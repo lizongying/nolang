@@ -94,7 +94,7 @@ get-option = (key str, keyn i64, val str) (ok bool) {
                 vn = 0
                 !! {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     c = arg[k]
                     c == 0 -> break
 
@@ -125,7 +125,6 @@ get-positional = (idx i64) (val str, ok bool) {
     j = 1
     (j < n) {
 
-        #{overflow=wrap}
         arg = get(j)
 
         ; 跳過以 '-' 開頭的參數
@@ -143,7 +142,6 @@ get-positional = (idx i64) (val str, ok bool) {
             c1 = arg[1]
             c1 != 45 -> j < n -> {
 
-                #{overflow=wrap}
                 next = get(j)
 
                 #{index-out=0}
@@ -160,7 +158,7 @@ get-positional = (idx i64) (val str, ok bool) {
             k = 0
             !! {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 c = arg[k]
                 c == 0 -> break
 

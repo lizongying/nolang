@@ -76,7 +76,6 @@ conn {
 ; 返回 next-pos ?i64: ok=下一個位置, nil=錯誤
 frame.parse = (data str, pos i64) (next-pos ?i64) {
 
-    #{overflow=wrap}
     next-pos = nil
 
     #{overflow=wrap}
@@ -102,7 +101,7 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
 ; 返回 next-pos=下一個位置
 frame.serialize = (buf str, pos i64) (next-pos i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     buf[pos] = (.length >> 16) & 255
 
     #{index-out=0, overflow=wrap}
@@ -208,7 +207,6 @@ conn.recv-frame = () (frame ?frame) {
     recv-n = 0
     !! {
 
-        #{overflow=wrap}
         hdr-total >= HTTP2-FRAME-HEADER-SIZE -> *
         {
             .use-tls -> {
@@ -252,7 +250,6 @@ conn.recv-frame = () (frame ?frame) {
         payload-total = 0
         !! {
 
-            #{overflow=wrap}
             payload-total >= f.length -> *
             {
                 .use-tls -> {
@@ -307,7 +304,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
     i <- [0..count): {
 
         ; 用 slice 載入值（避開 IndexExpression codegen 問題）
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         nlen = names[i].len-bytes()
 
         #{index-out=0}
@@ -370,7 +367,6 @@ conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
 ; 返回 conn ?conn: ok=連線, nil=失敗
 connect = (host str, port i64) (conn ?conn) {
 
-    #{overflow=wrap}
     conn = nil
     fd = net.net-dial(host, port)
     fd < 0 -> return
@@ -382,7 +378,6 @@ connect = (host str, port i64) (conn ?conn) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     written = net.net-send(fd, preface, preface.len-bytes())
     written != preface.len-bytes() -> {
@@ -413,7 +408,6 @@ connect = (host str, port i64) (conn ?conn) {
 ; 返回 conn ?conn: ok=連線, nil=失敗
 connect-tls = (host str, port i64) (conn ?conn) {
 
-    #{overflow=wrap}
     conn = nil
 
     ; 1. 建立 TLS 連線
@@ -431,7 +425,6 @@ connect-tls = (host str, port i64) (conn ?conn) {
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
 
-    #{overflow=wrap}
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     w = tls-c.send(preface)
     w: {
@@ -483,7 +476,6 @@ conn.close = () {
 ; 返回 resp=回應, ok=true=成功
 conn.request = (method str, path str, host str, body str) (names [32]str, values [32]str, header-count i64, resp-body str, resp-n i64, ok bool) {
 
-    #{overflow=wrap}
     ok = false
     header-count = 0
     resp-n = 0
@@ -710,7 +702,6 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
     colon-idx = host.index(':')
     colon-idx >= 0 -> {
 
-        #{overflow=wrap}
         host-only = host.slice(0, colon-idx)
 
         #{overflow=wrap}

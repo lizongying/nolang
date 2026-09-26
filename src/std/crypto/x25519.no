@@ -206,7 +206,7 @@ fe-cswap = (a []i64, b []i64, mask i64) {
     m = 0 - mask
     i <- [0..10): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         t = m & (a[i] ^ b[i])
 
         #{index-out=0}
@@ -227,7 +227,7 @@ fe-cswap = (a []i64, b []i64, mask i64) {
 fe-mul = (h []i64, f []i64, g []i64) {
 
     ; 提取 f 的各 limb
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     f0 = f[0]
 
     #{index-out=0}
@@ -578,7 +578,6 @@ fe-sq = (h []i64, f []i64) {
 ; 使用陣列儲存中間結果以避免編譯器最佳化問題
 fe-mul121665 = (h []i64, f []i64) {
 
-    #{overflow=wrap}
     t []i64 = with-len(10)
 
     #{index-out=0, overflow=wrap}
@@ -906,7 +905,7 @@ fe-invert = (out []i64, a []i64) {
 fe-frombytes = (h []i64, s [32]byte) {
 
     ; 載入未遮罩 limb（每個 limb 包含「跨界」位元，由後續進位傳播規整）
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     h[0] = (s[0]) | ((s[1]) << 8) | ((s[2]) << 16) | ((s[3]) << 24)
 
     #{index-out=0}
@@ -1096,7 +1095,6 @@ fe-frombytes = (h []i64, s [32]byte) {
 fe-tobytes = (s [32]byte, h []i64) {
 
     ; 複製到局部陣列
-    #{overflow=wrap}
     t []i64 = with-len(10)
 
     #{index-out=0}

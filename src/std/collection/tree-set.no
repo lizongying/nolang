@@ -58,7 +58,6 @@ tree-set {
 ; init: 初始化空樹與空閒節點池
 tree-set.init = () {
 
-    #{overflow=wrap}
     .root = -1
     .free-head = 0
     .size = 0
@@ -128,7 +127,7 @@ tree-set.ht = (idx i64) (h i64) {
 ; idx i64: 節點索引
 tree-set.update-ht = (idx i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     lh = .ht(.left[idx])
 
     #{index-out=0}
@@ -143,7 +142,7 @@ tree-set.update-ht = (idx i64) {
 ; 返回 b i64: 平衡因子
 tree-set.bf = (idx i64) (b i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     lh = .ht(.left[idx])
 
     #{index-out=0}
@@ -399,7 +398,6 @@ tree-set.add = (key i64) (ok bool) {
             key < .keys[cur] -> {
                 .left[cur] < 0 -> {
 
-                    #{overflow=wrap}
                     idx = .alloc-node()
                     idx < 0 -> return
 
@@ -426,7 +424,6 @@ tree-set.add = (key i64) (ok bool) {
             -> {
                 .right[cur] < 0 -> {
 
-                    #{overflow=wrap}
                     idx = .alloc-node()
                     idx < 0 -> return
 
@@ -485,11 +482,9 @@ tree-set.contains = (key i64) (yes bool) {
 tree-set.remove = (key i64) (ok bool) {
 
     ; BST 搜尋
-    #{overflow=wrap}
     idx = .root
     (idx >= 0) {
 
-        #{overflow=wrap}
         key == .keys[idx] -> {
 
             #{index-out=0}
@@ -709,7 +704,6 @@ tree-set.for-each = () (val i64) {
 ; clear: 清空所有元素，重建空閒池
 tree-set.clear = () {
 
-    #{overflow=wrap}
     .root = -1
     .free-head = 0
     .size = 0

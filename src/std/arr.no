@@ -63,14 +63,12 @@
 #{index-out=0}
 [n]t.reverse = () {
 
-    #{overflow=wrap}
     i = 0
 
     #{overflow=wrap}
     j = n - 1
     (i < j) {
 
-        #{overflow=wrap}
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
@@ -166,14 +164,12 @@
 [n]t.sort-asc = () {
     i <- [1..n): {
 
-        #{overflow=wrap}
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
 
-            #{overflow=wrap}
             .[j] <= key -> break
 
             #{overflow=wrap}
@@ -193,14 +189,12 @@
 [n]t.sort-desc = () {
     i <- [1..n): {
 
-        #{overflow=wrap}
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
 
-            #{overflow=wrap}
             .[j] >= key -> break
 
             #{overflow=wrap}
@@ -260,22 +254,17 @@
         n == 0 -> out = '[]'
 
         -> {
-
-            #{overflow=wrap}
             out = '['
 
             #{overflow=wrap}
             last = n - 1
             i <- [0..n): {
 
-                #{overflow=wrap}
                 out = out - number.i64-to-str(.[i])
 
-                #{overflow=wrap}
                 i < last -> out = out - ', '
             }
 
-            #{overflow=wrap}
             out = out - ']'
         }
     }

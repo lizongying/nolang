@@ -150,7 +150,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     i = 0
     (i <= domain.len-bytes()) {
 
-        #{overflow=wrap}
         is-dot = false
         {
             i == domain.len-bytes() -> is-dot = true
@@ -169,7 +168,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
             label-len = i - label-start
             label-len > 0 -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 query[pos] = label-len & 255
                 pos = pos + 1
                 j <- [0..label-len): {
@@ -224,7 +223,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
 parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
     ; Use a byte buffer for building the name (str indexed assignment requires cap>0)
-    #{overflow=wrap}
     buf []byte = with-len(256)
     buf-pos = 0
     pos = offset
@@ -234,7 +232,6 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
     !! {
 
-        #{overflow=wrap}
         pos >= data.len() -> *
 
         #{index-out=0}
@@ -264,8 +261,6 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
             }
 
             (len-byte & 0xc0) == 0 -> {
-
-                #{overflow=wrap}
                 label-len = len-byte
                 pos = pos + 1
                 i <- [0..label-len): {
@@ -332,7 +327,6 @@ parse-response = (data []byte) (ip ?str) {
     ; 跳過問題部分
     i <- [0..qdcount): {
 
-        #{overflow=wrap}
         qname = ''
         qname, pos = parse-name(data, pos)
 
@@ -344,14 +338,13 @@ parse-response = (data []byte) (ip ?str) {
     ; 解析回答部分
     i <- [0..ancount): {
 
-        #{overflow=wrap}
         rname = ''
         rname, pos = parse-name(data, pos)
 
         #{overflow=wrap}
         pos + 10 > data.len() -> return
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         rtype = ((data[pos]) << 8) | (data[pos + 1])
 
         #{overflow=wrap}
@@ -366,7 +359,7 @@ parse-response = (data []byte) (ip ?str) {
         pos = pos + 4
 
         ; RDLENGTH (2 bytes)
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         rdlength = ((data[pos]) << 8) | (data[pos + 1])
 
         #{overflow=wrap}
@@ -391,7 +384,6 @@ parse-response = (data []byte) (ip ?str) {
             #{index-out=0}
             d = data[pos + 3]
 
-            #{overflow=wrap}
             sa = a.to-str()
             sb = b.to-str()
             sc = c.to-str()

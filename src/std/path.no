@@ -113,7 +113,7 @@ path.join = (b str) (out str) {
     out-n == 0 -> need-sep = 0
     need-sep == 1 -> {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .p[out-n] = SEP
 
         #{overflow=wrap}
@@ -132,7 +132,7 @@ path.join = (b str) (out str) {
     ; 複製 b
     j <- [start-b..bn): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .p[out-n] = b.byte(j)
 
         #{overflow=wrap}
@@ -150,11 +150,10 @@ path.join = (b str) (out str) {
 path.base = () (out str) {
 
     ; 找最右邊的 '/'
-    #{overflow=wrap}
     last-sep = -1
     i <- [0...p.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = .p.byte(i)
         c == SEP-BYTE -> last-sep = i
     }
@@ -216,7 +215,6 @@ path.dir = () (out str) {
 ; 返回副檔名字串
 path.ext = () (out str) {
 
-    #{overflow=wrap}
     out-n = 0
 
     ; 找最右邊的 '/' 之後的 '.'
@@ -224,7 +222,7 @@ path.ext = () (out str) {
     last-dot = -1
     i <- [0...p.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = .p.byte(i)
         {
             c == SEP-BYTE -> last-sep = i
@@ -236,7 +234,6 @@ path.ext = () (out str) {
     ; '.' 必須在 '/' 之後
     {
 
-        #{overflow=wrap}
         last-dot <= last-sep -> return
 
         #{overflow=wrap}
@@ -316,7 +313,6 @@ path.clean = () {
                             j = j - 1
                         }
                         {
-
                             ; 找不到前一段 ⇒ 相對路徑已在開頭（清空），
                             ; 絕對路徑則只保留根 '/'
                             j < 0 -> {
@@ -333,7 +329,7 @@ path.clean = () {
                         prev = .p.byte(out-n - 1)
                         prev != SEP-BYTE -> {
 
-                            #{index-out=0, overflow=wrap}
+                            #{index-out=0}
                             .p[out-n] = SEP
 
                             #{overflow=wrap}
@@ -343,7 +339,7 @@ path.clean = () {
 
                     -> {
 
-                        #{index-out=0, overflow=wrap}
+                        #{index-out=0}
                         .p[out-n] = SEP
 
                         #{overflow=wrap}
@@ -364,14 +360,13 @@ path.clean = () {
                 ; 寫入之前積累的 '.' 字元
                 j <- [0..dot-count): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     .p[out-n] = DOT
 
                     #{overflow=wrap}
                     out-n = out-n + 1
                 }
 
-                #{overflow=wrap}
                 dot-count = 0
 
                 #{index-out=0}
@@ -406,7 +401,6 @@ path.clean = () {
                 j = j - 1
             }
             {
-
                 j < 0 -> {
                     .p.byte(0) == SEP-BYTE -> out-n = 1
 
@@ -439,11 +433,10 @@ path.clean = () {
 path.split = () (f str) {
 
     ; 找最右邊的 '/'
-    #{overflow=wrap}
     last-sep = -1
     i <- [0...p.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = .p.byte(i)
         c == SEP-BYTE -> last-sep = i
     }

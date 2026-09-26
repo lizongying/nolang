@@ -150,7 +150,6 @@ gcd = (a int, b int) (r int) {
     rb < 0 -> rb = 0 - rb
     (rb != 0) {
 
-        #{overflow=wrap}
         t = rb
         rb = ra % rb
         ra = t
@@ -161,7 +160,6 @@ gcd = (a int, b int) (r int) {
 ; lcm: 最小公倍數
 lcm = (a int, b int) (r int) {
 
-    #{overflow=wrap}
     a == 0 || b == 0 -> {
         r = 0
         return
@@ -224,7 +222,6 @@ f64-to-f32 = (a f64) (r f32) {
 ; 避免 n = 0 - n 在 i64.MIN 時溢出（i64.MIN 的絕對值 2^63 超出 i64 範圍）。
 i64-to-str = (n i64) (out str) {
 
-    #{overflow=wrap}
     n == 0 -> {
         out = with-cap(1)
 
@@ -240,7 +237,6 @@ i64-to-str = (n i64) (out str) {
     #{overflow=wrap}
     n < 0 -> {
 
-        #{overflow=wrap}
         neg = 1
         mag = n
         mag = 0 - mag
@@ -296,7 +292,6 @@ i64-to-str = (n i64) (out str) {
 u64-to-str = (u u64) (out str) {
     ru = u
 
-    #{overflow=wrap}
     u == 0 -> {
         out = with-cap(1)
 
@@ -393,7 +388,6 @@ char-to-str = (c i64) (out str) {
 ; 改為直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
 int.to-str = () (out str) {
 
-    #{overflow=wrap}
     . == 0 -> {
         out = with-cap(1)
 
@@ -507,7 +501,6 @@ f64-to-str = (x f64) (out str) {
 
     ; 特殊值處理
     ; 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
-    #{overflow=wrap}
     {
         x != x -> {
             out = 'nan'.copy()
@@ -533,10 +526,8 @@ f64-to-str = (x f64) (out str) {
     neg = 0
     ax = x
 
-    #{overflow=wrap}
     x < 0.0 -> {
 
-        #{overflow=wrap}
         neg = 1
         ax = 0.0 - x
     }
@@ -564,7 +555,6 @@ f64-to-str = (x f64) (out str) {
         base = math.exp(i64-to-f64(e) * LN10)
     }
 
-    #{overflow=wrap}
     m = f64-to-i64(ax / base * 100000.0 + 0.5)
 
     ; 四捨五入溢出處理
@@ -597,7 +587,6 @@ f64-to-str = (x f64) (out str) {
     i = 5
     (i >= 0) {
 
-        #{overflow=wrap}
         digits[i] != 48 -> {
             last-nz = i
             i = -1
@@ -619,12 +608,11 @@ f64-to-str = (x f64) (out str) {
     use-sci == 1 -> {
 
         ; 科學記號：d.ddddde±NN
-        #{overflow=wrap}
         out = with-cap(20)
         pos = 0
         neg == 1 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out[pos] = 45
             pos = pos + 1
         }
@@ -634,13 +622,13 @@ f64-to-str = (x f64) (out str) {
         pos = pos + 1
         last-nz >= 1 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out[pos] = 46
             pos = pos + 1
             j = 1
             (j <= last-nz) {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out[pos] = digits[j]
                 pos = pos + 1
                 j = j + 1
@@ -654,7 +642,7 @@ f64-to-str = (x f64) (out str) {
         {
             ae < 0 -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out[pos] = 45
                 pos = pos + 1
                 ae = 0 - ae
@@ -662,7 +650,7 @@ f64-to-str = (x f64) (out str) {
 
             -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out[pos] = 43
                 pos = pos + 1
             }
@@ -670,14 +658,14 @@ f64-to-str = (x f64) (out str) {
         estr = i64-to-str(ae)
         estr.len-bytes() == 1 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out[pos] = 48
             pos = pos + 1
         }
         j = 0
         (j < estr.len-bytes()) {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out[pos] = estr[j]
             pos = pos + 1
             j = j + 1
@@ -703,27 +691,27 @@ f64-to-str = (x f64) (out str) {
         pos = 0
         neg == 1 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out[pos] = 45
             pos = pos + 1
         }
         j = 0
         (j < int-digits) {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out[pos] = digits[j]
             pos = pos + 1
             j = j + 1
         }
         last-nz >= int-digits -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out[pos] = 46
             pos = pos + 1
             j = int-digits
             (j <= last-nz) {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out[pos] = digits[j]
                 pos = pos + 1
                 j = j + 1
@@ -747,7 +735,7 @@ f64-to-str = (x f64) (out str) {
     #{overflow=wrap}
     neg == 1 -> {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[pos] = 45
         pos = pos + 1
     }
@@ -766,7 +754,7 @@ f64-to-str = (x f64) (out str) {
     j = 0
     (j < lead-zeros) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[pos] = 48
 
         #{overflow=wrap}
@@ -778,7 +766,7 @@ f64-to-str = (x f64) (out str) {
     j = 0
     (j <= last-nz) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[pos] = digits[j]
 
         #{overflow=wrap}

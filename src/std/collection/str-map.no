@@ -42,18 +42,16 @@ str-map.init = () {
 ; hash: FNV-1a 字串雜湊
 str-map.hash = (key str) (idx i64) {
 
-    #{overflow=wrap}
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
         h = h * FNV-PRIME
     }
 
-    #{overflow=wrap}
     idx = h & (.cap - 1)
 }
 
@@ -73,12 +71,11 @@ str-map.str-eq = (a str, b str) (eq bool) {
 ; put: 插入或更新 key→value，回傳是否新增
 str-map.put = (key str, val str) (is-new bool) {
 
-    #{overflow=wrap}
     idx = .hash(key)
 
     (.occ[idx] == 1) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         eq = .str-eq(.keys[idx], key)
         eq -> {
 
@@ -121,7 +118,7 @@ str-map.get = (key str) (result ?str) {
 
     (.occ[idx] == 1) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         eq = .str-eq(.keys[idx], key)
         eq -> {
 
@@ -157,13 +154,13 @@ str-map.remove = (key str) (removed bool) {
 
     (.occ[idx] == 1) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         eq = .str-eq(.keys[idx], key)
 
         #{overflow=wrap}
         eq -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             .occ[idx] = 0
 
             #{index-out=0}
@@ -235,6 +232,7 @@ str-map.to-str = () (out str) {
                 out = out - .keys[i] - ': ' - .vals[i]
                 first = false
             }
+
             -> {
                 out = out - ', ' - .keys[i] - ': ' - .vals[i]
             }

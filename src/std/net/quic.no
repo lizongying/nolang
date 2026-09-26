@@ -156,8 +156,6 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
     prefix = first >> 6
     {
         prefix == 0 -> {
-
-            #{overflow=wrap}
             val = first & 63
 
             #{overflow=wrap}
@@ -236,6 +234,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 ; len i64: CID 長度（通常 8）
 ; 返回 cid []byte: 隨機 CID
 gen-cid = (len i64) (cid []byte) {
+
     ; xorshift32 的 0 是固定點（0 永遠產生 0），必須以非零種子起算。
     ; 與 tls.no 的 .rand-state 初始化方式一致。
     state = time.now-ns() ^ os.get-pid()
@@ -280,7 +279,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
     ft = 0
     (r-pos < end) {
 
-        #{overflow=wrap}
         count >= QUIC-MAX-FRAMES -> return
         ft-val = 0
         ft-pos = 0
@@ -317,7 +315,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         ft == QUIC-FRAME-CONNECTION-CLOSE -> {
 
             ; error_code + frame_type + reason_length + reason
-            #{overflow=wrap}
             ec-val = 0
             ec-np = 0
             ec-val, ec-np = varint-decode(buf, r-pos)
@@ -356,7 +353,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             ; CONNECTION_CLOSE (0x1d) — application
 
-            #{overflow=wrap}
             ec-val = 0
             ec-np = 0
             ec-val, ec-np = varint-decode(buf, r-pos)
@@ -387,7 +383,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             ; HANDSHAKE_DONE
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             frames[count].length = 0
 
             #{overflow=wrap}
@@ -398,7 +394,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             ; NEW_TOKEN
 
-            #{overflow=wrap}
             tl-val = 0
             tl-np = 0
             tl-val, tl-np = varint-decode(buf, r-pos)
@@ -421,7 +416,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             ; MAX_DATA, MAX_STREAMS, etc. — 帶單個 varint
 
-            #{overflow=wrap}
             mv-val = 0
             mv-np = 0
             mv-val, mv-np = varint-decode(buf, r-pos)
@@ -528,7 +522,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     ; Long Header: mask[0] 的低位 4 bits
 
     ; Short Header: mask[0] 的低位 5 bits
-    #{index-out=0, index-out=0}
+    #{index-out=0}
     mask-offset = 1
     mask-bits = 0x1f
     is-long-header -> mask-bits = 0x0f
@@ -569,7 +563,6 @@ remove-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-h
 ; 返回 pn-len i64: 封包號碼位元組數
 decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, pn-len i64) {
 
-    #{overflow=wrap}
     pn = 0
     pn-len = 0
 
@@ -586,7 +579,7 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     truncated-pn = 0
     i <- [0..pn-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         truncated-pn = (truncated-pn << 8) | (packet[pn-offset + i])
     }
 
@@ -626,7 +619,6 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     pn-mask = pn-win - 1
 
     ; 恢復完整封包號碼
-    #{overflow=wrap}
     candidate-pn = (expected-pn & (-1 - pn-mask)) | truncated-pn
 
     #{overflow=wrap}
@@ -719,7 +711,6 @@ conn.close = () {
 ; 返回 ok bool: true=成功
 conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 
-    #{overflow=wrap}
     ok = false
     pn = .initial-pn
     pn-len = 4
@@ -729,7 +720,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     packet = with-cap(QUIC-MAX-PACKET-SIZE)
 
     ; 1. 第一位元組: Fixed bit + Long header + Initial type
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     packet[0] = QUIC-LONG-HEADER-FIXED-BIT | QUIC-PACKET-INITIAL | (pn-len - 1)
     pos = 1
 
@@ -885,7 +876,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     #{overflow=wrap}
     (pos < QUIC-MAX-PACKET-SIZE - 16) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         packet[pos] = 0
 
         #{overflow=wrap}
@@ -897,7 +888,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     nonce [12]byte
     i <- [0..12): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         nonce[i] = .client-initial-iv[i]
     }
     i <- [0..8): {
@@ -910,7 +901,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     aad []byte
     i <- [0..pn-offset): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         aad[i] = packet[i]
     }
 
@@ -961,7 +952,6 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 ; 返回 ok bool: true=成功
 conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
-    #{overflow=wrap}
     ok = false
     count = -1
 
@@ -1037,7 +1027,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     nonce [12]byte
     i <- [0..12): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         nonce[i] = .server-initial-iv[i]
     }
     i <- [0..8): {
@@ -1050,7 +1040,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     aad []byte
     i <- [0..pn-offset): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         aad[i] = buf[i]
     }
 

@@ -25,7 +25,6 @@ PAD = 61
 ; 返回 out str: Base64 編碼字串
 encode = (data []byte, table str) (out str) {
 
-    #{overflow=wrap}
     n = data.len()
 
     #{overflow=wrap}
@@ -37,7 +36,7 @@ encode = (data []byte, table str) (out str) {
     #{overflow=wrap}
     (i + 3 <= n) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         b0 = data[i]
 
         #{index-out=0, overflow=wrap}
@@ -73,7 +72,7 @@ encode = (data []byte, table str) (out str) {
     {
         rem == 1 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             b0 = data[i]
 
             #{index-out=0}
@@ -91,7 +90,7 @@ encode = (data []byte, table str) (out str) {
 
         rem == 2 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             b0 = data[i]
 
             #{index-out=0}
@@ -136,7 +135,6 @@ encode-url = (data []byte) (out str) {
 ; 返回 out ?[]byte: ok=解碼後資料, err=無效字元
 decode = (s str, table str) (out ?[]byte) {
 
-    #{overflow=wrap}
     out = nil
     n = s.len-bytes()
 
@@ -168,7 +166,7 @@ decode = (s str, table str) (out ?[]byte) {
     #{overflow=wrap}
     (i + 4 <= n) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         v0 = b64-val(s[i], table)
 
         #{index-out=0, overflow=wrap}
@@ -190,7 +188,6 @@ decode = (s str, table str) (out ?[]byte) {
         #{overflow=wrap}
         s[i + 2] != 61 -> {
 
-            #{overflow=wrap}
             v2 < 0 -> {
                 out = err('invalid base64 character')
                 return
@@ -203,7 +200,6 @@ decode = (s str, table str) (out ?[]byte) {
         #{overflow=wrap}
         s[i + 3] != 61 -> {
 
-            #{overflow=wrap}
             v3 < 0 -> {
                 out = err('invalid base64 character')
                 return

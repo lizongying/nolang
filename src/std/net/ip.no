@@ -114,7 +114,6 @@ ip-addr.parse = (s str) (ok bool) {
             c == 46 -> {
 
                 ; 點分隔符
-                #{overflow=wrap}
                 has-digit == 0 -> return
 
                 #{overflow=wrap}
@@ -351,8 +350,6 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
         }
 
         -> {
-
-            #{overflow=wrap}
             mask = (0 - 1) << (32 - prefix-len)
             mask = mask & 0xffffffff
         }

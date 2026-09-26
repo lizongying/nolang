@@ -63,7 +63,6 @@ link {
 #{index-out=0}
 [n]t.link-init = (nxt []i64, prv []i64) (l link) {
 
-    #{overflow=wrap}
     l.head = -1
     l.tail = -1
     l.free-head = 0
@@ -90,7 +89,6 @@ link {
 #{index-out=0}
 [n]t.link-push-front = (l link, val t) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; 從空閒鏈結串列分配節點
@@ -129,7 +127,6 @@ link {
 #{index-out=0}
 [n]t.link-push-back = (l link, val t) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     idx = l.free-head
     idx < 0 -> return
@@ -162,7 +159,6 @@ link {
 #{index-out=0}
 [n]t.link-pop-front = (l link) (val ?t) {
 
-    #{overflow=wrap}
     l.head < 0 -> {
         val = nil
         return
@@ -197,7 +193,6 @@ link {
 #{index-out=0}
 [n]t.link-pop-back = (l link) (val ?t) {
 
-    #{overflow=wrap}
     l.tail < 0 -> {
         val = nil
         return
@@ -257,7 +252,6 @@ link {
 #{index-out=0}
 [n]t.link-insert-at = (l link, pos i64, val t) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     #{overflow=wrap}
@@ -267,7 +261,6 @@ link {
         pos == 0 -> {
 
             ; 插入頭部
-            #{overflow=wrap}
             idx = l.free-head
             idx < 0 -> return
 
@@ -295,7 +288,6 @@ link {
         pos == l.size -> {
 
             ; 插入尾部
-            #{overflow=wrap}
             idx = l.free-head
             idx < 0 -> return
 
@@ -325,7 +317,7 @@ link {
     idx = l.head
     i <- [0..pos): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         idx = l.next[idx]
     }
 
@@ -375,7 +367,6 @@ link {
         pos == 0 -> {
 
             ; 移除頭部
-            #{overflow=wrap}
             idx = l.head
             val = .[idx]
 
@@ -401,7 +392,6 @@ link {
         pos == l.size - 1 -> {
 
             ; 移除尾部
-            #{overflow=wrap}
             idx = l.tail
             val = .[idx]
 
@@ -429,7 +419,7 @@ link {
     idx = l.head
     i <- [0..pos): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         idx = l.next[idx]
     }
     val = .[idx]

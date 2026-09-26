@@ -38,7 +38,7 @@ new-v4 = (state i64) (out uuid) {
     (i < 16) {
         state, r = rand.rand(state)
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out.bytes[i] = r & 255
 
         #{overflow=wrap}
@@ -67,11 +67,11 @@ new-v4 = (state i64) (out uuid) {
     }
 
     ; 設定版本位：byte[6] 的高 4 位 = 0100 (version 4)
-    #{index-out=0, index-out=0}
+    #{index-out=0}
     out.bytes[6] = (out.bytes[6] & 15) | 64
 
     ; 設定變體位：byte[8] 的高 2 位 = 10 (RFC 4122)
-    #{index-out=0, index-out=0}
+    #{index-out=0}
     out.bytes[8] = (out.bytes[8] & 63) | 128
 }
 
@@ -160,7 +160,7 @@ uuid.to-str = () (out str) {
 ; hex-byte: 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
 hex-byte = (b byte, pos i64, out str) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     out[pos] = HEX[(b >> 4) & 15]
 
     #{index-out=0, overflow=wrap}
@@ -237,7 +237,7 @@ uuid.to-str-upper = () (out str) {
 ; hex-byte-upper: 大寫 hex 位元組寫入
 hex-byte-upper = (b byte, pos i64, out str, table str) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     out[pos] = table[(b >> 4) & 15]
 
     #{index-out=0, overflow=wrap}
@@ -275,7 +275,6 @@ from-str = (s str, out uuid) (ok bool) {
 ; parse-with-dashes: 解析帶連字號的 UUID
 parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
-    #{overflow=wrap}
     ok = true
     v0 = parse-hex-byte(s, pos)
 
@@ -418,7 +417,7 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
 ; parse-hex-byte: 從字串解析兩個 hex 字元為一個位元組
 parse-hex-byte = (s str, pos i64) (v i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     c0 = s.byte(pos)
 
     #{index-out=0, overflow=wrap}
@@ -441,14 +440,14 @@ uuid.validate = () (ok bool) {
     ok = true
 
     ; 檢查版本位（byte[6] 的 4-7 位應為 4）
-    #{index-out=0, index-out=0}
+    #{index-out=0}
     ver = (.bytes[6] >> 4) & 15
     ver != 4 -> {
         ; 不強制版本，只檢查變體
     }
 
     ; 檢查變體位（byte[8] 的 6-7 位應為 10）
-    #{index-out=0, index-out=0}
+    #{index-out=0}
     var = (.bytes[8] >> 6) & 3
     var != 2 -> ok = false
 }

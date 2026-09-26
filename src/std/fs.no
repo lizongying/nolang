@@ -617,7 +617,6 @@ file.read-bytes = () (content ?[]byte) {
     total = 0
     (total < size) {
 
-        #{overflow=wrap}
         total >= size -> break
 
         #{index-out=0, overflow=wrap}
@@ -651,7 +650,6 @@ file.write-str = (data str) (ok ?bool) {
     total = 0
     (total < s.len()) {
 
-        #{overflow=wrap}
         total >= s.len() -> break
 
         #{index-out=0, overflow=wrap}
@@ -677,7 +675,6 @@ file.write-bytes = (data []byte) (ok ?bool) {
     total = 0
     (total < data.len()) {
 
-        #{overflow=wrap}
         total >= data.len() -> break
 
         #{index-out=0, overflow=wrap}
@@ -906,7 +903,6 @@ list-dir = (dirpath str) (entries []str) {
 #{win-amd64, win-arm64}
 list-dir = (dirpath str) (entries []str) {
 
-    #{overflow=wrap}
     winpath = dirpath - '\\*'
     bufptr = os.win-find-first-file(winpath)
     {
@@ -917,7 +913,6 @@ list-dir = (dirpath str) (entries []str) {
     (ok == true) {
         name, ok = os.win-find-next-file(bufptr)
 
-        #{overflow=wrap}
         ok -> result.push(name)
     }
     os.win-find-close(bufptr)
@@ -1014,7 +1009,6 @@ walk-collect = (dirpath str, paths []str) (out []str) {
                 last = dirpath[dirpath.len-bytes() - 1]
                 last == sep -> fullpath = dirpath - name
 
-                #{overflow=wrap}
                 last != sep -> fullpath = dirpath - '/' - name
             }
 

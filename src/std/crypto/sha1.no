@@ -23,7 +23,6 @@
 ; h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 輸入/輸出 160-bit 哈希狀態
 sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, r2 u32, r3 u32, r4 u32) {
 
-    #{overflow=wrap}
     mask u32 = 4294967295
 
     ; 初始狀態
@@ -39,7 +38,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[0]) & mask
     e = d
     d = c
@@ -49,7 +48,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[1]) & mask
     e = d
     d = c
@@ -59,7 +58,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[2]) & mask
     e = d
     d = c
@@ -69,7 +68,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[3]) & mask
     e = d
     d = c
@@ -79,7 +78,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[4]) & mask
     e = d
     d = c
@@ -89,7 +88,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[5]) & mask
     e = d
     d = c
@@ -99,7 +98,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[6]) & mask
     e = d
     d = c
@@ -109,7 +108,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[7]) & mask
     e = d
     d = c
@@ -119,7 +118,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[8]) & mask
     e = d
     d = c
@@ -129,7 +128,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[9]) & mask
     e = d
     d = c
@@ -139,7 +138,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[10]) & mask
     e = d
     d = c
@@ -149,7 +148,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[11]) & mask
     e = d
     d = c
@@ -159,7 +158,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[12]) & mask
     e = d
     d = c
@@ -169,7 +168,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[13]) & mask
     e = d
     d = c
@@ -179,7 +178,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[14]) & mask
     e = d
     d = c
@@ -189,7 +188,7 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     temp = (temp + f + e + 1518500249 + s[15]) & mask
     e = d
     d = c
@@ -207,7 +206,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1518500249 + w) & mask
     e = d
     d = c
@@ -223,7 +221,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1518500249 + w) & mask
     e = d
     d = c
@@ -239,7 +236,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1518500249 + w) & mask
     e = d
     d = c
@@ -255,7 +251,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1518500249 + w) & mask
     e = d
     d = c
@@ -274,7 +269,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -290,7 +284,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -306,7 +299,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -322,7 +314,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -338,7 +329,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -354,7 +344,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -370,7 +359,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -386,7 +374,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -402,7 +389,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -418,7 +404,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -434,7 +419,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -450,7 +434,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -465,7 +448,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -480,7 +462,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -495,7 +476,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -510,7 +490,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -525,7 +504,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -540,7 +518,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -555,7 +532,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -570,7 +546,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 1859775393 + w) & mask
     e = d
     d = c
@@ -588,7 +563,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -603,7 +577,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -618,7 +591,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -633,7 +605,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -648,7 +619,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -663,7 +633,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -678,7 +647,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -693,7 +661,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -708,7 +675,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -723,7 +689,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -738,7 +703,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -753,7 +717,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -768,7 +731,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -783,7 +745,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -798,7 +759,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -813,7 +773,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -828,7 +787,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -843,7 +801,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -858,7 +815,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -873,7 +829,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | (b & d) | (c & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 2400959708 + w) & mask
     e = d
     d = c
@@ -891,7 +846,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -906,7 +860,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -921,7 +874,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -936,7 +888,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -951,7 +902,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -966,7 +916,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -981,7 +930,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -996,7 +944,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1011,7 +958,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1026,7 +972,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1041,7 +986,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1056,7 +1000,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1071,7 +1014,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1086,7 +1028,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1101,7 +1042,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1116,7 +1056,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1131,7 +1070,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1146,7 +1084,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1161,7 +1098,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1176,7 +1112,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = b ^ c ^ d
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{overflow=wrap}
     temp = (temp + f + e + 3395469782 + w) & mask
     e = d
     d = c
@@ -1185,19 +1120,14 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; 累加回初始哈希值
-    #{overflow=wrap}
     r0 = (h0 + a) & mask
 
-    #{overflow=wrap}
     r1 = (h1 + b) & mask
 
-    #{overflow=wrap}
     r2 = (h2 + c) & mask
 
-    #{overflow=wrap}
     r3 = (h3 + d) & mask
 
-    #{overflow=wrap}
     r4 = (h4 + e) & mask
 }
 
@@ -1207,7 +1137,6 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
 sha1 = (data []byte) (hash [20]byte) {
 
     ; SHA-1 初始狀態
-    #{overflow=wrap}
     h0 u32 = 1732584193
     h1 u32 = 4023233417
     h2 u32 = 2562383102
@@ -1236,14 +1165,14 @@ sha1 = (data []byte) (hash [20]byte) {
     padded []byte
     i <- [0..total-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = 0
     }
 
     ; 複製原始資料
     i <- [0..dlen): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = data[i]
     }
 
@@ -1252,10 +1181,9 @@ sha1 = (data []byte) (hash [20]byte) {
     padded[dlen] = 128
 
     ; 填充 0x00
-    #{overflow=wrap}
     i <- [dlen + 1..total-len - 8): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = 0
     }
 

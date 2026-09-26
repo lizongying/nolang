@@ -351,7 +351,6 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
             ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
             exec-rc != 0 -> {
 
-                #{overflow=wrap}
                 exec-err str = 'exec: ' - cmdline - ': command not found\n'
                 exec-err-bytes = exec-err.to-bytes()
                 fs.write(2, exec-err-bytes, exec-err-bytes.len())
@@ -530,11 +529,9 @@ process.read-all = () (content str, n i64) {
     buf []byte = with-len(4096)
     !! {
 
-        #{overflow=wrap}
         chunk-n = fs.read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> *
 
-        #{overflow=wrap}
         content = content - buf.slice(0, chunk-n).to-str()
 
         #{overflow=wrap}
@@ -808,7 +805,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
             exec-rc != 0 -> {
 
-                #{overflow=wrap}
                 exec-err str = 'exec: ' - cmdline - ': command not found\n'
                 exec-err-bytes = exec-err.to-bytes()
                 fs.write(2, exec-err-bytes, exec-err-bytes.len())
@@ -864,11 +860,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     buf []byte = with-len(4096)
     !! {
 
-        #{overflow=wrap}
         n = fs.read(out-read, buf, 4096)
         n <= 0 -> break
 
-        #{overflow=wrap}
         out = out - buf.slice(0, n).to-str()
     }
 
@@ -923,7 +917,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             err-read >= 0 -> {
                 !! {
 
-                    #{overflow=wrap}
                     n = fs.read(err-read, buf, 4096)
                     n <= 0 -> break
                     stderr = stderr - buf.slice(0, n).to-str()
@@ -974,12 +967,10 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         has-space = arg.contains(' ')
         has-space != 0 -> {
 
-            #{overflow=wrap}
             cmdline = cmdline - ' "' - arg - '"'
         }
         has-space == 0 -> {
 
-            #{overflow=wrap}
             cmdline = cmdline - ' ' - arg
         }
     }
@@ -1130,7 +1121,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             !! {
                 chunk, chunk-n = win-read-pipe(out-read, 4096)
 
-                #{overflow=wrap}
                 chunk-n <= 0 -> break
                 out = out - chunk
             }
@@ -1147,7 +1137,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 !! {
                     chunk, chunk-n = win-read-pipe(err-read, 4096)
 
-                    #{overflow=wrap}
                     chunk-n <= 0 -> break
                     stderr = stderr - chunk
                 }
@@ -1246,13 +1235,10 @@ list-all = () (procs []proc-info) {
         pid-val ?i64 = name.to-i64()
         pid-val: {
             ok -> {
-
-                #{overflow=wrap}
                 p = proc-info {}
                 p.pid = it
 
                 ; 讀取 /proc/<pid>/comm 取得進程名
-                #{overflow=wrap}
                 comm-path = '/proc/' - name - '/comm'
                 comm = fs.read-file(comm-path).to-str()
                 comm.len() > 0 -> p.name = comm.trim()

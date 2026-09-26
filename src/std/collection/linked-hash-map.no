@@ -43,19 +43,16 @@ linked-hash-map.init = () {
 ; hash: 計算索引
 linked-hash-map.hash = (key i64) (idx i64) {
 
-    #{overflow=wrap}
     idx = key & (.cap - 1)
 }
 
 ; put: 插入或更新 key→value
 linked-hash-map.put = (key i64, val i64) (is-new bool) {
 
-    #{overflow=wrap}
     idx = .hash(key)
 
     (.occ[idx] == 1) {
 
-        #{overflow=wrap}
         .keys[idx] == key -> {
 
             #{index-out=0}
@@ -110,7 +107,6 @@ linked-hash-map.get = (key i64) (result ?i64) {
 
     (.occ[idx] == 1) {
 
-        #{overflow=wrap}
         .keys[idx] == key -> {
 
             #{index-out=0}
@@ -145,7 +141,7 @@ linked-hash-map.remove = (key i64) (removed bool) {
         #{overflow=wrap}
         .keys[idx] == key -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             .occ[idx] = 0
             .size = .size - 1
 

@@ -218,7 +218,6 @@ conn.recv-all = () (content str, total i64) {
     buf str = with-len(NET-BUF-SIZE)
     !! {
 
-        #{overflow=wrap}
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> *
         i <- [0..chunk-n): {
@@ -558,7 +557,6 @@ enc-conn.gen-iv = () (iv [12]byte) {
     i <- [4..12): {
         s, r = rand.rand(.rand-seed)
 
-        #{overflow=wrap}
         .rand-seed = s
 
         #{index-out=0}
@@ -571,7 +569,6 @@ enc-conn.gen-iv = () (iv [12]byte) {
 ; 返回 ok bool: true=成功
 enc-conn.send-encrypted = (data str) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     .underlying.fd < 0 -> return
 
@@ -627,7 +624,6 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 ; 返回 data ?str: ok=解密後明文, nil=失敗
 enc-conn.recv-encrypted = () (data ?str) {
 
-    #{overflow=wrap}
     data = nil
     .underlying.fd < 0 -> return
 
@@ -649,7 +645,7 @@ enc-conn.recv-encrypted = () (data ?str) {
     iv [12]byte
     i <- [0..12): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         iv[i] = payload-buf.byte(i)
     }
 
@@ -825,7 +821,6 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
 ; 返回 checksum i64（16 位元）
 icmp-checksum = (data []byte, len i64) (checksum i64) {
 
-    #{overflow=wrap}
     checksum = 0
     i = 0
     (i < len) {
@@ -834,7 +829,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
         i + 1 < len -> {
 
             ; 16-bit word: data[i] << 8 | data[i+1]
-            #{index-out=0, index-out=0, overflow=wrap}
+            #{index-out=0}
             w = ((data[i]) << 8) | (data[i + 1])
             checksum = checksum + w
 
@@ -866,7 +861,6 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 ; 返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
 icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 
-    #{overflow=wrap}
     rtt = nil
     .fd < 0 -> return
 
@@ -925,12 +919,12 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     icmp-type != ICMP-ECHO-REPLY -> return
 
     ; 驗證 Identifier
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     recv-ident = ((recv-buf[offset + 4]) << 8) | (recv-buf[offset + 5])
     recv-ident != .ident -> return
 
     ; 驗證 Sequence（只比較低 16 位）
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     recv-seq = ((recv-buf[offset + 6]) << 8) | (recv-buf[offset + 7])
     recv-seq != (.seq & 65535) -> return
 
@@ -947,14 +941,10 @@ icmp-conn.ping-host = (host str, count i64, timeout-ms i64) {
     i <- [0..count): {
         r ?i64 = .ping-once(host, timeout-ms)
         r: {
-
-            #{overflow=wrap}
             nil -> print(host + ': ping timeout (seq=' + (.seq & 65535).to-str() + ')')
 
-            #{overflow=wrap}
             err -> print(host + ': ping failed (seq=' + (.seq & 65535).to-str() + ')')
 
-            #{overflow=wrap}
             ok -> print(host + ': seq=' + (.seq & 65535).to-str() + ' rtt=' + it.to-str() + ' us')
         }
 
@@ -1055,7 +1045,7 @@ ifconfig-list = () (ifs []if-info) {
     lines = content.split('\n')
     i <- [2..lines.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         line = lines[i]
         line.len-bytes() == 0 -> *
         colon-pos = line.index(':')
@@ -1259,7 +1249,7 @@ split-ws = (s str) (out []str) {
         (i < n && s[i] != 32 && s[i] != 9) {
             i < n -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 c = s[i]
                 c == 32 || c == 9 -> *
 

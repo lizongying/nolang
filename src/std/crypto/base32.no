@@ -15,7 +15,6 @@ BASE32-ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 ; 返回 out str: Base32 編碼字串
 encode = (data []byte) (out str) {
 
-    #{overflow=wrap}
     dlen = data.len()
 
     ; 計算輸出長度
@@ -38,7 +37,7 @@ encode = (data []byte) (out str) {
     (pos + 5 <= dlen) {
 
         ; 提取 5 位元組 → 40 位元 → 8 個 5-bit 值
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         b0 = data[pos]
 
         #{index-out=0, overflow=wrap}
@@ -89,7 +88,6 @@ encode = (data []byte) (out str) {
     remainder != 0 -> {
 
         ; 補零到 5 位元組
-        #{overflow=wrap}
         b0 = 0
         b1 = 0
         b2 = 0
@@ -258,7 +256,6 @@ decode = (in str) (out []byte) {
     (pos + 8 <= in-len) {
 
         ; 解碼 8 個字元 → 5 位元組
-        #{overflow=wrap}
         v0 = 0
         v1 = 0
         v2 = 0
@@ -346,6 +343,5 @@ decode = (in str) (out []byte) {
     ; 「完整群組數 × 5」。少了這一行，decode('MZXW6===')（'foo'）會回傳
     ; 5 個位元組（102 111 111 0 0）而不是 3 個 —— 尾端多出零填充。
     ; 這對合法輸入就會發生，與非 ASCII 無關。
-    #{overflow=wrap}
     out.truncate(out-pos)
 }

@@ -1,0 +1,323 @@
+; std-option.no — option（?T）模組測試
+;
+; 執行：no test test/std/option.no
+; 覆蓋：ok / nil / err 三態、各載荷型別（i64 / str / f64 / 結構體 / 切片）、
+;       match 三個臂、`it` 綁定、巢狀 option、option 當回傳值 / 當結構體欄位
+;
+; 已知未測（見下「已知 bug 3」）：option 當**函式參數**、且被 match。
+;
+; ⚠️⚠️ 本檔所有 option 變數都**在函式內宣告**。這不是風格偏好，是必要的：
+;
+;   已知 bug 1（module-scope option，靜默錯答）：
+;     在**模組頂層**宣告 option 並當行用字面量初始化 ——
+;         v ?i64 = 7
+;         v: { ok(p) -> print('OK')  nil -> …  err -> … }
+;     match 會**一個臂都不執行**（靜默跳過，rc 仍是 0）。而且結果**取決於變數名**：
+;         a / w / x / y / res  → 正常
+;         b / c / foo / bar / val / tmp / opt / …（絕大多數）→ 靜默
+;         A（大寫＝真全局）→ 一律靜默
+;     改用下列任一寫法則正常：
+;         (a) 在函式內宣告                       ← 本檔採用
+;         (b) `v ?i64 = mk()`（由函式回傳）      ← 一律正常
+;         (c) 拆成兩行 `v ?i64` / `v = 7`        ← 多數正常，但 foo 這種名字會變 NIL
+;     重現：/tmp/rule_{a,b,foo}_{inline,split,uppercase,fnret}.no、
+;           /tmp/ltr_*.no（26 個單字母掃描：只有 a/w/x/y 正常）
+;     判定法：臂裡放 `os.exit(3)`，看退出碼 —— /tmp/arm_b.no 走到 `os.exit(9)`，
+;             證明「沒有任何臂被執行」，而不是印到別的地方。
+;
+;   已知 bug 2（?bool 載荷恆為 false）：
+;         f = () (v ?bool) { v = true }
+;         print(f())              ; → true   ✅ 包裝是對的
+;         x ?bool = f()
+;         x: { ok(b) -> print(b) … }   ; → 0      ❌ 取值是錯的
+;     `?i64` / `?str` / `?f64` / `?結構體` / `?切片` 全部正常，**只有 bool** 壞。
+;     連帶讓 `txt.to-bool` 全滅。重現：/tmp/p_b1.no、/tmp/p_b11.no。
+;     以下 t-ok-payloads 刻意不含 bool，bool 另列為未測。
+;
+;   已知 bug 3（option 當參數 + match，編譯失敗）：
+;         f = (o ?i64) (n i64) {
+;             n = -1
+;             o: { ok(v) -> n = v   nil -> n = -2   err -> n = -3 }
+;         }
+;     → `opt-verify: '%lv64' defined with type '%option = type { i64, [3 x i64] }'
+;        but expected '%str-long = type { i64, i64, ptr }'`
+;        （`%cl47 = call %str-long @str_clone(%str-long %lv64)`）
+;     推測：option 的載荷槽是 24 位元組（＝%str-long 的大小），參數 marshal 把它
+;     誤判成 %str-long 而去 clone。**只傳不 match** 沒事（/tmp/q4.no）；
+;     **一 match 就爆**（/tmp/q8.no）。因為是硬編譯錯誤（不是靜默），
+;     影響有限，但等於「option 參數無法使用」。
+;
+;   已知 bug 4（大寫＝真全局的 option 初始化，靜默）：
+;     `A ?i64 = 7` 之後 match 一個臂都不跑（見 bug 1 的說明）。重現：/tmp/rule_a_uppercase.no。
+
+# /test/runner
+
+pt {
+    x i64
+    y i64
+}
+
+; ── 三態 ───────────────────────────────────────
+
+t-ok-payloads = () {
+    a ?i64 = 7
+    a: {
+        ok(v) -> runner.eq(v, 7, '?i64 ok payload')
+
+        nil -> runner.is-true(false, '?i64 must be ok')
+
+        err -> runner.is-true(false, '?i64 must be ok')
+    }
+    b ?str = 'hi'
+    b: {
+        ok(v) -> runner.str-eq(v, 'hi', 2, '?str ok payload')
+
+        nil -> runner.is-true(false, '?str must be ok')
+
+        err -> runner.is-true(false, '?str must be ok')
+    }
+    c ?f64 = 2.5
+    c: {
+        ok(v) -> runner.f64-eq(v, 2.5, 0.0001, '?f64 ok payload')
+
+        nil -> runner.is-true(false, '?f64 must be ok')
+
+        err -> runner.is-true(false, '?f64 must be ok')
+    }
+    ; 結構體載荷
+    d ?pt = pt { x: 1, y: 2 }
+    d: {
+        ok(v) -> {
+            runner.eq(v.x, 1, '?struct ok .x')
+            runner.eq(v.y, 2, '?struct ok .y')
+        }
+
+        nil -> runner.is-true(false, '?struct must be ok')
+
+        err -> runner.is-true(false, '?struct must be ok')
+    }
+    ; 切片載荷
+    e ?[]i64 = [1, 2, 3]
+    e: {
+        ok(v) -> {
+            runner.eq(v.len(), 3, '?slice ok len')
+            runner.eq(v[0], 1, '?slice ok [0]')
+            runner.eq(v[2], 3, '?slice ok [2]')
+        }
+
+        nil -> runner.is-true(false, '?slice must be ok')
+
+        err -> runner.is-true(false, '?slice must be ok')
+    }
+    ; 零值也要是 ok(0)，不能和 nil 混淆
+    z ?i64 = 0
+    z: {
+        ok(v) -> runner.eq(v, 0, '?i64 ok(0) is not nil')
+
+        nil -> runner.is-true(false, '?i64 = 0 must be ok, not nil')
+
+        err -> runner.is-true(false, '?i64 = 0 must be ok')
+    }
+    ; 負數
+    n ?i64 = -3
+    n: {
+        ok(v) -> runner.eq(v, -3, '?i64 negative payload')
+
+        nil -> runner.is-true(false, '?i64 negative must be ok')
+
+        err -> runner.is-true(false, '?i64 negative must be ok')
+    }
+    ; 空字串也是 ok，不是 nil
+    s ?str = ''
+    s: {
+        ok(v) -> runner.eq(v.len(), 0, '?str ok(empty) is not nil')
+
+        nil -> runner.is-true(false, '?str = empty must be ok, not nil')
+
+        err -> runner.is-true(false, '?str = empty must be ok')
+    }
+}
+
+t-nil = () {
+    a ?i64 = nil
+    a: {
+        ok(v) -> runner.is-true(false, 'nil must not be ok')
+
+        nil -> runner.is-true(true, '?i64 nil branch')
+
+        err -> runner.is-true(false, 'nil must not be err')
+    }
+    b ?str = nil
+    b: {
+        ok(v) -> runner.is-true(false, '?str nil must not be ok')
+
+        nil -> runner.is-true(true, '?str nil branch')
+
+        err -> runner.is-true(false, '?str nil must not be err')
+    }
+    ; 未賦值的 option 預設也是 nil
+    c ?i64
+    c: {
+        ok(v) -> runner.is-true(false, 'unassigned option must not be ok')
+
+        nil -> runner.is-true(true, 'unassigned option defaults to nil')
+
+        err -> runner.is-true(false, 'unassigned option must not be err')
+    }
+}
+
+t-err = () {
+    a ?i64 = err('boom')
+    a: {
+        ok(v) -> runner.is-true(false, 'err must not be ok')
+
+        nil -> runner.is-true(false, 'err must not be nil')
+
+        err -> runner.is-true(true, '?i64 err branch')
+    }
+    ; `err` 臂不綁定時用 `it` 取訊息
+    b ?i64 = err('boom')
+    b: {
+        ok(v) -> runner.is-true(false, 'err must not be ok')
+
+        nil -> runner.is-true(false, 'err must not be nil')
+
+        err -> runner.str-eq(it, 'boom', 4, 'err it == message')
+    }
+    ; 空訊息
+    c ?str = err('')
+    c: {
+        ok(v) -> runner.is-true(false, 'empty-msg err must not be ok')
+
+        nil -> runner.is-true(false, 'empty-msg err must not be nil')
+
+        err -> runner.eq(it.len(), 0, 'err it empty message')
+    }
+}
+
+; ── `it` 綁定（ok 臂不寫參數）─────────────────
+
+t-it-binding = () {
+    a ?i64 = 7
+    a: {
+        ok -> runner.eq(it, 7, 'ok arm without binding uses it')
+
+        nil -> runner.is-true(false, 'must be ok')
+
+        err -> runner.is-true(false, 'must be ok')
+    }
+    b ?str = 'xyz'
+    b: {
+        ok -> runner.str-eq(it, 'xyz', 3, 'ok it for ?str')
+
+        nil -> runner.is-true(false, 'must be ok')
+
+        err -> runner.is-true(false, 'must be ok')
+    }
+}
+
+; ── 巢狀 / 參數 / 回傳 ─────────────────────────
+
+t-nested = () {
+    a ?i64 = 5
+    a: {
+        ok(v) -> {
+            inner ?i64 = v
+            inner: {
+                ok(w) -> runner.eq(w, 5, 'nested option ok payload')
+
+                nil -> runner.is-true(false, 'inner must be ok')
+
+                err -> runner.is-true(false, 'inner must be ok')
+            }
+        }
+
+        nil -> runner.is-true(false, 'outer must be ok')
+
+        err -> runner.is-true(false, 'outer must be ok')
+    }
+}
+
+; option 當回傳值（這是唯一「在模組頂層也安全」的初始化方式）
+mk-ok = () (v ?i64) {
+    v = 11
+}
+
+mk-nil = () (v ?i64) {
+    v = nil
+}
+
+mk-err = () (v ?i64) {
+    v = err('e')
+}
+
+; 選項當結構體欄位
+box {
+    q ?i64
+}
+
+t-ret-and-field = () {
+    ; 回傳值在**模組頂層**也安全，拿來當「安全初始化」的對照組
+    p ?i64 = mk-ok()
+    p: {
+        ok(v) -> runner.eq(v, 11, 'option from function return (ok)')
+
+        nil -> runner.is-true(false, 'mk-ok must be ok')
+
+        err -> runner.is-true(false, 'mk-ok must be ok')
+    }
+    q ?i64 = mk-nil()
+    q: {
+        ok(v) -> runner.is-true(false, 'mk-nil must not be ok')
+
+        nil -> runner.is-true(true, 'option from function return (nil)')
+
+        err -> runner.is-true(false, 'mk-nil must not be err')
+    }
+    r ?i64 = mk-err()
+    r: {
+        ok(v) -> runner.is-true(false, 'mk-err must not be ok')
+
+        nil -> runner.is-true(false, 'mk-err must not be nil')
+
+        err -> runner.is-true(true, 'option from function return (err)')
+    }
+    ; 選項當結構體欄位（讀取正常）
+    ; 注意：match 的主體只能是**裸名**，`b.q: { … }` 會被 parser 拒絕
+    ;       （expected left parenthesis, got LBRACE），必須先落到區域變數。
+    b = box { q: mk-ok() }
+    fq ?i64 = b.q
+    fq: {
+        ok(v) -> runner.eq(v, 11, 'option as struct field (ok)')
+
+        nil -> runner.is-true(false, 'struct field must be ok')
+
+        err -> runner.is-true(false, 'struct field must be ok')
+    }
+    b2 = box { q: mk-nil() }
+    fq2 ?i64 = b2.q
+    fq2: {
+        ok(v) -> runner.is-true(false, 'struct field nil must not be ok')
+
+        nil -> runner.is-true(true, 'option as struct field (nil)')
+
+        err -> runner.is-true(false, 'struct field nil must not be err')
+    }
+}
+
+; ── 執行 ───────────────────────────────────────
+
+p1, f1 = runner.test('option.ok-payloads', t-ok-payloads)
+p2, f2 = runner.test('option.nil', t-nil)
+p3, f3 = runner.test('option.err', t-err)
+p4, f4 = runner.test('option.it-binding', t-it-binding)
+p5, f5 = runner.test('option.nested', t-nested)
+p6, f6 = runner.test('option.ret/field', t-ret-and-field)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

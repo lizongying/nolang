@@ -57,7 +57,6 @@ rotl64 = (x u64, n i64) (r u64) {
         return
     }
 
-    #{overflow=wrap}
     r = ((x << m) | (x >> (64 - m))) & SHA3-MASK64
 }
 
@@ -156,7 +155,6 @@ keccak-f1600 = (state []u64) {
 ; 返回 out []byte: 輸出雜湊值
 keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) (out []byte) {
 
-    #{overflow=wrap}
     out = with-len(out-len)
 
     ; 初始化狀態（25 個 64-bit lane，全零）
@@ -187,11 +185,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
             #{index-out=0, overflow=wrap}
             w = data[absorbed + i]
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             state[lane-idx] = state[lane-idx] ^ (w << (byte-idx * 8))
         }
 
-        #{overflow=wrap}
         keccak-f1600(state)
 
         #{overflow=wrap}
@@ -213,7 +210,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
             #{index-out=0, overflow=wrap}
             w = data[absorbed + i]
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             state[lane-idx] = state[lane-idx] ^ (w << (byte-idx * 8))
         }
     }
@@ -230,7 +227,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     #{overflow=wrap}
     pad-byte-idx = remaining % 8
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     state[pad-lane-idx] = state[pad-lane-idx] ^ (s-term << (pad-byte-idx * 8))
 
     #{overflow=wrap}
@@ -239,7 +236,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     #{overflow=wrap}
     last-byte-idx = (rate - 1) % 8
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     state[last-lane-idx] = state[last-lane-idx] ^ (SHA3-PAD-HIGH << (last-byte-idx * 8))
 
     keccak-f1600(state)

@@ -27,7 +27,6 @@
 sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) (r0 u64, r1 u64, r2 u64, r3 u64, r4 u64, r5 u64, r6 u64, r7 u64) {
 
     ; 64-bit 全 1 遮罩（用於位元 NOT）
-    #{overflow=wrap}
     mask64 u64 = 18446744073709551615
 
     ; 初始狀態
@@ -3099,7 +3098,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
 sha512 = (data []byte) (hash [64]byte) {
 
     ; SHA-512 初始狀態
-    #{overflow=wrap}
     h0 u64 = 7640891576956012808
     h1 u64 = 13503953896175478587
     h2 u64 = 4354685564936845355
@@ -3131,14 +3129,14 @@ sha512 = (data []byte) (hash [64]byte) {
     padded []byte
     i <- [0..total-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = 0
     }
 
     ; 複製原始資料
     i <- [0..dlen): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = data[i]
     }
 
@@ -3147,10 +3145,9 @@ sha512 = (data []byte) (hash [64]byte) {
     padded[dlen] = 128
 
     ; 填充 0x00
-    #{overflow=wrap}
     i <- [dlen + 1..total-len - 16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = 0
     }
 

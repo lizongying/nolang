@@ -28,7 +28,7 @@ salsa20-8-core = (block []byte) {
         #{overflow=wrap}
         off = i * 4
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
     }
 
@@ -46,115 +46,115 @@ salsa20-8-core = (block []byte) {
 
         ; 列輪
         ; QR(x[0], x[4], x[8], x[12])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[4] = (x[4] ^ (((x[0] + x[12]) & mask) << 7)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[8] = (x[8] ^ (((x[4] + x[0]) & mask) << 9)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[12] = (x[12] ^ (((x[8] + x[4]) & mask) << 13)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[0] = (x[0] ^ (((x[12] + x[8]) & mask) << 18)) & mask
 
         ; QR(x[5], x[9], x[13], x[1])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[9] = (x[9] ^ (((x[5] + x[1]) & mask) << 7)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[13] = (x[13] ^ (((x[9] + x[5]) & mask) << 9)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[1] = (x[1] ^ (((x[13] + x[9]) & mask) << 13)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[5] = (x[5] ^ (((x[1] + x[13]) & mask) << 18)) & mask
 
         ; QR(x[10], x[14], x[2], x[6])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[14] = (x[14] ^ (((x[10] + x[6]) & mask) << 7)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[2] = (x[2] ^ (((x[14] + x[10]) & mask) << 9)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[6] = (x[6] ^ (((x[2] + x[14]) & mask) << 13)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[10] = (x[10] ^ (((x[6] + x[2]) & mask) << 18)) & mask
 
         ; QR(x[15], x[3], x[7], x[11])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[3] = (x[3] ^ (((x[15] + x[11]) & mask) << 7)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[7] = (x[7] ^ (((x[3] + x[15]) & mask) << 9)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[11] = (x[11] ^ (((x[7] + x[3]) & mask) << 13)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[15] = (x[15] ^ (((x[11] + x[7]) & mask) << 18)) & mask
 
         ; 行輪
         ; QR(x[0], x[1], x[2], x[3])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[1] = (x[1] ^ (((x[0] + x[3]) & mask) << 7)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[2] = (x[2] ^ (((x[1] + x[0]) & mask) << 9)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[3] = (x[3] ^ (((x[2] + x[1]) & mask) << 13)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[0] = (x[0] ^ (((x[3] + x[2]) & mask) << 18)) & mask
 
         ; QR(x[5], x[6], x[7], x[4])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[6] = (x[6] ^ (((x[5] + x[4]) & mask) << 7)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[7] = (x[7] ^ (((x[6] + x[5]) & mask) << 9)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[4] = (x[4] ^ (((x[7] + x[6]) & mask) << 13)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[5] = (x[5] ^ (((x[4] + x[7]) & mask) << 18)) & mask
 
         ; QR(x[10], x[11], x[8], x[9])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[11] = (x[11] ^ (((x[10] + x[9]) & mask) << 7)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[8] = (x[8] ^ (((x[11] + x[10]) & mask) << 9)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[9] = (x[9] ^ (((x[8] + x[11]) & mask) << 13)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[10] = (x[10] ^ (((x[9] + x[8]) & mask) << 18)) & mask
 
         ; QR(x[15], x[12], x[13], x[14])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[12] = (x[12] ^ (((x[15] + x[14]) & mask) << 7)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[13] = (x[13] ^ (((x[12] + x[15]) & mask) << 9)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[14] = (x[14] ^ (((x[13] + x[12]) & mask) << 13)) & mask
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[15] = (x[15] ^ (((x[14] + x[13]) & mask) << 18)) & mask
     }
 
     ; 加上初始值並寫回（小端序）
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         val = (x[i] + init[i]) & 4294967295
 
         #{overflow=wrap}
@@ -208,12 +208,11 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
         ; X = B[i] XOR X
         j <- [0..64): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             x[j] = (b[i * 64 + j]) ^ (x[j])
         }
 
         ; X = Salsa20/8(X)
-        #{overflow=wrap}
         salsa20-8-core(x)
 
         ; Y[i] = X
@@ -265,7 +264,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     x []byte
     i <- [0..block-bytes): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         x[i] = b[i]
     }
 
@@ -274,18 +273,17 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     v []byte
     i <- [0..block-bytes): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         v[i] = x[i]
     }
     n-idx = 1
     (n-idx < n) {
 
         ; X = BlockMix(X)
-        #{overflow=wrap}
         mixed = scrypt-blockmix(x, r)
         i <- [0..block-bytes): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             x[i] = mixed[i]
 
             #{index-out=0, overflow=wrap}
@@ -302,17 +300,16 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
         ; j = Integerify(X) mod N
         ; Integerify: 將 X 的最後 64 位元組的前 8 位元組解釋為小端整數
-        #{overflow=wrap}
         j = 0
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         j = (x[(2 * r - 1) * 64]) | ((x[(2 * r - 1) * 64 + 1]) << 8) | ((x[(2 * r - 1) * 64 + 2]) << 16) | ((x[(2 * r - 1) * 64 + 3]) << 24) | ((x[(2 * r - 1) * 64 + 4]) << 32) | ((x[(2 * r - 1) * 64 + 5]) << 40) | ((x[(2 * r - 1) * 64 + 6]) << 48) | ((x[(2 * r - 1) * 64 + 7]) << 56)
         j = j % n
 
         ; X = X XOR V[j]
         i <- [0..block-bytes): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             x[i] = (x[i]) ^ (v[j * block-bytes + i])
         }
 
@@ -320,7 +317,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         mixed = scrypt-blockmix(x, r)
         i <- [0..block-bytes): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             x[i] = mixed[i]
         }
 
@@ -331,7 +328,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     ; 輸出 X
     i <- [0..block-bytes): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = x[i]
     }
 }
@@ -362,7 +359,6 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
     i <- [0..p): {
 
         ; 提取 B_i
-        #{overflow=wrap}
         b-i []byte
         j <- [0..block-bytes): {
 

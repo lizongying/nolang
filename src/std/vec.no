@@ -130,8 +130,6 @@ vec-clear = () {
 []t.pop = () (val ?t) {
     {
         .len() > 0 -> {
-
-            #{overflow=wrap}
             idx = .len()
 
             #{overflow=wrap}
@@ -162,7 +160,6 @@ vec-clear = () {
 ; []t.reverse: 反轉
 []t.reverse = () {
 
-    #{overflow=wrap}
     i = 0
     j = .len()
 
@@ -170,7 +167,6 @@ vec-clear = () {
     j = j - 1
     (i < j) {
 
-        #{overflow=wrap}
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
@@ -216,8 +212,6 @@ vec-clear = () {
 []t.insert = (i i64, val t) {
     {
         i >= .len() -> {
-
-            #{overflow=wrap}
             cur = .len()
 
             #{overflow=wrap}
@@ -228,7 +222,6 @@ vec-clear = () {
         -> {
 
             ; 先在末尾增長一格作為佔位（內聯 push）
-            #{overflow=wrap}
             last = .len()
 
             #{overflow=wrap}
@@ -266,8 +259,6 @@ vec-clear = () {
         i >= .len() -> val = nil
 
         -> {
-
-            #{overflow=wrap}
             val = .[i]
             bound = .len()
 
@@ -424,7 +415,6 @@ vec-clear = () {
     i = 0
     (i < blen) {
 
-        #{overflow=wrap}
         i >= blen -> break
         cur = .len()
 
@@ -471,8 +461,6 @@ vec-reverse = (a i64) {
         .len() == 0 -> out = '[]'
 
         -> {
-
-            #{overflow=wrap}
             out = '['
             last = .len()
 
@@ -480,14 +468,11 @@ vec-reverse = (a i64) {
             last = last - 1
             i <- [0...len()): {
 
-                #{overflow=wrap}
                 out = out - number.i64-to-str(.[i])
 
-                #{overflow=wrap}
                 i < last -> out = out - ', '
             }
 
-            #{overflow=wrap}
             out = out - ']'
         }
     }

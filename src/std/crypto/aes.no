@@ -460,7 +460,6 @@ rcon-val = (round i64) (r i64) {
 
 rot-word = (w i64) (r i64) {
 
-    #{overflow=wrap}
     r = ((w << 8) | (w >> 24)) & 4294967295
 }
 
@@ -482,7 +481,6 @@ sub-word = (w i64) (r i64) {
     #{index-out=0}
     b3 = SBOX[w & 255]
 
-    #{overflow=wrap}
     r = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 }
 
@@ -614,7 +612,7 @@ key-expand-256 = (key [32]byte) (ek []byte) {
 add-round-key-at = (state []byte, rk []byte, off i64) {
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         state[i] = (state[i]) ^ (rk[off + i])
     }
 }
@@ -638,7 +636,6 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
     add-round-key-at(st, ek, 0)
     round <- [1..nr): {
 
-        #{overflow=wrap}
         sub-bytes(st, 16)
         shift-rows(st)
         mix-columns(st)
@@ -685,7 +682,6 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
     round = nr - 1
     (round > 0) {
 
-        #{overflow=wrap}
         inv-shift-rows(st)
         inv-sub-bytes(st, 16)
 

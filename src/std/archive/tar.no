@@ -75,11 +75,9 @@ tar.count = () (count i64) {
     (off + TAR-BLOCK <= n) {
 
         ; 檢查是否為結束標記（全零區塊）
-        #{overflow=wrap}
         empty = 1
         i <- [0..TAR-BLOCK): {
 
-            #{overflow=wrap}
             (.data[off + i]) != 0 -> {
 
                 #{index-out=0}
@@ -116,7 +114,6 @@ tar.offset = (idx i64) (off i64) {
     off = 0
     i <- [0..idx): {
 
-        #{overflow=wrap}
         sz = 0
         j <- [0..12): {
 
@@ -152,7 +149,6 @@ tar.name = (idx i64) (name str) {
         c = .data[hdr + i]
         c == 0 -> break
 
-        #{overflow=wrap}
         name = name - number.char-to-str(c)
     }
 }
@@ -175,7 +171,6 @@ tar.size = (idx i64) (sz i64) {
 ; 返回 "file"、"dir" 或 "unknown"
 tar.type = (idx i64) (typ str) {
 
-    #{overflow=wrap}
     hdr = .offset(idx)
 
     #{index-out=0, overflow=wrap}
@@ -191,7 +186,6 @@ tar.type = (idx i64) (typ str) {
 ; is-dir: 判斷第 idx 個條目是否為目錄
 tar.is-dir = (idx i64) (yes bool) {
 
-    #{overflow=wrap}
     hdr = .offset(idx)
 
     #{index-out=0, overflow=wrap}
@@ -202,7 +196,6 @@ tar.is-dir = (idx i64) (yes bool) {
 ; is-file: 判斷第 idx 個條目是否為普通檔案
 tar.is-file = (idx i64) (yes bool) {
 
-    #{overflow=wrap}
     hdr = .offset(idx)
 
     #{index-out=0, overflow=wrap}
@@ -263,7 +256,6 @@ tar-entry.name = () (name str) {
         c = .data[hdr + i]
         c == 0 -> break
 
-        #{overflow=wrap}
         name = name - number.char-to-str(c)
     }
 }
@@ -285,7 +277,6 @@ tar-entry.size = () (sz i64) {
 ; type: 讀取條目類型
 tar-entry.type = () (typ str) {
 
-    #{overflow=wrap}
     hdr = .idx
 
     #{index-out=0, overflow=wrap}
@@ -301,7 +292,6 @@ tar-entry.type = () (typ str) {
 ; is-dir: 判斷是否為目錄
 tar-entry.is-dir = () (yes bool) {
 
-    #{overflow=wrap}
     hdr = .idx
 
     #{index-out=0, overflow=wrap}
@@ -312,7 +302,6 @@ tar-entry.is-dir = () (yes bool) {
 ; is-file: 判斷是否為普通檔案
 tar-entry.is-file = () (yes bool) {
 
-    #{overflow=wrap}
     hdr = .idx
 
     #{index-out=0, overflow=wrap}
@@ -375,7 +364,6 @@ tar-builder.pre-alloc = (size i64) {
 ; add-file: 新增檔案條目
 tar-builder.add-file = (name str, content []byte) {
 
-    #{overflow=wrap}
     .write-header(name, TAR-TYPE-FILE, len(content))
 
     ; 寫入檔案內容
@@ -414,7 +402,6 @@ tar-builder.add-dir = (name str) {
 ; add-bytes: 新增原始位元組條目
 tar-builder.add-bytes = (name str, content []byte, typ i64) {
 
-    #{overflow=wrap}
     .write-header(name, typ, len(content))
     sz = len(content)
     i <- [0..sz): {
@@ -454,7 +441,6 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
     }
 
     ; 名稱（偏移 0，最多 100 位元組）
-    #{overflow=wrap}
     name-len = len(name)
     i <- [0..name-len): {
 
@@ -594,6 +580,5 @@ tar-builder.finish = () (archive tar) {
     }
 
     ; 構建 tar 結構體
-    #{overflow=wrap}
     archive.data = .buf
 }

@@ -50,7 +50,7 @@ python3 <skill-dir>/scripts/release.py plan [--version vX.Y.Z] [--no-release-che
 `commits since <last tag>`、待执行命令（含发布页 URL，由 origin 推出）。
 不带 `--version` 时按惯例**末位 +1**（`vX.Y.Z` → `vX.Y.(Z+1)`）。
 
-**`plan` 会先联网查最新的已发布 release**（走 `gh` 或 GitHub API），拿它和仓库里最高的本地 tag 比对：
+**`plan` 会先联网查最新的已发布 release**——默认直接打公开 API `https://api.github.com/repos/<owner>/<repo>/releases/latest`（不需要 token；`gh` 只在私有仓库时才作为兜底），拿它和仓库里最高的本地 tag 比对：
 
 - **release == 最高本地 tag**：上次发版成功，走正常 +1 流程。
 - **release < 最高本地 tag**（例如本地已有 `v0.3.4`，但最新 release 还是 `v0.3.3`）：
@@ -63,6 +63,18 @@ python3 <skill-dir>/scripts/release.py plan [--version vX.Y.Z] [--no-release-che
 - 查不到（非 GitHub 远端 / 离线 / 私有未授权）：退回普通 +1 流程。
 
 离线或非 GitHub 远端想跳过联网检查，加 `--no-release-check`。
+
+本地 tag 永远 ≥ 任何已发布 release（发版流程只会往上打 tag），所以检查只需要一次等值比对：
+**最高本地 tag 有没有出现在 `/releases/latest` 里**，一个 grep 就能自行复核 `plan` 的结论：
+
+```bash
+git tag --list 'v*' | sort -V | tail -1   # 最高本地 tag
+curl -sS -f https://api.github.com/repos/<owner>/<repo>/releases/latest | grep -o '"tag_name"[^,]*'
+```
+
+两条输出的 tag 一致才是 +1 的前提；若本地 tag 比 release 高（`releases/latest` 回 404 表示仓库还没有任何
+release），走下面的复用 tag 分支，即使 `plan` 没提示也要按这个分支处理；只有离线或非 GitHub 远端
+才允许跳过。
 
 用户给的版本号可以是**不完整的**，脚本会自动补全成 `vMAJOR.MINOR.PATCH`，并在输出里打一行 `note:` 说明补全结果：
 

@@ -3540,6 +3540,27 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 			if exprHasIntOverflow(x.Index, declared, selfType) {
 				found = true
 			}
+		case *parser.DotExpression:
+			// 接收者必須遞迴走查。方法呼叫 `recv.method(args)` 在原始 AST 裡是
+			// CallExpression{Function: DotExpression{Receiver: recv}}，而
+			// CallExpression 分支只走 Function 與 Arguments ⇒ 不收斂 Receiver 的
+			// 話，`recv` 內的整數運算就被整棵漏掉。
+			//
+			// 這在「原始 AST」與「lowering 後」之間造成口徑不一致：
+			// ValidateIntOverflow 跑在 **lowering 之後**的程式上，而 lowering 會把
+			// 接收者 unshift 進 Arguments（見 checker.go 的攤平註釋），於是
+			// `prev-len = .names[i - 1].len-bytes()` 的 `i - 1` 會被報為
+			// ovf-int-default；但 `no fmt` 解析的是**未 lowering** 的原始程式，
+			// 漏掉 Receiver ⇒ 判該 #{overflow=wrap} 無效而**刪除**，
+			// 刪完 vet 立刻新增錯誤（實測 src/std/net/hpack.no 的
+			// `prev-name-len = .dyn-names[i - 1].len-bytes()` 與
+			// `prev-val-len = .dyn-values[i - 1].len-bytes()` 兩行）。
+			//
+			// relevant 集合必須是「需要註解的陳述」的**超集**，因此這裡一律
+			// 往保守（保留註解）方向補齊。
+			if exprHasIntOverflow(x.Receiver, declared, selfType) {
+				found = true
+			}
 		case *parser.AssignExpression:
 			if exprHasIntOverflow(x.Left, declared, selfType) {
 				found = true

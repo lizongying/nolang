@@ -62,14 +62,12 @@ str.gt = (b str) (res bool) {
 [n]ord.sort-asc = () {
     i <- [1..n): {
 
-        #{overflow=wrap}
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
 
-            #{overflow=wrap}
             .[j] <= key -> break
 
             #{overflow=wrap}
@@ -89,14 +87,12 @@ str.gt = (b str) (res bool) {
 [n]ord.sort-desc = () {
     i <- [1..n): {
 
-        #{overflow=wrap}
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
 
-            #{overflow=wrap}
             .[j] >= key -> break
 
             #{overflow=wrap}
@@ -116,14 +112,12 @@ str.gt = (b str) (res bool) {
     sz = .len()
     i <- [1..sz): {
 
-        #{overflow=wrap}
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
 
-            #{overflow=wrap}
             .[j] <= key -> break
 
             #{overflow=wrap}
@@ -143,14 +137,12 @@ str.gt = (b str) (res bool) {
     sz = .len()
     i <- [1..sz): {
 
-        #{overflow=wrap}
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
 
-            #{overflow=wrap}
             .[j] >= key -> break
 
             #{overflow=wrap}

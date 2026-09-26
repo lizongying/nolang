@@ -1,26 +1,170 @@
 ; std-char.no — char 模組測試
 ;
 ; 執行：no test test/std/char.no
-; 注意：char 方法（to-upper / to-lower / to-str / is-digit 等）
-;       全部存在特化問題（@char.xxx 未定義），無法測試。
-;       此檔案保留為佔位，待 codegen 修復後補充測試。
+; 覆蓋：is-digit / is-letter / is-alpha / is-alnum / is-space / is-upper / is-lower /
+;       to-upper / to-lower / to-str / to-txt / to-bytes
+;
+; ⚠️ 本檔原本只是佔位（只斷言 runner.eq(1,1)），檔頭寫著
+;    「char 方法全部存在特化問題（@char.xxx 未定義），無法測試」。
+;    該說明**已經過時**：2026-09-26 實測 `"a".to-upper()`、`"5".is-digit()`
+;    全部正常（見 /tmp/p_ch.no），故本檔改為真正的測試。
+;
+; 注意 char 是 **i32**（碼點），不是字串：
+;   c = "A"                ; 雙引號 = char 字面量（單引號 'A' 是 str！）
+;   c.to-upper()           ; 回傳 char，print 出來是**碼點數字**（65）
+;   c.to-upper().to-str()  ; 才是字串 'A'
+; 本檔比較時一律用碼點數值，避免依賴列印路徑。
 
 # /test/runner
 
-passed = 0
-failed = 0
+; ── 分類：ASCII 邊界 ───────────────────────────
 
-t-placeholder = () {
-    runner.eq(1, 1, 'placeholder')
+t-is-digit = () {
+    ; '0'=48 .. '9'=57
+    runner.is-true("0".is-digit(), 'is-digit "0"')
+    runner.is-true("9".is-digit(), 'is-digit "9"')
+    runner.is-true("5".is-digit(), 'is-digit "5"')
+    ; 邊界外：'/'=47、':'=58
+    runner.is-false("/".is-digit(), 'is-digit "/" (47) false')
+    runner.is-false(":".is-digit(), 'is-digit ":" (58) false')
+    runner.is-false("a".is-digit(), 'is-digit "a" false')
+    runner.is-false(" ".is-digit(), 'is-digit space false')
 }
 
-p1, f1 = runner.test('char.placeholder', t-placeholder)
+t-is-letter = () {
+    ; 'A'=65 'Z'=90 'a'=97 'z'=122
+    runner.is-true("A".is-letter(), 'is-letter "A"')
+    runner.is-true("Z".is-letter(), 'is-letter "Z"')
+    runner.is-true("a".is-letter(), 'is-letter "a"')
+    runner.is-true("z".is-letter(), 'is-letter "z"')
+    ; 邊界外：'@'=64、'['=91、'`'=96、'{'=123
+    runner.is-false("@".is-letter(), 'is-letter "@" (64) false')
+    runner.is-false("[".is-letter(), 'is-letter "[" (91) false')
+    runner.is-false("`".is-letter(), 'is-letter "`" (96) false')
+    runner.is-false("{".is-letter(), 'is-letter "{" (123) false')
+    runner.is-false("5".is-letter(), 'is-letter "5" false')
+    ; 非 ASCII（分類器是 ASCII-only）
+    runner.is-false("中".is-letter(), 'is-letter non-ASCII false')
+}
 
-#{overflow=wrap}
-passed = passed + p1
+t-is-alpha = () {
+    runner.is-true("A".is-alpha(), 'is-alpha "A"')
+    runner.is-true("z".is-alpha(), 'is-alpha "z"')
+    runner.is-false("5".is-alpha(), 'is-alpha "5" false')
+    runner.is-false(" ".is-alpha(), 'is-alpha space false')
+}
 
-#{overflow=wrap}
-failed = failed + f1
+t-is-alnum = () {
+    runner.is-true("A".is-alnum(), 'is-alnum "A"')
+    runner.is-true("z".is-alnum(), 'is-alnum "z"')
+    runner.is-true("0".is-alnum(), 'is-alnum "0"')
+    runner.is-true("9".is-alnum(), 'is-alnum "9"')
+    runner.is-false(" ".is-alnum(), 'is-alnum space false')
+    runner.is-false("_".is-alnum(), 'is-alnum "_" false')
+    runner.is-false("-".is-alnum(), 'is-alnum "-" false')
+}
+
+t-is-space = () {
+    runner.is-true(" ".is-space(), 'is-space space')
+    runner.is-true("\t".is-space(), 'is-space tab')
+    runner.is-true("\n".is-space(), 'is-space newline')
+    runner.is-true("\r".is-space(), 'is-space CR')
+    runner.is-false("A".is-space(), 'is-space "A" false')
+    runner.is-false("0".is-space(), 'is-space "0" false')
+}
+
+t-is-case = () {
+    ; is-upper
+    runner.is-true("A".is-upper(), 'is-upper "A"')
+    runner.is-true("Z".is-upper(), 'is-upper "Z"')
+    runner.is-false("a".is-upper(), 'is-upper "a" false')
+    runner.is-false("5".is-upper(), 'is-upper "5" false')
+    ; is-lower
+    runner.is-true("a".is-lower(), 'is-lower "a"')
+    runner.is-true("z".is-lower(), 'is-lower "z"')
+    runner.is-false("A".is-lower(), 'is-lower "A" false')
+    runner.is-false("5".is-lower(), 'is-lower "5" false')
+}
+
+; ── 轉換 ───────────────────────────────────────
+
+t-to-upper = () {
+    ; 'a'=97 -> 'A'=65，差 32
+    runner.eq("a".to-upper(), 65, 'to-upper "a" == 65')
+    runner.eq("z".to-upper(), 90, 'to-upper "z" == 90')
+    ; 非小寫字母原樣回傳
+    runner.eq("A".to-upper(), 65, 'to-upper "A" unchanged')
+    runner.eq("5".to-upper(), 53, 'to-upper "5" unchanged')
+    runner.eq(" ".to-upper(), 32, 'to-upper space unchanged')
+    ; 邊界：'`'=96（緊鄰小寫 a）不該被轉
+    runner.eq("`".to-upper(), 96, 'to-upper "`" unchanged')
+    ; 轉完再 to-str 應得到字串
+    runner.str-eq("a".to-upper().to-str(), 'A', 1, 'to-upper "a" to-str')
+}
+
+t-to-lower = () {
+    runner.eq("A".to-lower(), 97, 'to-lower "A" == 97')
+    runner.eq("Z".to-lower(), 122, 'to-lower "Z" == 122')
+    runner.eq("a".to-lower(), 97, 'to-lower "a" unchanged')
+    runner.eq("5".to-lower(), 53, 'to-lower "5" unchanged')
+    ; 邊界：'@'=64（緊鄰大寫 A）不該被轉
+    runner.eq("@".to-lower(), 64, 'to-lower "@" unchanged')
+    runner.str-eq("A".to-lower().to-str(), 'a', 1, 'to-lower "A" to-str')
+}
+
+t-to-str = () {
+    runner.str-eq("A".to-str(), 'A', 1, 'to-str "A"')
+    runner.str-eq("5".to-str(), '5', 1, 'to-str "5"')
+    runner.str-eq(" ".to-str(), ' ', 1, 'to-str space')
+    ; ⚠️ `str.len()` 回傳的是**碼點數**，不是位元組數（'中' -> 1）
+    ;    要拿位元組數得走 `.to-bytes().len()`（-> 3）。兩個都釘住。
+    s = "中".to-str()
+    runner.eq(s.len(), 1, 'to-str non-ASCII: len is 1 CODEPOINT')
+    runner.eq(s.to-bytes().len(), 3, 'to-str non-ASCII: 3 BYTES (UTF-8)')
+    runner.str-eq(s, '中', 3, 'to-str non-ASCII content')
+    ; 同一件事用 hex 再驗一次：'中' == E4 B8 AD
+    runner.str-eq(s.to-hex(), 'e4b8ad', 6, 'to-str non-ASCII hex == e4b8ad')
+    ; 往返：to-str 的結果是 str，可以和 str 字面量比較
+    runner.is-true("A".to-str().eq('A', 1), 'to-str roundtrip via str.eq')
+}
+
+t-to-bytes = () {
+    b []byte = "A".to-bytes()
+    runner.eq(b.len(), 1, 'to-bytes "A" len == 1')
+    runner.eq(b[0], 65, 'to-bytes "A"[0] == 65')
+    ; UTF-8 編碼：中 = E4 B8 AD = 228 184 173
+    c []byte = "中".to-bytes()
+    runner.eq(c.len(), 3, 'to-bytes non-ASCII len == 3')
+    runner.eq(c[0], 228, 'to-bytes non-ASCII[0] == 228')
+    runner.eq(c[1], 184, 'to-bytes non-ASCII[1] == 184')
+    runner.eq(c[2], 173, 'to-bytes non-ASCII[2] == 173')
+}
+
+t-to-txt = () {
+    t txt = "A".to-txt()
+    runner.eq(t.len(), 1, 'to-txt "A" len == 1')
+    runner.str-eq(t.to-str(), 'A', 1, 'to-txt "A" value')
+    ; 非 ASCII：一個碼點 -> 3 個 byte。txt.len() 也是**碼點數**，
+    ;    位元組數要走 .len-bytes()（見 t-to-str 的說明）。
+    u txt = "中".to-txt()
+    runner.eq(u.len(), 1, 'to-txt non-ASCII: len is 1 CODEPOINT')
+    runner.eq(u.len-bytes(), 3, 'to-txt non-ASCII: 3 BYTES (UTF-8)')
+    runner.str-eq(u.to-str(), '中', 3, 'to-txt non-ASCII value')
+}
+
+; ── 執行 ───────────────────────────────────────
+
+p1, f1 = runner.test('char.is-digit', t-is-digit)
+p2, f2 = runner.test('char.is-letter', t-is-letter)
+p3, f3 = runner.test('char.is-alpha', t-is-alpha)
+p4, f4 = runner.test('char.is-alnum', t-is-alnum)
+p5, f5 = runner.test('char.is-space', t-is-space)
+p6, f6 = runner.test('char.is-case', t-is-case)
+p7, f7 = runner.test('char.to-upper', t-to-upper)
+p8, f8 = runner.test('char.to-lower', t-to-lower)
+p9, f9 = runner.test('char.to-str', t-to-str)
+p10, f10 = runner.test('char.to-bytes', t-to-bytes)
+p11, f11 = runner.test('char.to-txt', t-to-txt)
 
 total = runner.summary()
 f = runner.failed-count()

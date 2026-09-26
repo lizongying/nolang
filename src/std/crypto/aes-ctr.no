@@ -18,7 +18,7 @@ ctr-inc = (cb []byte) {
     j = 15
     (j >= 12) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         cb[j] = (cb[j] + 1) & 255
         cb[j] != 0 -> {
             break
@@ -34,7 +34,7 @@ ctr-inc = (cb []byte) {
         j = 11
         (j >= 0) {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             cb[j] = (cb[j] + 1) & 255
             cb[j] != 0 -> {
                 break
@@ -65,7 +65,6 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     (pos < in.len()) {
 
         ; 加密當前計數器區塊
-        #{overflow=wrap}
         blk [16]byte
         i <- [0..16): {
 

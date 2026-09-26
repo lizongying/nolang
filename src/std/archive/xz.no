@@ -30,7 +30,6 @@ lzma-rd {
 ; init: 初始化範圍解碼器
 lzma-rd.init = (data []byte, start-pos i64) {
 
-    #{overflow=wrap}
     .data = data
 
     #{overflow=wrap}
@@ -39,7 +38,7 @@ lzma-rd.init = (data []byte, start-pos i64) {
     .code = 0
     i <- [0..4): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .code = (.code << 8) | .data[.pos]
 
         #{overflow=wrap}
@@ -51,7 +50,7 @@ lzma-rd.init = (data []byte, start-pos i64) {
 lzma-rd.normalize = () {
     .range < 0x1000000 -> {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .code = (.code << 8) | .data[.pos]
 
         #{overflow=wrap}
@@ -64,7 +63,6 @@ lzma-rd.normalize = () {
 ; prob: 機率值（0-0x7FFF），返回 bit 和更新後的 prob
 lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
 
-    #{overflow=wrap}
     .normalize()
 
     #{overflow=wrap}
@@ -75,8 +73,6 @@ lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
     #{overflow=wrap}
     {
         .code < bound -> {
-
-            #{overflow=wrap}
             .range = bound
             new-prob = prob + ((0x800 - prob) >> 5)
             bit = 0
@@ -98,7 +94,6 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
     res = 0
     i <- [0..num-bits): {
 
-        #{overflow=wrap}
         .normalize()
         .range = .range >> 1
 
@@ -120,14 +115,13 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
 ; num-bits: 樹的深度，probs: 機率陣列，返回符號
 lzma-rd.decode-bit-tree = (probs []i64, num-bits i64) (sym i64) {
 
-    #{overflow=wrap}
     m = 1
     i <- [0..num-bits): {
 
         #{index-out=0}
         bit, tmp = .decode-bit(probs[m])
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         probs[m] = tmp
         m = (m << 1) | bit
     }
@@ -334,11 +328,9 @@ lzma-decoder.decode-literal = () {
 
     ; 簡化版：直接從範圍解碼器讀取一個位元組
     ; 完整版本需要考慮 lc/lp/pb 和前一個字節的上下文
-    #{overflow=wrap}
     prev = .prev-byte
 
     ; 使用前一個字節的高位作為上下文
-    #{overflow=wrap}
     ctx = prev >> (8 - .lc)
 
     ; 解碼 8 個位元
@@ -373,7 +365,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
     #{index-out=0}
     bit, tmp = .rd.decode-bit(probs[0])
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     probs[0] = tmp
     bit == 0 -> {
 
@@ -394,7 +386,6 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
 
         ; 中位：3 bits + 8
         ; 使用子陣列（從 index 2 開始）
-        #{overflow=wrap}
         sub-probs []i64
         i <- [0..8): {
 
@@ -424,7 +415,6 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
 lzma-decoder.decode-distance = (length i64) (dist i64) {
 
     ; 根據狀態選擇 pos-slot 機率表
-    #{overflow=wrap}
     st = .state
     st > 3 -> st = 3
 
@@ -452,7 +442,6 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     pos-slot < 14 -> {
 
         ; 使用反向位元樹
-        #{overflow=wrap}
         sub-probs []i64
         i <- [0..1 << num-direct-bits): {
 
@@ -470,7 +459,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     align-probs []i64
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         align-probs.push(.align[i])
     }
     align = .rd.decode-reverse-bit-tree(align-probs, 4)
@@ -516,7 +505,6 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                 bit2 == 0 -> {
 
                     ; 簡單匹配
-                    #{overflow=wrap}
                     length = .decode-length(.len-coder)
                     dist = .decode-distance(length)
 
@@ -570,7 +558,6 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                         bit4 == 0 -> {
 
                             ; 短重複（1 字節）
-                            #{overflow=wrap}
                             .update-state-shortrep()
 
                             #{overflow=wrap}
@@ -586,7 +573,6 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                         bit4 == 1 -> {
 
                             ; 長重複
-                            #{overflow=wrap}
                             length = .decode-length(.rep-len-coder)
                             .update-state-rep()
                             i <- [0..length + LZMA-MIN-MATCH): {
@@ -611,7 +597,6 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
 
                         ; rep1, rep2, or rep3
                         ; 簡化處理
-                        #{overflow=wrap}
                         .rep3 = .rep2
                         .rep2 = .rep1
                         .rep1 = .rep0
@@ -657,7 +642,6 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
 ;   - compressed data
 lzma-decompress = (data []byte) (out []byte) {
 
-    #{overflow=wrap}
     data.len() < 13 -> return
 
     ; 解析屬性
@@ -667,7 +651,6 @@ lzma-decompress = (data []byte) (out []byte) {
     #{overflow=wrap}
     pb = props / (9 * 5)
 
-    #{overflow=wrap}
     rem = props % (9 * 5)
 
     #{overflow=wrap}
@@ -759,7 +742,6 @@ xz-decompress = (data []byte) (out []byte) {
     ; 讀取區塊
     (pos < data.len()) {
 
-        #{overflow=wrap}
         pos >= data.len() -> *
 
         ; 檢查是否為 Index marker（0x00 表示 Index）
@@ -826,7 +808,7 @@ xz-decompress = (data []byte) (out []byte) {
         #{overflow=wrap}
         props-size > 0 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             lzma2-props = data[pos]
             pos = pos + 1
         }
@@ -855,7 +837,6 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
 
     !! {
 
-        #{overflow=wrap}
         pos >= data.len() -> *
 
         #{index-out=0}
@@ -906,7 +887,6 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
 
             ; 解析大小
             ; 高 2 bits 在 ctrl 中（bits 6-5），低 16 bits 在接下來 2 bytes
-            #{overflow=wrap}
             size-hi = (ctrl & 0x1f)
 
             #{index-out=0}
@@ -925,7 +905,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
             ctrl >= 0xc0 -> {
 
                 ; 屬性位元組
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 props = data[pos]
                 pos = pos + 1
             }
@@ -956,7 +936,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
             ; 將解壓結果附加到輸出
             i <- [0..dec.out.len()): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out.push(dec.out[i])
             }
         }

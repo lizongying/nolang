@@ -14,7 +14,6 @@
 sha384 = (data []byte) (hash [48]byte) {
 
     ; SHA-384 初始狀態（不同於 SHA-512）
-    #{overflow=wrap}
     h0 u64 = 13482960517240979576
     h1 u64 = 7101009194901214487
     h2 u64 = 10469292120843277175
@@ -45,14 +44,14 @@ sha384 = (data []byte) (hash [48]byte) {
     padded []byte
     i <- [0..total-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = 0
     }
 
     ; 複製原始資料
     i <- [0..dlen): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = data[i]
     }
 
@@ -61,10 +60,9 @@ sha384 = (data []byte) (hash [48]byte) {
     padded[dlen] = 128
 
     ; 填充 0x00
-    #{overflow=wrap}
     i <- [dlen + 1..total-len - 16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         padded[i] = 0
     }
 
@@ -94,7 +92,6 @@ sha384 = (data []byte) (hash [48]byte) {
             block[i] = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]
         }
 
-        #{overflow=wrap}
         sha512.sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
         #{overflow=wrap}

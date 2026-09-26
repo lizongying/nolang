@@ -58,7 +58,6 @@ arr-stack {
 #{index-out=0}
 [n]t.arr-stack-push = (s arr-stack, val t) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     s.top >= s.cap -> return
     .[s.top] = val
@@ -74,7 +73,6 @@ arr-stack {
 #{index-out=0}
 [n]t.arr-stack-pop = (s arr-stack) (val ?t) {
 
-    #{overflow=wrap}
     s.top <= 0 -> {
         val = nil
         return
@@ -91,7 +89,6 @@ arr-stack {
 #{index-out=0}
 [n]t.arr-stack-peek = (s arr-stack) (val ?t) {
 
-    #{overflow=wrap}
     s.top <= 0 -> {
         val = nil
         return

@@ -95,8 +95,11 @@ push tag 后 `build.yml` 负责交叉编译并 `create-release`。如果这次 a
 `release.py plan` 的发版前检查专门处理这个情况：
 
 1. 拿仓库里最高的本地 tag（`all_tags` 末位）。
-2. 联网查最新的**已发布** release（`latest_release_tag`：先试 `gh api repos/<owner>/<repo>/releases/latest`，
-   退回公开的 `curl https://api.github.com/...`）。非 GitHub 远端 / 离线 / 私有未授权 → 返回 None，跳过检查。
+2. 联网查最新的**已发布** release（`latest_release_tag`：默认直接打公开的
+   `curl https://api.github.com/repos/<owner>/<repo>/releases/latest`，`gh api` 只在私有仓库时作为兜底）。
+   非 GitHub 远端 / 离线 / 私有未授权 → 返回 None，跳过检查。
+   本地 tag 永远 ≥ 任何已发布 release，所以只需一次等值比对，人工复核可用：
+   `git tag --list 'v*' | sort -V | tail -1` 对 `curl -sS -f .../releases/latest | grep -o '"tag_name"[^,]*'`。
 3. 若 `release tag < 最高本地 tag`，判定为 action 失败：
    - **不 +1**，直接复用最高本地 tag（`resolve_version` 返回 `(prev, prev, rel)`）。
    - 输出 `!!! RELEASE CHECK !!!` 与强制重推命令。

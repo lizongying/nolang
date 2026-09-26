@@ -62,7 +62,6 @@ queue {
 #{index-out=0}
 [n]t.queue-push = (q queue, val t) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     #{overflow=wrap}

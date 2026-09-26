@@ -14,11 +14,9 @@
 ; 返回新的大小
 add = (s []i64, n i64, val i64) (new-n i64) {
 
-    #{overflow=wrap}
     new-n = n
     i <- [0..n): {
 
-        #{overflow=wrap}
         s[i] == val -> {
 
             #{index-out=0}
@@ -80,7 +78,7 @@ union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
         }
         found == false -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             a[new-an] = v
 
             #{overflow=wrap}
@@ -102,7 +100,7 @@ intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
         j <- [0..bn): {
             b[j] == v -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out[out-n] = v
 
                 #{overflow=wrap}
@@ -131,7 +129,7 @@ difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
         }
         found == false -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out[out-n] = v
 
             #{overflow=wrap}

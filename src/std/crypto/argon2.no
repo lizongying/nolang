@@ -36,7 +36,6 @@ ARGON2-MASK u64 = 18446744073709551615
 ; rotr64: 64-bit 循環右移
 rotr = (x u64, n i64) (r u64) {
 
-    #{overflow=wrap}
     r = ((x >> n) | (x << (64 - n))) & ARGON2-MASK
 }
 
@@ -44,25 +43,25 @@ rotr = (x u64, n i64) (r u64) {
 ; 操作 8 個 u64 值（索引 a..h 在 v 陣列中）
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
 
     #{index-out=0}
     v[d] = rotr(v[d] ^ v[a], 32)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[c] = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
 
     #{index-out=0}
     v[b] = rotr(v[b] ^ v[c], 24)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
 
     #{index-out=0}
     v[d] = rotr(v[d] ^ v[a], 16)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[c] = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
 
     #{index-out=0}
@@ -134,7 +133,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 
             ; 輸出 > 64 位元組，需要多次 Blake2b
             ; V = Blake2b(len_bytes || input)
-            #{overflow=wrap}
             combined []byte
 
             #{index-out=0}
@@ -159,7 +157,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; 輸出前 32 位元組
             i <- [0..32): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out[i] = v[i]
             }
 
@@ -168,7 +166,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             pos = 32
             (remaining > 64) {
 
-                #{overflow=wrap}
                 v = blake2.b(v)
                 i <- [0..32): {
 
@@ -221,7 +218,7 @@ compress = (x []byte, y []byte) (out []byte) {
         #{overflow=wrap}
         off = i * 8
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         v[i] = (r[off]) | ((r[off + 1]) << 8) | ((r[off + 2]) << 16) | ((r[off + 3]) << 24) | ((r[off + 4]) << 32) | ((r[off + 5]) << 40) | ((r[off + 6]) << 48) | ((r[off + 7]) << 56)
     }
 
@@ -261,7 +258,6 @@ compress = (x []byte, y []byte) (out []byte) {
     ; 應用 P 函數到每列
     i <- [0..8): {
 
-        #{overflow=wrap}
         base = i
 
         #{overflow=wrap}
@@ -580,7 +576,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     init-input []byte
     i <- [0..64): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         init-input[i] = h0[i]
     }
 
@@ -621,7 +617,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; 複製到記憶體
     i <- [0..1024): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         mem[i] = block0[i]
 
         #{index-out=0, overflow=wrap}
@@ -643,7 +639,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         ref-idx < 0 -> ref-idx = 0
 
         ; 計算新區塊 = G(mem[prev], mem[ref])
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         new-block = compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
         i <- [0..1024): {
@@ -659,7 +655,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; 迭代 passes
     pass <- [1..time-cost): {
 
-        #{overflow=wrap}
         curr-idx = 0
         (curr-idx < blocks-per-lane) {
 
@@ -672,7 +667,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
             ref-idx < 0 -> ref-idx = 0
 
             ; 新區塊 = G(mem[prev], mem[ref]) XOR 舊區塊
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             new-block = compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
             i <- [0..1024): {

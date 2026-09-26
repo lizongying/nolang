@@ -94,7 +94,7 @@ request.init = (method str, url str, body str) {
     .header-count = 0
     i <- [0..HTTP-MAX-REQ-HEADERS): {
 
-        #{index-out=0, index-out=0}
+        #{index-out=0}
 
         ; 用空格字串初始化 headers[i]，使 data buffer 非 null
         .headers[i] = ' '
@@ -109,13 +109,12 @@ request.init = (method str, url str, body str) {
 ; 返回 ok=true=成功, false=標頭數已滿
 request.add-header = (name str, value str) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     .header-count >= HTTP-MAX-REQ-HEADERS -> return
     idx = .header-count
 
     ; 用字串串接組裝 'Name: Value'（建立獨立緩衝區，避免逐位元組寫入溢出）
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     .headers[idx] = name - ': ' - value
 
     #{overflow=wrap}
@@ -131,13 +130,12 @@ request.add-header = (name str, value str) (ok bool) {
 ; 必須在 headers 欄位被填入後呼叫（do / do-req 內部會自動呼叫）
 response.parse-headers = () {
 
-    #{overflow=wrap}
     .header-count = 0
 
     ; 初始化標頭陣列（用空格字串使 data buffer 非 null）
     i <- [0..HTTP-MAX-RESP-HEADERS): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .header-names[i] = ' '
 
         #{index-out=0}
@@ -161,7 +159,6 @@ response.parse-headers = () {
     pos = 0
     !! {
 
-        #{overflow=wrap}
         pos >= n -> *
 
         ; 找下一個 CRLF
@@ -178,7 +175,6 @@ response.parse-headers = () {
             cnt < HTTP-MAX-RESP-HEADERS -> {
 
                 ; 用 slice 複製 name/value（建立獨立緩衝區，避免逐位元組寫入溢出）
-                #{overflow=wrap}
                 name-str = hs.slice(pos, colon-pos)
 
                 #{index-out=0}
@@ -252,7 +248,6 @@ response.get-header = (name str) (val ?str) {
 ; 返回 resp ?response: ok=回應, nil=失敗
 do = (method str, url str, body str) (resp ?response) {
 
-    #{overflow=wrap}
     resp = nil
     r response
 
@@ -322,13 +317,12 @@ do = (method str, url str, body str) (resp ?response) {
     #{overflow=wrap}
     colon-pos >= 0 -> {
 
-        #{overflow=wrap}
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             c = port-str[i]
             c < 48 || c > 57 -> return
             p = p * 10 + c - 48
@@ -355,43 +349,30 @@ do = (method str, url str, body str) (resp ?response) {
     ; ── 建構請求 ──
     req = method
 
-    #{overflow=wrap}
     req = req - ' '
 
-    #{overflow=wrap}
     req = req - path
 
-    #{overflow=wrap}
     req = req - ' HTTP/1.1'
 
-    #{overflow=wrap}
     req = req - crlf
 
-    #{overflow=wrap}
     req = req - 'Host: '
 
-    #{overflow=wrap}
     req = req - host
 
-    #{overflow=wrap}
     req = req - crlf
 
-    #{overflow=wrap}
     req = req - 'Connection: close'
 
-    #{overflow=wrap}
     req = req - crlf
 
-    #{overflow=wrap}
     req = req - 'User-Agent: nolang-http/1.0'
 
-    #{overflow=wrap}
     req = req - crlf
 
-    #{overflow=wrap}
     body.len-bytes() > 0 -> {
 
-        #{overflow=wrap}
         body-len i64 = body.len-bytes()
         len-str = body-len.to-str()
         req = req - 'Content-Length: '
@@ -399,10 +380,8 @@ do = (method str, url str, body str) (resp ?response) {
         req = req - crlf
     }
 
-    #{overflow=wrap}
     req = req - crlf
 
-    #{overflow=wrap}
     body.len-bytes() > 0 -> req = req - body
 
     ; ── 發送請求 ──
@@ -432,7 +411,6 @@ do = (method str, url str, body str) (resp ?response) {
     ; net-recv 從 offset 0 覆寫，不更新 len；用 buf 暫存再複製到 raw
     !! {
 
-        #{overflow=wrap}
         {
             use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
 
@@ -482,8 +460,6 @@ do = (method str, url str, body str) (resp ?response) {
         }
 
         -> {
-
-            #{overflow=wrap}
             status-line = head.slice(0, first-line-end)
             r.headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
         }
@@ -506,7 +482,7 @@ do = (method str, url str, body str) (resp ?response) {
     code = 0
     i <- [0..code-str.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = code-str[i]
         c < 48 || c > 57 -> return
 
@@ -523,7 +499,6 @@ do = (method str, url str, body str) (resp ?response) {
 ; 返回 resp ?response: ok=回應, nil=失敗
 do-req = (req request) (resp ?response) {
 
-    #{overflow=wrap}
     resp = nil
     r response
 
@@ -591,13 +566,12 @@ do-req = (req request) (resp ?response) {
     #{overflow=wrap}
     colon-pos >= 0 -> {
 
-        #{overflow=wrap}
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             c = port-str[i]
             c < 48 || c > 57 -> return
             p = p * 10 + c - 48
@@ -624,53 +598,39 @@ do-req = (req request) (resp ?response) {
     ; ── 建構請求（含自訂標頭）──
     req-str = method
 
-    #{overflow=wrap}
     req-str = req-str - ' '
 
-    #{overflow=wrap}
     req-str = req-str - path
 
-    #{overflow=wrap}
     req-str = req-str - ' HTTP/1.1'
 
-    #{overflow=wrap}
     req-str = req-str - crlf
 
-    #{overflow=wrap}
     req-str = req-str - 'Host: '
 
-    #{overflow=wrap}
     req-str = req-str - host
 
-    #{overflow=wrap}
     req-str = req-str - crlf
 
-    #{overflow=wrap}
     req-str = req-str - 'Connection: close'
 
-    #{overflow=wrap}
     req-str = req-str - crlf
 
-    #{overflow=wrap}
     req-str = req-str - 'User-Agent: nolang-http/1.0'
 
-    #{overflow=wrap}
     req-str = req-str - crlf
 
     ; 附加自訂標頭
     hi <- [0..req.header-count): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         req-str = req-str - req.headers[hi]
 
-        #{overflow=wrap}
         req-str = req-str - crlf
     }
 
-    #{overflow=wrap}
     body.len-bytes() > 0 -> {
 
-        #{overflow=wrap}
         body-len i64 = body.len-bytes()
         len-str = body-len.to-str()
         req-str = req-str - 'Content-Length: '
@@ -678,10 +638,8 @@ do-req = (req request) (resp ?response) {
         req-str = req-str - crlf
     }
 
-    #{overflow=wrap}
     req-str = req-str - crlf
 
-    #{overflow=wrap}
     body.len-bytes() > 0 -> req-str = req-str - body
 
     ; ── 發送請求 ──
@@ -710,7 +668,6 @@ do-req = (req request) (resp ?response) {
     ; ── 接收回應 ──
     !! {
 
-        #{overflow=wrap}
         {
             use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
 
@@ -755,8 +712,6 @@ do-req = (req request) (resp ?response) {
         }
 
         -> {
-
-            #{overflow=wrap}
             status-line = head.slice(0, first-line-end)
             r.headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
         }
@@ -776,7 +731,7 @@ do-req = (req request) (resp ?response) {
     code = 0
     i <- [0..code-str.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = code-str[i]
         c < 48 || c > 57 -> return
 
@@ -845,12 +800,10 @@ patch = (url str, body str) (resp ?response) {
 set-basic-auth = (req request, user str, password str) (ok bool) {
 
     ; 拼接 user:password 並 Base64 編碼
-    #{overflow=wrap}
     raw = user - ':' - password
     raw-bytes []byte = raw.to-bytes()
     enc-str = base64.encode-std(raw-bytes)
 
-    #{overflow=wrap}
     auth-val = 'Basic ' - enc-str
     ok = req.add-header('Authorization', auth-val)
 }
@@ -861,7 +814,6 @@ set-basic-auth = (req request, user str, password str) (ok bool) {
 ; 返回 ok=true=成功
 set-bearer-auth = (req request, token str) (ok bool) {
 
-    #{overflow=wrap}
     auth-val = 'Bearer ' - token
     ok = req.add-header('Authorization', auth-val)
 }

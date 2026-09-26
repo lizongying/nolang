@@ -41,7 +41,7 @@ hex = (data []byte) (hex str) {
     hex str = with-len(16)
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         hex[i] = hex-chars[(crc >> (60 - i * 4)) & 15]
     }
 }

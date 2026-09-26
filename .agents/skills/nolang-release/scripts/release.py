@@ -178,21 +178,17 @@ def latest_release_tag(repo: str) -> str | None:
       tag str -> the release that CI actually created (e.g. 'v0.3.4')
       None    -> cannot tell (non-GitHub remote / offline / private without auth)
 
-    Tries `gh` (handles private-repo auth) then the public API. Used to detect
-    the case where a tag was pushed but its release action failed: the highest
-    local tag then sits ahead of the latest published release.
+    Used to detect the case where a tag was pushed but its release action
+    failed: the highest local tag then sits ahead of the latest published
+    release. Local tags are always >= any published release, so the check is
+    a single equality probe against /releases/latest -- no listing needed.
+    Query the public API first (no auth, works for public repos); `gh` is only
+    a fallback for private repos where `gh` carries credentials.
     """
     orr = github_owner_repo(repo)
     if not orr:
         return None
     owner, name = orr
-    gh = _try(
-        ["gh", "api", f"repos/{owner}/{name}/releases/latest", "--jq", ".tag_name"])
-    if gh is not None:
-        if gh.returncode == 0:
-            return gh.stdout.strip()
-        if "Not Found" in gh.stderr or "no releases" in gh.stderr.lower():
-            return ""
     curl = _try(
         ["curl", "-s", "-f",
             f"https://api.github.com/repos/{owner}/{name}/releases/latest"]
@@ -202,6 +198,13 @@ def latest_release_tag(repo: str) -> str | None:
         if m:
             return m.group(1)
         if re.search(r'"message"\s*:\s*"Not Found"', curl.stdout):
+            return ""
+    gh = _try(
+        ["gh", "api", f"repos/{owner}/{name}/releases/latest", "--jq", ".tag_name"])
+    if gh is not None:
+        if gh.returncode == 0:
+            return gh.stdout.strip()
+        if "Not Found" in gh.stderr or "no releases" in gh.stderr.lower():
             return ""
     return None
 

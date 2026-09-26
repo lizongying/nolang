@@ -59,14 +59,12 @@ detect-type = (path str) (kind str) {
 ; 返回副檔名（不含 '.'），無副檔名返回空串
 get-extension = (path str) (ext str) {
 
-    #{overflow=wrap}
     n = path.len-bytes()
 
     #{overflow=wrap}
     i = n - 1
     (i >= 0) {
 
-        #{overflow=wrap}
         i < 0 -> return
 
         #{index-out=0}

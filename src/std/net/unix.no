@@ -187,7 +187,6 @@ unix-conn.recv-all = () (content str, total i64) {
     buf str = with-len(UNIX-BUF-SIZE)
     !! {
 
-        #{overflow=wrap}
         chunk-n = net.net-recv(.fd, buf, UNIX-BUF-SIZE)
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {

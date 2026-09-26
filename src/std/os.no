@@ -166,8 +166,6 @@ strerror = (errnum i64) (msg str) {
         errnum == 113 -> msg = 'No route to host'
 
         -> {
-
-            #{overflow=wrap}
             msg = 'Unknown error: ' + errnum.to-str()
         }
     }

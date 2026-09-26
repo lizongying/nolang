@@ -25,7 +25,7 @@ heap.init = (data []i64) (h heap) {
 ; push: 向堆積推入一個元素
 heap.push = (val i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     .data[.n] = val
 
     #{overflow=wrap}
@@ -59,7 +59,6 @@ heap.push = (val i64) {
 ; 返回 val ?i64: ok=最小值, nil=堆積為空
 heap.pop = () (val ?i64) {
 
-    #{overflow=wrap}
     .n == 0 -> {
         val = nil
         return
@@ -76,7 +75,6 @@ heap.pop = () (val ?i64) {
     i = 0
     !! {
 
-        #{overflow=wrap}
         smallest = i
 
         #{overflow=wrap}

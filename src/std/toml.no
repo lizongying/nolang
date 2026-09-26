@@ -169,7 +169,6 @@ toml-find-eq = (s str) (pos i64) {
     i = 0
     (i < s.len-bytes()) {
 
-        #{overflow=wrap}
         i >= s.len-bytes() -> break
         c = s.byte(i)
         {
@@ -212,7 +211,6 @@ toml-strip-comment = (s str) (out str) {
     n = s.len-bytes()
     (i < n) {
 
-        #{overflow=wrap}
         i >= n -> break
 
         #{index-out=0}
@@ -404,7 +402,6 @@ toml-value-complete = (raw str) (complete bool) {
     i = 0
     (i < n) {
 
-        #{overflow=wrap}
         i >= n -> break
 
         #{index-out=0}
@@ -554,7 +551,6 @@ toml-resolve-section = (doc toml-doc, name str) (resolved str) {
         base = toml-array-name(doc.arrays[i])
         name.starts-with(base) -> {
 
-            #{overflow=wrap}
             blen = base.len-bytes()
             name.len-bytes() > blen -> {
 
@@ -562,7 +558,6 @@ toml-resolve-section = (doc toml-doc, name str) (resolved str) {
                 name.byte(blen) == 46 -> {
                     suffix = name.slice-bytes(blen, name.len-bytes())
 
-                    #{overflow=wrap}
                     resolved = base - '[' - doc.arrays[i].index.to-str() - ']' - suffix
                     return
                 }
@@ -615,7 +610,6 @@ toml.parse = (s str) (result ?toml-doc) {
     i = 0
     (i < lines.len()) {
 
-        #{overflow=wrap}
         i >= lines.len() -> break
 
         #{index-out=0}
@@ -637,13 +631,11 @@ toml.parse = (s str) (result ?toml-doc) {
             is-array-table -> close-len = 2
             line.ends-with(']') == false -> {
 
-                #{overflow=wrap}
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
             is-array-table && line.ends-with(']]') == false -> {
 
-                #{overflow=wrap}
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
@@ -653,7 +645,6 @@ toml.parse = (s str) (result ?toml-doc) {
             start-pos = close-len
             end-pos <= start-pos -> {
 
-                #{overflow=wrap}
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
@@ -661,7 +652,6 @@ toml.parse = (s str) (result ?toml-doc) {
             section, section-ok = toml-normalize-key(raw-section)
             section-ok == false -> {
 
-                #{overflow=wrap}
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
@@ -673,7 +663,6 @@ toml.parse = (s str) (result ?toml-doc) {
                         return
                     }
 
-                    #{overflow=wrap}
                     section = section - '[' - array-index.to-str() - ']'
                 }
 
@@ -682,7 +671,6 @@ toml.parse = (s str) (result ?toml-doc) {
                     table-ok = toml-register-table(doc, section)
                     table-ok == false -> {
 
-                        #{overflow=wrap}
                         result = err('toml duplicate table at line ' - line-no.to-str())
                         return
                     }
@@ -699,7 +687,6 @@ toml.parse = (s str) (result ?toml-doc) {
         #{overflow=wrap}
         eq <= 0 || eq >= line.len-bytes() - 1 -> {
 
-            #{overflow=wrap}
             result = err('toml parse error at line ' - line-no.to-str())
             return
         }
@@ -707,17 +694,14 @@ toml.parse = (s str) (result ?toml-doc) {
         key, key-ok = toml-normalize-key(raw-key)
         key-ok == false -> {
 
-            #{overflow=wrap}
             result = err('toml parse error at line ' - line-no.to-str())
             return
         }
 
-        #{overflow=wrap}
         section.len-bytes() > 0 -> key = section - '.' - key
         raw-value = line.slice-bytes(eq + 1, line.len-bytes()).trim()
         raw-value.len-bytes() == 0 -> {
 
-            #{overflow=wrap}
             result = err('toml parse error at line ' - line-no.to-str())
             return
         }
@@ -743,7 +727,6 @@ toml.parse = (s str) (result ?toml-doc) {
                 }
                 complete == false -> {
 
-                    #{overflow=wrap}
                     result = err('toml unterminated value at line ' - line-no.to-str())
                     return
                 }
@@ -755,14 +738,12 @@ toml.parse = (s str) (result ?toml-doc) {
         valid-value = toml-valid-value(raw-value)
         valid-value == false -> {
 
-            #{overflow=wrap}
             result = err('toml invalid value at line ' - line-no.to-str())
             return
         }
         key = key.trim()
         key.len-bytes() == 0 -> {
 
-            #{overflow=wrap}
             result = err('toml parse error at line ' - line-no.to-str())
             return
         }
@@ -778,7 +759,6 @@ toml.parse = (s str) (result ?toml-doc) {
         }
         key-exists -> {
 
-            #{overflow=wrap}
             result = err('toml duplicate key at line ' - line-no.to-str())
             return
         }
@@ -819,7 +799,6 @@ stringify = (doc toml-doc) (out str) {
                     array-id.eq-full(last-array) == false -> {
                         out.len-bytes() > 0 -> out = out - '\n'
 
-                        #{overflow=wrap}
                         out = out - '[[' - prefix - ']]\n'
                         last-array = array-id
                     }
@@ -831,15 +810,12 @@ stringify = (doc toml-doc) (out str) {
                         #{overflow=wrap}
                         local-key = key.slice-bytes(local-start + 1, key.len-bytes())
 
-                        #{overflow=wrap}
                         out = out - local-key - ' = ' - value
                     }
                 }
             }
 
             -> {
-
-                #{overflow=wrap}
                 out = out - key - ' = ' - value
                 last-array = ''
             }

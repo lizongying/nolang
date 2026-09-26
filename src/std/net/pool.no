@@ -96,7 +96,7 @@ pool.get = () (c ?net.conn) {
         ok = cn.dial(.host, .port)
         ok -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             .conns[.count] = cn
 
             #{index-out=0}
@@ -131,7 +131,6 @@ pool.put = (c net.conn) {
 ; idx i64: 連接索引
 pool.close-conn = (idx i64) {
 
-    #{overflow=wrap}
     idx < 0 || idx >= .count -> return
 
     #{index-out=0}

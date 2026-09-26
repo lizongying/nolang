@@ -58,7 +58,6 @@ embed.read = (path str) (data []byte, ok bool) {
             }
         }
 
-        #{overflow=wrap}
         match -> {
 
             #{index-out=0}

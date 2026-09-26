@@ -261,6 +261,52 @@ func TestFormatPreservesEffectiveOverflowNumAlias(t *testing.T) {
 	}
 }
 
+// TestFormatPreservesEffectiveOverflowInMethodReceiverIndex 回归钉：方法呼叫
+// **接收者内的索引算式**（src/std/net/hpack.no `tables.dyn-add` 的
+// `prev-name-len = .dyn-names[i - 1].len-bytes()`）其 #{overflow=wrap} 不得被
+// `no fmt` 误删。
+//
+// 缺陷（已修）：`recv.method(args)` 在原始 AST 是
+// CallExpression{Function: DotExpression{Receiver: recv}}，而 checker 的
+// exprHasIntOverflow（`no fmt` 用来算 relevant 集合）在 CallExpression 分支只
+// 走 Function 与 Arguments，**没有 DotExpression 分支** ⇒ recv 整棵子树被漏掉
+// ⇒ relevant 不含该陈述 ⇒ 注解被当「无效」删除。
+//
+// 但 ValidateIntOverflow 跑在 lowering **之后** 的程式上，而 lowering 会把接收者
+// unshift 进 Arguments ⇒ 同一个 `i - 1` 在 vet 眼里是未处理的整数运算。两边口径
+// 不一致的后果是「fmt 删注解 → vet 立刻新增 ERROR」：实测全量 `no fmt -w src/std`
+// 后 `no vet src/std` 由 0 error 变 2 error，两处正是本 fixture 的这两行。
+//
+// relevant 必须是「需要注解的陈述」的**超集**，故 exprHasIntOverflow 补上
+// DotExpression → Receiver 的递回。
+func TestFormatPreservesEffectiveOverflowInMethodReceiverIndex(t *testing.T) {
+	input := "tables.dyn-add = (name str, value str) {\n" +
+		"    i = .dyn-count\n" +
+		"    (i > 0) {\n" +
+		"        #{index-out=0, overflow=wrap}\n" +
+		"        prev-name-len = .dyn-names[i - 1].len-bytes()\n" +
+		"    }\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	relevant, governed := checker.OverflowAnnotationRelevance(program)
+	out := FormatProgramWithOverflow(program, input, relevant, governed)
+	if !strings.Contains(out, "#{index-out=0, overflow=wrap}") {
+		t.Errorf("method-receiver index overflow annotation stripped:\n%s", out)
+	}
+	// 幂等：二次格式化不得再变动。
+	program2 := parseForTest(out)
+	if program2 == nil {
+		t.Fatal("failed to re-parse formatted output")
+	}
+	relevant2, governed2 := checker.OverflowAnnotationRelevance(program2)
+	if out2 := FormatProgramWithOverflow(program2, out, relevant2, governed2); out2 != out {
+		t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
+	}
+}
+
 // parseForTest parses source with the same options the `no fmt` CLI uses.
 func parseForTest(src string) *parser.Program {
 	lx := lexer.New(src)

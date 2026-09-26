@@ -173,7 +173,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; Schoolbook 乘法
     i <- [0..32): {
 
-        #{overflow=wrap}
         carry = 0
         j <- [0..32): {
 
@@ -235,7 +234,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             ; m << shift
             i <- [0..32): {
 
-                #{overflow=wrap}
                 src-byte = i
                 dst-byte-start = (i * 8 + shift) / 8
                 ; 簡化：只在 byte 邊界對齊時處理
@@ -266,7 +264,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         can-sub = 1
         i <- [0..32): {
 
-            #{overflow=wrap}
             wi = 0
 
             #{overflow=wrap}
@@ -291,7 +288,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         #{overflow=wrap}
         can-sub == 1 -> {
 
-            #{overflow=wrap}
             borrow = 0
             i <- [0..32): {
 
@@ -564,7 +560,7 @@ ec-point-double = (p []byte) (r []byte) {
     ; 輸出
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         r[i] = x3[i]
 
         #{index-out=0, overflow=wrap}
@@ -729,7 +725,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         r[i] = x3[i]
 
         #{index-out=0, overflow=wrap}
@@ -758,12 +754,11 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
     (bit >= 0) {
 
         ; R = 2*R
-        #{overflow=wrap}
         tmp []byte
         tmp = ec-point-double(r)
         i <- [0..96): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             r[i] = tmp[i]
         }
 
@@ -866,7 +861,7 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = x[i]
 
         #{index-out=0, overflow=wrap}
@@ -972,7 +967,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         #{index-out=0, overflow=wrap}
         state, rand-r = rand.rand(state + d[i] + h-le[i] + i)
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         k[i] = state & 255
     }
 

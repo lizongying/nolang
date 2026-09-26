@@ -54,32 +54,31 @@ BLAKE2B-MASK u64 = 18446744073709551615
 ; rotr64: 64-bit 循環右移
 rotr64 = (x u64, n i64) (r u64) {
 
-    #{overflow=wrap}
     r = ((x >> n) | (x << (64 - n))) & BLAKE2B-MASK
 }
 
 ; G 函數（混合函數）
 b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[a] = (v[a] + v[b] + x) & BLAKE2B-MASK
 
     #{index-out=0}
     v[d] = rotr64(v[d] ^ v[a], 32)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[c] = (v[c] + v[d]) & BLAKE2B-MASK
 
     #{index-out=0}
     v[b] = rotr64(v[b] ^ v[c], 24)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[a] = (v[a] + v[b] + y) & BLAKE2B-MASK
 
     #{index-out=0}
     v[d] = rotr64(v[d] ^ v[a], 16)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[c] = (v[c] + v[d]) & BLAKE2B-MASK
 
     #{index-out=0}
@@ -127,7 +126,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
         #{overflow=wrap}
         off = i * 8
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24) | ((block[off + 4]) << 32) | ((block[off + 5]) << 40) | ((block[off + 6]) << 48) | ((block[off + 7]) << 56)
     }
 
@@ -171,7 +170,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
     ; 最終化: h[i] ^= v[i] ^ v[i+8]
     i <- [0..8): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         h[i] = (h[i] ^ v[i] ^ v[8 + i]) & BLAKE2B-MASK
     }
 }
@@ -186,11 +185,10 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
 b = (data []byte) (hash [64]byte) {
 
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | out_len
-    #{overflow=wrap}
     h []u64
     i <- [0..8): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         h[i] = BLAKE2B-IV[i]
     }
 
@@ -206,7 +204,6 @@ b = (data []byte) (hash [64]byte) {
     #{overflow=wrap}
     (offset + 128 < dlen) {
 
-        #{overflow=wrap}
         t = (t + 128) & BLAKE2B-MASK
 
         #{index-out=0}
@@ -230,11 +227,10 @@ b = (data []byte) (hash [64]byte) {
     ; 補零到 128 位元組
     i <- [remaining..128): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         last-block[i] = 0
     }
 
-    #{overflow=wrap}
     t = (t + remaining) & BLAKE2B-MASK
     b-compress(h, last-block, t, 1)
 
@@ -276,11 +272,10 @@ b = (data []byte) (hash [64]byte) {
 b-256 = (data []byte) (hash [32]byte) {
 
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | 32
-    #{overflow=wrap}
     h []u64
     i <- [0..8): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         h[i] = BLAKE2B-IV[i]
     }
 
@@ -295,7 +290,6 @@ b-256 = (data []byte) (hash [32]byte) {
     #{overflow=wrap}
     (offset + 128 < dlen) {
 
-        #{overflow=wrap}
         t = (t + 128) & BLAKE2B-MASK
 
         #{index-out=0}
@@ -315,11 +309,10 @@ b-256 = (data []byte) (hash [32]byte) {
     }
     i <- [remaining..128): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         last-block[i] = 0
     }
 
-    #{overflow=wrap}
     t = (t + remaining) & BLAKE2B-MASK
     b-compress(h, last-block, t, 1)
 
@@ -426,32 +419,31 @@ BLAKE2S-MASK u32 = 4294967295
 ; rotr32: 32-bit 循環右移
 rotr32 = (x u32, n i64) (r u32) {
 
-    #{overflow=wrap}
     r = ((x >> n) | (x << (32 - n))) & BLAKE2S-MASK
 }
 
 ; G 函數
 s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[a] = (v[a] + v[b] + x) & BLAKE2S-MASK
 
     #{index-out=0}
     v[d] = rotr32(v[d] ^ v[a], 16)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[c] = (v[c] + v[d]) & BLAKE2S-MASK
 
     #{index-out=0}
     v[b] = rotr32(v[b] ^ v[c], 12)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[a] = (v[a] + v[b] + y) & BLAKE2S-MASK
 
     #{index-out=0}
     v[d] = rotr32(v[d] ^ v[a], 8)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     v[c] = (v[c] + v[d]) & BLAKE2S-MASK
 
     #{index-out=0}
@@ -485,7 +477,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         #{overflow=wrap}
         off = i * 4
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         m[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
     }
     s [16]i64
@@ -525,7 +517,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
     }
     i <- [0..8): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         h[i] = (h[i] ^ v[i] ^ v[8 + i]) & BLAKE2S-MASK
     }
 }
@@ -535,11 +527,10 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
 ; 返回 hash [32]byte: 32 位元組雜湊值
 s = (data []byte) (hash [32]byte) {
 
-    #{overflow=wrap}
     h []u32
     i <- [0..8): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         h[i] = BLAKE2S-IV[i]
     }
 
@@ -554,7 +545,6 @@ s = (data []byte) (hash [32]byte) {
     #{overflow=wrap}
     (offset + 64 < dlen) {
 
-        #{overflow=wrap}
         t = (t + 64) & BLAKE2S-MASK
 
         #{index-out=0}
@@ -574,11 +564,10 @@ s = (data []byte) (hash [32]byte) {
     }
     i <- [remaining..64): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         last-block[i] = 0
     }
 
-    #{overflow=wrap}
     t = (t + remaining) & BLAKE2S-MASK
     s-compress(h, last-block, t, 1)
 

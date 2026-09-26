@@ -42,7 +42,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             r-pos = r-pos + 1
             (r-pos < s.len-bytes()) {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 c = s.byte(r-pos)
                 c == 34 -> {
 
@@ -54,7 +54,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                         nc = s.byte(r-pos + 1)
                         nc == 34 -> {
 
-                            #{index-out=0, overflow=wrap}
+                            #{index-out=0}
                             field[fn] = 34
                             fn = fn + 1
                             r-pos = r-pos + 2
@@ -69,7 +69,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     ; 跳過後續逗號
                     r-pos < s.len-bytes() -> {
 
-                        #{index-out=0, overflow=wrap}
+                        #{index-out=0}
                         nc = s.byte(r-pos)
 
                         #{overflow=wrap}
@@ -81,7 +81,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 c == 10 || c == 13 -> {
 
                     ; 換行在引號內視為換行字元
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     field[fn] = c
 
                     #{overflow=wrap}
@@ -109,7 +109,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     ; 普通欄位（無引號）
     (r-pos < s.len-bytes()) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = s.byte(r-pos)
 
         #{overflow=wrap}
@@ -167,11 +167,10 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
 ; 返回 out str: CSV 編碼後的字串
 encode-field = (field str) (out str) {
 
-    #{overflow=wrap}
     need-quote = false
     i <- [0..field.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = field.byte(i)
         c == 44 || c == 34 || c == 10 || c == 13 -> {
             need-quote = true
@@ -194,14 +193,14 @@ encode-field = (field str) (out str) {
     j = j + 1
     i <- [0..field.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = field.byte(i)
 
         #{overflow=wrap}
         {
             c == 34 -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out[j] = 34
                 j = j + 1
 

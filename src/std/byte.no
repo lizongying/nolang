@@ -90,7 +90,6 @@ i64.to-bytes-le = () (out [?]byte) {
     n = .len()
     i <- [0..n): {
 
-        #{overflow=wrap}
         v = v | ((.[i]) << (i * 8))
     }
 }
@@ -134,7 +133,6 @@ i64.to-bytes-le = () (out [?]byte) {
     r str = with-len(0)
     i <- [0..n): {
 
-        #{overflow=wrap}
         cp = .[i] & 0xff
         seg str = with-cap(4)
         cp < 0x80 -> {
@@ -175,7 +173,6 @@ i64.to-bytes-le = () (out [?]byte) {
             seg[3] = 0x80 | (cp & 0x3f)
         }
 
-        #{overflow=wrap}
         r = r - seg
     }
     out = r
@@ -198,7 +195,6 @@ i64.to-bytes-le = () (out [?]byte) {
 ; 返回首次出现的位置，未找到返回 -1
 []byte.index = (target str) (pos i64) {
 
-    #{overflow=wrap}
     pos = -1
     tn = target.len-bytes()
     tn == 0 -> {
@@ -212,7 +208,6 @@ i64.to-bytes-le = () (out [?]byte) {
     i = 0
     (i <= limit) {
 
-        #{overflow=wrap}
         matched = 1
         j <- [0..tn): {
 
@@ -240,7 +235,6 @@ i64.to-bytes-le = () (out [?]byte) {
 ; 返回首次出現的位置，未找到返回 -1
 []byte.index-from = (target str, from i64) (pos i64) {
 
-    #{overflow=wrap}
     pos = -1
     tn = target.len-bytes()
     tn == 0 -> {
@@ -256,7 +250,6 @@ i64.to-bytes-le = () (out [?]byte) {
     i = from
     (i <= limit) {
 
-        #{overflow=wrap}
         matched = 1
         j <- [0..tn): {
 
@@ -284,7 +277,6 @@ i64.to-bytes-le = () (out [?]byte) {
 ; 返回新切片
 []byte.slice = (start i64, end i64) (val []byte) {
 
-    #{overflow=wrap}
     start < 0 -> start = 0
     end > .len() -> end = .len()
     start >= end -> return
@@ -310,14 +302,12 @@ HEX-LOWER = '0123456789abcdef'
 ; []byte.to-hex: 將 []byte 編碼為大寫十六進制字串
 []byte.to-hex = () (out str) {
 
-    #{overflow=wrap}
     n = .len()
 
     #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
 
-        #{overflow=wrap}
         b = .[i]
 
         #{index-out=0, overflow=wrap}
@@ -331,14 +321,12 @@ HEX-LOWER = '0123456789abcdef'
 ; []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
 []byte.to-hex-lower = () (out str) {
 
-    #{overflow=wrap}
     n = .len()
 
     #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
 
-        #{overflow=wrap}
         b = .[i]
 
         #{index-out=0, overflow=wrap}

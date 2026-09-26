@@ -85,7 +85,6 @@ jar {
 ; 返回 c cookie: 解析結果
 parse-set = (set-cookie-str str) (c cookie) {
 
-    #{overflow=wrap}
     c.valid = false
     c.name = ''
     c.value = ''
@@ -107,7 +106,6 @@ parse-set = (set-cookie-str str) (c cookie) {
     #{overflow=wrap}
     semi-pos >= 0 -> {
 
-        #{overflow=wrap}
         first-pair = set-cookie-str.slice(0, semi-pos)
         rest = set-cookie-str.slice(semi-pos + 1, set-cookie-str.len-bytes())
     }
@@ -140,7 +138,6 @@ parse-set = (set-cookie-str str) (c cookie) {
             #{index-out=0}
         }
 
-        #{overflow=wrap}
         pos >= rest.len-bytes() -> *
 
         ; 找下一個分號
@@ -156,8 +153,6 @@ parse-set = (set-cookie-str str) (c cookie) {
         #{overflow=wrap}
         {
             attr-eq >= 0 -> {
-
-                #{overflow=wrap}
                 attr-name = attr.slice(0, attr-eq)
                 attr-name = attr-name.trim()
                 attr-name-lower = attr-name.to-lower()
@@ -174,7 +169,7 @@ parse-set = (set-cookie-str str) (c cookie) {
                         valid = true
                         j <- [0..attr-val.len-bytes()): {
 
-                            #{index-out=0, overflow=wrap}
+                            #{index-out=0}
                             ch = attr-val[j]
                             ch < 48 || ch > 57 -> {
                                 valid = false
@@ -235,7 +230,6 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
             #{index-out=0}
         }
 
-        #{overflow=wrap}
         pos >= cookie-header.len-bytes() -> *
 
         ; 找下一個分號
@@ -249,7 +243,7 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         #{overflow=wrap}
         eq-pos >= 0 && count < 16 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             names[count] = pair.slice(0, eq-pos)
 
             #{index-out=0}
@@ -275,27 +269,20 @@ build-set = (c cookie) (out str) {
     #{overflow=wrap}
     out = c.name - '=' - c.value
 
-    #{overflow=wrap}
     c.path.len-bytes() > 0 -> out = out - '; Path=' - c.path
 
-    #{overflow=wrap}
     c.domain.len-bytes() > 0 -> out = out - '; Domain=' - c.domain
 
-    #{overflow=wrap}
     c.max-age >= 0 -> {
 
-        #{overflow=wrap}
         ma-s = c.max-age.to-str()
         out = out - '; Max-Age=' - ma-s
     }
 
-    #{overflow=wrap}
     c.secure -> out = out - '; Secure'
 
-    #{overflow=wrap}
     c.http-only -> out = out - '; HttpOnly'
 
-    #{overflow=wrap}
     c.same-site.len-bytes() > 0 -> out = out - '; SameSite=' - c.same-site
 }
 
@@ -308,10 +295,9 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
 
-        #{overflow=wrap}
         out.len-bytes() > 0 -> out = out - '; '
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out = out - names[i] - '=' - values[i]
     }
 }
@@ -341,7 +327,7 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
     ; 新增 Cookie
     .count < COOKIE-JAR-MAX -> {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .names[.count] = name
 
         #{index-out=0}
@@ -378,8 +364,6 @@ jar.get = (name str, domain str, path str) (val ?str) {
                 }
 
                 .domains[i].len-bytes() > 0 -> {
-
-                    #{overflow=wrap}
                     domain.ends-with('.' - .domains[i]) -> {
 
                         #{index-out=0}
@@ -463,7 +447,6 @@ jar.build-header = (domain str, path str) (out str) {
         ; 域名匹配
         domain-match = false
 
-        #{overflow=wrap}
         {
             .domains[i].len-bytes() == 0 -> {
 
@@ -478,8 +461,6 @@ jar.build-header = (domain str, path str) (out str) {
             }
 
             domain.ends-with('.' - .domains[i]) -> {
-
-                #{overflow=wrap}
                 domain-match = true
             }
         }
@@ -501,10 +482,9 @@ jar.build-header = (domain str, path str) (out str) {
         }
         domain-match && path-match -> {
 
-            #{overflow=wrap}
             out.len-bytes() > 0 -> out = out - '; '
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             out = out - .names[i] - '=' - .values[i]
         }
     }
@@ -525,14 +505,12 @@ jar.parse-response = (set-cookie-str str, domain str, path str) {
     ; 如果 Cookie 未指定 path，使用回應的 path 的目錄
     c.path.len-bytes() == 0 -> {
 
-        #{overflow=wrap}
         slash-pos = -1
 
         #{overflow=wrap}
         i = path.len-bytes() - 1
         (i >= 0) {
 
-            #{overflow=wrap}
             path[i] == 47 -> {
                 slash-pos = i
                 break
@@ -577,7 +555,6 @@ jar.count-of = () (n i64) {
 sign = (name str, value str, key []byte) (signed str) {
 
     ; 簽名內容 = name=value
-    #{overflow=wrap}
     msg-str = name - '=' - value
     msg []byte = msg-str.to-bytes()
     mac [32]byte = hmac.hmac-sha256(key, msg)
@@ -594,7 +571,6 @@ sign = (name str, value str, key []byte) (signed str) {
         hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]
     }
 
-    #{overflow=wrap}
     signed = value - '.' - hex-str
 }
 
@@ -606,7 +582,6 @@ sign = (name str, value str, key []byte) (signed str) {
 ; 返回 value str: 原始 Cookie 值（驗證失敗時為空）
 verify = (name str, signed-value str, key []byte) (ok bool, value str) {
 
-    #{overflow=wrap}
     ok = false
     value = ''
 
@@ -617,7 +592,6 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     i = signed-value.len-bytes() - 1
     (i >= 0) {
 
-        #{overflow=wrap}
         signed-value[i] == 46 -> {
             dot-pos = i
             break
@@ -649,7 +623,7 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     diff = 0
     i <- [0..provided-hex.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         diff = diff | (provided-hex.byte(i) ^ expected-hex.byte(i))
     }
     {

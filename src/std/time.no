@@ -89,7 +89,6 @@ duration-us-between = (start i64, end i64) (diff i64) {
 ; since-s: 從 start 到現在的經過秒數
 since-s = (start i64) (diff i64) {
 
-    #{overflow=wrap}
     end i64 = os.now()
 
     #{overflow=wrap}
@@ -99,7 +98,6 @@ since-s = (start i64) (diff i64) {
 ; since-ms: 從 start 到現在的經過毫秒數
 since-ms = (start i64) (diff i64) {
 
-    #{overflow=wrap}
     end = now-ms()
 
     #{overflow=wrap}
@@ -109,7 +107,6 @@ since-ms = (start i64) (diff i64) {
 ; since-us: 從 start 到現在的經過微秒數
 since-us = (start i64) (diff i64) {
 
-    #{overflow=wrap}
     end = now-us()
 
     #{overflow=wrap}
@@ -226,7 +223,6 @@ is-leap = (y i64) (leap bool) {
 ; _days-in-month: 取得指定年月的天數
 days-in-month-fn = (y i64, m i64) (d i64) {
 
-    #{overflow=wrap}
     d = 31
     {
         m < 1 -> return
@@ -335,7 +331,6 @@ unix-to-date = (ts i64) (d date) {
 ; 使用 days-from-civil 演算法（Howard Hinnant）
 date-to-unix = (d date) (ts i64) {
 
-    #{overflow=wrap}
     y = d.year
     m = d.month
 
@@ -377,14 +372,12 @@ date-to-unix = (d date) (ts i64) {
 ; 格式：YYYY-MM-DD HH:MM:SS（負年份加前綴 '-'）
 format-date = (d date) (out str) {
 
-    #{overflow=wrap}
     neg = 0
     yr = d.year
 
     #{overflow=wrap}
     yr < 0 -> {
 
-        #{overflow=wrap}
         neg = 1
         yr = 0 - yr
     }
@@ -488,7 +481,7 @@ parse-date = (s str) (ts ?i64) {
     ; 解析 YYYY-MM-DD
     i <- [0..4): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = s[i]
         c < 48 || c > 57 -> return
 
@@ -502,7 +495,7 @@ parse-date = (s str) (ts ?i64) {
     }
     i <- [5..7): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = s[i]
         c < 48 || c > 57 -> return
 
@@ -516,7 +509,7 @@ parse-date = (s str) (ts ?i64) {
     }
     i <- [8..10): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c = s[i]
         c < 48 || c > 57 -> return
 
@@ -545,7 +538,7 @@ parse-date = (s str) (ts ?i64) {
         }
         i <- [11..13): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             c = s[i]
             c < 48 || c > 57 -> return
 
@@ -559,7 +552,7 @@ parse-date = (s str) (ts ?i64) {
         }
         i <- [14..16): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             c = s[i]
             c < 48 || c > 57 -> return
 
@@ -573,7 +566,7 @@ parse-date = (s str) (ts ?i64) {
         }
         i <- [17..19): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             c = s[i]
             c < 48 || c > 57 -> return
 

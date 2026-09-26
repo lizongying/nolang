@@ -33,32 +33,31 @@ CC-MASK32 u32 = 4294967295
 ; rotl32: 32-bit 循環左移
 rotl32 = (x u32, n i64) (r u32) {
 
-    #{overflow=wrap}
     r = ((x << n) | (x >> (32 - n))) & CC-MASK32
 }
 
 ; quarter-round: ChaCha20 四分之一輪
 qr = (state []u32, a i64, b i64, c i64, d i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     state[a] = (state[a] + state[b]) & CC-MASK32
 
     #{index-out=0}
     state[d] = rotl32(state[d] ^ state[a], 16)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     state[c] = (state[c] + state[d]) & CC-MASK32
 
     #{index-out=0}
     state[d] = rotl32(state[d] ^ state[c], 12)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     state[a] = (state[a] + state[b]) & CC-MASK32
 
     #{index-out=0}
     state[d] = rotl32(state[d] ^ state[a], 8)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     state[c] = (state[c] + state[d]) & CC-MASK32
 
     #{index-out=0}
@@ -136,7 +135,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     ; state += init（序列化為小端位元組）
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         val = (state[i] + init[i]) & CC-MASK32
 
         #{index-out=0, overflow=wrap}
@@ -165,7 +164,6 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
     blk-counter = counter
     (pos < data.len()) {
 
-        #{overflow=wrap}
         ks [64]byte
         ks = chacha20-block(key, blk-counter, nonce)
 
@@ -182,7 +180,6 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
         #{overflow=wrap}
         pos = pos + n
 
-        #{overflow=wrap}
         blk-counter = (blk-counter + 1) & CC-MASK32
     }
 }
@@ -199,7 +196,6 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
     ; r = key[0..16]，清除高位（clamping）
     ; r &= 0x0ffffffc0ffffffc0ffffffc0fffffff
-    #{overflow=wrap}
     r [5]u32
 
     #{index-out=0}
@@ -242,7 +238,6 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     (pos < data.len()) {
 
         ; 載入區塊（小端序），末尾補零
-        #{overflow=wrap}
         n = 16
 
         #{overflow=wrap}
@@ -354,32 +349,25 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
         ; 高位 1（2^128 或 2^(n*8)）
         ; 完整區塊添加 2^128，部分區塊添加 2^(n*8)
-        #{overflow=wrap}
         {
             n == 16 -> t4 = 1
 
             -> {
 
                 ; 部分區塊：設置對應位元
-                #{overflow=wrap}
                 t0 = t0 | (1 << (n * 8))
             }
         }
 
         ; h += t（h 是 5-limb 130-bit，t 也轉為 5-limb）
-        #{overflow=wrap}
         h0 = (h0 + t0) & CC-MASK32
 
-        #{overflow=wrap}
         h1 = (h1 + t1) & CC-MASK32
 
-        #{overflow=wrap}
         h2 = (h2 + t2) & CC-MASK32
 
-        #{overflow=wrap}
         h3 = (h3 + t3) & CC-MASK32
 
-        #{overflow=wrap}
         h4 = (h4 + t4) & CC-MASK32
 
         ; h = h * r mod (2^130 - 5)
@@ -493,12 +481,10 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         c = d4 >> 26
         h4 = (d4 & 67108863)
 
-        #{overflow=wrap}
         h0 = (h0 + c * 5) & CC-MASK32
         c = h0 >> 26
         h0 = h0 & 67108863
 
-        #{overflow=wrap}
         h1 = (h1 + c) & CC-MASK32
 
         #{overflow=wrap}
@@ -509,27 +495,22 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     c = h1 >> 26
     h1 = h1 & 67108863
 
-    #{overflow=wrap}
     h2 = (h2 + c) & CC-MASK32
     c = h2 >> 26
     h2 = h2 & 67108863
 
-    #{overflow=wrap}
     h3 = (h3 + c) & CC-MASK32
     c = h3 >> 26
     h3 = h3 & 67108863
 
-    #{overflow=wrap}
     h4 = (h4 + c) & CC-MASK32
     c = h4 >> 26
     h4 = h4 & 67108863
 
-    #{overflow=wrap}
     h0 = (h0 + c * 5) & CC-MASK32
     c = h0 >> 26
     h0 = h0 & 67108863
 
-    #{overflow=wrap}
     h1 = (h1 + c) & CC-MASK32
 
     ; h -= 2^130 - 5（如果 h >= 2^130 - 5）
@@ -584,7 +565,6 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     f3 = (f >> 32)
 
     ; h += s
-    #{overflow=wrap}
     f0 = (f0 + s0) & CC-MASK32
     carry = f0 >> 16
 
@@ -605,7 +585,6 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     f2 = f & CC-MASK32
     c = (f >> 32)
 
-    #{overflow=wrap}
     f3 = (f3 + s3 + c) & CC-MASK32
 
     ; 輸出 tag（小端序）
@@ -688,7 +667,6 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
 chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte) (sealed []byte) {
 
     ; 1. 生成 Poly1305 金鑰
-    #{overflow=wrap}
     otk [32]byte
     otk = poly1305-key-gen(key, nonce)
 
@@ -815,7 +793,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         sealed[i] = cipher[i]
     }
     i <- [0..16): {
@@ -833,7 +811,6 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
 chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byte) (plain []byte) {
 
-    #{overflow=wrap}
     sealed.len() < 16 -> return
 
     #{overflow=wrap}
@@ -847,7 +824,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     cipher []byte
     i <- [0..cipher-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         cipher[i] = sealed[i]
     }
     tag [16]byte
@@ -968,7 +945,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     diff = 0
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         diff = diff | (tag[i] ^ exp-tag[i])
     }
     diff != 0 -> return

@@ -203,7 +203,6 @@ server-conn.recv-more = () (n i64) {
 ; 返回 ok bool: true=解析成功
 server-conn.parse = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     .fd < 0 -> return
     cr = number.char-to-str(13)
@@ -220,7 +219,6 @@ server-conn.parse = () (ok bool) {
     !! {
 
         ; 檢查緩衝區中是否已有分隔符
-        #{overflow=wrap}
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
@@ -265,8 +263,6 @@ server-conn.parse = () (ok bool) {
     #{overflow=wrap}
     {
         q-pos >= 0 -> {
-
-            #{overflow=wrap}
             .path = full-path.slice(0, q-pos)
             .query = full-path.slice(q-pos + 1, full-path.len-bytes())
         }
@@ -285,7 +281,7 @@ server-conn.parse = () (ok bool) {
     .header-count = 0
     i <- [0..HTTP-SRV-MAX-HEADERS): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .header-names[i] = ' '
 
         #{index-out=0}
@@ -305,7 +301,6 @@ server-conn.parse = () (ok bool) {
         pos = 0
         !! {
 
-            #{overflow=wrap}
             pos >= hn -> *
             next-crlf = hs.index-from(crlf, pos)
             line-end = next-crlf
@@ -346,7 +341,6 @@ server-conn.parse = () (ok bool) {
     ; 判斷 Keep-Alive
     .keep-alive = false
 
-    #{overflow=wrap}
     .version == 'HTTP/1.1' -> .keep-alive = true
     conn-val = .get-header('Connection')
     conn-val: {
@@ -373,7 +367,7 @@ server-conn.parse = () (ok bool) {
             content-len = 0
             j <- [0..cl-str.len-bytes()): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 ch = cl-str[j]
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
@@ -386,7 +380,6 @@ server-conn.parse = () (ok bool) {
                 ; 如果不足，繼續接收
                 (available < content-len) {
 
-                    #{overflow=wrap}
                     n = .recv-more()
                     n <= 0 -> return
                     available = .recv-buf-len - body-start
@@ -421,7 +414,7 @@ server-conn.get-header = (name str) (val ?str) {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     c1 = .header-names[i][j]
 
                     #{index-out=0}
@@ -457,7 +450,6 @@ server-conn.get-header = (name str) (val ?str) {
 ; 返回 ok bool: true=成功
 server-conn.write-status = (status i64) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     .fd < 0 -> return
     cr = number.char-to-str(13)
@@ -510,7 +502,6 @@ server-conn.write-status = (status i64) (ok bool) {
         ->
     }
 
-    #{overflow=wrap}
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
     written = net.net-send(.fd, line, line.len-bytes())
     written < 0 -> return
@@ -523,7 +514,6 @@ server-conn.write-status = (status i64) (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.write-header = (name str, value str) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     .fd < 0 -> return
     cr = number.char-to-str(13)
@@ -532,7 +522,6 @@ server-conn.write-header = (name str, value str) (ok bool) {
     #{overflow=wrap}
     crlf = cr - lf
 
-    #{overflow=wrap}
     line = name - ': ' - value - crlf
     written = net.net-send(.fd, line, line.len-bytes())
     written < 0 -> return
@@ -543,7 +532,6 @@ server-conn.write-header = (name str, value str) (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.write-headers-done = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     .fd < 0 -> return
     cr = number.char-to-str(13)
@@ -576,7 +564,6 @@ server-conn.write-body = (data str) (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.write-text = (status i64, text str) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     .fd < 0 -> return
     cr = number.char-to-str(13)
@@ -593,7 +580,6 @@ server-conn.write-text = (status i64, text str) (ok bool) {
     text-len = text.len-bytes()
     len-s = text-len.to-str()
 
-    #{overflow=wrap}
     .write-header('Content-Type', 'text/plain; charset=utf-8')
     .write-header('Content-Length', len-s)
     {
@@ -602,7 +588,6 @@ server-conn.write-text = (status i64, text str) (ok bool) {
         -> .write-header('Connection', 'close')
     }
 
-    #{overflow=wrap}
     .write-header('Server', 'nolang-http/1.0')
     .write-headers-done()
 
@@ -790,10 +775,8 @@ secure-compare = (a str, b str) (ok bool) {
 ; key []byte: HMAC-SHA256 簽名金鑰
 server-conn.set-signed-cookie = (name str, value str, key []byte) {
 
-    #{overflow=wrap}
     signed-value = cookie.sign(name, value, key)
 
-    #{overflow=wrap}
     cookie-val = name - '=' - signed-value - '; Path=/; HttpOnly'
     .write-header('Set-Cookie', cookie-val)
 }
@@ -931,7 +914,6 @@ https-server-conn.recv-more = () (n i64) {
 ; 返回 ok bool: true=解析成功
 https-server-conn.parse = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
@@ -946,7 +928,6 @@ https-server-conn.parse = () (ok bool) {
     sep-pos = -1
     !! {
 
-        #{overflow=wrap}
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> *
@@ -990,8 +971,6 @@ https-server-conn.parse = () (ok bool) {
     #{overflow=wrap}
     {
         q-pos >= 0 -> {
-
-            #{overflow=wrap}
             .path = full-path.slice(0, q-pos)
             .query = full-path.slice(q-pos + 1, full-path.len-bytes())
         }
@@ -1010,7 +989,7 @@ https-server-conn.parse = () (ok bool) {
     .header-count = 0
     i <- [0..HTTP-SRV-MAX-HEADERS): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .header-names[i] = ' '
 
         #{index-out=0}
@@ -1030,7 +1009,6 @@ https-server-conn.parse = () (ok bool) {
         pos = 0
         !! {
 
-            #{overflow=wrap}
             pos >= hn -> *
             next-crlf = hs.index-from(crlf, pos)
             line-end = next-crlf
@@ -1071,7 +1049,6 @@ https-server-conn.parse = () (ok bool) {
     ; 判斷 Keep-Alive
     .keep-alive = false
 
-    #{overflow=wrap}
     .version == 'HTTP/1.1' -> .keep-alive = true
     conn-val = .get-header('Connection')
     conn-val: {
@@ -1098,7 +1075,7 @@ https-server-conn.parse = () (ok bool) {
             content-len = 0
             j <- [0..cl-str.len-bytes()): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 ch = cl-str[j]
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
@@ -1108,7 +1085,6 @@ https-server-conn.parse = () (ok bool) {
                 available = .recv-buf-len - body-start
                 (available < content-len) {
 
-                    #{overflow=wrap}
                     n = .recv-more()
                     n <= 0 -> return
                     available = .recv-buf-len - body-start
@@ -1143,7 +1119,7 @@ https-server-conn.get-header = (name str) (val ?str) {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     c1 = .header-names[i][j]
 
                     #{index-out=0}
@@ -1178,7 +1154,6 @@ https-server-conn.get-header = (name str) (val ?str) {
 ; 返回 ok bool: true=成功
 https-server-conn.write-status = (status i64) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
@@ -1222,7 +1197,6 @@ https-server-conn.write-status = (status i64) (ok bool) {
         ->
     }
 
-    #{overflow=wrap}
     line = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf
     w = .tls.send(line)
     send-ok = false
@@ -1244,7 +1218,6 @@ https-server-conn.write-status = (status i64) (ok bool) {
 ; 返回 ok bool: true=成功
 https-server-conn.write-header = (name str, value str) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)
@@ -1252,7 +1225,6 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
     #{overflow=wrap}
     crlf = cr - lf
 
-    #{overflow=wrap}
     line = name - ': ' - value - crlf
     w = .tls.send(line)
     send-ok = false
@@ -1272,7 +1244,6 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
 ; 返回 ok bool: true=成功
 https-server-conn.write-headers-done = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     cr = number.char-to-str(13)
     lf = number.char-to-str(10)

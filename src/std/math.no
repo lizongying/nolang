@@ -29,16 +29,12 @@ cbrt = (x f64) (res f64) {
     }
     {
         x < 0.0 -> {
-
-            #{overflow=wrap}
             ax f64 = 0.0 - x
             l f64 = log(ax)
             res = 0.0 - exp(l / 3.0)
         }
 
         -> {
-
-            #{overflow=wrap}
             l f64 = log(x)
             res = exp(l / 3.0)
         }
@@ -52,7 +48,6 @@ pow = (x f64, y f64) (res f64) {
 ; hypot: 歐幾里得範數 sqrt(x*x + y*y)
 hypot = (x f64, y f64) (res f64) {
 
-    #{overflow=wrap}
     res = sqrt(x * x + y * y)
 }
 
@@ -139,32 +134,26 @@ log2 = (x f64) (res f64) {
 ; fmod: 浮點取餘
 fmod = (x f64, y f64) (res f64) {
 
-    #{overflow=wrap}
     y == 0.0 -> {
 
-        #{overflow=wrap}
         res = 0.0 / 0.0
         return
     }
 
-    #{overflow=wrap}
     q = x / y
 
-    #{overflow=wrap}
     res = x - trunc(q) * y
 }
 
 ; degrees: 弧度转角度
 degrees = (r f64) (res f64) {
 
-    #{overflow=wrap}
     res = r * 180.0 / PI
 }
 
 ; radians: 角度转弧度
 radians = (d f64) (res f64) {
 
-    #{overflow=wrap}
     res = d * PI / 180.0
 }
 

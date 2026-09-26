@@ -190,7 +190,6 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
         pos = width - (tbl[i])
         bit = (input >> pos) & 1
 
-        #{overflow=wrap}
         r = r | (bit << (n - 1 - i))
 
         #{overflow=wrap}
@@ -203,7 +202,6 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
 ; row = b1*2 + b6，col = b2 b3 b4 b5。
 sbox-lookup = (input i64, box []byte) (r i64) {
 
-    #{overflow=wrap}
     v = input & 63
 
     #{overflow=wrap}
@@ -267,28 +265,24 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         pos = 64 - (PC1-C[i])
         bit = (k64 >> pos) & 1
 
-        #{overflow=wrap}
         c = c | (bit << (27 - i))
 
         #{index-out=0, overflow=wrap}
         pos2 = 64 - (PC1-D[i])
         bit2 = (k64 >> pos2) & 1
 
-        #{overflow=wrap}
         d = d | (bit2 << (27 - i))
     }
     round <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         shift = SHIFT-TBL[round]
 
         #{overflow=wrap}
         cm = (1 << 28) - 1
 
-        #{overflow=wrap}
         c = ((c << shift) | (c >> (28 - shift))) & cm
 
-        #{overflow=wrap}
         d = ((d << shift) | (d >> (28 - shift))) & cm
         cd = (c << 28) | d
         sk = 0
@@ -364,7 +358,6 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
 
     i <- [0..8): {
 
-        #{overflow=wrap}
         out.push((fp >> (56 - i * 8)) & 255)
     }
 }

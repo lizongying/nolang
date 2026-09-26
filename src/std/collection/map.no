@@ -49,18 +49,16 @@ hashmap-str-tmpl.init = () {
 ; hash: FNV-1a 字串雜湊
 hashmap-str-tmpl.hash = (key str) (idx i64) {
 
-    #{overflow=wrap}
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
         h = h * FNV-PRIME
     }
 
-    #{overflow=wrap}
     idx = h & (.cap - 1)
 }
 
@@ -93,7 +91,6 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
     (.occ[idx] != 0) {
 
-        #{overflow=wrap}
         .occ[idx] == 1 -> {
 
             #{index-out=0}
@@ -145,7 +142,6 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 
     (.occ[idx] != 0) {
 
-        #{overflow=wrap}
         .occ[idx] == 1 -> {
 
             #{index-out=0}
@@ -194,7 +190,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
             eq = .str-eq(k, key)
             eq -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 .occ[idx] = 2
                 .size = .size - 1
                 removed = true
@@ -326,7 +322,6 @@ hashmap-int-tmpl.init = () {
 ; hash: 計算索引（位元遮罩）
 hashmap-int-tmpl.hash = (key k) (idx i64) {
 
-    #{overflow=wrap}
     idx = key & (.cap - 1)
 }
 
@@ -346,7 +341,6 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 
     (.occ[idx] != 0) {
 
-        #{overflow=wrap}
         .occ[idx] == 1 -> {
 
             #{index-out=0}
@@ -394,7 +388,6 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
 
     (.occ[idx] != 0) {
 
-        #{overflow=wrap}
         .occ[idx] == 1 -> {
 
             #{index-out=0}
@@ -439,7 +432,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
             #{index-out=0}
             .keys[idx] == key -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 .occ[idx] = 2
                 .size = .size - 1
                 removed = true
@@ -575,7 +568,6 @@ hashmap-bool-tmpl.hash = (key bool) (idx i64) {
 hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     .cap == 0 -> .init()
 
-    #{overflow=wrap}
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
@@ -632,7 +624,7 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
 
     .occ[idx] == 1 -> {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .occ[idx] = 2
 
         #{overflow=wrap}

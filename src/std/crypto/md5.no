@@ -13,7 +13,6 @@
 md5 = (data []byte) (out [16]byte) {
 
     ; MD5 初始值（u32 自然 32-bit 溢出）
-    #{overflow=wrap}
     h0 u32 = 1732584193
     h1 u32 = 4023233417
     h2 u32 = 2562383102

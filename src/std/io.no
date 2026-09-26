@@ -141,7 +141,6 @@ writer.write-byte = (b i64) (written i64) {
 ; 返回實際寫入的位元組數
 writer.write-line = (s str) (written i64) {
 
-    #{overflow=wrap}
     written = 0
     .fd < 0 -> return
     b = s.to-bytes()
@@ -169,7 +168,6 @@ out = (s str) (n i64) {
 ; outln: 寫入字串到標準輸出並換行
 outln = (s str) (n i64) {
 
-    #{overflow=wrap}
     b = s.to-bytes()
     n = fs.write(STDOUT-FD, b, b.len())
     nl []byte = with-len(1)
@@ -191,7 +189,6 @@ err = (s str) (n i64) {
 ; errln: 寫入字串到標準錯誤並換行
 errln = (s str) (n i64) {
 
-    #{overflow=wrap}
     b = s.to-bytes()
     n = fs.write(STDERR-FD, b, b.len())
     nl []byte = with-len(1)

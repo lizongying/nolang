@@ -89,7 +89,6 @@ zlib-compress = (data []byte) (out []byte) {
 ; 先嘗試 stored-block 掃描（快速路徑），失敗則使用 inflate 解壓。
 zlib-decompress = (data []byte) (out []byte, ok bool) {
 
-    #{overflow=wrap}
     ok = false
     data.len() < 6 -> return
 
@@ -136,7 +135,6 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
     p = 2; 跳過 2-byte zlib header
     !! {
 
-        #{overflow=wrap}
         p >= data.len() -> break
 
         #{index-out=0}
@@ -148,7 +146,7 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
         #{overflow=wrap}
         p = p + 1
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         blk-len i64 = data[p] | (data[p + 1] << 8)
 
         #{overflow=wrap}
@@ -173,14 +171,12 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
 ;   返回 consumed: 總消耗位元組數（含 header 和 Adler-32），0 表示非 stored 區塊
 zlib-consumed-stored = (data []byte) (consumed i64) {
 
-    #{overflow=wrap}
     consumed = 0
     data.len() < 6 -> return
 
     p = 2; 跳過 2-byte zlib header
     !! {
 
-        #{overflow=wrap}
         p >= data.len() -> return
 
         #{index-out=0}
@@ -193,7 +189,7 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
         #{overflow=wrap}
         p = p + 1
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         blk-len i64 = (data[p] & 255) | ((data[p + 1] & 255) << 8)
 
         #{overflow=wrap}

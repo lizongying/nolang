@@ -162,7 +162,7 @@ rand-bytes = (state i64, n i64) (out []byte) {
 ; val i64: 值
 put-u16 = (buf []byte, pos i64, val i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     buf[pos] = (val >> 8) & 255
 
     #{index-out=0, overflow=wrap}
@@ -172,7 +172,7 @@ put-u16 = (buf []byte, pos i64, val i64) {
 ; put-u24: 將 24-bit 大端序值寫入緩衝區
 put-u24 = (buf []byte, pos i64, val i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     buf[pos] = (val >> 16) & 255
 
     #{index-out=0, overflow=wrap}
@@ -185,21 +185,20 @@ put-u24 = (buf []byte, pos i64, val i64) {
 ; get-u16: 從緩衝區讀取 16-bit 大端序值
 get-u16 = (buf []byte, pos i64) (val i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     val = ((buf[pos]) << 8) | (buf[pos + 1])
 }
 
 ; get-u24: 從緩衝區讀取 24-bit 大端序值
 get-u24 = (buf []byte, pos i64) (val i64) {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     val = ((buf[pos]) << 16) | ((buf[pos + 1]) << 8) | (buf[pos + 2])
 }
 
 ; bytes-cat: 串接兩個位元組陣列
 bytes-cat = (a []byte, b []byte) (out []byte) {
 
-    #{overflow=wrap}
     an = a.len()
     bn = b.len()
 
@@ -207,7 +206,7 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
     out = with-len(an + bn)
     i <- [0..an): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = a[i]
     }
     i <- [0..bn): {
@@ -229,7 +228,6 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
 ; 返回 out []i64: 大整數（每個元素為 32-bit limb）
 bytes-to-bn = (data []byte) (out []i64) {
 
-    #{overflow=wrap}
     n = data.len()
 
     #{overflow=wrap}
@@ -237,7 +235,7 @@ bytes-to-bn = (data []byte) (out []i64) {
     out = with-len(limb-count)
     i <- [0..limb-count): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = 0
     }
     i <- [0..n): {
@@ -262,7 +260,6 @@ bytes-to-bn = (data []byte) (out []i64) {
 ; 返回 out []byte: big-endian 位元組
 bn-to-bytes = (num []i64) (out []byte) {
 
-    #{overflow=wrap}
     n = num.len()
 
     #{overflow=wrap}
@@ -337,7 +334,6 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     (out-off < out-len) {
 
         ; P_i = HMAC(secret, A(i) || label-seed)
-        #{overflow=wrap}
         a-and-ls []byte
         a-and-ls = bytes-cat(a, ls)
 
@@ -346,7 +342,7 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         p []byte = with-len(32)
         i <- [0..32): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             p[i] = p-tmp[i]
         }
 
@@ -368,7 +364,7 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         a-tmp = hmac.hmac-sha256(secret, a)
         i <- [0..32): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             a[i] = a-tmp[i]
         }
     }
@@ -513,7 +509,6 @@ send-raw = (fd fd, ct i64, data []byte) {
 ; data []byte: 訊息資料
 conn.append-hs = (data []byte) {
 
-    #{overflow=wrap}
     n = data.len()
     i <- [0..n): {
 
@@ -548,7 +543,6 @@ conn.append-hs-from = (buf []byte, offset i64, n i64) {
 ; 返回 ok bool: true=成功
 conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     n = data.len()
 
@@ -584,7 +578,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     plain []byte = with-len(n + 32)
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         plain[i] = data[i]
     }
     i <- [0..32): {
@@ -606,7 +600,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     iv-bytes = rand-bytes(.rand-state, 16)
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         iv[i] = iv-bytes[i]
     }
 
@@ -655,7 +649,6 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 ; 返回 out []byte: 解密後的明文
 conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
 
-    #{overflow=wrap}
     ct = -1
 
     rlen = get-u16(buf, 3)
@@ -737,7 +730,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     out = with-cap(rlen)
     i <- [0..content-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = plain[i]
     }
     out.truncate(content-len)
@@ -758,7 +751,6 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
 ; 返回 out []byte: 加密後的資料（長度 = mod-bytes.len）
 rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
-    #{overflow=wrap}
     msg-n = msg.len()
     mod-n = mod-bytes.len()
 
@@ -782,7 +774,6 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     i <- [0..ps-len): {
         state, r = rand(state)
 
-        #{overflow=wrap}
         b = state & 255
         b == 0 -> b = 1
 
@@ -832,12 +823,11 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
         raw.len() < mod-n -> {
 
             ; 建立新緩衝區, 左側補零
-            #{overflow=wrap}
             out = with-len(mod-n)
             shift = mod-n - raw.len()
             i <- [0..shift): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 out[i] = 0
             }
             i <- [0..raw.len()): {
@@ -850,7 +840,6 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
         raw.len() > mod-n -> {
 
             ; 結果比模數長（不應發生）, 截斷
-            #{overflow=wrap}
             out = with-len(mod-n)
             off = raw.len() - mod-n
             i <- [0..mod-n): {
@@ -870,7 +859,6 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 ; 返回 ok bool: true=成功
 conn.send-client-hello = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; ClientHello 訊息
@@ -956,7 +944,6 @@ conn.send-client-hello = () (ok bool) {
 ; 返回 ok bool: true=成功
 conn.read-server-hello = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     buf []byte = with-len(16400)
 
@@ -1020,7 +1007,6 @@ conn.read-server-hello = () (ok bool) {
 ; 返回 ok bool: true=成功
 conn.read-certificate = (cert-out []byte) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     buf []byte = with-len(16400)
 
@@ -1031,7 +1017,7 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
-    #{index-out=0, index-out=0}
+    #{index-out=0}
     msg-type = buf[5]
     msg-type != TLS-HS-CERTIFICATE -> return
     pos = 9
@@ -1082,7 +1068,6 @@ conn.read-server-hello-done = () (ok bool) {
 ; 返回 ok bool: true=成功
 conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     cert-n = cert.len()
 
@@ -1157,7 +1142,6 @@ conn.send-change-cipher-spec = () {
 ; 返回 ok bool: true=成功
 conn.send-finished = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; 計算 handshake hash
@@ -1166,7 +1150,7 @@ conn.send-finished = () (ok bool) {
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         hs-hash[i] = hs-hash-arr[i]
     }
 
@@ -1348,7 +1332,6 @@ conn.derive-keys = (premaster []byte) {
 ; 返回 ok bool: true=成功
 conn.send-client-hello-13 = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; 生成 X25519 金鑰對（內聯實現，避免多返回值 [32]byte 的編譯器 bug）
@@ -1362,7 +1345,7 @@ conn.send-client-hello-13 = () (ok bool) {
     i <- [0..32): {
         kp-state, kp-r = rand(kp-state)
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .client-priv[i] = kp-state & 255
     }
 
@@ -1379,13 +1362,13 @@ conn.send-client-hello-13 = () (ok bool) {
     priv-slice []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         priv-slice[i] = .client-priv[i]
     }
     pub-slice []byte = x25519.x25519-scalarmult-base-bytes(priv-slice)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .client-pub[i] = pub-slice[i]
     }
 
@@ -1671,10 +1654,9 @@ conn.send-client-hello-13 = () (ok bool) {
     dump = ''
     j <- [0..pos): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         b = hs[j]
 
-        #{overflow=wrap}
         dump = dump - b.to-str() - ' '
     }
 
@@ -1691,7 +1673,6 @@ conn.send-client-hello-13 = () (ok bool) {
 ; 返回 ok bool: true=TLS 1.3, false=TLS 1.2 或失敗
 conn.read-server-hello-13 = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     buf []byte = with-len(16400)
 
@@ -1709,7 +1690,7 @@ conn.read-server-hello-13 = () (ok bool) {
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
-    #{index-out=0, index-out=0}
+    #{index-out=0}
     msg-type = buf[5]
     msg-type != TLS-HS-SERVER-HELLO -> return
     pos = 9
@@ -1765,7 +1746,6 @@ conn.read-server-hello-13 = () (ok bool) {
     is-tls13 = false
     (pos < ext-end) {
 
-        #{overflow=wrap}
         ext-type i64 = get-u16(buf, pos)
 
         #{overflow=wrap}
@@ -1792,7 +1772,6 @@ conn.read-server-hello-13 = () (ok bool) {
             ext-type == TLS-EXT-KEY-SHARE -> {
 
                 ; key_share: 2 bytes group + 2 bytes key length + key
-                #{overflow=wrap}
                 ks-group = get-u16(buf, pos)
                 ks-len i64 = get-u16(buf, pos + 2)
                 ks-group == TLS-GROUP-X25519 && ks-len == 32 -> {
@@ -2073,7 +2052,6 @@ build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
 ; 返回 ok bool: true=成功
 conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i64) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     n = data.len()
 
@@ -2082,7 +2060,7 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     plain []byte = with-len(n + 1)
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         plain[i] = data[i]
     }
 
@@ -2149,7 +2127,6 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
 ; 返回 out []byte: 解密後的明文（不含 content type byte）
 conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i64, out []byte) {
 
-    #{overflow=wrap}
     ct = -1
 
     rlen = get-u16(rec, 3)
@@ -2202,7 +2179,7 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     out = with-len(plain-len)
     i <- [0..plain-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = plain[i]
     }
 }
@@ -2240,7 +2217,6 @@ conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64, ou
 ; 返回 msg-data []byte: 訊息資料（不含標頭）
 conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
 
-    #{overflow=wrap}
     msg-type = -1
 
     ; 若緩衝區中沒有足夠的資料，讀取新的加密記錄
@@ -2248,7 +2224,6 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     #{overflow=wrap}
     .hs-plain-pos + 4 > .hs-plain-len -> {
 
-        #{overflow=wrap}
         ct = 0
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
@@ -2393,7 +2368,6 @@ conn.connect-13 = () (ok bool) {
 ; 返回 ok bool: true=成功
 conn.send-finished-13 = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; 計算 verify_data
@@ -2402,7 +2376,7 @@ conn.send-finished-13 = () (ok bool) {
     c-hs-secret []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         c-hs-secret[i] = .hs-c-secret[i]
     }
     finished-key []byte
@@ -2414,7 +2388,7 @@ conn.send-finished-13 = () (ok bool) {
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         hs-hash[i] = hs-hash-arr[i]
     }
 
@@ -2691,7 +2665,6 @@ conn.send = (data str) (written ?i64) {
         .version == TLS-VERSION-1-3 -> {
 
             ; TLS 1.3: 使用 AEAD
-            #{overflow=wrap}
             ok = .encrypt-record-13(TLS-CT-APP-DATA, data-bytes, .ap-client-key, .ap-client-iv, .ap-write-seq)
             ok == false -> return
 
@@ -2887,7 +2860,6 @@ server-conn {
 ; server-conn.append-hs: 追加交握資料到緩衝區
 server-conn.append-hs = (data []byte) {
 
-    #{overflow=wrap}
     n = data.len()
     i <- [0..n): {
 
@@ -2917,7 +2889,6 @@ server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
 ; 返回 ok bool: true=成功
 server-conn.read-client-hello = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     buf []byte = with-len(16400)
 
@@ -2930,7 +2901,7 @@ server-conn.read-client-hello = () (ok bool) {
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 ClientHello: buf[5]=type, buf[6..8]=length, buf[9..10]=version, buf[11..42]=random
-    #{index-out=0, index-out=0}
+    #{index-out=0}
     msg-type = buf[5]
     msg-type != TLS-HS-CLIENT-HELLO -> return
     pos = 11; 跳過 type(1)+length(3)+version(2)
@@ -2997,7 +2968,6 @@ server-conn.read-client-hello = () (ok bool) {
     #{overflow=wrap}
     pos + 2 <= rlen + 5 -> {
 
-        #{overflow=wrap}
         ext-total = get-u16(buf, pos)
         pos = pos + 2
         ext-end = pos + ext-total
@@ -3007,7 +2977,6 @@ server-conn.read-client-hello = () (ok bool) {
             #{overflow=wrap}
             pos + 4 <= ext-end -> {
 
-                #{overflow=wrap}
                 ext-type = get-u16(buf, pos)
                 ext-data-len = get-u16(buf, pos + 2)
                 pos = pos + 4
@@ -3016,7 +2985,7 @@ server-conn.read-client-hello = () (ok bool) {
                 ext-type == TLS-EXT-SUPPORTED-VERSIONS -> {
 
                     ; client 端: 1 byte list length + versions
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     sv-list-len = buf[pos]
                     sv-pos = pos + 1
                     sv-end = sv-pos + sv-list-len
@@ -3025,7 +2994,6 @@ server-conn.read-client-hello = () (ok bool) {
                         #{overflow=wrap}
                         sv-pos + 2 <= sv-end -> {
 
-                            #{overflow=wrap}
                             sv = get-u16(buf, sv-pos)
                             sv == TLS-VERSION-1-3 -> {
                                 .is-tls13 = true
@@ -3039,7 +3007,6 @@ server-conn.read-client-hello = () (ok bool) {
                 ; key_share (51)
                 ext-type == TLS-EXT-KEY-SHARE -> {
 
-                    #{overflow=wrap}
                     ks-list-len = get-u16(buf, pos)
                     ks-pos = pos + 2
                     ks-end = ks-pos + ks-list-len
@@ -3048,7 +3015,6 @@ server-conn.read-client-hello = () (ok bool) {
                         #{overflow=wrap}
                         ks-pos + 4 <= ks-end -> {
 
-                            #{overflow=wrap}
                             ks-group = get-u16(buf, ks-pos)
                             ks-key-len = get-u16(buf, ks-pos + 2)
                             ks-group == TLS-GROUP-X25519 && ks-key-len == 32 -> {
@@ -3089,7 +3055,6 @@ server-conn.read-client-hello = () (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.send-server-hello = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     hs []byte = with-len(64)
@@ -3159,7 +3124,6 @@ server-conn.send-server-hello = () (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.send-certificate = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     cert-len = .cert.len()
@@ -3222,7 +3186,6 @@ server-conn.send-server-hello-done = () (ok bool) {
 ; 返回 out []byte: 解密後的明文（nil=失敗）
 rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
 
-    #{overflow=wrap}
     mod-len = n.len()
 
     ; 轉換為大整數
@@ -3252,13 +3215,11 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
         raw.len() == mod-len -> m-bytes = raw
 
         raw.len() < mod-len -> {
-
-            #{overflow=wrap}
             m-bytes = with-len(mod-len)
             shift = mod-len - raw.len()
             i <- [0..shift): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 m-bytes[i] = 0
             }
             i <- [0..raw.len()): {
@@ -3269,8 +3230,6 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
         }
 
         raw.len() > mod-len -> {
-
-            #{overflow=wrap}
             m-bytes = with-len(mod-len)
             off = raw.len() - mod-len
             i <- [0..mod-len): {
@@ -3301,7 +3260,6 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
         #{overflow=wrap}
         sep-pos < mod-len -> {
 
-            #{overflow=wrap}
             m-bytes[sep-pos] == 0 -> {
 
                 #{index-out=0}
@@ -3459,7 +3417,6 @@ server-conn.derive-keys = (premaster []byte) {
 ; 返回 ok bool: true=成功
 server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     n = data.len()
 
@@ -3492,7 +3449,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     plain []byte = with-len(n + 32)
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         plain[i] = data[i]
     }
     i <- [0..32): {
@@ -3516,7 +3473,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     .rand-state = .rand-state + 16
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         iv[i] = iv-bytes[i]
     }
 
@@ -3566,7 +3523,6 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 ; 返回 out []byte: 解密後的明文
 server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
 
-    #{overflow=wrap}
     ct = -1
 
     rlen = get-u16(buf, 3)
@@ -3647,7 +3603,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     out = with-len(data-len)
     i <- [0..data-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = plain[i]
     }
     out.truncate(data-len)
@@ -3756,7 +3712,6 @@ server-conn.read-finished = () (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.send-finished = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; 計算 handshake hash（包含 client Finished）
@@ -3765,7 +3720,7 @@ server-conn.send-finished = () (ok bool) {
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         hs-hash[i] = hs-hash-arr[i]
     }
 
@@ -3805,7 +3760,6 @@ server-conn.send-finished = () (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.send-server-hello-13 = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; 生成 X25519 金鑰對
@@ -3818,7 +3772,7 @@ server-conn.send-server-hello-13 = () (ok bool) {
     i <- [0..32): {
         kp-state, kp-r = rand(kp-state)
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .server-priv[i] = kp-state & 255
     }
 
@@ -3835,13 +3789,13 @@ server-conn.send-server-hello-13 = () (ok bool) {
     priv-slice []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         priv-slice[i] = .server-priv[i]
     }
     pub-slice []byte = x25519.x25519-scalarmult-base-bytes(priv-slice)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .server-pub[i] = pub-slice[i]
     }
 
@@ -4103,11 +4057,10 @@ server-conn.derive-handshake-keys-13 = () {
 ; server-conn.derive-application-keys-13: 推導應用層金鑰
 server-conn.derive-application-keys-13 = () {
 
-    #{overflow=wrap}
     hs-prk []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         hs-prk[i] = .hs-prk-field[i]
     }
 
@@ -4116,7 +4069,7 @@ server-conn.derive-application-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         empty-hash[i] = empty-hash-arr[i]
     }
     derived-hs []byte
@@ -4126,7 +4079,7 @@ server-conn.derive-application-keys-13 = () {
     zero-32 []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         zero-32[i] = 0
     }
     empty-ctx []byte = with-len(0)
@@ -4142,14 +4095,14 @@ server-conn.derive-application-keys-13 = () {
     pre-cf-buf []byte = with-len(pre-cf-len)
     i <- [0..pre-cf-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         pre-cf-buf[i] = .hs-buf[i]
     }
     hs-hash-arr = sha256.sha256(pre-cf-buf)
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         hs-hash[i] = hs-hash-arr[i]
     }
 
@@ -4170,26 +4123,26 @@ server-conn.derive-application-keys-13 = () {
     key-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .ap-client-key[i] = key-tmp[i]
     }
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .ap-client-iv[i] = iv-tmp[i]
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .ap-server-key[i] = key-tmp[i]
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .ap-server-iv[i] = iv-tmp[i]
     }
     .ap-write-seq = 0
@@ -4205,7 +4158,6 @@ server-conn.derive-application-keys-13 = () {
 ; 返回 ok bool: true=成功
 server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i64) (ok bool) {
 
-    #{overflow=wrap}
     ok = false
     n = data.len()
 
@@ -4214,7 +4166,7 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     plain []byte = with-len(n + 1)
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         plain[i] = data[i]
     }
 
@@ -4280,7 +4232,6 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
 ; 返回 out []byte: 解密後的明文
 server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i64, out []byte) {
 
-    #{overflow=wrap}
     ct = -1
 
     rlen = get-u16(rec, 3)
@@ -4333,7 +4284,7 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     out = with-len(plain-len)
     i <- [0..plain-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = plain[i]
     }
 }
@@ -4362,13 +4313,11 @@ server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct 
 ; server-conn.read-encrypted-handshake-13: 讀取加密的交握訊息
 server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
 
-    #{overflow=wrap}
     msg-type = -1
 
     #{overflow=wrap}
     .hs-plain-pos + 4 > .hs-plain-len -> {
 
-        #{overflow=wrap}
         ct = 0
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-client-key, .hs-client-iv, .hs-read-seq)
@@ -4432,7 +4381,6 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
 ; 返回 ok bool: true=成功
 server-conn.send-encrypted-extensions-13 = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; EncryptedExtensions: type(1) + length(3) + extensions_list_length(2) = 6 bytes
@@ -4458,7 +4406,6 @@ server-conn.send-encrypted-extensions-13 = () (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.send-certificate-13 = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     cert-len = .cert.len()
@@ -4512,14 +4459,13 @@ server-conn.send-certificate-13 = () (ok bool) {
 ; 返回 ok bool: true=成功
 server-conn.send-finished-13 = () (ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     ; server_finished_key = HKDF-Expand-Label(s_hs_traffic, "finished", "", 32)
     s-hs-secret []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         s-hs-secret[i] = .hs-s-secret[i]
     }
     finished-key []byte
@@ -4531,7 +4477,7 @@ server-conn.send-finished-13 = () (ok bool) {
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         hs-hash[i] = hs-hash-arr[i]
     }
 
@@ -4719,7 +4665,6 @@ server-conn.send = (data str) (written ?i64) {
         .is-tls13 -> {
 
             ; TLS 1.3: 使用 AEAD（伺服器應用金鑰）
-            #{overflow=wrap}
             ok = .encrypt-record-13(TLS-CT-APP-DATA, data-bytes, .ap-server-key, .ap-server-iv, .ap-write-seq)
             ok == false -> return
 
@@ -4751,7 +4696,6 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
         .is-tls13 -> {
 
             ; TLS 1.3: 使用 AEAD（客戶端應用金鑰），跳過 CCS
-            #{overflow=wrap}
             ct = 0
             out []byte
             ct, out = .read-encrypted-record-13(.ap-client-key, .ap-client-iv, .ap-read-seq)
@@ -4921,8 +4865,6 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
         }
 
         ok -> {
-
-            #{overflow=wrap}
             c = it
 
             ; 3. TLS 交握（方法呼叫在局部變數上操作，接收者位址一致）
@@ -4948,7 +4890,6 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             sep-found = false
             (sep-found == false) {
 
-                #{overflow=wrap}
                 sep-found -> *
 
                 #{overflow=wrap}
@@ -4984,7 +4925,6 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             len-s = body-len.to-str()
 
             ; 構建完整回應（一次發送，避免多次 send 的 option 處理）
-            #{overflow=wrap}
             response = 'HTTP/1.1 ' - status-s - ' ' - status-text - crlf - 'Content-Type: text/plain; charset=utf-8' - crlf - 'Content-Length: ' - len-s - crlf - 'Connection: close' - crlf - 'Server: nolang-https/1.0' - crlf - crlf - body
 
             w1 = c.send(response)

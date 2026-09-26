@@ -433,7 +433,6 @@ tables.init = () {
 ; dyn-add: 新增標頭到動態表（FIFO，新項在索引 0）
 tables.dyn-add = (name str, value str) {
 
-    #{overflow=wrap}
     .dyn-count >= HPACK-DYN-MAX -> return
 
     ; 向後移動（從尾部開始避免覆蓋）
@@ -477,7 +476,7 @@ tables.dyn-add = (name str, value str) {
     dn0-tmp str = ''.with-len(name.len-bytes())
     j <- [0..name.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         dn0-tmp[j] = name.byte(j)
     }
 
@@ -486,7 +485,7 @@ tables.dyn-add = (name str, value str) {
     dv0-tmp str = ''.with-len(value.len-bytes())
     j <- [0..value.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         dv0-tmp[j] = value.byte(j)
     }
 
@@ -636,7 +635,6 @@ tables.find-name = (name str) (idx i64) {
 ; 返回 name, value, ok=true=找到
 tables.lookup = (idx i64) (name str, value str, ok bool) {
 
-    #{overflow=wrap}
     ok = false
 
     #{overflow=wrap}
@@ -701,7 +699,6 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     r-val = val
 
-    #{overflow=wrap}
     out = with-cap(10)
 
     #{overflow=wrap}
@@ -722,7 +719,7 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     r-val = r-val - max-prefix
     (r-val >= 128) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[n] = (r-val & 127) | 128
 
         #{overflow=wrap}
@@ -739,7 +736,6 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
 ; 返回 val=解碼值, next-pos=下一個未讀位置（-1=錯誤）
 decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 
-    #{overflow=wrap}
     val = 0
     next-pos = pos
     pos >= data.len-bytes() -> {
@@ -762,7 +758,6 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     m = 0
     !! {
 
-        #{overflow=wrap}
         next-pos >= data.len-bytes() -> {
             next-pos = -1
             *
@@ -805,7 +800,7 @@ encode-str = (s str) (out str) {
     ; 複製長度編碼到 out
     i <- [0..len-out.len-bytes()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         out[i] = len-out.byte(i)
     }
     out-n = len-out.len-bytes()
@@ -822,7 +817,6 @@ encode-str = (s str) (out str) {
 ; 返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
 decode-str = (data str, pos i64) (out str, next-pos i64) {
 
-    #{overflow=wrap}
     pos >= data.len-bytes() -> {
         next-pos = -1
         return
@@ -873,7 +867,6 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
 tables.encode-header = (name str, value str) (out str) {
 
     ; 1. 完全匹配 → Indexed Header Field（6.1）
-    #{overflow=wrap}
     full-idx = 0
     full-idx = .find(name, value)
     full-idx > 0 -> {
@@ -982,8 +975,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
         ; Indexed Header Field（6.1）：1xxxxxxx
         {
             (b & 128) != 0 -> {
-
-                #{overflow=wrap}
                 idx = 0
                 next = 0
                 idx, next = decode-int(data, pos, 7)
@@ -998,7 +989,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 ln-tmp str = ''.with-len(lk-name.len-bytes())
                 j <- [0..lk-name.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     ln-tmp[j] = lk-name.byte(j)
                 }
 
@@ -1007,7 +998,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 lv-tmp str = ''.with-len(lk-val.len-bytes())
                 j <- [0..lk-val.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     lv-tmp[j] = lk-val.byte(j)
                 }
 
@@ -1023,7 +1014,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 ; Literal with Incremental Indexing（6.2.1）：01xxxxxx
 
-                #{overflow=wrap}
                 name-idx = 0
                 next = 0
                 name-idx, next = decode-int(data, pos, 6)
@@ -1053,7 +1043,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     nb-tmp[j] = name.byte(j)
                 }
 
@@ -1062,7 +1052,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     vb-tmp[j] = value.byte(j)
                 }
 
@@ -1080,7 +1070,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 ; Literal without Indexing（6.2.2）：0000xxxx
 
-                #{overflow=wrap}
                 name-idx = 0
                 next = 0
                 name-idx, next = decode-int(data, pos, 4)
@@ -1108,7 +1097,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     nb-tmp[j] = name.byte(j)
                 }
 
@@ -1117,7 +1106,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     vb-tmp[j] = value.byte(j)
                 }
 
@@ -1132,7 +1121,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 ; Literal Never Indexed（6.2.3）：0001xxxx
 
-                #{overflow=wrap}
                 name-idx = 0
                 next = 0
                 name-idx, next = decode-int(data, pos, 4)
@@ -1160,7 +1148,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     nb-tmp[j] = name.byte(j)
                 }
 
@@ -1169,7 +1157,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=0}
                     vb-tmp[j] = value.byte(j)
                 }
 
