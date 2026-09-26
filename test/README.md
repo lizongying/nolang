@@ -187,19 +187,23 @@ f = runner.failed-count()
 
 ## 5. 目前覆蓋狀況
 
-最後一次全量執行（2026-09-26，`./bin/no`）：**41 檔、836 個斷言通過、14 個失敗**
-（7 個檔失敗，**全部是預存問題**，見下節）。
+最後一次全量執行（本輪修復後，`./bin/no`）：**41 檔、906 個斷言通過、14 個失敗**
+（6 個檔失敗，**全部是預存問題**，見下節）。
+
+> 本輪修復：`number.div`/`number.mod`（#8）、`bigint` bus error（#7）、`txt.to-f32` 回傳 f64 位元（#5）、
+> `format` 的 `:t`/`:v`/`,`/`_`（#6）、`[]char` 切片字面量（#4）已全部修復，並釘迴歸測試。
+> 斷言數由 836 → 906（`bigint +27`、`number +37`、`char +6`）。
 
 | 檔案 | passed | failed | rc | 檔 | passed | failed | rc |
 |---|---:|---:|---:|---|---:|---:|---:|
 | `arr-stack.no` | 9 | 0 | 0 | `log.no` | 9 | 0 | 0 |
 | `arr.no` | 11 | 0 | 0 | `magic.no` | 11 | 0 | 0 |
 | `base64.no` | 12 | **1** | **1** | `math.no` | 27 | **2** | **1** |
-| `bigint.no` | **0** | 0 | 0 | `number.no` | **0** | 0 | **1** |
+| `bigint.no` | 27 | 0 | 0 | `number.no` | 37 | 0 | 0 |
 | `bool.no` | 4 | 0 | 0 | `option.no` | 25 | 0 | 0 |
 | `bufio.no` | 3 | **3** | **1** | `os.no` | 5 | 0 | 0 |
 | `byte.no` | 15 | 0 | 0 | `path.no` | 8 | 0 | 0 |
-| `char.no` | 74 | 0 | 0 | `pem.no` | 3 | 0 | 0 |
+| `char.no` | 80 | 0 | 0 | `pem.no` | 3 | 0 | 0 |
 | `csv.no` | 30 | 0 | 0 | `process.no` | 9 | 0 | 0 |
 | `deque.no` | 16 | 0 | 0 | `queue.no` | 9 | 0 | 0 |
 | `enum_cross.no` | 2 | 0 | 0 | `regexp.no` | 35 | 0 | 0 |
@@ -214,19 +218,20 @@ f = runner.failed-count()
 | `io.no` | 9 | 0 | 0 | `zlib.no` | 4 | 0 | 0 |
 | `json.no` | 25 | **3** | **1** | | | | |
 
-兩個「0 斷言」的檔是**刻意的**：
-- `bigint.no` —— 整個 bigint 模組在 MIR 後端 **bus error**（連
-  `bigint.from-i64(42).to-str()` 都崩，2026-09-26 複驗仍如此），所有
-  `runner.test` 註冊已停用並註明原因；等 bug 修好解除註解即可復原。
+兩個「0 斷言」的檔**已解決**：
+- `bigint.no` —— 原整個 bigint 模組在 MIR 後端 **bus error**（連
+  `bigint.from-i64(42).to-str()` 都崩）。根因是編譯器在「方法內對同型別區域變數呼叫方法」
+  時，被呼叫方法體內的裸 `.` 會解析到**外層方法接收者**；`to-str` 內對 `tmp` 呼叫
+  `tmp.is-zero()` 永遠檢查錯誤物件 → 迴圈不會在零值停住（bus error / 前導零）。
+  修法：改用顯式欄位存取 `tmp.len == 1 && tmp.limbs[0] == 0`。現已復原守衛，**27 個斷言全過**。
 - `char.no` —— 原為佔位（只斷言 `runner.eq(1,1)`），檔頭寫著「char 方法全部有
   特化問題」。該說明**已過時**：`char` 方法現在全部正常，故 2026-09-26 改寫成
-  74 個斷言的真正測試。
+  74 個斷言的真正測試，本輪再補 `[]char` 字面量回歸 → **80 個斷言全過**。
 
-### 7 個失敗檔（全部預存，與 `no fmt` 無關）
+### 6 個失敗檔（全部預存，與 `no fmt` 無關）
 
 | 檔 | 失敗斷言 | 說明 |
 |---|---|---|
-| `number.no` | — | **編譯失敗**：`EmitLLVM: unknown callee number.div in func t-div-mod` |
 | `base64.no` | 1 | `decode QUJD content == ABC` |
 | `bufio.no` | 2 | `read-byte 1st == X (88)`、`read-byte 2nd == Y (89)` |
 | `heap.no` | 4 | `pop 2nd/3rd/4th`、`dup pop 2nd`、`fill returns true` |
@@ -235,7 +240,8 @@ f = runner.failed-count()
 | `uuid.no` | 1 | `from-str roundtrip eq` |
 
 > **歸因**：用 pre-fmt-std 的 binary 與 post-fmt 的 binary 各跑一次全套件，
-> `FAIL` 集合**逐行完全相同**（`diff` 為空）⇒ 這 7 檔不是 fmt 造成的。
+> `FAIL` 集合**逐行完全相同**（`diff` 為空）⇒ 這 6 檔不是 fmt 造成的。
+> `number.no`（原 `unknown callee number.div`）與 `bigint.no`（bus error）本輪已修復。
 
 **尚未覆蓋**（`src/std` 有、`test/std` 沒有）：
 
@@ -273,6 +279,19 @@ f = runner.failed-count()
 > 跑新的 `txt.no` 會**連編都編不過**（`to-bytes` → `unsupported builtin []t.set-byte`），
 > 跑出來唯一的 diff 就是 `FAIL: test/std/txt.no` 消失。
 
+### ✅ 已修（本輪 —— `txt.to-f32` / `format` / `number.div` / `bigint` / `[]char`）
+
+| # | 症狀 | 修法 | 迴歸釘 |
+|---|---|---|---|
+| D | **`[]char` 切片字面量**編不過（global 宣告 `[N x i64]`、元素卻是 `i32` → opt-verify / `unsupported builtin []t.set-byte`） | 編譯器已修（切片字面量降級為正確元素型別） | `test/std/char.no` 的 `t-slice-char-literal`（len / 索引 / 元素賦值 / `[N]char` 固定陣列） |
+| E | **`txt.to-f32` 回傳 f64 的位元**（`42.0` 印成 `4631107791820423168`）。`?f32` 裝箱被 `optionPayloadLLVMType` 當成 `i64` 存/讀 | `src/mir/codegen.go` 的 `optionPayloadLLVMType` 把 `f32`/`float` 納入 `double` 分支；`src/mir/hir2mir.go` 兩處 format-field dispatch 補 `f32` | `src/mir/f32_option_payload_test.go`（`TestOptionF32PayloadUsesDoubleType` / `TestOptionF32PeelEmitsDoubleLoad` / `TestFormatFieldF32Lowers`）；`txt.to-f32()` 現印 `3.5` |
+| F | **`format` 的 `:t`/`:v`/`,`/`_` 沒實作** | `src/std/fmt.no`：`fmt-int`/`fmt-uint`/`fmt-f64`/`fmt-str`/`fmt-bool` 加 `:t`（型別名）；`fmt-str` 加 `:v`（單引號包裹）；新增 `fmt-group-digits` 並在 `:` 規格的 grouping 分支套用（**必須在零填充之前**） | `print('{n:t}')`→`i64`、`'{s:v}'`→`'abc'`、`'{g:,}'`→`1,234,567`、`'{h:08,d}'`→`0001,234` |
+| G | **`bigint` 全模組 bus error**（`from-i64(42).to-str()` 都崩）。根因：編譯器在「方法內對同型別區域變數呼叫方法」時，被呼叫方法體內裸 `.` 解析到**外層方法接收者** ⇒ `to-str` 內 `tmp.is-zero()` 永遠檢查錯誤物件 → 迴圈不會在零值停住 | `src/std/bigint.no` 的 `to-str` 把 `tmp.is-zero()` 改為顯式欄位存取 `tmp.len == 1 && tmp.limbs[0] == 0`（並加 `while` 計數保護替代 `!!` 無限迴圈） | `test/std/bigint.no` 解封 `runner.test` 註冊（**27 斷言全過**：`from-i64`/`zero`/`cmp`/`eq`/`is-zero`/`is-neg`/`add`/`sub`/`mul`/`div-mod`/`mod-i64`/`pow`/`gcd`/`lcm`） |
+| H | **`number.div`/`number.mod` → `unknown callee number.div`**（`number.no` 編不過） | `src/std/number.no` 補 `div`/`mod` 實作（`#{overflow=wrap}` 的 `a/b`、`a%b`，向零截斷，與 C/Go/Java 一致） | `test/std/number.no` 現 **37 斷言全過** |
+
+> ⚠️ `:t` 的已知小瑕疵：`{b:t}`（bool）與 `{u:t}`（u64）仍會印 `i64`——因為 bool/u64 被 dispatch 到
+> `fmt-int`（回傳 `'i64'`），非本輪修復範圍；其餘 `int`/`f64`/`str`/`bool` 的 `:t`/`:v` 均正確。
+
 ### ❌ 未修（待處理）
 
 | # | 症狀 | 嚴重度 | 位置 |
@@ -280,11 +299,9 @@ f = runner.failed-count()
 | 1 | **模組頂層 option 初始化後 match，一個臂都不執行**（靜默，rc 仍 0）。`v ?i64 = 7` 後 `v: {…}` 直接跳過；結果**取決於變數名**（`a`/`w`/`x`/`y`/`res` 正常，其餘絕大多數靜默；大寫＝真全局一律靜默）。安全寫法：在函式內宣告、或 `v ?i64 = mk()` 由函式回傳 | 高（靜默錯答） | compiler（option 初始化） |
 | 2 | **`?bool` 的 match 取值恆為 false**。`print(f())` 印 `true`（包裝對），`ok(b) -> print(b)` 印 `0`。`?i64`/`?str`/`?f64`/`?struct`/`?slice` 全正常，只有 bool 壞。連帶 `txt.to-bool` 全滅 | 高 | compiler（option 載荷） |
 | 3 | **option 當函式參數 + match → 編譯失敗**：`opt-verify: '%option' … but expected '%str-long'`（`str_clone` 被套到 option 上，option 載荷槽 24 bytes 剛好＝`%str-long`）。只傳不 match 沒事 | 中（硬錯誤） | compiler（參數 marshal） |
-| 4 | `[]char` **切片字面量**編不過（global 宣告 `[N x i64]`、元素卻是 `i32`）。改用 `.push("a")`，`[N]char` 固定陣列正常 | 中 | compiler |
-| 5 | `txt.to-f32` 回傳 f64 的位元（`42.0` 印成 `4631107791820423168`） | 中 | `src/std/txt.no` |
-| 6 | `format` 的 `:t`（型別名）、`:v`（加引號）、`,`/`_`（千分位）三個 spec **文件有寫、但沒實作** | 低（文件與實作不符） | compiler / `src/std/global.no` 註解 |
-| 7 | `bigint` 全模組 **bus error** | 高 | codegen |
-| 8 | `number.div` → `unknown callee number.div`（`test/std/number.no` 編不過） | 中 | `src/std/number.no` |
+
+> 原本的 #4–#8（[]char 字面量、`txt.to-f32` 位元、`format :t/:v/千分位`、`bigint` bus error、
+> `number.div`）**本輪已全部修復**（見下方「✅ 已修」D–H）。
 
 ### 寫測試時的三個型別陷阱（會讓你寫出「永遠綠」的錯測試）
 

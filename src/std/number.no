@@ -187,6 +187,26 @@ pow = (a int, n int) (r int) {
     }
 }
 
+; div: 整數除法（向零截斷，與 C/Go/Java 的 `a / b` 一致）
+;
+; -7 / 2 == -3（不是 -4：floor 語義請自行改用 sign 判斷）
+; ⚠️ b == 0 時與裸 `/` 一樣會 trap（執行期無除零檢查）。
+div = (a int, b int) (r int) {
+
+    #{overflow=wrap}
+    r = a / b
+}
+
+; mod: 整數取餘（餘數符號跟隨被除數 a，與 C/Go/Java 的 `a % b` 一致）
+;
+; -7 % 2 == -1（floor-mod 語義請自行改用 sign 判斷）
+; ⚠️ b == 0 時與裸 `%` 一樣會 trap。
+mod = (a int, b int) (r int) {
+
+    #{overflow=wrap}
+    r = a % b
+}
+
 ; i64-to-f64: 整數轉浮點
 #{buildin}
 i64-to-f64 = (a i64) (r f64) {

@@ -454,10 +454,69 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 ; 整數格式化
 ; ═══════════════════════════════════════════════
 
+; fmt-group-digits: 每 3 位插入千分位分隔字元（',' = 44 / '_' = 95）
+;
+; 只處理「純數字」部分，不含符號與進制前綴 —— 呼叫端負責在組裝 body 之前
+; 先把符號/前綴剝掉，分組後再接回去（Python 的 f'{n:,}' 與此一致）：
+;   1234567   -> 1,234,567
+;   123456789 -> 123,456,789
+;   123       -> 123（不足 4 位不分組）
+;
+; ⚠️ 必須在「零填充之後」套用：f'{1234:08,d}' 是 0001,234（先補到 8 位再分組），
+; 先分組再補零會得到錯誤的 0001234,。
+fmt-group-digits = (digits str, sep i64) (out str) {
+    n = digits.len-bytes()
+    n <= 3 -> {
+        out = digits.copy()
+        return
+    }
+
+    #{overflow=wrap}
+    ngroups = (n + 2) / 3
+
+    #{overflow=wrap}
+    first = n - (ngroups - 1) * 3
+
+    #{overflow=wrap}
+    total = n + ngroups - 1
+    out = with-cap(total)
+    pos = 0
+    i <- [0..first): {
+
+        #{index-out=0}
+        out[pos] = digits.byte(i)
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
+    g <- [1..ngroups): {
+
+        #{index-out=0}
+        out[pos] = sep
+
+        #{overflow=wrap}
+        pos = pos + 1
+        k <- [0..3): {
+
+            #{index-out=0, overflow=wrap}
+            out[pos] = digits.byte(first + (g - 1) * 3 + k)
+
+            #{overflow=wrap}
+            pos = pos + 1
+        }
+    }
+}
+
 ; fmt-int: 有號整數格式化
-; 支援 type(c/無)、sign(+/-/space)、zero、width、align、fill
+; 支援 type(c/d/t/無)、sign(+/-/space)、zero、width、align、fill、千分位(,/_)
 fmt-int = (n i64, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; t 類型：印出值的靜態型別名（{x:t} -> i64）
+    typ == 116 -> {
+        out = fmt-apply-spec('i64', fill, align, width)
+        return
+    }
 
     ; c 類型：將整數轉為單一字元
     typ == 99 -> {
@@ -505,6 +564,13 @@ fmt-int = (n i64, spec str) (out str) {
                 digits[i] = full[i]
             }
         }
+    }
+
+    ; 千分位分組（',' = 44 / '_' = 95）：必須在「零填充之前」套用，
+    ; 否則會把補零也算進去（f'{1234567:012,d}' 應為 0001,234,567，而非 000,001,234,567）。
+    grouping != 0 -> {
+        digits = fmt-group-digits(digits, grouping)
+        dlen-v = digits.len-bytes()
     }
 
     ; 零填充：在符號後、數字前補 0
@@ -558,9 +624,15 @@ fmt-int = (n i64, spec str) (out str) {
 }
 
 ; fmt-uint: 無號整數格式化
-; 支援 type(b/o/d/x/X)、alt(#前綴)、zero、width、align、fill
+; 支援 type(b/o/d/x/X/t)、alt(#前綴)、zero、width、align、fill、千分位(,/_)
 fmt-uint = (u u64, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; t 類型：印出值的靜態型別名（{u:t} -> u64）
+    typ == 116 -> {
+        out = fmt-apply-spec('u64', fill, align, width)
+        return
+    }
 
     ; 依 type 轉換
     digits str = with-cap(21)
@@ -663,6 +735,13 @@ fmt-uint = (u u64, spec str) (out str) {
         }
     }
 
+    ; 千分位分組：僅十進位（無 type 或 d）。b/o/x/X 的分組單位不是 3
+    ; （Python 對二進制每 4 位一組），這裡不猜，直接不套用。
+    grouping != 0 && (typ == 0 || typ == 100) -> {
+        digits = fmt-group-digits(digits, grouping)
+        dlen = digits.len-bytes()
+    }
+
     ; 組合 body = prefix + digits
     #{overflow=wrap}
     body-len = dlen + prefix-len
@@ -687,9 +766,15 @@ fmt-uint = (u u64, spec str) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; fmt-f64: 浮點數格式化
-; 支援 type(f/e/g)、precision、sign、zero、width、align、fill
+; 支援 type(f/e/g/t)、precision、sign、zero、width、align、fill
 fmt-f64 = (x f64, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; t 類型：印出值的靜態型別名（{pi:t} -> f64）
+    typ == 116 -> {
+        out = fmt-apply-spec('f64', fill, align, width)
+        return
+    }
 
     prec = precision
     prec < 0 -> prec = 6
@@ -795,9 +880,15 @@ fmt-f64 = (x f64, spec str) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; fmt-str: 字串格式化
-; 支援 precision(截斷)、width、align、fill
+; 支援 precision(截斷)、width、align、fill、type(t/v)
 fmt-str = (s str, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; t 類型：印出值的靜態型別名（{s:t} -> str）
+    typ == 116 -> {
+        out = fmt-apply-spec('str', fill, align, width)
+        return
+    }
 
     ; precision 截斷
     body str = s.copy()
@@ -810,6 +901,29 @@ fmt-str = (s str, spec str) (out str) {
         }
     }
 
+    ; v 類型：字面量值 —— 字串以單引號包裹（{s:v} -> 'hello'）
+    typ == 118 -> {
+        blen = body.len-bytes()
+
+        #{overflow=wrap}
+        quoted str = with-cap(blen + 2)
+
+        #{index-out=0}
+        quoted[0] = 39
+        i <- [0..blen): {
+
+            #{index-out=0, overflow=wrap}
+            quoted[1 + i] = body.byte(i)
+        }
+
+        #{index-out=0, overflow=wrap}
+        quoted[blen + 1] = 39
+
+        ; 套用寬度/對齊（含引號在內計算寬度）
+        out = fmt-apply-spec(quoted, fill, align, width)
+        return
+    }
+
     ; 套用寬度/對齊
     out = fmt-apply-spec(body, fill, align, width)
 }
@@ -819,9 +933,15 @@ fmt-str = (s str, spec str) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; fmt-bool: 布林值格式化
-; 支援 width、align、fill
+; 支援 width、align、fill、type(t)
 fmt-bool = (b bool, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
+
+    ; t 類型：印出值的靜態型別名（{b:t} -> bool）
+    typ == 116 -> {
+        out = fmt-apply-spec('bool', fill, align, width)
+        return
+    }
 
     body str = with-cap(5)
     {

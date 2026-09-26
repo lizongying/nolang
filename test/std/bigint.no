@@ -210,24 +210,25 @@ t-lcm = () {
 ; }
 
 ; ── 執行 ──────────────────────────────────────
-; 不進守衛：整個 bigint 模組 bus error（見檔頭說明），停用下列註冊，
-; 僅留 runner.summary() 讓本檔以 0 測試通過，避免拖垮守衛。
-; 待 codegen bus error 修復後，解除本段註解即可復原守衛。
-;
-; p1, f1 = runner.test('bigint.from-i64', t-from-i64)
-; p2, f2 = runner.test('bigint.zero-one', t-zero-one)
-; p3, f3 = runner.test('bigint.cmp', t-cmp)
-; p4, f4 = runner.test('bigint.eq', t-eq)
-; p5, f5 = runner.test('bigint.is-zero', t-is-zero)
-; p6, f6 = runner.test('bigint.is-neg', t-is-neg)
-; p7, f7 = runner.test('bigint.add', t-add)
-; p8, f8 = runner.test('bigint.sub', t-sub)
-; p9, f9 = runner.test('bigint.mul', t-mul)
-; p10, f10 = runner.test('bigint.div-mod', t-div-mod)
-; p11, f11 = runner.test('bigint.mod-i64', t-mod-i64)
-; p12, f12 = runner.test('bigint.pow', t-pow)
-; p13, f13 = runner.test('bigint.gcd', t-gcd)
-; p14, f14 = runner.test('bigint.lcm', t-lcm)
+; to-str 的 bus error 已修復（編譯器在「方法內對同型別區域變數呼叫方法」時，
+; 被呼叫方法體內的裸 `.` 會解析到外層方法接收者 → 改用顯式欄位存取判斷零值）。
+; 下方註冊已復原守衛。注意：to-hex / from-hex / shl / shr / from-str 仍有預存
+; codegen bug（BPT trap），維持停用。
+
+p1, f1 = runner.test('bigint.from-i64', t-from-i64)
+p2, f2 = runner.test('bigint.zero-one', t-zero-one)
+p3, f3 = runner.test('bigint.cmp', t-cmp)
+p4, f4 = runner.test('bigint.eq', t-eq)
+p5, f5 = runner.test('bigint.is-zero', t-is-zero)
+p6, f6 = runner.test('bigint.is-neg', t-is-neg)
+p7, f7 = runner.test('bigint.add', t-add)
+p8, f8 = runner.test('bigint.sub', t-sub)
+p9, f9 = runner.test('bigint.mul', t-mul)
+p10, f10 = runner.test('bigint.div-mod', t-div-mod)
+p11, f11 = runner.test('bigint.mod-i64', t-mod-i64)
+p12, f12 = runner.test('bigint.pow', t-pow)
+p13, f13 = runner.test('bigint.gcd', t-gcd)
+p14, f14 = runner.test('bigint.lcm', t-lcm)
 total = runner.summary()
 f = runner.failed-count()
 {

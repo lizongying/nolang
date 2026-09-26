@@ -152,6 +152,22 @@ t-to-txt = () {
     runner.str-eq(u.to-str(), '中', 3, 'to-txt non-ASCII value')
 }
 
+; ── []char 字面量（回歸）─────────────────────────
+; 歷史 bug：slice 字面量降級為全域 [N x i64] 卻發出 i32 元素，
+;   觸發 opt-verify 失敗 / `unsupported builtin []t.set-byte`。
+;   現已修復：長度、索引、元素賦值、固定長度 [N]char 陣列皆可用。
+t-slice-char-literal = () {
+    arr []char = ["a", "b", "c"]
+    runner.eq(arr.len(), 3, '[]char len == 3')
+    runner.str-eq(arr[0].to-str(), 'a', 1, '[]char[0] == a')
+    runner.str-eq(arr[2].to-str(), 'c', 1, '[]char[2] == c')
+    arr[1] = "Z"
+    runner.str-eq(arr[1].to-str(), 'Z', 1, '[]char[1] assign == Z')
+    fixed [3]char = ["x", "y", "z"]
+    runner.str-eq(fixed[0].to-str(), 'x', 1, '[3]char[0] == x')
+    runner.eq(fixed.len(), 3, '[3]char len == 3')
+}
+
 ; ── 執行 ───────────────────────────────────────
 
 p1, f1 = runner.test('char.is-digit', t-is-digit)
@@ -165,6 +181,7 @@ p8, f8 = runner.test('char.to-lower', t-to-lower)
 p9, f9 = runner.test('char.to-str', t-to-str)
 p10, f10 = runner.test('char.to-bytes', t-to-bytes)
 p11, f11 = runner.test('char.to-txt', t-to-txt)
+p12, f12 = runner.test('char.slice-char-literal', t-slice-char-literal)
 
 total = runner.summary()
 f = runner.failed-count()

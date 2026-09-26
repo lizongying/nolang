@@ -913,7 +913,11 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 		return "%str-long"
 	case "vec":
 		return "%vec"
-	case "double", "f64":
+	// `f32` 與 `f64` 在 MIR 一律以 `double` 承載（builtin_call.go 的
+	// emitBuiltinConv 註解：MIR 沒有 f32）。漏掉 `f32` 會掉到最後的
+	// `return "i64"` ⇒ 裝箱時 double 被當整數存、剝殼時又以 i64 讀回，
+	// `print(v)` 印出的是 IEEE-754 位元模式（3.5 → 4615063718147915776）。
+	case "double", "f64", "f32", "float":
 		return "double"
 	case "i64", "i8", "i1", "byte", "u8", "char", "bool", "":
 		return "i64"

@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "5231035fffc382b963d0019d4ae09611a29cd5b57fe03f6ac14028cd2316df7e"
+	embeddedStdSigKey = "41ce7243f2743744aa373ffac4c91943388dd1d526748e90a59b945694ea0305"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -276,6 +276,7 @@ func init() {
 		"fmt.fmt-apply-spec":                       {"str"},
 		"fmt.fmt-bool":                             {"str"},
 		"fmt.fmt-f64":                              {"str"},
+		"fmt.fmt-group-digits":                     {"str"},
 		"fmt.fmt-int":                              {"str"},
 		"fmt.fmt-parse-spec":                       {"i64", "i64", "i64", "i64", "i64", "i64", "i64", "i64", "i64"},
 		"fmt.fmt-str":                              {"str"},
@@ -483,6 +484,7 @@ func init() {
 		"number.abs":                               {"num"},
 		"number.arr-zero":                          {},
 		"number.char-to-str":                       {"str"},
+		"number.div":                               {"int"},
 		"number.even":                              {"bool"},
 		"number.f32-to-f64":                        {"f64"},
 		"number.f64-to-f32":                        {"f32"},
@@ -494,6 +496,7 @@ func init() {
 		"number.lcm":                               {"int"},
 		"number.max":                               {"num"},
 		"number.min":                               {"num"},
+		"number.mod":                               {"int"},
 		"number.odd":                               {"bool"},
 		"number.pow":                               {"int"},
 		"number.rotate-left":                       {"i64"},
@@ -3124,6 +3127,7 @@ func init() {
 		"fmt.fmt-apply-spec":                       {"str", "i64", "i64", "i64"},
 		"fmt.fmt-bool":                             {"bool", "str"},
 		"fmt.fmt-f64":                              {"f64", "str"},
+		"fmt.fmt-group-digits":                     {"str", "i64"},
 		"fmt.fmt-int":                              {"i64", "str"},
 		"fmt.fmt-parse-spec":                       {"str"},
 		"fmt.fmt-str":                              {"str", "str"},
@@ -3331,6 +3335,7 @@ func init() {
 		"number.abs":                               {"num"},
 		"number.arr-zero":                          {},
 		"number.char-to-str":                       {"i64"},
+		"number.div":                               {"int", "int"},
 		"number.even":                              {"int"},
 		"number.f32-to-f64":                        {"f32"},
 		"number.f64-to-f32":                        {"f64"},
@@ -3342,6 +3347,7 @@ func init() {
 		"number.lcm":                               {"int", "int"},
 		"number.max":                               {"[]num"},
 		"number.min":                               {"[]num"},
+		"number.mod":                               {"int", "int"},
 		"number.odd":                               {"int"},
 		"number.pow":                               {"int", "int"},
 		"number.rotate-left":                       {"i64", "i64"},

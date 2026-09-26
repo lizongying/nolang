@@ -7504,7 +7504,10 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 	switch {
 	case raw == "str":
 		fn = "fmt-str"
-	case raw == "f64" || raw == "float" || raw == "double":
+	// `f32` 在 MIR 以 double 承載（無獨立 f32 型別），所以也走 fmt-f64。
+	// 漏列會讓 `print('{g}')`（g 為 f32）撞上
+	// "unsupported construct ... format field type f32 not lowered"。
+	case raw == "f64" || raw == "f32" || raw == "float" || raw == "double":
 		fn = "fmt-f64"
 		// NOTE: `bool` deliberately does NOT go through std fmt-bool here.
 		// fmt-bool renders "true"/"false", but the legacy backend renders a
@@ -9100,7 +9103,7 @@ func (l *lowerer) scalarOrStrToStr(v ValueID, t *Type) ValueID {
 	switch {
 	case raw == "str":
 		return v
-	case raw == "f64" || raw == "float" || raw == "double":
+	case raw == "f64" || raw == "f32" || raw == "float" || raw == "double":
 		l.enqueueCallee("fmt-f64")
 		if d := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{v, l.b.EmitStr(OpConst, strT, "", "")}, "fmt-f64"); len(d) > 0 {
 			return d[0]

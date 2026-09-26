@@ -836,9 +836,14 @@ bigint.to-str = () (out str) {
     tmp.sign = 1
     buf [256]byte
     bufn = 0
-    !! {
+    (bufn < 256) {
 
-        tz = tmp.is-zero()
+        ; 注意：不可寫成 tmp.is-zero()。
+        ; 編譯器在「方法內對同型別區域變數呼叫方法」時，被呼叫方法體內的
+        ; 裸 `.` 會解析到「外層方法（to-str）的接收者」而非 tmp，
+        ; 導致 is-zero 永遠檢查錯誤的物件 → 迴圈不會在零值停住（bus error / 前導零）。
+        ; 因此這裡用顯式欄位存取來判斷 tmp 是否為零。
+        tz = tmp.len == 1 && tmp.limbs[0] == 0
         tz -> break
         d = mod-i64(tmp, 10)
 
@@ -847,7 +852,8 @@ bigint.to-str = () (out str) {
 
         #{overflow=wrap}
         bufn = bufn + 1
-        tmp = div-i64(tmp, 10)
+        next = div-i64(tmp, 10)
+        tmp = next
     }
 
     #{overflow=wrap}
