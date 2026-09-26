@@ -1,5 +1,18 @@
 # 更新日誌
 
+## v0.3.6
+
+- feat(mir): implement tagged enum payload ownership with phased design
+- fix(mir): complete phase 3 ownership for zero-match tagged enums
+- fix(mir): handle both OpMove encodings to fix silent double free
+- fix(mir): fix receiver write-back for set-byte on struct fields and elements
+- fix(mir,std): close the last ownership gaps; audit crypto/ for byte indexing
+- feat(mir): add Windows Winsock initialization support
+- fix(mir): skip the bare-name fallback for builtin names in resolveCallee
+- fix(checker): correct operandIntKind recursion for nested string concat chains
+- refactor(lang): remove `xNN` byte literal spelling from language
+- docs(design): record the resolveCallee guard and correct the mass-regression status
+
 ## v0.3.5
 
 - feat(mir): build the libc call spec table per target instead of at package init
