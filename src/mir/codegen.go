@@ -3113,6 +3113,29 @@ entry:
   ret void
 }
 `)
+	// POSIX entry points the Windows CRT never exports (mkfifo, kill, uname,
+	// ...) are routed to nolang.win_* by the registry's AltFuncs — but the
+	// definitions were left behind with the deleted legacy backend, so a
+	// -target windows build linked against symbols nobody provided. Append them
+	// for the TARGET, not the host (see builtin_win_shims.go).
+	if targetGOOS() == "windows" {
+		// The shims memset unconditionally (uname/hostid/flock buffers); unlike
+		// memcpy (declared above), memset has no prelude declaration, so route
+		// one through extDecls (deduped with the on-demand c.decl calls).
+		c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+		shims := windowsShimsIR()
+		// The shim block hard-codes the Win32 declarations it calls. Record them
+		// as emitted: the trailing extDeclOrder pass would otherwise repeat the
+		// identical line (LLVM rejects a duplicated declare with "invalid
+		// redefinition of function 'CloseHandle'", hit by readlink's own
+		// c.decl("declare i32 @CloseHandle(i64)").
+		for _, ln := range strings.Split(shims, "\n") {
+			if strings.HasPrefix(ln, "declare ") {
+				c.extDecls[strings.TrimSpace(ln)] = true
+			}
+		}
+		c.sb.WriteString(shims)
+	}
 }
 
 func (c *codegen) emitGlobals() {

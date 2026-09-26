@@ -1,6 +1,8 @@
 ; fmt — 格式化輸入輸出標準庫
 ;
-; printf/print/eprintf/eprint/sprintf 為編譯器內建（ForwardFunc）。
+; print/eprint/format/sprintf 為編譯器內建（ForwardFunc）。
+; ⚠️ printf/eprintf 已移除：名稱仍保留於符號表（呼叫仍可解析、LSP 仍可補全），
+;    但任何呼叫都是硬性編譯錯誤 [printf-depr]，引導遷移到 print/io.out 與 eprint/io.err。
 ; 本檔案提供純 Nolang 實現的格式化輔助函數，支援 Python format spec 子集：
 ;   fmt-parse-spec  — 解析規範字串
 ;   fmt-apply-spec  — 套用寬度/對齊/填充
@@ -31,17 +33,17 @@
 ; 全局函数 print / eprint / format 的声明已移至 global.no
 ; 以下为需要模块前缀的 fmt 模块函数
 
-; printf: 已廢棄，請改用 print（自動換行）或 io.out（不換行）
+; printf: 已移除（名稱保留供解析）——呼叫即編譯錯誤，請改用 print（自動換行）或 io.out（不換行）
 #{buildin}
 printf = (s str) {
 }
 
-; sprintf: 已廢棄，請改用 format
+; sprintf: 已廢棄但仍可用，請改用 format
 #{buildin}
 sprintf = (s str) (out str) {
 }
 
-; eprintf: 輸出格式化字串到標準錯誤（不換行），支援 {name:spec}
+; eprintf: 已移除（名稱保留供解析）——呼叫即編譯錯誤，請改用 eprint（自動換行）或 io.err（不換行）
 #{buildin}
 eprintf = (s str) {
 }

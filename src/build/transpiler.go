@@ -2778,6 +2778,13 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 	// backend cannot lower and would emit unsubstituted) are hard errors.
 	// Shipping silently-wrong output is the one outcome worse than refusing to
 	// compile, so these fatal lower diagnostics (kind "interp") stop the build.
+	//
+	// kind "deprecated" joins them: it is the backstop for a call to a REMOVED
+	// builtin (printf / eprintf) that reached lowering. The checker rejects
+	// those first (ValidateDeprecatedPrintf) with a better, source-located
+	// message, so this only fires if a call site somehow bypassed it — and
+	// exactly then it must refuse the build rather than emit a call whose
+	// target does not exist.
 	if d, ok := firstFatalLowerDiag(diags); ok {
 		// Surface the concrete lowering diagnostic (field name / type / shape),
 		// not just the generic bucket. A bare "unsupported construct" forces a
@@ -2838,7 +2845,11 @@ func (t *Transpiler) applyOptionInlineThreshold(mod *mir.Module) {
 
 func firstFatalLowerDiag(diags []mir.LowerDiag) (mir.LowerDiag, bool) {
 	for _, d := range diags {
-		if d.Kind == "interp" {
+		// "interp": a named-format shape the backend would emit unsubstituted.
+		// "deprecated": a call to a removed builtin (printf / eprintf) that got
+		//   past the checker — the call target does not exist, so the build must
+		//   stop instead of emitting it.
+		if d.Kind == "interp" || d.Kind == "deprecated" {
 			return d, true
 		}
 	}

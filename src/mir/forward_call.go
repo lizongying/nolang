@@ -357,6 +357,21 @@ func numCpuSpec() cCallSpec {
 	}
 }
 
+// ttynameSpec is `os.ttyname`. Windows has no ttyname(3); the prelude shim
+// nolang.win_ttyname answers via _isatty and returns "con:" (or NULL), and
+// cRetCStrToStr maps NULL to the empty string — the same contract as POSIX.
+func ttynameSpec() cCallSpec {
+	ff := "ttyname"
+	if targetGOOS() == "windows" {
+		ff = "nolang.win_ttyname"
+	}
+	return cCallSpec{
+		Func: ff,
+		Args: []cArgSpec{{Kind: cArgI32, From: 0}},
+		Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
+	}
+}
+
 // buildForwardCSpecs maps a ForwardFunc name to its C call. Adding a builtin is
 // now a data change, not a new emitter.
 //
@@ -382,13 +397,7 @@ func buildForwardCSpecs() map[string]cCallSpec {
 			Func: "getlogin",
 			Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
 		},
-		"ttyname": {
-			// ttyname(fd) -> char* (NULL when fd is not a tty). cRetCStrToStr maps
-			// NULL to the empty string, which is exactly the documented contract.
-			Func: "ttyname",
-			Args: []cArgSpec{{Kind: cArgI32, From: 0}},
-			Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
-		},
+		"ttyname": ttynameSpec(),
 		"mkdtemp": {
 			// mkdtemp(tmpl) -> (name, ok). Like mkstemp it rewrites the template
 			// buffer in place and returns the same pointer (NULL on failure), so
@@ -543,7 +552,6 @@ func forwardCSpecOf(ff string) *cCallSpec {
 // builtin pulled it in; naming the builtin at compile time is actionable.
 var windowsUnavailable = map[string]string{
 	"mkdtemp":       "no mkdtemp(3) in the Windows C runtime",
-	"ttyname":       "no ttyname(3) in the Windows C runtime",
 	"getdomainname": "no getdomainname(3) in the Windows C runtime",
 	"process-fork":  "no fork(2) on Windows",
 }

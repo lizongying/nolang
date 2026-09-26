@@ -58,7 +58,8 @@ with-cap-len = (cap i64, len i64) {
 ;     print('result={val}', 42, 'result={val}')
 ;   → 每个字串字面量**各自**是一个模板：{val} 从**调用点作用域**取值，
 ;     与同一调用里的其它参数无关。字面量不会去描述/消费后面的参数
-;     （不是 printf('%d', 42) 那样的替换）。
+;     （不是 C 风格的 printf('%d', 42) 那种替换 —— 且 printf/eprintf 本身已移除，
+;      调用即编译错误 [printf-depr]，请一律改用 print/eprint/format）。
 ;   非字面量参数（变量、表达式）按普通可变参数处理：空格分隔，整行末尾一个换行。
 ;     tmpl = '{val}'
 ;     print(tmpl)                 → {val}（变量是纯文字，不做替换）

@@ -1022,6 +1022,11 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 	// Deprecated `.len` property pass (drives + enforces the .len() migration).
 	results = append(results, ValidateDeprecatedLen(program)...)
 
+	// Removed print-family builtins (printf / eprintf). The names stay in the
+	// symbol table so a call still resolves; calling one is a hard error with a
+	// migration hint, instead of the backend's "unknown callee fmt-int".
+	results = append(results, ValidateDeprecatedPrintf(program)...)
+
 	// View (`&T`) placement rules: methods' result lists only, borrowing the
 	// receiver's own type.
 	results = append(results, ValidateViewTypes(program)...)

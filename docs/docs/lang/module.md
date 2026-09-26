@@ -105,9 +105,11 @@ print('a={val}', val)                      ; a=42 42
 
 `format(s)` 以及已廢棄的 `sprintf(s)` 仍只接受**單一格式字串**，沒有多參數形式。
 
-> `printf`、`eprintf`、`sprintf` 已**廢棄**，保留僅為向後兼容。替代關係如下：
-> - `printf(s)` → `io.out(s)`（無換行，標準輸出）
-> - `eprintf(s)` → `io.err(s)`（無換行，標準錯誤）
+> `printf`、`eprintf` 已**移除**：名字仍留在符號表中（呼叫仍能解析、編輯器仍能補全），
+> 但**任何呼叫都是硬性編譯錯誤**（`[printf-depr]`），訊息會直接引導遷移。`sprintf` 仍可用但已**廢棄**。
+> 替代關係如下：
+> - `printf(s)` → `print(s)`（自動換行）或 `io.out(s)`（無換行，標準輸出）
+> - `eprintf(s)` → `eprint(s)`（自動換行）或 `io.err(s)`（無換行，標準錯誤）
 > - `sprintf(s)` → `format(s)`（返回格式化字串）
 >
 > `io.out`/`io.err` 是底層命令，輸出**不換行**。由於模組調用必須加模組名，`io.err` 明確了模組前綴，不會與 Option 構造函數 `err()` 衝突；即使同名，模組前綴也能區分。

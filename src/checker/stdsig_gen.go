@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "2bb9143f9f1f0ffbcbc63e948570f22d3b7301f1a784092076732b967f4ca641"
+	embeddedStdSigKey = "4d9f9b447b8448e5be1305262156a9873e8bbc7ebcee6ae7f95def033f06788a"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -1994,6 +1994,8 @@ func init() {
 		"str-map.str-map.put":                              {"bool"},
 		"str-map.str-map.remove":                           {"bool"},
 		"str-map.str-map.str-eq":                           {"bool"},
+		"str-map.str-map.to-str":                           {"str"},
+		"str-map.to-str":                                   {"str"},
 		"str-set.add":                                      {"bool"},
 		"str-set.clear":                                    {},
 		"str-set.contains":                                 {"bool"},
@@ -4840,6 +4842,8 @@ func init() {
 		"str-map.str-map.put":                              {"str", "str"},
 		"str-map.str-map.remove":                           {"str"},
 		"str-map.str-map.str-eq":                           {"str", "str"},
+		"str-map.str-map.to-str":                           {},
+		"str-map.to-str":                                   {},
 		"str-set.add":                                      {"str"},
 		"str-set.clear":                                    {},
 		"str-set.contains":                                 {"str"},

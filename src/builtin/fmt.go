@@ -46,20 +46,22 @@ func init() {
 		ForwardFunc:  "format",
 	})
 
-	// ─── Deprecated (kept for backward compatibility; prefer print/eprint/format + io.out) ───
+	// ─── Removed (the name stays so a call still RESOLVES; calling it is a hard
+	// compile error [printf-depr] — see checker/deprecated_printf.go) ───
 
-	// printf: deprecated. Use print (auto-newline) or io.out (no newline) instead.
-	// Single format string only (no multi-argument form).
+	// printf: removed. Use print (auto-newline) or io.out (no newline) instead.
+	// The registration is kept ONLY so the symbol resolves and the LSP completes
+	// it; the MIR backend never implemented it.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "printf",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{},
-		Doc:          "Deprecated: use print (auto-newline) or io.out (no newline). Formatted print to stdout without newline.",
+		Doc:          "Removed: use print (auto-newline) or io.out (no newline). Calling this is a compile error.",
 		ForwardFunc:  "printf",
 	})
 
-	// sprintf: deprecated. Use format instead. Single format string only.
+	// sprintf: deprecated but WORKING. Use format instead. Single format string only.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "sprintf",
@@ -69,14 +71,14 @@ func init() {
 		ForwardFunc:  "sprintf",
 	})
 
-	// eprintf: deprecated. Use eprint (auto-newline) or io.err (no newline) instead.
-	// Single format string only (no multi-argument form).
+	// eprintf: removed. Use eprint (auto-newline) or io.err (no newline) instead.
+	// Kept for symbol resolution only, like printf.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "eprintf",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{},
-		Doc:          "Deprecated: use eprint (auto-newline) or io.err (no newline). Formatted print to stderr without newline.",
+		Doc:          "Removed: use eprint (auto-newline) or io.err (no newline). Calling this is a compile error.",
 		ForwardFunc:  "eprintf",
 	})
 }

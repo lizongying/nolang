@@ -1,0 +1,37 @@
+; format('plain') 必須合法 —— 回歸測試
+;
+; 使用者 2026-09-26 指定：`format` 接一個「不含 {field} 的純字面量」時，
+; 不能報 `EmitLLVM: unsupported builtin format`，必須直接回傳該字面量本身。
+;
+; 契約：
+;   1. `format('plain')` 輸出 `plain`（不進具名欄位路徑，原地回傳字面量）。
+;   2. `format('多字 純文字 無欄位')` 同樣原地回傳。
+;   3. 含欄位的寫法不受影響：`format('{x}')` 仍解析欄位。
+;   4. 非字面量參數（`format(format(...))` / `format(var)`）仍報
+;      `unsupported builtin format`，合約不變。
+;
+; 實作位於 src/mir/hir2mir.go 的 lowerNamedFormat：retStr 分支在
+; formatTemplateOf 失敗時，若引數仍能折疊成常數字串字面量，直接 emit 該字面量，
+; 而非落到 generic builtin emit（其 format 實作為 unsupported）。
+
+main = () {
+    ; 1. 純字面量，無欄位
+    s = format('plain')
+    (s == 'plain') -> print('PASS: 1 format plain literal returned verbatim')
+    -> print('FAIL: 1 got=[' - s - ']')
+
+    ; 2. 多字純文字，無欄位
+    t = format('多字 純文字 無欄位')
+    (t == '多字 純文字 無欄位') -> print('PASS: 2 multi-word plain literal')
+    -> print('FAIL: 2 got=[' - t - ']')
+
+    ; 3. 含欄位仍正常
+    x = 42
+    f = format('value={x}')
+    (f == 'value=42') -> print('PASS: 3 field form still resolves')
+    -> print('FAIL: 3 got=[' - f - ']')
+
+    ; 4. 非字面量仍報錯（此分支由 `no vet` / 編譯期把關，程式內不捕捉）
+    ;    `format(format('{x}'))` 應報 `unsupported builtin format`，不應靜默輸出。
+}
+main()

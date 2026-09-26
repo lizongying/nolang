@@ -2710,11 +2710,11 @@ print(tmpl)                                // {val} — a variable is plain text
 print('a={val}', val)                      // a=42 42
 ```
 
-`format(s)` — and the deprecated `printf(s)` / `eprintf(s)` / `sprintf(s)` — still accept a **single format string** only.
+`format(s)` — and the deprecated `sprintf(s)` — still accept a **single format string** only.
 
-> `printf`, `eprintf`, `sprintf` are **deprecated**, kept only for backward compatibility. Replacements:
-> - `printf(s)` → `io.out(s)` (no newline, stdout)
-> - `eprintf(s)` → `io.err(s)` (no newline, stderr)
+> `printf` and `eprintf` are **removed**: the names stay in the symbol table (a call still resolves and the editor still completes them), but **calling one is a hard compile error** (`[printf-depr]`) whose message names the migration directly. `sprintf` still works but is **deprecated**. Replacements:
+> - `printf(s)` → `print(s)` (auto-newline) or `io.out(s)` (no newline, stdout)
+> - `eprintf(s)` → `eprint(s)` (auto-newline) or `io.err(s)` (no newline, stderr)
 > - `sprintf(s)` → `format(s)` (returns formatted string)
 >
 > `io.out`/`io.err` are low-level commands that output **without a newline**. Since module calls must include the module prefix, `io.err` explicitly carries the module prefix and will not conflict with the Option constructor `err()`; even if names overlap, the module prefix disambiguates.

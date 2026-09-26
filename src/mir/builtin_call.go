@@ -121,6 +121,7 @@ var runtimeFns = map[string]bool{
 // bit: its mode argument is variadic.
 var variadicFixedArgs = map[string]int{
 	"open":     2, // open(const char*, int, ...)
+	"_open":    2, // _open(const char*, int, ...) — the Windows AltFunc spelling
 	"openat":   3, // openat(int, const char*, int, ...)
 	"fcntl":    2, // fcntl(int, int, ...)
 	"ioctl":    2, // ioctl(int, unsigned long, ...)
@@ -246,10 +247,14 @@ func (c *codegen) decl(line string) {
 	if c.extDecls[line] {
 		return
 	}
+	name := declFuncName(line)
 	// Runtime-provided functions are already declared in the prelude. The generic
 	// C-forwarder would re-declare them (possibly with a different signature), so
 	// skip to avoid LLVM "invalid redefinition of function 'X'".
-	if runtimeFns[declFuncName(line)] {
+	// nolang.win_* is the family of Windows shim DEFINITIONS emitted from the
+	// prelude (see emitWindowsShims): they are real defines, so a competing
+	// declare is at best redundant and at worst signature-conflicting.
+	if runtimeFns[name] || strings.HasPrefix(name, "nolang.win_") {
 		c.extDecls[line] = true
 		return
 	}
@@ -465,6 +470,31 @@ func (c *codegen) cstrOf(v ValueID) string {
 // CLibCall: the generic C call path
 // ---------------------------------------------------------------------------
 
+// clibResolve picks the C symbol name, parameter list and fixed-argument
+// literals for the COMPILATION TARGET. The registry records the POSIX default
+// plus per-GOOS overrides (CLibCall.AltFuncs / AltArgTypes / AltFixedArgs)
+// because the choice of symbol is a property of the platform the binary will
+// run on, not of the machine that builds it: a `-target x86_64-windows-gnu`
+// cross build must call _getcwd/win_mkfifo, not getcwd/mkfifo. The Alt* maps
+// REPLACE their default wholesale — a per-index merge would silently keep a
+// host value (or a host arity) for a slot the target variant forgot to list.
+func clibResolve(cl *builtin.CLibCall) (string, []builtin.LLVMArgType, map[int]string) {
+	fn := cl.FuncName
+	argTypes := cl.ArgTypes
+	fixed := cl.FixedArgs
+	goos := targetGOOS()
+	if alt, ok := cl.AltFuncs[goos]; ok && alt != "" {
+		fn = alt
+	}
+	if alt, ok := cl.AltArgTypes[goos]; ok {
+		argTypes = alt
+	}
+	if alt, ok := cl.AltFixedArgs[goos]; ok {
+		fixed = alt
+	}
+	return fn, argTypes, fixed
+}
+
 // emitBuiltinCLib lowers a call to a C library function described by a
 // builtin.CLibCall. It is the single highest-leverage builtin path: one
 // implementation covers every builtin that is "just a libc call with a type
@@ -481,7 +511,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 	if cl == nil || cl.FuncName == "" {
 		return fmt.Errorf("builtin %s: no CLibCall", inst.Sym)
 	}
-	fn := cl.FuncName
+	fn, clibArgs, fixedArgs := clibResolve(cl)
 
 	// RetBuf builtins (get-wd / host-name) write into a static 1024-byte
 	// scratch buffer owned by the module.
@@ -494,7 +524,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 	var argStrs []string
 	var frees []string // NUL-terminated temporaries to release after the call
 	ev := 0
-	for i, at := range cl.ArgTypes {
+	for i, at := range clibArgs {
 		lt := clibLLVMType(at)
 		declArgs = append(declArgs, lt)
 		switch {
@@ -502,7 +532,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			argStrs = append(argStrs, "i8* getelementptr inbounds ([1024 x i8], [1024 x i8]* @.mir-os-buf, i64 0, i64 0)")
 			continue
 		}
-		if fv, ok := cl.FixedArgs[i]; ok {
+		if fv, ok := fixedArgs[i]; ok {
 			argStrs = append(argStrs, lt+" "+fv)
 			continue
 		}
@@ -2425,15 +2455,21 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 	totalSize := fieldLen * 5
 	offsets := [5]int64{0, fieldLen, fieldLen * 2, fieldLen * 3, fieldLen * 4}
 
-	// declare i32 @uname(i8*)
-	c.decl("declare i32 @uname(i8*)")
+	// Windows has no uname(2): the prelude shim nolang.win_uname fills the same
+	// five-field layout (256 bytes each) from Win32 facts (see
+	// builtin_win_shims.go). The buffer geometry matches the shim exactly.
+	unameFn := "uname"
+	if targetGOOS() == "windows" {
+		unameFn = "nolang.win_uname"
+	}
+	c.decl(fmt.Sprintf("declare i32 @%s(i8*)", unameFn))
 
 	unBuf := c.treg("unbuf")
 	c.sb.WriteString(fmt.Sprintf("  %s = alloca [%d x i8]\n", unBuf, totalSize))
 	unBufPtr := c.treg("unbufp")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [%d x i8], [%d x i8]* %s, i64 0, i64 0\n", unBufPtr, totalSize, totalSize, unBuf))
 	unRet := c.treg("unret")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @uname(i8* %s)\n", unRet, unBufPtr))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @%s(i8* %s)\n", unRet, unameFn, unBufPtr))
 
 	for i := 0; i < 5; i++ {
 		fldGEP := c.treg("unfld")
@@ -3530,13 +3566,21 @@ func (c *codegen) emitBuiltinGetPriority(inst *Inst) error {
 		return err
 	}
 	efn := c.errnoFnName()
+	// Windows has no getpriority(2): the prelude shim nolang.win_getpriority
+	// maps GetPriorityClass to a nice value and reports failure through
+	// _errno, which is exactly the contract the errno-clear + errno==0 check
+	// below already implements.
+	gpFn := "getpriority"
+	if targetGOOS() == "windows" {
+		gpFn = "nolang.win_getpriority"
+	}
 	c.decl(fmt.Sprintf("declare i32* @%s()", efn))
-	c.decl("declare i32 @getpriority(i32, i32)")
+	c.decl(fmt.Sprintf("declare i32 @%s(i32, i32)", gpFn))
 	ePtr := c.treg("gp.err")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32* @%s()\n", ePtr, efn))
 	c.sb.WriteString(fmt.Sprintf("  store i32 0, i32* %s\n", ePtr))
 	ret := c.treg("gp.ret")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @getpriority(i32 %s, i32 %s)\n", ret, which, who))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @%s(i32 %s, i32 %s)\n", ret, gpFn, which, who))
 	ext := c.treg("gp.ext")
 	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, ret))
 	if err := c.storeResult(inst, 0, ext, "i64"); err != nil {
@@ -3790,17 +3834,17 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 			return fmt.Errorf("get-line: no result")
 		}
 	}
+	// The stdin FILE* is picked from the COMPILATION TARGET (targetGOOS), not
+	// the host — a darwin binary produced on a Linux runner must reference
+	// __stdinp or the link dies on undefined _stdin.
+	//   - Linux/glibc: the `stdin` data symbol (i8**)
+	//   - macOS/BSD:   `__stdinp` (i8**)
+	//   - Windows/UCRT: NO stdin data symbol at all — the CRT only exports the
+	//     accessor __acrt_iob_func(0) -> FILE* (see zig's bundled mingw
+	//     api-ms-win-crt-stdio def); a __stdinp reference dies in lld-link with
+	//     "undefined symbol: __stdinp".
 	c.decl("declare i8* @fgets(i8*, i32, i8*)")
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
-	// macOS/BSD use __stdinp (i8**); Linux/glibc use stdin (i8**). The symbol is
-	// picked from the COMPILATION TARGET (targetGOOS), not the host — a darwin
-	// binary produced on a Linux runner must reference __stdinp or the link
-	// dies on undefined _stdin.
-	stdinSym := "@__stdinp"
-	if targetGOOS() == "linux" {
-		stdinSym = "@stdin"
-	}
-	c.global(stdinSym + " = external global i8*")
 
 	// buf = malloc(4096); memset(buf, 0, 4096) so a NULL (EOF) read leaves a
 	// valid, zeroed buffer and the branchless strip below never touches
@@ -3809,7 +3853,17 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 4096)\n", buf))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 4096, i1 false)\n", buf))
 	stdinReg := c.treg("gl.stdin")
-	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", stdinReg, stdinSym))
+	if targetGOOS() == "windows" {
+		c.decl("declare i8* @__acrt_iob_func(i32)")
+		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @__acrt_iob_func(i32 0)\n", stdinReg))
+	} else {
+		stdinSym := "@__stdinp"
+		if targetGOOS() == "linux" {
+			stdinSym = "@stdin"
+		}
+		c.global(stdinSym + " = external global i8*")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", stdinReg, stdinSym))
+	}
 	fgetsReg := c.treg("gl.fgets")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @fgets(i8* %s, i32 4096, i8* %s)\n", fgetsReg, buf, stdinReg))
 	ok := c.treg("gl.ok")

@@ -16,7 +16,8 @@ print('id {id:06} amount {money:.2f}')  ; Supports align/fill/width/precision
 s = format('x={x}')            ; Returns formatted string (replaces sprintf)
 io.out('no-newline-here')      ; Low-level command, no newline (stdout)
 io.err('err-no-newline')       ; Low-level command, no newline (stderr)
-; printf/eprintf/sprintf are deprecated: printf→io.out, eprintf→io.err, sprintf→format
+; printf/eprintf are REMOVED (calling one is a compile error [printf-depr]): printf→print/io.out, eprintf→eprint/io.err
+; sprintf still works but is deprecated: sprintf→format
 ; io.err carries the module prefix and will not conflict with the Option constructor err()
 ```
 

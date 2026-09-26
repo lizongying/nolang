@@ -1229,20 +1229,20 @@ func (p *Parser) parseLetStatement() Statement {
 			// 从元素推断切片类型
 			elemValue := "i64"
 			if len(v.Elements) > 0 {
-			switch v.Elements[0].(type) {
-			case *IntegerLiteral:
-				elemValue = "i64"
-			case *FloatLiteral:
-				elemValue = "f64"
-			case *StringLiteral:
-				elemValue = "str"
-			case *BooleanLiteral:
-				elemValue = "bool"
-			case *CharLiteral:
-				elemValue = ValueTypeChar.String()
-			default:
-				elemValue = "i64"
-			}
+				switch v.Elements[0].(type) {
+				case *IntegerLiteral:
+					elemValue = "i64"
+				case *FloatLiteral:
+					elemValue = "f64"
+				case *StringLiteral:
+					elemValue = "str"
+				case *BooleanLiteral:
+					elemValue = "bool"
+				case *CharLiteral:
+					elemValue = ValueTypeChar.String()
+				default:
+					elemValue = "i64"
+				}
 			}
 			stmt.Type = &SliceType{
 				Token:      nameToken,
@@ -2356,10 +2356,11 @@ parseBody:
 	return stmt
 }
 
-// parseForRange 解析 <- 或 in 後的 range 表達式
+// parseForRange 解析 <- 或 in 後的 range 表達式。支持全部 16 種區間寫法：
+// 兩端都有值（[a..b] 等 4 種）、僅有下界（[a..] 等 4 種）、僅有上界
+// （[..b] 等 4 種）、完全無界（[..] 等 4 種）。左端 `[` 含、`(` 不含；右端
+// `]` 含、`)` 不含。省略的端點由 MIR 降低為類型最小/最大值。
 func (p *Parser) parseForRange(ir *IterationExpr) {
-	// 解析 range: [a..b], (a..b], [a..b), (a..b)
-	leftInc := false
 	// 字串遍歷: for i in 'abc'
 	if p.currentToken.Type == lexer.STRING {
 		ir.RangeStr = p.currentToken.Literal
@@ -2372,87 +2373,50 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 		return
 	}
 
-	if p.currentToken.Type == lexer.LBRACKET {
-		// Peek ahead: [a..b] = range, [1, 2, 3] = slice literal
+	switch p.currentToken.Type {
+	case lexer.LBRACKET:
+		// Peek ahead to tell a range ([a..b] / [..b] / [a..] / [..]) apart from an
+		// anonymous slice literal ([a, b] / [a]). Consume nothing permanently —
+		// restore before the real parse.
 		state := p.saveState()
 		p.nextToken() // skip [
-		p.parseExpression(LOWEST)
-
+		kind := 0     // 0 = unclassified, 1 = range, 2 = slice literal
 		if p.currentToken.Type == lexer.ELLIPSIS {
-			// Range: [a..b] — restore state, use existing range logic
-			p.restoreState(state)
-			leftInc = true
-			tok := p.currentToken
-			p.nextToken() // skip [
-
-			start := p.parseExpression(LOWEST)
-
-			// 拒絕浮點數區間邊界
-			if _, ok := start.(*FloatLiteral); ok {
-				msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-					p.currentToken.Line, p.currentToken.Column)
-				p.saveError(msg)
-				return
+			kind = 1 // [..b] / [..]: open lower bound
+		} else {
+			p.parseExpression(LOWEST)
+			switch p.currentToken.Type {
+			case lexer.ELLIPSIS:
+				kind = 1 // [a..b] / [a..]
+			case lexer.COMMA, lexer.RBRACKET:
+				kind = 2 // [a, b] / [a]
 			}
-
-			if p.currentToken.Type != lexer.ELLIPSIS {
-				msg := fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
-				return
-			}
-			p.nextToken() // skip ..
-
-			end := p.parseExpression(LOWEST)
-
-			// 拒絕浮點數區間邊界
-			if _, ok := end.(*FloatLiteral); ok {
-				msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-					p.currentToken.Line, p.currentToken.Column)
-				p.saveError(msg)
-				return
-			}
-
-			rightInc := false
-			if p.currentToken.Type == lexer.RBRACKET {
-				rightInc = true
-			} else if p.currentToken.Type == lexer.RPAREN {
-				rightInc = false
-			} else {
-				msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
-				return
-			}
-			p.nextToken() // skip ] or )
-
-			ir.Range = &RangeExpression{
-				Token:    tok,
-				Start:    start,
-				End:      end,
-				LeftInc:  leftInc,
-				RightInc: rightInc,
-			}
+		}
+		p.restoreState(state)
+		switch kind {
+		case 1:
+			tok := p.currentToken // [
+			p.nextToken()         // skip [
+			p.parseRangeBody(ir, tok, true)
 			return
-		} else if p.currentToken.Type == lexer.COMMA || p.currentToken.Type == lexer.RBRACKET {
+		case 2:
 			// 匿名切片: [1, 2, 3]
-			p.restoreState(state)
 			sliceExpr := p.parseSliceLiteral()
 			if sliceLit, ok := sliceExpr.(*SliceLiteral); ok {
 				ir.RangeExpr = sliceLit
-				return
 			}
 			return
-		} else {
-			p.restoreState(state)
-			msg := fmt.Sprintf("line %d, column %d: expected '..' for range or ','/'}' for slice, got %s instead",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
+		default:
+			p.saveError(fmt.Sprintf("line %d, column %d: expected '..' for range or ','/']' for slice, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
 			return
 		}
-	} else if p.currentToken.Type == lexer.LPAREN {
-		leftInc = false
-	} else if p.currentToken.Type == lexer.IDENT {
+	case lexer.LPAREN:
+		tok := p.currentToken // (
+		p.nextToken()         // skip (
+		p.parseRangeBody(ir, tok, false)
+		return
+	case lexer.IDENT:
 		// 陣列/切片遍歷: for i in a, for i in a[1..3], for i in a[0]
 		// 使用 parseExpression 處理後綴操作（索引/切片/方法呼叫等），
 		// 並 push CTX_FOR_COND 防止 { 被當作 struct literal 消耗。
@@ -2463,56 +2427,60 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 			ir.RangeExpr = expr
 		}
 		return
-	} else {
-		msg := fmt.Sprintf("line %d, column %d: expected '[' or '(' or string in range expression, got %s instead",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
+	default:
+		p.saveError(fmt.Sprintf("line %d, column %d: expected '[' or '(' or string in range expression, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
 		return
 	}
-	tok := p.currentToken
-	p.nextToken() // skip [ or (
+}
 
-	start := p.parseExpression(LOWEST)
-
-	// 拒絕浮點數區間邊界
-	if _, ok := start.(*FloatLiteral); ok {
-		msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-			p.currentToken.Line, p.currentToken.Column)
-		p.saveError(msg)
-		return
-	}
-
+// parseRangeBody parses the interior of a for-range interval AFTER the opening
+// bracket (`[` or `(`) has been consumed, with EITHER bound optional:
+//
+//	start .. end closing   |   .. end closing   |   start .. closing   |   .. closing
+//
+// `leftInc` reflects the already-consumed opening bracket. currentToken must be
+// the first token inside the brackets. On success ir.Range is set and
+// currentToken is left on the token following the closing bracket; on a syntax
+// error the error is recorded and ir.Range is left nil.
+func (p *Parser) parseRangeBody(ir *IterationExpr, tok lexer.Token, leftInc bool) {
+	var start, end Expression
+	// Optional lower bound: absent iff the first token inside is `..`.
 	if p.currentToken.Type != lexer.ELLIPSIS {
-		msg := fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
-		return
+		start = p.parseExpression(LOWEST)
+		if _, ok := start.(*FloatLiteral); ok {
+			p.saveError(fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
+				p.currentToken.Line, p.currentToken.Column))
+			return
+		}
+		if p.currentToken.Type != lexer.ELLIPSIS {
+			p.saveError(fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			return
+		}
 	}
 	p.nextToken() // skip ..
-
-	end := p.parseExpression(LOWEST)
-
-	// 拒絕浮點數區間邊界
-	if _, ok := end.(*FloatLiteral); ok {
-		msg := fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-			p.currentToken.Line, p.currentToken.Column)
-		p.saveError(msg)
-		return
+	// Optional upper bound: absent iff a closing bracket immediately follows `..`.
+	if p.currentToken.Type != lexer.RBRACKET && p.currentToken.Type != lexer.RPAREN {
+		end = p.parseExpression(LOWEST)
+		if _, ok := end.(*FloatLiteral); ok {
+			p.saveError(fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
+				p.currentToken.Line, p.currentToken.Column))
+			return
+		}
 	}
-
 	rightInc := false
-	if p.currentToken.Type == lexer.RBRACKET {
+	switch p.currentToken.Type {
+	case lexer.RBRACKET:
 		rightInc = true
-	} else if p.currentToken.Type == lexer.RPAREN {
+	case lexer.RPAREN:
 		rightInc = false
-	} else {
-		msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
+	default:
+		p.saveError(fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
 		return
 	}
 	p.nextToken() // skip ] or )
-
 	ir.Range = &RangeExpression{
 		Token:    tok,
 		Start:    start,

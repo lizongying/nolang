@@ -16,7 +16,8 @@ print('編號 {id:06} 金額 {money:.2f}')  ; 支援對齊/填充/寬度/精度
 s = format('x={x}')            ; 返回格式化字串（替代 sprintf）
 io.out('no-newline-here')      ; 底層命令，輸出不換行（stdout）
 io.err('err-no-newline')       ; 底層命令，輸出不換行（stderr）
-; printf/eprintf/sprintf 已廢棄：printf→io.out、eprintf→io.err、sprintf→format
+; printf/eprintf 已移除（呼叫即編譯錯誤 [printf-depr]）：printf→print/io.out、eprintf→eprint/io.err
+; sprintf 仍可用但已廢棄：sprintf→format
 ; io.err 明確模組前綴，不會與 Option 構造函數 err() 衝突
 ```
 

@@ -1,8 +1,6 @@
 package builtin
 
 import (
-	"runtime"
-
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -26,35 +24,31 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Set the value of an environment variable",
-		CLibCall:     &CLibCall{FuncName: "setenv", ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, FixedArgs: map[int]string{2: "1"}},
+		// POSIX setenv(name, value, overwrite) has no Windows twin; UCRT's
+		// _putenv_s(name, value) takes two args (overwrite is dropped — nolang
+		// always overwrites) and shares the 0-on-success convention, so CmpRet
+		// carries over unchanged.
+		CLibCall: &CLibCall{FuncName: "setenv", AltFuncs: altWin("_putenv_s"), AltArgTypes: map[string][]LLVMArgType{"windows": {LLVMStrPtr, LLVMStrPtr}}, AltFixedArgs: map[string]map[int]string{"windows": {}}, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, FixedArgs: map[int]string{2: "1"}},
 	})
 
 	// get-wd: get current working directory (uses @.os-buf)
-	getcwdFn := "getcwd"
-	if runtime.GOOS == "windows" {
-		getcwdFn = "_getcwd"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "get-wd",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeStr},
 		Doc:          "Get the current working directory",
-		CLibCall:     &CLibCall{FuncName: getcwdFn, ArgTypes: []LLVMArgType{LLVMI8Ptr, LLVMI64}, RetType: LLVMI8Ptr, RetBuf: true, BufGlobal: "@.os-buf", FixedArgs: map[int]string{1: "1024"}},
+		CLibCall:     &CLibCall{FuncName: "getcwd", AltFuncs: altWin("_getcwd"), ArgTypes: []LLVMArgType{LLVMI8Ptr, LLVMI64}, RetType: LLVMI8Ptr, RetBuf: true, BufGlobal: "@.os-buf", FixedArgs: map[int]string{1: "1024"}},
 	})
 
 	// ch-dir: change current working directory
-	chdirFn := "chdir"
-	if runtime.GOOS == "windows" {
-		chdirFn = "_chdir"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "ch-dir",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Change the current working directory",
-		CLibCall:     &CLibCall{FuncName: chdirFn, ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+		CLibCall:     &CLibCall{FuncName: "chdir", AltFuncs: altWin("_chdir"), ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// exit: exit the process with status code
@@ -98,45 +92,33 @@ func init() {
 	})
 
 	// mkdir: create a directory
-	mkdirFn := "mkdir"
-	if runtime.GOOS == "windows" {
-		mkdirFn = "_mkdir"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "mkdir",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a directory with the given mode",
-		CLibCall:     &CLibCall{FuncName: mkdirFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "mkdir", AltFuncs: altWin("_mkdir"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
 	})
 
 	// ch-mod: change file permissions
-	chmodFn := "chmod"
-	if runtime.GOOS == "windows" {
-		chmodFn = "_chmod"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "ch-mod",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Change file permissions with the given mode",
-		CLibCall:     &CLibCall{FuncName: chmodFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "chmod", AltFuncs: altWin("_chmod"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
 	})
 
 	// remove: remove a file
-	unlinkFn := "unlink"
-	if runtime.GOOS == "windows" {
-		unlinkFn = "_unlink"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "remove",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Remove (unlink) a file",
-		CLibCall:     &CLibCall{FuncName: unlinkFn, ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+		CLibCall:     &CLibCall{FuncName: "unlink", AltFuncs: altWin("_unlink"), ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// rename: rename a file
@@ -150,31 +132,23 @@ func init() {
 	})
 
 	// symlink: create a symbolic link
-	symlinkFn := "symlink"
-	if runtime.GOOS == "windows" {
-		symlinkFn = "nolang.win_symlink"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "symlink",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a symbolic link (target, linkpath). Returns true on success",
-		CLibCall:     &CLibCall{FuncName: symlinkFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+		CLibCall:     &CLibCall{FuncName: "symlink", AltFuncs: altWin("nolang.win_symlink"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// link: create a hard link
-	linkFn := "link"
-	if runtime.GOOS == "windows" {
-		linkFn = "nolang.win_link"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "link",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a hard link (oldpath, newpath). Returns true on success",
-		CLibCall:     &CLibCall{FuncName: linkFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+		CLibCall:     &CLibCall{FuncName: "link", AltFuncs: altWin("nolang.win_link"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// is-file: check if path is a regular file
@@ -198,34 +172,29 @@ func init() {
 	})
 
 	// open-read: open a file for reading
-	openFn := "open"
-	if runtime.GOOS == "windows" {
-		openFn = "_open"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "open-read",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeFd},
 		Doc:          "Open a file for reading, returns file descriptor",
-		CLibCall:     &CLibCall{FuncName: openFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "0", 2: "0"}},
+		CLibCall:     &CLibCall{FuncName: "open", AltFuncs: altWin("_open"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: "0", 2: "0"}},
 	})
 
 	// open-write: open a file for writing
-	openWriteFlagVal := "1537" // macOS default: O_WRONLY|O_CREAT|O_TRUNC
-	if runtime.GOOS == "linux" {
-		openWriteFlagVal = "577"
-	} else if runtime.GOOS == "windows" {
-		// Windows _O_WRONLY(1) | _O_CREAT(256) | _O_TRUNC(512) = 769
-		openWriteFlagVal = "769"
-	}
+	//
+	// The flag literal is O_WRONLY|O_CREAT|O_TRUNC, whose bits are NOT portable:
+	// 1537 on macOS, 577 on Linux, 769 on Windows (see a CRT's fcntl.h). The
+	// default is the macOS value; AltFixedArgs swaps the whole map per target.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "open-write",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeFd},
 		Doc:          "Open a file for writing, returns file descriptor",
-		CLibCall:     &CLibCall{FuncName: openFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, FixedArgs: map[int]string{1: openWriteFlagVal, 2: "420"}},
+		CLibCall: &CLibCall{FuncName: "open", AltFuncs: altWin("_open"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type,
+			FixedArgs:    map[int]string{1: "1537", 2: "420"},
+			AltFixedArgs: map[string]map[int]string{"linux": {1: "577", 2: "420"}, "windows": {1: "769", 2: "420"}}},
 	})
 
 	// open-file: open a file with custom flags and mode
@@ -235,51 +204,39 @@ func init() {
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeFd},
 		Doc:          "Open a file with given flags and mode, returns file descriptor",
-		CLibCall:     &CLibCall{FuncName: openFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "open", AltFuncs: altWin("_open"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
 	})
 
 	// close: close a file descriptor
-	closeFn := "close"
-	if runtime.GOOS == "windows" {
-		closeFn = "_close"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "close",
 		Params:       []parser.Type{parser.TypeFd},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Close a file descriptor",
-		CLibCall:     &CLibCall{FuncName: closeFn, ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "close", AltFuncs: altWin("_close"), ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI32, RetExt: &i64Type, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
 	// read: read from a file descriptor into buf
 	// Uses StrDataArg to pass the buf's data pointer directly to C read(),
 	// so data is written into the caller's buffer (not a global @.os-buf).
-	readFn := "read"
-	if runtime.GOOS == "windows" {
-		readFn = "_read"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "read",
-	Params:       []parser.Type{parser.TypeFd, &parser.SliceType{Elem: parser.TypeByte}, parser.TypeI64},
-	Return:       []parser.Type{parser.TypeI64},
-	Doc:          "Read n bytes from a file descriptor into buf ([]byte)",
-		CLibCall:     &CLibCall{FuncName: readFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},
+		Params:       []parser.Type{parser.TypeFd, &parser.SliceType{Elem: parser.TypeByte}, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Read n bytes from a file descriptor into buf ([]byte)",
+		CLibCall:     &CLibCall{FuncName: "read", AltFuncs: altWin("_read"), ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},
 	})
 
 	// write: write to a file descriptor
-	writeFn := "write"
-	if runtime.GOOS == "windows" {
-		writeFn = "_write"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "write",
-	Params:       []parser.Type{parser.TypeFd, &parser.SliceType{Elem: parser.TypeByte}, parser.TypeI64},
-	Return:       []parser.Type{parser.TypeI64},
-	Doc:          "Write n bytes ([]byte) to a file descriptor",
-		CLibCall:     &CLibCall{FuncName: writeFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},
+		Params:       []parser.Type{parser.TypeFd, &parser.SliceType{Elem: parser.TypeByte}, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "Write n bytes ([]byte) to a file descriptor",
+		CLibCall:     &CLibCall{FuncName: "write", AltFuncs: altWin("_write"), ArgTypes: []LLVMArgType{LLVMI32, LLVMI8Ptr, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}, StrDataArg: map[int]bool{1: true}},
 	})
 
 	// now: get current Unix timestamp (uses internal @nolang.now_s, replaces libc @time)
@@ -386,45 +343,33 @@ func init() {
 	})
 
 	// chown: change file owner and group
-	chownFn := "chown"
-	if runtime.GOOS == "windows" {
-		chownFn = "nolang.win_chown"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "chown",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Change file owner and group (uid, gid)",
-		CLibCall:     &CLibCall{FuncName: chownFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "chown", AltFuncs: altWin("nolang.win_chown"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32, 2: LLVMI32}},
 	})
 
 	// getuid: get current user ID
-	getuidFn := "getuid"
-	if runtime.GOOS == "windows" {
-		getuidFn = "nolang.win_getuid"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "getuid",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Get the current user ID",
-		CLibCall:     &CLibCall{FuncName: getuidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "getuid", AltFuncs: altWin("nolang.win_getuid"), ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
 	// getgid: get current group ID
-	getgidFn := "getgid"
-	if runtime.GOOS == "windows" {
-		getgidFn = "nolang.win_getgid"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "getgid",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Get the current group ID",
-		CLibCall:     &CLibCall{FuncName: getgidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "getgid", AltFuncs: altWin("nolang.win_getgid"), ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
 	// is-dir: check if path is a directory
@@ -666,17 +611,13 @@ func init() {
 
 	// mkfifo: create a named pipe (POSIX mkfifo(3))
 	// Returns ok bool.
-	mkfifoFn := "mkfifo"
-	if runtime.GOOS == "windows" {
-		mkfifoFn = "nolang.win_mkfifo"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "mkfifo",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a named pipe (FIFO). Returns true on success",
-		CLibCall:     &CLibCall{FuncName: mkfifoFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "mkfifo", AltFuncs: altWin("nolang.win_mkfifo"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
 	})
 
 	// utime: set file access and modification times (POSIX utimes(2))
@@ -692,47 +633,35 @@ func init() {
 
 	// rmdir: remove empty directory (POSIX rmdir(2))
 	// Returns ok bool.
-	rmdirFn := "rmdir"
-	if runtime.GOOS == "windows" {
-		rmdirFn = "_rmdir"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "rmdir",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Remove an empty directory. Returns true on success",
-		CLibCall:     &CLibCall{FuncName: rmdirFn, ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+		CLibCall:     &CLibCall{FuncName: "rmdir", AltFuncs: altWin("_rmdir"), ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// mknod: create special file (POSIX mknod(2))
 	// Returns ok bool. Not supported on Windows.
-	mknodFn := "mknod"
-	if runtime.GOOS == "windows" {
-		mknodFn = "nolang.win_mknod"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "mknod",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Create a special file (FIFO, device node). Returns true on success",
-		CLibCall:     &CLibCall{FuncName: mknodFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI64}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "mknod", AltFuncs: altWin("nolang.win_mknod"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI32, LLVMI64}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{1: LLVMI32}},
 	})
 
 	// truncate: truncate/extend file to specified length (POSIX truncate(2))
 	// Returns ok bool.
-	truncateFn := "truncate"
-	if runtime.GOOS == "windows" {
-		truncateFn = "nolang.win_truncate"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "truncate",
 		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Truncate or extend a file to the given length. Returns true on success",
-		CLibCall:     &CLibCall{FuncName: truncateFn, ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI64}, RetType: LLVMI32, CmpRet: true},
+		CLibCall:     &CLibCall{FuncName: "truncate", AltFuncs: altWin("nolang.win_truncate"), ArgTypes: []LLVMArgType{LLVMStrPtr, LLVMI64}, RetType: LLVMI32, CmpRet: true},
 	})
 
 	// sync: flush filesystem buffers to disk (POSIX sync(2))
@@ -758,31 +687,23 @@ func init() {
 	})
 
 	// geteuid: get effective user ID (POSIX geteuid(2))
-	geteuidFn := "geteuid"
-	if runtime.GOOS == "windows" {
-		geteuidFn = "nolang.win_getuid" // Windows: reuse getuid stub (returns 0)
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "geteuid",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Get the effective user ID",
-		CLibCall:     &CLibCall{FuncName: geteuidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "geteuid", AltFuncs: altWin("nolang.win_getuid"), ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
 	// getegid: get effective group ID (POSIX getegid(2))
-	getegidFn := "getegid"
-	if runtime.GOOS == "windows" {
-		getegidFn = "nolang.win_getgid" // Windows: reuse getgid stub (returns 0)
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "getegid",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Get the effective group ID",
-		CLibCall:     &CLibCall{FuncName: getegidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "getegid", AltFuncs: altWin("nolang.win_getgid"), ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
 	// getgroups: get supplementary group IDs (POSIX getgroups(2))
@@ -829,33 +750,29 @@ func init() {
 	})
 
 	// signal: set signal handler (simplified: SIG_DFL=0, SIG_IGN=1)
-	// Returns previous handler value (i64)
-	signalFn := "signal"
-	if runtime.GOOS == "windows" {
-		signalFn = "nolang.win_signal"
-	}
+	// Returns previous handler value (i64). mingw/CRTs export `signal` and the
+	// x64 ABI passes handler pointers in registers regardless of the IR type,
+	// so the generic i64-shaped declaration links on Windows too.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "signal",
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Set signal handler (0=SIG_DFL, 1=SIG_IGN). Returns previous handler value",
-		CLibCall:     &CLibCall{FuncName: signalFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "signal", ArgTypes: []LLVMArgType{LLVMI32, LLVMI64}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
 	// ttyname: get terminal name (POSIX ttyname(3))
-	// Returns name str (empty on failure or if fd is not a tty)
-	ttynameFn := "ttyname"
-	if runtime.GOOS == "windows" {
-		ttynameFn = "nolang.win_ttyname"
-	}
+	// Returns name str (empty on failure or if fd is not a tty). The Windows
+	// target has no ttyname(3); MIR lowers it through _isatty + "con:" (see
+	// emitBuiltinForward "ttyname"), so the registry stays on the POSIX name.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "ttyname",
 		Params:       []parser.Type{parser.TypeFd},
 		Return:       []parser.Type{parser.TypeStr},
 		Doc:          "Get terminal name for a file descriptor. Returns empty string if not a tty",
-		ForwardFunc:  ttynameFn,
+		ForwardFunc:  "ttyname",
 	})
 
 	// ═══════════════════════════════════════════════
@@ -875,32 +792,24 @@ func init() {
 
 	// get-host-id: get host identifier (POSIX gethostid(3))
 	// Returns i64 id.
-	gethostidFn := "gethostid"
-	if runtime.GOOS == "windows" {
-		gethostidFn = "nolang.win_gethostid"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "get-host-id",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Get the host identifier (32-bit integer)",
-		CLibCall:     &CLibCall{FuncName: gethostidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "gethostid", AltFuncs: altWin("nolang.win_gethostid"), ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
 	// set-priority: set process priority (POSIX setpriority(2))
 	// Returns ok bool.
-	setpriorityFn := "setpriority"
-	if runtime.GOOS == "windows" {
-		setpriorityFn = "nolang.win_setpriority"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "set-priority",
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Set process priority (which, who, prio). Returns true on success",
-		CLibCall:     &CLibCall{FuncName: setpriorityFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32, 2: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "setpriority", AltFuncs: altWin("nolang.win_setpriority"), ArgTypes: []LLVMArgType{LLVMI32, LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32, 2: LLVMI32}},
 	})
 
 	// get-priority: get process priority (POSIX getpriority(2))
@@ -916,32 +825,24 @@ func init() {
 
 	// set-sid: create new session (POSIX setsid(2))
 	// Returns pid i64 (>0 on success, -1 on failure).
-	setsidFn := "setsid"
-	if runtime.GOOS == "windows" {
-		setsidFn = "nolang.win_setsid"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "set-sid",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Create a new session and detach from controlling terminal. Returns new pgid or -1",
-		CLibCall:     &CLibCall{FuncName: setsidFn, ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "setsid", AltFuncs: altWin("nolang.win_setsid"), ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
 	// flock: apply advisory lock on fd (POSIX flock(2))
 	// Returns ok bool.
-	flockFn := "flock"
-	if runtime.GOOS == "windows" {
-		flockFn = "nolang.win_flock"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "flock",
 		Params:       []parser.Type{parser.TypeFd, parser.TypeI64},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Apply or release an advisory lock on a file descriptor. Returns true on success",
-		CLibCall:     &CLibCall{FuncName: flockFn, ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "flock", AltFuncs: altWin("nolang.win_flock"), ArgTypes: []LLVMArgType{LLVMI32, LLVMI32}, RetType: LLVMI32, CmpRet: true, TruncArgs: map[int]LLVMArgType{0: LLVMI32, 1: LLVMI32}},
 	})
 
 	// sysctl: query system control parameter (reads string value)
@@ -979,16 +880,12 @@ func init() {
 
 	// chroot: change root directory (POSIX chroot(2))
 	// Returns ok bool. Not supported on Windows.
-	chrootFn := "chroot"
-	if runtime.GOOS == "windows" {
-		chrootFn = "nolang.win_chroot"
-	}
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "chroot",
 		Params:       []parser.Type{parser.TypeStr},
 		Return:       []parser.Type{parser.TypeBool},
 		Doc:          "Change root directory to the given path. Returns true on success",
-		CLibCall:     &CLibCall{FuncName: chrootFn, ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
+		CLibCall:     &CLibCall{FuncName: "chroot", AltFuncs: altWin("nolang.win_chroot"), ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI32, CmpRet: true},
 	})
 }

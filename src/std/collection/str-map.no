@@ -223,3 +223,22 @@ str-map.for-each = () (k str, v str) {
         }
     }
 }
+
+; to-str: 字串表示
+; 格式如 `{name: Alice, age: 18}`
+str-map.to-str = () (out str) {
+    out = '{'
+    first = true
+    i <- [0...cap): {
+        .occ[i] == 1 -> {
+            first -> {
+                out = out - .keys[i] - ': ' - .vals[i]
+                first = false
+            }
+            -> {
+                out = out - ', ' - .keys[i] - ': ' - .vals[i]
+            }
+        }
+    }
+    out = out - '}'
+}

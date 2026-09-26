@@ -1,0 +1,105 @@
+; Regression: all 16 for-range interval notations must parse and lower.
+; Bounded forms iterate fully; open forms run "to the type extreme", so a break
+; guard keeps them terminating while still pinning the FIRST value (which proves
+; the inclusivity of the omitted bracket and the i64.MIN/i64.MAX defaulting).
+
+sum i64 = 0
+cnt i64 = 0
+first i64 = 0
+
+; --- bounded (both ends present): exact inclusive sums ---
+sum = 0
+#{overflow = wrap}
+i <- [1..4]: { sum = sum + i }
+print('[1..4]', sum)          ; 1+2+3+4 = 10
+sum = 0
+#{overflow = wrap}
+i <- [1..4): { sum = sum + i }
+print('[1..4)', sum)          ; 1+2+3   = 6
+sum = 0
+#{overflow = wrap}
+i <- (1..4]: { sum = sum + i }
+print('(1..4]', sum)          ; 2+3+4   = 9
+sum = 0
+#{overflow = wrap}
+i <- (1..4): { sum = sum + i }
+print('(1..4)', sum)          ; 2+3     = 5
+
+; --- open upper: iterate from a, "up to type max" (break-guarded) ---
+cnt = 0
+first = 0
+#{overflow = wrap}
+i <- [7..]: {
+    if cnt == 0 { first = i }
+    cnt = cnt + 1
+    if cnt >= 3 { break }
+}
+print('[7..]', first, cnt)     ; first=7 (left inclusive)
+cnt = 0
+first = 0
+#{overflow = wrap}
+i <- (7..]: {
+    if cnt == 0 { first = i }
+    cnt = cnt + 1
+    if cnt >= 3 { break }
+}
+print('(7..]', first, cnt)     ; first=8 (left exclusive)
+
+; --- open lower: "from type min", break-guarded; first pins the default ---
+cnt = 0
+first = 0
+#{overflow = wrap}
+i <- [..3]: {
+    if cnt == 0 { first = i }
+    cnt = cnt + 1
+    if cnt >= 2 { break }
+}
+print('[..3]', first, cnt)     ; first=i64.MIN (left inclusive)
+cnt = 0
+first = 0
+#{overflow = wrap}
+i <- (..3]: {
+    if cnt == 0 { first = i }
+    cnt = cnt + 1
+    if cnt >= 2 { break }
+}
+print('(..3]', first, cnt)     ; first=i64.MIN+1 (left exclusive)
+
+; --- fully unbounded: whole i64 space, break-guarded ---
+cnt = 0
+first = 0
+#{overflow = wrap}
+i <- [..]: {
+    if cnt == 0 { first = i }
+    cnt = cnt + 1
+    if cnt >= 2 { break }
+}
+print('[..]', first, cnt)      ; [MIN,MAX] 闭区间：first=i64.MIN（含最小）
+cnt = 0
+first = 0
+#{overflow = wrap}
+i <- (..): {
+    if cnt == 0 { first = i }
+    cnt = cnt + 1
+    if cnt >= 2 { break }
+}
+print('(..)', first, cnt)      ; (MIN,MAX) 开区间：first=i64.MIN+1（不含最小，也不含最大）
+
+; --- descending still works (bounded, reverse) ---
+sum = 0
+#{overflow = wrap}
+i <- [4..1): { sum = sum + i }
+print('[4..1)', sum)           ; 4+3+2 = 9
+
+; --- endpoint inclusivity proven on a REACHABLE (descending) bound ---
+; The right bracket governs the END bound in every direction; `(..` defaults the
+; end to i64.MAX, so `)` excludes that maximum exactly as it excludes 1 here.
+; Together with the `(..)`/`[..]` first-values above this locks "(..) 不含最大最小".
+sum = 0
+#{overflow = wrap}
+i <- [3..1]: { sum = sum + i }
+print('[3..1]', sum)           ; 3+2+1 = 6  （']' 含右端点）
+sum = 0
+#{overflow = wrap}
+i <- [3..1): { sum = sum + i }
+print('[3..1)', sum)           ; 3+2   = 5  （')' 不含右端点 = 排除上界）

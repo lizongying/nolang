@@ -21,7 +21,7 @@ Nolang 的内建函数（builtin）是由编译器直接生成 LLVM IR 的函数
 src/builtin/
 ├── builtin.go      # BuiltinMethod 结构体定义 + FindBuiltinMethod()
 ├── os.go            # fs/os 相关 builtin（read-file, write-file, open-read, etc.）
-├── fmt.go           # print, eprint, format, printf, sprintf, eprintf
+├── fmt.go           # print, eprint, format, sprintf（+ 已移除但仍註冊的 printf, eprintf）
 ├── math.go          # max, min, abs, clamp
 ├── math_f64.go      # sqrt, sin, cos, log, pow, etc.
 ├── str.go           # with-cap, with-len, with-cap-len
@@ -56,11 +56,14 @@ print(tmpl)                                ; {val} —— 变量是纯文字，�
 - codegen：`print`/`println` 在 `src/mir/codegen.go` 的 `emitCall`（`callee == "print"` 分支）；
   `eprint` 在 `emitBuiltinEprint`
 - `format` / `sprintf` 仍是**单一格式字串**，没有多参数形式
-- ⚠️ **既有 bug（未修，2026-09-26 实测）**：`printf` / `eprintf` 在当前 MIR 后端**无法编译**——
-  带栏位时报 `unknown callee fmt-int in func main`，无栏位时报 `unsupported builtin printf`。
-  根因线索：printf/eprintf 分支里的 `enqueueCallee("fmt-int")` 没有生效；只要同一编译单元中
-  先出现一次 `print('{x}')`（它会成功 enqueue fmt-int），`printf('x={x}')` 就能正常输出。
-  两文件 `print`/`eprint`/`format`/`sprintf` 均正常，只有 printf/eprintf 受影响。
+- ✅ **`printf` / `eprintf` 已移除（2026-09-26）**：名字仍註冊在符號表（呼叫仍能解析、LSP 仍可補全），
+  但**呼叫即硬性編譯錯誤** `[printf-depr]`，訊息引導遷移到 `print`/`io.out` 與 `eprint`/`io.err`。
+  兩層實作：checker `ValidateDeprecatedPrintf`（`src/checker/deprecated_printf.go`，掛在 `ValidateTypes`）
+  ＝主要關卡；MIR `lowerNamedFormat` 內的 `removedPrintfHint(base)` 分支＝backstop（mir 不能 import
+  checker，訊息文字**刻意重複**，改一處要改兩處）。
+  （歷史：移除前 printf 分支的 `enqueueCallee("fmt-int")` 未生效 → 帶欄位報 `unknown callee fmt-int`、
+  無欄位報 `unsupported builtin printf`。這兩條後端內部訊息已被上述清晰錯誤取代。）
+- 两文件 `print`/`eprint`/`format`/`sprintf` 均正常，只有 printf/eprintf 受影响。
 - 语法侧（`{name:spec}` 说明符、`{{`/`}}` 转义）见 skill `nolang-syntax` 的 Output/Formatting
 
 ### 3. BuiltinMethod 结构体

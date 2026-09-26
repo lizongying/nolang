@@ -1,0 +1,8 @@
+// probe for windows cross-compile: set-env + get-line must lower without
+// referencing POSIX-only symbols (setenv/__stdinp)
+main = () {
+    ok = os.set-env('PROBE', '1')
+    print('set-env ok: ', ok)
+    line, rok = fs.get-line()
+    print('get-line rok: ', rok)
+}

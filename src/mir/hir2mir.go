@@ -1504,6 +1504,28 @@ func (l *lowerer) inferredTypeOf(n *hir.Node) TypeID {
 	return l.b.Type(raw)
 }
 
+// userFuncBody reports whether name resolves to a function DEFINED by the
+// program with a non-empty body. The `#{buildin}` stubs kept in std/fmt.no
+// for the removed printf/eprintf parse to a KFuncDef whose body block has no
+// children, so an empty body means "this name is the builtin stub", and only
+// a real body marks a user function the generic call path can emit.
+func (l *lowerer) userFuncBody(name string) bool {
+	id, ok := l.funcNames[name]
+	if !ok {
+		return false
+	}
+	n := l.pkg.Node(id)
+	if n == nil || n.Kind != hir.KFuncDef {
+		return false
+	}
+	bodyID := l.slot(id, "body")
+	if bodyID == hir.NoID {
+		return false
+	}
+	b := l.pkg.Node(bodyID)
+	return b != nil && b.First != hir.NoID
+}
+
 func (l *lowerer) unsupported(funcName, kind, msg string) {
 	l.diags = append(l.diags, LowerDiag{Func: funcName, Kind: kind, Msg: msg})
 }
@@ -3604,20 +3626,31 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 			l.unsupported(l.curFuncName(), "for-range", "unsupported iter form")
 			return
 		}
-		startID := l.slot(rangeNodeID, "start")
-		endID := l.slot(rangeNodeID, "end")
-		if startID == hir.NoID || endID == hir.NoID {
-			l.unsupported(l.curFuncName(), "for-range", "open range not supported")
-			return
-		}
-		startV := l.lowerExpr(startID)
-		endV := l.lowerExpr(endID)
-		if startV == NoVal || endV == NoVal {
-			return
-		}
 		leftInc := rn.Has(hir.FlagLeftInc)   // '[' -> start inclusive
 		rightInc := rn.Has(hir.FlagRightInc) // ']' -> end inclusive
 		elemT := l.b.Type("i64")
+		// A for-range bound may be omitted (open interval): `[a..]` runs up to the
+		// type maximum, `[..b]` starts from the type minimum, `[..]` spans the whole
+		// type. tohir stores only present bounds as named slots, so an absent bound
+		// has no slot; materialise it as the i64 extreme (loop element type is
+		// always i64). Exclusivity of an OMITTED bracket is meaningless at the
+		// extreme and is still applied by the shared exclOff / `<=` logic below.
+		startID := l.slot(rangeNodeID, "start")
+		endID := l.slot(rangeNodeID, "end")
+		var startV, endV ValueID
+		if startID != hir.NoID {
+			startV = l.lowerExpr(startID)
+		} else {
+			startV = l.b.EmitInt(OpConst, elemT, math.MinInt64, "")
+		}
+		if endID != hir.NoID {
+			endV = l.lowerExpr(endID)
+		} else {
+			endV = l.b.EmitInt(OpConst, elemT, math.MaxInt64, "")
+		}
+		if startV == NoVal || endV == NoVal {
+			return
+		}
 		// Allocate the loop variable as a local with its own alloca slot. Using
 		// b.Param would mint a value id WITHOUT a slot (params are only slotted
 		// when registered into f.Params, which loop vars are not) -> the init
@@ -6733,6 +6766,23 @@ func isPrintFamilyCallee(callee string) bool {
 	return ok
 }
 
+// removedPrintfHint is the migration hint for the removed print-family builtins
+// printf / eprintf, used by the lowering backstop in lowerNamedFormat.
+//
+// ⚠️ Keep the wording in sync with checker.removedPrintfBuiltins — that map is
+// the PRIMARY gate (it runs first and produces the nice source-located error);
+// this copy only fires if a call site somehow reaches lowering without passing
+// the checker. mir cannot import checker (layering), hence the duplication.
+func removedPrintfHint(name string) string {
+	switch name {
+	case "printf":
+		return "printf() is removed; use print(...) for stdout with a newline, or io.out(...) for stdout without one"
+	case "eprintf":
+		return "eprintf() is removed; use eprint(...) for stderr with a newline, or io.err(...) for stderr without one"
+	}
+	return name + "() is removed"
+}
+
 // formatStringHasField reports whether `s` really is a named-format string,
 // i.e. it parses as one AND carries at least one {name} / {name:spec} field.
 // The cheap `Contains` pre-tests matter: an ordinary brace-bearing literal
@@ -6937,6 +6987,30 @@ func (l *lowerer) lowerNamedFormat(callee string, n *hir.Node, recvV ValueID) (b
 	if !ok {
 		return false, NoVal
 	}
+	// printf / eprintf are REMOVED. The names stay in the symbol table so the
+	// call still resolves, but calling one is rejected by the checker
+	// (ValidateDeprecatedPrintf) with a migration hint — this is the backstop
+	// for a call site that reached lowering anyway. It must refuse here rather
+	// than fall through to the generic path, whose diagnostics name neither the
+	// builtin nor the fix ("unknown callee fmt-int in func main" for a field
+	// argument, "unsupported builtin printf" for a plain one). Note it sits
+	// BEFORE the zero-argument early return: `printf()` is still a call.
+	//
+	// The one shape that must NOT be caught: a program that DEFINES its own
+	// printf (notools/src/printf.no implements POSIX printf(1)). A qualified
+	// call `printf.printf()` passes the checker (only bare printf / fmt.printf
+	// are deprecated names) but the `#`-use merge collapses it to the bare
+	// callee "printf" by lowering time. funcNames is the exact table the
+	// generic path will use to emit the call, so deferring to it keeps the
+	// backstop aimed at the removed builtin — the stub in std/fmt.no has an
+	// EMPTY body, a user function never does.
+	if base == "printf" || base == "eprintf" {
+		if l.userFuncBody(callee) {
+			return false, NoVal
+		}
+		l.unsupported(l.curFuncName(), "deprecated", removedPrintfHint(base))
+		return true, NoVal
+	}
 	args := l.slotArgs(n.Id, "arg")
 	if len(args) == 0 {
 		// `print()` / `eprint()` — nothing to substitute.
@@ -6947,21 +7021,21 @@ func (l *lowerer) lowerNamedFormat(callee string, n *hir.Node, recvV ValueID) (b
 	if k.retStr {
 		s, segs, ok := l.formatTemplateOf(args[0])
 		if !ok {
+			// Not a named-format TEMPLATE. If the argument is still a
+			// compile-time string literal (e.g. `format('plain')`), it is a
+			// legal call that simply returns itself — emit the literal verbatim
+			// instead of falling through to the generic path, whose builtin
+			// emit for `format` is unsupported. A genuinely non-literal argument
+			// (`format(var)` / `format(format(...))`) keeps reporting the
+			// unsupported-builtin diagnostic.
+			if lit, _, lok := l.foldStrConcat(args[0]); lok {
+				strT := l.b.Type("str")
+				return true, l.b.EmitStr(OpConst, strT, lit, "")
+			}
 			return false, NoVal
 		}
 		// format()/sprintf() CONCATENATE the segments into one str result.
 		return l.lowerNamedFormatResult(segs, s)
-	}
-	// printf/eprintf are the deprecated no-newline stream writers: this
-	// interception IS their only implementation (there is no generic codegen
-	// path for them), and they are documented as taking a single format string.
-	// Keep their historical single-argument behaviour exactly.
-	if base == "printf" || base == "eprintf" {
-		_, segs, ok := l.formatTemplateOf(args[0])
-		if !ok {
-			return false, NoVal
-		}
-		return l.lowerNamedFormatStream(k, segs)
 	}
 	// print / eprint.
 	if len(args) == 1 {
@@ -7152,6 +7226,17 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 			v = uv
 			if ty := l.mod.Type(l.valueTypeOf(v)); ty != nil && ty.Kind == KindStr {
 				v = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{v}, "")
+			}
+		}
+	}
+	// Aggregates (struct / map / slice / array) auto-stringify through to-str,
+	// exactly like print(). This lifts the legacy "format field type ... not
+	// lowered" refusal for slice/struct.
+	if ty := l.mod.Type(l.valueTypeOf(v)); ty != nil {
+		switch ty.Kind {
+		case KindStruct, KindMap, KindSlice, KindArray:
+			if sv := l.valueToStr(v); sv != NoVal {
+				return sv, true
 			}
 		}
 	}
@@ -8343,22 +8428,232 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 // print fails with "print unsupported arg type %vec"
 // (tests/slice-heavy.no). Scalar types (including `str`, whose Kind is
 // KindStr rather than KindSlice) are returned untouched.
+// printableValue renders a container-typed print-family argument through its
+// receiver's `to-str` method, mirroring the legacy backend (which lowers
+// `print(v)` / `print(a[0..2])` to a `[]t.to-str` call).
+//
+// Without it the argument reaches codegen as a raw `%vec` / fixed array and
+// print fails with "print unsupported arg type %vec"
+// (tests/slice-heavy.no). Scalar types (including `str`, whose Kind is
+// KindStr rather than KindSlice) are returned untouched.
+//
+// Structs and maps are now also supported: print(struct) / print(map) auto-
+// stringify through valueToStr — a user-defined `<Type>.to-str` when present,
+// otherwise the compiler default (a `{field: value, ...}` dump for structs,
+// a `{key: value, ...}` dump for str-maps). This is the `to-str` auto-execution
+// the language promises for arr / vec / map / struct.
 func (l *lowerer) printableValue(v ValueID) ValueID {
 	if v == NoVal {
 		return v
 	}
 	t := l.valueTypeOf(v)
 	ty := l.mod.Type(t)
-	if ty == nil || (ty.Kind != KindSlice && ty.Kind != KindArray) {
+	if ty == nil {
 		return v
 	}
-	if callee := l.toStrCalleeFor(ty); callee != "" {
-		l.enqueueCallee(callee)
-		if dsts := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(dsts) > 0 {
-			return dsts[0]
+	switch ty.Kind {
+	case KindStruct, KindMap:
+		return l.valueToStr(v)
+	case KindSlice, KindArray:
+		if callee := l.toStrCalleeFor(ty); callee != "" {
+			l.enqueueCallee(callee)
+			if dsts := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(dsts) > 0 {
+				return dsts[0]
+			}
 		}
+		return v
 	}
 	return v
+}
+
+// valueToStr renders ANY value as a `%str-long` by auto-executing its `to-str`
+// (or, for structs/maps without one, the compiler default). It is the single
+// choke point that makes print / format / eprint auto-stringify every
+// aggregate type (arr, vec, map, struct).
+//
+// Dispatch order:
+//   - option  -> peel the payload, then recurse on it
+//   - str     -> already a string, return as-is
+//   - struct  -> `<Type>.to-str` if defined, else a `{field: value, ...}` dump
+//   - map     -> `<[k]v>.to-str` if defined, else a `{...}` dump for str-maps
+//   - slice/array -> the generic `[]t.to-str` / `[n]t.to-str` (already works)
+//   - scalar  -> the matching fmt-* helper (fmt-int / fmt-f64 / fmt-str)
+func (l *lowerer) valueToStr(v ValueID) ValueID {
+	if v == NoVal {
+		return v
+	}
+	t := l.valueTypeOf(v)
+	ty := l.mod.Type(t)
+	if ty == nil {
+		return v
+	}
+	if ty.Kind == KindOption {
+		if uv := l.unwrapOptionOperand(v); uv != NoVal && uv != v {
+			v = uv
+			ty = l.mod.Type(l.valueTypeOf(v))
+			if ty == nil {
+				return v
+			}
+		}
+	}
+	switch ty.Kind {
+	case KindStr:
+		return v
+	case KindSlice, KindArray:
+		if callee := l.toStrCalleeFor(ty); callee != "" {
+			l.enqueueCallee(callee)
+			if d := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(d) > 0 {
+				return d[0]
+			}
+		}
+		return l.b.EmitStr(OpConst, l.b.Type("str"), "<"+ty.Raw+">", "")
+	case KindMap:
+		if callee := l.mapToStrCalleeFor(ty); callee != "" {
+			l.enqueueCallee(callee)
+			if d := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(d) > 0 {
+				return d[0]
+			}
+		}
+		if fs, _ := l.structFieldsOf(ty.Raw); fs != nil {
+			return l.structFieldsToStr(v, ty)
+		}
+		return l.b.EmitStr(OpConst, l.b.Type("str"), "<map>", "")
+	case KindStruct:
+		if callee := l.structToStrCalleeFor(ty); callee != "" {
+			l.enqueueCallee(callee)
+			if d := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{v}, callee); len(d) > 0 {
+				return d[0]
+			}
+		}
+		return l.structFieldsToStr(v, ty)
+	default:
+		return l.scalarOrStrToStr(v, ty)
+	}
+}
+
+// structToStrCalleeFor returns the user-defined `<Type>.to-str` callee for a
+// struct receiver, or "" when none exists (valueToStr then falls back to the
+// compiler-default field dump). The qualified-type fallback mirrors
+// lowerDotField: a local binding may only know the bare type name (`point`)
+// while the method is registered under its module-qualified key.
+func (l *lowerer) structToStrCalleeFor(ty *Type) string {
+	_, qual := l.structFieldsOf(ty.Raw)
+	cands := []string{ty.Raw + ".to-str", qual + ".to-str"}
+	for _, c := range cands {
+		if _, ok := l.funcNames[c]; ok {
+			return c
+		}
+	}
+	return ""
+}
+
+// mapToStrCalleeFor returns the `<[k]v>.to-str` callee for a built-in map
+// receiver, or "" when none exists. str-maps are laid out as structs
+// (KindStruct) and handled by structToStrCalleeFor / structFieldsToStr.
+func (l *lowerer) mapToStrCalleeFor(ty *Type) string {
+	raw := strings.TrimPrefix(ty.Raw, "?")
+	if strings.HasPrefix(raw, "[") {
+		if idx := strings.IndexByte(raw, ']'); idx > 0 {
+			inner := raw[1:idx] + raw[idx+1:] // "K V"
+			mangled := "_" + strings.ReplaceAll(inner, " ", "_x") + ".to-str"
+			for _, c := range []string{mangled, "[k]v.to-str"} {
+				if _, ok := l.funcNames[c]; ok {
+					return c
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// structFieldsOf resolves the ordered FieldInfo slice for a struct raw-type
+// name, applying the same qualified-name fallback as lowerDotField.
+func (l *lowerer) structFieldsOf(raw string) ([]FieldInfo, string) {
+	if fs, ok := l.mod.StructFields[raw]; ok {
+		return fs, raw
+	}
+	for k, fs := range l.mod.StructFields {
+		if k == raw || strings.HasSuffix(k, "."+raw) {
+			return fs, k
+		}
+	}
+	return nil, raw
+}
+
+// structFieldsToStr renders a struct value as `{name: value, name2: value2}`.
+// Each field value is recursively stringified through valueToStr so nested
+// aggregates (structs, slices, str-maps) render correctly. Owned string fields
+// are cloned before concatenation so the dump does not free the struct's own
+// field storage.
+func (l *lowerer) structFieldsToStr(v ValueID, ty *Type) ValueID {
+	strT := l.b.Type("str")
+	fields, _ := l.structFieldsOf(ty.Raw)
+	if fields == nil {
+		return l.b.EmitStr(OpConst, strT, "<"+ty.Raw+">", "")
+	}
+	cur := l.b.EmitStr(OpConst, strT, "{", "")
+	for i, f := range fields {
+		nameSeg := l.b.EmitStr(OpConst, strT, f.Name+": ", "")
+		cur = l.concatStr(cur, nameSeg)
+		fv := l.b.Emit(OpGetField, l.b.Type(f.TypeRaw), []ValueID{v}, "")
+		l.mod.Insts[len(l.mod.Insts)-1].Str = f.Name
+		if ft := l.mod.Type(l.b.Type(f.TypeRaw)); ft != nil && ft.Kind == KindStr {
+			fv = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{fv}, "")
+		}
+		cur = l.concatStr(cur, l.valueToStr(fv))
+		if i < len(fields)-1 {
+			cur = l.concatStr(cur, l.b.EmitStr(OpConst, strT, ", ", ""))
+		}
+	}
+	return l.concatStr(cur, l.b.EmitStr(OpConst, strT, "}", ""))
+}
+
+// concatStr concatenates two `%str-long` values via the synthetic $str_concat
+// helper used elsewhere by the named-format lowering.
+func (l *lowerer) concatStr(a, b ValueID) ValueID {
+	if a == NoVal || b == NoVal {
+		return a
+	}
+	d := l.b.EmitCallMulti([]TypeID{l.b.Type("str")}, []ValueID{a, b}, "$str_concat")
+	if len(d) > 0 {
+		return d[0]
+	}
+	return a
+}
+
+// scalarOrStrToStr renders a scalar (or str) value as a `%str-long` via the
+// matching fmt-* helper, mirroring lowerFormatField's scalar dispatch.
+func (l *lowerer) scalarOrStrToStr(v ValueID, t *Type) ValueID {
+	if v == NoVal || t == nil {
+		return v
+	}
+	strT := l.b.Type("str")
+	raw := strings.TrimPrefix(t.Raw, "?")
+	switch {
+	case raw == "str":
+		return v
+	case raw == "f64" || raw == "float" || raw == "double":
+		l.enqueueCallee("fmt-f64")
+		if d := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{v, l.b.EmitStr(OpConst, strT, "", "")}, "fmt-f64"); len(d) > 0 {
+			return d[0]
+		}
+		return v
+	case isIntegerMIRType(raw):
+		l.enqueueCallee("fmt-int")
+		argV := v
+		i64T := l.b.Type("i64")
+		if l.valueTypeOf(v) != i64T {
+			if lt := l.mod.Type(l.valueTypeOf(v)); lt != nil && isIntegerMIRType(lt.Raw) && lt.Raw != "i64" {
+				argV = l.b.Emit(OpCast, i64T, []ValueID{v}, "")
+			}
+		}
+		if d := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{argV, l.b.EmitStr(OpConst, strT, "", "")}, "fmt-int"); len(d) > 0 {
+			return d[0]
+		}
+		return v
+	default:
+		return v
+	}
 }
 
 // toStrCalleeFor returns the `to-str` callee registered for a slice/array
