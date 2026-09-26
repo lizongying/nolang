@@ -42,6 +42,24 @@ main()
 }
 main()
 `
+	// 巢狀拼接鏈（第二輪缺陷，2026-09-25）：`-` 左結合 ⇒ 外層 `-` 的左運算元
+	// 是一個 InfixExpression，先前掉到尾部「保守視為有號整數」；只要右運算元
+	// 的型別 lint 無從得知（此處 s 來自 format()，declared 表沒有它），
+	// 兩側就都被判為整數 → 誤報。修法是讓 operandIntKind 遞迴進 InfixExpression。
+	const chainConcat = `main = () {
+    s = format('{x}')
+    print('A=[' - s - '] B=[' - s - ']')
+}
+main()
+`
+	// 同一個缺陷的 txt 版本：宣告為 txt 的變數參與「鏈」的右側。
+	const txtChainConcat = `main = () {
+    t txt = 'a'
+    u txt = 'b'
+    print('A=' - t - ' B=' - u - '!')
+}
+main()
+`
 	lintCount := func(src string) int {
 		p := parser.New(lexer.New(src))
 		prog := p.ParseProgram()
@@ -53,6 +71,8 @@ main()
 	for _, c := range []struct{ name, src string }{
 		{"literalConcat", literalConcat},
 		{"txtVarConcat", txtVarConcat},
+		{"chainConcat", chainConcat},
+		{"txtChainConcat", txtChainConcat},
 	} {
 		if got := lintCount(c.src); got != 0 {
 			t.Errorf("%s: 字串拼接被誤報 %d 次（應為 0）", c.name, got)
@@ -60,5 +80,18 @@ main()
 	}
 	if got := lintCount(control); got == 0 {
 		t.Errorf("control: 未處理的 `x - 1` 未被報告 —— 走查可能已失效，本測試失去鑑別力")
+	}
+	// 鑑別力對照組（鏈）：把拼接換成真正的整數相減鏈，必須**照樣被報告**，
+	// 否則「0 報告」可能只是「遞迴讓整條走查靜音」造成的假通過。
+	const chainControl = `main = () {
+    x i64 = 100
+    y i64 = 7
+    z i64 = 3
+    print(x - y - z)
+}
+main()
+`
+	if got := lintCount(chainControl); got == 0 {
+		t.Errorf("chainControl: 整數相減鏈未被報告 —— 遞迴可能讓走查靜音，本測試失去鑑別力")
 	}
 }

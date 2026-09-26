@@ -3054,6 +3054,24 @@ func operandIntKind(e parser.Expression, declared map[string]string) string {
 			}
 		}
 		return ""
+	case *parser.InfixExpression:
+		// 巢狀的字串拼接鏈。`-` 是左結合，所以
+		//     'A=[' - s - '] B=[' - s - ']'
+		// 會被解析成 (((('A=' - s) - '] B=[') - s) - ']')；除了最內層以外，
+		// 每個 `-` 的**左運算元本身就是一個 InfixExpression**。先前它掉到尾部
+		// 「呼叫 / 索引 / 成員等：保守視為有號整數」，於是只要右運算元的型別
+		// 無法解析（例如來自 `format(...)` / `.to-str()` 這類 lint 無從得知
+		// 回傳型別的呼叫），兩側就都被判為「有號整數」⇒ 整條字串拼接鏈被
+		// 誤報為整數溢出（實測：`tests/print-int-named-format.no:69`）。
+		//
+		// 遞迴求值：任一侧確定為非整數，這個子表達式就不是整數算術，
+		// 因此外層也不該提示。注意「兩側皆為整數」時仍回 "signed"（而非
+		// 依運算子推導 unsigned），以完全保留既有報告行為 —— 只有
+		// 「確定非整數」這一種情形會改變結果。
+		if operandIntKind(x.Left, declared) == "" || operandIntKind(x.Right, declared) == "" {
+			return ""
+		}
+		return "signed"
 	}
 	if id, ok := e.(*parser.Identifier); ok {
 		t, ok := declared[id.Value]

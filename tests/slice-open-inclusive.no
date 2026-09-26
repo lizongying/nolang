@@ -1,0 +1,44 @@
+; slice-open-inclusive test
+; cd src && go run ./cmd/cli/. build ../tests/slice-open-inclusive.no
+; ../dist/slice-open-inclusive
+;
+; 鎖定「無界上界 + 右閉 `]`」的語義：`x[a..]` 與 `x[a..)` 都必須是「從 a 到結尾」，
+; 長度相同；`x[..]` 必須等於容器總長。修復前 vec/arr 的 `[a..]`、`[..]` 會多算
+; 一個元素（`[..]` 在 5 元素 vec 上得到 6，讀取越界）。str/txt 因 utf8_off 會夾取
+; 到結尾而未顯現，但包含性旗標現在對四種型別都一致。
+
+v = [10, 20, 30, 40, 50]
+a [5] = [10, 20, 30, 40, 50]
+s = 'HelloWorld'
+t txt = 'HelloWorld'
+
+; vec：到結尾，包含 = 排除 = 從 a 到末尾（4 個元素）
+print(v[1..].len())
+print(v[1..).len())
+print(v(1..].len())
+print(v(1..).len())
+print(v[..].len())
+print(v[..).len())
+
+; arr：同上
+print(a[1..].len())
+print(a[1..).len())
+print(a(..].len())
+print(a[..].len())
+
+; str：到結尾（9 個碼點），全切片 10
+print(s[1..].len())
+print(s[1..).len())
+print(s[..].len())
+
+; txt：與 str 逐字一致
+print(t[1..].len())
+print(t[1..).len())
+print(t[..].len())
+
+; 實際元素：v[1..] 必為 20,30,40,50（不再多讀一個殭屍元素）
+w = v[1..]
+print(w[0], w[1], w[2], w[3])
+
+; 顯式右閉仍舊 +1（未被此修復影響）：v[1..4] = 20,30,40,50（4 個）
+print(v[1..4].len())

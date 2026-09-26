@@ -1,0 +1,41 @@
+; txt-slice test
+; cd src && go run ./cmd/cli/. build ../tests/txt-slice.no
+; ../dist/txt-slice
+;
+; txt 原始切片語法 t[a..b]。txt 索引是「碼點」語義（與 str 一致），
+; 切片結果仍是 txt，內容必須與 str 逐字一致。此檔在 txt 切片支援前無法編譯。
+
+t txt = 'HelloWorld'
+
+; 邊界開合 + 無界上界：全部 16 種區間寫法的長度
+print(t[..].len())
+print(t[1..].len())
+print(t[1..).len())
+print(t(1..].len())
+print(t(1..).len())
+print(t[..4].len())
+print(t[..4).len())
+print(t(..4].len())
+print(t(1..4].len())
+print(t(1..4).len())
+
+; 內容檢查（`]` 為右閉，含端點）
+; t[..5]  -> 'HelloW'（碼點 0..5）  t[5..] -> 'World'  t[1..4] -> 'ello'
+print(t[..5])
+print(t[5..])
+print(t[1..4])
+
+; 無界上界的包含性必須等於排除性（都表示「到結尾」）
+; 修復前 [1..] 會多算一個元素（越界讀取）
+t2 txt = 'abcde'
+print(t2[1..].len())
+print(t2[1..).len())
+print(t2[..].len())
+
+; 多字节码点：切片按下标为码点（非字节），结果必与 str 逐字一致
+; 'héllo世界' = h é l l o 世 界 （7 个码点）
+m txt = 'héllo世界'
+print(m.len())
+print(m[1..3])
+print(m[5..])
+print(m(0..2))

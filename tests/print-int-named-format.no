@@ -1,0 +1,83 @@
+; print(1) 與 print('{x}') —— 回歸測試
+;
+; 使用者 2026-09-25 指定的契約（兩點都必須成立）：
+;   1. `print(1)` 必須支援 —— 整數直接印出，不需要任何包裝。
+;   2. `print(format('{x}'))` 可以直接寫成 `print('{x}')`。
+;
+; 這兩個行為其實一直都能用；本檔把它們**釘住**，理由是舊筆記曾誤記為
+; 「print 整數不輸出，要包 format」——那個錯誤結論來自一個被 `;` 註解吃掉的
+; 陳述（`x = 1; print(x)` 只執行前半），並非編譯器限制。詳見
+; skill `nolang-compiler-change` 的「`;` is a LINE COMMENT」一節。
+;
+; 原本沒有任何測試斷言 `print('{x}')` 與 `print(format('{x}'))` **等價**：
+;   tests/multi-print.no:15  只覆蓋 print(<int 變數>)
+;   tests/bytes.no:15        只覆蓋 print(<int 字面量>)
+;   tests/named-format.no:12 只覆蓋 print('x={x}')
+; 本檔補上「同一個值、兩種寫法必須產生相同輸出」這個關係。
+;
+; ⚠️ format/print 的具名欄位在**呼叫點**解析，被引用的變數必須先宣告，
+;    否則編譯期報 `interp: unresolved format field x`。故每段都先宣告再格式化。
+
+main = () {
+
+    ; ─────────────────────────────────────────────
+    ; 1. 整數字面量：直接 print（不經 format）
+    ; ─────────────────────────────────────────────
+    print(1)
+
+    ; ─────────────────────────────────────────────
+    ; 2. 整數變數：直接 print
+    ; ─────────────────────────────────────────────
+    x = 42
+    print(x)
+
+    ; ─────────────────────────────────────────────
+    ; 3. 整數運算式：直接 print
+    ;    `print(1 + 2)` 編譯與執行都正常（編譯器把呼叫引數位置視為「已處理」該
+    ;    option）。此處的 #{overflow = wrap} 只是為了讓 `no vet` 乾淨：vet 的
+    ;    ovf-int-default lint 未模型化這個豁免，會對這一行誤報 ERROR
+    ;    （實測 `no build` rc=0、`no run` 輸出 3，但 `no vet` 報 1 個 ERROR）。
+    ; ─────────────────────────────────────────────
+    #{overflow = wrap}
+    print(1 + 2)
+
+    ; ─────────────────────────────────────────────
+    ; 4. 具名欄位：短寫法與長寫法必須等價
+    ;    下面兩行在 golden 指紋中必須是兩個相同的 42。
+    ; ─────────────────────────────────────────────
+    print('{x}')
+    print(format('{x}'))
+
+    ; 同一個值，用 format 做程式內斷言
+    direct = format('{x}')
+    (direct == '42') -> print('PASS: 4a format-field resolves to 42')
+    -> print('FAIL: 4a format-field value=[' - direct - ']')
+
+    ; 內嵌在文字中（欄位在呼叫點解析）
+    ; ⚠️ 具名格式的攔截**只認單一字串字面量**：把 '{x}' 拿去跟別的字串 `-` 串接
+    ;    會走 generic 路徑並報 `interp: string interpolation not lowered: {x}`。
+    ;    所以整段（含文字）必須寫成同一個字面量。
+    inlined = format('value={x}')
+    (inlined == 'value=42') -> print('PASS: 4b field inside literal text')
+    -> print('FAIL: 4b inlined=[' - inlined - ']')
+
+    ; ─────────────────────────────────────────────
+    ; 5. 欄位解析結果 == 該值的直接字串化
+    ;    ⚠️ print 的輸出無法在程式內捕捉，且 format 的參數**必須是字面量**
+    ;       （`format(format(...))` 會報 `unsupported builtin format`），
+    ;       所以「兩種 print 寫法輸出相同」這一半由 golden 指紋把關：
+    ;       上面第 4 段的兩行 print 必須是兩個相同的 42。
+    ; ─────────────────────────────────────────────
+    short = format('{x}')
+    plain = x.to-str()
+    (short == plain) -> print('PASS: 5 named field == x.to-str()')
+    -> print('FAIL: 5 short=[' - short - '] plain=[' - plain - ']')
+
+    ; ─────────────────────────────────────────────
+    ; 6. {{ }} 轉義仍能印出字面大括號（不可被欄位解析吃掉）
+    ; ─────────────────────────────────────────────
+    literal = format('literal {{x}} and field {x}')
+    (literal == 'literal {x} and field 42') -> print('PASS: 6 brace escaping preserved')
+    -> print('FAIL: 6 literal=[' - literal - ']')
+}
+main()

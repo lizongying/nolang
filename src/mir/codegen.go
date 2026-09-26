@@ -8397,6 +8397,13 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 2\n", rdata, recvLT, rv))
 		srcPtr = rdata
 		stride, strideOp = 1, "1"
+	case recvLT == "%txt":
+		// txt is the fixed inline { [255 x i8] data, i8 len } buffer: its data
+		// pointer is field 0's address and its length is the i8 len field widened
+		// to i64; stride is 1 byte. Like str, slicing a txt is CODE-POINT
+		// indexed, handled by the utf8_off conversion below.
+		srcPtr, _, rlen = c.txtHeaderOfSlot(recvSlot)
+		stride, strideOp = 1, "1"
 	case isFixedArray:
 		// Fixed array [N x E]: length is the compile-time size N; the data
 		// pointer is the address of element 0.
@@ -8466,7 +8473,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	// (`str.slice` clamps start>=end to the empty string); it is supported for the
 	// array/vec case, where the conversion below does not run.
 	rightIncEff := inst.Int&SliceFlagRightInc != 0
-	if recvLT == "%str-long" {
+	if recvLT == "%str-long" || recvLT == "%txt" {
 		if rightIncEff {
 			hiIdx := c.treg("sohx")
 			c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", hiIdx, hiV))
@@ -8534,6 +8541,26 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 
 	srcBase := c.treg("sosb")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcBase, srcPtr, off))
+
+	// A `txt` result is a fresh inline %txt slot: copy the sub-range bytes
+	// straight into field 0's buffer and store the new byte length in the i8 len
+	// field. dstSlot is a distinct %txt* alloca (never the receiver), so a
+	// self-slice `t = t[a..b]` writes disjoint memory and the copy is safe. txt
+	// owns no heap, so there is no backing malloc / view / cap path here.
+	// newLen is already a BYTE count (the code-point -> byte conversion above
+	// folded the inclusive-upper +1 and set rightIncEff off), stride is 1.
+	if dstLT == "%txt" {
+		c.ensureMirSliceCopy()
+		dstData := c.treg("txdd")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dstData, dstSlot))
+		c.sb.WriteString(fmt.Sprintf("  call void @mir_slice_copy(i8* %s, i8* %s, i64 %s, i64 1, i1 %s)\n", dstData, srcBase, newLen, revCmp))
+		dstLenP := c.treg("txdl")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", dstLenP, dstSlot))
+		dstLen8 := c.treg("txdn")
+		c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i8\n", dstLen8, newLen))
+		c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", dstLen8, dstLenP))
+		return nil
+	}
 
 	// SLICE VIEW: when the sub-range is statically FORWARD and does not escape,
 	// the result ALIASES the receiver's buffer instead of copying it.

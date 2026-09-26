@@ -64,7 +64,7 @@ type lowerer struct {
 	// `udiv`/`urem` over `sdiv`/`srem` for unsigned division (i64-to-str's u64
 	// magnitude loop for i64.MIN). Populated from the KLet declaration's type
 	// annotation; reassignments (no type) leave the earlier entry intact.
-	localRaw  map[string]string
+	localRaw map[string]string
 	// movedSlots records ownership-transferred source slots. When an owned
 	// value is moved (its heap ownership transferred into another slot / a
 	// result param), its slot must NOT be re-dropped if that same slot is
@@ -73,11 +73,11 @@ type lowerer struct {
 	// See the `reassign-after-move` case in tests/mem-safety/move-eligibility-improved.no
 	// and tests/mem-safety/clone-reset-is-moved.no.
 	movedSlots map[ValueID]bool
-	curFunc   FuncID
-	voidType  TypeID
-	curRecv   ValueID // current method's implicit `self` receiver value (first param)
-	diags     []LowerDiag
-	loopStack []loopCtx // active for-loops, for break/continue targets
+	curFunc    FuncID
+	voidType   TypeID
+	curRecv    ValueID // current method's implicit `self` receiver value (first param)
+	diags      []LowerDiag
+	loopStack  []loopCtx // active for-loops, for break/continue targets
 
 	// matchDepth counts how many enclosing match arms are currently being
 	// lowered. A match desugars to a chain of `if`/`elif`/`else` (each arm a
@@ -5963,12 +5963,29 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 			resTyp = l.b.Type("[]" + elemRaw)
 		}
 	}
+	// Slicing a `txt` yields a `txt`: the receiver is the fixed inline
+	// { [255 x i8] data, i8 len } struct, and codegen's txt slice path copies
+	// the sub-range straight into a fresh %txt slot. Without pinning the result
+	// to the receiver's txt type, typeOfNode falls back to i64 and emitSliceOp
+	// would take the %vec store path on a %txt receiver.
+	if rt := l.valueTypeOf(arrV); rt != NoType && rt != l.voidType {
+		if rty := l.mod.Type(rt); rty != nil && rty.Raw == "txt" {
+			resTyp = rt
+		}
+	}
 	sliceDst := l.b.Emit(OpSliceOp, resTyp, args, "")
 	// Record rightInc on the instruction (Int=1) so codegen knows the upper
 	// bound is inclusive and must add 1 to hi before computing the length.
 	// This is needed for BOTH forward and reverse slices; codegen takes
 	// abs(hi - lo) to handle reverse (start > end) correctly.
-	if rightInc {
+	//
+	// Only when the upper bound was written EXPLICITLY. An open upper bound
+	// (`a[1..]`, `a[..]`) lowers hi to the container length, which is already
+	// one-past-the-end (exclusive); layering the inclusive `]` +1 on top of it
+	// over-extends by one element (`a[..]` on a 5-vec yielded len 6 and read
+	// past the buffer). With no bound written, its inclusivity is meaningless,
+	// so the flag is not set.
+	if rightInc && hiV != NoVal {
 		l.mod.Insts[len(l.mod.Insts)-1].Int = SliceFlagRightInc
 	}
 	// Mark the slice as a VIEW candidate: it aliases the receiver's buffer
