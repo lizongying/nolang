@@ -19,7 +19,10 @@
 ;
 ; 本檔的每個 case 都印 ok/fail，方便肉眼與 golden 比對。
 
-box { full(v i64) empty }
+box {
+    full(v i64),
+    empty,
+}
 
 main = () {
 
@@ -27,16 +30,23 @@ main = () {
     a ?i64 = ok(7)
     a: {
         ok(x) -> print('ok 1: arm binding binds payload ' - x.to-str())
+
         nil -> print('fail 1: nil')
+
         err -> print('fail 1: err')
     }
 
     ; (2) 臂綁定不得覆蓋同名的外層普通變數
-    x i64 = 99
+    x = 99
     a: {
-        ok(x) -> {}
-        nil -> {}
-        err -> {}
+        ok(x) -> {
+        }
+
+        nil -> {
+        }
+
+        err -> {
+        }
     }
     x == 99 -> print('ok 2: outer local survives the arm binding')
 
@@ -53,12 +63,14 @@ main = () {
 
             q: {
                 full(v) -> print('ok 3b: inner arm binding ' - v.to-str())
+
                 empty -> print('fail 3b: empty')
             }
             v == 5 -> print('ok 3c: outer arm binding restored after the nested match')
 
             -> print('fail 3c: outer arm binding leaked the inner payload, got=' - v.to-str())
         }
+
         empty -> print('fail 3: empty')
     }
 
@@ -70,18 +82,21 @@ main = () {
                 full(v) -> {
                     r: {
                         full(v) -> print('ok 4a: level-3 binding ' - v.to-str())
+
                         empty -> print('fail 4a: empty')
                     }
                     v == 6 -> print('ok 4b: level-2 restored')
 
                     -> print('fail 4b: level-2 got=' - v.to-str())
                 }
+
                 empty -> print('fail 4: empty')
             }
             v == 5 -> print('ok 4c: level-1 restored')
 
             -> print('fail 4c: level-1 got=' - v.to-str())
         }
+
         empty -> print('fail 4: empty')
     }
 
@@ -89,7 +104,9 @@ main = () {
     z ?i64 = ok(42)
     z: {
         ok(w) -> print('ok 5: fresh arm binding ' - w.to-str())
+
         nil -> print('fail 5: nil')
+
         err -> print('fail 5: err')
     }
 }

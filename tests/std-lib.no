@@ -24,7 +24,9 @@
 test-fill = () {
     data [4] = [1, 2, 3, 4]
     data.fill(42)
+    #{index-out = 0}
     v0 = data[0]
+    #{index-out = 0}
     v3 = data[3]
     print(v0)
     print(v3)
@@ -33,7 +35,9 @@ test-fill = () {
 test-reverse = () {
     data [4] = [1, 2, 3, 4]
     data.reverse()
+    #{index-out = 0}
     v0 = data[0]
+    #{index-out = 0}
     v3 = data[3]
     print(v0)
     print(v3)

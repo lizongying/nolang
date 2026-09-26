@@ -263,7 +263,6 @@ test-qpack-encode-decode = () {
     values [16]str
     names[0] = 'content-type'
 
-    #{overflow=wrap}
     values[0] = 'text/plain'
     buf []byte
     n = 0
@@ -288,7 +287,6 @@ test-qpack-encode-decode = () {
         return
     }
 
-    #{overflow=wrap}
     value != 'text/plain' -> {
         print('FAIL: decode-header value mismatch: ')
         print(value)
@@ -324,7 +322,6 @@ test-http3-parse-url = () {
     path = ''
     ok = false
 
-    #{overflow=wrap}
     host, port, path, ok = http3.parse-url('https://example.com:8443/api/v1')
     ok == false -> {
         print('FAIL: http3-parse-url returned ok=false')
@@ -341,7 +338,6 @@ test-http3-parse-url = () {
         return
     }
 
-    #{overflow=wrap}
     path != '/api/v1' -> {
         print('FAIL: http3-parse-url path mismatch: ')
         print(path)

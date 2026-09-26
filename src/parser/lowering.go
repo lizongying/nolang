@@ -1092,6 +1092,21 @@ func overflowModeFieldOf(n Node) string {
 // defaultLiteralFor 依元素型別 elem 解釋 #{index-out} 的預設註解值 defVal，
 // 產生對應的 AST 字面量。回傳 (字面量, 錯誤訊息)；錯誤訊息非空表示無法轉換。
 func defaultLiteralFor(tok lexer.Token, elem string, defVal AnnotationValue) (Expression, string) {
+	// 非标量元素（切片 / 陣列 / 映射 / 結構體）：#{index-out} 越界預設值統一取「零值」。
+	// 觸發語法為 `nil` 或 `0`；越界時回傳空容器 / 零結構體字面量。
+	if isContainerOrStructElem(elem) {
+		switch defVal.(type) {
+		case *AnnotationIdentValue:
+			if v, ok := defVal.(*AnnotationIdentValue); ok && v.Value == "nil" {
+				return zeroValueLiteralFor(tok, elem), ""
+			}
+		case *AnnotationIntValue:
+			if v, ok := defVal.(*AnnotationIntValue); ok && v.Value == 0 {
+				return zeroValueLiteralFor(tok, elem), ""
+			}
+		}
+		return nil, fmt.Sprintf("#{index-out} default for %s must be 'nil' or 0 (zero value)", elem)
+	}
 	switch elem {
 	case "f64", "f32":
 		switch val := defVal.(type) {
@@ -1144,6 +1159,32 @@ func defaultLiteralFor(tok lexer.Token, elem string, defVal AnnotationValue) (Ex
 			return nil, fmt.Sprintf("#{index-out} default for %s must be an integer or char literal", elem)
 		}
 	}
+}
+
+// isContainerOrStructElem 報告元素型別 elem 是否為非标量（容器或結構體）。
+// 容器以 [ 開頭（[]T / [N]T / [K]V）；其餘非标量識別字型別（如結構體）視為結構體。
+func isContainerOrStructElem(elem string) bool {
+	if elem == "" {
+		return false
+	}
+	if strings.HasPrefix(elem, "[") {
+		return true
+	}
+	switch elem {
+	case "f64", "f32", "bool", "str", "txt", "byte", "char",
+		"i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
+		return false
+	}
+	return true
+}
+
+// zeroValueLiteralFor 依元素型別 elem 產生越界預設值字面量：
+// 容器 → 空 ArrayLiteral（WasSliceLiteral）；結構體 → 空 StructLiteral。
+func zeroValueLiteralFor(tok lexer.Token, elem string) Expression {
+	if strings.HasPrefix(elem, "[") {
+		return &ArrayLiteral{Token: tok, Elements: []Expression{}, WasSliceLiteral: true}
+	}
+	return &StructLiteral{Token: tok, Type: elem, Fields: nil}
 }
 
 // preRegisterEnumArmBindings 在展開 match 之前，先依「被匹配變數的靜態型別」把

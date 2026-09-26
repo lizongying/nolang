@@ -11,7 +11,10 @@ point {
 }
 
 main = () {
-    p = point { x: 1, y: 2 }
+    p = point {
+        x: 1
+        y: 2
+    }
     s []str = ['a', 'b']
     m [str]i64 = { 'a': 1, 'b': 2 }
 

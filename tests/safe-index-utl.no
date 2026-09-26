@@ -11,8 +11,12 @@ safe-utl = (i i64) (res ?i64) {
     a = [10, 20, 30, 40]
     x = a[i]; 未標型別區域變數承接安全索引 → 捕獲 x: ?i64
     x: {
-        nil -> {}
-        err -> {}
+        nil -> {
+        }
+
+        err -> {
+        }
+
         -> {
             io.out('untyped-local x = ')
             io.out(it); 應印出 20（ib=1），證明 payload 正確推論為 i64 而非被污染成 str

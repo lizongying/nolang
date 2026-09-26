@@ -10,15 +10,18 @@ is-file = (p str) (ok bool) {
     ok = fs.is-file(p)
 }
 print('start')
+
 ; qualified std call on a directory: must be false via the builtin
 fs.is-file('/tmp') -> {
     print('BAD: fs.is-file says /tmp is a file')
 }
+
 ; the user wrapper resolves by its bare name and must NOT recurse
 wrap-ok = is-file('/tmp')
 wrap-ok -> {
     print('BAD: wrapper says /tmp is a file')
 }
+
 ; both agree on a real file
 fs.is-file('/dev/null') -> {
     print('fs: /dev/null is a file')

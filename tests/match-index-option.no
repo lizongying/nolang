@@ -17,8 +17,13 @@ t-in-bounds = () {
     parts = s.split('-')
     i = 0
     parts[i]: {
-        ok -> { p = it }
-        -> { p = '' }
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = ''
+        }
     }
     runner.str-eq(p.to-str(), 'a', 1, 'in-bounds payload == a')
 }
@@ -29,8 +34,13 @@ t-out-of-bounds = () {
     parts = s.split('-')
     i = 99
     parts[i]: {
-        ok -> { p = it }
-        -> { p = 'OOB' }
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = 'OOB'
+        }
     }
     runner.str-eq(p.to-str(), 'OOB', 3, 'out-of-bounds -> nil arm == OOB')
 }
@@ -58,8 +68,13 @@ t-literal-in-bounds = () {
     parts = ['a', 'b', 'c', 'd']
     i = 1
     parts[i]: {
-        ok -> { p = it }
-        -> { p = 'MISS' }
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = 'MISS'
+        }
     }
     runner.str-eq(p, 'b', 1, 'literal in-bounds payload == b')
 }
@@ -68,8 +83,13 @@ t-literal-out-of-bounds = () {
     parts = ['a', 'b', 'c', 'd']
     j = 9
     parts[j]: {
-        ok -> { p = it }
-        -> { p = 'OOB' }
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = 'OOB'
+        }
     }
     runner.str-eq(p, 'OOB', 1, 'literal out-of-bounds -> nil arm == OOB')
 }
@@ -84,5 +104,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> os.exit(1)
+
     -> os.exit(0)
 }

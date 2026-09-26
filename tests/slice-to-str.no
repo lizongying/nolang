@@ -3,13 +3,13 @@
 ; and a numeric slice as [1, 2, 3]. Format fields also work.
 
 main = () {
-    s []str = ['a', 'b', 'c']
+    s = ['a', 'b', 'c']
     print(s); expect: [a, b, c]
 
     e []i64 = []
     print(e); expect: []
 
-    n []i64 = [1, 2, 3]
+    n = [1, 2, 3]
     print(n); expect: [1, 2, 3]
 
     print('s={s}'); expect: s=[a, b, c]

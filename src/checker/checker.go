@@ -4190,9 +4190,15 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			return
 		}
 		seen[key] = true
+		// 填寫 File = curFile（陳述所屬模組），與 idxhndld 口徑一致：否則
+		// ValidateResult.File 為空，RunAllLints 的行號→檔案回退會把 std 函式
+		// （如 map.no 的成長運算）內的未處理溢位誤歸因到「行號恰落在呼叫端檔案
+		// 某個函式行距範圍內」的測試檔案路徑，造成跨模組誤報。有了 File 後，
+		// std 的溢位會正確歸屬到 src/std/...，不再污染測試檔案的診斷。
 		results = append(results, ValidateResult{
 			Line:    stmt.Pos().Line,
 			Column:  stmt.Pos().Column,
+			File:    curFile,
 			Message: msg,
 			TraceID: unhandledOverflowTraceID,
 		})

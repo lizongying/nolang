@@ -19,30 +19,34 @@
 z = 0
 
 print('── 1. 對照組：正常除法')
+#{overflow=wrap}
 print(10 / 5); expect: 2
 
 print('── 2. 整數 / 0（變數）—— 應 panic 或回 option，實為 poison')
+
 #{overflow=wrap}
 q1 = 10 / z
 print(q1); BUG: 實測 -2
 
 print('── 3. 整數 % 0 —— 同上')
+
 #{overflow=wrap}
 q2 = 10 % z
 print(q2); BUG: 實測 -2
 
 print('── 4. 0 / 0 —— LLVM 把 X / X 折疊成常數 1（前提正是 X != 0）')
+
 #{overflow=wrap}
 q3 = z / z
 print(q3); BUG: 實測 1，數學上無意義
 
 print('── 5. 字面常數 10 / 0 —— 編譯期已可偵測並診斷（div-by-zero），故改用變數除數觀察運行期 UB')
+#{overflow=wrap}
 print(10 / z); BUG: 實測 -1，無 warning / 無 error
 
 print('── 6. 無號 u64 / 0')
 n u64 = 0
 m u64 = 10
-#{overflow=wrap}
 q4 = m / n
 print(q4); BUG: 實測 -1（還印成有號）
 
@@ -53,6 +57,7 @@ print(f / f); BUG: 應為 nan，實測 0.
 
 print('── 8. std number.div / number.mod —— 方法已不存在（現為 int.div=(b int)(q ?int) 回傳 option），僅保留觀察註解')
 r = 0
+
 ; number.div(10, z, r)  ; 方法不存在：std 現為 int.div=(b int)(q ?int)
 ; print(r); BUG: 靜默 0，呼叫端無從得知出錯
 ; number.mod(10, z, r)  ; 方法不存在
@@ -60,16 +65,19 @@ r = 0
 
 print('── 9. 除零結果流向索引：值不可預測')
 arr [3] = [10, 20, 30]
+
 #{overflow=wrap}
 idx = 100 / z
 print(idx); 實測 -0
 
 print('── 10. 除法之後的零檢查（此例未被最佳化器刪除）')
 zz = 0
+
 #{overflow=wrap}
 q5 = 10 / zz
 {
     zz == 0 -> print('zero-check still holds')
+
     -> print('zero-check optimized away')
 }
 

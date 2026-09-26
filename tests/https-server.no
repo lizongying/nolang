@@ -111,7 +111,6 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             #{overflow=wrap}
             crlf = cr - lf
 
-            #{overflow=wrap}
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false
@@ -246,7 +245,6 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
             #{overflow=wrap}
             crlf = cr - lf
 
-            #{overflow=wrap}
             req = 'GET / HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Connection: close' - crlf - crlf
 
             send-ok = false

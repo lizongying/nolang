@@ -31,6 +31,7 @@ main = () {
     q1 e-res = ok('hi')
     q1: {
         ok(v) -> print('ok 1: owned payload ' - v)
+
         fail -> print('fail 1')
     }
 
@@ -38,6 +39,7 @@ main = () {
     q2 e-res = ok('renamed')
     q2: {
         ok(s) -> print('ok 2: renamed binding ' - s)
+
         fail -> print('fail 2')
     }
 
@@ -48,14 +50,16 @@ main = () {
             print('ok 3a: multi-statement arm body')
             print('ok 3b: ' - v)
         }
+
         fail -> print('fail 3')
     }
 
     ; (4) 堆積載荷（非字面量），且與前面的臂同名
-    h str = 'he' - 'llo'
+    h = 'he' - 'llo'
     q4 e-res = ok(h)
     q4: {
         ok(v) -> print('ok 4: heap payload ' - v)
+
         fail -> print('fail 4')
     }
 
@@ -67,10 +71,12 @@ main = () {
             print('ok 5a: ' - v)
             e2: {
                 ok(v) -> print('ok 5b: ' - v)
+
                 fail -> print('fail 5b')
             }
             print('ok 5c: outer restored ' - v)
         }
+
         fail -> print('fail 5')
     }
 }

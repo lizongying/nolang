@@ -87,7 +87,3 @@
 - refactor(crypto): reorganize hash modules and remove deprecated AES and RSA code
 - fix(parser): correct nested if lowering for chained `->` conditions
 - docs(lang): clarify str slicing, `it` binding rules and field annotations
-
-## v0.1.0
-
-- 初始代碼

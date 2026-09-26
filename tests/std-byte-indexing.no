@@ -40,14 +40,18 @@ main = () {
     m.put('ascii', 'plain')
 
     m.len() == 3 -> print('PASS: 1a str-map size=3')
+
     -> print('FAIL: 1a str-map size=' - m.len().to-str() - ' (expect 3)')
 
     g = m.get('日本語')
     g: {
         err -> print('FAIL: 1b str-map get 日本語 -> err')
+
         nil -> print('FAIL: 1b str-map get 日本語 -> nil')
+
         -> {
             it == 'nihongo' -> print('PASS: 1b str-map non-ascii key round trip')
+
             -> print('FAIL: 1b str-map get 日本語 got=[' - it - ']')
         }
     }
@@ -55,14 +59,18 @@ main = () {
     g2 = m.get('中文')
     g2: {
         err -> print('FAIL: 1c str-map get 中文 -> err')
+
         nil -> print('FAIL: 1c str-map get 中文 -> nil')
+
         -> {
             it == 'zhongwen' -> print('PASS: 1c str-map second non-ascii key')
+
             -> print('FAIL: 1c str-map get 中文 got=[' - it - ']')
         }
     }
 
     m.contains('ascii') -> print('PASS: 1d str-map contains ascii')
+
     -> print('FAIL: 1d str-map contains ascii')
 
     ; ─────────────────────────────────────────────
@@ -76,15 +84,19 @@ main = () {
     s.add('ascii')
 
     s.len() == 3 -> print('PASS: 2a str-set size=3')
+
     -> print('FAIL: 2a str-set size=' - s.len().to-str() - ' (expect 3)')
 
     s.contains('日本語') -> print('PASS: 2b str-set contains 日本語')
+
     -> print('FAIL: 2b str-set contains 日本語 -> false')
 
     s.contains('中文') -> print('PASS: 2c str-set contains 中文')
+
     -> print('FAIL: 2c str-set contains 中文 -> false')
 
     s.contains('nope') -> print('FAIL: 2d str-set contains nope -> true')
+
     -> print('PASS: 2d str-set rejects absent key')
 
     ; ─────────────────────────────────────────────
@@ -94,14 +106,17 @@ main = () {
     b = 'ab日本語cd'.to-bytes()
     pos = b.index('日本語')
     pos == 2 -> print('PASS: 3a []byte.index finds non-ascii needle at 2')
+
     -> print('FAIL: 3a []byte.index got ' - pos.to-str() - ' (expect 2)')
 
     pos2 = b.index('cd')
     pos2 == 11 -> print('PASS: 3b []byte.index ascii needle at 11 (after 9 bytes)')
+
     -> print('FAIL: 3b []byte.index ascii got ' - pos2.to-str() - ' (expect 11)')
 
     pos3 = b.index('zz')
     pos3 == -1 -> print('PASS: 3c []byte.index absent -> -1')
+
     -> print('FAIL: 3c []byte.index absent got ' - pos3.to-str())
 
     ; ─────────────────────────────────────────────
@@ -112,6 +127,7 @@ main = () {
     }
     base = p1.base()
     base == 'ファイル.txt' -> print('PASS: 4a path.base non-ascii')
+
     -> print('FAIL: 4a path.base got=[' - base - '] (expect ファイル.txt)')
 
     p2 = path {
@@ -119,6 +135,7 @@ main = () {
     }
     ext = p2.ext()
     ext == '.txt' -> print('PASS: 4b path.ext non-ascii')
+
     -> print('FAIL: 4b path.ext got=[' - ext - '] (expect .txt)')
 
     p3 = path {
@@ -126,6 +143,7 @@ main = () {
     }
     dir = p3.dir()
     dir == '/tmp/日本語' -> print('PASS: 4c path.dir non-ascii')
+
     -> print('FAIL: 4c path.dir got=[' - dir - '] (expect /tmp/日本語)')
 
     p4 = path {
@@ -133,6 +151,7 @@ main = () {
     }
     fname = p4.split()
     fname == 'ファイル.txt' -> print('PASS: 4d path.split non-ascii')
+
     -> print('FAIL: 4d path.split got=[' - fname - '] (expect ファイル.txt)')
 
     ; ⚠️ 刻意**不測** `path.join`：它另有「原地成長 .p」的既有記憶體安全問題 ——
@@ -147,21 +166,27 @@ main = () {
     j = json.parse('{"name":"Alice"}')
     j: {
         err -> print('FAIL: 5 json.parse -> err')
+
         nil -> print('FAIL: 5 json.parse -> nil')
+
         -> {
             ok-set = it.set-str('日本語', 'にほんご')
             ok-set -> print('PASS: 5a json.set-str non-ascii key+value')
+
             -> print('FAIL: 5a json.set-str returned false')
 
             val, found = it.get-str('日本語')
             found -> {
                 val == 'にほんご' -> print('PASS: 5b json.get-str non-ascii round trip')
+
                 -> print('FAIL: 5b json.get-str got=[' - val - '] (expect にほんご)')
             }
+
             -> print('FAIL: 5b json.get-str key not found')
 
             s-val, s-ok = it.get-str('name')
             s-ok && s-val == 'Alice' -> print('PASS: 5c json ascii value intact')
+
             -> print('FAIL: 5c json ascii value broken')
         }
     }
@@ -175,10 +200,13 @@ main = () {
     jp = json.parse('{"名前":"日本語"}')
     jp: {
         err -> print('FAIL: 5d json.parse non-ascii -> err')
+
         nil -> print('FAIL: 5d json.parse non-ascii -> nil')
+
         -> {
             jpv, jpok = it.get-str('名前')
             jpok && jpv == '日本語' -> print('PASS: 5d json.parse non-ascii key+value')
+
             -> print('FAIL: 5d json.parse non-ascii got=[' - jpv - '] ok=' - jpok.to-str())
         }
     }
@@ -188,15 +216,18 @@ main = () {
     ; ─────────────────────────────────────────────
     padded = fmt.fmt-str('日本語', '10')
     padded.len-bytes() == 10 -> print('PASS: 6a fmt-str pads by bytes (9+1=10)')
+
     -> print('FAIL: 6a fmt-str len-bytes=' - padded.len-bytes().to-str() - ' (expect 10)')
 
     padded2 = fmt.fmt-apply-spec('日本語', 32, 60, 12)
     padded2.len-bytes() == 12 -> print('PASS: 6b fmt-apply-spec left-align keeps bytes')
+
     -> print('FAIL: 6b fmt-apply-spec len-bytes=' - padded2.len-bytes().to-str() - ' (expect 12)')
 
     ; 填充後原字串必須完整保留（不能在中間被碼點讀取破壞）
     ; padded2 為左對齊（原字串在前，尾隨 3 個空白），故前 9 位元組就是原字串。
     padded2.slice-bytes(0, 9) == '日本語' -> print('PASS: 6c fmt padding preserved original bytes')
+
     -> print('FAIL: 6c fmt padding corrupted original, hex=' - padded2.to-bytes().to-hex())
 
     ; ─────────────────────────────────────────────
@@ -210,6 +241,7 @@ main = () {
     }
     p6.clean()
     p6.p == '日本語/ファイル.txt' -> print('PASS: 7 path.clean collapses // on non-ascii path')
+
     -> print('FAIL: 7 path.clean got=[' - p6.p - '] (expect 日本語/ファイル.txt)')
 
     ; ⚠️ 刻意**不測** `url.url-encode`：它的 `c = s[i]` 已改為 `s.byte(i)`（這是正確的
@@ -225,10 +257,12 @@ main = () {
     ; ─────────────────────────────────────────────
     cf = csv.encode-field('日本語,含む')
     cf == '"日本語,含む"' -> print('PASS: 9 csv.encode-field quotes non-ascii field with comma')
+
     -> print('FAIL: 9 csv.encode-field got=[' - cf - ']')
 
     cf2 = csv.encode-field('日本語')
     cf2 == '日本語' -> print('PASS: 9b csv.encode-field leaves plain non-ascii unquoted')
+
     -> print('FAIL: 9b csv.encode-field got=[' - cf2 - ']')
 
     ; ─────────────────────────────────────────────
@@ -241,16 +275,20 @@ main = () {
     ; ─────────────────────────────────────────────
     cp-f, cp-np = csv.parse-field('日本語,中文', 0)
     cp-f == '日本語' -> print('PASS: 10a csv.parse-field non-ascii field')
+
     -> print('FAIL: 10a csv.parse-field got=[' - cp-f - '] (expect 日本語)')
 
     cp-np == 10 -> print('PASS: 10b csv.parse-field new-pos advances by BYTES (10, not 4 codepoints)')
+
     -> print('FAIL: 10b csv.parse-field new-pos=' - cp-np.to-str() - ' (expect 10)')
 
     cp-h, cp-np3 = csv.parse-field('"日本語,含む",b', 0)
     cp-h == '日本語,含む' -> print('PASS: 10c csv.parse-field quoted non-ascii w/ comma')
+
     -> print('FAIL: 10c csv.parse-field quoted got=[' - cp-h - '] (expect 日本語,含む)')
 
     cp-g, cp-np2 = csv.parse-field('abc,def', 0)
     cp-g == 'abc' && cp-np2 == 4 -> print('PASS: 10d csv.parse-field ascii unchanged')
+
     -> print('FAIL: 10d csv.parse-field ascii got=[' - cp-g - '] pos=' - cp-np2.to-str())
 }

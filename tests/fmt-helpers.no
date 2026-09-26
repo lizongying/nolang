@@ -20,19 +20,15 @@ main = () {
     print('=== fmt-apply-spec ===')
     s = fmt.fmt-apply-spec('42', 32, 0, 5)
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-apply-spec('42', 32, 60, 5)
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-apply-spec('42', 32, 94, 5)
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-apply-spec('42', 42, 94, 8)
 
-    #{overflow=wrap}
     print('[' - s - ']')
     print()
 
@@ -41,25 +37,20 @@ main = () {
     print(s)
     s = fmt.fmt-int(42, '5')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-int(42, '<5')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-int(42, '^5')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-int(42, '05')
     print(s)
     s = fmt.fmt-int(-42, '5')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-int(42, '+5')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-int(42, '*^8')
     print(s)
@@ -114,7 +105,6 @@ main = () {
     print(s)
     s = fmt.fmt-f64(-3.14, '8.2f')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-f64(3.14, '+.2f')
     print(s)
@@ -127,17 +117,14 @@ main = () {
     print('=== fmt-str ===')
     s = fmt.fmt-str('hello', '10')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-str('hello', '<10')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-str('hello', '.3')
     print(s)
     s = fmt.fmt-str('hello', '^10')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-str('hi', '')
     print(s)
@@ -150,11 +137,9 @@ main = () {
     print(s)
     s = fmt.fmt-bool(true, '6')
 
-    #{overflow=wrap}
     print('[' - s - ']')
     s = fmt.fmt-bool(false, '<6')
 
-    #{overflow=wrap}
     print('[' - s - ']')
 }
 main()

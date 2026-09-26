@@ -15,20 +15,24 @@
 ; 而非落到 generic builtin emit（其 format 實作為 unsupported）。
 
 main = () {
+
     ; 1. 純字面量，無欄位
     s = format('plain')
     (s == 'plain') -> print('PASS: 1 format plain literal returned verbatim')
+
     -> print('FAIL: 1 got=[' - s - ']')
 
     ; 2. 多字純文字，無欄位
     t = format('多字 純文字 無欄位')
     (t == '多字 純文字 無欄位') -> print('PASS: 2 multi-word plain literal')
+
     -> print('FAIL: 2 got=[' - t - ']')
 
     ; 3. 含欄位仍正常
     x = 42
     f = format('value={x}')
     (f == 'value=42') -> print('PASS: 3 field form still resolves')
+
     -> print('FAIL: 3 got=[' - f - ']')
 
     ; 4. 非字面量仍報錯（此分支由 `no vet` / 編譯期把關，程式內不捕捉）

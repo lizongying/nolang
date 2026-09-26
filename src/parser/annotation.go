@@ -1155,6 +1155,15 @@ func (p *Parser) parseAnnotationSimpleValue() AnnotationValue {
 		}
 		p.nextToken()
 		return val
+	case lexer.NIL:
+		// `#{index-out = nil}`：非标量元素（切片/陣列/映射/結構體）的越界預設值
+		// 用零值（空容器 / 零結構體）表示。lowering.defaultLiteralFor 據此產生字面量。
+		val := &AnnotationIdentValue{
+			Token: p.currentToken,
+			Value: "nil",
+		}
+		p.nextToken()
+		return val
 	case lexer.IDENT:
 		// 检查是否为裸路径（如 assets/win-icon.ico）
 		// 当 IDENT 后跟 QUO('/') 或 DOT('.') 时，拼接为完整路径

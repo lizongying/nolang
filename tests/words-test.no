@@ -43,6 +43,7 @@ k <- [0..n): {
     found == 0 -> {
         cmp-result = tmp-word.compare(words[k])
         cmp-result == 0 -> {
+            #{overflow=wrap}
             counts[k] = counts[k] + 1
             found = 1
         }

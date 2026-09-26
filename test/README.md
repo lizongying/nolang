@@ -292,16 +292,25 @@ f = runner.failed-count()
 > ⚠️ `:t` 的已知小瑕疵：`{b:t}`（bool）與 `{u:t}`（u64）仍會印 `i64`——因為 bool/u64 被 dispatch 到
 > `fmt-int`（回傳 `'i64'`），非本輪修復範圍；其餘 `int`/`f64`/`str`/`bool` 的 `:t`/`:v` 均正確。
 
+### ✅ 已修（本輪 —— option / match 的 #1–#3）
+
+| # | 症狀 | 修法 | 迴歸釘 |
+|---|---|---|---|
+| 1 | **模組頂層 option 初始化後 match，一個臂都不執行**（靜默，rc 仍 0）。`v ?i64 = 7` 後 `v: {…}` 直接跳過；結果**取決於變數名**（`a`/`w`/`x`/`y`/`res` 正常，其餘絕大多數靜默；大寫＝真全局一律靜默） | `src/mir/hir2mir.go` 的 `lowerGlobalRef` 偵測 option 型別全域（`parseOptionElem`），改走 `foldOptionGlobalConst` emit 真正的 `%option { i64 0, [N x i64] <payload> }` 初值。原本 `foldConstText` 只回裸純量 `"i64 7"`，而 `emitGlobals` 又從 ConstText 首個 token 推型別 ⇒ 全域被 emit 成 `global i64 7`，main 卻以 %option 讀它，`=== ok` 永不成立 | `src/mir/option_match_three_bugs_test.go` 的 `TestOptionGlobalEmitsOptionInitializer`；`tests/option-match-silent-wrong.no` 印 `7` |
+| 2 | **`?bool` 的 match 取值恆為 false**。`print(x)` 印 `true`（包裝對），`ok(b) -> print(b)` 印 `0`。`?i64`/`?str`/`?f64`/`?struct`/`?slice` 全正常，只有 bool 壞。連帶 `txt.to-bool` 全滅 | `src/mir/builtin_call.go` 的 `coerce` 補 `i64 → i1`（`trunc i64 … to i1`）。剝殼把槽讀成 i64，coerce 原本沒有 i64→i1，於是把 i64 經 bitcast 直接 store 進 `b` 的 i1 槽，接著 `load i1` 讀到 0 | `TestOptionBoolPeelTruncatesToI1`（IR 須含 `trunc i64 %mvu… to i1`）；`tests/option-match-silent-wrong.no` 印 `1` / `0`；`'true'.to-bool()` 現印 `1` |
+| 3 | **option 當函式參數 + match → 編譯失敗**：`opt-verify: '%option' … but expected '%str-long'`（`str_clone` 被套到 option 上，option 載荷槽 24 bytes 剛好＝`%str-long`）。只傳不 match 沒事 | `src/mir/codegen.go` 的 `emitMove`，「借用參數」clone 閘門加 `&& !isOptionType(srcT)`。該閘門原本對 `move str = <參數>` 直接 `str_clone(參數)`；參數是 `?str` 時載入的是**整個** %option ⇒ clone 吃到 option。跳過後改走 option 剝殼分支（先 GEP 進載荷槽、再 clone 載荷） | `TestOptionParamMatchPeelsBeforeClone`（register 精準：同一個暫存器被 `load %option` 又餵給 `@str_clone` 才算 bug）；`tests/option-match-silent-wrong.no` 印 `hello` |
+
+> 三條的 Go 測試都做過「還原成 HEAD ⇒ 紅、帶修復 ⇒ 綠」的雙向驗證。
+> 修完 `no vet src/std` 仍 **0 error**、`no fmt -w src/std` 仍 fixed point、
+> `no test test/std/` 的失敗集合與控制組**逐行相同**（控制組＝只還原這 3 個檔案重新編出的
+> binary，避免把別人未提交的工作算進來）。
+
 ### ❌ 未修（待處理）
 
-| # | 症狀 | 嚴重度 | 位置 |
-|---|---|---|---|
-| 1 | **模組頂層 option 初始化後 match，一個臂都不執行**（靜默，rc 仍 0）。`v ?i64 = 7` 後 `v: {…}` 直接跳過；結果**取決於變數名**（`a`/`w`/`x`/`y`/`res` 正常，其餘絕大多數靜默；大寫＝真全局一律靜默）。安全寫法：在函式內宣告、或 `v ?i64 = mk()` 由函式回傳 | 高（靜默錯答） | compiler（option 初始化） |
-| 2 | **`?bool` 的 match 取值恆為 false**。`print(f())` 印 `true`（包裝對），`ok(b) -> print(b)` 印 `0`。`?i64`/`?str`/`?f64`/`?struct`/`?slice` 全正常，只有 bool 壞。連帶 `txt.to-bool` 全滅 | 高 | compiler（option 載荷） |
-| 3 | **option 當函式參數 + match → 編譯失敗**：`opt-verify: '%option' … but expected '%str-long'`（`str_clone` 被套到 option 上，option 載荷槽 24 bytes 剛好＝`%str-long`）。只傳不 match 沒事 | 中（硬錯誤） | compiler（參數 marshal） |
+（目前沒有。）
 
-> 原本的 #4–#8（[]char 字面量、`txt.to-f32` 位元、`format :t/:v/千分位`、`bigint` bus error、
-> `number.div`）**本輪已全部修復**（見下方「✅ 已修」D–H）。
+> #1–#3（本節上方）、A–C（`txt` 三兄弟）、#4–#8（[]char 字面量、`txt.to-f32` 位元、
+> `format :t/:v/千分位`、`bigint` bus error、`number.div`）**至此已全部修復**。
 
 ### 寫測試時的三個型別陷阱（會讓你寫出「永遠綠」的錯測試）
 

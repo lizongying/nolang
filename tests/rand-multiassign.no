@@ -61,7 +61,6 @@ main = () {
     i <- [0..4): {
         ka-state, ka-r = rand(ka-state)
 
-        #{overflow=wrap}
         ka-priv = ka-priv - (ka-state & 255).to-str() - ' '
     }
     eprint('seed-a priv bytes (first 4): ')
@@ -72,7 +71,6 @@ main = () {
     i <- [0..4): {
         kb-state, kb-r = rand(kb-state)
 
-        #{overflow=wrap}
         kb-priv = kb-priv - (kb-state & 255).to-str() - ' '
     }
     eprint('seed-b priv bytes (first 4): ')

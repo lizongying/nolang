@@ -15,14 +15,15 @@ keep = true
     #{overflow=wrap}
     count = count + 1
 
-    #{overflow=wrap}
     count >= 3 -> keep = false
 }
 print('1 flag-loop ran: ' + count.to-str())
 
 ; 2) 條件為假時不執行 —— 前置測試（while），不是 do-while
 ran = false
-(false) { ran = true }
+! {
+    ran = true
+}
 print('2 false cond skipped: ' + ran.to-str())
 
 ; 3) 一般比較條件仍是迴圈
@@ -71,7 +72,6 @@ go = true
     #{overflow=wrap}
     hits = hits + 1
 
-    #{overflow=wrap}
     hits >= 2 -> break #1
 }
 print('5 labeled flag-loop hits: ' + hits.to-str())

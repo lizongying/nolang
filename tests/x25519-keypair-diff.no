@@ -38,7 +38,6 @@ main = () {
     s = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         s = s - (ga-priv[i]).to-str() - ' '
     }
     eprint(s)
@@ -48,7 +47,6 @@ main = () {
     s = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         s = s - (gb-priv[i]).to-str() - ' '
     }
     eprint(s)
@@ -58,7 +56,6 @@ main = () {
     s = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         s = s - (ga-pub[i]).to-str() - ' '
     }
     eprint(s)
@@ -68,7 +65,6 @@ main = () {
     s = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         s = s - (gb-pub[i]).to-str() - ' '
     }
     eprint(s)
@@ -105,7 +101,6 @@ main = () {
     s = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         s = s - (g-shared-a[i]).to-str() - ' '
     }
     eprint(s)
@@ -115,7 +110,6 @@ main = () {
     s = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         s = s - (g-shared-b[i]).to-str() - ' '
     }
     eprint(s)

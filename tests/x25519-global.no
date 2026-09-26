@@ -94,7 +94,6 @@ main = () {
     s = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         s = s - (g-priv[i]).to-str() - ' '
     }
     eprint(s)
@@ -106,7 +105,6 @@ main = () {
     s = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         s = s - (global-pub[i]).to-str() - ' '
     }
     eprint(s)

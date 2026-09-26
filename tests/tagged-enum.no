@@ -1,6 +1,5 @@
 ; tagged-enum.no — 任意標籤列舉（帶載荷 / 多欄位 / 命名空間 / 表達式位置建構）
 
-#{overflow=wrap}
 color {
     red,
     green,

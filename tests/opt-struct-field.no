@@ -16,7 +16,6 @@ conn {
 make-conn = () (result ?conn) {
     result = nil
 
-    #{overflow=wrap}
     c = conn {
         path: '/api/health'
         port: 8080
@@ -37,7 +36,6 @@ test-opt-field = () {
     print(port); expect: 8080
 
     ; str 字段参与字符串拼接（触发堆持有类型的深拷贝）
-    #{overflow=wrap}
     s = 'path=' - p
     print(s); expect: path=/api/health
 

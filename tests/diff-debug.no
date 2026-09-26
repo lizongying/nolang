@@ -47,11 +47,15 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             #{overflow=wrap}
             a[ai].compare(b[aj]) == 0 -> dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
 
-            #{overflow=wrap}
-            dp[ai * cols + aj] < dp[(ai + 1) * cols + aj] -> dp[ai * cols + aj] = dp[(ai + 1) * cols + aj]
+            #{index-out = 0, overflow=wrap}
+            cur = dp[ai * cols + aj]
+            #{index-out = 0, overflow=wrap}
+            below = dp[(ai + 1) * cols + aj]
+            cur < below -> dp[ai * cols + aj] = below
 
-            #{overflow=wrap}
-            dp[ai * cols + aj] < dp[ai * cols + (aj + 1)] -> dp[ai * cols + aj] = dp[ai * cols + (aj + 1)]
+            #{index-out = 0, overflow=wrap}
+            right = dp[ai * cols + (aj + 1)]
+            cur < right -> dp[ai * cols + aj] = right
         }
     }
 
@@ -66,10 +70,9 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
         #{overflow=wrap}
         aj <- [0..nb + 1): {
 
-            #{overflow=wrap}
+            #{index-out = 0, overflow=wrap}
             v = dp[ai * cols + aj]
 
-            #{overflow=wrap}
             row = row - ' ' - v.to-str()
         }
         eprint('  {row}')
@@ -81,6 +84,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             a[i].compare(b[j]) == 0 -> {
                 op = diff-op {}
                 op.kind = 0
+                #{index-out = 0}
                 tmp-line = a[i]
                 op.line = tmp-line
 

@@ -474,7 +474,6 @@ print(21)
 ; ═══════════════════════════════════════════════
 test-integration = () {
 
-    #{overflow=wrap}
     s = 'Hello' - ' ' - 'World'
     n = s.len-bytes()
     print(n); expect: 11

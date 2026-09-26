@@ -1837,7 +1837,30 @@ func fixRedundantTypeSource(src string) (string, bool) {
 	if len(removals) == 0 {
 		return "", false
 	}
-	return applyRemovals(src, removals), true
+	reduced := applyRemovals(src, removals)
+	// 防禦：移除後的源碼若無法再解析（典型情況：map / set 字面量 `m [str]i64 =
+	// {...}` 的型別標註被移除後，parser 無法從字面量推斷型別而誤讀，產生
+	// 解析錯誤）。這類「冗餘」標註其實不可省——checker 的型別推斷能算出型別，
+	// 但 parser 需要顯式標註才能建出正確 AST。一旦移除會破壞原合法檔案，且錯誤
+	// 位置會指向被改寫後的源碼（欄位移位），造成「報錯位置不對」。
+	// 故這裡驗證 reduced 仍可解析；解析失敗則視為不可移除，退回原檔（由上層
+	// 對 original 報錯，位置才正確）。
+	if !sourceParses(reduced) {
+		return "", false
+	}
+	return reduced, true
+}
+
+// sourceParses 回傳 source 是否可在 formatter 的解析選項下成功解析（無解析錯誤）。
+// 這裡複製 fmt 路徑的選項（SkipUnwrapLowering / SkipSafeIndexLowering），與
+// parseProgramForFmt 保持一致，避免選項差異造成誤判。
+func sourceParses(source string) bool {
+	lx := lexer.New(source)
+	p := parser.New(lx)
+	p.SkipUnwrapLowering = true
+	p.SkipSafeIndexLowering = true
+	p.ParseProgram()
+	return len(p.Errors()) == 0
 }
 
 // applyRemovals 按升序拼接移除區間，得到修復後源碼。區間互不重疊（同一陳述至多一個冗餘標註）。

@@ -41,6 +41,7 @@ e-res {
 show = (q e-res) {
     q: {
         ok(v) -> print('show: ' - v)
+
         fail -> print('show: fail')
     }
 }
@@ -54,10 +55,12 @@ ignore = (q e-res) {
 pair = (a e-res, b e-res) {
     a: {
         ok(v) -> print('a: ' - v)
+
         fail -> print('a: fail')
     }
     b: {
         ok(v) -> print('b: ' - v)
+
         fail -> print('b: fail')
     }
 }
@@ -78,15 +81,18 @@ box.report = (q e-res) {
     print(.n)
     q: {
         ok(v) -> print('box.ok: ' - v)
+
         fail -> print('box.fail')
     }
 }
 
 main = () {
+
     ; (1) caller 先 match、callee 再 match —— 兩邊讀同一份載荷
     q e-res = ok('one')
     q: {
         ok(v) -> print('main: ' - v)
+
         fail -> print('main: fail')
     }
     show(q)
@@ -106,7 +112,7 @@ main = () {
     outer(n)
 
     ; (5) method receiver
-    bx box = box {
+    bx = box {
         n: 5
     }
     m e-res = ok('five')

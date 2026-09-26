@@ -2,7 +2,6 @@
 
 test-remove = () {
 
-    #{overflow=wrap}
     ok = fs.remove('/tmp/nonexistent-test-file')
     print(ok)
 }

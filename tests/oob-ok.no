@@ -2,7 +2,9 @@ arr = [1, 2, 3]
 print(arr[0])
 print(arr[1])
 print(arr[2])
+#{overflow=wrap}
 print(arr[2 - 1])
+#{overflow=wrap}
 print(arr[1 + 1])
 
 s = 'hello'

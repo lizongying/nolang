@@ -14,11 +14,9 @@
 test-read-into-buf = () (ok bool) {
 
     ; 建立測試檔案
-    #{overflow=wrap}
     fs.write-file('/tmp/bug15_test.txt', 'Hello World'.to-bytes())
 
     ; 讀取檔案
-    #{overflow=wrap}
     fd = fs.open-read('/tmp/bug15_test.txt')
     fd < 0 -> return
     buf []byte = with-len(4096)
@@ -36,16 +34,13 @@ test-read-into-buf = () (ok bool) {
 test-copy-file = () (ok bool) {
 
     ; 建立測試檔案
-    #{overflow=wrap}
     fs.write-file('/tmp/bug15_src.txt', 'Hello Nolang'.to-bytes())
 
     ; 複製檔案
-    #{overflow=wrap}
     ok2 = copy-file('/tmp/bug15_src.txt', '/tmp/bug15_dst.txt')
     ok2 != true -> return
 
     ; 讀取複製後的檔案驗證內容
-    #{overflow=wrap}
     fd = fs.open-read('/tmp/bug15_dst.txt')
     fd < 0 -> return
     buf []byte = with-len(4096)

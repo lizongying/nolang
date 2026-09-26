@@ -38,6 +38,7 @@ e-list {
 show = (q e-res) {
     q: {
         ok(v) -> print('show: ' - v)
+
         fail -> print('show: fail')
     }
 }
@@ -46,68 +47,70 @@ show-list = (q e-list) {
     q: {
         ok2(v) -> {
             print('show-list:')
-            for x in v {
+            for x <- v: {
                 print(x)
             }
         }
+
         none -> print('show-list: none')
     }
 }
 
 main = () {
+
     ; 1) 別名是唯一的消費者（來源之後不再使用）
     a1 e-res = ok('one')
-    b1 e-res = a1
+    b1 = a1
     show(b1)
 
     ; 2) 來源與別名**都**被消費
     a2 e-res = ok('two')
-    b2 e-res = a2
+    b2 = a2
     show(a2)
     show(b2)
 
     ; 3) 三層別名鏈
     a3 e-res = ok('three')
-    b3 e-res = a3
-    c3 e-res = b3
+    b3 = a3
+    c3 = b3
     show(c3)
 
     ; 4) 兩層鏈，每一層都被消費
     a4 e-res = ok('four')
-    b4 e-res = a4
+    b4 = a4
     show(a4)
     show(b4)
 
     ; 5) 無載荷變體經由別名（不需要深拷貝，但也不能出錯）
     a5 e-res = fail
-    b5 e-res = a5
+    b5 = a5
     show(b5)
 
     ; 6) 無載荷變體，來源與別名都被消費
     a6 e-res = fail
-    b6 e-res = a6
+    b6 = a6
     show(a6)
     show(b6)
 
     ; 7) 同一個別名被消費兩次
     a7 e-res = ok('seven')
-    b7 e-res = a7
+    b7 = a7
     show(b7)
     show(b7)
 
     ; 8) 別名是死的，只有來源被消費（維持原本的單一緩衝轉移）
     a8 e-res = ok('eight')
-    b8 e-res = a8
+    b8 = a8
     show(a8)
 
     ; 9) 切片載荷的別名是唯一消費者（%vec 深拷貝路徑）
     l9 e-list = ok2([1, 2, 3])
-    m9 e-list = l9
+    m9 = l9
     show-list(m9)
 
     ; 10) 切片載荷，來源與別名都被消費
     l10 e-list = ok2([4, 5])
-    m10 e-list = l10
+    m10 = l10
     show-list(l10)
     show-list(m10)
 

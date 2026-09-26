@@ -28,7 +28,6 @@ use-struct = (t data) (s str) {
     }
     nl i64 = t.raw.len-bytes()
 
-    #{overflow=wrap}
     j <- [sp + 1..t.raw.len-bytes()): {
         t.raw[j] == 0 -> {
             nl = j
@@ -36,7 +35,6 @@ use-struct = (t data) (s str) {
         }
     }
 
-    #{overflow=wrap}
     s = t.raw[sp + 1..nl)
 }
 
@@ -51,7 +49,6 @@ pass-direct = (raw str) (s str) {
     }
     nl i64 = raw.len-bytes()
 
-    #{overflow=wrap}
     j <- [sp + 1..raw.len-bytes()): {
         raw[j] == 0 -> {
             nl = j
@@ -59,7 +56,6 @@ pass-direct = (raw str) (s str) {
         }
     }
 
-    #{overflow=wrap}
     s = raw[sp + 1..nl)
 }
 
@@ -88,7 +84,6 @@ main = () {
     ; Safe: directly use parameter
     good-result = pass-direct(test-raw)
 
-    #{overflow=wrap}
     print('good: ' - good-result)
 
     ; Expected: good: file1.txt
@@ -96,7 +91,6 @@ main = () {
     ; Bug: through struct
     bad-result = pass-struct(test-raw)
 
-    #{overflow=wrap}
     print('bad: ' - bad-result)
 
     ; Expected: bad: file1.txt

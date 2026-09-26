@@ -6,7 +6,6 @@
 inner-write = () (s [32]byte) {
     i <- [0..32): {
 
-        #{overflow=wrap}
         s[i] = (i + 1) & 255
     }
 }
@@ -28,7 +27,6 @@ test-via-inner = () (pass bool) {
     hex = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('via inner bytes:')
@@ -37,7 +35,6 @@ test-via-inner = () (pass bool) {
     ; 檢查前 8 bytes
     i <- [0..8): {
 
-        #{overflow=wrap}
         expected = (i + 1) & 255
         arr[i] != expected -> {
             print('FAIL: via inner byte mismatch')
@@ -83,7 +80,6 @@ test-via-i64 = () (pass bool) {
     hex = ''
     i <- [0..32): {
 
-        #{overflow=wrap}
         hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('via i64 bytes:')
@@ -93,7 +89,6 @@ test-via-i64 = () (pass bool) {
     i <- [0..8): {
 
         ; h[0] = 10, h[1] = 20, ...
-        #{overflow=wrap}
         expected = ((i + 1) * 10) & 255
         arr[i] != expected -> {
             print('FAIL: via i64 byte mismatch')

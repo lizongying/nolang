@@ -70,6 +70,7 @@ loop-body-read = () (out i64) {
     i <- [0, 1, 2]: {
         print(a[i]); 循环体内读 a → 阻止 move
     }
+    #{index-out = 0}
     out = a[0]
 }
 r3 = loop-body-read()

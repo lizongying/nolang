@@ -329,6 +329,13 @@ func (c *codegen) coerce(srcTy, srcVal, wantTy string) string {
 		c.sb.WriteString(fmt.Sprintf("  %s = sitofp i64 %s to double\n", r, srcVal))
 	case srcTy == "i64" && wantTy == "i8":
 		c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i8\n", r, srcVal))
+	case srcTy == "i64" && wantTy == "i1":
+		// `?bool` payload: the option slot stores the bool as a 0/1 i64, so a
+		// peel reads it back as i64 and must be truncated to i1 before landing
+		// in the bound variable's i1 slot. Without this the i64 is stored
+		// through a bitcast pointer into a 1-byte slot -> load i1 reads 0
+		// (every `ok(b) -> print(b)` over a `?bool` reported false; see bug #2).
+		c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i1\n", r, srcVal))
 	case srcTy == "double" && wantTy == "i64":
 		c.sb.WriteString(fmt.Sprintf("  %s = fptosi double %s to i64\n", r, srcVal))
 	case srcTy == "i8" && wantTy == "i64":

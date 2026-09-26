@@ -26,7 +26,6 @@ test-nan-inf = () {
     ; expect: 0
 
     ; NaN = 0.0 / 0.0
-    #{overflow=wrap}
     b = 0.0 / 0.0
     b.is-nan(yes)
     {
@@ -49,7 +48,6 @@ test-nan-inf = () {
     ; expect: 0
 
     ; +Inf = 1.0 / 0.0
-    #{overflow=wrap}
     c = 1.0 / 0.0
     c.is-nan(yes)
     {
@@ -72,7 +70,6 @@ test-nan-inf = () {
     ; expect: 0 (not printed)
 
     ; -Inf = -1.0 / 0.0
-    #{overflow=wrap}
     d = -1.0 / 0.0
     d.is-nan(yes)
     {

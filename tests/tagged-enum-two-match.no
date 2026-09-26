@@ -46,10 +46,12 @@ main = () {
     q1 e-res = ok('hi')
     q1: {
         ok(v) -> print('1a: ' - v)
+
         fail -> print('fail 1a')
     }
     q1: {
         ok(v) -> print('1b: ' - v)
+
         fail -> print('fail 1b')
     }
 
@@ -57,10 +59,12 @@ main = () {
     q2 e-res = ok('renamed')
     q2: {
         ok(s) -> print('2a: ' - s)
+
         fail -> print('fail 2a')
     }
     q2: {
         ok(t) -> print('2b: ' - t)
+
         fail -> print('fail 2b')
     }
 
@@ -70,40 +74,46 @@ main = () {
     q3 shape = rect(3, 4)
     q3: {
         circle(r) -> print('fail 3a: circle')
+
         rect(w, h) -> {
             print('3a: rect')
             print(w)
             print(h)
         }
+
         dot -> print('fail 3a: dot')
     }
     q3: {
         circle(r) -> print('fail 3b: circle')
+
         rect(w, h) -> {
             print('3b: rect')
             print(w)
             print(h)
         }
+
         dot -> print('fail 3b: dot')
     }
 
     ; (4) 切片載荷 ×2：抽取是**借用**（無 @vec_clone），由 enum 的 drop 釋放一次
-    l4 []str = ['p', 'q']
+    l4 = ['p', 'q']
     q4 list-res = ok(l4)
     q4: {
         ok(items) -> {
-            for x in items {
+            for x <- items: {
                 print('4a: ' - x)
             }
         }
+
         fail -> print('fail 4a')
     }
     q4: {
         ok(items) -> {
-            for x in items {
+            for x <- items: {
                 print('4b: ' - x)
             }
         }
+
         fail -> print('fail 4b')
     }
 
@@ -111,14 +121,17 @@ main = () {
     q5 e-res = ok('three')
     q5: {
         ok(v) -> print('5a: ' - v)
+
         fail -> print('fail 5a')
     }
     q5: {
         ok(v) -> print('5b: ' - v)
+
         fail -> print('fail 5b')
     }
     q5: {
         ok(v) -> print('5c: ' - v)
+
         fail -> print('fail 5c')
     }
 
@@ -126,12 +139,14 @@ main = () {
     q6 e-res = ok('between')
     q6: {
         ok(v) -> print('6a: ' - v)
+
         fail -> print('fail 6a')
     }
-    filler str = 'noi' - 'se'
+    filler = 'noi' - 'se'
     print('6m: ' - filler)
     q6: {
         ok(v) -> print('6b: ' - v)
+
         fail -> print('fail 6b')
     }
 
@@ -144,14 +159,17 @@ main = () {
             print('7a: ' - v)
             e2: {
                 ok(w) -> print('7b: ' - w)
+
                 fail -> print('fail 7b')
             }
             e2: {
                 ok(w) -> print('7c: ' - w)
+
                 fail -> print('fail 7c')
             }
             print('7d: ' - v)
         }
+
         fail -> print('fail 7')
     }
 }

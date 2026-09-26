@@ -47,10 +47,11 @@ make-map = () (out [str]i64) {
     out [str]i64 = { 'x': 10, 'y': 20 }
     ; out 走 move，由呼叫者管理
 }
-m2 = make-map()
+m2 [str]i64 = make-map()
 v2 = m2.get('x')
 v2: {
     ok -> print(v2)
+
     -> print('test-move-out: ok')
 }
 print('test-move-out: ok')
@@ -75,11 +76,13 @@ test-clone = () {
     va4 = a4.get('key')
     va4: {
         ok -> print(va4)
+
         nil -> print('va4-nil')
     }
     vb4 = b4.get('key')
     vb4: {
         ok -> print(vb4)
+
         nil -> print('vb4-nil')
     }
     ; a4 和 b4 應各自獨立擁有 256 個 keys 的 data，離開作用域時各自 free

@@ -5205,7 +5205,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// argument opt-verify rejects. txt -> str is handled further down by
 	// strValueFromTxt, which already produces an independent (malloc'd) buffer,
 	// so skipping the clone costs nothing.
-	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) && srcT != "%txt" &&
+	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) && srcT != "%txt" && !isOptionType(srcT) &&
 		(dstT == "%str-long" || (dstT == "%vec" && srcT == "%vec")) {
 		if dstT == "%str-long" {
 			_, sv := c.loadVal(inst.Args[0])

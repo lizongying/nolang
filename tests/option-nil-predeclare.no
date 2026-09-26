@@ -4,7 +4,9 @@ main = () {
     x ?i64 = nil
     x: {
         ok -> io.out('x=ok ')
+
         nil -> io.out('x=nil ')
+
         err -> io.out('x=err ')
     }
     print('')
@@ -13,14 +15,18 @@ main = () {
     y = 5
     y: {
         ok -> print(y)
+
         nil -> print('nil')
+
         err -> print('err')
     }
 
     s ?str = nil
     s: {
         ok -> print(s)
+
         nil -> print('s=nil')
+
         err -> print('s=err')
     }
 }

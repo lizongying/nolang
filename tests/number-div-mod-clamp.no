@@ -13,18 +13,23 @@
 test-div = () {
     r = 0
 
+    #{overflow=wrap}
     r = 10 / 3
     print(r); expect: 3
 
+    #{overflow=wrap}
     r = 7 / 2
     print(r); expect: 3
 
+    #{overflow=wrap}
     r = 100 / 4
     print(r); expect: 25
 
+    #{overflow=wrap}
     r = 1 / 1
     print(r); expect: 1
 
+    #{overflow=wrap}
     r = 0 / 5
     print(r); expect: 0
 }

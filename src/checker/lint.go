@@ -465,9 +465,18 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 整數運算預設回傳 option<int>；若結果既沒被 ?= 上拋、沒被 match 解構、也沒作為
 	// ?T 顯式返回/宣告，就處於「沉默泄漏」狀態（option 值飄著未被處理）。
 	for _, u := range ValidateUnhandledOverflow(program, opts.SourcePath) {
+		// 與 20e（idxhndld）一致：攜帶 ValidateResult.File（陳述所屬模組），
+		// 避免合併 std vet 時把 std 函式內的未處理溢位誤歸因到呼叫端測試檔案
+		// （行號回退會把 std 行號對到測試檔案某函式的行距範圍）。File 為空則
+		// 回退到 opts.SourcePath（主檔，通常是使用者碼）。
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-overflow",
+			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}

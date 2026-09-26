@@ -57,6 +57,7 @@ main = () {
     w = fill-slice()
     print('peel len=' - w.len().to-str())
     i <- [0..3): {
+        #{overflow=wrap}
         w[i] == 10 + i * 10 -> {}
 
         -> print('fail: borrow peel freed the buffer at ' - i.to-str())

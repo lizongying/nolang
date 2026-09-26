@@ -53,6 +53,7 @@ e-list {
 consume = (q e-res) {
     q: {
         ok(v) -> print('consume: ' - v)
+
         fail -> print('consume: fail')
     }
 }
@@ -67,10 +68,11 @@ show-list = (q e-list) {
     q: {
         ok2(v) -> {
             print('show-list:')
-            for x in v {
+            for x <- v: {
                 print(x)
             }
         }
+
         none -> print('show-list: none')
     }
 }
@@ -88,7 +90,7 @@ make-inner = () (r e-res) {
 
 ; 再轉手一層：接到 inner 的結果，原樣交還。
 make-outer = () (r e-res) {
-    t e-res = make-inner()
+    t = make-inner()
     r = t
 }
 
@@ -97,11 +99,12 @@ make-outer = () (r e-res) {
 ; 來源」規則同樣必須讓位給「移進參數 = 離開這個框」（§11.4）。
 make-chain = () (r e-res) {
     q e-res = ok('chain')
-    t e-res = q
+    t = q
     r = t
 }
 
 main = () {
+
     ; 1) 一次都沒被 match（R5 的主案例；修前 drop 1、修後 drop 2）
     q1 e-res = ok('one')
     print('case1')
@@ -122,12 +125,12 @@ main = () {
 
     ; 5) 別名一次都沒被 match（R5 標的是**來源**，別名是死的）
     a5 e-res = ok('five')
-    b5 e-res = a5
+    b5 = a5
     print('case5')
 
     ; 6) 別名，經由別名抽取一次（Phase 2b 的 clone 路徑 + R5 的來源標記）
     a6 e-res = ok('six')
-    b6 e-res = a6
+    b6 = a6
     consume(b6)
     print('case6')
 
@@ -143,7 +146,7 @@ main = () {
 
     ; 9) 切片載荷，經由別名抽取一次
     l9 e-list = ok2([4, 5])
-    m9 e-list = l9
+    m9 = l9
     show-list(m9)
     print('case9')
 
@@ -155,16 +158,18 @@ main = () {
     ; 11) 🔴 經結果參數交還（`move dst=0 args=[q r]` 的編碼）⇒ q 不可被標
     ;     （歷史註記：變數名原本得避開 `x11`/`x12`，因為 `x` + 兩個十六進位數字
     ;     曾是 byte 字面量；該拼寫已從語言移除，現在 `x11` 是普通識別字。）
-    r11 e-res = make-direct()
+    r11 = make-direct()
     r11: {
         ok(v) -> print('case11: ' - v)
+
         fail -> print('case11: fail')
     }
 
     ; 12) 🔴 同上，再隔一層呼叫（逃逸必須跨函式邊界往回傳遞）
-    r12 e-res = make-outer()
+    r12 = make-outer()
     r12: {
         ok(v) -> print('case12: ' - v)
+
         fail -> print('case12: fail')
     }
 
@@ -175,9 +180,10 @@ main = () {
     print('case13')
 
     ; 14) 🔴 區域別名後才交還（Phase 2b 的 clone + §11.4 的轉移規則）
-    r14 e-res = make-chain()
+    r14 = make-chain()
     r14: {
         ok(v) -> print('case14: ' - v)
+
         fail -> print('case14: fail')
     }
 

@@ -840,9 +840,9 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			// unconditionally used to leave such lets as unmaterialized global
 			// markers -> every later read was `undef` (test-fd-newtype trapped at
 			// `bad-fd < 0`).
-			if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" {
-				continue
-			}
+		if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" {
+			continue
+		}
 			raw := l.letTypeRaw(n)
 			if raw != "" && l.foldConstText(n, raw) != "" {
 				// A real COMPILE-TIME CONSTANT initializer. Scalars/enums/fixed
@@ -4776,41 +4776,150 @@ func (l *lowerer) lowerGlobalRef(name string) ValueID {
 					break
 				}
 			}
-			if initNode.Kind == hir.KStrLit {
+			if elemRaw, isOpt := parseOptionElem(gtype); isOpt {
+				// Option-typed module constant (`v ?i64 = 7`): fold the wrapped
+				// element into a proper `%option { i64 tag, [N x i64] slot }`
+				// initializer. The generic foldConstText only yields the bare
+				// inner scalar ("i64 7"), which made the global declare as `i64`
+				// while every read expected `%option` — so the match-arm
+				// comparison silently never matched (bug #1).
+				if ct := l.foldOptionGlobalConst(nn, initNode, elemRaw, name); ct != "" {
+					l.setGlobalConstText(gv, ct)
+				}
+			} else if initNode.Kind == hir.KStrLit {
 				// Module-level `VERSION = '...'` (and any top-level str constant):
 				// emit a backing byte-array constant plus a %str-long struct
 				// initializer so readers see the REAL string instead of an empty
 				// (zeroinitializer) global. foldConstText has no KStrLit case and
 				// falls through to "", which produced the empty `version` output
 				// for every subproject (nogit/nonpm/noimg/nouv).
-				text := l.pkg.Str(initNode.S)
-				nb := len([]byte(text))
-				backing := ".gstr." + name
-				l.mod.Globals = append(l.mod.Globals, GlobalDecl{
-					Name:      backing,
-					Type:      l.b.Type("str"),
-					ConstText: fmt.Sprintf("[%d x i8] c\"%s\"", nb, dataStr(text)),
-				})
-				ct := fmt.Sprintf("%%str-long { i64 %d, i64 %d, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, nb, backing)
-				for i := range l.mod.Globals {
-					if l.mod.Globals[i].Init == gv {
-						l.mod.Globals[i].ConstText = ct
-						break
-					}
-				}
+				l.setGlobalConstText(gv, l.foldStrLitConst(initNode, name))
 			} else {
-				ct := l.foldConstText(nn, gtype)
-				for i := range l.mod.Globals {
-					if l.mod.Globals[i].Init == gv {
-						l.mod.Globals[i].ConstText = ct
-						break
-					}
-				}
+				l.setGlobalConstText(gv, l.foldConstText(nn, gtype))
 			}
 		}
 	}
 	l.globals[name] = gv
 	return gv
+}
+
+// setGlobalConstText finds the module global whose Init value is gv and sets its
+// LLVM constant-initializer text. (Multiple GlobalDecls may share backing data;
+// the Init pointer uniquely identifies the one just created in lowerGlobalRef.)
+func (l *lowerer) setGlobalConstText(gv ValueID, ct string) {
+	if ct == "" {
+		return
+	}
+	for i := range l.mod.Globals {
+		if l.mod.Globals[i].Init == gv {
+			l.mod.Globals[i].ConstText = ct
+			return
+		}
+	}
+}
+
+// foldStrLitConst folds a top-level string literal into a `%str-long` constant
+// initializer, emitting the backing byte-array global it references. `name` is
+// the owning module-global's name, used to keep the backing symbol unique.
+func (l *lowerer) foldStrLitConst(initNode *hir.Node, name string) string {
+	text := l.pkg.Str(initNode.S)
+	nb := len([]byte(text))
+	backing := ".gstr." + name
+	l.mod.Globals = append(l.mod.Globals, GlobalDecl{
+		Name:      backing,
+		Type:      l.b.Type("str"),
+		ConstText: fmt.Sprintf("[%d x i8] c\"%s\"", nb, dataStr(text)),
+	})
+	return fmt.Sprintf("%%str-long { i64 %d, i64 %d, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, nb, backing)
+}
+
+// foldOptionGlobalConst folds a top-level option-typed `let` (e.g. `v ?i64 = 7`)
+// into a `%option { i64 tag, [N x i64] slot }` LLVM constant. It mirrors the
+// runtime layout produced by emitOptionWrap: tag 0 (ok) plus the payload stored
+// inline in the slot's first i64 (scalars) or laid out word-by-word for
+// aggregates (%str-long / %vec are exactly 24 bytes = 3 i64s). Returns "" when
+// the element cannot be folded, leaving the global zero-initialized rather than
+// emitting malformed IR.
+func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name string) string {
+	slotBytes := optionSlotBytesFor(l.mod.OptionInlineThreshold)
+	n := int(slotBytes / 8)
+	if n < 1 {
+		n = 1
+	}
+	// String option (`v ?str = 'hello'`): the element is a %str-long
+	// {i64 len, i64 cap, ptr data} — exactly 24 bytes = 3 i64s. We cannot
+	// `bitcast` an aggregate literal (the LLVM assembler rejects it), so lay the
+	// three words out explicitly into the payload slot.
+	if initNode.Kind == hir.KStrLit {
+		text := l.pkg.Str(initNode.S)
+		nb := len([]byte(text))
+		backing := ".gstr." + name
+		l.mod.Globals = append(l.mod.Globals, GlobalDecl{
+			Name:      backing,
+			Type:      l.b.Type("str"),
+			ConstText: fmt.Sprintf("[%d x i8] c\"%s\"", nb, dataStr(text)),
+		})
+		parts := make([]string, n)
+		parts[0] = fmt.Sprintf("i64 %d", nb)
+		parts[1] = fmt.Sprintf("i64 %d", nb)
+		parts[2] = fmt.Sprintf("i64 ptrtoint([%d x i8]* @%s to i64)", nb, backing)
+		for i := 3; i < n; i++ {
+			parts[i] = "i64 0"
+		}
+		slot := fmt.Sprintf("[%d x i64] [%s]", n, strings.Join(parts, ", "))
+		return fmt.Sprintf("%%option { i64 0, %s }", slot)
+	}
+	// Scalar element: fold and store into the slot's first i64.
+	elemCT := l.foldConstText(nn, elemRaw)
+	if elemCT == "" {
+		return ""
+	}
+	var slot string
+	if isScalarConst(elemCT) {
+		// Scalars occupy the slot's first i64 (matching optStoreInlinePayload's
+		// bitcast-to-payloadLT store). Floats/bools become their i64 bit-pattern.
+		parts := make([]string, n)
+		parts[0] = scalarConstToI64(elemCT)
+		for i := 1; i < n; i++ {
+			parts[i] = "i64 0"
+		}
+		slot = fmt.Sprintf("[%d x i64] [%s]", n, strings.Join(parts, ", "))
+	} else {
+		// Non-scalar aggregate we cannot safely lay out (vec/struct option
+		// globals): emit a zeroed option rather than malformed IR.
+		slot = fmt.Sprintf("[%d x i64] zeroinitializer", n)
+	}
+	return fmt.Sprintf("%%option { i64 0, %s }", slot)
+}
+
+// isScalarConst reports whether ct is a scalar LLVM constant (i1/i8/i16/i32/i64/
+// double/float/half) that can be stored into the option payload slot's first i64.
+func isScalarConst(ct string) bool {
+	switch {
+	case strings.HasPrefix(ct, "i1 "), strings.HasPrefix(ct, "i8 "),
+		strings.HasPrefix(ct, "i16 "), strings.HasPrefix(ct, "i32 "),
+		strings.HasPrefix(ct, "i64 "), strings.HasPrefix(ct, "double "),
+		strings.HasPrefix(ct, "float "), strings.HasPrefix(ct, "half "):
+		return true
+	}
+	return false
+}
+
+// scalarConstToI64 converts a scalar LLVM constant to the i64 bit-pattern stored
+// in the option payload slot. Integers keep their value; floats/bools become
+// their i64 bit-pattern (matching how optStoreInlinePayload pun the slot).
+func scalarConstToI64(ct string) string {
+	fields := strings.Fields(ct)
+	if len(fields) != 2 {
+		return "i64 0"
+	}
+	typ, lit := fields[0], fields[1]
+	switch typ {
+	case "double", "float", "half":
+		return fmt.Sprintf("i64 bitcast (%s %s to i64)", typ, lit)
+	default: // integer family
+		return "i64 " + lit
+	}
 }
 
 // foldConstText folds an HIR constant expression into LLVM constant-initializer

@@ -14,12 +14,21 @@ group {
 }
 
 main = () {
-    p = point { x: 1, y: 2 }
+    p = point {
+        x: 1
+        y: 2
+    }
     print(p); expect: {x: 1, y: 2}
 
     g = group {
         name: 'team'
-        pts: [point { x: 1, y: 2 }, point { x: 3, y: 4 }]
+        pts: [point {
+            x: 1
+            y: 2
+        }, point {
+            x: 3
+            y: 4
+        }]
     }
     print(g); expect: {name: team, pts: [{x: 1, y: 2}, {x: 3, y: 4}]}
 

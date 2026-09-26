@@ -38,7 +38,7 @@ main = () {
     ;    ovf-int-default lint 未模型化這個豁免，會對這一行誤報 ERROR
     ;    （實測 `no build` rc=0、`no run` 輸出 3，但 `no vet` 報 1 個 ERROR）。
     ; ─────────────────────────────────────────────
-    #{overflow = wrap}
+    #{overflow=wrap}
     print(1 + 2)
 
     ; ─────────────────────────────────────────────
@@ -51,6 +51,7 @@ main = () {
     ; 同一個值，用 format 做程式內斷言
     direct = format('{x}')
     (direct == '42') -> print('PASS: 4a format-field resolves to 42')
+
     -> print('FAIL: 4a format-field value=[' - direct - ']')
 
     ; 內嵌在文字中（欄位在呼叫點解析）
@@ -61,6 +62,7 @@ main = () {
     ;    `interp: string interpolation not lowered: {x}`。
     inlined = format('value={x}')
     (inlined == 'value=42') -> print('PASS: 4b field inside literal text')
+
     -> print('FAIL: 4b inlined=[' - inlined - ']')
 
     ; ─────────────────────────────────────────────
@@ -73,6 +75,7 @@ main = () {
     short = format('{x}')
     plain = x.to-str()
     (short == plain) -> print('PASS: 5 named field == x.to-str()')
+
     -> print('FAIL: 5 short=[' - short - '] plain=[' - plain - ']')
 
     ; ─────────────────────────────────────────────
@@ -80,6 +83,7 @@ main = () {
     ; ─────────────────────────────────────────────
     literal = format('literal {{x}} and field {x}')
     (literal == 'literal {x} and field 42') -> print('PASS: 6 brace escaping preserved')
+
     -> print('FAIL: 6 literal=[' - literal - ']')
 }
 main()

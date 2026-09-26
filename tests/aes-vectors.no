@@ -7,6 +7,7 @@ g-aad-empty []byte = with-len(0)
 dump = (label str, b []byte) {
     s = format('{label}=')
     i <- [0..b.len()): {
+        #{overflow=wrap}
         s = s + format('{b[i]:02x}')
     }
     print(s)
@@ -15,6 +16,7 @@ dump = (label str, b []byte) {
 dump16 = (label str, b [16]byte) {
     s = format('{label}=')
     i <- [0..16): {
+        #{overflow=wrap}
         s = s + format('{b[i]:02x}')
     }
     print(s)

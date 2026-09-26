@@ -1,0 +1,42 @@
+; option-match-silent-wrong.no — option / match 的三個靜默錯答（2026-09-26 修）
+;
+; 三條都是「重解釋」型 bug：程式能編、rc=0，但值是錯的（或錯誤訊息指到錯的型別），
+; 所以只能靠「可觀測輸出」釘住。逐條的機理與 IR 證據見
+; src/mir/option_match_three_bugs_test.go。
+;
+; ── 迴歸 1（bug #1）：模組頂層 `?T` + match，一個臂都不執行 ──
+; 修復前：全域 emit 成 `@V = private global i64 7`（型別 i64），main 卻以 %option
+;         讀它，`=== ok` 永不成立 ⇒ 一個臂都不跑、rc 仍 0（靜默）。
+; 修復後：emit 成 `%option { i64 0, [3 x i64] [i64 7, 0, 0] }` ⇒ 印 7。
+;         （大寫＝真全局，修復前是一律靜默的那個分支，所以這裡刻意用大寫。）
+;
+; ── 迴歸 2（bug #2）：`?bool` 的 match 取值恆為 false ──
+; 修復前：`print(x)` 印 true，但 `ok(b) -> print(b)` 印 0 —— 剝殼把槽讀成 i64，
+;         coerce 沒有 i64→i1，於是把 i64 直接 store 進 b 的 i1 槽，load i1 讀到 0。
+; 修復後：coerce 補上 i64→i1 的 trunc ⇒ 印 1 / 0。
+;
+; ── 迴歸 3（bug #3）：option 當函式參數 + match ⇒ 編譯期 opt-verify ──
+; 修復前：`g-str` 對 %option 參數呼叫 str_clone ⇒
+;         opt-verify "'%lv' defined with type '%option' but expected '%str-long'"。
+; 修復後：參數是 option 時跳過「借用參數 clone」閘門，改走剝殼 ⇒ 印 hello。
+;
+; 期望輸出（依序）：7 / 1 / 0 / hello
+
+V ?i64 = 7
+
+g-str = (r ?str) {
+    r: { ok(s) -> print(s) nil -> print('NIL') err -> print('ERR') }
+}
+mk-str = () (r ?str) { r = 'hello' }
+mk-bt = () (r ?bool) { r = true }
+mk-bf = () (r ?bool) { r = false }
+
+V: { ok(x) -> print(x) nil -> print('NIL') err -> print('ERR') }
+
+bt ?bool = mk-bt()
+bt: { ok(b) -> print(b) nil -> print('NIL') err -> print('ERR') }
+bf ?bool = mk-bf()
+bf: { ok(b) -> print(b) nil -> print('NIL') err -> print('ERR') }
+
+s ?str = mk-str()
+g-str(s)
