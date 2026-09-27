@@ -37,16 +37,45 @@ var optionMatchVariants = map[string]bool{"ok": true, "nil": true, "err": true}
 // Only option matches are reported: bare guard blocks (`{ cond -> body }`) have
 // no MatchedExpr, and matches over plain values (`x: { 1 -> ... }`) test no
 // option variant, so neither is flagged — keeping the rule low-noise.
-func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
+// NonExhaustiveMatch describes one option match that ValidateNonExhaustiveMatch
+// reports: the desugared root arm plus the option variants it fails to handle.
+//
+// It exists so automated fixers (see `no fmt --fix=match`) can drive off the
+// *same* detection the diagnostic uses instead of re-deriving arm structure from
+// source text. Root is the outermost IfExpression of the match; its MatchEndPos
+// carries the source position of the match's closing `}` (set by the parser's
+// match desugar), which is where a fixer inserts the missing arms.
+type NonExhaustiveMatch struct {
+	Root    *parser.IfExpression
+	Missing []string // subset of ok / nil / err, in that canonical order
+}
+
+// CollectNonExhaustiveMatches returns every option match in program that neither
+// terminates in a catch-all arm nor handles all three option variants.
+// ValidateNonExhaustiveMatch is a thin reporting wrapper over it.
+func CollectNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
 	if program == nil {
 		return nil
 	}
-	var results []ValidateResult
+	var out []NonExhaustiveMatch
 	for _, root := range collectMatchRoots(program) {
 		vs := matchVariants(root)
 		// Not an option match: no arm tests ok/nil/err (bare guard blocks and
 		// matches over plain values land here and stay unreported).
 		if len(vs) == 0 {
+			continue
+		}
+		// Matches synthesised by the `?=` / safe-index lowerings have no source
+		// block of their own (MatchEndPos stays zero): the user cannot add arms
+		// to them, so demanding completeness is both unfixable and wrong.
+		if root.MatchEndPos.Line == 0 {
+			continue
+		}
+		// Tagged-enum matches are not option matches: `q: { ok(v) -> ... fail -> ... }`
+		// matches the enum's OWN variants, and `ok` is simply a variant name that
+		// collides with the option vocabulary. Demanding nil/err arms there is a
+		// false positive — the match is already exhaustive over its enum.
+		if subjectIsDeclaredEnum(program, root) {
 			continue
 		}
 		// Exhaustive: terminates in a catch-all `-> ` arm, or handles every
@@ -62,17 +91,49 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 				missing = append(missing, v)
 			}
 		}
-		pos := root.Pos()
+		out = append(out, NonExhaustiveMatch{Root: root, Missing: missing})
+	}
+	return out
+}
+
+func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
+	if program == nil {
+		return nil
+	}
+	var results []ValidateResult
+	for _, m := range CollectNonExhaustiveMatches(program) {
+		pos := m.Root.Pos()
 		results = append(results, ValidateResult{
 			TraceID: matchNonexTraceID,
 			Line:    pos.Line,
 			Column:  pos.Column,
 			Message: fmt.Sprintf(
 				"non-exhaustive match on option '%s': missing arm(s): %s — add a `-> ` (else) arm, or handle every variant",
-				matchSubjectName(root), strings.Join(missing, ", ")),
+				matchSubjectName(m.Root), strings.Join(m.Missing, ", ")),
 		})
 	}
 	return results
+}
+
+// subjectIsDeclaredEnum reports whether the matched subject's static type is a
+// user-declared enum (e.g. `e-res`). Such a match ranges over that enum's own
+// variants, so the option completeness rule (ok/nil/err) does not apply.
+// Only a statically known type can be excluded — unknown types stay reported,
+// which is what lets call subjects (`foo(): { ok -> ... }`) still be caught.
+func subjectIsDeclaredEnum(program *parser.Program, root *parser.IfExpression) bool {
+	if program == nil || program.Sem == nil || len(program.Sem.EnumVariants) == 0 {
+		return false
+	}
+	id, ok := root.MatchedExpr.(*parser.Identifier)
+	if !ok {
+		return false
+	}
+	t, ok := program.Sem.VarTypes[id.Value]
+	if !ok || t == "" || strings.HasPrefix(t, "?") {
+		return false
+	}
+	_, isEnum := program.Sem.EnumVariants[t]
+	return isEnum
 }
 
 // matchSubjectName returns a printable name for the matched expression.

@@ -21,7 +21,7 @@ main = () {
     ; ─────────────────────────────────────────────
     ; 1. "f" → "MY======"  (pad 6 → 1 byte)
     ; ─────────────────────────────────────────────
-    a []byte = base32.decode('MY======')
+    a = base32.decode('MY======')
     an = a.len()
 
     #{index-out=0}
@@ -33,7 +33,7 @@ main = () {
     ; ─────────────────────────────────────────────
     ; 2. "fo" → "MZXQ===="  (pad 4 → 2 bytes)
     ; ─────────────────────────────────────────────
-    b []byte = base32.decode('MZXQ====')
+    b = base32.decode('MZXQ====')
     bn = b.len()
 
     #{index-out=0}
@@ -48,7 +48,7 @@ main = () {
     ; ─────────────────────────────────────────────
     ; 3. "foo" → "MZXW6==="  (pad 3 → 3 bytes)
     ; ─────────────────────────────────────────────
-    c []byte = base32.decode('MZXW6===')
+    c = base32.decode('MZXW6===')
     cn = c.len()
 
     #{index-out=0}
@@ -66,7 +66,7 @@ main = () {
     ; ─────────────────────────────────────────────
     ; 4. "foob" → "MZXW6YQ="  (pad 1 → 4 bytes)
     ; ─────────────────────────────────────────────
-    d []byte = base32.decode('MZXW6YQ=')
+    d = base32.decode('MZXW6YQ=')
     dn = d.len()
 
     #{index-out=0}
@@ -78,7 +78,7 @@ main = () {
     ; ─────────────────────────────────────────────
     ; 5. "fooba" → "MZXW6YTB"  (pad 0 → 5 bytes)
     ; ─────────────────────────────────────────────
-    e []byte = base32.decode('MZXW6YTB')
+    e = base32.decode('MZXW6YTB')
     en = e.len()
 
     #{index-out=0}
@@ -96,7 +96,7 @@ main = () {
 
     -> print('FAIL: 6 enc=[' - enc - ']')
 
-    back []byte = base32.decode(enc)
+    back = base32.decode(enc)
     backn = back.len()
     backn == 6 -> print('PASS: 7 round-trip decodes back to 6 bytes')
 

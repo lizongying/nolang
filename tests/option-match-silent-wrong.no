@@ -33,10 +33,10 @@ mk-bf = () (r ?bool) { r = false }
 
 V: { ok(x) -> print(x) nil -> print('NIL') err -> print('ERR') }
 
-bt ?bool = mk-bt()
+bt = mk-bt()
 bt: { ok(b) -> print(b) nil -> print('NIL') err -> print('ERR') }
-bf ?bool = mk-bf()
+bf = mk-bf()
 bf: { ok(b) -> print(b) nil -> print('NIL') err -> print('ERR') }
 
-s ?str = mk-str()
+s = mk-str()
 g-str(s)

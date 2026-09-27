@@ -22,7 +22,7 @@ check = (name str, cond bool) {
 
 ; 断言字符串路径等于期望值
 check-str = (name str, src str, path str, want str) {
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: ' - name - ' (nil)')
 
@@ -41,7 +41,7 @@ check-str = (name str, src str, path str, want str) {
 
 ; 断言整数路径等于期望值
 check-i64 = (name str, src str, path str, want i64) {
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: ' - name - ' (nil)')
 
@@ -64,7 +64,7 @@ check-i64 = (name str, src str, path str, want i64) {
 
 t-scalars = () {
     src = 'a-null: null\nb-tilde: ~\nc-empty:\nd-true: true\ne-false: FALSE\nf-yes: yes\ng-int: 42\nh-neg: -7\ni-hex: 0x1F\nj-oct: 0o17\nk-sep: 1_000\nl-float: 1.5\nm-exp: 1e3\nn-inf: .inf\no-nan: .nan\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> {
             print('fail: scalars (nil)')
@@ -124,7 +124,7 @@ t-scalars = () {
 
 t-block-seq = () {
     src = 'top:\n  - one\n  - two\n  - three\nnums:\n  - 1\n  - 2\n  - 3\npeople:\n  - name: Alice\n    age: 30\n  - name: Bob\n    age: 25\nmatrix:\n  - - 1\n    - 2\n  - - 3\n    - 4\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: block seq (nil)')
 
@@ -160,7 +160,7 @@ t-block-seq = () {
 
 t-flow = () {
     src = 'flow-seq: [1, 2, three]\nflow-map: {a: 1, b: two}\nnested: {list: [1, {k: v}], n: 5}\nmultiline: [\n  1,\n  2\n]\nempty-seq: []\nempty-map: {}\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: flow (nil)')
 
@@ -190,7 +190,7 @@ t-flow = () {
 
 t-quoted = () {
     src = 'single: \'it\'\'s ok\'\ndouble: "a\\tb\\nc"\nplain-hash: a # comment\nquoted-hash: \'a # not comment\'\ndq-quote: "say \\"hi\\""\nempty-s: \'\'\nnum-as-str: \'123\'\nbool-as-str: "true"\ncolon-in-sq: \'a: b\'\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: quoted (nil)')
 
@@ -216,7 +216,7 @@ t-quoted = () {
 
 t-block-scalar = () {
     src = 'literal: |\n  line1\n  line2\nfolded: >\n  word1\n  word2\nstrip: |-\n  tail\nkeep: |+\n  kept\n\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: block scalar (nil)')
 
@@ -238,7 +238,7 @@ t-block-scalar = () {
 
 t-comments = () {
     src = '# leading comment\n\n---\n# comment inside\nkey: value   # trailing\n\nother: 1\n...\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: comments (nil)')
 
@@ -257,7 +257,7 @@ t-comments = () {
 
 t-multi-doc = () {
     src = '---\nname: first\n---\nname: second\n---\nname: third\n'
-    all ?yaml = yaml.parse-all(src)
+    all = yaml.parse-all(src)
     all: {
         nil -> print('fail: multi-doc (nil)')
 
@@ -293,7 +293,7 @@ t-multi-doc = () {
 
 t-anchor-merge = () {
     src = 'base: &b\n  x: 1\n  y: 2\nref: *b\nmerged:\n  <<: *b\n  y: 9\nexplicit:\n  ? complex key\n  : complex value\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: anchor (nil)')
 
@@ -322,7 +322,7 @@ t-anchor-merge = () {
 
 t-walk = () {
     src = 'a: 1\nb: two\nc: true\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: walk (nil)')
 
@@ -370,7 +370,7 @@ t-walk = () {
 
 t-serialize = () {
     src = 'name: Alice\nage: 30\nactive: true\nnone: null\ntags:\n  - a\n  - b\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: serialize (nil)')
 
@@ -419,7 +419,7 @@ t-errors = () {
     msg = yaml.error-of(bad)
     check('error-of 非法输入非空', msg.len-bytes() > 0)
 
-    b ?yaml = yaml.parse(bad)
+    b = yaml.parse(bad)
     b: {
         nil -> print('fail: 非法输入返回 nil 而非 err')
 
@@ -435,7 +435,7 @@ t-errors = () {
 
 t-round-trip = () {
     src = '# app config\nversion: 2\nname: "demo app"\ndebug: false\nratio: 0.75\nhex: 0xFF\nserver:\n  host: localhost\n  port: 8080\n  tags:\n    - web\n    - api\n  limits: {cpu: 2, mem: 512}\nusers:\n  - name: alice\n    roles: [admin, dev]\n  - name: bob\n    roles: []\ndesc: |\n  line one\n  line two\nempty-map: {}\nempty-seq: []\n'
-    d ?yaml = yaml.parse(src)
+    d = yaml.parse(src)
     d: {
         nil -> print('fail: round-trip big (nil)')
 
@@ -483,7 +483,7 @@ t-round-trip = () {
 t-bom = () {
     raw = '\xEF\xBB\xBFa: 1\n'
     check('strip-bom 去掉 BOM', yaml.strip-bom(raw) == 'a: 1\n')
-    d ?yaml = yaml.parse(raw)
+    d = yaml.parse(raw)
     d: {
         nil -> print('fail: bom (nil)')
 

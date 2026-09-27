@@ -2667,6 +2667,33 @@ func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
 	}
 	return results
 }
+// exprHasHexIntLiteralValue reports whether an expression (including array/slice
+// literals and their elements) contains a hexadecimal integer literal (0xNN).
+// Such literals are inferred as i64 by the compiler, so an explicit byte-array
+// annotation is NOT redundant and must not be removed: dropping `[N]byte` from
+// `x [N]byte = [0x2b, …]` makes the compiler infer `[]i64` instead, which breaks
+// any later use expecting []byte. The frontend type inference here returns
+// "byte" for hex (see inferExprType), which is wrong for this case, so we skip
+// the redundant report — mirroring the fix tool's valueHasHexLiteral guard.
+func exprHasHexIntLiteralValue(e parser.Expression) bool {
+	switch v := e.(type) {
+	case *parser.IntegerLiteral:
+		raw := v.Token.Literal
+		if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+			return true
+		}
+		return false
+	case *parser.ArrayLiteral:
+		for _, el := range v.Elements {
+			if exprHasHexIntLiteralValue(el) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
 func checkRedundantTypeInStmt(stmt parser.Statement, varTypes map[string]string) []ValidateResult {
 	if stmt == nil {
 		return nil
@@ -2678,6 +2705,14 @@ func checkRedundantTypeInStmt(stmt parser.Statement, varTypes map[string]string)
 			annotatedType := s.Type.String()
 			inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
 			if inferredType != "" && inferredType == annotatedType {
+				// Hex-integer array/slice literal: removing the explicit
+				// annotation would change the element type (i64 instead of
+				// byte) and break compilation. Skip the redundant report.
+				if exprHasHexIntLiteralValue(s.Value) {
+					// Register the variable for subsequent checks
+					varTypes[s.Name.Value] = annotatedType
+					return results
+				}
 				results = append(results, ValidateResult{
 					TraceID: "tcpoxtfd",
 					Line:    s.Type.Pos().Line,
@@ -4085,11 +4120,36 @@ func isImplicitSelfIdent(e parser.Expression) bool {
 	return ok && id != nil && id.Value == "self" && id.Token.Type == lexer.DOT
 }
 
-// isIntExpr 推斷表達式 e 是否為整數型別（用於判定 + - * / 是否會產生 option<int>）。
-// 確定型別為整數家族 → true；確定非整數（str / char / bool / f64 / ptr / fn 等）→ false；
-// 型別未知（無標註的區域變數 / 動態呼叫）→ 保守傳回 true（視為整數，寧可多報，
-// 因為未標註整數運算預設就是 option，多報可由使用者加註解消除；而漏報會沉默泄漏）。
+// isIntExpr 報告表達式 e 是否「確定為整數算術運算元」（用於判定 + - * / 是否會產生
+// option<int>，即 ovfhndld 硬錯誤路徑）。與 ovf-int-default lint 走查的 operandIntKind
+// 保持同一口径：任一側確定為非整數（str/txt 字面量、char/bool/float、或具名非整數型別
+// 變數）時，整條 `-` 鏈即視為字串拼接，不應被當成整數溢出。
+//
+// 背景：舊實作只取 e 的「結果型別」(inferExprType) 判斷，但 `got - '/' - inner` 這類
+// 字串拼接鏈的頂層 InfixExpression 結果型別為未知 ""，於是被保守視為整數 → 誤報
+// ovfhndld（tests/match-it-scope.no:49/54/117 實報）。lint 路徑的 operandIntKind 因為
+// 遞迴進 InfixExpression、遇 StringLiteral 即回 ""，從不誤報；本函式改採相同結構遞迴，
+// 讓兩條路徑一致。
+//
+// 型別未知（如跨模組呼叫結果、未標註的區域變數）仍保守回傳 true，保留對真正未處理
+// 整數溢出的報告——對照組（`x - 1`）必須照樣被報告，否則只是整條走查靜音造成的假通過。
 func isIntExpr(e parser.Expression, varTypes map[string]string, selfType string) bool {
+	switch x := e.(type) {
+	case *parser.StringLiteral, *parser.CharLiteral, *parser.BooleanLiteral, *parser.RegexLiteral:
+		return false // str/txt 字面量等：確定非整數，`-` 是字串拼接
+	case *parser.InfixExpression:
+		// 字串拼接鏈：`-` 左結合，任一側確定非整數（字面量 / 具名非整數型別 /
+		// 被捕獲的 option 子運算）即視為拼接，不產生 option<int>。與 ovf-int-default
+		// lint 走查 operandIntKind 同一口径，修復 tests/match-it-scope.no:49/54/117
+		// 的 ovfhndld 誤報（頂層 InfixExpression 結果型別未知 ""，舊實作只取結果
+		// 型別而誤判為整數）。兩側皆整數時不在此短路，交給下方「結果型別」判斷。
+		if !isIntExpr(x.Left, varTypes, selfType) || !isIntExpr(x.Right, varTypes, selfType) {
+			return false
+		}
+	}
+	// 結果型別判斷：推斷型別為非整數（含被捕獲的 option ?T、str/txt 標註變數）時
+	// 不回報溢出——例如 `a = b + c / 2` 因除法被捕獲為 ?T，不屬沉默泄漏；這是與
+	// 舊實作一致的既有可能性，必須保留以避免「被捕獲賦值」被誤報。
 	t := inferExprType(e, varTypes, nil, selfType)
 	if t == "" {
 		return true // 未知型別：保守視為整數

@@ -2,6 +2,6 @@
 print('start')
 space = ' '
 print('space created')
-buf str = space.repeat(8)
+buf = space.repeat(8)
 print('buf created')
 print('end')

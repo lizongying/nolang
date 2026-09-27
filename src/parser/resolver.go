@@ -131,6 +131,14 @@ type SemanticContext struct {
 	// 型別名為 `<枚舉名>.<變體名>`（由 codegen 登記為具名 LLVM struct）。
 	EnumVariantFields map[string]map[string][]string
 
+	// IfaceImpls：介面名 -> 實作者型別列表，由 build.devirtualizeInterfaceVars
+	// 在攤平方法呼叫前從「合併後程式」推導並寫入。刻意掛在 Program 的語義副表
+	// 而不是全域變數：它是**單一編譯單元的狀態**，若跨檔案共用，`no vet <dir>`
+	// 的平行處理會讓前一個檔（例如引了 sqlite 驅動的 database-sql.no）的映射
+	// 污染下一個檔（ffi-mysql.no），把它的介面呼叫攤平成根本不存在的
+	// `sqlite.db-sqlite.query`，最後報成「'...' is not defined」假警報。
+	IfaceImpls map[string][]string
+
 	// FuncVarTypes stores per-function-local variable types, keyed by
 	// function name → variable name → type. This prevents same-named
 	// locals in different functions (e.g. `r` in parse-i64 and parse-f64)
@@ -157,6 +165,7 @@ func NewSemanticContext() *SemanticContext {
 		EnumVariantFields:  make(map[string]map[string][]string),
 		FuncVarTypes:       make(map[string]map[string]string),
 		FuncDeclaredVars:   make(map[string]map[string]bool),
+		IfaceImpls:         make(map[string][]string),
 	}
 }
 
@@ -197,6 +206,13 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	}
 	for k := range other.DeclaredVars {
 		s.SetDeclared(k)
+	}
+	// 合併介面實作對映（不覆蓋既有條目）。正常情況下 IfaceImpls 是在模組合併
+	// 之後才由 devirtualizeInterfaceVars 寫入，這裡只是讓 Sem 的合併語意完整。
+	for k, v := range other.IfaceImpls {
+		if _, exists := s.IfaceImpls[k]; !exists {
+			s.SetIfaceImpls(k, v)
+		}
 	}
 	// Merge per-function variable types (don't overwrite existing entries).
 	for fn, vars := range other.FuncVarTypes {
@@ -571,6 +587,20 @@ func (s *SemanticContext) SetDeclared(name string) {
 		s.DeclaredVars = make(map[string]bool)
 	}
 	s.DeclaredVars[name] = true
+}
+
+// SetIfaceImpls 記錄「介面名 -> 實作者型別列表」（供方法呼叫攤平時的
+// 單一實作者回退）。範圍是單一 Program，禁止改成全域：見 IfaceImpls 的註解。
+func (s *SemanticContext) SetIfaceImpls(iface string, impls []string) {
+	if s.IfaceImpls == nil {
+		s.IfaceImpls = make(map[string][]string)
+	}
+	s.IfaceImpls[iface] = impls
+}
+
+// IfaceImplsOf 回傳介面的實作者列表；未記錄（或無語義副表）時回傳 nil。
+func (s *SemanticContext) IfaceImplsOf(iface string) []string {
+	return s.IfaceImpls[iface]
 }
 
 // IsDeclared 報告變數是否已宣告。

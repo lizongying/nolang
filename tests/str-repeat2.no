@@ -2,6 +2,6 @@
 print('=== str.repeat Test 2 ===')
 space = ' '
 print('space created')
-buf str = space.repeat(8)
+buf = space.repeat(8)
 print('buf created')
 print('=== Done ===')

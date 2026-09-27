@@ -9,6 +9,8 @@ test-minimal = () {
         ok -> print(v)
 
         nil -> print('nil')
+
+        err -> print('err')
     }
     ; m 退出作用域：应释放 keys 和 vals 的 256 个 str-long
 }

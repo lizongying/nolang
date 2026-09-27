@@ -3913,15 +3913,30 @@ func isBuiltinType(name string) bool {
 // 多個實作者（例如同時 import sqlite 與 mysql 驅動）時保持原樣 —— 寧可讓下游
 // 給出明確診斷，也不要猜一個實作而產生錯誤分派。
 // ifaceImplTable 記錄「介面 -> 實作者型別」映射，由 devirtualizeInterfaceVars
-// 在每次編譯時重建。resolveMethodCall 在接收者的靜態型別是介面名時靠它回退到
+// 在每次編譯時寫入 **該次編譯的 merged Program 的語義副表**（SemanticContext.
+// IfaceImpls）；resolveMethodCall 在接收者的靜態型別是介面名時靠它回退到
 // 唯一實作者 —— 介面本身只有方法簽名、沒有方法體可呼叫。
+//
+// 為什麼必須是 per-Program 而不能是全域變數：它是「單一編譯單元」的狀態。
+// 放在全域時，`no vet <dir>` 的平行處理會讓先編譯的檔案（例如引入 sqlite 驅動
+// 的 database-sql.no）把 `db -> [db-sqlite]` 留在表裡，後編譯的 ffi-mysql.no
+// 於是把自己的介面呼叫攤平成 `sqlite.db-sqlite.query` —— 該定義在這個程式裡
+// 並不存在，最終報成 `'sqlite.db-sqlite.query' is not defined` 假警報。
 //
 // 為什麼不能只靠 varTypes：合併後 buildVarTypes(merged) 會從 AST 重建一份
 // 變數型別表，重建結果與 CompileTarget 早期那張表並非同一個 map，時序上無法
 // 保證具象化寫入一定活到攤平那一刻。這張表按「介面名」查詢，與 varTypes 的
 // 生命周期解耦。key 同時含完整名（sql.db）與去掉模組前綴的裸名（db），因為
 // 不同 pass 拿到的名字形態不一致。
-var ifaceImplTable = make(map[string][]string)
+
+// ifaceImplsOf 取出單一編譯單元的「介面 -> 實作者」對映。刻意從 Program 的語義
+// 副表讀而不是全域表：見上方跨檔案污染的說明。
+func ifaceImplsOf(program *parser.Program, iface string) []string {
+	if program == nil || program.Sem == nil || iface == "" {
+		return nil
+	}
+	return program.Sem.IfaceImplsOf(iface)
+}
 
 func devirtualizeInterfaceVars(mainProg, merged *parser.Program,
 	varTypes map[string]string, typeOwner map[string]string) {
@@ -3947,12 +3962,14 @@ func devirtualizeInterfaceVars(mainProg, merged *parser.Program,
 		return
 	}
 	// 供 resolveMethodCall 回退使用（見 ifaceImplTable 的說明）。
+	if os.Getenv("NOLANG_IFACEDBG") != "" {
+		fmt.Fprintf(os.Stderr, "[IFACEDBG] devirt merged=%p sem=%p\n", merged, merged.Sem)
+	}
 	for k, v := range impls {
-		ifaceImplTable[k] = v
-		if i := strings.LastIndex(k, "."); i >= 0 {
-			bare := k[i+1:]
-			if _, exists := ifaceImplTable[bare]; !exists {
-				ifaceImplTable[bare] = v
+		if merged.Sem != nil {
+			merged.Sem.SetIfaceImpls(k, v)
+			if i := strings.LastIndex(k, "."); i >= 0 {
+				merged.Sem.SetIfaceImpls(k[i+1:], v)
 			}
 		}
 	}
@@ -4049,7 +4066,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// 攤平成 `sql.db.exec` 會得到不存在的函式（MIR: unknown callee）。
 	// 回退到唯一實作者 —— 多個實作者時保持原樣，讓下游給出明確診斷，
 	// 而不是猜一個實作產生錯誤分派。
-	if impl := ifaceImplTable[recvType]; len(impl) == 1 {
+	if impl := ifaceImplsOf(program, recvType); len(impl) == 1 {
 		recvType = impl[0]
 	}
 	methodName := dot.Property

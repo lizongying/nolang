@@ -197,6 +197,58 @@ bar = () {
 	}
 }
 
+// Tagged enums are NOT options. `q: { ok(v) -> ... fail -> ... }` matches the
+// enum's OWN variants — `ok` and `fail` merely share a name with the option
+// vocabulary. Demanding nil/err arms there is a false positive: the match is
+// already exhaustive over its enum (this is what tests/tagged-enum*.no hit).
+func TestNonExhaustiveMatchTaggedEnumNotReported(t *testing.T) {
+	src := `e-res {
+    ok(v str),
+    fail,
+}
+show = (q e-res) {
+    q: {
+        ok(v) -> print('show: ' - v)
+
+        fail -> print('show: fail')
+    }
+}
+`
+	prog := parseProg(t, src)
+	// Sanity: the enum type must actually be known, otherwise this test would
+	// pass for the wrong reason (unknown types stay reported by design).
+	if _, ok := prog.Sem.EnumVariants["e-res"]; !ok {
+		t.Fatalf("parser did not register enum e-res: %v", prog.Sem.EnumVariants)
+	}
+	results := ValidateNonExhaustiveMatch(prog)
+	if n := countMatchNonex(results); n != 0 {
+		t.Fatalf("expected 0 match-nonex for tagged-enum match, got %d: %v", n, results)
+	}
+}
+
+// Matches synthesised by the `?=` lowering (`a ?= x`) have no source `{ ... }`
+// block to add arms to — MatchEndPos stays zero. Reporting them produces
+// diagnostics the user literally cannot act on (they name internal temporaries
+// like `__opt_1`), so they must be skipped.
+func TestNonExhaustiveMatchSynthesizedUnwrapNotReported(t *testing.T) {
+	// `?=` is only legal inside a function with an option-typed result param
+	// (it returns the failure through it). The arithmetic RHS is what forces the
+	// lowering to unwrap each operand into a synthetic `__opt_N` match — that is
+	// the shape reported in tests/safe-index.no.
+	src := `f = () (r ?i64) {
+    b ?i64 = 1
+    c ?i64 = 2
+    d ?i64 = 3
+    a ?= b + c + d
+    r = a
+}
+`
+	results := ValidateNonExhaustiveMatch(parseProg(t, src))
+	if n := countMatchNonex(results); n != 0 {
+		t.Fatalf("expected 0 match-nonex for synthesized ?= match, got %d: %v", n, results)
+	}
+}
+
 // Counterpart of the above: a call-subject match that DOES handle all three
 // variants must not be reported (the rule is about exhaustiveness, not about
 // the subject shape).

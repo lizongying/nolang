@@ -11,6 +11,8 @@ test-simple = () {
         ok -> print(v)
 
         nil -> print('nil')
+
+        err -> print('err')
     }
 }
 test-simple()

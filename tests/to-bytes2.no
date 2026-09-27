@@ -4,7 +4,7 @@
 print('start')
 s = 'test label'
 print('before to-bytes')
-b []byte = s.to-bytes()
+b = s.to-bytes()
 print('after to-bytes')
 
 ; 不訪問 b[0]，只打印 len

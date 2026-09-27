@@ -55,7 +55,7 @@ test-encode-int-multi = () {
 ; test-decode-int-small: 解碼小整數
 test-decode-int-small = () {
     space = ' '
-    data str = space.repeat(HPACK-TEST-BUF)
+    data = space.repeat(HPACK-TEST-BUF)
     data[0] = 10
     val = 0
     next = 0
@@ -74,7 +74,7 @@ test-decode-int-small = () {
 ; test-decode-int-multi: 解碼多 byte 整數
 test-decode-int-multi = () {
     space = ' '
-    data str = space.repeat(HPACK-TEST-BUF)
+    data = space.repeat(HPACK-TEST-BUF)
     data[0] = 31
     data[1] = 170
     data[2] = 10
@@ -116,7 +116,7 @@ test-encode-str = () {
 ; test-decode-str: 解碼字串
 test-decode-str = () {
     space = ' '
-    data str = space.repeat(HPACK-TEST-BUF)
+    data = space.repeat(HPACK-TEST-BUF)
     data[0] = 3
     data[1] = 97
     data[2] = 98
@@ -234,7 +234,6 @@ test-decode-headers = () {
     enc2 = t.encode-header(':path', '/')
 
     ; 合併
-    #{overflow=wrap}
     enc-out = enc-out - enc2
 
     ; 解碼

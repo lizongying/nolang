@@ -250,14 +250,26 @@ test-map-clone = () (ok bool) {
     v1 = m2.get('a')
     v1: {
         ok -> v1 == 1 -> ok = true
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
     v2 = m2.get('b')
     v2: {
         ok -> v2 == 2 -> ok = true
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
     v3 = m2.get('c')
     v3: {
         ok -> v3 == 3 -> ok = true
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
 
     ; 修改 m2 不影響 m1
@@ -265,10 +277,18 @@ test-map-clone = () (ok bool) {
     v4 = m1.get('a')
     v4: {
         ok -> v4 == 1 -> ok = true
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
     v5 = m2.get('a')
     v5: {
         ok -> v5 == 100 -> ok = true
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
 
     ; m1 大小不變
@@ -296,12 +316,20 @@ test-map-vec-value-clone = () (ok bool) {
             v.push('z')
             v.len() == 3 -> ok = true
         }
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
 
     ; m1 的切片不應受影響
     v2 = m1.get('items')
     v2: {
         ok -> v2.len() == 2 -> ok = true
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
 }
 

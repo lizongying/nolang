@@ -623,6 +623,23 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		}
 	}
 
+	// 檢查目標不是 std 檔時，丟棄歸屬到 std 的診斷：
+	// std 有獨立閘門（`no vet src/std`，目前 0 error），而 merged 模式下 std 自帶的
+	// `#{overflow}` 註解會因為 lowering 重建 AST 節點、導致註解側表（nodeSem，
+	// 以節點指標為鍵）查不到而產生大量假警報——實測 src/std/arr.no:68 已存在
+	// `#{overflow=wrap}`，merged vet 仍報 :69 未處理溢位；同一份 std 單獨 vet 卻是
+	// 乾淨的。把 std 內部診斷算進使用者/測試檔的 vet 結果只會誤導，故在此過濾。
+	if !isStdPath(opts.SourcePath) {
+		filtered := results[:0]
+		for _, r := range results {
+			if isStdPath(r.File) {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		results = filtered
+	}
+
 	// 按 file, line, column 排序，方便閱讀
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].File != results[j].File {
@@ -635,6 +652,19 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	})
 
 	return results
+}
+
+// isStdPath 報告路徑是否屬於標準函式庫（std）。std 可能以絕對路徑
+// （/…/src/std/X.no）、相對路徑（src/std/X.no）或正規化後的模組形式（std/X.no）
+// 出現，三種都要認得，否則過濾會漏。
+func isStdPath(p string) bool {
+	if p == "" {
+		return false
+	}
+	if strings.HasPrefix(p, "std/") {
+		return true
+	}
+	return strings.Contains(p, "/std/")
 }
 
 // CountBySeverity 統計指定嚴重性的結果數量。

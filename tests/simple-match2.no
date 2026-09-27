@@ -3,6 +3,8 @@ test1 = () {
     n = 42
     r = n: {
         err -> 'err'
+
+        -> ''
     }
     print(r)
 }

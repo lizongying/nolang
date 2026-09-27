@@ -40,7 +40,6 @@ test-opt-field = () {
     print(s); expect: path=/api/health
 
     ; 多个字段组合
-    #{overflow=wrap}
     combined = p - ':' - port.to-str()
     print(combined); expect: /api/health:8080
 }

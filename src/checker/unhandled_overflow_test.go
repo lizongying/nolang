@@ -123,6 +123,19 @@ func TestUnhandledOverflowAllowed(t *testing.T) {
 }`,
 		},
 		{
+			// 字串拼接鏈中運算元型別未知（如來自 to-str() 呼叫結果，未標註型別）、
+			// 但鏈中含有字串字面量：整條 `-` 是拼接、不產生 option<int>，不得誤報
+			// ovfhndld。迴歸：tests/match-it-scope.no:49/54/117 實報（`got - '/' -
+			// inner` 中 got/inner 皆未知型別，舊 isIntExpr 只看結果型別 "" 而誤判為整數）。
+			name: "string_concat_chain_with_unknown_operands",
+			src: `f = () () {
+    got = it.to-str()
+    inner = it.to-str()
+    out = got - '/' - inner - '/' - it.to-str()
+    io.outln(out)
+}`,
+		},
+		{
 			// 位元運算不屬於溢出的 + - * /，不得誤報。
 			name: "bitwise_ops",
 			src: `f = () () {

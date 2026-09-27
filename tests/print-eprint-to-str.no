@@ -15,7 +15,7 @@ main = () {
         x: 1
         y: 2
     }
-    s []str = ['a', 'b']
+    s = ['a', 'b']
     m [str]i64 = { 'a': 1, 'b': 2 }
 
     ; stdout (print):

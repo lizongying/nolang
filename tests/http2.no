@@ -4,7 +4,7 @@
 ; test-frame-parse: 影格標頭解析
 test-frame-parse = () {
     space = ' '
-    data str = space.repeat(16)
+    data = space.repeat(16)
 
     ; 構建一個 HEADERS 影格標頭
     ; length = 10 (0x00000a), type = 1 (HEADERS), flags = 4 (END_HEADERS)
@@ -51,7 +51,7 @@ test-frame-serialize = () {
     f.frame-type = 1
     f.flags = 4
     f.stream-id = 1
-    buf str = space.repeat(16)
+    buf = space.repeat(16)
     next = 0
     next = f.serialize(buf, 0)
     next != 9 -> {

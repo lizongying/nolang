@@ -36,6 +36,10 @@ test-scope = () {
     v1 = m1.get('apple')
     v1: {
         ok -> print(v1)
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
     ; m1 離開作用域時應釋放 256 個 keys slot 的 data
 }
@@ -47,7 +51,7 @@ make-map = () (out [str]i64) {
     out [str]i64 = { 'x': 10, 'y': 20 }
     ; out 走 move，由呼叫者管理
 }
-m2 [str]i64 = make-map()
+m2 = make-map()
 v2 = m2.get('x')
 v2: {
     ok -> print(v2)
@@ -63,6 +67,10 @@ test-reassign = () {
     v3 = m3.get('second')
     v3: {
         ok -> print(v3)
+
+        nil -> print('nil')
+
+        err -> print('err')
     }
     ; m3 離開作用域時應釋放所有 keys data
 }
@@ -72,18 +80,22 @@ print('test-reassign: ok')
 ; 測試 4：map-to-map 局部賦值走深層 clone（涵蓋 emitInlineArrayFieldClone）
 test-clone = () {
     a4 [str]i64 = { 'key': 99 }
-    b4 [str]i64 = a4
+    b4 = a4
     va4 = a4.get('key')
     va4: {
         ok -> print(va4)
 
         nil -> print('va4-nil')
+
+        err -> print('err')
     }
     vb4 = b4.get('key')
     vb4: {
         ok -> print(vb4)
 
         nil -> print('vb4-nil')
+
+        err -> print('err')
     }
     ; a4 和 b4 應各自獨立擁有 256 個 keys 的 data，離開作用域時各自 free
 }

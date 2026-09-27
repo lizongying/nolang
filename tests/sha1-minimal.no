@@ -4,7 +4,7 @@
 ; SHA-1("abc") = a9993e364706816aba3e25717850c26c9cd0d89d
 
 data []byte = [0x61, 0x62, 0x63]
-hash [20]byte = sha1.sha1(data)
+hash = sha1.sha1(data)
 
 print('sha1(abc)=')
 i <- [0..20): {

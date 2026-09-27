@@ -2,7 +2,7 @@
 print('start')
 space = ' '
 print('before repeat')
-buf str = space.repeat(8)
+buf = space.repeat(8)
 print('after repeat')
 buf[0] != 32 -> {
     print('FAIL: expected space')

@@ -394,7 +394,30 @@ func (w *optCmpWalker) checkCompare(e *parser.InfixExpression) {
 	if otherType == optionVariantType || otherType == optionNilType {
 		return
 	}
+	// option 與「純量 / 值型別」比較是合法的：nolang 的 `==` / `<` 等比較會解開
+	// option 的內層值再比（實證 `?i64 == 42` / `?i64 < 100` 在 runtime 皆正確運作，
+	// tests/opt-container-len.no 即依賴此行為印出 `ok: ?i64 scalar unchanged`）。
+	// 舊規則假設「拿 {tag,data} 跟數字比是無意義的」是錯的——語言實際比對的是內層值，
+	// 故 option-vs-純量比較不應報 fe0a5wt2（參見 src/checker/option_compare_test.go）。
+	if isValueComparableType(otherType) {
+		return
+	}
 	w.report(e, optExpr, otherExpr, optType, otherType)
+}
+
+// isValueComparableType 報告型別是否為可與 option 內層值直接比較的「純量 / 值型別」。
+// 這些型別的 option（`?T`）與對應純量比較時，nolang 會解開 option 比對內層值
+// （`?i64 == 42` 合法），故不應觸發 fe0a5wt2。struct / interface / fn 等非值型別
+// 仍走原規則（其與 option 的比較語意不明，保留報錯）。
+func isValueComparableType(t string) bool {
+	switch t {
+	case "i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "byte", "int",
+		"f32", "f64", "float",
+		"char", "bool", "str", "txt":
+		return true
+	}
+	return false
 }
 
 // typeOf 盡力推斷表達式的靜態型別；第二個回傳值為 false 表示型別未知。

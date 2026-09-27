@@ -14,7 +14,8 @@ func TestOptionComparisonErrors(t *testing.T) {
 		contains string // 命中時訊息須含此子串
 	}{
 		{
-			// 裸指派來自 option 內建：size 是 ?i64，拿它跟 0 比是無意義的。
+			// 裸指派來自 option 內建：size 是 ?i64，拿它跟 0 比——nolang 會解開
+			// 內層值再比（`?i64 == 0` 在 runtime 合法），故不應報錯。
 			name: "plain_assign_from_builtin_option_then_compare",
 			src: `f = () () {
     size = fstat-size(.fd)
@@ -22,27 +23,37 @@ func TestOptionComparisonErrors(t *testing.T) {
         content = nil
     }
 }`,
-			wantErr:  true,
-			contains: "size",
+			wantErr:  false,
 		},
 		{
-			// 顯式 ?i64 標註：r 是 option，與 0 比要報錯。
+			// 顯式 ?i64 標註：r 是 option，與 0 比（解開內層值）合法，不報錯。
 			name: "explicit_option_annotation_then_compare",
 			src: `f = () () {
     r ?i64 = get-size()
     r == 0 -> return
 }`,
-			wantErr:  true,
-			contains: "r",
+			wantErr:  false,
 		},
 		{
-			// 結果參數是 option：在函式體內拿它跟數字比要報錯。
+			// 結果參數是 option：在函式體內拿它跟數字比（解開內層值）合法，不報錯。
 			name: "result_param_compared_with_number",
 			src: `g = () (r ?i64) {
     r == 0 -> return
 }`,
+			wantErr:  false,
+		},
+		{
+			// option 與「struct 值」比較仍報錯：struct 非值型別，語意不明
+			// （非 option-vs-純量那種可解開內層值再比的情形），保留原規則。
+			name: "option_compared_with_struct_still_errors",
+			src: `point = (x i64, y i64) {}
+f = () () {
+    p ?point = make-point()
+    q point = point { x: 1, y: 2 }
+    p == q -> return
+}`,
 			wantErr:  true,
-			contains: "r",
+			contains: "p",
 		},
 	}
 
@@ -141,9 +152,11 @@ f = (fd i64) (out ?i64) {
 
 // TestOptionComparisonWiredIntoLints 確認規則已接入 RunAllLints（no vet / LSP 路徑）。
 func TestOptionComparisonWiredIntoLints(t *testing.T) {
-	src := `f = () () {
-    size = fstat-size(.fd)
-    size == 0 -> return
+	src := `point = (x i64, y i64) {}
+f = () () {
+    p ?point = make-point()
+    q point = point { x: 1, y: 2 }
+    p == q -> return
 }`
 	prog := parseProg(t, src)
 	lints := RunAllLints(prog, LintOptions{})

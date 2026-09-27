@@ -4,7 +4,7 @@
 print('=== str.repeat Test ===')
 space = ' '
 print('space created')
-buf str = space.repeat(8)
+buf = space.repeat(8)
 print('buf created')
 buf[0] = 0x12
 print('buf[0] set')

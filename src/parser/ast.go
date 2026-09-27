@@ -482,7 +482,7 @@ type Program struct {
 	Statements       []Statement
 	FreeComments     []*CommentGroup // standalone comments at file start, between stmts, EOF
 	TrailingComments *CommentGroup
-	Warnings         []string // parser warnings (e.g., dead code, deprecation)
+	Warnings         []string         // parser warnings (e.g., dead code, deprecation)
 	Sem              *SemanticContext // 語義副表：註解/平台鍵/embed/泛型參數/類型推斷結果（解析/语义分离）
 	// BuiltinFuncNames 記錄被 #{buildin=...} / #{intrinsic} 標記的函式名稱集合。
 	// 由 stripBuiltinStubs（編譯/ vet 管線）在移除內建樁函式時填寫，使後續
@@ -589,7 +589,7 @@ func (uas *UnwrapAssignStatement) TargetName() string {
 }
 
 func (uas *UnwrapAssignStatement) statementNode()         {}
-func (uas *UnwrapAssignStatement) expressionNode()         {}
+func (uas *UnwrapAssignStatement) expressionNode()        {}
 func (uas *UnwrapAssignStatement) Pos() lexer.Position    { return posFromToken(uas.Token) }
 func (uas *UnwrapAssignStatement) EndPos() lexer.Position { return uas.Value.EndPos() }
 func (uas *UnwrapAssignStatement) String() string {
@@ -601,11 +601,11 @@ func (uas *UnwrapAssignStatement) String() string {
 
 // a u8 = 8
 type LetStatement struct {
-	Token         lexer.Token
-	Name          *Identifier
-	Type          Type
-	Value         Expression
-	IsSynthetic   bool               // compiler-injected (e.g. `it = matched`), not from source
+	Token       lexer.Token
+	Name        *Identifier
+	Type        Type
+	Value       Expression
+	IsSynthetic bool // compiler-injected (e.g. `it = matched`), not from source
 	// IsArmBinding marks the synthetic binding the parser prepends to a match
 	// arm body to destructure the arm's payload (`ok(v) -> ...` binds `v`).
 	// Unlike other synthetic lets, this one is SCOPED TO ITS ARM: it must not
@@ -613,11 +613,11 @@ type LetStatement struct {
 	// (`a: { ok(x) -> b: { ok(x) -> ... } print(x) }`) makes the outer `x` read
 	// the inner payload. MIR gives it a fresh slot and restores the outer entry
 	// when the arm ends.
-	IsArmBinding  bool
-	SyntheticEnd  lexer.Position     // override EndPos for synthetic bindings
+	IsArmBinding bool
+	SyntheticEnd lexer.Position // override EndPos for synthetic bindings
 	// ItArmType 標記 match 派生 it 綁定的 arm 類型（ok/err/nil/else 等），
 	// 供校驗器在 matched 變數型別於解析期未知（跨模組回傳型別）時收窄 it。
-	ItArmType     string
+	ItArmType string
 	// IsModuleConst marks this LetStatement as a module-level constant
 	// eligible for constant propagation. Set by the transpiler's module
 	// merge pass when the value is a compile-time constant expression
@@ -690,8 +690,8 @@ func (rs *ReturnStatement) EndPos() lexer.Position {
 }
 
 type ExpressionStatement struct {
-	Token        lexer.Token
-	Expression   Expression
+	Token      lexer.Token
+	Expression Expression
 	// OverflowMode 攜帶區塊級/語句級 #{overflow = ...} 模式（if/match 臂體與臂條件）。
 	// 貫穿 HIR 重建；HIR 模式下 g.sem 為 nil，若無此欄位臂體整數運算會退回預設 option 模式。
 	OverflowMode string
@@ -719,8 +719,8 @@ type BlockStatement struct {
 	// `{` 同行註釋已遷至語義副表：SemanticContext.OpeningBraceCommentOf(block)。
 }
 
-func (bs *BlockStatement) statementNode()         {}
-func (bs *BlockStatement) Pos() lexer.Position    { return posFromToken(bs.Token) }
+func (bs *BlockStatement) statementNode()      {}
+func (bs *BlockStatement) Pos() lexer.Position { return posFromToken(bs.Token) }
 func (bs *BlockStatement) EndPos() lexer.Position {
 	if bs.RBrace.Line > 0 {
 		return bs.RBrace
@@ -783,8 +783,8 @@ type FunctionDefinition struct {
 	Token lexer.Token
 	Name  string
 	FuncSignature
-	Body         *BlockStatement
-	ColonSyntax  bool               // 是否為冒號語法 foo: (a int) { }
+	Body        *BlockStatement
+	ColonSyntax bool // 是否為冒號語法 foo: (a int) { }
 	// IsMethodDef 標記此 FunctionDefinition 為方法定義（如 `t.method = ...`）。
 	// parser 在方法定義位置顯式設定此欄位，formatter 直接讀取以跳過隱式 self 參數，
 	// 避免依賴 `strings.Contains(Name, ".")` 的字串子串啟發式。
@@ -832,11 +832,11 @@ func (fd *FunctionDefinition) EndPos() lexer.Position { return fd.Body.EndPos() 
 // 僅為宣告，無函式主體；對應外部 C 函式。
 // 支援 #{c}（新語法）和 #c（舊語法，向後相容）。
 type ExternStatement struct {
-	Token       lexer.Token
-	Lang        string // FFI language: "c", "cpp", etc.
-	Name        *Identifier
-	Parameters  []*Parameter
-	Results     []*Parameter
+	Token      lexer.Token
+	Lang       string // FFI language: "c", "cpp", etc.
+	Name       *Identifier
+	Parameters []*Parameter
+	Results    []*Parameter
 	CommentedNode
 }
 
@@ -1614,8 +1614,8 @@ type IterationExpr struct {
 	RangeExpr Expression       // identifier or slice literal
 }
 
-func (ie *IterationExpr) expressionNode()        {}
-func (ie *IterationExpr) Pos() lexer.Position    { return posFromToken(ie.Token) }
+func (ie *IterationExpr) expressionNode()     {}
+func (ie *IterationExpr) Pos() lexer.Position { return posFromToken(ie.Token) }
 func (ie *IterationExpr) EndPos() lexer.Position {
 	if ie.Range != nil {
 		return ie.Range.EndPos()
@@ -1754,14 +1754,14 @@ func (sl *SliceLiteral) EndPos() lexer.Position {
 }
 
 type StructField struct {
-	Token       lexer.Token
-	Name        string
-	Type        Type
-	ArraySize   int64 // >0 = 定長陣列 [N]type
-	IsSlice     bool  // true = 切片 []type
-	ReadOnly    bool  // true = read-only field modifier
-	Sealed      bool  // true = sealed field modifier
-	Value       Expression
+	Token     lexer.Token
+	Name      string
+	Type      Type
+	ArraySize int64 // >0 = 定長陣列 [N]type
+	IsSlice   bool  // true = 切片 []type
+	ReadOnly  bool  // true = read-only field modifier
+	Sealed    bool  // true = sealed field modifier
+	Value     Expression
 }
 
 func (sf *StructField) Pos() lexer.Position { return posFromToken(sf.Token) }
@@ -1800,8 +1800,8 @@ type EnumDefinition struct {
 	CommentedNode
 }
 
-func (ed *EnumDefinition) statementNode()         {}
-func (ed *EnumDefinition) Pos() lexer.Position    { return posFromToken(ed.Token) }
+func (ed *EnumDefinition) statementNode()      {}
+func (ed *EnumDefinition) Pos() lexer.Position { return posFromToken(ed.Token) }
 func (ed *EnumDefinition) EndPos() lexer.Position {
 	if n := len(ed.Values); n > 0 {
 		return posFromToken(ed.Values[n-1].Token)
@@ -1942,8 +1942,8 @@ type InterfaceDefinition struct {
 	CommentedNode
 }
 
-func (id *InterfaceDefinition) statementNode()         {}
-func (id *InterfaceDefinition) Pos() lexer.Position    { return posFromToken(id.Token) }
+func (id *InterfaceDefinition) statementNode()      {}
+func (id *InterfaceDefinition) Pos() lexer.Position { return posFromToken(id.Token) }
 func (id *InterfaceDefinition) EndPos() lexer.Position {
 	if n := len(id.Methods); n > 0 {
 		return posFromToken(id.Methods[n-1].Token)
@@ -1952,10 +1952,10 @@ func (id *InterfaceDefinition) EndPos() lexer.Position {
 }
 
 type StructDefinition struct {
-	Token         lexer.Token
-	Name          string
-	Implements    []string // 實現的介面列表（空 = 無）
-	Fields        []*StructField
+	Token      lexer.Token
+	Name       string
+	Implements []string // 實現的介面列表（空 = 無）
+	Fields     []*StructField
 	CommentedNode
 }
 

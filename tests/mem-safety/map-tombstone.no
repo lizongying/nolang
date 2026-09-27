@@ -20,18 +20,24 @@ test-tombstone = () {
         ok -> print(v)
 
         nil -> print('e-nil')
+
+        err -> print('err')
     }
     v2 = m.get('b')
     v2: {
         ok -> print(v2)
 
         nil -> print('b-nil')
+
+        err -> print('err')
     }
     v3 = m.get('d')
     v3: {
         ok -> print(v3)
 
         nil -> print('d-nil')
+
+        err -> print('err')
     }
 
     ; 验证已删除的 key 查不到
@@ -40,6 +46,8 @@ test-tombstone = () {
         ok -> print('c-found')
 
         nil -> print('c-removed-ok')
+
+        err -> print('err')
     }
     l = m.len()
     print('len:')
@@ -61,6 +69,8 @@ test-reuse = () {
         ok -> print(v)
 
         nil -> print('x-nil')
+
+        err -> print('err')
     }
     l = m.len()
     print('len:')
@@ -81,12 +91,16 @@ test-str-values = () {
         ok -> print(v)
 
         nil -> print('name-nil')
+
+        err -> print('err')
     }
     v2 = m.get('city')
     v2: {
         ok -> print(v2)
 
         nil -> print('city-nil')
+
+        err -> print('err')
     }
 
     ; remove 后再 get
@@ -96,6 +110,8 @@ test-str-values = () {
         ok -> print('name-found')
 
         nil -> print('name-removed-ok')
+
+        err -> print('err')
     }
 
     ; city 应仍可查找
@@ -104,6 +120,8 @@ test-str-values = () {
         ok -> print(v4)
 
         nil -> print('city-nil-after-remove')
+
+        err -> print('err')
     }
 }
 test-str-values()
@@ -124,18 +142,24 @@ test-int-tombstone = () {
         ok -> print(v)
 
         nil -> print('3-nil')
+
+        err -> print('err')
     }
     v2 = m.get(1)
     v2: {
         ok -> print(v2)
 
         nil -> print('1-nil')
+
+        err -> print('err')
     }
     v3 = m.get(2)
     v3: {
         ok -> print('2-found')
 
         nil -> print('2-removed-ok')
+
+        err -> print('err')
     }
 }
 test-int-tombstone()
