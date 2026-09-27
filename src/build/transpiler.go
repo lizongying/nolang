@@ -4700,16 +4700,18 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		return &parser.ExpressionStatement{
-			Token:      s.Token,
-			Expression: substituteExpr(s.Expression, subst),
+			Token:        s.Token,
+			Expression:   substituteExpr(s.Expression, subst),
+			OverflowMode: s.OverflowMode,
 		}
 	case *parser.LetStatement:
 		return &parser.LetStatement{
-			Token:       s.Token,
-			Name:        s.Name,
-			Value:       substituteExpr(s.Value, subst),
-			Type:        substituteType(s.Type, subst),
-			IsSynthetic: s.IsSynthetic,
+			Token:        s.Token,
+			Name:         s.Name,
+			Value:        substituteExpr(s.Value, subst),
+			Type:         substituteType(s.Type, subst),
+			IsSynthetic:  s.IsSynthetic,
+			OverflowMode: s.OverflowMode,
 		}
 	case *parser.ForStatement:
 		newFor := &parser.ForStatement{
@@ -4717,6 +4719,7 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 			Body:          substituteBody(s.Body, subst),
 			Label:         s.Label,
 			IsCondWrapper: s.IsCondWrapper,
+			OverflowMode:  s.OverflowMode,
 		}
 		if s.IterRange != nil {
 			newFor.IterRange = &parser.IterationExpr{
@@ -4744,12 +4747,14 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		return substituteBody(s, subst)
 	case *parser.ReturnStatement:
 		return &parser.ReturnStatement{
-			Token:       s.Token,
-			ReturnValue: substituteExpr(s.ReturnValue, subst),
+			Token:        s.Token,
+			ReturnValue:  substituteExpr(s.ReturnValue, subst),
+			OverflowMode: s.OverflowMode,
 		}
 	case *parser.MultiAssignStatement:
 		newMulti := &parser.MultiAssignStatement{
-			Token: s.Token,
+			Token:        s.Token,
+			OverflowMode: s.OverflowMode,
 		}
 		for _, tgt := range s.Targets {
 			newMulti.Targets = append(newMulti.Targets, substituteExpr(tgt, subst))

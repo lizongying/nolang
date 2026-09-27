@@ -206,7 +206,7 @@ f = runner.failed-count()
 | `char.no` | 80 | 0 | 0 | `pem.no` | 3 | 0 | 0 |
 | `csv.no` | 30 | 0 | 0 | `process.no` | 9 | 0 | 0 |
 | `deque.no` | 16 | 0 | 0 | `queue.no` | 9 | 0 | 0 |
-| `enum_cross.no` | 2 | 0 | 0 | `regexp.no` | 35 | 0 | 0 |
+| `enum-cross.no` | 2 | 0 | 0 | `regexp.no` | 35 | 0 | 0 |
 | `env.no` | 7 | 0 | 0 | `set.no` | 26 | 0 | 0 |
 | `err.no` | 5 | 0 | 0 | `sort.no` | 33 | 0 | 0 |
 | `fmt.no` | 35 | 0 | 0 | `stack.no` | 13 | 0 | 0 |
