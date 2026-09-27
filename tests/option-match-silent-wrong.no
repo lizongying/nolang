@@ -25,18 +25,51 @@
 V ?i64 = 7
 
 g-str = (r ?str) {
-    r: { ok(s) -> print(s) nil -> print('NIL') err -> print('ERR') }
-}
-mk-str = () (r ?str) { r = 'hello' }
-mk-bt = () (r ?bool) { r = true }
-mk-bf = () (r ?bool) { r = false }
+    r: {
+        ok(s) -> print(s)
 
-V: { ok(x) -> print(x) nil -> print('NIL') err -> print('ERR') }
+        nil -> print('NIL')
+
+        err -> print('ERR')
+    }
+}
+
+mk-str = () (r ?str) {
+    r = 'hello'
+}
+
+mk-bt = () (r ?bool) {
+    r = true
+}
+
+mk-bf = () (r ?bool) {
+    r = false
+}
+
+V: {
+    ok(x) -> print(x)
+
+    nil -> print('NIL')
+
+    err -> print('ERR')
+}
 
 bt = mk-bt()
-bt: { ok(b) -> print(b) nil -> print('NIL') err -> print('ERR') }
+bt: {
+    ok(b) -> print(b)
+
+    nil -> print('NIL')
+
+    err -> print('ERR')
+}
 bf = mk-bf()
-bf: { ok(b) -> print(b) nil -> print('NIL') err -> print('ERR') }
+bf: {
+    ok(b) -> print(b)
+
+    nil -> print('NIL')
+
+    err -> print('ERR')
+}
 
 s = mk-str()
 g-str(s)

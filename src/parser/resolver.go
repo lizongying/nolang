@@ -102,16 +102,22 @@ const (
 	// （在 parseBlockStatement 循環中），與同行 `cond -> body -> elseBody` 區分。
 	// Formatter 根據此標誌在新行輸出 `->`。
 	RTElseNewline
+	// RTPipelineValue 標記「作為值」的短路管道 `x = A -> B -> V`（parser/stmt.go
+	// 在 var/assignment 右側構造、刻意不設 RTStandalone 的 IfExpression）。
+	// Formatter 據此原樣輸出 `cond -> body`；缺此標誌時會掉進通用 IfExpression
+	// 打印分支輸出 `cond: { body }`，而該寫法會重新解析成 match-as-value，
+	// 靜默改變語義（`x = 2 > 1 -> 42` 變 `x = 2 > 1: { 42 }` 後 x 變成布爾 1）。
+	RTPipelineValue
 )
 
 // SemanticContext 是解析/语义分离后的“副表”。
 //
-//  - nodeSem：以 AST 節點（指針，包裝為 Node 接口）為鍵的語義信息表。
-//  - VarTypes / EnumVariants / DeclaredVars：類型推斷結果
-//    （原 parser.varDeclTypes / enumVariantNames / declaredVars）。nolang 是單遍
-//    遞歸下降解析器，部分類型感知（如 match arm 分類、方法返回型別推斷）必須在
-//    解析當下完成；這些推斷結果統一寫入本 side-table，而非散落在 parser 私有字段，
-//    從而實現“語義結果集中存放、AST 節點零語義字段”。
+//   - nodeSem：以 AST 節點（指針，包裝為 Node 接口）為鍵的語義信息表。
+//   - VarTypes / EnumVariants / DeclaredVars：類型推斷結果
+//     （原 parser.varDeclTypes / enumVariantNames / declaredVars）。nolang 是單遍
+//     遞歸下降解析器，部分類型感知（如 match arm 分類、方法返回型別推斷）必須在
+//     解析當下完成；這些推斷結果統一寫入本 side-table，而非散落在 parser 私有字段，
+//     從而實現“語義結果集中存放、AST 節點零語義字段”。
 type SemanticContext struct {
 	nodeSem map[Node]*NodeSemantics
 

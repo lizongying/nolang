@@ -8,6 +8,7 @@
 ; 缺陷修正：以前 `a ?i64 = b + c / d` 會把 c/d 的 payload 無條件解包再包 ok，
 ; 除零得到錯誤數值、錯誤完全遺失。現在 c/d 被就地捕獲成 __cap_N。
 div-capture = (b i64, c i64, d i64) {
+
     #{overflow=wrap}
     a = b + c / d
     a: {

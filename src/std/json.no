@@ -532,7 +532,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
         c = s.byte(i)
         c < 48 || c > 57 -> break
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .nodes[node-idx].num-val = .nodes[node-idx].num-val * 10.0 + (c - 48)
 
         #{overflow=wrap}
@@ -736,13 +736,13 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
     head = 0
     tail = 1
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     qt-src[0] = node-idx
     dst = .alloc()
     dst < 0 -> return
     dst-idx = dst
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=0}
     qt-dst[0] = dst
     (head < tail) {
 
@@ -771,7 +771,7 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
         #{index-out=0}
         cn = src.nodes[s].count
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=0}
         .nodes[d].count = cn
         ci <- [0..cn): {
 
@@ -787,10 +787,10 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
             .nodes[d].keys[ci] = k2.copy()
             .nodes[d].children[ci] = cd
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             qt-src[tail] = cs
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=0}
             qt-dst[tail] = cd
 
             #{index-out=0, overflow=wrap}
@@ -1224,6 +1224,7 @@ json.get-i64 = (key str) (val i64, ok bool) {
     ok = false
     f, found = .get-num(key)
     found == false -> return
+
     ; get-num 回傳 f64，直接 `val = f` 會被當成 f64→i64 的裸指派，
     ; codegen 只做位元重解（42.0 -> 4631107791820423168），必須顯式截斷。
     val = number.f64-to-i64(f)
@@ -1716,6 +1717,7 @@ json.set-key = (key str, val json) (ok bool) {
         #{index-out=0}
         .pool.nodes[.root].count = 0
     }
+
     ; 深拷贝 val 池中的子树到接收者池，再挂键（避免跨池悬空索引）
     v-idx = .pool.copy-tree(val.pool, val.root)
     v-idx < 0 -> return

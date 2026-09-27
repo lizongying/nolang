@@ -20,10 +20,12 @@
 ; ── 分類：ASCII 邊界 ───────────────────────────
 
 t-is-digit = () {
+
     ; '0'=48 .. '9'=57
     runner.is-true("0".is-digit(), 'is-digit "0"')
     runner.is-true("9".is-digit(), 'is-digit "9"')
     runner.is-true("5".is-digit(), 'is-digit "5"')
+
     ; 邊界外：'/'=47、':'=58
     runner.is-false("/".is-digit(), 'is-digit "/" (47) false')
     runner.is-false(":".is-digit(), 'is-digit ":" (58) false')
@@ -32,17 +34,20 @@ t-is-digit = () {
 }
 
 t-is-letter = () {
+
     ; 'A'=65 'Z'=90 'a'=97 'z'=122
     runner.is-true("A".is-letter(), 'is-letter "A"')
     runner.is-true("Z".is-letter(), 'is-letter "Z"')
     runner.is-true("a".is-letter(), 'is-letter "a"')
     runner.is-true("z".is-letter(), 'is-letter "z"')
+
     ; 邊界外：'@'=64、'['=91、'`'=96、'{'=123
     runner.is-false("@".is-letter(), 'is-letter "@" (64) false')
     runner.is-false("[".is-letter(), 'is-letter "[" (91) false')
     runner.is-false("`".is-letter(), 'is-letter "`" (96) false')
     runner.is-false("{".is-letter(), 'is-letter "{" (123) false')
     runner.is-false("5".is-letter(), 'is-letter "5" false')
+
     ; 非 ASCII（分類器是 ASCII-only）
     runner.is-false("中".is-letter(), 'is-letter non-ASCII false')
 }
@@ -74,11 +79,13 @@ t-is-space = () {
 }
 
 t-is-case = () {
+
     ; is-upper
     runner.is-true("A".is-upper(), 'is-upper "A"')
     runner.is-true("Z".is-upper(), 'is-upper "Z"')
     runner.is-false("a".is-upper(), 'is-upper "a" false')
     runner.is-false("5".is-upper(), 'is-upper "5" false')
+
     ; is-lower
     runner.is-true("a".is-lower(), 'is-lower "a"')
     runner.is-true("z".is-lower(), 'is-lower "z"')
@@ -89,15 +96,19 @@ t-is-case = () {
 ; ── 轉換 ───────────────────────────────────────
 
 t-to-upper = () {
+
     ; 'a'=97 -> 'A'=65，差 32
     runner.eq("a".to-upper(), 65, 'to-upper "a" == 65')
     runner.eq("z".to-upper(), 90, 'to-upper "z" == 90')
+
     ; 非小寫字母原樣回傳
     runner.eq("A".to-upper(), 65, 'to-upper "A" unchanged')
     runner.eq("5".to-upper(), 53, 'to-upper "5" unchanged')
     runner.eq(" ".to-upper(), 32, 'to-upper space unchanged')
+
     ; 邊界：'`'=96（緊鄰小寫 a）不該被轉
     runner.eq("`".to-upper(), 96, 'to-upper "`" unchanged')
+
     ; 轉完再 to-str 應得到字串
     runner.str-eq("a".to-upper().to-str(), 'A', 1, 'to-upper "a" to-str')
 }
@@ -107,6 +118,7 @@ t-to-lower = () {
     runner.eq("Z".to-lower(), 122, 'to-lower "Z" == 122')
     runner.eq("a".to-lower(), 97, 'to-lower "a" unchanged')
     runner.eq("5".to-lower(), 53, 'to-lower "5" unchanged')
+
     ; 邊界：'@'=64（緊鄰大寫 A）不該被轉
     runner.eq("@".to-lower(), 64, 'to-lower "@" unchanged')
     runner.str-eq("A".to-lower().to-str(), 'a', 1, 'to-lower "A" to-str')
@@ -116,14 +128,17 @@ t-to-str = () {
     runner.str-eq("A".to-str(), 'A', 1, 'to-str "A"')
     runner.str-eq("5".to-str(), '5', 1, 'to-str "5"')
     runner.str-eq(" ".to-str(), ' ', 1, 'to-str space')
+
     ; ⚠️ `str.len()` 回傳的是**碼點數**，不是位元組數（'中' -> 1）
     ;    要拿位元組數得走 `.to-bytes().len()`（-> 3）。兩個都釘住。
     s = "中".to-str()
     runner.eq(s.len(), 1, 'to-str non-ASCII: len is 1 CODEPOINT')
     runner.eq(s.to-bytes().len(), 3, 'to-str non-ASCII: 3 BYTES (UTF-8)')
     runner.str-eq(s, '中', 3, 'to-str non-ASCII content')
+
     ; 同一件事用 hex 再驗一次：'中' == E4 B8 AD
     runner.str-eq(s.to-hex(), 'e4b8ad', 6, 'to-str non-ASCII hex == e4b8ad')
+
     ; 往返：to-str 的結果是 str，可以和 str 字面量比較
     runner.is-true("A".to-str().eq('A', 1), 'to-str roundtrip via str.eq')
 }
@@ -132,6 +147,7 @@ t-to-bytes = () {
     b []byte = "A".to-bytes()
     runner.eq(b.len(), 1, 'to-bytes "A" len == 1')
     runner.eq(b[0], 65, 'to-bytes "A"[0] == 65')
+
     ; UTF-8 編碼：中 = E4 B8 AD = 228 184 173
     c []byte = "中".to-bytes()
     runner.eq(c.len(), 3, 'to-bytes non-ASCII len == 3')
@@ -144,6 +160,7 @@ t-to-txt = () {
     t txt = "A".to-txt()
     runner.eq(t.len(), 1, 'to-txt "A" len == 1')
     runner.str-eq(t.to-str(), 'A', 1, 'to-txt "A" value')
+
     ; 非 ASCII：一個碼點 -> 3 個 byte。txt.len() 也是**碼點數**，
     ;    位元組數要走 .len-bytes()（見 t-to-str 的說明）。
     u txt = "中".to-txt()
@@ -157,7 +174,7 @@ t-to-txt = () {
 ;   觸發 opt-verify 失敗 / `unsupported builtin []t.set-byte`。
 ;   現已修復：長度、索引、元素賦值、固定長度 [N]char 陣列皆可用。
 t-slice-char-literal = () {
-    arr []char = ["a", "b", "c"]
+    arr = ["a", "b", "c"]
     runner.eq(arr.len(), 3, '[]char len == 3')
     runner.str-eq(arr[0].to-str(), 'a', 1, '[]char[0] == a')
     runner.str-eq(arr[2].to-str(), 'c', 1, '[]char[2] == c')

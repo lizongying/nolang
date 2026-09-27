@@ -23,7 +23,7 @@ func TestFixRedundantTypeInFile(t *testing.T) {
 		},
 		{
 			name: "named type equal to inferred (function call)",
-			src:  "main = () () {\n  e str = greet()\n  f i64 = getv()\n}\n" +
+			src: "main = () () {\n  e str = greet()\n  f i64 = getv()\n}\n" +
 				"greet = () (s str) {\n  s = 'hi'\n}\n" +
 				"getv = () (v i64) {\n  v = 7\n}\n",
 			want: "main = () () {\n  e = greet()\n  f = getv()\n}\n" +
@@ -32,7 +32,7 @@ func TestFixRedundantTypeInFile(t *testing.T) {
 		},
 		{
 			name: "map type equal to inferred",
-			src:  "main = () () {\n  m [str]i64 = make-map()\n}\n" +
+			src: "main = () () {\n  m [str]i64 = make-map()\n}\n" +
 				"make-map = () (r [str]i64) {\n  r = [:]\n}\n",
 			want: "main = () () {\n  m = make-map()\n}\n" +
 				"make-map = () (r [str]i64) {\n  r = [:]\n}\n",
@@ -61,14 +61,14 @@ func TestFixRedundantTypeInFile(t *testing.T) {
 		// 一起吃掉，否則會留下懸空 `?`（`c ?conn = f()` -> `c ? = f()`，語法錯）。
 		{
 			name: "nullable equal to inferred (?i64 <- fn returning ?i64)",
-			src:  "main = () () {\n  v ?i64 = maybe()\n}\n" +
+			src: "main = () () {\n  v ?i64 = maybe()\n}\n" +
 				"maybe = () (r ?i64) {\n  r = 5\n}\n",
 			want: "main = () () {\n  v = maybe()\n}\n" +
 				"maybe = () (r ?i64) {\n  r = 5\n}\n",
 		},
 		{
 			name: "nullable equal to inferred (?str <- fn returning ?str)",
-			src:  "main = () () {\n  w ?str = maybe-s()\n}\n" +
+			src: "main = () () {\n  w ?str = maybe-s()\n}\n" +
 				"maybe-s = () (r ?str) {\n  r = 'x'\n}\n",
 			want: "main = () () {\n  w = maybe-s()\n}\n" +
 				"maybe-s = () (r ?str) {\n  r = 'x'\n}\n",
@@ -84,6 +84,20 @@ func TestFixRedundantTypeInFile(t *testing.T) {
 		{
 			name: "hex literal slice preserved (annotation load-bearing)",
 			src:  "main = () () {\n  s []byte = [0x50, 0x4b, 0x03, 0x04]\n}\n",
+			want: "",
+		},
+		// 回歸：定長陣列標註 [N]T 決定「固定棧陣列 vs 堆切片」的表示形式，刪掉會改語意
+		// （`[3]char` push 後 len 仍為 3；退化成 `[]char` 後 push 會增長為 4）。
+		// checker 推斷讀到的 ArrayLiteral 正是這個標註觸發轉換才形成的，屬於循環論證，
+		// 故 [N]T 永遠不算冗餘，必須保守保留。
+		{
+			name: "fixed-size array annotation preserved (representation-bearing)",
+			src:  "main = () () {\n  fixed [3]char = [\"x\", \"y\", \"z\"]\n}\n",
+			want: "",
+		},
+		{
+			name: "fixed-size array annotation preserved (int elements)",
+			src:  "main = () () {\n  a [3]i64 = [1, 2, 3]\n}\n",
 			want: "",
 		},
 	}

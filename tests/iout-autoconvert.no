@@ -25,6 +25,7 @@ main = () {
     io.err('err-')
     io.errln('msg')
     io.out('sum=')
+
     #{overflow=wrap}
     io.outln(10 + 20)
     print('')

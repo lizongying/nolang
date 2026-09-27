@@ -266,7 +266,6 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
 ; 返回 out str: Set-Cookie 標頭值
 build-set = (c cookie) (out str) {
 
-    #{overflow=wrap}
     out = c.name - '=' - c.value
 
     c.path.len-bytes() > 0 -> out = out - '; Path=' - c.path

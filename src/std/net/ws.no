@@ -503,13 +503,10 @@ server-conn.handshake = () {
     ; 發送 101 回應
     resp = 'HTTP/1.1 101 Switching Protocols' - crlf
 
-    #{overflow=wrap}
     resp = resp - 'Upgrade: websocket' - crlf
 
-    #{overflow=wrap}
     resp = resp - 'Connection: Upgrade' - crlf
 
-    #{overflow=wrap}
     resp = resp - 'Sec-WebSocket-Accept: ' - accept-val - crlf
 
     #{overflow=wrap}
@@ -1578,22 +1575,16 @@ connect = (url str) (c ?client) {
 
     req = 'GET ' - path - ' HTTP/1.1' - crlf
 
-    #{overflow=wrap}
     req = req - 'Host: ' - host - crlf
 
-    #{overflow=wrap}
     req = req - 'Upgrade: websocket' - crlf
 
-    #{overflow=wrap}
     req = req - 'Connection: Upgrade' - crlf
 
-    #{overflow=wrap}
     req = req - 'Sec-WebSocket-Key: ' - client-key - crlf
 
-    #{overflow=wrap}
     req = req - 'Sec-WebSocket-Version: 13' - crlf
 
-    #{overflow=wrap}
     req = req - 'User-Agent: nolang-ws/1.0' - crlf
 
     #{overflow=wrap}

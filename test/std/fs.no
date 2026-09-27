@@ -112,6 +112,7 @@ t-stat-size = () {
             it.close()
         }
     }
+
     ; stat-size 回傳 ?i64（檔案不存在或 stat 失敗時為 nil/err），
     ; MIR 需要顯式 ?i64 標註 + 三分支 match 才能取值。
     sz ?i64 = fs.stat-size(TMP-FILE)

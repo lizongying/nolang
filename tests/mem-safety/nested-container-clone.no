@@ -20,14 +20,15 @@ test-nested-clone-vec = () (ok bool) {
     b = a
 
     ; 驗證 a 和 b 的內容相同（透過臨時變數避免嵌套索引讀取）
-    #{index-out = 0}
+    #{index-out=0}
     a0 = a[0]
     b0 = b[0]
     a0[0] == 1 -> ok = true
     b0[0] == 1 -> ok = true
     a0[2] == 3 -> ok = true
     b0[2] == 3 -> ok = true
-    #{index-out = 0}
+
+    #{index-out=0}
     a1 = a[1]
     b1 = b[1]
     a1[1] == 5 -> ok = true
@@ -49,7 +50,7 @@ test-nested-clone-modify = () (ok bool) {
     b0 = b[0]
 
     ; a 的第一個子切片長度應仍為 2
-    #{index-out = 0}
+    #{index-out=0}
     a0 = a[0]
     a0.len() == 2 -> ok = true
 
@@ -61,7 +62,7 @@ test-nested-clone-modify = () (ok bool) {
     b0[1] == 2 -> ok = true
 
     ; a 的第二個子切片不變
-    #{index-out = 0}
+    #{index-out=0}
     a1 = a[1]
     b1 = b[1]
     a1[0] == 3 -> ok = true
@@ -73,7 +74,8 @@ test-nested-element-assign = () (ok bool) {
     a [][]i64
     a.push(make-vec3(1, 2, 3))
     a.push(make-vec3(4, 5, 6))
-    #{index-out = 0}
+
+    #{index-out=0}
     x = a[0]
 
     ; x 是獨立拷貝
@@ -83,7 +85,7 @@ test-nested-element-assign = () (ok bool) {
     x[2] == 3 -> ok = true
 
     ; a 應不受影響
-    #{index-out = 0}
+    #{index-out=0}
     a0 = a[0]
     a0.len() == 3 -> ok = true
     a0[0] == 1 -> ok = true
@@ -100,9 +102,11 @@ test-nested-reassign = () (ok bool) {
     b = a
     b0 = b[0]
     b1 = b[1]
-    #{index-out = 0}
+
+    #{index-out=0}
     a0 = a[0]
-    #{index-out = 0}
+
+    #{index-out=0}
     a1 = a[1]
     b0[0] == 1 -> ok = true
     b1[1] == 4 -> ok = true
@@ -122,14 +126,16 @@ test-nested-clone-str = () (ok bool) {
     sub2.push('bar')
     s.push(sub2)
     c = s
-    #{index-out = 0}
+
+    #{index-out=0}
     s0 = s[0]
     c0 = c[0]
     s0[0] == 'hello' -> ok = true
     c0[0] == 'hello' -> ok = true
     s0[1] == 'world' -> ok = true
     c0[1] == 'world' -> ok = true
-    #{index-out = 0}
+
+    #{index-out=0}
     s1 = s[1]
     c1 = c[1]
     s1[0] == 'foo' -> ok = true
@@ -395,7 +401,8 @@ test-struct-array-clone = () (ok bool) {
     ; 修改 copy 不影響 original
     c0b = copy[0]
     c0b.name = 'Charlie'
-    #{index-out = 0}
+
+    #{index-out=0}
     o0 = people[0]
     o0.name == 'Alice' -> ok = true
     c0b.name == 'Charlie' -> ok = true

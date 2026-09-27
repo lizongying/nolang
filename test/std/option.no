@@ -84,8 +84,12 @@ t-ok-payloads = () {
 
         err -> runner.is-true(false, '?f64 must be ok')
     }
+
     ; 結構體載荷
-    d ?pt = pt { x: 1, y: 2 }
+    d ?pt = pt {
+        x: 1
+        y: 2
+    }
     d: {
         ok(v) -> {
             runner.eq(v.x, 1, '?struct ok .x')
@@ -96,6 +100,7 @@ t-ok-payloads = () {
 
         err -> runner.is-true(false, '?struct must be ok')
     }
+
     ; 切片載荷
     e ?[]i64 = [1, 2, 3]
     e: {
@@ -109,6 +114,7 @@ t-ok-payloads = () {
 
         err -> runner.is-true(false, '?slice must be ok')
     }
+
     ; 零值也要是 ok(0)，不能和 nil 混淆
     z ?i64 = 0
     z: {
@@ -118,6 +124,7 @@ t-ok-payloads = () {
 
         err -> runner.is-true(false, '?i64 = 0 must be ok')
     }
+
     ; 負數
     n ?i64 = -3
     n: {
@@ -127,6 +134,7 @@ t-ok-payloads = () {
 
         err -> runner.is-true(false, '?i64 negative must be ok')
     }
+
     ; 空字串也是 ok，不是 nil
     s ?str = ''
     s: {
@@ -155,6 +163,7 @@ t-nil = () {
 
         err -> runner.is-true(false, '?str nil must not be err')
     }
+
     ; 未賦值的 option 預設也是 nil
     c ?i64
     c: {
@@ -175,6 +184,7 @@ t-err = () {
 
         err -> runner.is-true(true, '?i64 err branch')
     }
+
     ; `err` 臂不綁定時用 `it` 取訊息
     b ?i64 = err('boom')
     b: {
@@ -184,6 +194,7 @@ t-err = () {
 
         err -> runner.str-eq(it, 'boom', 4, 'err it == message')
     }
+
     ; 空訊息
     c ?str = err('')
     c: {
@@ -257,8 +268,9 @@ box {
 }
 
 t-ret-and-field = () {
+
     ; 回傳值在**模組頂層**也安全，拿來當「安全初始化」的對照組
-    p ?i64 = mk-ok()
+    p = mk-ok()
     p: {
         ok(v) -> runner.eq(v, 11, 'option from function return (ok)')
 
@@ -266,7 +278,7 @@ t-ret-and-field = () {
 
         err -> runner.is-true(false, 'mk-ok must be ok')
     }
-    q ?i64 = mk-nil()
+    q = mk-nil()
     q: {
         ok(v) -> runner.is-true(false, 'mk-nil must not be ok')
 
@@ -274,7 +286,7 @@ t-ret-and-field = () {
 
         err -> runner.is-true(false, 'mk-nil must not be err')
     }
-    r ?i64 = mk-err()
+    r = mk-err()
     r: {
         ok(v) -> runner.is-true(false, 'mk-err must not be ok')
 
@@ -282,10 +294,13 @@ t-ret-and-field = () {
 
         err -> runner.is-true(true, 'option from function return (err)')
     }
+
     ; 選項當結構體欄位（讀取正常）
     ; 注意：match 的主體只能是**裸名**，`b.q: { … }` 會被 parser 拒絕
     ;       （expected left parenthesis, got LBRACE），必須先落到區域變數。
-    b = box { q: mk-ok() }
+    b = box {
+        q: mk-ok()
+    }
     fq ?i64 = b.q
     fq: {
         ok(v) -> runner.eq(v, 11, 'option as struct field (ok)')
@@ -294,7 +309,9 @@ t-ret-and-field = () {
 
         err -> runner.is-true(false, 'struct field must be ok')
     }
-    b2 = box { q: mk-nil() }
+    b2 = box {
+        q: mk-nil()
+    }
     fq2 ?i64 = b2.q
     fq2: {
         ok(v) -> runner.is-true(false, 'struct field nil must not be ok')

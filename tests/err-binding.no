@@ -4,6 +4,7 @@
 ; 2) 嵌套：內層 match 的 err(e) 綁定不得覆蓋外層綁定名
 ; 3) err(e) 載荷可當 str 用（方法呼叫）
 main = () {
+
     ; (1) 基本 err(e)
     a ?i64 = err('boom')
     a: {

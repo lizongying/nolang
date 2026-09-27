@@ -249,7 +249,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
         -> {
             i <- [0..args.len()): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 cmdline = cmdline - ' ' - args[i]
             }
         }
@@ -682,7 +682,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         -> {
             i <- [0..args.len()): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 cmdline = cmdline - ' ' - args[i]
             }
         }
@@ -695,11 +695,10 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             envline str = 'env'
             ei <- [0..env.len()): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=0}
                 envline = envline - ' ' - env[ei]
             }
 
-            #{overflow=wrap}
             cmdline = envline - ' ' - cmdline
         }
     }

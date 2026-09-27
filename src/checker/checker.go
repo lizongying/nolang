@@ -2791,6 +2791,27 @@ func exprHasHexIntLiteralValue(e parser.Expression) bool {
 	return false
 }
 
+// isFixedArrayAnnotation 判斷型別標註是否為定長陣列 [N]T / [?]T（可被 ?、&、* 包裝）。
+// 這類標註永遠不冗餘：它是「選哪一種表示形式」的開關，而不是單純的型別提示。
+// 只有寫了 [N]，parser 才會把右值的 SliceLiteral 轉成 ArrayLiteral；checker 的
+// inferExprType 正是讀這個 ArrayLiteral 才回報出 [N]T，於是「標註 == 推斷型別」
+// 成了標註自己造出來的循環論證。把標註刪掉重新解析，同一行就變成 `v = [...]`，
+// 型別是堆上可增長的切片 []T，語意隨之改變（實測 [3]char .push() 後 .len() 仍為 3，
+// []char 則變 4）。因此冗餘檢查與 `no fmt` 的預先移除都必須跳過定長陣列。
+func isFixedArrayAnnotation(t parser.Type) bool {
+	switch tt := t.(type) {
+	case *parser.ArrayType:
+		return true
+	case *parser.NullableType:
+		return isFixedArrayAnnotation(tt.Type)
+	case *parser.ViewType:
+		return isFixedArrayAnnotation(tt.Type)
+	case *parser.PointerType:
+		return isFixedArrayAnnotation(tt.Type)
+	}
+	return false
+}
+
 // checkRedundantTypeInStmt 遞迴掃描語句樹中的冗餘型別標註。file 由外層頂層語句逐層
 // 傳入（合併模式只有頂層語句被 SetSourceFile 標記，巢狀語句的 SourceFile 為空），
 // 節點若確有自身 SourceFile 則覆蓋——否則 tcpoxtfd 的行號是相對於來源檔的，
@@ -2807,23 +2828,26 @@ func checkRedundantTypeInStmt(stmt parser.Statement, file string, varTypes map[s
 		var results []ValidateResult
 		if s.Type != nil && !isInferredType(s.Type) && s.Value != nil && s.Name != nil {
 			annotatedType := s.Type.String()
-			inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
-			if inferredType != "" && inferredType == annotatedType {
-				// Hex-integer array/slice literal: removing the explicit
-				// annotation would change the element type (i64 instead of
-				// byte) and break compilation. Skip the redundant report.
-				if exprHasHexIntLiteralValue(s.Value) {
-					// Register the variable for subsequent checks
-					varTypes[s.Name.Value] = annotatedType
-					return results
+			// 定長陣列標註決定表示形式（固定棧陣列 vs 堆切片），刪掉會改語意：不報冗餘。
+			if !isFixedArrayAnnotation(s.Type) {
+				inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
+				if inferredType != "" && inferredType == annotatedType {
+					// Hex-integer array/slice literal: removing the explicit
+					// annotation would change the element type (i64 instead of
+					// byte) and break compilation. Skip the redundant report.
+					if exprHasHexIntLiteralValue(s.Value) {
+						// Register the variable for subsequent checks
+						varTypes[s.Name.Value] = annotatedType
+						return results
+					}
+					results = append(results, ValidateResult{
+						TraceID: "tcpoxtfd",
+						File:    file,
+						Line:    s.Type.Pos().Line,
+						Column:  s.Type.Pos().Column,
+						Message: fmt.Sprintf("type annotation '%s' can be omitted (inferred from value)", annotatedType),
+					})
 				}
-				results = append(results, ValidateResult{
-					TraceID: "tcpoxtfd",
-					File:    file,
-					Line:    s.Type.Pos().Line,
-					Column:  s.Type.Pos().Column,
-					Message: fmt.Sprintf("type annotation '%s' can be omitted (inferred from value)", annotatedType),
-				})
 			}
 			// Register the variable for subsequent checks
 			varTypes[s.Name.Value] = annotatedType

@@ -272,7 +272,6 @@ decode = (in str) (out []byte) {
             c = in[pos + i]
             val = 0
 
-            #{overflow=wrap}
             {
                 c >= 'A' && c <= 'Z' -> val = c - 'A'
 

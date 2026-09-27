@@ -1059,6 +1059,10 @@ func (p *Parser) parseLetStatement() Statement {
 	// if-then: `A -> B -> V` nests as `if A { if B { V } }`, so every node must
 	// succeed for V to be produced. The one difference is RTStandalone, which
 	// is deliberately NOT set here — this if-then is a VALUE, not a statement.
+	// RTPipelineValue is set instead so the formatter round-trips the `->`
+	// syntax back out; without it the generic IfExpression printer would emit
+	// `cond: { body }`, which re-parses as a match-as-value and silently
+	// changes the meaning of the code.
 	if stmt.Value != nil && p.currentToken.Type == lexer.RARROW &&
 		!p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
 		p.nextToken() // skip ->
@@ -1076,6 +1080,7 @@ func (p *Parser) parseLetStatement() Statement {
 			Consequence: conseq,
 			Alternative: alt,
 		}
+		p.sem.SetRTFlag(stmt.Value.(*IfExpression), RTPipelineValue)
 	}
 
 	if stmt.Value == nil {

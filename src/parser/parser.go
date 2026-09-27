@@ -1275,119 +1275,42 @@ func (p *Parser) attachInlineCommentOnLine(stmt Statement, line int) {
 	p.comments = p.comments[1:]
 }
 
-// stmtTokenEndLine returns the line number of the last token in a statement.
+// stmtTokenEndLine returns the line number of the last source token in a
+// statement. It delegates to the AST node's EndPos(), which already recurses
+// into the correct sub-position (multi-line blocks, calls, struct literals,
+// inline bodies, …). The previous hand-maintained per-type switch returned
+// START-line tokens for several shapes — LetStatement→Name, FunctionDefinition→
+// opening `{`, inline-body ForStatement→the NEWLINE after the body — so a
+// trailing same-line comment written on those statements' real end line failed
+// attachInlineComment's same-line test and detached onto its own line; for
+// inline loop bodies that detach made `no fmt` oscillate (joined <-> split) and
+// lose the author's intended binding. This mirrors the identical delegation
+// already done in the formatter (see src/fmt/comments.go stmtTokenEndLine).
 func stmtTokenEndLine(stmt Statement) int {
+	if stmt == nil {
+		return 0
+	}
+	// Defensive: parse-failure nodes can carry a nil Body whose EndPos() would
+	// nil-dereference (see tmp/bug-comment/test-type.no SIGSEGV). Fall back to
+	// the statement's own token line in that case.
 	switch s := stmt.(type) {
-	case *LetStatement:
-		return s.Name.Token.Line
-	case *UseStatement:
-		return s.Token.Line
-	case *ExportStatement:
-		return s.Token.Line
-	case *ReturnStatement:
-		if s.ReturnValue != nil {
-			// We approximate: return value line
-			return s.Token.Line
-		}
-		return s.Token.Line
-	case *ExpressionStatement:
-		return stmtExprEndLine(s.Expression)
 	case *FunctionDefinition:
-		// Use the function's body closing brace
 		if s.Body == nil {
-			// 防禦：解析失敗（缺參數串/缺函數體等）可能留下 nil Body。
-			// 回退到函數定義本身的行號，避免對 nil 解參考造成 panic
-			//（見 tmp/bug-comment/test-type.no 觸發的 SIGSEGV）。
 			return s.Token.Line
 		}
-		return s.Body.Token.Line
 	case *ForStatement:
-		// Use the for body's closing brace
 		if s.Body == nil {
 			return s.Token.Line
 		}
-		return s.Body.Token.Line
-	case *BreakStatement:
-		return s.Token.Line
-	case *ContinueStatement:
-		return s.Token.Line
-	case *BlockStatement:
-		if len(s.Statements) > 0 {
-			return stmtTokenEndLine(s.Statements[len(s.Statements)-1])
-		}
-		return s.Token.Line
-	case *EnumDefinition:
-		return s.Token.Line
-	case *TaggedEnumDefinition:
-		return s.Token.Line
-	case *InterfaceDefinition:
-		return s.Token.Line
-	case *StructDefinition:
-		return s.Token.Line
-	case *MultiAssignStatement:
-		if s.Value != nil {
-			return s.Value.EndPos().Line
-		}
-		return s.Token.Line
 	}
-	return 0
-}
-
-// stmtExprEndLine returns the end line of an expression.
-func stmtExprEndLine(expr Expression) int {
-	switch e := expr.(type) {
-	case *Identifier:
-		return e.Token.Line
-	case *IntegerLiteral:
-		return e.Token.Line
-	case *FloatLiteral:
-		return e.Token.Line
-	case *BooleanLiteral:
-		return e.Token.Line
-	case *StringLiteral:
-		return e.Token.Line
-	case *CharLiteral:
-		return e.Token.Line
-	case *NilLiteral:
-		return e.Token.Line
-	case *PrefixExpression:
-		return stmtExprEndLine(e.Right)
-	case *InfixExpression:
-		return stmtExprEndLine(e.Right)
-	case *CallExpression:
-		return e.Token.Line
-	case *DotExpression:
-		return stmtExprEndLine(e.Receiver)
-	case *IfExpression:
-		if e.Alternative != nil && len(e.Alternative.Statements) > 0 {
-			return stmtTokenEndLine(e.Alternative.Statements[len(e.Alternative.Statements)-1])
-		}
-		if e.Consequence != nil && len(e.Consequence.Statements) > 0 {
-			return stmtTokenEndLine(e.Consequence.Statements[len(e.Consequence.Statements)-1])
-		}
-		return e.Token.Line
-	case *FunctionLiteral:
-		return e.Body.Token.Line
-	case *IndexExpression:
-		return e.Token.Line
-	case *SliceExpression:
-		return e.Token.Line
-	case *RangeExpression:
-		return e.Token.Line
-	case *ArrayLiteral:
-		return e.Token.Line
-	case *SliceLiteral:
-		return e.Token.Line
-	case *StructLiteral:
-		return e.Token.Line
-	case *AssignExpression:
-		return e.Token.Line
-	case *ConditionalExpression:
-		return e.Token.Line
-	case *GroupedExpression:
-		return e.Token.Line
+	// Degenerate nodes (e.g. an empty-body standalone if `cond ->` whose
+	// consequence block has no statements and no `}`) report EndPos().Line == 0.
+	// For those the statement occupies only its start line, so anchor there;
+	// otherwise a trailing same-line comment would fail to attach.
+	if line := stmt.EndPos().Line; line > 0 {
+		return line
 	}
-	return 0
+	return stmt.Pos().Line
 }
 
 // setDoc sets the Doc field on any Statement that supports it

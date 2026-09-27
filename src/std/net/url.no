@@ -551,13 +551,11 @@ url-join = (base str, path-str str) (out str) {
     }
 
     ; 如果以 / 開頭，替換基礎路徑
-    #{overflow=wrap}
     path-str.len-bytes() > 0 && path-str[0] == 47 -> {
         u url-info
         u = url-parse(base)
         u.ok -> {
 
-            #{overflow=wrap}
             out = u.scheme - '://' - u.host
             u.port > 0 -> {
 

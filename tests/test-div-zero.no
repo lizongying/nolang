@@ -19,6 +19,7 @@
 z = 0
 
 print('── 1. 對照組：正常除法')
+
 #{overflow=wrap}
 print(10 / 5); expect: 2
 
@@ -41,6 +42,7 @@ q3 = z / z
 print(q3); BUG: 實測 1，數學上無意義
 
 print('── 5. 字面常數 10 / 0 —— 編譯期已可偵測並診斷（div-by-zero），故改用變數除數觀察運行期 UB')
+
 #{overflow=wrap}
 print(10 / z); BUG: 實測 -1，無 warning / 無 error
 

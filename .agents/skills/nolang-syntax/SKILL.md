@@ -1579,6 +1579,14 @@ x: {
 > `{ 1 > 2 -> x = 42 }`. The value's type is inferred from the arm's trailing
 > expression (`str` / `i64` / `?T`), the same inference the match-as-value form
 > `x = subject: { arms }` uses.
+>
+> **`no fmt` must round-trip this form through `->` verbatim.** It lowers to an
+> IfExpression *without* `RTStandalone` (it is a value, not a statement); the
+> parser flags it with `RTPipelineValue` and `src/fmt/control.go` prints it with
+> the same `cond -> body` branch as standalone if-then. Emitting the generic
+> `cond: { body }` instead is a corruption: `x = 2 > 1: { 42 }` re-parses as a
+> match-as-value and assigns the boolean `1`, not `42`. Regression guard:
+> `src/fmt/pipeline_value_test.go`.
 
 > **Match semantics inside for-in**: `i <- (a..b]: { 1 -> ... 2 -> ... }` executes the match body once for each iteration variable `i` (`1 ->` is equivalent to `i == 1 ->`, etc.). This is syntactic sugar for executing one match per iteration.
 

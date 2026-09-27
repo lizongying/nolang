@@ -29,6 +29,7 @@ t-with-len = () {
     runner.eq(s.len(), 5, 'with-len(5) str len == 5')
     v []i64 = with-len(3)
     runner.eq(v.len(), 3, 'with-len(3) vec len == 3')
+
     ; with-len 的內容是零初始化
     runner.eq(v[0], 0, 'with-len vec element zero-initialised')
     runner.eq(v[2], 0, 'with-len vec last element zero-initialised')
@@ -37,6 +38,7 @@ t-with-len = () {
 }
 
 t-with-cap = () {
+
     ; with-cap 只給容量，**長度必須是 0**
     s str = with-cap(16)
     runner.eq(s.len(), 0, 'with-cap(16) str len == 0')
@@ -47,15 +49,18 @@ t-with-cap = () {
 }
 
 t-with-cap-len = () {
+
     ; with-cap-len(cap, len)：長度由第二個引數決定，容量只影響配置
     s str = with-cap-len(16, 5)
     runner.eq(s.len(), 5, 'with-cap-len(16,5) str len == 5')
     v []i64 = with-cap-len(200, 100)
     runner.eq(v.len(), 100, 'with-cap-len(200,100) vec len == 100')
     runner.eq(v[99], 0, 'with-cap-len vec zero-initialised')
+
     ; len == cap
     e str = with-cap-len(4, 4)
     runner.eq(e.len(), 4, 'with-cap-len(4,4) str len == 4')
+
     ; len == 0
     n str = with-cap-len(4, 0)
     runner.eq(n.len(), 0, 'with-cap-len(4,0) str len == 0')
@@ -64,7 +69,7 @@ t-with-cap-len = () {
 ; ── format：整數基數 ───────────────────────────
 
 t-format-radix = () {
-    x i64 = 42
+    x = 42
     runner.str-eq(format('{x}'), '42', 2, 'plain {x}')
     runner.str-eq(format('{x:d}'), '42', 2, ':d decimal')
     runner.str-eq(format('{x:b}'), '101010', 6, ':b binary')
@@ -72,19 +77,21 @@ t-format-radix = () {
     runner.str-eq(format('{x:x}'), '2a', 2, ':x hex lower')
     runner.str-eq(format('{x:X}'), '2A', 2, ':X hex upper')
     runner.str-eq(format('{x:#x}'), '0x2a', 4, ':#x hex with prefix')
+
     ; 負數：-42
     ; ⚠️ 設計選擇：非十進位基數把 i64 當**無號 64 位**重新解讀，印出補碼位元樣式
     ;    （-42 -> ffffffffffffffd6），而不是 Python 的 `-2a`。
     ;    與 C 的 `printf("%x", (unsigned)-42)` 一致，這裡把行為釘死。
-    m i64 = -42
+    m = -42
     runner.str-eq(format('{m:d}'), '-42', 3, 'negative :d keeps sign')
     runner.str-eq(format('{m:x}'), 'ffffffffffffffd6', 16, 'negative :x == 64-bit pattern')
     runner.str-eq(format('{m:X}'), 'FFFFFFFFFFFFFFD6', 16, 'negative :X uppercase')
     runner.str-eq(format('{m:#x}'), '0xffffffffffffffd6', 18, 'negative :#x with prefix')
     runner.str-eq(format('{m:o}'), '1777777777777777777726', 22, 'negative :o')
     runner.str-eq(format('{m:b}'), '1111111111111111111111111111111111111111111111111111111111010110', 64, 'negative :b')
+
     ; 0
-    z i64 = 0
+    z = 0
     runner.str-eq(format('{z}'), '0', 1, 'zero plain')
     runner.str-eq(format('{z:x}'), '0', 1, 'zero :x')
 }
@@ -92,25 +99,32 @@ t-format-radix = () {
 ; ── format：寬度 / 對齊 / 填充 / 補零 / 正負號 ──
 
 t-format-layout = () {
-    x i64 = 42
+    x = 42
+
     ; 補零：0 是「寬度前補零」的旗標
     runner.str-eq(format('{x:06}'), '000042', 6, ':06 zero pad')
     runner.str-eq(format('{x:08}'), '00000042', 8, ':08 zero pad')
+
     ; 右對齊（預設）與明確右對齊
     runner.str-eq(format('{x:6}'), '    42', 6, ':6 width only == right align')
     runner.str-eq(format('{x:>6}'), '    42', 6, ':>6 right align')
+
     ; 左對齊
     runner.str-eq(format('{x:<6}'), '42    ', 6, ':<6 left align')
+
     ; 置中
     runner.str-eq(format('{x:^6}'), '  42  ', 6, ':^6 centre')
+
     ; 自訂填充字元（必須與 align 一起用）
     runner.str-eq(format('{x:*<6}'), '42****', 6, ':*<6 fill * left')
     runner.str-eq(format('{x:*>6}'), '****42', 6, ':*>6 fill * right')
     runner.str-eq(format('{x:*^6}'), '**42**', 6, ':*^6 fill * centre')
+
     ; 正負號
     runner.str-eq(format('{x:+}'), '+42', 3, ':+ force plus')
-    m i64 = -42
+    m = -42
     runner.str-eq(format('{m:+}'), '-42', 3, ':+ on negative')
+
     ; 寬度不足時不截斷
     runner.str-eq(format('{x:1}'), '42', 2, 'width smaller than value')
 }
@@ -118,12 +132,13 @@ t-format-layout = () {
 ; ── format：浮點 ───────────────────────────────
 
 t-format-float = () {
-    pi f64 = 3.14159
+    pi = 3.14159
     runner.str-eq(format('{pi:.2f}'), '3.14', 4, ':.2f')
     runner.str-eq(format('{pi:.0f}'), '3', 1, ':.0f')
     runner.str-eq(format('{pi:.4f}'), '3.1416', 6, ':.4f rounds')
     runner.str-eq(format('{pi:8.3e}'), '3.142e+00', 9, ':8.3e')
     runner.str-eq(format('{pi:f}'), '3.141590', 8, ':f default 6 decimals')
+
     ; f32 也要能走同一條路
     q f32 = 1.5
     runner.str-eq(format('{q:.1f}'), '1.5', 3, 'f32 :.1f')
@@ -132,15 +147,16 @@ t-format-float = () {
 ; ── format：字串 ───────────────────────────────
 
 t-format-str = () {
-    h str = 'hello'
+    h = 'hello'
     runner.str-eq(format('{h}'), 'hello', 5, 'plain str')
     runner.str-eq(format('{h:s}'), 'hello', 5, ':s')
     runner.str-eq(format('{h:.3}'), 'hel', 3, ':.3 truncates')
     runner.str-eq(format('{h:.3s}'), 'hel', 3, ':.3s truncates')
     runner.str-eq(format('{h:<10}|'), 'hello     |', 11, ':<10 pads right')
     runner.str-eq(format('{h:>10}|'), '     hello|', 11, ':>10 pads left')
+
     ; 空字串
-    e str = ''
+    e = ''
     runner.str-eq(format('{e}'), '', 0, 'empty str')
     runner.str-eq(format('{e:.3}'), '', 0, 'empty str :.3')
 }
@@ -148,22 +164,27 @@ t-format-str = () {
 ; ── format：轉義 / 多欄位 ──────────────────────
 
 t-format-misc = () {
-    x i64 = 42
+    x = 42
+
     ; {{ }} 轉義只在同一字串另有真實欄位時生效
     runner.str-eq(format('a{{b}}c {x}'), 'a{b}c 42', 8, 'escapes with a real field')
+
     ; 單獨的大括號直接寫
     runner.str-eq(format('{'), '{', 1, 'lone open brace')
     runner.str-eq(format('}'), '}', 1, 'lone close brace')
+
     ; 多個欄位
-    a i64 = 1
-    b i64 = 2
+    a = 1
+    b = 2
     runner.str-eq(format('{a}+{b}={a}'), '1+2=1', 5, 'repeated field')
+
     ; 同一欄位重複取用
     runner.str-eq(format('{a}{a}{a}'), '111', 3, 'field used three times')
+
     ; bool
-    t bool = true
+    t = true
     runner.str-eq(format('{t}'), '1', 1, 'bool true -> 1')
-    f bool = false
+    f = false
     runner.str-eq(format('{f}'), '0', 1, 'bool false -> 0')
 }
 

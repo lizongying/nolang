@@ -23,6 +23,7 @@ x: {
 ; ✅ match 表达式：分支体是单一表达式
 a = 100
 b = 101
+
 #{overflow=wrap}
 result = x: {
     ; 单一值

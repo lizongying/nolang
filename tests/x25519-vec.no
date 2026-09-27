@@ -88,9 +88,11 @@ test-vec-1 = () (pass bool) {
     ok == false -> {
         print('FAIL: Alice public key mismatch')
         i <- [0..32): {
-            #{index-out = 0}
+
+            #{index-out=0}
             e = alice-pub-expected[i]
-            #{index-out = 0}
+
+            #{index-out=0}
             c = alice-pub[i]
             eprint('  idx=')
             eprint(i)

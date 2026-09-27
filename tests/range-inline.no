@@ -5,6 +5,6 @@ foo = () {
     off = 0
     copy-rem = 2
 
-    #{overflow=wrap, index-out = 0}
+    #{index-out=0, overflow=wrap}
     k <- [0..copy-rem): buf[base + k] = data[off + base + k]
 }

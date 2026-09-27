@@ -7,7 +7,8 @@ main = () {
     a = [1, 2, 3, 4]
     off = 0
     res ?i64 = a[off + 1]
-    #{index-out = 0}
+
+    #{index-out=0}
     x = a[res]
     io.out('x=')
     io.out(x)

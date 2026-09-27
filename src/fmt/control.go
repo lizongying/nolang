@@ -9,7 +9,6 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-
 // formatStandaloneBody formats the body of a standalone if-then (cond -> body).
 // If the body was written inline (single simple statement, no braces), it outputs
 // inline without braces. If the body was written as a block `{ ... }`, it keeps
@@ -81,7 +80,13 @@ func (f *formatter) isBareMatchBody(statements []parser.Statement) bool {
 
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 	// Standalone if-then: `cond -> body` (without enclosing { })
-	if f.hasRT(e, parser.RTStandalone) {
+	//
+	// RTPipelineValue（`x = cond -> v` 的管道值節點，parser 刻意不設
+	// RTStandalone）與 standalone 共用同一套 `->` 輸出：管體在值語境下
+	// 同樣由 parseStandaloneBody/wrapStandaloneChain 構造（內鏈自帶
+	// RTStandalone），else 續寫規則也一致。若不加此分支，通用打印會輸出
+	// `cond: { body }`——該寫法重新解析為 match-as-value，語義已被改變。
+	if f.hasRT(e, parser.RTStandalone) || f.hasRT(e, parser.RTPipelineValue) {
 		// Wildcard standalone: -> body
 		if f.hasRT(e, parser.RTMatchWildcard) {
 			// Empty body: just output -> (no trailing space)
@@ -102,11 +107,11 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 			// - If RTElseNewline is set (else was on a new line in source),
 			//   `->` must go on a new line even when consequence is inline.
 			// - Otherwise (inline consequence, same-line else), `->` stays inline.
-		if !f.isStandaloneInline(e.Consequence) || f.hasRT(e, parser.RTElseNewline) {
-			f.write("\n")
-			f.newline()
-			f.write("-> ")
-		} else {
+			if !f.isStandaloneInline(e.Consequence) || f.hasRT(e, parser.RTElseNewline) {
+				f.write("\n")
+				f.newline()
+				f.write("-> ")
+			} else {
 				f.write(" -> ")
 			}
 			f.formatStandaloneBody(e.Alternative)
@@ -236,7 +241,7 @@ func (f *formatter) formatBareMatchExpressionSubj(e *parser.IfExpression, subjOv
 			f.write(strings.TrimSpace(c.Text))
 		}
 	}
-f.indent++
+	f.indent++
 	// 輸出當前 arm
 	f.writeBareMatchArm(e)
 	// 處理後續 arm（Alternative 鏈）

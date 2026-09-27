@@ -923,16 +923,12 @@ server-conn.handshake = () (ok bool) {
     ; 發送 SSE 回應標頭
     resp = 'HTTP/1.1 200 OK' - crlf
 
-    #{overflow=wrap}
     resp = resp - 'Content-Type: text/event-stream' - crlf
 
-    #{overflow=wrap}
     resp = resp - 'Cache-Control: no-cache' - crlf
 
-    #{overflow=wrap}
     resp = resp - 'Connection: keep-alive' - crlf
 
-    #{overflow=wrap}
     resp = resp - 'Access-Control-Allow-Origin: *' - crlf
 
     #{overflow=wrap}

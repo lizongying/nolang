@@ -3,6 +3,7 @@
 
 a int = 10
 b int = 2
+
 #{overflow=wrap}
 q = a / b
 q: {
@@ -13,6 +14,7 @@ q: {
     -> print(it)
 }
 z int = 0
+
 #{overflow=wrap}
 q0 = a / z
 q0: {
