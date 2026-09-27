@@ -25,7 +25,7 @@ type Parser struct {
 	comments          []lexer.Token                // collected comment tokens
 	warnedSemiEat     map[int]bool                 // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
 	reportedIllegal   map[string]bool              // 已報告的 ILLEGAL token 位置（避免重複）
-	sem               *SemanticContext            // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
+	sem               *SemanticContext             // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
 	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
 	methodSignatures  map[string][]string          // 結構體方法 → 結果型別字串列表（鍵：module.struct.method）
 	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
@@ -961,14 +961,14 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 }
 
 type parserState struct {
-	cur          int // ring cursor (absolute token index of currentToken)
-	peek         int // ring cursor of peekToken
-	prevToken    lexer.Token
-	ctx          contextStack      // snapshot of context stack
-	comments     []lexer.Token     // snapshot of collected comments
-	semVarTypes     map[string]string   // snapshot of variable type table
-	semEnumVariants map[string][]string // snapshot of enum variant table
-	semDeclaredVars map[string]bool     // snapshot of declared variable set
+	cur                 int // ring cursor (absolute token index of currentToken)
+	peek                int // ring cursor of peekToken
+	prevToken           lexer.Token
+	ctx                 contextStack                 // snapshot of context stack
+	comments            []lexer.Token                // snapshot of collected comments
+	semVarTypes         map[string]string            // snapshot of variable type table
+	semEnumVariants     map[string][]string          // snapshot of enum variant table
+	semDeclaredVars     map[string]bool              // snapshot of declared variable set
 	semFuncVarTypes     map[string]map[string]string // snapshot of per-function var types
 	semFuncDeclaredVars map[string]map[string]bool   // snapshot of per-function declared vars
 }
