@@ -137,7 +137,7 @@ python3 <skill-dir>/scripts/release.py verify
    ```bash
    git add -A
    git commit -m "chore(release): vX.Y.Z"
-   git tag vX.Y.Z
+   python3 <skill-dir>/scripts/release.py tag --version vX.Y.Z
    git push origin main
    git push origin vX.Y.Z
    ```
@@ -161,16 +161,16 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
 
 据此分三种情况处理：
 
-- **正常**：`git add -A` → `git commit -m "chore(release): vX.Y.Z"` → `git tag vX.Y.Z`
+- **正常**：`git add -A` → `git commit -m "chore(release): vX.Y.Z"` → `python3 <skill-dir>/scripts/release.py tag --version vX.Y.Z`
   → `git push origin <branch>` → `git push origin vX.Y.Z`
 - **commit 已存在**（`git commit` 回 `nothing to commit`）：说明别处已经提交了。
-  不要重试、不要 `--amend`，直接核对 `git log -1 --stat` 确认内容对得上，然后只补 `git tag` 和 push。
+  不要重试、不要 `--amend`，直接核对 `git log -1 --stat` 确认内容对得上，然后只补 `python3 <skill-dir>/scripts/release.py tag --version vX.Y.Z` 和 push。
 - **tag 已存在**（本地或远端）：先分辨是哪种情况：
   - **正常发版撞车**（release 已经成功、只是想又打一个同名 tag）：停下来告诉用户，改用更高的版本号重新走流程。**不要** `-f` 覆盖已有 tag。
   - **release action 失败**（`plan` 报 `!!! RELEASE CHECK !!!`，即最高本地 tag 没有对应 release）：
     这**不是**撞车，而是上次推 tag 后 CI 没建成 release。此时**复用当前这个 tag**（不 +1）。
     `plan` 会列出 tag 之后的新提交——先把它们归纳进现有段落：`apply --version <tag> --update-existing`（重写 `## <tag>` 正文，不新增版本号）。
-    然后按 `plan` 给的强制重推命令走：`git add -A` → `git commit` → `git tag -f <tag>`（tag 对齐到含新提交的 HEAD）
+    然后按 `plan` 给的强制重推命令走：`git add -A` → `git commit` → `python3 <skill-dir>/scripts/release.py tag --version <tag> --force`（tag 对齐到含新提交的 HEAD）
     → `git push origin <branch>` → `git push origin :refs/tags/<tag>`（删远端旧 tag）→ `git push origin <tag>` 重新触发 CI。
     这是唯一允许对同名 tag 施 `-f` / 删远端重推的场景，目的是重跑失败的 action，不是篡改已发布的版本。
 

@@ -17,11 +17,14 @@ apply    Prepend a `## vX.Y.Z` section to HISTORY.md (the only file mutation).
          Enforces English, conventional-commit style bullets.
 verify   Run ./history.sh with no arguments and print what GitHub Actions will
          publish as the release body.
+tag      Create the release tag idempotently (skips if it already points at
+         HEAD; --force retargets an existing tag for failed-release reuse).
 
 Usage
 -----
     release.py plan  [--repo DIR] [--version v0.2.33] [--no-release-check]
     release.py apply --version v0.2.33 --body-file /tmp/notes.md [--repo DIR]
+    release.py tag   [--repo DIR] [--version v0.2.33] [--force]
     release.py verify [--repo DIR]
 
 Exit codes
@@ -349,7 +352,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         print("git add -A")
         print(f'git commit -m "chore(release): {version}"')
         print(
-            f"git tag -f {version}                 # retarget the tag at HEAD (now incl. new commits)")
+            f"python3 {script} tag --version {version} --force   # retarget the tag at HEAD (now incl. new commits)")
         print(
             f"git push origin {branch}             # push the new commit(s)")
         print(
@@ -364,7 +367,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     print(f"cd {repo}")
     print("git add -A")
     print(f'git commit -m "chore(release): {version}"')
-    print(f"git tag {version}")
+    print(f"python3 {script} tag --version {version}")
     print(f"git push origin {branch}")
     print(f"git push origin {version}")
     if url:
@@ -501,6 +504,46 @@ def cmd_apply(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tag(args: argparse.Namespace) -> int:
+    """Create the release tag idempotently.
+
+    A tag may already exist -- created by a post-commit hook, a concurrent
+    session, or a previous aborted run. If it already points at HEAD we skip
+    instead of failing with 'already exists'. With --force an existing tag is
+    retargeted at HEAD -- only for re-releasing a tag whose CI action failed.
+    """
+    repo = args.repo
+    if args.version:
+        version = normalize_version(args.version)
+    else:
+        version, _, _ = resolve_version(repo, None)
+    head = run(repo, "rev-parse", "HEAD")
+
+    listed = subprocess.run(
+        ["git", "tag", "-l", version], cwd=repo,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    if listed == version:
+        pointed = subprocess.run(
+            ["git", "rev-list", "-n", "1", version], cwd=repo,
+            capture_output=True, text=True,
+        ).stdout.strip()
+        if pointed == head:
+            print(f"tag {version} already exists and points to HEAD; skipping")
+            return 0
+        if args.force:
+            subprocess.run(["git", "tag", "-f", version], cwd=repo, check=True)
+            print(f"force-retargeted tag {version} onto HEAD")
+            return 0
+        raise SystemExit(
+            f"tag {version} already exists and points to {pointed[:8]}, not HEAD "
+            f"({head[:8]}); pass --force only when re-releasing a failed release"
+        )
+    subprocess.run(["git", "tag", version], cwd=repo, check=True)
+    print(f"created tag {version}")
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     repo = args.repo
     script = os.path.join(repo, "history.sh")
@@ -558,6 +601,19 @@ def main() -> int:
 
     v = sub.add_parser("verify", help="show the release body CI will produce")
     v.set_defaults(func=cmd_verify)
+
+    t = sub.add_parser("tag", help="create the release tag idempotently")
+    t.add_argument(
+        "--version",
+        help="explicit version; partial forms are expanded (0.3 -> v0.3.0); "
+             "defaults to the next tag from resolve_version",
+    )
+    t.add_argument(
+        "--force",
+        action="store_true",
+        help="retarget an existing tag at HEAD (failed-release reuse only)",
+    )
+    t.set_defaults(func=cmd_tag)
 
     args = ap.parse_args()
     args.repo = detect_repo(args.repo)
