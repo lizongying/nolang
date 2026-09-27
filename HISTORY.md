@@ -1,5 +1,15 @@
 # 更新日誌
 
+## v0.3.10
+
+- fix(mir): add null-buffer guard for %str-long index store
+- fix(parser): prevent unsafe index lowering from corrupting formatted source
+- fix(build): preserve overflow annotations across monomorph clone and fix diagnostic source file info
+- refactor(mysql): add overflow wrap handling and improve slice safety
+- fix(bench): add overflow annotations to fib benchmarks
+- refactor(parser): align struct field comments and parser state formatting
+- chore(audit): add 2026-09-27 Nolang audit report
+
 ## v0.3.9
 
 - fix(mir): fix bigint bus error and implement div/mod with tests
