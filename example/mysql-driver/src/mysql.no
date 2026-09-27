@@ -82,6 +82,7 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         ; 複製到位據
         i = 0
         (i < read-n) {
+
             #{overflow=wrap}
             data[total + i] = tmp[i]
 
@@ -170,6 +171,7 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
         first == 251 -> is-null = true
 
         first == 252 -> {
+
             #{overflow=wrap}
             val = data[pos + 1] | (data[pos + 2] << 8)
 
@@ -178,6 +180,7 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
         }
 
         first == 253 -> {
+
             #{overflow=wrap}
             val = data[pos + 1] | (data[pos + 2] << 8) | (data[pos + 3] << 16)
 
@@ -186,6 +189,7 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
         }
 
         first == 254 -> {
+
             #{overflow=wrap}
             val = data[pos + 1] | (data[pos + 2] << 8) | (data[pos + 3] << 16) | (data[pos + 4] << 24) | (data[pos + 5] << 32) | (data[pos + 6] << 40) | (data[pos + 7] << 48) | (data[pos + 8] << 56)
 
@@ -216,15 +220,34 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     combined [40]byte
     i = 0
     (i < 20) {
-        combined[i] = seed[i]
+        {
+            __idx_out_220_21: {
+                ok -> {
+                    combined[i] = it
+                }
+
+                -> {
+                    combined[i] = =
+                }
+            }
+        }
 
         #{overflow=wrap}
         i = i + 1
     }
     i = 0
     (i < 20) {
-        #{overflow=wrap}
-        combined[20 + i] = stage2[i]
+        {
+            __idx_out_228_26: {
+                ok -> {
+                    combined[20 + i] = it
+                }
+
+                -> {
+                    combined[20 + i] = =
+                }
+            }
+        }
 
         #{overflow=wrap}
         i = i + 1
@@ -312,6 +335,7 @@ open = (dsn str) (d db-mysql) {
         colon-pos > at-pos -> return
     }
     user = dsn.slice(0, colon-pos)
+
     #{overflow=wrap}
     password = dsn.slice(colon-pos + 1, at-pos)
 
@@ -323,6 +347,7 @@ open = (dsn str) (d db-mysql) {
         slash-pos < 0 -> return
     }
     host-port = rest.slice(0, slash-pos)
+
     #{overflow=wrap}
     dbname = rest.slice(slash-pos + 1, rest.len-bytes())
 
@@ -333,6 +358,7 @@ open = (dsn str) (d db-mysql) {
     {
         hp-colon >= 0 -> {
             host = host-port.slice(0, hp-colon)
+
             #{overflow=wrap}
             port-str = host-port.slice(hp-colon + 1, host-port.len-bytes())
             p = 0
@@ -434,6 +460,7 @@ open = (dsn str) (d db-mysql) {
     seed [20]byte
     i = 0
     (i < 8) {
+
         #{overflow=wrap}
         seed[i] = handshake[pos + i]
 
@@ -485,6 +512,7 @@ open = (dsn str) (d db-mysql) {
     }
     i = 0
     (i < seed2-len) {
+
         #{overflow=wrap}
         seed[8 + i] = handshake[pos + i]
 
@@ -542,6 +570,7 @@ open = (dsn str) (d db-mysql) {
     ; Reserved (23 bytes of 0x00)
     i = 0
     (i < 23) {
+
         #{overflow=wrap}
         resp[9 + i] = 0
 
@@ -573,7 +602,17 @@ open = (dsn str) (d db-mysql) {
     wpos = wpos + 1
     i = 0
     (i < 20) {
-        resp[wpos] = auth-token[i]
+        {
+            __idx_out_578_20: {
+                ok -> {
+                    resp[wpos] = it
+                }
+
+                -> {
+                    resp[wpos] = =
+                }
+            }
+        }
 
         #{overflow=wrap}
         wpos = wpos + 1
@@ -680,11 +719,13 @@ db-mysql.exec = (sql str) (r sql.result) {
 
     ; 建構 COM_QUERY 封包：0x03 + SQL
     space = ' '
+
     #{overflow=wrap}
     payload = space.repeat(sql.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     (i < sql.len-bytes()) {
+
         #{overflow=wrap}
         payload[1 + i] = sql[i]
 
@@ -735,11 +776,13 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
     ; 建構 COM_QUERY 封包
     space = ' '
+
     #{overflow=wrap}
     payload = space.repeat(sql.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     (i < sql.len-bytes()) {
+
         #{overflow=wrap}
         payload[1 + i] = sql[i]
 
@@ -880,6 +923,7 @@ rows-mysql.scan-int = (col i64) (v i64) {
     (c < col) {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
+
         #{overflow=wrap}
         {
             fn == false -> .row-pos = .row-pos + fl
@@ -930,6 +974,7 @@ rows-mysql.scan-int = (col i64) (v i64) {
             v = 0 - v
         }
     }
+
     #{overflow=wrap}
     .row-pos = .row-pos + field-len
 }
@@ -941,6 +986,7 @@ rows-mysql.scan-str = (col i64) (v str) {
     (c < col) {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
+
         #{overflow=wrap}
         {
             fn == false -> .row-pos = .row-pos + fl
@@ -957,8 +1003,10 @@ rows-mysql.scan-str = (col i64) (v str) {
 
     ; 複製欄位資料到 v（使用 slice 一次截取）
     row-str = .row-data
+
     #{overflow=wrap}
     v = row-str.slice(.row-pos, .row-pos + field-len)
+
     #{overflow=wrap}
     .row-pos = .row-pos + field-len
 }
@@ -971,6 +1019,7 @@ rows-mysql.scan-float = (col i64) (v f64) {
     (c < col) {
         fl, fn, np = mysql-read-lenenc(.row-data, .row-pos)
         .row-pos = np
+
         #{overflow=wrap}
         {
             fn == false -> .row-pos = .row-pos + fl
@@ -1002,6 +1051,7 @@ rows-mysql.scan-float = (col i64) (v f64) {
         }
     }
     (i < field-len) {
+
         #{overflow=wrap}
         ch = .row-data[base + i]
         {
@@ -1024,6 +1074,7 @@ rows-mysql.scan-float = (col i64) (v f64) {
     {
         neg == 1 -> v = 0.0 - v
     }
+
     #{overflow=wrap}
     .row-pos = .row-pos + field-len
 }
@@ -1061,8 +1112,10 @@ stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
     }
     vstr = v.to-str()
     before = cur.slice(0, pos)
+
     #{overflow=wrap}
     after = cur.slice(pos + 1, cur.len-bytes())
+
     #{overflow=wrap}
     .bound = before - vstr - after
     ok = true
@@ -1083,8 +1136,10 @@ stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     ; char-to-str(39) = 單引號 '（ASCII 39）
     q = number.char-to-str(39)
     before = cur.slice(0, pos)
+
     #{overflow=wrap}
     after = cur.slice(pos + 1, cur.len-bytes())
+
     #{overflow=wrap}
     .bound = before - q - sval - q - after
     ok = true
@@ -1105,6 +1160,7 @@ stmt-mysql.bind-bool = (idx i64, v bool) (ok bool) {
         v -> bstr = '1'
     }
     before = cur.slice(0, pos)
+
     #{overflow=wrap}
     after = cur.slice(pos + 1, cur.len-bytes())
     .bound = before - bstr - after
@@ -1118,11 +1174,13 @@ stmt-mysql.exec = () (r sql.result) {
 
     ; 建構 COM_QUERY 封包
     space = ' '
+
     #{overflow=wrap}
     payload = space.repeat(.bound.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     (i < .bound.len-bytes()) {
+
         #{overflow=wrap}
         payload[1 + i] = .bound[i]
 
@@ -1166,11 +1224,13 @@ stmt-mysql.query = () (rs rows-mysql) {
 
     ; 建構 COM_QUERY 封包
     space = ' '
+
     #{overflow=wrap}
     payload = space.repeat(.bound.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     (i < .bound.len-bytes()) {
+
         #{overflow=wrap}
         payload[1 + i] = .bound[i]
 
