@@ -223,6 +223,12 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	// 直接渲染回源碼（server.go formatNolangCode → fmt.FormatProgram）。
 	// 若啟用 lowering，`v ?= expr` 會展開成不可再解析的 __unwrap_N 區塊寫回檔案。
 	p.SkipUnwrapLowering = true
+	// 同理跳過安全索引降級：`#{index-out = DEF} x = v[i]` 若被降級成
+	// __idx_out_L_C 區塊，format-on-save 會把該區塊（且遺失 DEF 字面量、變成
+	// `x = =`）寫回使用者源碼，產生不可解析的損壞檔案。保留 surface AST 讓
+	// formatter 原樣渲染 `#{index-out}` 註解與 `x = v[i]`（見 no fmt 的
+	// formatProgramWithLoopStyle 同設此二旗標）。
+	p.SkipSafeIndexLowering = true
 	// Inject std module function signatures and struct field types so that
 	// the parser can infer types from cross-module method calls (e.g.
 	// tls-c.send() → ?i64), which enables option-match `it` binding injection.

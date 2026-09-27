@@ -220,34 +220,18 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     combined [40]byte
     i = 0
     (i < 20) {
-        {
-            __idx_out_220_21: {
-                ok -> {
-                    combined[i] = it
-                }
 
-                -> {
-                    combined[i] = =
-                }
-            }
-        }
+        #{index-out=0}
+        combined[i] = seed[i]
 
         #{overflow=wrap}
         i = i + 1
     }
     i = 0
     (i < 20) {
-        {
-            __idx_out_228_26: {
-                ok -> {
-                    combined[20 + i] = it
-                }
 
-                -> {
-                    combined[20 + i] = =
-                }
-            }
-        }
+        #{index-out=0, overflow=wrap}
+        combined[20 + i] = stage2[i]
 
         #{overflow=wrap}
         i = i + 1
@@ -340,6 +324,7 @@ open = (dsn str) (d db-mysql) {
     password = dsn.slice(colon-pos + 1, at-pos)
 
     ; 解析 host:port/dbname
+
     #{overflow=wrap}
     rest = dsn.slice(at-pos + 1, dsn.len-bytes())
     slash-pos = rest.index('/')
@@ -436,7 +421,6 @@ open = (dsn str) (d db-mysql) {
     ;   cap_lower(2) + charset(1) + status(2) + cap_upper(2) +
     ;   auth_plugin_data_len(1) + reserved(10) + auth_seed_part2(12+null) +
     ;   auth_plugin_name(null-terminated)
-
     pos = 1
 
     ; 跳過 server version（null-terminated）
@@ -453,6 +437,7 @@ open = (dsn str) (d db-mysql) {
     pos = pos + 1; skip null terminator
 
     ; thread_id (4 bytes) — skip
+
     #{overflow=wrap}
     pos = pos + 4
 
@@ -472,22 +457,27 @@ open = (dsn str) (d db-mysql) {
     pos = pos + 8
 
     ; filler (1 byte)
+
     #{overflow=wrap}
     pos = pos + 1
 
     ; capabilities_lower (2 bytes)
+
     #{overflow=wrap}
     pos = pos + 2
 
     ; charset (1 byte)
+
     #{overflow=wrap}
     pos = pos + 1
 
     ; status (2 bytes)
+
     #{overflow=wrap}
     pos = pos + 2
 
     ; capabilities_upper (2 bytes)
+
     #{overflow=wrap}
     pos = pos + 2
 
@@ -498,6 +488,7 @@ open = (dsn str) (d db-mysql) {
     pos = pos + 1
 
     ; reserved (10 bytes)
+
     #{overflow=wrap}
     pos = pos + 10
 
@@ -544,7 +535,6 @@ open = (dsn str) (d db-mysql) {
     client-caps = CLIENT-PROTOCOL-41 | CLIENT-SECURE-CONNECTION | CLIENT-PLUGIN-AUTH | CLIENT-CONNECT-WITH-DB
     max-packet = MYSQL-RECV-BUF
     charset = 255; utf8mb4
-
     space = ' '
     resp = space.repeat(512)
     wpos = 0
@@ -602,17 +592,9 @@ open = (dsn str) (d db-mysql) {
     wpos = wpos + 1
     i = 0
     (i < 20) {
-        {
-            __idx_out_578_20: {
-                ok -> {
-                    resp[wpos] = it
-                }
 
-                -> {
-                    resp[wpos] = =
-                }
-            }
-        }
+        #{index-out=0}
+        resp[wpos] = auth-token[i]
 
         #{overflow=wrap}
         wpos = wpos + 1
@@ -688,7 +670,6 @@ open = (dsn str) (d db-mysql) {
 ; ============================================================================
 ; 方法：db-mysql — 實作 sql.db 介面
 ; ============================================================================
-
 db-mysql.enter = () {
 }
 
@@ -862,7 +843,6 @@ db-mysql.prepare = (sql str) (s stmt-mysql) {
 ; ============================================================================
 ; 方法：rows-mysql — 實作 sql.rows 介面
 ; ============================================================================
-
 rows-mysql.enter = () {
 }
 
@@ -1093,7 +1073,6 @@ rows-mysql.close = () (ok bool) {
 ; 方法：stmt-mysql — 實作 sql.stmt 介面（字串替換模式）
 ; bind-* 按順序替換第一個 ? 佔位符
 ; ============================================================================
-
 stmt-mysql.enter = () {
 }
 
