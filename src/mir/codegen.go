@@ -6752,6 +6752,82 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	_ = v
 }
 
+// ensureStrLongBuffer makes a `s[i] = x` store safe for the %str-long at arrSlot:
+// if the backing byte buffer is null (a string declared with no capacity, or a
+// moved-from / dropped buffer), it mallocs a default-capacity buffer so the
+// store never writes through a null i8*. This is the %str-long analogue of
+// ensureVecBuffer's case 1 (the null-data allocation).
+//
+// Unlike %vec (whose data is stored as an i64 and inttoptr'd at use), a
+// %str-long's data is a real i8* pointer, so the malloc here operates on i8*
+// directly — no ptrtoint/inttoptr round-trip. The buffer is byte-addressed
+// (see elemAddrRaw: `getelementptr i8, i8* d, i64 idxV`), so a write at byte
+// index idxV needs at least idxV+1 bytes; we size the fresh buffer to
+// max(strDefaultCap, idxV+1) so any caller index is in range.
+//
+// This only covers the null-data case. The %str-long growth case (idxV >= cap
+// with a NON-NULL data pointer) is a separate concern — str mutation grows via
+// re-encode — and is deliberately NOT addressed here; a borrowed view
+// (string -> []byte coercion: cap==0, non-null data aliasing the source
+// string) must be left alone exactly as before, and growing it would free a
+// buffer the string still owns.
+func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT string) {
+	const strDefaultCap = int64(1024)
+	_ = elemT
+	_ = v
+
+	// Fresh buffer size: at least idxV+1 bytes, but never smaller than the
+	// default capacity (so a string written only near the front keeps a
+	// reasonable slack, matching the vec convention).
+	c.loadSeq++
+	needReg := fmt.Sprintf("%%slbn%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", needReg, idxV))
+	c.loadSeq++
+	overDefault := fmt.Sprintf("%%slbo%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %d\n", overDefault, needReg, strDefaultCap))
+	c.loadSeq++
+	sizeReg := fmt.Sprintf("%%slbs%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %d\n", sizeReg, overDefault, needReg, strDefaultCap))
+
+	// Load data (field 2) once, in the entry block, so it dominates both
+	// branches below.
+	c.loadSeq++
+	dg := fmt.Sprintf("%%slbdg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dg, arrSlot))
+	c.loadSeq++
+	di := fmt.Sprintf("%%slbdi%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", di, dg))
+
+	c.loadSeq++
+	isnull := fmt.Sprintf("%%slbnl%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8* %s, null\n", isnull, di))
+
+	c.loadSeq++
+	lAlloc := fmt.Sprintf("slbA%d", c.loadSeq)
+	lDone := fmt.Sprintf("slbD%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lDone))
+
+	// alloc block (case 1): malloc the default buffer, store data + cap.
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lAlloc))
+	c.loadSeq++
+	buf := fmt.Sprintf("%%slbbuf%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sizeReg))
+	// Zero it: the bytes are owned (and a %str-long element that aliases a
+	// garbage pointer would free() an arbitrary address on drop), so a fresh
+	// buffer starts clean exactly like the vec path.
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sizeReg))
+	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", buf, dg))
+	c.loadSeq++
+	cg := fmt.Sprintf("%%slbcg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", cg, arrSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", sizeReg, cg))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lDone))
+
+	// done block: merge point; the caller's subsequent store lands here.
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lDone))
+}
+
 // elemTypeOfReceiver returns the LLVM *element* type for indexing/store into a
 // slice/array/str receiver. The byte-addressed backing store of a %vec (slice)
 // or %str-long means the element type is the slice's declared element — i8 for
@@ -7214,6 +7290,13 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// the old null location, and the store would still segfault.
 	if arrT == "%vec" {
 		c.ensureVecBuffer(arrSlot, inst.Args[0], idxV, elemT)
+	}
+	// Symmetric null-buffer guard for %str-long: a direct `s[i] = c` on a string
+	// whose backing buffer is null would store through a null i8*. Legacy
+	// allocates a real backing buffer for an empty string; we do the same lazily
+	// on the first write (see ensureStrLongBuffer).
+	if arrT == "%str-long" {
+		c.ensureStrLongBuffer(arrSlot, inst.Args[0], idxV, elemT)
 	}
 	// `txt[i] = v` writes a CODE POINT at code-point index i (re-encode + shift
 	// inside the 255-byte cap, length field maintained) — see emitTxtCpPut.
