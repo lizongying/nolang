@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "8e47deb7665bdbf096a10a913a524d729d4f88a2912dc495f0da46c4d95defd6"
+	embeddedStdSigKey = "7c19a0c48da343f865746b8180ef743c43f2b6ba885e155eaa24a83dbf97f15f"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -1295,6 +1295,7 @@ func init() {
 		"json-pool.alloc":                                  {"i64"},
 		"json-pool.arr-get":                                {"i64", "bool"},
 		"json-pool.arr-len":                                {"i64"},
+		"json-pool.copy-tree":                              {"i64"},
 		"json-pool.get-bool":                               {"bool", "bool"},
 		"json-pool.get-key":                                {"i64", "bool"},
 		"json-pool.get-kind":                               {"i64"},
@@ -1333,6 +1334,7 @@ func init() {
 		"json.json-pool.alloc":                             {"i64"},
 		"json.json-pool.arr-get":                           {"i64", "bool"},
 		"json.json-pool.arr-len":                           {"i64"},
+		"json.json-pool.copy-tree":                         {"i64"},
 		"json.json-pool.get-bool":                          {"bool", "bool"},
 		"json.json-pool.get-key":                           {"i64", "bool"},
 		"json.json-pool.get-kind":                          {"i64"},
@@ -4146,6 +4148,7 @@ func init() {
 		"json-pool.alloc":                                  {},
 		"json-pool.arr-get":                                {"i64", "i64"},
 		"json-pool.arr-len":                                {"i64"},
+		"json-pool.copy-tree":                              {"json-pool", "i64"},
 		"json-pool.get-bool":                               {"i64"},
 		"json-pool.get-key":                                {"i64", "str"},
 		"json-pool.get-kind":                               {"i64"},
@@ -4184,6 +4187,7 @@ func init() {
 		"json.json-pool.alloc":                             {},
 		"json.json-pool.arr-get":                           {"i64", "i64"},
 		"json.json-pool.arr-len":                           {"i64"},
+		"json.json-pool.copy-tree":                         {"json-pool", "i64"},
 		"json.json-pool.get-bool":                          {"i64"},
 		"json.json-pool.get-key":                           {"i64", "str"},
 		"json.json-pool.get-kind":                          {"i64"},

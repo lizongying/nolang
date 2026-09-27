@@ -1249,12 +1249,18 @@ func ValidateNaming(program *parser.Program) []ValidateResult {
 		if _, ok := stmt.(*parser.LetStatement); ok {
 			continue
 		}
-		results = append(results, checkNaming(stmt, definedVars)...)
+		results = append(results, checkNaming(stmt, parser.GetSourceFile(stmt), definedVars)...)
 	}
 	return results
 }
-func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateResult {
+
+// checkNaming 遞迴檢查命名規範。file 由外層頂層語句傳入（合併模式只有頂層語句被
+// SetSourceFile 標記），讓診斷能正確歸屬到語句實際來源檔。
+func checkNaming(stmt parser.Statement, file string, globalVars map[string]bool) []ValidateResult {
 	var results []ValidateResult
+	if f := parser.GetSourceFile(stmt); f != "" {
+		file = f
+	}
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
 		// Skip naming-convention checks for functions explicitly marked
@@ -1265,7 +1271,7 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		if s.IsSkipNamingCheck || strings.Contains(s.Name, "_") {
 			if s.Body != nil {
 				for _, bStmt := range s.Body.Statements {
-					results = append(results, checkNaming(bStmt, globalVars)...)
+					results = append(results, checkNaming(bStmt, file, globalVars)...)
 				}
 			}
 			return results
@@ -1278,6 +1284,7 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		if !isValidVarName(nameToCheck) {
 			results = append(results, ValidateResult{
 				TraceID: "x6swm2kk",
+				File:    file,
 				Line:    s.Token.Line,
 				Column:  s.Token.Column,
 				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name),
@@ -1285,7 +1292,7 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		}
 		if s.Body != nil {
 			for _, bStmt := range s.Body.Statements {
-				results = append(results, checkNaming(bStmt, globalVars)...)
+				results = append(results, checkNaming(bStmt, file, globalVars)...)
 			}
 		}
 	case *parser.LetStatement:
@@ -1307,6 +1314,7 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		if s.Name != nil && !isValidVarName(s.Name.Value) {
 			results = append(results, ValidateResult{
 				TraceID: "2dhoris2",
+				File:    file,
 				Line:    s.Name.Token.Line,
 				Column:  s.Name.Token.Column,
 				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name.Value),
@@ -1314,15 +1322,15 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 		}
 	case *parser.BlockStatement:
 		for _, bStmt := range s.Statements {
-			results = append(results, checkNaming(bStmt, globalVars)...)
+			results = append(results, checkNaming(bStmt, file, globalVars)...)
 		}
 	case *parser.ExpressionStatement:
 		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
 			if ifExpr.Consequence != nil {
-				results = append(results, checkNaming(ifExpr.Consequence, globalVars)...)
+				results = append(results, checkNaming(ifExpr.Consequence, file, globalVars)...)
 			}
 			if ifExpr.Alternative != nil {
-				results = append(results, checkNaming(ifExpr.Alternative, globalVars)...)
+				results = append(results, checkNaming(ifExpr.Alternative, file, globalVars)...)
 			}
 		}
 	}
@@ -1330,47 +1338,68 @@ func checkNaming(stmt parser.Statement, globalVars map[string]bool) []ValidateRe
 }
 func ValidateAsyncNaming(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
-	walkStatementsForAsync(program.Statements, &results)
+	for _, stmt := range program.Statements {
+		walkStatementsForAsync(stmt, parser.GetSourceFile(stmt), &results)
+	}
 	return results
 }
-func walkStatementsForAsync(stmts []parser.Statement, results *[]ValidateResult) {
-	for _, stmt := range stmts {
-		switch s := stmt.(type) {
-		case *parser.FunctionDefinition:
-			if s.Body != nil {
-				walkStatementsForAsync(s.Body.Statements, results)
+
+// walkStatementsForAsync 遞迴走訪語句。file 為外層頂層語句的來源檔（合併模式只有
+// 頂層語句被 SetSourceFile 標記），供診斷歸屬使用。
+func walkStatementsForAsync(stmt parser.Statement, file string, results *[]ValidateResult) {
+	if stmt == nil {
+		return
+	}
+	if f := parser.GetSourceFile(stmt); f != "" {
+		file = f
+	}
+	switch s := stmt.(type) {
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				walkStatementsForAsync(b, file, results)
 			}
-		case *parser.LetStatement:
-			if s.Value != nil {
-				checkRunAsyncNaming(s.Value, results)
-				if fnLit, ok := s.Value.(*parser.FunctionLiteral); ok {
-					if fnLit.Body != nil {
-						walkStatementsForAsync(fnLit.Body.Statements, results)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			checkRunAsyncNaming(s.Value, file, results)
+			if fnLit, ok := s.Value.(*parser.FunctionLiteral); ok {
+				if fnLit.Body != nil {
+					for _, b := range fnLit.Body.Statements {
+						walkStatementsForAsync(b, file, results)
 					}
 				}
 			}
-		case *parser.BlockStatement:
-			walkStatementsForAsync(s.Statements, results)
-		case *parser.ExpressionStatement:
-			if s.Expression != nil {
-				checkRunAsyncNaming(s.Expression, results)
-				if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-					if ifExpr.Consequence != nil {
-						walkStatementsForAsync(ifExpr.Consequence.Statements, results)
+		}
+	case *parser.BlockStatement:
+		for _, b := range s.Statements {
+			walkStatementsForAsync(b, file, results)
+		}
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			checkRunAsyncNaming(s.Expression, file, results)
+			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+				if ifExpr.Consequence != nil {
+					for _, b := range ifExpr.Consequence.Statements {
+						walkStatementsForAsync(b, file, results)
 					}
-					if ifExpr.Alternative != nil {
-						walkStatementsForAsync(ifExpr.Alternative.Statements, results)
+				}
+				if ifExpr.Alternative != nil {
+					for _, b := range ifExpr.Alternative.Statements {
+						walkStatementsForAsync(b, file, results)
 					}
 				}
 			}
-		case *parser.ForStatement:
-			if s.Body != nil {
-				walkStatementsForAsync(s.Body.Statements, results)
+		}
+	case *parser.ForStatement:
+		if s.Body != nil {
+			for _, b := range s.Body.Statements {
+				walkStatementsForAsync(b, file, results)
 			}
 		}
 	}
 }
-func checkRunAsyncNaming(expr parser.Expression, results *[]ValidateResult) {
+func checkRunAsyncNaming(expr parser.Expression, file string, results *[]ValidateResult) {
 	runExpr, ok := expr.(*parser.RunExpression)
 	if !ok {
 		return
@@ -1386,6 +1415,7 @@ func checkRunAsyncNaming(expr parser.Expression, results *[]ValidateResult) {
 	if !strings.HasSuffix(fnName, "-async") {
 		*results = append(*results, ValidateResult{
 			TraceID: "y7964ox1",
+			File:    file,
 			Line:    runExpr.Token.Line,
 			Column:  runExpr.Token.Column,
 			Message: fmt.Sprintf("function '%s' called by 'run' should end with '-async'", fnName),
@@ -1406,6 +1436,8 @@ func ValidateUnusedVars(program *parser.Program, mainVarNames map[string]bool) [
 
 	// Collect top-level LetStatement names
 	topLevelVars := make(map[string]struct{ line, column int })
+	// varFiles 記錄每個變數定義所在的來源檔（合併模式下區分導入模組的副本）。
+	varFiles := make(map[string]string)
 	var varOrder []string
 
 	for _, stmt := range program.Statements {
@@ -1421,6 +1453,7 @@ func ValidateUnusedVars(program *parser.Program, mainVarNames map[string]bool) [
 					line:   ls.Name.Token.Line,
 					column: ls.Name.Token.Column,
 				}
+				varFiles[ls.Name.Value] = parser.GetSourceFile(ls)
 				varOrder = append(varOrder, ls.Name.Value)
 			}
 		}
@@ -1442,6 +1475,7 @@ func ValidateUnusedVars(program *parser.Program, mainVarNames map[string]bool) [
 			def := topLevelVars[name]
 			results = append(results, ValidateResult{
 				TraceID:   "6kryrbsq",
+				File:      varFiles[name],
 				Line:      def.line,
 				Column:    def.column,
 				EndColumn: def.column + len(name) - 1,
@@ -1989,6 +2023,7 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 			if read[p.name] && !assigned[p.name] {
 				results = append(results, ValidateResult{
 					TraceID: "wdk3k728",
+					File:    parser.GetSourceFile(fd),
 					Line:    p.line,
 					Column:  p.col,
 					Message: fmt.Sprintf("output parameter '%s' (?T) is read but never assigned in function body — uninitialized use of nullable output parameter", p.name),
@@ -2059,6 +2094,7 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 			if !assigned[p.name] {
 				results = append(results, ValidateResult{
 					TraceID: "i3k422u3",
+					File:    parser.GetSourceFile(fd),
 					Line:    p.line,
 					Column:  p.col,
 					Message: fmt.Sprintf("result parameter '%s' (%s) is never assigned in function body — will be zero-filled on return", p.name, p.typ),
@@ -2482,6 +2518,28 @@ func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 		// FunctionLiteral: don't recurse (nested function has its own scope)
 	}
 }
+
+// ifaceBaseName 去掉型別/介面名的模組前綴，保留容器前綴：
+// "sql.db" → "db"、"net.listener" → "listener"、"[]ord" → "[]ord"。
+// 合併模組後，struct 的 Implements 條目與 InterfaceDefinition.Name 可能被加上
+// 模組前綴（見 build/module_prefix.go），兩側都歸一為基名後才能配對。
+func ifaceBaseName(name string) string {
+	var prefix strings.Builder
+	for len(name) > 0 && name[0] == '[' {
+		j := strings.IndexByte(name, ']')
+		if j < 0 {
+			break
+		}
+		prefix.WriteString(name[:j+1])
+		name = name[j+1:]
+		name = strings.TrimPrefix(name, ".")
+	}
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		name = name[i+1:]
+	}
+	return prefix.String() + name
+}
+
 func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 
@@ -2519,6 +2577,27 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 		ifaces[id.Name] = methods
 	}
 
+	// struct 自帶的 implements 清單（`db-mysql sql.db { ... }`）：只有明確宣告實作
+	// 某介面的型別，才拿該介面的方法簽名去比對。若型別根本沒有 struct 定義（i8、str
+	// 等內建型別無法寫 implements），則退回原本的隱式結構匹配——按方法名匹配所有介面。
+	// 少了這層範圍限定，任何同名方法都會跟所有介面比對，std 的 `listener.close`（0 返回）
+	// 會被 database/sql 的 `db { fs.close() (ok bool) }` 誤報。
+	declaredIfaces := map[string]map[string]bool{} // base(struct name) → base(iface name)
+	for _, stmt := range program.Statements {
+		sd, ok := stmt.(*parser.StructDefinition)
+		if !ok {
+			continue
+		}
+		set := declaredIfaces[ifaceBaseName(sd.Name)]
+		if set == nil {
+			set = map[string]bool{}
+			declaredIfaces[ifaceBaseName(sd.Name)] = set
+		}
+		for _, impl := range sd.Implements {
+			set[ifaceBaseName(impl)] = true
+		}
+	}
+
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok || !fd.IsMethodDef {
@@ -2535,7 +2614,18 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 		if len(implResults) > 0 && implResults[0].Name == "self" {
 			implResults = implResults[1:]
 		}
-		for _, methods := range ifaces {
+		// 節點級來源檔：合併模式下 std 的方法定義必須帶著自己的檔案，否則
+		// RunAllLints 的行號範圍回退歸因會把 std 的行號對到被 vet 的主檔上。
+		implFile := parser.GetSourceFile(fd)
+		implBase := ifaceBaseName(implType)
+		implIfaces, knownType := declaredIfaces[implBase]
+		if knownType && len(implIfaces) == 0 {
+			continue // struct 定義存在但未宣告任何介面 → 不做簽名比對
+		}
+		for ifaceName, methods := range ifaces {
+			if knownType && !implIfaces[ifaceBaseName(ifaceName)] {
+				continue
+			}
 			for _, m := range methods {
 				if m.Name != implMethod {
 					continue
@@ -2543,6 +2633,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 				if len(implParams) != len(m.Params) {
 					results = append(results, ValidateResult{
 						TraceID:   "m5klw1rq",
+						File:      implFile,
 						Line:      fd.Token.Line,
 						Column:    fd.Token.Column,
 						EndColumn: fd.Token.Column + len(fd.Name),
@@ -2560,6 +2651,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 					if paramType != expected {
 						results = append(results, ValidateResult{
 							TraceID:   "i933a48e",
+							File:      implFile,
 							Line:      p.Token.Line,
 							Column:    p.Token.Column,
 							EndColumn: p.Token.Column + len(p.Name),
@@ -2571,6 +2663,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 				if len(implResults) != len(m.Results) {
 					results = append(results, ValidateResult{
 						TraceID:   "iky4xsx4",
+						File:      implFile,
 						Line:      fd.Token.Line,
 						Column:    fd.Token.Column,
 						EndColumn: fd.Token.Column + len(fd.Name),
@@ -2587,6 +2680,7 @@ func ValidateInterfaceImplementation(program *parser.Program) []ValidateResult {
 						if resType != expected {
 							results = append(results, ValidateResult{
 								TraceID:   "9741sawd",
+								File:      implFile,
 								Line:      r.Token.Line,
 								Column:    r.Token.Column,
 								EndColumn: r.Token.Column + len(r.Name),
@@ -2619,6 +2713,7 @@ func ValidateUseKeyword(program *parser.Program) []ValidateResult {
 		if us, ok := stmt.(*parser.UseStatement); ok && us.Token.Literal == "use" {
 			results = append(results, ValidateResult{
 				TraceID: "8yiio0ut",
+				File:    parser.GetSourceFile(us),
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
 				Message: "'use' keyword is deprecated, use '#' instead (e.g., '# " + us.Path + "')",
@@ -2633,6 +2728,7 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 		if us, ok := stmt.(*parser.UseStatement); ok && us.Token.Literal == "#" && us.AsKeyword {
 			results = append(results, ValidateResult{
 				TraceID: "tgutu5g0",
+				File:    parser.GetSourceFile(us),
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
 				Message: fmt.Sprintf("use '# %s.%s %s' instead of '# %s.%s as %s'", us.Path, us.Function, us.Alias, us.Path, us.Function, us.Alias),
@@ -2663,10 +2759,11 @@ func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
 	}
 	varTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
-		results = append(results, checkRedundantTypeInStmt(stmt, varTypes)...)
+		results = append(results, checkRedundantTypeInStmt(stmt, parser.GetSourceFile(stmt), varTypes)...)
 	}
 	return results
 }
+
 // exprHasHexIntLiteralValue reports whether an expression (including array/slice
 // literals and their elements) contains a hexadecimal integer literal (0xNN).
 // Such literals are inferred as i64 by the compiler, so an explicit byte-array
@@ -2694,9 +2791,16 @@ func exprHasHexIntLiteralValue(e parser.Expression) bool {
 	return false
 }
 
-func checkRedundantTypeInStmt(stmt parser.Statement, varTypes map[string]string) []ValidateResult {
+// checkRedundantTypeInStmt 遞迴掃描語句樹中的冗餘型別標註。file 由外層頂層語句逐層
+// 傳入（合併模式只有頂層語句被 SetSourceFile 標記，巢狀語句的 SourceFile 為空），
+// 節點若確有自身 SourceFile 則覆蓋——否則 tcpoxtfd 的行號是相對於來源檔的，
+// RunAllLints 的行號範圍回退歸因會把 std 的提示對到被 vet 的主檔頭上。
+func checkRedundantTypeInStmt(stmt parser.Statement, file string, varTypes map[string]string) []ValidateResult {
 	if stmt == nil {
 		return nil
+	}
+	if f := parser.GetSourceFile(stmt); f != "" {
+		file = f
 	}
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
@@ -2715,6 +2819,7 @@ func checkRedundantTypeInStmt(stmt parser.Statement, varTypes map[string]string)
 				}
 				results = append(results, ValidateResult{
 					TraceID: "tcpoxtfd",
+					File:    file,
 					Line:    s.Type.Pos().Line,
 					Column:  s.Type.Pos().Column,
 					Message: fmt.Sprintf("type annotation '%s' can be omitted (inferred from value)", annotatedType),
@@ -2742,14 +2847,14 @@ func checkRedundantTypeInStmt(stmt parser.Statement, varTypes map[string]string)
 			}
 			var results []ValidateResult
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkRedundantTypeInStmt(bs, localTypes)...)
+				results = append(results, checkRedundantTypeInStmt(bs, file, localTypes)...)
 			}
 			return results
 		}
 	case *parser.BlockStatement:
 		var results []ValidateResult
 		for _, bs := range s.Statements {
-			results = append(results, checkRedundantTypeInStmt(bs, varTypes)...)
+			results = append(results, checkRedundantTypeInStmt(bs, file, varTypes)...)
 		}
 		return results
 	}
@@ -2759,11 +2864,17 @@ func ValidateDuplicateVars(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	seen := make(map[string]struct{})
 	for _, stmt := range program.Statements {
-		results = append(results, checkStmtDuplicateVars(program.Sem, stmt, seen)...)
+		results = append(results, checkStmtDuplicateVars(program.Sem, stmt, parser.GetSourceFile(stmt), seen)...)
 	}
 	return results
 }
-func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, seen map[string]struct{}) []ValidateResult {
+
+// checkStmtDuplicateVars 遞迴走訪語句。file 為外層頂層語句的來源檔（合併模式只有頂層
+// 語句被 SetSourceFile 標記），供診斷歸屬使用。
+func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, file string, seen map[string]struct{}) []ValidateResult {
+	if f := parser.GetSourceFile(stmt); f != "" {
+		file = f
+	}
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		if s.Name == nil {
@@ -2796,6 +2907,7 @@ func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, 
 				if _, exists := seen[k]; exists {
 					return []ValidateResult{{
 						TraceID: "379z4njd",
+						File:    file,
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
 						Message: fmt.Sprintf("'%s' already declared in this scope", s.Name.Value),
@@ -2826,7 +2938,7 @@ func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, 
 		if s.Body != nil {
 			bodySeen := make(map[string]struct{})
 			for _, bStmt := range s.Body.Statements {
-				results := checkStmtDuplicateVars(sem, bStmt, bodySeen)
+				results := checkStmtDuplicateVars(sem, bStmt, file, bodySeen)
 				if len(results) > 0 {
 					return results
 				}
@@ -2834,7 +2946,7 @@ func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, 
 		}
 	case *parser.BlockStatement:
 		for _, bStmt := range s.Statements {
-			results := checkStmtDuplicateVars(sem, bStmt, seen)
+			results := checkStmtDuplicateVars(sem, bStmt, file, seen)
 			if len(results) > 0 {
 				return results
 			}
@@ -2867,6 +2979,7 @@ func ValidateDependencyImports(program *parser.Program, rootDir string) []Valida
 		if _, _, matched := pkg.MatchDependency(path); !matched {
 			results = append(results, ValidateResult{
 				TraceID: "tmqnqq9x",
+				File:    parser.GetSourceFile(us),
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
 				Message: fmt.Sprintf("dependency not found: %q is not declared in package.jsonc dependencies", path),
@@ -2970,7 +3083,7 @@ func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateRe
 func ValidateStringConcat(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	for _, stmt := range program.Statements {
-		results = append(results, checkStringConcatInStmt(stmt)...)
+		results = append(results, checkStringConcatInStmt(stmt, parser.GetSourceFile(stmt))...)
 	}
 	return results
 }
@@ -4763,50 +4876,53 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	return results
 }
 
-func checkStringConcatInStmt(stmt parser.Statement) []ValidateResult {
+func checkStringConcatInStmt(stmt parser.Statement, file string) []ValidateResult {
 	var results []ValidateResult
+	if f := parser.GetSourceFile(stmt); f != "" {
+		file = f
+	}
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			results = append(results, checkStringConcatInExpr(s.Expression)...)
+			results = append(results, checkStringConcatInExpr(s.Expression, file)...)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			results = append(results, checkStringConcatInExpr(s.Value)...)
+			results = append(results, checkStringConcatInExpr(s.Value, file)...)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkStringConcatInStmt(bodyStmt)...)
+				results = append(results, checkStringConcatInStmt(bodyStmt, file)...)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			results = append(results, checkStringConcatInStmt(bodyStmt)...)
+			results = append(results, checkStringConcatInStmt(bodyStmt, file)...)
 		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			results = append(results, checkStringConcatInExpr(s.ReturnValue)...)
+			results = append(results, checkStringConcatInExpr(s.ReturnValue, file)...)
 		}
 	case *parser.ForStatement:
 		if s.Init != nil {
-			results = append(results, checkStringConcatInStmt(s.Init)...)
+			results = append(results, checkStringConcatInStmt(s.Init, file)...)
 		}
 		if s.Condition != nil {
-			results = append(results, checkStringConcatInExpr(s.Condition)...)
+			results = append(results, checkStringConcatInExpr(s.Condition, file)...)
 		}
 		if s.Update != nil {
-			results = append(results, checkStringConcatInStmt(s.Update)...)
+			results = append(results, checkStringConcatInStmt(s.Update, file)...)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkStringConcatInStmt(bodyStmt)...)
+				results = append(results, checkStringConcatInStmt(bodyStmt, file)...)
 			}
 		}
 	}
 	return results
 }
-func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
+func checkStringConcatInExpr(expr parser.Expression, file string) []ValidateResult {
 	var results []ValidateResult
 	switch e := expr.(type) {
 	case *parser.InfixExpression:
@@ -4821,6 +4937,7 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 			if isStrConcat {
 				results = append(results, ValidateResult{
 					TraceID: "a3yrogp1",
+					File:    file,
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
 					Message: "string concatenation: use '-' instead of '+'",
@@ -4828,21 +4945,21 @@ func checkStringConcatInExpr(expr parser.Expression) []ValidateResult {
 			}
 		}
 		// Recurse into sub-expressions
-		results = append(results, checkStringConcatInExpr(e.Left)...)
-		results = append(results, checkStringConcatInExpr(e.Right)...)
+		results = append(results, checkStringConcatInExpr(e.Left, file)...)
+		results = append(results, checkStringConcatInExpr(e.Right, file)...)
 	case *parser.CallExpression:
 		for _, arg := range e.Arguments {
-			results = append(results, checkStringConcatInExpr(arg)...)
+			results = append(results, checkStringConcatInExpr(arg, file)...)
 		}
 	case *parser.DotExpression:
-		results = append(results, checkStringConcatInExpr(e.Receiver)...)
+		results = append(results, checkStringConcatInExpr(e.Receiver, file)...)
 	case *parser.PrefixExpression:
-		results = append(results, checkStringConcatInExpr(e.Right)...)
+		results = append(results, checkStringConcatInExpr(e.Right, file)...)
 	case *parser.GroupedExpression:
-		results = append(results, checkStringConcatInExpr(e.Expression)...)
+		results = append(results, checkStringConcatInExpr(e.Expression, file)...)
 	case *parser.IndexExpression:
-		results = append(results, checkStringConcatInExpr(e.Left)...)
-		results = append(results, checkStringConcatInExpr(e.Index)...)
+		results = append(results, checkStringConcatInExpr(e.Left, file)...)
+		results = append(results, checkStringConcatInExpr(e.Index, file)...)
 	}
 	return results
 }
@@ -5627,48 +5744,54 @@ func ValidateStrOrdering(program *parser.Program) []ValidateResult {
 func ValidateHexCase(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	for _, stmt := range program.Statements {
-		results = append(results, checkHexCaseInStmt(stmt)...)
+		results = append(results, checkHexCaseInStmt(stmt, parser.GetSourceFile(stmt))...)
 	}
 	return results
 }
-func checkHexCaseInStmt(stmt parser.Statement) []ValidateResult {
+
+// checkHexCaseInStmt 遞迴走訪語句。file 為外層頂層語句的來源檔（合併模式只有頂層語句
+// 被 SetSourceFile 標記），供診斷歸屬使用。
+func checkHexCaseInStmt(stmt parser.Statement, file string) []ValidateResult {
 	var results []ValidateResult
+	if f := parser.GetSourceFile(stmt); f != "" {
+		file = f
+	}
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			results = append(results, checkHexCaseInExpr(s.Expression)...)
+			results = append(results, checkHexCaseInExpr(s.Expression, file)...)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			results = append(results, checkHexCaseInExpr(s.Value)...)
+			results = append(results, checkHexCaseInExpr(s.Value, file)...)
 		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkHexCaseInStmt(bodyStmt)...)
+				results = append(results, checkHexCaseInStmt(bodyStmt, file)...)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			results = append(results, checkHexCaseInStmt(bodyStmt)...)
+			results = append(results, checkHexCaseInStmt(bodyStmt, file)...)
 		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			results = append(results, checkHexCaseInExpr(s.ReturnValue)...)
+			results = append(results, checkHexCaseInExpr(s.ReturnValue, file)...)
 		}
 	case *parser.ForStatement:
 		if s.Init != nil {
-			results = append(results, checkHexCaseInStmt(s.Init)...)
+			results = append(results, checkHexCaseInStmt(s.Init, file)...)
 		}
 		if s.Condition != nil {
-			results = append(results, checkHexCaseInExpr(s.Condition)...)
+			results = append(results, checkHexCaseInExpr(s.Condition, file)...)
 		}
 		if s.Update != nil {
-			results = append(results, checkHexCaseInStmt(s.Update)...)
+			results = append(results, checkHexCaseInStmt(s.Update, file)...)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkHexCaseInStmt(bodyStmt)...)
+				results = append(results, checkHexCaseInStmt(bodyStmt, file)...)
 			}
 		}
 	}
@@ -5694,61 +5817,62 @@ func hasUpperHex(literal string) bool {
 	}
 	return false
 }
-func checkHexCaseInExpr(expr parser.Expression) []ValidateResult {
+func checkHexCaseInExpr(expr parser.Expression, file string) []ValidateResult {
 	var results []ValidateResult
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
 		if hasUpperHex(e.Token.Literal) {
 			results = append(results, ValidateResult{
 				TraceID: "lkiy53ow",
+				File:    file,
 				Line:    e.Token.Line,
 				Column:  e.Token.Column,
 				Message: fmt.Sprintf("hex literal '%s' uses uppercase; format will convert to lowercase (e.g. 0xff)", e.Token.Literal),
 			})
 		}
 	case *parser.InfixExpression:
-		results = append(results, checkHexCaseInExpr(e.Left)...)
-		results = append(results, checkHexCaseInExpr(e.Right)...)
+		results = append(results, checkHexCaseInExpr(e.Left, file)...)
+		results = append(results, checkHexCaseInExpr(e.Right, file)...)
 	case *parser.PrefixExpression:
-		results = append(results, checkHexCaseInExpr(e.Right)...)
+		results = append(results, checkHexCaseInExpr(e.Right, file)...)
 	case *parser.GroupedExpression:
-		results = append(results, checkHexCaseInExpr(e.Expression)...)
+		results = append(results, checkHexCaseInExpr(e.Expression, file)...)
 	case *parser.CallExpression:
 		for _, arg := range e.Arguments {
-			results = append(results, checkHexCaseInExpr(arg)...)
+			results = append(results, checkHexCaseInExpr(arg, file)...)
 		}
 	case *parser.DotExpression:
-		results = append(results, checkHexCaseInExpr(e.Receiver)...)
+		results = append(results, checkHexCaseInExpr(e.Receiver, file)...)
 	case *parser.IndexExpression:
-		results = append(results, checkHexCaseInExpr(e.Left)...)
-		results = append(results, checkHexCaseInExpr(e.Index)...)
+		results = append(results, checkHexCaseInExpr(e.Left, file)...)
+		results = append(results, checkHexCaseInExpr(e.Index, file)...)
 	case *parser.AssignExpression:
-		results = append(results, checkHexCaseInExpr(e.Value)...)
+		results = append(results, checkHexCaseInExpr(e.Value, file)...)
 	case *parser.ConditionalExpression:
-		results = append(results, checkHexCaseInExpr(e.Condition)...)
-		results = append(results, checkHexCaseInExpr(e.Consequence)...)
-		results = append(results, checkHexCaseInExpr(e.Alternative)...)
+		results = append(results, checkHexCaseInExpr(e.Condition, file)...)
+		results = append(results, checkHexCaseInExpr(e.Consequence, file)...)
+		results = append(results, checkHexCaseInExpr(e.Alternative, file)...)
 	case *parser.ArrayLiteral:
 		for _, elem := range e.Elements {
-			results = append(results, checkHexCaseInExpr(elem)...)
+			results = append(results, checkHexCaseInExpr(elem, file)...)
 		}
 	case *parser.SliceLiteral:
 		for _, elem := range e.Elements {
-			results = append(results, checkHexCaseInExpr(elem)...)
+			results = append(results, checkHexCaseInExpr(elem, file)...)
 		}
 	case *parser.StructLiteral:
 		for _, field := range e.Fields {
 			if field.Value != nil {
-				results = append(results, checkHexCaseInExpr(field.Value)...)
+				results = append(results, checkHexCaseInExpr(field.Value, file)...)
 			}
 		}
 	case *parser.MapLiteral:
 		for _, pair := range e.Pairs {
-			results = append(results, checkHexCaseInExpr(pair.Key)...)
-			results = append(results, checkHexCaseInExpr(pair.Value)...)
+			results = append(results, checkHexCaseInExpr(pair.Key, file)...)
+			results = append(results, checkHexCaseInExpr(pair.Value, file)...)
 		}
 	case *parser.CastExpression:
-		results = append(results, checkHexCaseInExpr(e.Expr)...)
+		results = append(results, checkHexCaseInExpr(e.Expr, file)...)
 	}
 	return results
 }

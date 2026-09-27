@@ -725,6 +725,80 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     ok = true
 }
 
+; copy-tree: 将 src 池中 node-idx 为根的整棵子树深拷贝进接收者池（BFS 迭代）
+; 返回 dst-idx: 新节点索引（-1=失败）
+json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
+
+    dst-idx = -1
+    node-idx < 0 || node-idx >= src.count -> return
+    qt-src [64]i64
+    qt-dst [64]i64
+    head = 0
+    tail = 1
+
+    #{index-out=0, overflow=wrap}
+    qt-src[0] = node-idx
+    dst = .alloc()
+    dst < 0 -> return
+    dst-idx = dst
+
+    #{index-out=0, overflow=wrap}
+    qt-dst[0] = dst
+    (head < tail) {
+
+        #{index-out=0}
+        s = qt-src[head]
+
+        #{index-out=0}
+        d = qt-dst[head]
+
+        #{index-out=0, overflow=wrap}
+        head = head + 1
+
+        #{index-out=0}
+        k = src.nodes[s].kind
+        .nodes[d].kind = k
+
+        #{index-out=0}
+        .nodes[d].num-val = src.nodes[s].num-val
+
+        #{index-out=0}
+        .nodes[d].bool-val = src.nodes[s].bool-val
+
+        #{index-out=0}
+        .nodes[d].str-val = src.nodes[s].str-val.copy()
+
+        #{index-out=0}
+        cn = src.nodes[s].count
+
+        #{index-out=0, overflow=wrap}
+        .nodes[d].count = cn
+        ci <- [0..cn): {
+
+            #{index-out=0}
+            cs = src.nodes[s].children[ci]
+            cd = .alloc()
+            cd < 0 || tail >= JSON-MAX-NODES -> {
+
+                dst-idx = -1
+                return
+            }
+            k2 str = src.nodes[s].keys[ci]
+            .nodes[d].keys[ci] = k2.copy()
+            .nodes[d].children[ci] = cd
+
+            #{index-out=0, overflow=wrap}
+            qt-src[tail] = cs
+
+            #{index-out=0, overflow=wrap}
+            qt-dst[tail] = cd
+
+            #{index-out=0, overflow=wrap}
+            tail = tail + 1
+        }
+    }
+}
+
 ; ═══════════════════════════════════════════════
 ; 陣列存取
 ; ═══════════════════════════════════════════════
@@ -1150,7 +1224,9 @@ json.get-i64 = (key str) (val i64, ok bool) {
     ok = false
     f, found = .get-num(key)
     found == false -> return
-    val = f
+    ; get-num 回傳 f64，直接 `val = f` 會被當成 f64→i64 的裸指派，
+    ; codegen 只做位元重解（42.0 -> 4631107791820423168），必須顯式截斷。
+    val = number.f64-to-i64(f)
     ok = true
 }
 
@@ -1627,7 +1703,23 @@ json.delete-key = (key str) (ok bool) {
 ; json.set-key: 設定物件鍵值（語意糖，接受 json 值作為 val）
 ; 返回 ok bool: ok=成功
 json.set-key = (key str, val json) (ok bool) {
-    ok = .pool.set-key(.root, key, val.root)
+    ok = false
+    val.root < 0 || val.root >= val.pool.count -> return
+    .root < 0 -> {
+
+        .root = .alloc-node()
+        .root < 0 -> return
+
+        #{index-out=0}
+        .pool.nodes[.root].kind = JSON-KIND-OBJ
+
+        #{index-out=0}
+        .pool.nodes[.root].count = 0
+    }
+    ; 深拷贝 val 池中的子树到接收者池，再挂键（避免跨池悬空索引）
+    v-idx = .pool.copy-tree(val.pool, val.root)
+    v-idx < 0 -> return
+    ok = .pool.set-key(.root, key, v-idx)
 }
 
 ; json.obj-keys-str: 取得物件所有鍵，以換行分隔的字串返回

@@ -2047,19 +2047,24 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				continue
 			}
 			if fd, ok := ms.(*parser.FunctionDefinition); ok {
+				// 來源檔必須 Deep 標記（與 std 自動載入路徑一致）：只標頂層語句時，
+				// 函式體內的語句 SourceFile 留空，lint 端拿不到來源檔就回退成主檔路徑，
+				// 而 Line/Column 取自節點本身（模組座標）——報出 `main.no:1098` 這種
+				// 主檔根本沒有的行號（實報 tests/ffi-mysql.no:1098:5，該檔僅 126 行，
+				// 1098 行在 example/mysql-driver/src/mysql.no）。
 				// If alias is specified, only import the specific function under the alias name
 				if use.Alias != "" {
 					if use.Function != "" && fd.Name == use.Function {
 						fd.Name = use.Alias
 						merged.Statements = append(merged.Statements, fd)
-						parser.SetSourceFile(fd, modFile)
+						parser.SetSourceFileDeep(fd, modFile)
 						// alias 導入按用戶指定名，不參與衝突前綴
 					}
 					// Skip other functions when alias is used
 				} else {
 					merged.Statements = append(merged.Statements, fd)
 					parser.SetModuleOwner(fd, useModShort)
-					parser.SetSourceFile(fd, modFile)
+					parser.SetSourceFileDeep(fd, modFile)
 				}
 			}
 			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
@@ -2071,7 +2076,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						}
 						if !mainVarNames[ls.Name.Value] {
 							merged.Statements = append(merged.Statements, ls)
-							parser.SetSourceFile(ls, modFile)
+							parser.SetSourceFileDeep(ls, modFile)
 							if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
 								ls.IsModuleConst = true
 							}
@@ -2094,7 +2099,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						}
 						merged.Statements = append(merged.Statements, ls)
 						parser.SetModuleOwner(ls, useModShort)
-						parser.SetSourceFile(ls, modFile)
+						parser.SetSourceFileDeep(ls, modFile)
 						if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
 							ls.IsModuleConst = true
 						}

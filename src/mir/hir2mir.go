@@ -5231,11 +5231,31 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			// FIRST so we never short-circuit a real variable (this is exactly
 			// what caused the 19th-round regression on test-ok-shadow /
 			// test-bare-match / bug13, which all declare `ok bool`).
-			if v, ok := l.locals[name]; ok {
-				return v
+			//
+			// EXCEPTION: in an option-tag TEST context the bare name is the
+			// variant keyword even when a local shadows it. A match arm
+			// `m: { ok -> ... }` desugars to `m == ok`, and lowerInfix seeds
+			// l.typeHint with the SUBJECT's ?T type for exactly this position
+			// (see the isVar cases). A real read of a bool/option local `ok`
+			// never carries an option type hint here, so gating on "expected
+			// type is ?T" separates the arm label from the shadowing variable
+			// without breaking the `ok bool` tests. Without it, semver's
+			// `ok bool` result parameter made every `ok ->` arm compare the
+			// option against the bool's runtime value, so the `it` payload
+			// binding was skipped (parse("1.2.3") produced minor/patch 0).
+			variantCtx := false
+			if ht := l.typeHint; ht != NoType && ht != l.voidType {
+				if tt := l.mod.Type(ht); tt != nil && tt.Kind == KindOption {
+					variantCtx = true
+				}
 			}
-			if l.globalVisible(name) {
-				return l.lowerGlobalRef(name)
+			if !variantCtx {
+				if v, ok := l.locals[name]; ok {
+					return v
+				}
+				if l.globalVisible(name) {
+					return l.lowerGlobalRef(name)
+				}
 			}
 			// A tagged enum may declare a variant named `ok` / `err` / `nil`
 			// (`b-res { ok(v str), fail }`). When the expected type at this

@@ -242,7 +242,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 2. 命名規範
 	for _, w := range ValidateNaming(program) {
 		results = append(results, LintResult{
-			Line: w.Line, Column: w.Column,
+			Line: w.Line, Column: w.Column, File: w.File,
 			Severity: LintWarning, Source: "nolang-lint",
 			Message: w.Message, TraceID: w.TraceID,
 		})
@@ -251,7 +251,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 3. async 命名規範
 	for _, w := range ValidateAsyncNaming(program) {
 		results = append(results, LintResult{
-			Line: w.Line, Column: w.Column,
+			Line: w.Line, Column: w.Column, File: w.File,
 			Severity: LintWarning, Source: "nolang-lint",
 			Message: w.Message, TraceID: w.TraceID,
 		})
@@ -264,7 +264,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			endCol = u.EndColumn
 		}
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column, EndColumn: endCol,
+			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
 			Severity: LintHint, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -282,7 +282,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 6. 未初始化的 ?T 輸出參數
 	for _, u := range ValidateUninitOutputParams(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintError, Source: "nolang-type-checker",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -291,7 +291,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 7. 未賦值的命名返回參數
 	for _, w := range ValidateUnassignedReturns(program) {
 		results = append(results, LintResult{
-			Line: w.Line, Column: w.Column,
+			Line: w.Line, Column: w.Column, File: w.File,
 			Severity: LintWarning, Source: "nolang-type-checker",
 			Message: w.Message, TraceID: w.TraceID,
 		})
@@ -313,7 +313,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			endCol = u.EndColumn
 		}
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column, EndColumn: endCol,
+			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
 			Severity: LintWarning, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -322,7 +322,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 10. use 關鍵字提示
 	for _, u := range ValidateUseKeyword(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintHint, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -331,7 +331,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 11. use as 別名提示
 	for _, u := range ValidateUseAlias(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintHint, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -340,7 +340,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 12. 冗餘型別標註
 	for _, u := range ValidateRedundantTypeAnnotation(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintHint, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -349,7 +349,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 13. 重複變數
 	for _, u := range ValidateDuplicateVars(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintError, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -358,7 +358,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 14. 依賴導入校驗
 	for _, u := range ValidateDependencyImports(program, opts.RootDir) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintError, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -376,7 +376,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 16. 字串拼接提示（建議用 - 代替 +）
 	for _, u := range ValidateStringConcat(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintHint, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -394,7 +394,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 17. hex 字面量大寫提示
 	for _, u := range ValidateHexCase(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintHint, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})

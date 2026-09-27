@@ -2114,7 +2114,25 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		}
 	}
 	// Filter statements
-	filtered := &parser.Program{Statements: []parser.Statement{}}
+	//
+	// 必須帶著 prog.Sem 回傳：Sem 是以「節點指標」為鍵的語義側表（#{overflow} /
+	// #{index-out} / #{ascii} / platform keys / embed / 推斷型別…），過濾只動頂層
+	// 語句清單、不動節本體，兩者的節點是同一批指標。若回傳 `&parser.Program{Statements: …}`
+	// 把 Sem 丟掉，導入模組的標註在 merged 程式裡就整套查不到（transpiler 的
+	// `merged.Sem.Merge(modProg.Sem)` 對 nil 是 no-op），於是
+	//   - 安全索引寫入 desugar（parser/lowering.go）讀不到原陳述的 overflow 條目、
+	//     無法把模式轉移到取代節點；
+	//   - 下游 checker 遂把已標註的 `out[20 + i]` 報成 ovf-int-default 硬錯誤，
+	//     而同一份檔案「直接當主檔 vet」（不經本過濾）零錯誤——同一原始碼兩條
+	//     管道自相矛盾（實報 example/mysql-driver/src/mysql.no:234）。
+	// BuiltinFuncNames 同理：它是「按名稱」跳過內建樁返回值校驗的集合，遺失會讓
+	// 導入模組的 #{buildin} 樁被 i3k422u3 誤報。
+	// Warnings 屬文字訊息且可能指向被過濾掉的語句，不帶（維持原行為）。
+	filtered := &parser.Program{
+		Statements:       []parser.Statement{},
+		Sem:              prog.Sem,
+		BuiltinFuncNames: prog.BuiltinFuncNames,
+	}
 	for _, stmt := range prog.Statements {
 		switch s := stmt.(type) {
 		case *parser.UseStatement:

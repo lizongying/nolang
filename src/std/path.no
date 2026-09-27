@@ -30,9 +30,10 @@ path {
     p str
 }
 
-; exists: 檢查路徑是否存在（為檔案）
+; exists: 檢查路徑是否存在（檔案或目錄均算存在）
 path.exists = () (yes bool) {
     yes = fs.is-file(.p)
+    yes == false -> yes = fs.is-dir(.p)
 }
 
 ; is-dir: 檢查路徑是否為目錄

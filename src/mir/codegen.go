@@ -7980,6 +7980,17 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	if fieldLT == "" {
 		fieldLT = "i64"
 	}
+	// `ptype` answers with the RHS's OWN type, so for an option-valued RHS it
+	// returns %option, and the unwrap test below (`!HasPrefix(fieldLT,
+	// "%option")`) could never fire: emitSetField stored the whole 32-byte
+	// {tag, payload} aggregate through the 8-byte field pointer, so the tag
+	// landed in the target field and the payload bled into the NEXT one
+	// (`v.major = it` silently assigning v.minor). The field's DECLARED type is
+	// what the store must satisfy, so re-derive it here (non-struct receivers
+	// have no StructFields entry and keep the RHS-derived type).
+	if dft := c.declaredFieldLT(recvRaw, inst.Str); dft != "" {
+		fieldLT = dft
+	}
 	// Overflow-default: if the RHS is ?T (an %option) but the field is a scalar,
 	// unwrap the ok payload before storing — mirror legacy, which stores the
 	// scalar payload, not the whole {tag,payload} struct. Without this, opt
@@ -8952,6 +8963,30 @@ func (c *codegen) fieldAt(structKey string, idx int) (FieldInfo, bool) {
 		return FieldInfo{}, false
 	}
 	return fields[idx], true
+}
+
+// declaredFieldLT returns the LLVM type of a struct's DECLARED field, or ""
+// when the receiver is not a known struct / the field does not exist. Used by
+// emitSetField, where the RHS-derived ptype cannot be trusted for the store
+// type (an option RHS reports %option no matter what the field is declared as).
+func (c *codegen) declaredFieldLT(recvRaw, field string) string {
+	key := c.structKeyOf(recvRaw)
+	if key == "" {
+		key = recvRaw
+	}
+	idx, ok := c.mod.FieldIndex(key, field)
+	if !ok {
+		return ""
+	}
+	f, ok := c.fieldAt(key, idx)
+	if !ok {
+		return ""
+	}
+	ft := c.mod.Type(c.mod.internType(f.TypeRaw))
+	if ft == nil {
+		return ""
+	}
+	return c.llvmTypeOf(ft)
 }
 
 // taggedEnumOf looks up an enum's variant table by raw type name.
