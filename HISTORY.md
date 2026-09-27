@@ -1,5 +1,15 @@
 # 更新日誌
 
+## v0.3.9
+
+- fix(mir): fix bigint bus error and implement div/mod with tests
+- fix(mir): resolve option/match LLVM backend bugs and improve global constants
+- feat(parser): add err variant destructuring binding in option matches
+- fix(checker): suppress false-positive redundant-type hints for hex arrays and relax option-vs-scalar comparison
+- fix(checker): fix string-concat overflow false positive and scope ineffective overflow lint checks with deduplication
+- feat(cmd): add AST-driven no fmt --fix=match and enhance no fmt --fix=redundant with package context
+- fix(release): refine release tag comparison and querying logic
+
 ## v0.3.8
 
 - fix(mir): implement truncate on windows via kernel32 instead of the nonexistent _truncate CRT symbol
