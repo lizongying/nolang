@@ -5971,6 +5971,23 @@ func (c *codegen) emitClone(inst *Inst) error {
 			}
 		}
 	}
+	// An OPTION SOURCE with a NON-option destination is a PEEL — `x = opt`,
+	// and (far more commonly) the `x = it` binding inside an option match arm.
+	// The struct deep-copy branches below resolve the DESTINATION's struct key
+	// and then memcpy that struct's bytes out of `c.valSlot[src]`, which for a
+	// boxed payload is the 32-byte %option SLOT rather than the payload: the
+	// copy reads the option's {tag, data} header instead of the boxed value, so
+	// every field comes back zeroed (`range-ver.major` == the ok tag, 0). Seen
+	// as nonpm/src/semver.no's satisfies() silently failing every `^`/`~`
+	// range once `parse` returned `?semver` and insertDrops rewrote the arm's
+	// move to OpClone (the option is still live — it is dropped after the arm).
+	// emitMove owns the peel path (it goes through optPayloadTypedAddr and so
+	// dereferences the box), so hand the instruction back to it.
+	if st := c.mod.Type(c.localTypeOf(inst.Args[0])); st != nil && st.Kind == KindOption {
+		if dt := c.mod.Type(c.localTypeOf(moveDst(inst))); dt == nil || dt.Kind != KindOption {
+			return c.emitMove(inst)
+		}
+	}
 	// An OPTION destination is never a struct deep copy. clonePtrStructKey /
 	// cloneLeafStructKey resolve the SOURCE's struct key and then emit a
 	// memcpy of that struct's bytes into the destination — which for a 32-byte
