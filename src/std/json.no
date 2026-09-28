@@ -34,10 +34,10 @@ JSON-KIND-ARR = 4
 JSON-KIND-OBJ = 5
 
 ; 池最大節點數
-JSON-MAX-NODES = 64
+JSON-MAX-NODES = 128
 
 ; 每節點最大子元素數
-JSON-MAX-CHILDREN = 16
+JSON-MAX-CHILDREN = 32
 
 ; ═══════════════════════════════════════════════
 ; 結構
@@ -49,15 +49,16 @@ json-value {
     str-val str
     num-val f64
     bool-val bool
-    children [16]i64
-    keys [16]str
+    children [32]i64
+    keys [32]str
     count i64
 }
 
 ; json-pool: JSON 節點池
 json-pool {
-    nodes [64]json-value
+    nodes [128]json-value
     count i64
+    overflowed bool
 }
 
 ; json: 高級 JSON 值，封裝節點池與根節點索引
@@ -99,13 +100,17 @@ new-pool = () (p json-pool) {
 ; init: 初始化節點池（延遲初始化，不預先清零所有節點）
 json-pool.init = () {
     .count = 0
+    .overflowed = false
 }
 
-; alloc: 分配新節點，返回索引（-1=池滿）
+; alloc: 分配新節點，返回索引（-1=池滿，並置 overflowed 旗標）
 json-pool.alloc = () (idx i64) {
 
     idx = -1
-    .count >= JSON-MAX-NODES -> return
+    .count >= JSON-MAX-NODES -> {
+        .overflowed = true
+        return
+    }
     idx = .count
 
     #{overflow=wrap}
@@ -286,7 +291,10 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
                 #{index-out=0}
                 cnt = .nodes[node-idx].count
-                cnt >= JSON-MAX-CHILDREN -> return
+                cnt >= JSON-MAX-CHILDREN -> {
+                    .overflowed = true
+                    return
+                }
 
                 #{index-out=0}
                 .nodes[node-idx].children[cnt] = child-idx
@@ -376,7 +384,10 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 ; add to object
                 #{index-out=0}
                 cnt = .nodes[node-idx].count
-                cnt >= JSON-MAX-CHILDREN -> return
+                cnt >= JSON-MAX-CHILDREN -> {
+                    .overflowed = true
+                    return
+                }
 
                 ; copy key string to keys[cnt]
                 #{index-out=0}
@@ -704,7 +715,10 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     }
 
     ; 新增鍵
-    cnt >= JSON-MAX-CHILDREN -> return
+    cnt >= JSON-MAX-CHILDREN -> {
+        .overflowed = true
+        return
+    }
 
     #{index-out=0}
 
@@ -731,8 +745,8 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
 
     dst-idx = -1
     node-idx < 0 || node-idx >= src.count -> return
-    qt-src [64]i64
-    qt-dst [64]i64
+    qt-src [128]i64
+    qt-dst [128]i64
     head = 0
     tail = 1
 
@@ -1064,6 +1078,12 @@ json.parse = (s str) (result ?json) {
     root, next, ok = j.pool.parse(s, 0)
 
     ok == false -> {
+
+        ; 區分「池容量耗盡」與真正的語法錯誤，避免靜默失敗誤導呼叫端
+        j.pool.overflowed -> {
+            result = err('json: node pool exhausted (limit JSON-MAX-NODES/JSON-MAX-CHILDREN reached)')
+            return
+        }
         result = err('parse error')
         return
     }
@@ -1087,6 +1107,15 @@ json.stringify = () (out str) {
     out = ''
     .root < 0 -> return
     out = .pool.stringify(.root)
+}
+
+; json.overflowed: 最近一次操作是否因池容量耗盡而失敗
+; 供 set / arr-push 等回傳 bool 的方法在返回 false 後區分「溢出」與「其他失敗」
+; 用法：
+;   ok = j.set('k', v)
+;   ok == false && j.overflowed() -> print('pool full')
+json.overflowed = () (yes bool) {
+    yes = .pool.overflowed
 }
 
 ; json.is-null: 判斷是否為 null
@@ -1170,7 +1199,6 @@ json.get = (key str) (child ?json) {
 
     ; 非物件直接回傳 nil（不在這裡把 root 變成新物件）
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
-
     val-idx, found = .pool.get-key(.root, key)
     found == false -> return
     val-idx < 0 -> return
@@ -1234,7 +1262,6 @@ json.get-i64 = (key str) (val i64, ok bool) {
 ; json.alloc-node: 內聯分配節點，避免嵌套方法調用的接收者複製問題
 ; 返回 idx: 新節點索引（-1=池滿）
 json.alloc-node = () (idx i64) {
-
     idx = -1
     .pool.count >= JSON-MAX-NODES -> return
     idx = .pool.count
@@ -1269,7 +1296,6 @@ json.alloc-node = () (idx i64) {
 ; json.set: 在物件中設定鍵值（值為另一個 json 節點）
 ; 返回 ok bool: 是否成功
 json.set = (key str, val-idx i64) (ok bool) {
-
     ok = false
     .root < 0 -> {
 
@@ -1308,7 +1334,6 @@ json.set = (key str, val-idx i64) (ok bool) {
 
     ; 檢查鍵是否存在（更新）
     i <- [0..cnt): {
-
         found-eq = 0
         .pool.nodes[.root].keys[i].eq-full(key) -> {
 
@@ -1325,7 +1350,10 @@ json.set = (key str, val-idx i64) (ok bool) {
     }
 
     ; 新增鍵
-    cnt >= JSON-MAX-CHILDREN -> return
+    cnt >= JSON-MAX-CHILDREN -> {
+        .pool.overflowed = true
+        return
+    }
 
     #{index-out=0}
 
@@ -1376,7 +1404,6 @@ json.set-str = (key str, val str) (ok bool) {
 
     #{index-out=0}
     .pool.nodes[idx].str-val = svt
-
     ok = .set(key, idx)
 }
 
@@ -1394,7 +1421,6 @@ json.set-num = (key str, val f64) (ok bool) {
 
     #{index-out=0}
     .pool.nodes[idx].num-val = val
-
     ok = .set(key, idx)
 }
 
@@ -1419,7 +1445,6 @@ json.set-bool = (key str, val bool) (ok bool) {
 
     #{index-out=0}
     .pool.nodes[idx].bool-val = val
-
     ok = .set(key, idx)
 }
 
@@ -1432,7 +1457,6 @@ json.set-null = (key str) (ok bool) {
 
     #{index-out=0}
     .pool.nodes[idx].kind = JSON-KIND-NULL
-
     ok = .set(key, idx)
 }
 
@@ -1479,7 +1503,6 @@ json.arr-len = () (n i64) {
 ; 用法：
 ;   j.arr-push(item)
 json.arr-push = (val json) (ok bool) {
-
     ok = false
     .root < 0 -> {
 
@@ -1514,7 +1537,10 @@ json.arr-push = (val json) (ok bool) {
 
     #{index-out=0}
     cnt = .pool.nodes[.root].count
-    cnt >= JSON-MAX-CHILDREN -> return
+    cnt >= JSON-MAX-CHILDREN -> {
+        .pool.overflowed = true
+        return
+    }
 
     #{index-out=0}
     .pool.nodes[.root].children[cnt] = val.root
@@ -1547,7 +1573,6 @@ json.arr-push-str = (val str) (ok bool) {
 
     #{index-out=0}
     .pool.nodes[idx].str-val = svt
-
     ok = .arr-push(json {
         pool: .pool
         root: idx
@@ -1566,7 +1591,6 @@ json.arr-push-num = (val f64) (ok bool) {
 
     #{index-out=0}
     .pool.nodes[idx].num-val = val
-
     ok = .arr-push(json {
         pool: .pool
         root: idx
@@ -1585,7 +1609,6 @@ json.arr-push-bool = (val bool) (ok bool) {
 
     #{index-out=0}
     .pool.nodes[idx].bool-val = val
-
     ok = .arr-push(json {
         pool: .pool
         root: idx
@@ -1707,7 +1730,6 @@ json.set-key = (key str, val json) (ok bool) {
     ok = false
     val.root < 0 || val.root >= val.pool.count -> return
     .root < 0 -> {
-
         .root = .alloc-node()
         .root < 0 -> return
 
@@ -1738,7 +1760,6 @@ json.obj-keys-str = () (keys str) {
 
         #{index-out=0}
         key = .pool.nodes[.root].keys[i]
-
         keys = keys - key - '\n'
     }
 }

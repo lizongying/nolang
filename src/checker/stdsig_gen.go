@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "d60c7209dcf7ab87f68d709369af075b3a3c73bb63c23240870d05c5efddad5e"
+	embeddedStdSigKey = "35c79678a97d36050e4db2501f03657a2e6b4e49b03b9636c65af0f056828cb5"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -1375,6 +1375,7 @@ func init() {
 		"json.json.obj-key":                                {"str", "bool"},
 		"json.json.obj-keys-str":                           {"str"},
 		"json.json.obj-len":                                {"i64"},
+		"json.json.overflowed":                             {"bool"},
 		"json.json.parse":                                  {"?json"},
 		"json.json.set":                                    {"bool"},
 		"json.json.set-bool":                               {"bool"},
@@ -1391,6 +1392,7 @@ func init() {
 		"json.obj-key":                                     {"str", "bool"},
 		"json.obj-keys-str":                                {"str"},
 		"json.obj-len":                                     {"i64"},
+		"json.overflowed":                                  {"bool"},
 		"json.parse":                                       {"?json"},
 		"json.set":                                         {"bool"},
 		"json.set-bool":                                    {"bool"},
@@ -4228,6 +4230,7 @@ func init() {
 		"json.json.obj-key":                                {"i64"},
 		"json.json.obj-keys-str":                           {},
 		"json.json.obj-len":                                {},
+		"json.json.overflowed":                             {},
 		"json.json.parse":                                  {"str"},
 		"json.json.set":                                    {"str", "i64"},
 		"json.json.set-bool":                               {"str", "bool"},
@@ -4244,6 +4247,7 @@ func init() {
 		"json.obj-key":                                     {"i64"},
 		"json.obj-keys-str":                                {},
 		"json.obj-len":                                     {},
+		"json.overflowed":                                  {},
 		"json.parse":                                       {"str"},
 		"json.set":                                         {"str", "i64"},
 		"json.set-bool":                                    {"str", "bool"},
@@ -6035,14 +6039,15 @@ func init() {
 			"root": "i64",
 		},
 		"json-pool": {
-			"count": "i64",
-			"nodes": "[64]json-value",
+			"count":      "i64",
+			"nodes":      "[128]json-value",
+			"overflowed": "bool",
 		},
 		"json-value": {
 			"bool-val": "bool",
-			"children": "[16]i64",
+			"children": "[32]i64",
 			"count":    "i64",
-			"keys":     "[16]str",
+			"keys":     "[32]str",
 			"kind":     "i64",
 			"num-val":  "f64",
 			"str-val":  "str",

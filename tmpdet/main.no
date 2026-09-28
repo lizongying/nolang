@@ -1,0 +1,4 @@
+e1 = fs.dir-entries('/tmp/detest')
+print('dir-entries:', e1)
+e2 = fs.list-dir('/tmp/detest')
+print('list-dir:  ', e2)
