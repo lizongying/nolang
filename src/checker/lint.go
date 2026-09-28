@@ -391,6 +391,15 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 16c. fs.list-dir 遞歸/刪除未過濾 "."/".."（防沿 .. 上爬誤刪整棵父樹）
+	for _, u := range ValidateListDirUnfiltered(program) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, File: u.File,
+			Severity: LintWarning, Source: "nolang-lint",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 17. hex 字面量大寫提示
 	for _, u := range ValidateHexCase(program) {
 		results = append(results, LintResult{

@@ -119,6 +119,26 @@ cd /tmp/pristine && make no
 /tmp/pristine/bin/no vet src/std 2>&1 | grep '\[ERROR\]'
 ```
 
+## 关注的新增 WARNING：nolang-list-dir-unfiltered
+
+`no vet` 新增了一条防误删 lint（实现位于 `src/checker/listdir.go`）：当函数同时满足
+① 调用 `fs.list-dir`；② 调用破坏性删除（`fs.remove`/`fs.rmdir`）或对自身递归；
+③ 函数体内没有任何 `"."`/`".."` 过滤守卫 —— 报 WARNING。
+
+背景：`fs.list-dir` 遵循 POSIX readdir，返回值**包含** `.` 和 `..`。递归遍历若
+不跳过 `".."`，会向上逃逸出目标目录、误删整棵父树（remove-tree 事故根因）。
+
+处理：递归遍历/删除改用 `fs.dir-entries`（已自动过滤），或在递归前显式跳过
+`"."`/`".."`。看到此 WARNING 不要简单屏蔽 —— 逐条确认是真风险还是已手动过滤。
+
+## 递归删除函数的测试规范（强制）
+
+任何递归删除类函数（remove-tree、tmp 清理、目录重置等）的测试必须满足：
+
+1. **限定临时目录** — 只在 `fs.mkdtemp` 创建的目录内操作，参数化根路径，绝不以真实工作区/用户目录为删除目标。
+2. **逃逸防护断言** — 测试中显式验证：目标目录的父目录（含 `".."`）在删除后依然存在（如删除前后各 `fs.is-dir(parent)` 断言为真）。
+3. **含 `"."`/`".."` 的目录结构用例** — 验证遍历结果不含 `"."`/`".."`（用 dir-entries），或手动过滤确实生效。
+
 ## 与其他 Skill 的关系
 
 - [nolang-build](file://../nolang-build/SKILL.md) — 构建流程中的 Post-Build Verification 已包含 `no vet`，本 skill 将其提升为强制规则

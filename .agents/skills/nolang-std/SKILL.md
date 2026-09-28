@@ -663,6 +663,10 @@ ok = fs.close-dir(dirp)              // Close directory handle
 names = fs.list-dir(path)            // List all entry names (includes . and ..)
 names = fs.dir-entries(path)          // List entries (excludes . and ..)
 paths = fs.walk(root)                // Recursively walk directory tree
+// ⚠ fs.list-dir 遵循 POSIX readdir，返回值包含 "." 和 ".."。任何「递归遍历 +
+// 破坏性删除(fs.remove/fs.rmdir)」必须用 fs.dir-entries（已自动过滤 "."/".."），
+// 否则递归进入 ".." 会向上逃逸出目标目录、误删整棵父树。`no vet` 对此组合报
+// WARNING [nolang-list-dir-unfiltered]。
 
 // Path resolution
 abs = fs.realpath(path)              // Resolve to absolute canonical path
