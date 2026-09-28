@@ -8125,6 +8125,35 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			}
 		}
 	}
+	// %vec RHS stored into a FIXED-ARRAY field (`id [3]byte` initialized by the
+	// array literal `[1,2,3]`): the frontend lowers that literal to a heap-backed
+	// slice, so the RHS value is `%vec` while the field's DECLARED type is
+	// [N x T]. The generic store below takes the store type from the declared
+	// field, so it emitted `store [3 x i8] %lv, [3 x i8]* %gp` with `%lv` really
+	// defined as `%vec` -> opt-verify "'%lv' defined with type '%vec' but
+	// expected '[3 x i8]'". Mirror vecFromArraySink on the store side: copy the
+	// slice's contiguous element buffer into the inline field (N*sizeof(T)
+	// bytes). Sound for trivially-copyable elements, the same limitation the
+	// reverse array<->slice coercion already accepts.
+	if strings.HasPrefix(fieldLT, "[") && valLT == "%vec" {
+		if vecSlot := c.valSlot[inst.Args[1]]; vecSlot != "" {
+			c.loadSeq++
+			dg := fmt.Sprintf("%%vaf%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dg, vecSlot))
+			c.loadSeq++
+			di := fmt.Sprintf("%%vaf%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", di, dg))
+			c.loadSeq++
+			dp := fmt.Sprintf("%%vaf%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dp, di))
+			c.loadSeq++
+			gp := fmt.Sprintf("%%vaf%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, recvLT, recvLT, recvSlot, idx))
+			c.emitMemcpy(gp, dp, c.typeSizeOperand(fieldLT))
+			c.cloneStructFieldLeaves(structKey, idx, gp, fieldLT)
+			return nil
+		}
+	}
 	structLT := recvLT
 	c.loadSeq++
 	gep := fmt.Sprintf("%%gp%d", c.loadSeq)

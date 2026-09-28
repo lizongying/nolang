@@ -1,0 +1,24 @@
+; test-arr-field-lit — 數組字面量初始化 struct 的 [N]T 固定數組字段（bugB）
+;
+; struct 字段聲明為固定數組（id [3]byte、n [3]i64），用數組字面量初始化時，
+; MIR emitSetField 把右值（%vec）直接 store 進 [N x T] 字段，
+; opt-verify 報 "'%lv' defined with type '%vec' but expected '[3 x i8]'"。
+
+oid {
+    id [3]byte
+    n [3]i64
+}
+
+main = () {
+    o = oid {
+        id: [1, 2, 3]
+        n: [10, 20, 30]
+    }
+    o.id[0] != 1 -> os.exit(1)
+    o.id[1] != 2 -> os.exit(2)
+    o.id[2] != 3 -> os.exit(3)
+    o.n[0] != 10 -> os.exit(4)
+    o.n[1] != 20 -> os.exit(5)
+    o.n[2] != 30 -> os.exit(6)
+    print('arr-field-lit passed')
+}
