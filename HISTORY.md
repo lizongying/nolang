@@ -1,5 +1,10 @@
 # 更新日誌
 
+## v0.3.11
+
+- feat(build): add global no binary reinstall in make targets
+- fix(release): make tag creation idempotent via release.py tag subcommand
+
 ## v0.3.10
 
 - fix(mir): add null-buffer guard for %str-long index store
