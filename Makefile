@@ -9,6 +9,8 @@ SRCMOD     = src/go.mod
 GO_SOURCES := $(shell find src -name '*.go' -type f)
 NO_SOURCES := $(shell find src/std -name '*.no' -type f)
 NO_BIN    = $(BINDIR)/no
+NO_HOME   = $(HOME)/no/bin
+NO_LINK   = /usr/local/bin/no
 LSP_BIN    = vscode-nolang/server/lsp
 WASM_DIR  = docs/static/wasm
 NO_WASM   = $(WASM_DIR)/no.wasm
@@ -24,11 +26,11 @@ PLAYGROUND_PORT ?= 3000
 # same IDs.
 TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/checker/option_compare.go src/lsp/vet.go
 
-.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke gen stamp-traceid
+.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke gen stamp-traceid install
 
-all: $(NO_BIN) $(LSP_BIN)
+all: $(NO_BIN) $(LSP_BIN) install
 
-no: $(NO_BIN)
+no: $(NO_BIN) install
 
 lsp: $(LSP_BIN)
 
@@ -64,6 +66,16 @@ $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(B
 	$(MAKE) stamp-traceid
 	cd src && $(GO) build $(LD_FLAGS) -o ../$(NO_BIN) ./cmd/no
 	chmod +x $(NO_BIN)
+
+# ── INSTALL ────────────────────────────
+# 每次 make 都強制重裝全局 no：binary 存到 ~/no/bin/，並在 /usr/local/bin/ 建軟鏈接
+# （與 `no install` 的安裝約定一致）。install 會先 unlink 目標，覆蓋運行中的 binary 也安全。
+.PHONY: install
+install: $(NO_BIN)
+	@mkdir -p $(NO_HOME)
+	install -m 0755 $(NO_BIN) $(NO_HOME)/no
+	ln -sf $(NO_HOME)/no $(NO_LINK)
+	@echo "Installed: $(NO_LINK) -> $(NO_HOME)/no"
 
 # ── LSP ────────────────────────────────────
 $(LSP_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum
@@ -136,7 +148,8 @@ clean:
 help:
 	@echo "Nolang 構建目標："
 	@echo "  make            構建所有目標"
-	@echo "  make no         構建 bin/no"
+	@echo "  make no         構建 bin/no 並重裝全局 no"
+	@echo "  make install    強制重裝全局 no（~/no/bin/no + /usr/local/bin/no 軟鏈接）"
 	@echo "  make lsp        構建 vscode-nolang/server/lsp"
 	@echo "  make gen        gen stdsig_gen.go"
 	@echo "  make stamp-traceid  替換 checker 源碼中的占位符為各自唯一的隨機 base36 ID"

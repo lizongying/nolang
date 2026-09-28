@@ -92,21 +92,32 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     ok = false
     data.len() < 6 -> return
 
-    ; 檢查 zlib header（應以 0x78 開頭）
-    data[0] != 0x78 -> {
+    ; 檢查 zlib header：CM(低 4 位)必須為 8(deflate)，CINFO(高 4 位)≤7
+    ; 窗口大小僅供參考，inflate 一律用 32K 窗口解碼，故接受任意合法 CMF(如 sips 的 0x08)
+    (data[0] & 0x0F) != 8 || (data[0] >> 4) > 7 -> {
 
         #{index-out=0}
         return
     }
 
-    ; 跳過 2-byte zlib header，取 raw DEFLATE 資料
+    ; 跳過 zlib header(2 bytes；若 FLG.FDICT 置位再多 4 bytes DICTID)，取 raw DEFLATE 資料
+    hdr-len = 2
+    {
+        data[1] & 0x20 != 0 -> hdr-len = 6
+    }
     #{overflow=wrap}
-    deflate-len = data.len() - 6; 去掉 2-byte header + 4-byte Adler-32
+    data.len() < hdr-len + 4 -> {
+
+        #{index-out=0}
+        return
+    }
+    #{overflow=wrap}
+    deflate-len = data.len() - hdr-len - 4; 去掉 header + 4-byte Adler-32
     deflate-data []byte
     i <- [0..deflate-len): {
 
         #{index-out=0, overflow=wrap}
-        deflate-data.push(data[2 + i])
+        deflate-data.push(data[hdr-len + i])
     }
 
     ; 預估輸出大小：100 倍輸入（上限 1MB，下限 64 bytes）

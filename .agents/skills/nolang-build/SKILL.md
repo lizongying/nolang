@@ -15,16 +15,17 @@ Run from the **project root directory** (where the `Makefile` lives):
 
 | Target | Description |
 |--------|-------------|
-| `make` | Build all targets (`bin/no` and `vscode-nolang/server/lsp`) |
-| `make no` | Build `bin/no` only |
-| `make lsp` | Build LSP server to `vscode-nolang/server/lsp` |
+| `make` | Build all targets (`bin/no` and `vscode-nolang/server/lsp`), then force-reinstall global `no` |
+| `make no` | Build `bin/no` only, then force-reinstall global `no` |
+| `make lsp` | Build LSP server to `vscode-nolang/server/lsp` (does not touch global `no`) |
+| `make install` | Force-reinstall global `no`: copy `bin/no` → `~/no/bin/no` + symlink `/usr/local/bin/no` |
 | `make gen` | Regenerate `src/checker/stdsig_gen.go` (baked-in std signature tables) |
 | `make package` | Build LSP and package VSCode extension (uses `bun run package`) |
 | `make no-wasm` | Cross-compile `no` to WebAssembly (wasip1) → `docs/static/wasm/no.wasm` |
 | `make lsp-wasm` | Cross-compile LSP to WebAssembly (wasip1) → `docs/static/wasm/lsp.wasm` |
 | `make playground` | Build `no.wasm` + `lsp.wasm` + Docusaurus site |
 | `make playground-smoke` | Start dev server and verify playground + wasm assets are served |
-| `make clean` | Clean build artifacts (`bin/` directory) |
+| `make clean` | Clean build artifacts (`bin/` directory; global `~/no/bin/no` is left as-is) |
 | `make help` | Show all build targets and environment variables |
 
 ## Environment Variables
@@ -43,25 +44,26 @@ The Makefile automatically handles:
 1. **stdsig generation** — `src/checker/stdsig_gen.go` is regenerated when std `.no` files or checker sources change, **before** building `no` or `lsp`.
 2. **Output directories** — `bin/` and `docs/static/wasm/` are created as needed.
 3. **File permissions** — Built binaries are `chmod +x`'d automatically.
+4. **Global `no` reinstall** — `make` / `make no` always run the `install` target afterwards (even when `bin/no` is up-to-date): the fresh binary is copied to `~/no/bin/no` (via `install -m 0755`, safe to overwrite a running binary) and `/usr/local/bin/no` is (re)linked to it. This matches the `no install` package convention and prevents stale global binaries.
 
 ## Common Workflows
 
 ### After modifying Nolang compiler source (Go files in `src/`)
 
 ```bash
-make no          # Rebuild bin/no
+make no          # Rebuild bin/no + force-reinstall global no
 ```
 
 ### After modifying LSP server source
 
 ```bash
-make lsp         # Rebuild LSP server
+make lsp         # Rebuild LSP server (global no untouched)
 ```
 
 ### After modifying standard library (`.no` files in `src/std/`)
 
 ```bash
-make no          # stdsig_gen.go auto-regenerates, then no is rebuilt
+make no          # stdsig_gen.go auto-regenerates, then no is rebuilt + reinstalled globally
 ```
 
 ### Full rebuild
@@ -88,11 +90,12 @@ make playground  # Build everything + Docusaurus site
 
 > **强制规则**：每次修改完代码后，必须运行 `no vet src/std` 检查标准库，**不允许出现 ERROR**。详见 [nolang-vet](file://../nolang-vet/SKILL.md)。
 
-After building, run vet checks on the standard library:
+After building, run vet checks on the standard library (since `make` reinstalls the global `no`, the PATH `no` is always the fresh build):
 
 ```bash
-./bin/no vet src/std                     # Nolang vet check — 不允许 ERROR
-./vscode-nolang/server/lsp vet src/std   # LSP vet check (可选，检查诊断级错误)
+no vet src/std                               # Nolang vet check — 不允许 ERROR
+./bin/no vet src/std                         # 等價（同一 binary）
+./vscode-nolang/server/lsp vet src/std       # LSP vet check (可选，检查诊断级错误)
 ```
 
 如果 `no vet` 报告 ERROR，必须修复后才能继续。其他项目的标准库目录可能不同，需根据实际项目结构调整 vet 路径。
