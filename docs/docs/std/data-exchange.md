@@ -6,29 +6,63 @@ sidebar_position: 4.1
 
 ### json — JSON 解析與產生
 
+`json` 以**堆配置的節點池**（`json-pool`）保存 JSON 樹，支援巢狀陣列與物件、字串/數值/布林/null 標量、轉義字元與指數格式數字。節點池改用動態 `vec`，**沒有固定容量上限**——節點總數與單一節點的子元素數僅受可用記憶體限制。高級介面以 `json` 結構體封裝節點池與根節點索引；其 `pool` 欄位標註 `#{inline=false}`（指標欄位），使 `json` 可按值安全回傳與複製。
+
 ```no
-; 型別枚舉
-json-kind {
-    null,
-    bool,
-    num,
-    str,
-    arr,
-    obj,
+; 解析：回傳 ?json（ok=成功，err=失敗並附原因）
+j = json.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')
+j: {
+    ok -> {
+        name, found = it.get-str('name')   ; 取標量：get-str / get-num / get-bool / get-i64
+        age, ok2 = it.get-i64('age')       ; 整數取值
+        items = it.get('items')            ; 取子節點，回傳 ?json
+        s = it.stringify()                 ; 序列化回字串
+    }
+    err(e) -> print(e)
 }
 
-; 解析
-v = json.parse(s, n)          ; 完整解析
-v = json.parse-str(s, n)                 ; 解析字串值
-v = json.parse-num(s, n)                 ; 解析數值值
-
-; 產生
-n = json.stringify(v, out)    ; 序列化
-
-; 存取
-val = json.get-key(v, key)    ; 取得物件屬性
-json.set-key(v json-value, key, val)    ; 設定物件屬性
+; 產生：從空 json 開始，逐步 set / arr-push
+j2 = json.new()
+j2.set-str('key', 'value')
+j2.set-i64('count', 3)
+j2.arr-push-str('a')
+print(j2.stringify())
 ```
+
+**高級 API（`json` 結構體）**
+
+- `json.new()` — 建立空（null）`json`
+- `json.parse(s)` — 解析，回傳 `?json`；失敗時 `err` 分支帶具體原因（`empty input` / `parse error` / `trailing characters`）
+- `j.stringify()` — 序列化為字串
+- 取值：`j.get-str(key)` / `j.get-num(key)` / `j.get-bool(key)` / `j.get-i64(key)`（回傳 `(val, ok)`）；`j.get(key)` 回傳子節點 `?json`
+- 標量直取（root 為標量時）：`j.str()` / `j.num()` / `j.bool()` / `j.i64()` / `j.str-val()`
+- 寫入：`j.set-str(key,val)` / `j.set-num` / `j.set-i64` / `j.set-bool` / `j.set-null` / `j.set-key(key, val json)`
+- 陣列：`j.arr-get(i)` / `j.arr-len()` / `j.arr-push(val json)` / `j.arr-push-str` / `j.arr-push-num` / `j.arr-push-bool`
+- 物件列舉：`j.obj-len()` / `j.obj-key(i)` / `j.obj-keys-str()` / `j.delete-key(key)`
+- 型別判定：`j.kind()` 及 `j.is-null()` / `j.is-obj()` / `j.is-arr()` / `j.is-str()` / `j.is-num()` / `j.is-bool()`
+
+**池容量（無固定上限）**
+
+早期版本以固定陣列作池，硬限制 `JSON-MAX-NODES = 128` / `JSON-MAX-CHILDREN = 32`，超出即靜默失敗。現已全面改為堆 `vec`：
+
+- 節點總數、每節點子元素數**皆無上限**，僅受可用記憶體限制。
+- `json.parse` 只在真正的語法錯誤時回傳 `err`，不再有「池耗盡」錯誤分支。
+- `j.set*` / `j.arr-push*` 僅在建構目標型別不符時回傳 `false`（例如對非物件節點 set、對非陣列節點 push）。`j.overflowed()` 為向後相容而保留，現恆回傳 `false`。
+
+> **`json` 的複製語意（`#{inline=false}`）**：`pool` 是指標欄位，`j.get` / `j.arr-get` 回傳的子節點 `json` 會**深拷貝**整個池，是父池的獨立快照——對快照的寫入不會回寫父節點。另因 `?json`（option）在 `match` 時會消費其值，對同一個 option **重複 `match`** 會進入 `nil` 分支；若需對同一解析結果多次操作，請在單一 `match` 內完成，或先以一個 `json` 區域變數承接 `it`。
+
+**低階 API（`json-pool` / `json-value`）**
+
+直接以節點索引操作，池作為區域變數使用（單層結構體按值回傳/複製安全）：
+
+- `p = json.new-pool()`；或 `p = json-pool {}` 後 `p.init()`（把 `nodes`/`strs`/`ec`/`ek`/`en` 各 vec 初始化為 `with-len(0)`）
+- `idx = p.alloc()` — 分配新節點並回傳索引（堆 vec 自動擴容）
+- `p.add-child(node-idx, child-idx, key)` — 以邊表（`ec`/`ek`/`en` 單向鏈表）附加子元素，無每節點上限
+- `node-idx, next-pos, ok = p.parse(s, pos)` — 從 `pos` 解析一個值，回傳節點索引
+- `val-idx, ok = p.get-key(obj-idx, key)`；`p.arr-get(arr-idx, i)`；`p.arr-len(arr-idx)`
+- `p.get-kind(idx)` / `p.get-str(idx)` / `p.get-num(idx)` / `p.get-bool(idx)`
+- `p.set-key(obj-idx, key, val-idx)`；`p.copy-tree(src, idx)`（遞迴深拷貝子樹）
+- `p.stringify(node-idx)` — 序列化指定節點
 
 ### toml — TOML 1.0 解析與產生
 

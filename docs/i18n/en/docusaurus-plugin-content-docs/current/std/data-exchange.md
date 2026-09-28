@@ -6,29 +6,58 @@ sidebar_position: 4.1
 
 ### json — JSON Parsing and Generation
 
+`json` stores a JSON tree in a **heap-allocated node pool** (`json-pool`), supporting nested arrays/objects, string/number/bool/null scalars, escape sequences and exponent-format numbers. The pool is built from dynamic `[]vec` buffers, so there is **no fixed capacity cap** — total node count and children-per-node are bounded only by available memory. The high-level `json` struct wraps the pool plus a root index; its `pool` field is annotated `#{inline=false}` (a pointer field), which lets `json` be safely returned and copied by value.
+
 ```no
-; Type enum
-json-kind {
-    null,
-    bool,
-    num,
-    str,
-    arr,
-    obj,
+; Parse: returns ?json (ok = value, err = failure with a specific reason)
+j = json.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')
+j: {
+    ok -> {
+        name, found = it.get-str('name')   ; scalars: get-str / get-num / get-bool / get-i64
+        age, ok2 = it.get-i64('age')
+        items = it.get('items')            ; child node, returns ?json
+        s = it.stringify()                 ; serialize back to string
+    }
+    err(e) -> print(e)
 }
 
-; Parsing
-v = json.parse(s, n)          ; Full parse
-v = json.parse-str(s, n)                 ; Parse string value
-v = json.parse-num(s, n)                 ; Parse numeric value
-
-; Generation
-n = json.stringify(v, out)    ; Serialize
-
-; Access
-val = json.get-key(v, key)    ; Get object property
-json.set-key(v json-value, key, val)    ; Set object property
+; Build: start from an empty (null) json, then set / arr-push
+j2 = json.new()
+j2.set-str('key', 'value')
+j2.set-i64('count', 3)
+j2.arr-push-str('a')
+print(j2.stringify())
 ```
+
+High-level API (methods on `json`):
+
+- `json.new()` — create an empty (null) `json`
+- `json.parse(s)` — parse, returns `?json`; the `err` branch carries the reason (`empty input` / `parse error` / `trailing characters`)
+- `j.stringify()` — serialize to a string
+- Read by key: `j.get-str(key)` / `j.get-num(key)` / `j.get-bool(key)` / `j.get-i64(key)` (each returns `(val, ok)`); `j.get(key)` returns a child `?json`
+- Direct root scalar access (when root is a scalar): `j.str()` / `j.num()` / `j.bool()` / `j.i64()` / `j.str-val()`
+- Write: `j.set-str(key,val)` / `j.set-num` / `j.set-i64` / `j.set-bool` / `j.set-null` / `j.set-key(key, val json)`
+- Array: `j.arr-get(i)` / `j.arr-len()` / `j.arr-push(val json)` / `j.arr-push-str` / `j.arr-push-num` / `j.arr-push-bool`
+- Object enumeration: `j.obj-len()` / `j.obj-key(i)` / `j.obj-keys-str()` / `j.delete-key(key)`
+- Type checks: `j.kind()` and `j.is-null()` / `j.is-obj()` / `j.is-arr()` / `j.is-str()` / `j.is-num()` / `j.is-bool()`
+
+**Pool capacity (no fixed cap).** The pool grows automatically on heap `[]vec`:
+
+- Total nodes and children-per-node have no hard limit (only memory-bound). The old `JSON-MAX-NODES = 128` / `JSON-MAX-CHILDREN = 32` caps are gone.
+- `json.parse` returns `err` only on a genuine syntax error — there is no longer a "pool exhausted" branch.
+- `j.set*` / `j.arr-push*` return `false` only on a kind mismatch. `j.overflowed()` is kept for backward compatibility and now always returns `false`.
+
+> **`json` copy semantics — `#{inline=false}`.** Because `pool` is a pointer field, a child handle returned by `j.get` / `j.arr-get` deep-copies the whole pool: the handle is an independent snapshot of the parent, and writes through it do not propagate back. Also, matching a `?json` option consumes its value — matching the same option a second time falls into the `nil` branch. To reuse one parsed result, finish the work inside a single `match` (use `it`) or bind it once into a plain `json` local.
+
+Low-level API (`json-pool` / `json-value`) — operate by node index; the pool is a single-level struct so it is safe to return/copy by value:
+
+- `p = json.new-pool()`, or `p = json-pool {}` then `p.init()` (sets `nodes`/`strs`/`ec`/`ek`/`en` to `with-len(0)`)
+- `idx = p.alloc()` — allocate a node (heap vec auto-grows); `p.add-child(node-idx, child-idx, key)` — append a child via the `ec`/`ek`/`en` edge linked-list
+- `node-idx, next-pos, ok = p.parse(s, pos)` — parse one value from `pos`
+- `p.get-key(obj-idx, key)`; `p.arr-get(arr-idx, i)`; `p.arr-len(arr-idx)`
+- `p.get-kind(idx)` / `p.get-str(idx)` / `p.get-num(idx)` / `p.get-bool(idx)`
+- `p.set-key(obj-idx, key, val-idx)`; `p.copy-tree(src, idx)` (recursive deep copy)
+- `p.stringify(node-idx)` — serialize a specific node
 
 ### toml — TOML 1.0 Parsing and Generation
 

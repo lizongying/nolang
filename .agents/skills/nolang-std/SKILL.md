@@ -1163,6 +1163,8 @@ resp.parse-headers()
 val = resp.get-header(name)                       // Look up a header value (?str)
 ```
 
+> **Gotcha — `https://` (TLS) is currently unavailable in pure Nolang.** Plain `http://` works: `get`/`do` return a real `ok(response)`. But the pure-Nolang `net/tls` record layer is not functional yet, so any `https://` request via `http.get` / `http.do` / `http.do-req` returns an **explicit `err(...)`** (not a silent `nil`) with messages such as `tls handshake failed: pure nolang TLS unavailable`, `tls send failed: ...`, `tls recv failed: ...`. Handle the `err` branch; for now, target plain HTTP or shell out to an external TLS-capable client.
+
 #### net/http2 — HTTP/2.0 Client (RFC 7540)
 
 Supports HTTP/2 frame parsing and connection management, supports h2c prior knowledge mode:
@@ -1305,6 +1307,8 @@ ok = tls.server-listen(host, port, cert, key)    // Start TLS server
 ok = tls.server-accept(fd)                       // Accept TLS connection
 ok = tls.https-serve-once(fd, cert, key)        // Handle one HTTPS request
 ```
+
+> **Status — client TLS record layer is not yet functional.** In this environment `tls.conn.connect` / handshake fails against real servers (peer logs `DECRYPTION_FAILED_OR_BAD_RECORD_MAC`), so `https://` requests through `net/http` return an explicit `err(...)` rather than a response. The API above is stable; treat pure-Nolang TLS as unavailable until the record layer is fixed.
 
 #### net/client — High-level TCP Client
 
@@ -2450,70 +2454,86 @@ out = x25519.x25519-scalarmult(scalar [32]byte, point [32]byte) (out [32]byte)``
 
 #### json — JSON Parsing and Generation
 
+`json` stores a JSON tree in a **heap-allocated node pool** (`json-pool`), supporting nested arrays/objects, string/number/bool/null scalars, escape sequences and exponent numbers. The pool is built from dynamic `[]vec` buffers, so there is **no fixed capacity cap** — total node count and children-per-node are bounded only by available memory. The high-level `json` struct wraps the pool plus a root index; its `pool` field is annotated `#{inline=false}` (a pointer field), which lets `json` be safely returned and copied **by value**.
+
 ```no
-// Type enum
-json-kind {
-    null,
-    bool,
-    num,
-    str,
-    arr,
-    obj,
+// Parse: returns ?json (ok = value, err = failure with a specific reason)
+j = json.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')
+j: {
+    ok -> {
+        name, found = it.get-str('name')   // scalars: get-str / get-num / get-bool / get-i64
+        age, ok2 = it.get-i64('age')
+        items = it.get('items')            // child node, returns ?json
+        s = it.stringify()                 // serialize back to string
+    }
+    err(e) -> print(e)
 }
 
-// Parsing
-v = json.parse(s, n)          // Full parse
-v = json.parse-str(s, n)                 // Parse string value
-v = json.parse-num(s, n)                 // Parse numeric value
-
-// Generation
-n = json.stringify(v, out)    // Serialize
-
-// Access
-val = json.get-key(v, key)    // Get object property
-json.set-key(v json-value, key, val)    // Set object property
-val = json.get(v, key)                  // Get by key (generic)
-result = json.get-bool(v, key)         // Get bool value
-result = json.get-num(v, key)           // Get numeric value
-result = json.get-str(v, key)           // Get string value
-result = json.get-i64(v, key)           // Get i64 value
-
-// Type checks
-yes = json.is-null(v)                  // Is null?
-yes = json.is-bool(v)                  // Is bool?
-yes = json.is-num(v)                   // Is number?
-yes = json.is-str(v)                   // Is string?
-yes = json.is-arr(v)                   // Is array?
-yes = json.is-obj(v)                   // Is object?
-
-// Setters
-json.set(v, key, val)                  // Set by key (generic)
-json.set-bool(v, key, val)             // Set bool
-json.set-num(v, key, val)              // Set number
-json.set-str(v, key, val)              // Set string
-json.set-i64(v, key, val)              // Set i64
-json.set-null(v, key)                  // Set null
-
-// Array operations
-val = json.arr-get(v, idx)             // Get array element by index
-n = json.arr-len(v)                    // Get array length
-json.arr-push(v, val)                  // Push to array
-json.arr-push-bool(v, val)             // Push bool
-json.arr-push-num(v, val)              // Push number
-json.arr-push-str(v, val)              // Push string
-
-// Direct value access
-b = json.bool(v)                       // Get bool value
-n = json.num(v)                        // Get numeric value
-s = json.str(v)                        // Get string value
-n = json.i64(v)                        // Get i64 value
-
-// Pool-based JSON (for memory efficiency)
-pool = json.new-pool()                 // Create json-pool
-ok = pool.parse(s, n)                  // Parse into pool
-s = pool.stringify()                   // Serialize from pool
-val = pool.get-key(key)                // Get by key
+// Build: start from an empty (null) json, then set / arr-push
+j2 = json.new()
+j2.set-str('key', 'value')
+j2.set-i64('count', 3)
+j2.arr-push-str('a')
+print(j2.stringify())
 ```
+
+High-level API (methods on `json`):
+
+```no
+j = json.new()                              // empty (null) json
+j = json.parse(s)                           // ?json; err reasons: empty input / parse error / trailing characters
+s = j.stringify()                           // serialize
+
+// read scalars by key (returns (val, ok))
+val, ok = j.get-str(key)
+val, ok = j.get-num(key)                    // f64
+val, ok = j.get-bool(key)
+val, ok = j.get-i64(key)                    // truncated integer
+child = j.get(key)                          // child node, ?json
+
+// direct root scalar access (when root is a scalar)
+val, ok = j.str(); val, ok = j.num(); val, ok = j.bool(); val, ok = j.i64()
+val = j.str-val()
+
+// write
+ok = j.set-str(key, val); ok = j.set-num(key, val); ok = j.set-i64(key, val)
+ok = j.set-bool(key, val); ok = j.set-null(key)
+ok = j.set-key(key, val json)               // attach another json node (deep-copied)
+
+// array
+child = j.arr-get(i); n = j.arr-len()
+ok = j.arr-push(val json); ok = j.arr-push-str(val); ok = j.arr-push-num(val); ok = j.arr-push-bool(val)
+
+// object enumeration
+n = j.obj-len(); key, ok = j.obj-key(i); keys = j.obj-keys-str(); ok = j.delete-key(key)
+
+// type checks
+k = j.kind()                                // JSON-KIND-* constant
+yes = j.is-null(); yes = j.is-obj(); yes = j.is-arr(); yes = j.is-str(); yes = j.is-num(); yes = j.is-bool()
+```
+
+**Pool capacity (no fixed cap).** The pool uses heap `[]vec`, so it grows automatically:
+
+- Total nodes and children-per-node have **no hard limit** (only memory-bound). The old `JSON-MAX-NODES = 128` / `JSON-MAX-CHILDREN = 32` caps are gone.
+- `json.parse` returns `err` only on a genuine syntax error — there is no longer a "pool exhausted" error branch.
+- `j.set*` / `j.arr-push*` return `false` only on a kind mismatch (e.g. `set` on a non-object, `arr-push` on a non-array). `j.overflowed()` is kept for backward compatibility and now always returns `false`.
+
+Low-level API (`json-pool` / `json-value`) — operate by node index; the pool is a single-level struct so it is safe to return/copy by value:
+
+```no
+p = json.new-pool(); p.init()               // init() sets nodes/strs/ec/ek/en to with-len(0)
+idx = p.alloc()                             // allocate a node (heap vec auto-grows)
+p.add-child(node-idx, child-idx, key)       // append a child via the ec/ek/en edge linked-list
+node-idx, next-pos, ok = p.parse(s, pos)    // parse one value from pos, returns node index
+val-idx, ok = p.get-key(obj-idx, key)
+val-idx, ok = p.arr-get(arr-idx, i); n = p.arr-len(arr-idx)
+kind = p.get-kind(idx); s, ok = p.get-str(idx); n, ok = p.get-num(idx); b, ok = p.get-bool(idx)
+ok = p.set-key(obj-idx, key, val-idx); dst = p.copy-tree(src, idx)   // copy-tree recurses
+s = p.stringify(node-idx)                   // serialize a specific node
+```
+
+> **`json` copy semantics — `#{inline=false}`.** `pool` is a pointer field, so a child handle returned by `j.get` / `j.arr-get` **deep-copies** the whole pool: the handle is an independent snapshot of the parent, and writes through it do **not** propagate back to the parent node. Also, matching a `?json` option **consumes** its value — calling `match` on the *same* option a second time falls into the `nil` branch. To reuse one parsed result several times, either finish all work inside a single `match` (use `it`), or bind it once into a plain `json` local. This is why the pool was migrated to heap `vec` + `#{inline=false}`: the earlier fixed inline array existed only because a two-level `json { pool json-pool }` **by-value** return silently corrupted nested heap vecs; making `pool` a pointer field removes that restriction.
+
 
 #### toml — TOML Parsing and Generation
 

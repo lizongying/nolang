@@ -12,46 +12,36 @@
 t-parse-obj = () {
     j = json.parse('{"name":"Alice","age":30}')
     ok = false
+    is-obj = false
     j: {
-        ok -> ok = true
+        ok -> {
+            is-obj = it.is-obj()
+            ok = true
+        }
 
         nil -> ok = false
 
         err -> ok = false
     }
     runner.is-true(ok, 'parse obj ok')
-
-    is-obj = false
-    j: {
-        ok -> is-obj = it.is-obj()
-
-        nil -> is-obj = false
-
-        err -> is-obj = false
-    }
     runner.is-true(is-obj, 'parsed is-obj')
 }
 
 t-parse-arr = () {
     j = json.parse('[1, 2, 3]')
     ok = false
+    is-arr = false
     j: {
-        ok -> ok = true
+        ok -> {
+            is-arr = it.is-arr()
+            ok = true
+        }
 
         nil -> ok = false
 
         err -> ok = false
     }
     runner.is-true(ok, 'parse arr ok')
-
-    is-arr = false
-    j: {
-        ok -> is-arr = it.is-arr()
-
-        nil -> is-arr = false
-
-        err -> is-arr = false
-    }
     runner.is-true(is-arr, 'parsed is-arr')
 }
 
@@ -208,32 +198,8 @@ t-arr-len = () {
 
 t-arr-get = () {
     j = json.parse('["a", "b", "c"]')
-    ok = false
-    val str
-    j: {
-        ok -> {
-            elem = it.arr-get(1)
-            elem: {
-                ok -> {
-                    val, ok = it.get-str('')
-                }
 
-                nil -> {
-                }
-
-                err -> {
-                }
-            }
-        }
-
-        nil -> {
-        }
-
-        err -> {
-        }
-    }
-
-    ; arr-get 返回 ?json，對 string 元素用 str() 取值
+    ; arr-get 返回 ?json，對 string 元素用 str() 取值（單次匹配內完成，避免重複消費 option）
     ok2 = false
     val2 str
     j: {

@@ -1,0 +1,133 @@
+; json-heap-cap.no — 驗證 json 節點池改用堆 vec 後不再有固定容量上限
+;
+; 背景：舊實作以固定陣列作池，硬性限制 JSON-MAX-NODES=128 / JSON-MAX-CHILDREN=32，
+; 超過即靜默失敗。改為堆配置 vec（json.pool 以 #{inline=false} 存放指標）後，
+; 節點數與每節點子元素數皆無上限，僅受可用記憶體限制。
+;
+; 本測試為純計算，不需網路，可實際執行。
+
+print('start')
+
+; 以 os.exit(1) 標記任何斷言失敗
+fail = false
+
+; ── 1. 大陣列：2000 個元素（遠超舊 128 節點 / 32 子元素上限）──
+arr-str = '['
+i <- [0..2000): {
+    i > 0 -> arr-str = arr-str - ','
+    arr-str = arr-str - i.to-str()
+}
+arr-str = arr-str - ']'
+
+j = json.parse(arr-str)
+n = 0
+parsed1 = false
+j: {
+    ok -> {
+        n = it.arr-len()
+        parsed1 = true
+    }
+
+    nil ->
+
+    err ->
+}
+{
+    parsed1 && n == 2000 -> print('ok: array 2000 nodes')
+
+    -> {
+        print('fail: array node count (got ')
+        print(n)
+        print(')')
+        fail = true
+    }
+}
+
+; ── 2. 大物件：500 個鍵（遠超舊每節點 32 子元素上限）──
+obj-str = '{'
+k <- [0..500): {
+    k > 0 -> obj-str = obj-str - ','
+    key = 'k' - k.to-str()
+    obj-str = obj-str - '"' - key - '":' - k.to-str()
+}
+obj-str = obj-str - '}'
+o = json.parse(obj-str)
+m = 0
+lastv = 0.0
+found-last = false
+o: {
+    ok -> {
+        m = it.obj-len()
+        lastv, found-last = it.get-num('k499')
+    }
+
+    nil ->
+
+    err ->
+}
+{
+    m == 500 && found-last && lastv == 499.0 -> print('ok: object 500 keys')
+
+    -> {
+        print('fail: object keys (len=')
+        print(m)
+        print(')')
+        fail = true
+    }
+}
+
+; ── 3. 深巢狀：結構可往返序列化，且不因池上限而截斷 ──
+depth = 200
+nested = ''
+t <- [0..depth): {
+    nested = nested - '['
+}
+nested = nested - '1'
+t <- [0..depth): {
+    nested = nested - ']'
+}
+d = json.parse(nested)
+ok3 = false
+rs = ''
+d: {
+    ok -> {
+        rs = it.stringify()
+        ok3 = true
+    }
+
+    nil ->
+
+    err ->
+}
+{
+    ok3 && rs.len-bytes() == (2 * depth + 1) -> print('ok: deep nest roundtrip')
+
+    -> {
+        print('fail: deep nest (bytes=')
+        print(rs.len-bytes())
+        print(')')
+        fail = true
+    }
+}
+
+; ── 4. 構建大陣列：逐個 push，無 128 上限 ──
+b = json.new()
+p <- [0..1000): {
+    b.arr-push-num(number.i64-to-f64(p))
+}
+cnt = b.arr-len()
+{
+    cnt == 1000 -> print('ok: build array 1000 via push')
+
+    -> {
+        print('fail: build array (len=')
+        print(cnt)
+        print(')')
+        fail = true
+    }
+}
+{
+    fail -> os.exit(1)
+
+    -> print('ok: all heap-pool cap tests done')
+}

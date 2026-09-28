@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "35c79678a97d36050e4db2501f03657a2e6b4e49b03b9636c65af0f056828cb5"
+	embeddedStdSigKey = "0a15480c0e68c0fdd7f30a0680df553a7361b07ee36b220962b637eff2da808f"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -1292,6 +1292,7 @@ func init() {
 		"jar.parse-response":                               {},
 		"jar.set":                                          {},
 		"jar.set-signed":                                   {},
+		"json-pool.add-child":                              {},
 		"json-pool.alloc":                                  {"i64"},
 		"json-pool.arr-get":                                {"i64", "bool"},
 		"json-pool.arr-len":                                {"i64"},
@@ -1314,6 +1315,7 @@ func init() {
 		"json.arr-len":                                     {"i64"},
 		"json.arr-push":                                    {"bool"},
 		"json.arr-push-bool":                               {"bool"},
+		"json.arr-push-idx":                                {"bool"},
 		"json.arr-push-num":                                {"bool"},
 		"json.arr-push-str":                                {"bool"},
 		"json.bool":                                        {"bool", "bool"},
@@ -1331,6 +1333,7 @@ func init() {
 		"json.is-num":                                      {"bool"},
 		"json.is-obj":                                      {"bool"},
 		"json.is-str":                                      {"bool"},
+		"json.json-pool.add-child":                         {},
 		"json.json-pool.alloc":                             {"i64"},
 		"json.json-pool.arr-get":                           {"i64", "bool"},
 		"json.json-pool.arr-len":                           {"i64"},
@@ -1353,6 +1356,7 @@ func init() {
 		"json.json.arr-len":                                {"i64"},
 		"json.json.arr-push":                               {"bool"},
 		"json.json.arr-push-bool":                          {"bool"},
+		"json.json.arr-push-idx":                           {"bool"},
 		"json.json.arr-push-num":                           {"bool"},
 		"json.json.arr-push-str":                           {"bool"},
 		"json.json.bool":                                   {"bool", "bool"},
@@ -4147,6 +4151,7 @@ func init() {
 		"jar.parse-response":                               {"str", "str", "str"},
 		"jar.set":                                          {"str", "str", "str", "str", "i64"},
 		"jar.set-signed":                                   {"str", "str", "str", "str", "i64", "[]byte"},
+		"json-pool.add-child":                              {"i64", "i64", "str"},
 		"json-pool.alloc":                                  {},
 		"json-pool.arr-get":                                {"i64", "i64"},
 		"json-pool.arr-len":                                {"i64"},
@@ -4169,6 +4174,7 @@ func init() {
 		"json.arr-len":                                     {},
 		"json.arr-push":                                    {"json"},
 		"json.arr-push-bool":                               {"bool"},
+		"json.arr-push-idx":                                {"i64"},
 		"json.arr-push-num":                                {"f64"},
 		"json.arr-push-str":                                {"str"},
 		"json.bool":                                        {},
@@ -4186,6 +4192,7 @@ func init() {
 		"json.is-num":                                      {},
 		"json.is-obj":                                      {},
 		"json.is-str":                                      {},
+		"json.json-pool.add-child":                         {"i64", "i64", "str"},
 		"json.json-pool.alloc":                             {},
 		"json.json-pool.arr-get":                           {"i64", "i64"},
 		"json.json-pool.arr-len":                           {"i64"},
@@ -4208,6 +4215,7 @@ func init() {
 		"json.json.arr-len":                                {},
 		"json.json.arr-push":                               {"json"},
 		"json.json.arr-push-bool":                          {"bool"},
+		"json.json.arr-push-idx":                           {"i64"},
 		"json.json.arr-push-num":                           {"f64"},
 		"json.json.arr-push-str":                           {"str"},
 		"json.json.bool":                                   {},
@@ -6040,17 +6048,20 @@ func init() {
 		},
 		"json-pool": {
 			"count":      "i64",
-			"nodes":      "[128]json-value",
+			"ec":         "[]i64",
+			"ek":         "[]str",
+			"en":         "[]i64",
+			"nodes":      "[]json-value",
 			"overflowed": "bool",
+			"strs":       "[]str",
 		},
 		"json-value": {
 			"bool-val": "bool",
-			"children": "[32]i64",
 			"count":    "i64",
-			"keys":     "[32]str",
+			"first":    "i64",
 			"kind":     "i64",
+			"last":     "i64",
 			"num-val":  "f64",
-			"str-val":  "str",
 		},
 		"link": {
 			"free-head": "i64",

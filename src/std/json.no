@@ -33,30 +33,33 @@ JSON-KIND-STR = 3
 JSON-KIND-ARR = 4
 JSON-KIND-OBJ = 5
 
-; 池最大節點數
-JSON-MAX-NODES = 128
-
-; 每節點最大子元素數
-JSON-MAX-CHILDREN = 32
-
 ; ═══════════════════════════════════════════════
 ; 結構
 ; ═══════════════════════════════════════════════
 
-; json-value: JSON 節點
+; json-value: JSON 節點（純標量欄位，可安全存放於堆 vec）
+; kind/num-val/bool-val: 標量值
+; count: 陣列/物件的子元素數量
+; first/last: 子元素在邊表的單向鏈表首/尾邊索引（-1=無子元素）
 json-value {
     kind i64
-    str-val str
     num-val f64
     bool-val bool
-    children [32]i64
-    keys [32]str
     count i64
+    first i64
+    last i64
 }
 
-; json-pool: JSON 節點池
+; json-pool: JSON 節點池（堆 vec 配置，無容量上限）
+; nodes: 節點平行陣列（以節點 idx 索引，元素為純標量結構）
+; strs: 每個節點的字串值（以節點 idx 索引；自舊 str-val 欄位移出，避免 str  residing 於 vec 元素內）
+; ec/ek/en: 邊表——子節點 idx、鍵名、下一同級邊 idx（父節點以 first/last 串起鏈表）
 json-pool {
-    nodes [128]json-value
+    nodes []json-value
+    strs []str
+    ec []i64
+    ek []str
+    en []i64
     count i64
     overflowed bool
 }
@@ -66,8 +69,10 @@ json-pool {
 ;   j = new()                      // 建立 null json
 ;   j = json.parse('{"a":1}')      // 從字串解析
 ;   s = j.stringify()              // 序列化為字串
+; pool 以 #{inline=false} 存放為指標：使 json 可按值回傳/複製，
+; 同時讓節點池改用堆 vec（複製時深拷貝池，避免別名與 double-free）。
 json {
-    pool json-pool
+    pool json-pool #{inline=false}
     root i64
 }
 
@@ -81,10 +86,7 @@ json {
 ;   j.set('key', 'value')
 ;   s = j.stringify()
 new = () (j json) {
-    j = json {
-        pool: json-pool {}
-        root: -1
-    }
+    j.root = -1
     j.pool.init()
 }
 
@@ -97,47 +99,62 @@ new-pool = () (p json-pool) {
     p.init()
 }
 
-; init: 初始化節點池（延遲初始化，不預先清零所有節點）
+; init: 初始化節點池（堆 vec 需在使用前先初始化為非 nil，方能安全 push）
 json-pool.init = () {
+    .nodes = with-len(0)
+    .strs = with-len(0)
+    .ec = with-len(0)
+    .ek = with-len(0)
+    .en = with-len(0)
     .count = 0
     .overflowed = false
 }
 
-; alloc: 分配新節點，返回索引（-1=池滿，並置 overflowed 旗標）
+; alloc: 分配新節點，返回索引（堆 vec 自動擴容，不再有池滿上限）
 json-pool.alloc = () (idx i64) {
-
-    idx = -1
-    .count >= JSON-MAX-NODES -> {
-        .overflowed = true
-        return
-    }
-    idx = .count
+    idx = .nodes.len()
+    v json-value
+    v.kind = JSON-KIND-NULL
+    v.num-val = 0.0
+    v.bool-val = false
+    v.count = 0
+    v.first = -1
+    v.last = -1
+    .nodes.push(v)
+    .strs.push('')
 
     #{overflow=wrap}
     .count = .count + 1
+}
 
+; add-child: 將子節點 child-idx（鍵名 key，陣列傳空字串）附加到節點 node-idx
+; 以邊表單向鏈表實作可變長子元素，無每節點上限
+json-pool.add-child = (node-idx i64, child-idx i64, key str) {
+    e = .ec.len()
+    .ec.push(child-idx)
+    .ek.push(key)
+    .en.push(-1)
+
+    ; 串接到父節點鏈表尾端
     #{index-out=0}
-    .nodes[idx].count = 0
-
-    #{index-out=0}
-    .nodes[idx].kind = JSON-KIND-NULL
-
-    #{index-out=0}
-    .nodes[idx].str-val = ''
-
-    #{index-out=0}
-    .nodes[idx].num-val = 0.0
-
-    #{index-out=0}
-    .nodes[idx].bool-val = false
-    j <- [0..JSON-MAX-CHILDREN): {
-
-        #{index-out=0}
-        .nodes[idx].children[j] = -1
-
-        #{index-out=0}
-        .nodes[idx].keys[j] = ''
+    last = .nodes[node-idx].last
+    last >= 0 -> {
+        .en[last] = e
     }
+    last < 0 -> {
+
+        #{index-out=0}
+        .nodes[node-idx].first = e
+    }
+
+    #{index-out=0}
+    .nodes[node-idx].last = e
+
+    #{index-out=0}
+    cd = .nodes[node-idx].count
+
+    #{index-out=0, overflow=wrap}
+    .nodes[node-idx].count = cd + 1
 }
 
 ; ═══════════════════════════════════════════════
@@ -289,18 +306,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 child-idx, child-next, child-ok = .parse(s, p)
                 child-ok == false -> return
 
-                #{index-out=0}
-                cnt = .nodes[node-idx].count
-                cnt >= JSON-MAX-CHILDREN -> {
-                    .overflowed = true
-                    return
-                }
-
-                #{index-out=0}
-                .nodes[node-idx].children[cnt] = child-idx
-
-                #{index-out=0, overflow=wrap}
-                .nodes[node-idx].count = cnt + 1
+                ; 陣列：以邊表附加子元素（鍵名空字串）
+                .add-child(node-idx, child-idx, '')
                 p = child-next
                 p = .skip-ws(s, p)
                 p >= sn -> return
@@ -381,32 +388,10 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 val-idx, val-next, val-ok = .parse(s, p)
                 val-ok == false -> return
 
-                ; add to object
+                ; 物件：以邊表附加子元素；鍵名取自解析出的 key 節點字串值
                 #{index-out=0}
-                cnt = .nodes[node-idx].count
-                cnt >= JSON-MAX-CHILDREN -> {
-                    .overflowed = true
-                    return
-                }
-
-                ; copy key string to keys[cnt]
-                #{index-out=0}
-                key-len = .nodes[key-idx].str-val.len-bytes()
-
-                #{index-out=0}
-                .nodes[node-idx].keys[cnt] = with-len(key-len)
-                j <- [0..key-len): {
-
-                    #{index-out=0}
-                    .nodes[node-idx].keys[cnt][j] = .nodes[key-idx].str-val.byte(j)
-                }
-
-                ; (length preset by with-len(key-len) above)
-                #{index-out=0}
-                .nodes[node-idx].children[cnt] = val-idx
-
-                #{index-out=0, overflow=wrap}
-                .nodes[node-idx].count = cnt + 1
+                key-str = .strs[key-idx]
+                .add-child(node-idx, val-idx, key-str)
                 p = val-next
                 p = .skip-ws(s, p)
                 p >= sn -> return
@@ -459,8 +444,9 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     est-cap = s.len-bytes() - pos
     est-cap < 1 -> est-cap = 1
 
-    #{index-out=0}
-    .nodes[node-idx].str-val = with-len(est-cap)
+    ; 在本地 str 緩衝逐位元組建構，最後存入 strs[node-idx]
+    ; （避免對 vec 元素 str 做鏈式位元組寫入）
+    buf str = with-len(est-cap)
     (i < s.len-bytes()) {
 
         i >= s.len-bytes() -> return
@@ -473,11 +459,10 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             c == 34 -> {
 
                 ; str.truncate 尚未實作，改用 slice-bytes 截斷（est-cap 為預估容量）
-                #{index-out=0}
-                sv str = .nodes[node-idx].str-val.slice-bytes(0, j)
+                sv = buf.slice-bytes(0, j)
 
                 #{index-out=0}
-                .nodes[node-idx].str-val = sv
+                .strs[node-idx] = sv
 
                 #{overflow=wrap}
                 next-pos = i + 1
@@ -504,8 +489,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             }
         }
 
-        #{index-out=0}
-        .nodes[node-idx].str-val[j] = c
+        buf[j] = c
 
         #{overflow=wrap}
         j = j + 1
@@ -667,20 +651,22 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok bool) {
         return
     }
 
+    ; 沿邊表單向鏈表走訪子元素，比對鍵名 .ek[e]，命中回傳子節點 .ec[e]
     #{index-out=0}
-    cnt = .nodes[obj-idx].count
-    i <- [0..cnt): {
-        found-eq = 0
+    e = .nodes[obj-idx].first
+    (e >= 0) {
 
         #{index-out=0}
-        found-eq = .str-eq(.nodes[obj-idx].keys[i], key)
-        found-eq == 1 -> {
+        .str-eq(.ek[e], key) == 1 -> {
 
             #{index-out=0}
-            val-idx = .nodes[obj-idx].children[i]
+            val-idx = .ec[e]
             ok = true
             return
         }
+
+        #{index-out=0}
+        e = .en[e]
     }
 }
 
@@ -696,46 +682,26 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
         return
     }
 
-    ; 檢查鍵是否存在（更新）
+    ; 沿邊表走訪，命中既有鍵則更新其子節點索引
     #{index-out=0}
-    cnt = .nodes[obj-idx].count
-    i <- [0..cnt): {
-
-        found-eq = 0
+    e = .nodes[obj-idx].first
+    (e >= 0) {
 
         #{index-out=0}
-        found-eq = .str-eq(.nodes[obj-idx].keys[i], key)
-        found-eq == 1 -> {
+        .str-eq(.ek[e], key) == 1 -> {
 
             #{index-out=0}
-            .nodes[obj-idx].children[i] = val-idx
+            .ec[e] = val-idx
             ok = true
             return
         }
-    }
-
-    ; 新增鍵
-    cnt >= JSON-MAX-CHILDREN -> {
-        .overflowed = true
-        return
-    }
-
-    #{index-out=0}
-
-    ; 复制键字符串到 keys[cnt]
-    .nodes[obj-idx].keys[cnt] = with-len(key.len-bytes())
-    j <- [0..key.len-bytes()): {
 
         #{index-out=0}
-        .nodes[obj-idx].keys[cnt][j] = key.byte(j)
+        e = .en[e]
     }
 
-    ; (length preset by with-len(key.len-bytes()) above)
-    #{index-out=0}
-    .nodes[obj-idx].children[cnt] = val-idx
-
-    #{index-out=0, overflow=wrap}
-    .nodes[obj-idx].count = cnt + 1
+    ; 未命中：以邊表附加新鍵值（堆 vec 自動擴容，無每節點上限）
+    .add-child(obj-idx, val-idx, key)
     ok = true
 }
 
@@ -745,71 +711,40 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
 
     dst-idx = -1
     node-idx < 0 || node-idx >= src.count -> return
-    qt-src [128]i64
-    qt-dst [128]i64
-    head = 0
-    tail = 1
+
+    ; 遞迴深拷貝：分配目標節點，複製標量欄位與字串值
+    d = .alloc()
+    d < 0 -> return
+    dst-idx = d
 
     #{index-out=0}
-    qt-src[0] = node-idx
-    dst = .alloc()
-    dst < 0 -> return
-    dst-idx = dst
+    .nodes[d].kind = src.nodes[node-idx].kind
 
     #{index-out=0}
-    qt-dst[0] = dst
-    (head < tail) {
+    .nodes[d].num-val = src.nodes[node-idx].num-val
+
+    #{index-out=0}
+    .nodes[d].bool-val = src.nodes[node-idx].bool-val
+
+    #{index-out=0}
+    .strs[d] = src.strs[node-idx].copy()
+
+    ; 遍歷子節點的邊，逐一遞迴拷貝並以同鍵名附加
+    #{index-out=0}
+    e = src.nodes[node-idx].first
+    (e >= 0) {
 
         #{index-out=0}
-        s = qt-src[head]
+        cs = src.ec[e]
 
         #{index-out=0}
-        d = qt-dst[head]
+        ck = src.ek[e]
 
-        #{index-out=0, overflow=wrap}
-        head = head + 1
-
-        #{index-out=0}
-        k = src.nodes[s].kind
-        .nodes[d].kind = k
+        cd = .copy-tree(src, cs)
+        .add-child(d, cd, ck)
 
         #{index-out=0}
-        .nodes[d].num-val = src.nodes[s].num-val
-
-        #{index-out=0}
-        .nodes[d].bool-val = src.nodes[s].bool-val
-
-        #{index-out=0}
-        .nodes[d].str-val = src.nodes[s].str-val.copy()
-
-        #{index-out=0}
-        cn = src.nodes[s].count
-
-        #{index-out=0}
-        .nodes[d].count = cn
-        ci <- [0..cn): {
-
-            #{index-out=0}
-            cs = src.nodes[s].children[ci]
-            cd = .alloc()
-            cd < 0 || tail >= JSON-MAX-NODES -> {
-
-                dst-idx = -1
-                return
-            }
-            k2 str = src.nodes[s].keys[ci]
-            .nodes[d].keys[ci] = k2.copy()
-            .nodes[d].children[ci] = cd
-
-            #{index-out=0}
-            qt-src[tail] = cs
-
-            #{index-out=0}
-            qt-dst[tail] = cd
-
-            #{index-out=0, overflow=wrap}
-            tail = tail + 1
-        }
+        e = src.en[e]
     }
 }
 
@@ -834,8 +769,17 @@ json-pool.arr-get = (arr-idx i64, elem i64) (val-idx i64, ok bool) {
         return
     }
 
+    ; 沿邊表走訪到第 elem 條邊
     #{index-out=0}
-    val-idx = .nodes[arr-idx].children[elem]
+    e = .nodes[arr-idx].first
+    k <- [0..elem): {
+
+        #{index-out=0}
+        e = .en[e]
+    }
+
+    #{index-out=0}
+    val-idx = .ec[e]
     ok = true
 }
 
@@ -878,7 +822,7 @@ json-pool.get-str = (node-idx i64) (out str, ok bool) {
     }
 
     #{index-out=0}
-    out = .nodes[node-idx].str-val.copy()
+    out = .strs[node-idx].copy()
     ok = true
 }
 
@@ -931,6 +875,8 @@ json-pool.stringify = (node-idx i64) (out str) {
     cnt = 0
     i = 0
     j = 0
+    e = 0
+    is-first = true
     child-str = ''
     num-val = 0.0
     num-str = ''
@@ -966,7 +912,7 @@ json-pool.stringify = (node-idx i64) (out str) {
             out = '"'
 
             #{index-out=0}
-            sv str = .nodes[node-idx].str-val
+            sv str = .strs[node-idx]
             j = 0
             (j < sv.len-bytes()) {
 
@@ -999,14 +945,19 @@ json-pool.stringify = (node-idx i64) (out str) {
             out = '['
 
             #{index-out=0}
-            cnt = .nodes[node-idx].count
-            i <- [0..cnt): {
+            e = .nodes[node-idx].first
+            is-first = true
+            (e >= 0) {
 
-                i > 0 -> out = out - ','
+                is-first == false -> out = out - ','
+                is-first = false
 
                 #{index-out=0}
-                child-str = .stringify(.nodes[node-idx].children[i])
+                child-str = .stringify(.ec[e])
                 out = out - child-str
+
+                #{index-out=0}
+                e = .en[e]
             }
             out = out - ']'
             return
@@ -1016,19 +967,24 @@ json-pool.stringify = (node-idx i64) (out str) {
             out = '{'
 
             #{index-out=0}
-            cnt = .nodes[node-idx].count
-            i <- [0..cnt): {
+            e = .nodes[node-idx].first
+            is-first = true
+            (e >= 0) {
 
-                i > 0 -> out = out - ','
+                is-first == false -> out = out - ','
+                is-first = false
 
                 #{index-out=0}
-                key-str = .nodes[node-idx].keys[i]
+                key-str = .ek[e]
 
                 out = out - '"' - key-str - '":'
 
                 #{index-out=0}
-                child-str = .stringify(.nodes[node-idx].children[i])
+                child-str = .stringify(.ec[e])
                 out = out - child-str
+
+                #{index-out=0}
+                e = .en[e]
             }
             out = out - '}'
             return
@@ -1079,11 +1035,7 @@ json.parse = (s str) (result ?json) {
 
     ok == false -> {
 
-        ; 區分「池容量耗盡」與真正的語法錯誤，避免靜默失敗誤導呼叫端
-        j.pool.overflowed -> {
-            result = err('json: node pool exhausted (limit JSON-MAX-NODES/JSON-MAX-CHILDREN reached)')
-            return
-        }
+        ; 池改用堆 vec 自動擴容，不再有容量上限；解析失敗即語法錯誤
         result = err('parse error')
         return
     }
@@ -1259,38 +1211,10 @@ json.get-i64 = (key str) (val i64, ok bool) {
     ok = true
 }
 
-; json.alloc-node: 內聯分配節點，避免嵌套方法調用的接收者複製問題
-; 返回 idx: 新節點索引（-1=池滿）
+; json.alloc-node: 分配新節點（pool 為 #{inline=false} 指標欄位，直接委派 .pool.alloc）
+; 返回 idx: 新節點索引
 json.alloc-node = () (idx i64) {
-    idx = -1
-    .pool.count >= JSON-MAX-NODES -> return
-    idx = .pool.count
-
-    #{overflow=wrap}
-    .pool.count = .pool.count + 1
-
-    #{index-out=0}
-    .pool.nodes[idx].count = 0
-
-    #{index-out=0}
-    .pool.nodes[idx].kind = JSON-KIND-NULL
-
-    #{index-out=0}
-    .pool.nodes[idx].str-val = ''
-
-    #{index-out=0}
-    .pool.nodes[idx].num-val = 0.0
-
-    #{index-out=0}
-    .pool.nodes[idx].bool-val = false
-    j <- [0..JSON-MAX-CHILDREN): {
-
-        #{index-out=0}
-        .pool.nodes[idx].children[j] = -1
-
-        #{index-out=0}
-        .pool.nodes[idx].keys[j] = ''
-    }
+    idx = .pool.alloc()
 }
 
 ; json.set: 在物件中設定鍵值（值為另一個 json 節點）
@@ -1301,82 +1225,22 @@ json.set = (key str, val-idx i64) (ok bool) {
 
         ; 建立 root 為物件
         .root = .alloc-node()
-        .root < 0 -> return
 
         #{index-out=0}
         .pool.nodes[.root].kind = JSON-KIND-OBJ
+    }
+
+    ; null 節點可原地提升為物件；其他非物件類型拒絕寫入
+    k = .pool.get-kind(.root)
+    k == JSON-KIND-NULL -> {
 
         #{index-out=0}
-        .pool.nodes[.root].count = 0
+        .pool.nodes[.root].kind = JSON-KIND-OBJ
     }
-    k = JSON-KIND-NULL
-    .root >= 0 && .root < .pool.count -> {
+    k != JSON-KIND-NULL && k != JSON-KIND-OBJ -> return
 
-        #{index-out=0}
-        k = .pool.nodes[.root].kind
-    }
-    {
-        k == JSON-KIND-NULL -> {
-
-            #{index-out=0}
-            .pool.nodes[.root].kind = JSON-KIND-OBJ
-
-            #{index-out=0}
-            .pool.nodes[.root].count = 0
-        }
-
-        k != JSON-KIND-OBJ -> return
-    }
-
-    ; 內聯 set-key 邏輯（避免嵌套方法調用）
-    #{index-out=0}
-    cnt = .pool.nodes[.root].count
-
-    ; 檢查鍵是否存在（更新）
-    i <- [0..cnt): {
-        found-eq = 0
-        .pool.nodes[.root].keys[i].eq-full(key) -> {
-
-            #{index-out=0}
-            found-eq = 1
-        }
-        found-eq == 1 -> {
-
-            #{index-out=0}
-            .pool.nodes[.root].children[i] = val-idx
-            ok = true
-            return
-        }
-    }
-
-    ; 新增鍵
-    cnt >= JSON-MAX-CHILDREN -> {
-        .pool.overflowed = true
-        return
-    }
-
-    #{index-out=0}
-
-    ; 複製鍵字串到 keys[cnt]
-    .pool.nodes[.root].keys[cnt] = with-len(key.len-bytes())
-    j <- [0..key.len-bytes()): {
-
-        #{index-out=0}
-        .pool.nodes[.root].keys[cnt][j] = key.byte(j)
-    }
-
-    #{index-out=0}
-    ktmp str = .pool.nodes[.root].keys[cnt].slice-bytes(0, key.len-bytes())
-
-    #{index-out=0}
-    .pool.nodes[.root].keys[cnt] = ktmp
-
-    #{index-out=0}
-    .pool.nodes[.root].children[cnt] = val-idx
-
-    #{index-out=0, overflow=wrap}
-    .pool.nodes[.root].count = cnt + 1
-    ok = true
+    ; 委派池方法（pool 為指標欄位，嵌套調用安全）
+    ok = .pool.set-key(.root, key, val-idx)
 }
 
 ; json.set-str: 在物件中設定字串值
@@ -1386,24 +1250,13 @@ json.set = (key str, val-idx i64) (ok bool) {
 json.set-str = (key str, val str) (ok bool) {
     ok = false
     idx = .alloc-node()
-    idx < 0 -> return
 
     #{index-out=0}
     .pool.nodes[idx].kind = JSON-KIND-STR
 
+    ; 字串值存於平行 strs vec（以節點 idx 索引），直接指派副本
     #{index-out=0}
-    .pool.nodes[idx].str-val = with-len(val.len-bytes())
-    i <- [0..val.len-bytes()): {
-
-        #{index-out=0}
-        .pool.nodes[idx].str-val[i] = val.byte(i)
-    }
-
-    #{index-out=0}
-    svt str = .pool.nodes[idx].str-val.slice-bytes(0, val.len-bytes())
-
-    #{index-out=0}
-    .pool.nodes[idx].str-val = svt
+    .pool.strs[idx] = val.copy()
     ok = .set(key, idx)
 }
 
@@ -1498,56 +1351,39 @@ json.arr-len = () (n i64) {
     n = .pool.arr-len(.root)
 }
 
-; json.arr-push: 向陣列末尾添加元素
+; json.arr-push-idx: 以節點索引向陣列末尾附加元素（內部輔助，避免構造 json 時深拷貝整個池）
 ; 返回 ok bool: 是否成功
-; 用法：
-;   j.arr-push(item)
-json.arr-push = (val json) (ok bool) {
+json.arr-push-idx = (child-idx i64) (ok bool) {
     ok = false
     .root < 0 -> {
 
         ; 建立 root 為陣列
         .root = .alloc-node()
-        .root < 0 -> return
 
         #{index-out=0}
         .pool.nodes[.root].kind = JSON-KIND-ARR
+    }
+
+    ; null 節點可原地提升為陣列；其他非陣列類型拒絕寫入
+    k = .pool.get-kind(.root)
+    k == JSON-KIND-NULL -> {
 
         #{index-out=0}
-        .pool.nodes[.root].count = 0
+        .pool.nodes[.root].kind = JSON-KIND-ARR
     }
-    k = JSON-KIND-NULL
-    .root >= 0 && .root < .pool.count -> {
+    k != JSON-KIND-NULL && k != JSON-KIND-ARR -> return
 
-        #{index-out=0}
-        k = .pool.nodes[.root].kind
-    }
-    {
-        k == JSON-KIND-NULL -> {
-
-            #{index-out=0}
-            .pool.nodes[.root].kind = JSON-KIND-ARR
-
-            #{index-out=0}
-            .pool.nodes[.root].count = 0
-        }
-
-        k != JSON-KIND-ARR -> return
-    }
-
-    #{index-out=0}
-    cnt = .pool.nodes[.root].count
-    cnt >= JSON-MAX-CHILDREN -> {
-        .pool.overflowed = true
-        return
-    }
-
-    #{index-out=0}
-    .pool.nodes[.root].children[cnt] = val.root
-
-    #{index-out=0, overflow=wrap}
-    .pool.nodes[.root].count = cnt + 1
+    ; 以邊表附加子元素（鍵名空字串）
+    .pool.add-child(.root, child-idx, '')
     ok = true
+}
+
+; json.arr-push: 向陣列末尾添加元素
+; 返回 ok bool: 是否成功
+; 用法：
+;   j.arr-push(item)
+json.arr-push = (val json) (ok bool) {
+    ok = .arr-push-idx(val.root)
 }
 
 ; json.arr-push-str: 向陣列末尾添加字串元素
@@ -1555,28 +1391,14 @@ json.arr-push = (val json) (ok bool) {
 json.arr-push-str = (val str) (ok bool) {
     ok = false
     idx = .alloc-node()
-    idx < 0 -> return
 
     #{index-out=0}
     .pool.nodes[idx].kind = JSON-KIND-STR
 
+    ; 字串值存於平行 strs vec
     #{index-out=0}
-    .pool.nodes[idx].str-val = with-len(val.len-bytes())
-    i <- [0..val.len-bytes()): {
-
-        #{index-out=0}
-        .pool.nodes[idx].str-val[i] = val.byte(i)
-    }
-
-    #{index-out=0}
-    svt str = .pool.nodes[idx].str-val.slice-bytes(0, val.len-bytes())
-
-    #{index-out=0}
-    .pool.nodes[idx].str-val = svt
-    ok = .arr-push(json {
-        pool: .pool
-        root: idx
-    })
+    .pool.strs[idx] = val.copy()
+    ok = .arr-push-idx(idx)
 }
 
 ; json.arr-push-num: 向陣列末尾添加數值元素
@@ -1584,17 +1406,13 @@ json.arr-push-str = (val str) (ok bool) {
 json.arr-push-num = (val f64) (ok bool) {
     ok = false
     idx = .alloc-node()
-    idx < 0 -> return
 
     #{index-out=0}
     .pool.nodes[idx].kind = JSON-KIND-NUM
 
     #{index-out=0}
     .pool.nodes[idx].num-val = val
-    ok = .arr-push(json {
-        pool: .pool
-        root: idx
-    })
+    ok = .arr-push-idx(idx)
 }
 
 ; json.arr-push-bool: 向陣列末尾添加布林元素
@@ -1602,17 +1420,13 @@ json.arr-push-num = (val f64) (ok bool) {
 json.arr-push-bool = (val bool) (ok bool) {
     ok = false
     idx = .alloc-node()
-    idx < 0 -> return
 
     #{index-out=0}
     .pool.nodes[idx].kind = JSON-KIND-BOOL
 
     #{index-out=0}
     .pool.nodes[idx].bool-val = val
-    ok = .arr-push(json {
-        pool: .pool
-        root: idx
-    })
+    ok = .arr-push-idx(idx)
 }
 
 ; ═══════════════════════════════════════════════
@@ -1674,8 +1488,17 @@ json.obj-key = (idx i64) (key str, ok bool) {
     cnt i64 = .pool.nodes[.root].count
     idx < 0 || idx >= cnt -> return
 
+    ; 沿邊表走訪到第 idx 條邊，取鍵名 .ek[e]
     #{index-out=0}
-    key = .pool.nodes[.root].keys[idx]
+    e i64 = .pool.nodes[.root].first
+    t <- [0..idx): {
+
+        #{index-out=0}
+        e = .pool.en[e]
+    }
+
+    #{index-out=0}
+    key = .pool.ek[e]
     ok = true
 }
 
@@ -1687,40 +1510,51 @@ json.delete-key = (key str) (ok bool) {
     k i64 = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
+    ; 遍歷邊鏈並記錄前驅；命中則將該邊從單向鏈表摘除
     #{index-out=0}
-    cnt i64 = .pool.nodes[.root].count
-    i <- [0..cnt): {
-        found-eq = 0
+    e i64 = .pool.nodes[.root].first
+    prev i64 = -1
+    (e >= 0) {
 
         #{index-out=0}
-        found-eq = .pool.str-eq(.pool.nodes[.root].keys[i], key)
-        found-eq == 1 -> {
+        next i64 = .pool.en[e]
 
-            ; 向前移動後續鍵值
-            jj <- [i + 1..cnt): {
+        #{index-out=0}
+        ek = .pool.ek[e]
+        .pool.str-eq(ek, key) == 1 -> {
 
-                #{index-out=0, overflow=wrap}
-                .pool.nodes[.root].keys[jj - 1] = .pool.nodes[.root].keys[jj]
+            ; 前驅改指向 next；若命中邊為首則更新 first
+            prev >= 0 -> {
 
-                #{index-out=0, overflow=wrap}
-                .pool.nodes[.root].children[jj - 1] = .pool.nodes[.root].children[jj]
+                #{index-out=0}
+                .pool.en[prev] = next
             }
+            prev < 0 -> {
+
+                #{index-out=0}
+                .pool.nodes[.root].first = next
+            }
+
+            ; 若命中邊為尾則更新 last
+            #{index-out=0}
+            last i64 = .pool.nodes[.root].last
+            last == e -> {
+
+                #{index-out=0}
+                .pool.nodes[.root].last = prev
+            }
+
+            #{index-out=0}
+            cnt i64 = .pool.nodes[.root].count
 
             #{index-out=0, overflow=wrap}
             .pool.nodes[.root].count = cnt - 1
-
-            ; 清空最後一個槽位
-            #{overflow=wrap}
-            last i64 = cnt - 1
-
-            #{index-out=0}
-            .pool.nodes[.root].keys[last] = ''
-
-            #{index-out=0}
-            .pool.nodes[.root].children[last] = -1
             ok = true
             return
         }
+
+        prev = e
+        e = next
     }
 }
 
@@ -1754,13 +1588,17 @@ json.obj-keys-str = () (keys str) {
     k i64 = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
+    ; 沿邊表走訪，依序拼接每個鍵名
     #{index-out=0}
-    cnt i64 = .pool.nodes[.root].count
-    i <- [0..cnt): {
+    e i64 = .pool.nodes[.root].first
+    (e >= 0) {
 
         #{index-out=0}
-        key = .pool.nodes[.root].keys[i]
+        key = .pool.ek[e]
         keys = keys - key - '\n'
+
+        #{index-out=0}
+        e = .pool.en[e]
     }
 }
 
