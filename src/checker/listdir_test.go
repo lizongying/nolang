@@ -27,6 +27,18 @@ func TestListDirUnfiltered_Fires(t *testing.T) {
     kids = list-dir(p)
     remove(p)
 }`,
+		// read-dir（裸 readdir，同样含 "."/".."）+ 递归 + 无过滤
+		"read_dir_recursive": `r1 = (p str) {
+    dp = fs.open-dir(p)
+    name, ok = fs.read-dir(dp)
+    r1(p)
+}`,
+		// read-dir + 破坏性删除 + 无过滤
+		"read_dir_destructive": `r2 = (p str) {
+    dp = fs.open-dir(p)
+    name, ok = fs.read-dir(dp)
+    fs.rmdir(p)
+}`,
 	}
 	for name, src := range cases {
 		if !fireListDir(t, src) {
@@ -44,15 +56,24 @@ func TestListDirUnfiltered_NoFalsePositive(t *testing.T) {
     skip = name == '.' || name == '..'
     ! skip -> good(p)
 }`,
-		// 用 dir-entries（已过滤），非 list-dir
-		"uses_dir_entries": `ok2 = (p str) {
-    kids = fs.dir-entries(p)
-    ok2(p)
+		// read-dir 但非递归非删除（仅拼名字）：不致命
+		"read_dir_norisk": `lb = (p str) (names str) {
+    dp = fs.open-dir(p)
+    name, ok = fs.read-dir(dp)
+    names = names - name - '\n'
 }`,
-		// list-dir 但不递归也不删除：只读遍历
-		"read_only": `ls1 = (p str) {
-    kids = fs.list-dir(p)
-    print(kids)
+		// read-dir + 递归，但用字符串字面量跳过 "."/".."
+		"read_dir_filtered_str": `gr = (p str) {
+    dp = fs.open-dir(p)
+    name, ok = fs.read-dir(dp)
+    skip = name == '.' || name == '..'
+    ! skip -> gr(p)
+}`,
+		// read-dir + 递归，但按字节值 46（'.'）跳过——main.add-directory-recursive 形态
+		"read_dir_filtered_byte": `gb = (p str) {
+    dp = fs.open-dir(p)
+    name, ok = fs.read-dir(dp)
+    name[0] == 46 -> gb(p)
 }`,
 	}
 	for name, src := range cases {

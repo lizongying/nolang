@@ -272,12 +272,19 @@ read-stdin-str = () (content ?str) {
 ; ═══════════════════════════════════════════════
 
 ; open-dir: 開啟目錄以讀取條目
+; 配對 read-dir 逐條讀取；結束須 close-dir。
+; ⚠ read-dir 逐條返回的 POSIX 目錄條目【包含】 '.' 和 '..'：
+;   遞迴遍歷/刪除若不慎進入 '..' 會向上逃逸、誤刪父樹。
+;   需安全地取「子項列表」請改用 fs.dir-entries（已自動過濾 '.'/'..'）。
 
 #{buildin}
 open-dir = (p str) (dirp i64) {
 }
 
 ; read-dir: 讀取下一個目錄條目名稱
+; ⚠ 遵循 POSIX readdir：逐條迭代會吐出 '.' 和 '..'（當前目錄/父目錄）。
+;   任何遞迴遍歷/刪除都必須顯式跳過這兩個條目，否則會經 '..' 向上逃逸。
+;   需子項列表時優先使用 fs.dir-entries，而非裸 open-dir+read-dir。
 
 #{buildin}
 read-dir = (dirp i64) (name str, ok bool) {
