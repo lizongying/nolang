@@ -1,5 +1,14 @@
 # 更新日誌
 
+## v0.3.12
+
+- feat(json): refactor implementation with heap-allocated dynamic pool and expand node pool with overflow flag
+- fix(mir): read option payload from box under OpClone instead of memcpy of option slot
+- fix(mir): fix array literal initialization for [N]T struct fields in emitSetField
+- fix(parser): improve type resolution and remove debug logs
+- fix(match): improve enum variant lookup for function-local types
+- feat(lint): extend readdir-unfiltered lint to raw read-dir and add list-dir-unfiltered lint
+
 ## v0.3.11
 
 - feat(build): add global no binary reinstall in make targets
