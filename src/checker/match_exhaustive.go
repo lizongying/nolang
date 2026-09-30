@@ -58,7 +58,8 @@ func CollectNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
 		return nil
 	}
 	var out []NonExhaustiveMatch
-	for _, root := range collectMatchRoots(program) {
+	roots, rootFunc := collectMatchRoots(program)
+	for _, root := range roots {
 		vs := matchVariants(root)
 		// Not an option match: no arm tests ok/nil/err (bare guard blocks and
 		// matches over plain values land here and stay unreported).
@@ -75,7 +76,7 @@ func CollectNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
 		// matches the enum's OWN variants, and `ok` is simply a variant name that
 		// collides with the option vocabulary. Demanding nil/err arms there is a
 		// false positive — the match is already exhaustive over its enum.
-		if subjectIsDeclaredEnum(program, root) {
+		if subjectIsDeclaredEnum(program, root, rootFunc[root]) {
 			continue
 		}
 		// Exhaustive: terminates in a catch-all `-> ` arm, or handles every
@@ -120,7 +121,13 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 // variants, so the option completeness rule (ok/nil/err) does not apply.
 // Only a statically known type can be excluded — unknown types stay reported,
 // which is what lets call subjects (`foo(): { ok -> ... }`) still be caught.
-func subjectIsDeclaredEnum(program *parser.Program, root *parser.IfExpression) bool {
+//
+// The subject is looked up with FuncVarType(funcName, ...) so function-local
+// types (parameters included) are found in the per-function map first, falling
+// back to the global VarTypes for module-level matches — rather than reading
+// the global snapshot directly, which misses parameters that now live only in
+// the per-function map.
+func subjectIsDeclaredEnum(program *parser.Program, root *parser.IfExpression, funcName string) bool {
 	if program == nil || program.Sem == nil || len(program.Sem.EnumVariants) == 0 {
 		return false
 	}
@@ -128,7 +135,7 @@ func subjectIsDeclaredEnum(program *parser.Program, root *parser.IfExpression) b
 	if !ok {
 		return false
 	}
-	t, ok := program.Sem.VarTypes[id.Value]
+	t, ok := program.Sem.FuncVarType(funcName, id.Value)
 	if !ok || t == "" || strings.HasPrefix(t, "?") {
 		return false
 	}
@@ -161,56 +168,59 @@ func matchSubjectName(ife *parser.IfExpression) string {
 }
 
 // collectMatchRoots returns the outermost IfExpression of every match in the
-// program. Chained arms (an arm sitting in another arm's else slot) are excluded
-// so each match is reported exactly once.
-func collectMatchRoots(program *parser.Program) []*parser.IfExpression {
+// program, together with the name of the enclosing function ("" for module-level
+// matches). Chained arms (an arm sitting in another arm's else slot) are
+// excluded so each match is reported exactly once.
+func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*parser.IfExpression]string) {
 	var all []*parser.IfExpression
 	children := make(map[*parser.IfExpression]bool)
+	rootFunc := make(map[*parser.IfExpression]string)
 
-	var walkExpr func(parser.Expression)
-	var walkStmts func([]parser.Statement)
+	var walkExpr func(funcName string, e parser.Expression)
+	var walkStmts func(funcName string, stmts []parser.Statement)
 
-	walkStmts = func(stmts []parser.Statement) {
+	walkStmts = func(funcName string, stmts []parser.Statement) {
 		for _, s := range stmts {
 			if s == nil {
 				continue
 			}
 			switch st := s.(type) {
 			case *parser.FunctionDefinition:
+				fn := st.Name
 				if st.Body != nil {
-					walkStmts(st.Body.Statements)
+					walkStmts(fn, st.Body.Statements)
 				}
 			case *parser.BlockStatement:
-				walkStmts(st.Statements)
+				walkStmts(funcName, st.Statements)
 			case *parser.LetStatement:
-				walkExpr(st.Value)
+				walkExpr(funcName, st.Value)
 			case *parser.MultiAssignStatement:
 				for _, t := range st.Targets {
-					walkExpr(t)
+					walkExpr(funcName, t)
 				}
-				walkExpr(st.Value)
+				walkExpr(funcName, st.Value)
 			case *parser.UnwrapAssignStatement:
-				walkExpr(st.Value)
+				walkExpr(funcName, st.Value)
 			case *parser.ReturnStatement:
-				walkExpr(st.ReturnValue)
+				walkExpr(funcName, st.ReturnValue)
 			case *parser.ExpressionStatement:
-				walkExpr(st.Expression)
+				walkExpr(funcName, st.Expression)
 			case *parser.ForStatement:
-				walkExpr(st.Condition)
+				walkExpr(funcName, st.Condition)
 				if st.Init != nil {
-					walkStmts([]parser.Statement{st.Init})
+					walkStmts(funcName, []parser.Statement{st.Init})
 				}
 				if st.Update != nil {
-					walkStmts([]parser.Statement{st.Update})
+					walkStmts(funcName, []parser.Statement{st.Update})
 				}
 				if st.Body != nil {
-					walkStmts(st.Body.Statements)
+					walkStmts(funcName, st.Body.Statements)
 				}
 			}
 		}
 	}
 
-	walkExpr = func(e parser.Expression) {
+	walkExpr = func(funcName string, e parser.Expression) {
 		if e == nil {
 			return
 		}
@@ -218,47 +228,48 @@ func collectMatchRoots(program *parser.Program) []*parser.IfExpression {
 		case *parser.IfExpression:
 			if x.MatchedExpr != nil {
 				all = append(all, x)
+				rootFunc[x] = funcName
 				if c := matchChainedChild(x); c != nil {
 					children[c] = true
 				}
 			}
-			walkExpr(x.Condition)
+			walkExpr(funcName, x.Condition)
 			if x.Consequence != nil {
-				walkStmts(x.Consequence.Statements)
+				walkStmts(funcName, x.Consequence.Statements)
 			}
 			if x.Alternative != nil {
-				walkStmts(x.Alternative.Statements)
+				walkStmts(funcName, x.Alternative.Statements)
 			}
 		case *parser.InfixExpression:
-			walkExpr(x.Left)
-			walkExpr(x.Right)
+			walkExpr(funcName, x.Left)
+			walkExpr(funcName, x.Right)
 		case *parser.PrefixExpression:
-			walkExpr(x.Right)
+			walkExpr(funcName, x.Right)
 		case *parser.CallExpression:
-			walkExpr(x.Function)
+			walkExpr(funcName, x.Function)
 			for _, a := range x.Arguments {
-				walkExpr(a)
+				walkExpr(funcName, a)
 			}
 		case *parser.AssignExpression:
-			walkExpr(x.Left)
-			walkExpr(x.Value)
+			walkExpr(funcName, x.Left)
+			walkExpr(funcName, x.Value)
 		case *parser.IndexExpression:
-			walkExpr(x.Left)
-			walkExpr(x.Index)
+			walkExpr(funcName, x.Left)
+			walkExpr(funcName, x.Index)
 		case *parser.ArrayLiteral:
 			for _, el := range x.Elements {
-				walkExpr(el)
+				walkExpr(funcName, el)
 			}
 		case *parser.GroupedExpression:
-			walkExpr(x.Expression)
+			walkExpr(funcName, x.Expression)
 		case *parser.AwaitExpression:
-			walkExpr(x.Right)
+			walkExpr(funcName, x.Right)
 		case *parser.DotExpression:
-			walkExpr(x.Receiver)
+			walkExpr(funcName, x.Receiver)
 		}
 	}
 
-	walkStmts(program.Statements)
+	walkStmts("", program.Statements)
 
 	roots := make([]*parser.IfExpression, 0, len(all))
 	for _, ife := range all {
@@ -266,7 +277,7 @@ func collectMatchRoots(program *parser.Program) []*parser.IfExpression {
 			roots = append(roots, ife)
 		}
 	}
-	return roots
+	return roots, rootFunc
 }
 
 // matchChainedChild returns the next arm of the if/else chain, i.e. the match

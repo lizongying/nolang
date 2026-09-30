@@ -3,6 +3,7 @@ package mir
 import (
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1522,6 +1523,9 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 		if callee != "" {
 			if cid, ok := l.mod.FuncByName[callee]; ok {
 				if cf := l.mod.Func(cid); cf != nil && len(cf.Results) > 0 {
+					if strings.Contains(callee, "json") {
+						fmt.Fprintf(os.Stderr, "DBG KCall callee=%q resultRaw=%q\n", callee, l.mod.Type(cf.Results[0]).Raw)
+					}
 					return cf.Results[0]
 				}
 			}
@@ -1558,6 +1562,9 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 // node kinds collapsed to void and produced `add void` / `and void` IR.
 func (l *lowerer) inferredTypeOf(n *hir.Node) TypeID {
 	raw := l.pkg.InferredType(n.Id)
+	if raw != "" && strings.Contains(raw, "str") && n.Kind == hir.KCall {
+		fmt.Fprintf(os.Stderr, "DBG inferred KCall raw=%q nodeType=%q\n", raw, l.pkg.Type(n.Type))
+	}
 	if raw == "" {
 		raw = l.pkg.Type(n.Type)
 	}
@@ -2831,16 +2838,17 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				// struct), which the memory analysis already handles with a single
 				// drop for the fresh slot — no double-free.
 				if name == "it" {
-					// A match arm's synthetic `let it = <matched>` rebinds `it` to that
-					// arm's own subject — including for a match NESTED inside another
-					// arm (`child: { ok -> it.get-str(...) }` must see `child`, not the
-					// outer match's subject). Previously the nested case was skipped and
-					// `it` kept pointing at the OUTER subject, so an inner arm silently
-					// read the parent value (tests/mem-safety/json-nested-match.no:
-					// `it.get-str('inner')` looked up the key on the PARENT object and
-					// reported "not found"). Bind unconditionally; `val` is consumed by
-					// the binding (aliased, not moved), so no drop is needed here.
 					if typ := l.valueTypeOf(val); typ != NoType && typ != l.voidType {
+						if ty := l.mod.Type(typ); ty != nil {
+							dt := l.typeOfNode(n)
+							dts := ""
+							if dt != NoType && dt != l.voidType {
+								if dty := l.mod.Type(dt); dty != nil {
+									dts = dty.Raw
+								}
+							}
+							fmt.Fprintf(os.Stderr, "DBG it-bind func=%s val=%d raw=%q kind=%d declared=%q armBind=%v\n", l.curFuncName(), val, ty.Raw, ty.Kind, dts, n.Flags&hir.FlagArmBinding != 0)
+						}
 						l.locals[name] = val
 						break
 					}
@@ -6965,6 +6973,9 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// name also matches the legacy backend, which tries `[]<elem>.m` before the
 		// `_x<elem>.m` / generic candidates.
 		concrete := recvTypeName + "." + method
+		if method == "get" || method == "get-str" {
+			fmt.Fprintf(os.Stderr, "DBG callee method=%q recvTypeName=%q concrete=%q found=%v inFunc=%s rv=%d recvT=%d\n", method, recvTypeName, concrete, l.funcNames[concrete], l.curFuncName(), rv, recvT)
+		}
 		if _, ok := l.funcNames[concrete]; ok {
 			return concrete, rv
 		}
@@ -8401,9 +8412,12 @@ func (l *lowerer) resultTypeOfCallee(callee string) TypeID {
 				continue // skip self
 			}
 			t := l.typeOfNode(cn)
-			if t != l.voidType {
-				return t
+		if t != l.voidType {
+			if strings.Contains(callee, "json") {
+				fmt.Fprintf(os.Stderr, "DBG resType callee=%q tRaw=%q\n", callee, l.mod.Type(t).Raw)
 			}
+			return t
+		}
 		}
 	}
 	return l.voidType

@@ -17,7 +17,10 @@ func (p *Parser) matchedIsOption(matched Expression) bool {
 		return false // 裸 match 不需完整分支
 	}
 	if ident, ok := matched.(*Identifier); ok {
-		if t, ok := p.sem.VarTypes[ident.Value]; ok {
+		// 函數作用域查詢：優先本函數的 FuncVarTypes，未命中再回退全域
+		// VarTypes（模組級變數／參數）。直接讀全域會漏掉函數參數與區域
+		// 變數（它們現僅寫入 FuncVarTypes，避免同名區域變數跨函數型別污染）。
+		if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok {
 			return strings.HasPrefix(t, "?")
 		}
 	}

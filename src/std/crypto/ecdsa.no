@@ -908,6 +908,44 @@ ec-get-basepoint = () (g []byte) {
 ; ECDSA 公開 API
 ; ═══════════════════════════════════════════════
 
+; ecdh-p256: P-256 (secp256r1) ECDH 共享秘密
+; priv [32]byte: 我方私鑰（大端序）
+; peer [65]byte: 對端未壓縮公鑰（04 || x || y）
+; 返回 shared []byte: 共享秘密（R 點之 x 座標, 32 bytes 大端序）；空=無效輸入
+ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
+
+    ; 將私鑰轉為小端序（內部點運算使用小端序純量）
+    k [32]byte
+    i <- [0..32): {
+
+        #{index-out=0, overflow=wrap}
+        k[i] = priv[31 - i]
+    }
+
+    ; 對端點解碼為 Jacobian 座標
+    p []byte
+    p = ec-bytes-to-point(peer)
+
+    ; R = k * P
+    r []byte
+    r = ec-scalar-mult(k, p)
+
+    ; R 轉為未壓縮編碼（無窮遠點/无效點時首位元組不為 04）
+    enc [65]byte
+    enc = ec-point-to-bytes(r)
+
+    #{index-out=0}
+    enc[0] != 4 -> return
+
+    ; 提取 x 座標（大端序）
+    shared = with-len(32)
+    i <- [0..32): {
+
+        #{index-out=0, overflow=wrap}
+        shared[i] = enc[1 + i]
+    }
+}
+
 ; ecdsa-publickey: 從私鑰計算公鑰
 ; priv [32]byte: 私鑰（大端序）
 ; 返回 pub [65]byte: 未壓縮公鑰（04 || x || y）
@@ -1012,13 +1050,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     ; s = k^(-1) * (h + r * d) mod n
     k-inv [32]byte
     k-inv = bn-invmod(k, P256-N)
-
     rd [32]byte
     rd = bn-mulmod(r-val, d, P256-N)
-
     h-rd [32]byte
     h-rd = bn-addmod(h-le, rd, P256-N)
-
     s-val [32]byte
     s-val = bn-mulmod(k-inv, h-rd, P256-N)
 

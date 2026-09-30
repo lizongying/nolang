@@ -997,7 +997,18 @@ func New(lx *lexer.Lexer) *Parser {
 // per-function FuncVarTypes map to prevent same-named locals in different
 // functions from colliding during lowering.
 func (p *Parser) setVarType(name, typ string) {
-	p.sem.SetVarType(name, typ)
+	// Function-local variables belong in the per-function FuncVarTypes map so
+	// that same-named locals in different functions do NOT collide. Writing them
+	// into the module-level global VarTypes pollutes it: e.g. function A with a
+	// result `(info ?str)` that declares a local `info-opt ?str` would stamp the
+	// global VarTypes["info-opt"] = "?str", and function B's independent local
+	// `info-opt` (e.g. bound to a `?json` value) would then read that polluted
+	// global via FuncVarType's fallback and be mis-typed as `?str`. The global
+	// VarTypes is reserved for module-level (top-level) variables, which are
+	// declared outside any function body (curFuncName == "").
+	if p.curFuncName == "" {
+		p.sem.SetVarType(name, typ)
+	}
 	if p.curFuncName != "" {
 		p.sem.SetFuncVarType(p.curFuncName, name, typ)
 	}
