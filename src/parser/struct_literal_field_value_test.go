@@ -38,6 +38,18 @@ func TestStructLiteralFirstFieldValueShapes(t *testing.T) {
 		{"negated_ident", "i64", "-y", "y = 3"},
 		{"index_expression", "i64", "arr[0]", "arr = [7, 8, 9]"},
 		{"slice_range", "[]i64", "arr[0..2]", "arr = [1, 2, 3]"},
+		// `name : recv.field` / `name : recv.method(args)`.
+		//
+		// The arm separator in a match is `:`, so `s: n.to-str()` also looks
+		// like an arm whose pattern is `s`. The disambiguator is the token
+		// after `ident.ident`: `(` (a method call) can only be a field value.
+		// LPAREN was missing, so the block fell through to blockMatch and the
+		// struct name was reported as undefined ("'holder' is not defined").
+		{"method_call", "str", "y.to-str()", "y = 3"},
+		{"method_call_chain", "str", "y.to-str().slice(0, 1)", "y = 3"},
+		// Control: `name : recv.field` (no call) already worked, via the token
+		// after `ident.ident` being a member terminator.
+		{"dot_field_value", "i64", "y.f", "y = 3"},
 		// Controls that already worked and must keep working.
 		{"bare_int", "i64", "7", ""},
 		{"bare_str", "str", "'ab'", ""},
@@ -106,6 +118,39 @@ x: {
 	}
 	if _, ok := es.Expression.(*IfExpression); !ok {
 		t.Fatalf("labelled block expression is %T, want *IfExpression (a match)",
+			es.Expression)
+	}
+}
+
+// TestLabelledMatchWithMethodCallArmStillParsesAsMatch guards the reverse of
+// the `method_call` shape above: widening the value-shape list must not steal
+// `x: { arm -> body }` labelled matches. A real match arm separates its pattern
+// from its body with `->`, so an arm whose BODY is a method call must stay a
+// match even though its first member begins `ident -> ...`.
+func TestLabelledMatchWithMethodCallArmStillParsesAsMatch(t *testing.T) {
+	src := `n = 7
+x = n
+x: {
+    k -> print(n.to-str())
+    -> print(33)
+}
+`
+	l := lexer.New(src)
+	p := New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	if len(prog.Statements) < 3 {
+		t.Fatalf("expected at least 3 statements, got %d", len(prog.Statements))
+	}
+	es, ok := prog.Statements[2].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("labelled match parsed as %T, want *ExpressionStatement",
+			prog.Statements[2])
+	}
+	if _, ok := es.Expression.(*IfExpression); !ok {
+		t.Fatalf("labelled match expression is %T, want *IfExpression (a match)",
 			es.Expression)
 	}
 }

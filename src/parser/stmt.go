@@ -468,7 +468,34 @@ func (p *Parser) parseStatement() Statement {
 		// top level. Try a bare match first so the entire guard becomes a single
 		// statement; fall back to a plain expression statement (struct literals,
 		// grouping blocks, etc.) otherwise.
-		if bt == blockUnknown {
+		//
+		// A bare `{` at STATEMENT position is also never a DECLARATION. Enum /
+		// interface / tagged-enum declarations all require a preceding NAME, and
+		// that form is dispatched by classifyBlock() from the IDENT +
+		// peekToken==LBRACE branch earlier in parseStatement. This function is
+		// called when currentToken is ALREADY `{`, so the name-consuming answers
+		// classifyBlockAtCurrent() can produce here (blockEnum / blockIface /
+		// blockTaggedEnum) carry no meaning and must fall back to a statement
+		// block. Concretely `{ x = 2 }` used to classify as blockEnum and
+		// `{ print(2) }` as blockIface; both then reached parseExpressionStatement,
+		// whose LBRACE case (expr.go) accepts only blockStruct / blockMatch and
+		// otherwise does `p.nextToken(); return nil`. The result was that the `{`
+		// was eaten, the block's inner statements became SIBLINGS of the enclosing
+		// body, and the block's own `}` closed the ENCLOSING block — so every
+		// statement after it leaked one level outward:
+		//
+		//     f = () {
+		//       x = 1
+		//       {
+		//         x = 2
+		//       }
+		//       print(x)      ; leaked to top level; printed nothing
+		//     }
+		//     f()
+		//
+		// blockStruct deliberately stays on the expression path: `{ field: value }`
+		// is a legitimate anonymous struct-literal expression statement.
+		if bt == blockUnknown || bt == blockEnum || bt == blockIface || bt == blockTaggedEnum {
 			tok := p.currentToken
 			state := p.saveState()
 			savedCtx := p.ctx.copy()
@@ -1896,7 +1923,27 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// 時被 skipToStatementEnd 吃掉開頭的 `_` 與 `=`，只剩右值被當成裸表達式
 		// 陳述（`_ = 1 / zz` 靜默退化成 `1 / zz`）。UNDERSCORE 不是 IDENT，
 		// 沒有這一項就無法在 `_` 上停下。
-		lexer.IN, lexer.UNDERSCORE:
+		lexer.IN, lexer.UNDERSCORE,
+		// `run` / `awy` 是**前綴關鍵字**，只能開始一個陳述或表達式，永遠不會
+		// 續接上一個表達式。parseStatement 沒有它們的 case ⇒ 落到 default 的
+		// parseExpressionStatement，所以它們確實能開始一條陳述。少了這兩項時：
+		//
+		//     f = () {
+		//       y = 1
+		//       run dbl(21)     ; `run` 被吃掉 ⇒ 靜默退化成同步呼叫 dbl(21)
+		//       awy t           ; `awy` 被吃掉 ⇒ 陳述退化成裸識別字 t
+		//     }
+		//
+		// 上一條陳述（`y = 1`）解析完會呼叫 skipToStatementEnd()，它一路前進到
+		// 「能開始下一條陳述」的 token 才停。NEWLINE 不是邊界，`awy`/`run` 也不是
+		// ⇒ 兩者連同換行一起被吞掉，停在後面的 IDENT 上。症狀因此只在
+		// 「不是區塊第一條陳述」時出現（第一條不經過 skipToStatementEnd）。
+		//
+		// 特別危險的是 `run`：吞掉後 `run dbl(21)` 變成同步呼叫 `dbl(21)`，
+		// 編譯照過、輸出照印，只是**不再 spawn**。而 `awy t` 退化成裸 `t`，
+		// 於是「if 鏈臂體的值」拿到的是 task handle（一個堆指標），印出來就是
+		// 一個垃圾大數（如 4316452624）。兩者都是 rc=0、無診斷的靜默錯誤。
+		lexer.RUN, lexer.AWY:
 		return true
 	}
 	return false

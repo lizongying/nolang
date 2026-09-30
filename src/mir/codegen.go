@@ -93,6 +93,12 @@ type codegen struct {
 	asyncWrappers   map[string]string
 	asyncWrapperSeq int
 
+	// awaitConsumedMsgEmitted gates the one-shot emission of the diagnostic
+	// string constant used by emitAsyncAwait's consumed-handle guard. The
+	// constant is only added to a module that actually awaits twice, so no
+	// correct program's IR is perturbed by it.
+	awaitConsumedMsgEmitted bool
+
 	// optPrintHelper maps an option PAYLOAD LLVM type to the dedicated print
 	// helper function name (e.g. @print_option_str) that performs the nil-tag
 	// check and prints "nil" or the payload inside its OWN function body.
@@ -1870,8 +1876,17 @@ target triple = "arm64-apple-macosx15.0.0"
 	c.sb.WriteString(`
 
 ; async task runtime (mirrors legacy build/llvm cooperative scheduler).
-; %task = { resume_fn, data(i64 ptr), done, cancelled }; 24 bytes.
-%task = type { void (i8*)*, i64, i1, i1 }
+; %task = { resume_fn, data(i64 ptr), done, cancelled, waiter }; 32 bytes.
+;
+; field 4 (waiter) holds the task that is blocked on THIS task (set by
+; @nolang_async_wait, consumed by @nolang_async_done). It lives in the task
+; itself so the lookup is exact. The scheduler used to keep a separate
+; "@nolang_waiters [256 x i8*]" table indexed by "ptrtoint(task) & 255", but
+; malloc returns 16-byte-aligned blocks, so only the low 4 bits of a task
+; pointer ever varied: the 256 slots collapsed to 16 and any two tasks whose
+; addresses shared those bits aliased each other's waiter. See the note on
+; emitAsyncScheduler.
+%task = type { void (i8*)*, i64, i1, i1, i8* }
 
 declare i8* @malloc(i64)
 declare void @free(i8*)
@@ -11503,19 +11518,95 @@ func parseArrayType(lt string) (int64, string) {
 // %task type they reference is declared in the prelude.
 func (c *codegen) emitAsyncScheduler() {
 	var b strings.Builder
-	b.WriteString("@nolang_ready_q = global [256 x i8*] zeroinitializer\n")
+	// READY QUEUE: heap-allocated and GROWABLE, not a fixed 256-slot ring.
+	//
+	// It used to be `@nolang_ready_q = global [256 x i8*]` with head/tail
+	// wrapping mod 256 and NO overflow check, so the 257th outstanding enqueue
+	// silently overwrote the slot at head and the queue stopped being a queue.
+	// Every `run` enqueues its task and `async-yield()` re-enqueues the running
+	// one, so any program with more than 256 outstanding enqueues corrupted the
+	// queue silently. (Measured: a 300-spawn program ran with rc=0 and correct
+	// output — because the MIR backend never calls @nolang_async_run, so
+	// nothing ever drained it. The corruption was latent, not absent.)
+	//
+	// Capacity now doubles on demand. @nolang_ready_grow compacts the live
+	// window [head, tail) down to index 0 while doubling, so the ring can never
+	// lap itself and no entry is ever overwritten.
+	b.WriteString("@nolang_ready_q = global i8** null\n")
+	b.WriteString("@nolang_ready_cap = global i32 0\n")
 	b.WriteString("@nolang_ready_head = global i32 0\n")
 	b.WriteString("@nolang_ready_tail = global i32 0\n")
 	b.WriteString("@nolang_current_task = global i8* null\n")
-	b.WriteString("@nolang_waiters = global [256 x i8*] zeroinitializer\n")
-	// nolang_async_enqueue(task): enqueue into the ready queue (ring of 256).
+	// (No separate waiter table: the waiter lives in %task field 4 — see
+	// @nolang_async_wait / @nolang_async_done below.)
+	// nolang_ready_grow(): double the capacity, compacting [head, tail) to 0.
+	// With cap == 0 (first use) it allocates the initial capacity and the
+	// compaction loop copies nothing (head == tail == 0).
+	b.WriteString("define void @nolang_ready_grow() {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%cap = load i32, i32* @nolang_ready_cap\n")
+	b.WriteString("\t%is0 = icmp eq i32 %cap, 0\n")
+	b.WriteString("\t%dbl = mul i32 %cap, 2\n")
+	b.WriteString("\t%newcap = select i1 %is0, i32 256, i32 %dbl\n")
+	b.WriteString("\t%nc64 = zext i32 %newcap to i64\n")
+	b.WriteString("\t%nbytes = mul i64 %nc64, 8\n")
+	b.WriteString("\t%newraw = call i8* @malloc(i64 %nbytes)\n")
+	b.WriteString("\t%newq = bitcast i8* %newraw to i8**\n")
+	b.WriteString("\t%head = load i32, i32* @nolang_ready_head\n")
+	b.WriteString("\t%tail = load i32, i32* @nolang_ready_tail\n")
+	b.WriteString("\t%oldq = load i8**, i8*** @nolang_ready_q\n")
+	b.WriteString("\tbr label %loop\n")
+	b.WriteString("loop:\n")
+	b.WriteString("\t%i = phi i32 [ 0, %entry ], [ %i1, %body ]\n")
+	b.WriteString("\t%j = phi i32 [ %head, %entry ], [ %j1m, %body ]\n")
+	b.WriteString("\t%more = icmp ne i32 %j, %tail\n")
+	b.WriteString("\tbr i1 %more, label %body, label %done\n")
+	b.WriteString("body:\n")
+	b.WriteString("\t%src = getelementptr i8*, i8** %oldq, i32 %j\n")
+	b.WriteString("\t%v = load i8*, i8** %src\n")
+	b.WriteString("\t%dst = getelementptr i8*, i8** %newq, i32 %i\n")
+	b.WriteString("\tstore i8* %v, i8** %dst\n")
+	b.WriteString("\t%i1 = add i32 %i, 1\n")
+	b.WriteString("\t%j1 = add i32 %j, 1\n")
+	b.WriteString("\t%j1m = urem i32 %j1, %cap\n")
+	b.WriteString("\tbr label %loop\n")
+	b.WriteString("done:\n")
+	b.WriteString("\t%oldraw = bitcast i8** %oldq to i8*\n")
+	b.WriteString("\tstore i8** %newq, i8*** @nolang_ready_q\n")
+	b.WriteString("\tstore i32 %newcap, i32* @nolang_ready_cap\n")
+	b.WriteString("\tstore i32 0, i32* @nolang_ready_head\n")
+	b.WriteString("\tstore i32 %i, i32* @nolang_ready_tail\n")
+	b.WriteString("\tcall void @free(i8* %oldraw)\n")
+	b.WriteString("\tret void\n}\n")
+	// nolang_async_enqueue(task): append to the ready queue, growing if the
+	// next tail would collide with head (i.e. the buffer is full).
 	b.WriteString("define void @nolang_async_enqueue(i8* %task) {\n")
 	b.WriteString("entry:\n")
+	b.WriteString("\t%cap0 = load i32, i32* @nolang_ready_cap\n")
+	b.WriteString("\t%uninit = icmp eq i32 %cap0, 0\n")
+	b.WriteString("\tbr i1 %uninit, label %init, label %chk\n")
+	b.WriteString("init:\n")
+	b.WriteString("\tcall void @nolang_ready_grow()\n")
+	b.WriteString("\tbr label %chk\n")
+	b.WriteString("chk:\n")
+	b.WriteString("\t%cap = load i32, i32* @nolang_ready_cap\n")
 	b.WriteString("\t%tail = load i32, i32* @nolang_ready_tail\n")
-	b.WriteString("\t%gep = getelementptr [256 x i8*], [256 x i8*]* @nolang_ready_q, i32 0, i32 %tail\n")
-	b.WriteString("\tstore i8* %task, i8** %gep\n")
 	b.WriteString("\t%next = add i32 %tail, 1\n")
-	b.WriteString("\t%mod = urem i32 %next, 256\n")
+	b.WriteString("\t%nextmod = urem i32 %next, %cap\n")
+	b.WriteString("\t%head = load i32, i32* @nolang_ready_head\n")
+	b.WriteString("\t%full = icmp eq i32 %nextmod, %head\n")
+	b.WriteString("\tbr i1 %full, label %grow, label %store\n")
+	b.WriteString("grow:\n")
+	b.WriteString("\tcall void @nolang_ready_grow()\n")
+	b.WriteString("\tbr label %store\n")
+	b.WriteString("store:\n")
+	b.WriteString("\t%cap2 = load i32, i32* @nolang_ready_cap\n")
+	b.WriteString("\t%tail2 = load i32, i32* @nolang_ready_tail\n")
+	b.WriteString("\t%q = load i8**, i8*** @nolang_ready_q\n")
+	b.WriteString("\t%gep = getelementptr i8*, i8** %q, i32 %tail2\n")
+	b.WriteString("\tstore i8* %task, i8** %gep\n")
+	b.WriteString("\t%next2 = add i32 %tail2, 1\n")
+	b.WriteString("\t%mod = urem i32 %next2, %cap2\n")
 	b.WriteString("\tstore i32 %mod, i32* @nolang_ready_tail\n")
 	b.WriteString("\tret void\n}\n")
 	// nolang_async_yield(): re-enqueue the current task.
@@ -11525,28 +11616,30 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\tcall void @nolang_async_enqueue(i8* %cur)\n")
 	b.WriteString("\tret void\n}\n")
 	// nolang_async_wait(waited): register the current task as waiter on `waited`.
+	//
+	// The waiter is stored in the WAITED task's own `waiter` field (%task field
+	// 4), so the association is exact — one slot per task, no hashing. It used
+	// to be `@nolang_waiters[ptrtoint(waited) & 255]`, which aliased: malloc
+	// blocks are 16-byte aligned, so only the low 4 bits of the address varied
+	// and 256 slots collapsed to 16.
 	b.WriteString("define void @nolang_async_wait(i8* %waited) {\n")
 	b.WriteString("entry:\n")
 	b.WriteString("\t%cur = load i8*, i8** @nolang_current_task\n")
-	b.WriteString("\t%idx = ptrtoint i8* %waited to i64\n")
-	b.WriteString("\t%idx8 = and i64 %idx, 255\n")
-	b.WriteString("\t%idx32 = trunc i64 %idx8 to i32\n")
-	b.WriteString("\t%gep = getelementptr [256 x i8*], [256 x i8*]* @nolang_waiters, i32 0, i32 %idx32\n")
-	b.WriteString("\tstore i8* %cur, i8** %gep\n")
+	b.WriteString("\t%wt = bitcast i8* %waited to %task*\n")
+	b.WriteString("\t%wgep = getelementptr inbounds %task, %task* %wt, i32 0, i32 4\n")
+	b.WriteString("\tstore i8* %cur, i8** %wgep\n")
 	b.WriteString("\tret void\n}\n")
 	// nolang_async_done(task): wake the task's waiter (if any).
 	b.WriteString("define void @nolang_async_done(i8* %task) {\n")
 	b.WriteString("entry:\n")
-	b.WriteString("\t%idx = ptrtoint i8* %task to i64\n")
-	b.WriteString("\t%idx8 = and i64 %idx, 255\n")
-	b.WriteString("\t%idx32 = trunc i64 %idx8 to i32\n")
-	b.WriteString("\t%gep = getelementptr [256 x i8*], [256 x i8*]* @nolang_waiters, i32 0, i32 %idx32\n")
-	b.WriteString("\t%waiter = load i8*, i8** %gep\n")
+	b.WriteString("\t%dt = bitcast i8* %task to %task*\n")
+	b.WriteString("\t%dgep = getelementptr inbounds %task, %task* %dt, i32 0, i32 4\n")
+	b.WriteString("\t%waiter = load i8*, i8** %dgep\n")
 	b.WriteString("\t%is_null = icmp eq i8* %waiter, null\n")
 	b.WriteString("\tbr i1 %is_null, label %ret, label %wake\n")
 	b.WriteString("wake:\n")
 	b.WriteString("\tcall void @nolang_async_enqueue(i8* %waiter)\n")
-	b.WriteString("\tstore i8* null, i8** %gep\n")
+	b.WriteString("\tstore i8* null, i8** %dgep\n")
 	b.WriteString("\tbr label %ret\n")
 	b.WriteString("ret:\n")
 	b.WriteString("\tret void\n}\n")
@@ -11563,17 +11656,19 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\t%eq = icmp eq i32 %head, %tail\n")
 	b.WriteString("\tbr i1 %eq, label %exit, label %run_one\n")
 	b.WriteString("run_one:\n")
-	b.WriteString("\t%gep = getelementptr [256 x i8*], [256 x i8*]* @nolang_ready_q, i32 0, i32 %head\n")
+	b.WriteString("\t%cap = load i32, i32* @nolang_ready_cap\n")
+	b.WriteString("\t%q = load i8**, i8*** @nolang_ready_q\n")
+	b.WriteString("\t%gep = getelementptr i8*, i8** %q, i32 %head\n")
 	b.WriteString("\t%task = load i8*, i8** %gep\n")
 	b.WriteString("\tstore i8* %task, i8** @nolang_current_task\n")
 	b.WriteString("\t%next = add i32 %head, 1\n")
-	b.WriteString("\t%mod = urem i32 %next, 256\n")
+	b.WriteString("\t%mod = urem i32 %next, %cap\n")
 	b.WriteString("\tstore i32 %mod, i32* @nolang_ready_head\n")
-	b.WriteString("\t%task_typed = bitcast i8* %task to { void (i8*)*, i64, i1, i1 }*\n")
-	b.WriteString("\t%fn_gep = getelementptr { void (i8*)*, i64, i1, i1 }, { void (i8*)*, i64, i1, i1 }* %task_typed, i32 0, i32 0\n")
+	b.WriteString("\t%task_typed = bitcast i8* %task to %task*\n")
+	b.WriteString("\t%fn_gep = getelementptr inbounds %task, %task* %task_typed, i32 0, i32 0\n")
 	b.WriteString("\t%resume_fn = load void (i8*)*, void (i8*)** %fn_gep\n")
 	b.WriteString("\tcall void %resume_fn(i8* %task)\n")
-	b.WriteString("\t%done_gep = getelementptr { void (i8*)*, i64, i1, i1 }, { void (i8*)*, i64, i1, i1 }* %task_typed, i32 0, i32 2\n")
+	b.WriteString("\t%done_gep = getelementptr inbounds %task, %task* %task_typed, i32 0, i32 2\n")
 	b.WriteString("\t%done_val = load i1, i1* %done_gep\n")
 	b.WriteString("\tbr i1 %done_val, label %done_handler, label %loop\n")
 	b.WriteString("done_handler:\n")
@@ -11589,7 +11684,7 @@ func (c *codegen) emitAsyncScheduler() {
 // target MIR function with the arg/result pointers packed in the args struct,
 // then marks the task done. argTypes are the callee's non-result (input)
 // parameter LLVM types in order; resLT is the single result type.
-func (c *codegen) asyncWrapperFor(calleeName, targetName string, argTypes []string, resLT string) string {
+func (c *codegen) asyncWrapperFor(calleeName, targetName string, argTypes []string, argKinds []string, resLT string) string {
 	if w, ok := c.asyncWrappers[calleeName]; ok {
 		return w
 	}
@@ -11622,7 +11717,7 @@ func (c *codegen) asyncWrapperFor(calleeName, targetName string, argTypes []stri
 	b.WriteString("\tbr i1 %can.val, label %w_skip, label %w_exec\n")
 	b.WriteString("w_skip:\n")
 	b.WriteString("\tstore i1 true, i1* %done.gep\n")
-	b.WriteString("\tbr label %w_exit\n")
+	b.WriteString("\tbr label %w_free\n")
 	// Execute: read args struct from data field, call target, set done.
 	b.WriteString("w_exec:\n")
 	b.WriteString("\t%data.gep = getelementptr inbounds %task, %task* %t, i32 0, i32 1\n")
@@ -11651,13 +11746,64 @@ func (c *codegen) asyncWrapperFor(calleeName, targetName string, argTypes []stri
 	}
 	callArgs = append(callArgs, fmt.Sprintf("%s* %%result.typed", resLT))
 	fmt.Fprintf(&b, "\tcall void @%s(%s)\n", targetName, strings.Join(callArgs, ", "))
-	// Free each arg container (the malloc'd per-arg buffer); the data the
-	// target may have moved into its result is owned by the result buffer, not
-	// by these arg buffers, so freeing only the container is safe.
-	for i := range argTypes {
-		fmt.Fprintf(&b, "\tcall void @free(i8* %%warg.%d.ptr)\n", i)
-	}
 	b.WriteString("\tstore i1 true, i1* %done.gep\n")
+	b.WriteString("\tbr label %w_free\n")
+	// w_free: release the per-argument heap buffers. Reached from BOTH w_exec
+	// and w_skip, so a cancelled task no longer leaks its argbufs (the skip
+	// path used to branch straight to w_exit, stranding every buffer that
+	// emitAsyncRun had malloc'd). The args struct is re-read from %t here
+	// because a value defined in w_exec does not dominate w_skip.
+	//
+	// Two frees per argument:
+	//
+	//  1. the PAYLOAD — the spawn-boundary deep copy emitAsyncRun made for the
+	//     arguments asyncArgKinds classified as "str"/"vec". The target never
+	//     takes ownership of a parameter's payload (emitMove clones on a
+	//     param -> result move, and vec.push deep-copies), so after the call
+	//     the copy is dead and must be released here or it leaks. @str_free and
+	//     @vec_free both skip cap == 0, which is what makes this safe for a
+	//     copy that came out empty.
+	//  2. the CONTAINER — the malloc'd per-arg buffer itself.
+	//
+	// Arguments with no kind ("") are copied by value into their container and
+	// own nothing, so only the container is freed — exactly the old behaviour.
+	b.WriteString("w_free:\n")
+	b.WriteString("\t%f.dgep = getelementptr inbounds %task, %task* %t, i32 0, i32 1\n")
+	b.WriteString("\t%f.di64 = load i64, i64* %f.dgep\n")
+	b.WriteString("\t%f.di8 = inttoptr i64 %f.di64 to i8*\n")
+	fmt.Fprintf(&b, "\t%%f.args = bitcast i8* %%f.di8 to %s*\n", argsTypeStr)
+	for i, at := range argTypes {
+		fmt.Fprintf(&b, "\t%%f.%d.gep = getelementptr inbounds %s, %s* %%f.args, i32 0, i32 %d\n", i, argsTypeStr, argsTypeStr, i+1)
+		fmt.Fprintf(&b, "\t%%f.%d.ptr = load i8*, i8** %%f.%d.gep\n", i, i)
+		kind := ""
+		if i < len(argKinds) {
+			kind = argKinds[i]
+		}
+		// The payload free is emitted only when the container really holds the
+		// descriptor the helper takes — the same guard the clone side applies,
+		// so the two can never disagree and the IR stays well-typed.
+		if (kind == "str" && at == "%str-long") || (kind == "vec" && at == "%vec") {
+			fmt.Fprintf(&b, "\t%%f.%d.typed = bitcast i8* %%f.%d.ptr to %s*\n", i, i, at)
+			fmt.Fprintf(&b, "\t%%f.%d.desc = load %s, %s* %%f.%d.typed\n", i, at, at, i)
+			fmt.Fprintf(&b, "\tcall void @%s_free(%s %%f.%d.desc)\n", kind, at, i)
+		}
+		if kind == "struct" {
+			// A heap-owning struct argbuf: free the fields with the RECURSIVE
+			// destructor, then the container. This is the exact mirror of the
+			// clone walk emitAsyncRun ran over the same argbuf (ptr fields
+			// first, then inline leaves), so the two can never disagree about
+			// which fields are owned. The guard re-resolves the key from the
+			// LLVM type, the same way emitDrop does, and falls back to freeing
+			// only the container if the key is unreachable.
+			if key := c.structKeyOfLLVM(at); key != "" &&
+				(c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)) {
+				fmt.Fprintf(&b, "\t%%f.%d.typed = bitcast i8* %%f.%d.ptr to %s*\n", i, i, at)
+				c.emitStructDropHelper(at, key)
+				fmt.Fprintf(&b, "\tcall void @%s(%s* %%f.%d.typed)\n", structDropName(at), at, i)
+			}
+		}
+		fmt.Fprintf(&b, "\tcall void @free(i8* %%f.%d.ptr)\n", i)
+	}
 	b.WriteString("\tbr label %w_exit\n")
 	b.WriteString("w_exit:\n")
 	b.WriteString("\tret void\n}\n\n")
@@ -11675,10 +11821,17 @@ func (c *codegen) asyncWrapperFor(calleeName, targetName string, argTypes []stri
 // cases reuse the exact coercions emitCallBody applies for ordinary calls
 // (heap-owned copy for trivially-copyable elements, borrow view otherwise;
 // string byte view for %str-long -> []byte).
-func (c *codegen) coerceAsyncArg(av ValueID, plt string) (string, string) {
+//
+// The third result, `owned`, reports whether the returned descriptor already
+// owns its heap block outright (cap > 0, no sharing with the caller). It is
+// false for a borrowed view — cap == 0, the backing store belongs to someone
+// else — and for the plain `alt == plt` passthrough, where the descriptor
+// still aliases the CALLER's buffer. emitAsyncRun must deep-copy exactly the
+// not-owned cases before the value escapes into a task (see asyncArgOwnedCopy).
+func (c *codegen) coerceAsyncArg(av ValueID, plt string) (string, string, bool) {
 	alt, areg := c.loadVal(av)
 	if alt == plt {
-		return alt, areg
+		return alt, areg, false
 	}
 	if plt == "%vec" && strings.HasPrefix(alt, "[") {
 		slot := c.valSlot[av]
@@ -11690,7 +11843,12 @@ func (c *codegen) coerceAsyncArg(av ValueID, plt string) (string, string) {
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", slot, alt))
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", alt, areg, alt, slot))
 		}
-		return "%vec", c.vecFromArraySink(alt, slot)
+		// vecFromArraySink heap-copies trivially-copyable elements (owned) and
+		// otherwise hands back a cap==0 view over the caller's stack array.
+		// Mirror that choice in the `owned` result — it is the same predicate
+		// vecFromArraySink uses internally, and it decides whether the argbuf
+		// still needs a deep copy.
+		return "%vec", c.vecFromArraySink(alt, slot), arrayElemIsTrivial(alt)
 	}
 	if plt == "%vec" && alt == "%str-long" {
 		// string -> []byte view: %vec{ len, 0, data-as-intptr }. cap is 0 so the
@@ -11707,9 +11865,138 @@ func (c *codegen) coerceAsyncArg(av ValueID, plt string) (string, string) {
 		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0))
 		s2 := c.treg("asv2")
 		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, p))
-		return "%vec", s2
+		return "%vec", s2, false
 	}
-	return alt, areg
+	return alt, areg, false
+}
+
+// arrayElemIsTrivial reports whether a fixed-array LLVM type `[N x T]` has an
+// element type that vecFromArraySink copies to the heap. It MUST agree with the
+// element switch in vecFromArraySink: that function returns an OWNED %vec for
+// exactly these element types and a cap==0 borrow view for every other one.
+func arrayElemIsTrivial(arrLT string) bool {
+	i := strings.Index(arrLT, " x ")
+	if i < 0 {
+		return false
+	}
+	switch strings.TrimSuffix(arrLT[i+3:], "]") {
+	case "i8", "i1", "i64", "double":
+		return true
+	}
+	return false
+}
+
+// asyncArgOwnedCopy returns an owned deep copy of an async-launch argument so
+// that the spawned task never aliases the caller's binding.
+//
+// WHY THIS EXISTS (measured UAF). emitAsyncRun copies each argument into its
+// own heap buffer as a BITWISE copy of the descriptor. For a heap-owning type
+// (%str-long's {len,cap,data}, %vec's {len,cap,data-as-intptr}) that shares the
+// underlying block with the caller. The target function only clones the
+// argument when it RUNS — which is at `awy`, potentially long after the caller
+// reassigned or went out of scope and dropped it. The task then clones from
+// freed memory:
+//
+//	s str = 'AAAA…'
+//	h = run echo-async(s)     ; argbuf shares s's block
+//	s = 'BBBB…'               ; frees s's OLD block
+//	v = awy h                 ; task runs, @str_clone reads freed bytes
+//	print(v)                  ; prints 40 NUL instead of 40 'A'  (rc=0!)
+//
+// Measured on HEAD: the str form prints 40 NULs, the []i64 form prints 0, both
+// with rc=0 and no diagnostic. The control (no reassignment) prints correctly,
+// so the difference is exactly the early free.
+//
+// The copy is made AT SPAWN, before the caller can invalidate anything, which
+// is what makes the argbuf safe to hand to a task that outlives the frame.
+//
+// `kind` is decided from the CALLEE's parameter type (see asyncArgKinds) so
+// that the matching free in asyncWrapperFor is uniform across every call site
+// of the same callee — the wrapper is generated once and cached.
+func (c *codegen) asyncArgOwnedCopy(kind, areg string, elem TypeID) string {
+	switch kind {
+	case "str":
+		c.loadSeq++
+		tmp := fmt.Sprintf("%%arun.argcopy.%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", tmp, areg))
+		return tmp
+	case "vec":
+		if elem != NoType {
+			if fn := c.vecDeepClone(elem, 0); fn != "" {
+				c.loadSeq++
+				tmp := fmt.Sprintf("%%arun.argcopy.%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", tmp, fn, areg))
+				return tmp
+			}
+		}
+	}
+	return ""
+}
+
+// asyncArgKinds classifies a callee's parameters for the spawn-boundary
+// ownership protocol. The results are indexed by argument position:
+//
+//	kinds[i] == "str"  the parameter is a `str`; the argbuf always holds an
+//	                   owned @str_clone, and the wrapper always frees it with
+//	                   @str_free
+//	kinds[i] == "vec"  the parameter is a `[]T` whose element type has a
+//	                   vecDeepClone helper; the argbuf always holds an owned
+//	                   %vec (cap > 0), and the wrapper always frees it with
+//	                   @vec_free. elems[i] is that T, used to pick the helper.
+//	kinds[i] == "struct"
+//	                   the parameter is a user struct that OWNS heap through
+//	                   inline `str` leaves or pointer-laid-out fields; the
+//	                   argbuf holds a deep copy and the wrapper frees it with
+//	                   the struct destructor. keys[i] is its StructFields key,
+//	                   used to pick the clone walk. A struct that owns nothing
+//	                   stays "" — for it a bitwise copy IS a value copy.
+//	kinds[i] == ""     anything else — nothing is cloned and nothing is freed,
+//	                   exactly as before
+//
+// Keying on the CALLEE (not on the argument expression) is what keeps the
+// clone in emitAsyncRun and the free in asyncWrapperFor in agreement: the
+// wrapper is emitted once per callee and reused by every call site, so a
+// per-call-site decision would let one call site clone what another did not.
+func (c *codegen) asyncArgKinds(cf *Function) ([]string, []TypeID, []string) {
+	isResult := map[ValueID]bool{}
+	for _, rp := range cf.ResultParams {
+		isResult[rp] = true
+	}
+	var kinds []string
+	var elems []TypeID
+	var keys []string
+	for _, p := range cf.Params {
+		if isResult[p] {
+			continue
+		}
+		kind := ""
+		elem := NoType
+		key := ""
+		if t := c.mod.Type(c.localTypeOf(p)); t != nil {
+			switch {
+			case t.Kind == KindStr:
+				kind = "str"
+			case t.Kind == KindSlice && t.Elem != NoType && c.vecDeepClone(t.Elem, 0) != "":
+				kind = "vec"
+				elem = t.Elem
+			case t.Kind == KindStruct:
+				// Same hazard as str/vec, one level down: the argbuf is a
+				// BITWISE copy of the struct, so every heap-owning field (an
+				// inline `str` leaf, or a pointee) ends up shared with the
+				// caller. A struct that owns nothing is a true value copy and
+				// needs neither clone nor free.
+				if k := c.mod.StructKeyOf(t.Raw); k != "" &&
+					(c.mod.StructHasOwnedLeafFields(k) || c.mod.StructHasPtrFields(k)) {
+					kind = "struct"
+					key = k
+				}
+			}
+		}
+		kinds = append(kinds, kind)
+		elems = append(elems, elem)
+		keys = append(keys, key)
+	}
+	return kinds, elems, keys
 }
 
 // emitAsyncRun emits caller code for OpRun: it resolves the `-async` callee,
@@ -11746,11 +12033,15 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		lt, _ := c.ptype(p)
 		argTypes = append(argTypes, lt)
 	}
+	// Spawn-boundary ownership protocol, decided from the CALLEE so that the
+	// deep copy emitted below and the free emitted inside the wrapper agree on
+	// every call site (the wrapper is generated once and cached).
+	argKinds, argElems, argKeys := c.asyncArgKinds(cf)
 	resLT := "i64"
 	if len(cf.ResultParams) > 0 {
 		resLT, _ = c.ptype(cf.ResultParams[0])
 	}
-	wrapperName := c.asyncWrapperFor(calleeName, targetName, argTypes, resLT)
+	wrapperName := c.asyncWrapperFor(calleeName, targetName, argTypes, argKinds, resLT)
 
 	numFields := len(argTypes) + 1
 	argsTypeStr := "{ "
@@ -11802,7 +12093,57 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		if i < len(argTypes) {
 			plt = argTypes[i]
 		}
-		alt, areg := c.coerceAsyncArg(av, plt)
+		alt, areg, owned := c.coerceAsyncArg(av, plt)
+		// SPAWN-BOUNDARY DEEP COPY. The argbuf below is a bitwise copy of the
+		// descriptor, so an argument that still aliases the caller's binding
+		// (or a borrow view over it) would leave the task reading a block the
+		// caller is free to drop before `awy` runs — the measured UAF in
+		// asyncArgOwnedCopy's comment. Copy now, while the caller is provably
+		// alive, and let the wrapper free the copy (asyncWrapperFor).
+		kind := ""
+		if i < len(argKinds) {
+			kind = argKinds[i]
+		}
+		// structKey is non-empty only for kind == "struct". A struct is handled
+		// AFTER the argbuf store (below) rather than by pre-cloning the value:
+		// the field walks operate on memory, and the argbuf is already the
+		// destination slot they need.
+		structKey := ""
+		if i < len(argKeys) {
+			structKey = argKeys[i]
+		}
+		if kind != "" && kind != "struct" && !owned {
+			// Only copy when the register really carries the descriptor type
+			// the helper expects. `alt` is the COERCED type; a `str` parameter
+			// fed something that coerceAsyncArg did not convert (so alt is
+			// still the argument's own type) must not be cloned as a %str-long,
+			// or the call would be ill-typed.
+			wantLT := "%str-long"
+			if kind == "vec" {
+				wantLT = "%vec"
+			}
+			if alt == wantLT {
+				elem := NoType
+				if i < len(argElems) {
+					elem = argElems[i]
+				}
+				if cp := c.asyncArgOwnedCopy(kind, areg, elem); cp != "" {
+					areg = cp
+				}
+			}
+		}
+		// A struct needs its SOURCE addressable: emitPtrFieldsClone resolves
+		// each pointee through the source pointer (allocating one if the field
+		// is NULL, exactly as emitPtrStructClone does for `b = a`). Spill the
+		// value into a private slot so the walk has a stable pointer to read,
+		// whatever shape the argument expression had.
+		srcSlot := ""
+		if structKey != "" && alt == plt {
+			c.loadSeq++
+			srcSlot = fmt.Sprintf("%%arun.srcslot.%d_%d", c.loadSeq, i)
+			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", srcSlot, alt))
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", alt, areg, alt, srcSlot))
+		}
 		c.loadSeq++
 		abuf := fmt.Sprintf("%%arun.argbuf.%d_%d", c.loadSeq, i)
 		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", abuf, c.mallocBytesFor(alt)))
@@ -11810,6 +12151,19 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		abufT := fmt.Sprintf("%%arun.argbuf.t.%d_%d", c.loadSeq, i)
 		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", abufT, abuf, alt))
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", alt, areg, alt, abufT))
+		// STRUCT: the store above is a BITWISE copy, so every heap-owning field
+		// (inline `str` leaves, pointees) still aliases the caller's. Give the
+		// argbuf its own deep copy, walking the SAME shape the wrapper's
+		// destructor frees — emitStructDropHelper frees ptr fields (recursively)
+		// and inline leaves, so clone and free can never disagree.
+		if srcSlot != "" {
+			if c.mod.StructHasPtrFields(structKey) {
+				c.emitPtrFieldsClone(abufT, srcSlot, alt, structKey, map[string]bool{})
+			}
+			if c.mod.StructHasOwnedLeafFields(structKey) {
+				c.emitLeafFieldsClone(abufT, alt, structKey)
+			}
+		}
 		c.loadSeq++
 		ai8 := fmt.Sprintf("%%arun.argi8.%d_%d", c.loadSeq, i)
 		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", ai8, alt, abufT))
@@ -11827,10 +12181,13 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	argsI64 := fmt.Sprintf("%%arun.argsi64.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", argsI64, argsI8))
 
-	// 3. task struct (heap).
+	// 3. task struct (heap). 32 bytes: %task = { resume_fn, data, done,
+	// cancelled, waiter }. Must stay in sync with the `%task` type in the
+	// prelude — a short malloc would leave the `waiter` field (offset 24)
+	// pointing past the block.
 	c.loadSeq++
 	taskBuf := fmt.Sprintf("%%arun.task.%d", c.loadSeq)
-	c.sb.WriteString("  " + taskBuf + " = call i8* @malloc(i64 24)\n")
+	c.sb.WriteString("  " + taskBuf + " = call i8* @malloc(i64 32)\n")
 	c.loadSeq++
 	taskT := fmt.Sprintf("%%arun.task.t.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%task*\n", taskT, taskBuf))
@@ -11850,6 +12207,11 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	tf3 := fmt.Sprintf("%%arun.tf3.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", tf3, taskT))
 	c.sb.WriteString(fmt.Sprintf("  store i1 false, i1* %s\n", tf3))
+	// field 4 = waiter: no task is blocked on this one yet.
+	c.loadSeq++
+	tf4 := fmt.Sprintf("%%arun.tf4.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 4\n", tf4, taskT))
+	c.sb.WriteString(fmt.Sprintf("  store i8* null, i8** %s\n", tf4))
 
 	// enqueue the task.
 	c.loadSeq++
@@ -11866,11 +12228,38 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	return nil
 }
 
+// awaitConsumedMsg emits (once per module) the diagnostic string constant used
+// by emitAsyncAwait's consumed-handle guard and returns the LLVM call that
+// writes it to stderr.
+//
+// It is emitted LAZILY — only a program that actually reaches the guard (i.e.
+// awaits one handle twice, or awaits a never-assigned handle) gets the
+// constant, so no correct program's IR changes.
+func (c *codegen) awaitConsumedMsg() string {
+	const msg = "nolang: await on a null task handle (already awaited, or never assigned)\n"
+	if !c.awaitConsumedMsgEmitted {
+		c.awaitConsumedMsgEmitted = true
+		var lit strings.Builder
+		for i := 0; i < len(msg); i++ {
+			fmt.Fprintf(&lit, "\\%02X", msg[i])
+		}
+		c.extraGlobals = append(c.extraGlobals, fmt.Sprintf(
+			"@nolang_msg_await_consumed = private unnamed_addr constant [%d x i8] c\"%s\"\n",
+			len(msg), lit.String()))
+	}
+	return fmt.Sprintf("call i64 @write(i32 2, i8* getelementptr inbounds ([%d x i8], [%d x i8]* @nolang_msg_await_consumed, i64 0, i64 0), i64 %d)",
+		len(msg), len(msg), len(msg))
+}
+
 // emitAsyncAwait emits caller code for OpAwait: it loads the task handle,
 // synchronously drives the task to completion if not already done, then reads
 // the result from the args struct's field 0 and stores it into inst.Dst. The
 // result/args/task heap containers are freed afterwards (their inner owned data
 // is now owned by the result slot, so only the containers are freed).
+//
+// The handle slot is then ZEROED, which makes this operation consume-once: a
+// second `awy h` sees 0 and takes the guarded no-op path instead of freeing
+// three already-dead pointers (the measured SIGSEGV).
 func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	resLT, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
@@ -11880,6 +12269,34 @@ func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	}
 	// load handle (i64) -> %task*
 	_, hreg := c.loadVal(inst.Args[0])
+
+	// CONSUMED-HANDLE GUARD (measured SIGSEGV). `run` always mallocs a %task,
+	// so a zero handle means either "this task was already awaited" (the first
+	// await freed the task, the args struct and the result buffer, and then
+	// zeroed the slot — see the tail of this function) or "the handle was
+	// never assigned". Continuing would inttoptr(0) and free three pointers
+	// that are already dead. Report once and yield a zero value instead, so a
+	// double await is a defined no-op rather than a crash.
+	//
+	// The message goes to fd 2 and is only ever emitted for a program that
+	// actually awaits twice, so no correct program's output changes.
+	finDef := fmt.Sprintf("aawy.fin.%d", c.loadSeq)
+	finRef := "%" + finDef
+	nullDef := fmt.Sprintf("aawy.invalid.%d", c.loadSeq)
+	nullRef := "%" + nullDef
+	okDef := fmt.Sprintf("aawy.ok.%d", c.loadSeq)
+	okRef := "%" + okDef
+
+	c.loadSeq++
+	isNull := fmt.Sprintf("%%aawy.isnull.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", isNull, hreg))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %s, label %s\n", isNull, nullRef, okRef))
+	c.sb.WriteString(nullDef + ":\n")
+	c.sb.WriteString("  " + c.awaitConsumedMsg() + "\n")
+	c.sb.WriteString(fmt.Sprintf("  store %s zeroinitializer, %s* %s\n", resLT, resLT, slot))
+	c.sb.WriteString(fmt.Sprintf("  br label %s\n", finRef))
+	c.sb.WriteString(okDef + ":\n")
+
 	c.loadSeq++
 	taskI8 := fmt.Sprintf("%%aawy.ti8.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", taskI8, hreg))
@@ -11957,9 +12374,21 @@ func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", fr))
 	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", dataI8))
 	c.loadSeq++
-	ft := fmt.Sprintf("%%aawy.freetask.%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %%task* %s to i8*\n", ft, taskT))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", ft))
+	ftreg := fmt.Sprintf("%%aawy.freetask.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %%task* %s to i8*\n", ftreg, taskT))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", ftreg))
+
+	// CONSUME THE HANDLE. The %task, its args struct and the result buffer are
+	// gone, but the handle is just an i64 sitting in the caller's slot — it
+	// carries no "already freed" state. A second `awy h` would re-run all of
+	// the above and free three dead pointers (measured: SIGSEGV after the
+	// first result printed). Zeroing the slot makes the guard at the top of
+	// this function fire instead.
+	if hslot := c.valSlot[inst.Args[0]]; hslot != "" {
+		c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", hslot))
+	}
+	c.sb.WriteString(fmt.Sprintf("  br label %s\n", finRef))
+	c.sb.WriteString(finDef + ":\n")
 	return nil
 }
 

@@ -66,6 +66,7 @@ Basic types
 - bool ; lowercase only
 - char ; character type: a single Unicode scalar value (rune), stored as i32. Wrapped in double quotes, e.g. "中"
 - str ; string type, wrapped in single quotes 'hello', or backtick raw strings `multi-line`
+- txt ; fixed-length text type, 256 bytes underlying (max 255 bytes of data), requires an explicit type annotation, e.g. t txt = 'abc'
 - i8
 - i16
 - i32

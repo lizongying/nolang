@@ -5691,6 +5691,13 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 		// `x str = a[1..3]` over a non-str container is still rejected by the
 		// checker.
 		return true
+	case *parser.AwaitExpression:
+		// `awy <handle>` yields the awaited task's result. The handle is an
+		// opaque i64, so the result type is not statically known here — e.g.
+		// `v str = awy t` where t came from `run f(...)` and f returns str.
+		// Defer to LLVM type checking, like the cases above. Without this the
+		// validator rejected a perfectly valid str result.
+		return true
 	}
 	return false
 }

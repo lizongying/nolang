@@ -2855,7 +2855,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				// Owned reassignment frees the old value exactly once (drop) then
 				// transfers ownership of the new value via move; the memory analysis
 				// inserts the slot's exit drop, which frees the NEW content.
-				if l.isOwnedLocal(existing) {
+				if l.rebindOwnsHeap(existing) {
 					// Skip the manual drop when `existing` has already been
 					// moved: its heap ownership was transferred into another
 					// slot / a result parameter, so its buffer now belongs to
@@ -2868,6 +2868,10 @@ func (l *lowerer) lowerStmtInner(id int32) {
 					}
 				}
 				l.b.EmitMoveInto(existing, val)
+				// The handle now lives in `existing`; carry the task's result
+				// type across, or `awy t` would await an untyped handle (see
+				// carryAsyncResType).
+				l.carryAsyncResType(existing, val)
 				// A transferring move hands `val`'s heap ownership to
 				// `existing`; record that `val` is no longer drop-responsible
 				// so a later reassign of `val` does not double-free it.
@@ -2895,6 +2899,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
 						if vt := l.valueTypeOf(val); vt == gvt {
 							l.b.EmitMoveInto(gv, val)
+							l.carryAsyncResType(gv, val)
 							l.locals[name] = gv
 							break
 						}
@@ -9544,6 +9549,79 @@ func (l *lowerer) isOwnedLocal(v ValueID) bool {
 		}
 	}
 	return l.mod.isOwnedVal(f, v)
+}
+
+// rebindOwnsHeap reports whether re-binding `v` must free its OLD content
+// before the new value is moved in.
+//
+// It is isOwnedLocal (str / vec / []T / map / ?owned) PLUS a struct that owns
+// heap through inline `str` leaves or pointer-laid-out fields. Such a struct is
+// deliberately NOT Type.Owned — see isOwnedVal's comment: Type.Owned doubles as
+// the lowerer's "does a binding alias" signal, and widening it would turn every
+// struct binding into an alias. But the DROP machinery DOES own it
+// (dropOwnsHeap -> typeOwnsHeap, and emitDrop frees it with the recursive
+// struct destructor), so a rebind that skips the drop leaks every owned field.
+//
+// Measured before this: re-binding a `holder { s str }` local leaked one
+// 40-byte string buffer per rebind. The leak was also LOAD-BEARING: it kept the
+// caller's buffer alive after the rebind, which is the only reason the async
+// spawn-boundary argbuf aliasing it did not read freed memory
+// (tests/async-ownership.no test 7).
+//
+// Params stay excluded, exactly as in isOwnedLocal: an input param is borrowed
+// and a result param is caller-owned, so neither may be freed here. Result
+// params are a subset of f.Params, so one loop covers both.
+func (l *lowerer) rebindOwnsHeap(v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	if l.isOwnedLocal(v) {
+		return true
+	}
+	if f := l.mod.Func(l.curFunc); f != nil {
+		for _, p := range f.Params {
+			if p == v {
+				return false
+			}
+		}
+	}
+	t := l.mod.Type(l.valueTypeOf(v))
+	if t == nil || t.Kind != KindStruct {
+		return false
+	}
+	key := l.mod.StructKeyOf(t.Raw)
+	if key == "" {
+		return false
+	}
+	return l.mod.StructHasOwnedLeafFields(key) || l.mod.StructHasPtrFields(key)
+}
+
+// carryAsyncResType propagates a task's result type from the value holding an
+// OpRun handle to the slot that value is being moved into.
+//
+// asyncResTypes is keyed by MIR value id, but `awy <handle-var>` resolves the
+// handle through the LOCAL's current value id — which is the slot the OpRun
+// result was moved into, not the OpRun result id itself. Without propagation an
+// already-declared handle variable is awaited as an untyped i64 and the result
+// buffer is reinterpreted: a `str` result comes out as its LENGTH.
+//
+//	holder { s str }
+//	echo-holder-async = (h holder) (r str) { r = h.s }
+//	t i64 = 0
+//	t = run echo-holder-async(h)   ; reassignment, not a fresh binding
+//	print(awy t)                   ; printed 40, want the 40-char string
+//
+// The entry is CLEARED when src is not a handle, so a later `awy t` cannot pick
+// up a stale result type left by a previous task.
+func (l *lowerer) carryAsyncResType(dst, src ValueID) {
+	if dst <= NoVal {
+		return
+	}
+	if rt, ok := l.asyncResTypes[src]; ok {
+		l.asyncResTypes[dst] = rt
+		return
+	}
+	delete(l.asyncResTypes, dst)
 }
 
 // elementTypeOf returns the element type of a value that is an array/slice/option.

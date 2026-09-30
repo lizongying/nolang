@@ -395,8 +395,104 @@ view = arr[1..3]   ; view 共享 arr.data
 arr = [9, 8, 7]    ; 釋放舊 arr.data → view 懸空
 ```
 
-### async 共享數據
-異步線程與主線程共享堆數據時，free 順序不確定。
+### async 共享數據（2026-09-30 已修）
+
+`run`/`awy` 的 spawn 邊界現在會**深拷貝**擁有堆的引數，任務不再與呼叫方共享 buffer。
+
+協程是協作式、單執行緒的，所以「跨協程共享可變堆數據」在語言層不成立；唯一會共享的
+是**呼叫方在 spawn 之後仍然持有**的那份值。修復前 argbuf 只是引數描述符的**位元複製**，
+`data` 與呼叫方共享，而任務要等到 `awy` 才執行 —— 呼叫方在那之前重賦值或離開作用域就會
+把 buffer 釋放掉，任務於是讀到已釋放的記憶體（實測：str 印出 40 個 NUL、`[]i64` 印出 0，
+兩者 rc 都是 0 且無任何診斷）。
+
+現在 spawn 當下就深拷貝，wrapper 在呼叫結束後釋放副本：
+
+| 參數型別 | spawn 邊界 | wrapper 釋放 |
+|---|---|---|
+| `str` | `@str_clone` | `@str_free` |
+| `[]T`（T 有 deep-clone helper） | `vecDeepClone` | `@vec_free` |
+| 擁有堆的 struct（內聯 `str` 葉子／指標欄位） | 就地葉子 clone ＋ pointee 複製 | 遞迴結構體解構子 |
+| 其他（純值型別） | 位元複製（正確） | 只釋放容器 |
+
+另外兩個已修的邊界缺陷：同一 handle `awy` 兩次（修復前 SIGSEGV，現在是已定義的 no-op
+並輸出診斷到 fd 2）、以及被取消的任務不再洩漏 argbuf。
+
+迴歸：`tests/async-ownership.no`。
+
+### struct 重賦值洩漏（2026-09-30 已修）
+
+```no
+holder { s str }
+h holder = holder { s: 'first' }
+h = holder { s: 'second' }   ; 舊的 'first' buffer 曾洩漏
+```
+
+重綁定一個區域變數時，舊值只有在其型別是 `Type.Owned`（`str`/`vec`/`[]T`/`map`/`?owned`）
+才會被釋放。struct **刻意不算** `Type.Owned`（該標記同時是 lowerer 判斷「綁定是否為別名」
+的依據），所以 `h = holder { … }` 直接覆寫整個結構體，舊的 `s` buffer 永遠不會被釋放。
+但 drop 機制其實是認得 struct 的（`dropOwnsHeap` → `typeOwnsHeap`，且 `emitDrop` 用遞迴
+解構子釋放），只有 lowerer 的閘門太窄。修復後重綁定前會先釋放舊欄位。
+
+實測 2,000,000 次重賦值：峰值 RSS 66.1 MB → 33.8 MB，輸出逐位元組相同。
+
+### struct literal 首欄位值是方法呼叫（2026-09-30 已修）
+
+```no
+holder { s str }
+h = holder { s: n.to-str() }   ; 修復前：'holder' is not defined
+```
+
+`{ … }` 的歸類是靠向前看幾顆 token 決定的。match 的**臂分隔符也是 `:`**，所以
+`s: n.to-str()` 同時長得像「pattern 為 `s` 的 match 臂」與「struct literal 的欄位」。
+兩者的唯一消歧符是 `ident.ident` **之後**那顆 token —— 方法呼叫只可能是欄位值。
+舊的分支漏了 `(`，於是整塊被判成 match，struct 名稱在 match 語境下找不到而報未定義
+（欄位值是一般函式呼叫則正常）。
+
+修復後 `h = holder { s: recv.method(args) }` 正常解析。nolang 的 match 臂不可能以
+`name : X(` 開頭（臂分隔符是 `->`，`:` 開頭的臂必為 wildcard/default，body 不會帶括號呼叫），
+所以放行 `(` 不會把任何合法的 match 誤判成 struct literal。迴歸：
+`src/parser/struct_literal_field_value_test.go`。
+
+### await 結果型別跨 handle 重賦值（2026-09-30 已修）
+
+```no
+holder { s str }
+echo-holder-async = (h holder) (r str) { r = h.s }
+t i64 = 0
+t = run echo-holder-async(h)   ; 重賦值，不是新綁定
+print(awy t)                   ; 修復前印出 40（str 的長度），rc 仍是 0
+```
+
+任務的結果型別記在以 MIR value id 為鍵的表裡。`awy <handle-var>` 是透過**區域變數當前的
+value id** 去解析 handle 的，而那是 OpRun 結果被 move 進去的**新槽**，不是 OpRun 結果本身的
+id —— 重賦值路徑沒有把型別搬過去，於是 await 被當成無型別的 `i64`，`str` 結果的 buffer 被
+重新解讀，印出來的就是長度。
+
+修復要三處同時到位，缺一都會留下症狀：
+
+1. 降低階段在兩條 rebind 路徑（區域變數、模組級全局）把結果型別搬到目標槽；
+   來源不是 handle 時**清除**目標槽的記錄，避免後續 `awy` 撿到上一個任務的陳舊型別。
+2. 檢查器對 `*AwaitExpression` 不再一律回 `i64`：`awy <call>` 回 callee 的回傳型別，
+   `awy <handle-var>` 回「未知」而跳過型別檢查（handle 是不透明的 `i64`，靜態無法還原）。
+   舊行為會拒收完全合法的 `v str = awy t`。
+3. 轉譯層的字串判定把 `*AwaitExpression` 視為可能是字串，否則合法的 `v str = awy t`
+   會被「cannot assign non-string value to string variable」擋下。
+
+迴歸：`tests/async-ownership.no` 的 test 9 / test 10。
+
+### 協程等待者表別名（2026-09-30 已修）
+
+排程器原本用 `@nolang_waiters = global [256 x i8*]`，以 `ptrtoint(task) & 255` 當索引。
+task 由 `@malloc` 配置、**16 位元組對齊**，指標低位只有 4 個有效位 —— 256 個槽實際塌縮成
+16 個（實測只有 8 個會被用到），兩個並發等待的任務極容易互相覆寫等待者、喚醒錯誤的任務。
+
+現在整張表移除，等待者存進 `%task` 自己的第 5 個欄位（`%task` 由 24 位元組增為
+32 位元組）：`@nolang_async_wait` 把當前任務寫進**被等待者**的欄位，
+`@nolang_async_done` 讀該欄位、非空則入隊後清空。查詢因此是精確的，不再有位址別名。
+
+> 註：MIR 後端目前是同步驅動 await，從不呼叫 `@nolang_async_run`／`@nolang_async_wait`，
+> 所以這一條在今天是**潛伏**缺陷而非可觀測故障。迴歸：
+> `src/mir/async_boundary_ownership_test.go`。
 
 ### 全局變數首次賦值的 free 跳過判斷不夠精確
 

@@ -436,6 +436,23 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			return t
 		}
 		return blockTrailingExprType(e.Alternative, varTypes, funcTypes, selfType)
+	case *parser.AwaitExpression:
+		// `awy <call>` — a direct call operand is launched as a task and then
+		// awaited, so the result is the callee's own return type.
+		if call, ok := e.Right.(*parser.CallExpression); ok {
+			if t := inferExprType(call, varTypes, funcTypes, selfType); t != "" && t != "i8*" {
+				return t
+			}
+		}
+		// `awy <handle-var>` — the handle is an opaque i64, so the task's
+		// result type is not statically recoverable from the variable alone.
+		// Return "" (unknown) so callers skip the type check and defer to LLVM,
+		// matching the other "cannot determine at vet time" cases above.
+		//
+		// The `default:` arm below used to answer "i64" for every await, which
+		// rejected the valid `v str = awy t` ("cannot assign i64 value to str
+		// variable 'v'") and silently mis-typed `v = awy t` as an integer.
+		return ""
 	default:
 		return "i64"
 	}

@@ -751,6 +751,14 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		return blockEnum
 	case lexer.ASSIGN:
 		// enum 顯式賦值：Name { VARIANT = value, ... }
+		//
+		// ⚠️ 這個回傳值只有在「名稱已經消耗、currentToken 就是 `{`」的呼叫情境下
+		// 才有意義，而那種情境下它其實是**死的**：classifyBlockAtCurrent() 的所有
+		// 呼叫點只比較 blockMatch / blockStruct / blockUnknown，沒有任何一處比較
+		// blockEnum（全 repo 唯一消費 blockEnum 的是 stmt.go 的 classifyBlock()
+		// 分支，那是名稱尚未消耗的宣告路徑）。因此宣告形式的判定請一律以
+		// classifyBlock() 為準；在**語句位置**的裸 `{` 由 stmt.go 的 LBRACE 分支
+		// 強制當成語句區塊（見該處註解）。
 		return blockEnum
 	case lexer.LPAREN:
 		if p.blockIsTaggedEnumWithParens(base) || p.blockIsTaggedEnumAllParens(base) {
@@ -829,8 +837,21 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 					tok6 = p.look(base + 5)
 				}
 				// name: EnumName.Variant [op] ... → struct literal
+				//
+				// LPAREN covers `name: recv.method(args)`, e.g.
+				//
+				//     holder { s str }
+				//     h = holder { s: n.to-str() }
+				//
+				// The arm separator in a match is `:`, so `s: n.to-str()` also
+				// *looks* like an arm whose pattern is `s`; the disambiguator is
+				// the token after `ident.ident` — a method call can only be a
+				// struct-literal field value. Without LPAREN here the block fell
+				// through to blockMatch and the struct name was reported as
+				// undefined ("'holder' is not defined").
 				if tok5.Type == lexer.IDENT {
-					if tok6.Type == lexer.OR || tok6.Type == lexer.AND || tok6.Type == lexer.XOR ||
+					if tok6.Type == lexer.LPAREN ||
+						tok6.Type == lexer.OR || tok6.Type == lexer.AND || tok6.Type == lexer.XOR ||
 						tok6.Type == lexer.ADD || tok6.Type == lexer.SUB || tok6.Type == lexer.MUL ||
 						tok6.Type == lexer.QUO || tok6.Type == lexer.MOD ||
 						tok6.Type == lexer.SHL || tok6.Type == lexer.SHR ||
