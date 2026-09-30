@@ -14,7 +14,11 @@ import (
 // 以及 self.field.subfield (嵌套 DotExpression{DotExpression{self, field}, subfield})
 func (p *Parser) resolveReceiverType(receiver Expression) string {
 	if ident, ok := receiver.(*Identifier); ok {
-		if t, ok := p.sem.VarTypes[ident.Value]; ok {
+		// 必須優先查函數作用域表（FuncVarType，內部自帶全域 VarTypes 回退）：
+		// setVarType 已不再把函數參數/區域變數寫入全域 VarTypes，若這裡只查
+		// 全域快照，body 解析期將找不到接收者型別（如 `path.split('.')` 的
+		// `path`），導致方法返回型別推斷靜默丟失。
+		if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
 			return strings.TrimPrefix(t, "?")
 		}
 		// self 欄位：在方法體中，`.field` 語法會解析為裸識別符 `field`，
@@ -53,7 +57,8 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 				// （例如 sse-connect 中的 `tls-c tls.conn` 區域變數，`.tls-c.recv`
 				// 應解析為 tls.conn.recv）。此回退讓 inferTypeFromCallExpr 能推斷
 				// 方法呼叫的回傳型別，避免 match 的 it 綁定型別缺失而誤報。
-				if t, ok := p.sem.VarTypes[dot.Property]; ok {
+				// 優先查函數作用域表（含全域回退），與 Identifier 分支同理。
+				if t, ok := p.sem.FuncVarType(p.curFuncName, dot.Property); ok && t != "" {
 					return strings.TrimPrefix(t, "?")
 				}
 			}

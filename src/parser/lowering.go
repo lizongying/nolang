@@ -1806,9 +1806,6 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	if ident, ok := matched.(*Identifier); ok {
 		if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok {
 			matchedVarType = t
-			if os.Getenv("NOLANG_DEBUG_IT") != "" {
-				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q matchedVarType=%q curFunc=%q\n", ident.Value, matchedVarType, p.curFuncName)
-			}
 			if vs, ok := p.sem.EnumVariantsOf(t); ok {
 				isEnumType = true
 				enumVariants = vs
