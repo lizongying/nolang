@@ -271,8 +271,8 @@ m.put('key', val)
 result = m.get('key')   ; ?V，nil=未找到
 found = m.contains('key')
 m.remove('key')
-n = m.size()
-yes = m.empty()
+n = m.len()
+yes = m.is-empty()
 m.clear()
 
 ; int 鍵映射表（K, V 均泛型）
@@ -298,7 +298,7 @@ m.put('key', val)
 result = m.get('key')   ; ?V，nil=未找到
 found = m.contains('key')
 m.remove('key')
-n = m.size()
+n = m.len()
 
 ; int 鍵靜態映射表（K, V 均泛型）
 m2 = static-hashmap-int-tmpl{}

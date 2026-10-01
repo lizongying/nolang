@@ -13,12 +13,12 @@ LEVEL-WARN  = 2
 LEVEL-ERROR = 3
 LEVEL-FATAL = 4
 
-log.set-level(lvl)
+log.set-level(lvl)                     // Set the minimum log level
 log.debug(msg)
 log.info(msg)
 log.warn(msg)
 log.error(msg)
-log.fatal(msg)
+log.fatal(msg, code)                   // Log and exit with the given status code
 ```
 
 ---

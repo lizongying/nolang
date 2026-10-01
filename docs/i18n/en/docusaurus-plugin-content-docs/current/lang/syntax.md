@@ -201,7 +201,7 @@ i = 1
 f = 1.0
 
 ; byte
-b = x00
+b = 0x00
 
 
 ; i8 — if the variable name matches the type name, the type annotation can be omitted
@@ -260,7 +260,7 @@ PORT i64 = 0x0303        ; ok: explicit i64, value = 771
 c = "中"
 
 ; byte type
-b = x00
+b = 0x00
 
 ; arr fixed-length array
 arr [3] = [1, 2, 3]

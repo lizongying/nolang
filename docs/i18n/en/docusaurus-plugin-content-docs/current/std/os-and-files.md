@@ -26,6 +26,15 @@ pid = os.get-pid()
 name = os.host-name()
 arch = os.get-arch()
 msg = os.strerror(errnum)
+errno = os.get-errno()
+
+; File attributes and user (permission queries live in os, not fs)
+mode = os.stat-mode(path)           ; Get file mode (st_mode, returns mode, ok)
+uid = os.stat-uid(path)             ; Get file owner uid (returns uid, ok)
+gid = os.stat-gid(path)             ; Get file group gid (returns gid, ok)
+mtime = os.stat-mtime(path)         ; Get modification time (Unix seconds, returns mtime, ok)
+self-uid = os.getuid()              ; Current user ID
+self-gid = os.getgid()              ; Current group ID
 
 ; Time
 sec = os.now()
@@ -199,9 +208,9 @@ embed {
 }
 
 ; Windows-specific (only available on win-amd64/win-arm64)
-bufptr = fs.win-find-first-file(path) ; FindFirstFileA, returns handle (0=failure)
-name = fs.win-find-next-file(bufptr)  ; FindNextFileA, returns (name, ok)
-ok = fs.win-find-close(bufptr)        ; FindClose
+bufptr = os.win-find-first-file(path) ; FindFirstFileA, returns handle (0=failure)
+name = os.win-find-next-file(bufptr)  ; FindNextFileA, returns (name, ok)
+ok = os.win-find-close(bufptr)        ; FindClose
 
 ; open() flag constants (platform-specific, shown for macOS)
 O-RDONLY = 0
@@ -327,7 +336,7 @@ line = io.read-line()           ; Read one line from stdin (?str, nil=EOF)
 
 ### regexp — Regular Expressions
 
-Wraps a pattern with the `regexp` struct, backed by the C standard library `regex.h`:
+Wraps a pattern with the `regexp` struct. The regular-expression engine is implemented entirely in Nolang (an imperative VM + backtracking matcher), with no dependency on the C standard library `regex.h`:
 
 ```no
 ; Struct
@@ -341,6 +350,20 @@ re = regexp{
 }
 matched = re.matches(text)        ; Check whether it matches
 result = re.find(text)           ; Find the first matching substring
+```
+
+It supports the **regex-literal syntax** `/pattern/flags` (JavaScript style), which desugars at code-generation time into a `regexp-compile` call:
+
+```no
+; Regex literal (recommended form)
+re = /\d+/
+matched = re.matches('hello 123 world')  ; true
+
+; With flags
+re = /[a-z]+/gi
+
+; Equivalent explicit call
+re = regexp-compile('\\d+')
 ```
 
 ### process — Process Operations
@@ -417,10 +440,13 @@ o = process.cmdopts{
     timeout: 200,
     merge-err: false
 }
-out, code, err = process.exec('echo', ['hello'], o)
+; exec-result { stdout str, stderr str, code i64 }
+res = process.exec('echo', ['hello'], o)     ; Returns exec-result (res.stdout / res.code ...)
 
-; Convenience functions (legacy, pending decision)
-status = process.process-run(cmd)           ; Execute shell command
+; Convenience functions
+code = process.shell(cmd)                     ; Run a command via the shell, returns the exit code
+pid = process.spawn(cmd)                      ; Spawn a child process, returns the pid
+status = process.wait(pid)                    ; Wait for the given pid to finish
 content, code = process.new().output(program, arg) ; Execute and capture output
 ```
 
@@ -460,8 +486,8 @@ c.close()                           ; Close connection
 fd = c.fd-of()                       ; Get fd
 
 ; Convenience functions
-l = net.net-listen-on(host, port)        ; Create listener and start listening (?listener)
-c = net.net-dial-to(host, port)          ; Create connection and dial (?conn)
+l = net.listen-on(host, port)            ; Create listener and start listening (?listener)
+c = net.dial-to(host, port)              ; Create connection and dial (?conn)
 ```
 
 ### net/ip — IP Address Operations
@@ -563,7 +589,7 @@ Provides an HTTP/1.1 protocol client supporting GET, POST, PUT, DELETE, PATCH an
 
 ```no
 ; Structs
-http-request {
+http.request {
     method str
     url str
     body str
@@ -583,16 +609,25 @@ http.response {
 ; Convenience functions
 resp = http.get(url)                        ; GET request (?http.response)
 resp = http.post(url, body)                  ; POST request (?http.response)
+resp = http.put(url, body)                   ; PUT request (?http.response)
+resp = http.delete(url)                      ; DELETE request (?http.response)
+resp = http.patch(url, body)                 ; PATCH request (?http.response)
 resp = http.do(method, url, body)            ; Custom method (?http.response)
+resp = http.get-auth(url, user, password)    ; GET with Basic auth (?http.response)
+resp = http.post-auth(url, body, user, password) ; POST with Basic auth (?http.response)
 
 ; Using a request object
-req = http-request{}
+req = http.request{}
 req.init('POST', url, body)
 req.add-header('Content-Type', 'application/json')
+ok = http.set-basic-auth(req, user, password)   ; Set a Basic-auth header (bool)
+ok = http.set-bearer-auth(req, token)           ; Set a Bearer header (bool)
+ok = http.set-api-key(req, header-name, api-key) ; Set an API-key header (bool)
 resp = http.do-req(req)                      ; Send request (?http.response)
 
-; Parse response headers
+; Parse and read response headers
 resp.parse-headers()
+val = resp.get-header(name)                  ; Look up a header value (?str)
 ```
 
 ### net/http2 — HTTP/2.0 Client (RFC 7540)
@@ -647,14 +682,14 @@ HTTP3-METHOD-OPTIONS = 'OPTIONS'
 
 ; Convenience functions
 c = http3.connect(host, port)                ; Establish QUIC connection (?http3-conn)
-resp = http3.send-request(c, method, path, headers, body) ; Send request (?http.response)
+resp = http3.send-request(c, method, path, host, body) ; Send request (?http.response)
 resp = http3.get(url)                        ; GET request (?http.response)
 resp = http3.post(url, body)                 ; POST request (?http.response)
 
 ; QPACK header encoding/decoding
-buf, n = http3.qpack-encode-header(name, value)
-buf, n = http3.qpack-encode-headers(names, values, count)
-name, value, pos = http3.qpack-decode-header(buf, pos)
+buf, n = http3.encode-header(name, value)
+buf, n = http3.encode-headers(names, values, count)
+name, value, pos = http3.decode-header(buf, pos)
 ```
 
 ### net/ws — WebSocket Client and Server (RFC 6455)
@@ -691,7 +726,7 @@ Provides TLS encrypted connections, supporting TLS 1.2 and 1.3:
 
 ```no
 ; Connection
-c = tls.tls-dial(host, port)                     ; Establish TLS connection (?tls.conn)
+c = tls.dial(host, port)                       ; Establish TLS connection (?tls.conn)
 n = c.send(data)                             ; Send encrypted data (?i64)
 n = c.recv(buf, n)                           ; Receive decrypted data (?i64)
 c.close()
@@ -702,12 +737,13 @@ c.close()
 Wraps the `conn` struct, providing features such as automatic reconnection:
 
 ```no
-c = client.net-client(host, port)                   ; Create client (?client)
+c = client.client-create(host, port)               ; Create client (?client)
 ok = c.connect(host, port)                   ; Connect
 ok = c.reconnect()                           ; Reconnect
 written = c.send(data)                       ; Send
 read-n = c.recv(buf, n)                      ; Receive
 line = c.recv-line()                         ; Receive one line (?str)
+written = c.send-line(line)                  ; Send one line (i64)
 response = c.request(data)                   ; Request-response pattern (?str)
 yes = c.is-connected()                       ; Connection state
 c.close()
@@ -731,7 +767,7 @@ Provides HTTP server functionality:
 ```no
 s = server{}
 ok = s.listen(host, port)                    ; Start listening
-ok = s.serve()                               ; Handle requests
+c = s.accept()                               ; Accept one connection (?server-conn)
 s.close()
 ```
 
@@ -767,8 +803,14 @@ s = c.to-str()
 Provides parsing and construction of multipart/form-data:
 
 ```no
-out = multipart.multipart-encode(fields, boundary)
-fields = multipart.multipart-parse(data, boundary)
+; Write (build multipart/form-data)
+w = multipart.multipart-create()           ; Create a writer (?multipart-writer)
+w.write-field(name, value)                 ; Write a field
+body = w.body-of()                         ; Get the encoded body
+ct = w.content-type()                      ; Get the content-type (includes the boundary)
+
+; Parse
+r = multipart.multipart-parse(content-type, body) ; Parse (?multipart-reader)
 ```
 
 ### net/hpack — HPACK Header Compression (HTTP/2)
@@ -776,8 +818,21 @@ fields = multipart.multipart-parse(data, boundary)
 Provides encoding/decoding of the HPACK algorithm, used for HTTP/2 header compression:
 
 ```no
-buf, n = hpack.encode(headers)
-headers = hpack.decode(buf, n)
+; Header-table operations
+t = hpack.tables{}
+t.init()                                 ; Initialize the static + dynamic tables
+out = t.encode-header(name, value)       ; Encode a single header (str)
+names, values, count, ok = t.decode-headers(data) ; Decode headers ([]str)
+t.dyn-add(name, value)                   ; Add to the dynamic table
+idx = t.find(name, value)                ; Look up an exact name/value
+idx = t.find-name(name)                  ; Look up by name only
+name, value, ok = t.lookup(idx)           ; Look up by index
+
+; Integer/string primitive encoding/decoding
+out = hpack.encode-int(val, prefix-bits, prefix-byte)
+val, next-pos = hpack.decode-int(data, pos, prefix-bits)
+out = hpack.encode-str(s)
+out, next-pos = hpack.decode-str(data, pos)
 ```
 
 ### net/proxy — Proxy Support
@@ -805,9 +860,10 @@ p.close()
 Provides Unix domain socket communication:
 
 ```no
-fd = unix.unix-listen(path)                       ; Listen
-fd = unix.unix-dial(path)                         ; Connect
-fd = unix.unix-accept(listen-fd)                  ; Accept connection
+fd = unix.unix-listen(path)                       ; Listen (returns fd)
+fd = unix.unix-dial(path)                         ; Connect (returns fd)
+l = unix.unix-listen-on(path)                     ; Create a listener (?unix-listener)
+c = l.accept()                                    ; Accept a connection (?unix-conn)
 ```
 
 ---

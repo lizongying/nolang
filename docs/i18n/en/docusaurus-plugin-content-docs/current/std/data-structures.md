@@ -274,6 +274,16 @@ m.clear()
 n = m.len()
 yes = m.is-empty()
 m.for-each(key, val)                ; Traverse all entries
+
+; int-key map (both K and V generic)
+m2 = hashmap-int-tmpl{}
+m2.init()
+m2.put(k, v)
+
+; bool-key map (V generic)
+m3 = hashmap-bool-tmpl{}
+m3.init()
+m3.put(flag, v)
 ```
 
 ### collection/static-hashmap — Generic Fixed-capacity Hash Map
@@ -291,6 +301,12 @@ m.clear()
 n = m.len()
 yes = m.is-empty()
 m.for-each(key, val)                ; Traverse all entries
+
+; int-key static map (both K and V generic)
+m2 = static-hashmap-int-tmpl{}
+
+; bool-key static map (V generic, 2 slots)
+m3 = static-hashmap-bool-tmpl{}
 ```
 
 ---

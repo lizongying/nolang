@@ -502,6 +502,9 @@ egid = os.getegid()                    // Effective group ID
 gids = os.getgroups()                  // Supplementary group IDs
 login = os.get-login()                 // Login user name
 hostid = os.get-host-id()              // Host ID (32-bit)
+uname = os.getpwuid-name(uid)          // Resolve UID to login name (empty if unknown)
+gname = os.getgrgid-name(gid)          // Resolve GID to group name (empty if unknown)
+gids, n = os.getgrouplist(user, basegid) // Full group list for user (getgrouplist)
 
 // File permissions and info
 ok = os.ch-mod(path, mode)             // Change file permissions
@@ -510,6 +513,12 @@ mode = os.stat-mode(path)              // Get file mode bits
 uid = os.stat-uid(path)                // Get file owner uid
 gid = os.stat-gid(path)                // Get file group gid
 mtime = os.stat-mtime(path)            // Get file modification time
+nlink = os.stat-nlink(path)            // Hard link count (st_nlink)
+ino = os.stat-ino(path)                // Inode number (st_ino)
+atime = os.stat-atime(path)            // Access time (Unix seconds, st_atime)
+ctime = os.stat-ctime(path)            // Inode change time (Unix seconds, st_ctime)
+blocks = os.stat-blocks(path)          // Allocated 512-byte block count (st_blocks)
+blksize = os.stat-blksize(path)        // Optimal I/O block size (st_blksize)
 
 // System configuration
 val = os.sysconf(name)                 // Query system config limit
@@ -653,6 +662,7 @@ ok = fs.is-dir(path)                // Check if directory
 sz = fs.stat-size(path)             // Get file size (returns ?i64)
 sz = fs.file-size(path)             // Same as stat-size (returns ?i64)
 sz = fs.fstat-size(fd)              // Get file size via fstat(fd), eliminates TOCTOU (returns ?i64)
+// Other stat fields available via os.stat-{nlink,ino,atime,ctime,blocks,blksize}
 ok = fs.lstat(path)                 // Get symlink info (does not follow link target)
 
 // note: file mode/owner/mtime getters live in the `os` package
@@ -1885,8 +1895,8 @@ m.put('key', val)
 result = m.get('key')   // ?V, nil=not found
 found = m.contains('key')
 m.remove('key')
-n = m.size()
-yes = m.empty()
+n = m.len()
+yes = m.is-empty()
 m.clear()
 
 // int-key map (K, V both generic)
@@ -1912,7 +1922,7 @@ m.put('key', val)
 result = m.get('key')   // ?V, nil=not found
 found = m.contains('key')
 m.remove('key')
-n = m.size()
+n = m.len()
 
 // int-key static map (K, V both generic)
 m2 = static-hashmap-int-tmpl{}
