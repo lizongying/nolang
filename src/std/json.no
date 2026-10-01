@@ -33,6 +33,11 @@ JSON-KIND-STR = 3
 JSON-KIND-ARR = 4
 JSON-KIND-OBJ = 5
 
+; json-pool 实例唯一标识计数器：copy-tree 据此检测“源池 == 接收者池”的自引用。
+; 每次 init 递增取一个 id。即便被常量折叠使所有 id 相同，copy-tree 仍走经
+; copy-tree-into（不查 id）的两段中转，递归在结构上必然收敛，只失去快路径优化。
+json-pool-next-id = 0
+
 ; ═══════════════════════════════════════════════
 ; 結構
 ; ═══════════════════════════════════════════════
@@ -62,6 +67,7 @@ json-pool {
     en []i64
     count i64
     overflowed bool
+    id i64
 }
 
 ; json: 高級 JSON 值，封裝節點池與根節點索引
@@ -108,6 +114,9 @@ json-pool.init = () {
     .en = with-len(0)
     .count = 0
     .overflowed = false
+    #{overflow=wrap}
+    json-pool-next-id = json-pool-next-id + 1
+    .id = json-pool-next-id
 }
 
 ; alloc: 分配新節點，返回索引（堆 vec 自動擴容，不再有池滿上限）
@@ -705,12 +714,26 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     ok = true
 }
 
-; copy-tree: 将 src 池中 node-idx 为根的整棵子树深拷贝进接收者池（BFS 迭代）
+; copy-tree: 将 src 池中 node-idx 为根的整棵子树深拷贝进接收者池。
 ; 返回 dst-idx: 新节点索引（-1=失败）
+;
+; 内存安全（根治自引用崩溃）：src 以 json-pool 值快照传入，其 vec 头与源池共享
+; 底层缓冲区。当源与接收者为同一池（自引用，例如 root.get(k) 取到子树后又
+; root.set-key(k, child)，且 pool 经 #{inline=false} 指针共享缓冲区）时，递归写入
+; 接收者会在 .alloc()/add-child 处扩容共享 vec，使快照 src 的 vec 头失效（UAF）。
+; 检测到同池（src.id == .id）即改走 copy-self：直接在实时接收者 `.` 上沿原始
+; 子边链递归拷贝，读写均用实时 `.`，无快照失效；副本节点不再被遍历，递归
+; 在结构上收敛。跨池（src.id != .id）时保持下方直拷分支，读写分处不同缓冲区。
 json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
 
     dst-idx = -1
     node-idx < 0 || node-idx >= src.count -> return
+
+    ; 同池自引用：改用 copy-self 在实时接收者上拷贝，避免快照 vec 头失效
+    src.id == .id -> {
+        dst-idx = .copy-self(node-idx)
+        return
+    }
 
     ; 遞迴深拷貝：分配目標節點，複製標量欄位與字串值
     d = .alloc()
@@ -745,6 +768,63 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
 
         #{index-out=0}
         e = src.en[e]
+    }
+}
+
+; copy-self: 在同一池内把 node-idx 为根的子树深拷贝到新分配的節點，返回新根索引。
+; 专用于自引用（源与目标同池）场景：读写均用实时接收者 `.`，无值快照，
+; 因而不存在共享 vec 被扩容作废的 UAF；递归沿原始子边链走，新副本节点不会
+; 被再次遍历，结构上必然收敛。读取子边先于递归写入完成（先存 enext）。
+json-pool.copy-self = (node-idx i64) (dst-idx i64) {
+    dst-idx = -1
+    node-idx < 0 || node-idx >= .count -> return
+
+    d = .alloc()
+    d < 0 -> return
+    dst-idx = d
+
+    #{index-out=0}
+    kind = .nodes[node-idx].kind
+
+    #{index-out=0}
+    numv = .nodes[node-idx].num-val
+
+    #{index-out=0}
+    boolv = .nodes[node-idx].bool-val
+
+    #{index-out=0}
+    first = .nodes[node-idx].first
+
+    sval = .strs[node-idx].copy()
+
+    #{index-out=0}
+    .nodes[d].kind = kind
+
+    #{index-out=0}
+    .nodes[d].num-val = numv
+
+    #{index-out=0}
+    .nodes[d].bool-val = boolv
+
+    #{index-out=0}
+    .strs[d] = sval
+
+    e = first
+    (e >= 0) {
+
+        #{index-out=0}
+        cs = .ec[e]
+
+        #{index-out=0}
+        ck = .ek[e]
+
+        #{index-out=0}
+        enext = .en[e]
+
+        cd = .copy-self(cs)
+        .add-child(d, cd, ck)
+
+        e = enext
     }
 }
 

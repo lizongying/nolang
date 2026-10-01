@@ -1,0 +1,39 @@
+; test-stat-fields — 新增 fs.stat-{nlink,ino,atime,ctime,blocks,blksize} 内建
+;
+; 这些 builtin 走 cRetField 路径：按 struct stat 的「字段偏移 + 原生位宽」读取。
+; 位宽读错会把相邻字段折进结果（stat-mode 曾因按 64-bit 读 16-bit st_mode 返回垃圾）。
+; 本测试验证：(a) 每个字段读出合理值；(b) 不同文件的 st_ino 不同——若 ino 被折叠/
+; 读成常数就会相等，可借此钉住偏移/位宽正确性。所有值已在 darwin 上逐一对照 BSD
+; `stat -f` 确认一致（nlink/ino/atime/ctime/blocks/blksize 全等）。
+
+main = () {
+    ls = '/bin/ls'
+
+    nlink = fs.stat-nlink(ls)
+    ino = fs.stat-ino(ls)
+    blksize = fs.stat-blksize(ls)
+    blocks = fs.stat-blocks(ls)
+    mtime = fs.stat-mtime(ls)
+    ctime = fs.stat-ctime(ls)
+    atime = fs.stat-atime(ls)
+
+    nlink < 1 -> os.exit(2)
+    ino <= 0 -> os.exit(3)
+    blksize <= 0 -> os.exit(4)
+    blocks <= 0 -> os.exit(5)
+    mtime <= 0 -> os.exit(6)
+    ctime <= 0 -> os.exit(7)
+
+    ; atime 在 noatime/relatime 挂载下可能为 0，只读取不强求 >0
+    atime < 0 -> os.exit(8)
+
+    ; 不同 inode：ino 字段未被折叠成常数
+    tmp = '/tmp'
+    dino = fs.stat-ino(tmp)
+    dino == ino -> os.exit(9)
+
+    dnlink = fs.stat-nlink(tmp)
+    dnlink < 1 -> os.exit(10)
+
+    print('stat-fields passed')
+}

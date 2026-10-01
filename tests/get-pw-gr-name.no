@@ -1,0 +1,25 @@
+; Regression for os.getpwuid-name / os.getgrgid-name (cRetFieldStr: deref the
+; struct pointer returned by getpwuid(3)/getgrgid(3) and copy pw_name/gr_name,
+; both at offset 0). The current uid/gid always resolve to a non-empty name; an
+; out-of-range id must resolve to the empty string (NULL struct pointer guarded).
+main = () {
+    uid = os.geteuid()
+    gid = os.getegid()
+    uname = os.getpwuid-name(uid)
+    gname = os.getgrgid-name(gid)
+    uname.len() == 0 -> {
+        print('get-pw-gr-name FAILED: current user name empty')
+        os.exit(1)
+    }
+    gname.len() == 0 -> {
+        print('get-pw-gr-name FAILED: current group name empty')
+        os.exit(1)
+    }
+    nobody = os.getpwuid-name(4294967295)
+    nobody.len() != 0 -> {
+        print('get-pw-gr-name FAILED: unknown uid should be empty, got ')
+        print(nobody)
+        os.exit(1)
+    }
+    print('get-pw-gr-name passed')
+}

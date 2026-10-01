@@ -1,0 +1,112 @@
+; json-set-key-self.no — 回歸測試：set-key 寫回同池自引用子樹
+; 修复前：copy-tree 源池与接收者池共享底层 vec，扩容使快照 src 结构体的 vec 头失效 -> segfault。
+; 运行：no run tests/json-set-key-self.no
+
+print('start')
+
+; ── case 1: get 子对象 -> delete-key -> set-key 覆盖同一个已存在的键 ──
+j = json.parse('{"name":"test","dependencies":{"foo":"^1.0.0","bar":"^2.0.0"}}')
+j: {
+    ok -> {
+        root json = it
+        dep = root.get('dependencies')
+        dep: {
+            ok -> {
+                it.delete-key('foo')
+                root.set-key('dependencies', it)
+                out = root.stringify()
+                out.contains('foo') -> {
+                    print('fail: case1 foo not removed -> ' - out)
+                }
+                out.contains('bar') -> {
+                    print('ok: case1 set-key self existing')
+                }
+            }
+            nil -> print('fail: case1 dep nil')
+            err -> print('fail: case1 dep err')
+        }
+    }
+    nil -> print('fail: case1 parse nil')
+    err -> print('fail: case1 parse err')
+}
+
+; ── case 2: get 子对象 -> set-key 到一个新键（同为自引用） ──
+k = json.parse('{"a":{"x":"1"},"b":"2"}')
+k: {
+    ok -> {
+        r2 json = it
+        sub = r2.get('a')
+        sub: {
+            ok -> {
+                r2.set-key('copied', it)
+                out2 = r2.stringify()
+                out2.contains('copied') -> {
+                    print('ok: case2 set-key self newkey')
+                }
+                out2.contains('copied') == false -> {
+                    print('fail: case2 copied missing -> ' - out2)
+                }
+            }
+            nil -> print('fail: case2 sub nil')
+            err -> print('fail: case2 sub err')
+        }
+    }
+    nil -> print('fail: case2 parse nil')
+    err -> print('fail: case2 parse err')
+}
+
+; ── case 3: 跨池 set-key（确保没被改坏） ──
+base = json.parse('{"deps":{"old":"1"}}')
+other = json.parse('{"fresh":"9"}')
+base: {
+    ok -> {
+        b json = it
+        other: {
+            ok -> {
+                b.set-key('deps', it)
+                out3 = b.stringify()
+                out3.contains('fresh') -> {
+                    print('ok: case3 cross-pool set-key')
+                }
+                out3.contains('fresh') == false -> {
+                    print('fail: case3 fresh missing -> ' - out3)
+                }
+            }
+            nil -> print('fail: case3 other nil')
+            err -> print('fail: case3 other err')
+        }
+    }
+    nil -> print('fail: case3 parse nil')
+    err -> print('fail: case3 parse err')
+}
+
+; ── case 4: 直接对同一池调用 copy-tree（根修验证：保护必须在 copy-tree 本身）──
+; 40 个嵌套对象 -> self-copy 期间 .alloc()/add-child 反复扩容共享 vec，使按值传入的
+; src 快照头失效。当前 set-key 的调用点中转不覆盖直接调用 copy-tree 的情形。
+p = json-pool {}
+p.init()
+p-root, p-next, p-ok = p.parse('{"k0":{"v":"0"},"k1":{"v":"1"},"k2":{"v":"2"},"k3":{"v":"3"},"k4":{"v":"4"},"k5":{"v":"5"},"k6":{"v":"6"},"k7":{"v":"7"},"k8":{"v":"8"},"k9":{"v":"9"},"k10":{"v":"10"},"k11":{"v":"11"},"k12":{"v":"12"},"k13":{"v":"13"},"k14":{"v":"14"},"k15":{"v":"15"},"k16":{"v":"16"},"k17":{"v":"17"},"k18":{"v":"18"},"k19":{"v":"19"},"k20":{"v":"20"},"k21":{"v":"21"},"k22":{"v":"22"},"k23":{"v":"23"},"k24":{"v":"24"},"k25":{"v":"25"},"k26":{"v":"26"},"k27":{"v":"27"},"k28":{"v":"28"},"k29":{"v":"29"},"k30":{"v":"30"},"k31":{"v":"31"},"k32":{"v":"32"},"k33":{"v":"33"},"k34":{"v":"34"},"k35":{"v":"35"},"k36":{"v":"36"},"k37":{"v":"37"},"k38":{"v":"38"},"k39":{"v":"39"}}', 0)
+{{
+    p-ok -> {{
+        dup = p.copy-tree(p, p-root)
+        {{
+            dup >= 0 -> {{
+                last-idx, last-found = p.get-key(dup, 'k39')
+                {{
+                    last-found -> {{
+                        inner-idx, inner-found = p.get-key(last-idx, 'v')
+                        {{
+                            inner-found -> print('ok: case4 copy-tree self-pool deep')
+                            -> print('fail: case4 inner v missing')
+                        }}
+                    }}
+                    -> print('fail: case4 deep k39 missing after realloc')
+                }}
+            }}
+            -> print('fail: case4 copy-tree self returned -1')
+        }}
+    }}
+    -> print('fail: case4 parse')
+}}
+
+print('end')

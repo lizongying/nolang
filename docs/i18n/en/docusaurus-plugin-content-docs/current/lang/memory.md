@@ -399,3 +399,58 @@ This map is initialized once for the whole compilation, is never reset per funct
 These two layers of runtime protection mean that, even though the compile-time judgment is imprecise, no actual crash occurs. But logically this relies on runtime NULL checks as a safety net rather than precise compile-time judgment.
 
 **Possible improvement**: turn `globalFirstAssigned` from a compile-time map into a runtime tracking mechanism (a bitmap like `movedVarBitset`), but this would add runtime overhead, and the current mitigations are already sufficient.
+
+### `run` / `awy` are swallowed when they are not the first statement of a block (fixed 2026-09-30)
+
+`skipToStatementEnd()` advances until it reaches a token that can **begin** the next statement, and that
+whitelist — `isStatementBoundary()` (`src/parser/stmt.go`) — was missing `run` and `awy`. Both are
+**prefix keywords** (they can only open an expression; `parseStatement` has no case for them, so they
+fall through to `parseExpressionStatement`) and can therefore legitimately begin a statement. `NEWLINE`
+is deliberately not a boundary, so when they are **not the first statement of a block** (the first one
+never goes through `skipToStatementEnd`) the keyword is skipped over together with its newline. Both
+consequences are `rc=0` with **no diagnostic**:
+
+| Source | Before the fix | After the fix |
+|---|---|---|
+| `awy t` | degraded to a bare `t`, so an if-chain arm's value became the **task handle** (a heap pointer), printed as a garbage integer (e.g. `4367685392`) | correctly unwraps the task result |
+| `run dbl(21)` | degraded to a **synchronous** `dbl(21)` — compiles, prints, but **no longer spawns** | actually spawns |
+
+The second one is especially dangerous: it is a **semantic** degradation, not a crash, so any check of
+the form "did it run without error?" cannot see it.
+
+The fix adds `lexer.RUN, lexer.AWY` to `isStatementBoundary()`. The rule: **every token that
+`parseStatement`'s `switch` can dispatch on must also be listed in `isStatementBoundary()`**; omitting
+one produces a silent bug that only appears when the statement is not the first in its block.
+Regression: `tests/stmt-boundary.no`, `src/parser/stmt_boundary_block_test.go`.
+
+### A bare `{ ... }` at statement position was treated as a declaration (fixed 2026-09-30)
+
+`parseStatement`'s `LBRACE` branch calls `classifyBlockAtCurrent()` (by which point `currentToken` is
+already `{` and no name can be consumed). The `blockEnum` / `blockIface` / `blockTaggedEnum` answers it
+can return are **meaningless at statement position** — real enum / interface / tagged-enum declarations
+all require a preceding name and are dispatched earlier via `classifyBlock()`. But the statement
+dispatch sent only `blockUnknown` to the statement-block path, so:
+
+- `{ x = 2 }` classified as `blockEnum` and `{ print(2) }` as `blockIface`;
+- both reached `parseExpressionStatement`, whose `LBRACE` case in `expr.go` accepts only
+  `blockStruct` / `blockMatch` and otherwise does `p.nextToken(); return nil`;
+- the `{` was eaten, the block's inner statements became **siblings** of the enclosing body, and the
+  block's own `}` closed the **enclosing** block.
+
+The result is not a swallow but a **one-level statement leak**: `f = () { print(1); { print(2) }; print(3) }`
+printed `3,1,2`, and `f = () { x = 1; { x = 2 }; print(x) }` printed nothing. Again `rc=0`, no diagnostic.
+
+The fix routes `blockEnum` / `blockIface` / `blockTaggedEnum` to the statement block as well
+(`blockStruct` must **stay** on the expression path — `{ field: value }` is a legitimate anonymous
+struct-literal expression statement). ⚠️ Do **not** "fix" this by changing `classifyBlockAtCurrent`'s
+`ASSIGN` branch: that covers only one of the three misclassifications and moves the decision away from
+the one place that knows "I am at statement position".
+
+⚠️ **Knock-on effect**: this fix made a statement-position `{ ... }` survive as a real
+`*parser.BlockStatement` for the first time, and the whitelist of `programUsesPrint`
+(`src/build/transpiler.go`, the hand-written AST walker that decides whether to load
+`fmt`/`io`/`str`/`byte`) had no `BlockStatement` case — so a program whose only `print` sits inside a
+bare block stopped being detected. **After any statement-layer change, re-run
+`go test ./build/ -run TestProgramUsesPrint`** and add the new container type to `walkStmt`.
+Regression: `src/parser/stmt_boundary_block_test.go`, `tests/stmt-boundary.no`.
+

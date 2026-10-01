@@ -18,6 +18,19 @@
 ; 基础操作
 ; ═══════════════════════════════════════════════
 
+; string = str | txt —— 字符串族聯合類型別名（對標 number.no 的 num = int | float）
+; 用法：函數參數/返回值聲稱 string，調用時傳入 str 或 txt 實參，
+; 編譯期按實參具體型別單態化（ValidateUnionTypes + FlattenUnion + clone），
+; 每個成員各生成一份具體函數（如 f__str / f__txt）。
+; 能力邊界（與 num 完全相同的既有限制）：
+;   - 函數體內對 union 參數調用成員方法（s.len()/s.to-upper()）尚不支持
+;     （單態化名限定缺陷），請改用全域內建（len(s) 為字節數）或拆成
+;     str/txt 兩個具體函數；
+;   - 聯合變數聲明（s string = 'x'）尚不支持；
+;   - 不要定義 string.len 这类「與成員同名」的別名方法：會接管 s.len()
+;     調用且方法體遞迴分发回自身（段錯誤）。成员方法請直接用 str.*/txt.* 原版。
+string = str | txt
+
 ; str.len-bytes(): 返回字符串的「字節數量」（底層 UTF-8 緩衝區長度）
 ; 由編譯器內建處理（build-in，等同舊 .len 結構體字段）；標準庫內部位元組級迴圈/切片請用本方法
 ; build-in

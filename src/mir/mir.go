@@ -491,6 +491,13 @@ const (
 	// resume_fn if not yet done) and loads the result. Dst is the result value;
 	// its LLVM type is the async function's result type. Args[0] is the handle.
 	OpAwait
+	// OpTaskRetain increments the reference count of the R-tier task object that
+	// a handle points at. Emitted at every COPY of a handle: `run` owns the
+	// first reference and each OpAwait releases one, so an aliased handle
+	// (`h2 = h`) must retain or the first await would free the task out from
+	// under the second. Args[0] is the handle (an i64 whose bits are the %task
+	// pointer). See NOLANG-OWNERSHIP-MODEL.md §1.3 (correction B) and §4.4.
+	OpTaskRetain
 
 	opCount
 )
@@ -545,8 +552,9 @@ var opNames = [opCount]string{
 	OpTxtFromStr: "txt-from-str",
 	OpStrFromVec: "str-from-vec",
 	OpFuncRef:   "func-ref",
-	OpRun:       "run",
-	OpAwait:     "await",
+	OpRun:        "run",
+	OpAwait:      "await",
+	OpTaskRetain: "task-retain",
 	OpEnumNew:   "enum-new",
 	OpEnumTag:   "enum-tag",
 	OpEnumField: "enum-field",

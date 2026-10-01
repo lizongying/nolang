@@ -311,17 +311,23 @@ main = () {
 	if strings.Contains(ir, "and i64 %idx, 255") {
 		t.Errorf("`ptrtoint(task) & 255` waiter indexing is still emitted")
 	}
-	// The waiter must live in the task itself: a 5th field, and a malloc big
-	// enough to hold it (offset 24 + 8 = 32; a 24-byte block would leave the
-	// field dangling past the allocation).
+	// The waiter must live in the task itself: a 5th field, and an allocation
+	// big enough to hold it (offset 24 + 8 = 32; a 24-byte block would leave the
+	// field dangling past the allocation). The task is now an R-tier block, so
+	// the request goes through @nolang_rc_alloc — which adds a 16-byte header in
+	// FRONT and still returns a 32-byte payload, so the size invariant is
+	// unchanged. Accept either allocator but pin the size, and reject a 24-byte
+	// request under both spellings.
 	if !strings.Contains(ir, "%task = type { void (i8*)*, i64, i1, i1, i8* }") {
 		t.Errorf("%%task does not carry a waiter field:\n%s", ir)
 	}
-	if !strings.Contains(ir, "@malloc(i64 32)") {
-		t.Errorf("task allocation is not sized for the waiter field (want @malloc(i64 32))")
+	if !strings.Contains(ir, "@nolang_rc_alloc(i64 32)") && !strings.Contains(ir, "@malloc(i64 32)") {
+		t.Errorf("task allocation is not sized for the waiter field (want a 32-byte request)")
 	}
-	if strings.Contains(ir, "@malloc(i64 24)") {
-		t.Errorf("task allocation is still 24 bytes but %%task is now 32 bytes")
+	for _, bad := range []string{"@malloc(i64 24)", "@nolang_rc_alloc(i64 24)"} {
+		if strings.Contains(ir, bad) {
+			t.Errorf("task allocation is still 24 bytes but %%task is now 32 bytes (%s)", bad)
+		}
 	}
 	for _, want := range []string{
 		"define void @nolang_async_wait(i8* %waited)",

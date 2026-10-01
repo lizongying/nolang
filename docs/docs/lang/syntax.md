@@ -77,7 +77,6 @@ y = 3
 - u32
 - u64
 - u128 ; 128位無符號整數
-- usize ; 僅用於ffi 
 - f32
 - f64
 
@@ -98,9 +97,10 @@ y = 3
 - map ; 映射
 - arr ; 定長數組
 - vec ; 變長數組
-- slice ; 切片（視圖）沒有獨立數據結構，必須依附於arr/vec
+- slice ; 切片（視圖）沒有獨立數據結構，必須依附於arr/vec/str/txt
 
 - \* ; 指針 僅限 FFI `#{c}` 宣告與標準庫
+- usize ; 僅用於ffi 
 - any ; 任意類型 僅限標準庫
 
 高級類型
@@ -119,11 +119,14 @@ y = 3
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float
+string = str | txt
 
 ; 單一類型別名
 bytes = []byte
 buf = [16]u8
 ```
+
+> `int`、`float`、`num` 定義在 `std/number`，`string` 定義在 `std/str`——它們都不是編譯器內建關鍵字，而是標準庫用同一套別名語法寫的聯合類型。
 
 ### 聯合類型的鏈式引用
 
@@ -133,6 +136,7 @@ buf = [16]u8
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float     ; num 是 int 和 float 的聯合
+string = str | txt    ; string 直接聯合兩個具體字符串類型
 ```
 
 ### 在函數中使用
@@ -158,6 +162,22 @@ num.sign = () (r num) {
     }
 }
 ```
+
+`string`（= `str | txt`）同樣可用於參數與返回值：
+
+```no
+; str 與 txt 實參都能傳入，各自單態化一份具體函數
+take = (s string) (n i64) {
+    n = len(s)
+}
+
+a str = 'hello'
+b txt = 'hi'
+n1 = take(a)   ; take__str
+n2 = take(b)   ; take__txt
+```
+
+> 聯合類型函數體的既有限制（`num` 與 `string` 相同）：函數體內對 union 參數調用成員方法（如 `s.len()`）尚不支持，需使用全域內建（`len(s)`，字節數）或拆成具體類型的函數；聯合類型的變量聲明（`s string = 'x'`）也尚不支持。另注意不要定義與成員方法同名的別名方法（如 `string.len`）——它會接管 `s.len()` 調用並在方法體中遞迴分发回自身。
 
 ### 偵測規則
 

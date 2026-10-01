@@ -831,7 +831,7 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 	r := fmt.Sprintf("%%cv%d", c.loadSeq)
 	if fw > tw {
 		c.sb.WriteString(fmt.Sprintf("  %s = trunc %s %s to %s\n", r, fromT, v, toT))
-	} else if fromT == "i8" {
+	} else if fromT == "i8" || fromT == "i1" {
 		// Narrowing->widening an i8 must ZERO-extend: nolang's `byte`/`u8` are
 		// UNSIGNED and are by far the dominant user of the i8 LLVM type (MIR
 		// maps byte/u8/i8 all to i8), and the legacy backend zexts i8 to i64.
@@ -839,6 +839,10 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 		// took part in — `padded[i] = 0x80` then
 		// `(padded[i+0]<<24)|...|padded[i+3]` yielded a negative word, which is
 		// why std/crypto/sha1 produced a wrong (but exit-0) digest under MIR.
+		// The same holds for i1 (bool): MIR maps bool to i1, where true is 1, so
+		// `sext i1 true to i64` would give -1, not 1. A bool widened into an i64
+		// field (`b.flag = true` on `flag i64`, std regexp.no's bool fields) must
+		// read back as 1/0. coerceIndex already zexts i1 for the same reason.
 		c.sb.WriteString(fmt.Sprintf("  %s = zext %s %s to %s\n", r, fromT, v, toT))
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  %s = sext %s %s to %s\n", r, fromT, v, toT))
@@ -1887,6 +1891,23 @@ target triple = "arm64-apple-macosx15.0.0"
 ; addresses shared those bits aliased each other's waiter. See the note on
 ; emitAsyncScheduler.
 %task = type { void (i8*)*, i64, i1, i1, i8* }
+
+; R-tier block header (NOLANG-OWNERSHIP-MODEL.md §3.4, correction B §1.3).
+;
+; ONLY blocks allocated by @nolang_rc_alloc carry one, and for them
+; data = base + 16. Every other heap block in the program keeps the bare-pointer
+; ABI (data == base, plain @free) — the S and C tiers are byte-identical to what
+; they were before RC existed, which is what makes this an additive change.
+;
+;   field 0  rc     live reference count, >= 1 for an owned block
+;   field 1  flags  reserved; bit0 would mark an RC block, bit1 a static/borrow
+;
+; rc == 0 is the BORROWED sentinel: a block the compiler did not allocate (an
+; FFI return, a string constant, the cap==0 str -> []byte view). retain and
+; release both no-op on it, so a borrowed pointer can never reach @free. This
+; is not optional — the same hazard as the historical ensureVecBuffer bug that
+; freed a borrowed view and produced a trace/BPT trap.
+%nolang_hdr = type { i64, i64 }
 
 declare i8* @malloc(i64)
 declare void @free(i8*)
@@ -3887,6 +3908,8 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitAsyncRun(f, inst)
 	case OpAwait:
 		return c.emitAsyncAwait(f, inst)
+	case OpTaskRetain:
+		return c.emitTaskRetain(f, inst)
 	case OpReturn:
 		c.sb.WriteString("  ret void\n")
 		return nil
@@ -7300,7 +7323,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// (`self.pool.nodes[i] = x`) or an element read — the alloca holds a COPY of
 	// the container, so storing through it would be lost. Write through the
 	// real container address instead.
-	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0]); projected && p != "" && os.Getenv("NOLANG_LV_INDEX") == "" {
+	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0], inst); projected && p != "" && os.Getenv("NOLANG_LV_INDEX") == "" {
 		if pt := c.mod.Type(ptid); pt != nil {
 			arrSlot = p
 			arrT = c.llvmTypeOf(pt)
@@ -7470,7 +7493,10 @@ func (c *codegen) localTypeOf(v ValueID) TypeID {
 // wherever the value's slot would have been used — or (slot, tid, false) when
 // the value is not a projection, in which case callers keep their existing
 // slot-based handling unchanged.
-func (c *codegen) lvalueAddrOf(v ValueID) (string, TypeID, bool) {
+//
+// A read that produced an INDEPENDENT COPY is never a projection — see
+// getFieldWasCloned.
+func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 	slot := c.valSlot[v]
 	tid := c.localTypeOf(v)
 	if slot == "" || tid == NoType {
@@ -7492,7 +7518,24 @@ func (c *codegen) lvalueAddrOf(v ValueID) (string, TypeID, bool) {
 		if len(di.Args) < 1 {
 			return slot, tid, false
 		}
-		bptr, btid, _ := c.lvalueAddrOf(di.Args[0])
+		// The field was read BY VALUE (emitGetField cloned it), so the slot
+		// holds an independent copy — NOT an alias of the field's storage.
+		// Forwarding here would hand callers `&struct.field`, i.e. the address
+		// of the SOURCE copy, and the drop of the source struct typically
+		// happens before the use: a use-after-free. This is std/markdown's
+		// nondeterministic table rendering — `line.body.contains('|')` read a
+		// freed buffer and the row fell through to the paragraph branch, so the
+		// same source printed a <tr> or a <p>| Alice | 30 |</p> depending on
+		// heap layout (see tests/repro notes).
+		//
+		// Staying on the clone is also the coherent choice: the clone's buffer
+		// is private to this value, so a mutation through the forwarded address
+		// would land in the field while this value keeps its own buffer and the
+		// two silently diverge.
+		if c.getFieldWasCloned(v) && c.sourceAlreadyDropped(di, use) {
+			return slot, tid, false
+		}
+		bptr, btid, _ := c.lvalueAddrOf(di.Args[0], use)
 		if bptr == "" || btid == NoType {
 			return slot, tid, false
 		}
@@ -7549,7 +7592,7 @@ func (c *codegen) lvalueAddrOf(v ValueID) (string, TypeID, bool) {
 		if len(di.Args) < 2 {
 			return slot, tid, false
 		}
-		bptr, btid, _ := c.lvalueAddrOf(di.Args[0])
+		bptr, btid, _ := c.lvalueAddrOf(di.Args[0], use)
 		if bptr == "" || btid == NoType {
 			return slot, tid, false
 		}
@@ -7587,6 +7630,164 @@ func (c *codegen) lvalueAddrOf(v ValueID) (string, TypeID, bool) {
 		return ep, tid, true
 	}
 	return slot, tid, false
+}
+
+// getFieldWasCloned reports whether the value v — which must be defined by an
+// OpGetField — was read BY VALUE, i.e. emitGetField handed it an independent
+// copy of the field instead of an alias of the field's storage.
+//
+// It must mirror emitGetField's decision EXACTLY: that is the only place that
+// knows whether a clone was emitted, and a mismatch in either direction is a
+// memory bug. Say "no clone" when there was one and callers get the address of
+// the source copy (use-after-free once the source is dropped); say "clone" when
+// there was none and every read of a field becomes a redundant non-projection,
+// silently breaking `pool.nodes[i].kind = x`.
+//
+// Today emitGetField clones exactly one shape: an OWNED `str` field, whose
+// by-value read would otherwise share the heap buffer with the field and be
+// double-freed when both the temp and the struct are dropped.
+func (c *codegen) getFieldWasCloned(v ValueID) bool {
+	fieldLT, owned := c.ptype(v)
+	return owned && fieldLT == "%str-long"
+}
+
+// sourceAlreadyDropped reports whether the storage a projection addresses has
+// ALREADY been released at the point `use` is being emitted.
+//
+// A projection hands out `&root.field...`. That address is only meaningful while
+// every struct along the chain still owns its buffers: dropping any of them
+// frees the very bytes the caller is about to read or write. So this walks the
+// WHOLE chain, not just the immediate receiver — `l = ls[0]; b = l.body` projects
+// to `&ls[0].body`, and it is `ls` (or the element temp) that gets freed, not the
+// local `l`.
+//
+// If nothing has been dropped yet, forwarding is what makes
+// `b.s.set-byte(0, 72)` write the field rather than a temp —
+// tests/set-byte-receiver-writeback.no exists for exactly that, and a blanket
+// "never forward a cloned field" turns it (and len-assign-grow /
+// std-byte-indexing / path-char2 / path-clean-dotdot) into silent lost writes.
+//
+// "Dead" is NOT the same as "dropped": in `w.b.s.set-byte(1, 88)` the
+// intermediate `w.b` copy has no further use after the getfield, yet its drop is
+// emitted at the end of the function — long after the call — so the address is
+// fine. insertDrops is free to place a drop later than the last use; only its
+// ACTUAL position decides when the buffer is freed.
+//
+// Emission order is block order in f.Blocks, then instruction order — the order
+// codegen emits in. A drop only counts when its block is forward-reachable from
+// the read, so a drop on an unrelated branch cannot suppress a projection.
+func (c *codegen) sourceAlreadyDropped(read, use *Inst) bool {
+	f := c.mod.Func(c.cf)
+	if f == nil || read == nil || use == nil || len(read.Args) == 0 {
+		return false // unknown: keep today's behaviour (forward)
+	}
+	usePos, okU := c.emitPos(f, use)
+	if !okU {
+		return false
+	}
+	// Every value the projected address is derived from.
+	srcs := map[ValueID]bool{}
+	cur := read.Args[0]
+	for guard := 0; cur > NoVal && guard < 64; guard++ {
+		if srcs[cur] {
+			break
+		}
+		srcs[cur] = true
+		iid, ok := c.defInst[cur]
+		if !ok {
+			break
+		}
+		d := c.mod.Inst(iid)
+		if d == nil || len(d.Args) == 0 {
+			break
+		}
+		switch d.Op {
+		case OpGetField, OpIndex:
+			cur = d.Args[0]
+		case OpMove:
+			// Both encodings: Dst = fresh (Args=[src]), or Dst = NoVal with
+			// Args=[src, dst] for an assignment to an existing binding.
+			cur = d.Args[0]
+		case OpCast:
+			cur = d.Args[0]
+		default:
+			// Not a projection: the chain ends here. The values already
+			// collected are still the ones the address is derived from, so this
+			// must STOP THE WALK, not abandon the check — returning false here
+			// silently skipped every drop and left std/markdown's
+			// `line.body.contains('|')` reading a freed buffer.
+			cur = NoVal
+		}
+	}
+	// Blocks reachable from the read's block, including itself.
+	reach := map[BlockID]bool{}
+	var visit func(BlockID)
+	visit = func(bid BlockID) {
+		if reach[bid] {
+			return
+		}
+		reach[bid] = true
+		blk := c.mod.Block(bid)
+		if blk == nil || blk.Term == nil {
+			return
+		}
+		for _, t := range blk.Term.Targets {
+			visit(t)
+		}
+	}
+	visit(read.Block)
+	for _, bid := range f.Blocks {
+		if !reach[bid] {
+			continue
+		}
+		blk := c.mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := c.mod.Inst(iid)
+			if inst == nil || inst.Op != OpDrop || len(inst.Args) == 0 {
+				continue
+			}
+			if !srcs[inst.Args[0]] {
+				continue
+			}
+			dp, ok := c.emitPos(f, inst)
+			if !ok {
+				continue
+			}
+			// At or before the use: a drop emitted at this very instruction has
+			// already run by the time the projected address is read.
+			if dp.block < usePos.block || (dp.block == usePos.block && dp.idx <= usePos.idx) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// emitPosition is an instruction's position in emission order.
+type emitPosition struct {
+	block int
+	idx   int
+}
+
+func (c *codegen) emitPos(f *Function, inst *Inst) (emitPosition, bool) {
+	if inst == nil {
+		return emitPosition{}, false
+	}
+	for bi, bid := range f.Blocks {
+		blk := c.mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for i, iid := range blk.Insts {
+			if iid == inst.ID {
+				return emitPosition{bi, i}, true
+			}
+		}
+	}
+	return emitPosition{}, false
 }
 
 // emitGetField lowers `recv.field`: compute the field address via GEP into the
@@ -7882,7 +8083,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// container element (`self.pool.nodes[i].kind = x`, `o.i.v = n`), its alloca
 	// holds a COPY and the store below would be lost. Redirect the write at the
 	// real storage (GEP chain from the addressable base) instead.
-	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0]); projected && p != "" && os.Getenv("NOLANG_LV_FIELD") == "" {
+	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0], inst); projected && p != "" && os.Getenv("NOLANG_LV_FIELD") == "" {
 		if pt := c.mod.Type(ptid); pt != nil {
 			recvSlot = p
 			recvTy = pt
@@ -8037,6 +8238,23 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			valV = cv2
 		} else {
 			valV = pl
+		}
+	}
+	// Scalar integer width mismatch: fieldLT was re-derived from the field
+	// DECLARATION above, but valV still carries the RHS's own integer width. A
+	// char/bool RHS is LLVM i32 while an i64 field needs i64 (and a []byte/i8
+	// field needs i8), so the generic `store fieldLT valV` at the end of this
+	// function emitted `store i64 %lv` with %lv defined as i32 -> opt-verify
+	// "defined with type 'i32' but expected 'i64'" and the build failed. The
+	// existing branches below all handle aggregates (%str-long/%txt/%vec/option/
+	// [N x T]/pointer) but let a bare int->int width gap slip through. Widen or
+	// truncate to the field's width via coerceInt (char/bool are non-negative, so
+	// its sext is equivalent to the intended zext). std regexp.no's
+	// `.tmp-atom-char = c` (char -> i64 field) hit exactly this.
+	if vw, vwOK := intWidth(valLT); vwOK {
+		if fw, fwOK := intWidth(fieldLT); fwOK && vw != fw {
+			valV = c.coerceInt(valV, valLT, fieldLT)
+			valLT = fieldLT
 		}
 	}
 	// Container pseudo-fields (len/cap/data) for slice/str are layout-derived
@@ -10803,7 +11021,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 		// (this is why json.parse / json.set-str silently did nothing). Pass
 		// the address of the REAL field instead so `self` aliases it.
 		rs := ""
-		if p, _, projected := c.lvalueAddrOf(inst.Args[0]); projected && p != "" && os.Getenv("NOLANG_LV_RECV") == "" {
+		if p, _, projected := c.lvalueAddrOf(inst.Args[0], inst); projected && p != "" && os.Getenv("NOLANG_LV_RECV") == "" {
 			rs = p
 		} else if s, ok := c.valSlot[inst.Args[0]]; ok && s != "" {
 			rs = s
@@ -11676,6 +11894,91 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\tbr label %loop\n")
 	b.WriteString("exit:\n")
 	b.WriteString("\tret void\n}\n")
+
+	// ---------------------------------------------------------------------
+	// R-tier reference counting (correction B, NOLANG-OWNERSHIP-MODEL.md §1.3)
+	//
+	// Correction B's claim is that RC's scope is EXACTLY the coroutine-spawn
+	// edge: every other candidate escape boundary (function return, module
+	// global, container, slice view) already has a statically determined order,
+	// and closures / real threads do not exist in this backend. So the only
+	// refcounted object in the language today is the %task that `run` produces
+	// — the canonical "OpRun result -> R" constraint of §4.1.
+	//
+	// Ownership discipline, one count per REFERENCE:
+	//   run                 -> rc = 1   (the handle it returns)
+	//   copy of a handle    -> retain   (OpTaskRetain; h2 = h)
+	//   awy h               -> release  (emitAsyncAwait)
+	// so the task's three containers are freed by whichever await is LAST.
+	//
+	// The layout is data = base + 16, and rc is the FIRST field, i.e. exactly
+	// at data - 16 — which is why retain/release index backwards off the data
+	// pointer instead of naming the header struct.
+	//
+	// These are emitted unconditionally (like the rest of the scheduler) and
+	// are dead code in a program that never spawns; LLVM drops them.
+	//
+	// BORROWED SENTINEL: rc == 0 means "not allocated by @nolang_rc_alloc", and
+	// both retain and release return immediately for it. A handle is the only
+	// value that ever reaches these helpers, and every handle comes from `run`
+	// (which always allocates), so today the sentinel is unreachable from
+	// generated code. It exists so the helpers stay safe when P5 is extended to
+	// user values — a borrowed string constant or FFI pointer must never be
+	// freed, and that hazard has already bitten this codebase once (the
+	// ensureVecBuffer borrowed-view free).
+	b.WriteString("define i8* @nolang_rc_alloc(i64 %n) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%tot = add i64 %n, 16\n")
+	b.WriteString("\t%base = call i8* @malloc(i64 %tot)\n")
+	b.WriteString("\t%hdr = bitcast i8* %base to %nolang_hdr*\n")
+	b.WriteString("\t%rcp = getelementptr inbounds %nolang_hdr, %nolang_hdr* %hdr, i32 0, i32 0\n")
+	b.WriteString("\tstore i64 1, i64* %rcp\n")
+	b.WriteString("\t%fp = getelementptr inbounds %nolang_hdr, %nolang_hdr* %hdr, i32 0, i32 1\n")
+	b.WriteString("\tstore i64 0, i64* %fp\n")
+	b.WriteString("\t%data = getelementptr inbounds i8, i8* %base, i64 16\n")
+	b.WriteString("\tret i8* %data\n}\n")
+
+	b.WriteString("define void @nolang_rc_retain(i8* %p) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%isnull = icmp eq i8* %p, null\n")
+	b.WriteString("\tbr i1 %isnull, label %out, label %go\n")
+	b.WriteString("go:\n")
+	b.WriteString("\t%rcp = getelementptr inbounds i8, i8* %p, i64 -16\n")
+	b.WriteString("\t%rc = load i64, i64* %rcp\n")
+	b.WriteString("\t%borrowed = icmp eq i64 %rc, 0\n")
+	b.WriteString("\tbr i1 %borrowed, label %out, label %inc\n")
+	b.WriteString("inc:\n")
+	b.WriteString("\t%rc1 = add i64 %rc, 1\n")
+	b.WriteString("\tstore i64 %rc1, i64* %rcp\n")
+	b.WriteString("\tbr label %out\n")
+	b.WriteString("out:\n")
+	b.WriteString("\tret void\n}\n")
+
+	// nolang_rc_release returns TRUE when the decrement reached zero and the
+	// block was freed. emitAsyncAwait branches on it to free the task's two
+	// borrowed containers (the args struct and the result buffer) at the same
+	// moment, and only then.
+	b.WriteString("define i1 @nolang_rc_release(i8* %p) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%isnull = icmp eq i8* %p, null\n")
+	b.WriteString("\tbr i1 %isnull, label %no, label %go\n")
+	b.WriteString("go:\n")
+	b.WriteString("\t%base = getelementptr inbounds i8, i8* %p, i64 -16\n")
+	b.WriteString("\t%rc = load i64, i64* %base\n")
+	b.WriteString("\t%borrowed = icmp eq i64 %rc, 0\n")
+	b.WriteString("\tbr i1 %borrowed, label %no, label %dec\n")
+	b.WriteString("dec:\n")
+	b.WriteString("\t%rc1 = sub i64 %rc, 1\n")
+	b.WriteString("\tstore i64 %rc1, i64* %base\n")
+	b.WriteString("\t%zero = icmp eq i64 %rc1, 0\n")
+	b.WriteString("\tbr i1 %zero, label %free, label %no\n")
+	b.WriteString("free:\n")
+	b.WriteString("\tcall void @free(i8* %base)\n")
+	b.WriteString("\tbr label %no\n")
+	b.WriteString("no:\n")
+	b.WriteString("\t%r = phi i1 [ false, %entry ], [ false, %go ], [ false, %dec ], [ true, %free ]\n")
+	b.WriteString("\tret i1 %r\n}\n")
+
 	c.extraGlobals = append(c.extraGlobals, b.String())
 }
 
@@ -12185,9 +12488,14 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	// cancelled, waiter }. Must stay in sync with the `%task` type in the
 	// prelude — a short malloc would leave the `waiter` field (offset 24)
 	// pointing past the block.
+	//
+	// Allocated as an R-tier block (correction B): @nolang_rc_alloc puts a
+	// 16-byte header in front and starts the count at 1, which is the reference
+	// the returned handle owns. The `data` pointer it returns is the %task
+	// itself, so every field access below is unchanged.
 	c.loadSeq++
 	taskBuf := fmt.Sprintf("%%arun.task.%d", c.loadSeq)
-	c.sb.WriteString("  " + taskBuf + " = call i8* @malloc(i64 32)\n")
+	c.sb.WriteString("  " + taskBuf + " = call i8* @nolang_rc_alloc(i64 32)\n")
 	c.loadSeq++
 	taskT := fmt.Sprintf("%%arun.task.t.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%task*\n", taskT, taskBuf))
@@ -12249,6 +12557,28 @@ func (c *codegen) awaitConsumedMsg() string {
 	}
 	return fmt.Sprintf("call i64 @write(i32 2, i8* getelementptr inbounds ([%d x i8], [%d x i8]* @nolang_msg_await_consumed, i64 0, i64 0), i64 %d)",
 		len(msg), len(msg), len(msg))
+}
+
+// emitTaskRetain emits the R-tier retain for a handle copy (OpTaskRetain).
+//
+// The handle is an i64 whose bits ARE the %task pointer (`ptrtoint i8*` at the
+// spawn), so the retain is `inttoptr` back and a call. A zero handle is left
+// alone: @nolang_rc_retain already no-ops on null, but skipping the inttoptr
+// keeps the IR honest about "there is no task here".
+//
+// No result: the instruction only bumps a count, so a failure to emit would be
+// a silent ownership bug rather than a crash — hence the explicit slot check
+// instead of a best-effort store.
+func (c *codegen) emitTaskRetain(f *Function, inst *Inst) error {
+	if len(inst.Args) == 0 {
+		return nil
+	}
+	lt, hreg := c.loadVal(inst.Args[0])
+	c.loadSeq++
+	ptr := fmt.Sprintf("%%tr.ptr.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr %s %s to i8*\n", ptr, lt, hreg))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_rc_retain(i8* %s)\n", ptr))
+	return nil
 }
 
 // emitAsyncAwait emits caller code for OpAwait: it loads the task handle,
@@ -12365,25 +12695,58 @@ func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", resVal, resLT, resLT, resTyped))
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", resLT, resVal, resLT, slot))
 
-	// free the containers (result buffer, args struct, task struct). Inner owned
-	// data now lives in the result slot, so freeing only the 24/8-byte wrappers
-	// is safe.
+	// RELEASE the handle's reference (correction B, NOLANG-OWNERSHIP-MODEL.md
+	// §1.3/§4.4). The %task is an R-tier block: `run` created it with rc = 1 for
+	// the returned handle, and every COPY of that handle retained it
+	// (OpTaskRetain), so this decrement frees the three containers only when the
+	// LAST reference is awaited.
+	//
+	// That is what makes an aliased handle well-defined:
+	//
+	//	h = run dbl(21)
+	//	h2 = h          ; rc 1 -> 2
+	//	print(awy h)    ; rc 2 -> 1, nothing freed
+	//	print(awy h2)   ; rc 1 -> 0, containers freed
+	//
+	// The previous scheme freed unconditionally and merely zeroed the awaited
+	// SLOT, so `h2` still held a dangling pointer and the second await ran on
+	// freed memory (measured SIGSEGV after printing 42). The slot zeroing is
+	// kept: it is still what makes `awy h; awy h` — the same slot twice —
+	// a defined no-op rather than a second release of a dead block.
+	c.loadSeq++
+	relFreed := fmt.Sprintf("%%aawy.freed.%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i1 @nolang_rc_release(i8* %s)\n", relFreed, taskI8))
+	freeDef := fmt.Sprintf("aawy.free.%d", c.loadSeq)
+	freeRef := "%" + freeDef
+	relDoneDef := fmt.Sprintf("aawy.reldone.%d", c.loadSeq)
+	relDoneRef := "%" + relDoneDef
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %s, label %s\n", relFreed, freeRef, relDoneRef))
+
+	// The count reached zero: free the two containers the task borrowed. Inner
+	// owned data now lives in the result slot, so freeing only the 24/8-byte
+	// wrappers is safe. The per-argument buffers are NOT here — the wrapper
+	// (asyncWrapperFor's w_free) already released them when it ran the callee,
+	// and the wrapper is invoked at most once per task (the `done` guard at the
+	// top of this function is what makes that true).
+	//
+	// The %task block itself is NOT freed here either: @nolang_rc_release owns
+	// it and has already freed the allocation's BASE (data - 16) by the time it
+	// returns true. Freeing the data pointer as well would free an interior
+	// address of a block that is already gone (measured trace/BPT trap).
+	c.sb.WriteString(freeDef + ":\n")
 	c.loadSeq++
 	fr := fmt.Sprintf("%%aawy.freeres.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i8*\n", fr, resPtr))
 	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", fr))
 	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", dataI8))
-	c.loadSeq++
-	ftreg := fmt.Sprintf("%%aawy.freetask.%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %%task* %s to i8*\n", ftreg, taskT))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", ftreg))
+	c.sb.WriteString(fmt.Sprintf("  br label %s\n", relDoneRef))
+	c.sb.WriteString(relDoneDef + ":\n")
 
-	// CONSUME THE HANDLE. The %task, its args struct and the result buffer are
-	// gone, but the handle is just an i64 sitting in the caller's slot — it
-	// carries no "already freed" state. A second `awy h` would re-run all of
-	// the above and free three dead pointers (measured: SIGSEGV after the
-	// first result printed). Zeroing the slot makes the guard at the top of
-	// this function fire instead.
+	// CONSUME THE HANDLE. The task may still be alive (an aliased handle holds
+	// another reference), but THIS slot's reference has now been released, so it
+	// must not be released again. The handle is a bare i64 with no "already
+	// released" state, so zeroing the slot is what makes a second `awy h` take
+	// the guarded no-op path at the top of this function.
 	if hslot := c.valSlot[inst.Args[0]]; hslot != "" {
 		c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", hslot))
 	}
@@ -12534,7 +12897,7 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 	// address here would GEP it as a %str-long and write past the real object.
 	// Only accept the projection when it preserves the receiver's OWN storage
 	// layout, and fall back to the copy slot on any mismatch.
-	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0]); projected && p != "" && rt != "" {
+	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0], inst); projected && p != "" && rt != "" {
 		if pt := c.mod.Type(ptid); pt != nil && c.llvmTypeOf(pt) == rt {
 			rslot = p
 		}

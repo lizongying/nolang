@@ -511,11 +511,14 @@ Type aliases create a new name for an existing type. Use the equals syntax `name
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float
+string = str | txt
 
 // Single type alias
 bytes = []byte
 buf = [16]u8
 ```
+
+`int`/`float`/`num` are defined in `std/number.no` and `string` in `std/str.no` — none are compiler keywords; they are ordinary std code using this alias syntax, monomorphized by `ValidateUnionTypes` + `FlattenUnion` + codegen clone.
 
 Union types can reference other union types, forming a hierarchy. They can be used for function parameters and return values; the compiler automatically performs monomorphization, generating a separate function version for each member type.
 
@@ -528,7 +531,17 @@ max = (a ..num) (r num) {
         a[i] > r -> r = a[i]
     }
 }
+
+// Parameter type is string union — accepts both str and txt arguments
+take = (s string) (n i64) {
+    n = len(s)
+}
 ```
+
+**Known union-body limitations (identical for `num` and `string`):**
+- Calling a member method on a union parameter inside the body (`s.len()`, `s.to-upper()`) is NOT supported (broken monomorphized callee qualification). Use global builtins (`len(s)` — byte count) or split into concrete-typed functions.
+- Union-typed variable declarations (`s string = 'x'`, `x num = 5`) are NOT supported.
+- Never define an alias method whose name collides with a member method (e.g. `string.len`): it takes over member calls like `a.len()` and re-dispatches to itself in its own body → infinite recursion / segfault. Member methods `str.*` / `txt.*` must be called as-is.
 
 **Detection rules** — The equals syntax is recognized as a type alias (not a variable assignment) in the following cases:
 
@@ -1287,6 +1300,7 @@ The parser automatically adds a hidden `self` parameter with the receiver type, 
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float
+string = str | txt
 
 // Single type alias
 bytes = []byte

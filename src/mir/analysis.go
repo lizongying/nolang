@@ -412,6 +412,15 @@ func (m *Module) Analyze() *Report {
 		m.checkDropCount(f, rep)
 		m.checkBorrowEscapes(f, rep)
 	}
+	// P3 (NOLANG-OWNERSHIP-MODEL.md §4.3): spawn-graph linearization. Report
+	// only — it decides nothing, and DumpSpawnGraph is a no-op unless
+	// NOLANG_MIR_SPAWN_GRAPH=1 is set.
+	m.DumpSpawnGraph()
+	// P1 (NOLANG-OWNERSHIP-MODEL.md §4.1/§5): tier inference. Report only in
+	// P1 — tierConstraint returns S for every use, so the inference is the
+	// identity and nothing downstream changes. DumpTiers is a no-op unless
+	// NOLANG_MIR_TIER=1 is set.
+	m.DumpTiers()
 	return rep
 }
 
@@ -1532,6 +1541,13 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 	// dropOwnsHeap about them (below, and via isBorrowRead). See
 	// markEnumPayloadOwners.
 	m.markEnumPayloadOwners(f)
+
+	// Tier C (correction A, §1.2): an alias that is only ever READ needs no
+	// copy, so drop the assignment-point clone and share the source's buffer.
+	// Must run after markEnumPayloadOwners (the "source must own its buffer"
+	// guard asks isBorrowRead, which consults enumOwnsPayload) and before the
+	// liveness/drop computation, which has to see the final instruction stream.
+	m.forwardReadOnlyAliases(f)
 
 	// Liveness is needed to decide whether a constructor store CONSUMES its
 	// value (only when the value is dead after the store — a still-live value

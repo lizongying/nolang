@@ -1,0 +1,34 @@
+; test-char-to-i64-field — char/bool(i32) 赋给 i64 struct 字段（emitSetField 缺加宽）
+;
+; MIR emitSetField 用字段声明类型(i64)作为 store 类型，但右值是 char/bool
+; （LLVM i32），旧代码不加宽，直接发 `store i64 %lv`（%lv 实为 i32）->
+; opt-verify 报 "'%lv' defined with type 'i32' but expected 'i64'"，no build 失败。
+; std regexp.no 的 `.tmp-atom-char = c`（char->i64 字段）即触发，阻断 egrep/grep -E 正则。
+
+box {
+    ch i64
+    flag i64
+    b i64
+}
+
+main = () {
+    x box
+
+    ca char = "A"
+    x.ch = ca
+    x.ch != 65 -> os.exit(1)
+
+    cz char = "z"
+    x.b = cz
+    x.b != 122 -> os.exit(2)
+
+    t bool = true
+    f bool = false
+    x.flag = t
+    x.flag != 1 -> os.exit(3)
+
+    x.flag = f
+    x.flag != 0 -> os.exit(4)
+
+    print('char-to-i64-field passed')
+}

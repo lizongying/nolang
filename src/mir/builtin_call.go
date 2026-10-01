@@ -860,6 +860,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinArgsGet(inst)
 	case "getgroups":
 		return c.emitBuiltinGetGroups(inst)
+	case "getgrouplist":
+		return c.emitBuiltinGetGrouplist(inst)
 	case "syslog":
 		return c.emitBuiltinSyslog(inst)
 	case "readlink":
@@ -3768,6 +3770,141 @@ func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
 
 	// --- count result ------------------------------------------------------
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, nSlot))
+	return nil
+}
+
+// emitBuiltinGetGrouplist lowers `os.getgrouplist(user str, basegid i64)` ->
+// (gids []i64, n i64).
+//
+// This is how `id` derives the FULL group membership from the directory (the
+// passwd/group databases) — getgroups(2) alone is not enough, because macOS
+// caps the process credential set at 16 groups, so directory-only memberships
+// (e.g. com.apple.access_remote_ae) are invisible to it while `id` prints them.
+//
+//	int getgrouplist(const char *user, int basegid, int *groups, int *ngroups)
+//	(Linux: gid_t == u32, same width; the buffer element type is i32 on both)
+//
+// `*ngroups` is IN/OUT: capacity on entry, number written on exit — so the count
+// is read back from the out-param, NOT the return value. basegid is always
+// present at index 0. A capacity of getGroupsCap truncates an oversized
+// membership (the same trade-off getgroups makes); the count is clamped to
+// [0, getGroupsCap] so the widen loop can never read past the stack buffer.
+func (c *codegen) emitBuiltinGetGrouplist(inst *Inst) error {
+	if targetGOOS() == "windows" {
+		// No getgrouplist(3); the builtin is only declared for POSIX platforms
+		// (see the platform guards in std/os.no).
+		c.fail("getgrouplist: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("getgrouplist: unsupported on windows")
+	}
+	if len(inst.Results) < 2 {
+		return fmt.Errorf("getgrouplist: needs 2 results (gids, n)")
+	}
+	gidsSlot := c.valSlot[inst.Results[0]]
+	nSlot := c.valSlot[inst.Results[1]]
+	if gidsSlot == "" || nSlot == "" {
+		return fmt.Errorf("getgrouplist: missing result slot")
+	}
+
+	userV, err := c.argIndex(inst, 0)
+	if err != nil {
+		return err
+	}
+	ucstr := c.cstrOf(userV)
+	if ucstr == "" {
+		return fmt.Errorf("getgrouplist: cannot marshal arg 0 as C string")
+	}
+	basegid, err := c.marshalScalar(inst, 1, "i32")
+	if err != nil {
+		return fmt.Errorf("getgrouplist: %v", err)
+	}
+
+	c.decl("declare i32 @getgrouplist(i8*, i32, i8*, i32*)")
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.decl("declare void @free(i8*)")
+
+	// --- scratch groups buffer + the in/out ngroups cell -----------------
+	buf := c.treg("gl.buf")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca [%d x i32]\n", buf, getGroupsCap))
+	bp := c.treg("gl.bp")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast [%d x i32]* %s to i8*\n", bp, getGroupsCap, buf))
+	ngp := c.treg("gl.ngp")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i32\n", ngp))
+	c.sb.WriteString(fmt.Sprintf("  store i32 %d, i32* %s\n", getGroupsCap, ngp))
+
+	// the C return is informational (success/too-small); the count lives in *ngp.
+	c.sb.WriteString(fmt.Sprintf("  call i32 @getgrouplist(i8* %s, i32 %s, i8* %s, i32* %s)\n", ucstr, basegid, bp, ngp))
+	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", ucstr))
+
+	// --- n = clamp(*ngp, [0, getGroupsCap]) ------------------------------
+	nraw32 := c.treg("gl.nraw32")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", nraw32, ngp))
+	nraw := c.treg("gl.nraw")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", nraw, nraw32))
+	neg := c.treg("gl.neg")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", neg, nraw))
+	ge0 := c.treg("gl.ge0")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", ge0, neg, nraw))
+	tooBig := c.treg("gl.big")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ugt i64 %s, %d\n", tooBig, ge0, getGroupsCap))
+	cnt := c.treg("gl.cnt")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %d, i64 %s\n", cnt, tooBig, getGroupsCap, ge0))
+
+	// --- backing store for the []i64 -------------------------------------
+	bytes := c.treg("gl.bytes")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 8\n", bytes, cnt))
+	heap := c.treg("gl.heap")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", heap, bytes))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", heap, bytes))
+
+	// --- widen loop: i32 groups[i] -> i64 heap[i] ------------------------
+	ip := c.treg("gl.ip")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i64\n", ip))
+	c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", ip))
+	condL := c.label("gl.wcond")
+	bodyL := c.label("gl.wbody")
+	endL := c.label("gl.wend")
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", condL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", condL))
+	i := c.treg("gl.i")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", i, ip))
+	more := c.treg("gl.more")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", more, i, cnt))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", more, bodyL, endL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", bodyL))
+	sp := c.treg("gl.sp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr [%d x i32], [%d x i32]* %s, i64 0, i64 %s\n", sp, getGroupsCap, getGroupsCap, buf, i))
+	sv := c.treg("gl.sv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", sv, sp))
+	wv := c.treg("gl.wv")
+	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", wv, sv))
+	off := c.treg("gl.off")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 8\n", off, i))
+	dp := c.treg("gl.dp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", dp, heap, off))
+	dpi := c.treg("gl.dpi")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i64*\n", dpi, dp))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", wv, dpi))
+	i1 := c.treg("gl.i1")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", i1, i))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", i1, ip))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", condL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", endL))
+
+	// --- build the %vec { len, cap, data } -------------------------------
+	lenGEP := c.treg("gl.lgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, gidsSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, lenGEP))
+	capGEP := c.treg("gl.cgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, gidsSlot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, capGEP))
+	dataGEP := c.treg("gl.dgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, gidsSlot))
+	dataInt := c.treg("gl.data")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, heap))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
+
+	// --- count result ----------------------------------------------------
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, nSlot))
 	return nil
 }

@@ -119,6 +119,16 @@ func extractArrayElemType(typeStr string) string {
 // are also registered but treated as transparent (no newtype enforcement).
 var validationConcreteTypeAliases map[string]string
 
+// validationUnionTypeAliases holds union type alias name → alias AST
+// (e.g. "num" → `int | float`, "string" → `str | txt`), populated by
+// ValidateTypes from the current program. Used by isArgTypeCompatible to
+// accept a concrete member (or any type compatible with a member) where the
+// union alias is expected. Nested members are flattened recursively via
+// FlattenUnion, which also resolves members that are themselves aliases.
+// Std-module aliases are merged in via CollectStdUnionAliases (sync.Once),
+// so cross-module calls with union-alias parameters validate correctly.
+var validationUnionTypeAliases map[string]*parser.TypeAlias
+
 // ValidateFuncArgCount checks only argument counts against function signatures.
 // Unlike ValidateFuncArgs, it does NOT check argument types, making it safe
 // to run on merged programs that include standard library functions with
@@ -256,6 +266,16 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 	validationMu.Lock()
 	defer validationMu.Unlock()
 	var results []ValidateResult
+	// 確保 union 別名表可用（isArgTypeCompatible 的 union 分支依賴它）。
+	// ValidateTypes 正常會先填充；此處冪等重填以防單獨調用本函數。
+	if validationUnionTypeAliases == nil {
+		validationUnionTypeAliases, _ = ValidateUnionTypes(program)
+		for k, v := range CollectStdUnionAliases() {
+			if _, exists := validationUnionTypeAliases[k]; !exists {
+				validationUnionTypeAliases[k] = v
+			}
+		}
+	}
 	// 1. Collect local function signatures (including from resolved imports
 	//    which are already merged into the program at build time)
 	sigs := make(map[string]*funcSig)
@@ -1010,6 +1030,24 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 			part = strings.TrimSpace(part)
 			if part == expectedType || isArgTypeCompatible(expectedType, part, arg) {
 				return true
+			}
+		}
+	}
+	// 聯合別名反向相容：當 expectedType 是 union alias（如 "num"、"string"），
+	// argType 是其中一個（遞迴展平後的）成員時允許。單態化管線
+	// （ValidateUnionTypes + FlattenUnion + codegen clone）本就為每個成員
+	// 生成特化版本，此處只是讓參數檢查與之一致。
+	if validationUnionTypeAliases != nil {
+		for _, name := range []string{expectedType, stripModulePrefix(expectedType)} {
+			if ta, ok := validationUnionTypeAliases[name]; ok && ta != nil && ta.IsUnion() {
+				for _, m := range FlattenUnion(name, validationUnionTypeAliases) {
+					if nt, ok := m.(*parser.NamedType); ok {
+						if nt.Value == argType || isArgTypeCompatible(nt.Value, argType, arg) {
+							return true
+						}
+					}
+				}
+				break
 			}
 		}
 	}

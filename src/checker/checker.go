@@ -994,6 +994,17 @@ func ValidateTypes(program *parser.Program) []ValidateResult {
 			validationConcreteTypeAliases[k] = v
 		}
 	}
+	// 收集 union 型別別名（如 num=int|float、string=str|txt），供
+	// isArgTypeCompatible 接受「具體成員實參 → union 別名形參」。
+	// 當前檔案別名優先，再合併 std 模組別名（CollectStdUnionAliases，
+	// sync.Once 快取），使跨模組函數的 union 形參不被 6fgg3htw 誤報。
+	unionAliases, _ := ValidateUnionTypes(program)
+	for k, v := range CollectStdUnionAliases() {
+		if _, exists := unionAliases[k]; !exists {
+			unionAliases[k] = v
+		}
+	}
+	validationUnionTypeAliases = unionAliases
 	// 先收集所有頂層變數的顯式型別，供跨語句型別推斷使用
 	// （如 `z f64 = 2.0` 之後 `a = z * z` 需知道 z 是 f64）
 	topLevelVarTypes := make(map[string]string)
@@ -8227,6 +8238,39 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 func CollectStdConcreteAliases() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
 	return stdAliasesCache
+}
+
+// stdUnionAliasesCache 是 std 模組的 union 型別別名表（如 "string" → str|txt、
+// "num" → int|float）。單檔校驗看不到其他模組的 TypeAlias 語句，導致
+// 「跨模組函數的 union 形參」在 vet/run 階段被 6fgg3htw 誤報；此表以 sync.Once
+// 懶解析全部 std 模組補齊（僅收集 TypeAlias，不觸發完整簽名管線）。
+// 與 stdAliasesCache 一樣使用裸名（不帶模組前綴）。
+var (
+	stdUnionAliasesOnce  sync.Once
+	stdUnionAliasesCache map[string]*parser.TypeAlias
+)
+
+func CollectStdUnionAliases() map[string]*parser.TypeAlias {
+	stdUnionAliasesOnce.Do(func() {
+		out := make(map[string]*parser.TypeAlias)
+		for _, info := range knownStdModules() {
+			source, err := fs.ReadFile(nolang.StdFS, "std/"+info.FullPath+".no")
+			if err != nil {
+				continue
+			}
+			l := lexer.NewCached("std/"+info.FullPath+".no", string(source))
+			prog := parser.New(l).ParseProgram()
+			for _, stmt := range prog.Statements {
+				if ta, ok := stmt.(*parser.TypeAlias); ok && ta.IsUnion() {
+					if _, exists := out[ta.Name]; !exists {
+						out[ta.Name] = ta
+					}
+				}
+			}
+		}
+		stdUnionAliasesCache = out
+	})
+	return stdUnionAliasesCache
 }
 func CollectStdStructModules() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取

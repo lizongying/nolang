@@ -35,7 +35,9 @@ import "testing"
 
 // peelDst reports whether func `name` contains an option→slice peel (a move-like
 // instruction whose source is option-typed and whose destination is slice-typed)
-// and whether that destination is dropped.
+// and whether the payload that peel handed out is FREED — either under the
+// destination itself or under a value its ownership was moved on to. See the
+// chain note in the body: the invariant is "freed", not "freed under this id".
 func peelDst(t *testing.T, mod *Module, name string) (found, dropped bool) {
 	t.Helper()
 	fid, ok := mod.FuncByName[name]
@@ -73,6 +75,22 @@ func peelDst(t *testing.T, mod *Module, name string) (found, dropped bool) {
 	if dst <= NoVal {
 		return found, false
 	}
+
+	// Which value carries the free is an implementation detail; that the
+	// payload IS freed is the invariant. The peel's destination may be freed
+	// under its own value id, or under a value its ownership was MOVED on to:
+	// the clone→move rule in alias_forward.go rewrites the fresh binding's
+	// redundant clone into a move (the peel already handed it a private
+	// vecDeepClone, so `s []i64 = o` was paying for two deep copies of one
+	// payload), which transfers the drop from the peel's temporary to the
+	// binding. Following the chain keeps this an assertion about the invariant
+	// instead of about one value id.
+	//
+	// It still catches the bug these tests exist for. Pre-fix, the peel's
+	// destination had NEITHER an outgoing transfer NOR a drop, so the chain
+	// ended there and nothing ever freed the clone — the leak. A shape that
+	// frees nothing still fails, which is the property that matters.
+	droppedVals := map[ValueID]bool{}
 	for _, bid := range f.Blocks {
 		blk := mod.Block(bid)
 		if blk == nil {
@@ -83,12 +101,36 @@ func peelDst(t *testing.T, mod *Module, name string) (found, dropped bool) {
 			if inst == nil || inst.Op != OpDrop || len(inst.Args) == 0 {
 				continue
 			}
-			if inst.Args[0] == dst {
-				dropped = true
-			}
+			droppedVals[inst.Args[0]] = true
 		}
 	}
-	return found, dropped
+	tail := dst
+	for hop := 0; hop < 8; hop++ {
+		if droppedVals[tail] {
+			return found, true
+		}
+		next := NoVal
+		for _, bid := range f.Blocks {
+			blk := mod.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				inst := mod.Inst(iid)
+				if inst == nil || inst.Op != OpMove {
+					continue
+				}
+				if moveSrc(inst) == tail && moveDst(inst) > NoVal {
+					next = moveDst(inst)
+				}
+			}
+		}
+		if next <= NoVal {
+			break
+		}
+		tail = next
+	}
+	return found, droppedVals[tail]
 }
 
 // The fresh-binding spelling `s []i64 = o` lowers to `move dst=s args=[o]`.

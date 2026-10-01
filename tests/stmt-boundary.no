@@ -1,0 +1,100 @@
+; stmt-boundary.no — 語句層兩個靜默誤編譯的端到端釘子（2026-09-30）
+;
+; 兩者都 pre-existing、rc=0、無任何診斷，且 AST 仍「型別正確」，所以型別檢查器
+; 完全看不到。修復前的實測輸出（對照組 d1943b6e = v0.3.12）：
+;
+;   1. 裸 `{ ... }` 區塊出現在語句位置
+;        修復前：區塊被 classifyBlockAtCurrent 判成宣告（blockEnum /
+;                blockIface），送進 parseExpressionStatement；expr.go 的
+;                LBRACE 分支只認 blockStruct / blockMatch，其餘走
+;                `p.nextToken(); return nil` —— `{` 被吃掉，區塊內語句變成
+;                外層主體的「兄弟」，區塊自己的 `}` 反而關掉了外層區塊。
+;                於是裸區塊之後的每一條語句都往外漏一層。
+;                test-bare-block 修復前只印 `99`（`print(x)` 漏到頂層）。
+;
+;   2. `run` / `awy` 不是區塊第一條語句時，關鍵字被上一條語句的
+;      skipToStatementEnd() 吃掉（NEWLINE 刻意不是語句邊界）。
+;        修復前：`awy t` 退化成裸 `t` ⇒ if 鏈臂體的值變成 task handle
+;                （一個堆指標），印出來是垃圾大數（如 4367685392）。
+;                `run f(x)` 退化成同步 `f(x)` ⇒ 編譯照過、輸出照印，
+;                只是**不再 spawn**（這條無法從 stdout 觀察，由
+;                src/parser/stmt_boundary_block_test.go 的 AST 斷言釘住）。
+
+dbl-async = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n * 2
+}
+
+; ── 缺陷 1：裸 { } 區塊不吞後續語句 ─────────────────────────────────
+
+test-bare-block = () {
+    x = 1
+    {
+        x = 2
+    }
+    print(x); expect: 2
+    print(99); expect: 99
+}
+
+; 首條語句是呼叫 ⇒ 修復前分類為 blockIface，同樣吞掉後續語句
+test-bare-block-call-first = () {
+    print(1); expect: 1
+    {
+        print(2); expect: 2
+    }
+    print(3); expect: 3
+}
+
+; 頂層裸區塊（無外層函式）
+x-top = 1
+{
+    x-top = 2
+}
+print(x-top); expect: 2
+
+; ── 缺陷 2：非首條語句的 run / awy ───────────────────────────────────
+
+; 原始回報形式：if 鏈臂體尾巴是 `awy t`，臂值必須是結果而非 task handle
+test-awy-tail-in-ifchain = () {
+    x = true -> {
+        t = run dbl-async(21)
+        awy t
+    }
+    print(x); expect: 42
+}
+
+; 同樣的缺陷，但尾巴 `awy t` 出現在 **match 臂** 而非 if 鏈臂
+test-awy-tail-in-match = () {
+    t = run dbl-async(21)
+    v = 1
+    x = v: {
+        1 -> {
+            y = 1
+            awy t
+        }
+        -> 0
+    }
+    print(x); expect: 42
+}
+
+; `awy run f(21)` 作為非首條語句（兩個關鍵字連續）
+test-awy-run-nonfirst = () {
+    y = 1
+    z = awy run dbl-async(21)
+    print(z); expect: 42
+}
+
+; 過度修正守門員：非首條 `run` 之後的語句仍要正常解析
+test-run-nonfirst-then-use = () {
+    y = 1
+    t = run dbl-async(21)
+    print(y); expect: 1
+    print(awy t); expect: 42
+}
+
+test-bare-block()
+test-bare-block-call-first()
+test-awy-tail-in-ifchain()
+test-awy-tail-in-match()
+test-awy-run-nonfirst()
+test-run-nonfirst-then-use()

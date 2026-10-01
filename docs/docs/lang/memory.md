@@ -494,6 +494,53 @@ task 由 `@malloc` 配置、**16 位元組對齊**，指標低位只有 4 個有
 > 所以這一條在今天是**潛伏**缺陷而非可觀測故障。迴歸：
 > `src/mir/async_boundary_ownership_test.go`。
 
+### `run` / `awy` 不是區塊第一條陳述時被吃掉（2026-09-30 已修）
+
+`skipToStatementEnd()` 在每條陳述解析完後一路前進到「能**開始**下一條陳述」的 token 才停，
+而這份白名單 `isStatementBoundary()`（`src/parser/stmt.go`）漏了 `run` 與 `awy`。兩者都是
+**前綴關鍵字**（只能開啟一個表達式，`parseStatement` 沒有它們的 case ⇒ 落到
+`parseExpressionStatement`），確實能開始一條陳述，因此必須在白名單裡。`NEWLINE` 刻意不是
+邊界，於是當它們**不是區塊第一條陳述**時（第一條不經過 `skipToStatementEnd`），關鍵字連同
+換行一起被吞掉。兩個後果都是 `rc=0`、無診斷：
+
+| 原始碼 | 修復前 | 修復後 |
+|---|---|---|
+| `awy t` | 退化成裸 `t` ⇒ if 鏈臂體的值變成 **task handle**（堆指標），印出垃圾大數（如 `4367685392`） | 正確解出任務結果 |
+| `run dbl(21)` | 退化成**同步** `dbl(21)` ⇒ 編譯照過、輸出照印，只是**不再 spawn** | 真的 spawn |
+
+第二條特別危險：它是**語意**退化，不是崩潰，任何「跑起來有沒有報錯」的檢查都看不到。
+
+修法是往 `isStatementBoundary()` 加入 `lexer.RUN, lexer.AWY`。規則是：**`parseStatement` 的
+`switch` 能分派的每一個 token，都必須同時列在 `isStatementBoundary()` 裡**；漏一個就會出現
+「只在非第一條陳述時發生」的靜默錯誤。迴歸：`tests/stmt-boundary.no`、
+`src/parser/stmt_boundary_block_test.go`。
+
+### 語句位置的裸 `{ ... }` 被當成宣告（2026-09-30 已修）
+
+`parseStatement` 的 `LBRACE` 分支會呼叫 `classifyBlockAtCurrent()`（此時 `currentToken` 已是
+`{`、沒有名稱可消耗）。它回傳的 `blockEnum` / `blockIface` / `blockTaggedEnum` 在**語句位置**
+毫無意義 —— 真正的列舉／介面／標籤列舉宣告都需要前置名稱，走的是較早的
+`classifyBlock()` 分支。但語句分派只把 `blockUnknown` 導向語句區塊，於是：
+
+- `{ x = 2 }` 被分類成 `blockEnum`、`{ print(2) }` 被分類成 `blockIface`；
+- 兩者都送進 `parseExpressionStatement`，而 `expr.go` 的 `LBRACE` 分支只認
+  `blockStruct` / `blockMatch`，其餘走 `p.nextToken(); return nil`；
+- `{` 被吃掉，區塊內陳述變成外層主體的**兄弟**，區塊自己的 `}` 反而關掉了**外層**區塊。
+
+結果不是「吞掉」而是**陳述外漏一層**：`f = () { print(1); { print(2) }; print(3) }` 印出
+`3,1,2`；`f = () { x = 1; { x = 2 }; print(x) }` 什麼都不印。同樣 `rc=0`、無診斷。
+
+修法是在語句分派把 `blockEnum` / `blockIface` / `blockTaggedEnum` 一併導向語句區塊
+（`blockStruct` 必須**留在**表達式路徑 —— `{ field: value }` 是合法的匿名結構體字面量陳述）。
+⚠️ **不要**改 `classifyBlockAtCurrent` 的 `ASSIGN` 分支來「修」這個問題：那只涵蓋三種誤分類
+中的一種，而且把判斷搬離了唯一知道「我在語句位置」的地方。
+
+⚠️ **連帶影響**：這個修復讓語句位置的 `{ ... }` 第一次真正以 `*parser.BlockStatement` 存活，
+而 `programUsesPrint`（`src/build/transpiler.go`，決定要不要載入 `fmt`/`io`/`str`/`byte` 的
+手寫 AST walker）的白名單裡沒有 `BlockStatement` ⇒ 只把 `print` 寫在裸區塊裡的程式不再被偵測。
+**動到語句層就要重跑 `go test ./build/ -run TestProgramUsesPrint`**，並把新的容器型別補進
+`walkStmt`。迴歸：`src/parser/stmt_boundary_block_test.go`、`tests/stmt-boundary.no`。
+
 ### 全局變數首次賦值的 free 跳過判斷不夠精確
 
 編譯器使用編譯期 map `globalFirstAssigned` 追蹤全局變數是否已做過首次賦值：首次賦值跳過釋放舊值（舊值是 `zeroinitializer`，非堆數據），後續重賦值才釋放舊堆值。

@@ -1,0 +1,73 @@
+; test/string-union.no — 測試 std/str 中 string = str | txt 聯合類型別名
+;
+; 覆蓋能力（與 number.no 的 num = int | float 同構）：
+;   - union 參數單態化：f(s string) 分別以 str / txt 實參調用
+;   - union 返回值單態化：pick(a string, b string) (r string)
+;   - 檢查器相容性：具體成員實參傳給 union 別名形參不報 6fgg3htw
+;   - 成員方法（str.*/txt.* 原版）不受別名影響
+
+; ── union 參數：str 實參單態化 ──
+take-bytes = (s string) (n i64) {
+    n = len(s)
+}
+
+test-str-arg = () {
+    a str = 'hello'
+    n = take-bytes(a)
+    print(n); expect: 5
+
+    b str = '你好ab'
+    n = take-bytes(b)
+    print(n); expect: 8 ; len() 內建為字節數（UTF-8）
+}
+test-str-arg()
+print(0)
+
+; ── union 參數：txt 實參單態化 ──
+test-txt-arg = () {
+    t txt = 'hi'
+    n = take-bytes(t)
+    print(n); expect: 2
+
+    u txt = 'abc'
+    n = take-bytes(u)
+    print(n); expect: 3
+}
+test-txt-arg()
+print(1)
+
+; ── union 返回值：pick 按實參型別單態化，str/txt 各自保留原型別 ──
+pick = (a string, b string) (r string) {
+    r = a
+}
+
+test-pick = () {
+    a str = 'hello'
+    b str = 'world'
+    x = pick(a, b)
+    print(x); expect: hello
+
+    p txt = 'yes'
+    q txt = 'no'
+    y = pick(p, q)
+    n = len(y)
+    print(n); expect: 3
+}
+test-pick()
+print(2)
+
+; ── 成員方法不受 string 別名影響（str.len/txt.len 仍為碼點數）──
+test-member-methods = () {
+    a str = '你好ab'
+    n = a.len()
+    print(n); expect: 4
+
+    t txt = '你好'
+    n = t.len()
+    print(n); expect: 2
+
+    ok = a.empty()
+    print(ok); expect: false
+}
+test-member-methods()
+print(3)

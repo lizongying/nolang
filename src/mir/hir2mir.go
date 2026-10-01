@@ -2952,6 +2952,13 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						// A copied async handle keeps its task's result type.
 						if rt, ok := l.asyncResTypes[val]; ok {
 							l.asyncResTypes[fresh] = rt
+							// …and the copy is a NEW reference to the same
+							// %task, so it must retain. `run` owns the first
+							// count and each OpAwait releases one; without this
+							// the first await would free the task out from under
+							// the aliased handle (measured SIGSEGV on
+							// `h2 = h`). See NOLANG-OWNERSHIP-MODEL.md §4.4.
+							l.b.EmitVoid(OpTaskRetain, []ValueID{fresh}, "")
 						}
 						l.locals[name] = fresh
 						if f := l.mod.Func(l.curFunc); f != nil {
@@ -9613,12 +9620,20 @@ func (l *lowerer) rebindOwnsHeap(v ValueID) bool {
 //
 // The entry is CLEARED when src is not a handle, so a later `awy t` cannot pick
 // up a stale result type left by a previous task.
+//
+// The destination is also a NEW REFERENCE to the same %task, so it retains
+// (OpTaskRetain) — the R-tier discipline is one count per reference, released by
+// OpAwait. Both call sites invoke this immediately after the EmitMoveInto that
+// created the reference, so the retain lands in the right order.
 func (l *lowerer) carryAsyncResType(dst, src ValueID) {
 	if dst <= NoVal {
 		return
 	}
 	if rt, ok := l.asyncResTypes[src]; ok {
 		l.asyncResTypes[dst] = rt
+		if dst != src {
+			l.b.EmitVoid(OpTaskRetain, []ValueID{dst}, "")
+		}
 		return
 	}
 	delete(l.asyncResTypes, dst)

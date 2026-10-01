@@ -119,11 +119,14 @@ A type alias creates a new name for an existing type. It uses the equals syntax 
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float
+string = str | txt
 
 ; Single type alias
 bytes = []byte
 buf = [16]u8
 ```
+
+> `int`, `float`, `num` are defined in `std/number`, and `string` is defined in `std/str` — none of them are compiler built-in keywords; they are union types written by the standard library using this same alias syntax.
 
 ### Chained References of Union Types
 
@@ -133,6 +136,7 @@ Union types can reference other union types to form a hierarchy:
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float     ; num is a union of int and float
+string = str | txt    ; string directly unions the two concrete string types
 ```
 
 ### Using in Functions
@@ -158,6 +162,22 @@ num.sign = () (r num) {
     }
 }
 ```
+
+`string` (= `str | txt`) works the same way for parameters and return values:
+
+```no
+; Both str and txt arguments are accepted; each is monomorphized into a concrete function
+take = (s string) (n i64) {
+    n = len(s)
+}
+
+a str = 'hello'
+b txt = 'hi'
+n1 = take(a)   ; take__str
+n2 = take(b)   ; take__txt
+```
+
+> Known limitations of union-typed function bodies (identical for `num` and `string`): calling a member method on a union parameter inside the body (e.g. `s.len()`) is not yet supported — use a global builtin (`len(s)`, byte count) or split into concrete-typed functions; declaring a union-typed variable (`s string = 'x'`) is also not yet supported. In addition, never define an alias method that shares a member method's name (e.g. `string.len`) — it takes over `s.len()` calls and re-dispatches to itself inside its own body, causing infinite recursion.
 
 ### Detection Rules
 

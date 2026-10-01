@@ -1,0 +1,88 @@
+; Correction B (NOLANG-OWNERSHIP-MODEL.md §1.3): the coroutine-spawn edge is the
+; ONLY RC scope, so a %task is the one R-tier object in the language.
+;
+; Ownership discipline — one count per REFERENCE:
+;     run              -> rc = 1  (the handle it returns)
+;     copy of a handle -> retain  (h2 = h)
+;     awy h            -> release
+; so the task's containers are freed by whichever await is LAST.
+;
+; Before this change `awy` freed the task unconditionally and merely zeroed the
+; awaited SLOT. An aliased handle therefore still held a dangling pointer: every
+; case below printed its value and then died (segmentation fault, rc=1).
+; Measured A/B: cases 1 and 2 crash on the pre-change binary, print correctly
+; after it; cases 3-6 are byte-identical either way (they are the controls that
+; keep the new retain/release from over-reaching).
+
+dbl = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n * 2
+}
+
+mk = () (h i64) {
+    h = run dbl(21)
+}
+
+; 1. the reported crash: h2 aliases h and BOTH are awaited
+alias-both = () {
+    h = run dbl(21)
+    h2 = h
+    a = awy h
+    b = awy h2
+    print('1a={a} 1b={b}')
+}
+
+; 2. a chain of aliases — every copy is its own reference
+alias-chain = () {
+    h = run dbl(21)
+    h2 = h
+    h3 = h2
+    a = awy h
+    b = awy h2
+    c = awy h3
+    print('2a={a} 2b={b} 2c={c}')
+}
+
+; 3. a handle returned from a function is a single reference
+via-return = () {
+    h = mk()
+    a = awy h
+    print('3a={a}')
+}
+
+; 4. a handle stored in a container
+via-container = () {
+    hs []i64 = []
+    hs.push(run dbl(21))
+    a = awy hs[0]
+    print('4a={a}')
+}
+
+; 5. the SAME slot awaited twice stays a defined no-op. The diagnostic goes to
+;    stderr; stdout keeps the deterministic 42 then 0.
+same-slot-twice = () {
+    h = run dbl(21)
+    a = awy h
+    b = awy h
+    print('5a={a} 5b={b}')
+}
+
+; 6. many spawn+await cycles — the count must balance or RSS grows without
+;    bound (measured 300k cycles: 8.40 MB before, 7.96 MB after, same sum)
+many = () (s i64) {
+    s = 0
+    i <- [0..2000) {
+        h = run dbl(i)
+        v = awy h
+        #{overflow=wrap}
+        s = s + v
+    }
+}
+
+alias-both()
+alias-chain()
+via-return()
+via-container()
+same-slot-twice()
+total = many()
+print('6={total}')

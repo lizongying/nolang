@@ -1,0 +1,27 @@
+; Regression for os.getgrouplist(user str, basegid i64) -> (gids []i64, n i64).
+; getgrouplist(3) resolves the FULL directory membership (getgroups caps at 16 on
+; macOS). The current user's real gid must appear in the list, and the returned
+; count must equal the slice length.
+main = () {
+    ruid = os.getuid()
+    rgid = os.getgid()
+    user = os.getpwuid-name(ruid)
+    gids, n = os.getgrouplist(user, rgid)
+    gids.len() == 0 -> {
+        print('getgrouplist FAILED: empty membership for current user')
+        os.exit(1)
+    }
+    n != gids.len() -> {
+        print('getgrouplist FAILED: count != slice length')
+        os.exit(1)
+    }
+    found = false
+    i <- [0..gids.len()): {
+        gids[i] == rgid -> found = true
+    }
+    found == false -> {
+        print('getgrouplist FAILED: base gid not present in membership')
+        os.exit(1)
+    }
+    print('getgrouplist passed')
+}

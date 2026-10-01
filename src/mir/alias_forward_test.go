@@ -1,0 +1,418 @@
+package mir
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+// These tests pin tier C of the hybrid ownership model (correction A in
+// NOLANG-OWNERSHIP-MODEL.md §1.2): an alias that is only ever READ costs no
+// copy, while every alias that is written — or whose source is written, rebound
+// or handed to a callee — keeps the conservative clone.
+//
+// WHY THE ASSERTIONS ARE ON THE MIR AND NOT ON STDOUT
+// ---------------------------------------------------
+// The whole point of the change is that the observable behaviour is IDENTICAL;
+// what differs is that one deep copy is gone. A stdout test cannot see the
+// difference, and neither can a golden sweep — which is exactly why the sweep
+// having zero diffs is a NECESSARY but not SUFFICIENT check here. Pinning the
+// instruction stream is what makes the win non-regressible: put the clone back
+// and these tests fail while every program still prints the right answer.
+//
+// The dangerous direction is under-cloning (a silent use-after-free), so every
+// test below that describes a hazard asserts that the clone is STILL THERE.
+
+// aliasCounts returns the OpClone / OpDrop counts in func `name`, plus a
+// textual op dump used in failure messages.
+func aliasCounts(t *testing.T, mod *Module, name string) (clones, drops int, dump string) {
+	t.Helper()
+	fid, ok := mod.FuncByName[name]
+	if !ok {
+		t.Fatalf("function %q not found in lowered module", name)
+	}
+	f := mod.Func(fid)
+	if f == nil {
+		t.Fatalf("function %q (id %d) not resolvable", name, fid)
+	}
+	var b strings.Builder
+	for _, bid := range f.Blocks {
+		blk := mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := mod.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			switch inst.Op {
+			case OpClone:
+				clones++
+			case OpDrop:
+				drops++
+			}
+			fmt.Fprintf(&b, "    %s\n", inst.Op)
+		}
+	}
+	return clones, drops, b.String()
+}
+
+// TestReadOnlySliceAliasIsNotCloned is the case correction A exists for: `b = a`
+// where `b` is only read and `a` is still live. Today's lowering clones
+// unconditionally; with tier C the alias shares the source's buffer and there is
+// exactly ONE drop.
+func TestReadOnlySliceAliasIsNotCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    print(a[0])
+    print(b[0])
+}
+`)
+	clones, drops, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("read-only alias still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+	if drops != 1 {
+		t.Errorf("shared alias must leave exactly one drop: drops=%d, want 1\n%s", drops, dump)
+	}
+}
+
+// TestReadOnlyAliasInsideLoopIsNotCloned: the alias is read only, but the read
+// sits in a loop body, i.e. in a different block from the binding.
+func TestReadOnlyAliasInsideLoopIsNotCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    i i64 = 0
+    for i <- [0..3) {
+        print(b[i])
+    }
+    print(a[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("read-only alias in a loop still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+}
+
+// TestWrittenAliasStillCloned: `b[0] = 99` must not be visible through `a`, so
+// the copy has to stay. This is the rule the whole safety argument rests on.
+func TestWrittenAliasStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    b[0] = 99
+    print(a[0])
+    print(b[0])
+}
+`)
+	clones, drops, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("alias written through was NOT cloned: clones=0, want >=1\n%s", dump)
+	}
+	if drops != 2 {
+		t.Errorf("independent copies must each drop once: drops=%d, want 2\n%s", drops, dump)
+	}
+}
+
+// TestSourceWrittenAfterAliasStillCloned: writing the SOURCE while the alias is
+// live is the mirror hazard — the alias must not observe the write.
+func TestSourceWrittenAfterAliasStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    a[0] = 99
+    print(a[0])
+    print(b[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("source written under a live alias was NOT cloned: clones=0\n%s", dump)
+	}
+}
+
+// TestReboundSourceAliasStillCloned: `a = [9,9,9]` drops a's old buffer, so an
+// alias sharing it would dangle. This is the exact defect the unconditional
+// binding-time clone was introduced for (hir2mir.go:2996).
+func TestReboundSourceAliasStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    a = [9, 9, 9]
+    print(b[0])
+    print(a[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("alias outliving a rebind of its source was NOT cloned: clones=0\n%s", dump)
+	}
+}
+
+// TestAliasPassedToCalleeStillCloned: a callee receives a BORROWED pointer and
+// can write through it (measured: `mutate(v []i64) { v[0] = 99 }` really does
+// change the caller's buffer), so handing the alias to a call is a write as far
+// as the alias's independence is concerned.
+func TestAliasPassedToCalleeStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+mutate = (v []i64) {
+    v[0] = 99
+}
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    mutate(b)
+    print(a[0])
+    print(b[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("alias passed to a callee was NOT cloned: clones=0\n%s", dump)
+	}
+}
+
+// TestSourcePassedToCalleeUnderAliasStillCloned is the mirror of the above: a
+// callee given the SOURCE may mutate it, and the alias would then observe a
+// change a private copy would not have seen.
+func TestSourcePassedToCalleeUnderAliasStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+mutate = (v []i64) {
+    v[0] = 99
+}
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    print(b[0])
+    mutate(a)
+    print(a[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("source passed to a callee under a live alias was NOT cloned: clones=0\n%s", dump)
+	}
+}
+
+// assertEveryOperandDefined is the invariant that a deleted definition breaks,
+// and it is the only thing that catches the alias-chain bug: the broken version
+// deleted exactly as many clones as the fixed one, so a clone-count assertion
+// passes on both.
+func assertEveryOperandDefined(t *testing.T, mod *Module, name string) {
+	t.Helper()
+	fid, ok := mod.FuncByName[name]
+	if !ok {
+		t.Fatalf("function %q not found", name)
+	}
+	f := mod.Func(fid)
+	if f == nil {
+		t.Fatalf("function %q (id %d) not resolvable", name, fid)
+	}
+	defined := map[ValueID]bool{}
+	for _, p := range f.Params {
+		defined[p] = true
+	}
+	for _, bid := range f.Blocks {
+		blk := mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			if inst := mod.Inst(iid); inst != nil && inst.Dst > NoVal {
+				defined[inst.Dst] = true
+			}
+		}
+	}
+	for _, bid := range f.Blocks {
+		blk := mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := mod.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			for _, a := range inst.Args {
+				if a > NoVal && !defined[a] {
+					t.Errorf("value %d used by %s has no definition", a, inst.Op)
+				}
+			}
+		}
+		if blk.Term != nil {
+			for _, a := range blk.Term.Args {
+				if a > NoVal && !defined[a] {
+					t.Errorf("value %d used by terminator %s has no definition", a, blk.Term.Op)
+				}
+			}
+		}
+	}
+}
+
+// TestForwardedAliasChainLeavesNoDanglingValue: `c = b` where `b` was itself
+// forwarded must be re-pointed at the SURVIVING source. Deciding every rewrite
+// up front and applying them afterwards left `c` reading a value whose
+// definition had been deleted, and the LLVM backend then refused the module
+// outright — tests/mem-safety/nested-container-clone.no failed with
+// "EmitLLVM: index slot: value id 124 (type %vec) has no slot in func 2".
+func TestForwardedAliasChainLeavesNoDanglingValue(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    c []i64 = b
+    print(a[0])
+    print(b[0])
+    print(c[0])
+}
+`)
+	clones, drops, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("read-only alias chain still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+	if drops != 1 {
+		t.Errorf("shared aliases must leave exactly one drop: drops=%d, want 1\n%s", drops, dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestBorrowedEnumPayloadAliasIsNotForwarded: the payload peeled out of a tagged
+// enum by OpEnumField is a BORROW — the enum owns the buffer and frees it, and
+// on the second extraction the enum is marked as the payload's owner. Forwarding
+// an alias of that peel makes the alias outlive the enum's drop.
+//
+// This is exactly what tests/tagged-enum-two-match.no caught: the second match's
+// `for x <- items` iterated the freed payload and printed nothing at all.
+func TestBorrowedEnumPayloadAliasIsNotForwarded(t *testing.T) {
+	mod := lowerForTest(t, `
+list-res {
+    ok(items []str),
+    fail,
+}
+main = () {
+    l []str = ['p', 'q']
+    q list-res = ok(l)
+    q: {
+        ok(items) -> {
+            for x <- items: {
+                print('a: ' - x)
+            }
+        }
+
+        fail -> print('fail a')
+    }
+    q: {
+        ok(items) -> {
+            for x <- items: {
+                print('b: ' - x)
+            }
+        }
+
+        fail -> print('fail b')
+    }
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("alias of a borrowed enum payload was forwarded: clones=0, want >=1\n%s", dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestAliasUsedAfterSourceLastUseIsStillSafe checks the guard does not simply
+// refuse everything: a read-only alias that outlives the source's last explicit
+// read must still forward (the single drop is moved to cover the alias).
+func TestAliasUsedAfterSourceLastUseIsStillSafe(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    print(b[0])
+    print(b[1])
+}
+`)
+	clones, drops, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("read-only alias still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+	if drops != 1 {
+		t.Errorf("shared alias must leave exactly one drop: drops=%d, want 1\n%s", drops, dump)
+	}
+}
+
+// TestSourceDeadAliasIsMovedNotCloned pins the OTHER half of tier C (§1.2's
+// third bullet): when the source has no use left after the binding, `b = a` is
+// a MOVE — the alias takes over the buffer — so not even a deferred clone is
+// needed, whatever the alias does with it afterwards.
+//
+// This is the case hir2mir's unconditional binding-time clone (hir2mir.go:3003)
+// over-pays for: `b` is WRITTEN, so the read-only forwarding refuses, yet `a` is
+// provably dead, so a copy is pure waste. The observable output is unchanged —
+// only the allocation disappears.
+func TestSourceDeadAliasIsMovedNotCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    b[0] = 99
+    print(b[0])
+}
+`)
+	clones, drops, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("source-dead alias still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+	if drops != 1 {
+		t.Errorf("a moved buffer must be dropped exactly once: drops=%d, want 1\n%s", drops, dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestSourceDeadAfterEarlierReadsAliasIsMoved: the source may still be READ
+// before the binding — only its DEADNESS after the binding matters. This is the
+// boundary the move predicate has to get right, so it gets its own case.
+func TestSourceDeadAfterEarlierReadsAliasIsMoved(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    print(a[0])
+    b []i64 = a
+    b[0] = 99
+    print(b[0])
+}
+`)
+	clones, drops, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("source-dead alias still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+	if drops != 1 {
+		t.Errorf("a moved buffer must be dropped exactly once: drops=%d, want 1\n%s", drops, dump)
+	}
+}
+
+// TestSourceLiveAfterBindingIsNotMoved is the guard on the above: one read of
+// the source AFTER the binding keeps it live, so the copy must stay. Without
+// this the "source dead" test could be passing for the wrong reason.
+func TestSourceLiveAfterBindingIsNotMoved(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    b[0] = 99
+    print(a[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("source still live after the binding was NOT cloned: clones=0\n%s", dump)
+	}
+}

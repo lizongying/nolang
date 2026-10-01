@@ -118,6 +118,13 @@ const (
 	// cArgCStr buffer that the C call rewrote in place (mkstemp writes the real
 	// name into its template). The buffer is freed after the copy.
 	cRetStrFromArg
+	// cRetFieldStr: the C call returns a POINTER to a struct whose field at
+	// Offset is a NUL-terminated char* (getpwuid -> passwd.pw_name, getgrgid ->
+	// group.gr_name; both sit at offset 0 on darwin and linux). The pointer may
+	// be NULL (unknown id), so a zeroed dummy buffer stands in for it — the
+	// loaded char* is then NULL and storeCStrResult yields the empty string,
+	// exactly the "no name" case POSIX id prints as a bare number.
+	cRetFieldStr
 )
 
 // cPairKind describes the SECOND Nolang result of a builtin whose C call already
@@ -200,14 +207,33 @@ type statLayout struct {
 	// the value, which is exactly the bug cRetField.Width was added to prevent.
 	UidW int
 	GidW int
+	// The stat family is extended so std stat/du/ls can emit the full BSD
+	// field set. Each *_W is that C field's NATIVE bit width (see
+	// cRetField.Width) — reading wider than the field occupies folds a
+	// neighbour into the value. Verified against the platform <sys/stat.h>:
+	//   nlink:  darwin 16 (uint16 @6) | linux x86_64 64 (@16) | arm64 32 (@20)
+	//   ino:    darwin/linux 64 (@8) | windows 16 (@4)
+	//   atime/ctime: time_t, always 64 (tv_sec of the timespec)
+	//   blocks: 512-byte block count, 64 on darwin/x86_64/arm64 (@104/64/64)
+	//   blksize: darwin & arm64 32 (@112/56) | x86_64 64 (@56)
+	NlinkOff   int64
+	NlinkW     int
+	InoOff     int64
+	InoW       int
+	AtimeOff   int64
+	CtimeOff   int64
+	BlocksOff  int64
+	BlocksW    int
+	BlksizeOff int64
+	BlksizeW   int
 }
 
 func statLayoutFor() statLayout {
 	if targetGOOS() == "linux" {
 		if targetGOARCH() == "arm64" {
-			return statLayout{Size: 128, ModeOff: 16, UidOff: 24, GidOff: 28, MtimeOff: 88, SizeOff: 48, UidW: 32, GidW: 32}
+			return statLayout{Size: 128, ModeOff: 16, UidOff: 24, GidOff: 28, MtimeOff: 88, SizeOff: 48, UidW: 32, GidW: 32, NlinkOff: 20, NlinkW: 32, InoOff: 8, InoW: 64, AtimeOff: 72, CtimeOff: 104, BlocksOff: 64, BlocksW: 64, BlksizeOff: 56, BlksizeW: 32}
 		}
-		return statLayout{Size: 144, ModeOff: 24, UidOff: 28, GidOff: 32, MtimeOff: 88, SizeOff: 48, UidW: 32, GidW: 32}
+		return statLayout{Size: 144, ModeOff: 24, UidOff: 28, GidOff: 32, MtimeOff: 88, SizeOff: 48, UidW: 32, GidW: 32, NlinkOff: 16, NlinkW: 64, InoOff: 8, InoW: 64, AtimeOff: 72, CtimeOff: 104, BlocksOff: 64, BlocksW: 64, BlksizeOff: 56, BlksizeW: 64}
 	}
 	if targetGOOS() == "windows" {
 		// msvcrt `struct _stat64` (mingw _mingw_stat64.h) — the struct filled by
@@ -225,10 +251,14 @@ func statLayoutFor() statLayout {
 		//   __time64_t st_ctime    @48                        → sizeof 56
 		// S_IFREG (0x8000) / S_IFDIR (0x4000) keep their POSIX values, so the
 		// stat-file / stat-dir masks carry over unchanged.
-		return statLayout{Size: 56, ModeOff: 6, UidOff: 10, GidOff: 12, MtimeOff: 40, SizeOff: 24, UidW: 16, GidW: 16}
+		// msvcrt _stat64 has NO allocated-block accounting (no st_blocks /
+		// st_blksize). du/stat on windows fall back to apparent size, so blocks
+		// & blksize are mapped onto st_size here purely to stay in-bounds; the
+		// values are meaningless on windows and callers must not rely on them.
+		return statLayout{Size: 56, ModeOff: 6, UidOff: 10, GidOff: 12, MtimeOff: 40, SizeOff: 24, UidW: 16, GidW: 16, NlinkOff: 8, NlinkW: 16, InoOff: 4, InoW: 16, AtimeOff: 32, CtimeOff: 48, BlocksOff: 24, BlocksW: 64, BlksizeOff: 24, BlksizeW: 64}
 	}
 	// darwin (and any unknown target, matching legacy's default branch)
-	return statLayout{Size: 144, ModeOff: 4, UidOff: 16, GidOff: 20, MtimeOff: 48, SizeOff: 96, UidW: 32, GidW: 32}
+	return statLayout{Size: 144, ModeOff: 4, UidOff: 16, GidOff: 20, MtimeOff: 48, SizeOff: 96, UidW: 32, GidW: 32, NlinkOff: 6, NlinkW: 16, InoOff: 8, InoW: 64, AtimeOff: 32, CtimeOff: 64, BlocksOff: 104, BlocksW: 64, BlksizeOff: 112, BlksizeW: 32}
 }
 
 // statBufArg is the `struct stat*` scratch-buffer argument shared by the whole
@@ -372,6 +402,36 @@ func ttynameSpec() cCallSpec {
 	}
 }
 
+// getpwuidSpec is `os.getpwuid-name`: getpwuid(3) returns struct passwd* whose
+// first field pw_name (offset 0 on darwin & linux) is the login name. A NULL
+// return (unknown uid) becomes the empty string via cRetFieldStr. Windows has no
+// passwd database; the prelude shim nolang.win_getpwuid always returns NULL.
+func getpwuidSpec() cCallSpec {
+	fn := "getpwuid"
+	if targetGOOS() == "windows" {
+		fn = "nolang.win_getpwuid"
+	}
+	return cCallSpec{
+		Func: fn,
+		Args: []cArgSpec{{Kind: cArgI32, From: 0}},
+		Ret:  cRetSpec{Kind: cRetFieldStr, LLVM: "i8*", Offset: 0},
+	}
+}
+
+// getgrgidSpec is `os.getgrgid-name`: getgrgid(3) -> struct group* with gr_name
+// at offset 0. Same NULL/empty contract and Windows shim as getpwuid.
+func getgrgidSpec() cCallSpec {
+	fn := "getgrgid"
+	if targetGOOS() == "windows" {
+		fn = "nolang.win_getgrgid"
+	}
+	return cCallSpec{
+		Func: fn,
+		Args: []cArgSpec{{Kind: cArgI32, From: 0}},
+		Ret:  cRetSpec{Kind: cRetFieldStr, LLVM: "i8*", Offset: 0},
+	}
+}
+
 // buildForwardCSpecs maps a ForwardFunc name to its C call. Adding a builtin is
 // now a data change, not a new emitter.
 //
@@ -397,6 +457,8 @@ func buildForwardCSpecs() map[string]cCallSpec {
 			Func: "getlogin",
 			Ret:  cRetSpec{Kind: cRetCStrToStr, LLVM: "i8*"},
 		},
+		"getpwuid": getpwuidSpec(),
+		"getgrgid": getgrgidSpec(),
 		"ttyname": ttynameSpec(),
 		"mkdtemp": {
 			// mkdtemp(tmpl) -> (name, ok). Like mkstemp it rewrites the template
@@ -471,6 +533,30 @@ func buildForwardCSpecs() map[string]cCallSpec {
 		"stat-mtime": {
 			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
 			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.MtimeOff, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-nlink": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.NlinkOff, Width: st.NlinkW, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-ino": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.InoOff, Width: st.InoW, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-atime": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.AtimeOff, Width: 64, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-ctime": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.CtimeOff, Width: 64, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-blocks": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.BlocksOff, Width: st.BlocksW, Pair: cPairSpec{Kind: cPairOKRetZero}},
+		},
+		"stat-blksize": {
+			Func: statFn, Args: []cArgSpec{{Kind: cArgCStr, From: 0}, statBufArg()},
+			Ret: cRetSpec{Kind: cRetField, LLVM: "i32", BufIdx: 1, Offset: st.BlksizeOff, Width: st.BlksizeW, Pair: cPairSpec{Kind: cPairOKRetZero}},
 		},
 
 		// ------------------------------------------------- scalar / void
@@ -799,6 +885,25 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		if err := c.storeResult(inst, 0, v, "i64"); err != nil {
 			return err
 		}
+	case cRetFieldStr:
+		// callReg points at the struct (declared i8*); Offset selects the char*
+		// field. A NULL struct pointer would fault on the load, so a zeroed,
+		// 8-aligned dummy global stands in — its offset-0 bytes are themselves a
+		// NULL char*, which storeCStrResult turns into the empty string.
+		if callTy != "i8*" {
+			return fmt.Errorf("builtin %s: cRetFieldStr expects i8* return, got %s", inst.Sym, callTy)
+		}
+		okc := c.treg("pstr")
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i8* %s, null\n", okc, callReg))
+		safe := c.treg("psafe")
+		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8* %s, i8* %s\n", safe, okc, callReg, c.dummyZeroBuf()))
+		fa := c.treg("psfa")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %d\n", fa, safe, spec.Ret.Offset))
+		name := c.treg("psname")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s, align 8\n", name, fa))
+		if err := c.storeCStrResult(inst, 0, name); err != nil {
+			return err
+		}
 	case cRetSret:
 		if sretSlot == "" {
 			return fmt.Errorf("builtin %s: sret slot not allocated", inst.Sym)
@@ -1020,6 +1125,15 @@ func (c *codegen) storeResult(inst *Inst, i int, v, srcTy string) error {
 // emptyStrGlobal is the shared 1-byte NUL terminator used whenever a C string
 // comes back NULL: handing NULL to strlen/memcpy would be instant UB, and
 // Nolang's convention is that a failed lookup yields the empty string.
+// dummyZeroBuf is a private, 8-aligned, all-zero 16-byte buffer used to stand in
+// for a NULL struct pointer before reading a char* field out of it (cRetFieldStr).
+// align 8 matters: a 1-byte-aligned load of the pointer would let the optimizer
+// legalize it as misaligned UB and fold the value to poison.
+func (c *codegen) dummyZeroBuf() string {
+	c.global("@.mir.dummy = private constant [16 x i8] zeroinitializer, align 8")
+	return "getelementptr inbounds ([16 x i8], [16 x i8]* @.mir.dummy, i64 0, i64 0)"
+}
+
 func (c *codegen) emptyStrGlobal() string {
 	c.global("@.mir.empty = private constant [1 x i8] zeroinitializer")
 	return "getelementptr inbounds ([1 x i8], [1 x i8]* @.mir.empty, i64 0, i64 0)"

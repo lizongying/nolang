@@ -417,6 +417,8 @@ r = t.compare(b txt)        // Lexicographic comparison (-1/0/1)
 b = t.at(idx i64)           // Safe index access
 ```
 
+> **`string` union alias (std/str.no):** `string = str | txt` mirrors `num = int | float` (std/number.no). Usable as function parameter/return type — the compiler monomorphizes per concrete argument type (`f__str` / `f__txt`). Same limitations as `num`: no union-typed variables, no member-method calls on the union parameter inside the body (use `len(s)` global or split concrete overloads), and never define alias methods colliding with member names (`string.len` would hijack `str.len`/`txt.len` and self-recurse).
+
 #### vec — Slice Operations
 
 ```no

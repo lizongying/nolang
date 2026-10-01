@@ -452,6 +452,66 @@ func init() {
 		ForwardFunc:  "stat-mtime",
 	})
 
+	// stat-nlink: get hard link count (st_nlink) via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-nlink",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "hard link count (st_nlink) (returns value, ok)",
+		ForwardFunc:  "stat-nlink",
+	})
+
+	// stat-ino: get inode number (st_ino) via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-ino",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "inode number (st_ino) (returns value, ok)",
+		ForwardFunc:  "stat-ino",
+	})
+
+	// stat-atime: get access time in Unix seconds (st_atime) via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-atime",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "access time in Unix seconds (st_atime) (returns value, ok)",
+		ForwardFunc:  "stat-atime",
+	})
+
+	// stat-ctime: get inode change time in Unix seconds (st_ctime) via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-ctime",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "inode change time in Unix seconds (st_ctime) (returns value, ok)",
+		ForwardFunc:  "stat-ctime",
+	})
+
+	// stat-blocks: get allocated 512-byte block count (st_blocks) via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-blocks",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "allocated 512-byte block count (st_blocks) (returns value, ok)",
+		ForwardFunc:  "stat-blocks",
+	})
+
+	// stat-blksize: get optimal I/O block size (st_blksize) via stat
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "stat-blksize",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
+		Doc:          "optimal I/O block size (st_blksize) (returns value, ok)",
+		ForwardFunc:  "stat-blksize",
+	})
+
 	// [deprecated] read-file: use read-bytes instead (supports error handling, TOCTOU safety, loop read)
 	// read-file: read entire file into a []byte
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
@@ -717,6 +777,21 @@ func init() {
 		ForwardFunc:  "getgroups",
 	})
 
+	// getgrouplist: resolve a user's FULL group membership from the directory
+	// (POSIX getgrouplist(3)). Unlike getgroups (the process credential set, which
+	// macOS caps at 16), this includes every group the user belongs to in the
+	// passwd/group databases — exactly what `id` prints. basegid is always present
+	// at index 0. Returns (gids, count); an oversized membership is truncated at
+	// the builtin's fixed capacity.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "getgrouplist",
+		Params:       []parser.Type{parser.TypeStr, parser.TypeI64},
+		Return:       []parser.Type{&parser.SliceType{Elem: parser.TypeI64}, parser.TypeI64},
+		Doc:          "Resolve a user name + base gid to its full group list (getgrouplist). Returns (gids, count)",
+		ForwardFunc:  "getgrouplist",
+	})
+
 	// sysconf: query system configuration limit (POSIX sysconf(3))
 	// Returns i64 value (-1 on error)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
@@ -788,6 +863,28 @@ func init() {
 		Return:       []parser.Type{parser.TypeStr},
 		Doc:          "Get the login name of the current user. Returns empty string on failure",
 		ForwardFunc:  "getlogin",
+	})
+
+	// getpwuid-name: resolve a uid to its login name (POSIX getpwuid(3)).
+	// Returns the pw_name string, or "" when the uid is unknown (no such user).
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "getpwuid-name",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Resolve a user ID to its login name (getpwuid). Empty string if unknown",
+		ForwardFunc:  "getpwuid",
+	})
+
+	// getgrgid-name: resolve a gid to its group name (POSIX getgrgid(3)).
+	// Returns the gr_name string, or "" when the gid is unknown (no such group).
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "getgrgid-name",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Resolve a group ID to its group name (getgrgid). Empty string if unknown",
+		ForwardFunc:  "getgrgid",
 	})
 
 	// get-host-id: get host identifier (POSIX gethostid(3))

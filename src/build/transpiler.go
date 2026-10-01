@@ -1106,6 +1106,18 @@ func (t *Transpiler) programUsesPrint(progs ...*parser.Program) bool {
 				walkExpr(ex.Expression)
 			case *parser.IfExpression:
 				walkExpr(ex.Condition)
+				walkExpr(ex.MatchedExpr)
+				// Match arms nest: the tail arm's body is carried on the
+				// DotValBody block rather than on Alternative, so it has to be
+				// walked separately or a `-> { print(...) }` tail is missed.
+				if ex.DotValBody != nil {
+					for _, st := range ex.DotValBody.Statements {
+						if used {
+							return
+						}
+						walkStmt(st)
+					}
+				}
 				if ex.Consequence != nil {
 					for _, st := range ex.Consequence.Statements {
 						if used {
@@ -1152,6 +1164,58 @@ func (t *Transpiler) programUsesPrint(progs ...*parser.Program) bool {
 					}
 					walkStmt(st2)
 				}
+			// ── container statements ──────────────────────────────────────
+			// Every statement type that can hold child statements or
+			// expressions must be listed here, because a print call anywhere
+			// inside one of them has to force the fmt/io/str/byte modules to
+			// load. A miss is not a cosmetic problem: codegen still emits the
+			// bare `@fmt-int` call, so `opt` then fails with
+			// "use of undefined value '@fmt-int'" and the program does not
+			// build at all.
+			//
+			// BlockStatement and ForStatement were the two that mattered in
+			// practice (the 2026-09-07 regression test asserts both). The bare
+			// `{ ... }` case only became reachable once the parser started
+			// keeping a statement-position block as a real BlockStatement
+			// instead of flattening its body into the enclosing block — before
+			// that the walker saw the print calls as siblings and the gap was
+			// masked.
+			case *parser.BlockStatement:
+				for _, st2 := range st.Statements {
+					if used {
+						return
+					}
+					walkStmt(st2)
+				}
+			case *parser.ForStatement:
+				walkStmt(st.Init)
+				walkExpr(st.Condition)
+				walkStmt(st.Update)
+				walkExpr(st.CountExpr)
+				if st.IterRange != nil {
+					walkExpr(st.IterRange.RangeExpr)
+				}
+				if st.Body != nil {
+					for _, st2 := range st.Body.Statements {
+						if used {
+							return
+						}
+						walkStmt(st2)
+					}
+				}
+			case *parser.ReturnStatement:
+				walkExpr(st.ReturnValue)
+			case *parser.MultiAssignStatement:
+				for _, tgt := range st.Targets {
+					if used {
+						return
+					}
+					walkExpr(tgt)
+				}
+				walkExpr(st.Value)
+			case *parser.UnwrapAssignStatement:
+				walkExpr(st.Target)
+				walkExpr(st.Value)
 			}
 		}
 		for _, st := range prog.Statements {

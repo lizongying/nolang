@@ -446,6 +446,18 @@ entry:
   ret i8* %p
 }
 
+; getpwuid(3)/getgrgid(3): Windows has no passwd/group database; return NULL so
+; cRetFieldStr yields the empty string and id prints the bare numeric id.
+define i8* @nolang.win_getpwuid(i32 %uid) {
+entry:
+  ret i8* null
+}
+
+define i8* @nolang.win_getgrgid(i32 %gid) {
+entry:
+  ret i8* null
+}
+
 ; gethostid(3): FNV-1a over the COMPUTERNAME environment value.
 define i32 @nolang.win_gethostid() {
 entry:
