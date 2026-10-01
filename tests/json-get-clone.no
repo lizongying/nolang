@@ -1,0 +1,111 @@
+; json-get-clone.no — 回归：json.get / arr-get / get-key 返回“独立深拷贝子树”，
+; 使子句柄与父不再共享底层 vec 缓冲区。
+; 修复前：#{inline=false} 指针字段拷贝缺借用语义，父子各持 vec 头但共享同一 data 缓冲；
+; 任一 handle 扩容 realloc → 另一 handle 头失效 → 悬垂读（父 stringify=null / 数据错乱）。
+; 修复后：get 族返回独立副本，扩容互不影响；re-attach（set-key 回写）惯用法仍生效。
+; 运行：no run tests/json-get-clone.no
+
+print('start')
+
+; ── case1: 子句柄 set-str（会 alloc）后父仍完好，且父不被污染 ──
+j = json.parse('{"a":{"x":"1"},"b":"2"}')
+j: {
+    ok -> {
+        root json = it
+        sub = root.get('a')
+        sub: {
+            ok -> {
+                it.set-str('newkey', 'val')
+                out = root.stringify()
+                out == 'null' -> print('fail: case1 root null (regression)')
+                out.contains('x') == false -> print('fail: case1 root lost x -> ' - out)
+                out.contains('newkey') -> print('fail: case1 child leaked to parent -> ' - out)
+                sout = it.stringify()
+                sout.contains('newkey') == false -> print('fail: case1 child missing its own newkey')
+                out.contains('x') -> { sout.contains('newkey') -> { out.contains('newkey') == false -> print('ok: case1 child-grow keeps parent intact') } }
+            }
+            nil -> print('fail: case1 sub nil')
+            err -> print('fail: case1 sub err')
+        }
+    }
+    nil -> print('fail: case1 parse nil')
+    err -> print('fail: case1 parse err')
+}
+
+; ── case2: 子句柄直接 alloc-node 后父仍完好 ──
+y = json.parse('{"obj":{"k":"v"},"tail":"t"}')
+y: {
+    ok -> {
+        r json = it
+        c = r.get('obj')
+        c: {
+            ok -> {
+                i = it.alloc-node()
+                ro = r.stringify()
+                ro == 'null' -> print('fail: case2 root null after child.alloc')
+                ro.contains('obj') == false -> print('fail: case2 root lost obj -> ' - ro)
+                ro.contains('obj') -> print('ok: case2 root survives child.alloc')
+            }
+            nil -> print('fail: case2 child nil')
+            err -> print('fail: case2 child err')
+        }
+    }
+    nil -> print('fail: case2 parse nil')
+    err -> print('fail: case2 parse err')
+}
+
+; ── case3: re-attach 惯用法（消费者真实写法）结果正确 ──
+v = json.parse('{"dependencies":{"foo":"^1.0.0","bar":"^2.0.0"}}')
+v: {
+    ok -> {
+        vv json = it
+        d = vv.get('dependencies')
+        d: {
+            ok -> {
+                it.delete-key('foo')
+                it.set-str('baz', '^3.0.0')
+                vv.set-key('dependencies', it)
+                vo = vv.stringify()
+                vo.contains('foo') -> print('fail: case3 foo not removed -> ' - vo)
+                vo.contains('baz') == false -> print('fail: case3 baz not added -> ' - vo)
+                vo.contains('bar') == false -> print('fail: case3 bar lost -> ' - vo)
+                vo.contains('foo') == false -> { vo.contains('baz') -> { vo.contains('bar') -> print('ok: case3 re-attach idiom works') } }
+            }
+            nil -> print('fail: case3 dep nil')
+            err -> print('fail: case3 dep err')
+        }
+    }
+    nil -> print('fail: case3 parse nil')
+    err -> print('fail: case3 parse err')
+}
+
+; ── case4: arr-get 元素子句柄 grow 后父数组仍完好 ──
+a = json.parse('{"list":[{"n":1},{"n":2}]}')
+a: {
+    ok -> {
+        root json = it
+        lst = root.get('list')
+        lst: {
+            ok -> {
+                e = it.arr-get(0)
+                e: {
+                    ok -> {
+                        it.set-str('extra', 'x')   ; grow the element copy
+                        ro = root.stringify()
+                        ro == 'null' -> print('fail: case4 root null after arr-get elem grow')
+                        ro.contains('list') == false -> print('fail: case4 root lost list -> ' - ro)
+                        ro.contains('list') -> print('ok: case4 root survives arr-get elem grow')
+                    }
+                    nil -> print('fail: case4 elem nil')
+                    err -> print('fail: case4 elem err')
+                }
+            }
+            nil -> print('fail: case4 list nil')
+            err -> print('fail: case4 list err')
+        }
+    }
+    nil -> print('fail: case4 parse nil')
+    err -> print('fail: case4 parse err')
+}
+
+print('end')

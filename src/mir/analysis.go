@@ -398,6 +398,10 @@ func (m *Module) Analyze() *Report {
 	// on the same Module (tests re-analyze after mutating the IR), and a stale
 	// ValueID left owning would keep a drop the new IR no longer warrants.
 	m.enumOwnsPayload = map[ValueID]bool{}
+	// Same reasoning for the spawn-argument move set: it is recomputed by
+	// insertDrops below, and a stale entry would make emitAsyncRun skip a deep
+	// copy for a value whose drop was NOT suppressed this time — a double free.
+	m.spawnArgMoves = map[ValueID]bool{}
 	// Phase 2 needs a whole-module pre-pass: a caller must know whether a callee
 	// consumes the enum it passes, and a callee may be analyzed after its caller.
 	m.markEnumParamOwners()
@@ -410,12 +414,20 @@ func (m *Module) Analyze() *Report {
 		m.insertDrops(f, rep)
 		m.checkMoves(f, rep)
 		m.checkDropCount(f, rep)
+		// R-tier counterpart of checkDropCount: invariant I3 for task handles
+		// (NOLANG-OWNERSHIP-MODEL.md §3.5 / §4.5, roadmap P6). Runs after the
+		// drops are placed so it sees the final instruction stream.
+		m.checkRefBalance(f, rep)
 		m.checkBorrowEscapes(f, rep)
 	}
 	// P3 (NOLANG-OWNERSHIP-MODEL.md §4.3): spawn-graph linearization. Report
 	// only — it decides nothing, and DumpSpawnGraph is a no-op unless
 	// NOLANG_MIR_SPAWN_GRAPH=1 is set.
 	m.DumpSpawnGraph()
+	// P5 sizing (NOLANG-OWNERSHIP-MODEL.md §5 P5, "參數側"): how many spawn
+	// arguments could avoid the P0 deep copy by being MOVED instead of copied.
+	// Report only, gated on NOLANG_MIR_SPAWN_ARG_MOVE=1.
+	m.DumpSpawnArgMoveStats()
 	// P1 (NOLANG-OWNERSHIP-MODEL.md §4.1/§5): tier inference. Report only in
 	// P1 — tierConstraint returns S for every use, so the inference is the
 	// identity and nothing downstream changes. DumpTiers is a no-op unless
@@ -1554,6 +1566,16 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 	// keeps its own drop at its last use).
 	liveIn, liveOut := m.Liveness(f)
 
+	// isParam is computed up here because two later steps need it: the
+	// spawn-argument move decision and the wouldDrop set.
+	isParam := map[ValueID]bool{}
+	for _, p := range f.Params {
+		isParam[p] = true
+	}
+	for _, p := range f.ResultParams {
+		isParam[p] = true
+	}
+
 	moveSrc := map[ValueID]bool{}
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
@@ -1716,16 +1738,20 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 		}
 	}
 
-	isParam := map[ValueID]bool{}
-	for _, p := range f.Params {
-		isParam[p] = true
-	}
-	for _, p := range f.ResultParams {
-		isParam[p] = true
-	}
-
-	// droppable: every owned, non-param, non-moveSource value defined in f.
-	droppable := map[ValueID]bool{}
+	// wouldDrop is the predicate that decides whether a value gets a drop at
+	// all, and droppable below is now literally "wouldDrop minus moveSrc" —
+	// where it used to be a second spelling of the same condition. A second
+	// spelling is how the two would drift.
+	//
+	// ⚠️ IT MUST BE COMPUTED HERE, AFTER the moveSrc loop above, and not
+	// earlier. That loop MUTATES module state: the moveEnumSharesHeap branch
+	// marks `m.enumOwnsPayload[src]` and `[dst]`, and dropOwnsHeap consults
+	// enumOwnsPayload FIRST. Collecting wouldDrop before that loop therefore
+	// misses every value that only becomes an owning enum there, which strips
+	// its drop and turns into a hard `[missing-drop]` build failure — measured
+	// on tests/tagged-enum-zero-match.no and tests/tagged-enum-alias.no (3 and
+	// 1 diagnostics respectively).
+	wouldDrop := map[ValueID]bool{}
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
 		if blk == nil {
@@ -1736,9 +1762,86 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			if inst.Dst > NoVal && m.dropOwnsHeap(f, inst.Dst) && !isParam[inst.Dst] && !moveSrc[inst.Dst] && !m.isSliceViewOfArray(f, inst) && !m.isBorrowRead(f, inst) {
-				droppable[inst.Dst] = true
+			if inst.Dst > NoVal && m.dropOwnsHeap(f, inst.Dst) && !isParam[inst.Dst] && !m.isSliceViewOfArray(f, inst) && !m.isBorrowRead(f, inst) {
+				wouldDrop[inst.Dst] = true
 			}
+		}
+	}
+
+	// SPAWN ARGUMENT AS A MOVE (NOLANG-OWNERSHIP-MODEL.md §1.3.1, the non-ABI
+	// intermediate). `run f(x)` deep-copies every heap-owning argument into the
+	// task's own buffer (P0), because the task may run at `awy`, long after the
+	// caller reassigned or dropped x. When x is PROVABLY DEAD at the spawn, that
+	// copy is pure waste: ownership can transfer into the task instead —
+	// zero-copy, and §3.3's "a move is count-neutral" is exactly the licence for
+	// it.
+	//
+	// Three conditions, all required:
+	//
+	//   1. there is a drop to suppress (wouldDrop) — otherwise the value is
+	//      borrowed (a slice view, a borrow read) or is a parameter, and the
+	//      caller never owned it, so moving would free someone else's buffer;
+	//   2. the source is dead here, spelled with the SAME two predicates the
+	//      clone-vs-move rewrites above use: not live out of the block, and no
+	//      non-drop read after this instruction;
+	//   3. the wrapper will FREE the payload, i.e. the callee's parameter
+	//      classifies as str/vec/struct (SpawnArgClasses). Without this the
+	//      wrapper frees only the container and a moved payload leaks.
+	//      Condition 3 is why this decision needs the callee's classification
+	//      and cannot be made from liveness alone — and why the classification
+	//      must be shared with codegen rather than re-derived.
+	//
+	//      Why condition 3 is SUFFICIENT: for each of those three kinds the
+	//      wrapper's free and the caller's OpDrop lower to the SAME helper —
+	//      emitDrop emits @str_free for %str-long, @vec_free for %vec, and the
+	//      struct destructor for a struct with ptr fields or owned inline
+	//      leaves; asyncWrapperFor's w_free emits exactly the same three. So
+	//      transferring ownership moves one free from the caller to the task
+	//      without changing WHAT is freed. (A kind the wrapper cannot free — a
+	//      map, an owning tagged enum, a slice of non-deep-cloneable elements —
+	//      is classified "" and therefore excluded, even though dropOwnsHeap
+	//      says it owns heap.)
+	//
+	// `inst.Sym == ""` is `run <handle>`, which forwards an existing task and
+	// spawns nothing: there is no argbuf to move into.
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil || inst.Op != OpRun || inst.Sym == "" {
+				continue
+			}
+			cid, ok := m.FuncByName[inst.Sym]
+			if !ok {
+				continue
+			}
+			classes, _, _ := m.SpawnArgClasses(m.Func(cid))
+			for idx, a := range inst.Args {
+				if a <= NoVal || !wouldDrop[a] {
+					continue
+				}
+				if idx >= len(classes) || classes[idx] == "" {
+					continue
+				}
+				if liveOut[bid][a] || m.readNonDropAfterInBlock(bid, iid, a) {
+					continue
+				}
+				moveSrc[a] = true
+				m.spawnArgMoves[a] = true
+			}
+		}
+	}
+
+	// droppable: every owned, non-param, non-moveSource value defined in f.
+	// It is wouldDrop minus the move sources — one predicate, not two spellings
+	// of it (see wouldDrop's comment).
+	droppable := map[ValueID]bool{}
+	for v := range wouldDrop {
+		if !moveSrc[v] {
+			droppable[v] = true
 		}
 	}
 	if len(droppable) == 0 {
@@ -2491,6 +2594,24 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 					}
 				}
 			}
+			// A spawn argument whose ownership was MOVED into the task is freed
+			// by the task's wrapper (asyncWrapperFor's w_free), not by the
+			// caller, so it is exempt here too — exactly as it is exempt from
+			// the drop insertion in insertDrops. Without this the leak check
+			// reports `missing-drop` for the very value the move was made for,
+			// which is a HARD BUILD FAILURE (Analyze's report gates codegen).
+			//
+			// The exemption is read back from m.spawnArgMoves rather than
+			// re-derived: that map IS insertDrops' decision, so the two passes
+			// cannot drift. insertDrops runs before checkDropCount for the same
+			// function, so the entry is already there.
+			if inst.Op == OpRun && inst.Sym != "" {
+				for _, a := range inst.Args {
+					if a > NoVal && m.spawnArgMoves[a] {
+						moveSrc[a] = true
+					}
+				}
+			}
 		}
 	}
 	dropCount := map[ValueID]int{}
@@ -2544,6 +2665,95 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 				Kind: "missing-drop", Func: f.Name,
 				Msg: fmt.Sprintf("owned value %d has no drop (leak)", v),
 			})
+		}
+	}
+}
+
+// checkRefBalance enforces the R-tier reference discipline for task handles —
+// invariant I3 of NOLANG-OWNERSHIP-MODEL.md §3.5, in the direction that is
+// sound. It is the R-tier counterpart of checkDropCount, which covers I4 for
+// the S/C tiers.
+//
+// THE DISCIPLINE (one count per REFERENCE, §4.4):
+//
+//	run f(x)       -> rc = 1   (the handle it returns)
+//	copy of handle -> retain   (OpTaskRetain; `h2 = h` and `h2 = run h`)
+//	awy h          -> release  (OpAwait)
+//
+// WHY THE LITERAL FORM OF I3 IS NOT USABLE AS A HARD ERROR. §3.5 states I3 as an
+// EQUALITY — `#retain == #release + 1` on every path. That is FALSE for a handle
+// reference that is never awaited, which §1.3.1 accepts as a documented leak
+// (`h = run f(); h2 = h` and only `h` is awaited leaves rc at 1). A validator
+// enforcing the equality would fire on an accepted program, and a false positive
+// here is a HARD BUILD FAILURE: Analyze's report gates codegen (§4.5).
+//
+// So this check enforces the direction that is both TRUE and load-bearing:
+// every alias of a task's handle must carry its own count. A copy WITHOUT a
+// retain makes two references share one count, so the first `awy` drives rc to 0
+// and frees the task while the second reference still points at it — the second
+// release then touches freed memory. That is not a leak, it is a use-after-free,
+// and it was measured:
+//
+//	void-async = () { print('inside') }
+//	h = run void-async()   ; rc = 1
+//	h2 = h                 ; copy with NO retain -> still rc = 1
+//	awy h                  ; rc 1 -> 0, task freed
+//	awy h2                 ; release on a freed task -> rc = 139 (SIGSEGV)
+//
+// The concrete cause was gating the retain on `asyncResTypes[v]` being present,
+// which skipped every VOID task — a handle with no result type. hir2mir now
+// tracks handle identity in a dedicated `asyncHandles` set.
+//
+// The alias set comes from handleAliasSet — the SAME predicate the spawn-graph
+// analysis uses. §4.5: a new validator must share the existing predicates, not
+// grow its own.
+func (m *Module) checkRefBalance(f *Function, rep *Report) {
+	// Which values are the operand of at least one OpTaskRetain. Collected once
+	// for the whole function; the per-spawn loop below is then a lookup.
+	retained := map[ValueID]bool{}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil || inst.Op != OpTaskRetain || len(inst.Args) == 0 {
+				continue
+			}
+			if inst.Args[0] > NoVal {
+				retained[inst.Args[0]] = true
+			}
+		}
+	}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil || inst.Op != OpRun || inst.Sym == "" {
+				continue
+			}
+			// `run <handle-var>` (Sym == "") forwards an existing handle: no new
+			// task, so there is no new count to balance. Only a real spawn site
+			// establishes rc = 1.
+			members := m.handleAliasSet(f, inst.Dst)
+			if len(members) <= 1 {
+				continue
+			}
+			for _, mem := range members {
+				if mem == inst.Dst || retained[mem] {
+					continue
+				}
+				rep.Diagnostics = append(rep.Diagnostics, Diagnostic{
+					Kind: "missing-task-retain", Func: f.Name, Block: bid, Inst: iid,
+					Msg: fmt.Sprintf("task handle %d has alias %d with no OpTaskRetain: "+
+						"the two references share one refcount, so the first await frees the "+
+						"task and the second releases freed memory", inst.Dst, mem),
+				})
+			}
 		}
 	}
 }

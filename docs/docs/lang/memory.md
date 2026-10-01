@@ -480,6 +480,71 @@ id —— 重賦值路徑沒有把型別搬過去，於是 await 被當成無型
 
 迴歸：`tests/async-ownership.no` 的 test 9 / test 10。
 
+### handle 複製的引用計數漏計：void 任務與 `run <handle>`（2026-10-01 已修）
+
+協程 spawn 是唯一的引用計數邊界，所以 `run` 產生的 `%task` 是語言裡唯一的 R 檔物件。紀律是
+**一個引用一個計數**：`run` 建立時 `rc = 1`，handle 的**每次複製** `retain`，每次 `awy` `release`。
+有兩條路徑的複製沒有計數，因為「這個值是不是 handle」被誤判成「這個值有沒有已知的**任務結果型別**」：
+
+| 形狀 | 修復前 | 修復後 |
+|---|---|---|
+| `h = run void-async(); h2 = h; awy h; awy h2` | **SIGSEGV（rc=139）** | 正常結束 |
+| `h = run dbl(21); h2 = run h; awy h; awy h2` | 印出 `42 0` | 印出 `42 42` |
+
+第一條是**結果型別為 void 的任務**：它有 handle，但沒有結果型別，於是複製不 retain，`rc` 停在 1。
+第一次 `awy` 就把任務釋放掉，第二個引用仍指著它，第二次 `awy` 對已釋放的塊再 `release` 一次。
+同一個形狀在任務回傳 `i64` 時完全正確 —— 這個**不對稱**就是病灶。
+
+第二條是 `run <handle>`：它**不是** spawn 站點（運算元已經是 handle），而是「同一任務的第二個
+引用」，所以必須跟 `h2 = h` 一樣 retain。修復前它直接回傳運算元、不建新值也不 retain，兩次 `awy`
+因此落在同一個槽上，第一次把槽歸零後第二次讀到 0。
+
+修法是把 **handle 的「身分」與任務的「結果型別」分開記**（`asyncHandles` 對上 `asyncResTypes`），
+`run <handle>` 走與 `h2 = h` 相同的計數路徑。新增的 `checkRefBalance` 驗證器（MIR `Analyze` 內）
+會把「有別名卻沒有 retain」變成**編譯錯誤**，而不是等到執行期才崩。
+
+迴歸：`tests/async-rc.no`（修復前 rc=139）、`src/mir/async_rc_handle_test.go` 的
+`TestVoidTaskHandleCopyRetains` / `TestRunHandleForwardCreatesFreshReference` /
+`TestCheckRefBalanceFiresOnMissingRetain`。
+
+### spawn 參數的移動：來源已死時零拷貝（2026-10-01）
+
+`run f(x)` 對每個**擁有堆**的參數會在 spawn 邊界做一次深拷貝，因為任務可能到 `awy` 才執行，
+而呼叫端在那之前可以重賦值或離開作用域（見下方「spawn 後重賦值參數」那條）。當 x 在 spawn 之後
+**確定不再被使用**時，那次拷貝是多餘的：所有權直接**轉移**進任務。
+
+```
+s str = 'hello'
+t = run echo-async(s)     ; s 之後不再被讀 -> 零拷貝轉移
+print(awy t)              ; hello
+
+s str = 'hello'
+t = run echo-async(s)
+print(s)                  ; s 仍被讀 -> 維持深拷貝（兩邊各自擁有）
+print(awy t)              ; hello
+```
+
+判準三個，全部必要：
+
+1. 呼叫端**本來就會**釋放 x —— 借用（切片視圖、borrow read）與參數都不會被呼叫端釋放，
+   把它們轉移進任務等於讓任務去釋放別人的緩衝區；
+2. x 在 spawn 之後已死（不是「活到區塊結束」，而是**沒有任何後續讀取**）；
+3. 被呼叫端該位置的參數是 `str` / `[]T` / 擁有堆的 `struct` —— 也就是任務的 wrapper
+   會負責釋放 payload 的那三類。其餘型別（`map`、owning tagged enum、元素不可深拷貝的
+   切片）即使擁有堆也**不會**被轉移，因為 wrapper 只釋放容器、不釋放內容。
+
+**為什麼這樣是安全的**：對那三類，任務 wrapper 的釋放與呼叫端原本的 drop **降成同一支 helper**
+（`@str_free` / `@vec_free` / 該 struct 的解構子）。所以轉移只是把**同一次釋放**從呼叫端搬到
+任務，不改變釋放了什麼——既不多釋放（double free），也不少釋放（洩漏）。
+
+**不變的使用者語義**：從未被 `awy` 的任務，它的參數緩衝區本來就會洩漏（釋放它的是任務的
+wrapper，而 wrapper 只在 await 時執行）。移動與拷貝在這點上**完全相同**，所以移動不會把
+「一次拷貝」換成「一筆洩漏」。
+
+實作：`insertDrops` 判定並記進 `Module.spawnArgMoves`，`emitAsyncRun` 據此跳過深拷貝，
+`checkDropCount` 據此豁免 `missing-drop`。量測開關 `NOLANG_MIR_SPAWN_ARG_MOVE=1`。
+迴歸：`tests/async-arg-move.no`、`src/mir/spawn_arg_move_test.go`。
+
 ### 協程等待者表別名（2026-09-30 已修）
 
 排程器原本用 `@nolang_waiters = global [256 x i8*]`，以 `ptrtoint(task) & 255` 當索引。

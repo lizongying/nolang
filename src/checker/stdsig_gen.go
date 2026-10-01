@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "a50d8a97c612ed43d93d409d0a333dd5d1c2a4daa96ad1512a58288f9dc48ae7"
+	embeddedStdSigKey = "ec6bfaa9c29d3f673789990ea3627ace6a8e0d7e7809542b633b3f8bff5ec264"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -409,6 +409,7 @@ func init() {
 		"ip.ip-is-loopback":                        {"bool"},
 		"ip.ip-is-private":                         {"bool"},
 		"ip.ip-parse":                              {"?ip-addr"},
+		"json.json-clone-tree":                     {"json"},
 		"json.new":                                 {"json"},
 		"json.new-pool":                            {"json-pool"},
 		"log.debug":                                {},
@@ -3287,6 +3288,7 @@ func init() {
 		"ip.ip-is-loopback":                        {"str"},
 		"ip.ip-is-private":                         {"str"},
 		"ip.ip-parse":                              {"str"},
+		"json.json-clone-tree":                     {"json-pool", "i64"},
 		"json.new":                                 {},
 		"json.new-pool":                            {},
 		"log.debug":                                {"str"},

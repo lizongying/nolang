@@ -216,3 +216,178 @@ main = () {
 		t.Errorf("OpTaskRetain count = %d, want >= 1 for a handle copy onto a pre-existing slot", got)
 	}
 }
+
+// voidAliasSrc is the VOID-result handle-copy shape. It is the fixture for both
+// the lowering fix and checkRefBalance: the task returns nothing, so it has a
+// handle but no result type, which is exactly the combination the pre-fix code
+// mis-handled.
+const voidAliasSrc = `void-async = () {
+    print('inside')
+}
+
+main = () {
+    h = run void-async()
+    h2 = h
+    awy h
+    awy h2
+}
+`
+
+// TestVoidTaskHandleCopyRetains pins the VOID-result half of the R-tier
+// discipline. A task that returns nothing is still a task: `run` allocates it
+// with rc = 1, so every copy of its handle must retain.
+//
+// The retain used to be gated on the task's RESULT TYPE being known
+// (asyncResTypes[v]), which a void task never has. Its handle copies therefore
+// went uncounted: the first await drove rc to 0 and freed the task while the
+// second reference still pointed at it, and the second await released a freed
+// block. Measured on the pre-fix binary: rc = 139 (SIGSEGV) for this exact
+// program, while the same shape with an i64 result printed correctly. The
+// asymmetry between the two was the whole bug.
+func TestVoidTaskHandleCopyRetains(t *testing.T) {
+	mod := lowerForTest(t, voidAliasSrc)
+	if got := countOp(t, mod, "main", OpTaskRetain); got != 1 {
+		t.Errorf("OpTaskRetain count = %d, want 1: a VOID task's handle copy is still a reference", got)
+	}
+	if got := countOp(t, mod, "main", OpAwait); got != 2 {
+		t.Errorf("OpAwait count = %d, want 2", got)
+	}
+}
+
+// TestRunHandleForwardCreatesFreshReference pins `h2 = run h`. `run` of an
+// existing handle is NOT a spawn site — it forwards the handle — so it yields
+// another REFERENCE to the same task and must retain, exactly like `h2 = h`.
+//
+// Returning the operand value as-is made the two spellings disagree. `h2 = h`
+// retained and printed 42 twice; `h2 = run h` added no count, so the first await
+// freed the task and zeroed the slot the copy shared, and the second await read
+// 0 (measured `42 0`, with only a stderr note). Two spellings of "a second
+// reference to this task" must not have different ownership.
+func TestRunHandleForwardCreatesFreshReference(t *testing.T) {
+	mod := lowerForTest(t, `dbl = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n * 2
+}
+
+main = () {
+    h = run dbl(21)
+    h2 = run h
+    a = awy h
+    b = awy h2
+    print(a)
+    print(b)
+}
+`)
+	if got := countOp(t, mod, "main", OpTaskRetain); got != 1 {
+		t.Errorf("OpTaskRetain count = %d, want 1: `run h` forwards the handle, so it is a new reference", got)
+	}
+	// The forwarding must NOT spawn a second task: exactly one OpRun, and it is
+	// the `run dbl(21)` that owns the single rc = 1.
+	if got := countOp(t, mod, "main", OpRun); got != 1 {
+		t.Errorf("OpRun count = %d, want 1: `run h` must not spawn a second task", got)
+	}
+}
+
+// stripTaskRetains clears the operand of every OpTaskRetain in `fn`, making the
+// module look like the pre-fix output. Inst() returns a pointer into the module's
+// instruction slice, so the mutation is visible to later analysis — which is what
+// lets the validator test below construct the defect instead of asserting on a
+// fixture that happens to contain it.
+func stripTaskRetains(mod *Module, fn string) int {
+	fid, ok := mod.FuncByName[fn]
+	if !ok {
+		return 0
+	}
+	f := mod.Func(fid)
+	if f == nil {
+		return 0
+	}
+	n := 0
+	for _, b := range f.Blocks {
+		blk := mod.Block(b)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			if inst := mod.Inst(iid); inst != nil && inst.Op == OpTaskRetain {
+				inst.Args = nil
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// TestCheckRefBalanceSilentOnFixedModule is the false-positive control. The
+// validator gates codegen (§4.5), so a spurious diagnostic is a hard build
+// failure — the historical failure mode was checkDropCount using the wrong
+// predicate and refusing 14 files.
+func TestCheckRefBalanceSilentOnFixedModule(t *testing.T) {
+	mod := lowerForTest(t, voidAliasSrc)
+	fid, ok := mod.FuncByName["main"]
+	if !ok {
+		t.Fatal("function main not found")
+	}
+	rep := &Report{}
+	mod.checkRefBalance(mod.Func(fid), rep)
+	if rep.HasErrors() {
+		t.Errorf("checkRefBalance reported %v on a correctly-retained module", rep.Diagnostics)
+	}
+}
+
+// TestCheckRefBalanceFiresOnMissingRetain is the "must fail before the fix" test
+// §7.2 requires of every new validator: strip the retain the fix added and the
+// check must notice. Without this, the validator could be silently vacuous —
+// passing because it looks at nothing, not because the program is sound.
+func TestCheckRefBalanceFiresOnMissingRetain(t *testing.T) {
+	mod := lowerForTest(t, voidAliasSrc)
+	if n := stripTaskRetains(mod, "main"); n == 0 {
+		t.Fatal("no OpTaskRetain to strip: the fixture no longer exercises the defect")
+	}
+	fid, ok := mod.FuncByName["main"]
+	if !ok {
+		t.Fatal("function main not found")
+	}
+	rep := &Report{}
+	mod.checkRefBalance(mod.Func(fid), rep)
+	if !rep.HasErrors() {
+		t.Fatal("checkRefBalance found nothing after the retain was removed; " +
+			"it cannot catch the SIGSEGV class it exists for")
+	}
+	if k := rep.Diagnostics[0].Kind; k != "missing-task-retain" {
+		t.Errorf("diagnostic kind = %q, want %q", k, "missing-task-retain")
+	}
+}
+
+// TestCheckRefBalanceFiresOnForwardedHandleWithoutRetain is the same test for
+// the `run h` spelling. Both spellings must be covered, because the two bugs
+// were in different lowering paths and a single-shape test would have let one
+// of them regress.
+func TestCheckRefBalanceFiresOnForwardedHandleWithoutRetain(t *testing.T) {
+	mod := lowerForTest(t, `dbl = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n * 2
+}
+
+main = () {
+    h = run dbl(21)
+    h2 = run h
+    a = awy h
+    b = awy h2
+    print(a)
+    print(b)
+}
+`)
+	if n := stripTaskRetains(mod, "main"); n == 0 {
+		t.Fatal("no OpTaskRetain to strip: the `run h` forwarding no longer retains")
+	}
+	fid, ok := mod.FuncByName["main"]
+	if !ok {
+		t.Fatal("function main not found")
+	}
+	rep := &Report{}
+	mod.checkRefBalance(mod.Func(fid), rep)
+	if !rep.HasErrors() {
+		t.Fatal("checkRefBalance found nothing for a forwarded handle with no retain")
+	}
+}

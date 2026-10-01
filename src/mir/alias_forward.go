@@ -40,13 +40,31 @@ import (
 // read-only reference" the model asks for — no new opcode, no header, no
 // runtime branch.
 //
+// The SAME rewriting also covers a WRITTEN alias, whenever the source is dead
+// by the time the write happens:
+//
+//	a []i64 = [1, 2, 3]
+//	b []i64 = a            ; today: clone (a is read on the next line)
+//	print(a[0])            ; 1     <- a's last read
+//	b[0] = 99              ; a is DEAD here → the write is unobservable
+//	print(b[0])            ; 99    (same either way)
+//
+// Nothing can read `a` after that write, so sharing the buffer is
+// indistinguishable from copying it — and the copy disappears. This is §4.2's
+// "first-write clone" in the form that needs no borrow-alias / deferred-drop
+// machinery (§1.2.1 更正 2); aliasWritesUnobservable holds the exact
+// conditions. Anything it cannot prove keeps the assignment-point clone, which
+// is a conservative SUPERSET of "clone at the first write".
+//
 // SAFETY. Under-cloning is a use-after-free, so the guard is a whitelist: every
 // case the analysis cannot PROVE safe keeps today's clone.
 //
 //	(d1) the alias is defined exactly once and is never re-bound;
 //	(d2) the alias carries no drop of its own (it is not an owner);
-//	(r1) EVERY use of the alias is a pure read — never a call argument, a store,
-//	     a return, a field/element write, a slice view or a second move;
+//	(r1) every use of the alias is a pure read — or a write that the source
+//	     cannot observe (aliasWritesUnobservable). A call argument, a store of
+//	     the alias into another container, a return, a slice view or a second
+//	     move is never either;
 //	(r2) the SOURCE is neither written nor allowed to escape in any block where
 //	     the alias is live. A callee handed `a` may mutate it through the
 //	     borrowed pointer (measured: `mutate(v []i64) { v[0] = 99 }` called as
@@ -59,7 +77,9 @@ import (
 //	     alias would outlive that owner's drop. This is not hypothetical: it is
 //	     what tests/tagged-enum-two-match.no caught. `items` aliased the enum's
 //	     payload, the enum was dropped at the end of the match arm, and the loop
-//	     then iterated freed memory (4b printed nothing at all).
+//	     then iterated freed memory (4b printed nothing at all). A slice
+//	     PARAMETER is the caller's buffer, so the WRITTEN path refuses it too
+//	     (w2) — a write there is observable outside the frame.
 //
 // (r1)-(r4) are why the guard is a whitelist rather than a list of known
 // hazards: `aliasUse`'s DEFAULT is aliasUseEscape, so a new opcode added to the
@@ -180,7 +200,7 @@ func aliasStats(f *Function, forwarded int, reasons map[string]int) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "[alias] func %s forwarded=%d", f.Name, forwarded)
-	for _, k := range []string{"no-shares-heap", "src-dead", "clone-src-dead-to-move", "dst-not-fresh", "dst-is-param", "multi-def", "dst-has-drop", "dst-bad-use", "src-is-borrow", "src-hazard-while-alias-live"} {
+	for _, k := range []string{"no-shares-heap", "src-dead", "clone-src-dead-to-move", "dst-not-fresh", "dst-is-param", "multi-def", "dst-has-drop", "dst-bad-use", "dst-written-src-dead", "dst-written", "src-is-borrow", "src-hazard-while-alias-live"} {
 		if n := reasons[k]; n > 0 {
 			fmt.Fprintf(os.Stderr, " %s=%d", k, n)
 		}
@@ -217,6 +237,15 @@ func (m *Module) forwardReadOnlyAliases(f *Function) {
 	dropped := map[ValueID]bool{}
 	mutateAt := map[ValueID][]aliasHazard{}
 	escapeAt := map[ValueID][]aliasHazard{}
+	// copiesOf[v] = how many move-like instructions take v as their SOURCE.
+	// It answers "is v aliased anywhere else?" — the guard the WRITTEN-alias
+	// relaxation needs (a second copy of the source, or a copy of the alias
+	// itself, would become a second observer of the shared buffer).
+	//
+	// It is deliberately built from the PRE-REWRITE instruction stream: a copy
+	// that this pass is about to delete still counts, which is what makes the
+	// guard independent of the order in which candidates are visited.
+	copiesOf := map[ValueID]int{}
 	// Program order, so a hazard inside the defining block can be compared
 	// against the copy itself (a write BEFORE the alias is irrelevant).
 	ord := map[InstID]int{}
@@ -236,6 +265,11 @@ func (m *Module) forwardReadOnlyAliases(f *Function) {
 		}
 		if inst.Op == OpMove && inst.Dst == NoVal && len(inst.Args) >= 2 {
 			moveInto[inst.Args[1]] = true
+		}
+		if moveLike(inst) {
+			if s := moveSrc(inst); s > NoVal {
+				copiesOf[s]++
+			}
 		}
 		if inst.Op == OpDrop && len(inst.Args) > 0 {
 			dropped[inst.Args[0]] = true
@@ -450,25 +484,38 @@ func (m *Module) forwardReadOnlyAliases(f *Function) {
 				reasons["src-is-borrow"]++
 				continue
 			}
-			// (r1) every use of the alias must be a pure read.
+			// (r1) the alias's own uses. An ESCAPE — a call argument, the
+			// alias stored into another container, a return — always keeps the
+			// clone: after forwarding it hands the SOURCE to code that may
+			// retain it past the source's single drop.
 			bad := false
-			for _, h := range mutateAt[dst] {
+			for _, h := range escapeAt[dst] {
 				if h.iid != iid {
 					bad = true
 					break
 				}
 			}
-			if !bad {
-				for _, h := range escapeAt[dst] {
-					if h.iid != iid {
-						bad = true
-						break
-					}
-				}
-			}
 			if bad {
 				reasons["dst-bad-use"]++
 				continue
+			}
+			// A WRITTEN alias is not automatically rejected any more: when the
+			// source is provably dead at every write, the two-buffer and
+			// one-buffer programs are indistinguishable and the copy is pure
+			// waste. See aliasWritesUnobservable for the exact conditions —
+			// they are narrow on purpose (§4.2's conservatism requirement).
+			var writes []aliasHazard
+			for _, h := range mutateAt[dst] {
+				if h.iid != iid {
+					writes = append(writes, h)
+				}
+			}
+			if len(writes) > 0 {
+				if !m.aliasWritesUnobservable(f, src, dst, bid, ord[iid], writes, copiesOf, liveOut) {
+					reasons["dst-written"]++
+					continue
+				}
+				reasons["dst-written-src-dead"]++
 			}
 			// (r2) the source must not be written or escaped while the alias is
 			// live. A hazard in the defining block only counts when it comes
@@ -533,4 +580,96 @@ func (m *Module) forwardReadOnlyAliases(f *Function) {
 		}
 		blk.Insts = kept
 	}
+}
+
+// aliasWritesUnobservable reports whether an alias that IS written may still be
+// forwarded onto its source — i.e. whether the writes through the alias can be
+// observed by anything once the two values share one buffer.
+//
+// This is §4.2's "first-write clone" in the only form that is provable without
+// the borrow-alias / deferred-owner-drop machinery that §1.2.1 更正 2 shows the
+// literal reading needs: the assignment-point clone is dropped when, at EVERY
+// write through the alias, the source is ALREADY DEAD. Then no read of the
+// source can follow a write to the shared buffer, so nothing observes the
+// sharing — and, because the alias carries no drop of its own, the merged value
+// is dropped exactly once by insertDrops at its last use. The forwarding is a
+// MOVE, not a copy, which is why this direction can only ever REMOVE a clone.
+//
+// WHY "source dead at the write" IS EXACTLY THE RIGHT PREDICATE. Forwarding
+// re-points every use of the alias at the source, so the merged program has
+// exactly two observations the two-buffer program did not:
+//
+//	(i)  a read of the SOURCE after a write through the ALIAS;
+//	(ii) a read of the ALIAS after a write to the SOURCE.
+//
+// (ii) is rule (r2) and is checked by the caller. (i) is this function, and
+// `src` being dead at the write — no liveOut, no later non-drop read in the
+// block — is precisely its negation. There is no third case: reads and writes
+// WITHIN one value behave identically in both programs.
+//
+// CONSERVATIVE BY CONSTRUCTION. Every condition below can only return false,
+// which falls back to today's assignment-point clone. A missing clone is a
+// use-after-free; a redundant one is only a wasted allocation (§4.2's
+// "conservatism requirement").
+func (m *Module) aliasWritesUnobservable(
+	f *Function,
+	src, dst ValueID,
+	bid BlockID, copyPos int,
+	writes []aliasHazard,
+	copiesOf map[ValueID]int,
+	liveOut map[BlockID]map[ValueID]bool,
+) bool {
+	// (w1) Only the `b[i] = x` shape on an OWNED SLICE is modelled: a slice
+	// write goes through the shared backing buffer, which is the case §1.2
+	// describes ("寫（b[0] = x，且分析證明 a 在此仍活）"). Struct field writes,
+	// slot writes and re-bindings stay on the conservative path.
+	if !m.typeIsOwnedSlice(f, src) || !m.typeIsOwnedSlice(f, dst) {
+		return false
+	}
+	// (w2) The source must OWN its buffer. A slice PARAMETER is the CALLER's
+	// buffer — `mutate(v []i64) { v[0] = 99 }` really does change the caller's
+	// slice — so a write through an alias of it is visible OUTSIDE the frame,
+	// where no liveness fact in this function can rule it out. The read-only
+	// path may forward a parameter because it never writes; this one may not.
+	if m.isParamValue(f, src) {
+		return false
+	}
+	// (w3) The source must be copied exactly once — by this instruction. A
+	// second copy would be a second alias, and forwarding THIS one would make
+	// that copy an observer of these writes. Counting is done on the
+	// pre-rewrite stream, so it does not depend on visit order.
+	if copiesOf[src] != 1 {
+		return false
+	}
+	// (w4) Nothing may be derived from the alias. `c = b` would be re-pointed
+	// at the source by rewriteUses and could then be forwarded itself, turning
+	// a private copy into a third observer — a case (w3) cannot see, because
+	// it counts copies OF THE SOURCE and `c` copies the ALIAS.
+	if copiesOf[dst] != 0 {
+		return false
+	}
+	for _, h := range writes {
+		// (w5) An in-place ELEMENT write and only that: OpIndexStore with the
+		// alias in the container position. OpSetField / OpStore write a field
+		// or a slot, and the EmitMoveInto re-binding is already refused by the
+		// caller's moveInto check — but state the shape explicitly rather than
+		// relying on a distant guard.
+		inst := m.Inst(h.iid)
+		if inst == nil || inst.Op != OpIndexStore || len(inst.Args) == 0 || inst.Args[0] != dst {
+			return false
+		}
+		// (w6) The write must come AFTER the copy. An SSA use cannot precede
+		// its definition, but assert it so a malformed block order cannot open
+		// a hole.
+		if h.bid == bid && h.pos < copyPos {
+			return false
+		}
+		// (w7) THE condition: the source must be DEAD at the write. Same
+		// predicate insertDrops uses for clone-vs-transfer (liveOut, plus a
+		// later non-drop read in the same block).
+		if liveOut[h.bid][src] || m.readNonDropAfterInBlock(h.bid, h.iid, src) {
+			return false
+		}
+	}
+	return true
 }

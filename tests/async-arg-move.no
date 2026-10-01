@@ -1,0 +1,117 @@
+; async-arg-move.no — spawn 參數的「move 轉移」
+;
+; 背景（NOLANG-OWNERSHIP-MODEL.md §1.3.1 末段的不改 ABI 中間方案）：
+; `run f(x)` 預設在 spawn 邊界把每個「擁有堆」的參數深拷貝進任務自己的
+; buffer（P0 的 asyncArgOwnedCopy），因為任務可能到 `awy` 才執行，而呼叫端
+; 在那之前可以重賦值或離開作用域。當 x 在 spawn 之後**可證明已死**時，那份
+; 拷貝是純浪費：所有權直接轉移進任務——零拷貝，而 §3.3 的「move 是計數中性」
+; 正是它的許可證。
+;
+; 落地方式：insertDrops 抑制 x 的 drop 並把 x 記進 spawnArgMoves；emitAsyncRun
+; 讀到那筆記錄就跳過自己的深拷貝；任務的 wrapper（asyncWrapperFor 的 w_free）
+; 照舊釋放 payload。於是「誰釋放這塊記憶體」從兩個站點變成一個站點。
+;
+; ⚠️ 這個檔案只是端到端煙霧測試，兩個失敗方向都無法從 stdout 可靠地看出來：
+;   - 該 move 卻沒 move：只是多一次拷貝，輸出完全正確；
+;   - 抑制了 drop 卻仍舊拷貝：payload 洩漏（要量 RSS 才看得到）；
+;   - 保留了 drop 卻也轉移了所有權：double free，而小字串的第二次 free
+;     在本平台不一定會 abort（輸出仍可能是對的）。
+; 真正的守門員是 src/mir/spawn_arg_move_test.go 的 MIR / IR 斷言，它直接檢查
+; spawnArgMoves 的內容、drop 的數量，以及解構子落在 spawn 邊界的哪一側。
+
+echo-async = (s str) (r str) {
+    r = s
+}
+
+first-async = (v []i64) (r i64) {
+    #{index-out=0}
+    r = v[0]
+}
+
+holder { s str }
+
+echo-holder-async = (h holder) (r str) {
+    r = h.s
+}
+
+; 1. str 參數在 spawn 之後已死 -> 轉移。任務必須讀到完整內容，
+;    而且呼叫端不得再釋放它（否則就是 double free）。
+test-str-move = () {
+    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    t = run echo-async(s)
+    v = awy t
+    print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+}
+
+; 2. 同一個形狀，但字串夠大：double free 在大塊上比較容易被配置器抓到。
+;    印長度而不是內容，只是為了讓 expect 短一點——轉移後長度必須原樣送達。
+test-str-move-large = () {
+    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    t = run echo-async(s)
+    v = awy t
+    print(v.len()); expect: 100
+}
+
+; 3. []i64 參數已死 -> 轉移（元素指標走另一條克隆 helper）。
+test-vec-move = () {
+    a []i64 = [7, 8, 9]
+    t = run first-async(a)
+    n = awy t
+    print(n); expect: 7
+}
+
+; 4. struct 參數已死 -> 轉移。struct 的深拷貝是「ptr 欄位遞迴 + 內聯葉子」
+;    兩段走訪，轉移則整段省掉，改由 wrapper 的遞迴解構子釋放。
+test-struct-move = () {
+    h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
+    t = run echo-holder-async(h)
+    v = awy t
+    print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+}
+
+; 5. 一次 spawn 兩個已死參數（str + vec）都走轉移，且互不干擾。
+test-two-moves = () {
+    s str = 'hello'
+    a []i64 = [42]
+    t1 = run echo-async(s)
+    t2 = run first-async(a)
+    print(awy t1); expect: hello
+    print(awy t2); expect: 42
+}
+
+; 6. 反向（防止過度修正）：參數在 spawn 之後仍被**讀取** -> 必須維持深拷貝。
+;    這裡若改成轉移，任務就會在呼叫端釋放之後才讀，印出垃圾。
+test-str-live-copy = () {
+    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    t = run echo-async(s)
+    print(s); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    v = awy t
+    print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+}
+
+; 7. 反向：§2.3.2 的重賦值形狀（重賦值會釋放舊 buffer）-> 必須維持深拷貝。
+test-arg-reassign = () {
+    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    t = run echo-async(s)
+    s = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+    v = awy t
+    print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+}
+
+; 8. 反向：struct 參數在 spawn 之後仍被讀取 -> 必須維持深拷貝。
+test-struct-live-copy = () {
+    h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
+    t = run echo-holder-async(h)
+    print(h.s); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    v = awy t
+    print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+}
+
+test-str-move()
+test-str-move-large()
+test-vec-move()
+test-struct-move()
+test-two-moves()
+test-str-live-copy()
+test-arg-reassign()
+test-struct-live-copy()

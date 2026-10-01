@@ -1085,6 +1085,21 @@ json-pool.stringify = (node-idx i64) (out str) {
 ;           name, found = it.get-str('name')
 ;       }
 ;   }
+; json-clone-tree: 把 src 池中以 idx 为根的子树深拷贝到一个全新的独立池，
+; 返回持有该子树根的新 json。供 json.get / json.arr-get / json.get-key 等
+; 「取子句柄」接口使用：返回体与源 json 不共享底层 vec 缓冲区。
+;
+; 为何必需深拷贝：json.pool 是 #{inline=false} 指针字段，而编译器的指针字段
+; 拷贝目前尚缺借用语义（见 copy-tree 注释与 src/mir 的 hybrid-ownership 说明），
+; 直接 `child = json { pool: .pool, ... }` 会让父子各持一份 vec 头但共享同一
+; data 缓冲；一旦任一 handle 触发 vec realloc，另一 handle 的 vec 头即指向已
+; 释放的旧缓冲 → 悬垂读（stringify 返回 null / 数据错乱）。改为独立深拷贝后，
+; 双方的 alloc/扩容各写自有缓冲，互不影响。
+json-clone-tree = (src json-pool, idx i64) (out json) {
+    out.pool.init()
+    out.root = out.pool.copy-tree(src, idx)
+}
+
 ; json.get-key: 全局函数 — 从 json 对象中按键获取子节点
 ; 返回 child ?json: 子节点（nil 表示不存在）
 json.get-key = (obj json, key str) (child ?json) {
@@ -1094,10 +1109,8 @@ json.get-key = (obj json, key str) (child ?json) {
     k != JSON-KIND-OBJ -> return
     val-idx, found = obj.pool.get-key(obj.root, key)
     found == true -> {
-        child = json {
-            pool: obj.pool
-            root: val-idx
-        }
+        ; 返回独立深拷贝子树（不与 obj 共享 vec 缓冲）
+        child = json-clone-tree(obj.pool, val-idx)
     }
 }
 
@@ -1235,11 +1248,8 @@ json.get = (key str) (child ?json) {
     found == false -> return
     val-idx < 0 -> return
 
-    ; 子節點仍屬於 json 自己的節點池，只換 root 指向它
-    child = json {
-        pool: .pool
-        root: val-idx
-    }
+    ; 返回独立深拷贝子树（不与父共享 vec 缓冲），避免任一 handle 扩容使另一失效
+    child = json-clone-tree(.pool, val-idx)
 }
 
 ; json.get-str: 從物件取得字串值
@@ -1412,12 +1422,8 @@ json.arr-get = (elem i64) (child ?json) {
     .pool.get-kind(.root) != JSON-KIND-ARR -> return
     val-idx, found = .pool.arr-get(.root, elem)
     found == false -> return
-    c json
-    c = json {
-        pool: .pool
-        root: val-idx
-    }
-    child = c
+    ; 返回独立深拷贝子树（不与父共享 vec 缓冲）
+    child = json-clone-tree(.pool, val-idx)
 }
 
 ; json.arr-len: 取得陣列長度

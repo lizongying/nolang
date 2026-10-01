@@ -222,6 +222,159 @@ func (m *Module) evalSpawnEdge(f *Function, b *Block, inst *Inst) SpawnEdge {
 	return e
 }
 
+// SpawnArgClasses classifies a callee's non-result parameters for the
+// spawn-boundary ownership protocol, indexed by ARGUMENT POSITION — the same
+// indexing emitAsyncRun uses for inst.Args. It is the SINGLE source of truth
+// for that classification.
+//
+// WHY IT IS A Module METHOD AND NOT A codegen METHOD. Two layers now need the
+// answer, and they must not be allowed to disagree:
+//
+//   - codegen (emitAsyncRun / asyncWrapperFor) uses it to decide what to
+//     deep-copy into the task's argbuf and what the wrapper then frees;
+//   - analysis (insertDrops) uses it to decide whether a spawn argument may be
+//     MOVED into the task instead of copied. A move is only sound when the
+//     wrapper will actually free the payload: with kind == "" the wrapper frees
+//     only the container, so a moved payload would leak, and a moved payload
+//     that the wrapper DOES free must have had its source drop suppressed.
+//
+// One question, one implementation. The emitter's classification is reached
+// through a throwaway codegen with only `mod` set, exactly as
+// Module.OptionPayloadBoxed reaches the emitter's sizing rules — see the
+// rationale there, which applies verbatim: "if the two ever disagreed, one side
+// would free a box the other shared."
+//
+// The throwaway is sound because asyncArgKinds resolves each parameter's type
+// through localTypeOf, whose only function-scoped lookup is
+// `mod.Func(c.cf).LocalTypes[p]`. A ValueID belongs to exactly one function, so
+// for a CALLEE parameter that lookup always misses and the answer comes from
+// mod.Value(p).Type — independent of which function `c.cf` names. (The throwaway
+// leaves c.cf at 0; the real call leaves it at the caller.)
+//
+// vecDeepClone's "is there a clone helper" guard is evaluated on the throwaway
+// codegen, so the helper it would register is discarded — which is what we want
+// for a pure query. The clone site re-asks through the real codegen and
+// registers it there. extraFuncs must nevertheless be a REAL map: vecDeepClone
+// memoizes the helper name in it, and a nil map panics ("assignment to entry in
+// nil map"), which the codegen entry point reports as a compile error.
+func (m *Module) SpawnArgClasses(cf *Function) ([]string, []TypeID, []string) {
+	c := &codegen{mod: m, extraFuncs: map[string]bool{}}
+	return c.asyncArgKinds(cf)
+}
+
+// DumpSpawnArgMoveStats reports, for every `run` argument, whether the P5
+// "parameter side" could avoid the P0 deep copy — i.e. whether the argument's
+// SOURCE is dead immediately after the spawn, so ownership could be MOVED
+// instead of copied. Gated on NOLANG_MIR_SPAWN_ARG_MOVE=1; report-only.
+//
+// WHY A SEPARATE SWITCH. This answers a question the four §4.3 criteria do not.
+// They ask whether an EDGE is linearizable; this asks whether one ARGUMENT's
+// copy is avoidable, so the granularity differs.
+//
+// Criterion 2 (every path awaits exactly once) is NOT required, and that is a
+// deliberate departure from the estimate §1.3.1 recorded when this was still
+// unimplemented. The reason is that a never-awaited task leaks its argbuf
+// EITHER WAY: the wrapper is what frees the payload (asyncWrapperFor's w_free),
+// and it only runs when the task is awaited. Copying leaks the copy; moving
+// leaks the moved buffer. So the move does not trade a copy for a leak — it
+// trades a copy for the same leak, minus the copy.
+//
+// It exists so the size of the remaining P5 work is a MEASUREMENT rather than an
+// estimate, exactly as §1.2.3 closed out §4.2's remaining branch. The `moved=`
+// field it prints is read back from m.spawnArgMoves, i.e. it reports what
+// insertDrops actually decided rather than recomputing it.
+func (m *Module) DumpSpawnArgMoveStats() {
+	if os.Getenv("NOLANG_MIR_SPAWN_ARG_MOVE") == "" {
+		return
+	}
+	// Edge verdicts, keyed by spawn instruction, so the leak gate reuses the
+	// SAME criterion-2 computation rather than a second copy of it.
+	oneAwait := map[InstID]bool{}
+	for _, e := range m.SpawnGraph() {
+		oneAwait[e.Inst] = e.OneAwait
+	}
+	var total, owned, dead, deadAwait, ownedAwait, moved int
+	classesOf := map[FuncID][]string{}
+	for i := range m.Funcs {
+		f := &m.Funcs[i]
+		if f.IsExtern {
+			continue
+		}
+		_, liveOut := m.Liveness(f)
+		for _, bid := range f.Blocks {
+			b := m.Block(bid)
+			if b == nil {
+				continue
+			}
+			for _, iid := range b.Insts {
+				inst := m.Inst(iid)
+				if inst == nil || inst.Op != OpRun || inst.Sym == "" {
+					continue
+				}
+				cid, ok := m.FuncByName[inst.Sym]
+				if !ok {
+					continue
+				}
+				classes, ok := classesOf[cid]
+				if !ok {
+					classes, _, _ = m.SpawnArgClasses(m.Func(cid))
+					classesOf[cid] = classes
+				}
+				oa := oneAwait[iid]
+				for idx, a := range inst.Args {
+					total++
+					own := m.dropOwnsHeap(f, a)
+					// The move condition, spelled with the SAME two predicates
+					// insertDrops uses to decide a value is dead: not live out of
+					// the block, and no non-drop read after this instruction.
+					d := !liveOut[b.ID][a] && !m.readNonDropAfterInBlock(b.ID, iid, a)
+					// Did insertDrops actually take the move? This is the
+					// GROUND TRUTH (read back from the module), not a
+					// recomputation — the point of the dump is to show what the
+					// pass did.
+					mv := m.spawnArgMoves[a]
+					if own {
+						owned++
+						if d {
+							dead++
+							if oa {
+								deadAwait++
+							}
+						}
+						if oa {
+							ownedAwait++
+						}
+					}
+					if mv {
+						moved++
+					}
+					fmt.Fprintf(os.Stderr,
+						"[spawn-arg] %s inst=%d arg=%d val=%d kind=%v ownedVal=%v ownsHeap=%v deadAfterSpawn=%v oneAwait=%v moved=%v callee=%s\n",
+						f.Name, iid, idx, a, m.typeKindOf(f, a), m.isOwnedVal(f, a), own, d, oa, mv, inst.Sym)
+				}
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr,
+		"[spawn-arg] totals: args=%d ownsHeap=%d ownsHeap+deadAfterSpawn=%d ownsHeap+deadAfterSpawn+oneAwait=%d ownsHeap+oneAwait=%d moved=%d\n",
+		total, owned, dead, deadAwait, ownedAwait, moved)
+}
+
+// typeKindOf resolves a value's Kind for diagnostics (never decides anything).
+func (m *Module) typeKindOf(f *Function, v ValueID) TypeKind {
+	if t, ok := f.LocalTypes[v]; ok {
+		if ty := m.Type(t); ty != nil {
+			return ty.Kind
+		}
+	}
+	if val := m.Value(v); val != nil {
+		if ty := m.Type(val.Type); ty != nil {
+			return ty.Kind
+		}
+	}
+	return KindVoid
+}
+
 // handleAliasSet returns root plus every value that is a copy of it (or of a
 // copy), following OpMove (both encodings), OpCast and OpPhi.
 //

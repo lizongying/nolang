@@ -383,22 +383,75 @@ view = arr[1..3]   ; view shares arr.data
 arr = [9, 8, 7]    ; free old arr.data → view dangling
 ```
 
-### async Shared Data
-When async threads share heap data with the main thread, free order is nondeterministic.
+### async Shared Data (fixed 2026-09-30)
 
-### Imprecise free-skip heuristic for a global variable's first assignment
+The `run`/`awy` spawn boundary now **deep-clones** heap-owning arguments; tasks no longer share buffers with the caller.
 
-The compiler uses a compile-time map `globalFirstAssigned` to track whether a global variable has already had its first assignment: the first assignment skips freeing the old value (the old value is `zeroinitializer`, not heap data), and only later reassignments free the previous heap value.
+Coroutines are cooperative, single-threaded, so "sharing mutable heap data across coroutines" does not hold at the language level; the only thing that was shared was **the caller's copy that it still holds after spawn**. Before the fix, `argbuf` was merely a **bit-copy** of the argument descriptor; `data` was shared with the caller, and the task ran only when `awy` was called — if the caller reassigned or left scope before that point, the buffer was freed, and the task read freed memory (observed: `str` printed 40 NUL bytes, `[]i64` printed 0; both with rc=0 and no diagnostic).
 
-This map is initialized once for the whole compilation, is never reset per function, and does not distinguish conditional branch paths. If a global variable's first assignment happens inside a conditional branch, the compiler processes it in AST order: the first assignment statement is treated as the "first" one (skipping free), while a second assignment statement (even in a different branch) takes the reassignment path (attempting to free the old value). If at runtime the second branch executes first, the global is still `zeroinitializer` (`data=NULL, len=0`) and it attempts to free an uninitialized old value.
+Spawn now deep-clones at the call site; the wrapper frees the copy after the callee returns:
 
-**Current mitigations (effective)**:
-- Shallow containers (`%str-long`): `emitNullCheckFree` emits a runtime `icmp eq i8* dataPtr, null` check, skipping `call @free` when NULL
-- Deep containers (`%vec/%arr`): `emitDeepContainerFree` additionally has a `len == 0` short-circuit check; `zeroinitializer` has len 0, so the whole free loop is skipped directly
+| Parameter type | Spawn boundary | Wrapper free |
+|---|---|---|
+| `str` | `@str_clone` | `@str_free` |
+| `[]T` (T has deep-clone helper) | `vecDeepClone` | `@vec_free` |
+| Heap-owning struct (inlined `str` leaves / pointer fields) | in-place leaf clone + pointee copy | recursive struct destructor |
+| Other (pure value types) | bit-copy (correct) | free container only |
 
-These two layers of runtime protection mean that, even though the compile-time judgment is imprecise, no actual crash occurs. But logically this relies on runtime NULL checks as a safety net rather than precise compile-time judgment.
+Two additional boundary bugs were fixed: awaiting the same handle twice (was SIGSEGV, now a defined no-op with a diagnostic to fd 2), and cancelled tasks no longer leak `argbuf`.
 
-**Possible improvement**: turn `globalFirstAssigned` from a compile-time map into a runtime tracking mechanism (a bitmap like `movedVarBitset`), but this would add runtime overhead, and the current mitigations are already sufficient.
+Regression: `tests/async-ownership.no`.
+
+### struct Reassignment Leak (fixed 2026-09-30)
+
+```no
+holder { s str }
+h holder = holder { s: 'first' }
+h = holder { s: 'second' }   ; the old 'first' buffer used to leak
+```
+
+When rebinding a local variable, the old value is freed only if its type is `Type.Owned` (`str`/`vec`/`[]T`/`map`/`?owned`). A struct is deliberately **not** classified as `Type.Owned` (that tag doubles as the lowerer's criterion for "is this binding an alias"), so `h = holder { … }` overwrites the whole struct without ever freeing the old `s` buffer. The drop machinery actually does know about structs (`dropOwnsHeap` → `typeOwnsHeap`, and `emitDrop` uses the recursive destructor to free fields); only the lowerer's gate was too narrow. After the fix, old fields are freed before rebinding.
+
+Measured with 2,000,000 reassignments: peak RSS dropped from 66.1 MB to 33.8 MB; output is byte-for-byte identical.
+
+### struct Literal First Field Value Is a Method Call (fixed 2026-09-30)
+
+```no
+holder { s str }
+h = holder { s: n.to-str() }   ; before fix: 'holder' is not defined
+```
+
+The classification of `{ … }` depends on a few-token lookahead. A match arm's **separator is also `:`**, so `s: n.to-str()` looks like both "a match arm with pattern `s`" and "a struct literal field". The only disambiguator is the token **after** `ident.ident` — a method call can only be a field value. The old branch missed `(`, so the whole block was classified as match, and the struct name was not found in match context (a plain function call as field value worked fine).
+
+After the fix `h = holder { s: recv.method(args) }` parses correctly. Nolang match arms cannot start with `name : X(` (the arm separator is `->`; arms starting with `:` are wildcard/default and their body won't have a parenthesized call), so allowing `(` does not misclassify any legitimate match as a struct literal. Regression: `src/parser/struct_literal_field_value_test.go`.
+
+### Await Result Type Reassigned Across Handle (fixed 2026-09-30)
+
+```no
+holder { s str }
+echo-holder-async = (h holder) (r str) { r = h.s }
+t i64 = 0
+t = run echo-holder-async(h)   ; reassignment, not a new binding
+print(awy t)                   ; before fix: printed 40 (the str length), rc=0
+```
+
+A task's result type is recorded in a table keyed by MIR value id. `awy <handle-var>` resolves the handle through the **local variable's current value id**, which is the **new slot** where the OpRun result was moved, not the OpRun result id itself — the reassignment path did not propagate the type, so await was treated as untyped `i64`, and the `str` result's buffer was reinterpreted, printing the length.
+
+The fix required three coordinated changes; missing any one leaves a symptom:
+
+1. The lowering stage moves the result type to the target slot on both rebind paths (local variable, module-level global); when the source is not a handle, **clear** the target slot's record to prevent a later `awy` from picking up a stale type from a previous task.
+2. The checker no longer returns `i64` for all `*AwaitExpression`: `awy <call>` returns the callee's return type; `awy <handle-var>` returns "unknown" and skips type checking (the handle is an opaque `i64`; statically the type cannot be recovered). The old behavior rejected the perfectly valid `v str = awy t`.
+3. The transpiler's string check treats `*AwaitExpression` as potentially a string, otherwise the valid `v str = awy t` would be caught by "cannot assign non-string value to string variable".
+
+Regression: `tests/async-ownership.no` test 9 / test 10.
+
+### Coroutine Waiter Table Alias (fixed 2026-09-30)
+
+The scheduler originally used `@nolang_waiters = global [256 x i8*]`, indexed by `ptrtoint(task) & 255`. Tasks are allocated by `@malloc` with **16-byte alignment**; the low bits of the pointer have only 4 useful bits — 256 slots collapsed to effectively 16 (measured: only 8 were ever used), making it easy for two concurrently awaited tasks to overwrite each other's waiter and wake the wrong task.
+
+Now the entire table is removed; waiters are stored in `%task`'s own 5th field (`%task` grew from 24 to 32 bytes): `@nolang_async_wait` writes the current task into the **waited-upon task's** field; `@nolang_async_done` reads that field, enqueues the waiter if non-null, then clears it. Lookup is now precise; no address aliasing.
+
+> Note: the MIR backend currently drives await synchronously and never calls `@nolang_async_run`/`@nolang_async_wait`, so this was a **latent** defect, not an observable fault. Regression: `src/mir/async_boundary_ownership_test.go`.
 
 ### `run` / `awy` are swallowed when they are not the first statement of a block (fixed 2026-09-30)
 
@@ -453,4 +506,18 @@ the one place that knows "I am at statement position".
 bare block stopped being detected. **After any statement-layer change, re-run
 `go test ./build/ -run TestProgramUsesPrint`** and add the new container type to `walkStmt`.
 Regression: `src/parser/stmt_boundary_block_test.go`, `tests/stmt-boundary.no`.
+
+### Imprecise free-skip heuristic for a global variable's first assignment
+
+The compiler uses a compile-time map `globalFirstAssigned` to track whether a global variable has already had its first assignment: the first assignment skips freeing the old value (the old value is `zeroinitializer`, not heap data), and only later reassignments free the previous heap value.
+
+This map is initialized once for the whole compilation, is never reset per function, and does not distinguish conditional branch paths. If a global variable's first assignment happens inside a conditional branch, the compiler processes it in AST order: the first assignment statement is treated as the "first" one (skipping free), while a second assignment statement (even in a different branch) takes the reassignment path (attempting to free the old value). If at runtime the second branch executes first, the global is still `zeroinitializer` (`data=NULL, len=0`) and it attempts to free an uninitialized old value.
+
+**Current mitigations (effective)**:
+- Shallow containers (`%str-long`): `emitNullCheckFree` emits a runtime `icmp eq i8* dataPtr, null` check, skipping `call @free` when NULL
+- Deep containers (`%vec/%arr`): `emitDeepContainerFree` additionally has a `len == 0` short-circuit check; `zeroinitializer` has len 0, so the whole free loop is skipped directly
+
+These two layers of runtime protection mean that, even though the compile-time judgment is imprecise, no actual crash occurs. But logically this relies on runtime NULL checks as a safety net rather than precise compile-time judgment.
+
+**Possible improvement**: turn `globalFirstAssigned` from a compile-time map into a runtime tracking mechanism (a bitmap like `movedVarBitset`), but this would add runtime overhead, and the current mitigations are already sufficient.
 

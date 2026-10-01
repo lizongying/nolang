@@ -304,7 +304,31 @@ type lowerer struct {
 	// `awy` site (which must read the result with the right type — e.g. a `str`
 	// result read as i64 prints the length instead of the string). Populated in
 	// lowerCall's OpRun branch and propagated through scalar let-copies.
+	//
+	// ⚠️ This map answers "what type is the task's RESULT?", NOT "is this value
+	// a task handle?". A task whose result is void has no entry here, so using
+	// presence in this map as the handle test silently exempted every void task
+	// from the R-tier reference counting — see asyncHandles below.
 	asyncResTypes map[ValueID]TypeID
+
+	// asyncHandles is the set of MIR values that ARE task handles (the opaque
+	// i64 that `run` yields). It exists as a SEPARATE set from asyncResTypes
+	// because handle identity and result type are independent: a void task is a
+	// handle with no result type.
+	//
+	// WHY IT MATTERS: the R-tier discipline is one reference count per handle
+	// reference, released by OpAwait (§4.4). Every handle COPY must therefore
+	// emit OpTaskRetain. Gating that retain on `asyncResTypes[v]` being present
+	// missed every copy of a VOID task's handle, so
+	//
+	//	h = run void-async()   ; rc = 1
+	//	h2 = h                 ; copy with NO retain -> still rc = 1
+	//	awy h                  ; rc 1 -> 0, task freed
+	//	awy h2                 ; release on a freed task -> SIGSEGV
+	//
+	// (measured rc=139 on the pre-fix binary). Populated unconditionally in
+	// lowerCall's OpRun branch and propagated through every copy site.
+	asyncHandles map[ValueID]bool
 }
 
 // armScopedBind is one `locals` entry that a match arm's synthetic binding
@@ -1021,6 +1045,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		// would leak one program's enums into every later compilation.
 		enumVariants:  copiedEnumVariants(enumVariants),
 		asyncResTypes: map[ValueID]TypeID{},
+		asyncHandles:  map[ValueID]bool{},
 	}
 	l.b = NewBuilder("hir")
 	l.mod = l.b.Module()
@@ -2950,14 +2975,22 @@ func (l *lowerer) lowerStmtInner(id int32) {
 					if typ != NoType && typ != l.voidType {
 						fresh := l.b.Emit(OpMove, typ, []ValueID{val}, "")
 						// A copied async handle keeps its task's result type.
-						if rt, ok := l.asyncResTypes[val]; ok {
-							l.asyncResTypes[fresh] = rt
+						if l.asyncHandles[val] {
+							l.asyncHandles[fresh] = true
+							if rt, ok := l.asyncResTypes[val]; ok {
+								l.asyncResTypes[fresh] = rt
+							}
 							// …and the copy is a NEW reference to the same
 							// %task, so it must retain. `run` owns the first
 							// count and each OpAwait releases one; without this
 							// the first await would free the task out from under
 							// the aliased handle (measured SIGSEGV on
 							// `h2 = h`). See NOLANG-OWNERSHIP-MODEL.md §4.4.
+							//
+							// ⚠️ The gate is asyncHandles, NOT `asyncResTypes[val]`:
+							// a VOID task has no result type but its handle copy
+							// still needs the retain (measured rc=139 on the
+							// pre-fix binary for a void `h2 = h`).
 							l.b.EmitVoid(OpTaskRetain, []ValueID{fresh}, "")
 						}
 						l.locals[name] = fresh
@@ -8065,6 +8098,10 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	if (l.forceRunCall != hir.NoID && n.Id == l.forceRunCall) || strings.HasSuffix(callee, "-async") {
 		handleTyp := l.b.Type("i64")
 		v := l.b.Emit(OpRun, handleTyp, argv, callee)
+		// This value IS a task handle — record that unconditionally. A void
+		// task has no result type (so it gets no asyncResTypes entry) but is
+		// still a handle whose every copy must retain. See asyncHandles.
+		l.asyncHandles[v] = true
 		// Remember the task's result type: the handle is an opaque i64, so the
 		// matching `awy` cannot recover it and would otherwise read the result
 		// buffer as i64 (e.g. printing a str result as its length).
@@ -8307,8 +8344,31 @@ func (l *lowerer) lowerAsyncRun(n *hir.Node) ValueID {
 	}
 	cn := l.pkg.Node(child)
 	if cn != nil && cn.Kind == hir.KIdent {
-		// run <handle-var>: operand already a handle; return it as-is.
-		return l.lowerExpr(child)
+		// `run <handle-var>`: the operand is ALREADY a handle, so this is not a
+		// spawn site — it yields another REFERENCE to the same %task, exactly
+		// like `h2 = h`. It must therefore obey the same one-count-per-reference
+		// discipline: emit a fresh value and retain it.
+		//
+		// Returning the operand value AS-IS made `run h` a second reference with
+		// no count. `h2 = run h; awy h; awy h2` then released one reference
+		// twice: the first await freed the task, and the second hit the
+		// slot-zero guard and silently read 0 instead of the task's result
+		// (measured `42 0`, while the `h2 = h` spelling prints `42 42`).
+		//
+		// A non-handle operand is returned unchanged: `run x` on something that
+		// is not a handle is not this rule's business, and guessing would add a
+		// retain to a value that has no count.
+		h := l.lowerExpr(child)
+		if h == NoVal || !l.asyncHandles[h] {
+			return h
+		}
+		fresh := l.b.Emit(OpMove, l.b.Type("i64"), []ValueID{h}, "")
+		l.asyncHandles[fresh] = true
+		if rt, ok := l.asyncResTypes[h]; ok {
+			l.asyncResTypes[fresh] = rt
+		}
+		l.b.EmitVoid(OpTaskRetain, []ValueID{fresh}, "")
+		return fresh
 	}
 	// run <call>: force THIS call node to lower as OpRun, regardless of the
 	// callee's name. The flag is scoped to the exact node id and restored
@@ -9625,18 +9685,31 @@ func (l *lowerer) rebindOwnsHeap(v ValueID) bool {
 // (OpTaskRetain) — the R-tier discipline is one count per reference, released by
 // OpAwait. Both call sites invoke this immediately after the EmitMoveInto that
 // created the reference, so the retain lands in the right order.
+//
+// ⚠️ The retain is gated on asyncHandles (handle IDENTITY), not on the result
+// type being present: a void task is a handle with no result type, and gating on
+// asyncResTypes made every rebind of a void task's handle skip the retain
+// (measured SIGSEGV). Both maps are carried, and both are cleared for a
+// non-handle source so neither a stale result type nor a stale handle identity
+// can survive a rebind.
 func (l *lowerer) carryAsyncResType(dst, src ValueID) {
 	if dst <= NoVal {
 		return
 	}
-	if rt, ok := l.asyncResTypes[src]; ok {
-		l.asyncResTypes[dst] = rt
-		if dst != src {
-			l.b.EmitVoid(OpTaskRetain, []ValueID{dst}, "")
-		}
+	if !l.asyncHandles[src] {
+		delete(l.asyncResTypes, dst)
+		delete(l.asyncHandles, dst)
 		return
 	}
-	delete(l.asyncResTypes, dst)
+	l.asyncHandles[dst] = true
+	if rt, ok := l.asyncResTypes[src]; ok {
+		l.asyncResTypes[dst] = rt
+	} else {
+		delete(l.asyncResTypes, dst)
+	}
+	if dst != src {
+		l.b.EmitVoid(OpTaskRetain, []ValueID{dst}, "")
+	}
 }
 
 // elementTypeOf returns the element type of a value that is an array/slice/option.

@@ -1287,7 +1287,9 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 
 ### Methods on Union Types
 
-Methods attached to a union type (e.g. `int`, `float`, `num`) use `type.method = () (results)` syntax.
+Methods attached to a union type (e.g. `int`, `float`, `num`, `string`) use `type.method = () (results)` syntax.
+
+> **Caution for `string`:** Only methods that do NOT collide with `str.*` or `txt.*` member names may be defined on `string` (e.g. `string.shout` is fine; `string.len` causes infinite recursion because it hijacks all `str.len`/`txt.len` dispatch). For methods that already exist as member methods, call them on the concrete receiver directly (`a.len()` where `a str`).
 
 The parser automatically adds a hidden `self` parameter with the receiver type, so you must **not** declare the receiver explicitly.
 

@@ -853,6 +853,26 @@ Nolang 的 `#` 導入語句支援別名：
 
 這可用於解決跨模組變量名衝突。導入後可直接使用 `ALIAS` 訪問，無需模組前綴。
 
+## 13. Hybrid Ownership Model (MIR passes)
+
+The hybrid ownership model (design doc: `NOLANG-OWNERSHIP-MODEL.md`) introduces a tiered ownership inference layered on top of the existing single-ownership model. All new code lives in `src/mir/`:
+
+| Pass | File | Status | Purpose |
+|------|------|--------|---------|
+| **P1 Tier Lattice** | `src/mir/tier.go` | Framework (all values classified S) | S (statically unique) / C (first-write clone) / R (refcounted) lattice; monotone fixpoint over MIR ops. Currently returns S for all values (baseline equivalence). |
+| **P2 Alias Forward (first-write clone)** | `src/mir/alias_forward.go` | Active (codegen-affecting) | Defers unnecessary OpClone/OpMove deep copies to the alias's first write. If the alias is never written, the clone is eliminated entirely. Reduces redundant heap allocations for `b = a` where `b` is only read. |
+| **P3 Spawn Graph** | `src/mir/spawn_graph.go` | Report-only (no codegen effect) | Analyzes coroutine spawn edges: determines whether a `run`/`awy` boundary can be downgraded to static tier (S/C) vs requiring refcounted (R). Four-condition test: handle doesn't escape, every path awaits exactly once, callee doesn't spawn, boundary values unused after await. |
+
+### Key design facts (mirrored in docs/docs/lang/memory.md)
+
+- **RC only on coroutine spawn edges** — the only place where ownership might be ambiguous at runtime; all other flows remain static.
+- **`%task` grew from 24 to 32 bytes** — the 5th field stores the waiter pointer (replacing the 256-entry hash table, fixing address aliasing).
+- **Deep clone at spawn boundary** — heap-owning arguments (str, vec, struct with heap fields) are cloned at `run`; the wrapper frees the clone after the callee completes.
+- **Double await** — now a defined no-op with diagnostic to fd 2 (was SIGSEGV).
+- **Cancelled task** — no longer leaks argbuf.
+
+Regression: `tests/async-ownership.no`, `tests/async-handle-alias.no`, `src/mir/async_boundary_ownership_test.go`, `src/mir/async_rc_handle_test.go`, `src/mir/option_peel_ownership_test.go`.
+
 ## See Also — Nolang References
 
 - [nolang-syntax](file://../nolang-syntax/SKILL.md) — Nolang syntax, grammar, types, operators, and language features

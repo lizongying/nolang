@@ -1,0 +1,93 @@
+; async-rc.no — P5/P6 acceptance corpus (NOLANG-OWNERSHIP-MODEL.md §5 P5, §5 P6).
+;
+; RC's scope is exactly the coroutine-spawn edge, so the %task that `run` produces
+; is the only refcounted (R-tier) object in the language. This file exercises the
+; four shapes §5 P5 asks for — cross-boundary sharing, several concurrent tasks,
+; cancel with no await, and a handle kept in a container — plus the two
+; handle-COPY spellings whose reference accounting §1.3.1's fix is about.
+;
+; Every case prints one deterministic line. The golden sweep hashes stdout, so a
+; change in ownership surfaces as a changed hash instead of a silent leak.
+
+worker-async = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n * 2
+}
+
+; a task whose RESULT IS VOID — a handle with no result type at all
+noise-async = () {
+    print('noise')
+}
+
+; 1. two references to ONE task, both awaited: rc must reach 2 and be released
+;    twice. Before the fix this printed 42 then died (SIGSEGV).
+test-alias-both = () {
+    h = run worker-async(21)
+    h2 = h
+    a = awy h
+    b = awy h2
+    print('1 {a} {b}')
+}
+
+; 2. a VOID task's handle copy. This is the shape that still segfaulted after the
+;    first fix: the retain was gated on the task having a result TYPE, which a
+;    void task never has, so the copy went uncounted and the second await
+;    released a task the first had already freed (measured rc=139).
+test-void-alias = () {
+    h = run noise-async()
+    h2 = h
+    awy h
+    awy h2
+    print('2 ok')
+}
+
+; 3. `run <handle>` FORWARDS an existing handle: not a new task, but still a new
+;    REFERENCE, so it must retain like `h2 = h` does. Before the fix this spelling
+;    added no count and the two awaits shared one slot, so the second read a
+;    zeroed handle and printed 0 instead of 42.
+test-run-forward = () {
+    h = run worker-async(21)
+    h2 = run h
+    a = awy h
+    b = awy h2
+    print('3 {a} {b}')
+}
+
+; 4. several concurrent tasks, awaited out of order
+test-many-tasks = () {
+    h1 = run worker-async(1)
+    h2 = run worker-async(2)
+    h3 = run worker-async(3)
+    c = awy h3
+    a = awy h1
+    b = awy h2
+    print('4 {a} {b} {c}')
+}
+
+; 5. a handle stored in a CONTAINER. The container holds a reference the compiler
+;    cannot follow, which is precisely why R is the safe tier here.
+test-container = () {
+    hs []i64 = []
+    hs.push(run worker-async(21))
+    hs.push(run worker-async(22))
+    a = awy hs[0]
+    b = awy hs[1]
+    print('5 {a} {b}')
+}
+
+; 6. cancelled and NEVER awaited: the handle is abandoned, so its count stays at
+;    1 and the task leaks. That is the documented trade-off (§1.3.1), not a
+;    regression — the point of the case is that it must neither crash nor
+;    double-free.
+test-cancel-no-await = () {
+    h = run worker-async(100)
+    async-cancel(h)
+    print('6 ok')
+}
+
+test-alias-both()
+test-void-alias()
+test-run-forward()
+test-many-tasks()
+test-container()
+test-cancel-no-await()

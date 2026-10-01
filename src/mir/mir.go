@@ -1164,6 +1164,26 @@ type Module struct {
 	// forms a callee (`fd.to-str`) that no function matches
 	// ("unknown callee fd.to-str", tests/errno-basic.no).
 	ValueTypeAliases map[string]string
+
+	// spawnArgMoves is the set of values that a `run` argument position
+	// CONSUMES: the value's ownership transfers into the spawned task instead
+	// of being deep-copied, so it must not be dropped by the caller.
+	//
+	// This is the cross-layer protocol §1.3.1 recorded as the cost of the
+	// non-ABI "move the spawn argument" intermediate. The decision needs
+	// liveness (analysis) and the callee's parameter classification (codegen),
+	// so it is made ONCE — in insertDrops — and recorded here for emitAsyncRun
+	// to read. Computing it independently on both sides is exactly how the
+	// clone and the free would drift apart: emitAsyncRun must skip its deep
+	// copy for precisely the values whose caller-side drop was suppressed, or
+	// the payload is either leaked (drop suppressed AND copy still made) or
+	// double-freed (drop kept AND ownership also moved).
+	//
+	// Populated per Analyze run and keyed by ValueID, which is module-global
+	// (Module.Values), so one map serves every function. A nil map means
+	// "Analyze has not run" and codegen falls back to the P0 deep copy, which
+	// is the safe default.
+	spawnArgMoves map[ValueID]bool
 }
 
 // blockEmpty reports whether b has no instructions and no terminator — i.e. it

@@ -416,3 +416,174 @@ main = () {
 		t.Errorf("source still live after the binding was NOT cloned: clones=0\n%s", dump)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §4.2 "first write": a WRITTEN alias whose source is already dead by the time
+// of the write. The copy is unobservable — nothing can read the source after
+// the write — so the alias may take over the source's buffer (a MOVE).
+//
+// These are the cases hir2mir's unconditional binding-time clone over-pays for
+// and the read-only rule refuses, yet where `a` is provably dead at the WRITE
+// even though it is still live at the BINDING.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestAliasWrittenAfterSourceLastReadIsNotCloned is the case §4.2 exists for and
+// the read-only rule cannot reach: `a` is READ after the binding (so the
+// "source dead ⇒ move" shortcut does not apply at the binding), but `a` is DEAD
+// by the time `b[0] = 99` runs. Sharing the buffer is then indistinguishable
+// from copying it.
+func TestAliasWrittenAfterSourceLastReadIsNotCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    print(a[0])
+    b[0] = 99
+    print(b[0])
+}
+`)
+	clones, drops, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("alias written after the source's last read still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+	if drops != 1 {
+		t.Errorf("a moved buffer must be dropped exactly once: drops=%d, want 1\n%s", drops, dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestAliasWrittenAfterSourceLastReadInLoop: same shape, but the alias's write
+// and the source's last read sit in different blocks, so the predicate has to
+// hold across blocks (liveOut) rather than within one. `a`'s last read is in the
+// entry block; the write is in the loop body.
+func TestAliasWrittenAfterSourceLastReadInLoop(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    print(a[0])
+    i i64 = 0
+    for i <- [0..3) {
+        b[i] = 7
+    }
+    print(b[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("alias written in a loop still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestAliasWrittenBeforeSourceLastReadStillCloned is the guard on the above: the
+// write comes BEFORE the source's last read, so a read of `a` WOULD observe the
+// write and the copy must stay. Without this the positive test could be passing
+// because the rule fires unconditionally.
+func TestAliasWrittenBeforeSourceLastReadStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    print(b[0])
+    b[0] = 99
+    print(a[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("alias written while the source is still live was NOT cloned: clones=0\n%s", dump)
+	}
+}
+
+// TestAliasWrittenWithSecondAliasStillCloned pins (w3): a SECOND copy of the
+// source makes the relaxation unsound. `c` is read-only and therefore forwarded
+// onto `a`; if `b`'s write also went to `a`, `print(c[0])` would read 99 where a
+// private copy reads 1. So the relaxation must refuse `b` as soon as `a` is
+// copied more than once.
+func TestAliasWrittenWithSecondAliasStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    c []i64 = a
+    print(a[0])
+    b[0] = 99
+    print(b[0])
+    print(c[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("alias written while a second alias of the source exists was NOT cloned: clones=0\n%s", dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestAliasChainWrittenStillCloned pins (w4): the source is copied only once, but
+// the ALIAS is copied. `c = b` would be re-pointed at `a` and could then be
+// forwarded itself, turning a private copy into a third observer — a case the
+// "copies of the source" count cannot see.
+func TestAliasChainWrittenStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    c []i64 = b
+    print(a[0])
+    b[0] = 99
+    print(c[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("alias written while a copy of the ALIAS exists was NOT cloned: clones=0\n%s", dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestAliasOfParameterWrittenStillCloned pins (w2): a slice PARAMETER is the
+// caller's buffer — `mutate(v []i64) { v[0] = 99 }` really does change the
+// caller's slice — so a write through an alias of it is observable OUTSIDE the
+// frame, where no liveness fact in this function can rule it out. The read-only
+// path may forward a parameter because it never writes; this one may not.
+func TestAliasOfParameterWrittenStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+takes = (p []i64) {
+    b []i64 = p
+    print(p[0])
+    b[0] = 99
+    print(b[0])
+}
+main = () {
+    a []i64 = [1, 2, 3]
+    takes(a)
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "takes")
+	if clones == 0 {
+		t.Errorf("alias of a slice PARAMETER was written without a clone: clones=0\n%s", dump)
+	}
+}
+
+// TestAliasWrittenThenEscapedStillCloned pins the escape half of (r1): the write
+// itself would be allowed, but the alias is then handed to a callee, which may
+// retain it past the source's single drop. An escape always keeps the clone.
+func TestAliasWrittenThenEscapedStillCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+mutate = (v []i64) {
+    v[0] = 99
+}
+main = () {
+    a []i64 = [1, 2, 3]
+    b []i64 = a
+    print(a[0])
+    mutate(b)
+    print(b[0])
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Errorf("alias written and then escaped to a callee was NOT cloned: clones=0\n%s", dump)
+	}
+}

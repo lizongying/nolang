@@ -12407,6 +12407,23 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		if i < len(argKinds) {
 			kind = argKinds[i]
 		}
+		// MOVED ARGUMENT (NOLANG-OWNERSHIP-MODEL.md §1.3.1). When the source is
+		// provably dead at this spawn, insertDrops transfers its ownership into
+		// the task instead of copying: it suppressed the source's drop and
+		// recorded the value in mod.spawnArgMoves. The argbuf then holds the
+		// source descriptor VERBATIM and the wrapper's existing free path
+		// releases it exactly once — so the deep copy below must be skipped, or
+		// the payload is leaked (drop suppressed AND a copy still made).
+		//
+		// The decision is READ, never recomputed: a second implementation here
+		// is precisely how the clone and the suppressed drop would drift apart.
+		//
+		// `alt == plt` restricts the move to arguments needing no coercion
+		// (coerceAsyncArg's plain passthrough). A coerced argument's descriptor
+		// is not the source's, so there is nothing to transfer, and `kind != ""`
+		// re-asserts the precondition insertDrops checked — the wrapper only
+		// frees the payload for a classified kind.
+		moved := c.mod.spawnArgMoves[av] && alt == plt && kind != ""
 		// structKey is non-empty only for kind == "struct". A struct is handled
 		// AFTER the argbuf store (below) rather than by pre-cloning the value:
 		// the field walks operate on memory, and the argbuf is already the
@@ -12415,7 +12432,7 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		if i < len(argKeys) {
 			structKey = argKeys[i]
 		}
-		if kind != "" && kind != "struct" && !owned {
+		if !moved && kind != "" && kind != "struct" && !owned {
 			// Only copy when the register really carries the descriptor type
 			// the helper expects. `alt` is the COERCED type; a `str` parameter
 			// fed something that coerceAsyncArg did not convert (so alt is
@@ -12439,9 +12456,10 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		// each pointee through the source pointer (allocating one if the field
 		// is NULL, exactly as emitPtrStructClone does for `b = a`). Spill the
 		// value into a private slot so the walk has a stable pointer to read,
-		// whatever shape the argument expression had.
+		// whatever shape the argument expression had. Only the clone walk needs
+		// it, so a moved struct skips the spill too.
 		srcSlot := ""
-		if structKey != "" && alt == plt {
+		if !moved && structKey != "" && alt == plt {
 			c.loadSeq++
 			srcSlot = fmt.Sprintf("%%arun.srcslot.%d_%d", c.loadSeq, i)
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", srcSlot, alt))
@@ -12458,7 +12476,9 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		// (inline `str` leaves, pointees) still aliases the caller's. Give the
 		// argbuf its own deep copy, walking the SAME shape the wrapper's
 		// destructor frees — emitStructDropHelper frees ptr fields (recursively)
-		// and inline leaves, so clone and free can never disagree.
+		// and inline leaves, so clone and free can never disagree. A MOVED
+		// struct keeps the bitwise copy on purpose: those fields ARE the
+		// transferred ownership, and the same destructor frees them.
 		if srcSlot != "" {
 			if c.mod.StructHasPtrFields(structKey) {
 				c.emitPtrFieldsClone(abufT, srcSlot, alt, structKey, map[string]bool{})
