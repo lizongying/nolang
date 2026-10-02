@@ -1,80 +1,92 @@
-; heap — 二元堆積 / 優先權佇列
+; heap — 泛型二元堆積 / 優先權佇列
 ;
-; 實作最小堆積（Min-Heap），以小根堆方式儲存 i64 整數。
+; heap 結構體自行承載元素緩衝區（`data []t`）與狀態（cap/n），元素型別 `t` 由
+; 工廠呼叫 `heap.init(data)` 傳入的具體 `[N]E` / `[]E` 緩衝區推斷，編譯器透過
+; monomorphizeSliceStructs（src/build/slice_structs.go）單態化出 heap-E 具現型別
+; 與其所有方法。因此 heap 支援任意具 `<` / `>=` 比較語義的元素型別（i64/u8/f64 等）。
+; 實作最小堆積（Min-Heap）。
 ;
 ; 用法：
 ;   use std/heap
-;   data [128]i64 = [0:128]
-;   h = heap-init(data)
+;   data [128]i64 = [0, 0, 0 /* ... 128 個元素 */]
+;   h = heap.init(data)          // h : heap-i64，容量 = 緩衝區長度
 ;   h.push(42)
 ;   h.push(7)
-;   val = h.pop()
+;   val = h.pop()                // val = ok(7)（最小值先出）
+;   sz = h.size()
+;
+; 注意：容量上限即為緩衝區陣列長度；實例由 heap.init(buffer) 建立。
 
-; heap: 二元堆積
+; heap: 堆積狀態（自行承載元素緩衝區）
+; data: 元素緩衝區切片（容量 = 其長度）
+; cap:  容量（= 緩衝區陣列長度）
+; n:    目前元素數量
 heap {
-    data []i64
+    data []t
+    cap i64
     n i64
 }
 
-; init: 建立堆積
-heap.init = (data []i64) (h heap) {
+; ═══════════════════════════════════════════════
+; 泛型方法（由工廠呼叫的緩衝區型別單態化元素型別 t）
+; ═══════════════════════════════════════════════
+
+; heap.init: 工廠 — 以呼叫者提供的元素緩衝區建立空堆積
+; data []t: 元素緩衝區（其長度即容量上限）
+; 返回 h heap: 初始化後的堆積實例
+heap.init = (data []t) (h heap) {
     h.data = data
+    h.cap = len(data)
     h.n = 0
 }
 
-; push: 向堆積推入一個元素
-heap.push = (val i64) {
+; heap.push: 向堆積推入一個元素並維持最小堆性質
+; val t: 要推入的值
+#{index-out=0}
+heap.push = (val t) {
 
-    #{index-out=0}
+    ; 已滿則不推入
+    .n >= .cap -> return
+
     .data[.n] = val
 
     #{overflow=wrap}
     .n = .n + 1
 
+    ; sift-up：向上調整維持最小堆性質
     #{overflow=wrap}
     i = .n - 1
     (i > 0) {
 
         #{overflow=wrap}
         parent = (i - 1) / 2
-        .data[i] >= .data[parent] -> {
+        .data[i] >= .data[parent] -> break
 
-            #{index-out=0}
-            break
-        }
-
-        #{index-out=0}
         tmp = .data[i]
-
-        #{index-out=0}
         .data[i] = .data[parent]
-
-        #{index-out=0}
         .data[parent] = tmp
         i = parent
     }
 }
 
-; pop: 從堆積彈出最小元素
-; 返回 val ?i64: ok=最小值, nil=堆積為空
-heap.pop = () (val ?i64) {
-
+; heap.pop: 從堆積彈出最小元素並向下調整
+; 返回 val ?t: ok=最小值, nil=堆積為空
+#{index-out=0}
+heap.pop = () (val ?t) {
     .n == 0 -> {
         val = nil
         return
     }
 
-    #{index-out=0}
     val = .data[0]
 
     #{overflow=wrap}
     .n = .n - 1
-
-    #{index-out=0}
     .data[0] = .data[.n]
+
+    ; sift-down：向下調整維持最小堆性質
     i = 0
     !! {
-
         smallest = i
 
         #{overflow=wrap}
@@ -82,48 +94,38 @@ heap.pop = () (val ?i64) {
 
         #{overflow=wrap}
         right = 2 * i + 2
-        left < .n && .data[left] < .data[smallest] -> {
-
-            #{index-out=0}
-            smallest = left
-        }
-        right < .n && .data[right] < .data[smallest] -> {
-
-            #{index-out=0}
-            smallest = right
-        }
+        left < .n && .data[left] < .data[smallest] -> smallest = left
+        right < .n && .data[right] < .data[smallest] -> smallest = right
         smallest == i -> break
 
-        #{index-out=0}
         tmp = .data[i]
-
-        #{index-out=0}
         .data[i] = .data[smallest]
-
-        #{index-out=0}
         .data[smallest] = tmp
         i = smallest
     }
 }
 
-; peek: 查看最小元素（不移除）
-; 返回 val ?i64: ok=最小值, nil=堆積為空
-heap.peek = () (val ?i64) {
+; heap.peek: 查看最小元素（不移除）
+; 返回 val ?t: ok=最小值, nil=堆積為空
+#{index-out=0}
+heap.peek = () (val ?t) {
     .n == 0 -> {
         val = nil
         return
     }
-
-    #{index-out=0}
     val = .data[0]
 }
 
-; size: 返回堆積大小
+; ═══════════════════════════════════════════════
+; 狀態查詢方法（不涉及元素型別）
+; ═══════════════════════════════════════════════
+
+; heap.size: 返回堆積大小
 heap.size = () (sz i64) {
     sz = .n
 }
 
-; empty: 判斷堆積是否為空
+; heap.empty: 判斷堆積是否為空
 heap.empty = () (yes bool) {
     yes = .n == 0
 }

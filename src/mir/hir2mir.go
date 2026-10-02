@@ -2941,9 +2941,22 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// digit-counting loop, so the second loop never ran). Give `name`
 			// its OWN slot and COPY the value in, so the two names stay
 			// independent. This also restores correct value semantics: a plain
-			// `let x = y` (scalar) is a copy, not a live view of `y`. Owned
-			// values keep the alias (view) semantics the memory analysis already
-			// handles with a single drop for the shared slot.
+			// `let x = y` (scalar) is a copy, not a live view of `y`.
+			//
+			// RULE 1 (NOLANG-OWNERSHIP-MODEL.md §1.1): an OWNED value now takes
+			// the same path. It used to keep the alias — `l.locals[name] = val`
+			// bound BOTH names to one SSA value, and therefore to one drop — so
+			// `c = s` followed by `c[0] = "H"` really did change `s` (measured:
+			// both printed `Hello`), and `n = m; n.put('b', 2)` changed `m`.
+			// Value-to-value aliasing is exactly what the model forbids now.
+			//
+			// The copy is a bitwise OpMove into a FRESH value; insertDrops then
+			// applies its existing liveness rule — source still live ⇒ rewrite
+			// to OpClone (a deep copy, so each side owns its buffer), source
+			// dead ⇒ keep the zero-copy move and exempt the source's drop.
+			// Either way the two names never share. Owned SLICES keep their
+			// dedicated path below (they are lowered to OpClone directly, and
+			// lowerDeadSourceCopiesToMoves applies the same rule to them).
 			if cn := l.pkg.Node(childID); cn != nil && cn.Kind == hir.KIdent {
 				// Same hazard for a module-level binding: `K = 100` lowers to a
 				// global VALUE, so `t = K` binds `t` onto @K's own storage and a
@@ -2967,7 +2980,39 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						}
 					}
 				}
-				if (isLocal || isScalarGlobal) && !l.isOwnedLocal(val) {
+				// An owned `str` and an owned OPTION take this path too — see
+				// the RULE 1 note above. Slices are excluded because they have
+				// their own lowering below.
+				//
+				// The option case is `p ?T = o` with an owned payload
+				// (`?str`, `?[]T`): `isOwnedLocal` is TRUE for those, so
+				// without this the gate fell through and bound `p` to `o`'s
+				// value id — one value, one drop, and a write through either
+				// visible through the other.
+				//
+				// NOT the PEEL, though. When the binding's declared type is a
+				// non-option, the block above has already replaced `val` with
+				// the peeled (and, for an owned payload, cloned) value, so no
+				// option is left here. The declared-type test below is
+				// belt-and-braces for the one shape that block leaves alone —
+				// a declared type that is neither the option nor its payload —
+				// where routing the OPTION through this path would type the
+				// fresh value as the option while the binding is not one.
+				ownedStr := false
+				ownedOpt := false
+				if fn := l.mod.Func(l.curFunc); fn != nil {
+					ownedStr = l.mod.typeIsOwnedStr(fn, val)
+					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+						if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption && vty.Owned {
+							if dt := l.letDeclaredType(n); dt == NoType || dt == l.voidType {
+								ownedOpt = true
+							} else if dty := l.mod.Type(dt); dty != nil && dty.Kind == KindOption {
+								ownedOpt = true
+							}
+						}
+					}
+				}
+				if (isLocal || isScalarGlobal) && (!l.isOwnedLocal(val) || ownedStr || ownedOpt) {
 					typ := l.valueTypeOf(val)
 					if typ == NoType || typ == l.voidType {
 						typ = l.typeOfNode(cn)

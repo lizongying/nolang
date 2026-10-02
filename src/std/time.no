@@ -3,6 +3,10 @@
 ; 提供 Unix 時間戳、格式化、睡眠、時長計算、計時器。
 ; 底層依賴 os 模組的系統調用（now、now-ms、now-us、now-ns、sleep、sleep-us、sleep-ns）。
 ;
+; 另提供 time 結構體（sec + nsec 表示的絕對時間點）：now-time、unix-to-time、
+; duration-time、since-time、parse-time 等函式，以及 .unix/.date/.format 等方法，
+; 讓呼叫端以 time 而非裸 i64 時間戳操作時間。
+;
 ; 注意：now-ms、now-us、now-ns、sleep-us、sleep-ns 已由 builtin 提供，
 ; 此處不再重新定義（用戶函式會遮蔽同名 builtin 造成遞迴），
 ; 直接以 builtin 形式供使用者呼叫。
@@ -583,4 +587,104 @@ parse-date = (s str) (ts ?i64) {
 now-date = () (d date) {
     ts = os.now()
     d = unix-to-date(ts)
+}
+
+; ═══════════════════════════════════════════════
+; time 結構體（時間點）
+; ═══════════════════════════════════════════════
+
+; time: 時間點結構體（UTC）
+; 以 Unix 秒（sec）與納秒（nsec，0~999,999,999）表示一個絕對時間點。
+; 搭配 now-time、unix-to-time 等構造函式與 .unix、.date、.format 等方法，
+; 讓呼叫端以 time 而非裸 i64 時間戳操作時間。
+time {
+    sec i64
+    nsec i64
+}
+
+; now-time: 當前時間點（UTC）
+; 由 builtin now-ns()（CLOCK_REALTIME 奈秒）拆解出 sec 與 nsec
+now-time = () (t time) {
+    ns = now-ns()
+
+    #{overflow=wrap}
+    t.sec = ns / 1000000000
+
+    #{overflow=wrap}
+    t.nsec = ns % 1000000000
+}
+
+; unix-to-time: 由 Unix 秒時間戳構造 time（nsec=0）
+unix-to-time = (ts i64) (t time) {
+    t.sec = ts
+    t.nsec = 0
+}
+
+; duration-time: 計算兩個 time 的差（秒）
+duration-time = (start time, end time) (diff i64) {
+
+    #{overflow=wrap}
+    diff = end.sec - start.sec
+}
+
+; since-time: 從 start 到現在的經過秒數
+since-time = (start time) (diff i64) {
+    now-t time
+    now-t = now-time()
+
+    #{overflow=wrap}
+    diff = now-t.sec - start.sec
+}
+
+; parse-time: 解析日期字串為 time
+; 支援格式同 parse-date：YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DD
+; 返回 ?time：ok=time, nil=解析失敗
+parse-time = (s str) (t ?time) {
+    t = nil
+    ts = parse-date(s)
+    ts: {
+        ok -> t = unix-to-time(it)
+
+        ; nil / err → 解析失敗，保持 t = nil
+        -> return
+    }
+}
+
+; time.unix: 取得 Unix 秒時間戳
+time.unix = () (ts i64) {
+    ts = .sec
+}
+
+; time.unix-ms: 取得 Unix 毫秒時間戳
+time.unix-ms = () (ms i64) {
+
+    #{overflow=wrap}
+    ms = .sec * 1000 + .nsec / 1000000
+}
+
+; time.date: 轉換為 date 結構體（UTC，忽略 nsec）
+time.date = () (d date) {
+    d = unix-to-date(.sec)
+}
+
+; time.format: 格式化為 'YYYY-MM-DD HH:MM:SS'（UTC，忽略 nsec）
+time.format = () (out str) {
+    d date
+    d = unix-to-date(.sec)
+    out = format-date(d)
+}
+
+; time.add-seconds: 增加秒數，回傳新的 time
+time.add-seconds = (n i64) (t time) {
+
+    #{overflow=wrap}
+    t.sec = .sec + n
+    t.nsec = .nsec
+}
+
+; time.sub: 與另一個 time 的差（秒，. - other）
+time.sub = (other time) (diff i64) {
+
+    #{overflow=wrap}
+    diff = .sec - other.sec
 }

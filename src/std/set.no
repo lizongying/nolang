@@ -1,160 +1,238 @@
-; set — 集合資料結構
+; set — 泛型集合資料結構
 ;
-; 使用 []i64 實作整數集合，提供基本集合操作。
+; set 結構體自行承載元素緩衝區（`data []t`）與狀態（cap/size），元素型別 `t` 由
+; 工廠呼叫 `set.init(data)` 傳入的具體 `[N]E` / `[]E` 緩衝區推斷，編譯器透過
+; monomorphizeSliceStructs（src/build/slice_structs.go）單態化出 set-E 具現型別
+; 與其所有方法。因此 set 支援任意具 `==` 語義的元素型別（i64/u8/byte/str 等）。
 ;
 ; 用法：
 ;   use std/set
-;   a [128]i64 = [0:128]
-;   an = 0
-;   an = set.add(a, an, 1)
-;   an = set.add(a, an, 2)
-;   yes = set.contains(a, an, 1)   // yes = true
+;   buf [128]i64 = [0,0,0 /* ... 128 個元素 */]
+;   s = set.init(buf)                // s : set-i64，容量 = 緩衝區長度
+;   n = s.add(1)                     // 加入 1，回傳新大小
+;   s.add(2)
+;   yes = s.contains(1)              // yes = true
+;   n = s.remove(1)                  // 移除 1，回傳新大小
+;   sz = s.size()
+;
+;   // 泛型字串集合：另給一個 [n]str 緩衝區即可
+;   sbuf [16]str = ['', '', /* ... */]
+;   ss = set.init(sbuf)
+;   ss.add('apple')
+;
+; 注意：容量上限即為緩衝區陣列長度；實例由 set.init(buffer) 建立。
 
-; add: 加入元素到集合（若不存在）
-; 返回新的大小
-add = (s []i64, n i64, val i64) (new-n i64) {
+; set: 集合狀態（自行承載元素緩衝區）
+; data: 元素緩衝區切片（容量 = 其長度）
+; cap:  容量（= 緩衝區陣列長度）
+; size: 目前元素數量
+set {
+    data []t
+    cap i64
+    size i64
+}
 
-    new-n = n
-    i <- [0..n): {
+; ═══════════════════════════════════════════════
+; 泛型方法（由工廠呼叫的緩衝區型別單態化元素型別 t）
+; ═══════════════════════════════════════════════
 
-        s[i] == val -> {
+; set.init: 工廠 — 以呼叫者提供的元素緩衝區建立空集合
+; data []t: 元素緩衝區（其長度即容量上限）
+; 返回 s set: 初始化後的集合實例
+set.init = (data []t) (s set) {
+    s.data = data
+    s.cap = len(data)
+    s.size = 0
+}
 
-            #{index-out=0}
-            return
+; set.add: 加入元素到集合（若不存在）
+; val t: 要加入的元素
+; 返回 new-size i64: 新的大小
+#{index-out=0, overflow=wrap}
+set.add = (val t) (new-size i64) {
+    sz = .size
+
+    ; 已存在則不重複加入
+    found = false
+    i <- [0..sz): {
+        e = .data[i]
+        e == val -> {
+            found = true
+            break
+        }
+    }
+    found -> {
+        new-size = sz
+        return
+    }
+
+    ; 已滿則不加入
+    sz >= .cap -> {
+        new-size = sz
+        return
+    }
+
+    .data[sz] = val
+    .size = sz + 1
+    new-size = .size
+}
+
+; set.remove: 從集合移除元素
+; 以最後一個元素填補被移除的位置（無序）
+; val t: 要移除的元素
+; 返回 new-size i64: 新的大小
+#{index-out=0, overflow=wrap}
+set.remove = (val t) (new-size i64) {
+    sz = .size
+    idx = -1
+    i <- [0..sz): {
+        e = .data[i]
+        e == val -> {
+            idx = i
+            break
         }
     }
 
-    #{index-out=0}
-    s[n] = val
+    ; 未找到
+    idx < 0 -> {
+        new-size = sz
+        return
+    }
 
+    ; 將最後一個元素移到被移除位置
     #{overflow=wrap}
-    new-n = n + 1
+    last = sz - 1
+    .data[idx] = .data[last]
+    .size = last
+    new-size = .size
 }
 
-; remove: 從集合移除元素
-; 返回新的大小
-set-remove = (s []i64, n i64, val i64) (new-n i64) {
-    new-n = n
-    i <- [0..n): {
-        s[i] == val -> {
-
-            ; 將最後一個元素移到該位置
-            #{index-out=0, overflow=wrap}
-            s[i] = s[n - 1]
-
-            #{overflow=wrap}
-            new-n = n - 1
-            return
-        }
-    }
-}
-
-; contains: 檢查元素是否存在於集合中
-; 返回 true=存在, false=不存在
-contains = (s []i64, n i64, val i64) (yes bool) {
-    i <- [0..n): {
-        s[i] == val -> {
+; set.contains: 檢查元素是否存在於集合中
+; val t: 要查詢的元素
+; 返回 yes bool: true=存在, false=不存在
+#{index-out=0}
+set.contains = (val t) (yes bool) {
+    sz = .size
+    i <- [0..sz): {
+        e = .data[i]
+        e == val -> {
             yes = true
-            return
+            break
         }
     }
 }
 
-; union: 計算兩個集合的聯集
-; 將 b（含 bn 個元素）中不在 a 的元素加入 a
-; 返回新的大小
-union = (a []i64, an i64, b []i64, bn i64) (new-an i64) {
-    new-an = an
-    i <- [0..bn): {
+; set.union: 計算聯集（將 other 緩衝區中不在自身的元素加入自身）
+; other []t: 另一個集合的元素緩衝區
+; osize i64: 另一個集合的元素數量
+; 返回 new-size i64: 聯集後的大小
+#{index-out=0, overflow=wrap}
+set.union = (other []t, osize i64) (new-size i64) {
+    j <- [0..osize): {
+        ov = other[j]
 
-        #{index-out=0}
-        v = b[i]
         found = false
-        j <- [0..an): {
-            a[j] == v -> {
+        sz = .size
+        i <- [0..sz): {
+            e = .data[i]
+            e == ov -> {
+                found = true
+                break
+            }
+        }
+
+        found == false -> {
+            .size < .cap -> {
+                .data[.size] = ov
+                .size = .size + 1
+            }
+        }
+    }
+    new-size = .size
+}
+
+; set.intersection: 計算交集（自身與 other 的共同元素）
+; 結果寫入呼叫者提供的 out 緩衝區，並回傳交集元素數量
+; other []t: 另一個集合的元素緩衝區
+; osize i64: 另一個集合的元素數量
+; out []t: 交集結果緩衝區
+; 返回 cnt i64: 交集元素數量
+#{index-out=0, overflow=wrap}
+set.intersection = (other []t, osize i64, out []t) (cnt i64) {
+    cnt = 0
+    sz = .size
+    i <- [0..sz): {
+        v = .data[i]
+
+        found = false
+        j <- [0..osize): {
+            ov = other[j]
+            ov == v -> {
+                found = true
+                break
+            }
+        }
+
+        found -> {
+            out[cnt] = v
+
+            #{overflow=wrap}
+            cnt = cnt + 1
+        }
+    }
+}
+
+; set.difference: 計算差集（在自身中但不在 other 中）
+; 結果寫入呼叫者提供的 out 緩衝區，並回傳差集元素數量
+; other []t: 另一個集合的元素緩衝區
+; osize i64: 另一個集合的元素數量
+; out []t: 差集結果緩衝區
+; 返回 cnt i64: 差集元素數量
+#{index-out=0, overflow=wrap}
+set.difference = (other []t, osize i64, out []t) (cnt i64) {
+    cnt = 0
+    sz = .size
+    i <- [0..sz): {
+        v = .data[i]
+        found = false
+        j <- [0..osize): {
+            ov = other[j]
+            ov == v -> {
                 found = true
                 break
             }
         }
         found == false -> {
-
-            #{index-out=0}
-            a[new-an] = v
+            out[cnt] = v
 
             #{overflow=wrap}
-            new-an = new-an + 1
+            cnt = cnt + 1
         }
     }
 }
 
-; intersection: 計算兩個集合的交集
-; 將 a 和 b 的共同元素寫入 out
-; 返回交集中的元素數量
-intersection = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
-    out-n = 0
-    out = with-cap(an)
-    i <- [0..an): {
-
-        #{index-out=0}
-        v = a[i]
-        j <- [0..bn): {
-            b[j] == v -> {
-
-                #{index-out=0}
-                out[out-n] = v
-
-                #{overflow=wrap}
-                out-n = out-n + 1
-                break
-            }
-        }
+; set.to-vec: 將集合轉為切片（無序）
+; 返回 out []t: 集合元素切片（長度 = size）
+#{index-out=0}
+set.to-vec = () (out []t) {
+    sz = .size
+    out = with-len(sz)
+    i <- [0..sz): {
+        e = .data[i]
+        out[i] = e
     }
 }
 
-; difference: 計算兩個集合的差集（在 a 中但不在 b 中）
-; 返回差集中的元素數量
-difference = (a []i64, an i64, b []i64, bn i64) (out []i64, out-n i64) {
-    out-n = 0
-    out = with-cap(an)
-    i <- [0..an): {
+; ═══════════════════════════════════════════════
+; 狀態查詢方法（不涉及元素型別）
+; ═══════════════════════════════════════════════
 
-        #{index-out=0}
-        v = a[i]
-        found = false
-        j <- [0..bn): {
-            b[j] == v -> {
-                found = true
-                break
-            }
-        }
-        found == false -> {
-
-            #{index-out=0}
-            out[out-n] = v
-
-            #{overflow=wrap}
-            out-n = out-n + 1
-        }
-    }
+; set.size: 返回集合大小
+set.size = () (sz i64) {
+    sz = .size
 }
 
-; to-vec: 將集合轉為切片（無序）
-to-vec = (s []i64, n i64) (out []i64) {
-    out = with-len(n)
-    i <- [0..n): {
-
-        #{index-out=0}
-        out[i] = s[i]
-    }
-}
-
-; size: 返回集合大小
-set-size = (s []i64, n i64) (sz i64) {
-    sz = n
-}
-
-; empty: 判斷集合是否為空
-; 返回 true=空, false=非空
-set-empty = (s []i64, n i64) (yes bool) {
-    yes = n == 0
+; set.is-empty: 判斷集合是否為空
+set.is-empty = () (yes bool) {
+    yes = .size == 0
 }

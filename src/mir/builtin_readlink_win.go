@@ -71,7 +71,7 @@ func (c *codegen) emitBuiltinReadlinkWindows(inst *Inst) error {
 	// h = CreateFileA(path, 0, 7, NULL, OPEN_EXISTING, 0x02200000, NULL)
 	h := c.treg("rlw.h")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @CreateFileA(i8* %s, i32 0, i32 7, i8* null, i32 3, i32 35651584, i8* null)\n", h, p))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", p))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", p))
 	inv := c.treg("rlw.inv")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, -1\n", inv, h))
 

@@ -379,6 +379,30 @@ const (
 	OpClone   // deep copy (heap duplicated); both source and dest stay owned
 	OpDrop    // destructor + @free (owned, exactly once)
 	OpBorrow  // take a reference (no ownership transfer)
+	// OpRetain bumps the refcount of the heap buffer behind an ALIASED value.
+	//
+	// A container element/field read (OpIndex / OpGetField / OpEnumField / the
+	// option->slice peel) hands out a bitwise copy of the owner's descriptor,
+	// so two values name the SAME buffer. Under the header ABI (P4) that is
+	// only safe if the copy is refcounted: the grow path releases the old
+	// buffer, and a release of a still-referenced buffer is a use-after-free.
+	// insertDrops emits one OpRetain per borrow read, and the matching
+	// OpRelease when that reference dies.
+	OpRetain
+	// OpRelease gives back the reference an OpRetain took. It is the SHALLOW
+	// dual of OpDrop, and it must be a separate op rather than an OpDrop
+	// because the two differ in exactly the case that matters: a borrow's
+	// buffer is OWNED BY THE CONTAINER it was read from (`x = a[0]` names a
+	// buffer belonging to `a`'s element), so disposing of x must not free that
+	// element's contents. OpDrop dispatches on the element type and would free
+	// them (emitDrop's %vec branch selects the DEEP free for a %str-long/%vec
+	// element); OpRelease always lowers to the shallow release — @vec_free,
+	// which is precisely the dual of @vec_retain, since @nolang_free
+	// decrements the header refcount and frees only at zero.
+	//
+	// insertDrops places exactly one OpRelease per OpRetain, on every path the
+	// borrow's value can die on. See releaseVals in analysis.go.
+	OpRelease
 
 	// data
 	OpConst     // integer/float/bool/string literal
@@ -529,6 +553,8 @@ var opNames = [opCount]string{
 	OpClone:     "clone",
 	OpDrop:      "drop",
 	OpBorrow:    "borrow",
+	OpRetain:     "retain",
+	OpRelease:    "release",
 	OpConst:     "const",
 	OpGetField:  "getfield",
 	OpSetField:  "setfield",
@@ -571,7 +597,7 @@ func (o Op) String() string {
 // pure side-effecting stores, and Drop/SetField do not.
 func producesValue(op Op) bool {
 	switch op {
-	case OpReturn, OpBr, OpCondBr, OpSwitch, OpStore, OpDrop, OpSetField, OpIndexStore:
+	case OpReturn, OpBr, OpCondBr, OpSwitch, OpStore, OpDrop, OpSetField, OpIndexStore, OpRetain, OpRelease:
 		return false
 	}
 	return true

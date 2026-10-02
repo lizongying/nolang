@@ -1,0 +1,151 @@
+; set.no — 泛型 set 模組測試（run-based，使用 use std/set）
+;
+; 執行：no run tests/set.no
+;
+; 泛型容器現已支援「切片欄位」單態化（monomorphizeSliceStructs）：結構體自行
+; 承載 `data []t`，元素型別 `t` 由工廠呼叫 `set.init(buffer)` 傳入的具體緩衝區
+; 推斷。故泛型操作的完整驗證放在此 run-based 檔案：透過 `# std/set` 明確匯入
+; 即可正常單態化。
+; 覆蓋：init / add / remove / contains / union / intersection / difference /
+;       to-vec / size / is-empty，以及 str 元素型別的泛型推斷。
+
+# std/set
+
+; check：純函數，印出結果並回傳布爾值（不可在函式內改動全域變數）
+check = (cond bool, msg str) (r bool) {
+    r = cond
+    cond -> {
+        print('ok:', msg)
+    }
+
+    -> {
+        print('FAIL:', msg)
+    }
+}
+
+; 全部斷言以此旗標彙整（於 top-level main scope 更新）
+allok = true
+
+; ── 1. add / contains / size ──
+buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+s = set.init(buf)
+n = 0
+n = s.add(1)
+n = s.add(2)
+n = s.add(3)
+allok = allok && check(n == 3, 'add 3 unique -> size 3')
+allok = allok && check(s.contains(2), 'contains 2')
+allok = allok && check(! s.contains(99), 'not contains 99')
+allok = allok && check(s.size() == 3, 'size() == 3')
+allok = allok && check(! s.is-empty(), 'not empty')
+
+; ── 2. add 重複元素 ──
+dbuf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+ds = set.init(dbuf)
+dn = 0
+dn = ds.add(5)
+dn = ds.add(5)
+dn = ds.add(5)
+allok = allok && check(dn == 1, 'add duplicate 3x -> size 1')
+
+; ── 3. remove ──
+rm [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+rs = set.init(rm)
+rs.add(1)
+rs.add(2)
+rs.add(3)
+rn = 0
+rn = rs.remove(2)
+allok = allok && check(rn == 2, 'remove -> size 2')
+allok = allok && check(! rs.contains(2), 'removed 2 gone')
+allok = allok && check(rs.contains(1), 'still contains 1')
+allok = allok && check(rs.contains(3), 'still contains 3')
+
+; ── 4. union ──
+abuf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+aset = set.init(abuf)
+aset.add(1)
+aset.add(2)
+aset.add(3)
+bbuf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+bset = set.init(bbuf)
+bbuf_add = 0
+bbuf_add = bset.add(3)
+bbuf_add = bset.add(4)
+bbuf_add = bset.add(5)
+un = aset.union(bbuf, bset.size())
+allok = allok && check(un == 5, 'union -> size 5')
+allok = allok && check(aset.contains(4), 'union contains 4')
+allok = allok && check(aset.contains(5), 'union contains 5')
+
+; ── 5. intersection ──
+ia [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+ias = set.init(ia)
+ias.add(1)
+ias.add(2)
+ias.add(3)
+ib [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+ibs = set.init(ib)
+ibs.add(2)
+ibs.add(3)
+ibs.add(4)
+iout [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+icnt = ias.intersection(ib, ibs.size(), iout)
+allok = allok && check(icnt == 2, 'intersection size 2')
+allok = allok && check(iout[0] == 2, 'intersection [0] == 2')
+allok = allok && check(iout[1] == 3, 'intersection [1] == 3')
+
+; ── 6. difference ──
+da [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+das = set.init(da)
+das.add(1)
+das.add(2)
+das.add(3)
+db [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+dbs = set.init(db)
+dbs.add(2)
+dbs.add(4)
+dout [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+dcnt = das.difference(db, dbs.size(), dout)
+allok = allok && check(dcnt == 2, 'difference size 2')
+allok = allok && check(dout[0] == 1, 'difference [0] == 1')
+allok = allok && check(dout[1] == 3, 'difference [1] == 3')
+
+; ── 7. to-vec ──
+tv [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+tvs = set.init(tv)
+tvs.add(10)
+tvs.add(20)
+tvs.add(30)
+vec = tvs.to-vec()
+allok = allok && check(len(vec) == 3, 'to-vec len 3')
+allok = allok && check(vec[0] == 10, 'to-vec [0] == 10')
+allok = allok && check(vec[1] == 20, 'to-vec [1] == 20')
+allok = allok && check(vec[2] == 30, 'to-vec [2] == 30')
+
+; ── 8. 泛型 str 元素 ──
+sbuf [4]str = ['', '', '', '']
+ss = set.init(sbuf)
+sn = 0
+sn = ss.add('apple')
+sn = ss.add('banana')
+sn = ss.add('apple')
+allok = allok && check(sn == 2, 'str set: add duplicate -> size 2')
+allok = allok && check(ss.contains('banana'), 'str set: contains banana')
+allok = allok && check(! ss.contains('cherry'), 'str set: not contains cherry')
+sn = ss.remove('apple')
+allok = allok && check(sn == 1, 'str set: remove -> size 1')
+allok = allok && check(! ss.contains('apple'), 'str set: apple removed')
+
+; ── 結果 ──
+{
+    allok -> {
+        print('set test ALL PASSED')
+        os.exit(0)
+    }
+
+    -> {
+        print('set test FAILED')
+        os.exit(1)
+    }
+}

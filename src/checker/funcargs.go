@@ -1278,6 +1278,28 @@ func genericElemOfKey(key string) string {
 	return elem
 }
 
+// mentionsTypeVar reports whether a type string still references a bare
+// generic type variable — a token that is exactly one ASCII lowercase letter
+// ("t", "v", "k", ...), whether bare (`t`) or wrapped in a container (`[]t`,
+// `?t`, `[n]t`, `&t`). Concrete type names are always longer or contain
+// non-letters, so scanning for such a standalone token separates generic
+// (un-checkable, must be skipped) from concrete parameters.
+func mentionsTypeVar(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		isLetter := c >= 'a' && c <= 'z'
+		if !isLetter {
+			continue
+		}
+		prevIdent := i > 0 && isTypeIdentByte(s[i-1])
+		nextIdent := i+1 < len(s) && isTypeIdentByte(s[i+1])
+		if !prevIdent && !nextIdent {
+			return true
+		}
+	}
+	return false
+}
+
 // isTypeIdentByte reports whether c can appear inside a nolang type/identifier
 // name. Type names may contain '-' (e.g. "server-conn"), so it counts too.
 func isTypeIdentByte(c byte) bool {
@@ -1537,6 +1559,17 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 				continue
 			}
 		}
+		// A parameter that STILL mentions a bare single-lowercase-letter type
+		// variable (`t`, or a container of it like `[]t`, `?t`, `[n]t`) is generic
+		// in a way the checker cannot bind here. Slice-field generic structs
+		// (`heap { data []t }`, `set { data []t }`) declare methods whose element
+		// type `t` is specialized by the FACTORY argument (`set.init(buf)`), not
+		// by the receiver name (`set`), so `recvType` carries no element to
+		// substitute. Per the "DO NOT INFER" rule above we SKIP such parameters
+		// rather than mis-report `expected '[]t', got '[8]i64'`.
+		if mentionsTypeVar(paramType) {
+			continue
+		}
 		argType := resolveExprType(arg, varTypes, structFields)
 		if argType == "" {
 			continue // unknown argument type: nothing to assert
@@ -1645,6 +1678,18 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						argType := resolveExprType(arg, varTypes, structFields)
 						expectedType := sig.ParamTypes[i].Type
 						if expectedType == "" || argType == "" {
+							continue
+						}
+						// An argument whose resolved type STILL mentions a bare
+						// generic type variable (`t`, `?t`, `[]t`, `[n]t`) could
+						// not be specialized at check time. Slice-field generic std
+						// structs (`heap { data []t }`, `set { data []t }`) return
+						// `?t`/`[]t` from their methods, and the element type `t` is
+						// bound only by the factory argument during
+						// monomorphizeSliceStructs, which runs AFTER the checker. Per
+						// the "DO NOT INFER" rule we skip the mismatch rather than
+						// mis-report `expected '?i64', got '?t'`.
+						if mentionsTypeVar(argType) {
 							continue
 						}
 						// Phase-2 rule: a bare option argument (?T passed where T is

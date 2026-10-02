@@ -772,7 +772,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	// Release the NUL-terminated copies now that C is done with them; keeping
 	// them alive would leak one buffer per call.
 	for _, s := range toFree {
-		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", s))
+		c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", s))
 	}
 
 	// --- convert the result ------------------------------------------------
@@ -928,7 +928,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	// Free any KeepAlive C-string copies now that their contents have been
 	// adopted into Nolang strings (mkstemp's rewritten template buffer).
 	for _, s := range keepFree {
-		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", s))
+		c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", s))
 	}
 	return nil
 }
@@ -1216,7 +1216,7 @@ func (c *codegen) copyStrToSlot(slot, src, lenR string) error {
 	sz := c.treg("bss")
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", sz, lenR))
 	buf := c.treg("bsb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sz))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sz))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 0)\n", buf, src, sz))
 	r0 := c.treg("bs0")
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", r0, lenR))

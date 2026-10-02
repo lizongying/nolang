@@ -65,9 +65,9 @@ Usage: `# std/xxx` (core modules do not need to be imported).
 - [Logging](#logging)
   - [log — Leveled Logging](#log--leveled-logging)
 - [Data Structures](#data-structures)
-  - [set — Set (Array-based)](#set--set-array-based)
+  - [set — Generic Set (Slice-field)](#set--generic-set-slice-field)
   - [deque — Double-ended Queue](#deque--double-ended-queue)
-  - [heap — Min Heap](#heap--min-heap)
+  - [heap — Generic Min Heap (Slice-field)](#heap--generic-min-heap-slice-field)
   - [stack — Stack](#stack--stack)
   - [map/linked-hash-map — Ordered Hash Map](#maplinked-hash-map--ordered-hash-map)
   - [map/hash-set — i64 Hash Set](#maphash-set--i64-hash-set)
@@ -1601,6 +1601,19 @@ t.stop()                              // Stop timer
 us = t.elapsed-us()                   // Elapsed microseconds
 ms = t.elapsed-ms()                   // Elapsed milliseconds
 s = t.elapsed-s()                     // Elapsed seconds
+
+// time struct (absolute point in time: Unix sec + nsec, UTC)
+t = time.unix-to-time(ts)             // Build time from Unix seconds (nsec=0)
+nt = time.now-time()                  // Current time point (from now-ns)
+ts = time.duration-time(start, end)   // Difference in seconds (end - start)
+ts = time.since-time(start)           // Seconds elapsed from start to now
+tp = time.parse-time(s)               // Parse date string (?time)
+sec = t.unix()                        // Unix seconds
+ms = t.unix-ms()                      // Unix milliseconds
+d = t.date()                          // Convert to date struct
+s = t.format()                        // Format as 'YYYY-MM-DD HH:MM:SS'
+t2 = t.add-seconds(n)                 // Return a new time shifted by n seconds
+diff = t.sub(other)                   // Seconds difference (t - other)
 ```
 
 ---
@@ -1628,18 +1641,29 @@ log.fatal(msg, code)                   // Log and exit with status code
 
 ### Data Structures
 
-#### set — Set (Array-based)
+#### set — Generic Set (Slice-field)
+
+`set` is a **generic** set. The `set` struct owns its element buffer as a `[]t` field plus state (`cap`/`size`); the element type `t` is inferred from the concrete `[N]E` / `[]E` buffer passed to the factory `set.init(data)`, and the compiler monomorphizes `set-E` (via `monomorphizeSliceStructs`). So `set` works for any element type with `==` semantics (`i64`/`u8`/`byte`/`str` …). Capacity is the buffer length.
 
 ```no
-new-n = set.add(s, n, val)           // Add element
-new-n = set.set-remove(s, n, val)        // Remove element
-ok = set.contains(s, n, val)         // Whether it contains
-new-an = set.union(a, an, b, bn)     // Union
-out, n = set.intersection(a, an, b, bn)// Intersection
-out, n = set.difference(a, an, b, bn)  // Difference
-v = set.to-vec(s, n)                 // Convert to slice
-sz = set.set-size(s, n)                   // Element count
-yes = set.set-empty(s, n)                    // Whether empty
+use std/set
+
+buf [128]i64 = [0, 0, 0, /* ... n elements ... */]
+s = set.init(buf)                   // s : set-i64, cap = n, size = 0
+new-n = s.add(val)                  // Add element (if absent); returns new size
+new-n = s.remove(val)               // Remove element (swap-last); returns new size
+yes = s.contains(val)               // Membership
+new-n = s.union(other, osize)       // Union: add other's elements into s (other []t, osize i64)
+cnt = s.intersection(other, osize, out) // Common elements written to out []t; returns count
+cnt = s.difference(other, osize, out)   // In s but not other, written to out []t; returns count
+v = s.to-vec()                      // -> []t of size s.size
+sz = s.size()                       // Element count
+yes = s.is-empty()                  // Whether empty
+
+// Generic str set — just supply a [n]str buffer
+sbuf [16]str = ['', '', /* ... */]
+ss = set.init(sbuf)
+ss.add('apple')
 ```
 
 #### deque — Double-ended Queue
@@ -1675,27 +1699,32 @@ yes = d.empty()                 // Whether empty
 d.clear()                      // Clear
 ```
 
-#### heap — Min Heap
+#### heap — Generic Min Heap (Slice-field)
 
-Binary min heap wrapped in the `heap` struct:
+`heap` is a **generic** binary min heap / priority queue. The `heap` struct owns its element buffer as a `[]t` field plus state (`cap`/`n`); the element type `t` is inferred from the concrete `[N]E` buffer passed to the factory `heap.init(data)`, and the compiler monomorphizes `heap-E` (via `monomorphizeSliceStructs`). So `heap` works for any element type with `<`/`>=` comparison semantics (`i64`/`u8`/`f64` …). Capacity is the buffer length. Minimum element pops first.
 
 ```no
-// Struct
-heap {
-    data []i64
-    n i64
-}
+use std/heap
 
-// Initialization
-h = heap.init(data)            // Build heap
+buf [128]i64 = [0, 0, 0, /* ... n elements ... */]
+h = heap.init(buf)                // h : heap-i64, cap = n, n = 0
+h.push(val)                       // Push element (ignored if full)
+val = h.pop()                     // Pop minimum (?t, nil = empty)
+val = h.peek()                    // Peek minimum without removing (?t, nil = empty)
+sz = h.size()                     // Element count
+yes = h.empty()                   // Whether empty
 
-// Methods
-h.push(val)                    // Push element
-val = h.pop()                  // Pop minimum element (?i64, nil=empty)
-val = h.peek()                 // Peek minimum element (?i64, nil=empty)
-sz = h.size()                  // Size
-yes = h.empty()                // Whether empty
+// Generic str is NOT supported (needs < / >= ordering); use i64/u8/f64 etc.
+// f64 heap — just supply an [n]f64 buffer
+fbuf [8]f64 = [0.0, 0.0, /* ... */]
+fh = heap.init(fbuf)
+fh.push(3.0)
+fh.push(1.5)
+smallest = fh.pop()               // -> ok(1.5)
 ```
+
+> Codegen caveat: writing into a **top-level global** `[n]f64` array via a generic method triggers a compiler bug (global emitted as `[N x i64]`). Reads are fine; keep f64 buffers **function-local** (stack alloca) until fixed.
+
 
 #### stack — Stack
 

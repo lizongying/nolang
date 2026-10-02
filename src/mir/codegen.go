@@ -1350,7 +1350,7 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	fmt.Fprintf(b, "  %%es = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", elemLT)
 	b.WriteString("  %bytes = mul i64 %len, %es\n")
 	b.WriteString("  %oldp = inttoptr i64 %data to i8*\n")
-	b.WriteString("  %newp = call i8* @malloc(i64 %bytes)\n")
+	b.WriteString("  %newp = call i8* @nolang_rc_alloc(i64 %bytes)\n")
 	b.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %newp, ptr %oldp, i64 %bytes, i1 false)\n")
 	if perElem == "" {
 		b.WriteString("  br label %fin\n")
@@ -1378,6 +1378,124 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	b.WriteString("  %r1 = insertvalue %vec %r0, i64 %len, 1\n")
 	b.WriteString("  %r2 = insertvalue %vec %r1, i64 %newi, 2\n")
 	b.WriteString("  ret %vec %r2\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+	return "@" + fn
+}
+
+// vecElemNeedsDeepFree reports whether a slice's element type owns heap memory
+// that the CONTAINER is responsible for releasing.
+//
+// It answers exactly the question vecDeepClone answers when it decides whether
+// an element needs a per-element fix-up after the memcpy: `%str-long` (cloned
+// with @str_clone) and `%vec` (recursively cloned) are the two element types a
+// container is given its OWN copy of. Everything else (scalars, POD structs) is
+// memcpy'd wholesale and owns nothing, so a shallow free is already complete.
+//
+// Keeping the two predicates in lockstep is what makes the pair sound: a
+// container that was handed its own copy of an element must free that copy, and
+// one that was not must not. If vecDeepClone ever learns a third element type,
+// this must learn it too — a clone without a matching free leaks, and a free
+// without a matching clone double-frees.
+func (c *codegen) vecElemNeedsDeepFree(elemType TypeID) bool {
+	t := c.mod.Type(elemType)
+	if t == nil {
+		return false
+	}
+	switch c.llvmTypeOf(t) {
+	case "%str-long", "%vec":
+		return true
+	}
+	return false
+}
+
+// vecDeepFree emits (once per element type and depth) a helper that deep-frees a
+// %vec, and returns its @name. It is the exact counterpart of vecDeepClone: the
+// clone gives a container its own copy of every owned element, so the drop has
+// to release those copies, one level down at a time. A shallow @vec_free frees
+// only the outer buffer and leaks one block per element.
+//
+// Measured before this existed (allocator accounting via malloc_zone_statistics,
+// -O0 so no LICM, N = 100000):
+//
+//	a [][]i64 push loop     47 live blocks -> 100047  (+1 block, 32 B, per iter)
+//	a []str  push loop  100047 live blocks -> 100047  (already leaked pre-header-ABI)
+//
+// The `[]str` column is the tell: the same mismatch was already there for
+// `%str-long` elements, because emitBuiltinVecPush has always @str_clone'd them.
+// The `%vec` element clone added by the header-ABI round simply extended an
+// existing leak class to nested slices. Fixing it here fixes both.
+//
+// The guards mirror @vec_free EXACTLY and for the same reason: a borrowed VIEW
+// (cap == 0) aliases storage the container does not own — a stack array, a
+// string constant, another container's buffer — and must be skipped wholesale,
+// elements included. Freeing a view's elements would free the owner's buffers.
+func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
+	t := c.mod.Type(elemType)
+	if t == nil {
+		return ""
+	}
+	elemLT := c.llvmTypeOf(t)
+	if elemLT == "" {
+		return ""
+	}
+	fn := fmt.Sprintf("__nolang_vec_free_%d_%d", elemType, depth)
+	if c.extraFuncs[fn] {
+		return "@" + fn
+	}
+	c.extraFuncs[fn] = true
+
+	// What has to happen to each element BEFORE the outer buffer goes away,
+	// decided once here. "" means the outer free is the whole drop.
+	perElem := ""
+	if depth < vecCloneMaxDepth {
+		switch {
+		case elemLT == "%str-long":
+			perElem = "str"
+		case elemLT == "%vec" && t.Elem != NoType:
+			if inner := c.vecDeepFree(t.Elem, depth+1); inner != "" {
+				perElem = "call:" + inner
+			}
+		}
+	}
+
+	b := &strings.Builder{}
+	fmt.Fprintf(b, "define void @%s(%%vec %%v) {\n", fn)
+	b.WriteString("entry:\n")
+	b.WriteString("  %cap = extractvalue %vec %v, 1\n")
+	b.WriteString("  %cap0 = icmp eq i64 %cap, 0\n")
+	b.WriteString("  br i1 %cap0, label %done, label %check\n")
+	b.WriteString("check:\n")
+	b.WriteString("  %data = extractvalue %vec %v, 2\n")
+	b.WriteString("  %ptr = inttoptr i64 %data to ptr\n")
+	b.WriteString("  %null = icmp eq ptr %ptr, null\n")
+	b.WriteString("  br i1 %null, label %done, label %freeit\n")
+	b.WriteString("freeit:\n")
+	if perElem == "" {
+		b.WriteString("  call void @nolang_free(ptr %ptr)\n")
+		b.WriteString("  br label %done\n")
+	} else {
+		b.WriteString("  %len = extractvalue %vec %v, 0\n")
+		b.WriteString("  br label %lp\n")
+		b.WriteString("lp:\n")
+		b.WriteString("  %i = phi i64 [ 0, %freeit ], [ %inext, %body ]\n")
+		b.WriteString("  %more = icmp ult i64 %i, %len\n")
+		b.WriteString("  br i1 %more, label %body, label %fin\n")
+		b.WriteString("body:\n")
+		fmt.Fprintf(b, "  %%ep = getelementptr inbounds %s, ptr %%ptr, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  %%ev = load %s, ptr %%ep\n", elemLT)
+		if perElem == "str" {
+			b.WriteString("  call void @str_free(%str-long %ev)\n")
+		} else {
+			fmt.Fprintf(b, "  call void %s(%%vec %%ev)\n", strings.TrimPrefix(perElem, "call:"))
+		}
+		b.WriteString("  %inext = add i64 %i, 1\n")
+		b.WriteString("  br label %lp\n")
+		b.WriteString("fin:\n")
+		b.WriteString("  call void @nolang_free(ptr %ptr)\n")
+		b.WriteString("  br label %done\n")
+	}
+	b.WriteString("done:\n")
+	b.WriteString("  ret void\n}\n")
 	c.extraFuncsBody.WriteString(b.String())
 	return "@" + fn
 }
@@ -1471,7 +1589,7 @@ func (c *codegen) optStoreBoxedPayload(optSlot string, tag int64, payloadLT, src
 	sz := c.typeSizeOperand(payloadLT)
 	c.loadSeq++
 	m := fmt.Sprintf("%%obm%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", m, sz))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", m, sz))
 	c.emitMemcpy(m, srcAddr, sz)
 	c.loadSeq++
 	pi := fmt.Sprintf("%%obn%d", c.loadSeq)
@@ -1708,7 +1826,7 @@ func (c *codegen) emitOptionBoxHelpers(payloadLT string) {
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  %%n = %s\n", sz))
 	}
-	c.sb.WriteString("  %m = call i8* @malloc(i64 %n)\n")
+	c.sb.WriteString("  %m = call i8* @nolang_rc_alloc(i64 %n)\n")
 	c.sb.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %m, ptr %oldp, i64 %n, i1 false)\n")
 	// The box's OWNED contents must be deep-copied as well. The option owns
 	// what is inside its box — emitOptionDropHelper frees it — so a shared
@@ -1892,21 +2010,27 @@ target triple = "arm64-apple-macosx15.0.0"
 ; emitAsyncScheduler.
 %task = type { void (i8*)*, i64, i1, i1, i8* }
 
-; R-tier block header (NOLANG-OWNERSHIP-MODEL.md §3.4, correction B §1.3).
+; R-tier block header (NOLANG-OWNERSHIP-MODEL.md §3.4).
 ;
-; ONLY blocks allocated by @nolang_rc_alloc carry one, and for them
-; data = base + 16. Every other heap block in the program keeps the bare-pointer
-; ABI (data == base, plain @free) — the S and C tiers are byte-identical to what
-; they were before RC existed, which is what makes this an additive change.
+; Since P4 "full" EVERY compiler-owned heap buffer carries one: allocation goes
+; through @nolang_rc_alloc, which is why raw @malloc/@free survive in the emitted
+; module ONLY inside the three helpers below. For those blocks data = base + 16.
 ;
 ;   field 0  rc     live reference count, >= 1 for an owned block
-;   field 1  flags  reserved; bit0 would mark an RC block, bit1 a static/borrow
+;   field 1  flags  the tag nolangHdrMagic, written by @nolang_rc_alloc and
+;                   verified by @nolang_free before it touches the header
 ;
-; rc == 0 is the BORROWED sentinel: a block the compiler did not allocate (an
-; FFI return, a string constant, the cap==0 str -> []byte view). retain and
-; release both no-op on it, so a borrowed pointer can never reach @free. This
-; is not optional — the same hazard as the historical ensureVecBuffer bug that
-; freed a borrowed view and produced a trace/BPT trap.
+; The TAG, not rc, is what tells @nolang_free whether a pointer is one of our
+; blocks: a pointer that is not (impossible by construction, but the P4 swap
+; spans ~90 sites across four files) degrades to a plain @free instead of
+; decrementing a foreign malloc chunk header.
+;
+; rc == 0 is the BORROWED sentinel for the R-tier helpers (@nolang_rc_retain /
+; @nolang_rc_release): a block the compiler did not allocate (an FFI return, a
+; string constant, the cap==0 str -> []byte view). retain and release no-op on
+; it, so a borrowed pointer can never reach @free. This is not optional — the
+; same hazard as the historical ensureVecBuffer bug that freed a borrowed view
+; and produced a trace/BPT trap.
 %nolang_hdr = type { i64, i64 }
 
 declare i8* @malloc(i64)
@@ -1929,7 +2053,7 @@ check:
   %null = icmp eq i8* %data, null
   br i1 %null, label %done, label %freeit
 freeit:
-  call void @free(i8* %data)
+  call void @nolang_free(i8* %data)
   br label %done
 done:
   ret void
@@ -1981,7 +2105,58 @@ check:
   %null = icmp eq i8* %ptr, null
   br i1 %null, label %done, label %freeit
 freeit:
-  call void @free(i8* %ptr)
+  call void @nolang_free(i8* %ptr)
+  br label %done
+done:
+  ret void
+}
+
+; str_retain / vec_retain: bump the refcount of an ALIASED buffer.
+;
+; A container element or field read hands out a bitwise copy of the owner's
+; descriptor, so two values name the SAME buffer. Under the header ABI that is
+; only safe if the copy is refcounted: the grow path releases the old buffer,
+; and releasing a buffer the owner still points at is a use-after-free.
+; insertDrops emits one OpRetain per borrow read and, when that reference dies,
+; the matching OpRelease — which lowers to @vec_free / @str_free below, i.e.
+; exactly this helper's inverse. @nolang_free decrements the header refcount and
+; frees only at zero, so a retain with no release pins the buffer forever (a
+; leak measured at one block per borrow read in a loop), and a release with no
+; retain frees a buffer the owner still points at.
+;
+; The guards mirror @str_free / @vec_free EXACTLY, and for the same reason: a
+; borrowed VIEW carries cap==0 and aliases storage that is not heap at all (a
+; string constant or a stack array). Such a pointer has no header, so retaining
+; it would read and increment rc in arbitrary memory. Only real heap buffers
+; (cap>0, data!=null) are retained.
+define void @str_retain(%str-long %s) {
+entry:
+  %scap = extractvalue %str-long %s, 1
+  %scap0 = icmp eq i64 %scap, 0
+  br i1 %scap0, label %done, label %check
+check:
+  %data = extractvalue %str-long %s, 2
+  %null = icmp eq i8* %data, null
+  br i1 %null, label %done, label %do
+do:
+  call void @nolang_rc_retain(i8* %data)
+  br label %done
+done:
+  ret void
+}
+
+define void @vec_retain(%vec %v) {
+entry:
+  %cap = extractvalue %vec %v, 1
+  %cap0 = icmp eq i64 %cap, 0
+  br i1 %cap0, label %done, label %check
+check:
+  %data = extractvalue %vec %v, 2
+  %ptr = inttoptr i64 %data to i8*
+  %null = icmp eq i8* %ptr, null
+  br i1 %null, label %done, label %do
+do:
+  call void @nolang_rc_retain(i8* %ptr)
   br label %done
 done:
   ret void
@@ -1989,7 +2164,7 @@ done:
 
 define %str-long @str_from_const(i8* %ptr, i64 %len) {
 entry:
-  %buf = call i8* @malloc(i64 %len)
+  %buf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %ptr, i64 %len, i1 0)
   %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
   %r1 = insertvalue %str-long %r0, i64 %len, 1
@@ -2002,7 +2177,7 @@ entry:
   %la = extractvalue %str-long %a, 0
   %lb = extractvalue %str-long %b, 0
   %total = add i64 %la, %lb
-  %buf = call i8* @malloc(i64 %total)
+  %buf = call i8* @nolang_rc_alloc(i64 %total)
   %da = extractvalue %str-long %a, 2
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %da, i64 %la, i1 0)
   %db = extractvalue %str-long %b, 2
@@ -2024,7 +2199,7 @@ define %str-long @_mir_str_repeat(%str-long %s, i64 %count) {
 entry:
   %len = extractvalue %str-long %s, 0
   %total = mul i64 %len, %count
-  %buf = call i8* @malloc(i64 %total)
+  %buf = call i8* @nolang_rc_alloc(i64 %total)
   %data = extractvalue %str-long %s, 2
   br label %loop
 loop:
@@ -2392,7 +2567,7 @@ entry:
   %blen = extractvalue %str-long %b, 0
   %total = add i64 %alen, %blen
   %size = add i64 %total, 1
-  %buf = call i8* @malloc(i64 %size)
+  %buf = call i8* @nolang_rc_alloc(i64 %size)
   %adata = extractvalue %str-long %a, 2
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %adata, i64 %alen, i1 false)
   %bdst = getelementptr i8, i8* %buf, i64 %alen
@@ -2420,7 +2595,7 @@ entry:
   %len = extractvalue %str-long %s, 0
   %data = extractvalue %str-long %s, 2
   %sz = add i64 %len, 1
-  %buf = call i8* @malloc(i64 %sz)
+  %buf = call i8* @nolang_rc_alloc(i64 %sz)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %data, i64 %len, i1 0)
   %np = getelementptr inbounds i8, i8* %buf, i64 %len
   store i8 0, i8* %np
@@ -2439,7 +2614,7 @@ nil:
 copy:
   %len = call i64 @strlen(i8* %p)
   %sz = add i64 %len, 1
-  %buf = call i8* @malloc(i64 %sz)
+  %buf = call i8* @nolang_rc_alloc(i64 %sz)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %p, i64 %len, i1 0)
   %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
   %s1 = insertvalue %str-long %s0, i64 %len, 1
@@ -2465,7 +2640,7 @@ nil:
   ret %str-long %z
 copy:
   %sz = add i64 %len, 1
-  %buf = call i8* @malloc(i64 %sz)
+  %buf = call i8* @nolang_rc_alloc(i64 %sz)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %data, i64 %len, i1 0)
   %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
   %s1 = insertvalue %str-long %s0, i64 %len, 1
@@ -2496,7 +2671,7 @@ emit:
   %epp = ptrtoint i8* %ep to i64
   %startp = ptrtoint i8* %start to i64
   %len = sub i64 %epp, %startp
-  %nbuf = call i8* @malloc(i64 %len)
+  %nbuf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %start, i64 %len, i1 0)
   %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
   %s1 = insertvalue %str-long %s0, i64 %len, 1
@@ -2509,7 +2684,7 @@ emit:
 ; %str-long type and go through @str_eq instead of an illegal icmp i8, %str-long.
 define %str-long @str_from_char(i8 %c) {
 entry:
-  %nbuf = call i8* @malloc(i64 1)
+  %nbuf = call i8* @nolang_rc_alloc(i64 1)
   store i8 %c, i8* %nbuf
   %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 1, 0
   %s1 = insertvalue %str-long %s0, i64 1, 1
@@ -2908,7 +3083,7 @@ w4:
   br label %alloc
 alloc:
   %n = phi i64 [ 1, %w1 ], [ 2, %w2 ], [ 3, %w3 ], [ 4, %w4 ]
-  %nbuf = call i8* @malloc(i64 %n)
+  %nbuf = call i8* @nolang_rc_alloc(i64 %n)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %buf, i64 %n, i1 false)
   %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %n, 0
   %s1 = insertvalue %str-long %s0, i64 %n, 1
@@ -3045,7 +3220,7 @@ w0:
   br label %done
 done:
   %flen = phi i64 [ %tlen, %frac ], [ %tlen12, %c0 ], [ %tlen13, %w0 ]
-  %nbuf = call i8* @malloc(i64 %flen)
+  %nbuf = call i8* @nolang_rc_alloc(i64 %flen)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %wpos, i64 %flen, i1 0)
   %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %flen, 0
   %s1 = insertvalue %str-long %s0, i64 %flen, 1
@@ -3852,6 +4027,10 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitMove(inst)
 	case OpBorrow:
 		return c.emitBorrow(inst)
+	case OpRetain:
+		return c.emitRetain(inst)
+	case OpRelease:
+		return c.emitRelease(inst)
 	case OpClone:
 		return c.emitClone(inst)
 	case OpEnumNew:
@@ -4927,7 +5106,18 @@ func (c *codegen) emitDrop(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  call void @str_free(%s %s)\n", lt, v))
 	case "%vec":
 		// Real drop: free the backing store (data pointer at field 2). The %vec
-		// struct is by-value and needs no free.
+		// struct is by-value and needs no free. When the elements themselves own
+		// heap memory the container was given its own copy of (see
+		// vecElemNeedsDeepFree), the free must be DEEP — a shallow @vec_free
+		// releases only the outer buffer and leaks every element, one block per
+		// push. The two helpers must stay in lockstep with vecDeepClone: clone
+		// without free leaks, free without clone double-frees.
+		if et := c.vecElemTypeID(inst.Args[0]); et != NoType && c.vecElemNeedsDeepFree(et) {
+			if fn := c.vecDeepFree(et, 0); fn != "" {
+				c.sb.WriteString(fmt.Sprintf("  call void %s(%s %s)\n", fn, lt, v))
+				break
+			}
+		}
 		c.sb.WriteString(fmt.Sprintf("  call void @vec_free(%s %s)\n", lt, v))
 	default:
 		// STRUCT WITH POINTER FIELDS: free the pointees, recursively. Pass the
@@ -4942,6 +5132,68 @@ func (c *codegen) emitDrop(inst *Inst) error {
 		}
 		// scalar: nothing to free
 	}
+	return nil
+}
+
+// emitRetain bumps the refcount of the heap buffer behind an ALIASED value.
+//
+// A container element/field read hands out a bitwise copy of the owner's
+// descriptor, so two values name the same buffer; the copy must be refcounted
+// or the grow path's release frees a buffer the owner still points at.
+//
+// The "is this really a heap buffer" guard lives in the @str_retain /
+// @vec_retain helpers, not here: a borrowed view carries cap==0 and aliases
+// storage that has no header at all, so retaining it would increment rc in
+// arbitrary memory. That is exactly the guard @str_free / @vec_free use.
+func (c *codegen) emitRetain(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("retain: needs a value")
+	}
+	lt, _ := c.ptype(inst.Args[0])
+	_, v := c.loadVal(inst.Args[0])
+	switch lt {
+	case "%str-long":
+		c.sb.WriteString(fmt.Sprintf("  call void @str_retain(%s %s)\n", lt, v))
+	case "%vec":
+		c.sb.WriteString(fmt.Sprintf("  call void @vec_retain(%s %s)\n", lt, v))
+	}
+	// Scalars own nothing. Structs and options are deliberately NOT retained
+	// here: their owned leaves are reached by the clone/drop helpers, and a
+	// partial (shallow) retain would unbalance the count.
+	return nil
+}
+
+// emitRelease gives back the reference an OpRetain took — the dual of
+// emitRetain, and deliberately NOT a reuse of emitDrop.
+//
+// It is ALWAYS shallow, and that is the whole point of the op. A borrow's
+// buffer belongs to the container the borrow was read from (`x = a[0]` names a
+// buffer owned by `a`'s element), so releasing x must not free that element's
+// contents. emitDrop cannot express that: its %vec branch dispatches on the
+// ELEMENT TYPE and selects the deep free (@__nolang_vec_free_<T>_<d>) whenever
+// the element owns heap, which is correct for a value that owns its elements
+// and a double free for one that merely aliases them. @vec_free / @str_free are
+// exactly the shallow release we want: each calls @nolang_free, which
+// decrements the header refcount and frees the block only when it reaches zero.
+//
+// The guards live in the helpers and mirror @vec_retain's line for line
+// (cap == 0 -> a borrowed VIEW aliasing non-heap storage; data == null -> an
+// empty container), so a retain that no-oped is paired with a release that
+// no-ops. That symmetry is what keeps the count balanced on every path.
+func (c *codegen) emitRelease(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return fmt.Errorf("release: needs a value")
+	}
+	lt, _ := c.ptype(inst.Args[0])
+	_, v := c.loadVal(inst.Args[0])
+	switch lt {
+	case "%str-long":
+		c.sb.WriteString(fmt.Sprintf("  call void @str_free(%s %s)\n", lt, v))
+	case "%vec":
+		c.sb.WriteString(fmt.Sprintf("  call void @vec_free(%s %s)\n", lt, v))
+	}
+	// Scalars own nothing, so there is nothing to give back. Structs and
+	// options are never retained (see emitRetain), so they are never released.
 	return nil
 }
 
@@ -5002,7 +5254,7 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 		c.loadSeq++
 		pd := fmt.Sprintf("%%optpd%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", pd, pv))
-		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", pd))
+		c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", pd))
 	case "vec":
 		// Inline %vec payload: free its backing store (field 2, a pointer held
 		// as i64).
@@ -5018,7 +5270,7 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 		c.loadSeq++
 		pp := fmt.Sprintf("%%optpp%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", pp, pd))
-		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", pp))
+		c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", pp))
 	default:
 		// INLINE payload that still owns heap: a small struct whose owned `str`
 		// leaves live inside the payload slot (e.g. `?person` with
@@ -5103,7 +5355,7 @@ func (c *codegen) emitOptionDropHelper(elemRaw, payloadLT string) string {
 	}
 	c.emitOptionPayloadContentFree(&b, elemRaw, payloadLT, key)
 	if boxed {
-		b.WriteString("  call void @free(i8* %box)\n")
+		b.WriteString("  call void @nolang_free(i8* %box)\n")
 	}
 	b.WriteString("  br label %done\n")
 
@@ -5119,7 +5371,7 @@ func (c *codegen) emitOptionDropHelper(elemRaw, payloadLT string) string {
 		b.WriteString("  %eop = bitcast i8* %ebox to %str-long*\n")
 		b.WriteString("  %ev = load %str-long, %str-long* %eop\n")
 		b.WriteString("  call void @str_free(%str-long %ev)\n")
-		b.WriteString("  call void @free(i8* %ebox)\n")
+		b.WriteString("  call void @nolang_free(i8* %ebox)\n")
 	} else {
 		// The message occupies the first 24 bytes of the payload slot — the
 		// invariant the whole 24-byte default is built on.
@@ -5153,12 +5405,146 @@ func (c *codegen) emitOptionPayloadContentFree(b *strings.Builder, elemRaw, payl
 		b.WriteString("  %cv = load %vec, %vec* %op\n")
 		b.WriteString("  %cd = extractvalue %vec %cv, 2\n")
 		b.WriteString("  %cdp = inttoptr i64 %cd to i8*\n")
-		b.WriteString("  call void @free(i8* %cdp)\n")
+		b.WriteString("  call void @nolang_free(i8* %cdp)\n")
 	case key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)):
 		c.emitStructDropHelper(payloadLT, key)
 		b.WriteString(fmt.Sprintf("  call void @%s(%s* %%op)\n", structDropName(payloadLT), payloadLT))
 	default:
 		// POD payload: the box itself is the only thing to free.
+	}
+}
+
+// optCloneName is the LLVM name of the deep-copy helper for one option payload
+// type — the clone-side twin of optDropName, and keyed the same way (by the
+// PAYLOAD type, not the element).
+func optCloneName(payloadLT string) string {
+	return "__nolang_opt_clone_" + sanitize(strings.TrimPrefix(payloadLT, "%"))
+}
+
+// emitOptionCloneHelper emits (once per payload type) and returns the name of
+// `@__nolang_opt_clone_<payload>(%option* dst, %option* src)`: it copies the
+// option and then gives the DESTINATION its own heap.
+//
+// It is the exact inverse of emitOptionDropHelper, and the two must be written
+// as a pair. emitOptionPayloadContentFree is the single statement of what an
+// option's drop frees; this clones precisely that and nothing else. A clone
+// that stopped short would leave the copy sharing a block the destination's
+// drop frees — a double free; a clone that went further would leak.
+//
+// The tag test is mandatory for the same reason it is in the drop helper: a nil
+// slot is fully zeroed and an err slot holds a %str-long, and neither may be
+// interpreted as the declared payload type. For `?[]i64` that distinction is
+// load-bearing — reading an err message as a %vec and "cloning" it would treat
+// the string's length as a slice length and its data pointer as the backing
+// store.
+//
+// Only an INLINE payload reaches here. A boxed one is re-boxed by optBoxClone,
+// and the caller (emitClone) checks inline-ness first. The predicate behind
+// that check, Module.optionCopyOwnsPayload, is this function's analysis-side
+// half — it must answer "yes" for exactly the shapes handled below.
+func (c *codegen) emitOptionCloneHelper(elemRaw, payloadLT string) string {
+	fn := optCloneName(payloadLT)
+	if c.extraFuncs[fn] {
+		return "@" + fn
+	}
+	c.extraFuncs[fn] = true
+
+	key := c.structKeyOf(elemRaw)
+	var b strings.Builder
+	fmt.Fprintf(&b, "define void @%s(%%option* %%dst, %%option* %%src) {\n", fn)
+	b.WriteString("entry:\n")
+	// The bitwise copy first: it carries the tag and the payload bytes across,
+	// and the ok/err branches below then replace the SHARED heap with fresh
+	// copies. Nothing here reads the source afterwards, so the copy is only
+	// ever read back through the destination.
+	b.WriteString("  %v = load %option, %option* %src\n")
+	b.WriteString("  store %option %v, %option* %dst\n")
+	b.WriteString("  %tp = getelementptr inbounds %option, %option* %dst, i32 0, i32 0\n")
+	b.WriteString("  %t = load i64, i64* %tp\n")
+	b.WriteString("  %sp = getelementptr inbounds %option, %option* %dst, i32 0, i32 1\n")
+	b.WriteString("  %isok = icmp eq i64 %t, 0\n")
+	b.WriteString("  br i1 %isok, label %ok, label %notok\n")
+	b.WriteString("notok:\n")
+	b.WriteString("  %iserr = icmp eq i64 %t, 2\n")
+	b.WriteString("  br i1 %iserr, label %err, label %done\n")
+
+	// ---- tag 0: the ok payload -------------------------------------------
+	b.WriteString("ok:\n")
+	b.WriteString(fmt.Sprintf("  %%ok8 = bitcast %s* %%sp to i8*\n", c.optSlotLT))
+	b.WriteString(fmt.Sprintf("  %%op = bitcast i8* %%ok8 to %s*\n", payloadLT))
+	c.emitOptionPayloadContentClone(&b, elemRaw, payloadLT, key)
+	b.WriteString("  br label %done\n")
+
+	// ---- tag 2: the err message (a %str-long, inline in the slot) ---------
+	//
+	// emitOptionDropHelper's err branch frees this message, so the copy must
+	// own its own. Only the inline layout is handled: the caller requires
+	// optionPayloadInline("%str-long"), and a slot below 24 bytes boxes every
+	// OWNED payload as well (%str-long and %vec are both 24 bytes), so
+	// optBoxClone — never this helper — takes those.
+	b.WriteString("err:\n")
+	b.WriteString(fmt.Sprintf("  %%err8 = bitcast %s* %%sp to i8*\n", c.optSlotLT))
+	b.WriteString("  %eop = bitcast i8* %err8 to %str-long*\n")
+	b.WriteString("  %ev = load %str-long, %str-long* %eop\n")
+	b.WriteString("  %ec = call %str-long @str_clone(%str-long %ev)\n")
+	b.WriteString("  store %str-long %ec, %str-long* %eop\n")
+	b.WriteString("  br label %done\n")
+
+	b.WriteString("done:\n")
+	b.WriteString("  ret void\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+	return "@" + fn
+}
+
+// emitOptionPayloadContentClone appends the "give the ok payload its own heap"
+// instructions, given `%op`, a `<payloadLT>*` pointing at the payload — which
+// for this helper is always the INLINE payload slot, since the bitwise option
+// copy already ran.
+//
+// It is emitOptionPayloadContentFree read backwards, and must stay that way:
+// same cases, same order, same conditions. The `%cv` / `%cc` register names are
+// distinct from the free side's on purpose, so a diff between the pair reads as
+// a diff.
+func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, payloadLT, key string) {
+	switch {
+	case payloadLT == "%str-long":
+		b.WriteString("  %cv = load %str-long, %str-long* %op\n")
+		b.WriteString("  %cc = call %str-long @str_clone(%str-long %cv)\n")
+		b.WriteString("  store %str-long %cc, %str-long* %op\n")
+	case payloadLT == "%vec":
+		// The backing store is what the drop frees, so it is what must be
+		// duplicated — element by element, because an owned element (%str-long
+		// or a nested %vec) would otherwise still be shared.
+		elemType := c.mod.TypeMap[elemRaw]
+		fn := ""
+		if elemType != NoType {
+			fn = c.vecDeepClone(elemType, 0)
+		}
+		if fn == "" {
+			// Cannot deep-clone the elements. Emitting the bitwise copy would
+			// leave the buffer shared while BOTH options free it, so this is a
+			// hard failure rather than a silent double free. Unreachable for a
+			// well-formed `?[]T`: vecDeepClone only declines an unresolvable
+			// element type, which the option's own interning has already
+			// resolved.
+			c.fail("cannot deep-clone the elements of %s for an option copy", elemRaw)
+			return
+		}
+		b.WriteString("  %cv = load %vec, %vec* %op\n")
+		b.WriteString(fmt.Sprintf("  %%cc = call %%vec %s(%%vec %%cv)\n", fn))
+		b.WriteString("  store %vec %cc, %vec* %op\n")
+	default:
+		// Nothing to duplicate. Reaching this for an owning payload would be a
+		// silent double free, so the caller's predicate (Module.
+		// optionCopyOwnsPayload) claims ONLY the two shapes above; it is not a
+		// type taxonomy, it is this switch's guard.
+		//
+		// An inline STRUCT payload with owned leaves is the one shape that
+		// genuinely owns heap and is deliberately NOT claimed here: its clone
+		// needs emitLeafFieldsClone / emitPtrFieldsClone, which write into the
+		// enclosing function's buffer and so cannot be used from inside a
+		// generated helper. See NOLANG-OWNERSHIP-MODEL.md §4.2(a).
+		_ = key
 	}
 }
 
@@ -5852,7 +6238,7 @@ func (c *codegen) emitStructDropHelper(lt, key string) {
 			c.emitStructDropHelper(pointeeLT, sub)
 			b.WriteString(fmt.Sprintf("  call void @%s(%s* %%q%d)\n", structDropName(pointeeLT), pointeeLT, n))
 		}
-		b.WriteString(fmt.Sprintf("  call void @free(i8* %%q%d)\n", n))
+		b.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %%q%d)\n", n))
 		b.WriteString(fmt.Sprintf("  br label %%%s\n", next))
 	}
 	b.WriteString(fmt.Sprintf("b%d:\n", len(idx)))
@@ -6045,19 +6431,31 @@ func (c *codegen) emitClone(inst *Inst) error {
 		dstSlot := c.valSlot[dstVal]
 		if st := c.mod.Type(c.localTypeOf(inst.Args[0])); st != nil && st.Kind == KindOption {
 			// option -> option: emitMove's bitwise transfer leaves both sides
-			// sharing one box, so copy and then re-box the copy.
+			// sharing one payload, so copy and then give the copy its own heap.
 			if ok, elem := c.optElemRawOf(inst.Args[0]); ok {
 				_, payloadLT := c.optionType(elem)
+				srcSlot := c.optSlotOfValue(inst.Args[0])
 				if !c.optionPayloadInline(payloadLT) {
-					if srcSlot := c.optSlotOfValue(inst.Args[0]); srcSlot != "" && dstSlot != "" {
+					if srcSlot != "" && dstSlot != "" {
 						c.optBoxClone(srcSlot, dstSlot, payloadLT)
 						return nil
 					}
+				} else if srcSlot != "" && dstSlot != "" && c.mod.optionCopyOwnsPayload(elem) {
+					// An INLINE payload that the option's own drop FREES — a
+					// `?str` or `?[]T`. RULE 1 (NOLANG-OWNERSHIP-MODEL.md §1.1)
+					// is what makes this reachable: `p ?T = o` used to bind both
+					// names to one value, and now that a live `o` produces an
+					// OpClone here, the two options would otherwise free one
+					// buffer. @__nolang_opt_clone_<payload> is
+					// emitOptionDropHelper's exact inverse; see
+					// emitOptionCloneHelper for why the pair must stay in step.
+					c.sb.WriteString(fmt.Sprintf("  call void %s(%%option* %s, %%option* %s)\n",
+						c.emitOptionCloneHelper(elem, payloadLT), dstSlot, srcSlot))
+					return nil
 				}
 			}
-			// An inline payload: a bitwise copy is the whole story (the option's
-			// drop deliberately does not free an inline struct payload's leaves,
-			// because this copy shares them — see emitOptionDrop).
+			// An inline payload the drop does NOT free — a POD struct, a `?i64`:
+			// a bitwise copy is the whole story.
 			return c.emitMove(inst)
 		}
 		// A WRAP promoted to a clone: `o ?T = y` with y still live. emitOptionWrap
@@ -6487,7 +6885,7 @@ func (c *codegen) emitAllocPointee(lt string) string {
 	sz := c.typeSizeOperand(lt)
 	c.loadSeq++
 	buf := fmt.Sprintf("%%pa%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sz))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sz))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sz))
 	return buf
 }
@@ -6561,7 +6959,7 @@ func (c *codegen) emitPtrFieldGetHelper(pointeeLT string) {
 	// size calculator — the class of disagreement opaque pointers cannot catch.
 	// The instruction is a constant expression and is folded away by opt.
 	c.extraFuncsBody.WriteString(fmt.Sprintf("  %%sz = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", pointeeLT))
-	c.extraFuncsBody.WriteString("  %n = call i8* @malloc(i64 %sz)\n")
+	c.extraFuncsBody.WriteString("  %n = call i8* @nolang_rc_alloc(i64 %sz)\n")
 	c.extraFuncsBody.WriteString("  call void @llvm.memset.p0i8.i64(i8* %n, i8 0, i64 %sz, i1 false)\n")
 	c.extraFuncsBody.WriteString(fmt.Sprintf("  store %s* %%n, %s** %%slot\n", pointeeLT, pointeeLT))
 	c.extraFuncsBody.WriteString("  br label %done\n")
@@ -6702,7 +7100,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lAlloc))
 	c.loadSeq++
 	buf := fmt.Sprintf("%%vbbuf%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sizeReg))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sizeReg))
 	// Zero it for the same reason as emitBuiltinAlloc: the elements are owned
 	// (e.g. []str), so the first `a[i] = v` drops the previous element and a
 	// garbage %str-long there would free() an arbitrary pointer.
@@ -6769,7 +7167,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", gsz, newCap, elemSz))
 	c.loadSeq++
 	gbuf := fmt.Sprintf("%%vbgbuf%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", gbuf, gsz))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", gbuf, gsz))
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", gbuf, gsz))
 	// Copy min(len, cap) elements — never more than the old buffer holds.
@@ -6794,7 +7192,12 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	c.decl("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)")
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", gbuf, oldp, cbytes))
 	c.decl("declare void @free(i8*)")
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", oldp))
+	// Release the old buffer. Unconditional, like the other three grow sites:
+	// the buffer may be an alias of a container element's storage (`x = a[0]`,
+	// a field read, a map-get peel), so freeing it outright is a use-after-free
+	// that the header ABI turns fatal. insertBorrowRetains retains every borrow
+	// read, which is what makes this call a safe release. See emitBuiltinVecPush.
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", oldp))
 	c.loadSeq++
 	ptri2 := fmt.Sprintf("%%vbpti%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", ptri2, gbuf))
@@ -6866,7 +7269,7 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lAlloc))
 	c.loadSeq++
 	buf := fmt.Sprintf("%%slbbuf%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sizeReg))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sizeReg))
 	// Zero it: the bytes are owned (and a %str-long element that aliases a
 	// garbage pointer would free() an arbitrary address on drop), so a fresh
 	// buffer starts clean exactly like the vec path.
@@ -6906,6 +7309,19 @@ func arrayElemRaw(raw string) (string, bool) {
 		return "", false
 	}
 	return elem, true
+}
+
+// vecElemTypeID returns the MIR TypeID of the ELEMENT of a slice-typed value —
+// the `T` of a `[]T`. vecDeepClone needs it to pick (and emit) the right
+// deep-copy helper. NoType means "unknown"; callers must then keep their
+// previous behaviour rather than guess, because guessing produces IR that
+// compiles and runs but walks a buffer at the wrong stride.
+func (c *codegen) vecElemTypeID(v ValueID) TypeID {
+	ty := c.mirTypeOfValue(v)
+	if ty == nil || ty.Kind != KindSlice || ty.Elem == NoType {
+		return NoType
+	}
+	return ty.Elem
 }
 
 func (c *codegen) elemTypeOfReceiver(recv ValueID) string {
@@ -8036,7 +8452,7 @@ func (c *codegen) ensureContainerStorageForLen(slot, recvLT string, ty *Type, nV
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", sizeReg, nV, elemSz))
 	c.loadSeq++
 	buf := fmt.Sprintf("%%lsbuf%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sizeReg))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sizeReg))
 	// Zero it: for owned element types (e.g. []str) the first `a[i] = v` drops
 	// the previous element, and garbage there would free() a wild pointer.
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
@@ -8999,7 +9415,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		// Fresh backing buffer: the sub-slice gets its own copy and never
 		// aliases the source.
 		newBuf = c.treg("snbuf")
-		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, bytes))
+		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBuf, bytes))
 
 		// Delegate the copy to @mir_slice_copy, a runtime helper that handles
 		// both forward (memcpy) and reverse (per-element backward copy) cases
@@ -9614,7 +10030,7 @@ func (c *codegen) emitEnumPayloadFieldFree(b *strings.Builder, fieldLT, ptr stri
 		b.WriteString(fmt.Sprintf("  %%ev%s = load %s, %s* %s\n", sfx, fieldLT, fieldLT, ptr))
 		b.WriteString(fmt.Sprintf("  %%ed%s = extractvalue %s %%ev%s, 2\n", sfx, fieldLT, sfx))
 		b.WriteString(fmt.Sprintf("  %%ep%s = inttoptr i64 %%ed%s to i8*\n", sfx, sfx))
-		b.WriteString(fmt.Sprintf("  call void @free(i8* %%ep%s)\n", sfx))
+		b.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %%ep%s)\n", sfx))
 	default:
 		// Inline struct with pointees and/or owned leaves: recurse into the
 		// same destructor a plain struct local gets. Anything else owns nothing
@@ -10710,21 +11126,21 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 	if retLLVM == "void" || len(inst.Results) == 0 {
 		// No return to convert; the NUL-terminated copies are no longer needed.
 		for _, cs := range toFree {
-			c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cs))
+			c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", cs))
 		}
 		return nil
 	}
 	rv := inst.Results[0]
 	if rv <= NoVal {
 		for _, cs := range toFree {
-			c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cs))
+			c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", cs))
 		}
 		return nil
 	}
 	rslot := c.valSlot[rv]
 	if rslot == "" {
 		for _, cs := range toFree {
-			c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cs))
+			c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", cs))
 		}
 		return nil
 	}
@@ -10764,7 +11180,7 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 	// (if any) has been converted: a str return points into the copy's buffer,
 	// so freeing first would read freed memory in @str_from_cstr.
 	for _, cs := range toFree {
-		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cs))
+		c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", cs))
 	}
 	return nil
 }
@@ -10859,7 +11275,7 @@ func (c *codegen) vecOwnedFromArray(argT, arrSlot string) string {
 		}
 	}
 	buf := c.treg("bva")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, total))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, total))
 	src := c.treg("bva")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", src, argT, argT, arrSlot))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", buf, src, total))
@@ -11734,6 +12150,27 @@ func parseArrayType(lt string) (int64, string) {
 // (nolang_async_enqueue / _yield / _wait / _done / _run) into the module tail.
 // These are ported verbatim from the legacy build/llvm emitter (decl.go); the
 // %task type they reference is declared in the prelude.
+// nolangHdrMagic is written into the %nolang_hdr `flags` field of every block
+// that @nolang_rc_alloc hands out, and checked by @nolang_free.
+//
+// P4 (NOLANG-OWNERSHIP-MODEL.md §3.4, the "full" header ABI) routes EVERY
+// compiler-owned heap buffer through the RC allocator, not just the %task. That
+// widens @free's reach enormously (≈90 sites across codegen.go, builtin_call.go,
+// forward_call.go), so @nolang_free verifies the tag before touching the header:
+//
+//	tag == MAGIC  -> our block: decrement rc, free base at zero
+//	tag != MAGIC  -> NOT ours (a raw libc pointer reaching this by mistake):
+//	                 fall back to a plain @free(p)
+//
+// The fallback turns a whole class of ABI-mismatch bug (freeing base+16 of a
+// non-header block, or decrementing a malloc chunk header) from silent heap
+// corruption into, at worst, a leak. It reads p-8, which for a malloc'd pointer
+// is the allocator's own chunk metadata and therefore mapped — no fault.
+//
+// The value spells "nolang" followed by a version byte pair, chosen so it is
+// not a plausible rc/size/flag value.
+const nolangHdrMagic int64 = 0x6E6F6C616E670001 // "nolang\0\1"
+
 func (c *codegen) emitAsyncScheduler() {
 	var b strings.Builder
 	// READY QUEUE: heap-allocated and GROWABLE, not a fixed 256-slot ring.
@@ -11768,7 +12205,7 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\t%newcap = select i1 %is0, i32 256, i32 %dbl\n")
 	b.WriteString("\t%nc64 = zext i32 %newcap to i64\n")
 	b.WriteString("\t%nbytes = mul i64 %nc64, 8\n")
-	b.WriteString("\t%newraw = call i8* @malloc(i64 %nbytes)\n")
+	b.WriteString("\t%newraw = call i8* @nolang_rc_alloc(i64 %nbytes)\n")
 	b.WriteString("\t%newq = bitcast i8* %newraw to i8**\n")
 	b.WriteString("\t%head = load i32, i32* @nolang_ready_head\n")
 	b.WriteString("\t%tail = load i32, i32* @nolang_ready_tail\n")
@@ -11794,7 +12231,7 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\tstore i32 %newcap, i32* @nolang_ready_cap\n")
 	b.WriteString("\tstore i32 0, i32* @nolang_ready_head\n")
 	b.WriteString("\tstore i32 %i, i32* @nolang_ready_tail\n")
-	b.WriteString("\tcall void @free(i8* %oldraw)\n")
+	b.WriteString("\tcall void @nolang_free(i8* %oldraw)\n")
 	b.WriteString("\tret void\n}\n")
 	// nolang_async_enqueue(task): append to the ready queue, growing if the
 	// next tail would collide with head (i.e. the buffer is full).
@@ -11934,16 +12371,39 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\t%rcp = getelementptr inbounds %nolang_hdr, %nolang_hdr* %hdr, i32 0, i32 0\n")
 	b.WriteString("\tstore i64 1, i64* %rcp\n")
 	b.WriteString("\t%fp = getelementptr inbounds %nolang_hdr, %nolang_hdr* %hdr, i32 0, i32 1\n")
-	b.WriteString("\tstore i64 0, i64* %fp\n")
+	b.WriteString(fmt.Sprintf("\tstore i64 %d, i64* %%fp\n", nolangHdrMagic))
 	b.WriteString("\t%data = getelementptr inbounds i8, i8* %base, i64 16\n")
 	b.WriteString("\tret i8* %data\n}\n")
 
+	// nolang_rc_retain: bump the count of a block WE allocated. The header-tag
+	// check is not optional, and it is the same check @nolang_free makes below.
+	//
+	// Without it, retaining a pointer that is not one of our header blocks reads
+	// the two words in front of it and increments whatever is there. That is not
+	// hypothetical: a borrow read can alias a raw-@malloc'd clone
+	// (__nolang_vec_clone_* / @str_clone allocate with @malloc, not
+	// @nolang_rc_alloc), and `p - 16` of such a block is the TAIL OF THE
+	// PREVIOUS LIVE ALLOCATION. Incrementing it silently corrupts an unrelated
+	// object — measured as a hard crash on tests/mem-safety/
+	// nested-container-clone.no the moment the retain pass was switched on,
+	// while the identical pass with the tag check below passed the same file.
+	//
+	// The rc == 0 BORROWED sentinel is kept as well (it is the documented R-tier
+	// convention, see the %nolang_hdr comment); the tag check is strictly
+	// stronger and subsumes it for every pointer the compiler hands out.
 	b.WriteString("define void @nolang_rc_retain(i8* %p) {\n")
 	b.WriteString("entry:\n")
 	b.WriteString("\t%isnull = icmp eq i8* %p, null\n")
 	b.WriteString("\tbr i1 %isnull, label %out, label %go\n")
 	b.WriteString("go:\n")
-	b.WriteString("\t%rcp = getelementptr inbounds i8, i8* %p, i64 -16\n")
+	b.WriteString("\t%base = getelementptr inbounds i8, i8* %p, i64 -16\n")
+	b.WriteString("\t%fp = getelementptr inbounds i8, i8* %base, i64 8\n")
+	b.WriteString("\t%fpi = bitcast i8* %fp to i64*\n")
+	b.WriteString("\t%flags = load i64, i64* %fpi\n")
+	b.WriteString(fmt.Sprintf("\t%%ours = icmp eq i64 %%flags, %d\n", nolangHdrMagic))
+	b.WriteString("\tbr i1 %ours, label %chk, label %out\n")
+	b.WriteString("chk:\n")
+	b.WriteString("\t%rcp = bitcast i8* %base to i64*\n")
 	b.WriteString("\t%rc = load i64, i64* %rcp\n")
 	b.WriteString("\t%borrowed = icmp eq i64 %rc, 0\n")
 	b.WriteString("\tbr i1 %borrowed, label %out, label %inc\n")
@@ -11978,6 +12438,38 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("no:\n")
 	b.WriteString("\t%r = phi i1 [ false, %entry ], [ false, %go ], [ false, %dec ], [ true, %free ]\n")
 	b.WriteString("\tret i1 %r\n}\n")
+
+	// nolang_free: the SINGLE free entry point for every compiler-owned heap
+	// buffer (P4 "full", §3.4). @nolang_rc_release above is the R-tier release
+	// used by the task handle; this one adds the header-tag check so a pointer
+	// that is NOT one of our header blocks degrades to a plain @free instead of
+	// decrementing an unrelated malloc chunk header. See nolangHdrMagic.
+	b.WriteString("define void @nolang_free(i8* %p) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%isnull = icmp eq i8* %p, null\n")
+	b.WriteString("\tbr i1 %isnull, label %out, label %go\n")
+	b.WriteString("go:\n")
+	b.WriteString("\t%base = getelementptr inbounds i8, i8* %p, i64 -16\n")
+	b.WriteString("\t%fp = getelementptr inbounds i8, i8* %base, i64 8\n")
+	b.WriteString("\t%fpi = bitcast i8* %fp to i64*\n")
+	b.WriteString("\t%flags = load i64, i64* %fpi\n")
+	b.WriteString(fmt.Sprintf("\t%%ours = icmp eq i64 %%flags, %d\n", nolangHdrMagic))
+	b.WriteString("\tbr i1 %ours, label %rel, label %raw\n")
+	b.WriteString("raw:\n")
+	b.WriteString("\tcall void @free(i8* %p)\n")
+	b.WriteString("\tbr label %out\n")
+	b.WriteString("rel:\n")
+	b.WriteString("\t%rcp = bitcast i8* %base to i64*\n")
+	b.WriteString("\t%rc = load i64, i64* %rcp\n")
+	b.WriteString("\t%rc1 = sub i64 %rc, 1\n")
+	b.WriteString("\tstore i64 %rc1, i64* %rcp\n")
+	b.WriteString("\t%zero = icmp eq i64 %rc1, 0\n")
+	b.WriteString("\tbr i1 %zero, label %freeit, label %out\n")
+	b.WriteString("freeit:\n")
+	b.WriteString("\tcall void @free(i8* %base)\n")
+	b.WriteString("\tbr label %out\n")
+	b.WriteString("out:\n")
+	b.WriteString("\tret void\n}\n")
 
 	c.extraGlobals = append(c.extraGlobals, b.String())
 }
@@ -12105,7 +12597,7 @@ func (c *codegen) asyncWrapperFor(calleeName, targetName string, argTypes []stri
 				fmt.Fprintf(&b, "\tcall void @%s(%s* %%f.%d.typed)\n", structDropName(at), at, i)
 			}
 		}
-		fmt.Fprintf(&b, "\tcall void @free(i8* %%f.%d.ptr)\n", i)
+		fmt.Fprintf(&b, "\tcall void @nolang_free(i8* %%f.%d.ptr)\n", i)
 	}
 	b.WriteString("\tbr label %w_exit\n")
 	b.WriteString("w_exit:\n")
@@ -12359,7 +12851,7 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	// 1. result buffer (heap), zero-initialized so an owned payload slot is valid.
 	c.loadSeq++
 	resBuf := fmt.Sprintf("%%arun.resbuf.%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", resBuf, c.mallocBytesFor(resLT)))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %d)\n", resBuf, c.mallocBytesFor(resLT)))
 	c.loadSeq++
 	resBufT := fmt.Sprintf("%%arun.resbuf.t.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", resBufT, resBuf, resLT))
@@ -12368,7 +12860,7 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	// 2. args struct (heap): { i8*, i8*, ... }
 	c.loadSeq++
 	argsStruct := fmt.Sprintf("%%arun.args.%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", argsStruct, int64(numFields)*8))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %d)\n", argsStruct, int64(numFields)*8))
 	c.loadSeq++
 	argsStructT := fmt.Sprintf("%%arun.args.t.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", argsStructT, argsStruct, argsTypeStr))
@@ -12467,7 +12959,7 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		}
 		c.loadSeq++
 		abuf := fmt.Sprintf("%%arun.argbuf.%d_%d", c.loadSeq, i)
-		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %d)\n", abuf, c.mallocBytesFor(alt)))
+		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %d)\n", abuf, c.mallocBytesFor(alt)))
 		c.loadSeq++
 		abufT := fmt.Sprintf("%%arun.argbuf.t.%d_%d", c.loadSeq, i)
 		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", abufT, abuf, alt))
@@ -12757,8 +13249,8 @@ func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	c.loadSeq++
 	fr := fmt.Sprintf("%%aawy.freeres.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i8*\n", fr, resPtr))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", fr))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", dataI8))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", fr))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", dataI8))
 	c.sb.WriteString(fmt.Sprintf("  br label %s\n", relDoneRef))
 	c.sb.WriteString(relDoneDef + ":\n")
 
@@ -13132,7 +13624,7 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	}
 	mp := fmt.Sprintf("%%ba%d", c.loadSeq)
 	c.loadSeq++
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", mp, szStr))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", mp, szStr))
 	// Zero the fresh buffer. A malloc'd block is UNINITIALIZED, and for owned
 	// element types (%str-long / nested %vec / %option) the slice's element slots
 	// must read back as a defined empty value: `a[i] = v` drops the PREVIOUS

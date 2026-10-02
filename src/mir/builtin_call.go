@@ -685,7 +685,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		}
 	}
 	for _, p := range frees {
-		c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", p))
+		c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", p))
 	}
 	return nil
 }
@@ -1673,6 +1673,26 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 // place, growing the backing buffer (cap -> cap*2, or 1 when empty) when full.
 // The receiver is `inst.Args[0]` (a %vec passed by its alloca slot so the
 // mutation is visible to the caller) and the element is `inst.Args[1]`.
+//
+// The grow path RELEASES the old buffer (see the call site). It used to be a
+// plain `free`, which is a use-after-free whenever the receiver is an alias of
+// a container element: `x = a[0]` shares a's buffer, so growing x freed the
+// storage `a` still points at, and a's own drop freed it a second time.
+//
+// Under the flat ABI that double free was invisible — both calls were `free(B)`
+// on the SAME pointer, which the allocator silently tolerates (which is why
+// tests/nested-vec-test.no and tests/mem-safety/nested-container-clone.no
+// passed before). Under the header ABI it is fatal: the first call frees base,
+// and the second reads a freed header, misses the magic, falls to the raw
+// branch and calls `free(B)` where B == base+16 — an interior pointer, which
+// aborts with `trace/BPT trap`.
+//
+// The fix is refcounting, not a static "does the receiver own this?" test: such
+// a predicate cannot see every alias shape (it was tried — gating the four grow
+// sites on isBorrowRead fixed nested-vec-test but left nested-container-clone
+// crashing, because the peel/map-get shapes reach the grow through variables
+// that isBorrowRead classifies differently). insertBorrowRetains retains the
+// buffer at every borrow read, so the release here only frees at count zero.
 func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	if len(inst.Args) < 2 {
 		return fmt.Errorf("vec.push: needs receiver and element")
@@ -1798,13 +1818,21 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	sz := c.treg("vpsz")
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", sz, newCap, strideOp))
 	newBuf := c.treg("vpnb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, sz))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBuf, sz))
 	bytes := c.treg("vpby")
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", bytes, lenG, strideOp))
 	srcPtr := c.treg("vpsp")
 	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, dataG))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", srcPtr))
+	// Release the old buffer. Unconditional on purpose: the grow path used to
+	// free it outright, which is a use-after-free whenever the receiver is an
+	// alias of a container element (`x = a[0]` shares a's buffer) — under the
+	// header ABI that free is an interior-pointer free and aborts. The fix is
+	// NOT a static "does the receiver own it?" test (that predicate cannot see
+	// every alias shape); it is refcounting: insertBorrowRetains retains the
+	// buffer at the borrow, so this call is a RELEASE that only frees when the
+	// count reaches zero. See emitRetain / @vec_retain.
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", srcPtr))
 	ebase := c.treg("vpeb")
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", ebase, newBuf, elemTy))
 	// Owned-string element: the %str-long struct is stored by value into the
@@ -1817,6 +1845,34 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 		cl := c.treg("vpc2")
 		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, elemV))
 		elemV = cl
+	}
+	// Owned `%vec` element: exactly the same bug as the `%str-long` case above,
+	// one level of nesting deeper. A %vec is stored by value, so a plain `store`
+	// hands the container the SOURCE slice's backing store; when the source's
+	// own drop runs, the container's element dangles and the container's later
+	// deep-free releases the same buffer a second time. Under the flat ABI that
+	// second free was `free(B)` on the SAME pointer, which the allocator
+	// tolerates (which is why this test passed before); under the header ABI the
+	// block's tag is gone by then, so the second call falls to the raw branch
+	// and calls `free(B)` where B == base+16 — an interior pointer, which
+	// aborts. Measured: tests/mem-safety/nested-container-clone.no test 5
+	// (`s.push(sub1)` with `s [][]str`); MallocScribble=1 makes it fire on every
+	// build instead of only on the drop orders that happen to clobber the tag.
+	if elemTy == "%vec" {
+		// The ELEMENT's own element type, not the receiver's: vecDeepClone(T)
+		// builds a helper that copies a %vec whose elements are T, and the value
+		// copied here is the pushed slice (args[1]), whose elements are T. Using
+		// the receiver's element type instead compiles cleanly and is silently
+		// wrong — it walks the source at the wrong stride and hands @str_clone a
+		// pointer into the middle of a string (measured: len = the first eight
+		// bytes of "hello", data = 0x1).
+		if et := c.vecElemTypeID(elem); et != NoType {
+			if cl := c.vecDeepClone(et, 0); cl != "" {
+				cv := c.treg("vpc3")
+				c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", cv, cl, elemV))
+				elemV = cv
+			}
+		}
 	}
 	eptr := c.treg("vpep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemTy, elemTy, ebase, lenG))
@@ -2181,7 +2237,7 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	sz := c.treg("ivsz")
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sz, newCap, stride))
 	newBuf := c.treg("ivnb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, sz))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBuf, sz))
 	srcPtr := c.treg("ivsp")
 	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, dataG))
 	idxLo := c.treg("ivil")
@@ -2225,7 +2281,9 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	dstRest := c.treg("ivdr2")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", dstRest, newBuf, dstRestOff))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dstRest, srcRest, restBytes))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", srcPtr))
+	// Release the old buffer; see emitBuiltinVecPush for why this is
+	// unconditional (the borrow read retained it, so this is a release).
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", srcPtr))
 	dataI64 := c.treg("ivdi")
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataI64, newBuf))
 	s0 := c.treg("ivs0")
@@ -2284,7 +2342,7 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	sz := c.treg("rmsz")
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sz, newLen, stride))
 	newBuf := c.treg("rmnb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", newBuf, sz))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBuf, sz))
 	idxLo := c.treg("rmil")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", idxLo, idx))
 	idxClamp := c.treg("rmic")
@@ -2315,7 +2373,9 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	dstRest := c.treg("rmdr2")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", dstRest, newBuf, dstRestOff))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dstRest, srcRest, restBytes))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", srcPtr))
+	// Release the old buffer; see emitBuiltinVecPush for why this is
+	// unconditional (the borrow read retained it, so this is a release).
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", srcPtr))
 	dataI64 := c.treg("rmdi")
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataI64, newBuf))
 	s0 := c.treg("rms0")
@@ -2642,7 +2702,7 @@ func (c *codegen) emitBuiltinNetDial(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", addrGEP, addr, addrOff))
 	pton := c.treg("netd.pton")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", pton, hostPtr, addrGEP))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", hostPtr))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", hostPtr))
 
 	connRet := c.treg("netd.conn")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @connect(i32 %s, i8* %s, i32 16)\n", connRet, sock, addrp))
@@ -2746,7 +2806,7 @@ func (c *codegen) emitBuiltinNetListen(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", addrGEP, addr, addrOff))
 	pton := c.treg("netl.pton")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", pton, hostPtr, addrGEP))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", hostPtr))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", hostPtr))
 
 	bindRet := c.treg("netl.bind")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @bind(i32 %s, i8* %s, i32 16)\n", bindRet, sock, addrp))
@@ -3068,7 +3128,7 @@ func (c *codegen) emitBuiltinNetUdpSendTo(inst *Inst) error {
 	ret := c.treg("netus")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @sendto(i32 %s, i8* %s, i64 %s, i32 0, i8* %s, i32 16)\n",
 		ret, fdReg, dataPtr, nReg, addrp))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", hostPtr))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", hostPtr))
 	dstLT, _ := c.ptype(inst.Dst)
 	if dstLT == "" {
 		dstLT = "i64"
@@ -3245,7 +3305,7 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 	sz := c.treg("rf.sz")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", sz, szOk, end))
 	buf := c.treg("rf.buf")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, sz))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sz))
 	nr := c.treg("rf.n")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @read(i32 %s, i8* %s, i64 %s)\n", nr, fd, buf, sz))
 	c.sb.WriteString(fmt.Sprintf("  call i32 @close(i32 %s)\n", fd))
@@ -3423,7 +3483,7 @@ func (c *codegen) emitBuiltinReadDir(inst *Inst) error {
 	bufSize := c.treg("rd.bs")
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", bufSize, lenReg))
 	nameBuf := c.treg("rd.nb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", nameBuf, bufSize))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", nameBuf, bufSize))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", nameBuf, safeName, bufSize))
 
 	// Build %str-long { len, cap, data } in the result slot
@@ -3540,7 +3600,7 @@ func (c *codegen) emitBuiltinUtime(inst *Inst) error {
 	cmp := c.treg("utcmp")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", cmp, utRet))
 	c.sb.WriteString(fmt.Sprintf("  store i1 %s, i1* %s\n", cmp, dstSlot))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", pathPtr))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", pathPtr))
 	return nil
 }
 
@@ -3713,7 +3773,7 @@ func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
 	bytes := c.treg("gg.bytes")
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 8\n", bytes, cnt))
 	heap := c.treg("gg.heap")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", heap, bytes))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", heap, bytes))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", heap, bytes))
 
 	// --- widen loop --------------------------------------------------------
@@ -3834,7 +3894,7 @@ func (c *codegen) emitBuiltinGetGrouplist(inst *Inst) error {
 
 	// the C return is informational (success/too-small); the count lives in *ngp.
 	c.sb.WriteString(fmt.Sprintf("  call i32 @getgrouplist(i8* %s, i32 %s, i8* %s, i32* %s)\n", ucstr, basegid, bp, ngp))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", ucstr))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", ucstr))
 
 	// --- n = clamp(*ngp, [0, getGroupsCap]) ------------------------------
 	nraw32 := c.treg("gl.nraw32")
@@ -3854,7 +3914,7 @@ func (c *codegen) emitBuiltinGetGrouplist(inst *Inst) error {
 	bytes := c.treg("gl.bytes")
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 8\n", bytes, cnt))
 	heap := c.treg("gl.heap")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", heap, bytes))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", heap, bytes))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", heap, bytes))
 
 	// --- widen loop: i32 groups[i] -> i64 heap[i] ------------------------
@@ -3950,7 +4010,7 @@ func (c *codegen) emitBuiltinSyslog(inst *Inst) error {
 		"  call void @syslog(i32 %s, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.mir.syslog.fmt, i64 0, i64 0), i8* %s)\n",
 		prio, msg))
 	// str_cstr hands back a malloc'd copy; release it now that C is done.
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", msg))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", msg))
 	return nil
 }
 
@@ -3994,7 +4054,7 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 	// valid, zeroed buffer and the branchless strip below never touches
 	// uninitialized memory.
 	buf := c.treg("gl.buf")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 4096)\n", buf))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 4096)\n", buf))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 4096, i1 false)\n", buf))
 	stdinReg := c.treg("gl.stdin")
 	if targetGOOS() == "windows" {
@@ -4079,7 +4139,7 @@ func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 	capR := c.treg("sc.cap")
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", capR, sz))
 	buf := c.treg("sc.buf")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @malloc(i64 %s)\n", buf, capR))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, capR))
 	ret2 := c.treg("sc.ret2")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @sysctlbyname(i8* %s, i8* %s, i64* %s, i8* null, i64 0)\n", ret2, namePtr, buf, lenBuf))
 	cmp2 := c.treg("sc.cmp2")
@@ -4089,7 +4149,7 @@ func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 	}
 	len2 := c.treg("sc.len2")
 	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", len2, lenBuf))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", namePtr))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", namePtr))
 	return c.storeRawStr(inst, 0, len2, capR, buf)
 }
 
@@ -4245,7 +4305,7 @@ func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
 	dc := "getelementptr inbounds ([3 x i8], [3 x i8]* @.mir.str.dashc, i64 0, i64 0)"
 	ret := c.treg("es.ret")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 (i8*, i8*, ...) @execlp(i8* %s, i8* %s, i8* %s, i8* %s, i8* null)\n", ret, sh, sh, dc, cmdPtr))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", cmdPtr))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", cmdPtr))
 	return nil
 }
 
@@ -4285,7 +4345,7 @@ func (c *codegen) emitBuiltinProcessExec(inst *Inst) error {
 		ret, prog, prog, arg))
 	ext := c.treg("pe.ext")
 	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, ret))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", prog))
-	c.sb.WriteString(fmt.Sprintf("  call void @free(i8* %s)\n", arg))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", prog))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", arg))
 	return c.storeResult(inst, 0, ext, "i64")
 }

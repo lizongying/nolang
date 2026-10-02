@@ -2413,7 +2413,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		merged.Statements = append(merged.Statements, stmt)
 	}
-	// 泛型單態化：掃描泛型函數呼叫，生成具體版本
+	// 切片欄位泛型結構體單態化：由工廠呼叫 `Type.init(concreteBuffer)` 推斷元素
+	// 型別，生成具現化結構體 + 方法，標註工廠結果變數型別，並移除模板。
+	// 必須在 monomorphizeGenerics 之前執行：實例方法呼叫 `h.push` 需保持為接收者
+	// 為變數的 DotExpression，交由 resolveMethodCall 依 varTypes[h]=具現化名自然攤平。
+	monomorphizeSliceStructs(merged, globalVarTypes)
+	checker.DebugCountHashFns("after-monomorphizeSliceStructs", merged)
 	// 使用 globalVarTypes（僅頂層變數）避免其他函數的局部變數型別洩漏到 method resolution
 	// 傳入 typeOwner 以便 resolveMethodCall 為跨模組型別補上模組前綴
 	// typeOwner 用剔除主程序本地型別的版本：globalVarTypes 只含主程序頂層變數，

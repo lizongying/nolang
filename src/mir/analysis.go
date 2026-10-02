@@ -411,6 +411,9 @@ func (m *Module) Analyze() *Report {
 		if f.IsExtern {
 			continue
 		}
+		// P4 / tier C: refcount every borrow read BEFORE the drops are placed,
+		// so the drop pass sees the retain when it decides what to drop.
+		m.insertBorrowRetains(f)
 		m.insertDrops(f, rep)
 		m.checkMoves(f, rep)
 		m.checkDropCount(f, rep)
@@ -1083,10 +1086,12 @@ func (m *Module) readAfterInBlock(bid BlockID, after InstID, v ValueID) bool {
 	return false
 }
 
-// readNonDropAfterInBlock is readAfterInBlock minus OpDrop: it answers "is v's
-// DATA still used after this point", which is what decides clone-vs-transfer for
-// a bitwise-copied value. readAfterInBlock itself is left alone because the
-// struct-pointer path wants the conservative answer (any later mention).
+// readNonDropAfterInBlock is readAfterInBlock minus the DISPOSAL ops (OpDrop /
+// OpRelease): it answers "is v's DATA still used after this point", which is
+// what decides clone-vs-transfer for a bitwise-copied value. Neither op reads
+// the bytes — each just gives up ownership — so neither counts as a use.
+// readAfterInBlock itself is left alone because the struct-pointer path wants
+// the conservative answer (any later mention).
 func (m *Module) readNonDropAfterInBlock(bid BlockID, after InstID, v ValueID) bool {
 	if v <= NoVal {
 		return false
@@ -1105,7 +1110,7 @@ func (m *Module) readNonDropAfterInBlock(bid BlockID, after InstID, v ValueID) b
 			continue
 		}
 		inst := m.Inst(iid)
-		if inst == nil || inst.Op == OpDrop {
+		if inst == nil || inst.Op == OpDrop || inst.Op == OpRelease {
 			continue
 		}
 		for _, a := range inst.Args {
@@ -1190,9 +1195,10 @@ func (m *Module) moveStructSharesHeap(f *Function, inst *Inst) bool {
 //   - a WRAP (`o ?T = y`, OpOptionWrap): the payload is stored by a BITWISE
 //     copy (memcpy'd into the box, or straight into the inline slot), so the
 //     option's leaves and pointees alias y's.
-//   - an option-to-option copy of a BOXED payload: emitClone re-boxes it
-//     (optBoxClone — a fresh malloc plus a deep copy), so the copy does not
-//     consume the source.
+//   - an option-to-option copy of a payload the DESTINATION's drop frees:
+//     emitClone gives the copy its own heap (optBoxClone for a boxed payload,
+//     the opt-clone helper for an inline `?str` / `?[]T` / owning-struct one),
+//     so the copy does not consume the source.
 //
 // Both must go through the live-source liveness rule instead of being assumed
 // to consume the source; see the call site in moveStructSharesHeap.
@@ -1231,9 +1237,66 @@ func (m *Module) optionCopySharesHeap(f *Function, inst *Inst) bool {
 		if !ok {
 			return false
 		}
-		return m.OptionPayloadBoxed(elem)
+		// The question is "will the DESTINATION free what it would share?" —
+		// NOT "is the payload boxed?". Those differ for `?str` / `?[]T`, whose
+		// payload is stored INLINE but is freed by the option's own drop, so a
+		// bitwise copy leaves both options freeing one block.
+		return m.optionCopyOwnsPayload(elem)
 	}
 	return false
+}
+
+// optionCopyOwnsPayload reports whether an option's drop FREES the heap the
+// payload it holds points at.
+//
+// This is the analysis-side mirror of codegen's emitOptionPayloadContentFree —
+// the switch that decides what an `%option*` destructor frees. The two must
+// agree case for case, because the copy-side question is exactly "what does the
+// destination's drop free?": an option→option bitwise copy that shares such a
+// payload gives both sides the same block and both sides a drop for it.
+//
+// It is deliberately NOT OptionOwnsHeap. That predicate answers the different
+// question "does this VALUE need a drop at all" (it feeds typeOwnsHeap →
+// dropOwnsHeap, so widening it ADDS drops); this one only decides clone-vs-
+// transfer for a copy that already happens, so it cannot change what is freed.
+//
+// `?str` / `?[]T` are the cases this exists for: ClassifyOwnership(elem) is
+// true, so the option owns its payload and emitOptionDrop's "str" / "vec"
+// branches free it — while OptionPayloadBoxed is FALSE for them (24 bytes fits
+// the default 24-byte slot), which is why the copy used to be exempted from the
+// liveness rule and silently aliased.
+func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
+	if elemRaw == "" {
+		return false
+	}
+	// Size questions go through the emitter's own code, exactly as
+	// OptionPayloadBoxed does, so the analysis and codegen can never disagree
+	// about which layout a payload gets.
+	c := &codegen{mod: m, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
+	_, payloadLT := c.optionType(elemRaw)
+	if payloadLT == "" {
+		return false
+	}
+	if !c.optionPayloadInline(payloadLT) {
+		// Heap-boxed: optBoxClone gives the copy a fresh box and re-clones the
+		// payload's contents, and it handles the err tag itself.
+		return true
+	}
+	// An INLINE payload. The clone helper must also duplicate the err message,
+	// and it only implements the inline layout; a slot small enough to box the
+	// 24-byte message would box every owned payload too (a `%str-long` and a
+	// `%vec` are both 24 bytes), so the branch above would have taken it.
+	if !c.optionPayloadInline("%str-long") {
+		return false
+	}
+	// The two inline payload shapes the clone helper can give their own heap.
+	// This is NOT a type taxonomy — it is that helper's switch written as a
+	// predicate, and the two must stay in step. An inline struct payload with
+	// owned leaves owns heap too, but cloning it needs the struct-clone
+	// emitters, which cannot run inside a generated helper; it is left at its
+	// previous (aliasing) behaviour and recorded in NOLANG-OWNERSHIP-MODEL.md
+	// §4.2(a).
+	return payloadLT == "%str-long" || payloadLT == "%vec"
 }
 
 // moveStrSharesHeap reports whether an OpMove copies an owned `str` BITWISE,
@@ -1490,6 +1553,58 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 	return false
 }
 
+// borrowRetained reports whether a borrow read is REFCOUNTED: insertBorrowRetains
+// emits an OpRetain for it, which is what keeps the grow paths sound.
+//
+// Only a `%vec` borrow qualifies. That is not a stylistic choice — it is the
+// exact scope of the problem the retain solves. emitBuiltinVecPush & friends now
+// release the buffer they replace UNCONDITIONALLY, because no static "does the
+// receiver own this?" test can see every alias shape (see builtin_call.go). A
+// release of a buffer someone else still points at is a use-after-free, and the
+// borrower's retain is what turns it into a mere decrement. Only a SLICE can be
+// grown, so only a slice borrow can ever be the receiver of such a release.
+//
+// A `%str-long` borrow is deliberately NOT retained. A str is never grown, so a
+// retain on it protects nothing, and retaining without releasing pins the buffer
+// forever. Measured (allocator accounting, borrow-in-loop probe): str borrows
+// gain nothing from the retain and cost nothing to drop it, while retaining them
+// only adds a reference nobody releases.
+//
+// THE MATCHING RELEASE IS AN OpRelease, AND IT IS DELIBERATELY NOT AN OpDrop.
+// A borrow read does need its reference given back — @nolang_free frees only at
+// zero, so a retain with no release pins the buffer forever (measured: one
+// block per iteration for `x = a[0]` in a loop) — and insertDrops does place
+// that disposal. See borrowReleaseValues for where. What it must not be is an
+// OpDrop, for two independent reasons:
+//
+//   - An OpDrop would put the value in `wouldDrop`, the predicate the
+//     clone-vs-move analysis reads (a value in wouldDrop is a value that can be
+//     MOVED), so admitting it changes lowering decisions elsewhere. Measured:
+//     tests/tagged-enum-two-match.no segfaults 20/20 with the borrow admitted
+//     there, while it passes 20/20 without. Every other signal was unchanged —
+//     the 512-file compile scan, `no test`'s FAIL list apart from that entry,
+//     and the allocator accounting.
+//   - Even with that avoided, OpDrop is the wrong destructor for this value.
+//     emitDrop dispatches on the ELEMENT TYPE and takes the DEEP free when the
+//     element owns heap (%str-long / %vec) — correct for a value that owns its
+//     elements, a double free for one that merely aliases them. A borrow owns
+//     its buffer's elements no more than it owns the buffer.
+//
+// OpRelease is admitted through `droppable` instead (local to insertDrops,
+// feeding nothing but drop placement) and lowers to the shallow @vec_free /
+// @str_free, the exact inverse of @vec_retain.
+//
+// (`Owned` is what excludes `&T` views: KindOfRaw reports a view as its
+// pointee's kind, so without it a `&[]T` would look retained here while
+// emitRetain emitted nothing — a retain that silently does nothing.)
+func (m *Module) borrowRetained(f *Function, inst *Inst) bool {
+	if !m.isBorrowRead(f, inst) {
+		return false
+	}
+	ty := m.valueTypeOf(f, inst.Dst)
+	return ty != nil && ty.Owned && ty.Kind == KindSlice
+}
+
 // optionSlicePeelClones reports whether the option→slice peel `dst = src` hands
 // the destination its OWN copy of the payload (a vecDeepClone) rather than a
 // bitwise ALIAS of the option's backing store.
@@ -1554,12 +1669,17 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 	// markEnumPayloadOwners.
 	m.markEnumPayloadOwners(f)
 
-	// Tier C (correction A, §1.2): an alias that is only ever READ needs no
-	// copy, so drop the assignment-point clone and share the source's buffer.
+	// Rule 1 (NOLANG-OWNERSHIP-MODEL.md §1.1): `a = b` never aliases — it is a
+	// deep copy, or a MOVE when the source is dead at the copy. This pass
+	// performs only that second half: an OpClone whose source has no use left
+	// is rewritten to OpMove. The read-only / written-alias FORWARDING that
+	// used to live here was removed with the tier-C design; it turned `a = b`
+	// into two names for one buffer.
+	//
 	// Must run after markEnumPayloadOwners (the "source must own its buffer"
 	// guard asks isBorrowRead, which consults enumOwnsPayload) and before the
 	// liveness/drop computation, which has to see the final instruction stream.
-	m.forwardReadOnlyAliases(f)
+	m.lowerDeadSourceCopiesToMoves(f)
 
 	// Liveness is needed to decide whether a constructor store CONSUMES its
 	// value (only when the value is dead after the store — a still-live value
@@ -1835,11 +1955,39 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 		}
 	}
 
+	// RELEASE THE BORROW REFERENCES (P4, NOLANG-OWNERSHIP-MODEL.md §3.4).
+	//
+	// insertBorrowRetains gave every borrow read a reference (+1) so the grow
+	// paths could release the buffer they replace without freeing one the owner
+	// still points at. That retain is only half the story: @nolang_free
+	// decrements the header refcount and frees ONLY at zero, so a retain with no
+	// release pins the buffer forever. Measured before this pass existed:
+	// `x = a[0]` in a loop leaked one block per iteration, with the count stuck
+	// at 1.
+	//
+	// The values in releaseVals owe that release, and they are added to
+	// `droppable` — but deliberately NOT to `wouldDrop`. wouldDrop is the
+	// predicate the clone-vs-move analysis reads (see its comment above), so
+	// widening IT changes lowering decisions elsewhere: doing that instead was
+	// measured to segfault tests/tagged-enum-two-match.no 20/20. `droppable` is
+	// local to this function and feeds nothing but drop placement, so widening
+	// it adds the release instruction and changes no other decision.
+	releaseVals := m.borrowReleaseValues(f, moveSrc)
+
 	// droppable: every owned, non-param, non-moveSource value defined in f.
 	// It is wouldDrop minus the move sources — one predicate, not two spellings
 	// of it (see wouldDrop's comment).
 	droppable := map[ValueID]bool{}
 	for v := range wouldDrop {
+		if !moveSrc[v] {
+			droppable[v] = true
+		}
+	}
+	// A borrow-held reference is not an owned value, so it is absent from
+	// wouldDrop and has to be admitted here. A value that MOVED the reference on
+	// is excluded for the same reason a move source is: the responsibility left
+	// with it (and the destination is in releaseVals in its place).
+	for v := range releaseVals {
 		if !moveSrc[v] {
 			droppable[v] = true
 		}
@@ -2031,7 +2179,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			continue
 		}
 		for _, v := range vs {
-			m.insertDropAt(bid, v, true)
+			m.insertDropAt(bid, v, true, releaseVals[v])
 			rep.DropsInserted++
 		}
 	}
@@ -2042,7 +2190,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			continue
 		}
 		for _, v := range vs {
-			m.insertDropAt(bid, v, false)
+			m.insertDropAt(bid, v, false, releaseVals[v])
 			rep.DropsInserted++
 		}
 	}
@@ -2077,14 +2225,177 @@ func (m *Module) redundantStartDrop(b BlockID, v ValueID, startDrop, skipped map
 	return m.redundantStartDrop(t, v, startDrop, skipped, seen)
 }
 
-// insertDropAt appends an OpDrop for val to the module and inserts it into the
-// block either at the start (atStart=true) or at the end (before the terminator,
-// atStart=false). It returns the new instruction id.
-func (m *Module) insertDropAt(block BlockID, val ValueID, atStart bool) InstID {
+// insertBorrowRetains emits one OpRetain immediately after every borrow read.
+//
+// WHY THIS EXISTS (P4, NOLANG-OWNERSHIP-MODEL.md §3.4)
+//
+// A borrow read — an element read (`a[0]`), a non-cloning field read, an enum
+// payload read, or the option→slice peel — hands out a BITWISE COPY of the
+// owner's descriptor. Two values therefore name the same heap buffer. The
+// static model got away with that because only the owner ever freed it; but the
+// grow paths (`v.push`, `a[i]=x`, `v.insert`, `v.remove`) free the buffer they
+// replace. If the value being grown is such a copy, the grow frees a buffer the
+// owner still points at — a use-after-free, and fatal under the header ABI
+// (measured: tests/mem-safety/nested-container-clone.no).
+//
+// Refcounting is the fix: the copy retains, so the grow's release only drops the
+// count instead of freeing. The reference is given back when the borrow's value
+// dies, by an OpRelease rather than an OpDrop — borrowRetained and
+// borrowReleaseValues record why those two are not interchangeable.
+//
+// Only %vec borrows are retained; borrowRetained is the single place that
+// decides, and the helper guards live in @vec_retain.
+func (m *Module) insertBorrowRetains(f *Function) {
+	type site struct {
+		block BlockID
+		after InstID
+		val   ValueID
+	}
+	var sites []site
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil || inst.Dst <= NoVal {
+				continue
+			}
+			if !m.borrowRetained(f, inst) {
+				continue
+			}
+			sites = append(sites, site{bid, iid, inst.Dst})
+		}
+	}
+	for _, s := range sites {
+		m.insertRetainAfter(s.block, s.after, s.val)
+	}
+}
+
+// insertRetainAfter appends an OpRetain for val to the module and splices it
+// into the block immediately after the given instruction.
+func (m *Module) insertRetainAfter(block BlockID, after InstID, val ValueID) InstID {
 	iid := InstID(len(m.Insts))
 	m.Insts = append(m.Insts, Inst{
 		ID:    iid,
-		Op:    OpDrop,
+		Op:    OpRetain,
+		Args:  []ValueID{val},
+		Block: block,
+	})
+	blk := m.Block(block)
+	if blk == nil {
+		return iid
+	}
+	for i, id := range blk.Insts {
+		if id == after {
+			out := make([]InstID, 0, len(blk.Insts)+1)
+			out = append(out, blk.Insts[:i+1]...)
+			out = append(out, iid)
+			out = append(out, blk.Insts[i+1:]...)
+			blk.Insts = out
+			return iid
+		}
+	}
+	blk.Insts = append(blk.Insts, iid)
+	return iid
+}
+
+// borrowReleaseValues returns the values that owe a release for the reference
+// insertBorrowRetains took — the dual of that pass, and the only place that
+// decides it.
+//
+//   - The seeds are the OpRetain instructions ACTUALLY IN THE STREAM. They are
+//     read back, not re-derived: borrowRetained's answer depends on
+//     enumOwnsPayload (via isBorrowRead), and that map is mutated by
+//     markEnumPayloadOwners and by insertDrops' moveSrc loop between the retain
+//     pass and this one. Re-evaluating the predicate here therefore does NOT
+//     reproduce the retain set, and the difference is not benign — it emits a
+//     release for a value that was never retained, which is an underflow on a
+//     count the container still owns. Measured: tests/tagged-enum-two-match.no
+//     got a bare `release args=[76]` (its enum-field read) with no retain
+//     anywhere in the file, and segfaulted 20/20. Reading the retain back makes
+//     the pairing structural: a release exists iff a retain does.
+//
+// There is deliberately no closure over CLONES, but there is one over MOVES.
+// `y = x` with x a borrow stays an OpClone when it is a fresh-variable
+// assignment (rule 1 forbids aliasing it, and lowerDeadSourceCopiesToMoves
+// refuses to turn a borrow source into a move — its `src-is-borrow` counter),
+// and a clone owns its own buffer, so it must NOT be released. But an
+// assignment into an EXISTING slot — the
+// `out = c.data` out-parameter form, which lowers to the two-operand
+// EmitMoveInto encoding `move dst=0 args=[src dst]` — does transfer the
+// reference, and then the release belongs to the destination. Measured: three
+// corpus files (mem-safety/struct-field-{move-test,shallow-copy-bug,uaf-bug}.no)
+// emit `getfield -> retain -> move dst=0 args=[24 23] -> release args=[23]`.
+//
+// That is why this reads moveDst rather than inst.Dst: the EmitMoveInto form
+// carries the destination in Args[1] with no Dst, so reading inst.Dst would
+// silently miss every assignment-shaped move and leak the reference.
+func (m *Module) borrowReleaseValues(f *Function, moveSrc map[ValueID]bool) map[ValueID]bool {
+	releaseVals := map[ValueID]bool{}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil || inst.Op != OpRetain || len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+				continue
+			}
+			releaseVals[inst.Args[0]] = true
+		}
+	}
+	// Fixpoint, not one sweep: a chain `x -> b -> c` need not be linked in
+	// program order across blocks. It terminates because the set only grows and
+	// is bounded by the number of values.
+	for changed := true; changed; {
+		changed = false
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil || inst.Op != OpMove || len(inst.Args) == 0 {
+					continue
+				}
+				src := inst.Args[0]
+				if src <= NoVal || !releaseVals[src] || !moveSrc[src] {
+					continue
+				}
+				dst := moveDst(inst)
+				if dst <= NoVal || dst == src || releaseVals[dst] {
+					continue
+				}
+				releaseVals[dst] = true
+				changed = true
+			}
+		}
+	}
+	return releaseVals
+}
+
+// insertDropAt appends an OpDrop for val to the module and inserts it into the
+// block either at the start (atStart=true) or at the end (before the terminator,
+// atStart=false). It returns the new instruction id.
+//
+// release selects OpRelease instead of OpDrop. The two have the same shape and
+// the same placement rules — they differ only in what codegen does with them:
+// OpDrop is the destructor (deep for a container whose element type owns heap),
+// while OpRelease is the shallow give-back of a BORROW's reference, whose buffer
+// belongs to the container it was read from. See releaseVals.
+func (m *Module) insertDropAt(block BlockID, val ValueID, atStart bool, release bool) InstID {
+	op := OpDrop
+	if release {
+		op = OpRelease
+	}
+	iid := InstID(len(m.Insts))
+	m.Insts = append(m.Insts, Inst{
+		ID:    iid,
+		Op:    op,
 		Args:  []ValueID{val},
 		Block: block,
 	})
@@ -2359,10 +2670,12 @@ func (m *Module) isParamValue(f *Function, v ValueID) bool {
 	return false
 }
 
-// checkMoves flags use-after-move in nolang's sense: a value DROPPED after it
-// has been moved (its ownership transferred to the move destination) is a
-// double-free — the destination already owns the heap pointer, so dropping the
-// source frees the same pointer twice. nolang's OpMove is a BITWISE COPY
+// checkMoves flags use-after-move in nolang's sense: a value DISPOSED OF after
+// it has been moved (its ownership transferred to the move destination) is a
+// double-disposal — the destination already owns the heap pointer, so disposing
+// of the source touches the same pointer twice. Both disposal ops count:
+// OpDrop frees the buffer twice, and OpRelease gives back a reference that
+// already left with the destination. nolang's OpMove is a BITWISE COPY
 // (emitMove does load+store), NOT a C++-style move that invalidates the source,
 // so a plain READ of a moved value is always SAFE and is deliberately NOT
 // flagged. Flagging reads was a false positive that blocked the MIR backend on
@@ -2458,9 +2771,12 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 	// load+store), not a C++-style move that invalidates the source. So a
 	// plain READ of a moved value is always safe — its bytes remain valid and
 	// only its DROP responsibility transfers to the move destination. The real
-	// memory hazard is a SECOND DROP of a moved value (the destination already
-	// owns it, so dropping the source too frees the same heap pointer twice).
-	// We therefore flag OpDrop of a moved value, and never flag reads of one.
+	// memory hazard is a SECOND DISPOSAL of a moved value (the destination
+	// already owns it, so disposing of the source too touches the same heap
+	// pointer twice). We therefore flag OpDrop AND OpRelease of a moved value,
+	// and never flag reads of one. (OpRelease is the same hazard, one reference
+	// instead of one buffer: the reference moved to the destination, so
+	// releasing the source gives it back a second time.)
 	// This matches the legacy backend, where md5 passes its `data` []byte to
 	// `load-le-u32` many times without moving it — flagging the reads there was
 	// a false positive that blocked the MIR backend on std-hash.no.
@@ -2475,9 +2791,9 @@ func (m *Module) checkMoves(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			// A moved value dropped again is a double-free. OpMove defines the
-			// move (its source is not a drop) and is excluded here.
-			if inst.Op == OpDrop {
+			// A moved value disposed of again is a double-disposal. OpMove
+			// defines the move (its source is not a drop) and is excluded here.
+			if inst.Op == OpDrop || inst.Op == OpRelease {
 				if len(inst.Args) > 0 && inst.Args[0] > NoVal && cur[inst.Args[0]] {
 					rep.Diagnostics = append(rep.Diagnostics, Diagnostic{
 						Kind:  "use-after-move",
@@ -2626,7 +2942,13 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
-			if inst.Op == OpDrop && len(inst.Args) > 0 {
+			// OpRelease disposes of the value exactly as OpDrop does, so it
+			// satisfies the "exactly one disposal" obligation. It must be
+			// counted here: the destination of `b = x` (x a borrow-held
+			// reference) carries the reference on and is released, not dropped,
+			// so omitting it would report a leak — and Analyze's report gates
+			// codegen, making that a hard build failure.
+			if (inst.Op == OpDrop || inst.Op == OpRelease) && len(inst.Args) > 0 {
 				dropCount[inst.Args[0]]++
 			}
 			if inst.Dst > NoVal {

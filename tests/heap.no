@@ -1,0 +1,122 @@
+; heap.no — 泛型 heap 模組測試（run-based，使用 use std/heap）
+;
+; 執行：no run tests/heap.no
+;
+; 泛型 heap 現已採用具 `[]t` 欄位的常規形式：實例由工廠 `heap.init(data)` 建立，
+; 元素型別 `t` 由傳入的具體 `[N]E` 緩衝區推斷，編譯器透過 monomorphizeSliceStructs
+; （src/build/slice_structs.go）單態化出 heap-E 具現型別與其所有方法。
+; 覆蓋：heap.init / push / pop / peek / size / empty
+;       並以 i64 與 f64 兩種元素型別驗證泛型單態化推斷。
+
+# std/heap
+
+; check：純函數，印出結果並回傳布爾值（不可在函式內改動全域變數）
+check = (cond bool, msg str) (r bool) {
+    r = cond
+    cond -> {
+        print('ok:', msg)
+    }
+
+    -> {
+        print('FAIL:', msg)
+    }
+}
+
+; deref：?i64 -> i64（空/err -> -999），純函數
+deref = (x ?i64) (v i64) {
+    v = -999
+    x: {
+        nil -> v = -999
+
+        err -> v = -999
+
+        ok -> v = it
+    }
+}
+
+; deref-f：?f64 -> f64（空/err -> -1.0），純函數
+deref-f = (x ?f64) (v f64) {
+    v = -1.0
+    x: {
+        nil -> v = -1.0
+
+        err -> v = -1.0
+
+        ok -> v = it
+    }
+}
+
+; 全部斷言以此旗標彙整（於 top-level main scope 更新）
+allok = true
+
+; ── 1. i64 最小堆：push / peek / pop 順序 ──
+data [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+h = heap.init(data)
+h.push(5)
+h.push(3)
+h.push(7)
+h.push(1)
+allok = allok && check(h.size() == 4, 'push 4 -> size 4')
+allok = allok && check(! h.empty(), 'not empty')
+allok = allok && check(deref(h.peek()) == 1, 'peek min == 1')
+
+r1 = h.pop()
+allok = allok && check(deref(r1) == 1, 'pop 1st == 1')
+r2 = h.pop()
+allok = allok && check(deref(r2) == 3, 'pop 2nd == 3')
+r3 = h.pop()
+allok = allok && check(deref(r3) == 5, 'pop 3rd == 5')
+r4 = h.pop()
+allok = allok && check(deref(r4) == 7, 'pop 4th == 7')
+allok = allok && check(h.empty(), 'empty after all pops')
+
+; ── 2. 空堆 pop / peek -> nil ──
+data2 [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+h2 = heap.init(data2)
+allok = allok && check(deref(h2.pop()) == -999, 'pop empty == nil')
+allok = allok && check(deref(h2.peek()) == -999, 'peek empty == nil')
+
+; ── 3. 重複元素 ──
+data3 [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+h3 = heap.init(data3)
+h3.push(5)
+h3.push(5)
+h3.push(5)
+d1 = h3.pop()
+d2 = h3.pop()
+allok = allok && check(deref(d1) == 5, 'dup pop 1st == 5')
+allok = allok && check(deref(d2) == 5, 'dup pop 2nd == 5')
+allok = allok && check(h3.size() == 1, 'after 2 pops size == 1')
+
+; ── 4. 泛型 f64 元素型別（驗證 t 單態化推斷）──
+; 註：f64 陣列作為 top-level 全域 + 泛型方法寫入會觸發編譯器 codegen bug
+;     （全域被誤標為 [N x i64]），故放入函式內以區域變數（stack alloca）避開。
+t-f64 = () (ok bool) {
+    ok = true
+    fdata [4]f64 = [0.0, 0.0, 0.0, 0.0]
+    fh = heap.init(fdata)
+    fh.push(3.0)
+    fh.push(1.5)
+    fh.push(2.0)
+    fr1 = fh.pop()
+    fr2 = fh.pop()
+    fr3 = fh.pop()
+    ok = ok && check(deref-f(fr1) == 1.5, 'f64 pop 1st == 1.5')
+    ok = ok && check(deref-f(fr2) == 2.0, 'f64 pop 2nd == 2.0')
+    ok = ok && check(deref-f(fr3) == 3.0, 'f64 pop 3rd == 3.0')
+    ok = ok && check(fh.empty(), 'f64 heap empty after pops')
+}
+allok = allok && t-f64()
+
+; ── 結果 ──
+{
+    allok -> {
+        print('heap test ALL PASSED')
+        os.exit(0)
+    }
+
+    -> {
+        print('heap test FAILED')
+        os.exit(1)
+    }
+}

@@ -2,7 +2,8 @@
 ;
 ; 執行：no test test/std/time.no
 ; 覆蓋：now-s / duration-between / is-leap / days-in-month-fn /
-;       unix-to-date / date-to-unix / format-date / format-time-str / format-duration / parse-date / timer
+;       unix-to-date / date-to-unix / format-date / format-time-str / format-duration / parse-date / timer /
+;       time 結構體（now-time / unix-to-time / duration-time / since-time / parse-time + .unix/.date/.format/.add-seconds/.sub）
 
 # /test/runner
 
@@ -161,6 +162,61 @@ t-format-duration = () {
     runner.str-eq(s3, '25h1m1s', 7, 'format-duration(90061) == 25h1m1s')
 }
 
+; ── time 結構體 ────────────────────────────────
+
+t-time-struct = () {
+
+    ; unix-to-time / .unix 往返
+    t0 = time.unix-to-time(1700000000)
+    runner.eq(t0.unix(), 1700000000, 'unix-to-time(1700000000).unix == 1700000000')
+
+    ; .date 轉換
+    d = t0.date()
+    runner.eq(d.year, 2023, 'time.date(1700000000) year == 2023')
+
+    ; .format 格式化（UTC）
+    tz = time.unix-to-time(0)
+    s = tz.format()
+    runner.str-eq(s, '1970-01-01 00:00:00', 19, 'time.format(0)')
+
+    ; .add-seconds / .unix-ms
+    t1 = tz.add-seconds(3600)
+    runner.eq(t1.unix(), 3600, 'add-seconds(3600).unix == 3600')
+    runner.eq(t1.unix-ms(), 3600000, 'add-seconds(3600).unix-ms == 3600000')
+
+    ; .sub / duration-time
+    runner.eq(t1.sub(tz), 3600, 'sub diff == 3600')
+    runner.eq(time.duration-time(tz, t1), 3600, 'duration-time == 3600')
+
+    ; now-time > 1e9
+    nt = time.now-time()
+    runner.gt(nt.unix(), 1000000000, 'now-time > 1e9 (post-2001)')
+
+    ; parse-time → ?time
+    oku = false
+    pt = time.parse-time('2024-01-15 12:30:45')
+    pt: {
+        ok -> {
+            tv time
+            tv = it
+            oku = tv.unix() == 1705321845
+        }
+
+        -> return
+    }
+    runner.is-true(oku, 'parse-time 2024-01-15 12:30:45 == 1705321845')
+
+    ; parse-time 無效格式 → nil
+    isnil = false
+    pt2 = time.parse-time('invalid')
+    pt2: {
+        nil -> isnil = true
+
+        -> isnil = false
+    }
+    runner.is-true(isnil, 'parse-time invalid == nil')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('time.now-s', t-now-s)
@@ -175,6 +231,7 @@ p9, f9 = runner.test('time.format-time-str', t-format-time-str)
 p10, f10 = runner.test('time.parse-date', t-parse-date)
 p11, f11 = runner.test('time.timer', t-timer)
 p12, f12 = runner.test('time.format-duration', t-format-duration)
+p13, f13 = runner.test('time.time-struct', t-time-struct)
 
 total = runner.summary()
 f = runner.failed-count()

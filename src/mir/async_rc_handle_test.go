@@ -138,11 +138,21 @@ func TestAwaitDoesNotFreeTaskDataPointer(t *testing.T) {
 		t.Errorf("await still frees the task data pointer; @nolang_rc_release owns that block\n%s",
 			ir)
 	}
-	// The release helper must free %base (p - 16), never %p.
-	if !strings.Contains(ir, "%base = getelementptr inbounds i8, i8* %p, i64 -16") {
+	// The release helper must free %base (p - 16), never %p. Scope this to the
+	// @nolang_rc_release body: @nolang_free (P4 "full", §3.4) legitimately
+	// contains a guarded `@free(i8* %p)` fallback for pointers that are NOT our
+	// header blocks, so a whole-module substring test is now a false positive.
+	rel := irFunc(ir, "nolang_rc_release")
+	if rel == "" {
+		t.Fatalf("could not locate @nolang_rc_release in the emitted IR")
+	}
+	if !strings.Contains(rel, "%base = getelementptr inbounds i8, i8* %p, i64 -16") {
 		t.Errorf("nolang_rc_release does not compute the block base as p - 16")
 	}
-	if strings.Contains(ir, "call void @free(i8* %p)") {
+	if !strings.Contains(rel, "call void @free(i8* %base)") {
+		t.Errorf("nolang_rc_release does not free the block base (p - 16)")
+	}
+	if strings.Contains(rel, "call void @free(i8* %p)") {
 		t.Errorf("nolang_rc_release frees the DATA pointer instead of the block base")
 	}
 }

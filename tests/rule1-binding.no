@@ -1,0 +1,90 @@
+; rule1-binding.no — 規則一（NOLANG-OWNERSHIP-MODEL.md §1.1）：`a = b` 一律深拷貝
+;
+; `a = b`（值對值賦值）不得產生零拷貝別名。它只允許兩種降低：
+;   源仍活 ⇒ 深拷貝（兩邊各自擁有、各自釋放）；
+;   源已死 ⇒ move（零拷貝，但源在搬移之後不再被讀取）。
+; 元素／欄位讀取（`a = b[i]`、`a = b.c`）維持原本的別名（視圖）語意，不在本檔範圍。
+;
+; ⚠️ 本檔只釘「可觀測」的那一半。真正的守門員是 MIR 斷言
+; （src/mir/alias_forward_test.go 與 src/mir/rule1_binding_test.go）：slice 的只讀別名
+; 在修復前後 stdout 完全相同 —— 差別只是多/少一次深拷貝 —— 所以那種形狀從 stdout
+; 看不出來，只能看指令流。
+;
+; 本輪修好的可觀測缺陷：`c = s; c[0] = "H"`。舊版 `c = s` 讓兩個名字綁到**同一個
+; SSA 值**（⇒ 同一個 buffer、同一個 drop），所以寫 `c` 連 `s` 一起改：
+; 實測印出 `Hello` / `Hello`；現在印 `hello` / `Hello`。
+
+MyData {
+    name str
+    value i64
+}
+
+; 1. str：寫別名不得影響源（本輪修好的缺陷）
+test-str-independence = () {
+    s = 'hello'
+    c = s
+    c[0] = "H"
+    print(s); expect: hello
+    print(c); expect: Hello
+}
+
+; 2. str：只讀別名也必須各自持有自己的 buffer
+test-str-readonly = () {
+    s = 'hello'
+    c = s
+    print(s); expect: hello
+    print(c); expect: hello
+}
+
+; 3. []i64：寫別名不得影響源
+test-vec-independence = () {
+    a = [10, 20, 30]
+    b = a
+    b[0] = 99
+    print(a[0]); expect: 10
+    print(b[0]); expect: 99
+}
+
+; 4. []i64：只讀別名。舊版會被前向成共用 buffer；輸出相同，差別只在深拷貝的有無。
+test-vec-readonly = () {
+    a = [10, 20, 30]
+    b = a
+    print(a[0]); expect: 10
+    print(b[0]); expect: 10
+}
+
+; 5. struct：寫別名不得影響源（struct 本來就走 OpMove，這條是防止它退化）
+test-struct-independence = () {
+    d = MyData { name: 'test', value: 42 }
+    c = d
+    c.value = 7
+    print(d.value); expect: 42
+    print(c.value); expect: 7
+}
+
+; 6. 源已死 ⇒ move：零拷貝，但輸出必須正確（緩衝區不得被提前釋放）
+test-str-source-dead-move = () {
+    s = 'hello'
+    c = s
+    print(c); expect: hello
+}
+
+main = () {
+    print('== str independence')
+    test-str-independence()
+
+    print('== str readonly')
+    test-str-readonly()
+
+    print('== vec independence')
+    test-vec-independence()
+
+    print('== vec readonly')
+    test-vec-readonly()
+
+    print('== struct independence')
+    test-struct-independence()
+
+    print('== str source-dead move')
+    test-str-source-dead-move()
+}
