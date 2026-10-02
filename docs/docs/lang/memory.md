@@ -11,16 +11,22 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 ### 單一所有權
 每個堆 `data` 緩衝區**只有一個所有者**。所有權可透過 move 轉移，轉移後原所有者放棄 free 責任。局部變數間的 `=` 則透過深層 clone 使兩個變數各自獨立擁有 data。
 
-### 三種賦值語義
-`b = a` 根據上下文選擇三種語義之一：
+### 賦值語義
+`b = a` 根據上下文選擇以下語義之一：
 
 | 語義 | 觸發條件 | 行為 |
 |------|---------|------|
 | **值拷貝** | 基本型別（i64/f64/bool 等）且不滿足 can_slot_rebind | 直接拷貝數值，無堆數據 |
 | **棧槽重綁定** | 局部變數間 `b = a`，a 為棧類型（i64/u64/i128/u128/txt）且滿足 can_slot_rebind | `g.varAlias[b] = a`，b 與 a 共享同一棧槽，0 拷貝（優於值拷貝）；否則降級為值拷貝 |
-| **深層 clone** | 局部變數間 `b = a`，a 為堆擁有型別（vec/arr/str/可克隆結構體） | malloc 新 data + memcpy + 遞迴 clone 元素；a 和 b 各自獨立擁有 data，函數結束各自 free |
+| **深層 clone** | 局部變數間 `b = a`，a 為堆擁有型別（vec/arr/str/可克隆結構體/**`?str`、`?[]T`**）且賦值後**仍被引用** | malloc 新 data + memcpy + 遞迴 clone 元素；a 和 b 各自獨立擁有 data，函數結束各自 free |
+| **move（源已死）** | 局部變數間 `b = a`，a 為堆擁有型別但賦值後**不再被引用** | 零拷貝轉移所有權；源跳過 free。與深層 clone **可觀測等價**，只省掉一次拷貝 |
 | **move** | 輸出參數 `out = x` | 淺拷貝結構體 + 標記源為 moved；源跳過 free |
 | **深層 clone** | `vec.push(x)`（x 為堆擁有型別） | malloc 新 data + memcpy + 遞迴 clone 元素；源仍擁有獨立 data，函數結束各自 free |
+
+> **值對值賦值一律深拷貝，禁止零拷貝別名。** `b = a`（RHS 是整個具名變數）只有兩種降低——
+> **源仍活 ⇒ 深層 clone**、**源已死 ⇒ move**；**不允許**「兩個名字共用一個 buffer、只留一個 free」
+> （那種降低曾存在於只讀前向優化，已移除）。**元素／欄位讀取**（`b = a[i]`、`b = a.f`）維持
+> **視圖別名**語意，不受此限。
 
 ## 棧類型 move（棧槽重綁定 / slot-rebind）
 
@@ -221,6 +227,14 @@ b[0] = 99
 | `%str-long` | ✅ | malloc + memcpy 字串 data |
 | 用戶結構體（無巢狀容器欄位） | ✅ | memcpy 結構體 + 遞迴 clone 堆欄位 |
 | 用戶結構體（含巢狀容器欄位） | ✅ | memcpy 結構體 + 遞迴 clone 含巢狀容器的欄位（透過 `elemElemType`） |
+| `?str` | ✅ | inline payload 的 option：clone 選項本身與其字串 data |
+| `?[]T` | ✅ | inline payload 的 option：clone 選項本身與內層切片的 data（逐元素 clone，`?[]str` 等元素擁有堆者遞迴） |
+
+> **`?str` / `?[]T` 是 inline payload，但擁有堆。** 它們的 24 位元組 payload 直接存在 option 槽裡，
+> 但其中的 `str` data／slice backing store 是堆配置 ⇒ **clone 時要連 payload 一起深拷貝，
+> free 時要連 payload 一起釋放**，兩側必須成對。`?[]T` 的釋放走與 `[]T` 相同的深層 free helper
+> （依元素型別決定是否遞迴），所以「深層 clone 配深層 free」這條對偶在這裡同樣成立。
+> ⚠️ 一般（非 `?str`/`?[]T`）的 option，payload 是借用或純值，**不擁有**堆，clone／free 都不碰它。
 
 ### 與 move 的區別
 - **深層 clone**：源和目標各自獨立擁有 data，函數結束各自 free
@@ -228,8 +242,9 @@ b[0] = 99
 
 `b = a` 的判斷規則：
 1. 若 a 是輸出參數的源 → move
-2. 否則若 a 是堆擁有型別且可深層 clone → 深層 clone
-3. 否則值拷貝
+2. 否則若 a 是堆擁有型別但**賦值後不再被引用** → move（零拷貝，與深層 clone 可觀測等價）
+3. 否則若 a 是堆擁有型別且可深層 clone → 深層 clone
+4. 否則值拷貝
 
 `vec.push(x)` 不在此判斷規則內：push 是方法調用，不論 x 是否堆擁有型別，都對堆擁有元素執行深層 clone（見前節）。
 
@@ -376,6 +391,8 @@ local = [100, 200, 300]                ; 重新賦值為切片（24 字節）
 | `global-heap-free.no` | 模組級堆變數在 main 退出時釋放 |
 | `double-move-same-source.no` | `a=x; b=x` 同源多賦值：首次 clone + 末次 move |
 | `move-clone-liveness.no` | Liveness 預分析決定 clone/move（含條件分支、三賦值） |
+| `rule1-binding.no` | 規則一：`b = a` 的 `str`／`[]i64`／struct／`?str`／`?[]i64` 寫入獨立性、只讀別名、源已死 move |
+| `nested-container-clone.no` | 巢狀容器的深層 clone／深層 free 對偶（`[][]str`、struct 內 vec、map value 為 vec 等 12 例） |
 
 ## 已知限制
 
@@ -619,3 +636,18 @@ task 由 `@malloc` 配置、**16 位元組對齊**，指標低位只有 4 個有
 這兩層運行時防護使得即使編譯期判斷不夠精確，實際不會崩潰。但邏輯上依賴運行時 NULL 檢查作為安全網，而非編譯期精確判斷。
 
 **潛在改進方向**：將 `globalFirstAssigned` 從編譯期 map 改為運行時追踪機制（類似 `movedVarBitset` 的 bitmap），但會增加運行時開銷，且當前緩解措施已足夠有效。
+
+## 設計取捨
+
+1. **深層 clone 的成本。** `b = a` 會配置並複製一份 data；`vec.push(x)` 也對堆擁有元素做一次深層 clone。
+   這是刻意的：**用一次拷貝換掉一整類別名分析**——值對值之間只保留「擁有」與「搬移」，不保留共享，
+   於是「誰擁有、誰釋放、寫入是否可被觀測」不需要為每一種別名情形各寫一組守則。
+2. **spawn 邊界的深拷貝（＝快照）。** `run f(x)` 對擁有堆的引數在 spawn 當下做一次深拷貝，所以任務看到的
+   是 **spawn 當下的值**，與呼叫方在那之後的寫入無關。**來源已死時改為零拷貝 move**。
+   ⚠️ 不要為了省這份拷貝而改成「共用同一塊 buffer ＋ 引用計數」：那會讓任務看到呼叫方在 spawn 與 `awy`
+   之間的**原位寫入**（共享），違反第 4 條。要省拷貝的正確做法是「**寫入時才拷貝**」（copy-on-write）。
+3. **循環引用會洩漏。** 語言裡唯一的引用計數物件是協程任務 handle（`%task`）。引用計數無法回收**環**——
+   若一組任務互相持有 handle，它們都不會被釋放。需要時用 `awy` 明確等待，或避免讓任務互相持有。
+   這是確定性記憶體管理的固有代價（同 Rust 的 `Rc`）。
+4. **協程之間不共享可變堆數據。** 協程是**協作式、單執行緒**調度，跨協程共享可變堆數據在語言層不成立；
+   允許共享只會帶來資料競爭與懸空指標。因此 spawn 邊界一律傳遞**獨立副本**（或轉移所有權）。

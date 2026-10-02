@@ -89,6 +89,12 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 			}
 		}
 	}
+	// Coroutine groups (協程組): a bare block holding `-async` calls is
+	// rewritten into explicit `run` / `awy` bindings. It runs HERE, after the
+	// surface AST has been fully lowered and — critically — after the checker
+	// has already run on the AST, so a synthesized handle binding never has to
+	// satisfy a declaration check. See hir.DesugarAsyncGroups.
+	hir.DesugarAsyncGroups(pkg)
 	return pkg, c.astOf
 }
 

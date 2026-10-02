@@ -1286,7 +1286,9 @@ git-dispatch = (cmd str) {
 }
 ```
 
-### Async Programming (run / awy)
+### Async Programming (run / awy) — hand-written form deprecated, use coroutine groups
+
+> **Deprecated (hand-written primitives):** Writing `run` / `awy` / `async-cancel` / `async-cancelled` by hand is deprecated and not recommended for application code. Manual task-handle management is unsafe (an un-awaited task leaks its argument buffer; aliasing a handle and awaiting twice crashes; cooperative cancellation cannot force-interrupt a long-blocking call). Use **coroutine groups** (below) instead — simpler and it manages handles for you.
 
 Nolang uses `run` and `awy` to implement async concurrency. Async function names must end with `-async`, but the `async` keyword is not used.
 
@@ -1350,6 +1352,107 @@ val: {
     -> return
 }
 ```
+
+## Asynchronous Programming (run / awy) — hand-written form deprecated, use coroutine groups
+
+> **Deprecated (hand-written primitives):** Writing `run` / `awy` / `async-cancel` / `async-cancelled` by hand is deprecated and not recommended for application code. Manual task-handle management is unsafe (an un-awaited task leaks its argument buffer; aliasing a handle and awaiting twice crashes; cooperative cancellation cannot force-interrupt a long-blocking call). Use **coroutine groups** (below / `lang/syntax.md`) instead — simpler and it manages handles for you.
+
+Nolang implements async concurrency with `run` and `awy`. An async function's
+name must end in `-async`; there is no `async` keyword.
+
+- `run` — launches an async task and returns a task handle
+- `awy` — waits for the task to finish and yields its result
+
+```no
+; Async function definition (name ends with -async)
+compute-async = (n i64) (r i64) {
+    r = n * 2
+}
+
+test-basic = () {
+    h = run compute-async(21)
+    r = awy h
+    print(r)  ; 42
+}
+
+test-concurrent = () {
+    h1 = run compute-async(10)
+    h2 = run compute-async(20)
+    r1 = awy h1
+    r2 = awy h2
+    print(r1)  ; 20
+    print(r2)  ; 40
+}
+
+; Inline await
+test-inline = () {
+    r = awy run compute-async(5)
+    print(r)  ; 10
+}
+```
+
+> **Naming rule:** an async function name must end with `-async` (e.g.
+> `compute-async`, `fetch-data-async`). It is not declared with an `async`
+> keyword.
+
+## Coroutine Groups
+
+A bare `{ ... }` block in **statement position** is a **coroutine group**: every
+statement in it that directly calls an `-async` function is **spawned** by
+default (as if written `run`), and the result is `awy`-ed where it is needed.
+You do not write `run` / `awy` yourself.
+
+```no
+hello-async = (i i64) (r i64) {
+    r = i
+}
+
+; No dependency: the two tasks run concurrently (both spawned, then awaited)
+test-concurrent = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = hello-async(1)
+        r2 = hello-async(2)
+    }
+    print(r1)  ; 1
+    print(r2)  ; 2
+}
+
+; Dependency: r2 reads r1, so it cannot overlap — the group degrades to await
+; and the two run sequentially
+test-sequential = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = hello-async(1)
+        r2 = hello-async(r1)
+    }
+    print(r1)  ; 1
+    print(r2)  ; 1
+}
+```
+
+Rules:
+
+- **Degradation.** When a later statement reads (or rebinds) a variable bound by
+  an earlier one, that earlier task is awaited at that point and the group
+  degrades to sequential execution. Dependencies are transitive (`r3` reads
+  `r2`, `r2` reads `r1` ⇒ the whole chain is sequential).
+- **Barriers.** A statement in the group that is not a direct `-async` call — a
+  plain assignment, a `print`, a loop, an `if` — is a barrier: every task still
+  in flight is awaited before it runs. This is what guarantees code inside a
+  group reads a value and never an opaque handle.
+- **A function body is not a group.** Only a bare block in statement position
+  is; function bodies, `if` arms and loop bodies are not. So
+  `f = hello-async(1)` at function-body level still only builds a future and is
+  not awaited.
+- **A discarded result is still awaited.** `{ side-async(5) }` spawns *and*
+  awaits: a task that is never awaited leaks its argument buffer.
+
+> **Equivalent expansion** (of the concurrent example above):
+> `__ag0 = run hello-async(1)` → `__ag1 = run hello-async(2)` →
+> `r1 = awy __ag0` → `r2 = awy __ag1`.
 
 ## Arrays and Slices
 

@@ -293,7 +293,7 @@ func (m *Module) DumpSpawnArgMoveStats() {
 	for _, e := range m.SpawnGraph() {
 		oneAwait[e.Inst] = e.OneAwait
 	}
-	var total, owned, dead, deadAwait, ownedAwait, moved int
+	var total, owned, dead, deadAwait, ownedAwait, moved, retained int
 	classesOf := map[FuncID][]string{}
 	for i := range m.Funcs {
 		f := &m.Funcs[i]
@@ -348,16 +348,23 @@ func (m *Module) DumpSpawnArgMoveStats() {
 					if mv {
 						moved++
 					}
+					// Read back the §4.2(b) share decision, exactly as `moved`
+					// is read back — the dump reports what insertDrops DID, not a
+					// recomputation of what it should have done.
+					rt := m.spawnArgRetains[a]
+					if rt {
+						retained++
+					}
 					fmt.Fprintf(os.Stderr,
-						"[spawn-arg] %s inst=%d arg=%d val=%d kind=%v ownedVal=%v ownsHeap=%v deadAfterSpawn=%v oneAwait=%v moved=%v callee=%s\n",
-						f.Name, iid, idx, a, m.typeKindOf(f, a), m.isOwnedVal(f, a), own, d, oa, mv, inst.Sym)
+						"[spawn-arg] %s inst=%d arg=%d val=%d kind=%v ownedVal=%v ownsHeap=%v deadAfterSpawn=%v oneAwait=%v moved=%v retained=%v callee=%s\n",
+						f.Name, iid, idx, a, m.typeKindOf(f, a), m.isOwnedVal(f, a), own, d, oa, mv, rt, inst.Sym)
 				}
 			}
 		}
 	}
 	fmt.Fprintf(os.Stderr,
-		"[spawn-arg] totals: args=%d ownsHeap=%d ownsHeap+deadAfterSpawn=%d ownsHeap+deadAfterSpawn+oneAwait=%d ownsHeap+oneAwait=%d moved=%d\n",
-		total, owned, dead, deadAwait, ownedAwait, moved)
+		"[spawn-arg] totals: args=%d ownsHeap=%d ownsHeap+deadAfterSpawn=%d ownsHeap+deadAfterSpawn+oneAwait=%d ownsHeap+oneAwait=%d moved=%d retained=%d\n",
+		total, owned, dead, deadAwait, ownedAwait, moved, retained)
 }
 
 // typeKindOf resolves a value's Kind for diagnostics (never decides anything).

@@ -1210,6 +1210,31 @@ type Module struct {
 	// "Analyze has not run" and codegen falls back to the P0 deep copy, which
 	// is the safe default.
 	spawnArgMoves map[ValueID]bool
+
+	// spawnArgRetains is the set of values that a `run` argument position
+	// SHARES with the spawned task instead of deep-copying it — the §4.2(b)
+	// "static gate" (NOLANG-OWNERSHIP-MODEL.md §4.2 b). The caller keeps its
+	// binding AND its drop; the spawn boundary takes a SECOND reference
+	// (@str_retain / @vec_retain) that the task's wrapper releases from w_free.
+	// Since @nolang_free is a release, the buffer is freed exactly once, when
+	// both references are given back — whatever the order of the caller's drop
+	// and the task's run.
+	//
+	// WHY THIS IS SOUND, and why it is NOT a plain "always retain". Today the
+	// spawn boundary deep-copies every owned argument so the task sees the value
+	// AS OF SPAWN (the §6.3 snapshot). Sharing instead would let the task observe
+	// the caller's IN-PLACE WRITES between the spawn and the await (a[0] = 99),
+	// which the language forbids ("no mutable heap data shared across
+	// coroutines") and the corpus never tests — i.e. a silent semantic change.
+	// So the share is taken ONLY when the caller provably never writes the
+	// buffer after the spawn (spawnArgWritesAfter), and every other case keeps
+	// the deep copy. That is what makes the gate a pure optimisation: it removes
+	// a copy in the "live but not written" case and changes nothing else.
+	//
+	// Same cross-layer discipline as spawnArgMoves: decided ONCE in insertDrops
+	// and READ back by emitAsyncRun, so the retain and the wrapper's free cannot
+	// drift. A nil map means "Analyze has not run" ⇒ deep copy, the safe default.
+	spawnArgRetains map[ValueID]bool
 }
 
 // blockEmpty reports whether b has no instructions and no terminator — i.e. it

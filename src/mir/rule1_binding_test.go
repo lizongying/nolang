@@ -195,3 +195,123 @@ main = () {
 		t.Errorf("a moved str must be dropped exactly once: drops=%d, want 1\n%s", drops, dump)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OPTION bindings: `p ?T = o`.
+//
+// The second half of RULE 1. An option whose payload is INLINE (24 bytes fits
+// the default 24-byte slot) but OWNED — `?str`, `?[]T` — used to be excluded
+// from the binding gate, so `p ?T = o` bound both names to one SSA value and
+// one drop. Measured on the pre-fix compiler, `o ?str = 'a long string …';
+// p ?str = o; o = 'another …'` printed the NEW string for BOTH names (the
+// aliasing is directly observable through a rebind), and `o ?[]i64 = [10,20,30];
+// p ?[]i64 = o; o = [40,50]` printed 2/2 instead of 3/2.
+//
+// The binding gate (hir2mir.go) and the clone itself (emitClone →
+// emitOptionCloneHelper) are the two halves; this file pins the gate, and
+// emitOptionCloneHelper's inverse — the option drop — must stay in step or the
+// clone either leaks (shallow free) or double-frees (shallow clone).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestOwnedOptStrBindingIsCloned: `p ?str = o` with `o` read again afterwards.
+func TestOwnedOptStrBindingIsCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    o ?str = 'a fairly long string that must be heap allocated'
+    p ?str = o
+    print(p)
+    print(o)
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones != 1 {
+		t.Errorf("`p ?str = o` (live source) was not cloned: clones=%d, want 1\n%s", clones, dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestOwnedOptVecBindingIsCloned: the `?[]T` half. Same gate, but the payload is
+// a %vec, so the clone must reach vecDeepClone for the ELEMENT type (not the
+// slice type) and the helper must be keyed per element type.
+func TestOwnedOptVecBindingIsCloned(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    o ?[]i64 = [10, 20, 30]
+    p ?[]i64 = o
+    print(p.len())
+    print(o.len())
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones != 1 {
+		t.Errorf("`p ?[]i64 = o` (live source) was not cloned: clones=%d, want 1\n%s", clones, dump)
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}
+
+// TestOwnedOptBindingDeadSourceIsMoved is the guard on the two tests above: a
+// source never read after the binding is a transfer, and the copy must be
+// turned back into a move by insertDrops.
+func TestOwnedOptBindingDeadSourceIsMoved(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    o ?str = 'a fairly long string that must be heap allocated'
+    p ?str = o
+    print(p)
+}
+`)
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones != 0 {
+		t.Errorf("source-dead `?str` binding still cloned: clones=%d, want 0\n%s", clones, dump)
+	}
+}
+
+// TestOwnedOptVecPeelIsNotClonedAsOption pins the shape the binding gate must
+// NOT capture: `p []i64 = o` is a PEEL, lowered by its own block (which clones
+// the payload and re-types the fresh value as `[]i64`). Routing the OPTION
+// through the new gate would emit `move dst=…:?[]i64` instead, so this asserts
+// the binding still produces a `[]i64` value — i.e. the declared-type guard in
+// the gate holds.
+func TestOwnedOptVecPeelIsNotClonedAsOption(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    o ?[]i64 = [10, 20, 30]
+    p []i64 = o
+    print(p[0])
+    print(o.len())
+}
+`)
+	fid, ok := mod.FuncByName["main"]
+	if !ok {
+		t.Fatalf("main not found")
+	}
+	f := mod.Func(fid)
+	if f == nil {
+		t.Fatalf("main not resolvable")
+	}
+	// The fresh value bound to the peel must be a slice, not an option.
+	sawSliceDst := false
+	for _, bid := range f.Blocks {
+		blk := mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := mod.Inst(iid)
+			if inst == nil || inst.Op != OpMove {
+				continue
+			}
+			if inst.Dst <= NoVal {
+				continue
+			}
+			if ty := mod.Type(f.LocalTypes[inst.Dst]); ty != nil && ty.Kind == KindSlice {
+				sawSliceDst = true
+			}
+		}
+	}
+	if !sawSliceDst {
+		t.Errorf("peel `p []i64 = o` produced no OpMove into a slice-typed value; " +
+			"the binding gate likely captured the option")
+	}
+	assertEveryOperandDefined(t, mod, "main")
+}

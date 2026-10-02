@@ -69,6 +69,33 @@ test-str-source-dead-move = () {
     print(c); expect: hello
 }
 
+; 7. ?str：inline payload 的 option。舊版 `p = o` 讓兩個名字綁到同一個 SSA 值，
+;    所以重綁 `o` 之後 `p` 也跟著變；現在 `p` 保留舊值。
+;    （本輪修好的第二個可觀測缺陷；見 NOLANG-OWNERSHIP-MODEL.md §4.2 a）
+test-opt-str-independence = () {
+    o ?str = 'a fairly long string that must be heap allocated'
+    p ?str = o
+    o = 'another fairly long string that must be heap allocated'
+    print(p); expect: a fairly long string that must be heap allocated
+    print(o); expect: another fairly long string that must be heap allocated
+}
+
+; 8. ?[]i64：同上，用長度當可觀測量。
+test-opt-vec-independence = () {
+    o ?[]i64 = [10, 20, 30]
+    p ?[]i64 = o
+    o = [40, 50]
+    print(p.len()); expect: 3
+    print(o.len()); expect: 2
+}
+
+; 9. ?[]i64：源已死 ⇒ move（剝離路徑不得被新閘門擾動）。輸出必須正確。
+test-opt-vec-source-dead = () {
+    o ?[]i64 = [10, 20, 30]
+    p ?[]i64 = o
+    print(p.len()); expect: 3
+}
+
 main = () {
     print('== str independence')
     test-str-independence()
@@ -87,4 +114,13 @@ main = () {
 
     print('== str source-dead move')
     test-str-source-dead-move()
+
+    print('== opt str independence')
+    test-opt-str-independence()
+
+    print('== opt vec independence')
+    test-opt-vec-independence()
+
+    print('== opt vec source-dead')
+    test-opt-vec-source-dead()
 }

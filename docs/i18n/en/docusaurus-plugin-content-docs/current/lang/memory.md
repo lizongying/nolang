@@ -11,15 +11,22 @@ Nolang is a **GC-free** language. Memory safety is guaranteed by compiler-insert
 ### Single Ownership
 Each heap `data` buffer has **exactly one owner**. Ownership can be transferred via move; after transfer, the original owner relinquishes free responsibility. For `=` between local variables, a deep clone makes both variables independently own their data.
 
-### Three Assignment Semantics
-`b = a` selects one of three semantics based on context:
+### Assignment Semantics
+`b = a` selects one of the following semantics based on context:
 
 | Semantic | Trigger | Behavior |
 |----------|---------|----------|
 | **Value copy** | Primitive types (i64/f64/bool, etc.) and `can_slot_rebind` not satisfied | Direct value copy, no heap data |
 | **Stack-slot rebind** | local `b = a`, a is a stack type (i64/u64/i128/u128/txt) and `can_slot_rebind` satisfied | `g.varAlias[b] = a`, b and a share the same stack slot, 0-copy (better than value copy); otherwise degrades to value copy |
-| **Deep clone** | `b = a` between locals, a is heap-owning (vec/arr/str/cloneable struct) | malloc new data + memcpy + recursively clone elements; a and b independently own data, each freed at function exit |
+| **Deep clone** | `b = a` between locals, a is heap-owning (vec/arr/str/cloneable struct/**`?str`, `?[]T`**) and **still referenced** after the assignment | malloc new data + memcpy + recursively clone elements; a and b independently own data, each freed at function exit |
+| **move (dead source)** | `b = a` between locals, a is heap-owning but **no longer referenced** after the assignment | Zero-copy transfer of ownership; source skips free. **Observably equivalent** to a deep clone, minus one copy |
 | **move** | Output param `out = x`, `vec.push(x)` | Shallow copy struct + mark source as moved; source skips free |
+
+> **Value-to-value assignment always deep-clones; zero-copy aliasing is forbidden.** `b = a` (RHS is a whole
+> named variable) has exactly two lowerings — **source still live ⇒ deep clone**, **source dead ⇒ move**.
+> It may **not** become "two names sharing one buffer with a single free" (that lowering once existed in the
+> read-only forward optimization and has been removed). **Element / field reads** (`b = a[i]`, `b = a.f`)
+> keep their **view-alias** semantics and are not affected.
 
 ## Stack-type move (stack-slot rebind / slot-rebind)
 
@@ -209,10 +216,19 @@ b[0] = 99
 | `%vec` / `%arr` (primitive elements) | Yes | memcpy data suffices |
 | `%vec` / `%arr` (elements are %str-long) | Yes | per-element malloc+memcpy of string data |
 | `%vec` / `%arr` (elements are cloneable structs) | Yes | per-element recursive clone of struct fields |
-| `%vec` / `%arr` (elements are %vec / %arr) | No | nested container element type unknown, falls back to move |
+| `%vec` / `%arr` (elements are %vec / %arr) | Yes | recursively clone the inner container's elements via the `elemElemType` mechanism |
 | `%str-long` | Yes | malloc + memcpy string data |
 | User struct (no nested container fields) | Yes | memcpy struct + recursive clone of heap fields |
-| User struct (with nested container fields) | No | falls back to move |
+| User struct (with nested container fields) | Yes | memcpy struct + recursively clone fields holding nested containers (via `elemElemType`) |
+| `?str` | Yes | inline-payload option: clone the option and its string data |
+| `?[]T` | Yes | inline-payload option: clone the option and the inner slice's data (per-element clone; recurses when the element owns heap, e.g. `?[]str`) |
+
+> **`?str` / `?[]T` are inline-payload but heap-owning.** Their 24-byte payload lives directly in the option
+> slot, but the `str` data / slice backing store inside it is heap-allocated ⇒ **the clone must deep-copy the
+> payload, and the free must release it**, and the two sides must stay paired. Freeing `?[]T` goes through the
+> same deep-free helper as `[]T` (recursing by element type), so "deep clone pairs with deep free" holds here
+> too. ⚠️ An ordinary (non-`?str`/`?[]T`) option's payload is a borrow or a plain value and **does not own**
+> heap; clone and free leave it alone.
 
 ### Difference from move
 - **Deep clone**: source and target each independently own data; each freed at function exit
@@ -221,8 +237,9 @@ b[0] = 99
 Decision rules for `b = a`:
 1. If a is the source of an output param → move
 2. If a is the source of vec.push → move
-3. Otherwise, if a is a heap-owning type and deep-cloneable → deep clone
-4. Otherwise value copy
+3. Otherwise, if a is a heap-owning type but **no longer referenced** after the assignment → move (zero-copy, observably equivalent to a deep clone)
+4. Otherwise, if a is a heap-owning type and deep-cloneable → deep clone
+5. Otherwise value copy
 
 ## Stack-type move (stack-slot rebind / slot-rebind)
 
@@ -364,6 +381,10 @@ Tests are in `tests/mem-safety/`:
 | `vec-push-leak.no` | vec.push moved marking |
 | `ffi-str-return.no` | FFI extern str return value safe copy |
 | `global-heap-free.no` | module-level heap variables freed at main exit |
+| `double-move-same-source.no` | `a=x; b=x` from one source: first clone + last move |
+| `move-clone-liveness.no` | Liveness pre-analysis decides clone/move (incl. conditional branches, triple assignment) |
+| `rule1-binding.no` | Rule 1: `b = a` write independence for `str`/`[]i64`/struct/`?str`/`?[]i64`, read-only aliasing, dead-source move |
+| `nested-container-clone.no` | deep clone / deep free duality for nested containers (`[][]str`, vec inside struct, map value being a vec — 12 cases) |
 
 ## Known Limitations
 
@@ -520,4 +541,11 @@ This map is initialized once for the whole compilation, is never reset per funct
 These two layers of runtime protection mean that, even though the compile-time judgment is imprecise, no actual crash occurs. But logically this relies on runtime NULL checks as a safety net rather than precise compile-time judgment.
 
 **Possible improvement**: turn `globalFirstAssigned` from a compile-time map into a runtime tracking mechanism (a bitmap like `movedVarBitset`), but this would add runtime overhead, and the current mitigations are already sufficient.
+
+## Design Trade-offs
+
+1. **The cost of a deep clone.** `b = a` allocates and copies the data; `vec.push(x)` likewise deep-clones a heap-owning element. This is deliberate: **one copy buys back an entire class of alias analysis** — value-to-value keeps only "own" and "transfer", never "share", so "who owns, who frees, whether a write is observable" no longer needs a separate set of rules per aliasing shape.
+2. **Deep copy at the spawn boundary (= a snapshot).** `run f(x)` deep-copies heap-owning arguments at spawn time, so the task sees the value **as of spawn**, independent of anything the caller writes afterwards. **When the source is already dead this becomes a zero-copy move.** ⚠️ Do not replace this copy with "share one buffer + reference count" just to save it: that would let the task observe the caller's **in-place writes** between spawn and `awy` (sharing), violating point 4. The correct way to save the copy is **copy-on-write**.
+3. **Reference cycles leak.** The only reference-counted object in the language is the coroutine task handle (`%task`). Reference counting cannot reclaim **cycles** — if a set of tasks hold each other's handles, none of them is ever freed. Wait explicitly with `awy`, or avoid letting tasks hold each other. This is the inherent cost of deterministic memory management (the same as Rust's `Rc`).
+4. **Coroutines do not share mutable heap data.** Coroutines are scheduled **cooperatively on a single thread**, so sharing mutable heap data across coroutines does not exist at the language level; allowing it would only produce data races and dangling pointers. The spawn boundary therefore always passes an **independent copy** (or transfers ownership).
 

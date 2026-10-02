@@ -27,6 +27,7 @@ description: Reference for Nolang programming language syntax. Use when working 
   - [Match (new style `x: { ... }`)](#match-new-style-x---)
   - [If/Else (new style `{ cond -> body }`)](#ifelse-new-style--cond---body-)
   - [Async / Await (`run` / `awy`)](#async--await-run--awy)
+  - [Coroutine Groups](#coroutine-groups)
   - [Multi-Assignment](#multi-assignment)
   - [Structs & Methods](#structs--methods)
     - [Struct field inline tags](#struct-field-inline-tags)
@@ -1816,7 +1817,9 @@ func = (cmd str) {
 }
 ```
 
-### Async / Await (`run` / `awy`)
+### Async / Await (`run` / `awy`) — hand-written form deprecated, use coroutine groups
+
+> **Deprecated (hand-written primitives):** Writing `run` / `awy` / `async-cancel` / `async-cancelled` by hand is deprecated and not recommended for application code. Manual task-handle management is unsafe (an un-awaited task leaks its argument buffer; aliasing a handle and awaiting twice crashes; cooperative cancellation cannot force-interrupt a long-blocking call). Use **coroutine groups** (below) instead — simpler and it manages handles for you.
 
 Nolang uses `run` and `awy` for async concurrency. Async function names must end with `-async` (no `async` keyword).
 
@@ -1844,6 +1847,57 @@ r = awy run compute-async(5)   // r = 10
 ```
 
 > **Naming rule**: async function names must end with `-async` (e.g. `compute-async`, `fetch-data-async`). Do not use the `async` keyword.
+
+### Coroutine Groups
+
+A bare `{ ... }` block in statement position — see the rules below.
+
+A bare `{ ... }` block in **statement position** is a **coroutine group**. Every
+statement in it that directly calls an `-async` function is spawned by default
+(as if written `run`); the result is `awy`-ed where it is needed. You do not
+write `run` / `awy` yourself.
+
+```no
+hello-async = (i i64) (r i64) {
+    r = i
+}
+
+// No dependency — the two tasks run concurrently
+{
+    r1 = hello-async(1)
+    r2 = hello-async(2)
+}
+// lowers to: __ag0 = run hello-async(1)
+//            __ag1 = run hello-async(2)
+//            r1 = awy __ag0
+//            r2 = awy __ag1
+
+// Dependency — r2 reads r1, so it cannot overlap; degrades to await
+{
+    r1 = hello-async(1)
+    r2 = hello-async(r1)
+}
+// lowers to: __ag0 = run hello-async(1)
+//            r1 = awy __ag0
+//            __ag1 = run hello-async(r1)
+//            r2 = awy __ag1
+```
+
+Rules:
+
+- **Degradation.** When a later statement reads (or rebinds) a variable bound by
+  an earlier one, that earlier task is awaited right there and the group becomes
+  sequential. Dependencies are transitive.
+- **Barriers.** Any statement in the group that is not a direct `-async` call
+  (plain assignment, `print`, loop, `if`, …) is a barrier: every task still in
+  flight is awaited before it runs. This is what makes code inside a group read
+  a *value*, never an opaque handle.
+- **A function body is NOT a group.** Only a bare block in statement position
+  is. Function bodies, `if` arms and loop bodies are not — so
+  `f = hello-async(1)` at function-body level still just builds a future and is
+  never awaited.
+- **A discarded result is still awaited.** `{ side-async(5) }` spawns *and*
+  awaits: an un-awaited task leaks its argument buffer.
 
 ### Multi-Assignment
 

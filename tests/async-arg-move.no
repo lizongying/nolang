@@ -107,6 +107,18 @@ test-struct-live-copy = () {
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
+; 9. 快照語義（NOLANG-OWNERSHIP-MODEL.md §6.3 第 5 條）：呼叫端在 spawn 之後**原位寫入**
+;    參數，任務必須看到 **spawn 當下**的值（1），不是寫入後的值（99）。
+;    這同時是 §4.2(b)「無條件 retain」的守門員：retain 會共用 buffer ⇒ 這例會印 99。
+;    ⚠️ 第 6–8 例（重賦值／讀取）兩種做法都得到舊值，無法區分；只有**原位寫入**會分歧。
+test-arg-inplace-mutation = () {
+    a []i64 = [1, 2, 3]
+    t = run first-async(a)
+    a[0] = 99
+    n = awy t
+    print(n); expect: 1
+}
+
 test-str-move()
 test-str-move-large()
 test-vec-move()
@@ -115,3 +127,4 @@ test-two-moves()
 test-str-live-copy()
 test-arg-reassign()
 test-struct-live-copy()
+test-arg-inplace-mutation()

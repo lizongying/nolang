@@ -1281,7 +1281,9 @@ git-dispatch = (cmd str) {
 }
 ```
 
-### 異步編程（run / awy）
+### 異步編程（run / awy）— 已廢棄手寫，推薦協程組
+
+> ⚠️ **已廢棄（手寫原語）**：`run` / `awy` / `async-cancel` / `async-cancelled` 已廢棄，不推薦手寫。手動管理 task 句柄不安全（未 await 會洩漏參數緩衝區、複製句柄後重複 await 會崩潰），協作式取消無法強制中斷長阻塞調用。請改用「協程組」（見下方），自動管理句柄與依賴。
 
 Nolang 使用 `run` 和 `awy` 實現異步並發。異步函數的名稱必須以 `-async` 結尾，但不使用 `async` 關鍵字。
 
@@ -1319,6 +1321,54 @@ test-inline = () {
 ```
 
 > **命名規則**：異步函數名必須以 `-async` 結尾（如 `compute-async`、`fetch-data-async`）。不使用 `async` 關鍵字聲明。
+
+#### 協程組（coroutine group）— 推薦
+
+語句位置的裸塊 `{ ... }` 是**協程組**：塊內每條「直接調用 `-async` 函數」的語句默認被 **spawn**（等價於 `run`），
+結果在**需要它的地方**才 `awy`。不需要寫 `run` / `awy`。
+
+```no
+hello-async = (i i64) (r i64) {
+    r = i
+}
+
+; 無依賴：兩個任務並發（先後 spawn，最後一起 await）
+test-concurrent = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = hello-async(1)
+        r2 = hello-async(2)
+    }
+    print(r1)  ; 1
+    print(r2)  ; 2
+}
+
+; 有依賴：r2 讀 r1，不能並發 —— 退化成 await（順序執行）
+test-sequential = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = hello-async(1)
+        r2 = hello-async(r1)
+    }
+    print(r1)  ; 1
+    print(r2)  ; 1
+}
+```
+
+規則：
+
+- **降級條件**：後面的語句讀到（或覆寫）前面某條語句綁定的變量時，那條語句的任務必須先落地，
+  於是在該處插入 `awy`，整組退化為順序執行。依賴是傳遞的（`r3` 讀 `r2`、`r2` 讀 `r1` ⇒ 整條鏈順序）。
+- **屏障**：組內不是「直接 `-async` 調用」的語句（普通賦值、`print`、迴圈、`if`…）是屏障，
+  它之前所有仍在飛行中的任務都會先 `awy`。這保證組內讀到的永遠是值，不會是 opaque 句柄。
+- **函數體不是協程組**：只有語句位置的裸塊才是。函數體、`if` 分支、迴圈體都不是，
+  所以 `f = hello-async(1)` 在函數體裡仍然只是建出一個 future，不自動 await。
+- **丟棄結果也要 await**：`{ side-async(5) }` 仍會 spawn + await —— 未 await 的任務會洩漏它的參數緩衝區。
+
+> **等價展開**（上面並發例子的實際 lowering）：
+> `__ag0 = run hello-async(1)` → `__ag1 = run hello-async(2)` → `r1 = awy __ag0` → `r2 = awy __ag1`。
 
 ### 多重賦值
 

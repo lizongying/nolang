@@ -1283,6 +1283,25 @@ func (c *codegen) optSliceElemType(v ValueID) TypeID {
 	return inner.Elem
 }
 
+// sliceElemTypeOfRaw resolves the ELEMENT TypeID of a slice RAW type — "[]i64"
+// -> i64, "[][]str" -> []str. Returns NoType when elemRaw is not an interned
+// slice.
+//
+// It exists because vecDeepClone / vecDeepFree are specialised on the ELEMENT
+// type, while the option clone/drop helpers hold only the option's element RAW
+// string. Passing that raw string's OWN TypeID instead (the slice type) is the
+// tempting mistake: vecDeepClone would then clone a `[]([]T)` — 24 bytes per
+// element plus a recursive per-element clone — and walk off the end of a real
+// `[]T` buffer.
+func (c *codegen) sliceElemTypeOfRaw(elemRaw string) TypeID {
+	if sid := c.mod.TypeMap[elemRaw]; sid != NoType {
+		if st := c.mod.Type(sid); st != nil {
+			return st.Elem
+		}
+	}
+	return NoType
+}
+
 // vecDeepClone emits (once per element type and depth) a helper that deep-copies
 // a %vec, and returns its @name. It returns "" when the element type is unknown,
 // in which case the caller keeps its old behaviour rather than emitting a call
@@ -1474,10 +1493,48 @@ func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
 		b.WriteString("  call void @nolang_free(ptr %ptr)\n")
 		b.WriteString("  br label %done\n")
 	} else {
+		// REFCOUNT-AWARE, and this is the whole point of the branch. Freeing
+		// this buffer's CONTENTS is only sound when this drop is the LAST
+		// reference to it. A borrow read (`a[0]` on a `[][]str`) retains the
+		// element it hands out (§2.2), so the element buffer can be shared:
+		// the container's drop and the borrow's drop both reach it. The
+		// container's drop used to free the contents unconditionally and the
+		// borrow's drop freed them again — measured as SIGTRAP / "pointer
+		// being freed was not allocated" on tests/mem-safety/
+		// nested-container-clone.no the moment an inline `?[]T` option started
+		// freeing its payload. So: if rc > 1, release and STOP; the drop that
+		// reaches rc == 0 frees the contents. rc == 1 (every unshared buffer,
+		// i.e. the entire pre-existing corpus) is unchanged — it falls through
+		// to `deep` and frees exactly what it freed before.
+		//
+		// The magic test mirrors @nolang_free / @nolang_rc_retain, and here it
+		// is a SAFETY guard as well as a probe: a block with no header is not
+		// one this compiler allocated (every owned buffer comes from
+		// @nolang_rc_alloc — @str_clone and the vec clone/alloc paths all use
+		// it), so it is either foreign or ALREADY FREED. Freeing it would
+		// violate I6 ("never free memory this compiler did not allocate") and,
+		// for an already-freed block, is a double free: the exact failure this
+		// whole branch exists to prevent, reached through an alias whose
+		// reference was never counted (a map value, whose `put` stores the
+		// descriptor without retaining it — a known, documented, out-of-scope
+		// gap; see §4.2(a)). Skip it instead of raw-freeing.
+		b.WriteString("  %shbase = getelementptr inbounds i8, ptr %ptr, i64 -16\n")
+		b.WriteString("  %shfp = getelementptr inbounds i8, ptr %shbase, i64 8\n")
+		b.WriteString("  %shflags = load i64, ptr %shfp\n")
+		fmt.Fprintf(b, "  %%shours = icmp eq i64 %%shflags, %d\n", nolangHdrMagic)
+		b.WriteString("  br i1 %shours, label %shchk, label %done\n")
+		b.WriteString("shchk:\n")
+		b.WriteString("  %shrc = load i64, ptr %shbase\n")
+		b.WriteString("  %shgt1 = icmp ugt i64 %shrc, 1\n")
+		b.WriteString("  br i1 %shgt1, label %rel, label %deep\n")
+		b.WriteString("rel:\n")
+		b.WriteString("  call void @nolang_free(ptr %ptr)\n")
+		b.WriteString("  br label %done\n")
+		b.WriteString("deep:\n")
 		b.WriteString("  %len = extractvalue %vec %v, 0\n")
 		b.WriteString("  br label %lp\n")
 		b.WriteString("lp:\n")
-		b.WriteString("  %i = phi i64 [ 0, %freeit ], [ %inext, %body ]\n")
+		b.WriteString("  %i = phi i64 [ 0, %deep ], [ %inext, %body ]\n")
 		b.WriteString("  %more = icmp ult i64 %i, %len\n")
 		b.WriteString("  br i1 %more, label %body, label %fin\n")
 		b.WriteString("body:\n")
@@ -5242,8 +5299,16 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 		c.sb.WriteString(fmt.Sprintf("  call void %s(%%option* %s)\n", fn, slot))
 		return
 	}
-	switch elemRaw {
-	case "str":
+	// Switch on the PAYLOAD LLVM TYPE, not on the element raw. The element raw
+	// for a slice is "[]i64" / "[]str" / ..., never the literal "vec", so the
+	// `case "vec"` this replaced could only ever fire for a type literally
+	// named `vec` — every inline `?[]T` payload fell through to `default` and
+	// LEAKED. The payload type is also the more faithful key: it is what
+	// emitOptionDropHelper and emitOptionPayloadContentFree already switch on,
+	// and it follows a type alias (`MyStr = str`) to the same case as the
+	// underlying type.
+	switch payloadLT {
+	case "%str-long":
 		// Inline %str-long payload: free its heap data buffer (field 2).
 		c.loadSeq++
 		pl := fmt.Sprintf("%%optpl%d", c.loadSeq)
@@ -5255,22 +5320,38 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 		pd := fmt.Sprintf("%%optpd%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%str-long %s, 2\n", pd, pv))
 		c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", pd))
-	case "vec":
-		// Inline %vec payload: free its backing store (field 2, a pointer held
-		// as i64).
+	case "%vec":
+		// Inline %vec payload: free its backing store — DEEPLY when the element
+		// owns heap the option was given its own copy of, exactly as emitDrop's
+		// %vec branch does. This is the counterpart of emitOptionCloneHelper,
+		// which deep-clones the payload (and of the peel path, which deep-clones
+		// via vecDeepClone): a shallow free here would leak every cloned element,
+		// and a shallow clone there would double-free them.
+		//
+		// BOTH arms must go through the GUARDED releases (@vec_free /
+		// @__nolang_vec_free_<T>), never a raw @nolang_free of field 2. An inline
+		// `?[]T` is not always an OWNED slice: the bounds-checked index read
+		// (`a[0]` on a `[][]str`) materialises the element as a RETAINED BORROW
+		// (paired with @vec_retain) and wraps it in an option. Its descriptor is
+		// a real sub-vec with cap > 0 — NOT a cap==0 view — so the guard that
+		// saves us is not @vec_free's cap test but vecDeepFree's REFCOUNT test
+		// (rc > 1 ⇒ release, do not free the contents): the container's own drop
+		// and this one both reach the element, and only the last may free.
+		// Measured: freeing the element unconditionally SIGTRAP'd
+		// `tests/mem-safety/nested-container-clone.no`; see vecDeepFree.
 		c.loadSeq++
 		pl := fmt.Sprintf("%%optpl%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%vec*\n", pl, c.optPayloadAddr(slot, "%vec")))
 		c.loadSeq++
 		pv := fmt.Sprintf("%%optpv%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", pv, pl))
-		c.loadSeq++
-		pd := fmt.Sprintf("%%optpd%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", pd, pv))
-		c.loadSeq++
-		pp := fmt.Sprintf("%%optpp%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", pp, pd))
-		c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", pp))
+		if et := c.sliceElemTypeOfRaw(elemRaw); et != NoType && c.vecElemNeedsDeepFree(et) {
+			if fn := c.vecDeepFree(et, 0); fn != "" {
+				c.sb.WriteString(fmt.Sprintf("  call void %s(%%vec %s)\n", fn, pv))
+				break
+			}
+		}
+		c.sb.WriteString(fmt.Sprintf("  call void @vec_free(%%vec %s)\n", pv))
 	default:
 		// INLINE payload that still owns heap: a small struct whose owned `str`
 		// leaves live inside the payload slot (e.g. `?person` with
@@ -5403,9 +5484,20 @@ func (c *codegen) emitOptionPayloadContentFree(b *strings.Builder, elemRaw, payl
 		b.WriteString("  call void @str_free(%str-long %cv)\n")
 	case payloadLT == "%vec":
 		b.WriteString("  %cv = load %vec, %vec* %op\n")
-		b.WriteString("  %cd = extractvalue %vec %cv, 2\n")
-		b.WriteString("  %cdp = inttoptr i64 %cd to i8*\n")
-		b.WriteString("  call void @nolang_free(i8* %cdp)\n")
+		// DEEP when the element owns heap, exactly as emitDrop's %vec branch and
+		// the inline path in emitOptionDrop do — this is the counterpart of
+		// emitOptionPayloadContentClone, which deep-clones the payload. A
+		// shallow @nolang_free here would leak every cloned element.
+		if et := c.sliceElemTypeOfRaw(elemRaw); et != NoType && c.vecElemNeedsDeepFree(et) {
+			if fn := c.vecDeepFree(et, 0); fn != "" {
+				b.WriteString(fmt.Sprintf("  call void %s(%%vec %%cv)\n", fn))
+				break
+			}
+		}
+		// The guarded shallow release, for the same reason as the inline path in
+		// emitOptionDrop: an inline `?[]T` may hold a RETAINED BORROW, and
+		// @vec_free is the release half of @vec_retain.
+		b.WriteString("  call void @vec_free(%vec %cv)\n")
 	case key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)):
 		c.emitStructDropHelper(payloadLT, key)
 		b.WriteString(fmt.Sprintf("  call void @%s(%s* %%op)\n", structDropName(payloadLT), payloadLT))
@@ -5415,10 +5507,16 @@ func (c *codegen) emitOptionPayloadContentFree(b *strings.Builder, elemRaw, payl
 }
 
 // optCloneName is the LLVM name of the deep-copy helper for one option payload
-// type — the clone-side twin of optDropName, and keyed the same way (by the
-// PAYLOAD type, not the element).
-func optCloneName(payloadLT string) string {
-	return "__nolang_opt_clone_" + sanitize(strings.TrimPrefix(payloadLT, "%"))
+// type — the clone-side twin of optDropName.
+//
+// It is keyed by the ELEMENT RAW, where optDropName is keyed by the payload
+// LLVM type, and the difference is forced: freeing a `%vec` is element-
+// independent (@nolang_free of the backing store), but CLONING one is not —
+// `?[]i64` and `?[]str` share the payload type `%vec` yet need different
+// element fix-ups. Keying this by payloadLT would emit ONE helper for both and
+// silently give the second element type the first one's clone.
+func optCloneName(elemRaw string) string {
+	return "__nolang_opt_clone_" + sanitize(elemRaw)
 }
 
 // emitOptionCloneHelper emits (once per payload type) and returns the name of
@@ -5443,7 +5541,7 @@ func optCloneName(payloadLT string) string {
 // that check, Module.optionCopyOwnsPayload, is this function's analysis-side
 // half — it must answer "yes" for exactly the shapes handled below.
 func (c *codegen) emitOptionCloneHelper(elemRaw, payloadLT string) string {
-	fn := optCloneName(payloadLT)
+	fn := optCloneName(elemRaw)
 	if c.extraFuncs[fn] {
 		return "@" + fn
 	}
@@ -5515,7 +5613,10 @@ func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, pay
 		// The backing store is what the drop frees, so it is what must be
 		// duplicated — element by element, because an owned element (%str-long
 		// or a nested %vec) would otherwise still be shared.
-		elemType := c.mod.TypeMap[elemRaw]
+		//
+		// vecDeepClone is specialised on the ELEMENT type, NOT the slice's —
+		// see sliceElemTypeOfRaw for what passing the slice type does instead.
+		elemType := c.sliceElemTypeOfRaw(elemRaw)
 		fn := ""
 		if elemType != NoType {
 			fn = c.vecDeepClone(elemType, 0)
@@ -12681,6 +12782,31 @@ func arrayElemIsTrivial(arrLT string) bool {
 	return false
 }
 
+// emitSpawnArgRetain takes the SECOND reference that makes a shared spawn
+// argument safe (NOLANG-OWNERSHIP-MODEL.md §4.2 b) — the exact dual of the deep
+// copy asyncArgOwnedCopy would have made. Instead of duplicating the buffer it
+// bumps its refcount, so the caller's own drop and the wrapper's w_free each
+// give one reference back and @nolang_free frees the block only at zero.
+//
+// It is emitted only when the register really carries the descriptor type the
+// helper takes, mirroring the same guard on the clone side (asyncArgOwnedCopy's
+// caller) so the retain and the wrapper's free can never disagree about which
+// argument was shared.
+//
+// A borrowed VIEW (cap == 0) is deliberately not special-cased here: @str_retain
+// / @vec_retain already no-op on it, and the matching @str_free / @vec_free no-op
+// too, so a view that reaches this point stays balanced. In practice the gate
+// never admits one — wouldDrop excludes borrow reads and slice views — but the
+// helper's own guard is what keeps that from mattering.
+func (c *codegen) emitSpawnArgRetain(kind, lt, areg string) {
+	switch {
+	case kind == "str" && lt == "%str-long":
+		c.sb.WriteString(fmt.Sprintf("  call void @str_retain(%s %s)\n", lt, areg))
+	case kind == "vec" && lt == "%vec":
+		c.sb.WriteString(fmt.Sprintf("  call void @vec_retain(%s %s)\n", lt, areg))
+	}
+}
+
 // asyncArgOwnedCopy returns an owned deep copy of an async-launch argument so
 // that the spawned task never aliases the caller's binding.
 //
@@ -12916,6 +13042,23 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		// re-asserts the precondition insertDrops checked — the wrapper only
 		// frees the payload for a classified kind.
 		moved := c.mod.spawnArgMoves[av] && alt == plt && kind != ""
+		// SHARED ARGUMENT (NOLANG-OWNERSHIP-MODEL.md §4.2 b). The caller keeps
+		// its binding AND its drop; the spawn boundary takes a SECOND reference
+		// (@str_retain / @vec_retain) that the wrapper's w_free gives back, and
+		// @nolang_free frees the buffer only when both are released. This is
+		// sound only because insertDrops proved the caller never writes the
+		// buffer after the spawn (spawnArgWritesAfter), so the task still sees
+		// the value AS OF SPAWN. Read back, never recomputed — the same
+		// discipline `moved` follows, and the reason both are recorded in
+		// analysis rather than derived here.
+		retained := c.mod.spawnArgRetains[av] && alt == plt && kind != ""
+		// Either way the argbuf holds the caller's descriptor VERBATIM and the
+		// deep copy below must be skipped; a shared argument only adds the
+		// retain that its second owner (the task) will release.
+		share := moved || retained
+		if retained {
+			c.emitSpawnArgRetain(kind, alt, areg)
+		}
 		// structKey is non-empty only for kind == "struct". A struct is handled
 		// AFTER the argbuf store (below) rather than by pre-cloning the value:
 		// the field walks operate on memory, and the argbuf is already the
@@ -12924,7 +13067,7 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		if i < len(argKeys) {
 			structKey = argKeys[i]
 		}
-		if !moved && kind != "" && kind != "struct" && !owned {
+		if !share && kind != "" && kind != "struct" && !owned {
 			// Only copy when the register really carries the descriptor type
 			// the helper expects. `alt` is the COERCED type; a `str` parameter
 			// fed something that coerceAsyncArg did not convert (so alt is
@@ -12951,7 +13094,7 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		// whatever shape the argument expression had. Only the clone walk needs
 		// it, so a moved struct skips the spill too.
 		srcSlot := ""
-		if !moved && structKey != "" && alt == plt {
+		if !share && structKey != "" && alt == plt {
 			c.loadSeq++
 			srcSlot = fmt.Sprintf("%%arun.srcslot.%d_%d", c.loadSeq, i)
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", srcSlot, alt))

@@ -402,6 +402,11 @@ func (m *Module) Analyze() *Report {
 	// insertDrops below, and a stale entry would make emitAsyncRun skip a deep
 	// copy for a value whose drop was NOT suppressed this time — a double free.
 	m.spawnArgMoves = map[ValueID]bool{}
+	// Same reasoning again for the spawn-argument SHARE set (§4.2 b): a stale
+	// entry would make emitAsyncRun skip the deep copy AND emit a retain for a
+	// value whose gate no longer holds — a double reference with no matching
+	// release, i.e. a leak or a double free.
+	m.spawnArgRetains = map[ValueID]bool{}
 	// Phase 2 needs a whole-module pre-pass: a caller must know whether a callee
 	// consumes the enum it passes, and a callee may be analyzed after its caller.
 	m.markEnumParamOwners()
@@ -1929,7 +1934,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 		if blk == nil {
 			continue
 		}
-		for _, iid := range blk.Insts {
+		for spawnIdx, iid := range blk.Insts {
 			inst := m.Inst(iid)
 			if inst == nil || inst.Op != OpRun || inst.Sym == "" {
 				continue
@@ -1938,7 +1943,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			if !ok {
 				continue
 			}
-			classes, _, _ := m.SpawnArgClasses(m.Func(cid))
+			classes, elems, _ := m.SpawnArgClasses(m.Func(cid))
 			for idx, a := range inst.Args {
 				if a <= NoVal || !wouldDrop[a] {
 					continue
@@ -1946,11 +1951,31 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 				if idx >= len(classes) || classes[idx] == "" {
 					continue
 				}
-				if liveOut[bid][a] || m.readNonDropAfterInBlock(bid, iid, a) {
+				if !liveOut[bid][a] && !m.readNonDropAfterInBlock(bid, iid, a) {
+					// DEAD source: transfer ownership (the zero-copy move).
+					moveSrc[a] = true
+					m.spawnArgMoves[a] = true
 					continue
 				}
-				moveSrc[a] = true
-				m.spawnArgMoves[a] = true
+				// STILL LIVE: the §4.2(b) static gate. Share the buffer with a
+				// second reference (retain) instead of deep-copying — but ONLY
+				// when the caller provably never writes it in place from the
+				// spawn onward, so the task keeps observing the spawn-time
+				// snapshot. Everything else keeps the P0 deep copy.
+				if m.spawnArgMoves[a] {
+					continue
+				}
+				elem := NoType
+				if idx < len(elems) {
+					elem = elems[idx]
+				}
+				if !m.spawnArgRetainSafe(classes[idx], elem) {
+					continue
+				}
+				if m.spawnArgWritesAfter(bid, spawnIdx+1, a) {
+					continue
+				}
+				m.spawnArgRetains[a] = true
 			}
 		}
 	}
@@ -2299,6 +2324,157 @@ func (m *Module) insertRetainAfter(block BlockID, after InstID, val ValueID) Ins
 	}
 	blk.Insts = append(blk.Insts, iid)
 	return iid
+}
+
+// spawnArgRetainSafe reports whether the spawn boundary may SHARE an argument
+// of the given class instead of deep-copying it (NOLANG-OWNERSHIP-MODEL.md
+// §4.2 b). "Sharing" means: skip the copy, keep the caller's descriptor in the
+// argbuf, emit one @str_retain / @vec_retain, and let the wrapper's w_free give
+// that reference back.
+//
+// Only classes where ONE outer retain balances the TWO releases are admitted:
+//
+//   - "str": the buffer is a single block. @str_retain bumps it, the caller's
+//     @str_free and the wrapper's @str_free each release it — freed at zero.
+//   - "vec" with elements that own NO heap (`[]i64`, `[]f64`, `[]byte`, a slice
+//     of POD structs): vecDeepClone is a bare malloc+memcpy, the caller's drop
+//     is the shallow @vec_free, and so is the wrapper's — again one buffer, one
+//     retain, two releases.
+//
+// Everything else is refused, and the reason is the SAME in each case — the
+// caller's drop releases MORE than the single outer buffer:
+//
+//   - "vec" with owned elements (`[]str`, `[][]i64`): the caller's drop is the
+//     DEEP free, which also releases every ELEMENT buffer. One outer retain does
+//     not cover those, so sharing would let the caller's drop free an element
+//     the task is still reading — a use-after-free.
+//   - "struct": its owned leaves / pointees are reached by the recursive clone
+//     and the recursive destructor. Sharing would need a recursive RETAIN
+//     mirroring emitPtrFieldsClone + emitLeafFieldsClone, which does not exist
+//     yet. Refused rather than approximated — a partial retain leaks or
+//     double-frees exactly the fields it skipped.
+//   - "": nothing is copied, so there is nothing to share; the argbuf already
+//     holds the descriptor and owns nothing.
+func (m *Module) spawnArgRetainSafe(kind string, elem TypeID) bool {
+	switch kind {
+	case "str":
+		return true
+	case "vec":
+		return !m.VecElemOwnsHeap(elem)
+	}
+	return false
+}
+
+// VecElemOwnsHeap reports whether a slice's element type owns heap memory that
+// the container is responsible for releasing. It answers exactly the question
+// codegen.vecElemNeedsDeepFree answers, reached through the same throwaway-codegen
+// idiom SpawnArgClasses uses — one predicate, one implementation, so the retain
+// gate and the clone/free pair can never disagree about which elements are owned.
+func (m *Module) VecElemOwnsHeap(elem TypeID) bool {
+	if elem == NoType {
+		return false
+	}
+	c := &codegen{mod: m, extraFuncs: map[string]bool{}}
+	return c.vecElemNeedsDeepFree(elem)
+}
+
+// spawnArgWritesAfter reports whether the caller may write IN PLACE through the
+// buffer named by value v anywhere the spawned task could still observe it —
+// i.e. from (startBlk, startIdx) onward in the CFG. This is the §4.2(b) gate:
+// a "false" answer is what lets the spawn boundary share the buffer instead of
+// copying it, because then the task keeps seeing the value AS OF SPAWN.
+//
+// It walks the CFG forward exactly as spawnAwaitPaths does. Reaching a block
+// again through a back edge re-checks it from index 0, which is what catches a
+// write that sits BEFORE the spawn inside a loop body — on the next iteration it
+// runs after the spawn. The walk starts just past the spawn instruction, so the
+// spawn itself is never mistaken for a write.
+//
+// Conservative in the two ways that matter for soundness:
+//   - a CALL counts as a write, because a mutating method (`a.push(1)`,
+//     `a.insert(…)`) lowers to OpCall with the receiver as Args[0], and the
+//     callee's effect is not visible here (see spawnArgUseWrites);
+//   - exhausting the step budget answers TRUE, so a CFG too large to prove
+//     clean falls back to the deep copy rather than assuming the best.
+func (m *Module) spawnArgWritesAfter(startBlk BlockID, startIdx int, v ValueID) bool {
+	type state struct {
+		b   BlockID
+		idx int
+	}
+	const maxSteps = 200000
+	start := state{startBlk, startIdx}
+	seen := map[state]bool{start: true}
+	stack := []state{start}
+	steps := 0
+	for len(stack) > 0 {
+		st := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		steps++
+		if steps > maxSteps {
+			return true
+		}
+		blk := m.Block(st.b)
+		if blk == nil {
+			continue
+		}
+		if st.idx >= len(blk.Insts) {
+			if blk.Term != nil {
+				for _, t := range blk.Term.Targets {
+					s2 := state{t, 0}
+					if !seen[s2] {
+						seen[s2] = true
+						stack = append(stack, s2)
+					}
+				}
+			}
+			continue
+		}
+		if inst := m.Inst(blk.Insts[st.idx]); inst != nil && spawnArgUseWrites(inst, v) {
+			return true
+		}
+		s2 := state{st.b, st.idx + 1}
+		if !seen[s2] {
+			seen[s2] = true
+			stack = append(stack, s2)
+		}
+	}
+	return false
+}
+
+// spawnArgUseWrites reports whether instruction inst may write IN PLACE through
+// the buffer named by value v. It is a WHITELIST of read-only uses: anything not
+// on the list — a call, an element/field store, an OpStore, a move, a return —
+// is treated as a write, so an op that mutates a buffer cannot silently make the
+// retain unsound by being forgotten here.
+//
+// OpMove is deliberately NOT whitelisted even though a move only copies the
+// descriptor: a move TRANSFERS the caller's reference, so the caller's drop
+// would be suppressed and the retain taken at the spawn would have no second
+// release to give back — the count would be pinned. Refusing the move keeps the
+// invariant "the caller still drops what we retained" structural.
+func spawnArgUseWrites(inst *Inst, v ValueID) bool {
+	used := false
+	for _, a := range inst.Args {
+		if a == v {
+			used = true
+			break
+		}
+	}
+	if !used {
+		return false
+	}
+	switch inst.Op {
+	case OpLoad, OpClone, OpDrop, OpRelease, OpRetain, OpBorrow,
+		OpIndex, OpSliceOp, OpLen, OpCap, OpUtf8At, OpGetField,
+		OpCast, OpTxtFromStr, OpStrFromVec,
+		OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpStrEq,
+		OpAdd, OpSub, OpMul, OpDiv, OpMod, OpUDiv, OpUMod, OpNeg, OpNot,
+		OpAnd, OpOr, OpBitAnd, OpBitOr, OpXor, OpShl, OpShr,
+		OpPhi, OpEnumTag, OpEnumField,
+		OpAwait, OpTaskRetain:
+		return false
+	}
+	return true
 }
 
 // borrowReleaseValues returns the values that owe a release for the reference

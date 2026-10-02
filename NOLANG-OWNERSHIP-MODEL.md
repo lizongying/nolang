@@ -1,6 +1,6 @@
 # Nolang 混合所有權模型（Hybrid Ownership）— 設計方案
 
-**版本**：v2.1（2026-10-02）
+**版本**：v2.2（2026-10-02）
 **基線**：`a6c8559d`。所有 A/B 都用**自建快照**（`/tmp/**/no-*`），全程不使用 `bin/no`（並行 session 會重建它）。
 **適用後端**：MIR（`src/mir`）
 **前置文件**：`docs/docs/lang/memory.md`（現行模型權威描述）、`NOLANG-AUDIT-2026-09-27.md`
@@ -12,8 +12,17 @@
 >
 > **v2.1 相對 v2.0 的變更**：規則一**落地**（`str` / `[]T`）——`forwardReadOnlyAliases` 的前向整段刪除、
 > 改名 `lowerDeadSourceCopiesToMoves`；owned `str` 的新綁定改走深拷貝路徑。新增
-> `src/mir/rule1_binding_test.go` 與 `tests/rule1-binding.no`。§0.3／§1.1／§1.3／§4.2(a)／§5／§6.2／§7
-> 同步更新。**`?str` / `?[]T` / map 仍未收**（§4.2 a）。
+> `src/mir/rule1_binding_test.go` 與 `tests/rule1-binding.no`。
+>
+> **v2.2 相對 v2.1 的變更**：規則一**補完 `?str` / `?[]T`**（inline-payload 的 option）——
+> 綁定閘門開到 owned option（`hir2mir.go`）、新增 `emitOptionCloneHelper`（drop helper 的鏡像）、
+> **並修掉 `emitOptionDrop` 的 `case "vec"` 死碼**（`?[]T` 的 payload 從來沒被釋放過，實測
+> 10 萬圈漏 100000 塊）。落地後暴露一個既有迴歸（`vecDeepFree` 的深釋放無視元素引用計數）並修好，
+> 見 §4.2(a)。§0.3／§1.1／§1.3／§4.2(a)／§5／§6.2／§7 同步更新。
+> **只剩 map 未收**（§4.2 a；`isOwnedLocal` 對 map 為 false，map 是引用語意，不是所有權缺陷）。
+>
+> ⚠️ **驗收的控制組一律指名 SHA**：本輪控制組 = `no-head777`（真 HEAD `777b9389`）；「修復前」=
+> `a6c8559d`（HEAD 的父提交）。並行 session 會把 HEAD 往前推，「HEAD 控制樹」不是穩定的指稱。
 
 ---
 
@@ -48,19 +57,27 @@
 - **`vecDeepFree`**：深釋放配深克隆（對偶 `vecDeepClone`）。
 - **async 邊界的兩條**（§2.3／§2.4）：spawn 參數「源已死 ⇒ move」、`%task` 的 RC ＋ 兩個漏計缺陷修復。
 - **分析與驗證器**（§3）：tier 推斷（報告-only）、spawn graph 線性化（報告-only）、`checkRefBalance`。
-- **規則一（§1.1）**：只讀前向移除、owned `str` 綁定改深拷貝（§4.2 a）。
+- **規則一（§1.1）**：只讀前向移除、owned `str` / `[]T` / **`?str` / `?[]T`** 綁定改深拷貝（§4.2 a）。
+  過程中一併修掉 `emitOptionDrop` 的 `case "vec"` 死碼（`?[]T` 的 payload 從未釋放，§4.2 a）。
 
 **未落地**（皆為刻意，前置條件見 §4）
 
-1. **規則一的剩餘型別**（§4.2 a）：`str` / `[]T` 已收；`?str` / `?[]T`（inline-payload 的 option）
-   與 **map** 仍是文件化的 transfer。要全收需在綁定處補一個 MIR-only 的 `OpClone`，
-   或教 drop 側 clone inline-payload option。
-2. **參數側的 retain**（源仍活時用 retain 取代深拷貝）：需要參數自己的 buffer 帶 header，
-   即 §2.1 的「其餘 `@malloc` 站點」那筆帳（§4.2 b）。
-3. **`checkTierSoundness` / `checkReleaseTarget`**：要等第 2 項把 header 接上使用者值之後才有內容（§4.2 c）。
+1. **規則一的剩餘型別**（§4.2 a）：只剩 **map**。`isOwnedLocal` 對 map 為 false，而 map 是**引用語意**
+   （`owned=false`、從不釋放），共用是它的定義而非缺陷；要收就得先決定 map 的擁有權歸屬，不是補一個
+   `OpClone` 能解決的。
+2. **參數側的 retain**（源仍活時用 retain 取代深拷貝）：**原寫的「buffer 要帶 header」這個前置條件
+   已不存在**（header ABI 是全型別落地，參數 buffer 今天就帶 header，§4.2 b ①）。
+   ⚠️ **真正的障礙是語義**：無條件 retain 會把 spawn 邊界的「快照」變成「共享」——任務會看到呼叫端
+   在 spawn→`awy` 之間對 `x` 的**原位寫入**——與 §6.3 第 5 條衝突。（分歧**只有**這一種形狀：
+   重賦值／離開作用域兩者結果相同；且範圍只到**輸入參數**，out param `r` 不在協議內。）
+   正確形式是「**可證明無原位寫入 ⇒ retain**」的靜態閘門（無法證明就退回深拷貝，§4.2 b ⑤），
+   前置是「呼叫端寫入點」分析（§3.1，今天仍報告-only）。
+3. **`checkTierSoundness` / `checkReleaseTarget`**：要等第 2 項的「呼叫端寫入點／tier」分析落地
+   （不是等 header——header 已經有了）才有內容（§4.2 c）。
 
 **一句話總結**：**S／C 兩檔的機制完整且被驗證；R 檔只覆蓋了 `%task`。** 「值對值別名」整類已從模型與
-實作裡刪掉（`str` / `[]T` 已收，`?str` / `?[]T` / map 待收）；剩下的主要待辦是參數側的 retain。
+實作裡刪掉（`str` / `[]T` / `?str` / `?[]T` 已收，只剩 map 這種引用語意的型別）；剩下的主要待辦是
+參數側的 retain。
 
 ---
 
@@ -96,10 +113,12 @@
 |---|---|---|
 | `%vec`（owned slice） | 新綁定直接 `OpClone`（`hir2mir.go`），但**只讀時會被 `forwardReadOnlyAliases` 刪掉** ⇒ 變別名 | ✅ 前向移除後即為深拷貝 |
 | `%str-long` | 與源**共用同一個 SSA 值**（`l.locals[name] = val`）⇒ 別名 | ✅ 改走「拷貝進新值」路徑 |
+| `?str` / `?[]T`（owned option） | 被綁定閘門**排除**（`isOwnedLocal` 為 true）⇒ 兩個名字綁到同一個 SSA 值 | ✅ 閘門開到 owned option；`emitClone` 的 option→option 分支改呼叫 `emitOptionCloneHelper` |
 | struct | 本來就產生 `OpClone`（實測 MIR：`clone dst=18:MyData args=[15]`） | ✅ 未動 |
 
-**未收的型別**：`?str` / `?[]T`（inline-payload 的 option，drop 側尚不會 clone）與 map
-（`isOwnedLocal` 對 map 為 false）。見 §4.2 a。
+**未收的型別**：只剩 **map**。`isOwnedLocal` 對 map 為 false，但 map 是**引用語意**——`Type.Owned` 為
+false、從不被釋放——所以「兩個名字共用一個 map」是它的定義，不是所有權缺陷；要收得先決定 map 的
+擁有權歸屬。見 §4.2 a。
 
 ### 1.2 規則二：元素／欄位讀取保留別名（`a = b[i]`、`a = b.c`）
 
@@ -130,7 +149,7 @@
 
 | 場景 | 規則一改動前 | 目標（＝現況） |
 |---|---|---|
-| `a = b`，源之後**仍活** | slice：深拷貝後可能被前向刪掉；str：共用 SSA 值 | **深拷貝**（`str`/`[]T` 已落地，§1.1） |
+| `a = b`，源之後**仍活** | slice：深拷貝後可能被前向刪掉；str：共用 SSA 值；owned option：被閘門排除 ⇒ 共用 SSA 值 | **深拷貝**（`str`/`[]T`/`?str`/`?[]T` 已落地，§1.1） |
 | `a = b`，源之後**已死** | slice：`OpClone` → `OpMove`；str：共用 SSA 值 | **move**（零拷貝、無別名） |
 | `a = b[i]`、`a = b.c` | 別名（借讀）＋ `OpRetain`/`OpRelease` | **不變**（§1.2） |
 | `out = x`（返回值） | move | 不變 |
@@ -139,7 +158,7 @@
 | `run f(x)` | 源已死 ⇒ move；源仍活 ⇒ 深拷貝 | 不變（§2.3） |
 | `awy h` | `@nolang_rc_release`，歸零才 free | 不變（§2.4） |
 
-> 前兩列的「目標」欄已於 2026-10-02 落地（`str` / `[]T`；`?str` / `?[]T` / map 見 §4.2 a）。
+> 前兩列的「目標」欄已於 2026-10-02 落地（`str` / `[]T`，再補 `?str` / `?[]T`；只剩 map 見 §4.2 a）。
 
 **「move 是計數中性的」** 是關鍵設計：搬移不改變活躍別名數，所以 R 檔的 move 既不需 inc 也不需 dec。
 這讓 R 檔可以完全重用既有的 move 分析，只是把 `OpDrop` 換成 `OpRelease`。
@@ -385,59 +404,205 @@ I1 由 `inferTiers` 的結構性 seed 保證、I2 是真空的（語言裡沒有
 
 ### 4.2 未落地
 
-#### (a) 規則一（§1.1）—— **`str`／`[]T` 已落地；`?str`／`?[]T`／map 仍待收**
+#### (a) 規則一（§1.1）—— **`str`／`[]T`／`?str`／`?[]T` 已落地；只剩 map（引用語意）**
 
-**已落地的兩處**（2026-10-02）：
+**已落地的三處**（2026-10-02）：
 
 | 位置 | 原本的行為 | 現在 |
 |---|---|---|
 | `src/mir/alias_forward.go` | `forwardReadOnlyAliases`：把只讀別名的所有使用改寫成源、**刪掉那個拷貝**（共用 buffer、只剩一個 drop）；`aliasWritesUnobservable` 還會在源已死時前向**被寫**的別名 | 改名 **`lowerDeadSourceCopiesToMoves`**，**只保留「源已死 ⇒ `OpClone` 改寫成 `OpMove`」**；前向與 `aliasUse`／`aliasHazard`／`rewriteUses` 整段刪除 |
 | `src/mir/hir2mir.go` 新綁定 | owned `str` 的 `a = b` 走 `l.locals[name] = val`，**共用同一個 SSA 值**（⇒ 同一個 buffer、同一個 drop） | owned `str` 改走「拷貝進新值」路徑：發出 bitwise `OpMove` 到 fresh value，再由 `insertDrops` 依活性改成 `OpClone`（源仍活）或保留 move（源已死） |
+| `src/mir/hir2mir.go` 新綁定（**v2.2**） | **owned option（`?str` / `?[]T`）被閘門排除**（`isOwnedLocal` 為 true）⇒ 兩個名字綁到同一個 SSA 值 | 閘門改為 `!isOwnedLocal(val) \|\| ownedStr \|\| ownedOpt`；`ownedOpt` 用**宣告型別**排除 option→slice 的剝離 |
 
 owned `[]T` 本來就在新綁定直接降低成 `OpClone`；規則一只需把「只讀前向」移除即成立。
 
-**可觀測缺陷（已修）**：`s = 'hello'; c = s; c[0] = "H"`。舊版兩個名字綁到同一個 SSA 值 ⇒ 寫 `c` 連 `s`
-一起改，實測印 `Hello` / `Hello`；新版印 `hello` / `Hello`。MIR 對照：
+**可觀測缺陷（已修）**：
+
+1. `s = 'hello'; c = s; c[0] = "H"` —— 舊版兩個名字綁到同一個 SSA 值 ⇒ 寫 `c` 連 `s` 一起改，
+   實測印 `Hello` / `Hello`；新版印 `hello` / `Hello`。
+2. （**v2.2**）`o ?str = '…'; p ?str = o; o = '…'` —— 舊版重綁 `o` 之後 **`p` 也跟著變**（兩個名字是同一個值）；
+   新版 `p` 保留舊值。`?[]i64` 同形狀用長度觀測：舊版 `2`/`2`，新版 `3`/`2`。
+
+**順帶修掉的缺陷：`emitOptionDrop` 的 `case "vec"` 是死碼。** `emitOptionDrop` 原本 `switch elemRaw`
+（比對字面型別名），但 slice 的 `elemRaw` 是 `"[]i64"` / `"[]str"`……**永遠不會等於 `"vec"`**，
+所以 inline `?[]T` 的 payload 一路落到 `default`，**從未被釋放**。實測（10 萬圈，`malloc_zone_statistics`
+的 `blocks_in_use`）：
 
 ```
-舊： const 15:str(owned=true) args=[] ; indexstore 0 [15 …] ; drop [15]
-新： const 15:str(owned=true) args=[] ; clone 16:str args=[15] ; indexstore 0 [16 …] ; drop [15] ; drop [16]
+o ?[]i64 = [10,20,30]; p ?[]i64 = o   ×100000
+  HEAD（777b9389）: 100050 塊   ← 每圈漏 1 塊
+  改動後（E）     :     50 塊   ← 無洩漏
 ```
 
-**剩餘缺口（刻意）**：
+修法有兩處、**必須成對**：(1) `switch` 改比對 **payload LLVM 型別**（`%str-long` / `%vec`）而不是元素字串
+——這也順帶讓型別別名（`MyStr = str`）走到正確分支；(2) `%vec` 分支在元素 owned 時走 `vecDeepFree`
+（與 `emitDrop` 的 `%vec` 分支、以及新的深拷貝 helper 對齊）。**兩者互為鏡像**：
+`emitOptionPayloadContentClone` 是 `emitOptionPayloadContentFree` 的鏡像、`vecDeepClone` 與 `vecDeepFree`
+同進退——淺拷貝配深釋放會 double free，深拷貝配淺釋放會洩漏。
 
-- **`?str` / `?[]T`**：inline payload 的 option 沒有 `optionCopySharesHeap` 分支，兩個 option 之間的
-  move 是**文件化的 transfer**（§1.3）。把 `str` 的閘門放寬到 `?str` 會讓 option→slice 的**剝離**
-  被誤判（實測：`p = o` 由 `move dst=24:[]i64` 變成 `move dst=24:?[]i64`）⇒ 只縮到 owned `str`。
-- **map**：`isOwnedLocal` 對 map 為 false，根本不進這條路徑。
+**`?[]T` 的深拷貝 helper（`emitOptionCloneHelper`）有兩個必須記住的細節**（第一版都踩過）：
 
-要全收，需在綁定處補一個 MIR-only 的 `OpClone`，或教 drop 側 clone inline-payload option——**刻意延後**。
+- **`vecDeepClone` 吃的是「元素」型別，不是「切片」型別。** 傳切片本身的 TypeID 會讓它克隆
+  `[]([]T)`——每個元素讀 24 位元組再遞迴——直接走出一段 `[]i64` buffer 之外。**症狀是 SIGSEGV**，
+  而且**只有全語料編譯掃描／實際執行才看得到**（單元測試看不到）。用 `sliceElemTypeOfRaw(elemRaw)`
+  取 `TypeMap[elemRaw]` 的 `.Elem`。
+- **helper 名必須用「元素 raw」當鍵，不能用 payload 型別。** `?[]i64` 與 `?[]str` 的 payload 型別
+  都是 `%vec`，用 `payloadLT` 當鍵會讓第二個元素型別**靜默沿用第一個的 clone**。
+  （`optDropName` 用 payload 型別是對的——釋放 `%vec` 與元素無關。）
+
+**剩餘缺口：只剩 map。** `isOwnedLocal` 對 map 為 false，而 map 是**引用語意**——`Type.Owned` 為 false、
+從不被釋放——所以「兩個名字共用一個 map」是它的定義，不是所有權缺陷。要收得先決定 map 的擁有權歸屬，
+不是補一個 `OpClone` 能解決的。**刻意不做。**
+
+**🔴 落地後才浮現的迴歸：`vecDeepFree` 的深釋放無視元素的引用計數（已修）。**
+
+inline `?[]T` 開始釋放 payload 之後，`tests/mem-safety/nested-container-clone.no` 立刻
+`trace/BPT trap`（`MallocScribble=1` 下是 `pointer being freed was not allocated`）。最小重現是
+`[][]str` 的 `a0 = a[0]`，**與 map 無關**。根因不在 option，而在**容器自己的深釋放**：
+
+```
+a [][]str ; a[0]  ← 借讀：retain(element) ⇒ element 的 buffer rc = 2
+a 的 drop：__nolang_vec_free_12_0(a)
+            每個元素呼叫 __nolang_vec_free_3_1(element)
+              → 無條件 @str_free(element 內每個 str)   ← ★ 這裡
+              → @nolang_free(element.data)             （rc 2→1，buffer 活著）
+option 的 drop：__nolang_vec_free_3_0(element)
+              → @str_free(同樣那些 str)  ← ★ 第二次 ⇒ double free
+```
+
+**retain 只保護 element 的「buffer」，沒有保護它的「內容」。** 容器深釋放把內容釋放掉了，
+借用還活著；借用自己的深釋放再釋放一次 ⇒ double free。**判準應該是「內容的壽命 = buffer 的壽命」**：
+釋放一個 element 的內容，只在這次釋放**真的把它的 buffer 收到 0** 時才成立。
+
+修法（`codegen.go` `vecDeepFree`，`perElem != ""` 分支）把深釋放改成**引用計數感知**：
+
+| 情況 | 行為 |
+|---|---|
+| 區塊沒有 magic header（不是本編譯器配置的） | **跳過**（I6）—— dangling 或外部指標 |
+| 有 header，`rc > 1`（還有別的持有者） | 只 `@nolang_free`（release），**不動內容** |
+| 有 header，`rc == 1`（唯一持有者） | 釋放內容 ＋ 釋放 buffer（＝原行為） |
+
+`rc == 1` 涵蓋整個既有語料，所以**行為逐位元組不變**；只有被 retain 的借用元素改變。
+「沒有 header ⇒ 跳過」同時是 I6 的落實（**永不 free 非本編譯器記憶體**）：所有 owned buffer 都出自
+`@nolang_rc_alloc`（`@str_clone`、vec clone/alloc 全部走它；全檔唯一的裸 `@malloc` 就在
+`@nolang_rc_alloc` 自己體內），所以沒有 header 的 `%vec` 只可能是**已釋放的**或外部的。
+
+> ⚠️ **這個守衛把 map 的缺陷從「崩潰」降級為「洩漏」。** map 的 `put` 是
+> `store %vec %lv330, ptr %ep363`——**位元複製描述子、不 retain**（見 `hashmap_*_put` 的 IR），
+> 所以 map 的引用**不計數**：呼叫端的 `list1` drop 會把共用的 buffer 釋放掉，map 之後就 dangling。
+> `m1.get()` 的 `vec_retain` 對已釋放的區塊是 no-op（magic 沒了），於是 option 的釋放會踩到
+> dangling 指標。守衛讓它變成 no-op ⇒ `nested-container-clone.no` 恢復全綠。**真正的修法是讓 map 的
+> 引用計數**（`put` retain 或 clone），那是 §4.2(a) 開頭宣告的 map 缺口，**刻意不做**。
 
 **驗收（已過，2026-10-02）**：
 
 | 檢查 | 結果 |
 |---|---|
-| `a = b` 之後對 `b` 的寫入／釋放**不得**影響 `a` | ✅ `tests/rule1-binding.no`：唯一差異是 `str` 獨立性（舊 `Hello`/`Hello` → 新 `hello`/`Hello`），其餘逐位元組相同 |
-| 單元測試在修復前**必須失敗** | ✅ `rule1_binding_test.go` 的 **4** 個 live-source 測試在 HEAD 控制樹 FAIL（`clones=0`），在改動後 PASS；2 個 dead-source 是標明過的守門員 |
-| 語料 **514 檔編譯掃描** | ✅ A（前向移除）與 B（＋`str` 深拷貝）**各 0 差異** vs HEAD |
-| `go test ./mir/ ./fmt/ ./parser/ ./lexer/ ./hir/ ./checker/` | ✅ 全綠 |
-| `no test` | ✅ base 與 B **各 8 個 FAIL，排序後逐行相同**（`tests/rule1-binding.no` 兩邊都通過） |
-| `no vet src/std` | ✅ 兩邊 **0 error**（hint 數會抖，見 §5） |
+| `a = b` 之後對 `b` 的寫入／重綁**不得**影響 `a` | ✅ `tests/rule1-binding.no` 9 例：可觀測差異只有 `str` 獨立性（舊 `Hello`/`Hello` → 新 `hello`/`Hello`）與兩個 **option** 獨立性（舊 `another…`/`2` → 新 `a fairly…`/`3`），其餘逐位元組相同 |
+| 單元測試在修復前**必須失敗** | ✅ `rule1_binding_test.go`：**6** 個 live-source 測試（4 個 `str` ＋ 2 個 option）在**修復前的控制樹 `a6c8559d`（HEAD 的父提交，引入所有權閘門之前）** FAIL（`clones=0`）；4 個 dead-source／剝離守門員兩邊都過。⚠️ **在 HEAD（`777b9389`）上 10 個全過**——HEAD 已含第一版閘門與 clone helper，只是 helper 有元素型別／鍵的 bug，**clone 計數看不到**（見下） |
+| `tests/mem-safety/nested-container-clone.no` | ✅ 12/12，rc=0（修 `vecDeepFree` 之前：test 5 崩；只修一半：test 10 崩） |
+| 語料 **515 檔編譯掃描** | ✅ **0 regression**：與控制組 `no-head777`（真 HEAD，`codegen.go` 與 `HEAD:src/mir/codegen.go` 逐位元組相同，且已含 `src/std/{heap,set}.no`）**515/515 檔結果完全相同**（509 過 / 6 敗）。敗的 6 檔兩邊同一組，全是既有的 `EmitLLVM: unknown callee …` 建置失敗（`map-key-leak` `m2.get`；其餘 5 檔 `str.init`），**與本次改動無關**；**無任何 `rc 0→1`** |
+| `go test ./mir/ ./fmt/ ./parser/ ./lexer/ ./hir/ ./checker/` | ✅ 全綠（`go vet ./mir/` 亦乾淨——`c.fail` 的格式字串必須是常數） |
+| `no test` | ✅ 改動後 **8 個 FAIL**（排序後集合）：`conn-init fd`、`expected nil`、`tests/mem-safety/{map-key-leak,map-tombstone,minimal-option-str,minimal-str-map,minimal-str-map2,option-str-match}.no`——與控制組**逐行相同**；**無 `nested-container-clone`** |
+| `no vet src/std` | ✅ E 與 `no-head777` 讀數**逐位元組相同**：`0 error(s), 6205 warning(s), 936 hint(s)` |
+| **洩漏（heapstat）** | ✅ `?[]i64` 10 萬圈：HEAD 100050 塊 → 改動後 50 塊；`?str` 兩邊皆 50 塊 |
 
-> ⚠️ **這是行為改變，不是純重構。** 舊版 `a = b; print(a[0])` 共用 buffer；改成深拷貝後會多一次配置。
+> ⚠️ **`tests/rule1-binding.no` 的 `?[]i64` 例子在 HEAD 會當場崩潰。** HEAD 的
+> `emitOptionCloneHelper` 有本節上述的兩個 bug（元素型別、helper 鍵），所以「`p = o` 深拷貝」在
+> `?[]i64` 上走錯 stride ⇒ `no run` 報 `Error: signal: segmentation fault`（rc=1），**只印到
+> `opt vec independence` 為止**；`?str` 例子沒有元素型別，HEAD 印得對。改動後 9 例全過、印出 `3`/`2`。
+> **這正是單元測試抓不到的那一類**：clone 計數在 HEAD 上就已是 1（見上表），要**執行**才看得到記憶體錯誤。
+> 所以「新測試要在**修復前**的控制樹上先失敗」與「**可觀測的端到端測試**」缺一不可——前者釘住 clone 的有無，
+> 後者釘住 clone 的**正確性**。
+
+> ⚠️ **這是行為改變，不是純重構。** 舊版 `a = b` 共用 buffer；改成深拷貝後會多一次配置。
 > 判準因此是「**clone 只增不減、且每一筆增加都能對應到一條值對值賦值**」，不是「0 差異」。
 
-#### (b) 參數側的 retain（源仍活時）
 
-`run f(x)` 的 `x` 在 spawn 之後**仍活**時，今天仍走深拷貝。要改成 retain，前置條件是
-**參數自己的 buffer 必須帶 header**——也就是參數的**配置點**要改走 `rc_alloc`。那些配置點散在
-`@str_from_const` / `@str_concat` / `@str_clone` / `vecDeepClone` / 各種回傳路徑，即 §2.1 的
-「其餘 `@malloc` 站點」那筆帳。這需要 tier 推斷（§3.1）先把「哪些值真的跨了 spawn 邊」算出來，
-否則就是對所有值加開銷。
+#### (b) 參數側的 retain（源仍活時）—— **前置條件已消失；真正的障礙是語義，已重新界定**
+
+**① 原文的前提是錯的（已更正）。** 原文寫「參數的 buffer 必須帶 header ⇒ 配置點要改走 `rc_alloc`，
+即 §2.1 的『其餘 `@malloc` 站點』那筆帳」。那筆帳**已經結清**：header ABI 落地的是**全型別**版，
+所有編譯器擁有的堆 buffer 都經 `@nolang_rc_alloc` 配置（`codegen.go` 全檔唯一的裸 `@malloc`
+**呼叫**就在 `@nolang_rc_alloc` 自己體內）。所以參數的 buffer **今天就已經帶 header**，
+`@nolang_rc_retain` / `@nolang_free`（＝release）可以直接作用在它上面。**這個前置條件不存在。**
+
+**② 真正的障礙：retain 會把「快照」變成「共享」。** `run f(x)` 今天在 spawn 邊界深拷貝，所以任務
+看到的是 **spawn 當下的快照**。若改成 retain（共用同一塊 buffer、靠 rc 續命），任務就會看到
+**呼叫端在 spawn 與 `awy` 之間對 `x` 的原位寫入**。實測（探針語法同 `tests/async-arg-move.no`）：
+
+```no
+a []i64 = [1, 2, 3]
+ta = run first-async(a)   ; first-async 讀 v[0]
+a[0] = 99                 ; 原位寫入（不是重賦值）
+print(awy ta)             ; 深拷貝 ⇒ 1    ／    retain ⇒ 99
+```
+
+**重賦值**（`a = [...]`）兩種做法都得到舊值（舊 buffer 靠 rc 活到任務釋放），所以
+`tests/async-arg-move.no` 的第 6–8 例**無法區分**兩者——它們只釘住「源仍活 ⇒ 不得 move」。
+真正會分歧的是**原位寫入**，而語料裡沒有任何一例測它。
+
+**只有「原位寫入」這一種形狀會分歧。** 「spawn 之後呼叫端動到 `x`」共有三種形狀，另外兩種
+**兩種做法結果完全相同**：
+
+| 形狀 | 深拷貝 | retain |
+|---|---|---|
+| **原位寫入**（`x[i] = …`、`x.push(…)`） | 任務看到 spawn 當下的值 | 任務看到**寫入後**的值 ⇒ **分歧** |
+| **重賦值**（`x = …`） | 任務看到舊值 | 呼叫端釋放把 rc 2→1，舊 buffer 活到任務釋放 ⇒ **同為舊值** |
+| **離開作用域**（函式返回） | 任務看到舊值 | 同上，rc 只降到 1，**不懸空** ⇒ 同為舊值 |
+
+⇒ 深拷貝與 retain 的分界**只有**「呼叫端是否在 spawn 之後原位寫入輸入參數」這一個問題。
+
+**③ 這與使用者文檔直接衝突。** `docs/docs/lang/memory.md` 的「async 共享數據」一節明寫
+「**跨協程共享可變堆數據在語言層不成立**」，而 retain 正是引入這種共享。⇒ **(b) 不是「還沒做」，
+而是「照原樣做會改變語言語義」**；而且語料裡沒有任何一例測原位寫入，所以這個改變會是**靜默**的。
+（⚠️ 這個「不共享」此前只寫在使用者文檔，模型文件沒有正式記錄 ⇒ 已補進 §6.3 第 5 條。）
+
+**④ 範圍只到「輸入參數」——回傳值是 out param，且語言的呼叫模型就是「輸入唯讀、輸出可寫」。**
+
+依 `docs/docs/lang/syntax.md`「函數定義」：
+
+| 事實 | 內容 |
+|---|---|
+| **沒有「返回值」機制** | 結果一律透過**具名結果參數（out-param）**傳出，它是 out-parameter 的**語法糖**；接收變數由**呼叫處**決定（LHS 綁定 `a, b = swap(x, y)`，或尾隨引數 `add1(5, 3, res)`） |
+| **輸入參數唯讀** | 複合型別傳**唯讀引用**；函數體內**禁止**寫入輸入參數及其子欄位 |
+| **輸出參數可寫** | 呼叫方可把**既有變數**綁定到輸出槽，函數直接在該記憶體修改；也可不綁定，由函數生成新值交付 |
+| **別名規則** | 輸入唯讀引用與輸出槽**可以指向同一物件**；只要寫只發生在輸出區、輸入僅讀取即為合法，**編譯器不做靜態別名檢查** |
+
+⇒ 呼叫模型本來就是「**輸入共享唯讀引用、輸出被寫**」（這也解釋了同步呼叫為何共享：實測 `mut(a)` 印
+`99`）。async 的深拷貝是這個模型在「被呼叫端活得比呼叫端框架久」時的一次**壽命偏離**，
+而 retain 修的正是**同一個壽命問題**、且更貼近原本的呼叫模型——這是 (b) 值得一想的理由。
+⚠️ 但「輸入唯讀」約束的是**被呼叫端**，不是呼叫端：呼叫端在 spawn 之後仍可寫自己的 `a`，
+那正是 ② 裡唯一會分歧的形狀。
+
+**async 的 `r` 在哪裡**：`emitAsyncRun` 與 `asyncArgKinds` 都用 `cf.ResultParams` 建 `isResult` 並
+**`continue`** 掉這些位置；argbuf 多配置一個**結果槽位**（`numFields = len(argTypes) + 1`），
+由 **wrapper** 把它的指標當 out param 傳進去，`awy` 再把結果取出。⇒ 對 async，`r` 的儲存是
+**argbuf 自己的**（呼叫端在 spawn 時不傳 `r`），所以 **clone／free 協議只作用於輸入參數 `i`**。
+
+**⑤ 重新界定：正確的形式是「可證明無原位寫入 ⇒ retain」的靜態閘門。** 綜合 ②（分歧只有一種形狀）
+與 ④（只關於輸入參數）：
+
+| 呼叫端在 spawn 之後對輸入參數 `x` | 降低 |
+|---|---|
+| **可證明沒有原位寫入** | **retain**（零拷貝；rc 續命 ⇒ 重賦值／離開作用域都安全） |
+| 有原位寫入，或**無法證明** | 維持深拷貝（＝今天的行為） |
+
+**這比 C 檔 CoW 更適合。** CoW 要在每一次寫入插「`rc > 1` ⇒ 先 clone」的**運行時**檢查；
+閘門版只在 spawn 做一次**靜態**決定，而且**無法證明時退回今天的深拷貝** ⇒ 保守方向、**零風險**。
+效果也一樣好：大多數「spawn 完就不再動它」的呼叫端直接零拷貝。
+
+所以 (b) 的正確前置條件**不是** header（已有），而是**「呼叫端在 spawn 之後對 `x` 的寫入點」分析**
+——正是 §3.1 tier 推斷要算的東西（今天仍是報告-only）。**在沒有那個分析之前，深拷貝是唯一保持語義的
+選擇**；無條件 retain 會讓「任務看到什麼」取決於呼叫端在 `awy` 之前寫了什麼，是**語義退化**而非優化。
+（輸入參數的契約「不改」正是這個閘門想要**靜態化**的東西——與其在文件裡寫「不應該寫」，不如讓
+分析證明它沒寫、然後省掉那份拷貝。）
 
 #### (c) `checkTierSoundness` / `checkReleaseTarget`
 
-前置條件 = (b)。理由見 §3.3。
+前置條件 = (b)。(b) 重新界定之後，等的是**同一個**「呼叫端寫入點／tier」分析（§3.1，今天報告-only）——
+要等使用者值真的被提升到 R 檔（或 C 檔 CoW 有寫入點可查）才有東西可守。理由見 §3.3；
+「為什麼此刻刻意不寫」見 §3.3 末（先寫空檢查比不寫更糟）。
 
 ### 4.3 已知殘留
 
@@ -489,12 +654,22 @@ release 落在**剝離結果**上；在直線程式碼裡配對成立，但那�
   **不要用 hint/warning 的總數做 A/B**（會製造假差異）。診斷：`<no> vet src/std 2>&1 | tail -1`。
 - ⚠️ **`no test` 的 FAIL 行數會抖**：`grep '^FAIL:'` 會同時撈到**測試程式自己印的** `FAIL: ...`
   （例如 `FAIL: conn-init fd`）。要比就比**排序後的整份 FAIL 集合**，不是行數。
+- ⚠️ **`go build` 不跑 `go vet`，`go test` 跑。** `c.fail(format, args...)` 是 printf-like：
+  傳**拼接出來的字串**（`c.fail("x " + raw)`）能 `go build` 過，卻在 `go test` 的 vet 檢查下
+  `non-constant format string` 而**整包測試編不過**。一律寫成 `c.fail("... %s", raw)`。
+- ⚠️ **`vecDeepClone` / `vecDeepFree` 吃的是「元素」型別，不是容器型別**；`optDropName` 用
+  payload 型別是對的（釋放 `%vec` 與元素無關），但 clone 的 helper 名**必須**用元素 raw 當鍵，
+  否則 `?[]i64` 與 `?[]str` 會共用一個 helper。兩者的錯誤都**只有全語料掃描／實際執行看得到**。
 - ⚠️ shell：一律 `grep -E`（BRE 的 `\|` / `\b` / `\s` **靜默回空**）；`a && b` 中 grep 未中會
   **靜默截斷** ⇒ 用 `;`；macOS 無 `timeout` / `cat -A`。
 
-**量測基準（截至 2026-10-02，規則一落地後）**：`go test ./mir/ ./fmt/ ./parser/ ./lexer/ ./hir/ ./checker/` 全綠；
-`no vet src/std` **0 error**（hint 936，會抖見上）；`no test` **8 個 FAIL，base 與改動後逐行相同**；
-語料 **514 檔編譯掃描 0 差異**（A／B 各一次）；`tests/rule1-binding.no` 唯一差異是預期的 `str` 獨立性。
+**量測基準（截至 2026-10-02，規則一補完 `?str`/`?[]T` 後；控制組 = `no-head777`，真 HEAD `777b9389`）**：
+`go test ./mir/ ./fmt/ ./parser/ ./lexer/ ./hir/ ./checker/` 全綠（`go vet ./mir/` 乾淨）；
+`no vet src/std` E 與控制組**逐位元組相同**（`0 error(s), 6205 warning(s), 936 hint(s)`）；`no test` **8 個 FAIL、與控制組逐行相同**；
+語料 **515 檔編譯掃描 0 regression**（與控制組**逐檔相同**，509 過 / 6 敗，敗者兩邊同一組）；
+`tests/rule1-binding.no` 在控制組上 `?[]i64` 崩潰、改動後 **9 例全過**；`?[]i64` 10 萬圈 heapstat 由 **100050 塊降到 50 塊**
+（`?str` 兩邊皆 50 塊）；`nested-container-clone.no` **12/12 rc=0**；`rule1_binding_test.go` 在 `a6c8559d` 上 **6 敗**、
+在 HEAD 與改動後**全過**。
 
 ---
 
@@ -515,7 +690,7 @@ release 落在**剝離結果**上；在直線程式碼裡配對成立，但那�
 | 風險 | 影響 | 緩解 |
 |---|---|---|
 | **檔位判定不保守** | 少插 clone → UAF，且**靜默** | 所有判定「無法證明 → 往保守方向倒」；驗證器與插入器共用謂詞 |
-| **規則一落地時的迴歸**（已落地） | 深拷貝增加 ⇒ 效能；改錯方向 ⇒ 共用 buffer ⇒ double free | 逐檔解釋每一筆 clone 變化；514 檔編譯掃描 ＋ `no test` FAIL 集合比對（§4.2 a） |
+| **規則一落地時的迴歸**（已落地） | 深拷貝增加 ⇒ 效能；改錯方向 ⇒ 共用 buffer ⇒ double free；**clone 與 drop 不同步 ⇒ 洩漏或 double free** | 逐檔解釋每一筆 clone 變化；**515** 檔編譯掃描（0 regression）＋ `no test` FAIL 集合比對 ＋ heapstat 洩漏量測（§4.2 a）。`emitOptionCloneHelper` 與 option 的 drop 是**成對**寫的：`emitOptionPayloadContentClone` 是 `emitOptionPayloadContentFree` 的鏡像，`vecDeepClone`／`vecDeepFree` 同進退 |
 | **header 引入後 ABI 混用** | 對裸指標做 header 存取 → 記憶體損壞 | I1/I2 由 `checkTierSoundness` 強制（前置條件見 §4.2 c） |
 | **`shouldUseMemcpy` 被間接改變** | 大聚合的 `loadVal` 由「回傳值」變「回傳槽指標」→ 走進從未執行過的路徑 | 任何可能改變 `computeTypeSize` / 4096 門檻 / 欄位佈局的改動**必須跑金標** |
 | **驗證器假陽性** | `rep.HasErrors()` gate codegen → 整檔編不過 | 與插入器共用謂詞；每個新驗證器附「修復前必須失敗」的測試 |
@@ -524,8 +699,16 @@ release 落在**剝離結果**上；在直線程式碼裡配對成立，但那�
 
 1. **RC 檔的循環引用會洩漏。** 確定性記憶體管理的標準代價。
 2. **R 檔有 inc/dec 開銷。** 但只要不跨協程邊界，值就留在 S/C 檔。
-3. **跨協程邊界的深拷貝**比 RC 貴，但語義最簡單。§4.2(b) 之後可改為 retain 以省掉拷貝。
+3. **跨協程邊界的深拷貝**比 RC 貴，但語義最簡單。⚠️ **不能只改成 retain**：那會讓任務看到呼叫端的
+   **原位寫入**（共享），與第 5 條衝突；正確形式是 C 檔 CoW（§4.2 b）。
 4. **規則一讓 `a = b` 多一次深拷貝。** 這是刻意的：用一次拷貝換掉一整類別名分析。
+5. **spawn 邊界對「輸入參數」傳遞獨立副本（快照），不共享。** 任務看到的是 **spawn 當下**的輸入值。
+   這是「協程之間不共享可變堆數據」的落實；代價是每次 spawn 一次深拷貝。
+   ⚠️ 這條**此前只存在於使用者文檔**（`docs/docs/lang/memory.md`「async 共享數據」），模型文件未正式
+   記錄 ⇒ 補記於此，並由 `tests/async-arg-move.no` 第 9 例釘住。
+   **兩點範圍**：①只到**輸入參數**——回傳值 `r` 是宣告在參數位置的 **out param**，由任務自己寫入，
+   不在 clone／free 協議內（§4.2 b ④）；②與「改成 retain」**只在「呼叫端原位寫入輸入參數」這一種
+   形狀上分歧**，重賦值與離開作用域兩者結果相同（§4.2 b ②）。
 
 ---
 
@@ -540,10 +723,11 @@ release 落在**剝離結果**上；在直線程式碼裡配對成立，但那�
 | 5 | 是否處理 ready queue 溢出？ | **改為可增長佇列**（溢出根本不存在，因此無需報錯） |
 | 6 | I3 的驗證器強制**等號**還是**不等式**？ | **不等式**。等號對「未 await 的引用」為假，而那正是已接受的洩漏；在此處假陽性＝硬編譯失敗 |
 | 7 | `run <handle>` 的語義：**補 retain** 還是**報錯**？ | **補 retain**（語義明確的第二個引用；語料與文檔都沒有這個拼法 ⇒ 無相容性包袱） |
-| 8 | 參數側：等 header-aware 的 `retain`，還是先做**不改 ABI 的 move**？ | **先做 move**（§2.3）；剩下的「源仍活 ⇒ retain」才需要 header |
+| 8 | 參數側：先做 retain，還是先做**不改 ABI 的 move**？ | **先做 move**（§2.3）。原本記的「retain 要等 header」是錯的——header ABI 已全型別落地；「源仍活 ⇒ retain」真正卡的是「呼叫端寫入點」分析（§4.2 b） |
 | **9** | **`a = b` 要不要保留零拷貝別名？** | **不保留：一律深拷貝**（§1.1）。隨意別名毫無語義價值，卻讓分析憑空多出一整類情形。`a = b[i]` / `a = b.c` 維持原樣（§1.2） |
-| 10 | 規則一的綁定閘門開到多大？ | **只開 owned `str`**（＋既有的 owned `[]T`）。`?str`/`?[]T` 的 drop 側不會 clone（move 是文件化的 transfer），map 的 `isOwnedLocal` 為 false ⇒ 放寬只會讓 option→slice 的**剝離**被誤判（實測 `p = o` 由 `move dst=24:[]i64` 變 `?[]i64`），**成本無收益**（§4.2 a） |
+| 10 | 規則一的綁定閘門開到多大？ | **開到 owned `str` ＋ owned option**（＋既有的 owned `[]T`）。`?str`/`?[]T` 的 drop 側**本來就是 no-op 死碼**（見 §4.2 a），所以放寬閘門的同時必須把 drop 修好，否則 clone 只會製造洩漏。閘門用**宣告型別**排除 option→slice 的**剝離**（`p []T = o` 由既有的剝離區塊處理，實測不變：`move dst=…:[]i64`）。map 的 `isOwnedLocal` 為 false 且是引用語意 ⇒ **不收**（§4.2 a） |
 | 11 | 移除前向後，`lowerDeadSourceCopiesToMoves` 還要不要處理 str／struct？ | **不要，只留 owned slice**。str/struct 的 move 已由 `insertDrops` 用同一條活性規則處理；在這裡改寫 OP 會**跳過目的地的型別檢查**（`vecDeepClone` 依元素型別取 stride ⇒ 型別不符可編譯但靜默錯誤） |
+| **12** | **參數側（源仍活）要改成 retain 嗎？** | **不能只做 retain。** 原本記錄的前置條件（「buffer 要帶 header ⇒ 配置點改走 `rc_alloc`」）**已不存在**——header ABI 是全型別落地，參數 buffer 今天就帶 header。真正的障礙是**語義**：retain 會把 spawn 邊界的「快照」變成「共享」，任務會看到呼叫端在 spawn→`awy` 之間對 `x` 的**原位寫入**（實測：深拷貝印 `1`、retain 印 `99`），與使用者文檔「跨協程共享可變堆數據不成立」衝突，且**語料無任何一例測它 ⇒ 會是靜默改變**。要收就收成「**可證明無原位寫入 ⇒ retain**」的靜態閘門——無法證明就退回深拷貝，比 C 檔 CoW 簡單（不需運行時 clone-on-write）且零風險（§4.2 b ⑤）；前置是「呼叫端寫入點」分析（§3.1）。在那之前維持深拷貝。快照語義由 `tests/async-arg-move.no` 第 9 例釘住 |
 
 ---
 
@@ -554,7 +738,7 @@ release 落在**剝離結果**上；在直線程式碼裡配對成立，但那�
 | `tests/async-ownership.no` | 新增（P0） | 參數重賦值（str／vec／struct）、同槽雙 await、null handle、單次 await、雙 handle |
 | `tests/async-handle-alias.no` | 新增 | 別名雙 await、別名鏈、out-param 返回、存容器逃逸、同槽兩次、spawn+await 循環 |
 | `tests/async-rc.no` | 新增 | 跨邊界共享／多任務／取消後不 await／handle 存容器 ＋ 兩個漏計缺陷迴歸（void 別名、`run` 轉發） |
-| `tests/async-arg-move.no` | 新增 | spawn 參數 move：5 個該 move（6 個參數）＋ 3 個該維持深拷貝的反向案例 |
+| `tests/async-arg-move.no` | 新增 | spawn 參數 move：5 個該 move（6 個參數）＋ 3 個該維持深拷貝的反向案例（重賦值／讀取）＋ **第 9 例釘「快照」語義**（呼叫端原位寫入 ⇒ 任務仍看到 spawn 當下的值），是 §4.2(b)「無條件 retain」的守門員 |
 | `tests/async.no` / `async-cancel.no` / `async-coop.no` / `async-yield.no` / `module-async.no` | 既有 | flat spawn 邊（線性化對照組）、取消、協作、模組層級 async |
 | `tests/rule1-binding.no` | 新增（規則一） | `a = b` 的 `str`／`[]i64`／struct 寫入獨立性 ＋ 只讀 ＋ 源已死 move；**唯一 stdout 可觀測的規則一缺陷** |
 
