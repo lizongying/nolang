@@ -154,3 +154,75 @@ func TestIndexOutRemovalConsistentWithChecker(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatRemovesWithLenSliceFixedLenRead: a slice base whose length is fixed by a
+// top-level `buf []T = with-len(<literal>)` and never reassigned has a statically known
+// length, so a literal index within it is provably in-bounds — the `#{index-out=zero}`
+// is redundant and `no fmt` strips it. This extends the old conservative rule (which
+// treated every `[]T` as runtime-length) to the with-len-literal case.
+func TestFormatRemovesWithLenSliceFixedLenRead(t *testing.T) {
+	input := "get = () (res i64) {\n" +
+		"    buf []i64 = with-len(4)\n" +
+		"    #{index-out=zero}\n" +
+		"    res = buf[0]\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	out := FormatProgramWithOverflow(program, input, nil, nil)
+	if strings.Contains(out, "index-out") {
+		t.Errorf("with-len literal slice in-bounds read #{index-out} was not removed:\n%s", out)
+	}
+	if !strings.Contains(out, "res = buf[0]") {
+		t.Errorf("statement body changed unexpectedly:\n%s", out)
+	}
+	// Idempotency.
+	if out2 := FormatProgramWithOverflow(parseForTest(out), out, nil, nil); out2 != out {
+		t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
+	}
+	// Three-way consistency: after removal, the checker must NOT report the read.
+	for _, r := range checker.ValidateUnhandledIndex(parseFull(t, out), "src/app.no") {
+		if r.TraceID == "idxhndld" {
+			t.Fatalf("fmt removed annotation but checker reports unhandled index: %+v\n%s", r, out)
+		}
+	}
+}
+
+// TestFormatPreservesIndexOutForReassignedSlice: the fixed-length guarantee is void the
+// moment the variable is reassigned — `buf` may then hold a shorter slice, so a literal
+// index is no longer provably in-bounds and the annotation must be PRESERVED.
+func TestFormatPreservesIndexOutForReassignedSlice(t *testing.T) {
+	input := "get = () (res i64) {\n" +
+		"    buf []i64 = with-len(4)\n" +
+		"    buf = with-len(2)\n" +
+		"    #{index-out=zero}\n" +
+		"    res = buf[0]\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	out := FormatProgramWithOverflow(program, input, nil, nil)
+	if !strings.Contains(out, "#{index-out=zero}") {
+		t.Errorf("reassigned slice #{index-out} was wrongly stripped:\n%s", out)
+	}
+}
+
+// TestFormatPreservesIndexOutForWithLenVarArg: `with-len(n)` (runtime length) is not a
+// literal, so the slice length is unknown and the annotation must be PRESERVED.
+func TestFormatPreservesIndexOutForWithLenVarArg(t *testing.T) {
+	input := "get = (n i64) (res i64) {\n" +
+		"    buf []i64 = with-len(n)\n" +
+		"    #{index-out=zero}\n" +
+		"    res = buf[0]\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	out := FormatProgramWithOverflow(program, input, nil, nil)
+	if !strings.Contains(out, "#{index-out=zero}") {
+		t.Errorf("with-len(non-literal) #{index-out} was wrongly stripped:\n%s", out)
+	}
+}

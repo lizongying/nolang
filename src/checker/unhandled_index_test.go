@@ -1,6 +1,11 @@
 package checker
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
+)
 
 // 本檔案是 ValidateUnhandledIndex 的回歸測試：arr/vec/slice 索引 b[i] 越界時
 // 預設回傳 option<elem>（永不 panic），若結果既沒被 `?=` 上拋、沒被 `#{index-out
@@ -247,6 +252,93 @@ func TestUnhandledIndexNoStdExempt(t *testing.T) {
 				t.Fatalf("mainFile=%q: expected %d error(s), got %d: %+v", c.mainFile, c.want, len(res), res)
 			}
 		})
+	}
+}
+
+// parseSurfaceProg 以「跳過安全索引降級」的方式解析（與 LSP 編輯器主解析同旗標，
+// 見 lsp/documents.go：SkipSafeIndexLowering=true，為保住可 format-on-save 的 surface
+// AST）。此時 `#{index-out = DEF}` 註解不會被降級成合成的 __idx_out_ tmp，
+// ValidateUnhandledIndex 必須直接辨識陳述上的註解，否則會對已正確標註的越界索引
+// 誤報「未處理」（編輯器持續提示，但 `no vet`（走降級）卻不報——兩端口徑不一致）。
+func parseSurfaceProg(t *testing.T, src string) *parser.Program {
+	t.Helper()
+	l := lexer.New(src)
+	p := parser.New(l)
+	p.SkipSafeIndexLowering = true
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	return prog
+}
+
+// TestUnhandledIndexSurfaceAnnotationNotReported 驗證在 surface AST（未經降級）下，
+// `#{index-out}` 行注解／尾隨注解所標註的索引讀取不再被誤報為未處理。
+func TestUnhandledIndexSurfaceAnnotationNotReported(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "line_above_index_out_zero",
+			src: `detect = (buf []byte) (b0 i64) {
+    #{index-out=zero}
+    b0 = buf[0]
+}`,
+		},
+		{
+			name: "trailing_index_out",
+			src: `get = (arr []i64, i i64) (res i64) {
+    res = arr[i]  #{index-out = 0}
+}`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res := ValidateUnhandledIndex(parseSurfaceProg(t, c.src), "src/app.no")
+			for _, r := range res {
+				if r.TraceID == unhandledIndexTraceID {
+					t.Fatalf("surface AST false-positive on annotated index: L%d:C%d %s", r.Line, r.Column, r.Message)
+				}
+			}
+		})
+	}
+}
+
+// TestUnhandledIndexWithLenLiteralSliceInBounds 驗證 `buf []T = with-len(<字面量 K>)`
+// 且本函數內未被重賦值的切片，其字面量下標 `< K` 被視為可證明界內——既不需要
+// `#{index-out}`，也不應被上報（surface AST 與降級 AST 兩端口徑一致）。
+func TestUnhandledIndexWithLenLiteralSliceInBounds(t *testing.T) {
+	src := `get = () (res i64) {
+    buf []i64 = with-len(4)
+    res = buf[0]
+}`
+	for _, prog := range []*parser.Program{parseProg(t, src), parseSurfaceProg(t, src)} {
+		for _, r := range ValidateUnhandledIndex(prog, "src/app.no") {
+			if r.TraceID == unhandledIndexTraceID {
+				t.Fatalf("with-len literal slice in-bounds read wrongly reported: L%d:C%d %s", r.Line, r.Column, r.Message)
+			}
+		}
+	}
+}
+
+// TestUnhandledIndexWithLenReassignedSliceReported 驗證重賦值後長度不再可證明：
+// `buf = with-len(2)` 之後的 `buf[0]` 無註解仍屬未處理越界索引，必須上報。
+func TestUnhandledIndexWithLenReassignedSliceReported(t *testing.T) {
+	src := `get = () (res i64) {
+    buf []i64 = with-len(4)
+    buf = with-len(2)
+    res = buf[0]
+}`
+	res := ValidateUnhandledIndex(parseSurfaceProg(t, src), "src/app.no")
+	found := false
+	for _, r := range res {
+		if r.TraceID == unhandledIndexTraceID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected unhandled-index report for reassigned slice read, got %+v", res)
 	}
 }
 

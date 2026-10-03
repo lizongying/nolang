@@ -214,16 +214,12 @@ detect-by-magic = (path str) (kind str) {
     n < 4 -> return; 至少需要 4 字節才能判斷
 
     ; 取得前 4 個位元組
-    #{index-out=zero}
     b0 = buf[0]
 
-    #{index-out=zero}
     b1 = buf[1]
 
-    #{index-out=zero}
     b2 = buf[2]
 
-    #{index-out=zero}
     b3 = buf[3]
 
     {
@@ -377,16 +373,12 @@ detect-by-magic = (path str) (kind str) {
 
             n >= 12 -> {
 
-                #{index-out=zero}
                 w4 = buf[8]
 
-                #{index-out=zero}
                 w5 = buf[9]
 
-                #{index-out=zero}
                 w6 = buf[10]
 
-                #{index-out=zero}
                 w7 = buf[11]
                 w4 == 87 && w5 == 65 && w6 == 86 && w7 == 69 -> {
                     kind = 'WAV audio'

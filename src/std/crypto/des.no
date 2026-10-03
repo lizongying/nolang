@@ -254,7 +254,6 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i <- [0..8): {
 
-        #{index-out=zero}
         k64 = (k64 << 8) | (key[i])
     }
     c = 0

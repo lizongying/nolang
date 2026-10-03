@@ -50,7 +50,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
     v [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         v[i] = h[i]
     }
 
@@ -71,13 +70,11 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         xi == 1 -> {
             j <- [0..16): {
 
-                #{index-out=zero}
                 z[j] = z[j] ^ v[j]
             }
         }
 
         ; 判斷 v 的最低位元
-        #{index-out=zero}
         v-lsb = v[15] & 1
 
         ; v = v >> 1
@@ -91,19 +88,16 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
             j = j - 1
         }
 
-        #{index-out=zero}
         v[0] = v[0] >> 1
 
         ; 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
         v-lsb == 1 -> {
 
-            #{index-out=zero}
             v[0] = v[0] ^ 225
         }
     }
     i <- [0..16): {
 
-        #{index-out=zero}
         out[i] = z[i]
     }
 }
@@ -138,7 +132,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         ; y = (y XOR block) * H
         i <- [0..16): {
 
-            #{index-out=zero}
             y[i] = y[i] ^ blk[i]
         }
 
@@ -163,7 +156,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         }
         i <- [0..16): {
 
-            #{index-out=zero}
             y[i] = y[i] ^ blk[i]
         }
 
@@ -182,7 +174,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         }
         i <- [0..16): {
 
-            #{index-out=zero}
             y[i] = y[i] ^ blk[i]
         }
 
@@ -206,7 +197,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         }
         i <- [0..16): {
 
-            #{index-out=zero}
             y[i] = y[i] ^ blk[i]
         }
 
@@ -279,14 +269,12 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     i <- [0..16): {
 
-        #{index-out=zero}
         y[i] = y[i] ^ len-blk[i]
     }
     y = ghash-mul(y, h)
 
     i <- [0..16): {
 
-        #{index-out=zero}
         out[i] = y[i]
     }
 }
@@ -304,7 +292,6 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
     cb []byte = with-len(16)
     i <- [0..16): {
 
-        #{index-out=zero}
         cb[i] = icb[i]
     }
     out = with-len(data.len())
@@ -315,7 +302,6 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
         blk [16]byte
         i <- [0..16): {
 
-            #{index-out=zero}
             blk[i] = cb[i]
         }
         ks [16]byte
@@ -347,7 +333,6 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
 gcm-j0 = (iv [12]byte) (j0 [16]byte) {
     i <- [0..12): {
 
-        #{index-out=zero}
         j0[i] = iv[i]
     }
 
@@ -395,14 +380,12 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     ctr []byte = with-len(16)
     i <- [0..16): {
 
-        #{index-out=zero}
         ctr[i] = j0[i]
     }
     aes-ctr.ctr-inc(ctr)
     ctr0 [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         ctr0[i] = ctr[i]
     }
     cipher []byte
@@ -418,7 +401,6 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     tag [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         tag[i] = (j0-enc[i]) ^ (ghash-out[i])
     }
 
@@ -432,7 +414,7 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     }
     i <- [0..16): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         sealed[cipher.len() + i] = tag[i]
     }
 }
@@ -480,7 +462,6 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     exp-tag [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         exp-tag[i] = (j0-enc[i]) ^ (ghash-out[i])
     }
 
@@ -488,7 +469,6 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     diff = 0
     i <- [0..16): {
 
-        #{index-out=zero}
         diff = diff | (tag[i] ^ exp-tag[i])
     }
     diff != 0 -> {
@@ -501,14 +481,12 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     ctr []byte = with-len(16)
     i <- [0..16): {
 
-        #{index-out=zero}
         ctr[i] = j0[i]
     }
     aes-ctr.ctr-inc(ctr)
     ctr0 [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         ctr0[i] = ctr[i]
     }
     plain = ctr-xor(ctr0, cipher, ek)

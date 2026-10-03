@@ -3398,7 +3398,6 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         hash[i] = h-arr[i]
     }
     hash.truncate(32)

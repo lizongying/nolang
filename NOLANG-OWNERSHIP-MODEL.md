@@ -1,6 +1,6 @@
 # Nolang 混合所有權模型（Hybrid Ownership）— 設計方案
 
-**版本**：v2.9（2026-10-03）
+**版本**：v2.10（2026-10-03）
 **基線**：`96e8d3e7`（v2.4 的文件提交）。所有 A/B 都用**自建快照**（`/tmp/**/no-*`），全程不使用 `bin/no`（並行 session 會重建它）。
 **適用後端**：MIR（`src/mir`）
 **前置文件**：`docs/docs/lang/memory.md`（現行模型權威描述）、`NOLANG-AUDIT-2026-09-27.md`
@@ -125,6 +125,17 @@
 > （印 `mkstemp` 隨機名，**同一支 binary 連跑 3 次 3 個 sha**）；`tls.no`／`https-server.no` 是
 > `-P 6` 下載撞 8s 逾時（**序列重跑兩邊 sha 逐字相同**）。`no vet src/std` 的 **error 集合逐行相同**
 > （47 error，皆來自別的 session 的未提交工作）。核心套件 `go test` 全 ok；本次改的 6 檔 `gofmt` 乾淨。
+>
+> **v2.10 相對 v2.9 的變更**：**§4.3 的 map 儲存釋放落地了 tier 1**（`hashmap-*` / `static_hashmap-*`）。
+> 順序照 v2.9 定的 ③ clone → ② drop → ① 分類，但**先做結構性保證**：把 `codegen.go` 十餘處硬寫的
+> `%str-long` 收斂成「owned leaf 依型別分派」的**單一入口**（`ownedLeafCloneFunc`/`ownedLeafFreeFunc` 等），
+> 使 clone 與 drop 不可能只改一半；分類端改成 tier 白名單 `ownedVecLeafTiers`（空 list ⇒ 與落地前同形）。
+> **第一次啟動就崩**（`hashmap_i64_i64_put` SIGTRAP）：`emitGetField` 的**普通**（非 option）`%vec`
+> 欄位讀取回傳別名、卻被 `isBorrowRead` 插了 drop ⇒ 正是 v2.9 預言的 double free；補上對稱的 clone 後
+> 由 `TestOwnedVecLeafFieldReadIsCloned`（帶負對照，已證明會壞）釘住。
+> 洩漏從 **200k→164 MB／800k→651 MB（線性）** 變成 **200k→1.82 MB／800k→1.80 MB（平線）**；
+> 692 檔 exact matched A/B **全等**（唯一差異是規則一釘子 `tests/map-struct-deep-copy.no`）。
+> `set_*`／`heap_*` 與 pool 型別**維持不落地**（理由見 §4.3）。
 
 ---
 
@@ -203,11 +214,14 @@
    **v2.8 複查：洩漏量首次可以量到底**（原本被棧溢位截斷，§4.6）：丟棄一個 `[str]i64` ≈ **814 B**，
    50k→44.8 MB、100k→87.7 MB、200k→164 MB、**800k→651 MB，線性無上界**。**負對照**：`init()` 但
    從不 `put` ⇒ 1,000,000 圈仍是 **1.69 MB 平線**（漏的是 `put` 配置的 buffer，不是 `init`）。
-   ✅ **v2.10：tier 1 已落地**——`hashmap-*` / `static_hashmap-*` 的 `keys`/`vals`/`occ` 現在**既會被
+   ✅    **v2.10：tier 1 已落地**——`hashmap-*` / `static_hashmap-*` 的 `keys`/`vals`/`occ` 現在**既會被
    深拷貝（規則一）也會被釋放**：同一支探針從 **200k→164 MB / 800k→651 MB（線性）** 變成
    **200k→1.82 MB / 800k→1.80 MB（平線）**，且 800k 圈 `rc=0`、無 SIGTRAP／SIGSEGV。
-   做法、逐型別放行表與全部數字見 §4.3 的「v2.10」小節。**其餘 ~30 個 struct 型別**
-   （`set-*`／`heap-*`／json、yaml 的 pool 型別……）**維持不落地**。
+   做法、逐型別放行表與全部數字見 §4.3 的「v2.10」小節。
+   **其餘型別已分類完（不是延後）**：`set-*`／`heap-*`／`bufio.reader` 是**呼叫端供緩衝區**
+   ⇒ **永久 OUT**（放行＝改 API 語意，實測 `tests/set.no` 的 union/intersection/difference 會 FAIL）；
+   `bigint` 分類正確但自帶後端崩潰、語料無守衛 ⇒ 不驗證；`json.json-pool` 放行後 RSS **272 MB → 354 MB
+   更糟**（解構子沒問題，是 clone 出來的暫存值沒 drop）⇒ tier 2 **不放行**（§4.3 有完整證據）。
 
 **一句話總結**：**S／C 兩檔的機制完整且被驗證；R 檔只覆蓋了 `%task`。** 「值對值別名」整類已從模型與
 實作裡刪掉（`str` / `[]T` / `?str` / `?[]T` 已收，**map 的值**亦已收——修在**元素寫入**而非 map 自身，§4.4 b）；
@@ -1036,6 +1050,111 @@ rc、**歸零才 free**。`a[0]`（配 `#{index-out}`）產生 **owned 深拷貝
 > 還要「欄位**讀取**也給出 clone 而不是別名」才安全（即 `projectionWasCloned` 那套，§4.5）。
 > **維持不落地**；要做時的順序是 ③（clone，含欄位讀取）→ ②（drop）→ ①（分類），
 > 且**逐 struct 型別放行**（先 `hashmap-*`，再 `set-*`/`heap-*`，最後 `json`/`yaml` 的 pool 型別）。
+
+**v2.10：按上面的順序落地了 tier 1（`hashmap-*` / `static_hashmap-*`），其餘型別維持不落地。**
+
+**先做結構性保證，才放行。** 上面判定「不落地」的第三個理由是「十餘處 `%str-long` 硬寫點要對齊」——
+靠人工對齊的東西一定會漂移，所以本輪**先把它們收斂成單一入口**，再談放行：
+
+| # | 落地內容 | 位置 |
+|---|---|---|
+| 前置 | 把 clone／free 的型別分派收進**一個**入口：`ownedLeafCloneFunc`／`ownedLeafFreeFunc`（＋ `AtDepth` 遞迴版）、`ownedLeafCloneCall`／`ownedLeafDropCall`、`emitOwnedLeafFieldStore` | `codegen.go` |
+| ③ clone | `emitLeafFieldsCloneR`、`emitGetField`、`emitSetField`、`emitIndexStore`、`vecDeepClone` 全部改走該入口（`str` → `@str_clone`；`[]T` → `__nolang_vec_clone_*`） | 同上 |
+| ② drop | `emitStructDropHelper` 對 `StructOwnedLeafFieldIdxs` 選出的 leaf 逐欄呼叫 `ownedLeafDropCall` | 同上 |
+| ① 分類 | `StructOwnedLeafFieldIdxs` 放行 `KindSlice`，但**只對 `ownedVecLeafTiers` 白名單裡的 struct key** | `mir.go` |
+
+⇒ **③ ② ① 從此不可能只做一半**：clone 與 free 讀同一個分派函式，而分派與分類讀同一個
+`StructFieldIsOwnedLeaf`。新增 leaf 型別時「只改一半」不再是選項。
+
+🔴 **第一次啟動就崩，正好撞上上面預言的那個陷阱。** 症狀：`hashmap_i64_i64_put` 內 **SIGTRAP**
+（macOS crash report：`mfm_free` → `brk 1`）。根因：`isBorrowRead` 對**普通（非 option）**
+`%vec` 欄位讀取插了 drop，而 `emitGetField` **只有 option 路徑有 clone**、普通路徑回傳**別名**
+⇒ drop 釋放了 struct 自己仍持有的 buffer。修法：在 `emitGetField` 補上與 option 路徑**對稱**的
+clone（走同一個分派入口，不是再複製一份 `%vec` 特例）。
+
+| 釘子 | 內容 | 修復前必須失敗 |
+|---|---|---|
+| `owned_vec_leaf_test.go` `TestOwnedVecLeafFieldReadIsCloned` | 欄位讀取必須 clone；**帶負對照**（閘門關閉時必須**沒有** clone） | ✅ 把 clone 分支短路 ⇒ **FAIL**；IR 直證 `%lx26 = load %vec` 之後同時有 `@vec_free`（讀出的值）與 `__nolang_drop_box`（欄位本體）⇒ double free |
+| 同上 `TestOwnedVecLeafStructCopyClonesAndFrees` | `c = b` 的 clone 與 drop **同時**出現；閘門關閉時兩者都**不**出現 | ✅ 與上一個測試彼此獨立（短路 clone 時它仍 PASS） |
+| 同上 `TestOwnedVecLeafTiersMatchLandedSet` | 白名單 = 已放行的 tier；加 tier 必須同時改這個 list | ✅ 加前綴卻不改 list ⇒ FAIL |
+
+**放行是逐型別的。** `ownedVecLeafTiers`（`mir.go`）是**唯一閘門**，空 list ⇒ 與落地前**完全同形**；
+放行一個 tier 就是加一個前綴。tier 1 = `hashmap_` / `static_hashmap_`。
+`set_*` / `heap_*` **故意不放行**：它們的 `init(data)` 收的是呼叫端的固定陣列**視圖**，呼叫端在 init
+之後還在用同一個陣列（`tests/set.no` 把 `bbuf` 交給 `bset.init(bbuf)` 之後又拿去 `union`）
+⇒ 把它當成 owned copy 會釋放呼叫端仍持有的 buffer。那是**API 所有權語意的改變**，不是修 bug。
+
+**驗收（全部可重跑）**：
+
+| 檢查 | 結果 |
+|---|---|
+| 語料 A/B（**692** 檔：`tests`＋`test`＋`example`＋`src/std`） | ✅ **exact matched**（同一份 source snapshot 建兩支 binary，**只差閘門**）：逐檔比 build rc／run rc／stdout sha ⇒ **全等**；唯一差異是新增的規則一釘子 `tests/map-struct-deep-copy.no` |
+| 洩漏（`m [str]i64 = {}` ＋ `put`，`/usr/bin/time -l` 峰值 RSS） | 閘門關閉：**200k → 164 MB**、**800k → 651 MB**（線性；本輪實測值與 v2.8 記載的 651 MB 相符）⇒ tier 1：**200k → 1.82 MB**、**800k → 1.80 MB**（**平線**） |
+| 同上，`[str]str` ／ `[str][]i64`（200k） | 229.7 MB → **1.84 MB** ／ **1.88 MB** |
+| **負對照**（同形狀但**不 put**，只 `m.len()`；800k） | tier 1 **1.74 MB**、關閉 **1.67 MB** ⇒ 平線不是「程式沒在跑」 |
+| 規則一（map 賦值是深拷貝） | `m2 = m` 後 `m2.put('a','X')`，`m.get('a')` 仍是 `1`（閘門關閉時變成 `X`）⇒ 釘在 `tests/map-struct-deep-copy.no` |
+| `no vet src/std` | tier 1 與關閉**逐行同 Error 集合**（皆 0 error） |
+| 單元測試 | `go test ./mir/ ./fmt/ ./parser/ ./lexer/ ./hir/ ./checker/` 全綠 |
+
+⚠️ **判準是「端到端 RSS 平線」，不是「有沒有插 drop」**：插了 drop 卻沒 clone 就是 double free
+（上表那次崩潰正是如此），而**洩漏在 stdout 上看不見**——修好之前這支程式一樣是印 `done`。
+`remove` 是否釋放被刪項的 key/value **仍未定**（那是解構子語意，與本輪無關）。
+
+**v2.10 後續：其餘型別不是「延後」，是有結論了。** 判準只有一條——這個容器是**自備緩衝區**
+（`with-len`／`with-cap`）還是**用呼叫端給的緩衝區**：只有前者才「證明擁有」自己的 buffer。
+
+| 類別 | 型別 | 證據 | 處置 |
+|---|---|---|---|
+| **呼叫端供緩衝區**（caller-backed） | `set-*`／`heap-*` | `set.init = (data []t) { s.data = data … }`；`heap.init` 同 | **永久 OUT**：那是這個 API 的設計（容量 = 呼叫端陣列長度），放行＝改語意 |
+| 同上 | `bufio.reader` | `r.buf = buf` | 同上 |
+| **自備緩衝區** | `bigint.bigint` | 每一處 `limbs =` 都是 `with-len(…)` | 分類正確但**無法驗證**：bigint 有獨立的後端崩潰（`bus error`，見 `tests/bigint-uuid-byte-indexing.no`），且語料裡 `test/std/bigint.no` 是 BUILD_FAIL ⇒ 沒有可用的語料守衛 |
+| 同上 | `json.json-pool` | `.nodes/.strs/.ec/.ek/.en = with-len(0)` | 分類正確，但**放行後更糟**，見下 |
+
+**「呼叫端供緩衝區」是怎麼被證實的（可重跑）**：只開閘門、**不改任何 std**，`tests/set.no` 就 FAIL
+三條（`union -> size 5`／`intersection size 2`／`difference size 2`）。原因是測試這樣寫：
+
+```
+bbuf [8]i64 = [0,…]
+bset = set.init(bbuf)
+bset.add(3) ; 4 ; 5
+un = aset.union(bbuf, bset.size())   ; ← 把「呼叫端的陣列」當成 set 的內容讀
+```
+
+`s.data = data` 一旦是深拷貝（規則一），`bset.add` 就不再寫穿到 `bbuf` ⇒ `union` 讀到 8 個 0。
+**這不是 bug，是契約**：這個 API 要的就是「set 直接在呼叫端的陣列上操作」。
+
+🔴 **自備緩衝區也不代表可以放行**：`json_` 實測**更糟**，而且是**線性**的（不是配置抖動）：
+
+| 探針（`p = json-pool {}` ＋ `p.init()` ＋ `p.parse(...)`） | 閘門關閉 | `json_` 開啟 |
+|---|---|---|
+| 50,000 圈 | **137 MB** | **179 MB** |
+| 100,000 圈 | **272 MB** | **354 MB** |
+
+多出 ~820 B／圈，且**隨圈數線性成長**（50k→178 MB、100k→354 MB 正好兩倍）⇒ 是真的漏，不是峰值抖動。
+**逐句二分**：只做 `p = json-pool {}`（1.7 MB）或再加上 `p.init()`（1.7 MB）都**平線**，
+**漏的是 `p.parse(...)` 本身**（137 MB @50k）。
+
+已經排除的三個假說（都有直證，別再從這幾個方向查）：
+
+| 假說 | 反證 |
+|---|---|
+| 「解構子沒被 emit／沒被呼叫」 | `-v` 的 `.ll`：`__nolang_drop_json_json_pool` 有 emit、**在迴圈體內**被呼叫（`bb5`），主體 `__nolang_vec_free_*` 了全部 5 個欄位 |
+| 「忘了插 drop」 | MIR 直讀（`NOLANG_MIR_DUMP_MIR=1`）：同一支探針的 `drop` 指令從 **14 條變 81 條**（開閘門後多了 67 條） |
+| 「呼叫端供緩衝區／寫穿」 | `json-pool.init` 是 `.nodes/.strs/.ec/.ek/.en = with-len(0)`，沒有任何 `= 參數` |
+
+⇒ 剩下的最可能方向（**未證實**，下一輪從這裡開始）：`StructHasOwnedLeafFields` 翻面後
+`moveStructSharesHeap` 對 `json.json-pool` 也翻面 ⇒ `parse` 內部原本是 **move** 的結構複製全部被降級成
+**深拷貝**（5 條 slice），而這些拷貝之中至少有一條沒有被釋放。**下一步的量法**：把
+`nolang_rc_alloc` / `nolang_free` 各加一個計數器，跑同一支探針 1 圈，比對兩個計數（差值就是漏的塊數）。
+
+⇒ **tier 2 不放行。** 這一條與 tier 1 的差別在於：tier 1 的 `hashmap-*` 內部沒有「結構按值傳遞」，
+所以 move→clone 降級不會發生；`json.parse` 有。
+
+> ⚠️ **一個會靜默失敗的坑（下次開 tier 一定會再踩）**：struct key 是**模組限定**的
+> （`json.json-pool`、`bigint.bigint`），白名單比對時若只把 `-` 正規化成 `_`，`json_` 會
+> **一個 struct 都沒匹配到**（實測：改之前 RSS 完全不變，看起來像「這條路走不通」）。
+> 已改成 `-` 與 `.` 都正規化（`ownedVecLeafAllowed`），並由
+> `TestOwnedVecLeafTiersMatchDottedKeys` 釘住。
 
 ### 4.4 上一輪（2026-10-02）修的兩個可觀測缺陷
 

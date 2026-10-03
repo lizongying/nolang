@@ -602,7 +602,7 @@ enc-conn.send-encrypted = (data str) (ok bool) {
     ; 複製 IV
     i <- [0..12): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         packet[4 + i] = iv[i]
     }
 

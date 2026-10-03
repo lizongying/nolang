@@ -94,7 +94,6 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     prk-vec []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         prk-vec[i] = prk[i]
     }
 

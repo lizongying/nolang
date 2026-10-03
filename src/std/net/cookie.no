@@ -563,10 +563,10 @@ sign = (name str, value str, key []byte) (signed str) {
     hex-str str = with-len(64)
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex-str[i * 2] = hex-chars[(mac[i] >> 4) & 15]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]
     }
 

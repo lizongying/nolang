@@ -264,10 +264,13 @@ func (m *Module) ownedVecLeafAllowed(key string) bool {
 	if len(ownedVecLeafTiers) == 0 {
 		return false
 	}
-	// MIR struct keys use dashes (`hashmap-str-i64`); the tier list is written
-	// the way the emitted LLVM type reads (`%hashmap_str_i64`). Normalise once
-	// here rather than at every call site.
-	nk := strings.ReplaceAll(key, "-", "_")
+	// MIR struct keys use dashes (`hashmap-str-i64`) AND, for a struct declared
+	// inside a module, a dot as the module separator (`json.json-pool`,
+	// `bigint.bigint`); the tier list is written the way the emitted LLVM type
+	// reads (`%hashmap_str_i64`, `%json_json_pool`). Normalise both here rather
+	// than at every call site — normalising only the dash makes a dotted tier a
+	// SILENT no-op (measured: `json_` matched nothing until the dot was handled).
+	nk := strings.NewReplacer("-", "_", ".", "_").Replace(key)
 	for _, prefix := range ownedVecLeafTiers {
 		if strings.HasPrefix(nk, prefix) {
 			return true

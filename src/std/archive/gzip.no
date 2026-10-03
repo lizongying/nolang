@@ -122,7 +122,7 @@ huffman.build = (lengths []i64, n i64) {
     }
     i <- [1..16): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         offs[i + 1] = offs[i] + .count[i]
     }
 

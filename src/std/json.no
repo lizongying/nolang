@@ -1572,7 +1572,7 @@ json.delete-key = (key str) (ok bool) {
     ; 遍歷邊鏈並記錄前驅；命中則將該邊從單向鏈表摘除
     #{index-out=zero}
     e i64 = .pool.nodes[.root].first
-    prev i64 = -1
+    prev = -1
     (e >= 0) {
 
         #{index-out=zero}

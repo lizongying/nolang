@@ -148,13 +148,11 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         diff, borrow = bn-sub(work, m)
         i <- [0..32): {
 
-            #{index-out=zero}
             work[i] = diff[i]
         }
     }
     i <- [0..32): {
 
-        #{index-out=zero}
         out[i] = work[i]
     }
 }
@@ -210,7 +208,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     work [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         work[i] = product[i]
     }
 
@@ -342,7 +339,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     }
     i <- [0..32): {
 
-        #{index-out=zero}
         out[i] = work[i]
     }
 }
@@ -452,7 +448,6 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     }
     i <- [0..32): {
 
-        #{index-out=zero}
         out[i] = result[i]
     }
 }
@@ -560,13 +555,12 @@ ec-point-double = (p []byte) (r []byte) {
     ; 輸出
     i <- [0..32): {
 
-        #{index-out=zero}
         r[i] = x3[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         r[32 + i] = y3[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         r[64 + i] = z3[i]
     }
 }
@@ -725,13 +719,12 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
     i <- [0..32): {
 
-        #{index-out=zero}
         r[i] = x3[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         r[32 + i] = y3[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         r[64 + i] = z3[i]
     }
 }
@@ -861,10 +854,9 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
 
-        #{index-out=zero}
         out[i] = x[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[32 + i] = y[i]
     }
 
@@ -934,7 +926,6 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
     enc [65]byte
     enc = ec-point-to-bytes(r)
 
-    #{index-out=zero}
     enc[0] != 4 -> return
 
     ; 提取 x 座標（大端序）
@@ -1002,7 +993,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     state = 0
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         state, rand-r = rand.rand(state + d[i] + h-le[i] + i)
 
         #{index-out=zero}

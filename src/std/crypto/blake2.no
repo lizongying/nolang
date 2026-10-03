@@ -357,10 +357,10 @@ b-hex = (data []byte) (hex str) {
     hex = with-len(128)
     i <- [0..64): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -374,10 +374,10 @@ b-256-hex = (data []byte) (hex str) {
     hex = with-len(64)
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }
@@ -599,10 +599,10 @@ s-hex = (data []byte) (hex str) {
     hex = with-len(64)
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

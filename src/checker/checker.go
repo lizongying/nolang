@@ -4786,10 +4786,43 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 		return false
 	}
 
+	// indexOutAnnotated 報告節點（或其候選集合）是否攜帶 `#{index-out = DEF}` 註解。
+	//
+	// 為何需要：`#{index-out}` 的降級（parser/lowering.go 產生合成 __idx_out_ tmp）
+	// 只在**啟用安全索引降級**時執行。`no vet` 走降級，tmp 讓上報被豁免；但 LSP 編輯器
+	// 主解析設 SkipSafeIndexLowering=true（保住可 format-on-save 的 surface AST，見
+	// lsp/documents.go），此時註解原樣留在陳述上、不會變成 tmp——若只認 tmp，編輯器
+	// 就會對已正確標註的越界索引誤報「未處理」。此處直接讀註解，讓兩端口徑一致。
+	// 與 overflowAnnotatedNode 同源：同時查 AnnotationsOf（ResolveProgram 後）與
+	// RawAnnotationsOf（解析期 side-table）。candidates 涵蓋「註解掛在外層
+	// ExpressionStatement / LetStatement」與「掛在內層 AssignExpression」兩種附着點。
+	indexOutAnnotated := func(candidates ...parser.Node) bool {
+		if sem == nil {
+			return false
+		}
+		for _, n := range candidates {
+			if n == nil {
+				continue
+			}
+			for _, e := range sem.AnnotationsOf(n) {
+				if e != nil && e.Key == "index-out" {
+					return true
+				}
+			}
+			for _, e := range sem.RawAnnotationsOf(n) {
+				if e != nil && e.Key == "index-out" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
 	// Pass 1：收錄「已處理」的索引表達式指標。
 	//   - `a ?= b[i]`（UnwrapAssignStatement）
 	//   - option 回傳函式內裸 `a = b[i]` 的就地捕獲（lowering 捕獲 pass）
 	//   - `#{index-out = DEF}` 降級產生的合成 tmp：`__idx_out_L_C = b[i]`（IsSynthetic）
+	//   - `#{index-out = DEF}` 行注解／尾隨注解（未經降級的 surface AST，LSP 路徑）
 	handled := map[*parser.IndexExpression]bool{}
 
 	var walkStmt func(stmt parser.Statement, curFunc string, fnOpt bool, curFile string)
@@ -4865,7 +4898,8 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 			if !s.IsSynthetic {
 				if idx, ok := s.Value.(*parser.IndexExpression); ok {
 					discarded := s.Name != nil && s.Name.Value == "_"
-					if isSafeBase(curFunc, idx) && !discarded && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) {
+					annotated := indexOutAnnotated(s)
+					if isSafeBase(curFunc, idx) && !discarded && !annotated && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) {
 						cf := s.SourceFile
 						if cf == "" {
 							cf = curFile
@@ -4891,7 +4925,8 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 						if id, ok := ae.Left.(*parser.Identifier); ok {
 							handledByType = id.Value == "_" || lhsIsOption(curFunc, id.Value)
 						}
-						if !handledByType && !fnOpt {
+						annotated := indexOutAnnotated(s, ae)
+						if !handledByType && !annotated && !fnOpt {
 							cf := s.SourceFile
 							if cf == "" {
 								cf = curFile

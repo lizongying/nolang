@@ -96,6 +96,27 @@ func TestOwnedVecLeafStructCopyClonesAndFrees(t *testing.T) {
 	}
 }
 
+// TestOwnedVecLeafTiersMatchDottedKeys covers the key spelling trap: a struct
+// declared inside a module is keyed `module.name` (`json.json-pool`), so a tier
+// written as `json_` matches nothing unless the dot is normalised too. It fails
+// silently — the tier is simply opt-in for zero structs — which is the one
+// failure mode this whole allowlist is most likely to hit next time.
+func TestOwnedVecLeafTiersMatchDottedKeys(t *testing.T) {
+	old := ownedVecLeafTiers
+	ownedVecLeafTiers = []string{"json_"}
+	defer func() { ownedVecLeafTiers = old }()
+
+	m := &Module{}
+	for _, key := range []string{"json.json-pool", "json.json-value"} {
+		if !m.ownedVecLeafAllowed(key) {
+			t.Errorf("tier %q did not match dotted struct key %q", ownedVecLeafTiers[0], key)
+		}
+	}
+	if m.ownedVecLeafAllowed("hashmap-str-i64") {
+		t.Errorf("tier %q matched an unrelated container", ownedVecLeafTiers[0])
+	}
+}
+
 // TestOwnedVecLeafTiersMatchLandedSet pins the rollout state: a struct key opts
 // in only if its tier has a clean corpus compile+run sweep behind it. Adding a
 // tier is a one-line change to ownedVecLeafTiers — and it has to change this

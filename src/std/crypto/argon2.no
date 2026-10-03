@@ -101,16 +101,12 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; 構建輸入: len_bytes || input
             combined []byte
 
-            #{index-out=zero}
             combined[0] = len-bytes[0]
 
-            #{index-out=zero}
             combined[1] = len-bytes[1]
 
-            #{index-out=zero}
             combined[2] = len-bytes[2]
 
-            #{index-out=zero}
             combined[3] = len-bytes[3]
             i <- [0..input.len()): {
 
@@ -135,16 +131,12 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; V = Blake2b(len_bytes || input)
             combined []byte
 
-            #{index-out=zero}
             combined[0] = len-bytes[0]
 
-            #{index-out=zero}
             combined[1] = len-bytes[1]
 
-            #{index-out=zero}
             combined[2] = len-bytes[2]
 
-            #{index-out=zero}
             combined[3] = len-bytes[3]
             i <- [0..input.len()): {
 
@@ -315,7 +307,6 @@ compress = (x []byte, y []byte) (out []byte) {
         #{overflow=wrap}
         off = i * 8
 
-        #{index-out=zero}
         val = v[i]
 
         #{index-out=zero}
@@ -576,7 +567,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     init-input []byte
     i <- [0..64): {
 
-        #{index-out=zero}
         init-input[i] = h0[i]
     }
 

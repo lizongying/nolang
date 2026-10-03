@@ -270,12 +270,10 @@ ge-pack = (p []i64) (out [32]byte) {
     x25519.fe-tobytes(x-bytes, x)
 
     ; 設置最高位元為 x 的最低位元
-    #{index-out=zero}
     y-bytes[31] = y-bytes[31] | ((x-bytes[0] & 1) << 7)
 
     i <- [0..32): {
 
-        #{index-out=zero}
         out[i] = y-bytes[i]
     }
 }
@@ -286,16 +284,13 @@ ge-pack = (p []i64) (out [32]byte) {
 ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
     ; 提取符號位
-    #{index-out=zero}
     sign = (s[31] >> 7) & 1
     s-copy [32]byte
     i <- [0..32): {
 
-        #{index-out=zero}
         s-copy[i] = s[i]
     }
 
-    #{index-out=zero}
     s-copy[31] = s-copy[31] & 127
 
     ; 載入 y
@@ -583,7 +578,7 @@ sc-reduce = (s []byte) (out [32]byte) {
         borrow = 0
         i <- [0..32): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             diff-val = (work[i]) - (ED-L[i]) - borrow
 
             #{overflow=wrap}
@@ -626,7 +621,6 @@ sc-reduce = (s []byte) (out [32]byte) {
     }
     i <- [0..32): {
 
-        #{index-out=zero}
         out[i] = work[i]
     }
 }
@@ -683,7 +677,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     carry = 0
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         val = (product[i]) + (c[i]) + carry
 
         #{index-out=zero}
@@ -721,7 +715,6 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
     a []byte
     i <- [0..32): {
 
-        #{index-out=zero}
         a[i] = h[i]
     }
 
@@ -756,7 +749,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     a []byte
     i <- [0..32): {
 
-        #{index-out=zero}
         a[i] = h[i]
     }
 
@@ -785,7 +777,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     r-input []byte
     i <- [0..32): {
 
-        #{index-out=zero}
         r-input[i] = prefix[i]
     }
     msg-len = msg.len()
@@ -809,12 +800,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     k-input []byte
     i <- [0..32): {
 
-        #{index-out=zero}
         k-input[i] = r[i]
     }
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         k-input[32 + i] = pub[i]
     }
     i <- [0..msg-len): {
@@ -840,10 +830,9 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     ; 簽名 = R || S
     i <- [0..32): {
 
-        #{index-out=zero}
         sig[i] = r[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         sig[32 + i] = s[i]
     }
 }
@@ -859,7 +848,6 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     r [32]byte
     i <- [0..32): {
 
-        #{index-out=zero}
         r[i] = sig[i]
     }
     s [32]byte
@@ -912,12 +900,11 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     k-input []byte
     i <- [0..32): {
 
-        #{index-out=zero}
         k-input[i] = r[i]
     }
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         k-input[32 + i] = pub[i]
     }
     msg-len = msg.len()

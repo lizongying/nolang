@@ -347,7 +347,6 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     a []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         a[i] = a-tmp[i]
     }
     out-off = 0
@@ -362,7 +361,6 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         p []byte = with-len(32)
         i <- [0..32): {
 
-            #{index-out=zero}
             p[i] = p-tmp[i]
         }
 
@@ -384,7 +382,6 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         a-tmp = hmac.hmac-sha256(secret, a)
         i <- [0..32): {
 
-            #{index-out=zero}
             a[i] = a-tmp[i]
         }
     }
@@ -680,7 +677,7 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     n = data.len()
 
     ; 8-byte 顯式 nonce（隨機）
-    exp-nonce []byte = rand-bytes(.rand-state, 8)
+    exp-nonce = rand-bytes(.rand-state, 8)
 
     #{overflow=wrap}
     .rand-state = .rand-state + 8
@@ -689,7 +686,6 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     nonce [12]byte
     i <- [0..4): {
 
-        #{index-out=zero}
         nonce[i] = salt[i]
     }
     i <- [0..8): {
@@ -766,7 +762,6 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
     nonce [12]byte
     i <- [0..4): {
 
-        #{index-out=zero}
         nonce[i] = salt[i]
     }
     i <- [0..8): {
@@ -870,7 +865,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     }
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         plain[n + i] = mac[i]
     }
 
@@ -911,7 +906,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     put-u16(rec, 3, rec-len)
     i <- [0..16): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         rec[5 + i] = iv[i]
     }
     i <- [0..padded.len()): {
@@ -979,7 +974,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     plain-len = cipher-len
 
     ; 移除 TLS 填充
-    unpad-n i64 = tls-unpad(plain)
+    unpad-n = tls-unpad(plain)
     unpad-n < 0 -> return
     plain-len = unpad-n
 
@@ -1023,7 +1018,6 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
         #{index-out=zero, overflow=wrap}
         b1 = plain[recv-mac-off + i]
 
-        #{index-out=zero}
         b2 = exp-mac[i]
         b1 != b2 -> return
     }
@@ -1217,7 +1211,6 @@ conn.gen-p256-keypair = () {
     pub-arr = ecdsa.ecdsa-publickey(.client-priv)
     i <- [0..65): {
 
-        #{index-out=zero}
         .pub-p256[i] = pub-arr[i]
     }
 }
@@ -1544,7 +1537,6 @@ conn.read-server-hello = () (ok bool) {
     #{index-out=zero}
     pos = 9
 
-    #{index-out=zero}
     msg-type = buf[5]
     msg-type != TLS-HS-SERVER-HELLO -> return
     msg-len = get-u24(buf, 6)
@@ -1607,7 +1599,6 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
 
-    #{index-out=zero}
     msg-type = buf[5]
     msg-type != TLS-HS-CERTIFICATE -> return
     pos = 9
@@ -1648,7 +1639,6 @@ conn.read-server-key-exchange = () (ok bool) {
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
 
-    #{index-out=zero}
     msg-type = buf[5]
     msg-type != TLS-HS-SERVER-KEY-EXCHANGE -> return
     pos = 9
@@ -1721,7 +1711,6 @@ conn.read-server-hello-done = () (ok bool) {
     ct != TLS-CT-HANDSHAKE -> return
     .append-hs-from(buf, 5, rlen)
 
-    #{index-out=zero}
     msg-type = buf[5]
     msg-type != TLS-HS-SERVER-HELLO-DONE -> return
     ok = true
@@ -1857,7 +1846,6 @@ conn.send-finished = () (ok bool) {
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         hs-hash[i] = hs-hash-arr[i]
     }
 
@@ -1933,7 +1921,6 @@ conn.read-finished = () (ok bool) {
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         hs-hash[i] = hs-hash-arr[i]
     }
     verify []byte
@@ -2547,7 +2534,6 @@ conn.read-server-hello-13 = () (ok bool) {
 
     ; 解析 handshake message（buf[5] = type, buf[6..8] = length, buf[9+] = data）
 
-    #{index-out=zero}
     msg-type = buf[5]
     msg-type != TLS-HS-SERVER-HELLO -> return
     pos = 9
@@ -2723,7 +2709,6 @@ conn.derive-handshake-keys-13 = () {
     ; 儲存 Handshake Secret 供 derive-application-keys-13 使用
     i <- [0..32): {
 
-        #{index-out=zero}
         .hs-prk-field[i] = hs-prk[i]
     }
 
@@ -2795,7 +2780,6 @@ conn.derive-handshake-keys-13 = () {
     ; 保存到 shared-secret 的空間（重用）
     i <- [0..32): {
 
-        #{index-out=zero}
         .shared-secret[i] = hs-prk[i]
     }
     .hs-write-seq = 0
@@ -2894,7 +2878,6 @@ conn.derive-application-keys-13 = () {
 build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
     i <- [0..12): {
 
-        #{index-out=zero}
         nonce[i] = iv[i]
     }
 
@@ -3650,7 +3633,6 @@ server-conn.read-client-hello = () (ok bool) {
 
     ; 解析 ClientHello: buf[5]=type, buf[6..8]=length, buf[9..10]=version, buf[11..42]=random
 
-    #{index-out=zero}
     msg-type = buf[5]
     msg-type != TLS-HS-CLIENT-HELLO -> return
     pos = 11; 跳過 type(1)+length(3)+version(2)
@@ -4033,7 +4015,6 @@ server-conn.read-client-key-exchange = () (ok bool) {
     .append-hs-from(buf, 5, rlen)
 
     ; 解析 ClientKeyExchange
-    #{index-out=zero}
     msg-type = buf[5]
     msg-type != TLS-HS-CLIENT-KEY-EXCHANGE -> return
 
@@ -4188,7 +4169,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     }
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         plain[n + i] = mac[i]
     }
 
@@ -4230,7 +4211,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     put-u16(rec, 3, rec-len)
     i <- [0..16): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         rec[5 + i] = iv[i]
     }
     i <- [0..padded.len()): {
@@ -4287,7 +4268,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     plain = aes-cbc.dec-128(cipher, .client-enc-key, iv)
 
     ; 移除 TLS 填充
-    unpad-n i64 = tls-unpad(plain)
+    unpad-n = tls-unpad(plain)
     unpad-n < 0 -> return
 
     ; 明文 = data(0..unpad-n-32) + MAC(unpad-n-32..unpad-n)
@@ -4328,7 +4309,6 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
         #{index-out=zero, overflow=wrap}
         b1 = plain[data-len + i]
 
-        #{index-out=zero}
         b2 = exp-mac[i]
         b1 != b2 -> mac-ok = 0
     }
@@ -4419,7 +4399,6 @@ server-conn.read-finished = () (ok bool) {
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         hs-hash[i] = hs-hash-arr[i]
     }
     verify []byte
@@ -4450,7 +4429,6 @@ server-conn.send-finished = () (ok bool) {
     hs-hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         hs-hash[i] = hs-hash-arr[i]
     }
 
@@ -4709,7 +4687,6 @@ server-conn.derive-handshake-keys-13 = () {
     ; 儲存 Handshake Secret 供 derive-application-keys-13 使用
     i <- [0..32): {
 
-        #{index-out=zero}
         .hs-prk-field[i] = hs-prk[i]
     }
 
@@ -4775,7 +4752,6 @@ server-conn.derive-handshake-keys-13 = () {
     ; 儲存 handshake secret 供推導應用金鑰
     i <- [0..32): {
 
-        #{index-out=zero}
         .shared-secret[i] = hs-prk[i]
     }
     .hs-write-seq = 0

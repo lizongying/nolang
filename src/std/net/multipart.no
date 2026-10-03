@@ -543,7 +543,6 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     combined []byte
     i <- [0..12): {
 
-        #{index-out=zero}
         combined[i] = iv[i]
     }
     sealed-n = sealed.len()
@@ -597,7 +596,6 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     combined []byte
     i <- [0..12): {
 
-        #{index-out=zero}
         combined[i] = iv[i]
     }
     sealed-n = sealed.len()

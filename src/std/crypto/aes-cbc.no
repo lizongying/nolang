@@ -30,7 +30,6 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     prev [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         prev[i] = iv[i]
     }
 
@@ -54,7 +53,7 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ; 輸出密文
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             out[blk + i] = enc-blk[i]
         }
 
@@ -81,7 +80,6 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     prev [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         prev[i] = iv[i]
     }
 
@@ -105,14 +103,13 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ; XOR 與 prev 得到明文
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             out[blk + i] = (dec-blk[i]) ^ (prev[i])
         }
 
         ; 更新 prev 為當前密文區塊
         i <- [0..16): {
 
-            #{index-out=zero}
             prev[i] = cur-cipher[i]
         }
 

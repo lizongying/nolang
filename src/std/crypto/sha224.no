@@ -191,10 +191,10 @@ sha224-hex = (data []byte) (hex str) {
 
     i <- [0..28): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

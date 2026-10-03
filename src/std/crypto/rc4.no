@@ -32,7 +32,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
         j = (j + (s[i]) + (key[i % key-len])) % 256
 
         ; Swap s[i] and s[j]
-        #{index-out=zero}
         t = s[i]
 
         #{index-out=zero}

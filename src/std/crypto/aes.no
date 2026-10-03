@@ -491,7 +491,6 @@ key-expand = (key [16]byte) (ek []byte) {
     ek = with-len(176)
     i <- [0..16): {
 
-        #{index-out=zero}
         ek[i] = key[i]
     }
     i <- [4..44): {
@@ -548,7 +547,6 @@ key-expand-256 = (key [32]byte) (ek []byte) {
     ek = with-len(240)
     i <- [0..32): {
 
-        #{index-out=zero}
         ek[i] = key[i]
     }
     i <- [8..60): {
@@ -629,7 +627,6 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
     st []byte = with-len(16)
     i <- [0..16): {
 
-        #{index-out=zero}
         st[i] = in[i]
     }
 
@@ -653,7 +650,6 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
 
     i <- [0..16): {
 
-        #{index-out=zero}
         out[i] = st[i]
     }
 }
@@ -670,7 +666,6 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
     st []byte = with-len(16)
     i <- [0..16): {
 
-        #{index-out=zero}
         st[i] = in[i]
     }
 
@@ -699,7 +694,6 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
 
     i <- [0..16): {
 
-        #{index-out=zero}
         out[i] = st[i]
     }
 }

@@ -60,7 +60,6 @@ reader.read-byte = () (b ?i64) {
     n = fs.read(.fd, buf, 1)
     n > 0 -> {
 
-        #{index-out=zero}
         b = buf[0]
     }
 }

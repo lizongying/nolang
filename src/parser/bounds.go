@@ -13,8 +13,8 @@
 //  2. 下標 `i` 可證明恆在 `[0, N)`：
 //     a) 整數字面量 `k` 且 `0 <= k < N`；或
 //     b) `i` 恰為「外層 for-range 迴圈變數」，該迴圈形如 `i <- [a..b)`（端點皆整數
-//        字面量），套用開閉區間後取值區間 `[lo..hi]` 滿足 `lo >= 0 && hi < N`，且
-//        迴圈體內從未對 `i` 賦值 / 重新宣告 / 被巢狀同名 for-range 重綁。
+//     字面量），套用開閉區間後取值區間 `[lo..hi]` 滿足 `lo >= 0 && hi < N`，且
+//     迴圈體內從未對 `i` 賦值 / 重新宣告 / 被巢狀同名 for-range 重綁。
 //
 // codegen（lowering）、`no vet`（ValidateUnhandledIndex）、`no fmt`（移除冗餘
 // `#{index-out}`）三方必須共用同一份判定，否則會出現「fmt 刪了註解 → vet/編譯立刻
@@ -109,10 +109,16 @@ type boundsAnalyzer struct {
 	funcName string
 	idxLocal map[string]string
 	inb      map[*IndexExpression]bool
+	// sliceFixedLen：本作用域內「運行期長度可靜態確定」的切片基底 → 其長度。
+	// 由 computeSliceFixedLen 在進入每個函數作用域時計算：僅收錄以函數體頂層
+	//（無條件）`name []T = with-len(<整數字面量 K>)` 綁定、且在本函數內從未被
+	// 重新賦值 / 重新切片 / 多重賦值 / ?= 目標 / for-range 重綁 / 再次 let 绑定的
+	// 切片變數。此類變數的 len() 恆等於 K，故 `v[字面量<K]` 可證明在界內。
+	sliceFixedLen map[string]int64
 	// removable / annRemovable 在走訪過程中（作用域正確時）就地填充，避免結束後
 	// 另起反射遍歷時 funcName/idxLocal 已退回全域作用域而查不到區域型別。
-	removable     map[Statement]bool
-	annRemovable  map[*AnnotationStatement]bool
+	removable    map[Statement]bool
+	annRemovable map[*AnnotationStatement]bool
 }
 
 // typeOf 取該名稱在「當前函數作用域」的靜態型別，**僅查 idxLocal**（即
@@ -169,7 +175,15 @@ func (a *boundsAnalyzer) mark(e *IndexExpression, ctx boundsCtx) {
 	id := e.Left.(*Identifier)
 	n, ok := arrayStaticLen(a.typeOf(id.Value))
 	if !ok {
-		return // 切片 / vec：不定長，保守
+		// 型別不是定長陣列（切片 []T / vec）：運行期長度通常未知，保守跳過。
+		// 唯一例外——基底由本函數頂層 `v []T = with-len(<整數字面量 K>)` 綁定，
+		// 且在函數內從未被重寫（見 sliceFixedLen / computeSliceFixedLen），其 len()
+		// 恆等於 K，可用 K 作界內判定基準。
+		if k, has := a.sliceFixedLen[id.Value]; has && k > 0 {
+			n = k
+		} else {
+			return
+		}
 	}
 	switch idx := e.Index.(type) {
 	case *IntegerLiteral:
@@ -376,10 +390,13 @@ func (a *boundsAnalyzer) markFunc(fd *FunctionDefinition) {
 		return
 	}
 	savedName, savedLocal := a.funcName, a.idxLocal
+	savedSliceLen := a.sliceFixedLen
 	a.idxLocal = resolveIdxLocal(a.sem, fd.Name)
 	a.funcName = fd.Name
+	a.sliceFixedLen = computeSliceFixedLen(fd.Body.Statements)
 	a.markStmts(fd.Body.Statements, boundsCtx{})
 	a.funcName, a.idxLocal = savedName, savedLocal
+	a.sliceFixedLen = savedSliceLen
 }
 
 // reassignsIdent 報告 body 內是否出現對 name 的賦值 / 重新宣告 / for-range 重綁
@@ -473,11 +490,12 @@ type InBoundsIndex struct {
 func analyzeFunc(sem *SemanticContext, funcName string, idxLocal map[string]string, body *BlockStatement) (map[*IndexExpression]bool, map[Statement]bool) {
 	a := &boundsAnalyzer{
 		sem: sem, funcName: funcName, idxLocal: idxLocal,
-		inb:         map[*IndexExpression]bool{},
-		removable:   map[Statement]bool{},
+		inb:          map[*IndexExpression]bool{},
+		removable:    map[Statement]bool{},
 		annRemovable: map[*AnnotationStatement]bool{},
 	}
 	if body != nil {
+		a.sliceFixedLen = computeSliceFixedLen(body.Statements)
 		a.markStmts(body.Statements, boundsCtx{})
 	}
 	return a.inb, a.removable
@@ -509,6 +527,7 @@ func AnalyzeInBoundsIndex(prog *Program) InBoundsIndex {
 		removable:    res.StmtRemovable,
 		annRemovable: res.AnnRemovable,
 	}
+	a.sliceFixedLen = computeSliceFixedLen(prog.Statements)
 	a.markStmts(prog.Statements, boundsCtx{})
 	for k, v := range a.inb {
 		res.Reads[k] = v
@@ -524,6 +543,143 @@ func hasIndexOutEntry(entries []*AnnotationEntry) bool {
 		}
 	}
 	return false
+}
+
+// isSliceType 報告型別節點是否為切片 `[]T`。解析器可能以 *SliceType 表示，也可能
+// 以 Size 為 nil 的 *ArrayType 表示；兩者皆算切片。定長陣列 `[N]T`（Size 非 nil）
+// 由 arrayStaticLen 處理，不在此列。
+func isSliceType(t Type) bool {
+	switch v := t.(type) {
+	case *SliceType:
+		return v.Elem != nil
+	case *ArrayType:
+		return v.Size == nil && v.Elem != nil
+	}
+	return false
+}
+
+// calleeLeafName 取呼叫目標的最後段名稱（去掉模組前綴）：
+//   - Identifier "with-len" / "global.with-len" → "with-len"
+//   - DotExpression（接收者.方法）→ 屬性名
+//
+// 合併模式下內建函式可能帶 `global.` 前綴，此處以末段比對。
+func calleeLeafName(e Expression) string {
+	switch v := e.(type) {
+	case *Identifier:
+		name := v.Value
+		if i := strings.LastIndex(name, "."); i >= 0 {
+			name = name[i+1:]
+		}
+		return name
+	case *DotExpression:
+		return v.Property
+	}
+	return ""
+}
+
+// withLenLiteral 報告 e 是否為 `with-len(<非負整數字面量>)`，是則回傳該字面量。
+// 引數為變數 / 運算式（如 `with-len(content-len)`、`with-len(1 + lb)`）時回傳 false
+// ——其長度無法靜態確定。
+func withLenLiteral(e Expression) (int64, bool) {
+	ce, ok := e.(*CallExpression)
+	if !ok || len(ce.Arguments) != 1 || calleeLeafName(ce.Function) != "with-len" {
+		return 0, false
+	}
+	il, ok := ce.Arguments[0].(*IntegerLiteral)
+	if !ok || il.Value < 0 {
+		return 0, false
+	}
+	return il.Value, true
+}
+
+// computeSliceFixedLen 掃描一個作用域的頂層陳述，回傳「運行期長度可靜態確定」的
+// 切片變數名 → 長度。收錄條件（全部成立，任一違反即保守剔除）：
+//  1. 頂層（無條件執行，非巢狀區塊內）LetStatement `name []T = with-len(<字面量 K>)`；
+//  2. name 在本作用域（含巢狀區塊，且 walkNodes 亦會跨入巢狀函式——皆為保守多剔）
+//     只被唯一一條 LetStatement 綁定（nolang 禁止重複宣告，>1 視為遮蔽/衝突而剔除）；
+//  3. name 從未被重新賦值（AssignExpression）、多重賦值、?= 目標、for-range 重綁。
+//
+// 切片傳給函式/內建（如 fs.read）不會改變呼叫端 name 的 len（slice 以 (ptr,len,cap)
+// 傳值），故只要變數本身未被重寫，其 len() 恆等於 K，`name[<K]` 即為可證明界內讀取。
+func computeSliceFixedLen(stmts []Statement) map[string]int64 {
+	candLen := map[string]int64{}
+	for _, s := range stmts {
+		ls, ok := s.(*LetStatement)
+		if !ok || ls.Name == nil || ls.IsSynthetic || ls.Type == nil {
+			continue
+		}
+		if !isSliceType(ls.Type) {
+			continue
+		}
+		k, ok := withLenLiteral(ls.Value)
+		if !ok {
+			continue
+		}
+		name := ls.Name.Value
+		if _, dup := candLen[name]; dup {
+			continue // 頂層重複綁定：保守（下方 letCount 也會剔除）
+		}
+		candLen[name] = k
+	}
+	if len(candLen) == 0 {
+		return nil
+	}
+	letCount := map[string]int{}
+	written := map[string]bool{}
+	for _, s := range stmts {
+		walkNodes(s, func(n interface{}) {
+			switch v := n.(type) {
+			case *LetStatement:
+				if v.Name != nil {
+					if _, ok := candLen[v.Name.Value]; ok {
+						letCount[v.Name.Value]++
+					}
+				}
+			case *AssignExpression:
+				if id, ok := v.Left.(*Identifier); ok {
+					if _, o := candLen[id.Value]; o {
+						written[id.Value] = true
+					}
+				}
+			case *MultiAssignStatement:
+				for _, t := range v.Targets {
+					if id, ok := t.(*Identifier); ok {
+						if _, o := candLen[id.Value]; o {
+							written[id.Value] = true
+						}
+					}
+				}
+			case *UnwrapAssignStatement:
+				if v.Name != nil {
+					if _, o := candLen[v.Name.Value]; o {
+						written[v.Name.Value] = true
+					}
+				}
+				if id, ok := v.Target.(*Identifier); ok {
+					if _, o := candLen[id.Value]; o {
+						written[id.Value] = true
+					}
+				}
+			case *ForStatement:
+				if v.IterRange != nil && v.IterRange.Variable != "" {
+					if _, o := candLen[v.IterRange.Variable]; o {
+						written[v.IterRange.Variable] = true
+					}
+				}
+			}
+		})
+	}
+	out := map[string]int64{}
+	for name, k := range candLen {
+		if written[name] || letCount[name] != 1 {
+			continue
+		}
+		out[name] = k
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // AnalyzInBoundsForFunc 供 lowering 呼叫：在一個函數定義上計算 in-bounds 讀取集合。

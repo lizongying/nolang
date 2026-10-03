@@ -128,7 +128,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         #{index-out=zero}
         .base[i] = pp
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         pp = pp + len-count[i]
     }
 
@@ -137,7 +137,6 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     vec = 0
     i <- [0..24): {
 
-        #{index-out=zero}
         vec = (vec << 1) | len-count[i]
 
         #{index-out=zero}
@@ -555,7 +554,6 @@ bzip2-decompress = (data []byte) (out []byte) {
                     run-len > 0 -> {
                         i <- [0..run-len): {
 
-                            #{index-out=zero}
                             bwt-out.push(mtf-pos[0])
                         }
                     }
@@ -569,7 +567,6 @@ bzip2-decompress = (data []byte) (out []byte) {
                     run-len > 0 -> {
                         i <- [0..run-len): {
 
-                            #{index-out=zero}
                             bwt-out.push(mtf-pos[0])
                         }
                         run-len = 0
@@ -628,7 +625,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{index-out=zero}
                 cum[i] = total
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 total = total + count[i]
             }
 

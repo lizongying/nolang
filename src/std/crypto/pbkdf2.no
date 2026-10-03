@@ -64,7 +64,6 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         t [32]byte
         i <- [0..32): {
 
-            #{index-out=zero}
             t[i] = u[i]
         }
 
@@ -77,7 +76,6 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
             ; T = T XOR U
             i <- [0..32): {
 
-                #{index-out=zero}
                 t[i] = t[i] ^ u[i]
             }
         }
@@ -149,7 +147,6 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
         t [64]byte
         i <- [0..64): {
 
-            #{index-out=zero}
             t[i] = u[i]
         }
         iter <- [1..iterations): {
@@ -157,7 +154,6 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
             u = hmac.hmac-sha512(password, u)
             i <- [0..64): {
 
-                #{index-out=zero}
                 t[i] = t[i] ^ u[i]
             }
         }
@@ -227,7 +223,6 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
         t [20]byte
         i <- [0..20): {
 
-            #{index-out=zero}
             t[i] = u[i]
         }
         iter <- [1..iterations): {
@@ -235,7 +230,6 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
             u = hmac.hmac-sha1(password, u)
             i <- [0..20): {
 
-                #{index-out=zero}
                 t[i] = t[i] ^ u[i]
             }
         }

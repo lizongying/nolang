@@ -36,7 +36,6 @@ salsa20-8-core = (block []byte) {
     init [16]u32
     i <- [0..16): {
 
-        #{index-out=zero}
         init[i] = x[i]
     }
 
@@ -46,115 +45,82 @@ salsa20-8-core = (block []byte) {
 
         ; 列輪
         ; QR(x[0], x[4], x[8], x[12])
-        #{index-out=zero}
         x[4] = (x[4] ^ (((x[0] + x[12]) & mask) << 7)) & mask
 
-        #{index-out=zero}
         x[8] = (x[8] ^ (((x[4] + x[0]) & mask) << 9)) & mask
 
-        #{index-out=zero}
         x[12] = (x[12] ^ (((x[8] + x[4]) & mask) << 13)) & mask
 
-        #{index-out=zero}
         x[0] = (x[0] ^ (((x[12] + x[8]) & mask) << 18)) & mask
 
         ; QR(x[5], x[9], x[13], x[1])
-        #{index-out=zero}
         x[9] = (x[9] ^ (((x[5] + x[1]) & mask) << 7)) & mask
 
-        #{index-out=zero}
         x[13] = (x[13] ^ (((x[9] + x[5]) & mask) << 9)) & mask
 
-        #{index-out=zero}
         x[1] = (x[1] ^ (((x[13] + x[9]) & mask) << 13)) & mask
 
-        #{index-out=zero}
         x[5] = (x[5] ^ (((x[1] + x[13]) & mask) << 18)) & mask
 
         ; QR(x[10], x[14], x[2], x[6])
-        #{index-out=zero}
         x[14] = (x[14] ^ (((x[10] + x[6]) & mask) << 7)) & mask
 
-        #{index-out=zero}
         x[2] = (x[2] ^ (((x[14] + x[10]) & mask) << 9)) & mask
 
-        #{index-out=zero}
         x[6] = (x[6] ^ (((x[2] + x[14]) & mask) << 13)) & mask
 
-        #{index-out=zero}
         x[10] = (x[10] ^ (((x[6] + x[2]) & mask) << 18)) & mask
 
         ; QR(x[15], x[3], x[7], x[11])
-        #{index-out=zero}
         x[3] = (x[3] ^ (((x[15] + x[11]) & mask) << 7)) & mask
 
-        #{index-out=zero}
         x[7] = (x[7] ^ (((x[3] + x[15]) & mask) << 9)) & mask
 
-        #{index-out=zero}
         x[11] = (x[11] ^ (((x[7] + x[3]) & mask) << 13)) & mask
 
-        #{index-out=zero}
         x[15] = (x[15] ^ (((x[11] + x[7]) & mask) << 18)) & mask
 
         ; 行輪
         ; QR(x[0], x[1], x[2], x[3])
-        #{index-out=zero}
         x[1] = (x[1] ^ (((x[0] + x[3]) & mask) << 7)) & mask
 
-        #{index-out=zero}
         x[2] = (x[2] ^ (((x[1] + x[0]) & mask) << 9)) & mask
 
-        #{index-out=zero}
         x[3] = (x[3] ^ (((x[2] + x[1]) & mask) << 13)) & mask
 
-        #{index-out=zero}
         x[0] = (x[0] ^ (((x[3] + x[2]) & mask) << 18)) & mask
 
         ; QR(x[5], x[6], x[7], x[4])
-        #{index-out=zero}
         x[6] = (x[6] ^ (((x[5] + x[4]) & mask) << 7)) & mask
 
-        #{index-out=zero}
         x[7] = (x[7] ^ (((x[6] + x[5]) & mask) << 9)) & mask
 
-        #{index-out=zero}
         x[4] = (x[4] ^ (((x[7] + x[6]) & mask) << 13)) & mask
 
-        #{index-out=zero}
         x[5] = (x[5] ^ (((x[4] + x[7]) & mask) << 18)) & mask
 
         ; QR(x[10], x[11], x[8], x[9])
-        #{index-out=zero}
         x[11] = (x[11] ^ (((x[10] + x[9]) & mask) << 7)) & mask
 
-        #{index-out=zero}
         x[8] = (x[8] ^ (((x[11] + x[10]) & mask) << 9)) & mask
 
-        #{index-out=zero}
         x[9] = (x[9] ^ (((x[8] + x[11]) & mask) << 13)) & mask
 
-        #{index-out=zero}
         x[10] = (x[10] ^ (((x[9] + x[8]) & mask) << 18)) & mask
 
         ; QR(x[15], x[12], x[13], x[14])
-        #{index-out=zero}
         x[12] = (x[12] ^ (((x[15] + x[14]) & mask) << 7)) & mask
 
-        #{index-out=zero}
         x[13] = (x[13] ^ (((x[12] + x[15]) & mask) << 9)) & mask
 
-        #{index-out=zero}
         x[14] = (x[14] ^ (((x[13] + x[12]) & mask) << 13)) & mask
 
-        #{index-out=zero}
         x[15] = (x[15] ^ (((x[14] + x[13]) & mask) << 18)) & mask
     }
 
     ; 加上初始值並寫回（小端序）
     i <- [0..16): {
 
-        #{index-out=zero}
         val = (x[i] + init[i]) & 4294967295
 
         #{overflow=wrap}

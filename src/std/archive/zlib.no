@@ -94,7 +94,7 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
 
     ; 檢查 zlib header：CM(低 4 位)必須為 8(deflate)，CINFO(高 4 位)≤7
     ; 窗口大小僅供參考，inflate 一律用 32K 窗口解碼，故接受任意合法 CMF(如 sips 的 0x08)
-    (data[0] & 0x0F) != 8 || (data[0] >> 4) > 7 -> {
+    (data[0] & 0x0f) != 8 || (data[0] >> 4) > 7 -> {
 
         #{index-out=zero}
         return
@@ -105,12 +105,14 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     {
         data[1] & 0x20 != 0 -> hdr-len = 6
     }
+
     #{overflow=wrap}
     data.len() < hdr-len + 4 -> {
 
         #{index-out=zero}
         return
     }
+
     #{overflow=wrap}
     deflate-len = data.len() - hdr-len - 4; 去掉 header + 4-byte Adler-32
     deflate-data []byte

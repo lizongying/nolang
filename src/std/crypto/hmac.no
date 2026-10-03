@@ -71,7 +71,6 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     ipad-key [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
 
@@ -79,7 +78,6 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     opad-key [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
 
@@ -87,7 +85,6 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     inner-data []byte
     i <- [0..64): {
 
-        #{index-out=zero}
         inner-data[i] = ipad-key[i]
     }
     i <- [0..msg-n): {
@@ -101,7 +98,6 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     outer-data []byte
     i <- [0..64): {
 
-        #{index-out=zero}
         outer-data[i] = opad-key[i]
     }
     i <- [0..32): {
@@ -122,7 +118,6 @@ hmac-sha256-vec = (key []byte, msg []byte) (out []byte) {
     out = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         out[i] = h[i]
     }
     out.truncate(32)
@@ -171,19 +166,16 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     ipad-key [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
     opad-key [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
     inner-data []byte
     i <- [0..64): {
 
-        #{index-out=zero}
         inner-data[i] = ipad-key[i]
     }
     i <- [0..msg-n): {
@@ -196,7 +188,6 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     outer-data []byte
     i <- [0..64): {
 
-        #{index-out=zero}
         outer-data[i] = opad-key[i]
     }
     i <- [0..20): {
@@ -217,7 +208,6 @@ hmac-sha1-vec = (key []byte, msg []byte) (out []byte) {
     out = with-cap(20)
     i <- [0..20): {
 
-        #{index-out=zero}
         out[i] = h[i]
     }
 }
@@ -266,19 +256,16 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     ipad-key [128]byte
     i <- [0..128): {
 
-        #{index-out=zero}
         ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
     opad-key [128]byte
     i <- [0..128): {
 
-        #{index-out=zero}
         opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
     inner-data []byte
     i <- [0..128): {
 
-        #{index-out=zero}
         inner-data[i] = ipad-key[i]
     }
     i <- [0..msg-n): {
@@ -291,7 +278,6 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     outer-data []byte
     i <- [0..128): {
 
-        #{index-out=zero}
         outer-data[i] = opad-key[i]
     }
     i <- [0..64): {
@@ -312,7 +298,6 @@ hmac-sha512-vec = (key []byte, msg []byte) (out []byte) {
     out = with-cap(64)
     i <- [0..64): {
 
-        #{index-out=zero}
         out[i] = h[i]
     }
 }
@@ -354,19 +339,16 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     ipad-key [128]byte
     i <- [0..128): {
 
-        #{index-out=zero}
         ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
     opad-key [128]byte
     i <- [0..128): {
 
-        #{index-out=zero}
         opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
     inner-data []byte
     i <- [0..128): {
 
-        #{index-out=zero}
         inner-data[i] = ipad-key[i]
     }
     i <- [0..msg-n): {
@@ -379,7 +361,6 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     outer-data []byte
     i <- [0..128): {
 
-        #{index-out=zero}
         outer-data[i] = opad-key[i]
     }
     i <- [0..48): {
@@ -400,7 +381,6 @@ hmac-sha384-vec = (key []byte, msg []byte) (out []byte) {
     out = with-cap(48)
     i <- [0..48): {
 
-        #{index-out=zero}
         out[i] = h[i]
     }
 }
@@ -442,19 +422,16 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     ipad-key [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         ipad-key[i] = (k[i]) ^ HMAC-IPAD
     }
     opad-key [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         opad-key[i] = (k[i]) ^ HMAC-OPAD
     }
     inner-data []byte
     i <- [0..64): {
 
-        #{index-out=zero}
         inner-data[i] = ipad-key[i]
     }
     i <- [0..msg-n): {
@@ -467,7 +444,6 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     outer-data []byte
     i <- [0..64): {
 
-        #{index-out=zero}
         outer-data[i] = opad-key[i]
     }
     i <- [0..16): {
@@ -488,7 +464,6 @@ hmac-md5-vec = (key []byte, msg []byte) (out []byte) {
     out = with-cap(16)
     i <- [0..16): {
 
-        #{index-out=zero}
         out[i] = h[i]
     }
 }
