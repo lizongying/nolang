@@ -150,8 +150,8 @@ response.parse-headers = () {
     hs = .headers
     n = hs.len-bytes()
     n == 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -259,8 +259,8 @@ do = (method str, url str, body str) (resp ?response) {
     path str
     host-only = ''
     port-str = ''
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
     req = ''
@@ -503,8 +503,8 @@ do-req = (req request) (resp ?response) {
     path str
     host-only = ''
     port-str = ''
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
     crlf = cr - lf
     req-str = ''
     len-str = ''
@@ -748,6 +748,11 @@ do-req = (req request) (resp ?response) {
 ; 返回 resp ?response: ok=回應, nil=失敗
 get = (url str) (resp ?response) {
     resp = do('GET', url, '')
+}
+
+; ping — temporary probe to detect source vs embedded std loading
+ping = () (s str) {
+    s = 'pong'
 }
 
 ; post: 執行 HTTP POST 請求

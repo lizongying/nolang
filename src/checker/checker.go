@@ -241,6 +241,13 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		// 接收者型別未知（如跨模組函數返回的變數、struct field 存取結果等），
 		// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
 		return ""
+	case *parser.CoExpression:
+		// `co f(x)` 的回傳型別與 `f(x)` 相同：monomorphization 在 checker
+		// 之後的 ASTToHIR 階段才發生，此處 e.Call 仍是原始同步呼叫 f(x)。
+		// 直接遞迴推斷內部呼叫，使 `r str = co echo(a)` 能正確取得 echo 的
+		// 回傳型別，而非落入 default 預設的 i64（否則非 i64 回傳會報錯
+		// "cannot assign i64 value to str variable"）。
+		return inferExprType(e.Call, varTypes, funcTypes, selfType)
 	case *parser.InfixExpression:
 		// 簡單推斷：比較與邏輯運算返回 bool，算術返回左運算元型別，
 		// 位元/移位運算僅在左運算元為具體整數型別時返回該型別（避免泛型型別參數回傳非整數型別）
@@ -4653,6 +4660,13 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	var results []ValidateResult
 	seen := map[string]bool{}
 
+	// 可證明越界安全的索引讀取（定長陣列 + 界內下標，見 parser/bounds.go）不再是
+	// option 基底，也就無需 `#{index-out}` 處理。codegen（isSafeIndexBase）已對這類
+	// 讀取停止降級，`no fmt` 會移除其冗餘註解；此處必須用同一份判定跳過上報，否則
+	// 註解被移除後 `no vet` 立刻新增「未處理越界索引」ERROR（與 #{overflow} 移除同源
+	// 的三方一致性要求）。
+	inBoundsIdx := parser.ProvablyInBoundsIndexReads(program)
+
 	// 合併程式中同一份 std 原始檔可能因載入路徑不同而帶兩種 SourceFile 字串，
 	// 去重鍵對路徑做 filepath.Abs 正規化（見 ValidateUnhandledOverflow）。
 	canonPath := func(f string) string {
@@ -4698,6 +4712,10 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	}
 
 	report := func(idx *parser.IndexExpression, curFile string) {
+		// 可證明越界安全的讀取：不報（見上方 inBoundsIdx 說明）。
+		if inBoundsIdx[idx] {
+			return
+		}
 		// 標準庫（std）不再豁免（自 2026-09-11 起，與 overflow 規則一致）。未處理
 		// 越界索引必須逐站以 `#{index-out = DEF}` 或 `?=` 修復，使 `no vet` 與
 		// 合併程式的 lint 對 std 保持乾淨。

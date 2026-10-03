@@ -41,20 +41,20 @@ fstr = '  hello   world  nolang  '
 fields []str
 fields = fstr.fields()
 n = fields.len()
-print('field count:' - n.to-str())
+print('field count:{n.to-str()}')
 i <- [0..n): {
-    print('  [' - i.to-str() - '] ' - fields[i])
+    print('  [{i.to-str()}] {fields[i]}')
 }
 
 ; 空字串
 fstr = ''
 fields = fstr.fields()
-print('empty fields:' - fields.len().to-str())
+print('empty fields:{fields.len()}')
 
 ; 純空白
 fstr = '   '
 fields = fstr.fields()
-print('whitespace fields:' - fields.len().to-str())
+print('whitespace fields:{fields.len()}')
 
 ; ═══════════════════════════════════════════════
 ; 3. time 日期解析/格式化
@@ -65,23 +65,23 @@ print('=== time ===')
 ts = 946684800
 d time.date
 d = time.unix-to-date(ts)
-print('year:' - d.year.to-str())
-print('month:' - d.month.to-str())
-print('day:' - d.day.to-str())
-print('hour:' - d.hour.to-str())
-print('min:' - d.min.to-str())
-print('sec:' - d.sec.to-str())
+print('year:{d.year}')
+print('month:{d.month}')
+print('day:{d.day}')
+print('hour:{d.hour}')
+print('min:{d.min}')
+print('sec:{d.sec}')
 
 fmt str
 fmt = time.format-time-str(ts)
-print('formatted:' - fmt)
+print('formatted:{fmt}')
 
 ; 往返測試
 ts2 ?i64 = time.parse-date('2000-01-01 00:00:00')
 ts2: {
     ok -> {
         v = it
-        print('roundtrip:' - v.to-str())
+        print('roundtrip:{v.to-str()}')
         {
             v == 946684800 -> print('PASS')
 
@@ -97,7 +97,7 @@ ts2: {
 ; 只日期
 ts3 ?i64 = time.parse-date('2024-07-22')
 ts3: {
-    ok -> print('date-only ts:' - it.to-str())
+    ok -> print('date-only ts:{it.to-str()}')
 
     nil -> print('FAIL: date-only parse')
 
@@ -125,7 +125,7 @@ decoded ?pem.pem-block = pem.pem-decode(pem-out)
 decoded: {
     ok -> {
         blk = it
-        print('label:' - blk.label)
+        print('label:{blk.label}')
         print('data-len:' - blk.data.len().to-str())
 
         ; 驗證資料
@@ -152,7 +152,7 @@ print('=== fs.list-dir ===')
 
 entries []str = fs.list-dir('.')
 n = entries.len()
-print('entry count:' - n.to-str())
+print('entry count:{n.to-str()}')
 i <- [0..n): {
-    print('  ' - entries[i])
+    print('  {entries[i]}')
 }

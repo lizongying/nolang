@@ -28,7 +28,7 @@ main = () {
     a0 = a[0]
     (an == 1 && a0 == 102) -> print('PASS: 1 MY====== decodes to 1 byte f')
 
-    -> print('FAIL: 1 len=' - an.to-str() - ' b0=' - a0.to-str())
+    -> print('FAIL: 1 len={an.to-str()} b0={a0.to-str()}')
 
     ; ─────────────────────────────────────────────
     ; 2. "fo" → "MZXQ===="  (pad 4 → 2 bytes)
@@ -43,7 +43,7 @@ main = () {
     b1 = b[1]
     (bn == 2 && b0 == 102 && b1 == 111) -> print('PASS: 2 MZXQ==== decodes to 2 bytes fo')
 
-    -> print('FAIL: 2 len=' - bn.to-str())
+    -> print('FAIL: 2 len={bn.to-str()}')
 
     ; ─────────────────────────────────────────────
     ; 3. "foo" → "MZXW6==="  (pad 3 → 3 bytes)
@@ -61,7 +61,7 @@ main = () {
     c2 = c[2]
     (cn == 3 && c0 == 102 && c1 == 111 && c2 == 111) -> print('PASS: 3 MZXW6=== decodes to 3 bytes foo')
 
-    -> print('FAIL: 3 len=' - cn.to-str())
+    -> print('FAIL: 3 len={cn.to-str()}')
 
     ; ─────────────────────────────────────────────
     ; 4. "foob" → "MZXW6YQ="  (pad 1 → 4 bytes)
@@ -73,7 +73,7 @@ main = () {
     d3 = d[3]
     (dn == 4 && d3 == 98) -> print('PASS: 4 MZXW6YQ= decodes to 4 bytes foob')
 
-    -> print('FAIL: 4 len=' - dn.to-str())
+    -> print('FAIL: 4 len={dn.to-str()}')
 
     ; ─────────────────────────────────────────────
     ; 5. "fooba" → "MZXW6YTB"  (pad 0 → 5 bytes)
@@ -85,7 +85,7 @@ main = () {
     e4 = e[4]
     (en == 5 && e4 == 97) -> print('PASS: 5 MZXW6YTB decodes to 5 bytes fooba')
 
-    -> print('FAIL: 5 len=' - en.to-str())
+    -> print('FAIL: 5 len={en.to-str()}')
 
     ; ─────────────────────────────────────────────
     ; 6. encode/decode 往返（6 bytes → 16 符號 → 6 bytes）
@@ -94,11 +94,11 @@ main = () {
     enc = base32.encode(s)
     enc == 'MZXW6YTBOI======' -> print('PASS: 6 encode(foobar)=MZXW6YTBOI======')
 
-    -> print('FAIL: 6 enc=[' - enc - ']')
+    -> print('FAIL: 6 enc=[{enc}]')
 
     back = base32.decode(enc)
     backn = back.len()
     backn == 6 -> print('PASS: 7 round-trip decodes back to 6 bytes')
 
-    -> print('FAIL: 7 round-trip len=' - backn.to-str())
+    -> print('FAIL: 7 round-trip len={backn.to-str()}')
 }

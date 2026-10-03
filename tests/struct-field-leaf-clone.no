@@ -11,9 +11,9 @@
 ; 修復前 a1 印出空字串（父物件被銷毀），修復後印出 alice。
 
 check-str = (name str, got str, want str) {
-    got == want -> print('ok: ' - name)
+    got == want -> print('ok: {name}')
 
-    -> print('fail: ' - name - ' got=[' - got - '] want=[' - want - ']')
+    -> print('fail: {name} got=[{got}] want=[{want}]')
 }
 
 inner {

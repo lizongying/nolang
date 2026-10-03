@@ -28,6 +28,7 @@ description: Reference for Nolang programming language syntax. Use when working 
   - [If/Else (new style `{ cond -> body }`)](#ifelse-new-style--cond---body-)
   - [Async / Await (`run` / `awy`)](#async--await-run--awy)
   - [Coroutine Groups](#coroutine-groups)
+  - [Go keyword (colorless async)](#go-keyword-colorless-async)
   - [Multi-Assignment](#multi-assignment)
   - [Structs & Methods](#structs--methods)
     - [Struct field inline tags](#struct-field-inline-tags)
@@ -1898,6 +1899,47 @@ Rules:
   never awaited.
 - **A discarded result is still awaited.** `{ side-async(5) }` spawns *and*
   awaits: an un-awaited task leaks its argument buffer.
+
+#### Go keyword (colorless async) — recommended
+
+`go` is a **colorless** syntax built on top of coroutine groups: you write the
+uncolored name `worker` and the compiler automatically monomorphizes a
+`worker-async` variant, executing it on the underlying colored stackless
+coroutines. You never write the `-async` suffix and you never write `run` / `awy`.
+
+```no
+worker = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n + 1
+}
+main = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = go worker(1)   ; auto-monomorphizes worker-async and spawns
+        r2 = go worker(2)   ; runs concurrently with r1
+    }
+    print(r1.to-str() + ' ' + r2.to-str())
+}
+```
+
+Rules:
+
+- **Monomorphization.** `go worker(1)` auto-generates `worker-async` (a clone
+  of `worker`'s body, renamed). If `worker` is also called synchronously, both
+  `worker` (sync) and `worker-async` (async) coexist.
+- **Transitivity.** If a function calls an async function internally (e.g.
+  `worker` contains `go child(...)`), then `worker` is also monomorphized into
+  `worker-async`; the async coloring propagates up the call chain.
+- **Statement-level `go` (outside a group).** When `go` appears outside a
+  coroutine group (e.g. `d = go worker(5)` at function-body level), the compiler
+  wraps it as `run worker-async(5)` + `awy` inline-await, so `d` receives the
+  result value, not a task handle.
+- **Underlying still colored stackless coroutines.** `go` is just sugar.
+  `{ r1 = go worker(1); r2 = go worker(2) }` lowers like a coroutine group — the
+  two `worker-async` tasks are spawned first, then `awy`-ed together.
+
+Diagnostic switch: `NOLANG_ASYNC_GO=0` disables monomorphization (diagnostic only).
 
 ### Multi-Assignment
 

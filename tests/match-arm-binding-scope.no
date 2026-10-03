@@ -29,7 +29,7 @@ main = () {
     ; (1) 臂綁定本身要正確拿到載荷
     a ?i64 = ok(7)
     a: {
-        ok(x) -> print('ok 1: arm binding binds payload ' - x.to-str())
+        ok(x) -> print('ok 1: arm binding binds payload {x.to-str()}')
 
         nil -> print('fail 1: nil')
 
@@ -50,7 +50,7 @@ main = () {
     }
     x == 99 -> print('ok 2: outer local survives the arm binding')
 
-    -> print('fail 2: outer local got=' - x.to-str())
+    -> print('fail 2: outer local got={x.to-str()}')
 
     ; (3) 巢狀 match 同名綁定：內層用完要還原外層
     p box = full(5)
@@ -59,16 +59,16 @@ main = () {
         full(v) -> {
             v == 5 -> print('ok 3a: outer arm binding')
 
-            -> print('fail 3a: outer arm binding got=' - v.to-str())
+            -> print('fail 3a: outer arm binding got={v.to-str()}')
 
             q: {
-                full(v) -> print('ok 3b: inner arm binding ' - v.to-str())
+                full(v) -> print('ok 3b: inner arm binding {v.to-str()}')
 
                 empty -> print('fail 3b: empty')
             }
             v == 5 -> print('ok 3c: outer arm binding restored after the nested match')
 
-            -> print('fail 3c: outer arm binding leaked the inner payload, got=' - v.to-str())
+            -> print('fail 3c: outer arm binding leaked the inner payload, got={v.to-str()}')
         }
 
         empty -> print('fail 3: empty')
@@ -81,20 +81,20 @@ main = () {
             q: {
                 full(v) -> {
                     r: {
-                        full(v) -> print('ok 4a: level-3 binding ' - v.to-str())
+                        full(v) -> print('ok 4a: level-3 binding {v.to-str()}')
 
                         empty -> print('fail 4a: empty')
                     }
                     v == 6 -> print('ok 4b: level-2 restored')
 
-                    -> print('fail 4b: level-2 got=' - v.to-str())
+                    -> print('fail 4b: level-2 got={v.to-str()}')
                 }
 
                 empty -> print('fail 4: empty')
             }
             v == 5 -> print('ok 4c: level-1 restored')
 
-            -> print('fail 4c: level-1 got=' - v.to-str())
+            -> print('fail 4c: level-1 got={v.to-str()}')
         }
 
         empty -> print('fail 4: empty')
@@ -103,7 +103,7 @@ main = () {
     ; (5) 對照組：外層沒有同名變數時，臂綁定照舊可用於整個臂
     z ?i64 = ok(42)
     z: {
-        ok(w) -> print('ok 5: fresh arm binding ' - w.to-str())
+        ok(w) -> print('ok 5: fresh arm binding {w.to-str()}')
 
         nil -> print('fail 5: nil')
 

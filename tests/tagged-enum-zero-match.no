@@ -52,7 +52,7 @@ e-list {
 ; 抽取的 callee（Phase 2 的 R2 會把呼叫者的引數標成 owning）
 consume = (q e-res) {
     q: {
-        ok(v) -> print('consume: ' - v)
+        ok(v) -> print('consume: {v}')
 
         fail -> print('consume: fail')
     }
@@ -160,7 +160,7 @@ main = () {
     ;     曾是 byte 字面量；該拼寫已從語言移除，現在 `x11` 是普通識別字。）
     r11 = make-direct()
     r11: {
-        ok(v) -> print('case11: ' - v)
+        ok(v) -> print('case11: {v}')
 
         fail -> print('case11: fail')
     }
@@ -168,7 +168,7 @@ main = () {
     ; 12) 🔴 同上，再隔一層呼叫（逃逸必須跨函式邊界往回傳遞）
     r12 = make-outer()
     r12: {
-        ok(v) -> print('case12: ' - v)
+        ok(v) -> print('case12: {v}')
 
         fail -> print('case12: fail')
     }
@@ -182,7 +182,7 @@ main = () {
     ; 14) 🔴 區域別名後才交還（Phase 2b 的 clone + §11.4 的轉移規則）
     r14 = make-chain()
     r14: {
-        ok(v) -> print('case14: ' - v)
+        ok(v) -> print('case14: {v}')
 
         fail -> print('case14: fail')
     }

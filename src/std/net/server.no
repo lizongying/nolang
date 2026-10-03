@@ -205,8 +205,8 @@ server-conn.parse = () (ok bool) {
 
     ok = false
     .fd < 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -451,8 +451,8 @@ server-conn.write-status = (status i64) (ok bool) {
 
     ok = false
     .fd < 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -514,8 +514,8 @@ server-conn.write-header = (name str, value str) (ok bool) {
 
     ok = false
     .fd < 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -531,8 +531,8 @@ server-conn.write-headers-done = () (ok bool) {
 
     ok = false
     .fd < 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
     written = net.net-send(.fd, crlf, crlf.len-bytes())
@@ -562,8 +562,8 @@ server-conn.write-text = (status i64, text str) (ok bool) {
 
     ok = false
     .fd < 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -910,10 +910,9 @@ https-server-conn.recv-more = () (n i64) {
 https-server-conn.parse = () (ok bool) {
 
     ok = false
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     #{overflow=wrap}
@@ -945,7 +944,7 @@ https-server-conn.parse = () (ok bool) {
     request-line = head.slice(0, first-line-end)
 
     ; 解析方法、路徑、版本
-    sp = number.char-to-str(32)
+    sp = ' '
     sp1 = request-line.index(sp)
     sp1 < 0 -> return
     .method = request-line.slice(0, sp1)
@@ -960,7 +959,7 @@ https-server-conn.parse = () (ok bool) {
     .version = after-method.slice(sp2 + 1, after-method.len-bytes())
 
     ; 分離 path 和 query
-    qm = number.char-to-str(63)
+    qm = '?'
     q-pos = full-path.index(qm)
 
     #{overflow=wrap}
@@ -1150,10 +1149,9 @@ https-server-conn.get-header = (name str) (val ?str) {
 https-server-conn.write-status = (status i64) (ok bool) {
 
     ok = false
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     status-s = status.to-str()
@@ -1214,10 +1212,9 @@ https-server-conn.write-status = (status i64) (ok bool) {
 https-server-conn.write-header = (name str, value str) (ok bool) {
 
     ok = false
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
-    #{overflow=wrap}
     crlf = cr - lf
 
     line = name - ': ' - value - crlf
@@ -1240,10 +1237,9 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
 https-server-conn.write-headers-done = () (ok bool) {
 
     ok = false
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
-    #{overflow=wrap}
     crlf = cr - lf
     w = .tls.send(crlf)
     send-ok = false

@@ -1,20 +1,18 @@
-; async-group.no — 協程組（coroutine group）：裸 `{ ... }` 塊默認 spawn，有依賴則退化成 await
-;
-; 協程組是語句位置的裸塊：塊內每條「直接調用 -async 函數」的語句會被 spawn（run），
-; 結果在需要它的地方才 await。沒有依賴時全部並發；後面的語句讀到前面的結果時，
-; 前面的任務必須先落地，於是退化成順序執行。
+; async-group.no — 協程組（coroutine group）：裸 `{ ... }` 塊內用 `go` 呼叫無色函式，
+; 默認 spawn，有依賴則退化成 await。底層仍是染色的 `-async` 無棧協程。
+; `co f(x)` 自動單態化出 f-async 並 spawn。
 
-hello-async = (i i64) (r i64) {
+hello = (i i64) (r i64) {
     r = i
 }
 
-; 1. 無依賴：兩個 spawn 都先發出，再一起 await
+; 1. 無依賴：兩個 go 都先發出，再一起 await
 test-independent = () {
     r1 i64
     r2 i64
     {
-        r1 = hello-async(1)
-        r2 = hello-async(2)
+        r1 = co hello(1)
+        r2 = co hello(2)
     }
     print(r1); expect: 1
     print(r2); expect: 2
@@ -25,8 +23,8 @@ test-dependent = () {
     r1 i64
     r2 i64
     {
-        r1 = hello-async(1)
-        r2 = hello-async(r1)
+        r1 = co hello(1)
+        r2 = co hello(r1)
     }
     print(r1); expect: 1
     print(r2); expect: 1
@@ -38,9 +36,9 @@ test-chain = () {
     r2 i64
     r3 i64
     {
-        r1 = hello-async(1)
-        r2 = hello-async(r1)
-        r3 = hello-async(r2)
+        r1 = co hello(1)
+        r2 = co hello(r1)
+        r3 = co hello(r2)
     }
     print(r3); expect: 1
 }
@@ -49,23 +47,23 @@ test-chain = () {
 test-read-inside = () {
     r1 i64
     {
-        r1 = hello-async(7)
+        r1 = co hello(7)
         print(r1); expect: 7
     }
 }
 
-; 5. 丟棄結果的 spawn 仍然要 await，否則任務的參數緩衝區會洩漏
-side-async = (n i64) {
+; 5. 丟棄結果的 go 仍然要 await，否則任務的參數緩衝區會洩漏
+side = (n i64) {
     print(n); expect: 5
 }
 test-discarded = () {
     {
-        side-async(5)
+        co side(5)
     }
 }
 
 ; 6. 堆擁有參數：spawn 時深拷貝進任務自己的緩衝區
-echo-async = (s str) (r str) {
+echo = (s str) (r str) {
     r = s
 }
 test-heap-arg = () {
@@ -74,17 +72,18 @@ test-heap-arg = () {
     ra str
     rb str
     {
-        ra = echo-async(a)
-        rb = echo-async(b)
+        ra = co echo(a)
+        rb = co echo(b)
     }
     print(ra); expect: hello
     print(rb); expect: world
 }
 
-; 7. 函數體不是協程組：`f = hello-async(1)` 仍然只是建出一個 future，不自動 await
-test-fn-body-not-a-group = () {
-    f = hello-async(1)
-    print(1); expect: 1
+; 7. 語句級 go（協程組之外）：每個 go 即 spawn + 立即 await，順序執行。
+;    與協程組內的並發 spawn 不同，這裡不會與其他任務重疊。
+test-statement-level = () {
+    f = co hello(1)
+    print(f); expect: 1
 }
 
 test-independent()
@@ -93,4 +92,4 @@ test-chain()
 test-read-inside()
 test-discarded()
 test-heap-arg()
-test-fn-body-not-a-group()
+test-statement-level()

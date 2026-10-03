@@ -258,7 +258,7 @@ func (m *Module) evalSpawnEdge(f *Function, b *Block, inst *Inst) SpawnEdge {
 // memoizes the helper name in it, and a nil map panics ("assignment to entry in
 // nil map"), which the codegen entry point reports as a compile error.
 func (m *Module) SpawnArgClasses(cf *Function) ([]string, []TypeID, []string) {
-	c := &codegen{mod: m, extraFuncs: map[string]bool{}}
+	c := &codegen{mod: m, sb: &strings.Builder{}, extraFuncs: map[string]bool{}}
 	return c.asyncArgKinds(cf)
 }
 

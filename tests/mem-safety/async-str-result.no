@@ -1,33 +1,31 @@
-; 測試 awy 取回 %str-long 結果的懸空指針問題
+; 測試 go 取回 %str-long / []i64 結果的懸空指針問題
+; （底層仍 desugar 成 run/awy，所以與手寫 run/awy 的行為一致）
 ; 場景 1：簡單字串返回
 
-str-producer-async = () (s str) {
+str-producer = () (s str) {
     s = 'hello from async'
 }
 
 ; 場景 2：局部變數 move 到輸出參數
-str-producer2-async = () (s str) {
+str-producer2 = () (s str) {
     local = 'world from local'
     s = local
 }
 
 ; 場景 3：vec 返回
-vec-producer-async = () (v []i64) {
+vec-producer = () (v []i64) {
     v = [10, 20, 30]
 }
 
-; 場景 4：多個 awy 連續調用
+; 場景 4：多個 go 連續調用
 consumer = () {
-    task1 = run str-producer-async()
-    s1 = awy task1
+    s1 = co str-producer()
     print(s1)
 
-    task2 = run str-producer2-async()
-    s2 = awy task2
+    s2 = co str-producer2()
     print(s2)
 
-    task3 = run vec-producer-async()
-    v = awy task3
+    v = co vec-producer()
     print(v.len())
     print(v[0])
     print(v[1])

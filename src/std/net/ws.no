@@ -383,8 +383,8 @@ server.close = () {
 server-conn.handshake = () {
 
     .fd < 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -614,8 +614,8 @@ server-conn.recv = () (msg ?message) {
         msg = err('not connected')
         return
     }
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -881,8 +881,8 @@ server-conn.recv-nb = () (msg ?message) {
         msg = err('not connected')
         return
     }
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -1568,8 +1568,8 @@ connect = (url str) (c ?client) {
     client-key = gen-client-key(seed)
 
     ; 建構 HTTP 升級請求
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 

@@ -537,7 +537,7 @@ fmt-int = (n i64, spec str) (out str) {
 
     ; 提取 sign-char 與 digits（不含符號）
     sign-char = 0
-    full = number.i64-to-str(n)
+    full = n.to-str()
     flen = full.len-bytes()
     digits str = with-cap(flen)
     dlen-v = 0
@@ -704,7 +704,7 @@ fmt-uint = (u u64, spec str) (out str) {
             }
         }
 
-        -> digits = number.u64-to-str(u)
+        -> digits = u.to-str()
     }
 
     ; 零填充

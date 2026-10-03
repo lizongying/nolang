@@ -110,8 +110,8 @@ client.next-event = () (ev ?event) {
         ev = err('not connected')
         return
     }
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -219,8 +219,6 @@ client.next-event = () (ev ?event) {
                             }
                             {
                                 field == 'data' -> {
-
-                                    #{overflow=wrap}
                                     has-data -> e-data = e-data - lf - value
 
                                     -> {
@@ -330,8 +328,8 @@ client.reconnect = () (ok bool) {
     req = ''
     crlf = ''
     .connected -> .close()
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -602,8 +600,8 @@ sse-connect = (url str) (client ?client) {
     }
 
     ; ── 建構 SSE 請求 ──
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
     req = 'GET '
@@ -865,8 +863,8 @@ server-conn.handshake = () (ok bool) {
 
     ok = false
     .fd < 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -949,7 +947,7 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
 
     ok = false
     .connected == false -> return
-    lf = number.char-to-str(10)
+    lf = '\n'
 
     msg = ''
 
@@ -1001,7 +999,7 @@ server-conn.send-comment = (comment str) (ok bool) {
 
     ok = false
     .connected == false -> return
-    lf = number.char-to-str(10)
+    lf = '\n'
 
     msg = ':' - comment - lf - lf
 

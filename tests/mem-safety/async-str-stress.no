@@ -1,13 +1,13 @@
-; 壓力測試：循環中重複 awy，驗證是否有累積泄漏或 UAF
+; 壓力測試：循環中重複 go，驗證是否有累積泄漏或 UAF
+; （底層仍 desugar 成 run/awy，所以與手寫 run/awy 的行為一致）
 
-str-producer-async = () (s str) {
+str-producer = () (s str) {
     s = 'value'
 }
 
 stress = () {
     i <- [0..100): {
-        task = run str-producer-async()
-        s = awy task
+        s = co str-producer()
         s.len-bytes() == 5 -> print('ok ', i)
     }
 }

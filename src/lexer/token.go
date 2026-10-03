@@ -45,6 +45,7 @@ const (
 	MAP
 	RUN
 	AWY
+	CO // `co` — colorless async spawn keyword: `r1 = co worker(1)` monomorphizes worker-async and spawns it
 
 	// 运算符
 	ASSIGN         // =
@@ -209,6 +210,7 @@ var tokenNames = map[TokenType]string{
 	TILDE:            "TILDE(~)",
 	RUN:            "RUN",
 	AWY:            "AWY",
+	CO:             "CO",
 }
 
 // lookupKeyword 以 switch 實現關鍵字查找，替代原 map[string]TokenType。
@@ -261,6 +263,8 @@ func lookupKeyword(s string) TokenType {
 		return RUN
 	case "awy":
 		return AWY
+	case "co":
+		return CO
 	}
 	return 0
 }

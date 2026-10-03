@@ -1370,6 +1370,35 @@ test-sequential = () {
 > **等價展開**（上面並發例子的實際 lowering）：
 > `__ag0 = run hello-async(1)` → `__ag1 = run hello-async(2)` → `r1 = awy __ag0` → `r2 = awy __ag1`。
 
+#### 無色 async：`co` 關鍵字 — 推薦
+
+`co` 是建立在協程組之上的**無色（colorless）**語法：你寫未染色的函式名 `worker`，編譯器自動單態化出 `worker-async` 變體，並在底層以染色無棧協程執行。你不需要手寫 `-async` 後綴，也不需要手寫 `run` / `awy`。
+
+```no
+worker = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n + 1
+}
+main = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = co worker(1)   ; 自動單態 worker-async 並 spawn
+        r2 = co worker(2)   ; 與 r1 並發執行
+    }
+    print(r1.to-str() + ' ' + r2.to-str())
+}
+```
+
+規則：
+
+- **單態化**：`co worker(1)` 會自動生成 `worker-async`（複製 `worker` 的本體、改名）。若 `worker` 同時也被同步呼叫，則 `worker` 與 `worker-async` 兩個方法共存。
+- **傳遞性**：若某函式內部呼叫了異步函式（例如 `worker` 內 `co child(...)`），則 `worker` 也會被單態為 `worker-async`，異步染色沿呼叫鏈向上傳遞。
+- **語句級 `co`（協程組之外）**：當 `co` 出現在協程組之外（例如在函式體裡 `d = co worker(5)`），編譯器會把它包成 `run worker-async(5)` + `awy` 的內聯 await，使 `d` 取到的是結果值而非 task 句柄。
+- **底層仍是染色無棧協程**：`co` 只是語法糖。`{ r1 = co worker(1); r2 = co worker(2) }` 等價於協程組展開——先後 spawn `worker-async`，最後一起 `awy`。
+
+診斷開關：`NOLANG_ASYNC_GO=0` 可停用單態化（僅作對照）。
+
 ### 多重賦值
 
 函數可以返回多個值，調用時使用多重賦值接收：

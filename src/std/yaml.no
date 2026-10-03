@@ -731,19 +731,19 @@ yaml-unescape-double = (body str) (out str, ok bool) {
 
             e == 114 -> out = out - '\r'
 
-            e == 48 -> out = out - char-to-str(0)
+            e == 48 -> out = out - '\0'
 
-            e == 97 -> out = out - char-to-str(7)
+            e == 97 -> out = out - '\x07'
 
-            e == 98 -> out = out - char-to-str(8)
+            e == 98 -> out = out - '\x08'
 
-            e == 118 -> out = out - char-to-str(11)
+            e == 118 -> out = out - '\x0b'
 
-            e == 102 -> out = out - char-to-str(12)
+            e == 102 -> out = out - '\x0c'
 
-            e == 101 -> out = out - char-to-str(27)
+            e == 101 -> out = out - '\x1b'
 
-            e == 34 -> out = out - char-to-str(34)
+            e == 34 -> out = out - '"'
 
             e == 47 -> out = out - '/'
 
@@ -1258,7 +1258,7 @@ yaml-parser.parse-single = () (idx i64) {
         c = .cur()
         c == 39 -> {
             .at(1) == 39 -> {
-                out = out - char-to-str(39)
+                out = out - '\''
                 .advance()
                 .advance()
                 continue
@@ -2787,12 +2787,12 @@ yaml-hex-char = (v i64) (ch str) {
 
 ; yaml-json-escape: JSON 字符串转义
 yaml-json-escape = (s str) (out str) {
-    out = char-to-str(34)
+    out = '"'
     i <- [0..s.len-bytes()): {
         c = s.byte(i)
         {
             c == 34 -> {
-                out = out - '\\' - char-to-str(34)
+                out = out - '\\' - '"'
             }
 
             c == 92 -> {
@@ -2828,7 +2828,7 @@ yaml-json-escape = (s str) (out str) {
         }
     }
 
-    out = out - char-to-str(34)
+    out = out - '"'
 }
 
 ; yaml-json-of: 节点转 JSON
@@ -2978,12 +2978,12 @@ yaml-plain-safe = (s str) (yes bool) {
 
 ; yaml-quote: 输出双引号 YAML 标量
 yaml-quote = (s str) (out str) {
-    out = char-to-str(34)
+    out = '"'
     i <- [0..s.len-bytes()): {
         c = s.byte(i)
         {
             c == 34 -> {
-                out = out - '\\' - char-to-str(34)
+                out = out - '\\' - '"'
             }
 
             c == 92 -> {
@@ -3019,7 +3019,7 @@ yaml-quote = (s str) (out str) {
         }
     }
 
-    out = out - char-to-str(34)
+    out = out - '"'
 }
 
 ; yaml-scalar-repr: 标量的 YAML 表示

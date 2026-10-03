@@ -25,7 +25,7 @@ main = () {
     ; Without fix: LLVM type error (store i64 %rf.vec.N, i64* %data)
     data str = fs.read-file('/tmp/bug12-mem-safety-test.txt')
 
-    print('data=[' - data - ']')
+    print('data=[{data}]')
 
     ; Expected: data=[hello world test]
 

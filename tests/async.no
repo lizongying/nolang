@@ -1,85 +1,80 @@
-; async.no — 測試 async/await (run/awy) Future 模型
+; async.no — 測試 async/await（go 關鍵字 / 協程組）無色 async 模型
+;
+; `co f(x)` 會自動單態化出 f-async 變體並在底層以染色無棧協程執行。
+; 協程組（語句位置的裸塊）內的 `go` 預設並發 spawn，遇到依賴則退化成 await。
 
-; 異步函數：返回輸入值的兩倍
-compute-async = (n i64) (r i64) {
-
+; 同步函數：返回輸入值的兩倍
+compute = (n i64) (r i64) {
     #{overflow=wrap}
     r = n * 2
 }
 
-; 異步函數：多參數
-add-async = (a i64, b i64) (r i64) {
-
+; 多參數
+add = (a i64, b i64) (r i64) {
     #{overflow=wrap}
     r = a + b
 }
 
-; 異步函數：條件邏輯
-classify-async = (n i64) (r i64) {
+; 條件邏輯
+classify = (n i64) (r i64) {
     {
         n > 0 -> r = 1
-
         n < 0 -> r = -1
-
         n == 0 -> r = 0
     }
 }
 
-; 1. 串行等待（最簡）— awy f-async()
+; 1. 串行等待（最簡）— r = co f()
 test-serial = () {
-    r = awy compute-async(21)
+    r = co compute(21)
     print(r); expect: 42
 }
 
 ; 2. 多參數串行等待
 test-multi-params = () {
-    r = awy add-async(15, 27)
+    r = co add(15, 27)
     print(r); expect: 42
 }
 
 ; 3. 條件邏輯
 test-conditional = () {
-    r1 = awy classify-async(5)
-    r2 = awy classify-async(-3)
-    r3 = awy classify-async(0)
+    r1 = co classify(5)
+    r2 = co classify(-3)
+    r3 = co classify(0)
     print(r1); expect: 1
     print(r2); expect: -1
     print(r3); expect: 0
 }
 
-; 4. 並發：先全部 run，再依次 awy
+; 4. 並發：協程組內兩個 go 並發 spawn，最後一起 await
 test-concurrent = () {
-    h1 = run compute-async(10)
-    h2 = run compute-async(20)
-    r1 = awy h1
-    r2 = awy h2
-
-    #{overflow=wrap}
+    r1 i64
+    r2 i64
+    {
+        r1 = co compute(10)
+        r2 = co compute(20)
+    }
     print(r1 + r2); expect: 60
 }
 
-; 5. 預創建 Future，延遲執行
-test-lazy-future = () {
-    f1 = compute-async(10)
-    f2 = compute-async(20)
-    h1 = run f1
-    h2 = run f2
-    r1 = awy h1
-    r2 = awy h2
-
-    #{overflow=wrap}
-    print(r1 + r2); expect: 60
+; 5. 語句級 go（協程組之外）：每個 go 即 spawn + 立即 await，順序執行
+test-statement-level = () {
+    r = co compute(10)
+    s = co compute(20)
+    print(r + s); expect: 60
 }
 
-; 6. awy future 變量（串行執行 future）
-test-await-future = () {
-    f = compute-async(25)
-    r = awy f
-    print(r); expect: 50
+; 6. 協程組內讀取結果：print(r1) 是屏障，r1 必須先落地
+test-group-read = () {
+    r1 i64
+    {
+        r1 = co compute(25)
+        print(r1); expect: 50
+    }
 }
 test-serial()
 test-multi-params()
 test-conditional()
 test-concurrent()
-test-lazy-future()
-test-await-future()
+test-statement-level()
+test-group-read()

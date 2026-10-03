@@ -240,6 +240,7 @@ f64-to-f32 = (a f64) (r f32) {
 ; i64-to-str: 將 i64 轉為字串
 ; 處理 0、正數、負數。負數的絕對值以 u64 表示（2's 補數 0 - (u64)n），
 ; 避免 n = 0 - n 在 i64.MIN 時溢出（i64.MIN 的絕對值 2^63 超出 i64 範圍）。
+; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 n.to-str()（i64.to-str，本函數為其底層實現）。
 i64-to-str = (n i64) (out str) {
 
     n == 0 -> {
@@ -309,6 +310,7 @@ i64-to-str = (n i64) (out str) {
 }
 
 ; u64-to-str: 將 u64 轉為字串
+; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 u.to-str()（u64.to-str，本函數為其底層實現）。
 u64-to-str = (u u64) (out str) {
     ru = u
 
@@ -352,9 +354,11 @@ u64-to-str = (u u64) (out str) {
     }
 }
 
-; char-to-str: 將 char（i64 Unicode 碼點）轉為 UTF-8 編碼字串
+; char-to-str: 將 char（Unicode 碼點）轉為 UTF-8 編碼字串
 ; 取代舊版 sprintf %c（僅能處理單位元組 ASCII）
-char-to-str = (c i64) (out str) {
+; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 char.to-str()（見 std/char.no），
+;    如 c char = 'A'; c.to-str()；本函數僅為舊調用點保留兼容。
+char-to-str = (c char) (out str) {
     out = with-cap(4)
     {
         c < 0x80 -> {
@@ -517,6 +521,7 @@ LN10 = 2.302585092994046
 
 ; f64-to-str: 將 f64 轉為字串（模擬 C %g 格式）
 ; 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號
+; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 x.to-str()（f64.to-str，本函數為其底層實現）。
 f64-to-str = (x f64) (out str) {
 
     ; 特殊值處理

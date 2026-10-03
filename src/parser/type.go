@@ -312,6 +312,12 @@ func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
 	if idx == nil || idx.Left == nil {
 		return false
 	}
+	// 可證明越界安全的讀取（定長陣列 + 界內下標）不再是 option 基底：lowering 已
+	// 於進入函數時算好此集合（bounds.go），使這類讀取不被降級成 option、無需
+	// `#{index-out}`。codegen / no vet / no fmt 共用同一判定。
+	if p.inBoundsIdx[idx] {
+		return false
+	}
 	ident, ok := idx.Left.(*Identifier)
 	if !ok {
 		return false

@@ -5,9 +5,9 @@
 ; 看起來像「後端用 fast-math、運行期產生不出 NaN」。實際上 NaN 一直都存在。
 
 check = (name str, cond bool) {
-    cond -> print('ok: ' - name)
+    cond -> print('ok: {name}')
 
-    -> print('fail: ' - name)
+    -> print('fail: {name}')
 }
 
 nan-of = () (v f64) {

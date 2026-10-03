@@ -73,6 +73,13 @@ type formatter struct {
 	// 語意下所管轄的陳述（可能為 nil）。與 overflowRelevant 配套使用：對獨立節點
 	// 路徑以 governed 查 relevant。
 	overflowGoverned map[*parser.AnnotationStatement]parser.Statement
+
+	// indexOutRemovable：其全部容器索引讀取皆可證明在界內的陳述（parser/bounds.go
+	// 計算）。非 nil 時，formatter 會移除附加/尾隨於這些陳述的冗餘 `#{index-out}`
+	// 註解（該讀取永遠不會越界，option 處理無意義）。nil = 保留（舊行為）。
+	indexOutRemovable map[parser.Statement]bool
+	// indexOutAnnRemovable：獨立成行、管轄陳述全部讀取在界內的 #{index-out} 註解節點。
+	indexOutAnnRemovable map[*parser.AnnotationStatement]bool
 }
 
 // hasRT 查詢 IfExpression 的 fmt 往返標誌：先查 formatter 本地合成表，
@@ -247,12 +254,18 @@ func formatProgramASTWithOverflow(program *parser.Program, code string, style Lo
 	}
 
 	sourceLines := strings.Split(code, "\n")
+	// 一併計算「可證明越界安全」的索引讀取，讓 formatter 移除冗餘 #{index-out}
+	// 註解（該讀取恆在界內，option 處理無意義）。此判定與 codegen / no vet 共用
+	// parser/bounds.go，保證「刪註解後 vet/編譯仍通過」的三方一致性。
+	inb := parser.AnalyzeInBoundsIndex(program)
 	f := &formatter{
-		sourceLines:      sourceLines,
-		sem:              program.Sem,
-		loopStyle:        style,
-		overflowRelevant: relevant,
-		overflowGoverned: governed,
+		sourceLines:          sourceLines,
+		sem:                  program.Sem,
+		loopStyle:            style,
+		overflowRelevant:     relevant,
+		overflowGoverned:     governed,
+		indexOutRemovable:    inb.StmtRemovable,
+		indexOutAnnRemovable: inb.AnnRemovable,
 	}
 	f.formatProgram(program)
 

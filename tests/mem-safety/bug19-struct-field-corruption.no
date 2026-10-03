@@ -84,14 +84,14 @@ main = () {
     ; Safe: directly use parameter
     good-result = pass-direct(test-raw)
 
-    print('good: ' - good-result)
+    print('good: {good-result}')
 
     ; Expected: good: file1.txt
 
     ; Bug: through struct
     bad-result = pass-struct(test-raw)
 
-    print('bad: ' - bad-result)
+    print('bad: {bad-result}')
 
     ; Expected: bad: file1.txt
     ; Without fix: trace/BPT trap (crash)

@@ -15,9 +15,9 @@
 ; 「cannot assign err value to str variable」。
 
 check-str = (name str, got str, want str) {
-    got == want -> print('ok: ' - name)
+    got == want -> print('ok: {name}')
 
-    -> print('fail: ' - name - ' got=[' - got - '] want=[' - want - ']')
+    -> print('fail: {name} got=[{got}] want=[{want}]')
 }
 
 fail-i64 = () (out ?i64) {

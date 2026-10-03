@@ -124,6 +124,105 @@ func TestUnhandledIndexAllowed(t *testing.T) {
 	}
 }
 
+// TestUnhandledIndexProvablyInBounds 驗證「可證明越界安全」的定長陣列讀取不再被
+// 上報（見 parser/bounds.go）：基底為定長 [N]T、下標為整數字面量 0<=k<N，或下標恰
+// 為 for-range 迴圈變數且其字面量取值區間恆在 [0,N) 時，讀取永不越界，也就無需
+// `#{index-out}` 處理。此判定必須與 codegen（isSafeIndexBase）、`no fmt`（移除冗餘
+// 註解）三方一致，否則「fmt 刪註解 → vet 立刻新增 ERROR」。
+func TestUnhandledIndexProvablyInBounds(t *testing.T) {
+	allowed := []struct {
+		name string
+		src  string
+	}{
+		{
+			// 定長陣列 + 字面量下標在界內。
+			name: "fixed_array_literal_index",
+			src: `f = () (res i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    res = a[0]
+}`,
+		},
+		{
+			// 定長陣列 + for-range 迴圈變數下標（[0..4) → 取值 [0..3] 恆 < 4）。
+			name: "fixed_array_loop_index",
+			src: `f = () (res i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    i <- [0..4): {
+        res = a[i]
+    }
+}`,
+		},
+	}
+	for _, c := range allowed {
+		t.Run(c.name, func(t *testing.T) {
+			if res := ValidateUnhandledIndex(parseProg(t, c.src), "src/app.no"); len(res) != 0 {
+				t.Fatalf("expected no error for provably-in-bounds %s, got: %+v", c.name, res)
+			}
+		})
+	}
+
+	blocked := []struct {
+		name string
+		src  string
+	}{
+		{
+			// 切片（[]T）運行期長度未知，保守視為可能越界。
+			name: "slice_base_still_reported",
+			src: `f = (v []i64) (res i64) {
+    i <- [0..4): {
+        res = v[i]
+    }
+}`,
+		},
+		{
+			// for-range 端點非字面量（n 為參數）→ 無法證明界內。
+			name: "non_literal_loop_bound",
+			src: `f = (n i64) (res i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    i <- [0..n): {
+        res = a[i]
+    }
+}`,
+		},
+		{
+			// 下標為複合算式（i + 1），非純字面量 / 迴圈變數。
+			name: "composite_index",
+			src: `f = () (res i64) {
+    a [8]i64 = [0, 1, 2, 3, 4, 5, 6, 7]
+    i <- [0..4): {
+        #{overflow=wrap}
+        res = a[i + 1]
+    }
+}`,
+		},
+	}
+	for _, c := range blocked {
+		t.Run(c.name, func(t *testing.T) {
+			var idxErrs int
+			for _, r := range ValidateUnhandledIndex(parseProg(t, c.src), "src/app.no") {
+				if r.TraceID == unhandledIndexTraceID {
+					idxErrs++
+				}
+			}
+			if idxErrs == 0 {
+				t.Fatalf("expected unhandled-index error for non-provable %s, got none", c.name)
+			}
+		})
+	}
+}
+
+// TestUnhandledIndexCompositeIndexNotProvable 單獨驗證複合下標（`a[i + 1]`）即使
+// 迴圈區間看似安全，也不被證明在界內（bounds.go 只認整數字面量 / 純迴圈變數識別符）。
+func TestUnhandledIndexCompositeIndexNotProvable(t *testing.T) {
+	src := `f = (g i64) (res i64) {
+    a [8]i64 = [0, 1, 2, 3, 4, 5, 6, 7]
+    res = a[g]
+}`
+	if res := ValidateUnhandledIndex(parseProg(t, src), "src/app.no"); len(res) == 0 {
+		t.Fatalf("expected error for param-index (not provable), got none")
+	}
+}
+
 // TestUnhandledIndexNoStdExempt 驗證撤銷標準庫豁免後的統一檢查：不再因
 // mainFile 路徑含 std 而放行。原本的 std 豁免是為了繞開 merged 歸因不準導致的
 // 偽報，現歸因已修好且 std 自身沉默泄漏已以 `#{index-out = DEF}` / `?=` 逐站

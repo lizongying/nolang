@@ -8,9 +8,9 @@ main = () {
     ; (1) 基本 err(e)
     a ?i64 = err('boom')
     a: {
-        ok(v) -> print('fail 1: ok ' - v.to-str() - '\n')
+        ok(v) -> print('fail 1: ok {v.to-str()}\n')
 
-        err(e) -> print('ok 1: ' - e - '\n')
+        err(e) -> print('ok 1: {e}\n')
 
         nil -> print('fail 1: nil\n')
     }
@@ -25,13 +25,13 @@ main = () {
             b: {
                 ok(w) -> print('fail 2: inner ok\n')
 
-                err(m) -> print('ok 2a: inner ' - m - '\n')
+                err(m) -> print('ok 2a: inner {m}\n')
 
                 nil -> print('fail 2: inner nil\n')
             }
-            m == 'outer-msg' -> print('ok 2b: outer restored ' - m - '\n')
+            m == 'outer-msg' -> print('ok 2b: outer restored {m}\n')
 
-            -> print('fail 2b: outer got ' - m - '\n')
+            -> print('fail 2b: outer got {m}\n')
         }
 
         nil -> print('fail 2: outer nil\n')
@@ -42,7 +42,7 @@ main = () {
     c: {
         ok(v) -> print('fail 3: ok\n')
 
-        err(e) -> print('ok 3: len=' - e.len().to-str() - '\n')
+        err(e) -> print('ok 3: len={e.len()}\n')
 
         nil -> print('fail 3: nil\n')
     }

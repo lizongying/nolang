@@ -1871,7 +1871,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
     m i64 = number.f64-to-i64(scaled + 0.5)
 
     ; 將 m 轉為字串
-    mstr = number.i64-to-str(m)
+    mstr = m.to-str()
     mn = mstr.len-bytes()
 
     ; 補零到至少 precision+1 位（保證整數部分至少一位）
@@ -2107,7 +2107,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     }
 
     ; 構建 mantissa 字串
-    mstr = number.i64-to-str(m)
+    mstr = m.to-str()
     mn = mstr.len-bytes()
 
     ; 指數位數
@@ -2209,7 +2209,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     pos = pos + 1
 
     ; 指數位數（至少 2 位，前導補零）
-    estr = number.i64-to-str(ae)
+    estr = ae.to-str()
     elen2 = estr.len-bytes()
 
     #{overflow=wrap}
@@ -2340,7 +2340,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     }
 
     ; mantissa 字串
-    mstr = number.i64-to-str(m)
+    mstr = m.to-str()
     mn = mstr.len-bytes()
     pad = 0
 
@@ -2470,7 +2470,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         pos = pos + 1
 
         ; 指數位數（至少 2 位）
-        estr = number.i64-to-str(ae)
+        estr = ae.to-str()
         elen2 = estr.len-bytes()
         elen2 == 1 -> {
 

@@ -333,6 +333,29 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			Right: rightExpr,
 		}
 
+	case lexer.CO:
+		// `co <call>` — colorless async spawn. Mirror the run/awy prefix
+		// handling: consume `co`, then parse the following call expression.
+		// (Unlike `run`, `co` targets an uncolored callee and resolves to its
+		// `-async` monomorphized variant at HIR time.)
+		// When `co` is followed by `.`, it is a module-qualified name (e.g. a
+		// module literally named `co`), not the async keyword.
+		if p.peekToken.Type == lexer.DOT {
+			leftExp = &Identifier{
+				Token: p.currentToken,
+				Value: p.currentToken.Literal,
+			}
+			p.nextToken()
+		} else {
+			tok := p.currentToken
+			p.nextToken() // consume 'co'
+			callExpr := p.parseExpression(LOWEST)
+			leftExp = &CoExpression{
+				Token: tok,
+				Call:  callExpr,
+			}
+		}
+
 	// case lexer.FUNC:
 	// 	// 打印调试信息
 	// 	leftExp = p.parseFunctionLiteral()

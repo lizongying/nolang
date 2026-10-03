@@ -4,10 +4,10 @@
 
 fstr = '  hello   world  nolang  '
 n = fstr.len-bytes()
-print('len:' - n.to-str())
+print('len:{n.to-str()}')
 
 ; 打印每個 byte
 i <- [0..n): {
     b = fstr[i]
-    print('byte[' - i.to-str() - ']=' - b.to-str())
+    print('byte[{i.to-str()}]={b.to-str()}')
 }

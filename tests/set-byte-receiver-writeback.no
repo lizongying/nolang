@@ -27,7 +27,7 @@ main = () {
     a.set-byte(0, 72)
     a == 'Hello' -> print('ok 1: local str receiver')
 
-    -> print('fail 1: local str receiver got=' - a)
+    -> print('fail 1: local str receiver got={a}')
 
     ; (2) 結構體 str 欄位接收者：寫回必須到達欄位本身
     b = box {
@@ -37,20 +37,20 @@ main = () {
     b.s.set-byte(0, 72)
     b.s == 'Hello' -> print('ok 2: struct str field receiver')
 
-    -> print('fail 2: struct str field receiver got=' - b.s)
+    -> print('fail 2: struct str field receiver got={b.s}')
 
     ; (3) 結構體 txt 欄位接收者（%txt 佈局：內聯緩衝，與 %str-long 不同）
     b.t.set-byte(0, 74)
     b.t == 'Ji' -> print('ok 3: struct txt field receiver')
 
-    -> print('fail 3: struct txt field receiver got=' - b.t)
+    -> print('fail 3: struct txt field receiver got={b.t}')
 
     ; (4) 切片元素接收者
     rows = ['x', 'y']
     rows[0].set-byte(0, 90)
     rows[0] == 'Z' -> print('ok 4: slice element receiver')
 
-    -> print('fail 4: slice element receiver got=' - rows[0])
+    -> print('fail 4: slice element receiver got={rows[0]}')
 
     ; (5) 巢狀結構體欄位接收者（兩層投影）
     w = wrap {

@@ -1,7 +1,7 @@
 # Nolang 混合所有權模型（Hybrid Ownership）— 設計方案
 
-**版本**：v2.4（2026-10-02）
-**基線**：`a6c8559d`。所有 A/B 都用**自建快照**（`/tmp/**/no-*`），全程不使用 `bin/no`（並行 session 會重建它）。
+**版本**：v2.9（2026-10-03）
+**基線**：`96e8d3e7`（v2.4 的文件提交）。所有 A/B 都用**自建快照**（`/tmp/**/no-*`），全程不使用 `bin/no`（並行 session 會重建它）。
 **適用後端**：MIR（`src/mir`）
 **前置文件**：`docs/docs/lang/memory.md`（現行模型權威描述）、`NOLANG-AUDIT-2026-09-27.md`
 **改動規範**：skill `nolang-compiler-change`（金標、A/B 歸因、並行 session 陷阱）
@@ -45,6 +45,86 @@
 >    與凍結金標**逐位元組相同**，全量 DIVERGE **9 → 8**。教訓見 §5 操作紀律。
 > 4. **`Type.Owned` 對 map 是 `true`**（v2.2 起的錯誤診斷），`§4.2 a` 已改寫。
 > 5. 新增 `src/mir/view_liveness_test.go`、`tests/slice-view-liveness.no`、`tests/vec-elem-ownership.no`。
+>
+> **v2.5 相對 v2.4 的變更**：**把「接收者投影」的失效條件補完**（§1.2／§4.5）——v2.4 只寫了第一層
+> （「來源已經沒有那個值了」）。本輪由**使用者回報的症狀**（`str.trim()` 的結果長度為 0）引出，
+> 補上第二層與一個缺失的護欄：
+> 1. **一個 value 被定義第二次就撤回投影**（§4.5 a）：MIR 的 value id 是**變數**不是 SSA 名，
+>    重新綁定（`line = line.trim()`）走 **move-into 編碼**（`Dst = NoVal`）**再定義同一個 id**，
+>    而 `defInst` 只記 `Dst > NoVal` ⇒ **move 隱形** ⇒ 投影停在**舊**的儲存位置。
+>    新增 `definedValue(inst)`（跨兩種編碼）＋ `defCount`：**第二次定義即 `delete(defInst)`**。
+> 2. **被投影的路徑被寫入 ⇒ 撤回投影**（§4.5 b）：投影 `&root.field`／`&container[i]` 只在
+>    「**那條路徑上沒人寫過**」時才還代表同一個值。新增 `sourceWrittenBetween(read, use)`
+>    （寫入必須**嚴格落在** read 與 use 之間）＋ `projectionChain`／`reachableBlocks`（與
+>    `sourceAlreadyDropped` 共用），**同時掛上 `OpGetField` 與 `OpIndex`**——後者原本
+>    **完全沒有護欄**，症狀是 `SIGTRAP`（use-after-free）。`getFieldWasCloned` 更名
+>    `projectionWasCloned`（field 與 index 共用）。🔴 前提是 `projectionWasCloned(v)`：
+>    **非 clone 的欄位不可套用**（`x = o.c; x.n = 7` 必須繼續投影）。
+> 3. 本輪另落地兩個**與所有權無關**的改動（§4.6，只作記錄以免日後誤判為迴歸）：單字元 `str` 字面量
+>    ＋ `char` 字面量的 `+`/`-` 被位元組折疊（`'x' - "a"` 得 `23` 而非 `"xa"`）；`go` 關鍵字的無色
+>    協程轉寫——**它只是 `run`/`awy` 的語法糖，§2.3／§2.3b／§2.4 的邊界協議逐字不變**。
+> 新增 `src/mir/rebind_retracts_projection_test.go`、`src/mir/str_lit_char_concat_test.go`、
+> `tests/rebind-retracts-view.no`。
+>
+> **v2.6 相對 v2.5 的變更**：**tier 推斷真的落地了**（§3.1／§3.3／§4.2 c）。v2.5 時
+> `tierConstraint` 對每個 use 都回 S ⇒ 推斷是**恆等映射** ⇒ 那時寫 `checkTierSoundness` 是**自證**
+> （拿恆真的推斷去驗證自己）。本輪把兩件事**一起**做：
+> 1. **真實的 constraint 函式。** `tierConstraint`（指令內可判定的列）回答 §3.1 的 R 列：spawn 的
+>    **結果**（`%task` handle）、**被 §4.2 b 閘門共享**的 spawn 參數（讀回 `spawnArgRetains` 這個
+>    **已記錄的決定**，不重算）、`OpTaskRetain`／`OpAwait` 的運算元。`tierStep`（需要看**當前 tier
+>    map** 的兩列）補上**別名傳遞性**（`OpMove`／`OpCast`／`OpPhi` 的兩端是同一個引用 ⇒ 取 join；
+>    **`OpClone` 刻意不在其中**——克隆是新值，這正是規則一能說「值對值不產生別名」的原因）與 **I2**
+>    （存入 R 檔容器者亦為 R；今天真空，但規則先立著）。**C 檔的觸發點是新的 `writtenThroughSet`**：
+>    借讀視圖**被寫穿**（`OpSetField`／`OpIndexStore` 的 `Args[0]`）⇒ C——這正是 §4.2 c 要的
+>    「C 檔 CoW 有寫入點可查」。
+> 2. **`checkTierSoundness` 落地為硬閘門**（I1，§3.3）。它從 **IR 那一側**讀「這是 R 物件」的地面真相
+>    ——真實 spawn 的 handle 及**其全部別名**（`handleAliasSet`，與 spawn graph／`checkRefBalance`
+>    共用同一個謂詞）、§4.2 b 共享的 spawn 參數、每個 `OpTaskRetain`／`OpAwait` 運算元——並要求推斷
+>    對它們**一律回 R**；外加**分區完整性**（每個值都有檔位，且不低於自己使用點的要求——後半是一趟
+>    fixpoint 撐不住的**別名鏈**）。**I2 刻意不查**（今天唯一的 R 物件是 `%task`，不是容器 ⇒ 真空；
+>    空檢查比不檢查更糟）。
+> **非空性證明（兩個方向都做）**：把**恆等分區**（每個值 S，即 v2.5 的真實行為）餵給
+> `checkTierRSites` ⇒ **必須開火**；把**空 map** 餵給 `checkTierPartition` ⇒ **必須開火**（那是 P1
+> 唯一的真缺陷）。兩者都有測試，且控制組是**重建原行為**而非「關掉新行為」。
+> ⚠️ **仍然沒有任何東西依 tier 改寫 IR。** R 檔描述的是編譯器**已經**在發的機制（handle 的
+> retain/release ＋ §4.2 b 閘門）；要讓 tier 變成**規定式**，得把這個 pass 移到
+> `insertBorrowRetains`／`emitAsyncRun` **之前**，那是 P2／P5 的工作（§4.2 c 記了這條界線與理由）。
+> 改寫：`src/mir/tier.go`、`src/mir/tier_test.go`（10 個測試）、`src/mir/analysis.go`（接線）。
+>
+> **v2.7 相對 v2.6 的變更**：**撤銷 §4.3 的「借讀 release 死亡點精度」殘留**——它是**誤判**，
+> 而且從未在當前樹上複現過。本輪用三條獨立證據把它證偽（§4.3 有完整表格）：MIR 直讀顯示**剝離結果的
+> drop 就在迴圈內**（原條目說「會被提到迴圈外」）；8 個形狀 × 2,000,000 次迭代的端到端 RSS **全部平線**
+> （1.7 MB）；語料 691 檔（**全部**成功 lower）逐值不對稱只有 **13 筆**，**全部**可用
+> 「option 的深釋放是 rc 感知」與「release 落在 move 目的地」解釋。原文的
+> 「1717 retain / 1693 release、未配對 24 個」**無法複現**（同 roots／同 lowering 路徑／同粒度得 68/58/13），
+> 已標註為不可信。
+> **本輪另加一條釘子** `TestBorrowInLoopIsDisposedEveryIteration`（含**負對照**：沒有迴圈攜帶累加器的
+> 形狀必須不滿足該性質），並**先證明它會壞**：把 `insertDrops` 的 start-drop 從迴圈內提到迴圈外
+> （臨時 hack，已回退）⇒ 測試 **FAIL**、RSS 漲到 66 MB／259 MB。**本輪無生產程式碼變更**（只加測試
+> ＋改文件）。
+>
+> **v2.8 相對 v2.7 的變更**：**修掉一個「呼叫臨時變數的 `alloca` 落在迴圈內」的堆疊溢位**（§4.6 第三列）。
+> 它是**量 map 洩漏時撞到的**、與所有權無關的獨立缺陷：LLVM 的 `alloca` 是**指令**不是宣告，每次執行都
+> 保留棧空間、且只在函式返回時回收 ⇒ 迴圈體裡的一條 `alloca` **每圈增長一次棧**，無上限。實測
+> `i <- [0..200000) { m.put('key', 1) }` 在 ~180k 圈 **SIGSEGV（rc=139）**，而峰值 RSS 只有 15.6 MB
+> （**棧**溢位，不是堆耗盡）。`-O2` 後的 IR 仍留著 `%carg12 = alloca %str-long` 與 `%cres14 = alloca i1`
+> 在迴圈體內：**LICM 不提 `alloca`，mem2reg/SROA 也無法提升不在 entry block 的 `alloca`**。
+> 修法：`emitFunc` 先把函式體寫進暫存 builder，結束時用 `hoistEntryAllocas` 把**靜態** `alloca`
+> 全部搬進 entry block（**動態** `alloca i8, i64 %n` 必須留在原地——它的人數運算元可能由後面的 block
+> 定義，entry 不支配它）。修好之後同一支程式 **rc=0**，並**解除遮蔽**了 map 洩漏：現在可以量到
+> 800,000 圈 ⇒ **651 MB 且線性成長**（§4.3）。
+> 生產改動：`codegen.go`（`sb` 改成 `*strings.Builder` 以便逐函式重導 ＋ 新增 `hoistEntryAllocas`／
+> `isHoistableAlloca`）、`analysis.go`／`spawn_graph.go`／`mir.go`（建構點補 `sb`）、
+> 新增 `src/mir/entry_alloca_test.go`（3 個測試，含**動態 alloca 負對照**；**已證明會壞**：關掉 hoist
+> ⇒ `TestCallTemporariesAreAllocatedInTheEntryBlock` FAIL，報 `%cres11 = alloca i64`）。
+>
+> **驗收**：控制組 = **同一棵樹、只把 `hoistEntryAllocas(x)` 換成 `x`** 的 binary（`/tmp/no_kill`），
+> 治療組 = `/tmp/no_fix`。**全語料 691 檔「編譯＋執行」A/B**（比 `rc` ＋ stdout sha）：
+> BUILDFAIL 集合**完全相同**（3 檔：`src/std/number.no`、`tests/opt-container-len.no`、`tests/std-new.no`，
+> 皆非本輪），**只有 4 筆差異且全部解釋**：`std-unix-fs-os.no`／`std-unix-fs-os-2.no` 是**本質非決定性**
+> （印 `mkstemp` 隨機名，**同一支 binary 連跑 3 次 3 個 sha**）；`tls.no`／`https-server.no` 是
+> `-P 6` 下載撞 8s 逾時（**序列重跑兩邊 sha 逐字相同**）。`no vet src/std` 的 **error 集合逐行相同**
+> （47 error，皆來自別的 session 的未提交工作）。核心套件 `go test` 全 ok；本次改的 6 檔 `gofmt` 乾淨。
 
 ---
 
@@ -70,18 +150,21 @@
 這兩條合起來就是整個模型的分界線：**值與值之間只有「擁有」與「搬移」，沒有共享**；
 唯一允許的共享是「視圖」，而視圖只從容器／聚合的內部取出來。
 
-### 0.3 完成狀態（2026-10-02）
+### 0.3 完成狀態（2026-10-03）
 
 **已落地並通過驗收**
 
 - **header ABI 全型別**（§2.1）：37 個 alloc ＋ 35 個 free 站點全部改走 `@nolang_rc_alloc` / `@nolang_free`。
-- **借讀的引用計數**（§2.2）：`OpRetain` / `OpRelease` 成對落地；語料 1717 retain / 1693 release。
+- **借讀的引用計數**（§2.2）：`OpRetain` / `OpRelease` 成對落地。**語料實測（可複現）**：`tests` ＋
+  `test` ＋ `example` ＋ `src/std` 共 **691 檔全部成功 lower**，`OpRetain=68` / `OpRelease=58` /
+  `OpDrop=11151`。⚠️ 舊版此處記的「1717 retain / 1693 release」**無法複現、已作廢**（§4.3）。
 - **`vecDeepFree`**：深釋放配深克隆（對偶 `vecDeepClone`）。
 - **async 邊界的兩條**（§2.3／§2.4）：spawn 參數「源已死 ⇒ move」、`%task` 的 RC ＋ 兩個漏計缺陷修復。
 - **async 邊界第三條：spawn 參數的「靜態閘門 retain」**（§4.2 b ⑥，2026-10-02）：源仍活但**可證明**
   spawn 之後不原位寫入、且型別可共享（owned `str`／非擁有元素的 `[]T`）⇒ 共用 buffer ＋ 第二個引用
   （`@str_retain`/`@vec_retain`），否則維持深拷貝。對既有語料**零觸發**（保語義的精化）。
-- **分析與驗證器**（§3）：tier 推斷（報告-only）、spawn graph 線性化（報告-only）、`checkRefBalance`。
+- **分析與驗證器**（§3）：tier 推斷（**已落地，且是硬閘門**，2026-10-03）、spawn graph 線性化
+  （報告-only）、`checkRefBalance`、`checkTierSoundness`（I1，2026-10-03）。
 - **規則一（§1.1）**：只讀前向移除、owned `str` / `[]T` / **`?str` / `?[]T`** 綁定改深拷貝（§4.2 a）。
   過程中一併修掉 `emitOptionDrop` 的 `case "vec"` 死碼（`?[]T` 的 payload 從未釋放，§4.2 a）。
 - **切片視圖的壽命**（§4.4 a，2026-10-02）：`Module.viewSrc` ＋ `defUse` ⇒ 視圖的來源活到視圖的最後一次
@@ -90,6 +173,9 @@
 - **`%vec` 元素賦值的深拷貝**（§4.4 b，2026-10-02）：`emitIndexStore` 補上與 `vec.push` 對稱的 `%vec`
   分支（共用 `vecElemTypeID`）⇒ 一併讓 **map 的值**擁有自己的 buffer（規則一的剩餘型別就此收完），
   並修掉 `[][]i64` 元素賦值的 `trace/BPT trap`。
+- **接收者投影的失效條件補完**（§4.5，2026-10-03）：**重新綁定**（value 被第二次定義 ⇒ `defCount > 1`）
+  與**被投影的路徑被寫入**（`sourceWrittenBetween`）都撤回投影；`OpIndex` 補上原本缺失的護欄
+  （症狀是 `SIGTRAP`）。修掉「`str.trim()` 的結果**內容對、長度為 0／舊值**」。前提 `projectionWasCloned`。
 
 **待辦**（前置條件見 §4）
 
@@ -106,20 +192,28 @@
    retain**」（`spawnArgWritesAfter` ＋ `spawnArgRetainSafe`），無法證明就退回深拷貝。
    **刻意收窄**：只覆蓋 owned `str` 與**元素不擁有堆**的 `[]T`；`[]str`/`[][]i64`、struct、以及任何
    無法證明無寫入者**維持深拷貝**。⚠️ 對既有語料**零觸發**（保語義的精化，見 §4.2 b ⑥）。
-3. **`checkTierSoundness` / `checkReleaseTarget`**：要等第 2 項的「呼叫端寫入點／tier」分析落地
-   （不是等 header——header 已經有了）才有內容（§4.2 c）。⚠️ 第 2 項只落了**布林**寫入點（且只管
-   spawn 輸入參數），**tier 推斷仍是報告-only** ⇒ 本項前置**仍未滿足**。
+3. ~~**`checkTierSoundness`**~~ ✅ **已落地（2026-10-03，v2.6）**：tier 推斷不再報告-only（§3.1），
+   驗證器守住 I1 並成為**硬閘門**（§3.3）。全語料 575 檔編譯掃描 **0 個 `tier-soundness`**（無假陽性）。
+   **`checkReleaseTarget`（I5/I6）仍未落地，且仍不該寫**：它要守的性質活在 `@nolang_rc_release` 的
+   **函式體**裡，MIR 看不到（§3.3）。
 4. **map 的儲存從不釋放**（§4.3）：**只洩漏、不懸空**，但本輪（2026-10-03）複查確認它是**功能**
    而非小修——根因是**三段**（`StructOwnedLeafFieldIdxs` 只看 `KindStr` ⇒ 不插 drop；`emitStructDropHelper`
    只釋放 `%str-long` leaf；`emitLeafFieldsCloneR` 只深拷貝 `%str-long` leaf），且 `%str-long` 硬寫點
    在 `codegen.go` **十餘處**。**只做前兩段會把洩漏升級成 double free** ⇒ 與 §4.2 c 同級，**判定不落地**。
+   **v2.8 複查：洩漏量首次可以量到底**（原本被棧溢位截斷，§4.6）：丟棄一個 `[str]i64` ≈ **814 B**，
+   50k→44.8 MB、100k→87.7 MB、200k→164 MB、**800k→651 MB，線性無上界**。**負對照**：`init()` 但
+   從不 `put` ⇒ 1,000,000 圈仍是 **1.69 MB 平線**（漏的是 `put` 配置的 buffer，不是 `init`）。
 
 **一句話總結**：**S／C 兩檔的機制完整且被驗證；R 檔只覆蓋了 `%task`。** 「值對值別名」整類已從模型與
 實作裡刪掉（`str` / `[]T` / `?str` / `?[]T` 已收，**map 的值**亦已收——修在**元素寫入**而非 map 自身，§4.4 b）；
-參數側的 retain 已收成**靜態閘門**（窄範圍、對既有語料零觸發）；本輪另修掉兩個**可觀測缺陷**：
-**切片視圖的來源被提前釋放**（§4.4 a）與 **`%vec` 元素賦值的淺拷貝**（§4.4 b）。剩下的主要待辦是
-**tier 推斷落地**（§4.2 c 的前置）、**借讀 release 的死亡點精度**（§4.3）與 **map 儲存的釋放**（§4.3；
-本輪確認是「功能」：三段根因 ＋ 十餘處 `%str-long` 硬寫點，只做一半會變 double free）。
+參數側的 retain 已收成**靜態閘門**（窄範圍、對既有語料零觸發）；規則一那輪另修掉兩個**可觀測缺陷**：
+**切片視圖的來源被提前釋放**（§4.4 a）與 **`%vec` 元素賦值的淺拷貝**（§4.4 b）；v2.5 修掉
+**接收者投影的兩層失效條件**（§4.5）；v2.6 **tier 推斷落地並成為硬閘門**（§3.1／§3.3，
+含 C 檔的寫入點 `writtenThroughSet`）；v2.7 **撤銷了 §4.3 的「借讀 release 死亡點精度」殘留**
+（三條獨立證據證偽，並補上會壞的釘子）。剩下的主要待辦**只有兩項**：
+**map 儲存的釋放**（§4.3；確認是「功能」：三段根因 ＋
+十餘處 `%str-long` 硬寫點，只做一半會變 double free），以及把 tier 從**描述式**變成**規定式**
+（§4.2 c 的界線：那需要把 pass 移到 `insertBorrowRetains` 之前）。
 
 ---
 
@@ -186,6 +280,14 @@ false、從不被釋放——所以「兩個名字共用一個 map」是它的�
 > （症狀：`std/markdown.no` 的表格渲染不確定，`-O0` 下 100% 重現）。修法是
 > `getFieldWasCloned && sourceAlreadyDropped` 才停止投影。
 > **🔴 「已 drop」≠「已死」**——必須用 drop 的**實際發出位置**判定，不是用存活分析。
+>
+> **🔴 投影有兩層失效條件，v2.4 只寫了第一層（2026-10-03 補完，§4.5）。**
+> 第一層是「**來源已經沒有那個值了**」：`sourceAlreadyDropped`（來源的 drop 落在 read 與 use 之間）
+> 與 `sourceWrittenBetween`（那條路徑在 read 與 use 之間**被寫過**）。
+> 第二層是「**這個 value 已經不是當初那個值了**」：`defCount > 1`（value 被第二次定義 ⇒ 撤回投影）。
+> 兩層都必要，且**都必須以「這個讀取產生了獨立的 owned `%str-long`」為前提**（`projectionWasCloned`）
+> ——只有這樣，退回自己的槽位才永遠安全。判準一律是**結構性的**（指令的定義數、指令的相對位置），
+> **不是存活分析**——這是本節兩次修正共同的教訓（「已 drop」≠「已死」；move-into 編碼對存活分析隱形）。
 
 ### 1.3 指令語義表
 
@@ -397,18 +499,34 @@ worklist ← 所有值
     對每個 v：t = tier(v) ⊔= 各使用點的 constraint；若上升，把 v 的別名加入 worklist
 
 constraint(u, v)：
-    OpRun 的參數／結果     → R      ; 目前唯一的 R 來源
-    存入 R 檔容器          → R
-    被 R 檔值別名          → R      ; 傳遞性
-    借讀視圖且之後有寫入    → C
-    僅借讀且只讀           → S      ; 讀不提升檔位
-    （值對值賦值）         → S      ; 規則一：不產生別名
+    OpRun 的結果            → R      ; %task handle，目前唯一的 R 來源
+    OpRun 的參數（閘門共享） → R      ; 讀回 spawnArgRetains（§4.2 b ⑥ 的決定，不重算）
+    OpRun 的參數（深拷貝／move）→ S   ; 呼叫端不留引用，值沒有跨邊界
+    OpTaskRetain / OpAwait  → R      ; 第二個引用必須自己計數（§2.4）
+    被 R 檔值別名           → R      ; 傳遞性（tierStep 的別名邊）
+    存入 R 檔容器           → R      ; I2（tierStep；今天真空）
+    借讀視圖且之後有寫入     → C      ; writtenThroughSet
+    僅借讀且只讀            → S      ; 讀不提升檔位
+    （值對值賦值）          → S      ; 規則一：不產生別名
 ```
 
-**收斂性**：晶格高度 3，每輪只升不降，最多 2 輪 × |值| 次。
+**收斂性**：晶格高度 3，每輪只升不降。**別名鏈需要不只一趟**（`h → h2 → h3` 要三趟），
+所以「只跑一趟」的 fixpoint 是錯的——這正是 `checkTierPartition` 的**閉包**那一半在守的東西。
+
+**實作落點（2026-10-03）**：**指令內可判定**的列在 `tierConstraint`（`tier.go`），**需要看當前 tier
+map** 的兩列在 `tierStep`；C 檔的觸發點在 `inferTiers` 的前置 pass（`writtenThroughSet`）。這個切分
+是刻意的：`tierConstraint` 是設計表格的**可直接單測**的形式，`tierStep` 是把它閉合的資料流。
 
 > ⚠️ **`inferTiers` 必須顯式 seed 每個值。** `TierS` 是晶格的零值，所以「只寫入上升的值」會讓全 S 的
-> 推論回傳**空 map**。目前是**報告-only**（`NOLANG_MIR_TIER=1` 印到 stderr），對編譯輸出 0 差異。
+> 推論回傳**空 map**——那是 P1 唯一的真缺陷，現在由 `checkTierPartition` 的 seed 那一半守住
+> （測試用**空 map** 餵它，必須開火）。
+>
+> 🔴 **`OpClone` 不是別名邊。** 傳遞性只走 `OpMove`／`OpCast`／`OpPhi`；把 `OpClone` 算進去會讓
+> 「克隆出來的獨立值」繼承來源的 R 檔 ⇒ 推斷**過度提升** ⇒ 驗證器（只查「S/C 不得是 R 物件」的
+> **單向**）就再也抓不到真正的漏提升。**過度提升會讓檢查變安靜**，這與假陽性同樣危險。
+>
+> **觀測**：`NOLANG_MIR_TIER=1` 印 S/C/R 直方圖到 stderr（對編譯輸出 0 差異）。它現在只是**量測面**，
+> 不再是「唯一的可觀測」——真正的消費者已經是 `checkTierSoundness`（§3.3）。
 
 ### 3.2 Escape / spawn graph 線性化
 
@@ -439,8 +557,8 @@ constraint(u, v)：
 |---|---|---|
 | `checkDropCount` | I4 | ✅ 已落地 |
 | `checkRefBalance` | I3（安全方向） | ✅ 已落地 |
-| `checkTierSoundness` | I1, I2 | ⬜ **刻意未實作**（前置條件見 §4.2 c） |
-| `checkReleaseTarget` | I5, I6 | ⬜ **刻意未實作**（同上） |
+| `checkTierSoundness` | I1 | ✅ **已落地（2026-10-03，v2.6）**，見下 |
+| `checkReleaseTarget` | I5, I6 | ⬜ **刻意未實作**（§4.2 c） |
 
 **`checkRefBalance` 的要點**：與插入器**共用謂詞**（直接用 `spawn_graph.go` 的 `handleAliasSet`，
 同時走兩種 `OpMove` 編碼、`OpCast`、`OpPhi`）；**只報安全方向**（每個非 root 別名成員必須是某個
@@ -449,11 +567,28 @@ spawn，`Sym == ""` 的 `run <var>` 只是轉發，沒有新計數可平衡）�
 **必須有「修復前必須失敗」的測試**（用 `stripTaskRetains` 把修復加上的 retain 拿掉，再要求驗證器開火）
 ——否則一個「什麼都沒看」的空驗證器也會全綠。
 
-**為什麼 `checkTierSoundness` / `checkReleaseTarget` 此刻刻意不寫**：它們要守的 I1/I2/I5/I6 是
-**header ABI 接上使用者值之後才存在**的性質。今天唯一提升到 R 檔的物件是 `%task`——
-I1 由 `inferTiers` 的結構性 seed 保證、I2 是真空的（語言裡沒有 R 容器）、I5/I6 是 **codegen 層**的性質
-（MIR 看不到 `@nolang_rc_release` 的函式體，而 `ValidateTypes` 是 AST 層的鏈，放不進去）。
-**先寫空檢查比不寫更糟**——它會讓「驗證器存在」變成一個虛假的保證。
+**`checkTierSoundness` 的要點（2026-10-03 落地）**：守的是 I1——「被推斷成 S/C 的值**真的**沒有跨
+線性上下文的別名」——而**兩個方向是從相反的兩側寫的**，這才是它不自我證明的理由：
+- **constraint**（`tierConstraint`／`tierStep`）是**設計表格**：「這個使用點要求運算元是什麼檔位」；
+- **驗證器**讀的是 **IR 那一側**的地面真相：「這是 R 物件」——真實 spawn 的 handle **及其全部別名**
+  （`handleAliasSet`，與 spawn graph／`checkRefBalance` **共用同一個謂詞**）、§4.2 b 共享的 spawn
+  參數、每個 `OpTaskRetain`／`OpAwait` 運算元。
+
+兩者都**讀回已記錄的決定**（`spawnArgRetains` 是 `insertDrops` 寫下的；retain/await 是**串流裡的
+指令**）而不是各自重算（§4.5 的紀律），所以「推斷的結論」與「IR 的假設」一旦漂移就是**硬編譯失敗**，
+而不是靜默的錯檔位。另有**分區完整性**那一半：每個值都有檔位，且不低於自己使用點的要求。
+
+**非空性（必須「修復前會壞」）**：把**恆等分區**（每個值 S——即 v2.5 的真實行為）餵給
+`checkTierRSites`，它**必須開火**；把**空 map** 餵給 `checkTierPartition`，它**必須開火**。
+兩個測試都要求「先證明它會壞」，且控制組是**忠實重建原行為**（改寫整個 map），不是「關掉新行為」
+——後者在「新舊都會寫」的分支上不等價（§5 操作紀律）。
+
+**I2 為什麼仍然不查**：今天唯一的 R 物件是 `%task`，而 `%task` 不是容器 ⇒ 規則真空。§3.3 的判決
+不變：**空檢查比不寫更糟**，因為它讓「驗證器存在」變成虛假的保證。
+
+**`checkReleaseTarget` 為什麼仍刻意不寫**：I5/I6 是 **codegen 層**的性質（MIR 看不到
+`@nolang_rc_release` 的函式體，而 `ValidateTypes` 是 AST 層的鏈，放不進去）。等 R 檔接上使用者值
+（P5）再寫。
 
 ⚠️ **驗證器的假陽性在此是硬編譯失敗**（`rep.HasErrors()` 會 gate codegen）。**新驗證器必須與插入器
 共用同一組判定謂詞**，且要跑**全語料的編譯掃描**。新增診斷要四處齊備（`checker.go` 的 `ValidateXxx`
@@ -469,7 +604,7 @@ I1 由 `inferTiers` 的結構性 seed 保證、I2 是真空的（語言裡沒有
 
 §0.3 已列。細節與量測見 §2／§3，語料見附錄 A，觸點見附錄 B。
 
-### 4.2 落地狀態（(a) 全落；(b) 已落閘門；(c) 未落）
+### 4.2 落地狀態（(a) 全落；(b) 已落閘門；(c) I1 已落、I5/I6 仍不落）
 
 #### (a) 規則一（§1.1）—— **`str`／`[]T`／`?str`／`?[]T`／map 的值 已全部落地**
 
@@ -696,7 +831,8 @@ print(awy ta)             ; 深拷貝 ⇒ 1    ／    retain ⇒ 99
 效果也一樣好：大多數「spawn 完就不再動它」的呼叫端直接零拷貝。
 
 所以 (b) 的正確前置條件**不是** header（已有），而是**「呼叫端在 spawn 之後對 `x` 的寫入點」分析**
-——正是 §3.1 tier 推斷要算的東西（今天仍是報告-only）。**在沒有那個分析之前，深拷貝是唯一保持語義的
+——正是 §3.1 tier 推斷要算的東西。（tier 推斷後來（2026-10-03）落地了，但**只當驗證器**、**不依 tier
+改寫 IR**，所以它**不能**取代這裡的閘門——見 §4.2 c 的「循環依賴」說明。）**在沒有那個分析之前，深拷貝是唯一保持語義的
 選擇**；無條件 retain 會讓「任務看到什麼」取決於呼叫端在 `awy` 之前寫了什麼，是**語義退化**而非優化。
 （輸入參數的契約「不改」正是這個閘門想要**靜態化**的東西——與其在文件裡寫「不應該寫」，不如讓
 分析證明它沒寫、然後省掉那份拷貝。）
@@ -730,38 +866,83 @@ print(awy ta)             ; 深拷貝 ⇒ 1    ／    retain ⇒ 99
 效益要等真實程式出現「spawn 完就不再動參數」的形狀才會顯現。**其餘仍維持深拷貝**：`[]str`/`[][]i64`、
 struct、以及任何**無法證明**無寫入的參數。
 
-#### (c) `checkTierSoundness` / `checkReleaseTarget`
+#### (c) `checkTierSoundness` ✅ 已落地（2026-10-03）；`checkReleaseTarget` ⬜ 仍不落地
 
-前置條件 = (b)。(b) 重新界定之後，等的是**同一個**「呼叫端寫入點／tier」分析（§3.1，今天報告-only）——
-要等使用者值真的被提升到 R 檔（或 C 檔 CoW 有寫入點可查）才有東西可守。理由見 §3.3；
-「為什麼此刻刻意不寫」見 §3.3 末（先寫空檢查比不寫更糟）。
+**原判決（2026-10-02）**：前置 = 真實的 tier 推斷，而推斷當時對每個 use 回 S ⇒ 恆等映射 ⇒
+拿它驗證「推斷是否可靠」是**自證**，恆真。本輪的解法是**同時解掉兩邊**，而不是繼續等。
 
-> **更新（2026-10-02，本輪）**：`spawnArgWritesAfter` 是**第一塊**「呼叫端寫入點」分析，但它 (1) 只覆蓋
-> **spawn 邊界的輸入參數**、(2) 只回答布林「有沒有原位寫入」而非 tier、(3) 只在 `insertDrops` 的
-> spawn 迴圈裡被呼叫。**tier 推斷本身仍是報告-only**，所以 `checkTierSoundness` 的前置條件**仍未滿足**。
+| 動作 | 內容 |
+|---|---|
+| 填實 `tierConstraint`（`mir/tier.go`） | 三條**非平凡**來源：`OpRun` 的 dst 與 `spawnArgRetains` 的參數 ⇒ **R**；`OpTaskRetain`／`OpAwait` 的操作數 ⇒ **R**；其餘 ⇒ S |
+| 填實 `tierStep` | (1) 指令局部約束；(2) **別名傳遞**：`OpMove`／`OpCast`／`OpPhi` 雙向 join（`OpClone` **不**傳——clone 就是為了斷開別名）；(3) **I2**：`OpSetField`／`OpIndexStore` 把值存進 R 容器 ⇒ 被存的值抬到 R |
+| C 檔種子 | `writtenThroughSet`（`OpSetField`／`OpIndexStore` 的 `Args[0]`）＋ `isBorrowRead`——正是 §3.1 表列的「C 檔 CoW 有寫入點可查」 |
+| `checkTierSoundness` 讀 **IR 的地面真相** | 不重跑推斷，而是**獨立**讀：spawn handle、`handleAliasSet` 的成員、`spawnArgRetains` 的參數、`OpTaskRetain`／`OpAwait` 的操作數——這些**必須**被推斷成 R；C 的種子必須落在 `writtenThroughSet`／`isBorrowRead` 上 |
 
-> **判決（2026-10-02）：不落地。** 本輪再次確認前置未滿足，且**不打算用「先寫空檢查」蒙混**：
-> - `checkTierSoundness` 要守的是「**被推斷成 S/C 的值真的沒有跨線性上下文的別名**」。今天
->   `tierConstraint` 對每個 use 都回 S（`analysis.go:480`，P1 報告-only），推斷是**恆等映射**——
->   拿它去驗證「推斷是否可靠」是**自證**，恆真，等於沒有檢查。
-> - `checkReleaseTarget` 要守的是「`OpRelease` 的目標確實是被 retain 過的那個值」。今天唯一會發
->   retain/release 的是**借讀**（§2.2）與 **spawn 閘門**（§4.2 b ⑥），兩者的配對已由 `checkRefBalance`
->   與各自的單元測試釘住；對**尚未存在的 R 檔使用者值**寫檢查，沒有可檢查的對象。
-> - ⇒ 先寫空檢查比不寫更糟（它會讓人以為這一塊已經被守住了）。**等 tier 推斷真的開始改寫 IR 再寫。**
+**為什麼這不是自證**：驗證器與推斷**讀不同的東西**。推斷讀「我自己的約束表」，驗證器讀「IR 裡哪些值
+真的是 R 物件」（spawn handle 的定義、`handleAliasSet` 的連通分量）。若 `tierConstraint` 退化成全 S，
+`checkTierRSites` 立刻在 spawn handle 上報錯——**這是可證明會壞的**（`tier_test.go` 的
+`TestCheckTierRSitesFiresOnIdentityPartition` 把約束釘成全 S 即觸發；`TestCheckTierPartitionFiresOnUnseededMap`
+釘 C 的種子）。語料掃描（575 檔）**零** `tier-soundness` 假陽性。
+
+**仍然沒有任何東西依 tier 改寫 IR，這是刻意的。** 要變成規定式，得把這個 pass 移到
+`insertBorrowRetains`（借讀 retain）與 `emitAsyncRun`（spawn 的 retain／拷貝）**之前**——而
+`tierConstraint` 的 R 列**讀回 `spawnArgRetains`**，那個決定是 `insertDrops` 寫的 ⇒
+**把 pass 往前搬會形成循環依賴**。所以 tier 推斷今天只**驗證**已經由別處（借讀／spawn 閘門）做出的
+決定，不自己下決定。`checkTierSoundness` 因此必須排在 `insertDrops` **之後**（`analysis.go` 的呼叫點有註記）。
+
+**`checkReleaseTarget`（I5/I6）—— 仍不落地。** 它要守的是「`OpRelease` 的目標確實是被 retain 過的
+那個值」。今天唯一會 retain/release 的是**借讀**（§2.2）與 **spawn 閘門**（§4.2 b ⑥），兩者的配對已由
+`checkRefBalance` 與各自的單元測試釘住；對**尚未存在的 R 檔使用者值**寫檢查，沒有可檢查的對象。
+⇒ 先寫空檢查比不寫更糟（它會讓人以為這一塊已經被守住了）。
 
 ### 4.3 已知殘留
 
-**借讀 release 的活性精度（不是配對問題）**：借讀值被 option-wrap／enum 建構子**吃掉**時，引用隨容器走，
-release 落在**剝離結果**上；在直線程式碼裡配對成立，但那個結果的 drop 位置由（保守的）活性分析決定，
-**在迴圈裡會被提到迴圈外** ⇒ 每圈漏一塊（`x = a[0]` 配 `#{index-out}` 的形狀）。語料實測
-1717 retain / 1693 release，未配對的 24 個全屬此類；**沒有任何檔案是 release > retain**。
-收掉它需要更精確的死亡點分析（must-defined／支配），**與規則一無關**。
+**借讀 release 的死亡點精度 —— 本輪（2026-10-03，v2.7）複查：不存在，原條目是誤判，予以撤銷。**
 
-> **本輪（2026-10-02）複查：維持不落地，且與 §4.4 a 是「不同的」問題。** §4.4 a 修的是「來源被視圖
-> **提前**釋放」（**漏釋放的反面：過早釋放**，會讀到垃圾）；本節是「release 被**延後**到迴圈外」
-> （**只會洩漏，不會讀到垃圾**）。兩者的判準相反，所以 §4.4 a 的 `viewSrc` **不影響**本節——
-> `viewSrc` 只**延長**來源的活性，不改變任何 release 的落點。本節要的「must-defined／支配」分析
-> **仍不存在**；但因為它**不造成記憶體不安全**（只洩漏），優先序低於 tier 推斷（§4.2 c）。
+原條目（v2.1 起）主張：借讀值被 option-wrap／enum 建構子**吃掉**時，引用隨容器走，release 落在
+**剝離結果**上；那個結果的 drop 位置由（保守的）活性分析決定，**在迴圈裡會被提到迴圈外** ⇒ 每圈漏一塊
+（`x = a[0]` 配 `#{index-out}` 的形狀）。**前半段是對的，後半段是錯的。**
+
+**三條獨立證據**（都只用**現行樹**，且都可重跑）：
+
+| # | 證據 | 指令 | 結果 |
+|---|---|---|---|
+| ① | **MIR 直讀** | `NOLANG_MIR_DUMP_MIR=1 no build x.no`（`x = a[0]` 在迴圈裡） | `index dst=21(owned) → retain args=[21] → option-wrap dst=22 args=[21] → move dst=0 args=[22 20]`；**剝離結果的 drop 就在迴圈內**（`drop dst=0 args=[29]` 落在迴圈的 some 臂，可回到迴圈頭）——**沒有被提到迴圈外** |
+| ② | **端到端 RSS** | `/usr/bin/time -l ./probe.bin`，2,000,000 次迭代 | 8 個形狀（option-wrap／純臨時值／`y = x` clone／grow 路徑 `x.push`／三層嵌套／`[]str` 元素／跨迴圈逃逸／`#{index-out}` 直讀）**全部 1.7 MB 平線**。**正對照**：同一個 harness 跑已知的 map 洩漏（§4.3 下一條）**300,000 次迭代即 151 MB** ⇒ harness 偵測得到洩漏 |
+| ③ | **語料逐值不對稱** | 691 檔（`tests` ＋ `test` ＋ `example` ＋ `src/std`，**全部**成功 lower） | `OpRetain=68` / `OpRelease=58` / `OpDrop=11151`；不對稱**只有 13 筆**，**全部**可解釋（下表） |
+
+**為什麼 retain 是承重的、而「沒有配對的 `OpRelease`」是正確的。** `@nolang_free` 只**遞減** header 的
+rc、**歸零才 free**。`a[0]`（配 `#{index-out}`）產生 **owned 深拷貝**（rc=1），`retain` 把它抬到 2，因為
+**之後有兩次處置**：①`option-wrap` 出來的 option 被 drop ⇒ **深度釋放**（rc 2→1，**不 free**）；
+②剝離結果的 drop ⇒ rc 1→0（**free**）。retain 與「option 的深釋放」正好配平；**再補一條 `OpRelease`
+反而是 underflow**（提前 free）。這正是 `borrowReleaseValues` 的種子**只讀回 `OpRetain` 指令**、
+且**故意不做 clone 閉包**的原因（`analysis.go` 的函式註解有完整推導）。
+
+**13 筆殘餘的歸類**（前 3 筆 `borrowReleaseValues` 的註解已記載）：
+
+| 檔案 | 筆數 | 形狀 | 配平方式 |
+|---|---|---|---|
+| `tests/mem-safety/nested-container-clone.no` | 10 | `retain → option-wrap`（無 move） | option 的**深釋放是 rc 感知的**（證據 ②），且剝離結果在迴圈內被 drop |
+| `mem-safety/struct-field-{move-test,shallow-copy-bug,uaf-bug}.no` | 3 | `getfield → retain args=[24] → move dst=0 args=[24 23] → release args=[23]` | **release 落在 move 的目的地**（`borrowReleaseValues` 的 move 閉包） |
+
+**沒有任何 `release > retain` 的真實案例。** 同一支掃描另報 3 筆「release 無 retain」（正是上表後 3 筆），
+那是同一條 move 轉移的另一面，**不是 underflow**。
+
+**「先證明它會壞」。** 把 `insertDrops` 的 start-drop 全部從迴圈內提到迴圈外（臨時 hack，**已回退**，
+`grep -c TEMP-HACK == 0` ＋ diff-stat 回到原值）⇒ 新增的釘子
+`TestBorrowInLoopIsDisposedEveryIteration` **FAIL**，且端到端 RSS 從 1.7 MB 漲到
+**66 MB（`[]i64` 元素）/ 259 MB（`[]str` 元素）**。⇒ 原條目描述的**機制是真的**，只是**當前樹上不成立**。
+釘子本身帶**負對照**（沒有迴圈攜帶累加器的同形狀必須**不**滿足該性質），所以它不是恆真斷言。
+
+⚠️ **原文的「語料實測 1717 retain / 1693 release，未配對的 24 個」無法複現。** 同 roots、同 lowering
+路徑（`lexer → parser → ASTToHIR → LowerHIR`）、同粒度（MIR 指令、逐值）得到的是 **68 / 58 / 13**。
+原文未記測量方法，本輪改用上表 ③ 的可複現數字。**保留這一行是為了標示舊數字不可信，不是為了引用它。**
+
+> **與 §4.4 a 的關係（原文的這段推理仍然有效，只是結論反了）。** §4.4 a 修的是「來源被視圖**提前**
+> 釋放」（**過早釋放**，會讀到垃圾）；本節原以為是「release 被**延後**到迴圈外」（只洩漏）。兩者判準相反
+> 這點是對的，所以 §4.4 a 的 `viewSrc` 確實**不影響**本節。**但本節的症狀從來沒有被觀測到**——
+> 本輪的 MIR 直讀與 RSS 都指向「drop 就在迴圈內」。**教訓**：一個「只洩漏、不影響輸出」的殘留
+> 最容易被記進文件而永不複驗；**沒有可複現測量的殘留不該寫進 §4.3**（見 §7 決策 17）。
 
 **map 的儲存從不釋放（只洩漏，不懸空）**：`map.no` 沒有 `deinit`/`free`，`remove` 只標墓碑
 （註解自承「不清 keys/vals」）。IR 直證：`m [str][]i64 = {}` 的 `alloca %hashmap_str_slice_i64` 有
@@ -795,8 +976,61 @@ release 落在**剝離結果**上；在直線程式碼裡配對成立，但那�
 > ⇒ 本輪**判定不落地**（與 §4.2 c 同級的理由：改動面廣、風險是「不安全」而非「浪費」，
 > 且在並行 session 環境下無法安全地做全語料 A/B）。要做時，先把上面十餘處 `%str-long` 抽成
 > 「owned leaf 依型別分派」的單一入口，再逐 leaf 型別（`str` → `vec` → `map`）放行。
+>
+> **v2.8 複查：洩漏量終於可以量到底了（原本被另一個 bug 遮蔽）。** 之前量到 200,000 圈就
+> **SIGSEGV**，所以只能報「≈880 B/圈、200k 崩潰」。崩潰的原因**不是**洩漏，是 §4.6 第三列的
+> 棧溢位（呼叫臨時變數的 `alloca` 在迴圈內）——**v2.8 修好之後，同一支程式不再崩**，洩漏因此可以
+> 一路量到 800,000 圈：
+>
+> | 圈數 | 峰值 RSS | 說明 |
+> |---|---|---|
+> | 50,000 | 44.8 MB | |
+> | 100,000 | 87.7 MB | |
+> | 200,000 | **164 MB**（修好前：rc=139） | 棧溢位曾在此處截斷測量 |
+> | 800,000 | **651 MB** | **線性成長，無上界** |
+>
+> 斜率 ≈ **814 B/圈**（一個被丟棄的 `[str]i64` 的三個 buffer）。**正／負對照都在**：
+> `m [str]i64 = {}` ＋ `m.len()`（**從不 put**）跑 **1,000,000 圈仍是 1.69 MB 平線**
+> ⇒ 洩漏**只在真的 put 過、buffer 真的被配置之後才發生**，`init()` 本身不是漏點。
+> （可重跑：`/usr/bin/time -l` 量 `i <- [0..N) { m [str]i64 = {} ; m.put('key',1) }`。）
+> ⚠️ v2.7 之前記的「沒用過的 fresh map 每圈 ~80 B」是**錯的**——那次量到的是棧增長，不是堆洩漏。
+>
+> **v2.9 複查：③ 目前連 map 自己都不成立——「map 賦值是淺拷貝」（規則一的洞）。** 這是**比洩漏更該先
+> 處理**的一條，而且它讓 ① ② ③ 的「同一次落地」從紀律變成硬需求。探針（可重跑）：
+>
+> ```
+> m  [str]str = {}      print(m.get('a'))    ; => yyy   ← 被 m2 的寫入改到了
+> m.put('a', 'xxx')
+> m2 [str]str = m
+> m2.put('a', 'yyy')    print(m2.get('a'))  ; => yyy
+> ```
+>
+> ⚠️ **只看 `m.len()` 會得到相反的結論**：同源探針 `m2 = m; m2.put('b',2)` 印 `1` 與 `2`
+> （`size` 是純量欄位，按值複製）⇒ 曾因此誤判成「map 賦值已深拷貝」。**要用「寫入後回讀原物件」**
+> 才測得出共享（`get` 才是，`len` 不是）。⇒ `cloneLeafStructKey` 對 `hashmap-*` 回 false
+> （`StructHasOwnedLeafFields` 為 false）⇒ `emitClone` 落到 `emitMove` 的**逐位元搬移** ⇒
+> `keys`/`vals`/`occ` 三個 buffer **共享**。這同時是**規則一（§1.1）的未完成項**：值對值賦值
+> 對「含 `[]T` 欄位的 struct」目前不是深拷貝。
+>
+> **v2.9 複查：把「不落地」從判斷變成有數字。** `StructHasOwnedLeafFields` 在 `analysis.go`／
+> `codegen.go`／`hir2mir.go` 有 **~25 個呼叫點**（drop 插入、零初始化、clone、move 分類、
+> option payload、巢狀遞迴……），**放寬 `StructOwnedLeafFieldIdxs` 會把它們全部翻面**。語料實測
+> （全 691 檔，暫時插樁後全數移除）：
+> **36 個 struct 型別、52 個檔案**帶有 owned `[]T` 欄位——**不只有 `hashmap-*`**：
+>
+> `json.json-pool`／`yaml.yaml-parser`／`yaml.yaml-pool`／`tls.conn`／`tls.server-conn`／
+> `bigint.bigint`／`bufio.reader`／`gzip.bit-reader`／`pem.pem-block`／`deque.deque`／
+> `stack.stack`／`heap-i64`／`heap-f64`／`set-i64`／`set-str`／`process.cmdopts`／
+> `hashmap-{str,i32,u8,bool}-*`（8 種）……
+>
+> 欄位型別含 `[]i64`／`[]str`／`[]byte`／`[]bool`／`[]f64`／`[]i32`／`[]u8`／`[][]str`／
+> `[][]i64`／`[]json.json-value`／`[]yaml.yaml-node`。⇒ **這不是「給 map 加個解構子」，
+> 是「讓一整類 struct 開始有解構子」**，且 `emitStructDropHelper` 的註解自承：owned leaf 的釋放
+> 還要「欄位**讀取**也給出 clone 而不是別名」才安全（即 `projectionWasCloned` 那套，§4.5）。
+> **維持不落地**；要做時的順序是 ③（clone，含欄位讀取）→ ②（drop）→ ①（分類），
+> 且**逐 struct 型別放行**（先 `hashmap-*`，再 `set-*`/`heap-*`，最後 `json`/`yaml` 的 pool 型別）。
 
-### 4.4 本輪（2026-10-02）修的兩個可觀測缺陷
+### 4.4 上一輪（2026-10-02）修的兩個可觀測缺陷
 
 兩者都**不是合成探針**——既有語料／既有形狀就能觀測到——且都**與規則一無關**：它們是在規則一那輪把
 `vecDeepFree` 改成引用計數感知、並讓 option payload **真的開始釋放**之後，**才浮現或才被看見**的。
@@ -893,6 +1127,117 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
 **⚠️ 這也會增加配置**：每次 `%vec` 元素寫入多一次 malloc ＋ memcpy（`cap` 設為 `len`）。判準與規則一
 相同——「**clone 只增不減，且每一筆增加都能對應到一條元素寫入**」，不是「0 差異」。
 
+### 4.5 本輪（2026-10-03）修的兩個投影缺陷
+
+兩者都由**使用者回報的症狀**引出（`str.trim()` 的結果**內容對、長度為 0**），根因都在**接收者投影**
+（`lvalueAddrOf` 那一族，§1.2），**與規則一無關**：它們是「投影」這條線在 v2.4 只寫了第一層
+失效條件（來源已 drop）之後剩下的兩個缺口。
+
+#### (a) 重新綁定之後投影仍然生效 —— `defCount` / `definedValue`
+
+```no
+line = lines[0]          ; OpIndex 定義 line
+line = line.trim()       ; OpMove **重新定義同一個 value id**
+print(line)              ; 內容正確
+print(line.len())        ; 修復前：0（或舊長度）；修復後：正確長度
+```
+
+**根因**：**MIR 的 value id 是「變數」，不是 SSA 名。** 同一條 value 可以被多條指令定義，而
+「寫入既有綁定」的 move 用的是**另一種編碼**（`Dst = NoVal`、`Args = [src, dst]`）。
+`codegen.defInst` 的建表迴圈只記 `inst.Dst > NoVal` ⇒ **move 隱形** ⇒ `defInst[line]` 永遠停在
+`OpIndex` ⇒ `lvalueAddrOf` 把**重新綁定之後**的每一次使用都投影回**舊的容器元素**
+（`%epN = getelementptr …, %edpM, i64 %i`）。`trim` 的結果寫進 **out-param**（不是接收者），
+所以 `lines[0]` 根本沒變；`line.len()` 卻讀 `&lines[0]` ⇒ **內容對、長度舊**。容器 drop 落地之後
+就是 use-after-free ⇒ 讀到 `0`（正是使用者看到的數字；換個檔案佈局會讀到舊長度）。
+
+**修法**（`src/mir/`）：
+
+| 觸點 | 內容 |
+|---|---|
+| `analysis.go` `definedValue(inst)` | 跨**兩種** move 編碼取「這條指令定義了誰」（`Dst`，或 `moveDst(inst)`）；放在 `moveSrc`／`moveDst`／`moveLike` 旁 |
+| `codegen.go` `defCount map[ValueID]int` | 建表迴圈改成 `defCount[d]++; if > 1 { delete(defInst, d) } else { defInst[d] = iid }` ⇒ **一個 value 被定義第二次就撤回投影**，退回自己的槽位 |
+
+**語義**：投影只描述**第一個**定義的儲存位置。`move dst=N args=[src]`（fresh 編碼）本來就無投影
+（`lvalueAddrOf` 的 switch 沒有 `OpMove` case）⇒ 修法只是讓**兩種 move 編碼行為一致**。
+**保守性：只會減少投影，不會新增。**
+
+**驗收**：
+
+| 檢查 | 結果 |
+|---|---|
+| 端到端 `tests/rebind-retracts-view.no`（新增） | 修復前 `fail 1 … got=0` ＋ fail 5／6；修復後 **9/9 ok** |
+| 單元測試 `rebind_retracts_projection_test.go`（新增） | 斷言 **IR 的接收者運算元**：修復前 `@str_plen receiver = %ep62`（element 投影）／`%lvg11`（field 投影）⇒ FAIL；修復後 `%vN.s` ⇒ PASS（`TestReboundElementViewIsNotProjected`／`TestReboundFieldViewIsNotProjected`） |
+| 對照組（**必須仍**投影） | ✅ `TestSingleDefinitionElementViewStillProjects`、`tests/set-byte-receiver-writeback.no` 7/7、`tests/len-assign-grow.no` 5/5 |
+| 全語料 A/B（**480** 檔；控制組 = 改動前**同一棵樹**的 `make no` 產物） | **465 逐位元組相同**；15 個差異**全為環境噪音**（12 × `compiler version mismatch`、2 × 隨機 temp 路徑、1 × pid）⇒ **0 行為回歸** |
+
+> 🔴 **「先證明它會壞」的陷阱：臨時 kill switch 必須忠實重放原行為。** 第一版寫成
+> `if defCount > 1 && !kill { delete } else { defInst[d] = iid }` ⇒ 語義變成「**最後**定義勝」
+> ⇒ 探針的接收者仍是 `%vN.s`，**測試假通過**（先被誤判成「探針形狀不對」，查了 MIR／LLVM 才發現
+> 是開關不忠實）。教訓與 §5「驗證器要守的東西必須先真的會壞」同源：**控制組要重放原行為，
+> 不是「把新行為關掉」**——兩者在不變的舊分支上等價，在「新舊都寫入」的分支上不等價。
+
+#### (b) 被投影的路徑被寫入 —— `sourceWrittenBetween`（`OpIndex` 原本沒有護欄）
+
+```no
+lines = ['aaaa'] ; line = lines[0]
+lines = ['bb']        ; 重綁容器
+print(line.len())     ; 修復前：SIGTRAP（舊 buffer 已 drop，是 use-after-free）；修復後：2
+
+h.f = '  hi  ' ; g = h.f
+h.f = 'zzzz'          ; 重綁欄位（**整支程式沒有任何 drop**）
+print(g.len())        ; 修復前：4（內容仍是 '  hi  '）；修復後：6
+```
+
+**根因**：投影 `&container[i]`／`&root.field` 描述的是**儲存位置**，只有「**那條路徑上沒人寫過**」
+時才還代表同一個值。兩種寫入形狀：容器重綁 ⇒ `move args=[new, ls]` 寫進鏈上的 `ls`
+（舊 buffer 同時被 drop）；欄位重綁 ⇒ `setfield args=[h, newval]` 寫進鏈上的 `h`——
+**後者整支程式沒有任何 drop，所以 `sourceAlreadyDropped` 抓不到**，必須另立「寫入」這條守則。
+
+**修法**（`src/mir/codegen.go`）：
+
+| 觸點 | 內容 |
+|---|---|
+| `projectionChain(read)` | 把原本內嵌在 `sourceAlreadyDropped` 裡的**鏈走訪**抽出，兩條守則共用 |
+| `reachableBlocks(f, from)` | 前向可達區塊（兩條守則共用） |
+| `sourceWrittenBetween(read, use)` | 掃可達區塊找**寫入鏈上任一 value** 的指令（`OpSetField`／`OpIndexStore` 的 `Args[0]`、move-like 的 `moveDst`），位置必須**嚴格落在** read 與 use 之間 |
+| `getFieldWasCloned` → **`projectionWasCloned`** | 它其實是「這個讀取產生了獨立的 owned `%str-long`」，field 與 index 兩種形狀共用 |
+| `sourceAlreadyDropped \|\| sourceWrittenBetween` | **同時掛到 `OpGetField` 與 `OpIndex` 兩分支**（`OpIndex` 原本**完全沒有護欄** ⇒ 這就是 `SIGTRAP` 的來源） |
+
+🔴 **「嚴格」是關鍵**：**寫入本身就是 use** 的那些（`b.s.len = 3`、`b.s[0] = 97`、
+`b.s.set-byte(…)`）正是投影存在的理由——把它們算進「read 與 use 之間」就會讓**寫回變成寫副本**。
+🔴 **前提是 `projectionWasCloned(v)`**：讀取有 clone ⇒ 自己的槽是完整私有值，退回它永遠安全。
+這也是為什麼**不能**把守則套到非 clone 的欄位（`x = o.c; x.n = 7` 必須繼續投影）。
+
+**驗收**：
+
+| 檢查 | 結果 |
+|---|---|
+| 端到端（`tests/rebind-retracts-view.no` case 8／9） | 控制組（只含 (a)）case 8 **SIGTRAP**、case 9 印 `fail 9 … got=4`；修復後 **9/9 ok** |
+| 單元測試 | `TestReboundContainerViewIsNotProjected`／`TestReboundFieldWriteViewIsNotProjected`：關掉守則後接收者分別是 `%ep109`／`%lvg14` ⇒ FAIL；修復後 `%vN.s` ⇒ PASS。**case 9 的探針全程式沒有任何 drop** ⇒ 單獨釘住「寫入」這條 |
+| 全語料 A/B（**481** 檔；控制組 = 只含 (a) 的 `./bin/no`） | **465 逐位元組相同**、15 個已知環境噪音、**唯一差異就是自己的新 case 8／9**（控制組 SIGTRAP）⇒ **0 非預期回歸** |
+| `go test ./mir/ ./parser/ ./hir/ ./checker/ ./fmt/ ./lexer/` ＋ `no vet src/std` | ✅ 全綠／**0 error**；gofmt 乾淨 |
+
+#### (c) 同族但**刻意未收**（回報，不隱藏）
+
+- **map 的儲存從不釋放**（§4.3）——本輪再次確認是「功能」而非小修（三段根因 ＋ 十餘處 `%str-long`
+  硬寫點），**判定不落地**。
+- **tier 推斷落地**（§4.2 c 的前置）——**已落地（2026-10-03，v2.6）**：`tierConstraint` 不再對每個 use
+  回 S，且 `checkTierSoundness` 從 IR 側獨立驗證（§3.3）。**但仍不依 tier 改寫 IR**（循環依賴，見 §4.2 c）。
+- **借讀 release 的死亡點精度**（§4.3）——**v2.7 撤銷**：三條獨立證據（MIR 直讀／8 形狀 × 2M 迭代
+  RSS 全平線／691 檔語料逐值不對稱僅 13 筆且全部可解釋）證偽「drop 被提到迴圈外」。
+  **不再是殘留**；新增的釘子 `TestBorrowInLoopIsDisposedEveryIteration` 守住它（並已證明會壞）。
+- **`%vec` 元素賦值多一次 malloc**（§4.4 b）——是**正確性的代價**（深拷貝必要），不是缺陷。
+
+### 4.6 本輪的三個非所有權改動（記錄，供追溯）
+
+不屬本模型的範圍，但同輪落地、**都會改變程式輸出**，故記在這裡以免日後誤判為迴歸。
+
+| 改動 | 症狀／內容 | 修法 | 驗證 |
+|---|---|---|---|
+| **單字元 `str` 字面量 ＋ `char` 字面量的位元組折疊** | `'x' - "a"` **靜默**得整數 `23`（`120-97`）、`'x' + "a"` 得 `217`；使用者要的是拼接 `"xa"`。`'xy' - "a"`（多字元）**已經**正確 ⇒ 只有「單字元 `'…'` 折位元組」那條路徑錯 | `hir2mir.go` 的 `+`/`-` 折疊條件加 `&& !charLitSibling(i)`——**只**豁免兄弟是 `"…"` **char 字面量節點**（`hir.KCharLit`）。🔴 **不可**豁免「char 型別的值」：那會讓 `c - '0'`（數字字元取值慣用法）從 `5` 變成拼接 `"50"`（**第一版就踩，實測回歸**） | 新 `src/mir/str_lit_char_concat_test.go`（控制組 FAIL）；`tests/str-ops.no` 輸出**逐位元組相同**；全語料編譯掃描 468 檔 **0 FAIL**。⚠️ 殘留不對稱（已知未解）：`'x' - "a"` = `"xa"` 但 `'x' - c`（`c` 是 `"a"` 變數）= `23` |
+| **`go` 關鍵字的無色協程轉寫** | `r = go f(x)` 自動單態 `f-async`（`hir.MonomorphizeGo`）；陳述層級 desugar 成 `run`＋`awy`（`hir.DesugarGoInlineAwait`）；協程組（裸 `{}`）內 `go` 並發 spawn。殺手開關 `NOLANG_ASYNC_GO=0` | 順帶修兩個編譯器缺陷：checker 缺 `*parser.GoExpression` 的型別推斷（`go` 預設 `i64`）；模組層級 `go` 的 `insertTopBefore`（handle 從未進程式 ⇒ `awy` 等一個不存在的 handle ⇒ `trace/BPT trap`） | 🔴 **對本模型的意義：`go` 只是 `run`/`awy` 的語法糖 ⇒ §2.3／§2.3b／§2.4 的邊界協議逐字不變**（move／retain 閘門／`%task` 計數全走同一條路徑）。8 個 `go` 檔全 `rc=0`；核心套件全 ok |
+| **呼叫臨時變數的 `alloca` 落在迴圈內 ⇒ 棧溢位**（v2.8） | `i <- [0..200000) { m.put('key', 1) }` **SIGSEGV（rc=139）**，峰值 RSS 卻只有 15.6 MB（**棧**溢位不是堆耗盡）。門檻約 160k 圈過、180k 圈崩。macOS crash report：`EXC_BAD_ACCESS / KERN_PROTECTION_FAILURE`、`Thread stack size exceeded`、幀 `_xzm_xzone_malloc_tiny → hashmap_str_i64_put → main` | **根因**：LLVM 的 `alloca` 是**指令**不是宣告——每次執行都保留棧空間，**只在函式返回時回收**。呼叫臨時變數（`%cargN` 引數暫存、`%cresN` 出參暫存）是在**呼叫點**發的，所以落在迴圈體裡就每圈增長一次。`-O2` 後 IR 仍留著 `%carg12 = alloca %str-long`／`%cres14 = alloca i1` 在 `bb5`：**LICM 不提 `alloca`，mem2reg/SROA 也無法提升不在 entry block 的 `alloca`**。被 inline 掉的呼叫沒事（`f()` 300k 圈正常），所以只有**呼叫沒被 inline 的函式**才會中。<br>**修法**：`emitFunc` 把函式體寫進暫存 builder（`codegen.sb` 改成 `*strings.Builder` 以便逐函式重導），結束時 `hoistEntryAllocas` 把**靜態** `alloca` 搬進 entry block；**動態** `alloca i8, i64 %n` 留在原地（人數運算元可能是後面 block 定義的 register，entry 不支配它 ⇒ 搬了就是非法 IR） | 修好後同一支程式 **rc=0**（`m.len()` 印 `1` ⇒ `put` 有去重）。**副作用**：解除遮蔽了 map 洩漏，現在可量到 800k 圈／651 MB 線性成長（§4.3）。新釘子 `src/mir/entry_alloca_test.go`（3 個測試；**負對照**：動態 alloca 必須**不**搬；**已證明會壞**：關掉 hoist ⇒ `TestCallTemporariesAreAllocatedInTheEntryBlock` FAIL，報 `%cres11 = alloca i64`） |
+
 ---
 
 ## 5. 驗證矩陣與操作紀律
@@ -902,7 +1247,7 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
 | 單元 | `cd src && go test ./mir/ ./fmt/ ./parser/ ./lexer/ ./hir/ ./checker/` | ok |
 | 端到端 | `GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default bash scripts/mir_golden.sh` | SAME 不減、REGRESS=0 |
 | 純重構 | `fp.txt` 前後逐檔 diff `(rc, sha256)` | 「N 檔中 0 檔變動」 |
-| **編譯掃描** | 只比 `no build` 的**成功／失敗**（不執行程式） | 全語料 0 差異；**驗證器的假陽性就用這個抓** |
+| **編譯掃描** | 只比 `no build` 的**成功／失敗**（不執行程式）；**設計上就是 no-op** 的改動再逐檔比 `sha256(stderr)` | 全語料 0 差異；**驗證器的假陽性就用這個抓**（tier 落地實測 **575/575**，`rc` 與 `stderr` 皆相同） |
 | 洩漏 | C 檔 `__attribute__((destructor))` 印 `malloc_zone_statistics` 的 `blocks_in_use`（`-O0`） | 大負載下有界 |
 | 診斷 | `no vet src/std` | 0 error |
 | 標準庫 | `no test` | FAIL 集合逐行不變 |
@@ -929,6 +1274,17 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
   回報成 `rc=0` ⇒ 掃描表上的 SIGSEGV 顯示 `rc=0`（但 stdout 的 sha 仍不同，差異不會漏）。
 - 🔴 **驗證器要守的東西必須先真的會壞。** 順序是「先找到／造出缺陷 → 再寫守它的驗證器 →
   附『修復前必須失敗』的測試」；反過來會寫出恆真的空檢查。
+  **但如果被驗的 pass 本身就是恆等映射，先修 pass、再讓驗證器讀「另一側」的來源**（§3.3 的
+  `checkTierSoundness`：推斷讀約束表，驗證器讀 IR 的 R 物件地面真相）——**兩個來源才可否證**；
+  舊的恆等映射要當**負對照**（餵它進去必須開火），不是當契約去釘。
+- 🔴 **臨時 kill switch 必須「忠實重放原行為」，不是「把新行為關掉」。** 第一版寫成
+  `if cond && !kill { A } else { B }` 會**連帶改變語義**（變成「最後定義勝」）⇒ 控制組與新版的
+  **接收者運算元相同** ⇒ **測試假通過**，還會讓你誤判成「探針形狀不對」而走錯方向（§4.5 a）。
+  正確寫法是把整段換成**原行為的那一段**（`defInst[d] = iid`），而不是在新邏輯外掛一個開關。
+- ⚠️ **`bin/no` 會被別的 session 用「沒有 ldflags」的 `go build` 覆蓋**（14.3 MB → 19.1 MB、
+  `version` 變 `dev`）⇒ 語料 A/B 會多出一批 `compiler version mismatch` 噪音。要用就 `make no`
+  重建並**核對 size／version**（`rm -f bin/no && make no`）；更穩的做法是 `go build -o /tmp/no_<x> ./cmd/no`
+  自建快照。
 - ⚠️ **`gofmt -w` 前先確認該檔在 HEAD 乾不乾淨**（`mir/hir2mir.go`、`mir/mir.go` 在 HEAD 就不乾淨）。
 - 🔴 **`no vet src/std` 的 hint 數會抖**：同一個 binary、同一個目錄，連跑 6 次得 5 次 **936**、1 次 **938**
   （差的是 `src/std/fs.no` 的 2 個 `tcpoxtfd` hint）。**error 數恆為 0**，所以判準只能用 error；
@@ -986,8 +1342,25 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
 > **刻意不刷新金標。** 刷新會把一個**真的既有缺陷**從 `REGRESS` 洗成 `SAME`——正是 harness 註解警告的
 > 「re-freeze 是唯一會銷毀證據的操作」。`$MIR_GOLDEN_UNSTABLE` **維持空**（本輪再次確認：`UNSTABLE=0`）。
 > 要收就修 `str.init`／`m2.get`，不是改金標。
+> ✅ **2026-10-03 更新：已解，且解法證實了上面這段判斷。** 根因不是 `str.init` 本身壞掉，而是這 6 檔
+> 用了**無標註**的 map 字面值 `m = {}`——在新的型別推斷下 `{}` 被解成 `str` ⇒ 走到 `str.init`。
+> 修法是**改測試**（補上 `m [str]str = {}` 等真型別，`46be7004`），**不是改金標**：重算的 6 筆指紋與
+> **原金標逐位元組相同**（⇒ 測試只是編譯不過，不是行為改變）。全語料 golden 517 檔 **`REGRESS` 6 → 0**、
+> `UNSTABLE=0`、`DIVERGE=8`（與本模型無關）。`map-key-leak.no` 另把 `make-map()` 綁成 `m2`
+> （回傳的 map 由呼叫端擁有、**必須**被 drop；丟棄它會讓測試測不到它要測的洩漏）。
+> **教訓：`REGRESS` 不減 ≠ 地板；先查「測試自己是不是壞了」，再決定要不要動金標。**
 > （`DIVERGE=8` 其餘 8 檔為 `ffi-sqlite`／`markdown`／`net-client`／`path-char`／`std-new`／`std-unix-fs-os`／
 > `test-div-mod-option`／`tls`，皆與本輪無關。）
+
+**本輪投影修復的量測基準（2026-10-03，v2.5；控制組 = 改動前「同一棵樹」的 `make no` 產物）**：
+
+| 檢查 | 結果 |
+|---|---|
+| `go test -count=1 ./mir/ ./parser/ ./hir/ ./checker/ ./fmt/ ./lexer/` | ✅ **全綠**（先前由其他 session 造成的 3 個 `fmt` FAIL 本輪已不在） |
+| `no vet src/std` | ✅ **0 error** |
+| 端到端（`/tmp/no_v25` 自建 binary） | ✅ `tests/rebind-retracts-view.no` **9/9**；`slice-view-liveness.no`、`vec-elem-ownership.no`、`rule1-binding.no`、`async-arg-retain.no`、`async-arg-move.no`、`go-async.no` 全 `rc=0` |
+| 全語料行為 A/B | ✅ (a) **480** 檔：465 逐位元組相同 ＋ 15 個環境噪音；(b) **481** 檔：465 相同 ＋ 15 個噪音 ＋ **唯一差異＝自己的新 case 8／9**（控制組 SIGTRAP） |
+| 金標 | ⚠️ 本輪**未重跑全量 golden**：改動只影響**接收者運算元**（單元測試已直接斷言），且已用全語料**行為** A/B 覆蓋。`REGRESS` 的地板已於 10-03 的測試修正輪**歸零**（見上） |
 
 ---
 
@@ -1009,7 +1382,7 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
 |---|---|---|
 | **檔位判定不保守** | 少插 clone → UAF，且**靜默** | 所有判定「無法證明 → 往保守方向倒」；驗證器與插入器共用謂詞 |
 | **規則一落地時的迴歸**（已落地） | 深拷貝增加 ⇒ 效能；改錯方向 ⇒ 共用 buffer ⇒ double free；**clone 與 drop 不同步 ⇒ 洩漏或 double free** | 逐檔解釋每一筆 clone 變化；**515** 檔編譯掃描（0 regression）＋ `no test` FAIL 集合比對 ＋ heapstat 洩漏量測（§4.2 a）。`emitOptionCloneHelper` 與 option 的 drop 是**成對**寫的：`emitOptionPayloadContentClone` 是 `emitOptionPayloadContentFree` 的鏡像，`vecDeepClone`／`vecDeepFree` 同進退 |
-| **header 引入後 ABI 混用** | 對裸指標做 header 存取 → 記憶體損壞 | I1/I2 由 `checkTierSoundness` 強制（前置條件見 §4.2 c） |
+| **header 引入後 ABI 混用** | 對裸指標做 header 存取 → 記憶體損壞 | I1/I2 由 `checkTierSoundness` 強制（已落地，§3.3／§4.2 c）；I5/I6（`checkReleaseTarget`）仍**刻意未實作** |
 | **`shouldUseMemcpy` 被間接改變** | 大聚合的 `loadVal` 由「回傳值」變「回傳槽指標」→ 走進從未執行過的路徑 | 任何可能改變 `computeTypeSize` / 4096 門檻 / 欄位佈局的改動**必須跑金標** |
 | **驗證器假陽性** | `rep.HasErrors()` gate codegen → 整檔編不過 | 與插入器共用謂詞；每個新驗證器附「修復前必須失敗」的測試 |
 
@@ -1046,6 +1419,13 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
 | 10 | 規則一的綁定閘門開到多大？ | **開到 owned `str` ＋ owned option**（＋既有的 owned `[]T`）。`?str`/`?[]T` 的 drop 側**本來就是 no-op 死碼**（見 §4.2 a），所以放寬閘門的同時必須把 drop 修好，否則 clone 只會製造洩漏。閘門用**宣告型別**排除 option→slice 的**剝離**（`p []T = o` 由既有的剝離區塊處理，實測不變：`move dst=…:[]i64`）。map 的 `isOwnedLocal` 為 false 且是引用語意 ⇒ **不收**（§4.2 a） |
 | 11 | 移除前向後，`lowerDeadSourceCopiesToMoves` 還要不要處理 str／struct？ | **不要，只留 owned slice**。str/struct 的 move 已由 `insertDrops` 用同一條活性規則處理；在這裡改寫 OP 會**跳過目的地的型別檢查**（`vecDeepClone` 依元素型別取 stride ⇒ 型別不符可編譯但靜默錯誤） |
 | **12** | **參數側（源仍活）要改成 retain 嗎？** | **不能只做 retain。** 原本記錄的前置條件（「buffer 要帶 header ⇒ 配置點改走 `rc_alloc`」）**已不存在**——header ABI 是全型別落地，參數 buffer 今天就帶 header。真正的障礙是**語義**：retain 會把 spawn 邊界的「快照」變成「共享」，任務會看到呼叫端在 spawn→`awy` 之間對 `x` 的**原位寫入**（實測：深拷貝印 `1`、retain 印 `99`），與使用者文檔「跨協程共享可變堆數據不成立」衝突，且**語料無任何一例測它 ⇒ 會是靜默改變**。**結論：收成「可證明無原位寫入 ⇒ retain」的靜態閘門**（§4.2 b ⑤）——無法證明就退回深拷貝，比 C 檔 CoW 簡單（不需運行時 clone-on-write）且零風險。✅ **已於 2026-10-02 落地**（§4.2 b ⑥）：`spawnArgWritesAfter`＋`spawnArgRetainSafe`，範圍**刻意收窄**到 `str`／非擁有元素的 `[]T`，對既有語料**零觸發**。快照語義仍由 `tests/async-arg-move.no` 第 9 例釘住；`tests/async-arg-retain.no` 釘住共享路徑的計數平衡 |
+| **13** | **接收者投影的失效條件用什麼判準？** | **結構性判準**：①「**這個 value 已經不是當初那個值了**」⇒ `defCount > 1` 就撤回投影（value id 是變數，重新綁定走 move-into 編碼，`Dst = NoVal`，存活分析看不到）；②「**來源已經沒有那個值了**」⇒ `sourceAlreadyDropped`（drop 落在 read 與 use 之間）**或** `sourceWrittenBetween`（那條路徑在 read 與 use 之間**被寫過**）。**不用存活分析**——「已 drop」≠「已死」，且 move-into／`setfield` 對存活分析隱形（§4.5）。🔴 臨時 kill switch 必須**忠實重放原行為**，否則控制組變成「最後定義勝」⇒ 測試假通過 |
+| **14** | 投影守則要不要套到**非 clone** 的欄位／元素？ | **不要。** 前提是 `projectionWasCloned(v)`——讀取產生了**獨立的 owned `%str-long`** ⇒ 自己的槽是完整私有值，退回它永遠安全。套到非 clone 的欄位會讓 `x = o.c; x.n = 7` 的寫回變成**寫副本**（值沒改到）。所以 `getFieldWasCloned` 更名為 `projectionWasCloned`（field 與 index 共用同一個前提） |
+| **15** | **tier 推斷該「落地成規定式」還是「落地成驗證器」？** | **只能當驗證器（描述式），不能當規定式。** 這是**依賴問題不是範圍問題**：要讓 tier 改寫 IR，得把 pass 移到 `insertBorrowRetains`／`emitAsyncRun` 之前，但 `tierConstraint` 的 R 列**讀回 `spawnArgRetains`**——那是 `insertDrops` 寫的 ⇒ **往前搬成循環依賴**。所以它只驗證別處做出的決定，且呼叫點必須在 `insertDrops` **之後**（§4.2 c） |
+| **16** | **驗證器怎麼才不會變成自證？** | **讓它讀「另一側」的來源。** 推斷讀**自己的約束表**；`checkTierSoundness` 讀 **IR 的 R 物件地面真相**（spawn handle ＋ `handleAliasSet` 全部別名、`spawnArgRetains` 的參數、`OpTaskRetain`／`OpAwait` 運算元）。**舊的恆等映射（全 S）降級為負對照**——餵它進去必須開火（§3.3／§4.2 c）。⚠️ 兩側都必須是**讀回已記錄的決定**，不得各自重算（§4.5 紀律） |
+| **17** | **「只洩漏、不影響輸出」的殘留要怎麼記？** | **沒有可複現測量的殘留不該寫進 §4.3。** §4.3 的「借讀 release 死亡點精度」存在了兩個版本、被「複查」過一次，卻**從未被任何測量支持**——它的症狀（drop 被提到迴圈外）在現行樹上**不存在**（§4.3 三條證據）。這一類殘留的危險正在於**沒有輸出可看** ⇒ 永遠不會有人發現它已經不成立。**紀律**：寫進 §4.3 前必須附**可重跑的指令 ＋ 觀測值**；觀測不到就寫「未複現」而不是「已知」。⚠️ 反向也成立：**已撤銷的殘留要留痕**（本節保留舊數字並標註不可信），否則後人會再引用一次 |
+| **18** | **量洩漏時高圈數「崩潰」該怎麼歸因？** | **先證明崩的是什麼，再拿它當洩漏的證據。** v2.7 量 map 洩漏時把 200,000 圈的 **rc=139** 記成「洩漏大到崩潰」，還報了「沒用過的 fresh map 每圈 ~80 B」。v2.8 證明**兩者都錯**：崩的是**棧**溢位（`alloca` 在迴圈內，§4.6），峰值 RSS 只有 15.6 MB；而那 ~80 B/圈量的**就是棧增長**，不是堆洩漏（`m [str]i64 = {}` ＋ `m.len()` 跑 1,000,000 圈是 **1.69 MB 平線**）。**紀律**：①崩潰**必須**區分棧／堆（看峰值 RSS：棧溢位時 RSS 很小；`rc=139`＋`Thread stack size exceeded` 的 crash report 是決定性的）；②「崩潰」**截斷**了洩漏的量測 ⇒ 修好崩潰**之前**報的斜率都不可信；③斜率要用**兩點以上**算，並配一個**負對照**（本條：`init()` 但不 `put`） |
+| **19** | **IR 的結構性不變式該由 emitter 保證，還是交給 `opt`？** | **由 emitter 保證。** `alloca` 必須在 entry block 是不變式，但 `-O2` 不會幫你做：**LICM 不提 `alloca`**，`mem2reg`/`SROA` 也**無法提升**不在 entry block 的 `alloca`。後果是「呼叫被 inline 就沒事、沒被 inline 就棧溢位」——一個**只在特定 inline 決策下才成立**的不變式，本質上是不變式沒被建立。修法是 emitter 端逐函式重寫（`hoistEntryAllocas`），**不是**加 pass 或調 opt 參數。⚠️ 重寫必須**放過動態 `alloca`**（人數運算元可能是後面 block 定義的 register ⇒ entry 不支配它） |
 
 ---
 
@@ -1060,6 +1440,10 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
 | `tests/async-arg-retain.no` | 新增（§4.2 b ⑥） | spawn 參數**共享**（靜態閘門）：`[]i64` 共享（`a[1]` 讀）＋ `str` 共享（`s[0]` 讀）＋ **原位寫入退回深拷貝**（`a[0]=99` ⇒ 任務仍見 `1`，快照守衛）＋ **20 圈迴圈共享**（釘住引用計數平衡）；觸發 2 次 retain，輸出 base 與 retain 逐位元組相同 |
 | `tests/async.no` / `async-cancel.no` / `async-coop.no` / `async-yield.no` / `module-async.no` | 既有 | flat spawn 邊（線性化對照組）、取消、協作、模組層級 async |
 | `tests/rule1-binding.no` | 新增（規則一） | `a = b` 的 `str`／`[]i64`／struct 寫入獨立性 ＋ 只讀 ＋ 源已死 move；**唯一 stdout 可觀測的規則一缺陷** |
+| `tests/slice-view-liveness.no` | 新增（§4.4 a） | 切片視圖的來源壽命：`b = a[i..j]` 之後讀 `b`（修復前印**堆位址**）＋ 巢狀視圖 ＋ 來源重綁 |
+| `tests/vec-elem-ownership.no` | 新增（§4.4 b） | `%vec` 元素賦值的所有權：`outer[0] = inner` ＋ 重綁來源（修復前 `trace/BPT trap`）＋ `vec.push` 對照 |
+| `tests/rebind-retracts-view.no` | 新增（§4.5） | **接收者投影的撤回**：9 例——重新綁定後讀 `len()`（case 1／5／6，修復前 `got=0`）＋ 容器重綁（case 8，修復前 **SIGTRAP**）＋ 欄位重綁（case 9，**全程式無 drop**，單獨釘「寫入」這條）＋ 對照組（單次定義**仍**投影，case 7） |
+| `tests/set-byte-receiver-writeback.no` / `tests/len-assign-grow.no` | 既有 | **反向對照組**：寫入本身就是 use ⇒ **必須繼續投影**（修投影守則時這兩檔是守門員） |
 
 ⚠️ 語料撰寫注意：`;` 是**行註解**不是陳述分隔符；`''` 是 `str`、`""` 是 `char`；切片寫 `[a..b)`；
 **option match 必須三個臂都寫**。
@@ -1077,12 +1461,12 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
 | move 四判別式 | `analysis.go` `moveStructSharesHeap` / `moveStrSharesHeap` / `moveSliceSharesHeap` / `moveTransfersOwnership`；聯集 `moveExemptsSource` |
 | drop 數量驗證（I4） | `analysis.go` `checkDropCount` |
 | 計數平衡驗證（I3） | `analysis.go` `checkRefBalance`；別名集合重用 `spawn_graph.go` `handleAliasSet`；診斷 `missing-task-retain` |
-| 借讀 retain／release | `analysis.go` `insertBorrowRetains` / `borrowRetained` / `borrowReleaseValues`；`mir.go` `OpRetain` / `OpRelease`；`codegen.go` `emitRetain` / `emitRelease` |
+| 借讀 retain／release | `analysis.go` `insertBorrowRetains` / `borrowRetained` / `borrowReleaseValues`（種子**只讀回 `OpRetain` 指令**、**不做 clone 閉包**、**做 move 閉包**）；`mir.go` `OpRetain` / `OpRelease`；`codegen.go` `emitRetain` / `emitRelease`；釘子 `borrow_release_test.go`（含 v2.7 的 `TestBorrowInLoopIsDisposedEveryIteration`，帶負對照） |
 | 深釋放配深克隆 | `codegen.go` `vecDeepClone` / `vecElemNeedsDeepFree` / `vecDeepFree` |
 | spawn 參數 move | `analysis.go`（`wouldDrop` ＋ 獨立第二迴圈）、`mir.go` `Module.spawnArgMoves`、`spawn_graph.go` `SpawnArgClasses` / `DumpSpawnArgMoveStats`、`codegen.go` `emitAsyncRun` |
 | **spawn 參數 retain（靜態閘門）** | `analysis.go` `spawnArgWritesAfter` / `spawnArgUseWrites` / `spawnArgRetainSafe` / `VecElemOwnsHeap`、`mir.go` `Module.spawnArgRetains`、`codegen.go` `emitSpawnArgRetain`（`emitAsyncRun` 的 `share := moved \|\| retained`）、`spawn_graph.go` `DumpSpawnArgMoveStats`（報告-only 的 `retained`） |
 | spawn graph / 線性化 | `src/mir/spawn_graph.go` `SpawnGraph` / `evalSpawnEdge`（報告-only） |
-| Tier 推斷 | `src/mir/tier.go` `Tier` / `joinTier` / `tierConstraint` / `inferTiers` / `DumpTiers`（報告-only） |
+| Tier 推斷 | `src/mir/tier.go` `Tier` / `joinTier` / `tierConstraint` / `tierStep` / `writtenThroughSet` / `inferTiers` / `checkTierSoundness`（＝`checkTierPartition` ＋ `checkTierRSites`）/ `DumpTiers`（`NOLANG_MIR_TIER=1` 只印直方圖，**推斷本身已是硬閘門**） |
 | handle 身分集合 | `hir2mir.go` `asyncHandles`（`asyncResTypes` 只管結果型別） |
 | `run <handle-var>` 轉發 | `hir2mir.go` `lowerAsyncRun` |
 | 借用逃逸 / 視圖降級 | `analysis.go` `checkBorrowEscapes` / `demoteUnsafeSliceViews` |
@@ -1090,7 +1474,9 @@ print(outer[0][0])   ; 修復前：印 0 然後 `signal: trace/BPT trap`（rc=1�
 | header ABI | `codegen.go` `@nolang_rc_alloc` / `@nolang_free` / `@nolang_rc_retain` / `@nolang_rc_release`；型別 `%str-long` / `%vec` / `%option` / `%task`（32 bytes） |
 | async 排程器 | `codegen.go` `emitAsyncScheduler`（ready queue 可增長）、`emitAsyncRun`、`emitAsyncAwait`、`emitTaskRetain` |
 | 克隆欄位守衛 | `codegen.go` `getFieldWasCloned` / `sourceAlreadyDropped` / `lvalueAddrOf` / `emitGetField` |
+| **呼叫臨時變數的 `alloca` 只能在 entry block（v2.8）** | `codegen.go` `hoistEntryAllocas` / `isHoistableAlloca`（由 `emitFunc` 在函式結束時套用；`codegen.sb` 是 `*strings.Builder`，逐函式重導到暫存 builder）；呼叫臨時變數的發出點：`%cargN`（引數暫存）、`%cresN`（出參暫存）、`%icrN`／`%adsN`；釘子 `src/mir/entry_alloca_test.go` |
+| **接收者投影的撤回（v2.5）** | `analysis.go` `definedValue`（跨兩種 move 編碼取「定義了誰」）＋ `moveSrc`／`moveDst`／`moveLike`；`codegen.go` `defCount`（第二次定義 ⇒ `delete(defInst)`）、`projectionWasCloned`（原 `getFieldWasCloned`）、`projectionChain`、`reachableBlocks`、`sourceWrittenBetween`；`lvalueAddrOf` 的 `OpGetField`／`OpIndex` 兩分支共用 `sourceAlreadyDropped \|\| sourceWrittenBetween` |
 | MIR 指令定義 | `src/mir/mir.go`（move/clone/drop/borrow、run/await/task-retain、retain/release） |
 | 現行模型文檔 | `docs/docs/lang/memory.md` |
 | `KFuncLit`（未被 MIR 消費） | `src/hir/hir.go`、`src/parser/tohir.go` |
-| 迴歸釘（測試） | `src/mir/{alias_forward,async_boundary_ownership,async_rc_handle,spawn_arg_move,spawn_arg_retain,spawn_graph,str_field_lvalue,tier,vec_deep_free,borrow_release,p4_header_abi}_test.go`、`src/mir/option_peel_ownership_test.go`、`src/parser/{struct_literal_field_value,stmt_boundary_block}_test.go` |
+| 迴歸釘（測試） | `src/mir/{alias_forward,async_boundary_ownership,async_rc_handle,spawn_arg_move,spawn_arg_retain,spawn_graph,str_field_lvalue,tier,vec_deep_free,borrow_release,p4_header_abi}_test.go`、`src/mir/option_peel_ownership_test.go`、`src/mir/{view_liveness,rebind_retracts_projection,str_lit_char_concat}_test.go`、`src/mir/entry_alloca_test.go`（v2.8：迴圈內的呼叫臨時變數必須被提到 entry block，含動態 `alloca` 負對照）、`src/parser/{struct_literal_field_value,stmt_boundary_block}_test.go`；語料 `tests/{rebind-retracts-view,set-byte-receiver-writeback,len-assign-grow}.no` |

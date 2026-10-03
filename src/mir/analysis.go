@@ -467,6 +467,12 @@ func (m *Module) Analyze() *Report {
 		// (NOLANG-OWNERSHIP-MODEL.md §3.5 / §4.5, roadmap P6). Runs after the
 		// drops are placed so it sees the final instruction stream.
 		m.checkRefBalance(f, rep)
+		// Invariant I1 for the tier partition (§3.1 / §3.3). It must run AFTER
+		// insertDrops: the partition reads back the RECORDED decisions
+		// (spawnArgRetains) and the final instruction stream, so running it
+		// earlier would compare the inference against a program that no longer
+		// exists. A diagnostic here is a hard build failure (§3.3 / §6.2).
+		m.checkTierSoundness(f, rep)
 		m.checkBorrowEscapes(f, rep)
 	}
 	// P3 (NOLANG-OWNERSHIP-MODEL.md §4.3): spawn-graph linearization. Report
@@ -477,10 +483,11 @@ func (m *Module) Analyze() *Report {
 	// arguments could avoid the P0 deep copy by being MOVED instead of copied.
 	// Report only, gated on NOLANG_MIR_SPAWN_ARG_MOVE=1.
 	m.DumpSpawnArgMoveStats()
-	// P1 (NOLANG-OWNERSHIP-MODEL.md §4.1/§5): tier inference. Report only in
-	// P1 — tierConstraint returns S for every use, so the inference is the
-	// identity and nothing downstream changes. DumpTiers is a no-op unless
-	// NOLANG_MIR_TIER=1 is set.
+	// P1 (NOLANG-OWNERSHIP-MODEL.md §3.1/§4.1): the tier partition. Since v2.6
+	// the inference is REAL (tierConstraint answers §3.1's table, the C-tier
+	// borrow views are seeded from the IR) and checkTierSoundness above makes it
+	// a build gate — so DumpTiers is no longer the only observable, it is the
+	// measurement surface. Still a no-op unless NOLANG_MIR_TIER=1 is set.
 	m.DumpTiers()
 	return rep
 }
@@ -1318,7 +1325,7 @@ func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 	// Size questions go through the emitter's own code, exactly as
 	// OptionPayloadBoxed does, so the analysis and codegen can never disagree
 	// about which layout a payload gets.
-	c := &codegen{mod: m, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
+	c := &codegen{mod: m, sb: &strings.Builder{}, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
 	_, payloadLT := c.optionType(elemRaw)
 	if payloadLT == "" {
 		return false
@@ -2415,7 +2422,7 @@ func (m *Module) VecElemOwnsHeap(elem TypeID) bool {
 	if elem == NoType {
 		return false
 	}
-	c := &codegen{mod: m, extraFuncs: map[string]bool{}}
+	c := &codegen{mod: m, sb: &strings.Builder{}, extraFuncs: map[string]bool{}}
 	return c.vecElemNeedsDeepFree(elem)
 }
 
@@ -2785,6 +2792,24 @@ func moveLike(inst *Inst) bool {
 		return true
 	}
 	return false
+}
+
+// definedValue returns the value an instruction DEFINES, across every shape the
+// MIR uses for a binding: `Dst` when the instruction produces a fresh value, and
+// moveDst's Args[1] when EmitMoveInto stores into an existing one. NoVal when the
+// instruction defines nothing (stores, drops, terms, calls with no result).
+//
+// A MIR value id is a VARIABLE, not an SSA name, so the same id can be defined
+// by several instructions. Callers that need "the value's storage" must treat a
+// second definition as invalidating the first — see codegen's defInst map.
+func definedValue(inst *Inst) ValueID {
+	if inst == nil {
+		return NoVal
+	}
+	if inst.Dst > NoVal {
+		return inst.Dst
+	}
+	return moveDst(inst)
 }
 
 func isTransferringMove(inst *Inst) bool {

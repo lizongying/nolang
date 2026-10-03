@@ -65,9 +65,10 @@ keep-trimming = true
 print('4 trim leading zeros: cn=' + cn.to-str())
 
 ; 5) 帶標籤的旗標迴圈（#1 (flag) { } 在舊 parser 是硬 parse error）
+; 注意：變數原名 `go` 已升級為關鍵字（無色 async 啟動），此處改名為 goon 以避免衝突。
 hits = 0
-go = true
-#1 (go) {
+goon = true
+#1 (goon) {
 
     #{overflow=wrap}
     hits = hits + 1

@@ -7,6 +7,9 @@
 ; 因為 @nolang_free 只在計數歸零時釋放，緩衝區剛好被釋放一次——與呼叫端 drop
 ; 的順序無關。
 ;
+; 本檔以無色 `go` 關鍵字書寫：底下仍 desugar 成 `run`/`awy`，所以 retain 優化
+; 與手寫 `run` 完全一致。`co f(x)` 自動單態出 f-async 並 spawn。
+;
 ; ⚠️ 這個檔案只是端到端煙霧測試：共享與深拷貝的**輸出完全相同**（這正是閘門的
 ; 意義），所以 stdout 分不出兩者。真正的守門員是
 ;   - src/mir/spawn_arg_retain_test.go：檢查 spawnArgRetains、IR 裡是
@@ -14,21 +17,20 @@
 ;   - 第 3 例（原位寫入）是 §4.2(b) 的快照守門員：閘門若失效會印 99 而不是 1；
 ;   - 第 4 例（迴圈）若 retain 與 wrapper 的 release 不平衡，會洩漏或 double free。
 
-first-async = (v []i64) (r i64) {
+first = (v []i64) (r i64) {
     #{index-out=0}
     r = v[0]
 }
 
-echo-async = (s str) (r str) {
+echo = (s str) (r str) {
     r = s
 }
 
 ; 1. vec 參數在 spawn 之後只被「直接索引讀取」、從未被寫 -> 共享（retain）。
 test-vec-share = () {
     a []i64 = [7, 8, 9]
-    t = run first-async(a)
+    n = co first(a)
     m = a[1]
-    n = awy t
     print(n); expect: 7
     print(m); expect: 8
 }
@@ -36,9 +38,8 @@ test-vec-share = () {
 ; 2. str 參數同理：直接索引讀取 -> 共享。
 test-str-share = () {
     s str = 'ABC'
-    t = run echo-async(s)
+    v = co echo(s)
     c = s[0]
-    v = awy t
     print(v); expect: ABC
     print(c); expect: 65
 }
@@ -47,9 +48,8 @@ test-str-share = () {
 ;    閘門若失效（無條件 retain）這一例就會印 99。
 test-inplace-keeps-copy = () {
     a []i64 = [1, 2, 3]
-    t = run first-async(a)
+    n = co first(a)
     a[0] = 99
-    n = awy t
     print(n); expect: 1
 }
 
@@ -58,9 +58,8 @@ test-share-loop = () {
     total = 0
     i <- [0..20) {
         a []i64 = [i, i + 1]
-        t = run first-async(a)
+        n = co first(a)
         m = a[1]
-        n = awy t
         #{overflow=wrap}
         total = total + n
     }

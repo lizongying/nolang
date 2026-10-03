@@ -15,7 +15,7 @@ main = () {
     ; Step 1: Get a str from a cross-module call
     ch = bug13-helper.compute-str('commit')
 
-    print('step1 ch=[' - ch - ']')
+    print('step1 ch=[{ch}]')
 
     ; Expected: step1 ch=[commit-1234567890abcdef]
 
@@ -27,7 +27,7 @@ main = () {
     -> print('step2 ok=false')
 
     ; Step 3: Access ch again — should still be valid
-    print('step3 ch=[' - ch - ']')
+    print('step3 ch=[{ch}]')
 
     ; Expected: step3 ch=[commit-1234567890abcdef]
 

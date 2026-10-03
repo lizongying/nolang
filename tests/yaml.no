@@ -15,25 +15,25 @@
 ; ═══════════════════════════════════════════════
 
 check = (name str, cond bool) {
-    cond -> print('ok: ' - name)
+    cond -> print('ok: {name}')
 
-    -> print('fail: ' - name)
+    -> print('fail: {name}')
 }
 
 ; 断言字符串路径等于期望值
 check-str = (name str, src str, path str, want str) {
     d = yaml.parse(src)
     d: {
-        nil -> print('fail: ' - name - ' (nil)')
+        nil -> print('fail: {name} (nil)')
 
-        err -> print('fail: ' - name - ' (err)')
+        err -> print('fail: {name} (err)')
 
         -> {
             got, found = it.find-str(path)
             {
-                found && got == want -> print('ok: ' - name)
+                found && got == want -> print('ok: {name}')
 
-                -> print('fail: ' - name - ' got=[' - got - ']')
+                -> print('fail: {name} got=[{got}]')
             }
         }
     }
@@ -43,16 +43,16 @@ check-str = (name str, src str, path str, want str) {
 check-i64 = (name str, src str, path str, want i64) {
     d = yaml.parse(src)
     d: {
-        nil -> print('fail: ' - name - ' (nil)')
+        nil -> print('fail: {name} (nil)')
 
-        err -> print('fail: ' - name - ' (err)')
+        err -> print('fail: {name} (err)')
 
         -> {
             got, found = it.find-i64(path)
             {
-                found && got == want -> print('ok: ' - name)
+                found && got == want -> print('ok: {name}')
 
-                -> print('fail: ' - name - ' got=[' - got.to-str() - ']')
+                -> print('fail: {name} got=[{got.to-str()}]')
             }
         }
     }

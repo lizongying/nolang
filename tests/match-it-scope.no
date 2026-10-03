@@ -14,9 +14,9 @@
 ; 修復前「again」那幾條印出內層值（7 / child），修復後印出外層值（42 / root）。
 
 check-str = (name str, got str, want str) {
-    got == want -> print('ok: ' - name)
+    got == want -> print('ok: {name}')
 
-    -> print('fail: ' - name - ' got=[' - got - '] want=[' - want - ']')
+    -> print('fail: {name} got=[{got}] want=[{want}]')
 }
 
 mk-outer = () (out ?i64) {
@@ -112,7 +112,7 @@ probe-else = () (out str) {
 
                 err -> print('  b err')
 
-                -> print('  b=' - it.to-str())
+                -> print('  b={it.to-str()}')
             }
             out = o - '/' - it.to-str()
         }

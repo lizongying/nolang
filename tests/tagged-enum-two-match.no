@@ -45,12 +45,12 @@ main = () {
     ; (1) 單欄位 str 載荷 match 兩次：第二次必須仍讀到 'hi'
     q1 e-res = ok('hi')
     q1: {
-        ok(v) -> print('1a: ' - v)
+        ok(v) -> print('1a: {v}')
 
         fail -> print('fail 1a')
     }
     q1: {
-        ok(v) -> print('1b: ' - v)
+        ok(v) -> print('1b: {v}')
 
         fail -> print('fail 1b')
     }
@@ -58,12 +58,12 @@ main = () {
     ; (2) 改名綁定 ×2：單欄位變體的析構名是任意的
     q2 e-res = ok('renamed')
     q2: {
-        ok(s) -> print('2a: ' - s)
+        ok(s) -> print('2a: {s}')
 
         fail -> print('fail 2a')
     }
     q2: {
-        ok(t) -> print('2b: ' - t)
+        ok(t) -> print('2b: {t}')
 
         fail -> print('fail 2b')
     }
@@ -101,7 +101,7 @@ main = () {
     q4: {
         ok(items) -> {
             for x <- items: {
-                print('4a: ' - x)
+                print('4a: {x}')
             }
         }
 
@@ -110,7 +110,7 @@ main = () {
     q4: {
         ok(items) -> {
             for x <- items: {
-                print('4b: ' - x)
+                print('4b: {x}')
             }
         }
 
@@ -120,17 +120,17 @@ main = () {
     ; (5) match 三次
     q5 e-res = ok('three')
     q5: {
-        ok(v) -> print('5a: ' - v)
+        ok(v) -> print('5a: {v}')
 
         fail -> print('fail 5a')
     }
     q5: {
-        ok(v) -> print('5b: ' - v)
+        ok(v) -> print('5b: {v}')
 
         fail -> print('fail 5b')
     }
     q5: {
-        ok(v) -> print('5c: ' - v)
+        ok(v) -> print('5c: {v}')
 
         fail -> print('fail 5c')
     }
@@ -138,14 +138,14 @@ main = () {
     ; (6) 兩次 match 之間插入其他語句（含配置與釋放），載荷必須活到第二次
     q6 e-res = ok('between')
     q6: {
-        ok(v) -> print('6a: ' - v)
+        ok(v) -> print('6a: {v}')
 
         fail -> print('fail 6a')
     }
     filler = 'noi' - 'se'
-    print('6m: ' - filler)
+    print('6m: {filler}')
     q6: {
-        ok(v) -> print('6b: ' - v)
+        ok(v) -> print('6b: {v}')
 
         fail -> print('fail 6b')
     }
@@ -156,18 +156,18 @@ main = () {
     e2 e-res = ok('inner')
     e1: {
         ok(v) -> {
-            print('7a: ' - v)
+            print('7a: {v}')
             e2: {
-                ok(w) -> print('7b: ' - w)
+                ok(w) -> print('7b: {w}')
 
                 fail -> print('fail 7b')
             }
             e2: {
-                ok(w) -> print('7c: ' - w)
+                ok(w) -> print('7c: {w}')
 
                 fail -> print('fail 7c')
             }
-            print('7d: ' - v)
+            print('7d: {v}')
         }
 
         fail -> print('fail 7')

@@ -59,8 +59,8 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     ; 連接到代理伺服器
     fd = net.net-dial(proxy-host, proxy-port)
     fd < 0 -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 

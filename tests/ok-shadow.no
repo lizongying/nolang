@@ -3,7 +3,7 @@
 ok = false
 print('start')
 ok = true
-print('ok=' - ok.to-str())
+print('ok={ok.to-str()}')
 {
     ok -> print('ok: if works')
 

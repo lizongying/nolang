@@ -68,6 +68,16 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 	}
 	pkg := b.Package()
 	pkg.Owners = owners
+	// Colorless async (`go`): monomorphize each `go <call>` callee into its
+	// `-async` variant and propagate the async coloring transitively. This
+	// MUST run before DesugarAsyncGroups so the rewritten bare `-async` calls
+	// are recognized as spawnable by the group pass. See hir.MonomorphizeGo.
+	pkg.GoSpawns = c.goSpawns
+	hir.MonomorphizeGo(pkg)
+	// Coroutine groups run first (above) and claim the `go` spawns that sit
+	// inside a bare block; any `go` left at statement level (outside a group)
+	// is wrapped in `run`/`awy` here so its RESULT is read, not the handle.
+	hir.DesugarGoInlineAwait(pkg)
 	// Record the owning module of every top-level free function so backends
 	// can validate module-qualified bare-name resolution (see
 	// hir.Package.FuncOwners). Names are taken AFTER build.mangleOverloads /
@@ -102,6 +112,10 @@ type hirConv struct {
 	b     *hir.Builder
 	sem   *SemanticContext
 	astOf map[Node]int32 // AST node -> HIR id, for checker-side TypeMap keying
+	// goSpawns accumulates the HIR node ids of `co <call>` KCalls lowered from
+	// CoExpression nodes, so ASTToHIRWithMap can hand them to the
+	// monomorphization pass via hir.Package.GoSpawns.
+	goSpawns []int32
 }
 
 // remember records the HIR id assigned to an AST node so the checker can later
@@ -758,6 +772,15 @@ func (c *hirConv) exprNode(e Expression) int32 {
 
 	case *RunExpression:
 		return c.b.Add(hir.Node{Kind: hir.KRun, First: c.expr(e.Call), Line: line, Col: col})
+
+	case *CoExpression:
+		// Lower `co F(args)` to a plain KCall to F; the monomorphization pass
+		// (hir.MonomorphizeGo) rewrites the callee to `F-async` and, when the
+		// call sits inside a coroutine group, lets DesugarAsyncGroups spawn it.
+		// The call node id is recorded in c.goSpawns so the pass can find it.
+		callID := c.expr(e.Call)
+		c.goSpawns = append(c.goSpawns, callID)
+		return callID
 
 	case *AwaitExpression:
 		return c.b.Add(hir.Node{Kind: hir.KAwait, First: c.expr(e.Right), Line: line, Col: col})

@@ -36,7 +36,7 @@ import (
 // TestOptionF32PayloadUsesDoubleType pins the payload-type table directly: every
 // float spelling must agree, because MIR stores them all as `double`.
 func TestOptionF32PayloadUsesDoubleType(t *testing.T) {
-	c := &codegen{}
+	c := &codegen{sb: &strings.Builder{}}
 	for _, raw := range []string{"f32", "f64", "float", "double"} {
 		if got := c.optionPayloadLLVMType(raw); got != "double" {
 			t.Errorf("optionPayloadLLVMType(%q) = %q, want \"double\"", raw, got)

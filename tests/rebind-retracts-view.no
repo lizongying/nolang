@@ -1,0 +1,97 @@
+; rebind-retracts-view.no — 變數被重新綁定後，接收者投影必須失效
+;
+; MIR 的 value id 是「變數」不是 SSA 名：`line = lines[0]` 用 OpIndex 定義 line，
+; 之後 `line = line.trim()` 用 move **重新定義同一個 id**。codegen 的 defInst 只記
+; 「第一」個定義（move 的 dst 是 NoVal，根本不進表），於是重新綁定之後的每一次讀取
+; 仍被投影回**舊的容器元素**：
+;
+;   lines = ['  a  ']
+;   line  = lines[0]
+;   line  = line.trim()
+;   line.len()        ; 讀 &lines[0].len (= 5)，不是 line 自己的 (= 1)
+;
+; 症狀是「內容正確、長度是舊的」—— trim 的結果寫進 line 自己的槽（沒人讀），
+; 長度卻透過容器元素讀回來。同一族的寫入更糟：`v = ls[0]; v = ls[1]; v.len()`
+; 會去讀 ls[0]。
+;
+; 修法：一個 value 被定義第二次就撤回 defInst 的投影（defCount > 1 ⇒ delete），
+; 退回它自己的槽位。**單一定義**的投影不受影響 —— 那些是本檔的對照組：
+; `m.rows.push(x)`、`rows[0].set-byte(...)`、`h.f.set-byte(...)` 都必須照舊寫回。
+;
+; 第二層（case 8/9）：視圖本身沒被重綁，但**被投影的儲存位置**被寫了 ——
+; 投影指向 `&ls[0]` / `&h.f`，容器或欄位一換，那個位址就不再是視圖的值。
+; case 8 在修復前是 **SIGTRAP**（舊容器的 buffer 已被 drop，是 use-after-free），
+; case 9 沒有任何 drop，單獨釘住「寫入」這條守則。
+
+Holder {
+    f str
+}
+
+main = () {
+
+    ; (1) 重綁定的視圖：長度必須是 trim 之後的長度
+    lines []str = ['  a  ']
+    line = lines[0]
+    line = line.trim()
+    line.len() == 1 -> print('ok 1: rebound view length')
+    -> print('fail 1: rebound view length got={line.len()}')
+
+    ; (2) 內容同時必須正確（修復前這裡是對的，用來證明只有長度壞掉）
+    line == 'a' -> print('ok 2: rebound view content')
+    -> print('fail 2: rebound view content got=[{line}]')
+
+    ; (3) 對照組：單一定義的切片元素接收者，set-byte 必須寫回元素本身
+    rows = ['x', 'y']
+    rows[0].set-byte(0, 90)
+    rows[0] == 'Z' -> print('ok 3: single-def element receiver writes back')
+    -> print('fail 3: element receiver got=[{rows[0]}]')
+
+    ; (4) 對照組：單一定義的結構體欄位接收者
+    h = Holder {
+        f: 'hello'
+    }
+    h.f.set-byte(0, 72)
+    h.f == 'Hello' -> print('ok 4: single-def struct field receiver writes back')
+    -> print('fail 4: struct field receiver got=[{h.f}]')
+
+    ; (5) 重綁定的**欄位**視圖：`g = h.f` 之後重綁定，長度必須是自己的
+    h2 = Holder {
+        f: '  hi  '
+    }
+    g = h2.f
+    g = g.trim()
+    g.len() == 2 -> print('ok 5: rebound field view length')
+    -> print('fail 5: rebound field view length got={g.len()}')
+
+    ; (6) 重綁定到**另一個**元素後，不得再讀到第一個元素
+    ls []str = ['aaaa', 'b']
+    v = ls[0]
+    v = ls[1]
+    v.len() == 1 -> print('ok 6: rebind to another element')
+    -> print('fail 6: rebind to another element got={v.len()}')
+
+    ; (7) 對照組：單一定義的視圖仍必須投影（寫回元素）
+    box = Holder {
+        f: 'xy'
+    }
+    w = box.f
+    w.set-byte(0, 90)
+    box.f == 'Zy' -> print('ok 7: single-def view still projects to the field')
+    -> print('fail 7: field got=[{box.f}]')
+
+    ; (8) **容器本身**被重新綁定：投影指向 &ls[0]，容器換了它就指向別的字串
+    ls2 []str = ['aaaa']
+    ln2 = ls2[0]
+    ls2 = ['bb']
+    ln2.len() == 4 -> print('ok 8: rebound container does not leak into the view')
+    -> print('fail 8: rebound container got={ln2.len()}')
+
+    ; (9) **欄位本身**被重新綁定：投影指向 &h.f，欄位換了它就不是 g2 了
+    h4 = Holder {
+        f: '  hi  '
+    }
+    g2 = h4.f
+    h4.f = 'zzzz'
+    g2.len() == 6 -> print('ok 9: rebound field does not leak into the view')
+    -> print('fail 9: rebound field got={g2.len()}')
+}

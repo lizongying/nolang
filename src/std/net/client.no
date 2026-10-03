@@ -111,8 +111,8 @@ client.send-line = (line str) (written i64) {
     written = -1
     .connected == false -> return
 
-    ; char-to-str(10) = 換行符 \n（ASCII 10）
-    nl = number.char-to-str(10)
+    ; 換行符 \n 作為行終止符
+    nl = '\n'
 
     written = .c.send(line - nl)
 }

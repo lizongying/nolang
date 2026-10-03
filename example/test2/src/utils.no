@@ -1,5 +1,5 @@
 ; Example module
 
 greet = (name str) {
-    print('000Hello, ' - name)
+    print('000Hello, {name}')
 }

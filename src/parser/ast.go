@@ -1424,6 +1424,28 @@ func (re *RunExpression) EndPos() lexer.Position {
 	return re.Call.EndPos()
 }
 
+// CoExpression: co <call-expression>
+// Colorless async spawn. `r1 = co worker(1)` spawns `worker-async` (the
+// compiler-monomorphized async variant of `worker`) and reads its RESULT back
+// into `r1` — i.e. it is sugar for `run worker-async(1); r1 = awy <handle>`.
+// The user writes the uncolored name `worker`; the `-async` suffix is purely a
+// compiler-internal detail over stackless coroutines. The monomorphization
+// pass (src/hir) generates `worker-async` from `worker` when it does not
+// already exist, and propagates the async coloring transitively upward.
+type CoExpression struct {
+	Token lexer.Token
+	Call  Expression // must be a *CallExpression
+}
+
+func (ge *CoExpression) expressionNode()     {}
+func (ge *CoExpression) Pos() lexer.Position { return posFromToken(ge.Token) }
+func (ge *CoExpression) EndPos() lexer.Position {
+	if ge.Call == nil {
+		return posFromToken(ge.Token)
+	}
+	return ge.Call.EndPos()
+}
+
 // AwaitExpression: awy <expression>
 // Waits for an async task to complete and returns the result.
 type AwaitExpression struct {

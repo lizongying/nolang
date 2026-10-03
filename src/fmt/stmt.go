@@ -292,6 +292,11 @@ func (f *formatter) annotationStatementEmits(s *parser.AnnotationStatement) bool
 			}
 			continue
 		}
+		if e.Key == "index-out" && f.indexOutAnnRemovable[s] {
+			// 冗餘 #{index-out}（管轄陳述讀取全在界內）將被移除，不計入「會輸出」判斷，
+			// 避免整條空註解留下懸空空行（非冪等）。
+			continue
+		}
 		return true
 	}
 	return false
@@ -837,6 +842,10 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) boo
 				seenMode[m] = true
 				overflowModes = append(overflowModes, m)
 			}
+		} else if e.Key == "index-out" && f.indexOutAnnRemovable[s] {
+			// 冗餘 #{index-out}：獨立成行註解所管轄的下一條陳述所有索引讀取皆可證明
+			// 在界內（parser/bounds.go），越界保護無意義，`no fmt` 移除。
+			continue
 		} else {
 			others = append(others, e)
 		}

@@ -30,7 +30,7 @@ main = () {
     ; (1) 單獨讀 owned 載荷：修前在 exit 時 trace/BPT trap
     q1 e-res = ok('hi')
     q1: {
-        ok(v) -> print('ok 1: owned payload ' - v)
+        ok(v) -> print('ok 1: owned payload {v}')
 
         fail -> print('fail 1')
     }
@@ -38,7 +38,7 @@ main = () {
     ; (2) 改名綁定：欄位宣告為 v，綁到 s（單欄位按位置解析）
     q2 e-res = ok('renamed')
     q2: {
-        ok(s) -> print('ok 2: renamed binding ' - s)
+        ok(s) -> print('ok 2: renamed binding {s}')
 
         fail -> print('fail 2')
     }
@@ -48,7 +48,7 @@ main = () {
     q3: {
         ok(v) -> {
             print('ok 3a: multi-statement arm body')
-            print('ok 3b: ' - v)
+            print('ok 3b: {v}')
         }
 
         fail -> print('fail 3')
@@ -58,7 +58,7 @@ main = () {
     h = 'he' - 'llo'
     q4 e-res = ok(h)
     q4: {
-        ok(v) -> print('ok 4: heap payload ' - v)
+        ok(v) -> print('ok 4: heap payload {v}')
 
         fail -> print('fail 4')
     }
@@ -68,13 +68,13 @@ main = () {
     e2 e-res = ok('inner')
     e1: {
         ok(v) -> {
-            print('ok 5a: ' - v)
+            print('ok 5a: {v}')
             e2: {
-                ok(v) -> print('ok 5b: ' - v)
+                ok(v) -> print('ok 5b: {v}')
 
                 fail -> print('fail 5b')
             }
-            print('ok 5c: outer restored ' - v)
+            print('ok 5c: outer restored {v}')
         }
 
         fail -> print('fail 5')

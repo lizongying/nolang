@@ -40,7 +40,7 @@ e-res {
 ; (1) callee match 自己的參數一次
 show = (q e-res) {
     q: {
-        ok(v) -> print('show: ' - v)
+        ok(v) -> print('show: {v}')
 
         fail -> print('show: fail')
     }
@@ -54,12 +54,12 @@ ignore = (q e-res) {
 ; (3) 一個 callee 兩個 enum 參數
 pair = (a e-res, b e-res) {
     a: {
-        ok(v) -> print('a: ' - v)
+        ok(v) -> print('a: {v}')
 
         fail -> print('a: fail')
     }
     b: {
-        ok(v) -> print('b: ' - v)
+        ok(v) -> print('b: {v}')
 
         fail -> print('b: fail')
     }
@@ -80,7 +80,7 @@ box.report = (q e-res) {
     print('box n:')
     print(.n)
     q: {
-        ok(v) -> print('box.ok: ' - v)
+        ok(v) -> print('box.ok: {v}')
 
         fail -> print('box.fail')
     }
@@ -91,7 +91,7 @@ main = () {
     ; (1) caller 先 match、callee 再 match —— 兩邊讀同一份載荷
     q e-res = ok('one')
     q: {
-        ok(v) -> print('main: ' - v)
+        ok(v) -> print('main: {v}')
 
         fail -> print('main: fail')
     }

@@ -20,7 +20,7 @@ main = () {
     m.put('name', 'Bob')
     m.size == 2 -> print('ok: size after 3 puts (1 update)')
 
-    -> print('fail: size after 3 puts got=' - m.size.to-str())
+    -> print('fail: size after 3 puts got={m.size}')
 
     g = m.get('name')
     g: {
@@ -31,7 +31,7 @@ main = () {
         -> {
             it == 'Bob' -> print('ok: get name (updated)')
 
-            -> print('fail: get name got=[' - it - ']')
+            -> print('fail: get name got=[{it}]')
         }
     }
 
@@ -44,7 +44,7 @@ main = () {
         -> {
             it == 'Taipei' -> print('ok: get city')
 
-            -> print('fail: get city got=[' - it - ']')
+            -> print('fail: get city got=[{it}]')
         }
     }
 
@@ -54,7 +54,7 @@ main = () {
 
         nil -> print('ok: get missing -> nil')
 
-        -> print('fail: get missing -> found ' - it)
+        -> print('fail: get missing -> found {it}')
     }
 
     m.contains('city') -> print('ok: contains city')
@@ -75,7 +75,7 @@ main = () {
 
         nil -> print('ok: removed key is gone')
 
-        -> print('fail: get after remove -> still ' - it)
+        -> print('fail: get after remove -> still {it}')
     }
 
     ; remove 之後 city 必須還在（不能把整個表打壞）
@@ -88,12 +88,12 @@ main = () {
         -> {
             it == 'Taipei' -> print('ok: city survives remove of another key')
 
-            -> print('fail: city after remove got=[' - it - ']')
+            -> print('fail: city after remove got=[{it}]')
         }
     }
 
     m.clear()
     m.size == 0 -> print('ok: size after clear')
 
-    -> print('fail: size after clear got=' - m.size.to-str())
+    -> print('fail: size after clear got={m.size}')
 }

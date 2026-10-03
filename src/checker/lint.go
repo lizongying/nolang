@@ -400,6 +400,19 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 16d. 棄用函數呼叫提示（如 number.char-to-str → char.to-str()）
+	for _, u := range ValidateDeprecatedCalls(program) {
+		endCol := u.Column
+		if u.EndColumn > 0 {
+			endCol = u.EndColumn
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
+			Severity: LintHint, Source: "nolang-lint",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 17. hex 字面量大寫提示
 	for _, u := range ValidateHexCase(program) {
 		results = append(results, LintResult{

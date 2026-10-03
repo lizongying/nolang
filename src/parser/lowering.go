@@ -64,6 +64,9 @@ func (p *Parser) lowerProgram(prog *Program) {
 		fmt.Fprintf(os.Stderr, "[debug-it] lowerProgram called, %d top-level statements\n", len(prog.Statements))
 	}
 	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}}
+	// 預先計算頂層（函數外）讀取的「可證明越界安全」集合；函數內的定長陣列型別
+	// 要到 collectLocalTypes 才已知，故各函數另於下方進入時增量合併（見 struct 分支）。
+	p.inBoundsIdx = AnalyzeInBoundsIndex(prog).Reads
 	l.walk(reflect.ValueOf(prog))
 }
 
@@ -269,6 +272,14 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 預掃描區域變數容器型別（如 `av = a.to-vec()`），使其被安全索引
 				// 降級辨識（isSafeIndexBase / inferIndexElemType 依賴 FuncVarType）。
 				l.collectLocalTypes(fd)
+				// 型別表就緒後，計算本函數「可證明越界安全」的索引讀取，併入
+				// p.inBoundsIdx（isSafeIndexBase 據此對這類讀取回傳 false）。
+				if l.p.inBoundsIdx == nil {
+					l.p.inBoundsIdx = map[*IndexExpression]bool{}
+				}
+				for idx := range AnalyzInBoundsForFunc(l.p.sem, fd, l.p.idxLocalTypes[fd.Name]) {
+					l.p.inBoundsIdx[idx] = true
+				}
 				isFuncDef = true
 			}
 		}
@@ -333,9 +344,14 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 			l.recordIndexLocalType(fd.Name, nm, lt)
 		}
 	}
-	for _, st := range fd.Body.Statements {
-		ls, ok := st.(*LetStatement)
-		if !ok || ls.Name == nil {
+	// 掃描「同一函數作用域內」所有 LetStatement（含巢狀區塊 / 迴圈體 / if/match 臂體，
+	// 但不跨越巢狀函式定義）。原本只掃描函式體頂層陳述，導致巢狀區塊內宣告的定長陣列
+	//（如 tls.no prf 的 `p-tmp [32]byte` 位於 `(out-off < out-len) { ... }` 條件區塊內）
+	// 不會記入 idxLocalTypes → isSafeIndexBase 查不到其容器型別 → 該陣列的 in-bounds
+	// 讀取無法被推斷、配套 `#{index-out}` 註解也無法被 `no fmt` 移除。仍按 fd.Name 分鍵、
+	// 不跨越巢狀函式，故不會造成跨函數 / 跨模組型別污染。
+	for _, ls := range gatherLetsInFuncScope(fd.Body) {
+		if ls == nil || ls.Name == nil {
 			continue
 		}
 		name := ls.Name.Value
@@ -367,6 +383,58 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 	}
 	l.p.curFuncName = savedP
 	l.curFuncName = savedL
+}
+
+// gatherLetsInFuncScope 以反射走訪 body 子樹，依原始碼順序回傳「本函數作用域內」
+//（含巢狀區塊 / 迴圈體 / if-match 臂體）的所有 *LetStatement；遇到巢狀
+// FunctionDefinition（閉包 / 巢狀函式）即停止下钻——那是另一個作用域、另有自己的
+// idxLocalTypes 鍵。反射僅讀取導出欄位，並按指標去重（AST 可能有共享節點）。
+func gatherLetsInFuncScope(body *BlockStatement) []*LetStatement {
+	var out []*LetStatement
+	if body == nil {
+		return out
+	}
+	seen := map[uintptr]bool{}
+	var walk func(rv reflect.Value)
+	walk = func(rv reflect.Value) {
+		switch rv.Kind() {
+		case reflect.Ptr:
+			if rv.IsNil() {
+				return
+			}
+			ptr := rv.Pointer()
+			if seen[ptr] {
+				return
+			}
+			seen[ptr] = true
+			if _, isFn := rv.Interface().(*FunctionDefinition); isFn {
+				return // 巢狀函式：獨立作用域，不下钻
+			}
+			if ls, isLet := rv.Interface().(*LetStatement); isLet {
+				out = append(out, ls)
+			}
+			walk(rv.Elem())
+		case reflect.Interface:
+			if rv.IsNil() {
+				return
+			}
+			walk(rv.Elem())
+		case reflect.Slice:
+			for i := 0; i < rv.Len(); i++ {
+				walk(rv.Index(i))
+			}
+		case reflect.Struct:
+			t := rv.Type()
+			for i := 0; i < t.NumField(); i++ {
+				if t.Field(i).PkgPath != "" {
+					continue // 非導出欄位
+				}
+				walk(rv.Field(i))
+			}
+		}
+	}
+	walk(reflect.ValueOf(body))
+	return out
 }
 
 // toVecElemType 從 `a.to-vec()` / `a.to-vec` 這類 RHS 推導容器元素型別。

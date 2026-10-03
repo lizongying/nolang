@@ -408,7 +408,7 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
         tmp str = with-len(n - total)
 
         #{overflow=wrap}
-        r = net.net-recv(fd, tmp, n - total)
+        r = net-recv-wait(fd, tmp, n - total)
         r <= 0 -> return
         i <- [0..r): {
 
@@ -423,6 +423,44 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
         total = total + r
     }
     ok = true
+}
+
+; net-recv-wait: 阻塞式接收（用 nb recv + 短睡重試）
+; 繞開原生阻塞 recv 在 macOS 上「資料已就緒卻不回傳」的卡死問題。
+; 回傳 r: >0=位元組數, 0=對端關閉(FIN), -1=錯誤
+net-recv-wait = (fd fd, buf str, n i64) (r i64) {
+    r = -1
+    tries = 0
+    done = false
+    (done == false) {
+        tries = tries + 1
+        tries > 4000 -> {
+            print('RECVWAIT giveup tries=')
+            print(tries)
+            done = true
+        }
+        done == false -> {
+            nr = net.net-recv-nb(fd, buf, n)
+            nr > 0 -> {
+                r = nr
+                done = true
+            }
+            nr == 0 -> {
+                r = 0
+                done = true
+            }
+            nr == -1 -> {
+                r = -1
+                done = true
+            }
+            nr < -2 -> {
+                r = -1
+                done = true
+            }
+            ; nr == -2：暫無資料（would-block），睡 500us 後繼續迴圈
+            nr == -2 -> sleep-us(500)
+        }
+    }
 }
 
 ; read-record: 讀取一筆 TLS 記錄
@@ -442,8 +480,13 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         tmp str = with-len(5 - hdr-total)
 
         #{overflow=wrap}
-        r = net.net-recv(fd, tmp, 5 - hdr-total)
-        r <= 0 -> return
+        r = net-recv-wait(fd, tmp, 5 - hdr-total)
+        print('RRHDR r=')
+        print(r)
+        r <= 0 -> {
+            print(' RRHDR-EOF')
+            return
+        }
         i <- [0..r): {
 
             ; ⚠️ .byte(i) 而非 tmp[i]：str[i] 是碼點索引，會把 >= 0x80 的
@@ -461,8 +504,15 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     #{index-out=0}
     ct = buf[0]
     rlen = get-u16(buf, 3)
+    print('RRPARSE ct=')
+    print(ct)
+    print(' rlen=')
+    print(rlen)
 
-    rlen > 16384 -> {
+    ; TLS 1.3 app-data 記錄最大密文 = 16384(明文) + 1(內容類型) + 16(GCM tag) = 16401 位元組。
+    ; 舊守衛 rlen > 16384 會把 >16401 的記錄誤判為錯誤，導致多記錄流在第一條後中斷。
+    ; 改為 16640 (= 2^14 + 256) 留足 padding 餘量。
+    rlen > 16640 -> {
         ct = -1
         return
     }
@@ -475,8 +525,11 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         tmp2 str = with-len(rlen - body-total)
 
         #{overflow=wrap}
-        r = net.net-recv(fd, tmp2, rlen - body-total)
+        r = net-recv-wait(fd, tmp2, rlen - body-total)
+        print('RRBODY r=')
+        print(r)
         r <= 0 -> {
+            print(' RRBODY-EOF')
             ct = -1
             return
         }
@@ -2986,7 +3039,7 @@ conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64, ou
     ct = -1
 
     ; 讀取記錄（跳過 TLS 1.3 middlebox compatibility 的 CCS 記錄）
-    rec []byte = with-len(16400)
+    rec []byte = with-len(16640)
     r-ct = 0
     rlen = 0
     r-ct, rlen = read-record(.fd, rec)
@@ -3359,6 +3412,12 @@ conn.send = (data str) (written ?i64) {
 ; buf str: 接收緩衝區
 ; n i64: 最大接收位元組數
 ; 返回 read-n i64: 已接收位元組數（-1=錯誤, 0=連線關閉）
+
+; get-fd: 診斷用 — 暴露底層 socket fd
+conn.get-fd = () (fd fd) {
+    fd = .fd
+}
+
 conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .connected == false -> return
@@ -3375,29 +3434,44 @@ conn.recv = (buf str, n i64) (read-n i64) {
             ; （如 NewSessionTicket 等握手後記錄），只返回應用資料
             got-app-data = false
             (got-app-data == false) {
-                rec []byte = with-len(16400)
+                rec []byte = with-len(16640)
                 r-ct = 0
                 rlen = 0
                 r-ct, rlen = read-record(.fd, rec)
+                print('TLSRECV r-ct=')
+                print(r-ct)
+                print(' rlen=')
+                print(rlen)
                 {
                     r-ct < 0 -> return
 
-                    r-ct != TLS-CT-CCS -> {
+                    ; alert：返回錯誤
+                    r-ct == TLS-CT-ALERT -> return
 
-                        ; CCS: middlebox compatibility dummy, 跳過不解密
-
+                    ; TLS 1.3 所有加密記錄的外層 ct 皆為 23(application_data)，
+                    ; 真正的內容型別在解密後的「內層 ct」(decrypt-record-13 回傳的 d-ct)。
+                    ; 因此必須解密後依內層型別判斷，而非依外層 r-ct。
+                    ; 注意：ap-read-seq 對「每一筆用 app key 加密的記錄」都要遞增，
+                    ; 包含 NewSessionTicket（內層 handshake）—— 否則後續 body 記錄
+                    ; 序號錯位會解密失敗。CCS(20) 等外層非 app_data 記錄不解密、直接跳過。
+                    r-ct == TLS-CT-APP-DATA -> {
                         d-ct, plain = .decrypt-record-13(rec, .ap-server-key, .ap-server-iv, .ap-read-seq)
-
+                        print('TLSDECRYPT d-ct=')
+                        print(d-ct)
                         #{overflow=wrap}
                         .ap-read-seq = .ap-read-seq + 1
                         d-ct < 0 -> return
-
-                        ; alert: 返回錯誤
-                        d-ct == TLS-CT-ALERT -> return
-
-                        ; application data: 取得資料
                         d-ct == TLS-CT-APP-DATA -> got-app-data = true
-                        ; handshake (e.g., NewSessionTicket): 跳過繼續讀取
+                        -> {
+                            ; 內層 handshake（NewSessionTicket 等）：跳過，繼續讀下一筆
+                            print('TLSSKIP d-ct=')
+                            print(d-ct)
+                        }
+                    }
+                    -> {
+                        ; 外層非 application_data（如 CCS）：不解密，跳過
+                        print('TLSSKIP r-ct=')
+                        print(r-ct)
                     }
                 }
             }
@@ -3406,7 +3480,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
         -> {
 
             ; TLS 1.2: 使用 CBC+MAC
-            rec []byte = with-len(16400)
+            rec []byte = with-len(16640)
             ct = 0
             rlen = 0
             ct, rlen = read-record(.fd, rec)
@@ -3425,6 +3499,8 @@ conn.recv = (buf str, n i64) (read-n i64) {
         buf[i] = plain[i]
     }
     read-n = copy-n
+    print('RECV-RET read-n=')
+    print(read-n)
 }
 
 ; close: 關閉 TLS 連線
@@ -5529,8 +5605,8 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             ; 接收直到找到 \r\n\r\n（標頭結束）
             recv-buf str = with-len(8192)
             recv-len = 0
-            cr = number.char-to-str(13)
-            lf = number.char-to-str(10)
+            cr = '\r'
+            lf = '\n'
 
             #{overflow=wrap}
             crlf = cr - lf

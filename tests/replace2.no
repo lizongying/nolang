@@ -6,4 +6,4 @@
 s = 'abc'
 r str
 r = s.replace-str('b', 'X')
-print('result: ' - r)
+print('result: {r}')

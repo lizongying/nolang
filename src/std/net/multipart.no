@@ -112,8 +112,8 @@ multipart-writer.write-field = (name str, value str) (ok bool) {
 
     ok = false
     .closed -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -138,8 +138,8 @@ multipart-writer.write-file = (name str, filename str, content-type str, content
 
     ok = false
     .closed -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -162,8 +162,8 @@ multipart-writer.close-form = () (ok bool) {
 
     ok = false
     .closed -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -239,8 +239,8 @@ multipart-reader.init = (boundary str, data str) {
 ; part multipart-part: 輸出，解析結果
 multipart-reader.parse-headers = (header-block str, part multipart-part) {
 
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -313,8 +313,8 @@ multipart-reader.next = () (has-part bool) {
     .has-current = false
 
     .pos >= .end -> return
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -557,8 +557,8 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     combined-n = 12 + sealed-n
     enc-str = base64.encode-std(combined)
 
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 
@@ -612,8 +612,8 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     combined-n = 12 + sealed-n
     enc-str = base64.encode-std(combined)
 
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     crlf = cr - lf
 

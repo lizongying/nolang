@@ -37,7 +37,7 @@ e-list {
 
 show = (q e-res) {
     q: {
-        ok(v) -> print('show: ' - v)
+        ok(v) -> print('show: {v}')
 
         fail -> print('show: fail')
     }

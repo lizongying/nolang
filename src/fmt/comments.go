@@ -283,6 +283,12 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 			if e != nil && e.Key == "index-out" && !e.Trailing && e.Propagated {
 				continue
 			}
+			// 冗餘 #{index-out}：被標註陳述的所有容器索引讀取皆可證明在界內
+			// （parser/bounds.go，與 codegen / no vet 同源），越界保護無意義，
+			// `no fmt` 移除。indexOutRemovable 為 nil 時退回保留（舊行為）。
+			if e != nil && e.Key == "index-out" && f.indexOutRemovable[stmt] {
+				continue
+			}
 			filtered = append(filtered, e)
 		}
 		return filtered

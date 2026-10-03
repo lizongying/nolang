@@ -38,8 +38,14 @@ type strGlobal struct {
 }
 
 type codegen struct {
-	mod  *Module
-	sb   strings.Builder
+	mod *Module
+	// sb is the LLVM-text sink currently being written to. It is a POINTER so
+	// emitFunc can redirect it at a per-function scratch builder: a call
+	// temporary (`%cargN` / `%cresN`) is only discovered while a later block is
+	// being emitted, but it must be moved into the function's ENTRY block
+	// afterwards (see hoistEntryAllocas). Everything else writes straight
+	// through to the module builder.
+	sb   *strings.Builder
 	errs []string
 
 	fname       map[FuncID]string // MIR func id -> llvm function name
@@ -131,7 +137,18 @@ type codegen struct {
 	// a pointer to a temporary alloca slot (which silently discards writes).
 	// This is the `m.rows.push(x)` case: without it, push modifies a copy of
 	// m.rows and the struct field stays unchanged.
+	//
+	// An entry is RETRACTED (deleted) as soon as the value is defined a second
+	// time: the projection describes where the FIRST definition's storage
+	// lives, and a rebinding moves the value back into its own slot. See
+	// defCount and the recording loop in emitFunc.
 	defInst map[ValueID]InstID
+
+	// defCount counts how many instructions DEFINE each value (see
+	// definedValue: both `Dst` and OpMove's EmitMoveInto encoding). 1 means
+	// defInst's projection is still sound; >1 means the value was rebound and
+	// defInst must hold no entry for it.
+	defCount map[ValueID]int
 }
 
 // ptype returns the LLVM type string for a MIR value and whether it is owned.
@@ -402,6 +419,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	}()
 	c := &codegen{
 		mod:            m,
+		sb:             &strings.Builder{},
 		fname:          map[FuncID]string{},
 		labelFor:       map[BlockID]string{},
 		valSlot:        map[ValueID]string{},
@@ -413,6 +431,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		optBoxRebox:    map[string]string{},
 		optBoxZero:     map[string]string{},
 		defInst:        map[ValueID]InstID{},
+		defCount:       map[ValueID]int{},
 		extraFuncs:     map[string]bool{},
 	}
 	// Sanitize LLVM symbol names, disambiguating collisions. Nolang method
@@ -3556,6 +3575,18 @@ func (c *codegen) emitEntry(main *Function) {
 // ---- function emission ----
 
 func (c *codegen) emitFunc(f *Function) error {
+	// Call temporaries (`%cargN`, `%cresN`, `%icrN`, ...) are discovered only
+	// while the block that contains the call is being emitted — which may be a
+	// loop body — but they have to end up in the ENTRY block (hoistEntryAllocas).
+	// Emit into a scratch builder and splice the fixed-up text into the module
+	// when the function is done, so the rewrite never has to scan the module.
+	outer := c.sb
+	var fn strings.Builder
+	c.sb = &fn
+	defer func() {
+		c.sb = outer
+		outer.WriteString(hoistEntryAllocas(fn.String()))
+	}()
 	c.cf = f.ID
 	c.curFn = f
 	c.resultParam = map[ValueID]bool{}
@@ -3586,13 +3617,38 @@ func (c *codegen) emitFunc(f *Function) error {
 		}
 		for _, iid := range blk.Insts {
 			inst := c.mod.Inst(iid)
-			if inst != nil && inst.Dst > NoVal {
-				// Build the defInst map: record which instruction produced
-				// each value, so emitCallBody can detect a method-call
-				// receiver that is the result of OpGetField and pass the
-				// struct field's GEP address directly (so mutations
-				// propagate back to the struct, e.g. `m.rows.push(x)`).
-				c.defInst[inst.Dst] = iid
+			if inst == nil {
+				continue
+			}
+			// Build the defInst map: record which instruction produced each
+			// value, so emitCallBody can detect a method-call receiver that is
+			// the result of OpGetField and pass the struct field's GEP address
+			// directly (so mutations propagate back to the struct, e.g.
+			// `m.rows.push(x)`).
+			//
+			// A value id here is a VARIABLE, not an SSA name: `line = lines[0]`
+			// defines `line` with the OpIndex, and a later `line = line.trim()`
+			// re-defines the SAME id with a move-like instruction. The
+			// projection describes where the FIRST definition's storage lives;
+			// after a rebinding the value is back in its own slot, so a second
+			// definition must RETRACT the entry. Keeping it made every read of
+			// the rebound variable project to the stale container element:
+			//   lines = ['  a  ']
+			//   line  = lines[0]
+			//   line  = line.trim()
+			//   line.len()      ; read &lines[0].len (= 5), not line's (= 1)
+			// The content was right and only the length was stale, because the
+			// trim result was written to line's own slot (which nobody read)
+			// while the length was read back through the container element.
+			if d := definedValue(inst); d > NoVal {
+				c.defCount[d]++
+				if c.defCount[d] > 1 {
+					delete(c.defInst, d)
+				} else {
+					c.defInst[d] = iid
+				}
+			}
+			if inst.Dst > NoVal {
 				// Function-pointer constants (a fn name passed as a callback)
 				// have a void(...)* MIR type that supportedLLVM does not list;
 				// they are referenced by @name directly (loadVal) and need no
@@ -3837,6 +3893,103 @@ func (c *codegen) emitFunc(f *Function) error {
 	c.sb.WriteString("}\n")
 	c.cf = NoFunc
 	return nil
+}
+
+// hoistEntryAllocas rewrites one emitted LLVM function so that every STATIC
+// `alloca` lives in the function's entry block.
+//
+// WHY THIS IS NECESSARY: in LLVM an `alloca` is not a declaration — it is an
+// instruction that reserves stack space *each time it executes*, and that space
+// is reclaimed only when the function returns. A call temporary is emitted at
+// the call site, so a call inside a loop grows the stack once per iteration,
+// without bound. Measured on darwin/arm64 (8 MB default stack):
+//
+//	m [str]i64 = {}
+//	i <- [0..200000) { m.put('key', 1) }
+//
+// segfaulted (rc=139) after ~180k iterations with peak RSS still only 15.6 MB —
+// a stack overflow, not a heap exhaustion. The optimized IR still contained
+// `%carg12 = alloca %str-long` and `%cres14 = alloca i1` inside the loop body;
+// LLVM's LICM does not hoist them, and mem2reg/SROA cannot promote an alloca
+// that is not in the entry block. The same shape is harmless when the callee is
+// inlined (a 300k-iteration loop calling a tiny local function keeps every
+// alloca out of the body), which is why the bug only shows up on calls to
+// non-inlined functions.
+//
+// Moving the alloca into the entry block is dominance-safe (the entry block
+// dominates every block) and semantics-preserving for these temporaries: each
+// is written before every read — the call argument is stored into it
+// immediately, and the out-param is written by the callee — so reusing one
+// slot across iterations is not observable. Recursion is unaffected: every
+// invocation still gets its own frame.
+//
+// DYNAMIC allocas (`%s = alloca i8, i64 %n`) are deliberately left in place:
+// their element count may be an SSA register defined by a later block, which
+// the entry block does not dominate. Moving one would produce invalid IR.
+func hoistEntryAllocas(fnIR string) string {
+	lines := strings.Split(fnIR, "\n")
+	// The entry block is the first block label, which is always at column 0.
+	entry := -1
+	for i, ln := range lines {
+		if ln == "" || strings.HasPrefix(ln, " ") || strings.HasPrefix(ln, "\t") {
+			continue
+		}
+		if strings.HasSuffix(ln, ":") {
+			entry = i
+			break
+		}
+	}
+	if entry < 0 {
+		return fnIR
+	}
+	var hoisted []string
+	kept := make([]string, 0, len(lines))
+	for i, ln := range lines {
+		if i > entry && isHoistableAlloca(ln) {
+			hoisted = append(hoisted, ln)
+			continue
+		}
+		kept = append(kept, ln)
+	}
+	if len(hoisted) == 0 {
+		return fnIR
+	}
+	out := make([]string, 0, len(kept)+len(hoisted))
+	out = append(out, kept[:entry+1]...)
+	out = append(out, hoisted...)
+	out = append(out, kept[entry+1:]...)
+	return strings.Join(out, "\n")
+}
+
+// isHoistableAlloca reports whether ln is a static `alloca` that can be moved
+// into the entry block: `  %name = alloca <type>[, <const count>][, align N]`
+// with no register operands.
+func isHoistableAlloca(ln string) bool {
+	t := strings.TrimSpace(ln)
+	if !strings.HasPrefix(t, "%") {
+		return false
+	}
+	const marker = " = alloca "
+	eq := strings.Index(t, marker)
+	if eq < 0 {
+		return false
+	}
+	rest := t[eq+len(marker):]
+	if strings.Contains(rest, "addrspace") {
+		return false // unknown form: leave it exactly where it is
+	}
+	// parts[0] is the allocated type (a named struct like `%str-long` may
+	// legitimately start with '%'); every later part is an operand.
+	for _, p := range strings.Split(rest, ",")[1:] {
+		p = strings.TrimSpace(p)
+		if strings.HasPrefix(p, "align ") {
+			continue
+		}
+		if strings.Contains(p, "%") {
+			return false // register operand, e.g. `alloca i8, i64 %n`
+		}
+	}
+	return true
 }
 
 func (c *codegen) emitBlock(f *Function, bid BlockID, allocaFor func(ValueID) string) error {
@@ -8048,7 +8201,8 @@ func (c *codegen) localTypeOf(v ValueID) TypeID {
 // slot-based handling unchanged.
 //
 // A read that produced an INDEPENDENT COPY is never a projection — see
-// getFieldWasCloned.
+// projectionWasCloned, and the two invalidation guards (sourceAlreadyDropped /
+// sourceWrittenBetween) that narrow it further.
 func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 	slot := c.valSlot[v]
 	tid := c.localTypeOf(v)
@@ -8085,7 +8239,7 @@ func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 		// is private to this value, so a mutation through the forwarded address
 		// would land in the field while this value keeps its own buffer and the
 		// two silently diverge.
-		if c.getFieldWasCloned(v) && c.sourceAlreadyDropped(di, use) {
+		if c.projectionWasCloned(v) && (c.sourceAlreadyDropped(di, use) || c.sourceWrittenBetween(di, use)) {
 			return slot, tid, false
 		}
 		bptr, btid, _ := c.lvalueAddrOf(di.Args[0], use)
@@ -8145,6 +8299,14 @@ func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 		if len(di.Args) < 2 {
 			return slot, tid, false
 		}
+		// Same invalidation rule as the field branch above, one level out: the
+		// projection addresses `&container[i]`, so rebinding the CONTAINER — or
+		// storing a new element — leaves it pointing at a different string.
+		// `lines = ['bb']` after `line = lines[0]` made `line.len()` report 2
+		// for content 'aaaa'.
+		if c.projectionWasCloned(v) && (c.sourceAlreadyDropped(di, use) || c.sourceWrittenBetween(di, use)) {
+			return slot, tid, false
+		}
 		bptr, btid, _ := c.lvalueAddrOf(di.Args[0], use)
 		if bptr == "" || btid == NoType {
 			return slot, tid, false
@@ -8185,23 +8347,190 @@ func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 	return slot, tid, false
 }
 
-// getFieldWasCloned reports whether the value v — which must be defined by an
-// OpGetField — was read BY VALUE, i.e. emitGetField handed it an independent
-// copy of the field instead of an alias of the field's storage.
+// projectionWasCloned reports whether the value v — which must be defined by a
+// projection (OpGetField or OpIndex) — was read BY VALUE, i.e. the emitter
+// handed it an independent copy of the field / element instead of an alias of
+// that storage.
 //
-// It must mirror emitGetField's decision EXACTLY: that is the only place that
+// It must mirror the emitter's decision EXACTLY: that is the only place that
 // knows whether a clone was emitted, and a mismatch in either direction is a
 // memory bug. Say "no clone" when there was one and callers get the address of
 // the source copy (use-after-free once the source is dropped); say "clone" when
 // there was none and every read of a field becomes a redundant non-projection,
 // silently breaking `pool.nodes[i].kind = x`.
 //
-// Today emitGetField clones exactly one shape: an OWNED `str` field, whose
-// by-value read would otherwise share the heap buffer with the field and be
-// double-freed when both the temp and the struct are dropped.
-func (c *codegen) getFieldWasCloned(v ValueID) bool {
+// Today the emitter clones exactly one shape: an OWNED `str` field or element,
+// whose by-value read would otherwise share the heap buffer with the source and
+// be double-freed when both are dropped. It is the precondition for BOTH
+// invalidation guards below, and it is what makes them safe: when the read
+// cloned, the value's own slot is a complete private `%str-long`, so falling
+// back to it can never read stale or freed bytes.
+func (c *codegen) projectionWasCloned(v ValueID) bool {
 	fieldLT, owned := c.ptype(v)
 	return owned && fieldLT == "%str-long"
+}
+
+// projectionChain returns every value the address a projection hands out is
+// derived from: the source the read projected out of, plus each of ITS
+// projection roots. `l = ls[0]; b = l.body` projects to `&ls[0].body`, so the
+// chain is {ls[0]-read, ls} — it is `ls`, not the local `l`, that owns the bytes.
+//
+// The walk STOPS at the first non-projection instruction rather than abandoning
+// the check: the values collected so far are still the ones the address derives
+// from. Returning early there is what once let std/markdown's
+// `line.body.contains('|')` read a freed buffer.
+func (c *codegen) projectionChain(read *Inst) map[ValueID]bool {
+	srcs := map[ValueID]bool{}
+	if read == nil || len(read.Args) == 0 {
+		return srcs
+	}
+	cur := read.Args[0]
+	for guard := 0; cur > NoVal && guard < 64; guard++ {
+		if srcs[cur] {
+			break
+		}
+		srcs[cur] = true
+		iid, ok := c.defInst[cur]
+		if !ok {
+			break
+		}
+		d := c.mod.Inst(iid)
+		if d == nil || len(d.Args) == 0 {
+			break
+		}
+		switch d.Op {
+		case OpGetField, OpIndex:
+			cur = d.Args[0]
+		case OpMove:
+			// Both encodings: Dst = fresh (Args=[src]), or Dst = NoVal with
+			// Args=[src, dst] for an assignment to an existing binding.
+			cur = d.Args[0]
+		case OpCast:
+			cur = d.Args[0]
+		default:
+			cur = NoVal
+		}
+	}
+	return srcs
+}
+
+// reachableBlocks lists the blocks forward-reachable from `from`, itself
+// included, in f.Blocks order. A write (or drop) on an unrelated branch cannot
+// invalidate a projection, so both guards below restrict their scan to this set.
+func (c *codegen) reachableBlocks(f *Function, from BlockID) []BlockID {
+	reach := map[BlockID]bool{}
+	var visit func(BlockID)
+	visit = func(bid BlockID) {
+		if reach[bid] {
+			return
+		}
+		reach[bid] = true
+		blk := c.mod.Block(bid)
+		if blk == nil || blk.Term == nil {
+			return
+		}
+		for _, t := range blk.Term.Targets {
+			visit(t)
+		}
+	}
+	visit(from)
+	out := make([]BlockID, 0, len(reach))
+	for _, bid := range f.Blocks {
+		if reach[bid] {
+			out = append(out, bid)
+		}
+	}
+	return out
+}
+
+// sourceWrittenBetween reports whether anything WROTE to the storage a
+// projection addresses, strictly between the read that produced the projected
+// value and `use`.
+//
+// WHY THIS EXISTS (the bug it closes)
+// -----------------------------------
+// A projection hands out `&root.field...`, and that address keeps denoting the
+// same value only while nothing writes through that path. Rebinding the FIELD
+// leaves the address pointing at a different string than the one that was read:
+//
+//	h = hold { f: '  hi  ' }
+//	g = h.f              ; cloned read → g owns '  hi  '
+//	h.f = 'zzzz'         ; the FIELD is rebound
+//	g.len()              ; projected to &h.f → 4, for content '  hi  ' (6)
+//
+// Rebinding the CONTAINER is the same hazard one level out:
+//
+//	lines = ['aaaa']
+//	line  = lines[0]
+//	lines = ['bb']       ; the CONTAINER is rebound
+//	line.len()           ; projected to &lines[0] → 2, for content 'aaaa' (4)
+//
+// Both are "content correct, length stale", the same shape as the value-level
+// rebinding that defInst's retraction handles — this is the level below it.
+//
+// Only writes landing STRICTLY between the read and the use count. A write that
+// IS the use is precisely the write-through the projection exists for
+// (`b.s.len = 3`, `b.s[0] = 97`, `b.s.set-byte(0, 72)`), and a write before the
+// read is already reflected in what was read.
+func (c *codegen) sourceWrittenBetween(read, use *Inst) bool {
+	f := c.mod.Func(c.cf)
+	if f == nil || read == nil || use == nil || len(read.Args) == 0 {
+		return false // unknown: keep today's behaviour (forward)
+	}
+	readPos, okR := c.emitPos(f, read)
+	usePos, okU := c.emitPos(f, use)
+	if !okR || !okU {
+		return false
+	}
+	srcs := c.projectionChain(read)
+	if len(srcs) == 0 {
+		return false
+	}
+	for _, bid := range c.reachableBlocks(f, read.Block) {
+		blk := c.mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := c.mod.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			var w ValueID = NoVal
+			switch inst.Op {
+			case OpSetField:
+				// Args = [receiver, value]: writes the struct's storage.
+				if len(inst.Args) >= 1 {
+					w = inst.Args[0]
+				}
+			case OpIndexStore:
+				// Args = [container, index, value]: writes the element.
+				if len(inst.Args) >= 1 {
+					w = inst.Args[0]
+				}
+			default:
+				// A rebinding of the value itself (both move encodings).
+				w = moveDst(inst)
+			}
+			if w <= NoVal || !srcs[w] {
+				continue
+			}
+			wp, ok := c.emitPos(f, inst)
+			if !ok {
+				continue
+			}
+			// Strictly after the read ...
+			if wp.block < readPos.block || (wp.block == readPos.block && wp.idx <= readPos.idx) {
+				continue
+			}
+			// ... and strictly before the use.
+			if wp.block > usePos.block || (wp.block == usePos.block && wp.idx >= usePos.idx) {
+				continue
+			}
+			return true
+		}
+	}
+	return false
 }
 
 // sourceAlreadyDropped reports whether the storage a projection addresses has
@@ -8238,61 +8567,8 @@ func (c *codegen) sourceAlreadyDropped(read, use *Inst) bool {
 	if !okU {
 		return false
 	}
-	// Every value the projected address is derived from.
-	srcs := map[ValueID]bool{}
-	cur := read.Args[0]
-	for guard := 0; cur > NoVal && guard < 64; guard++ {
-		if srcs[cur] {
-			break
-		}
-		srcs[cur] = true
-		iid, ok := c.defInst[cur]
-		if !ok {
-			break
-		}
-		d := c.mod.Inst(iid)
-		if d == nil || len(d.Args) == 0 {
-			break
-		}
-		switch d.Op {
-		case OpGetField, OpIndex:
-			cur = d.Args[0]
-		case OpMove:
-			// Both encodings: Dst = fresh (Args=[src]), or Dst = NoVal with
-			// Args=[src, dst] for an assignment to an existing binding.
-			cur = d.Args[0]
-		case OpCast:
-			cur = d.Args[0]
-		default:
-			// Not a projection: the chain ends here. The values already
-			// collected are still the ones the address is derived from, so this
-			// must STOP THE WALK, not abandon the check — returning false here
-			// silently skipped every drop and left std/markdown's
-			// `line.body.contains('|')` reading a freed buffer.
-			cur = NoVal
-		}
-	}
-	// Blocks reachable from the read's block, including itself.
-	reach := map[BlockID]bool{}
-	var visit func(BlockID)
-	visit = func(bid BlockID) {
-		if reach[bid] {
-			return
-		}
-		reach[bid] = true
-		blk := c.mod.Block(bid)
-		if blk == nil || blk.Term == nil {
-			return
-		}
-		for _, t := range blk.Term.Targets {
-			visit(t)
-		}
-	}
-	visit(read.Block)
-	for _, bid := range f.Blocks {
-		if !reach[bid] {
-			continue
-		}
+	srcs := c.projectionChain(read)
+	for _, bid := range c.reachableBlocks(f, read.Block) {
 		blk := c.mod.Block(bid)
 		if blk == nil {
 			continue

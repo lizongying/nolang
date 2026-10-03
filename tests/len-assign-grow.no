@@ -29,7 +29,7 @@ main = () {
     ; (2) 增長出來的緩衝區是真的可寫的（能讀回寫進去的位元組）
     b.s == 'abc' -> print('ok: grown str buffer is writable')
 
-    -> print('fail: grown str got=[' - b.s - ']')
+    -> print('fail: grown str got=[{b.s}]')
 
     ; (3) 結構體欄位：slice 從零值增長到 2 後可寫可讀
     b.v.len = 2
@@ -54,5 +54,5 @@ main = () {
     b.s.len = 2
     b.s == 'ab' -> print('ok: shrink on an allocated str still works')
 
-    -> print('fail: shrink got=[' - b.s - ']')
+    -> print('fail: shrink got=[{b.s}]')
 }

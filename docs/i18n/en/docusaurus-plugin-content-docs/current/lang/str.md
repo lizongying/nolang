@@ -102,6 +102,24 @@ msg = 'first: ' - s[0]   ; 'first: h'
 ok = s[0] == 'h'         ; true
 ```
 
+> **`'...'` is a `str` literal, `"..."` is a `char` literal** — even when `'x'` holds a single code point it is still a `str`. So when **both** sides of `+` / `-` are literals (`'...'` with `"..."`), the implicit conversion above applies and the result is **concatenation**, not integer arithmetic:
+>
+> ```no
+> 'x' - "a"                ; "xa" (concatenation; not 120-97 = 23)
+> "a" + 'x'                ; "ax"
+> 'xy' + "a"               ; "xya"
+> ```
+>
+> As soon as **one** side is not a literal (a char variable, `s[i]`, an integer), a single-character `'...'` takes part in integer arithmetic as a **byte** — this is deliberate, and it is what makes the digit-to-value idiom work:
+>
+> ```no
+> c char = "5"
+> n = c - '0'              ; 5 (byte subtraction, not "50")
+> m = 'A' + 1              ; 66
+> "z" - "a"                ; 25 (both sides are char literals → char minus char)
+> 'x' - c                  ; 23 (c is a variable → byte arithmetic)
+> ```
+
 > Implicit conversion encodes a **single code point** as `str`. If what you want is the numeric value, use the `char` itself (e.g. `print(c)` prints the decimal value of that code point); if you want an explicit conversion, `c.to-str()` still works (it is equivalent to the implicit one).
 >
 > A `char` represents a single Unicode scalar value, and its underlying storage type is **`i32`** (valid range `0 ..= 0x10FFFF`).

@@ -11,7 +11,7 @@ f1 ?fs.file = fs.open('/nonexistent/file-12345.txt',  {
     mode: file-mode.read
 })
 f1: {
-    err -> print('  错误: ' - it)
+    err -> print('  错误: {it}')
 
     nil -> print('  结果: nil')
 
@@ -26,7 +26,7 @@ f2 ?fs.file = fs.open('/tmp',  {
     mode: file-mode.read
 })
 f2: {
-    err -> print('  错误: ' - it)
+    err -> print('  错误: {it}')
 
     nil -> print('  结果: nil')
 
@@ -42,7 +42,7 @@ f3 ?fs.file = fs.open('/tmp/nolang-test-err.txt',  {
     perm: file-perm.perm-644
 })
 f3: {
-    err -> print('  错误: ' - it)
+    err -> print('  错误: {it}')
 
     nil -> print('  结果: nil')
 

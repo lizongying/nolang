@@ -35,6 +35,43 @@ Rules:
 
 See `lang/syntax.md` → "Coroutine Groups" for the full expansion.
 
+### `co` keyword (colorless async) — recommended
+
+`co` is a **colorless** syntax built on top of coroutine groups: you write the
+uncolored name `worker`; the compiler auto-monomorphizes a `worker-async` variant
+and runs it on the underlying colored stackless coroutines. You do not hand-write
+the `-async` suffix and you do not hand-write `run` / `awy`.
+
+```no
+worker = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n + 1
+}
+main = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = co worker(1)   ; auto-monomorphizes worker-async and spawns
+        r2 = co worker(2)   ; runs concurrently with r1
+    }
+    print(r1.to-str() + ' ' + r2.to-str())
+}
+```
+
+Rules:
+
+- **Monomorphization.** `co worker(1)` auto-generates `worker-async` (a clone of
+  `worker`'s body, renamed). If `worker` is also called synchronously, both
+  `worker` (sync) and `worker-async` (async) coexist.
+- **Transitivity.** If a function calls an async function internally (e.g.
+  `worker` contains `co child(...)`), then `worker` is also monomorphized into
+  `worker-async`; async coloring propagates up the call chain.
+- **Underlying still colored stackless coroutines.** `co` is only sugar,
+  equivalent to `run worker-async(1); r1 = awy <handle>`; inside a coroutine group
+  the group schedules the spawn / await to obtain concurrency.
+
+Diagnostic switch: `NOLANG_ASYNC_GO=0` disables monomorphization (diagnostic only).
+
 ### async — manual primitives (deprecated, low-level reference only)
 
 A coroutine model:

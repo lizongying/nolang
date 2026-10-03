@@ -375,8 +375,8 @@ connect = (host str, port i64) (conn ?conn) {
     c.fd = fd
 
     ; 1. 送出連線 preface
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     written = net.net-send(fd, preface, preface.len-bytes())
@@ -422,8 +422,8 @@ connect-tls = (host str, port i64) (conn ?conn) {
     c.fd = tls-c.fd
 
     ; 2. 送出連線 preface（透過 TLS）
-    cr = number.char-to-str(13)
-    lf = number.char-to-str(10)
+    cr = '\r'
+    lf = '\n'
 
     preface = 'PRI * HTTP/2.0' - cr - lf - cr - lf - 'SM' - cr - lf - cr - lf
     w = tls-c.send(preface)

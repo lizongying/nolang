@@ -296,7 +296,7 @@ toml-normalize-key = (s str) (key str, ok bool) {
     n = key.len-bytes()
     n == 0 || n > TOML-MAX-KEY -> return
     key = key.replace-str('"', '')
-    key = key.replace-str(char-to-str(39), '')
+    key = key.replace-str('\'', '')
     n = key.len-bytes()
 
     #{index-out=0}

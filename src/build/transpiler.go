@@ -1244,6 +1244,16 @@ func (t *Transpiler) programUsesPrint(progs ...*parser.Program) bool {
 // 模組。同一模組檔可能被 ShortName（如 "map"）與 ShortPath（如 "collection/map"）
 // 同時引用，皆指向同一份 std/collection/map.no，故以 path 去重避免重複合併。
 func (t *Transpiler) loadStdModuleBody(sp string, merged *parser.Program, typeOwner map[string]string, mainVarNames map[string]bool, mergedGlobalConsts map[string]bool, globalVarTypes map[string]string, loadedStd map[string]bool, explicitStdModules map[string]bool) ([]string, error) {
+	return t.loadStdModuleBodyForce(sp, merged, typeOwner, mainVarNames, mergedGlobalConsts, globalVarTypes, loadedStd, explicitStdModules, nil)
+}
+
+// loadStdModuleBodyForce 是 loadStdModuleBody 的實現；forcePrintDeps 標記
+// 「print/具名格式內建依賴」的模組（fmt/io/str/byte）：這些模組即便與頂層
+// 變量同名也必須載入 —— MIR 的具名格式欄位（print('{x}')）在 codegen 期會
+// 發出對 std/fmt.no 中 fmt-str/fmt-int 等函數的真實呼叫，若因同名變量跳過
+// 載入，呼叫端將得到 `unknown callee fmt-str`（見 r4 回歸：頂層 fmt 變量 +
+// print('{x}')）。模組內的全局變量合併仍受 mainVarNames 保護，不會重複聲明。
+func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, typeOwner map[string]string, mainVarNames map[string]bool, mergedGlobalConsts map[string]bool, globalVarTypes map[string]string, loadedStd map[string]bool, explicitStdModules map[string]bool, forcePrintDeps map[string]bool) ([]string, error) {
 	info, ok := stdModuleLookup()[sp]
 	if !ok {
 		return nil, nil
@@ -1252,7 +1262,9 @@ func (t *Transpiler) loadStdModuleBody(sp string, merged *parser.Program, typeOw
 	// 註：必須用 globalVarTypes（僅頂層變數），不能用 varTypes（含函數體內的局部變數），
 	// 否則函數內的局部變數（如 test-arr-reverse 中的 arr [4] = ...）會導致
 	// arr 模組被錯誤跳過，使 [n]t 方法無法載入。
-	if _, isVar := globalVarTypes[info.ShortName]; isVar {
+	// 例外：print 內建依賴的 fmt/io/str/byte 不跳過（其函數體是具名格式欄位的
+	// codegen 依賴，缺失會造成 MIR `unknown callee fmt-*`）。
+	if _, isVar := globalVarTypes[info.ShortName]; isVar && !forcePrintDeps[sp] {
 		return nil, nil
 	}
 	path := "std/" + info.ShortPath
@@ -2265,8 +2277,13 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 缺 fmt/str/byte 本體而編譯失敗）。
 	usesPrint := t.programUsesPrint(merged) || t.programUsesPrint(program)
 	usesIO := refs["io"]
+	// printInferredStd：標記由 print/io 用法推斷引入的基礎模組。這些模組的
+	// 函數體（fmt-str/fmt-int 等）是 MIR 具名格式欄位的 codegen 硬依賴，
+	// 即使與頂層變量同名也不能被衝突跳過（見 loadStdModuleBodyForce）。
+	printInferredStd := make(map[string]bool)
 	if usesPrint || usesIO {
 		for _, name := range []string{"fmt", "io", "str", "byte"} {
+			printInferredStd[name] = true
 			if _, ok := stdModuleLookup()[name]; ok && !loadedStd[name] {
 				loadedStd[name] = true
 				stdWorklist = append(stdWorklist, name)
@@ -2287,7 +2304,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	for len(stdWorklist) > 0 {
 		sp := stdWorklist[0]
 		stdWorklist = stdWorklist[1:]
-		newDeps, err := t.loadStdModuleBody(sp, merged, typeOwner, mainVarNames, mergedGlobalConsts, globalVarTypes, loadedStd, explicitStdModules)
+		newDeps, err := t.loadStdModuleBodyForce(sp, merged, typeOwner, mainVarNames, mergedGlobalConsts, globalVarTypes, loadedStd, explicitStdModules, printInferredStd)
 		if err != nil {
 			return "", err
 		}

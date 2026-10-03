@@ -41,10 +41,10 @@ fib-rec = (n i64) (r i64) {
     r = p1 + p2
 }
 loop10 = fib-loop(10)
-print('fib-loop(10) = ' - loop10.to-str())
+print('fib-loop(10) = {loop10.to-str()}')
 
 loop30 = fib-loop(30)
-print('fib-loop(30) = ' - loop30.to-str())
+print('fib-loop(30) = {loop30.to-str()}')
 
 rec-result = fib-rec(20)
-print('fib-rec(20) = ' - rec-result.to-str())
+print('fib-rec(20) = {rec-result.to-str()}')

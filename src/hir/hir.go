@@ -309,6 +309,13 @@ type Package struct {
 	// `i = 0`) resolved to the main program's same-named top-level binding and
 	// silently overwrote it — see nameUsedInFuncBodies in src/mir/hir2mir.go.
 	Owners map[int32]string
+	// GoSpawns records the HIR node ids of every `co <call>` KCall lowered from
+	// a CoExpression. The monomorphization pass (MonomorphizeGo) reads it to
+	// clone the callee's `-async` variant and rewrite each spawn's callee from
+	// the uncolored name to its `-async` monomorph; the coroutine-group pass
+	// then treats the rewritten bare `-async` calls as spawnable. It is empty
+	// for programs that never use `co`, which keeps MonomorphizeGo a no-op.
+	GoSpawns []int32
 	// Inferred holds the checker's inferred type strings, keyed by node id.
 	// HIR nodes only carry *declared* types in Node.Type; the rich inferred
 	// types (which the checker computes by mutating the AST) live here so

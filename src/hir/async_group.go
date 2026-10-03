@@ -457,3 +457,328 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
+
+// ---------------------------------------------------------------------------
+// Colorless async (`go`): monomorphization
+//
+// `go worker(1)` is sugar for spawning the compiler-generated `worker-async`
+// variant of `worker` and reading its result. The user writes the uncolored
+// name `worker`; the `-async` suffix is purely internal. This pass:
+//
+//   1. clones every `go`-targeted (or transitively async) function `F` into a
+//      fresh `F-async` definition (identical body, renamed), and
+//   2. rewrites each `go <call>` KCall's callee from `F` to `F-async`.
+//
+// The coroutine-group pass (which runs AFTER this one) then treats the
+// rewritten bare `-async` calls as spawnable, so `go` inside a `{ }` group
+// overlaps with its siblings; outside a group a later pass wraps the bare
+// `-async` call in `run`/`awy` (see hir.DesugarAsyncGroups / the inline-await
+// step). The async coloring is propagated upward: any function that calls an
+// async-colored function also gets an `-async` variant, so a `go` deep in the
+// call tree lifts every ancestor that could spawn it.
+//
+// Kill switch: NOLANG_ASYNC_GO=0 disables the pass (diagnostic only). The pass
+// is a no-op whenever pkg.GoSpawns is empty, i.e. for programs that never use
+// `go` — which keeps the corpus guard untouched.
+// ---------------------------------------------------------------------------
+
+// MonomorphizeGo clones `-async` variants for every function in the async
+// call graph and rewrites the `go` spawn sites to target them. It returns the
+// number of functions cloned (0 means nothing changed).
+func MonomorphizeGo(p *Package) int {
+	if p == nil || len(p.GoSpawns) == 0 || os.Getenv("NOLANG_ASYNC_GO") == "0" {
+		return 0
+	}
+	// funcByName maps a function name to its KFuncDef id (top-level only).
+	funcByName := map[string]int32{}
+	for _, id := range p.Top {
+		n := p.Node(id)
+		if n != nil && n.Kind == KFuncDef {
+			funcByName[p.Str(n.S)] = id
+		}
+	}
+	// Base async-colored set: the direct callees of `go` spawns. These MUST
+	// have `-async` variants because they are launched as tasks.
+	asyncColored := map[string]bool{}
+	for _, callID := range p.GoSpawns {
+		if f := calleeName(p, callID); f != "" {
+			asyncColored[f] = true
+		}
+	}
+	// Fixpoint: any function that calls an async-colored function is itself
+	// async-colored ("lower async → upper also gets -async"). This lifts the
+	// coloring up every caller to the program entry.
+	for changed := true; changed; {
+		changed = false
+		for name, fid := range funcByName {
+			if asyncColored[name] {
+				continue
+			}
+			for _, callee := range calleesOf(p, fid) {
+				if asyncColored[callee] {
+					asyncColored[name] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	// Clone each async-colored function that lacks an `-async` variant.
+	n := 0
+	for name := range asyncColored {
+		if _, ok := funcByName[name+"-async"]; ok {
+			continue
+		}
+		fid, ok := funcByName[name]
+		if !ok {
+			continue
+		}
+		newID, oldToNew := p.cloneSubtree(fid)
+		p.Nodes[newID].S = p.intern(name + "-async")
+		p.Top = append(p.Top, newID)
+		funcByName[name+"-async"] = newID
+		// The clone's body may itself contain `go` calls (to other async
+		// functions). Record their new node ids as go-spawns so the rewrite
+		// below retargets them too.
+		for oldID, newID2 := range oldToNew {
+			if goSpawnIndex(p, oldID) >= 0 {
+				p.GoSpawns = append(p.GoSpawns, newID2)
+			}
+		}
+		n++
+	}
+	// Rewrite every `go` spawn's callee from the uncolored name to its
+	// `-async` monomorph.
+	for _, callID := range p.GoSpawns {
+		f := calleeName(p, callID)
+		if f != "" && asyncColored[f] {
+			setCallee(p, callID, f+"-async")
+		}
+	}
+	return n
+}
+
+// calleeName returns the function name a KCall invokes, or "" if it is not a
+// direct call. Mirrors groupRewriter.isAsyncCall's callee extraction.
+func calleeName(p *Package, callID int32) string {
+	call := p.Node(callID)
+	if call == nil || call.Kind != KCall {
+		return ""
+	}
+	for c := call.First; c != NoID; c = p.Nodes[c].Next {
+		slot := p.Node(c)
+		if slot == nil || slot.Kind != KSlot || p.Str(slot.S) != "fn" {
+			continue
+		}
+		if ident := p.Node(slot.First); ident != nil && ident.Kind == KIdent {
+			return p.Str(ident.S)
+		}
+	}
+	return ""
+}
+
+// setCallee rewrites the callee of a KCall node to newName.
+func setCallee(p *Package, callID int32, newName string) {
+	call := p.Node(callID)
+	if call == nil || call.Kind != KCall {
+		return
+	}
+	for c := call.First; c != NoID; c = p.Nodes[c].Next {
+		slot := p.Node(c)
+		if slot == nil || slot.Kind != KSlot || p.Str(slot.S) != "fn" {
+			continue
+		}
+		if ident := p.Node(slot.First); ident != nil && ident.Kind == KIdent {
+			ident.S = p.intern(newName)
+		}
+	}
+}
+
+// calleesOf returns the names of every function a KFuncDef calls (transitively
+// through its body), stopping at nested KFuncDef boundaries so a nested
+// function literal is treated as opaque.
+func calleesOf(p *Package, fid int32) []string {
+	var out []string
+	seen := map[int32]bool{}
+	var walk func(id int32)
+	walk = func(id int32) {
+		for c := id; c != NoID; c = p.Nodes[c].Next {
+			if seen[c] {
+				continue
+			}
+			seen[c] = true
+			node := p.Node(c)
+			if node == nil {
+				continue
+			}
+			if node.Kind == KFuncDef {
+				// Do not descend into a nested function definition.
+				continue
+			}
+			if node.Kind == KCall {
+				if name := calleeName(p, c); name != "" {
+					out = append(out, name)
+				}
+			}
+			walk(node.First)
+		}
+	}
+	walk(p.Node(fid).First)
+	return out
+}
+
+// goSpawnIndex returns the index of callID in p.GoSpawns, or -1.
+func goSpawnIndex(p *Package, callID int32) int {
+	for i, id := range p.GoSpawns {
+		if id == callID {
+			return i
+		}
+	}
+	return -1
+}
+
+// DesugarGoInlineAwait wraps every `go <call>` that was NOT claimed by a
+// coroutine group (DesugarAsyncGroups runs first and rewrites the group ones
+// into `run`/`awy`, leaving their call node parented by a KRun) with the
+// synchronous `run` + `awy` pair:
+//
+//	r1 = go worker(1)   ──▶   __ghN = run worker-async(1)
+//	                         r1    = awy __ghN
+//
+// so the spawn's RESULT (not the opaque handle) lands in the binding. A `go`
+// nested inside a larger expression (e.g. `n + go child(n)`) is not
+// statement-level and is left to the caller's diagnostic; only direct
+// KLet/KExprStmt `go` calls are wrapped here, mirroring the coroutine group's
+// own refusal of nested async calls.
+func DesugarGoInlineAwait(p *Package) {
+	if p == nil || len(p.GoSpawns) == 0 {
+		return
+	}
+	// Parent map: child id -> parent node id (the node whose First/Next links
+	// to it). Built once over the whole arena.
+	parent := make(map[int32]int32, len(p.Nodes))
+	for i := 1; i < len(p.Nodes); i++ {
+		for c := p.Nodes[i].First; c != NoID; c = p.Nodes[c].Next {
+			parent[c] = int32(i)
+		}
+	}
+	g := &groupRewriter{p: p, taken: map[string]bool{}}
+	g.collectNames()
+	for _, callID := range p.GoSpawns {
+		call := p.Node(callID)
+		if call == nil || call.Kind != KCall {
+			continue
+		}
+		par := parent[callID]
+		if par == NoID {
+			continue
+		}
+		pk := p.Node(par)
+		if pk == nil {
+			continue
+		}
+		// Already a `run` (spawned by a coroutine group) or an `awy` — leave
+		// it alone; the group pass owns its ordering.
+		if pk.Kind == KRun || pk.Kind == KAwait {
+			continue
+		}
+		// Only statement-level `go` (r1 = go f / go f) is wrapped here.
+		if pk.Kind != KLet && pk.Kind != KExprStmt {
+			continue
+		}
+		line, col := call.Line, call.Col
+		runID := p.add(Node{Kind: KRun, First: callID, Line: line, Col: col})
+		hName := g.freshName()
+		hLet := p.add(Node{Kind: KLet, S: p.intern(hName), First: runID, Line: line, Col: col})
+		hIdent := p.add(Node{Kind: KIdent, S: p.intern(hName), Line: line, Col: col})
+		awy := p.add(Node{Kind: KAwait, First: hIdent, Line: line, Col: col})
+		// Insert `__ghN = run <call>` immediately before the statement that
+		// held the spawn. When that statement is a top-level node (module-level
+		// `go`, e.g. `r = go f(21)` at the package root) it has no block
+		// parent in the arena, so `parent[par] == NoID`; in that case the new
+		// `run` node must be spliced into the package's top-level list instead,
+		// otherwise the `awy` would await a handle that is never spawned
+		// (→ trace/BPT trap at runtime).
+		if blk := parent[par]; blk != NoID {
+			insertBefore(p, blk, par, hLet)
+		} else {
+			insertTopBefore(p, par, hLet)
+		}
+		// Rewrite the original statement to await the handle.
+		if pk.Kind == KLet {
+			pk.First = awy // keep S (target) and Type
+		} else {
+			pk.First = awy
+		}
+	}
+}
+
+// insertBefore inserts newID into blockID's child chain, right before stmtID.
+// It is a no-op if stmtID is not a child of blockID.
+func insertBefore(p *Package, blockID, stmtID, newID int32) {
+	blk := p.Node(blockID)
+	if blk == nil || stmtID == NoID || newID == NoID {
+		return
+	}
+	if blk.First == stmtID {
+		p.Nodes[newID].Next = blk.First
+		blk.First = newID
+		return
+	}
+	for c := blk.First; c != NoID; c = p.Nodes[c].Next {
+		if p.Nodes[c].Next == stmtID {
+			p.Nodes[newID].Next = stmtID
+			p.Nodes[c].Next = newID
+			return
+		}
+	}
+}
+
+// insertTopBefore inserts newID into p.Top immediately before stmtID. It is a
+// no-op if stmtID is not present in p.Top (this is the module-level analogue of
+// insertBefore: a `go` spawn written at package scope has no enclosing block in
+// the arena, so its `run`/`awy` pair is spliced into the top-level list).
+func insertTopBefore(p *Package, stmtID, newID int32) {
+	for i, id := range p.Top {
+		if id == stmtID {
+			p.Top = append(p.Top, 0)
+			copy(p.Top[i+1:], p.Top[i:])
+			p.Top[i] = newID
+			return
+		}
+	}
+}
+
+// cloneSubtree deep-copies the closed subtree rooted at root into fresh arena
+// nodes and returns the new root id plus the old->new id map. The root's own
+// Next link is NOT followed (so cloning a KFuncDef does not drag in sibling
+// top-level nodes); every other node's Next (sibling) chain IS cloned, because
+// it is part of the function body. Callees are referenced by name string, not
+// node id, so the subtree is self-contained.
+func (p *Package) cloneSubtree(root int32) (int32, map[int32]int32) {
+	oldToNew := map[int32]int32{}
+	var clone func(id int32, isRoot bool) int32
+	clone = func(id int32, isRoot bool) int32 {
+		if id == NoID {
+			return NoID
+		}
+		if v, ok := oldToNew[id]; ok {
+			return v
+		}
+		src := p.Node(id)
+		newID := int32(len(p.Nodes))
+		p.Nodes = append(p.Nodes, Node{Id: newID})
+		oldToNew[id] = newID
+		dst := &p.Nodes[newID]
+		*dst = *src
+		dst.Id = newID
+		dst.First = clone(src.First, false)
+		if isRoot {
+			dst.Next = NoID
+		} else {
+			dst.Next = clone(src.Next, false)
+		}
+		return newID
+	}
+	return clone(root, true), oldToNew
+}

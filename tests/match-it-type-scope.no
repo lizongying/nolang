@@ -21,9 +21,9 @@
 ; 註：寫成 `w = it.get()`（不帶 ?T）本來就正常，這裡刻意保留 ?T 以守住回歸。
 
 check-str = (name str, got str, want str) {
-    got == want -> print('ok: ' - name)
+    got == want -> print('ok: {name}')
 
-    -> print('fail: ' - name - ' got=[' - got - '] want=[' - want - ']')
+    -> print('fail: {name} got=[{got}] want=[{want}]')
 }
 
 thing {

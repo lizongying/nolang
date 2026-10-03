@@ -1,6 +1,7 @@
-; async-yield.no — async-yield 在 -async 目標內（讓出控制權）
+; async-yield.no — async-yield 在協程內（讓出控制權）
+; `co f(x)` 單態化出的 f-async 繼承 f 的內容，包括 async-yield() 調用。
 
-yielder-async = (n i64) (r i64) {
+yielder = (n i64) (r i64) {
     async-yield()
 
     #{overflow=wrap}
@@ -9,8 +10,7 @@ yielder-async = (n i64) (r i64) {
 
 ; 目標執行中讓出一次後繼續，最終返回 n+1
 test-yield-inside = () {
-    h = run yielder-async(5)
-    r = awy h
+    r = co yielder(5)
     print(r); expect: 6
 }
 

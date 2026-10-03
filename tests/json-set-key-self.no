@@ -16,7 +16,7 @@ j: {
                 root.set-key('dependencies', it)
                 out = root.stringify()
                 out.contains('foo') -> {
-                    print('fail: case1 foo not removed -> ' - out)
+                    print('fail: case1 foo not removed -> {out}')
                 }
                 out.contains('bar') -> {
                     print('ok: case1 set-key self existing')
@@ -44,7 +44,7 @@ k: {
                     print('ok: case2 set-key self newkey')
                 }
                 out2.contains('copied') == false -> {
-                    print('fail: case2 copied missing -> ' - out2)
+                    print('fail: case2 copied missing -> {out2}')
                 }
             }
             nil -> print('fail: case2 sub nil')
@@ -69,7 +69,7 @@ base: {
                     print('ok: case3 cross-pool set-key')
                 }
                 out3.contains('fresh') == false -> {
-                    print('fail: case3 fresh missing -> ' - out3)
+                    print('fail: case3 fresh missing -> {out3}')
                 }
             }
             nil -> print('fail: case3 other nil')

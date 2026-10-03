@@ -274,6 +274,165 @@ func TestMovedBorrowReferenceIsReleasedOnTheDestination(t *testing.T) {
 	}
 }
 
+// borrowInLoopSrc is the shape NOLANG-OWNERSHIP-MODEL.md §4.3 named as a leak:
+// a borrow read of a slice element INSIDE a loop, whose reference is handed to
+// the option-wrap constructor and then peeled back out into the loop-carried
+// accumulator `x`.
+//
+// §4.3 claimed the peeled value's drop is placed by (conservative) liveness and
+// "in a loop gets hoisted out of the loop => one block leaked per iteration".
+// Measured on this tree it is NOT: the option's drop lowers to the refcount-aware
+// deep free (rc 2 -> 1) and the accumulator's rebind drop runs inside the loop
+// (rc 1 -> 0), so the buffer is freed once per iteration. See the test below and
+// the runtime battery recorded in §4.3.
+const borrowInLoopSrc = `
+mk = () (v []i64) {
+    v.push(1)
+    v.push(2)
+}
+
+main = () {
+    a [][]i64
+    a.push(mk())
+    n = 0
+    i <- [0..4) {
+        #{index-out=0}
+        x = a[0]
+        #{overflow=wrap}
+        n = n + x.len()
+    }
+    print(n)
+}
+`
+
+// borrowInLoopNoAccumulatorSrc is the NEGATIVE CONTROL for the test below: the
+// same borrow-in-a-loop, but nothing carries the peel result across the
+// back-edge. It still retains once and still option-wraps once, yet no value is
+// disposed BOTH inside and outside the loop — which is exactly what makes the
+// assertion discriminating rather than vacuous.
+const borrowInLoopNoAccumulatorSrc = `
+mk = () (v []i64) {
+    v.push(1)
+    v.push(2)
+}
+
+main = () {
+    a [][]i64
+    a.push(mk())
+    i <- [0..4) {
+        print(a[0].len())
+    }
+}
+`
+
+// loopHeader returns the block that can reach one of its own predecessors via a
+// back-edge — the same predicate insertDrops uses to keep header drops safe.
+func loopHeader(mod *Module, f *Function) BlockID {
+	for _, bid := range f.Blocks {
+		blk := mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, p := range blk.Preds {
+			if mod.blockReaches(bid, p) {
+				return bid
+			}
+		}
+	}
+	return NoBlock
+}
+
+// TestBorrowInLoopIsDisposedEveryIteration pins the geometry that makes a borrow
+// read inside a loop a no-op instead of a leak.
+//
+// A retained borrow raises the header refcount to 2, so the buffer is freed only
+// when BOTH disposals happen: the option's (refcount-aware) deep free, and the
+// drop of the peeled value that is carried across the back-edge. If the latter
+// were hoisted out of the loop, the accumulator would be overwritten every
+// iteration without its old buffer ever reaching rc 0 — one leaked block per
+// iteration, exactly the §4.3 claim.
+//
+// The observable is therefore: some value must be disposed BOTH inside the loop
+// and outside it (the per-iteration rebind drop, plus the final one after the
+// loop exits). The negative control shows that is a real property and not
+// something every borrow shape satisfies.
+func TestBorrowInLoopIsDisposedEveryIteration(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		src        string
+		minWrap    int
+		wantInside bool
+	}{
+		{"loop-carried accumulator", borrowInLoopSrc, 1, true},
+		{"no accumulator (control)", borrowInLoopNoAccumulatorSrc, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mod := lowerForTest(t, tc.src)
+			fid, ok := mod.FuncByName["main"]
+			if !ok {
+				t.Fatalf("main not found in the lowered module")
+			}
+			f := mod.Func(fid)
+			if f == nil {
+				t.Fatalf("main (id %d) is not resolvable", fid)
+			}
+			header := loopHeader(mod, f)
+			if header == NoBlock {
+				t.Fatalf("the probe no longer contains a loop:\n%s", mod.DumpAnnotated())
+			}
+			retain, wrap := 0, 0
+			inside := map[ValueID]bool{}
+			outside := map[ValueID]bool{}
+			for _, bid := range f.Blocks {
+				blk := mod.Block(bid)
+				if blk == nil {
+					continue
+				}
+				for _, iid := range blk.Insts {
+					inst := mod.Inst(iid)
+					if inst == nil {
+						continue
+					}
+					switch inst.Op {
+					case OpRetain:
+						retain++
+					case OpOptionWrap:
+						wrap++
+					case OpDrop, OpRelease:
+						if len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+							continue
+						}
+						if mod.blockReaches(bid, header) {
+							inside[inst.Args[0]] = true
+						} else {
+							outside[inst.Args[0]] = true
+						}
+					}
+				}
+			}
+			// Vacuity guard: without the retain the assertion below says nothing
+			// about the borrow path, and the accumulator case must actually
+			// exercise the option-wrap constructor it is about.
+			if retain != 1 || wrap < tc.minWrap {
+				t.Fatalf("expected exactly one borrow retain and at least %d option-wrap, got %d / %d:\n%s",
+					tc.minWrap, retain, wrap, mod.DumpAnnotated())
+			}
+			both := false
+			for v := range inside {
+				if outside[v] {
+					both = true
+				}
+			}
+			if both != tc.wantInside {
+				t.Errorf("a value disposed both inside and outside the loop = %v, want %v — "+
+					"the loop-carried peel result must be disposed on EVERY iteration "+
+					"(otherwise each iteration leaks one block; §4.3):\n%s",
+					both, tc.wantInside, mod.DumpAnnotated())
+			}
+		})
+	}
+}
+
 // TestNoReleaseWithoutARetain is the module-wide invariant, and the pin for the
 // bug that motivated it: a release whose value was never retained is an
 // underflow on a count the container still owns. Checked over every function

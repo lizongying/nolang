@@ -85,5 +85,14 @@ main = () {
     (literal == 'literal {x} and field 42') -> print('PASS: 6 brace escaping preserved')
 
     -> print('FAIL: 6 literal=[' - literal - ']')
+
+    ; ─────────────────────────────────────────────
+    ; 7. 方法欄位 {x.to-str()}（回歸：method 分支曾把呼叫結果型別硬編為 i64，
+    ;    導致 str 回傳被按整數渲染，印出 1 而非 42）
+    ; ─────────────────────────────────────────────
+    method-field = format('m={x.to-str()}')
+    (method-field == 'm=42') -> print('PASS: 7 method field == m=42')
+
+    -> print('FAIL: 7 method=[' - method-field - ']')
 }
 main()

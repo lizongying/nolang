@@ -1,6 +1,9 @@
 package mir
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestInternTypeNestedElemSurvivesRealloc pins the fix for a dangling-pointer
 // write in Module.internType.
@@ -43,7 +46,7 @@ func TestInternTypeNestedElemSurvivesRealloc(t *testing.T) {
 		if elem := m.Type(ty.Elem); elem == nil || elem.Raw != "byte" {
 			t.Fatalf("Elem = %v, want the interned \"byte\" type", elem)
 		}
-		cg := &codegen{mod: m}
+		cg := &codegen{mod: m, sb: &strings.Builder{}}
 		if got := cg.llvmTypeOf(ty); got != "[512 x i8]" {
 			t.Fatalf("llvmTypeOf = %q, want \"[512 x i8]\" (the buggy path yields the zero-byte fallback \"[0 x i64]\")", got)
 		}

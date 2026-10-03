@@ -39,7 +39,7 @@ val-idx, found = p.get-key(root, 'name')
     found -> {
         str-val, ok = p.get-str(val-idx)
         {
-            ok -> print('ok: name=' - str-val)
+            ok -> print('ok: name={str-val}')
 
             -> print('fail: get-str name')
         }
@@ -123,7 +123,7 @@ val-idx, found = p.get-key(root, 'active')
 ; json-pool.stringify(node-idx) → str（舊的三參 out-buf 版本已移除）
 result = p.stringify(root)
 {
-    result.len() > 0 -> print('ok: stringify=' - result)
+    result.len() > 0 -> print('ok: stringify={result}')
 
     -> print('fail: stringify')
 }

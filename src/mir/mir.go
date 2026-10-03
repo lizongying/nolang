@@ -317,7 +317,7 @@ func (m *Module) OptionPayloadBoxed(elemRaw string) bool {
 	if v, ok := m.optBoxed[elemRaw]; ok {
 		return v
 	}
-	c := &codegen{mod: m, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
+	c := &codegen{mod: m, sb: &strings.Builder{}, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
 	lt := c.optionPayloadLLVMType(elemRaw)
 	boxed := true
 	if lt != "" {

@@ -43,6 +43,12 @@ type Parser struct {
 	// 區域變數型別（跨函數型別污染會讓 str.to-i8 等 std 函式 codegen 崩潰）。
 	idxLocalTypes map[string]map[string]string
 
+	// inBoundsIdx 由 lowering 在進入每個函數時計算（bounds.go）：目前函數內
+	// 「可證明越界安全」的索引讀取節點集合。isSafeIndexBase 據此對這類讀取回傳
+	// false，使其不再被包裝成 option / 不再需要 `#{index-out}` 處理。codegen、
+	// no vet、no fmt 三方共用同一份判定以保持一致。
+	inBoundsIdx map[*IndexExpression]bool
+
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
 

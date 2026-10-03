@@ -1454,6 +1454,47 @@ Rules:
 > `__ag0 = run hello-async(1)` → `__ag1 = run hello-async(2)` →
 > `r1 = awy __ag0` → `r2 = awy __ag1`.
 
+### co keyword (colorless async) — recommended
+
+`co` is a **colorless** syntax built on top of coroutine groups: you write the
+uncolored name `worker` and the compiler automatically monomorphizes a
+`worker-async` variant, executing it on the underlying colored stackless
+coroutines. You never write the `-async` suffix and you never write `run` / `awy`.
+
+```no
+worker = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n + 1
+}
+main = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = co worker(1)   ; auto-monomorphizes worker-async and spawns
+        r2 = co worker(2)   ; runs concurrently with r1
+    }
+    print(r1.to-str() + ' ' + r2.to-str())
+}
+```
+
+Rules:
+
+- **Monomorphization.** `co worker(1)` auto-generates `worker-async` (a clone
+  of `worker`'s body, renamed). If `worker` is also called synchronously, both
+  `worker` (sync) and `worker-async` (async) coexist.
+- **Transitivity.** If a function calls an async function internally (e.g.
+  `worker` contains `co child(...)`), then `worker` is also monomorphized into
+  `worker-async`; the async coloring propagates up the call chain.
+- **Statement-level `co` (outside a group).** When `co` appears outside a
+  coroutine group (e.g. `d = co worker(5)` at function-body level), the compiler
+  wraps it as `run worker-async(5)` + `awy` inline-await, so `d` receives the
+  result value, not a task handle.
+- **Underlying still colored stackless coroutines.** `co` is just sugar.
+  `{ r1 = co worker(1); r2 = co worker(2) }` lowers like a coroutine group — the
+  two `worker-async` tasks are spawned first, then `awy`-ed together.
+
+Diagnostic switch: `NOLANG_ASYNC_GO=0` disables monomorphization (diagnostic only).
+
 ## Arrays and Slices
 
 Containers store copies of data; the original variable and the container are independent, eliminating dangling references.

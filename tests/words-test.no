@@ -60,5 +60,5 @@ found == 0 -> {
 
 ; 輸出
 k <- [0..n): {
-    print(words[k] - ' ' - counts[k].to-str())
+    print('{words[k]} {counts[k]}')
 }

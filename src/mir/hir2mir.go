@@ -5701,15 +5701,31 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// this on the sibling NOT being a string, so `'a' + 'b'` stays "ab".
 		// It applies to `+`/`-` only — for `*` a string literal is always a
 		// string (`'x' * 5` is repeat -> "xxxxx"), never a byte.
+		//
+		// A `char` LITERAL sibling is the one exception: when both operands
+		// are literals the `'...'` operand stays a STRING, so `'x' - "a"` is
+		// the concatenation "xa" (the char is UTF-8 encoded by the materialize
+		// step below). The exception is deliberately narrow — it must be the
+		// `"..."` literal NODE, not merely a char-typed VALUE — because the
+		// byte fold is what makes the digit-to-value idiom work: with a char
+		// VARIABLE sibling, `c - '0'` is the digit value 5, and `c - '0'`
+		// concatenating into "50" would be a silent corruption. Byte folding
+		// therefore still applies to `'A' + 1` (66), `c - '0'` (5) and
+		// `'x' - c` (23), and `"z" - "a"` stays char-minus-char (25) because
+		// NEITHER operand is a StringLiteral, so no fold is ever attempted.
+		charLitSibling := func(i int) bool {
+			sn := l.pkg.Node(lr[i])
+			return sn != nil && sn.Kind == hir.KCharLit
+		}
 		srcOp := l.pkg.Str(n.S)
 		if !isCmp && (srcOp == "+" || srcOp == "-") {
-			if sn := l.pkg.Node(lr[0]); sn != nil && sn.Kind == hir.KStrLit && !rStr {
+			if sn := l.pkg.Node(lr[0]); sn != nil && sn.Kind == hir.KStrLit && !rStr && !charLitSibling(1) {
 				if b, ok := singleCharStrByte(l.pkg.Str(sn.S)); ok {
 					lv = l.b.EmitInt(OpConst, l.b.Type("i64"), b, "")
 					lStr = false
 				}
 			}
-			if sn := l.pkg.Node(lr[1]); sn != nil && sn.Kind == hir.KStrLit && !lStr {
+			if sn := l.pkg.Node(lr[1]); sn != nil && sn.Kind == hir.KStrLit && !lStr && !charLitSibling(0) {
 				if b, ok := singleCharStrByte(l.pkg.Str(sn.S)); ok {
 					rv = l.b.EmitInt(OpConst, l.b.Type("i64"), b, "")
 					rStr = false
@@ -7861,6 +7877,21 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 		if !ok {
 			return NoVal, false
 		}
+		// An `?T` base must be PEELED before the method dispatch: the
+		// receiver-type naming below reads ty.Raw, and an option wrapper
+		// (empty Raw) defaults to "str", so `{v.len()}` on a `?[]i64`
+		// emitted `str-len` against a %option value — LLVM verifier
+		// "unsupported receiver type %option" (opt-container-len.no).
+		// Mirror lowerFormatField's option peel, incl. the owned-str clone
+		// that keeps the option's drop from freeing shared bytes twice.
+		if t := l.mod.Type(l.valueTypeOf(base)); t != nil && t.Kind == KindOption {
+			if uv := l.unwrapOptionOperand(base); uv != NoVal {
+				base = uv
+				if ty := l.mod.Type(l.valueTypeOf(base)); ty != nil && ty.Kind == KindStr {
+					base = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{base}, "")
+				}
+			}
+		}
 		method := m[2]
 		// Determine the receiver type to form the callee name.
 		recvT := l.valueTypeOf(base)
@@ -7895,9 +7926,18 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 		// "recvType.method" (e.g. "str.to-str").
 		callee := canonSliceRecv(recvTypeName + "." + method)
 		l.enqueueCallee(callee)
-		// We don't know the return type; use i64 as a safe default.
-		// The format field rendering will coerce to str via fmt-* helpers.
-		return l.b.Emit(OpCall, l.b.Type("i64"), []ValueID{base}, callee), true
+		// The call's result type must come from the callee's declared
+		// signature: a `to-str` method returns a str (%str-long), and
+		// hardcoding i64 here reinterpreted that 24-byte struct as an
+		// integer, so `print('{n.to-str()}')` rendered garbage (1/2)
+		// instead of the digits. resultTypeOfCallee also covers std
+		// methods whose module is loaded on demand (scalarMethodResult).
+		// Only fall back to i64 when the signature is unknown/void.
+		resT := l.resultTypeOfCallee(callee)
+		if resT == NoType || resT == l.voidType {
+			resT = l.b.Type("i64")
+		}
+		return l.b.Emit(OpCall, resT, []ValueID{base}, callee), true
 	}
 	return NoVal, false
 }

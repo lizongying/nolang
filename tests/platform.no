@@ -55,4 +55,4 @@ print('arm64 unix (mac or linux)')
 
 ; Should print current arch
 arch = os.get-arch()
-print('arch: ' - arch)
+print('arch: {arch}')

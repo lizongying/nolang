@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "a84a7fd11b087d5704be149a80441e38745953a7c35fcf9be696e260882bc66f"
+	embeddedStdSigKey = "97c8453ea895184d139e29c5491fc1f629125816017f285f0473d0fccb439728"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -372,6 +372,7 @@ func init() {
 		"http.get":                                 {"?http.response"},
 		"http.get-auth":                            {"?http.response"},
 		"http.patch":                               {"?http.response"},
+		"http.ping":                                {"str"},
 		"http.post":                                {"?http.response"},
 		"http.post-auth":                           {"?http.response"},
 		"http.put":                                 {"?http.response"},
@@ -707,6 +708,7 @@ func init() {
 		"tls.get-u16":                              {"i64"},
 		"tls.get-u24":                              {"i64"},
 		"tls.https-serve-once":                     {"bool"},
+		"tls.net-recv-wait":                        {"i64"},
 		"tls.prf":                                  {"[]byte"},
 		"tls.put-u16":                              {},
 		"tls.put-u24":                              {},
@@ -1006,6 +1008,7 @@ func init() {
 		"conn.fd-of":                                       {"fd"},
 		"conn.gen-p256-keypair":                            {},
 		"conn.gen-x25519-keypair":                          {},
+		"conn.get-fd":                                      {"fd"},
 		"conn.handshake-12-body":                           {"bool"},
 		"conn.init":                                        {},
 		"conn.read-certificate":                            {"bool"},
@@ -2267,6 +2270,7 @@ func init() {
 		"tls.conn.encrypt-record-gcm":                      {"bool"},
 		"tls.conn.gen-p256-keypair":                        {},
 		"tls.conn.gen-x25519-keypair":                      {},
+		"tls.conn.get-fd":                                  {"fd"},
 		"tls.conn.handshake-12-body":                       {"bool"},
 		"tls.conn.init":                                    {},
 		"tls.conn.read-certificate":                        {"bool"},
@@ -3279,6 +3283,7 @@ func init() {
 		"http.get":                                 {"str"},
 		"http.get-auth":                            {"str", "str", "str"},
 		"http.patch":                               {"str", "str"},
+		"http.ping":                                {},
 		"http.post":                                {"str", "str"},
 		"http.post-auth":                           {"str", "str", "str", "str"},
 		"http.put":                                 {"str", "str"},
@@ -3392,7 +3397,7 @@ func init() {
 		"net.udp-dial-to":                          {"str", "i64"},
 		"number.abs":                               {"num"},
 		"number.arr-zero":                          {},
-		"number.char-to-str":                       {"i64"},
+		"number.char-to-str":                       {"char"},
 		"number.div":                               {"int", "int"},
 		"number.even":                              {"int"},
 		"number.f32-to-f64":                        {"f32"},
@@ -3614,6 +3619,7 @@ func init() {
 		"tls.get-u16":                              {"[]byte", "i64"},
 		"tls.get-u24":                              {"[]byte", "i64"},
 		"tls.https-serve-once":                     {"fd", "i64", "str"},
+		"tls.net-recv-wait":                        {"fd", "str", "i64"},
 		"tls.prf":                                  {"[]byte", "str", "[]byte", "i64"},
 		"tls.put-u16":                              {"[]byte", "i64", "i64"},
 		"tls.put-u24":                              {"[]byte", "i64", "i64"},
@@ -3913,6 +3919,7 @@ func init() {
 		"conn.fd-of":                                       {},
 		"conn.gen-p256-keypair":                            {},
 		"conn.gen-x25519-keypair":                          {},
+		"conn.get-fd":                                      {},
 		"conn.handshake-12-body":                           {},
 		"conn.init":                                        {},
 		"conn.read-certificate":                            {"[]byte"},
@@ -5174,6 +5181,7 @@ func init() {
 		"tls.conn.encrypt-record-gcm":                      {"i64", "[]byte", "[16]byte", "[4]byte", "i64"},
 		"tls.conn.gen-p256-keypair":                        {},
 		"tls.conn.gen-x25519-keypair":                      {},
+		"tls.conn.get-fd":                                  {},
 		"tls.conn.handshake-12-body":                       {},
 		"tls.conn.init":                                    {},
 		"tls.conn.read-certificate":                        {"[]byte"},

@@ -5,4 +5,4 @@ ok == false -> {
     print('no input')
     return
 }
-print('got: ' - line)
+print('got: {line}')
