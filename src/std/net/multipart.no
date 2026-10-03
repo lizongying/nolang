@@ -573,7 +573,6 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     #{overflow=wrap}
     .body = .body - crlf
 
-    #{overflow=wrap}
     .body = .body - enc-str - crlf
     ok = true
 }
@@ -626,7 +625,6 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     #{overflow=wrap}
     .body = .body - crlf
 
-    #{overflow=wrap}
     .body = .body - enc-str - crlf
     ok = true
 }

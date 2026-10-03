@@ -60,7 +60,6 @@ link {
 ; nxt []i64: 下一節點索引陣列（由呼叫者提供，大小 ≥ n）
 ; prv []i64: 前一節點索引陣列（由呼叫者提供，大小 ≥ n）
 ; 返回 l link: 初始化後的鏈結串列
-#{index-out=0}
 [n]t.link-init = (nxt []i64, prv []i64) (l link) {
 
     l.head = -1
@@ -86,7 +85,6 @@ link {
 ; l link: 鏈結串列狀態
 ; val t: 要插入的值
 ; 返回 ok bool: true=成功, false=節點池已滿
-#{index-out=0}
 [n]t.link-push-front = (l link, val t) (ok bool) {
 
     ok = false
@@ -124,7 +122,6 @@ link {
 ; l link: 鏈結串列狀態
 ; val t: 要插入的值
 ; 返回 ok bool: true=成功, false=節點池已滿
-#{index-out=0}
 [n]t.link-push-back = (l link, val t) (ok bool) {
 
     ok = false
@@ -156,7 +153,6 @@ link {
 ; [n]t.link-pop-front: 從鏈結串列頭部彈出元素
 ; l link: 鏈結串列狀態
 ; 返回 val ?t: ok=彈出值, nil=串列為空
-#{index-out=0}
 [n]t.link-pop-front = (l link) (val ?t) {
 
     l.head < 0 -> {
@@ -190,7 +186,6 @@ link {
 ; [n]t.link-pop-back: 從鏈結串列尾部彈出元素
 ; l link: 鏈結串列狀態
 ; 返回 val ?t: ok=彈出值, nil=串列為空
-#{index-out=0}
 [n]t.link-pop-back = (l link) (val ?t) {
 
     l.tail < 0 -> {
@@ -223,7 +218,6 @@ link {
 ; [n]t.link-peek-front: 查看頭部元素（不移除）
 ; l link: 鏈結串列狀態
 ; 返回 val ?t: ok=頭部值, nil=串列為空
-#{index-out=0}
 [n]t.link-peek-front = (l link) (val ?t) {
     l.head < 0 -> {
         val = nil
@@ -235,7 +229,6 @@ link {
 ; [n]t.link-peek-back: 查看尾部元素（不移除）
 ; l link: 鏈結串列狀態
 ; 返回 val ?t: ok=尾部值, nil=串列為空
-#{index-out=0}
 [n]t.link-peek-back = (l link) (val ?t) {
     l.tail < 0 -> {
         val = nil
@@ -249,7 +242,6 @@ link {
 ; pos i64: 插入位置（0=頭部, size=尾部）
 ; val t: 要插入的值
 ; 返回 ok bool: true=成功, false=位置越界或節點池已滿
-#{index-out=0}
 [n]t.link-insert-at = (l link, pos i64, val t) (ok bool) {
 
     ok = false
@@ -354,7 +346,6 @@ link {
 ; l link: 鏈結串列狀態
 ; pos i64: 移除位置
 ; 返回 val ?t: ok=移除的值, nil=位置越界
-#{index-out=0}
 [n]t.link-remove-at = (l link, pos i64) (val ?t) {
 
     #{overflow=wrap}
@@ -449,7 +440,6 @@ link {
 ; l link: 鏈結串列狀態
 ; pos i64: 位置
 ; 返回 val ?t: ok=元素值, nil=位置越界
-#{index-out=0}
 [n]t.link-get-at = (l link, pos i64) (val ?t) {
     pos < 0 || pos >= l.size -> {
         val = nil
@@ -469,7 +459,6 @@ link {
 ; pos i64: 位置
 ; val t: 新值
 ; 返回 ok bool: true=成功, false=位置越界
-#{index-out=0}
 [n]t.link-set-at = (l link, pos i64, val t) (ok bool) {
     ok = false
     pos < 0 || pos >= l.size -> return
@@ -487,7 +476,6 @@ link {
 ; l link: 鏈結串列狀態
 ; val t: 要查找的值
 ; 返回 pos i64: 位置索引, -1=未找到
-#{index-out=0}
 [n]t.link-find = (l link, val t) (pos i64) {
     pos = -1
     idx = l.head
@@ -508,7 +496,6 @@ link {
 ; [n]t.link-reverse: 反轉鏈結串列
 ; 交換所有節點的 next/prev，然後交換 head/tail
 ; l link: 鏈結串列狀態
-#{index-out=0}
 [n]t.link-reverse = (l link) {
     idx = l.head
     (idx >= 0) {
@@ -530,7 +517,6 @@ link {
 
 ; [n]t.link-clear: 清空鏈結串列，回收所有節點
 ; l link: 鏈結串列狀態
-#{index-out=0}
 [n]t.link-clear = (l link) {
     idx = l.head
     (idx >= 0) {

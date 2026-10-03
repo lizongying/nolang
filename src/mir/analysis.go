@@ -1542,6 +1542,28 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 		if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Owned && ty.Kind == KindStr {
 			return false
 		}
+		if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Owned && ty.Kind == KindSlice {
+			// Mirror emitGetField's clone condition EXACTLY: only an owned %vec
+			// leaf that the classifier has opted in (StructFieldIsOwnedLeaf) is
+			// cloned on read, so it must be dropped — not borrowed. A %vec leaf
+			// NOT opted in still aliases the struct's storage and must stay a
+			// borrow, or the struct's drop would double-free it.
+			if rt := m.valueTypeOf(f, inst.Args[0]); rt != nil {
+				raw := rt.Raw
+				if rt.Kind == KindOption {
+					if elem, ok := parseOptionElem(raw); ok {
+						raw = elem
+					}
+				}
+				key := m.StructKeyOf(raw)
+				if key == "" {
+					key = raw
+				}
+				if idx, ok := m.FieldIndex(key, inst.Str); ok && m.StructFieldIsOwnedLeaf(key, idx) {
+					return false
+				}
+			}
+		}
 		return m.dropOwnsHeap(f, inst.Dst)
 	}
 	// OpEnumField: tagged-enum payload extraction. Its answer must MIRROR
@@ -1565,6 +1587,15 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 		}
 		if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Owned && ty.Kind == KindStr {
 			return false
+		}
+		if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Owned && ty.Kind == KindSlice {
+			// Mirror emitEnumField's clone condition: only a %vec payload the
+			// allowlist has opted in is cloned on read, so it must be dropped.
+			if dv := m.Value(inst.Dst); dv != nil {
+				if dt := m.Type(dv.Type); dt != nil && m.ownedVecLeafAllowed(dt.Raw) {
+					return false
+				}
+			}
 		}
 		return m.dropOwnsHeap(f, inst.Dst)
 	}

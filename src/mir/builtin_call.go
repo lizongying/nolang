@@ -842,9 +842,9 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinEqRaw(inst)
 	case "rotate-left", "rotate-right":
 		return c.emitBuiltinRotate(f, inst, bm.ForwardFunc)
-	case "async-cancel":
+	case "cancel":
 		return c.emitBuiltinAsyncCancel(inst)
-	case "async-cancelled":
+	case "cancelled":
 		return c.emitBuiltinAsyncCancelled(inst)
 	case "async-yield":
 		return c.emitBuiltinAsyncYield(inst)
@@ -938,7 +938,7 @@ func (c *codegen) emitBuiltinEqRaw(inst *Inst) error {
 	return nil
 }
 
-// emitBuiltinAsyncCancel lowers `async-cancel(h)`: set the task's cancelled flag
+// emitBuiltinAsyncCancel lowers `cancel(h)`: set the task's cancelled flag
 // (%task field 3 = true). `h` is MIR's opaque handle — the i64 that OpRun
 // stored (ptrtoint of the heap %task i8*), so it is inttoptr'd back to %task*
 // here. Mirrors legacy build/llvm/call_stdlib.go verbatim: the generated
@@ -948,7 +948,7 @@ func (c *codegen) emitBuiltinEqRaw(inst *Inst) error {
 // r 为 zero value").
 func (c *codegen) emitBuiltinAsyncCancel(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("async-cancel: missing task handle")
+		return fmt.Errorf("cancel: missing task handle")
 	}
 	lt, hreg := c.loadVal(inst.Args[0])
 	taskT := hreg
@@ -966,7 +966,7 @@ func (c *codegen) emitBuiltinAsyncCancel(inst *Inst) error {
 	return nil
 }
 
-// emitBuiltinAsyncCancelled lowers `async-cancelled()`: cooperative
+// emitBuiltinAsyncCancelled lowers `cancelled()`: cooperative
 // self-cancellation check. It reads @nolang_current_task (the task the
 // scheduler is currently running) and returns its cancelled flag (field 3).
 // When no task is current (e.g. a top-level `awy` sync drive, or a non-async
@@ -981,7 +981,7 @@ func (c *codegen) emitBuiltinAsyncCancelled(inst *Inst) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("async-cancelled: no result slot")
+		return fmt.Errorf("cancelled: no result slot")
 	}
 	cur := c.treg("acur.cur")
 	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** @nolang_current_task\n", cur))
@@ -1006,7 +1006,7 @@ func (c *codegen) emitBuiltinAsyncCancelled(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = phi i1 [ %s, %%%s ], [ false, %%%s ]\n", phi, loaded, loadDef, nullDef))
 	v := c.coerce("i1", phi, dstLT)
 	if v == "" {
-		return fmt.Errorf("async-cancelled: cannot store i1 into %s", dstLT)
+		return fmt.Errorf("cancelled: cannot store i1 into %s", dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
@@ -2969,7 +2969,12 @@ func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
 	}
 	c.decl("declare i32 @fcntl(i32, i32, i32)")
 	c.decl("declare i32 @accept(i32, i8*, i32*)")
-	c.decl("@.mir.errno = external global i32")
+	// errno is read through the platform pointer (mirrors emitBuiltinGetErrno);
+	// @.mir.errno is not a defined symbol in this runtime.
+	efn := c.errnoFnName()
+	c.decl(fmt.Sprintf("declare i32* @%s()", efn))
+	ePtr0 := c.treg("netanb.ep")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32* @%s()\n", ePtr0, efn))
 	// fcntl(fd, F_SETFL=4, O_NONBLOCK) — macOS 0x0004, Linux 0x800
 	nb := "4"
 	if targetGOOS() == "linux" {
@@ -3002,7 +3007,7 @@ func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
 	isErr := c.treg("netanb.iserr")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, -1\n", isErr, ret))
 	en := c.treg("netanb.en")
-	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* @.mir.errno\n", en))
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", en, ePtr0))
 	isAgain := c.treg("netanb.again")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, %s\n", isAgain, en, eagain))
 	wouldBlock := c.treg("netanb.wb")
@@ -3045,14 +3050,37 @@ func (c *codegen) emitBuiltinNetRecvNb(inst *Inst) error {
 	c.decl("declare i64 @recv(i32, i8*, i64, i32)")
 	ret := c.treg("netrnb")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @recv(i32 %s, i8* %s, i64 %s, i32 64)\n", ret, fdReg, bufPtr, nReg))
+	// Under MSG_DONTWAIT a temporarily-empty socket returns -1 with
+	// errno=EAGAIN/EWOULDBLOCK.  Net-recv-nb's contract promises -2 for
+	// "would block" and -1 only for a hard error, so fold the transient
+	// EAGAIN into -2 here.  macOS EAGAIN=35, Linux EAGAIN=11.  errno is
+	// read through the platform pointer (mirrors emitBuiltinGetErrno).
+	efn := c.errnoFnName()
+	c.decl(fmt.Sprintf("declare i32* @%s()", efn))
+	ePtr := c.treg("recbnb.ep")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32* @%s()\n", ePtr, efn))
+	eagain := "35"
+	if targetGOOS() == "linux" {
+		eagain = "11"
+	}
+	isErr := c.treg("recbnb.err")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, -1\n", isErr, ret))
+	en := c.treg("recbnb.en")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", en, ePtr))
+	isAgain := c.treg("recbnb.again")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, %s\n", isAgain, en, eagain))
+	wouldBlock := c.treg("recbnb.wb")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", wouldBlock, isErr, isAgain))
+	res := c.treg("recbnb.res")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 -2, i64 %s\n", res, wouldBlock, ret))
 	dstLT, _ := c.ptype(inst.Dst)
 	if dstLT == "" {
 		dstLT = "i64"
 	}
-	if cv := c.coerce("i64", ret, dstLT); cv != "" {
-		ret = cv
+	if cv := c.coerce("i64", res, dstLT); cv != "" {
+		res = cv
 	}
-	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, ret, dstLT, dstSlot))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, res, dstLT, dstSlot))
 	return nil
 }
 

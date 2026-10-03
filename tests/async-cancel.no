@@ -1,4 +1,4 @@
-; async-cancel.no — async-cancel / async-cancelled / async-yield 探针
+; async-cancel.no — async-cancel / cancelled / async-yield 探针
 
 worker-async = (n i64) (r i64) {
 
@@ -21,9 +21,9 @@ test-no-cancel = () {
     print(r); expect: 42
 }
 
-; async-cancelled 在非事件循环驱动下应安全返回 0（false）
+; cancelled 在非事件循环驱动下应安全返回 0（false）
 test-cancelled = () {
-    c = async-cancelled()
+    c = cancelled()
     print(c); expect: 0
 }
 

@@ -421,7 +421,7 @@ arg = (idx i64) (val str) {
 ; Windows 平台專用（內建）
 ; ═══════════════════════════════════════════════
 ; win-find-first-file: Windows 目錄搜尋（FindFirstFileA），返回 bufPtr（0=失敗）
-#{index-out=0, buildin}
+#{buildin}
 win-find-first-file = (path str) (bufptr i64) {
 }
 

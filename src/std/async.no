@@ -1,6 +1,6 @@
 ; async — 协程 / 异步任务与取消原语（D10）
 ;
-; ⚠️ 已废弃（手写原语）：run / awy / async-cancel / async-cancelled 已废弃，
+; ⚠️ 已废弃（手写原语）：run / awy / cancel / cancelled 已废弃，
 ;    不要在应用代码里手写。手动管理 task 句柄不安全（未 await 会泄漏参数缓冲、
 ;    复制句柄后重复 await 会崩溃），且协作式取消无法强制中断长阻塞调用；
 ;    请改用「协程组」（语句位置的裸块 { ... }）。本文件仅保留底层参考。
@@ -12,30 +12,30 @@
 ;   - `awy h`              等待后台任务 h 完成，返回其结果。
 ;
 ; 真正的“取消”原语（此前缺失）如下：
-;   - `async-cancel(h)`        取消任务 h：将 %task.cancelled 标志置位。
+;   - `cancel(h)`        取消任务 h：将 %task.cancelled 标志置位。
 ;                              事件循环调度 h 时，async_wrapper 在入口检查该标志，
 ;                              若已置位则跳过目标函数执行并标记 done=true（优雅中止），
 ;                              使等待方（awy h）能立即返回。
-;   - `async-cancelled()`      协作式自我取消检查：返回当前正在执行的任务是否已被取消。
+;   - `cancelled()`      协作式自我取消检查：返回当前正在执行的任务是否已被取消。
 ;                              异步函数（如 Agent Loop）应在每个步骤开头调用它，
 ;                              若返回 true 则提前返回，从而实现“被外部取消后及时退出”。
 ;
 ; 注意（协作式取消的边界）：
-;   长阻塞调用（例如一次 LLM 网络请求）无法被强制中断。async-cancel 设置标志后，
-;   任务会在“下一个协作检查点”（async-cancelled() 调用处，或事件循环的下一次调度）
+;   长阻塞调用（例如一次 LLM 网络请求）无法被强制中断。cancel 设置标志后，
+;   任务会在“下一个协作检查点”（cancelled() 调用处，或事件循环的下一次调度）
 ;   真正停止。因此取消是“及时”而非“瞬时”的——这正是协作式调度模型的固有特性。
 ;
 ; 用法示例：
 ;   // 启动后台任务并稍后取消
 ;   h = run worker-async(...)
 ;   ...
-;   async-cancel(h)        ; 请求取消
+;   cancel(h)        ; 请求取消
 ;   r = awy h              ; 等待（若已取消则立即返回，r 为 zero value）
 ;
 ;   // 在异步函数内部协作式检查
 ;   worker-async = (n i64) (r i64) {
 ;       loop i in 0..n {
-;           if async-cancelled() { return 0 }   ; 被取消则提前退出
+;           if cancelled() { return 0 }   ; 被取消则提前退出
 ;           r = r + step(i)
 ;       }
 ;       r
@@ -45,16 +45,16 @@
 ; 內建函數（底層實作）
 ; ═══════════════════════════════════════════════
 
-; ⚠️ 已废弃：手写 async-cancel 已废弃，请改用「协程组」（裸块 { ... }）。
-; async-cancel: 取消一个通过 run() 启动的后台任务
+; ⚠️ 已废弃：手写 cancel 已废弃，请改用「协程组」（裸块 { ... }）。
+; cancel: 取消一个通过 run() 启动的后台任务
 ; 参数 task 为 run 返回的不透明句柄（i8*）。返回 void。
 #{buildin}
-async-cancel = (task *i8) {
+cancel = (task *i8) {
 }
 
-; ⚠️ 已废弃：手写 async-cancelled 已废弃，请改用「协程组」（裸块 { ... }）。
-; async-cancelled: 检查当前正在执行的异步任务是否已被取消
+; ⚠️ 已废弃：手写 cancelled 已废弃，请改用「协程组」（裸块 { ... }）。
+; cancelled: 检查当前正在执行的异步任务是否已被取消
 ; 返回 bool。仅在异步任务（事件循环调度的 -async 函数）内调用才有意义。
 #{buildin}
-async-cancelled = () (cancelled bool) {
+cancelled = () (cancelled bool) {
 }

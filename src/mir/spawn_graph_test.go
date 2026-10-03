@@ -95,7 +95,7 @@ func TestSpawnAliasedHandleAwaitedTwiceIsNotLinear(t *testing.T) {
 }
 
 // TestSpawnHandlePassedToCallIsNotLinear pins criterion 1 in its conservative
-// form: a handle handed to any call is treated as escaping. async-cancel is the
+// form: a handle handed to any call is treated as escaping. cancel is the
 // known false positive (the builtin neither stores nor retains the handle);
 // whitelisting it is exactly how such an analysis starts lying, so it stays a
 // verdict and not a special case.

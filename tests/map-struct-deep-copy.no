@@ -1,0 +1,21 @@
+; Regression: a struct copy of a map must not share its backing arrays.
+; Updating an existing value mutates vals[idx] in place, so reading the copied
+; map after the write distinguishes a deep copy from a shallow map alias.
+
+original [str]str = { 'a': '1' }
+copied = original
+original.put('a', 'X')
+
+copied-value = copied.get('a')
+copied-value: {
+    ok -> print('copied[a] =', copied-value)
+    nil -> print('copied[a] = nil')
+    err -> print('copied[a] = err')
+}
+
+original-value = original.get('a')
+original-value: {
+    ok -> print('original[a] =', original-value)
+    nil -> print('original[a] = nil')
+    err -> print('original[a] = err')
+}

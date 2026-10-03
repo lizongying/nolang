@@ -446,7 +446,7 @@ func (m *Module) handleAliasSet(f *Function, root ValueID) []ValueID {
 // a call, and is not returned. Anything else is an escape — the rule is
 // deliberately conservative, because the R tier is the safe fallback.
 //
-// Known-conservative case: `async-cancel(h)` is a call, so it is reported as an
+// Known-conservative case: `cancel(h)` is a call, so it is reported as an
 // escape even though the builtin neither stores nor retains the handle. Flagged
 // rather than special-cased: whitelisting a callee is how such an analysis
 // starts lying.

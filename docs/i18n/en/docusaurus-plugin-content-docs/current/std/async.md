@@ -5,7 +5,7 @@ sidebar_position: 4.2
 ## Async
 
 :::warning Deprecated
-Writing `run` / `awy` / `async-cancel` / `async-cancelled` by hand is **deprecated**. They are unsafe: manual task-handle management leaks (an un-awaited task leaks its argument buffer), aliasing a handle and awaiting twice crashes, and cooperative cancellation cannot force-interrupt a long-blocking call. Use **coroutine groups** below instead — simpler syntax, and handles/cancellation are managed for you. These primitives remain only as a low-level reference.
+Writing `run` / `awy` / `cancel` / `cancelled` by hand is **deprecated**. They are unsafe: manual task-handle management leaks (an un-awaited task leaks its argument buffer), aliasing a handle and awaiting twice crashes, and cooperative cancellation cannot force-interrupt a long-blocking call. Use **coroutine groups** below instead — simpler syntax, and handles/cancellation are managed for you. These primitives remain only as a low-level reference.
 :::
 
 ### Coroutine groups — recommended
@@ -84,12 +84,12 @@ h = run f-async(args)
 r = awy h
 
 ; Cancellation primitives (deprecated)
-async-cancel(h)                     ; Cancel task h (sets cancelled flag, returns void)
-yes = async-cancelled()              ; Check if current task has been cancelled (returns bool)
+cancel(h)                     ; Cancel task h (sets cancelled flag, returns void)
+yes = cancelled()              ; Check if current task has been cancelled (returns bool)
 ```
 
 :::note
-Cancellation is cooperative: long-blocking calls (e.g. a network request) cannot be force-interrupted. After `async-cancel` sets the flag, the task stops at the next cooperative checkpoint (`async-cancelled()` call or next event loop dispatch). Cancellation is "timely" not "instantaneous" — this is inherent to cooperative scheduling.
+Cancellation is cooperative: long-blocking calls (e.g. a network request) cannot be force-interrupted. After `cancel` sets the flag, the task stops at the next cooperative checkpoint (`cancelled()` call or next event loop dispatch). Cancellation is "timely" not "instantaneous" — this is inherent to cooperative scheduling.
 :::
 
 ---

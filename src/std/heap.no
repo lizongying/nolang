@@ -42,7 +42,6 @@ heap.init = (data []t) (h heap) {
 
 ; heap.push: 向堆積推入一個元素並維持最小堆性質
 ; val t: 要推入的值
-#{index-out=0}
 heap.push = (val t) {
 
     ; 已滿則不推入
@@ -71,7 +70,6 @@ heap.push = (val t) {
 
 ; heap.pop: 從堆積彈出最小元素並向下調整
 ; 返回 val ?t: ok=最小值, nil=堆積為空
-#{index-out=0}
 heap.pop = () (val ?t) {
     .n == 0 -> {
         val = nil
@@ -107,7 +105,6 @@ heap.pop = () (val ?t) {
 
 ; heap.peek: 查看最小元素（不移除）
 ; 返回 val ?t: ok=最小值, nil=堆積為空
-#{index-out=0}
 heap.peek = () (val ?t) {
     .n == 0 -> {
         val = nil

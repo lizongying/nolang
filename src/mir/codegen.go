@@ -1321,6 +1321,100 @@ func (c *codegen) sliceElemTypeOfRaw(elemRaw string) TypeID {
 	return NoType
 }
 
+// ownedLeafCloneFunc is the single type-dispatch point for cloning an owned
+// leaf stored inline in a struct/option/container. Keep clone and drop dispatch
+// paired: a %str-long uses the scalar helpers, while a %vec field must be
+// specialised on its element type so nested owned elements are copied too.
+func (c *codegen) ownedLeafCloneFunc(ty *Type) string {
+	return c.ownedLeafCloneFuncAtDepth(ty, 0)
+}
+
+func (c *codegen) ownedLeafCloneFuncAtDepth(ty *Type, depth int) string {
+	if ty == nil || !ty.Owned {
+		return ""
+	}
+	switch ty.Kind {
+	case KindStr:
+		return "@str_clone"
+	case KindSlice:
+		if ty.Elem != NoType {
+			return c.vecDeepClone(ty.Elem, depth)
+		}
+	}
+	return ""
+}
+
+// ownedLeafFreeFunc is the exact free-side mirror of ownedLeafCloneFunc.
+func (c *codegen) ownedLeafFreeFunc(ty *Type) string {
+	return c.ownedLeafFreeFuncAtDepth(ty, 0)
+}
+
+func (c *codegen) ownedLeafFreeFuncAtDepth(ty *Type, depth int) string {
+	if ty == nil || !ty.Owned {
+		return ""
+	}
+	switch ty.Kind {
+	case KindStr:
+		return "@str_free"
+	case KindSlice:
+		if ty.Elem != NoType {
+			return c.vecDeepFree(ty.Elem, depth)
+		}
+	}
+	return ""
+}
+
+func (c *codegen) ownedLeafCloneCall(result, source string, ty *Type) string {
+	fn := c.ownedLeafCloneFunc(ty)
+	if fn == "" {
+		return ""
+	}
+	lt := c.llvmTypeOf(ty)
+	return fmt.Sprintf("  %s = call %s %s(%s %s)\n", result, lt, fn, lt, source)
+}
+
+func (c *codegen) ownedLeafDropCall(source string, ty *Type) string {
+	fn := c.ownedLeafFreeFunc(ty)
+	if fn == "" {
+		return ""
+	}
+	lt := c.llvmTypeOf(ty)
+	return fmt.Sprintf("call void %s(%s %s)", fn, lt, source)
+}
+
+// emitOwnedLeafFieldStore clones an owned leaf before replacing the existing
+// field value, then frees the old leaf with the matching type-dispatched helper.
+// The caller must pass the declared field LLVM type; an RHS-derived type alone
+// is insufficient because all slices share the same LLVM descriptor type.
+func (c *codegen) emitOwnedLeafFieldStore(structKey string, idx int, fieldLT, valLT, valV, fieldAddr string) bool {
+	if fieldLT != valLT || !c.mod.StructFieldIsOwnedLeaf(structKey, idx) {
+		return false
+	}
+	field, ok := c.fieldAt(structKey, idx)
+	if !ok {
+		return false
+	}
+	ty := c.mod.Type(c.mod.internType(field.TypeRaw))
+	cloneFn := c.ownedLeafCloneFunc(ty)
+	freeFn := c.ownedLeafFreeFunc(ty)
+	if cloneFn == "" || freeFn == "" {
+		return false
+	}
+	old := c.treg("olf")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", old, fieldLT, fieldLT, fieldAddr))
+	cloned := c.treg("olc")
+	call := c.ownedLeafCloneCall(cloned, valV, ty)
+	if call == "" {
+		return false
+	}
+	c.sb.WriteString(call)
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, cloned, fieldLT, fieldAddr))
+	if drop := c.ownedLeafDropCall(old, ty); drop != "" {
+		c.sb.WriteString("  " + drop + "\n")
+	}
+	return true
+}
+
 // vecDeepClone emits (once per element type and depth) a helper that deep-copies
 // a %vec, and returns its @name. It returns "" when the element type is unknown,
 // in which case the caller keeps its old behaviour rather than emitting a call
@@ -1361,14 +1455,7 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	// "" means the memcpy was the whole copy (scalars, POD structs).
 	perElem := ""
 	if depth < vecCloneMaxDepth {
-		switch {
-		case elemLT == "%str-long":
-			perElem = "str"
-		case elemLT == "%vec" && t.Elem != NoType:
-			if inner := c.vecDeepClone(t.Elem, depth+1); inner != "" {
-				perElem = "call:" + inner
-			}
-		}
+		perElem = c.ownedLeafCloneFuncAtDepth(t, depth+1)
 	}
 
 	b := &strings.Builder{}
@@ -1401,11 +1488,7 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 		b.WriteString("body:\n")
 		fmt.Fprintf(b, "  %%ep = getelementptr inbounds %s, ptr %%newp, i64 %%i\n", elemLT)
 		fmt.Fprintf(b, "  %%ev = load %s, ptr %%ep\n", elemLT)
-		if perElem == "str" {
-			b.WriteString("  %cv = call %str-long @str_clone(%str-long %ev)\n")
-		} else {
-			fmt.Fprintf(b, "  %%cv = call %%vec %s(%%vec %%ev)\n", strings.TrimPrefix(perElem, "call:"))
-		}
+		fmt.Fprintf(b, "  %%cv = call %s %s(%s %%ev)\n", elemLT, perElem, elemLT)
 		fmt.Fprintf(b, "  store %s %%cv, ptr %%ep\n", elemLT)
 		b.WriteString("  %inext = add i64 %i, 1\n")
 		b.WriteString("  br label %lp\n")
@@ -1436,14 +1519,7 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 // without a matching clone double-frees.
 func (c *codegen) vecElemNeedsDeepFree(elemType TypeID) bool {
 	t := c.mod.Type(elemType)
-	if t == nil {
-		return false
-	}
-	switch c.llvmTypeOf(t) {
-	case "%str-long", "%vec":
-		return true
-	}
-	return false
+	return c.ownedLeafFreeFunc(t) != ""
 }
 
 // vecDeepFree emits (once per element type and depth) a helper that deep-frees a
@@ -1486,14 +1562,7 @@ func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
 	// decided once here. "" means the outer free is the whole drop.
 	perElem := ""
 	if depth < vecCloneMaxDepth {
-		switch {
-		case elemLT == "%str-long":
-			perElem = "str"
-		case elemLT == "%vec" && t.Elem != NoType:
-			if inner := c.vecDeepFree(t.Elem, depth+1); inner != "" {
-				perElem = "call:" + inner
-			}
-		}
+		perElem = c.ownedLeafFreeFuncAtDepth(t, depth+1)
 	}
 
 	b := &strings.Builder{}
@@ -1559,11 +1628,7 @@ func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
 		b.WriteString("body:\n")
 		fmt.Fprintf(b, "  %%ep = getelementptr inbounds %s, ptr %%ptr, i64 %%i\n", elemLT)
 		fmt.Fprintf(b, "  %%ev = load %s, ptr %%ep\n", elemLT)
-		if perElem == "str" {
-			b.WriteString("  call void @str_free(%str-long %ev)\n")
-		} else {
-			fmt.Fprintf(b, "  call void %s(%%vec %%ev)\n", strings.TrimPrefix(perElem, "call:"))
-		}
+		fmt.Fprintf(b, "  call void %s(%s %%ev)\n", perElem, elemLT)
 		b.WriteString("  %inext = add i64 %i, 1\n")
 		b.WriteString("  br label %lp\n")
 		b.WriteString("fin:\n")
@@ -6295,17 +6360,17 @@ func (c *codegen) emitLeafFieldsCloneR(dstSlot, structLT, key string, depth int)
 	}
 	fields := c.mod.StructFields[key]
 	for _, i := range c.mod.StructOwnedLeafFieldIdxs(key) {
-		fLT := c.llvmTypeOf(c.mod.Type(c.mod.internType(fields[i].TypeRaw)))
-		if fLT != "%str-long" {
-			continue
-		}
+		ft := c.mod.Type(c.mod.internType(fields[i].TypeRaw))
+		fLT := c.llvmTypeOf(ft)
 		g := c.treg("lfc")
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g, structLT, structLT, dstSlot, i))
 		v := c.treg("lfv")
 		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", v, fLT, fLT, g))
 		cl := c.treg("lfl")
-		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fLT, fLT, v))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fLT, cl, fLT, g))
+		if call := c.ownedLeafCloneCall(cl, v, ft); call != "" {
+			c.sb.WriteString(call)
+			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fLT, cl, fLT, g))
+		}
 	}
 	for i := range fields {
 		if c.mod.FieldIsPointer(fields[i]) || !c.mod.IsStructType(fields[i].TypeRaw) {
@@ -6500,13 +6565,13 @@ func (c *codegen) emitStructDropHelper(lt, key string) {
 	// cap==0 / null data, so a zero-initialised struct is a no-op and no
 	// null check is needed here.
 	for n, i := range c.mod.StructOwnedLeafFieldIdxs(key) {
-		fLT := c.llvmTypeOf(c.mod.Type(c.mod.internType(fields[i].TypeRaw)))
-		if fLT != "%str-long" {
-			continue
-		}
+		ft := c.mod.Type(c.mod.internType(fields[i].TypeRaw))
+		fLT := c.llvmTypeOf(ft)
 		b.WriteString(fmt.Sprintf("  %%lf%d = getelementptr inbounds %s, %s* %%p, i32 0, i32 %d\n", n, lt, lt, i))
 		b.WriteString(fmt.Sprintf("  %%lv%d = load %s, %s* %%lf%d\n", n, fLT, fLT, n))
-		b.WriteString(fmt.Sprintf("  call void @str_free(%s %%lv%d)\n", fLT, n))
+		if call := c.ownedLeafDropCall(fmt.Sprintf("%%lv%d", n), ft); call != "" {
+			b.WriteString("  " + call + "\n")
+		}
 	}
 	// Inline nested structs: their leaves are part of THIS struct's storage,
 	// so they must be freed by this destructor — and, symmetrically, cloned
@@ -8035,7 +8100,15 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		c.loadSeq++
 		old := fmt.Sprintf("%%old%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", old, elemT, elemT, ep))
-		c.sb.WriteString(fmt.Sprintf("  call void @str_free(%s %s)\n", elemT, old))
+		if elemT == "%vec" {
+			if elemType := c.mod.Type(c.vecElemTypeID(inst.Args[0])); elemType != nil {
+				if freeFn := c.ownedLeafFreeFunc(elemType); freeFn != "" {
+					c.sb.WriteString(fmt.Sprintf("  call void %s(%s %s)\n", freeFn, elemT, old))
+				}
+			}
+		} else {
+			c.sb.WriteString(fmt.Sprintf("  call void @str_free(%s %s)\n", elemT, old))
+		}
 	}
 	// Truncate/extend the stored value to the element type (e.g. i64 -> i8 for a
 	// []byte, which keeps the store to a single byte at offset i).
@@ -8359,15 +8432,51 @@ func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 // there was none and every read of a field becomes a redundant non-projection,
 // silently breaking `pool.nodes[i].kind = x`.
 //
-// Today the emitter clones exactly one shape: an OWNED `str` field or element,
-// whose by-value read would otherwise share the heap buffer with the source and
-// be double-freed when both are dropped. It is the precondition for BOTH
-// invalidation guards below, and it is what makes them safe: when the read
-// cloned, the value's own slot is a complete private `%str-long`, so falling
-// back to it can never read stale or freed bytes.
+// The emitter clones an OWNED `str` field/element, and a classified owned `%vec`
+// field. The latter is keyed by the field's declaring struct and element type;
+// it must not be inferred from the result type alone because ordinary `%vec`
+// element reads are still borrowed. This is the precondition for BOTH
+// invalidation guards below: if a cloned field read's owner dies or is rewritten,
+// keep using the private slot instead of projecting back into stale storage.
 func (c *codegen) projectionWasCloned(v ValueID) bool {
 	fieldLT, owned := c.ptype(v)
-	return owned && fieldLT == "%str-long"
+	if owned && fieldLT == "%str-long" {
+		return true
+	}
+	if !owned || fieldLT != "%vec" {
+		return false
+	}
+	def, ok := c.defInst[v]
+	if !ok {
+		return false
+	}
+	inst := c.mod.Inst(def)
+	if inst == nil || inst.Op != OpGetField || len(inst.Args) == 0 {
+		return false
+	}
+	recvTy := c.mod.Type(c.localTypeOf(inst.Args[0]))
+	if recvTy == nil {
+		return false
+	}
+	raw := recvTy.Raw
+	if recvTy.Kind == KindOption {
+		if elem, ok := parseOptionElem(raw); ok {
+			raw = elem
+		}
+	}
+	key := c.structKeyOf(raw)
+	if key == "" {
+		return false
+	}
+	idx, ok := c.mod.FieldIndex(key, inst.Str)
+	if !ok || !c.mod.StructFieldIsOwnedLeaf(key, idx) {
+		return false
+	}
+	field, ok := c.fieldAt(key, idx)
+	if !ok {
+		return false
+	}
+	return c.ownedLeafCloneFunc(c.mod.Type(c.mod.internType(field.TypeRaw))) != ""
 }
 
 // projectionChain returns every value the address a projection hands out is
@@ -8721,14 +8830,20 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		c.loadSeq++
 		lv := fmt.Sprintf("%%lx%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gp))
-		// Owned string fields are read by value (sharing the heap buffer with the
-		// field). Clone so the read temp owns its own buffer and the field's later
-		// drop can't double-free it.
-		if owned && fieldLT == "%str-long" {
-			c.loadSeq++
-			cl := fmt.Sprintf("%%lc%d", c.loadSeq)
-			c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, lv))
-			lv = cl
+		// Clone exactly the owned leaf types opted in by the declaring struct.
+		// Keep this gate synchronized with isBorrowRead and projectionWasCloned:
+		// otherwise the analysis either drops an alias of the field (double free)
+		// or suppresses the drop of this private copy (leak).
+		if owned && c.mod.StructFieldIsOwnedLeaf(structKey, idx) {
+			if f, ok := c.fieldAt(structKey, idx); ok {
+				ft := c.mod.Type(c.mod.internType(f.TypeRaw))
+				c.loadSeq++
+				cl := fmt.Sprintf("%%lc%d", c.loadSeq)
+				if call := c.ownedLeafCloneCall(cl, lv, ft); call != "" {
+					c.sb.WriteString(call)
+					lv = cl
+				}
+			}
 		}
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, lv, fieldLT, c.valSlot[inst.Dst]))
 		return nil
@@ -8778,14 +8893,18 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	c.loadSeq++
 	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gep))
-	// Owned string fields are read by value (the triple is copied, sharing the
-	// heap buffer with the field). Clone so the read temp owns its own buffer
-	// and the field's later drop can't double-free it.
-	if owned && fieldLT == "%str-long" {
-		c.loadSeq++
-		cl := fmt.Sprintf("%%lc%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, lv))
-		lv = cl
+	// Owned leaves are read by value, so the clone dispatcher gives the result
+	// an independent allocation before insertDrops releases it.
+	if owned && c.mod.StructFieldIsOwnedLeaf(structKey, idx) {
+		if f, ok := c.fieldAt(structKey, idx); ok {
+			ft := c.mod.Type(c.mod.internType(f.TypeRaw))
+			c.loadSeq++
+			cl := fmt.Sprintf("%%lc%d", c.loadSeq)
+			if call := c.ownedLeafCloneCall(cl, lv, ft); call != "" {
+				c.sb.WriteString(call)
+				lv = cl
+			}
+		}
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, lv, fieldLT, c.valSlot[inst.Dst]))
 	return nil
@@ -8999,8 +9118,8 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			c.fail("setfield: field %q not found on %q (option %q) in func %d", inst.Str, innerRaw, recvRaw, c.cf)
 			return fmt.Errorf("setfield field")
 		}
-		_, valV := c.loadVal(inst.Args[1])
-		fieldLT, _ := c.ptype(inst.Args[1])
+		valLT, valV := c.loadVal(inst.Args[1])
+		fieldLT := valLT
 		if fieldLT == "" {
 			fieldLT = "i64"
 		}
@@ -9027,6 +9146,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 				if rs := c.valSlot[inst.Args[1]]; rs != "" {
 					valV = c.vecViewValue(fieldLT, rs)
 					fieldLT = "%vec"
+					valLT = "%vec"
 				}
 			}
 		}
@@ -9034,6 +9154,9 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		c.loadSeq++
 		gp := fmt.Sprintf("%%gp%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, payloadLT, payloadLT, pg, idx))
+		if c.emitOwnedLeafFieldStore(structKey, idx, fieldLT, valLT, valV, gp) {
+			return nil
+		}
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gp))
 		return nil
 	}
@@ -9315,15 +9438,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			}
 		}
 	}
-	if fieldLT == "%str-long" && valLT == "%str-long" {
-		c.loadSeq++
-		old := fmt.Sprintf("%%sfold%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = load %s, %s* %s\n", old, fieldLT, fieldLT, gep))
-		c.loadSeq++
-		cl := fmt.Sprintf("%%sfcl%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, valV))
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, cl, fieldLT, gep))
-		c.sb.WriteString(fmt.Sprintf("  call void @str_free(%s %s)\n", fieldLT, old))
+	if c.emitOwnedLeafFieldStore(structKey, idx, fieldLT, valLT, valV, gep) {
 		return nil
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep))
@@ -10315,6 +10430,22 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 		cl := fmt.Sprintf("%%ef%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, lv))
 		lv = cl
+	} else if c.mod.enumOwnsPayload[inst.Args[0]] && fieldOwned && fieldLT == "%vec" {
+		// OWNING ENUM with a %vec payload: clone it exactly as the %str-long
+		// branch does (mirrors isBorrowRead's OpEnumField). Gated on the same
+		// allowlist as the struct path so it only fires once a container enum is
+		// opted in; the enum's own drop frees the payload, and the cloned read
+		// temp is freed by insertDrops via vecDeepFree.
+		if dv := c.mod.Value(inst.Dst); dv != nil {
+			if dt := c.mod.Type(dv.Type); dt != nil && dt.Elem != NoType && c.mod.ownedVecLeafAllowed(dt.Raw) {
+				if fn := c.vecDeepClone(dt.Elem, 0); fn != "" {
+					c.loadSeq++
+					cl := fmt.Sprintf("%%ef%d", c.loadSeq)
+					c.sb.WriteString(fmt.Sprintf("  %s = call %s %s(%s %s)\n", cl, fieldLT, fn, fieldLT, lv))
+					lv = cl
+				}
+			}
+		}
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", fieldLT, lv, fieldLT, dstSlot))
 	return nil
@@ -13624,7 +13755,7 @@ func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	fnVal := fmt.Sprintf("%%aawy.fn.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load void (i8*)*, void (i8*)** %s\n", fnVal, fnGep))
 	// Publish this task as the current task for the duration of the synchronous
-	// drive, so an `async-cancelled()` call inside the target reads the right
+	// drive, so an `cancelled()` call inside the target reads the right
 	// %task.cancelled flag (the legacy event loop sets @nolang_current_task the
 	// same way before invoking a task's resume_fn). Restored to null afterwards;
 	// MIR drives one task at a time (no nested coroutine suspend), so a single

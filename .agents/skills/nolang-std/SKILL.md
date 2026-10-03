@@ -2845,13 +2845,13 @@ h = run worker-async(args)
 r = awy h
 
 // Cancel a background task (cooperative)
-async.async-cancel(h)                    // Set cancellation flag on task h
+async.cancel(h)                    // Set cancellation flag on task h
 
 // Cooperative self-cancellation check (call inside async functions)
-yes = async.async-cancelled()            // Returns true if current task has been cancelled
+yes = async.cancelled()            // Returns true if current task has been cancelled
 ```
 
-> **Note:** Cancellation is cooperative, not preemptive. Long blocking calls (e.g. network requests) cannot be force-interrupted. The task stops at the next cooperative checkpoint (`async-cancelled()` call or next event loop scheduling).
+> **Note:** Cancellation is cooperative, not preemptive. Long blocking calls (e.g. network requests) cannot be force-interrupted. The task stops at the next cooperative checkpoint (`cancelled()` call or next event loop scheduling).
 
 ### global — Global Built-in Functions
 

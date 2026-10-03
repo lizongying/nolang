@@ -547,7 +547,7 @@ map** 的兩列在 `tierStep`；C 檔的觸發點在 `inferTiers` 的前置 pass
   `OpSetField` / `OpIndexStore` / `OpStore` / 呼叫引數 / `OpReturn` / out-param 返回一律算逃逸。
 - 「每條路徑恰好一次 await」從 spawn 前向走 CFG 到每個出口計數；遇到回到 spawn 的回邊就**切斷**
   （那一輪屬於下一次迭代的 handle）。
-- ⚠️ `async-cancel(h)` 是**已知偽陽性**（內建既不保存也不 retain），但**刻意不做白名單**——
+- ⚠️ `cancel(h)` 是**已知偽陽性**（內建既不保存也不 retain），但**刻意不做白名單**——
   白名單正是這類分析開始說謊的方式。
 - 目前是**報告-only**（`NOLANG_MIR_SPAWN_GRAPH=1`），對編譯輸出 0 差異。
 
@@ -1438,7 +1438,7 @@ print(g.len())        ; 修復前：4（內容仍是 '  hi  '）；修復後：6
 | `tests/async-rc.no` | 新增 | 跨邊界共享／多任務／取消後不 await／handle 存容器 ＋ 兩個漏計缺陷迴歸（void 別名、`run` 轉發） |
 | `tests/async-arg-move.no` | 新增 | spawn 參數 move：5 個該 move（6 個參數）＋ 3 個該維持深拷貝的反向案例（重賦值／讀取）＋ **第 9 例釘「快照」語義**（呼叫端原位寫入 ⇒ 任務仍看到 spawn 當下的值），是 §4.2(b)「無條件 retain」的守門員 |
 | `tests/async-arg-retain.no` | 新增（§4.2 b ⑥） | spawn 參數**共享**（靜態閘門）：`[]i64` 共享（`a[1]` 讀）＋ `str` 共享（`s[0]` 讀）＋ **原位寫入退回深拷貝**（`a[0]=99` ⇒ 任務仍見 `1`，快照守衛）＋ **20 圈迴圈共享**（釘住引用計數平衡）；觸發 2 次 retain，輸出 base 與 retain 逐位元組相同 |
-| `tests/async.no` / `async-cancel.no` / `async-coop.no` / `async-yield.no` / `module-async.no` | 既有 | flat spawn 邊（線性化對照組）、取消、協作、模組層級 async |
+| `tests/async.no` / `cancel.no` / `async-coop.no` / `async-yield.no` / `module-async.no` | 既有 | flat spawn 邊（線性化對照組）、取消、協作、模組層級 async |
 | `tests/rule1-binding.no` | 新增（規則一） | `a = b` 的 `str`／`[]i64`／struct 寫入獨立性 ＋ 只讀 ＋ 源已死 move；**唯一 stdout 可觀測的規則一缺陷** |
 | `tests/slice-view-liveness.no` | 新增（§4.4 a） | 切片視圖的來源壽命：`b = a[i..j]` 之後讀 `b`（修復前印**堆位址**）＋ 巢狀視圖 ＋ 來源重綁 |
 | `tests/vec-elem-ownership.no` | 新增（§4.4 b） | `%vec` 元素賦值的所有權：`outer[0] = inner` ＋ 重綁來源（修復前 `trace/BPT trap`）＋ `vec.push` 對照 |

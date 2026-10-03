@@ -1820,7 +1820,7 @@ func = (cmd str) {
 
 ### Async / Await (`run` / `awy`) — hand-written form deprecated, use coroutine groups
 
-> **Deprecated (hand-written primitives):** Writing `run` / `awy` / `async-cancel` / `async-cancelled` by hand is deprecated and not recommended for application code. Manual task-handle management is unsafe (an un-awaited task leaks its argument buffer; aliasing a handle and awaiting twice crashes; cooperative cancellation cannot force-interrupt a long-blocking call). Use **coroutine groups** (below) instead — simpler and it manages handles for you.
+> **Deprecated (hand-written primitives):** Writing `run` / `awy` / `cancel` / `cancelled` by hand is deprecated and not recommended for application code. Manual task-handle management is unsafe (an un-awaited task leaks its argument buffer; aliasing a handle and awaiting twice crashes; cooperative cancellation cannot force-interrupt a long-blocking call). Use **coroutine groups** (below) instead — simpler and it manages handles for you.
 
 Nolang uses `run` and `awy` for async concurrency. Async function names must end with `-async` (no `async` keyword).
 

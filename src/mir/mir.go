@@ -174,12 +174,73 @@ func (m *Module) StructOwnedLeafFieldIdxs(key string) []int {
 			continue // structs are handled by the pointee walk
 		}
 		ty := m.Type(m.internType(fields[i].TypeRaw))
-		if ty == nil || !ty.Owned || ty.Kind != KindStr {
+		if ty == nil || !ty.Owned {
 			continue
 		}
-		out = append(out, i)
+		switch ty.Kind {
+		case KindStr:
+			out = append(out, i)
+		case KindSlice:
+			// A `%vec` (slice) leaf owns its backing buffer. It is only opted in
+			// for the container structs of the §4.3 map-storage ownership landing
+			// (see ownedVecLeafAllowed): opting in makes the clone and drop walks
+			// deep-copy / deep-free this leaf, so a struct whose `%vec` field is
+			// actually a borrowed view must stay OUT, or the drop walk frees a
+			// buffer the struct does not own.
+			if m.ownedVecLeafAllowed(key) {
+				out = append(out, i)
+			}
+		}
 	}
 	return out
+}
+
+// StructFieldIsOwnedLeaf reports whether field idx of struct key is one of the
+// owned leaves StructOwnedLeafFieldIdxs enumerates — i.e. it owns heap that the
+// clone and drop walks must deep-copy / deep-free. Read clones (emitGetField /
+// emitSetField) and isBorrowRead consult this so a cloned %vec read is dropped
+// exactly when its field's buffer is, and never before the classifier opts the
+// struct in (which is what keeps the clone and the drop in lockstep).
+func (m *Module) StructFieldIsOwnedLeaf(key string, idx int) bool {
+	for _, j := range m.StructOwnedLeafFieldIdxs(key) {
+		if j == idx {
+			return true
+		}
+	}
+	return false
+}
+
+// ownedVecLeafAllowed gates the widening of StructOwnedLeafFieldIdxs to include
+// owned %vec (slice) leaves. It is the per-tier allowlist for the map-storage
+// ownership landing (NOLANG-OWNERSHIP-MODEL.md §4.3): only container struct
+// types whose %vec leaves are genuinely owned-by-the-struct buffers are opted
+// in, rolled out one tier at a time with a full corpus sweep between tiers.
+//
+// Rollout order (each tier validated by a 691-file compile+run sweep before the
+// next is enabled):
+//  1. hashmap_* / static_hashmap_*  — the str/int/bool-keyed hash tables.
+//  2. set_* / heap_*                — the set and binary-heap pools.
+//
+// Opting in a struct here makes its %vec leaves deep-cloned on copy and
+// deep-freed on drop (emitLeafFieldsCloneR / emitStructDropHelper). A struct
+// whose %vec field is a borrowed view, or whose drop would double-free, must
+// stay OUT of this list.
+// DISABLED — see NOLANG-OWNERSHIP-MODEL.md §4.3 (v2.8/v2.9: "判定不落地 / 維持不落地").
+//
+// Enabling this (opting hashmap-*/static_hashmap-*/set-*/heap-* into the owned
+// %vec-leaf classifier) is the map-storage-release feature. It was attempted and
+// produced a memory-unsafe crash: classifying those structs reroutes the std
+// library's INTERNAL field assignments (self.keys = X, in init/put/rehash)
+// through the generic clone+free owned-leaf path, which collides with the
+// library's own buffer management and lands in the `raw:` branch of nolang_free
+// (a `free()` on a bad pointer — Apple's mfm_free → brk 1, SIGTRAP) inside
+// hashmap_i64_i64_put. The doc notes this is broad/risky (~25 call sites of
+// StructHasOwnedLeafFields, 36 struct types / 52 files) and that doing it safely
+// needs the projectionWasCloned-style safeguards for %vec field access plus
+// per-type rollout — a redesign, not a patch. Left disabled so the compiler stays
+// working; revisit only with an explicit go-ahead and the full plan.
+func (m *Module) ownedVecLeafAllowed(key string) bool {
+	return false
 }
 
 // StructHasOwnedLeafFields reports whether a bitwise copy of this struct would

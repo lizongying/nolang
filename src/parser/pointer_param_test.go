@@ -8,7 +8,7 @@ import (
 
 // Regression tests for pointer-typed parameters in function definitions.
 //
-// `async-cancel = (task i8*) () { }` (src/std/async.no) used to fail with
+// `cancel = (task i8*) () { }` (src/std/async.no) used to fail with
 // "expected comma or right parenthesis, got MUL(*)": three separate param-list
 // parsers existed and none accepted a pointer suffix:
 //  1. isFunctionDefinition (decl.go) — lookahead whitelist rejected MUL, so the
@@ -65,7 +65,7 @@ func TestPointerParamFunctionDefinition(t *testing.T) {
 
 // A pointer parameter must survive as a PointerType through parseFunctionDefinition.
 func TestPointerParamTypeIsPointerType(t *testing.T) {
-	p := New(lexer.New("async-cancel = (task i8*) () { }\n"))
+	p := New(lexer.New("cancel = (task i8*) () { }\n"))
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		t.Fatalf("unexpected errors: %v", p.Errors())
@@ -96,9 +96,9 @@ func TestPointerParamTypeIsPointerType(t *testing.T) {
 // （TestFormatReparseClean/std/async.no 曾因此失敗）。
 func TestPointerParamPrefixFormAccepted(t *testing.T) {
 	srcs := []string{
-		"async-cancel = (task *i8) () { }",
-		"async-cancel = (task **i8) () { }",
-		"async-cancel = (task ?*i8) () { }",
+		"cancel = (task *i8) () { }",
+		"cancel = (task **i8) () { }",
+		"cancel = (task ?*i8) () { }",
 	}
 	for _, src := range srcs {
 		l := lexer.New(src)

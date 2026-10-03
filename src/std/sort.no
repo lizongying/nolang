@@ -58,7 +58,6 @@ str.gt = (b str) (res bool) {
 }
 
 ; [n]ord.sort-asc: 升序原地排序（插入排序）
-#{index-out=0}
 [n]ord.sort-asc = () {
     i <- [1..n): {
 
@@ -83,7 +82,6 @@ str.gt = (b str) (res bool) {
 }
 
 ; [n]ord.sort-desc: 降序原地排序（插入排序）
-#{index-out=0}
 [n]ord.sort-desc = () {
     i <- [1..n): {
 

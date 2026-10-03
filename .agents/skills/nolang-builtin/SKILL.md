@@ -27,7 +27,7 @@ src/builtin/
 ├── str.go           # with-cap, with-len, with-cap-len
 ├── net.go           # net-listen, net-dial, net-accept, etc.
 ├── process.go       # process-exec, process-kill, process-dup2, etc.
-├── async.go         # async-cancel, async-cancelled, async-yield
+├── async.go         # cancel, cancelled, async-yield
 ├── bits.go          # rotate-left, rotate-right, load-le-u16/u32/u64
 └── vec.go           # vec 容器内建（push 等）
 ```

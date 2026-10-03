@@ -10,6 +10,7 @@
 ; change in ownership surfaces as a changed hash instead of a silent leak.
 
 worker-async = (n i64) (r i64) {
+
     #{overflow=wrap}
     r = n * 2
 }
@@ -84,7 +85,6 @@ test-cancel-no-await = () {
     async-cancel(h)
     print('6 ok')
 }
-
 test-alias-both()
 test-void-alias()
 test-run-forward()
