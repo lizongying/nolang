@@ -27,10 +27,10 @@ str-set.init = () {
     .size = 0
     i <- [0..256): {
 
-        #{index-out=0}
+        #{index-out=zero}
         .occ[i] = 0
 
-        #{index-out=0}
+        #{index-out=zero}
         .keys[i].len = 0
     }
 }
@@ -41,7 +41,7 @@ str-set.hash = (key str) (idx i64) {
     h = SS-FNV-OFFSET
     i <- [0..key.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
@@ -57,7 +57,7 @@ str-set.str-eq = (a str, b str) (eq bool) {
     i <- [0..a.len-bytes()): {
         a.byte(i) != b.byte(i) -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             return
         }
     }
@@ -71,7 +71,7 @@ str-set.add = (key str) (is-new bool) {
 
     (.occ[idx] == 1) {
 
-        #{index-out=0}
+        #{index-out=zero}
         eq = .str-eq(.keys[idx], key)
         eq -> {
             is-new = false
@@ -82,19 +82,19 @@ str-set.add = (key str) (is-new bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 
     ; 複製 key
-    #{index-out=0}
+    #{index-out=zero}
     .keys[idx].len = key.len-bytes()
     i <- [0..key.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         .keys[idx][i] = key.byte(i)
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     .occ[idx] = 1
 
     #{overflow=wrap}
@@ -109,7 +109,7 @@ str-set.contains = (key str) (found bool) {
 
     (.occ[idx] == 1) {
 
-        #{index-out=0}
+        #{index-out=zero}
         eq = .str-eq(.keys[idx], key)
         eq -> {
             found = true
@@ -120,7 +120,7 @@ str-set.contains = (key str) (found bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 }
 
@@ -131,16 +131,16 @@ str-set.remove = (key str) (removed bool) {
 
     (.occ[idx] == 1) {
 
-        #{index-out=0}
+        #{index-out=zero}
         eq = .str-eq(.keys[idx], key)
 
         #{overflow=wrap}
         eq -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             .occ[idx] = 0
 
-            #{index-out=0}
+            #{index-out=zero}
             .keys[idx].len = 0
             .size = .size - 1
             removed = true
@@ -151,7 +151,7 @@ str-set.remove = (key str) (removed bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 }
 
@@ -159,10 +159,10 @@ str-set.remove = (key str) (removed bool) {
 str-set.clear = () {
     i <- [0...cap): {
 
-        #{index-out=0}
+        #{index-out=zero}
         .occ[i] = 0
 
-        #{index-out=0}
+        #{index-out=zero}
         .keys[i].len = 0
     }
     .size = 0
@@ -183,7 +183,7 @@ str-set.for-each = () (val str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             val = .keys[i]
         }
     }

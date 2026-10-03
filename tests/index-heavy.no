@@ -1,6 +1,6 @@
 get-at = (arr [5]i64, i i64) (r i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     r = arr[i]
 }
 

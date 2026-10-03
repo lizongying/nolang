@@ -18,7 +18,7 @@
 ;   - 第 4 例（迴圈）若 retain 與 wrapper 的 release 不平衡，會洩漏或 double free。
 
 first = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 

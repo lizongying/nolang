@@ -290,10 +290,10 @@ yaml-parser.push-null = () (idx i64) {
 ; set-props: 为节点附加标签与锚点（并登记锚点）
 yaml-parser.set-props = (idx i64, tag str, anchor str) {
 
-    #{index-out=0}
+    #{index-out=zero}
     .nodes[idx].tag = tag
 
-    #{index-out=0}
+    #{index-out=zero}
     .nodes[idx].anchor = anchor
     anchor.len-bytes() > 0 -> .register-anchor(anchor, idx)
 }
@@ -1002,7 +1002,7 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 j = i + 1
                 j < .n -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     .src.byte(j) == 39 -> {
 
                         #{overflow=wrap}
@@ -1817,7 +1817,7 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
     }
     src < 0 -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     .nodes[src].kind != YAML-KIND-MAP -> return
     cnt = .nodes[src].keys.len()
     i <- [0..cnt): {
@@ -1932,10 +1932,10 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
 
         is-merge = false
 
-        #{index-out=0}
+        #{index-out=zero}
         .nodes[key].kind == YAML-KIND-STR -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             .nodes[key].text.eq-full('<<') -> is-merge = true
         }
         is-merge -> {
@@ -1948,7 +1948,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
             dup = -1
             total = keys.len()
             j <- [0..total): {
-                kj = keys[j] #{index-out=0}
+                kj = keys[j] #{index-out=zero}
                 yaml-key-eq(.nodes[key], .nodes[kj]) -> {
                     dup = j
                     break
@@ -2192,7 +2192,7 @@ yaml.parse-all = (source str) (out ?yaml) {
         ; root 已在上方宣告為純量（`root = -1`），無法就地捕獲越界 option
         ; （`x = v[i]` 只在首次宣告時推斷為 `?elem`），故顯式標註越界語義。
         ; `roots.len() > 0` 已保證索引 0 合法，此預設值不可達。
-        #{index-out=0}
+        #{index-out=zero}
         root = roots[0]
     }
     doc = yaml {
@@ -2545,7 +2545,7 @@ yaml.get = (key str) (out yaml, ok bool) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     .pool.nodes[.root].kind != YAML-KIND-MAP -> return
     cnt = .pool.nodes[.root].keys.len()
     i <- [0..cnt): {

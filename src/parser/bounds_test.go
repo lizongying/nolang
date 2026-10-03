@@ -113,7 +113,7 @@ func TestProvablyInBoundsReads(t *testing.T) {
 
 // TestAnalyzeInBoundsIndexRemovable verifies the formatter-facing result: a
 // statement whose every container read is provably in-bounds is marked
-// StmtRemovable. Note: a standalone `#{index-out=0}` on its own line is ATTACHED
+// StmtRemovable. Note: a standalone `#{index-out=zero}` on its own line is ATTACHED
 // to the following statement by the parser (the governed statement is the sole
 // list entry), so removal flows through StmtRemovable; AnnRemovable only covers
 // annotation nodes that survive as standalone statements (e.g. block-governed),
@@ -123,7 +123,7 @@ func TestAnalyzeInBoundsIndexRemovable(t *testing.T) {
     p-tmp [32]byte
     p []byte = with-len(32)
     i <- [0..32): {
-        #{index-out=0}
+        #{index-out=zero}
         p[i] = p-tmp[i]
     }
 }`)
@@ -137,7 +137,7 @@ func TestAnalyzeInBoundsIndexRemovable(t *testing.T) {
 func TestAnalyzeInBoundsIndexNotRemovableForSlice(t *testing.T) {
 	prog := parseSurface(t, `f = (v []i64) (res i64) {
     i <- [0..4): {
-        #{index-out=0}
+        #{index-out=zero}
         res = v[i]
     }
 }`)

@@ -35,7 +35,7 @@ import (
 // retainVecSrc is the positive shape: `a` is READ after the spawn (a[1], a direct
 // index read, which cannot write) and never written, so the buffer can be shared.
 const retainVecSrc = `first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 
@@ -54,7 +54,7 @@ main = () {
 // would print 99 instead of 1 — the silent semantic change the gate exists to
 // prevent.
 const retainVecWrittenSrc = `first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 
@@ -128,7 +128,7 @@ func TestSpawnArgRetainNotTakenWhenWritten(t *testing.T) {
 // index read, no write), so only the element class can explain the refusal.
 func TestSpawnArgRetainNotTakenForOwnedElements(t *testing.T) {
 	mod := lowerForTest(t, `vecstr-async = (v []str) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0].len()
 }
 
@@ -178,7 +178,7 @@ main = () {
 // reference the move would have consumed.
 func TestSpawnArgRetainNotTakenWhenDead(t *testing.T) {
 	mod := lowerForTest(t, `first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 
@@ -209,12 +209,12 @@ main = () {
 // gate keys on the ops, not on the source spelling.
 func TestSpawnArgRetainNotTakenForCallUse(t *testing.T) {
 	mod := lowerForTest(t, `peek = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 
 first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 
@@ -238,7 +238,7 @@ main = () {
 // container lowers to a len/index loop (read-only), so the share IS taken.
 func TestSpawnArgRetainTakenForContainerPrint(t *testing.T) {
 	mod := lowerForTest(t, `first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 
@@ -263,12 +263,12 @@ func TestSpawnArgRetainSafeContract(t *testing.T) {
 	// internType never ran on it and TypeMap yields NoType (which would answer
 	// "owns no heap" for the wrong reason).
 	mod := lowerForTest(t, `first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 
 vecstr-async = (v []str) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0].len()
 }
 

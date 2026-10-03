@@ -1561,26 +1561,32 @@ safe-get = (arr []i64, i i64) (res ?i64) {
 }
 ```
 
-**2. `x = v[i] #{index-out=DEF}` —— 越界用字面量預設值替代**
+**2. `x = v[i] #{index-out=DEF}` —— 越界用預設值替代（`zero` 或字面量）**
 
-帶 `#{index-out=DEF}` 註解（獨立成行置於賦值上方，或寫在賦值同一行尾隨）時，越界不會崩潰，而是用 `DEF` 替代。`DEF` **只能是字面量**，依容器元素型別決定允許的種類：
+帶 `#{index-out=DEF}` 註解（獨立成行置於賦值上方，或寫在賦值同一行尾隨）時，越界不會崩潰，而是用 `DEF` 替代。`DEF` 有兩種形式：**關鍵字 `zero`** 或**字面量**。
 
-- 整數 / 字元容器（`i8`~`i128`、`u8`~`u128`、`byte`、`char`）：整數或字元字面量，如 `0`、`'x'`
-- 浮點容器（`f32`、`f64`）：浮點字面量，如 `0.0`
-- 布林容器（`bool`）：`true` / `false`
-- 字串容器（`str`）：字串字面量，如 `''`
+- **`#{index-out=zero}`**：不分容器元素型別，一律用「當前元素型別的零值」替代——整數族 / `byte` / `char` → `0`、`f32`/`f64` → `0.0`、`bool` → `false`、`str`/`txt` → `''`、容器 → 空容器 / 零定長陣列、結構體 → 零值結構體。無需知曉元素型別細節，最適合「越界即按預設零值處理」的場景。
+- **`#{index-out=DEF}`（字面量）**：依容器元素型別決定允許的種類，`DEF` 必須與元素型別相容：
+  - 整數 / 字元容器（`i8`~`i128`、`u8`~`u128`、`byte`、`char`）：整數或字元字面量，如 `0`、`'x'`
+  - 浮點容器（`f32`、`f64`）：浮點字面量，如 `0.0`
+  - 布林容器（`bool`）：`true` / `false`
+  - 字串容器（`str`）：字串字面量，如 `''`
 
 ```no
 get-default = (arr []i64, i i64) (res i64) {
-    res = arr[i]  #{index-out=0}   ; 越界 → res = 0
+    res = arr[i]  #{index-out=zero}     ; 越界 → res = 0（顯式字面量）
+}
+
+get-zero = (arr []f64, i i64) (res f64) {
+    res = arr[i]  #{index-out=zero}  ; 越界 → res = 0.0（當前型別零值）
 }
 
 get-ch = (arr []byte, i i64) (res byte) {
-    res = arr[i]  #{index-out=0}   ; byte 容器預設 0
+    res = arr[i]  #{index-out=zero}  ; byte 容器零值 0
 }
 ```
 
-> 註解也可以獨立成行、置於賦值上方：`#{index-out=0}` ⏎ `res = arr[i]`。寫在賦值**前方同一行**（`#{index-out=0} res = arr[i]`）則會報錯（見〈註解位置〉）。
+> 註解也可以獨立成行、置於賦值上方：`#{index-out=zero}` ⏎ `res = arr[i]`。寫在賦值**前方同一行**（`#{index-out=zero} res = arr[i]`）則會報錯（見〈註解位置〉）。
 
 **3. option 回傳函式內的裸 `x = v[i]` —— 就地捕獲**
 
@@ -1604,7 +1610,7 @@ capture-prop = (arr []i64, i i64) (res ?i64) {
 ```no
 get-vec-default = (a [4]i64, i i64) (res i64) {
     v = a.to-vec()          ; v 的元素型別由 a 推導，無需標註
-    res = v[i]  #{index-out=0}   ; 越界 → res = 0（不崩潰）
+    res = v[i]  #{index-out=zero}   ; 越界 → res = 0（不崩潰）
 }
 ```
 
@@ -2828,10 +2834,10 @@ open = (dsn str) (d db-sqlite) {
 `#{...}` 只允許兩種寫法：
 
 - **上方**：獨立成行，置於目標（陳述、結構體欄位、枚舉成員、宣告、match 臂）上方；
-- **後方**：寫在目標同一行的尾隨位置（`res = arr[i] #{index-out=0}`、`a pt #{inline}`、
+- **後方**：寫在目標同一行的尾隨位置（`res = arr[i] #{index-out=zero}`、`a pt #{inline}`、
   `green #{deprecated}`）。
 
-寫在目標**前方同一行**（前綴，如 `#{index-out=0} res = arr[i]`）是**編譯錯誤**，編譯器與
+寫在目標**前方同一行**（前綴，如 `#{index-out=zero} res = arr[i]`）是**編譯錯誤**，編譯器與
 LSP 會回報同一條診斷。判定方式：註解群組的 `}` 之後、同一行上不得再有程式碼（換行、
 `;` 行註釋、或緊接的另一個註解群組不算程式碼）。
 

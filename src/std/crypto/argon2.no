@@ -43,28 +43,28 @@ rotr = (x u64, n i64) (r u64) {
 ; 操作 8 個 u64 值（索引 a..h 在 v 陣列中）
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
 
-    #{index-out=0}
+    #{index-out=zero}
     v[d] = rotr(v[d] ^ v[a], 32)
 
-    #{index-out=0}
+    #{index-out=zero}
     v[c] = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
 
-    #{index-out=0}
+    #{index-out=zero}
     v[b] = rotr(v[b] ^ v[c], 24)
 
-    #{index-out=0}
+    #{index-out=zero}
     v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
 
-    #{index-out=0}
+    #{index-out=zero}
     v[d] = rotr(v[d] ^ v[a], 16)
 
-    #{index-out=0}
+    #{index-out=zero}
     v[c] = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
 
-    #{index-out=0}
+    #{index-out=zero}
     v[b] = rotr(v[b] ^ v[c], 63)
 }
 
@@ -82,16 +82,16 @@ h-prime = (input []byte, out-len i64) (out []byte) {
     ; 輸出長度的 32-bit 小端表示
     len-bytes [4]byte
 
-    #{index-out=0}
+    #{index-out=zero}
     len-bytes[0] = out-len & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     len-bytes[1] = (out-len >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     len-bytes[2] = (out-len >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     len-bytes[3] = (out-len >> 24) & 255
 
     {
@@ -101,20 +101,20 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; 構建輸入: len_bytes || input
             combined []byte
 
-            #{index-out=0}
+            #{index-out=zero}
             combined[0] = len-bytes[0]
 
-            #{index-out=0}
+            #{index-out=zero}
             combined[1] = len-bytes[1]
 
-            #{index-out=0}
+            #{index-out=zero}
             combined[2] = len-bytes[2]
 
-            #{index-out=0}
+            #{index-out=zero}
             combined[3] = len-bytes[3]
             i <- [0..input.len()): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=zero, overflow=wrap}
                 combined[4 + i] = input[i]
             }
 
@@ -124,7 +124,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             hash = blake2.b(combined)
             i <- [0..out-len): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 out[i] = hash[i]
             }
         }
@@ -135,20 +135,20 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; V = Blake2b(len_bytes || input)
             combined []byte
 
-            #{index-out=0}
+            #{index-out=zero}
             combined[0] = len-bytes[0]
 
-            #{index-out=0}
+            #{index-out=zero}
             combined[1] = len-bytes[1]
 
-            #{index-out=0}
+            #{index-out=zero}
             combined[2] = len-bytes[2]
 
-            #{index-out=0}
+            #{index-out=zero}
             combined[3] = len-bytes[3]
             i <- [0..input.len()): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=zero, overflow=wrap}
                 combined[4 + i] = input[i]
             }
             v [64]byte
@@ -157,7 +157,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; 輸出前 32 位元組
             i <- [0..32): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 out[i] = v[i]
             }
 
@@ -169,7 +169,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                 v = blake2.b(v)
                 i <- [0..32): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=zero, overflow=wrap}
                     out[pos + i] = v[i]
                 }
 
@@ -185,7 +185,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             last-hash = blake2.b(v)
             i <- [0..remaining): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=zero, overflow=wrap}
                 out[pos + i] = last-hash[i]
             }
         }
@@ -207,7 +207,7 @@ compress = (x []byte, y []byte) (out []byte) {
     r []byte
     i <- [0..1024): {
 
-        #{index-out=0}
+        #{index-out=zero}
         r[i] = (x[i]) ^ (y[i])
     }
 
@@ -218,7 +218,7 @@ compress = (x []byte, y []byte) (out []byte) {
         #{overflow=wrap}
         off = i * 8
 
-        #{index-out=0}
+        #{index-out=zero}
         v[i] = (r[off]) | ((r[off + 1]) << 8) | ((r[off + 2]) << 16) | ((r[off + 3]) << 24) | ((r[off + 4]) << 32) | ((r[off + 5]) << 40) | ((r[off + 6]) << 48) | ((r[off + 7]) << 56)
     }
 
@@ -315,31 +315,31 @@ compress = (x []byte, y []byte) (out []byte) {
         #{overflow=wrap}
         off = i * 8
 
-        #{index-out=0}
+        #{index-out=zero}
         val = v[i]
 
-        #{index-out=0}
+        #{index-out=zero}
         out[off] = ((val & 255) ^ r[off]) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[off + 1] = (((val >> 8) & 255) ^ r[off + 1]) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[off + 2] = (((val >> 16) & 255) ^ r[off + 2]) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[off + 3] = (((val >> 24) & 255) ^ r[off + 3]) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[off + 4] = (((val >> 32) & 255) ^ r[off + 4]) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[off + 5] = (((val >> 40) & 255) ^ r[off + 5]) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[off + 6] = (((val >> 48) & 255) ^ r[off + 6]) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[off + 7] = (((val >> 56) & 255) ^ r[off + 7]) & 255
     }
 }
@@ -376,96 +376,96 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     pos = 0
 
     ; parallelism (32-bit LE)
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = parallelism & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = (parallelism >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = (parallelism >> 16) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = (parallelism >> 24) & 255
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; out-len (32-bit LE)
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = out-len & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = (out-len >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = (out-len >> 16) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = (out-len >> 24) & 255
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; memory-cost m (32-bit LE)
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = m & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = (m >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = (m >> 16) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = (m >> 24) & 255
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; time-cost t (32-bit LE)
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = time-cost & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = (time-cost >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = (time-cost >> 16) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = (time-cost >> 24) & 255
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; version v (32-bit LE) = 0x13
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = ARGON2-VERSION & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = (ARGON2-VERSION >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = 0
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; type y (32-bit LE) = 2 (Argon2id)
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = ARGON2-ID & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = 0
 
     #{overflow=wrap}
@@ -474,23 +474,23 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; len(P) (32-bit LE) || P
     pw-len = password.len()
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = pw-len & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = (pw-len >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = (pw-len >> 16) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = (pw-len >> 24) & 255
 
     #{overflow=wrap}
     pos = pos + 4
     i <- [0..pw-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         h0-input[pos + i] = password[i]
     }
 
@@ -500,23 +500,23 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; len(S) (32-bit LE) || S
     salt-len = salt.len()
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = salt-len & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = (salt-len >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = (salt-len >> 16) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = (salt-len >> 24) & 255
 
     #{overflow=wrap}
     pos = pos + 4
     i <- [0..salt-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         h0-input[pos + i] = salt[i]
     }
 
@@ -524,31 +524,31 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     pos = pos + salt-len
 
     ; len(K) = 0, len(X) = 0（不使用金鑰和關聯資料）
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = 0
 
     #{overflow=wrap}
     pos = pos + 4
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 0] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 1] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 2] = 0
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     h0-input[pos + 3] = 0
 
     #{overflow=wrap}
@@ -576,40 +576,40 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     init-input []byte
     i <- [0..64): {
 
-        #{index-out=0}
+        #{index-out=zero}
         init-input[i] = h0[i]
     }
 
     ; B[0]: H0 || 0 (32-bit LE) || 0 (32-bit LE)
-    #{index-out=0}
+    #{index-out=zero}
     init-input[64] = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     init-input[65] = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     init-input[66] = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     init-input[67] = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     init-input[68] = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     init-input[69] = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     init-input[70] = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     init-input[71] = 0
 
     block0 []byte
     block0 = h-prime(init-input, 1024)
 
     ; B[1]: H0 || 1 (32-bit LE) || 0 (32-bit LE)
-    #{index-out=0}
+    #{index-out=zero}
     init-input[68] = 1
     block1 []byte
     block1 = h-prime(init-input, 1024)
@@ -617,10 +617,10 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; 複製到記憶體
     i <- [0..1024): {
 
-        #{index-out=0}
+        #{index-out=zero}
         mem[i] = block0[i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         mem[1024 + i] = block1[i]
     }
 
@@ -639,12 +639,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         ref-idx < 0 -> ref-idx = 0
 
         ; 計算新區塊 = G(mem[prev], mem[ref])
-        #{index-out=0}
+        #{index-out=zero}
         new-block = compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
         i <- [0..1024): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             mem[curr-idx * 1024 + i] = new-block[i]
         }
 
@@ -667,12 +667,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
             ref-idx < 0 -> ref-idx = 0
 
             ; 新區塊 = G(mem[prev], mem[ref]) XOR 舊區塊
-            #{index-out=0}
+            #{index-out=zero}
             new-block = compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
             i <- [0..1024): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=zero, overflow=wrap}
                 mem[curr-idx * 1024 + i] = (mem[curr-idx * 1024 + i]) ^ (new-block[i])
             }
 
@@ -689,7 +689,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     last-idx = blocks-per-lane - 1
     i <- [0..1024): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         final-block[i] = mem[last-idx * 1024 + i]
     }
 

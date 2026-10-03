@@ -22,7 +22,7 @@
 ; tag: 輸出標籤值
 der-tag = (data []byte, pos i64) (tag i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     tag = data[pos]
 }
 
@@ -31,7 +31,7 @@ der-tag = (data []byte, pos i64) (tag i64) {
 ; len: 輸出長度值, adv: 輸出消耗的位元組數（1 或更多）
 der-len = (data []byte, pos i64) (len i64, adv i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     b = data[pos]
 
     ; 短格式：長度 = b (0-127)
@@ -46,7 +46,7 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
     len = 0
     i <- [0..n): {
 
-        #{index-out=0}
+        #{index-out=zero}
         len = (len << 8) | (data[pos + 1 + i])
     }
 
@@ -82,7 +82,7 @@ der-skip = (data []byte, pos i64) (next i64) {
 x509-tbs-range = (data []byte) (start i64, end i64) {
 
     ; 驗證外層 SEQUENCE
-    #{index-out=0}
+    #{index-out=zero}
     tag = data[0]
     tag != 48 -> {
         start = 0
@@ -102,13 +102,13 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
     }
 
     ; 印出 TBS 標頭位元組以驗證
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     b0 = data[start + 1]
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     b1 = data[start + 2]
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     b2 = data[start + 3]
     end = der-skip(data, start)
 }
@@ -162,7 +162,7 @@ x509-serial = (data []byte) (serial i64) {
     val = 0
     i <- [0..int-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         val = (val << 8) | (data[p + 1 + adv + i])
     }
     serial = val
@@ -271,7 +271,7 @@ x509-rsa-e = (data []byte) (e i64) {
     val = 0
     i <- [0..exp-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         val = (val << 8) | (data[rsa-start + 1 + adv + i])
     }
     e = val
@@ -352,7 +352,7 @@ x509-rsa-n = (data []byte) (out []byte) {
     #{overflow=wrap}
     mod-len > 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         (data[mod-val-start]) == 0 -> {
 
             #{overflow=wrap}
@@ -364,7 +364,7 @@ x509-rsa-n = (data []byte) (out []byte) {
     ; 複製模數位元組
     i <- [0..actual-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[i] = data[actual-start + i]
     }
 }
@@ -451,7 +451,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         {
             boff < tbs-len -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 b0 = data[tbs-start + boff]
             }
 
@@ -490,7 +490,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         {
             boff + 1 < tbs-len -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 b1 = data[tbs-start + boff + 1]
             }
 
@@ -528,7 +528,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         {
             boff + 2 < tbs-len -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 b2 = data[tbs-start + boff + 2]
             }
 
@@ -564,7 +564,7 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
         {
             boff + 3 < tbs-len -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 b3 = data[tbs-start + boff + 3]
             }
 
@@ -1011,7 +1011,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
 
     ; ---- 擴展訊息排程 W[16..63] + 壓縮 ----
 
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w1 >> 7) | (w1 << 25)) & mask
     s0-r18 = ((w1 >> 18) | (w1 << 14)) & mask
     s0-sh3 = w1 >> 3
@@ -1046,7 +1046,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[17]: σ1(w15) + w10 + σ0(w2) + w1
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w2 >> 7) | (w2 << 25)) & mask
     s0-r18 = ((w2 >> 18) | (w2 << 14)) & mask
     s0-sh3 = w2 >> 3
@@ -1081,7 +1081,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[18]: σ1(w16) + w11 + σ0(w3) + w2
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w3 >> 7) | (w3 << 25)) & mask
     s0-r18 = ((w3 >> 18) | (w3 << 14)) & mask
     s0-sh3 = w3 >> 3
@@ -1116,7 +1116,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[19]: σ1(w17) + w12 + σ0(w4) + w3
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w4 >> 7) | (w4 << 25)) & mask
     s0-r18 = ((w4 >> 18) | (w4 << 14)) & mask
     s0-sh3 = w4 >> 3
@@ -1151,7 +1151,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[20]: σ1(w18) + w13 + σ0(w5) + w4
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w5 >> 7) | (w5 << 25)) & mask
     s0-r18 = ((w5 >> 18) | (w5 << 14)) & mask
     s0-sh3 = w5 >> 3
@@ -1186,7 +1186,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[21]: σ1(w19) + w14 + σ0(w6) + w5
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w6 >> 7) | (w6 << 25)) & mask
     s0-r18 = ((w6 >> 18) | (w6 << 14)) & mask
     s0-sh3 = w6 >> 3
@@ -1221,7 +1221,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[22]: σ1(w20) + w15 + σ0(w7) + w6
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w7 >> 7) | (w7 << 25)) & mask
     s0-r18 = ((w7 >> 18) | (w7 << 14)) & mask
     s0-sh3 = w7 >> 3
@@ -1256,7 +1256,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[23]: σ1(w21) + w16 + σ0(w8) + w7
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w8 >> 7) | (w8 << 25)) & mask
     s0-r18 = ((w8 >> 18) | (w8 << 14)) & mask
     s0-sh3 = w8 >> 3
@@ -1291,7 +1291,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[24]: σ1(w22) + w17 + σ0(w9) + w8
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w9 >> 7) | (w9 << 25)) & mask
     s0-r18 = ((w9 >> 18) | (w9 << 14)) & mask
     s0-sh3 = w9 >> 3
@@ -1326,7 +1326,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[25]: σ1(w23) + w18 + σ0(w10) + w9
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w10 >> 7) | (w10 << 25)) & mask
     s0-r18 = ((w10 >> 18) | (w10 << 14)) & mask
     s0-sh3 = w10 >> 3
@@ -1361,7 +1361,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[26]: σ1(w24) + w19 + σ0(w11) + w10
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w11 >> 7) | (w11 << 25)) & mask
     s0-r18 = ((w11 >> 18) | (w11 << 14)) & mask
     s0-sh3 = w11 >> 3
@@ -1396,7 +1396,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[27]: σ1(w25) + w20 + σ0(w12) + w11
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w12 >> 7) | (w12 << 25)) & mask
     s0-r18 = ((w12 >> 18) | (w12 << 14)) & mask
     s0-sh3 = w12 >> 3
@@ -1431,7 +1431,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[28]: σ1(w26) + w21 + σ0(w13) + w12
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w13 >> 7) | (w13 << 25)) & mask
     s0-r18 = ((w13 >> 18) | (w13 << 14)) & mask
     s0-sh3 = w13 >> 3
@@ -1466,7 +1466,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[29]: σ1(w27) + w22 + σ0(w14) + w13
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w14 >> 7) | (w14 << 25)) & mask
     s0-r18 = ((w14 >> 18) | (w14 << 14)) & mask
     s0-sh3 = w14 >> 3
@@ -1501,7 +1501,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[30]: σ1(w28) + w23 + σ0(w15) + w14
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w15 >> 7) | (w15 << 25)) & mask
     s0-r18 = ((w15 >> 18) | (w15 << 14)) & mask
     s0-sh3 = w15 >> 3
@@ -1536,7 +1536,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[31]: σ1(w29) + w24 + σ0(w16) + w15
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w16 >> 7) | (w16 << 25)) & mask
     s0-r18 = ((w16 >> 18) | (w16 << 14)) & mask
     s0-sh3 = w16 >> 3
@@ -1571,7 +1571,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[32]: σ1(w30) + w25 + σ0(w17) + w16
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w17 >> 7) | (w17 << 25)) & mask
     s0-r18 = ((w17 >> 18) | (w17 << 14)) & mask
     s0-sh3 = w17 >> 3
@@ -1606,7 +1606,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[33]: σ1(w31) + w26 + σ0(w18) + w17
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w18 >> 7) | (w18 << 25)) & mask
     s0-r18 = ((w18 >> 18) | (w18 << 14)) & mask
     s0-sh3 = w18 >> 3
@@ -1641,7 +1641,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[34]: σ1(w32) + w27 + σ0(w19) + w18
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w19 >> 7) | (w19 << 25)) & mask
     s0-r18 = ((w19 >> 18) | (w19 << 14)) & mask
     s0-sh3 = w19 >> 3
@@ -1676,7 +1676,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[35]: σ1(w33) + w28 + σ0(w20) + w19
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w20 >> 7) | (w20 << 25)) & mask
     s0-r18 = ((w20 >> 18) | (w20 << 14)) & mask
     s0-sh3 = w20 >> 3
@@ -1711,7 +1711,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[36]: σ1(w34) + w29 + σ0(w21) + w20
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w21 >> 7) | (w21 << 25)) & mask
     s0-r18 = ((w21 >> 18) | (w21 << 14)) & mask
     s0-sh3 = w21 >> 3
@@ -1746,7 +1746,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[37]: σ1(w35) + w30 + σ0(w22) + w21
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w22 >> 7) | (w22 << 25)) & mask
     s0-r18 = ((w22 >> 18) | (w22 << 14)) & mask
     s0-sh3 = w22 >> 3
@@ -1781,7 +1781,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[38]: σ1(w36) + w31 + σ0(w23) + w22
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w23 >> 7) | (w23 << 25)) & mask
     s0-r18 = ((w23 >> 18) | (w23 << 14)) & mask
     s0-sh3 = w23 >> 3
@@ -1816,7 +1816,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[39]: σ1(w37) + w32 + σ0(w24) + w23
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w24 >> 7) | (w24 << 25)) & mask
     s0-r18 = ((w24 >> 18) | (w24 << 14)) & mask
     s0-sh3 = w24 >> 3
@@ -1851,7 +1851,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[40]: σ1(w38) + w33 + σ0(w25) + w24
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w25 >> 7) | (w25 << 25)) & mask
     s0-r18 = ((w25 >> 18) | (w25 << 14)) & mask
     s0-sh3 = w25 >> 3
@@ -1886,7 +1886,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[41]: σ1(w39) + w34 + σ0(w26) + w25
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w26 >> 7) | (w26 << 25)) & mask
     s0-r18 = ((w26 >> 18) | (w26 << 14)) & mask
     s0-sh3 = w26 >> 3
@@ -1921,7 +1921,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[42]: σ1(w40) + w35 + σ0(w27) + w26
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w27 >> 7) | (w27 << 25)) & mask
     s0-r18 = ((w27 >> 18) | (w27 << 14)) & mask
     s0-sh3 = w27 >> 3
@@ -1956,7 +1956,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[43]: σ1(w41) + w36 + σ0(w28) + w27
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w28 >> 7) | (w28 << 25)) & mask
     s0-r18 = ((w28 >> 18) | (w28 << 14)) & mask
     s0-sh3 = w28 >> 3
@@ -1991,7 +1991,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[44]: σ1(w42) + w37 + σ0(w29) + w28
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w29 >> 7) | (w29 << 25)) & mask
     s0-r18 = ((w29 >> 18) | (w29 << 14)) & mask
     s0-sh3 = w29 >> 3
@@ -2026,7 +2026,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[45]: σ1(w43) + w38 + σ0(w30) + w29
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w30 >> 7) | (w30 << 25)) & mask
     s0-r18 = ((w30 >> 18) | (w30 << 14)) & mask
     s0-sh3 = w30 >> 3
@@ -2061,7 +2061,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[46]: σ1(w44) + w39 + σ0(w31) + w30
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w31 >> 7) | (w31 << 25)) & mask
     s0-r18 = ((w31 >> 18) | (w31 << 14)) & mask
     s0-sh3 = w31 >> 3
@@ -2096,7 +2096,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[47]: σ1(w45) + w40 + σ0(w32) + w31
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w32 >> 7) | (w32 << 25)) & mask
     s0-r18 = ((w32 >> 18) | (w32 << 14)) & mask
     s0-sh3 = w32 >> 3
@@ -2131,7 +2131,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[48]: σ1(w46) + w41 + σ0(w33) + w32
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w33 >> 7) | (w33 << 25)) & mask
     s0-r18 = ((w33 >> 18) | (w33 << 14)) & mask
     s0-sh3 = w33 >> 3
@@ -2166,7 +2166,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[49]: σ1(w47) + w42 + σ0(w34) + w33
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w34 >> 7) | (w34 << 25)) & mask
     s0-r18 = ((w34 >> 18) | (w34 << 14)) & mask
     s0-sh3 = w34 >> 3
@@ -2201,7 +2201,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[50]: σ1(w48) + w43 + σ0(w35) + w34
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w35 >> 7) | (w35 << 25)) & mask
     s0-r18 = ((w35 >> 18) | (w35 << 14)) & mask
     s0-sh3 = w35 >> 3
@@ -2236,7 +2236,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[51]: σ1(w49) + w44 + σ0(w36) + w35
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w36 >> 7) | (w36 << 25)) & mask
     s0-r18 = ((w36 >> 18) | (w36 << 14)) & mask
     s0-sh3 = w36 >> 3
@@ -2271,7 +2271,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[52]: σ1(w50) + w45 + σ0(w37) + w36
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w37 >> 7) | (w37 << 25)) & mask
     s0-r18 = ((w37 >> 18) | (w37 << 14)) & mask
     s0-sh3 = w37 >> 3
@@ -2306,7 +2306,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[53]: σ1(w51) + w46 + σ0(w38) + w37
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w38 >> 7) | (w38 << 25)) & mask
     s0-r18 = ((w38 >> 18) | (w38 << 14)) & mask
     s0-sh3 = w38 >> 3
@@ -2341,7 +2341,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[54]: σ1(w52) + w47 + σ0(w39) + w38
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w39 >> 7) | (w39 << 25)) & mask
     s0-r18 = ((w39 >> 18) | (w39 << 14)) & mask
     s0-sh3 = w39 >> 3
@@ -2376,7 +2376,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[55]: σ1(w53) + w48 + σ0(w40) + w39
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w40 >> 7) | (w40 << 25)) & mask
     s0-r18 = ((w40 >> 18) | (w40 << 14)) & mask
     s0-sh3 = w40 >> 3
@@ -2411,7 +2411,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[56]: σ1(w54) + w49 + σ0(w41) + w40
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w41 >> 7) | (w41 << 25)) & mask
     s0-r18 = ((w41 >> 18) | (w41 << 14)) & mask
     s0-sh3 = w41 >> 3
@@ -2446,7 +2446,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[57]: σ1(w55) + w50 + σ0(w42) + w41
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w42 >> 7) | (w42 << 25)) & mask
     s0-r18 = ((w42 >> 18) | (w42 << 14)) & mask
     s0-sh3 = w42 >> 3
@@ -2481,7 +2481,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[58]: σ1(w56) + w51 + σ0(w43) + w42
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w43 >> 7) | (w43 << 25)) & mask
     s0-r18 = ((w43 >> 18) | (w43 << 14)) & mask
     s0-sh3 = w43 >> 3
@@ -2516,7 +2516,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[59]: σ1(w57) + w52 + σ0(w44) + w43
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w44 >> 7) | (w44 << 25)) & mask
     s0-r18 = ((w44 >> 18) | (w44 << 14)) & mask
     s0-sh3 = w44 >> 3
@@ -2551,7 +2551,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[60]: σ1(w58) + w53 + σ0(w45) + w44
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w45 >> 7) | (w45 << 25)) & mask
     s0-r18 = ((w45 >> 18) | (w45 << 14)) & mask
     s0-sh3 = w45 >> 3
@@ -2586,7 +2586,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[61]: σ1(w59) + w54 + σ0(w46) + w45
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w46 >> 7) | (w46 << 25)) & mask
     s0-r18 = ((w46 >> 18) | (w46 << 14)) & mask
     s0-sh3 = w46 >> 3
@@ -2621,7 +2621,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[62]: σ1(w60) + w55 + σ0(w47) + w46
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w47 >> 7) | (w47 << 25)) & mask
     s0-r18 = ((w47 >> 18) | (w47 << 14)) & mask
     s0-sh3 = w47 >> 3
@@ -2656,7 +2656,7 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     a = (t1 + t2) & mask
 
     ; W[63]: σ1(w61) + w56 + σ0(w48) + w47
-    #{index-out=0}
+    #{index-out=zero}
     s0-r7 = ((w48 >> 7) | (w48 << 25)) & mask
     s0-r18 = ((w48 >> 18) | (w48 << 14)) & mask
     s0-sh3 = w48 >> 3
@@ -2720,7 +2720,7 @@ der-enc-len = (val i64) (out []byte) {
         val < 128 -> {
             out = with-len(1)
 
-            #{index-out=0}
+            #{index-out=zero}
             out[0] = val & 255
             out.truncate(1)
             return
@@ -2729,10 +2729,10 @@ der-enc-len = (val i64) (out []byte) {
         val < 256 -> {
             out = with-len(2)
 
-            #{index-out=0}
+            #{index-out=zero}
             out[0] = 0x81
 
-            #{index-out=0}
+            #{index-out=zero}
             out[1] = val & 255
             out.truncate(2)
             return
@@ -2741,13 +2741,13 @@ der-enc-len = (val i64) (out []byte) {
         val < 65536 -> {
             out = with-len(3)
 
-            #{index-out=0}
+            #{index-out=zero}
             out[0] = 0x82
 
-            #{index-out=0}
+            #{index-out=zero}
             out[1] = (val >> 8) & 255
 
-            #{index-out=0}
+            #{index-out=zero}
             out[2] = val & 255
             out.truncate(3)
             return
@@ -2755,16 +2755,16 @@ der-enc-len = (val i64) (out []byte) {
     }
     out = with-len(5)
 
-    #{index-out=0}
+    #{index-out=zero}
     out[0] = 0x83
 
-    #{index-out=0}
+    #{index-out=zero}
     out[1] = (val >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     out[2] = (val >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     out[3] = val & 255
     out.truncate(4)
 }
@@ -2783,16 +2783,16 @@ der-enc-tlv = (tag i64, content []byte) (out []byte) {
     #{overflow=wrap}
     out = with-len(1 + lb + cl)
 
-    #{index-out=0}
+    #{index-out=zero}
     out[0] = tag & 255
     i <- [0..lb): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[1 + i] = len-bytes[i]
     }
     i <- [0..cl): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[1 + lb + i] = content[i]
     }
 
@@ -2809,7 +2809,7 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
     n == 0 -> {
         zero []byte = with-len(1)
 
-        #{index-out=0}
+        #{index-out=zero}
         zero[0] = 0
         zero.truncate(1)
         out = der-enc-tlv(2, zero)
@@ -2825,11 +2825,11 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
         #{overflow=wrap}
         start < n - 1 && data[start] == 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             start = start + 1
         }
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 
     #{overflow=wrap}
@@ -2839,7 +2839,7 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
     need-pad = 0
     (data[start] & 128) != 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         need-pad = 1
     }
 
@@ -2851,11 +2851,11 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
     {
         need-pad == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             content[0] = 0
             i <- [0..actual): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=zero, overflow=wrap}
                 content[1 + i] = data[start + i]
             }
         }
@@ -2863,7 +2863,7 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
         -> {
             i <- [0..actual): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=zero, overflow=wrap}
                 content[i] = data[start + i]
             }
         }
@@ -2880,7 +2880,7 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     val == 0 -> {
         zero []byte = with-len(1)
 
-        #{index-out=0}
+        #{index-out=zero}
         zero[0] = 0
         zero.truncate(1)
         out = der-enc-tlv(2, zero)
@@ -2901,7 +2901,7 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     data []byte = with-len(n + 1)
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         data[n - 1 - i] = (val >> (i * 8)) & 255
     }
     data.truncate(n)
@@ -2928,11 +2928,11 @@ der-enc-bitstring = (data []byte) (out []byte) {
     #{overflow=wrap}
     content []byte = with-len(n + 1)
 
-    #{index-out=0}
+    #{index-out=zero}
     content[0] = 0; 未使用位元數
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[1 + i] = data[i]
     }
 
@@ -2959,7 +2959,7 @@ x509-bytes-to-bn = (data []byte) (out []i64) {
     out = with-len(limb-count)
     i <- [0..limb-count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = 0
     }
     i <- [0..n): {
@@ -2973,7 +2973,7 @@ x509-bytes-to-bn = (data []byte) (out []i64) {
         #{overflow=wrap}
         shift = (byte-from-lsb % 4) * 8
 
-        #{index-out=0}
+        #{index-out=zero}
         out[limb] = out[limb] | ((data[i]) << shift)
     }
     out.truncate(limb-count)
@@ -2983,10 +2983,10 @@ x509-bytes-to-bn = (data []byte) (out []i64) {
 der-enc-null = () (out []byte) {
     out = with-len(2)
 
-    #{index-out=0}
+    #{index-out=zero}
     out[0] = 5
 
-    #{index-out=0}
+    #{index-out=zero}
     out[1] = 0
     out.truncate(2)
 }
@@ -3031,31 +3031,31 @@ alg-id-rsa-encryption = () (out []byte) {
 
     oid-rsa []byte = with-len(9)
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[0] = 0x2a; 1.2
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[1] = 0x86; 840 (high bit)
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[2] = 0x48; 840 (low)
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[3] = 0x86; 113549 (high)
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[4] = 0xf7; 113549
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[5] = 0x0d; 113549
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[6] = 0x01; 1
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[7] = 0x01; 1
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-rsa[8] = 0x01; 1
     oid-rsa.truncate(9)
     oid-tlv []byte
@@ -3067,12 +3067,12 @@ alg-id-rsa-encryption = () (out []byte) {
     content []byte = with-len(oid-tlv.len() + null-tlv.len())
     i <- [0..oid-tlv.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         content[i] = oid-tlv[i]
     }
     i <- [0..null-tlv.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[oid-tlv.len() + i] = null-tlv[i]
     }
 
@@ -3087,31 +3087,31 @@ alg-id-sha256-with-rsa = () (out []byte) {
 
     oid []byte = with-len(9)
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[0] = 0x2a
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[1] = 0x86
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[2] = 0x48
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[3] = 0x86
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[4] = 0xf7
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[5] = 0x0d
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[6] = 0x01
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[7] = 0x01
 
-    #{index-out=0}
+    #{index-out=zero}
     oid[8] = 0x0b; 11
     oid.truncate(9)
     oid-tlv []byte
@@ -3123,12 +3123,12 @@ alg-id-sha256-with-rsa = () (out []byte) {
     content []byte = with-len(oid-tlv.len() + null-tlv.len())
     i <- [0..oid-tlv.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         content[i] = oid-tlv[i]
     }
     i <- [0..null-tlv.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[oid-tlv.len() + i] = null-tlv[i]
     }
 
@@ -3156,12 +3156,12 @@ x509-build-rsa-public-key = (n []byte, e i64) (out []byte) {
     content []byte = with-len(n-int.len() + e-int.len())
     i <- [0..n-int.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         content[i] = n-int[i]
     }
     i <- [0..e-int.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[n-int.len() + i] = e-int[i]
     }
 
@@ -3187,12 +3187,12 @@ x509-build-spki = (n []byte, e i64) (out []byte) {
     content []byte = with-len(alg-id.len() + bit-str.len())
     i <- [0..alg-id.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         content[i] = alg-id[i]
     }
     i <- [0..bit-str.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[alg-id.len() + i] = bit-str[i]
     }
 
@@ -3209,13 +3209,13 @@ x509-build-name-cn = (cn str) (out []byte) {
     ; OID commonName (2.5.4.3): 55 04 03
     oid-cn []byte = with-len(3)
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-cn[0] = 0x55
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-cn[1] = 0x04
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-cn[2] = 0x03
     oid-cn.truncate(3)
     oid-tlv []byte
@@ -3228,12 +3228,12 @@ x509-build-name-cn = (cn str) (out []byte) {
     atv-content []byte = with-len(oid-tlv.len() + val-tlv.len())
     i <- [0..oid-tlv.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         atv-content[i] = oid-tlv[i]
     }
     i <- [0..val-tlv.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         atv-content[oid-tlv.len() + i] = val-tlv[i]
     }
 
@@ -3265,12 +3265,12 @@ x509-build-validity = (not-before str, not-after str) (out []byte) {
     content []byte = with-len(nb.len() + na.len())
     i <- [0..nb.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         content[i] = nb[i]
     }
     i <- [0..na.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[nb.len() + i] = na[i]
     }
 
@@ -3325,7 +3325,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     pos = 0
     i <- [0..version.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = version[i]
     }
 
@@ -3333,7 +3333,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     pos = pos + version.len()
     i <- [0..serial.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = serial[i]
     }
 
@@ -3341,7 +3341,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     pos = pos + serial.len()
     i <- [0..sig-alg.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = sig-alg[i]
     }
 
@@ -3349,7 +3349,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     pos = pos + sig-alg.len()
     i <- [0..issuer.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = issuer[i]
     }
 
@@ -3357,7 +3357,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     pos = pos + issuer.len()
     i <- [0..validity.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = validity[i]
     }
 
@@ -3365,7 +3365,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     pos = pos + validity.len()
     i <- [0..subject.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = subject[i]
     }
 
@@ -3373,7 +3373,7 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     pos = pos + subject.len()
     i <- [0..spki.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = spki[i]
     }
     content.truncate(total)
@@ -3398,7 +3398,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     hash []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         hash[i] = h-arr[i]
     }
     hash.truncate(32)
@@ -3407,31 +3407,31 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     ; OID sha256 (2.16.840.1.101.3.4.2.1): 60 86 48 01 65 03 04 02 01
     oid-sha256 []byte = with-len(9)
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[0] = 0x60
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[1] = 0x86
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[2] = 0x48
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[3] = 0x01
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[4] = 0x65
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[5] = 0x03
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[6] = 0x04
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[7] = 0x02
 
-    #{index-out=0}
+    #{index-out=zero}
     oid-sha256[8] = 0x01
     oid-sha256.truncate(9)
     oid-tlv []byte
@@ -3443,12 +3443,12 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     inner-content []byte = with-len(oid-tlv.len() + null-tlv.len())
     i <- [0..oid-tlv.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         inner-content[i] = oid-tlv[i]
     }
     i <- [0..null-tlv.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         inner-content[oid-tlv.len() + i] = null-tlv[i]
     }
 
@@ -3464,12 +3464,12 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     di-content []byte = with-len(inner-seq.len() + hash-octet.len())
     i <- [0..inner-seq.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         di-content[i] = inner-seq[i]
     }
     i <- [0..hash-octet.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         di-content[inner-seq.len() + i] = hash-octet[i]
     }
 
@@ -3489,22 +3489,22 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
 
     padded []byte = with-len(mod-len)
 
-    #{index-out=0}
+    #{index-out=zero}
     padded[0] = 0x00
 
-    #{index-out=0}
+    #{index-out=zero}
     padded[1] = 0x01
     i <- [0..pad-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         padded[2 + i] = 0xff
     }
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     padded[2 + pad-len] = 0x00
     i <- [0..di-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         padded[3 + pad-len + i] = digest-info[i]
     }
     padded.truncate(mod-len)
@@ -3533,14 +3533,14 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     ; 先填零
     i <- [0..mod-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         sig[i] = 0
     }
 
     ; 將 limb 轉為位元組
     i <- [0..rn): {
 
-        #{index-out=0}
+        #{index-out=zero}
         limb = result[i]
         limb-byte-0 = limb & 255
         limb-byte-1 = (limb >> 8) & 255
@@ -3552,26 +3552,26 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
         #{overflow=wrap}
         out-pos = mod-len - 1 - i * 4
 
-        #{index-out=0}
+        #{index-out=zero}
         sig[out-pos] = limb-byte-0
 
         #{overflow=wrap}
         {
             out-pos > 0 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 sig[out-pos - 1] = limb-byte-1
             }
 
             out-pos > 1 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 sig[out-pos - 2] = limb-byte-2
             }
 
             out-pos > 2 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 sig[out-pos - 3] = limb-byte-3
             }
         }
@@ -3616,7 +3616,7 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
     pos = 0
     i <- [0..tbs.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = tbs[i]
     }
 
@@ -3624,7 +3624,7 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
     pos = pos + tbs.len()
     i <- [0..sig-alg.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = sig-alg[i]
     }
 
@@ -3632,7 +3632,7 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
     pos = pos + sig-alg.len()
     i <- [0..sig-bitstr.len()): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         content[pos + i] = sig-bitstr[i]
     }
     content.truncate(total)

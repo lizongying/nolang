@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "6dc45dc75f1e5b5497b040bcdc71e3d1c847b5516cb56173d196db7898c3f900"
+	embeddedStdSigKey = "0dcf6c8af5b3a96bc9bc66ec7ca37d08a6945bc0dba5d41d821fea574c812234"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -148,8 +148,8 @@ func init() {
 		"args.get-positional":              {"str", "bool"},
 		"args.has-flag":                    {"bool"},
 		"args.program":                     {"str"},
-		"async.cancel":               {},
-		"async.cancelled":            {"bool"},
+		"async.cancel":                     {},
+		"async.cancelled":                  {"bool"},
 		"base32.decode":                    {"[]byte"},
 		"base32.encode":                    {"str"},
 		"base64.b64-val":                   {"i64"},
@@ -3059,8 +3059,8 @@ func init() {
 		"args.get-positional":              {"i64"},
 		"args.has-flag":                    {"str", "i64"},
 		"args.program":                     {},
-		"async.cancel":               {"*i8"},
-		"async.cancelled":            {},
+		"async.cancel":                     {"*i8"},
+		"async.cancelled":                  {},
 		"base32.decode":                    {"str"},
 		"base32.encode":                    {"[]byte"},
 		"base64.b64-val":                   {"i64", "str"},

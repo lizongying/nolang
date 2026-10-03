@@ -82,14 +82,14 @@ pem-encode = (label str, data []byte) (out str) {
     ; 寫入 header
     i <- [0..header.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[pos] = header.byte(i)
 
         #{overflow=wrap}
         pos = pos + 1
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     out[pos] = 10
 
     #{overflow=wrap}
@@ -107,14 +107,14 @@ pem-encode = (label str, data []byte) (out str) {
         remaining < PEM-LINE-LEN -> line-len = remaining
         j <- [0..line-len): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             out[pos] = b64[src + j]
 
             #{overflow=wrap}
             pos = pos + 1
         }
 
-        #{index-out=0}
+        #{index-out=zero}
         out[pos] = 10
 
         #{overflow=wrap}
@@ -127,14 +127,14 @@ pem-encode = (label str, data []byte) (out str) {
     ; 寫入 footer
     i <- [0..footer.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[pos] = footer.byte(i)
 
         #{overflow=wrap}
         pos = pos + 1
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     out[pos] = 10
 
     #{overflow=wrap}
@@ -178,7 +178,7 @@ pem-decode = (pem-str str) (result ?pem-block) {
     b64-start < n -> {
         pem-str[b64-start] == 10 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             b64-start = b64-start + 1
         }
     }
@@ -196,7 +196,7 @@ pem-decode = (pem-str str) (result ?pem-block) {
     dst = 0
     i <- [b64-start..end-pos): {
 
-        #{index-out=0}
+        #{index-out=zero}
         c = pem-str[i]
 
         ; 跳過換行符和空白
@@ -212,7 +212,7 @@ pem-decode = (pem-str str) (result ?pem-block) {
         #{overflow=wrap}
         skip == false -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             b64-data[dst] = c
             dst = dst + 1
         }

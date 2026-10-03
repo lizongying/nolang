@@ -52,7 +52,7 @@ hashmap-str-tmpl.hash = (key str) (idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
@@ -68,7 +68,7 @@ hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     i <- [0..a.len-bytes()): {
         a.byte(i) != b.byte(i) -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             return
         }
     }
@@ -93,12 +93,12 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
         .occ[idx] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             k str = .keys[idx]
             eq = .str-eq(k, key)
             eq -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .vals[idx] = val
                 is-new = false
                 return
@@ -106,7 +106,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
         }
         .occ[idx] == 2 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             first-tomb < 0 -> first-tomb = idx
         }
 
@@ -114,20 +114,20 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 
     ; 未找到相同 key，插入
     insert-idx = idx
     first-tomb >= 0 -> insert-idx = first-tomb
 
-    #{index-out=0}
+    #{index-out=zero}
     .keys[insert-idx] = key
 
-    #{index-out=0}
+    #{index-out=zero}
     .vals[insert-idx] = val
 
-    #{index-out=0}
+    #{index-out=zero}
     .occ[insert-idx] = 1
 
     #{overflow=wrap}
@@ -144,12 +144,12 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 
         .occ[idx] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             k str = .keys[idx]
             eq = .str-eq(k, key)
             eq -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 result = .vals[idx]
                 return
             }
@@ -159,7 +159,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 }
 
@@ -185,12 +185,12 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
         #{overflow=wrap}
         .occ[idx] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             k str = .keys[idx]
             eq = .str-eq(k, key)
             eq -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .occ[idx] = 2
                 .size = .size - 1
                 removed = true
@@ -202,7 +202,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 }
 
@@ -228,15 +228,15 @@ hashmap-str-tmpl.for-each = () (k str, v v) {
     i <- [0..n): {
         .occ[i] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             src str = .keys[i]
             j <- [0..src.len-bytes()): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 k[j] = src.byte(j)
             }
 
-            #{index-out=0}
+            #{index-out=zero}
             v = .vals[i]
         }
     }
@@ -261,10 +261,10 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
     i <- [0..old-cap): {
         old-occ[i] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             k str = old-keys[i]
 
-            #{index-out=0}
+            #{index-out=zero}
             v = old-vals[i]
             idx = .hash(k)
 
@@ -277,16 +277,16 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
                     idx >= .cap -> idx = 0
                 }
 
-                #{index-out=0}
+                #{index-out=zero}
             }
 
-            #{index-out=0}
+            #{index-out=zero}
             .keys[idx] = k
 
-            #{index-out=0}
+            #{index-out=zero}
             .vals[idx] = v
 
-            #{index-out=0}
+            #{index-out=zero}
             .occ[idx] = 1
         }
     }
@@ -343,10 +343,10 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 
         .occ[idx] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             .keys[idx] == key -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .vals[idx] = val
                 is-new = false
                 return
@@ -354,7 +354,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
         }
         .occ[idx] == 2 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             first-tomb < 0 -> first-tomb = idx
         }
 
@@ -362,18 +362,18 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
     insert-idx = idx
     first-tomb >= 0 -> insert-idx = first-tomb
 
-    #{index-out=0}
+    #{index-out=zero}
     .keys[insert-idx] = key
 
-    #{index-out=0}
+    #{index-out=zero}
     .vals[insert-idx] = val
 
-    #{index-out=0}
+    #{index-out=zero}
     .occ[insert-idx] = 1
 
     #{overflow=wrap}
@@ -390,10 +390,10 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
 
         .occ[idx] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             .keys[idx] == key -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 result = .vals[idx]
                 return
             }
@@ -403,7 +403,7 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 }
 
@@ -429,10 +429,10 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
         #{overflow=wrap}
         .occ[idx] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             .keys[idx] == key -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .occ[idx] = 2
                 .size = .size - 1
                 removed = true
@@ -444,7 +444,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
         idx = idx + 1
         idx >= .cap -> idx = 0
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 }
 
@@ -470,10 +470,10 @@ hashmap-int-tmpl.for-each = () (k k, v v) {
     i <- [0..n): {
         .occ[i] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             k = .keys[i]
 
-            #{index-out=0}
+            #{index-out=zero}
             v = .vals[i]
         }
     }
@@ -498,10 +498,10 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
     i <- [0..old-cap): {
         old-occ[i] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             k = old-keys[i]
 
-            #{index-out=0}
+            #{index-out=zero}
             v = old-vals[i]
             idx = .hash(k)
 
@@ -514,16 +514,16 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
                     idx >= .cap -> idx = 0
                 }
 
-                #{index-out=0}
+                #{index-out=zero}
             }
 
-            #{index-out=0}
+            #{index-out=zero}
             .keys[idx] = k
 
-            #{index-out=0}
+            #{index-out=zero}
             .vals[idx] = v
 
-            #{index-out=0}
+            #{index-out=zero}
             .occ[idx] = 1
         }
     }
@@ -572,19 +572,19 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 
     .occ[idx] == 1 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         .vals[idx] = val
         is-new = false
         return
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     .keys[idx] = key
 
-    #{index-out=0}
+    #{index-out=zero}
     .vals[idx] = val
 
-    #{index-out=0}
+    #{index-out=zero}
     .occ[idx] = 1
 
     #{overflow=wrap}
@@ -599,7 +599,7 @@ hashmap-bool-tmpl.get = (key bool) (result ?v) {
 
     .occ[idx] == 1 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         result = .vals[idx]
         return
     }
@@ -624,7 +624,7 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
 
     .occ[idx] == 1 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         .occ[idx] = 2
 
         #{overflow=wrap}
@@ -655,10 +655,10 @@ hashmap-bool-tmpl.for-each = () (k bool, v v) {
     i <- [0..n): {
         .occ[i] == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             k = .keys[i]
 
-            #{index-out=0}
+            #{index-out=zero}
             v = .vals[i]
         }
     }

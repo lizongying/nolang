@@ -184,7 +184,7 @@ vec-clear = () {
     dst = with-len(.len())
     i <- [0...len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         dst[i] = .[i]
     }
 }
@@ -200,7 +200,7 @@ vec-clear = () {
 []t.to-arr = () (out [?]t) {
     i <- [0...len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = .[i]
     }
 }
@@ -421,7 +421,7 @@ vec-clear = () {
         #{overflow=wrap}
         .len = cur + 1
 
-        #{index-out=0}
+        #{index-out=zero}
         .[cur] = b[i]
 
         #{overflow=wrap}

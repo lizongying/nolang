@@ -38,10 +38,10 @@ embed.read = (path str) (data []byte, ok bool) {
     pathLen = path.len()
     i <- [0...count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         pStart = .pathStarts[i]
 
-        #{index-out=0}
+        #{index-out=zero}
         pLen = .pathLens[i]
 
         ; 快速長度檢查
@@ -60,10 +60,10 @@ embed.read = (path str) (data []byte, ok bool) {
 
         match -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             dStart = .dataStarts[i]
 
-            #{index-out=0}
+            #{index-out=zero}
             dLen = .dataLens[i]
 
             ; 從 blob 中切片返回
@@ -82,10 +82,10 @@ embed.exists = (path str) (yes bool) {
     pathLen = path.len()
     i <- [0...count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         pStart = .pathStarts[i]
 
-        #{index-out=0}
+        #{index-out=zero}
         pLen = .pathLens[i]
         pLen != pathLen -> *
         match = true

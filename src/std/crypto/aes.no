@@ -105,10 +105,10 @@ gf-mul2 = (x i64) (r i64) {
 sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         b = state[i]
 
-        #{index-out=0}
+        #{index-out=zero}
         state[i] = SBOX[b]
     }
 }
@@ -117,10 +117,10 @@ sub-bytes = (state []byte, n i64) {
 inv-sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         b = state[i]
 
-        #{index-out=0}
+        #{index-out=zero}
         state[i] = INV-SBOX[b]
     }
 }
@@ -128,104 +128,104 @@ inv-sub-bytes = (state []byte, n i64) {
 ; shift-rows: 列位移（第 i 列左旋轉 i 個位元組）
 shift-rows = (state []byte) {
 
-    #{index-out=0}
+    #{index-out=zero}
     t = state[1]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[1] = state[5]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[5] = state[9]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[9] = state[13]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[13] = t
 
-    #{index-out=0}
+    #{index-out=zero}
     t0 = state[2]
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = state[6]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[2] = state[10]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[6] = state[14]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[10] = t0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[14] = t1
 
-    #{index-out=0}
+    #{index-out=zero}
     t = state[15]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[15] = state[11]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[11] = state[7]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[7] = state[3]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[3] = t
 }
 
 ; inv-shift-rows: 逆向列位移（右旋轉）
 inv-shift-rows = (state []byte) {
 
-    #{index-out=0}
+    #{index-out=zero}
     t = state[13]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[13] = state[9]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[9] = state[5]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[5] = state[1]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[1] = t
 
-    #{index-out=0}
+    #{index-out=zero}
     t0 = state[2]
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = state[6]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[2] = state[10]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[6] = state[14]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[10] = t0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[14] = t1
 
-    #{index-out=0}
+    #{index-out=zero}
     t = state[3]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[3] = state[7]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[7] = state[11]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[11] = state[15]
 
-    #{index-out=0}
+    #{index-out=zero}
     state[15] = t
 }
 
@@ -252,64 +252,64 @@ mix-columns = (state []byte) {
     d2 = 0
     d3 = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     d0, d1, d2, d3 = mix-col(state[0], state[1], state[2], state[3])
 
-    #{index-out=0}
+    #{index-out=zero}
     state[0] = d0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[1] = d1
 
-    #{index-out=0}
+    #{index-out=zero}
     state[2] = d2
 
-    #{index-out=0}
+    #{index-out=zero}
     state[3] = d3
 
-    #{index-out=0}
+    #{index-out=zero}
     d0, d1, d2, d3 = mix-col(state[4], state[5], state[6], state[7])
 
-    #{index-out=0}
+    #{index-out=zero}
     state[4] = d0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[5] = d1
 
-    #{index-out=0}
+    #{index-out=zero}
     state[6] = d2
 
-    #{index-out=0}
+    #{index-out=zero}
     state[7] = d3
 
-    #{index-out=0}
+    #{index-out=zero}
     d0, d1, d2, d3 = mix-col(state[8], state[9], state[10], state[11])
 
-    #{index-out=0}
+    #{index-out=zero}
     state[8] = d0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[9] = d1
 
-    #{index-out=0}
+    #{index-out=zero}
     state[10] = d2
 
-    #{index-out=0}
+    #{index-out=zero}
     state[11] = d3
 
-    #{index-out=0}
+    #{index-out=zero}
     d0, d1, d2, d3 = mix-col(state[12], state[13], state[14], state[15])
 
-    #{index-out=0}
+    #{index-out=zero}
     state[12] = d0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[13] = d1
 
-    #{index-out=0}
+    #{index-out=zero}
     state[14] = d2
 
-    #{index-out=0}
+    #{index-out=zero}
     state[15] = d3
 }
 
@@ -351,64 +351,64 @@ inv-mix-columns = (state []byte) {
     d2 = 0
     d3 = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     d0, d1, d2, d3 = inv-mix-col(state[0], state[1], state[2], state[3])
 
-    #{index-out=0}
+    #{index-out=zero}
     state[0] = d0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[1] = d1
 
-    #{index-out=0}
+    #{index-out=zero}
     state[2] = d2
 
-    #{index-out=0}
+    #{index-out=zero}
     state[3] = d3
 
-    #{index-out=0}
+    #{index-out=zero}
     d0, d1, d2, d3 = inv-mix-col(state[4], state[5], state[6], state[7])
 
-    #{index-out=0}
+    #{index-out=zero}
     state[4] = d0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[5] = d1
 
-    #{index-out=0}
+    #{index-out=zero}
     state[6] = d2
 
-    #{index-out=0}
+    #{index-out=zero}
     state[7] = d3
 
-    #{index-out=0}
+    #{index-out=zero}
     d0, d1, d2, d3 = inv-mix-col(state[8], state[9], state[10], state[11])
 
-    #{index-out=0}
+    #{index-out=zero}
     state[8] = d0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[9] = d1
 
-    #{index-out=0}
+    #{index-out=zero}
     state[10] = d2
 
-    #{index-out=0}
+    #{index-out=zero}
     state[11] = d3
 
-    #{index-out=0}
+    #{index-out=zero}
     d0, d1, d2, d3 = inv-mix-col(state[12], state[13], state[14], state[15])
 
-    #{index-out=0}
+    #{index-out=zero}
     state[12] = d0
 
-    #{index-out=0}
+    #{index-out=zero}
     state[13] = d1
 
-    #{index-out=0}
+    #{index-out=zero}
     state[14] = d2
 
-    #{index-out=0}
+    #{index-out=zero}
     state[15] = d3
 }
 
@@ -416,7 +416,7 @@ inv-mix-columns = (state []byte) {
 add-round-key = (state []byte, rk []byte) {
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         state[i] = (state[i]) ^ (rk[i])
     }
 }
@@ -469,16 +469,16 @@ sub-word = (w i64) (r i64) {
     b2 = 0
     b3 = 0
 
-    #{index-out=0}
+    #{index-out=zero}
     b0 = SBOX[(w >> 24) & 255]
 
-    #{index-out=0}
+    #{index-out=zero}
     b1 = SBOX[(w >> 16) & 255]
 
-    #{index-out=0}
+    #{index-out=zero}
     b2 = SBOX[(w >> 8) & 255]
 
-    #{index-out=0}
+    #{index-out=zero}
     b3 = SBOX[w & 255]
 
     r = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
@@ -491,7 +491,7 @@ key-expand = (key [16]byte) (ek []byte) {
     ek = with-len(176)
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         ek[i] = key[i]
     }
     i <- [4..44): {
@@ -548,7 +548,7 @@ key-expand-256 = (key [32]byte) (ek []byte) {
     ek = with-len(240)
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         ek[i] = key[i]
     }
     i <- [8..60): {
@@ -612,7 +612,7 @@ key-expand-256 = (key [32]byte) (ek []byte) {
 add-round-key-at = (state []byte, rk []byte, off i64) {
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         state[i] = (state[i]) ^ (rk[off + i])
     }
 }
@@ -629,7 +629,7 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
     st []byte = with-len(16)
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         st[i] = in[i]
     }
 
@@ -653,7 +653,7 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
 
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = st[i]
     }
 }
@@ -670,7 +670,7 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
     st []byte = with-len(16)
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         st[i] = in[i]
     }
 
@@ -699,7 +699,7 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
 
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = st[i]
     }
 }

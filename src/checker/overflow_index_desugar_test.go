@@ -18,8 +18,8 @@ import (
 //
 // 修法兩處：
 //   - parser.(*lowerer).carryOverflowAnnotation 把 overflow 條目轉掛到取代節點；
-//   - parser.applyLineOverflowAnnotations 不再因為中間夾著無關的 `#{index-out=0}`
-//     就中斷傳播（std 的 `#{overflow=wrap}` + `#{index-out=0}` 組合正是這種情形）。
+//   - parser.applyLineOverflowAnnotations 不再因為中間夾著無關的 `#{index-out=zero}`
+//     就中斷傳播（std 的 `#{overflow=wrap}` + `#{index-out=zero}` 組合正是這種情形）。
 //
 // 兩種陳述形狀都要覆蓋：識別符索引（`out[8+i]`，parser 直接把註解附加到陳述）
 // 與點選欄位索引（`.buf[.pos+i]`，開頭是 DOT，註解只能退化成獨立註解行、

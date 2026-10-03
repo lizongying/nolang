@@ -274,7 +274,7 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 		//     applyLineIndexOutAnnotations 複製進本陳述 side-table 的副本
 		//     （Propagated=true）：其顯示已由該節點/表頭負責，此处再印一次會雙印、
 		//     非冪等，故只過濾掉 Propagated 副本。
-		// 尾隨寫法（`stmt #{index-out=0}`）無獨立節點，永遠保留。
+		// 尾隨寫法（`stmt #{index-out=zero}`）無獨立節點，永遠保留。
 		if len(all) == 0 {
 			return nil
 		}

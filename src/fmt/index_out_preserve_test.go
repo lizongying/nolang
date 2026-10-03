@@ -9,7 +9,7 @@ import "testing"
 // applyLineIndexOutAnnotations), marking an out-of-range index read to yield
 // DEF instead of faulting. `no fmt` used to DROP it for the common spelling
 //
-//	#{index-out=0}
+//	#{index-out=zero}
 //	ac = arg[j]
 //
 // because the parser attaches a leading annotation directly to the following
@@ -37,9 +37,9 @@ func TestFormatIndexOutPreservedInPlace(t *testing.T) {
 			name: "index-out above ident-initial let is preserved",
 			input: "f = (arg str, flag str, flagn i64) (yes bool) {\n" +
 				"    j <- [0..flagn): {\n" +
-				"        #{index-out=0}\n" +
+				"        #{index-out=zero}\n" +
 				"        ac = arg[j]\n" +
-				"        #{index-out=0}\n" +
+				"        #{index-out=zero}\n" +
 				"        fc = flag[j]\n" +
 				"        ac != fc -> {\n" +
 				"            yes = false\n" +
@@ -50,10 +50,10 @@ func TestFormatIndexOutPreservedInPlace(t *testing.T) {
 			expected: "f = (arg str, flag str, flagn i64) (yes bool) {\n" +
 				"    j <- [0..flagn): {\n" +
 				"\n" +
-				"        #{index-out=0}\n" +
+				"        #{index-out=zero}\n" +
 				"        ac = arg[j]\n" +
 				"\n" +
-				"        #{index-out=0}\n" +
+				"        #{index-out=zero}\n" +
 				"        fc = flag[j]\n" +
 				"        ac != fc -> {\n" +
 				"            yes = false\n" +
@@ -67,12 +67,12 @@ func TestFormatIndexOutPreservedInPlace(t *testing.T) {
 			// assignment statement; the propagated copy must NOT double print.
 			name: "index-out above an index-write is printed once",
 			input: "f = (arr []i64, i i64, v i64) {\n" +
-				"    #{index-out=0}\n" +
+				"    #{index-out=zero}\n" +
 				"    arr[i] = v\n" +
 				"}\n",
 			expected: "f = (arr []i64, i i64, v i64) {\n" +
 				"\n" +
-				"    #{index-out=0}\n" +
+				"    #{index-out=zero}\n" +
 				"    arr[i] = v\n" +
 				"}\n",
 		},
@@ -80,8 +80,8 @@ func TestFormatIndexOutPreservedInPlace(t *testing.T) {
 			// Trailing spelling stays on the same line (already worked, guard
 			// against the filter change regressing it).
 			name:     "trailing index-out stays on the same line",
-			input:    "f = (arr []i64, i i64) (x i64) {\n    x = arr[i] #{index-out=0}\n}\n",
-			expected: "f = (arr []i64, i i64) (x i64) {\n    x = arr[i] #{index-out=0}\n}\n",
+			input:    "f = (arr []i64, i i64) (x i64) {\n    x = arr[i] #{index-out=zero}\n}\n",
+			expected: "f = (arr []i64, i i64) (x i64) {\n    x = arr[i] #{index-out=zero}\n}\n",
 		},
 	}
 	for _, tt := range tests {
@@ -108,11 +108,11 @@ func TestFormatIndexOutPreservedInPlace(t *testing.T) {
 // REGRESSION GUARD (duplicate-key annotation merge: later value wins).
 //
 // When the same annotation key appears more than once on one statement — either
-// as two trailing `#{...}` on the same line (`x = v[i] #{index-out=0} #{index-out=1}`)
+// as two trailing `#{...}` on the same line (`x = v[i] #{index-out=zero} #{index-out=1}`)
 // or as consecutive line annotations that the parser merges into a single node
-// (`#{index-out=0}` / `#{index-out=1}`) — the entries must collapse to a single
+// (`#{index-out=zero}` / `#{index-out=1}`) — the entries must collapse to a single
 // key whose value is the LAST one written. Before this, both values survived and
-// the formatter emitted `#{index-out=0, index-out=1}`, and desugar picked the
+// the formatter emitted `#{index-out=zero, index-out=1}`, and desugar picked the
 // first (wrong) default.
 func TestFormatDuplicateAnnotationKeyLastWins(t *testing.T) {
 	tests := []struct {
@@ -123,7 +123,7 @@ func TestFormatDuplicateAnnotationKeyLastWins(t *testing.T) {
 		{
 			name: "two trailing index-out collapse to the last value",
 			input: "f = (arr []i64, i i64) (x i64) {\n" +
-				"    x = arr[i] #{index-out=0} #{index-out=1}\n" +
+				"    x = arr[i] #{index-out=zero} #{index-out=1}\n" +
 				"}\n",
 			expected: "f = (arr []i64, i i64) (x i64) {\n" +
 				"    x = arr[i] #{index-out=1}\n" +
@@ -132,7 +132,7 @@ func TestFormatDuplicateAnnotationKeyLastWins(t *testing.T) {
 		{
 			name: "consecutive line index-out collapse to the last value",
 			input: "f = (arr []i64, i i64) (x i64) {\n" +
-				"    #{index-out=0}\n" +
+				"    #{index-out=zero}\n" +
 				"    #{index-out=1}\n" +
 				"    x = arr[i]\n" +
 				"}\n",

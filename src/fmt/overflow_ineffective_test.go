@@ -283,7 +283,7 @@ func TestFormatPreservesEffectiveOverflowInMethodReceiverIndex(t *testing.T) {
 	input := "tables.dyn-add = (name str, value str) {\n" +
 		"    i = .dyn-count\n" +
 		"    (i > 0) {\n" +
-		"        #{index-out=0, overflow=wrap}\n" +
+		"        #{index-out=zero, overflow=wrap}\n" +
 		"        prev-name-len = .dyn-names[i - 1].len-bytes()\n" +
 		"    }\n" +
 		"}\n"
@@ -293,7 +293,7 @@ func TestFormatPreservesEffectiveOverflowInMethodReceiverIndex(t *testing.T) {
 	}
 	relevant, governed := checker.OverflowAnnotationRelevance(program)
 	out := FormatProgramWithOverflow(program, input, relevant, governed)
-	if !strings.Contains(out, "#{index-out=0, overflow=wrap}") {
+	if !strings.Contains(out, "#{index-out=zero, overflow=wrap}") {
 		t.Errorf("method-receiver index overflow annotation stripped:\n%s", out)
 	}
 	// 幂等：二次格式化不得再变动。

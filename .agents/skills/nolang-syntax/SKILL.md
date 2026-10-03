@@ -2443,18 +2443,25 @@ safe-get = (arr []i64, i i64) (res ?i64) {
 }
 ```
 
-**2. `x = v[i] #{index-out=DEF}` — substitute a literal default on OOB.** The annotation trails the assignment on the same line (or sits on its own line above it). `DEF` **must be a literal** (not an expression), typed by the element:
-- integer/char containers (`i8`–`i128`, `u8`–`u128`, `byte`, `char`): int or char literal, e.g. `0`, `'x'`
-- float containers (`f32`, `f64`): float literal, e.g. `0.0`
-- bool containers (`bool`): `true` / `false`
-- str containers (`str`): string literal, e.g. `''`
+**2. `x = v[i] #{index-out=DEF}` — substitute a default on OOB (`zero` or a literal).** The annotation trails the assignment on the same line (or sits on its own line above it). `DEF` takes one of two forms:
+
+- **`zero`** — a keyword: regardless of the element type, always substitutes the **zero value of the current element type** (integer family / `byte` / `char` → `0`, `f32`/`f64` → `0.0`, `bool` → `false`, `str`/`txt` → `''`, container → empty container / zero-length array, struct → zero-valued struct). Use it when you want "out-of-range just reads as the type default" without naming a literal.
+- **a literal** (not an expression), typed by the element:
+  - integer/char containers (`i8`–`i128`, `u8`–`u128`, `byte`, `char`): int or char literal, e.g. `0`, `'x'`
+  - float containers (`f32`, `f64`): float literal, e.g. `0.0`
+  - bool containers (`bool`): `true` / `false`
+  - str containers (`str`): string literal, e.g. `''`
 
 ```no
 get-default = (arr []i64, i i64) (res i64) {
-    res = arr[i]  #{index-out=0}   // OOB → res = 0
+    res = arr[i]  #{index-out=zero}     // OOB → res = 0 (explicit literal)
+}
+
+get-zero = (arr []f64, i i64) (res f64) {
+    res = arr[i]  #{index-out=zero}  // OOB → res = 0.0 (zero value of the type)
 }
 ```
-The **prefix** form `#{index-out=0} res = arr[i]` is **not** accepted — it is a compile error. See
+The **prefix** form `#{index-out=zero} res = arr[i]` is **not** accepted — it is a compile error. See
 [Annotation placement](#annotation-placement-only-two-legal-positions): writing the annotation in
 front of the target on the same line is rejected by both the compiler and nolang-lsp.
 
@@ -3329,7 +3336,7 @@ A `#{...}` group may be written in **exactly two** places:
    declaration, match arm);
 2. **Trailing** — on the target's same line, *after* it.
 
-A **prefix** annotation (`#{index-out=0} res = arr[i]`) — one that appears on the same line *in
+A **prefix** annotation (`#{index-out=zero} res = arr[i]`) — one that appears on the same line *in
 front of* its target — is a **compile error**, reported identically by the compiler and by
 nolang-lsp. The rule is decided the same way everywhere: if code still follows the group's closing
 `}` on the same line, it is a prefix. A newline, a `;`/`//` line comment, a closing `}`, or another

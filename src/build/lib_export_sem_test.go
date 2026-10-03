@@ -46,7 +46,7 @@ func TestVetLibExportFilteredModuleKeepsOverflowAnnotation(t *testing.T) {
 		"    i = 0\n"+
 		"    (i < 20) {\n"+
 		"\n"+
-		"        #{index-out=0, overflow=wrap}\n"+
+		"        #{index-out=zero, overflow=wrap}\n"+
 		"        out[20 + i] = seed[i]\n"+
 		"\n"+
 		"        #{overflow=wrap}\n"+

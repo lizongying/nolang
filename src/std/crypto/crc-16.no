@@ -12,7 +12,7 @@ new = (data []byte) (crc i64) {
     crc = 65535
     i <- [0..data.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         crc = crc ^ ((data[i]) << 8)
         j <- [0..8): {
             {
@@ -32,15 +32,15 @@ hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(4)
 
-    #{index-out=0}
+    #{index-out=zero}
     hex[0] = hex-chars[(crc >> 12) & 15]
 
-    #{index-out=0}
+    #{index-out=zero}
     hex[1] = hex-chars[(crc >> 8) & 15]
 
-    #{index-out=0}
+    #{index-out=zero}
     hex[2] = hex-chars[(crc >> 4) & 15]
 
-    #{index-out=0}
+    #{index-out=zero}
     hex[3] = hex-chars[crc & 15]
 }

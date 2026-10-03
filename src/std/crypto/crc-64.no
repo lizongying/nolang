@@ -20,7 +20,7 @@ new = (data []byte) (crc u64) {
     crc = 0
     i <- [0..data.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         crc = crc ^ (data[i])
         j <- [0..8): {
             {
@@ -41,7 +41,7 @@ hex = (data []byte) (hex str) {
     hex str = with-len(16)
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         hex[i] = hex-chars[(crc >> (60 - i * 4)) & 15]
     }
 }

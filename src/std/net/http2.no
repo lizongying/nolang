@@ -81,16 +81,16 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     #{overflow=wrap}
     pos + HTTP2-FRAME-HEADER-SIZE > data.len-bytes() -> return; 24-bit length（big-endian）
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     .length = (data.byte(pos) << 16) | (data.byte(pos + 1) << 8) | data.byte(pos + 2)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     .frame-type = data.byte(pos + 3)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     .flags = data.byte(pos + 4); 31-bit stream-id（big-endian，高位保留）
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     .stream-id = ((data.byte(pos + 5) & 127) << 24) | (data.byte(pos + 6) << 16) | (data.byte(pos + 7) << 8) | data.byte(pos + 8)
 
     #{overflow=wrap}
@@ -101,31 +101,31 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
 ; 返回 next-pos=下一個位置
 frame.serialize = (buf str, pos i64) (next-pos i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     buf[pos] = (.length >> 16) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     buf[pos + 1] = (.length >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     buf[pos + 2] = .length & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     buf[pos + 3] = .frame-type & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     buf[pos + 4] = .flags & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     buf[pos + 5] = (.stream-id >> 24) & 127
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     buf[pos + 6] = (.stream-id >> 16) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     buf[pos + 7] = (.stream-id >> 8) & 255
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     buf[pos + 8] = .stream-id & 255
 
     #{overflow=wrap}
@@ -224,10 +224,10 @@ conn.recv-frame = () (frame ?frame) {
         recv-n <= 0 -> return
 
         ; net-recv 覆寫 buf[0]，需要位移複製
-        #{index-out=0}
+        #{index-out=zero}
         i <- [0..recv-n): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             hdr-buf[hdr-total + i] = hdr-buf.byte(i)
         }
 
@@ -267,7 +267,7 @@ conn.recv-frame = () (frame ?frame) {
             recv-n <= 0 -> return
             i <- [0..recv-n): {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=zero, overflow=wrap}
                 f.payload[payload-total + i] = f.payload.byte(i)
             }
 
@@ -304,16 +304,16 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
     i <- [0..count): {
 
         ; 用 slice 載入值（避開 IndexExpression codegen 問題）
-        #{index-out=0}
+        #{index-out=zero}
         nlen = names[i].len-bytes()
 
-        #{index-out=0}
+        #{index-out=zero}
         vlen = values[i].len-bytes()
 
-        #{index-out=0}
+        #{index-out=zero}
         n str = names[i].slice(0, nlen)
 
-        #{index-out=0}
+        #{index-out=zero}
         v str = values[i].slice(0, vlen)
         hdr-out = ' '
         hdr-out = .hpack.encode-header(n, v)
@@ -321,7 +321,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
         ; 複製到 block
         j <- [0..hdr-out.len-bytes()): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             block[block-n + j] = hdr-out.byte(j)
         }
 
@@ -492,34 +492,34 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     hdr-count = 0
 
     ; :method
-    #{index-out=0}
+    #{index-out=zero}
     hdr-names[0] = ':method'
 
-    #{index-out=0}
+    #{index-out=zero}
     hdr-values[0] = method
     hdr-count = 1
 
     ; :path
-    #{index-out=0}
+    #{index-out=zero}
     hdr-names[1] = ':path'
 
-    #{index-out=0}
+    #{index-out=zero}
     hdr-values[1] = path
     hdr-count = 2
 
     ; :scheme
-    #{index-out=0}
+    #{index-out=zero}
     hdr-names[2] = ':scheme'
 
-    #{index-out=0}
+    #{index-out=zero}
     hdr-values[2] = 'http'
     hdr-count = 3
 
     ; :authority
-    #{index-out=0}
+    #{index-out=zero}
     hdr-names[3] = ':authority'
 
-    #{index-out=0}
+    #{index-out=zero}
     hdr-values[3] = host
     hdr-count = 4
 
@@ -530,11 +530,11 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
         has-body = true
 
         ; content-length
-        #{index-out=0}
+        #{index-out=zero}
         hdr-names[4] = 'content-length'
         blen-str = body-len.to-str()
 
-        #{index-out=0}
+        #{index-out=zero}
         hdr-values[4] = blen-str
         hdr-count = 5
     }
@@ -578,16 +578,16 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 i <- [0..dec-count): {
                     i >= 32 -> break
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     nlen = dec-names[i].len-bytes()
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     vlen = dec-values[i].len-bytes()
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     names[i] = dec-names[i].slice(0, nlen)
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     values[i] = dec-values[i].slice(0, vlen)
                 }
                 {
@@ -608,7 +608,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 ; 複製到 resp-body
                 i <- [0..f.payload.len-bytes()): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=zero, overflow=wrap}
                     resp-body[resp-n + i] = f.payload.byte(i)
                 }
 
@@ -709,7 +709,7 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
         port = 0
         i <- [0..port-str.len-bytes()): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             port = port * 10 + (port-str[i] - 48)
         }
         host = host-only
@@ -752,16 +752,16 @@ do-req = (method str, url str, body str) (resp ?http.response) {
     r.header-count = header-count
     i <- [0..header-count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         nlen = names[i].len-bytes()
 
-        #{index-out=0}
+        #{index-out=zero}
         vlen = values[i].len-bytes()
 
-        #{index-out=0}
+        #{index-out=zero}
         r.header-names[i] = names[i].slice(0, nlen)
 
-        #{index-out=0}
+        #{index-out=zero}
         r.header-values[i] = values[i].slice(0, vlen)
 
         ; 尋找 :status
@@ -778,11 +778,11 @@ do-req = (method str, url str, body str) (resp ?http.response) {
                 r.status-code = 0
                 j <- [0..vlen): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=zero, overflow=wrap}
                     r.status-code = r.status-code * 10 + (values[i][j] - 48)
                 }
 
-                #{index-out=0}
+                #{index-out=zero}
                 r.status-text = values[i].slice(0, vlen)
             }
         }

@@ -237,7 +237,7 @@ read-stdin = () (content ?[]byte) {
         n <= 0 -> break
         i <- [0..n): {
 
-            #{index-out=0}
+            #{index-out=zero}
             buf.push(tmp[i])
         }
     }
@@ -626,7 +626,7 @@ file.read-bytes = () (content ?[]byte) {
 
         total >= size -> break
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         n = read(.fd, buf[total..], size - total)
         n <= 0 -> break
 
@@ -659,7 +659,7 @@ file.write-str = (data str) (ok ?bool) {
 
         total >= s.len() -> break
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         n = write(.fd, s[total..], s.len() - total)
         n <= 0 -> break
 
@@ -684,7 +684,7 @@ file.write-bytes = (data []byte) (ok ?bool) {
 
         total >= data.len() -> break
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         n = write(.fd, data[total..], data.len() - total)
         n <= 0 -> break
 
@@ -965,17 +965,17 @@ dir-entries = (dirpath str) (entries []str) {
     n = all.len()
     i <- [0..n): {
 
-        #{index-out=0}
+        #{index-out=zero}
         name = all[i]
         skip = false
         name.len-bytes() == 1 && name[0] == 46 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             skip = true
         }
         name.len-bytes() == 2 && name[0] == 46 && name[1] == 46 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             skip = true
         }
         skip == false -> entries.push(name)
@@ -1009,13 +1009,13 @@ walk-collect = (dirpath str, paths []str) (out []str) {
     sep = 47
     i <- [0..n): {
 
-        #{index-out=0}
+        #{index-out=zero}
         name = names[i]
         fullpath str
         {
             dirpath.len-bytes() > 0 -> {
 
-                #{index-out=0, overflow=wrap}
+                #{index-out=zero, overflow=wrap}
                 last = dirpath[dirpath.len-bytes() - 1]
                 last == sep -> fullpath = dirpath - name
 

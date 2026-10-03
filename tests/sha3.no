@@ -57,10 +57,10 @@ hex-chars = '0123456789abcdef'
 got str = with-len(64)
 i <- [0..32): {
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     got[i * 2] = hex-chars[(h[i] >> 4) & 15]
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     got[i * 2 + 1] = hex-chars[h[i] & 15]
 }
 check('sha3-256("abc") via [32]byte', got, '3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532')

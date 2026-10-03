@@ -234,7 +234,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
         program == 'sh' -> {
             args.len() >= 2 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 is-sh-c = args[0] == '-c'
             }
         }
@@ -242,14 +242,14 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     {
         is-sh-c -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             cmdline = args[1]
         }
 
         -> {
             i <- [0..args.len()): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 cmdline = cmdline - ' ' - args[i]
             }
         }
@@ -667,7 +667,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         program == 'sh' -> {
             args.len() >= 2 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 is-sh-c = args[0] == '-c'
             }
         }
@@ -675,14 +675,14 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     {
         is-sh-c -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             cmdline = args[1]
         }
 
         -> {
             i <- [0..args.len()): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 cmdline = cmdline - ' ' - args[i]
             }
         }
@@ -695,7 +695,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             envline str = 'env'
             ei <- [0..env.len()): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 envline = envline - ' ' - env[ei]
             }
 
@@ -959,7 +959,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     cmdline = program
     i <- [0..args.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         arg str = args[i]
 
         ; 含空格的參數需要加引號
@@ -1227,7 +1227,7 @@ list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
     i <- [0..names.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         name = names[i]
 
         ; 只處理全數字條目（PID 目錄）
@@ -1279,7 +1279,7 @@ find-by-name = (name str) (pids []i64) {
     all = list-all()
     i <- [0..all.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         p proc-info = all[i]
         yes = find-match(p.name, name)
         yes -> pids.push(p.pid)

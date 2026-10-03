@@ -249,7 +249,7 @@ func TestSpawnArgMoveOnlyWhenWrapperFreesPayload(t *testing.T) {
 }
 
 first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 
@@ -326,7 +326,7 @@ func TestSpawnArgClassesContract(t *testing.T) {
 }
 
 first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 

@@ -29,7 +29,7 @@ adler-32 = (data []byte, n i64) (sum i64) {
     b = 0
     i <- [0..n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         a = (a + data[i]) % MOD
 
         #{overflow=wrap}
@@ -61,7 +61,7 @@ zlib-compress = (data []byte) (out []byte) {
     deflated []byte = gzip.deflate-stored(data)
     i <- [0..deflated.len()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         result.push(deflated[i])
     }
 
@@ -96,7 +96,7 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     ; 窗口大小僅供參考，inflate 一律用 32K 窗口解碼，故接受任意合法 CMF(如 sips 的 0x08)
     (data[0] & 0x0F) != 8 || (data[0] >> 4) > 7 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         return
     }
 
@@ -108,7 +108,7 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     #{overflow=wrap}
     data.len() < hdr-len + 4 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         return
     }
     #{overflow=wrap}
@@ -116,7 +116,7 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     deflate-data []byte
     i <- [0..deflate-len): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         deflate-data.push(data[hdr-len + i])
     }
 
@@ -148,7 +148,7 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
 
         p >= data.len() -> break
 
-        #{index-out=0}
+        #{index-out=zero}
         hdr i64 = data[p]
         bfinal i64 = hdr & 1
         btype i64 = (hdr >> 1) & 3
@@ -157,7 +157,7 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
         #{overflow=wrap}
         p = p + 1
 
-        #{index-out=0}
+        #{index-out=zero}
         blk-len i64 = data[p] | (data[p + 1] << 8)
 
         #{overflow=wrap}
@@ -166,7 +166,7 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
         ; 提取 payload
         i <- [0..blk-len): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             out.push(data[p + i])
         }
 
@@ -190,17 +190,17 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
 
         p >= data.len() -> return
 
-        #{index-out=0}
+        #{index-out=zero}
         bfinal i64 = data[p] & 1
 
-        #{index-out=0}
+        #{index-out=zero}
         btype i64 = (data[p] >> 1) & 3
         btype != 0 -> return
 
         #{overflow=wrap}
         p = p + 1
 
-        #{index-out=0}
+        #{index-out=zero}
         blk-len i64 = (data[p] & 255) | ((data[p + 1] & 255) << 8)
 
         #{overflow=wrap}

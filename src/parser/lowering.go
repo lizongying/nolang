@@ -951,8 +951,8 @@ func lowerSignedIntName(typ string) (string, bool) {
 }
 
 // maybeIndexOutAssign 偵測帶 `#{index-out=DEF}` 註解的安全索引賦值
-// （`x = v[5]`，v 為 arr/vec/slice，DEF 為字面量預設值），將其就地改寫為
-// match：越界時用 DEF 替代，否則取出元素。返回 *BlockStatement；非候選則回傳 nil。
+// （`x = v[5]`，v 為 arr/vec/slice，DEF 為關鍵字 `zero`（當前元素型別零值）或字面量預設值），
+// 將其就地改寫為 match：越界時用 DEF 替代，否則取出元素。返回 *BlockStatement；非候選則回傳 nil。
 //
 // 這條路徑與 `x ?= v[5]` 共用安全索引 codegen（`__tmp = v[5]` 產生 %option，
 // 越界回傳 none），差別只在 none arm 的行為：?= 向上傳播錯誤，index-out 用 DEF 替代。
@@ -1160,6 +1160,12 @@ func overflowModeFieldOf(n Node) string {
 // defaultLiteralFor 依元素型別 elem 解釋 #{index-out} 的預設註解值 defVal，
 // 產生對應的 AST 字面量。回傳 (字面量, 錯誤訊息)；錯誤訊息非空表示無法轉換。
 func defaultLiteralFor(tok lexer.Token, elem string, defVal AnnotationValue) (Expression, string) {
+	// `#{index-out=zero}`：不分元素型別，一律取「當前元素型別的零值」——
+	// 整數族→0、浮點→0.0、bool→false、str/txt→''、容器→空容器/零定長陣列、
+	// 結構體→零值結構體。由 scalarZeroLiteral 統一處理（對複合型別遞迴展開）。
+	if iv, ok := defVal.(*AnnotationIdentValue); ok && iv.Value == "zero" {
+		return scalarZeroLiteral(tok, elem), ""
+	}
 	// 非标量元素（切片 / 陣列 / 映射 / 結構體）：越界預設值可以是
 	//   - `nil` 或 `0`            → 零值（空容器 / 零定長陣列 / 空映射 / 零結構體）
 	//   - `[]` / `[1, 2]`         → 明確的複合（容器）字面量

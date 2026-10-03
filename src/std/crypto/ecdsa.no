@@ -67,10 +67,10 @@ P256-B [32]byte = [
 bn-cmp = (a []byte, b []byte) (r i64) {
     i <- [31..0]: {
 
-        #{index-out=0}
+        #{index-out=zero}
         ai = a[i]
 
-        #{index-out=0}
+        #{index-out=zero}
         bi = b[i]
         {
             ai > bi -> {
@@ -93,10 +93,10 @@ bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     carry = 0
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         val = (a[i]) + (b[i]) + carry
 
-        #{index-out=0}
+        #{index-out=zero}
         sum[i] = val & 255
         carry = val >> 8
     }
@@ -108,7 +108,7 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     borrow = 0
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         val = (a[i]) - (b[i]) - borrow
 
         #{overflow=wrap}
@@ -123,7 +123,7 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
             -> borrow = 0
         }
 
-        #{index-out=0}
+        #{index-out=zero}
         diff[i] = val
     }
 }
@@ -134,7 +134,7 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
     diff [32]byte
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         work[i] = a[i]
     }
 
@@ -148,13 +148,13 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         diff, borrow = bn-sub(work, m)
         i <- [0..32): {
 
-            #{index-out=0}
+            #{index-out=zero}
             work[i] = diff[i]
         }
     }
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = work[i]
     }
 }
@@ -166,7 +166,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     product [64]byte
     i <- [0..64): {
 
-        #{index-out=0}
+        #{index-out=zero}
         product[i] = 0
     }
 
@@ -179,10 +179,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             #{overflow=wrap}
             idx = i + j
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             val = (product[idx]) + (a[i]) * (b[j]) + carry
 
-            #{index-out=0}
+            #{index-out=zero}
             product[idx] = val & 255
             carry = val >> 8
         }
@@ -192,10 +192,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         idx = i + 32
         (idx < 64 && carry != 0) {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             val = (product[idx]) + carry
 
-            #{index-out=0}
+            #{index-out=zero}
             product[idx] = val & 255
             carry = val >> 8
 
@@ -210,7 +210,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     work [64]byte
     i <- [0..64): {
 
-        #{index-out=0}
+        #{index-out=zero}
         work[i] = product[i]
     }
 
@@ -269,11 +269,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             #{overflow=wrap}
             shift-byte + i < 64 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 wi = work[shift-byte + i]
             }
 
-            #{index-out=0}
+            #{index-out=zero}
             mi = m[i]
             {
                 wi > mi -> break
@@ -296,7 +296,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 {
                     idx < 64 -> {
 
-                        #{index-out=0, overflow=wrap}
+                        #{index-out=zero, overflow=wrap}
                         val = (work[idx]) - (m[i]) - borrow
                         {
                             val < 0 -> {
@@ -309,14 +309,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             -> borrow = 0
                         }
 
-                        #{index-out=0}
+                        #{index-out=zero}
                         work[idx] = val
                     }
 
                     -> {
                         borrow != 0 -> {
 
-                            #{index-out=0, overflow=wrap}
+                            #{index-out=zero, overflow=wrap}
                             val = (work[idx]) - borrow
                             {
                                 val < 0 -> {
@@ -329,7 +329,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                                 -> borrow = 0
                             }
 
-                            #{index-out=0}
+                            #{index-out=zero}
                             work[idx] = val
                         }
                     }
@@ -342,7 +342,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     }
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = work[i]
     }
 }
@@ -376,7 +376,7 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             diff, borrow = bn-sub(a, b)
             i <- [0..32): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 out[i] = diff[i]
             }
         }
@@ -400,7 +400,7 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             diff2, borrow2 = bn-sub(tmp, b)
             i <- [0..32): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 out[i] = diff2[i]
             }
         }
@@ -425,11 +425,11 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     ; result = 1
     result [32]byte
 
-    #{index-out=0}
+    #{index-out=zero}
     result[0] = 1
     i <- [1..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         result[i] = 0
     }
 
@@ -445,14 +445,14 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
         bit-idx = bit % 8
         (exp[byte-idx] >> bit-idx) & 1 == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             result = bn-mulmod(result, base, m)
         }
         base = bn-mulmod(base, base, m)
     }
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = result[i]
     }
 }
@@ -475,14 +475,14 @@ ec-point-double = (p []byte) (r []byte) {
         #{overflow=wrap}
         p[32 + i] != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             is-zero = 0
         }
     }
     is-zero == 1 -> {
         i <- [0..96): {
 
-            #{index-out=0}
+            #{index-out=zero}
             r[i] = 0
         }
         return
@@ -560,13 +560,13 @@ ec-point-double = (p []byte) (r []byte) {
     ; 輸出
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         r[i] = x3[i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         r[32 + i] = y3[i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         r[64 + i] = z3[i]
     }
 }
@@ -586,14 +586,14 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     i <- [0..96): {
         p[i] != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             p-inf = 0
         }
     }
     p-inf == 1 -> {
         i <- [0..96): {
 
-            #{index-out=0}
+            #{index-out=zero}
             r[i] = q[i]
         }
         return
@@ -604,14 +604,14 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     i <- [0..96): {
         q[i] != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             q-inf = 0
         }
     }
     q-inf == 1 -> {
         i <- [0..96): {
 
-            #{index-out=0}
+            #{index-out=zero}
             r[i] = p[i]
         }
         return
@@ -660,7 +660,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     i <- [0..32): {
         h[i] != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             h-is-zero = 0
         }
     }
@@ -669,7 +669,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         i <- [0..32): {
             rr[i] != 0 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 r-is-zero = 0
             }
         }
@@ -682,7 +682,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
             -> {
                 i <- [0..96): {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     r[i] = 0
                 }
                 return
@@ -725,13 +725,13 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         r[i] = x3[i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         r[32 + i] = y3[i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         r[64 + i] = z3[i]
     }
 }
@@ -745,7 +745,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
     ; R = 無窮遠點
     i <- [0..96): {
 
-        #{index-out=0}
+        #{index-out=zero}
         r[i] = 0
     }
 
@@ -758,7 +758,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         tmp = ec-point-double(r)
         i <- [0..96): {
 
-            #{index-out=0}
+            #{index-out=zero}
             r[i] = tmp[i]
         }
 
@@ -770,7 +770,7 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
             tmp = ec-point-add(r, p)
             i <- [0..96): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 r[i] = tmp[i]
             }
         }
@@ -793,7 +793,7 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     i <- [0..32): {
         pz[i] != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             z-is-zero = 0
         }
     }
@@ -828,14 +828,14 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     y = bn-mulmod(py, z3-inv, P256-P)
 
     ; 輸出: 04 || x || y（大端序）
-    #{index-out=0}
+    #{index-out=zero}
     out[0] = 4
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[1 + i] = x[31 - i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[33 + i] = y[31 - i]
     }
 }
@@ -851,28 +851,28 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     y [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         x[i] = in[1 + 31 - i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         y[i] = in[33 + 31 - i]
     }
 
     ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = x[i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[32 + i] = y[i]
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     out[64] = 1
     i <- [1..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         out[64 + i] = 0
     }
 }
@@ -887,19 +887,19 @@ ec-get-basepoint = () (g []byte) {
     ; Gx, Gy 轉為小端序
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         g[i] = P256-GX[31 - i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         g[32 + i] = P256-GY[31 - i]
     }
 
     ; Z = 1
-    #{index-out=0}
+    #{index-out=zero}
     g[64] = 1
     i <- [1..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         g[64 + i] = 0
     }
 }
@@ -918,7 +918,7 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
     k [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         k[i] = priv[31 - i]
     }
 
@@ -934,14 +934,14 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
     enc [65]byte
     enc = ec-point-to-bytes(r)
 
-    #{index-out=0}
+    #{index-out=zero}
     enc[0] != 4 -> return
 
     ; 提取 x 座標（大端序）
     shared = with-len(32)
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         shared[i] = enc[1 + i]
     }
 }
@@ -955,7 +955,7 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
     k [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         k[i] = priv[31 - i]
     }
 
@@ -985,7 +985,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     h-le [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         h-le[i] = h[31 - i]
     }
 
@@ -993,7 +993,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     d [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         d[i] = priv[31 - i]
     }
 
@@ -1002,10 +1002,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     state = 0
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         state, rand-r = rand.rand(state + d[i] + h-le[i] + i)
 
-        #{index-out=0}
+        #{index-out=zero}
         k[i] = state & 255
     }
 
@@ -1016,13 +1016,13 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         i <- [1..32): {
             k[i] != 0 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 all-zero = 0
             }
         }
         all-zero == 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             k[0] = 1
         }
     }
@@ -1041,7 +1041,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     rx [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         rx[i] = r-point-bytes[1 + 31 - i]
     }
     r-val [32]byte
@@ -1060,10 +1060,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     ; 輸出（大端序）
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         sig[i] = r-val[31 - i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         sig[32 + i] = s-val[31 - i]
     }
 }
@@ -1080,10 +1080,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     s-val [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         r-val[i] = sig[31 - i]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         s-val[i] = sig[32 + 31 - i]
     }
 
@@ -1093,7 +1093,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..32): {
         r-val[i] != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             r-zero = 0
         }
     }
@@ -1107,7 +1107,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..32): {
         s-val[i] != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             s-zero = 0
         }
     }
@@ -1132,7 +1132,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     h-le [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         h-le[i] = h[31 - i]
     }
 
@@ -1171,7 +1171,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..96): {
         r-point[i] != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             r-inf = 0
         }
     }
@@ -1186,7 +1186,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     rx [32]byte
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         rx[i] = r-point-bytes[1 + 31 - i]
     }
     v [32]byte
@@ -1197,7 +1197,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..32): {
         v[i] != r-val[i] -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             ok = 0
         }
     }

@@ -29,7 +29,7 @@ import (
 // 為何用 prevToken 的行號，而不是陳述的 Pos()/EndPos()：兩者都不等於「陳述真正
 // 結束的那一行」。
 //   - Pos() 是陳述的**第一行**。多行陳述（值跨行、區塊收尾的 `}` 自成一行）的尾隨
-//     註解與它不同行，於是被誤判為「下一條陳述的前置註解」：`#{index-out=0}` 被
+//     註解與它不同行，於是被誤判為「下一條陳述的前置註解」：`#{index-out=zero}` 被
 //     套用到錯誤目標（該行越界索引仍被當成未處理），LSP 的「Add #{index-out = 0}」
 //     quickfix 追加在行尾的註解也就形同無效。
 //   - EndPos() 對呼叫表達式只回到**最後一個引數**（CallExpression.EndPos），
@@ -52,7 +52,7 @@ func (p *Parser) annotationImmediatelyTrails() bool {
 
 // parseTrailingAnnotation 解析緊跟在陳述句之後的尾隨 #{...} 註解（同一行），
 // 回傳註解條目。呼叫方負責將其附加到剛解析的陳述句（parseBlockStatement 會
-// 在解析完 stmt 後呼叫）。這支援 `x = v[5] #{index-out=0}` 這類尾隨註解語法，
+// 在解析完 stmt 後呼叫）。這支援 `x = v[5] #{index-out=zero}` 這類尾隨註解語法，
 // 否則尾隨 #{...} 會被 parseAnnotationStatement 當成孤立註解陳述句而遺失。
 // 連續的尾隨 #{...}（以空白分隔）會合併為同一組條目。
 func (p *Parser) parseTrailingAnnotation() []*AnnotationEntry {
@@ -78,7 +78,7 @@ func (p *Parser) parseTrailingAnnotation() []*AnnotationEntry {
 		}
 		entries = append(entries, more...)
 	}
-	// 收斂同名註解：同一行連續的尾隨 #{...}（如 `x = v[i] #{index-out=0} #{index-out=1}`）
+	// 收斂同名註解：同一行連續的尾隨 #{...}（如 `x = v[i] #{index-out=zero} #{index-out=1}`）
 	// 被合併為同一組條目，依 key 去重、取最後一次（後面的替換前面的）。
 	return dedupeAnnotationEntries(entries)
 }
@@ -212,9 +212,9 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		annotStmt.Entries = entries
 	}
 	// 收斂同名註解：連續的 #{...} 群組（以空行分隔）被解析期合併為同一節點，
-	// 若其中出現同名鍵（如 `#{index-out=0} #{index-out=1}` 或跨行連續
-	// `#{index-out=0}` / `#{index-out=1}`），依 key 去重、取最後一次
-	// （後面的替換前面的），避免輸出 `#{index-out=0, index-out=1}` 且讓
+	// 若其中出現同名鍵（如 `#{index-out=zero} #{index-out=1}` 或跨行連續
+	// `#{index-out=zero}` / `#{index-out=1}`），依 key 去重、取最後一次
+	// （後面的替換前面的），避免輸出 `#{index-out=zero, index-out=1}` 且讓
 	// desugar 讀到正確（最後一個）的預設值。
 	entries = dedupeAnnotationEntries(entries)
 	annotStmt.Entries = entries
@@ -320,7 +320,7 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 	// 註解位置規則（統一）：`#{...}` 只允許
 	//  1) 獨立成行、置於目標上方（`#{...}` ⏎ 目標），或
 	//  2) 寫在目標同一行的後方（尾隨，`目標 #{...}`）。
-	// 「目標前方同一行」的前綴寫法（如 `#{index-out=0} x = v[5]`）在解析當下即
+	// 「目標前方同一行」的前綴寫法（如 `#{index-out=zero} x = v[5]`）在解析當下即
 	// 報錯（見 annotationPrefixIllegal 的三個呼叫點：parseAnnotationStatement、
 	// parseStructDefinition、match 臂首），故這裡對同一行的尾隨註解一律放行——
 	// `#{index-out = ...}` 也不例外（尾隨寫法與 LSP 的 quickfix 一致）。
@@ -416,8 +416,8 @@ func (p *Parser) applyLineOverflowAnnotations(block *BlockStatement) {
 				}
 				// 連續的獨立註解：若後一條**也帶 overflow**，以最後一條為準
 				//（前一條不覆蓋後一條的目標）。但若後一條與 overflow 無關
-				//（如緊跟在 `#{overflow=wrap}` 之後的 `#{index-out=0}`），
-				// 不能就此中斷——否則 `#{overflow=wrap}` + `#{index-out=0}` 這種
+				//（如緊跟在 `#{overflow=wrap}` 之後的 `#{index-out=zero}`），
+				// 不能就此中斷——否則 `#{overflow=wrap}` + `#{index-out=zero}` 這種
 				// std 常見組合會讓 overflow 註解完全失效（陳述仍被
 				// ovf-int-default 誤報）。此時略過該註解行，繼續找真正的目標陳述。
 				if as2, isAnn := next.(*AnnotationStatement); isAnn {
@@ -456,7 +456,7 @@ func (p *Parser) applyLineOverflowAnnotations(block *BlockStatement) {
 // 獨立的 AnnotationStatement 只把其 index-out 條目套用到**緊跟其後的下一條陳述**
 //（若該陳述尚未自帶 index-out 註解），不向區塊其餘陳述或巢狀區塊傳播。
 //
-// 之所以需要此 pass：`#{index-out=0}` 緊跟的陳述可能以無法被
+// 之所以需要此 pass：`#{index-out=zero}` 緊跟的陳述可能以無法被
 // parseAnnotationStatement 附加的 token 開頭（如 `return arr[i]` 以 RETURN 開頭、
 // `.[i] = x` 以 DOT 開頭），此時註解會退化成獨立 AnnotationStatement，而其
 // index-out 條目不會出現在目標陳述的 side-table 上，desugar 讀取 AnnotationsOf
@@ -782,7 +782,7 @@ func setStmtOverflowMode(s Statement, mode string) {
 // mergeAnnotations 將 entries 合併（無則直接設定）到節點 n 的註解副表。
 //
 // 去重按 key 進行（而非 key+value）：同一 key 只保留最後一次出現的條目，
-// 後到的 value 覆寫先前的——例如 `#{index-out=0, index-out=1}` 會收斂成
+// 後到的 value 覆寫先前的——例如 `#{index-out=zero, index-out=1}` 會收斂成
 // `#{index-out=1}`（後面的替換前面的）。這同時涵蓋區塊級 overflow 傳播與語句
 // 自帶同名註解疊加成 [wrap, wrap] 的場景（同 key 同 value 自然去重，不會讓
 // `no fmt` 非冪等：每格式化一輪多印一次）。
@@ -847,9 +847,9 @@ func (p *Parser) mergeIndexOutAnnotations(n Node, entries []*AnnotationEntry) {
 }
 
 // dedupeAnnotationEntries 依 key 去重，同名鍵只保留最後一次出現的條目
-// （後到的 value 覆寫先前的）。例如 [index-out=0, index-out=1] 收斂成
+// （後到的 value 覆寫先前的）。例如 [index-out=zero, index-out=1] 收斂成
 // [index-out=1]。這避免同一陳述上寫多個同名註解時輸出
-// `#{index-out=0, index-out=1}`，並讓 desugar 取用正確（最後一個）的預設值。
+// `#{index-out=zero, index-out=1}`，並讓 desugar 取用正確（最後一個）的預設值。
 func dedupeAnnotationEntries(entries []*AnnotationEntry) []*AnnotationEntry {
 	if len(entries) <= 1 {
 		return entries

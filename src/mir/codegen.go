@@ -6312,11 +6312,11 @@ func (c *codegen) cloneLeafStructKey(inst *Inst) (string, bool) {
 	return "", false
 }
 
-// emitLeafStructClone lowers a deep copy of a struct whose only shared heap is
-// inline owned `str` leaves: a bitwise copy, then @str_clone per leaf. Without
-// it `b = a` leaves a.name and b.name pointing at one buffer, so the first
-// `b.name = x` would free a buffer `a` still reads (verified: leafshare.no went
-// from `A/A/B` to `A//B` when emitSetField freed the old occupant).
+// emitLeafStructClone lowers a deep copy of a struct with inline owned leaves:
+// a bitwise copy followed by a type-dispatched clone for each leaf selected by
+// StructOwnedLeafFieldIdxs (currently str everywhere, vec only for explicitly
+// opted-in struct keys). Without it, `b = a` shares those field buffers and a
+// later field write/drop can invalidate the other struct.
 func (c *codegen) emitLeafStructClone(inst *Inst, key string) error {
 	dstVal := moveDst(inst)
 	dstSlot := c.valSlot[dstVal]
@@ -6336,11 +6336,10 @@ func (c *codegen) emitLeafStructClone(inst *Inst, key string) error {
 	return nil
 }
 
-// emitLeafFieldsClone replaces each inline owned `str` leaf of the struct at
-// dstSlot with a fresh @str_clone of it.
-//
-// Discarding the descriptor that the preceding bitwise copy installed is NOT a
-// leak: that buffer is the SOURCE's, and the source still owns and drops it.
+// emitLeafFieldsClone replaces each classified inline owned leaf of the struct
+// at dstSlot with a fresh, type-appropriate clone. Discarding the descriptor that
+// the preceding bitwise copy installed is NOT a leak: that buffer is the SOURCE's,
+// and the source still owns and drops it.
 func (c *codegen) emitLeafFieldsClone(dstSlot, structLT, key string) {
 	c.emitLeafFieldsCloneR(dstSlot, structLT, key, 0)
 }
@@ -6513,20 +6512,13 @@ func (c *codegen) structKeyOfLLVM(lt string) string {
 	return c.sanitizedStructKey(name)
 }
 
-// emitStructDropHelper emits the recursive destructor for one struct type: it
-// frees the pointee of every pointer field (recursing into it first), and
-// nothing else.
-//
-// SCOPE — what this deliberately does NOT free yet: owned LEAF fields (str / vec
-// / []T / map) whose descriptor is inlined in the struct. Their buffers are
-// reachable only through the field, and the current read path
-// (`isBorrowRead`'s "the struct owns its fields; a field read borrows") hands out
-// aliases of them, so freeing them here would double-free against a value that
-// was legitimately read out. Landing leaf frees needs the clone/move machinery to
-// be in place for field READS too, and is tracked as the next step. Structs
-// therefore still leak their leaf buffers, exactly as they did before Phase 1 —
-// this change fixes the leak Phase 1 itself introduced (the pointees), and does
-// not make the pre-existing one worse.
+// emitStructDropHelper emits the destructor for one struct type: it frees the
+// pointee of every pointer field (recursing into it first) and frees exactly the
+// inline leaves selected by StructOwnedLeafFieldIdxs. For each selected leaf the
+// clone/read/write paths must have given every live value its own buffer; the
+// clone and drop walkers share that classifier so an un-cloned alias is never
+// freed here. Non-opted-in vector fields remain outside this destructor and keep
+// their prior behavior until their ownership contract is established.
 //
 // Each pointer field is null-checked before being recursed into and freed: a
 // freshly declared struct has NULL pointees, and `free` on NULL is legal but a

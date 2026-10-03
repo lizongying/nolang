@@ -47,14 +47,14 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             #{overflow=wrap}
             a[ai].compare(b[aj]) == 0 -> dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             cur = dp[ai * cols + aj]
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             below = dp[(ai + 1) * cols + aj]
             cur < below -> dp[ai * cols + aj] = below
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             right = dp[ai * cols + (aj + 1)]
             cur < right -> dp[ai * cols + aj] = right
         }
@@ -71,7 +71,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
         #{overflow=wrap}
         aj <- [0..nb + 1): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             v = dp[ai * cols + aj]
 
             row = row - ' ' - v.to-str()
@@ -86,7 +86,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op = diff-op {}
                 op.kind = 0
 
-                #{index-out=0}
+                #{index-out=zero}
                 tmp-line = a[i]
                 op.line = tmp-line
 
@@ -109,7 +109,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op = diff-op {}
                 op.kind = 1
 
-                #{index-out=0}
+                #{index-out=zero}
                 tmp-line = a[i]
                 op.line = tmp-line
 
@@ -126,7 +126,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op = diff-op {}
                 op.kind = 2
 
-                #{index-out=0}
+                #{index-out=zero}
                 tmp-line = b[j]
                 op.line = tmp-line
 
@@ -142,7 +142,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op = diff-op {}
             op.kind = 1
 
-            #{index-out=0}
+            #{index-out=zero}
             tmp-line = a[i]
             op.line = tmp-line
 
@@ -157,7 +157,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op = diff-op {}
             op.kind = 2
 
-            #{index-out=0}
+            #{index-out=zero}
             tmp-line = b[j]
             op.line = tmp-line
 
@@ -196,13 +196,13 @@ c'
     }
     i <- [0..n1): {
 
-        #{index-out=0}
+        #{index-out=zero}
         s = lines1[i]
         eprint('  L1[{i}]={s}')
     }
     i <- [0..n2): {
 
-        #{index-out=0}
+        #{index-out=zero}
         s = lines2[i]
         eprint('  L2[{i}]={s}')
     }
@@ -213,7 +213,7 @@ c'
     eprint('ops.len={on}')
     i <- [0..on): {
 
-        #{index-out=0}
+        #{index-out=zero}
         op = ops[i]
         k = op.kind
         eprint('  op[{i}] kind={k}')

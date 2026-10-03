@@ -296,7 +296,7 @@ main = () {
     a.push(mk())
     n = 0
     i <- [0..4) {
-        #{index-out=0}
+        #{index-out=zero}
         x = a[0]
         #{overflow=wrap}
         n = n + x.len()

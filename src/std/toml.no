@@ -60,23 +60,23 @@ toml.new = () (doc toml-doc) {
     }
     i <- [0..TOML-MAX-ENTRIES): {
 
-        #{index-out=0}
+        #{index-out=zero}
         doc.entries[i].key-len = 0
 
-        #{index-out=0}
+        #{index-out=zero}
         doc.entries[i].value-len = 0
     }
     i <- [0..TOML-MAX-TABLES): {
 
-        #{index-out=0}
+        #{index-out=zero}
         doc.tables[i].name-len = 0
     }
     i <- [0..TOML-MAX-ARRAY-TABLES): {
 
-        #{index-out=0}
+        #{index-out=zero}
         doc.arrays[i].name-len = 0
 
-        #{index-out=0}
+        #{index-out=zero}
         doc.arrays[i].index = 0
     }
 }
@@ -86,7 +86,7 @@ toml-entry-key = (e toml-entry) (s str) {
     s = with-len(e.key-len)
     i <- [0..e.key-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         s[i] = e.key[i]
     }
 }
@@ -96,7 +96,7 @@ toml-entry-value = (e toml-entry) (s str) {
     s = with-len(e.value-len)
     i <- [0..e.value-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         s[i] = e.value[i]
     }
 }
@@ -107,7 +107,7 @@ toml-entry-key-eq = (e toml-entry, key str) (same bool) {
     e.key-len != key.len-bytes() -> return
     i <- [0..e.key-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         e.key[i] != key.byte(i) -> return
     }
     same = true
@@ -119,12 +119,12 @@ toml-make-entry = (key str, value str) (e toml-entry) {
     e.value-len = value.len-bytes()
     i <- [0..e.key-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         e.key[i] = key.byte(i)
     }
     i <- [0..e.value-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         e.value[i] = value.byte(i)
     }
 }
@@ -134,7 +134,7 @@ toml-table-name = (t toml-table) (s str) {
     s = with-len(t.name-len)
     i <- [0..t.name-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         s[i] = t.name[i]
     }
 }
@@ -144,7 +144,7 @@ toml-array-name = (t toml-array-table) (s str) {
     s = with-len(t.name-len)
     i <- [0..t.name-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         s[i] = t.name[i]
     }
 }
@@ -155,7 +155,7 @@ toml-table-eq = (name [32]byte, name-len i64, s str) (same bool) {
     name-len != s.len-bytes() -> return
     i <- [0..name-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         name[i] != s.byte(i) -> return
     }
     same = true
@@ -213,7 +213,7 @@ toml-strip-comment = (s str) (out str) {
 
         i >= n -> break
 
-        #{index-out=0}
+        #{index-out=zero}
         c = s.byte(i)
         {
             quote == 1 -> {
@@ -299,10 +299,10 @@ toml-normalize-key = (s str) (key str, ok bool) {
     key = key.replace-str('\'', '')
     n = key.len-bytes()
 
-    #{index-out=0}
+    #{index-out=zero}
     a = key.byte(0)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     z = key.byte(n - 1)
     (a == 34 && z == 34) || (a == 39 && z == 39) -> {
         key, ok = toml-unquote(key)
@@ -310,7 +310,7 @@ toml-normalize-key = (s str) (key str, ok bool) {
     }
     i <- [0..n): {
 
-        #{index-out=0}
+        #{index-out=zero}
         c = key.byte(i)
         valid = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 45 || c == 95 || c == 46 || c == 32 || c == 9
         valid == false -> return
@@ -326,10 +326,10 @@ toml-unquote = (raw str) (value str, ok bool) {
     n = s.len-bytes()
     n < 2 -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     q = s.byte(0)
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     s.byte(n - 1) != q -> return
     q != 34 && q != 39 -> return
 
@@ -351,7 +351,7 @@ toml-unquote = (raw str) (value str, ok bool) {
         #{overflow=wrap}
         i >= n - 1 -> break
 
-        #{index-out=0}
+        #{index-out=zero}
         c = s.byte(i)
         c == 92 -> {
 
@@ -361,7 +361,7 @@ toml-unquote = (raw str) (value str, ok bool) {
             #{overflow=wrap}
             i >= n - 1 -> return
 
-            #{index-out=0}
+            #{index-out=zero}
             c = s.byte(i)
             {
                 c == 110 -> c = 10
@@ -378,7 +378,7 @@ toml-unquote = (raw str) (value str, ok bool) {
             }
         }
 
-        #{index-out=0}
+        #{index-out=zero}
         value[j] = c
 
         #{overflow=wrap}
@@ -404,7 +404,7 @@ toml-value-complete = (raw str) (complete bool) {
 
         i >= n -> break
 
-        #{index-out=0}
+        #{index-out=zero}
         c = s.byte(i)
         {
             q == 1 -> {
@@ -498,7 +498,7 @@ toml-valid-value = (raw str) (valid bool) {
     complete = toml-value-complete(s)
     complete == false -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     c = s.byte(0)
     {
         c == 34 || c == 39 || c == 91 || c == 123 -> valid = true
@@ -510,7 +510,7 @@ toml-valid-value = (raw str) (valid bool) {
             }
             i <- [0..n): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 c = s.byte(i)
                 allowed = (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102) || c == 43 || c == 45 || c == 46 || c == 58 || c == 84 || c == 90 || c == 95 || c == 32 || c == 9 || c == 101 || c == 69 || c == 120 || c == 88 || c == 111 || c == 79 || c == 98 || c == 66
                 allowed == false -> return
@@ -525,7 +525,7 @@ toml-register-table = (doc toml-doc, name str) (ok bool) {
     ok = false
     i <- [0..doc.table-count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         table-name = toml-table-name(doc.tables[i])
         table-name.eq-full(name) -> return
     }
@@ -533,7 +533,7 @@ toml-register-table = (doc toml-doc, name str) (ok bool) {
     doc.tables[doc.table-count].name-len = name.len-bytes()
     i <- [0..name.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         doc.tables[doc.table-count].name[i] = name.byte(i)
     }
 
@@ -547,14 +547,14 @@ toml-resolve-section = (doc toml-doc, name str) (resolved str) {
     resolved = name
     i <- [0..doc.array-count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         base = toml-array-name(doc.arrays[i])
         name.starts-with(base) -> {
 
             blen = base.len-bytes()
             name.len-bytes() > blen -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 name.byte(blen) == 46 -> {
                     suffix = name.slice-bytes(blen, name.len-bytes())
 
@@ -572,14 +572,14 @@ toml-next-array-table = (doc toml-doc, name str) (idx i64, ok bool) {
     ok = false
     i <- [0..doc.array-count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         array-name = toml-array-name(doc.arrays[i])
         array-name.eq-full(name) -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             idx = doc.arrays[i].index + 1
 
-            #{index-out=0}
+            #{index-out=zero}
             doc.arrays[i].index = idx
             ok = true
             return
@@ -589,11 +589,11 @@ toml-next-array-table = (doc toml-doc, name str) (idx i64, ok bool) {
     doc.arrays[doc.array-count].name-len = name.len-bytes()
     i <- [0..name.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         doc.arrays[doc.array-count].name[i] = name.byte(i)
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     doc.arrays[doc.array-count].index = 0
 
     #{overflow=wrap}
@@ -612,7 +612,7 @@ toml.parse = (s str) (result ?toml-doc) {
 
         i >= lines.len() -> break
 
-        #{index-out=0}
+        #{index-out=zero}
         line = toml-strip-comment(lines[i])
 
         #{overflow=wrap}
@@ -714,7 +714,7 @@ toml.parse = (s str) (result ?toml-doc) {
                 (j < lines.len()) {
                     j >= lines.len() -> break
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     next-line = toml-strip-comment(lines[j])
 
                     raw-value = raw-value - '\n' - next-line
@@ -749,7 +749,7 @@ toml.parse = (s str) (result ?toml-doc) {
         key-exists = false
         k <- [0..doc.count): {
 
-            #{index-out=0}
+            #{index-out=zero}
             entry-key = toml-entry-key(doc.entries[k])
             entry-key.eq-full(key) -> {
                 key-exists = true
@@ -782,7 +782,7 @@ stringify = (doc toml-doc) (out str) {
     last-array = ''
     i <- [0..doc.count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         entry = doc.entries[i]
         key = toml-entry-key(entry)
         value = toml-entry-value(entry)
@@ -835,7 +835,7 @@ toml-doc.put = (key str, value str) (ok bool) {
     value-ok == false -> return
     i <- [0...count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         entry-key = toml-entry-key(.entries[i])
         entry-key.eq-full(key) -> {
             .entries[i] = toml-make-entry(key, value)
@@ -856,7 +856,7 @@ toml-doc.put = (key str, value str) (ok bool) {
 get = (doc toml-doc, key str) (value ?str) {
     i <- [0..doc.count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         entry-key = toml-entry-key(doc.entries[i])
         entry-key.eq-full(key) -> {
             value = toml-entry-value(doc.entries[i])
@@ -869,7 +869,7 @@ get = (doc toml-doc, key str) (value ?str) {
 has = (doc toml-doc, key str) (found bool) {
     i <- [0..doc.count): {
 
-        #{index-out=0}
+        #{index-out=zero}
         entry-key = toml-entry-key(doc.entries[i])
         entry-key.eq-full(key) -> {
             found = true
@@ -903,7 +903,7 @@ toml-parse-i64 = (s str) (value i64, ok bool) {
     start = 0
     neg = false
 
-    #{index-out=0}
+    #{index-out=zero}
     c = clean.byte(0)
     c == 45 -> {
         neg = true
@@ -921,10 +921,10 @@ toml-parse-i64 = (s str) (value i64, ok bool) {
     #{overflow=wrap}
     start + 2 <= n -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         p0 = clean.byte(start)
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         p1 = clean.byte(start + 1)
         {
             (p0 == 48 && (p1 == 120 || p1 == 88)) -> {
@@ -953,7 +953,7 @@ toml-parse-i64 = (s str) (value i64, ok bool) {
     digits = 0
     i <- [start..n): {
 
-        #{index-out=0}
+        #{index-out=zero}
         c = clean.byte(i)
         c == 95 -> continue
         d = -1

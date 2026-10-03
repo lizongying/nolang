@@ -1631,26 +1631,32 @@ safe-get = (arr []i64, i i64) (res ?i64) {
 }
 ```
 
-**2. `x = v[i] #{index-out=DEF}` — substitute a literal default when out of range**
+**2. `x = v[i] #{index-out=DEF}` — substitute a default when out of range (`zero` or a literal)**
 
-With the `#{index-out=DEF}` annotation (on its own line above the assignment, or trailing on the same line), an out-of-range index does not crash; it substitutes `DEF` instead. `DEF` **must be a literal**, and the kinds allowed depend on the container's element type:
+With the `#{index-out=DEF}` annotation (on its own line above the assignment, or trailing on the same line), an out-of-range index does not crash; it substitutes `DEF` instead. `DEF` takes one of two forms: the **keyword `zero`** or a **literal**.
 
-- Integer / character containers (`i8`~`i128`, `u8`~`u128`, `byte`, `char`): an integer or character literal, e.g. `0`, `'x'`
-- Floating-point containers (`f32`, `f64`): a float literal, e.g. `0.0`
-- Boolean containers (`bool`): `true` / `false`
-- String containers (`str`): a string literal, e.g. `''`
+- **`#{index-out=zero}`**: regardless of the container's element type, it always substitutes the **zero value of the current element type** — integer family / `byte` / `char` → `0`, `f32`/`f64` → `0.0`, `bool` → `false`, `str`/`txt` → `''`, container → empty container / zero-length array, struct → zero-valued struct. No need to know the element type details; best suited for "treat out-of-range as the default zero".
+- **`#{index-out=DEF}` (a literal)**: the kinds allowed depend on the container's element type, and `DEF` must be compatible with it:
+  - Integer / character containers (`i8`~`i128`, `u8`~`u128`, `byte`, `char`): an integer or character literal, e.g. `0`, `'x'`
+  - Floating-point containers (`f32`, `f64`): a float literal, e.g. `0.0`
+  - Boolean containers (`bool`): `true` / `false`
+  - String containers (`str`): a string literal, e.g. `''`
 
 ```no
 get-default = (arr []i64, i i64) (res i64) {
-    res = arr[i]  #{index-out=0}   ; out of range → res = 0
+    res = arr[i]  #{index-out=zero}     ; out of range → res = 0 (explicit literal)
+}
+
+get-zero = (arr []f64, i i64) (res f64) {
+    res = arr[i]  #{index-out=zero}  ; out of range → res = 0.0 (zero value of the type)
 }
 
 get-ch = (arr []byte, i i64) (res byte) {
-    res = arr[i]  #{index-out=0}   ; byte container defaults to 0
+    res = arr[i]  #{index-out=zero}  ; byte container zero value 0
 }
 ```
 
-> The annotation may also go on its own line above the assignment: `#{index-out=0}` ⏎ `res = arr[i]`. Writing it on the **same line in front of** the assignment (`#{index-out=0} res = arr[i]`) is an error (see "Annotation Placement").
+> The annotation may also go on its own line above the assignment: `#{index-out=zero}` ⏎ `res = arr[i]`. Writing it on the **same line in front of** the assignment (`#{index-out=zero} res = arr[i]`) is an error (see "Annotation Placement").
 
 **3. A bare `x = v[i]` inside a function returning an option — captured in place**
 
@@ -1674,7 +1680,7 @@ capture-prop = (arr []i64, i i64) (res ?i64) {
 ```no
 get-vec-default = (a [4]i64, i i64) (res i64) {
     v = a.to-vec()          ; v's element type is derived from a, no annotation needed
-    res = v[i]  #{index-out=0}   ; out of range → res = 0 (no crash)
+    res = v[i]  #{index-out=zero}   ; out of range → res = 0 (no crash)
 }
 ```
 
@@ -3017,7 +3023,7 @@ A `#{...}` group may be written in **exactly two** places:
    declaration, match arm);
 2. **Trailing** — on the target's same line, *after* it.
 
-A **prefix** annotation (`#{index-out=0} res = arr[i]`) — one written on the same line *in front of*
+A **prefix** annotation (`#{index-out=zero} res = arr[i]`) — one written on the same line *in front of*
 its target — is a **compile error**, reported identically by the compiler and by nolang-lsp. The rule
 is decided the same way everywhere: if code still follows the group's closing `}` on the same line,
 it is a prefix. A newline, a `;` / `//` line comment, a closing `}`, or another `#{` group does

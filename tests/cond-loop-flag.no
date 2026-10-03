@@ -49,14 +49,14 @@ keep-trimming = true
         #{overflow=wrap}
         cn > 1 -> {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             arr[cn - 1] == 0 -> {
 
                 #{overflow=wrap}
                 cn = cn - 1
             }
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             arr[cn - 1] != 0 -> keep-trimming = false
         }
         cn <= 1 -> keep-trimming = false

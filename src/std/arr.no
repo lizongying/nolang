@@ -32,7 +32,7 @@
 [n]t.clone = () (dst [n]t) {
     i <- [0..n): {
 
-        #{index-out=0}
+        #{index-out=zero}
         dst[i] = .[i]
     }
 }
@@ -91,7 +91,7 @@
     out = with-len(n)
     i <- [0..n): {
 
-        #{index-out=0}
+        #{index-out=zero}
         out[i] = .[i]
     }
 }

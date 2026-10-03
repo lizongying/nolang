@@ -1201,8 +1201,9 @@ func (m *Module) moveStructHasPtrFields(f *Function, inst *Inst) bool {
 
 // moveStructSharesHeap reports whether a BITWISE copy of this OpMove's payload
 // would leave source and destination sharing heap — either through
-// pointer-laid-out fields (pointees) or through an inline owned leaf (`str`),
-// whose {len,cap,data} descriptor is copied while its buffer is not.
+// pointer-laid-out fields (pointees) or through an inline owned leaf selected by
+// StructOwnedLeafFieldIdxs (currently `str` everywhere and opted-in `%vec` leaves),
+// whose descriptor is copied while its buffer is not.
 //
 // Both cases need the same treatment: promote to OpClone while the source is
 // still live, so each side ends up owning its own memory.

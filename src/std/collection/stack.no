@@ -25,7 +25,7 @@ stack {
 ; push: 推入元素到堆疊頂端
 stack.push = (val i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     .data[.n] = val
 
     #{overflow=wrap}
@@ -44,7 +44,7 @@ stack.pop = () (val ?i64) {
     #{overflow=wrap}
     .n = .n - 1
 
-    #{index-out=0}
+    #{index-out=zero}
     val = .data[.n]
 }
 
@@ -57,7 +57,7 @@ stack.peek = () (val ?i64) {
         return
     }
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     val = .data[.n - 1]
 }
 

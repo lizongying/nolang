@@ -73,11 +73,11 @@ link {
     #{overflow=wrap}
     i <- [0..n - 1): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         l.next[i] = i + 1
     }
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     l.next[n - 1] = -1
 }
 
@@ -93,21 +93,21 @@ link {
     idx = l.free-head
     idx < 0 -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     l.free-head = l.next[idx]
 
     ; 寫入值
     .[idx] = val
 
     ; 鏈結到頭部
-    #{index-out=0}
+    #{index-out=zero}
     l.next[idx] = l.head
 
-    #{index-out=0}
+    #{index-out=zero}
     l.prev[idx] = -1
     l.head >= 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         l.prev[l.head] = idx
     }
     l.head = idx
@@ -128,18 +128,18 @@ link {
     idx = l.free-head
     idx < 0 -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     l.free-head = l.next[idx]
     .[idx] = val
 
-    #{index-out=0}
+    #{index-out=zero}
     l.next[idx] = -1
 
-    #{index-out=0}
+    #{index-out=zero}
     l.prev[idx] = l.tail
     l.tail >= 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         l.next[l.tail] = idx
     }
     l.tail = idx
@@ -162,12 +162,12 @@ link {
     idx = l.head
     val = .[idx]
 
-    #{index-out=0}
+    #{index-out=zero}
     l.head = l.next[idx]
     {
         l.head >= 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             l.prev[l.head] = -1
         }
 
@@ -175,7 +175,7 @@ link {
     }
 
     ; 回收節點到空閒鏈結串列
-    #{index-out=0}
+    #{index-out=zero}
     l.next[idx] = l.free-head
     l.free-head = idx
 
@@ -195,19 +195,19 @@ link {
     idx = l.tail
     val = .[idx]
 
-    #{index-out=0}
+    #{index-out=zero}
     l.tail = l.prev[idx]
     {
         l.tail >= 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             l.next[l.tail] = -1
         }
 
         -> l.head = -1
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     l.next[idx] = l.free-head
     l.free-head = idx
 
@@ -256,18 +256,18 @@ link {
             idx = l.free-head
             idx < 0 -> return
 
-            #{index-out=0}
+            #{index-out=zero}
             l.free-head = l.next[idx]
             .[idx] = val
 
-            #{index-out=0}
+            #{index-out=zero}
             l.next[idx] = l.head
 
-            #{index-out=0}
+            #{index-out=zero}
             l.prev[idx] = -1
             l.head >= 0 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 l.prev[l.head] = idx
             }
             l.head = idx
@@ -283,18 +283,18 @@ link {
             idx = l.free-head
             idx < 0 -> return
 
-            #{index-out=0}
+            #{index-out=zero}
             l.free-head = l.next[idx]
             .[idx] = val
 
-            #{index-out=0}
+            #{index-out=zero}
             l.next[idx] = -1
 
-            #{index-out=0}
+            #{index-out=zero}
             l.prev[idx] = l.tail
             l.tail >= 0 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 l.next[l.tail] = idx
             }
             l.tail = idx
@@ -309,7 +309,7 @@ link {
     idx = l.head
     i <- [0..pos): {
 
-        #{index-out=0}
+        #{index-out=zero}
         idx = l.next[idx]
     }
 
@@ -317,24 +317,24 @@ link {
     new = l.free-head
     new < 0 -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     l.free-head = l.next[new]
     .[new] = val
 
     ; 插入到 idx 之前
-    #{index-out=0}
+    #{index-out=zero}
     p = l.prev[idx]
 
-    #{index-out=0}
+    #{index-out=zero}
     l.prev[new] = p
 
-    #{index-out=0}
+    #{index-out=zero}
     l.next[new] = idx
 
-    #{index-out=0}
+    #{index-out=zero}
     l.next[p] = new
 
-    #{index-out=0}
+    #{index-out=zero}
     l.prev[idx] = new
 
     #{overflow=wrap}
@@ -361,19 +361,19 @@ link {
             idx = l.head
             val = .[idx]
 
-            #{index-out=0}
+            #{index-out=zero}
             l.head = l.next[idx]
             {
                 l.head >= 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     l.prev[l.head] = -1
                 }
 
                 -> l.tail = -1
             }
 
-            #{index-out=0}
+            #{index-out=zero}
             l.next[idx] = l.free-head
             l.free-head = idx
             l.size = l.size - 1
@@ -386,19 +386,19 @@ link {
             idx = l.tail
             val = .[idx]
 
-            #{index-out=0}
+            #{index-out=zero}
             l.tail = l.prev[idx]
             {
                 l.tail >= 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     l.next[l.tail] = -1
                 }
 
                 -> l.head = -1
             }
 
-            #{index-out=0}
+            #{index-out=zero}
             l.next[idx] = l.free-head
             l.free-head = idx
             l.size = l.size - 1
@@ -410,25 +410,25 @@ link {
     idx = l.head
     i <- [0..pos): {
 
-        #{index-out=0}
+        #{index-out=zero}
         idx = l.next[idx]
     }
     val = .[idx]
 
-    #{index-out=0}
+    #{index-out=zero}
     p = l.prev[idx]
 
-    #{index-out=0}
+    #{index-out=zero}
     nx = l.next[idx]
 
-    #{index-out=0}
+    #{index-out=zero}
     l.next[p] = nx
 
-    #{index-out=0}
+    #{index-out=zero}
     l.prev[nx] = p
 
     ; 回收節點
-    #{index-out=0}
+    #{index-out=zero}
     l.next[idx] = l.free-head
     l.free-head = idx
 
@@ -448,7 +448,7 @@ link {
     idx = l.head
     i <- [0..pos): {
 
-        #{index-out=0}
+        #{index-out=zero}
         idx = l.next[idx]
     }
     val = .[idx]
@@ -465,7 +465,7 @@ link {
     idx = l.head
     i <- [0..pos): {
 
-        #{index-out=0}
+        #{index-out=zero}
         idx = l.next[idx]
     }
     .[idx] = val
@@ -488,7 +488,7 @@ link {
             return
         }
 
-        #{index-out=0}
+        #{index-out=zero}
         idx = l.next[idx]
     }
 }
@@ -500,13 +500,13 @@ link {
     idx = l.head
     (idx >= 0) {
 
-        #{index-out=0}
+        #{index-out=zero}
         nx = l.next[idx]
 
-        #{index-out=0}
+        #{index-out=zero}
         l.next[idx] = l.prev[idx]
 
-        #{index-out=0}
+        #{index-out=zero}
         l.prev[idx] = nx
         idx = nx
     }
@@ -521,10 +521,10 @@ link {
     idx = l.head
     (idx >= 0) {
 
-        #{index-out=0}
+        #{index-out=zero}
         nx = l.next[idx]
 
-        #{index-out=0}
+        #{index-out=zero}
         l.next[idx] = l.free-head
         l.free-head = idx
         idx = nx

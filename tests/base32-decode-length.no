@@ -24,7 +24,7 @@ main = () {
     a = base32.decode('MY======')
     an = a.len()
 
-    #{index-out=0}
+    #{index-out=zero}
     a0 = a[0]
     (an == 1 && a0 == 102) -> print('PASS: 1 MY====== decodes to 1 byte f')
 
@@ -36,10 +36,10 @@ main = () {
     b = base32.decode('MZXQ====')
     bn = b.len()
 
-    #{index-out=0}
+    #{index-out=zero}
     b0 = b[0]
 
-    #{index-out=0}
+    #{index-out=zero}
     b1 = b[1]
     (bn == 2 && b0 == 102 && b1 == 111) -> print('PASS: 2 MZXQ==== decodes to 2 bytes fo')
 
@@ -51,13 +51,13 @@ main = () {
     c = base32.decode('MZXW6===')
     cn = c.len()
 
-    #{index-out=0}
+    #{index-out=zero}
     c0 = c[0]
 
-    #{index-out=0}
+    #{index-out=zero}
     c1 = c[1]
 
-    #{index-out=0}
+    #{index-out=zero}
     c2 = c[2]
     (cn == 3 && c0 == 102 && c1 == 111 && c2 == 111) -> print('PASS: 3 MZXW6=== decodes to 3 bytes foo')
 
@@ -69,7 +69,7 @@ main = () {
     d = base32.decode('MZXW6YQ=')
     dn = d.len()
 
-    #{index-out=0}
+    #{index-out=zero}
     d3 = d[3]
     (dn == 4 && d3 == 98) -> print('PASS: 4 MZXW6YQ= decodes to 4 bytes foob')
 
@@ -81,7 +81,7 @@ main = () {
     e = base32.decode('MZXW6YTB')
     en = e.len()
 
-    #{index-out=0}
+    #{index-out=zero}
     e4 = e[4]
     (en == 5 && e4 == 97) -> print('PASS: 5 MZXW6YTB decodes to 5 bytes fooba')
 

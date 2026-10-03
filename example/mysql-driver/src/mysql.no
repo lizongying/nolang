@@ -221,7 +221,7 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     i = 0
     (i < 20) {
 
-        #{index-out=0}
+        #{index-out=zero}
         combined[i] = seed[i]
 
         #{overflow=wrap}
@@ -230,7 +230,7 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     i = 0
     (i < 20) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         combined[20 + i] = stage2[i]
 
         #{overflow=wrap}
@@ -593,7 +593,7 @@ open = (dsn str) (d db-mysql) {
     i = 0
     (i < 20) {
 
-        #{index-out=0}
+        #{index-out=zero}
         resp[wpos] = auth-token[i]
 
         #{overflow=wrap}

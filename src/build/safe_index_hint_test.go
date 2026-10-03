@@ -7,7 +7,7 @@ import (
 
 // TestSafeIndexStrComputedIndex verifies that a bounds-checked safe read of a
 // []str element with a COMPUTED integer index — `a-line = lines[pre + k]` under
-// `#{index-out=0}` — compiles. Regression for a lowering bug where the read's
+// `#{index-out=zero}` — compiles. Regression for a lowering bug where the read's
 // `str` target typeHint leaked into the index sub-expression, so `pre + k` was
 // emitted as `add %str-long` and the bounds-check `ge`/`lt` received string
 // operands, failing codegen with "ordering comparison ge with a string operand".
@@ -21,7 +21,7 @@ func TestSafeIndexStrComputedIndex(t *testing.T) {
   n = lines.len()
   k <- [0..n): {
     #{overflow=wrap}
-    #{index-out=0}
+    #{index-out=zero}
     a-line = lines[pre + k]
     print(a-line)
   }

@@ -46,7 +46,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 1116352408 + s[0]) & mask
 
     t2 = (s0 + maj) & mask
@@ -69,7 +69,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 1899447441 + s[1]) & mask
 
     t2 = (s0 + maj) & mask
@@ -92,7 +92,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 3049323471 + s[2]) & mask
 
     t2 = (s0 + maj) & mask
@@ -115,7 +115,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 3921009573 + s[3]) & mask
 
     t2 = (s0 + maj) & mask
@@ -138,7 +138,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 961987163 + s[4]) & mask
 
     t2 = (s0 + maj) & mask
@@ -161,7 +161,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 1508970993 + s[5]) & mask
 
     t2 = (s0 + maj) & mask
@@ -184,7 +184,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 2453635748 + s[6]) & mask
 
     t2 = (s0 + maj) & mask
@@ -207,7 +207,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 2870763221 + s[7]) & mask
 
     t2 = (s0 + maj) & mask
@@ -230,7 +230,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 3624381080 + s[8]) & mask
 
     t2 = (s0 + maj) & mask
@@ -253,7 +253,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 310598401 + s[9]) & mask
 
     t2 = (s0 + maj) & mask
@@ -276,7 +276,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 607225278 + s[10]) & mask
 
     t2 = (s0 + maj) & mask
@@ -299,7 +299,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 1426881987 + s[11]) & mask
 
     t2 = (s0 + maj) & mask
@@ -322,7 +322,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 1925078388 + s[12]) & mask
 
     t2 = (s0 + maj) & mask
@@ -345,7 +345,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 2162078206 + s[13]) & mask
 
     t2 = (s0 + maj) & mask
@@ -368,7 +368,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 2614888103 + s[14]) & mask
 
     t2 = (s0 + maj) & mask
@@ -391,7 +391,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=0}
+    #{index-out=zero}
     t1 = (h + s1 + ch + 3248222580 + s[15]) & mask
 
     t2 = (s0 + maj) & mask
@@ -408,52 +408,52 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
 
     ; ---- 第 16-63 輪：擴展訊息排程 + 壓縮 ----
     ; 預計算所有 W[16..63]
-    #{index-out=0}
+    #{index-out=zero}
     w0 = s[0]
 
-    #{index-out=0}
+    #{index-out=zero}
     w1 = s[1]
 
-    #{index-out=0}
+    #{index-out=zero}
     w2 = s[2]
 
-    #{index-out=0}
+    #{index-out=zero}
     w3 = s[3]
 
-    #{index-out=0}
+    #{index-out=zero}
     w4 = s[4]
 
-    #{index-out=0}
+    #{index-out=zero}
     w5 = s[5]
 
-    #{index-out=0}
+    #{index-out=zero}
     w6 = s[6]
 
-    #{index-out=0}
+    #{index-out=zero}
     w7 = s[7]
 
-    #{index-out=0}
+    #{index-out=zero}
     w8 = s[8]
 
-    #{index-out=0}
+    #{index-out=zero}
     w9 = s[9]
 
-    #{index-out=0}
+    #{index-out=zero}
     w10 = s[10]
 
-    #{index-out=0}
+    #{index-out=zero}
     w11 = s[11]
 
-    #{index-out=0}
+    #{index-out=zero}
     w12 = s[12]
 
-    #{index-out=0}
+    #{index-out=zero}
     w13 = s[13]
 
-    #{index-out=0}
+    #{index-out=zero}
     w14 = s[14]
 
-    #{index-out=0}
+    #{index-out=zero}
     w15 = s[15]
 
     ; W[16]: σ1(w14) + w9 + σ0(w1) + w0
@@ -2143,32 +2143,32 @@ sha256 = (data []byte) (hash [32]byte) {
     padded []byte = with-len(total-len)
     i <- [0..total-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         padded[i] = 0
     }
 
     ; 複製原始資料
     i <- [0..dlen): {
 
-        #{index-out=0}
+        #{index-out=zero}
         padded[i] = data[i]
     }
 
     ; 填充 0x80
-    #{index-out=0}
+    #{index-out=zero}
     padded[dlen] = 128
 
     ; 填充 0x00
     i <- [dlen + 1..total-len - 8): {
 
-        #{index-out=0}
+        #{index-out=zero}
         padded[i] = 0
     }
 
     ; 填充 bit-len（big-endian 64-bit）
     i <- [0..8): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
@@ -2177,7 +2177,7 @@ sha256 = (data []byte) (hash [32]byte) {
     block []u32
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         block[i] = 0
     }
     offset = 0
@@ -2186,7 +2186,7 @@ sha256 = (data []byte) (hash [32]byte) {
         ; 將 64 位元組轉為 16 個 32-bit big-endian 字
         i <- [0..16): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
         }
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
@@ -2196,100 +2196,100 @@ sha256 = (data []byte) (hash [32]byte) {
     }
 
     ; 輸出 32 位元組雜湊值（big-endian）
-    #{index-out=0}
+    #{index-out=zero}
     hash[0] = (h0 >> 24) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[1] = (h0 >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[2] = (h0 >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[3] = h0 & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[4] = (h1 >> 24) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[5] = (h1 >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[6] = (h1 >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[7] = h1 & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[8] = (h2 >> 24) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[9] = (h2 >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[10] = (h2 >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[11] = h2 & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[12] = (h3 >> 24) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[13] = (h3 >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[14] = (h3 >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[15] = h3 & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[16] = (h4 >> 24) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[17] = (h4 >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[18] = (h4 >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[19] = h4 & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[20] = (h5 >> 24) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[21] = (h5 >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[22] = (h5 >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[23] = h5 & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[24] = (h6 >> 24) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[25] = (h6 >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[26] = (h6 >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[27] = h6 & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[28] = (h7 >> 24) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[29] = (h7 >> 16) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[30] = (h7 >> 8) & 255
 
-    #{index-out=0}
+    #{index-out=zero}
     hash[31] = h7 & 255
 }
 
@@ -2304,10 +2304,10 @@ sha256-hex = (data []byte) (hex str) {
 
     i <- [0..32): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         hex[i * 2 + 1] = hex-chars[hash[i] & 15]
     }
 }

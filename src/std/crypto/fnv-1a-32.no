@@ -12,7 +12,7 @@ fnv-1a-32 = (s []byte, n i64) (h i64) {
     h = 2166136261
     i <- [0..n): {
 
-        #{index-out=0}
+        #{index-out=zero}
         h = h ^ s[i]
 
         h = (h * 16777619) & 4294967295

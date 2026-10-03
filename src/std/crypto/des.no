@@ -186,7 +186,7 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     i = 0
     (i < n) {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         pos = width - (tbl[i])
         bit = (input >> pos) & 1
 
@@ -208,7 +208,7 @@ sbox-lookup = (input i64, box []byte) (r i64) {
     row = ((v >> 5) & 1) * 2 + (v & 1)
     col = (v >> 1) & 15
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     r = box[row * 16 + col] & 15
 }
 
@@ -254,20 +254,20 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i <- [0..8): {
 
-        #{index-out=0}
+        #{index-out=zero}
         k64 = (k64 << 8) | (key[i])
     }
     c = 0
     d = 0
     i <- [0..28): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         pos = 64 - (PC1-C[i])
         bit = (k64 >> pos) & 1
 
         c = c | (bit << (27 - i))
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         pos2 = 64 - (PC1-D[i])
         bit2 = (k64 >> pos2) & 1
 
@@ -275,7 +275,7 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     }
     round <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         shift = SHIFT-TBL[round]
 
         #{overflow=wrap}
@@ -291,22 +291,22 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         #{overflow=wrap}
         off = round * 6
 
-        #{index-out=0}
+        #{index-out=zero}
         ks[off] = (sk >> 40) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         ks[off + 1] = (sk >> 32) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         ks[off + 2] = (sk >> 24) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         ks[off + 3] = (sk >> 16) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         ks[off + 4] = (sk >> 8) & 255
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         ks[off + 5] = sk & 255
     }
 }
@@ -318,7 +318,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
 
-        #{index-out=0}
+        #{index-out=zero}
         block = (block << 8) | (in[i])
     }
     ip = 0
@@ -342,7 +342,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
         ; 越界預設值）。注意：`#{...}` 必須自成一行置於目標陳述「上方」——若把它
         ; 插在多行運算式的續行之間（換行 + `#{...}` + 續行運算元），語句會在該處
         ; 被切斷，後續陳述被收編到外層區塊，函式體因而被靜默截斷。
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         sk = (ks[sk-off] << 40) |
 (ks[sk-off + 1] << 32) |
 (ks[sk-off + 2] << 24) |

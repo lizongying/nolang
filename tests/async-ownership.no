@@ -40,7 +40,7 @@ echo-async = (s str) (r str) {
 }
 
 first-async = (v []i64) (r i64) {
-    #{index-out=0}
+    #{index-out=zero}
     r = v[0]
 }
 

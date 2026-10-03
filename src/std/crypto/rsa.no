@@ -46,12 +46,12 @@ rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
                     cmp == 0 -> {
                         a[i] > b[i] -> {
 
-                            #{index-out=0}
+                            #{index-out=zero}
                             cmp = 1
                         }
                         a[i] < b[i] -> {
 
-                            #{index-out=0}
+                            #{index-out=zero}
                             cmp = -1
                         }
                         cmp == 0 -> i = i - 1
@@ -83,18 +83,18 @@ rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         {
             i < an -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 sum = sum + a[i]
             }
 
             i < bn -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 sum = sum + b[i]
             }
         }
 
-        #{index-out=0}
+        #{index-out=zero}
         c[i] = sum & 4294967295
         carry = sum >> 32
 
@@ -115,13 +115,13 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     borrow = 0
     i <- [0..an): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         diff = a[i] - borrow
 
         #{overflow=wrap}
         i < bn -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             diff = diff - b[i]
         }
 
@@ -137,7 +137,7 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
             -> borrow = 0
         }
 
-        #{index-out=0}
+        #{index-out=zero}
         c[i] = diff & 4294967295
     }
 
@@ -153,12 +153,12 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
                 #{overflow=wrap}
                 c[local-cn - 1] == 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     local-cn = local-cn - 1
                 }
                 c[local-cn - 1] != 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     keep-trimming = false
                 }
             }
@@ -179,28 +179,28 @@ rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     i <- [0..an + bn): {
 
-        #{index-out=0}
+        #{index-out=zero}
         c[i] = 0
     }
     i <- [0..an): {
 
         a[i] == 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             continue
         }
         carry = 0
         j <- [0..bn): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             prod = (c[i + j] & 4294967295) + (a[i] & 4294967295) * (b[j] & 4294967295) + carry
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             c[i + j] = prod & 4294967295
             carry = prod >> 32
         }
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         c[i + bn] = carry & 4294967295
     }
 
@@ -217,12 +217,12 @@ rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
                 #{overflow=wrap}
                 c[local-cn - 1] == 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     local-cn = local-cn - 1
                 }
                 c[local-cn - 1] != 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     keep-trimming = false
                 }
             }
@@ -239,19 +239,19 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i <- [0..an): {
 
-        #{index-out=0}
+        #{index-out=zero}
         new-val = (a[i] << 1) | carry
 
-        #{index-out=0}
+        #{index-out=zero}
         carry = a[i] >> 31
 
-        #{index-out=0}
+        #{index-out=zero}
         a[i] = new-val & 4294967295
     }
     new-an = an
     carry != 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         a[an] = carry
 
         #{overflow=wrap}
@@ -270,13 +270,13 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
     i = an - 1
     (i >= 0) {
 
-        #{index-out=0}
+        #{index-out=zero}
         new-val = (carry << 31) | (a[i] >> 1)
 
-        #{index-out=0}
+        #{index-out=zero}
         carry = a[i] & 1
 
-        #{index-out=0}
+        #{index-out=zero}
         a[i] = new-val & 4294967295
 
         #{overflow=wrap}
@@ -295,12 +295,12 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
                 #{overflow=wrap}
                 a[local-an - 1] == 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     local-an = local-an - 1
                 }
                 a[local-an - 1] != 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     keep-trimming = false
                 }
             }
@@ -323,11 +323,11 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     bn == 1 && b[0] == 0 -> {
         q = with-len(1)
 
-        #{index-out=0}
+        #{index-out=zero}
         q[0] = 0
         r = with-len(1)
 
-        #{index-out=0}
+        #{index-out=zero}
         r[0] = 0
         qn = 0
         rn = 0
@@ -350,15 +350,15 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     ; 初始化
     i <- [0..buf-len): {
 
-        #{index-out=0}
+        #{index-out=zero}
         local-r[i] = 0
 
-        #{index-out=0}
+        #{index-out=zero}
         local-q[i] = 0
     }
 
     ; 計算 a 的最高有效位元數
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     top = a[an - 1]
     lead = 0
     tmp i64 = top
@@ -383,20 +383,20 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
         carry-shl = 0
         j <- [0..local-rn): {
 
-            #{index-out=0}
+            #{index-out=zero}
             new-val = (local-r[j] << 1) | carry-shl
 
-            #{index-out=0}
+            #{index-out=zero}
             carry-shl = local-r[j] >> 31
 
-            #{index-out=0}
+            #{index-out=zero}
             local-r[j] = new-val & 4294967295
         }
 
         #{overflow=wrap}
         carry-shl != 0 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             local-r[local-rn] = carry-shl
             local-rn = local-rn + 1
         }
@@ -406,10 +406,10 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
         limb = i / 32
         bit-pos = i % 32
 
-        #{index-out=0}
+        #{index-out=zero}
         a-bit = (a[limb] >> bit-pos) & 1
 
-        #{index-out=0}
+        #{index-out=zero}
         local-r[0] = local-r[0] | a-bit
 
         ; 如果 r >= b: r = r - b; q 的第 i 位元設為 1
@@ -426,7 +426,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
             ; 複製 sub-r 回 local-r
             k <- [0..sub-rn): {
 
-                #{index-out=0}
+                #{index-out=zero}
                 local-r[k] = sub-r[k]
             }
 
@@ -437,7 +437,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
                 #{overflow=wrap}
                 k < local-rn -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     local-r[k] = 0
                     k = k + 1
                 }
@@ -446,7 +446,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
             q-limb = i / 32
             q-bit = i % 32
 
-            #{index-out=0}
+            #{index-out=zero}
             local-q[q-limb] = local-q[q-limb] | (1 << q-bit)
         }
 
@@ -467,12 +467,12 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
                 #{overflow=wrap}
                 local-q[local-qn - 1] == 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     local-qn = local-qn - 1
                 }
                 local-q[local-qn - 1] != 0 -> {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     keep-trimming = false
                 }
             }
@@ -528,16 +528,16 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     local-result []i64 = with-len(mn)
     i <- [0..mn): {
 
-        #{index-out=0}
+        #{index-out=zero}
         local-result[i] = 0
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     local-result[0] = 1
     local-rn = 1
 
     ; 計算 exp 的位元數
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     top = exp[en - 1]
     lead = 0
     tmp = top
@@ -562,7 +562,7 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
         e-limb = i / 32
         e-bit = i % 32
 
-        #{index-out=0}
+        #{index-out=zero}
         exp-bit = (exp[e-limb] >> e-bit) & 1
 
         new-result []i64

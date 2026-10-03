@@ -38,13 +38,13 @@ test-nested-clone-str = () (ok bool) {
     s.push(sub1)
     c = s
 
-    #{index-out=0}
+    #{index-out=zero}
     s0 = s[0]
 
-    #{index-out=0}
+    #{index-out=zero}
     c0 = c[0]
 
-    #{index-out=0}
+    #{index-out=zero}
     s0head str = s0[0]
     s0head == 'hello' -> ok = true
     c0[0] == 'hello' -> ok = true

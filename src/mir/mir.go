@@ -153,8 +153,9 @@ func (m *Module) StructHasPtrFields(key string) bool {
 }
 
 // StructOwnedLeafFieldIdxs returns the indices of key's fields whose descriptor
-// is INLINED in the struct yet owns a separately-allocated buffer — `str` today,
-// `vec` / `[]T` / `map` once they get a clone helper.
+// is inline in the struct yet owns a separately allocated buffer: owned strings
+// generally, and owned slices only for struct keys explicitly approved by
+// ownedVecLeafAllowed after clone/drop coverage and corpus validation.
 //
 // These share EXACTLY like pointees do: a bitwise struct copy copies the
 // {len,cap,data} triple and both structs end up freeing the same buffer. The
@@ -216,30 +217,62 @@ func (m *Module) StructFieldIsOwnedLeaf(key string, idx int) bool {
 // types whose %vec leaves are genuinely owned-by-the-struct buffers are opted
 // in, rolled out one tier at a time with a full corpus sweep between tiers.
 //
-// Rollout order (each tier validated by a 691-file compile+run sweep before the
-// next is enabled):
-//  1. hashmap_* / static_hashmap_*  — the str/int/bool-keyed hash tables.
-//  2. set_* / heap_*                — the set and binary-heap pools.
+// Rollout contract: only types proven to own their backing buffers may be opted
+// in, and each tier needs a full corpus compile+run sweep before the gate opens.
+// hashmap_* / static_hashmap_* is tier 1. set_* / heap_* are deliberately NOT
+// tier 2 as written: their init(data) API accepts fixed-array views and callers
+// use the supplied array after init (tests/set.no passes bbuf to union after
+// bset.init(bbuf)). Treating those fields as owned copies breaks that contract.
+// Revisit only if the API ownership semantics are intentionally changed.
 //
-// Opting in a struct here makes its %vec leaves deep-cloned on copy and
-// deep-freed on drop (emitLeafFieldsCloneR / emitStructDropHelper). A struct
-// whose %vec field is a borrowed view, or whose drop would double-free, must
-// stay OUT of this list.
-// DISABLED — see NOLANG-OWNERSHIP-MODEL.md §4.3 (v2.8/v2.9: "判定不落地 / 維持不落地").
+// Ownership: the list is the GATE, so an empty list means "no struct opts in"
+// and StructOwnedLeafFieldIdxs keeps seeing owned %vec leaves exactly as it did
+// before this landing. Landing a tier is appending one prefix; un-landing it is
+// deleting one. Nothing else in the compiler has to change, because the clone
+// walk, the drop walk and isBorrowRead all read the same classifier — which is
+// what keeps them in lockstep by construction rather than by convention.
 //
-// Enabling this (opting hashmap-*/static_hashmap-*/set-*/heap-* into the owned
-// %vec-leaf classifier) is the map-storage-release feature. It was attempted and
-// produced a memory-unsafe crash: classifying those structs reroutes the std
-// library's INTERNAL field assignments (self.keys = X, in init/put/rehash)
-// through the generic clone+free owned-leaf path, which collides with the
-// library's own buffer management and lands in the `raw:` branch of nolang_free
-// (a `free()` on a bad pointer — Apple's mfm_free → brk 1, SIGTRAP) inside
-// hashmap_i64_i64_put. The doc notes this is broad/risky (~25 call sites of
-// StructHasOwnedLeafFields, 36 struct types / 52 files) and that doing it safely
-// needs the projectionWasCloned-style safeguards for %vec field access plus
-// per-type rollout — a redesign, not a patch. Left disabled so the compiler stays
-// working; revisit only with an explicit go-ahead and the full plan.
+// TIERS
+//
+//	tier 1  hashmap_ / static_hashmap_ — LANDED, on the back of the exact
+//	        matched 692-file compile+run A/B sweep (build rc, run rc and stdout
+//	        sha identical on every file; the single intentional difference is
+//	        tests/map-struct-deep-copy.no, which is the Rule 1 fix itself).
+//	        Measured on the same probe the doc uses: `m [str]i64 = {}` + put
+//	        went from 164 MB @ 200k / 651 MB @ 800k (linear, unbounded) to
+//	        1.88 MB @ 200k / 1.80 MB @ 800k (flat), with the never-puts
+//	        negative control flat on both sides.
+//
+//	        The first activation crashed in hashmap_i64_i64_put because
+//	        isBorrowRead inserted a drop for ordinary %vec field reads that
+//	        emitGetField had not cloned (only the option path cloned). Fixed by
+//	        cloning ordinary owned leaves too; guarded by
+//	        TestOwnedVecLeafFieldReadIsCloned, which was verified to fail with
+//	        the clone short-circuited.
+//	tier 2+ set_ / heap_ are deliberately NOT queued: their init(data) API
+//	        accepts fixed-array views and callers keep using the array they
+//	        passed (tests/set.no hands bbuf to union after bset.init(bbuf)).
+//	        Classifying that field as an owned copy would free a buffer the
+//	        caller still owns — an API ownership change, not a bug fix.
+//
+// Structs outside this list stay OUT until their actual buffer ownership is
+// established: StructHasOwnedLeafFields fans out to ~25 call sites, so a
+// blanket opt-in flips every %vec-bearing struct at once.
+var ownedVecLeafTiers = []string{"hashmap_", "static_hashmap_"}
+
 func (m *Module) ownedVecLeafAllowed(key string) bool {
+	if len(ownedVecLeafTiers) == 0 {
+		return false
+	}
+	// MIR struct keys use dashes (`hashmap-str-i64`); the tier list is written
+	// the way the emitted LLVM type reads (`%hashmap_str_i64`). Normalise once
+	// here rather than at every call site.
+	nk := strings.ReplaceAll(key, "-", "_")
+	for _, prefix := range ownedVecLeafTiers {
+		if strings.HasPrefix(nk, prefix) {
+			return true
+		}
+	}
 	return false
 }
 

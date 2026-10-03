@@ -65,11 +65,11 @@ tree-set.init = () {
     #{overflow=wrap}
     i <- [0..TS-CAP - 1): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         .left[i] = i + 1
     }
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     .left[TS-CAP - 1] = -1
 }
 
@@ -83,19 +83,19 @@ tree-set.alloc-node = () (idx i64) {
     idx = .free-head
     idx < 0 -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     .free-head = .left[idx]
 
-    #{index-out=0}
+    #{index-out=zero}
     .left[idx] = -1
 
-    #{index-out=0}
+    #{index-out=zero}
     .right[idx] = -1
 
-    #{index-out=0}
+    #{index-out=zero}
     .parent[idx] = -1
 
-    #{index-out=0}
+    #{index-out=zero}
     .height[idx] = 1
 }
 
@@ -103,7 +103,7 @@ tree-set.alloc-node = () (idx i64) {
 ; idx i64: 要釋放的節點索引
 tree-set.free-node = (idx i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     .left[idx] = .free-head
     .free-head = idx
 }
@@ -119,7 +119,7 @@ tree-set.ht = (idx i64) (h i64) {
     h = 0
     idx < 0 -> return
 
-    #{index-out=0}
+    #{index-out=zero}
     h = .height[idx]
 }
 
@@ -127,13 +127,13 @@ tree-set.ht = (idx i64) (h i64) {
 ; idx i64: 節點索引
 tree-set.update-ht = (idx i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     lh = .ht(.left[idx])
 
-    #{index-out=0}
+    #{index-out=zero}
     rh = .ht(.right[idx])
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     .height[idx] = (lh > rh ? lh : rh) + 1
 }
 
@@ -142,10 +142,10 @@ tree-set.update-ht = (idx i64) {
 ; 返回 b i64: 平衡因子
 tree-set.bf = (idx i64) (b i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     lh = .ht(.left[idx])
 
-    #{index-out=0}
+    #{index-out=zero}
     rh = .ht(.right[idx])
 
     #{overflow=wrap}
@@ -165,27 +165,27 @@ tree-set.bf = (idx i64) (b i64) {
 ; x i64: 旋轉軸節點
 tree-set.rot-left = (x i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     y = .right[x]
 
-    #{index-out=0}
+    #{index-out=zero}
     b = .left[y]
 
-    #{index-out=0}
+    #{index-out=zero}
     .right[x] = b
     b >= 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         .parent[b] = x
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     .left[y] = x
 
-    #{index-out=0}
+    #{index-out=zero}
     .parent[y] = .parent[x]
 
-    #{index-out=0}
+    #{index-out=zero}
     p = .parent[x]
     {
         p < 0 -> .root = y
@@ -193,19 +193,19 @@ tree-set.rot-left = (x i64) {
         -> {
             .left[p] == x -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .left[p] = y
             }
 
             -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .right[p] = y
             }
         }
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     .parent[x] = y
     .update-ht(x)
     .update-ht(y)
@@ -220,27 +220,27 @@ tree-set.rot-left = (x i64) {
 ; x i64: 旋轉軸節點
 tree-set.rot-right = (x i64) {
 
-    #{index-out=0}
+    #{index-out=zero}
     y = .left[x]
 
-    #{index-out=0}
+    #{index-out=zero}
     b = .right[y]
 
-    #{index-out=0}
+    #{index-out=zero}
     .left[x] = b
     b >= 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         .parent[b] = x
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     .right[y] = x
 
-    #{index-out=0}
+    #{index-out=zero}
     .parent[y] = .parent[x]
 
-    #{index-out=0}
+    #{index-out=zero}
     p = .parent[x]
     {
         p < 0 -> .root = y
@@ -248,19 +248,19 @@ tree-set.rot-right = (x i64) {
         -> {
             .left[p] == x -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .left[p] = y
             }
 
             -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .right[p] = y
             }
         }
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     .parent[x] = y
     .update-ht(x)
     .update-ht(y)
@@ -281,16 +281,16 @@ tree-set.rebalance = (idx i64) (nr i64) {
     {
         b > 1 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             lb = .bf(.left[idx])
             lb < 0 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .rot-left(.left[idx])
             }
             .rot-right(idx)
 
-            #{index-out=0}
+            #{index-out=zero}
             nr = .parent[idx]
             return
         }
@@ -299,16 +299,16 @@ tree-set.rebalance = (idx i64) (nr i64) {
 
             ; 右重（b < -1）
 
-            #{index-out=0}
+            #{index-out=zero}
             rb = .bf(.right[idx])
             rb > 0 -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .rot-right(.right[idx])
             }
             .rot-left(idx)
 
-            #{index-out=0}
+            #{index-out=zero}
             nr = .parent[idx]
             return
         }
@@ -323,7 +323,7 @@ tree-set.rebalance-up = (idx i64) {
     (r-idx >= 0) {
         nr = .rebalance(r-idx)
 
-        #{index-out=0}
+        #{index-out=zero}
         r-idx = .parent[nr]
     }
 }
@@ -336,29 +336,29 @@ tree-set.successor = (idx i64) (succ i64) {
     succ = -1
     .right[r-idx] >= 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         succ = .right[r-idx]
         (.left[succ] >= 0) {
 
-            #{index-out=0}
+            #{index-out=zero}
             succ = .left[succ]
 
-            #{index-out=0}
+            #{index-out=zero}
         }
         return
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     p = .parent[r-idx]
     (p >= 0) {
         r-idx != .right[p] -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             break
         }
         r-idx = p
 
-        #{index-out=0}
+        #{index-out=zero}
         p = .parent[p]
     }
     succ = p
@@ -378,7 +378,7 @@ tree-set.add = (key i64) (ok bool) {
         idx = .alloc-node()
         idx < 0 -> return
 
-        #{index-out=0}
+        #{index-out=zero}
         .keys[idx] = key
         .root = idx
         .size = 1
@@ -391,7 +391,7 @@ tree-set.add = (key i64) (ok bool) {
     !! {
         key == .keys[cur] -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             return
         }
         {
@@ -401,13 +401,13 @@ tree-set.add = (key i64) (ok bool) {
                     idx = .alloc-node()
                     idx < 0 -> return
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     .keys[idx] = key
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     .left[cur] = idx
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     .parent[idx] = cur
 
                     #{overflow=wrap}
@@ -417,7 +417,7 @@ tree-set.add = (key i64) (ok bool) {
                     return
                 }
 
-                #{index-out=0}
+                #{index-out=zero}
                 cur = .left[cur]
             }
 
@@ -427,13 +427,13 @@ tree-set.add = (key i64) (ok bool) {
                     idx = .alloc-node()
                     idx < 0 -> return
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     .keys[idx] = key
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     .right[cur] = idx
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     .parent[idx] = cur
 
                     #{overflow=wrap}
@@ -443,7 +443,7 @@ tree-set.add = (key i64) (ok bool) {
                     return
                 }
 
-                #{index-out=0}
+                #{index-out=zero}
                 cur = .right[cur]
             }
         }
@@ -463,13 +463,13 @@ tree-set.contains = (key i64) (yes bool) {
         {
             key < .keys[idx] -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 idx = .left[idx]
             }
 
             -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 idx = .right[idx]
             }
         }
@@ -487,19 +487,19 @@ tree-set.remove = (key i64) (ok bool) {
 
         key == .keys[idx] -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             break
         }
         {
             key < .keys[idx] -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 idx = .left[idx]
             }
 
             -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 idx = .right[idx]
             }
         }
@@ -513,35 +513,35 @@ tree-set.remove = (key i64) (ok bool) {
     ; 雙子節點：用後繼替換後刪除後繼
     .left[idx] >= 0 && .right[idx] >= 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         succ = .right[idx]
         (.left[succ] >= 0) {
 
-            #{index-out=0}
+            #{index-out=zero}
             succ = .left[succ]
 
-            #{index-out=0}
+            #{index-out=zero}
         }
 
-        #{index-out=0}
+        #{index-out=zero}
         .keys[idx] = .keys[succ]
         idx = succ
     }
 
     ; 此時 idx 最多一個子節點
-    #{index-out=0}
+    #{index-out=zero}
     child = .left[idx]
     child < 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         child = .right[idx]
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     p = .parent[idx]
     child >= 0 -> {
 
-        #{index-out=0}
+        #{index-out=zero}
         .parent[child] = p
     }
     {
@@ -550,13 +550,13 @@ tree-set.remove = (key i64) (ok bool) {
         -> {
             .left[p] == idx -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .left[p] = child
             }
 
             -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 .right[p] = child
             }
         }
@@ -581,13 +581,13 @@ tree-set.first = () (val ?i64) {
     }
     (.left[idx] >= 0) {
 
-        #{index-out=0}
+        #{index-out=zero}
         idx = .left[idx]
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     val = .keys[idx]
 }
 
@@ -601,13 +601,13 @@ tree-set.last = () (val ?i64) {
     }
     (.right[idx] >= 0) {
 
-        #{index-out=0}
+        #{index-out=zero}
         idx = .right[idx]
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     val = .keys[idx]
 }
 
@@ -622,13 +622,13 @@ tree-set.lower-bound = (target i64) (val ?i64) {
             .keys[idx] >= target -> {
                 result = idx
 
-                #{index-out=0}
+                #{index-out=zero}
                 idx = .left[idx]
             }
 
             -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 idx = .right[idx]
             }
         }
@@ -638,7 +638,7 @@ tree-set.lower-bound = (target i64) (val ?i64) {
         return
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     val = .keys[result]
 }
 
@@ -653,13 +653,13 @@ tree-set.upper-bound = (target i64) (val ?i64) {
             .keys[idx] > target -> {
                 result = idx
 
-                #{index-out=0}
+                #{index-out=zero}
                 idx = .left[idx]
             }
 
             -> {
 
-                #{index-out=0}
+                #{index-out=zero}
                 idx = .right[idx]
             }
         }
@@ -669,7 +669,7 @@ tree-set.upper-bound = (target i64) (val ?i64) {
         return
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     val = .keys[result]
 }
 
@@ -682,16 +682,16 @@ tree-set.for-each = () (val i64) {
     ; 定位到最小值
     (.left[idx] >= 0) {
 
-        #{index-out=0}
+        #{index-out=zero}
         idx = .left[idx]
 
-        #{index-out=0}
+        #{index-out=zero}
     }
 
     ; 逐個後繼遍歷
     (idx >= 0) {
 
-        #{index-out=0}
+        #{index-out=zero}
         val = .keys[idx]
         idx = .successor(idx)
     }
@@ -711,11 +711,11 @@ tree-set.clear = () {
     #{overflow=wrap}
     i <- [0..TS-CAP - 1): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         .left[i] = i + 1
     }
 
-    #{index-out=0, overflow=wrap}
+    #{index-out=zero, overflow=wrap}
     .left[TS-CAP - 1] = -1
 }
 

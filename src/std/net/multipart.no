@@ -64,7 +64,7 @@ multipart-gen-boundary = (seed i64) (boundary str) {
     i <- [0..16): {
         seed, r = rand.rand(seed)
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         boundary[prefix-len + i] = chars[r % 36]
     }
 }
@@ -344,7 +344,7 @@ multipart-reader.next = () (has-part bool) {
     header-start + 1 < .end -> {
         .data[header-start] == 13 && .data[header-start + 1] == 10 -> {
 
-            #{index-out=0}
+            #{index-out=zero}
             header-start = header-start + 2
         }
     }
@@ -543,13 +543,13 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     combined []byte
     i <- [0..12): {
 
-        #{index-out=0}
+        #{index-out=zero}
         combined[i] = iv[i]
     }
     sealed-n = sealed.len()
     i <- [0..sealed-n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         combined[12 + i] = sealed[i]
     }
 
@@ -597,13 +597,13 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     combined []byte
     i <- [0..12): {
 
-        #{index-out=0}
+        #{index-out=zero}
         combined[i] = iv[i]
     }
     sealed-n = sealed.len()
     i <- [0..sealed-n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         combined[12 + i] = sealed[i]
     }
 
@@ -654,7 +654,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     iv [12]byte
     i <- [0..12): {
 
-        #{index-out=0}
+        #{index-out=zero}
         iv[i] = raw[i]
     }
 
@@ -665,7 +665,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     sealed-n = raw.len() - 12
     i <- [0..sealed-n): {
 
-        #{index-out=0, overflow=wrap}
+        #{index-out=zero, overflow=wrap}
         sealed[i] = raw[12 + i]
     }
 

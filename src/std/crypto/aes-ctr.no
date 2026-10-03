@@ -18,7 +18,7 @@ ctr-inc = (cb []byte) {
     j = 15
     (j >= 12) {
 
-        #{index-out=0}
+        #{index-out=zero}
         cb[j] = (cb[j] + 1) & 255
         cb[j] != 0 -> {
             break
@@ -34,7 +34,7 @@ ctr-inc = (cb []byte) {
         j = 11
         (j >= 0) {
 
-            #{index-out=0}
+            #{index-out=zero}
             cb[j] = (cb[j] + 1) & 255
             cb[j] != 0 -> {
                 break
@@ -57,7 +57,7 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     cb []byte = with-len(16)
     i <- [0..16): {
 
-        #{index-out=0}
+        #{index-out=zero}
         cb[i] = iv[i]
     }
     out = with-len(in.len())
@@ -68,7 +68,7 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         blk [16]byte
         i <- [0..16): {
 
-            #{index-out=0}
+            #{index-out=zero}
             blk[i] = cb[i]
         }
         ks [16]byte
@@ -81,7 +81,7 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         pos + n > in.len() -> n = in.len() - pos
         i <- [0..n): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             out[pos + i] = (in[pos + i]) ^ (ks[i])
         }
 

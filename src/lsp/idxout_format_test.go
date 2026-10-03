@@ -19,7 +19,7 @@ import (
 func TestFormatOnSaveDoesNotEmitIdxOutBlocks(t *testing.T) {
 	dm := NewDocumentManager()
 	uri := "file:///test/idxout.no"
-	text := "combined [40]byte\nseed [20]byte\ni = 0\n(i < 20) {\n    #{index-out=0}\n    combined[i] = seed[i]\n    i = i + 1\n}\n"
+	text := "combined [40]byte\nseed [20]byte\ni = 0\n(i < 20) {\n    #{index-out=zero}\n    combined[i] = seed[i]\n    i = i + 1\n}\n"
 
 	if _, err := dm.OpenDocument(uri, text); err != nil {
 		t.Fatalf("OpenDocument failed: %v", err)
@@ -43,7 +43,7 @@ func TestFormatOnSaveDoesNotEmitIdxOutBlocks(t *testing.T) {
 	if !strings.Contains(formatted, "combined[i] = seed[i]") {
 		t.Errorf("safe-index statement not preserved verbatim:\n%s", formatted)
 	}
-	if !strings.Contains(formatted, "#{index-out=0}") {
+	if !strings.Contains(formatted, "#{index-out=zero}") {
 		t.Errorf("#{index-out} annotation not preserved:\n%s", formatted)
 	}
 }

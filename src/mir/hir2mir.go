@@ -2736,7 +2736,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 										// in it made every later use emit IR
 										// the verifier rejects ("'%lv' defined
 										// with type '%option' ... but expected
-										// '%str-long'") — `#{index-out=0}
+										// '%str-long'") — `#{index-out=zero}
 										// s = xs[i]` followed by `f(s)` was the
 										// first live case (nonpm cmd-add).
 										//

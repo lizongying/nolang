@@ -3882,7 +3882,7 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 //   - governed：把「獨立成行」的 #{overflow = ...} 註解節點（*parser.AnnotationStatement）
 //     對應到它「行注解」語意下所管轄的下一條陳述（*parser.Statement；若後方沒有任何
 //     被管轄的陳述則為 nil）。語意與 parser.applyLineOverflowAnnotations 完全一致：
-//     連續的非 overflow 註解（如緊跟的 #{index-out=0}）會被略過，直到遇到第一條非
+//     連續的非 overflow 註解（如緊跟的 #{index-out=zero}）會被略過，直到遇到第一條非
 //     註解陳述（即被管轄者）；若下一條是另一個含 overflow 的註解，則本註解不轄制任何
 //     陳述（gov 為 nil）。
 //

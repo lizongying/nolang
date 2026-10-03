@@ -165,11 +165,11 @@ func TestFormatTrailingAnnotationAfterMultilineStatement(t *testing.T) {
 				"    v = pick(\n" +
 				"        1,\n" +
 				"        2\n" +
-				"    ) #{index-out=0}\n" +
+				"    ) #{index-out=zero}\n" +
 				"    print(v)\n" +
 				"}\n",
 			expected: "f = () {\n" +
-				"    v = pick(1, 2) #{index-out=0}\n" +
+				"    v = pick(1, 2) #{index-out=zero}\n" +
 				"    print(v)\n" +
 				"}\n",
 		},
@@ -197,13 +197,13 @@ func TestFormatTrailingAnnotationAfterMultilineStatement(t *testing.T) {
 				"        1,\n" +
 				"        2\n" +
 				"    )\n" +
-				"    #{index-out=0}\n" +
+				"    #{index-out=zero}\n" +
 				"    print(v)\n" +
 				"}\n",
 			expected: "f = () {\n" +
 				"    v = pick(1, 2)\n" +
 				"\n" +
-				"    #{index-out=0}\n" +
+				"    #{index-out=zero}\n" +
 				"    print(v)\n" +
 				"}\n",
 		},

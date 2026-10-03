@@ -35,13 +35,13 @@ func parseFull(t *testing.T, src string) *parser.Program {
 }
 
 // TestFormatRemovesProvablyInBoundsIndexOut: a fixed-array read whose index is a
-// for-range loop variable provably in `[0, N)` loses its `#{index-out=0}`.
+// for-range loop variable provably in `[0, N)` loses its `#{index-out=zero}`.
 func TestFormatRemovesProvablyInBoundsIndexOut(t *testing.T) {
 	input := "main = () {\n" +
 		"    p-tmp [32]byte\n" +
 		"    p []byte = with-len(32)\n" +
 		"    i <- [0..32): {\n" +
-		"        #{index-out=0}\n" +
+		"        #{index-out=zero}\n" +
 		"        p[i] = p-tmp[i]\n" +
 		"    }\n" +
 		"}\n"
@@ -72,7 +72,7 @@ func TestFormatRemovesAttachedInBoundsIndexOut(t *testing.T) {
 	input := "get = () (res i64) {\n" +
 		"    a [4]i64 = [10, 20, 30, 40]\n" +
 		"    i <- [0..4): {\n" +
-		"        res = a[i] #{index-out=0}\n" +
+		"        res = a[i] #{index-out=zero}\n" +
 		"    }\n" +
 		"}\n"
 	program := parseForTest(input)
@@ -86,11 +86,11 @@ func TestFormatRemovesAttachedInBoundsIndexOut(t *testing.T) {
 }
 
 // TestFormatPreservesIndexOutForSlice: a slice read (`[]T`, runtime length unknown)
-// is NOT provably in-bounds, so its `#{index-out=0}` must be preserved.
+// is NOT provably in-bounds, so its `#{index-out=zero}` must be preserved.
 func TestFormatPreservesIndexOutForSlice(t *testing.T) {
 	input := "get = (v []i64) (res i64) {\n" +
 		"    i <- [0..4): {\n" +
-		"        #{index-out=0}\n" +
+		"        #{index-out=zero}\n" +
 		"        res = v[i]\n" +
 		"    }\n" +
 		"}\n"
@@ -99,7 +99,7 @@ func TestFormatPreservesIndexOutForSlice(t *testing.T) {
 		t.Fatal("failed to parse test input")
 	}
 	out := FormatProgramWithOverflow(program, input, nil, nil)
-	if !strings.Contains(out, "#{index-out=0}") {
+	if !strings.Contains(out, "#{index-out=zero}") {
 		t.Errorf("slice (non-provable) #{index-out} was wrongly stripped:\n%s", out)
 	}
 }
@@ -110,7 +110,7 @@ func TestFormatPreservesIndexOutForParamBound(t *testing.T) {
 	input := "get = (n i64) (res i64) {\n" +
 		"    a [4]i64 = [10, 20, 30, 40]\n" +
 		"    i <- [0..n): {\n" +
-		"        #{index-out=0}\n" +
+		"        #{index-out=zero}\n" +
 		"        res = a[i]\n" +
 		"    }\n" +
 		"}\n"
@@ -119,7 +119,7 @@ func TestFormatPreservesIndexOutForParamBound(t *testing.T) {
 		t.Fatal("failed to parse test input")
 	}
 	out := FormatProgramWithOverflow(program, input, nil, nil)
-	if !strings.Contains(out, "#{index-out=0}") {
+	if !strings.Contains(out, "#{index-out=zero}") {
 		t.Errorf("non-literal-bound #{index-out} was wrongly stripped:\n%s", out)
 	}
 }
@@ -134,7 +134,7 @@ func TestIndexOutRemovalConsistentWithChecker(t *testing.T) {
 		"    p-tmp [32]byte\n" +
 		"    p []byte = with-len(32)\n" +
 		"    i <- [0..32): {\n" +
-		"        #{index-out=0}\n" +
+		"        #{index-out=zero}\n" +
 		"        p[i] = p-tmp[i]\n" +
 		"    }\n" +
 		"}\n"

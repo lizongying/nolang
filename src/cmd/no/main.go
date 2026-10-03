@@ -1462,7 +1462,7 @@ func fmtProcessFixDirectory(dirname string, writeInPlace bool, diffMode bool, fi
 // fmtOverflowFixes 對未標註 #{overflow} 的整數溢位運算做「手術式」文字插入，
 // 回傳「絕對檔名 -> 修復後源碼」。只有真正未標註的整數運算才會被插入
 // `#{overflow=wrap}`（若該陳述上方緊鄰已有其它單行註解，如 #{intrinsic} /
-// #{index-out=0}，則合併為單行 `#{intrinsic, overflow=wrap}`），不污染無溢出的
+// #{index-out=zero}，則合併為單行 `#{intrinsic, overflow=wrap}`），不污染無溢出的
 // 陳述、不改排版、不改動其它註解，因此對 std 這種含手寫 `#{index-out}` 行註解的
 // 檔案安全。重跑冪等：已標註的陳述不再被報告。
 //

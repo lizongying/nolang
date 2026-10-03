@@ -2062,7 +2062,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 				fmt.Fprintf(os.Stderr, "[debug-self][block]   captured %T (cur=%s tok=%s)\n", stmt, p.curFuncName, p.currentToken.Type)
 			}
 			// 尾隨註解：`stmt #{...}`（同一行 stmt 之後的 #{...}）附加到剛解析的
-			// stmt，支援 `x = v[5] #{index-out=0}` 這類語法。前置註解由
+			// stmt，支援 `x = v[5] #{index-out=zero}` 這類語法。前置註解由
 			// parseAnnotationStatement 附加到後續 stmt，此處僅處理尾隨。
 			// 關鍵：只有 #{...} 與 stmt 位於「同一行」才算尾隨；若 #{...} 在
 			// 新行，應視為下一條陳述的前置註解（如 std/str.no 的
@@ -2073,7 +2073,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 			// 「同一行」以「前一個非註釋 token（= 陳述的最後一個 token）與 #{ 同
 			// 行」判定（annotationImmediatelyTrails），而不是 stmt.Pos().Line：
 			// 後者是陳述的**第一行**，多行陳述（值跨行、或收尾的 `}` 自成一行）的
-			// 尾隨註解會被誤判成下一條陳述的前置註解，使 `#{index-out=0}` 套用到
+			// 尾隨註解會被誤判成下一條陳述的前置註解，使 `#{index-out=zero}` 套用到
 			// 錯誤目標。stmt.Pos().Line 的舊條件保留為超集（單行陳述時兩者等價）。
 			if p.annotationImmediatelyTrails() || (p.currentToken.Type == lexer.HASH_LBRACE && p.currentToken.Line == stmt.Pos().Line) {
 				annLine := p.currentToken.Line

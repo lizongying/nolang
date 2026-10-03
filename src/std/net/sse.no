@@ -168,7 +168,7 @@ client.next-event = () (ev ?event) {
                 ; 將剩餘資料移到緩衝區開頭
                 i <- [0..remaining.len-bytes()): {
 
-                    #{index-out=0}
+                    #{index-out=zero}
                     .recv-buf[i] = remaining.byte(i)
                 }
                 .recv-buf-len = remaining.len-bytes()
@@ -191,7 +191,7 @@ client.next-event = () (ev ?event) {
                     line.len-bytes() > 0 -> {
                         line[line.len-bytes() - 1] == 13 -> {
 
-                            #{index-out=0}
+                            #{index-out=zero}
                             line = line.slice(0, line.len-bytes() - 1)
                         }
                     }
@@ -211,7 +211,7 @@ client.next-event = () (ev ?event) {
                                 val-start < line.len-bytes() -> {
                                     line[val-start] == 32 -> {
 
-                                        #{index-out=0}
+                                        #{index-out=zero}
                                         val-start = val-start + 1
                                     }
                                 }
@@ -295,7 +295,7 @@ client.next-event = () (ev ?event) {
                 ; 複製到緩衝區末尾
                 i <- [0..n): {
 
-                    #{index-out=0, overflow=wrap}
+                    #{index-out=zero, overflow=wrap}
                     .recv-buf[.recv-buf-len + i] = tmp.byte(i)
                 }
                 .recv-buf-len = .recv-buf-len + n
@@ -447,7 +447,7 @@ client.reconnect = () (ok bool) {
         }
         i <- [0..n): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             raw[total + i] = tmp.byte(i)
         }
 
@@ -477,7 +477,7 @@ client.reconnect = () (ok bool) {
     status-code = 0
     i <- [0..code-str.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         c = code-str[i]
         c < 48 || c > 57 -> {
             .close()
@@ -501,7 +501,7 @@ client.reconnect = () (ok bool) {
     .recv-buf-len = remaining.len-bytes()
     i <- [0..remaining.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         .recv-buf[i] = remaining.byte(i)
     }
     ok = true
@@ -563,7 +563,7 @@ sse-connect = (url str) (client ?client) {
         p = 0
         i <- [0..port-str.len-bytes()): {
 
-            #{index-out=0}
+            #{index-out=zero}
             c = port-str[i]
             c < 48 || c > 57 -> {
                 client = err('invalid port')
@@ -702,7 +702,7 @@ sse-connect = (url str) (client ?client) {
         }
         i <- [0..n): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             raw[total + i] = tmp.byte(i)
         }
 
@@ -734,7 +734,7 @@ sse-connect = (url str) (client ?client) {
     status-code = 0
     i <- [0..code-str.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         c = code-str[i]
         c < 48 || c > 57 -> {
             use-tls -> tls-c.close()
@@ -764,7 +764,7 @@ sse-connect = (url str) (client ?client) {
     rb str = with-len(SSE-BUF-SIZE)
     i <- [0..remaining.len-bytes()): {
 
-        #{index-out=0}
+        #{index-out=zero}
         rb[i] = remaining.byte(i)
     }
     cli = client {
@@ -885,7 +885,7 @@ server-conn.handshake = () (ok bool) {
         n <= 0 -> return
         i <- [0..n): {
 
-            #{index-out=0, overflow=wrap}
+            #{index-out=zero, overflow=wrap}
             raw[total + i] = tmp.byte(i)
         }
 

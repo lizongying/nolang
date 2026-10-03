@@ -1,0 +1,69 @@
+; 安全索引：#{index-out=zero} —— 越界時取「當前元素型別的零值」。
+; 與指定字面量預設值不同，zero 不需知道型別細節，一律回傳該元素型別的零值：
+;   i64→0  f64→0.0  bool→false  str→''  char→'\0'  byte→0
+
+z-i64 = (arr []i64, i i64) (res i64) {
+    #{index-out=zero}
+    res = arr[i]
+}
+
+z-f64 = (arr []f64, i i64) (res f64) {
+    #{index-out=zero}
+    res = arr[i]
+}
+
+z-bool = (arr []bool, i i64) (res bool) {
+    #{index-out=zero}
+    res = arr[i]
+}
+
+z-str = (arr []str, i i64) (res str) {
+    #{index-out=zero}
+    res = arr[i]
+}
+
+z-char = (arr []char, i i64) (res char) {
+    #{index-out=zero}
+    res = arr[i]
+}
+
+z-byte = (arr []u8, i i64) (res u8) {
+    #{index-out=zero}
+    res = arr[i]
+}
+
+main = () {
+    ia = [10, 20, 30]
+    io.out('i64 OOB -> ')
+    io.out(z-i64(ia, 9))
+    print('')
+    io.out('i64 in-bounds[1] -> ')
+    io.out(z-i64(ia, 1))
+    print('')
+
+    fa = [1.5, 2.5, 3.5]
+    io.out('f64 OOB -> ')
+    io.out(z-f64(fa, 9))
+    print('')
+
+    ba = [true, true, true]
+    io.out('bool OOB -> ')
+    io.out(z-bool(ba, 9))
+    print('')
+
+    sa = ['a', 'b', 'c']
+    io.out('str OOB -> [')
+    io.out(z-str(sa, 9))
+    io.out(']')
+    print('')
+
+    ca = ["x", "y", "z"]
+    io.out('char OOB -> ')
+    io.out(z-char(ca, 9))
+    print('')
+
+    xa []u8 = [7, 8, 9]
+    io.out('byte OOB -> ')
+    io.out(z-byte(xa, 9))
+    print('')
+}

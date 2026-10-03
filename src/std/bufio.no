@@ -44,7 +44,7 @@ reader.read-byte = () (b ?byte) {
         return
     }
 
-    #{index-out=0}
+    #{index-out=zero}
     b = .buf[.pos]
 
     #{overflow=wrap}
@@ -62,7 +62,7 @@ reader.read-line = () (line str, ok bool) {
         }
         (.pos < .avail) {
 
-            #{index-out=0}
+            #{index-out=zero}
             c = .buf[.pos]
 
             #{overflow=wrap}
@@ -72,7 +72,7 @@ reader.read-line = () (line str, ok bool) {
                 return
             }
 
-            #{index-out=0}
+            #{index-out=zero}
             line[n] = c
 
             #{overflow=wrap}

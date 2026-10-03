@@ -72,7 +72,7 @@ func TestAnnotationAboveAndTrailingAccepted(t *testing.T) {
 
 // TestTrailingAnnotationBindsToPrecedingStatement guards the reason the
 // trailing form is worth allowing: `stmt #{...}` must attach to the statement it
-// trails. Attaching it to the *next* statement made `x = v[i] #{index-out=0}`
+// trails. Attaching it to the *next* statement made `x = v[i] #{index-out=zero}`
 // (the spelling the LSP quickfix inserts) silently apply to the wrong target.
 func TestTrailingAnnotationBindsToPrecedingStatement(t *testing.T) {
 	src := "a i8 = 100\nb i8 = a + 100 #{overflow = wrap}\nprint(b)\n"
