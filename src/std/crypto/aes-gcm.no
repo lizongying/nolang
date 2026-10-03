@@ -42,7 +42,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
     z [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         z[i] = 0
     }
 
@@ -114,7 +113,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     blk [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         y[i] = 0
     }
 
@@ -146,7 +144,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     pos < aad.len() -> {
         i <- [0..16): {
 
-            #{index-out=zero}
             blk[i] = 0
         }
         i <- [0..aad.len() - pos): {
@@ -187,7 +184,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     pos < cipher.len() -> {
         i <- [0..16): {
 
-            #{index-out=zero}
             blk[i] = 0
         }
         i <- [0..cipher.len() - pos): {
@@ -207,7 +203,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     len-blk [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         len-blk[i] = 0
     }
 
@@ -218,53 +213,37 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     cipher-bits = cipher.len() * 8
 
     ; aad-bits 的高 64 位元（大端序）
-    #{index-out=zero}
     len-blk[0] = (aad-bits >> 56) & 255
 
-    #{index-out=zero}
     len-blk[1] = (aad-bits >> 48) & 255
 
-    #{index-out=zero}
     len-blk[2] = (aad-bits >> 40) & 255
 
-    #{index-out=zero}
     len-blk[3] = (aad-bits >> 32) & 255
 
-    #{index-out=zero}
     len-blk[4] = (aad-bits >> 24) & 255
 
-    #{index-out=zero}
     len-blk[5] = (aad-bits >> 16) & 255
 
-    #{index-out=zero}
     len-blk[6] = (aad-bits >> 8) & 255
 
-    #{index-out=zero}
     len-blk[7] = aad-bits & 255
 
     ; cipher-bits 的高 64 位元（大端序）
-    #{index-out=zero}
     len-blk[8] = (cipher-bits >> 56) & 255
 
-    #{index-out=zero}
     len-blk[9] = (cipher-bits >> 48) & 255
 
-    #{index-out=zero}
     len-blk[10] = (cipher-bits >> 40) & 255
 
-    #{index-out=zero}
     len-blk[11] = (cipher-bits >> 32) & 255
 
-    #{index-out=zero}
     len-blk[12] = (cipher-bits >> 24) & 255
 
-    #{index-out=zero}
     len-blk[13] = (cipher-bits >> 16) & 255
 
-    #{index-out=zero}
     len-blk[14] = (cipher-bits >> 8) & 255
 
-    #{index-out=zero}
     len-blk[15] = cipher-bits & 255
 
     i <- [0..16): {
@@ -336,16 +315,12 @@ gcm-j0 = (iv [12]byte) (j0 [16]byte) {
         j0[i] = iv[i]
     }
 
-    #{index-out=zero}
     j0[12] = 0
 
-    #{index-out=zero}
     j0[13] = 0
 
-    #{index-out=zero}
     j0[14] = 0
 
-    #{index-out=zero}
     j0[15] = 1
 }
 
@@ -354,7 +329,6 @@ gcm-h = (ek []byte) (h [16]byte) {
     zero-block [16]byte
     i <- [0..16): {
 
-        #{index-out=zero}
         zero-block[i] = 0
     }
     h = aes.enc-block(zero-block, ek)

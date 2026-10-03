@@ -78,16 +78,12 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     ; 初始化狀態（16 個 32-bit 字）
     state []u32
 
-    #{index-out=zero}
     state[0] = CC-SIGMA0
 
-    #{index-out=zero}
     state[1] = CC-SIGMA1
 
-    #{index-out=zero}
     state[2] = CC-SIGMA2
 
-    #{index-out=zero}
     state[3] = CC-SIGMA3
 
     ; 金鑰（8 個 32-bit 小端字）
@@ -98,7 +94,6 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     }
 
     ; 計數器
-    #{index-out=zero}
     state[12] = counter
 
     ; Nonce（3 個 32-bit 小端字）
@@ -138,16 +133,16 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
         #{index-out=zero}
         val = (state[i] + init[i]) & CC-MASK32
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i * 4] = val & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i * 4 + 1] = (val >> 8) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i * 4 + 2] = (val >> 16) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i * 4 + 3] = (val >> 24) & 255
     }
 }
@@ -580,52 +575,36 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     f3 = (f3 + s3 + c) & CC-MASK32
 
     ; 輸出 tag（小端序）
-    #{index-out=zero}
     tag[0] = f0 & 255
 
-    #{index-out=zero}
     tag[1] = (f0 >> 8) & 255
 
-    #{index-out=zero}
     tag[2] = (f0 >> 16) & 255
 
-    #{index-out=zero}
     tag[3] = (f0 >> 24) & 255
 
-    #{index-out=zero}
     tag[4] = f1 & 255
 
-    #{index-out=zero}
     tag[5] = (f1 >> 8) & 255
 
-    #{index-out=zero}
     tag[6] = (f1 >> 16) & 255
 
-    #{index-out=zero}
     tag[7] = (f1 >> 24) & 255
 
-    #{index-out=zero}
     tag[8] = f2 & 255
 
-    #{index-out=zero}
     tag[9] = (f2 >> 8) & 255
 
-    #{index-out=zero}
     tag[10] = (f2 >> 16) & 255
 
-    #{index-out=zero}
     tag[11] = (f2 >> 24) & 255
 
-    #{index-out=zero}
     tag[12] = f3 & 255
 
-    #{index-out=zero}
     tag[13] = (f3 >> 8) & 255
 
-    #{index-out=zero}
     tag[14] = (f3 >> 16) & 255
 
-    #{index-out=zero}
     tag[15] = (f3 >> 24) & 255
 }
 
@@ -685,7 +664,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = 0
     }
 
@@ -708,7 +687,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = 0
     }
 
@@ -718,28 +697,28 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     ; aad_len (64-bit LE)
     aad-len = aad.len()
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 0] = aad-len & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 1] = (aad-len >> 8) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 2] = (aad-len >> 16) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 3] = (aad-len >> 24) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 4] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 5] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 6] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 7] = 0
 
     #{overflow=wrap}
@@ -748,28 +727,28 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     ; cipher_len (64-bit LE)
     cipher-len = cipher.len()
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 0] = cipher-len & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 1] = (cipher-len >> 8) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 2] = (cipher-len >> 16) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 3] = (cipher-len >> 24) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 4] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 5] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 6] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 7] = 0
 
     #{overflow=wrap}
@@ -843,7 +822,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = 0
     }
 
@@ -864,7 +843,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     pad-len == 16 -> pad-len = 0
     i <- [0..pad-len): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         mac-input[pos + i] = 0
     }
 
@@ -873,28 +852,28 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
 
     aad-len = aad.len()
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 0] = aad-len & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 1] = (aad-len >> 8) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 2] = (aad-len >> 16) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 3] = (aad-len >> 24) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 4] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 5] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 6] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 7] = 0
 
     #{overflow=wrap}
@@ -902,28 +881,28 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
 
     cipher-len-val = cipher.len()
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 0] = cipher-len-val & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 1] = (cipher-len-val >> 8) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 2] = (cipher-len-val >> 16) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 3] = (cipher-len-val >> 24) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 4] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 5] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 6] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     mac-input[pos + 7] = 0
 
     #{overflow=wrap}

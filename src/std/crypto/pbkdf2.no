@@ -44,16 +44,15 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         }
 
         ; INT_32_BE(block_idx)
-        #{index-out=zero}
         u-input[salt-len] = (block-idx >> 24) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 1] = (block-idx >> 16) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 2] = (block-idx >> 8) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 3] = block-idx & 255
 
         ; U1 = HMAC(password, salt || INT_32_BE(block_idx))
@@ -129,16 +128,15 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
             u-input[i] = salt[i]
         }
 
-        #{index-out=zero}
         u-input[salt-len] = (block-idx >> 24) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 1] = (block-idx >> 16) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 2] = (block-idx >> 8) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 3] = block-idx & 255
 
         u [64]byte
@@ -205,16 +203,15 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
             u-input[i] = salt[i]
         }
 
-        #{index-out=zero}
         u-input[salt-len] = (block-idx >> 24) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 1] = (block-idx >> 16) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 2] = (block-idx >> 8) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         u-input[salt-len + 3] = block-idx & 255
 
         u [20]byte

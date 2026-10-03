@@ -26,7 +26,6 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
         salt.len() == 0 -> {
             i <- [0..32): {
 
-                #{index-out=zero}
                 k[i] = 0
             }
         }
@@ -77,7 +76,6 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
     #{overflow=wrap}
     counter > 0 -> {
 
-        #{index-out=zero}
         msg[t-len + info.len()] = counter & 255
     }
     out = hmac.hmac-sha256(prk-vec, msg)
@@ -115,7 +113,6 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
             copy-n = out-len
             i <- [0..copy-n): {
 
-                #{index-out=zero}
                 okm[i] = t-tmp[i]
             }
         }
@@ -130,7 +127,6 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
                 i <- [0..32): {
 
-                    #{index-out=zero}
                     t[i] = t-tmp[i]
                 }
                 t-valid = true
@@ -182,15 +178,12 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     pos = 0
 
     ; length (2 bytes, big-endian)
-    #{index-out=zero}
     info[0] = (out-len >> 8) & 255
 
-    #{index-out=zero}
     info[1] = out-len & 255
     pos = 2
 
     ; label length (1 byte)
-    #{index-out=zero}
     info[2] = label-bytes.len() & 255
     pos = 3
 
@@ -205,7 +198,6 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     pos = pos + label-bytes.len()
 
     ; context length (1 byte)
-    #{index-out=zero}
     info[pos] = context.len() & 255
 
     #{overflow=wrap}

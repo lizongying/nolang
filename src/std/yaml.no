@@ -290,10 +290,8 @@ yaml-parser.push-null = () (idx i64) {
 ; set-props: 为节点附加标签与锚点（并登记锚点）
 yaml-parser.set-props = (idx i64, tag str, anchor str) {
 
-    #{index-out=zero}
     .nodes[idx].tag = tag
 
-    #{index-out=zero}
     .nodes[idx].anchor = anchor
     anchor.len-bytes() > 0 -> .register-anchor(anchor, idx)
 }
@@ -1002,7 +1000,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 j = i + 1
                 j < .n -> {
 
-                    #{index-out=zero}
                     .src.byte(j) == 39 -> {
 
                         #{overflow=wrap}
@@ -1817,7 +1814,6 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
     }
     src < 0 -> return
 
-    #{index-out=zero}
     .nodes[src].kind != YAML-KIND-MAP -> return
     cnt = .nodes[src].keys.len()
     i <- [0..cnt): {
@@ -1932,10 +1928,8 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
 
         is-merge = false
 
-        #{index-out=zero}
         .nodes[key].kind == YAML-KIND-STR -> {
 
-            #{index-out=zero}
             .nodes[key].text.eq-full('<<') -> is-merge = true
         }
         is-merge -> {
@@ -2545,7 +2539,6 @@ yaml.get = (key str) (out yaml, ok bool) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
 
-    #{index-out=zero}
     .pool.nodes[.root].kind != YAML-KIND-MAP -> return
     cnt = .pool.nodes[.root].keys.len()
     i <- [0..cnt): {

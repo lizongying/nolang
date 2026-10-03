@@ -2143,7 +2143,6 @@ sha256 = (data []byte) (hash [32]byte) {
     padded []byte = with-len(total-len)
     i <- [0..total-len): {
 
-        #{index-out=zero}
         padded[i] = 0
     }
 
@@ -2155,20 +2154,18 @@ sha256 = (data []byte) (hash [32]byte) {
     }
 
     ; 填充 0x80
-    #{index-out=zero}
     padded[dlen] = 128
 
     ; 填充 0x00
     i <- [dlen + 1..total-len - 8): {
 
-        #{index-out=zero}
         padded[i] = 0
     }
 
     ; 填充 bit-len（big-endian 64-bit）
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
@@ -2177,7 +2174,6 @@ sha256 = (data []byte) (hash [32]byte) {
     block []u32
     i <- [0..16): {
 
-        #{index-out=zero}
         block[i] = 0
     }
     offset = 0
@@ -2196,100 +2192,68 @@ sha256 = (data []byte) (hash [32]byte) {
     }
 
     ; 輸出 32 位元組雜湊值（big-endian）
-    #{index-out=zero}
     hash[0] = (h0 >> 24) & 255
 
-    #{index-out=zero}
     hash[1] = (h0 >> 16) & 255
 
-    #{index-out=zero}
     hash[2] = (h0 >> 8) & 255
 
-    #{index-out=zero}
     hash[3] = h0 & 255
 
-    #{index-out=zero}
     hash[4] = (h1 >> 24) & 255
 
-    #{index-out=zero}
     hash[5] = (h1 >> 16) & 255
 
-    #{index-out=zero}
     hash[6] = (h1 >> 8) & 255
 
-    #{index-out=zero}
     hash[7] = h1 & 255
 
-    #{index-out=zero}
     hash[8] = (h2 >> 24) & 255
 
-    #{index-out=zero}
     hash[9] = (h2 >> 16) & 255
 
-    #{index-out=zero}
     hash[10] = (h2 >> 8) & 255
 
-    #{index-out=zero}
     hash[11] = h2 & 255
 
-    #{index-out=zero}
     hash[12] = (h3 >> 24) & 255
 
-    #{index-out=zero}
     hash[13] = (h3 >> 16) & 255
 
-    #{index-out=zero}
     hash[14] = (h3 >> 8) & 255
 
-    #{index-out=zero}
     hash[15] = h3 & 255
 
-    #{index-out=zero}
     hash[16] = (h4 >> 24) & 255
 
-    #{index-out=zero}
     hash[17] = (h4 >> 16) & 255
 
-    #{index-out=zero}
     hash[18] = (h4 >> 8) & 255
 
-    #{index-out=zero}
     hash[19] = h4 & 255
 
-    #{index-out=zero}
     hash[20] = (h5 >> 24) & 255
 
-    #{index-out=zero}
     hash[21] = (h5 >> 16) & 255
 
-    #{index-out=zero}
     hash[22] = (h5 >> 8) & 255
 
-    #{index-out=zero}
     hash[23] = h5 & 255
 
-    #{index-out=zero}
     hash[24] = (h6 >> 24) & 255
 
-    #{index-out=zero}
     hash[25] = (h6 >> 16) & 255
 
-    #{index-out=zero}
     hash[26] = (h6 >> 8) & 255
 
-    #{index-out=zero}
     hash[27] = h6 & 255
 
-    #{index-out=zero}
     hash[28] = (h7 >> 24) & 255
 
-    #{index-out=zero}
     hash[29] = (h7 >> 16) & 255
 
-    #{index-out=zero}
     hash[30] = (h7 >> 8) & 255
 
-    #{index-out=zero}
     hash[31] = h7 & 255
 }
 

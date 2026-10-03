@@ -180,7 +180,6 @@ zip.name = (idx i64) (name str) {
         #{overflow=wrap}
         idx2 = off46 + i
 
-        #{index-out=zero}
         result = result - number.char-to-str(.data[idx2])
     }
     name = result
@@ -261,7 +260,6 @@ zip.extract = (idx i64) (out []byte) {
                 #{overflow=wrap}
                 src-off = data-off + i
 
-                #{index-out=zero}
                 result.push(.data[src-off])
             }
         }
@@ -272,7 +270,7 @@ zip.extract = (idx i64) (out []byte) {
             compressed []byte
             i <- [0..csz): {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 compressed.push(.data[data-off + i])
             }
 
@@ -302,7 +300,6 @@ zip-entry.name = () (name str) {
         #{overflow=wrap}
         idx2 = off46 + i
 
-        #{index-out=zero}
         result = result - number.char-to-str(.data[idx2])
     }
     name = result
@@ -377,7 +374,6 @@ zip-entry.extract = () (out []byte) {
                 #{overflow=wrap}
                 src-off = data-off + i
 
-                #{index-out=zero}
                 result.push(.data[src-off])
             }
         }
@@ -388,7 +384,7 @@ zip-entry.extract = () (out []byte) {
             compressed []byte
             i <- [0..csz): {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 compressed.push(.data[data-off + i])
             }
 
@@ -465,7 +461,6 @@ zip-writer.finalize = () (out []byte) {
     cd-size = .cd-data.len()
     i <- [0..cd-size): {
 
-        #{index-out=zero}
         .put(.cd-data[i])
     }
     .write-eocd(cd-offset, cd-size)
@@ -473,7 +468,6 @@ zip-writer.finalize = () (out []byte) {
     out = with-cap(.data.len())
     i <- [0..dlen): {
 
-        #{index-out=zero}
         out[i] = .data[i]
     }
 }
@@ -535,7 +529,6 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
     ; 檔名
     i <- [0..name-len): {
 
-        #{index-out=zero}
         .put(name.byte(i))
     }
 
@@ -622,7 +615,6 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
     ; 檔名
     i <- [0..name-len): {
 
-        #{index-out=zero}
         .cd-put(name.byte(i))
     }
 }

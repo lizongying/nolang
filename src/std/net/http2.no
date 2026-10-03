@@ -81,16 +81,16 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     #{overflow=wrap}
     pos + HTTP2-FRAME-HEADER-SIZE > data.len-bytes() -> return; 24-bit length（big-endian）
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     .length = (data.byte(pos) << 16) | (data.byte(pos + 1) << 8) | data.byte(pos + 2)
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     .frame-type = data.byte(pos + 3)
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     .flags = data.byte(pos + 4); 31-bit stream-id（big-endian，高位保留）
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     .stream-id = ((data.byte(pos + 5) & 127) << 24) | (data.byte(pos + 6) << 16) | (data.byte(pos + 7) << 8) | data.byte(pos + 8)
 
     #{overflow=wrap}
@@ -101,31 +101,30 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
 ; 返回 next-pos=下一個位置
 frame.serialize = (buf str, pos i64) (next-pos i64) {
 
-    #{index-out=zero}
     buf[pos] = (.length >> 16) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     buf[pos + 1] = (.length >> 8) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     buf[pos + 2] = .length & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     buf[pos + 3] = .frame-type & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     buf[pos + 4] = .flags & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     buf[pos + 5] = (.stream-id >> 24) & 127
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     buf[pos + 6] = (.stream-id >> 16) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     buf[pos + 7] = (.stream-id >> 8) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     buf[pos + 8] = .stream-id & 255
 
     #{overflow=wrap}
@@ -224,10 +223,9 @@ conn.recv-frame = () (frame ?frame) {
         recv-n <= 0 -> return
 
         ; net-recv 覆寫 buf[0]，需要位移複製
-        #{index-out=zero}
         i <- [0..recv-n): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             hdr-buf[hdr-total + i] = hdr-buf.byte(i)
         }
 
@@ -267,7 +265,7 @@ conn.recv-frame = () (frame ?frame) {
             recv-n <= 0 -> return
             i <- [0..recv-n): {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 f.payload[payload-total + i] = f.payload.byte(i)
             }
 
@@ -321,7 +319,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
         ; 複製到 block
         j <- [0..hdr-out.len-bytes()): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             block[block-n + j] = hdr-out.byte(j)
         }
 
@@ -492,34 +490,26 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     hdr-count = 0
 
     ; :method
-    #{index-out=zero}
     hdr-names[0] = ':method'
 
-    #{index-out=zero}
     hdr-values[0] = method
     hdr-count = 1
 
     ; :path
-    #{index-out=zero}
     hdr-names[1] = ':path'
 
-    #{index-out=zero}
     hdr-values[1] = path
     hdr-count = 2
 
     ; :scheme
-    #{index-out=zero}
     hdr-names[2] = ':scheme'
 
-    #{index-out=zero}
     hdr-values[2] = 'http'
     hdr-count = 3
 
     ; :authority
-    #{index-out=zero}
     hdr-names[3] = ':authority'
 
-    #{index-out=zero}
     hdr-values[3] = host
     hdr-count = 4
 
@@ -530,11 +520,9 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
         has-body = true
 
         ; content-length
-        #{index-out=zero}
         hdr-names[4] = 'content-length'
         blen-str = body-len.to-str()
 
-        #{index-out=zero}
         hdr-values[4] = blen-str
         hdr-count = 5
     }
@@ -578,16 +566,12 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 i <- [0..dec-count): {
                     i >= 32 -> break
 
-                    #{index-out=zero}
                     nlen = dec-names[i].len-bytes()
 
-                    #{index-out=zero}
                     vlen = dec-values[i].len-bytes()
 
-                    #{index-out=zero}
                     names[i] = dec-names[i].slice(0, nlen)
 
-                    #{index-out=zero}
                     values[i] = dec-values[i].slice(0, vlen)
                 }
                 {
@@ -608,7 +592,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 ; 複製到 resp-body
                 i <- [0..f.payload.len-bytes()): {
 
-                    #{index-out=zero, overflow=wrap}
+                    #{overflow=wrap}
                     resp-body[resp-n + i] = f.payload.byte(i)
                 }
 
@@ -709,7 +693,7 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
         port = 0
         i <- [0..port-str.len-bytes()): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             port = port * 10 + (port-str[i] - 48)
         }
         host = host-only

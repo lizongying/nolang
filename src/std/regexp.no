@@ -104,13 +104,10 @@ regexp {
 ; arg2 i64: 參數2
 regexp.emit = (op i64, arg1 i64, arg2 i64) {
 
-    #{index-out=zero}
     .op[.n] = op
 
-    #{index-out=zero}
     .arg1[.n] = arg1
 
-    #{index-out=zero}
     .arg2[.n] = arg2
 
     #{overflow=wrap}
@@ -142,7 +139,7 @@ regexp.set-class-bit = (cls-idx i64, c i64) {
     bit-idx = c & 7
     mask = 1 << bit-idx
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     .cls[base + byte-idx] = .cls[base + byte-idx] | mask
 }
 
@@ -157,7 +154,7 @@ regexp.clear-class-bit = (cls-idx i64, c i64) {
     bit-idx = c & 7
     mask = 255 ^ (1 << bit-idx)
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     .cls[base + byte-idx] = .cls[base + byte-idx] & mask
 }
 
@@ -175,7 +172,6 @@ regexp.in-class = (cls-idx i64, c i64) (yes bool) {
 
     (.cls[base + byte-idx] & mask) != 0 -> {
 
-        #{index-out=zero}
         yes = true
     }
 }
@@ -188,7 +184,7 @@ regexp.init-class-zero = (cls-idx i64) {
     base = cls-idx * RE-CLS-SIZE
     j <- [0..RE-CLS-SIZE): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         .cls[base + j] = 0
     }
 }
@@ -201,7 +197,7 @@ regexp.init-class-all = (cls-idx i64) {
     base = cls-idx * RE-CLS-SIZE
     j <- [0..RE-CLS-SIZE): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         .cls[base + j] = 255
     }
 }
@@ -401,7 +397,6 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         return
     }
 
-    #{index-out=zero}
     c = pattern[i]
 
     ; . — 任意字元
@@ -472,7 +467,6 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 
     (ri < n) {
 
-        #{index-out=zero}
         c = pattern[ri]
 
         ; 結束（非首字元）
@@ -495,11 +489,11 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         #{overflow=wrap}
         ri + 2 < n -> {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             next-c = pattern[ri + 1]
             next-c == 45 -> {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 end-c = pattern[ri + 2]
                 end-c != 93 -> {
 
@@ -525,7 +519,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                 next-i = ri + 1
                 ri < n -> {
 
-                    #{index-out=zero, overflow=wrap}
+                    #{overflow=wrap}
                     esc-c = pattern[ri + 1]
                     .set-class-escape(cls-idx, esc-c)
                     next-i = ri + 2
@@ -544,7 +538,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         base = cls-idx * RE-CLS-SIZE
         j <- [0..RE-CLS-SIZE): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             .cls[base + j] = .cls[base + j] ^ 255
         }
     }
@@ -575,7 +569,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         return
     }
 
-    #{index-out=zero}
     c = pattern[ri]
 
     ; \d — 數字
@@ -689,10 +682,8 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         .emit-atom(atom-type, atom-char, atom-cls)
         .emit(RE-OP-JUMP, split-pc)
 
-        #{index-out=zero}
         .arg1[split-pc] = l1
 
-        #{index-out=zero}
         .arg2[split-pc] = .n
 
         #{overflow=wrap}
@@ -722,10 +713,8 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
 
-        #{index-out=zero}
         .arg1[split-pc] = l1
 
-        #{index-out=zero}
         .arg2[split-pc] = .n
 
         #{overflow=wrap}
@@ -766,7 +755,6 @@ regexp.compile = () {
 
     (i < n) {
 
-        #{index-out=zero}
         c = pat[i]
 
         ; 預設前進 1
@@ -804,7 +792,6 @@ regexp.compile = () {
             .tmp-quant = _RE-QUANT-NONE
             atom-i < n -> {
 
-                #{index-out=zero}
                 qc = pat[atom-i]
                 is-star = .in-class(star-cls, qc)
                 is-star -> .tmp-quant = _RE-QUANT-STAR
@@ -839,14 +826,13 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
 
     pc < .n -> {
 
-        #{index-out=zero}
         op = .op[pc]
 
         op == RE-OP-CHAR -> {
             sp < text.len-bytes() -> {
                 (text[sp]) == .arg1[pc] -> {
 
-                    #{index-out=zero, overflow=wrap}
+                    #{overflow=wrap}
                     result-ok = .match-at(pc + 1, sp + 1, text)
                 }
             }
@@ -855,17 +841,15 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
             sp < text.len-bytes() -> {
                 (text[sp]) != 10 -> {
 
-                    #{index-out=zero, overflow=wrap}
+                    #{overflow=wrap}
                     result-ok = .match-at(pc + 1, sp + 1, text)
                 }
             }
         }
         op == RE-OP-CLASS -> sp < text.len-bytes() -> {
 
-            #{index-out=zero}
             ch = text[sp]
 
-            #{index-out=zero}
             yes = .in-class(.arg1[pc], ch)
 
             #{overflow=wrap}
@@ -874,19 +858,16 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
         op == RE-OP-SPLIT -> {
 
             ; 貪婪：先嘗試第一分支
-            #{index-out=zero}
             result-ok = .match-at(.arg1[pc], sp, text)
 
             ; 第一分支失敗時回溯到第二分支
             ! result-ok -> {
 
-                #{index-out=zero}
                 result-ok = .match-at(.arg2[pc], sp, text)
             }
         }
         op == RE-OP-JUMP -> {
 
-            #{index-out=zero}
             result-ok = .match-at(.arg1[pc], sp, text)
         }
         op == RE-OP-MATCH -> {
@@ -956,7 +937,7 @@ regexp.find = (text str) (result str) {
             result = with-cap(mlen)
             j <- [0..mlen): {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 result[j] = text[sp + j]
             }
             return

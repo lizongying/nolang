@@ -363,7 +363,6 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     i <- [0..32): {
         diff-bytes[i] != 0 -> {
 
-            #{index-out=zero}
             is-zero = 0
         }
     }
@@ -389,7 +388,6 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
         i <- [0..32): {
             diff-bytes[i] != 0 -> {
 
-                #{index-out=zero}
                 is-zero = 0
             }
         }
@@ -404,7 +402,6 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     x25519.fe-tobytes(x-bytes, x)
     (x-bytes[0] & 1) != sign -> {
 
-        #{index-out=zero}
         fe-neg(x, x)
     }
 
@@ -544,7 +541,6 @@ sc-reduce = (s []byte) (out [32]byte) {
         i <- [32..64): {
             work[i] != 0 -> {
 
-                #{index-out=zero}
                 has-high = 1
             }
         }
@@ -557,8 +553,6 @@ sc-reduce = (s []byte) (out [32]byte) {
 
                 {
                     work[i] > ED-L[i] -> {
-
-                        #{index-out=zero}
                         break
                     }
 
@@ -593,7 +587,6 @@ sc-reduce = (s []byte) (out [32]byte) {
                 -> borrow = 0
             }
 
-            #{index-out=zero}
             work[i] = diff-val
         }
 
@@ -615,7 +608,6 @@ sc-reduce = (s []byte) (out [32]byte) {
                 -> borrow = 0
             }
 
-            #{index-out=zero}
             work[i] = diff-val
         }
     }
@@ -637,7 +629,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     product [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         product[i] = 0
     }
     i <- [0..32): {
@@ -651,7 +642,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             #{index-out=zero, overflow=wrap}
             val = (product[idx]) + (a[i]) * (b[j]) + carry
 
-            #{index-out=zero}
             product[idx] = val & 255
             carry = val >> 8
         }
@@ -664,7 +654,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             #{index-out=zero, overflow=wrap}
             val = (product[idx]) + carry
 
-            #{index-out=zero}
             product[idx] = val & 255
             carry = val >> 8
 
@@ -680,7 +669,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         #{overflow=wrap}
         val = (product[i]) + (c[i]) + carry
 
-        #{index-out=zero}
         product[i] = val & 255
         carry = val >> 8
     }
@@ -689,7 +677,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         #{index-out=zero, overflow=wrap}
         val = (product[i]) + carry
 
-        #{index-out=zero}
         product[i] = val & 255
         carry = val >> 8
     }
@@ -868,8 +855,6 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
             }
 
             s[i] < ED-L[i] -> {
-
-                #{index-out=zero}
                 break
             }
         }
@@ -938,7 +923,6 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..32): {
         sb-bytes[i] != rka-bytes[i] -> {
 
-            #{index-out=zero}
             ok = 0
         }
     }

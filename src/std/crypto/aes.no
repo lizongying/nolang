@@ -108,7 +108,6 @@ sub-bytes = (state []byte, n i64) {
         #{index-out=zero}
         b = state[i]
 
-        #{index-out=zero}
         state[i] = SBOX[b]
     }
 }
@@ -120,7 +119,6 @@ inv-sub-bytes = (state []byte, n i64) {
         #{index-out=zero}
         b = state[i]
 
-        #{index-out=zero}
         state[i] = INV-SBOX[b]
     }
 }
@@ -140,7 +138,6 @@ shift-rows = (state []byte) {
     #{index-out=zero}
     state[9] = state[13]
 
-    #{index-out=zero}
     state[13] = t
 
     #{index-out=zero}
@@ -155,10 +152,8 @@ shift-rows = (state []byte) {
     #{index-out=zero}
     state[6] = state[14]
 
-    #{index-out=zero}
     state[10] = t0
 
-    #{index-out=zero}
     state[14] = t1
 
     #{index-out=zero}
@@ -173,7 +168,6 @@ shift-rows = (state []byte) {
     #{index-out=zero}
     state[7] = state[3]
 
-    #{index-out=zero}
     state[3] = t
 }
 
@@ -192,7 +186,6 @@ inv-shift-rows = (state []byte) {
     #{index-out=zero}
     state[5] = state[1]
 
-    #{index-out=zero}
     state[1] = t
 
     #{index-out=zero}
@@ -207,10 +200,8 @@ inv-shift-rows = (state []byte) {
     #{index-out=zero}
     state[6] = state[14]
 
-    #{index-out=zero}
     state[10] = t0
 
-    #{index-out=zero}
     state[14] = t1
 
     #{index-out=zero}
@@ -225,7 +216,6 @@ inv-shift-rows = (state []byte) {
     #{index-out=zero}
     state[11] = state[15]
 
-    #{index-out=zero}
     state[15] = t
 }
 
@@ -255,61 +245,45 @@ mix-columns = (state []byte) {
     #{index-out=zero}
     d0, d1, d2, d3 = mix-col(state[0], state[1], state[2], state[3])
 
-    #{index-out=zero}
     state[0] = d0
 
-    #{index-out=zero}
     state[1] = d1
 
-    #{index-out=zero}
     state[2] = d2
 
-    #{index-out=zero}
     state[3] = d3
 
     #{index-out=zero}
     d0, d1, d2, d3 = mix-col(state[4], state[5], state[6], state[7])
 
-    #{index-out=zero}
     state[4] = d0
 
-    #{index-out=zero}
     state[5] = d1
 
-    #{index-out=zero}
     state[6] = d2
 
-    #{index-out=zero}
     state[7] = d3
 
     #{index-out=zero}
     d0, d1, d2, d3 = mix-col(state[8], state[9], state[10], state[11])
 
-    #{index-out=zero}
     state[8] = d0
 
-    #{index-out=zero}
     state[9] = d1
 
-    #{index-out=zero}
     state[10] = d2
 
-    #{index-out=zero}
     state[11] = d3
 
     #{index-out=zero}
     d0, d1, d2, d3 = mix-col(state[12], state[13], state[14], state[15])
 
-    #{index-out=zero}
     state[12] = d0
 
-    #{index-out=zero}
     state[13] = d1
 
-    #{index-out=zero}
     state[14] = d2
 
-    #{index-out=zero}
     state[15] = d3
 }
 
@@ -354,61 +328,45 @@ inv-mix-columns = (state []byte) {
     #{index-out=zero}
     d0, d1, d2, d3 = inv-mix-col(state[0], state[1], state[2], state[3])
 
-    #{index-out=zero}
     state[0] = d0
 
-    #{index-out=zero}
     state[1] = d1
 
-    #{index-out=zero}
     state[2] = d2
 
-    #{index-out=zero}
     state[3] = d3
 
     #{index-out=zero}
     d0, d1, d2, d3 = inv-mix-col(state[4], state[5], state[6], state[7])
 
-    #{index-out=zero}
     state[4] = d0
 
-    #{index-out=zero}
     state[5] = d1
 
-    #{index-out=zero}
     state[6] = d2
 
-    #{index-out=zero}
     state[7] = d3
 
     #{index-out=zero}
     d0, d1, d2, d3 = inv-mix-col(state[8], state[9], state[10], state[11])
 
-    #{index-out=zero}
     state[8] = d0
 
-    #{index-out=zero}
     state[9] = d1
 
-    #{index-out=zero}
     state[10] = d2
 
-    #{index-out=zero}
     state[11] = d3
 
     #{index-out=zero}
     d0, d1, d2, d3 = inv-mix-col(state[12], state[13], state[14], state[15])
 
-    #{index-out=zero}
     state[12] = d0
 
-    #{index-out=zero}
     state[13] = d1
 
-    #{index-out=zero}
     state[14] = d2
 
-    #{index-out=zero}
     state[15] = d3
 }
 
@@ -469,16 +427,12 @@ sub-word = (w i64) (r i64) {
     b2 = 0
     b3 = 0
 
-    #{index-out=zero}
     b0 = SBOX[(w >> 24) & 255]
 
-    #{index-out=zero}
     b1 = SBOX[(w >> 16) & 255]
 
-    #{index-out=zero}
     b2 = SBOX[(w >> 8) & 255]
 
-    #{index-out=zero}
     b3 = SBOX[w & 255]
 
     r = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3

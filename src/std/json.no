@@ -146,24 +146,20 @@ json-pool.add-child = (node-idx i64, child-idx i64, key str) {
     .en.push(-1)
 
     ; 串接到父節點鏈表尾端
-    #{index-out=zero}
     last = .nodes[node-idx].last
     last >= 0 -> {
         .en[last] = e
     }
     last < 0 -> {
 
-        #{index-out=zero}
         .nodes[node-idx].first = e
     }
 
-    #{index-out=zero}
     .nodes[node-idx].last = e
 
-    #{index-out=zero}
     cd = .nodes[node-idx].count
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     .nodes[node-idx].count = cd + 1
 }
 
@@ -194,7 +190,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     ; 跳過空白
     (p < sn) {
 
-        #{index-out=zero}
         c = s.byte(p)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
@@ -203,7 +198,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     }
     p >= sn -> return
 
-    #{index-out=zero}
     c = s.byte(p)
 
     ; 分配節點
@@ -213,8 +207,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     ; null
     {
         c == 110 -> {
-
-            #{index-out=zero}
             .nodes[node-idx].kind = JSON-KIND-NULL
 
             #{overflow=wrap}
@@ -226,10 +218,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c == 116 -> {
 
             ; true
-            #{index-out=zero}
             .nodes[node-idx].kind = JSON-KIND-BOOL
 
-            #{index-out=zero}
             .nodes[node-idx].bool-val = true
 
             #{overflow=wrap}
@@ -241,10 +231,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c == 102 -> {
 
             ; false
-            #{index-out=zero}
             .nodes[node-idx].kind = JSON-KIND-BOOL
 
-            #{index-out=zero}
             .nodes[node-idx].bool-val = false
 
             #{overflow=wrap}
@@ -256,7 +244,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c == 34 -> {
 
             ; string
-            #{index-out=zero}
             .nodes[node-idx].kind = JSON-KIND-STR
             next-pos, ok = .parse-str(node-idx, s, p)
             return
@@ -265,15 +252,12 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c == 45 -> {
 
             ; number
-            #{index-out=zero}
             .nodes[node-idx].kind = JSON-KIND-NUM
             next-pos, ok = .parse-num(node-idx, s, p)
             return
         }
 
         c >= 48 && c <= 57 -> {
-
-            #{index-out=zero}
             .nodes[node-idx].kind = JSON-KIND-NUM
             next-pos, ok = .parse-num(node-idx, s, p)
             return
@@ -282,10 +266,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c == 91 -> {
 
             ; array
-            #{index-out=zero}
             .nodes[node-idx].kind = JSON-KIND-ARR
 
-            #{index-out=zero}
             .nodes[node-idx].count = 0
 
             #{overflow=wrap}
@@ -316,7 +298,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 p = .skip-ws(s, p)
                 p >= sn -> return
 
-                #{index-out=zero}
                 c2 = s.byte(p)
                 c2 == 93 -> {
 
@@ -340,10 +321,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c == 123 -> {
 
             ; object
-            #{index-out=zero}
             .nodes[node-idx].kind = JSON-KIND-OBJ
 
-            #{index-out=zero}
             .nodes[node-idx].count = 0
 
             #{overflow=wrap}
@@ -369,7 +348,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 ; key must be string
                 s.byte(p) != 34 -> {
 
-                    #{index-out=zero}
                     return
                 }
                 key-idx, key-next, key-ok = .parse(s, p)
@@ -381,7 +359,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 ; expect ':'
                 s.byte(p) != 58 -> {
 
-                    #{index-out=zero}
                     return
                 }
 
@@ -391,14 +368,12 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 val-ok == false -> return
 
                 ; 物件：以邊表附加子元素；鍵名取自解析出的 key 節點字串值
-                #{index-out=zero}
                 key-str = .strs[key-idx]
                 .add-child(node-idx, val-idx, key-str)
                 p = val-next
                 p = .skip-ws(s, p)
                 p >= sn -> return
 
-                #{index-out=zero}
                 c2 = s.byte(p)
                 c2 == 125 -> {
 
@@ -425,7 +400,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 json-pool.skip-ws = (s str, pos i64) (p i64) {
     p <- [pos..s.len-bytes()): {
 
-        #{index-out=zero}
         c = s.byte(p)
         c != 32 && c != 9 && c != 10 && c != 13 -> return
     }
@@ -451,7 +425,6 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     (i < s.len-bytes()) {
         i >= s.len-bytes() -> return
 
-        #{index-out=zero}
         c = s.byte(i)
 
         #{overflow=wrap}
@@ -461,7 +434,6 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
                 ; str.truncate 尚未實作，改用 slice-bytes 截斷（est-cap 為預估容量）
                 sv = buf.slice-bytes(0, j)
 
-                #{index-out=zero}
                 .strs[node-idx] = sv
 
                 #{overflow=wrap}
@@ -478,7 +450,6 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
                 i = i + 1
                 i >= s.len-bytes() -> return
 
-                #{index-out=zero}
                 c = s.byte(i)
 
                 ; 處理常見轉義
@@ -505,7 +476,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     c = 0
     negative = 0
 
-    #{index-out=zero}
     .nodes[node-idx].num-val = 0.0
 
     ; 負號
@@ -519,11 +489,9 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     (i < s.len-bytes()) {
         i >= s.len-bytes() -> break
 
-        #{index-out=zero}
         c = s.byte(i)
         c < 48 || c > 57 -> break
 
-        #{index-out=zero}
         .nodes[node-idx].num-val = .nodes[node-idx].num-val * 10.0 + (c - 48)
 
         #{overflow=wrap}
@@ -534,7 +502,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     #{overflow=wrap}
     i < s.len-bytes() -> {
 
-        #{index-out=zero}
         c = s.byte(i)
         c == 46 -> {
 
@@ -544,11 +511,9 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             (i < s.len-bytes()) {
                 i >= s.len-bytes() -> break
 
-                #{index-out=zero}
                 c = s.byte(i)
                 c < 48 || c > 57 -> break
 
-                #{index-out=zero}
                 .nodes[node-idx].num-val = .nodes[node-idx].num-val + frac * (c - 48)
                 frac = frac * 0.1
                 i = i + 1
@@ -560,7 +525,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     #{overflow=wrap}
     i < s.len-bytes() -> {
 
-        #{index-out=zero}
         c = s.byte(i)
         c == 101 || c == 69 -> {
 
@@ -569,7 +533,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             exp-sign = 1
             i < s.len-bytes() -> {
 
-                #{index-out=zero}
                 c = s.byte(i)
                 c == 45 -> {
 
@@ -583,7 +546,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             (i < s.len-bytes()) {
                 i >= s.len-bytes() -> break
 
-                #{index-out=zero}
                 c = s.byte(i)
                 c < 48 || c > 57 -> break
                 exp-val = exp-val * 10 + (c - 48)
@@ -603,12 +565,10 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
             }
             exp-sign < 0 -> {
 
-                #{index-out=zero}
                 .nodes[node-idx].num-val = .nodes[node-idx].num-val / exp-r
             }
             exp-sign >= 0 -> {
 
-                #{index-out=zero}
                 .nodes[node-idx].num-val = .nodes[node-idx].num-val * exp-r
             }
         }
@@ -617,7 +577,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     ; 處理負數
     negative == 1 -> {
 
-        #{index-out=zero}
         .nodes[node-idx].num-val = 0.0 - .nodes[node-idx].num-val
     }
     next-pos = i
@@ -641,25 +600,20 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok bool) {
     obj-idx < 0 || obj-idx >= .count -> return
     .nodes[obj-idx].kind != JSON-KIND-OBJ -> {
 
-        #{index-out=zero}
         return
     }
 
     ; 沿邊表單向鏈表走訪子元素，比對鍵名 .ek[e]，命中回傳子節點 .ec[e]
-    #{index-out=zero}
     e = .nodes[obj-idx].first
     (e >= 0) {
 
-        #{index-out=zero}
         .str-eq(.ek[e], key) == 1 -> {
 
-            #{index-out=zero}
             val-idx = .ec[e]
             ok = true
             return
         }
 
-        #{index-out=zero}
         e = .en[e]
     }
 }
@@ -671,25 +625,20 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     obj-idx < 0 || obj-idx >= .count -> return
     .nodes[obj-idx].kind != JSON-KIND-OBJ -> {
 
-        #{index-out=zero}
         return
     }
 
     ; 沿邊表走訪，命中既有鍵則更新其子節點索引
-    #{index-out=zero}
     e = .nodes[obj-idx].first
     (e >= 0) {
 
-        #{index-out=zero}
         .str-eq(.ek[e], key) == 1 -> {
 
-            #{index-out=zero}
             .ec[e] = val-idx
             ok = true
             return
         }
 
-        #{index-out=zero}
         e = .en[e]
     }
 
@@ -723,32 +672,24 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
     d < 0 -> return
     dst-idx = d
 
-    #{index-out=zero}
     .nodes[d].kind = src.nodes[node-idx].kind
 
-    #{index-out=zero}
     .nodes[d].num-val = src.nodes[node-idx].num-val
 
-    #{index-out=zero}
     .nodes[d].bool-val = src.nodes[node-idx].bool-val
 
-    #{index-out=zero}
     .strs[d] = src.strs[node-idx].copy()
 
     ; 遍歷子節點的邊，逐一遞迴拷貝並以同鍵名附加
-    #{index-out=zero}
     e = src.nodes[node-idx].first
     (e >= 0) {
 
-        #{index-out=zero}
         cs = src.ec[e]
 
-        #{index-out=zero}
         ck = src.ek[e]
         cd = .copy-tree(src, cs)
         .add-child(d, cd, ck)
 
-        #{index-out=zero}
         e = src.en[e]
     }
 }
@@ -764,40 +705,29 @@ json-pool.copy-self = (node-idx i64) (dst-idx i64) {
     d < 0 -> return
     dst-idx = d
 
-    #{index-out=zero}
     kind = .nodes[node-idx].kind
 
-    #{index-out=zero}
     numv = .nodes[node-idx].num-val
 
-    #{index-out=zero}
     boolv = .nodes[node-idx].bool-val
 
-    #{index-out=zero}
     first = .nodes[node-idx].first
     sval = .strs[node-idx].copy()
 
-    #{index-out=zero}
     .nodes[d].kind = kind
 
-    #{index-out=zero}
     .nodes[d].num-val = numv
 
-    #{index-out=zero}
     .nodes[d].bool-val = boolv
 
-    #{index-out=zero}
     .strs[d] = sval
     e = first
     (e >= 0) {
 
-        #{index-out=zero}
         cs = .ec[e]
 
-        #{index-out=zero}
         ck = .ek[e]
 
-        #{index-out=zero}
         enext = .en[e]
         cd = .copy-self(cs)
         .add-child(d, cd, ck)
@@ -817,25 +747,20 @@ json-pool.arr-get = (arr-idx i64, elem i64) (val-idx i64, ok bool) {
     arr-idx < 0 || arr-idx >= .count -> return
     .nodes[arr-idx].kind != JSON-KIND-ARR -> {
 
-        #{index-out=zero}
         return
     }
     elem < 0 || elem >= .nodes[arr-idx].count -> {
 
-        #{index-out=zero}
         return
     }
 
     ; 沿邊表走訪到第 elem 條邊
-    #{index-out=zero}
     e = .nodes[arr-idx].first
     k <- [0..elem): {
 
-        #{index-out=zero}
         e = .en[e]
     }
 
-    #{index-out=zero}
     val-idx = .ec[e]
     ok = true
 }
@@ -846,11 +771,9 @@ json-pool.arr-len = (arr-idx i64) (n i64) {
     arr-idx < 0 || arr-idx >= .count -> return
     .nodes[arr-idx].kind != JSON-KIND-ARR -> {
 
-        #{index-out=zero}
         return
     }
 
-    #{index-out=zero}
     n = .nodes[arr-idx].count
 }
 
@@ -863,7 +786,6 @@ json-pool.get-kind = (node-idx i64) (kind i64) {
     kind = JSON-KIND-NULL
     node-idx < 0 || node-idx >= .count -> return
 
-    #{index-out=zero}
     kind = .nodes[node-idx].kind
 }
 
@@ -874,11 +796,9 @@ json-pool.get-str = (node-idx i64) (out str, ok bool) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-STR -> {
 
-        #{index-out=zero}
         return
     }
 
-    #{index-out=zero}
     out = .strs[node-idx].copy()
     ok = true
 }
@@ -890,11 +810,9 @@ json-pool.get-num = (node-idx i64) (val f64, ok bool) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-NUM -> {
 
-        #{index-out=zero}
         return
     }
 
-    #{index-out=zero}
     val = .nodes[node-idx].num-val
     ok = true
 }
@@ -907,11 +825,9 @@ json-pool.get-bool = (node-idx i64) (val bool, ok bool) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-BOOL -> {
 
-        #{index-out=zero}
         return
     }
 
-    #{index-out=zero}
     val = .nodes[node-idx].bool-val
     ok = true
 }
@@ -926,7 +842,6 @@ json-pool.stringify = (node-idx i64) (out str) {
     out = ''
     node-idx < 0 || node-idx >= .count -> return
 
-    #{index-out=zero}
     kind = .nodes[node-idx].kind
     c = 0
     cnt = 0
@@ -947,7 +862,6 @@ json-pool.stringify = (node-idx i64) (out str) {
         kind == JSON-KIND-BOOL -> {
             .nodes[node-idx].bool-val -> {
 
-                #{index-out=zero}
                 out = 'true'
             }
 
@@ -956,8 +870,6 @@ json-pool.stringify = (node-idx i64) (out str) {
         }
 
         kind == JSON-KIND-NUM -> {
-
-            #{index-out=zero}
             num-val = .nodes[node-idx].num-val
             num-str = num-val.to-str()
             out = num-str
@@ -967,13 +879,11 @@ json-pool.stringify = (node-idx i64) (out str) {
         kind == JSON-KIND-STR -> {
             out = '"'
 
-            #{index-out=zero}
             sv str = .strs[node-idx]
             j = 0
             (j < sv.len-bytes()) {
                 j >= sv.len-bytes() -> break
 
-                #{index-out=zero}
                 c = sv[j]
                 {
                     c == 34 -> out = out - '\\"'
@@ -999,18 +909,15 @@ json-pool.stringify = (node-idx i64) (out str) {
         kind == JSON-KIND-ARR -> {
             out = '['
 
-            #{index-out=zero}
             e = .nodes[node-idx].first
             is-first = true
             (e >= 0) {
                 is-first == false -> out = out - ','
                 is-first = false
 
-                #{index-out=zero}
                 child-str = .stringify(.ec[e])
                 out = out - child-str
 
-                #{index-out=zero}
                 e = .en[e]
             }
             out = out - ']'
@@ -1020,22 +927,18 @@ json-pool.stringify = (node-idx i64) (out str) {
         kind == JSON-KIND-OBJ -> {
             out = '{'
 
-            #{index-out=zero}
             e = .nodes[node-idx].first
             is-first = true
             (e >= 0) {
                 is-first == false -> out = out - ','
                 is-first = false
 
-                #{index-out=zero}
                 key-str = .ek[e]
                 out = out - '"' - key-str - '":'
 
-                #{index-out=zero}
                 child-str = .stringify(.ec[e])
                 out = out - child-str
 
-                #{index-out=zero}
                 e = .en[e]
             }
             out = out - '}'
@@ -1288,7 +1191,6 @@ json.set = (key str, val-idx i64) (ok bool) {
         ; 建立 root 為物件
         .root = .alloc-node()
 
-        #{index-out=zero}
         .pool.nodes[.root].kind = JSON-KIND-OBJ
     }
 
@@ -1296,7 +1198,6 @@ json.set = (key str, val-idx i64) (ok bool) {
     k = .pool.get-kind(.root)
     k == JSON-KIND-NULL -> {
 
-        #{index-out=zero}
         .pool.nodes[.root].kind = JSON-KIND-OBJ
     }
     k != JSON-KIND-NULL && k != JSON-KIND-OBJ -> return
@@ -1313,11 +1214,9 @@ json.set-str = (key str, val str) (ok bool) {
     ok = false
     idx = .alloc-node()
 
-    #{index-out=zero}
     .pool.nodes[idx].kind = JSON-KIND-STR
 
     ; 字串值存於平行 strs vec（以節點 idx 索引），直接指派副本
-    #{index-out=zero}
     .pool.strs[idx] = val.copy()
     ok = .set(key, idx)
 }
@@ -1331,10 +1230,8 @@ json.set-num = (key str, val f64) (ok bool) {
     idx = .alloc-node()
     idx < 0 -> return
 
-    #{index-out=zero}
     .pool.nodes[idx].kind = JSON-KIND-NUM
 
-    #{index-out=zero}
     .pool.nodes[idx].num-val = val
     ok = .set(key, idx)
 }
@@ -1355,10 +1252,8 @@ json.set-bool = (key str, val bool) (ok bool) {
     idx = .alloc-node()
     idx < 0 -> return
 
-    #{index-out=zero}
     .pool.nodes[idx].kind = JSON-KIND-BOOL
 
-    #{index-out=zero}
     .pool.nodes[idx].bool-val = val
     ok = .set(key, idx)
 }
@@ -1370,7 +1265,6 @@ json.set-null = (key str) (ok bool) {
     idx = .alloc-node()
     idx < 0 -> return
 
-    #{index-out=zero}
     .pool.nodes[idx].kind = JSON-KIND-NULL
     ok = .set(key, idx)
 }
@@ -1419,7 +1313,6 @@ json.arr-push-idx = (child-idx i64) (ok bool) {
         ; 建立 root 為陣列
         .root = .alloc-node()
 
-        #{index-out=zero}
         .pool.nodes[.root].kind = JSON-KIND-ARR
     }
 
@@ -1427,7 +1320,6 @@ json.arr-push-idx = (child-idx i64) (ok bool) {
     k = .pool.get-kind(.root)
     k == JSON-KIND-NULL -> {
 
-        #{index-out=zero}
         .pool.nodes[.root].kind = JSON-KIND-ARR
     }
     k != JSON-KIND-NULL && k != JSON-KIND-ARR -> return
@@ -1451,11 +1343,9 @@ json.arr-push-str = (val str) (ok bool) {
     ok = false
     idx = .alloc-node()
 
-    #{index-out=zero}
     .pool.nodes[idx].kind = JSON-KIND-STR
 
     ; 字串值存於平行 strs vec
-    #{index-out=zero}
     .pool.strs[idx] = val.copy()
     ok = .arr-push-idx(idx)
 }
@@ -1466,10 +1356,8 @@ json.arr-push-num = (val f64) (ok bool) {
     ok = false
     idx = .alloc-node()
 
-    #{index-out=zero}
     .pool.nodes[idx].kind = JSON-KIND-NUM
 
-    #{index-out=zero}
     .pool.nodes[idx].num-val = val
     ok = .arr-push-idx(idx)
 }
@@ -1480,10 +1368,8 @@ json.arr-push-bool = (val bool) (ok bool) {
     ok = false
     idx = .alloc-node()
 
-    #{index-out=zero}
     .pool.nodes[idx].kind = JSON-KIND-BOOL
 
-    #{index-out=zero}
     .pool.nodes[idx].bool-val = val
     ok = .arr-push-idx(idx)
 }
@@ -1530,7 +1416,6 @@ json.obj-len = () (n i64) {
     k i64 = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
-    #{index-out=zero}
     n = .pool.nodes[.root].count
 }
 
@@ -1543,20 +1428,16 @@ json.obj-key = (idx i64) (key str, ok bool) {
     k i64 = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
-    #{index-out=zero}
     cnt i64 = .pool.nodes[.root].count
     idx < 0 || idx >= cnt -> return
 
     ; 沿邊表走訪到第 idx 條邊，取鍵名 .ek[e]
-    #{index-out=zero}
     e i64 = .pool.nodes[.root].first
     t <- [0..idx): {
 
-        #{index-out=zero}
         e = .pool.en[e]
     }
 
-    #{index-out=zero}
     key = .pool.ek[e]
     ok = true
 }
@@ -1570,43 +1451,35 @@ json.delete-key = (key str) (ok bool) {
     k != JSON-KIND-OBJ -> return
 
     ; 遍歷邊鏈並記錄前驅；命中則將該邊從單向鏈表摘除
-    #{index-out=zero}
     e i64 = .pool.nodes[.root].first
     prev = -1
     (e >= 0) {
 
-        #{index-out=zero}
         next i64 = .pool.en[e]
 
-        #{index-out=zero}
         ek = .pool.ek[e]
         .pool.str-eq(ek, key) == 1 -> {
 
             ; 前驅改指向 next；若命中邊為首則更新 first
             prev >= 0 -> {
 
-                #{index-out=zero}
                 .pool.en[prev] = next
             }
             prev < 0 -> {
 
-                #{index-out=zero}
                 .pool.nodes[.root].first = next
             }
 
             ; 若命中邊為尾則更新 last
-            #{index-out=zero}
             last i64 = .pool.nodes[.root].last
             last == e -> {
 
-                #{index-out=zero}
                 .pool.nodes[.root].last = prev
             }
 
-            #{index-out=zero}
             cnt i64 = .pool.nodes[.root].count
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             .pool.nodes[.root].count = cnt - 1
             ok = true
             return
@@ -1625,10 +1498,8 @@ json.set-key = (key str, val json) (ok bool) {
         .root = .alloc-node()
         .root < 0 -> return
 
-        #{index-out=zero}
         .pool.nodes[.root].kind = JSON-KIND-OBJ
 
-        #{index-out=zero}
         .pool.nodes[.root].count = 0
     }
 
@@ -1647,15 +1518,12 @@ json.obj-keys-str = () (keys str) {
     k != JSON-KIND-OBJ -> return
 
     ; 沿邊表走訪，依序拼接每個鍵名
-    #{index-out=zero}
     e i64 = .pool.nodes[.root].first
     (e >= 0) {
 
-        #{index-out=zero}
         key = .pool.ek[e]
         keys = keys - key - '\n'
 
-        #{index-out=zero}
         e = .pool.en[e]
     }
 }

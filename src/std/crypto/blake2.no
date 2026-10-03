@@ -101,7 +101,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
     }
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         v[8 + i] = BLAKE2B-IV[i]
     }
 
@@ -138,7 +138,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
         base = round * 16
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             s[i] = BLAKE2B-SIGMA[base + i]
         }
 
@@ -188,7 +188,6 @@ b = (data []byte) (hash [64]byte) {
     h []u64
     i <- [0..8): {
 
-        #{index-out=zero}
         h[i] = BLAKE2B-IV[i]
     }
 
@@ -206,7 +205,6 @@ b = (data []byte) (hash [64]byte) {
 
         t = (t + 128) & BLAKE2B-MASK
 
-        #{index-out=zero}
         b-compress(h, data[offset..], t, 0)
 
         #{overflow=wrap}
@@ -227,7 +225,6 @@ b = (data []byte) (hash [64]byte) {
     ; 補零到 128 位元組
     i <- [remaining..128): {
 
-        #{index-out=zero}
         last-block[i] = 0
     }
 
@@ -275,7 +272,6 @@ b-256 = (data []byte) (hash [32]byte) {
     h []u64
     i <- [0..8): {
 
-        #{index-out=zero}
         h[i] = BLAKE2B-IV[i]
     }
 
@@ -292,7 +288,6 @@ b-256 = (data []byte) (hash [32]byte) {
 
         t = (t + 128) & BLAKE2B-MASK
 
-        #{index-out=zero}
         b-compress(h, data[offset..], t, 0)
 
         #{overflow=wrap}
@@ -309,7 +304,6 @@ b-256 = (data []byte) (hash [32]byte) {
     }
     i <- [remaining..128): {
 
-        #{index-out=zero}
         last-block[i] = 0
     }
 
@@ -460,7 +454,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
     }
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         v[8 + i] = BLAKE2S-IV[i]
     }
 
@@ -487,7 +481,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         base = round * 16
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             s[i] = BLAKE2S-SIGMA[base + i]
         }
 
@@ -530,7 +524,6 @@ s = (data []byte) (hash [32]byte) {
     h []u32
     i <- [0..8): {
 
-        #{index-out=zero}
         h[i] = BLAKE2S-IV[i]
     }
 
@@ -547,7 +540,6 @@ s = (data []byte) (hash [32]byte) {
 
         t = (t + 64) & BLAKE2S-MASK
 
-        #{index-out=zero}
         s-compress(h, data[offset..], t, 0)
 
         #{overflow=wrap}
@@ -564,7 +556,6 @@ s = (data []byte) (hash [32]byte) {
     }
     i <- [remaining..64): {
 
-        #{index-out=zero}
         last-block[i] = 0
     }
 

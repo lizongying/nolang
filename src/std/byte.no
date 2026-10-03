@@ -22,56 +22,40 @@
 ; i64.to-bytes-be: 將 int64 轉為大端序 8 位元組
 i64.to-bytes-be = () (out [?]byte) {
 
-    #{index-out=zero}
     out[0] = (. >> 56) & 255
 
-    #{index-out=zero}
     out[1] = (. >> 48) & 255
 
-    #{index-out=zero}
     out[2] = (. >> 40) & 255
 
-    #{index-out=zero}
     out[3] = (. >> 32) & 255
 
-    #{index-out=zero}
     out[4] = (. >> 24) & 255
 
-    #{index-out=zero}
     out[5] = (. >> 16) & 255
 
-    #{index-out=zero}
     out[6] = (. >> 8) & 255
 
-    #{index-out=zero}
     out[7] = . & 255
 }
 
 ; i64.to-bytes-le: 將 int64 轉為小端序 8 位元組
 i64.to-bytes-le = () (out [?]byte) {
 
-    #{index-out=zero}
     out[0] = . & 255
 
-    #{index-out=zero}
     out[1] = (. >> 8) & 255
 
-    #{index-out=zero}
     out[2] = (. >> 16) & 255
 
-    #{index-out=zero}
     out[3] = (. >> 24) & 255
 
-    #{index-out=zero}
     out[4] = (. >> 32) & 255
 
-    #{index-out=zero}
     out[5] = (. >> 40) & 255
 
-    #{index-out=zero}
     out[6] = (. >> 48) & 255
 
-    #{index-out=zero}
     out[7] = (. >> 56) & 255
 }
 
@@ -137,39 +121,29 @@ i64.to-bytes-le = () (out [?]byte) {
         seg str = with-cap(4)
         cp < 0x80 -> {
 
-            #{index-out=zero}
             seg[0] = cp
         }
 
         -> cp < 0x800 -> {
 
-            #{index-out=zero}
             seg[0] = 0xc0 | ((cp >> 6) & 0x1f)
 
-            #{index-out=zero}
             seg[1] = 0x80 | (cp & 0x3f)
         } -> cp < 0x10000 -> {
 
-            #{index-out=zero}
             seg[0] = 0xe0 | ((cp >> 12) & 0x0f)
 
-            #{index-out=zero}
             seg[1] = 0x80 | ((cp >> 6) & 0x3f)
 
-            #{index-out=zero}
             seg[2] = 0x80 | (cp & 0x3f)
         } -> {
 
-            #{index-out=zero}
             seg[0] = 0xf0 | ((cp >> 18) & 0x07)
 
-            #{index-out=zero}
             seg[1] = 0x80 | ((cp >> 12) & 0x3f)
 
-            #{index-out=zero}
             seg[2] = 0x80 | ((cp >> 6) & 0x3f)
 
-            #{index-out=zero}
             seg[3] = 0x80 | (cp & 0x3f)
         }
 
@@ -186,7 +160,6 @@ i64.to-bytes-le = () (out [?]byte) {
     out = with-len(n)
     i <- [0..n): {
 
-        #{index-out=zero}
         out[i] = .[i]
     }
 }
@@ -214,7 +187,6 @@ i64.to-bytes-le = () (out [?]byte) {
             #{overflow=wrap}
             sj = .[i + j]
 
-            #{index-out=zero}
             tj = target.byte(j)
             sj != tj -> {
                 matched = 0
@@ -256,7 +228,6 @@ i64.to-bytes-le = () (out [?]byte) {
             #{overflow=wrap}
             sj = .[i + j]
 
-            #{index-out=zero}
             tj = target.byte(j)
             sj != tj -> {
                 matched = 0
@@ -286,7 +257,7 @@ i64.to-bytes-le = () (out [?]byte) {
     val = with-len(n)
     i <- [0..n): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         val[i] = .[start + i]
     }
 }
@@ -310,10 +281,10 @@ HEX-LOWER = '0123456789abcdef'
 
         b = .[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i * 2] = HEX-UPPER[b >> 4]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i * 2 + 1] = HEX-UPPER[b & 15]
     }
 }
@@ -329,10 +300,10 @@ HEX-LOWER = '0123456789abcdef'
 
         b = .[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i * 2] = HEX-LOWER[b >> 4]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i * 2 + 1] = HEX-LOWER[b & 15]
     }
 }

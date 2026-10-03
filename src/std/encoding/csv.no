@@ -24,7 +24,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         return
     }
 
-    #{index-out=zero}
     c = s.byte(r-pos)
     {
         c == 44 -> {
@@ -42,7 +41,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             r-pos = r-pos + 1
             (r-pos < s.len-bytes()) {
 
-                #{index-out=zero}
                 c = s.byte(r-pos)
                 c == 34 -> {
 
@@ -50,11 +48,10 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     #{overflow=wrap}
                     r-pos + 1 < s.len-bytes() -> {
 
-                        #{index-out=zero, overflow=wrap}
+                        #{overflow=wrap}
                         nc = s.byte(r-pos + 1)
                         nc == 34 -> {
 
-                            #{index-out=zero}
                             field[fn] = 34
                             fn = fn + 1
                             r-pos = r-pos + 2
@@ -69,7 +66,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     ; 跳過後續逗號
                     r-pos < s.len-bytes() -> {
 
-                        #{index-out=zero}
                         nc = s.byte(r-pos)
 
                         #{overflow=wrap}
@@ -81,7 +77,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 c == 10 || c == 13 -> {
 
                     ; 換行在引號內視為換行字元
-                    #{index-out=zero}
                     field[fn] = c
 
                     #{overflow=wrap}
@@ -92,7 +87,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     continue
                 }
 
-                #{index-out=zero}
                 field[fn] = c
 
                 #{overflow=wrap}
@@ -109,7 +103,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     ; 普通欄位（無引號）
     (r-pos < s.len-bytes()) {
 
-        #{index-out=zero}
         c = s.byte(r-pos)
 
         #{overflow=wrap}
@@ -130,7 +123,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             }
         }
 
-        #{index-out=zero}
         field[fn] = c
 
         #{overflow=wrap}
@@ -152,7 +144,6 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     fields = with-cap(max-fields)
     (pos < s.len-bytes() && n < max-fields) {
 
-        #{index-out=zero}
         fields[n], pos = parse-field(s, pos)
 
         #{overflow=wrap}
@@ -170,7 +161,6 @@ encode-field = (field str) (out str) {
     need-quote = false
     i <- [0..field.len-bytes()): {
 
-        #{index-out=zero}
         c = field.byte(i)
         c == 44 || c == 34 || c == 10 || c == 13 -> {
             need-quote = true
@@ -186,31 +176,24 @@ encode-field = (field str) (out str) {
     #{overflow=wrap}
     out = with-cap(field.len-bytes() * 2 + 2)
 
-    #{index-out=zero}
     out[j] = 34
 
     #{overflow=wrap}
     j = j + 1
     i <- [0..field.len-bytes()): {
 
-        #{index-out=zero}
         c = field.byte(i)
 
         #{overflow=wrap}
         {
             c == 34 -> {
-
-                #{index-out=zero}
                 out[j] = 34
                 j = j + 1
 
-                #{index-out=zero}
                 out[j] = 34
             }
 
             -> {
-
-                #{index-out=zero}
                 out[j] = c
             }
         }
@@ -219,6 +202,5 @@ encode-field = (field str) (out str) {
         j = j + 1
     }
 
-    #{index-out=zero}
     out[j] = 34
 }

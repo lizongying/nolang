@@ -28,7 +28,6 @@ rand-str = (state i64, n i64) (s str) {
         r = 0
         state, r = rand(state)
 
-        #{index-out=zero}
         s[i] = chars[r % 62]
     }
 }

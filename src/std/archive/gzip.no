@@ -35,7 +35,6 @@ bit-reader.read-bit = () (bit i64) {
     #{overflow=wrap}
     .bit-cnt == 0 -> .pos < .data.len() -> {
 
-        #{index-out=zero}
         .bit-buf = .data[.pos]
         .pos = .pos + 1
         .bit-cnt = 8
@@ -64,13 +63,11 @@ bit-reader.skip-to-byte = () {
 ; read-u16-le: 讀取 2 位元組小端序整數（位元組對齊時）
 bit-reader.read-u16-le = () (v i64) {
 
-    #{index-out=zero}
     lo = .data[.pos]
 
     #{overflow=wrap}
     .pos = .pos + 1
 
-    #{index-out=zero}
     hi = .data[.pos]
 
     #{overflow=wrap}
@@ -96,7 +93,6 @@ huffman.build = (lengths []i64, n i64) {
     ; 初始化 count[0..16] = 0
     i <- [0..17): {
 
-        #{index-out=zero}
         .count[i] = 0
     }
 
@@ -106,18 +102,16 @@ huffman.build = (lengths []i64, n i64) {
         #{index-out=zero}
         l = lengths[i]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         .count[l] = .count[l] + 1
     }
 
-    #{index-out=zero}
     .count[0] = 0
 
     ; 計算各長度的起始偏移
     offs [17]i64
     i <- [0..17): {
 
-        #{index-out=zero}
         offs[i] = 0
     }
     i <- [1..16): {
@@ -129,7 +123,6 @@ huffman.build = (lengths []i64, n i64) {
     ; 排序符號
     i <- [0..n): {
 
-        #{index-out=zero}
         .symbol[i] = 0
     }
     i <- [0..n): {
@@ -138,7 +131,6 @@ huffman.build = (lengths []i64, n i64) {
             #{index-out=zero}
             idx = offs[lengths[i]]
 
-            #{index-out=zero}
             .symbol[idx] = i
 
             #{index-out=zero, overflow=wrap}
@@ -158,13 +150,12 @@ huffman.decode = (br bit-reader) (sym i64) {
         bit = br.read-bit()
         code = code | bit
 
-        #{index-out=zero}
         cnt = .count[len]
 
         #{overflow=wrap}
         code - first < cnt -> {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             sym = .symbol[index + (code - first)]
             return
         }
@@ -266,8 +257,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
         #{overflow=wrap}
         {
             sym < 16 -> {
-
-                #{index-out=zero}
                 lengths[idx] = sym
                 idx = idx + 1
             }
@@ -282,7 +271,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 prev = lengths[idx - 1]
                 j <- [0..cnt): {
 
-                    #{index-out=zero}
                     lengths[idx] = prev
                     idx = idx + 1
                 }
@@ -295,7 +283,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 cnt = br.read-bits(3) + 3
                 j <- [0..cnt): {
 
-                    #{index-out=zero}
                     lengths[idx] = 0
                     idx = idx + 1
                 }
@@ -308,7 +295,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 cnt = br.read-bits(7) + 11
                 j <- [0..cnt): {
 
-                    #{index-out=zero}
                     lengths[idx] = 0
                     idx = idx + 1
                 }

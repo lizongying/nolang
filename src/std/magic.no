@@ -67,7 +67,6 @@ get-extension = (path str) (ext str) {
 
         i < 0 -> return
 
-        #{index-out=zero}
         c = path[i]
         c == 47 -> return; '/' - 目錄分隔符，停止查找
 

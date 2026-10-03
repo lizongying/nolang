@@ -126,16 +126,15 @@ salsa20-8-core = (block []byte) {
         #{overflow=wrap}
         off = i * 4
 
-        #{index-out=zero}
         block[off] = val & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         block[off + 1] = (val >> 8) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         block[off + 2] = (val >> 16) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         block[off + 3] = (val >> 24) & 255
     }
 }

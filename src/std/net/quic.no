@@ -79,62 +79,43 @@ varint-encode = (val i64) (buf []byte, n i64) {
     n = 0
     {
         val <= 63 -> {
-
-            #{index-out=zero}
             buf[0] = val & 255
             n = 1
         }
 
         val <= 16383 -> {
-
-            #{index-out=zero}
             buf[0] = ((val >> 8) | 0x40) & 255
 
-            #{index-out=zero}
             buf[1] = val & 255
             n = 2
         }
 
         val <= 1073741823 -> {
-
-            #{index-out=zero}
             buf[0] = ((val >> 24) | 0x80) & 255
 
-            #{index-out=zero}
             buf[1] = (val >> 16) & 255
 
-            #{index-out=zero}
             buf[2] = (val >> 8) & 255
 
-            #{index-out=zero}
             buf[3] = val & 255
             n = 4
         }
 
         -> {
-
-            #{index-out=zero}
             buf[0] = ((val >> 56) | 0xc0) & 255
 
-            #{index-out=zero}
             buf[1] = (val >> 48) & 255
 
-            #{index-out=zero}
             buf[2] = (val >> 40) & 255
 
-            #{index-out=zero}
             buf[3] = (val >> 32) & 255
 
-            #{index-out=zero}
             buf[4] = (val >> 24) & 255
 
-            #{index-out=zero}
             buf[5] = (val >> 16) & 255
 
-            #{index-out=zero}
             buf[6] = (val >> 8) & 255
 
-            #{index-out=zero}
             buf[7] = val & 255
             n = 8
         }
@@ -244,7 +225,6 @@ gen-cid = (len i64) (cid []byte) {
     i <- [0..len): {
         state, cid-r = rand.rand(state)
 
-        #{index-out=zero}
         cid[i] = state & 255
     }
 }
@@ -289,13 +269,11 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         }
         r-pos = ft-pos
 
-        #{index-out=zero}
         frames[count].frame-type = ft-val & 255
 
         ft = ft-val & 255
 
         ; 複製資料
-        #{index-out=zero}
         data-len = frames[count].length
         i <- [0..data-len): {
 
@@ -303,7 +281,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].data[i] = buf[r-pos + i]
         }
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         r-pos = r-pos + frames[count].length
 
         #{overflow=wrap}
@@ -342,7 +320,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             #{overflow=wrap}
             r-pos = rl-np + rl-val
 
-            #{index-out=zero}
             frames[count].length = 0
 
             #{overflow=wrap}
@@ -372,7 +349,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             #{overflow=wrap}
             r-pos = rl-np + rl-val
 
-            #{index-out=zero}
             frames[count].length = 0
 
             #{overflow=wrap}
@@ -383,7 +359,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             ; HANDSHAKE_DONE
 
-            #{index-out=zero}
             frames[count].length = 0
 
             #{overflow=wrap}
@@ -405,7 +380,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             #{overflow=wrap}
             r-pos = tl-np + tl-val
 
-            #{index-out=zero}
             frames[count].length = 0
 
             #{overflow=wrap}
@@ -425,7 +399,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
             r-pos = mv-np
 
-            #{index-out=zero}
             frames[count].length = 0
 
             #{overflow=wrap}
@@ -451,7 +424,6 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     initial-salt []byte
     i <- [0..20): {
 
-        #{index-out=zero}
         initial-salt[i] = QUIC-INITIAL-SALT[i]
     }
     initial-secret [32]byte
@@ -522,7 +494,6 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     ; Long Header: mask[0] 的低位 4 bits
 
     ; Short Header: mask[0] 的低位 5 bits
-    #{index-out=zero}
     mask-offset = 1
     mask-bits = 0x1f
     is-long-header -> mask-bits = 0x0f
@@ -720,21 +691,19 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     packet = with-cap(QUIC-MAX-PACKET-SIZE)
 
     ; 1. 第一位元組: Fixed bit + Long header + Initial type
-    #{index-out=zero}
     packet[0] = QUIC-LONG-HEADER-FIXED-BIT | QUIC-PACKET-INITIAL | (pn-len - 1)
     pos = 1
 
     ; 2. Version (4 bytes, big-endian)
-    #{index-out=zero}
     packet[pos] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     packet[pos + 1] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     packet[pos + 2] = 0
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     packet[pos + 3] = 1
 
     #{overflow=wrap}
@@ -743,14 +712,13 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     ; 3. Destination CID length + CID
     dcid-len = .remote-cid.len()
 
-    #{index-out=zero}
     packet[pos] = dcid-len & 255
 
     #{overflow=wrap}
     pos = pos + 1
     i <- [0..dcid-len): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         packet[pos + i] = .remote-cid[i]
     }
 
@@ -760,14 +728,13 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     ; 4. Source CID length + CID
     scid-len = .local-cid.len()
 
-    #{index-out=zero}
     packet[pos] = scid-len & 255
 
     #{overflow=wrap}
     pos = pos + 1
     i <- [0..scid-len): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         packet[pos + i] = .local-cid[i]
     }
 
@@ -775,7 +742,6 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     pos = pos + scid-len
 
     ; 5. Token length (0 for client Initial)
-    #{index-out=zero}
     packet[pos] = 0
 
     #{overflow=wrap}
@@ -805,16 +771,15 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     ; 7. Packet Number (4 bytes, big-endian)
     pn-offset = pos
 
-    #{index-out=zero}
     packet[pos] = (pn >> 24) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     packet[pos + 1] = (pn >> 16) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     packet[pos + 2] = (pn >> 8) & 255
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     packet[pos + 3] = pn & 255
 
     #{overflow=wrap}
@@ -876,7 +841,6 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     #{overflow=wrap}
     (pos < QUIC-MAX-PACKET-SIZE - 16) {
 
-        #{index-out=zero}
         packet[pos] = 0
 
         #{overflow=wrap}
@@ -888,7 +852,6 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     nonce [12]byte
     i <- [0..12): {
 
-        #{index-out=zero}
         nonce[i] = .client-initial-iv[i]
     }
     i <- [0..8): {
@@ -901,19 +864,17 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     aad []byte
     i <- [0..pn-offset): {
 
-        #{index-out=zero}
         aad[i] = packet[i]
     }
 
     ; Plaintext = packet[pn_offset..pos]
-    #{index-out=zero}
     plain []byte
 
     #{overflow=wrap}
     plain-len = pos - pn-offset
     i <- [0..plain-len): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         plain[i] = packet[pn-offset + i]
     }
 
@@ -1027,7 +988,6 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     nonce [12]byte
     i <- [0..12): {
 
-        #{index-out=zero}
         nonce[i] = .server-initial-iv[i]
     }
     i <- [0..8): {
@@ -1045,7 +1005,6 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     }
 
     ; Ciphertext = buf[pn_offset..pn_offset+length_val]
-    #{index-out=zero}
     sealed []byte
     i <- [0..length-val): {
 

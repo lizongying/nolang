@@ -60,7 +60,7 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ; 更新 prev 為當前密文區塊
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             prev[i] = out[blk + i]
         }
 
@@ -176,7 +176,7 @@ pkcs7-pad = (in []byte) (out []byte) {
     }
     i <- [0..pad-len): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[in.len() + i] = pad-len
     }
 }

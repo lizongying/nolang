@@ -1227,7 +1227,6 @@ list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
     i <- [0..names.len()): {
 
-        #{index-out=zero}
         name = names[i]
 
         ; 只處理全數字條目（PID 目錄）

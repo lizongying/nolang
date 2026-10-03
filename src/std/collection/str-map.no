@@ -28,13 +28,10 @@ str-map.init = () {
     .size = 0
     i <- [0..256): {
 
-        #{index-out=zero}
         .occ[i] = 0
 
-        #{index-out=zero}
         .keys[i].len = 0
 
-        #{index-out=zero}
         .vals[i].len = 0
     }
 }
@@ -45,7 +42,6 @@ str-map.hash = (key str) (idx i64) {
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
 
-        #{index-out=zero}
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
@@ -61,7 +57,6 @@ str-map.str-eq = (a str, b str) (eq bool) {
     i <- [0..a.len-bytes()): {
         a.byte(i) != b.byte(i) -> {
 
-            #{index-out=zero}
             return
         }
     }
@@ -75,12 +70,10 @@ str-map.put = (key str, val str) (is-new bool) {
 
     (.occ[idx] == 1) {
 
-        #{index-out=zero}
         eq = .str-eq(.keys[idx], key)
         eq -> {
 
             ; 直接指派；結構欄位寫入會深拷貝 inline str，不需要手動 .len + 逐字節拷貝
-            #{index-out=zero}
             .vals[idx] = val
             is-new = false
             return
@@ -97,13 +90,10 @@ str-map.put = (key str, val str) (is-new bool) {
     ; 不能用 `.keys[idx].len = key.len-bytes()` 再逐字節寫：`.len = n` 是裸欄位寫入，
     ; 不會分配緩衝區，而新槽位的 keys[idx] 緩衝區還是 null，下一個 [i] = 會對 null
     ; 做 GEP+store（SIGSEGV）。直接指派會深拷貝，才是正確寫法。
-    #{index-out=zero}
     .keys[idx] = key
 
-    #{index-out=zero}
     .vals[idx] = val
 
-    #{index-out=zero}
     .occ[idx] = 1
 
     #{overflow=wrap}
@@ -118,11 +108,9 @@ str-map.get = (key str) (result ?str) {
 
     (.occ[idx] == 1) {
 
-        #{index-out=zero}
         eq = .str-eq(.keys[idx], key)
         eq -> {
 
-            #{index-out=zero}
             result = .vals[idx]
             return
         }
@@ -154,19 +142,15 @@ str-map.remove = (key str) (removed bool) {
 
     (.occ[idx] == 1) {
 
-        #{index-out=zero}
         eq = .str-eq(.keys[idx], key)
 
         #{overflow=wrap}
         eq -> {
 
-            #{index-out=zero}
             .occ[idx] = 0
 
-            #{index-out=zero}
             .keys[idx].len = 0
 
-            #{index-out=zero}
             .vals[idx].len = 0
             .size = .size - 1
             removed = true
@@ -185,13 +169,10 @@ str-map.remove = (key str) (removed bool) {
 str-map.clear = () {
     i <- [0...cap): {
 
-        #{index-out=zero}
         .occ[i] = 0
 
-        #{index-out=zero}
         .keys[i].len = 0
 
-        #{index-out=zero}
         .vals[i].len = 0
     }
     .size = 0
@@ -212,10 +193,8 @@ str-map.for-each = () (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
 
-            #{index-out=zero}
             k = .keys[i]
 
-            #{index-out=zero}
             v = .vals[i]
         }
     }

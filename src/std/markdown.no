@@ -275,7 +275,6 @@ markdown.table-separator = (line str) (yes bool) {
     }
     i <- [0..cells.len()): {
 
-        #{index-out=zero}
         cell = cells[i].trim()
         cell = cell.replace-str(':', '')
         cell = cell.replace-str('-', '')
@@ -297,7 +296,6 @@ markdown.table-row = (line str, tag str) (out str) {
     out = '<tr>\n'
     i <- [0..cells.len()): {
 
-        #{index-out=zero}
         cell = cells[i].trim()
 
         out = out - '<' - tag - '>' - markdown.inline(cell) - '</' - tag - '>\n'

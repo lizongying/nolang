@@ -29,68 +29,48 @@ X25519-A24 = 121665
 ; fe-zero: 零元素
 fe-zero = (h []i64) {
 
-    #{index-out=zero}
     h[0] = 0
 
-    #{index-out=zero}
     h[1] = 0
 
-    #{index-out=zero}
     h[2] = 0
 
-    #{index-out=zero}
     h[3] = 0
 
-    #{index-out=zero}
     h[4] = 0
 
-    #{index-out=zero}
     h[5] = 0
 
-    #{index-out=zero}
     h[6] = 0
 
-    #{index-out=zero}
     h[7] = 0
 
-    #{index-out=zero}
     h[8] = 0
 
-    #{index-out=zero}
     h[9] = 0
 }
 
 ; fe-one: 一元素
 fe-one = (h []i64) {
 
-    #{index-out=zero}
     h[0] = 1
 
-    #{index-out=zero}
     h[1] = 0
 
-    #{index-out=zero}
     h[2] = 0
 
-    #{index-out=zero}
     h[3] = 0
 
-    #{index-out=zero}
     h[4] = 0
 
-    #{index-out=zero}
     h[5] = 0
 
-    #{index-out=zero}
     h[6] = 0
 
-    #{index-out=zero}
     h[7] = 0
 
-    #{index-out=zero}
     h[8] = 0
 
-    #{index-out=zero}
     h[9] = 0
 }
 
@@ -342,34 +322,34 @@ fe-mul = (h []i64, f []i64, g []i64) {
     ; shift 序列: 0,26,51,77,102,128,153,179,204,230
     ; 偶數 shift_k（0,51,102,153,204）: 奇數 i 的低位對稱項與奇數 i 的高位項都有 shift 和 = shift_k+1，故需 2 倍
     ; 奇數 shift_k（26,77,128,179,230）: 所有 wrap 項 shift 和恰好 = 255+shift_k，故只需 19 倍（無 2 倍）
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[0] = f0 * g0 + f1-2 * g9-19 + f2 * g8-19 + f3-2 * g7-19 + f4 * g6-19 + f5-2 * g5-19 + f6 * g4-19 + f7-2 * g3-19 + f8 * g2-19 + f9-2 * g1-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[1] = f0 * g1 + f1 * g0 + f2 * g9-19 + f3 * g8-19 + f4 * g7-19 + f5 * g6-19 + f6 * g5-19 + f7 * g4-19 + f8 * g3-19 + f9 * g2-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[2] = f0 * g2 + f1-2 * g1 + f2 * g0 + f3-2 * g9-19 + f4 * g8-19 + f5-2 * g7-19 + f6 * g6-19 + f7-2 * g5-19 + f8 * g4-19 + f9-2 * g3-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[3] = f0 * g3 + f1 * g2 + f2 * g1 + f3 * g0 + f4 * g9-19 + f5 * g8-19 + f6 * g7-19 + f7 * g6-19 + f8 * g5-19 + f9 * g4-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[4] = f0 * g4 + f1-2 * g3 + f2 * g2 + f3-2 * g1 + f4 * g0 + f5-2 * g9-19 + f6 * g8-19 + f7-2 * g7-19 + f8 * g6-19 + f9-2 * g5-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[5] = f0 * g5 + f1 * g4 + f2 * g3 + f3 * g2 + f4 * g1 + f5 * g0 + f6 * g9-19 + f7 * g8-19 + f8 * g7-19 + f9 * g6-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[6] = f0 * g6 + f1-2 * g5 + f2 * g4 + f3-2 * g3 + f4 * g2 + f5-2 * g1 + f6 * g0 + f7-2 * g9-19 + f8 * g8-19 + f9-2 * g7-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[7] = f0 * g7 + f1 * g6 + f2 * g5 + f3 * g4 + f4 * g3 + f5 * g2 + f6 * g1 + f7 * g0 + f8 * g9-19 + f9 * g8-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[8] = f0 * g8 + f1-2 * g7 + f2 * g6 + f3-2 * g5 + f4 * g4 + f5-2 * g3 + f6 * g2 + f7-2 * g1 + f8 * g0 + f9-2 * g9-19
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     t[9] = f0 * g9 + f1 * g8 + f2 * g7 + f3 * g6 + f4 * g5 + f5 * g4 + f6 * g3 + f7 * g2 + f8 * g1 + f9 * g0
 
     ; 進位傳播 (ref10 風格：使用捨入常數 + floor division)
@@ -1531,11 +1511,9 @@ x25519-get-basepoint = () (base [32]byte) {
     ; [32]byte 不自動零初始化，需顯式清零
     i <- [0..32): {
 
-        #{index-out=zero}
         base[i] = 0
     }
 
-    #{index-out=zero}
     base[0] = 9
 }
 
@@ -1685,11 +1663,9 @@ x25519-scalarmult-base-bytes = (scalar []byte) (out []byte) {
     base []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         base[i] = 0
     }
 
-    #{index-out=zero}
     base[0] = 9
     out = x25519-scalarmult-bytes(scalar, base)
 }
@@ -1709,18 +1685,14 @@ x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
     i <- [0..32): {
         state, r = rand(state)
 
-        #{index-out=zero}
         priv[i] = state & 255
     }
 
     ; Clamping
-    #{index-out=zero}
     priv[0] = priv[0] & 248
 
-    #{index-out=zero}
     priv[31] = priv[31] & 127
 
-    #{index-out=zero}
     priv[31] = priv[31] | 64
 
     ; 計算公鑰

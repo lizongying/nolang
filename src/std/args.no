@@ -40,10 +40,8 @@ has-flag = (flag str, flagn i64) (yes bool) {
         flagn == 0 -> matched = false
         j <- [0..flagn): {
 
-            #{index-out=zero}
             ac = arg[j]
 
-            #{index-out=zero}
             fc = flag[j]
             ac != fc -> {
                 matched = false
@@ -71,10 +69,8 @@ get-option = (key str, keyn i64, val str) (ok bool) {
         matched-prefix = 1
         j <- [0..keyn): {
 
-            #{index-out=zero}
             ac = arg[j]
 
-            #{index-out=zero}
             kc = key[j]
             ac != kc -> {
                 matched-prefix = 0
@@ -84,7 +80,6 @@ get-option = (key str, keyn i64, val str) (ok bool) {
         matched-prefix == 1 -> {
 
             ; 檢查 key 後是 '='
-            #{index-out=zero}
             eq = arg[keyn]
             eq == 61 -> {
 
@@ -94,11 +89,9 @@ get-option = (key str, keyn i64, val str) (ok bool) {
                 vn = 0
                 !! {
 
-                    #{index-out=zero}
                     c = arg[k]
                     c == 0 -> break
 
-                    #{index-out=zero}
                     val[vn] = c
 
                     #{overflow=wrap}
@@ -128,7 +121,6 @@ get-positional = (idx i64) (val str, ok bool) {
         arg = get(j)
 
         ; 跳過以 '-' 開頭的參數
-        #{index-out=zero}
         c0 = arg[0]
 
         #{overflow=wrap}
@@ -138,13 +130,11 @@ get-positional = (idx i64) (val str, ok bool) {
             j = j + 1
 
             ; 如果是 --key value 形式，也跳過下一個
-            #{index-out=zero}
             c1 = arg[1]
             c1 != 45 -> j < n -> {
 
                 next = get(j)
 
-                #{index-out=zero}
                 nc = next[0]
                 nc != 45 -> j = j + 1
             }
@@ -158,11 +148,9 @@ get-positional = (idx i64) (val str, ok bool) {
             k = 0
             !! {
 
-                #{index-out=zero}
                 c = arg[k]
                 c == 0 -> break
 
-                #{index-out=zero}
                 val[k] = c
                 k = k + 1
             }

@@ -118,7 +118,6 @@ url-parse = (url-str str) (u url-info) {
     }
 
     ; 剩餘部分為 authority (host[:port] 或 user:pass@host:port)
-    #{index-out=zero}
     authority = url-str.slice(pos, n)
 
     ; 解析 user:pass@
@@ -152,7 +151,6 @@ url-parse = (url-str str) (u url-info) {
             valid = true
             i <- [0..port-str.len-bytes()): {
 
-                #{index-out=zero}
                 ch = port-str[i]
                 ch < 48 || ch > 57 -> {
                     valid = false
@@ -323,8 +321,6 @@ url-info.to-str = () (out str) {
 
     {
         .path.len-bytes() > 0 && .path[0] == 47 -> {
-
-            #{index-out=zero}
             out = out - .path
         }
 
@@ -348,7 +344,6 @@ url-encode = (s str) (out str) {
     out = ''
     i <- [0..s.len-bytes()): {
 
-        #{index-out=zero}
         c = s.byte(i)
 
         ; 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
@@ -372,20 +367,14 @@ url-encode = (s str) (out str) {
         }
         {
             keep -> {
-
-                #{index-out=zero}
                 out[out.len-bytes()] = c
             }
 
             -> {
-
-                #{index-out=zero}
                 out[out.len-bytes()] = 37
 
-                #{index-out=zero}
                 out[out.len-bytes()] = hex-chars[c >> 4]
 
-                #{index-out=zero}
                 out[out.len-bytes()] = hex-chars[c & 15]
             }
         }
@@ -400,7 +389,6 @@ url-encode-component = (s str) (out str) {
     out = ''
     i <- [0..s.len-bytes()): {
 
-        #{index-out=zero}
         c = s.byte(i)
 
         ; 只保留 A-Z, a-z, 0-9, -, _, ., ~
@@ -424,20 +412,14 @@ url-encode-component = (s str) (out str) {
         }
         {
             keep -> {
-
-                #{index-out=zero}
                 out[out.len-bytes()] = c
             }
 
             -> {
-
-                #{index-out=zero}
                 out[out.len-bytes()] = 37
 
-                #{index-out=zero}
                 out[out.len-bytes()] = hex-chars[c >> 4]
 
-                #{index-out=zero}
                 out[out.len-bytes()] = hex-chars[c & 15]
             }
         }
@@ -452,7 +434,6 @@ url-decode = (s str) (out str) {
     i = 0
     (i < s.len-bytes()) {
 
-        #{index-out=zero}
         c = s.byte(i)
 
         #{overflow=wrap}
@@ -462,10 +443,9 @@ url-decode = (s str) (out str) {
 
                     ; %XX
 
-                    #{index-out=zero, overflow=wrap}
+                    #{overflow=wrap}
                     h1 = s.byte(i + 1)
 
-                    #{index-out=zero}
                     h2 = s.byte(i + 2)
                     val = 0
 
@@ -489,21 +469,16 @@ url-decode = (s str) (out str) {
                         ->
                     }
 
-                    #{index-out=zero}
                     out[out.len-bytes()] = val & 255
                     i = i + 2
                 }
             }
 
             c == 43 -> {
-
-                #{index-out=zero}
                 out[out.len-bytes()] = 32; + 號轉空格
             }
 
             -> {
-
-                #{index-out=zero}
                 out[out.len-bytes()] = c
             }
         }

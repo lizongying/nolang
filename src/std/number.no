@@ -246,7 +246,6 @@ i64-to-str = (n i64) (out str) {
     n == 0 -> {
         out = with-cap(1)
 
-        #{index-out=zero}
         out[0] = 48
         return
     }
@@ -293,7 +292,6 @@ i64-to-str = (n i64) (out str) {
         #{overflow=wrap}
         ascii = d + 48
 
-        #{index-out=zero}
         out[pos] = ascii
 
         #{overflow=wrap}
@@ -304,7 +302,6 @@ i64-to-str = (n i64) (out str) {
     }
     neg == 1 -> {
 
-        #{index-out=zero}
         out[0] = 45
     }
 }
@@ -317,7 +314,6 @@ u64-to-str = (u u64) (out str) {
     u == 0 -> {
         out = with-cap(1)
 
-        #{index-out=zero}
         out[0] = 48
         return
     }
@@ -343,7 +339,6 @@ u64-to-str = (u u64) (out str) {
         #{overflow=wrap}
         ascii = d + 48
 
-        #{index-out=zero}
         out[pos] = ascii
 
         #{overflow=wrap}
@@ -362,44 +357,30 @@ char-to-str = (c char) (out str) {
     out = with-cap(4)
     {
         c < 0x80 -> {
-
-            #{index-out=zero}
             out[0] = c
         }
 
         c < 0x800 -> {
-
-            #{index-out=zero}
             out[0] = 0xc0 | ((c >> 6) & 0x1f)
 
-            #{index-out=zero}
             out[1] = 0x80 | (c & 0x3f)
         }
 
         c < 0x10000 -> {
-
-            #{index-out=zero}
             out[0] = 0xe0 | ((c >> 12) & 0x0f)
 
-            #{index-out=zero}
             out[1] = 0x80 | ((c >> 6) & 0x3f)
 
-            #{index-out=zero}
             out[2] = 0x80 | (c & 0x3f)
         }
 
         -> {
-
-            #{index-out=zero}
             out[0] = 0xf0 | ((c >> 18) & 0x07)
 
-            #{index-out=zero}
             out[1] = 0x80 | ((c >> 12) & 0x3f)
 
-            #{index-out=zero}
             out[2] = 0x80 | ((c >> 6) & 0x3f)
 
-            #{index-out=zero}
             out[3] = 0x80 | (c & 0x3f)
         }
     }
@@ -415,7 +396,6 @@ int.to-str = () (out str) {
     . == 0 -> {
         out = with-cap(1)
 
-        #{index-out=zero}
         out[0] = 48
         return
     }
@@ -452,7 +432,6 @@ int.to-str = () (out str) {
         #{overflow=wrap}
         ascii = d + 48
 
-        #{index-out=zero}
         out[pos] = ascii
 
         #{overflow=wrap}
@@ -463,7 +442,6 @@ int.to-str = () (out str) {
     }
     neg == 1 -> {
 
-        #{index-out=zero}
         out[0] = 45
     }
 }
@@ -597,7 +575,7 @@ f64-to-str = (x f64) (out str) {
     i = 5
     (i >= 0) {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         digits[i] = (tmp % 10) + 48
 
         #{overflow=wrap}
@@ -637,45 +615,36 @@ f64-to-str = (x f64) (out str) {
         pos = 0
         neg == 1 -> {
 
-            #{index-out=zero}
             out[pos] = 45
             pos = pos + 1
         }
 
-        #{index-out=zero}
         out[pos] = digits[0]
         pos = pos + 1
         last-nz >= 1 -> {
 
-            #{index-out=zero}
             out[pos] = 46
             pos = pos + 1
             j = 1
             (j <= last-nz) {
 
-                #{index-out=zero}
                 out[pos] = digits[j]
                 pos = pos + 1
                 j = j + 1
             }
         }
 
-        #{index-out=zero}
         out[pos] = 101
         pos = pos + 1
         ae i64 = e
         {
             ae < 0 -> {
-
-                #{index-out=zero}
                 out[pos] = 45
                 pos = pos + 1
                 ae = 0 - ae
             }
 
             -> {
-
-                #{index-out=zero}
                 out[pos] = 43
                 pos = pos + 1
             }
@@ -683,14 +652,12 @@ f64-to-str = (x f64) (out str) {
         estr = i64-to-str(ae)
         estr.len-bytes() == 1 -> {
 
-            #{index-out=zero}
             out[pos] = 48
             pos = pos + 1
         }
         j = 0
         (j < estr.len-bytes()) {
 
-            #{index-out=zero}
             out[pos] = estr[j]
             pos = pos + 1
             j = j + 1
@@ -716,27 +683,23 @@ f64-to-str = (x f64) (out str) {
         pos = 0
         neg == 1 -> {
 
-            #{index-out=zero}
             out[pos] = 45
             pos = pos + 1
         }
         j = 0
         (j < int-digits) {
 
-            #{index-out=zero}
             out[pos] = digits[j]
             pos = pos + 1
             j = j + 1
         }
         last-nz >= int-digits -> {
 
-            #{index-out=zero}
             out[pos] = 46
             pos = pos + 1
             j = int-digits
             (j <= last-nz) {
 
-                #{index-out=zero}
                 out[pos] = digits[j]
                 pos = pos + 1
                 j = j + 1
@@ -760,18 +723,15 @@ f64-to-str = (x f64) (out str) {
     #{overflow=wrap}
     neg == 1 -> {
 
-        #{index-out=zero}
         out[pos] = 45
         pos = pos + 1
     }
 
-    #{index-out=zero}
     out[pos] = 48
 
     #{overflow=wrap}
     pos = pos + 1
 
-    #{index-out=zero}
     out[pos] = 46
 
     #{overflow=wrap}
@@ -779,7 +739,6 @@ f64-to-str = (x f64) (out str) {
     j = 0
     (j < lead-zeros) {
 
-        #{index-out=zero}
         out[pos] = 48
 
         #{overflow=wrap}
@@ -791,7 +750,6 @@ f64-to-str = (x f64) (out str) {
     j = 0
     (j <= last-nz) {
 
-        #{index-out=zero}
         out[pos] = digits[j]
 
         #{overflow=wrap}

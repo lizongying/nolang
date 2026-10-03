@@ -96,7 +96,6 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     ; 窗口大小僅供參考，inflate 一律用 32K 窗口解碼，故接受任意合法 CMF(如 sips 的 0x08)
     (data[0] & 0x0f) != 8 || (data[0] >> 4) > 7 -> {
 
-        #{index-out=zero}
         return
     }
 
@@ -109,7 +108,6 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
     #{overflow=wrap}
     data.len() < hdr-len + 4 -> {
 
-        #{index-out=zero}
         return
     }
 

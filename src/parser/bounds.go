@@ -308,16 +308,21 @@ func (a *boundsAnalyzer) markStmts(list []Statement, ctx boundsCtx) {
 	a.scanAnn(list)
 }
 
-// computeRemovable：若陳述 s 至少有一個容器索引讀取、且其整棵子樹的容器索引讀取
-// 全部 in-bounds，則標記 s 為可移除 `#{index-out}`。
+// computeRemovable：標記 s 為可移除 `#{index-out}`。判準——s 子樹內不存在「仍需要
+// index-out」的容器索引讀取即可移除，涵蓋兩種情形：
+//  1. 根本沒有容器索引讀取：包括純寫入陳述（如 `nl[0] = 10`）與只有 str/txt、
+//     結構欄位索引（皆非 option 基底）的陳述。`#{index-out}` 的降級只在**指派右側
+//     值為索引讀取**時生效（parser/lowering.go maybeIndexOutAssign：value 非
+//     IndexExpression 即早退），索引寫入走獨立的 bounds_check，注解對寫入毫無作用
+//     → 死代碼，移除安全，且 checker 從不對寫入上報未處理索引（口徑一致）。
+//  2. 有容器索引讀取，但全部可證明 in-bounds（定長陣列 / with-len 字面量切片）。
+//
+// 只要有一個讀取不在 a.inb（可能越界且未被 ?= / option 處理），就必須保留注解。
 func (a *boundsAnalyzer) computeRemovable(s Statement) {
 	if _, ok := s.(*AnnotationStatement); ok {
 		return
 	}
 	reads := a.enumContainerReads(s)
-	if len(reads) == 0 {
-		return
-	}
 	for idx := range reads {
 		if !a.inb[idx] {
 			return

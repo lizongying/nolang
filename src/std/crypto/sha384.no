@@ -44,7 +44,6 @@ sha384 = (data []byte) (hash [48]byte) {
     padded []byte
     i <- [0..total-len): {
 
-        #{index-out=zero}
         padded[i] = 0
     }
 
@@ -56,25 +55,23 @@ sha384 = (data []byte) (hash [48]byte) {
     }
 
     ; 填充 0x80
-    #{index-out=zero}
     padded[dlen] = 128
 
     ; 填充 0x00
     i <- [dlen + 1..total-len - 16): {
 
-        #{index-out=zero}
         padded[i] = 0
     }
 
     ; 填充 bit-len（big-endian 128-bit，高 64 位元為 0）
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         padded[total-len - 16 + i] = 0
     }
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
@@ -99,148 +96,100 @@ sha384 = (data []byte) (hash [48]byte) {
     }
 
     ; 輸出 48 位元組雜湊值（big-endian，截斷 h0..h5）
-    #{index-out=zero}
     hash[0] = (h0 >> 56) & 255
 
-    #{index-out=zero}
     hash[1] = (h0 >> 48) & 255
 
-    #{index-out=zero}
     hash[2] = (h0 >> 40) & 255
 
-    #{index-out=zero}
     hash[3] = (h0 >> 32) & 255
 
-    #{index-out=zero}
     hash[4] = (h0 >> 24) & 255
 
-    #{index-out=zero}
     hash[5] = (h0 >> 16) & 255
 
-    #{index-out=zero}
     hash[6] = (h0 >> 8) & 255
 
-    #{index-out=zero}
     hash[7] = h0 & 255
 
-    #{index-out=zero}
     hash[8] = (h1 >> 56) & 255
 
-    #{index-out=zero}
     hash[9] = (h1 >> 48) & 255
 
-    #{index-out=zero}
     hash[10] = (h1 >> 40) & 255
 
-    #{index-out=zero}
     hash[11] = (h1 >> 32) & 255
 
-    #{index-out=zero}
     hash[12] = (h1 >> 24) & 255
 
-    #{index-out=zero}
     hash[13] = (h1 >> 16) & 255
 
-    #{index-out=zero}
     hash[14] = (h1 >> 8) & 255
 
-    #{index-out=zero}
     hash[15] = h1 & 255
 
-    #{index-out=zero}
     hash[16] = (h2 >> 56) & 255
 
-    #{index-out=zero}
     hash[17] = (h2 >> 48) & 255
 
-    #{index-out=zero}
     hash[18] = (h2 >> 40) & 255
 
-    #{index-out=zero}
     hash[19] = (h2 >> 32) & 255
 
-    #{index-out=zero}
     hash[20] = (h2 >> 24) & 255
 
-    #{index-out=zero}
     hash[21] = (h2 >> 16) & 255
 
-    #{index-out=zero}
     hash[22] = (h2 >> 8) & 255
 
-    #{index-out=zero}
     hash[23] = h2 & 255
 
-    #{index-out=zero}
     hash[24] = (h3 >> 56) & 255
 
-    #{index-out=zero}
     hash[25] = (h3 >> 48) & 255
 
-    #{index-out=zero}
     hash[26] = (h3 >> 40) & 255
 
-    #{index-out=zero}
     hash[27] = (h3 >> 32) & 255
 
-    #{index-out=zero}
     hash[28] = (h3 >> 24) & 255
 
-    #{index-out=zero}
     hash[29] = (h3 >> 16) & 255
 
-    #{index-out=zero}
     hash[30] = (h3 >> 8) & 255
 
-    #{index-out=zero}
     hash[31] = h3 & 255
 
-    #{index-out=zero}
     hash[32] = (h4 >> 56) & 255
 
-    #{index-out=zero}
     hash[33] = (h4 >> 48) & 255
 
-    #{index-out=zero}
     hash[34] = (h4 >> 40) & 255
 
-    #{index-out=zero}
     hash[35] = (h4 >> 32) & 255
 
-    #{index-out=zero}
     hash[36] = (h4 >> 24) & 255
 
-    #{index-out=zero}
     hash[37] = (h4 >> 16) & 255
 
-    #{index-out=zero}
     hash[38] = (h4 >> 8) & 255
 
-    #{index-out=zero}
     hash[39] = h4 & 255
 
-    #{index-out=zero}
     hash[40] = (h5 >> 56) & 255
 
-    #{index-out=zero}
     hash[41] = (h5 >> 48) & 255
 
-    #{index-out=zero}
     hash[42] = (h5 >> 40) & 255
 
-    #{index-out=zero}
     hash[43] = (h5 >> 32) & 255
 
-    #{index-out=zero}
     hash[44] = (h5 >> 24) & 255
 
-    #{index-out=zero}
     hash[45] = (h5 >> 16) & 255
 
-    #{index-out=zero}
     hash[46] = (h5 >> 8) & 255
 
-    #{index-out=zero}
     hash[47] = h5 & 255
 }
 

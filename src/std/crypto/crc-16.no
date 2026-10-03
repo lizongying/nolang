@@ -32,15 +32,11 @@ hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(4)
 
-    #{index-out=zero}
     hex[0] = hex-chars[(crc >> 12) & 15]
 
-    #{index-out=zero}
     hex[1] = hex-chars[(crc >> 8) & 15]
 
-    #{index-out=zero}
     hex[2] = hex-chars[(crc >> 4) & 15]
 
-    #{index-out=zero}
     hex[3] = hex-chars[crc & 15]
 }

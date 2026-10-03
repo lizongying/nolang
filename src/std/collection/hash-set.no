@@ -24,7 +24,6 @@ hash-set.init = () {
     .size = 0
     i <- [0..64): {
 
-        #{index-out=zero}
         .occ[i] = 0
     }
 }
@@ -52,10 +51,8 @@ hash-set.add = (key i64) (is-new bool) {
         idx >= .cap -> idx = 0
     }
 
-    #{index-out=zero}
     .keys[idx] = key
 
-    #{index-out=zero}
     .occ[idx] = 1
 
     #{overflow=wrap}
@@ -93,7 +90,6 @@ hash-set.remove = (key i64) (removed bool) {
         #{overflow=wrap}
         .keys[idx] == key -> {
 
-            #{index-out=zero}
             .occ[idx] = 0
             .size = .size - 1
             removed = true
@@ -112,7 +108,6 @@ hash-set.remove = (key i64) (removed bool) {
 hash-set.clear = () {
     i <- [0...cap): {
 
-        #{index-out=zero}
         .occ[i] = 0
     }
     .size = 0
@@ -133,7 +128,6 @@ hash-set.for-each = () (val i64) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
 
-            #{index-out=zero}
             val = .keys[i]
         }
     }

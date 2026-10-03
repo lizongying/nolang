@@ -1142,10 +1142,49 @@ un = aset.union(bbuf, bset.size())   ; ← 把「呼叫端的陣列」當成 set
 | 「忘了插 drop」 | MIR 直讀（`NOLANG_MIR_DUMP_MIR=1`）：同一支探針的 `drop` 指令從 **14 條變 81 條**（開閘門後多了 67 條） |
 | 「呼叫端供緩衝區／寫穿」 | `json-pool.init` 是 `.nodes/.strs/.ec/.ek/.en = with-len(0)`，沒有任何 `= 參數` |
 
-⇒ 剩下的最可能方向（**未證實**，下一輪從這裡開始）：`StructHasOwnedLeafFields` 翻面後
-`moveStructSharesHeap` 對 `json.json-pool` 也翻面 ⇒ `parse` 內部原本是 **move** 的結構複製全部被降級成
-**深拷貝**（5 條 slice），而這些拷貝之中至少有一條沒有被釋放。**下一步的量法**：把
-`nolang_rc_alloc` / `nolang_free` 各加一個計數器，跑同一支探針 1 圈，比對兩個計數（差值就是漏的塊數）。
+**形狀已收斂（50k 圈；「好」＝開啟後**沒有**變差）**：
+
+| 探針 | 關閉 | 開啟 | 判讀 |
+|---|---|---|---|
+| `p.init()` ＋ 3× `p.alloc()` | 26.1 MB | **11.5 MB** | 好 |
+| `json.parse('12345')` | 19.6 MB | **17.1 MB** | 好 |
+| `json.parse('"hello world"')` | 21.3 MB | 22.0 MB | 持平 |
+| `json.parse('{"a":1}')` | 42.3 MB | **55.2 MB** | ❌ 差 |
+| `json.parse('{"name":"Alice"}')` | 43.8 MB | **61.6 MB** | ❌ 差 |
+| `json.parse('[1,2,3]')` | 51.2 MB | **65.7 MB** | ❌ 差 |
+| 使用者結構（200k）：struct literal／按值傳參／**方法內改 slice 欄位**／對欄位 push `i64`／`str`／**子字串視圖**／**struct 元素** | 1.7–8.2 MB | 1.7–1.8 MB | 全部持平或**更好**（`push str` 8.2 → 1.8） |
+
+⇒ **凡是「容器」的 parse 就變差，純量 parse 不變差；而且用使用者結構完全複製不出來。**
+所以觸發點在 `json.parse` 的容器路徑，**不是**「結構按值傳遞」的通則（那條已經被上表最後一列否證：
+按值傳參、方法接收者、對欄位 push 全都持平或更好）。
+
+**`?json` 包裝已排除**：最早的探針就是**繞過 `json` 包裝**、直接 `p = json-pool {}` ＋ `p.parse(...)`
+（100k：272 → 354 MB），照樣變差 ⇒ 不是 option＋指標欄位那條路。
+
+**再往下用「std 打樁」二分（在 `/tmp` 樹裡改 `src/std/json.no` 再重建，不碰 repo）**：
+
+| `add-child` 的打樁 | `{"a":1}` @50k | 相對開啟（55.2 MB）回收 |
+|---|---|---|
+| 三個 push 全拿掉 | **47.8 MB** | −7.4 MB（12.9 MB 差額的 57%） |
+| 只拿掉 `.ek.push(key)`（str） | 51.1 MB | −4.1 MB |
+| 只拿掉 `.ec.push` ＋ `.en.push`（兩個 i64） | （打樁字串沒對上，未測） | — |
+
+⇒ **差額主要來自 `add-child` 的三個 `push`**（str 那個最大），而 `push` 進的是 **pool 自己的
+owned slice 欄位**。這與上面「使用者探針 push 進欄位反而變好」不衝突：差別在**規模**——json 的
+`.ec/.ek/.en` 每次 parse 都在成長，`push` 在 owned-leaf 欄位上會 clone（讀＋寫各一次），
+於是每次 push 的臨時配置與陣列大小成正比。**下一步**：把這三個 push 換成等價但**不成長**的寫法
+（先 `with-len(N)` 再 `[i] =`）看差額是否消失；若消失，就定位到 `push` 在 owned-leaf 欄位上的
+clone 語意（而不是 `add-child` 本身）。
+
+**量法（已試過、走不通的記在這裡省下一輪）**：`DYLD_INSERT_LIBRARIES` 攔 `malloc`/`free`
+（`__DATA,__interpose` ＋ constructor 解析符號）在本機直接 **rc=139**，不可用；要數塊數就直接改
+**產生的 runtime**：`@nolang_rc_alloc` 在 `codegen.go:12902`、runtime 的 `@main` 在 `codegen.go:3608`
+（在 `ret i32` 前插一段 printf 把兩個計數器印出來），在 `/tmp` 樹裡做。
+
+**量法（已試過、走不通的記在這裡省下一輪）**：`DYLD_INSERT_LIBRARIES` 攔 `malloc`/`free`
+（`__DATA,__interpose` ＋ constructor 解析符號）在本機直接 **rc=139**，不可用；要數塊數就直接改
+**產生的 runtime**：`@nolang_rc_alloc` 在 `codegen.go:12902`、runtime 的 `@main` 在 `codegen.go:3608`
+（在 `ret i32` 前插一段 printf 把兩個計數器印出來），在 `/tmp` 樹裡做。
 
 ⇒ **tier 2 不放行。** 這一條與 tier 1 的差別在於：tier 1 的 `hashmap-*` 內部沒有「結構按值傳遞」，
 所以 move→clone 降級不會發生；`json.parse` 有。

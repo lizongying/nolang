@@ -73,7 +73,6 @@ encode-header = (name str, value str) (buf []byte, n i64) {
     buf = with-cap(name.len-bytes() + value.len-bytes() + 16)
 
     ; 字面標頭前綴: 0010 0000（不使用靜態表參考，名稱為字面值）
-    #{index-out=zero}
     buf[pos] = QPACK-LITERAL-PREFIX
 
     #{overflow=wrap}
@@ -82,8 +81,6 @@ encode-header = (name str, value str) (buf []byte, n i64) {
     ; 名稱長度（varint，高位=0 表示 Huffman 關閉）
     {
         name-bytes.len() < 64 -> {
-
-            #{index-out=zero}
             buf[pos] = name-bytes.len() & 255
 
             #{overflow=wrap}
@@ -93,10 +90,9 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         -> {
 
             ; 大於等於 64 的長度使用多位元組編碼
-            #{index-out=zero}
             buf[pos] = 0x40 | ((name-bytes.len() >> 8) & 255)
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             buf[pos + 1] = name-bytes.len() & 255
 
             #{overflow=wrap}
@@ -117,8 +113,6 @@ encode-header = (name str, value str) (buf []byte, n i64) {
     ; 值長度
     {
         value-bytes.len() < 64 -> {
-
-            #{index-out=zero}
             buf[pos] = value-bytes.len() & 255
 
             #{overflow=wrap}
@@ -126,11 +120,9 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         }
 
         -> {
-
-            #{index-out=zero}
             buf[pos] = 0x40 | ((value-bytes.len() >> 8) & 255)
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             buf[pos + 1] = value-bytes.len() & 255
 
             #{overflow=wrap}
@@ -161,10 +153,8 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
     pos = 0
 
     ; 前綴: 2 位元組（required insert count=0, delta base=0）
-    #{index-out=zero}
     buf[0] = 0
 
-    #{index-out=zero}
     buf[1] = 0
     pos = 2
 
@@ -223,7 +213,6 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos + name-len > buf.len() -> return
 
     ; 讀取名稱
-    #{index-out=zero}
     name = buf[r-pos..r-pos + name-len).to-str()
 
     #{overflow=wrap}
@@ -242,7 +231,6 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos + value-len > buf.len() -> return
 
     ; 讀取值
-    #{index-out=zero}
     value = buf[r-pos..r-pos + value-len).to-str()
 
     #{overflow=wrap}
@@ -316,7 +304,6 @@ encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []byte, n
     qpack-n = 0
     qpack-buf, qpack-n = encode-headers(names, values, count)
 
-    #{index-out=zero}
     buf, n = encode-frame(0x01, qpack-buf[..qpack-n))
 }
 
@@ -337,10 +324,8 @@ encode-settings-frame = () (buf []byte, n i64) {
     ; 空 SETTINGS（無參數）
     buf = with-len(2)
 
-    #{index-out=zero}
     buf[0] = 0x04
 
-    #{index-out=zero}
     buf[1] = 0
     n = 2
 }
@@ -409,11 +394,9 @@ response.get-header = (name str) (val ?str) {
     target = name.to-lower()
     i <- [0...header-count): {
 
-        #{index-out=zero}
         h = .header-names[i].to-lower()
         h == target -> {
 
-            #{index-out=zero}
             val = .header-values[i]
             return
         }
@@ -457,7 +440,6 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
         p = 0
         i <- [0..port-str.len-bytes()): {
 
-            #{index-out=zero}
             c = port-str[i]
             c < 48 || c > 57 -> return
 
@@ -502,50 +484,40 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     hdr-count = 0
 
     ; :method
-    #{index-out=zero}
     hdr-names[hdr-count] = ':method'
 
-    #{index-out=zero}
     hdr-values[hdr-count] = method
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :path
-    #{index-out=zero}
     hdr-names[hdr-count] = ':path'
 
-    #{index-out=zero}
     hdr-values[hdr-count] = path
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :scheme
-    #{index-out=zero}
     hdr-names[hdr-count] = ':scheme'
 
-    #{index-out=zero}
     hdr-values[hdr-count] = 'https'
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :authority
-    #{index-out=zero}
     hdr-names[hdr-count] = ':authority'
 
-    #{index-out=zero}
     hdr-values[hdr-count] = host
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; user-agent
-    #{index-out=zero}
     hdr-names[hdr-count] = 'user-agent'
 
-    #{index-out=zero}
     hdr-values[hdr-count] = 'nolang-http3/1.0'
 
     #{overflow=wrap}
@@ -554,10 +526,8 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     ; content-length（如有主體）
     body.len-bytes() > 0 -> {
 
-        #{index-out=zero}
         hdr-names[hdr-count] = 'content-length'
 
-        #{index-out=zero}
         hdr-values[hdr-count] = body.len-bytes().to-str()
 
         #{overflow=wrap}
@@ -720,10 +690,8 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
                     }
                     r.header-count < 32 -> {
 
-                        #{index-out=zero}
                         r.header-names[r.header-count] = name
 
-                        #{index-out=zero}
                         r.header-values[r.header-count] = value
 
                         #{overflow=wrap}

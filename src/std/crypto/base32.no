@@ -52,28 +52,27 @@ encode = (data []byte) (out str) {
         #{index-out=zero, overflow=wrap}
         b4 = data[pos + 4]
 
-        #{index-out=zero}
         out[out-pos] = BASE32-ALPHABET[(b0 >> 3) & 31]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 1] = BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 2] = BASE32-ALPHABET[(b1 >> 1) & 31]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 3] = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 4] = BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 5] = BASE32-ALPHABET[(b3 >> 2) & 31]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 6] = BASE32-ALPHABET[((b3 & 3) << 3) | ((b4 >> 5) & 7)]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 7] = BASE32-ALPHABET[b4 & 31]
 
         #{overflow=wrap}
@@ -115,95 +114,73 @@ encode = (data []byte) (out str) {
         }
 
         ; 根據剩餘位元組數決定輸出字元和填充
-        #{index-out=zero}
         out[out-pos] = BASE32-ALPHABET[(b0 >> 3) & 31]
 
-        #{index-out=zero}
         out[out-pos + 1] = BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
 
         {
             remainder == 1 -> {
 
                 ; 1 byte → 2 chars + 6 padding
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 out[out-pos + 2] = '='
 
-                #{index-out=zero}
                 out[out-pos + 3] = '='
 
-                #{index-out=zero}
                 out[out-pos + 4] = '='
 
-                #{index-out=zero}
                 out[out-pos + 5] = '='
 
-                #{index-out=zero}
                 out[out-pos + 6] = '='
 
-                #{index-out=zero}
                 out[out-pos + 7] = '='
             }
 
             remainder == 2 -> {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 out[out-pos + 2] = BASE32-ALPHABET[(b1 >> 1) & 31]
 
-                #{index-out=zero}
                 out[out-pos + 3] = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
 
-                #{index-out=zero}
                 out[out-pos + 4] = '='
 
-                #{index-out=zero}
                 out[out-pos + 5] = '='
 
-                #{index-out=zero}
                 out[out-pos + 6] = '='
 
-                #{index-out=zero}
                 out[out-pos + 7] = '='
             }
 
             remainder == 3 -> {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 out[out-pos + 2] = BASE32-ALPHABET[(b1 >> 1) & 31]
 
-                #{index-out=zero}
                 out[out-pos + 3] = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
 
-                #{index-out=zero}
                 out[out-pos + 4] = BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
 
-                #{index-out=zero}
                 out[out-pos + 5] = '='
 
-                #{index-out=zero}
                 out[out-pos + 6] = '='
 
-                #{index-out=zero}
                 out[out-pos + 7] = '='
             }
 
             remainder == 4 -> {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
                 out[out-pos + 2] = BASE32-ALPHABET[(b1 >> 1) & 31]
 
-                #{index-out=zero}
                 out[out-pos + 3] = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
 
-                #{index-out=zero}
                 out[out-pos + 4] = BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
 
-                #{index-out=zero}
                 out[out-pos + 5] = BASE32-ALPHABET[(b3 >> 2) & 31]
 
-                #{index-out=zero}
                 out[out-pos + 6] = BASE32-ALPHABET[((b3 & 3) << 3) | ((b4 >> 5) & 7)]
 
-                #{index-out=zero}
                 out[out-pos + 7] = '='
             }
         }
@@ -238,8 +215,6 @@ decode = (in str) (out []byte) {
         #{overflow=wrap}
         {
             in[i] == '=' -> {
-
-                #{index-out=zero}
                 pad-count = pad-count + 1
             }
 
@@ -268,7 +243,7 @@ decode = (in str) (out []byte) {
         ; 將字元映射回 5-bit 值
         i <- [0..8): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             c = in[pos + i]
             val = 0
 
@@ -301,19 +276,18 @@ decode = (in str) (out []byte) {
         }
 
         ; 組合為 5 位元組
-        #{index-out=zero}
         out[out-pos] = ((v0 << 3) | (v1 >> 2)) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 1] = (((v1 & 3) << 6) | (v2 << 1) | (v3 >> 4)) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 2] = (((v3 & 15) << 4) | (v4 >> 1)) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 3] = (((v4 & 1) << 7) | (v5 << 2) | (v6 >> 3)) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[out-pos + 4] = (((v6 & 7) << 5) | v7) & 255
 
         #{overflow=wrap}

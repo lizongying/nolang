@@ -101,20 +101,18 @@ path.join = (b str) (out str) {
     need-sep = 1
     out-n > 0 -> {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         last-a = .p.byte(out-n - 1)
         last-a == SEP-BYTE -> need-sep = 0
     }
     bn > 0 -> {
 
-        #{index-out=zero}
         first-b = b.byte(0)
         first-b == SEP-BYTE -> need-sep = 0
     }
     out-n == 0 -> need-sep = 0
     need-sep == 1 -> {
 
-        #{index-out=zero}
         .p[out-n] = SEP
 
         #{overflow=wrap}
@@ -125,7 +123,6 @@ path.join = (b str) (out str) {
     start-b = 0
     bn > 0 -> {
 
-        #{index-out=zero}
         first-b = b.byte(0)
         first-b == SEP-BYTE -> start-b = 1
     }
@@ -133,7 +130,6 @@ path.join = (b str) (out str) {
     ; 複製 b
     j <- [start-b..bn): {
 
-        #{index-out=zero}
         .p[out-n] = b.byte(j)
 
         #{overflow=wrap}
@@ -154,7 +150,6 @@ path.base = () (out str) {
     last-sep = -1
     i <- [0...p.len-bytes()): {
 
-        #{index-out=zero}
         c = .p.byte(i)
         c == SEP-BYTE -> last-sep = i
     }
@@ -167,7 +162,7 @@ path.base = () (out str) {
     out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i] = .p.byte(start + i)
     }
 }
@@ -180,7 +175,6 @@ path.dir = () (out str) {
     last-sep = -1
     i <- [0...p.len-bytes()): {
 
-        #{index-out=zero}
         c = .p.byte(i)
         c == SEP-BYTE -> last-sep = i
     }
@@ -188,7 +182,6 @@ path.dir = () (out str) {
         last-sep < 0 -> {
 
             ; 無 '/'，變為 '.'
-            #{index-out=zero}
             .p[0] = DOT
             .p.len = 1
             out = .p
@@ -200,7 +193,6 @@ path.dir = () (out str) {
             out-n == 0 -> {
 
                 ; 根目錄 '/'
-                #{index-out=zero}
                 .p[0] = SEP
                 .p.len = 1
                 out = .p
@@ -223,7 +215,6 @@ path.ext = () (out str) {
     last-dot = -1
     i <- [0...p.len-bytes()): {
 
-        #{index-out=zero}
         c = .p.byte(i)
         {
             c == SEP-BYTE -> last-sep = i
@@ -252,7 +243,7 @@ path.ext = () (out str) {
     out = with-cap(.p.len-bytes())
     i <- [0..out-n): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         out[i] = .p.byte(start + i)
     }
 }
@@ -266,7 +257,6 @@ path.ext = () (out str) {
 path.is-abs = () (yes bool) {
     .p.len-bytes() > 0 -> {
 
-        #{index-out=zero}
         c = .p.byte(0)
         c == SEP-BYTE -> yes = true
     }
@@ -283,7 +273,6 @@ path.clean = () {
     dot-count = 0
     i <- [0...p.len-bytes()): {
 
-        #{index-out=zero}
         c = .p.byte(i)
         {
             c == SEP-BYTE -> {
@@ -324,11 +313,10 @@ path.clean = () {
 
                     out-n > 0 -> {
 
-                        #{index-out=zero, overflow=wrap}
+                        #{overflow=wrap}
                         prev = .p.byte(out-n - 1)
                         prev != SEP-BYTE -> {
 
-                            #{index-out=zero}
                             .p[out-n] = SEP
 
                             #{overflow=wrap}
@@ -337,8 +325,6 @@ path.clean = () {
                     }
 
                     -> {
-
-                        #{index-out=zero}
                         .p[out-n] = SEP
 
                         #{overflow=wrap}
@@ -359,7 +345,6 @@ path.clean = () {
                 ; 寫入之前積累的 '.' 字元
                 j <- [0..dot-count): {
 
-                    #{index-out=zero}
                     .p[out-n] = DOT
 
                     #{overflow=wrap}
@@ -368,7 +353,6 @@ path.clean = () {
 
                 dot-count = 0
 
-                #{index-out=zero}
                 .p[out-n] = c
 
                 #{overflow=wrap}
@@ -412,7 +396,7 @@ path.clean = () {
     ; 移除末尾 '/'
     out-n > 1 -> {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         prev = .p.byte(out-n - 1)
 
         #{overflow=wrap}
@@ -435,7 +419,6 @@ path.split = () (f str) {
     last-sep = -1
     i <- [0...p.len-bytes()): {
 
-        #{index-out=zero}
         c = .p.byte(i)
         c == SEP-BYTE -> last-sep = i
     }
@@ -449,7 +432,7 @@ path.split = () (f str) {
     f = with-len(out-n)
     i <- [0..out-n): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         f[i] = .p.byte(start + i)
     }
 
@@ -458,7 +441,6 @@ path.split = () (f str) {
         last-sep < 0 -> {
 
             ; 無 '/'，.p 變為 '.'
-            #{index-out=zero}
             .p[0] = DOT
             .p.len = 1
             return
@@ -467,7 +449,6 @@ path.split = () (f str) {
         last-sep == 0 -> {
 
             ; 根目錄 '/'
-            #{index-out=zero}
             .p[0] = SEP
             .p.len = 1
             return

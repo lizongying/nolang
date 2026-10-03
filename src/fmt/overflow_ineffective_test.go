@@ -293,7 +293,12 @@ func TestFormatPreservesEffectiveOverflowInMethodReceiverIndex(t *testing.T) {
 	}
 	relevant, governed := checker.OverflowAnnotationRelevance(program)
 	out := FormatProgramWithOverflow(program, input, relevant, governed)
-	if !strings.Contains(out, "#{index-out=zero, overflow=wrap}") {
+	// 本 pin 的核心：接收者索引算式 `.dyn-names[i - 1]` 的 `#{overflow=wrap}` 絕不能被刪
+	//（刪了 vet 立刻新增 ERROR）。至於同一行的 `#{index-out=zero}`：`.dyn-names[i-1]` 的
+	// 基底是 DotExpression（struct field），`isSafeIndexBase` 只認 Identifier 基底 ⇒
+	// index-out 對 struct-field 索引是死代碼（走 bounds_check、checker 從不上報），fmt 可
+	// 單獨移除它而保留 overflow=wrap。
+	if !strings.Contains(out, "overflow=wrap") {
 		t.Errorf("method-receiver index overflow annotation stripped:\n%s", out)
 	}
 	// 幂等：二次格式化不得再变动。

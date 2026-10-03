@@ -260,13 +260,13 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     d = 0
     i <- [0..28): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         pos = 64 - (PC1-C[i])
         bit = (k64 >> pos) & 1
 
         c = c | (bit << (27 - i))
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         pos2 = 64 - (PC1-D[i])
         bit2 = (k64 >> pos2) & 1
 
@@ -274,7 +274,6 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
     }
     round <- [0..16): {
 
-        #{index-out=zero}
         shift = SHIFT-TBL[round]
 
         #{overflow=wrap}
@@ -290,22 +289,21 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         #{overflow=wrap}
         off = round * 6
 
-        #{index-out=zero}
         ks[off] = (sk >> 40) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         ks[off + 1] = (sk >> 32) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         ks[off + 2] = (sk >> 24) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         ks[off + 3] = (sk >> 16) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         ks[off + 4] = (sk >> 8) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         ks[off + 5] = sk & 255
     }
 }

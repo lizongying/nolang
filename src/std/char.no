@@ -97,47 +97,33 @@ char.to-bytes = () (out []byte) {
     len = 0
     {
         . < 0x80 -> {
-
-            #{index-out=zero}
             buf[0] = .
             len = 1
         }
 
         . < 0x800 -> {
-
-            #{index-out=zero}
             buf[0] = 0xc0 | ((. >> 6) & 0x1f)
 
-            #{index-out=zero}
             buf[1] = 0x80 | (. & 0x3f)
             len = 2
         }
 
         . < 0x10000 -> {
-
-            #{index-out=zero}
             buf[0] = 0xe0 | ((. >> 12) & 0x0f)
 
-            #{index-out=zero}
             buf[1] = 0x80 | ((. >> 6) & 0x3f)
 
-            #{index-out=zero}
             buf[2] = 0x80 | (. & 0x3f)
             len = 3
         }
 
         -> {
-
-            #{index-out=zero}
             buf[0] = 0xf0 | ((. >> 18) & 0x07)
 
-            #{index-out=zero}
             buf[1] = 0x80 | ((. >> 12) & 0x3f)
 
-            #{index-out=zero}
             buf[2] = 0x80 | ((. >> 6) & 0x3f)
 
-            #{index-out=zero}
             buf[3] = 0x80 | (. & 0x3f)
             len = 4
         }
@@ -155,44 +141,30 @@ char.to-str = () (s str) {
     s = with-cap(4)
     {
         . < 0x80 -> {
-
-            #{index-out=zero}
             s[0] = .
         }
 
         . < 0x800 -> {
-
-            #{index-out=zero}
             s[0] = 0xc0 | ((. >> 6) & 0x1f)
 
-            #{index-out=zero}
             s[1] = 0x80 | (. & 0x3f)
         }
 
         . < 0x10000 -> {
-
-            #{index-out=zero}
             s[0] = 0xe0 | ((. >> 12) & 0x0f)
 
-            #{index-out=zero}
             s[1] = 0x80 | ((. >> 6) & 0x3f)
 
-            #{index-out=zero}
             s[2] = 0x80 | (. & 0x3f)
         }
 
         -> {
-
-            #{index-out=zero}
             s[0] = 0xf0 | ((. >> 18) & 0x07)
 
-            #{index-out=zero}
             s[1] = 0x80 | ((. >> 12) & 0x3f)
 
-            #{index-out=zero}
             s[2] = 0x80 | ((. >> 6) & 0x3f)
 
-            #{index-out=zero}
             s[3] = 0x80 | (. & 0x3f)
         }
     }

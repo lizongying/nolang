@@ -226,3 +226,37 @@ func TestFormatPreservesIndexOutForWithLenVarArg(t *testing.T) {
 		t.Errorf("with-len(non-literal) #{index-out} was wrongly stripped:\n%s", out)
 	}
 }
+
+// TestFormatRemovesIndexOutOnPureWrite: `#{index-out = DEF}` only ever affects an index
+// READ (the desugar fires when the assignment RHS is an IndexExpression). On a pure
+// write — `nl[0] = 10`, RHS is a literal — the annotation is dead code: writes go through
+// the bounds_check path (no option) and the checker never reports writes. `no fmt` must
+// strip it, and removal must not introduce a vet error (three-way consistency).
+func TestFormatRemovesIndexOutOnPureWrite(t *testing.T) {
+	input := "errln = (s str) (n i64) {\n" +
+		"    nl []byte = with-len(1)\n" +
+		"    #{index-out=zero}\n" +
+		"    nl[0] = 10\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	out := FormatProgramWithOverflow(program, input, nil, nil)
+	if strings.Contains(out, "index-out") {
+		t.Errorf("#{index-out} on a pure index write (dead annotation) was not removed:\n%s", out)
+	}
+	if !strings.Contains(out, "nl[0] = 10") {
+		t.Errorf("write statement changed unexpectedly:\n%s", out)
+	}
+	// Removing it must not make the checker report an unhandled index.
+	for _, r := range checker.ValidateUnhandledIndex(parseFull(t, out), "src/app.no") {
+		if r.TraceID == "idxhndld" {
+			t.Fatalf("fmt removed write annotation but checker reports unhandled index: %+v\n%s", r, out)
+		}
+	}
+	// Idempotency.
+	if out2 := FormatProgramWithOverflow(parseForTest(out), out, nil, nil); out2 != out {
+		t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
+	}
+}

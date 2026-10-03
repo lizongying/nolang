@@ -507,7 +507,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     w15 = s[15]
 
     ; W[16]: σ1(w14) + w9 + σ0(w1) + w0
-    #{index-out=zero}
     s0-r1 = ((w1 >> 1) | (w1 << 63))
     s0-r8 = ((w1 >> 8) | (w1 << 56))
     s0-sh7 = w1 >> 7
@@ -547,7 +546,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[17]: σ1(w15) + w10 + σ0(w2) + w1
-    #{index-out=zero}
     s0-r1 = ((w2 >> 1) | (w2 << 63))
     s0-r8 = ((w2 >> 8) | (w2 << 56))
     s0-sh7 = w2 >> 7
@@ -587,7 +585,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[18]: σ1(w16) + w11 + σ0(w3) + w2
-    #{index-out=zero}
     s0-r1 = ((w3 >> 1) | (w3 << 63))
     s0-r8 = ((w3 >> 8) | (w3 << 56))
     s0-sh7 = w3 >> 7
@@ -627,7 +624,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[19]: σ1(w17) + w12 + σ0(w4) + w3
-    #{index-out=zero}
     s0-r1 = ((w4 >> 1) | (w4 << 63))
     s0-r8 = ((w4 >> 8) | (w4 << 56))
     s0-sh7 = w4 >> 7
@@ -667,7 +663,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[20]: σ1(w18) + w13 + σ0(w5) + w4
-    #{index-out=zero}
     s0-r1 = ((w5 >> 1) | (w5 << 63))
     s0-r8 = ((w5 >> 8) | (w5 << 56))
     s0-sh7 = w5 >> 7
@@ -707,7 +702,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[21]: σ1(w19) + w14 + σ0(w6) + w5
-    #{index-out=zero}
     s0-r1 = ((w6 >> 1) | (w6 << 63))
     s0-r8 = ((w6 >> 8) | (w6 << 56))
     s0-sh7 = w6 >> 7
@@ -747,7 +741,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[22]: σ1(w20) + w15 + σ0(w7) + w6
-    #{index-out=zero}
     s0-r1 = ((w7 >> 1) | (w7 << 63))
     s0-r8 = ((w7 >> 8) | (w7 << 56))
     s0-sh7 = w7 >> 7
@@ -787,7 +780,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[23]: σ1(w21) + w16 + σ0(w8) + w7
-    #{index-out=zero}
     s0-r1 = ((w8 >> 1) | (w8 << 63))
     s0-r8 = ((w8 >> 8) | (w8 << 56))
     s0-sh7 = w8 >> 7
@@ -827,7 +819,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[24]: σ1(w22) + w17 + σ0(w9) + w8
-    #{index-out=zero}
     s0-r1 = ((w9 >> 1) | (w9 << 63))
     s0-r8 = ((w9 >> 8) | (w9 << 56))
     s0-sh7 = w9 >> 7
@@ -867,7 +858,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[25]: σ1(w23) + w18 + σ0(w10) + w9
-    #{index-out=zero}
     s0-r1 = ((w10 >> 1) | (w10 << 63))
     s0-r8 = ((w10 >> 8) | (w10 << 56))
     s0-sh7 = w10 >> 7
@@ -907,7 +897,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[26]: σ1(w24) + w19 + σ0(w11) + w10
-    #{index-out=zero}
     s0-r1 = ((w11 >> 1) | (w11 << 63))
     s0-r8 = ((w11 >> 8) | (w11 << 56))
     s0-sh7 = w11 >> 7
@@ -947,7 +936,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[27]: σ1(w25) + w20 + σ0(w12) + w11
-    #{index-out=zero}
     s0-r1 = ((w12 >> 1) | (w12 << 63))
     s0-r8 = ((w12 >> 8) | (w12 << 56))
     s0-sh7 = w12 >> 7
@@ -987,7 +975,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[28]: σ1(w26) + w21 + σ0(w13) + w12
-    #{index-out=zero}
     s0-r1 = ((w13 >> 1) | (w13 << 63))
     s0-r8 = ((w13 >> 8) | (w13 << 56))
     s0-sh7 = w13 >> 7
@@ -1027,7 +1014,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[29]: σ1(w27) + w22 + σ0(w14) + w13
-    #{index-out=zero}
     s0-r1 = ((w14 >> 1) | (w14 << 63))
     s0-r8 = ((w14 >> 8) | (w14 << 56))
     s0-sh7 = w14 >> 7
@@ -1067,7 +1053,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[30]: σ1(w28) + w23 + σ0(w15) + w14
-    #{index-out=zero}
     s0-r1 = ((w15 >> 1) | (w15 << 63))
     s0-r8 = ((w15 >> 8) | (w15 << 56))
     s0-sh7 = w15 >> 7
@@ -1107,7 +1092,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[31]: σ1(w29) + w24 + σ0(w16) + w15
-    #{index-out=zero}
     s0-r1 = ((w16 >> 1) | (w16 << 63))
     s0-r8 = ((w16 >> 8) | (w16 << 56))
     s0-sh7 = w16 >> 7
@@ -1147,7 +1131,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[32]: σ1(w30) + w25 + σ0(w17) + w16
-    #{index-out=zero}
     s0-r1 = ((w17 >> 1) | (w17 << 63))
     s0-r8 = ((w17 >> 8) | (w17 << 56))
     s0-sh7 = w17 >> 7
@@ -1187,7 +1170,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[33]: σ1(w31) + w26 + σ0(w18) + w17
-    #{index-out=zero}
     s0-r1 = ((w18 >> 1) | (w18 << 63))
     s0-r8 = ((w18 >> 8) | (w18 << 56))
     s0-sh7 = w18 >> 7
@@ -1227,7 +1209,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[34]: σ1(w32) + w27 + σ0(w19) + w18
-    #{index-out=zero}
     s0-r1 = ((w19 >> 1) | (w19 << 63))
     s0-r8 = ((w19 >> 8) | (w19 << 56))
     s0-sh7 = w19 >> 7
@@ -1267,7 +1248,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[35]: σ1(w33) + w28 + σ0(w20) + w19
-    #{index-out=zero}
     s0-r1 = ((w20 >> 1) | (w20 << 63))
     s0-r8 = ((w20 >> 8) | (w20 << 56))
     s0-sh7 = w20 >> 7
@@ -1307,7 +1287,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[36]: σ1(w34) + w29 + σ0(w21) + w20
-    #{index-out=zero}
     s0-r1 = ((w21 >> 1) | (w21 << 63))
     s0-r8 = ((w21 >> 8) | (w21 << 56))
     s0-sh7 = w21 >> 7
@@ -1347,7 +1326,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[37]: σ1(w35) + w30 + σ0(w22) + w21
-    #{index-out=zero}
     s0-r1 = ((w22 >> 1) | (w22 << 63))
     s0-r8 = ((w22 >> 8) | (w22 << 56))
     s0-sh7 = w22 >> 7
@@ -1387,7 +1365,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[38]: σ1(w36) + w31 + σ0(w23) + w22
-    #{index-out=zero}
     s0-r1 = ((w23 >> 1) | (w23 << 63))
     s0-r8 = ((w23 >> 8) | (w23 << 56))
     s0-sh7 = w23 >> 7
@@ -1427,7 +1404,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[39]: σ1(w37) + w32 + σ0(w24) + w23
-    #{index-out=zero}
     s0-r1 = ((w24 >> 1) | (w24 << 63))
     s0-r8 = ((w24 >> 8) | (w24 << 56))
     s0-sh7 = w24 >> 7
@@ -1467,7 +1443,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[40]: σ1(w38) + w33 + σ0(w25) + w24
-    #{index-out=zero}
     s0-r1 = ((w25 >> 1) | (w25 << 63))
     s0-r8 = ((w25 >> 8) | (w25 << 56))
     s0-sh7 = w25 >> 7
@@ -1507,7 +1482,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[41]: σ1(w39) + w34 + σ0(w26) + w25
-    #{index-out=zero}
     s0-r1 = ((w26 >> 1) | (w26 << 63))
     s0-r8 = ((w26 >> 8) | (w26 << 56))
     s0-sh7 = w26 >> 7
@@ -1547,7 +1521,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[42]: σ1(w40) + w35 + σ0(w27) + w26
-    #{index-out=zero}
     s0-r1 = ((w27 >> 1) | (w27 << 63))
     s0-r8 = ((w27 >> 8) | (w27 << 56))
     s0-sh7 = w27 >> 7
@@ -1587,7 +1560,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[43]: σ1(w41) + w36 + σ0(w28) + w27
-    #{index-out=zero}
     s0-r1 = ((w28 >> 1) | (w28 << 63))
     s0-r8 = ((w28 >> 8) | (w28 << 56))
     s0-sh7 = w28 >> 7
@@ -1627,7 +1599,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[44]: σ1(w42) + w37 + σ0(w29) + w28
-    #{index-out=zero}
     s0-r1 = ((w29 >> 1) | (w29 << 63))
     s0-r8 = ((w29 >> 8) | (w29 << 56))
     s0-sh7 = w29 >> 7
@@ -1667,7 +1638,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[45]: σ1(w43) + w38 + σ0(w30) + w29
-    #{index-out=zero}
     s0-r1 = ((w30 >> 1) | (w30 << 63))
     s0-r8 = ((w30 >> 8) | (w30 << 56))
     s0-sh7 = w30 >> 7
@@ -1707,7 +1677,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[46]: σ1(w44) + w39 + σ0(w31) + w30
-    #{index-out=zero}
     s0-r1 = ((w31 >> 1) | (w31 << 63))
     s0-r8 = ((w31 >> 8) | (w31 << 56))
     s0-sh7 = w31 >> 7
@@ -1747,7 +1716,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[47]: σ1(w45) + w40 + σ0(w32) + w31
-    #{index-out=zero}
     s0-r1 = ((w32 >> 1) | (w32 << 63))
     s0-r8 = ((w32 >> 8) | (w32 << 56))
     s0-sh7 = w32 >> 7
@@ -1787,7 +1755,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[48]: σ1(w46) + w41 + σ0(w33) + w32
-    #{index-out=zero}
     s0-r1 = ((w33 >> 1) | (w33 << 63))
     s0-r8 = ((w33 >> 8) | (w33 << 56))
     s0-sh7 = w33 >> 7
@@ -1827,7 +1794,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[49]: σ1(w47) + w42 + σ0(w34) + w33
-    #{index-out=zero}
     s0-r1 = ((w34 >> 1) | (w34 << 63))
     s0-r8 = ((w34 >> 8) | (w34 << 56))
     s0-sh7 = w34 >> 7
@@ -1867,7 +1833,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[50]: σ1(w48) + w43 + σ0(w35) + w34
-    #{index-out=zero}
     s0-r1 = ((w35 >> 1) | (w35 << 63))
     s0-r8 = ((w35 >> 8) | (w35 << 56))
     s0-sh7 = w35 >> 7
@@ -1907,7 +1872,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[51]: σ1(w49) + w44 + σ0(w36) + w35
-    #{index-out=zero}
     s0-r1 = ((w36 >> 1) | (w36 << 63))
     s0-r8 = ((w36 >> 8) | (w36 << 56))
     s0-sh7 = w36 >> 7
@@ -1947,7 +1911,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[52]: σ1(w50) + w45 + σ0(w37) + w36
-    #{index-out=zero}
     s0-r1 = ((w37 >> 1) | (w37 << 63))
     s0-r8 = ((w37 >> 8) | (w37 << 56))
     s0-sh7 = w37 >> 7
@@ -1987,7 +1950,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[53]: σ1(w51) + w46 + σ0(w38) + w37
-    #{index-out=zero}
     s0-r1 = ((w38 >> 1) | (w38 << 63))
     s0-r8 = ((w38 >> 8) | (w38 << 56))
     s0-sh7 = w38 >> 7
@@ -2027,7 +1989,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[54]: σ1(w52) + w47 + σ0(w39) + w38
-    #{index-out=zero}
     s0-r1 = ((w39 >> 1) | (w39 << 63))
     s0-r8 = ((w39 >> 8) | (w39 << 56))
     s0-sh7 = w39 >> 7
@@ -2067,7 +2028,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[55]: σ1(w53) + w48 + σ0(w40) + w39
-    #{index-out=zero}
     s0-r1 = ((w40 >> 1) | (w40 << 63))
     s0-r8 = ((w40 >> 8) | (w40 << 56))
     s0-sh7 = w40 >> 7
@@ -2107,7 +2067,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[56]: σ1(w54) + w49 + σ0(w41) + w40
-    #{index-out=zero}
     s0-r1 = ((w41 >> 1) | (w41 << 63))
     s0-r8 = ((w41 >> 8) | (w41 << 56))
     s0-sh7 = w41 >> 7
@@ -2147,7 +2106,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[57]: σ1(w55) + w50 + σ0(w42) + w41
-    #{index-out=zero}
     s0-r1 = ((w42 >> 1) | (w42 << 63))
     s0-r8 = ((w42 >> 8) | (w42 << 56))
     s0-sh7 = w42 >> 7
@@ -2187,7 +2145,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[58]: σ1(w56) + w51 + σ0(w43) + w42
-    #{index-out=zero}
     s0-r1 = ((w43 >> 1) | (w43 << 63))
     s0-r8 = ((w43 >> 8) | (w43 << 56))
     s0-sh7 = w43 >> 7
@@ -2227,7 +2184,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[59]: σ1(w57) + w52 + σ0(w44) + w43
-    #{index-out=zero}
     s0-r1 = ((w44 >> 1) | (w44 << 63))
     s0-r8 = ((w44 >> 8) | (w44 << 56))
     s0-sh7 = w44 >> 7
@@ -2267,7 +2223,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[60]: σ1(w58) + w53 + σ0(w45) + w44
-    #{index-out=zero}
     s0-r1 = ((w45 >> 1) | (w45 << 63))
     s0-r8 = ((w45 >> 8) | (w45 << 56))
     s0-sh7 = w45 >> 7
@@ -2307,7 +2262,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[61]: σ1(w59) + w54 + σ0(w46) + w45
-    #{index-out=zero}
     s0-r1 = ((w46 >> 1) | (w46 << 63))
     s0-r8 = ((w46 >> 8) | (w46 << 56))
     s0-sh7 = w46 >> 7
@@ -2347,7 +2301,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[62]: σ1(w60) + w55 + σ0(w47) + w46
-    #{index-out=zero}
     s0-r1 = ((w47 >> 1) | (w47 << 63))
     s0-r8 = ((w47 >> 8) | (w47 << 56))
     s0-sh7 = w47 >> 7
@@ -2387,7 +2340,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[63]: σ1(w61) + w56 + σ0(w48) + w47
-    #{index-out=zero}
     s0-r1 = ((w48 >> 1) | (w48 << 63))
     s0-r8 = ((w48 >> 8) | (w48 << 56))
     s0-sh7 = w48 >> 7
@@ -2427,7 +2379,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[64]: σ1(w62) + w57 + σ0(w49) + w48
-    #{index-out=zero}
     s0-r1 = ((w49 >> 1) | (w49 << 63))
     s0-r8 = ((w49 >> 8) | (w49 << 56))
     s0-sh7 = w49 >> 7
@@ -2467,7 +2418,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[65]: σ1(w63) + w58 + σ0(w50) + w49
-    #{index-out=zero}
     s0-r1 = ((w50 >> 1) | (w50 << 63))
     s0-r8 = ((w50 >> 8) | (w50 << 56))
     s0-sh7 = w50 >> 7
@@ -2507,7 +2457,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[66]: σ1(w64) + w59 + σ0(w51) + w50
-    #{index-out=zero}
     s0-r1 = ((w51 >> 1) | (w51 << 63))
     s0-r8 = ((w51 >> 8) | (w51 << 56))
     s0-sh7 = w51 >> 7
@@ -2547,7 +2496,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[67]: σ1(w65) + w60 + σ0(w52) + w51
-    #{index-out=zero}
     s0-r1 = ((w52 >> 1) | (w52 << 63))
     s0-r8 = ((w52 >> 8) | (w52 << 56))
     s0-sh7 = w52 >> 7
@@ -2587,7 +2535,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[68]: σ1(w66) + w61 + σ0(w53) + w52
-    #{index-out=zero}
     s0-r1 = ((w53 >> 1) | (w53 << 63))
     s0-r8 = ((w53 >> 8) | (w53 << 56))
     s0-sh7 = w53 >> 7
@@ -2627,7 +2574,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[69]: σ1(w67) + w62 + σ0(w54) + w53
-    #{index-out=zero}
     s0-r1 = ((w54 >> 1) | (w54 << 63))
     s0-r8 = ((w54 >> 8) | (w54 << 56))
     s0-sh7 = w54 >> 7
@@ -2667,7 +2613,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[70]: σ1(w68) + w63 + σ0(w55) + w54
-    #{index-out=zero}
     s0-r1 = ((w55 >> 1) | (w55 << 63))
     s0-r8 = ((w55 >> 8) | (w55 << 56))
     s0-sh7 = w55 >> 7
@@ -2707,7 +2652,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[71]: σ1(w69) + w64 + σ0(w56) + w55
-    #{index-out=zero}
     s0-r1 = ((w56 >> 1) | (w56 << 63))
     s0-r8 = ((w56 >> 8) | (w56 << 56))
     s0-sh7 = w56 >> 7
@@ -2747,7 +2691,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[72]: σ1(w70) + w65 + σ0(w57) + w56
-    #{index-out=zero}
     s0-r1 = ((w57 >> 1) | (w57 << 63))
     s0-r8 = ((w57 >> 8) | (w57 << 56))
     s0-sh7 = w57 >> 7
@@ -2787,7 +2730,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[73]: σ1(w71) + w66 + σ0(w58) + w57
-    #{index-out=zero}
     s0-r1 = ((w58 >> 1) | (w58 << 63))
     s0-r8 = ((w58 >> 8) | (w58 << 56))
     s0-sh7 = w58 >> 7
@@ -2827,7 +2769,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[74]: σ1(w72) + w67 + σ0(w59) + w58
-    #{index-out=zero}
     s0-r1 = ((w59 >> 1) | (w59 << 63))
     s0-r8 = ((w59 >> 8) | (w59 << 56))
     s0-sh7 = w59 >> 7
@@ -2867,7 +2808,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[75]: σ1(w73) + w68 + σ0(w60) + w59
-    #{index-out=zero}
     s0-r1 = ((w60 >> 1) | (w60 << 63))
     s0-r8 = ((w60 >> 8) | (w60 << 56))
     s0-sh7 = w60 >> 7
@@ -2907,7 +2847,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[76]: σ1(w74) + w69 + σ0(w61) + w60
-    #{index-out=zero}
     s0-r1 = ((w61 >> 1) | (w61 << 63))
     s0-r8 = ((w61 >> 8) | (w61 << 56))
     s0-sh7 = w61 >> 7
@@ -2947,7 +2886,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[77]: σ1(w75) + w70 + σ0(w62) + w61
-    #{index-out=zero}
     s0-r1 = ((w62 >> 1) | (w62 << 63))
     s0-r8 = ((w62 >> 8) | (w62 << 56))
     s0-sh7 = w62 >> 7
@@ -2987,7 +2925,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[78]: σ1(w76) + w71 + σ0(w63) + w62
-    #{index-out=zero}
     s0-r1 = ((w63 >> 1) | (w63 << 63))
     s0-r8 = ((w63 >> 8) | (w63 << 56))
     s0-sh7 = w63 >> 7
@@ -3027,7 +2964,6 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; W[79]: σ1(w77) + w72 + σ0(w64) + w63
-    #{index-out=zero}
     s0-r1 = ((w64 >> 1) | (w64 << 63))
     s0-r8 = ((w64 >> 8) | (w64 << 56))
     s0-sh7 = w64 >> 7
@@ -3129,7 +3065,6 @@ sha512 = (data []byte) (hash [64]byte) {
     padded []byte
     i <- [0..total-len): {
 
-        #{index-out=zero}
         padded[i] = 0
     }
 
@@ -3141,13 +3076,11 @@ sha512 = (data []byte) (hash [64]byte) {
     }
 
     ; 填充 0x80
-    #{index-out=zero}
     padded[dlen] = 128
 
     ; 填充 0x00
     i <- [dlen + 1..total-len - 16): {
 
-        #{index-out=zero}
         padded[i] = 0
     }
 
@@ -3155,14 +3088,14 @@ sha512 = (data []byte) (hash [64]byte) {
     ; 高 64 位元為 0（訊息長度不會超過 2^64 位元）
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         padded[total-len - 16 + i] = 0
     }
 
     ; 低 64 位元
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
     }
 
@@ -3188,196 +3121,132 @@ sha512 = (data []byte) (hash [64]byte) {
     }
 
     ; 輸出 64 位元組雜湊值（big-endian）
-    #{index-out=zero}
     hash[0] = (h0 >> 56) & 255
 
-    #{index-out=zero}
     hash[1] = (h0 >> 48) & 255
 
-    #{index-out=zero}
     hash[2] = (h0 >> 40) & 255
 
-    #{index-out=zero}
     hash[3] = (h0 >> 32) & 255
 
-    #{index-out=zero}
     hash[4] = (h0 >> 24) & 255
 
-    #{index-out=zero}
     hash[5] = (h0 >> 16) & 255
 
-    #{index-out=zero}
     hash[6] = (h0 >> 8) & 255
 
-    #{index-out=zero}
     hash[7] = h0 & 255
 
-    #{index-out=zero}
     hash[8] = (h1 >> 56) & 255
 
-    #{index-out=zero}
     hash[9] = (h1 >> 48) & 255
 
-    #{index-out=zero}
     hash[10] = (h1 >> 40) & 255
 
-    #{index-out=zero}
     hash[11] = (h1 >> 32) & 255
 
-    #{index-out=zero}
     hash[12] = (h1 >> 24) & 255
 
-    #{index-out=zero}
     hash[13] = (h1 >> 16) & 255
 
-    #{index-out=zero}
     hash[14] = (h1 >> 8) & 255
 
-    #{index-out=zero}
     hash[15] = h1 & 255
 
-    #{index-out=zero}
     hash[16] = (h2 >> 56) & 255
 
-    #{index-out=zero}
     hash[17] = (h2 >> 48) & 255
 
-    #{index-out=zero}
     hash[18] = (h2 >> 40) & 255
 
-    #{index-out=zero}
     hash[19] = (h2 >> 32) & 255
 
-    #{index-out=zero}
     hash[20] = (h2 >> 24) & 255
 
-    #{index-out=zero}
     hash[21] = (h2 >> 16) & 255
 
-    #{index-out=zero}
     hash[22] = (h2 >> 8) & 255
 
-    #{index-out=zero}
     hash[23] = h2 & 255
 
-    #{index-out=zero}
     hash[24] = (h3 >> 56) & 255
 
-    #{index-out=zero}
     hash[25] = (h3 >> 48) & 255
 
-    #{index-out=zero}
     hash[26] = (h3 >> 40) & 255
 
-    #{index-out=zero}
     hash[27] = (h3 >> 32) & 255
 
-    #{index-out=zero}
     hash[28] = (h3 >> 24) & 255
 
-    #{index-out=zero}
     hash[29] = (h3 >> 16) & 255
 
-    #{index-out=zero}
     hash[30] = (h3 >> 8) & 255
 
-    #{index-out=zero}
     hash[31] = h3 & 255
 
-    #{index-out=zero}
     hash[32] = (h4 >> 56) & 255
 
-    #{index-out=zero}
     hash[33] = (h4 >> 48) & 255
 
-    #{index-out=zero}
     hash[34] = (h4 >> 40) & 255
 
-    #{index-out=zero}
     hash[35] = (h4 >> 32) & 255
 
-    #{index-out=zero}
     hash[36] = (h4 >> 24) & 255
 
-    #{index-out=zero}
     hash[37] = (h4 >> 16) & 255
 
-    #{index-out=zero}
     hash[38] = (h4 >> 8) & 255
 
-    #{index-out=zero}
     hash[39] = h4 & 255
 
-    #{index-out=zero}
     hash[40] = (h5 >> 56) & 255
 
-    #{index-out=zero}
     hash[41] = (h5 >> 48) & 255
 
-    #{index-out=zero}
     hash[42] = (h5 >> 40) & 255
 
-    #{index-out=zero}
     hash[43] = (h5 >> 32) & 255
 
-    #{index-out=zero}
     hash[44] = (h5 >> 24) & 255
 
-    #{index-out=zero}
     hash[45] = (h5 >> 16) & 255
 
-    #{index-out=zero}
     hash[46] = (h5 >> 8) & 255
 
-    #{index-out=zero}
     hash[47] = h5 & 255
 
-    #{index-out=zero}
     hash[48] = (h6 >> 56) & 255
 
-    #{index-out=zero}
     hash[49] = (h6 >> 48) & 255
 
-    #{index-out=zero}
     hash[50] = (h6 >> 40) & 255
 
-    #{index-out=zero}
     hash[51] = (h6 >> 32) & 255
 
-    #{index-out=zero}
     hash[52] = (h6 >> 24) & 255
 
-    #{index-out=zero}
     hash[53] = (h6 >> 16) & 255
 
-    #{index-out=zero}
     hash[54] = (h6 >> 8) & 255
 
-    #{index-out=zero}
     hash[55] = h6 & 255
 
-    #{index-out=zero}
     hash[56] = (h7 >> 56) & 255
 
-    #{index-out=zero}
     hash[57] = (h7 >> 48) & 255
 
-    #{index-out=zero}
     hash[58] = (h7 >> 40) & 255
 
-    #{index-out=zero}
     hash[59] = (h7 >> 32) & 255
 
-    #{index-out=zero}
     hash[60] = (h7 >> 24) & 255
 
-    #{index-out=zero}
     hash[61] = (h7 >> 16) & 255
 
-    #{index-out=zero}
     hash[62] = (h7 >> 8) & 255
 
-    #{index-out=zero}
     hash[63] = h7 & 255
 }
 

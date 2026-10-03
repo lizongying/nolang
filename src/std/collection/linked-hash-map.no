@@ -29,13 +29,10 @@ linked-hash-map.init = () {
     .size = 0
     i <- [0..64): {
 
-        #{index-out=zero}
         .occ[i] = 0
 
-        #{index-out=zero}
         .nxt[i] = -1
 
-        #{index-out=zero}
         .prv[i] = -1
     }
 }
@@ -55,7 +52,6 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
 
         .keys[idx] == key -> {
 
-            #{index-out=zero}
             .vals[idx] = val
             is-new = false
             return
@@ -66,19 +62,14 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
         idx >= .cap -> idx = 0
     }
 
-    #{index-out=zero}
     .keys[idx] = key
 
-    #{index-out=zero}
     .vals[idx] = val
 
-    #{index-out=zero}
     .occ[idx] = 1
 
-    #{index-out=zero}
     .nxt[idx] = -1
 
-    #{index-out=zero}
     .prv[idx] = .tail
 
     {
@@ -88,8 +79,6 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
         }
 
         -> {
-
-            #{index-out=zero}
             .nxt[.tail] = idx
             .tail = idx
         }
@@ -109,7 +98,6 @@ linked-hash-map.get = (key i64) (result ?i64) {
 
         .keys[idx] == key -> {
 
-            #{index-out=zero}
             result = .vals[idx]
             return
         }
@@ -141,21 +129,16 @@ linked-hash-map.remove = (key i64) (removed bool) {
         #{overflow=wrap}
         .keys[idx] == key -> {
 
-            #{index-out=zero}
             .occ[idx] = 0
             .size = .size - 1
 
-            #{index-out=zero}
             prev = .prv[idx]
 
-            #{index-out=zero}
             next = .nxt[idx]
             {
                 prev == -1 -> .head = next
 
                 -> {
-
-                    #{index-out=zero}
                     .nxt[prev] = next
                 }
             }
@@ -163,8 +146,6 @@ linked-hash-map.remove = (key i64) (removed bool) {
                 next == -1 -> .tail = prev
 
                 -> {
-
-                    #{index-out=zero}
                     .prv[next] = prev
                 }
             }
@@ -184,7 +165,6 @@ linked-hash-map.remove = (key i64) (removed bool) {
 linked-hash-map.clear = () {
     i <- [0...cap): {
 
-        #{index-out=zero}
         .occ[i] = 0
     }
     .head = -1
@@ -208,14 +188,11 @@ linked-hash-map.for-each = () (k i64, v i64) {
     (idx != -1) {
         .occ[idx] == 1 -> {
 
-            #{index-out=zero}
             k = .keys[idx]
 
-            #{index-out=zero}
             v = .vals[idx]
         }
 
-        #{index-out=zero}
         idx = .nxt[idx]
     }
 }

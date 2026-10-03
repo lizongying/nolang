@@ -21,7 +21,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
     s [256]byte
     i <- [0..256): {
 
-        #{index-out=zero}
         s[i] = i
     }
     key-len = key.len()
@@ -37,7 +36,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
         #{index-out=zero}
         s[i] = s[j]
 
-        #{index-out=zero}
         s[j] = t
     }
 
@@ -60,7 +58,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
         #{index-out=zero}
         s[i] = s[j]
 
-        #{index-out=zero}
         s[j] = t
 
         ; 生成密鑰流位元組
