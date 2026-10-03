@@ -109,12 +109,17 @@
 3. **`checkTierSoundness` / `checkReleaseTarget`**：要等第 2 項的「呼叫端寫入點／tier」分析落地
    （不是等 header——header 已經有了）才有內容（§4.2 c）。⚠️ 第 2 項只落了**布林**寫入點（且只管
    spawn 輸入參數），**tier 推斷仍是報告-only** ⇒ 本項前置**仍未滿足**。
+4. **map 的儲存從不釋放**（§4.3）：**只洩漏、不懸空**，但本輪（2026-10-03）複查確認它是**功能**
+   而非小修——根因是**三段**（`StructOwnedLeafFieldIdxs` 只看 `KindStr` ⇒ 不插 drop；`emitStructDropHelper`
+   只釋放 `%str-long` leaf；`emitLeafFieldsCloneR` 只深拷貝 `%str-long` leaf），且 `%str-long` 硬寫點
+   在 `codegen.go` **十餘處**。**只做前兩段會把洩漏升級成 double free** ⇒ 與 §4.2 c 同級，**判定不落地**。
 
 **一句話總結**：**S／C 兩檔的機制完整且被驗證；R 檔只覆蓋了 `%task`。** 「值對值別名」整類已從模型與
 實作裡刪掉（`str` / `[]T` / `?str` / `?[]T` 已收，**map 的值**亦已收——修在**元素寫入**而非 map 自身，§4.4 b）；
 參數側的 retain 已收成**靜態閘門**（窄範圍、對既有語料零觸發）；本輪另修掉兩個**可觀測缺陷**：
 **切片視圖的來源被提前釋放**（§4.4 a）與 **`%vec` 元素賦值的淺拷貝**（§4.4 b）。剩下的主要待辦是
-**tier 推斷落地**（§4.2 c 的前置）與**借讀 release 的死亡點精度**（§4.3）。
+**tier 推斷落地**（§4.2 c 的前置）、**借讀 release 的死亡點精度**（§4.3）與 **map 儲存的釋放**（§4.3；
+本輪確認是「功能」：三段根因 ＋ 十餘處 `%str-long` 硬寫點，只做一半會變 double free）。
 
 ---
 
@@ -766,6 +771,30 @@ release 落在**剝離結果**上；在直線程式碼裡配對成立，但那�
 ⚠️ **這與 §4.4 b 是兩件不同的事，別把它們混為一談。** §4.4 b 修的是**懸空**（值被 map 與呼叫端共用，
 呼叫端一重綁就 dangling ⇒ **記憶體不安全**）；本條是**洩漏**（map 自己擁有值了，但從不釋放 ⇒ 只是浪費）。
 修法要給 map 一個真正的解構子，並決定 `remove` 是否釋放被刪項的 key/value——**與元素寫入無關**。
+
+> **本輪（2026-10-03）複查：確認是「功能」而非「小修」，且一行都不能偷。** 重新用 `NOLANG_MIR_DUMP_MIR`
+> 與 `NOLANG_MIR_DUMP_LL` 各證一次，並把**根因鏈**釘死（三段缺一不可）：
+>
+> | # | 位置 | 現況 | 後果 |
+> |---|---|---|---|
+> | ① 分類 | `mir.go` `StructOwnedLeafFieldIdxs`（`ty.Kind != KindStr` 就 `continue`） | 只看 `KindStr` 欄位，`%vec` 欄位**跳過** | `hashmap-*` 被判「不擁有堆」⇒ **根本不插 drop** |
+> | ② 解構 | `codegen.go` `emitStructDropHelper`（`if fLT != "%str-long" { continue }`） | 只釋放 `str` leaf | 即使插了 drop，也**不會**碰 `keys`/`vals`/`occ` |
+> | ③ 拷貝 | `codegen.go` `emitLeafFieldsCloneR`（同樣 `fLT != "%str-long"` 就 `continue`） | 只深拷貝 `str` leaf | 見下方「陷阱」 |
+>
+> **MIR 直證**（`probe = () { m [str]str = {} ; m.init() ; m.put('k','v') }`）：
+> `structlit dst=17:hashmap-str-str(owned=false)`，之後**只有兩個 `str` 臨時值的 drop**，
+> **`17` 本身沒有 drop**。**LLVM 直證**：`%v0.s = alloca %hashmap_str_str` 在函式結束時
+> **沒有任何 `@vec_free`/`@str_free` 碰它**（只有 `hashmap_str_str_put` 內部那兩個 `str_free`）。
+> 與本節上方、以及 `docs/docs/lang/memory.md:400` 的記載一致。
+>
+> 🔴 **陷阱：只做 ①＋② 會把「洩漏」升級成「double free」（記憶體不安全）。** 因為 struct 賦值
+> （`b = a`）走的是 `emitLeafStructClone`→`emitLeafFieldsCloneR`，而**欄位讀取**（`x = a.v`）
+> 也在多處各自 `@str_clone`（`emitGetField` 等，全檔十餘處硬寫 `%str-long`）。只加 drop 不加
+> 這些 clone，兩個 struct 就共用同一條 vec buffer，**兩邊都 drop ⇒ double free**。
+> 換句話說 ③ 不是可選項，① ② ③ 必須**同一次**落地，且要與所有 `%str-long` 硬寫點**對齊**。
+> ⇒ 本輪**判定不落地**（與 §4.2 c 同級的理由：改動面廣、風險是「不安全」而非「浪費」，
+> 且在並行 session 環境下無法安全地做全語料 A/B）。要做時，先把上面十餘處 `%str-long` 抽成
+> 「owned leaf 依型別分派」的單一入口，再逐 leaf 型別（`str` → `vec` → `map`）放行。
 
 ### 4.4 本輪（2026-10-02）修的兩個可觀測缺陷
 
