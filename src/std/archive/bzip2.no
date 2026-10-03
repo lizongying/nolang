@@ -177,8 +177,6 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
         zn = zn + 1
         zj = br.read-bit()
         zvec = (zvec << 1) | zj
-
-        #{index-out=zero}
     }
 
     ; 計算符號
@@ -214,8 +212,6 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
         zn = zn + 1
         zj = br.read-bit()
         zvec = (zvec << 1) | zj
-
-        #{index-out=zero}
     }
 
     #{overflow=wrap}

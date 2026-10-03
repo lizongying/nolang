@@ -75,8 +75,6 @@ hash-set.contains = (key i64) (found bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-
-        #{index-out=zero}
     }
 }
 
@@ -99,8 +97,6 @@ hash-set.remove = (key i64) (removed bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-
-        #{index-out=zero}
     }
 }
 

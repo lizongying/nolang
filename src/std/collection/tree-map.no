@@ -299,8 +299,6 @@ tree-map.successor = (idx i64) (succ i64) {
         (.left[succ] >= 0) {
 
             succ = .left[succ]
-
-            #{index-out=zero}
         }
         return
     }
@@ -487,8 +485,6 @@ tree-map.remove = (key i64) (ok bool) {
         (.left[succ] >= 0) {
 
             succ = .left[succ]
-
-            #{index-out=zero}
         }
 
         .keys[idx] = .keys[succ]
@@ -543,8 +539,6 @@ tree-map.first = () (key ?i64) {
     (.left[idx] >= 0) {
 
         idx = .left[idx]
-
-        #{index-out=zero}
     }
 
     key = .keys[idx]
@@ -561,8 +555,6 @@ tree-map.last = () (key ?i64) {
     (.right[idx] >= 0) {
 
         idx = .right[idx]
-
-        #{index-out=zero}
     }
 
     key = .keys[idx]
@@ -633,8 +625,6 @@ tree-map.for-each = () (k i64, v i64) {
     (.left[idx] >= 0) {
 
         idx = .left[idx]
-
-        #{index-out=zero}
     }
 
     ; 逐個後繼遍歷

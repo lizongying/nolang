@@ -308,8 +308,6 @@ bn-to-bytes = (num []i64) (out []byte) {
 
         #{overflow=wrap}
         out-n = out-n - 1
-
-        #{index-out=zero}
     }
     out.truncate(out-n)
 }
@@ -2462,7 +2460,6 @@ conn.read-server-hello-13 = () (ok bool) {
     ct != TLS-CT-HANDSHAKE -> {
         ct == 21 -> {
 
-            #{index-out=zero}
             ; alert message: buf[5] = level, buf[6] = description
         }
         return

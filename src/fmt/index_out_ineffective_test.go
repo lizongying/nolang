@@ -209,6 +209,40 @@ func TestFormatPreservesIndexOutForReassignedSlice(t *testing.T) {
 	}
 }
 
+// TestFormatRemovesOrphanIndexOutAnnotation: a standalone `#{index-out=zero}` with no
+// following statement — it sits at the end of a block, governing nothing (the orphan
+// case in src/std/collection/map.no). checker never reads it (no indexed read statement
+// carries it) and codegen never applies it (maybeIndexOutAssign fires only for an
+// annotation attached to an index-read) → dead code, `no fmt` must strip it.
+func TestFormatRemovesOrphanIndexOutAnnotation(t *testing.T) {
+	input := "rebuild = (n i64) (r i64) {\n" +
+		"    x []i64 = with-len(8)\n" +
+		"    i <- [0..n): {\n" +
+		"        x[i] = i\n" +
+		"        #{index-out=zero}\n" +
+		"    }\n" +
+		"    r = x[0]\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	out := FormatProgramWithOverflow(program, input, nil, nil)
+	if strings.Contains(out, "index-out") {
+		t.Errorf("orphan #{index-out} (end of block, no governed statement) was not removed:\n%s", out)
+	}
+	// Orphan removal must not create a checker unhandled-index error.
+	for _, r := range checker.ValidateUnhandledIndex(parseFull(t, out), "src/app.no") {
+		if r.TraceID == "idxhndld" {
+			t.Fatalf("orphan removal introduced unhandled index: %+v\n%s", r, out)
+		}
+	}
+	// Idempotency: a second format must be stable (no dangling blank line left behind).
+	if out2 := FormatProgramWithOverflow(parseForTest(out), out, nil, nil); out2 != out {
+		t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
+	}
+}
+
 // TestFormatPreservesIndexOutForWithLenVarArg: `with-len(n)` (runtime length) is not a
 // literal, so the slice length is unknown and the annotation must be PRESERVED.
 func TestFormatPreservesIndexOutForWithLenVarArg(t *testing.T) {
@@ -224,6 +258,34 @@ func TestFormatPreservesIndexOutForWithLenVarArg(t *testing.T) {
 	out := FormatProgramWithOverflow(program, input, nil, nil)
 	if !strings.Contains(out, "#{index-out=zero}") {
 		t.Errorf("with-len(non-literal) #{index-out} was wrongly stripped:\n%s", out)
+	}
+}
+
+// TestFormatPreservesIndexOutForUnresolvedBaseRead: `names = <cross-module call>()`
+// gives `names` a container type that the single-file fmt analysis cannot resolve, so
+// the OLD removable check (keyed on *recognized* container reads) saw an empty read set
+// — indistinguishable from a pure write — and stripped the annotation. commit 23038595
+// ran `no fmt -w src/std` with that bug and removed the needed `#{index-out=zero}` from
+// `name = names[i]` (process.no) / `lines[i]` (toml.no), making `no vet` fail with
+// idxhndld / fxxoptarg. enumReadIndexAll now counts ANY read-position index (regardless
+// of base resolution), so this annotation must be PRESERVED.
+func TestFormatPreservesIndexOutForUnresolvedBaseRead(t *testing.T) {
+	// `probe` is an undefined (cross-module) call → `names`'s type is not a resolvable
+	// container in this single-file analysis.
+	input := "scan = () (r str) {\n" +
+		"    names = probe-list()\n" +
+		"    i <- [0..names.len()): {\n" +
+		"        #{index-out=zero}\n" +
+		"        r = names[i]\n" +
+		"    }\n" +
+		"}\n"
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	out := FormatProgramWithOverflow(program, input, nil, nil)
+	if !strings.Contains(out, "#{index-out=zero}") {
+		t.Errorf("read with unresolved container base: #{index-out} was wrongly stripped:\n%s", out)
 	}
 }
 

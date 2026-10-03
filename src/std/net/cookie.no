@@ -134,8 +134,6 @@ parse-set = (set-cookie-str str) (c cookie) {
 
             #{overflow=wrap}
             pos = pos + 1
-
-            #{index-out=zero}
         }
 
         pos >= rest.len-bytes() -> *
@@ -225,8 +223,6 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
 
             #{overflow=wrap}
             pos = pos + 1
-
-            #{index-out=zero}
         }
 
         pos >= cookie-header.len-bytes() -> *

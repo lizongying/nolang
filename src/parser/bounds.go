@@ -308,21 +308,22 @@ func (a *boundsAnalyzer) markStmts(list []Statement, ctx boundsCtx) {
 	a.scanAnn(list)
 }
 
-// computeRemovable：標記 s 為可移除 `#{index-out}`。判準——s 子樹內不存在「仍需要
-// index-out」的容器索引讀取即可移除，涵蓋兩種情形：
-//  1. 根本沒有容器索引讀取：包括純寫入陳述（如 `nl[0] = 10`）與只有 str/txt、
-//     結構欄位索引（皆非 option 基底）的陳述。`#{index-out}` 的降級只在**指派右側
-//     值為索引讀取**時生效（parser/lowering.go maybeIndexOutAssign：value 非
-//     IndexExpression 即早退），索引寫入走獨立的 bounds_check，注解對寫入毫無作用
-//     → 死代碼，移除安全，且 checker 從不對寫入上報未處理索引（口徑一致）。
-//  2. 有容器索引讀取，但全部可證明 in-bounds（定長陣列 / with-len 字面量切片）。
+// computeRemovable：標記 s 為可移除 `#{index-out}`。判準以「讀取位置的索引」（不问
+// 基底是否解析為容器，見 enumReadIndexAll）為準，而非「容器索引讀取」：
+//  1. 讀取位置完全沒有索引：純寫入（`nl[0] = 10`）或無索引運算。`#{index-out}` 的降級
+//     只在指派右側值為索引讀取時生效（maybeIndexOutAssign：value 非 IndexExpression
+//     即早退），寫入走獨立 bounds_check → 注解是死代碼，移除安全，checker 從不對寫入上報。
+//  2. 有讀取位置索引，但全部可證明 in-bounds（定長陣列 / with-len 字面量切片）。
 //
-// 只要有一個讀取不在 a.inb（可能越界且未被 ?= / option 處理），就必須保留注解。
+// 反之，只要有任何一個讀取位置索引不在 a.inb（可能越界），就必須保留注解。這包括
+// 「基底型別在本作用域未被解析成容器的真实讀取」（如 `names = fs.list-dir()` 後的
+// `names[i]`）——若只看 enumContainerReads 會把它們当空集合而誤刪（commit 23038595
+// 引入的回归），故這裡刻意用不問基底的 enumReadIndexAll 兜底。
 func (a *boundsAnalyzer) computeRemovable(s Statement) {
 	if _, ok := s.(*AnnotationStatement); ok {
 		return
 	}
-	reads := a.enumContainerReads(s)
+	reads := a.enumReadIndexAll(s)
 	for idx := range reads {
 		if !a.inb[idx] {
 			return
@@ -333,8 +334,16 @@ func (a *boundsAnalyzer) computeRemovable(s Statement) {
 	}
 }
 
-// scanAnn 掃描同一清單內「獨立成行」的 #{index-out} 註解，若其管轄的下一條陳述可
-// 移除，則標記該註解節點可移除。管轄語意與 parser.applyLineIndexOutAnnotations 一致。
+// scanAnn 掃描同一清單內「獨立成行」的 #{index-out} 註解：
+//  1. 若其管轄的下一條實語句可移除，標記該註解可移除（管轄語意與
+//     parser.applyLineIndexOutAnnotations 一致）。
+//  2. 若其後再也沒有可被支配的實語句（區塊 / 檔案尾端的「無主」註解，如
+//     src/std/collection/map.no 的 `#{index-out=zero}` 落在 `}` 之前），該註解對
+//     任何陳述都不生效 → 死代碼，標記可移除。checker 只讀取掛在「索引讀取語句」
+//     上的 index-out（ValidateUnhandledIndex），codegen 只在被指派語句附著時降級
+//     （maybeIndexOutAssign），無主註解兩邊都不消費 → 移除安全、三方口徑一致。
+//
+// 連串重複的 index-out（後一條同為 index-out）保守不動，避免誤刪相連注解的前一條。
 func (a *boundsAnalyzer) scanAnn(list []Statement) {
 	if a.annRemovable == nil {
 		return
@@ -344,6 +353,8 @@ func (a *boundsAnalyzer) scanAnn(list []Statement) {
 		if !ok || !hasIndexOutEntry(as.Entries) {
 			continue
 		}
+		targetFound := false
+		hitDupAnn := false
 		for j := i + 1; j < len(list); j++ {
 			next := list[j]
 			if next == nil {
@@ -351,14 +362,19 @@ func (a *boundsAnalyzer) scanAnn(list []Statement) {
 			}
 			if as2, isAnn := next.(*AnnotationStatement); isAnn {
 				if hasIndexOutEntry(as2.Entries) {
+					hitDupAnn = true
 					break
 				}
 				continue
 			}
+			targetFound = true
 			if a.removable[next] {
 				a.annRemovable[as] = true
 			}
 			break
+		}
+		if !targetFound && !hitDupAnn {
+			a.annRemovable[as] = true
 		}
 	}
 }
@@ -446,11 +462,10 @@ func reassignsIdent(body *BlockStatement, name string) bool {
 	return found
 }
 
-// enumContainerReads 泛型走訪 s 的整棵子樹，收集所有「直接變數基底容器索引」讀取
-// 節點（排除指派目標的寫入索引：`a[i] = ...` 的左側 `a[i]`、多-target / ?= 目標）。
-// 寫入不產生 option 讀取，不應计入「全部讀取都在界內」的判定，否則像
-// `p[i] = p-tmp[i]`（p 為切片寫入、p-tmp[i] 為定長陣列讀取）會被誤判為不可移除。
-func (a *boundsAnalyzer) enumContainerReads(s Statement) map[*IndexExpression]bool {
+// collectWriteTargets 回傳 s 子樹中所有「指派寫入目標」位置的索引節點：
+// `a[i] = ...` 左側、多-target / ?= 目標。寫入不產生 option 讀取，不該被當作需要
+// index-out 的讀取。
+func (a *boundsAnalyzer) collectWriteTargets(s Statement) map[*IndexExpression]bool {
 	writes := map[*IndexExpression]bool{}
 	walkNodes(s, func(n interface{}) {
 		switch v := n.(type) {
@@ -470,9 +485,21 @@ func (a *boundsAnalyzer) enumContainerReads(s Statement) map[*IndexExpression]bo
 			}
 		}
 	})
+	return writes
+}
+
+// enumReadIndexAll 收集 s 子樹中所有「讀取位置」的索引表達式，**不問**基底是否可被
+// 解析為容器。用途：判定 `#{index-out}` 是否可能仍被某個讀取需要。只要存在任一讀取
+// 位置索引——即使其基底型別在本作用域未被解析成容器（例如 `names = fs.list-dir()`
+// 之後的 `names[i]`、或 struct-field / str 索引）——都保守認為注解可能必要，不可移除。
+// 這是防呆關鍵：若只用「直接變數基底容器索引」這種過濾過的集合來判「空集合＝死代碼」，
+// 會把「型別未及时解析的真实讀取」誤當「純寫入」，導致 `no fmt` 誤刪必要注解、
+// `no vet` 立刻新增 ERROR（见 commit 23038595 引入的回归）。
+func (a *boundsAnalyzer) enumReadIndexAll(s Statement) map[*IndexExpression]bool {
+	writes := a.collectWriteTargets(s)
 	out := map[*IndexExpression]bool{}
 	walkNodes(s, func(n interface{}) {
-		if idx, ok := n.(*IndexExpression); ok && !writes[idx] && a.isContainerBase(idx) {
+		if idx, ok := n.(*IndexExpression); ok && !writes[idx] {
 			out[idx] = true
 		}
 	})

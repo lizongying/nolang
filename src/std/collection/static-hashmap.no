@@ -112,8 +112,6 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-
-        #{index-out=zero}
     }
 
     ; 未找到相同 key，插入
@@ -151,8 +149,6 @@ static-hashmap-str-tmpl.get = (key str) (result ?v) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-
-        #{index-out=zero}
     }
 }
 
@@ -191,8 +187,6 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-
-        #{index-out=zero}
     }
 }
 
@@ -302,8 +296,6 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-
-        #{index-out=zero}
     }
     insert-idx = idx
     first-tomb >= 0 -> insert-idx = first-tomb
@@ -338,8 +330,6 @@ static-hashmap-int-tmpl.get = (key k) (result ?v) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-
-        #{index-out=zero}
     }
 }
 
@@ -377,8 +367,6 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
         #{overflow=wrap}
         idx = idx + 1
         idx >= .cap -> idx = 0
-
-        #{index-out=zero}
     }
 }
 

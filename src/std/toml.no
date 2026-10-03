@@ -582,6 +582,7 @@ toml.parse = (s str) (result ?toml-doc) {
 
         i >= lines.len() -> break
 
+        #{index-out=zero}
         line = toml-strip-comment(lines[i])
 
         #{overflow=wrap}
@@ -683,6 +684,7 @@ toml.parse = (s str) (result ?toml-doc) {
                 (j < lines.len()) {
                     j >= lines.len() -> break
 
+                    #{index-out=zero}
                     next-line = toml-strip-comment(lines[j])
 
                     raw-value = raw-value - '\n' - next-line

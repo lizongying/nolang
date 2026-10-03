@@ -1200,8 +1200,6 @@ split-ws = (s str) (out []str) {
                     -> *
                 }
             }
-
-            #{index-out=zero}
         }
         i >= n -> *
 
@@ -1216,8 +1214,6 @@ split-ws = (s str) (out []str) {
                 #{overflow=wrap}
                 i = i + 1
             }
-
-            #{index-out=zero}
         }
         out.push(s.slice(start, i))
     }

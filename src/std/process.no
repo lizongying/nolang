@@ -230,7 +230,6 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     cmdline = program
     is-sh-c = false
     {
-        ; 直接執行 `sh -c <script>` 時避免雙重嵌套 sh -c（詳見 cmd）
         program == 'sh' -> {
             args.len() >= 2 -> {
 
@@ -659,11 +658,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     cmdline = program
     is-sh-c = false
     {
-        ; 直接執行 `sh -c <script>` 時避免雙重嵌套 sh -c：
-        ; 否則 cmdline 會變成 "sh -c <script>"，再被 process-exec-shell 包成
-        ; `sh -c "sh -c <script>"`，script 永遠不會按預期執行。
-        ; 注意：nolang 的 && 不短路，故 args[0] 索引必須放在
-        ; `#{index-out = 0}` 守衛區塊內。
         program == 'sh' -> {
             args.len() >= 2 -> {
 
@@ -1227,6 +1221,7 @@ list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
     i <- [0..names.len()): {
 
+        #{index-out=zero}
         name = names[i]
 
         ; 只處理全數字條目（PID 目錄）

@@ -767,8 +767,6 @@ bigint.normalize = () {
 
         #{overflow=wrap}
         .len = .len - 1
-
-        #{index-out=zero}
     }
 }
 

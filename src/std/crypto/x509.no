@@ -2767,8 +2767,6 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
 
             start = start + 1
         }
-
-        #{index-out=zero}
     }
 
     #{overflow=wrap}
