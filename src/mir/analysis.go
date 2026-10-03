@@ -392,6 +392,41 @@ func (m *Module) demoteUnsafeSliceViews() {
 	}
 }
 
+// buildViewSrc records, for every surviving slice VIEW, the value whose backing
+// buffer it aliases. A view of a view is resolved to the original owner, so a
+// single hop in defUse is enough.
+//
+// Only OpSliceOp with SliceFlagView is an alias; a demoted slice (bit cleared by
+// demoteUnsafeSliceViews) owns its own buffer and must NOT keep its source live.
+// The resolution is bounded so a malformed cycle cannot hang the compiler.
+func (m *Module) buildViewSrc() map[ValueID]ValueID {
+	direct := map[ValueID]ValueID{}
+	for i := range m.Insts {
+		inst := &m.Insts[i]
+		if inst.Op != OpSliceOp || inst.Int&SliceFlagView == 0 || inst.Dst <= NoVal {
+			continue
+		}
+		if len(inst.Args) == 0 || inst.Args[0] <= NoVal {
+			continue
+		}
+		direct[inst.Dst] = inst.Args[0]
+	}
+	resolved := make(map[ValueID]ValueID, len(direct))
+	for dst, s := range direct {
+		for n := 0; n < 64; n++ {
+			up, ok := direct[s]
+			if !ok || up == s {
+				break
+			}
+			s = up
+		}
+		if s != dst {
+			resolved[dst] = s
+		}
+	}
+	return resolved
+}
+
 func (m *Module) Analyze() *Report {
 	m.BuildCFG()
 	// Rebuild the owning-enum marks from scratch: Analyze may run more than once
@@ -407,6 +442,12 @@ func (m *Module) Analyze() *Report {
 	// value whose gate no longer holds — a double reference with no matching
 	// release, i.e. a leak or a double free.
 	m.spawnArgRetains = map[ValueID]bool{}
+	// Slice-view aliases: a surviving view (SliceFlagView) shares its source's
+	// buffer, so the source must stay live wherever the view is used. Rebuilt
+	// here (after demoteUnsafeSliceViews has cleared the bit on every view it
+	// refused) and read back by defUse. A stale entry would extend the live
+	// range of a value that is no longer an alias.
+	m.viewSrc = m.buildViewSrc()
 	// Phase 2 needs a whole-module pre-pass: a caller must know whether a callee
 	// consumes the enum it passes, and a callee may be analyzed after its caller.
 	m.markEnumParamOwners()

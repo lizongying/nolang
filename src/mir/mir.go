@@ -1235,6 +1235,29 @@ type Module struct {
 	// and READ back by emitAsyncRun, so the retain and the wrapper's free cannot
 	// drift. A nil map means "Analyze has not run" ⇒ deep copy, the safe default.
 	spawnArgRetains map[ValueID]bool
+
+	// viewSrc maps a surviving slice VIEW (OpSliceOp with SliceFlagView) to the
+	// value whose backing buffer it aliases, resolved transitively (a view of a
+	// view points at the original owner).
+	//
+	// WHY IT EXISTS: a view shares its source's buffer, so the source must stay
+	// ALIVE as long as the view is used. Liveness (defUse → Liveness →
+	// insertDrops) used to see only the view value, never the source, so the
+	// source's drop was placed at the source's own last use — BEFORE the view's.
+	// The freed buffer was then read through the view:
+	//
+	//     a = [10, 20, 30, 40, 50]
+	//     b = a[2..4]        ; b.cap == 0, b.data == a.data + 16 (a VIEW)
+	//     print(b)           ; `a` was already freed → printed heap addresses
+	//
+	// defUse consults this map and counts a view's use as a use of its source,
+	// which extends the source's live range to the view's last use and pushes
+	// the drop after it.
+	//
+	// Rebuilt on every Analyze (a stale entry would keep a freed value live or,
+	// worse, extend the range of a value that is no longer an alias). A nil map
+	// means "no views", which is the pre-existing behaviour.
+	viewSrc map[ValueID]ValueID
 }
 
 // blockEmpty reports whether b has no instructions and no terminator — i.e. it

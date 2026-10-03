@@ -54,8 +54,24 @@ func (m *Module) defUse(b BlockID) (def map[ValueID]bool, use map[ValueID]bool) 
 			if a <= NoVal {
 				continue
 			}
-			if !definedSoFar[a] {
-				use[a] = true
+			// A slice VIEW shares its source's backing buffer, so using the view
+			// is a use of the source: the source must stay live up to here, or
+			// insertDrops places its drop at the source's own last use — BEFORE
+			// the view's — and the view reads a freed buffer.
+			//   a = [10,20,30,40,50]
+			//   b = a[2..4]        ; view: cap == 0, data == a.data + 16
+			//   print(b)           ; a already freed -> heap addresses
+			// m.viewSrc is nil before Analyze (e.g. lowerDeadSourceCopiesToMoves),
+			// which leaves the pre-existing behaviour intact.
+			for v, guard := a, 0; v > NoVal && guard < 64; guard++ {
+				if !definedSoFar[v] {
+					use[v] = true
+				}
+				up, ok := m.viewSrc[v]
+				if !ok || up == v {
+					break
+				}
+				v = up
 			}
 		}
 		if inst.Dst > NoVal {

@@ -1,0 +1,74 @@
+; 容器「元素賦值」的擁有權：元素必須深拷貝，否則呼叫端一重綁就讓容器懸空。
+;
+; `outer[0] = inner` 對 `[]T` 元素原本是**位元複製**（共用 inner 的 buffer），
+; 而 `%str-long` 元素早已深拷貝 —— 這個不對稱就是缺陷本身。
+;
+; 修復前：test-vec-elem 印 0 之後 `signal: trace/BPT trap`；
+;         test-map-value 印 107（已釋放的 buffer 被重用，107 是 'k' 的位元組）。
+; 修復後：依下方註解的預期值。
+;
+; 修法在 src/mir/codegen.go `emitIndexStore` 的 `%vec` 分支（vecDeepClone）。
+; map 的 `.vals[idx] = val`（map.no:102/128）對 `[K][]T` 就是同一種元素寫入，
+; 所以同一個修法一併讓 map 擁有自己的值（見 NOLANG-OWNERSHIP-MODEL.md §4.4 b）。
+
+; 1. `[][]i64` 元素賦值 + 來源重綁
+test-vec-elem = () {
+    outer [][]i64 = with-len(1)
+    inner []i64 = [1, 2, 3]
+    outer[0] = inner
+    inner = [9, 9, 9]
+    print(outer[0][0])          ; 1
+}
+
+; 2. 來源「原位寫入」（不是重綁）—— 深拷貝下容器應看到舊值
+test-vec-elem-inplace = () {
+    outer [][]i64 = with-len(1)
+    inner []i64 = [1, 2, 3]
+    outer[0] = inner
+    inner[0] = 99
+    print(outer[0][0])          ; 1
+}
+
+; 3. 兩層巢狀：外層元素是 []i64，內層元素是 i64
+test-vec-nested = () {
+    a []i64 = [7, 8]
+    b []i64 = [1, 2]
+    outer [][]i64 = with-len(2)
+    outer[0] = a
+    outer[1] = b
+    a = [0, 0]
+    b = [0, 0]
+    print(outer[0][0])          ; 7
+    print(outer[1][1])          ; 2
+}
+
+; 4. map 的值 + 來源重綁（NOLANG-OWNERSHIP-MODEL.md §4.2 a 的探針）
+test-map-value = () {
+    list1 []i64 = [1, 2, 3]
+    m [str][]i64 = {}
+    m.put('k', list1)
+    list1 = [9, 9, 9]
+    v ?[]i64 = m.get('k')
+    v: {
+        ok(x) -> print(x[0])    ; 1
+        nil -> print('nil')
+        err(e) -> print('err')
+    }
+}
+
+; 5. 對照組：vec.push 本來就深拷貝（不具鑑別力，只確認沒被改壞）
+test-push-control = () {
+    outer [][]i64 = []
+    inner []i64 = [5, 6]
+    outer.push(inner)
+    inner = [0, 0]
+    print(outer[0][0])          ; 5
+}
+
+main = () {
+    test-vec-elem()
+    test-vec-elem-inplace()
+    test-vec-nested()
+    test-map-value()
+    test-push-control()
+}

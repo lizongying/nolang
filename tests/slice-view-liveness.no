@@ -1,0 +1,63 @@
+; 切片「視圖」的生命週期（slice VIEW lifetime）。
+;
+; `b = a[i..j]` 對 `[]T` 產生一個視圖：b.cap == 0、b.data == a.data + i*8，
+; 也就是 b 別名了 a 的底層緩衝區。因此 a 必須活到 b 的最後一次使用。
+;
+; 修復前：活性分析只看得到 b、看不到 a，於是 a 的 drop 被放在 a 自己的最後一次
+; 使用（早於視圖的），之後透過 b 讀到的就是已釋放的記憶體 —— print(b) 會印出
+; 堆位址（例如 [4341880592, 4341880608, ...]），而且每次執行都不同。
+;
+; 切片是「兩端皆含」（`s[0..1]` 取 2 個字元），所以 [2..4] 是索引 2、3、4。
+;
+; 修復：Module.viewSrc（Analyze 由仍帶 SliceFlagView 的切片建立）把視圖對應到
+; 它的來源，defUse 把「使用視圖」算成「使用來源」，來源的活性因此延伸到視圖的
+; 最後一次使用。單元測試見 src/mir/view_liveness_test.go。
+
+; 直接印視圖（最小重現）
+test-print-view = () {
+    a []i64 = [10, 20, 30, 40, 50]
+    b = a[2..4]
+    print(b)
+}
+
+; 視圖在來源「重綁」之後仍然有效 —— 視圖讓舊緩衝區活著
+test-view-survives-rebind = () {
+    a []i64 = [1, 2, 3]
+    b = a[0..1]
+    a = [9, 9, 9]
+    print(b)
+}
+
+; 逐元素讀（這條在修復前就是對的 —— 對照組）
+test-view-elements = () {
+    a []i64 = [7, 8, 9, 10]
+    b = a[1..2]
+    print(b[0])
+    print(b[1])
+}
+
+; 迴圈裡的視圖
+test-view-in-loop = () {
+    a []i64 = [1, 2, 3, 4, 5, 6]
+    i <- [0..3] {
+        #{overflow=wrap}
+        b = a[i..i]
+        print(b[0])
+    }
+}
+
+; 視圖鏈：視圖的視圖仍指向原始擁有者
+test-view-chain = () {
+    a []i64 = [10, 20, 30, 40, 50, 60]
+    b = a[1..5]
+    c = b[1..2]
+    print(c)
+}
+
+main = () {
+    test-print-view()
+    test-view-survives-rebind()
+    test-view-elements()
+    test-view-in-loop()
+    test-view-chain()
+}

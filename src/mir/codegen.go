@@ -7925,12 +7925,48 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// dangling, and s[0]'s own drop then double-frees it. Legacy deep-clones on
 	// the write side to mirror the already-cloned read side (`x = s[0]`), which
 	// is exactly what tests/mem-safety/element-assign-clone.no asserts.
-	// %vec / heap-option elements still share: there is no vec clone helper.
 	if elemT == "%str-long" && valT == "%str-long" {
 		c.loadSeq++
 		cl := fmt.Sprintf("%%icl%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = call %s @str_clone(%s %s)\n", cl, elemT, elemT, valV))
 		valV = cl
+	}
+	// The same fix for a `%vec` element, and the reason is identical: a bitwise
+	// store of the {len,cap,data} triple shares the source's buffer. Measured:
+	//
+	//	outer [][]i64 = with-len(1) ; inner []i64 = [1,2,3]
+	//	outer[0] = inner ; inner = [9,9,9] ; print(outer[0][0])
+	//
+	// used to print 0 and then die with `signal: trace/BPT trap` — the rebind
+	// freed the shared buffer and the container's own drop double-freed it.
+	//
+	// This comment used to read "there is no vec clone helper", which stopped
+	// being true when vecDeepClone was written for `?[]T`. The push path
+	// (builtin_call.go, the `elemTy == "%vec"` branch) was already fixed with it;
+	// THIS store was the sibling that got missed, which is why `outer.push(x)`
+	// and `outer[0] = x` disagreed about who owns the element. Both now go
+	// through the same helper (vecElemTypeID) so they cannot drift apart again.
+	//
+	// This is also what makes a map own its values. `map.no` stores with
+	// `.vals[idx] = val`, so for a `[K][]T` map the store below IS hashmap.put's
+	// only write; with it shallow, the map's reference did not count, and a
+	// caller rebinding the value it had put left the map dangling (probe:
+	// `m.put('k', list1) ; list1 = [9,9,9] ; m.get('k')` printed 107, not 1).
+	//
+	// vecElemTypeID answers "the T of this []T" from the VALUE being stored, and
+	// vecDeepClone is specialised on that T, never on the slice type itself: it
+	// builds a helper that copies a %vec WHOSE ELEMENTS ARE T, so handing it
+	// `[]i64` would clone a `[][]i64` and walk 24 bytes per element out of an
+	// 8-byte buffer (SIGSEGV).
+	if elemT == "%vec" && valT == "%vec" {
+		if et := c.vecElemTypeID(inst.Args[2]); et != NoType {
+			if fn := c.vecDeepClone(et, 0); fn != "" {
+				c.loadSeq++
+				cl := fmt.Sprintf("%%icl%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", cl, fn, valV))
+				valV = cl
+			}
+		}
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemT, valV, elemT, ep))
 	// Same by-value sharing as vec.push — see cloneStructElemLeaves. Only
