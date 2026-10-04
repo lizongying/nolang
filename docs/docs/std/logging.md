@@ -47,6 +47,7 @@ log.open-file(path)                    ; 以追加模式開啟檔案並設為輸
 log.set-output-fd(fd)                  ; 切換到自訂 fd（呼叫端負責開啟/關閉）
 log.set-writer(w io.writer)            ; 切換到 io.writer（取其 fd）
 cur = log.get-output-fd()              ; 回傳目前輸出目標 fd
+w = log.get-writer()                   ; 回傳目前輸出目標對應的 io.writer
 ```
 
 ```no

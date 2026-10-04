@@ -1,7 +1,7 @@
 ; log — 分級日誌
 ;
-; 前綴式分級日誌。預設寫入標準錯誤，可用 open-file / set-output-fd
-; 切換到檔案；輸出格式由 set-format 選擇，可含時間戳、級別標籤，
+; 前綴式分級日誌。預設寫入標準錯誤（以 io.writer 抽象承載），可用
+; open-file / set-writer / set-output-fd 切換輸出目標；輸出格式由 set-format 選擇，可含時間戳、級別標籤，
 ; 以及由編譯器自動注入的呼叫點 檔案:行:列（見 #{track-caller}）。
 ;
 ; 用法：
@@ -36,16 +36,18 @@ F-LOC = 4
 ; 全域設定
 ; ═══════════════════════════════════════════════
 
-; level: 當前日誌級別（預設 INFO）
-level = 1
+; LEVEL: 當前日誌級別（預設 INFO）
+LEVEL = 1
 
-; fmt-flags: 輸出格式位（預設僅 [INFO] 級別標籤，貼近舊輸出以保持相容；
+; FMT-FLAGS: 輸出格式位（預設僅 [INFO] 級別標籤，貼近舊輸出以保持相容；
 ; 需要的話用 set-format 疊加 F-TIME / F-LOC）
-fmt-flags = 2
+FMT-FLAGS = 2
 
-; out-fd: 日誌輸出目標檔案描述符（預設標準錯誤 fd=2）。
-; 透過 io 抽象 writer 寫入；open-file / set-output-fd 可切換。
-out-fd fd = STDERR-FD
+; OUT-FD: 日誌輸出目標 fd（預設標準錯誤 stderr=2）。
+; 說明：對外的輸出介面以 io.writer 抽象承載（見 set-writer / get-writer），但真正
+; 持久化的狀態只能是這個標量 fd —— Nolang 的 std 合併模組中，struct global 的寫入
+; 不會持久（只有標量 global 可變），故以 fd 作為唯一可信的儲存，寫入時再組裝 writer。
+OUT-FD fd = STDERR-FD
 
 ; ═══════════════════════════════════════════════
 ; 設定介面
@@ -53,27 +55,33 @@ out-fd fd = STDERR-FD
 
 ; set-level: 設定日誌級別
 set-level = (l i64) {
-    level = l
+    LEVEL = l
 }
 
 ; set-format: 設定輸出格式位（F-TIME / F-LEVEL / F-LOC 的或運算）
 set-format = (flags i64) {
-    fmt-flags = flags
+    FMT-FLAGS = flags
 }
 
 ; set-output-fd: 切換輸出目標到指定 fd（呼叫端負責開啟/關閉）
 set-output-fd = (new-fd fd) {
-    out-fd = new-fd
+    OUT-FD = new-fd
 }
 
-; get-output-fd: 回傳目前輸出目標 fd（除錯用）
+; get-output-fd: 回傳目前輸出目標的 fd（除錯用）
 get-output-fd = () (cur fd) {
-    cur = out-fd
+    cur = OUT-FD
 }
 
-; set-writer: 切換輸出目標到指定 io.writer（io 介面的抽象寫入器）
+; set-writer: 切換輸出目標到指定 io.writer（io 介面的抽象寫入器）。
+; writer 本質只包一個 fd，std 中唯一可持久化的是標量，故儲存其 fd。
 set-writer = (w io.writer) {
-    out-fd = w.fd
+    OUT-FD = w.fd
+}
+
+; get-writer: 回傳目前輸出目標對應的 io.writer
+get-writer = () (w io.writer) {
+    w = writer.from-fd(OUT-FD)
 }
 
 ; open-file: 以追加模式開啟日誌檔案並設為輸出目標
@@ -98,21 +106,17 @@ log-stamp = () (s str) {
     s = time.format-time-str(time.now-s())
 }
 
-; log-emit: 依 fmt-flags 組裝單行日誌，寫入 out-fd（io 抽象的落地寫入）
+; log-emit: 依 FMT-FLAGS 組裝單行日誌，經 io.writer 抽象寫入 OUT-FD
 log-emit = (tag str, msg str, loc str) {
     buf = ''
-    fmt-flags & F-TIME != 0 -> buf = buf - log-stamp() - ' '
-    fmt-flags & F-LEVEL != 0 -> buf = buf - '[' - tag - '] '
-    fmt-flags & F-LOC != 0 -> {
+    FMT-FLAGS & F-TIME != 0 -> buf = buf - log-stamp() - ' '
+    FMT-FLAGS & F-LEVEL != 0 -> buf = buf - '[' - tag - '] '
+    FMT-FLAGS & F-LOC != 0 -> {
         ! loc.empty() -> buf = buf - '[' - loc - '] '
     }
     buf = buf - msg
-    dst fd = out-fd
-    b = buf.to-bytes()
-    n = fs.write(dst, b, b.len())
-    nl []byte = with-len(1)
-    nl[0] = 10
-    m = fs.write(dst, nl, 1)
+    w io.writer = writer.from-fd(OUT-FD)
+    n = w.write-line(buf)
 }
 
 ; ═══════════════════════════════════════════════
@@ -123,28 +127,28 @@ log-emit = (tag str, msg str, loc str) {
 
 #{track-caller}
 debug = (msg str, loc str = '') {
-    level <= 0 -> log-emit('DEBUG', msg, loc)
+    LEVEL <= 0 -> log-emit('DEBUG', msg, loc)
 }
 
 ; info: 輸出 INFO 級別日誌
 
 #{track-caller}
 info = (msg str, loc str = '') {
-    level <= 1 -> log-emit('INFO', msg, loc)
+    LEVEL <= 1 -> log-emit('INFO', msg, loc)
 }
 
 ; warn: 輸出 WARN 級別日誌
 
 #{track-caller}
 warn = (msg str, loc str = '') {
-    level <= 2 -> log-emit('WARN', msg, loc)
+    LEVEL <= 2 -> log-emit('WARN', msg, loc)
 }
 
 ; error: 輸出 ERROR 級別日誌
 
 #{track-caller}
 error = (msg str, loc str = '') {
-    level <= 3 -> log-emit('ERROR', msg, loc)
+    LEVEL <= 3 -> log-emit('ERROR', msg, loc)
 }
 
 ; fatal: 輸出 FATAL 級別日誌並退出

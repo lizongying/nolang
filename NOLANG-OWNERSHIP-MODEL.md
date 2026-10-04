@@ -198,8 +198,10 @@
 > 並確認 **`tests/map.no` 與 2000 筆 put 的 rehash 壓力測試輸出完全相同** ⇒ 註解裡那句「沒有 MovesArg 會
 > 讓 `.keys = with-len(n)` 立刻被 drop 而崩」是**在 `emitOwnedLeafFieldStore` 存在之前寫的**，現在 `keys`
 > 是 owned leaf、會被克隆，所以該警告已失效。
-> **驗收**：**692 檔 exact-matched 編譯＋執行 A/B**（控制組＝同樹，只把 `SetFieldConsumesRHS` 的函式體換成
-> `return true`，忠實重放舊的無條件 `MovesArg = true`；已驗證控制組在 pD 上仍洩漏 8.16 MB）；結果見本節末。
+> **驗收**：**692 檔 exact-matched 編譯＋執行 A/B**（控制組＝**同一份凍結快照**，只把 `SetFieldConsumesRHS`
+> 的函式體換成 `return true`，忠實重放舊的無條件 `MovesArg = true`；已驗證控制組在 pD 上仍洩漏 8.16 MB）；
+> **`BUILDFAIL` 集合逐行相同（56／56），stdout 僅 3 行有差異且全部不可歸因**（1 行逾時 `rc=142`、2 行
+> `mkstemp` 自身非決定性）。細節與方法論教訓見本節末。
 
 ---
 
@@ -1453,6 +1455,31 @@ pD 在控制組上仍洩漏 8.16 MB）：
 > （`@str_clone` 多一個分支 ⇒ LLVM 不再消除某些「死」的克隆迴圈），**不是**造成它。
 > **判準**：只有**可觀測**形狀的差異才算行為差異；「死迴圈有沒有被消除」是 codegen 細節。
 
+**驗收：692 檔 exact-matched 編譯＋執行 A/B**（凍結快照 `a1d184ce3e6a2a5d`）
+
+控制組與治療組都從**同一份凍結 `src/` 快照**建出（`rsync` 兩份，控制組**只**把 `SetFieldConsumesRHS`
+的函式體換成 `return true`；`diff -r` 確認兩棵樹**只差 `mir/mir.go` 一個檔案**），逐檔 `no build` ＋執行
+（`alarm 8`）：
+
+| 檢查 | 結果 |
+|---|---|
+| `BUILDFAIL` | 控制組 56／治療組 56，**集合逐行相同** |
+| stdout 有差異的行 | **3**（其餘 689 行的 `rc` 與 sha **逐位元組相同**） |
+
+3 行差異**全部不可歸因**：
+
+| 檔案 | 為什麼不可歸因 |
+|---|---|
+| `tests/https-server.no` | **兩邊都 `rc=142`**（＝SIGALRM，8 秒逾時被砍）⇒ 差異只是「被砍在哪一行」，不是行為差異 |
+| `tests/std-unix-fs-os.no`、`tests/std-unix-fs-os-2.no` | **自身非決定性**：同一支 binary 連跑 6 次得 **6 個不同 sha**（`mkstemp`／`link` 隨機檔名）⇒ 無法歸因 |
+
+🔴 **方法論教訓（併入 §7 決策 23）**：第一次 A/B 的兩支 binary 相隔 6 分鐘建出（`/tmp/no_fix` @12:36、
+`/tmp/no_ctl2` @12:42），而這段期間**並行 session 正在改樹**（13:00 的 `HEAD` commit 動了 22 個檔，
+含 `std/log.no`）⇒ 那一對**不是嚴格配對**，它多報了 2 行 async 差異（`tests/module-async.no`、
+`tests/mem-safety/async-module-awy.no`）。在**凍結配對**上重跑：兩檔、兩邊都印 `42`
+（`out=92cfceb39d57d914`），**各 80/80 次一致** ⇒ 那 2 行是**過期樹**造成的假差異。
+**教訓**：只要樹在動，A/B **前**必須先把 `src/` 凍結成快照，**兩邊都從快照建**。
+
 #### v2.12 仍未解：`?json` 那條路（沿用 v2.11 的結論）
 
 `r = json.parse(...)`（回傳 `?json`）在迴圈裡**每圈都不 drop 舊值**，與上面那條**同一個主題**、
@@ -1860,7 +1887,7 @@ print(g.len())        ; 修復前：4（內容仍是 '  hi  '）；修復後：6
 | **20** | **配置型 runtime helper 回傳的值要怎麼跟 `@str_free`／`@vec_free` 的守衛對齊？** | **任何配置過 buffer 的 helper 都不可回傳 `cap == 0`。** `@str_free`／`@vec_free` 用 `cap == 0` 表示「借用視圖、不擁有任何東西、跳過」——守衛本身**對**（視圖的 data 指向別人的 buffer），但它讓 `cap == 0` 的語意**變成**「沒有東西要釋放」。`@str_clone` 對空字串配 `len + 1` 位元組卻回傳 `cap = len = 0`、`@str_from_const` 對 `''` 直接 `@nolang_rc_alloc(0)` ⇒ 兩者都交出**永遠沒人釋放**的塊，**每個提到空字串字面量的程式都在漏**（與 tier 無關）；tier 2 只是把「每圈克隆的元素數」放大成線性。修法：`len == 0` 一律回**全零描述子**（`@str_clone` 的 nil 分支本來就回這個）。⚠️ **量配置的插樁必須插在 `X.bin_opt.ll`**：`no build` 走 `opt -O3` → `llc` → `clang`，`X.ll` 是未優化的；實測 `''` 的 `str_from_const` ＋ `str_clone` 在 `-O3` 下**整組被消除**（未優化 IR 上「每圈漏 3 塊」，同一支程式峰值 RSS 卻是平線）。⚠️ 反向也成立：**「clone 有沒有被釋放」要用逐 clone 配對檢查去否證**（v2.11 用它排除了「容器沒釋放」的假說，逼出真正的原因在 clone 的**內容**） |
 | **21** | **`emitStructDropHelper` 遞迴進 pointee 的條件該用哪個述詞？** | **與 clone 側完全同一個**（`StructHasPtrFields(sub) \|\| StructHasOwnedLeafFields(sub)`，也是 `structSlotNeedsZero` 用的那個）。只認**指標欄位**會讓「只有 inline owned leaf、零指標欄位」的 pointee **完全沒有解構子**，而 clone 側（`emitPtrFieldsClone`）**早已深拷貝**它的 leaf ⇒ **純洩漏、stdout 完全看不到**（實例：`json-pool` 五個 `%vec`，`@__nolang_drop_json_json_pool` 從未產生）。**判準**：drop 與 clone 必須是**同一條遍歷**——任一邊多、另一邊少，就分別是 **double free** 與**洩漏**。驗收：修後指標欄位案例與「無指標欄位」的 `box { name str }` **位元組完全相同**（8,175,616 B） |
 | **22** | **「這個現象是不是我這個 hunk 造成的」要怎麼歸因？** | **凍結 HEAD 快照 ＋ 只疊那一個 hunk**（`git archive HEAD \| tar -x -C /tmp/headtree`，改一處、重建、量）。理由：並行 session 讓「當前樹 vs HEAD」同時差很多東西——本輪實例是另一 session 正在把 `hir.Node.File` 改名成 `S2`，**`/tmp` 的 `rsync` 副本因此一度建不起來**（`unknown field File`）。本輪用它證明「`@str_clone` 多一分支後 LLVM 不再消除某些死克隆迴圈」**是 v2.11 的 str hunk 造成的**，而**可觀測**的洩漏在 HEAD 上**數字相同** ⇒ 是**揭開**既有洩漏、不是引入。**判準**：只有**可觀測**形狀（有輸出、迴圈不被消除）的差異才算行為差異；「死迴圈有沒有被消除」是 codegen 細節 |
-| **23** | **`OpSetField.MovesArg`（「這個欄位賦值消耗 RHS」）該由誰決定、憑什麼？** | **由 codegen 的實際行為決定，且必須是單一述詞**（`Module.SetFieldConsumesRHS`，v2.13）。`MovesArg` 只影響一件事——drop 分析要不要抑制 RHS 臨時的 drop——所以它**只在 codegen 真的 MOVE（位元複製共享）時**才該為真。`emitSetField` 對 owned leaf **克隆**、對 struct／指標欄位**深拷貝**，欄位因此拿到自己的 buffer，RHS 必須被 drop；只有未放行的 `%vec`／map／`%option` 是位元複製。兩處呼叫點（`obj.field = v`、`lowerStructLit`）**共用同一個述詞**才不會漂移。**無法解析的目標保守回 `true`**（漏修是洩漏，修錯是 use-after-free）。⚠️ **舊註解會過期**：`tests/map.no` 那句「沒有 MovesArg 就會崩」寫於 `emitOwnedLeafFieldStore` 之前，該欄位現在是 owned leaf、會被克隆 ⇒ 警告已失效（實測 `tests/map.no` 與 rehash 壓力測試輸出完全相同）。⚠️ **負對照不可省**：共享容器欄位（未放行的 `%vec`）**必須**保持 `MovesArg=true`，否則欄位 buffer 被 drop ⇒ UAF |
+| **23** | **`OpSetField.MovesArg`（「這個欄位賦值消耗 RHS」）該由誰決定、憑什麼？** | **由 codegen 的實際行為決定，且必須是單一述詞**（`Module.SetFieldConsumesRHS`，v2.13）。`MovesArg` 只影響一件事——drop 分析要不要抑制 RHS 臨時的 drop——所以它**只在 codegen 真的 MOVE（位元複製共享）時**才該為真。`emitSetField` 對 owned leaf **克隆**、對 struct／指標欄位**深拷貝**，欄位因此拿到自己的 buffer，RHS 必須被 drop；只有未放行的 `%vec`／map／`%option` 是位元複製。兩處呼叫點（`obj.field = v`、`lowerStructLit`）**共用同一個述詞**才不會漂移。**無法解析的目標保守回 `true`**（漏修是洩漏，修錯是 use-after-free）。⚠️ **舊註解會過期**：`tests/map.no` 那句「沒有 MovesArg 就會崩」寫於 `emitOwnedLeafFieldStore` 之前，該欄位現在是 owned leaf、會被克隆 ⇒ 警告已失效（實測 `tests/map.no` 與 rehash 壓力測試輸出完全相同）。⚠️ **負對照不可省**：共享容器欄位（未放行的 `%vec`）**必須**保持 `MovesArg=true`，否則欄位 buffer 被 drop ⇒ UAF。⚠️ **A/B 前必須凍結**：本輪第一次 A/B 的兩支 binary 相隔 6 分鐘建出（`/tmp/no_fix` @12:36、`/tmp/no_ctl2` @12:42），期間並行 session 正在改樹（13:00 的 `HEAD` commit 動了 22 個檔）⇒ 那一對**不是嚴格配對**、多報了 2 行 async 假差異；改成「`rsync` 兩份**凍結快照**、`diff -r` 確認只差自己一個檔案」後重跑才乾淨（3 行差異全部不可歸因：1 行逾時 `rc=142`、2 行 `mkstemp` 自身非決定性） |
 
 ---
 

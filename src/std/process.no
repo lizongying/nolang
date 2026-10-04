@@ -629,6 +629,16 @@ process-shell = (cmd str) (status i64) {
     status = process-system(cmd)
 }
 
+; shell-quote: POSIX 單引號轉義 — 把任意字串包成殼層（sh -c）可安全二次解析的單引號字面量。
+; 內部單引號替換為 '\'' 四字符序列（結尾引號+轉義引號+開始引號）。
+; 背景：cmd() 通用分支透過 process-exec-shell 執行拼接後的命令列，舊實作把參數裸空格
+; 拼接會丟失參數邊界（含空格/引號的 arg 被殼層重新分詞），本函數修復該缺陷。
+shell-quote = (s str) (out str) {
+    q = '\''
+    esc = q - '\\' - q - q
+    out = q - s.replace-str(q, esc) - q
+}
+
 ; cmd: 完整功能的子進程執行器（跨平台生產級實作）
 ; program   : 要執行的程式名（PATH 搜尋）
 ; args      : 傳給程式的參數列表
@@ -654,16 +664,26 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     code = -1
     err = ''
 
-    ; 構建命令字串
+    ; 構建命令字串。
+    ; shell 程式（basename ∈ {sh,bash,zsh,dash,ksh,ash}）+ args[0]=='-c' 時，直接把
+    ; args[1] 作為命令列經 process-exec-shell 執行（保留原 -c 語義）；其余情形對
+    ; program 與每個 arg 做 shell-quote，防止含空格/特殊字元的參數被殼層重新分詞。
     cmdline = program
     is-sh-c = false
-    {
-        program == 'sh' -> {
-            args.len() >= 2 -> {
+    base = program
+    slash = program.last-index('/')
+    #{overflow=wrap}
+    slash >= 0 -> base = program.slice-bytes(slash + 1, program.len-bytes())
+    args.len() >= 2 -> {
 
-                #{index-out=zero}
-                is-sh-c = args[0] == '-c'
-            }
+        #{index-out=zero}
+        args[0] == '-c' -> {
+            base == 'sh' -> is-sh-c = true
+            base == 'bash' -> is-sh-c = true
+            base == 'zsh' -> is-sh-c = true
+            base == 'dash' -> is-sh-c = true
+            base == 'ksh' -> is-sh-c = true
+            base == 'ash' -> is-sh-c = true
         }
     }
     {
@@ -674,26 +694,34 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         }
 
         -> {
+            cmdline = shell-quote(program)
             i <- [0..args.len()): {
 
                 #{index-out=zero}
-                cmdline = cmdline - ' ' - args[i]
+                cmdline = cmdline - ' ' - shell-quote(args[i])
             }
         }
     }
 
-    ; 環境變數轉發：process-exec-shell 本身不接收 env，故以 `env VAR=val ...` 前綴注入。
-    ; 說明：env 值含空白/特殊字元時可能需額外引用；此處處理常見情形。
+    ; 環境變數轉發：process-exec-shell 本身不接收 env，故以 `env VAR=val ...` 前綴注入；
+    ; 每個 K=V 經 shell-quote，含空白/特殊字元的環境值不再被分詞破壞。
     {
         env.len() > 0 -> {
             envline str = 'env'
             ei <- [0..env.len()): {
 
                 #{index-out=zero}
-                envline = envline - ' ' - env[ei]
+                envline = envline - ' ' - shell-quote(env[ei])
             }
 
-            cmdline = envline - ' ' - cmdline
+        {
+            is-sh-c -> {
+                ; -c 命令串必須單引號包裹後交給 `env K=V ... sh -c '...'`，
+                ; 否則 $VAR 會在 env 設置環境之前被外層殼展開（展開時機錯誤）。
+                cmdline = envline - ' sh -c ' - shell-quote(cmdline)
+            }
+            -> cmdline = envline - ' ' - cmdline
+        }
         }
     }
 

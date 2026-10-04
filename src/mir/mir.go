@@ -470,7 +470,7 @@ func (m *Module) typeOwnsHeap(ty *Type) bool {
 // needs a real drop (emitOptionDrop) rather than the no-op a scalar option
 // gets.
 //
-// An option owns heap in exactly two ways:
+// An option owns heap in exactly three ways:
 //
 //   - the PAYLOAD owns heap — `?str`, `?vec`, `?[]T`, `?map`. This is the same
 //     question ClassifyOwnership already answers for a plain value.
@@ -481,11 +481,20 @@ func (m *Module) typeOwnsHeap(ty *Type) bool {
 //     to free — even when the payload is a POD struct that owns nothing itself
 //     (`big { pad [32]i64 }`).
 //
-// A struct payload is deliberately NOT claimed here on the strength of its
-// leaves alone: a payload small enough to be inline is stored by a bitwise
-// copy that SHARES those leaves with the value it was wrapped from, and
-// emitOptionDrop does not free inline struct payloads for exactly that reason.
-// Only the boxed case — where the option has its own heap block — is claimed.
+//   - the payload is an INLINE struct that owns heap through its own fields —
+//     `?json` (a pointer field to a pool), `?person` (an owned `str` leaf).
+//     The option's drop frees those through emitOptionPayloadContentFree's
+//     struct arm, and every path that PRODUCES such an option gives it its own
+//     copy of them: the wrap (`o ?T = y`) goes through optionCopySharesHeap's
+//     OpOptionWrap case, so a live source becomes an OpClone that deep-copies
+//     the payload (emitClone's option-destination branch), and a dead one is a
+//     genuine transfer. That is what makes the option a real owner here rather
+//     than the aliasing hazard it would be without the clone half.
+//
+// The third case is the one the model doc recorded as a deliberate gap
+// (§4.2(a)) and it was the sole cause of the `json.parse` loop leak: a `?json`
+// local is re-bound every iteration, and with no drop emitted for the option
+// each iteration leaked its whole json pool.
 func (m *Module) OptionOwnsHeap(raw string) bool {
 	elem, ok := parseOptionElem(raw)
 	if !ok {
@@ -494,7 +503,29 @@ func (m *Module) OptionOwnsHeap(raw string) bool {
 	if ClassifyOwnership(elem) {
 		return true
 	}
-	return m.OptionPayloadBoxed(elem)
+	if m.OptionPayloadBoxed(elem) {
+		return true
+	}
+	return m.inlineStructPayloadOwnsHeap(elem)
+}
+
+// inlineStructPayloadOwnsHeap reports whether an option payload named elemRaw is
+// a struct the option's drop would free heap through: pointer-laid-out fields
+// (pointees) or inline owned leaves.
+//
+// It is deliberately the EXACT predicate emitOptionPayloadContentFree switches
+// on, and it is shared by the three places that must agree about it:
+// OptionOwnsHeap (does the option need a drop at all),
+// optionCopyOwnsPayload (does an option→option copy have to clone), and
+// emitOptionDrop's inline default branch (route to the struct destructor).
+// Spelling it out at each site is how those three drift apart, and the failure
+// mode of a drift is a double free, not a leak.
+func (m *Module) inlineStructPayloadOwnsHeap(elemRaw string) bool {
+	key := m.StructKeyOf(elemRaw)
+	if key == "" {
+		return false
+	}
+	return m.StructHasPtrFields(key) || m.StructHasOwnedLeafFields(key)
 }
 
 // OptionPayloadBoxed reports whether a payload of raw type elemRaw is heap-

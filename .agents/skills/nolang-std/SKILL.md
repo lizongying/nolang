@@ -1647,13 +1647,16 @@ F-LOC   = 4                            // Call site [file:line:col]
 log.set-format(log.F-TIME | log.F-LEVEL | log.F-LOC)
 ```
 
-Output target (default stderr fd=2):
+Output target (default stderr fd=2). The API speaks `io.writer`, but the persisted
+state is a scalar fd (in std merged modules, struct globals do not retain writes —
+only scalar globals are mutable), so a writer is reconstructed from the fd at emit time:
 
 ```no
 log.open-file(path)                    // Append-open a file and set as target; returns ?bool
 log.set-output-fd(fd)                  // Switch to a custom fd (caller opens/closes)
-log.set-writer(w io.writer)            // Switch to an io.writer (uses its fd)
+log.set-writer(w io.writer)            // Switch to an io.writer (stores its fd)
 cur = log.get-output-fd()              // Current output-target fd
+w = log.get-writer()                   // Current output target as an io.writer
 ```
 
 > The `F-LOC` "file:line:col" is auto-injected by the compiler at each call site

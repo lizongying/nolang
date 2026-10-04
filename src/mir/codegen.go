@@ -5613,11 +5613,18 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 	default:
 		// INLINE payload that still owns heap: a small struct whose owned `str`
 		// leaves live inside the payload slot (e.g. `?person` with
-		// `person { name str }`, 24 bytes). Its destructor is the same
-		// recursive one a plain struct local gets, called on the payload
+		// `person { name str }`, 24 bytes) or whose POINTEES do (e.g. `?json`,
+		// 16 bytes with `pool json-pool #{inline=false}`). Its destructor is the
+		// same recursive one a plain struct local gets, called on the payload
 		// address — but tag-guarded, so a nil (tag 1) or an err message
 		// (tag 2, a %str-long in the same slot) is not mistaken for a struct.
-		if key := c.structKeyOf(elemRaw); key != "" && c.mod.StructHasOwnedLeafFields(key) {
+		//
+		// The guard is Module.inlineStructPayloadOwnsHeap, the SAME predicate
+		// OptionOwnsHeap and optionCopyOwnsPayload use — it must include
+		// StructHasPtrFields, or a `?json` would get a drop (the analysis says
+		// it owns heap) that then frees nothing (this branch says it owns
+		// nothing), which is the leak this change removes.
+		if key := c.structKeyOf(elemRaw); key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)) {
 			fn := c.emitOptionDropHelper(elemRaw, payloadLT)
 			c.sb.WriteString(fmt.Sprintf("  call void %s(%%option* %s)\n", fn, slot))
 			return
@@ -5828,7 +5835,7 @@ func (c *codegen) emitOptionCloneHelper(elemRaw, payloadLT string) string {
 	b.WriteString("ok:\n")
 	b.WriteString(fmt.Sprintf("  %%ok8 = bitcast %s* %%sp to i8*\n", c.optSlotLT))
 	b.WriteString(fmt.Sprintf("  %%op = bitcast i8* %%ok8 to %s*\n", payloadLT))
-	c.emitOptionPayloadContentClone(&b, elemRaw, payloadLT, key)
+	c.emitOptionPayloadContentClone(&b, elemRaw, payloadLT, key, "%src")
 	b.WriteString("  br label %done\n")
 
 	// ---- tag 2: the err message (a %str-long, inline in the slot) ---------
@@ -5861,7 +5868,7 @@ func (c *codegen) emitOptionCloneHelper(elemRaw, payloadLT string) string {
 // same cases, same order, same conditions. The `%cv` / `%cc` register names are
 // distinct from the free side's on purpose, so a diff between the pair reads as
 // a diff.
-func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, payloadLT, key string) {
+func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, payloadLT, key, srcOpt string) {
 	switch {
 	case payloadLT == "%str-long":
 		b.WriteString("  %cv = load %str-long, %str-long* %op\n")
@@ -5892,17 +5899,30 @@ func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, pay
 		b.WriteString("  %cv = load %vec, %vec* %op\n")
 		b.WriteString(fmt.Sprintf("  %%cc = call %%vec %s(%%vec %%cv)\n", fn))
 		b.WriteString("  store %vec %cc, %vec* %op\n")
+	case key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)):
+		// INLINE struct payload that owns heap — `?json` (pointee to a pool),
+		// `?person` (owned `str` leaf). The bitwise option copy at the top of
+		// emitOptionCloneHelper carried the source's payload BYTES across, so
+		// `%op` currently holds the SOURCE's pointers and descriptors; replace
+		// them with fresh copies.
+		//
+		// It needs the SOURCE payload address as well as the destination's, and
+		// that is why this function takes srcOpt: the destination payload comes
+		// from `%sp` (already `%op`), but the source's lives in a DIFFERENT
+		// option slot, and emitStructCloneHelper must read one while writing the
+		// other (see its doc — passing `%op` twice would zero the copy).
+		c.emitStructCloneHelper(payloadLT, key)
+		b.WriteString(fmt.Sprintf("  %%sps = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", srcOpt))
+		b.WriteString(fmt.Sprintf("  %%oks = bitcast %s* %%sps to i8*\n", c.optSlotLT))
+		b.WriteString(fmt.Sprintf("  %%ops = bitcast i8* %%oks to %s*\n", payloadLT))
+		b.WriteString(fmt.Sprintf("  call void @%s(%s* %%op, %s* %%ops)\n", structCloneName(payloadLT), payloadLT, payloadLT))
 	default:
 		// Nothing to duplicate. Reaching this for an owning payload would be a
 		// silent double free, so the caller's predicate (Module.
-		// optionCopyOwnsPayload) claims ONLY the two shapes above; it is not a
-		// type taxonomy, it is this switch's guard.
-		//
-		// An inline STRUCT payload with owned leaves is the one shape that
-		// genuinely owns heap and is deliberately NOT claimed here: its clone
-		// needs emitLeafFieldsClone / emitPtrFieldsClone, which write into the
-		// enclosing function's buffer and so cannot be used from inside a
-		// generated helper. See NOLANG-OWNERSHIP-MODEL.md §4.2(a).
+		// optionCopyOwnsPayload) claims ONLY the three shapes above; it is not a
+		// type taxonomy, it is this switch's guard. Both it and this switch now
+		// ask Module.inlineStructPayloadOwnsHeap for the struct case, so the
+		// analysis and the emitter cannot disagree about which payloads own heap.
 		_ = key
 	}
 }
@@ -6642,6 +6662,51 @@ func (c *codegen) emitStructDropHelper(lt, key string) {
 		b.WriteString(fmt.Sprintf("  call void @%s(%s* %%ls%d)\n", structDropName(subLT), subLT, sub))
 		sub++
 	}
+	b.WriteString("  ret void\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+}
+
+// structCloneName is the LLVM name of the deep-copy helper for a struct type —
+// the clone-side twin of structDropName.
+func structCloneName(lt string) string {
+	return "__nolang_struct_clone_" + sanitize(strings.TrimPrefix(lt, "%"))
+}
+
+// emitStructCloneHelper emits (once per struct type)
+// `@__nolang_struct_clone_<T>(%T* dst, %T* src)`: it gives dst its own pointees
+// and inline owned leaves, deep-copying the whole chain that
+// `@__nolang_drop_<T>` later frees. The pair MUST walk the same shape — a clone
+// that stopped short leaves the two structs sharing a block both sides free.
+//
+// WHY A GENERATED FUNCTION AND NOT INLINE CODE: its only caller so far is the
+// option-copy helper (emitOptionCloneHelper), which is itself a generated
+// function — and emitPtrFieldsClone / emitLeafFieldsClone write into whatever
+// buffer `c.sb` currently points at, i.e. the ENCLOSING function's body. Rather
+// than reimplement "give this struct its own heap" (which is exactly how the
+// clone and drop walks would drift apart), the body below temporarily redirects
+// `c.sb` at this helper's own builder while those two walkers run. Nothing they
+// call reaches back into `c.sb` for anything but the current body — the other
+// emitters (vecDeepClone, emitStructDropHelper, emitPtrFieldGetHelper) build
+// their own strings.Builder and append to c.extraFuncsBody.
+//
+// `dst` and `src` MUST be DIFFERENT addresses. emitPtrFieldsClone stores the
+// freshly allocated pointee into the destination field and only THEN reads the
+// source field, so passing one pointer for both would read back the new
+// pointer, memcpy it onto itself, and silently leave the copy zeroed.
+func (c *codegen) emitStructCloneHelper(lt, key string) {
+	fn := structCloneName(lt)
+	if c.extraFuncs[fn] {
+		return
+	}
+	c.extraFuncs[fn] = true
+	var b strings.Builder
+	fmt.Fprintf(&b, "define void @%s(%s* %%dst, %s* %%src) {\n", fn, lt, lt)
+	b.WriteString("entry:\n")
+	saved := c.sb
+	c.sb = &b
+	c.emitPtrFieldsClone("%dst", "%src", lt, key, map[string]bool{})
+	c.emitLeafFieldsClone("%dst", lt, key)
+	c.sb = saved
 	b.WriteString("  ret void\n}\n")
 	c.extraFuncsBody.WriteString(b.String())
 }

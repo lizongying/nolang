@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "b6899b6f4fba48028dab89ab442521b3f53f7dcf4348f33e37ff40f39116b03d"
+	embeddedStdSigKey = "35874376f89052b1b82c5b32710cbfcecacede7b36b6fb5f9e8bb8e2b8e06118"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -419,6 +419,7 @@ func init() {
 		"log.error":                                {},
 		"log.fatal":                                {},
 		"log.get-output-fd":                        {"fd"},
+		"log.get-writer":                           {"io.writer"},
 		"log.info":                                 {},
 		"log.log-emit":                             {},
 		"log.log-stamp":                            {"str"},
@@ -591,6 +592,7 @@ func init() {
 		"process.process-waitpid":                  {"i64"},
 		"process.process-waitpid-nohang":           {"i64"},
 		"process.shell":                            {"i64"},
+		"process.shell-quote":                      {"str"},
 		"process.spawn":                            {"i64"},
 		"process.wait":                             {"i64"},
 		"process.win-close-handle":                 {"bool"},
@@ -3339,6 +3341,7 @@ func init() {
 		"log.error":                                {"str", "str"},
 		"log.fatal":                                {"str", "i64", "str"},
 		"log.get-output-fd":                        {},
+		"log.get-writer":                           {},
 		"log.info":                                 {"str", "str"},
 		"log.log-emit":                             {"str", "str", "str"},
 		"log.log-stamp":                            {},
@@ -3511,6 +3514,7 @@ func init() {
 		"process.process-waitpid":                  {"i64", "i64"},
 		"process.process-waitpid-nohang":           {"i64"},
 		"process.shell":                            {"str"},
+		"process.shell-quote":                      {"str"},
 		"process.spawn":                            {"str"},
 		"process.wait":                             {"i64"},
 		"process.win-close-handle":                 {"i64"},

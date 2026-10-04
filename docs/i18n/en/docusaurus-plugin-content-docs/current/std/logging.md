@@ -48,6 +48,7 @@ log.open-file(path)                    // Open file in append mode and set as ta
 log.set-output-fd(fd)                  // Switch to a custom fd (caller opens/closes it)
 log.set-writer(w io.writer)            // Switch to an io.writer (uses its fd)
 cur = log.get-output-fd()              // Current output-target fd
+w = log.get-writer()                    // Current output target as an io.writer
 ```
 
 ```no

@@ -1214,6 +1214,22 @@ func (m *Module) moveStructHasPtrFields(f *Function, inst *Inst) bool {
 // leaving the copy sharing would make that free a use-after-free in BOTH switch
 // states, not just under the pointer layout.
 func (m *Module) moveStructSharesHeap(f *Function, inst *Inst) bool {
+	// An option PEEL (`x = opt` into a NON-option) is not a struct copy, even
+	// when the peeled payload IS a struct. emitMove's peel branch already gives
+	// the destination its own memory — cloneOptionPayloadInto for a struct
+	// payload, @str_clone / vecDeepClone for `?str` / `?[]T` — and the option
+	// deliberately KEEPS its payload and its drop (isOptionPeelMove). Claiming
+	// the peel here marks the OPTION as a move source and suppresses exactly
+	// that drop, which is how a `?json` / `?person` match arm leaked its whole
+	// payload every iteration: the ptr/leaf tests below ask about the
+	// DESTINATION, which for a peel is the payload's own struct type.
+	//
+	// The `?big` (POD payload) shape was already immune, because big has
+	// neither pointer fields nor owned leaves; moveTransfersOwnership's
+	// isOptionPeelMove guard is the same rule applied to the residual case.
+	if m.isOptionPeelMove(f, inst) {
+		return false
+	}
 	// A WRAP into an option (`o ?T = y`) shares heap for exactly the same
 	// reason a struct copy does: the payload is stored by a BITWISE copy
 	// (memcpy'd into the box, or straight into the inline slot), so the
@@ -1343,14 +1359,19 @@ func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 	if !c.optionPayloadInline("%str-long") {
 		return false
 	}
-	// The two inline payload shapes the clone helper can give their own heap.
-	// This is NOT a type taxonomy — it is that helper's switch written as a
-	// predicate, and the two must stay in step. An inline struct payload with
-	// owned leaves owns heap too, but cloning it needs the struct-clone
-	// emitters, which cannot run inside a generated helper; it is left at its
-	// previous (aliasing) behaviour and recorded in NOLANG-OWNERSHIP-MODEL.md
-	// §4.2(a).
-	return payloadLT == "%str-long" || payloadLT == "%vec"
+	// The two inline payload shapes the clone helper has always given their own
+	// heap. This is NOT a type taxonomy — it is that helper's switch written as
+	// a predicate, and the two must stay in step.
+	if payloadLT == "%str-long" || payloadLT == "%vec" {
+		return true
+	}
+	// An INLINE struct payload that owns heap: emitOptionPayloadContentClone's
+	// struct arm duplicates its pointees and leaves through the generated
+	// @__nolang_struct_clone_<key> helper, which is emitOptionPayloadContentFree's
+	// struct arm read backwards. Shared with OptionOwnsHeap through
+	// inlineStructPayloadOwnsHeap so the drop side and the clone side cannot
+	// disagree about which payloads own heap.
+	return m.inlineStructPayloadOwnsHeap(elemRaw)
 }
 
 // moveStrSharesHeap reports whether an OpMove copies an owned `str` BITWISE,
