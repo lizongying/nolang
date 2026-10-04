@@ -35,7 +35,6 @@ sidebar_position: 4.3
 | stack               | 核心   | 堆疊（結構體）   |
 | regexp              | 核心   | 正規表示式       |
 | process             | 核心   | 進程操作         |
-| unicode             | 核心   | Unicode 說明     |
 | uuid                | 核心   | UUID v4          |
 | bigint              | 核心   | 任意精度整數     |
 | bool                | 核心   | 布爾型別         |
@@ -64,7 +63,6 @@ sidebar_position: 4.3
 | net/pool            | 子模組 | 連接池           |
 | net/unix            | 子模組 | Unix 域套接字    |
 | net/ip              | 子模組 | IP 地址操作      |
-| encoding/hex        | 子模組 | 十六進制編解碼   |
 | encoding/base64     | 子模組 | Base64 編解碼    |
 | encoding/csv        | 子模組 | CSV 解析         |
 | encoding/pem        | 子模組 | PEM 編解碼       |

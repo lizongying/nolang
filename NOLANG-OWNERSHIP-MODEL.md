@@ -1,6 +1,6 @@
 # Nolang 混合所有權模型（Hybrid Ownership）— 設計方案
 
-**版本**：v2.13（2026-10-04）
+**版本**：v2.14（2026-10-04）
 **基線**：`96e8d3e7`（v2.4 的文件提交）；**v2.11／v2.12 工作時的 `HEAD` 是 `20318d7d`**。所有 A/B 都用**自建快照**（`/tmp/**/no-*`），全程不使用 `bin/no`（並行 session 會重建它）。⚠️ **並行 session 常態在場** ⇒ `git diff` 無鑑別力、**「HEAD」不是控制組**；控制組必須是**同樹、只差自己 hunk** 的另一支 binary（v2.11 的做法：複製當前 `src/`，**只回退自己的兩處 hunk**，兩邊一起重建 ⇒ 免掉 rsync／逐 hunk 篩，且保證只差自己的改動）。v2.12 另加一種**凍結快照**控制組：`git archive HEAD | tar -x` 成 `/tmp/headtree`，再把**單一** hunk 疊上去重建（用來證明「某現象是這個 hunk 造成的」而非別的並行改動）。
 **適用後端**：MIR（`src/mir`）
 **前置文件**：`docs/docs/lang/memory.md`（現行模型權威描述）、`NOLANG-AUDIT-2026-09-27.md`
@@ -202,6 +202,40 @@
 > 的函式體換成 `return true`，忠實重放舊的無條件 `MovesArg = true`；已驗證控制組在 pD 上仍洩漏 8.16 MB）；
 > **`BUILDFAIL` 集合逐行相同（56／56），stdout 僅 3 行有差異且全部不可歸因**（1 行逾時 `rc=142`、2 行
 > `mkstemp` 自身非決定性）。細節與方法論教訓見本節末。
+>
+> **v2.14 相對 v2.13 的變更**：**收掉 §4.3 記了兩版的「`?json` 那條路」**——inline owning struct 的
+> option payload 現在**會被釋放**（§4.2 a 第三種擁有方式）。
+> 根因是**兩個獨立的缺陷**，只修一個仍會漏：
+> 1. **述詞缺失**：`OptionOwnsHeap`／`typeOwnsHeap` 對 struct payload 回 `false`（`ClassifyOwnership(elem)`
+>    不認 struct），且 `emitOptionDrop` 的 inline `default:` 分支只放行 `StructHasOwnedLeafFields`、
+>    不放行 `StructHasPtrFields` ⇒ `?json`（`pool json-pool #{inline=false}`，16 B）**既沒有 drop、
+>    drop 也不認它**。三處（`OptionOwnsHeap`／`optionCopyOwnsPayload`／`emitOptionDrop`）改共用單一述詞
+>    `Module.inlineStructPayloadOwnsHeap`，並補上 clone 側的 struct 分支
+>    （`@__nolang_struct_clone_<key>`，`emitOptionPayloadContentClone` 的第四個 case）。
+> 2. 🔴 **主要成因：option 的 PEEL 被誤判成 struct 拷貝**。`x = opt` 進非 option 目的地時，
+>    `emitMove` 的剝離分支**已經**給目的地自己的記憶體（`cloneOptionPayloadInto`／`@str_clone`／
+>    `vecDeepClone`），option **保留** payload 與它的 drop（`isOptionPeelMove`）；但
+>    `moveStructSharesHeap` 的 `typeIsPtrStruct`／`typeIsLeafStruct` 問的是**目的地**——剝離時目的地
+>    正是 payload 自己的 struct 型別 ⇒ 剝離被當成「共享堆的 struct 拷貝」，`moveSrc[src] = true`，
+>    **option 的 drop 被整個抑制**。`moveStrSharesHeap`／`moveSliceSharesHeap` 因為要求兩邊同類
+>    而不可能誤觸，只有 struct 這一條會。修法：`moveStructSharesHeap` 開頭加 `isOptionPeelMove` 守衛。
+> **驗收（配對 A/B，控制組＝同樹只回退自己那 10 個 hunk，`git show HEAD` 逐檔證明回退精確）**：
+> `?json` 迴圈 50k **40,697,856 → 5,373,952 B**；`?person` 200k **8,192,000 → 1,720,320 B**、
+> 800k **27,443,200 → 1,720,320 B（平線）**。**選民分解（200k，`parse` ＋ match、不呼叫 `get-str`）**：
+> option 自己的貢獻 **150,175,744 → 8,486,912 B**（即 **141.7 MB → ~0**），而**沒有 option** 的
+> `json.new-pool` ＋ `parse` 對照組兩邊同為 **8,486,912 → 8,454,144 B** ⇒ 剩下的 **~33 B／圈殘留是
+> json-pool 路徑自己的既有洩漏**（與 option 無關、修前修後相同，§4.3「v2.14 仍未解」）。
+> **選民排除**：純 setfield 探針（`p.name = i.to-str()`，**無 option**）在控制組 **1,703,936 B @800k
+> 平線** ⇒ v2.13 的 `SetFieldConsumesRHS` 有效，`?person` 的洩漏 **100% 是 option**，不是 setfield 的殘留。
+> **既有語料的獨立佐證**：`tests/opt-box-drop.no`（**未修改**，`?big` 的 match 臂 ＋ 200k 圈 boxed wrap ＋
+> 50k 圈 boxed option→option copy）控制組 **7,405,568 B** → 修後 **1,769,472 B**，**stdout 逐位元組相同、rc=0**。
+> IR 直證：修後多出 `@__nolang_opt_drop_person` 與 `@__nolang_opt_drop_json_json`（控制組**沒有定義**），
+> 且 `@__nolang_opt_drop_big` 的**呼叫數 12 → 21**。⇒ ⚠️ **原本以為免疫的 `?big` 其實也在漏**：
+> 只要 payload struct **擁有** owned leaf（`big { name str; pad [4]i64 }` 有），`typeIsLeafStruct` 就對它
+> 回 true ⇒ 同樣的剝離誤判。真正免疫的只有**不擁有任何堆**的 POD payload（`big { pad [32]i64 }`）。
+> `go test ./mir/ ./parser/ ./checker/ ./lexer/ ./hir/` 兩邊同綠；`fmt` 兩邊同為 3 個既有 FAIL。
+> 新增釘子 `src/mir/option_struct_payload_ownership_test.go`（4 測，其中 **3 個在控制組上 FAIL**、
+> 第 4 個是刻意的負對照，兩邊都 PASS）。全語料 A/B 見本節末（凍結快照、只差自己那 10 個 hunk）。
 
 ---
 
@@ -253,6 +287,13 @@
 - **接收者投影的失效條件補完**（§4.5，2026-10-03）：**重新綁定**（value 被第二次定義 ⇒ `defCount > 1`）
   與**被投影的路徑被寫入**（`sourceWrittenBetween`）都撤回投影；`OpIndex` 補上原本缺失的護欄
   （症狀是 `SIGTRAP`）。修掉「`str.trim()` 的結果**內容對、長度為 0／舊值**」。前提 `projectionWasCloned`。
+- **inline owning struct 的 option payload 會被釋放**（§4.2 a 第三種擁有方式，2026-10-04／v2.14）：
+  `?json`／`?person` 這類「payload 是指標欄位或 inline owned leaf 的 struct」現在**既有 drop 也會被克隆**。
+  三處（`OptionOwnsHeap`／`optionCopyOwnsPayload`／`emitOptionDrop`）共用新述詞
+  `Module.inlineStructPayloadOwnsHeap`；clone 側補 `@__nolang_struct_clone_<key>`（生成函式，重導 `c.sb`）。
+  🔴 **真正的主因是 drop 被抑制**：option 的剝離被 `moveStructSharesHeap` 誤判成 struct 拷貝 ⇒
+  `moveSrc[src]=true` ⇒ drop 不發（§7 決策 24）。`?json` 50k **40.70 → 5.37 MB**、`?person` 800k
+  **27.44 → 1.72 MB 平線**。
 
 **待辦**（前置條件見 §4）
 
@@ -305,7 +346,11 @@
 逐型別 ＋ 各自的全語料 A/B），
 以及把 tier 從**描述式**變成**規定式**
 （§4.2 c 的界線：那需要把 pass 移到 `insertBorrowRetains` 之前）。
-另有一個**不屬 §4.3** 的已知漏洞：高階 `json.parse` 回傳的 `?json` 那條路自漏（開不開閘門數字相同，§4.3「v2.11」小節末）。
+另有一筆**不屬 §4.3** 的既有洩漏（**已修**，v2.14）：高階 `json.parse` 回傳的 `?json` 那條路自漏——
+inline owning struct 的 option payload（`?json`／`?person`）**從不被釋放**，且**兩個獨立缺陷**疊加
+（述詞不含 `StructHasPtrFields` ＋ 剝離被 `moveStructSharesHeap` 誤判而**抑制 drop**），§4.2 a 第三種
+擁有方式。修後 `?json` 50k **40.70 → 5.37 MB**、`?person` 800k **27.44 → 1.72 MB 平線**；
+剩下 **~33 B／圈**是 `json.new-pool` 路徑自己的既有殘留（§4.3「v2.14 仍未解」）。
 
 ---
 
@@ -1480,13 +1525,62 @@ pD 在控制組上仍洩漏 8.16 MB）：
 （`out=92cfceb39d57d914`），**各 80/80 次一致** ⇒ 那 2 行是**過期樹**造成的假差異。
 **教訓**：只要樹在動，A/B **前**必須先把 `src/` 凍結成快照，**兩邊都從快照建**。
 
-#### v2.12 仍未解：`?json` 那條路（沿用 v2.11 的結論）
+#### v2.14 已修：`?json` 那條路（inline owning struct option payload）
 
-`r = json.parse(...)`（回傳 `?json`）在迴圈裡**每圈都不 drop 舊值**，與上面那條**同一個主題**、
-但路徑不同（`?json` ＝ 指標欄位 ＋ option 兩層）。**不放行任何 `OptionOwnsHeap`／分析改動**：
-`OptionOwnsHeap` 目前對 struct payload 回 false（`ClassifyOwnership(elem)` 不認 struct），
-動它會同時影響 `emitOptionDrop` 的 default 守衛與 `Module.optionCopyOwnsPayload`，屬 double-free 風險類，
-且與 §4.2(a) 已定案的「inline struct option payload 刻意不克隆」相衝 ⇒ **需使用者明確同意才動**。
+`r = json.parse(...)`（回傳 `?json`）在迴圈裡**每圈都不 drop 舊值**——v2.11／v2.12 記了兩版、都停在
+「需使用者明確同意才動」。**已修**（2026-10-04）。原記錄的顧慮（動 `OptionOwnsHeap` 會同時影響
+`emitOptionDrop` 的 default 守衛與 `Module.optionCopyOwnsPayload`，屬 double-free 風險類）**是對的**——
+所以三處改成**共用單一述詞** `Module.inlineStructPayloadOwnsHeap`（＝`StructHasPtrFields(key) ||
+StructHasOwnedLeafFields(key)`），而**不是**在三處各寫一次。
+
+🔴 **真正的主要成因不是述詞，是「drop 被整個抑制」。** 只補述詞（前 4 個 hunk）**完全沒有效果**
+（50k 仍是 40.7 MB）。用 `NOLANG_MIR_DUMP_MIR` ＋ 在 `wouldDrop` 迴圈插樁才定位到：`dropOwnsHeap(13)`
+已經是 `true`，drop **該發而沒發**。原因是剝離 `move 17←13`（`x = opt`）觸發了 `moveStructSharesHeap`
+⇒ `moveSrc[13] = true` ⇒ option 的 drop 被抑制。見 §7 決策 24 的完整推理。
+
+**兩層修法**：
+
+| # | 位置 | 修法 |
+|---|---|---|
+| 1 | `mir.go` `OptionOwnsHeap`／新 `inlineStructPayloadOwnsHeap`、`analysis.go` `optionCopyOwnsPayload`、`codegen.go` `emitOptionDrop` 的 inline `default:` | 三處共用同一述詞，**含 `StructHasPtrFields`**（原本只認 `StructHasOwnedLeafFields` ⇒ `?json` 的 pointee 不被認） |
+| 2 | `codegen.go` `emitOptionPayloadContentClone` ＋新 `structCloneName`／`emitStructCloneHelper` | clone 側補 struct 分支（drop 側 `emitOptionPayloadContentFree` 的 struct arm 本來就有），兩者必須是同一條遍歷 |
+| 3 | `analysis.go` `moveStructSharesHeap` | 🔴 **開頭加 `isOptionPeelMove` 守衛**——剝離不是 struct 拷貝，它已經給目的地自己的記憶體，option 保留 payload 與 drop |
+
+**`emitStructCloneHelper` 的兩個實作要點**（第一版都踩過）：
+
+- **它必須是「生成的函式」，不能 inline。** `emitPtrFieldsClone`／`emitLeafFieldsClone` 寫進
+  `c.sb` 指到的 buffer（＝**外層**函式的 body），而呼叫點本身就在生成函式
+  （`emitOptionCloneHelper`）裡。作法：暫時把 `c.sb` 重導到 helper 自己的 builder。安全性靠
+  「其他 emitter（`vecDeepClone`／`emitStructDropHelper`／`emitPtrFieldGetHelper`）都自建
+  builder、append 到 `c.extraFuncsBody`」這個性質；`vecDeepClone` 的 `c.extraFuncs[fn]` 去重
+  在**重導之前**，所以重導不會讓它漏發或重發。
+- **`dst` 與 `src` 必須是不同位址。** `emitPtrFieldsClone` 先寫入目的地的欄位、**之後才**讀來源欄位
+  ⇒ 同一個指標傳兩次會讀回剛寫的新指標、memcpy 到自己身上、靜默留一個全零的副本。這正是
+  `emitOptionPayloadContentClone` 要新增 `srcOpt` 參數的原因（目的地 payload 來自 `%sp`，
+  來源的在**另一個** option 槽）。
+
+**驗收數字**見頂部 v2.14 changelog（`?json` 50k **40.70 → 5.37 MB**；`?person` 200k **8.19 → 1.72 MB**、
+800k **27.44 → 1.72 MB 平線**；option 自身貢獻 **141.7 MB → ~0**）。
+
+🔴 **適用範圍比標題寬：任何「擁有堆的 struct payload」都在漏，不只 `?json`／`?person`。**
+既有語料 `tests/opt-box-drop.no`（未修改）就是第三個受害者——`big { name str; pad [4]i64 }` 是**擁有
+owned leaf 的 boxed payload**，它的 match 臂剝離同樣被誤判 ⇒ 控制組 **7.4 MB** → 修後 **1.77 MB**。
+真正免疫的只有**不擁有任何堆**的 POD payload（`big { pad [32]i64 }`）：`typeIsLeafStruct` 對它回 false。
+判準：`StructHasPtrFields(key) || StructHasOwnedLeafFields(key)` 為真的 payload 都受影響。
+
+#### v2.14 仍未解：`json.new-pool`／`parse` 路徑的既有 ~33 B／圈
+
+**與上面的 option 無關**，且**修前修後完全相同**：沒有 option 的對照組
+（`json.new-pool()` ＋ `p.parse(...)`，200k 圈）控制組 **8,486,912 B**、修後 **8,454,144 B**（差 0.16 B／圈
+＝量測噪音）。隔離方式是把 option 從探針裡拿掉，只剩 pool：兩邊同斜率 ⇒ 洩漏在 **pool 路徑**。
+
+**最小重現**：`p = json.new-pool()` ＋ `p.parse('{"a":1}', 0)`，200k 圈。逐 key 的差分（同輪量測）：
+`{}`（無 pair）**1,753,088**、`{"a":1}` **8,454,144**、`{"name":"Alice"}` **8,454,144**、兩對 **14,925,824**
+⇒ **每對 key-value 約 33 B**（1 字元 key 33 B、30 字元 key 50 B；30 字元的 **value** 不影響）
+⇒ 嫌疑是 **key 字串的一份 `str.copy` 克隆**（16 B header ＋ 16 對齊的 data）。
+**不在本輪範圍**（動它要碰 `json-pool.add-child` 的三個 `push`，屬 §4.3 的 std 容器類），**只記錄、不修**。
+⚠️ 依 §7 決策 17：這是**可複現**的量測（有指令、有觀測值），不是「未複現」。
+
 
 ### 4.4 上一輪（2026-10-02）修的兩個可觀測缺陷
 
@@ -1888,6 +1982,8 @@ print(g.len())        ; 修復前：4（內容仍是 '  hi  '）；修復後：6
 | **21** | **`emitStructDropHelper` 遞迴進 pointee 的條件該用哪個述詞？** | **與 clone 側完全同一個**（`StructHasPtrFields(sub) \|\| StructHasOwnedLeafFields(sub)`，也是 `structSlotNeedsZero` 用的那個）。只認**指標欄位**會讓「只有 inline owned leaf、零指標欄位」的 pointee **完全沒有解構子**，而 clone 側（`emitPtrFieldsClone`）**早已深拷貝**它的 leaf ⇒ **純洩漏、stdout 完全看不到**（實例：`json-pool` 五個 `%vec`，`@__nolang_drop_json_json_pool` 從未產生）。**判準**：drop 與 clone 必須是**同一條遍歷**——任一邊多、另一邊少，就分別是 **double free** 與**洩漏**。驗收：修後指標欄位案例與「無指標欄位」的 `box { name str }` **位元組完全相同**（8,175,616 B） |
 | **22** | **「這個現象是不是我這個 hunk 造成的」要怎麼歸因？** | **凍結 HEAD 快照 ＋ 只疊那一個 hunk**（`git archive HEAD \| tar -x -C /tmp/headtree`，改一處、重建、量）。理由：並行 session 讓「當前樹 vs HEAD」同時差很多東西——本輪實例是另一 session 正在把 `hir.Node.File` 改名成 `S2`，**`/tmp` 的 `rsync` 副本因此一度建不起來**（`unknown field File`）。本輪用它證明「`@str_clone` 多一分支後 LLVM 不再消除某些死克隆迴圈」**是 v2.11 的 str hunk 造成的**，而**可觀測**的洩漏在 HEAD 上**數字相同** ⇒ 是**揭開**既有洩漏、不是引入。**判準**：只有**可觀測**形狀（有輸出、迴圈不被消除）的差異才算行為差異；「死迴圈有沒有被消除」是 codegen 細節 |
 | **23** | **`OpSetField.MovesArg`（「這個欄位賦值消耗 RHS」）該由誰決定、憑什麼？** | **由 codegen 的實際行為決定，且必須是單一述詞**（`Module.SetFieldConsumesRHS`，v2.13）。`MovesArg` 只影響一件事——drop 分析要不要抑制 RHS 臨時的 drop——所以它**只在 codegen 真的 MOVE（位元複製共享）時**才該為真。`emitSetField` 對 owned leaf **克隆**、對 struct／指標欄位**深拷貝**，欄位因此拿到自己的 buffer，RHS 必須被 drop；只有未放行的 `%vec`／map／`%option` 是位元複製。兩處呼叫點（`obj.field = v`、`lowerStructLit`）**共用同一個述詞**才不會漂移。**無法解析的目標保守回 `true`**（漏修是洩漏，修錯是 use-after-free）。⚠️ **舊註解會過期**：`tests/map.no` 那句「沒有 MovesArg 就會崩」寫於 `emitOwnedLeafFieldStore` 之前，該欄位現在是 owned leaf、會被克隆 ⇒ 警告已失效（實測 `tests/map.no` 與 rehash 壓力測試輸出完全相同）。⚠️ **負對照不可省**：共享容器欄位（未放行的 `%vec`）**必須**保持 `MovesArg=true`，否則欄位 buffer 被 drop ⇒ UAF。⚠️ **A/B 前必須凍結**：本輪第一次 A/B 的兩支 binary 相隔 6 分鐘建出（`/tmp/no_fix` @12:36、`/tmp/no_ctl2` @12:42），期間並行 session 正在改樹（13:00 的 `HEAD` commit 動了 22 個檔）⇒ 那一對**不是嚴格配對**、多報了 2 行 async 假差異；改成「`rsync` 兩份**凍結快照**、`diff -r` 確認只差自己一個檔案」後重跑才乾淨（3 行差異全部不可歸因：1 行逾時 `rc=142`、2 行 `mkstemp` 自身非決定性） |
+| **24** | **option 的 PEEL（`x = opt` 進非 option 目的地）該不該算「共享堆的 struct 拷貝」？** | **不該——這是 `?json` 迴圈洩漏的真正主因，不是述詞。** `moveStructSharesHeap` 的 `typeIsPtrStruct`／`typeIsLeafStruct` 問的是**目的地**；剝離時目的地正是 payload 自己的 struct 型別 ⇒ 剝離被誤判成 struct 拷貝、`moveSrc[src] = true`、**option 的 drop 被整個抑制**。可是 `emitMove` 的剝離分支**早就**給目的地自己的記憶體（`cloneOptionPayloadInto`／`@str_clone`／`vecDeepClone`），option **保留** payload 與它的 drop（`isOptionPeelMove`）——抑制那個 drop 就是每圈漏一整個 json pool。修法：`moveStructSharesHeap` 開頭加 `isOptionPeelMove` 守衛。⚠️ `moveStrSharesHeap`／`moveSliceSharesHeap` **不會**誤觸（它們要求 src 與 dst **同類**），所以只有 struct 這一條需要。⚠️ **述詞與抑制是兩個獨立缺陷**：只補述詞（讓 `OptionOwnsHeap` 認 inline owning struct）**完全沒效果**（50k 仍 40.7 MB），必須兩者都修才動得了數字。**判準**：`dropOwnsHeap(v)` 為 `true` 而 MIR 裡找不到 `drop v` ⇒ 去查「**誰把它記進了 `moveSrc`**」，而不是繼續修述詞 |
+| **25** | **「一個述詞、三處使用」的結構性缺陷該怎麼修？** | **抽成單一方法，不要在每處各寫一次。** `OptionOwnsHeap`（要不要 drop）、`optionCopyOwnsPayload`（option→option 拷貝要不要克隆）、`emitOptionDrop` 的 inline `default:`（route 到 struct 解構子）必須對「哪些 payload 擁有堆」**給出同一個答案**——任兩者不一致的失敗模式是 **double free**（不是洩漏）。作法：新增 `Module.inlineStructPayloadOwnsHeap(elemRaw)`，三處都呼叫它；clone 側 `emitOptionPayloadContentClone` 的 struct case 用**同一個條件字面**，而它與 free 側 `emitOptionPayloadContentFree` 的 struct arm 必須是**同一條遍歷**（drop 與 clone 多一邊少一邊 = double free 或洩漏） |
 
 ---
 

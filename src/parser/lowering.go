@@ -1711,11 +1711,65 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 // ---- desugar 構建器（原 desugar.go，現屬 lowering 層） ----
 
 // buildBareMatchDesugar 建立 if/elif/else 鏈（無 matched expression，條件直接使用）
+//
+// 當所有 arm 都是非 wildcard 且數量大於 1 時，使用 independent-guard 語義：
+// 每個條件獨立判定，所有命中的 arm 都會執行（而非 elif 只走第一個 true 臂）。
+// 這對應 uuid.no 之类的 guard 模式：
+//
+//	{ i+1 < 16 -> { ... }  i+2 < 16 -> { ... }  i+3 < 16 -> { ... } }
+//
+// 三個條件可同時成立，elif 會丟棄第 2/3 個字節寫入。
+// 結構化為 `if(1){ if(c1){B1}; if(c2){B2}; ... }`，hir2mir lowerBlock
+// 逐條 lowerStmt 使每個 KIf 獨立求值。
+//
+// 含有 wildcard 臂（→ default）或僅一個臂時沿用既有 elif 鏈語義。
 func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Expression {
 	if len(arms) == 0 {
 		return nil
 	}
 
+	// ---- independent-guard fast path ----
+	allNonWildcard := true
+	for _, arm := range arms {
+		if arm.isWildcard {
+			allNonWildcard = false
+			break
+		}
+	}
+	if allNonWildcard && len(arms) > 1 {
+		stmts := make([]Statement, 0, len(arms))
+		for _, arm := range arms {
+			var equalityPattern Expression
+			var rangePattern *RangeExpression
+			if rng, isRange := arm.condition.(*RangeExpression); isRange {
+				rangePattern = rng
+			} else {
+				equalityPattern = arm.condition
+			}
+			newIf := &IfExpression{
+				Token:           tok,
+				Condition:       arm.condition,
+				Consequence:     arm.body,
+				Alternative:     nil,
+				EqualityPattern: equalityPattern,
+				RangePattern:    rangePattern,
+			}
+			p.sem.SetRTFlag(newIf, RTBareMatch)
+			stmts = append(stmts, &ExpressionStatement{Token: tok, Expression: newIf})
+		}
+		wrapper := &IfExpression{
+			Token:     tok,
+			Condition: &IntegerLiteral{Token: tok, Value: 1},
+			Consequence: &BlockStatement{
+				Token:      tok,
+				Statements: stmts,
+			},
+		}
+		p.sem.SetRTFlag(wrapper, RTBareMatch|RTMatchWrapper)
+		return wrapper
+	}
+
+	// ---- elif chain (original logic) ----
 	var ifExpr *IfExpression
 	var defaultBody *BlockStatement // 最內層非 dotVal wildcard body
 	for i := len(arms) - 1; i >= 0; i-- {

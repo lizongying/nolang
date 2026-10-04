@@ -3,6 +3,7 @@ package build
 import (
 	"strings"
 
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -337,6 +338,27 @@ func prefixCollidingFunctions(merged *parser.Program) map[string]bool {
 	// C extern 名稱視同主程序佔位：模組函數與 C extern 同名時衝突計數 > 1，
 	// 模組側被改名為 module.fn，C extern 的 declare 保持裸名不動。
 	for name := range cExternNames {
+		counts[name]++
+	}
+	// A registered builtin occupies the Nolang bare-method-name space in exactly
+	// the same way a C extern occupies the global LLVM symbol table. MIR dispatch
+	// (codegen emitCall) only routes a bare callee to its builtin when NO module
+	// function of that bare name is registered (KnownFuncs[callee]). The fs
+	// open-file / read / write / close #{buildin} stubs are dropped from the
+	// merged program before this pass, so a same-named free function living in a
+	// DIFFERENT module (log.open-file) is the only "open-file" definition left:
+	// counts==1, it keeps its bare name, registers as bare "open-file", and then
+	// silently shadows the builtin — fs.open's internal `open-file(...)` binds to
+	// log's ?bool function (wrong fd), leaking every fs write to stdout. Treating
+	// bare builtin method names as main-program occupants (owner=="" already skips
+	// renaming them) forces such collisions to be prefixed, keeping the builtin
+	// path reachable. Qualified method names ("str.eq") are skipped — they never
+	// appear as a bare callee and cannot shadow a global builtin.
+	for i := range builtin.BuiltinMethodList {
+		name := builtin.BuiltinMethodList[i].MethodName
+		if name == "" || strings.Contains(name, ".") {
+			continue
+		}
 		counts[name]++
 	}
 	for _, stmt := range merged.Statements {

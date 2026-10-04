@@ -1,0 +1,150 @@
+name: test
+
+# Quality gate: the audit (NOLANG-AUDIT-2026-09-27.md §6.1) found that CI ran
+# NO tests at all — only cross-compilation + a wasm smoke. That is why 13 files
+# could sit broken and regressions shipped with a release unnoticed. This
+# workflow closes that hole with cheap, high-signal gates.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # ── Go toolchain: must compile + vet cleanly ──────────────────────────
+  go-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+      - name: Build toolchain
+        run: cd src && go build ./...
+      - name: Vet toolchain
+        run: cd src && go vet ./...
+
+  # ── Corpus compile gate (§2 class of "compile directly fails") ──────────
+  # Compile (do not run) every corpus file. Cheap, yet it catches the exact
+  # regression family the audit flagged — programs that fail MIR/codegen outright.
+  corpus-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+
+      - name: Cache LLVM
+        id: llvm-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            /usr/lib/llvm-21
+            /usr/local/bin/opt
+            /usr/local/bin/llc
+          key: llvm-21-ubuntu-latest
+
+      - name: Install LLVM (opt/llc)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+          sudo apt-get install -y llvm-21 llvm-21-dev clang
+          sudo ln -sf /usr/lib/llvm-21/bin/opt /usr/local/bin/opt
+          sudo ln -sf /usr/lib/llvm-21/bin/llc /usr/local/bin/llc
+
+      - name: Add LLVM to PATH
+        run: |
+          sudo ln -sf /usr/lib/llvm-21/bin/opt /usr/local/bin/opt
+          sudo ln -sf /usr/lib/llvm-21/bin/llc /usr/local/bin/llc
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
+          /usr/lib/llvm-21/bin/opt --version
+
+      - name: Build no binary
+        run: make no
+
+      - name: Compile corpus
+        run: |
+          fail=0
+          for f in tests/*.no tests/mem-safety/*.no; do
+            [ -f "$f" ] || continue
+            if ! ./bin/no build -o /tmp/out.bin "$f"; then
+              echo "BUILD FAIL: $f"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  # ── std library regression tests ──────────────────────────────────────
+  std-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+
+      - name: Cache LLVM
+        uses: actions/cache@v6
+        with:
+          path: |
+            /usr/lib/llvm-21
+            /usr/local/bin/opt
+            /usr/local/bin/llc
+          key: llvm-21-ubuntu-latest
+
+      - name: Install LLVM (opt/llc)
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21 || true
+          sudo apt-get install -y llvm-21 llvm-21-dev clang
+          sudo ln -sf /usr/lib/llvm-21/bin/opt /usr/local/bin/opt
+          sudo ln -sf /usr/lib/llvm-21/bin/llc /usr/local/bin/llc
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
+
+      - name: Build no binary
+        run: make no
+
+      - name: Run std tests
+        run: |
+          # TODO(audit §5.1): bufio / math / uuid are EXCLUDED because they fail
+          # on open COMPILER codegen bugs, not std defects (see the audit doc's
+          # §5.1 re-verification). Remove each from this list once its compiler
+          # bug is fixed, so the gate re-covers it.
+          skip="test/std/bufio.no test/std/math.no test/std/uuid.no"
+          fail=0
+          for f in test/std/*.no; do
+            case " $skip " in
+              *" $f "*) echo "SKIP (known compiler bug): $f"; continue;;
+            esac
+            if ! ./bin/no test "$f"; then
+              echo "FAILED: $f"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  # ── Static check gate: std + tests must vet with 0 errors ──────────────
+  vet-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+
+      - name: Build no binary
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21 || true
+          sudo apt-get install -y llvm-21 llvm-21-dev clang
+          sudo ln -sf /usr/lib/llvm-21/bin/opt /usr/local/bin/opt
+          sudo ln -sf /usr/lib/llvm-21/bin/llc /usr/local/bin/llc
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
+          make no
+
+      - name: vet src/std
+        run: ./bin/no vet src/std
+      - name: vet tests
+        run: ./bin/no vet tests

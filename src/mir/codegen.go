@@ -4523,7 +4523,7 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", arrSlot, svType))
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", svType, sv, svType, arrSlot))
 		}
-		sv = c.vecFromArraySink(svType, arrSlot)
+		sv = c.vecFromArraySink(svType, arrSlot, c.arrayElemTypeID(src))
 		svType = "%vec"
 	}
 	// Type-pun: the wrapped value's type differs from the declared payload.
@@ -6083,7 +6083,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 				c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", arrSlot, srcT))
 				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", srcT, sv, srcT, arrSlot))
 			}
-			sv = c.vecFromArraySink(srcT, arrSlot)
+			sv = c.vecFromArraySink(srcT, arrSlot, c.arrayElemTypeID(src))
 			srcT = "%vec"
 		}
 		// Type-pun (`x ?i64 = msg`): store the source's raw bytes. This is the
@@ -6239,7 +6239,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// element) — e.g. get-pair's `x=[1,2,3]; a=x` read len=1. Build a real slice
 	// view instead. Mirrors the call-site / emitSetField array->vec coercion.
 	if dstT == "%vec" && strings.HasPrefix(srcT, "[") {
-		v := c.vecFromArraySink(srcT, srcSlot)
+		v := c.vecFromArraySink(srcT, srcSlot, c.arrayElemTypeID(inst.Args[0]))
 		c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", v, dstSlot))
 		return nil
 	}
@@ -7752,6 +7752,20 @@ func (c *codegen) vecElemTypeID(v ValueID) TypeID {
 		return NoType
 	}
 	return ty.Elem
+}
+
+// arrayElemTypeID extracts the element TypeID from a fixed-array MIR value.
+// Returns NoType when the value is nil or its type is not KindArray.
+func (c *codegen) arrayElemTypeID(v ValueID) TypeID {
+	val := c.mod.Value(v)
+	if val == nil {
+		return NoType
+	}
+	t := c.mod.Type(val.Type)
+	if t == nil || t.Kind != KindArray {
+		return NoType
+	}
+	return t.Elem
 }
 
 func (c *codegen) elemTypeOfReceiver(recv ValueID) string {
@@ -9433,7 +9447,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	if strings.HasPrefix(fieldLT, "[") {
 		if fi := c.mod.StructFields[structKey]; idx < len(fi) && strings.HasPrefix(fi[idx].TypeRaw, "[]") {
 			if rs := c.valSlot[inst.Args[1]]; rs != "" {
-				valV = c.vecFromArraySink(fieldLT, rs)
+				valV = c.vecFromArraySink(fieldLT, rs, c.arrayElemTypeID(inst.Args[1]))
 				fieldLT = "%vec"
 			}
 		}
@@ -11946,10 +11960,11 @@ func (c *codegen) vecOwnedFromArray(argT, arrSlot string) string {
 }
 
 // vecFromArraySink selects the array -> slice coercion for a sink that may
-// escape the frame: a heap-owned copy for trivially-copyable elements, falling
-// back to the cap=0 borrow view for element types whose nested heap would be
-// aliased by a raw memcpy (needs a deep clone that does not exist yet).
-func (c *codegen) vecFromArraySink(argT, arrSlot string) string {
+// escape the frame: a heap-owned copy for trivially-copyable elements, or a
+// deep-clone for element types that own nested heap. Falls back to the cap==0
+// borrow view only when the element TypeID is unresolvable (shouldn't happen
+// for well-formed MIR arrays).
+func (c *codegen) vecFromArraySink(argT, arrSlot string, elemID TypeID) string {
 	elemT := ""
 	if i := strings.Index(argT, " x "); i >= 0 {
 		elemT = strings.TrimSuffix(argT[i+3:], "]")
@@ -11958,7 +11973,20 @@ func (c *codegen) vecFromArraySink(argT, arrSlot string) string {
 	case "i8", "i1", "i64", "double":
 		return c.vecOwnedFromArray(argT, arrSlot)
 	default:
-		return c.vecViewValue(argT, arrSlot)
+		// §3.2 fix: build a temporary borrow view, then deep-clone it to produce
+		// a heap-owned %vec. Previously this returned the raw view (cap=0,
+		// pointing to the stack array), causing dangling pointers when the
+		// array's frame exited.
+		s := c.vecViewValue(argT, arrSlot)
+		if elemID != NoType {
+			if fn := c.vecDeepClone(elemID, 0); fn != "" {
+				c.loadSeq++
+				cl := fmt.Sprintf("%%vfa%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", cl, fn, s))
+				return cl
+			}
+		}
+		return s
 	}
 }
 
@@ -13293,12 +13321,12 @@ func (c *codegen) coerceAsyncArg(av ValueID, plt string) (string, string, bool) 
 			c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", slot, alt))
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", alt, areg, alt, slot))
 		}
-		// vecFromArraySink heap-copies trivially-copyable elements (owned) and
-		// otherwise hands back a cap==0 view over the caller's stack array.
-		// Mirror that choice in the `owned` result — it is the same predicate
-		// vecFromArraySink uses internally, and it decides whether the argbuf
-		// still needs a deep copy.
-		return "%vec", c.vecFromArraySink(alt, slot), arrayElemIsTrivial(alt)
+		// vecFromArraySink now heap-copies trivially-copyable elements AND
+		// deep-clones non-trivial ones (producing owned %vec). The `owned`
+		// result is true whenever the clone was performed — that is, for
+		// trivial types or when the element TypeID is resolvable.
+		eid := c.arrayElemTypeID(av)
+		return "%vec", c.vecFromArraySink(alt, slot, eid), arrayElemIsTrivial(alt) || eid != NoType
 	}
 	if plt == "%vec" && alt == "%str-long" {
 		// string -> []byte view: %vec{ len, 0, data-as-intptr }. cap is 0 so the

@@ -38,7 +38,6 @@ sidebar_position: 4.5
 | async              | Core   | Async coroutines/cancellation                |
 | global             | Core   | Global built-in functions                    |
 | magic              | Core   | File type detection                          |
-| unicode             | Core   | Unicode documentation                        |
 | uuid                | Core   | UUID v4                                      |
 | bigint              | Core   | Arbitrary precision integer                  |
 | bool                | Core   | Boolean type                                 |
@@ -64,7 +63,6 @@ sidebar_position: 4.5
 | net/pool            | Submodule | Connection pool                         |
 | net/unix            | Submodule | Unix domain sockets                     |
 | net/ip              | Submodule | IP address operations                   |
-| encoding/hex        | Submodule | Hexadecimal encoding/decoding           |
 | encoding/base64     | Submodule | Base64 encoding/decoding                |
 | encoding/csv        | Submodule | CSV parsing                             |
 | encoding/pem        | Submodule | PEM encoding/decoding (RFC 7468)         |

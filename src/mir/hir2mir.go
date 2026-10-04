@@ -1112,7 +1112,18 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 			if strings.Count(name, ".") == 1 {
 				if dot := strings.LastIndex(name, "."); dot > 0 {
 					bare := name[dot+1:]
-					if owner, ok := pkg.FuncOwners[bare]; ok && owner == name[:dot] {
+					// A bare name that is a registered builtin (e.g.
+					// fs.open-file) must NOT be claimed as a bare alias by
+					// a same-named free function in another module (e.g.
+					// log.open-file). Doing so shadows the builtin for every
+					// internal bare call, which is exactly what the invariant
+					// in resolveCallee forbids ("a bare name that IS a builtin
+					// must never be rewritten"). The qualified entry
+					// (log.open-file) is registered above, so only the bare
+					// alias is suppressed. (Regression: fs.open's internal
+					// `open-file(...)` bound to log's ?bool function -> wrong
+					// fd -> every fs write leaked to stdout.)
+					if owner, ok := pkg.FuncOwners[bare]; ok && owner == name[:dot] && builtin.FindBuiltinMethod(bare) == nil {
 						if _, exists := l.funcNames[bare]; !exists {
 							l.funcNames[bare] = id
 						}
@@ -6751,6 +6762,36 @@ func canonSliceRecv(name string) string {
 	return name
 }
 
+// dotExprAsString recursively extracts the full dotted name from a nested
+// KDot/KIdent expression chain. For `bufio.reader` (KDot with S="reader" and
+// child KIdent("bufio")), it returns "bufio.reader". Returns "" when the chain
+// contains anything other than KIdent/KDot nodes.
+func (l *lowerer) dotExprAsString(id int32) string {
+	n := l.pkg.Node(id)
+	if n == nil {
+		return ""
+	}
+	switch n.Kind {
+	case hir.KIdent:
+		return l.pkg.Str(n.S)
+	case hir.KDot:
+		var childID int32
+		for _, c := range l.pkg.Children(id) {
+			childID = c
+			break
+		}
+		if childID == hir.NoID {
+			return ""
+		}
+		prefix := l.dotExprAsString(childID)
+		if prefix == "" {
+			return ""
+		}
+		return prefix + "." + l.pkg.Str(n.S)
+	}
+	return ""
+}
+
 // resolveCallee determines the callee symbol and (for a method call) the
 // receiver value of a KCall node. Shared by the single-result expression path
 // and the multi-assign statement path.
@@ -6949,6 +6990,35 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 						// recvName is a bound GLOBAL (e.g. a top-level `data [4]i64`
 						// or `v []str`); fall through to the method-call path below
 						// so it is lowered as a real receiver value, not a module.
+					}
+				}
+			}
+			// §5.1 bufio fix: `pkg.Type.method(args)` form (e.g. `bufio.reader.init(fd, buf)`).
+			// The receiver node is KDot (chain `bufio.reader`) whose leftmost is a module
+			// name. Previously only KIdent receivers entered the module branch above;
+			// a KDot receiver fell to lowerExpr→NoVal→call silently dropped (reader.init
+			// body never executed, returning zeroinitializer). Now detect the dotted
+			// module namespace and route to the static method call.
+			if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KDot {
+				if dotted := l.dotExprAsString(recvID); dotted != "" {
+					// Verify the leftmost component is an unbound module name
+					dotParts := strings.SplitN(dotted, ".", 2)
+					baseName := dotParts[0]
+					if _, bound := l.locals[baseName]; !bound {
+						if _, gbound := l.globals[baseName]; !gbound {
+							qualified := dotted + "." + method
+							if _, ok := l.funcNames[qualified]; ok {
+								return qualified, NoVal
+							}
+							// Try overloaded variants (mangled param types)
+							if resolved := l.resolveOverloadedFuncName(qualified); resolved != qualified {
+								if _, ok := l.funcNames[resolved]; ok {
+									return resolved, NoVal
+								}
+							}
+							// Fall through: might still be a valid builtin-style name
+							return qualified, NoVal
+						}
 					}
 				}
 			}
@@ -8230,6 +8300,29 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 				resTyp = l.b.Type(br.Raw)
 			case br.LHSInferred && l.typeHint != NoType && l.typeHint != l.voidType:
 				resTyp = l.typeHint
+			}
+		}
+	}
+	// §5.1 math.abs overload: FindBuiltinMethod returns the first same-named
+	// entry (i64), but when the actual argument is f64, the call should go
+	// through llvm.fabs.f64 with an f64 result. Override resTyp from the
+	// builtin table's integer answer to f64. Without this the instruction
+	// result is typed as i64, emitBuiltinMath coerces the double arg to i64
+	// via fptosi, and the result is wrong.
+	// Gate: only applies when there exists a float overload for the same name.
+	if resTyp != l.voidType && resTyp != NoType && len(argv) > 0 {
+		if rt := l.mod.Type(resTyp); rt != nil && rt.Kind == KindInt {
+			bareName := callee
+			if i := strings.LastIndex(bareName, "."); i >= 0 {
+				bareName = bareName[i+1:]
+			}
+			if builtin.HasFloatOverload(bareName) {
+				at := l.valueTypeOf(argv[0])
+				if at != NoType && at != l.voidType {
+					if aty := l.mod.Type(at); aty != nil && aty.Kind == KindFloat {
+						resTyp = at
+					}
+				}
 			}
 		}
 	}

@@ -1276,6 +1276,20 @@ func (c *codegen) emitBuiltinMath(inst *Inst, ff string) error {
 		a, b := loadI64(0), loadI64(1)
 		res = sel(fmt.Sprintf("icmp slt i64 %s, %s", a, b), a, b)
 	case "math-abs":
+		// §5.1 fix: FindBuiltinMethod returns the i64 entry for both abs(i64)
+		// and abs(f64) calls (name-only match). When the actual argument is a
+		// double, emit llvm.fabs.f64 directly instead of the integer
+		// compare/negate/select path which corrupts the value via fptosi.
+		if len(inst.Args) > 0 {
+			argTy, argV := c.loadVal(inst.Args[0])
+			if argTy == "double" {
+				c.decl("declare double @llvm.fabs.f64(double)")
+				r := c.treg("fabs")
+				c.sb.WriteString(fmt.Sprintf("  %s = call double @llvm.fabs.f64(double %s)\n", r, argV))
+				c.sb.WriteString(fmt.Sprintf("  store double %s, double* %s\n", r, dstSlot))
+				return nil
+			}
+		}
 		a := loadI64(0)
 		cmpReg := c.treg("ac")
 		c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", cmpReg, a))

@@ -1,0 +1,67 @@
+; json-crosspool-mutate.no — KNOWN-BUG 最小复现（审计 §5.3）
+;
+; 状态：预期失败（expected-fail）。**故意不接入 CI**（CI 的 corpus-smoke 只 `build`
+;       不 `run`，本档可正常编译；std-test 不引用本档）。仅作为回归锚点，
+;       待 `src/std/json.no` 的跨池 builder 修复后，本档应转为全部 PASS。
+;
+; 复现的缺陷（baked bin/no @ adc925d4 实测）：
+;   1. arr-push：把来自**另一个 pool** 的 json 值 push 进目标数组，返回 ok=true
+;      但目标数组看不到该元素（子节点索引未 copy-tree 进目标池 → 悬空索引）。
+;      源码根因：src/std/json.no:1336 `arr-push = (val json){ ok = .arr-push-idx(val.root) }`
+;      直接把 `val.root`（val 自己池里的索引）交给 `.pool.add-child`，缺跨池 copy-tree。
+;   2. set-key / delete-key：对 `json.parse(...)` 建的接收者同样静默不改动。
+;   3. （附注）对 `json.new()`（null 根 root=-1）调用 arr-push 会 SIGSEGV，
+;      故本档不复现崩溃路径，只锁死「静默 no-op」这条可稳定观测的路径。
+;
+; 执行：no run tests/json-crosspool-mutate.no
+
+; ── case 1: 跨池 arr-push 应当让目标数组增长 ──────────────────
+a = json.parse('[1,2]')
+len_before = a.arr-len()
+pushed = a.arr-push(json.parse('3'))
+len_after = a.arr-len()
+s_after = a.stringify()
+
+print('case1 arr-push cross-pool:')
+print('  push returned ok =', pushed, '(expect 1)')
+print('  arr-len before/after =', len_before, '/', len_after, '(expect 2 / 3)')
+print('  stringify =', s_after, '(expect [1,2,3])')
+{
+    len_after == 3 -> print('  => PASS')
+
+    -> print('  => FAIL (KNOWN BUG §5.3: element lost, cross-pool index not copied)')
+}
+
+; ── case 2: set-key 对 parse 建的接收者应当新增键 ──────────────
+o = json.parse('{"x":1}')
+len_before2 = o.obj-len()
+ok2 = o.set-key('y', json.parse('2'))
+len_after2 = o.obj-len()
+s2 = o.stringify()
+
+print('case2 set-key on parse receiver:')
+print('  set-key returned ok =', ok2, '(expect 1)')
+print('  obj-len before/after =', len_before2, '/', len_after2, '(expect 1 / 2)')
+print('  stringify =', s2, '(expect {"x":1,"y":2})')
+{
+    len_after2 == 2 -> print('  => PASS')
+
+    -> print('  => FAIL (KNOWN BUG §5.3: key not visible on parse-built receiver)')
+}
+
+; ── case 3: delete-key 对 parse 建的接收者应当移除键 ────────────
+d = json.parse('{"a":1,"b":2}')
+len_before3 = d.obj-len()
+ok3 = d.delete-key('a')
+len_after3 = d.obj-len()
+
+print('case3 delete-key on parse receiver:')
+print('  delete-key returned ok =', ok3, '(expect 1)')
+print('  obj-len before/after =', len_before3, '/', len_after3, '(expect 2 / 1)')
+{
+    len_after3 == 1 -> print('  => PASS')
+
+    -> print('  => FAIL (KNOWN BUG §5.3: key not removed on parse-built receiver)')
+}
+
+print('DONE — any FAIL above is the tracked §5.3 defect, not a new regression.')

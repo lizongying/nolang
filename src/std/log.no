@@ -8,6 +8,12 @@
 ;   log.set-format(log.F-TIME | log.F-LEVEL | log.F-LOC)
 ;   log.open-file('app.log')            ; 追加寫入檔案
 ;   log.info('server started')          ; 2026-.. ..:.. [INFO] app.no:7:5 server started
+;
+;   ; 輸出目標（預設 stderr）：寫到 stdout / stderr 用大寫 fd 常量
+;   ;（用標量 STDOUT-FD/STDERR-FD，別用 fs.STDOUT/stdout 那類 struct 全域——
+;   ;  std 合併模組中 struct 全域的初始化不可靠）
+;   log.set-output-fd(fs.STDOUT-FD)             ; 日誌改寫到標準輸出
+;   log.set-output-fd(fs.STDERR-FD)             ; 改回標準錯誤（即預設）
 
 ; ═══════════════════════════════════════════════
 ; 日誌級別常量

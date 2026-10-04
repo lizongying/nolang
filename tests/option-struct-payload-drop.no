@@ -1,0 +1,52 @@
+; An INLINE owning STRUCT option payload must be dropped on every rebind.
+;
+; person { name str }      -> 24 B payload: fits the inline option slot, owns an
+;                             owned str leaf (the ?person shape).
+; json.parse -> ?json      -> 16 B payload: a POINTER field to a json pool
+;                             (the ?json shape).
+;
+; WHAT THIS FILE CAN AND CANNOT CATCH
+; -----------------------------------
+; The bug was a LEAK, and a leak is invisible in stdout — the leaking compiler
+; prints exactly what the fixed one prints. So the leak itself is pinned by
+; src/mir/option_struct_payload_ownership_test.go, which asserts on the MIR drop
+; (and fails on the pre-fix compiler).
+;
+; This file's job is the OTHER failure mode the fix introduces: the option now
+; FREES its payload, so a wrong predicate or a mismatched clone/drop walk would
+; double-free. That shows up here as a non-zero exit / trap, which the golden
+; sweep sees.
+;
+; Expected output (deterministic):
+;   1999
+;   Alice
+
+person { name str }
+
+main = () {
+    last str = ''
+
+    ; --- ?person: inline struct payload with an owned str leaf -------------
+    i <- [0..2000) {
+        p person
+        p.name = i.to-str()
+        ip ?person = p
+        q person = ip
+        last = q.name
+    }
+    print(last)
+
+    ; --- ?json: inline struct payload with a POINTER field -----------------
+    j <- [0..2000) {
+        r = json.parse('{"name":"Alice"}')
+        r: {
+            ok -> {
+                s, found = it.get-str('name')
+                found -> { last = s }
+            }
+            err -> { last = 'err' }
+            nil -> { last = 'nil' }
+        }
+    }
+    print(last)
+}

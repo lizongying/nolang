@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "35874376f89052b1b82c5b32710cbfcecacede7b36b6fb5f9e8bb8e2b8e06118"
+	embeddedStdSigKey = "953a2d3b3276ddc51e545891914581963f86f7fb9c12967a4cc316b86dbd8008"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -370,8 +370,13 @@ func init() {
 		"http.do":                                  {"?http.response"},
 		"http.do-req":                              {"?http.response"},
 		"http.download":                            {"bool"},
+		"http.download-to-file":                    {"bool"},
 		"http.get":                                 {"?http.response"},
 		"http.get-auth":                            {"?http.response"},
+		"http.http-dl-dechunk":                     {"[]byte"},
+		"http.http-dl-location":                    {"?str"},
+		"http.http-dl-open":                        {"bool"},
+		"http.http-dl-resolve":                     {"str"},
 		"http.patch":                               {"?http.response"},
 		"http.ping":                                {"str"},
 		"http.post":                                {"?http.response"},
@@ -3292,8 +3297,13 @@ func init() {
 		"http.do":                                  {"str", "str", "str"},
 		"http.do-req":                              {"request"},
 		"http.download":                            {"str", "str"},
+		"http.download-to-file":                    {"str", "str"},
 		"http.get":                                 {"str"},
 		"http.get-auth":                            {"str", "str", "str"},
+		"http.http-dl-dechunk":                     {"[]byte"},
+		"http.http-dl-location":                    {"str"},
+		"http.http-dl-open":                        {"str", "str", "i64"},
+		"http.http-dl-resolve":                     {"bool", "str", "i64", "str"},
 		"http.patch":                               {"str", "str"},
 		"http.ping":                                {},
 		"http.post":                                {"str", "str"},

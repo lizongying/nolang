@@ -14,9 +14,9 @@
 ;   f.write('hello'.to-bytes(), 5)         // 方法呼叫
 ;   f.close()
 ;
-;   line = stdin.read-line()              // 從標準輸入讀取一行，返回 ?str
-;   n = stdout.write('hello'.to-bytes(), 5)  // 寫入標準輸出
-;   n = stderr.write('error'.to-bytes(), 5)  // 寫入標準錯誤
+;   line = STDIN.read-line()              // 從標準輸入讀取一行，返回 ?str
+;   n = STDOUT.write('hello'.to-bytes(), 5)  // 寫入標準輸出
+;   n = STDERR.write('error'.to-bytes(), 5)  // 寫入標準錯誤
 ;
 ;   p = path{
 ;       p: '/tmp'
@@ -202,7 +202,7 @@ open-file = (path str, flags i64, mode i64) (fd fd) {
 
 ; read: 從檔案描述符讀取最多 n 位元組到 buf
 #{buildin}
-read = (fd fd, buf []byte, n i64) (n i64) {
+read = (fd fd, buf []byte, n i64) (got i64) {
 }
 
 ; write: 將 data 的前 n 位元組寫入檔案描述符
@@ -424,20 +424,20 @@ file {
 ; 特殊檔案：標準輸入/輸出/錯誤
 ; ═══════════════════════════════════════════════
 
-; stdin: 標準輸入（fd=0）
-stdin = file {
+; STDIN: 標準輸入（fd=0）
+STDIN = file {
     fd: 0
     path: '<stdin>'
 }
 
-; stdout: 標準輸出（fd=1）
-stdout = file {
+; STDOUT: 標準輸出（fd=1）
+STDOUT = file {
     fd: 1
     path: '<stdout>'
 }
 
-; stderr: 標準錯誤（fd=2）
-stderr = file {
+; STDERR: 標準錯誤（fd=2）
+STDERR = file {
     fd: 2
     path: '<stderr>'
 }
@@ -555,7 +555,7 @@ file.write = (data []byte, n i64) (written i64) {
 
 ; close: 關閉檔案
 ; 成功後 fd 重設為 -1
-; 標準檔案（stdin/stdout/stderr）不會被關閉
+; 標準檔案（STDIN/STDOUT/STDERR）不會被關閉
 file.close = () (ok bool) {
     {
         .fd < 0 -> {

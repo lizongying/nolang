@@ -1151,3 +1151,340 @@ post-auth = (url str, body str, user str, password str) (resp ?response) {
     set-basic-auth(r, user, password)
     resp = do-req(r)
 }
+
+
+; ═══════════════════════════════════════════════
+; download-to-file: 純 Nolang 二進位下載到檔案
+; 與 do/do-req 不同：以 []byte 累積整個回應（不受 HTTP-MAX-RESPONSE 限制），
+; 在位元組層級切分標頭與主旨（避免 str 碼點 slice 損壞二進位資料），
+; 並處理 chunked 傳輸編碼與 3xx 重定向。適合 tarball 等二進位下載。
+; url str: 完整 URL（http:// 或 https://）
+; dest str: 本地寫入路徑
+; 返回 ok bool: true=成功
+; ═══════════════════════════════════════════════
+
+download-to-file = (url str, dest str) (ok bool) {
+    ok = http-dl-open(url, dest, 0)
+}
+
+; http-dl-open: 實際下載（含 3xx 重定向遞迴，depth 為已跳轉次數）
+http-dl-open = (url str, dest str, depth i64) (ok bool) {
+    ok = false
+    depth > 5 -> return
+
+    ; ── 解析 URL ──
+    use-tls = false
+    scheme-len = 7
+    port i64 = HTTP-DEFAULT-PORT
+    {
+        url.starts-with('https://') -> {
+            use-tls = true
+            scheme-len = 8
+            port = HTTPS-DEFAULT-PORT
+        }
+
+        url.starts-with('http://') == false -> return
+    }
+    rest str = ''
+    rest = url.slice-bytes(scheme-len, url.len-bytes())
+    host str = ''
+    path str = '/'
+    slash-pos = rest.index('/')
+    {
+        slash-pos < 0 -> host = rest
+
+        -> {
+            host = rest.slice-bytes(0, slash-pos)
+            path = rest.slice-bytes(slash-pos, rest.len-bytes())
+        }
+    }
+    host-only str = ''
+    port-str str = ''
+    colon-pos = host.index(':')
+    #{overflow=wrap}
+    colon-pos >= 0 -> {
+        host-only = host.slice-bytes(0, colon-pos)
+        #{overflow=wrap}
+        port-str = host.slice-bytes(colon-pos + 1, host.len-bytes())
+        p = 0
+        pi <- [0..port-str.len-bytes()): {
+            c = port-str[pi]
+            c < 48 || c > 57 -> return
+            #{overflow=wrap}
+            p = p * 10 + c - 48
+        }
+        port = p
+        host = host-only
+    }
+    host.len-bytes() == 0 -> return
+
+    ; ── 建立連線 ──
+    fd fd = -1
+    tls-c tls.conn
+    {
+        use-tls -> {
+            tls-c.init()
+            okc = tls-c.connect(host, port)
+            okc == false -> return
+        }
+
+        -> {
+            fd = net.net-dial(host, port)
+            fd < 0 -> return
+        }
+    }
+
+    ; ── 送出 GET（Connection: close，讀到 EOF 為止）──
+    crlf = '\r\n'
+    req-str str = ''
+    req-str = 'GET ' - path - ' HTTP/1.1'
+    req-str = req-str - crlf - 'Host: ' - host
+    req-str = req-str - crlf - 'Connection: close'
+    req-str = req-str - crlf - 'User-Agent: nolang-http/1.0'
+    req-str = req-str - crlf - crlf
+    {
+        use-tls -> {
+            w = tls-c.send(req-str)
+            w: {
+                ok ->
+
+                -> {
+                    tls-c.close()
+                    return
+                }
+            }
+        }
+
+        -> {
+            written = net.net-send(fd, req-str, req-str.len-bytes())
+            written < 0 -> {
+                fs.close(fd)
+                return
+            }
+        }
+    }
+
+    ; ── 接收全部位元組（vec 累積，無 16KB 上限）──
+    acc []byte
+    buf str = with-len(HTTP-BUF-SIZE)
+    !! {
+        n = 0
+        {
+            use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
+
+            -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
+        }
+        n <= 0 -> *
+        bi <- [0..n): {
+            #{index-out=0}
+            acc.push(buf.byte(bi))
+        }
+    }
+    {
+        use-tls -> tls-c.close()
+
+        -> fs.close(fd)
+    }
+    alen = acc.len()
+    alen == 0 -> return
+
+    ; ── 找標頭/主旨分界（CR LF CR LF，位元組層級）──
+    sep = -1
+    scan = 0
+    #{index-out=0}
+    (sep < 0 && (scan + 3) < alen) {
+        #{index-out=0}
+        (acc[scan] == 13 && acc[scan + 1] == 10 && acc[scan + 2] == 13 && acc[scan + 3] == 10) -> sep = scan
+        #{overflow=wrap}
+        scan = scan + 1
+    }
+    sep < 0 -> return
+    #{overflow=wrap}
+    body-start = sep + 4
+
+    ; ── 標頭文字（ASCII，取 [0..sep) 逐位元組）──
+    hdr []byte
+    hi <- [0..sep): {
+        #{index-out=0}
+        hdr.push(acc[hi])
+    }
+    head-str = hdr.to-bytes-str()
+
+    ; 狀態碼（狀態行 "HTTP/1.1 200 OK"）
+    first-line = head-str
+    nl = head-str.index(crlf)
+    nl >= 0 -> first-line = head-str.slice-bytes(0, nl)
+    sp1 = first-line.index(' ')
+    sp1 < 0 -> return
+    #{overflow=wrap}
+    code-str = first-line.slice-bytes(sp1 + 1, sp1 + 4)
+    code = 0
+    ci <- [0..code-str.len-bytes()): {
+        #{index-out=0}
+        c = code-str[ci]
+        c < 48 || c > 57 -> return
+        #{overflow=wrap}
+        code = code * 10 + c - 48
+    }
+
+    ; ── 3xx 重定向 ──
+    code >= 300 && code < 400 -> {
+        loc = http-dl-location(head-str)
+        loc: {
+            ok -> {
+                target = http-dl-resolve(use-tls, host, port, it)
+                #{overflow=wrap}
+                ok = http-dl-open(target, dest, depth + 1)
+            }
+
+            -> ok = false
+        }
+        return
+    }
+    code < 200 || code >= 300 -> return
+
+    ; ── 主旨位元組 [body-start..alen) ──
+    body []byte
+    body-start < alen -> {
+        yi <- [body-start..alen): {
+            #{index-out=0}
+            body.push(acc[yi])
+        }
+    }
+
+    ; ── chunked 解框 ──
+    data []byte
+    is-chunked = head-str.to-lower().contains('chunked')
+    is-chunked -> data = http-dl-dechunk(body)
+    -> data = body
+
+    ; ── 寫入檔案 ──
+    w = fs.write-bytes(dest, data)
+    w: {
+        ok -> ok = it
+
+        -> ok = false
+    }
+}
+
+; http-dl-location: 從標頭文字找出 Location 值（大小寫不敏感）
+http-dl-location = (head-str str) (loc ?str) {
+    loc = nil
+    lines = head-str.lines()
+    li <- [0..lines.len()): {
+        #{index-out=0}
+        trimmed = lines[li].trim()
+        trimmed.to-lower().starts-with('location:') -> {
+            loc = trimmed.slice-bytes(9, trimmed.len-bytes()).trim()
+            return
+        }
+    }
+}
+
+; http-dl-resolve: 將 Location 解析為絕對 URL（http(s) 絕對 / 根相對 / 一般相對）
+http-dl-resolve = (use-tls bool, host str, port i64, loc str) (out str) {
+    loc.starts-with('http://') || loc.starts-with('https://') -> {
+        out = loc
+        return
+    }
+    scheme str
+    {
+        use-tls -> scheme = 'https://'
+
+        -> scheme = 'http://'
+    }
+    prefix = scheme - host
+    port != 80 && port != 443 -> {
+        prefix = prefix - ':' - port.to-str()
+    }
+    loc.starts-with('/') -> {
+        out = prefix - loc
+        return
+    }
+    out = prefix - '/' - loc
+}
+
+; http-dl-dechunk: 將 chunked 編碼的 body 解框為原始位元組
+http-dl-dechunk = (b []byte) (out []byte) {
+    out []byte
+    blen = b.len()
+    pos = 0
+    !! {
+        #{index-out=0}
+        (pos < blen && (b[pos] == 13 || b[pos] == 10)) {
+            #{overflow=wrap}
+            pos = pos + 1
+        }
+        pos >= blen -> *
+        size = 0
+        size-done = false
+        #{index-out=0}
+        (pos < blen && size-done == false) {
+            #{index-out=0}
+            c = b[pos]
+            {
+                c >= 48 && c <= 57 -> {
+                    #{overflow=wrap}
+                    size = size * 16 + c - 48
+                    #{overflow=wrap}
+                    pos = pos + 1
+                }
+
+                c >= 97 && c <= 102 -> {
+                    #{overflow=wrap}
+                    size = size * 16 + c - 87
+                    #{overflow=wrap}
+                    pos = pos + 1
+                }
+
+                c >= 65 && c <= 70 -> {
+                    #{overflow=wrap}
+                    size = size * 16 + c - 55
+                    #{overflow=wrap}
+                    pos = pos + 1
+                }
+
+                -> size-done = true
+            }
+        }
+        line-done = false
+        #{index-out=0}
+        (pos < blen && line-done == false) {
+            #{index-out=0}
+            c = b[pos]
+            {
+                c == 10 -> {
+                    #{overflow=wrap}
+                    pos = pos + 1
+                    line-done = true
+                }
+
+                c == 13 -> {
+                    #{overflow=wrap}
+                    pos = pos + 1
+                    #{index-out=0}
+                    (pos < blen && b[pos] == 10) -> {
+                        #{overflow=wrap}
+                        pos = pos + 1
+                    }
+                    line-done = true
+                }
+
+                -> {
+                    #{overflow=wrap}
+                    pos = pos + 1
+                }
+            }
+        }
+        size <= 0 -> *
+        #{index-out=0}
+        (pos < blen && size > 0) {
+            #{index-out=0}
+            out.push(b[pos])
+            #{overflow=wrap}
+            pos = pos + 1
+            #{overflow=wrap}
+            size = size - 1
+        }
+    }
+}

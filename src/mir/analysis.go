@@ -1224,8 +1224,14 @@ func (m *Module) moveStructSharesHeap(f *Function, inst *Inst) bool {
 	// payload every iteration: the ptr/leaf tests below ask about the
 	// DESTINATION, which for a peel is the payload's own struct type.
 	//
-	// The `?big` (POD payload) shape was already immune, because big has
-	// neither pointer fields nor owned leaves; moveTransfersOwnership's
+	// The ptr/leaf tests below ask about the DESTINATION, which for a peel is
+	// the payload's own struct type, so they answer true for every OWNING
+	// payload struct. A payload struct that owns nothing (a POD such as
+	// `big { pad [32]i64 }`) was already immune — both tests answer false for
+	// it — but the owning ones were not. Measured: tests/opt-box-drop.no's
+	// `?big` match arm (`big { name str; pad [4]i64 }`, boxed) leaked its box
+	// every iteration and dropped from 7.4 MB to 1.76 MB once this guard was
+	// added, with byte-identical output. moveTransfersOwnership's
 	// isOptionPeelMove guard is the same rule applied to the residual case.
 	if m.isOptionPeelMove(f, inst) {
 		return false

@@ -76,7 +76,7 @@ process-kill = (pid i64, sig i64) (ok bool) {
 
 ; process-dup2: 複製檔案描述符
 #{buildin}
-process-dup2 = (oldfd i64, newfd i64) (newfd i64) {
+process-dup2 = (oldfd i64, newfd i64) (ret i64) {
 }
 
 ; process-getppid: 取得父進程 ID
@@ -672,6 +672,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     is-sh-c = false
     base = program
     slash = program.last-index('/')
+
     #{overflow=wrap}
     slash >= 0 -> base = program.slice-bytes(slash + 1, program.len-bytes())
     args.len() >= 2 -> {
@@ -713,15 +714,16 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 #{index-out=zero}
                 envline = envline - ' ' - shell-quote(env[ei])
             }
+            {
+                is-sh-c -> {
 
-        {
-            is-sh-c -> {
-                ; -c 命令串必須單引號包裹後交給 `env K=V ... sh -c '...'`，
-                ; 否則 $VAR 會在 env 設置環境之前被外層殼展開（展開時機錯誤）。
-                cmdline = envline - ' sh -c ' - shell-quote(cmdline)
+                    ; -c 命令串必須單引號包裹後交給 `env K=V ... sh -c '...'`，
+                    ; 否則 $VAR 會在 env 設置環境之前被外層殼展開（展開時機錯誤）。
+                    cmdline = envline - ' sh -c ' - shell-quote(cmdline)
+                }
+
+                -> cmdline = envline - ' ' - cmdline
             }
-            -> cmdline = envline - ' ' - cmdline
-        }
         }
     }
 
@@ -880,7 +882,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     ; 讀取 stdout 輸出（在 waitpid 之前讀取以避免管道死鎖）
     buf []byte = with-len(4096)
     !! {
-
         n = fs.read(out-read, buf, 4096)
         n <= 0 -> break
 
@@ -937,7 +938,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         ! merge-err -> {
             err-read >= 0 -> {
                 !! {
-
                     n = fs.read(err-read, buf, 4096)
                     n <= 0 -> break
                     stderr = stderr - buf.slice(0, n).to-str()
@@ -969,7 +969,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 ; Windows 版本：使用 Win32 API（CreateProcessA、CreatePipe 等）以純 Nolang 實現。
 ; 不依賴 process.c C runtime，所有進程創建、管道管理、輸出捕獲均透過
 ; win-create-process、win-create-pipe、win-read-pipe 等 ForwardFunc 內建完成。
-
 #{win-amd64, win-arm64}
 cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err bool) (out str, stderr str, code i64, err str) {
     out = ''
@@ -987,11 +986,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         ; 含空格的參數需要加引號
         has-space = arg.contains(' ')
         has-space != 0 -> {
-
             cmdline = cmdline - ' "' - arg - '"'
         }
         has-space == 0 -> {
-
             cmdline = cmdline - ' ' - arg
         }
     }
@@ -1077,7 +1074,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     {
         in-read != 0 -> win-close-handle(in-read)
     }
-
     {
         proc-handle == 0 -> {
             win-close-handle(out-read)
@@ -1141,7 +1137,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             chunk-n i64 = 0
             !! {
                 chunk, chunk-n = win-read-pipe(out-read, 4096)
-
                 chunk-n <= 0 -> break
                 out = out - chunk
             }
@@ -1157,7 +1152,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 chunk-n i64 = 0
                 !! {
                     chunk, chunk-n = win-read-pipe(err-read, 4096)
-
                     chunk-n <= 0 -> break
                     stderr = stderr - chunk
                 }
@@ -1165,7 +1159,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             }
         }
     }
-
     win-close-handle(proc-handle)
 }
 
@@ -1243,7 +1236,6 @@ proc-info {
 ; Linux: 遍歷 /proc，讀取每個 PID 目錄下的 /proc/<pid>/comm 取得進程名
 ; macOS/Windows: 暫時返回空列表（需 libproc/sysctl 或 CreateToolhelp32Snapshot 支持）
 ; 返回 proc-info 列表
-
 #{linux-amd64, linux-arm64}
 list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
