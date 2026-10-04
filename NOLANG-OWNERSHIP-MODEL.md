@@ -1,7 +1,7 @@
 # Nolang 混合所有權模型（Hybrid Ownership）— 設計方案
 
-**版本**：v2.10（2026-10-03）
-**基線**：`96e8d3e7`（v2.4 的文件提交）。所有 A/B 都用**自建快照**（`/tmp/**/no-*`），全程不使用 `bin/no`（並行 session 會重建它）。
+**版本**：v2.13（2026-10-04）
+**基線**：`96e8d3e7`（v2.4 的文件提交）；**v2.11／v2.12 工作時的 `HEAD` 是 `20318d7d`**。所有 A/B 都用**自建快照**（`/tmp/**/no-*`），全程不使用 `bin/no`（並行 session 會重建它）。⚠️ **並行 session 常態在場** ⇒ `git diff` 無鑑別力、**「HEAD」不是控制組**；控制組必須是**同樹、只差自己 hunk** 的另一支 binary（v2.11 的做法：複製當前 `src/`，**只回退自己的兩處 hunk**，兩邊一起重建 ⇒ 免掉 rsync／逐 hunk 篩，且保證只差自己的改動）。v2.12 另加一種**凍結快照**控制組：`git archive HEAD | tar -x` 成 `/tmp/headtree`，再把**單一** hunk 疊上去重建（用來證明「某現象是這個 hunk 造成的」而非別的並行改動）。
 **適用後端**：MIR（`src/mir`）
 **前置文件**：`docs/docs/lang/memory.md`（現行模型權威描述）、`NOLANG-AUDIT-2026-09-27.md`
 **改動規範**：skill `nolang-compiler-change`（金標、A/B 歸因、並行 session 陷阱）
@@ -136,6 +136,70 @@
 > 洩漏從 **200k→164 MB／800k→651 MB（線性）** 變成 **200k→1.82 MB／800k→1.80 MB（平線）**；
 > 692 檔 exact matched A/B **全等**（唯一差異是規則一釘子 `tests/map-struct-deep-copy.no`）。
 > `set_*`／`heap_*` 與 pool 型別**維持不落地**（理由見 §4.3）。
+>
+> **v2.11 相對 v2.10 的變更**：**修掉 `@str_clone` / `@str_from_const` 對「空字串」的 clone／free
+> 不對稱，並據此放行 tier 2（`json_`）**。v2.10 記的「`json_` 放行後更糟（272 → 354 MB）」**不是 json
+> 的問題**，是這個不對稱被 tier 放大：`@str_free`／`@vec_free` 以 `cap == 0` 表示「借用視圖、不擁有
+> 任何東西、跳過」，而 `@str_clone` 對任何非 null 的 `data` 都配 `len + 1` 位元組卻回傳 `cap = len`
+> ⇒ **克隆空字串**得到一個帶 `cap == 0` 的新塊，**永遠不會有人釋放它**；`@str_from_const` 對 `''`
+> 更直接 `@nolang_rc_alloc(0)` ⇒ **每個提到空字串字面量的程式都在漏**（與 tier 無關）。
+> 放大路徑：owned `[]str` leaf 的**每次讀取都深克隆整個 vec**，每個元素走一次 `@str_clone`，
+> 而 `json-pool.strs` 裡**全是** `''`。
+> 修法：兩者在 `len == 0` 時回傳全零描述子（`@str_clone` 的 nil 分支本來就回這個）。
+> 實測（`p = json-pool {}` ＋ `p.init()` ＋ `p.parse(...)`，峰值 RSS）：基準 **130.9／260.0 MB**
+> （50k／100k）→ 只修 str **105.7／209.4** → **修 str ＋ `json_` 8.6／14.7 MB**（斜率 2.58 → **0.12 KB／圈**）。
+> 新增 `src/mir/str_empty_clone_test.go`（含「非空克隆仍必須配置」的負對照）；tier 白名單釘子更新為
+> `{hashmap_, static_hashmap_, json_}`。
+> **驗收**：兩次 **692 檔 exact-matched 編譯＋執行 A/B**（一次只差 str 兩處 hunk、一次只差閘門那一行，
+> 兩棵樹 `diff -rq` 皆只差一個檔）皆**無可歸因差異**（4 行與 3 行的差異全部以**序列重跑**證明是
+> `mkstemp` 隨機名／async 輸出順序／`-P` 逾時）；`no vet src/std` 前後**同 `[ERROR]` 集合**；
+> `go test ./mir/` 綠。逐型別放行表與全部數字見 §4.3 的「v2.11」小節。
+> **仍未解**：高階 `json.parse`（回傳 `?json`）的探針**開不開閘門數字相同** ⇒ 它漏的是 `?json` 那條路
+> 自己的問題，與 §4.3 無關（§4.3「v2.11」小節末）。
+>
+> **v2.12 相對 v2.11 的變更**：**修掉指標欄位（`#{inline=false}`）pointee 的 owned leaf「只克隆、不釋放」**（§4.3「v2.12」小節）。
+> `emitStructDropHelper` 只在 pointee **有指標欄位**時才遞迴進去；一個**只有 inline owned leaf、沒有指標欄位**的
+> pointee（`json-pool`：五個 `%vec`、零指標）**根本不會產生解構子**——而 clone 側（`emitPtrFieldsClone`）**早就在
+> 深拷貝它的 leaf** ⇒ 純洩漏、stdout 看不到。修法：drop 側的遞迴條件改成與 clone 側**同一個述詞**
+> `StructHasPtrFields(sub) || StructHasOwnedLeafFields(sub)`（也是 `structSlotNeedsZero` 用的那個）。
+> 驗收：`@__nolang_drop_json_json_pool` 現在**有產生且被呼叫**；最小非 json 探針
+> `outer { p inner #{inline=false} }`（`o.p.name = i.to-str()` ＋ `print(o.p.name)`，200k 圈）
+> 控制組 **14.60 MB** → 修後 **8.18 MB**，且修後的指標欄位案例與**沒有指標欄位**的 `box { name str }`
+> **位元組完全相同**（皆 8,175,616 B）⇒ pointee 的 leaf 被完整釋放。新增釘子 `src/mir/ptr_pointee_leaf_drop_test.go`
+> （已證明：修後過、回退則 FAIL）。
+> **同輪查出、但未落地的一筆既有洩漏**：`o.f = <str 表達式>` 在迴圈裡**只克隆來源、從不 drop 來源**
+> （每圈約 **31 B**，可觀測；**HEAD 上就有一樣的數字** ⇒ 既有、非本輪引入）。這是**下一個該查的目標**。
+> ⚠️ 附帶量到：v2.11 的 str 修法讓 `@str_clone` 多一個分支，**LLVM 因此不再消除某些「死」的克隆迴圈**
+> ——它**只是揭開**上面那筆既有洩漏，**不是**造成它（用凍結 HEAD 快照 ＋ 只疊 str hunk 證明：HEAD 平線、
+> HEAD+str 洩漏；而**可觀測**的那個形狀在 HEAD 與本輪**數字相同**）。
+> **驗收**：**692 檔 exact-matched 編譯＋執行 A/B**（控制組＝同樹、只把那個條件行回退成 `StructHasPtrFields(sub)`；
+> 兩棵樹 `diff -rq` 只差 `codegen.go`）：**BUILDFAIL 56／56、集合逐行相同**，只有 **5 行** stdout 差異，
+> 且**全部**以**序列重跑**證明不可歸因——`std-unix-fs-os.no`／`std-unix-fs-os-2.no`（`mkstemp` 隨機名）、
+> `sse.no`／`tls.no`（網路／計時）都是**同一支 binary 連跑 3 次 3 個 sha**；`tcp-fork.no` 序列下
+> 兩邊**逐位元組相同**（`-P` 負載造成的假差異）。`go test ./mir/` 綠（`TestPtrFieldPointeeOwnedLeafIsFreed`
+> 在修後過、回退則 FAIL）。
+>
+> **v2.13 相對 v2.12 的變更**：**修掉 v2.12「順帶查出」的那筆 `o.f = <str>` 來源洩漏**（§4.3「v2.13」小節）。
+> 根因是 `OpSetField.MovesArg` 的**賦值語意與 codegen 不符**：`hir2mir` 在兩處（`obj.field = v` 與
+> `lowerStructLit` 的欄位初始化）**無條件**設 `MovesArg = true`，而 `MovesArg` 的定義是「該 store 消耗 RHS，
+> 所以 drop 分析必須抑制 RHS 臨時的 drop」。可是 `emitSetField` 對 owned leaf（`str` 一律、allowlist 內的 `%vec`）
+> **克隆**、對 struct／指標欄位**深拷貝** ⇒ 欄位拿到自己的 buffer，RHS **沒有**被消耗，**必須**被 drop。
+> 抑制它就是每圈漏一個塊。修法：新增單一述詞 `Module.SetFieldConsumesRHS(recv, field)`，**精確鏡射** codegen 的
+> 「拷貝 vs 共享」決定（owned leaf／指標欄位／有 owned leaf 的 struct 欄位 ⇒ 拷貝 ⇒ **不消耗**；
+> 其餘（未放行的 `%vec`、map、`%option`）⇒ 位元複製 ⇒ **消耗**），兩處都改用它。無法解析的目標（未知型別、
+> 未剝離的 option、投影）**保守回 `true`**：漏修是洩漏，修錯是 use-after-free。
+> 驗收：可觀測探針 `box { name str }` ＋ `s = i.to-str(); b.name = s`，控制組 **8.16 MB @200k / 27.44 MB @800k
+> （32 B／圈，線性）** → 修後 **1.72 MB / 1.72 MB（平線，等於無 struct 的負對照 1.70 MB）**；
+> struct 欄位（`outer { p inner }` ＋ `o.p = inner { name: s }`）與指標欄位（`#{inline=false}`）由 **64 B／圈**
+> 一起降到 **0**（兩處 MovesArg 各貢獻 32 B）。**共享容器欄位保持原樣**（`vecbox { v []str }` 未放行 ⇒
+> `MovesArg` 仍為 `true`；三點量測兩邊同斜率、stdout 逐位元組相同）——它洩的是**另一個**既有機制
+> （未放行的 struct 沒有解構子，§4.3 的 tier 邊界），**不是**本條。新增釘子
+> `src/mir/setfield_movesarg_test.go`（3 測，其中 **2 個在控制組上 FAIL**；第 3 個是刻意的負對照）。
+> 並確認 **`tests/map.no` 與 2000 筆 put 的 rehash 壓力測試輸出完全相同** ⇒ 註解裡那句「沒有 MovesArg 會
+> 讓 `.keys = with-len(n)` 立刻被 drop 而崩」是**在 `emitOwnedLeafFieldStore` 存在之前寫的**，現在 `keys`
+> 是 owned leaf、會被克隆，所以該警告已失效。
+> **驗收**：**692 檔 exact-matched 編譯＋執行 A/B**（控制組＝同樹，只把 `SetFieldConsumesRHS` 的函式體換成
+> `return true`，忠實重放舊的無條件 `MovesArg = true`；已驗證控制組在 pD 上仍洩漏 8.16 MB）；結果見本節末。
 
 ---
 
@@ -220,8 +284,10 @@
    做法、逐型別放行表與全部數字見 §4.3 的「v2.10」小節。
    **其餘型別已分類完（不是延後）**：`set-*`／`heap-*`／`bufio.reader` 是**呼叫端供緩衝區**
    ⇒ **永久 OUT**（放行＝改 API 語意，實測 `tests/set.no` 的 union/intersection/difference 會 FAIL）；
-   `bigint` 分類正確但自帶後端崩潰、語料無守衛 ⇒ 不驗證；`json.json-pool` 放行後 RSS **272 MB → 354 MB
-   更糟**（解構子沒問題，是 clone 出來的暫存值沒 drop）⇒ tier 2 **不放行**（§4.3 有完整證據）。
+   `bigint` 分類正確但自帶後端崩潰、語料無守衛 ⇒ 不驗證；`json.json-pool` 一度看似「放行後更糟」
+   （272 MB → 354 MB），但 **v2.11 查出那不是 json 的問題**——是 `@str_clone`／`@str_from_const` 對
+   **空字串**的 clone／free 不對稱被 tier 放大；修好後 **tier 2（`json_`）已落地**（50k→8.6 MB，
+   斜率 2.58 → 0.12 KB／圈，§4.3「v2.11」小節）。
 
 **一句話總結**：**S／C 兩檔的機制完整且被驗證；R 檔只覆蓋了 `%task`。** 「值對值別名」整類已從模型與
 實作裡刪掉（`str` / `[]T` / `?str` / `?[]T` 已收，**map 的值**亦已收——修在**元素寫入**而非 map 自身，§4.4 b）；
@@ -231,10 +297,13 @@
 含 C 檔的寫入點 `writtenThroughSet`）；v2.7 **撤銷了 §4.3 的「借讀 release 死亡點精度」殘留**
 （三條獨立證據證偽，並補上會壞的釘子）；v2.10 **把 §4.3 的十餘處 `%str-long` 硬寫點收斂成單一型別
 分派入口，並對 `hashmap-*`／`static_hashmap-*` 放行**（map 的儲存終於會釋放，規則一的洞同時補上，
-語料 A/B 692 檔全等）。剩下的主要待辦**只有兩項**：
-**§4.3 其餘 struct 型別的放行**（`set-*`／`heap-*`／pool 型別，逐型別 ＋ 各自的全語料 A/B），
+語料 A/B 692 檔全等）；v2.11 **修掉空字串的 clone／free 不對稱，並據此放行 tier 2（`json_`）**
+（同一支探針斜率 2.58 → 0.12 KB／圈）。剩下的主要待辦**只有兩項**：
+**§4.3 其餘 struct 型別的處置**（`set-*`／`heap-*`／`bufio.reader` 是**永久 OUT**、`bigint` 未驗證，
+逐型別 ＋ 各自的全語料 A/B），
 以及把 tier 從**描述式**變成**規定式**
 （§4.2 c 的界線：那需要把 pass 移到 `insertBorrowRetains` 之前）。
+另有一個**不屬 §4.3** 的已知漏洞：高階 `json.parse` 回傳的 `?json` 那條路自漏（開不開閘門數字相同，§4.3「v2.11」小節末）。
 
 ---
 
@@ -1089,6 +1158,7 @@ clone（走同一個分派入口，不是再複製一份 `%vec` 特例）。
 | 檢查 | 結果 |
 |---|---|
 | 語料 A/B（**692** 檔：`tests`＋`test`＋`example`＋`src/std`） | ✅ **exact matched**（同一份 source snapshot 建兩支 binary，**只差閘門**）：逐檔比 build rc／run rc／stdout sha ⇒ **全等**；唯一差異是新增的規則一釘子 `tests/map-struct-deep-copy.no` |
+| 同上，**共三次**（第三次在並行 session 又提交了 parser／checker／`src/std/archive/*` 之後、用**當前樹**重建的配對跑） | ✅ 三次結果逐項相同（`missing=0 build_rc_diff=0 run_rc_diff=0 output_sha_diff=0 expected_sha_diff=1`）⇒ tier 1 沒有被後續合併弄壞 |
 | 洩漏（`m [str]i64 = {}` ＋ `put`，`/usr/bin/time -l` 峰值 RSS） | 閘門關閉：**200k → 164 MB**、**800k → 651 MB**（線性；本輪實測值與 v2.8 記載的 651 MB 相符）⇒ tier 1：**200k → 1.82 MB**、**800k → 1.80 MB**（**平線**） |
 | 同上，`[str]str` ／ `[str][]i64`（200k） | 229.7 MB → **1.84 MB** ／ **1.88 MB** |
 | **負對照**（同形狀但**不 put**，只 `m.len()`；800k） | tier 1 **1.74 MB**、關閉 **1.67 MB** ⇒ 平線不是「程式沒在跑」 |
@@ -1100,6 +1170,25 @@ clone（走同一個分派入口，不是再複製一份 `%vec` 特例）。
 （上表那次崩潰正是如此），而**洩漏在 stdout 上看不見**——修好之前這支程式一樣是印 `done`。
 `remove` 是否釋放被刪項的 key/value **仍未定**（那是解構子語意，與本輪無關）。
 
+**v2.11：tier 2（`json_`）已落地。** 白名單現在是 `{hashmap_, static_hashmap_, json_}`。它**不是**
+「再加一個前綴」就能落的——落地前先修掉一個**與 tier 無關**的既有漏洞（`@str_clone`／`@str_from_const`
+對空字串交出 `cap == 0` 的塊，而 `cap == 0` 正是 `@str_free`／`@vec_free` 讀成「借用視圖、不釋放」的
+記號）。完整推導見後面的「v2.11」小節。
+
+| 檢查 | 結果 |
+|---|---|
+| 語料 A/B（**692** 檔，exact matched：同一份 snapshot 建兩支 binary，**只差 `@str_clone`／`@str_from_const` 兩處 hunk**） | ✅ build rc／run rc／stdout sha **全等**；4 行差異**全部**經**序列重跑**證明**不可歸因**（2 檔 `mkstemp` 隨機名、1 檔 async 印**堆位址**、1 檔 `-P` 下撞 8s 逾時但序列輸出**逐位元組相同**） |
+| 語料 A/B（**692** 檔，matched pair：fix 關閘門 vs fix 開 `json_`，**兩樹 `diff -rq` 只差 `mir.go` 那一行**） | ✅ 56 BUILDFAIL 逐檔相同；**沒有任何 json 檔差異**；3 行差異全部經序列重跑證明不可歸因（async 的**輸出順序**在負載下變動、`https-server` 逾時、`mkstemp` 隨機名） |
+| `no vet src/std` | 修 str 前後**逐行同 `[ERROR]` 集合**（皆 0 error） |
+| 洩漏（`p = json-pool {}` ＋ `init()` ＋ `parse(...)`，峰值 RSS） | 105.70／209.42 MB（關閘門）→ **8.59／14.71 MB**（開 `json_`），斜率 2.07 → **0.12 KB／圈**；`jalloc` 20.17／38.60 → **1.75／1.71 MB（平線）**；`jinit` 1.60 → 1.59（**不動**） |
+| 單元測試 | `go test ./mir/` 綠（含 `str_empty_clone_test.go` 與更新後的白名單釘子） |
+
+⚠️ **matched pair 的定義要嚴格。** 第一次拿「當前樹（已含並行 session 的修復）」去對「09:29 的樹」跑，看到
+6 個 `tests/fs-*`／`open-*` 從 `rc=139` 變 `rc=0`，一度以為是閘門造成的——其實那是**並行 session 在
+09:29→09:50 之間修掉的既有 SIGSEGV**：**控制組與治療組在同一棵 09:29 樹上都是 `rc=139`**，一比就知道
+與本輪無關。⇒ **A/B 的兩支 binary 必須同樹、只差自己的 hunk**（`diff -rq` 兩棵樹**只能有一個檔**差異；
+本輪的 gate 對照就是這樣做的：`cA` 與 `cC` 只差 `mir.go` 那一行）。
+
 **v2.10 後續：其餘型別不是「延後」，是有結論了。** 判準只有一條——這個容器是**自備緩衝區**
 （`with-len`／`with-cap`）還是**用呼叫端給的緩衝區**：只有前者才「證明擁有」自己的 buffer。
 
@@ -1108,7 +1197,11 @@ clone（走同一個分派入口，不是再複製一份 `%vec` 特例）。
 | **呼叫端供緩衝區**（caller-backed） | `set-*`／`heap-*` | `set.init = (data []t) { s.data = data … }`；`heap.init` 同 | **永久 OUT**：那是這個 API 的設計（容量 = 呼叫端陣列長度），放行＝改語意 |
 | 同上 | `bufio.reader` | `r.buf = buf` | 同上 |
 | **自備緩衝區** | `bigint.bigint` | 每一處 `limbs =` 都是 `with-len(…)` | 分類正確但**無法驗證**：bigint 有獨立的後端崩潰（`bus error`，見 `tests/bigint-uuid-byte-indexing.no`），且語料裡 `test/std/bigint.no` 是 BUILD_FAIL ⇒ 沒有可用的語料守衛 |
-| 同上 | `json.json-pool` | `.nodes/.strs/.ec/.ek/.en = with-len(0)` | 分類正確，但**放行後更糟**，見下 |
+| 同上 | `json.json-pool` | `.nodes/.strs/.ec/.ek/.en = with-len(0)` | 分類正確；「放行後更糟」的舊結論**已被 v2.11 推翻**（見下，以及後面的「v2.11」小節） |
+
+> ⚠️ **下面到本節末（`json_` 的「更糟」證據、`add-child` 三個 `push` 的二分）是 v2.10 的過程紀錄，
+> 其結論已被 v2.11 推翻。** 保留它們是因為那是**反向對照**：它記錄了「看起來像 json 的問題」的
+> 完整誤判路徑，而真正的根因（空字串的 clone／free 不對稱）不在這裡。**要結論請直接讀「v2.11」小節。**
 
 **「呼叫端供緩衝區」是怎麼被證實的（可重跑）**：只開閘門、**不改任何 std**，`tests/set.no` 就 FAIL
 三條（`union -> size 5`／`intersection size 2`／`difference size 2`）。原因是測試這樣寫：
@@ -1173,28 +1266,200 @@ un = aset.union(bbuf, bset.size())   ; ← 把「呼叫端的陣列」當成 set
 ⇒ **差額主要來自 `add-child` 的三個 `push`**（str 那個最大），而 `push` 進的是 **pool 自己的
 owned slice 欄位**。這與上面「使用者探針 push 進欄位反而變好」不衝突：差別在**規模**——json 的
 `.ec/.ek/.en` 每次 parse 都在成長，`push` 在 owned-leaf 欄位上會 clone（讀＋寫各一次），
-於是每次 push 的臨時配置與陣列大小成正比。**下一步**：把這三個 push 換成等價但**不成長**的寫法
+於是每次 push 的臨時配置與陣列大小成正比。~~**下一步**：把這三個 push 換成等價但**不成長**的寫法
 （先 `with-len(N)` 再 `[i] =`）看差額是否消失；若消失，就定位到 `push` 在 owned-leaf 欄位上的
-clone 語意（而不是 `add-child` 本身）。
+clone 語意（而不是 `add-child` 本身）。~~ **此步已作廢（v2.11）**：差額**與 `push` 無關**，是
+`push` 進的 `[]str` 裡裝的是**空字串**、而空字串的 clone／free 不對稱（見「v2.11」小節）。
+`push` 只是讓「每圈要克隆的元素數」與節點數成正比，因而把那個固定不對稱放大成線性成長。
 
-**量法（已試過、走不通的記在這裡省下一輪）**：`DYLD_INSERT_LIBRARIES` 攔 `malloc`/`free`
-（`__DATA,__interpose` ＋ constructor 解析符號）在本機直接 **rc=139**，不可用；要數塊數就直接改
-**產生的 runtime**：`@nolang_rc_alloc` 在 `codegen.go:12902`、runtime 的 `@main` 在 `codegen.go:3608`
-（在 `ret i32` 前插一段 printf 把兩個計數器印出來），在 `/tmp` 樹裡做。
+**量法（走不通的記在這裡省下一輪）**：`DYLD_INSERT_LIBRARIES` 攔 `malloc`/`free`
+（`__DATA,__interpose` ＋ constructor 解析符號）在本機直接 **rc=139**，不可用。
 
-**量法（已試過、走不通的記在這裡省下一輪）**：`DYLD_INSERT_LIBRARIES` 攔 `malloc`/`free`
-（`__DATA,__interpose` ＋ constructor 解析符號）在本機直接 **rc=139**，不可用；要數塊數就直接改
-**產生的 runtime**：`@nolang_rc_alloc` 在 `codegen.go:12902`、runtime 的 `@main` 在 `codegen.go:3608`
-（在 `ret i32` 前插一段 printf 把兩個計數器印出來），在 `/tmp` 樹裡做。
+---
 
-⇒ **tier 2 不放行。** 這一條與 tier 1 的差別在於：tier 1 的 `hashmap-*` 內部沒有「結構按值傳遞」，
-所以 move→clone 降級不會發生；`json.parse` 有。
+#### v2.11：`json_` 的差額**不是 json 的問題**，是空字串的 clone／free 不對稱
+
+**定位用的三條工具（缺一不可，而且都必須作用在 `opt -O3` 之後的 `_opt.ll` 上）**
+
+| 工具 | 怎麼做 | 為什麼不能省 |
+|---|---|---|
+| `leaks(1)` | 探針跑長迴圈 → `leaks <pid>`。本機 `MallocStackLogging` 不生效（`not debuggable`），但**塊大小**仍會報 | 一次就把「漏的是哪一類塊」問出來：**25.9M 塊、全部 32-byte malloc** ⇒ 指向 `@nolang_rc_alloc(0)`／`(1)` |
+| IR 插樁數 alloc／free | 對 `_opt.ll` 做純文字手術：把每個 `@malloc`／`@free` 呼叫點改走計數 wrapper，並在 `@main` 的 `ret i32` 前 `write(2, &counters, 32)` | 把「線性成長」變成可比較的整數：每圈淨配置 **基準 16 → `json_` 96**（配置 71 → 396） |
+| 逐 clone 配對檢查 | 解析 IR：對每個 `__nolang_vec_clone_*` 找它 store 進的槽，再找有沒有 load 那個槽去 free | 用來**否證**第一嫌疑「clone 沒被釋放」（14/14 全部有配對）⇒ 逼出真正的原因在 clone 的**內容**，不在**容器** |
+
+🔴 **插樁必須插在 `_opt.ll`**：`no build` 走 `opt -O3` → `llc` → `clang`，`X.ll` 是**未優化**的。
+對未優化的 IR 插樁會量到 LLVM 之後會刪掉的配置——實測 `''` 的 `str_from_const` ＋ `str_clone` 在 `-O3`
+下整組被消除（未優化 IR 上「每圈漏 3 塊／50 位元組」，同一支程式的峰值 RSS 卻是**平線**）。
+
+**根因：`str_clone` / `str_from_const` 對空字串的 clone／free 不對稱。**
+
+`@str_free`／`@vec_free` 用 `cap == 0` 表示「這是借用視圖、不擁有任何東西、跳過」——守衛本身是對的
+（視圖的 data 指向別人的 buffer）。但它讓 **`cap == 0` 的語意變成「沒有東西要釋放」**，於是任何
+**配置過** buffer 的 helper 都**不可以**交出 `cap == 0` 的值：
+
+| helper | 舊行為 | 後果 |
+|---|---|---|
+| `@str_clone` | 只要 `data != null` 就配 `len + 1` 位元組、回傳 `cap = len` | 克隆 `''` ⇒ 新塊帶著 `cap == 0` ⇒ **沒有任何 `@str_free` 會釋放它** |
+| `@str_from_const` | 直接 `@nolang_rc_alloc(len)` | `''` 字面量 ⇒ `@nolang_rc_alloc(0)`（16 位元組塊 ⇒ 32-byte class）⇒ 同樣沒人釋放 |
+
+⇒ **每個提到空字串字面量的程式都在漏**（與 tier 無關）。tier 2 只是把它**放大**：owned `[]str` leaf 的
+**每次讀取都深克隆整個 vec**（`vecDeepClone` 逐元素 `@str_clone`），而 `json-pool.strs` 裡**全是** `''`；
+`.strs` 隨節點數成長 ⇒ 每圈漏的量與**已解析節點數**成正比。
+
+**修法**：兩者在 `len == 0` 時回傳**全零描述子**（`@str_clone` 的 nil 分支本來就回這個；`{0, 0, null}`
+已是 runtime 自己的「空字串」拼法——`@str_retain`／`@str_free` 對它都 no-op）。
+
+| 探針（`p = json-pool {}` ＋ `p.init()` ＋ `p.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')`；`/usr/bin/time -l` 峰值 RSS） | 基準 | 只修 str | **修 str ＋ `json_`** |
+|---|---|---|---|
+| 50,000 圈 | 130.9 MB | 105.7 MB | **8.6 MB** |
+| 100,000 圈 | 260.0 MB | 209.4 MB | **14.7 MB** |
+| 斜率 | 2.58 KB／圈 | 2.07 KB／圈 | **0.12 KB／圈** |
+| `p.init()` ＋ `p.alloc()`（同形狀） | 24.8／47.7 MB | 20.2／38.6 MB | **1.70／1.73 MB（平線）** |
+
+⇒ **`json_` 不再「更糟」，是目前最大的一筆回收（斜率 21 倍）。** 先前「tier 1 的 `hashmap-*` 內部沒有
+結構按值傳遞所以沒事、`json.parse` 有」這個歸因**是錯的**——差別不在按值傳遞，在 **`[]str` 的內容是不是
+空字串**（這也解釋了為什麼所有使用者結構探針都複製不出來：它們的 `[]str` 裝的是 `'a'` 這種**非空**字串）。
+
+**仍未解（已確認與 tier 無關）**：高階 `json.parse`（回傳 `?json`）的探針**開不開閘門數字相同**
+（`{"a":1}` 35.7／35.7 MB @50k、`{"name":"Alice"}` 37.2／37.3、`[1,2,3]` 35.7／35.8）⇒ 它漏的是
+**`?json` 那條路自己**的問題（指標欄位 ＋ option 兩層），不是 §4.3 這條。**這是下一個該查的目標。**
 
 > ⚠️ **一個會靜默失敗的坑（下次開 tier 一定會再踩）**：struct key 是**模組限定**的
 > （`json.json-pool`、`bigint.bigint`），白名單比對時若只把 `-` 正規化成 `_`，`json_` 會
 > **一個 struct 都沒匹配到**（實測：改之前 RSS 完全不變，看起來像「這條路走不通」）。
 > 已改成 `-` 與 `.` 都正規化（`ownedVecLeafAllowed`），並由
 > `TestOwnedVecLeafTiersMatchDottedKeys` 釘住。
+
+#### v2.12：指標欄位 pointee 的 owned leaf「只被克隆、不被釋放」
+
+**症狀（stdout 完全看不到）**：`json { pool json-pool #{inline=false} }`——`pool` 是**指標欄位**，
+`json-pool` 擁有五個 `%vec`（`.nodes`／`.strs`／`.ec`／`.ek`／`.en`）且**零指標欄位**。
+`emitStructDropHelper` 只在 pointee **有指標欄位**時才遞迴進去 ⇒ `json-pool` **根本沒有解構子**
+（`@__nolang_drop_json_json_pool` 不存在）⇒ `@__nolang_drop_json_json` 只 `free` 掉 pool 的**區塊**、
+**五個 buffer 全數洩漏**。而 clone 側（`emitPtrFieldsClone`）**早就在深拷貝** pointee 的 leaf
+⇒ 這是**純洩漏**（不是等待觸發的 double free），而且**不會反映在 stdout 上**。
+
+**修法**：把 drop 側的遞迴述詞改成與 clone 側**同一個**（`StructHasPtrFields(sub) || StructHasOwnedLeafFields(sub)`；
+`structSlotNeedsZero` 用的也是這個）。**前提**是它必須與 clone 走**同一條遍歷**——否則「clone 深拷貝了、
+drop 卻沒釋放」就是洩漏，反過來就是 double free。
+
+**最小重現（非 json）**：`inner { name str }` ＋ `outer { p inner #{inline=false} }`，把
+`o.p.name = i.to-str()` ＋ `print(o.p.name)` 放進迴圈（`print` 讓配置**可觀測**）：
+
+| 迴圈 | 控制組（同樹、只回退這一個 hunk） | 修後 |
+|---|---|---|
+| 100k | 7.77 MB | 4.73 MB |
+| 200k | 13.91 MB | 7.80 MB |
+| 400k | 26.19 MB | 13.94 MB |
+| 斜率 | **64 B／圈** | **32 B／圈** |
+
+兩點是關鍵：①修後**正好少掉 32 B／圈 ＝ 一個 32-byte 塊**；②**修後的指標欄位案例與「沒有指標欄位」的
+`box { name str }` 位元組完全相同（皆 8,175,616 B）** ⇒ pointee 的 leaf 被**完整**釋放。
+剩下的 32 B／圈**不是這個 bug**（見下一條）。釘子：`src/mir/ptr_pointee_leaf_drop_test.go`
+（已證明：修後過、把述詞回退成只認指標欄位則 FAIL）。
+
+**兩條量法陷阱（這次都踩到）**
+
+| 陷阱 | 現象 | 判準 |
+|---|---|---|
+| 常數字串的探針會被**整組優化掉** | `o.p.name = 'hello world'` 在 200k 迴圈裡，`opt -O3` 把 `str_from_const`／`drop_outer` 全變成死碼（實測 `_nolang_main` 只剩一個空的計數迴圈）⇒ **兩邊都 1.6 MB 平線** | 字串內容必須**依賴迴圈變數**（`i.to-str()`）**且被讀取**（`print`）；否則量到的是「LLVM 有沒有消除迴圈」，不是洩漏 |
+| 「平線」可能是**迴圈被消除**，不是沒洩漏 | 同一個探針換一支 binary 就從平線變成線性 | 量之前先確認 `X.bin_opt.ll` 裡那個迴圈還在（`no build -v`） |
+
+> 🔴 **本條也推翻了一個自己寫的數字。** 釘子的註解原本寫「`'hello world'` 200k 圈：7.78 → 1.64 MB（平線）」
+> ——那是**被優化掉的迴圈**量出來的（見上表第一列）。已改成上面那組**可重跑**的數字
+> （依賴迴圈變數的字串 ＋ 可觀測的讀取；控制組 14.60 MB、修後 8.18 MB @200k）。**教訓**：
+> 「修後平線」是強證據，但**前提是那個迴圈沒有被刪掉**；否則它證明的是別的東西。
+
+#### v2.13 已修：`o.f = <str>` 的**來源**不被 drop（v2.12 查出、v2.13 修掉）
+
+修掉上一條之後，json 的數字**沒有變**——因為 `r = json.parse(...)` 走的不是指標欄位那條路。
+追下去時用一個**更小的、可觀測的**形狀把問題逼出來：
+
+```no
+box { name str }
+main = () {
+    i <- [0..200000) {
+        b box
+        s = i.to-str()
+        b.name = s          ; ← 欄位賦值：克隆來源進欄位，但**來源從不被 drop**
+        print(b.name)
+    }
+}
+```
+
+| 探針（200k／400k） | 100k | 400k | 斜率 | HEAD 上是否一樣 |
+|---|---|---|---|---|
+| `s = i.to-str(); print(s)`（**不進欄位**） | 1.61 | 1.62 | **平線** | 是 |
+| `b.name = i.to-str(); print(b.name)`（來源是**呼叫臨時**） | 4.73 | 13.95 | **31 B／圈** | **是**（4.70／13.92） |
+| `s = i.to-str(); b.name = s; print(b.name)`（來源是**局部**） | 4.73 | 13.89 | **31 B／圈** | **是**（4.72／13.92） |
+| `b.name = i.to-str()`（**不讀**欄位，只有 `print('done')`） | — | — | 見下方註 | HEAD **平線**、本輪洩漏 |
+
+**IR 地面真相**（`b.name = s` 那一圈的未優化 IR，一個迴圈體）：
+`i64_to_str` 配置 **①**（臨時）→ `str_clone` 進欄位 **②** → 讀欄位再 `str_clone` **③**；
+而只有 **2 次 `str_free`**（舊欄位值 ＋ 讀取克隆）。⇒ **`s`（由呼叫結果綁定的值）從來沒有被 drop**。
+兩次配置、一次釋放 ⇒ 每圈漏一個 32-byte 塊，與斜率一致。
+
+🔴 **這是既有的**（HEAD 上同一個可觀測形狀有一模一樣的數字），**與 v2.11／v2.12 的任何改動無關**。
+
+**根因（v2.13 定位）**：`hir2mir` 在**兩處**把 `OpSetField.MovesArg` **無條件**設成 `true` ——
+`obj.field = v`（`hir2mir.go` 的 `hir.KDot` 分支）與 `lowerStructLit` 的欄位初始化。
+`MovesArg` 的定義是「該 store **消耗** RHS，所以 drop 分析要抑制 RHS 臨時的 drop」，
+而它**只在 codegen 真的 MOVE 時才成立**。但 `emitSetField`：
+
+| 欄位種類 | codegen 做什麼 | RHS 被消耗？ | 舊的無條件 `MovesArg=true` |
+|---|---|---|---|
+| `str`（`%str-long`） | `emitOwnedLeafFieldStore` **克隆** | **否** | ✗ 洩漏 |
+| allowlist 內的 `%vec` leaf | 同上（克隆） | **否** | ✗ 洩漏 |
+| struct 欄位（有 owned leaf） | `cloneStructFieldLeaves` **深拷貝** | **否** | ✗ 洩漏 |
+| 指標欄位（`#{inline=false}`） | memcpy 進 pointee ＋ 深拷貝 | **否** | ✗ 洩漏 |
+| 未放行的 `%vec` / map / `%option` | **位元複製（共享）** | **是** | ✓ 正確 |
+
+也就是說：`emitOwnedLeafFieldStore`／`cloneStructFieldLeaves` 讓欄位拿到**自己的** buffer，
+RHS 臨時仍擁有它的 buffer ⇒ **必須**被 drop；抑制它 = 每圈漏一個塊。
+
+**修法（v2.13）**：新增**單一述詞** `Module.SetFieldConsumesRHS(recv, field)`（`src/mir/mir.go`），
+**精確鏡射**上表的「拷貝 vs 共享」決定，兩處 MovesArg 都改用它。
+無法解析的目標（未知接收者型別、未剝離的 option、投影）**保守回 `true`** —— 漏修是洩漏，修錯是 use-after-free。
+`tests/map.no` 那條註解（「沒有 MovesArg 會讓 `.keys = with-len(n)` 立刻被 drop 而崩」）
+是**在 `emitOwnedLeafFieldStore` 存在之前寫的**：現在 `keys` 是 owned leaf、會被克隆，所以警告已失效
+（實測：`tests/map.no` 輸出逐位元組相同；2000 筆 `put` 的 rehash 壓力測試兩邊都印 `1999000`）。
+
+**修後量測**（控制組＝同樹、只把 `SetFieldConsumesRHS` 換成 `return true`，忠實重放舊行為；
+pD 在控制組上仍洩漏 8.16 MB）：
+
+| 形狀（200k → 800k） | 控制組 | 修後 |
+|---|---|---|
+| `box { name str }` ＋ `b.name = s` | 8.16 → 27.44 MB（**32 B／圈**） | **1.72 → 1.72 MB（平線）** |
+| `outer { p inner }` ＋ `o.p = inner { name: s }` | 14.60 → 53.17 MB（**64 B／圈**） | **1.72 → 1.74 MB（平線）** |
+| `outer { p inner #{inline=false} }`（指標欄位） | 14.57 → 53.15 MB（**64 B／圈**） | **1.75 → 1.72 MB（平線）** |
+| `vecbox { v []str }` ＋ `vb.v = [s]`（**未放行 ⇒ 共享**） | 14.61 → 53.15 MB | 14.61 → 53.18 MB（**不變**） |
+| `s = i.to-str(); print(s)`（負對照） | 1.70 → 1.70 MB | 1.70 → 1.70 MB |
+
+前兩列的 64 B／圈 ＝ 兩處 MovesArg **各** 32 B（struct-literal 一處、`obj.field = v` 一處），
+所以**兩處都要改**才降到 0。
+第四列是**刻意的負對照**：未放行的 `%vec` 欄位是**共享**的，`MovesArg` **必須**保持 `true`，
+否則欄位的 buffer 會被 drop 掉 ⇒ use-after-free。它自己那筆 64 B／圈是**另一個**既有機制
+（未放行的 struct **沒有解構子**，§4.3 的 tier 邊界），與本條無關，本輪**未動**。
+
+新增釘子 `src/mir/setfield_movesarg_test.go`（3 個測）：`TestSetFieldConsumesRHSFollowsCodegen`
+（三個方向一起驗，含共享容器這個負對照）、`TestSetFieldConsumesRHSDefaultsToConsumeOnUnknownTarget`
+（保守預設）、`TestSetFieldConsumesRHSOwnedVecLeafIsNotConsumed`（翻 tier allowlist 驗兩態）。
+**已證明非空洞**：前兩個在控制組上 **FAIL**、第三個（刻意的預設值測）兩邊都 PASS。
+
+> ⚠️ **別把「死迴圈」的差異當成迴歸。** 上表最後一列（不讀欄位）在 HEAD 上**平線**、在本輪**洩漏**。
+> 用**凍結 HEAD 快照 ＋ 只疊 str 那個 hunk**（`git archive HEAD` → 加 str 兩處 → 重建）證明：
+> **是 v2.11 的 str 修法造成的差異**（HEAD 平線、HEAD+str 洩漏），而**可觀測**的那兩個形狀
+> （第 2、3 列）在 HEAD 與本輪**數字相同**。也就是說 str 修法**只是揭開**了這筆既有洩漏
+> （`@str_clone` 多一個分支 ⇒ LLVM 不再消除某些「死」的克隆迴圈），**不是**造成它。
+> **判準**：只有**可觀測**形狀的差異才算行為差異；「死迴圈有沒有被消除」是 codegen 細節。
+
+#### v2.12 仍未解：`?json` 那條路（沿用 v2.11 的結論）
+
+`r = json.parse(...)`（回傳 `?json`）在迴圈裡**每圈都不 drop 舊值**，與上面那條**同一個主題**、
+但路徑不同（`?json` ＝ 指標欄位 ＋ option 兩層）。**不放行任何 `OptionOwnsHeap`／分析改動**：
+`OptionOwnsHeap` 目前對 struct payload 回 false（`ClassifyOwnership(elem)` 不認 struct），
+動它會同時影響 `emitOptionDrop` 的 default 守衛與 `Module.optionCopyOwnsPayload`，屬 double-free 風險類，
+且與 §4.2(a) 已定案的「inline struct option payload 刻意不克隆」相衝 ⇒ **需使用者明確同意才動**。
 
 ### 4.4 上一輪（2026-10-02）修的兩個可觀測缺陷
 
@@ -1592,6 +1857,10 @@ print(g.len())        ; 修復前：4（內容仍是 '  hi  '）；修復後：6
 | **17** | **「只洩漏、不影響輸出」的殘留要怎麼記？** | **沒有可複現測量的殘留不該寫進 §4.3。** §4.3 的「借讀 release 死亡點精度」存在了兩個版本、被「複查」過一次，卻**從未被任何測量支持**——它的症狀（drop 被提到迴圈外）在現行樹上**不存在**（§4.3 三條證據）。這一類殘留的危險正在於**沒有輸出可看** ⇒ 永遠不會有人發現它已經不成立。**紀律**：寫進 §4.3 前必須附**可重跑的指令 ＋ 觀測值**；觀測不到就寫「未複現」而不是「已知」。⚠️ 反向也成立：**已撤銷的殘留要留痕**（本節保留舊數字並標註不可信），否則後人會再引用一次 |
 | **18** | **量洩漏時高圈數「崩潰」該怎麼歸因？** | **先證明崩的是什麼，再拿它當洩漏的證據。** v2.7 量 map 洩漏時把 200,000 圈的 **rc=139** 記成「洩漏大到崩潰」，還報了「沒用過的 fresh map 每圈 ~80 B」。v2.8 證明**兩者都錯**：崩的是**棧**溢位（`alloca` 在迴圈內，§4.6），峰值 RSS 只有 15.6 MB；而那 ~80 B/圈量的**就是棧增長**，不是堆洩漏（`m [str]i64 = {}` ＋ `m.len()` 跑 1,000,000 圈是 **1.69 MB 平線**）。**紀律**：①崩潰**必須**區分棧／堆（看峰值 RSS：棧溢位時 RSS 很小；`rc=139`＋`Thread stack size exceeded` 的 crash report 是決定性的）；②「崩潰」**截斷**了洩漏的量測 ⇒ 修好崩潰**之前**報的斜率都不可信；③斜率要用**兩點以上**算，並配一個**負對照**（本條：`init()` 但不 `put`） |
 | **19** | **IR 的結構性不變式該由 emitter 保證，還是交給 `opt`？** | **由 emitter 保證。** `alloca` 必須在 entry block 是不變式，但 `-O2` 不會幫你做：**LICM 不提 `alloca`**，`mem2reg`/`SROA` 也**無法提升**不在 entry block 的 `alloca`。後果是「呼叫被 inline 就沒事、沒被 inline 就棧溢位」——一個**只在特定 inline 決策下才成立**的不變式，本質上是不變式沒被建立。修法是 emitter 端逐函式重寫（`hoistEntryAllocas`），**不是**加 pass 或調 opt 參數。⚠️ 重寫必須**放過動態 `alloca`**（人數運算元可能是後面 block 定義的 register ⇒ entry 不支配它） |
+| **20** | **配置型 runtime helper 回傳的值要怎麼跟 `@str_free`／`@vec_free` 的守衛對齊？** | **任何配置過 buffer 的 helper 都不可回傳 `cap == 0`。** `@str_free`／`@vec_free` 用 `cap == 0` 表示「借用視圖、不擁有任何東西、跳過」——守衛本身**對**（視圖的 data 指向別人的 buffer），但它讓 `cap == 0` 的語意**變成**「沒有東西要釋放」。`@str_clone` 對空字串配 `len + 1` 位元組卻回傳 `cap = len = 0`、`@str_from_const` 對 `''` 直接 `@nolang_rc_alloc(0)` ⇒ 兩者都交出**永遠沒人釋放**的塊，**每個提到空字串字面量的程式都在漏**（與 tier 無關）；tier 2 只是把「每圈克隆的元素數」放大成線性。修法：`len == 0` 一律回**全零描述子**（`@str_clone` 的 nil 分支本來就回這個）。⚠️ **量配置的插樁必須插在 `X.bin_opt.ll`**：`no build` 走 `opt -O3` → `llc` → `clang`，`X.ll` 是未優化的；實測 `''` 的 `str_from_const` ＋ `str_clone` 在 `-O3` 下**整組被消除**（未優化 IR 上「每圈漏 3 塊」，同一支程式峰值 RSS 卻是平線）。⚠️ 反向也成立：**「clone 有沒有被釋放」要用逐 clone 配對檢查去否證**（v2.11 用它排除了「容器沒釋放」的假說，逼出真正的原因在 clone 的**內容**） |
+| **21** | **`emitStructDropHelper` 遞迴進 pointee 的條件該用哪個述詞？** | **與 clone 側完全同一個**（`StructHasPtrFields(sub) \|\| StructHasOwnedLeafFields(sub)`，也是 `structSlotNeedsZero` 用的那個）。只認**指標欄位**會讓「只有 inline owned leaf、零指標欄位」的 pointee **完全沒有解構子**，而 clone 側（`emitPtrFieldsClone`）**早已深拷貝**它的 leaf ⇒ **純洩漏、stdout 完全看不到**（實例：`json-pool` 五個 `%vec`，`@__nolang_drop_json_json_pool` 從未產生）。**判準**：drop 與 clone 必須是**同一條遍歷**——任一邊多、另一邊少，就分別是 **double free** 與**洩漏**。驗收：修後指標欄位案例與「無指標欄位」的 `box { name str }` **位元組完全相同**（8,175,616 B） |
+| **22** | **「這個現象是不是我這個 hunk 造成的」要怎麼歸因？** | **凍結 HEAD 快照 ＋ 只疊那一個 hunk**（`git archive HEAD \| tar -x -C /tmp/headtree`，改一處、重建、量）。理由：並行 session 讓「當前樹 vs HEAD」同時差很多東西——本輪實例是另一 session 正在把 `hir.Node.File` 改名成 `S2`，**`/tmp` 的 `rsync` 副本因此一度建不起來**（`unknown field File`）。本輪用它證明「`@str_clone` 多一分支後 LLVM 不再消除某些死克隆迴圈」**是 v2.11 的 str hunk 造成的**，而**可觀測**的洩漏在 HEAD 上**數字相同** ⇒ 是**揭開**既有洩漏、不是引入。**判準**：只有**可觀測**形狀（有輸出、迴圈不被消除）的差異才算行為差異；「死迴圈有沒有被消除」是 codegen 細節 |
+| **23** | **`OpSetField.MovesArg`（「這個欄位賦值消耗 RHS」）該由誰決定、憑什麼？** | **由 codegen 的實際行為決定，且必須是單一述詞**（`Module.SetFieldConsumesRHS`，v2.13）。`MovesArg` 只影響一件事——drop 分析要不要抑制 RHS 臨時的 drop——所以它**只在 codegen 真的 MOVE（位元複製共享）時**才該為真。`emitSetField` 對 owned leaf **克隆**、對 struct／指標欄位**深拷貝**，欄位因此拿到自己的 buffer，RHS 必須被 drop；只有未放行的 `%vec`／map／`%option` 是位元複製。兩處呼叫點（`obj.field = v`、`lowerStructLit`）**共用同一個述詞**才不會漂移。**無法解析的目標保守回 `true`**（漏修是洩漏，修錯是 use-after-free）。⚠️ **舊註解會過期**：`tests/map.no` 那句「沒有 MovesArg 就會崩」寫於 `emitOwnedLeafFieldStore` 之前，該欄位現在是 owned leaf、會被克隆 ⇒ 警告已失效（實測 `tests/map.no` 與 rehash 壓力測試輸出完全相同）。⚠️ **負對照不可省**：共享容器欄位（未放行的 `%vec`）**必須**保持 `MovesArg=true`，否則欄位 buffer 被 drop ⇒ UAF |
 
 ---
 

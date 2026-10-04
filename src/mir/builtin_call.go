@@ -2628,14 +2628,12 @@ func (c *codegen) emitBuiltinWinWsaStartup(inst *Inst) error {
 }
 
 // emitBuiltinNetDial lowers `net.net-dial(host, port)` -> fd i64: create a TCP
-// client connection. Performs socket(AF_INET, SOCK_STREAM, 0) + inet_pton +
-// connect. This mirrors the legacy backend's happy path for IP-literal hosts
-// (build/llvm/call_stdlib.go net-dial); hostname DNS resolution via getaddrinfo
-// is intentionally omitted for now — net-dial returns -1 for a non-IP-literal
-// host until that fallback is ported. The sockaddr_in layout differs per OS:
-//
-//	darwin: sin_len@0=16, sin_family@1=AF_INET, sin_port@2, sin_addr@4
-//	linux :                 sin_family@0=AF_INET, sin_port@2, sin_addr@4
+// client connection. Performs socket(AF_INET, SOCK_STREAM, 0) +
+// getaddrinfo(host) (which resolves DNS hostnames — not just IP literals,
+// unlike the old inet_pton path) + connect. The returned sockaddr_in's
+// sin_port is overwritten with htons(port) since we pass a NULL service to
+// getaddrinfo. On getaddrinfo failure the fd is -1; the higher layers
+// (dns.dial) fall back to their own resolver or report the error.
 func (c *codegen) emitBuiltinNetDial(inst *Inst) error {
 	if len(inst.Args) < 2 {
 		return fmt.Errorf("net-dial: needs (host, port)")
@@ -2650,62 +2648,94 @@ func (c *codegen) emitBuiltinNetDial(inst *Inst) error {
 	}
 	_, portReg := c.loadVal(inst.Args[1])
 
-	darwin := targetGOOS() == "darwin"
-	familyOff := int64(0)
-	if darwin {
-		familyOff = 1
-	}
-	portOff := int64(2)
-	addrOff := int64(4)
-
 	c.decl("declare i32 @socket(i32, i32, i32)")
 	c.decl("declare i32 @connect(i32, i8*, i32)")
-	c.decl("declare i32 @inet_pton(i32, i8*, i8*)")
+	c.decl("declare i32 @getaddrinfo(i8*, i8*, %struct.addrinfo*, %struct.addrinfo**)")
+	c.decl("declare void @freeaddrinfo(%struct.addrinfo*)")
 
+	// ai_addr field index inside struct addrinfo differs by platform (both are
+	// 48 bytes; only the field ORDER differs):
+	//   glibc (linux):  ..., ai_addrlen, ai_addr, ai_canonname, ai_next  -> ai_addr @5
+	//   macOS (darwin): ..., ai_addrlen, ai_canonname, ai_addr, ai_next -> ai_addr @6
+	aiAddrIdx := 5
+	if targetGOOS() == "darwin" {
+		aiAddrIdx = 6
+	}
+
+	// socket(AF_INET=2, SOCK_STREAM=1, 0)
 	sock := c.treg("netd.sock")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @socket(i32 2, i32 1, i32 0)\n", sock))
 
-	addr := c.treg("netd.addr")
-	c.sb.WriteString(fmt.Sprintf("  %s = alloca [16 x i8]\n", addr))
-	addrp := c.treg("netd.addrp")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", addrp, addr))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 16, i1 0)\n", addrp))
+	// hints.addrinfo: ai_family=AF_INET(2), ai_socktype=SOCK_STREAM(1), rest 0
+	hints := c.treg("netd.hints")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%struct.addrinfo\n", hints))
+	hintsI8 := c.treg("netd.hintsi8")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %%struct.addrinfo* %s to i8*\n", hintsI8, hints))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 48, i1 0)\n", hintsI8))
+	hintsFam := c.treg("netd.hfam")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%struct.addrinfo, %%struct.addrinfo* %s, i64 0, i32 1\n", hintsFam, hints))
+	c.sb.WriteString(fmt.Sprintf("  store i32 2, i32* %s\n", hintsFam))
+	hintsType := c.treg("netd.htype")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%struct.addrinfo, %%struct.addrinfo* %s, i64 0, i32 2\n", hintsType, hints))
+	c.sb.WriteString(fmt.Sprintf("  store i32 1, i32* %s\n", hintsType))
 
-	if darwin {
-		lenGEP := c.treg("netd.leng")
-		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 0\n", lenGEP, addr))
-		c.sb.WriteString(fmt.Sprintf("  store i8 16, i8* %s\n", lenGEP))
-	}
+	// res = addrinfo**
+	resPtr := c.treg("netd.res")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca %%struct.addrinfo*\n", resPtr))
 
-	famGEP := c.treg("netd.famg")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", famGEP, addr, familyOff))
-	c.sb.WriteString(fmt.Sprintf("  store i8 2, i8* %s\n", famGEP))
+	// gai = getaddrinfo(host, NULL, &hints, &res)
+	gai := c.treg("netd.gai")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @getaddrinfo(i8* %s, i8* null, %%struct.addrinfo* %s, %%struct.addrinfo** %s)\n",
+		gai, hostPtr, hints, resPtr))
+	// host C string is no longer needed
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", hostPtr))
 
 	// sin_port = htons(port) = ((port & 0xff) << 8) | ((port >> 8) & 0xff)
 	plo := c.treg("netd.plo")
 	c.sb.WriteString(fmt.Sprintf("  %s = and i64 %s, 255\n", plo, portReg))
 	plo8 := c.treg("netd.plo8")
 	c.sb.WriteString(fmt.Sprintf("  %s = shl i64 %s, 8\n", plo8, plo))
-	phi := c.treg("netd.phi")
-	c.sb.WriteString(fmt.Sprintf("  %s = lshr i64 %s, 8\n", phi, portReg))
+	phiv := c.treg("netd.phiv")
+	c.sb.WriteString(fmt.Sprintf("  %s = lshr i64 %s, 8\n", phiv, portReg))
 	phi8 := c.treg("netd.phi8")
-	c.sb.WriteString(fmt.Sprintf("  %s = and i64 %s, 255\n", phi8, phi))
+	c.sb.WriteString(fmt.Sprintf("  %s = and i64 %s, 255\n", phi8, phiv))
 	pnet := c.treg("netd.pnet")
 	c.sb.WriteString(fmt.Sprintf("  %s = or i64 %s, %s\n", pnet, plo8, phi8))
 	pnet16 := c.treg("netd.pnet16")
 	c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i16\n", pnet16, pnet))
+
+	// branch: only dereference *res when getaddrinfo succeeded
+	gaiOk := c.treg("netd.gaiok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", gaiOk, gai))
+	okBlk := c.label("netd.ok")
+	failBlk := c.label("netd.fail")
+	doneBlk := c.label("netd.done")
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", gaiOk, okBlk, failBlk))
+
+	c.sb.WriteString(okBlk + ":\n")
+	resv := c.treg("netd.resv")
+	c.sb.WriteString(fmt.Sprintf("  %s = load %%struct.addrinfo*, %%struct.addrinfo** %s\n", resv, resPtr))
+	aiAddrGep := c.treg("netd.aiaddrg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%struct.addrinfo, %%struct.addrinfo* %s, i64 0, i32 %d\n", aiAddrGep, resv, aiAddrIdx))
+	aiAddr := c.treg("netd.aiaddr")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", aiAddr, aiAddrGep))
+	// overwrite sin_port (offset 2 in sockaddr_in) with htons(port)
 	portGEP := c.treg("netd.portg")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", portGEP, addr, portOff))
-	c.sb.WriteString(fmt.Sprintf("  store i16 %s, i16* %s\n", pnet16, portGEP))
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 2\n", portGEP, aiAddr))
+	portGEP16 := c.treg("netd.portg16")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i16*\n", portGEP16, portGEP))
+	c.sb.WriteString(fmt.Sprintf("  store i16 %s, i16* %s\n", pnet16, portGEP16))
+	conn := c.treg("netd.conn")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @connect(i32 %s, i8* %s, i32 16)\n", conn, sock, aiAddr))
+	c.sb.WriteString(fmt.Sprintf("  call void @freeaddrinfo(%%struct.addrinfo* %s)\n", resv))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", doneBlk))
 
-	addrGEP := c.treg("netd.addrg")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [16 x i8], [16 x i8]* %s, i64 0, i64 %d\n", addrGEP, addr, addrOff))
-	pton := c.treg("netd.pton")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @inet_pton(i32 2, i8* %s, i8* %s)\n", pton, hostPtr, addrGEP))
-	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", hostPtr))
+	c.sb.WriteString(failBlk + ":\n")
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", doneBlk))
 
-	connRet := c.treg("netd.conn")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @connect(i32 %s, i8* %s, i32 16)\n", connRet, sock, addrp))
+	c.sb.WriteString(doneBlk + ":\n")
+	connPhi := c.treg("netd.connphi")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i32 [ %s, %%%s ], [ -1, %%%s ]\n", connPhi, conn, okBlk, failBlk))
 
 	// fd = (socket ok && connect ok) ? socket : -1
 	sockOk := c.treg("netd.sok")
@@ -2715,7 +2745,7 @@ func (c *codegen) emitBuiltinNetDial(inst *Inst) error {
 	s1 := c.treg("netd.s1")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 -1\n", s1, sockOk, sock64))
 	connOk := c.treg("netd.cok")
-	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", connOk, connRet))
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", connOk, connPhi))
 	fd := c.treg("netd.fd")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 -1\n", fd, connOk, s1))
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", fd, dstSlot))

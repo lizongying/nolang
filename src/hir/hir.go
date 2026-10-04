@@ -200,6 +200,13 @@ const (
 	// slot and restores an enclosing binding of the same name when the arm
 	// ends, so a nested match cannot make the outer arm read the inner payload.
 	FlagArmBinding uint32 = 1 << 30
+	// FlagTrackCaller marks a function whose LAST parameter is a caller-location
+	// slot (declared as `loc str = ''`). The MIR lowerer overrides an omitted
+	// trailing argument with a compile-time "file:line:col" string literal built
+	// from the call node's S2/Line/Col (S2 carries the interned source-file base
+	// name on KCall — see Node.S2). Used by std/log to attribute log lines to the
+	// caller without a runtime backtrace.
+	FlagTrackCaller uint32 = 1 << 31
 )
 
 // NoID marks an absent child, sibling, string or type reference.
@@ -225,7 +232,13 @@ type Node struct {
 	First int32 // first child, NoID when leaf
 	Next  int32 // next sibling, NoID when last
 	S     int32 // primary interned string: name, literal text, operator
-	S2    int32 // secondary interned string: property, alias, receiver, lang
+	S2    int32 // secondary interned string: property, alias, receiver, lang.
+	// On a KCall node S2 is repurposed to hold the interned base name of the
+	// source file the call originated from (NoID when unknown), so a
+	// FlagTrackCaller callee can bake a caller "file:line:col" literal at
+	// compile time (see the FlagTrackCaller note and mir callerLocation).
+	// KCall never uses S2 for its other meanings, and the arena stays
+	// pointer-free / 48 bytes (TestNodeIsPointerFree).
 	Type  int32 // interned type-string id, NoID when unknown
 	Flags uint32
 	Line  int32
@@ -607,15 +620,15 @@ func (p *Package) dumpNode(sb *strings.Builder, id int32, depth int) {
 // Builder accumulates nodes and interns payload strings. It is not safe for
 // concurrent use; build each package on its own Builder.
 type Builder struct {
-	nodes   []Node
-	strings []string
-	strIdx  map[string]int32
-	top     []int32
-	anns    []Ann
-	annSeen map[int32]bool // dedup for AddAnn; discarded when Package is built
-	embeds  []Embed
+	nodes     []Node
+	strings   []string
+	strIdx    map[string]int32
+	top       []int32
+	anns      []Ann
+	annSeen   map[int32]bool // dedup for AddAnn; discarded when Package is built
+	embeds    []Embed
 	embedSeen map[int32]bool // dedup for AddEmbed; discarded when Package is built
-	name    string
+	name      string
 }
 
 // NewBuilder returns an empty Builder sized for a typical module.

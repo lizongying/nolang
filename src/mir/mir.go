@@ -249,7 +249,27 @@ func (m *Module) StructFieldIsOwnedLeaf(key string, idx int) bool {
 //	        cloning ordinary owned leaves too; guarded by
 //	        TestOwnedVecLeafFieldReadIsCloned, which was verified to fail with
 //	        the clone short-circuited.
-//	tier 2+ set_ / heap_ are deliberately NOT queued: their init(data) API
+//	tier 2  json_ (json.json-pool) — LANDED, on the back of the same 692-file
+//	        compile+run A/B sweep discipline (build rc, run rc and stdout sha
+//	        identical on every file; the four lines that differed were all
+//	        reproduced as non-attributable by serial re-runs: two tests/*-os.no
+//	        that print mkstemp names, an async test that prints a heap address,
+//	        and https-server.no which only timed out under -P load).
+//	        json-pool.init writes .nodes/.strs/.ec/.ek/.en = with-len(0), i.e.
+//	        it OWNS its buffers — unlike set_/heap_, which adopt caller arrays —
+//	        so the %vec leaves can be cloned and freed. This is the largest win
+//	        of the rollout: the doc probe (p = json-pool {} + init + parse) went
+//	        from 130.9 MB @ 50k / 260.0 MB @ 100k (slope 2.58 KB/iter) to
+//	        8.6 / 14.7 MB (slope 0.12 KB/iter).
+//	        Landing it REQUIRED fixing @str_clone / @str_from_const first: both
+//	        handed back a cap == 0 block for the empty string, and cap == 0 is
+//	        exactly what @str_free/@vec_free read as "borrowed view, owns
+//	        nothing, skip me" — so every clone/materialisation of '' leaked. A
+//	        read of an owned []str leaf deep-clones the whole vec, and
+//	        json-pool.strs holds nothing but '' values, so the tier turned a
+//	        fixed per-value leak into one proportional to the node count. See
+//	        the empty-string arms in codegen.go and str_empty_clone_test.go.
+//	tier 3+ set_ / heap_ are deliberately NOT queued: their init(data) API
 //	        accepts fixed-array views and callers keep using the array they
 //	        passed (tests/set.no hands bbuf to union after bset.init(bbuf)).
 //	        Classifying that field as an owned copy would free a buffer the
@@ -258,7 +278,7 @@ func (m *Module) StructFieldIsOwnedLeaf(key string, idx int) bool {
 // Structs outside this list stay OUT until their actual buffer ownership is
 // established: StructHasOwnedLeafFields fans out to ~25 call sites, so a
 // blanket opt-in flips every %vec-bearing struct at once.
-var ownedVecLeafTiers = []string{"hashmap_", "static_hashmap_"}
+var ownedVecLeafTiers = []string{"hashmap_", "static_hashmap_", "json_"}
 
 func (m *Module) ownedVecLeafAllowed(key string) bool {
 	if len(ownedVecLeafTiers) == 0 {
@@ -317,6 +337,87 @@ func (m *Module) structHasOwnedLeafFields(key string, depth int) bool {
 		}
 	}
 	return false
+}
+
+// SetFieldConsumesRHS reports whether `recv.field = v` genuinely TRANSFERS
+// ownership of an owned RHS into the field — i.e. whether the codegen stores
+// the RHS's OWN buffer into the field instead of an independent copy.
+//
+// It exists because OpSetField.MovesArg is what tells insertDrops to suppress
+// the RHS temporary's drop, and that is only sound when the codegen MOVES.
+// emitSetField's decision, mirrored here exactly:
+//
+//   - an owned leaf field (a `str` always; a `%vec` leaf opted in by
+//     ownedVecLeafAllowed) is CLONED by emitOwnedLeafFieldStore, and a
+//     struct-typed or pointer field is DEEP-COPIED by cloneStructFieldLeaves.
+//     The field then owns its own buffer, so the RHS temporary is NOT consumed
+//     and must still be dropped. Claiming otherwise leaked one buffer per
+//     assignment — measured 32 B/iter for a `str` field and 32 B/iter for a
+//     struct field over 600k iterations, and the same shape inside a struct
+//     literal (lowerStructLit's own MovesArg).
+//   - a container field the codegen merely BITWISE-STORES (`%vec` outside the
+//     tier allowlist, a map, an `%option`) SHARES the RHS's buffer, so the
+//     field really does take ownership and the RHS temporary must not be
+//     freed. That is the original reason MovesArg exists: without it
+//     `.keys = with-len(n)` inside hashmap.rehash drops the freshly allocated
+//     slice right after the store and every later read crashes (tests/map.no).
+//
+// Anything the predicate cannot resolve (unknown receiver type, an option
+// receiver that does not peel, a projection) keeps the historical "consumes"
+// answer. The asymmetry is deliberate: a missed fix is a leak, a wrong fix is
+// a use-after-free.
+func (m *Module) SetFieldConsumesRHS(recv ValueID, fieldName string) bool {
+	key, idx, ok := m.setFieldTarget(recv, fieldName)
+	if !ok {
+		return true
+	}
+	if m.StructFieldIsOwnedLeaf(key, idx) {
+		return false
+	}
+	f := m.StructFields[key][idx]
+	if m.FieldIsPointer(f) {
+		return false
+	}
+	if m.IsStructType(f.TypeRaw) {
+		if sub := m.StructKeyOf(f.TypeRaw); sub != "" && m.StructHasOwnedLeafFields(sub) {
+			return false
+		}
+	}
+	return true
+}
+
+// setFieldTarget resolves the (structKey, fieldIndex) that emitSetField will
+// write for `recv.field = v`, or ok=false when it cannot be determined.
+// `?T.field = v` peels the option first, exactly as emitSetField does.
+func (m *Module) setFieldTarget(recv ValueID, fieldName string) (string, int, bool) {
+	if recv <= NoVal || fieldName == "" {
+		return "", 0, false
+	}
+	v := m.Value(recv)
+	if v == nil {
+		return "", 0, false
+	}
+	t := m.Type(v.Type)
+	if t == nil {
+		return "", 0, false
+	}
+	raw := t.Raw
+	if t.Kind == KindOption {
+		elem, ok := parseOptionElem(raw)
+		if !ok {
+			return "", 0, false
+		}
+		raw = elem
+	}
+	key := m.StructKeyOf(raw)
+	if key == "" {
+		return "", 0, false
+	}
+	idx, ok := m.FieldIndex(key, fieldName)
+	if !ok {
+		return "", 0, false
+	}
+	return key, idx, true
 }
 
 // typeOwnsHeap is the drop machinery's ownership test: the pre-existing owner
@@ -1085,12 +1186,18 @@ type Inst struct {
 	Callee ValueID
 	Line  int32
 	Col   int32
-	// MovesArg marks an aggregate-constructor store (OpSetField emitted by
-	// lowerStructLit) whose value argument (Args[1]) is CONSUMED: ownership
-	// transfers into the struct field, so the value's temporary heap must not be
-	// dropped separately (doing so frees a buffer the escaped struct still
-	// points to). The drop pass treats it as a move source when it is dead after
-	// the store.
+	// MovesArg marks an OpSetField whose value argument (Args[1]) is CONSUMED:
+	// the codegen stores the value's OWN buffer into the field, so the value's
+	// temporary heap must not be dropped separately (the field owns it now). The
+	// drop pass treats it as a move source when it is dead after the store.
+	//
+	// Set by BOTH OpSetField emitters — lowerStructLit's field initializers and
+	// the `obj.field = v` assignment — through Module.SetFieldConsumesRHS, which
+	// mirrors emitSetField's copy/share decision. It is NOT unconditionally
+	// true: emitSetField CLONES an owned leaf (a `str` always; a `%vec` leaf
+	// opted in by ownedVecLeafAllowed) and DEEP-COPIES a struct/pointer field,
+	// so for those the RHS still owns its buffer and must be dropped. Claiming
+	// otherwise leaked one buffer per assignment.
 	MovesArg bool
 	// OvfAnnotated marks an arithmetic/bitwise instruction whose enclosing
 	// statement/function carries an explicit `#{overflow=...}` annotation. When

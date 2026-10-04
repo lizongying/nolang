@@ -2174,6 +2174,12 @@ target triple = "arm64-apple-macosx15.0.0"
 ; and produced a trace/BPT trap.
 %nolang_hdr = type { i64, i64 }
 
+; getaddrinfo result struct (POSIX). Layout is identical on darwin/linux
+; x86_64/arm64: { ai_flags, ai_family, ai_socktype, ai_protocol (i32 x4),
+; ai_addrlen (i32), ai_addr (i8*), ai_canonname (i8*), ai_next (i8*) }.
+; Used by emitBuiltinNetDial for hostname DNS resolution.
+%struct.addrinfo = type { i32, i32, i32, i32, i32, i8*, i8*, i8* }
+
 declare i8* @malloc(i64)
 declare void @free(i8*)
 declare i64 @write(i32, i8*, i64)
@@ -2303,8 +2309,24 @@ done:
   ret void
 }
 
+; str_from_const: materialise a string LITERAL as a heap %str-long.
+;
+; An EMPTY literal (len == 0) must return the all-zero descriptor rather than
+; allocate. @str_free skips a value whose cap == 0 — that guard exists because
+; a borrowed VIEW carries cap == 0 while aliasing storage it does not own — so a
+; heap block handed back with cap == 0 can never be released. Allocating
+; @nolang_rc_alloc(0) for '' produced exactly that: a 16-byte block (32-byte
+; malloc class) that leaked once per evaluation, in EVERY program that mentions
+; an empty string literal. The all-zero descriptor is already the runtime's own
+; spelling of "empty string": @str_clone returns it for a null data pointer, and
+; @str_retain / @str_free both no-op on it.
 define %str-long @str_from_const(i8* %ptr, i64 %len) {
 entry:
+  %zero = icmp eq i64 %len, 0
+  br i1 %zero, label %none, label %alloc
+none:
+  ret %str-long { i64 0, i64 0, i8* null }
+alloc:
   %buf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %ptr, i64 %len, i1 0)
   %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
@@ -2770,12 +2792,30 @@ copy:
 ; both be freed by the drop pass -> double free. Cloning gives the read its own
 ; buffer, matching nolang copy-on-read string semantics and keeping the field's
 ; drop independent.
+; str_clone: give the reader its OWN copy of a string's buffer.
+;
+; The nil arm must catch the EMPTY string as well as the null one. It used to
+; test only data == null, then allocate len + 1 bytes and hand the copy back
+; with cap = len — so cloning '' produced a fresh block carrying cap 0. cap 0
+; is precisely the marker @str_free / @vec_free use for "a borrowed view, owns
+; nothing, skip me", which makes such a clone unreleasable: one leaked block per
+; clone, for the lifetime of the process.
+;
+; Measured on the §4.3 tier-2 rollout, where it became the dominant cost: every
+; read of an owned []str leaf deep-clones the vec, so every element goes
+; through @str_clone, and json-pool.strs holds nothing but '' values. With the
+; gate open json parse went 130.9 MB -> 170.2 MB @50k iterations; with this arm
+; the same run is 8.6 MB @50k / 14.7 MB @100k (leaks(1) on the 400k-iteration
+; loop reported 25.9M leaked blocks, all of them 32-byte mallocs — i.e.
+; @nolang_rc_alloc(0) and @nolang_rc_alloc(1)).
 define %str-long @str_clone(%str-long %s) {
 entry:
   %len = extractvalue %str-long %s, 0
   %data = extractvalue %str-long %s, 2
   %isnull = icmp eq i8* %data, null
-  br i1 %isnull, label %nil, label %copy
+  %isempty = icmp eq i64 %len, 0
+  %skip = or i1 %isnull, %isempty
+  br i1 %skip, label %nil, label %copy
 nil:
   %z = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 0, 0
   ret %str-long %z
@@ -6545,7 +6585,21 @@ func (c *codegen) emitStructDropHelper(lt, key string) {
 		b.WriteString(fmt.Sprintf("  %%z%d = icmp eq %s* %%q%d, null\n", n, pointeeLT, n))
 		b.WriteString(fmt.Sprintf("  br i1 %%z%d, label %%%s, label %%r%d\n", n, next, n))
 		b.WriteString(fmt.Sprintf("r%d:\n", n))
-		if sub := c.mod.StructKeyOf(fields[i].TypeRaw); sub != "" && c.mod.StructHasPtrFields(sub) {
+		// Recurse into the pointee when it OWNS anything: pointees of its own
+		// (pointer fields) or inline owned leaves. The predicate must be exactly
+		// the one emitPtrFieldsClone uses to decide what it deep-copies
+		// (StructHasOwnedLeafFields -> emitLeafFieldsClone at its step 2,
+		// StructHasPtrFields -> its own recursion) — and the one
+		// structSlotNeedsZero already uses. Gating on POINTEES alone left a
+		// pointee's owned leaves cloned but never freed: a leak that is
+		// invisible in stdout.
+		//
+		// Measured: json.parse's `pool json-pool #{inline=false}`. The pool owns
+		// five %vec buffers and has no pointer fields, so no
+		// @__nolang_drop_json_json_pool was emitted at all and the destructor
+		// only freed the pool BLOCK. `r = json.parse('{"a":1}')` in a loop leaked
+		// ~0.68 KB/iter (linear to 200k); scalars leaked ~0.26 KB/iter.
+		if sub := c.mod.StructKeyOf(fields[i].TypeRaw); sub != "" && (c.mod.StructHasPtrFields(sub) || c.mod.StructHasOwnedLeafFields(sub)) {
 			c.emitStructDropHelper(pointeeLT, sub)
 			b.WriteString(fmt.Sprintf("  call void @%s(%s* %%q%d)\n", structDropName(pointeeLT), pointeeLT, n))
 		}

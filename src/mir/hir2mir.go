@@ -864,9 +864,9 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			// unconditionally used to leave such lets as unmaterialized global
 			// markers -> every later read was `undef` (test-fd-newtype trapped at
 			// `bad-fd < 0`).
-		if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" {
-			continue
-		}
+			if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" {
+				continue
+			}
 			raw := l.letTypeRaw(n)
 			if raw != "" && l.foldConstText(n, raw) != "" {
 				// A real COMPILE-TIME CONSTANT initializer. Scalars/enums/fixed
@@ -1547,7 +1547,7 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 		if callee != "" {
 			if cid, ok := l.mod.FuncByName[callee]; ok {
 				if cf := l.mod.Func(cid); cf != nil && len(cf.Results) > 0 {
-				return cf.Results[0]
+					return cf.Results[0]
 				}
 			}
 		}
@@ -6233,13 +6233,16 @@ func (l *lowerer) lowerStructLit(n *hir.Node) ValueID {
 		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
 		sid := l.b.EmitVoid(OpSetField, []ValueID{res, vv}, "")
 		l.mod.Insts[sid].Str = fieldName
-		// The field initializer is consumed by the constructor: its heap
-		// transfers into the struct field. Mark it so the drop pass does not
-		// free the initializer's temporary separately (which would free a
-		// buffer the struct — and any struct moved out of the frame — still
-		// points to; the SIGSEGV / NUL-name behind struct-field-leak and
-		// struct-move-is-moved).
-		l.mod.Insts[sid].MovesArg = true
+		// The field initializer is consumed by the constructor ONLY when the
+		// codegen moves it: emitSetField deep-copies an owned leaf (`str`
+		// always, a `%vec` leaf opted in by ownedVecLeafAllowed) and every
+		// struct/pointer field, so for those the initializer still owns its
+		// buffer and must be dropped. SetFieldConsumesRHS is the same predicate
+		// the `obj.field = v` site uses, so the two cannot drift. The old
+		// unconditional `true` leaked one buffer per literal field (measured
+		// 32 B/iter for `inner { name: s }` over 600k iterations); the
+		// container cases it was written for still keep their suppression.
+		l.mod.Insts[sid].MovesArg = l.mod.SetFieldConsumesRHS(res, fieldName)
 	}
 	return res
 }
@@ -7061,8 +7064,8 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// (tests/mem-safety/bug15-read-dowhile-copyfile.no). Preferring the concrete
 		// name also matches the legacy backend, which tries `[]<elem>.m` before the
 		// `_x<elem>.m` / generic candidates.
-	concrete := recvTypeName + "." + method
-	if _, ok := l.funcNames[concrete]; ok {
+		concrete := recvTypeName + "." + method
+		if _, ok := l.funcNames[concrete]; ok {
 			return concrete, rv
 		}
 		// Union-method dispatch (bug #85): a method declared on a union type
@@ -8549,9 +8552,9 @@ func (l *lowerer) resultTypeOfCallee(callee string) TypeID {
 				continue // skip self
 			}
 			t := l.typeOfNode(cn)
-		if t != l.voidType {
-			return t
-		}
+			if t != l.voidType {
+				return t
+			}
 		}
 	}
 	return l.voidType
@@ -8920,7 +8923,18 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 	// (e.g. `csv.parse-line(s)` → `max-fields = 1024`). Variadic callees are
 	// skipped: their trailing args are packed into the %vec, not bound to named
 	// params, so synthesizing defaults would corrupt the variadic spread.
+	//
+	// A `#{track-caller}` callee (e.g. std/log debug/info/...) has its LAST
+	// parameter as a caller-location slot (`loc str = ''`). When the caller
+	// omits it, override the default with a compile-time "file:line:col" string
+	// built from this call node (see hir.Node.S2 / hir.FlagTrackCaller). When
+	// the caller supplies it explicitly, the fill loop is skipped and the given
+	// value wins — so a wrapper forwarding its own loc is never overwritten.
 	if fid, ok := l.funcNames[callee]; ok {
+		trackCaller := false
+		if fdef := l.pkg.Node(fid); fdef != nil {
+			trackCaller = fdef.Has(hir.FlagTrackCaller)
+		}
 		if fdef := l.pkg.Node(fid); fdef != nil && fdef.Has(hir.FlagVariadic) {
 			// variadic: trailing args are real, do not synthesize defaults
 		} else if len(args) < len(paramNodes) {
@@ -8928,6 +8942,12 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 				pn := l.pkg.Node(paramNodes[pi])
 				if pn == nil {
 					continue
+				}
+				if trackCaller && pi == len(paramNodes)-1 {
+					if loc := l.callerLocation(n); loc != "" {
+						argv = append(argv, l.b.EmitStr(OpConst, l.b.Type("str"), loc, ""))
+						continue
+					}
 				}
 				deID := pn.First
 				if deID == hir.NoID {
@@ -8955,7 +8975,21 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 	return argv
 }
 
-// printableValue renders a container-typed print-family argument through its
+// callerLocation builds a "file:line:col" string from a call node, for
+// `#{track-caller}` callees (see lowerCallArgs). Returns "" when the node lacks
+// a source file (KCall S2 is NoID), so the callee's own `loc str = ”` default
+// stands in and the location field is simply omitted.
+func (l *lowerer) callerLocation(n *hir.Node) string {
+	if n == nil || n.S2 == hir.NoID {
+		return ""
+	}
+	file := l.pkg.Str(n.S2)
+	if file == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d:%d", file, n.Line, n.Col)
+}
+
 // receiver's `to-str` method, mirroring the legacy backend (which lowers
 // `print(v)` / `print(a[0..2])` to a `[]t.to-str` call).
 //
@@ -10176,15 +10210,19 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
 		sid := l.b.EmitVoid(OpSetField, []ValueID{recvV, v}, "")
 		l.mod.Insts[sid].Str = fieldName
-		// The field assignment consumes the RHS value: ownership of an owned
-		// RHS (str/vec/option) transfers into the struct field, so the value's
-		// temporary must NOT be dropped separately — that would free a buffer
-		// the struct still points to (use-after-free -> SIGSEGV). This mirrors
-		// lowerStructLit's MovesArg; without it, `.keys = with-len(n)` inside
-		// hashmap.rehash drops the freshly allocated slice immediately after
-		// the setfield, and every subsequent index/getfield on it crashes
-		// (tests/map.no).
-		l.mod.Insts[sid].MovesArg = true
+		// The field assignment consumes the RHS value ONLY when the codegen
+		// actually moves it. emitSetField deep-copies every owned leaf and
+		// every struct/pointer field (so the RHS temporary still owns its
+		// buffer and must be dropped), and bitwise-stores only a container it
+		// does not clone (`%vec` outside the tier allowlist, a map, an
+		// `%option`). SetFieldConsumesRHS mirrors that decision exactly; the
+		// old unconditional `true` suppressed the drop for the copy cases and
+		// leaked one buffer per assignment (measured 32 B/iter for a `str`
+		// field over 600k iterations). The share case is what needs the
+		// suppression: `.keys = with-len(n)` inside hashmap.rehash would
+		// otherwise drop the freshly allocated slice right after the store and
+		// every later read would crash (tests/map.no).
+		l.mod.Insts[sid].MovesArg = l.mod.SetFieldConsumesRHS(recvV, fieldName)
 		return v
 	default:
 		l.unsupported(l.curFuncName(), "assign", "unsupported assign target kind "+hir.KindNames[tn.Kind])

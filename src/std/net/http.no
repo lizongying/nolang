@@ -766,6 +766,317 @@ patch = (url str, body str) (resp ?response) {
     resp = do('PATCH', url, body)
 }
 
+; download: 串流下載（支援任意大小，直接寫入檔案）
+; 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
+; url str — 完整 URL
+; dest str — 目的地檔案路徑
+; 返回 ok bool — true=成功（且 HTTP 狀態碼為 2xx）
+download = (url str, dest str) (ok bool) {
+    ok = false
+    scheme-len = 7
+    rest = ''
+    host = ''
+    port i64 = HTTP-DEFAULT-PORT
+    path str
+    host-only = ''
+    port-str = ''
+    cr = '\r'
+    lf = '\n'
+    crlf = cr - lf
+    sep-str = crlf - crlf
+    req = ''
+    use-tls = false
+    fd fd = -1
+    tls-c tls.conn
+    written = 0
+    n = 0
+    buf str = with-len(HTTP-BUF-SIZE)
+
+    ; 解析 URL
+    {
+        url.starts-with('https://') -> {
+            use-tls = true
+            scheme-len = 8
+            port = HTTPS-DEFAULT-PORT
+        }
+        url.starts-with('http://') == false -> return
+    }
+    rest = url.slice(scheme-len, url.len-bytes())
+    slash-pos = rest.index('/')
+    {
+        slash-pos < 0 -> {
+            host = rest
+            path = '/'
+        }
+        -> {
+            host = rest.slice(0, slash-pos)
+            path = rest.slice(slash-pos, rest.len-bytes())
+        }
+    }
+    colon-pos = host.index(':')
+    colon-pos >= 0 -> {
+        host-only = host.slice(0, colon-pos)
+        port-str = host.slice(colon-pos + 1, host.len-bytes())
+        p = 0
+        i <- [0..port-str.len-bytes()): {
+            c = port-str[i]
+            c < 48 || c > 57 -> return
+            p = p * 10 + c - 48
+        }
+        port = p
+        host = host-only
+    }
+    host.len-bytes() == 0 -> return
+
+    ; 建立連線
+    {
+        use-tls -> {
+            tls-c.init()
+            ok2 = tls-c.connect(host, port)
+            ok2 == false -> return
+        }
+        -> {
+            fd = net.net-dial(host, port)
+            fd < 0 -> return
+        }
+    }
+
+    ; 建構 GET 請求（不帶 Accept-Encoding，取得原始位元組）
+    req = 'GET '
+    req = req - path
+    req = req - ' HTTP/1.1'
+    req = req - crlf
+    req = req - 'Host: '
+    req = req - host
+    req = req - crlf
+    req = req - 'Connection: close'
+    req = req - crlf
+    req = req - 'User-Agent: nolang-http/1.0'
+    req = req - crlf
+    req = req - crlf
+
+    ; 發送請求
+    {
+        use-tls -> {
+            w = tls-c.send(req)
+            w: {
+                ok ->
+                -> {
+                    tls-c.close()
+                    return
+                }
+            }
+        }
+        -> {
+            written = net.net-send(fd, req, req.len-bytes())
+            written < 0 -> {
+                fs.close(fd)
+                return
+            }
+        }
+    }
+
+    ; 接收並累積全部回應
+    all-str = ''
+    !! {
+        {
+            use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
+            -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
+        }
+        n <= 0 -> *
+        all-str = all-str - buf.slice(0, n)
+    }
+    {
+        use-tls -> tls-c.close()
+        -> fs.close(fd)
+    }
+
+    ; DBG
+    total = all-str.len-bytes()
+    print('DBG download total=' - total.to-str())
+    print('DBG download head=' - all-str.slice(0, 32))
+
+    ; 基本檢查 + 狀態碼必須為 2xx（'HTTP/1.x 2xx' 在第 9 位元組）
+    total = all-str.len-bytes()
+    total < 12 -> {
+        fs.remove(dest)
+        return
+    }
+    all-str[9] != 50 -> {
+        fs.remove(dest)
+        return
+    }
+    sep = all-str.index(sep-str)
+    sep < 0 -> {
+        fs.remove(dest)
+        return
+    }
+    body-str = all-str.slice(sep + 4, all-str.len-bytes())
+    fs.write-bytes(dest, body-str.to-bytes())
+    ok = true
+}
+
+; upload-put: 串流上傳檔案（PUT，原始二進位 body）
+; 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
+; url str — 完整 URL
+; token str — Bearer token（可空）
+; file-path str — 要上傳的檔案
+; 返回 ok bool — true=成功（且 HTTP 狀態碼為 2xx）
+upload-put = (url str, token str, file-path str) (ok bool) {
+    ok = false
+    content-opt = fs.read-str(file-path)
+    content = ''
+    content-opt: {
+        ok -> content = it
+        nil -> return
+        err -> return
+    }
+    fsize = content.len-bytes()
+
+    scheme-len = 7
+    rest = ''
+    host = ''
+    port i64 = HTTP-DEFAULT-PORT
+    path str
+    host-only = ''
+    port-str = ''
+    cr = '\r'
+    lf = '\n'
+    crlf = cr - lf
+    req = ''
+    use-tls = false
+    fd fd = -1
+    tls-c tls.conn
+    written = 0
+    n = 0
+    buf str = with-len(HTTP-BUF-SIZE)
+
+    {
+        url.starts-with('https://') -> {
+            use-tls = true
+            scheme-len = 8
+            port = HTTPS-DEFAULT-PORT
+        }
+        url.starts-with('http://') == false -> return
+    }
+    rest = url.slice(scheme-len, url.len-bytes())
+    slash-pos = rest.index('/')
+    {
+        slash-pos < 0 -> {
+            host = rest
+            path = '/'
+        }
+        -> {
+            host = rest.slice(0, slash-pos)
+            path = rest.slice(slash-pos, rest.len-bytes())
+        }
+    }
+    colon-pos = host.index(':')
+    colon-pos >= 0 -> {
+        host-only = host.slice(0, colon-pos)
+        port-str = host.slice(colon-pos + 1, host.len-bytes())
+        p = 0
+        i <- [0..port-str.len-bytes()): {
+            c = port-str[i]
+            c < 48 || c > 57 -> return
+            p = p * 10 + c - 48
+        }
+        port = p
+        host = host-only
+    }
+    host.len-bytes() == 0 -> return
+
+    {
+        use-tls -> {
+            tls-c.init()
+            ok2 = tls-c.connect(host, port)
+            ok2 == false -> return
+        }
+        -> {
+            fd = net.net-dial(host, port)
+            fd < 0 -> return
+        }
+    }
+
+    ; 建構 PUT 請求（含 body）
+    req = 'PUT '
+    req = req - path
+    req = req - ' HTTP/1.1'
+    req = req - crlf
+    req = req - 'Host: '
+    req = req - host
+    req = req - crlf
+    req = req - 'Connection: close'
+    req = req - crlf
+    req = req - 'User-Agent: nolang-http/1.0'
+    req = req - crlf
+    req = req - 'Content-Type: application/octet-stream'
+    req = req - crlf
+    token.len-bytes() > 0 -> {
+        req = req - 'Authorization: Bearer '
+        req = req - token
+        req = req - crlf
+    }
+    clen = fsize.to-str()
+    req = req - 'Content-Length: '
+    req = req - clen
+    req = req - crlf
+    req = req - crlf
+    req = req - content
+
+    ; 發送
+    {
+        use-tls -> {
+            w = tls-c.send(req)
+            w: {
+                ok ->
+                -> {
+                    tls-c.close()
+                    return
+                }
+            }
+        }
+        -> {
+            written = net.net-send(fd, req, req.len-bytes())
+            written < 0 -> {
+                fs.close(fd)
+                return
+            }
+        }
+    }
+
+    ; 讀取回應狀態
+    resp-str = ''
+    !! {
+        {
+            use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
+            -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
+        }
+        n <= 0 -> *
+        resp-str = resp-str - buf.slice(0, n)
+        resp-str.index(crlf) >= 0 -> *
+    }
+    {
+        use-tls -> tls-c.close()
+        -> fs.close(fd)
+    }
+
+    ; 狀態碼解析
+    sp1 = resp-str.index(' ')
+    sp1 < 0 -> return
+    after-code = resp-str.slice(sp1 + 1, resp-str.len-bytes())
+    sp2 = after-code.index(' ')
+    sp2 < 0 -> return
+    code-str = after-code.slice(0, sp2)
+    code = 0
+    i <- [0..code-str.len-bytes()): {
+        c = code-str[i]
+        c < 48 || c > 57 -> return
+        code = code * 10 + c - 48
+    }
+    code >= 200 && code < 300 -> ok = true
+}
+
 ; ═══════════════════════════════════════════════
 ; 認證便捷函數
 ; ═══════════════════════════════════════════════

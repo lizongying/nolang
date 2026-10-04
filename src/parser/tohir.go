@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -116,6 +117,11 @@ type hirConv struct {
 	// CoExpression nodes, so ASTToHIRWithMap can hand them to the
 	// monomorphization pass via hir.Package.GoSpawns.
 	goSpawns []int32
+	// curFile is the base name of the source file being lowered, threaded down
+	// the statement tree (inherited by nested statements whose SourceFile is
+	// empty). Stamp onto KCall nodes so the MIR lowerer can bake a caller
+	// "file:line:col" literal for FlagTrackCaller callees (see std/log).
+	curFile string
 }
 
 // remember records the HIR id assigned to an AST node so the checker can later
@@ -193,6 +199,29 @@ func (c *hirConv) annotate(n Node, id int32) int32 {
 
 func (c *hirConv) top(id int32) { c.b.AddTop(id) }
 
+// hasAnnotation reports whether the parser filed a `#{key}` annotation on n.
+// Reads the semantic side-tables, falling back to RawAnnotations: during
+// AST→HIR conversion the merged-`Annotations` copy is only populated by
+// ResolveProgram, which has NOT run yet for the MAIN program (module bodies are
+// resolved first). Mirrors annotation.go's `AnnotationsOf → RawAnnotationsOf`
+// fallback so `#{track-caller}` is recognised in both std and main sources.
+func (c *hirConv) hasAnnotation(n Node, key string) bool {
+	if c.sem == nil || isNil(n) {
+		return false
+	}
+	for _, e := range c.sem.AnnotationsOf(n) {
+		if e != nil && e.Key == key {
+			return true
+		}
+	}
+	for _, e := range c.sem.RawAnnotationsOf(n) {
+		if e != nil && e.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
 // slot wraps child in a labelled hir.KSlot, returning NoID when child is
 // absent so that missing optional operands add no nodes to the arena.
 func (c *hirConv) slot(label string, child int32) int32 {
@@ -226,6 +255,13 @@ func pos(n Node) (line, col int32) {
 // for it. The annotation hook lives here rather than in each case so a new
 // statement kind cannot forget it.
 func (c *hirConv) stmt(s Statement) int32 {
+	// Thread the origin file down the statement tree. Only top-level statements
+	// are tagged via SetSourceFile for the MAIN program (module bodies use
+	// SetSourceFileDeep), so a nested statement with an empty SourceFile keeps
+	// the enclosing statement's file instead of losing it.
+	if sf := GetSourceFile(s); sf != "" {
+		c.curFile = filepath.Base(sf)
+	}
 	id := c.annotate(s, c.stmtNode(s))
 	c.embed(s, id)
 	c.remember(s, id)
@@ -327,6 +363,7 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 			hir.FlagMethod*u32(s.IsMethodDef)|
 				hir.FlagColon*u32(s.ColonSyntax)|
 				hir.FlagSkipNaming*u32(s.IsSkipNamingCheck)|
+				hir.FlagTrackCaller*u32(c.hasAnnotation(s, "track-caller"))|
 				overflowModeFlags(s.OverflowMode))
 
 	case *ExternStatement:
@@ -935,7 +972,14 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		for _, a := range e.Arguments {
 			nodes = append(nodes, c.slot("arg", c.expr(a)))
 		}
-		return c.b.Add(hir.Node{Kind: hir.KCall, First: c.kids(nodes), Line: line, Col: col})
+		file := hir.NoID
+		if c.curFile != "" {
+			file = c.b.Intern(c.curFile)
+		}
+		// S2 on a KCall is repurposed to carry the interned source-file base name
+		// (NoID when unknown), so the MIR lowerer can bake a caller
+		// "file:line:col" for FlagTrackCaller callees (see hir.Node.S2, std/log).
+		return c.b.Add(hir.Node{Kind: hir.KCall, First: c.kids(nodes), Line: line, Col: col, S2: file})
 
 	case *DotExpression:
 		return c.b.Add(hir.Node{

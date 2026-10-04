@@ -123,7 +123,7 @@ func TestOwnedVecLeafTiersMatchDottedKeys(t *testing.T) {
 // list in the same commit, which is what stops a tier from shipping on the
 // strength of "it looked fine on the tests I ran".
 func TestOwnedVecLeafTiersMatchLandedSet(t *testing.T) {
-	want := []string{"hashmap_", "static_hashmap_"} // tier 1; see ownedVecLeafTiers
+	want := []string{"hashmap_", "static_hashmap_", "json_"} // tiers 1-2; see ownedVecLeafTiers
 	if len(ownedVecLeafTiers) != len(want) {
 		t.Fatalf("ownedVecLeafTiers = %v, want %v — a tier changed without its sweep record", ownedVecLeafTiers, want)
 	}

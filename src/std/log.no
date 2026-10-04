@@ -1,6 +1,13 @@
 ; log — 分級日誌
 ;
-; 提供前綴式分級日誌輸出，寫入標準錯誤。
+; 前綴式分級日誌。預設寫入標準錯誤，可用 open-file / set-output-fd
+; 切換到檔案；輸出格式由 set-format 選擇，可含時間戳、級別標籤，
+; 以及由編譯器自動注入的呼叫點 檔案:行:列（見 #{track-caller}）。
+;
+; 用法：
+;   log.set-format(log.F-TIME | log.F-LEVEL | log.F-LOC)
+;   log.open-file('app.log')            ; 追加寫入檔案
+;   log.info('server started')          ; 2026-.. ..:.. [INFO] app.no:7:5 server started
 
 ; ═══════════════════════════════════════════════
 ; 日誌級別常量
@@ -13,14 +20,35 @@ LEVEL-ERROR = 3
 LEVEL-FATAL = 4
 
 ; ═══════════════════════════════════════════════
-; 全域日誌級別
+; 日誌格式位（供 set-format 組合）
+; ═══════════════════════════════════════════════
+
+; F-TIME: 前置時間戳 YYYY-MM-DD HH:MM:SS（UTC）
+F-TIME = 1
+
+; F-LEVEL: 前置 [INFO] / [ERROR] 等級標籤
+F-LEVEL = 2
+
+; F-LOC: 前置呼叫點 [檔案:行:列]（由 #{track-caller} 自動注入）
+F-LOC = 4
+
+; ═══════════════════════════════════════════════
+; 全域設定
 ; ═══════════════════════════════════════════════
 
 ; level: 當前日誌級別（預設 INFO）
 level = 1
 
+; fmt-flags: 輸出格式位（預設僅 [INFO] 級別標籤，貼近舊輸出以保持相容；
+; 需要的話用 set-format 疊加 F-TIME / F-LOC）
+fmt-flags = 2
+
+; out-fd: 日誌輸出目標檔案描述符（預設標準錯誤 fd=2）。
+; 透過 io 抽象 writer 寫入；open-file / set-output-fd 可切換。
+out-fd fd = STDERR-FD
+
 ; ═══════════════════════════════════════════════
-; 級別設定
+; 設定介面
 ; ═══════════════════════════════════════════════
 
 ; set-level: 設定日誌級別
@@ -28,46 +56,101 @@ set-level = (l i64) {
     level = l
 }
 
+; set-format: 設定輸出格式位（F-TIME / F-LEVEL / F-LOC 的或運算）
+set-format = (flags i64) {
+    fmt-flags = flags
+}
+
+; set-output-fd: 切換輸出目標到指定 fd（呼叫端負責開啟/關閉）
+set-output-fd = (new-fd fd) {
+    out-fd = new-fd
+}
+
+; get-output-fd: 回傳目前輸出目標 fd（除錯用）
+get-output-fd = () (cur fd) {
+    cur = out-fd
+}
+
+; set-writer: 切換輸出目標到指定 io.writer（io 介面的抽象寫入器）
+set-writer = (w io.writer) {
+    out-fd = w.fd
+}
+
+; open-file: 以追加模式開啟日誌檔案並設為輸出目標
+; 回傳 ?bool：ok=true 成功、err 開啟失敗
+open-file = (path str) (res ?bool) {
+    res = nil
+    f = fs.open-file(path, fs.O-WRONLY | fs.O-CREAT | fs.O-APPEND, 420)
+    f < 0 -> {
+        res = err('log: open failed')
+        return
+    }
+    set-output-fd(f)
+    res = true
+}
+
 ; ═══════════════════════════════════════════════
-; 日誌輸出
+; 內部輸出
+; ═══════════════════════════════════════════════
+
+; log-stamp: 目前時間戳字串（UTC，YYYY-MM-DD HH:MM:SS）
+log-stamp = () (s str) {
+    s = time.format-time-str(time.now-s())
+}
+
+; log-emit: 依 fmt-flags 組裝單行日誌，寫入 out-fd（io 抽象的落地寫入）
+log-emit = (tag str, msg str, loc str) {
+    buf = ''
+    fmt-flags & F-TIME != 0 -> buf = buf - log-stamp() - ' '
+    fmt-flags & F-LEVEL != 0 -> buf = buf - '[' - tag - '] '
+    fmt-flags & F-LOC != 0 -> {
+        ! loc.empty() -> buf = buf - '[' - loc - '] '
+    }
+    buf = buf - msg
+    dst fd = out-fd
+    b = buf.to-bytes()
+    n = fs.write(dst, b, b.len())
+    nl []byte = with-len(1)
+    nl[0] = 10
+    m = fs.write(dst, nl, 1)
+}
+
+; ═══════════════════════════════════════════════
+; 日誌輸出（末位 loc 由 #{track-caller} 自動注入呼叫點）
 ; ═══════════════════════════════════════════════
 
 ; debug: 輸出 DEBUG 級別日誌
-debug = (msg str) {
-    level <= 0 -> {
 
-        n = io.errln('[DEBUG] ' - msg)
-    }
+#{track-caller}
+debug = (msg str, loc str = '') {
+    level <= 0 -> log-emit('DEBUG', msg, loc)
 }
 
 ; info: 輸出 INFO 級別日誌
-info = (msg str) {
-    level <= 1 -> {
 
-        n = io.errln('[INFO] ' - msg)
-    }
+#{track-caller}
+info = (msg str, loc str = '') {
+    level <= 1 -> log-emit('INFO', msg, loc)
 }
 
 ; warn: 輸出 WARN 級別日誌
-warn = (msg str) {
-    level <= 2 -> {
 
-        n = io.errln('[WARN] ' - msg)
-    }
+#{track-caller}
+warn = (msg str, loc str = '') {
+    level <= 2 -> log-emit('WARN', msg, loc)
 }
 
 ; error: 輸出 ERROR 級別日誌
-error = (msg str) {
-    level <= 3 -> {
 
-        n = io.errln('[ERROR] ' - msg)
-    }
+#{track-caller}
+error = (msg str, loc str = '') {
+    level <= 3 -> log-emit('ERROR', msg, loc)
 }
 
 ; fatal: 輸出 FATAL 級別日誌並退出
-fatal = (msg str, code i64) {
 
-    ; 無條件輸出
-    n = io.errln('[FATAL] ' - msg)
+#{track-caller}
+fatal = (msg str, code i64, loc str = '') {
+    log-emit('FATAL', msg, loc)
     os.exit(code)
 }

@@ -34,20 +34,20 @@ P256-N [32]byte = [
     0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
 ]
 
-; 基點 Gx（小端）
+; 基點 Gx（大端序；ec-get-basepoint 以 Gx[31-i] 轉為內部小端序）
 P256-GX [32]byte = [
-    0x96, 0xc2, 0x98, 0xd8, 0x45, 0x39, 0xa1, 0xf4,
-    0xa0, 0x33, 0xeb, 0xbd, 0x3a, 0x93, 0xaa, 0x8d,
-    0xe5, 0x6e, 0xbc, 0xf8, 0x47, 0x42, 0x2c, 0xe1,
-    0xf2, 0xd1, 0x17, 0x6b, 0x17, 0xd1, 0x6b, 0x6b,
+    0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47,
+    0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4, 0x40, 0xf2,
+    0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0,
+    0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2, 0x96,
 ]
 
-; 基點 Gy（小端）
+; 基點 Gy（大端序）
 P256-GY [32]byte = [
-    0xf5, 0x51, 0xbf, 0x37, 0x68, 0x40, 0xb6, 0xcb,
-    0xce, 0x5e, 0x31, 0x6b, 0x57, 0x33, 0xce, 0x2b,
-    0x16, 0x9e, 0x0f, 0x7c, 0x9b, 0xa7, 0x1a, 0xfe,
-    0xe2, 0x42, 0xe3, 0x4f, 0xfe, 0x34, 0xe2, 0x4f,
+    0x4f, 0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b,
+    0x8e, 0xe7, 0xeb, 0x4a, 0x7c, 0x0f, 0x9e, 0x16,
+    0x2b, 0xce, 0x33, 0x57, 0x6b, 0x31, 0x5e, 0xce,
+    0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5,
 ]
 
 ; 曲線參數 b
@@ -245,7 +245,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
     ; 從最高位元組開始減
     ; 每次嘗試減去 m * 2^(shift)
-    shift-byte = 32
+    ; 注意：64 位元組乘積最高可達 2^512-1，必須從 shift-byte=32
+    ; （窗 acc[32..63]，涵蓋 byte 63 / bit 504..511）開始，
+    ; 否則最高位元組永遠不會被規約，結果錯誤。
+    shift-byte = 33
     (shift-byte > 0) {
 
         #{overflow=wrap}
@@ -337,20 +340,102 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 }
 
 ; bn-addmod: 模加 (a + b) mod m
+; a, b < m (m 為 256-bit 模數，通常 m ≈ 2^256)
+; 關鍵：a + b 可能 >= 2^256，會產生進位。此時真實值為
+;   (a + b) = 2^256 + sum_low，而 (a+b) mod m = (sum_low + (2^256 mod m)) mod m。
+; 若只用 bn-mod(sum_low, m) 會少算 2^256 mod m 那一項，結果錯誤。
+; 這裡將 (a+b) 視為最多 33 位元組的數（含進位），放入 64 位元組空間，
+; 並與 bn-mulmod 共用「從高位元組開始減去 m<<(k*8)」的規約邏輯。
 bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
-    sum [32]byte
+    s [32]byte
     carry = 0
-    sum, carry = bn-add(a, b)
+    s, carry = bn-add(a, b)
 
-    ; 如果有進位或 sum >= m，需要規約
-    {
-        carry != 0 -> {
+    acc [64]byte
+    i <- [0..32): {
+        #{index-out=zero}
+        acc[i] = s[i]
+    }
+    acc[32] = carry & 255
+    i <- [33..64): {
+        #{index-out=zero}
+        acc[i] = 0
+    }
 
-            ; sum + 2^256 mod m，簡化處理
-            out = bn-mod(sum, m)
+    ; 規約：從 shift-byte=32 開始（窗 acc[32..63]），一路減到 0
+    shift-byte = 33
+    (shift-byte > 0) {
+
+        #{overflow=wrap}
+        shift-byte = shift-byte - 1
+
+        ; 嘗試在 acc[shift-byte..shift-byte+32) 處減去 m
+        can-sub = 1
+        i <- [0..32): {
+            #{index-out=zero}
+            wi = 0
+            #{overflow=wrap}
+            shift-byte + i < 64 -> {
+                #{index-out=zero}
+                wi = acc[shift-byte + i]
+            }
+            #{index-out=zero}
+            mi = m[i]
+            {
+                wi > mi -> break
+                wi < mi -> {
+                    can-sub = 0
+                    break
+                }
+            }
         }
 
-        -> out = bn-mod(sum, m)
+        can-sub == 1 -> {
+            borrow = 0
+            i <- [0..32): {
+                #{overflow=wrap}
+                idx = shift-byte + i
+                {
+                    idx < 64 -> {
+                        #{overflow=wrap}
+                        val = (acc[idx]) - (m[i]) - borrow
+                        {
+                            val < 0 -> {
+                                #{overflow=wrap}
+                                val = val + 256
+                                borrow = 1
+                            }
+                            -> borrow = 0
+                        }
+                        #{index-out=zero}
+                        acc[idx] = val
+                    }
+                    -> {
+                        borrow != 0 -> {
+                            #{overflow=wrap}
+                            val = (acc[idx]) - borrow
+                            {
+                                val < 0 -> {
+                                    #{overflow=wrap}
+                                    val = val + 256
+                                    borrow = 1
+                                }
+                                -> borrow = 0
+                            }
+                            #{index-out=zero}
+                            acc[idx] = val
+                        }
+                    }
+                }
+            }
+            #{overflow=wrap}
+            shift-byte = shift-byte + 1
+        }
+    }
+
+    i <- [0..32): {
+        #{index-out=zero}
+        out[i] = acc[i]
     }
 }
 

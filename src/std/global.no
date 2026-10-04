@@ -15,9 +15,6 @@
 ;   s str = with-cap(256)       → 预分配 256 位元组的 str
 ;   v []i64 = with-cap(100)     → 预分配 100 个元素的切片
 #{buildin}
-with-cap = () {
-}
-
 with-cap = (cap i64) {
 }
 
@@ -25,18 +22,12 @@ with-cap = (cap i64) {
 ;   s str = with-len(10)        → 长度为 10 的 str
 ;   v []i64 = with-len(100)     → 长度为 100 的切片
 #{buildin}
-with-len = () {
-}
-
 with-len = (len i64) {
 }
 
 ; with-cap-len: 建立指定容量和长度的字串或切片，型别由赋值左侧推断
 ;   v []i64 = with-cap-len(200, 100)  → 容量 200、长度 100 的切片
 #{buildin}
-with-cap-len = () {
-}
-
 with-cap-len = (cap i64, len i64) {
 }
 
@@ -116,9 +107,6 @@ with-cap-len = (cap i64, len i64) {
 ;   多参数时每个字串字面量各自是模板（见上方「多参数时，字面量默认是模板」）：
 ;     print('result={val}', 42, 'result={val}')  → result=42 42 result=42
 #{buildin}
-print = () {
-}
-
 print = (s str) {
 }
 
@@ -127,9 +115,6 @@ print = (s str) {
 ;   多参数：eprint('err:', a, b) 以空格分隔，整行末尾只有一个换行；
 ;           每个字串字面量各自是模板（同 print）
 #{buildin}
-eprint = () {
-}
-
 eprint = (s str) {
 }
 
@@ -138,8 +123,5 @@ eprint = (s str) {
 ;   s = format('{name} is {age}')  → 'Alice is 30'
 ;   ⚠️ 只接受单一格式字串（没有多参数形式）
 #{buildin, intrinsic}
-format = () {
-}
-
 format = (s str) (out str) {
 }

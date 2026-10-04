@@ -1638,6 +1638,31 @@ log.error(msg)
 log.fatal(msg, code)                   // Log and exit with status code
 ```
 
+Format bits (combine with `set-format`; default is `F-LEVEL` only):
+
+```no
+F-TIME  = 1                            // Timestamp YYYY-MM-DD HH:MM:SS (UTC)
+F-LEVEL = 2                            // [INFO] / [ERROR] level tag
+F-LOC   = 4                            // Call site [file:line:col]
+log.set-format(log.F-TIME | log.F-LEVEL | log.F-LOC)
+```
+
+Output target (default stderr fd=2):
+
+```no
+log.open-file(path)                    // Append-open a file and set as target; returns ?bool
+log.set-output-fd(fd)                  // Switch to a custom fd (caller opens/closes)
+log.set-writer(w io.writer)            // Switch to an io.writer (uses its fd)
+cur = log.get-output-fd()              // Current output-target fd
+```
+
+> The `F-LOC` "file:line:col" is auto-injected by the compiler at each call site
+> via the `#{track-caller}` function annotation: `debug/info/warn/error/fatal`
+> declare a trailing optional `loc str = ''` slot; when the caller omits it, the
+> MIR lowerer bakes a compile-time `"file:line:col"` string from the call node.
+> Passing `loc` explicitly overrides the injection (for wrapper forwarding).
+> Any user function may use `#{track-caller}` the same way.
+
 ---
 
 ### Data Structures

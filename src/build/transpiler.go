@@ -678,12 +678,44 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		}
 		return t.resolveFile(fullPath)
 	}
-	// std/ 開頭 → 標準庫路徑（只從內嵌 StdFS 載入，支援單二進制分發）
+	// std/ 開頭 → 標準庫路徑（預設只從內嵌 StdFS 載入，支援單二進制分發）
 	if strings.HasPrefix(path, "std/") || path == "std" {
 		// strip "std/" prefix to get module path relative to std/
 		relPath := strings.TrimPrefix(path, "std/")
 		if path == "std" {
 			relPath = ""
+		}
+		// 0. 開發期覆寫：當 $NOLANG_STD_SRC 設定時，優先從磁碟原始碼載入，
+		//    讓對 std/ 模組的原始碼修改（含偵錯插樁）立即生效，免於每次重編譯編譯器。
+		//    生產路徑（未設定環境變數）不受影響，仍走內嵌 StdFS。
+		if env := os.Getenv(pkg.NOLANG_STD_SRC); env != "" {
+			tryDisk := func(diskRel string) (*parser.Program, error) {
+				diskPath := pkg.GetStdSourceFile(diskRel)
+				if diskPath == "" {
+					return nil, nil
+				}
+				data, err := os.ReadFile(diskPath)
+				if err != nil {
+					return nil, nil
+				}
+				return t.parseEmbeddedProgram(diskPath, data)
+			}
+			if relPath != "" {
+				if prog, err := tryDisk(relPath); prog != nil {
+					return prog, nil
+				} else if err != nil {
+					return nil, err
+				}
+			}
+			for _, info := range checker.KnownStdModules() {
+				if info.ShortPath == relPath {
+					if prog, err := tryDisk(info.FullPath); prog != nil {
+						return prog, nil
+					} else if err != nil {
+						return nil, err
+					}
+				}
+			}
 		}
 		// 1. 直接路徑：std/<relPath>.no
 		if relPath != "" {
