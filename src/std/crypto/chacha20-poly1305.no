@@ -48,8 +48,10 @@ qr = (state []u32, a i64, b i64, c i64, d i64) {
     #{index-out=zero}
     state[c] = (state[c] + state[d]) & CC-MASK32
 
+    ; ⚠️ 原錯寫成 state[d] = rotl(state[d]^state[c], 12)：quarter-round 中
+    ;    輪 16/8 作用於 d，輪 12/7 應作用於 b（RFC 8439 §2.1）。
     #{index-out=zero}
-    state[d] = rotl32(state[d] ^ state[c], 12)
+    state[b] = rotl32(state[b] ^ state[c], 12)
 
     #{index-out=zero}
     state[a] = (state[a] + state[b]) & CC-MASK32
@@ -61,7 +63,7 @@ qr = (state []u32, a i64, b i64, c i64, d i64) {
     state[c] = (state[c] + state[d]) & CC-MASK32
 
     #{index-out=zero}
-    state[d] = rotl32(state[d] ^ state[c], 7)
+    state[b] = rotl32(state[b] ^ state[c], 7)
 }
 
 ; ═══════════════════════════════════════════════
@@ -183,429 +185,91 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
 ; Poly1305 MAC
 ; ═══════════════════════════════════════════════
 
+; poly1305-reduce: 将 x 约简到 [0, 2^130-5)
+; 利用 2^130 ≡ 5 (mod p) 的折叠约简，仅使用已验证的 bigint 运算
+; 不用 bigint.mod —— 其 div-mod 对多 limb 除数存在未还原 normalize shift 的错误
+poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
+    out = x
+    hi bigint.bigint = bigint.shr(out, 130)
+    (! hi.is-zero()) {
+        lo bigint.bigint = bigint.sub(out, bigint.shl(hi, 130))
+        out = bigint.add(lo, bigint.mul-i64(hi, 5))
+        hi = bigint.shr(out, 130)
+    }
+    p bigint.bigint = bigint.sub(bigint.shl(bigint.one(), 130), bigint.from-i64(5))
+    out.cmp(p) >= 0 -> out = bigint.sub(out, p)
+}
+
 ; poly1305: 計算 Poly1305 MAC
 ; key [32]byte: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
 ; data []byte: 輸入資料
 ; 返回 tag [16]byte: 16 位元組認證標籤
 poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
-    ; r = key[0..16]，清除高位（clamping）
-    ; r &= 0x0ffffffc0ffffffc0ffffffc0fffffff
-    r [5]u32
+    ; 用 bigint 直接表达 Poly1305 数学：tag = (h + s) mod 2^128
+    ;   h = Σ c_i · r^(n-1-i) mod (2^130 - 5)
 
-    r[0] = ((key[0]) | ((key[1]) << 8) | ((key[2]) << 16) | ((key[3]) << 24)) & 67108863
+    ; r = clamp(key[0..16])（小端 128-bit）
+    ; 字节 3,7,11,15 高两位清零（& 15）；字节 4,8,12 低两位清零（& 252）
+    r bigint.bigint = bigint.zero()
+    i <- [15..0]: {
+        bvr i64 = key[i]
+        {
+            i == 3 || i == 7 || i == 11 || i == 15 -> bvr = bvr & 15
 
-    r[1] = ((key[4]) | ((key[5]) << 8) | ((key[6]) << 16) | ((key[7]) << 24)) & 134217726
+            i == 4 || i == 8 || i == 12 -> bvr = bvr & 252
+        }
+        r = bigint.add(bigint.mul-i64(r, 256), bigint.from-i64(bvr))
+    }
 
-    r[2] = ((key[8]) | ((key[9]) << 8) | ((key[10]) << 16) | ((key[11]) << 24)) & 134217726
+    ; s = key[16..32]（小端 128-bit，无 clamp）
+    s bigint.bigint = bigint.zero()
+    j <- [31..16]: {
+        bvs i64 = key[j]
+        s = bigint.add(bigint.mul-i64(s, 256), bigint.from-i64(bvs))
+    }
 
-    r[3] = ((key[12]) | ((key[13]) << 8) | ((key[14]) << 16) | ((key[15]) << 24)) & 134217726
+    ; 累加器 h = 0
+    h bigint.bigint = bigint.zero()
 
-    ; r[4] 高位部分（r 是 128-bit，分 5 個 26-bit limb 更好，但這裡用 32-bit 分割）
-    ; 簡化：使用 4×32-bit + 進位的方式處理 130-bit
-
-    ; s = key[16..32]
-    s0 u32 = (key[16]) | ((key[17]) << 8) | ((key[18]) << 16) | ((key[19]) << 24)
-
-    s1 u32 = (key[20]) | ((key[21]) << 8) | ((key[22]) << 16) | ((key[23]) << 24)
-
-    s2 u32 = (key[24]) | ((key[25]) << 8) | ((key[26]) << 16) | ((key[27]) << 24)
-
-    s3 u32 = (key[28]) | ((key[29]) << 8) | ((key[30]) << 16) | ((key[31]) << 24)
-
-    ; 累加器 h = 0（使用 5 個 26-bit limb 表示 130-bit 數）
-    h0 u32 = 0
-    h1 u32 = 0
-    h2 u32 = 0
-    h3 u32 = 0
-    h4 u32 = 0
-
-    ; 逐 16 位元組區塊處理
+    ; 逐 16 字节区块：h = (h + c) * r mod p
     pos = 0
     (pos < data.len()) {
-
-        ; 載入區塊（小端序），末尾補零
         n = 16
 
         #{overflow=wrap}
         pos + n > data.len() -> n = data.len() - pos
-        t0 u32 = 0
-        t1 u32 = 0
-        t2 u32 = 0
-        t3 u32 = 0
-        t4 u32 = 0
+
+        ; c = 区块小端值 + 2^(8n)（最高位 1）
+        c bigint.bigint = bigint.zero()
 
         #{overflow=wrap}
-        {
-            n > 0 -> {
+        k <- [n - 1..0]: {
 
-                #{index-out=zero}
-                t0 = data[pos]
-            }
-
-            n > 1 -> {
-
-                #{index-out=zero}
-                t0 = t0 | ((data[pos + 1]) << 8)
-            }
-
-            n > 2 -> {
-
-                #{index-out=zero}
-                t0 = t0 | ((data[pos + 2]) << 16)
-            }
-
-            n > 3 -> {
-
-                #{index-out=zero}
-                t0 = t0 | ((data[pos + 3]) << 24)
-            }
-
-            n > 4 -> {
-
-                #{index-out=zero}
-                t1 = data[pos + 4]
-            }
-
-            n > 5 -> {
-
-                #{index-out=zero}
-                t1 = t1 | ((data[pos + 5]) << 8)
-            }
-
-            n > 6 -> {
-
-                #{index-out=zero}
-                t1 = t1 | ((data[pos + 6]) << 16)
-            }
-
-            n > 7 -> {
-
-                #{index-out=zero}
-                t1 = t1 | ((data[pos + 7]) << 24)
-            }
-
-            n > 8 -> {
-
-                #{index-out=zero}
-                t2 = data[pos + 8]
-            }
-
-            n > 9 -> {
-
-                #{index-out=zero}
-                t2 = t2 | ((data[pos + 9]) << 8)
-            }
-
-            n > 10 -> {
-
-                #{index-out=zero}
-                t2 = t2 | ((data[pos + 10]) << 16)
-            }
-
-            n > 11 -> {
-
-                #{index-out=zero}
-                t2 = t2 | ((data[pos + 11]) << 24)
-            }
-
-            n > 12 -> {
-
-                #{index-out=zero}
-                t3 = data[pos + 12]
-            }
-
-            n > 13 -> {
-
-                #{index-out=zero}
-                t3 = t3 | ((data[pos + 13]) << 8)
-            }
-
-            n > 14 -> {
-
-                #{index-out=zero}
-                t3 = t3 | ((data[pos + 14]) << 16)
-            }
-
-            n > 15 -> {
-
-                #{index-out=zero}
-                t3 = t3 | ((data[pos + 15]) << 24)
-            }
+            #{index-out=zero, overflow=wrap}
+            bvk i64 = data[pos + k]
+            c = bigint.add(bigint.mul-i64(c, 256), bigint.from-i64(bvk))
         }
 
-        ; 高位 1（2^128 或 2^(n*8)）
-        ; 完整區塊添加 2^128，部分區塊添加 2^(n*8)
-        {
-            n == 16 -> t4 = 1
-
-            -> {
-
-                ; 部分區塊：設置對應位元
-                t0 = t0 | (1 << (n * 8))
-            }
-        }
-
-        ; h += t（h 是 5-limb 130-bit，t 也轉為 5-limb）
-        h0 = (h0 + t0) & CC-MASK32
-
-        h1 = (h1 + t1) & CC-MASK32
-
-        h2 = (h2 + t2) & CC-MASK32
-
-        h3 = (h3 + t3) & CC-MASK32
-
-        h4 = (h4 + t4) & CC-MASK32
-
-        ; h = h * r mod (2^130 - 5)
-        ; 使用簡化的 32-bit 乘法 + 進位處理
-        ; 展開乘法: h = h * r
-        ; r 已 clamp，r[3] 只有低 2 位有效
-
-        ; 乘積（130-bit × 130-bit → 需要截斷 mod 2^130-5）
-        ; 簡化方法：使用 schoolbook 乘法 + 模約簡
-
-        ; d0 = h0*r0 + h1*r4*5 + h2*r3*5 + h3*r2*5 + h4*r1*5
-        ; 但 32-bit 乘法會溢出，所以需要更小心
-
-        ; 由於 Nolang 的整數運算，我們使用 64-bit 中間結果
         #{overflow=wrap}
-        d0 u64 = h0 * r[0]
-
-        #{overflow=wrap}
-        d0 = d0 + h1 * (r[4] * 5)
-
-        #{overflow=wrap}
-        d0 = d0 + h2 * (r[3] * 5)
-
-        #{overflow=wrap}
-        d0 = d0 + h3 * (r[2] * 5)
-
-        #{overflow=wrap}
-        d0 = d0 + h4 * (r[1] * 5)
-
-        #{overflow=wrap}
-        d1 u64 = h0 * r[1]
-
-        #{overflow=wrap}
-        d1 = d1 + h1 * r[0]
-
-        #{overflow=wrap}
-        d1 = d1 + h2 * (r[4] * 5)
-
-        #{overflow=wrap}
-        d1 = d1 + h3 * (r[3] * 5)
-
-        #{overflow=wrap}
-        d1 = d1 + h4 * (r[2] * 5)
-
-        #{overflow=wrap}
-        d2 u64 = h0 * r[2]
-
-        #{overflow=wrap}
-        d2 = d2 + h1 * r[1]
-
-        #{overflow=wrap}
-        d2 = d2 + h2 * r[0]
-
-        #{overflow=wrap}
-        d2 = d2 + h3 * (r[4] * 5)
-
-        #{overflow=wrap}
-        d2 = d2 + h4 * (r[3] * 5)
-
-        #{overflow=wrap}
-        d3 u64 = h0 * r[3]
-
-        #{overflow=wrap}
-        d3 = d3 + h1 * r[2]
-
-        #{overflow=wrap}
-        d3 = d3 + h2 * r[1]
-
-        #{overflow=wrap}
-        d3 = d3 + h3 * r[0]
-
-        #{overflow=wrap}
-        d3 = d3 + h4 * (r[4] * 5)
-
-        #{overflow=wrap}
-        d4 u64 = h0 * r[4]
-
-        #{overflow=wrap}
-        d4 = d4 + h1 * r[3]
-
-        #{overflow=wrap}
-        d4 = d4 + h2 * r[2]
-
-        #{overflow=wrap}
-        d4 = d4 + h3 * r[1]
-
-        #{overflow=wrap}
-        d4 = d4 + h4 * r[0]
-
-        ; 進位處理 + 模約簡（2^130 - 5）
-        c u64 = d0 >> 26
-        h0 = (d0 & 67108863)
-
-        #{overflow=wrap}
-        d1 = d1 + c
-        c = d1 >> 26
-        h1 = (d1 & 67108863)
-
-        #{overflow=wrap}
-        d2 = d2 + c
-        c = d2 >> 26
-        h2 = (d2 & 67108863)
-
-        #{overflow=wrap}
-        d3 = d3 + c
-        c = d3 >> 26
-        h3 = (d3 & 67108863)
-
-        #{overflow=wrap}
-        d4 = d4 + c
-        c = d4 >> 26
-        h4 = (d4 & 67108863)
-
-        h0 = (h0 + c * 5) & CC-MASK32
-        c = h0 >> 26
-        h0 = h0 & 67108863
-
-        h1 = (h1 + c) & CC-MASK32
+        c = bigint.add(c, bigint.shl(bigint.one(), n * 8))
+        h = poly1305-reduce(bigint.mul(bigint.add(h, c), r))
 
         #{overflow=wrap}
         pos = pos + 16
     }
 
-    ; 最終約簡
-    c = h1 >> 26
-    h1 = h1 & 67108863
+    ; tag = (h + s) 的低 128 位，小端输出（逐字节）
+    ; 注意：不可用 mod-i64/div-i64 取 32-bit limb —— 除数 2^32 会让内部 rem<<32 溢出 i64。
+    ; 改用 shr + mod-i64(.,256)：小除数保证 rem<256，rem<<32 不溢出。
+    hs bigint.bigint = bigint.add(h, s)
+    out <- [0..16): {
 
-    h2 = (h2 + c) & CC-MASK32
-    c = h2 >> 26
-    h2 = h2 & 67108863
-
-    h3 = (h3 + c) & CC-MASK32
-    c = h3 >> 26
-    h3 = h3 & 67108863
-
-    h4 = (h4 + c) & CC-MASK32
-    c = h4 >> 26
-    h4 = h4 & 67108863
-
-    h0 = (h0 + c * 5) & CC-MASK32
-    c = h0 >> 26
-    h0 = h0 & 67108863
-
-    h1 = (h1 + c) & CC-MASK32
-
-    ; h -= 2^130 - 5（如果 h >= 2^130 - 5）
-    ; 簡化：h += 5，如果進位則取低 130 位
-    #{overflow=wrap}
-    g0 = h0 + 5
-    g0-32 = g0 & CC-MASK32
-    c = g0 >> 26
-    g0 = g0 & 67108863
-
-    #{overflow=wrap}
-    g1 = h1 + c
-    c = g1 >> 26
-    g1 = g1 & 67108863
-
-    #{overflow=wrap}
-    g2 = h2 + c
-    c = g2 >> 26
-    g2 = g2 & 67108863
-
-    #{overflow=wrap}
-    g3 = h3 + c
-    c = g3 >> 26
-    g3 = g3 & 67108863
-
-    #{overflow=wrap}
-    g4 = h4 + c
-    c = g4 >> 26
-    g4 = g4 & 67108863
-
-    ; 選擇 h 或 g（如果 c != 0 則用 g）
-    c != 0 -> {
-        h0 = g0
-        h1 = g1
-        h2 = g2
-        h3 = g3
-        h4 = g4
+        #{overflow=wrap}
+        shifted bigint.bigint = bigint.shr(hs, out * 8)
+        b i64 = bigint.mod-i64(shifted, 256)
+        tag[out] = b & 255
     }
-
-    ; 將 h 從 5×26-bit 轉為 4×32-bit（小端序）
-    f u64 = h0 | (h1 << 26)
-    f-lo u32 = f & CC-MASK32
-    f-hi u32 = (f >> 32)
-    f = f-hi | (h2 << 20)
-    f0 = f & CC-MASK32
-    f-hi2 = (f >> 32)
-    f = f-hi2 | (h3 << 14)
-    f1 = f & CC-MASK32
-    f-hi3 = (f >> 32)
-    f = f-hi3 | (h4 << 8)
-    f2 = f & CC-MASK32
-    f3 = (f >> 32)
-
-    ; h += s
-    f0 = (f0 + s0) & CC-MASK32
-    carry = f0 >> 16
-
-    ; 對於 32-bit 加法，進位只影響高位
-    ; 簡化：直接逐字相加並處理進位
-    #{overflow=wrap}
-    f = f0 + s0
-    f0 = f & CC-MASK32
-    c = (f >> 32)
-
-    #{overflow=wrap}
-    f = f1 + s1 + c
-    f1 = f & CC-MASK32
-    c = (f >> 32)
-
-    #{overflow=wrap}
-    f = f2 + s2 + c
-    f2 = f & CC-MASK32
-    c = (f >> 32)
-
-    f3 = (f3 + s3 + c) & CC-MASK32
-
-    ; 輸出 tag（小端序）
-    tag[0] = f0 & 255
-
-    tag[1] = (f0 >> 8) & 255
-
-    tag[2] = (f0 >> 16) & 255
-
-    tag[3] = (f0 >> 24) & 255
-
-    tag[4] = f1 & 255
-
-    tag[5] = (f1 >> 8) & 255
-
-    tag[6] = (f1 >> 16) & 255
-
-    tag[7] = (f1 >> 24) & 255
-
-    tag[8] = f2 & 255
-
-    tag[9] = (f2 >> 8) & 255
-
-    tag[10] = (f2 >> 16) & 255
-
-    tag[11] = (f2 >> 24) & 255
-
-    tag[12] = f3 & 255
-
-    tag[13] = (f3 >> 8) & 255
-
-    tag[14] = (f3 >> 16) & 255
-
-    tag[15] = (f3 >> 24) & 255
 }
 
 ; ═══════════════════════════════════════════════
@@ -623,7 +287,6 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
     block [64]byte
     block = chacha20-block(key, 0, nonce)
     i <- [0..32): {
-
         otk[i] = block[i]
     }
 }
@@ -780,7 +443,6 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 ; sealed []byte: 密文 + 16 位元組 tag
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
 chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byte) (plain []byte) {
-
     sealed.len() < 16 -> return
 
     #{overflow=wrap}
@@ -807,7 +469,6 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     ; 3. 構建 Poly1305 輸入並計算期望 tag
     mac-input []byte
     pos = 0
-
     i <- [0..aad.len()): {
 
         #{index-out=zero, overflow=wrap}
@@ -878,7 +539,6 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
 
     #{overflow=wrap}
     pos = pos + 8
-
     cipher-len-val = cipher.len()
 
     #{overflow=wrap}
@@ -907,7 +567,6 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
 
     #{overflow=wrap}
     pos = pos + 8
-
     exp-tag [16]byte
     exp-tag = poly1305(otk, mac-input)
 

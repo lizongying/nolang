@@ -686,6 +686,16 @@ const (
 	// u64-to-str).
 	OpUDiv
 	OpUMod
+	// OpULt / OpULe / OpUGt / OpUGe: UNSIGNED comparison variants, the ordering
+	// counterpart of OpUDiv/OpUMod. hir2mir routes `< <= > >=` here when an
+	// operand's DECLARED raw type is unsigned (u64/u32/u16/u8/byte); codegen
+	// emits `icmp ult/ule/ugt/uge` instead of the signed predicates. Without
+	// this, a u64 binary search above i64.MAX compared negative-under-signed
+	// operands and converged to garbage (u64.MAX.sqrt() returned the MAX).
+	OpULt
+	OpULe
+	OpUGt
+	OpUGe
 	OpNeg
 	OpNot
 	OpAnd
@@ -799,6 +809,7 @@ var opNames = [opCount]string{
 	OpUDiv: "udiv", OpUMod: "umod",
 	OpNeg: "neg", OpNot: "not", OpAnd: "and", OpOr: "or", OpBitAnd: "bitand", OpBitOr: "bitor", OpXor: "xor", OpShl: "shl", OpShr: "shr",
 	OpEq: "eq", OpNe: "ne", OpLt: "lt", OpLe: "le", OpGt: "gt", OpGe: "ge", OpStrEq: "streq",
+	OpULt: "ult", OpULe: "ule", OpUGt: "ugt", OpUGe: "uge",
 	OpPhi:  "phi",
 	OpCall:      "call",
 	OpCallExtern: "call-extern",
@@ -1205,6 +1216,13 @@ type Inst struct {
 	Type  TypeID
 	Block BlockID
 	Int   int64   // integer / bool / enum payload (OpConst/OpInt payloads)
+	// IntBig carries the DECIMAL TEXT of a 128-bit integer literal whose value
+	// does not fit an int64 (i128/u128 beyond [-2^63, 2^64)). Int alone would
+	// silently truncate, which is exactly the bug that made `i128 x =
+	// 18446744073709551615` store -1. When non-empty the codegen emits this text
+	// as the i128 immediate instead of Int. Set only by hir2mir's KIntLit
+	// lowering for i128/u128-typed bindings; every other int const leaves it "".
+	IntBig string
 	Flt   float64 // float payload
 	Str   string  // literal text / label / field name
 	Sym   string  // callee name / extern symbol / builtin
@@ -1230,6 +1248,15 @@ type Inst struct {
 	// so for those the RHS still owns its buffer and must be dropped. Claiming
 	// otherwise leaked one buffer per assignment.
 	MovesArg bool
+	// BufClone marks an OpClone on a slice (%vec) to be lowered as a CAPACITY
+	// clone rather than the value-list clone: the helper allocates cap*elem
+	// bytes, copies len of them, and keeps {len, cap} intact. vecDeepClone
+	// clamps cap to len and returns {0,0,0} for an empty slice — correct for
+	// copying a VALUE LIST, fatal for a pre-allocated BUFFER (bufio's
+	// `with-cap(64)` handed to a reader would arrive with cap 0 and every
+	// fill() would read 0 bytes). Set by hir2mir's cloneIfBorrowedParamSlice,
+	// the only producer today.
+	BufClone bool
 	// OvfAnnotated marks an arithmetic/bitwise instruction whose enclosing
 	// statement/function carries an explicit `#{overflow=...}` annotation. When
 	// set, codegen suppresses the runtime overflow check it would otherwise

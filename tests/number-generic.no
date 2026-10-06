@@ -1,10 +1,10 @@
-; test/number-generic.no — 測試 std/number 中泛型函數的運行結果
+; test/number-generic.no — 測試 std/math、std/num 與 std/number 中泛型函數的運行結果
 ;
 ; 覆蓋以下函數：
-;   - max  (a ..num)  (r num)  — 變參泛型
-;   - min  (a ..num)  (r num)  — 變參泛型
-;   - abs  (a num)    (r num)  — 非變參泛型
-;   - sign (a num)    (r num)  — 方法泛型
+;   - max  (a ..num)  (r num)  — 變參泛型（math 模組）
+;   - min  (a ..num)  (r num)  — 變參泛型（math 模組）
+;   - abs  ()         (r num)  — num 方法（num 模組）
+;   - sign (a num)    (r num)  — 方法泛型（num 模組）
 ;   - even (a int)    (yes bool) — 整型泛型
 ;   - odd  (a int)    (yes bool) — 整型泛型
 ;   - pow  (a int, n int) (r int) — 整型泛型
@@ -13,13 +13,13 @@
 
 ; ── max：變參泛型，回傳最大值 ──
 test-max = () {
-    r = number.max(10, 20)
+    r = math.max(10, 20)
     print(r); expect: 20
 
-    r = number.max(3, 1, 4, 1, 5)
+    r = math.max(3, 1, 4, 1, 5)
     print(r); expect: 5
 
-    r = number.max(100, 50)
+    r = math.max(100, 50)
     print(r); expect: 100
 }
 test-max()
@@ -27,24 +27,24 @@ print(0)
 
 ; ── min：變參泛型，回傳最小值 ──
 test-min = () {
-    r = number.min(10, 20)
+    r = math.min(10, 20)
     print(r); expect: 10
 
-    r = number.min(3, 1, 4, 1, 5)
+    r = math.min(3, 1, 4, 1, 5)
     print(r); expect: 1
 }
 test-min()
 print(1)
 
-; ── abs：非變參泛型，回傳絕對值 ──
+; ── abs：num 方法（裸函數形式 abs(x)，x 為接收者），回傳絕對值 ──
 test-abs = () {
-    r = number.abs(-42)
+
+    #{overflow=wrap}
+    r = abs(0 - 42)
     print(r); expect: 42
-
-    r = number.abs(7)
+    r = abs(7)
     print(r); expect: 7
-
-    r = number.abs(0)
+    r = abs(0)
     print(r); expect: 0
 }
 test-abs()
@@ -58,7 +58,6 @@ test-sign = () {
     #{overflow=wrap}
     r = sign(0 - 3)
     print(r); expect: -1
-
     r = sign(0)
     print(r); expect: 0
 }
@@ -67,16 +66,13 @@ print(3)
 
 ; ── even / odd：整型泛型，回傳 bool ──
 test-even-odd = () {
-    yes = number.even(4)
+    yes = math.even(4)
     print(yes); expect: true
-
-    yes = number.even(7)
+    yes = math.even(7)
     print(yes); expect: false
-
-    yes = number.odd(4)
+    yes = math.odd(4)
     print(yes); expect: false
-
-    yes = number.odd(7)
+    yes = math.odd(7)
     print(yes); expect: true
 }
 test-even-odd()
@@ -86,13 +82,10 @@ print(4)
 test-pow = () {
     r = number.pow(2, 10)
     print(r); expect: 1024
-
     r = number.pow(3, 4)
     print(r); expect: 81
-
     r = number.pow(5, 0)
     print(r); expect: 1
-
     r = number.pow(7, 1)
     print(r); expect: 7
 }
@@ -101,20 +94,17 @@ print(5)
 
 ; ── gcd：最大公因數 ──
 test-gcd = () {
-    r = number.gcd(48, 18)
+    r = math.gcd(48, 18)
     print(r); expect: 6
-
-    r = number.gcd(42, 21)
+    r = math.gcd(42, 21)
     print(r); expect: 21
-
-    r = number.gcd(17, 23)
+    r = math.gcd(17, 23)
     print(r); expect: 1
-
-    r = number.gcd(0, 12)
+    r = math.gcd(0, 12)
     print(r); expect: 12
 
     #{overflow=wrap}
-    r = number.gcd(0 - 12, 8)
+    r = math.gcd(0 - 12, 8)
     print(r); expect: 4
 }
 test-gcd()
@@ -122,19 +112,15 @@ print(6)
 
 ; ── lcm：最小公倍數 ──
 test-lcm = () {
-    r = number.lcm(4, 6)
+    r = math.lcm(4, 6)
     print(r); expect: 12
-
-    r = number.lcm(12, 63)
+    r = math.lcm(12, 63)
     print(r); expect: 252
-
-    r = number.lcm(0, 5)
+    r = math.lcm(0, 5)
     print(r); expect: 0
-
-    r = number.lcm(7, 7)
+    r = math.lcm(7, 7)
     print(r); expect: 7
-
-    r = number.lcm(2, 5)
+    r = math.lcm(2, 5)
     print(r); expect: 10
 }
 test-lcm()

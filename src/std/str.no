@@ -897,7 +897,7 @@ str-to-f64 = (s str) (result f64) {
             c >= 48 && c <= 57 -> {
 
                 #{overflow=wrap}
-                int-part = int-part * 10.0 + number.i64-to-f64(c - 48)
+                int-part = int-part * 10.0 + math.i64-to-f64(c - 48)
                 has-digit = 1
 
                 i = i + 1
@@ -922,7 +922,7 @@ str-to-f64 = (s str) (result f64) {
                     c >= 48 && c <= 57 -> {
 
                         #{overflow=wrap}
-                        frac-part = frac-part * 10.0 + number.i64-to-f64(c - 48)
+                        frac-part = frac-part * 10.0 + math.i64-to-f64(c - 48)
 
                         frac-div = frac-div * 10.0
                         has-digit = 1
@@ -1065,7 +1065,7 @@ str.to-f32 = () (val ?f32) {
             return
         }
     }
-    val = number.f64-to-f32(f)
+    val = math.f64-to-f32(f)
 }
 
 ; str.to-bool: 將字串 "true" / "false" 解析為 bool
@@ -1839,7 +1839,7 @@ f64-to-str-fixed = (x f64, precision i64) (out str) {
 
     scaled = ax * scale
 
-    m i64 = number.f64-to-i64(scaled + 0.5)
+    m i64 = math.f64-to-i64(scaled + 0.5)
 
     ; 將 m 轉為字串
     mstr = m.to-str()
@@ -2012,15 +2012,19 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
 
     ; 計算指數 e = floor(log10(ax))
     ln10 = 2.302585092994046
-    e i64 = number.f64-to-i64(math.floor(math.log10(ax)))
+    lg10 = ax.log10()
+    flr = lg10.floor()
+    e i64 = math.f64-to-i64(flr)
 
     #{overflow=wrap}
-    upper f64 = math.exp(number.i64-to-f64(e + 1) * ln10)
+    epw f64 = math.i64-to-f64(e + 1) * ln10
+    upper = epw.exp()
 
     #{overflow=wrap}
     ax >= upper -> e = e + 1
 
-    base f64 = math.exp(number.i64-to-f64(e) * ln10)
+    bpw f64 = math.i64-to-f64(e) * ln10
+    base = bpw.exp()
 
     #{overflow=wrap}
     ax < base -> {
@@ -2028,7 +2032,8 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
         #{overflow=wrap}
         e = e - 1
 
-        base = math.exp(number.i64-to-f64(e) * ln10)
+        bpw2 f64 = math.i64-to-f64(e) * ln10
+        base = bpw2.exp()
     }
 
     ; m = round(ax / base * 10^precision)
@@ -2038,7 +2043,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
         scale = scale * 10.0
     }
 
-    m i64 = number.f64-to-i64(ax / base * scale + 0.5)
+    m i64 = math.f64-to-i64(ax / base * scale + 0.5)
 
     ; 四捨五入溢出處理（m 變成 10^(precision+1)）
     overflow = 1
@@ -2228,15 +2233,19 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
     ; 計算指數
     ln10 = 2.302585092994046
-    e i64 = number.f64-to-i64(math.floor(math.log10(ax)))
+    lg10 = ax.log10()
+    flr = lg10.floor()
+    e i64 = math.f64-to-i64(flr)
 
     #{overflow=wrap}
-    upper f64 = math.exp(number.i64-to-f64(e + 1) * ln10)
+    epw f64 = math.i64-to-f64(e + 1) * ln10
+    upper = epw.exp()
 
     #{overflow=wrap}
     ax >= upper -> e = e + 1
 
-    base f64 = math.exp(number.i64-to-f64(e) * ln10)
+    bpw f64 = math.i64-to-f64(e) * ln10
+    base = bpw.exp()
 
     #{overflow=wrap}
     ax < base -> {
@@ -2244,7 +2253,8 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         #{overflow=wrap}
         e = e - 1
 
-        base = math.exp(number.i64-to-f64(e) * ln10)
+        bpw2 f64 = math.i64-to-f64(e) * ln10
+        base = bpw2.exp()
     }
 
     ; m = round(ax / base * 10^(precision-1))
@@ -2257,7 +2267,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         scale = scale * 10.0
     }
 
-    m i64 = number.f64-to-i64(ax / base * scale + 0.5)
+    m i64 = math.f64-to-i64(ax / base * scale + 0.5)
 
     ; 四捨五入溢出處理
     overflow = 1

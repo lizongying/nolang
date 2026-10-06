@@ -817,6 +817,21 @@ func intTypeRange(t string) (min, max int64, ok bool) {
 	return 0, 0, false
 }
 
+// intToCharAssignOK 報告「把一個整數型別的運算式（i64/byte/u*/i* 等）指派給
+// char 變數」是否合法。char 本質就是 Unicode 碼點（i32），用一個執行期整數
+// 值（例如 buf 裡讀出的位元組、算術得到的碼點）初始化 char 變數是正當用法，
+// 等價於 std 的 char-to-str(x) 對執行期值的處理，因此放行。
+//
+// 僅在目標為 char、來源為整數型別時回傳 true；str/bool/f64 等非整數來源仍由
+// 既有型別檢查回報錯誤。char→char 不會走到這裡（型別相同，走既有捷徑）。
+func intToCharAssignOK(targetType, srcType string) bool {
+	if targetType != "char" {
+		return false
+	}
+	_, _, ok := intTypeRange(srcType)
+	return ok
+}
+
 // integerBitWidth returns the bit width of an integer type (8, 16, 32, 64, 128).
 // Returns 0 for non-integer types.
 func integerBitWidth(t string) int {
@@ -1655,7 +1670,12 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 				if len(sig.ParamTypes) > 0 && sig.ParamTypes[0].Name == "self" {
 					maxArgs--
 				}
-				if len(e.Arguments) > maxArgs {
+				// A `f (a ..T)` spread parameter absorbs any number of trailing
+				// arguments, so it puts no upper bound on the count. Without this the
+				// language's own variadic functions were unusable:
+				// `mx = (a ..i64) (r i64)` + `mx(3, 1, 7)` reported
+				// "expects at most 1 input argument(s), got 3".
+				if !sig.Variadic && len(e.Arguments) > maxArgs {
 					results = append(results, ValidateResult{
 						TraceID: "oarg2",
 						Line:    e.Token.Line,
@@ -1671,12 +1691,27 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 					})
 				} else {
 					// Check argument types using resolveExprType (handles struct fields, arrays, etc.)
+					// For a variadic callee the LAST parameter is the spread: every
+					// argument at or past it is an ELEMENT of that parameter, so the
+					// expected type is `T`, never the `[]T` the parameter is declared as
+					// (parser lowers `..T` to a slice type).
+					variadicAt := -1
+					if sig.Variadic && len(sig.ParamTypes) > 0 {
+						variadicAt = len(sig.ParamTypes) - 1
+					}
 					for i, arg := range e.Arguments {
-						if i >= len(sig.ParamTypes) {
+						pi := i
+						if variadicAt >= 0 && pi > variadicAt {
+							pi = variadicAt
+						}
+						if pi >= len(sig.ParamTypes) || (i >= len(sig.ParamTypes) && variadicAt < 0) {
 							break
 						}
 						argType := resolveExprType(arg, varTypes, structFields)
-						expectedType := sig.ParamTypes[i].Type
+						expectedType := sig.ParamTypes[pi].Type
+						if variadicAt >= 0 && pi == variadicAt {
+							expectedType = strings.TrimPrefix(expectedType, "[]")
+						}
 						if expectedType == "" || argType == "" {
 							continue
 						}

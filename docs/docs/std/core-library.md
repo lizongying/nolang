@@ -21,21 +21,41 @@ io.err('err-no-newline')       ; 底層命令，輸出不換行（stderr）
 ; io.err 明確模組前綴，不會與 Option 構造函數 err() 衝突
 ```
 
-### math — 數學函數
+### math — 數學函數（函數形式 API）
 
-**常量：** `math.PI`, `math.E`
+std 數字系全部「函數形式」API 集中於 math 模組（std/math.no）；「方法形式」（`*.to-str`、f64/f32 sqrt/sin/exp…、整數 sqrt/is-prime）全部在 number 模組（見下方 number 節）。聯合型別與成員方法：num → std/num.no、int → std/int.no、float → std/float.no。
 
-**基礎：** `math.abs`, `math.sqrt`
+**常量：** `math.PI`, `math.E`, `math.LN10`（ln 10，f64-to-str 实现配套）
 
-**三角：** `math.sin`, `math.cos`, `math.tan`, `math.asin`, `math.acos`, `math.atan`, `math.atan2`, `math.degrees`, `math.radians`
+**比値（num 泛型變參函數）：** `math.max`, `math.min`（`a ..num`，整數與浮點走同一單態化路徑）
 
-**雙曲：** `math.sinh`, `math.cosh`, `math.tanh`
+**冪/根（函數）：** `math.pow`（f64 求冪 a^b，映射 libm pow）, `math.hypot`（sqrt(x*x+y*y)）
 
-**取整：** `math.ceil`, `math.floor`, `math.round`, `math.trunc`
+**其他函數：** `math.atan2`, `math.fmod`（浮點取餘）, `math.clamp`（i64 飽和箝位）
 
-**指數/對數：** `math.exp`, `math.log`, `math.log10`, `math.log2`, `math.pow`, `math.hypot`, `math.cbrt`
+**整數數學（int 泛型函數）：** `math.even`, `math.odd`, `math.gcd`, `math.lcm`, `math.div`（取商）, `math.mod`（取模）
 
-**其他：** `math.fmod`, `math.max`, `math.min`
+**型別轉換（函數）：** `math.i64-to-f64`, `math.f64-to-i64`, `math.f32-to-f64`, `math.f64-to-f32`
+
+**數字轉字串底層（函數，已棄用；建議改用方法形式 `v.to-str()`）：** `math.i64-to-str`, `math.u64-to-str`, `math.char-to-str`, `math.f64-to-str`
+
+**位元操作（函數）：** `math.swap`, `math.arr-zero`, `math.rotate-left`, `math.rotate-right`, `math.store-le-u32`
+
+> 例外：整數冪 `pow`（int 泛型）與本節 `math.pow`（f64）同名衝突，同一模組不容兩條 pow，故整數冪保留在 std/number.no（見下方 number 節）。
+
+### number — 數值操作（方法形式 API）
+
+std 數字系「方法形式」API 集中在 number 模組（std/number.no）；函數形式 API 見上方 math 節。聯合型別 int / float / num 見各聯合節。
+
+**範圍常量：** i8.MIN / MAX … u64.MIN / MAX；`number.INF`
+
+**整數冪（函數，math.pow 同名衝突的唯一例外）：** `r = number.pow(a, n)`（a^n，n ≥ 0，快速冪 O(log n)，對所有整數型別通用）
+
+**整數方法：** `n.sqrt()`（整數平方根 floor(√n)，負數返回 0）、`n.is-prime()`（質數判斷）——提供 i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 各寬度版本；i128、u128 因 runtime 將 128 位整數截斷至 64 位暫不提供
+
+**具體型別 to-str（方法）：** `v.to-str()`——i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 各寬度
+
+**浮點方法（f64 及同名 f32）：** 三角 `x.sin()`, `x.cos()`, `x.tan()`, `x.asin()`, `x.acos()`, `x.atan()`；雙曲 `x.sinh()`, `x.cosh()`, `x.tanh()`；取整 `x.ceil()`, `x.floor()`, `x.round()`, `x.trunc()`；指數/對數 `x.exp()`, `x.log()`, `x.log10()`, `x.log2()`；冪/根 `x.sqrt()`, `x.cbrt()`；角度/弧度 `x.degrees()`, `x.radians()`。f32 內部以 double 精度計算後收窄回 f32。
 
 ### char — 字元操作
 
@@ -99,29 +119,59 @@ parts = s.split(sep)          ; 用分隔符分割（返回 []str，方法）
 out = ss.join(sep)            ; []str 用分隔符連接（方法）
 ```
 
-### number — 數值操作
+### num — num 聯合型別與 num 方法
+
+`num = int | float`（std/num.no）。num 型別的方法在 num 模組（泛型函數 max/min 見上方 math）：
 
 ```no
-number.max(a, b)                     ; 最大值
-number.min(a, b)                     ; 最小值
-r = num.clamp(lo, hi)         ; 限制範圍（方法）
-r = number.abs(a)                    ; 絕對值（num 泛型）
-r = num.sign()                ; 正負號（-1/0/1，方法）
-number.even(v)                       ; 奇偶判斷
-number.odd(v)
-number.gcd(a, b)                     ; 最大公因數
-number.lcm(a, b)                     ; 最小公倍數
-r = number.pow(a, n)                 ; 整數冪
-number.i64-to-f64(v)                 ; 數值轉換
-number.f64-to-i64(v)
-s = int.to-str()              ; i64 轉字串（方法）
-q = number.div(a, b)                 ; 除法取商
-r = number.mod(a, b)                 ; 取模
-number.swap(a, b)                    ; 交換
-yes = float.is-nan()          ; NaN 判斷（方法）
-yes = float.is-inf()          ; Inf 判斷（方法）
+r = num.abs()                        ; 絕對值（方法）
+r = num.clamp(lo, hi)                  ; 限制範圍（方法）
+r = num.sign()                         ; 正負號（-1/0/1，方法）
+```
 
-; 範圍常數
+### int — int 聯合型別與 int 方法
+
+`int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128`（std/int.no）。int 型別的方法在 int 模組：
+
+```no
+s = v.to-str()                       ; 整數轉字串（方法）
+q = v.div(b)                         ; 除法取商（回傳 option）
+r = v.mod(b)                         ; 取模（回傳 option）
+```
+
+### float — float 聯合型別與 float 方法
+
+`float = f32 | f64`（std/float.no）。float 型別的方法在 float 模組：
+
+```no
+q = v.div(b)                         ; 浮點除法
+yes = v.is-nan()                     ; NaN 判斷（方法）
+yes = v.is-inf()                     ; Inf 判斷（方法）
+```
+
+（不定義 float.to-str 聯合方法；f64/f32 變數直接用具體型別方法 `v.to-str()`。）
+
+### number — 方法用法範例
+
+（完整 API 見上方「number — 數值操作（方法形式 API）」；函數形式見「math」節。）
+
+```no
+; 方法形式（number 模組）
+s = v.to-str()                     ; 整數/浮點轉字串（各寬度）
+r = n.sqrt()                       ; 整數平方根 floor(√n)
+yes = n.is-prime()                 ; 質數判斷（int/u8…）
+q = x.sqrt()                       ; 浮點平方根（f64/f32 方法）
+q = x.floor()                      ; 取整（f64/f32 方法）
+r = number.pow(a, n)               ; 整數冪（math.pow f64 同名衝突的例外，保留於 number）
+
+; 函數形式（math 模組）
+m = math.max(1, 2, 3)              ; num 泛型變參
+g = math.gcd(a, b)                 ; 最大公因數
+l = math.lcm(a, b)                 ; 最小公倍數
+f = math.i64-to-f64(v)            ; 數值轉換
+sw = math.swap(a, b)              ; 交換
+
+; 範圍常數（number 模組）
 i8.MIN / MAX                  ; -128 / 127
 i16.MIN / MAX                 ; -32768 / 32767
 i32.MIN / MAX                 ; -2147483648 / 2147483647
@@ -132,6 +182,7 @@ u16.MIN / MAX                 ; 0 / 65535
 u32.MIN / MAX                 ; 0 / 4294967295
 u64.MIN / MAX                 ; 0 / 2^64-1
 u128.MIN / MAX                ; 0 / 2^128-1
+number.INF                    ; 浮點無窮大
 ```
 
 ### byte — 位元組操作

@@ -1,0 +1,202 @@
+; test/std/toml.no — toml 模組測試（TOML 解析與產生）
+;
+; 執行：no test test/std/toml.no
+; 覆蓋：parse（scalar/table/註解/負數/布林/錯誤）、get（原始字面）、get-str /
+;       get-i64 / get-f64 / get-bool、has、toml-unquote、toml-strip-comment、
+;       toml-parse-i64（十六進位/底線分隔）、new+put+stringify 回環
+; 註：文件容量上限極小（4 entries / 2 tables），測試用例據此控制規模。
+
+# /test/runner
+
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
+t-parse-scalars = () {
+    r = toml.parse('name = "nolang"
+port = 8080
+enabled = true
+ratio = 1.5')
+    r: {
+        ok -> {
+            doc = it
+            s str = ''
+            so bool = false
+            s, so = toml.get-str(doc, 'name')
+            runner.is-true(so, 'name decode ok')
+            runner.str-eq(s, 'nolang', 6, 'get-str name')
+            p i64 = 0
+            po bool = false
+            p, po = toml.get-i64(doc, 'port')
+            runner.is-true(po, 'port decode ok')
+            runner.eq(p, 8080, 'get-i64 port')
+            b bool = false
+            bo bool = false
+            b, bo = toml.get-bool(doc, 'enabled')
+            runner.is-true(bo, 'enabled decode ok')
+            runner.is-true(b, 'enabled true')
+            fr f64 = 0.0
+            fo bool = false
+            fr, fo = toml.get-f64(doc, 'ratio')
+            runner.is-true(fo, 'ratio decode ok')
+            runner.f64-eq(fr, 1.5, 0.0001, 'get-f64 ratio')
+            runner.is-true(toml.has(doc, 'name'), 'has name')
+            yes bool = toml.has(doc, 'zzz')
+            runner.is-false(yes, 'has missing false')
+        }
+
+        nil -> runner.is-true(false, 'parse scalars should succeed (nil)')
+
+        err -> runner.is-true(false, 'parse scalars should succeed (err)')
+    }
+}
+
+t-parse-neg-bool = () {
+    r = toml.parse('neg = -42
+off = false')
+    r: {
+        ok -> {
+            doc = it
+            p i64 = 0
+            po bool = false
+            p, po = toml.get-i64(doc, 'neg')
+            runner.is-true(po, 'neg decode ok')
+            runner.eq(p, -42, 'get-i64 negative')
+            b bool = true
+            bo bool = false
+            b, bo = toml.get-bool(doc, 'off')
+            runner.is-true(bo, 'off decode ok')
+            runner.is-false(b, 'get-bool false')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+t-parse-table = () {
+    r = toml.parse('# top comment
+[server]
+host = "localhost"
+port = 8080 # inline comment')
+    r: {
+        ok -> {
+            doc = it
+            runner.eq(doc.count, 2, 'table doc entry count')
+            runner.eq(doc.table-count, 1, 'table doc table count')
+            h str = ''
+            ho bool = false
+            h, ho = toml.get-str(doc, 'server.host')
+            runner.is-true(ho, 'server.host ok')
+            runner.str-eq(h, 'localhost', 9, 'get-str dotted key')
+            p i64 = 0
+            po bool = false
+            p, po = toml.get-i64(doc, 'server.port')
+            runner.eq(p, 8080, 'inline comment stripped from value')
+        }
+
+        nil -> runner.is-true(false, 'table parse should succeed')
+
+        err -> runner.is-true(false, 'table parse should succeed')
+    }
+}
+
+t-raw-literal = () {
+    r = toml.parse('arr = [1, 2, 3]')
+    r: {
+        ok -> {
+            doc = it
+            raw = toml.get(doc, 'arr')
+            raw: {
+                ok -> eq-str(it, '[1, 2, 3]', 'raw array literal preserved')
+
+                nil -> runner.is-true(false, 'raw get should hit')
+
+                err -> runner.is-true(false, 'raw get should hit')
+            }
+            miss = toml.get(doc, 'nope')
+            miss: {
+                ok -> runner.is-true(false, 'missing raw should be nil')
+
+                nil -> runner.is-true(true, 'missing raw => nil')
+
+                err -> runner.is-true(false, 'missing raw should be nil')
+            }
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+t-parse-error = () {
+    bad = toml.parse('this is not toml =')
+    bad: {
+        ok -> runner.is-true(false, 'malformed must not parse ok')
+
+        nil -> runner.is-true(false, 'malformed should be err')
+
+        err -> runner.is-true(true, 'malformed => err')
+    }
+}
+
+t-helpers = () {
+    u str = ''
+    uo bool = false
+    u, uo = toml.toml-unquote('"hi"')
+    runner.is-true(uo, 'unquote ok')
+    runner.str-eq(u, 'hi', 2, 'unquote basic string')
+
+    sc = toml.toml-strip-comment('a = 1 # note')
+    eq-str(sc, 'a = 1', 'strip inline comment')
+
+    hv i64 = 0
+    ho bool = false
+    hv, ho = toml.toml-parse-i64('0xFF')
+    runner.is-true(ho, 'hex parse ok')
+    runner.eq(hv, 255, 'hex 0xFF == 255')
+    uv i64 = 0
+    uo2 bool = false
+    uv, uo2 = toml.toml-parse-i64('1_000')
+    runner.is-true(uo2, 'underscore parse ok')
+    runner.eq(uv, 1000, 'underscore 1_000 == 1000')
+    dv i64 = 0
+    do2 bool = false
+    dv, do2 = toml.toml-parse-i64('-123')
+    runner.eq(dv, -123, 'decimal -123')
+}
+
+t-build-roundtrip = () {
+    doc = toml.new()
+    o1 bool = doc.put('title', '"hello"')
+    o2 bool = doc.put('n', '42')
+    runner.is-true(o1, 'put title ok')
+    runner.is-true(o2, 'put n ok')
+    runner.eq(doc.count, 2, 'built doc count 2')
+    s str = ''
+    so bool = false
+    s, so = toml.get-str(doc, 'title')
+    runner.str-eq(s, 'hello', 5, 'roundtrip get-str')
+    st = toml.stringify(doc)
+    eq-str(st, 'title = "hello"
+n = 42', 'stringify roundtrip')
+}
+
+p1 = runner.test('toml.parse-scalars', t-parse-scalars)
+p2 = runner.test('toml.parse-neg-bool', t-parse-neg-bool)
+p3 = runner.test('toml.parse-table', t-parse-table)
+p4 = runner.test('toml.raw-literal', t-raw-literal)
+p5 = runner.test('toml.parse-error', t-parse-error)
+p6 = runner.test('toml.helpers', t-helpers)
+p7 = runner.test('toml.build-roundtrip', t-build-roundtrip)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

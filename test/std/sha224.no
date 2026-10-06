@@ -1,0 +1,51 @@
+; std-sha224.no — crypto/sha224 模組測試
+;
+; 執行：no test test/std/sha224.no
+; 覆蓋：sha224（[28]byte）、sha224-hex（str）
+; 向量與 shasum -a 224 交叉核對
+
+# /test/runner
+
+EMPTY = ''
+ABC = 'abc'
+TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
+
+t-len = () {
+    h = sha224.sha224(ABC.to-bytes())
+    runner.eq(h.len(), 28, 'sha224 digest is 28 bytes')
+}
+
+t-hex-empty = () {
+    h = sha224.sha224-hex(EMPTY.to-bytes())
+    runner.str-eq(h, 'd14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f', 56, 'sha224-hex empty')
+}
+
+t-hex-abc = () {
+    h = sha224.sha224-hex(ABC.to-bytes())
+    runner.str-eq(h, '23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7', 56, 'sha224-hex abc')
+}
+
+t-hex-twoblock = () {
+    h = sha224.sha224-hex(TWOBLOCK.to-bytes())
+    runner.str-eq(h, '75388b16512776cc5dba5da1fd890150b0c6455cb4f58b1952522525', 56, 'sha224-hex two-block')
+}
+
+t-bytes-match-hex = () {
+    h = sha224.sha224(ABC.to-bytes())
+    runner.eq(h[0], 0x23, 'sha224 byte[0]')
+    runner.eq(h[27], 0xa7, 'sha224 byte[27]')
+}
+
+p1 = runner.test('sha224.digest-len', t-len)
+p2 = runner.test('sha224.hex.empty', t-hex-empty)
+p3 = runner.test('sha224.hex.abc', t-hex-abc)
+p4 = runner.test('sha224.hex.two-block', t-hex-twoblock)
+p5 = runner.test('sha224.bytes-match-hex', t-bytes-match-hex)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

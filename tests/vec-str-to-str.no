@@ -4,7 +4,7 @@
 ;
 ; Two distinct MIR=3 bugs were fixed here:
 ;   1. opt-verify type mismatch: the generic [n]t.to-str template calls
-;      number.i64-to-str(.[i]); for a str element elemToStrMethod returns ""
+;      math.i64-to-str(.[i]); for a str element elemToStrMethod returns ""
 ;      so @i64_to_str was handed a whole %str-long. Fixed by intercepting
 ;      %str-long and extracting field 0 (length) -> [1, 1, 1].
 ;   2. runtime trace/BPT trap: emitIndex lowers a container element read by

@@ -1184,14 +1184,19 @@ func (g *Generator) inferType(expr parser.Expression) ValType {
 				return results[0]
 			}
 		}
-		// 模組限定呼叫：math.max/min/sqrt 回傳 f64
+		// 模組限定呼叫：number.max/min 與 math.sqrt 回傳 f64
 		if de, ok := e.Function.(*parser.DotExpression); ok {
 			if ident, ok := de.Receiver.(*parser.Identifier); ok {
 				if _, isLocal := g.lookupLocal(ident.Value); !isLocal {
 					switch ident.Value {
+					case "number":
+						switch de.Property {
+						case "max", "min":
+							return F64
+						}
 					case "math":
 						switch de.Property {
-						case "max", "min", "sqrt":
+						case "sqrt":
 							return F64
 						}
 					}

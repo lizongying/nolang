@@ -13,6 +13,29 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
+// toolRunnable reports whether an external tool is present in $PATH *and* can
+// actually be executed on this host.
+//
+// exec.LookPath alone is insufficient: a binary that exists but is incompatible
+// with the host architecture (e.g. an x86_64 wasmtime/wasm-tools on an arm64 Mac
+// without Rosetta) is found by LookPath yet fails to spawn with
+// "bad CPU type in executable". That is an environment defect, not a bug in the
+// code under test, so the dependent tests must SKIP rather than FAIL. We probe
+// with `--version`: only a failure to START the process (anything other than an
+// *exec.ExitError) counts as "not runnable". A tool that starts and exits
+// non-zero (e.g. no --version support) is still considered runnable.
+func toolRunnable(name string) bool {
+	if _, err := exec.LookPath(name); err != nil {
+		return false
+	}
+	if err := exec.Command(name, "--version").Run(); err != nil {
+		if _, isExit := err.(*exec.ExitError); !isExit {
+			return false // cannot spawn: arch / platform mismatch
+		}
+	}
+	return true
+}
+
 // generateTestModule produces a fresh WASM module for testing. It uses a nil
 // program because the skeleton does not yet perform AST codegen (Task 7+).
 func generateTestModule(t *testing.T) []byte {
@@ -307,8 +330,8 @@ func TestMemoryExported(t *testing.T) {
 }
 
 func TestValidateWithWasmTools(t *testing.T) {
-	if _, err := exec.LookPath("wasm-tools"); err != nil {
-		t.Skip("wasm-tools not in PATH; skipping validation")
+	if !toolRunnable("wasm-tools") {
+		t.Skip("wasm-tools not runnable on this host; skipping validation")
 	}
 	out := generateTestModule(t)
 	cmd := exec.Command("wasm-tools", "validate", "-")
@@ -321,8 +344,8 @@ func TestValidateWithWasmTools(t *testing.T) {
 }
 
 func TestValidateWithWasmtime(t *testing.T) {
-	if _, err := exec.LookPath("wasmtime"); err != nil {
-		t.Skip("wasmtime not in PATH; skipping execution")
+	if !toolRunnable("wasmtime") {
+		t.Skip("wasmtime not runnable on this host; skipping execution")
 	}
 	out := generateTestModule(t)
 	tmp := t.TempDir() + "/skel.wasm"
@@ -372,7 +395,7 @@ func parseAndGenerate(t *testing.T, src string) []byte {
 // failing the test) if wasm-tools is not installed.
 func validateWithWasmTools(t *testing.T, wasm []byte) bool {
 	t.Helper()
-	if _, err := exec.LookPath("wasm-tools"); err != nil {
+	if !toolRunnable("wasm-tools") {
 		return false
 	}
 	cmd := exec.Command("wasm-tools", "validate", "-")
@@ -390,7 +413,7 @@ func validateWithWasmTools(t *testing.T, wasm []byte) bool {
 // Fails the test if wasmtime is installed but the run fails or exits non-zero.
 func runWithWasmtime(t *testing.T, wasm []byte) (string, bool) {
 	t.Helper()
-	if _, err := exec.LookPath("wasmtime"); err != nil {
+	if !toolRunnable("wasmtime") {
 		return "", false
 	}
 	tmp := t.TempDir() + "/task7.wasm"
@@ -499,7 +522,7 @@ print(result)`
 // caller checks the exit code (used for bounds-check tests).
 func runWithWasmtimeExit(t *testing.T, wasm []byte) (string, int, bool) {
 	t.Helper()
-	if _, err := exec.LookPath("wasmtime"); err != nil {
+	if !toolRunnable("wasmtime") {
 		return "", 0, false
 	}
 	tmp := t.TempDir() + "/task8.wasm"

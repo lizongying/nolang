@@ -45,7 +45,7 @@
 ;      `unsupported builtin []t.set-byte`。改用 `.push("a")` 建構即可，
 ;      `[N]char` 固定陣列也正常。重現：/tmp/p_char2.no。
 ;   5. `txt.to-f32` 回傳的是 f64 的位元（42.0 印成 4631107791820423168）。
-;      重現：/tmp/p_allnum.no。疑為 number.f64-to-f32 或 f32 的列印路徑。
+;      重現：/tmp/p_allnum.no。疑為 math.f64-to-f32 或 f32 的列印路徑。
 ;   6. **`?bool` 的 match 取值恆為 false**（不是 to-bool 的錯）——
 ;          f = () (v ?bool) { v = true }
 ;          x ?bool = f()

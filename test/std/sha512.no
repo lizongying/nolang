@@ -1,0 +1,62 @@
+; std-sha512.no — crypto/sha512 模組測試
+;
+; 執行：no test test/std/sha512.no
+; 覆蓋：sha512（[64]byte）、sha512-hex（str）
+; 向量與 shasum -a 512 交叉核對；含 112 位元組輸入以測試 1024-bit 雙區塊
+
+# /test/runner
+
+EMPTY = ''
+ABC = 'abc'
+TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
+
+; 112 個 'a' -> 超過 128 位元組區塊的 padding 閾值，強制兩個 1024-bit 區塊
+A112 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+t-len = () {
+    h = sha512.sha512(ABC.to-bytes())
+    runner.eq(h.len(), 64, 'sha512 digest is 64 bytes')
+}
+
+t-input-len = () {
+    runner.eq(A112.len(), 112, 'A112 literal is 112 bytes')
+}
+
+t-hex-empty = () {
+    h = sha512.sha512-hex(EMPTY.to-bytes())
+    runner.str-eq(h, 'cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e', 128, 'sha512-hex empty')
+}
+
+t-hex-abc = () {
+    h = sha512.sha512-hex(ABC.to-bytes())
+    runner.str-eq(h, 'ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f', 128, 'sha512-hex abc')
+}
+
+t-hex-twoblock = () {
+    h = sha512.sha512-hex(TWOBLOCK.to-bytes())
+    runner.str-eq(h, '204a8fc6dda82f0a0ced7beb8e08a41657c16ef468b228a8279be331a703c33596fd15c13b1b07f9aa1d3bea57789ca031ad85c7a71dd70354ec631238ca3445', 128, 'sha512-hex 56-byte')
+}
+
+t-hex-112a = () {
+    h = sha512.sha512-hex(A112.to-bytes())
+    runner.str-eq(h, 'c01d080efd492776a1c43bd23dd99d0a2e626d481e16782e75d54c2503b5dc32bd05f0f1ba33e568b88fd2d970929b719ecbb152f58f130a407c8830604b70ca', 128, 'sha512-hex 112a (two 1024-bit blocks)')
+}
+
+t-bytes-match-hex = () {
+    h = sha512.sha512(ABC.to-bytes())
+    runner.eq(h[0], 0xdd, 'sha512 byte[0]')
+    runner.eq(h[63], 0x9f, 'sha512 byte[63]')
+}
+p1 = runner.test('sha512.digest-len', t-len)
+p2 = runner.test('sha512.input-len-guard', t-input-len)
+p3 = runner.test('sha512.hex.empty', t-hex-empty)
+p4 = runner.test('sha512.hex.abc', t-hex-abc)
+p5 = runner.test('sha512.hex.56-byte', t-hex-twoblock)
+p6 = runner.test('sha512.hex.112a', t-hex-112a)
+p7 = runner.test('sha512.bytes-match-hex', t-bytes-match-hex)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

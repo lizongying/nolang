@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/builtin"
@@ -1036,6 +1037,54 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 // auto-loaded so its [n]t generic methods can be monomorphized.
 var stdModuleMethodPrefixes = []string{"queue", "arr-stack"}
 
+// stdPrimitiveTypeNames lists the scalar / union-alias receiver types whose
+// std methods are invoked through VALUES (`x.degrees()`, `i.to-str()`). The
+// static reference scan cannot see a module prefix on those calls, so the
+// owning module body would never auto-load and MIR codegen dies with
+// `unknown callee f64.degrees` in a script that never spells out `math.`.
+var stdPrimitiveTypeNames = map[string]bool{
+	"i8": true, "i16": true, "i32": true, "i64": true, "i128": true,
+	"u8": true, "u16": true, "u32": true, "u64": true, "u128": true,
+	"f32": true, "f64": true, "str": true, "char": true, "byte": true,
+	"bool": true, "int": true, "uint": true, "num": true, "float": true,
+}
+
+var (
+	stdPrimMethodModsOnce sync.Once
+	stdPrimMethodMods     map[string][]string
+)
+
+// stdPrimitiveMethodModules returns the std module short names that define a
+// primitive-type method with the given bare name ("degrees" → ["math"]).
+// Built from the qualified method-signature table: a key of the form
+// module.type.method whose middle segment is a primitive type name maps the
+// bare method name back to its owning module.
+func stdPrimitiveMethodModules(property string) []string {
+	stdPrimMethodModsOnce.Do(func() {
+		set := make(map[string]map[string]bool)
+		for key := range checker.CollectStdMethodSigs() {
+			parts := strings.Split(key, ".")
+			if len(parts) != 3 || !stdPrimitiveTypeNames[parts[1]] {
+				continue
+			}
+			if set[parts[2]] == nil {
+				set[parts[2]] = make(map[string]bool)
+			}
+			set[parts[2]][parts[0]] = true
+		}
+		stdPrimMethodMods = make(map[string][]string, len(set))
+		for name, mods := range set {
+			list := make([]string, 0, len(mods))
+			for mod := range mods {
+				list = append(list, mod)
+			}
+			sort.Strings(list)
+			stdPrimMethodMods[name] = list
+		}
+	})
+	return stdPrimMethodMods[property]
+}
+
 // pathHasComponent reports whether any slash-separated component of p equals
 // comp. It is used to decide whether a path belongs to the std library by an
 // exact component match, replacing the old substring heuristic
@@ -1499,6 +1548,14 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			if ty.Value == "byte" {
 				addRef("byte")
 			}
+			// 裸 union 別名型別名（num/int/float/string…）隱含引用定義該別名的模組：
+			// 別名定義分散在 std/num.no、std/int.no、std/float.no 等，定義模組體未載入
+			// 時 TypeAlias 不進 merged 程式，monomorphizeUnions 的 FlattenUnion 成員展開
+			// 不完整（如 num 缺 float 成員，math.max(1.0, 2.0) 呼叫點單態化失敗，
+			// 報 unknown callee max）。
+			if mod, ok := checker.StdUnionAliasModules()[ty.Value]; ok {
+				addRef(mod)
+			}
 		case *parser.ArrayType:
 			// [N]T 語法隱含引用 std/arr.no 模組（[n]t 泛型方法特化）。
 			// 若不標記為已引用，arr.no 不會被載入，[n]t.max / [n]t.clone 等
@@ -1595,6 +1652,12 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 							}
 						}
 					}
+				}
+				// 原始型別 std 方法（`x.degrees()`、`i.to-str()`）的接收者是值而
+				// 非模組名，靜態掃描看不到模組前綴；用方法裸名反查定義模組並
+				// 標記引用，否則模組體不載入，MIR 報 unknown callee。
+				for _, mod := range stdPrimitiveMethodModules(dot.Property) {
+					addRef(mod)
 				}
 			} else if ident, ok := ex.Function.(*parser.Identifier); ok {
 				// 裸函數呼叫：若函數名恰好為某個 std 模組的 ShortName，

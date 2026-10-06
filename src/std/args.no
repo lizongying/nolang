@@ -8,21 +8,20 @@
 ; ═══════════════════════════════════════════════
 
 ; count: 參數數量（含程式名）
-#{intrinsic}
+; 委派至 os.args() builtin（讀取 main 的 argc）
 count = () (n i64) {
-    ; LLVM: call os.args
+    n = os.args()
 }
 
 ; get: 獲取第 i 個參數
-#{intrinsic}
+; 委派至 os.arg(i) builtin（讀取 main 的 argv[i]）
 get = (i i64) (val str) {
-    ; LLVM: call os.arg(i)
+    val = os.arg(i)
 }
 
 ; program: 程式名（第 0 個參數）
-#{intrinsic}
 program = () (name str) {
-    ; LLVM: call os.arg(0)
+    name = os.arg(0)
 }
 
 ; ═══════════════════════════════════════════════

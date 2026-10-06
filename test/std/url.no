@@ -1,0 +1,156 @@
+; test/std/url.no — net/url 模組測試（URL 解析／建構／編碼）
+;
+; 執行：no test test/std/url.no
+; 覆蓋：url-parse（完整／相對路徑／預設埠／空字串）、get-query / set-query、
+;       to-str 回組（含路徑重複 bug 的回歸）、url-encode / url-decode /
+;       url-encode-component、url-build-query、url-join、
+;       url-basic-auth / url-parse-basic-auth
+; 註：回归點——(1) to-str 曾因群組內兩個具名條件臂同真導致 path 輸出兩次，
+;     已修正為「條件臂＋預設臂」結構；(2) url-decode 對無效 %XX 原本會靜默
+;     寫入 NUL 字元／丟棄尾孤立 '%'，已改為直通（passthrough）語義。
+
+# /test/runner
+
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
+t-parse-full = () {
+    u = url.url-parse('https://admin:pass@example.com:8080/api/v1?key=value&x=1#section')
+    runner.is-true(u.ok, 'parse full ok')
+    eq-str(u.scheme, 'https', 'scheme')
+    eq-str(u.host, 'example.com', 'host')
+    runner.eq(u.port, 8080, 'port')
+    eq-str(u.path, '/api/v1', 'path')
+    eq-str(u.query, 'key=value&x=1', 'query')
+    eq-str(u.fragment, 'section', 'fragment')
+    eq-str(u.user, 'admin', 'user')
+    eq-str(u.password, 'pass', 'password')
+}
+
+t-parse-default-ports = () {
+    a = url.url-parse('http://a.com/p')
+    runner.eq(a.port, 80, 'http default 80')
+    b = url.url-parse('https://x.example/p')
+    runner.eq(b.port, 443, 'https default 443')
+    c = url.url-parse('ws://w.example')
+    runner.eq(c.port, 80, 'ws default 80')
+    d = url.url-parse('wss://s.example')
+    runner.eq(d.port, 443, 'wss default 443')
+    e = url.url-parse('ftp://f.example')
+    runner.eq(e.port, 21, 'ftp default 21')
+    n = url.url-parse('http://hostonly')
+    runner.is-true(n.ok, 'no-path ok')
+    eq-str(n.path, '/', 'no-path default /')
+    q = url.url-parse('http://h/?a=1')
+    eq-str(q.path, '/', 'root path kept')
+    eq-str(q.query, 'a=1', 'query after root path')
+    fr = url.url-parse('http://h#frag')
+    runner.eq(fr.query.len-bytes(), 0, 'no query')
+    eq-str(fr.fragment, 'frag', 'frag without path')
+}
+
+t-parse-edge = () {
+    e = url.url-parse('')
+    runner.is-false(e.ok, 'empty not ok')
+    r = url.url-parse('rel/path.txt')
+    runner.is-true(r.ok, 'relative ok')
+    eq-str(r.path, 'rel/path.txt', 'relative path')
+    runner.eq(r.scheme.len-bytes(), 0, 'relative no scheme')
+}
+
+t-query = () {
+    u = url.url-parse('http://a.com/p?z=9')
+    hit = u.get-query('z')
+    found = false
+    hv = ''
+    hit: {
+        ok -> {
+            found = true
+            hv = it
+        }
+
+        nil -> found = false
+
+        err -> found = false
+    }
+    runner.is-true(found, 'get-query hit')
+    eq-str(hv, '9', 'get-query value')
+    miss = u.get-query('nope')
+    miss: {
+        ok -> runner.is-true(false, 'get-query miss should not hit')
+
+        nil -> runner.is-true(true, 'get-query miss nil')
+
+        err -> runner.is-true(false, 'get-query miss err arm')
+    }
+    u.set-query('k2', 'v2')
+    eq-str(u.query, 'z=9&k2=v2', 'set-query append')
+}
+
+t-to-str = () {
+
+    ; 回歸：修正前此處輸出 'http://a.com/p//p?z=9'（路徑重複）
+    u = url.url-parse('http://a.com/p?z=9')
+    eq-str(u.to-str(), 'http://a.com/p?z=9', 'to-str roundtrip')
+    w = url.url-parse('https://b.org:8443/a/b?k=1#f')
+    eq-str(w.to-str(), 'https://b.org:8443/a/b?k=1#f', 'to-str roundtrip full')
+    j = url.url-parse('http://x.com/a/b')
+    eq-str(j.to-str(), 'http://x.com/a/b', 'to-str no query')
+}
+
+t-encode-decode = () {
+    eq-str(url.url-encode('hello world!'), 'hello%20world%21', 'encode')
+    eq-str(url.url-decode('hello%20world'), 'hello world', 'decode')
+    eq-str(url.url-decode('a+b'), 'a b', 'decode plus')
+    eq-str(url.url-decode('%4A'), 'J', 'decode upper hex')
+    eq-str(url.url-decode('%zz'), '%zz', 'decode bad escape passthrough')
+    eq-str(url.url-decode('ab%'), 'ab%', 'decode trailing pct passthrough')
+    eq-str(url.url-encode-component('a b&c=d'), 'a%20b%26c%3Dd', 'encode component')
+    rt = url.url-decode(url.url-encode('a b&c=d?e#f/g%h'))
+    eq-str(rt, 'a b&c=d?e#f/g%h', 'encode-decode roundtrip')
+}
+
+t-build-join = () {
+    k [16]str
+    v [16]str
+    k[0] = 'a'
+    k[1] = 'b'
+    v[0] = '1'
+    v[1] = '2'
+    eq-str(url.url-build-query(k, v, 2), 'a=1&b=2', 'build-query')
+    eq-str(url.url-join('http://x.com/a/b', 'c/d'), 'http://x.com/a/c/d', 'join relative')
+    eq-str(url.url-join('http://x.com/a/b', '/root'), 'http://x.com:80/root', 'join absolute')
+}
+
+t-basic-auth = () {
+    eq-str(url.url-basic-auth('user', 'pass'), 'Basic dXNlcjpwYXNz', 'basic-auth')
+    u = ''
+    p = ''
+    u, p = url.url-parse-basic-auth('Basic dXNlcjpwYXNz')
+    eq-str(u, 'user', 'parse-basic-auth user')
+    eq-str(p, 'pass', 'parse-basic-auth pass')
+    nu = ''
+    np = ''
+    nu, np = url.url-parse-basic-auth('Bearer xyz')
+    runner.eq(nu.len-bytes(), 0, 'non-basic empty user')
+    runner.eq(np.len-bytes(), 0, 'non-basic empty pass')
+    bu = ''
+    bp = ''
+    bu, bp = url.url-parse-basic-auth('Basic bm90YmFzZXYx')
+    runner.eq(bu.len-bytes(), 0, 'bad b64 empty user')
+    runner.eq(bp.len-bytes(), 0, 'bad b64 empty pass')
+}
+runner.test('parse full', t-parse-full)
+runner.test('default ports', t-parse-default-ports)
+runner.test('parse edge cases', t-parse-edge)
+runner.test('query get/set', t-query)
+runner.test('to-str roundtrip (regression)', t-to-str)
+runner.test('encode/decode', t-encode-decode)
+runner.test('build-query/join', t-build-join)
+runner.test('basic auth', t-basic-auth)
+runner.summary()
+f = runner.failed-count()
+f > 0 -> os.exit(1)
+-> os.exit(0)

@@ -22,10 +22,10 @@ Usage: `# std/xxx` (core modules do not need to be imported).
   - [option — Option Type](#option--option-type)
 - [Core Library](#core-library)
   - [fmt — Formatted Output](#fmt--formatted-output)
-  - [math — Math Functions](#math--math-functions)
+  - [math — Math Functions (function-form API)](#math--math-functions-function-form-api)
   - [char — Character Operations](#char--character-operations)
   - [str — String Operations](#str--string-operations)
-  - [number — Numeric Operations](#number--numeric-operations)
+  - [number — Numeric Operations (method-form API)](#number--numeric-operations-method-form-api)
   - [byte — Byte Operations](#byte--byte-operations)
   - [txt — Fixed-length Text Type](#txt--fixed-length-text-type)
   - [vec — Slice Operations](#vec--slice-operations)
@@ -213,21 +213,39 @@ io.err('err-no-newline')       // Low-level command, no newline (stderr)
 // Output via io.out/io.err syscalls, no libc printf dependency
 ```
 
-#### math — Math Functions
+#### math — Math Functions (function-form API)
 
-**Constants:** `math.PI`, `math.E`
+After the 2026-10 math/number split, ALL function-form numeric APIs live in std/math.no; ALL method-form APIs (`*.to-str`, f64/f32 sqrt/sin/exp…, integer sqrt/is-prime) live in std/number.no (see the number section below). Union types and their member methods: num → std/num.no, int → std/int.no, float → std/float.no.
 
-**Basic:** `math.abs`, `math.sqrt`
+**Constants:** `math.PI`, `math.E`, `math.LN10` (ln 10, companion of f64-to-str)
 
-**Trigonometric:** `math.sin`, `math.cos`, `math.tan`, `math.asin`, `math.acos`, `math.atan`, `math.atan2`, `math.degrees`, `math.radians`
+**Compare (num-generic variadic functions):** `math.max`, `math.min` (variadic generic `a ..num`; integers and floats share the same monomorphization path)
 
-**Hyperbolic:** `math.sinh`, `math.cosh`, `math.tanh`
+**Power/Root (functions):** `math.pow` (f64 power a^b, maps to libm pow), `math.hypot` (sqrt(x*x + y*y))
 
-**Rounding:** `math.ceil`, `math.floor`, `math.round`, `math.trunc`
+**Other functions:** `math.atan2`, `math.fmod` (float remainder), `math.clamp` (i64 saturating clamp)
 
-**Exponential/Logarithm:** `math.exp`, `math.log`, `math.log10`, `math.log2`, `math.pow`, `math.hypot`, `math.cbrt`
+**Integer math (int-generic functions):** `math.even`, `math.odd`, `math.gcd`, `math.lcm`, `math.div` (quotient), `math.mod` (modulo)
 
-**Others:** `math.fmod`, `math.max`, `math.min`
+**Type conversions (functions):** `math.i64-to-f64`, `math.f64-to-i64`, `math.f32-to-f64`, `math.f64-to-f32`
+
+**Number-to-string underlying (functions, deprecated; prefer the method form `v.to-str()`):** `math.i64-to-str`, `math.u64-to-str`, `math.char-to-str`, `math.f64-to-str`
+
+**Bit operations (functions):** `math.swap`, `math.arr-zero`, `math.rotate-left`, `math.rotate-right`, `math.store-le-u32`
+
+> Exception: the integer power `pow` (int-generic) collides in name with `math.pow` (f64); one module cannot hold two `pow`, so the integer power stays in std/number.no.
+
+#### number — Numeric Operations (method-form API)
+
+**Range constants:** i8.MIN / MAX … u64.MIN / MAX; `number.INF`
+
+**Integer power (function, the sole exception to the math.pow collision):** `r = number.pow(a, n)` (a^n, n ≥ 0, fast exponentiation O(log n), generic over all integer types)
+
+**Concrete-type to-str (methods):** `v.to-str()` — i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 widths
+
+**Float methods (f64 and same-named f32):** trigonometric `x.sin()`, `x.cos()`, `x.tan()`, `x.asin()`, `x.acos()`, `x.atan()`; hyperbolic `x.sinh()`, `x.cosh()`, `x.tanh()`; rounding `x.ceil()`, `x.floor()`, `x.round()`, `x.trunc()`; exponential/logarithm `x.exp()`, `x.log()`, `x.log10()`, `x.log2()`; power/root `x.sqrt()`, `x.cbrt()`; degree/radian `x.degrees()`, `x.radians()`. All f64 methods have same-named f32 counterparts (f32 versions are implemented as pure .no widen→delegate→narrow: f32-to-f64, call the f64 method, f64-to-f32; f32 computes in double precision and narrows back).
+
+**Integer methods** (concrete widths i8/i16/i32/i64/u8/u16/u32/u64, declared in std/number.no after the 2026-10 math/number split): `n.sqrt()` (integer square root floor(√n), returns 0 for negatives), `n.is-prime()` (trial-division primality test). i128/u128 NOT provided — the runtime truncates 128-bit integers to 64 bits (print silently blank, loops trap). The former i8/u64 codegen gaps are FIXED in the compiler: i8 operands now sign-extend per declared type (codegen coerceIntSigned), and hir2mir routes `< <= > >=` plus `/ %` to unsigned ops (OpULt/OpULe/OpUGt/OpUGe/OpUDiv/OpUMod) when any operand — searched recursively through nested KInfix/KGrouped sub-expressions — has a declared unsigned raw type (u64/u32/u16/u8/byte), with a fallback that records the raw type from the lowered value for receiver bindings like `n T = .` whose annotation is lost after generic instantiation. Note: union-alias receiver methods (int/float/num) must be declared in the module that DEFINES the alias (std/int.no, std/float.no, std/num.no) — declaring `int.X` in another module breaks the prefix pipeline (double-prefixed `number.int.int.X`-style names, unknown callee at codegen), so integer methods must use concrete per-width forms. Bodies must give every intermediate variable an explicit concrete type (`lo i16 = 1`), otherwise literal-initialized vars infer i64 and narrow assignments to i16 outputs are rejected.
 
 #### char — Character Operations
 
@@ -314,44 +332,62 @@ cp = s.at(idx)                // Get character at index (method)
 
 > **Indexing cost:** `s[i]` is **O(i)** — it scans forward over UTF-8 to the i-th code point (O(1) only when the compiler can prove the string is pure ASCII). For byte-wise access use the escape hatch `s.byte(i)`, which is always **O(1)**. `for c <- s` walks code points in a single **O(n)** pass — prefer it over `s[i]` inside a loop, which degrades to **O(n²)** (and triggers a `no vet` / LSP warning).
 
-#### number — Numeric Operations
+#### num — num Union Type and num Methods
+
+`num = int | float` (defined in `src/std/num.no`). Methods on the `num` type live here; the generic functions max/min are in math:
 
 ```no
-number.max(a, b)                     // Maximum
-number.min(a, b)                     // Minimum
-r = num.clamp(lo, hi)         // Clamp to range (method)
-r = number.abs(a)                    // Absolute value (num generic)
-r = num.sign()                // Sign (-1/0/1, method)
-number.even(v)                       // Even/odd check
-number.odd(v)
-number.gcd(a, b)                     // Greatest common divisor
-number.lcm(a, b)                     // Least common multiple
-r = number.pow(a, n)                 // Integer power
-number.i64-to-f64(v)                 // Numeric conversion
-number.f64-to-i64(v)
-s = int.to-str()              // i64 to string (method)
-s = i8.to-str()                      // i8 to string (method)
-s = i16.to-str()                     // i16 to string (method)
-s = i32.to-str()                     // i32 to string (method)
-s = u8.to-str()                      // u8 to string (method)
-s = u16.to-str()                     // u16 to string (method)
-s = u32.to-str()                     // u32 to string (method)
-s = u64.to-str()                     // u64 to string (method)
-s = byte.to-str()                    // byte to string (method)
+r = v.abs()                      // Absolute value (num method)
+r = v.clamp(lo, hi)              // Clamp to range (num method)
+r = v.sign()                     // Sign (-1/0/1, num method)
+```
+
+#### int — int Union Type and int Methods
+
+`int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128` (defined in `src/std/int.no`). Methods on the `int` type live here:
+
+```no
+s = v.to-str()                   // Integer to string (int method)
+q = v.div(b)                     // Division quotient, returns option (int method)
+r = v.mod(b)                     // Modulo, returns option (int method)
+```
+
+#### float — float Union Type and float Methods
+
+`float = f32 | f64` (defined in `src/std/float.no`). Methods on the `float` type live here:
+
+```no
+q = v.div(b)                     // Float division (float method)
+yes = v.is-nan()                 // NaN check (float method)
+yes = v.is-inf()                 // Inf check (float method)
+```
+
+No `float.to-str` union method is defined (codegen fallback dispatches f64 receivers to the concrete `f64.to-str` in std/number.no).
+
+#### number — Usage Examples
+
+(Full API is in the two sections above: methods in "number — Numeric Operations (method-form API)", functions under "math". `x.to-str()` methods are on the value, e.g. `n.to-str()`.)
+
+```no
+math.even(v)                       // Even/odd check (function, math)
+math.odd(v)
+math.gcd(a, b)                     // Greatest common divisor (function, math)
+math.lcm(a, b)                     // Least common multiple (function, math)
+r = number.pow(a, n)                 // Integer power (exception, kept in number)
+math.i64-to-f64(v)                 // Numeric conversion (function, math)
+math.f64-to-i64(v)
+s = n.to-str()                       // to-str (method, number) — works on i8/i16/i32/i64/u8/u16/u32/u64/byte/f32/f64
 s = c.to-str()                       // char to string (method, preferred)
-s = char-to-str(c)                   // char to string (deprecated, use c.to-str())
-s = f64.to-str()                     // f64 to string (method)
-s = f32.to-str()                     // f32 to string (method)
-q = number.div(a, b)                 // Integer division quotient
-r = number.mod(a, b)                 // Modulo
-number.swap(a, b)                    // Swap
-yes = float.is-nan()          // NaN check (method)
-yes = float.is-inf()          // Inf check (method)
+s = math.char-to-str(c)            // char to string (deprecated function, use c.to-str())
+q = math.div(a, b)                 // Integer division quotient (function, math)
+r = math.mod(a, b)                 // Modulo (function, math)
+math.swap(a, b)                    // Swap (function, math)
 
 // Constants
-LN10                            // ln(10) ≈ 2.302585
+math.LN10                         // ln(10) ≈ 2.302585 (math)
+number.INF                        // floating-point infinity (number)
 
-// Range constants
+// Range constants (number)
 i8.MIN / MAX                  // -128 / 127
 i16.MIN / MAX                 // -32768 / 32767
 i32.MIN / MAX                 // -2147483648 / 2147483647
@@ -418,7 +454,7 @@ r = t.compare(b txt)        // Lexicographic comparison (-1/0/1)
 b = t.at(idx i64)           // Safe index access
 ```
 
-> **`string` union alias (std/str.no):** `string = str | txt` mirrors `num = int | float` (std/number.no). Usable as function parameter/return type — the compiler monomorphizes per concrete argument type (`f__str` / `f__txt`). Same limitations as `num`: no union-typed variables, no member-method calls on the union parameter inside the body (use `len(s)` global or split concrete overloads), and never define alias methods colliding with member names (`string.len` would hijack `str.len`/`txt.len` and self-recurse).
+> **`string` union alias (std/str.no):** `string = str | txt` mirrors `num = int | float` (std/num.no, with member aliases in std/int.no and std/float.no). Usable as function parameter/return type — the compiler monomorphizes per concrete argument type (`f__str` / `f__txt`). Same limitations as `num`: no union-typed variables, no member-method calls on the union parameter inside the body (use `len(s)` global or split concrete overloads), and never define alias methods colliding with member names (`string.len` would hijack `str.len`/`txt.len` and self-recurse).
 
 #### vec — Slice Operations
 

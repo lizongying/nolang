@@ -1,0 +1,62 @@
+; test/std/pbkdf2.no — crypto/pbkdf2 模組測試
+;
+; 執行：no test test/std/pbkdf2.no
+; 覆蓋：pbkdf2-hmac-sha1、pbkdf2-hmac-sha256、pbkdf2-hmac-sha512
+; 向量來源：與 python hashlib.pbkdf2_hmac 交叉核對（RFC 6070 風格輸入）
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+PW = 'password'
+SALT = 'salt'
+
+t-sha256-c1 = () {
+    out = pbkdf2.pbkdf2-hmac-sha256(PW.to-bytes(), SALT.to-bytes(), 1, 32)
+    runner.str-eq(bhex(out), '120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b', 64, 'pbkdf2-sha256 c=1')
+}
+
+t-sha256-c2 = () {
+    out = pbkdf2.pbkdf2-hmac-sha256(PW.to-bytes(), SALT.to-bytes(), 2, 32)
+    runner.str-eq(bhex(out), 'ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43', 64, 'pbkdf2-sha256 c=2')
+}
+
+t-sha1-c1 = () {
+    out = pbkdf2.pbkdf2-hmac-sha1(PW.to-bytes(), SALT.to-bytes(), 1, 20)
+    runner.str-eq(bhex(out), '0c60c80f961f0e71f3a9b524af6012062fe037a6', 40, 'pbkdf2-sha1 c=1')
+}
+
+t-sha512-c2 = () {
+    out = pbkdf2.pbkdf2-hmac-sha512(PW.to-bytes(), SALT.to-bytes(), 2, 64)
+    runner.str-eq(bhex(out), 'e1d9c16aa681708a45f5c7c4e215ceb66e011a2e9f0040713f18aefdb866d53cf76cab2868a39b9f7840edce4fef5a82be67335c77a6068e04112754f27ccf4e', 128, 'pbkdf2-sha512 c=2')
+}
+
+t-key-len = () {
+    out = pbkdf2.pbkdf2-hmac-sha256(PW.to-bytes(), SALT.to-bytes(), 1, 40)
+    runner.eq(out.len(), 40, 'pbkdf2 output length 40 honored')
+}
+p1 = runner.test('pbkdf2.sha256.c1', t-sha256-c1)
+p2 = runner.test('pbkdf2.sha256.c2', t-sha256-c2)
+p3 = runner.test('pbkdf2.sha1.c1', t-sha1-c1)
+p4 = runner.test('pbkdf2.sha512.c2', t-sha512-c2)
+p5 = runner.test('pbkdf2.key-len', t-key-len)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

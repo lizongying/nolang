@@ -90,6 +90,10 @@ var runtimeFns = map[string]bool{
 	"digits":                    true,
 	"print_str":                 true,
 	"print_i64":                 true,
+	"print_i128":                true,
+	"print_u128":                true,
+	"str_from_i128":             true,
+	"str_from_u128":             true,
 	"print_double":              true,
 	"print_bool":                true,
 	"print_space":               true,
@@ -362,6 +366,19 @@ func (c *codegen) coerce(srcTy, srcVal, wantTy string) string {
 	case srcTy == "i64" && wantTy == "i8*":
 		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", r, srcVal))
 	default:
+		// Integer<->integer pairs the explicit cases above do not enumerate
+		// (notably the 128-bit lane: i128<->i8/i32/i64 in a `[]byte` digit
+		// buffer written by std/int's generic `int.to-str__i128`). Defer to the
+		// width-aware coerceInt so a wider value truncates and a narrower one
+		// extends instead of falling through unconverted (which left an i128
+		// register to be `store i8`'d, failing opt-verify with "defined with
+		// type 'i128' but expected 'i8'"). Only fires when BOTH sides are
+		// concrete integer widths, so non-integer mismatches still return "".
+		if _, fok := intWidth(srcTy); fok {
+			if _, tok := intWidth(wantTy); tok {
+				return c.coerceInt(srcVal, srcTy, wantTy)
+			}
+		}
 		return ""
 	}
 	return r
@@ -760,7 +777,7 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinLen(inst, bm.ForwardFunc)
 	case "str-clear":
 		return c.emitBuiltinStrClear(inst)
-	case "math-max", "math-min", "math-abs", "math-clamp", "math-degrees":
+	case "math-clamp":
 		return c.emitBuiltinMath(inst, bm.ForwardFunc)
 	case "str-to-bool":
 		return c.emitBuiltinStrToBool(inst)
@@ -1233,11 +1250,16 @@ func (c *codegen) emitBuiltinRotate(f *Function, inst *Inst, ff string) error {
 	return nil
 }
 
-// emitBuiltinMath lowers the scalar math forwards (math-max / math-min /
-// math-abs / math-clamp / math-degrees). The semantics mirror the legacy
-// call.go inliners exactly: a handful of icmp/select/fp ops, no std dependency,
-// result stored into the destination slot. The receiver (if any) is already the
-// first argument in inst.Args, matching the legacy `args[]` layout.
+// emitBuiltinMath lowers the scalar math forward (math-clamp).
+// The semantics mirror the legacy call.go inliners exactly: a handful of
+// icmp/select/fp ops, no std dependency, result stored into the destination
+// slot. The receiver (if any) is already the first argument in inst.Args,
+// matching the legacy `args[]` layout.
+//
+// math-max / math-min were dropped (2026-10-05): max/min are ordinary variadic
+// generic functions in src/std/number.no now, not builtins.
+// math-degrees was dropped the same day: degrees/radians are pure f64 methods
+// in src/std/math.no (f64.degrees / f64.radians), no builtin forward at all.
 func (c *codegen) emitBuiltinMath(inst *Inst, ff string) error {
 	if inst.Dst <= NoVal {
 		return nil
@@ -1260,44 +1282,8 @@ func (c *codegen) emitBuiltinMath(inst *Inst, ff string) error {
 		}
 		return "0"
 	}
-	sel := func(cmp, a, b string) string {
-		cmpReg := c.treg("mc")
-		c.sb.WriteString(fmt.Sprintf("  %s = %s\n", cmpReg, cmp))
-		sReg := c.treg("ms")
-		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", sReg, cmpReg, a, b))
-		return sReg
-	}
 	var res string
 	switch ff {
-	case "math-max":
-		a, b := loadI64(0), loadI64(1)
-		res = sel(fmt.Sprintf("icmp sgt i64 %s, %s", a, b), a, b)
-	case "math-min":
-		a, b := loadI64(0), loadI64(1)
-		res = sel(fmt.Sprintf("icmp slt i64 %s, %s", a, b), a, b)
-	case "math-abs":
-		// §5.1 fix: FindBuiltinMethod returns the i64 entry for both abs(i64)
-		// and abs(f64) calls (name-only match). When the actual argument is a
-		// double, emit llvm.fabs.f64 directly instead of the integer
-		// compare/negate/select path which corrupts the value via fptosi.
-		if len(inst.Args) > 0 {
-			argTy, argV := c.loadVal(inst.Args[0])
-			if argTy == "double" {
-				c.decl("declare double @llvm.fabs.f64(double)")
-				r := c.treg("fabs")
-				c.sb.WriteString(fmt.Sprintf("  %s = call double @llvm.fabs.f64(double %s)\n", r, argV))
-				c.sb.WriteString(fmt.Sprintf("  store double %s, double* %s\n", r, dstSlot))
-				return nil
-			}
-		}
-		a := loadI64(0)
-		cmpReg := c.treg("ac")
-		c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", cmpReg, a))
-		subReg := c.treg("as")
-		c.sb.WriteString(fmt.Sprintf("  %s = sub i64 0, %s\n", subReg, a))
-		sReg := c.treg("asel")
-		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", sReg, cmpReg, subReg, a))
-		res = sReg
 	case "math-clamp":
 		val, lo, hi := loadI64(0), loadI64(1), loadI64(2)
 		hiCmp := c.treg("ch")
@@ -1309,30 +1295,6 @@ func (c *codegen) emitBuiltinMath(inst *Inst, ff string) error {
 		loSel := c.treg("ls")
 		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", loSel, loCmp, lo, hiSel))
 		res = loSel
-	case "math-degrees":
-		// r * 180 / PI  (PI as double literal 0x400921FB54442D18)
-		rdTy, rdV := c.loadVal(inst.Args[0])
-		r := c.coerce(rdTy, rdV, "double")
-		if r == "" {
-			r = rdV
-		}
-		m := c.treg("dm")
-		c.sb.WriteString(fmt.Sprintf("  %s = fmul double %s, 1.8e+02\n", m, r))
-		d := c.treg("dd")
-		c.sb.WriteString(fmt.Sprintf("  %s = fdiv double %s, 0x400921FB54442D18\n", d, m))
-		res = d
-		if dstLT == "double" && dstSlot != "" {
-			c.sb.WriteString(fmt.Sprintf("  store double %s, double* %s\n", d, dstSlot))
-			return nil
-		}
-		// store into an i64 slot: truncate the degrees value (legacy behaviour is
-		// broken here anyway); coerce via fptosi.
-		ri := c.coerce("double", d, dstLT)
-		if ri == "" {
-			return fmt.Errorf("builtin %s: cannot store double into %s", ff, dstLT)
-		}
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, ri, dstLT, dstSlot))
-		return nil
 	}
 	if res == "" {
 		return fmt.Errorf("builtin %s: no result", ff)

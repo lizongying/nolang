@@ -57,12 +57,12 @@ f = 0.0
 print(10.0 / f); BUG: 應為 inf，實測 9223372036854775807.<garbage>
 print(f / f); BUG: 應為 nan，實測 0.
 
-print('── 8. std number.div / number.mod —— 方法已不存在（現為 int.div=(b int)(q ?int) 回傳 option），僅保留觀察註解')
+print('── 8. std math.div / math.mod —— 方法已不存在（現為 int.div=(b int)(q ?int) 回傳 option），僅保留觀察註解')
 r = 0
 
-; number.div(10, z, r)  ; 方法不存在：std 現為 int.div=(b int)(q ?int)
+; math.div(10, z, r)  ; 方法不存在：std 現為 int.div=(b int)(q ?int)
 ; print(r); BUG: 靜默 0，呼叫端無從得知出錯
-; number.mod(10, z, r)  ; 方法不存在
+; math.mod(10, z, r)  ; 方法不存在
 ; print(r); BUG: 靜默 0
 
 print('── 9. 除零結果流向索引：值不可預測')

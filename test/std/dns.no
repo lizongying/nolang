@@ -1,0 +1,207 @@
+; test/std/dns.no — net/dns 模組測試（封包構建／名稱解析／回應解析）
+;
+; 執行：no test test/std/dns.no
+; 覆蓋：build-query（A/AAAA/尾點域名）、parse-name（普通標籤／壓縮指標／
+;       保留標籤型別／截斷）、parse-response（A 記錄 golden、短封包、
+;       NXDOMAIN、ANCOUNT=0、僅 CNAME、保留標籤畸形封包）
+; 註：回归點——parse-name 原實作遇保留 label 型別（長度 byte 前綴 01/10）
+;     無對應分支、pos 永不前進，對惡意/畸形 DNS 封包無限迴圈掛死；現標記
+;     next-pos=-1 終止，parse-response 檢查負 pos 後返回 nil。數據尾端
+;     未見終止零標籤同樣回傳 -1。
+;     resolve-from / resolve / dial 需真實網路，不在單測覆蓋。
+
+# /test/runner
+
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
+; 造 45-byte 應答：提問 example.com/A + 應答（指標 C0 0C）+ 4-byte IPv4 1.2.3.4
+make-resp = (rtype-hi i64, rtype-lo i64, rcode i64, ancount i64) (data []byte) {
+    data = with-len(45)
+    data[0] = 0
+    data[1] = 1
+    data[2] = 0x81
+    data[3] = 0x80 | rcode
+
+    #{overflow=wrap}
+    data[4] = (1 >> 8) & 255
+    data[5] = 1 & 255
+    data[6] = (ancount >> 8) & 255
+    data[7] = ancount & 255
+    data[12] = 7
+    data[13] = 101
+    data[14] = 120
+    data[15] = 97
+    data[16] = 109
+    data[17] = 112
+    data[18] = 108
+    data[19] = 101
+    data[20] = 3
+    data[21] = 99
+    data[22] = 111
+    data[23] = 109
+    data[24] = 0
+    data[25] = 0
+    data[26] = 1
+    data[27] = 0
+    data[28] = 1
+    data[29] = 0xc0
+    data[30] = 12
+    data[31] = rtype-hi
+    data[32] = rtype-lo
+    data[33] = 0
+    data[34] = 1
+    data[38] = 60
+    data[39] = 0
+    data[40] = 4
+    data[41] = 1
+    data[42] = 2
+    data[43] = 3
+    data[44] = 4
+}
+
+t-build-query = () {
+    q, qlen = dns.build-query('example.com', 1)
+    runner.eq(qlen, 29, 'A query len')
+    runner.eq(q[0], 0, 'id hi')
+    runner.eq(q[1], 1, 'id lo')
+    runner.eq(q[2], 1, 'flags hi (RD)')
+    runner.eq(q[3], 0, 'flags lo')
+    runner.eq(q[4], 0, 'qd hi')
+    runner.eq(q[5], 1, 'qd lo')
+    runner.eq(q[6], 0, 'an hi')
+    runner.eq(q[7], 0, 'an lo')
+    runner.eq(q[8], 0, 'ns hi')
+    runner.eq(q[9], 0, 'ns lo')
+    runner.eq(q[10], 0, 'ar hi')
+    runner.eq(q[11], 0, 'ar lo')
+    runner.eq(q[12], 7, 'label1 len')
+    runner.eq(q[13], 101, 'label1 e')
+    runner.eq(q[19], 101, 'label1 last e')
+    runner.eq(q[20], 3, 'label2 len')
+    runner.eq(q[21], 99, 'label2 c')
+    runner.eq(q[24], 0, 'root label')
+    runner.eq(q[25], 0, 'qtype hi')
+    runner.eq(q[26], 1, 'qtype lo (A)')
+    runner.eq(q[27], 0, 'qclass hi')
+    runner.eq(q[28], 1, 'qclass lo (IN)')
+    q4, qlen4 = dns.build-query('a.b', 28)
+    runner.eq(qlen4, 21, 'AAAA query len')
+    runner.eq(q4[12], 1, 'a label len')
+    runner.eq(q4[13], 97, 'a label byte')
+    runner.eq(q4[14], 1, 'b label len')
+    runner.eq(q4[15], 98, 'b label byte')
+    runner.eq(q4[16], 0, 'root')
+    runner.eq(q4[17], 0, 'aaaa hi')
+    runner.eq(q4[18], 28, 'aaaa lo')
+    runner.eq(q4[19], 0, 'class hi')
+    runner.eq(q4[20], 1, 'class lo')
+    qt, qlent = dns.build-query('example.com.', 1)
+    runner.eq(qlent, 29, 'trailing dot same len')
+    runner.eq(qt[24], 0, 'trailing dot root')
+}
+
+t-parse-name = () {
+    q, qlen = dns.build-query('example.com', 1)
+    n, p = dns.parse-name(q, 12)
+    eq-str(n, 'example.com', 'plain name')
+    runner.eq(p, 25, 'plain next-pos')
+    d = make-resp(0, 1, 0, 1)
+    cn, cp = dns.parse-name(d, 29)
+    eq-str(cn, 'example.com', 'compressed name')
+    runner.eq(cp, 31, 'compressed next-pos')
+
+    ; 保留 label 型別（0x40）：不得掛死，回傳 -1（回归點）
+    bad []byte = with-len(4)
+    bad[0] = 0x40
+    bad[1] = 65
+    bad[2] = 0
+    bad[3] = 0
+    bn, bp = dns.parse-name(bad, 0)
+    runner.eq(bp, -1, 'reserved label next-pos')
+
+    ; 截斷：無終止零標籤 → -1
+    tr []byte = with-len(3)
+    tr[0] = 3
+    tr[1] = 97
+    tr[2] = 98
+    tn, tp = dns.parse-name(tr, 0)
+    runner.eq(tp, -1, 'truncated next-pos')
+}
+
+t-parse-response = () {
+    d = make-resp(0, 1, 0, 1)
+    r = dns.parse-response(d)
+    hit = false
+    hv = ''
+    r: {
+        ok -> {
+            hit = true
+            hv = it
+        }
+
+        nil -> hit = false
+
+        err -> hit = false
+    }
+    runner.is-true(hit, 'A record found')
+    eq-str(hv, '1.2.3.4', 'A record ip')
+    c = make-resp(0, 5, 0, 1)
+    cr = dns.parse-response(c)
+    cr: {
+        ok -> runner.is-true(false, 'cname must not return ok')
+
+        nil -> runner.is-true(true, 'cname only nil')
+
+        err -> runner.is-true(false, 'cname err arm')
+    }
+    nx = make-resp(0, 1, 3, 1)
+    nr = dns.parse-response(nx)
+    nr: {
+        ok -> runner.is-true(false, 'nxdomain must not return ok')
+
+        nil -> runner.is-true(true, 'nxdomain nil')
+
+        err -> runner.is-true(false, 'nxdomain err arm')
+    }
+    za = make-resp(0, 1, 0, 0)
+    zr = dns.parse-response(za)
+    zr: {
+        ok -> runner.is-true(false, 'ancount0 must not return ok')
+
+        nil -> runner.is-true(true, 'ancount0 nil')
+
+        err -> runner.is-true(false, 'ancount0 err arm')
+    }
+    tiny []byte = with-len(8)
+    tr = dns.parse-response(tiny)
+    tr: {
+        ok -> runner.is-true(false, 'short must not return ok')
+
+        nil -> runner.is-true(true, 'short packet nil')
+
+        err -> runner.is-true(false, 'short err arm')
+    }
+
+    ; 提問段含保留標籤：不得掛死，返回 nil（回归點）
+    bad = make-resp(0, 1, 0, 1)
+    bad[12] = 0x80
+    br = dns.parse-response(bad)
+    br: {
+        ok -> runner.is-true(false, 'reserved must not return ok')
+
+        nil -> runner.is-true(true, 'reserved label nil')
+
+        err -> runner.is-true(false, 'reserved err arm')
+    }
+}
+
+runner.test('build-query', t-build-query)
+runner.test('parse-name', t-parse-name)
+runner.test('parse-response', t-parse-response)
+runner.summary()
+f = runner.failed-count()
+f > 0 -> os.exit(1)
+-> os.exit(0)

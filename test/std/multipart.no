@@ -1,0 +1,215 @@
+; test/std/multipart.no — net/multipart 模組測試（表單編碼／解析／加密欄位）
+;
+; 執行：no test test/std/multipart.no
+; 覆蓋：multipart-gen-boundary（前綴/長度/種子確定性）、
+;       multipart-extract-boundary（未加引號/引號/trim/無 boundary）、
+;       multipart-writer（write-field/write-file/close-form/重複關閉/
+;       body golden/content-type）、multipart-reader（next 迭代、文字/檔案
+;       欄位屬性、解析失敗）、write-encrypted-field + multipart-decrypt-field
+;       回環、篡改密文/錯誤 AAD — 認證失敗回 err('decryption failed')、
+;       格式不良回 nil
+; 註：回归點——(1) multipart-extract-boundary 原將未加引號分支誤掛在外層
+;     群組 default 臂，正常 'boundary=XYZ' 返回空字串，已修正；(2) 原
+;     parse-headers 的 `!!` 循環在群組臂內退出且臂內呼叫其他方法時觸發
+;     BPT trap（codegen 缺陷，reader.next 完全不可用），已改為條件循環
+;     結構（行為等價）。工具鏈限制：[n]str 陣列 out-param 多指派崩潰與
+;     本測試無關，未觸及。
+
+# /test/runner
+
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
+crlf-of = () (crlf str) {
+    crlf = '\r' - '\n'
+}
+
+t-boundary = () {
+    b1 = multipart.multipart-extract-boundary('multipart/form-data; boundary=XYZ-abc')
+    eq-str(b1, 'XYZ-abc', 'unquoted boundary (regression)')
+    b2 = multipart.multipart-extract-boundary('multipart/form-data; boundary="Q-B"')
+    eq-str(b2, 'Q-B', 'quoted boundary')
+    b3 = multipart.multipart-extract-boundary('text/plain')
+    runner.eq(b3.len-bytes(), 0, 'no boundary empty')
+    b4 = multipart.multipart-extract-boundary('multipart/form-data; boundary= ABC ;x')
+    eq-str(b4, 'ABC', 'trim to semicolon')
+    g = multipart.multipart-gen-boundary(123456789)
+    runner.eq(g.len-bytes(), 34, 'gen len')
+    runner.is-true(g.starts-with('----NolangBoundary'), 'gen prefix')
+    g2 = multipart.multipart-gen-boundary(123456789)
+    eq-str(g2, g, 'gen deterministic same seed')
+    c = multipart.multipart-create()
+    made = false
+    cv str = ''
+    c: {
+        ok -> {
+            made = true
+            w2 = it
+            cv = w2.boundary-of()
+        }
+
+        nil -> made = false
+
+        err -> made = false
+    }
+    runner.is-true(made, 'multipart-create ok')
+    runner.eq(cv.len-bytes(), 34, 'created boundary len')
+}
+
+t-writer = () {
+    w = multipart.multipart-create-boundary('BD')
+    ok1 = w.write-field('title', 'hello')
+    runner.is-true(ok1, 'write-field ok')
+    ok2 = w.write-file('doc', 'a.txt', 'text/plain', 'FILEDATA')
+    runner.is-true(ok2, 'write-file ok')
+    ck = w.close-form()
+    runner.is-true(ck, 'close ok')
+    after = w.write-field('late', 'x')
+    runner.is-false(after, 'write after close rejected')
+    ck2 = w.close-form()
+    runner.is-false(ck2, 'double close rejected')
+    crlf = crlf-of()
+    want = '--BD' - crlf - 'Content-Disposition: form-data; name="title"' - crlf - crlf - 'hello' - crlf
+    want = want - '--BD' - crlf - 'Content-Disposition: form-data; name="doc"; filename="a.txt"' - crlf - 'Content-Type: text/plain' - crlf - crlf - 'FILEDATA' - crlf - '--BD--' - crlf
+    eq-str(w.body-of(), want, 'body golden')
+    eq-str(w.content-type(), 'multipart/form-data; boundary=BD', 'content-type')
+    eq-str(w.boundary-of(), 'BD', 'boundary-of')
+}
+
+t-reader = () {
+    w = multipart.multipart-create-boundary('BD')
+    w.write-field('title', 'hello')
+    w.write-file('doc', 'a.txt', 'text/plain', 'FILEDATA')
+    w.close-form()
+    body = w.body-of()
+    ct = w.content-type()
+    r = multipart.multipart-parse(ct, body)
+    rd multipart-reader
+    got = false
+    r: {
+        ok -> {
+            rd = it
+            got = true
+        }
+
+        nil -> got = false
+
+        err -> got = false
+    }
+    runner.is-true(got, 'parse ok')
+    n1 = rd.next()
+    runner.is-true(n1, 'part 1 exists (regression: was BPT trap)')
+    runner.is-true(rd.has-current-part(), 'has-current p1')
+    eq-str(rd.field-name(), 'title', 'p1 name')
+    eq-str(rd.field-data(), 'hello', 'p1 data')
+    eq-str(rd.field-filename(), '', 'p1 no filename')
+    eq-str(rd.field-content-type(), '', 'p1 no ct')
+    runner.is-false(rd.is-file(), 'p1 not file')
+    n2 = rd.next()
+    runner.is-true(n2, 'part 2 exists')
+    eq-str(rd.field-name(), 'doc', 'p2 name')
+    eq-str(rd.field-filename(), 'a.txt', 'p2 filename')
+    eq-str(rd.field-content-type(), 'text/plain', 'p2 content-type')
+    eq-str(rd.field-data(), 'FILEDATA', 'p2 data')
+    runner.is-true(rd.is-file(), 'p2 is file')
+    n3 = rd.next()
+    runner.is-false(n3, 'no part 3 (closing boundary)')
+    runner.is-false(rd.has-current-part(), 'no current after end')
+    bad = multipart.multipart-parse('text/plain', body)
+    bad: {
+        ok -> runner.is-true(false, 'missing boundary must not be ok')
+
+        nil -> runner.is-true(true, 'parse without boundary nil')
+
+        err -> runner.is-true(false, 'parse err arm')
+    }
+}
+
+t-encrypted = () {
+    key [32]byte
+    iv [12]byte
+    i <- [0..32): {
+        key[i] = 65 + (i % 26)
+    }
+    i <- [0..12): {
+        iv[i] = 48 + i
+    }
+    w = multipart.multipart-create-boundary('ENC')
+    okw = w.write-encrypted-field('secret', 'pw123', key, iv)
+    runner.is-true(okw, 'enc write ok')
+    w.close-form()
+    r = multipart.multipart-parse('multipart/form-data; boundary=ENC', w.body-of())
+    rd multipart-reader
+    got = false
+    d = ''
+    r: {
+        ok -> {
+            rd = it
+            got = rd.next()
+            d = rd.field-data()
+        }
+
+        nil -> got = false
+
+        err -> got = false
+    }
+    runner.is-true(got, 'enc part found')
+    runner.gt(d.len-bytes(), 0, 'enc data nonempty')
+    neq = false
+    d.len-bytes() != 5 -> neq = true
+    runner.is-true(neq, 'ciphertext != plaintext len')
+    pt = multipart.multipart-decrypt-field(d, key, 'secret'.to-bytes())
+    hit = false
+    hv = ''
+    pt: {
+        ok -> {
+            hit = true
+            hv = it
+        }
+
+        nil -> hit = false
+
+        err -> hit = false
+    }
+    runner.is-true(hit, 'decrypt ok')
+    eq-str(hv, 'pw123', 'decrypt golden')
+    wrong = multipart.multipart-decrypt-field(d, key, 'other'.to-bytes())
+    wrong: {
+        ok -> runner.is-true(false, 'wrong aad must fail')
+
+        nil -> runner.is-true(false, 'wrong aad should be err not nil')
+
+        err -> runner.is-true(true, 'wrong aad err (auth fail)')
+    }
+    key2 [32]byte
+    i <- [0..32): {
+        key2[i] = 66 + (i % 26)
+    }
+    kbad = multipart.multipart-decrypt-field(d, key2, 'secret'.to-bytes())
+    kbad: {
+        ok -> runner.is-true(false, 'wrong key must fail')
+
+        nil -> runner.is-true(false, 'wrong key should be err not nil')
+
+        err -> runner.is-true(true, 'wrong key err (auth fail)')
+    }
+    trunc = d.slice(0, 6)
+    tbad = multipart.multipart-decrypt-field(trunc, key, 'secret'.to-bytes())
+    tbad: {
+        ok -> runner.is-true(false, 'truncated must fail')
+
+        nil -> runner.is-true(true, 'truncated nil')
+
+        err -> runner.is-true(false, 'truncated err arm')
+    }
+}
+runner.test('boundary', t-boundary)
+runner.test('writer', t-writer)
+runner.test('reader', t-reader)
+runner.test('encrypted field', t-encrypted)
+runner.summary()
+f = runner.failed-count()
+f > 0 -> os.exit(1)
+-> os.exit(0)

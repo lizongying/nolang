@@ -143,6 +143,11 @@ func printUsage() {
 	fmt.Println("    Flags:")
 	fmt.Println("      -w    write result to source file (in-place)")
 	fmt.Println("      -d    output colored diff instead of formatted result")
+	fmt.Println("      -fix=<class>  apply automatic fixes for one problem class:")
+	fmt.Println("                      overflow    add #{overflow=wrap} to unannotated integer arithmetic")
+	fmt.Println("                      redundant   remove type annotations equal to the inferred type")
+	fmt.Println("                      match       add missing nil/err arms to non-exhaustive option matches")
+	fmt.Println("      -loop-style=<s>  default loop spelling: prefix (default) or suffix")
 	fmt.Println("    Examples:")
 	fmt.Println("      no fmt                      list files in current dir needing formatting")
 	fmt.Println("      no fmt -w                   format all .no files in current dir in-place")
@@ -152,7 +157,11 @@ func printUsage() {
 	fmt.Println("      no fmt src/                 list .no files in src/ needing formatting")
 	fmt.Println("      no fmt -w src/              format all .no files in src/ in-place")
 	fmt.Println("      no fmt -d src/              show diff for all .no files in src/")
+	fmt.Println("      no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place")
+	fmt.Println("      no fmt -fix=redundant main.no   preview redundant annotation removal")
+	fmt.Println("      no fmt -fix=match -w src/       add missing match arms in src/ in-place")
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
+	fmt.Println("      no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'")
 	fmt.Println("")
 	fmt.Println("  no build [flags] [<file|dir>]  Build a Nolang project")
 	fmt.Println("    If no file/dir is given and workspace.jsonc exists,")
@@ -1171,6 +1180,9 @@ func fmtCommand(args []string) {
 		fmt.Println("  no fmt -w src/              format all .no files in src/ in-place")
 		fmt.Println("  no fmt -d src/              show diff for all .no files in src/")
 		fmt.Println("  echo 'x=1' | no fmt         format from stdin")
+		fmt.Println("  no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place")
+		fmt.Println("  no fmt -fix=redundant main.no   preview redundant annotation removal")
+		fmt.Println("  no fmt -fix=match -w src/       add missing match arms in src/ in-place")
 		fmt.Println("  no fmt -loop-style=suffix f.no   format loops as '{ } (cond)' / '{ } * N'")
 	}
 	_ = fs.Parse(args)
@@ -1309,10 +1321,19 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 	checkMode := !writeInPlace && !diffMode
 	// 載入 package 配置以套用 ignore 列表
 	fmtPkg, _ := nbuild.LoadPackage(dirname)
+	// 收集 .gitignore 規則：跳過被 git 排除的暫存／產物目錄（tmp、dist 等），
+	// 避免把殘檔當成源碼格式化而冒出大量假 parse error 誤導他人。
+	gitIgnored := loadGitIgnoreFiles(dirname)
 	_ = filepath.Walk(dirname, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
+			}
+			return nil
+		}
+		if isPathIgnored(gitIgnored, path, info.IsDir()) {
+			if info.IsDir() {
+				return filepath.SkipDir
 			}
 			return nil
 		}

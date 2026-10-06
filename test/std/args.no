@@ -1,0 +1,66 @@
+; test/std/args.no — args 模組測試（命令列參數解析）
+;
+; 執行：no test test/std/args.no
+;
+; 覆蓋：count / get / program（委派至 os.args/os.arg）
+;       has-flag / get-option / get-positional（在無附加參數下的否定路徑）
+;
+; 背景：args.count/get/program 原為 #{intrinsic} 空實作，實際回傳 0/空字串
+;       （真實 bug），而底層 os.args()/os.arg() 可正常讀取 argv。現已改為
+;       委派 os builtin。本測試驗證委派正確（count 不再為 0）。
+;
+; 註：no test 執行時，測試-binary 的 argv 固定為 1（僅含程式路徑），
+;     故正向 flag/option 解析無法在 runner 情境注入；此處斷言 count==os.args()
+;     的委派一致性，並驗證在僅有程式名時 has-flag/get-option/get-positional
+;     皆回傳 false（否定路徑）。
+
+# /test/runner
+
+t-count = () {
+    c i64 = args.count()
+    o i64 = os.args()
+    runner.eq(c, o, 'args.count == os.args (delegation)')
+    runner.gt(c, 0, 'count >= 1 (regression: was 0)')
+}
+
+t-get-program = () {
+    p str = args.program()
+    g0 str = args.get(0)
+    o0 str = os.arg(0)
+    runner.gt(p.len(), 0, 'program non-empty (was empty)')
+    runner.eq(g0.len(), o0.len(), 'get(0).len == os.arg(0).len')
+    n i64 = p.len()
+    runner.str-eq(g0, o0, n, 'get(0) == os.arg(0)')
+    runner.str-eq(p, o0, n, 'program == os.arg(0)')
+}
+
+t-has-flag-absent = () {
+
+    ; argv 僅含程式名，[1..n) 迴圈不執行 => 任何 flag 皆不存在
+    v bool = args.has-flag('--absent', 8)
+    runner.is-false(v, 'absent flag => false')
+}
+
+t-get-option-absent = () {
+    ok bool = args.get-option('--absent', 8, '')
+    runner.is-false(ok, 'absent option => false')
+}
+
+t-get-positional-absent = () {
+    pv str = ''
+    po bool = false
+    pv, po = args.get-positional(0)
+    runner.is-false(po, 'no positional => false')
+}
+p1 = runner.test('args.count', t-count)
+p2 = runner.test('args.get/program', t-get-program)
+p3 = runner.test('args.has-flag(absent)', t-has-flag-absent)
+p4 = runner.test('args.get-option(absent)', t-get-option-absent)
+p5 = runner.test('args.get-positional(absent)', t-get-positional-absent)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

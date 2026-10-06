@@ -1,6 +1,7 @@
 ; ecdsa — ECDSA 數位簽章（NIST P-256 / secp256r1）
 ;
 ; 實作基於 NIST P-256 橢圓曲線的 ECDSA 簽章算法。
+; # std/fs
 ; 曲線: y² = x³ - 3x + b (mod p)
 ;
 ; 使用 8×32-bit limb 表示 256-bit 大整數。
@@ -19,11 +20,13 @@
 
 ; 素數 p = 2^256 - 2^224 + 2^192 + 2^96 - 1
 ; 小端 32 位元組
+; 素域 p = 2^256 - 2^224 + 2^192 + 2^96 - 1（小端序：byte[0] 為最低有效位元組，
+; 與 bn-* 引擎及 P256-N 的儲存約定一致）
 P256-P [32]byte = [
-    0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
 ]
 
 ; 群階 n
@@ -241,13 +244,13 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; 更簡單的方法：將 64 位元組分為高低兩半
     ; result = low + high * 2^256 mod m
     ; 由於 2^256 mod m 可以預計算，這裡用簡化方法
-    ; 直接使用重複減法處理整個 64 位元組
-
     ; 從最高位元組開始減
     ; 每次嘗試減去 m * 2^(shift)
     ; 注意：64 位元組乘積最高可達 2^512-1，必須從 shift-byte=32
     ; （窗 acc[32..63]，涵蓋 byte 63 / bit 504..511）開始，
     ; 否則最高位元組永遠不會被規約，結果錯誤。
+    ; 迴圈條件 > 0 + 頂部先 -1，因此實際會處理到 shift-byte=0（窗 work[0..31]），
+    ; 確保結果 < m。
     shift-byte = 33
     (shift-byte > 0) {
 
@@ -255,10 +258,19 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         shift-byte = shift-byte - 1
 
         ; 嘗試減去 m << (shift_byte * 8)
-        ; 即在 work[shift_byte..shift_byte+32] 處減去 m
+        ; 即在 work[shift_byte..shift_byte+32) 處減去 m
+        ; 33 位元組修正：真實要比較的是 floor(work / 256^shift_byte)，佔用位元組
+        ; [shift_byte .. 63]；其上方位元組 work[shift_byte+32] 非 0 時，該值必
+        ; >= 2^256 > m，必須強制減。經高位處理後 [shift_byte+33 .. 63] 必為 0，
+        ; 故只需檢查此一位元組即可；僅在「窗口 < m 且無上溢位元組」時才清 can-sub。
         can-sub = 1
-        i <- [0..32): {
+        hi = 0
+        (shift-byte + 32 < 64) -> {
 
+            #{index-out=zero}
+            hi = work[shift-byte + 32]
+        }
+        i <- [31..0]: {
             wi = 0
 
             #{overflow=wrap}
@@ -274,7 +286,9 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 wi > mi -> break
 
                 wi < mi -> {
-                    can-sub = 0
+                    (hi == 0) -> {
+                        can-sub = 0
+                    }
                     break
                 }
             }
@@ -329,12 +343,36 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 }
             }
 
+            ; 傳播最後的借位到上位元組：強制減時窗口可能 < m 而產生借位，
+            ; 必須把借位繼續往 work[shift-byte+32 .. 63] 傳播，否則減法不完整。
+            (borrow != 0) {
+                idx = shift-byte + 32
+                (idx < 64) {
+
+                    #{index-out=zero, overflow=wrap}
+                    val = (work[idx]) - borrow
+                    {
+                        val < 0 -> {
+
+                            #{overflow=wrap}
+                            val = val + 256
+                            borrow = 1
+                        }
+
+                        -> borrow = 0
+                    }
+                    work[idx] = val
+
+                    #{overflow=wrap}
+                    idx = idx + 1
+                }
+            }
+
             ; 如果還能減，再減一次
             shift-byte = shift-byte + 1
         }
     }
     i <- [0..32): {
-
         out[i] = work[i]
     }
 }
@@ -350,19 +388,21 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     s [32]byte
     carry = 0
     s, carry = bn-add(a, b)
-
     acc [64]byte
     i <- [0..32): {
+
         #{index-out=zero}
         acc[i] = s[i]
     }
     acc[32] = carry & 255
     i <- [33..64): {
+
         #{index-out=zero}
         acc[i] = 0
     }
 
     ; 規約：從 shift-byte=32 開始（窗 acc[32..63]），一路減到 0
+    ; （迴圈條件 > 0 + 頂部先 -1，故實際會處理到 shift-byte=0）
     shift-byte = 33
     (shift-byte > 0) {
 
@@ -370,70 +410,122 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         shift-byte = shift-byte - 1
 
         ; 嘗試在 acc[shift-byte..shift-byte+32) 處減去 m
+        ; 同 bn-mulmod：真實值為 floor(acc / 256^shift_byte)，佔位元組
+        ; [shift_byte .. 63]；上方位元組 acc[shift-byte+32] 非 0 時必須強制減。
+        ; 經高位處理後 [shift-byte+33 .. 63] 必為 0，只需檢查此一位元組。
         can-sub = 1
-        i <- [0..32): {
+        hi = 0
+        (shift-byte + 32 < 64) -> {
+
+            #{index-out=zero}
+            hi = acc[shift-byte + 32]
+        }
+        i <- [31..0]: {
+
             #{index-out=zero}
             wi = 0
+
             #{overflow=wrap}
             shift-byte + i < 64 -> {
+
                 #{index-out=zero}
                 wi = acc[shift-byte + i]
             }
+
             #{index-out=zero}
             mi = m[i]
             {
                 wi > mi -> break
+
                 wi < mi -> {
-                    can-sub = 0
+                    (hi == 0) -> {
+                        can-sub = 0
+                    }
                     break
                 }
             }
         }
-
         can-sub == 1 -> {
             borrow = 0
             i <- [0..32): {
+
                 #{overflow=wrap}
                 idx = shift-byte + i
                 {
                     idx < 64 -> {
+
                         #{overflow=wrap}
                         val = (acc[idx]) - (m[i]) - borrow
                         {
                             val < 0 -> {
+
                                 #{overflow=wrap}
                                 val = val + 256
                                 borrow = 1
                             }
+
                             -> borrow = 0
                         }
+
                         #{index-out=zero}
                         acc[idx] = val
                     }
+
                     -> {
                         borrow != 0 -> {
+
                             #{overflow=wrap}
                             val = (acc[idx]) - borrow
                             {
                                 val < 0 -> {
+
                                     #{overflow=wrap}
                                     val = val + 256
                                     borrow = 1
                                 }
+
                                 -> borrow = 0
                             }
+
                             #{index-out=zero}
                             acc[idx] = val
                         }
                     }
                 }
             }
+
+            #{overflow=wrap}
+
+            ; 傳播最後的借位到上位元組（強制減時窗口可能 < m 而產生借位）
+            (borrow != 0) {
+                idx = shift-byte + 32
+                (idx < 64) {
+
+                    #{index-out=zero, overflow=wrap}
+                    val = (acc[idx]) - borrow
+                    {
+                        val < 0 -> {
+
+                            #{overflow=wrap}
+                            val = val + 256
+                            borrow = 1
+                        }
+
+                        -> borrow = 0
+                    }
+                    acc[idx] = val
+
+                    #{overflow=wrap}
+                    idx = idx + 1
+                }
+            }
+
             #{overflow=wrap}
             shift-byte = shift-byte + 1
         }
     }
-
     i <- [0..32): {
+
         #{index-out=zero}
         out[i] = acc[i]
     }
@@ -449,32 +541,19 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             borrow = 0
             diff, borrow = bn-sub(a, b)
             i <- [0..32): {
-
                 out[i] = diff[i]
             }
         }
 
         -> {
 
-            ; a < b, result = m - (b - a)
+            ; a < b: result = (a - b) mod m = m - (b - a)
+            ; 此時 0 < (b - a) < m（因 a, b 皆已約簡至 [0, m)），
+            ; 故 m > (b - a)，bn-sub(m, diff) 直接給出正確值，無借位問題。
             diff [32]byte
             borrow = 0
             diff, borrow = bn-sub(b, a)
-            out, borrow = bn-sub(P256-N, diff)
-
-            ; 簡化：使用 m 作為模數
-            ; result = m + a - b
-            tmp [32]byte
-            carry = 0
-            tmp, carry = bn-add(m, a)
-            out.zero()
-            diff2 [32]byte
-            borrow2 = 0
-            diff2, borrow2 = bn-sub(tmp, b)
-            i <- [0..32): {
-
-                out[i] = diff2[i]
-            }
+            out, borrow = bn-sub(m, diff)
         }
     }
 }
@@ -496,7 +575,6 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
 
     ; result = 1
     result [32]byte
-
     result[0] = 1
     i <- [1..32): {
 
@@ -514,13 +592,11 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
         byte-idx = bit / 8
         bit-idx = bit % 8
         (exp[byte-idx] >> bit-idx) & 1 == 1 -> {
-
             result = bn-mulmod(result, base, m)
         }
         base = bn-mulmod(base, base, m)
     }
     i <- [0..32): {
-
         out[i] = result[i]
     }
 }
@@ -542,7 +618,6 @@ ec-point-double = (p []byte) (r []byte) {
 
         #{overflow=wrap}
         p[32 + i] != 0 -> {
-
             is-zero = 0
         }
     }
@@ -561,7 +636,6 @@ ec-point-double = (p []byte) (r []byte) {
     ; X' = M² - 2*S
     ; Y' = M * (S - X') - 8 * Y⁴
     ; Z' = 2 * Y * Z
-
     x = p[0..32]
     y = p[32..64]
     z = p[64..96]
@@ -578,11 +652,13 @@ ec-point-double = (p []byte) (r []byte) {
     x-pz2 [32]byte
     x-pz2 = bn-addmod(x, z2, P256-P)
 
-    ; M = 3 * (X-Z²) * (X+Z²)
+    ; M = 3 * (X-Z²) * (X+Z²)   （a = -3 曲線的 Jacobian 倍點公式）
+    ; 注意：M 必須是 3 倍，不是 4 倍！
     m [32]byte
     m = bn-mulmod(x-mz2, x-pz2, P256-P)
-    m = bn-addmod(m, m, P256-P)
-    m = bn-addmod(m, m, P256-P)
+    m2 [32]byte
+    m2 = bn-addmod(m, m, P256-P)
+    m = bn-addmod(m2, m, P256-P)
 
     ; Y²
     y2 [32]byte
@@ -599,10 +675,10 @@ ec-point-double = (p []byte) (r []byte) {
     y4 = bn-mulmod(y2, y2, P256-P)
 
     ; X' = M² - 2*S
-    m2 [32]byte
-    m2 = bn-mulmod(m, m, P256-P)
+    m-sq [32]byte
+    m-sq = bn-mulmod(m, m, P256-P)
     x3 [32]byte
-    x3 = bn-submod(m2, s, P256-P)
+    x3 = bn-submod(m-sq, s, P256-P)
     x3 = bn-submod(x3, s, P256-P)
 
     ; Y' = M * (S - X') - 8 * Y⁴
@@ -625,7 +701,6 @@ ec-point-double = (p []byte) (r []byte) {
 
     ; 輸出
     i <- [0..32): {
-
         r[i] = x3[i]
 
         #{overflow=wrap}
@@ -667,7 +742,6 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     q-inf = 1
     i <- [0..96): {
         q[i] != 0 -> {
-
             q-inf = 0
         }
     }
@@ -722,7 +796,6 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     h-is-zero = 1
     i <- [0..32): {
         h[i] != 0 -> {
-
             h-is-zero = 0
         }
     }
@@ -730,7 +803,6 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         r-is-zero = 1
         i <- [0..32): {
             rr[i] != 0 -> {
-
                 r-is-zero = 0
             }
         }
@@ -742,7 +814,6 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
             -> {
                 i <- [0..96): {
-
                     r[i] = 0
                 }
                 return
@@ -782,9 +853,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     z3 [32]byte
     z3 = bn-mulmod(h, z1, P256-P)
     z3 = bn-mulmod(z3, z2, P256-P)
-
     i <- [0..32): {
-
         r[i] = x3[i]
 
         #{overflow=wrap}
@@ -850,7 +919,6 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     z-is-zero = 1
     i <- [0..32): {
         pz[i] != 0 -> {
-
             z-is-zero = 0
         }
     }
@@ -916,13 +984,11 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
 
     ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
-
         out[i] = x[i]
 
         #{overflow=wrap}
         out[32 + i] = y[i]
     }
-
     out[64] = 1
     i <- [1..32): {
 
@@ -986,7 +1052,6 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
     ; R 轉為未壓縮編碼（無窮遠點/无效點時首位元組不為 04）
     enc [65]byte
     enc = ec-point-to-bytes(r)
-
     enc[0] != 4 -> return
 
     ; 提取 x 座標（大端序）
@@ -1071,7 +1136,6 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
             }
         }
         all-zero == 1 -> {
-
             k[0] = 1
         }
     }
@@ -1141,7 +1205,6 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     r-zero = 1
     i <- [0..32): {
         r-val[i] != 0 -> {
-
             r-zero = 0
         }
     }
@@ -1154,7 +1217,6 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     s-zero = 1
     i <- [0..32): {
         s-val[i] != 0 -> {
-
             s-zero = 0
         }
     }
@@ -1217,7 +1279,6 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     r-inf = 1
     i <- [0..96): {
         r-point[i] != 0 -> {
-
             r-inf = 0
         }
     }

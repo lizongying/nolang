@@ -1,133 +1,87 @@
-; math - 数学函数标准库
+; math - 数学与数字函数（函数形式 API）
+;
+; std 数字系全部「函数形式」API 集中于本模块：max, min, pow, hypot, atan2,
+; fmod, clamp, even, odd, gcd, lcm, div, mod, swap, arr-zero,
+; 型别转换（i64-to-f64, f64-to-i64, f32-to-f64, f64-to-f32）,
+; 数字转字串底层函数（i64-to-str, u64-to-str, char-to-str, f64-to-str）,
+; 位元操作（rotate-left, rotate-right, store-le-u32）。
+; 「方法形式」API（*.to-str、f64/f32 sqrt/sin/exp…、整数 sqrt/is-prime）
+; 全部在 number 模块（std/number.no）；联合型别与成员方法：num → std/num.no,
+; int → std/int.no, float → std/float.no。
+; 例外：整数幂 pow（int 泛型）与本模块 pow（f64）同名冲突，留在 std/number.no。
+;
+; 常数：PI, E, LN10（ln 10，f64-to-str 实现配套）在本模块；
+; 数值范围常数（i8.MIN…u64.MAX）与 INF 在 std/number.no。
 PI = 3.141592653589793
 E = 2.718281828459045
 
-; 基础
-#{buildin}
-abs = (x f64) (res f64) {
-}
+; max / min：num 泛型數字函數（變參泛型 `a ..num`，整數與浮點
+; 走同一條單態化路徑）。舊的 `#{buildin}` f64 樁與 Go 側同名註冊已於
+; 2026-10-05 移除——同一裸名註冊兩條（i64 + f64）時，
+; FindBuiltinMethod 只取第一條，浮點呼叫會被靜默截斷成整數。
 
-#{buildin}
-max = (a f64, b f64) (res f64) {
-}
+; max: 回傳最大值（變參泛型，支援 num 所有成員）
+max = (a ..num) (r num) {
 
-#{buildin}
-min = (a f64, b f64) (res f64) {
-}
+    #{index-out=zero}
+    r = a[0]
+    n = len(a)
+    i <- [1..n): {
+        a[i] > r -> {
 
-; 幂与根
-#{buildin}
-sqrt = (x f64) (res f64) {
-}
-
-; cbrt: 立方根
-; 使用 exp(log(|x|) / 3) 實現，避開與 number.no / bigint.no 中整數 pow 的名稱衝突
-cbrt = (x f64) (res f64) {
-    x == 0.0 -> {
-        res = 0.0
-        return
-    }
-    {
-        x < 0.0 -> {
-            ax f64 = 0.0 - x
-            l f64 = log(ax)
-            res = 0.0 - exp(l / 3.0)
-        }
-
-        -> {
-            l f64 = log(x)
-            res = exp(l / 3.0)
+            #{index-out=zero}
+            r = a[i]
         }
     }
 }
 
+; min: 回傳最小值（變參泛型，支援 num 所有成員）
+min = (a ..num) (r num) {
+
+    #{index-out=zero}
+    r = a[0]
+    n = len(a)
+    i <- [1..n): {
+        a[i] < r -> {
+
+            #{index-out=zero}
+            r = a[i]
+        }
+    }
+}
+
+; pow: f64 求幂 a^b（映射 libm pow）；整数幂（int 泛型）见 std/number.no 的 pow
 #{buildin}
 pow = (x f64, y f64) (res f64) {
 }
 
+; pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
+; 使用快速冪算法 O(log n)
+; ⚠️ 未移至 math：與 std/math.no 的 pow（f64 求冪函數）同名衝突，
+;    同一模組不容兩條 pow；函數形式 API 集中於 math 的唯一例外。
+pow-int = (a int, n int) (r int) {
+    rn = n
+    r = 1
+    base = a
+    (rn > 0) {
+
+        #{overflow=wrap}
+        rn & 1 == 1 -> r = r * base
+
+        #{overflow=wrap}
+        base = base * base
+        rn = rn >> 1
+    }
+}
+
 ; hypot: 歐幾里得範數 sqrt(x*x + y*y)
 hypot = (x f64, y f64) (res f64) {
-
-    res = sqrt(x * x + y * y)
-}
-
-; 三角函数（弧度）
-#{buildin}
-sin = (x f64) (res f64) {
-}
-
-#{buildin}
-cos = (x f64) (res f64) {
-}
-
-; tan: tangent = sin/cos
-tan = (x f64) (res f64) {
-
-    #{overflow=wrap}
-    res = sin(x) / cos(x)
-}
-
-#{buildin}
-asin = (x f64) (res f64) {
-}
-
-#{buildin}
-acos = (x f64) (res f64) {
-}
-
-#{buildin}
-atan = (x f64) (res f64) {
+    s = x * x + y * y
+    res = s.sqrt()
 }
 
 #{buildin}
 atan2 = (y f64, x f64) (res f64) {
-}
-
-; 双曲函数
-#{buildin}
-sinh = (x f64) (res f64) {
-}
-
-#{buildin}
-cosh = (x f64) (res f64) {
-}
-
-#{buildin}
-tanh = (x f64) (res f64) {
-}
-
-; 取整
-#{buildin}
-ceil = (x f64) (res f64) {
-}
-
-#{buildin}
-floor = (x f64) (res f64) {
-}
-
-#{buildin}
-round = (x f64) (res f64) {
-}
-
-#{buildin}
-trunc = (x f64) (res f64) {
-}
-
-; 指数对数
-#{buildin}
-exp = (x f64) (res f64) {
-}
-
-#{buildin}
-log = (x f64) (res f64) {
-}
-
-#{buildin}
-log10 = (x f64) (res f64) {
-}
-
-#{buildin}
-log2 = (x f64) (res f64) {
 }
 
 ; 杂项
@@ -135,26 +89,12 @@ log2 = (x f64) (res f64) {
 fmod = (x f64, y f64) (res f64) {
 
     y == 0.0 -> {
-
         res = 0.0 / 0.0
         return
     }
 
     q = x / y
-
-    res = x - trunc(q) * y
-}
-
-; degrees: 弧度转角度
-degrees = (r f64) (res f64) {
-
-    res = r * 180.0 / PI
-}
-
-; radians: 角度转弧度
-radians = (d f64) (res f64) {
-
-    res = d * PI / 180.0
+    res = x - q.trunc() * y
 }
 
 ; ═══════════════════════════════════════════════
@@ -163,4 +103,573 @@ radians = (d f64) (res f64) {
 ; clamp: 將值限制在 [min, max] 範圍內
 #{buildin}
 clamp = (val i64, min i64, max i64) (result i64) {
+}
+
+; even: 是否為偶數 — 對所有整數型別（含無符號）通用
+even = (a int) (yes bool) {
+
+    #{overflow=wrap}
+    r = a % 2
+    yes = (r == 0)
+}
+
+; odd: 是否為奇數 — 對所有整數型別（含無符號）通用
+odd = (a int) (yes bool) {
+
+    #{overflow=wrap}
+    r = a % 2
+    yes = (r != 0)
+}
+
+; gcd: 最大公因數（輾轉相除法）
+gcd = (a int, b int) (r int) {
+    ra = a
+    rb = b
+
+    #{overflow=wrap}
+    ra < 0 -> ra = 0 - ra
+
+    #{overflow=wrap}
+    rb < 0 -> rb = 0 - rb
+    (rb != 0) {
+
+        t = rb
+        rb = ra % rb
+        ra = t
+    }
+    r = ra
+}
+
+; lcm: 最小公倍數
+lcm = (a int, b int) (r int) {
+
+    a == 0 || b == 0 -> {
+        r = 0
+        return
+    }
+    g = gcd(a, b)
+
+    #{overflow=wrap}
+    r = a / g * b
+}
+
+; div: 整數除法（向零截斷，與 C/Go/Java 的 `a / b` 一致）
+;
+; -7 / 2 == -3（不是 -4：floor 語義請自行改用 sign 判斷）
+; ⚠️ b == 0 時與裸 `/` 一樣會 trap（執行期無除零檢查）。
+div = (a int, b int) (r int) {
+
+    #{overflow=wrap}
+    r = a / b
+}
+
+; mod: 整數取餘（餘數符號跟隨被除數 a，與 C/Go/Java 的 `a % b` 一致）
+;
+; -7 % 2 == -1（floor-mod 語義請自行改用 sign 判斷）
+; ⚠️ b == 0 時與裸 `%` 一樣會 trap。
+mod = (a int, b int) (r int) {
+
+    #{overflow=wrap}
+    r = a % b
+}
+
+; i64-to-f64: 整數轉浮點
+#{buildin}
+i64-to-f64 = (a i64) (r f64) {
+}
+
+;     r = a
+; }
+
+; f64-to-i64: 浮點轉整數（截斷）
+#{buildin}
+f64-to-i64 = (a f64) (r i64) {
+}
+
+;     r = a
+; }
+
+; f32-to-f64: 將 f32 提升為 f64
+#{buildin}
+f32-to-f64 = (a f32) (r f64) {
+}
+
+; f64-to-f32: 將 f64 降為 f32（可能損失精度）
+#{buildin}
+f64-to-f32 = (a f64) (r f32) {
+}
+
+; ═══════════════════════════════════════════════
+; 整數轉字串（Nolang 實現，取代 sprintf CLibCall）
+; ═══════════════════════════════════════════════
+
+; i64-to-str: 將 i64 轉為字串
+; 處理 0、正數、負數。負數的絕對值以 u64 表示（2's 補數 0 - (u64)n），
+; 避免 n = 0 - n 在 i64.MIN 時溢出（i64.MIN 的絕對值 2^63 超出 i64 範圍）。
+; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 n.to-str()（i64.to-str，見 std/number.no；本函數為其底層實現）。
+i64-to-str = (n i64) (out str) {
+
+    n == 0 -> {
+        out = with-cap(1)
+
+        out[0] = 48
+        return
+    }
+    neg = 0
+    mag u64 = 0
+
+    ; 負數：以 u64 取絕對值，避開 i64.MIN 溢出。
+    ; 隱式 i64 -> u64（位元組重新詮釋）後做 0 - mag（u64 回繞）即得絕對值。
+    #{overflow=wrap}
+    n < 0 -> {
+
+        neg = 1
+        mag = n
+        mag = 0 - mag
+    }
+
+    -> {
+        mag = n
+    }
+    digits = 0
+    tmp = mag
+    (tmp != 0) {
+
+        #{overflow=wrap}
+        digits = digits + 1
+
+        #{overflow=wrap}
+        tmp = tmp / 10
+    }
+    total = digits
+
+    #{overflow=wrap}
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+
+    #{overflow=wrap}
+    pos = digits - 1
+    neg == 1 -> pos = digits
+    (mag != 0) {
+
+        #{overflow=wrap}
+        d = mag % 10
+
+        #{overflow=wrap}
+        ascii = d + 48
+
+        out[pos] = ascii
+
+        #{overflow=wrap}
+        mag = mag / 10
+
+        #{overflow=wrap}
+        pos = pos - 1
+    }
+    neg == 1 -> {
+
+        out[0] = 45
+    }
+}
+
+; u64-to-str: 將 u64 轉為字串
+; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 u.to-str()（u64.to-str，見 std/number.no；本函數為其底層實現）。
+u64-to-str = (u u64) (out str) {
+    ru = u
+
+    u == 0 -> {
+        out = with-cap(1)
+
+        out[0] = 48
+        return
+    }
+    tmp u64 = ru
+    digits = 0
+    (tmp > 0) {
+
+        #{overflow=wrap}
+        digits = digits + 1
+
+        #{overflow=wrap}
+        tmp = tmp / 10
+    }
+    out = with-cap(digits)
+
+    #{overflow=wrap}
+    pos = digits - 1
+    (ru > 0) {
+
+        #{overflow=wrap}
+        d = ru % 10
+
+        #{overflow=wrap}
+        ascii = d + 48
+
+        out[pos] = ascii
+
+        #{overflow=wrap}
+        ru = ru / 10
+
+        #{overflow=wrap}
+        pos = pos - 1
+    }
+}
+
+; char-to-str: 將 char（Unicode 碼點）轉為 UTF-8 編碼字串
+; 取代舊版 sprintf %c（僅能處理單位元組 ASCII）
+; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 char.to-str()（見 std/char.no），
+;    如 c char = 'A'; c.to-str()；本函數僅為舊調用點保留兼容。
+char-to-str = (c char) (out str) {
+    out = with-cap(4)
+    {
+        c < 0x80 -> {
+            out[0] = c
+        }
+
+        c < 0x800 -> {
+            out[0] = 0xc0 | ((c >> 6) & 0x1f)
+
+            out[1] = 0x80 | (c & 0x3f)
+        }
+
+        c < 0x10000 -> {
+            out[0] = 0xe0 | ((c >> 12) & 0x0f)
+
+            out[1] = 0x80 | ((c >> 6) & 0x3f)
+
+            out[2] = 0x80 | (c & 0x3f)
+        }
+
+        -> {
+            out[0] = 0xf0 | ((c >> 18) & 0x07)
+
+            out[1] = 0x80 | ((c >> 12) & 0x3f)
+
+            out[2] = 0x80 | ((c >> 6) & 0x3f)
+
+            out[3] = 0x80 | (c & 0x3f)
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 浮點轉字串（Nolang 實現，取代 sprintf %g CLibCall）
+; ═══════════════════════════════════════════════
+
+LN10 = 2.302585092994046
+
+; f64-to-str: 將 f64 轉為字串（模擬 C %g 格式）
+; 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號
+; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 x.to-str()（f64.to-str，見 std/number.no；本函數為其底層實現）。
+f64-to-str = (x f64) (out str) {
+
+    ; 特殊值處理
+    ; 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
+    {
+        x != x -> {
+            out = 'nan'.copy()
+            return
+        }
+
+        x == 0.0 -> {
+            out = '0'.copy()
+            return
+        }
+
+        x + x == x -> {
+            x < 0.0 -> {
+                out = '-inf'.copy()
+                return
+            }
+            out = 'inf'.copy()
+            return
+        }
+    }
+
+    ; 符號處理
+    neg = 0
+    ax = x
+
+    x < 0.0 -> {
+
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    ; 計算指數 e = floor(log10(ax))
+    lg10 = ax.log10()
+    flr = lg10.floor()
+    e = f64-to-i64(flr)
+
+    ; 邊界調整：若 ax >= 10^(e+1)，則 e++
+    #{overflow=wrap}
+    epw = i64-to-f64(e + 1) * LN10
+    upper f64 = epw.exp()
+
+    #{overflow=wrap}
+    ax >= upper -> e = e + 1
+
+    ; 計算 6 位有效數字的整數尾數
+    ; m = round(ax / 10^e * 100000)
+    #{overflow=wrap}
+    bpw = i64-to-f64(e) * LN10
+    base f64 = bpw.exp()
+
+    #{overflow=wrap}
+    ax < base -> {
+
+        #{overflow=wrap}
+        e = e - 1
+
+        #{overflow=wrap}
+        bpw2 f64 = i64-to-f64(e) * LN10
+        base = bpw2.exp()
+    }
+
+    m = f64-to-i64(ax / base * 100000.0 + 0.5)
+
+    ; 四捨五入溢出處理
+    #{overflow=wrap}
+    m >= 1000000 -> {
+
+        #{overflow=wrap}
+        m = m / 10
+        e = e + 1
+    }
+
+    ; 將 m 轉為 6 位數字字串（補前導零）
+    digits str = with-cap(6)
+    tmp = m
+    i = 5
+    (i >= 0) {
+
+        #{overflow=wrap}
+        digits[i] = (tmp % 10) + 48
+
+        #{overflow=wrap}
+        tmp = tmp / 10
+
+        #{overflow=wrap}
+        i = i - 1
+    }
+
+    ; 找最後一個非零位（用於去尾隨零）
+    last-nz = 0
+    i = 5
+    (i >= 0) {
+
+        digits[i] != 48 -> {
+            last-nz = i
+            i = -1
+        }
+
+        #{overflow=wrap}
+        i = i - 1
+    }
+
+    ; 決定格式
+    use-sci = 0
+    {
+        e < -4 -> use-sci = 1
+
+        e >= 6 -> use-sci = 1
+    }
+
+    #{overflow=wrap}
+    use-sci == 1 -> {
+
+        ; 科學記號：d.ddddde±NN
+        out = with-cap(20)
+        pos = 0
+        neg == 1 -> {
+
+            out[pos] = 45
+            pos = pos + 1
+        }
+
+        out[pos] = digits[0]
+        pos = pos + 1
+        last-nz >= 1 -> {
+
+            out[pos] = 46
+            pos = pos + 1
+            j = 1
+            (j <= last-nz) {
+
+                out[pos] = digits[j]
+                pos = pos + 1
+                j = j + 1
+            }
+        }
+
+        out[pos] = 101
+        pos = pos + 1
+        ae i64 = e
+        {
+            ae < 0 -> {
+                out[pos] = 45
+                pos = pos + 1
+                ae = 0 - ae
+            }
+
+            -> {
+                out[pos] = 43
+                pos = pos + 1
+            }
+        }
+        estr = i64-to-str(ae)
+        estr.len-bytes() == 1 -> {
+
+            out[pos] = 48
+            pos = pos + 1
+        }
+        j = 0
+        (j < estr.len-bytes()) {
+
+            out[pos] = estr[j]
+            pos = pos + 1
+            j = j + 1
+        }
+        return
+    }
+
+    ; 固定記號
+    #{overflow=wrap}
+    e >= 0 -> {
+
+        #{overflow=wrap}
+        int-digits = e + 1
+        total = int-digits
+        neg == 1 -> total = total + 1
+        last-nz >= int-digits -> {
+
+            #{overflow=wrap}
+            total = total + 1
+            total = total + (last-nz - int-digits + 1)
+        }
+        out = with-cap(total)
+        pos = 0
+        neg == 1 -> {
+
+            out[pos] = 45
+            pos = pos + 1
+        }
+        j = 0
+        (j < int-digits) {
+
+            out[pos] = digits[j]
+            pos = pos + 1
+            j = j + 1
+        }
+        last-nz >= int-digits -> {
+
+            out[pos] = 46
+            pos = pos + 1
+            j = int-digits
+            (j <= last-nz) {
+
+                out[pos] = digits[j]
+                pos = pos + 1
+                j = j + 1
+            }
+        }
+        return
+    }
+
+    ; e < 0: 0.00dddd
+    #{overflow=wrap}
+    lead-zeros = 0 - e - 1
+
+    #{overflow=wrap}
+    total = 2 + lead-zeros + last-nz + 1
+
+    #{overflow=wrap}
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+    pos = 0
+
+    #{overflow=wrap}
+    neg == 1 -> {
+
+        out[pos] = 45
+        pos = pos + 1
+    }
+
+    out[pos] = 48
+
+    #{overflow=wrap}
+    pos = pos + 1
+
+    out[pos] = 46
+
+    #{overflow=wrap}
+    pos = pos + 1
+    j = 0
+    (j < lead-zeros) {
+
+        out[pos] = 48
+
+        #{overflow=wrap}
+        pos = pos + 1
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+    j = 0
+    (j <= last-nz) {
+
+        out[pos] = digits[j]
+
+        #{overflow=wrap}
+        pos = pos + 1
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+}
+
+; swap: 交換兩個值
+swap = () (a t, b t) {
+    tmp = a
+    a = b
+    b = tmp
+}
+
+; [n]num.zero / []num.zero — 使用 llvm.memset 置零
+; 定長陣列：總位元組 = n * sizeof(num) 編譯期常量
+; 堆切片：運行時取 .len() * sizeof(num) 傳入 llvm.memset
+#{buildin}
+arr-zero = () {
+}
+
+;     i = 0
+;     for i < n {
+;         .[i] = 0
+;         i = i + 1
+;     }
+; }
+;
+; []num.zero = () {
+;     i = 0
+;     for i < .len() {
+;         .[i] = 0
+;         i = i + 1
+;     }
+; }
+; ═══════════════════════════════════════════════
+; 位元操作（內建）
+; ═══════════════════════════════════════════════
+; rotate-left: 整數左旋 n 位元（映射到 ARM64 ROR via llvm.fshl）
+#{buildin}
+rotate-left = (x i64, n i64) (r i64) {
+}
+
+; rotate-right: 整數右旋 n 位元（映射到 ARM64 ROR via llvm.fshr）
+#{buildin}
+rotate-right = (x i64, n i64) (r i64) {
+}
+
+; store-le-u32: 將 u32 值以小端序寫入位元組陣列指定偏移位置
+#{buildin}
+store-le-u32 = (arr i64, offset i64, val u32) {
 }

@@ -1,0 +1,142 @@
+; test/std/markdown.no — markdown 模組測試（CommonMark 風格渲染器）
+;
+; 執行：no test test/std/markdown.no
+; 覆蓋：escape-html / prefix-count / heading / setext-level / thematic-break /
+;       list-item / blockquote / fence / table-separator / inline / to-html
+;       （段落、標題、無序/有序列表、圍欄代碼、引用、連結、強調、表格）
+
+# /test/runner
+
+; 完整字串相等：先比長度再比前 n 字節
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
+t-escape = () {
+    out = markdown.escape-html('a < b & c > d "q"')
+    eq-str(out, 'a &lt; b &amp; c &gt; d &quot;q&quot;', 'escape-html')
+    p = markdown.escape-html('plain text')
+    eq-str(p, 'plain text', 'escape-html noop')
+}
+
+t-prefix = () {
+    n i64 = markdown.prefix-count('### x', 35)
+    runner.eq(n, 3, 'prefix-count # == 3')
+    z i64 = markdown.prefix-count('abc', 35)
+    runner.eq(z, 0, 'prefix-count none == 0')
+}
+
+t-heading = () {
+    hd = markdown.heading('### Hi there')
+    runner.eq(hd.level, 3, 'heading level 3')
+    eq-str(hd.text, 'Hi there', 'heading text')
+    none = markdown.heading('not a heading')
+    runner.eq(none.level, 0, 'non-heading level 0')
+    h1 = markdown.heading('# Title')
+    runner.eq(h1.level, 1, 'h1 level 1')
+    eq-str(h1.text, 'Title', 'h1 text')
+}
+
+t-setext-thematic = () {
+    runner.eq(markdown.setext-level('====='), 1, 'setext === => 1')
+    runner.eq(markdown.setext-level('-----'), 2, 'setext --- => 2')
+    runner.eq(markdown.setext-level('abc'), 0, 'setext none => 0')
+    tb bool = markdown.thematic-break('---')
+    runner.is-true(tb, 'thematic --- true')
+    nb bool = markdown.thematic-break('not ---')
+    runner.is-false(nb, 'thematic text false')
+}
+
+t-block-structs = () {
+    li = markdown.list-item('- item')
+    runner.eq(li.kind, 1, 'list-item kind unordered')
+    eq-str(li.text, 'item', 'list-item text')
+    ol = markdown.list-item('3. three')
+    runner.eq(ol.kind, 2, 'list-item kind ordered')
+    eq-str(ol.text, 'three', 'list-item ordered text')
+
+    q = markdown.blockquote('> q')
+    runner.is-true(q.yes, 'blockquote yes')
+    eq-str(q.text, 'q', 'blockquote text')
+    nq = markdown.blockquote('nope')
+    runner.is-false(nq.yes, 'blockquote no => false')
+
+    f = markdown.fence('```py')
+    runner.is-true(f.yes, 'fence yes')
+    runner.eq(f.marker, 96, 'fence marker backtick')
+    runner.eq(f.width, 3, 'fence width 3')
+    eq-str(f.info, 'py', 'fence info')
+
+    ts bool = markdown.table-separator('--- | ---')
+    runner.is-true(ts, 'table-separator true')
+}
+
+t-inline = () {
+    eq-str(markdown.inline('**bold** and `code`'), '<strong>bold</strong> and <code>code</code>', 'inline bold+code')
+    eq-str(markdown.inline('*it* and ~~del~~'), '<em>it</em> and <del>del</del>', 'inline em+del')
+    eq-str(markdown.inline('[t](http://u.com)'), '<a href="http://u.com">t</a>', 'inline link')
+}
+
+t-to-html = () {
+    eq-str(markdown.to-html('hello world'), '<p>hello world</p>\n', 'to-html paragraph')
+    eq-str(markdown.to-html('# Title'), '<h1>Title</h1>\n', 'to-html h1')
+    eq-str(markdown.to-html('- a
+- b'), '<ul>
+<li>a</li>
+<li>b</li>
+</ul>\n', 'to-html ul')
+
+    eq-str(markdown.to-html('1. x
+2. y'), '<ol>
+<li>x</li>
+<li>y</li>
+</ol>\n', 'to-html ol')
+    eq-str(markdown.to-html('> hi'), '<blockquote>
+hi
+</blockquote>\n', 'to-html quote')
+    eq-str(markdown.to-html('[t](http://u.com)'), '<p><a href="http://u.com">t</a></p>\n', 'to-html link')
+    eq-str(markdown.to-html('*it* and ~~del~~'), '<p><em>it</em> and <del>del</del></p>\n', 'to-html emphasis')
+}
+
+t-to-html-code = () {
+    eq-str(markdown.to-html('```js
+var a = 1
+```'), '<pre><code class="language-js">var a = 1
+</code></pre>\n', 'to-html fenced code')
+}
+
+t-to-html-table = () {
+    eq-str(markdown.to-html('a | b
+--- | ---
+1 | 2'), '<table>
+<thead>
+<tr>
+<th>a</th>
+<th>b</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>\n', 'to-html table')
+}
+p1 = runner.test('markdown.escape-html', t-escape)
+p2 = runner.test('markdown.prefix-count', t-prefix)
+p3 = runner.test('markdown.heading', t-heading)
+p4 = runner.test('markdown.setext/thematic', t-setext-thematic)
+p5 = runner.test('markdown.block-structs', t-block-structs)
+p6 = runner.test('markdown.inline', t-inline)
+p7 = runner.test('markdown.to-html', t-to-html)
+p8 = runner.test('markdown.to-html-code', t-to-html-code)
+p9 = runner.test('markdown.to-html-table', t-to-html-table)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

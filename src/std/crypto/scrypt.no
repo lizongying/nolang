@@ -14,6 +14,14 @@
 ;   derived = scrypt(password, salt, N, r, p, key-len)
 
 ; ═══════════════════════════════════════════════
+; rotl32: 32-bit 循環左移（Salsa20 quarter-round 需旋轉，非左移）
+rotl32 = (x u32, n i64) (r u32) {
+    mask u32 = 4294967295
+
+    #{overflow=wrap}
+    r = ((x >> (32 - n)) | (x << n)) & mask
+}
+
 ; Salsa20/8 核心函數
 ; ═══════════════════════════════════════════════
 
@@ -35,7 +43,6 @@ salsa20-8-core = (block []byte) {
     ; 保存初始值
     init [16]u32
     i <- [0..16): {
-
         init[i] = x[i]
     }
 
@@ -45,87 +52,61 @@ salsa20-8-core = (block []byte) {
 
         ; 列輪
         ; QR(x[0], x[4], x[8], x[12])
-        x[4] = (x[4] ^ (((x[0] + x[12]) & mask) << 7)) & mask
-
-        x[8] = (x[8] ^ (((x[4] + x[0]) & mask) << 9)) & mask
-
-        x[12] = (x[12] ^ (((x[8] + x[4]) & mask) << 13)) & mask
-
-        x[0] = (x[0] ^ (((x[12] + x[8]) & mask) << 18)) & mask
+        x[4] = (x[4] ^ (rotl32((x[0] + x[12]) & mask, 7))) & mask
+        x[8] = (x[8] ^ (rotl32((x[4] + x[0]) & mask, 9))) & mask
+        x[12] = (x[12] ^ (rotl32((x[8] + x[4]) & mask, 13))) & mask
+        x[0] = (x[0] ^ (rotl32((x[12] + x[8]) & mask, 18))) & mask
 
         ; QR(x[5], x[9], x[13], x[1])
-        x[9] = (x[9] ^ (((x[5] + x[1]) & mask) << 7)) & mask
-
-        x[13] = (x[13] ^ (((x[9] + x[5]) & mask) << 9)) & mask
-
-        x[1] = (x[1] ^ (((x[13] + x[9]) & mask) << 13)) & mask
-
-        x[5] = (x[5] ^ (((x[1] + x[13]) & mask) << 18)) & mask
+        x[9] = (x[9] ^ (rotl32((x[5] + x[1]) & mask, 7))) & mask
+        x[13] = (x[13] ^ (rotl32((x[9] + x[5]) & mask, 9))) & mask
+        x[1] = (x[1] ^ (rotl32((x[13] + x[9]) & mask, 13))) & mask
+        x[5] = (x[5] ^ (rotl32((x[1] + x[13]) & mask, 18))) & mask
 
         ; QR(x[10], x[14], x[2], x[6])
-        x[14] = (x[14] ^ (((x[10] + x[6]) & mask) << 7)) & mask
-
-        x[2] = (x[2] ^ (((x[14] + x[10]) & mask) << 9)) & mask
-
-        x[6] = (x[6] ^ (((x[2] + x[14]) & mask) << 13)) & mask
-
-        x[10] = (x[10] ^ (((x[6] + x[2]) & mask) << 18)) & mask
+        x[14] = (x[14] ^ (rotl32((x[10] + x[6]) & mask, 7))) & mask
+        x[2] = (x[2] ^ (rotl32((x[14] + x[10]) & mask, 9))) & mask
+        x[6] = (x[6] ^ (rotl32((x[2] + x[14]) & mask, 13))) & mask
+        x[10] = (x[10] ^ (rotl32((x[6] + x[2]) & mask, 18))) & mask
 
         ; QR(x[15], x[3], x[7], x[11])
-        x[3] = (x[3] ^ (((x[15] + x[11]) & mask) << 7)) & mask
-
-        x[7] = (x[7] ^ (((x[3] + x[15]) & mask) << 9)) & mask
-
-        x[11] = (x[11] ^ (((x[7] + x[3]) & mask) << 13)) & mask
-
-        x[15] = (x[15] ^ (((x[11] + x[7]) & mask) << 18)) & mask
+        x[3] = (x[3] ^ (rotl32((x[15] + x[11]) & mask, 7))) & mask
+        x[7] = (x[7] ^ (rotl32((x[3] + x[15]) & mask, 9))) & mask
+        x[11] = (x[11] ^ (rotl32((x[7] + x[3]) & mask, 13))) & mask
+        x[15] = (x[15] ^ (rotl32((x[11] + x[7]) & mask, 18))) & mask
 
         ; 行輪
         ; QR(x[0], x[1], x[2], x[3])
-        x[1] = (x[1] ^ (((x[0] + x[3]) & mask) << 7)) & mask
-
-        x[2] = (x[2] ^ (((x[1] + x[0]) & mask) << 9)) & mask
-
-        x[3] = (x[3] ^ (((x[2] + x[1]) & mask) << 13)) & mask
-
-        x[0] = (x[0] ^ (((x[3] + x[2]) & mask) << 18)) & mask
+        x[1] = (x[1] ^ (rotl32((x[0] + x[3]) & mask, 7))) & mask
+        x[2] = (x[2] ^ (rotl32((x[1] + x[0]) & mask, 9))) & mask
+        x[3] = (x[3] ^ (rotl32((x[2] + x[1]) & mask, 13))) & mask
+        x[0] = (x[0] ^ (rotl32((x[3] + x[2]) & mask, 18))) & mask
 
         ; QR(x[5], x[6], x[7], x[4])
-        x[6] = (x[6] ^ (((x[5] + x[4]) & mask) << 7)) & mask
-
-        x[7] = (x[7] ^ (((x[6] + x[5]) & mask) << 9)) & mask
-
-        x[4] = (x[4] ^ (((x[7] + x[6]) & mask) << 13)) & mask
-
-        x[5] = (x[5] ^ (((x[4] + x[7]) & mask) << 18)) & mask
+        x[6] = (x[6] ^ (rotl32((x[5] + x[4]) & mask, 7))) & mask
+        x[7] = (x[7] ^ (rotl32((x[6] + x[5]) & mask, 9))) & mask
+        x[4] = (x[4] ^ (rotl32((x[7] + x[6]) & mask, 13))) & mask
+        x[5] = (x[5] ^ (rotl32((x[4] + x[7]) & mask, 18))) & mask
 
         ; QR(x[10], x[11], x[8], x[9])
-        x[11] = (x[11] ^ (((x[10] + x[9]) & mask) << 7)) & mask
-
-        x[8] = (x[8] ^ (((x[11] + x[10]) & mask) << 9)) & mask
-
-        x[9] = (x[9] ^ (((x[8] + x[11]) & mask) << 13)) & mask
-
-        x[10] = (x[10] ^ (((x[9] + x[8]) & mask) << 18)) & mask
+        x[11] = (x[11] ^ (rotl32((x[10] + x[9]) & mask, 7))) & mask
+        x[8] = (x[8] ^ (rotl32((x[11] + x[10]) & mask, 9))) & mask
+        x[9] = (x[9] ^ (rotl32((x[8] + x[11]) & mask, 13))) & mask
+        x[10] = (x[10] ^ (rotl32((x[9] + x[8]) & mask, 18))) & mask
 
         ; QR(x[15], x[12], x[13], x[14])
-        x[12] = (x[12] ^ (((x[15] + x[14]) & mask) << 7)) & mask
-
-        x[13] = (x[13] ^ (((x[12] + x[15]) & mask) << 9)) & mask
-
-        x[14] = (x[14] ^ (((x[13] + x[12]) & mask) << 13)) & mask
-
-        x[15] = (x[15] ^ (((x[14] + x[13]) & mask) << 18)) & mask
+        x[12] = (x[12] ^ (rotl32((x[15] + x[14]) & mask, 7))) & mask
+        x[13] = (x[13] ^ (rotl32((x[12] + x[15]) & mask, 9))) & mask
+        x[14] = (x[14] ^ (rotl32((x[13] + x[12]) & mask, 13))) & mask
+        x[15] = (x[15] ^ (rotl32((x[14] + x[13]) & mask, 18))) & mask
     }
 
     ; 加上初始值並寫回（小端序）
     i <- [0..16): {
-
         val = (x[i] + init[i]) & 4294967295
 
         #{overflow=wrap}
         off = i * 4
-
         block[off] = val & 255
 
         #{overflow=wrap}
@@ -259,17 +240,24 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         n-idx = n-idx + 1
     }
 
+    ; 第一階段結束後，X 需再套用一次 BlockMix（標準 ROMix：X = BlockMix^N(B)）
+    x = scrypt-blockmix(x, r)
+
     ; 第二階段：偽隨機存取
     n-idx = 0
     (n-idx < n) {
 
         ; j = Integerify(X) mod N
-        ; Integerify: 將 X 的最後 64 位元組的前 8 位元組解釋為小端整數
+        ; Integerify: 將 X 的最後 64 位元組的前 8 位元組解釋為小端整數（取 mod N）
+        ; 用 Horner 法逐位元組累積，避免 byte<<56 在 i64 造成符號負值
+        #{overflow=wrap}
+        base-j = (2 * r - 1) * 64
         j = 0
+        k <- [0..8): {
 
-        #{index-out=zero}
-        j = (x[(2 * r - 1) * 64]) | ((x[(2 * r - 1) * 64 + 1]) << 8) | ((x[(2 * r - 1) * 64 + 2]) << 16) | ((x[(2 * r - 1) * 64 + 3]) << 24) | ((x[(2 * r - 1) * 64 + 4]) << 32) | ((x[(2 * r - 1) * 64 + 5]) << 40) | ((x[(2 * r - 1) * 64 + 6]) << 48) | ((x[(2 * r - 1) * 64 + 7]) << 56)
-        j = j % n
+            #{index-out=zero, overflow=wrap}
+            j = (j * 256 + x[base-j + (7 - k)]) % n
+        }
 
         ; X = X XOR V[j]
         i <- [0..block-bytes): {

@@ -1,0 +1,86 @@
+; test/std/hmac.no — crypto/hmac 模組測試
+;
+; 執行：no test test/std/hmac.no
+; 覆蓋：hmac-sha1-vec、hmac-sha256-vec、hmac-sha512-vec
+; 向量來源：RFC 4231 標準測試向量，並與 python hashlib.hmac 交叉核對
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+D1 = 'Hi There'
+K1 []byte = [
+    0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+    0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+    0x0b, 0x0b, 0x0b, 0x0b,
+]
+
+; RFC 4231 Test Case 1: key = 0x0b * 20, data = "Hi There"
+t-hmac-sha1 = () {
+    k []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    out = hmac.hmac-sha1-vec(k, D1.to-bytes())
+    runner.str-eq(bhex(out), 'b617318655057264e28bc0b6fb378c8ef146be00', 40, 'hmac-sha1 TC1')
+}
+
+t-hmac-sha256 = () {
+    k []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    out = hmac.hmac-sha256-vec(k, D1.to-bytes())
+    runner.str-eq(bhex(out), 'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7', 64, 'hmac-sha256 TC1')
+}
+
+t-hmac-sha512 = () {
+    k []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    out = hmac.hmac-sha512-vec(k, D1.to-bytes())
+    runner.str-eq(bhex(out), '87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854', 128, 'hmac-sha512 TC1')
+}
+
+; RFC 4231 Test Case 2: key = "Jefe", data = "what do ya want for nothing?"
+t-hmac-sha256-tc2 = () {
+    d = 'what do ya want for nothing?'
+    out = hmac.hmac-sha256-vec('Jefe'.to-bytes(), d.to-bytes())
+    runner.str-eq(bhex(out), '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843', 64, 'hmac-sha256 TC2')
+}
+
+t-hmac-fixed-len = () {
+    h32 = hmac.hmac-sha256(K1, D1.to-bytes())
+    runner.eq(h32.len(), 32, 'hmac-sha256 fixed digest len 32')
+    h20 = hmac.hmac-sha1(K1, D1.to-bytes())
+    runner.eq(h20.len(), 20, 'hmac-sha1 fixed digest len 20')
+}
+p1 = runner.test('hmac.sha1', t-hmac-sha1)
+p2 = runner.test('hmac.sha256', t-hmac-sha256)
+p3 = runner.test('hmac.sha512', t-hmac-sha512)
+p4 = runner.test('hmac.sha256.tc2', t-hmac-sha256-tc2)
+p5 = runner.test('hmac.fixed-len', t-hmac-fixed-len)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

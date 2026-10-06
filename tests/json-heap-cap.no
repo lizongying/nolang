@@ -113,7 +113,7 @@ d: {
 ; ── 4. 構建大陣列：逐個 push，無 128 上限 ──
 b = json.new()
 p <- [0..1000): {
-    b.arr-push-num(number.i64-to-f64(p))
+    b.arr-push-num(math.i64-to-f64(p))
 }
 cnt = b.arr-len()
 {

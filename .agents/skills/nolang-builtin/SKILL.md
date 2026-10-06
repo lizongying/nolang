@@ -22,7 +22,7 @@ src/builtin/
 ├── builtin.go      # BuiltinMethod 结构体定义 + FindBuiltinMethod()
 ├── os.go            # fs/os 相关 builtin（read-file, write-file, open-read, etc.）
 ├── fmt.go           # print, eprint, format, sprintf（+ 已移除但仍註冊的 printf, eprintf）
-├── math.go          # max, min, abs, clamp
+├── math.go          # clamp（max/min 已移除，見下方「同名遮蔽陷阱」）
 ├── math_f64.go      # sqrt, sin, cos, log, pow, etc.
 ├── str.go           # with-cap, with-len, with-cap-len
 ├── net.go           # net-listen, net-dial, net-accept, etc.
@@ -34,6 +34,10 @@ src/builtin/
 
 > 已删除（2026-09-21）：`database.go`（15 个 `db-*`）与 `ffi.go`（3 个 `ffi-cstr-*`）。
 > 原因见下文「半条命陷阱」——只注册、无 lowering。
+>
+> 已删除（2026-10-05）：`math.go` 的 `max`/`min`（i64，ForwardFunc `math-max`/`math-min`）
+> 与 `math_f64.go` 的 `max`/`min`（f64，llvm.maxnum/minnum），连同 `src/std/math.no` 的
+> `#{buildin}` 桩一起移除，`make gen` 重生 stdsig。原因见下文「同名遮蔽陷阱」。
 
 ### 2b. `fmt.go` 的 print / eprint 是**变参** builtin
 
@@ -177,6 +181,24 @@ func FindBuiltinMethod(name string) *BuiltinMethod {
 3. 如果不是 → 保持 DotExpression，由 codegen 查 builtin
 
 例如：`fs.read-str` 在 `fs.no` 中有实际定义（`read-str = (p str) (content ?str) { ... }`），所以 `fs.read-str()` 会改写为 `read-str()` 直接调用。而 `fs.read-file` 在 `fs.no` 中只有注释，没有实际定义，所以保持 `fs.read-file` 的 DotExpression 形式，由 codegen 查 builtin。
+
+### ⚠️ 同名遮蔽陷阱：一个裸名两条注册
+
+`FindBuiltinMethod` 只按**裸名**线性匹配并**返回第一条**，不看参数型别。同一个名字注册两次
+（典型：`math.go` 的 i64 `max`/`min` + `math_f64.go` 的 f64 `max`/`min`）时，先注册的那条永远
+胜出，结果浮点调用静默走整数路径：
+
+```
+./bin/no run x.no      ; math.max(1.5, 2.25) -> 2   ← fptosi 截断，不报错
+```
+
+它曾经靠 `src/mir/hir2mir.go` 里一个叫 `builtin.HasFloatOverload` 的 resTyp 覆写补丁兜底（已随
+ 2026-10-05 的移除一并删除）。规则：
+
+- **不要用同一个裸名注册不同型别的 builtin**；型别多态一律交给 `.no` 的泛型单态化；
+- 取最大/最小一律用 `math.max` / `math.min`（`f (a ..num) (r num)` 變參泛型，i64/f64 同一入口，定義在 std/math.no）；
+- 如果某个名字在 `src/std/*.no` 里有**真实实现**（非 `#{buildin}` 桩），它**不应该**同时出现在
+  `BuiltinMethodList` 里 —— 注册表会抢在 lowering 前命中。
 
 ### 验证某个 builtin 是否已注册
 

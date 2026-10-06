@@ -53,28 +53,26 @@ func TestLLVMIntrinsicMethods(t *testing.T) {
 		intrinsic string
 		paramType string
 	}{
-		{"abs", "llvm.fabs.f64", "f64"},
-		{"max", "llvm.maxnum.f64", "f64f64"},
-		{"min", "llvm.minnum.f64", "f64f64"},
-		{"sqrt", "llvm.sqrt.f64", "f64"},
-		{"sin", "llvm.sin.f64", "f64"},
-		{"cos", "llvm.cos.f64", "f64"},
+		{"f64.sqrt", "llvm.sqrt.f64", "f64"},
+		{"f64.sin", "llvm.sin.f64", "f64"},
+		{"f64.cos", "llvm.cos.f64", "f64"},
+		{"f64.tan", "llvm.tan.f64", "f64"},
 		{"pow", "llvm.pow.f64", "f64f64"},
-		{"ceil", "llvm.ceil.f64", "f64"},
-		{"floor", "llvm.floor.f64", "f64"},
-		{"round", "llvm.round.f64", "f64"},
-		{"trunc", "llvm.trunc.f64", "f64"},
-		{"exp", "llvm.exp.f64", "f64"},
-		{"log", "llvm.log.f64", "f64"},
-		{"log10", "llvm.log10.f64", "f64"},
-		{"log2", "llvm.log2.f64", "f64"},
-		{"asin", "llvm.asin.f64", "f64"},
-		{"acos", "llvm.acos.f64", "f64"},
-		{"atan", "llvm.atan.f64", "f64"},
+		{"f64.ceil", "llvm.ceil.f64", "f64"},
+		{"f64.floor", "llvm.floor.f64", "f64"},
+		{"f64.round", "llvm.round.f64", "f64"},
+		{"f64.trunc", "llvm.trunc.f64", "f64"},
+		{"f64.exp", "llvm.exp.f64", "f64"},
+		{"f64.log", "llvm.log.f64", "f64"},
+		{"f64.log10", "llvm.log10.f64", "f64"},
+		{"f64.log2", "llvm.log2.f64", "f64"},
+		{"f64.asin", "llvm.asin.f64", "f64"},
+		{"f64.acos", "llvm.acos.f64", "f64"},
+		{"f64.atan", "llvm.atan.f64", "f64"},
 		{"atan2", "llvm.atan2.f64", "f64f64"},
-		{"sinh", "llvm.sinh.f64", "f64"},
-		{"cosh", "llvm.cosh.f64", "f64"},
-		{"tanh", "llvm.tanh.f64", "f64"},
+		{"f64.sinh", "llvm.sinh.f64", "f64"},
+		{"f64.cosh", "llvm.cosh.f64", "f64"},
+		{"f64.tanh", "llvm.tanh.f64", "f64"},
 	}
 	for _, tt := range intrinsicMethods {
 		found := false
@@ -197,6 +195,25 @@ func TestReceiverKindString(t *testing.T) {
 	for _, tt := range tests {
 		if got := tt.kind.String(); got != tt.want {
 			t.Errorf("ReceiverKind(%d).String() = %q, want %q", tt.kind, got, tt.want)
+		}
+	}
+}
+
+// TestMaxMinAreNotBuiltins pins the 2026-10-05 removal: max/min live ONLY in
+// src/std/number.no as the variadic generic `f (a ..num) (r num)`.
+//
+// They used to be registered TWICE under the same bare name — an i64 entry with
+// ForwardFunc "math-max"/"math-min" and an f64 entry with llvm.maxnum/minnum.
+// FindBuiltinMethod matches the bare name and returns the FIRST hit, so every
+// float call silently took the integer path (fptosi truncation: math.max(1.5,
+// 2.25) -> 2), and hir2mir needed a type-override hack to paper over it.
+// A name that is a real .no function must never be a builtin: the registry
+// outranks the .no body during lowering.
+func TestMaxMinAreNotBuiltins(t *testing.T) {
+	for _, name := range []string{"max", "min"} {
+		if m := FindBuiltinMethod(name); m != nil {
+			t.Errorf("builtin %q is still registered (%+v); number.%s must be the only implementation",
+				name, m, name)
 		}
 	}
 }

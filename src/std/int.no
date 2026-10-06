@@ -1,0 +1,81 @@
+; int — int 聯合型別與 int 方法
+;
+; int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
+; （整數聯合型別別名）。
+; 本模組承載 int 型別的方法：to-str, div, mod。
+; float 聯合型別見 std/float.no；num 聯合型別見 std/num.no；
+; 具體型別操作（範圍常數、型別轉換、具體型別 to-str、位元操作等）見 number 模組。
+
+int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
+
+; int.to-str: 整數轉字串（聯合類型方法，涵蓋所有整數類型）
+; transpiler 會將 i64.to-str() 等解析為 int.to-str()
+; 直接使用算術運算，避免 int → u64 的類型轉換問題
+; 注意：不對負數取絕對值（0 - n 在 n = i64.MIN 時會溢出），
+; 改為直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
+int.to-str = () (out str) {
+
+    . == 0 -> {
+        out = with-cap(1)
+
+        out[0] = 48
+        return
+    }
+    neg = 0
+    n = .
+    n < 0 -> neg = 1
+    digits = 0
+    tmp = n
+    (tmp != 0) {
+
+        #{overflow=wrap}
+        digits = digits + 1
+
+        #{overflow=wrap}
+        tmp = tmp / 10
+    }
+    total = digits
+
+    #{overflow=wrap}
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+
+    #{overflow=wrap}
+    pos = digits - 1
+    neg == 1 -> pos = digits
+    (n != 0) {
+
+        #{overflow=wrap}
+        d = n % 10
+
+        #{overflow=wrap}
+        neg == 1 -> d = 0 - d
+
+        #{overflow=wrap}
+        ascii = d + 48
+
+        out[pos] = ascii
+
+        #{overflow=wrap}
+        n = n / 10
+
+        #{overflow=wrap}
+        pos = pos - 1
+    }
+    neg == 1 -> {
+
+        out[0] = 45
+    }
+}
+
+; div: 整數除法，回傳商（a ÷ b）
+; b 為 0 時行為未定義（執行時期錯誤）
+int.div = (b int) (q ?int) {
+    q = . / b
+}
+
+; mod: 整數取模，回傳餘數（a % b）
+; b 為 0 時行為未定義（執行時期錯誤）
+int.mod = (b int) (r ?int) {
+    r = . % b
+}

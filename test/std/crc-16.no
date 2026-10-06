@@ -1,0 +1,34 @@
+; test/std/crc-16.no — crypto/crc-16 模組測試
+;
+; 執行：no test test/std/crc-16.no
+; 覆蓋：crc-16.new / crc-16.hex（CRC-16/CCITT-FALSE：poly 0x1021, init 0xFFFF, msb-first, 無最終異或）
+; 向量來源：check value「123456789」= 0x29B1，並與 python 手算 CRC 交叉核對
+
+# /test/runner
+
+t-check = () {
+    crc = crc-16.new('123456789'.to-bytes())
+    runner.eq(crc, 10673, 'crc16("123456789") == 0x29B1')
+}
+
+t-check-hex = () {
+    h = crc-16.hex('123456789'.to-bytes())
+    runner.str-eq(h, '29b1', 4, 'crc16.hex("123456789") == "29b1"')
+}
+
+t-empty = () {
+    crc = crc-16.new(''.to-bytes())
+    runner.eq(crc, 65535, 'crc16("") == 0xFFFF (init unchanged)')
+}
+
+p1 = runner.test('crc16.check', t-check)
+p2 = runner.test('crc16.check-hex', t-check-hex)
+p3 = runner.test('crc16.empty', t-empty)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

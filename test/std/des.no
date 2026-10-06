@@ -1,0 +1,49 @@
+; test/std/des.no — crypto/des 模組測試
+;
+; 執行：no test test/std/des.no
+; 覆蓋：des.des-enc / des-dec（單區塊）
+; 向量來源：DES 標準附錄 B（FIPS 公開範例），pycryptodome ECB 交叉核對
+;   key=133457799BBCDFF1, pt=0123456789ABCDEF → ct=85e813540f0ab405
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-enc = () {
+    key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
+    pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
+    ct = des.des-enc(pt, 8, key)
+    runner.str-eq(bhex(ct), '85e813540f0ab405', 16, 'des enc KAT')
+}
+
+t-dec = () {
+    key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
+    pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
+    ct = des.des-enc(pt, 8, key)
+    back = des.des-dec(ct, 8, key)
+    runner.str-eq(bhex(back), '0123456789abcdef', 16, 'des dec round-trip')
+}
+p1 = runner.test('des.enc', t-enc)
+p2 = runner.test('des.dec', t-dec)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

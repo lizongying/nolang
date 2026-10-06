@@ -400,7 +400,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
-	// 16d. 棄用函數呼叫提示（如 number.char-to-str → char.to-str()）
+	// 16d. 棄用函數呼叫提示（如 math.char-to-str → char.to-str()）
 	for _, u := range ValidateDeprecatedCalls(program) {
 		endCol := u.Column
 		if u.EndColumn > 0 {

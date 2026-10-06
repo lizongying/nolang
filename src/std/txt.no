@@ -1011,7 +1011,7 @@ txt.to-f32 = () (val ?f32) {
             return
         }
     }
-    val = number.f64-to-f32(f)
+    val = math.f64-to-f32(f)
 }
 
 ; txt.to-bool: 將 "true"/"false" 解析為 bool

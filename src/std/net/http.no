@@ -30,7 +30,10 @@
 ; ═══════════════════════════════════════════════
 
 ; 接收緩衝區大小
-HTTP-BUF-SIZE = 4096
+; 必須 ≥ TLS 單筆記錄最大明文 (2^14 = 16384 位元組)。否則 tls.conn.recv 在
+; copy-n > n 時會靜默丟棄超過 n 的位元組，造成回應中段缺漏（見 tls.no recv）。
+; 使用 16640 (= 16384 + 256 餘量，與 tls 內部 rec 緩衝區一致) 確保單筆記錄完整。
+HTTP-BUF-SIZE = 16640
 
 ; 最大回應大小
 HTTP-MAX-RESPONSE = 16384
@@ -252,7 +255,7 @@ do = (method str, url str, body str) (resp ?response) {
     req = ''
     len-str = ''
     buf str = with-len(HTTP-BUF-SIZE)
-    raw str = with-len(HTTP-MAX-RESPONSE)
+    raw = ''
     total = 0
     recv-raw = ''
 
@@ -276,7 +279,7 @@ do = (method str, url str, body str) (resp ?response) {
             port = HTTPS-DEFAULT-PORT
         }
 
-        url.starts-with('http://') == false -> return
+        url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest = url.slice(scheme-len, url.len-bytes())
 
@@ -393,17 +396,9 @@ do = (method str, url str, body str) (resp ?response) {
         n <= 0 -> *
 
         #{overflow=wrap}
-        total + n > HTTP-MAX-RESPONSE -> *
-
-        ; 將接收的位元組複製到 raw
-        i <- [0..n): {
-
-            #{overflow=wrap}
-            raw[total + i] = buf.byte(i)
-        }
-
-        #{overflow=wrap}
         total = total + n
+        ; 動態累積到 raw（不再受限於 HTTP-MAX-RESPONSE，避免大回應被截斷）
+        raw = raw - buf.slice(0, n)
     }
     {
         use-tls -> tls-c.close()
@@ -494,7 +489,7 @@ do-req = (req request) (resp ?response) {
     req-str = ''
     len-str = ''
     buf str = with-len(HTTP-BUF-SIZE)
-    raw str = with-len(HTTP-MAX-RESPONSE)
+    raw = ''
     total = 0
     recv-raw = ''
 
@@ -521,7 +516,7 @@ do-req = (req request) (resp ?response) {
             port = HTTPS-DEFAULT-PORT
         }
 
-        url.starts-with('http://') == false -> return
+        url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest = url.slice(scheme-len, url.len-bytes())
     slash-pos = rest.index('/')
@@ -651,15 +646,8 @@ do-req = (req request) (resp ?response) {
         n <= 0 -> *
 
         #{overflow=wrap}
-        total + n > HTTP-MAX-RESPONSE -> *
-        i <- [0..n): {
-
-            #{overflow=wrap}
-            raw[total + i] = buf.byte(i)
-        }
-
-        #{overflow=wrap}
         total = total + n
+        raw = raw - buf.slice(0, n)
     }
     {
         use-tls -> tls-c.close()
@@ -784,8 +772,8 @@ download = (url str, dest str) (ok bool) {
     path str
     host-only = ''
     port-str = ''
-    cr str = number.char-to-str(13)
-    lf str = number.char-to-str(10)
+    cr str = math.char-to-str(13)
+    lf str = math.char-to-str(10)
     crlf str = cr - lf
     sep-str str = crlf - crlf
     req = ''
@@ -803,7 +791,7 @@ download = (url str, dest str) (ok bool) {
             scheme-len = 8
             port = HTTPS-DEFAULT-PORT
         }
-        url.starts-with('http://') == false -> return
+        url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest = url.slice(scheme-len, url.len-bytes())
     slash-pos = rest.index('/')
@@ -964,7 +952,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
             scheme-len = 8
             port = HTTPS-DEFAULT-PORT
         }
-        url.starts-with('http://') == false -> return
+        url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest = url.slice(scheme-len, url.len-bytes())
     slash-pos = rest.index('/')
@@ -1183,7 +1171,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
             port = HTTPS-DEFAULT-PORT
         }
 
-        url.starts-with('http://') == false -> return
+        url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest str = ''
     rest = url.slice-bytes(scheme-len, url.len-bytes())

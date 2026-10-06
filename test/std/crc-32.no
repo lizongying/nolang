@@ -1,0 +1,34 @@
+; test/std/crc-32.no — crypto/crc-32 模組測試
+;
+; 執行：no test test/std/crc-32.no
+; 覆蓋：crc-32.new（IEEE 802.3，poly 0xEDB88320，init/final-xor 0xFFFFFFFF）
+; 向量來源：CRC-32 標準 check value「123456789」= 0xCBF43926，並與 python zlib.crc32 交叉核對
+
+# /test/runner
+
+t-check = () {
+    crc = crc-32.new('123456789'.to-bytes(), 9)
+    runner.eq(crc, 3421780262, 'crc32("123456789") == 0xCBF43926')
+}
+
+t-empty = () {
+    crc = crc-32.new(''.to-bytes(), 0)
+    runner.eq(crc, 0, 'crc32("") == 0')
+}
+
+t-hello = () {
+    crc = crc-32.new('hello'.to-bytes(), 5)
+    runner.eq(crc, 907060870, 'crc32("hello") == 0x3610A686')
+}
+
+p1 = runner.test('crc32.check', t-check)
+p2 = runner.test('crc32.empty', t-empty)
+p3 = runner.test('crc32.hello', t-hello)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

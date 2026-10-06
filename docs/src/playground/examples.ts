@@ -250,13 +250,14 @@ state, r = rand.rand(state)
 r99 = r % 100
 print('rand[0..99] = {r99}')
 
-; A few math builtins (LLVM intrinsics)
+; max/min are variadic generic functions of the math module
 m = math.max(10.0, 20.0)
 print('math.max(10.0, 20.0) = {m}')
 
 mn = math.min(10.0, 20.0)
 print('math.min(10.0, 20.0) = {mn}')
 
+; A few math builtins (LLVM intrinsics)
 sq = math.sqrt(16.0)
 print('math.sqrt(16.0) = {sq}')
 `,

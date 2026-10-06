@@ -1172,7 +1172,7 @@ json.get-i64 = (key str) (val i64, ok bool) {
 
     ; get-num 回傳 f64，直接 `val = f` 會被當成 f64→i64 的裸指派，
     ; codegen 只做位元重解（42.0 -> 4631107791820423168），必須顯式截斷。
-    val = number.f64-to-i64(f)
+    val = math.f64-to-i64(f)
     ok = true
 }
 
@@ -1239,7 +1239,7 @@ json.set-num = (key str, val f64) (ok bool) {
 ; json.set-i64: 在物件中設定整數值
 ; 返回 ok bool: 是否成功
 json.set-i64 = (key str, val i64) (ok bool) {
-    f = number.i64-to-f64(val)
+    f = math.i64-to-f64(val)
     ok = .set-num(key, f)
 }
 

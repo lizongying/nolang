@@ -722,20 +722,16 @@ bigint.shl1 = () {
 ; bigint.shr1: self = self >> 1
 bigint.shr1 = () {
 
+    ; 高位→低位逐 limb 右移；进入当前 limb 的进位（来自更高 limb 的最低位）
+    ; 必须在当前 limb 移位「之后」放到 bit31，否则会被本 limb 的 >>1 再次右移到 bit30。
+    inb = 0
+
     #{overflow=wrap}
     i <- [.len - 1..0]: {
-
-        carry = .limbs[i] & 1
-
-        .limbs[i] = (.limbs[i] >> 1) & MASK
-
-        #{overflow=wrap}
-        i > 0 && carry > 0 -> {
-
-            .limbs[i - 1] = .limbs[i - 1] | (1 << 31)
-        }
+        outb = .limbs[i] & 1
+        .limbs[i] = ((.limbs[i] >> 1) | (inb << 31)) & MASK
+        inb = outb
     }
-
     .normalize()
 }
 
@@ -773,17 +769,14 @@ bigint.normalize = () {
 ; bigint.to-str: 將 bigint 轉為十進制字串
 ; 返回 out str: 十進制字串
 bigint.to-str = () (out str) {
-
     out = with-cap(256)
     z = .is-zero()
     z -> {
-
         out[0] = 48
         return
     }
     out-n = 0
     .sign == -1 -> {
-
         out[0] = 45
         out-n = 1
     }
@@ -833,13 +826,11 @@ bigint.to-str = () (out str) {
 from-str = (s str) (out bigint) {
     out.limbs = with-len(1)
     out.sign = 1
-
     out.limbs[0] = 0
     out.len = 1
     pos = 0
     tmp-bigint = bigint {}
     (pos < s.len-bytes()) {
-
         c = s.byte(pos)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
@@ -850,19 +841,16 @@ from-str = (s str) (out bigint) {
 
         #{overflow=wrap}
         s.byte(pos) == 45 -> {
-
             out.sign = -1
             pos = pos + 1
         }
 
         #{overflow=wrap}
         s.byte(pos) == 43 -> {
-
             pos = pos + 1
         }
     }
     (pos < s.len-bytes()) {
-
         c = s.byte(pos)
         {
             c >= 48 && c <= 57 -> {
@@ -900,19 +888,16 @@ bigint.add-i64 = (v i64) (c bigint) {
 ; bigint.to-hex: 將 bigint 轉為十六進制字串（小寫）
 ; 返回 out str: 十六進制字串
 bigint.to-hex = () (out str) {
-
     out = with-cap(256)
     hex = '0123456789abcdef'
     out-n = 0
     .sign == -1 -> {
-
         out[0] = 45
         out-n = 1
     }
 
     #{overflow=wrap}
     i <- [.len - 1..0]: {
-
         limb = .limbs[i] & MASK
 
         #{overflow=wrap}
@@ -922,11 +907,9 @@ bigint.to-hex = () (out str) {
                     done = 0
                     shift = 28
                     (shift >= 0) {
-
                         nibble = (limb >> shift) & 15
                         done == 1 || nibble != 0
                         done = 1
-
                         out[out-n] = hex[nibble]
                         out-n = out-n + 1
                     }
@@ -936,9 +919,7 @@ bigint.to-hex = () (out str) {
         }
         shift = 28
         (shift >= 0) {
-
             nibble = (limb >> shift) & 15
-
             out[out-n] = hex[nibble]
 
             #{overflow=wrap}
@@ -956,12 +937,10 @@ bigint.to-hex = () (out str) {
 from-hex = (s str) (out bigint) {
     out.limbs = with-len(1)
     out.sign = 1
-
     out.limbs[0] = 0
     out.len = 1
     tmp-bigint = bigint {}
     i <- [0..s.len-bytes()): {
-
         c = s.byte(i)
         {
             c >= 48 && c <= 57 -> {

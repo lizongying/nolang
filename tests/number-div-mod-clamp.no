@@ -1,11 +1,11 @@
-; number-div-mod-clamp.no — 測試 div, mod, clamp（現行 API）
+; math.div-mod-clamp.no — 測試 div, mod, clamp（現行 API）
 ;
 ; 覆蓋以下函數 / 運算：
 ;   - 整數除法：直接運算元 / （int.div 內部即 . / b）
 ;   - 整數取模：直接運算元 % （int.mod 內部即 . % b）
 ;   - clamp：num.clamp = (lo num, hi num) (r num) 方法，結果經結果參數 r 回傳
 ;
-; 註：原測試使用已移除的舊 API `number.div(a, b, r)` / `number.mod(a, b, r)`
+; 註：原測試使用已移除的舊 API `math.div(a, b, r)` / `math.mod(a, b, r)`
 ; （以 r 作為第 3 個 out-argument）。現行 std 為 `int.div=(b int)(q ?int)`、
 ; `int.mod=(b int)(r ?int)`，且 clamp 以結果參數接收，故改寫如下。
 

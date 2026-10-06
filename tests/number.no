@@ -1,11 +1,11 @@
-; number.no — 數字操作測試
+; number.no — 數字操作測試（max/min 已移至 math 模組）
 
 demo-number = () {
     r = 0
-    number.max(10, 20, r)
+    math.max(10, 20, r)
     print(r)
 
-    number.min(10, 20, r)
+    math.min(10, 20, r)
     print(r)
 }
 demo-number()

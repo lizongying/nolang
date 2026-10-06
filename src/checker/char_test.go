@@ -126,6 +126,40 @@ test = () {
 	}
 }
 
+// TestCharFromIntVar verifies that a runtime integer-typed variable/expression
+// (i64/byte) can initialize or be assigned to a `char` variable by code-point
+// value WITHOUT a spurious "cannot assign i64 value to char variable" error.
+//
+// REGRESSION GUARD: the parser used to rewrite a single-rune bare Identifier
+// initializer (`cc char = n`) into a CharLiteral built from the identifier's
+// NAME, so `n = 65; cc char = n` silently stored 110 ('n') instead of 65 ('A'),
+// which then made `cc.to-str()` print the wrong character. `char-to-str(n)` was
+// the only reliable drop-in. This test pins the intended equivalence: an
+// integer-typed value flows into a char variable as a code point.
+func TestCharFromIntVar(t *testing.T) {
+	src := `
+test = () {
+    num = 65
+    cc char = num
+    s = cc.to-str()
+    bval byte = 0x42
+    dd char = bval
+    s2 = dd.to-str()
+}
+`
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+
+	results := ValidateTypes(prog)
+	for _, r := range results {
+		t.Errorf("validate error: %s", r.Message)
+	}
+}
+
 // TestStrFill verifies str.fill method with UTF-8 encoding
 func TestStrFill(t *testing.T) {
 	src := `

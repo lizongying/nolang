@@ -239,7 +239,7 @@
             last = n - 1
             i <- [0..n): {
 
-                out = out - number.i64-to-str(.[i])
+                out = out - math.i64-to-str(.[i])
 
                 i < last -> out = out - ', '
             }

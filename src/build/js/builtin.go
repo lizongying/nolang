@@ -1,6 +1,7 @@
 package js
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
@@ -81,6 +82,68 @@ func (g *Generator) generateBuiltinCall(ce *parser.CallExpression) (string, bool
 	return "", false
 }
 
+// floatMethodJS maps the f64 math methods declared in std/math.no (x.ceil(),
+// x.log(), x.sqrt(), ...) to their JS Math.* equivalents.
+var floatMethodJS = map[string]string{
+	"sqrt":  "Math.sqrt",
+	"cbrt":  "Math.cbrt", // 純 .no 實現，JS 直接映射 Math.cbrt（負數語意一致）
+	"sin":   "Math.sin",
+	"cos":   "Math.cos",
+	"tan":   "Math.tan",
+	"asin":  "Math.asin",
+	"acos":  "Math.acos",
+	"atan":  "Math.atan",
+	"sinh":  "Math.sinh",
+	"cosh":  "Math.cosh",
+	"tanh":  "Math.tanh",
+	"ceil":  "Math.ceil",
+	"floor": "Math.floor",
+	"round": "Math.round",
+	"trunc": "Math.trunc",
+	"exp":   "Math.exp",
+	"log":   "Math.log",
+	"log10": "Math.log10",
+	"log2":  "Math.log2",
+}
+
+// stdModuleWords lists receiver identifiers that are std MODULE names, not
+// value receivers — `log.log(x)` must not be intercepted as the f64 method
+// `.log` by generateFloatMethodCall.
+var stdModuleWords = map[string]bool{
+	"math": true, "time": true, "os": true, "log": true, "fs": true,
+	"io": true, "path": true, "str": true, "number": true, "json": true,
+	"sort": true, "fmt": true, "net": true, "process": true, "crypto": true,
+}
+
+// floatExprJS maps f64 methods that have no single Math.* counterpart to JS
+// expression templates (%s = receiver): x.degrees() → x * 180 / Math.PI.
+var floatExprJS = map[string]string{
+	"degrees": "(%s * 180 / Math.PI)",
+	"radians": "(%s * Math.PI / 180)",
+}
+
+// generateFloatMethodCall maps f64 math method calls (x.sinh(), y.floor())
+// to Math.* JS calls (or expression templates for degrees/radians). Returns
+// (jsCode, true) when handled.
+func (g *Generator) generateFloatMethodCall(de *parser.DotExpression, args []parser.Expression) (string, bool) {
+	if de == nil || len(args) != 0 {
+		return "", false
+	}
+	if ident, isIdent := de.Receiver.(*parser.Identifier); isIdent && stdModuleWords[ident.Value] {
+		return "", false
+	}
+	if tmpl, ok := floatExprJS[de.Property]; ok {
+		recv := maybeParen(g.generateExpression(de.Receiver), de.Receiver)
+		return fmt.Sprintf(tmpl, recv), true
+	}
+	fn, ok := floatMethodJS[de.Property]
+	if !ok {
+		return "", false
+	}
+	recv := maybeParen(g.generateExpression(de.Receiver), de.Receiver)
+	return fn + "(" + recv + ")", true
+}
+
 // generateModuleCall maps Nolang module-qualified calls (math.sin, time.now, str.upper, etc.)
 // to their JS equivalents.
 // Returns (jsCode, true) when handled; ("", false) otherwise.
@@ -109,7 +172,9 @@ func (g *Generator) generateModuleCall(de *parser.DotExpression, args []parser.E
 
 	switch module {
 	case "math":
-		// math.<fn> → Math.<fn>; math.max/min are special (Math.max/min take varargs).
+		// math.<fn> → Math.<fn> (sqrt/ceil/floor/...). max/min are NOT here:
+		// they are variadic generic functions in src/std/number.no, mapped by the
+		// "number" case below.
 		return "Math." + method + "(" + joinedArgs + ")", true
 
 	case "time":

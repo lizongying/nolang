@@ -171,3 +171,27 @@ func isScalarNolangType(raw string) bool {
 	}
 	return false
 }
+
+// bareConvertResult returns the result type of a module-qualified bare numeric
+// conversion helper such as `number.i64-to-str` or `math.i64-to-str`. These
+// are compiler-supplied builtins that return str but are NOT registered as HIR
+// functions, and scalarMethodResult (which only recognizes the dot-method form
+// `i64.to-str`) does not match the dash form `i64-to-str`. Without this
+// fallback, resultTypeOfCallee mis-lowers the call as void, dropping the result
+// slot, and codegen's i64-to-str inline emit then fails with "no result slot"
+// (the bug that blocked nonpm's semver.to-string and the std i64.to-str method
+// body when invoked through the bare helper). The helper name is the segment
+// after the final dot, so `number.i64-to-str` and `math.i64-to-str` both
+// reduce to the bare `i64-to-str`.
+func bareConvertResult(callee string) string {
+	i := strings.LastIndex(callee, ".")
+	base := callee
+	if i >= 0 {
+		base = callee[i+1:]
+	}
+	switch base {
+	case "i64-to-str":
+		return "str"
+	}
+	return ""
+}

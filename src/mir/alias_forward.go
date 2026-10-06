@@ -132,6 +132,17 @@ func (m *Module) lowerDeadSourceCopiesToMoves(f *Function) {
 				reasons["src-is-borrow"]++
 				continue
 			}
+			// A PARAM source is caller storage too — it has no defining
+			// instruction here, so the test above never sees it, yet a "transfer"
+			// of it hands the CALLER's buffer to the destination while the caller
+			// keeps ownership and drops it (bufio.reader.init's `r.buf = buf`
+			// through exactly this hole: the lowering-side clone was rewritten
+			// back to a move and the second read-byte freed the dangling
+			// descriptor). Never lower the copy for a param source.
+			if m.isParamValue(f, src) {
+				reasons["src-is-borrow"]++
+				continue
+			}
 			// The source must be DEAD here, otherwise rule 1 keeps the deep
 			// copy (this is the only place rule 1 allows a copy to disappear).
 			if liveOut[bid][src] || m.readNonDropAfterInBlock(bid, iid, src) {

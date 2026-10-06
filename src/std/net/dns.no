@@ -220,7 +220,11 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
     !! {
 
-        pos >= data.len() -> *
+        ; 遇數據尾端仍未見終止零標籤：畸形封包，標記 next-pos=-1
+        pos >= data.len() -> {
+            jumped == false -> end-pos = -1
+            *
+        }
 
         #{index-out=zero}
         len-byte = data[pos]
@@ -261,6 +265,11 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                 buf[buf-pos] = 46
                 buf-pos = buf-pos + 1
                 pos = pos + label-len
+            }
+
+            -> {
+                end-pos = -1
+                *
             }
         }
     }
@@ -315,6 +324,7 @@ parse-response = (data []byte) (ip ?str) {
 
         qname = ''
         qname, pos = parse-name(data, pos)
+        pos < 0 -> return
 
         ; 跳過 QTYPE(2) + QCLASS(2)
         #{overflow=wrap}
@@ -326,6 +336,7 @@ parse-response = (data []byte) (ip ?str) {
 
         rname = ''
         rname, pos = parse-name(data, pos)
+        pos < 0 -> return
 
         #{overflow=wrap}
         pos + 10 > data.len() -> return

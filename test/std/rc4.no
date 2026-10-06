@@ -1,0 +1,49 @@
+; test/std/rc4.no — crypto/rc4 模組測試
+;
+; 執行：no test test/std/rc4.no
+; 覆蓋：rc4.rc4（對稱 XOR keystream）
+; 向量來源：經典 RC4 測試（key="Key", data="Plaintext"），pycryptodome ARC4 交叉核對
+;   → bbf316e8d940af0ad3
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-vector = () {
+    out = rc4.rc4('Plaintext'.to-bytes(), 'Key'.to-bytes())
+    runner.str-eq(bhex(out), 'bbf316e8d940af0ad3', 20, 'rc4 Key/Plaintext KAT')
+}
+
+t-roundtrip = () {
+    pt = 'Attack at dawn'.to-bytes()
+    key = 'Secret'.to-bytes()
+    ct = rc4.rc4(pt, key)
+    back = rc4.rc4(ct, key)
+
+    #{overflow=wrap}
+    blen = back.len() * 2
+    runner.str-eq(bhex(back), bhex(pt), blen, 'rc4 symmetric round-trip')
+}
+p1 = runner.test('rc4.vector', t-vector)
+p2 = runner.test('rc4.roundtrip', t-roundtrip)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

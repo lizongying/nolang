@@ -7,8 +7,9 @@
 greet2('World')
 print()
 
-; Module.function style (works even without explicit # std/math):
-b = math.sin(1.0)
+; f64 method form (sin/cos/tan 已改為 f64 方法，x.sin() 形式调用):
+x = 1.0
+b = x.sin()
 
 ; Both produce identical LLVM IR
 print('a:', b)
@@ -18,6 +19,7 @@ print('b:', b)
 print('pi:', math.PI)
 print('e:', math.E)
 
-; Module functions like degrees/radians work too:
-c = math.degrees(3.141592653589793)
+; f64 math methods work too:
+rad = 3.141592653589793
+c = rad.degrees()
 print('degrees(pi):', c)

@@ -21,21 +21,41 @@ io.err('err-no-newline')       ; Low-level command, no newline (stderr)
 ; io.err carries the module prefix and will not conflict with the Option constructor err()
 ```
 
-### math — Math Functions
+### math — Math Functions (function-form API)
 
-**Constants:** `math.PI`, `math.E`
+All "function-form" numeric APIs of std are gathered in the math module (std/math.no); all "method-form" APIs (`*.to-str`, f64/f32 sqrt/sin/exp…, integer sqrt/is-prime) live in the number module (see the number section below). Union types and their member methods: num → std/num.no, int → std/int.no, float → std/float.no.
 
-**Basic:** `math.abs`, `math.sqrt`
+**Constants:** `math.PI`, `math.E`, `math.LN10` (ln 10, companion of f64-to-str)
 
-**Trigonometric:** `math.sin`, `math.cos`, `math.tan`, `math.asin`, `math.acos`, `math.atan`, `math.atan2`, `math.degrees`, `math.radians`
+**Compare (num-generic variadic functions):** `math.max`, `math.min` (`a ..num`; integers and floats share the same monomorphization path)
 
-**Hyperbolic:** `math.sinh`, `math.cosh`, `math.tanh`
+**Power/Root (functions):** `math.pow` (f64 power a^b, maps to libm pow), `math.hypot` (sqrt(x*x + y*y))
 
-**Rounding:** `math.ceil`, `math.floor`, `math.round`, `math.trunc`
+**Other functions:** `math.atan2`, `math.fmod` (float remainder), `math.clamp` (i64 saturating clamp)
 
-**Exponential/Logarithm:** `math.exp`, `math.log`, `math.log10`, `math.log2`, `math.pow`, `math.hypot`, `math.cbrt`
+**Integer math (int-generic functions):** `math.even`, `math.odd`, `math.gcd`, `math.lcm`, `math.div` (quotient), `math.mod` (modulo)
 
-**Others:** `math.fmod`, `math.max`, `math.min`
+**Type conversions (functions):** `math.i64-to-f64`, `math.f64-to-i64`, `math.f32-to-f64`, `math.f64-to-f32`
+
+**Number-to-string underlying (functions, deprecated; prefer the method form `v.to-str()`):** `math.i64-to-str`, `math.u64-to-str`, `math.char-to-str`, `math.f64-to-str`
+
+**Bit operations (functions):** `math.swap`, `math.arr-zero`, `math.rotate-left`, `math.rotate-right`, `math.store-le-u32`
+
+> Exception: the integer power `pow` (int-generic) collides in name with this section's `math.pow` (f64); one module cannot hold two `pow`, so the integer power stays in std/number.no (see the number section below).
+
+### number — Numeric Operations (method-form API)
+
+The "method-form" numeric APIs are concentrated in the number module (std/number.no); function-form APIs are in the math section above. Union types int / float / num are covered in their own sections.
+
+**Range constants:** i8.MIN / MAX … u64.MIN / MAX; `number.INF`
+
+**Integer power (function, the sole exception to the math.pow name collision):** `r = number.pow(a, n)` (a^n, n ≥ 0, fast exponentiation O(log n), generic over all integer types)
+
+**Integer methods:** `n.sqrt()` (integer square root floor(√n), returns 0 for negatives), `n.is-prime()` (primality test) — available at i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 widths; i128 and u128 are not provided yet because the runtime truncates 128-bit integers to 64 bits
+
+**Concrete-type to-str (methods):** `v.to-str()` — i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 widths
+
+**Float methods (f64 and same-named f32):** trigonometric `x.sin()`, `x.cos()`, `x.tan()`, `x.asin()`, `x.acos()`, `x.atan()`; hyperbolic `x.sinh()`, `x.cosh()`, `x.tanh()`; rounding `x.ceil()`, `x.floor()`, `x.round()`, `x.trunc()`; exponential/logarithm `x.exp()`, `x.log()`, `x.log10()`, `x.log2()`; power/root `x.sqrt()`, `x.cbrt()`; degree/radian `x.degrees()`, `x.radians()`. f32 computes in double precision and narrows back to f32.
 
 ### char — Character Operations
 
@@ -99,29 +119,59 @@ parts = s.split(sep)          ; Split by separator (returns []str, method)
 out = ss.join(sep)            ; Join []str with separator (method)
 ```
 
-### number — Numeric Operations
+### num — num Union Type and num Methods
+
+`num = int | float` (std/num.no). Methods on the num type live in the num module (the generic functions max/min are in math, see above):
 
 ```no
-number.max(a, b)                     ; Maximum
-number.min(a, b)                     ; Minimum
-r = num.clamp(lo, hi)         ; Clamp to range (method)
-r = number.abs(a)                    ; Absolute value (number generic)
-r = num.sign()                ; Sign (-1/0/1, method)
-number.even(v)                       ; Even/odd check
-number.odd(v)
-number.gcd(a, b)                     ; Greatest common divisor
-number.lcm(a, b)                     ; Least common multiple
-r = number.pow(a, n)                 ; Integer power
-number.i64-to-f64(v)                 ; Numeric conversion
-number.f64-to-i64(v)
-s = int.to-str()              ; i64 to string (method)
-q = number.div(a, b)                 ; Integer division quotient
-r = number.mod(a, b)                 ; Modulo
-number.swap(a, b)                    ; Swap
-yes = float.is-nan()          ; NaN check (method)
-yes = float.is-inf()          ; Inf check (method)
+r = num.abs()                        ; Absolute value (method)
+r = num.clamp(lo, hi)                  ; Clamp to range (method)
+r = num.sign()                         ; Sign (-1/0/1, method)
+```
 
-; Range constants
+### int — int Union Type and int Methods
+
+`int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128` (std/int.no). Methods on the int type live in the int module:
+
+```no
+s = v.to-str()                       ; Integer to string (method)
+q = v.div(b)                         ; Division quotient (returns option)
+r = v.mod(b)                         ; Modulo (returns option)
+```
+
+### float — float Union Type and float Methods
+
+`float = f32 | f64` (std/float.no). Methods on the float type live in the float module:
+
+```no
+q = v.div(b)                         ; Float division
+yes = v.is-nan()                     ; NaN check (method)
+yes = v.is-inf()                     ; Inf check (method)
+```
+
+(No float.to-str union method is defined; on f64/f32 variables use the concrete-type method `v.to-str()` directly.)
+
+### number — Usage Examples
+
+(Full API is in the "number — Numeric Operations (method-form API)" section above; function-form APIs are under "math".)
+
+```no
+; Method form (number module)
+s = v.to-str()                     ; integer/float to string (each width)
+r = n.sqrt()                       ; integer square root floor(√n)
+yes = n.is-prime()                 ; primality test (int/u8…)
+q = x.sqrt()                       ; float square root (f64/f32 method)
+q = x.floor()                      ; rounding (f64/f32 method)
+r = number.pow(a, n)               ; integer power (exception to the math.pow collision, kept in number)
+
+; Function form (math module)
+m = math.max(1, 2, 3)              ; num-generic variadic
+g = math.gcd(a, b)                 ; greatest common divisor
+l = math.lcm(a, b)                 ; least common multiple
+f = math.i64-to-f64(v)            ; numeric conversion
+sw = math.swap(a, b)              ; swap
+
+; Range constants (number module)
 i8.MIN / MAX                  ; -128 / 127
 i16.MIN / MAX                 ; -32768 / 32767
 i32.MIN / MAX                 ; -2147483648 / 2147483647
@@ -132,6 +182,7 @@ u16.MIN / MAX                 ; 0 / 65535
 u32.MIN / MAX                 ; 0 / 4294967295
 u64.MIN / MAX                 ; 0 / 2^64-1
 u128.MIN / MAX                ; 0 / 2^128-1
+number.INF                    ; floating-point infinity
 ```
 
 ### byte — Byte Operations

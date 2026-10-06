@@ -3,6 +3,7 @@ package mir
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
@@ -73,11 +74,20 @@ type lowerer struct {
 	// See the `reassign-after-move` case in tests/mem-safety/move-eligibility-improved.no
 	// and tests/mem-safety/clone-reset-is-moved.no.
 	movedSlots map[ValueID]bool
-	curFunc    FuncID
-	voidType   TypeID
-	curRecv    ValueID // current method's implicit `self` receiver value (first param)
-	diags      []LowerDiag
-	loopStack  []loopCtx // active for-loops, for break/continue targets
+	// paramVals marks the VALUE ids of the current function's INPUT params —
+	// borrowed storage owned by the caller (see Module.isParamValue and the
+	// insertDrops convention "input parameters are BORROWED"). A bitwise
+	// setfield store of such a value SHARES the caller's buffer, so the field
+	// dangles when the caller drops its argument (bufio.reader.init stored its
+	// borrowed `buf []byte` into the returned reader; the caller's drop then
+	// freed the buffer the reader still pointed at). cloneIfBorrowedParamSlice
+	// consults this set.
+	paramVals map[ValueID]bool
+	curFunc   FuncID
+	voidType  TypeID
+	curRecv   ValueID // current method's implicit `self` receiver value (first param)
+	diags     []LowerDiag
+	loopStack []loopCtx // active for-loops, for break/continue targets
 
 	// matchDepth counts how many enclosing match arms are currently being
 	// lowered. A match desugars to a chain of `if`/`elif`/`else` (each arm a
@@ -129,6 +139,19 @@ type lowerer struct {
 	// expression, both captured while an arm condition is lowered; see lowerIf.
 	armEnumPrefer string
 	armSubjectID  int32
+	// stmtCall is the HIR node id of the call being lowered as a DISCARDED
+	// statement value (`mx(1, 2, r)` — a bare expression statement) rather than
+	// in a value position (`v = mx(p, q)`, `print(mx(p, q))`). It is the only
+	// way left to tell a variadic callee's two legal call shapes apart: the
+	// spread parameter makes the argument count useless for deciding whether a
+	// trailing identifier is a spread ELEMENT or an out-parameter ACTUAL, and
+	// only the statement position can bind out-parameters (a value position
+	// consumes the result through the assignment, so every argument there is a
+	// spread element). Node ids start at 1 (hir.NoID == 0 resolves to no node),
+	// so the zero value means "not a statement-position call". Set by lowerStmt's
+	// KExprStmt case; consulted by lowerCallArgsWith and bindOutParams.
+	stmtCall int32
+
 	// localEnums records the PLAIN enums defined by the program being
 	// compiled (as opposed to std's). It bounds the "resolve a bare variant
 	// name globally" fallback below: std's variant tables contain very common
@@ -1035,6 +1058,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		funcNames:    map[string]int32{},
 		lowered:      map[string]bool{},
 		locals:       map[string]ValueID{},
+		paramVals:    map[ValueID]bool{},
 		globals:      map[string]ValueID{},
 		globalTypes:  map[string]string{},
 		globalNodes:  map[string]int32{},
@@ -2012,6 +2036,84 @@ func (l *lowerer) letTypeRaw(n *hir.Node) string {
 	return ""
 }
 
+// isIntLitText reports whether txt is a bare integer literal token LLVM can
+// parse as an i128 immediate: decimal digits or a 0x/0X hex body, with no sign
+// (a leading '-' is a KPrefix over the literal, never part of this text). Used
+// to decide whether a KIntLit's original token text can stand in for its
+// (possibly truncated) int64 Val when lowering a 128-bit constant.
+func isIntLitText(txt string) bool {
+	if txt == "" {
+		return false
+	}
+	body := txt
+	if len(txt) > 2 && txt[0] == '0' && (txt[1] == 'x' || txt[1] == 'X') {
+		body = txt[2:]
+	}
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+			if len(body) == len(txt) {
+				return false // hex digit in a decimal literal
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// intLitNeeds128 decides whether a KIntLit must lower as a 128-bit constant,
+// returning the nolang raw to use ("i128"/"u128") or "" to keep the normal i64
+// lane. It fires when (a) the surrounding binding's declared type hint is
+// i128/u128, or (b) the literal's own token text is an integer that does NOT
+// fit a 64-bit lane at all (BitLen > 64) yet still fits 128 bits. A bare
+// literal is always non-negative, so values with BitLen in (64, 127] become
+// i128 and BitLen 128 (i.e. [2^127, 2^128)) become u128.
+//
+// The BitLen > 64 threshold is deliberate: constants in (int64max, uint64max]
+// (BitLen <= 64) are the domain of pre-existing u64/i64 code — sha512's K
+// constants and `mask64 u64 = 18446744073709551615` — which relied on the
+// 64-bit lane and must keep the old lowering. Only genuinely-wider-than-64-bit
+// literals are reclassified here, so this never regresses 64-bit arithmetic.
+func (l *lowerer) intLitNeeds128(n *hir.Node) string {
+	if l.typeHint != NoType && l.typeHint != l.voidType {
+		if ty := l.mod.Type(l.typeHint); ty != nil && (ty.Raw == "i128" || ty.Raw == "u128") {
+			return ty.Raw
+		}
+	}
+	txt := strings.TrimSpace(l.pkg.Str(n.S2))
+	if txt == "" || !isIntLitText(txt) {
+		return ""
+	}
+	base := 10
+	if len(txt) > 2 && txt[0] == '0' && (txt[1] == 'x' || txt[1] == 'X') {
+		base = 16
+		txt = txt[2:]
+	}
+	txt = strings.ReplaceAll(txt, "_", "")
+	bi, ok := new(big.Int).SetString(txt, base)
+	if !ok {
+		return ""
+	}
+	// Fits a 64-bit lane (including the u64 range above int64max): keep the
+	// pre-existing lowering so u64/i64 code such as sha512 is unaffected.
+	if bi.BitLen() <= 64 {
+		return ""
+	}
+	// Genuinely wider than 64 bits: a bare literal is non-negative, so BitLen
+	// 128 means [2^127, 2^128) which only an unsigned i128 lane can hold; anything
+	// wider (BitLen > 128) does not fit 128 bits and stays on the old path.
+	switch {
+	case bi.BitLen() <= 127:
+		return "i128"
+	case bi.BitLen() == 128:
+		return "u128"
+	}
+	return ""
+}
+
 // ---- function lowering ----
 
 // funcSigRaw builds a `fn(p0,p1,...)(r0,r1,...)?` type string from a HIR
@@ -2111,6 +2213,7 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	}
 	l.locals = map[string]ValueID{}
 	l.movedSlots = map[ValueID]bool{}
+	l.paramVals = map[ValueID]bool{}
 	// Build l.locals: each KParam/KResult name maps to its value. The params
 	// slice is built in HIR children order (interleaving KParam and KResult),
 	// so a simple index loop over paramNames is wrong when KResult (self)
@@ -2128,6 +2231,7 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 			case hir.KParam:
 				if pIdx < len(paramNames) {
 					l.locals[paramNames[pIdx]] = params[pIdx+rIdx]
+					l.paramVals[params[pIdx+rIdx]] = true
 					// Record the DECLARED raw type for unsigned division.
 					if isUnsignedRaw(l.mod.Type(paramTypes[pIdx]).Raw) {
 						l.localRaw[paramNames[pIdx]] = l.mod.Type(paramTypes[pIdx]).Raw
@@ -2692,6 +2796,34 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				}
 			}
 		}
+		// A binding DECLARED as `char` whose initializer is a plain integer
+		// (i64/byte/u* 或算術得到的碼點) 必須端到端攜帶 char 型別。MIR 以 i32
+		// (KindChar) 儲存 char；整數初始值 lower 成 KindInt，若不重新定型，
+		// 該值的 source raw type 會停在 "i64"，於是所有 char-aware 路徑都誤判：
+		//   - 隱式 `str - c` 串接字串化（codegen.strFromScalar）走 @str_from_i64
+		//     印出十進位文字（"65"）而非 @str_from_cp 的 UTF-8（"A"）；
+		//   - 串接鏈內聯的 `c.to-str()` 派发到 i64.to-str（十進位），而不是
+		//     char.to-str。
+		// 把整數截斷進一個 `char` 槽保留碼點值（合法值 0..0x10FFFF），並把它標
+		// 成 char，與 `x char = 'A'` / `c char = s[0]` 這些原生 char 值一致。
+		if val != NoVal {
+			if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
+				if dty := l.mod.Type(dt); dty != nil && dty.Raw == "char" {
+					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+						if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindInt {
+							val = l.b.Emit(OpMove, l.b.Type("char"), []ValueID{val}, "")
+							// Pin the value's type to `char`: the generic
+							// LocalTypes back-fill derives it from the HIR
+							// child (a KIntLit → i64), which would undo the
+							// retype above for strFromScalar's raw-type lookup.
+							if f := l.mod.Func(l.curFunc); f != nil {
+								f.LocalTypes[val] = l.b.Type("char")
+							}
+						}
+					}
+				}
+			}
+		}
 		// `?=` desugaring: the initializer is an OPTION but the binding's
 		// declared type is the PAYLOAD (`let s=size t=i64` inside the
 		// desugared `__unwrap` match — see fs.file.read-bytes). Legacy stores
@@ -3050,6 +3182,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 							l.b.EmitVoid(OpTaskRetain, []ValueID{fresh}, "")
 						}
 						l.locals[name] = fresh
+						l.recordRawFromValue(name, fresh, l.pkg.Type(n.Type))
 						if f := l.mod.Func(l.curFunc); f != nil {
 							if _, ok := f.LocalTypes[fresh]; !ok {
 								f.LocalTypes[fresh] = typ
@@ -3096,6 +3229,11 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				}
 			}
 			l.locals[name] = val
+			// Fallback declared-raw recording: a receiver binding like
+			// `n u64 = .` in an instantiated std method loses its annotation
+			// on the KLet node, so the check above never fired; read the
+			// unsigned-ness off the lowered value instead (see recordRawFromValue).
+			l.recordRawFromValue(name, val, l.pkg.Type(n.Type))
 			if f := l.mod.Func(l.curFunc); f != nil {
 				// Preserve the type Emit already assigned to val (authoritative for
 				// call results, which the KLet child node does not carry a type for).
@@ -3156,7 +3294,18 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		// then lower it exactly ONCE. (Returning here is essential — the old
 		// trailing `for` loop re-lowered this same child, duplicating every
 		// statement in the program.)
+		//
+		// A call in this position has its value DISCARDED, which is the one
+		// place where a variadic callee may bind out-parameters by trailing
+		// argument (`mx(1, 2, r)`). Mark the node so the variadic heuristics in
+		// lowerCallArgsWith / bindOutParams fire; a value position (`v = mx(p, q)`)
+		// leaves stmtCall untouched and keeps every argument as a spread element.
+		prevStmtCall := l.stmtCall
+		if cn != nil && cn.Kind == hir.KCall {
+			l.stmtCall = child
+		}
 		l.stmtVal = l.lowerExpr(child)
+		l.stmtCall = prevStmtCall
 	case hir.KReturn:
 		// Surface the function's option result type so `return nil` lowers to an
 		// %option constant (the "none" discriminant) rather than a bare i64 that
@@ -4526,10 +4675,21 @@ func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 			elemRaw = ty.Raw
 		}
 	}
-	if elemRaw == "" {
-		firstVal = l.lowerExpr(elems[0])
-		if firstVal != NoVal {
-			if ty := l.mod.Type(l.valueTypeOf(firstVal)); ty != nil && ty.Raw != "" && ty.Raw != "void" {
+	// Always lower the first element here (the store loop below reuses it, so
+	// this emits nothing extra) to catch a genuine 128-bit value the coarse
+	// hint / typeOfNode missed: an unannotated `xs = [a, b]` whose elements are
+	// i128 locals is inferred `[]i64` by the checker AND `typeOfNode(ident a)`
+	// resolves void, so only the materialized element VALUE carries the real
+	// width. When it lands on the 128-bit lane, widen the container to match.
+	// This is deliberately one-directional (64-bit -> 128-bit only): a narrow
+	// slot hint like `data []byte = [0x61, ...]` keeps `byte`, because its
+	// integer-literal elements lower to i64, never i128/u128.
+	firstVal = l.lowerExpr(elems[0])
+	if firstVal != NoVal {
+		if ty := l.mod.Type(l.valueTypeOf(firstVal)); ty != nil {
+			if ty.Raw == "i128" || ty.Raw == "u128" {
+				elemRaw = ty.Raw
+			} else if elemRaw == "" && ty.Raw != "" && ty.Raw != "void" {
 				elemRaw = ty.Raw
 			}
 		}
@@ -5014,6 +5174,52 @@ func scalarConstToI64(ct string) string {
 	}
 }
 
+// foldIntConst128 returns the LLVM i128 constant-initializer text (e.g.
+// `i128 170141183460469231731687303715884105727`) for a KIntLit that must live
+// on the 128-bit lane, or "" when it belongs on the pre-existing 64-bit lane.
+// It mirrors intLitNeeds128's width threshold but reads the explicit global
+// type (gtype) instead of the lowering typeHint, because foldConstText runs
+// during module-global registration where no statement type hint is in scope.
+// Without this, a top-level `a i128 = 2^127-1` folded to `i64 <truncated>`
+// (`@a = private global i64 0`), so every later `load i128 @a` read the wrong
+// width and printed 0 — the same silent truncation the array-element path
+// guards against, one layer up.
+func (l *lowerer) foldIntConst128(n *hir.Node, gtype string) string {
+	raw := ""
+	if gtype == "i128" || gtype == "u128" {
+		raw = gtype
+	}
+	txt := strings.TrimSpace(l.pkg.Str(n.S2))
+	if txt == "" || !isIntLitText(txt) {
+		return ""
+	}
+	base := 10
+	body := txt
+	if len(txt) > 2 && txt[0] == '0' && (txt[1] == 'x' || txt[1] == 'X') {
+		base = 16
+		body = txt[2:]
+	}
+	body = strings.ReplaceAll(body, "_", "")
+	bi, ok := new(big.Int).SetString(body, base)
+	if !ok {
+		return ""
+	}
+	if raw == "" {
+		// No explicit 128-bit global type: reclassify only genuinely-wider-than-64
+		// literals (BitLen > 64) so 64-bit constants (incl. the u64 range above
+		// int64max) keep their pre-existing i64 folding and never regress.
+		if bi.BitLen() <= 64 || bi.BitLen() > 128 {
+			return ""
+		}
+	} else if bi.BitLen() > 128 {
+		return "" // does not fit 128 bits: leave it to the caller's fallback
+	}
+	// i128/u128 share the LLVM i128 lane; the raw only picks the printer later.
+	// A bare literal is non-negative, so bi.String() is the correct unsigned
+	// magnitude for a u128 value above int128max.
+	return fmt.Sprintf("i128 %s", bi.String())
+}
+
 // foldConstText folds an HIR constant expression into LLVM constant-initializer
 // text (e.g. `i64 12`, `[256 x i8] c"\63\7c..."`). Returns "" when the
 // expression is not a compile-time constant (caller then emits an external
@@ -5034,6 +5240,9 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		}
 		return ""
 	case hir.KIntLit:
+		if t := l.foldIntConst128(n, gtype); t != "" {
+			return t
+		}
 		return fmt.Sprintf("i64 %d", n.Val)
 	case hir.KCharLit:
 		// The code point lives in S (the interned character TEXT), not in Val:
@@ -5083,6 +5292,15 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		typ, lit := fields[0], fields[1]
 		switch l.pkg.Str(n.S) {
 		case "-":
+			if typ == "i128" {
+				// A 128-bit lane constant (e.g. top-level `b i128 = -2^127`):
+				// the operand folded to `i128 <magnitude>`; negate it with
+				// big.Int because ParseInt(64) overflows on values past int64.
+				if bi, ok := new(big.Int).SetString(lit, 10); ok {
+					return fmt.Sprintf("i128 %s", bi.Neg(bi).String())
+				}
+				return ""
+			}
 			v, err := strconv.ParseInt(lit, 10, 64)
 			if err != nil {
 				return ""
@@ -5187,6 +5405,100 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		return fmt.Sprintf("[%d x i64] [%s]", len(parts), strings.Join(parts, ", "))
 	}
 	return ""
+}
+
+// operandUnsigned reports whether the expression subtree rooted at id is
+// unsigned for instruction-selection purposes: a KIdent whose DECLARED raw
+// type (localRaw) is unsigned, or a compound expression with an unsigned
+// operand anywhere below. The flat KIdent-only check used to MISS nested
+// shapes like `(lo + hi) / 2` — the direct child is a KInfix group, not an
+// identifier — so the division stayed signed and u64.sqrt's binary search
+// collapsed above i64.MAX. Recursing through the group's operand children
+// matches the same declared-unsigned-anywhere rule the flat check applies,
+// bounded by a depth cap so pathological trees cannot stall lowering.
+func (l *lowerer) operandUnsigned(id int32, depth int) bool {
+	if depth > 4 {
+		return false
+	}
+	nd := l.pkg.Node(id)
+	if nd == nil {
+		return false
+	}
+	switch nd.Kind {
+	case hir.KIdent:
+		return isUnsignedRaw(l.localRaw[l.pkg.Str(nd.S)])
+	case hir.KInfix, hir.KPrefix, hir.KGrouped:
+		for _, c := range l.pkg.Children(id) {
+			if l.operandUnsigned(c, depth+1) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// recordRawFromValue is the fallback for the KLet declared-type recording: a
+// std method's receiver binding `n T = .` loses its annotation on the node
+// after generic instantiation (l.pkg.Type(n.Type) misses), so localRaw["n"]
+// stayed empty and `n < 2` / `n / 2` lowered to SIGNED ops — u64.MAX.sqrt()
+// returned 0. The lowered MIR value still carries the true Raw (the dump
+// shows `move dst=20:u64`), so read the unsigned-ness back from the value.
+// An EXPLICITLY signed declaration still wins: `x i64 = u64val` must not be
+// routed through udiv/ult just because the initializer happened to be u64.
+// declaredRaw is the SAME annotation string the KLet fast path reads
+// (l.pkg.Type(n.Type)); when it is empty or unresolved (e.g. a leftover
+// generic `T`) the value-derived Raw decides.
+func (l *lowerer) recordRawFromValue(name string, val ValueID, declaredRaw string) {
+	if name == "" || val == NoVal {
+		return
+	}
+	if _, ok := l.localRaw[name]; ok {
+		return
+	}
+	switch declaredRaw {
+	case "i64", "i32", "i16", "i8":
+		return
+	}
+	vt := l.valueTypeOf(val)
+	if vt == NoType || vt == l.voidType {
+		return
+	}
+	if vty := l.mod.Type(vt); vty != nil && isUnsignedRaw(vty.Raw) {
+		l.localRaw[name] = vty.Raw
+	}
+}
+
+// cloneIfBorrowedParamSlice returns an independent OpClone of v when v is a
+// borrowed INPUT PARAM of the current function and a slice (`%vec`). The
+// bitwise setfield store for a non-allowlist %vec field SHARES the RHS's
+// buffer and MovesArg suppresses the RHS's drop — sound when the buffer was
+// allocated in this frame, fatal when it belongs to the caller: the caller
+// keeps ownership of a passed argument (input params are borrowed) and frees
+// it at its scope end, leaving the stored field dangling (bufio.reader.init:
+// `r.buf = buf` → the SECOND read-byte freed the caller's already-dropped
+// buffer — mfm_free abort). Cloning gives the field a buffer this frame owns
+// (the clone itself is consumed by MovesArg), matching RULE 1: no value
+// aliasing. Non-slice and non-param values are returned unchanged.
+func (l *lowerer) cloneIfBorrowedParamSlice(v ValueID) ValueID {
+	if v == NoVal || !l.paramVals[v] {
+		return v
+	}
+	vt := l.valueTypeOf(v)
+	if vt == NoType || vt == l.voidType {
+		return v
+	}
+	if vty := l.mod.Type(vt); vty == nil || vty.Kind != KindSlice {
+		return v
+	}
+	if fresh := l.b.Emit(OpClone, vt, []ValueID{v}, ""); fresh != NoVal {
+		// The param is a BUFFER handed in by the caller (bufio's with-cap), so
+		// the copy must keep cap and the backing store even at len==0 — the
+		// value-list vecDeepClone would clamp cap to len and hand back
+		// {0,0,0}, leaving every fill() to read into a cap-0 descriptor.
+		l.mod.Insts[len(l.mod.Insts)-1].BufClone = true
+		return fresh
+	}
+	return v
 }
 
 // ---- expressions ----
@@ -5467,6 +5779,24 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		l.unsupported(l.curFuncName(), "ident", "unresolved identifier "+name)
 		return l.b.Emit(OpConst, l.typeOfNode(n), nil, "")
 	case hir.KIntLit:
+		// A 128-bit integer literal. Two triggers:
+		//   1. the binding's declared type is i128/u128 (hint), so even an
+		//      in-range value like `a i128 = 5` lives in a 128-bit slot; and
+		//   2. the literal does not fit int64 (e.g. `10^21`, `2^64-1`, used in a
+		//      comparison or expression), which an i64 lane would truncate to a
+		//      wrong value. Emitting it as an exact i128 immediate keeps every
+		//      context faithful, not just typed bindings.
+		// MIR otherwise flattens integers to i64 — the original `print blank /
+		// wrong value` bug. The full-precision decimal comes from the ORIGINAL
+		// token text (S2), which the parser preserves even when int64 overflows.
+		if w128 := l.intLitNeeds128(n); w128 != "" {
+			tid := l.b.Type(w128)
+			v := l.b.EmitInt(OpConst, tid, n.Val, "")
+			if txt := strings.TrimSpace(l.pkg.Str(n.S2)); txt != "" && isIntLitText(txt) {
+				l.mod.Insts[len(l.mod.Insts)-1].IntBig = txt
+			}
+			return v
+		}
 		return l.b.EmitInt(OpConst, l.typeOfNode(n), n.Val, "")
 	case hir.KFloatLit:
 		v := l.b.Emit(OpConst, l.typeOfNode(n), nil, "")
@@ -5537,6 +5867,15 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				}
 			}
 		}
+		// A `-<128-bit literal>` must negate in the SAME 128-bit lane: typeOfNode
+		// reports i64 for a prefix by default, and negating an i128 operand in an
+		// i64 slot truncates it first (so -9223372036854775809 came back as
+		// +9223372036854775807). Inherit the operand's i128/u128 type.
+		if op == OpNeg {
+			if oraw := l.valueRaw(ov); oraw == "i128" || oraw == "u128" {
+				rt = l.b.Type(oraw)
+			}
+		}
 		v := l.b.Emit(op, rt, []ValueID{ov}, "")
 		if l.stmtOvfAnnotated && op == OpNeg && v != NoVal {
 			l.b.Mod.Insts[len(l.b.Mod.Insts)-1].OvfAnnotated = true
@@ -5584,12 +5923,9 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		if !isCmp && (op == OpDiv || op == OpMod) {
 			unsigned := false
 			for _, cid := range lr[:i] {
-				cn := l.pkg.Node(cid)
-				if cn != nil && cn.Kind == hir.KIdent {
-					if isUnsignedRaw(l.localRaw[l.pkg.Str(cn.S)]) {
-						unsigned = true
-						break
-					}
+				if l.operandUnsigned(cid, 0) {
+					unsigned = true
+					break
 				}
 			}
 			if unsigned {
@@ -5597,6 +5933,33 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					op = OpUDiv
 				} else {
 					op = OpUMod
+				}
+			}
+		}
+		// Unsigned ordering comparisons: same declared-type routing as OpUDiv/
+		// OpUMod above. `< <= > >=` on a u64/u32/u16/u8 local must emit ult/ule/
+		// ugt/uge; the signed predicates misorder any operand above the sign bit
+		// (u64.MAX.sqrt() binary-searched with slt and returned the MAX itself).
+		if isCmp {
+			var uop Op
+			switch op {
+			case OpLt:
+				uop = OpULt
+			case OpLe:
+				uop = OpULe
+			case OpGt:
+				uop = OpUGt
+			case OpGe:
+				uop = OpUGe
+			default:
+				// OpEq/OpNe are sign-agnostic (same bit compare); leave alone.
+			}
+			if uop != 0 {
+				for _, cid := range lr[:i] {
+					if l.operandUnsigned(cid, 0) {
+						op = uop
+						break
+					}
 				}
 			}
 		}
@@ -6242,6 +6605,13 @@ func (l *lowerer) lowerStructLit(n *hir.Node) ValueID {
 		}
 		// Store the field name in inst.Str (not inst.Sym) so emitSetField's
 		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
+		// A borrowed-param slice RHS would SHARE the caller's buffer through the
+		// bitwise store (bufio.reader.init's `r.buf = buf`): clone it first so
+		// the field owns a buffer of this frame, only when the codegen would
+		// actually move (an allowlist-cloned leaf does not need the extra copy).
+		if l.mod.SetFieldConsumesRHS(res, fieldName) {
+			vv = l.cloneIfBorrowedParamSlice(vv)
+		}
 		sid := l.b.EmitVoid(OpSetField, []ValueID{res, vv}, "")
 		l.mod.Insts[sid].Str = fieldName
 		// The field initializer is consumed by the constructor ONLY when the
@@ -6933,6 +7303,16 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 			if qualified != "" && !ambiguous {
 				return qualified, NoVal
 			}
+		}
+		// A concrete slice/array method name that IS a registered function
+		// (e.g. `[]i64.test-len`, a user method defined on `[]i64`) must be kept
+		// verbatim. canonSliceRecv is only the fallback for GENERIC slice methods
+		// whose concrete name is NOT itself defined (`[]t.len`). Rewriting a real
+		// registered `[]i64.test-len` to `[]t.test-len` (never defined) produced
+		// "unknown callee []t.test-len". This mirrors the concrete-name preference
+		// the KDot path applies at `if _, ok := l.funcNames[concrete]; ok`.
+		if _, ok := l.funcNames[name]; ok {
+			return name, NoVal
 		}
 		return canonSliceRecv(name), NoVal
 	case hir.KDot:
@@ -7799,6 +8179,13 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 		raw = t.Raw
 	}
 	raw = strings.TrimPrefix(raw, "?")
+	// 128-bit integers render through the native str_from_i128/u128 helpers, not
+	// fmt-int (which is i64-only and would truncate the value to 64 bits).
+	if raw == "i128" || raw == "u128" {
+		if sv := l.int128ToStr(v, raw, l.b.Type("str")); sv != NoVal {
+			return sv, true
+		}
+	}
 	fn := ""
 	switch {
 	case raw == "str":
@@ -7989,9 +8376,20 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 		// Check the builtin table for a str/scalar method (e.g. str.len-bytes).
 		if bm := builtin.FindBuiltinMethod(recvTypeName + "." + method); bm != nil {
 			callee := bm.ForwardFunc
+			if callee == "" {
+				// Intrinsic / C-lib builtins carry no forward symbol; the
+				// qualified name itself is the dispatch key (lookupBuiltin
+				// exact hit at emitCall, e.g. f64.ceil → llvm.ceil.f64).
+				callee = recvTypeName + "." + method
+			}
 			resT := l.b.Type("i64")
-			if len(bm.Return) > 0 && bm.Return[0] == parser.TypeStr {
-				resT = l.b.Type("str")
+			if len(bm.Return) > 0 && bm.Return[0] != nil {
+				switch bm.Return[0] {
+				case parser.TypeStr:
+					resT = l.b.Type("str")
+				case parser.TypeF64:
+					resT = l.b.Type("f64")
+				}
 			}
 			return l.b.Emit(OpCall, resT, []ValueID{base}, callee), true
 		}
@@ -8303,29 +8701,6 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 			}
 		}
 	}
-	// §5.1 math.abs overload: FindBuiltinMethod returns the first same-named
-	// entry (i64), but when the actual argument is f64, the call should go
-	// through llvm.fabs.f64 with an f64 result. Override resTyp from the
-	// builtin table's integer answer to f64. Without this the instruction
-	// result is typed as i64, emitBuiltinMath coerces the double arg to i64
-	// via fptosi, and the result is wrong.
-	// Gate: only applies when there exists a float overload for the same name.
-	if resTyp != l.voidType && resTyp != NoType && len(argv) > 0 {
-		if rt := l.mod.Type(resTyp); rt != nil && rt.Kind == KindInt {
-			bareName := callee
-			if i := strings.LastIndex(bareName, "."); i >= 0 {
-				bareName = bareName[i+1:]
-			}
-			if builtin.HasFloatOverload(bareName) {
-				at := l.valueTypeOf(argv[0])
-				if at != NoType && at != l.voidType {
-					if aty := l.mod.Type(at); aty != nil && aty.Kind == KindFloat {
-						resTyp = at
-					}
-				}
-			}
-		}
-	}
 	// Multi-result builtins (`stat-size` -> (i64, bool), `readlink` ->
 	// (str, bool), `mkstemp` -> (str, fd)) declare more than one Return entry.
 	// Allocate a destination per entry so `path, ok = fs.readlink(p)` binds both
@@ -8466,17 +8841,25 @@ func (l *lowerer) bindOutParams(n *hir.Node, callee string, dsts []ValueID) {
 	//     +1 for the receiver, `src.copy(dst)` is rejected (2 != 0+1) and the
 	//     result is never moved back into `dst` (test-str copy test reads the
 	//     unmodified '------').
-	//   - Variadic callee: the variadic formal packs >=1 actual args into one
-	//     formal, so len(args) exceeds kParam+kResult. The old strict equality
-	//     guard wrongly rejected these (e.g. `number.max(10, 20, r)`), silently
-	//     discarding the result. For them, arg-form is detected by the trailing
-	//     kResult arguments all being identifiers (legacy passes the variable's
-	//     address as the out-pointer).
+	//   - Variadic callee: the spread makes the count meaningless — `mx(p, q)`
+	//     (2 spread elements, no out-argument) has len(args) == kParam+kResult by
+	//     pure coincidence, while `mx(1, 2, r)` (1 out-argument) does not. So a
+	//     variadic callee binds out-parameters ONLY in the statement position,
+	//     where its value is discarded; anywhere else every argument is a spread
+	//     element and the trailing identifier must be left alone (writing the
+	//     result over it both corrupted the caller's variable and — because the
+	//     same test stripped it from the argument list in lowerCallArgsWith —
+	//     shortened the %vec, so the callee read past the end and died with a
+	//     trace/BPT trap: `r = number.max(a, b)`).
 	recvOffset := 0
 	if isMethod {
 		recvOffset = 1 // the receiver (self) is the first HIR arg
 	}
-	if len(args) != recvOffset+kParam+kResult && !fdef.Has(hir.FlagVariadic) {
+	variadicArgForm := fdef.Has(hir.FlagVariadic) && l.stmtCall == n.Id
+	if fdef.Has(hir.FlagVariadic) && !variadicArgForm {
+		return
+	}
+	if len(args) != recvOffset+kParam+kResult && !variadicArgForm {
 		return
 	}
 	base := len(args) - kResult
@@ -8624,6 +9007,11 @@ func (l *lowerer) resultTypeOfCallee(callee string) TypeID {
 		// call is mis-lowered as void and the consumer reads NoVal — the
 		// silent-undef bug #85.
 		if rt := scalarMethodResult(callee); rt != "" {
+			return l.b.Type(rt)
+		}
+		// Module-qualified bare conversion helper (e.g. `number.i64-to-str`,
+		// `math.i64-to-str`). See bareConvertResult in builtins.go.
+		if rt := bareConvertResult(callee); rt != "" {
 			return l.b.Type(rt)
 		}
 		return l.voidType
@@ -8884,12 +9272,13 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 	// as a normal LLVM argument. If left in, emitCallBody's variadic spread packs
 	// them into the %vec (corrupting the slice and dropping the out-pointer) —
 	// e.g. `number.max(10, 20, r)` would bundle `r`'s value into the variadic
-	// slice and never write the result back. Detect arg-form by the trailing
-	// kResult HIR arguments being identifiers (LHS-form `r = f(...)` omits them
-	// entirely, so it is left untouched). Restricted to variadic callees so
+	// slice and never write the result back. Arg-form is recognised ONLY in the
+	// statement position, where the call's value is discarded; in any value
+	// position (`v = mx(p, q)`, `print(mx(p, q))`) the trailing identifier is a
+	// spread element and must stay. Restricted to variadic callees so
 	// non-variadic / method out-parameters (e.g. `str.copy = () (dst str)`) keep
 	// their existing, working path.
-	if fid, ok := l.funcNames[callee]; ok {
+	if fid, ok := l.funcNames[callee]; ok && l.stmtCall == n.Id {
 		if fdef := l.pkg.Node(fid); fdef != nil && fdef.Has(hir.FlagVariadic) {
 			if kResult := l.countResultParams(callee); kResult > 0 && len(args) >= kResult {
 				isArgForm := true
@@ -9526,9 +9915,30 @@ func (l *lowerer) scalarOrStrToStr(v ValueID, t *Type) ValueID {
 			return d[0]
 		}
 		return v
+	case raw == "i128" || raw == "u128":
+		// 128-bit integers bypass fmt-int (i64-only, would truncate) and route to
+		// the native @str_from_i128/@str_from_u128 helpers via these callees.
+		return l.int128ToStr(v, raw, strT)
 	default:
 		return v
 	}
+}
+
+// int128ToStr renders an i128/u128 MIR value as a fresh `str` by calling the
+// `i128-to-str`/`u128-to-str` callee, which codegen dispatches to the native
+// @str_from_i128/@str_from_u128 decimal helpers. Used by string conversion
+// (valueToStr) and interpolation (lowerFormatField) so 128-bit values print in
+// full rather than being truncated to the low 64 bits by fmt-int.
+func (l *lowerer) int128ToStr(v ValueID, raw string, strT TypeID) ValueID {
+	fn := "i128-to-str"
+	if raw == "u128" {
+		fn = "u128-to-str"
+	}
+	l.enqueueCallee(fn)
+	if d := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{v}, fn); len(d) > 0 {
+		return d[0]
+	}
+	return v
 }
 
 // toStrCalleeFor returns the `to-str` callee registered for a slice/array
@@ -10299,6 +10709,14 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			return NoVal
 		}
 		fieldName := l.pkg.Str(tn.S)
+		// A borrowed-param slice RHS would SHARE the caller's buffer through the
+		// bitwise store (bufio.reader.init's `r.buf = buf` — the caller's drop
+		// then dangled the field and the second read-byte aborted in mfm_free):
+		// clone it first so the field owns a buffer of this frame, only when
+		// the codegen would actually move it.
+		if l.mod.SetFieldConsumesRHS(recvV, fieldName) {
+			v = l.cloneIfBorrowedParamSlice(v)
+		}
 		// Store the field name in inst.Str (not inst.Sym) so emitSetField's
 		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.
 		sid := l.b.EmitVoid(OpSetField, []ValueID{recvV, v}, "")

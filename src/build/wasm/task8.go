@@ -391,7 +391,7 @@ func (g *Generator) emitMultiAssignStmt(sb *bytes.Buffer, mas *parser.MultiAssig
 
 // emitMethodCall 處理 receiver.method(args) 方法呼叫。
 // 區分三種情況：
-//  1. 模組限定呼叫：receiver 是未定義的識別字且匹配已知模組（math/rand），
+//  1. 模組限定呼叫：receiver 是未定義的識別字且匹配已知模組（math/number/rand），
 //     走 emitModuleCall。
 //  2. 用戶定義方法：receiver 是 local 變數，且 "structType.method" 在 funcTable 中，
 //     發射 call（self 作為首個參數）。
@@ -436,24 +436,34 @@ func (g *Generator) emitMethodCall(sb *bytes.Buffer, de *parser.DotExpression, a
 
 // emitModuleCall 處理模組限定呼叫 module.func(args)。
 // 支援：
-//   - math.max(a, b) / math.min(a, b) / math.sqrt(x) → f64
+//   - number.max(a, b, ...) / number.min(a, b, ...) → f64（變參，逐個摺疊）
+//   - math.sqrt(x) → f64
 //   - rand.rand(state) → 留下 (new-state: i64, r: i64) 在堆疊上（多回傳值）
+//
+// max/min 原本掛在 math 下（2026-10-05 移除）：其為 src/std/number.no 的
+// 變參泛型函數，不是 math 的內建。
 func (g *Generator) emitModuleCall(sb *bytes.Buffer, module, name string, args []parser.Expression) ValType {
 	switch module {
+	case "number":
+		switch name {
+		case "max", "min":
+			if len(args) == 0 {
+				sb.WriteByte(OpUnreachable)
+				return Void
+			}
+			op := byte(0xA5) // f64.max
+			if name == "min" {
+				op = 0xA4 // f64.min
+			}
+			g.emitExpr(sb, args[0])
+			for _, arg := range args[1:] {
+				g.emitExpr(sb, arg)
+				sb.WriteByte(op)
+			}
+			return F64
+		}
 	case "math":
 		switch name {
-		case "max":
-			// f64.max (0xA5)
-			g.emitExpr(sb, args[0])
-			g.emitExpr(sb, args[1])
-			sb.WriteByte(0xA5) // f64.max
-			return F64
-		case "min":
-			// f64.min (0xA4)
-			g.emitExpr(sb, args[0])
-			g.emitExpr(sb, args[1])
-			sb.WriteByte(0xA4) // f64.min
-			return F64
 		case "sqrt":
 			// f64.sqrt (0x9F)
 			g.emitExpr(sb, args[0])

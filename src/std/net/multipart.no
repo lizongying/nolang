@@ -245,23 +245,20 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
     crlf = cr - lf
 
     pos = 0
-    !! {
 
-        ; 找到下一個 CRLF
+    ; 原 `!!` 無限循環 + 群組臂內退出（break/*）在呼叫其他方法後
+    ;   会触发 BPT trap（codegen 缺陷）；改用条件循环结构，行为等价：
+    ;   逐行 CRLF 分割，无 CRLF 尾行处理后退出
+    (pos < header-block.len-bytes()) {
         next-crlf = header-block.index-from(crlf, pos)
-        next-crlf < 0 -> {
-
-            ; 最後一行
-            line = header-block.slice(pos, header-block.len-bytes())
-            .parse-header-line(line, part)
-            break
-        }
-        line = header-block.slice(pos, next-crlf)
+        line-end = header-block.len-bytes()
+        next-crlf >= 0 -> line-end = next-crlf
+        line = header-block.slice(pos, line-end)
         .parse-header-line(line, part)
+        next-crlf < 0 -> *
 
         #{overflow=wrap}
         pos = next-crlf + 2
-        pos >= header-block.len-bytes() -> break
     }
 }
 
@@ -308,14 +305,11 @@ multipart-reader.parse-header-line = (line str, part multipart-part) {
 ; next: 前進到下一個部分
 ; 返回 has-part bool: true=有下一個部分, false=已到結尾
 multipart-reader.next = () (has-part bool) {
-
     has-part = false
     .has-current = false
-
     .pos >= .end -> return
     cr = '\r'
     lf = '\n'
-
     crlf = cr - lf
 
     ; 尋找邊界行: --boundary
@@ -343,7 +337,6 @@ multipart-reader.next = () (has-part bool) {
     #{overflow=wrap}
     header-start + 1 < .end -> {
         .data[header-start] == 13 && .data[header-start + 1] == 10 -> {
-
             header-start = header-start + 2
         }
     }
@@ -440,7 +433,6 @@ multipart-create-boundary = (boundary str) (w multipart-writer) {
 ; body str: 請求體
 ; 返回 r ?multipart-reader: ok=解析器, nil=失敗
 multipart-parse = (content-type str, body str) (r ?multipart-reader) {
-
     r = nil
 
     ; 從 Content-Type 提取 boundary
@@ -486,7 +478,6 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
 ; content-type str: Content-Type 標頭值
 ; 返回 boundary str: 邊界字串（空=未找到）
 multipart-extract-boundary = (content-type str) (boundary str) {
-
     boundary = ''
     boundary-marker = 'boundary='
     bpos = content-type.index(boundary-marker)
@@ -504,14 +495,16 @@ multipart-extract-boundary = (content-type str) (boundary str) {
                 bend < 0 -> return
                 boundary = content-type.slice(bstart, bend)
             }
+
+            -> {
+                bend = content-type.index-from(';', bstart)
+                bend < 0 -> bend = content-type.len-bytes()
+                boundary = content-type.slice(bstart, bend)
+                boundary = boundary.trim()
+            }
         }
 
-        -> {
-            bend = content-type.index-from(';', bstart)
-            bend < 0 -> bend = content-type.len-bytes()
-            boundary = content-type.slice(bstart, bend)
-            boundary = boundary.trim()
-        }
+        ->
     }
 }
 
@@ -528,7 +521,6 @@ multipart-extract-boundary = (content-type str) (boundary str) {
 ; iv [12]byte: GCM IV（nonce）
 ; 返回 ok=true=成功
 multipart-writer.write-encrypted-file = (name str, filename str, content-type str, content str, key [32]byte, iv [12]byte) (ok bool) {
-
     ok = false
     .closed -> return
 
@@ -541,7 +533,6 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     ; 格式: base64(iv || sealed)
     combined []byte
     i <- [0..12): {
-
         combined[i] = iv[i]
     }
     sealed-n = sealed.len()
@@ -554,23 +545,16 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     #{overflow=wrap}
     combined-n = 12 + sealed-n
     enc-str = base64.encode-std(combined)
-
     cr = '\r'
     lf = '\n'
-
     crlf = cr - lf
-
     .body = .body - '--' - .boundary - crlf
-
     .body = .body - 'Content-Disposition: form-data; name="' - name - '"; filename="' - filename - '"' - crlf
-
     .body = .body - 'Content-Type: ' - content-type - crlf
-
     .body = .body - 'X-Encryption: aes-256-gcm' - crlf
 
     #{overflow=wrap}
     .body = .body - crlf
-
     .body = .body - enc-str - crlf
     ok = true
 }
@@ -582,7 +566,6 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
 ; iv [12]byte: GCM IV
 ; 返回 ok=true=成功
 multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv [12]byte) (ok bool) {
-
     ok = false
     .closed -> return
 
@@ -594,7 +577,6 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     ; 將 IV + 密文轉為 Base64
     combined []byte
     i <- [0..12): {
-
         combined[i] = iv[i]
     }
     sealed-n = sealed.len()
@@ -607,21 +589,15 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     #{overflow=wrap}
     combined-n = 12 + sealed-n
     enc-str = base64.encode-std(combined)
-
     cr = '\r'
     lf = '\n'
-
     crlf = cr - lf
-
     .body = .body - '--' - .boundary - crlf
-
     .body = .body - 'Content-Disposition: form-data; name="' - name - '"' - crlf
-
     .body = .body - 'X-Encryption: aes-256-gcm' - crlf
 
     #{overflow=wrap}
     .body = .body - crlf
-
     .body = .body - enc-str - crlf
     ok = true
 }
@@ -632,7 +608,6 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
 ; aad []byte: 額外認證資料（欄位名稱）
 ; 返回 plain ?str: ok=解密後明文, nil=解密失敗
 multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain ?str) {
-
     plain = nil
 
     ; Base64 解碼

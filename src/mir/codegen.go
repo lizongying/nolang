@@ -239,7 +239,7 @@ func (c *codegen) optionElemKind(v ValueID) TypeKind {
 
 func supportedLLVM(lt string) bool {
 	switch lt {
-	case "i64", "i32", "double", "i1", "void", "%str-long", "i8", "%txt", "%vec", "%option":
+	case "i64", "i32", "double", "i1", "void", "%str-long", "i8", "%txt", "%vec", "%option", "i128":
 		return true
 	}
 	// Fixed arrays of supported element types are emitted as [N x elem]; the
@@ -656,6 +656,9 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 		if t.Raw == "byte" || t.Raw == "u8" || t.Raw == "i8" {
 			return "i8"
 		}
+		if t.Raw == "i128" || t.Raw == "u128" {
+			return "i128"
+		}
 		return "i64"
 	case KindChar:
 		// `char` is a single Unicode scalar value (0 ..= 0x10FFFF), which fits
@@ -800,6 +803,8 @@ func intWidth(t string) (int, bool) {
 		return 32, true
 	case "i64":
 		return 64, true
+	case "i128":
+		return 128, true
 	}
 	return 0, false
 }
@@ -867,6 +872,27 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 		c.sb.WriteString(fmt.Sprintf("  %s = sext %s %s to %s\n", r, fromT, v, toT))
 	}
 	return r
+}
+
+// coerceIntSigned is coerceInt plus declared-type sign awareness: an i8 operand
+// whose NOLANG type is signed `i8` (not `byte`/`u8` — they share the LLVM i8
+// representation) must SIGN-extend when widened. coerceInt blanket-zero-extends
+// every i8 because unsigned bytes dominate the corpus (the sha1 `padded[i] >=
+// 0x80` lesson), but that made a signed `h i8 = -9; h < 0` compare 247 and answer
+// false — the guard every i8 integer algorithm depends on. The print path
+// already splits sext/zext on rawTypeOf; this gives the compare/arithmetic
+// coercion the same rule.
+func (c *codegen) coerceIntSigned(src ValueID, v, fromT, toT string) string {
+	if fromT == "i8" && toT != "i8" && c.rawTypeOfValue(src) == "i8" {
+		tw, tok := intWidth(toT)
+		if tok && tw > 8 {
+			c.loadSeq++
+			r := fmt.Sprintf("%%cv%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = sext i8 %s to %s\n", r, v, toT))
+			return r
+		}
+	}
+	return c.coerceInt(v, fromT, toT)
 }
 
 // coerceIndex widens an array/slice index operand to i64. Indices are always
@@ -1497,6 +1523,90 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	b.WriteString("  %newi = ptrtoint i8* %newp to i64\n")
 	b.WriteString("  %r0 = insertvalue %vec undef, i64 %len, 0\n")
 	b.WriteString("  %r1 = insertvalue %vec %r0, i64 %len, 1\n")
+	b.WriteString("  %r2 = insertvalue %vec %r1, i64 %newi, 2\n")
+	b.WriteString("  ret %vec %r2\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+	return "@" + fn
+}
+
+// vecBufClone is vecDeepClone's BUFFER twin, used for Inst.BufClone clones:
+// it allocates cap*elem bytes (not len*), copies the len live elements, and
+// returns {len, cap, newdata} with both counters intact. A capacity-backed
+// slice handed across a frame boundary (bufio.reader.init's `with-cap(64)`
+// buffer) must stay a cap-64 buffer the receiver can read into; the
+// value-list clone clamps cap to len and — for an empty buffer — takes the
+// `none` arm entirely and returns {0,0,0}, which turned every later
+// fs.read(fd, buf, buf.cap) into a 0-byte read.
+//
+// The `do` test keys on data alone: a buffer with len==0 but a live backing
+// store still has to be copied (allocating cap bytes), whereas the value-list
+// helper could throw the empty case away.
+func (c *codegen) vecBufClone(elemType TypeID, depth int) string {
+	t := c.mod.Type(elemType)
+	if t == nil {
+		return ""
+	}
+	elemLT := c.llvmTypeOf(t)
+	if elemLT == "" {
+		return ""
+	}
+	fn := fmt.Sprintf("__nolang_vec_bufclone_%d_%d", elemType, depth)
+	if c.extraFuncs[fn] {
+		return "@" + fn
+	}
+	c.extraFuncs[fn] = true
+
+	perElem := ""
+	if depth < vecCloneMaxDepth {
+		perElem = c.ownedLeafCloneFuncAtDepth(t, depth+1)
+	}
+
+	b := &strings.Builder{}
+	fmt.Fprintf(b, "define %%vec @%s(%%vec %%v) {\n", fn)
+	b.WriteString("entry:\n")
+	b.WriteString("  %len = extractvalue %vec %v, 0\n")
+	b.WriteString("  %cap = extractvalue %vec %v, 1\n")
+	b.WriteString("  %data = extractvalue %vec %v, 2\n")
+	// An ARRAY-BACKED VIEW (`buf [128]i64` passed as `[]t`, set.init's buffer)
+	// carries cap == 0 with all 128 elements live behind data. Allocating on
+	// cap alone would malloc 0 bytes and then memcpy len*es into it — a silent
+	// heap overflow (measured: set.no spun and the runner killed the test).
+	// The store therefore holds max(cap, len) element slots.
+	b.WriteString("  %gt = icmp ugt i64 %cap, %len\n")
+	b.WriteString("  %sz = select i1 %gt, i64 %cap, i64 %len\n")
+	b.WriteString("  %hasdata = icmp ne i64 %data, 0\n")
+	b.WriteString("  br i1 %hasdata, label %cp, label %none\n")
+	b.WriteString("none:\n")
+	b.WriteString("  ret %vec %v\n")
+	b.WriteString("cp:\n")
+	fmt.Fprintf(b, "  %%es = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", elemLT)
+	b.WriteString("  %bytes = mul i64 %sz, %es\n")
+	b.WriteString("  %copy = mul i64 %len, %es\n")
+	b.WriteString("  %oldp = inttoptr i64 %data to i8*\n")
+	b.WriteString("  %newp = call i8* @nolang_rc_alloc(i64 %bytes)\n")
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	b.WriteString("  call void @llvm.memset.p0i8.i64(i8* %newp, i8 0, i64 %bytes, i1 false)\n")
+	b.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %newp, ptr %oldp, i64 %copy, i1 false)\n")
+	if perElem == "" {
+		b.WriteString("  br label %fin\n")
+	} else {
+		b.WriteString("  br label %lp\n")
+		b.WriteString("lp:\n")
+		b.WriteString("  %i = phi i64 [ 0, %cp ], [ %inext, %body ]\n")
+		b.WriteString("  %more = icmp ult i64 %i, %len\n")
+		b.WriteString("  br i1 %more, label %body, label %fin\n")
+		b.WriteString("body:\n")
+		fmt.Fprintf(b, "  %%ep = getelementptr inbounds %s, ptr %%newp, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  %%ev = load %s, ptr %%ep\n", elemLT)
+		fmt.Fprintf(b, "  %%cv = call %s %s(%s %%ev)\n", elemLT, perElem, elemLT)
+		fmt.Fprintf(b, "  store %s %%cv, ptr %%ep\n", elemLT)
+		b.WriteString("  %inext = add i64 %i, 1\n")
+		b.WriteString("  br label %lp\n")
+	}
+	b.WriteString("fin:\n")
+	b.WriteString("  %newi = ptrtoint i8* %newp to i64\n")
+	b.WriteString("  %r0 = insertvalue %vec undef, i64 %len, 0\n")
+	b.WriteString("  %r1 = insertvalue %vec %r0, i64 %cap, 1\n")
 	b.WriteString("  %r2 = insertvalue %vec %r1, i64 %newi, 2\n")
 	b.WriteString("  ret %vec %r2\n}\n")
 	c.extraFuncsBody.WriteString(b.String())
@@ -2441,6 +2551,76 @@ emit:
   ret void
 }
 
+; print_i128 renders a 128-bit integer as decimal. LLVM has no native i128->
+; decimal and @digits is i64-only, so the digit loop runs on i128 udiv/urem (the
+; target lowers these to libcalls). Signed: MIN is guarded by an isMin select so
+; the magnitude negate never produces poison; the buffer is 40 bytes (max 39
+; decimal digits of 2^127 plus a leading '-').
+define void @print_i128(i128 %v) {
+entry:
+  %buf = alloca [40 x i8]
+  %neg = icmp slt i128 %v, 0
+  %isMin = icmp eq i128 %v, -170141183460469231731687303715884105728
+  %negv = sub i128 0, %v
+  %absNeg = select i1 %isMin, i128 170141183460469231731687303715884105728, i128 %negv
+  %abs = select i1 %neg, i128 %absNeg, i128 %v
+  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
+  store i8 0, i8* %end
+  br label %loop
+loop:
+  %n = phi i128 [ %abs, %entry ], [ %next, %loop ]
+  %p = phi i8* [ %end, %entry ], [ %pp, %loop ]
+  %d = urem i128 %n, 10
+  %next = udiv i128 %n, 10
+  %d8 = trunc i128 %d to i8
+  %ch = add i8 %d8, 48
+  %pp = getelementptr i8, i8* %p, i64 -1
+  store i8 %ch, i8* %pp
+  %more = icmp ne i128 %next, 0
+  br i1 %more, label %loop, label %done
+done:
+  br i1 %neg, label %negw, label %emit
+negw:
+  %sn = getelementptr i8, i8* %pp, i64 -1
+  store i8 45, i8* %sn
+  br label %emit
+emit:
+  %start = phi i8* [ %sn, %negw ], [ %pp, %done ]
+  %epp = ptrtoint i8* %end to i64
+  %startp = ptrtoint i8* %start to i64
+  %len = sub i64 %epp, %startp
+  call i64 @write(i32 1, i8* %start, i64 %len)
+  ret void
+}
+
+; print_u128 renders an UNSIGNED 128-bit integer. It must NOT share print_i128's
+; signed path: a u128 value >= 2^127 is bit-pattern negative in two's-complement
+; i128, so the signed printer would emit a sp'-'. The digit loop is the same
+; i128 urem/udiv but with no negate/sign branch.
+define void @print_u128(i128 %v) {
+entry:
+  %buf = alloca [40 x i8]
+  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
+  store i8 0, i8* %end
+  br label %loop
+loop:
+  %n = phi i128 [ %v, %entry ], [ %next, %loop ]
+  %p = phi i8* [ %end, %entry ], [ %pp, %loop ]
+  %d = urem i128 %n, 10
+  %next = udiv i128 %n, 10
+  %d8 = trunc i128 %d to i8
+  %ch = add i8 %d8, 48
+  %pp = getelementptr i8, i8* %p, i64 -1
+  store i8 %ch, i8* %pp
+  %more = icmp ne i128 %next, 0
+  br i1 %more, label %loop, label %emit
+emit:
+  %epp = ptrtoint i8* %end to i64
+  %startp = ptrtoint i8* %pp to i64
+  %len = sub i64 %epp, %startp
+  call i64 @write(i32 1, i8* %pp, i64 %len)
+  ret void
+}
 @.dot = private constant [2 x i8] c".\00"
 ; @print_double formats a double with the SAME %g convention the legacy backend
 ; uses (legacy print(f64) routes through std f64-to-str, which replaced sprintf
@@ -2854,6 +3034,85 @@ emit:
   %len = sub i64 %epp, %startp
   %nbuf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %start, i64 %len, i1 0)
+  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
+  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
+  ret %str-long %s2
+}
+
+; str_from_i128 renders a SIGNED 128-bit integer as a freshly-allocated
+; %str-long (decimal). LLVM has no native i128->decimal and @digits is i64-only,
+; so the digit loop runs on i128 udiv/urem, mirroring print_i128. MIN is guarded
+; by an isMin select so the negate never poisons; the buffer is 40 bytes (max 39
+; digits of 2^127 plus a leading '-'). Used by i128-to-str for interpolation.
+define %str-long @str_from_i128(i128 %v) {
+entry:
+  %buf = alloca [40 x i8]
+  %neg = icmp slt i128 %v, 0
+  %isMin = icmp eq i128 %v, -170141183460469231731687303715884105728
+  %negv = sub i128 0, %v
+  %absNeg = select i1 %isMin, i128 170141183460469231731687303715884105728, i128 %negv
+  %abs = select i1 %neg, i128 %absNeg, i128 %v
+  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
+  store i8 0, i8* %end
+  br label %loop
+loop:
+  %n = phi i128 [ %abs, %entry ], [ %next, %loop ]
+  %p = phi i8* [ %end, %entry ], [ %pp, %loop ]
+  %d = urem i128 %n, 10
+  %next = udiv i128 %n, 10
+  %d8 = trunc i128 %d to i8
+  %ch = add i8 %d8, 48
+  %pp = getelementptr i8, i8* %p, i64 -1
+  store i8 %ch, i8* %pp
+  %more = icmp ne i128 %next, 0
+  br i1 %more, label %loop, label %done
+done:
+  br i1 %neg, label %negw, label %emit
+negw:
+  %sn = getelementptr i8, i8* %pp, i64 -1
+  store i8 45, i8* %sn
+  br label %emit
+emit:
+  %start = phi i8* [ %sn, %negw ], [ %pp, %done ]
+  %epp = ptrtoint i8* %end to i64
+  %startp = ptrtoint i8* %start to i64
+  %len = sub i64 %epp, %startp
+  %nbuf = call i8* @nolang_rc_alloc(i64 %len)
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %start, i64 %len, i1 0)
+  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
+  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
+  ret %str-long %s2
+}
+
+; str_from_u128 renders an UNSIGNED 128-bit integer as a %str-long. It must NOT
+; share str_from_i128's signed path: a u128 value >= 2^127 is bit-pattern
+; negative in two's-complement i128, so the signed renderer would emit a spurious
+; '-'. Same i128 urem/udiv digit loop, no sign branch.
+define %str-long @str_from_u128(i128 %v) {
+entry:
+  %buf = alloca [40 x i8]
+  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
+  store i8 0, i8* %end
+  br label %loop
+loop:
+  %n = phi i128 [ %v, %entry ], [ %next, %loop ]
+  %p = phi i8* [ %end, %entry ], [ %pp, %loop ]
+  %d = urem i128 %n, 10
+  %next = udiv i128 %n, 10
+  %d8 = trunc i128 %d to i8
+  %ch = add i8 %d8, 48
+  %pp = getelementptr i8, i8* %p, i64 -1
+  store i8 %ch, i8* %pp
+  %more = icmp ne i128 %next, 0
+  br i1 %more, label %loop, label %emit
+emit:
+  %epp = ptrtoint i8* %end to i64
+  %startp = ptrtoint i8* %pp to i64
+  %len = sub i64 %epp, %startp
+  %nbuf = call i8* @nolang_rc_alloc(i64 %len)
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %pp, i64 %len, i1 0)
   %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
   %s1 = insertvalue %str-long %s0, i64 %len, 1
   %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
@@ -4328,7 +4587,7 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitNot(inst)
 	case OpCast:
 		return c.emitCast(inst)
-	case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe:
+	case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpULt, OpULe, OpUGt, OpUGe:
 		return c.emitCmp(inst)
 	case OpStrEq:
 		return c.emitStrEq(inst)
@@ -4451,6 +4710,15 @@ func (c *codegen) emitConst(inst *Inst, allocaFor func(ValueID) string) error {
 	switch lt {
 	case "i64":
 		c.sb.WriteString(fmt.Sprintf("  store i64 %d, i64* %s\n", inst.Int, slot))
+	case "i128":
+		// A 128-bit integer constant. IntBig carries the full decimal text for
+		// values beyond int64 (so 2^63 / 2^64-1 / the i128 range do not truncate);
+		// otherwise the int64 payload is widened into the i128 immediate.
+		imm := inst.IntBig
+		if imm == "" {
+			imm = fmt.Sprintf("%d", inst.Int)
+		}
+		c.sb.WriteString(fmt.Sprintf("  store i128 %s, i128* %s\n", imm, slot))
 	case "i32":
 		// `char` is the i32 scalar (lowerCharLit emits OpConst with type char).
 		// Without this case a char constant fell into the zeroinitializer
@@ -4656,8 +4924,9 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	// (i8) arithmetic like `c - 32` feeds an i8 literal (i64) into an i8 op;
 	// mismatched widths are a hard LLVM type error. Truncate/extend so the
 	// operation type matches. (coerceInt is a no-op for floating-point types.)
-	aV = c.coerceInt(aV, aT, resLT)
-	bV = c.coerceInt(bV, bT, resLT)
+	// Signed `i8` operands sign-extend (coerceIntSigned); byte/u8 keep zext.
+	aV = c.coerceIntSigned(inst.Args[0], aV, aT, resLT)
+	bV = c.coerceIntSigned(inst.Args[1], bV, bT, resLT)
 	// Integer ops (add/sub/mul/sdiv/srem) are ILLEGAL on floating-point values;
 	// f64 arithmetic must use the float-family opcodes or opt rejects the IR with
 	// "invalid operand type for instruction" (the f64↔str type-width bug).
@@ -4994,7 +5263,8 @@ func (c *codegen) emitCmp(inst *Inst) error {
 	// fail loudly instead of emitting the wrong answer. %txt is in the same
 	// boat: it is an aggregate, so an ordering icmp on it is not even legal IR.
 	if (aT == "%str-long" || bT == "%str-long" || aT == "%txt" || bT == "%txt") &&
-		(inst.Op == OpLt || inst.Op == OpLe || inst.Op == OpGt || inst.Op == OpGe) {
+		(inst.Op == OpLt || inst.Op == OpLe || inst.Op == OpGt || inst.Op == OpGe ||
+			inst.Op == OpULt || inst.Op == OpULe || inst.Op == OpUGt || inst.Op == OpUGe) {
 		c.fail("ordering comparison %s with a string operand: nolang only implements string "+
 			"equality (@str_eq / @txt_eq), so the result would always be false; compare one-character "+
 			"strings ('a', implicitly a char), chars (\"a\") or numbers, or use == / !=", inst.Op)
@@ -5046,6 +5316,14 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		op = "sgt"
 	case OpGe:
 		op = "sge"
+	case OpULt:
+		op = "ult"
+	case OpULe:
+		op = "ule"
+	case OpUGt:
+		op = "ugt"
+	case OpUGe:
+		op = "uge"
 	}
 	// Fixed-array comparison ([N x T] == [N x T]): LLVM's icmp does NOT support
 	// aggregate types. For equality (== / !=) use memcmp on the raw byte
@@ -5129,8 +5407,8 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		if bw > aw {
 			ct = bT
 		}
-		aV = c.coerceInt(aV, aT, ct)
-		bV = c.coerceInt(bV, bT, ct)
+		aV = c.coerceIntSigned(inst.Args[0], aV, aT, ct)
+		bV = c.coerceIntSigned(inst.Args[1], bV, bT, ct)
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = icmp %s %s %s, %s\n", inst.Dst, op, ct, aV, bV))
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
@@ -5265,6 +5543,19 @@ func (c *codegen) strFromScalar(vID ValueID, v, vT string) string {
 		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cp(i64 %s)\n", r, av))
 		return r
 	}
+	// A 128-bit value must NOT be coerced down to i64 by emitIntToStr (that would
+	// truncate to the low 64 bits). Render it with the native str_from_i128 /
+	// str_from_u128 helpers, splitting signedness on the SOURCE raw type.
+	if vT == "i128" {
+		fn := "@str_from_i128"
+		if c.rawTypeOfValue(vID) == "u128" {
+			fn = "@str_from_u128"
+		}
+		c.loadSeq++
+		r := fmt.Sprintf("%%ci128%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long %s(i128 %s)\n", r, fn, v))
+		return r
+	}
 	return c.emitIntToStr(v, vT)
 }
 
@@ -5337,8 +5628,8 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 		aT, aV = c.unwrapOptionOperand(inst.Args[0], aT, aV, lt)
 		bT, bV = c.unwrapOptionOperand(inst.Args[1], bT, bV, lt)
 	}
-	aV = c.coerceInt(aV, aT, resLT)
-	bV = c.coerceInt(bV, bT, resLT)
+	aV = c.coerceIntSigned(inst.Args[0], aV, aT, resLT)
+	bV = c.coerceIntSigned(inst.Args[1], bV, bT, resLT)
 	var op string
 	switch inst.Op {
 	case OpBitAnd:
@@ -6790,7 +7081,13 @@ func (c *codegen) emitClone(inst *Inst) error {
 			}
 		}
 		if elemType != NoType {
-			if fn := c.vecDeepClone(elemType, 0); fn != "" {
+			fn := ""
+			if inst.BufClone {
+				fn = c.vecBufClone(elemType, 0)
+			} else {
+				fn = c.vecDeepClone(elemType, 0)
+			}
+			if fn != "" {
 				dstVal := moveDst(inst)
 				dstSlot := c.valSlot[dstVal]
 				if dstSlot != "" {
@@ -11280,6 +11577,14 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				c.sb.WriteString(fmt.Sprintf("  call void @print_str(%%str-long %s)\n", r2))
 			case "i64":
 				c.sb.WriteString(fmt.Sprintf("  call void @print_i64(%s %s)\n", argT, argV))
+			case "i128":
+				// Signed i128 vs unsigned u128 share the LLVM i128 lane; the nolang
+				// raw picks the printer (u128 >= 2^127 must not print as negative).
+				fn := "@print_i128"
+				if c.rawTypeOf(a) == "u128" {
+					fn = "@print_u128"
+				}
+				c.sb.WriteString(fmt.Sprintf("  call void %s(%s %s)\n", fn, argT, argV))
 			case "i8":
 				// byte/u8 and i8 share the LLVM i8 representation, so the
 				// static nolang type decides the extension: unsigned byte/u8
@@ -11429,6 +11734,44 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	if callee == "bool-to-str" {
 		callee = "bool.to-str"
 	}
+	// std/int's generic `int.to-str` instantiates per receiver type, so
+	// `x.to-str()` on an i128/u128 lowers to `int.int.to-str__i128` /
+	// `int.int.to-str__u128`. That generic body divides signed (sdiv/srem), so a
+	// u128 whose top bit is set (>= 2^127) is treated as negative and renders as
+	// a spurious '-N'. Redirect both to the native unsigned/signed helpers, which
+	// read the receiver's own raw type. The MIR callee keeps the __<type> suffix
+	// the checker attached to the instantiation.
+	switch {
+	case strings.HasSuffix(callee, "to-str__i128"):
+		callee = "i128-to-str"
+	case strings.HasSuffix(callee, "to-str__u128"):
+		callee = "u128-to-str"
+	}
+	// `i128-to-str` / `u128-to-str` render a 128-bit integer as a %str-long via
+	// the native @str_from_i128/@str_from_u128 helpers. The generic integer
+	// formatter fmt-int is i64-only, so routing an i128 through it truncates to
+	// the low 64 bits; these callees bypass fmt-int entirely. Used by string
+	// interpolation and .to-str on an i128/u128 value.
+	if callee == "i128-to-str" || callee == "u128-to-str" {
+		if len(inst.Args) > 0 && len(inst.Results) > 0 && inst.Results[0] > NoVal {
+			fn := "@str_from_i128"
+			if callee == "u128-to-str" {
+				fn = "@str_from_u128"
+			}
+			argT, argV := c.loadVal(inst.Args[0])
+			argV = c.coerceInt(argV, argT, "i128")
+			if rlt, _ := c.ptype(inst.Results[0]); rlt != "void" && c.valSlot[inst.Results[0]] != "" {
+				c.loadSeq++
+				tmp := fmt.Sprintf("%%i128s%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long %s(i128 %s)\n", tmp, fn, argV))
+				c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", tmp, c.valSlot[inst.Results[0]]))
+			}
+			if len(inst.Results) == 0 || inst.Results[0] <= NoVal {
+				c.fail("%s: no result slot (lowering failure in func %s)", callee, f.Name)
+			}
+			return nil
+		}
+	}
 	// `number.i64-to-str` / `i64-to-str` are hardcoded inside the generic
 	// `[]t.to-str` / `[n]t.to-str` std templates (`number.i64-to-str(.[i])`).
 	// For a non-i64 element type (txt, u64, ...) that call is a type mismatch
@@ -11437,7 +11780,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	// argument's real LLVM type is known. Redirect to the element's own
 	// `.to-str` method (e.g. %txt -> txt.to-str) so the conversion is correct.
 	// The target method is enqueued by hir2mir whenever it sees this callee.
-	if callee == "i64-to-str" || callee == "number.i64-to-str" {
+	if callee == "i64-to-str" || callee == "number.i64-to-str" || callee == "math.i64-to-str" {
 		if len(inst.Args) > 0 {
 			if argT, argV := c.loadVal(inst.Args[0]); argT != "" && argT != "i64" {
 				// A `str` element inside the generic `[]t.to-str` / `[n]t.to-str`

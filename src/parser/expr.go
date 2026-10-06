@@ -663,6 +663,15 @@ func (p *Parser) parseIntegerLiteral() Expression {
 		// 嘗試以 uint64 解析（用於 u64 字面量，如 18446744073709551615）
 		if uval, uerr := strconv.ParseUint(raw, base, 64); uerr == nil {
 			value = int64(uval)
+		} else if isBareIntToken(raw) {
+			// The token is a well-formed (unsigned) integer literal but exceeds
+			// uint64 — the i128/u128 range (e.g. 10^21, 2^127-1). The lexer has
+			// already validated it is digits/hex, so do NOT reject: keep Value at
+			// its low-bits value and let the ORIGINAL token text (carried through
+			// tohir to the HIR node's S2) supply full precision. Only a 128-bit
+			// binding reads that text; assigning such a literal to a <=64-bit type
+			// is caught separately by the checker's range validation.
+			value = 0
 		} else {
 			msg := fmt.Sprintf("line %d, column %d: could not parse %q as integer",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
@@ -673,8 +682,49 @@ func (p *Parser) parseIntegerLiteral() Expression {
 	}
 
 	lit.Value = value
+	lit.Raw = p.currentToken.Literal
 	p.nextToken()
 	return lit
+}
+
+// isBareIntToken reports whether raw is an unsigned integer literal body that
+// the lexer produced but strconv cannot fit in 64 bits: a run of decimal digits
+// (with optional '_' separators) or a 0x/0X hex run. Signed forms never reach
+// here (the '-' is a separate prefix token), so no sign is expected.
+func isBareIntToken(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+		raw = raw[2:]
+		if raw == "" {
+			return false
+		}
+		for i := 0; i < len(raw); i++ {
+			c := raw[i]
+			if c == '_' {
+				continue
+			}
+			isDigit := c >= '0' && c <= '9'
+			isHex := (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+			if !isDigit && !isHex {
+				return false
+			}
+		}
+		return true
+	}
+	sawDigit := false
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if c == '_' {
+			continue
+		}
+		if c < '0' || c > '9' {
+			return false
+		}
+		sawDigit = true
+	}
+	return sawDigit
 }
 
 // NOTE: there is deliberately no parseByteLiteral here. The `xNN` byte-literal

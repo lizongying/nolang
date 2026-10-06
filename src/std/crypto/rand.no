@@ -10,10 +10,22 @@
 ; state: 輸入/輸出狀態變數，初始為任意非零種子
 ; r: 輸出隨機值 (0..4294967295)
 rand = (state i64) (new-state i64, r i64) {
-    new-state = state ^ (state << 13)
-    new-state = new-state ^ (new-state >> 17)
-    new-state = new-state ^ (new-state << 5)
-    r = new-state & 4294967295
+
+    ; xorshift32 必須每一步都裁到 32-bit，否則 i64 不溢位會讓 state 無限增長、
+    ; 偏移量與 >>17 的語義都偏離標準 xorshift32（歷史 bug：僅在輸出 r 處遮罩）。
+    #{overflow=wrap}
+    s = state & 4294967295
+
+    #{overflow=wrap}
+    s = (s ^ (s << 13)) & 4294967295
+
+    #{overflow=wrap}
+    s = (s ^ (s >> 17)) & 4294967295
+
+    #{overflow=wrap}
+    s = (s ^ (s << 5)) & 4294967295
+    new-state = s
+    r = s
 }
 
 ; rand-str: 產生指定長度的隨機字母數字字串
@@ -27,7 +39,6 @@ rand-str = (state i64, n i64) (s str) {
     i <- [0..n): {
         r = 0
         state, r = rand(state)
-
         s[i] = chars[r % 62]
     }
 }

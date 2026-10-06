@@ -1,0 +1,196 @@
+; test/std/tree-set.no — collection/tree-set 模組測試（AVL 有序集合）
+;
+; 執行：no test test/std/tree-set.no
+; 覆蓋：init / add / contains / remove(葉・單子・雙子) / first / last /
+;       lower-bound / upper-bound / size / empty / clear / 升序遍歷
+
+# /test/runner
+
+; 解包 ?i64：found=是否 ok，x=值（未找到時為 -999）
+unwrap = (v ?i64) (found bool, x i64) {
+    x = -999
+    v: {
+        ok -> {
+            found = true
+            x = it
+        }
+
+        err ->
+
+        nil ->
+    }
+}
+
+t-init = () {
+    s = tree-set {}
+    s.init()
+    runner.eq(s.size(), 0, 'init size == 0')
+    e bool = s.empty()
+    runner.is-true(e, 'init empty')
+}
+
+t-add-contains = () {
+    s = tree-set {}
+    s.init()
+    a1 bool = s.add(30)
+    runner.is-true(a1, 'add 30')
+    s.add(10)
+    s.add(20)
+    s.add(5)
+    s.add(40)
+    runner.eq(s.size(), 5, 'size == 5')
+    yes bool = s.contains(20)
+    runner.is-true(yes, 'contains 20')
+    no bool = s.contains(99)
+    runner.is-false(no, 'not contains 99')
+    dup bool = s.add(30)
+    runner.is-false(dup, 'add existing => false')
+    runner.eq(s.size(), 5, 'size unchanged after dup')
+}
+
+t-order = () {
+    s = tree-set {}
+    s.init()
+    s.add(30)
+    s.add(10)
+    s.add(20)
+    s.add(5)
+    s.add(40)
+    f1 bool = false
+    mn i64 = 0
+    f1, mn = unwrap(s.first())
+    runner.is-true(f1, 'first found')
+    runner.eq(mn, 5, 'first == min 5')
+    f2 bool = false
+    mx i64 = 0
+    f2, mx = unwrap(s.last())
+    runner.is-true(f2, 'last found')
+    runner.eq(mx, 40, 'last == max 40')
+}
+
+t-bound = () {
+    s = tree-set {}
+    s.init()
+    s.add(10)
+    s.add(20)
+    s.add(30)
+    s.add(40)
+
+    o1 bool = false
+    lb20 i64 = 0
+    o1, lb20 = unwrap(s.lower-bound(20))
+    runner.is-true(o1, 'lower-bound 20 found')
+    runner.eq(lb20, 20, 'lower-bound 20 == 20')
+    o2 bool = false
+    lb15 i64 = 0
+    o2, lb15 = unwrap(s.lower-bound(15))
+    runner.eq(lb15, 20, 'lower-bound 15 == 20')
+    o3 bool = false
+    ub20 i64 = 0
+    o3, ub20 = unwrap(s.upper-bound(20))
+    runner.eq(ub20, 30, 'upper-bound 20 == 30')
+    f100 bool = false
+    d1 i64 = 0
+    f100, d1 = unwrap(s.lower-bound(100))
+    runner.is-false(f100, 'lower-bound 100 => nil')
+    f40 bool = false
+    d2 i64 = 0
+    f40, d2 = unwrap(s.upper-bound(40))
+    runner.is-false(f40, 'upper-bound 40 => nil')
+}
+
+t-remove = () {
+    s = tree-set {}
+    s.init()
+    s.add(20)
+    s.add(10)
+    s.add(30)
+    s.add(25)
+    s.add(35)
+
+    ; 刪除葉子（25）
+    r1 bool = s.remove(25)
+    runner.is-true(r1, 'remove leaf 25')
+    runner.is-false(s.contains(25), '25 gone')
+
+    ; 刪除雙子節點（30 有 25? no; 用 root 30 有左右）
+    r2 bool = s.remove(30)
+    runner.is-true(r2, 'remove internal 30')
+    runner.is-false(s.contains(30), '30 gone')
+
+    ; 刪除不存在
+    r3 bool = s.remove(999)
+    runner.is-false(r3, 'remove missing false')
+
+    runner.eq(s.size(), 3, 'size == 3 after 2 removals')
+
+    ; 其餘元素仍在
+    runner.is-true(s.contains(20), '20 still present')
+    runner.is-true(s.contains(10), '10 still present')
+    runner.is-true(s.contains(35), '35 still present')
+}
+
+t-stress-order = () {
+    s = tree-set {}
+    s.init()
+
+    ; 插入亂序，逐一後繼走訪應為嚴格升序
+    vals [10]i64 = [
+        50, 10, 30, 20, 40, 5, 15, 25,
+        35, 45,
+    ]
+    i <- [0..10): {
+        s.add(vals[i])
+    }
+    runner.eq(s.size(), 10, 'stress size == 10')
+
+    ; 逐一下界走訪：從 first 開始每次 upper-bound 應嚴格递增
+    prev = -1
+    steps = 0
+    f bool = false
+    cur i64 = 0
+    f, cur = unwrap(s.first())
+    (f) {
+        cur >= prev -> {
+            prev = cur
+
+            #{overflow=wrap}
+            steps = steps + 1
+        }
+        nf bool = false
+        nx i64 = 0
+        nf, nx = unwrap(s.upper-bound(cur))
+        f = nf
+        cur = nx
+    }
+    runner.eq(steps, 10, 'in-order walk visits all 10 ascending')
+    runner.eq(prev, 50, 'last visited == max 50')
+}
+
+t-clear = () {
+    s = tree-set {}
+    s.init()
+    s.add(1)
+    s.add(2)
+    s.add(3)
+    s.clear()
+    runner.eq(s.size(), 0, 'clear => size 0')
+    e bool = s.empty()
+    runner.is-true(e, 'clear => empty')
+    no bool = s.contains(1)
+    runner.is-false(no, 'after clear, 1 gone')
+}
+p1 = runner.test('tree-set.init', t-init)
+p2 = runner.test('tree-set.add/contains', t-add-contains)
+p3 = runner.test('tree-set.order', t-order)
+p4 = runner.test('tree-set.bound', t-bound)
+p5 = runner.test('tree-set.remove', t-remove)
+p6 = runner.test('tree-set.stress-order', t-stress-order)
+p7 = runner.test('tree-set.clear', t-clear)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

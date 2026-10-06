@@ -1,0 +1,111 @@
+; test/std/str-map.no — collection/str-map 模組測試
+;
+; 執行：no test test/std/str-map.no
+; 覆蓋：init / put / get / contains / remove / len / is-empty / clear / to-str
+
+# /test/runner
+
+t-init = () {
+    m = str-map {}
+    m.init()
+    runner.eq(m.len(), 0, 'init len == 0')
+    e bool = m.is-empty()
+    runner.is-true(e, 'init is-empty')
+}
+
+t-put-contains = () {
+    m = str-map {}
+    m.init()
+    n1 bool = m.put('name', 'Alice')
+    runner.is-true(n1, 'put name is-new')
+    n2 bool = m.put('age', '18')
+    runner.is-true(n2, 'put age is-new')
+    runner.eq(m.len(), 2, 'len == 2')
+    yes bool = m.contains('name')
+    runner.is-true(yes, 'contains name')
+    no bool = m.contains('missing')
+    runner.is-false(no, 'not contains missing')
+}
+
+t-overwrite = () {
+    m = str-map {}
+    m.init()
+    m.put('k', 'v1')
+    n bool = m.put('k', 'v2')
+    runner.is-false(n, 're-put same key not new')
+    runner.eq(m.len(), 1, 'len stays 1 after overwrite')
+    runner.str-eq(m.to-str(), '{k: v2}', 8, 'overwrite updates value')
+}
+
+t-get = () {
+    m = str-map {}
+    m.init()
+    m.put('city', 'Tokyo')
+    r = m.get('city')
+    hit bool = false
+    val str = ''
+    r: {
+        ok -> {
+            hit = true
+            val = it
+        }
+
+        err ->
+
+        nil ->
+    }
+    runner.is-true(hit, 'get found')
+    runner.str-eq(val, 'Tokyo', 5, 'get returns correct value')
+
+    miss = m.get('nope')
+    found bool = false
+    miss: {
+        ok -> found = true
+
+        err ->
+
+        nil ->
+    }
+    runner.is-false(found, 'get missing => nil')
+}
+
+t-remove = () {
+    m = str-map {}
+    m.init()
+    m.put('a', '1')
+    m.put('b', '2')
+    m.put('c', '3')
+    rm bool = m.remove('b')
+    runner.is-true(rm, 'remove b ok')
+    runner.eq(m.len(), 2, 'len == 2 after remove')
+    no bool = m.contains('b')
+    runner.is-false(no, 'removed key not found')
+    rm2 bool = m.remove('zzz')
+    runner.is-false(rm2, 'remove non-existent false')
+}
+
+t-clear = () {
+    m = str-map {}
+    m.init()
+    m.put('x', '1')
+    m.put('y', '2')
+    m.clear()
+    runner.eq(m.len(), 0, 'clear => len 0')
+    e bool = m.is-empty()
+    runner.is-true(e, 'clear => is-empty')
+}
+
+p1 = runner.test('str-map.init', t-init)
+p2 = runner.test('str-map.put/contains', t-put-contains)
+p3 = runner.test('str-map.overwrite', t-overwrite)
+p4 = runner.test('str-map.get', t-get)
+p5 = runner.test('str-map.remove', t-remove)
+p6 = runner.test('str-map.clear', t-clear)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

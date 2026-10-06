@@ -190,7 +190,7 @@ f = runner.failed-count()
 最後一次全量執行（本輪修復後，`./bin/no`）：**41 檔、906 個斷言通過、14 個失敗**
 （6 個檔失敗，**全部是預存問題**，見下節）。
 
-> 本輪修復：`number.div`/`number.mod`（#8）、`bigint` bus error（#7）、`txt.to-f32` 回傳 f64 位元（#5）、
+> 本輪修復：`math.div`/`math.mod`（#8）、`bigint` bus error（#7）、`txt.to-f32` 回傳 f64 位元（#5）、
 > `format` 的 `:t`/`:v`/`,`/`_`（#6）、`[]char` 切片字面量（#4）已全部修復，並釘迴歸測試。
 > 斷言數由 836 → 906（`bigint +27`、`number +37`、`char +6`）。
 
@@ -241,7 +241,7 @@ f = runner.failed-count()
 
 > **歸因**：用 pre-fmt-std 的 binary 與 post-fmt 的 binary 各跑一次全套件，
 > `FAIL` 集合**逐行完全相同**（`diff` 為空）⇒ 這 6 檔不是 fmt 造成的。
-> `number.no`（原 `unknown callee number.div`）與 `bigint.no`（bus error）本輪已修復。
+> `number.no`（原 `unknown callee math.div`）與 `bigint.no`（bus error）本輪已修復。
 
 **尚未覆蓋**（`src/std` 有、`test/std` 沒有）：
 
@@ -279,7 +279,7 @@ f = runner.failed-count()
 > 跑新的 `txt.no` 會**連編都編不過**（`to-bytes` → `unsupported builtin []t.set-byte`），
 > 跑出來唯一的 diff 就是 `FAIL: test/std/txt.no` 消失。
 
-### ✅ 已修（本輪 —— `txt.to-f32` / `format` / `number.div` / `bigint` / `[]char`）
+### ✅ 已修（本輪 —— `txt.to-f32` / `format` / `math.div` / `bigint` / `[]char`）
 
 | # | 症狀 | 修法 | 迴歸釘 |
 |---|---|---|---|
@@ -287,7 +287,7 @@ f = runner.failed-count()
 | E | **`txt.to-f32` 回傳 f64 的位元**（`42.0` 印成 `4631107791820423168`）。`?f32` 裝箱被 `optionPayloadLLVMType` 當成 `i64` 存/讀 | `src/mir/codegen.go` 的 `optionPayloadLLVMType` 把 `f32`/`float` 納入 `double` 分支；`src/mir/hir2mir.go` 兩處 format-field dispatch 補 `f32` | `src/mir/f32_option_payload_test.go`（`TestOptionF32PayloadUsesDoubleType` / `TestOptionF32PeelEmitsDoubleLoad` / `TestFormatFieldF32Lowers`）；`txt.to-f32()` 現印 `3.5` |
 | F | **`format` 的 `:t`/`:v`/`,`/`_` 沒實作** | `src/std/fmt.no`：`fmt-int`/`fmt-uint`/`fmt-f64`/`fmt-str`/`fmt-bool` 加 `:t`（型別名）；`fmt-str` 加 `:v`（單引號包裹）；新增 `fmt-group-digits` 並在 `:` 規格的 grouping 分支套用（**必須在零填充之前**） | `print('{n:t}')`→`i64`、`'{s:v}'`→`'abc'`、`'{g:,}'`→`1,234,567`、`'{h:08,d}'`→`0001,234` |
 | G | **`bigint` 全模組 bus error**（`from-i64(42).to-str()` 都崩）。根因：編譯器在「方法內對同型別區域變數呼叫方法」時，被呼叫方法體內裸 `.` 解析到**外層方法接收者** ⇒ `to-str` 內 `tmp.is-zero()` 永遠檢查錯誤物件 → 迴圈不會在零值停住 | `src/std/bigint.no` 的 `to-str` 把 `tmp.is-zero()` 改為顯式欄位存取 `tmp.len == 1 && tmp.limbs[0] == 0`（並加 `while` 計數保護替代 `!!` 無限迴圈） | `test/std/bigint.no` 解封 `runner.test` 註冊（**27 斷言全過**：`from-i64`/`zero`/`cmp`/`eq`/`is-zero`/`is-neg`/`add`/`sub`/`mul`/`div-mod`/`mod-i64`/`pow`/`gcd`/`lcm`） |
-| H | **`number.div`/`number.mod` → `unknown callee number.div`**（`number.no` 編不過） | `src/std/number.no` 補 `div`/`mod` 實作（`#{overflow=wrap}` 的 `a/b`、`a%b`，向零截斷，與 C/Go/Java 一致） | `test/std/number.no` 現 **37 斷言全過** |
+| H | **`math.div`/`math.mod` → `unknown callee math.div`**（`number.no` 編不過） | `src/std/number.no` 補 `div`/`mod` 實作（`#{overflow=wrap}` 的 `a/b`、`a%b`，向零截斷，與 C/Go/Java 一致） | `test/std/number.no` 現 **37 斷言全過** |
 
 > ⚠️ `:t` 的已知小瑕疵：`{b:t}`（bool）與 `{u:t}`（u64）仍會印 `i64`——因為 bool/u64 被 dispatch 到
 > `fmt-int`（回傳 `'i64'`），非本輪修復範圍；其餘 `int`/`f64`/`str`/`bool` 的 `:t`/`:v` 均正確。
@@ -310,7 +310,7 @@ f = runner.failed-count()
 （目前沒有。）
 
 > #1–#3（本節上方）、A–C（`txt` 三兄弟）、#4–#8（[]char 字面量、`txt.to-f32` 位元、
-> `format :t/:v/千分位`、`bigint` bus error、`number.div`）**至此已全部修復**。
+> `format :t/:v/千分位`、`bigint` bus error、`math.div`）**至此已全部修復**。
 
 ### 寫測試時的三個型別陷阱（會讓你寫出「永遠綠」的錯測試）
 

@@ -1,0 +1,55 @@
+; test/std/x25519.no — crypto/x25519 模組測試
+;
+; 執行：no test test/std/x25519.no
+; 覆蓋：x25519.x25519-scalarmult-base / x25519-scalarmult（Montgomery ladder, GF(2^255-19)）
+; 向量來源：RFC 7748 §5.2 單發測試 + §6.1 Diffie-Hellman Alice/Bob/shared
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+; RFC 7748 §6.1 Diffie-Hellman
+t-dh = () {
+    apriv [32]byte = [119, 7, 109, 10, 115, 24, 165, 125, 60, 22, 193, 114, 81, 178, 102, 69, 223, 76, 47, 135, 235, 192, 153, 42, 177, 119, 251, 165, 29, 185, 44, 42]
+    bpri  [32]byte = [93, 171, 8, 126, 98, 74, 138, 75, 121, 225, 127, 139, 131, 128, 14, 230, 111, 59, 177, 41, 38, 24, 182, 253, 28, 47, 139, 39, 255, 136, 224, 235]
+    apub = x25519.x25519-scalarmult-base(apriv)
+    runner.str-eq(bhex(apub), '8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a', 64, 'x25519 Alice pub')
+    bpub = x25519.x25519-scalarmult-base(bpri)
+    runner.str-eq(bhex(bpub), 'de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f', 64, 'x25519 Bob pub')
+    ka = x25519.x25519-scalarmult(apriv, bpub)
+    runner.str-eq(bhex(ka), '4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742', 64, 'x25519 shared (a,Kb)')
+    kb = x25519.x25519-scalarmult(bpri, apub)
+    runner.str-eq(bhex(kb), '4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742', 64, 'x25519 shared (b,Ka)')
+}
+
+; RFC 7748 §5.2 單發測試向量
+t-single = () {
+    sa5 [32]byte = [165, 70, 227, 107, 240, 82, 124, 157, 59, 22, 21, 75, 130, 70, 94, 221, 98, 20, 76, 10, 193, 252, 90, 24, 80, 106, 34, 68, 186, 68, 154, 196]
+    ua5 [32]byte = [230, 219, 104, 103, 88, 48, 48, 219, 53, 148, 193, 164, 36, 177, 95, 124, 114, 102, 36, 236, 38, 179, 53, 59, 16, 169, 3, 166, 208, 171, 28, 76]
+    oa5 = x25519.x25519-scalarmult(sa5, ua5)
+    runner.str-eq(bhex(oa5), 'c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552', 64, 'x25519 single-shot a5')
+    s4b [32]byte = [75, 102, 233, 212, 209, 180, 103, 60, 90, 210, 38, 145, 149, 125, 106, 245, 193, 27, 100, 33, 224, 234, 1, 212, 44, 164, 22, 158, 121, 24, 186, 13]
+    u4b [32]byte = [229, 33, 15, 18, 120, 104, 17, 211, 244, 183, 149, 157, 5, 56, 174, 44, 49, 219, 231, 16, 111, 192, 60, 62, 252, 76, 213, 73, 199, 21, 164, 147]
+    o4b = x25519.x25519-scalarmult(s4b, u4b)
+    runner.str-eq(bhex(o4b), '95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957', 64, 'x25519 single-shot 4b')
+}
+
+p1 = runner.test('x25519.dh', t-dh)
+p2 = runner.test('x25519.single', t-single)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+    -> os.exit(0)
+}

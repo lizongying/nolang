@@ -4,11 +4,11 @@ package checker
 //
 // std 中部分早期以「自由函數」形式提供的工具，後來都有了等價的方法形式
 // （接收者即參數）。舊函數保留兼容不刪除，但 lint 在每個呼叫點發出 HINT，
-// 建議改用新方法。例：number.char-to-str(c) 的取代是 char.to-str()（std/char.no），
+// 建議改用新方法。例：math.char-to-str(c) 的取代是 char.to-str()（std/char.no），
 // 呼叫點可改寫為 c.to-str()。
 //
-// callee 識別與 listdir.go 相同：未合併（LSP/單測）時 `number.char-to-str`
-// 是 DotExpression；模組合併（no vet）後可能成為 Value="number.char-to-str"
+// callee 識別與 listdir.go 相同：未合併（LSP/單測）時 `math.char-to-str`
+// 是 DotExpression；模組合併（no vet）後可能成為 Value="math.char-to-str"
 // 的點分 Identifier，故統一按「點號最後一段（base）」匹配，兩種形態都能命中。
 //
 // 嚴重級別：HINT（不阻斷編譯；--strict 升級為 error）。

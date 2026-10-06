@@ -1,0 +1,120 @@
+; test/std/hkdf.no — crypto/hkdf 模組測試
+;
+; 執行：no test test/std/hkdf.no
+; 覆蓋：hkdf-extract、hkdf-expand
+; 向量來源：RFC 5869 Test Case 1，並與 python hmac 手動 HKDF 交叉核對
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+; RFC 5869 TC1: IKM = 0x0b*22, salt = 00..0c, info = f0..f9, L = 42
+t-extract = () {
+    salt []byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c,
+    ]
+    ikm []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    prk = hkdf.hkdf-extract(salt, ikm)
+    pv []byte = [
+        prk[0],
+        prk[1],
+        prk[2],
+        prk[3],
+        prk[4],
+        prk[5],
+        prk[6],
+        prk[7],
+        prk[8],
+        prk[9],
+        prk[10],
+        prk[11],
+        prk[12],
+        prk[13],
+        prk[14],
+        prk[15],
+        prk[16],
+        prk[17],
+        prk[18],
+        prk[19],
+        prk[20],
+        prk[21],
+        prk[22],
+        prk[23],
+        prk[24],
+        prk[25],
+        prk[26],
+        prk[27],
+        prk[28],
+        prk[29],
+        prk[30],
+        prk[31],
+    ]
+    runner.str-eq(bhex(pv), '077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5', 64, 'hkdf-extract PRK')
+}
+
+t-expand = () {
+    salt []byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c,
+    ]
+    ikm []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    info []byte = [
+        0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+        0xf8, 0xf9,
+    ]
+    prk = hkdf.hkdf-extract(salt, ikm)
+    okm = hkdf.hkdf-expand(prk, info, 42)
+    runner.str-eq(bhex(okm), '3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865', 84, 'hkdf-expand OKM 42')
+}
+
+t-expand-len = () {
+    salt []byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c,
+    ]
+    ikm []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    info []byte = [
+        0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+        0xf8, 0xf9,
+    ]
+    prk = hkdf.hkdf-extract(salt, ikm)
+    okm = hkdf.hkdf-expand(prk, info, 20)
+    runner.eq(okm.len(), 20, 'hkdf-expand honors out-len 20')
+}
+p1 = runner.test('hkdf.extract', t-extract)
+p2 = runner.test('hkdf.expand', t-expand)
+p3 = runner.test('hkdf.expand-len', t-expand-len)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

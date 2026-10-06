@@ -22,9 +22,9 @@
 ;   header = jar.build-header('example.com', '/api')  // 'sessionid=abc123'
 ;
 ;   // 簽名 Cookie
-;   signed = sign('sessionid=abc123', secret-key)
+;   signed = cookie-sign('sessionid=abc123', secret-key)
 ;   // signed = 'sessionid=abc123.hmac-hex-signature'
-;   ok = verify(signed, secret-key)
+;   ok = cookie-verify(signed, secret-key)
 ;   // ok = true 表示簽名驗證通過
 
 ; ═══════════════════════════════════════════════
@@ -510,12 +510,14 @@ jar.count-of = () (n i64) {
 ; 簽名 Cookie（HMAC-SHA256）
 ; ═══════════════════════════════════════════════
 
-; sign: 對 Cookie 值進行 HMAC-SHA256 簽名
+; cookie-sign: 對 Cookie 值進行 HMAC-SHA256 簽名
+; 註：原名 sign 会与 num.sign 方法符號衝突（跨模組呼叫被解析為 signum，
+; 靜默返回 1），故改帶 cookie- 前綴（與 url.no 的 url- 前綴慣例一致）。
 ; name str: Cookie 名稱
 ; value str: Cookie 值
 ; key []byte: 簽名金鑰
 ; 返回 signed str: 簽名後的值（格式: value.hex-hmac）
-sign = (name str, value str, key []byte) (signed str) {
+cookie-sign = (name str, value str, key []byte) (signed str) {
 
     ; 簽名內容 = name=value
     msg-str = name - '=' - value
@@ -537,13 +539,13 @@ sign = (name str, value str, key []byte) (signed str) {
     signed = value - '.' - hex-str
 }
 
-; verify: 驗證簽名 Cookie
+; cookie-verify: 驗證簽名 Cookie
 ; name str: Cookie 名稱
 ; signed-value str: 簽名後的值（格式: value.hex-hmac）
 ; key []byte: 簽名金鑰
 ; 返回 ok bool: true=驗證通過
 ; 返回 value str: 原始 Cookie 值（驗證失敗時為空）
-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
+cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
 
     ok = false
     value = ''
@@ -572,7 +574,7 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
     provided-hex = signed-value.slice(dot-pos + 1, signed-value.len-bytes())
 
     ; 計算期望的簽名
-    expected-signed = sign(name, value, key)
+    expected-signed = cookie-sign(name, value, key)
 
     ; 提取期望的 hex 部分
     #{overflow=wrap}
@@ -603,7 +605,7 @@ verify = (name str, signed-value str, key []byte) (ok bool, value str) {
 ; max-age i64: 最大存活秒數
 ; key []byte: 簽名金鑰
 jar.set-signed = (name str, value str, domain str, path str, max-age i64, key []byte) {
-    signed-value = sign(name, value, key)
+    signed-value = cookie-sign(name, value, key)
     .set(name, signed-value, domain, path, max-age)
 }
 
@@ -624,7 +626,7 @@ jar.get-verified = (name str, domain str, path str, key []byte) (val ?str) {
         ok -> {
             verified-ok = false
             verified-val = ''
-            verified-ok, verified-val = verify(name, it, key)
+            verified-ok, verified-val = cookie-verify(name, it, key)
             {
                 verified-ok -> val = verified-val
 

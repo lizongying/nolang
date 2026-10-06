@@ -5,7 +5,7 @@
 main = () {
     pi = math.PI
     r = 2.0
-    area = math.degrees(pi)
+    area = pi.degrees()
     print('pi={pi} area={area}')
     print('typeOwner basic test: ok')
 }

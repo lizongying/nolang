@@ -1141,7 +1141,10 @@ func (p *Parser) parseLetStatement() Statement {
 				}
 
 			case "char":
-				stmt.Value = &Identifier{
+				// 零值 char：直接產生 CharLiteral（NUL 碼點），不再透過
+				// 單字元 Identifier 騙過下方的 char 折疊邏輯——那條折疊曾經
+				// 把 `cc char = <單字元變數>` 誤改寫成以變數名建字面值。
+				stmt.Value = &CharLiteral{
 					Token: nameToken,
 					Value: "\x00",
 				}
@@ -1162,16 +1165,14 @@ func (p *Parser) parseLetStatement() Statement {
 		}
 	}
 
-	// char 类型：将裸字符 Identifier 或单字符 StringLiteral 转换为 CharLiteral
+	// char 类型：将单字符 StringLiteral 转换为 CharLiteral。
+	// 只折疊字面量（`cc char = "A"`）；裸 Identifier（`cc char = n`）是變數
+	// 參照，必須保留為 Identifier 讓型別檢查與 codegen 按值處理，絕不能拿
+	// 變數名去建 CharLiteral（那會把 `n=65; cc char = n` 誤算成 110='n'）。
 	if stmt.Type != nil {
 		typeStr := typeString(stmt.Type)
 		if typeStr == "char" {
-			if ident, ok := stmt.Value.(*Identifier); ok && len([]rune(ident.Value)) == 1 {
-				stmt.Value = &CharLiteral{
-					Token: ident.Token,
-					Value: ident.Value,
-				}
-			} else if str, ok := stmt.Value.(*StringLiteral); ok && len([]rune(str.Value)) == 1 {
+			if str, ok := stmt.Value.(*StringLiteral); ok && len([]rune(str.Value)) == 1 {
 				stmt.Value = &CharLiteral{
 					Token: str.Token,
 					Value: str.Value,

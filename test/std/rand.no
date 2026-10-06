@@ -1,0 +1,39 @@
+; test/std/rand.no — crypto/rand 模組測試
+;
+; 執行：no test test/std/rand.no
+; 覆蓋：rand.rand（xorshift32，每步裁 32-bit）、rand.rand-str
+; 向量來源：Python 標準 xorshift32（seed=123456789 → 2714967881 → 2238813396）
+;           rand-str(seed=12345, n=10) → 'aZWqBKc0UW'
+
+# /test/runner
+
+t-xorshift = () {
+    st, r = rand.rand(123456789)
+    runner.eq(r, 2714967881, 'xorshift32 step1')
+    runner.eq(st, 2714967881, 'xorshift32 state == r')
+    st2, r2 = rand.rand(st)
+    runner.eq(r2, 2238813396, 'xorshift32 step2')
+
+    ; 所有輸出必須落在 0..2^32-1
+    s = 1
+    i <- [0..50): {
+        s, v = rand.rand(s)
+        runner.gt(v, -1, 'rand >= 0')
+        runner.lt(v, 4294967296, 'rand < 2^32')
+    }
+}
+
+t-str = () {
+    s = rand.rand-str(12345, 10)
+    runner.eq(s.len(), 10, 'rand-str length')
+    runner.str-eq(s, 'aZWqBKc0UW', 10, 'rand-str golden')
+}
+p1 = runner.test('rand.xorshift', t-xorshift)
+p2 = runner.test('rand.str', t-str)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

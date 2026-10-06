@@ -1,0 +1,69 @@
+; std-md5.no — crypto/md5 模組測試
+;
+; 執行：no test test/std/md5.no
+; 覆蓋：md5（[16]byte）—— 逐位元組比對
+; 向量與 md5 / shasum 交叉核對
+
+# /test/runner
+
+EMPTY = ''
+ABC = 'abc'
+TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
+
+t-len = () {
+    h = md5.md5(ABC.to-bytes())
+    runner.eq(h.len(), 16, 'md5 digest is 16 bytes')
+}
+
+t-abc-full = () {
+
+    ; md5("abc") = 900150983cd24fb0d6963f7d28e17f72
+    h = md5.md5(ABC.to-bytes())
+    runner.eq(h[0], 0x90, 'md5 abc b0')
+    runner.eq(h[1], 0x01, 'md5 abc b1')
+    runner.eq(h[2], 0x50, 'md5 abc b2')
+    runner.eq(h[3], 0x98, 'md5 abc b3')
+    runner.eq(h[4], 0x3c, 'md5 abc b4')
+    runner.eq(h[5], 0xd2, 'md5 abc b5')
+    runner.eq(h[6], 0x4f, 'md5 abc b6')
+    runner.eq(h[7], 0xb0, 'md5 abc b7')
+    runner.eq(h[8], 0xd6, 'md5 abc b8')
+    runner.eq(h[9], 0x96, 'md5 abc b9')
+    runner.eq(h[10], 0x3f, 'md5 abc b10')
+    runner.eq(h[11], 0x7d, 'md5 abc b11')
+    runner.eq(h[12], 0x28, 'md5 abc b12')
+    runner.eq(h[13], 0xe1, 'md5 abc b13')
+    runner.eq(h[14], 0x7f, 'md5 abc b14')
+    runner.eq(h[15], 0x72, 'md5 abc b15')
+}
+
+t-empty-ends = () {
+
+    ; md5("") = d41d8cd98f00b204e9800998ecf8427e
+    h = md5.md5(EMPTY.to-bytes())
+    runner.eq(h[0], 0xd4, 'md5 empty b0')
+    runner.eq(h[1], 0x1d, 'md5 empty b1')
+    runner.eq(h[14], 0x42, 'md5 empty b14')
+    runner.eq(h[15], 0x7e, 'md5 empty b15')
+}
+
+t-twoblock-ends = () {
+
+    ; md5(56-byte) = 8215ef0796a20bcaaae116d3876c664a
+    h = md5.md5(TWOBLOCK.to-bytes())
+    runner.eq(h[0], 0x82, 'md5 two-block b0')
+    runner.eq(h[1], 0x15, 'md5 two-block b1')
+    runner.eq(h[14], 0x66, 'md5 two-block b14')
+    runner.eq(h[15], 0x4a, 'md5 two-block b15')
+}
+p1 = runner.test('md5.digest-len', t-len)
+p2 = runner.test('md5.abc.full', t-abc-full)
+p3 = runner.test('md5.empty.ends', t-empty-ends)
+p4 = runner.test('md5.two-block.ends', t-twoblock-ends)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

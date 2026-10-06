@@ -1,0 +1,159 @@
+; test/std/tree-map.no — collection/tree-map 模組測試（AVL 有序映射 i64→i64）
+;
+; 執行：no test test/std/tree-map.no
+; 覆蓋：init / put / get / contains / remove / first / last /
+;       lower-bound / upper-bound / size / empty / clear
+
+# /test/runner
+
+unwrap = (v ?i64) (found bool, x i64) {
+    x = -999
+    v: {
+        ok -> {
+            found = true
+            x = it
+        }
+
+        err ->
+
+        nil ->
+    }
+}
+
+t-init = () {
+    m = tree-map {}
+    m.init()
+    runner.eq(m.size(), 0, 'init size 0')
+    e bool = m.empty()
+    runner.is-true(e, 'init empty')
+}
+
+t-put-get = () {
+    m = tree-map {}
+    m.init()
+    p1 bool = m.put(30, 100)
+    runner.is-true(p1, 'put 30 is-new')
+    m.put(10, 200)
+    m.put(20, 300)
+    runner.eq(m.size(), 3, 'size == 3')
+
+    f bool = false
+    v i64 = 0
+    f, v = unwrap(m.get(20))
+    runner.is-true(f, 'get 20 found')
+    runner.eq(v, 300, 'get 20 == 300')
+
+    yes bool = m.contains(10)
+    runner.is-true(yes, 'contains 10')
+    no bool = m.contains(99)
+    runner.is-false(no, 'not contains 99')
+    fn bool = false
+    fv i64 = 0
+    fn, fv = unwrap(m.get(99))
+    runner.is-false(fn, 'get missing => nil')
+}
+
+t-overwrite = () {
+    m = tree-map {}
+    m.init()
+    m.put(5, 1)
+    dup bool = m.put(5, 2)
+    runner.is-false(dup, 're-put not new')
+    runner.eq(m.size(), 1, 'size stays 1')
+    f bool = false
+    val i64 = 0
+    f, val = unwrap(m.get(5))
+    runner.eq(val, 2, 'overwrite updates value to 2')
+    runner.is-true(f, 'overwrite still found')
+}
+
+t-order = () {
+    m = tree-map {}
+    m.init()
+    m.put(30, 1)
+    m.put(10, 2)
+    m.put(40, 3)
+    m.put(5, 4)
+    f1 bool = false
+    mnk i64 = 0
+    f1, mnk = unwrap(m.first())
+    runner.eq(mnk, 5, 'first key == 5')
+    f2 bool = false
+    mxk i64 = 0
+    f2, mxk = unwrap(m.last())
+    runner.eq(mxk, 40, 'last key == 40')
+}
+
+t-bound = () {
+    m = tree-map {}
+    m.init()
+    m.put(10, 1)
+    m.put(20, 2)
+    m.put(30, 3)
+    m.put(40, 4)
+    o1 bool = false
+    lbk i64 = 0
+    o1, lbk = unwrap(m.lower-bound(15))
+    runner.eq(lbk, 20, 'lower-bound 15 == key 20')
+    o2 bool = false
+    ubk i64 = 0
+    o2, ubk = unwrap(m.upper-bound(20))
+    runner.eq(ubk, 30, 'upper-bound 20 == key 30')
+    o3 bool = false
+    dk i64 = 0
+    o3, dk = unwrap(m.lower-bound(100))
+    runner.is-false(o3, 'lower-bound 100 => nil')
+}
+
+t-remove = () {
+    m = tree-map {}
+    m.init()
+    m.put(20, 1)
+    m.put(10, 2)
+    m.put(30, 3)
+    m.put(25, 4)
+    m.put(35, 5)
+    r1 bool = m.remove(25)
+    runner.is-true(r1, 'remove leaf 25')
+    fn bool = false
+    fv i64 = 0
+    fn, fv = unwrap(m.get(25))
+    runner.is-false(fn, '25 gone after remove')
+    r2 bool = m.remove(30)
+    runner.is-true(r2, 'remove internal 30')
+    r3 bool = m.remove(999)
+    runner.is-false(r3, 'remove missing false')
+    runner.eq(m.size(), 3, 'size == 3 after removals')
+    runner.is-true(m.contains(20), '20 present')
+    runner.is-true(m.contains(10), '10 present')
+    runner.is-true(m.contains(35), '35 present')
+}
+
+t-clear = () {
+    m = tree-map {}
+    m.init()
+    m.put(1, 1)
+    m.put(2, 2)
+    m.put(3, 3)
+    m.clear()
+    runner.eq(m.size(), 0, 'clear => size 0')
+    e bool = m.empty()
+    runner.is-true(e, 'clear => empty')
+    runner.is-false(m.contains(1), 'after clear 1 gone')
+}
+
+p1 = runner.test('tree-map.init', t-init)
+p2 = runner.test('tree-map.put/get', t-put-get)
+p3 = runner.test('tree-map.overwrite', t-overwrite)
+p4 = runner.test('tree-map.order', t-order)
+p5 = runner.test('tree-map.bound', t-bound)
+p6 = runner.test('tree-map.remove', t-remove)
+p7 = runner.test('tree-map.clear', t-clear)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

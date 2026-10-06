@@ -1113,7 +1113,7 @@ stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     }
 
     ; char-to-str(39) = 單引號 '（ASCII 39）
-    q = number.char-to-str(39)
+    q = math.char-to-str(39)
     before = cur.slice(0, pos)
 
     #{overflow=wrap}

@@ -1,0 +1,69 @@
+; test/std/aes-ctr.no — crypto/aes-ctr 模組測試
+;
+; 執行：no test test/std/aes-ctr.no
+; 覆蓋：aes-ctr.crypt-128（counter 模式為對稱 XOR）
+; 向量來源：pycryptodome CTR，initial counter = iv=000102..0f
+; key=000102..0f, iv=000102..0f, pt=00112233445566778899aabbccddeeff → ct=0a852986053b9632795a3ee30a8e04a5
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-enc = () {
+    key [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    iv [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    pt []byte = [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ]
+    ct = aes-ctr.crypt-128(pt, key, iv)
+    runner.str-eq(bhex(ct), '0a852986053b9632795a3ee30a8e04a5', 32, 'aes-128-ctr enc')
+}
+
+t-roundtrip = () {
+    key [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    iv [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    pt []byte = [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ]
+    ct = aes-ctr.crypt-128(pt, key, iv)
+    back = aes-ctr.crypt-128(ct, key, iv)
+    runner.str-eq(bhex(back), '00112233445566778899aabbccddeeff', 32, 'aes-128-ctr round-trip')
+}
+p1 = runner.test('aesctr.enc', t-enc)
+p2 = runner.test('aesctr.roundtrip', t-roundtrip)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

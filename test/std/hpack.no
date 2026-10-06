@@ -1,0 +1,150 @@
+; test/std/hpack.no — net/hpack 模組測試（RFC 7541 變長整數／字串編解碼）
+;
+; 執行：no test test/std/hpack.no
+; 覆蓋：encode-int / decode-int（前綴內單 byte、val==max-prefix 邊界、多 byte
+;       延續編碼、prefix-byte 高位合併、越界/截斷錯誤）、encode-str /
+;       decode-str（literal H=0、空字串、跨 7-bit 前綴的長字串回環）
+; 註：回归點——(1) encode-int 原實作在 val==max-prefix 時用 out[n]=0 寫尾 byte，
+;     零寫入不推進 str 長度，丟失 0x00 延續 byte，回環解碼失敗，已改為預先
+;     with-len(n)；(2) encode-str 原用 with-cap + 逐 byte 寫入，空字串時長度
+;     byte 0x00 同樣不推進長度，輸出 0 byte，已改為 with-len 預設總長。
+;     tables.* 方法（init/find/lookup/encode-header/decode-headers）未測：
+;     跨模組對 hpack.tables 方法無法實例化（EmitLLVM unknown callee，工具鏈
+;     限制，且模組內無可觸發實例化的便捷函數）；decode-headers 的 [128]str
+;     陣列 out-param 多指派亦屬已知呼叫端段錯誤家族。
+
+# /test/runner
+
+t-int-prefix = () {
+
+    ; RFC 7541 §5.1 範例：10 以 5-bit 前綴編碼 = 0x0A
+    e = hpack.encode-int(10, 5, 0)
+    runner.eq(e.len-bytes(), 1, '10/5 len')
+    runner.eq(e.byte(0), 10, '10/5 byte')
+    v, p = hpack.decode-int(e, 0, 5)
+    runner.eq(v, 10, '10/5 decode val')
+    runner.eq(p, 1, '10/5 decode pos')
+
+    ; 高位 prefix-byte 應被保留（indexed 表示的 1xxxxxxx 前導位）
+    ep = hpack.encode-int(10, 5, 32)
+    runner.eq(ep.len-bytes(), 1, 'pfx len')
+    runner.eq(ep.byte(0), 42, 'pfx or high bits')
+}
+
+t-int-boundary = () {
+
+    ; val == max-prefix（31, 5-bit）：必須輸出 [0x1F, 0x00] 兩 byte
+    e31 = hpack.encode-int(31, 5, 0)
+    runner.eq(e31.len-bytes(), 2, '31/5 len (regression)')
+    runner.eq(e31.byte(0), 31, '31/5 b0')
+    runner.eq(e31.byte(1), 0, '31/5 b1')
+    v31, p31 = hpack.decode-int(e31, 0, 5)
+    runner.eq(v31, 31, '31/5 roundtrip (regression)')
+    runner.eq(p31, 2, '31/5 roundtrip pos')
+    e127 = hpack.encode-int(127, 7, 0)
+    runner.eq(e127.len-bytes(), 2, '127/7 len')
+    runner.eq(e127.byte(0), 127, '127/7 b0')
+    runner.eq(e127.byte(1), 0, '127/7 b1')
+    v127, p127 = hpack.decode-int(e127, 0, 7)
+    runner.eq(v127, 127, '127/7 roundtrip')
+    e255 = hpack.encode-int(255, 8, 0)
+    runner.eq(e255.len-bytes(), 2, '255/8 len')
+    runner.eq(e255.byte(0), 255, '255/8 b0')
+    v255, p255 = hpack.decode-int(e255, 0, 8)
+    runner.eq(v255, 255, '255/8 roundtrip')
+
+    ; 邊界內最大：126 以 7-bit 前綴單 byte
+    e126 = hpack.encode-int(126, 7, 0)
+    runner.eq(e126.len-bytes(), 1, '126/7 single')
+    v126, p126 = hpack.decode-int(e126, 0, 7)
+    runner.eq(v126, 126, '126/7 roundtrip')
+}
+
+t-int-multi = () {
+
+    ; RFC 7541 §5.1 範例：400 以 5-bit 前綴 = 0x1F 0xF1 0x02
+    e = hpack.encode-int(400, 5, 0)
+    runner.eq(e.len-bytes(), 3, '400/5 len')
+    runner.eq(e.byte(0), 31, '400/5 b0')
+    runner.eq(e.byte(1), 241, '400/5 b1')
+    runner.eq(e.byte(2), 2, '400/5 b2')
+    v, p = hpack.decode-int(e, 0, 5)
+    runner.eq(v, 400, '400/5 roundtrip')
+    runner.eq(p, 3, '400/5 pos')
+
+    ; 300 以 7-bit 前綴 = 0x7F 0xAD 0x01
+    e3 = hpack.encode-int(300, 7, 0)
+    runner.eq(e3.len-bytes(), 3, '300/7 len')
+    runner.eq(e3.byte(0), 127, '300/7 b0')
+    runner.eq(e3.byte(1), 173, '300/7 b1')
+    runner.eq(e3.byte(2), 1, '300/7 b2')
+    v3, p3 = hpack.decode-int(e3, 0, 7)
+    runner.eq(v3, 300, '300/7 roundtrip')
+}
+
+t-int-err = () {
+
+    ; 起點越界 → next-pos = -1
+    v0, p0 = hpack.decode-int('abc', 5, 5)
+    runner.eq(p0, -1, 'oob pos')
+
+    ; 多 byte 編碼被截斷（只剩首 0x1F）→ -1
+    e = hpack.encode-int(400, 5, 0)
+    trunc = e.slice(0, 1)
+    v1, p1 = hpack.decode-int(trunc, 0, 5)
+    runner.eq(p1, -1, 'truncated pos')
+}
+
+t-str-codec = () {
+    es = hpack.encode-str('Custom-Header')
+    runner.eq(es.len-bytes(), 14, 'enc len')
+    runner.eq(es.byte(0), 13, 'enc len byte')
+    runner.eq(es.byte(1), 67, 'enc first char')
+    ds, dp = hpack.decode-str(es, 0)
+    runner.str-eq(ds, 'Custom-Header', 13, 'roundtrip content')
+    runner.eq(ds.len-bytes(), 13, 'roundtrip len')
+    runner.eq(dp, 14, 'roundtrip pos')
+}
+
+t-str-empty = () {
+
+    ; 空字串：必須產生 1 byte 0x00 長度前綴（回归點）
+    ez = hpack.encode-str('')
+    runner.eq(ez.len-bytes(), 1, 'empty enc len (regression)')
+    runner.eq(ez.byte(0), 0, 'empty enc byte')
+    dz, dp = hpack.decode-str(ez, 0)
+    runner.eq(dz.len-bytes(), 0, 'empty dec len (regression)')
+    runner.eq(dp, 1, 'empty dec pos')
+}
+
+t-str-long = () {
+
+    ; 200 字元跨越 7-bit 前綴：長度編碼 2 byte（0x7F, 73）
+    s = ''
+    i <- [0..200): {
+        s = s - 'x'
+    }
+    e = hpack.encode-str(s)
+    runner.eq(e.len-bytes(), 202, 'long total len')
+    runner.eq(e.byte(0), 127, 'long len b0')
+    runner.eq(e.byte(1), 73, 'long len b1')
+    d, dp = hpack.decode-str(e, 0)
+    runner.eq(d.len-bytes(), 200, 'long roundtrip len')
+    runner.eq(dp, 202, 'long roundtrip pos')
+
+    ; 聲稱長度超出資料範圍 → -1
+    bad = 'abc'
+    v, p = hpack.decode-str(bad, 0)
+    runner.eq(p, -1, 'declared len overrun pos')
+}
+runner.test('int prefix', t-int-prefix)
+runner.test('int boundary', t-int-boundary)
+runner.test('int multi-byte', t-int-multi)
+runner.test('int errors', t-int-err)
+runner.test('str codec', t-str-codec)
+runner.test('str empty', t-str-empty)
+runner.test('str long', t-str-long)
+runner.summary()
+f = runner.failed-count()
+f > 0 -> os.exit(1)
+-> os.exit(0)

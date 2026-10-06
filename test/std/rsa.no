@@ -1,0 +1,47 @@
+; test/std/rsa.no — crypto/rsa 模組測試
+;
+; 執行：no test test/std/rsa.no
+; 覆蓋：rsa.rsa-encrypt / rsa.rsa-decrypt（base 2^32 little-endian limbs 模冪）
+; 向量來源：
+;   1) 教科書 RSA：p=61,q=53,n=3233,e=17,d=2753,m=65 → c=2790（Wikipedia RSA 例）
+;   2) 雙 limb（~64-bit）金鑰：p=4294967291,q=4294967279,e=65537，用 Python 生成 c
+
+# /test/runner
+
+; 教科書單 limb：m=65 → c=2790，再解密回 65
+t-textbook = () {
+    m []i64 = [65]
+    e []i64 = [17]
+    n []i64 = [3233]
+    d []i64 = [2753]
+    ct, ctn = rsa.rsa-encrypt(m, 1, e, 1, n, 1)
+    runner.eq(ctn, 1, 'textbook ct limb count')
+    runner.eq(ct[0], 2790, 'textbook ct == 2790')
+    pt, ptn = rsa.rsa-decrypt(ct, ctn, d, 1, n, 1)
+    runner.eq(ptn, 1, 'textbook pt limb count')
+    runner.eq(pt[0], 65, 'textbook round-trip == 65')
+}
+
+; 雙 limb 金鑰，ct 需與 Python 一致，並解密回原 m
+t-multilimb = () {
+    m []i64 = [2249056121, 28744]
+    e []i64 = [65537]
+    n []i64 = [85, 4294967274]
+    d []i64 = [1566417625, 2172747378]
+    ct, ctn = rsa.rsa-encrypt(m, 2, e, 1, n, 2)
+    runner.eq(ct[0], 2363560722, 'multilimb ct limb0')
+    runner.eq(ct[1], 246890888, 'multilimb ct limb1')
+    pt, ptn = rsa.rsa-decrypt(ct, ctn, d, 2, n, 2)
+    runner.eq(pt[0], 2249056121, 'multilimb pt limb0')
+    runner.eq(pt[1], 28744, 'multilimb pt limb1')
+}
+
+p1 = runner.test('rsa.textbook', t-textbook)
+p2 = runner.test('rsa.multilimb', t-multilimb)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

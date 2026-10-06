@@ -1576,6 +1576,10 @@ yaml-parser.parse-flow-node = (cont-min i64, key-mode bool, flow bool) (idx i64)
 yaml-parser.skip-flow-ws = () {
     !! {
         .skip-spaces()
+
+        ; EOF guard: at-eol() is true at EOF (c==0) but newline() does not advance,
+        ; so an unterminated flow (e.g. [1 without ]) would spin forever here.
+        .eof() -> break
         .at-eol() -> {
             .newline()
             continue
@@ -1762,7 +1766,6 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
             .newline()
             child = .parse-block-indented(indent)
         }
-
         .cur() == 35 -> {
             .skip-to-eol()
             .newline()
@@ -1813,7 +1816,6 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
         ok-vals.push(vals[b])
     }
     src < 0 -> return
-
     .nodes[src].kind != YAML-KIND-MAP -> return
     cnt = .nodes[src].keys.len()
     i <- [0..cnt): {
@@ -1890,7 +1892,6 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
             .advance()
             .skip-spaces()
         }
-
         key < 0 -> {
 
             #{overflow=wrap}
@@ -1904,20 +1905,17 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
             .advance()
             .skip-spaces()
         }
-
         val = -1
         .at-eol() -> {
             .skip-to-eol()
             .newline()
             val = .parse-block-indented(indent)
         }
-
         .cur() == 35 -> {
             .skip-to-eol()
             .newline()
             val = .parse-block-indented(indent)
         }
-
         val < 0 -> {
             vc = .indent-at()
 
@@ -1925,17 +1923,13 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
             val = .parse-block(vc, indent + 1)
         }
         .failed -> break
-
         is-merge = false
-
         .nodes[key].kind == YAML-KIND-STR -> {
-
             .nodes[key].text.eq-full('<<') -> is-merge = true
         }
         is-merge -> {
             keys, vals = .merge-into(keys, vals, val)
         }
-
         is-merge == false -> {
 
             ; 同名键：本地值覆盖已有条目（YAML 合并键语义）
@@ -1954,7 +1948,6 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
                 vals.push(val)
             }
         }
-
         .skip-to-eol()
         .skip-blank-lines()
         .eof() -> break
@@ -1986,13 +1979,11 @@ yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
     tag, anchor = .parse-props()
     .skip-spaces()
     c = .cur()
-
     c == 124 || c == 62 -> {
         idx = .parse-block-scalar(cont-min)
         .set-props(idx, tag, anchor)
         return
     }
-
     .at-eol() || c == 35 -> {
         .skip-to-eol()
         .newline()
@@ -2002,19 +1993,16 @@ yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
         .set-props(idx, tag, anchor)
         return
     }
-
     c == 45 && .is-seq-dash() -> {
         idx = .parse-block-seq(indent)
         .set-props(idx, tag, anchor)
         return
     }
-
     .looks-like-map-entry() -> {
         idx = .parse-block-map(indent)
         .set-props(idx, tag, anchor)
         return
     }
-
     idx = .parse-flow-node(cont-min, false, false)
     .set-props(idx, tag, anchor)
 }
@@ -2104,7 +2092,6 @@ yaml-parser.parse-document = () (idx i64) {
             idx = .parse-block(ind, ind)
             return
         }
-
         .cur() == 35 -> {
             .skip-to-eol()
             .newline()
@@ -2121,12 +2108,10 @@ yaml-parser.parse-document = () (idx i64) {
             idx = .parse-block(ind, ind)
             return
         }
-
         dc = .indent-at()
         idx = .parse-block(dc, dc)
         return
     }
-
     ind = .indent-at()
     idx = .parse-block(ind, ind)
 }
@@ -2446,7 +2431,7 @@ yaml.f64 = () (val f64, ok bool) {
         return
     }
     k == YAML-KIND-INT -> {
-        val = number.i64-to-f64(.pool.nodes[.root].ival)
+        val = math.i64-to-f64(.pool.nodes[.root].ival)
         ok = true
     }
 }
@@ -2538,7 +2523,6 @@ yaml.get = (key str) (out yaml, ok bool) {
     }
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-
     .pool.nodes[.root].kind != YAML-KIND-MAP -> return
     cnt = .pool.nodes[.root].keys.len()
     i <- [0..cnt): {
@@ -2811,7 +2795,6 @@ yaml-json-escape = (s str) (out str) {
 
                 #{overflow=wrap}
                 lo = c - hi * 16
-
                 out = out - '\\' - 'u' - '0' - '0' - yaml-hex-char(hi) - yaml-hex-char(lo)
             }
 
@@ -2820,7 +2803,6 @@ yaml-json-escape = (s str) (out str) {
             }
         }
     }
-
     out = out - '"'
 }
 
@@ -2888,7 +2870,6 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
                 kn = nd.keys[i]
-
                 out = out - yaml-json-escape(pool.nodes[kn].text) - ':'
                 out = out - yaml-json-of(pool, nd.kids[i], d)
             }
@@ -3002,7 +2983,6 @@ yaml-quote = (s str) (out str) {
 
                 #{overflow=wrap}
                 lo = c - hi * 16
-
                 out = out - '\\' - 'u' - '0' - '0' - yaml-hex-char(hi) - yaml-hex-char(lo)
             }
 
@@ -3011,7 +2991,6 @@ yaml-quote = (s str) (out str) {
             }
         }
     }
-
     out = out - '"'
 }
 
@@ -3078,7 +3057,6 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
             total = nd.kids.len()
             i <- [0..total): {
                 i > 0 -> out = out - '\n'
-
                 out = out - yaml-spaces(indent) - '-'
                 k = nd.kids[i]
                 ck = pool.nodes[k].kind
@@ -3096,17 +3074,14 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                         inner = yaml-emit(pool, k, cut, d)
                         inner.len-bytes() > 0 -> {
                             rest = inner.slice-bytes(cut, inner.len-bytes())
-
                             out = out - ' ' - rest
                         }
                         inner.len-bytes() == 0 -> {
-
                             out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                         }
                     }
                 }
                 container == false -> {
-
                     out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                 }
             }
@@ -3126,7 +3101,6 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                 i > 0 -> out = out - '\n'
                 kn = nd.keys[i]
                 ktext = yaml-scalar-repr(pool.nodes[kn])
-
                 out = out - yaml-spaces(indent) - ktext - ':'
                 k = nd.kids[i]
                 ck = pool.nodes[k].kind
@@ -3141,16 +3115,13 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
 
                         #{overflow=wrap}
                         inner = yaml-emit(pool, k, indent + 2, d)
-
                         inner.len-bytes() > 0 -> out = out - '\n' - inner
                         inner.len-bytes() == 0 -> {
-
                             out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                         }
                     }
                 }
                 container == false -> {
-
                     out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
                 }
             }

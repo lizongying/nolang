@@ -190,6 +190,10 @@ func (g *Generator) generateCallExpression(ce *parser.CallExpression) string {
 		if js, handled := g.generateModuleCall(de, ce.Arguments); handled {
 			return js
 		}
+		// Check for f64 math methods on values (x.ceil() → Math.ceil(x), etc.)
+		if js, handled := g.generateFloatMethodCall(de, ce.Arguments); handled {
+			return js
+		}
 		// Check for browser method calls on values (el.set-text(t), ctx.fill-rect(...), etc.)
 		if js, handled := g.generateBrowserMethodCall(de, ce.Arguments); handled {
 			return js

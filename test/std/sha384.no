@@ -1,0 +1,51 @@
+; std-sha384.no — crypto/sha384 模組測試
+;
+; 執行：no test test/std/sha384.no
+; 覆蓋：sha384（[48]byte）、sha384-hex（str）
+; 向量與 shasum -a 384 交叉核對
+
+# /test/runner
+
+EMPTY = ''
+ABC = 'abc'
+TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
+
+t-len = () {
+    h = sha384.sha384(ABC.to-bytes())
+    runner.eq(h.len(), 48, 'sha384 digest is 48 bytes')
+}
+
+t-hex-empty = () {
+    h = sha384.sha384-hex(EMPTY.to-bytes())
+    runner.str-eq(h, '38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b', 96, 'sha384-hex empty')
+}
+
+t-hex-abc = () {
+    h = sha384.sha384-hex(ABC.to-bytes())
+    runner.str-eq(h, 'cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7', 96, 'sha384-hex abc')
+}
+
+t-hex-twoblock = () {
+    h = sha384.sha384-hex(TWOBLOCK.to-bytes())
+    runner.str-eq(h, '3391fdddfc8dc7393707a65b1b4709397cf8b1d162af05abfe8f450de5f36bc6b0455a8520bc4e6f5fe95b1fe3c8452b', 96, 'sha384-hex two-block')
+}
+
+t-bytes-match-hex = () {
+    h = sha384.sha384(ABC.to-bytes())
+    runner.eq(h[0], 0xcb, 'sha384 byte[0]')
+    runner.eq(h[47], 0xa7, 'sha384 byte[47]')
+}
+
+p1 = runner.test('sha384.digest-len', t-len)
+p2 = runner.test('sha384.hex.empty', t-hex-empty)
+p3 = runner.test('sha384.hex.abc', t-hex-abc)
+p4 = runner.test('sha384.hex.two-block', t-hex-twoblock)
+p5 = runner.test('sha384.bytes-match-hex', t-bytes-match-hex)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

@@ -1,0 +1,56 @@
+; std-sha256.no — crypto/sha256 模組測試
+;
+; 執行：no test test/std/sha256.no
+; 覆蓋：sha256（[32]byte）、sha256-hex（str）
+; 向量來源：NIST / RFC 6234 標準測試向量，並與 shasum -a 256 交叉核對
+
+# /test/runner
+
+EMPTY = ''
+ABC = 'abc'
+
+; 56 字元 -> 跨越兩個 512-bit 區塊（padding 進位到第二塊）
+TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
+t-hash-len = () {
+    h = sha256.sha256(ABC.to-bytes())
+    runner.eq(h.len(), 32, 'sha256 digest is 32 bytes')
+}
+
+t-hex-empty = () {
+    h = sha256.sha256-hex(EMPTY.to-bytes())
+    runner.eq(h.len(), 64, 'sha256-hex("") len == 64')
+    runner.str-eq(h, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 64, 'sha256-hex empty')
+}
+
+t-hex-abc = () {
+    h = sha256.sha256-hex(ABC.to-bytes())
+    runner.str-eq(h, 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 64, 'sha256-hex abc')
+}
+
+t-hex-twoblock = () {
+    h = sha256.sha256-hex(TWOBLOCK.to-bytes())
+    runner.str-eq(h, '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1', 64, 'sha256-hex two-block')
+}
+
+t-hash-bytes-match-hex = () {
+
+    ; sha256() 的前 4 個位元組需與 sha256-hex() 開頭 'ba7816bf' 一致
+    h = sha256.sha256(ABC.to-bytes())
+    runner.eq(h[0], 0xba, 'sha256 byte[0] == 0xba')
+    runner.eq(h[1], 0x78, 'sha256 byte[1] == 0x78')
+    runner.eq(h[2], 0x16, 'sha256 byte[2] == 0x16')
+    runner.eq(h[3], 0xbf, 'sha256 byte[3] == 0xbf')
+    runner.eq(h[31], 0xad, 'sha256 byte[31] == 0xad')
+}
+p1 = runner.test('sha256.digest-len', t-hash-len)
+p2 = runner.test('sha256.hex.empty', t-hex-empty)
+p3 = runner.test('sha256.hex.abc', t-hex-abc)
+p4 = runner.test('sha256.hex.two-block', t-hex-twoblock)
+p5 = runner.test('sha256.bytes-match-hex', t-hash-bytes-match-hex)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

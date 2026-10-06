@@ -1,0 +1,28 @@
+; test/std/crc-64.no — crypto/crc-64 模組測試
+;
+; 執行：no test test/std/crc-64.no
+; 覆蓋：crc-64.new / crc-64.hex（CRC-64/ECMA-182 反射：poly 0xC96C5795D7870F42, init 0, 無最終異或）
+; 向量來源：check value「123456789」= 0x2B9C7EE4E2780C8A，並與 python 手算 CRC 交叉核對
+
+# /test/runner
+
+t-check-hex = () {
+    h = crc-64.hex('123456789'.to-bytes())
+    runner.str-eq(h, '2b9c7ee4e2780c8a', 16, 'crc64.hex("123456789") == "2b9c7ee4e2780c8a"')
+}
+
+t-empty = () {
+    crc = crc-64.new(''.to-bytes())
+    runner.eq(crc, 0, 'crc64("") == 0 (init unchanged)')
+}
+
+p1 = runner.test('crc64.check-hex', t-check-hex)
+p2 = runner.test('crc64.empty', t-empty)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

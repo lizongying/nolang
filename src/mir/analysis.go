@@ -2128,8 +2128,29 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 		return
 	}
 
-	// (B) intra-block drops: defined in b, dead after b.
+	// (B) intra-block drops: defined in b, dead after b — PLUS per-edge drops
+	// for values defined in b that stay live into SOME successors but die
+	// entering others. The second half used to be missing: a value defined in
+	// a diamond head (bufio.reader.read-byte's `getfield -> retain` of `.buf`)
+	// is not in liveIn[b], so pass (A) never considered it, and the all-dead
+	// test below placed nothing on the edge where it died — the borrow's
+	// release (and any owned temp's drop) simply never ran on that arm
+	// (a retained refcount per call that took the dead edge).
+	// Placement mirrors (A): END of b when dead on every edge, START of each
+	// dead successor otherwise (a value read by a block is in its liveIn, so
+	// the START drop only ever fires on paths that never read it again).
 	dropAtEnd := map[BlockID][]ValueID{}
+	type startKey struct {
+		v ValueID
+		s BlockID
+	}
+	type endKey struct {
+		v ValueID
+		b BlockID
+	}
+	seenStart := map[startKey]bool{}
+	seenEnd := map[endKey]bool{}
+	dropAtStart := map[BlockID][]ValueID{}
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
 		if blk == nil {
@@ -2142,6 +2163,18 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			}
 			if !liveOut[bid][v] {
 				dropAtEnd[bid] = append(dropAtEnd[bid], v)
+				continue
+			}
+			for _, s := range blk.Succs {
+				if liveIn[s][v] {
+					continue
+				}
+				k := startKey{v, s}
+				if seenStart[k] {
+					continue
+				}
+				seenStart[k] = true
+				dropAtStart[s] = append(dropAtStart[s], v)
 			}
 		}
 	}
@@ -2169,17 +2202,6 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 	}
 
 	// (A) edge drops: live into b, dead entering successor s.
-	type startKey struct {
-		v ValueID
-		s BlockID
-	}
-	type endKey struct {
-		v ValueID
-		b BlockID
-	}
-	seenStart := map[startKey]bool{}
-	seenEnd := map[endKey]bool{}
-	dropAtStart := map[BlockID][]ValueID{}
 	for _, bid := range f.Blocks {
 		blk := m.Block(bid)
 		if blk == nil {
@@ -2574,7 +2596,7 @@ func spawnArgUseWrites(inst *Inst, v ValueID) bool {
 	case OpLoad, OpClone, OpDrop, OpRelease, OpRetain, OpBorrow,
 		OpIndex, OpSliceOp, OpLen, OpCap, OpUtf8At, OpGetField,
 		OpCast, OpTxtFromStr, OpStrFromVec,
-		OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpStrEq,
+		OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpULt, OpULe, OpUGt, OpUGe, OpStrEq,
 		OpAdd, OpSub, OpMul, OpDiv, OpMod, OpUDiv, OpUMod, OpNeg, OpNot,
 		OpAnd, OpOr, OpBitAnd, OpBitOr, OpXor, OpShl, OpShr,
 		OpPhi, OpEnumTag, OpEnumField,

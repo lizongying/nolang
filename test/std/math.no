@@ -1,23 +1,28 @@
 ; std-math.no — math 模組測試
 ;
 ; 執行：no test test/std/math.no
-; 覆蓋：abs / sqrt / pow / hypot / sin / cos / tan / fmod /
-;       degrees / radians / cbrt / ceil / floor / round / trunc / clamp / max / min
+; 覆蓋：pow / hypot / fmod / clamp
+;       sqrt / cbrt —— 已改為 f64 方法形式（x.sqrt()）
+;       f32.* —— 所有 f64 方法均有同名 f32 拓寬委託版本（t-f32-math）
+;       i64.sqrt / i64.is-prime —— 整數方法（t-i64-math）
+;       i8 i16 i32 u8 u16 u32 u64 各配同寬副本（t-int-methods）；
+;       i128 u128 因 runtime 將 128 位整數截斷至 64 位暫不提供（見 math.no 說明）
+;       sin / cos / tan —— 已改為 f64 方法形式（x.sin()）
+;       degrees / radians —— 已改為 f64 方法形式（x.degrees()）
+;       ceil / floor / round / trunc —— 已改為 f64 方法形式（x.ceil()）
+; 不測：max / min —— 為 math 模組的 num 泛型 .no 函數（變參泛型
+;       math.max / math.min，見 test/std/number.no 的 t-max-min），
+;       math 不再提供 f64 內建同名樁；abs 已改為 num 模組方法（num.abs）。
 
 # /test/runner
 
-t-abs = () {
-    a f64 = math.abs(-5.5)
-    runner.f64-eq(a, 5.5, 0.000001, 'abs(-5.5) == 5.5')
-    b f64 = math.abs(3.25)
-    runner.f64-eq(b, 3.25, 0.000001, 'abs(3.25) == 3.25')
-}
-
 t-sqrt = () {
-    r f64 = math.sqrt(4.0)
-    runner.f64-eq(r, 2.0, 0.000001, 'sqrt(4) == 2')
-    r2 f64 = math.sqrt(2.0)
-    runner.f64-eq(r2, 1.4142135623730951, 0.000001, 'sqrt(2)')
+    four f64 = 4.0
+    r f64 = four.sqrt()
+    runner.f64-eq(r, 2.0, 0.000001, '4.0.sqrt() == 2')
+    two f64 = 2.0
+    r2 f64 = two.sqrt()
+    runner.f64-eq(r2, 1.4142135623730951, 0.000001, '2.0.sqrt()')
 }
 
 t-pow = () {
@@ -34,17 +39,26 @@ t-hypot = () {
 
 t-trig = () {
     z = 0.0
-    s f64 = math.sin(z)
+    s f64 = z.sin()
     runner.f64-eq(s, 0.0, 0.000001, 'sin(0) == 0')
-    c f64 = math.cos(z)
+    c f64 = z.cos()
     runner.f64-eq(c, 1.0, 0.000001, 'cos(0) == 1')
-    t f64 = math.tan(z)
+    t f64 = z.tan()
     runner.f64-eq(t, 0.0, 0.000001, 'tan(0) == 0')
 
     ; sin(pi/2) == 1
     half = 3.141592653589793 / 2.0
-    s2 f64 = math.sin(half)
+    s2 f64 = half.sin()
     runner.f64-eq(s2, 1.0, 0.000001, 'sin(pi/2) == 1')
+
+    ; asin/cos 互逆：asin(sin(0.5)) == 0.5
+    a = 0.5
+    v1 f64 = a.sin().asin()
+    runner.f64-eq(v1, 0.5, 0.000001, 'asin(sin(0.5)) == 0.5')
+    v2 f64 = a.cos().acos()
+    runner.f64-eq(v2, 0.5, 0.000001, 'acos(cos(0.5)) == 0.5')
+    v3 f64 = a.atan()
+    runner.f64-eq(v3, 0.4636476090008061, 0.000001, 'atan(0.5)')
 }
 
 t-fmod = () {
@@ -56,12 +70,14 @@ t-fmod = () {
 
 t-deg-rad = () {
     pi = 3.141592653589793
-    d f64 = math.degrees(pi)
-    runner.f64-eq(d, 180.0, 0.000001, 'degrees(pi) == 180')
-    r f64 = math.radians(180.0)
-    runner.f64-eq(r, pi, 0.000001, 'radians(180) == pi')
-    d2 f64 = math.degrees(0.0)
-    runner.f64-eq(d2, 0.0, 0.000001, 'degrees(0) == 0')
+    d f64 = pi.degrees()
+    runner.f64-eq(d, 180.0, 0.000001, 'pi.degrees() == 180')
+    half180 f64 = 180.0
+    r f64 = half180.radians()
+    runner.f64-eq(r, pi, 0.000001, '180.0.radians() == pi')
+    zero f64 = 0.0
+    d2 f64 = zero.degrees()
+    runner.f64-eq(d2, 0.0, 0.000001, '0.0.degrees() == 0')
 }
 
 t-clamp = () {
@@ -74,47 +90,175 @@ t-clamp = () {
 }
 
 t-cbrt = () {
-    r f64 = math.cbrt(27.0)
-    runner.f64-eq(r, 3.0, 0.000001, 'cbrt(27) == 3')
-    n f64 = math.cbrt(-8.0)
-    runner.f64-eq(n, -2.0, 0.000001, 'cbrt(-8) == -2')
+    v27 f64 = 27.0
+    r f64 = v27.cbrt()
+    runner.f64-eq(r, 3.0, 0.000001, '27.0.cbrt() == 3')
+    neg8 f64 = 0.0 - 8.0
+    n f64 = neg8.cbrt()
+    runner.f64-eq(n, -2.0, 0.000001, '(-8.0).cbrt() == -2')
 }
 
 t-rounding = () {
-    c f64 = math.ceil(2.1)
+    v1 f64 = 2.1
+    c f64 = v1.ceil()
     runner.f64-eq(c, 3.0, 0.000001, 'ceil(2.1) == 3')
-    f f64 = math.floor(2.9)
+    v2 f64 = 2.9
+    f f64 = v2.floor()
     runner.f64-eq(f, 2.0, 0.000001, 'floor(2.9) == 2')
-    r f64 = math.round(2.5)
+    v3 f64 = 2.5
+    r f64 = v3.round()
     runner.f64-eq(r, 3.0, 0.000001, 'round(2.5) == 3')
-    r2 f64 = math.round(2.4)
+    v4 f64 = 2.4
+    r2 f64 = v4.round()
     runner.f64-eq(r2, 2.0, 0.000001, 'round(2.4) == 2')
-    t f64 = math.trunc(2.9)
+    v5 f64 = 2.9
+    t f64 = v5.trunc()
     runner.f64-eq(t, 2.0, 0.000001, 'trunc(2.9) == 2')
-    n f64 = math.trunc(-2.9)
+    v6 f64 = -2.9
+    n f64 = v6.trunc()
     runner.f64-eq(n, -2.0, 0.000001, 'trunc(-2.9) == -2')
 }
 
-t-max-min = () {
-    mx i64 = math.max(3, 7)
-    runner.eq(mx, 7, 'max(3,7) == 7')
-    mn i64 = math.min(3, 7)
-    runner.eq(mn, 3, 'min(3,7) == 3')
+t-hyperbolic = () {
+    z f64 = 0.0
+    s f64 = z.sinh()
+    runner.f64-eq(s, 0.0, 0.000001, 'sinh(0) == 0')
+    c f64 = z.cosh()
+    runner.f64-eq(c, 1.0, 0.000001, 'cosh(0) == 1')
+    t f64 = z.tanh()
+    runner.f64-eq(t, 0.0, 0.000001, 'tanh(0) == 0')
+    one f64 = 1.0
+    s2 f64 = one.sinh()
+    runner.f64-eq(s2, 1.1752011936438014, 0.000001, 'sinh(1)')
+}
+
+t-exp-log = () {
+    z f64 = 0.0
+    e f64 = z.exp()
+    runner.f64-eq(e, 1.0, 0.000001, 'exp(0) == 1')
+    one f64 = 1.0
+    l f64 = one.log()
+    runner.f64-eq(l, 0.0, 0.000001, 'log(1) == 0')
+    h f64 = 2.718281828459045
+    lh f64 = h.log()
+    runner.f64-eq(lh, 1.0, 0.000001, 'log(e) == 1')
+    t10 f64 = 1000.0
+    l10 f64 = t10.log10()
+    runner.f64-eq(l10, 3.0, 0.000001, 'log10(1000) == 3')
+    t8 f64 = 8.0
+    l2 f64 = t8.log2()
+    runner.f64-eq(l2, 3.0, 0.000001, 'log2(8) == 3')
+}
+
+t-f32-math = () {
+    v f32 = 4.0
+    s f32 = v.sqrt()
+    runner.f64-eq(f32-to-f64(s), 2.0, 0.000001, 'f32: 4.0.sqrt() == 2')
+    a f32 = 0.0
+    sn f32 = a.sin()
+    runner.f64-eq(f32-to-f64(sn), 0.0, 0.000001, 'f32: 0.0.sin() == 0')
+    ee f32 = 2.7182817
+    lg f32 = ee.log()
+    runner.f64-eq(f32-to-f64(lg), 1.0, 0.00001, 'f32: e.log() == 1')
+    x f32 = 2.5
+    c f32 = x.ceil()
+    runner.f64-eq(f32-to-f64(c), 3.0, 0.000001, 'f32: 2.5.ceil() == 3')
+    pi f32 = 3.1415927
+    dg f32 = pi.degrees()
+    runner.f64-eq(f32-to-f64(dg), 180.0, 0.0001, 'f32: pi.degrees() == 180')
+    w f32 = 27.0
+    cb f32 = w.cbrt()
+    runner.f64-eq(f32-to-f64(cb), 3.0, 0.00001, 'f32: 27.0.cbrt() == 3')
+}
+
+t-i64-math = () {
+    v i64 = 100
+    s i64 = v.sqrt()
+    runner.eq(s, 10, '100.sqrt() == 10')
+    big i64 = 9223372036854775807
+    bs i64 = big.sqrt()
+    runner.eq(bs, 3037000499, 'i64.MAX.sqrt() == 3037000499')
+    neg i64 = -9
+    ns i64 = neg.sqrt()
+    runner.eq(ns, 0, '(-9).sqrt() == 0（負數域無解）')
+    zero i64 = 0
+    zs i64 = zero.sqrt()
+    runner.eq(zs, 0, '0.sqrt() == 0')
+    one i64 = 1
+    os i64 = one.sqrt()
+    runner.eq(os, 1, '1.sqrt() == 1')
+    p i64 = 97
+    runner.is-true(p.is-prime(), '97.is-prime()')
+    twosq i64 = 2
+    runner.is-true(twosq.is-prime(), '2.is-prime()')
+    four i64 = 4
+    runner.is-false(four.is-prime(), '4.is-prime() == false')
+    one2 i64 = 1
+    runner.is-false(one2.is-prime(), '1.is-prime() == false')
+    zero2 i64 = 0
+    runner.is-false(zero2.is-prime(), '0.is-prime() == false')
+}
+
+; 全寬度整數方法副本：i8 i16 i32 u8 u16 u32 u64（i128/u128 見 math.no 說明）
+t-int-methods = () {
+    h8 i8 = 100
+    runner.eq(h8.sqrt(), 10, 'i8: 100.sqrt() == 10')
+    n8 i8 = -9
+    runner.eq(n8.sqrt(), 0, 'i8: (-9).sqrt() == 0（負數守衛走 sext）')
+    pr8 i8 = 97
+    runner.is-true(pr8.is-prime(), 'i8: 97.is-prime()')
+    m8 i8 = 127
+    runner.eq(m8.sqrt(), 11, 'i8: MAX.sqrt() == 11')
+    a i16 = 10000
+    runner.eq(a.sqrt(), 100, 'i16: 10000.sqrt() == 100')
+    neg i16 = -100
+    runner.eq(neg.sqrt(), 0, 'i16: (-100).sqrt() == 0')
+    mx i16 = 32767
+    runner.eq(mx.sqrt(), 181, 'i16: MAX.sqrt() == 181')
+    b i32 = 1000000
+    runner.eq(b.sqrt(), 1000, 'i32: 1000000.sqrt() == 1000')
+    m32 i32 = 2147483647
+    runner.is-true(m32.is-prime(), 'i32: 2147483647.is-prime()')
+    c u8 = 255
+    runner.eq(c.sqrt(), 15, 'u8: 255.sqrt() == 15')
+    p8 u8 = 97
+    runner.is-true(p8.is-prime(), 'u8: 97.is-prime()')
+    z8 u8 = 1
+    runner.is-false(z8.is-prime(), 'u8: 1.is-prime() == false')
+    d u16 = 65535
+    runner.eq(d.sqrt(), 255, 'u16: MAX.sqrt() == 255')
+    t2 u16 = 2
+    runner.is-true(t2.is-prime(), 'u16: 2.is-prime()')
+    e u32 = 4294967295
+    runner.eq(e.sqrt(), 65535, 'u32: MAX.sqrt() == 65535')
+    q4 u32 = 4
+    runner.is-false(q4.is-prime(), 'u32: 4.is-prime() == false')
+    g64 u64 = 18446744073709551615
+    runner.eq(g64.sqrt(), 4294967295, 'u64: MAX.sqrt() == 4294967295')
+    b19 u64 = 10000000000000000000
+    runner.eq(b19.sqrt(), 3162277660, 'u64: 1e19.sqrt() 跨符號位無號比較')
+    p64 u64 = 97
+    runner.is-true(p64.is-prime(), 'u64: 97.is-prime()')
+    q64 u64 = 4
+    runner.is-false(q64.is-prime(), 'u64: 4.is-prime() == false')
 }
 
 ; ── 執行 ──────────────────────────────────────
 
-p1, f1 = runner.test('math.abs', t-abs)
-p2, f2 = runner.test('math.sqrt', t-sqrt)
+p2, f2 = runner.test('f64.sqrt', t-sqrt)
 p3, f3 = runner.test('math.pow', t-pow)
 p4, f4 = runner.test('math.hypot', t-hypot)
-p5, f5 = runner.test('math.sin/cos/tan', t-trig)
+p5, f5 = runner.test('f64.sin/cos/tan', t-trig)
 p6, f6 = runner.test('math.fmod', t-fmod)
-p7, f7 = runner.test('math.degrees/radians', t-deg-rad)
-p9, f9 = runner.test('math.cbrt', t-cbrt)
-p10, f10 = runner.test('math.ceil/floor/round/trunc', t-rounding)
+p7, f7 = runner.test('f64.degrees/radians', t-deg-rad)
+p9, f9 = runner.test('f64.cbrt', t-cbrt)
+p10, f10 = runner.test('f64.ceil/floor/round/trunc', t-rounding)
 p11, f11 = runner.test('math.clamp', t-clamp)
-p12, f12 = runner.test('math.max/min', t-max-min)
+p12, f12 = runner.test('f64.sinh/cosh/tanh', t-hyperbolic)
+p13, f13 = runner.test('f64.exp/log/log10/log2', t-exp-log)
+p14, f14 = runner.test('f32.math', t-f32-math)
+p15, f15 = runner.test('i64.sqrt/is-prime', t-i64-math)
+p16, f16 = runner.test('int-width methods', t-int-methods)
 
 total = runner.summary()
 f = runner.failed-count()

@@ -555,32 +555,47 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     r-val = val
 
-    out = with-cap(10)
-
     #{overflow=wrap}
     max-prefix = (1 << prefix-bits) - 1
     val < max-prefix -> {
 
+        out = with-len(1)
         out[0] = prefix-byte | val
         return
     }
 
-    ; 第一個 byte: prefix 全 1
-    out[0] = prefix-byte | max-prefix
-    n = 1
+    ; 多 byte 编码：所需字节数 = 1(首 byte) + 延续 byte 数 + 1(尾 byte，值为 0 也要写)
+    ; （原实现用 out[n] = 0 写尾部零 byte，零写入不会推进长度，导致
+    ;   val == max-prefix 时丢失 0x00 延续 byte，RFC 7541 回环解码失败）
 
     #{overflow=wrap}
-    r-val = r-val - max-prefix
-    (r-val >= 128) {
+    t = r-val - max-prefix
+    n = 2
+    (t >= 128) {
 
-        out[n] = (r-val & 127) | 128
+        #{overflow=wrap}
+        t = t >> 7
 
         #{overflow=wrap}
         n = n + 1
+    }
+    out = with-len(n)
+
+    ; 第一个 byte: prefix 全 1
+    out[0] = prefix-byte | max-prefix
+
+    #{overflow=wrap}
+    r-val = r-val - max-prefix
+    i = 1
+    (r-val >= 128) {
+
+        out[i] = (r-val & 127) | 128
+
+        #{overflow=wrap}
+        i = i + 1
         r-val = r-val >> 7
     }
-
-    out[n] = r-val
+    out[i] = r-val
 }
 
 ; decode-int: 從 data 的 pos 位置解碼變長整數
@@ -640,12 +655,13 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 ; 返回 out=編碼後字串
 encode-str = (s str) (out str) {
 
-    #{overflow=wrap}
-    out = with-cap(s.len-bytes() + 8)
-
     ; H bit=0, 長度用 7-bit prefix 編碼
-    len-out = ' '
     len-out = encode-int(s.len-bytes(), 7, 0)
+
+    ; 預先設定總長度（原 with-cap + 逐 byte 寫入在長度 byte 為 0x00
+    ;   （空字串）時零寫入不推進長度，產生 0 byte 輸出，回環解碼失敗）
+    #{overflow=wrap}
+    out = with-len(len-out.len-bytes() + s.len-bytes())
 
     ; 複製長度編碼到 out
     i <- [0..len-out.len-bytes()): {

@@ -242,6 +242,7 @@ ip-addr.is-loopback = () (yes bool) {
 ip-addr.is-private = () (yes bool) {
 
     ; 10.0.0.0/8
+    yes = false
     {
         .a == 10 -> {
             yes = true
@@ -251,19 +252,18 @@ ip-addr.is-private = () (yes bool) {
         .a == 172 -> {
 
             ; 172.16.0.0/12 (172.16.0.0 ~ 172.31.255.255)
-            .b >= 16 && .b <= 31
+            yes = .b >= 16 && .b <= 31
+            return
         }
 
         .a == 192 -> {
 
             ; 192.168.0.0/16
-            .b == 168
-        }
-
-        -> {
-            yes = true
+            yes = .b == 168
             return
         }
+
+        ->
     }
 }
 
@@ -334,7 +334,10 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
 
     ; 計算子網遮罩
     self-v = .to-u32()
-    base-v = base.to-u32()
+
+    ; 注意：在方法体内對同型參數呼叫方法（base.to-u32()）會錯誤綁定到隱式接收者，
+    ; 導致取到 self 自己的值（實測 self-v == base-v 恆成立）；改用欄位直讀繞過。
+    base-v = (base.a << 24) | (base.b << 16) | (base.c << 8) | base.d
 
     ; 建立遮罩：高位 prefix-len 個 1
     mask = 0

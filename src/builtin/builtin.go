@@ -119,19 +119,6 @@ func FindBuiltinMethod(name string) *BuiltinMethod {
 	return nil
 }
 
-// HasFloatOverload reports whether there exists a second registration for the
-// same method name that carries an LLVMIntrinsic (f64 path). Used by hir2mir to
-// decide whether an integer-result builtin call should have its result type
-// overridden to f64 when the argument is float (e.g. math.abs collision).
-func HasFloatOverload(name string) bool {
-	for i := range BuiltinMethodList {
-		if BuiltinMethodList[i].MethodName == name && BuiltinMethodList[i].LLVMIntrinsic != "" {
-			return true
-		}
-	}
-	return false
-}
-
 // optionReturnBuiltins lists builtins whose std declaration is a single option
 // (?i64) even though the registry Return carries the raw C pair (T, ok):
 //

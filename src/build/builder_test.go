@@ -11,10 +11,24 @@ import (
 	"testing"
 )
 
-// toolAvailable 報告指定工具是否在 $PATH 中可用。
+// toolAvailable 報告指定工具是否在本機「可執行」。
+//
+// 僅用 exec.LookPath 檢查存在是不夠的：一個存在於 PATH 但與本機指令集不相容的
+// 二進位（例如 arm64 Mac 上未裝 Rosetta 時的 x86_64 wasmtime）會「存在但無法 spawn」。
+// 這類失敗是環境缺陷，不是被测代碼的錯誤，依賴它的測試應該 t.Skip 而非 t.Fatal。
+// 因此用一次 `--version` 探測真實可執行性：只有「無法啟動」（非 ExitError）才判定不可用；
+// 工具正常啟動後即便以非零碼退出（不支援 --version）仍視為可用。
 func toolAvailable(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
+	if _, err := exec.LookPath(name); err != nil {
+		return false
+	}
+	cmd := exec.Command(name, "--version")
+	if err := cmd.Run(); err != nil {
+		if _, isExit := err.(*exec.ExitError); !isExit {
+			return false // 無法 spawn：指令集／平台不相容
+		}
+	}
+	return true
 }
 
 // TestBuildLLVMInternalWasiMissingSysroot 驗證：當 target 為 wasm32-wasi 且

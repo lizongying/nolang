@@ -241,7 +241,7 @@ compress = (x []byte, y []byte) (out []byte) {
         blake-g(v, base + 3, base + 4, base + 9, base + 14, 0, 0)
     }
 
-    ; 應用 P 函數到每列
+    ; 應用 P 函數到每列（stride 8），依 RFC 9106 §3.4：T[j] = v[base + 8*j]
     i <- [0..8): {
 
         base = i
@@ -250,49 +250,25 @@ compress = (x []byte, y []byte) (out []byte) {
         blake-g(v, base + 0, base + 32, base + 64, base + 96, 0, 0)
 
         #{overflow=wrap}
+        blake-g(v, base + 8, base + 40, base + 72, base + 104, 0, 0)
+
+        #{overflow=wrap}
         blake-g(v, base + 16, base + 48, base + 80, base + 112, 0, 0)
 
         #{overflow=wrap}
-        blake-g(v, base + 1, base + 33, base + 65, base + 97, 0, 0)
+        blake-g(v, base + 24, base + 56, base + 88, base + 120, 0, 0)
 
         #{overflow=wrap}
-        blake-g(v, base + 17, base + 49, base + 81, base + 113, 0, 0)
+        blake-g(v, base + 0, base + 40, base + 80, base + 120, 0, 0)
 
         #{overflow=wrap}
-        blake-g(v, base + 2, base + 34, base + 66, base + 98, 0, 0)
+        blake-g(v, base + 8, base + 48, base + 88, base + 96, 0, 0)
 
         #{overflow=wrap}
-        blake-g(v, base + 18, base + 50, base + 82, base + 114, 0, 0)
+        blake-g(v, base + 16, base + 56, base + 64, base + 104, 0, 0)
 
         #{overflow=wrap}
-        blake-g(v, base + 3, base + 35, base + 67, base + 99, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 19, base + 51, base + 83, base + 115, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 4, base + 36, base + 68, base + 100, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 20, base + 52, base + 84, base + 116, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 5, base + 37, base + 69, base + 101, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 21, base + 53, base + 85, base + 117, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 6, base + 38, base + 70, base + 102, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 22, base + 54, base + 86, base + 118, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 7, base + 39, base + 71, base + 103, 0, 0)
-
-        #{overflow=wrap}
-        blake-g(v, base + 23, base + 55, base + 87, base + 119, 0, 0)
+        blake-g(v, base + 24, base + 32, base + 72, base + 112, 0, 0)
     }
 
     ; 輸出 = (X XOR Y) XOR Z（即 R XOR P(R)）

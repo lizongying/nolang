@@ -212,13 +212,42 @@ func (f *formatter) formatBareMatchExpressionSubj(e *parser.IfExpression, subjOv
 				}
 			}
 		}
+		// 收集包裝層內的 bare-match 臂 IfExpression。independent-guard fast path 把
+		// 每個 guard 臂平成兄弟 ExpressionStatement；rawCond/索引歸一化只包一條 if 鏈
+		// （單一 ExpressionStatement，且 wrapper.MatchedExpr 非 nil 或帶合成主體）。
+		var wrapperArms []*parser.IfExpression
 		for _, stmt := range e.Consequence.Statements {
 			if es, ok := stmt.(*parser.ExpressionStatement); ok {
 				if inner, ok := es.Expression.(*parser.IfExpression); ok && f.hasRT(inner, parser.RTBareMatch) {
-					f.formatBareMatchExpressionSubj(inner, subjOverride)
-					return
+					wrapperArms = append(wrapperArms, inner)
 				}
 			}
+		}
+		// independent-guard 形態（無主語、多個兄弟臂）：全部臂輸出在同一 `{ }` 內。
+		// 舊碼只遞迴第一個臂便 return，會丟棄其餘臂（revwalk.no guard 丟分支根因）。
+		if subjOverride == nil && e.MatchedExpr == nil && len(wrapperArms) > 1 {
+			f.write("{")
+			if obc := f.obcOf(e); obc != nil && len(obc.List) > 0 {
+				f.write("; ")
+				for _, c := range obc.List {
+					f.write(strings.TrimSpace(c.Text))
+				}
+			}
+			f.indent++
+			for i, arm := range wrapperArms {
+				if i > 0 {
+					f.write("\n")
+				}
+				f.writeBareMatchArm(arm)
+			}
+			f.indent--
+			f.newline()
+			f.write("}")
+			return
+		}
+		for _, inner := range wrapperArms {
+			f.formatBareMatchExpressionSubj(inner, subjOverride)
+			return
 		}
 	}
 	displaySubj := e.MatchedExpr

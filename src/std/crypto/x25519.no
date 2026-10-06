@@ -1698,3 +1698,69 @@ x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
     ; 計算公鑰
     pub = x25519-scalarmult-base(priv)
 }
+
+; ═══════════════════════════════════════════════
+; 「回值形式」域元素操作（供 ed25519 等其他曲線模組使用）
+; ═══════════════════════════════════════════════
+;
+; 跨模組呼叫時，「就地寫入 slice 參數」不會回傳給呼叫端，只有「回傳值」會。
+; 因此其他曲線模組不能直接把配置好的 []i64 傳進來讓 fe-* 填充。
+; 下面這些包裝函式在本模組內（fe-* 同模組，就地寫入有效）先算好結果，
+; 再以「新配置的 []i64（長度 10）」或 [32]byte 回傳，呼叫端只需依賴回值。
+
+; fe-zero-v: 回傳零域元素
+fe-zero-v = () (h []i64) {
+    h = with-len(10)
+    fe-zero(h)
+}
+
+; fe-one-v: 回傳一域元素
+fe-one-v = () (h []i64) {
+    h = with-len(10)
+    fe-one(h)
+}
+
+; fe-add-v: 回傳 a + b
+fe-add-v = (a []i64, b []i64) (h []i64) {
+    h = with-len(10)
+    fe-add(h, a, b)
+}
+
+; fe-sub-v: 回傳 a - b
+fe-sub-v = (a []i64, b []i64) (h []i64) {
+    h = with-len(10)
+    fe-sub(h, a, b)
+}
+
+; fe-mul-v: 回傳 a * b mod p
+fe-mul-v = (a []i64, b []i64) (h []i64) {
+    h = with-len(10)
+    fe-mul(h, a, b)
+}
+
+; fe-sq-v: 回傳 a^2 mod p
+fe-sq-v = (a []i64) (h []i64) {
+    h = with-len(10)
+    fe-sq(h, a)
+}
+
+; fe-invert-v: 回傳 a^(-1) mod p
+fe-invert-v = (a []i64) (h []i64) {
+    h = with-len(10)
+    fe-invert(h, a)
+}
+
+; fe-frombytes-v: 從 32 位元組（小端）回傳域元素
+fe-frombytes-v = (s [32]byte) (h []i64) {
+    h = with-len(10)
+    fe-frombytes(h, s)
+}
+
+; fe-tobytes-v: 將域元素序列化為 32 位元組（小端）回傳
+; [32]byte 為值傳遞，直接 fe-tobytes(s, h) 不會寫回回傳槽，
+; 故先寫入局部陣列再整体賦值給回傳值 s。
+fe-tobytes-v = (h []i64) (s [32]byte) {
+    t [32]byte
+    fe-tobytes(t, h)
+    s = t
+}

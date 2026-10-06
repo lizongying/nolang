@@ -1,15 +1,17 @@
-; number — 數字操作
+; number — 數字操作（方法形式 API）
 ;
-; 泛型數字函數，支援 i64、f64 等數值型別。
-; 包含：max, min, abs, clamp, sign, even, odd,
-; gcd, lcm, pow, div, mod, swap, is-nan, is-inf
-; 範圍常數：i8/i16/i32/i64/u8/u16/u32/u64 的 MIN/MAX
-
-; max: 回傳最大值（variadic，支援 num 所有成員）
-
-int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
-float = f32 | f64
-num = int | float
+; std 數字系全部「方法形式」API 集中於本模組：具體型別 to-str
+; （i64/i32/i16/i8/u64/u32/u16/u8/byte/f64/f32）、f64/f32 數學方法
+; （sqrt, cbrt, 三角/雙曲, ceil/floor/round/trunc, exp/log, degrees/radians）、
+; 整數 sqrt / is-prime。
+; 「函數形式」API（max, min, pow, hypot, atan2, fmod, clamp, even, odd, gcd,
+; lcm, div, mod, swap, arr-zero, 型別轉換, 數字轉字串底層函數, 位元操作）
+; 全部在 math 模組（std/math.no）；唯一例外：整數冪 pow（int 泛型）與
+; math 的 pow（f64）同名衝突，留在本模組。
+; 聯合型別別名與成員方法：num → std/num.no, int → std/int.no,
+; float → std/float.no。
+; 範圍常數（用於範圍檢查，如 str.to-i8 等）：i8/i16/i32/i64/u8/u16/u32/u64
+; 的 MIN/MAX 與 INF 保留在本模組。
 
 ; ═══════════════════════════════════════════════
 ; 數值範圍常數（用於範圍檢查，如 str.to-i8 等）
@@ -55,396 +57,7 @@ u64.MAX = 0 - 1
 
 INF = 1.0 / 0.0
 
-max = (a ..num) (r num) {
-
-    #{index-out=zero}
-    r = a[0]
-    n = len(a)
-    i <- [1..n): {
-        a[i] > r -> {
-
-            #{index-out=zero}
-            r = a[i]
-        }
-    }
-}
-
-min = (a ..num) (r num) {
-
-    #{index-out=zero}
-    r = a[0]
-    n = len(a)
-    i <- [1..n): {
-        a[i] < r -> {
-
-            #{index-out=zero}
-            r = a[i]
-        }
-    }
-}
-
-abs = (a num) (r num) {
-    {
-        a < 0 -> {
-
-            #{overflow=wrap}
-            r = 0 - a
-        }
-
-        -> r = a
-    }
-}
-
-; clamp: 限制在 [lo, hi] 範圍內
-; 用法：x.clamp(lo, hi, r)
-num.clamp = (lo num, hi num) (r num) {
-    {
-        . < lo -> r = lo
-
-        . > hi -> r = hi
-
-        -> r = .
-    }
-}
-
-; sign: 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
-num.sign = () (r num) {
-    {
-        . > 0 -> r = 1
-
-        . < 0 -> {
-
-            #{overflow=wrap}
-            r = 0 - 1
-        }
-
-        -> r = 0
-    }
-}
-
-; even: 是否為偶數 — 對所有整數型別（含無符號）通用
-even = (a int) (yes bool) {
-
-    #{overflow=wrap}
-    r = a % 2
-    yes = (r == 0)
-}
-
-; odd: 是否為奇數 — 對所有整數型別（含無符號）通用
-odd = (a int) (yes bool) {
-
-    #{overflow=wrap}
-    r = a % 2
-    yes = (r != 0)
-}
-
-; gcd: 最大公因數（輾轉相除法）
-gcd = (a int, b int) (r int) {
-    ra = a
-    rb = b
-
-    #{overflow=wrap}
-    ra < 0 -> ra = 0 - ra
-
-    #{overflow=wrap}
-    rb < 0 -> rb = 0 - rb
-    (rb != 0) {
-
-        t = rb
-        rb = ra % rb
-        ra = t
-    }
-    r = ra
-}
-
-; lcm: 最小公倍數
-lcm = (a int, b int) (r int) {
-
-    a == 0 || b == 0 -> {
-        r = 0
-        return
-    }
-    g = gcd(a, b)
-
-    #{overflow=wrap}
-    r = a / g * b
-}
-
-; pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
-; 使用快速冪算法 O(log n)
-pow = (a int, n int) (r int) {
-    rn = n
-    r = 1
-    base = a
-    (rn > 0) {
-
-        #{overflow=wrap}
-        rn & 1 == 1 -> r = r * base
-
-        #{overflow=wrap}
-        base = base * base
-        rn = rn >> 1
-    }
-}
-
-; div: 整數除法（向零截斷，與 C/Go/Java 的 `a / b` 一致）
-;
-; -7 / 2 == -3（不是 -4：floor 語義請自行改用 sign 判斷）
-; ⚠️ b == 0 時與裸 `/` 一樣會 trap（執行期無除零檢查）。
-div = (a int, b int) (r int) {
-
-    #{overflow=wrap}
-    r = a / b
-}
-
-; mod: 整數取餘（餘數符號跟隨被除數 a，與 C/Go/Java 的 `a % b` 一致）
-;
-; -7 % 2 == -1（floor-mod 語義請自行改用 sign 判斷）
-; ⚠️ b == 0 時與裸 `%` 一樣會 trap。
-mod = (a int, b int) (r int) {
-
-    #{overflow=wrap}
-    r = a % b
-}
-
-; i64-to-f64: 整數轉浮點
-#{buildin}
-i64-to-f64 = (a i64) (r f64) {
-}
-
-;     r = a
-; }
-
-; f64-to-i64: 浮點轉整數（截斷）
-#{buildin}
-f64-to-i64 = (a f64) (r i64) {
-}
-
-;     r = a
-; }
-
-; f32-to-f64: 將 f32 提升為 f64
-#{buildin}
-f32-to-f64 = (a f32) (r f64) {
-}
-
-; f64-to-f32: 將 f64 降為 f32（可能損失精度）
-#{buildin}
-f64-to-f32 = (a f64) (r f32) {
-}
-
-; ═══════════════════════════════════════════════
-; 整數轉字串（Nolang 實現，取代 sprintf CLibCall）
-; ═══════════════════════════════════════════════
-
-; i64-to-str: 將 i64 轉為字串
-; 處理 0、正數、負數。負數的絕對值以 u64 表示（2's 補數 0 - (u64)n），
-; 避免 n = 0 - n 在 i64.MIN 時溢出（i64.MIN 的絕對值 2^63 超出 i64 範圍）。
-; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 n.to-str()（i64.to-str，本函數為其底層實現）。
-i64-to-str = (n i64) (out str) {
-
-    n == 0 -> {
-        out = with-cap(1)
-
-        out[0] = 48
-        return
-    }
-    neg = 0
-    mag u64 = 0
-
-    ; 負數：以 u64 取絕對值，避開 i64.MIN 溢出。
-    ; 隱式 i64 -> u64（位元組重新詮釋）後做 0 - mag（u64 回繞）即得絕對值。
-    #{overflow=wrap}
-    n < 0 -> {
-
-        neg = 1
-        mag = n
-        mag = 0 - mag
-    }
-
-    -> {
-        mag = n
-    }
-    digits = 0
-    tmp = mag
-    (tmp != 0) {
-
-        #{overflow=wrap}
-        digits = digits + 1
-
-        #{overflow=wrap}
-        tmp = tmp / 10
-    }
-    total = digits
-
-    #{overflow=wrap}
-    neg == 1 -> total = total + 1
-    out = with-cap(total)
-
-    #{overflow=wrap}
-    pos = digits - 1
-    neg == 1 -> pos = digits
-    (mag != 0) {
-
-        #{overflow=wrap}
-        d = mag % 10
-
-        #{overflow=wrap}
-        ascii = d + 48
-
-        out[pos] = ascii
-
-        #{overflow=wrap}
-        mag = mag / 10
-
-        #{overflow=wrap}
-        pos = pos - 1
-    }
-    neg == 1 -> {
-
-        out[0] = 45
-    }
-}
-
-; u64-to-str: 將 u64 轉為字串
-; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 u.to-str()（u64.to-str，本函數為其底層實現）。
-u64-to-str = (u u64) (out str) {
-    ru = u
-
-    u == 0 -> {
-        out = with-cap(1)
-
-        out[0] = 48
-        return
-    }
-    tmp u64 = ru
-    digits = 0
-    (tmp > 0) {
-
-        #{overflow=wrap}
-        digits = digits + 1
-
-        #{overflow=wrap}
-        tmp = tmp / 10
-    }
-    out = with-cap(digits)
-
-    #{overflow=wrap}
-    pos = digits - 1
-    (ru > 0) {
-
-        #{overflow=wrap}
-        d = ru % 10
-
-        #{overflow=wrap}
-        ascii = d + 48
-
-        out[pos] = ascii
-
-        #{overflow=wrap}
-        ru = ru / 10
-
-        #{overflow=wrap}
-        pos = pos - 1
-    }
-}
-
-; char-to-str: 將 char（Unicode 碼點）轉為 UTF-8 編碼字串
-; 取代舊版 sprintf %c（僅能處理單位元組 ASCII）
-; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 char.to-str()（見 std/char.no），
-;    如 c char = 'A'; c.to-str()；本函數僅為舊調用點保留兼容。
-char-to-str = (c char) (out str) {
-    out = with-cap(4)
-    {
-        c < 0x80 -> {
-            out[0] = c
-        }
-
-        c < 0x800 -> {
-            out[0] = 0xc0 | ((c >> 6) & 0x1f)
-
-            out[1] = 0x80 | (c & 0x3f)
-        }
-
-        c < 0x10000 -> {
-            out[0] = 0xe0 | ((c >> 12) & 0x0f)
-
-            out[1] = 0x80 | ((c >> 6) & 0x3f)
-
-            out[2] = 0x80 | (c & 0x3f)
-        }
-
-        -> {
-            out[0] = 0xf0 | ((c >> 18) & 0x07)
-
-            out[1] = 0x80 | ((c >> 12) & 0x3f)
-
-            out[2] = 0x80 | ((c >> 6) & 0x3f)
-
-            out[3] = 0x80 | (c & 0x3f)
-        }
-    }
-}
-
-; int.to-str: 整數轉字串（聯合類型方法，涵蓋所有整數類型）
-; transpiler 會將 i64.to-str() 等解析為 int.to-str()
-; 直接使用算術運算，避免 int → u64 的類型轉換問題
-; 注意：不對負數取絕對值（0 - n 在 n = i64.MIN 時會溢出），
-; 改為直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
-int.to-str = () (out str) {
-
-    . == 0 -> {
-        out = with-cap(1)
-
-        out[0] = 48
-        return
-    }
-    neg = 0
-    n = .
-    n < 0 -> neg = 1
-    digits = 0
-    tmp = n
-    (tmp != 0) {
-
-        #{overflow=wrap}
-        digits = digits + 1
-
-        #{overflow=wrap}
-        tmp = tmp / 10
-    }
-    total = digits
-
-    #{overflow=wrap}
-    neg == 1 -> total = total + 1
-    out = with-cap(total)
-
-    #{overflow=wrap}
-    pos = digits - 1
-    neg == 1 -> pos = digits
-    (n != 0) {
-
-        #{overflow=wrap}
-        d = n % 10
-
-        #{overflow=wrap}
-        neg == 1 -> d = 0 - d
-
-        #{overflow=wrap}
-        ascii = d + 48
-
-        out[pos] = ascii
-
-        #{overflow=wrap}
-        n = n / 10
-
-        #{overflow=wrap}
-        pos = pos - 1
-    }
-    neg == 1 -> {
-
-        out[0] = 45
-    }
-}
+; int.to-str 聯合方法已移至 std/int.no（此處保留具體型別 i64.to-str 等方法）
 
 ; i64.to-str: i64 轉字串
 i64.to-str = () (out str) {
@@ -491,275 +104,6 @@ byte.to-str = () (out str) {
     out = u64-to-str(.)
 }
 
-; ═══════════════════════════════════════════════
-; 浮點轉字串（Nolang 實現，取代 sprintf %g CLibCall）
-; ═══════════════════════════════════════════════
-
-LN10 = 2.302585092994046
-
-; f64-to-str: 將 f64 轉為字串（模擬 C %g 格式）
-; 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號
-; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 x.to-str()（f64.to-str，本函數為其底層實現）。
-f64-to-str = (x f64) (out str) {
-
-    ; 特殊值處理
-    ; 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
-    {
-        x != x -> {
-            out = 'nan'.copy()
-            return
-        }
-
-        x == 0.0 -> {
-            out = '0'.copy()
-            return
-        }
-
-        x + x == x -> {
-            x < 0.0 -> {
-                out = '-inf'.copy()
-                return
-            }
-            out = 'inf'.copy()
-            return
-        }
-    }
-
-    ; 符號處理
-    neg = 0
-    ax = x
-
-    x < 0.0 -> {
-
-        neg = 1
-        ax = 0.0 - x
-    }
-
-    ; 計算指數 e = floor(log10(ax))
-    e = f64-to-i64(math.floor(math.log10(ax)))
-
-    ; 邊界調整：若 ax >= 10^(e+1)，則 e++
-    #{overflow=wrap}
-    upper f64 = math.exp(i64-to-f64(e + 1) * LN10)
-
-    #{overflow=wrap}
-    ax >= upper -> e = e + 1
-
-    ; 計算 6 位有效數字的整數尾數
-    ; m = round(ax / 10^e * 100000)
-    #{overflow=wrap}
-    base f64 = math.exp(i64-to-f64(e) * LN10)
-
-    #{overflow=wrap}
-    ax < base -> {
-
-        #{overflow=wrap}
-        e = e - 1
-        base = math.exp(i64-to-f64(e) * LN10)
-    }
-
-    m = f64-to-i64(ax / base * 100000.0 + 0.5)
-
-    ; 四捨五入溢出處理
-    #{overflow=wrap}
-    m >= 1000000 -> {
-
-        #{overflow=wrap}
-        m = m / 10
-        e = e + 1
-    }
-
-    ; 將 m 轉為 6 位數字字串（補前導零）
-    digits str = with-cap(6)
-    tmp = m
-    i = 5
-    (i >= 0) {
-
-        #{overflow=wrap}
-        digits[i] = (tmp % 10) + 48
-
-        #{overflow=wrap}
-        tmp = tmp / 10
-
-        #{overflow=wrap}
-        i = i - 1
-    }
-
-    ; 找最後一個非零位（用於去尾隨零）
-    last-nz = 0
-    i = 5
-    (i >= 0) {
-
-        digits[i] != 48 -> {
-            last-nz = i
-            i = -1
-        }
-
-        #{overflow=wrap}
-        i = i - 1
-    }
-
-    ; 決定格式
-    use-sci = 0
-    {
-        e < -4 -> use-sci = 1
-
-        e >= 6 -> use-sci = 1
-    }
-
-    #{overflow=wrap}
-    use-sci == 1 -> {
-
-        ; 科學記號：d.ddddde±NN
-        out = with-cap(20)
-        pos = 0
-        neg == 1 -> {
-
-            out[pos] = 45
-            pos = pos + 1
-        }
-
-        out[pos] = digits[0]
-        pos = pos + 1
-        last-nz >= 1 -> {
-
-            out[pos] = 46
-            pos = pos + 1
-            j = 1
-            (j <= last-nz) {
-
-                out[pos] = digits[j]
-                pos = pos + 1
-                j = j + 1
-            }
-        }
-
-        out[pos] = 101
-        pos = pos + 1
-        ae i64 = e
-        {
-            ae < 0 -> {
-                out[pos] = 45
-                pos = pos + 1
-                ae = 0 - ae
-            }
-
-            -> {
-                out[pos] = 43
-                pos = pos + 1
-            }
-        }
-        estr = i64-to-str(ae)
-        estr.len-bytes() == 1 -> {
-
-            out[pos] = 48
-            pos = pos + 1
-        }
-        j = 0
-        (j < estr.len-bytes()) {
-
-            out[pos] = estr[j]
-            pos = pos + 1
-            j = j + 1
-        }
-        return
-    }
-
-    ; 固定記號
-    #{overflow=wrap}
-    e >= 0 -> {
-
-        #{overflow=wrap}
-        int-digits = e + 1
-        total = int-digits
-        neg == 1 -> total = total + 1
-        last-nz >= int-digits -> {
-
-            #{overflow=wrap}
-            total = total + 1
-            total = total + (last-nz - int-digits + 1)
-        }
-        out = with-cap(total)
-        pos = 0
-        neg == 1 -> {
-
-            out[pos] = 45
-            pos = pos + 1
-        }
-        j = 0
-        (j < int-digits) {
-
-            out[pos] = digits[j]
-            pos = pos + 1
-            j = j + 1
-        }
-        last-nz >= int-digits -> {
-
-            out[pos] = 46
-            pos = pos + 1
-            j = int-digits
-            (j <= last-nz) {
-
-                out[pos] = digits[j]
-                pos = pos + 1
-                j = j + 1
-            }
-        }
-        return
-    }
-
-    ; e < 0: 0.00dddd
-    #{overflow=wrap}
-    lead-zeros = 0 - e - 1
-
-    #{overflow=wrap}
-    total = 2 + lead-zeros + last-nz + 1
-
-    #{overflow=wrap}
-    neg == 1 -> total = total + 1
-    out = with-cap(total)
-    pos = 0
-
-    #{overflow=wrap}
-    neg == 1 -> {
-
-        out[pos] = 45
-        pos = pos + 1
-    }
-
-    out[pos] = 48
-
-    #{overflow=wrap}
-    pos = pos + 1
-
-    out[pos] = 46
-
-    #{overflow=wrap}
-    pos = pos + 1
-    j = 0
-    (j < lead-zeros) {
-
-        out[pos] = 48
-
-        #{overflow=wrap}
-        pos = pos + 1
-
-        #{overflow=wrap}
-        j = j + 1
-    }
-    j = 0
-    (j <= last-nz) {
-
-        out[pos] = digits[j]
-
-        #{overflow=wrap}
-        pos = pos + 1
-
-        #{overflow=wrap}
-        j = j + 1
-    }
-}
-
 ; f64.to-str: f64 轉字串（方法）
 f64.to-str = () (out str) {
     out = f64-to-str(.)
@@ -772,81 +116,836 @@ f32.to-str = () (out str) {
     out = f64-to-str(d)
 }
 
-; 注意：不定義 float.to-str 聯合方法。原因：
-; union 方法的 codegen 分派在無法推斷局部變數型別時會回退到非單態化名稱，
-; 導致 undefined @float.to-str 錯誤。改為依賴 codegen 的 fallback 機制：
-; 當變數 LLVM 型別為 double 時，自動分派到 f64.to-str。
+; 注意：不定義 float.to-str 聯合方法（原因見 std/float.no 末尾說明）。
 
-; div: 整數除法，回傳商（a ÷ b）
-; b 為 0 時行為未定義（執行時期錯誤）
-int.div = (b int) (q ?int) {
-    q = . / b
+; int.div / int.mod 已移至 std/int.no；float.div 已移至 std/float.no
+
+; float.is-nan / float.is-inf 已移至 std/float.no
+
+; f32 同名方法：以下所有 f64 方法均配 f32 版本，方法體統一
+; 「f32-to-f64 拓寬 → 調 f64 方法 → f64-to-f32 收窄」（同上方
+; f32.to-str 先例），以 double 精度計算後收窄。不寫成 float
+; union 泛型方法：#{buildin} 空體樁沒有函數體可供 monomorphizeUnions
+; 單態化複製；純 .no 方法（degrees/radians/cbrt）的 f32 實例體內
+; f32*f64 混合算術會被提升成 f64，破壞「接收者 f32 → 返回 f32」。
+; 故具體雙套（f64./f32.）是唯一穩定形態。
+
+; 幂与根（f64/f32 方法）
+#{buildin}
+f64.sqrt = () (res f64) {
 }
 
-float.div = (b float) (q float) {
-    q = . / b
+f32.sqrt = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.sqrt())
 }
 
-; mod: 整數取模，回傳餘數（a % b）
-; b 為 0 時行為未定義（執行時期錯誤）
-int.mod = (b int) (r ?int) {
-    r = . % b
+; cbrt: 立方根（f64 方法）
+; 使用 exp(log(|x|) / 3) 實現；方法體不调 pow（整數冪 pow 見本模組，f64 pow 見 std/math.no）
+f64.cbrt = () (res f64) {
+    . == 0.0 -> {
+        res = 0.0
+        return
+    }
+    {
+        . < 0.0 -> {
+            ax f64 = 0.0 - .
+            l f64 = ax.log()
+            t f64 = l / 3.0
+            res = 0.0 - t.exp()
+        }
+
+        -> {
+            l f64 = .log()
+            t f64 = l / 3.0
+            res = t.exp()
+        }
+    }
 }
 
-; swap: 交換兩個值
-swap = () (a t, b t) {
-    tmp = a
-    a = b
-    b = tmp
+f32.cbrt = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.cbrt())
 }
 
-; is-nan: 判斷是否為 NaN
-float.is-nan = () (yes bool) {
-    yes = . != .
+; 三角函数（弧度；f64/f32 方法）
+#{buildin}
+f64.sin = () (res f64) {
 }
 
-; is-inf: 判斷是否為無窮大
-float.is-inf = () (yes bool) {
+f32.sin = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.sin())
+}
+
+#{buildin}
+f64.cos = () (res f64) {
+}
+
+f32.cos = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.cos())
+}
+
+; tan: tangent（libm tan，等价于 sin/cos）
+#{buildin}
+f64.tan = () (res f64) {
+}
+
+f32.tan = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.tan())
+}
+
+#{buildin}
+f64.asin = () (res f64) {
+}
+
+f32.asin = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.asin())
+}
+
+#{buildin}
+f64.acos = () (res f64) {
+}
+
+f32.acos = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.acos())
+}
+
+#{buildin}
+f64.atan = () (res f64) {
+}
+
+f32.atan = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.atan())
+}
+
+; 雙曲函數（f64/f32 方法）
+#{buildin}
+f64.sinh = () (res f64) {
+}
+
+f32.sinh = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.sinh())
+}
+
+#{buildin}
+f64.cosh = () (res f64) {
+}
+
+f32.cosh = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.cosh())
+}
+
+#{buildin}
+f64.tanh = () (res f64) {
+}
+
+f32.tanh = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.tanh())
+}
+
+; 取整（f64/f32 方法；整數型別上取整為恆等，故不提供泛型版本）
+#{buildin}
+f64.ceil = () (res f64) {
+}
+
+f32.ceil = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.ceil())
+}
+
+#{buildin}
+f64.floor = () (res f64) {
+}
+
+f32.floor = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.floor())
+}
+
+#{buildin}
+f64.round = () (res f64) {
+}
+
+f32.round = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.round())
+}
+
+#{buildin}
+f64.trunc = () (res f64) {
+}
+
+f32.trunc = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.trunc())
+}
+
+; 指数对数（f64/f32 方法）
+#{buildin}
+f64.exp = () (res f64) {
+}
+
+f32.exp = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.exp())
+}
+
+#{buildin}
+f64.log = () (res f64) {
+}
+
+f32.log = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.log())
+}
+
+#{buildin}
+f64.log10 = () (res f64) {
+}
+
+f32.log10 = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.log10())
+}
+
+#{buildin}
+f64.log2 = () (res f64) {
+}
+
+f32.log2 = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.log2())
+}
+
+; degrees: 弧度轉角度（f64/f32 方法）
+f64.degrees = () (res f64) {
+    res = . * 180.0 / PI
+}
+
+f32.degrees = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.degrees())
+}
+
+; radians: 角度轉弧度（f64/f32 方法）
+f64.radians = () (res f64) {
+    res = . * PI / 180.0
+}
+
+f32.radians = () (res f32) {
+    d = f32-to-f64(.)
+    res = f64-to-f32(d.radians())
+}
+
+; sqrt: 整數平方根 floor(√n)——i64 方法
+; n < 0 時整數域無解，返回 0；二分搜尋 O(log n)，比較用 n/mid 而非
+; mid*mid，無溢出（同 math.no gcd/even 的 wrap 註解慣例）。
+; 不用 int 聯合接收者（本可全寬度通用）：int 別名定義在 std/int.no，
+; 跨模組声明 `int.X` 方法會被 prefixMethodNames 雙重加前綴成
+; `int.int.X`，呼叫點單態化匹配不到，報 unknown callee。
+i64.sqrt = () (r i64) {
+    n = .
+    n < 0 -> {
+        r = 0
+        return
+    }
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo = 1
 
     #{overflow=wrap}
-    yes = . + . == .
+    hi = n / 2
+    r = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
 }
 
-; [n]num.zero / []num.zero — 使用 llvm.memset 置零
-; 定長陣列：總位元組 = n * sizeof(num) 編譯期常量
-; 堆切片：運行時取 .len() * sizeof(num) 傳入 llvm.memset
-#{buildin}
-arr-zero = () {
+; is-prime: 是否為質數——i64 方法
+; 試除法 O(√n)：先排除偶數，再試除奇因數；終止條件用 d <= n/d
+; 避免 d*d 溢出，除數恆 ≥ 1 不會 trap（同樣不用 int 聯合接收者，見上）
+i64.is-prime = () (yes bool) {
+    n = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d = 3
+
+    #{overflow=wrap}
+    lim = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
 }
 
-;     i = 0
-;     for i < n {
-;         .[i] = 0
-;         i = i + 1
-;     }
-; }
-;
-; []num.zero = () {
-;     i = 0
-;     for i < .len() {
-;         .[i] = 0
-;         i = i + 1
-;     }
-; }
-; ═══════════════════════════════════════════════
-; 位元操作（內建）
-; ═══════════════════════════════════════════════
-; rotate-left: 整數左旋 n 位元（映射到 ARM64 ROR via llvm.fshl）
-#{buildin}
-rotate-left = (x i64, n i64) (r i64) {
+; ── 全寬度整數方法副本 ──
+; sqrt / is-prime 對 i8 i16 i32 u8 u16 u32 u64 各配具體型別版本
+; （int 聯合接收者不可用：別名定義在 std/int.no，跨模組声明雙重前綴，
+; 見上方 i64.sqrt 註解）。也不能經 i64 委託：u64 值域超出 i64，
+; 且無整數縮窄轉換內建可把 i64 結果歸還具體窄型。
+; i8/u64 曾因編譯器缺口（i8 拓寬按無符號、比較恒用有符號謂詞）暫缺，
+; 修復 hir2mir 無符號比較/除法路由（含嵌套子表達式遞迴探測、接收者綁定
+; `n T = .` 的 localRaw 回退記錄）與 codegen coerceIntSigned（i8 按宣告型
+; sext）後已補齊。
+; i128/u128 仍不提供：runtime 把 128 位整數截到 64 位，print 靜默空白、
+; 循環運算 trap，需完整 128 位 repr 支援。
+
+; i8（有符號：保留負數守衛）
+i8.sqrt = () (r i8) {
+    n = .
+    n < 0 -> {
+        r = 0
+        return
+    }
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo i8 = 1
+
+    #{overflow=wrap}
+    hi = n / 2
+    r = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid i8 = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q i8 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
 }
 
-; rotate-right: 整數右旋 n 位元（映射到 ARM64 ROR via llvm.fshr）
-#{buildin}
-rotate-right = (x i64, n i64) (r i64) {
+i8.is-prime = () (yes bool) {
+    n = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 i8 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d i8 = 3
+
+    #{overflow=wrap}
+    lim = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md i8 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
 }
 
-; store-le-u32: 將 u32 值以小端序寫入位元組陣列指定偏移位置
-#{buildin}
-store-le-u32 = (arr i64, offset i64, val u32) {
+; i16
+i16.sqrt = () (r i16) {
+    n = .
+    n < 0 -> {
+        r = 0
+        return
+    }
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo i16 = 1
+
+    #{overflow=wrap}
+    hi = n / 2
+    r = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid i16 = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q i16 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
+}
+
+i16.is-prime = () (yes bool) {
+    n = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 i16 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d i16 = 3
+
+    #{overflow=wrap}
+    lim = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md i16 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
+}
+
+; i32
+i32.sqrt = () (r i32) {
+    n = .
+    n < 0 -> {
+        r = 0
+        return
+    }
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo i32 = 1
+
+    #{overflow=wrap}
+    hi = n / 2
+    r = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid i32 = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q i32 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
+}
+
+i32.is-prime = () (yes bool) {
+    n = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 i32 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d i32 = 3
+
+    #{overflow=wrap}
+    lim = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md i32 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
+}
+
+; u8（無符號：無負數守衛）
+u8.sqrt = () (r u8) {
+    n = .
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo u8 = 1
+
+    #{overflow=wrap}
+    hi = n / 2
+    r = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid u8 = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q u8 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
+}
+
+u8.is-prime = () (yes bool) {
+    n = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 u8 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d u8 = 3
+
+    #{overflow=wrap}
+    lim = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md u8 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
+}
+
+; u16
+u16.sqrt = () (r u16) {
+    n = .
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo u16 = 1
+
+    #{overflow=wrap}
+    hi = n / 2
+    r = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid u16 = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q u16 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
+}
+
+u16.is-prime = () (yes bool) {
+    n = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 u16 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d u16 = 3
+
+    #{overflow=wrap}
+    lim = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md u16 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
+}
+
+; u32
+u32.sqrt = () (r u32) {
+    n = .
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo u32 = 1
+
+    #{overflow=wrap}
+    hi = n / 2
+    r = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid u32 = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q u32 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
+}
+
+u32.is-prime = () (yes bool) {
+    n = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 u32 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d u32 = 3
+
+    #{overflow=wrap}
+    lim = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md u32 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
+}
+
+; u64（值域超出 i64，必須獨立同寬實現）
+u64.sqrt = () (r u64) {
+    n = .
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo u64 = 1
+
+    #{overflow=wrap}
+    hi = n / 2
+    r = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid u64 = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q u64 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
+}
+
+u64.is-prime = () (yes bool) {
+    n = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 u64 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d u64 = 3
+
+    #{overflow=wrap}
+    lim = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md u64 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
 }

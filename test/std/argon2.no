@@ -1,0 +1,84 @@
+; test/std/argon2.no — crypto/argon2 模組測試
+;
+; 執行：no test test/std/argon2.no
+; 覆蓋：argon2.id（Argon2id）
+;
+; ⚠️ 已知正確性缺口（見 NOLANG-AUDIT §4.2）：
+;   argon2.id 目前與 RFC 9106 / argon2-cffi 參考向量「不一致」。
+;   本次已修正 compress() 的列置換索引錯誤（原為錯亂的 stride，
+;   改回 RFC 9106 §3.4 的 T[j]=v[base+8*j]），輸出更貼近規範，
+;   但要達到 bit-exact 還需重寫初始區塊、索引/依賴區塊取位與
+;   Argon2i/d 模式切換，尚未完成。故此处僅做「確定性/長度/敏感位」
+;   回歸測試，不写入错误的 golden 摘要冒充正確性。
+
+# /test/runner
+
+salt16 = () (s []byte) {
+    s = with-cap(16)
+    i <- [0..16): {
+
+        #{index-out=zero, overflow=wrap}
+        s[i] = i
+    }
+}
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-out-len = () {
+    s = salt16()
+    out = argon2.id('password'.to-bytes(), s, 2, 64, 1, 32)
+    runner.eq(out.len(), 32, 'argon2id honors out-len 32')
+    out2 = argon2.id('password'.to-bytes(), s, 2, 64, 1, 48)
+    runner.eq(out2.len(), 48, 'argon2id honors out-len 48')
+}
+
+t-deterministic = () {
+    s = salt16()
+    a = bhex(argon2.id('password'.to-bytes(), s, 2, 64, 1, 32))
+    s2 = salt16()
+    c = bhex(argon2.id('password'.to-bytes(), s2, 2, 64, 1, 32))
+    runner.str-eq(a, c, 64, 'argon2id deterministic for same inputs')
+}
+
+t-salt-sensitive = () {
+    s = salt16()
+    s3 []byte = [
+        9, 8, 7, 6, 5, 4, 3, 2,
+        1, 0, 15, 14, 13, 12, 11, 10,
+    ]
+    a = argon2.id('password'.to-bytes(), s, 2, 64, 1, 32)
+    b = argon2.id('password'.to-bytes(), s3, 2, 64, 1, 32)
+
+    ; 不同 salt 應產生不同 tag
+    diff = 0
+    i <- [0..32): {
+
+        #{index-out=zero, overflow=wrap}
+        (a[i] != b[i]) -> diff = diff + 1
+    }
+    runner.gt(diff, 0, 'argon2id salt changes the tag')
+}
+p1 = runner.test('argon2.out-len', t-out-len)
+p2 = runner.test('argon2.deterministic', t-deterministic)
+p3 = runner.test('argon2.salt-sensitive', t-salt-sensitive)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

@@ -203,6 +203,17 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 						return m.Return[0].String()
 					}
 				}
+				// std 原始型別浮點/捨入方法（f64.exp、f64.floor 等）以 #{buildin}
+				// 定義於 std/number.no：單檔解析（`no fmt` 的冗餘判定）或 std 未合併
+				// 的 vet 階段，funcTypes / BuiltinMethodList 都查不到，回傳型別在此
+				// 預置表補斷（仿 ValidatePrintFormat 的 stdlibMethodTypes 做法）。
+				// 僅限原始型別接收者——struct 名可能與方法名撞 key（如 f64.exp 的
+				// "exp"），自定義 struct 方法必須走上方 funcTypes。
+				if isValidationIntType(typeName) || typeName == "f64" || typeName == "f32" || typeName == "str" || typeName == "byte" || typeName == "char" || typeName == "bool" {
+					if retType, exists := stdPrimitiveFloatMethodTypes[methodName]; exists {
+						return retType
+					}
+				}
 				// typeName 已知但方法定義在 std 模組中（vet 階段尚未 merge），
 				// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
 				// 例外：slice/array/str 的常用方法直接推斷，避免格式字串檢查誤報
@@ -218,7 +229,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				}
 				return ""
 			}
-			// typeName 為空：可能是模組限定的內建呼叫（如 number.char-to-str(13)）。
+			// typeName 為空：可能是模組限定的內建呼叫（如 math.char-to-str(13)）。
 			// 此時接收者是模組名（非本作用域變數），對應裸內建回傳 str。
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 				if _, isVar := varTypes[recv.Value]; !isVar {
@@ -228,7 +239,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 						return retType
 					}
 					switch recv.Value + "." + dot.Property {
-					case "number.char-to-str":
+					case "math.char-to-str":
 						return "str"
 					}
 					switch dot.Property {
@@ -3185,15 +3196,17 @@ var unsignedIntTypeNames = map[string]bool{
 
 // nonIntTypeNames 是確定「非整數」（float / str / txt / char / bool / byte / rune）的
 // 型別集合；這些型別的算術不回傳 option，故不應提示 #{overflow} 註解（避免誤報）。
-// "float" 是 number.no 中定義的型別別名（float = f32 | f64），必須在此註冊，
+// "float" 是型別別名（float = f32 | f64，現定義於 std/float.no），必須在此註冊，
 // 否則 operandIntKind 對 float 型變數會保守回退為 "signed"，導致 float.div
-// （`q = . / b`）被誤報為整數溢出。
+// （`q = . / b`）被誤報為整數溢出。別名定義模組遷移（number.no → float.no）後，
+// 合併 std 語境中的限定名為 "float.float"（舊形態 "number.float" 保留兼容），
+// 兩種形態都必須註冊，否則單檔/合併兩條管道的型別名不一致會漏報。
 // 注意："num"（= int | float）不得註冊——它含 int 分支，算術仍可能產生
-// option（number.no `abs` 的 `r = 0 - a` 在 std 合併語境下確會報 ovf-int-default）；
+// option（num.abs 的 `r = 0 - .` 在 std 合併語境下確需 #{overflow=wrap}）；
 // 若在此註冊會使 `no fmt` 判其注解無效而誤刪，vet 反增硬錯（兩管道 AST 形態
 // 不同：單檔解析時參數型別保留 NamedType "num"，合併 std 時已展開）。
 var nonIntTypeNames = map[string]bool{
-	"float": true, "number.float": true,
+	"float": true, "number.float": true, "float.float": true,
 	"f32": true, "f64": true,
 	"str": true, "txt": true, "char": true, "bool": true, "byte": true, "rune": true,
 }
@@ -3325,7 +3338,7 @@ var overflowArithOps = map[string]bool{
 //
 // line 為包容此表達式的「葉」語句所在行（插入註解的位置）；sem 用於遞迴進入 if
 // 分支區塊時對其中的子語句做註解感知掃描。
-func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *parser.SemanticContext, declared map[string]string, emit func(file string, line, col int)) {
+func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int)) {
 	if e == nil {
 		return
 	}
@@ -3349,36 +3362,36 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 				}
 			}
 		}
-		walkExprForIntOverflow(x.Left, file, line, sem, declared, emit)
-		walkExprForIntOverflow(x.Right, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Right, file, line, sem, declared, funcTypes, emit)
 	case *parser.PrefixExpression:
-		walkExprForIntOverflow(x.Right, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Right, file, line, sem, declared, funcTypes, emit)
 	case *parser.CallExpression:
-		walkExprForIntOverflow(x.Function, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Function, file, line, sem, declared, funcTypes, emit)
 		for _, a := range x.Arguments {
-			walkExprForIntOverflow(a, file, line, sem, declared, emit)
+			walkExprForIntOverflow(a, file, line, sem, declared, funcTypes, emit)
 		}
 	case *parser.IfExpression:
-		walkExprForIntOverflow(x.Condition, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Condition, file, line, sem, declared, funcTypes, emit)
 		if x.Consequence != nil {
 			for _, s := range x.Consequence.Statements {
-				walkStmtForOverflow(s, file, sem, declared, emit)
+				walkStmtForOverflow(s, file, sem, declared, funcTypes, emit)
 			}
 		}
 		if x.Alternative != nil {
 			for _, s := range x.Alternative.Statements {
-				walkStmtForOverflow(s, file, sem, declared, emit)
+				walkStmtForOverflow(s, file, sem, declared, funcTypes, emit)
 			}
 		}
 	case *parser.IndexExpression:
-		walkExprForIntOverflow(x.Left, file, line, sem, declared, emit)
-		walkExprForIntOverflow(x.Index, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Index, file, line, sem, declared, funcTypes, emit)
 	case *parser.AssignExpression:
-		walkExprForIntOverflow(x.Left, file, line, sem, declared, emit)
-		walkExprForIntOverflow(x.Value, file, line, sem, declared, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Value, file, line, sem, declared, funcTypes, emit)
 	case *parser.ArrayLiteral:
 		for _, el := range x.Elements {
-			walkExprForIntOverflow(el, file, line, sem, declared, emit)
+			walkExprForIntOverflow(el, file, line, sem, declared, funcTypes, emit)
 		}
 	}
 }
@@ -3391,7 +3404,7 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 // 只有頂層語句被 SetSourceFile 標記，嵌套語句的 SourceFile 為空；若在此處取空值，
 // RunAllLints 的行號範圍回退歸因會把不同模組的同名行號張冠李戴（例如把 str.no 的
 // 整數運算算到 byte.no 頭上）。節點若確有自身 SourceFile，則以該值覆蓋。
-func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.SemanticContext, declared map[string]string, emit func(file string, line, col int)) {
+func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int)) {
 	if stmt == nil {
 		return
 	}
@@ -3402,9 +3415,9 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 			if fnFile == "" {
 				fnFile = file
 			}
-			fnDeclared := collectFuncDeclared(fn)
+			fnDeclared := collectFuncDeclared(fn, funcTypes)
 			for _, b := range fn.Body.Statements {
-				walkStmtForOverflow(b, fnFile, sem, fnDeclared, emit)
+				walkStmtForOverflow(b, fnFile, sem, fnDeclared, funcTypes, emit)
 			}
 		}
 		return
@@ -3418,7 +3431,7 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 	}
 	emitSubs := func(e parser.Expression) {
 		if e != nil {
-			walkExprForIntOverflow(e, file, stmt.Pos().Line, sem, declared, emit)
+			walkExprForIntOverflow(e, file, stmt.Pos().Line, sem, declared, funcTypes, emit)
 		}
 	}
 	switch s := stmt.(type) {
@@ -3462,19 +3475,19 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 	case *parser.ForStatement:
 		emitSubs(s.Condition)
 		if s.Init != nil {
-			walkStmtForOverflow(s.Init, file, sem, declared, emit)
+			walkStmtForOverflow(s.Init, file, sem, declared, funcTypes, emit)
 		}
 		if s.Update != nil {
-			walkStmtForOverflow(s.Update, file, sem, declared, emit)
+			walkStmtForOverflow(s.Update, file, sem, declared, funcTypes, emit)
 		}
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
-				walkStmtForOverflow(b, file, sem, declared, emit)
+				walkStmtForOverflow(b, file, sem, declared, funcTypes, emit)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, b := range s.Statements {
-			walkStmtForOverflow(b, file, sem, declared, emit)
+			walkStmtForOverflow(b, file, sem, declared, funcTypes, emit)
 		}
 	}
 }
@@ -3484,7 +3497,7 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 // 個 program；若用全域 name→type map，使用者函數的 `a`/`b` 會被 std 中同名參數（多為
 // u8/byte 等無號型別）覆寫，導致誤判（如把有號相減誤當無號、或把 float 相減誤報 /
 // 漏報）。故必須按函數作用域收集。
-func collectFuncDeclared(fn *parser.FunctionDefinition) map[string]string {
+func collectFuncDeclared(fn *parser.FunctionDefinition, funcTypes map[string]string) map[string]string {
 	types := map[string]string{}
 	for _, p := range fn.FuncSignature.Parameters {
 		if p.Type != nil {
@@ -3504,14 +3517,81 @@ func collectFuncDeclared(fn *parser.FunctionDefinition) map[string]string {
 		}
 	}
 	if fn.Body != nil {
-		collectLetsInStmts(fn.Body.Statements, types)
+		collectLetsInStmts(fn.Body.Statements, types, funcTypes)
 	}
 	return types
 }
 
+// snapshotValidationFuncTypes 在 validationMu 下拍一份 validationFuncTypes 快照，
+// 供不持锁的型別收集路径（registerInferredNonIntLet）安全使用。写入方均在
+// validationMu 下重建，故快照是一致视图。
+func snapshotValidationFuncTypes() map[string]string {
+	validationMu.Lock()
+	defer validationMu.Unlock()
+	if validationFuncTypes == nil {
+		return nil
+	}
+	cp := make(map[string]string, len(validationFuncTypes))
+	for k, v := range validationFuncTypes {
+		cp[k] = v
+	}
+	return cp
+}
+
+// stdPrimitiveFloatMethodTypes 預置 std 原始型別方法（定義於 src/std/number.no，
+// 多數為 `#{buildin}`）的回傳型別，鍵為 `type.method`。僅收錄確定非整數家族
+// （f64/f32/str）的浮點與捨入方法，供 inferExprType 在 std 未合併（單檔 vet /
+// `no fmt`）時補斷。口徑與 ValidatePrintFormat 的 stdlibMethodTypes 一致：
+// 只補「查不到」的條目，不覆寫 funcTypes / BuiltinMethodList 的既有結果。
+var stdPrimitiveFloatMethodTypes = map[string]string{
+	"f64.exp": "f64", "f64.log": "f64", "f64.log10": "f64", "f64.log2": "f64",
+	"f64.sqrt": "f64", "f64.cbrt": "f64", "f64.pow": "f64",
+	"f64.sin": "f64", "f64.cos": "f64", "f64.tan": "f64",
+	"f64.asin": "f64", "f64.acos": "f64", "f64.atan": "f64",
+	"f64.sinh": "f64", "f64.cosh": "f64", "f64.tanh": "f64",
+	"f64.degrees": "f64", "f64.radians": "f64",
+	"f64.ceil": "f64", "f64.floor": "f64", "f64.round": "f64", "f64.trunc": "f64",
+	"f32.exp": "f32", "f32.log": "f32", "f32.log10": "f32", "f32.log2": "f32",
+	"f32.sqrt": "f32", "f32.cbrt": "f32",
+	"f32.sin": "f32", "f32.cos": "f32", "f32.tan": "f32",
+	"f32.asin": "f32", "f32.acos": "f32", "f32.atan": "f32",
+	"f32.sinh": "f32", "f32.cosh": "f32", "f32.tanh": "f32",
+	"f32.degrees": "f32", "f32.radians": "f32",
+	"f32.ceil": "f32", "f32.floor": "f32", "f32.round": "f32", "f32.trunc": "f32",
+}
+
+// registerInferredNonIntLet 對「未標註型別的 let」補一層推斷：僅當右值推斷結果
+// 確定為非整數家族時才登記進型別表。整數家族（i64/u8/…）刻意不登記，維持既有
+// 「未知 → 保守視為有號整數」口徑，避免把真正的未處理整數溢位洗白成漏報
+//（見 overflow_inferred_float_test.go 的 control-int 對照組）。
+//
+// 背景缺陷（str.no:2046/2270，2026-10-05 math/number 拆分後暴露）：
+// `base = bpw.exp()` 無標註，f64.exp 是 std/number.no 的 #{buildin} 方法，
+// 未合併 std 時 lint 查不到回傳型別 → 保守視為整數 → `ax / base` 誤報；
+// 而 `no fmt` 在推斷得到 f64 時會刪掉手加的 `base f64 =` 標註（冗餘），
+// 兩邊口徑必須在此對齊：lint 也用推斷（刪標註後仍乾净），而非依賴標註存活。
+func registerInferredNonIntLet(s *parser.LetStatement, types map[string]string, funcTypes map[string]string) {
+	if s.Name == nil || s.Type != nil || s.Value == nil || types == nil {
+		return
+	}
+	// funcTypes 由呼叫端（collectFuncDeclared / collectTopLevelLets）在每次公開
+	// validator 呼叫頂部用 snapshotValidationFuncTypes() 拍一次後傳入，避免對每個
+	// 未標註 let 都複製整張 std 級巨型 map（合併 vet 下會 GC 抖動到近乎卡死）。
+	it := inferExprType(s.Value, types, funcTypes, "")
+	if it == "" || it == s.Name.Value {
+		return
+	}
+	if signedIntTypeNames[it] || unsignedIntTypeNames[it] || strings.HasPrefix(it, "?") || strings.HasPrefix(it, "fn") {
+		return
+	}
+	if nonIntTypeNames[it] || strings.HasPrefix(it, "f32") || strings.HasPrefix(it, "f64") || strings.HasPrefix(it, "[]") || strings.HasPrefix(it, "[") {
+		types[s.Name.Value] = it
+	}
+}
+
 // collectLetsInStmts 遞迴收集區塊 / for / 巢狀函數體內的 let 顯式型別，寫入 types。
 // 巢狀函數的參數作用域獨立，不寫入外層 types（由各自 collectFuncDeclared 處理）。
-func collectLetsInStmts(stmts []parser.Statement, types map[string]string) {
+func collectLetsInStmts(stmts []parser.Statement, types map[string]string, funcTypes map[string]string) {
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *parser.LetStatement:
@@ -3527,14 +3607,16 @@ func collectLetsInStmts(stmts []parser.Statement, types map[string]string) {
 					// 誤報為 ovf-int-default（訊息卻正是推薦這種寫法）。
 					types[s.Name.Value] = s.Type.String()
 				}
+				continue
 			}
+			registerInferredNonIntLet(s, types, funcTypes)
 		case *parser.FunctionDefinition:
 			if s.Body != nil {
-				collectLetsInStmts(s.Body.Statements, types)
+				collectLetsInStmts(s.Body.Statements, types, funcTypes)
 			}
 		case *parser.ForStatement:
 			if s.Init != nil {
-				collectLetsInStmts([]parser.Statement{s.Init}, types)
+				collectLetsInStmts([]parser.Statement{s.Init}, types, funcTypes)
 			}
 			// 迭代變數（`for ch <- s`）不是 let，原本從未登記型別；字串迭代的
 			// 元素是 char，不登記會被保守當成整數，把 `ch - 32` 這類字元算術
@@ -3543,10 +3625,10 @@ func collectLetsInStmts(stmts []parser.Statement, types map[string]string) {
 				types[s.IterRange.Variable] = et
 			}
 			if s.Body != nil {
-				collectLetsInStmts(s.Body.Statements, types)
+				collectLetsInStmts(s.Body.Statements, types, funcTypes)
 			}
 		case *parser.BlockStatement:
-			collectLetsInStmts(s.Statements, types)
+			collectLetsInStmts(s.Statements, types, funcTypes)
 		}
 	}
 }
@@ -3589,7 +3671,7 @@ func iterElemType(ie *parser.IterationExpr, varTypes map[string]string, selfType
 // collectTopLevelLets 收集模組頂層 let 的顯式型別，供頂層（非函數）語句掃描使用。
 // 非 let 的頂層陳述（for / 區塊）另行遞迴收集其內部型別，使頂層 `for ch <- s`
 // 的迭代變數也能帶上 char 型別（見 iterElemType），避免字元算術被誤報。
-func collectTopLevelLets(program *parser.Program) map[string]string {
+func collectTopLevelLets(program *parser.Program, funcTypes map[string]string) map[string]string {
 	types := map[string]string{}
 	if program == nil {
 		return types
@@ -3605,10 +3687,12 @@ func collectTopLevelLets(program *parser.Program) map[string]string {
 					// ovf-int-default。
 					types[ls.Name.Value] = ls.Type.String()
 				}
+				continue
 			}
+			registerInferredNonIntLet(ls, types, funcTypes)
 			continue
 		}
-		collectLetsInStmts([]parser.Statement{stmt}, types)
+		collectLetsInStmts([]parser.Statement{stmt}, types, funcTypes)
 	}
 	return types
 }
@@ -3621,6 +3705,12 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 		return nil
 	}
 	sem := program.Sem
+	// 每次 validator 呼叫只拍一次 validationFuncTypes 快照（不随 let 复制），
+	// 再往下透傳給 collect*；合併 std 級 vet 下避免 per-let 複製巨型 map 造成 GC 抖動。
+	funcTypes := snapshotValidationFuncTypes()
+	// 頂層 let 型別表對整棵 program 不變，提到迴圈外算一次即可（原本逐個頂層
+	// 非函式語句重算，是 O(頂層語句 × 全部 let) 的 blowup）。
+	topLevelDeclared := collectTopLevelLets(program, funcTypes)
 	var results []ValidateResult
 	emit := func(file string, line, col int) {
 		results = append(results, ValidateResult{
@@ -3636,7 +3726,7 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 			if fn.OverflowMode == "" && fn.Body != nil {
 				// 作用域限定：僅用本函數自身的參數 / let 型別，避免與 std 模組
 				// 同名參數互相污染（nolang vet 會合併 std 進同一 program）。
-				declared := collectFuncDeclared(fn)
+				declared := collectFuncDeclared(fn, funcTypes)
 				// 併入 parser 階段的逐函數變數型別表（Sem.FuncVarTypes）：safe-index /
 				// unwrap lowering 會把 `arg str = args[i]` 改寫為 match desugar（顯式
 				// 型別的 let 從 AST 消失），僅靠 AST 收集會漏掉 arg → 保守視為整數 →
@@ -3654,13 +3744,12 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 				}
 				file := parser.GetSourceFile(fn)
 				for _, b := range fn.Body.Statements {
-					walkStmtForOverflow(b, file, sem, declared, emit)
+					walkStmtForOverflow(b, file, sem, declared, funcTypes, emit)
 				}
 			}
 			continue
 		}
-		declared := collectTopLevelLets(program)
-		walkStmtForOverflow(stmt, parser.GetSourceFile(stmt), sem, declared, emit)
+		walkStmtForOverflow(stmt, parser.GetSourceFile(stmt), sem, topLevelDeclared, funcTypes, emit)
 	}
 	return results
 }
@@ -3681,6 +3770,9 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 		return nil
 	}
 	relevant := map[parser.Statement]bool{}
+	// 快照一次供闭包内 collectFuncDeclared 与主迴圈共用（同 ValidateIntOverflow）。
+	funcTypes := snapshotValidationFuncTypes()
+	topLevelDeclared := collectTopLevelLets(program, funcTypes)
 
 	// 先宣告兩個遞迴閉包變數（互相參考），再於下方指派，避免前向參考未定義。
 	var exprHasIntOverflow func(e parser.Expression, declared map[string]string, selfType string) bool
@@ -3794,7 +3886,7 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 		found := false
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
-			fd := collectFuncDeclared(s)
+			fd := collectFuncDeclared(s, funcTypes)
 			ft := methodSelfType(s)
 			if s.Body != nil {
 				for _, b := range s.Body.Statements {
@@ -3855,7 +3947,7 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 
 	for _, stmt := range program.Statements {
 		if fn, ok := stmt.(*parser.FunctionDefinition); ok {
-			fd := collectFuncDeclared(fn)
+			fd := collectFuncDeclared(fn, funcTypes)
 			ft := methodSelfType(fn)
 			if fn.Body != nil {
 				for _, b := range fn.Body.Statements {
@@ -3866,7 +3958,7 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 			}
 			continue
 		}
-		declared := collectTopLevelLets(program)
+		declared := topLevelDeclared
 		if stmtHasIntOverflow(stmt, declared, "") {
 			relevant[stmt] = true
 		}
@@ -6697,11 +6789,11 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			if funcNames[e.Value] {
 				return nil
 			}
-			// Module-prefixed names (e.g. "number.gcd"): check the last
+			// Module-prefixed names (e.g. "math.gcd"): check the last
 			// segment — LetStatement function assignments like
 			// `gcd = (a int, b int) (r int) { ... }` are collected by
 			// CollectDefinedVars under the bare name ("gcd"), but
-			// ResolveModuleCalls rewrites call sites to "number.gcd".
+			// ResolveModuleCalls rewrites call sites to "math.gcd".
 			if idx := strings.LastIndex(e.Value, "."); idx > 0 {
 				shortName := e.Value[idx+1:]
 				if definedVars[shortName] || funcNames[shortName] {
@@ -7657,6 +7749,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					if inferredType != "" && !typeNamesEquivalent(inferredType, existingType) && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
 						!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) &&
 						!isViewBorrow(existingType, inferredType) &&
+						// 整數值（i64/byte/u*/i*）指派給 char 變數：char 即 Unicode 碼點，按值放行
+						!intToCharAssignOK(existingType, inferredType) &&
 						// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
 						!isIntLiteralNarrowingToDeclared(s.Value, existingType) {
 						valPos := s.Value.Pos()
@@ -8301,11 +8395,24 @@ func CollectStdConcreteAliases() map[string]string {
 var (
 	stdUnionAliasesOnce  sync.Once
 	stdUnionAliasesCache map[string]*parser.TypeAlias
+	// stdUnionAliasModCache 記錄每個 union 別名（裸名）的定義模組 ShortName
+	// （如 "num" → "num"、"int" → "int"、"float" → "float"），供 build 端
+	// 按需載入掃描：別名形參/聯盟成員 references 必須拉起定義模組，否則
+	// monomorphizeUnions 的 FlattenUnion 看不到未載入模組的 TypeAlias，
+	// 成員展開不完整（如 num 缺 float 成員，math.max(1.0, 2.0) 報 unknown callee）。
+	stdUnionAliasModCache map[string]string
 )
+
+// StdUnionAliasModules 回傳 std union 別名裸名 → 定義模組 ShortName 的查表。
+func StdUnionAliasModules() map[string]string {
+	CollectStdUnionAliases()
+	return stdUnionAliasModCache
+}
 
 func CollectStdUnionAliases() map[string]*parser.TypeAlias {
 	stdUnionAliasesOnce.Do(func() {
 		out := make(map[string]*parser.TypeAlias)
+		outMod := make(map[string]string)
 		for _, info := range knownStdModules() {
 			source, err := fs.ReadFile(nolang.StdFS, "std/"+info.FullPath+".no")
 			if err != nil {
@@ -8317,11 +8424,13 @@ func CollectStdUnionAliases() map[string]*parser.TypeAlias {
 				if ta, ok := stmt.(*parser.TypeAlias); ok && ta.IsUnion() {
 					if _, exists := out[ta.Name]; !exists {
 						out[ta.Name] = ta
+						outMod[ta.Name] = info.ShortName
 					}
 				}
 			}
 		}
 		stdUnionAliasesCache = out
+		stdUnionAliasModCache = outMod
 	})
 	return stdUnionAliasesCache
 }
@@ -9719,7 +9828,7 @@ func funcSigFromDef(fd *parser.FunctionDefinition) *funcSig {
 		}
 		results[i] = paramInfo{Name: r.Name, Type: t}
 	}
-	return &funcSig{ParamTypes: params, ResultTypes: results}
+	return &funcSig{ParamTypes: params, ResultTypes: results, Variadic: fd.IsVariadic}
 }
 func funcSigFirstReturnType(sig *funcSig) string {
 	if sig == nil || len(sig.ResultTypes) == 0 {
@@ -9729,7 +9838,14 @@ func funcSigFirstReturnType(sig *funcSig) string {
 }
 
 type funcSig struct {
-	ParamTypes  []paramInfo
+	ParamTypes []paramInfo
+	// Variadic marks a `f (a ..T)` callee: its LAST parameter is a spread that
+	// absorbs any number of trailing arguments, so the parameter count puts no
+	// upper bound on the argument count and the arguments past the spread are
+	// checked against the spread's ELEMENT type. Set from FunctionDefinition
+	// (funcSigFromDef), not inferred from the `[]T` spelling — a plain slice
+	// parameter is written the same way and must keep the strict count.
+	Variadic    bool
 	ResultTypes []paramInfo
 }
 

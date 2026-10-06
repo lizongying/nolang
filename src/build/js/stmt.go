@@ -259,27 +259,33 @@ func (g *Generator) generateMethod(fd *parser.FunctionDefinition) {
 		methodName = fd.Name[idx+1:]
 	}
 	methodName = jsIdent(methodName)
-	// Skip the receiver (first parameter); remaining params become method params.
+	// The parser desugars `type.method = (inputs) (rest-outputs)` so the receiver
+	// `self` is the FIRST RESULT (out-param), NOT a parameter (see parser/decl.go).
+	// Therefore every fd.Parameters entry is a real method input.
 	params := make([]string, 0, len(fd.Parameters))
-	for i, p := range fd.Parameters {
-		if i == 0 {
-			continue // skip receiver
-		}
+	for _, p := range fd.Parameters {
 		params = append(params, jsIdent(p.Name))
 	}
 	g.writeLine(asyncPrefix(methodName) + methodName + "(" + strings.Join(params, ", ") + ") {")
 	g.indentLevel++
 
-	// Alias the receiver name to `this` so body references (self.field / self) map to this.
-	if len(fd.Parameters) > 0 && fd.Parameters[0].Name != "" {
-		g.writeLine("let " + jsIdent(fd.Parameters[0].Name) + " = this;")
+	// Split the receiver (`self`, Results[0]) from the real out-params.
+	outResults := fd.Results
+	if len(fd.Results) > 0 && fd.Results[0] != nil && fd.Results[0].Name == "self" {
+		outResults = fd.Results[1:]
+		// Bind the receiver name to `this` so body references (self.field / .field)
+		// resolve against the JS instance.
+		g.writeLine("let self = this;")
+		if g.declaredVars != nil {
+			g.declaredVars["self"] = true
+		}
 	}
 
-	// Declare out-params (Results) as local variables at method entry so that
-	// assignments in the body resolve to them and a trailing return can read them.
+	// Declare the real out-params as locals at method entry so that assignments
+	// in the body resolve to them and a trailing return can read them.
 	savedResults := g.currentResults
-	g.currentResults = fd.Results
-	for _, r := range fd.Results {
+	g.currentResults = outResults
+	for _, r := range outResults {
 		g.writeLine("let " + jsIdent(r.Name) + ";")
 		if g.declaredVars != nil {
 			g.declaredVars[r.Name] = true

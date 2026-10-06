@@ -1579,9 +1579,17 @@ type AssignExpression struct {
 	Value Expression
 }
 
-func (ae *AssignExpression) expressionNode()        {}
-func (ae *AssignExpression) Pos() lexer.Position    { return posFromToken(ae.Token) }
-func (ae *AssignExpression) EndPos() lexer.Position { return ae.Value.EndPos() }
+func (ae *AssignExpression) expressionNode()     {}
+func (ae *AssignExpression) Pos() lexer.Position { return posFromToken(ae.Token) }
+func (ae *AssignExpression) EndPos() lexer.Position {
+	// 解析錯誤可能留下 nil Value（如 `n = .len` 缺右運算元）。
+	// 與 IndexExpression / ExpressionStatement 一致：nil 時回退到 Token 位置，
+	// 避免 attachInlineComment 走 EndPos() 時對畸形輸入 panic。
+	if ae.Value != nil {
+		return ae.Value.EndPos()
+	}
+	return posFromToken(ae.Token)
+}
 
 // 三元運算子
 type ConditionalExpression struct {

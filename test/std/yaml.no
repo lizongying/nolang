@@ -1,0 +1,287 @@
+; test/std/yaml.no — yaml 模組測試（YAML 1.2 解析與生成）
+;
+; 執行：no test test/std/yaml.no
+; 覆蓋：parse、kind、find-str/i64/f64/bool、get、at、len、key、text、str、
+;       is-null、to-json、stringify；型別推斷（負數/十六進位/底線/null/bool/float）；
+;       流式集合 [..]/{..}、巢狀、雙引號轉義、錨點/別名；
+;       回歸：未闭合流式集合不再無限迴圈卡死（skip-flow-ws EOF 修復）。
+
+# /test/runner
+
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
+t-scalars = () {
+    r = yaml.parse('name: nolang
+port: 8080
+enabled: true
+ratio: 1.5
+server:
+  host: localhost
+  port: 9090')
+    r: {
+        ok -> {
+            doc = it
+            runner.eq(doc.kind(), 6, 'root is map')
+            s str = ''
+            so bool = false
+            s, so = doc.find-str('name')
+            runner.is-true(so, 'find name ok')
+            runner.str-eq(s, 'nolang', 6, 'find-str name')
+            p i64 = 0
+            po bool = false
+            p, po = doc.find-i64('port')
+            runner.eq(p, 8080, 'find-i64 port')
+            b bool = false
+            bo bool = false
+            b, bo = doc.find-bool('enabled')
+            runner.is-true(b, 'find-bool enabled')
+            fr f64 = 0.0
+            fo bool = false
+            fr, fo = doc.find-f64('ratio')
+            runner.f64-eq(fr, 1.5, 0.0001, 'find-f64 ratio')
+            h str = ''
+            ho bool = false
+            h, ho = doc.find-str('server.host')
+            runner.is-true(ho, 'nested path ok')
+            runner.str-eq(h, 'localhost', 9, 'find-str server.host')
+            sp i64 = 0
+            spo bool = false
+            sp, spo = doc.find-i64('server.port')
+            runner.eq(sp, 9090, 'find-i64 server.port')
+            ms str = ''
+            mo bool = false
+            ms, mo = doc.find-str('missing')
+            runner.is-false(mo, 'missing => ok false')
+        }
+
+        nil -> runner.is-true(false, 'parse should succeed')
+
+        err -> runner.is-true(false, 'parse should succeed')
+    }
+}
+
+t-seq = () {
+    r = yaml.parse('list:
+  - a
+  - b
+  - c')
+    r: {
+        ok -> {
+            doc = it
+            ls, lok = doc.get('list')
+            runner.is-true(lok, 'get list ok')
+            runner.eq(ls.kind(), 5, 'list is seq')
+            runner.eq(ls.len(), 3, 'list len 3')
+            e0, o0 = ls.at(0)
+            eq-str(e0.text(), 'a', 'list[0] text')
+            e1, o1 = ls.at(1)
+            sv str = ''
+            sok bool = false
+            sv, sok = e1.str()
+            runner.str-eq(sv, 'b', 1, 'list[1] str')
+            oob, oobok = ls.at(99)
+            runner.is-false(oobok, 'list[99] out-of-range => false')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+t-type-inference = () {
+    r = yaml.parse('a: -5
+b: false
+c: 3.14
+d: off
+h: 0x1F
+u: 1_000
+nul: null')
+    r: {
+        ok -> {
+            doc = it
+            ai i64 = 0
+            ao bool = false
+            ai, ao = doc.find-i64('a')
+            runner.eq(ai, -5, 'negative int')
+            bb bool = true
+            bo bool = false
+            bb, bo = doc.find-bool('b')
+            runner.is-false(bb, 'bool false')
+            cv f64 = 0.0
+            cvok bool = false
+            cv, cvok = doc.find-f64('c')
+            runner.f64-eq(cv, 3.14, 0.0001, 'float')
+            ds str = ''
+            do2 bool = false
+            ds, do2 = doc.find-str('d')
+            runner.str-eq(ds, 'off', 3, 'off stays string')
+            hi i64 = 0
+            ho2 bool = false
+            hi, ho2 = doc.find-i64('h')
+            runner.eq(hi, 31, 'hex 0x1F == 31')
+            ui i64 = 0
+            uo bool = false
+            ui, uo = doc.find-i64('u')
+            runner.eq(ui, 1000, 'underscore 1_000 == 1000')
+            nn, no2 = doc.get('nul')
+            runner.is-true(nn.is-null(), 'null is-null')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+t-to-json = () {
+    r = yaml.parse('a: -5
+b: false
+c: 3.14
+d: off')
+    r: {
+        ok -> {
+            doc = it
+            jj = doc.to-json()
+            eq-str(jj, '{"a":-5,"b":false,"c":3.14,"d":"off"}', 'to-json compact')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+t-flow = () {
+    r = yaml.parse('top: [1, 2, 3]
+fm: {a: 1, b: two}')
+    r: {
+        ok -> {
+            doc = it
+            tp, tok = doc.get('top')
+            runner.eq(tp.kind(), 5, 'flow seq kind')
+            runner.eq(tp.len(), 3, 'flow seq len')
+            e2, o2 = tp.at(2)
+            iv i64 = 0
+            ivok bool = false
+            iv, ivok = e2.i64()
+            runner.eq(iv, 3, 'flow seq[2] i64')
+            fmk, fok = doc.get('fm')
+            runner.eq(fmk.kind(), 6, 'flow map kind')
+            runner.eq(fmk.len(), 2, 'flow map len')
+            k0 str = ''
+            k0ok bool = false
+            k0, k0ok = fmk.key(0)
+            runner.str-eq(k0, 'a', 1, 'flow map key0')
+            av i64 = 0
+            avok bool = false
+            av, avok = fmk.find-i64('a')
+            runner.eq(av, 1, 'flow map a==1')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+t-quoted-anchor = () {
+    r = yaml.parse('dq: "line1\nline2"
+base: &b hello
+alias: *b')
+    r: {
+        ok -> {
+            doc = it
+            dqs str = ''
+            dqok bool = false
+            dqs, dqok = doc.find-str('dq')
+            runner.is-true(dqok, 'dq ok')
+            runner.eq(dqs.len-bytes(), 11, 'dq escape processed (len 11)')
+            als str = ''
+            alok bool = false
+            als, alok = doc.find-str('alias')
+            runner.is-true(alok, 'alias resolved')
+            runner.str-eq(als, 'hello', 5, 'alias == anchor value')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+t-stringify = () {
+    r = yaml.parse('list:
+  - a
+  - b
+  - c
+m: 1')
+    r: {
+        ok -> {
+            doc = it
+            st = doc.stringify()
+            eq-str(st, 'list:
+  - a
+  - b
+  - c
+m: 1', 'stringify roundtrip')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+t-error-and-nohang = () {
+
+    ; valid-of: 良好輸入 true
+    g bool = yaml.valid-of('a: 1')
+    runner.is-true(g, 'valid-of good')
+
+    ; 回歸：未闭合流式集合不得無限迴圈卡死（skip-flow-ws EOF 修復）
+    r1 = yaml.parse('x: [1, 2')
+    r1: {
+        ok -> runner.is-true(true, 'unterminated seq terminated (no hang)')
+
+        nil -> runner.is-true(true, 'unterminated seq terminated (no hang)')
+
+        err -> runner.is-true(true, 'unterminated seq terminated (no hang)')
+    }
+    r2 = yaml.parse('y: {a: 1')
+    r2: {
+        ok -> runner.is-true(true, 'unterminated map terminated (no hang)')
+
+        nil -> runner.is-true(true, 'unterminated map terminated (no hang)')
+
+        err -> runner.is-true(true, 'unterminated map terminated (no hang)')
+    }
+
+    ; 未闭合雙引號字串應報 err
+    r3 = yaml.parse('z: "abc')
+    r3: {
+        ok -> runner.is-true(false, 'unterminated dq should be err')
+
+        nil -> runner.is-true(true, 'unterminated dq not ok')
+
+        err -> runner.is-true(true, 'unterminated dq => err')
+    }
+}
+p1 = runner.test('yaml.scalars', t-scalars)
+p2 = runner.test('yaml.seq', t-seq)
+p3 = runner.test('yaml.type-inference', t-type-inference)
+p4 = runner.test('yaml.flow', t-flow)
+p5 = runner.test('yaml.quoted-anchor', t-quoted-anchor)
+p6 = runner.test('yaml.stringify', t-stringify)
+p7 = runner.test('yaml.error-and-nohang', t-error-and-nohang)
+p8 = runner.test('yaml.to-json', t-to-json)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

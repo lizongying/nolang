@@ -108,11 +108,14 @@ jobs:
 
       - name: Run std tests
         run: |
-          # TODO(audit §5.1): bufio / math / uuid are EXCLUDED because they fail
+          # TODO(audit §5.1): bufio / uuid are EXCLUDED because they fail
           # on open COMPILER codegen bugs, not std defects (see the audit doc's
           # §5.1 re-verification). Remove each from this list once its compiler
           # bug is fixed, so the gate re-covers it.
-          skip="test/std/bufio.no test/std/math.no test/std/uuid.no"
+          # math.no rejoined the gate (2026-10-05): its max/min case used the
+          # duplicate-name builtin (truncating f64) and the variadic arg-form
+          # misjudgement in MIR; both are gone, 34/34 pass.
+          skip="test/std/bufio.no test/std/uuid.no"
           fail=0
           for f in test/std/*.no; do
             case " $skip " in

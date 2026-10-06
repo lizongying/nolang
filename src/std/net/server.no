@@ -757,7 +757,7 @@ secure-compare = (a str, b str) (ok bool) {
 ; key []byte: HMAC-SHA256 簽名金鑰
 server-conn.set-signed-cookie = (name str, value str, key []byte) {
 
-    signed-value = cookie.sign(name, value, key)
+    signed-value = cookie.cookie-sign(name, value, key)
 
     cookie-val = name - '=' - signed-value - '; Path=/; HttpOnly'
     .write-header('Set-Cookie', cookie-val)

@@ -1,12 +1,7 @@
 # Nolang 全面体检报告
 
-**审计基线**：`HEAD = ae940358`（2026-09-27）
 **复验基线**：`HEAD = adc925d4`（2026-10-04，距审计 32 commit + v0.3.12）
 **语料规模**：`tests/*.no` 445 个；金标 488 条；`src/std` 39 顶层模块（含子目录 100+）
-
-> **复验说明（2026-10-04）**：原审计列出的 13 档编译级回归（§2）、`%vec` 元素 double-free（§3.3）、`TestVetImportedModule`（§4.1）、文档 hex/unicode/JSON 签名（§5.4）、CI 无门禁（§6.1）、金标过期（§6.2）、`fs.no`/`process.no` 撞名——**均已在复验时确认修复并从本文移除**。以下仅列**仍开放**的问题。
->
-> **修复批次（2026-10-04 续）**：§2.2 vecFromArraySink 悬垂指针、math.abs f64 重载、bufio resolveCallee KDot、uuid bare-match elif→independent guard **已修复**。修复后 `test/std/` 40/41（仅 bufio 1 个 option-cmp case 遗留，非编译器缺陷）。
 
 ---
 
@@ -14,11 +9,11 @@
 
 | 维度 | 状态 | 关键数字 |
 |---|---|---|
-| MIR 内存安全 | 🟠 部分修复 | §2.2 vecFromArraySink ✅；§2.1 越界堆写、§2.3 架构债仍开放 |
-| 标准库测试 | 🟢 40/41 | `test/std/` 41 档：bufio 5/6（option-cmp 遗留非编译器缺陷）、math 29/29、uuid 17/17 |
+| MIR 内存安全 | 🟠 开放 | §2.1 越界堆写、§2.3 架构债 |
+| 标准库测试 | 🟢 40/41 | bufio 5/6（option-cmp 遗留，非编译器缺陷） |
 | 诊断工具链 | 🟠 开放 | §3.1-3.5 merged 过滤掩盖、`no fmt` 默认改语义、`--fix` 局限 |
 | 测试覆盖 | 🔴 盲区 | crypto(31)/net(19) 零测试；json builder 零回归 |
-| std workaround 债 | 🟠 开放 | §4.4：`&&` 不短路、out-param 条件块失效等（`->` 链已修） |
+| std workaround 债 | 🟠 开放 | §4.4：`&&` 不短路、out-param 条件块失效等 |
 | CI 门禁 | ✅ 已补 | `.github/workflows/test.yml`（go-build/corpus-smoke/std-test/vet-gate） |
 
 ---
@@ -43,9 +38,7 @@
 - **影响**：静默堆破坏；`s[i]=c` 在 to-upper/to-lower/fill/set-byte 族大量使用。
 - **解法**：在 `lDone` 前加 `lCheck`（`idx+1 > cap && data != null`）+ `lGrow`（newCap=max(cap*2, idx+1, 1024)，malloc+memset+memcpy+free）。
 
-### ~~2.2 `[N]T → []T` 字段赋值对非平凡元素产生栈借用视图 → 悬垂指针~~ **已修复（2026-10-04）**
-
-### 2.3 `%vec` 借用视图写入原地改他人存储（架构性技术债）
+### 2.2 `%vec` 借用视图写入原地改他人存储（架构性技术债）
 
 - **位置**：`ensureVecBuffer` 文档声明 "borrowed view 写入是 separate, pre-existing question"
 - **判据**：`lCheck` 用 `cap > 0` 排除借用视图 ⇒ 永不增长 ⇒ 写入落到源存储。
@@ -96,9 +89,11 @@
 |---|---|---|
 | `bufio.no` | ❌ 5/6 | `read-byte 2nd` 测试的 matched-bare-match option 比较语法 `b2 == 89`（b2 为 `?byte`）在 wildcard arm 内的展开行为——实际 b2 值正确（调试输出 89），为 test 写法 / option-compare lowering 遗留，非编译器 codegen 缺陷。 |
 
+> **2026-10-06 复核**：该文件现已通过；全量 `test/std/` 86/86 绿（见 §4.2.1）。
+
 ### 4.2 测试覆盖缺口（大面积盲区）
 
-| 范围 | 缺口 |
+| 范围 | 缺口（整改前） |
 |---|---|
 | 顶层模块零测试（9 个） | yaml、markdown、toml、args、async、embed、types、enter、leave |
 | `src/std/crypto/` | **31 模块 → 0 测试**（AES/RSA/ECDSA/Ed25519/X509/哈希/KDF） |
@@ -106,6 +101,41 @@
 | `src/std/database/sql.no` | 0 测试 |
 | `src/std/archive/` | 7 → 仅 2 |
 | `src/std/collection/` | 12 → 5 |
+
+#### 4.2.1 整改进度（2026-10-06）
+
+`test/std/` 由 40 文件增至 **86 文件，全量 86/86 绿**；`no vet src/std` **0 error**（仅 warning/hint）。新增测试 47 个。黄金向量以 RFC/NIST 标准与 OpenSSL/Python 参考实现交叉验证，过程中发现并修复以下**真实缺陷**（均已被回归测试锁定）：
+
+| 模块 | 缺陷 | 处置 |
+|---|---|---|
+| crypto/sha224・sha384 | 返回值被丢弃 + IV 损坏 | 修复 |
+| crypto/md5 | u32 宽度缺陷（循环左移按 64bit、`~` 未掩码） | 修复 |
+| crypto/scrypt | salsa/integerify/romix 多处索引错误 | 修复 |
+| crypto/argon2 | compress 列置换索引错误 | 部分修复；**完整 RFC 一致性仍开放**（属性测试锁定） |
+| crypto/crc-64 | 多项式十进制常量笔误 | 修复 |
+| crypto/poly1305・bigint | poly1305 整体不可用（bigint 重写）；bigint.shr1 多 limb 进位丢失 | 修复 |
+| crypto/rand | xorshift32 未做 32bit 掩码 | 修复 |
+| crypto/ed25519 | 非 RFC 8032 一致 | 重写；golden 8/8 |
+| crypto/ecdsa | P-256 素数 p 存储字节序与大端引擎不符 | 修复；OpenSSL golden |
+| crypto/x509 | fingerprint 手写 SHA-256 损坏 | 改为复用 sha256 |
+| net/url | `to-str` 路径重复（群組双真臂）；`url-decode` 非法 `%` 转义产出 NUL | 修复；80/80 |
+| net/ip | `is-private` 判定完全反转；`in-subnet` 同型参 `base.to-u32()` 误绑隐式接收者 | 修复；54/54 |
+| net/cookie | 裸函数名 `sign` 与 `num.sign` 方法符号冲突，跨模块静默解析为 signum | 改名 `cookie-sign`/`cookie-verify`；58/58 |
+| net/hpack | `encode-int` 在 val==max-prefix 时丢 0x00 延续 byte（零写入不推进 str 长度）；`encode-str` 空字串输出 0 byte | 改 `with-len` 预置长度；49/49 |
+| net/dns | `parse-name` 遇保留 label 型别（前缀 01/10）无分支、pos 永不前进 → **恶意/畸形封包无限循环挂死（远端 DoS）**；越界截断返回 pos=0 | 新增错误臂返回 -1，调用方检查；51/51 |
+| net/multipart | `extract-boundary` 未加引号分支误挂外层群組 default 臂 → 常规 boundary 返回空；`parse-headers` 的 `!!` 群組臂内退出触发 **BPT trap（reader.next 完全不可用）** | 重构条件循环；59/59 |
+| std/args | `#{intrinsic}` 直连缺陷 | 改为委派 os；9/9 |
+| std/yaml | 流式集合 EOF 挂死 | 修复；43/43 |
+
+**仍开放的覆盖缺口（有意不测，原因标注）**：
+
+- `net/` socket I/O 模块（http/http2/http3/ws/quic/tls/client/server/pool/proxy/sse/net/unix）：需活动套接字，非单测范畴。
+- `net/cookie.parse-header`、`net/hpack.decode-headers`：`[n]str` 数组 out-param 多指派在呼叫端段错误（MIR codegen bug，最小重现与模块无关），测试头已记录。
+- `hpack.tables.*`、`ip-addr.from-str`：跨模块方法无法实例化（EmitLLVM unknown callee），工具链限制。
+- `collection/map`・`static-hashmap`：泛型模板受编译器限制，文档化。
+- `database/sql.no`：纯 interface/struct 定义，无可测函数（同顶层 `types.no`）。
+- `archive/`：仍仅 gzip/zlib 有测试；tar/zip 源码本轮有修补但未补 golden；bzip2/xz/zstd 未覆盖。
+- 顶层 `async/embed/enter/leave`：仍无 test/std 专项（async 行为在 `tests/async-*.no` 有金样本）。
 
 ### 4.3 json builder 跨池缺陷 + 零回归覆盖
 
@@ -123,11 +153,10 @@
 | `byte.no`/`char.no` | `[]char` 切片方法不可用 |
 | `process.no:618-623` | `process-shell` 命令注入风险、无超时 |
 | `process.no:665` | **`&&` 不短路** |
-| `txt.no:1086` | ~~相邻 `-> {}` 只执行第一个~~ **已修（independent-guard desugar）** |
 | `json.no:28` | 枚举值不递增 |
 | `str.no:765` | 不检查 i64 溢出 |
 
-其中 `&&` 不短路、out-param 条件块失效是**语义级缺陷**。~~`->` 链只执行首个已修。~~
+其中 `&&` 不短路、out-param 条件块失效是**语义级缺陷**。
 
 ---
 
@@ -136,14 +165,6 @@
 ### 5.1 并发会话共享工作区
 
 多会话同时修改工作树（20+ 文件在飞）。建议：归因前用隔离快照、关键改动前后 `git diff --stat`。
-
-### 5.2 工程卫生
-
-| 项 | 现状 | 建议 |
-|---|---|---|
-| 未推送 commit | 17 个 | 稳定后推送 |
-| `tmp/` | 794 文件 / 35M | 清理或加 .gitignore |
-| `--fix` 帮助文本 | 取值未见于 Usage | 补齐 |
 
 ---
 
@@ -159,20 +180,16 @@
 
 ---
 
-## 7. 解决方案路线图（仅开放项）
+## 7. 解决方案路线图
 
-| # | 动作 | 优先级 | 层级 | 状态 |
-|---|---|---|---|---|
-| 1 | ~~§2.2 vecFromArraySink default→vecDeepClone~~ | 高 | 编译器（有界） | ✅ 2026-10-04 |
-| 2 | ~~math.abs 按实参类型重载选择~~ | 高 | 编译器（宽影响） | ✅ 2026-10-04 |
-| 3 | ~~bufio resolveCallee pkg.Type.method~~ | 高 | 编译器（宽影响） | ✅ 2026-10-04 |
-| 4 | ~~uuid/-> 链 bare-match elif 降级~~ | 中 | 编译器（宽影响） | ✅ 2026-10-04 |
-| 5 | json builder 跨池 copy-tree 修复 | 中 | std+编译器 | 待做 |
-| 6 | §2.1 ensureStrLongBuffer 增长护栏 | 中 | 编译器 | 待做 |
-| 7 | 补 crypto(31)/net(19) 测试覆盖 | 中 | std | 待做 |
-| 8 | 默认 no fmt 不改语义（§3.4） | 中 | CLI | 待做 |
-| 9 | §4.4 技术债（&&/out-param） | 长效 | 编译器 | 待做 |
-| 10 | nodeSem 键稳定化 + 去掩盖式过滤 | 长效 | 诊断 | 待做 |
+| # | 动作 | 优先级 | 层级 |
+|---|---|---|---|
+| 1 | json builder 跨池 copy-tree 修复 | 中 | std+编译器 |
+| 2 | §2.1 ensureStrLongBuffer 增长护栏 | 中 | 编译器 |
+| 3 | 补 crypto(31)/net(19) 测试覆盖 | 中 | std |
+| 4 | 默认 no fmt 不改语义（§3.4） | 中 | CLI |
+| 5 | §4.4 技术债（&&/out-param） | 长效 | 编译器 |
+| 6 | nodeSem 键稳定化 + 去掩盖式过滤 | 长效 | 诊断 |
 
 ---
 

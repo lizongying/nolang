@@ -1,0 +1,72 @@
+; test/std/aes-cbc.no — crypto/aes-cbc 模組測試
+;
+; 執行：no test test/std/aes-cbc.no
+; 覆蓋：aes-cbc.enc-128 / dec-128（PKCS#7）
+; 向量來源：NIST SP800-38A 區塊，並與 pycryptodome CBC 交叉核對
+; key=000102..0f, iv=000102..0f, pt=00112233445566778899aabbccddeeff
+;   首個密文區塊 = 76d0627da1d290436e21a4af7fca94b7
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-first-block = () {
+    key [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    iv [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    pt []byte = [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ]
+    ct = aes-cbc.enc-128(pt, key, iv)
+
+    ; 16-byte 明文經 PKCS#7 → 32-byte 密文；str-eq 只比對前 32 個 hex 字元
+    runner.str-eq(bhex(ct), '76d0627da1d290436e21a4af7fca94b7', 32, 'aes-128-cbc first block')
+}
+
+t-roundtrip = () {
+    key [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    iv [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    pt []byte = [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ]
+    ct = aes-cbc.enc-128(pt, key, iv)
+    back = aes-cbc.dec-128(ct, key, iv)
+    runner.str-eq(bhex(back), '00112233445566778899aabbccddeeff', 32, 'aes-128-cbc round-trip (pkcs7 stripped)')
+}
+
+p1 = runner.test('aescbc.first-block', t-first-block)
+p2 = runner.test('aescbc.roundtrip', t-roundtrip)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

@@ -1,0 +1,77 @@
+; test/std/chacha20-poly1305.no — crypto/chacha20-poly1305 模組測試
+;
+; 執行：no test test/std/chacha20-poly1305.no
+; 覆蓋：chacha20-poly1305-seal / -open（sealed = ciphertext || 16-byte tag）
+; 向量來源：pycryptodome ChaCha20-Poly1305（key/nonce/aad 採 RFC 8439，明文改純 ASCII 以避開 raw-string 解析）
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-seal = () {
+    key [32]byte = [
+        0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
+        0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+        0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+        0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f,
+    ]
+    nonce [12]byte = [
+        0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43,
+        0x44, 0x45, 0x46, 0x47,
+    ]
+    aad []byte = [
+        0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3,
+        0xc4, 0xc5, 0xc6, 0xc7,
+    ]
+    plain = 'Chacha20-Poly1305 AEAD test vector for nolang'.to-bytes()
+    sealed = chacha20-poly1305.chacha20-poly1305-seal(key, nonce, aad, plain)
+    runner.eq(sealed.len(), 61, 'ccpoly sealed len = 45 ct + 16 tag')
+    runner.str-eq(bhex(sealed), 'dc13883e699c728a38b2e0974fb0399ef4e0c97a48454eaab8f9a4a723e760d121eceb5ec3fc7e45d7b6d3619d8381201392ca82f46516577efe95d888', 122, 'ccpoly seal ct||tag')
+}
+
+t-open = () {
+    key [32]byte = [
+        0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
+        0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+        0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+        0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f,
+    ]
+    nonce [12]byte = [
+        0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43,
+        0x44, 0x45, 0x46, 0x47,
+    ]
+    aad []byte = [
+        0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3,
+        0xc4, 0xc5, 0xc6, 0xc7,
+    ]
+    plain = 'Chacha20-Poly1305 AEAD test vector for nolang'.to-bytes()
+    sealed = chacha20-poly1305.chacha20-poly1305-seal(key, nonce, aad, plain)
+    back = chacha20-poly1305.chacha20-poly1305-open(key, nonce, aad, sealed)
+
+    #{overflow=wrap}
+    blen = back.len() * 2
+    runner.str-eq(bhex(back), bhex(plain), blen, 'ccpoly open round-trip')
+}
+p1 = runner.test('ccpoly.seal', t-seal)
+p2 = runner.test('ccpoly.open', t-open)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

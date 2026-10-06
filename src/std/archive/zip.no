@@ -180,7 +180,7 @@ zip.name = (idx i64) (name str) {
         #{overflow=wrap}
         idx2 = off46 + i
 
-        result = result - number.char-to-str(.data[idx2])
+        result = result - math.char-to-str(.data[idx2])
     }
     name = result
 }
@@ -300,7 +300,7 @@ zip-entry.name = () (name str) {
         #{overflow=wrap}
         idx2 = off46 + i
 
-        result = result - number.char-to-str(.data[idx2])
+        result = result - math.char-to-str(.data[idx2])
     }
     name = result
 }

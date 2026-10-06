@@ -1,0 +1,62 @@
+; test/std/base32.no — crypto/base32 模組測試
+;
+; 執行：no test test/std/base32.no
+; 覆蓋：base32.encode / base32.decode（RFC 4648，'A-Z2-7'，'=' 填充）
+; 向量來源：python base64.b32encode 交叉核對
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-enc-a = () {
+    runner.str-eq(base32.encode('a'.to-bytes()), 'ME======', 8, 'base32("a")')
+}
+
+t-enc-ab = () {
+    runner.str-eq(base32.encode('ab'.to-bytes()), 'MFRA====', 8, 'base32("ab")')
+}
+
+t-enc-abcdefg = () {
+    runner.str-eq(base32.encode('abcdefg'.to-bytes()), 'MFRGGZDFMZTQ====', 16, 'base32("abcdefg")')
+}
+
+t-enc-empty = () {
+    e = base32.encode(''.to-bytes())
+    runner.eq(e.len-bytes(), 0, 'base32("") is empty')
+}
+
+t-roundtrip = () {
+    s = 'Hello, Base32!'
+    e = base32.encode(s.to-bytes())
+    d = base32.decode(e)
+
+    #{overflow=wrap}
+    blen = d.len() * 2
+    runner.str-eq(bhex(d), bhex(s.to-bytes()), blen, 'base32 round-trip preserves bytes')
+}
+p1 = runner.test('base32.enc-a', t-enc-a)
+p2 = runner.test('base32.enc-ab', t-enc-ab)
+p3 = runner.test('base32.enc-abcdefg', t-enc-abcdefg)
+p4 = runner.test('base32.enc-empty', t-enc-empty)
+p5 = runner.test('base32.roundtrip', t-roundtrip)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

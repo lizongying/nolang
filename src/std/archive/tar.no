@@ -148,7 +148,7 @@ tar.name = (idx i64) (name str) {
         c = .data[hdr + i]
         c == 0 -> break
 
-        name = name - number.char-to-str(c)
+        name = name - math.char-to-str(c)
     }
 }
 
@@ -255,7 +255,7 @@ tar-entry.name = () (name str) {
         c = .data[hdr + i]
         c == 0 -> break
 
-        name = name - number.char-to-str(c)
+        name = name - math.char-to-str(c)
     }
 }
 

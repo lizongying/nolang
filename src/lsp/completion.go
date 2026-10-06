@@ -638,7 +638,7 @@ func (cp *CompletionProvider) getFunctionCompletionsFromFile(filePath, prefix st
 // getModuleBuiltinCompletions returns completions for module-like prefixes.
 // It builds the mapping from:
 // 1. Builtin methods whose MethodName contains "-" (e.g. "str-index" → module "str", name "str-index")
-// 2. Builtin methods whose ForwardFunc contains "-" (e.g. ForwardFunc "math-max" → module "math", name "max")
+// 2. Builtin methods whose ForwardFunc contains "-" (e.g. ForwardFunc "math-clamp" → module "math", name "clamp")
 func getModuleBuiltinCompletions() map[string][]SymbolInfo {
 	result := make(map[string][]SymbolInfo)
 	seen := make(map[string]map[string]bool)
@@ -651,7 +651,7 @@ func getModuleBuiltinCompletions() map[string][]SymbolInfo {
 			module = parts[0]
 		}
 
-		// Try ForwardFunc: "math-max" → module "math"
+		// Try ForwardFunc: "math-clamp" → module "math"
 		if module == "" && m.ForwardFunc != "" {
 			if parts := strings.SplitN(m.ForwardFunc, "-", 2); len(parts) >= 2 {
 				module = parts[0]

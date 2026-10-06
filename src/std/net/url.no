@@ -319,12 +319,14 @@ url-info.to-str = () (out str) {
         out = out - ':' - port-s
     }
 
-    {
-        .path.len-bytes() > 0 && .path[0] == 47 -> {
-            out = out - .path
-        }
+    ; 注意：群組內兩個具名條件臂會各自獨立執行（非 else-if），
+    ; 以 '/' 開頭的 path 會同時命中兩臂導致路徑重複，故改用「條件臂 + 預設臂」結構。
+    .path.len-bytes() > 0 -> {
+        {
+            .path[0] == 47 -> out = out - .path
 
-        .path.len-bytes() > 0 -> out = out - '/' - .path
+            -> out = out - '/' - .path
+        }
     }
 
     .query.len-bytes() > 0 -> out = out - '?' - .query
@@ -438,40 +440,44 @@ url-decode = (s str) (out str) {
 
         #{overflow=wrap}
         {
-            c == 37 -> {
-                i + 2 < s.len-bytes() -> {
+            c == 37 && i + 2 < s.len-bytes() -> {
 
-                    ; %XX
+                ; %XX（僅當後兩字节均為有效十六進位才解碼，否則直通 '%'）
+
+                #{overflow=wrap}
+                h1 = s.byte(i + 1)
+
+                h2 = s.byte(i + 2)
+                v1 = -1
+                v2 = -1
+
+                ; 解析十六進制（-1 表示無效字元）
+                {
+                    h1 >= 48 && h1 <= 57 -> v1 = h1 - 48
+
+                    h1 >= 65 && h1 <= 70 -> v1 = h1 - 55
+
+                    h1 >= 97 && h1 <= 102 -> v1 = h1 - 87
+
+                    ->
+                }
+                {
+                    h2 >= 48 && h2 <= 57 -> v2 = h2 - 48
+
+                    h2 >= 65 && h2 <= 70 -> v2 = h2 - 55
+
+                    h2 >= 97 && h2 <= 102 -> v2 = h2 - 87
+
+                    ->
+                }
+                v1 >= 0 && v2 >= 0 -> {
+                    out[out.len-bytes()] = (v1 << 4) | v2
 
                     #{overflow=wrap}
-                    h1 = s.byte(i + 1)
-
-                    h2 = s.byte(i + 2)
-                    val = 0
-
-                    ; 解析十六進制
-                    {
-                        h1 >= 48 && h1 <= 57 -> val = (h1 - 48) << 4
-
-                        h1 >= 65 && h1 <= 70 -> val = (h1 - 55) << 4
-
-                        h1 >= 97 && h1 <= 102 -> val = (h1 - 87) << 4
-
-                        ->
-                    }
-                    {
-                        h2 >= 48 && h2 <= 57 -> val = val | (h2 - 48)
-
-                        h2 >= 65 && h2 <= 70 -> val = val | (h2 - 55)
-
-                        h2 >= 97 && h2 <= 102 -> val = val | (h2 - 87)
-
-                        ->
-                    }
-
-                    out[out.len-bytes()] = val & 255
                     i = i + 2
                 }
+
+                -> out[out.len-bytes()] = c
             }
 
             c == 43 -> {

@@ -1,0 +1,91 @@
+; test/std/aes-gcm.no — crypto/aes-gcm 模組測試
+;
+; 執行：no test test/std/aes-gcm.no
+; 覆蓋：aes-gcm.seal-128 / open-128（sealed = ciphertext || 16-byte tag）
+; 向量來源：GCM 標準測試（key=0,iv=0,pt=16×0,無 aad），pycryptodome 交叉核對
+;   ct = 0388dace60b6a392f328c2b971b2fe78
+;   tag = ab6e47d42cec13bdf53a67b21257bddf
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-seal = () {
+    key [16]byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    iv [12]byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]
+    pt []byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    sealed = aes-gcm.seal-128(key, iv, ''.to-bytes(), pt)
+    runner.str-eq(bhex(sealed), '0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf', 64, 'aes-128-gcm seal ct||tag')
+}
+
+t-open = () {
+    key [16]byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    iv [12]byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]
+    pt []byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    sealed = aes-gcm.seal-128(key, iv, ''.to-bytes(), pt)
+    back = aes-gcm.open-128(key, iv, ''.to-bytes(), sealed)
+    runner.str-eq(bhex(back), bhex(pt), 32, 'aes-128-gcm open round-trip')
+}
+
+t-tamper = () {
+    key [16]byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    iv [12]byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]
+    pt []byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    sealed = aes-gcm.seal-128(key, iv, ''.to-bytes(), pt)
+    sealed[0] = sealed[0] ^ 1
+    back = aes-gcm.open-128(key, iv, ''.to-bytes(), sealed)
+
+    ; 認證失敗時 open 返回長度 0
+    runner.eq(back.len(), 0, 'aes-128-gcm rejects tampered ciphertext')
+}
+p1 = runner.test('aesgcm.seal', t-seal)
+p2 = runner.test('aesgcm.open', t-open)
+p3 = runner.test('aesgcm.tamper', t-tamper)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

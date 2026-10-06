@@ -33,7 +33,7 @@ sha256.sha256(data)
 sha256.sha256-hex(data)
 fs.open(path, opts)
 gzip.gzip-decompress(data)
-math.degrees(rad)
+math.pow(x, y)
 
 ; Module constants
 net.NET-BUF-SIZE
@@ -339,7 +339,7 @@ sha256.sha256(data)
 sha256.sha256-hex(data)
 fs.open(path, opts)
 gzip.gzip-decompress(data)
-math.degrees(rad)
+math.pow(x, y)
 
 ; Module constant
 net.NET-BUF-SIZE

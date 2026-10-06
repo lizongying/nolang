@@ -1,0 +1,69 @@
+; test/std/str-set.no — collection/str-set 模組測試
+;
+; 執行：no test test/std/str-set.no
+; 覆蓋：init / add / contains / remove / len / is-empty / clear
+
+# /test/runner
+
+t-init = () {
+    s = str-set {}
+    s.init()
+    runner.eq(s.len(), 0, 'init len == 0')
+    e bool = s.is-empty()
+    runner.is-true(e, 'init is-empty')
+}
+
+t-add-contains = () {
+    s = str-set {}
+    s.init()
+    n1 bool = s.add('hello')
+    runner.is-true(n1, 'add hello is-new')
+    n2 bool = s.add('world')
+    runner.is-true(n2, 'add world is-new')
+    n3 bool = s.add('hello')
+    runner.is-false(n3, 'add hello again not new')
+    runner.eq(s.len(), 2, 'len == 2')
+    yes bool = s.contains('hello')
+    runner.is-true(yes, 'contains hello')
+    no bool = s.contains('zzz')
+    runner.is-false(no, 'not contains zzz')
+}
+
+t-remove = () {
+    s = str-set {}
+    s.init()
+    s.add('a')
+    s.add('bb')
+    s.add('ccc')
+    rm bool = s.remove('bb')
+    runner.is-true(rm, 'remove bb ok')
+    runner.eq(s.len(), 2, 'len == 2 after remove')
+    no bool = s.contains('bb')
+    runner.is-false(no, 'removed bb not found')
+    rm2 bool = s.remove('missing')
+    runner.is-false(rm2, 'remove non-existent false')
+}
+
+t-clear = () {
+    s = str-set {}
+    s.init()
+    s.add('x')
+    s.add('y')
+    s.clear()
+    runner.eq(s.len(), 0, 'clear => len 0')
+    e bool = s.is-empty()
+    runner.is-true(e, 'clear => is-empty')
+}
+
+p1 = runner.test('str-set.init', t-init)
+p2 = runner.test('str-set.add/contains', t-add-contains)
+p3 = runner.test('str-set.remove', t-remove)
+p4 = runner.test('str-set.clear', t-clear)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

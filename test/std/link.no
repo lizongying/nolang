@@ -1,0 +1,122 @@
+; test/std/link.no — collection/link 模組測試（泛型雙向鏈結串列）
+;
+; 執行：no test test/std/link.no
+; 覆蓋：link 結構體上的非泛型狀態方法 size / empty / full
+; 注意：link 的值操作方法 [n]t.link-init/push/pop/insert-at/... 為定義在
+;       定長陣列 [n]t 上的泛型方法，在跨模組場景下無法被正確單態化
+;       （編譯器限制：EmitLLVM unknown callee []t.link-init），
+;       與 queue/arr-stack 同受限，故僅測試定義在 link 結構體上的非泛型方法。
+;       鏈結邏輯（head/tail/free-head/size 欄位語意）由這些狀態方法驗證。
+
+# /test/runner
+
+t-size = () {
+    l = link {
+        head: 0
+        tail: 2
+        free-head: 3
+        size: 3
+    }
+    runner.eq(l.size(), 3, 'size == 3')
+    l0 = link {
+        head: -1
+        tail: -1
+        free-head: 0
+        size: 0
+    }
+    runner.eq(l0.size(), 0, 'size == 0')
+}
+
+t-empty = () {
+    le = link {
+        head: -1
+        tail: -1
+        free-head: 0
+        size: 0
+    }
+    e1 bool = le.empty()
+    runner.is-true(e1, 'size 0 => empty')
+    lz = link {
+        head: -1
+        tail: -1
+        free-head: 0
+        size: 0
+    }
+    e2 bool = lz.empty()
+    runner.is-true(e2, 'empty is size<=0')
+    lfull = link {
+        head: 0
+        tail: 2
+        free-head: -1
+        size: 3
+    }
+    e3 bool = lfull.empty()
+    runner.is-false(e3, 'size 3 => not empty')
+}
+
+t-full = () {
+
+    ; free-head < 0 表示節點池已耗盡
+    l1 = link {
+        head: 0
+        tail: 5
+        free-head: -1
+        size: 6
+    }
+    f1 bool = l1.full()
+    runner.is-true(f1, 'free-head -1 => full')
+    l2 = link {
+        head: 0
+        tail: 2
+        free-head: 3
+        size: 3
+    }
+    f2 bool = l2.full()
+    runner.is-false(f2, 'free-head >=0 => not full')
+    l3 = link {
+        head: -1
+        tail: -1
+        free-head: 0
+        size: 0
+    }
+    f3 bool = l3.full()
+    runner.is-false(f3, 'fresh pool not full')
+}
+
+t-state-consistency = () {
+
+    ; 模擬 push-back 3 次後的狀態：size=3, free-head 前進到 3, tail=2
+    l = link {
+        head: 0
+        tail: 2
+        free-head: 3
+        size: 3
+    }
+    runner.eq(l.size(), 3, 'after 3 pushes size 3')
+    r bool = l.empty()
+    runner.is-false(r, 'not empty')
+    f bool = l.full()
+    runner.is-false(f, 'not full yet (cap 8)')
+
+    ; 模擬填滿至 cap=3：free-head=-1
+    lfull = link {
+        head: 0
+        tail: 2
+        free-head: -1
+        size: 3
+    }
+    runner.eq(lfull.size(), 3, 'full size 3')
+    ff bool = lfull.full()
+    runner.is-true(ff, 'pool exhausted => full')
+}
+p1 = runner.test('link.size', t-size)
+p2 = runner.test('link.empty', t-empty)
+p3 = runner.test('link.full', t-full)
+p4 = runner.test('link.state-consistency', t-state-consistency)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

@@ -1,0 +1,57 @@
+; test/std/tdes.no — crypto/tdes 模組測試
+;
+; 執行：no test test/std/tdes.no
+; 覆蓋：tdes.tdes-enc / tdes-dec（3DES-EDE 單區塊）
+; 向量來源：pycryptodome DES3 ECB 交叉核對（K1 != K3，避免退化為單 DES）
+;   key=0123456789ABCDEF|FEDCBA9876543210|0123456789ABCDEE, pt=0123456789ABCDEF
+;   → ct=1a4d672dca6cb335
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+t-enc = () {
+    key [24]byte = [
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+        0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xee,
+    ]
+    pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
+    ct = tdes.tdes-enc(pt, 8, key)
+    runner.str-eq(bhex(ct), '1a4d672dca6cb335', 16, '3des enc KAT')
+}
+
+t-dec = () {
+    key [24]byte = [
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+        0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xee,
+    ]
+    pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
+    ct = tdes.tdes-enc(pt, 8, key)
+    back = tdes.tdes-dec(ct, 8, key)
+    runner.str-eq(bhex(back), '0123456789abcdef', 16, '3des dec round-trip')
+}
+p1 = runner.test('tdes.enc', t-enc)
+p2 = runner.test('tdes.dec', t-dec)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

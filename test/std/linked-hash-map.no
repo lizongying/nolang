@@ -1,0 +1,108 @@
+; test/std/linked-hash-map.no — collection/linked-hash-map 模組測試
+;
+; 執行：no test test/std/linked-hash-map.no
+; 覆蓋：init / put / get / contains / remove / len / is-empty / clear
+
+# /test/runner
+
+t-init = () {
+    m = linked-hash-map {}
+    m.init()
+    runner.eq(m.len(), 0, 'init len == 0')
+    e bool = m.is-empty()
+    runner.is-true(e, 'init is-empty')
+}
+
+t-put-get = () {
+    m = linked-hash-map {}
+    m.init()
+    n1 bool = m.put(1, 100)
+    runner.is-true(n1, 'put 1 is-new')
+    n2 bool = m.put(2, 200)
+    runner.is-true(n2, 'put 2 is-new')
+    runner.eq(m.len(), 2, 'len == 2')
+
+    r = m.get(2)
+    hit bool = false
+    val i64 = -1
+    r: {
+        ok -> {
+            hit = true
+            val = it
+        }
+
+        err ->
+
+        nil ->
+    }
+    runner.is-true(hit, 'get 2 found')
+    runner.eq(val, 200, 'get 2 == 200')
+
+    yes bool = m.contains(1)
+    runner.is-true(yes, 'contains 1')
+    no bool = m.contains(99)
+    runner.is-false(no, 'not contains 99')
+}
+
+t-overwrite = () {
+    m = linked-hash-map {}
+    m.init()
+    m.put(5, 10)
+    n bool = m.put(5, 20)
+    runner.is-false(n, 're-put not new')
+    runner.eq(m.len(), 1, 'len stays 1')
+    r = m.get(5)
+    got i64 = -1
+    r: {
+        ok -> got = it
+
+        err ->
+
+        nil ->
+    }
+    runner.eq(got, 20, 'overwrite updates value')
+}
+
+t-remove = () {
+    m = linked-hash-map {}
+    m.init()
+    m.put(1, 10)
+    m.put(2, 20)
+    m.put(3, 30)
+    rm bool = m.remove(2)
+    runner.is-true(rm, 'remove 2 ok')
+    runner.eq(m.len(), 2, 'len == 2 after remove')
+    no bool = m.contains(2)
+    runner.is-false(no, 'removed key gone')
+    yes1 bool = m.contains(1)
+    runner.is-true(yes1, 'key 1 still present')
+    yes3 bool = m.contains(3)
+    runner.is-true(yes3, 'key 3 still present')
+    rm2 bool = m.remove(999)
+    runner.is-false(rm2, 'remove non-existent false')
+}
+
+t-clear = () {
+    m = linked-hash-map {}
+    m.init()
+    m.put(1, 1)
+    m.put(2, 2)
+    m.clear()
+    runner.eq(m.len(), 0, 'clear => len 0')
+    e bool = m.is-empty()
+    runner.is-true(e, 'clear => is-empty')
+}
+
+p1 = runner.test('linked-hash-map.init', t-init)
+p2 = runner.test('linked-hash-map.put/get', t-put-get)
+p3 = runner.test('linked-hash-map.overwrite', t-overwrite)
+p4 = runner.test('linked-hash-map.remove', t-remove)
+p5 = runner.test('linked-hash-map.clear', t-clear)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

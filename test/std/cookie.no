@@ -1,0 +1,155 @@
+; test/std/cookie.no — net/cookie 模組測試（Set-Cookie 解析／簽名／Jar）
+;
+; 執行：no test test/std/cookie.no
+; 覆蓋：parse-set（完整屬性/最小/非法/trim）、build-set、sign/verify
+;       （HMAC-SHA256 golden + 篡改拒絕）、jar（set/get/delete/clear/
+;       build-header/parse-response/set-signed/get-verified）
+; 註：回归點——原函數名 sign 與 num.sign 方法符號衝突，跨模組呼叫被靜默
+;     解析為 signum（返回 1），已更名為 cookie-sign / cookie-verify。
+;     parse-header / build-header(names...) 未測：[16]str 陣列 out-param 的
+;     多指派回傳在呼叫端段錯誤（MIR codegen bug，最小重現與 cookie 無關）。
+
+# /test/runner
+
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
+t-parse-set = () {
+    c = cookie.parse-set('sessionid=abc123; Path=/app; Domain=example.com; HttpOnly; Secure; Max-Age=3600; SameSite=Strict')
+    runner.is-true(c.valid, 'parse full valid')
+    eq-str(c.name, 'sessionid', 'name')
+    eq-str(c.value, 'abc123', 'value')
+    eq-str(c.path, '/app', 'path')
+    eq-str(c.domain, 'example.com', 'domain')
+    runner.eq(c.max-age, 3600, 'max-age')
+    runner.is-true(c.secure, 'secure')
+    runner.is-true(c.http-only, 'http-only')
+    eq-str(c.same-site, 'Strict', 'same-site')
+    m = cookie.parse-set('sid=v')
+    runner.is-true(m.valid, 'minimal valid')
+    eq-str(m.path, '/', 'minimal default path')
+    runner.eq(m.max-age, -1, 'minimal default max-age')
+    runner.is-false(m.secure, 'minimal not secure')
+    eq-str(cookie.build-set(m), 'sid=v; Path=/', 'build-set minimal')
+    bad = cookie.parse-set('novalue')
+    runner.is-false(bad.valid, 'no eq sign invalid')
+    empty = cookie.parse-set('')
+    runner.is-false(empty.valid, 'empty invalid')
+    d = cookie.parse-set(' x = y z ; Secure')
+    runner.is-true(d.valid, 'trim valid')
+    eq-str(d.name, 'x', 'trim name')
+    eq-str(d.value, 'y z', 'trim value keeps inner space')
+    runner.is-true(d.secure, 'trim secure')
+}
+
+t-build-set-full = () {
+    c = cookie.parse-set('sessionid=abc123; Path=/app; Domain=example.com; HttpOnly; Secure; Max-Age=3600; SameSite=Strict')
+    eq-str(cookie.build-set(c), 'sessionid=abc123; Path=/app; Domain=example.com; Max-Age=3600; Secure; HttpOnly; SameSite=Strict', 'build-set full')
+}
+
+t-sign-verify = () {
+    key = 'secretkey1234567'.to-bytes()
+    sg = cookie.cookie-sign('sid', 'v1', key)
+
+    ; golden: python hmac.new(b'secretkey1234567', b'sid=v1', sha256)
+    eq-str(sg, 'v1.78202b6198f8a40cf5c019ec9f6fbd2291e137f162dbbbdf0614707b3ae9d384', 'sign golden (regression: was num.sign)')
+    okv = false
+    val = ''
+    okv, val = cookie.cookie-verify('sid', sg, key)
+    runner.is-true(okv, 'verify ok')
+    eq-str(val, 'v1', 'verify value')
+    okv2 = false
+    val2 = ''
+    okv2, val2 = cookie.cookie-verify('sid', 'v9.78202b6198f8a40cf5c019ec9f6fbd2291e137f162dbbbdf0614707b3ae9d384', key)
+    runner.is-false(okv2, 'tampered value rejected')
+    eq-str(val2, '', 'tampered value empty')
+    okv3 = false
+    val3 = ''
+    okv3, val3 = cookie.cookie-verify('other', sg, key)
+    runner.is-false(okv3, 'wrong name rejected')
+    okv4 = false
+    val4 = ''
+    okv4, val4 = cookie.cookie-verify('sid', 'noseparatorpart', key)
+    runner.is-false(okv4, 'no dot rejected')
+}
+
+t-jar = () {
+    j = cookie.jar {}
+    runner.eq(j.count-of(), 0, 'empty jar')
+    j.set('s1', 'x', 'example.com', '/api', 0)
+    j.set('s2', 'y', 'example.com', '/', 0)
+    runner.eq(j.count-of(), 2, 'jar count')
+    eq-str(j.build-header('example.com', '/api/x'), 's1=x; s2=y', 'jar build-header')
+    q = j.get('s1', 'example.com', '/api')
+    got = false
+    gv = ''
+    q: {
+        ok -> {
+            got = true
+            gv = it
+        }
+
+        nil -> got = false
+
+        err -> got = false
+    }
+    runner.is-true(got, 'jar get ok')
+    eq-str(gv, 'x', 'jar get value')
+    m = j.get('s1', 'evil.com', '/api')
+    m: {
+        ok -> runner.is-true(false, 'domain mismatch must not hit')
+
+        nil -> runner.is-true(true, 'domain mismatch nil')
+
+        err -> runner.is-true(false, 'domain mismatch err arm')
+    }
+    j.delete('s1', 'example.com', '/api')
+    runner.eq(j.count-of(), 1, 'after delete')
+    j.clear()
+    runner.eq(j.count-of(), 0, 'after clear')
+    key = 'k'.to-bytes()
+    j.set-signed('ss', 'vv', 'd.com', '/', 0, key)
+    w = j.get-verified('ss', 'd.com', '/', key)
+    wok = false
+    wv = ''
+    w: {
+        ok -> {
+            wok = true
+            wv = it
+        }
+
+        nil -> wok = false
+
+        err -> wok = false
+    }
+    runner.is-true(wok, 'signed roundtrip ok')
+    eq-str(wv, 'vv', 'signed roundtrip value')
+    bad = j.get-verified('ss', 'd.com', '/', 'other'.to-bytes())
+    bad: {
+        ok -> runner.is-true(false, 'wrong key must not verify')
+
+        nil -> runner.is-true(true, 'wrong key nil')
+
+        err -> runner.is-true(false, 'wrong key err arm')
+    }
+    j.parse-response('b=2; Path=/', 'x.com', '/')
+    runner.eq(j.count-of(), 2, 'parse-response stored')
+    rp = j.get('b', 'x.com', '/p')
+    rp: {
+        ok -> eq-str(it, '2', 'parse-response value')
+
+        nil -> runner.is-true(false, 'parse-response get nil')
+
+        err -> runner.is-true(false, 'parse-response get err')
+    }
+}
+runner.test('parse-set', t-parse-set)
+runner.test('build-set full', t-build-set-full)
+runner.test('sign/verify', t-sign-verify)
+runner.test('jar', t-jar)
+runner.summary()
+f = runner.failed-count()
+f > 0 -> os.exit(1)
+-> os.exit(0)
