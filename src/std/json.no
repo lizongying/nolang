@@ -1046,7 +1046,7 @@ json.is-null = () (yes bool) {
         yes = true
         return
     }
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     yes = k == JSON-KIND-NULL
 }
 
@@ -1054,7 +1054,7 @@ json.is-null = () (yes bool) {
 json.is-obj = () (yes bool) {
     yes = false
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     yes = k == JSON-KIND-OBJ
 }
 
@@ -1062,7 +1062,7 @@ json.is-obj = () (yes bool) {
 json.is-arr = () (yes bool) {
     yes = false
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     yes = k == JSON-KIND-ARR
 }
 
@@ -1070,7 +1070,7 @@ json.is-arr = () (yes bool) {
 json.is-str = () (yes bool) {
     yes = false
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     yes = k == JSON-KIND-STR
 }
 
@@ -1078,7 +1078,7 @@ json.is-str = () (yes bool) {
 json.is-num = () (yes bool) {
     yes = false
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     yes = k == JSON-KIND-NUM
 }
 
@@ -1086,7 +1086,7 @@ json.is-num = () (yes bool) {
 json.is-bool = () (yes bool) {
     yes = false
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     yes = k == JSON-KIND-BOOL
 }
 
@@ -1413,7 +1413,7 @@ json.i64 = () (val i64, ok bool) {
 json.obj-len = () (n i64) {
     n = 0
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
     n = .pool.nodes[.root].count
@@ -1425,7 +1425,7 @@ json.obj-len = () (n i64) {
 json.obj-key = (idx i64) (key str, ok bool) {
     ok = false
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
     cnt i64 = .pool.nodes[.root].count
@@ -1447,7 +1447,7 @@ json.obj-key = (idx i64) (key str, ok bool) {
 json.delete-key = (key str) (ok bool) {
     ok = false
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
     ; 遍歷邊鏈並記錄前驅；命中則將該邊從單向鏈表摘除
@@ -1514,7 +1514,7 @@ json.set-key = (key str, val json) (ok bool) {
 json.obj-keys-str = () (keys str) {
     keys = ''
     .root < 0 -> return
-    k i64 = .pool.get-kind(.root)
+    k = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
     ; 沿邊表走訪，依序拼接每個鍵名

@@ -522,9 +522,9 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     .closed -> return
 
     ; 加密內容（AAD 為空，檔案加密不需要額外認證資料）
-    plain []byte = content.to-bytes()
+    plain = content.to-bytes()
     aad []byte
-    sealed []byte = aes-gcm.seal-256(key, iv, aad, plain)
+    sealed = aes-gcm.seal-256(key, iv, aad, plain)
 
     ; 將 IV + 密文轉為 Base64 字串
     ; 格式: base64(iv || sealed)
@@ -566,9 +566,9 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     .closed -> return
 
     ; 加密值
-    plain []byte = value.to-bytes()
-    aad []byte = name.to-bytes()
-    sealed []byte = aes-gcm.seal-256(key, iv, aad, plain)
+    plain = value.to-bytes()
+    aad = name.to-bytes()
+    sealed = aes-gcm.seal-256(key, iv, aad, plain)
 
     ; 將 IV + 密文轉為 Base64
     combined []byte
@@ -637,7 +637,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     }
 
     ; 解密
-    opened []byte = aes-gcm.open-256(key, iv, aad, sealed)
+    opened = aes-gcm.open-256(key, iv, aad, sealed)
     opened.len() == 0 -> {
         plain = err('decryption failed')
         return

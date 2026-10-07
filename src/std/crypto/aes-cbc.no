@@ -124,7 +124,7 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 ; iv [16]byte: 初始向量
 ; 返回 out []byte: 加密後的資料
 enc-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
-    ek []byte = aes.key-expand(key)
+    ek = aes.key-expand(key)
     out = cbc-enc(in, iv, ek)
 }
 
@@ -134,7 +134,7 @@ enc-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 ; iv [16]byte: 初始向量
 ; 返回 out []byte: 解密後的資料
 dec-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
-    ek []byte = aes.key-expand(key)
+    ek = aes.key-expand(key)
     out = cbc-dec(in, iv, ek)
 }
 
@@ -144,7 +144,7 @@ dec-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 ; iv [16]byte: 初始向量
 ; 返回 out []byte: 加密後的資料
 enc-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
-    ek []byte = aes.key-expand-256(key)
+    ek = aes.key-expand-256(key)
     out = cbc-enc(in, iv, ek)
 }
 
@@ -154,7 +154,7 @@ enc-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
 ; iv [16]byte: 初始向量
 ; 返回 out []byte: 解密後的資料
 dec-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
-    ek []byte = aes.key-expand-256(key)
+    ek = aes.key-expand-256(key)
     out = cbc-dec(in, iv, ek)
 }
 

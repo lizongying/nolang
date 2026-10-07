@@ -176,7 +176,7 @@ char.to-str = () (s str) {
 ; 有了它，txt.to-upper / to-lower 等可透過「取 char → char.to-lower → char.to-txt 串接」
 ; 重寫，無須再依賴會回傳 char 的 txt[i] 下標寫入。
 char.to-txt = () (out txt) {
-    b []byte = .to-bytes()
+    b = .to-bytes()
     out = b.to-txt()
 }
 

@@ -426,7 +426,7 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
 ; yaml-to-f64: 文本转 f64（返回 nil 表示失败）
 yaml-to-f64 = (t str) (v ?f64) {
     v = nil
-    r ?f64 = t.to-f64()
+    r = t.to-f64()
     r: {
         nil -> return
 

@@ -66,8 +66,8 @@ QPACK-LITERAL-PREFIX i64 = 0x20
 encode-header = (name str, value str) (buf []byte, n i64) {
 
     pos = 0
-    name-bytes []byte = name.to-bytes()
-    value-bytes []byte = value.to-bytes()
+    name-bytes = name.to-bytes()
+    value-bytes = value.to-bytes()
 
     #{overflow=wrap}
     buf = with-cap(name.len-bytes() + value.len-bytes() + 16)
@@ -312,7 +312,7 @@ encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []byte, n
 ; 返回 buf []byte: 編碼結果
 ; 返回 n i64: 編碼長度
 encode-data-frame = (data str) (buf []byte, n i64) {
-    payload []byte = data.to-bytes()
+    payload = data.to-bytes()
     buf, n = encode-frame(0x00, payload)
 }
 

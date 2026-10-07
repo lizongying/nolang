@@ -571,9 +571,9 @@ enc-conn.send-encrypted = (data str) (ok bool) {
     iv [12]byte = .gen-iv()
 
     ; 加密
-    plain []byte = data.to-bytes()
+    plain = data.to-bytes()
     aad []byte
-    sealed []byte = aes-gcm.seal-256(.key, iv, aad, plain)
+    sealed = aes-gcm.seal-256(.key, iv, aad, plain)
     sealed-n = sealed.len()
 
     ; 封包格式: [4-byte length][12-byte IV][sealed]
@@ -650,7 +650,7 @@ enc-conn.recv-encrypted = () (data ?str) {
 
     ; 解密
     aad []byte
-    opened []byte = aes-gcm.open-256(.key, iv, aad, sealed)
+    opened = aes-gcm.open-256(.key, iv, aad, sealed)
     opened.len() == 0 -> {
         data = err('decryption failed')
         return

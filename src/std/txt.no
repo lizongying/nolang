@@ -999,7 +999,7 @@ txt.to-f64 = () (val ?f64) {
 
 ; txt.to-f32: 將文字解析為 f32
 txt.to-f32 = () (val ?f32) {
-    f ?f64 = .to-f64()
+    f = .to-f64()
     {
         f == nil -> {
             val = nil

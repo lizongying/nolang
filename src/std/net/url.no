@@ -596,7 +596,7 @@ url-basic-auth = (user str, password str) (out str) {
 
     ; 拼接 user:password
     raw = user - ':' - password
-    raw-bytes []byte = raw.to-bytes()
+    raw-bytes = raw.to-bytes()
     enc-str = base64.encode-std(raw-bytes)
 
     out = 'Basic ' - enc-str

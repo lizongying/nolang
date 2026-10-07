@@ -121,7 +121,7 @@ log-emit = (tag str, msg str, loc str) {
         ! loc.empty() -> buf = buf - '[' - loc - '] '
     }
     buf = buf - msg
-    w io.writer = writer.from-fd(OUT-FD)
+    w = writer.from-fd(OUT-FD)
     n = w.write-line(buf)
 }
 

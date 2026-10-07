@@ -1053,7 +1053,7 @@ str.to-f64 = () (val ?f64) {
 ;   err('msg') - 含非數字字元
 ; 使用 Nolang 實作 str-to-f64 + f64-to-f32（已移除 strtod CLibCall 依賴）
 str.to-f32 = () (val ?f32) {
-    f ?f64 = .to-f64()
+    f = .to-f64()
     {
         f == nil -> {
             val = nil

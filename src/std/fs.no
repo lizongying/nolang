@@ -482,7 +482,7 @@ open = (p str, opts file-opts) (f ?file) {
     flags = 0
 
     ; 從 opts.mode 取得基礎旗標
-    m file-mode = opts.mode
+    m = opts.mode
     m: {
         read -> flags = O-RDONLY
 
@@ -500,7 +500,7 @@ open = (p str, opts file-opts) (f ?file) {
 
     ; 從 opts.perm 取得權限值
     perm-val = 420
-    pv file-perm = opts.perm
+    pv = opts.perm
     pv: {
         perm-600 -> perm-val = 384
 

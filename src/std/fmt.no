@@ -851,7 +851,7 @@ fmt-str = (s str, spec str) (out str) {
     }
 
     ; precision 截斷
-    body str = s.copy()
+    body = s.copy()
     precision >= 0 && precision < s.len-bytes() -> {
         body = with-cap(precision)
         i <- [0..precision): {

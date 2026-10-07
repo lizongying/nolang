@@ -521,7 +521,7 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
 
     ; 簽名內容 = name=value
     msg-str = name - '=' - value
-    msg []byte = msg-str.to-bytes()
+    msg = msg-str.to-bytes()
     mac [32]byte = hmac.hmac-sha256(key, msg)
 
     ; 轉為 hex 字串
@@ -617,7 +617,7 @@ jar.set-signed = (name str, value str, domain str, path str, max-age i64, key []
 ; 返回 val ?str: ok=原始 Cookie 值, nil=未找到或驗證失敗
 jar.get-verified = (name str, domain str, path str, key []byte) (val ?str) {
     val = nil
-    signed-val ?str = .get(name, domain, path)
+    signed-val = .get(name, domain, path)
     signed-val: {
         nil -> return
 

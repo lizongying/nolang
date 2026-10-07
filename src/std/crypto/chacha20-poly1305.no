@@ -190,13 +190,13 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
 ; 不用 bigint.mod —— 其 div-mod 对多 limb 除数存在未还原 normalize shift 的错误
 poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     out = x
-    hi bigint.bigint = bigint.shr(out, 130)
+    hi = bigint.shr(out, 130)
     (! hi.is-zero()) {
         lo bigint.bigint = bigint.sub(out, bigint.shl(hi, 130))
         out = bigint.add(lo, bigint.mul-i64(hi, 5))
         hi = bigint.shr(out, 130)
     }
-    p bigint.bigint = bigint.sub(bigint.shl(bigint.one(), 130), bigint.from-i64(5))
+    p = bigint.sub(bigint.shl(bigint.one(), 130), bigint.from-i64(5))
     out.cmp(p) >= 0 -> out = bigint.sub(out, p)
 }
 
@@ -211,7 +211,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
     ; r = clamp(key[0..16])（小端 128-bit）
     ; 字节 3,7,11,15 高两位清零（& 15）；字节 4,8,12 低两位清零（& 252）
-    r bigint.bigint = bigint.zero()
+    r = bigint.zero()
     i <- [15..0]: {
         bvr i64 = key[i]
         {
@@ -223,14 +223,14 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     }
 
     ; s = key[16..32]（小端 128-bit，无 clamp）
-    s bigint.bigint = bigint.zero()
+    s = bigint.zero()
     j <- [31..16]: {
         bvs i64 = key[j]
         s = bigint.add(bigint.mul-i64(s, 256), bigint.from-i64(bvs))
     }
 
     ; 累加器 h = 0
-    h bigint.bigint = bigint.zero()
+    h = bigint.zero()
 
     ; 逐 16 字节区块：h = (h + c) * r mod p
     pos = 0
@@ -262,7 +262,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     ; tag = (h + s) 的低 128 位，小端输出（逐字节）
     ; 注意：不可用 mod-i64/div-i64 取 32-bit limb —— 除数 2^32 会让内部 rem<<32 溢出 i64。
     ; 改用 shr + mod-i64(.,256)：小除数保证 rem<256，rem<<32 不溢出。
-    hs bigint.bigint = bigint.add(h, s)
+    hs = bigint.add(h, s)
     out <- [0..16): {
 
         #{overflow=wrap}

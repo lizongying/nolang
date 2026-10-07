@@ -477,7 +477,7 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
 ; plain []byte: 明文
 ; 返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len() + 16）
 seal-128 = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
-    ek []byte = aes.key-expand(key)
+    ek = aes.key-expand(key)
     sealed = gcm-seal(iv, aad, plain, ek)
 }
 
@@ -488,7 +488,7 @@ seal-128 = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte)
 ; sealed []byte: 密文 + 16 位元組 tag
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
 open-128 = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
-    ek []byte = aes.key-expand(key)
+    ek = aes.key-expand(key)
     plain = gcm-open(iv, aad, sealed, ek)
 }
 
@@ -499,7 +499,7 @@ open-128 = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte)
 ; plain []byte: 明文
 ; 返回 sealed []byte: 密文 + 16 位元組 tag
 seal-256 = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
-    ek []byte = aes.key-expand-256(key)
+    ek = aes.key-expand-256(key)
     sealed = gcm-seal(iv, aad, plain, ek)
 }
 
@@ -510,6 +510,6 @@ seal-256 = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte)
 ; sealed []byte: 密文 + 16 位元組 tag
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
 open-256 = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
-    ek []byte = aes.key-expand-256(key)
+    ek = aes.key-expand-256(key)
     plain = gcm-open(iv, aad, sealed, ek)
 }

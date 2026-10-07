@@ -169,7 +169,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     ;   opaque context<0..255> = context
 
     full-label = 'tls13 ' - label
-    label-bytes []byte = full-label.to-bytes()
+    label-bytes = full-label.to-bytes()
 
     ; 構建 info: length(2) + label-len(1) + label + ctx-len(1) + ctx
     #{overflow=wrap}

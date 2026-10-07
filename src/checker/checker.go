@@ -135,6 +135,15 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			case "char-to-str", "i64-to-str", "f64-to-str", "bool-to-str", "byte-to-str":
 				return "str"
 			}
+			// 合併/扁平化 std 程序中，方法呼叫被展平為
+			// CallExpression{Function: Identifier "f64.sin"}（build/transpiler.go），
+			// 且 ovfhndld 推斷路徑以 funcTypes=nil 呼叫本函式，上方查表全落空 →
+			// 隱式 self 浮點方法（.sin()/.cos()/.exp() 等）推斷為 ""，變數未登記型別，
+			// 下游 `s / c` 誤報整數溢位。此處補查 std 原始型別浮點方法預置表（仿
+			// DotExpression 分支 220 行），扁平識別符 "f64.sin" 直接命中 key。
+			if retType, exists := stdPrimitiveFloatMethodTypes[ident.Value]; exists {
+				return retType
+			}
 			return ""
 		}
 		// run <expr> 返回不透明的 task 句柄（LLVM i8*），供 cancel 使用。
@@ -149,6 +158,13 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				if recv.Value == "self" {
 					// 從當前方法的 self 參數獲取類型
 					typeName = selfType
+					if typeName == "" {
+						// selfType 未透傳（如 registerInferredNonIntLet 以空 selfType 呼叫
+						// 推斷）時，回退到型別表登記的接收者型別 `self`，使 `.sin()` 這類
+						// 隱式 self 方法呼叫仍能解析回傳型別（否則 typeName 空 → 整個呼叫
+						// 推斷失敗 → 冗餘標註刪除後 `s = .sin()` 誤報整數溢位）。
+						typeName = varTypes["self"]
+					}
 				} else if recvType, exists := varTypes[recv.Value]; exists {
 					typeName = recvType
 				}
@@ -303,6 +319,9 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			if recv, ok := e.Receiver.(*parser.Identifier); ok {
 				if recv.Value == "self" {
 					typeName = selfType
+					if typeName == "" {
+						typeName = varTypes["self"]
+					}
 				} else if t, exists := varTypes[recv.Value]; exists {
 					typeName = t
 				}
@@ -338,6 +357,9 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			t := ""
 			if recv.Value == "self" {
 				t = selfType
+				if t == "" {
+					t = varTypes["self"]
+				}
 			} else if tt, exists := varTypes[recv.Value]; exists {
 				t = tt
 			}
@@ -4615,8 +4637,9 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			//（非 Parameters[0]），且被 declaredResults 剝除，故 seedVarTypes 得到的 st
 			// 仍為空。此處從原始 Results 取回接收者型別並登記 self，使裸 `.`（self）在
 			// 下游運算元型別推斷中能解析——否則 `x = .` 型別未知 → 其 `(x - 1.0)` 等被
-			// 保守當成整數 → 對純浮點運算誤報 ovfhndld。
-			if s.IsMethodDef && st == "" && len(s.Results) > 0 && s.Results[0] != nil &&
+			// 保守當成整數 → 對純浮點運算誤報 ovfhndld。不依賴 IsMethodDef（原始型別方法
+			// 可能未設此旗標，但 Results[0]=="self" 就是接收者，與 collectFuncDeclared 一致）。
+			if st == "" && len(s.Results) > 0 && s.Results[0] != nil &&
 				s.Results[0].Name == "self" && s.Results[0].Type != nil {
 				st = s.Results[0].Type.String()
 				vt["self"] = st

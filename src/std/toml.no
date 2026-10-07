@@ -955,7 +955,7 @@ toml-parse-i64 = (s str) (value i64, ok bool) {
 toml-parse-f64 = (s str) (value f64, ok bool) {
     ok = false
     clean = s.replace-str('_', '')
-    parsed ?f64 = clean.to-f64()
+    parsed = clean.to-f64()
     parsed: {
         ok -> {
             value = it
@@ -971,7 +971,7 @@ toml-parse-f64 = (s str) (value f64, ok bool) {
 ; toml-parse-bool: 解析布林值
 toml-parse-bool = (s str) (value bool, ok bool) {
     ok = false
-    parsed ?bool = s.to-bool()
+    parsed = s.to-bool()
     parsed: {
         ok -> {
             value = it

@@ -245,8 +245,8 @@ f32.cos = () (res f32) {
 
 ; tan: tangent（libm tan，等价于 sin/cos）
 f64.tan = () (res f64) {
-    s f64 = .sin()
-    c f64 = .cos()
+    s = .sin()
+    c = .cos()
     res = s / c
 }
 
@@ -288,7 +288,7 @@ f32.atan = () (res f32) {
 
 ; 雙曲函數（f64/f32 方法）
 f64.sinh = () (res f64) {
-    e f64 = .exp()
+    e = .exp()
     ei = 1.0 / e
     res = (e - ei) / 2.0
 }
@@ -299,7 +299,7 @@ f32.sinh = () (res f32) {
 }
 
 f64.cosh = () (res f64) {
-    e f64 = .exp()
+    e = .exp()
     ei = 1.0 / e
     res = (e + ei) / 2.0
 }
@@ -310,7 +310,7 @@ f32.cosh = () (res f32) {
 }
 
 f64.tanh = () (res f64) {
-    e f64 = .exp()
+    e = .exp()
 
     ; tanh(x) = (e^2 - 1) / (e^2 + 1)
     res = (e * e - 1.0) / (e * e + 1.0)

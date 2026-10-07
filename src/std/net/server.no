@@ -705,7 +705,7 @@ server-conn.get-cookie = (name str) (val ?str) {
     val = nil
 
     ; 取得 Cookie 標頭
-    cookie-header ?str = .get-header('Cookie')
+    cookie-header = .get-header('Cookie')
     cookie-header: {
         ->
     }
@@ -717,7 +717,7 @@ server-conn.get-cookie = (name str) (val ?str) {
 ; 返回 val ?str: ok=原始 Cookie 值, nil=未找到或驗證失敗
 server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
     val = nil
-    signed ?str = .get-cookie(name)
+    signed = .get-cookie(name)
     signed: {
         ->
     }
@@ -729,7 +729,7 @@ server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
 ; 返回 ok bool: true=認證通過
 server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok bool) {
     ok = false
-    auth-header ?str = .get-header('Authorization')
+    auth-header = .get-header('Authorization')
     auth-header: {
         ->
     }

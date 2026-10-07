@@ -347,14 +347,14 @@ tables.dyn-add = (name str, value str) {
     }
 
     ; 新項放索引 0
-    dn0-tmp str = ''.with-len(name.len-bytes())
+    dn0-tmp = ''.with-len(name.len-bytes())
     j <- [0..name.len-bytes()): {
 
         dn0-tmp[j] = name.byte(j)
     }
 
     .dyn-names[0] = dn0-tmp
-    dv0-tmp str = ''.with-len(value.len-bytes())
+    dv0-tmp = ''.with-len(value.len-bytes())
     j <- [0..value.len-bytes()): {
 
         dv0-tmp[j] = value.byte(j)

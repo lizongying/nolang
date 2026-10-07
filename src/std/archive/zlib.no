@@ -58,7 +58,7 @@ zlib-compress = (data []byte) (out []byte) {
     result.push(0x9c)
 
     ; DEFLATE 資料（stored blocks）
-    deflated []byte = gzip.deflate-stored(data)
+    deflated = gzip.deflate-stored(data)
     i <- [0..deflated.len()): {
 
         #{index-out=zero}

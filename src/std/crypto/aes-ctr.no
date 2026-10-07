@@ -96,7 +96,7 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 ; iv [16]byte: 初始計數器值
 ; 返回 out []byte: 輸出資料
 crypt-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
-    ek []byte = aes.key-expand(key)
+    ek = aes.key-expand(key)
     out = ctr-crypt(in, iv, ek)
 }
 
@@ -106,6 +106,6 @@ crypt-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 ; iv [16]byte: 初始計數器值
 ; 返回 out []byte: 輸出資料
 crypt-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
-    ek []byte = aes.key-expand-256(key)
+    ek = aes.key-expand-256(key)
     out = ctr-crypt(in, iv, ek)
 }
