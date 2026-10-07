@@ -1,5 +1,20 @@
 # 更新日誌
 
+## v0.3.13
+
+- feat(ownership): implement hybrid ownership model with tiered soundness, deep-copy assignment rule, and precise RC handling
+- feat(mir): refine move/ownership semantics for correct drop and cloning; deep-clone vec elements and keep slice view sources alive
+- feat(mir): complete rule one for owned option and fix deep free regression
+- feat(ownership): land tier 1 owned %vec leaves for hashmap types
+- feat(number): add 128-bit integer range, sqrt, and is-prime methods
+- fix(mir): fix multiple memory leaks in string cloning and field assignment
+- fix(fmt): improve index-out annotation handling and prevent erroneous removals
+- fix(checker): support index-out annotation in LSP surface AST mode
+- perf(json): optimize memory usage by removing redundant index-out annotations
+- refactor(async): rename async-cancel primitives to cancel variants
+- docs(std): restructure math and number APIs; sync EN std docs with CN source
+- docs(ownership): document ownership model and record audit revalidation results
+
 ## v0.3.12
 
 - feat(json): refactor implementation with heap-allocated dynamic pool and expand node pool with overflow flag
