@@ -818,6 +818,17 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 			isWindowsTarget = tGoos == "windows"
 		}
 		clangArgs = append(clangArgs, sPath, "-o", outPath)
+		// Linux 發行版預設以 PIE 連結；本後端經 llc 產出的物件使用
+		// R_X86_64_32 絕對重定位（如 .rodata 中的常數查表），無法連結成
+		// PIE 可執行檔。對 Linux 目標改用 -no-pie 產生非 PIE 二進位。
+		// macOS / Windows 不適用此旗標（macOS 會報 unsupported option）。
+		tGoos, _ := parseTargetPlatform(target)
+		if tGoos == "" {
+			tGoos = runtime.GOOS
+		}
+		if tGoos == "linux" {
+			clangArgs = append(clangArgs, "-no-pie")
+		}
 		for _, lib := range linkLibs {
 			clangArgs = append(clangArgs, "-l"+lib)
 		}
