@@ -158,6 +158,64 @@ t-f64-method-to-str = () {
     runner.str-eq(s, '2.5', 3, 'f64.to-str 2.5')
 }
 
+; ── 128 位範圍常數（i128/u128）──────────────────
+; 取值經 hir2mir 的 typeConstantText128 常數表（i128 lane 全精度十進位），
+; 以 .to-str() 斷言精確位元組長度與內容。128 位算術已打通（見下方 sqrt/is-prime 測試）。
+t-int128-range-const = () {
+    a = i128.MAX
+    runner.str-eq(a.to-str(), '170141183460469231731687303715884105727', 39, 'i128.MAX')
+    b = i128.MIN
+    runner.str-eq(b.to-str(), '-170141183460469231731687303715884105728', 40, 'i128.MIN')
+    c = u128.MAX
+    runner.str-eq(c.to-str(), '340282366920938463463374607431768211455', 39, 'u128.MAX')
+    d = u128.MIN
+    runner.str-eq(d.to-str(), '0', 1, 'u128.MIN')
+
+    ; 邊界比較（已打通能力）
+    x i128 = i128.MAX
+    y i128 = i128.MIN
+    runner.eq(x > y ? 1 : 0, 1, 'i128 MAX > MIN')
+}
+
+; ── 128 位 sqrt / is-prime（i128/u128）──────────
+; 區區要點：運算元顯式標型、溢出註解獨立成行、多行 guard（單行 `;` 串接
+; 會觸發 128 位 codegen 丟棄 main）。結果常超 i64 值域，以 .to-str() 斷言。
+t-int128-sqrt = () {
+    imax i128 = i128.MAX
+    s1 i128 = imax.sqrt()
+    runner.str-eq(s1.to-str(), '13043817825332782212', 20, 'i128.MAX.sqrt')
+
+    imin i128 = i128.MIN
+    s2 i128 = imin.sqrt()
+    runner.str-eq(s2.to-str(), '0', 1, 'i128.MIN.sqrt (負數 -> 0)')
+
+    t124 i128 = 1000000000000000000000000
+    s3 i128 = t124.sqrt()
+    runner.str-eq(s3.to-str(), '1000000000000', 13, 'i128.1e24.sqrt')
+
+    umax u128 = u128.MAX
+    s4 u128 = umax.sqrt()
+    runner.str-eq(s4.to-str(), '18446744073709551615', 20, 'u128.MAX.sqrt (= 2^64-1)')
+
+    u124 u128 = 1000000000000000000000000
+    s5 u128 = u124.sqrt()
+    runner.str-eq(s5.to-str(), '1000000000000', 13, 'u128.1e24.sqrt')
+}
+
+t-int128-is-prime = () {
+    p97 i128 = 97
+    runner.is-true(p97.is-prime(), 'i128.is-prime(97)')
+
+    c100 i128 = 100
+    runner.is-false(c100.is-prime(), 'i128.is-prime(100)')
+
+    bp u128 = 1000003
+    runner.is-true(bp.is-prime(), 'u128.is-prime(1000003)')
+
+    bc u128 = 1000000000000000000
+    runner.is-false(bc.is-prime(), 'u128.is-prime(1e18)')
+}
+
 ; ── 執行 ──────────────────────────────────────
 p1, f1 = runner.test('math.max/min', t-max-min)
 p2, f2 = runner.test('num.abs', t-abs)
@@ -171,6 +229,9 @@ p9, f9 = runner.test('number.i64.to-str', t-i64-method-to-str)
 p10, f10 = runner.test('math.u64-to-str', t-u64-to-str)
 p11, f11 = runner.test('math.f64-to-str', t-f64-to-str)
 p12, f12 = runner.test('number.f64.to-str', t-f64-method-to-str)
+p13, f13 = runner.test('number.i128/u128 range const', t-int128-range-const)
+p14, f14 = runner.test('number.i128/u128 sqrt', t-int128-sqrt)
+p15, f15 = runner.test('number.i128/u128 is-prime', t-int128-is-prime)
 total = runner.summary()
 f = runner.failed-count()
 {

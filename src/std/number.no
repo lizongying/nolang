@@ -55,6 +55,16 @@ u64.MIN = 0
 #{overflow=wrap}
 u64.MAX = 0 - 1
 
+; i128: -170141183460469231731687303715884105728 ~ 170141183460469231731687303715884105727
+; 型別層常量取值經 hir2mir 的 typeConstantText128 常數表（i128 lane 走
+; 全精度十進位文字），以下定義為 API/文件用（與其他寬度一致）
+i128.MAX = 170141183460469231731687303715884105727
+i128.MIN = -170141183460469231731687303715884105728
+
+; u128: 0 ~ 340282366920938463463374607431768211455
+u128.MIN = 0
+u128.MAX = 340282366920938463463374607431768211455
+
 INF = 1.0 / 0.0
 
 ; int.to-str 聯合方法已移至 std/int.no（此處保留具體型別 i64.to-str 等方法）
@@ -438,8 +448,20 @@ i64.is-prime = () (yes bool) {
 ; 修復 hir2mir 無符號比較/除法路由（含嵌套子表達式遞迴探測、接收者綁定
 ; `n T = .` 的 localRaw 回退記錄）與 codegen coerceIntSigned（i8 按宣告型
 ; sext）後已補齊。
-; i128/u128 仍不提供：runtime 把 128 位整數截到 64 位，print 靜默空白、
-; 循環運算 trap，需完整 128 位 repr 支援。
+; i128/u128 除範圍常數與 .to-str() 外，亦提供 sqrt/is-prime（見下方
+; 「128 位整數方法副本」小節的標型與溢出註解要點）。
+; 128 位算術本身沒壞——把運算元顯式宣告為 i128/u128（帶型區域變數），
+; + − × ÷ % 在完整 128 位值域上結果正確（二分搜尋 sqrt 於 1e24、
+; i128.MAX、u128.MAX 上均得精確 ⌊√n⌋）。先前診斷出的兩處缺口皆已修通：
+; ① 溢出策略與 128 位交會——迴圈內整數算術需 `#{overflow=wrap}`，早期 i128
+;   位的 wrap 註解 lowering 會 derail 呼叫端 codegen（合成 main 丟棄頂層敘述），
+;   現以「顯式標型區域變數 + 註解獨立成行」的形式落地，既過 vet 又執行期正確。
+; ② u128 比較/除法誤走有符號謂詞——codegen isUnsignedRaw 漏列 u128，修正後
+;   u128.MAX 值域（≥ 2^127）不再誤序。
+; （範圍常數經 hir2mir 的 typeConstantText128 常數表（i128 lane，全精度十進位
+; 文字走 Inst.IntBig）取值；128 位字面量直接宣告給帶型區域變數、其 .to-str()
+; （經 int.to-str 或原生 @str_from_i128/@str_from_u128）、以及對合法 128 位值
+; 的比較，均已驗證。）
 
 ; i8（有符號：保留負數守衛）
 i8.sqrt = () (r i8) {
@@ -945,6 +967,154 @@ u64.is-prime = () (yes bool) {
         d = d + 2
 
         #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
+}
+
+; ── 128 位整數方法副本（i128 / u128）──
+; 128 位算術本身可用（運算元走 LLVM i128 道），但兩點必須兼顧：
+; ① 區域變數需顯式標型（`n i128 = .`、`lo i128 = 1` …）。不標型時
+;   checker 把與字面量混算的中間值推斷為 i64，迴圈會收敛於錯誤值甚至
+;   懸死（i128.MAX 的二分搜尋實測如此）。u128 不標型還會 i64→u128 賦值報錯。
+; ② 溢出註解佈局：i128（有符號，除法可能 INT_MIN/-1 溢出）對每條算術加
+;   `#{overflow=wrap}`；u128（無符號，÷/% 不會溢出）只對 + − 及「除以字面量」
+;   的運算加註解，對變數間 ÷/% 不加（否則 overflow-ineffective 告警）。
+;   註解須獨立成行、置於目標陳述前（單行 `;` 串接的 guard 會觸發
+;   128 位 codegen 丟棄整段 main）。
+;   同時修復 codegen isUnsignedRaw 漏列 u128：u128 的比較/除法之前誤走有符
+;   號謂詞，u128.MAX 值域（≥ 2^127）會誤序；修正後 u128.sqrt(u128.MAX)=2^64-1 精確。
+i128.sqrt = () (r i128) {
+    n i128 = .
+    n < 0 -> {
+        r = 0
+        return
+    }
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo i128 = 1
+
+    #{overflow=wrap}
+    hi i128 = n / 2
+    r i128 = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid i128 = (lo + hi) / 2
+
+        #{overflow=wrap}
+        q i128 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
+}
+
+i128.is-prime = () (yes bool) {
+    n i128 = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 i128 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d i128 = 3
+
+    #{overflow=wrap}
+    lim i128 = n / d
+    (d <= lim) {
+
+        #{overflow=wrap}
+        md i128 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
+
+        #{overflow=wrap}
+        lim = n / d
+    }
+    yes = true
+}
+
+u128.sqrt = () (r u128) {
+    n u128 = .
+    n < 2 -> {
+        r = n
+        return
+    }
+    lo u128 = 1
+
+    #{overflow=wrap}
+    hi u128 = n / 2
+    r u128 = 1
+    (lo <= hi) {
+
+        #{overflow=wrap}
+        mid u128 = (lo + hi) / 2
+        q u128 = n / mid
+        {
+            mid <= q -> {
+                r = mid
+
+                #{overflow=wrap}
+                lo = mid + 1
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                hi = mid - 1
+            }
+        }
+    }
+}
+
+u128.is-prime = () (yes bool) {
+    n u128 = .
+    n < 2 -> {
+        yes = false
+        return
+    }
+
+    #{overflow=wrap}
+    m2 u128 = n % 2
+    m2 == 0 -> {
+        yes = (n == 2)
+        return
+    }
+    d u128 = 3
+    lim u128 = n / d
+    (d <= lim) {
+        md u128 = n % d
+        md == 0 -> {
+            yes = false
+            return
+        }
+
+        #{overflow=wrap}
+        d = d + 2
         lim = n / d
     }
     yes = true

@@ -164,7 +164,7 @@ func scalarMethodResult(callee string) string {
 // std-defined methods (to-str, to-i64, ...).
 func isScalarNolangType(raw string) bool {
 	switch raw {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
 		"byte", "char", "int", "uint",
 		"f32", "f64":
 		return true
@@ -190,7 +190,7 @@ func bareConvertResult(callee string) string {
 		base = callee[i+1:]
 	}
 	switch base {
-	case "i64-to-str":
+	case "i64-to-str", "i128-to-str", "u128-to-str":
 		return "str"
 	}
 	return ""

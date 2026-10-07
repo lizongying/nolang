@@ -5484,7 +5484,7 @@ func isIntType(lt string) bool {
 // loop of i64-to-str / u64-to-str).
 func isUnsignedRaw(raw string) bool {
 	switch raw {
-	case "u64", "u32", "u16", "u8", "byte":
+	case "u64", "u32", "u16", "u8", "byte", "u128":
 		return true
 	}
 	return false
@@ -11745,6 +11745,15 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	case strings.HasSuffix(callee, "to-str__i128"):
 		callee = "i128-to-str"
 	case strings.HasSuffix(callee, "to-str__u128"):
+		callee = "u128-to-str"
+		// A value whose inferred type is the CONCRETE i128/u128 (e.g. an untyped
+		// top-level `b = i128.MAX`) resolves `.to-str()` against the raw type name
+		// as `i128.to-str` / `u128.to-str` instead of the `int` union instantiation
+		// (`int.int.to-str__i128`), which carries no `__<type>` suffix for the
+		// branches above to match. Route these directly to the native helpers too.
+	case callee == "i128.to-str":
+		callee = "i128-to-str"
+	case callee == "u128.to-str":
 		callee = "u128-to-str"
 	}
 	// `i128-to-str` / `u128-to-str` render a 128-bit integer as a %str-long via

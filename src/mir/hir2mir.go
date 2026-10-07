@@ -1698,7 +1698,14 @@ func (l *lowerer) valueRaw(v ValueID) string {
 // excluded so they are not inlined into main (which would produce malformed IR).
 func (l *lowerer) isInlineableLetType(raw string) bool {
 	switch raw {
-	case "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "byte",
+	case "i64", "i32", "i16", "i8", "i128", "u64", "u32", "u16", "u8", "u128", "byte",
+		// i128/u128 are 128-bit integer lanes (LLVM i128). Excluding them made
+		// every top-level `x i128 = <runtime value>` (e.g. `x i128 = i128.MAX`,
+		// whose initializer is NOT a foldable literal) fall into the
+		// "non-inlineable" branch below and get dropped from the synthesized
+		// `main` entirely, so the name never bound and the later read emitted
+		// `i128 undef`. Inline them like any other scalar so the OpConst store
+		// (emitConst `case "i128"`) materializes the value.
 		"bool", "f64", "f32", "double", "str", "txt",
 		// `char` is a scalar like any other integer lane (KindChar -> i32) and
 		// lowers the same way. Leaving it out made EVERY top-level `x char =
@@ -6934,6 +6941,39 @@ func typeConstantValue(typeName, field string) (int64, bool) {
 	return maxv, true
 }
 
+// typeConstantText128 resolves an i128/u128 MIN/MAX compile-time constant (e.g.
+// `i128.MAX`, `u128.MIN`). typeConstantValue is capped at int64, so the full 128-
+// bit range cannot flow through it; these return the exact decimal text plus the
+// MIR raw type ("i128"/"u128"), which the caller emits on the i128 lane carrying
+// the text on the inst's IntBig — the same mechanism the 128-bit integer LITERAL
+// lowering uses (see the KIntLit branch). Returns ("","",false) when the receiver
+// is not i128/u128 or the field is not MIN/MAX.
+func typeConstantText128(typeName, field string) (string, string, bool) {
+	if field != "MIN" && field != "MAX" {
+		return "", "", false
+	}
+	var minTxt, maxTxt string
+	switch typeName {
+	case "i128":
+		// -2^127 .. 2^127-1. MIN is the exact i128 two's-complement value; the
+		// i128 store path (codegen `store i128 <IntBig>`) already handles the
+		// negative decimal (a `x i128 = -2^127` local prints faithfully).
+		minTxt = "-170141183460469231731687303715884105728"
+		maxTxt = "170141183460469231731687303715884105727"
+	case "u128":
+		// 0 .. 2^128-1. MAX exceeds signed i128 magnitude but is a valid 128-bit
+		// bit pattern (@str_from_u128 reads it unsigned).
+		minTxt = "0"
+		maxTxt = "340282366920938463463374607431768211455"
+	default:
+		return "", "", false
+	}
+	if field == "MIN" {
+		return minTxt, typeName, true
+	}
+	return maxTxt, typeName, true
+}
+
 func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	fieldName := l.pkg.Str(n.S)
 
@@ -6951,7 +6991,16 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	// -> opt-inserted trap at the `m == -128` comparison (test-i8-debug2).
 	if recvID != hir.NoID {
 		if rn := l.pkg.Node(recvID); rn != nil && rn.Kind == hir.KIdent {
-			if v, ok := typeConstantValue(l.pkg.Str(rn.S), fieldName); ok {
+			tname := l.pkg.Str(rn.S)
+			// 128-bit range constants go on the i128 lane with the full decimal
+			// carried on IntBig (typeConstantValue below is int64-capped).
+			if txt, w, ok := typeConstantText128(tname, fieldName); ok {
+				tid := l.b.Type(w)
+				v := l.b.EmitInt(OpConst, tid, 0, "")
+				l.mod.Insts[len(l.mod.Insts)-1].IntBig = txt
+				return v
+			}
+			if v, ok := typeConstantValue(tname, fieldName); ok {
 				return l.b.EmitInt(OpConst, l.b.Type("i64"), v, "")
 			}
 		}

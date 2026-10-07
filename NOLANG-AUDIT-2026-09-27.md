@@ -10,10 +10,9 @@
 | 维度 | 状态 | 关键数字 |
 |---|---|---|
 | MIR 内存安全 | 🟠 开放 | §2.1 越界堆写、§2.3 架构债 |
-| 标准库测试 | 🟢 40/41 | bufio 5/6（option-cmp 遗留，非编译器缺陷） |
 | 诊断工具链 | 🟠 开放 | §3.1-3.5 merged 过滤掩盖、`no fmt` 默认改语义、`--fix` 局限 |
-| 测试覆盖 | 🔴 盲区 | crypto(31)/net(19) 零测试；json builder 零回归 |
-| std workaround 债 | 🟠 开放 | §4.4：`&&` 不短路、out-param 条件块失效等 |
+| 测试覆盖 | 🟠 部分闭环 | 2026-10-06：crypto/net/collection/顶层已补（见 §4.1.1）；archive、socket 模块、json builder 零回归仍开放 |
+| std workaround 债 | 🟠 开放 | §4.3：`&&` 不短路、out-param 条件块失效等 |
 | CI 门禁 | ✅ 已补 | `.github/workflows/test.yml`（go-build/corpus-smoke/std-test/vet-gate） |
 
 ---
@@ -83,15 +82,7 @@
 
 ## 4. 标准库（P1）
 
-### 4.1 `test/std/` 40 绿 1 红
-
-| 文件 | 结果 | 根因 |
-|---|---|---|
-| `bufio.no` | ❌ 5/6 | `read-byte 2nd` 测试的 matched-bare-match option 比较语法 `b2 == 89`（b2 为 `?byte`）在 wildcard arm 内的展开行为——实际 b2 值正确（调试输出 89），为 test 写法 / option-compare lowering 遗留，非编译器 codegen 缺陷。 |
-
-> **2026-10-06 复核**：该文件现已通过；全量 `test/std/` 86/86 绿（见 §4.2.1）。
-
-### 4.2 测试覆盖缺口（大面积盲区）
+### 4.1 测试覆盖缺口（大面积盲区）
 
 | 范围 | 缺口（整改前） |
 |---|---|
@@ -102,7 +93,7 @@
 | `src/std/archive/` | 7 → 仅 2 |
 | `src/std/collection/` | 12 → 5 |
 
-#### 4.2.1 整改进度（2026-10-06）
+#### 4.1.1 整改进度（2026-10-06）
 
 `test/std/` 由 40 文件增至 **86 文件，全量 86/86 绿**；`no vet src/std` **0 error**（仅 warning/hint）。新增测试 47 个。黄金向量以 RFC/NIST 标准与 OpenSSL/Python 参考实现交叉验证，过程中发现并修复以下**真实缺陷**（均已被回归测试锁定）：
 
@@ -137,11 +128,11 @@
 - `archive/`：仍仅 gzip/zlib 有测试；tar/zip 源码本轮有修补但未补 golden；bzip2/xz/zstd 未覆盖。
 - 顶层 `async/embed/enter/leave`：仍无 test/std 专项（async 行为在 `tests/async-*.no` 有金样本）。
 
-### 4.3 json builder 跨池缺陷 + 零回归覆盖
+### 4.2 json builder 跨池缺陷 + 零回归覆盖
 
 `arr-push`/`set-key`/`delete-key` 实测对 `parse`-建的接收者**返回 ok=true 却静默不改动**（跨池 copy-tree 未接上）；`json.new()`(null) 调 `arr-push` 则 **SIGSEGV**。详见 `tests/json-crosspool-mutate.no`（expected-fail）。`src/std/json.no` 正被并发会话编辑，本轮不碰。
 
-### 4.4 std 源码 workaround 技术债清单
+### 4.3 std 源码 workaround 技术债清单
 
 | 位置 | 问题 |
 |---|---|
@@ -186,9 +177,9 @@
 |---|---|---|---|
 | 1 | json builder 跨池 copy-tree 修复 | 中 | std+编译器 |
 | 2 | §2.1 ensureStrLongBuffer 增长护栏 | 中 | 编译器 |
-| 3 | 补 crypto(31)/net(19) 测试覆盖 | 中 | std |
+| 3 | ~~补 crypto(31)/net(19) 测试覆盖~~ ✅ 已完成（2026-10-06，见 §4.1.1） | 中 | std |
 | 4 | 默认 no fmt 不改语义（§3.4） | 中 | CLI |
-| 5 | §4.4 技术债（&&/out-param） | 长效 | 编译器 |
+| 5 | §4.3 技术债（&&/out-param） | 长效 | 编译器 |
 | 6 | nodeSem 键稳定化 + 去掩盖式过滤 | 长效 | 诊断 |
 
 ---
