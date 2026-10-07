@@ -19,8 +19,8 @@ func NewWriter() *Writer {
 }
 
 // WriteByte 寫入單一位元組。
-func (w *Writer) WriteByte(b byte) {
-	w.buf.WriteByte(b)
+func (w *Writer) WriteByte(b byte) error {
+	return w.buf.WriteByte(b)
 }
 
 // WriteBytes 寫入一段原始位元組。
