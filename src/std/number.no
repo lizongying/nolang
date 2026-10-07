@@ -875,7 +875,6 @@ u8.sqrt = () (r u8) {
         #{overflow=wrap}
         mid u8 = (lo + hi) / 2
 
-        #{overflow=wrap}
         q u8 = n / mid
         {
             mid <= q -> {
@@ -909,7 +908,6 @@ u8.is-prime = () (yes bool) {
     }
     d u8 = 3
 
-    #{overflow=wrap}
     lim = n / d
     (d <= lim) {
 
@@ -923,7 +921,6 @@ u8.is-prime = () (yes bool) {
         #{overflow=wrap}
         d = d + 2
 
-        #{overflow=wrap}
         lim = n / d
     }
     yes = true
@@ -946,7 +943,6 @@ u16.sqrt = () (r u16) {
         #{overflow=wrap}
         mid u16 = (lo + hi) / 2
 
-        #{overflow=wrap}
         q u16 = n / mid
         {
             mid <= q -> {
@@ -980,7 +976,6 @@ u16.is-prime = () (yes bool) {
     }
     d u16 = 3
 
-    #{overflow=wrap}
     lim = n / d
     (d <= lim) {
 
@@ -994,7 +989,6 @@ u16.is-prime = () (yes bool) {
         #{overflow=wrap}
         d = d + 2
 
-        #{overflow=wrap}
         lim = n / d
     }
     yes = true
@@ -1017,7 +1011,6 @@ u32.sqrt = () (r u32) {
         #{overflow=wrap}
         mid u32 = (lo + hi) / 2
 
-        #{overflow=wrap}
         q u32 = n / mid
         {
             mid <= q -> {
@@ -1051,7 +1044,6 @@ u32.is-prime = () (yes bool) {
     }
     d u32 = 3
 
-    #{overflow=wrap}
     lim = n / d
     (d <= lim) {
 
@@ -1065,7 +1057,6 @@ u32.is-prime = () (yes bool) {
         #{overflow=wrap}
         d = d + 2
 
-        #{overflow=wrap}
         lim = n / d
     }
     yes = true
@@ -1088,7 +1079,6 @@ u64.sqrt = () (r u64) {
         #{overflow=wrap}
         mid u64 = (lo + hi) / 2
 
-        #{overflow=wrap}
         q u64 = n / mid
         {
             mid <= q -> {
@@ -1122,7 +1112,6 @@ u64.is-prime = () (yes bool) {
     }
     d u64 = 3
 
-    #{overflow=wrap}
     lim = n / d
     (d <= lim) {
 
@@ -1136,7 +1125,6 @@ u64.is-prime = () (yes bool) {
         #{overflow=wrap}
         d = d + 2
 
-        #{overflow=wrap}
         lim = n / d
     }
     yes = true

@@ -52,6 +52,17 @@ min = (a ..num) (r num) {
 
 ; pow: f64 求幂 a^b（纯 .no 实现 exp(y*ln|x|)，避免 libm 依赖）
 ; 整数冪（int 泛型）见 std/number.no 的 pow-int
+;
+; ⚠️ 负底数必须单独处理：exp(y*ln|x|) **恒为正**，无法还原符号。
+; 移除 libm 前本函数是 `#{buildin}` → libm `pow`，遵循 C 语义；
+; 纯 .no 重写时漏了符号 ⇒ pow(-2.0, 3.0) 曾回传 8.0（应为 -8.0）。
+; C pow 对 x<0 的语义：y 为整数才有实数解，奇数取负、偶数取正；
+; y 非整数则返回 NaN。
+;
+; ⚠️ 已知限制（与 C pow 的差异，均为极端边界）：
+;   1. |y| > 2^63 时 f64-to-i64 溢出，奇偶判定失真 ⇒ inf 的符号可能反。
+;      此时 mag 本身已是 inf/0，只影响符号。
+;   2. x==0.0 且 y<0 时 C pow 回传 +inf，本实现回传 0.0（沿旧行为）。
 pow = (x f64, y f64) (res f64) {
     y == 0.0 -> {
         res = 1.0
@@ -62,8 +73,20 @@ pow = (x f64, y f64) (res f64) {
         return
     }
     x < 0.0 -> {
+        yi f64 = y.trunc()
+        yi != y -> {
+            ; 负底数 + 非整数指数 ⇒ NaN
+            res = 0.0 / 0.0
+            return
+        }
         ax f64 = 0.0 - x
-        res = (y * ax.log()).exp()
+        mag f64 = (y * ax.log()).exp()
+        n i64 = f64-to-i64(yi)
+        n & 1 == 0 -> {
+            res = mag
+            return
+        }
+        res = 0.0 - mag
         return
     }
     res = (y * x.log()).exp()

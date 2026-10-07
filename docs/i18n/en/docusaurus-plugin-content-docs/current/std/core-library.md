@@ -29,7 +29,7 @@ All "function-form" numeric APIs of std are gathered in the math module (std/mat
 
 **Compare (num-generic variadic functions):** `math.max`, `math.min` (`a ..num`; integers and floats share the same monomorphization path)
 
-**Power/Root (functions):** `math.pow` (f64 power a^b, implemented in pure Nolang as `exp(y*ln|x|)` — **no libm dependency**), `math.hypot` (sqrt(x*x + y*y))
+**Power/Root (functions):** `math.pow` (f64 power a^b, implemented in pure Nolang as `exp(y*ln|x|)` plus explicit sign handling for negative bases — odd integer exponent keeps the sign, even drops it, non-integer returns NaN; **no libm dependency**), `math.hypot` (sqrt(x*x + y*y))
 
 **Other functions:** `math.atan2`, `math.fmod` (float remainder), `math.clamp` (i64 saturating clamp)
 

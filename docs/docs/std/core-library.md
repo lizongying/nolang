@@ -29,7 +29,7 @@ std 數字系全部「函數形式」API 集中於 math 模組（std/math.no）�
 
 **比値（num 泛型變參函數）：** `math.max`, `math.min`（`a ..num`，整數與浮點走同一單態化路徑）
 
-**冪/根（函數）：** `math.pow`（f64 求冪 a^b，純 .no 實現 `exp(y*ln|x|)`，**不依賴 libm**）, `math.hypot`（sqrt(x*x+y*y)）
+**冪/根（函數）：** `math.pow`（f64 求冪 a^b，純 .no 實現：`exp(y*ln|x|)` ＋ 負底數符號處理（整數指數奇數取負、偶數取正，非整數指數回 NaN），**不依賴 libm**）, `math.hypot`（sqrt(x*x+y*y)）
 
 **其他函數：** `math.atan2`, `math.fmod`（浮點取餘）, `math.clamp`（i64 飽和箝位）
 

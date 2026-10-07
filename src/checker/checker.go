@@ -3279,6 +3279,11 @@ func operandIntKind(e parser.Expression, declared map[string]string) string {
 			}
 		}
 		return ""
+	case *parser.GroupedExpression:
+		// 括號包裹的運算式（如 `(x - 1.0) / (x + 1.0)` 中的 `(x - 1.0)`）：按內層
+		// 運算式判定，否則會掉到尾部的保守 `return "signed"`，使 `(f64 - 1.0)` 這類
+		// 明確浮點子運算被誤当成整數 → 外層 `/`、`*` 誤報 ovf-int-default。
+		return operandIntKind(x.Expression, declared)
 	case *parser.InfixExpression:
 		// 巢狀的字串拼接鏈。`-` 是左結合，所以
 		//     'A=[' - s - '] B=[' - s - ']'
@@ -3573,6 +3578,17 @@ var stdPrimitiveFloatMethodTypes = map[string]string{
 func registerInferredNonIntLet(s *parser.LetStatement, types map[string]string, funcTypes map[string]string) {
 	if s.Name == nil || s.Type != nil || s.Value == nil || types == nil {
 		return
+	}
+	// 右值是「型別已知」的裸識別字（如方法接收者 `.`=self，或另一個已標註變數）
+	// 時，直接別名登記其確定型別（含整數家族）。這不是算術推斷，型別無不確定性；
+	// 若不登記，`n = .`（u128 接收者）會令 n 型別未知 → `n / d`（無號除法永不溢出）
+	// 被 operandIntKind 保守當成有號 → 誤報 ovf-int-default。下方「整數家族不登記」
+	// 的保守口徑只針對算術推斷結果，不針對這種確定的識別字別名。
+	if id, ok := s.Value.(*parser.Identifier); ok {
+		if t := types[id.Value]; t != "" {
+			types[s.Name.Value] = t
+			return
+		}
 	}
 	// funcTypes 由呼叫端（collectFuncDeclared / collectTopLevelLets）在每次公開
 	// validator 呼叫頂部用 snapshotValidationFuncTypes() 拍一次後傳入，避免對每個
@@ -4401,6 +4417,11 @@ func isIntExpr(e parser.Expression, varTypes map[string]string, selfType string)
 	switch x := e.(type) {
 	case *parser.StringLiteral, *parser.CharLiteral, *parser.BooleanLiteral, *parser.RegexLiteral:
 		return false // str/txt 字面量等：確定非整數，`-` 是字串拼接
+	case *parser.GroupedExpression:
+		// 括號包裹：按內層運算式判定（與 operandIntKind 同口徑），避免 `(x - 1.0)`
+		// 這類浮點子運算因未展開而掉到尾部保守「型別未知 → 整數」路徑，誤報
+		// ovfhndld。
+		return isIntExpr(x.Expression, varTypes, selfType)
 	case *parser.InfixExpression:
 		// 字串拼接鏈：`-` 左結合，任一側確定非整數（字面量 / 具名非整數型別 /
 		// 被捕獲的 option 子運算）即視為拼接，不產生 option<int>。與 ovf-int-default
@@ -4590,6 +4611,16 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 				cf = mainFile
 			}
 			vt, st := seedVarTypes(s.Parameters, declaredResults(s), s.IsMethodDef)
+			// 原始型別方法（如 `f64.log = () (res f64)`）的接收者 self 位於 Results[0]
+			//（非 Parameters[0]），且被 declaredResults 剝除，故 seedVarTypes 得到的 st
+			// 仍為空。此處從原始 Results 取回接收者型別並登記 self，使裸 `.`（self）在
+			// 下游運算元型別推斷中能解析——否則 `x = .` 型別未知 → 其 `(x - 1.0)` 等被
+			// 保守當成整數 → 對純浮點運算誤報 ovfhndld。
+			if s.IsMethodDef && st == "" && len(s.Results) > 0 && s.Results[0] != nil &&
+				s.Results[0].Name == "self" && s.Results[0].Type != nil {
+				st = s.Results[0].Type.String()
+				vt["self"] = st
+			}
 			if s.Body != nil {
 				// 函式體是獨立作用域，只受其自身註解約束；不繼承外層 enclosingOverflow，
 				// 以免外層註解靜默掩蓋巢狀函式體內的真實泄漏。
