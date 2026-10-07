@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "1ecb2b5ca3396843e60fdbe8debe71802a5bf5e87bfaf51f0dec04704721d8ae"
+	embeddedStdSigKey = "ea08e4de24be450ce617cb55aacf8deeaa80e76ea6431d3bb7e3f056fbe714b4"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -503,6 +503,8 @@ func init() {
 		"net.route-list":                           {"[]route-info"},
 		"net.split-ws":                             {"[]str"},
 		"net.udp-dial-to":                          {"?udp-conn"},
+		"number.exp-f64":                           {"f64"},
+		"number.pow":                               {"i64"},
 		"os.arg":                                   {"str"},
 		"os.args":                                  {"i64"},
 		"os.ch-dir":                                {"bool"},
@@ -3547,6 +3549,8 @@ func init() {
 		"net.route-list":                           {},
 		"net.split-ws":                             {"str"},
 		"net.udp-dial-to":                          {"str", "i64"},
+		"number.exp-f64":                           {"f64"},
+		"number.pow":                               {"i64", "i64"},
 		"os.arg":                                   {"i64"},
 		"os.args":                                  {},
 		"os.ch-dir":                                {"str"},
