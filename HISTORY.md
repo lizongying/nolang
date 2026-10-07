@@ -1,5 +1,13 @@
 # 更新日誌
 
+## v0.3.14
+
+- refactor(math): remove libm dependency; implement math functions in pure Nolang
+- fix(build): link Linux native binaries with -no-pie to allow R_X86_64_32 rodata relocations
+- fix(wasm): make Writer.WriteByte match std method signature WriteByte(byte) error
+- fix(parser): add IsInferred flag for MapType and update related logic
+- docs(site): add release history page and register in sidebar
+
 ## v0.3.13
 
 - feat(ownership): implement hybrid ownership model with tiered soundness, deep-copy assignment rule, and precise RC handling
