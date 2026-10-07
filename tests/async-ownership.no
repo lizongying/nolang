@@ -40,17 +40,21 @@ echo-async = (s str) (r str) {
 }
 
 first-async = (v []i64) (r i64) {
+
     #{index-out=zero}
     r = v[0]
 }
 
 double-async = (n i64) (r i64) {
+
     #{overflow=wrap}
     r = n * 2
 }
 
 ; 7/8 用的結構體：內聯擁有的 `str` 葉子。
-holder { s str }
+holder {
+    s str
+}
 
 echo-holder-async = (h holder) (r str) {
     r = h.s
@@ -58,7 +62,7 @@ echo-holder-async = (h holder) (r str) {
 
 ; 1. str 參數：spawn 後重賦值 -> 任務必須持有自己的副本
 test-str-arg-reassign = () {
-    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     h = run echo-async(s)
     s = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
     v = awy h
@@ -67,7 +71,7 @@ test-str-arg-reassign = () {
 
 ; 2. []i64 參數：同上（元素指標型別走不同的克隆 helper）
 test-vec-arg-reassign = () {
-    a []i64 = [7, 8, 9]
+    a = [7, 8, 9]
     h = run first-async(a)
     a = [1, 2, 3]
     n = awy h
@@ -85,7 +89,7 @@ test-double-await = () {
 
 ; 4. 從未賦值的 handle（0）不會崩潰
 test-null-handle = () {
-    h i64 = 0
+    h = 0
     z = awy h
     print(z); expect: 0
 }
@@ -111,9 +115,13 @@ test-two-handles = () {
 ;    已釋放記憶體。修復前這條「碰巧」印對，因為重賦值本身洩漏了那個 buffer
 ;    ——兩個缺陷互相掩蓋，所以必須一起修。
 test-struct-arg-reassign = () {
-    h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
+    h = holder {
+        s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    }
     t = run echo-holder-async(h)
-    h = holder { s: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' }
+    h = holder {
+        s: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+    }
     v = awy t
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
@@ -121,16 +129,22 @@ test-struct-arg-reassign = () {
 ; 8. struct 重賦值必須釋放舊欄位（洩漏修復），但**不能**波及新值。
 ;    這條是過度修正的守門員：釋放順序若顛倒，這裡會印出空字串或崩潰。
 test-struct-rebind = () {
-    h holder = holder { s: 'first' }
-    h = holder { s: 'second' }
+    h = holder {
+        s: 'first'
+    }
+    h = holder {
+        s: 'second'
+    }
     print(h.s); expect: second
 }
 
 ; 9. 已宣告的 handle 重新賦值：結果型別必須跟著搬到既有的 slot。
 ;    修復前這條印出 40（str 的長度）而不是字串，rc 仍是 0。
 test-handle-rebind = () {
-    h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
-    t i64 = 0
+    h = holder {
+        s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    }
+    t = 0
     t = run echo-holder-async(h)
     v = awy t
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
@@ -139,8 +153,10 @@ test-handle-rebind = () {
 ; 10. 同上，但 v 明確宣告為 str（修復前是編譯錯誤：
 ;     "cannot assign i64 value to str variable 'v'"）。
 test-handle-rebind-typed = () {
-    h holder = holder { s: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC' }
-    t i64 = 0
+    h = holder {
+        s: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+    }
+    t = 0
     t = run echo-holder-async(h)
     v str = awy t
     print(v); expect: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC

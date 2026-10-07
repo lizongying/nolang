@@ -22,13 +22,21 @@ j: {
                 out.contains('newkey') -> print('fail: case1 child leaked to parent -> {out}')
                 sout = it.stringify()
                 sout.contains('newkey') == false -> print('fail: case1 child missing its own newkey')
-                out.contains('x') -> { sout.contains('newkey') -> { out.contains('newkey') == false -> print('ok: case1 child-grow keeps parent intact') } }
+                out.contains('x') -> {
+                    sout.contains('newkey') -> {
+                        out.contains('newkey') == false -> print('ok: case1 child-grow keeps parent intact')
+                    }
+                }
             }
+
             nil -> print('fail: case1 sub nil')
+
             err -> print('fail: case1 sub err')
         }
     }
+
     nil -> print('fail: case1 parse nil')
+
     err -> print('fail: case1 parse err')
 }
 
@@ -46,11 +54,15 @@ y: {
                 ro.contains('obj') == false -> print('fail: case2 root lost obj -> {ro}')
                 ro.contains('obj') -> print('ok: case2 root survives child.alloc')
             }
+
             nil -> print('fail: case2 child nil')
+
             err -> print('fail: case2 child err')
         }
     }
+
     nil -> print('fail: case2 parse nil')
+
     err -> print('fail: case2 parse err')
 }
 
@@ -69,13 +81,21 @@ v: {
                 vo.contains('foo') -> print('fail: case3 foo not removed -> {vo}')
                 vo.contains('baz') == false -> print('fail: case3 baz not added -> {vo}')
                 vo.contains('bar') == false -> print('fail: case3 bar lost -> {vo}')
-                vo.contains('foo') == false -> { vo.contains('baz') -> { vo.contains('bar') -> print('ok: case3 re-attach idiom works') } }
+                vo.contains('foo') == false -> {
+                    vo.contains('baz') -> {
+                        vo.contains('bar') -> print('ok: case3 re-attach idiom works')
+                    }
+                }
             }
+
             nil -> print('fail: case3 dep nil')
+
             err -> print('fail: case3 dep err')
         }
     }
+
     nil -> print('fail: case3 parse nil')
+
     err -> print('fail: case3 parse err')
 }
 
@@ -90,21 +110,27 @@ a: {
                 e = it.arr-get(0)
                 e: {
                     ok -> {
-                        it.set-str('extra', 'x')   ; grow the element copy
+                        it.set-str('extra', 'x'); grow the element copy
                         ro = root.stringify()
                         ro == 'null' -> print('fail: case4 root null after arr-get elem grow')
                         ro.contains('list') == false -> print('fail: case4 root lost list -> {ro}')
                         ro.contains('list') -> print('ok: case4 root survives arr-get elem grow')
                     }
+
                     nil -> print('fail: case4 elem nil')
+
                     err -> print('fail: case4 elem err')
                 }
             }
+
             nil -> print('fail: case4 list nil')
+
             err -> print('fail: case4 list err')
         }
     }
+
     nil -> print('fail: case4 parse nil')
+
     err -> print('fail: case4 parse err')
 }
 

@@ -15,14 +15,14 @@
 
 ; 直接印視圖（最小重現）
 test-print-view = () {
-    a []i64 = [10, 20, 30, 40, 50]
+    a = [10, 20, 30, 40, 50]
     b = a[2..4]
     print(b)
 }
 
 ; 視圖在來源「重綁」之後仍然有效 —— 視圖讓舊緩衝區活著
 test-view-survives-rebind = () {
-    a []i64 = [1, 2, 3]
+    a = [1, 2, 3]
     b = a[0..1]
     a = [9, 9, 9]
     print(b)
@@ -30,7 +30,7 @@ test-view-survives-rebind = () {
 
 ; 逐元素讀（這條在修復前就是對的 —— 對照組）
 test-view-elements = () {
-    a []i64 = [7, 8, 9, 10]
+    a = [7, 8, 9, 10]
     b = a[1..2]
     print(b[0])
     print(b[1])
@@ -38,9 +38,8 @@ test-view-elements = () {
 
 ; 迴圈裡的視圖
 test-view-in-loop = () {
-    a []i64 = [1, 2, 3, 4, 5, 6]
-    i <- [0..3] {
-        #{overflow=wrap}
+    a = [1, 2, 3, 4, 5, 6]
+    i <- [0..3]: {
         b = a[i..i]
         print(b[0])
     }
@@ -48,7 +47,7 @@ test-view-in-loop = () {
 
 ; 視圖鏈：視圖的視圖仍指向原始擁有者
 test-view-chain = () {
-    a []i64 = [10, 20, 30, 40, 50, 60]
+    a = [10, 20, 30, 40, 50, 60]
     b = a[1..5]
     c = b[1..2]
     print(c)

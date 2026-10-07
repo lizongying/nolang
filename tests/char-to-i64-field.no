@@ -14,16 +14,16 @@ box {
 main = () {
     x box
 
-    ca char = "A"
+    ca = "A"
     x.ch = ca
     x.ch != 65 -> os.exit(1)
 
-    cz char = "z"
+    cz = "z"
     x.b = cz
     x.b != 122 -> os.exit(2)
 
-    t bool = true
-    f bool = false
+    t = true
+    f = false
     x.flag = t
     x.flag != 1 -> os.exit(3)
 

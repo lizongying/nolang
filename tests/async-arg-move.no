@@ -23,11 +23,14 @@ echo = (s str) (r str) {
 }
 
 first = (v []i64) (r i64) {
+
     #{index-out=zero}
     r = v[0]
 }
 
-holder { s str }
+holder {
+    s str
+}
 
 echo-holder = (h holder) (r str) {
     r = h.s
@@ -36,7 +39,7 @@ echo-holder = (h holder) (r str) {
 ; 1. str 參數在 spawn 之後已死 -> 轉移。任務必須讀到完整內容，
 ;    而且呼叫端不得再釋放它（否則就是 double free）。
 test-str-move = () {
-    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     v = co echo(s)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
@@ -44,14 +47,14 @@ test-str-move = () {
 ; 2. 同一個形狀，但字串夠大：double free 在大塊上比較容易被配置器抓到。
 ;    印長度而不是內容，只是為了讓 expect 短一點——轉移後長度必須原樣送達。
 test-str-move-large = () {
-    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     v = co echo(s)
     print(v.len()); expect: 100
 }
 
 ; 3. []i64 參數已死 -> 轉移（元素指標走另一條克隆 helper）。
 test-vec-move = () {
-    a []i64 = [7, 8, 9]
+    a = [7, 8, 9]
     n = co first(a)
     print(n); expect: 7
 }
@@ -59,7 +62,9 @@ test-vec-move = () {
 ; 4. struct 參數已死 -> 轉移。struct 的深拷貝是「ptr 欄位遞迴 + 內聯葉子」
 ;    兩段走訪，轉移則整段省掉，改由 wrapper 的遞迴解構子釋放。
 test-struct-move = () {
-    h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
+    h = holder {
+        s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    }
     v = co echo-holder(h)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
@@ -68,8 +73,8 @@ test-struct-move = () {
 ;    （`go` 必須是陳述級：先 await 進變數，不能直接作為 print 引數——
 ;     巢狀 `go` 不在 desugar 範圍內，會退化成裸 -async 呼叫回傳句柄。）
 test-two-moves = () {
-    s str = 'hello'
-    a []i64 = [42]
+    s = 'hello'
+    a = [42]
     v1 = co echo(s)
     v2 = co first(a)
     print(v1); expect: hello
@@ -79,7 +84,7 @@ test-two-moves = () {
 ; 6. 反向（防止過度修正）：參數在 spawn 之後仍被**讀取** -> 必須維持深拷貝。
 ;    這裡若改成轉移，任務就會在呼叫端釋放之後才讀，印出垃圾。
 test-str-live-copy = () {
-    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     v = co echo(s)
     print(s); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
@@ -87,7 +92,7 @@ test-str-live-copy = () {
 
 ; 7. 反向：§2.3.2 的重賦值形狀（重賦值會釋放舊 buffer）-> 必須維持深拷貝。
 test-arg-reassign = () {
-    s str = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     v = co echo(s)
     s = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
@@ -95,7 +100,9 @@ test-arg-reassign = () {
 
 ; 8. 反向：struct 參數在 spawn 之後仍被讀取 -> 必須維持深拷貝。
 test-struct-live-copy = () {
-    h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
+    h = holder {
+        s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    }
     v = co echo-holder(h)
     print(h.s); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
@@ -106,7 +113,7 @@ test-struct-live-copy = () {
 ;    這同時是 §4.2(b)「無條件 retain」的守門員：retain 會共用 buffer ⇒ 這例會印 99。
 ;    ⚠️ 第 6–8 例（重賦值／讀取）兩種做法都得到舊值，無法區分；只有**原位寫入**會分歧。
 test-arg-inplace-mutation = () {
-    a []i64 = [1, 2, 3]
+    a = [1, 2, 3]
     n = co first(a)
     a[0] = 99
     print(n); expect: 1

@@ -64,7 +64,6 @@ test-index-store-struct-leaf = () (ok bool) {
     v[0] = p
     p.name = 'Dave'
 
-    #{index-out=zero}
     e = v[0]
     e.name == 'Carol' -> ok = true
     e.age == 40 -> ok = true

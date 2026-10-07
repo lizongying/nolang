@@ -21,13 +21,15 @@
 ;   1999
 ;   Alice
 
-person { name str }
+person {
+    name str
+}
 
 main = () {
-    last str = ''
+    last = ''
 
     ; --- ?person: inline struct payload with an owned str leaf -------------
-    i <- [0..2000) {
+    i <- [0..2000): {
         p person
         p.name = i.to-str()
         ip ?person = p
@@ -37,15 +39,23 @@ main = () {
     print(last)
 
     ; --- ?json: inline struct payload with a POINTER field -----------------
-    j <- [0..2000) {
+    j <- [0..2000): {
         r = json.parse('{"name":"Alice"}')
         r: {
             ok -> {
                 s, found = it.get-str('name')
-                found -> { last = s }
+                found -> {
+                    last = s
+                }
             }
-            err -> { last = 'err' }
-            nil -> { last = 'nil' }
+
+            err -> {
+                last = 'err'
+            }
+
+            nil -> {
+                last = 'nil'
+            }
         }
     }
     print(last)

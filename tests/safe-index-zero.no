@@ -3,31 +3,37 @@
 ;   i64→0  f64→0.0  bool→false  str→''  char→'\0'  byte→0
 
 z-i64 = (arr []i64, i i64) (res i64) {
+
     #{index-out=zero}
     res = arr[i]
 }
 
 z-f64 = (arr []f64, i i64) (res f64) {
+
     #{index-out=zero}
     res = arr[i]
 }
 
 z-bool = (arr []bool, i i64) (res bool) {
+
     #{index-out=zero}
     res = arr[i]
 }
 
 z-str = (arr []str, i i64) (res str) {
+
     #{index-out=zero}
     res = arr[i]
 }
 
 z-char = (arr []char, i i64) (res char) {
+
     #{index-out=zero}
     res = arr[i]
 }
 
 z-byte = (arr []u8, i i64) (res u8) {
+
     #{index-out=zero}
     res = arr[i]
 }

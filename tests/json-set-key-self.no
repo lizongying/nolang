@@ -22,11 +22,15 @@ j: {
                     print('ok: case1 set-key self existing')
                 }
             }
+
             nil -> print('fail: case1 dep nil')
+
             err -> print('fail: case1 dep err')
         }
     }
+
     nil -> print('fail: case1 parse nil')
+
     err -> print('fail: case1 parse err')
 }
 
@@ -47,11 +51,15 @@ k: {
                     print('fail: case2 copied missing -> {out2}')
                 }
             }
+
             nil -> print('fail: case2 sub nil')
+
             err -> print('fail: case2 sub err')
         }
     }
+
     nil -> print('fail: case2 parse nil')
+
     err -> print('fail: case2 parse err')
 }
 
@@ -72,11 +80,15 @@ base: {
                     print('fail: case3 fresh missing -> {out3}')
                 }
             }
+
             nil -> print('fail: case3 other nil')
+
             err -> print('fail: case3 other err')
         }
     }
+
     nil -> print('fail: case3 parse nil')
+
     err -> print('fail: case3 parse err')
 }
 
@@ -86,27 +98,45 @@ base: {
 p = json-pool {}
 p.init()
 p-root, p-next, p-ok = p.parse('{"k0":{"v":"0"},"k1":{"v":"1"},"k2":{"v":"2"},"k3":{"v":"3"},"k4":{"v":"4"},"k5":{"v":"5"},"k6":{"v":"6"},"k7":{"v":"7"},"k8":{"v":"8"},"k9":{"v":"9"},"k10":{"v":"10"},"k11":{"v":"11"},"k12":{"v":"12"},"k13":{"v":"13"},"k14":{"v":"14"},"k15":{"v":"15"},"k16":{"v":"16"},"k17":{"v":"17"},"k18":{"v":"18"},"k19":{"v":"19"},"k20":{"v":"20"},"k21":{"v":"21"},"k22":{"v":"22"},"k23":{"v":"23"},"k24":{"v":"24"},"k25":{"v":"25"},"k26":{"v":"26"},"k27":{"v":"27"},"k28":{"v":"28"},"k29":{"v":"29"},"k30":{"v":"30"},"k31":{"v":"31"},"k32":{"v":"32"},"k33":{"v":"33"},"k34":{"v":"34"},"k35":{"v":"35"},"k36":{"v":"36"},"k37":{"v":"37"},"k38":{"v":"38"},"k39":{"v":"39"}}', 0)
-{{
-    p-ok -> {{
-        dup = p.copy-tree(p, p-root)
-        {{
-            dup >= 0 -> {{
-                last-idx, last-found = p.get-key(dup, 'k39')
-                {{
-                    last-found -> {{
-                        inner-idx, inner-found = p.get-key(last-idx, 'v')
-                        {{
-                            inner-found -> print('ok: case4 copy-tree self-pool deep')
-                            -> print('fail: case4 inner v missing')
-                        }}
-                    }}
-                    -> print('fail: case4 deep k39 missing after realloc')
-                }}
-            }}
-            -> print('fail: case4 copy-tree self returned -1')
-        }}
-    }}
-    -> print('fail: case4 parse')
-}}
+{
+    {
+        p-ok -> {
+            {
+                dup = p.copy-tree(p, p-root)
+                {
+                    {
+                        dup >= 0 -> {
+                            {
+                                last-idx, last-found = p.get-key(dup, 'k39')
+                                {
+                                    {
+                                        last-found -> {
+                                            {
+                                                inner-idx, inner-found = p.get-key(last-idx, 'v')
+                                                {
+                                                    {
+                                                        inner-found -> print('ok: case4 copy-tree self-pool deep')
+
+                                                        -> print('fail: case4 inner v missing')
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        -> print('fail: case4 deep k39 missing after realloc')
+                                    }
+                                }
+                            }
+                        }
+
+                        -> print('fail: case4 copy-tree self returned -1')
+                    }
+                }
+            }
+        }
+
+        -> print('fail: case4 parse')
+    }
+}
 
 print('end')

@@ -5,12 +5,14 @@
 
 ; 同步函數：返回輸入值的兩倍
 compute = (n i64) (r i64) {
+
     #{overflow=wrap}
     r = n * 2
 }
 
 ; 多參數
 add = (a i64, b i64) (r i64) {
+
     #{overflow=wrap}
     r = a + b
 }
@@ -19,7 +21,9 @@ add = (a i64, b i64) (r i64) {
 classify = (n i64) (r i64) {
     {
         n > 0 -> r = 1
+
         n < 0 -> r = -1
+
         n == 0 -> r = 0
     }
 }

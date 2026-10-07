@@ -412,8 +412,10 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	} else if nt, ok := s.Type.(*parser.NullableType); ok && !nt.IsInferred {
 		f.write(" ?")
 		f.write(nt.Type.String())
-	} else if mt, ok := s.Type.(*parser.MapType); ok {
-		// map 型別：輸出 " [K]V"（MapType.String() 已回傳 "[K]V" 形式）
+	} else if mt, ok := s.Type.(*parser.MapType); ok && !mt.IsInferred {
+		// map 型別：輸出 " [K]V"（MapType.String() 已回傳 "[K]V" 形式）。
+		// IsInferred（parser 從右值推斷，如 `m = make-map()`）不渲染：原始碼未
+		// 書寫型別，渲染會無中生有地加上 `[K]V` 標註，破壞冪等。
 		f.write(" ")
 		f.write(mt.String())
 	}

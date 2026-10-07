@@ -56,6 +56,7 @@ test-read-inside = () {
 side = (n i64) {
     print(n); expect: 5
 }
+
 test-discarded = () {
     {
         co side(5)
@@ -66,9 +67,10 @@ test-discarded = () {
 echo = (s str) (r str) {
     r = s
 }
+
 test-heap-arg = () {
-    a str = 'hello'
-    b str = 'world'
+    a = 'hello'
+    b = 'world'
     ra str
     rb str
     {

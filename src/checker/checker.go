@@ -8496,6 +8496,8 @@ func isInferredType(t parser.Type) bool {
 		return tt.IsInferred || isInferredType(tt.Elem)
 	case *parser.SliceType:
 		return tt.IsInferred || isInferredType(tt.Elem)
+	case *parser.MapType:
+		return tt.IsInferred
 	}
 	return false
 }

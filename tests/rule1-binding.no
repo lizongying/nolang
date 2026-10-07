@@ -55,7 +55,10 @@ test-vec-readonly = () {
 
 ; 5. struct：寫別名不得影響源（struct 本來就走 OpMove，這條是防止它退化）
 test-struct-independence = () {
-    d = MyData { name: 'test', value: 42 }
+    d = MyData {
+        name: 'test'
+        value: 42
+    }
     c = d
     c.value = 7
     print(d.value); expect: 42
@@ -74,7 +77,7 @@ test-str-source-dead-move = () {
 ;    （本輪修好的第二個可觀測缺陷；見 NOLANG-OWNERSHIP-MODEL.md §4.2 a）
 test-opt-str-independence = () {
     o ?str = 'a fairly long string that must be heap allocated'
-    p ?str = o
+    p = o
     o = 'another fairly long string that must be heap allocated'
     print(p); expect: a fairly long string that must be heap allocated
     print(o); expect: another fairly long string that must be heap allocated
@@ -83,7 +86,7 @@ test-opt-str-independence = () {
 ; 8. ?[]i64：同上，用長度當可觀測量。
 test-opt-vec-independence = () {
     o ?[]i64 = [10, 20, 30]
-    p ?[]i64 = o
+    p = o
     o = [40, 50]
     print(p.len()); expect: 3
     print(o.len()); expect: 2
@@ -92,7 +95,7 @@ test-opt-vec-independence = () {
 ; 9. ?[]i64：源已死 ⇒ move（剝離路徑不得被新閘門擾動）。輸出必須正確。
 test-opt-vec-source-dead = () {
     o ?[]i64 = [10, 20, 30]
-    p ?[]i64 = o
+    p = o
     print(p.len()); expect: 3
 }
 

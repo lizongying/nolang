@@ -21,6 +21,7 @@
 ;                src/parser/stmt_boundary_block_test.go 的 AST 斷言釘住）。
 
 dbl-async = (n i64) (r i64) {
+
     #{overflow=wrap}
     r = n * 2
 }
@@ -72,6 +73,7 @@ test-awy-tail-in-match = () {
             y = 1
             awy t
         }
+
         -> 0
     }
     print(x); expect: 42

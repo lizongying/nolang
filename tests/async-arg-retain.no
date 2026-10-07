@@ -18,6 +18,7 @@
 ;   - 第 4 例（迴圈）若 retain 與 wrapper 的 release 不平衡，會洩漏或 double free。
 
 first = (v []i64) (r i64) {
+
     #{index-out=zero}
     r = v[0]
 }
@@ -28,7 +29,7 @@ echo = (s str) (r str) {
 
 ; 1. vec 參數在 spawn 之後只被「直接索引讀取」、從未被寫 -> 共享（retain）。
 test-vec-share = () {
-    a []i64 = [7, 8, 9]
+    a = [7, 8, 9]
     n = co first(a)
     m = a[1]
     print(n); expect: 7
@@ -37,7 +38,7 @@ test-vec-share = () {
 
 ; 2. str 參數同理：直接索引讀取 -> 共享。
 test-str-share = () {
-    s str = 'ABC'
+    s = 'ABC'
     v = co echo(s)
     c = s[0]
     print(v); expect: ABC
@@ -47,7 +48,7 @@ test-str-share = () {
 ; 3. 原位寫入 -> 必須維持深拷貝，任務看到 spawn 當下的值（1），不是寫入後的 99。
 ;    閘門若失效（無條件 retain）這一例就會印 99。
 test-inplace-keeps-copy = () {
-    a []i64 = [1, 2, 3]
+    a = [1, 2, 3]
     n = co first(a)
     a[0] = 99
     print(n); expect: 1
@@ -56,10 +57,11 @@ test-inplace-keeps-copy = () {
 ; 4. 迴圈反覆共享：retain 與 wrapper 的 release 若不平衡，這裡會洩漏或 double free。
 test-share-loop = () {
     total = 0
-    i <- [0..20) {
+    i <- [0..20): {
         a []i64 = [i, i + 1]
         n = co first(a)
         m = a[1]
+
         #{overflow=wrap}
         total = total + n
     }

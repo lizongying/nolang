@@ -15,6 +15,7 @@
 ; keep the new retain/release from over-reaching).
 
 dbl = (n i64) (r i64) {
+
     #{overflow=wrap}
     r = n * 2
 }
@@ -71,9 +72,10 @@ same-slot-twice = () {
 ;    bound (measured 300k cycles: 8.40 MB before, 7.96 MB after, same sum)
 many = () (s i64) {
     s = 0
-    i <- [0..2000) {
+    i <- [0..2000): {
         h = run dbl(i)
         v = awy h
+
         #{overflow=wrap}
         s = s + v
     }

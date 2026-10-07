@@ -126,39 +126,27 @@ test-scalarmult-base = () (pass bool) {
         lo-v = 0
         {
             hi >= 48 && hi <= 57 -> {
-
-                #{overflow=wrap}
                 hi-v = hi - 48
             }
 
             hi >= 97 && hi <= 102 -> {
-
-                #{overflow=wrap}
                 hi-v = hi - 87
             }
 
             hi >= 65 && hi <= 70 -> {
-
-                #{overflow=wrap}
                 hi-v = hi - 55
             }
         }
         {
             lo >= 48 && lo <= 57 -> {
-
-                #{overflow=wrap}
                 lo-v = lo - 48
             }
 
             lo >= 97 && lo <= 102 -> {
-
-                #{overflow=wrap}
                 lo-v = lo - 87
             }
 
             lo >= 65 && lo <= 70 -> {
-
-                #{overflow=wrap}
                 lo-v = lo - 55
             }
         }

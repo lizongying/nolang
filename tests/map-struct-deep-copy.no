@@ -9,13 +9,17 @@ original.put('a', 'X')
 copied-value = copied.get('a')
 copied-value: {
     ok -> print('copied[a] =', copied-value)
+
     nil -> print('copied[a] = nil')
+
     err -> print('copied[a] = err')
 }
 
 original-value = original.get('a')
 original-value: {
     ok -> print('original[a] =', original-value)
+
     nil -> print('original[a] = nil')
+
     err -> print('original[a] = err')
 }

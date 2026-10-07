@@ -851,10 +851,12 @@ func (p *Parser) parseLetStatement() Statement {
 	// 保存当前令牌，用于变量名
 	var nameToken lexer.Token
 	var letIsOption bool
+	var optToken lexer.Token // 透過 ? 前綴進入時記錄 `?` 令牌，供 NullableType 定位
 	if p.currentToken.Type == lexer.QUESTION {
 		// 可空类型的情况，使用前一个令牌作为变量名
 		nameToken = p.prevToken
 		letIsOption = true // entered via ? prefix (e.g. a ?[]i64 = nil)
+		optToken = p.currentToken
 	} else {
 		// 普通情况，使用当前令牌作为变量名
 		nameToken = p.currentToken
@@ -971,7 +973,16 @@ func (p *Parser) parseLetStatement() Statement {
 	// 將其包裹為 NullableType，使型別為 ?[]i64 而非 []i64。
 	if letIsOption && stmt.Type != nil {
 		if _, isNullable := stmt.Type.(*NullableType); !isNullable {
-			stmt.Type = &NullableType{Token: nameToken, Type: stmt.Type}
+			// Token 必須落在 `?`（型別註解起點），而非變數名 nameToken。
+			// NullableType.Pos() 由 Token 決定，冗餘型別標註移除（checker 報告、
+			// findRedundantTypeNode、computeRedundantTypeRemoval）全部以 Type.Pos()
+			// 為掃描原點；若指向 nameToken，`p ?[]i64 = o` 會把變數名 `p` 當成標註
+			// 起點而誤刪名字。與 buildType 的 `?T` 分支（Token=型別令牌）保持一致。
+			tok := optToken
+			if tok.Type != lexer.QUESTION {
+				tok = nameToken
+			}
+			stmt.Type = &NullableType{Token: tok, Type: stmt.Type}
 		}
 	}
 
@@ -1065,7 +1076,9 @@ func (p *Parser) parseLetStatement() Statement {
 	if stmt.Type == nil && p.currentToken.Type == lexer.LBRACE {
 		if varType, ok := p.sem.VarTypes[stmt.Name.Value]; ok {
 			if mt := parseMapTypeString(varType, nameToken); mt != nil {
-				stmt.Type = mt
+				// 源碼未顯式標注型別（僅靠 VarTypes 推斷以正確解析 map 字面量）：
+				// 標記為推斷，formatter 不會多渲染 `[K]V`，冗餘檢查也不會誤刪名字。
+				stmt.Type = markInferred(mt)
 			}
 		}
 	}

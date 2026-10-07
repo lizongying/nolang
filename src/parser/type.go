@@ -1156,6 +1156,10 @@ func markInferred(t Type) Type {
 	case *NullableType:
 		typ.IsInferred = true
 		markInferred(typ.Type)
+	case *MapType:
+		typ.IsInferred = true
+		markInferred(typ.Key)
+		markInferred(typ.Value)
 	case *PointerType:
 		markInferred(typ.Type)
 	}
@@ -1174,6 +1178,8 @@ func typeIsInferred(t Type) bool {
 	case *SliceType:
 		return typ.IsInferred
 	case *NullableType:
+		return typ.IsInferred
+	case *MapType:
 		return typ.IsInferred
 	}
 	return false

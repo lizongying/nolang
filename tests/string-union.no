@@ -12,11 +12,11 @@ take-bytes = (s string) (n i64) {
 }
 
 test-str-arg = () {
-    a str = 'hello'
+    a = 'hello'
     n = take-bytes(a)
     print(n); expect: 5
 
-    b str = '你好ab'
+    b = '你好ab'
     n = take-bytes(b)
     print(n); expect: 8 ; len() 內建為字節數（UTF-8）
 }
@@ -42,8 +42,8 @@ pick = (a string, b string) (r string) {
 }
 
 test-pick = () {
-    a str = 'hello'
-    b str = 'world'
+    a = 'hello'
+    b = 'world'
     x = pick(a, b)
     print(x); expect: hello
 
@@ -58,7 +58,7 @@ print(2)
 
 ; ── 成員方法不受 string 別名影響（str.len/txt.len 仍為碼點數）──
 test-member-methods = () {
-    a str = '你好ab'
+    a = '你好ab'
     n = a.len()
     print(n); expect: 4
 

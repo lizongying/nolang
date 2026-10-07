@@ -135,6 +135,10 @@ type MapType struct {
 	Token lexer.Token // [
 	Key   Type
 	Value Type
+	// IsInferred 標記此 map 型別由 parser 從右值推斷而來（如 `m = make-map()`
+	// 由呼叫回傳型別合成），而非源碼顯式標注。與 NamedType/SliceType/ArrayType
+	// 的 IsInferred 對稱：formatter 據此不渲染，冗餘標註檢查據此跳過。
+	IsInferred bool
 }
 
 func (mt *MapType) typeNode()              {}
