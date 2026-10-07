@@ -117,7 +117,6 @@ client.next-event = () (ev ?event) {
 
     lf-lf = lf - lf
 
-    #{overflow=wrap}
     crlf-crlf = crlf - crlf
 
     !! {
@@ -662,7 +661,6 @@ sse-connect = (url str) (client ?client) {
     total = 0
     n = 0
 
-    #{overflow=wrap}
     separator = crlf - crlf
     sep-pos = -1
 
@@ -860,7 +858,6 @@ server-conn.handshake = () (ok bool) {
 
     crlf = cr - lf
 
-    #{overflow=wrap}
     separator = crlf - crlf
 
     ; 讀取 HTTP 請求（直到 \r\n\r\n）
@@ -899,7 +896,6 @@ server-conn.handshake = () (ok bool) {
     sp1 < 0 -> return
     method = request-line.slice(0, sp1)
 
-    #{overflow=wrap}
     method != 'GET' -> {
 
         resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
@@ -921,7 +917,6 @@ server-conn.handshake = () (ok bool) {
 
     resp = resp - 'Access-Control-Allow-Origin: *' - crlf
 
-    #{overflow=wrap}
     resp = resp - crlf
     written = net.net-send(.fd, resp, resp.len-bytes())
     written < 0 -> return

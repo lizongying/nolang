@@ -81,7 +81,6 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         req = req - 'Proxy-Authorization: Basic ' - enc-str - crlf
     }
 
-    #{overflow=wrap}
     req = req - crlf
 
     ; 發送 CONNECT 請求
@@ -99,7 +98,6 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     raw str = with-len(PROXY-BUF-SIZE * 4)
     total = 0
 
-    #{overflow=wrap}
     separator = crlf - crlf
     sep-pos = -1
 

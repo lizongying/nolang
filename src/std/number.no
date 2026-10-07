@@ -183,49 +183,50 @@ f32.cbrt = () (res f32) {
 ; 與 math.pow-int（int 泛型快速冪）同義，但明確 i64 簽名以符合
 ; test/std/number.no 的 number.pow(2, 10) 等斷言。
 pow = (base i64, n i64) (res i64) {
-	rn = n
-	res = 1
-	b = base
-	(rn > 0) {
-		#{overflow=wrap}
-		rn & 1 == 1 -> res = res * b
-		#{overflow=wrap}
-		b = b * b
-		#{overflow=wrap}
-		rn = rn >> 1
-	}
+    rn = n
+    res = 1
+    b = base
+    (rn > 0) {
+
+        #{overflow=wrap}
+        rn & 1 == 1 -> res = res * b
+
+        #{overflow=wrap}
+        b = b * b
+        rn = rn >> 1
+    }
 }
 
 ; 三角函数（弧度；f64/f32 方法）
 f64.sin = () (res f64) {
-	twopi f64 = 6.283185307179586
-	pi f64 = 3.141592653589793
-	ax f64 = .
-	ax < 0.0 -> {
-		ax = 0.0 - ax
-	}
-	q i64 = f64-to-i64(ax / twopi)
-	y f64 = ax - i64-to-f64(q) * twopi
-	sgn f64 = 1.0
-	. < 0.0 -> {
-		sgn = -1.0
-	}
-	y > pi -> {
-		y = y - pi
-		sgn = 0.0 - sgn
-	}
-	y > pi / 2.0 -> {
-		y = pi - y
-	}
-	y2 f64 = y * y
-	y3 f64 = y2 * y
-	y5 f64 = y3 * y2
-	y7 f64 = y5 * y2
-	y9 f64 = y7 * y2
-	y11 f64 = y9 * y2
-	y13 f64 = y11 * y2
-	s f64 = y - y3 / 6.0 + y5 / 120.0 - y7 / 5040.0 + y9 / 362880.0 - y11 / 39916800.0 + y13 / 6227020800.0
-	res = sgn * s
+    twopi = 6.283185307179586
+    pi = 3.141592653589793
+    ax = .
+    ax < 0.0 -> {
+        ax = 0.0 - ax
+    }
+    q = f64-to-i64(ax / twopi)
+    y = ax - i64-to-f64(q) * twopi
+    sgn = 1.0
+    . < 0.0 -> {
+        sgn = -1.0
+    }
+    y > pi -> {
+        y = y - pi
+        sgn = 0.0 - sgn
+    }
+    y > pi / 2.0 -> {
+        y = pi - y
+    }
+    y2 = y * y
+    y3 = y2 * y
+    y5 = y3 * y2
+    y7 = y5 * y2
+    y9 = y7 * y2
+    y11 = y9 * y2
+    y13 = y11 * y2
+    s = y - y3 / 6.0 + y5 / 120.0 - y7 / 5040.0 + y9 / 362880.0 - y11 / 39916800.0 + y13 / 6227020800.0
+    res = sgn * s
 }
 
 f32.sin = () (res f32) {
@@ -234,7 +235,7 @@ f32.sin = () (res f32) {
 }
 
 f64.cos = () (res f64) {
-	res = (. + 1.5707963267948966).sin()
+    res = (. + 1.5707963267948966).sin()
 }
 
 f32.cos = () (res f32) {
@@ -244,9 +245,9 @@ f32.cos = () (res f32) {
 
 ; tan: tangent（libm tan，等价于 sin/cos）
 f64.tan = () (res f64) {
-	s f64 = .sin()
-	c f64 = .cos()
-	res = s / c
+    s f64 = .sin()
+    c f64 = .cos()
+    res = s / c
 }
 
 f32.tan = () (res f32) {
@@ -255,9 +256,9 @@ f32.tan = () (res f32) {
 }
 
 f64.asin = () (res f64) {
-	s f64 = . * .
-	one f64 = 1.0 - s
-	res = atan2(., one.sqrt())
+    s = . * .
+    one = 1.0 - s
+    res = atan2(., one.sqrt())
 }
 
 f32.asin = () (res f32) {
@@ -266,9 +267,9 @@ f32.asin = () (res f32) {
 }
 
 f64.acos = () (res f64) {
-	s f64 = . * .
-	one f64 = 1.0 - s
-	res = atan2(one.sqrt(), .)
+    s = . * .
+    one = 1.0 - s
+    res = atan2(one.sqrt(), .)
 }
 
 f32.acos = () (res f32) {
@@ -277,7 +278,7 @@ f32.acos = () (res f32) {
 }
 
 f64.atan = () (res f64) {
-	res = atan2(., 1.0)
+    res = atan2(., 1.0)
 }
 
 f32.atan = () (res f32) {
@@ -287,9 +288,9 @@ f32.atan = () (res f32) {
 
 ; 雙曲函數（f64/f32 方法）
 f64.sinh = () (res f64) {
-	e f64 = .exp()
-	ei f64 = 1.0 / e
-	res = (e - ei) / 2.0
+    e f64 = .exp()
+    ei = 1.0 / e
+    res = (e - ei) / 2.0
 }
 
 f32.sinh = () (res f32) {
@@ -298,9 +299,9 @@ f32.sinh = () (res f32) {
 }
 
 f64.cosh = () (res f64) {
-	e f64 = .exp()
-	ei f64 = 1.0 / e
-	res = (e + ei) / 2.0
+    e f64 = .exp()
+    ei = 1.0 / e
+    res = (e + ei) / 2.0
 }
 
 f32.cosh = () (res f32) {
@@ -309,9 +310,10 @@ f32.cosh = () (res f32) {
 }
 
 f64.tanh = () (res f64) {
-	e f64 = .exp()
-	; tanh(x) = (e^2 - 1) / (e^2 + 1)
-	res = (e * e - 1.0) / (e * e + 1.0)
+    e f64 = .exp()
+
+    ; tanh(x) = (e^2 - 1) / (e^2 + 1)
+    res = (e * e - 1.0) / (e * e + 1.0)
 }
 
 f32.tanh = () (res f32) {
@@ -321,16 +323,17 @@ f32.tanh = () (res f32) {
 
 ; 取整（f64/f32 方法；整數型別上取整為恆等，故不提供泛型版本）
 f64.ceil = () (res f64) {
-	t f64 = i64-to-f64(f64-to-i64(.))
-	. == t -> {
-		res = t
-	}
-	. > 0.0 -> {
-		res = t + 1.0
-	}
-	-> {
-		res = t
-	}
+    t = i64-to-f64(f64-to-i64(.))
+    . == t -> {
+        res = t
+    }
+    . > 0.0 -> {
+        res = t + 1.0
+    }
+
+    -> {
+        res = t
+    }
 }
 
 f32.ceil = () (res f32) {
@@ -339,16 +342,17 @@ f32.ceil = () (res f32) {
 }
 
 f64.floor = () (res f64) {
-	t f64 = i64-to-f64(f64-to-i64(.))
-	. == t -> {
-		res = t
-	}
-	. < 0.0 -> {
-		res = t - 1.0
-	}
-	-> {
-		res = t
-	}
+    t = i64-to-f64(f64-to-i64(.))
+    . == t -> {
+        res = t
+    }
+    . < 0.0 -> {
+        res = t - 1.0
+    }
+
+    -> {
+        res = t
+    }
 }
 
 f32.floor = () (res f32) {
@@ -357,24 +361,27 @@ f32.floor = () (res f32) {
 }
 
 f64.round = () (res f64) {
-	t f64 = i64-to-f64(f64-to-i64(.))
-	f f64 = . - t
-	. >= 0.0 -> {
-		f >= 0.5 -> {
-			res = t + 1.0
-		}
-		-> {
-			res = t
-		}
-	}
-	-> {
-		f <= -0.5 -> {
-			res = t - 1.0
-		}
-		-> {
-			res = t
-		}
-	}
+    t = i64-to-f64(f64-to-i64(.))
+    f = . - t
+    . >= 0.0 -> {
+        f >= 0.5 -> {
+            res = t + 1.0
+        }
+
+        -> {
+            res = t
+        }
+    }
+
+    -> {
+        f <= -0.5 -> {
+            res = t - 1.0
+        }
+
+        -> {
+            res = t
+        }
+    }
 }
 
 f32.round = () (res f32) {
@@ -383,7 +390,7 @@ f32.round = () (res f32) {
 }
 
 f64.trunc = () (res f64) {
-	res = i64-to-f64(f64-to-i64(.))
+    res = i64-to-f64(f64-to-i64(.))
 }
 
 f32.trunc = () (res f32) {
@@ -398,37 +405,38 @@ f32.trunc = () (res f32) {
 ; codegen bug，會誤用外層接收者；故所有對 exp 的間接呼叫都走本
 ; 自由函數，避開該問題。
 exp-f64 = (x f64) (res f64) {
-	x > 709.0 -> {
-		res = 1.0 / 0.0
-		return
-	}
-	x < -745.0 -> {
-		res = 0.0
-		return
-	}
-	ln2 f64 = 0.6931471805599453
-	k i64 = f64-to-i64(x / ln2)
-	r f64 = x - i64-to-f64(k) * ln2
-	r2 f64 = r * r
-	e f64 = 1.0 + r + r2 / 2.0 + r2 * r / 6.0 + r2 * r2 / 24.0 + r2 * r2 * r / 120.0 + r2 * r2 * r2 / 720.0 + r2 * r2 * r2 * r / 5040.0 + r2 * r2 * r2 * r2 / 40320.0
-	res = e
-	ki i64 = k
-	ki > 0 -> {
-		i <- [0..ki) {
-			res = res * 2.0
-		}
-	}
-	#{overflow=wrap}
-	ni i64 = 0 - ki
-	ni > 0 -> {
-		i <- [0..ni) {
-			res = res / 2.0
-		}
-	}
+    x > 709.0 -> {
+        res = 1.0 / 0.0
+        return
+    }
+    x < -745.0 -> {
+        res = 0.0
+        return
+    }
+    ln2 = 0.6931471805599453
+    k = f64-to-i64(x / ln2)
+    r = x - i64-to-f64(k) * ln2
+    r2 = r * r
+    e = 1.0 + r + r2 / 2.0 + r2 * r / 6.0 + r2 * r2 / 24.0 + r2 * r2 * r / 120.0 + r2 * r2 * r2 / 720.0 + r2 * r2 * r2 * r / 5040.0 + r2 * r2 * r2 * r2 / 40320.0
+    res = e
+    ki = k
+    ki > 0 -> {
+        i <- [0..ki): {
+            res = res * 2.0
+        }
+    }
+
+    #{overflow=wrap}
+    ni = 0 - ki
+    ni > 0 -> {
+        i <- [0..ni): {
+            res = res / 2.0
+        }
+    }
 }
 
 f64.exp = () (res f64) {
-	res = exp-f64(.)
+    res = exp-f64(.)
 }
 
 f32.exp = () (res f32) {
@@ -437,39 +445,42 @@ f32.exp = () (res f32) {
 }
 
 f64.log = () (res f64) {
-	x f64 = .
-	x <= 0.0 -> {
-		res = 0.0 / 0.0
-		return
-	}
-	k i64 = 0
-	i <- [0..2000) {
-		x < 2.0 -> break
-		x = x / 2.0
-		#{overflow=wrap}
-		k = k + 1
-	}
-	i <- [0..2000) {
-		x >= 1.0 -> break
-		x = x * 2.0
-		#{overflow=wrap}
-		k = k - 1
-	}
-	i <- [0..20) {
-		x <= 1.414213562373095 -> break
-		x = x / 2.0
-		#{overflow=wrap}
-		k = k + 1
-	}
-	z f64 = (x - 1.0) / (x + 1.0)
-	z2 f64 = z * z
-	z3 f64 = z2 * z
-	z5 f64 = z3 * z2
-	z7 f64 = z5 * z2
-	z9 f64 = z7 * z2
-	lnf f64 = 2.0 * (z + z3 / 3.0 + z5 / 5.0 + z7 / 7.0 + z9 / 9.0)
-	ln2 f64 = 0.6931471805599453
-	res = i64-to-f64(k) * ln2 + lnf
+    x = .
+    x <= 0.0 -> {
+        res = 0.0 / 0.0
+        return
+    }
+    k = 0
+    i <- [0..2000): {
+        x < 2.0 -> break
+        x = x / 2.0
+
+        #{overflow=wrap}
+        k = k + 1
+    }
+    i <- [0..2000): {
+        x >= 1.0 -> break
+        x = x * 2.0
+
+        #{overflow=wrap}
+        k = k - 1
+    }
+    i <- [0..20): {
+        x <= 1.414213562373095 -> break
+        x = x / 2.0
+
+        #{overflow=wrap}
+        k = k + 1
+    }
+    z = (x - 1.0) / (x + 1.0)
+    z2 = z * z
+    z3 = z2 * z
+    z5 = z3 * z2
+    z7 = z5 * z2
+    z9 = z7 * z2
+    lnf = 2.0 * (z + z3 / 3.0 + z5 / 5.0 + z7 / 7.0 + z9 / 9.0)
+    ln2 = 0.6931471805599453
+    res = i64-to-f64(k) * ln2 + lnf
 }
 
 f32.log = () (res f32) {
@@ -478,7 +489,7 @@ f32.log = () (res f32) {
 }
 
 f64.log10 = () (res f64) {
-	res = .log() / 2.302585092994046
+    res = .log() / 2.302585092994046
 }
 
 f32.log10 = () (res f32) {
@@ -487,7 +498,7 @@ f32.log10 = () (res f32) {
 }
 
 f64.log2 = () (res f64) {
-	res = .log() / 0.6931471805599453
+    res = .log() / 0.6931471805599453
 }
 
 f32.log2 = () (res f32) {
@@ -1144,7 +1155,7 @@ u64.is-prime = () (yes bool) {
 ;   同時修復 codegen isUnsignedRaw 漏列 u128：u128 的比較/除法之前誤走有符
 ;   號謂詞，u128.MAX 值域（≥ 2^127）會誤序；修正後 u128.sqrt(u128.MAX)=2^64-1 精確。
 i128.sqrt = () (r i128) {
-    n i128 = .
+    n = .
     n < 0 -> {
         r = 0
         return
@@ -1156,7 +1167,7 @@ i128.sqrt = () (r i128) {
     lo i128 = 1
 
     #{overflow=wrap}
-    hi i128 = n / 2
+    hi = n / 2
     r i128 = 1
     (lo <= hi) {
 
@@ -1183,7 +1194,7 @@ i128.sqrt = () (r i128) {
 }
 
 i128.is-prime = () (yes bool) {
-    n i128 = .
+    n = .
     n < 2 -> {
         yes = false
         return
@@ -1198,7 +1209,7 @@ i128.is-prime = () (yes bool) {
     d i128 = 3
 
     #{overflow=wrap}
-    lim i128 = n / d
+    lim = n / d
     (d <= lim) {
 
         #{overflow=wrap}
@@ -1218,7 +1229,7 @@ i128.is-prime = () (yes bool) {
 }
 
 u128.sqrt = () (r u128) {
-    n u128 = .
+    n = .
     n < 2 -> {
         r = n
         return
@@ -1226,7 +1237,7 @@ u128.sqrt = () (r u128) {
     lo u128 = 1
 
     #{overflow=wrap}
-    hi u128 = n / 2
+    hi = n / 2
     r u128 = 1
     (lo <= hi) {
 
@@ -1251,7 +1262,7 @@ u128.sqrt = () (r u128) {
 }
 
 u128.is-prime = () (yes bool) {
-    n u128 = .
+    n = .
     n < 2 -> {
         yes = false
         return
@@ -1264,7 +1275,7 @@ u128.is-prime = () (yes bool) {
         return
     }
     d u128 = 3
-    lim u128 = n / d
+    lim = n / d
     (d <= lim) {
         md u128 = n % d
         md == 0 -> {

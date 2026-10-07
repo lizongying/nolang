@@ -259,7 +259,6 @@ do = (method str, url str, body str) (resp ?response) {
     total = 0
     recv-raw = ''
 
-    #{overflow=wrap}
     separator = crlf - crlf
     head = ''
     status-line = ''
@@ -304,6 +303,7 @@ do = (method str, url str, body str) (resp ?response) {
     colon-pos >= 0 -> {
 
         host-only = host.slice(0, colon-pos)
+
         #{overflow=wrap}
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
@@ -311,6 +311,7 @@ do = (method str, url str, body str) (resp ?response) {
 
             c = port-str[i]
             c < 48 || c > 57 -> return
+
             #{overflow=wrap}
             p = p * 10 + c - 48
         }
@@ -397,6 +398,7 @@ do = (method str, url str, body str) (resp ?response) {
 
         #{overflow=wrap}
         total = total + n
+
         ; 動態累積到 raw（不再受限於 HTTP-MAX-RESPONSE，避免大回應被截斷）
         raw = raw - buf.slice(0, n)
     }
@@ -493,7 +495,6 @@ do-req = (req request) (resp ?response) {
     total = 0
     recv-raw = ''
 
-    #{overflow=wrap}
     separator = crlf - crlf
     head = ''
     status-line = ''
@@ -536,6 +537,7 @@ do-req = (req request) (resp ?response) {
     #{overflow=wrap}
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
+
         #{overflow=wrap}
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
@@ -543,6 +545,7 @@ do-req = (req request) (resp ?response) {
 
             c = port-str[i]
             c < 48 || c > 57 -> return
+
             #{overflow=wrap}
             p = p * 10 + c - 48
         }
@@ -772,10 +775,10 @@ download = (url str, dest str) (ok bool) {
     path str
     host-only = ''
     port-str = ''
-    cr str = math.char-to-str(13)
-    lf str = math.char-to-str(10)
-    crlf str = cr - lf
-    sep-str str = crlf - crlf
+    cr = math.char-to-str(13)
+    lf = math.char-to-str(10)
+    crlf = cr - lf
+    sep-str = crlf - crlf
     req = ''
     use-tls = false
     fd fd = -1
@@ -791,6 +794,7 @@ download = (url str, dest str) (ok bool) {
             scheme-len = 8
             port = HTTPS-DEFAULT-PORT
         }
+
         url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest = url.slice(scheme-len, url.len-bytes())
@@ -800,6 +804,7 @@ download = (url str, dest str) (ok bool) {
             host = rest
             path = '/'
         }
+
         -> {
             host = rest.slice(0, slash-pos)
             path = rest.slice(slash-pos, rest.len-bytes())
@@ -808,12 +813,14 @@ download = (url str, dest str) (ok bool) {
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
+
         #{overflow=wrap}
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
             c = port-str[i]
             c < 48 || c > 57 -> return
+
             #{overflow=wrap}
             p = p * 10 + c - 48
         }
@@ -829,6 +836,7 @@ download = (url str, dest str) (ok bool) {
             ok2 = tls-c.connect(host, port)
             ok2 == false -> return
         }
+
         -> {
             fd = net.net-dial(host, port)
             fd < 0 -> return
@@ -855,12 +863,14 @@ download = (url str, dest str) (ok bool) {
             w = tls-c.send(req)
             w: {
                 ok ->
+
                 -> {
                     tls-c.close()
                     return
                 }
             }
         }
+
         -> {
             written = net.net-send(fd, req, req.len-bytes())
             written < 0 -> {
@@ -875,6 +885,7 @@ download = (url str, dest str) (ok bool) {
     !! {
         {
             use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
+
             -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
         n <= 0 -> *
@@ -882,6 +893,7 @@ download = (url str, dest str) (ok bool) {
     }
     {
         use-tls -> tls-c.close()
+
         -> fs.close(fd)
     }
 
@@ -905,6 +917,7 @@ download = (url str, dest str) (ok bool) {
         fs.remove(dest)
         return
     }
+
     #{overflow=wrap}
     body-str = all-str.slice(sep + 4, all-str.len-bytes())
     fs.write-bytes(dest, body-str.to-bytes())
@@ -923,7 +936,9 @@ upload-put = (url str, token str, file-path str) (ok bool) {
     content = ''
     content-opt: {
         ok -> content = it
+
         nil -> return
+
         err -> return
     }
     fsize = content.len-bytes()
@@ -952,6 +967,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
             scheme-len = 8
             port = HTTPS-DEFAULT-PORT
         }
+
         url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest = url.slice(scheme-len, url.len-bytes())
@@ -961,6 +977,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
             host = rest
             path = '/'
         }
+
         -> {
             host = rest.slice(0, slash-pos)
             path = rest.slice(slash-pos, rest.len-bytes())
@@ -969,12 +986,14 @@ upload-put = (url str, token str, file-path str) (ok bool) {
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
+
         #{overflow=wrap}
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
             c = port-str[i]
             c < 48 || c > 57 -> return
+
             #{overflow=wrap}
             p = p * 10 + c - 48
         }
@@ -989,6 +1008,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
             ok2 = tls-c.connect(host, port)
             ok2 == false -> return
         }
+
         -> {
             fd = net.net-dial(host, port)
             fd < 0 -> return
@@ -1027,12 +1047,14 @@ upload-put = (url str, token str, file-path str) (ok bool) {
             w = tls-c.send(req)
             w: {
                 ok ->
+
                 -> {
                     tls-c.close()
                     return
                 }
             }
         }
+
         -> {
             written = net.net-send(fd, req, req.len-bytes())
             written < 0 -> {
@@ -1047,6 +1069,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
     !! {
         {
             use-tls -> n = tls-c.recv(buf, HTTP-BUF-SIZE)
+
             -> n = net.net-recv(fd, buf, HTTP-BUF-SIZE)
         }
         n <= 0 -> *
@@ -1055,12 +1078,14 @@ upload-put = (url str, token str, file-path str) (ok bool) {
     }
     {
         use-tls -> tls-c.close()
+
         -> fs.close(fd)
     }
 
     ; 狀態碼解析
     sp1 = resp-str.index(' ')
     sp1 < 0 -> return
+
     #{overflow=wrap}
     after-code = resp-str.slice(sp1 + 1, resp-str.len-bytes())
     sp2 = after-code.index(' ')
@@ -1070,6 +1095,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
     i <- [0..code-str.len-bytes()): {
         c = code-str[i]
         c < 48 || c > 57 -> return
+
         #{overflow=wrap}
         code = code * 10 + c - 48
     }
@@ -1140,7 +1166,6 @@ post-auth = (url str, body str, user str, password str) (resp ?response) {
     resp = do-req(r)
 }
 
-
 ; ═══════════════════════════════════════════════
 ; download-to-file: 純 Nolang 二進位下載到檔案
 ; 與 do/do-req 不同：以 []byte 累積整個回應（不受 HTTP-MAX-RESPONSE 限制），
@@ -1173,10 +1198,10 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
 
         url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
-    rest str = ''
+    rest = ''
     rest = url.slice-bytes(scheme-len, url.len-bytes())
-    host str = ''
-    path str = '/'
+    host = ''
+    path = '/'
     slash-pos = rest.index('/')
     {
         slash-pos < 0 -> host = rest
@@ -1186,18 +1211,21 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
             path = rest.slice-bytes(slash-pos, rest.len-bytes())
         }
     }
-    host-only str = ''
-    port-str str = ''
+    host-only = ''
+    port-str = ''
     colon-pos = host.index(':')
+
     #{overflow=wrap}
     colon-pos >= 0 -> {
         host-only = host.slice-bytes(0, colon-pos)
+
         #{overflow=wrap}
         port-str = host.slice-bytes(colon-pos + 1, host.len-bytes())
         p = 0
         pi <- [0..port-str.len-bytes()): {
             c = port-str[pi]
             c < 48 || c > 57 -> return
+
             #{overflow=wrap}
             p = p * 10 + c - 48
         }
@@ -1224,7 +1252,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
 
     ; ── 送出 GET（Connection: close，讀到 EOF 為止）──
     crlf = '\r\n'
-    req-str str = ''
+    req-str = ''
     req-str = 'GET ' - path - ' HTTP/1.1'
     req-str = req-str - crlf - 'Host: ' - host
     req-str = req-str - crlf - 'Connection: close'
@@ -1264,7 +1292,6 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         }
         n <= 0 -> *
         bi <- [0..n): {
-            #{index-out=0}
             acc.push(buf.byte(bi))
         }
     }
@@ -1279,20 +1306,25 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     ; ── 找標頭/主旨分界（CR LF CR LF，位元組層級）──
     sep = -1
     scan = 0
+
     #{index-out=0}
     (sep < 0 && (scan + 3) < alen) {
+
         #{index-out=0}
         (acc[scan] == 13 && acc[scan + 1] == 10 && acc[scan + 2] == 13 && acc[scan + 3] == 10) -> sep = scan
+
         #{overflow=wrap}
         scan = scan + 1
     }
     sep < 0 -> return
+
     #{overflow=wrap}
     body-start = sep + 4
 
     ; ── 標頭文字（ASCII，取 [0..sep) 逐位元組）──
     hdr []byte
     hi <- [0..sep): {
+
         #{index-out=0}
         hdr.push(acc[hi])
     }
@@ -1304,13 +1336,16 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     nl >= 0 -> first-line = head-str.slice-bytes(0, nl)
     sp1 = first-line.index(' ')
     sp1 < 0 -> return
+
     #{overflow=wrap}
     code-str = first-line.slice-bytes(sp1 + 1, sp1 + 4)
     code = 0
     ci <- [0..code-str.len-bytes()): {
+
         #{index-out=0}
         c = code-str[ci]
         c < 48 || c > 57 -> return
+
         #{overflow=wrap}
         code = code * 10 + c - 48
     }
@@ -1321,6 +1356,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         loc: {
             ok -> {
                 target = http-dl-resolve(use-tls, host, port, it)
+
                 #{overflow=wrap}
                 ok = http-dl-open(target, dest, depth + 1)
             }
@@ -1335,6 +1371,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     body []byte
     body-start < alen -> {
         yi <- [body-start..alen): {
+
             #{index-out=0}
             body.push(acc[yi])
         }
@@ -1344,6 +1381,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     data []byte
     is-chunked = head-str.to-lower().contains('chunked')
     is-chunked -> data = http-dl-dechunk(body)
+
     -> data = body
 
     ; ── 寫入檔案 ──
@@ -1360,6 +1398,7 @@ http-dl-location = (head-str str) (loc ?str) {
     loc = nil
     lines = head-str.lines()
     li <- [0..lines.len()): {
+
         #{index-out=0}
         trimmed = lines[li].trim()
         trimmed.to-lower().starts-with('location:') -> {
@@ -1398,36 +1437,46 @@ http-dl-dechunk = (b []byte) (out []byte) {
     blen = b.len()
     pos = 0
     !! {
+
         #{index-out=0}
         (pos < blen && (b[pos] == 13 || b[pos] == 10)) {
+
             #{overflow=wrap}
             pos = pos + 1
         }
         pos >= blen -> *
         size = 0
         size-done = false
+
         #{index-out=0}
         (pos < blen && size-done == false) {
+
             #{index-out=0}
             c = b[pos]
             {
                 c >= 48 && c <= 57 -> {
+
                     #{overflow=wrap}
                     size = size * 16 + c - 48
+
                     #{overflow=wrap}
                     pos = pos + 1
                 }
 
                 c >= 97 && c <= 102 -> {
+
                     #{overflow=wrap}
                     size = size * 16 + c - 87
+
                     #{overflow=wrap}
                     pos = pos + 1
                 }
 
                 c >= 65 && c <= 70 -> {
+
                     #{overflow=wrap}
                     size = size * 16 + c - 55
+
                     #{overflow=wrap}
                     pos = pos + 1
                 }
@@ -1436,22 +1485,28 @@ http-dl-dechunk = (b []byte) (out []byte) {
             }
         }
         line-done = false
+
         #{index-out=0}
         (pos < blen && line-done == false) {
+
             #{index-out=0}
             c = b[pos]
             {
                 c == 10 -> {
+
                     #{overflow=wrap}
                     pos = pos + 1
                     line-done = true
                 }
 
                 c == 13 -> {
+
                     #{overflow=wrap}
                     pos = pos + 1
+
                     #{index-out=0}
                     (pos < blen && b[pos] == 10) -> {
+
                         #{overflow=wrap}
                         pos = pos + 1
                     }
@@ -1459,18 +1514,23 @@ http-dl-dechunk = (b []byte) (out []byte) {
                 }
 
                 -> {
+
                     #{overflow=wrap}
                     pos = pos + 1
                 }
             }
         }
         size <= 0 -> *
+
         #{index-out=0}
         (pos < blen && size > 0) {
+
             #{index-out=0}
             out.push(b[pos])
+
             #{overflow=wrap}
             pos = pos + 1
+
             #{overflow=wrap}
             size = size - 1
         }

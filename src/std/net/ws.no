@@ -373,7 +373,6 @@ server-conn.handshake = () {
 
     crlf = cr - lf
 
-    #{overflow=wrap}
     separator = crlf - crlf
 
     ; 讀取 HTTP 請求（直到 \r\n\r\n）
@@ -410,7 +409,6 @@ server-conn.handshake = () {
     sp1 < 0 -> return
     method = request-line.slice(0, sp1)
 
-    #{overflow=wrap}
     method != 'GET' -> {
 
         resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
@@ -490,7 +488,6 @@ server-conn.handshake = () {
 
     resp = resp - 'Sec-WebSocket-Accept: ' - accept-val - crlf
 
-    #{overflow=wrap}
     resp = resp - crlf
     written = net.net-send(.fd, resp, resp.len-bytes())
     written < 0 -> return
@@ -1546,7 +1543,6 @@ connect = (url str) (c ?client) {
 
     req = req - 'User-Agent: nolang-ws/1.0' - crlf
 
-    #{overflow=wrap}
     req = req - crlf
 
     ; 發送請求
@@ -1586,7 +1582,6 @@ connect = (url str) (c ?client) {
     total = 0
     sep-pos = -1
 
-    #{overflow=wrap}
     separator = crlf - crlf
 
     !! {

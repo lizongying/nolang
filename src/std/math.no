@@ -53,20 +53,20 @@ min = (a ..num) (r num) {
 ; pow: f64 求幂 a^b（纯 .no 实现 exp(y*ln|x|)，避免 libm 依赖）
 ; 整数冪（int 泛型）见 std/number.no 的 pow-int
 pow = (x f64, y f64) (res f64) {
-	y == 0.0 -> {
-		res = 1.0
-		return
-	}
-	x == 0.0 -> {
-		res = 0.0
-		return
-	}
-	x < 0.0 -> {
-		ax f64 = 0.0 - x
-		res = (y * ax.log()).exp()
-		return
-	}
-	res = (y * x.log()).exp()
+    y == 0.0 -> {
+        res = 1.0
+        return
+    }
+    x == 0.0 -> {
+        res = 0.0
+        return
+    }
+    x < 0.0 -> {
+        ax f64 = 0.0 - x
+        res = (y * ax.log()).exp()
+        return
+    }
+    res = (y * x.log()).exp()
 }
 
 ; pow: 整數冪 a^n（n ≥ 0）— 對所有整數型別通用
@@ -97,52 +97,53 @@ hypot = (x f64, y f64) (res f64) {
 ; atan2: 反正切 y/x（纯 .no 实现，避免 libm 依赖）
 ; 内部 atan-kernel：先把 |t| 归约到 <= tan(pi/8)，再用泰勒级数
 atan-kernel = (t f64) (r f64) {
-	k f64 = 0.0
-	t > 0.414213562373095 -> {
-		t = (t - 1.0) / (t + 1.0)
-		k = k + 1.0
-	}
-	t < -0.414213562373095 -> {
-		t = (t + 1.0) / (1.0 - t)
-		k = k - 1.0
-	}
-	t2 f64 = t * t
-	t3 f64 = t2 * t
-	t5 f64 = t3 * t2
-	t7 f64 = t5 * t2
-	t9 f64 = t7 * t2
-	t11 f64 = t9 * t2
-	t13 f64 = t11 * t2
-	t15 f64 = t13 * t2
-	t17 f64 = t15 * t2
-	s f64 = t - t3 / 3.0 + t5 / 5.0 - t7 / 7.0 + t9 / 9.0 - t11 / 11.0 + t13 / 13.0 - t15 / 15.0 + t17 / 17.0
-	r = s + k * 0.7853981633974483
+    k = 0.0
+    t > 0.414213562373095 -> {
+        t = (t - 1.0) / (t + 1.0)
+        k = k + 1.0
+    }
+    t < -0.414213562373095 -> {
+        t = (t + 1.0) / (1.0 - t)
+        k = k - 1.0
+    }
+    t2 = t * t
+    t3 = t2 * t
+    t5 = t3 * t2
+    t7 = t5 * t2
+    t9 = t7 * t2
+    t11 = t9 * t2
+    t13 = t11 * t2
+    t15 = t13 * t2
+    t17 = t15 * t2
+    s = t - t3 / 3.0 + t5 / 5.0 - t7 / 7.0 + t9 / 9.0 - t11 / 11.0 + t13 / 13.0 - t15 / 15.0 + t17 / 17.0
+    r = s + k * 0.7853981633974483
 }
 
 atan2 = (y f64, x f64) (res f64) {
-	x > 0.0 -> {
-		res = atan-kernel(y / x)
-		return
-	}
-	x < 0.0 -> {
-		y >= 0.0 -> {
-			res = atan-kernel(y / x) + 3.141592653589793
-			return
-		}
-		-> {
-			res = atan-kernel(y / x) - 3.141592653589793
-			return
-		}
-	}
-	y > 0.0 -> {
-		res = 3.141592653589793 / 2.0
-		return
-	}
-	y < 0.0 -> {
-		res = 0.0 - 3.141592653589793 / 2.0
-		return
-	}
-	res = 0.0
+    x > 0.0 -> {
+        res = atan-kernel(y / x)
+        return
+    }
+    x < 0.0 -> {
+        y >= 0.0 -> {
+            res = atan-kernel(y / x) + 3.141592653589793
+            return
+        }
+
+        -> {
+            res = atan-kernel(y / x) - 3.141592653589793
+            return
+        }
+    }
+    y > 0.0 -> {
+        res = 3.141592653589793 / 2.0
+        return
+    }
+    y < 0.0 -> {
+        res = 0.0 - 3.141592653589793 / 2.0
+        return
+    }
+    res = 0.0
 }
 
 ; 杂项

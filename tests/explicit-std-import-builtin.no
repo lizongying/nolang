@@ -1,0 +1,85 @@
+; explicit-std-import-builtin.no
+;
+; 顯式 `# std/<module>` 導入不得遮蔽 Go 內建實作。
+;
+; 背景：src/std 有 153 個 `#{buildin}` 空體樁（os/fs/process/net/math/number/
+; vec/fmt/global/time/async…）。自動載入路徑（loadStdModuleBodyForce）與
+; stripBuiltinStubs 都會把它們剝掉，但 `# std/xxx` 的顯式導入路徑
+; （processUseAndMerge）曾漏掉這個檢查——空體被當成普通函式 codegen 成
+; 「讀未初始化 alloca」的 stub，呼叫點改走該真實符號而非 Go 內建表，
+; 於是 os.get-env 回傳 ''、os.get-pid 回傳 0、f64.sqrt 回傳堆疊垃圾
+; （連帶 f64.asin/acos/cbrt 全錯），rc=0 且無任何診斷。
+;
+; 沒有顯式導入時 std 走自動載入路徑，所以修復前這些呼叫「看起來」是好的；
+; 全語料只有 8 個檔案寫 `# std/...` 且沒有一個導入帶樁的模組，
+; 因此 golden sweep 也照不到——本檔就是補上這個缺口。
+;
+; 執行：no run tests/explicit-std-import-builtin.no
+
+# std/number
+# std/math
+# std/os
+# std/vec
+# /test/runner
+
+; ── # std/number：f64.sqrt（唯一仍為 LLVM 硬件內建的 f64 方法）──
+; 修復前 4.0.sqrt() 讀到未初始化堆疊，實測值為 500000 或 0（不確定）。
+t-sqrt = () {
+    four f64 = 4.0
+    r f64 = four.sqrt()
+    runner.f64-eq(r, 2.0, 0.000001, '# std/number: 4.0.sqrt() == 2')
+
+    two f64 = 2.0
+    r2 f64 = two.sqrt()
+    runner.f64-eq(r2, 1.4142135623730951, 0.000001, '# std/number: 2.0.sqrt() == 1.41421')
+}
+
+; asin/acos/cbrt 都是 .no 實作，但它們內部呼叫 .sqrt()——
+; 樁被遮蔽時它們會一起壞掉（asin(0.5) 曾回傳 pi/2）。
+t-inverse-trig-needs-sqrt = () {
+    h f64 = 0.5
+    runner.f64-eq(h.asin(), 0.5235987755982989, 0.000001, '# std/number: asin(0.5)')
+    runner.f64-eq(h.acos(), 1.0471975511965979, 0.000001, '# std/number: acos(0.5)')
+}
+
+; ── # std/math：clamp（#{buildin} 樁 → ForwardFunc math-clamp）──
+t-clamp = () {
+    hi i64 = math.clamp(9, 1, 5)
+    runner.eq(hi, 5, '# std/math: math.clamp(9,1,5) == 5')
+
+    lo i64 = math.clamp(-3, 0, 5)
+    runner.eq(lo, 0, '# std/math: math.clamp(-3,0,5) == 0')
+
+    mid i64 = math.clamp(3, 1, 5)
+    runner.eq(mid, 3, '# std/math: math.clamp(3,1,5) == 3')
+}
+
+; ── # std/os：get-wd（getcwd，C 字串回傳）──
+; 修復前 os.get-wd() 回傳空字串（長度 0）。
+t-get-wd = () {
+    wd str = os.get-wd()
+    n i64 = wd.len-bytes()
+    runner.is-true(n > 0, '# std/os: os.get-wd() 非空')
+}
+
+; ── # std/vec：vec-push（切片自動增長）──
+t-vec-push = () {
+    a []i64 = [1, 2, 3]
+    a.push(4)
+    runner.eq(len(a), 4, '# std/vec: push 後 len == 4')
+
+    ; 逐元素讀回（避免靜態下標越界檢查），和必須是 10
+    sum i64 = 0
+    i <- [0..len(a)): {
+        #{overflow=wrap}
+        sum = sum + a[i]
+    }
+    runner.eq(sum, 10, '# std/vec: 1+2+3+4 == 10')
+}
+
+p1, f1 = runner.test('# std/number: f64.sqrt', t-sqrt)
+p2, f2 = runner.test('# std/number: asin/acos', t-inverse-trig-needs-sqrt)
+p3, f3 = runner.test('# std/math: clamp', t-clamp)
+p4, f4 = runner.test('# std/os: get-wd', t-get-wd)
+p5, f5 = runner.test('# std/vec: push', t-vec-push)
+runner.summary()

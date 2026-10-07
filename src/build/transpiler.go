@@ -2218,6 +2218,28 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 				continue
 			}
 			if fd, ok := ms.(*parser.FunctionDefinition); ok {
+				// 🔴 內建樁函式（#{buildin=...}）必須在此跳過，與 stripBuiltinStubs 及
+				// std 自動載入路徑（loadStdModuleBodyForce）保持一致。
+				//
+				// 這條 `# std/xxx` 顯式導入路徑原本漏了這個檢查，後果不是「多一個沒用的
+				// 函式」而是**靜默錯誤答案**：空體樁（`f64.sqrt = () (res f64) {}`）被
+				// 當成普通函式 codegen 成一個讀未初始化 alloca 的 `define void @f64_sqrt`，
+				// 而呼叫點改走這個真實符號，不再走 Go 內建表：
+				//
+				//   # std/os  →  os.get-env('HOME') 回傳 ''，os.get-pid() 回傳 0
+				//   # std/number → f64.sqrt() 回傳堆疊垃圾（連帶 f64.asin/acos/cbrt 全錯）
+				//
+				// 沒有顯式導入時 std 走自動載入路徑，所以這些程式「看起來」是好的；
+				// 全語料只有 8 個檔案寫了 `# std/...`，且沒有一個導入了帶樁的模組，
+				// 因此 golden sweep 也照不到。src/std 共有 153 個 #{buildin} 樁，
+				// 散在 os/fs/process/net/math/number/vec/fmt/global/time/async/… 15 個模組。
+				if fd.BuiltinStub {
+					if merged.BuiltinFuncNames == nil {
+						merged.BuiltinFuncNames = make(map[string]bool)
+					}
+					merged.BuiltinFuncNames[fd.Name] = true
+					continue
+				}
 				// 來源檔必須 Deep 標記（與 std 自動載入路徑一致）：只標頂層語句時，
 				// 函式體內的語句 SourceFile 留空，lint 端拿不到來源檔就回退成主檔路徑，
 				// 而 Line/Column 取自節點本身（模組座標）——報出 `main.no:1098` 這種

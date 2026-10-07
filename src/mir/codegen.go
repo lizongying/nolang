@@ -14564,12 +14564,24 @@ func (c *codegen) emitReturn(f *Function) error {
 // CLibCall is checked first because a builtin may carry several annotations and
 // the C-call ABI is the one flavour that a single generic implementation covers
 // completely; everything else needs a name-specific lowering.
-// removedMathIntrinsic maps LLVM intrinsics that were removed in LLVM 21 (the
-// transcendental math intrinsics, deprecated in LLVM 20 with no intrinsic
-// replacement) to their libm function names. emitBuiltin routes these calls to a
-// plain external C function so the generated IR verifies on LLVM 21+. Intrinsics
-// that still exist (sqrt/fabs/floor/ceil/round/trunc/copysign/maxnum/minnum/...)
-// are intentionally absent and keep their `@llvm.*.f64` form.
+//
+// removedMathIntrinsic lists the LLVM intrinsics that were REMOVED in LLVM 21
+// (the transcendental math intrinsics, deprecated in LLVM 20 with no intrinsic
+// replacement). The value is the libm function LLVM used to lower them to.
+//
+// 🔴 DO NOT LOWER THESE TO THE libm CALL. This table is a TRIPWIRE, not a
+// lowering. The entire point of the pure-Nolang rewrite (src/std/number.no,
+// src/std/math.no — commit "refactor(math): remove libm dependency") is that the
+// toolchain links NO math library at all. Emitting `declare double @sin(...)`
+// here puts `-lm` back on the link line and resurrects the cross-platform
+// failure this refactor exists to remove (`undefined reference to
+// log10/floor/exp` when linking on Linux x86_64).
+//
+// So a builtin registration that still names one of these intrinsics is a hard
+// compile error (see emitBuiltin) that tells the author to implement it in std
+// instead. The only LLVMIntrinsic left in the registry is `llvm.sqrt.f64`, which
+// is a HARDWARE instruction (llvm.sqrt.f64 → fsqrt) and is deliberately absent
+// from this table.
 var removedMathIntrinsic = map[string]string{
 	"llvm.sin.f64":   "sin",
 	"llvm.cos.f64":   "cos",
@@ -14595,14 +14607,19 @@ func (c *codegen) emitBuiltin(f *Function, inst *Inst, bm *builtin.BuiltinMethod
 	case bm.CLibCall != nil:
 		return c.emitBuiltinCLib(f, inst, bm)
 	case bm.LLVMIntrinsic != "":
-		// Scalar LLVM intrinsic (sqrt/fabs/...): double args -> double result.
-		// LLVM 21 removed the transcendental intrinsics (sin/cos/tan/asin/acos/
-		// atan/atan2/sinh/cosh/tanh/exp/exp2/exp10/log/log2/log10/pow) and left no
-		// intrinsic replacement — code must call the libm functions instead.
-		// Emitting `@llvm.cos.f64` now fails LLVM verification with "invalid
-		// intrinsic signature", so route the removed names to their libm
-		// equivalents, declared as external C functions (a regular function call
-		// needs an explicit declare; implicit declarations are illegal in LLVM IR).
+		// Scalar LLVM intrinsic (sqrt/...): double args -> double result.
+		//
+		// 🔴 LLVM 21 removed the transcendental intrinsics (sin/cos/tan/asin/
+		// acos/atan/atan2/sinh/cosh/tanh/exp/exp2/exp10/log/log2/log10/pow) and
+		// left no intrinsic replacement. Do NOT paper over that by calling the
+		// libm function of the same name: it re-adds `-lm` to the link line and
+		// breaks cross-platform builds (see removedMathIntrinsic). These
+		// functions live in pure Nolang now (src/std/number.no, src/std/math.no)
+		// and must be reached as ordinary calls, not as intrinsics.
+		if libm, gone := removedMathIntrinsic[bm.LLVMIntrinsic]; gone {
+			c.fail("builtin %s is registered with the LLVM intrinsic %s, which LLVM 21 removed; lowering it to @%s would reintroduce the libm link dependency (-lm). Implement it in pure Nolang (src/std/number.no / src/std/math.no) and drop the LLVMIntrinsic registration instead.", inst.Sym, bm.LLVMIntrinsic, libm)
+			return fmt.Errorf("removed LLVM intrinsic %s for builtin %s", bm.LLVMIntrinsic, inst.Sym)
+		}
 		var argTys, argRegs []string
 		for _, a := range inst.Args {
 			lt, v := c.loadVal(a)
@@ -14610,29 +14627,9 @@ func (c *codegen) emitBuiltin(f *Function, inst *Inst, bm *builtin.BuiltinMethod
 			argRegs = append(argRegs, v)
 		}
 		callee := bm.LLVMIntrinsic
-		isLibm := false
-		if libm, ok := removedMathIntrinsic[callee]; ok {
-			callee = libm
-			isLibm = true
-			// libm transcendental functions have a fixed `double` ABI. Declare the
-			// canonical signature (all `double` args) rather than the call-site
-			// operand types: a call site whose argument collapsed to an integer
-			// would otherwise emit `declare double @cos(i64)` and collide with a
-			// `@cos(double)` call elsewhere ("invalid redefinition of function").
-			declArgs := make([]string, len(argTys))
-			for i := range declArgs {
-				declArgs[i] = "double"
-			}
-			c.decl(fmt.Sprintf("declare double @%s(%s)", callee, strings.Join(declArgs, ", ")))
-		}
 		argStr := ""
 		for i, t := range argTys {
 			v := argRegs[i]
-			if isLibm {
-				// Coerce a non-double argument (sitofp) to the fixed `double` ABI.
-				v = c.coerceInt(v, t, "double")
-				t = "double"
-			}
 			if i > 0 {
 				argStr += ", "
 			}

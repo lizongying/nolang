@@ -573,7 +573,6 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     n = 2
     (t >= 128) {
 
-        #{overflow=wrap}
         t = t >> 7
 
         #{overflow=wrap}

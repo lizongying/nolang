@@ -18,7 +18,6 @@
 rotl32 = (x u32, n i64) (r u32) {
     mask u32 = 4294967295
 
-    #{overflow=wrap}
     r = ((x >> (32 - n)) | (x << n)) & mask
 }
 

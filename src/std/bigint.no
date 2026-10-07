@@ -726,7 +726,6 @@ bigint.shr1 = () {
     ; 必须在当前 limb 移位「之后」放到 bit31，否则会被本 limb 的 >>1 再次右移到 bit30。
     inb = 0
 
-    #{overflow=wrap}
     i <- [.len - 1..0]: {
         outb = .limbs[i] & 1
         .limbs[i] = ((.limbs[i] >> 1) | (inb << 31)) & MASK

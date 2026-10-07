@@ -13,16 +13,12 @@ rand = (state i64) (new-state i64, r i64) {
 
     ; xorshift32 必須每一步都裁到 32-bit，否則 i64 不溢位會讓 state 無限增長、
     ; 偏移量與 >>17 的語義都偏離標準 xorshift32（歷史 bug：僅在輸出 r 處遮罩）。
-    #{overflow=wrap}
     s = state & 4294967295
 
-    #{overflow=wrap}
     s = (s ^ (s << 13)) & 4294967295
 
-    #{overflow=wrap}
     s = (s ^ (s >> 17)) & 4294967295
 
-    #{overflow=wrap}
     s = (s ^ (s << 5)) & 4294967295
     new-state = s
     r = s

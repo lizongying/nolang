@@ -121,7 +121,6 @@ multipart-writer.write-field = (name str, value str) (ok bool) {
 
     .body = .body - 'Content-Disposition: form-data; name="' - name - '"' - crlf
 
-    #{overflow=wrap}
     .body = .body - crlf
 
     .body = .body - value - crlf
@@ -149,7 +148,6 @@ multipart-writer.write-file = (name str, filename str, content-type str, content
 
     .body = .body - 'Content-Type: ' - content-type - crlf
 
-    #{overflow=wrap}
     .body = .body - crlf
 
     .body = .body - content - crlf
@@ -342,7 +340,6 @@ multipart-reader.next = () (has-part bool) {
     }
 
     ; 尋找標頭結束（CRLFCRLF）
-    #{overflow=wrap}
     header-end-marker = crlf - crlf
     header-end = .data.index-from(header-end-marker, header-start)
     header-end < 0 -> return
@@ -553,7 +550,6 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     .body = .body - 'Content-Type: ' - content-type - crlf
     .body = .body - 'X-Encryption: aes-256-gcm' - crlf
 
-    #{overflow=wrap}
     .body = .body - crlf
     .body = .body - enc-str - crlf
     ok = true
@@ -596,7 +592,6 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     .body = .body - 'Content-Disposition: form-data; name="' - name - '"' - crlf
     .body = .body - 'X-Encryption: aes-256-gcm' - crlf
 
-    #{overflow=wrap}
     .body = .body - crlf
     .body = .body - enc-str - crlf
     ok = true

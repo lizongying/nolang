@@ -408,7 +408,6 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
             #{index-out=zero}
             b = hash[idx]
 
-            #{overflow=wrap}
             acc = (acc << 8) | b
         }
         {

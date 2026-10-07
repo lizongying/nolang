@@ -391,13 +391,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     acc [64]byte
     i <- [0..32): {
 
-        #{index-out=zero}
         acc[i] = s[i]
     }
     acc[32] = carry & 255
     i <- [33..64): {
 
-        #{index-out=zero}
         acc[i] = 0
     }
 
@@ -422,7 +420,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
         i <- [31..0]: {
 
-            #{index-out=zero}
             wi = 0
 
             #{overflow=wrap}
@@ -467,7 +464,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             -> borrow = 0
                         }
 
-                        #{index-out=zero}
                         acc[idx] = val
                     }
 
@@ -487,7 +483,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                                 -> borrow = 0
                             }
 
-                            #{index-out=zero}
                             acc[idx] = val
                         }
                     }
@@ -526,7 +521,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     }
     i <- [0..32): {
 
-        #{index-out=zero}
         out[i] = acc[i]
     }
 }
