@@ -9,7 +9,7 @@ package checker
 func init() {
 	embeddedStdSigReady = true
 	embeddedStdSigVersion = 2
-	embeddedStdSigKey = "dd837c1471b31e0564dfc1512c243443b25d44a749b5cc469371f567028147bb"
+	embeddedStdSigKey = "1ecb2b5ca3396843e60fdbe8debe71802a5bf5e87bfaf51f0dec04704721d8ae"
 	embeddedStdFuncSigs = map[string][]string{
 		"[]byte.index":                     {"i64"},
 		"[]byte.index-from":                {"i64"},
@@ -443,6 +443,7 @@ func init() {
 		"magic.detect-type":                        {"str"},
 		"magic.get-extension":                      {"str"},
 		"math.arr-zero":                            {},
+		"math.atan-kernel":                         {"f64"},
 		"math.atan2":                               {"f64"},
 		"math.char-to-str":                         {"str"},
 		"math.clamp":                               {"i64"},
@@ -3486,6 +3487,7 @@ func init() {
 		"magic.detect-type":                        {"str"},
 		"magic.get-extension":                      {"str"},
 		"math.arr-zero":                            {},
+		"math.atan-kernel":                         {"f64"},
 		"math.atan2":                               {"f64", "f64"},
 		"math.char-to-str":                         {"char"},
 		"math.clamp":                               {"i64", "i64", "i64"},

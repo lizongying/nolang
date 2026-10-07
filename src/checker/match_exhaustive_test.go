@@ -271,3 +271,48 @@ bar = () {
 		t.Fatalf("expected 0 match-nonex when all variants are handled, got %d: %v", n, results)
 	}
 }
+
+// A combined `nil || err` arm claims BOTH failure variants, so `ok` + `nil || err`
+// is exhaustive and must NOT be reported. This is the case the parser's [RAL]
+// check already accepts; the exhaust checker must agree. Regression guard for the
+// bug where armVariantName returned only the first listed pattern (nil) and left
+// err looking missing.
+func TestExhaustiveMatchOkCombinedNilErrNotReported(t *testing.T) {
+	src := `f = () () {
+    b: {
+        ok -> {
+            n = 1
+        }
+
+        nil || err -> {
+            n = 2
+        }
+    }
+}
+`
+	results := ValidateNonExhaustiveMatch(parseProg(t, src))
+	if n := countMatchNonex(results); n != 0 {
+		t.Fatalf("expected 0 match-nonex for ok + (nil || err), got %d: %v", n, results)
+	}
+}
+
+// An `err || ok` combined arm that omits nil must still report the missing nil
+// arm: the combined-pattern handling must collect exactly the listed variants and
+// no more.
+func TestNonExhaustiveMatchErrOkCombinedMissingNil(t *testing.T) {
+	src := `f = () () {
+    b: {
+        err || ok -> {
+            n = 1
+        }
+    }
+}
+`
+	results := ValidateNonExhaustiveMatch(parseProg(t, src))
+	if n := countMatchNonex(results); n != 1 {
+		t.Fatalf("expected 1 match-nonex for (err || ok) missing nil, got %d: %v", n, results)
+	}
+	if !strings.Contains(results[0].Message, "nil") {
+		t.Errorf("expected message to list missing nil, got: %s", results[0].Message)
+	}
+}

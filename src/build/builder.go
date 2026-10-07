@@ -829,10 +829,6 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		if tGoos == "linux" {
 			clangArgs = append(clangArgs, "-no-pie")
 		}
-		// 浮點格式化（f64_to_str 等）會呼叫 libm 的 log10 / floor / exp。
-		// glibc 將 libm 獨立為 -lm（macOS 合併在 libc 中、Windows 在 msvcrt），
-		// 故 Linux 連結必須顯式帶 -lm，否則 undefined reference。
-		clangArgs = append(clangArgs, "-lm")
 		for _, lib := range linkLibs {
 			clangArgs = append(clangArgs, "-l"+lib)
 		}

@@ -53,26 +53,10 @@ func TestLLVMIntrinsicMethods(t *testing.T) {
 		intrinsic string
 		paramType string
 	}{
+		// 仅 f64.sqrt 仍为 LLVM 硬件内建（llvm.sqrt.f64，不依赖 libm）。
+		// 其余 f64 数学方法与全局 pow/atan2 现已改为纯 .no 实现，
+		// 不再注册 LLVMIntrinsic（见 src/builtin/math_f64.go 注释）。
 		{"f64.sqrt", "llvm.sqrt.f64", "f64"},
-		{"f64.sin", "llvm.sin.f64", "f64"},
-		{"f64.cos", "llvm.cos.f64", "f64"},
-		{"f64.tan", "llvm.tan.f64", "f64"},
-		{"pow", "llvm.pow.f64", "f64f64"},
-		{"f64.ceil", "llvm.ceil.f64", "f64"},
-		{"f64.floor", "llvm.floor.f64", "f64"},
-		{"f64.round", "llvm.round.f64", "f64"},
-		{"f64.trunc", "llvm.trunc.f64", "f64"},
-		{"f64.exp", "llvm.exp.f64", "f64"},
-		{"f64.log", "llvm.log.f64", "f64"},
-		{"f64.log10", "llvm.log10.f64", "f64"},
-		{"f64.log2", "llvm.log2.f64", "f64"},
-		{"f64.asin", "llvm.asin.f64", "f64"},
-		{"f64.acos", "llvm.acos.f64", "f64"},
-		{"f64.atan", "llvm.atan.f64", "f64"},
-		{"atan2", "llvm.atan2.f64", "f64f64"},
-		{"f64.sinh", "llvm.sinh.f64", "f64"},
-		{"f64.cosh", "llvm.cosh.f64", "f64"},
-		{"f64.tanh", "llvm.tanh.f64", "f64"},
 	}
 	for _, tt := range intrinsicMethods {
 		found := false

@@ -162,13 +162,13 @@ f64.cbrt = () (res f64) {
             ax f64 = 0.0 - .
             l f64 = ax.log()
             t f64 = l / 3.0
-            res = 0.0 - t.exp()
+            res = 0.0 - exp-f64(t)
         }
 
         -> {
             l f64 = .log()
             t f64 = l / 3.0
-            res = t.exp()
+            res = exp-f64(t)
         }
     }
 }
@@ -178,9 +178,54 @@ f32.cbrt = () (res f32) {
     res = f64-to-f32(d.cbrt())
 }
 
+; pow: 整數冪 base^n（n ≥ 0，i64）—— 供 number.pow 呼叫（模組前綴）。
+; 與 math.no 的 f64 pow 同名但不同模組，構建期加 number. 前綴；
+; 與 math.pow-int（int 泛型快速冪）同義，但明確 i64 簽名以符合
+; test/std/number.no 的 number.pow(2, 10) 等斷言。
+pow = (base i64, n i64) (res i64) {
+	rn = n
+	res = 1
+	b = base
+	(rn > 0) {
+		#{overflow=wrap}
+		rn & 1 == 1 -> res = res * b
+		#{overflow=wrap}
+		b = b * b
+		#{overflow=wrap}
+		rn = rn >> 1
+	}
+}
+
 ; 三角函数（弧度；f64/f32 方法）
-#{buildin}
 f64.sin = () (res f64) {
+	twopi f64 = 6.283185307179586
+	pi f64 = 3.141592653589793
+	ax f64 = .
+	ax < 0.0 -> {
+		ax = 0.0 - ax
+	}
+	q i64 = f64-to-i64(ax / twopi)
+	y f64 = ax - i64-to-f64(q) * twopi
+	sgn f64 = 1.0
+	. < 0.0 -> {
+		sgn = -1.0
+	}
+	y > pi -> {
+		y = y - pi
+		sgn = 0.0 - sgn
+	}
+	y > pi / 2.0 -> {
+		y = pi - y
+	}
+	y2 f64 = y * y
+	y3 f64 = y2 * y
+	y5 f64 = y3 * y2
+	y7 f64 = y5 * y2
+	y9 f64 = y7 * y2
+	y11 f64 = y9 * y2
+	y13 f64 = y11 * y2
+	s f64 = y - y3 / 6.0 + y5 / 120.0 - y7 / 5040.0 + y9 / 362880.0 - y11 / 39916800.0 + y13 / 6227020800.0
+	res = sgn * s
 }
 
 f32.sin = () (res f32) {
@@ -188,8 +233,8 @@ f32.sin = () (res f32) {
     res = f64-to-f32(d.sin())
 }
 
-#{buildin}
 f64.cos = () (res f64) {
+	res = (. + 1.5707963267948966).sin()
 }
 
 f32.cos = () (res f32) {
@@ -198,8 +243,10 @@ f32.cos = () (res f32) {
 }
 
 ; tan: tangent（libm tan，等价于 sin/cos）
-#{buildin}
 f64.tan = () (res f64) {
+	s f64 = .sin()
+	c f64 = .cos()
+	res = s / c
 }
 
 f32.tan = () (res f32) {
@@ -207,8 +254,10 @@ f32.tan = () (res f32) {
     res = f64-to-f32(d.tan())
 }
 
-#{buildin}
 f64.asin = () (res f64) {
+	s f64 = . * .
+	one f64 = 1.0 - s
+	res = atan2(., one.sqrt())
 }
 
 f32.asin = () (res f32) {
@@ -216,8 +265,10 @@ f32.asin = () (res f32) {
     res = f64-to-f32(d.asin())
 }
 
-#{buildin}
 f64.acos = () (res f64) {
+	s f64 = . * .
+	one f64 = 1.0 - s
+	res = atan2(one.sqrt(), .)
 }
 
 f32.acos = () (res f32) {
@@ -225,8 +276,8 @@ f32.acos = () (res f32) {
     res = f64-to-f32(d.acos())
 }
 
-#{buildin}
 f64.atan = () (res f64) {
+	res = atan2(., 1.0)
 }
 
 f32.atan = () (res f32) {
@@ -235,8 +286,10 @@ f32.atan = () (res f32) {
 }
 
 ; 雙曲函數（f64/f32 方法）
-#{buildin}
 f64.sinh = () (res f64) {
+	e f64 = .exp()
+	ei f64 = 1.0 / e
+	res = (e - ei) / 2.0
 }
 
 f32.sinh = () (res f32) {
@@ -244,8 +297,10 @@ f32.sinh = () (res f32) {
     res = f64-to-f32(d.sinh())
 }
 
-#{buildin}
 f64.cosh = () (res f64) {
+	e f64 = .exp()
+	ei f64 = 1.0 / e
+	res = (e + ei) / 2.0
 }
 
 f32.cosh = () (res f32) {
@@ -253,8 +308,10 @@ f32.cosh = () (res f32) {
     res = f64-to-f32(d.cosh())
 }
 
-#{buildin}
 f64.tanh = () (res f64) {
+	e f64 = .exp()
+	; tanh(x) = (e^2 - 1) / (e^2 + 1)
+	res = (e * e - 1.0) / (e * e + 1.0)
 }
 
 f32.tanh = () (res f32) {
@@ -263,8 +320,17 @@ f32.tanh = () (res f32) {
 }
 
 ; 取整（f64/f32 方法；整數型別上取整為恆等，故不提供泛型版本）
-#{buildin}
 f64.ceil = () (res f64) {
+	t f64 = i64-to-f64(f64-to-i64(.))
+	. == t -> {
+		res = t
+	}
+	. > 0.0 -> {
+		res = t + 1.0
+	}
+	-> {
+		res = t
+	}
 }
 
 f32.ceil = () (res f32) {
@@ -272,8 +338,17 @@ f32.ceil = () (res f32) {
     res = f64-to-f32(d.ceil())
 }
 
-#{buildin}
 f64.floor = () (res f64) {
+	t f64 = i64-to-f64(f64-to-i64(.))
+	. == t -> {
+		res = t
+	}
+	. < 0.0 -> {
+		res = t - 1.0
+	}
+	-> {
+		res = t
+	}
 }
 
 f32.floor = () (res f32) {
@@ -281,8 +356,25 @@ f32.floor = () (res f32) {
     res = f64-to-f32(d.floor())
 }
 
-#{buildin}
 f64.round = () (res f64) {
+	t f64 = i64-to-f64(f64-to-i64(.))
+	f f64 = . - t
+	. >= 0.0 -> {
+		f >= 0.5 -> {
+			res = t + 1.0
+		}
+		-> {
+			res = t
+		}
+	}
+	-> {
+		f <= -0.5 -> {
+			res = t - 1.0
+		}
+		-> {
+			res = t
+		}
+	}
 }
 
 f32.round = () (res f32) {
@@ -290,8 +382,8 @@ f32.round = () (res f32) {
     res = f64-to-f32(d.round())
 }
 
-#{buildin}
 f64.trunc = () (res f64) {
+	res = i64-to-f64(f64-to-i64(.))
 }
 
 f32.trunc = () (res f32) {
@@ -300,17 +392,84 @@ f32.trunc = () (res f32) {
 }
 
 ; 指数对数（f64/f32 方法）
-#{buildin}
+; exp-f64: 自由函數形式（接受參數 x，而非方法接收者）。
+; 作為 f64.exp / cbrt / sinh / cosh / f32.exp 的單一實現來源。
+; 注意：Nolang 當前對「具名區域變數上的方法呼叫」(如 t.exp()) 有
+; codegen bug，會誤用外層接收者；故所有對 exp 的間接呼叫都走本
+; 自由函數，避開該問題。
+exp-f64 = (x f64) (res f64) {
+	x > 709.0 -> {
+		res = 1.0 / 0.0
+		return
+	}
+	x < -745.0 -> {
+		res = 0.0
+		return
+	}
+	ln2 f64 = 0.6931471805599453
+	k i64 = f64-to-i64(x / ln2)
+	r f64 = x - i64-to-f64(k) * ln2
+	r2 f64 = r * r
+	e f64 = 1.0 + r + r2 / 2.0 + r2 * r / 6.0 + r2 * r2 / 24.0 + r2 * r2 * r / 120.0 + r2 * r2 * r2 / 720.0 + r2 * r2 * r2 * r / 5040.0 + r2 * r2 * r2 * r2 / 40320.0
+	res = e
+	ki i64 = k
+	ki > 0 -> {
+		i <- [0..ki) {
+			res = res * 2.0
+		}
+	}
+	#{overflow=wrap}
+	ni i64 = 0 - ki
+	ni > 0 -> {
+		i <- [0..ni) {
+			res = res / 2.0
+		}
+	}
+}
+
 f64.exp = () (res f64) {
+	res = exp-f64(.)
 }
 
 f32.exp = () (res f32) {
     d = f32-to-f64(.)
-    res = f64-to-f32(d.exp())
+    res = f64-to-f32(exp-f64(d))
 }
 
-#{buildin}
 f64.log = () (res f64) {
+	x f64 = .
+	x <= 0.0 -> {
+		res = 0.0 / 0.0
+		return
+	}
+	k i64 = 0
+	i <- [0..2000) {
+		x < 2.0 -> break
+		x = x / 2.0
+		#{overflow=wrap}
+		k = k + 1
+	}
+	i <- [0..2000) {
+		x >= 1.0 -> break
+		x = x * 2.0
+		#{overflow=wrap}
+		k = k - 1
+	}
+	i <- [0..20) {
+		x <= 1.414213562373095 -> break
+		x = x / 2.0
+		#{overflow=wrap}
+		k = k + 1
+	}
+	z f64 = (x - 1.0) / (x + 1.0)
+	z2 f64 = z * z
+	z3 f64 = z2 * z
+	z5 f64 = z3 * z2
+	z7 f64 = z5 * z2
+	z9 f64 = z7 * z2
+	lnf f64 = 2.0 * (z + z3 / 3.0 + z5 / 5.0 + z7 / 7.0 + z9 / 9.0)
+	ln2 f64 = 0.6931471805599453
+	res = i64-to-f64(k) * ln2 + lnf
 }
 
 f32.log = () (res f32) {
@@ -318,8 +477,8 @@ f32.log = () (res f32) {
     res = f64-to-f32(d.log())
 }
 
-#{buildin}
 f64.log10 = () (res f64) {
+	res = .log() / 2.302585092994046
 }
 
 f32.log10 = () (res f32) {
@@ -327,8 +486,8 @@ f32.log10 = () (res f32) {
     res = f64-to-f32(d.log10())
 }
 
-#{buildin}
 f64.log2 = () (res f64) {
+	res = .log() / 0.6931471805599453
 }
 
 f32.log2 = () (res f32) {

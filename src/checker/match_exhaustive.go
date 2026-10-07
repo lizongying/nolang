@@ -329,7 +329,7 @@ func matchVariants(root *parser.IfExpression) map[string]bool {
 			break
 		}
 		seen[node] = true
-		if v := armVariantName(node); v != "" {
+		for _, v := range armVariantNames(node) {
 			vs[v] = true
 		}
 		node = matchChainedChild(node)
@@ -337,20 +337,48 @@ func matchVariants(root *parser.IfExpression) map[string]bool {
 	return vs
 }
 
-// armVariantName returns the option variant a single desugared arm tests
-// ("ok" / "nil" / "err"), or "" when the arm tests something else.
+// armVariantNames returns every option variant ("ok" / "nil" / "err") a single
+// desugared arm claims. A combined arm (`nil || err ->`) records BOTH variants
+// in OptionPatterns, so collect ALL of them: returning only the first would make
+// the exhaust checker treat `nil || err` as covering just `nil` and falsely
+// report the `err` arm as missing. The parser's own [RAL] completeness check
+// already treats a combined pattern as covering every listed variant (see
+// parser/expr.go hasErrArm), so this keeps the checker consistent with it. An
+// empty result means the arm tests something other than an option variant.
+func armVariantNames(ife *parser.IfExpression) []string {
+	if ife == nil {
+		return nil
+	}
+	// Combined option patterns (`nil || err`): claim every listed variant.
+	if len(ife.OptionPatterns) > 0 {
+		var out []string
+		for _, p := range ife.OptionPatterns {
+			if optionMatchVariants[p] {
+				out = append(out, p)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	if v := armVariantName(ife); v != "" {
+		return []string{v}
+	}
+	return nil
+}
+
+// armVariantName returns the single option variant a non-combined desugared arm
+// tests ("ok" / "nil" / "err"), or "" when the arm tests something else.
 func armVariantName(ife *parser.IfExpression) string {
+	if ife == nil {
+		return ""
+	}
 	if id, ok := ife.EqualityPattern.(*parser.Identifier); ok && optionMatchVariants[id.Value] {
 		return id.Value
 	}
 	// `nil ->` carries a NilLiteral pattern, not an identifier.
 	if _, ok := ife.EqualityPattern.(*parser.NilLiteral); ok {
 		return "nil"
-	}
-	for _, p := range ife.OptionPatterns {
-		if optionMatchVariants[p] {
-			return p
-		}
 	}
 	// ok-> / .-> val branch: only meaningful for options.
 	if ife.DotValBody != nil {
