@@ -272,7 +272,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 ; data []byte: 輸入資料
 ; 返回 hash [28]byte: 28 位元組雜湊值
 sha3-224 = (data []byte) (hash [28]byte) {
-    out []byte = keccak-sponge(data, 144, 56, 28, 0x06)
+    out = keccak-sponge(data, 144, 56, 28, 0x06)
     i <- [0..28): {
 
         #{index-out=zero}
@@ -284,7 +284,7 @@ sha3-224 = (data []byte) (hash [28]byte) {
 ; data []byte: 輸入資料
 ; 返回 hash [32]byte: 32 位元組雜湊值
 sha3-256 = (data []byte) (hash [32]byte) {
-    out []byte = keccak-sponge(data, 136, 64, 32, 0x06)
+    out = keccak-sponge(data, 136, 64, 32, 0x06)
     i <- [0..32): {
 
         #{index-out=zero}
@@ -296,7 +296,7 @@ sha3-256 = (data []byte) (hash [32]byte) {
 ; data []byte: 輸入資料
 ; 返回 hash [48]byte: 48 位元組雜湊值
 sha3-384 = (data []byte) (hash [48]byte) {
-    out []byte = keccak-sponge(data, 104, 96, 48, 0x06)
+    out = keccak-sponge(data, 104, 96, 48, 0x06)
     i <- [0..48): {
 
         #{index-out=zero}
@@ -308,7 +308,7 @@ sha3-384 = (data []byte) (hash [48]byte) {
 ; data []byte: 輸入資料
 ; 返回 hash [64]byte: 64 位元組雜湊值
 sha3-512 = (data []byte) (hash [64]byte) {
-    out []byte = keccak-sponge(data, 72, 128, 64, 0x06)
+    out = keccak-sponge(data, 72, 128, 64, 0x06)
     i <- [0..64): {
 
         #{index-out=zero}

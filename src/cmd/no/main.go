@@ -1993,10 +1993,6 @@ func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStar
 	if _, ok := node.Value.(*parser.MapLiteral); ok {
 		return fmtRemoval{}, false
 	}
-	// 防禦（AST）：值運算式含十六進位整数字面量時不移除（見上）。
-	if exprHasHexIntLiteral(node.Value) {
-		return fmtRemoval{}, false
-	}
 	pos := node.Type.Pos()
 	sl, sc := pos.Line, pos.Column
 	if sl < 1 || sl > len(lineStarts) {
@@ -2025,11 +2021,6 @@ func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStar
 		return fmtRemoval{}, false
 	}
 	if typeEndExcl <= typeStart {
-		return fmtRemoval{}, false
-	}
-	// 防禦（文本）：切片與固定陣列字面量 AST 節點型別不同，單走 AST 會漏一種
-	// （實測 `s []byte = [0x50, ...]` 會漏），故補一道文本層檢查。
-	if valueHasHexLiteral(src, typeEndExcl) {
 		return fmtRemoval{}, false
 	}
 	// 移除型別前導空白（name 與型別之間的空格/tab）；型別後的空白（即 `=` 前的分隔）
@@ -2259,64 +2250,6 @@ func fixRedundantTypeInFileWithVet(filename, src string) (string, bool) {
 // findRedundantTypeNode 在程式中尋找「型別標註位置恰好為 (line, col)」的 LetStatement。
 // 與 checker.ValidateRedundantTypeAnnotation 的報告位置對齊（該報告的 Line/Column 即取自
 // s.Type.Pos()），因此能精準定位要移除的型別節點。
-// exprHasHexIntLiteral 判斷運算式（含陣列/切片字面量元素）是否含有十六進位整数字面量。
-// 供 fixRedundantTypeSource 過濾 linter 的 byte 啟發式誤判，見該處註解。
-func exprHasHexIntLiteral(expr parser.Expression) bool {
-	switch e := expr.(type) {
-	case nil:
-		return false
-	case *parser.IntegerLiteral:
-		raw := e.Raw
-		if raw == "" {
-			raw = e.Token.Literal
-		}
-		return len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X')
-	case *parser.ArrayLiteral:
-		for _, el := range e.Elements {
-			if exprHasHexIntLiteral(el) {
-				return true
-			}
-		}
-		return false
-	}
-	return false
-}
-
-// valueHasHexLiteral 從型別標註結尾（typeEndExcl）往後掃到該陳述結尾（括號/方括號平衡後
-// 的第一個換行或分號），檢查值運算式的原始文本是否含十六進位字面量（0x / 0X）。
-// 以文本而非 AST 判斷，是因為切片字面量與固定陣列字面量的 AST 節點型別不同，
-// 走 AST 會漏掉其中一種（實測 `s []byte = [0x50, ...]` 會漏）。
-func valueHasHexLiteral(src string, typeEndExcl int) bool {
-	i := typeEndExcl
-	// 值運算式起點：型別之後的 '='
-	for i < len(src) && src[i] != '=' && src[i] != '\n' && src[i] != ';' {
-		i++
-	}
-	if i >= len(src) || src[i] != '=' {
-		return false
-	}
-	i++
-	depth := 0
-	for i < len(src) {
-		switch src[i] {
-		case '[', '(':
-			depth++
-		case ']', ')':
-			if depth > 0 {
-				depth--
-			}
-		case '\n', ';':
-			if depth == 0 {
-				// 陳述結束：回傳值運算式區間是否含十六進位字面量
-				seg := src[typeEndExcl:i]
-				return strings.Contains(seg, "0x") || strings.Contains(seg, "0X")
-			}
-		}
-		i++
-	}
-	seg := src[typeEndExcl:]
-	return strings.Contains(seg, "0x") || strings.Contains(seg, "0X")
-}
 
 func findRedundantTypeNode(program *parser.Program, line, col int) *parser.LetStatement {
 	var found *parser.LetStatement

@@ -154,7 +154,7 @@ static-hashmap-str-tmpl.get = (key str) (result ?v) {
 
 ; contains: 檢查 key 是否存在
 static-hashmap-str-tmpl.contains = (key str) (found bool) {
-    val ?v = .get(key)
+    val = .get(key)
     val: {
         ok -> found = true
 
@@ -335,7 +335,7 @@ static-hashmap-int-tmpl.get = (key k) (result ?v) {
 
 ; contains: 檢查 key 是否存在
 static-hashmap-int-tmpl.contains = (key k) (found bool) {
-    val ?v = .get(key)
+    val = .get(key)
     val: {
         ok -> found = true
 
@@ -485,7 +485,7 @@ static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
 
 ; contains: 檢查 key 是否存在
 static-hashmap-bool-tmpl.contains = (key bool) (found bool) {
-    val ?v = .get(key)
+    val = .get(key)
     val: {
         ok -> found = true
 

@@ -1275,9 +1275,17 @@ func (p *Parser) parseLetStatement() Statement {
 			// 从元素推断切片类型
 			elemValue := "i64"
 			if len(v.Elements) > 0 {
-				switch v.Elements[0].(type) {
+				switch el := v.Elements[0].(type) {
 				case *IntegerLiteral:
-					elemValue = "i64"
+					// 十六進位字面量（0xNN）推斷為 byte，十進位整數推斷為 i64 —— 與上方
+					// 裸整數標量分支同一口徑（僅按進位制判定，不看數值範圍）。否則
+					// `sig = [0x50, 0x4b, ...]` 這類未標註十六進位陣列会被推成 []i64。
+					raw := el.Token.Literal
+					if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+						elemValue = ValueTypeByte.String()
+					} else {
+						elemValue = "i64"
+					}
 				case *FloatLiteral:
 					elemValue = "f64"
 				case *StringLiteral:
@@ -1340,9 +1348,16 @@ func (p *Parser) parseLetStatement() Statement {
 			// []elem（与下方登记一致，见 tohir.go KArrayLit）。
 			elemValue := "i64"
 			if len(v.Elements) > 0 {
-				switch v.Elements[0].(type) {
+				switch el := v.Elements[0].(type) {
 				case *IntegerLiteral:
-					elemValue = "i64"
+					// 十六進位字面量（0xNN）推斷為 byte，十進位整數推斷為 i64 —— 與
+					// SliceLiteral 分支同一口徑（僅按進位制判定，不看數值範圍）。
+					raw := el.Token.Literal
+					if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+						elemValue = ValueTypeByte.String()
+					} else {
+						elemValue = "i64"
+					}
 				case *FloatLiteral:
 					elemValue = "f64"
 				case *StringLiteral:

@@ -244,7 +244,7 @@ do = (method str, url str, body str) (resp ?response) {
     scheme-len = 7
     rest = ''
     host = ''
-    port i64 = HTTP-DEFAULT-PORT
+    port = HTTP-DEFAULT-PORT
     path str
     host-only = ''
     port-str = ''
@@ -481,7 +481,7 @@ do-req = (req request) (resp ?response) {
     scheme-len = 7
     rest = ''
     host = ''
-    port i64 = HTTP-DEFAULT-PORT
+    port = HTTP-DEFAULT-PORT
     path str
     host-only = ''
     port-str = ''
@@ -771,12 +771,14 @@ download = (url str, dest str) (ok bool) {
     scheme-len = 7
     rest = ''
     host = ''
-    port i64 = HTTP-DEFAULT-PORT
+    port = HTTP-DEFAULT-PORT
     path str
     host-only = ''
     port-str = ''
-    cr = math.char-to-str(13)
-    lf = math.char-to-str(10)
+    crc char = 13
+    cr = crc.to-str()
+    lfc char = 10
+    lf = lfc.to-str()
     crlf = cr - lf
     sep-str = crlf - crlf
     req = ''
@@ -946,7 +948,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
     scheme-len = 7
     rest = ''
     host = ''
-    port i64 = HTTP-DEFAULT-PORT
+    port = HTTP-DEFAULT-PORT
     path str
     host-only = ''
     port-str = ''
@@ -1188,7 +1190,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     ; ── 解析 URL ──
     use-tls = false
     scheme-len = 7
-    port i64 = HTTP-DEFAULT-PORT
+    port = HTTP-DEFAULT-PORT
     {
         url.starts-with('https://') -> {
             use-tls = true

@@ -151,7 +151,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 
 ; contains: 檢查 key 是否存在
 hashmap-str-tmpl.contains = (key str) (found bool) {
-    val ?v = .get(key)
+    val = .get(key)
     val: {
         ok -> found = true
 
@@ -369,7 +369,7 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
 
 ; contains: 檢查 key 是否存在
 hashmap-int-tmpl.contains = (key k) (found bool) {
-    val ?v = .get(key)
+    val = .get(key)
     val: {
         ok -> found = true
 
@@ -549,7 +549,7 @@ hashmap-bool-tmpl.get = (key bool) (result ?v) {
 
 ; contains: 檢查 key 是否存在
 hashmap-bool-tmpl.contains = (key bool) (found bool) {
-    val ?v = .get(key)
+    val = .get(key)
     val: {
         ok -> found = true
 

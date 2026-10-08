@@ -156,7 +156,7 @@ compute-accept = (key str) (accept str) {
     guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
     combined = key - guid
-    cb []byte = combined.to-bytes()
+    cb = combined.to-bytes()
     hash = sha1.sha1(cb)
 
     ; 將 [20]byte 複製到 []byte 供 base64 使用
@@ -1444,7 +1444,7 @@ connect = (url str) (c ?client) {
     scheme = 'ws://'
     rest = ''
     host = ''
-    port i64 = WS-DEFAULT-PORT
+    port = WS-DEFAULT-PORT
     path = '/'
     host-only = ''
     port-str = ''

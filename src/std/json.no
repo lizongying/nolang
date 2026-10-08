@@ -896,7 +896,10 @@ json-pool.stringify = (node-idx i64) (out str) {
 
                     c == 13 -> out = out - '\\r'
 
-                    -> out = out - char-to-str(c)
+                    -> {
+                        jscc char = c
+                        out = out - jscc.to-str()
+                    }
                 }
 
                 #{overflow=wrap}
@@ -1428,11 +1431,11 @@ json.obj-key = (idx i64) (key str, ok bool) {
     k = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
 
-    cnt i64 = .pool.nodes[.root].count
+    cnt = .pool.nodes[.root].count
     idx < 0 || idx >= cnt -> return
 
     ; 沿邊表走訪到第 idx 條邊，取鍵名 .ek[e]
-    e i64 = .pool.nodes[.root].first
+    e = .pool.nodes[.root].first
     t <- [0..idx): {
 
         e = .pool.en[e]
@@ -1451,7 +1454,7 @@ json.delete-key = (key str) (ok bool) {
     k != JSON-KIND-OBJ -> return
 
     ; 遍歷邊鏈並記錄前驅；命中則將該邊從單向鏈表摘除
-    e i64 = .pool.nodes[.root].first
+    e = .pool.nodes[.root].first
     prev = -1
     (e >= 0) {
 
@@ -1518,7 +1521,7 @@ json.obj-keys-str = () (keys str) {
     k != JSON-KIND-OBJ -> return
 
     ; 沿邊表走訪，依序拼接每個鍵名
-    e i64 = .pool.nodes[.root].first
+    e = .pool.nodes[.root].first
     (e >= 0) {
 
         key = .pool.ek[e]

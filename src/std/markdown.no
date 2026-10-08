@@ -314,7 +314,7 @@ markdown.inline = (s str) (out str) {
     n = s.len-bytes()
     (i < n) {
         i >= n -> break
-        c = s.byte(i)
+        c char = s.byte(i)
 
         ; 反斜杠转义 ASCII 标记。
         #{overflow=wrap}
@@ -485,7 +485,7 @@ markdown.inline = (s str) (out str) {
             continue
         }
 
-        result = result - markdown.escape-html(char-to-str(c))
+        result = result - markdown.escape-html(c.to-str())
 
         #{overflow=wrap}
         i = i + 1

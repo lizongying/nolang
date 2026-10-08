@@ -705,7 +705,8 @@ yaml-unescape-double = (body str) (out str, ok bool) {
         i >= n -> break
         c = body.byte(i)
         c != 92 -> {
-            out = out - char-to-str(c)
+            u1 char = c
+            out = out - u1.to-str()
 
             #{overflow=wrap}
             i = i + 1
@@ -768,7 +769,8 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         cp = cp * 16 + d
                     }
                     i = j
-                    out = out - char-to-str(cp)
+                    ucp1 char = cp
+                    out = out - ucp1.to-str()
                     continue
                 }
                 ok = false
@@ -794,7 +796,8 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         cp = cp * 16 + d
                     }
                     i = j
-                    out = out - char-to-str(cp)
+                    ucp2 char = cp
+                    out = out - ucp2.to-str()
                     continue
                 }
                 ok = false
@@ -820,7 +823,8 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         cp = cp * 16 + d
                     }
                     i = j
-                    out = out - char-to-str(cp)
+                    ucp3 char = cp
+                    out = out - ucp3.to-str()
                     continue
                 }
                 ok = false
@@ -1270,7 +1274,8 @@ yaml-parser.parse-single = () (idx i64) {
             out = out - ' '
             continue
         }
-        out = out - char-to-str(c)
+        sc char = c
+        out = out - sc.to-str()
         .advance()
     }
     closed == false -> .fail-at('unterminated single-quoted scalar')
@@ -1302,14 +1307,15 @@ yaml-parser.parse-double = () (idx i64) {
             #{overflow=wrap}
             i = .pos + 1
             i < .n -> {
-                e = .src.byte(i)
-                raw = raw - char-to-str(e)
+                e char = .src.byte(i)
+                raw = raw - e.to-str()
                 .advance()
             }
             .advance()
             continue
         }
-        raw = raw - char-to-str(c)
+        dc char = c
+        raw = raw - dc.to-str()
         .advance()
     }
     closed == false -> {
@@ -2754,12 +2760,16 @@ yaml-hex-char = (v i64) (ch str) {
 
     #{overflow=wrap}
     v < 10 -> {
-        ch = char-to-str(48 + v)
+
+        #{overflow=wrap}
+        h1 char = 48 + v
+        ch = h1.to-str()
         return
     }
 
     #{overflow=wrap}
-    ch = char-to-str(87 + v)
+    h2 char = 87 + v
+    ch = h2.to-str()
 }
 
 ; yaml-json-escape: JSON 字符串转义
@@ -2799,7 +2809,8 @@ yaml-json-escape = (s str) (out str) {
             }
 
             -> {
-                out = out - char-to-str(c)
+                jecc char = c
+                out = out - jecc.to-str()
             }
         }
     }
@@ -2987,7 +2998,8 @@ yaml-quote = (s str) (out str) {
             }
 
             -> {
-                out = out - char-to-str(c)
+                jecc char = c
+                out = out - jecc.to-str()
             }
         }
     }

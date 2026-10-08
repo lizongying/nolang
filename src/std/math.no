@@ -368,7 +368,7 @@ u64-to-str = (u u64) (out str) {
         out[0] = 48
         return
     }
-    tmp u64 = ru
+    tmp = ru
     digits = 0
     (tmp > 0) {
 
@@ -489,7 +489,7 @@ f64-to-str = (x f64) (out str) {
     ; 邊界調整：若 ax >= 10^(e+1)，則 e++
     #{overflow=wrap}
     epw = i64-to-f64(e + 1) * LN10
-    upper f64 = epw.exp()
+    upper = epw.exp()
 
     #{overflow=wrap}
     ax >= upper -> e = e + 1
@@ -498,7 +498,7 @@ f64-to-str = (x f64) (out str) {
     ; m = round(ax / 10^e * 100000)
     #{overflow=wrap}
     bpw = i64-to-f64(e) * LN10
-    base f64 = bpw.exp()
+    base = bpw.exp()
 
     #{overflow=wrap}
     ax < base -> {

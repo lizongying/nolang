@@ -172,7 +172,7 @@ timer.elapsed-ms = () (ms i64) {
 timer.elapsed-s = () (s i64) {
 
     #{overflow=wrap}
-    ms i64 = .end-ts - .start-ts
+    ms = .end-ts - .start-ts
 
     #{overflow=wrap}
     s = ms / 1000
@@ -182,7 +182,7 @@ timer.elapsed-s = () (s i64) {
 timer.elapsed-us = () (us i64) {
 
     #{overflow=wrap}
-    ms i64 = .end-ts - .start-ts
+    ms = .end-ts - .start-ts
 
     #{overflow=wrap}
     us = ms * 1000

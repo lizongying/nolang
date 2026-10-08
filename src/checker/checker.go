@@ -2832,33 +2832,6 @@ func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
 	return results
 }
 
-// exprHasHexIntLiteralValue reports whether an expression (including array/slice
-// literals and their elements) contains a hexadecimal integer literal (0xNN).
-// Such literals are inferred as i64 by the compiler, so an explicit byte-array
-// annotation is NOT redundant and must not be removed: dropping `[N]byte` from
-// `x [N]byte = [0x2b, …]` makes the compiler infer `[]i64` instead, which breaks
-// any later use expecting []byte. The frontend type inference here returns
-// "byte" for hex (see inferExprType), which is wrong for this case, so we skip
-// the redundant report — mirroring the fix tool's valueHasHexLiteral guard.
-func exprHasHexIntLiteralValue(e parser.Expression) bool {
-	switch v := e.(type) {
-	case *parser.IntegerLiteral:
-		raw := v.Token.Literal
-		if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
-			return true
-		}
-		return false
-	case *parser.ArrayLiteral:
-		for _, el := range v.Elements {
-			if exprHasHexIntLiteralValue(el) {
-				return true
-			}
-		}
-		return false
-	}
-	return false
-}
-
 // isFixedArrayAnnotation 判斷型別標註是否為定長陣列 [N]T / [?]T（可被 ?、&、* 包裝）。
 // 這類標註永遠不冗餘：它是「選哪一種表示形式」的開關，而不是單純的型別提示。
 // 只有寫了 [N]，parser 才會把右值的 SliceLiteral 轉成 ArrayLiteral；checker 的
@@ -2900,14 +2873,6 @@ func checkRedundantTypeInStmt(stmt parser.Statement, file string, varTypes map[s
 			if !isFixedArrayAnnotation(s.Type) {
 				inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
 				if inferredType != "" && inferredType == annotatedType {
-					// Hex-integer array/slice literal: removing the explicit
-					// annotation would change the element type (i64 instead of
-					// byte) and break compilation. Skip the redundant report.
-					if exprHasHexIntLiteralValue(s.Value) {
-						// Register the variable for subsequent checks
-						varTypes[s.Name.Value] = annotatedType
-						return results
-					}
 					results = append(results, ValidateResult{
 						TraceID: "tcpoxtfd",
 						File:    file,
@@ -2919,6 +2884,36 @@ func checkRedundantTypeInStmt(stmt parser.Statement, file string, varTypes map[s
 			}
 			// Register the variable for subsequent checks
 			varTypes[s.Name.Value] = annotatedType
+		} else if (s.Type == nil || isInferredType(s.Type)) && s.Name != nil && s.Value != nil {
+			// 未標註 let（無真實使用者標註）：補登記推斷型別，使後續依賴該變數型別的
+			// 冗餘判定在單檔管道（no fmt / no vet 單檔，跳過 lowering）也能對齊合併管道。
+			if s.Type != nil && isInferredType(s.Type) {
+				// parser 對「字面量右值」的裸宣告（如 `k = 80`）會附上推斷型別節點
+				// （typeNil=false 但 inferred=true），令上方首分支與 s.Type==nil 分支都落空 →
+				// k 從未登記 → `port i64 = HTTP-DEFAULT-PORT` 這類「標註 == 整數 const 引用」
+				// 單檔推不出。此處直接讀推斷節點型別登記（本 varTypes 僅 redundancy 局部使用，
+				// 不影響溢位 lint）。推斷不準時兩側不相等 → 不報冗餘（安全方向）。
+				if t := s.Type.String(); t != "" {
+					varTypes[s.Name.Value] = t
+				}
+			} else {
+				// s.Type == nil（右值是識別字 / 呼叫等無附上推斷型別者）：
+				// registerInferredNonIntLet 登記「確定非整數」型別（如 f64 別名）。
+				registerInferredNonIntLet(s, varTypes, validationFuncTypes)
+				// 純整數字面量（非十六進位）的未標註 let：型別無歧義地為 i64，登記它以令
+				// 單檔冗餘判定能解析 `port i64 = HTTP-DEFAULT-PORT` 這類「標註 == 常數字面量型別」。
+				// registerInferredNonIntLet 刻意跳過整數以維持溢位保守口徑（未知→有號），但
+				// 字面量本身無算術、無 option 溢出疑慮，且 i64 屬有號族 → 登記不削弱任何溢位
+				// 檢查（operandIntKind 對 i64 與對未知同判 "signed"）。十六進位字面量除外
+				// （推斷為 byte，刪標註會令下游 []byte 誤變 []i64）。
+				if lit, ok := s.Value.(*parser.IntegerLiteral); ok {
+					raw := lit.Token.Literal
+					isHex := len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X')
+					if !isHex && varTypes[s.Name.Value] == "" {
+						varTypes[s.Name.Value] = "i64"
+					}
+				}
+			}
 		}
 		return results
 	case *parser.FunctionDefinition:

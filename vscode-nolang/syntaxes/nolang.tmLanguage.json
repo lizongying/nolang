@@ -28,7 +28,7 @@
     },
     {
       "name": "keyword.control.nolang",
-      "match": "\\b(if|elif|else|for|in|break|continue|return|defer|as|chan|awy|run|match|while)\\b|\\*\\*|\\*(?=\\s|$|\\})|!!(?=\\s*\\{)"
+      "match": "\\b(if|elif|else|for|break|continue|return|defer|as|chan|awy|match|while|co)\\b|\\*\\*|\\*(?=\\s|$|\\})|!!(?=\\s*\\{)"
     },
     {
       "name": "keyword.control.import.nolang",
@@ -40,7 +40,7 @@
     },
     {
       "name": "support.type.nolang",
-      "match": "(?<=\\s)\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|str|byte|char|nil|err|bigint)\\b"
+      "match": "(?<=\\s)\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|f32|f64|int|float|num|bool|str|txt|string|byte|char|nil|err|bigint)\\b"
     },
     {
       "name": "string.quoted.single.nolang",
@@ -90,8 +90,12 @@
     {
       "match": "\\b([a-z][a-z0-9_]*)\\s*(\\()",
       "captures": {
-        "1": {"name": "entity.name.function.nolang"},
-        "2": {"name": "punctuation.section.parens.nolang"}
+        "1": {
+          "name": "entity.name.function.nolang"
+        },
+        "2": {
+          "name": "punctuation.section.parens.nolang"
+        }
       }
     },
     {

@@ -180,7 +180,8 @@ zip.name = (idx i64) (name str) {
         #{overflow=wrap}
         idx2 = off46 + i
 
-        result = result - math.char-to-str(.data[idx2])
+        cc char = .data[idx2]
+        result = result - cc.to-str()
     }
     name = result
 }
@@ -300,7 +301,8 @@ zip-entry.name = () (name str) {
         #{overflow=wrap}
         idx2 = off46 + i
 
-        result = result - math.char-to-str(.data[idx2])
+        cc char = .data[idx2]
+        result = result - cc.to-str()
     }
     name = result
 }
@@ -490,7 +492,7 @@ zip-writer.write-u32 = (v i64) {
 zip-writer.write-local-file = (name str, content []byte, crc i64) {
 
     ; 簽名 PK\x03\x04
-    sig []byte = [0x50, 0x4b, 0x03, 0x04]
+    sig = [0x50, 0x4b, 0x03, 0x04]
     i <- [0..4): {
 
         #{index-out=zero}
@@ -558,7 +560,7 @@ zip-writer.cd-write-u32 = (v i64) {
 zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64, crc i64) {
 
     ; 簽名 PK\x01\x02
-    sig []byte = [0x50, 0x4b, 0x01, 0x02]
+    sig = [0x50, 0x4b, 0x01, 0x02]
     i <- [0..4): {
 
         #{index-out=zero}
@@ -623,7 +625,7 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
 zip-writer.write-eocd = (cd-offset i64, cd-size i64) {
 
     ; 簽名 PK\x05\x06
-    sig []byte = [0x50, 0x4b, 0x05, 0x06]
+    sig = [0x50, 0x4b, 0x05, 0x06]
     i <- [0..4): {
 
         #{index-out=zero}

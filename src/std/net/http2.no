@@ -635,7 +635,7 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
 
     ; 解析 URL
     host = ''
-    port i64 = HTTP2-DEFAULT-PORT
+    port = HTTP2-DEFAULT-PORT
     path = '/'
     use-tls = false
     u = url

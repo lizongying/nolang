@@ -342,7 +342,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     #{index-out=zero, overflow=wrap}
     top = a[an - 1]
     lead = 0
-    tmp i64 = top
+    tmp = top
     (tmp != 0) {
 
         tmp = tmp >> 1
