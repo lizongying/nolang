@@ -1,6 +1,6 @@
 ---
 name: nolang-release
-description: 给当前 git 仓库发版——检测工作树是否干净（不干净就中断交还给用户）、先检查最新已发布 release 是否与最高本地 tag 一致（不一致则说明上次 tag 的 release action 失败，复用当前 tag 而不是 +1 并强制重推）、根据已有 tag 推导版本号（默认末位 +1）、在仓库根 HISTORY.md 顶部新增英文变更日志条目（GitHub Actions 会读取它作为 Release 正文）、打 tag，最后在用户确认后才执行 git push。当用户说「publish」「发版」「发布」「release」「打个 tag」「发 v0.3.0」或提到版本号与 HISTORY.md 时使用。
+description: 给当前 git 仓库发版——检测工作树是否干净（不干净就中断交还给用户）、先检查最新已发布 release 是否与最高本地 tag 一致（不一致则说明上次 tag 的 release action 失败，复用当前 tag 而不是 +1 并强制重推）、根据已有 tag 推导版本号（默认末位 +1）、在仓库根 HISTORY.md 顶部新增英文变更日志条目（GitHub Actions 会读取它作为 Release 正文，并同步到文档站 `docs/docs/history.md`）、打 tag，最后在用户确认后才执行 git push。当用户说「publish」「发版」「发布」「release」「打个 tag」「发 v0.3.0」或提到版本号与 HISTORY.md 时使用。
 agent_created: true
 ---
 
@@ -117,7 +117,9 @@ python3 <skill-dir>/scripts/release.py apply --version vX.Y.Z --body-file /tmp/n
 
 脚本会挡住三类问题：重复版本、空正文、以及**非英文 / 不符合 conventional 格式的条目**
 （exit 3，逐行报 offending line）。看到 exit 3 就按提示重写，不要用 `--allow-non-english` 绕过。
-写完后脚本还会再查一次工作树：若除 HISTORY.md 之外还有别的脏文件，报 exit 2 并阻止提交。
+写完后脚本还会再查一次工作树：若除 HISTORY.md 与文档站历史镜像（CN `docs/docs/history.md` + EN `docs/i18n/en/docusaurus-plugin-content-docs/current/history.md`）之外还有别的脏文件，报 exit 2 并阻止提交。
+
+`apply` 在写入根 `HISTORY.md` 的同时，会把同一 `## vX.Y.Z` 段落**镜像写入文档站历史页**（中文 `docs/docs/history.md` 与英文 `docs/i18n/en/docusaurus-plugin-content-docs/current/history.md`）。每个目标保留各自的 frontmatter / 标题 / 导言，版本段落 body 共用（英文 conventional-commit 行本身语言中立）；EN 档若不存在则由 `apply` 用其 locale 前綴自动建立。因此执行完 `apply` 后，工作树预期多出这两个 docs 历史档的改动——脚本已将其列入允许清单，不会误报 exit 2。
 
 写完立刻验证 CI 视角：
 
@@ -185,7 +187,8 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
 
 - **工作树不干净就中断**：把未提交清单交给用户，等用户自己提交完再从头走流程。代提交是禁区。
 - 不确认不推送。版本号、日志内容、命令三者都要用户点头。
-- 只改写 `HISTORY.md` 一个文件的内容；不要顺手改代码、不要改版本号常量（版本由 CI 用 ldflag 注入）。
+- 只改写 `HISTORY.md` 与文档站历史镜像两个文件（`docs/docs/history.md` 中文 + `docs/i18n/en/docusaurus-plugin-content-docs/current/history.md` 英文；英文档由 `apply` 自动建立/同步）；不要顺手改代码、不要改版本号常量（版本由 CI 用 ldflag 注入）。
+- 文档站历史页（CN + EN i18n）应与根 `HISTORY.md` 保持一致：每次 `apply` 自动同步新版本进两个目标；若发现历史段落缺失（例如曾漏同步），执行 `python3 <skill-dir>/scripts/release.py sync-docs` 一次性补齐——它把根 `HISTORY.md` 的所有 `## vX.Y.Z` 段落幂等镜像进两个目标（已存在的原地重写、缺失的插入或新建，旧→新序处理保证最新版在顶），可放心重跑。
 - HISTORY.md 正文**只写英文**，且必须是 `- type(scope): description`；中文条目直接重写，不要绕过 lint。
 - 新条目永远是 HISTORY.md 中第一个 `## ` 段落。
 - 已在远端存在的 tag **不要复用于正常发版**；正常流程下脚本会拒绝，此时改用更高的版本号并告知用户。永不 `-f` 覆盖已成功发布的 tag。

@@ -6,7 +6,6 @@ const sidebars: SidebarsConfig = {
     "history",
     "usage",
     "benchmarks",
-    "miropt-vs-llvm",
     "playground",
     {
       type: "category",

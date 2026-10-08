@@ -13,12 +13,17 @@ plan     Resolve the version to release, list commits since the last tag and
          has no matching release (the tag push action failed), it REUSES that
          tag instead of bumping +1 and prints force re-push commands.
          EXIT 2 if the working tree is dirty -- the user must commit first.
-apply    Prepend a `## vX.Y.Z` section to HISTORY.md (the only file mutation).
-         Enforces English, conventional-commit style bullets.
+apply    Prepend a `## vX.Y.Z` section to HISTORY.md and mirror it into the
+         docs history pages (CN `docs/docs/history.md` + EN i18n). Enforces
+         English, conventional-commit style.
 verify   Run ./history.sh with no arguments and print what GitHub Actions will
          publish as the release body.
 tag      Create the release tag idempotently (skips if it already points at
          HEAD; --force retargets an existing tag for failed-release reuse).
+sync-docs
+         Mirror every `## vX.Y.Z` section from HISTORY.md into the docs
+         history pages (CN + EN i18n); creates missing target files.
+         Idempotent; safe to re-run.
 
 Usage
 -----
@@ -26,6 +31,7 @@ Usage
     release.py apply --version v0.2.33 --body-file /tmp/notes.md [--repo DIR]
     release.py tag   [--repo DIR] [--version v0.2.33] [--force]
     release.py verify [--repo DIR]
+    release.py sync-docs [--repo DIR] [--dry-run]
 
 Exit codes
 ----------
@@ -46,6 +52,32 @@ import sys
 TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 HEADER_RE = re.compile(r"^## ")
 HISTORY_FILE = "HISTORY.md"
+# Docs history mirrors: CN root docs + English i18n. Each target keeps its own
+# locale frontmatter / title / intro prefix; the `## vX.Y.Z` bullet bodies are
+# identical (English conventional-commit lines) across locales.
+DOCS_HISTORY_TARGETS = [
+    {
+        "path": "docs/docs/history.md",
+        "prefix": (
+            "---\n"
+            "sidebar_position: 2\n"
+            "---\n\n"
+            "# 更新日誌\n\n"
+            "本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。\n\n"
+        ),
+    },
+    {
+        "path": "docs/i18n/en/docusaurus-plugin-content-docs/current/history.md",
+        "prefix": (
+            "---\n"
+            "sidebar_position: 2\n"
+            "---\n\n"
+            "# Changelog\n\n"
+            "This page collects Nolang release records for each version, "
+            "kept consistent with the root `HISTORY.md`.\n\n"
+        ),
+    },
+]
 # Any CJK codepoint (CJK punctuation, kanji/hanzi ranges, fullwidth forms).
 CJK_RE = re.compile(
     "[　-〿㐀-䶿一-鿿豈-﫿︰-﹏＀-￯]"
@@ -282,6 +314,84 @@ def lint_body(body: str) -> tuple[list[str], list[str]]:
     return cjk, off
 
 
+def upsert_section(text: str, version: str, body: str) -> tuple[str, bool]:
+    """Insert or replace the `## version` section in `text`.
+
+    Returns (new_text, existed). When the section already exists its body is
+    replaced in place; otherwise the block is prepended before the first
+    `## ` header (preserving any frontmatter / intro that precedes it).
+    `body` is the raw bullet text.
+    """
+    pat = re.compile(rf"^## {re.escape(version)}\s*$")
+    lines = text.split("\n")
+    hdr = None
+    for i, line in enumerate(lines):
+        if pat.match(line):
+            hdr = i
+            break
+    block = [f"## {version}", "", body, ""]
+    if hdr is not None:
+        nxt = len(lines)
+        for j in range(hdr + 1, len(lines)):
+            if HEADER_RE.match(lines[j]):
+                nxt = j
+                break
+        new_lines = lines[:hdr] + block + lines[nxt:]
+        return "\n".join(new_lines), True
+    insert_at = len(lines)
+    for i, line in enumerate(lines):
+        if HEADER_RE.match(line):
+            insert_at = i
+            break
+    new_lines = lines[:insert_at] + block + lines[insert_at:]
+    return "\n".join(new_lines), False
+
+
+def extract_sections(text: str) -> list[tuple[str, str]]:
+    """Return every `## vX.Y.Z` section as (version, body) in file order."""
+    sections: list[tuple[str, str]] = []
+    cur_v: str | None = None
+    cur_body: list[str] = []
+    for line in text.split("\n"):
+        m = re.match(r"^## (v\d+\.\d+\.\d+)\s*$", line)
+        if m:
+            if cur_v is not None:
+                sections.append((cur_v, "\n".join(cur_body).strip("\n")))
+            cur_v = m.group(1)
+            cur_body = []
+        elif cur_v is not None:
+            cur_body.append(line)
+    if cur_v is not None:
+        sections.append((cur_v, "\n".join(cur_body).strip("\n")))
+    return sections
+
+
+def _ensure_docs_file(repo: str, target: dict) -> str:
+    """Return the docs file path, creating it (with its locale prefix) if missing."""
+    path = os.path.join(repo, target["path"])
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(target["prefix"])
+        print(f"created {path}")
+    return path
+
+
+def _sync_docs_file(repo: str, version: str, body: str) -> None:
+    """Idempotently add/replace `version` in every docs history target (mirror)."""
+    for target in DOCS_HISTORY_TARGETS:
+        path = _ensure_docs_file(repo, target)
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        new_text, existed = upsert_section(text, version, body)
+        if new_text == text:
+            print(f"{target['path']} already current for {version}; no docs change")
+            continue
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(new_text)
+        print(f"{'updated' if existed else 'prepended'} {version} in {path}")
+
+
 def cmd_plan(args: argparse.Namespace) -> int:
     repo = args.repo
 
@@ -375,34 +485,6 @@ def cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
-def _replace_section(text: str, version: str, body: str) -> str | None:
-    """Rewrite the body of the existing `## version` section, in place.
-
-    Everything between the `## version` header and the next `## ` header (or EOF)
-    is replaced by `body`. Returns None when the header is not found. Used to
-    fold new commits into a reused release whose CI action failed.
-    """
-    lines = text.split("\n")
-    hdr = None
-    pat = re.compile(rf"^## {re.escape(version)}\s*$")
-    for i, line in enumerate(lines):
-        if pat.match(line):
-            hdr = i
-            break
-    if hdr is None:
-        return None
-    nxt = len(lines)
-    for j in range(hdr + 1, len(lines)):
-        if HEADER_RE.match(lines[j]):
-            nxt = j
-            break
-    new_lines = lines[:hdr + 1] + ["", body, ""] + lines[nxt:]
-    out = "\n".join(new_lines)
-    if not out.endswith("\n"):
-        out += "\n"
-    return out
-
-
 def cmd_apply(args: argparse.Namespace) -> int:
     repo = args.repo
     if args.update_existing:
@@ -440,67 +522,44 @@ def cmd_apply(args: argparse.Namespace) -> int:
         print("Rewrite them (or pass --allow-non-english).", file=sys.stderr)
         return 3
 
-    path = os.path.join(repo, HISTORY_FILE)
-    with open(path, encoding="utf-8") as fh:
-        text = fh.read()
+    # --- root HISTORY.md ---
+    root_path = os.path.join(repo, HISTORY_FILE)
+    with open(root_path, encoding="utf-8") as fh:
+        root_text = fh.read()
 
-    if re.search(rf"^## {re.escape(version)}\s*$", text, re.M):
-        if not args.update_existing:
-            raise SystemExit(
-                f"{HISTORY_FILE} already has a section for {version}; "
-                "pass --update-existing to rewrite it (used when re-releasing a tag "
-                "whose release action failed)"
-            )
-        out = _replace_section(text, version, body)
-        if out is None:
-            raise SystemExit(
-                f"could not locate the {version} section to update")
-        if args.dry_run:
-            sys.stdout.write(out)
-            return 0
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(out)
-        print(f"updated existing {version} section in {path}")
-        extra = [s for s in dirty_files(
-            repo) if status_path(s) != HISTORY_FILE]
-        if extra:
-            print(
-                "BLOCKED: unexpected dirty files appeared -- do not commit yet.", file=sys.stderr)
-            for s in extra[:20]:
-                print(f"  {s}", file=sys.stderr)
-            return 2
-        print("working tree: only HISTORY.md modified -- safe to commit")
-        return 0
-
-    lines = text.split("\n")
-    insert_at = len(lines)
-    for i, line in enumerate(lines):
-        if HEADER_RE.match(line):
-            insert_at = i
-            break
-
-    block = [f"## {version}", "", body, ""]
-    new_lines = lines[:insert_at] + block + lines[insert_at:]
-    out = "\n".join(new_lines)
-    if not out.endswith("\n"):
-        out += "\n"
-
+    root_new, existed = upsert_section(root_text, version, body)
+    if existed and not args.update_existing:
+        raise SystemExit(
+            f"{HISTORY_FILE} already has a section for {version}; "
+            "pass --update-existing to rewrite it (used when re-releasing a tag "
+            "whose release action failed)"
+        )
     if args.dry_run:
-        sys.stdout.write(out)
+        sys.stdout.write(root_new)
         return 0
+    with open(root_path, "w", encoding="utf-8") as fh:
+        fh.write(root_new)
+    print(f"prepended {version} to {root_path}")
 
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(out)
-    print(f"prepended {version} to {path}")
+    # --- docs/docs/history.md (keep the docs site in sync) ---
+    _sync_docs_file(repo, version, body)
 
-    # After this write the only expected dirty file is HISTORY.md itself.
-    extra = [s for s in dirty_files(repo) if status_path(s) != HISTORY_FILE]
+    # After the writes the only expected dirty files are HISTORY.md and the
+    # docs history mirror; anything else means a concurrent edit.
+    extra = [
+        s for s in dirty_files(repo)
+        if status_path(s) not in (
+            HISTORY_FILE,
+            *(t["path"] for t in DOCS_HISTORY_TARGETS),
+        )
+    ]
     if extra:
-        print("BLOCKED: unexpected dirty files appeared -- do not commit yet.", file=sys.stderr)
+        print(
+            "BLOCKED: unexpected dirty files appeared -- do not commit yet.", file=sys.stderr)
         for s in extra[:20]:
             print(f"  {s}", file=sys.stderr)
         return 2
-    print("working tree: only HISTORY.md modified -- safe to commit")
+    print("working tree: only HISTORY.md and docs/docs/history.md modified -- safe to commit")
     return 0
 
 
@@ -561,6 +620,43 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sync_docs(args: argparse.Namespace) -> int:
+    """Catch up every docs history target so it mirrors HISTORY.md.
+
+    Idempotent: existing sections are rewritten in place, missing ones are
+    inserted (processed oldest-first so the newest lands on top). Missing
+    target files are created with their locale prefix first.
+    """
+    repo = args.repo
+    root_path = os.path.join(repo, HISTORY_FILE)
+    if not os.path.exists(root_path):
+        print(f"{HISTORY_FILE} not found; nothing to sync")
+        return 0
+    with open(root_path, encoding="utf-8") as fh:
+        root_text = fh.read()
+    sections = extract_sections(root_text)
+    if not sections:
+        print("no version sections found in HISTORY.md; nothing to sync")
+        return 0
+    for target in DOCS_HISTORY_TARGETS:
+        _ensure_docs_file(repo, target)
+        path = os.path.join(repo, target["path"])
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        for version, body in reversed(sections):
+            text, _ = upsert_section(text, version, body)
+        if args.dry_run:
+            sys.stdout.write(f"--- {target['path']} ---\n")
+            sys.stdout.write(text)
+            continue
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        print(
+            f"synced {len(sections)} version sections from {HISTORY_FILE} "
+            f"into {path}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -614,6 +710,16 @@ def main() -> int:
         help="retarget an existing tag at HEAD (failed-release reuse only)",
     )
     t.set_defaults(func=cmd_tag)
+
+    s = sub.add_parser(
+        "sync-docs",
+        help="mirror every HISTORY.md version section into docs/docs/history.md",
+    )
+    s.add_argument(
+        "--dry-run", action="store_true",
+        help="print the resulting docs/docs/history.md instead of writing",
+    )
+    s.set_defaults(func=cmd_sync_docs)
 
     args = ap.parse_args()
     args.repo = detect_repo(args.repo)

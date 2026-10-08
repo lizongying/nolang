@@ -2,9 +2,10 @@
 sidebar_position: 2
 ---
 
-# 更新日誌
+# Changelog
 
-本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
+This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
+
 
 ## v0.3.15
 
