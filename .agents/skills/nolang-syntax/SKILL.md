@@ -2195,7 +2195,7 @@ drives match lowering and exhaustiveness checking.
 as a *builtin* enum: its variants (names, order, payload types) drive matching and
 exhaustiveness, but the underlying representation and construction come from the builtin
 runtime — no user-visible struct/union is generated. The `?t` option type is declared this
-way in `src/std/option.no`:
+way in `src/std/global.no`:
 
 ```no
 #{buildin}

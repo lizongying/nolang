@@ -71,59 +71,86 @@ INF = 1.0 / 0.0
 
 ; i64.to-str: i64 轉字串
 i64.to-str = () (out str) {
-    out = i64-to-str(.)
+    out = math.i64-to-str(.)
 }
 
 ; i32.to-str: i32 轉字串（隱式拓寬至 i64）
 i32.to-str = () (out str) {
-    out = i64-to-str(.)
+    out = math.i64-to-str(.)
 }
 
 ; i16.to-str: i16 轉字串
 i16.to-str = () (out str) {
-    out = i64-to-str(.)
+    out = math.i64-to-str(.)
 }
 
 ; i8.to-str: i8 轉字串
 i8.to-str = () (out str) {
-    out = i64-to-str(.)
+    out = math.i64-to-str(.)
 }
 
 ; u64.to-str: u64 轉字串
 u64.to-str = () (out str) {
-    out = u64-to-str(.)
+    out = math.u64-to-str(.)
 }
 
 ; u32.to-str: u32 轉字串（隱式拓寬至 u64）
 u32.to-str = () (out str) {
-    out = u64-to-str(.)
+    out = math.u64-to-str(.)
 }
 
 ; u16.to-str: u16 轉字串
 u16.to-str = () (out str) {
-    out = u64-to-str(.)
+    out = math.u64-to-str(.)
 }
 
 ; u8.to-str: u8 轉字串
 u8.to-str = () (out str) {
-    out = u64-to-str(.)
+    out = math.u64-to-str(.)
 }
 
 ; byte.to-str: byte 轉字串（無號，等同 u8）
 byte.to-str = () (out str) {
-    out = u64-to-str(.)
+    out = math.u64-to-str(.)
 }
 
 ; f64.to-str: f64 轉字串（方法）
 f64.to-str = () (out str) {
-    out = f64-to-str(.)
+    out = math.f64-to-str(.)
 }
 
 ; f32.to-str: f32 轉字串（方法）
 ; 透過 f32-to-f64 拓寬後委託 f64-to-str，取代 sprintf %g CLibCall
 f32.to-str = () (out str) {
-    d = f32-to-f64(.)
-    out = f64-to-str(d)
+    d = math.f32-to-f64(.)
+    out = math.f64-to-str(d)
+}
+
+; ═══════════════════════════════════════════════
+; 數值寬度轉換方法（取代已棄用的 math 函數形式）
+;   f64-to-i64(.) -> .to-i64()   i64-to-f64(.) -> .to-f64()
+;   f32-to-f64(.) -> .to-f64()   f64-to-f32(.) -> .to-f32()
+; 底層仍委託 #{buildin} 的 math.* 內在函數。
+; ═══════════════════════════════════════════════
+
+; f64.to-i64: 浮點轉整數（截斷）
+f64.to-i64 = () (out i64) {
+    out = math.f64-to-i64(.)
+}
+
+; i64.to-f64: 整數轉浮點
+i64.to-f64 = () (out f64) {
+    out = math.i64-to-f64(.)
+}
+
+; f32.to-f64: 將 f32 提升為 f64
+f32.to-f64 = () (out f64) {
+    out = math.f32-to-f64(.)
+}
+
+; f64.to-f32: 將 f64 降為 f32（可能損失精度）
+f64.to-f32 = () (out f32) {
+    out = math.f64-to-f32(.)
 }
 
 ; 注意：不定義 float.to-str 聯合方法（原因見 std/float.no 末尾說明）。
@@ -146,8 +173,8 @@ f64.sqrt = () (res f64) {
 }
 
 f32.sqrt = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.sqrt())
+    d = math.f32-to-f64(.)
+    res = d.sqrt().to-f32()
 }
 
 ; cbrt: 立方根（f64 方法）
@@ -174,8 +201,8 @@ f64.cbrt = () (res f64) {
 }
 
 f32.cbrt = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.cbrt())
+    d = math.f32-to-f64(.)
+    res = d.cbrt().to-f32()
 }
 
 ; pow: 整數冪 base^n（n ≥ 0，i64）—— 供 number.pow 呼叫（模組前綴）。
@@ -205,8 +232,8 @@ f64.sin = () (res f64) {
     ax < 0.0 -> {
         ax = 0.0 - ax
     }
-    q = f64-to-i64(ax / twopi)
-    y = ax - i64-to-f64(q) * twopi
+    q = (ax / twopi).to-i64()
+    y = ax - q.to-f64() * twopi
     sgn = 1.0
     . < 0.0 -> {
         sgn = -1.0
@@ -230,8 +257,8 @@ f64.sin = () (res f64) {
 }
 
 f32.sin = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.sin())
+    d = math.f32-to-f64(.)
+    res = d.sin().to-f32()
 }
 
 f64.cos = () (res f64) {
@@ -239,8 +266,8 @@ f64.cos = () (res f64) {
 }
 
 f32.cos = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.cos())
+    d = math.f32-to-f64(.)
+    res = d.cos().to-f32()
 }
 
 ; tan: tangent（libm tan，等价于 sin/cos）
@@ -251,39 +278,39 @@ f64.tan = () (res f64) {
 }
 
 f32.tan = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.tan())
+    d = math.f32-to-f64(.)
+    res = d.tan().to-f32()
 }
 
 f64.asin = () (res f64) {
     s = . * .
     one = 1.0 - s
-    res = atan2(., one.sqrt())
+    res = math.atan2(., one.sqrt())
 }
 
 f32.asin = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.asin())
+    d = math.f32-to-f64(.)
+    res = d.asin().to-f32()
 }
 
 f64.acos = () (res f64) {
     s = . * .
     one = 1.0 - s
-    res = atan2(one.sqrt(), .)
+    res = math.atan2(one.sqrt(), .)
 }
 
 f32.acos = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.acos())
+    d = math.f32-to-f64(.)
+    res = d.acos().to-f32()
 }
 
 f64.atan = () (res f64) {
-    res = atan2(., 1.0)
+    res = math.atan2(., 1.0)
 }
 
 f32.atan = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.atan())
+    d = math.f32-to-f64(.)
+    res = d.atan().to-f32()
 }
 
 ; 雙曲函數（f64/f32 方法）
@@ -294,8 +321,8 @@ f64.sinh = () (res f64) {
 }
 
 f32.sinh = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.sinh())
+    d = math.f32-to-f64(.)
+    res = d.sinh().to-f32()
 }
 
 f64.cosh = () (res f64) {
@@ -305,8 +332,8 @@ f64.cosh = () (res f64) {
 }
 
 f32.cosh = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.cosh())
+    d = math.f32-to-f64(.)
+    res = d.cosh().to-f32()
 }
 
 f64.tanh = () (res f64) {
@@ -317,13 +344,13 @@ f64.tanh = () (res f64) {
 }
 
 f32.tanh = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.tanh())
+    d = math.f32-to-f64(.)
+    res = d.tanh().to-f32()
 }
 
 ; 取整（f64/f32 方法；整數型別上取整為恆等，故不提供泛型版本）
 f64.ceil = () (res f64) {
-    t = i64-to-f64(f64-to-i64(.))
+    t = math.i64-to-f64(math.f64-to-i64(.))
     . == t -> {
         res = t
     }
@@ -337,12 +364,12 @@ f64.ceil = () (res f64) {
 }
 
 f32.ceil = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.ceil())
+    d = math.f32-to-f64(.)
+    res = d.ceil().to-f32()
 }
 
 f64.floor = () (res f64) {
-    t = i64-to-f64(f64-to-i64(.))
+    t = math.i64-to-f64(math.f64-to-i64(.))
     . == t -> {
         res = t
     }
@@ -356,12 +383,12 @@ f64.floor = () (res f64) {
 }
 
 f32.floor = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.floor())
+    d = math.f32-to-f64(.)
+    res = d.floor().to-f32()
 }
 
 f64.round = () (res f64) {
-    t = i64-to-f64(f64-to-i64(.))
+    t = math.i64-to-f64(math.f64-to-i64(.))
     f = . - t
     . >= 0.0 -> {
         f >= 0.5 -> {
@@ -385,17 +412,17 @@ f64.round = () (res f64) {
 }
 
 f32.round = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.round())
+    d = math.f32-to-f64(.)
+    res = d.round().to-f32()
 }
 
 f64.trunc = () (res f64) {
-    res = i64-to-f64(f64-to-i64(.))
+    res = math.i64-to-f64(math.f64-to-i64(.))
 }
 
 f32.trunc = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.trunc())
+    d = math.f32-to-f64(.)
+    res = d.trunc().to-f32()
 }
 
 ; 指数对数（f64/f32 方法）
@@ -414,8 +441,8 @@ exp-f64 = (x f64) (res f64) {
         return
     }
     ln2 = 0.6931471805599453
-    k = f64-to-i64(x / ln2)
-    r = x - i64-to-f64(k) * ln2
+    k = (x / ln2).to-i64()
+    r = x - k.to-f64() * ln2
     r2 = r * r
     e = 1.0 + r + r2 / 2.0 + r2 * r / 6.0 + r2 * r2 / 24.0 + r2 * r2 * r / 120.0 + r2 * r2 * r2 / 720.0 + r2 * r2 * r2 * r / 5040.0 + r2 * r2 * r2 * r2 / 40320.0
     res = e
@@ -440,8 +467,8 @@ f64.exp = () (res f64) {
 }
 
 f32.exp = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(exp-f64(d))
+    d = math.f32-to-f64(.)
+    res = exp-f64(d).to-f32()
 }
 
 f64.log = () (res f64) {
@@ -480,12 +507,12 @@ f64.log = () (res f64) {
     z9 = z7 * z2
     lnf = 2.0 * (z + z3 / 3.0 + z5 / 5.0 + z7 / 7.0 + z9 / 9.0)
     ln2 = 0.6931471805599453
-    res = i64-to-f64(k) * ln2 + lnf
+    res = k.to-f64() * ln2 + lnf
 }
 
 f32.log = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.log())
+    d = math.f32-to-f64(.)
+    res = d.log().to-f32()
 }
 
 f64.log10 = () (res f64) {
@@ -493,8 +520,8 @@ f64.log10 = () (res f64) {
 }
 
 f32.log10 = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.log10())
+    d = math.f32-to-f64(.)
+    res = d.log10().to-f32()
 }
 
 f64.log2 = () (res f64) {
@@ -502,28 +529,28 @@ f64.log2 = () (res f64) {
 }
 
 f32.log2 = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.log2())
+    d = math.f32-to-f64(.)
+    res = d.log2().to-f32()
 }
 
 ; degrees: 弧度轉角度（f64/f32 方法）
 f64.degrees = () (res f64) {
-    res = . * 180.0 / PI
+    res = . * 180.0 / math.PI
 }
 
 f32.degrees = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.degrees())
+    d = math.f32-to-f64(.)
+    res = d.degrees().to-f32()
 }
 
 ; radians: 角度轉弧度（f64/f32 方法）
 f64.radians = () (res f64) {
-    res = . * PI / 180.0
+    res = . * math.PI / 180.0
 }
 
 f32.radians = () (res f32) {
-    d = f32-to-f64(.)
-    res = f64-to-f32(d.radians())
+    d = math.f32-to-f64(.)
+    res = d.radians().to-f32()
 }
 
 ; sqrt: 整數平方根 floor(√n)——i64 方法

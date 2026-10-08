@@ -9,7 +9,7 @@ worker-async = (n i64) (r i64) {
 ; 启动后取消，再 awy（应得 zero value 0）
 test-cancel = () {
     h = run worker-async(100)
-    async-cancel(h)
+    async.cancel(h)
     r = awy h
     print(r); expect: 0
 }
@@ -23,7 +23,7 @@ test-no-cancel = () {
 
 ; cancelled 在非事件循环驱动下应安全返回 0（false）
 test-cancelled = () {
-    c = cancelled()
+    c = async.cancelled()
     print(c); expect: 0
 }
 

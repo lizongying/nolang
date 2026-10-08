@@ -105,8 +105,8 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             tc = it
 
             ; 發送 HTTP GET 請求
-            cr = char-to-str(13)
-            lf = char-to-str(10)
+            cr = math.char-to-str(13)
+            lf = math.char-to-str(10)
 
             #{overflow=wrap}
             crlf = cr - lf
@@ -239,8 +239,8 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
             tc = it
 
             ; 發送 HTTP GET 請求
-            cr = char-to-str(13)
-            lf = char-to-str(10)
+            cr = math.char-to-str(13)
+            lf = math.char-to-str(10)
 
             #{overflow=wrap}
             crlf = cr - lf

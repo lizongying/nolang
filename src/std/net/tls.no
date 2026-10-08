@@ -169,7 +169,7 @@ conn {
 rand-bytes = (state i64, n i64) (out []byte) {
     out = with-len(n)
     i <- [0..n): {
-        state, r = rand(state)
+        state, r = rand.rand(state)
 
         out[i] = state & 255
     }
@@ -1045,7 +1045,7 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     ; PS: 非零隨機位元組
     state = time.now-ns()
     i <- [0..ps-len): {
-        state, r = rand(state)
+        state, r = rand.rand(state)
         b = state & 255
         b == 0 -> b = 1
 
@@ -1138,7 +1138,7 @@ conn.gen-x25519-keypair = () {
     ; 生成私鑰
     kp-state = seed
     i <- [0..32): {
-        kp-state, kp-r = rand(kp-state)
+        kp-state, kp-r = rand.rand(kp-state)
 
         .client-priv[i] = kp-state & 255
     }
@@ -1171,7 +1171,7 @@ conn.gen-p256-keypair = () {
     #{overflow=wrap}
     .rand-state = .rand-state + 32
     i <- [0..32): {
-        s, r = rand(s)
+        s, r = rand.rand(s)
 
         .client-priv[i] = s & 255
     }
@@ -4372,7 +4372,7 @@ server-conn.send-server-hello-13 = () (ok bool) {
     .rand-state = .rand-state + 1
     kp-state = seed
     i <- [0..32): {
-        kp-state, kp-r = rand(kp-state)
+        kp-state, kp-r = rand.rand(kp-state)
 
         .server-priv[i] = kp-state & 255
     }

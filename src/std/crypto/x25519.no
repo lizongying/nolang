@@ -1683,7 +1683,7 @@ x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
     ; 用 PRNG 生成 32 位元組私鑰
     state = seed
     i <- [0..32): {
-        state, r = rand(state)
+        state, r = rand.rand(state)
 
         priv[i] = state & 255
     }

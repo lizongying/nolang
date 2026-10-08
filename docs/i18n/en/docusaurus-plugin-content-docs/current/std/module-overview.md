@@ -27,7 +27,6 @@ sidebar_position: 4.5
 | toml                | Core   | TOML 1.0 parsing/generation                 |
 | yaml                | Core   | YAML 1.2 parsing/generation                 |
 | types               | Core   | Type definitions document                    |
-| option              | Core   | Option type                                  |
 | sort                | Core   | Sort constants                               |
 | set                 | Core   | Set                                          |
 | deque               | Core   | Double-ended queue (struct)                  |

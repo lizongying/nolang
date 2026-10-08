@@ -1877,7 +1877,7 @@ o outer = wrap(a(5))                ; 枚舉載荷本身是另一個枚舉
 struct/union**。`?t` option 即以此方式聲明：
 
 ```no
-; src/std/option.no
+; src/std/global.no
 #{buildin}
 option {
     ok(v t),
@@ -2115,7 +2115,7 @@ read-file = () {
 
 可空類型變量可以合法持有空值/错误值，編譯器會進行相應的空值檢查。
 
-`?t` 是內建標籤列舉，其變體定義於 `src/std/option.no`：
+`?t` 是內建標籤列舉，其變體定義於 `src/std/global.no`：
 
 ```no
 #{buildin}

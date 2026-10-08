@@ -55,7 +55,7 @@ t-replace-n = () {
 t-join = () {
     s txt = 'a-b-c-d'
     parts = s.split('-')
-    j = txt-join(parts, '.')
+    j = txt.txt-join(parts, '.')
     runner.str-eq(j.to-str(), 'a.b.c.d', 7, 'txt-join')
 }
 

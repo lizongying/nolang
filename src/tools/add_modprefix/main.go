@@ -33,19 +33,26 @@ var constDefRe = regexp.MustCompile(`^([A-Z][A-Z0-9_-]*)\s*=\s`)
 // methodDefRe matches method definitions: `type.method = (`
 var methodDefRe = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_-]*)\.([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*\(`)
 
-// commentRe matches comment lines
-var commentRe = regexp.MustCompile(`^\s*//`)
+// commentRe matches comment LINES. Nolang's preferred comment marker is `;`
+// (also `;;`); `//` is the legacy marker. A line whose first non-space char is
+// one of these is a pure comment and is never touched.
+var commentRe = regexp.MustCompile(`^\s*(;|//)`)
 
 // builtinFuncs are functions that don't need a module prefix.
-// printf/eprintf/sprintf are deprecated but kept here for backward compat;
-// prefer print/eprint/format.
+// These are the 6 "truly global" functions documented in global.no
+// (print / eprint / format / with-cap / with-len / with-cap-len) — they are
+// always bare-callable and must NEVER get a module prefix.
+// printf/eprintf/sprintf are deprecated but kept for backward compat.
 var builtinFuncs = map[string]bool{
-	"print":   true,
-	"eprint":  true,
-	"format":  true,
-	"printf":  true, // deprecated, kept for backward compat
-	"sprintf": true, // deprecated, kept for backward compat
-	"eprintf": true, // deprecated, kept for backward compat
+	"print":        true,
+	"eprint":       true,
+	"format":       true,
+	"with-cap":     true,
+	"with-len":     true,
+	"with-cap-len": true,
+	"printf":       true, // deprecated, kept for backward compat
+	"sprintf":      true, // deprecated, kept for backward compat
+	"eprintf":      true, // deprecated, kept for backward compat
 }
 
 // funcToPath maps function name → ShortPath (dotted form, e.g. "hash.sha256")
@@ -69,8 +76,10 @@ func main() {
 	// 2. Process all .no files in std/, example/, tests/
 	var dirs []string
 	dirs = append(dirs, stdDir)
-	dirs = append(dirs, filepath.Join(rootDir, "example"))
-	dirs = append(dirs, filepath.Join(rootDir, "tests"))
+	if os.Getenv("ADD_MODPREFIX_ALL") == "1" {
+		dirs = append(dirs, filepath.Join(rootDir, "example"))
+		dirs = append(dirs, filepath.Join(rootDir, "tests"))
+	}
 
 	totalChanged := 0
 	for _, dir := range dirs {
@@ -231,8 +240,8 @@ func processFile(path, stdDir string) bool {
 
 // prefixLine adds ShortPath prefix to bare function calls in a line
 func prefixLine(line string, localFuncs map[string]bool, localConsts map[string]bool) string {
-	// Protect string literals from replacement
-	// Split line into segments: code and string parts
+	// Protect string literals and comments from replacement
+	// Split line into segments: code, string and comment parts
 	segments := splitCodeStrings(line)
 
 	// Process functions: replace bare funcname( with dotted.funcname(
@@ -243,7 +252,7 @@ func prefixLine(line string, localFuncs map[string]bool, localConsts map[string]
 		pattern := regexp.MustCompile(`(^|[^.\w-])` + regexp.QuoteMeta(fn) + `\(`)
 		replacement := "${1}" + path + "." + fn + "("
 		for i := range segments {
-			if segments[i].isString {
+			if segments[i].protected() {
 				continue
 			}
 			segments[i].text = pattern.ReplaceAllString(segments[i].text, replacement)
@@ -262,7 +271,7 @@ func prefixLine(line string, localFuncs map[string]bool, localConsts map[string]
 		pattern := regexp.MustCompile(`(^|[^.\w-])` + regexp.QuoteMeta(cn) + `([^A-Z0-9_-]|$)`)
 		replacement := "${1}" + path + "." + cn + "${2}"
 		for i := range segments {
-			if segments[i].isString {
+			if segments[i].protected() {
 				continue
 			}
 			segments[i].text = pattern.ReplaceAllString(segments[i].text, replacement)
@@ -277,54 +286,69 @@ func prefixLine(line string, localFuncs map[string]bool, localConsts map[string]
 	return result.String()
 }
 
-// lineSegment represents a part of a line that is either code or string content
+// lineSegment represents a part of a line: code, string literal, or comment.
 type lineSegment struct {
-	text     string
-	isString bool
+	text      string
+	isString  bool
+	isComment bool
 }
 
-// splitCodeStrings splits a line into alternating code and string segments.
-// String literals in Nolang use single quotes '...' or double quotes "...".
+// protected reports whether this segment must never be rewritten.
+func (s lineSegment) protected() bool { return s.isString || s.isComment }
+
+// splitCodeStrings splits a line into code / string / comment segments.
+// Nolang string literals use '...', "..." or backtick raw `...`. Comments start
+// with ';' (or ';;') or '//' and run to end of line; ';' is ONLY a comment in
+// Nolang (never a statement separator), so the first unquoted ';' or '//' begins
+// the comment. String and comment segments are protected from rewriting.
 func splitCodeStrings(line string) []lineSegment {
 	var segments []lineSegment
 	var current strings.Builder
-	inString := false
-	var quoteChar byte
-
-	for i := 0; i < len(line); i++ {
-		ch := line[i]
-
-		if !inString {
-			if ch == '\'' || ch == '"' {
-				// Flush current code segment
-				if current.Len() > 0 {
-					segments = append(segments, lineSegment{text: current.String(), isString: false})
-					current.Reset()
-				}
-				inString = true
-				quoteChar = ch
-				current.WriteByte(ch)
-			} else {
-				current.WriteByte(ch)
-			}
-		} else {
-			current.WriteByte(ch)
-			if ch == quoteChar {
-				// Check for escaped quote (preceded by backslash)
-				if i > 0 && line[i-1] == '\\' {
-					// Escaped, stay in string
-					continue
-				}
-				// End of string
-				segments = append(segments, lineSegment{text: current.String(), isString: true})
-				current.Reset()
-				inString = false
-			}
+	flush := func(isString, isComment bool) {
+		if current.Len() > 0 {
+			segments = append(segments, lineSegment{text: current.String(), isString: isString, isComment: isComment})
+			current.Reset()
 		}
 	}
-	// Flush remaining
-	if current.Len() > 0 {
-		segments = append(segments, lineSegment{text: current.String(), isString: inString})
+	inString := false
+	var quoteChar byte
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		if inString {
+			current.WriteByte(ch)
+			// Backtick raw strings do no escape processing; only ' and " honour \.
+			if quoteChar != '`' && ch == '\\' && i+1 < len(line) {
+				i++
+				current.WriteByte(line[i])
+				continue
+			}
+			if ch == quoteChar {
+				flush(true, false)
+				inString = false
+			}
+			continue
+		}
+		switch {
+		case ch == '\'' || ch == '"' || ch == '`':
+			flush(false, false)
+			inString = true
+			quoteChar = ch
+			current.WriteByte(ch)
+		case ch == ';':
+			// comment runs to end of line
+			flush(false, false)
+			current.WriteString(line[i:])
+			flush(false, true)
+			return segments
+		case ch == '/' && i+1 < len(line) && line[i+1] == '/':
+			flush(false, false)
+			current.WriteString(line[i:])
+			flush(false, true)
+			return segments
+		default:
+			current.WriteByte(ch)
+		}
 	}
+	flush(inString, false)
 	return segments
 }

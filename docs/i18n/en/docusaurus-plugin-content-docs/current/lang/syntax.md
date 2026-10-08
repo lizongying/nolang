@@ -1950,7 +1950,7 @@ construction come from the runtime/builtin — **no user-visible struct/union is
 is declared this way:
 
 ```no
-; src/std/option.no
+; src/std/global.no
 #{buildin}
 option {
     ok(v t),
@@ -2213,7 +2213,7 @@ Adding `?` before a type indicates a nullable type:
 
 A nullable type variable can legitimately hold a null value or an error value; the compiler will perform the corresponding null checks.
 
-`?t` is a built-in tagged enum whose variants are defined in `src/std/option.no`:
+`?t` is a built-in tagged enum whose variants are defined in `src/std/global.no`:
 
 ```no
 #{buildin}

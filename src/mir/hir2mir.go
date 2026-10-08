@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1392,6 +1393,24 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	// frame would leave the caller holding a pointer into storage that dies
 	// with it. Demote those back to an owned copy before the analysis runs.
 	l.mod.demoteUnsafeSliceViews()
+	// The compiler's OWN optimiser (NOLANG_MIR_OPT / `no build -opt[=N]`).
+	//
+	// It runs HERE — after the last lowering rewrite and BEFORE Analyze — and
+	// that position is load-bearing. Analyze is what decides ownership
+	// (enumOwnsPayload, spawnArgMoves, spawnArgRetains) and where every drop is
+	// placed; running the optimiser afterwards would leave all of those
+	// decisions describing an instruction stream that no longer exists. Running
+	// it first means Analyze sees the optimised program, so its answers are
+	// correct by construction and no re-analysis is needed.
+	//
+	// Default is OFF (MIROptLevel returns 0 for an unset/invalid switch), so a
+	// normal build is bit-identical to before this pass existed.
+	if lvl := MIROptLevel(); lvl > OptOff {
+		stats := l.mod.OptimizeMIR(lvl)
+		if os.Getenv("NOLANG_MIR_OPT_STATS") != "" {
+			fmt.Fprintf(os.Stderr, "[miropt] level=%d %s\n", lvl, stats)
+		}
+	}
 	rep := l.mod.Analyze()
 	return l.mod, rep, l.diags
 }

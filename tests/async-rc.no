@@ -82,7 +82,7 @@ test-container = () {
 ;    double-free.
 test-cancel-no-await = () {
     h = run worker-async(100)
-    async-cancel(h)
+    async.cancel(h)
     print('6 ok')
 }
 test-alias-both()

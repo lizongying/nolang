@@ -1,5 +1,23 @@
 # 更新日誌
 
+## v0.3.15
+
+- feat(mir): add an in-compiler MIR optimiser behind `-opt[=N]` / `NOLANG_MIR_OPT`
+- feat(mir): add constant folding, dead scalar elimination and control-flow cleanup passes
+- feat(mir): add integer identity rewriting (`x+0`, `x*1`, `x&x`, `x^0`, …) and constant-producing laws (`x-x`, `x%1`, …)
+- feat(mir): add per-block copy propagation and single-predecessor block merging
+- feat(codegen): drop runtime helpers nothing references when `-opt=2` is on, which `opt -O2` cannot do because the prelude is emitted with external linkage
+- feat(codegen): drop a removed helper's own doc comment with it, taking the one-line `print('hi')` module from 61,812 to 14,548 bytes (−76.5%) instead of −56.1%
+- feat(build): compare the MIR optimiser against LLVM `opt -O2` on IR instructions, IR size, compile time, binary size and execution time via scripts/miropt_vs_llvm.py
+- fix(mir): keep unreachable blocks that are the sole producer of a value codegen still needs
+- fix(mir): stop copy propagation redirecting a reader through a source reassigned later in the same block
+- fix(mir): stop empty-block threading widening a block's predecessor set, which let a per-edge drop become a double free on 49 of the 631-file corpus
+- fix(mir): stop copy propagation collapsing a task-handle copy, which made a second `awy` read the handle slot the first had zeroed
+- refactor(checker): remove redundant hex literal check and improve type inference registration
+- fix(checker): handle implicit self float methods in type inference
+- fix(builtin): audit and fix math.pow negative base sign and builtin handling
+- refactor(std/math): remove libm dependency from math.pow implementation
+
 ## v0.3.14
 
 - refactor(math): remove libm dependency; implement math functions in pure Nolang

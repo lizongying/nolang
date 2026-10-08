@@ -46,8 +46,40 @@ type CompilerConfig struct {
 	Version string `json:"version"`
 }
 
+// parseOptFlag extracts the global `-opt[=N]` switch from args and exports it as
+// NOLANG_MIR_OPT, the variable the MIR optimiser itself reads.
+//
+// The switch has two spellings on purpose. The environment variable is what a
+// script or the LSP sets; the CLI flag is the discoverable form for a human, and
+// it simply writes the variable so there is exactly ONE source of truth (and
+// therefore no way for the flag and the pass to disagree).
+//
+//	-opt      -> level 1 (constant folding + dead scalar elimination)
+//	-opt=0    -> off
+//	-opt=2    -> level 1 + control-flow cleanup
+//
+// The flag is global (handled in main, like -v) because build, run and test all
+// reach the optimiser through the same lowering path; a per-subcommand flag
+// would have to be added three times and could drift.
+func parseOptFlag(args []string) []string {
+	var filtered []string
+	for _, arg := range args {
+		if arg == "-opt" {
+			os.Setenv("NOLANG_MIR_OPT", "1")
+			continue
+		}
+		if strings.HasPrefix(arg, "-opt=") {
+			os.Setenv("NOLANG_MIR_OPT", arg[len("-opt="):])
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered
+}
+
 func main() {
 	// 全局 flags
+	os.Args = parseOptFlag(os.Args)
 	for i, arg := range os.Args[1:] {
 		if arg == "-v" {
 			verbose = true

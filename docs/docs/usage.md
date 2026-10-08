@@ -29,7 +29,7 @@ sudo mv nolang /usr/local/bin/no
 | `no init`                                                    | 定義工作區（生成 workspace.jsonc，不含 package.jsonc） |
 | `no new <name>`                                              | 在工作區內新建包（子目錄 + package.jsonc，並註冊到 workspace.jsonc） |
 | `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼            |
-| `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | 構建（輸出 executable） |
+| `no build [-o <file>] [-cc <s>] [-target <s>] [-opt[=N]] [<file\|dir>]` | 構建（輸出 executable） |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 構建並執行（包名/目錄/文件） |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | 執行測試                |
 | `no add <pkg>`                                               | 添加依賴                |
@@ -148,6 +148,68 @@ no build -target aarch64-linux-gnu   # 需要交叉編譯時才顯式指定
 
 - `clang`（預設）— 需要安裝 LLVM
 - `zig` — 需要安裝 Zig，適合交叉編譯
+
+### 編譯器內置優化器（MIR opt）
+
+編譯器自帶一個作用在 **MIR 層**（HIR 降級之後、LLVM 代碼生成之前）的優化器。它與後端已有的 LLVM `opt` 是兩件事：前者改寫 MIR，後者改寫已生成的 LLVM IR。
+
+用 `-opt[=N]` 開啟，**預設關閉**：
+
+```bash
+no build main.no          # 預設：不啟用（與歷史行為一致）
+no build -opt main.no     # 等同 -opt=1
+no build -opt=2 main.no   # 常數折疊 + 死碼消除 + 控制流清理
+no build -opt=0 main.no   # 顯式關閉
+```
+
+| 級別 | 含義 |
+| ---- | ---- |
+| `0` / `off` / `false` / `no` / `none` | 關閉（預設） |
+| `1` / `on` / `true` / `yes` / `-opt` | 常數折疊 + 整數恆等式改寫 + 複製傳播 + 死純量消除 |
+| `2` | 級別 1 + 控制流清理（常數分支折疊、不可達塊刪除、空塊跳轉串接、單前驅塊合併）+ 前導裁剪 |
+
+`-opt` 是**全局**開關（與 `-v` 一樣在 `main` 中處理），因此 `build`、`run`、`test` 都支持。
+
+同一開關也可用環境變量 `NOLANG_MIR_OPT` 指定；命令行 flag 只是把它寫進該變量，因此兩者不會出現不一致。查看本次優化做了什麼：
+
+```bash
+NOLANG_MIR_OPT=2 NOLANG_MIR_OPT_STATS=1 no build -o out main.no
+# [miropt] level=2 funcs=3 folded=5 (arith=2 cmp=3) ident=1 copies=4 dead=6 cfg{condbr=3 unreachable=4(5 insts) threaded=1 merged=5}
+# [miropt] prelude: dropped 27 unreferenced helpers
+```
+
+| 欄位 | 含義 |
+| ---- | ---- |
+| `folded`（`arith`/`cmp`） | 折疊成常數的算術／比較指令數 |
+| `ident` | 化簡為某個運算元的整數恆等式（`x+0`、`x*1`、`x&x`、`x^0`…） |
+| `copies` | 被複製傳播刪除的純量複製 |
+| `dead` | 被刪除的死純量指令 |
+| `cfg{condbr, unreachable, threaded, merged}` | 常數分支折疊、不可達塊刪除（連帶指令數）、空塊跳轉串接、單前驅塊合併 |
+| `prelude: dropped N` | codegen 前導中被證明無人引用的 runtime helper 數量（見下） |
+
+### 前導裁剪（級別 2）
+
+`emitPrelude` 把整個 runtime（`str_*`、`print_*`、`eprint_*`、`vec_*`、`nolang_*`）寫進**每一個**模組，不管程式有沒有用到——一個 `print('hi')` 程式會產生 60 個函式定義，其中只有 8 個從入口可達，**52 個從未被呼叫**。
+
+**這件事 `opt -O2` 做不到**：LLVM 的 GlobalDCE 只刪 `internal` 定義，而前導是以 external linkage 發出的（`no` 模組可以跟 C 連結，連結器可能需要的 helper 不能是 internal）。在該程式上實測，60 個定義中恰好 7 個是 `define internal`，`opt -O2` 恰好只刪掉這 7 個，而且 `.ll` 反而從 61,812 長到 69,874 bytes（+8,062）。
+
+因此級別 2 會在 IR 生成完成後，對**已完成的文本**做一次可達性裁剪，只保留真正被引用到的 helper（連帶遞迴保留它們自己呼叫的）。同一份 `print('hi')`：定義數 60 → **16**，`.ll` 61,812 → **14,548** bytes（**−76.5%**），執行檔 36,616 → 34,648（−5.4%）。裁剪只認真正的引用——**註解裡出現的名字不算**，這是它能刪掉 44 個而不是 33 個的關鍵；而丟掉一個函式時，**它自己那段說明註解也一起丟**（`optTrailingComment`），否則會留下 12,609 bytes 在描述 44 個已經不存在的函式。
+
+刪註解**不會縮小執行檔**——註解在 `opt`/`llc` 解析時就被丟棄，兩者的執行檔都是 34,648 bytes。那 12,609 bytes 是 IR 文本與編譯期解析量的收益。
+
+裁剪的近似一律偏向保留——無法解析出唯一名字的區塊保留、區塊沒有閉合大括號就從該處起停止裁剪、`declare`／global／型別定義永不刪。漏掉一個優化只是多幾個位元組，刪錯一個就是連結錯誤。
+
+**前導能不能整個移除？不能。** 前導區間裡不只有函式，還有**程式自己的字串字面值**（`@.mir.str.N`，就是 `"hi"` 本身）、`%str-long`／`%option`／`%task` 等型別、`@malloc`／`@write`／`@llvm.memcpy` 等外部宣告——這些資料面佔模組約 30%，砍掉連 `llc` 都過不了（`error: use of undefined value '@.mir.str.1'`）。能刪的只有**函式**那一半：把 48 個 `define` 換成同名 `declare` 後，連結器報出的未定義符號恰好是 `print_nl`、`print_str`、`str_free`、`str_from_const` 四個。所以正確的問法是「能不能按需發射」，而不是「能不能移除」。
+
+這筆浪費是一筆**與程式大小無關的固定稅**：前導的程式碼與註解逐模組相同（48 個定義、程式碼 36,043 ＋ 註解 17,516 bytes），語料抽樣 40 檔的保留量是 **0–19 個、中位數 9**。`tests/dup.no`／`tests/q.no`／`tests/u128-types.no` 保留 **0 個**——整段前導對它們全是死的。因此節省比例完全由模組大小決定：一行程式 −76.5%，3.0 MB 的 `test/std/pbkdf2.no` 只有 −4.1%。
+
+前導能不能整個移除？不能——區間裡還有程式自己的字串字面值（`@.mir.str.N`）、型別與外部宣告（1,151 bytes），砍掉連 `llc` 都過不了。而且 `codegen.go:75-83` 的 `extraFuncs`／`extraFuncsBody` 本來就是一個按需發射器（option／struct／enum／ptr 的 helper 都走它），前導是唯一沒被轉換的部分；但把它改成按需，能多拿的幾乎全是註解，程式碼面已經沒有東西可拿。
+
+該優化器只折疊 **純量**（`i64`/`u64`/`i16`/`i32`/`char`/`bool`/`f32`/`f64`）。`byte`/`u8`/`i8`、`i128`/`u128`、`option`、切片、結構體等一律跳過：前者在 `emitConst` 中沒有對應分支（會退化成 0），後者的算術走 `option` 溢出包裝路徑，折疊會改變語義。浮點同樣被排除在所有恆等式之外——`x * 0.0` 對 `inf`/`NaN` 不是 0，`x + 0.0` 對 `-0.0` 不是 `x`。
+
+與 LLVM `opt -O2` 的完整對比（IR 指令數／大小、編譯時間、執行檔大小、執行時間）見 [MIR 優化器 vs LLVM `opt -O2`](./miropt-vs-llvm.md)，量測腳本為 `scripts/miropt_vs_llvm.py`。
+
+那份對比的核心結論值得在這裡先講：**局部清理（常數折疊、死碼消除、控制流清理）在 `opt -O2` 跑過之後邊際價值幾乎為零**（−0.06%），因為 LLVM 把同一類工作做得更徹底。真正有回報的是 LLVM **因為 linkage 而不能做**的事——也就是上面的前導裁剪。加上前導裁剪後，`mir+llvm_O2` → `mir_opt+llvm_O2` 的整體邊際值是 **−19.03% 指令 / −15.81% 文本**（631 檔全語料）。
 
 ## JS 後端（JavaScript Backend）
 

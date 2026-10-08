@@ -73,7 +73,11 @@ bbuf_add = 0
 bbuf_add = bset.add(3)
 bbuf_add = bset.add(4)
 bbuf_add = bset.add(5)
-un = aset.union(bbuf, bset.size())
+
+; v2.1 深拷貝賦值規則下，set.init(buf) 會取得 buf 的擁有權副本；外部陣列不再
+; 別名集合內部 content。故 `other` 運算元必須取自集合自身的即時資料（to-vec），
+; 而非傳入時已過期的外部緩衝區。out 運算元仍走切片檢視（寫回呼叫端）故維持原樣。
+un = aset.union(bset.to-vec(), bset.size())
 allok = allok && check(un == 5, 'union -> size 5')
 allok = allok && check(aset.contains(4), 'union contains 4')
 allok = allok && check(aset.contains(5), 'union contains 5')
@@ -90,7 +94,7 @@ ibs.add(2)
 ibs.add(3)
 ibs.add(4)
 iout [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
-icnt = ias.intersection(ib, ibs.size(), iout)
+icnt = ias.intersection(ibs.to-vec(), ibs.size(), iout)
 allok = allok && check(icnt == 2, 'intersection size 2')
 allok = allok && check(iout[0] == 2, 'intersection [0] == 2')
 allok = allok && check(iout[1] == 3, 'intersection [1] == 3')
@@ -106,7 +110,7 @@ dbs = set.init(db)
 dbs.add(2)
 dbs.add(4)
 dout [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
-dcnt = das.difference(db, dbs.size(), dout)
+dcnt = das.difference(dbs.to-vec(), dbs.size(), dout)
 allok = allok && check(dcnt == 2, 'difference size 2')
 allok = allok && check(dout[0] == 1, 'difference [0] == 1')
 allok = allok && check(dout[1] == 3, 'difference [1] == 3')

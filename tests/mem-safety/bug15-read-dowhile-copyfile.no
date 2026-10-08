@@ -37,7 +37,7 @@ test-copy-file = () (ok bool) {
     fs.write-file('/tmp/bug15_src.txt', 'Hello Nolang'.to-bytes())
 
     ; 複製檔案
-    ok2 = copy-file('/tmp/bug15_src.txt', '/tmp/bug15_dst.txt')
+    ok2 = fs.copy-file('/tmp/bug15_src.txt', '/tmp/bug15_dst.txt')
     ok2 != true -> return
 
     ; 讀取複製後的檔案驗證內容

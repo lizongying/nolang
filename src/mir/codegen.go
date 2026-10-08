@@ -469,6 +469,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	usedFname := map[string]bool{}
 	preludeStart := c.sb.Len()
 	c.emitPrelude()
+	preludeEnd := c.sb.Len()
 	for _, sym := range definedSymbols(c.sb.String()[preludeStart:]) {
 		usedFname[sym] = true
 	}
@@ -589,7 +590,20 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	if len(c.errs) > 0 {
 		return "", fmt.Errorf("MIR->LLVM: %s", strings.Join(c.errs, "; "))
 	}
-	return c.sb.String(), nil
+	ir := c.sb.String()
+	// Behind the optimiser switch, so a default build emits byte-identical IR.
+	// This has to run on the FINISHED text: the prelude is written before any
+	// of the functions that reference it, and the trailing helper/global/declare
+	// sections are written after them, so neither the prelude nor the user code
+	// knows the whole reference set on its own.
+	if MIROptLevel() >= OptCFG {
+		var removed int
+		ir, removed = optPrunePrelude(ir, preludeStart, preludeEnd)
+		if os.Getenv("NOLANG_MIR_OPT_STATS") != "" && removed > 0 {
+			fmt.Fprintf(os.Stderr, "[miropt] prelude: dropped %d unreferenced helpers\n", removed)
+		}
+	}
+	return ir, nil
 }
 
 func findMainFunc(m *Module) FuncID {
@@ -616,6 +630,232 @@ func (c *codegen) collectStrings() {
 			}
 		}
 	}
+}
+
+// optPrunePrelude drops the runtime helpers that nothing in the module
+// references, and returns the new IR plus how many definitions it removed.
+//
+// WHY THIS IS WORTH DOING — AND WHY `opt -O2` CANNOT DO IT FOR US
+// --------------------------------------------------------------
+// emitPrelude writes the ENTIRE runtime into every module — `str_*`, `print_*`,
+// `eprint_*`, `vec_*`, `nolang_*` — whether or not the program calls any of it.
+// The cost is fixed and large: a one-line `print('hi')` program emits 60
+// function definitions, 51 of which are helpers it never calls.
+//
+// The obvious objection is that `opt -O2` already deletes unused functions. It
+// does not, here. LLVM's GlobalDCE only removes INTERNAL definitions, and the
+// prelude is emitted with external linkage. Measured on that one-line program:
+// of the 60 definitions exactly 7 are `define internal` (the utf8 helpers), and
+// `opt -O2` removes exactly those 7 — the other 53 survive, and the .ll even
+// GROWS (61,812 -> 69,948 bytes) because inlining attaches metadata to what it
+// keeps.
+//
+// Marking the prelude `internal` is not the fix: a `no` module is linkable
+// against C, and a helper the linker may legitimately need cannot be internal.
+// The only correct way to get the size back is to prove, for THIS module, which
+// helpers nothing can reach — a whole-module question, and the reason this lives
+// here rather than in opt.go.
+//
+// HOW IT WORKS
+// ------------
+// Textual, over the finished IR, because the prelude is emitted before the
+// functions that reference it and so cannot decide its own liveness.
+// [start,end) is the prelude region. Everything else — globals, user functions,
+// buffered helpers, declarations — is scanned for `@name` mentions to seed the
+// live set, which is then closed transitively over the prelude's own bodies.
+// Only `define` blocks are candidates for removal; `declare` lines, globals and
+// type definitions inside the region are kept verbatim, so the module stays
+// well-formed even when a helper is dropped.
+//
+// A dropped definition also takes its doc comment with it (optTrailingComment).
+// That is not cosmetic: the prelude documents itself heavily, and a comment is
+// not a `define` block, so an earlier version of this pass left 12,434 bytes of
+// prose describing 44 functions it had just deleted — 35.9% on top of the
+// 34,651 bytes of code. Removing them together is what took the one-line
+// program from 26,973 bytes to 14,539.
+//
+// Every approximation errs toward KEEPING: a block whose name cannot be parsed
+// is treated as a literal, and a block with no closing brace aborts pruning from
+// that point on. A missed optimisation costs bytes; a wrong removal costs a link
+// error. The one thing deliberately NOT treated as a reference is a name inside
+// an LLVM comment — see the `;` cut in addRefs.
+func optPrunePrelude(ir string, start, end int) (string, int) {
+	if start < 0 || end > len(ir) || start >= end {
+		return ir, 0
+	}
+	lines := strings.SplitAfter(ir[start:end], "\n")
+
+	type seg struct {
+		literal bool
+		text    string
+		name    string
+		// doc is the length of the trailing run of comment and blank lines in
+		// the LITERAL SEGMENT IMMEDIATELY BEFORE this definition — in other
+		// words, the doc comment that was written for it. It is measured even
+		// when the definition survives, so that the output loop can drop it
+		// together with a definition it decides to remove. Zero when this
+		// definition has no literal predecessor.
+		doc int
+	}
+	var seq []seg
+	for i := 0; i < len(lines); {
+		if !strings.HasPrefix(strings.TrimSpace(lines[i]), "define") {
+			var lit strings.Builder
+			for i < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[i]), "define") {
+				lit.WriteString(lines[i])
+				i++
+			}
+			seq = append(seq, seg{literal: true, text: lit.String()})
+			continue
+		}
+		// A definition runs from its header to the line that is exactly "}".
+		// Nested braces are indented, so only the function's own close matches.
+		var b strings.Builder
+		j, closed := i, false
+		for j < len(lines) {
+			b.WriteString(lines[j])
+			if strings.TrimRight(lines[j], "\n") == "}" {
+				closed = true
+				j++
+				break
+			}
+			j++
+		}
+		if !closed {
+			// No closing brace: the region is not shaped the way this function
+			// assumes, so stop pruning and keep the remainder verbatim.
+			var lit strings.Builder
+			for ; i < len(lines); i++ {
+				lit.WriteString(lines[i])
+			}
+			seq = append(seq, seg{literal: true, text: lit.String()})
+			continue
+		}
+		text := b.String()
+		var name string
+		if syms := definedSymbols(text); len(syms) == 1 {
+			name = syms[0]
+		}
+		if name == "" {
+			// Could not attribute the block to exactly one symbol — keep it.
+			seq = append(seq, seg{literal: true, text: text})
+		} else {
+			s := seg{text: text, name: name}
+			if k := len(seq) - 1; k >= 0 && seq[k].literal {
+				s.doc = optTrailingComment(seq[k].text)
+			}
+			seq = append(seq, s)
+		}
+		i = j
+	}
+
+	live := map[string]bool{}
+	addRefs := func(text string) {
+		for _, line := range strings.Split(text, "\n") {
+			// A `;` starts an LLVM comment, and a name inside one is not a
+			// reference — nothing executes it and the linker never sees it.
+			// Cutting here is what makes the pass actually bite: the prelude
+			// documents itself heavily, and without the cut those comments keep
+			// whole families alive. Measured on a one-line `print('hi')`: the
+			// async cluster survives because a comment NAMES
+			// @nolang_async_wait, and every utf8 helper survives because the
+			// block comment above them lists all seven. That was 24 of the 33
+			// definitions left behind by a first version that scanned raw text.
+			//
+			// Cutting at `;` can truncate a string literal that contains a
+			// semicolon, which is harmless: a literal is never a reference.
+			if i := strings.IndexByte(line, ';'); i >= 0 {
+				line = line[:i]
+			}
+			for i := 0; i < len(line); i++ {
+				if line[i] != '@' {
+					continue
+				}
+				j := i + 1
+				for j < len(line) && isSymChar(line[j]) {
+					j++
+				}
+				if j > i+1 {
+					live[line[i+1:j]] = true
+				}
+			}
+		}
+	}
+	// Seeds: everything outside the prelude, plus the prelude's own non-define
+	// lines (a global initializer can name a helper).
+	addRefs(ir[:start])
+	addRefs(ir[end:])
+	for _, s := range seq {
+		if s.literal {
+			addRefs(s.text)
+		}
+	}
+	// Close transitively: a live helper keeps the helpers ITS body calls.
+	for changed := true; changed; {
+		changed = false
+		for _, s := range seq {
+			if s.literal || !live[s.name] {
+				continue
+			}
+			before := len(live)
+			addRefs(s.text)
+			if len(live) != before {
+				changed = true
+			}
+		}
+	}
+
+	var out strings.Builder
+	out.Grow(len(ir))
+	out.WriteString(ir[:start])
+	removed := 0
+	for i, s := range seq {
+		if s.literal {
+			text := s.text
+			// If the definition this literal's doc comment was written for is
+			// about to be dropped, drop the comment with it. The body is gone;
+			// prose describing it now describes nothing, and the prelude is
+			// heavily self-documented. Measured on a one-line `print('hi')`:
+			// of the 47,085 bytes this pass removes, 12,434 are exactly this
+			// kind of orphaned comment — the single largest remaining item, and
+			// 35.9% on top of the 34,651 bytes of code already dropped.
+			if i+1 < len(seq) && !seq[i+1].literal && !live[seq[i+1].name] && seq[i+1].doc > 0 {
+				text = text[:len(text)-seq[i+1].doc]
+			}
+			out.WriteString(text)
+			continue
+		}
+		if live[s.name] {
+			out.WriteString(s.text)
+			continue
+		}
+		removed++
+	}
+	out.WriteString(ir[end:])
+	return out.String(), removed
+}
+
+// optTrailingComment returns the length of the trailing run of comment and
+// blank lines in lit — the doc comment that was written for the definition
+// following lit.
+//
+// The scan walks backwards and STOPS at the first line that is neither blank
+// nor starts with `;`. That stop is what makes it safe to delete what it
+// returns: a comment that documents a TYPE or a GLOBAL rather than the
+// definition below it always has that declaration between it and the
+// definition, so it is never reached. The module header is protected the same
+// way — it ends in `declare` lines.
+func optTrailingComment(lit string) int {
+	end := len(lit)
+	for end > 0 {
+		start := strings.LastIndexByte(lit[:end-1], '\n') + 1
+		line := strings.TrimRight(lit[start:end], "\n")
+		if t := strings.TrimSpace(line); t != "" && !strings.HasPrefix(t, ";") {
+			return len(lit) - end
+		}
+		end = start
+	}
+	return len(lit)
 }
 
 // viewPtrType renders the LLVM type of a view (`&T`) as a pointer to the
@@ -1390,6 +1630,26 @@ func (c *codegen) ownedLeafFreeFuncAtDepth(ty *Type, depth int) string {
 	return ""
 }
 
+// vecElemStructKey returns the StructFields key when a slice's element type is a
+// USER struct that owns heap leaves (inline `str`/`%vec` fields), else "". Such
+// an element cannot be cloned by the flat memcpy alone: the copy's leaf fields
+// ALIAS the source's blocks, so `b = a` followed by a field write through b (or a
+// later drop of either side) frees a block the other side still reads — the
+// trace/BPT trap seen in tests/mem-safety/nested-container-clone.no's []person
+// case. vecDeepClone therefore deep-copies each such element through the
+// pointer-ABI @__nolang_struct_clone_<T> (emitStructCloneHelper), which mirrors
+// @__nolang_drop_<T>. ownedLeafCloneFuncAtDepth is value-ABI (str and %vec only)
+// and stays "" for a struct, so this decision is made on the container side.
+func (c *codegen) vecElemStructKey(t *Type, elemLT string) string {
+	if t == nil || t.Kind != KindStruct || elemLT == "" || isBuiltinContainerLT(elemLT) {
+		return ""
+	}
+	if k := c.structKeyOfLLVM(elemLT); k != "" && c.mod.StructHasOwnedLeafFields(k) {
+		return k
+	}
+	return ""
+}
+
 func (c *codegen) ownedLeafCloneCall(result, source string, ty *Type) string {
 	fn := c.ownedLeafCloneFunc(ty)
 	if fn == "" {
@@ -1483,6 +1743,15 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	if depth < vecCloneMaxDepth {
 		perElem = c.ownedLeafCloneFuncAtDepth(t, depth+1)
 	}
+	// A struct element that owns heap leaves needs a per-element pointer-ABI deep
+	// copy (the flat memcpy would alias its leaves — see vecElemStructKey).
+	structKey := ""
+	if depth < vecCloneMaxDepth {
+		if k := c.vecElemStructKey(t, elemLT); k != "" {
+			structKey = k
+			c.emitStructCloneHelper(elemLT, k)
+		}
+	}
 
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "define %%vec @%s(%%vec %%v) {\n", fn)
@@ -1503,7 +1772,19 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	b.WriteString("  %oldp = inttoptr i64 %data to i8*\n")
 	b.WriteString("  %newp = call i8* @nolang_rc_alloc(i64 %bytes)\n")
 	b.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %newp, ptr %oldp, i64 %bytes, i1 false)\n")
-	if perElem == "" {
+	if structKey != "" {
+		b.WriteString("  br label %lp\n")
+		b.WriteString("lp:\n")
+		b.WriteString("  %i = phi i64 [ 0, %cp ], [ %inext, %body ]\n")
+		b.WriteString("  %more = icmp ult i64 %i, %len\n")
+		b.WriteString("  br i1 %more, label %body, label %fin\n")
+		b.WriteString("body:\n")
+		fmt.Fprintf(b, "  %%nep = getelementptr inbounds %s, ptr %%newp, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  %%oep = getelementptr inbounds %s, ptr %%oldp, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  call void @%s(%s* %%nep, %s* %%oep)\n", structCloneName(elemLT), elemLT, elemLT)
+		b.WriteString("  %inext = add i64 %i, 1\n")
+		b.WriteString("  br label %lp\n")
+	} else if perElem == "" {
 		b.WriteString("  br label %fin\n")
 	} else {
 		b.WriteString("  br label %lp\n")

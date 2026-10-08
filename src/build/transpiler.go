@@ -2101,7 +2101,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 	}
 	// 未定義變數檢查（包括 struct 類型名直接賦值欄位，如 s.x = 7 而非 s0.x = 7）
-	if undefErrs := checker.ValidateUndefinedVars(program, filepath.Dir(t.sourcePath)); len(undefErrs) > 0 {
+	if undefErrs := checker.ValidateUndefinedVars(program, filepath.Dir(t.sourcePath), t.sourcePath); len(undefErrs) > 0 {
 		for _, e := range undefErrs {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
@@ -2914,7 +2914,7 @@ func verifyMIRIRViaOpt(ll string) error {
 		if fullPreflight {
 			optLevel := os.Getenv("NOLANG_OPT_LEVEL")
 			if optLevel == "" {
-				optLevel = "-O3"
+				optLevel = "-O2"
 			}
 			args = []string{optLevel, inPath, "-S", "-o", outPath}
 		}

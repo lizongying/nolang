@@ -114,7 +114,7 @@ BuiltinMethod{
 2. **內建標籤列舉**（`#{buildin}` 在標籤列舉前）：
 
    ```no
-   ; src/std/option.no
+   ; src/std/global.no
    #{buildin}
    option {
        ok(v t),

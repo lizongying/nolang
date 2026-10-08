@@ -271,7 +271,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	}
 
 	// 5. 未定義變數
-	for _, u := range ValidateUndefinedVars(program, opts.RootDir) {
+	for _, u := range ValidateUndefinedVars(program, opts.RootDir, opts.SourcePath) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-lint",

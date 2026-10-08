@@ -1,6 +1,6 @@
 ---
 name: nolang-std
-description: Nolang 标准库参考。用于查找标准库模块 API、数据结构、加密/压缩/编码函数签名，以及编写或修改 .no 文件时确定应该使用哪些标准库函数。涵盖 fmt/math/str/vec/arr/number/byte/char/os/fs/io/path/bufio/time/log/json/types/option/sort/set/deque/heap/stack/regexp/process/net/database/encoding/archive/crypto/uuid/bigint/err 等全部模块。
+description: Nolang 标准库参考。用于查找标准库模块 API、数据结构、加密/压缩/编码函数签名，以及编写或修改 .no 文件时确定应该使用哪些标准库函数。涵盖 fmt/math/str/vec/arr/number/byte/char/os/fs/io/path/bufio/time/log/json/types/sort/set/deque/heap/stack/regexp/process/net/database/encoding/archive/crypto/uuid/bigint/err 等全部模块。
 ---
 
 # Nolang Standard Library Reference
@@ -2981,7 +2981,6 @@ ext = magic.get-extension(path)                // Extract file extension
 | toml                | TOML parse/generate |
 | yaml                | YAML 1.2 parse/generate |
 | types               | Type definitions |
-| option              | Option type      |
 | sort                | Sort constants   |
 | set                 | Set              |
 | deque               | Double-ended queue (struct) |

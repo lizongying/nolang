@@ -701,14 +701,14 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		}
 	}
 
-	// opt -O3 最佳化
+	// opt -O2 最佳化
 	if verbose {
 		vprintf(sink, "Generated LLVM IR: %s\n", llPath)
 	}
 	optPath := filepath.Join(tempDir, fileName+"_opt.ll")
 	optLevel := os.Getenv("NOLANG_OPT_LEVEL")
 	if optLevel == "" {
-		optLevel = "-O3"
+		optLevel = "-O2"
 	}
 	optCmd := exec.Command("opt", optLevel, llPath, "-S", "-o", optPath)
 	if sink != nil {
@@ -719,7 +719,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		optCmd.Stderr = os.Stderr
 	}
 	if verbose {
-		vprintf(sink, "Running: opt -O3 %s -o %s\n", llPath, optPath)
+		vprintf(sink, "Running: opt %s %s -o %s\n", optLevel, llPath, optPath)
 	}
 	if err := optCmd.Run(); err != nil {
 		// 區分 "opt 不存在" 和 "IR 錯誤"
@@ -1201,7 +1201,7 @@ func validateProgram(program *parser.Program, inputPath string) error {
 	var errs []checker.ValidateResult
 	errs = append(errs, checker.ValidateTypes(program)...)
 	errs = append(errs, checker.ValidateFuncArgs(program, filepath.Dir(inputPath))...)
-	errs = append(errs, checker.ValidateUndefinedVars(program, filepath.Dir(inputPath))...)
+	errs = append(errs, checker.ValidateUndefinedVars(program, filepath.Dir(inputPath), inputPath)...)
 	errs = append(errs, checker.ValidateUninitOutputParams(program)...)
 	if len(errs) == 0 {
 		return nil

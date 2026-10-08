@@ -27,7 +27,6 @@ sidebar_position: 4.3
 | toml                | 核心   | TOML 1.0 解析/產生 |
 | yaml                | 核心   | YAML 1.2 解析/產生 |
 | types               | 核心   | 型別定義文件     |
-| option              | 核心   | 選項型別         |
 | sort                | 核心   | 排序常量         |
 | set                 | 核心   | 集合             |
 | deque               | 核心   | 雙端佇列（結構體）|

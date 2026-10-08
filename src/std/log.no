@@ -53,7 +53,7 @@ FMT-FLAGS = 2
 ; 說明：對外的輸出介面以 io.writer 抽象承載（見 set-writer / get-writer），但真正
 ; 持久化的狀態只能是這個標量 fd —— Nolang 的 std 合併模組中，struct global 的寫入
 ; 不會持久（只有標量 global 可變），故以 fd 作為唯一可信的儲存，寫入時再組裝 writer。
-OUT-FD fd = STDERR-FD
+OUT-FD fd = fs.STDERR-FD
 
 ; ═══════════════════════════════════════════════
 ; 設定介面

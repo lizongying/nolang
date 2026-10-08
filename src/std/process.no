@@ -341,7 +341,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 
             ; 工作目錄
             {
-                dir.len-bytes() > 0 -> ch-dir(dir)
+                dir.len-bytes() > 0 -> os.ch-dir(dir)
             }
 
             ; 執行命令
@@ -356,7 +356,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
             }
 
             ; exec 失敗
-            exit(127)
+            os.exit(127)
         }
 
         pid < 0 -> {
@@ -819,7 +819,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
             ; 工作目錄
             {
-                dir.len-bytes() > 0 -> ch-dir(dir)
+                dir.len-bytes() > 0 -> os.ch-dir(dir)
             }
 
             ; 執行命令
@@ -834,7 +834,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             }
 
             ; exec 失敗
-            exit(127)
+            os.exit(127)
         }
 
         pid < 0 -> {

@@ -1826,10 +1826,18 @@ func CollectDefinedVars(program *parser.Program) map[string]bool {
 	}
 	return definedVars
 }
-func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateResult {
+func ValidateUndefinedVars(program *parser.Program, rootDir string, entryFile ...string) []ValidateResult {
 	validationMu.Lock()
 	defer validationMu.Unlock()
 	var results []ValidateResult
+	// entryFile identifies the file under validation (empty for standalone /
+	// test callers). Its own statements carry an empty SourceFile, so it is the
+	// fallback used to resolve the current module for self-module bare-call
+	// suppression; imported-module statements use their own SourceFile.
+	entry := ""
+	if len(entryFile) > 0 {
+		entry = entryFile[0]
+	}
 
 	// 1. Collect all defined names (shared first pass)
 	definedVars := CollectDefinedVars(program)
@@ -1852,15 +1860,29 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 	for _, m := range moduleNames {
 		definedVars[m] = true
 	}
-	exportedNames := collectModuleExports(program, moduleNames)
-	for _, n := range exportedNames {
-		definedVars[n] = true
-		// Union methods (e.g. "num.sign") can be called by short name ("sign")
-		// because rewriteUnionCalls dispatches by argument type.
-		// Register the short name so the validator doesn't flag it as undefined.
+	exported := collectModuleExports(program, moduleNames)
+	for _, e := range exported {
+		n := e.Name
+		if n == "" {
+			continue
+		}
 		if idx := strings.LastIndex(n, "."); idx > 0 {
-			shortName := n[idx+1:]
-			definedVars[shortName] = true
+			// Typed / union method (e.g. "num.sign", "i64.to-str"): register the
+			// full name AND the short-name alias. Union methods dispatch by
+			// argument type, so bare "sign(x)" / "abs(x)" is legal.
+			definedVars[n] = true
+			definedVars[n[idx+1:]] = true
+			continue
+		}
+		// Plain name. Constants (non-empty Type/Value) and the 6 truly-global
+		// functions (print/eprint/format/with-cap*/...) stay bare-callable. A
+		// known std-module function (async.cancelled, math.max, ...) must be
+		// module-qualified from another module, so it is NOT registered bare
+		// here; unknown names (stdFuncModule=="") remain bare-permissive so we
+		// never over-flag symbols the signature table does not describe.
+		isConst := e.Type != "" || e.Value != ""
+		if isConst || isTrulyGlobalStdFunc(n) || stdFuncModule(n) == "" {
+			definedVars[n] = true
 		}
 	}
 
@@ -2019,10 +2041,46 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string) []ValidateRe
 
 	// 4. Walk statements and check for undefined references
 	for _, stmt := range program.Statements {
-		results = append(results, checkUndefinedVarsInStmt(stmt, definedVars, funcNames)...)
+		// Resolve the module this statement originated from so a module may
+		// call its OWN std functions bare (self-module), while genuine
+		// cross-module bare calls are still flagged.
+		origin := parser.GetSourceFile(stmt)
+		if origin == "" {
+			origin = entry
+		}
+		curModule := stdModuleForSourceFile(origin)
+		results = append(results, checkUndefinedVarsInStmt(stmt, definedVars, funcNames, curModule)...)
 	}
 
 	return results
+}
+
+// stdModuleForSourceFile maps a source file path to the std module ShortName
+// that owns it, or "" when the file is not a std module (user code, standalone
+// test programs, empty paths). The path is normalized to its std-relative form
+// (everything after a "/std/" component, ".no" trimmed) and matched against the
+// known std modules by FullPath / ShortPath / ShortName.
+func stdModuleForSourceFile(file string) string {
+	if file == "" {
+		return ""
+	}
+	norm := filepath.ToSlash(file)
+	rel := norm
+	if i := strings.LastIndex(norm, "/std/"); i >= 0 {
+		rel = norm[i+len("/std/"):]
+	} else if strings.HasPrefix(norm, "std/") {
+		rel = norm[len("std/"):]
+	}
+	rel = strings.TrimSuffix(rel, ".no")
+	if rel == "" || strings.Contains(rel, ".") {
+		return ""
+	}
+	for _, info := range knownStdModules() {
+		if rel == info.FullPath || rel == info.ShortPath || rel == info.ShortName {
+			return info.ShortName
+		}
+	}
+	return ""
 }
 
 // 註：此處原本有一個 methodDefNames()，以「被呼叫者的名字是否撞上某個方法
@@ -6674,13 +6732,12 @@ func moduleExprValue(expr parser.Expression) string {
 		return ""
 	}
 }
-func collectModuleExports(program *parser.Program, moduleNames []string) []string {
-	exports := GetModuleExports(moduleNames)
-	var names []string
-	for _, e := range exports {
-		names = append(names, e.Name)
-	}
-	return names
+// collectModuleExports returns the raw export records (name + constant
+// Type/Value) for the given modules so ValidateUndefinedVars can tell a
+// constant (bare-callable) apart from a module-scoped function (must be
+// referenced as module.fn from another module).
+func collectModuleExports(program *parser.Program, moduleNames []string) []ModuleExport {
+	return GetModuleExports(moduleNames)
 }
 func resolveModulePath(moduleName string) string {
 	// 1. Consult knownStdModules lookup table.
@@ -6721,17 +6778,17 @@ func resolveModulePath(moduleName string) string {
 func ResolveStdModulePath(moduleName string) string {
 	return resolveModulePath(moduleName)
 }
-func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[string]bool) []ValidateResult {
+func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[string]bool, curModule string) []ValidateResult {
 	var results []ValidateResult
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.Expression, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(s.Expression, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.LetStatement:
 		// Name is a definition — register it so it can be referenced later
 		if s.Value != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false, curModule)...)
 		}
 		if s.Name != nil {
 			definedVars[s.Name.Value] = true
@@ -6744,7 +6801,7 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 			}
 		}
 		if s.Value != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(s.Value, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.FunctionDefinition:
 		// Parameters, generic params, and result params are defined vars at BOTH
@@ -6770,12 +6827,12 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkUndefinedVarsInStmt(bodyStmt, localDefs, funcNames)...)
+				results = append(results, checkUndefinedVarsInStmt(bodyStmt, localDefs, funcNames, curModule)...)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
-			results = append(results, checkUndefinedVarsInStmt(bodyStmt, definedVars, funcNames)...)
+			results = append(results, checkUndefinedVarsInStmt(bodyStmt, definedVars, funcNames, curModule)...)
 		}
 	case *parser.ForStatement:
 		localDefs := make(map[string]bool)
@@ -6799,23 +6856,23 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 			}
 		} else {
 			if s.Init != nil {
-				results = append(results, checkUndefinedVarsInStmt(s.Init, localDefs, funcNames)...)
+				results = append(results, checkUndefinedVarsInStmt(s.Init, localDefs, funcNames, curModule)...)
 			}
 			if s.Condition != nil {
-				results = append(results, checkUndefinedVarsInExpr(s.Condition, localDefs, funcNames, false)...)
+				results = append(results, checkUndefinedVarsInExpr(s.Condition, localDefs, funcNames, false, curModule)...)
 			}
 			if s.Update != nil {
-				results = append(results, checkUndefinedVarsInStmt(s.Update, localDefs, funcNames)...)
+				results = append(results, checkUndefinedVarsInStmt(s.Update, localDefs, funcNames, curModule)...)
 			}
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				results = append(results, checkUndefinedVarsInStmt(bodyStmt, localDefs, funcNames)...)
+				results = append(results, checkUndefinedVarsInStmt(bodyStmt, localDefs, funcNames, curModule)...)
 			}
 		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			results = append(results, checkUndefinedVarsInExpr(s.ReturnValue, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(s.ReturnValue, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.ExternStatement:
 		if s.Name != nil {
@@ -6825,7 +6882,7 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 	}
 	return results
 }
-func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map[string]bool, isFuncCallArg bool) []ValidateResult {
+func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map[string]bool, isFuncCallArg bool, curModule string) []ValidateResult {
 	var results []ValidateResult
 	if expr == nil {
 		return nil
@@ -6871,7 +6928,11 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 					return nil
 				}
 			}
-			if builtin.FindBuiltinMethod(e.Value) != nil {
+			if bm := builtin.FindBuiltinMethod(e.Value); bm != nil && stdFuncModule(e.Value) == "" {
+				// A bare builtin is a legitimate global (print/format/with-cap*) or
+				// an internal forward helper with no std-module owner. But a name
+				// the signature table records as module.fn (async.cancelled,
+				// math.max, ...) is NOT globally callable — it must be qualified.
 				return nil
 			}
 			// Skip private FFI functions (underscore-prefixed like
@@ -6890,6 +6951,15 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 				e.Value == "nil" || e.Value == "it" {
 				return nil
 			}
+			// Self-module bare call: a std module calling its OWN function
+			// (e.g. math.no calling f64-to-i64, net.no calling net-recv) is
+			// legal — the module-qualification rule only constrains CROSS-module
+			// calls. curModule is the owning module of the statement being
+			// checked (empty for user code / standalone validation, so the strict
+			// cross-module rule is fully preserved there).
+			if owner := stdFuncModule(e.Value); owner != "" && owner == curModule {
+				return nil
+			}
 			// Special hint for 'self' (.) used outside struct methods
 			if e.Value == "self" {
 				results = append(results, ValidateResult{
@@ -6899,11 +6969,17 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 					Message: "'self' (.) can only be used inside struct methods; if you meant the match value, use 'it'",
 				})
 			} else {
+				msg := fmt.Sprintf("'%s' is not defined", e.Value)
+				if mod := stdFuncModule(e.Value); mod != "" {
+					// global.no rule: cross-module calls must carry the module
+					// prefix. Suggest the qualified form.
+					msg = fmt.Sprintf("'%s' is not defined; call it as '%s.%s' (cross-module calls must be module-qualified)", e.Value, mod, e.Value)
+				}
 				results = append(results, ValidateResult{
 					TraceID: "4bek3xc6",
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
-					Message: fmt.Sprintf("'%s' is not defined", e.Value),
+					Message: msg,
 				})
 			}
 		}
@@ -6912,60 +6988,60 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 		if e.Function != nil {
 			// Don't pass isFuncCallArg=true for the function — the function name
 			// is checked by the Identifier case's builtin/funcName check
-			results = append(results, checkUndefinedVarsInExpr(e.Function, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Function, definedVars, funcNames, false, curModule)...)
 		}
 		for _, arg := range e.Arguments {
-			results = append(results, checkUndefinedVarsInExpr(arg, definedVars, funcNames, true)...)
+			results = append(results, checkUndefinedVarsInExpr(arg, definedVars, funcNames, true, curModule)...)
 		}
 	case *parser.DotExpression:
 		// Receiver is a module/struct/type name, Property is a method/field name.
 		// Neither is a plain variable reference — skip entirely.
 	case *parser.InfixExpression:
 		if e.Left != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false, curModule)...)
 		}
 		if e.Right != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Right, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Right, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Right, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Right, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Expression, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Expression, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false, curModule)...)
 		}
 		if e.Consequence != nil {
 			for _, innerStmt := range e.Consequence.Statements {
-				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
+				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames, curModule)...)
 			}
 		}
 		if e.Alternative != nil {
 			for _, innerStmt := range e.Alternative.Statements {
-				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
+				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames, curModule)...)
 			}
 		}
 	case *parser.IndexExpression:
 		if e.Left != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false, curModule)...)
 		}
 		if e.Index != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Index, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Index, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.SliceExpression:
 		if e.Left != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Left, definedVars, funcNames, false, curModule)...)
 		}
 		if e.Range != nil {
 			if e.Range.Start != nil {
-				results = append(results, checkUndefinedVarsInExpr(e.Range.Start, definedVars, funcNames, false)...)
+				results = append(results, checkUndefinedVarsInExpr(e.Range.Start, definedVars, funcNames, false, curModule)...)
 			}
 			if e.Range.End != nil {
-				results = append(results, checkUndefinedVarsInExpr(e.Range.End, definedVars, funcNames, false)...)
+				results = append(results, checkUndefinedVarsInExpr(e.Range.End, definedVars, funcNames, false, curModule)...)
 			}
 		}
 	case *parser.AssignExpression:
@@ -6991,36 +7067,36 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			}
 		}
 		if e.Value != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Value, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Value, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.ConditionalExpression:
 		if e.Condition != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Condition, definedVars, funcNames, false, curModule)...)
 		}
 		if e.Consequence != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Consequence, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Consequence, definedVars, funcNames, false, curModule)...)
 		}
 		if e.Alternative != nil {
-			results = append(results, checkUndefinedVarsInExpr(e.Alternative, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(e.Alternative, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.ArrayLiteral:
 		for _, elem := range e.Elements {
-			results = append(results, checkUndefinedVarsInExpr(elem, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(elem, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.SliceLiteral:
 		for _, elem := range e.Elements {
-			results = append(results, checkUndefinedVarsInExpr(elem, definedVars, funcNames, false)...)
+			results = append(results, checkUndefinedVarsInExpr(elem, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.StructLiteral:
 		for _, f := range e.Fields {
 			if f.Value != nil {
-				results = append(results, checkUndefinedVarsInExpr(f.Value, definedVars, funcNames, false)...)
+				results = append(results, checkUndefinedVarsInExpr(f.Value, definedVars, funcNames, false, curModule)...)
 			}
 		}
 	case *parser.FunctionLiteral:
 		if e.Body != nil {
 			for _, innerStmt := range e.Body.Statements {
-				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames)...)
+				results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames, curModule)...)
 			}
 		}
 	}
@@ -8501,6 +8577,87 @@ func CollectStdMethodSigs() map[string][]string {
 func CollectStdEnumVariants() map[string][]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
 	return stdEnumVariantsCache
+}
+
+// ── Cross-module qualification enforcement (global.no contract) ──────────
+//
+// global.no documents the rule: only print / eprint / format / with-cap /
+// with-len / with-cap-len may be called bare; every other std function must
+// carry its module prefix from another module (async.cancelled, math.max, ...).
+// stdFuncModule / isTrulyGlobalStdFunc classify a bare name from the generated
+// module-function signature table (stdSigsCache, keyed "module.fn").
+var (
+	stdFuncOwnerOnce sync.Once
+	stdFuncOwnerMap  map[string]string // bare fn -> owning module (non-global only)
+	stdGlobalFuncMap map[string]bool   // bare fn declared as "global.fn"
+)
+
+func buildStdFuncOwner() {
+	CollectStdModuleSignatures() // warm stdSigsCache
+	modules := make(map[string]bool)
+	for _, info := range knownStdModules() {
+		modules[info.ShortName] = true
+	}
+	owner := make(map[string]string)
+	globals := make(map[string]bool)
+	firstOwner := make(map[string]string) // fn -> first module seen
+	multiOwner := make(map[string]bool)   // fn -> seen from 2+ distinct modules
+	for key := range stdSigsCache {
+		idx := strings.Index(key, ".")
+		if idx <= 0 {
+			continue // bare key (no module prefix) — not a module-qualified entry
+		}
+		mod := key[:idx]
+		fn := key[idx+1:]
+		if strings.Contains(fn, ".") {
+			continue // struct method recorded in the func table; not a plain fn
+		}
+		if mod == "global" {
+			globals[fn] = true
+			continue
+		}
+		if modules[mod] {
+			if prev, exists := firstOwner[fn]; exists {
+				if prev != mod {
+					multiOwner[fn] = true
+				}
+			} else {
+				firstOwner[fn] = mod
+			}
+		}
+	}
+	// Gate only UNIQUE-owner names: a name defined by 2+ std modules (e.g.
+	// now-ms / now-ns / sleep-us live in both os.no and time.no) has no
+	// canonical prefix, so forcing one module's form would be wrong. Such names
+	// stay bare-permissive, mirroring the build's prefixCollidingFunctions.
+	for fn, mod := range firstOwner {
+		if !multiOwner[fn] {
+			owner[fn] = mod
+		}
+	}
+	// No blanket grandfather: strict enforcement is unconditional. std's own
+	// implementation-layer bare calls are permitted per-statement by the
+	// module-aware self-module carve-out in checkUndefinedVarsInExpr (a module
+	// calling its OWN functions bare is legal); genuine cross-module bare calls
+	// must carry the module prefix (or use method form).
+	stdFuncOwnerMap = owner
+	stdGlobalFuncMap = globals
+}
+
+// stdFuncModule returns the std module that owns a bare function name when that
+// name must be module-qualified from other modules, or "" when the name is
+// truly-global, a union/typed-method short form, or not a known std-module
+// function (unknown names stay bare-permissive to avoid over-flagging).
+func stdFuncModule(fn string) string {
+	stdFuncOwnerOnce.Do(buildStdFuncOwner)
+	return stdFuncOwnerMap[fn]
+}
+
+// isTrulyGlobalStdFunc reports whether the bare name is one of the global.no
+// functions declared as "global.fn" (callable without a module prefix).
+func isTrulyGlobalStdFunc(fn string) bool {
+	stdFuncOwnerOnce.Do(buildStdFuncOwner)
+	return stdGlobalFuncMap[fn]
 }
 
 // StdProgramForContent 返回與內容哈希相對應、在 CollectStdModuleSignatures
