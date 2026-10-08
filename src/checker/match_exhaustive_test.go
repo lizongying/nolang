@@ -226,6 +226,39 @@ show = (q e-res) {
 	}
 }
 
+// Same exemption must hold for a method declared with the `=` form
+// (`box.report = (q e-res)`): parseMethodDefinition renames the function to
+// "box.report" AFTER parseFunctionDefinition registered param/local types
+// under the bare "report", so without re-keying FuncVarTypes the subject
+// lookup falls back to the globals, misses `q`, and the enum match is falsely
+// reported as a non-exhaustive option match (tests/tagged-enum-cross-fn.no).
+func TestNonExhaustiveMatchTaggedEnumEqFormMethod(t *testing.T) {
+	src := `e-res {
+    ok(v str),
+    fail,
+}
+box {
+    n i64
+}
+box.report = (q e-res) {
+    q: {
+        ok(v) -> print('box.ok: ' - v)
+
+        fail -> print('box.fail')
+    }
+}
+`
+	prog := parseProg(t, src)
+	// Sanity: the param type must be registered under the FULL method name.
+	if tt, ok := prog.Sem.FuncVarType("box.report", "q"); !ok || tt != "e-res" {
+		t.Fatalf("FuncVarTypes not re-keyed to full method name: q=%q ok=%v", tt, ok)
+	}
+	results := ValidateNonExhaustiveMatch(prog)
+	if n := countMatchNonex(results); n != 0 {
+		t.Fatalf("expected 0 match-nonex for tagged-enum match in `=`-form method, got %d: %v", n, results)
+	}
+}
+
 // Matches synthesised by the `?=` lowering (`a ?= x`) have no source `{ ... }`
 // block to add arms to — MatchEndPos stays zero. Reporting them produces
 // diagnostics the user literally cannot act on (they name internal temporaries

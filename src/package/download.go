@@ -25,7 +25,10 @@ func cacheDir() string {
 
 // parseGitHubKey extracts owner and repo from a dependency key.
 // "github.com/lizongying/nolang/test2" → owner="lizongying", repo="nolang"
+// A leading "https://" (or "http://") scheme prefix is stripped first.
 func parseGitHubKey(key string) (owner, repo string, ok bool) {
+	key = strings.TrimPrefix(key, "https://")
+	key = strings.TrimPrefix(key, "http://")
 	parts := strings.SplitN(key, "/", 4)
 	if len(parts) < 3 || parts[0] != "github.com" {
 		return "", "", false

@@ -31,6 +31,8 @@ main = () {
 
     ; (1) 重綁定的視圖：長度必須是 trim 之後的長度
     lines = ['  a  ']
+
+    #{index-out=zero}
     line = lines[0]
     line = line.trim()
     line.len() == 1 -> print('ok 1: rebound view length')
@@ -70,7 +72,11 @@ main = () {
 
     ; (6) 重綁定到**另一個**元素後，不得再讀到第一個元素
     ls = ['aaaa', 'b']
+
+    #{index-out=zero}
     v = ls[0]
+
+    #{index-out=zero}
     v = ls[1]
     v.len() == 1 -> print('ok 6: rebind to another element')
 
@@ -88,6 +94,8 @@ main = () {
 
     ; (8) **容器本身**被重新綁定：投影指向 &ls[0]，容器換了它就指向別的字串
     ls2 = ['aaaa']
+
+    #{index-out=zero}
     ln2 = ls2[0]
     ls2 = ['bb']
     ln2.len() == 4 -> print('ok 8: rebound container does not leak into the view')

@@ -65,6 +65,26 @@ func (p *Parser) parseMethodDefinition(structToken lexer.Token) Statement {
 			p.methodSignatures[fullName] = rets
 		}
 	}
+	// 同樣修復 FuncVarTypes 鍵：parseFunctionDefinition 全程以裸方法名
+	// （def.Name 此時仍為 "report"）作為 curFuncName 註冊參數與區域變數型別，
+	// 改名後若不同时遷移，所有 parse 之後依函數名查作用域型的消費者
+	// （lowering、checker 的 FuncVarType 查詢，如 match-nonex 的
+	// subjectIsDeclaredEnum）對 `=`-形式方法都會 fallback 到全域而 miss。
+	// 冒號形式（parseColonMethodDefinition）無此問題，因 def.Name 在建構時
+	// 就是完整名。
+	if p.sem.FuncVarTypes != nil {
+		if vars, ok := p.sem.FuncVarTypes[methodName]; ok {
+			delete(p.sem.FuncVarTypes, methodName)
+			if p.sem.FuncVarTypes[fullName] == nil {
+				p.sem.FuncVarTypes[fullName] = vars
+			} else {
+				// 完整名鍵可能已由 lowerer 預先寫入，遷移項優先（來源才是本方法的作用域）。
+				for vn, vt := range vars {
+					p.sem.FuncVarTypes[fullName][vn] = vt
+				}
+			}
+		}
+	}
 
 	// 插入 self 作為首個輸出參數（out-param），而非輸入參數。
 	// 方法語義：type.method = (inputs) (self type, rest-outputs...) {}

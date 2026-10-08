@@ -31,6 +31,8 @@ echo = (s str) (r str) {
 test-vec-share = () {
     a = [7, 8, 9]
     n = co first(a)
+
+    #{index-out=zero}
     m = a[1]
     print(n); expect: 7
     print(m); expect: 8
@@ -60,6 +62,8 @@ test-share-loop = () {
     i <- [0..20): {
         a []i64 = [i, i + 1]
         n = co first(a)
+
+        #{index-out=zero}
         m = a[1]
 
         #{overflow=wrap}

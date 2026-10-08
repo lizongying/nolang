@@ -4096,6 +4096,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     .rand-state = .rand-state + 16
     i <- [0..16): {
 
+        #{index-out=zero}
         iv[i] = iv-bytes[i]
     }
 

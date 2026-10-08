@@ -58,6 +58,8 @@ test-concurrent = () {
         r1 = co compute(10)
         r2 = co compute(20)
     }
+
+    #{overflow=wrap}
     print(r1 + r2); expect: 60
 }
 
@@ -65,6 +67,8 @@ test-concurrent = () {
 test-statement-level = () {
     r = co compute(10)
     s = co compute(20)
+
+    #{overflow=wrap}
     print(r + s); expect: 60
 }
 

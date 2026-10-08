@@ -7,7 +7,8 @@ name: test
 
 on:
   push:
-    branches: [main]
+    tags:
+      - "v*"
   pull_request:
 
 jobs:
@@ -66,9 +67,20 @@ jobs:
 
       - name: Compile corpus
         run: |
+          # Every corpus file must compile (not run). If a file ever fails on a
+          # KNOWN compiler/platform defect (not a corpus regression), add its
+          # path to `skip` below with a comment naming the issue, and remove it
+          # once the defect is fixed so the gate re-covers it.
+          # (Empty as of now: os.sysctl's Linux /proc/sys lowering and the
+          #  method-receiver typeHint fix let tests/std-unix-fs-os-2.no and
+          #  tests/std-net-ext.no build on ubuntu again.)
+          skip=""
           fail=0
           for f in tests/*.no tests/mem-safety/*.no; do
             [ -f "$f" ] || continue
+            case " $skip " in
+              *" $f "*) echo "SKIP (known defect): $f"; continue;;
+            esac
             if ! ./bin/no build -o /tmp/out.bin "$f"; then
               echo "BUILD FAIL: $f"
               fail=1
@@ -108,14 +120,13 @@ jobs:
 
       - name: Run std tests
         run: |
-          # TODO(audit §5.1): bufio / uuid are EXCLUDED because they fail
-          # on open COMPILER codegen bugs, not std defects (see the audit doc's
-          # §5.1 re-verification). Remove each from this list once its compiler
-          # bug is fixed, so the gate re-covers it.
-          # math.no rejoined the gate (2026-10-05): its max/min case used the
-          # duplicate-name builtin (truncating f64) and the variadic arg-form
-          # misjudgement in MIR; both are gone, 34/34 pass.
-          skip="test/std/bufio.no test/std/uuid.no"
+          # bufio / uuid rejoined the gate: the open compiler-codegen bugs that
+          # had them excluded are now fixed, so every test/std/*.no passes.
+          # math.no rejoined earlier for the same reason (duplicate-name truncating
+          # f64 builtin + variadic arg-form misjudgement in MIR, both gone).
+          # If a file ever fails on a KNOWN COMPILER bug (not a std defect), add
+          # its path to `skip` below and remove it once that bug is fixed.
+          skip=""
           fail=0
           for f in test/std/*.no; do
             case " $skip " in

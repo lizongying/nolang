@@ -7477,7 +7477,23 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		//   call @str.to-bytes(%str-long* %recv, ...)).
 		rv := implicitIt
 		if rv == NoVal {
+			// The receiver is a self-contained value expression whose type is
+			// intrinsic; it must NOT be lowered under the outer result-binding's
+			// typeHint. A leftover option hint (e.g. `v ?i64 = arr[0].to-i64()`)
+			// otherwise leaks into the receiver sub-expression and, for an index
+			// receiver, the KIndex path (the KindOption typeHint check in lowerExpr,
+			// see the safe-index branch) treats the read as a SAFE INDEX typed by the
+			// hint rather than by the element type — so `arr[0]` (: str) is re-typed
+			// i64 and the callee resolves as `i64.to-i64` / `i64.trim`, failing codegen
+			// with "unknown callee" / "unsupported builtin" (net.ifconfig-list parses
+			// `fields[i].to-i64()` straight off a []str). Clear the hint for the
+			// receiver only — mirroring the deliberate clearing already done for the
+			// index operand — then restore it so the call RESULT still coerces to the
+			// binding type.
+			savedRecvHint := l.typeHint
+			l.typeHint = NoType
 			rv = l.lowerExpr(recvID)
+			l.typeHint = savedRecvHint
 		}
 		if rv == NoVal {
 			return "", NoVal

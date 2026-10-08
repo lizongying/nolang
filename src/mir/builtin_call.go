@@ -3585,6 +3585,10 @@ func (c *codegen) emitBuiltinStrTruncate(inst *Inst) error {
 // Unix seconds and tv_usec is zeroed. icmp eq ret 0 yields the success bool,
 // matching the legacy call_stdlib.go utime inliner.
 func (c *codegen) emitBuiltinUtime(inst *Inst) error {
+	if targetGOOS() == "windows" {
+		c.fail("utime: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("utime: unsupported on windows")
+	}
 	if len(inst.Args) < 3 {
 		return fmt.Errorf("utime: needs path, atime, mtime")
 	}
@@ -4151,6 +4155,10 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 // malloc'd buffer as an owned %str-long (len = returned size, cap = size+1),
 // matching call_stdlib.go's scLen2/scBufSize2 usage so the printed value agrees.
 func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
+	if targetGOOS() == "windows" {
+		c.fail("sysctl: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("sysctl: unsupported on windows")
+	}
 	if len(inst.Args) < 1 {
 		return fmt.Errorf("sysctl: needs a name")
 	}
@@ -4161,6 +4169,13 @@ func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 	namePtr := c.cstrOf(nameV)
 	if namePtr == "" {
 		return fmt.Errorf("sysctl: cannot marshal name as C string")
+	}
+	// Linux glibc has no sysctlbyname(3) (the legacy sysctl(2) syscall is
+	// deprecated and removed from glibc), so calling it would leave an undefined
+	// `sysctlbyname` symbol and fail the link on ubuntu. Route Linux to the
+	// procfs mirror instead; macOS/BSD keep sysctlbyname.
+	if targetGOOS() == "linux" {
+		return c.emitSysctlProcfs(inst, namePtr)
 	}
 	c.decl("declare i32 @sysctlbyname(i8*, i8*, i64*, i8*, i64)")
 	lenBuf := c.treg("sc.len")
@@ -4185,6 +4200,133 @@ func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", len2, lenBuf))
 	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", namePtr))
 	return c.storeRawStr(inst, 0, len2, capR, buf)
+}
+
+// emitSysctlProcfs lowers os.sysctl(name) on Linux, where glibc has no
+// sysctlbyname(3). It maps the dotted BSD-style name onto the procfs mirror
+// (/proc/sys/<name with '.' rewritten to '/'>) and reads the whole file, which
+// is exactly the behaviour the std os.sysctl doc comment promises for Linux
+// ("Linux 上 /proc/sys 對應"). A name with no procfs entry (most hw.* / kern.*
+// BSD keys) fails to open and yields ("", ok=false), the same shape the macOS
+// path returns when sysctlbyname is non-zero, so callers keep their existing
+// ok==false handling. namePtr is the runtime NUL-terminated C string produced by
+// cstrOf; it is freed here.
+func (c *codegen) emitSysctlProcfs(inst *Inst, namePtr string) error {
+	c.decl("declare i32 @open(i8*, i32, i32)")
+	c.decl("declare i64 @lseek(i32, i64, i32)")
+	c.decl("declare i64 @read(i32, i8*, i64)")
+	c.decl("declare i32 @close(i32)")
+
+	// path = "/proc/sys/" ++ name('.'->'/') ++ '\0'. The 10-byte prefix is
+	// memcpy'd from a module constant; the name is copied byte-by-byte with '.'
+	// (46) rewritten to '/' (47).
+	c.global(`@.mir.sysctl.proc = private constant [10 x i8] c"/proc/sys/"`)
+	prefixPtr := c.treg("scp.pf")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds [10 x i8], [10 x i8]* @.mir.sysctl.proc, i64 0, i64 0\n", prefixPtr))
+	nlen := c.treg("scp.nl")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", nlen, namePtr))
+	total := c.treg("scp.tt")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 11\n", total, nlen)) // 10 prefix + NUL + slack
+	pathBuf := c.treg("scp.pb")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", pathBuf, total))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 10, i1 false)\n", pathBuf, prefixPtr))
+
+	lPh := c.label("scp.ph")
+	lHead := c.label("scp.h")
+	lWork := c.label("scp.w")
+	lTail := c.label("scp.t")
+	lDone := c.label("scp.d")
+	iNext := c.treg("scp.n")
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lPh))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lPh))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lHead))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lHead))
+	iR := c.treg("scp.i")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i64 [ 0, %%%s ], [ %s, %%%s ]\n", iR, lPh, iNext, lTail))
+	cond := c.treg("scp.c")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", cond, iR, nlen))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", cond, lWork, lDone))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lWork))
+	sp := c.treg("scp.sp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", sp, namePtr, iR))
+	b := c.treg("scp.b")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", b, sp))
+	isDot := c.treg("scp.dot")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8 %s, 46\n", isDot, b))
+	slash := c.treg("scp.sl")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8 47, i8 %s\n", slash, isDot, b))
+	di := c.treg("scp.di")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 10\n", di, iR))
+	dp := c.treg("scp.dp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", dp, pathBuf, di))
+	c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", slash, dp))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lTail))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lTail))
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", iNext, iR))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lHead))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lDone))
+
+	// NUL-terminate, then open the procfs path. open() copies the path into the
+	// kernel, so both the path buffer and the str_cstr name buffer are released
+	// right after the call.
+	nulI := c.treg("scp.ni")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 10\n", nulI, nlen))
+	nulP := c.treg("scp.np")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", nulP, pathBuf, nulI))
+	c.sb.WriteString(fmt.Sprintf("  store i8 0, i8* %s\n", nulP))
+	fd := c.treg("scp.fd")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i32 (i8*, i32, ...) @open(i8* %s, i32 0, i32 0)\n", fd, pathBuf))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", pathBuf))
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", namePtr))
+	fdok := c.treg("scp.fdok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i32 %s, 0\n", fdok, fd))
+	end := c.treg("scp.end")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @lseek(i32 %s, i64 0, i32 2)\n", end, fd))
+	c.sb.WriteString(fmt.Sprintf("  call i64 @lseek(i32 %s, i64 0, i32 0)\n", fd))
+	szok := c.treg("scp.szok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i64 %s, 0\n", szok, end))
+	sz := c.treg("scp.sz")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", sz, szok, end))
+	// Allocate sz+1 so the trailing-newline probe below never reads out of bounds
+	// when the file is empty (sz == 0).
+	allocSz := c.treg("scp.asz")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", allocSz, sz))
+	buf := c.treg("scp.buf")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, allocSz))
+	nr := c.treg("scp.nr")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @read(i32 %s, i8* %s, i64 %s)\n", nr, fd, buf, sz))
+	c.sb.WriteString(fmt.Sprintf("  call i32 @close(i32 %s)\n", fd))
+	nrok := c.treg("scp.nrok")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i64 %s, 0\n", nrok, nr))
+	allOk := c.treg("scp.ok")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", allOk, fdok, nrok))
+	rawLen := c.treg("scp.rl")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", rawLen, allOk, nr))
+
+	// Trim a single trailing '\n' (procfs values are newline-terminated). The
+	// probe index is clamped to 0 when empty so the load stays in bounds; hasNl
+	// is false there, so the value is discarded.
+	hasNl := c.treg("scp.hn")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, 0\n", hasNl, rawLen))
+	lastI := c.treg("scp.li")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, 1\n", lastI, rawLen))
+	probeI := c.treg("scp.pi")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", probeI, hasNl, lastI))
+	probeP := c.treg("scp.pp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", probeP, buf, probeI))
+	lb := c.treg("scp.lb")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", lb, probeP))
+	isNl := c.treg("scp.isnl")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8 %s, 10\n", isNl, lb))
+	doTrim := c.treg("scp.dt")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", doTrim, hasNl, isNl))
+	effLen := c.treg("scp.el")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", effLen, doTrim, lastI, rawLen))
+
+	if err := c.storeResult(inst, 1, allOk, "i1"); err != nil {
+		return err
+	}
+	return c.storeRawStr(inst, 0, effLen, effLen, buf)
 }
 
 // storeRawStr builds an owned %str-long {len, cap, data} directly into the slot
@@ -4219,6 +4361,10 @@ func (c *codegen) storeRawStr(inst *Inst, i int, lenReg, capReg, dataReg string)
 // Returns WEXITSTATUS: (status >> 8) & 0xFF, where status is the i32 written by
 // libc waitpid into an out-parameter. Mirrors call_stdlib.go process-waitpid.
 func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
+	if targetGOOS() == "windows" {
+		c.fail("waitpid: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("waitpid: unsupported on windows")
+	}
 	if len(inst.Args) < 2 {
 		return fmt.Errorf("waitpid: needs pid, options")
 	}
@@ -4256,6 +4402,10 @@ func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
 // "unsupported builtin process-pipe" once the platform filter stopped resolving
 // `process.cmd` to its Win32 body.
 func (c *codegen) emitBuiltinPipe(inst *Inst) error {
+	if targetGOOS() == "windows" {
+		c.fail("pipe: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("pipe: unsupported on windows")
+	}
 	c.decl("declare i32 @pipe(i32*)")
 	fds := c.treg("pp.fds")
 	c.sb.WriteString(fmt.Sprintf("  %s = alloca [2 x i32]\n", fds))
@@ -4285,6 +4435,10 @@ func (c *codegen) emitBuiltinPipe(inst *Inst) error {
 // code. Mirrors call_stdlib.go process-waitpid-nohang, including the WNOHANG=1
 // option so the poll never blocks.
 func (c *codegen) emitBuiltinWaitpidNohang(inst *Inst) error {
+	if targetGOOS() == "windows" {
+		c.fail("waitpid-nohang: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("waitpid-nohang: unsupported on windows")
+	}
 	if len(inst.Args) < 1 {
 		return fmt.Errorf("waitpid-nohang: needs pid")
 	}
@@ -4321,6 +4475,10 @@ func (c *codegen) emitBuiltinWaitpidNohang(inst *Inst) error {
 // so the result is ignored. The "sh" and "-c" literals are emitted as private
 // module constants.
 func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
+	if targetGOOS() == "windows" {
+		c.fail("exec-shell: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("exec-shell: unsupported on windows")
+	}
 	if len(inst.Args) < 1 {
 		return fmt.Errorf("exec-shell: needs a command")
 	}
@@ -4353,6 +4511,10 @@ func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
 // on success the image is gone, but the allocator release must still be emitted
 // for the failure path.
 func (c *codegen) emitBuiltinProcessExec(inst *Inst) error {
+	if targetGOOS() == "windows" {
+		c.fail("process-exec: unsupported on windows in func %s", c.curFuncNameForFail())
+		return fmt.Errorf("process-exec: unsupported on windows")
+	}
 	if len(inst.Args) < 2 {
 		return fmt.Errorf("process-exec: needs (prog, arg)")
 	}
