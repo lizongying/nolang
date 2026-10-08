@@ -73,7 +73,7 @@ main.no
 
 - **G1** 默认关闭，开启后 `no build` 产出**可执行且在三个目标平台上行为与今日一致**。
 - **G2** native 路径**不执行任何外部工具**：无 `opt`、无 `llc`、无 `clang`、无 `zig`。这是"去依赖"的硬指标，须有测试断言（拦截 `exec.Command`）。
-- **G3** 目标三分 Wait：macOS arm64（Mach-O）、Windows x64（PE/COFF）、Linux x64（ELF64）。三者共享 machine-IR 与 MC 层，仅 codegen/obj writer/linker 端口不同。
+- **G3** 目标三平台：macOS arm64（Mach-O）、Windows x64（PE/COFF）、Linux x64（ELF64）。三者共享 machine-IR 与 MC 层，仅 codegen/obj writer/linker 端口不同。
 - **G4** 错误模型：**遇到不支持的结构就报清晰诊断，绝不产出静默错误的二进制**。宁可 fail，不可 emit garbage。
 - **G5** 长期可演进：ISel/RA/编码器/obj writer/linker 全部是接口，允许后续插入更好的实现而不动上层。
 
@@ -83,7 +83,7 @@ main.no
 - ❌ **不做 dSYM / PDB**：lld 本身就不生成 dSYM（由 `dsymutil` 后置生成），PDB 亦同；先做 debug info **透传**（把 DWARF/CodeView 段原样搬到输出），不自产。
 - ❌ **不做 linker script**（ELF）：`LinkerScript.cpp` 61KB + `ScriptParser.cpp` 62KB。提供最小 stub 版 `Script` 满足 `assignAddresses()` 内部调用即可。
 - ❌ **不做动态库产出**（dylib / DLL / .so 导出表）：MVP 只出可执行文件。
-- ❌ **不做 ICF / GC / 符号版本**：属于优化/体积Feature，后置。
+- ❌ **不做 ICF / GC / 符号版本**：属于优化与体积特性，后置。
 - ❌ **不作为通用的目标文件工具**：不是一个替代完整 `ld` 的产品。它是"**服务 Nolang 自身 codegen 的专用后端**"。
 
 ### 2.3 约束（C）
@@ -162,7 +162,7 @@ main.no
 | `src/native/mc` | `llvm/lib/MC/{MCContext,MCSection,MCFragment,MCAssembler}` | MC 核心 |
 | `src/native/obj/*` | `MachObjectWriter` / `ELFObjectWriter` / `WinCOFFObjectWriter` | 对象写出 |
 | `src/link/*` | `lld/{MachO,ELF,COFF}` | 链接器 |
-| `src/native/driver` | clang driver 的 `-target`/sysroot/CRT 部分 | 依赖方缺席或错rage |
+| `src/native/driver` | clang driver 的 `-target`/sysroot/CRT 部分 | **新增层**：承担 lld 刻意不做、交给 driver 的那部分职责 |
 
 ---
 
@@ -199,7 +199,7 @@ main.no
 >
 > MachO 端口同理：`crt` 仅在 `Options.td` 帮助文本与一处 `findLibrary` 注释（`Driver.cpp:101`）出现；`-lSystem` 由 clang 传入。
 >
-> **唯一例外是 Windows/COFF**：lld 必须自己解析 `.o` 的 `.drectve` 段里的 `/defaultlib:` 指令（`Driver.cpp:610-613`），并据此探测 VS / WinSDK 路径（`addWinSysRootLibSearchPaths`，`Driver.cpp:880-913`）——因为 MSVC 这条命令依靠目标文件自述。
+> **唯一例外是 Windows/COFF**：lld 必须自己解析 `.o` 的 `.drectve` 段里的 `/defaultlib:` 指令（`Driver.cpp:610-613`），并据此探测 VS / WinSDK 路径（`addWinSysRootLibSearchPaths`，`Driver.cpp:880-913`）——因为 MSVC 这条路径依赖目标文件自述。
 
 因此本方案**如法炮制**：
 
@@ -258,8 +258,8 @@ type Transpiler struct {
 | 档位 | codegen | assemble | link | 用途 |
 |---|---|---|---|---|
 | `off`（默认） | 现有 EmitLLVM | 外部 llc | 外部 clang | 今日行为，逐一字节不变 |
-| `asm` | nocg → 汇编文本 | 外部 assembler | 外部 clang | 独测 ISel/ABI 正确性 |
-| `obj` | nocg → 自研 .o | 自研 MC | 外部 clang | 独测 encoder/reloc 正确性（仍有外部 linker 兜底） |
+| `asm` | nocg → 汇编文本 | 外部 assembler | 外部 clang | 单独验证 ISel/ABI 正确性 |
+| `obj` | nocg → 自研 .o | 自研 MC | 外部 clang | 单独验证 encoder/reloc（仍由外部 linker 兜底） |
 | `link` | nocg → 自研 .o | 自研 MC | nold（自研） | **完全自举，零外部工具**（G2） |
 
 **必须同步短路的三处**（否则"去依赖"是假的）：
@@ -297,7 +297,7 @@ src/native/                          ← nocg 总控
 ├── aarch64/
 │   ├── regs.go           (~180)  x0-x30/v0-v31/sp/fp/lr；CSR 集合（按 Darwin/AAPCS64）
 │   ├── isel.go           (~1200) MI → AArch64 HI/LO 虚拟指令
-│   ├── encode.go         (~1500) 32-bit 定长指令编码捐献 (branch/add/sub/ldr/str/fmov…)
+│   ├── encode.go         (~1500) 32-bit 定长指令编码（branch/add/sub/ldr/str/fmov…）
 │   ├── abi.go            (~350)  AAPCS64-Darwin：参数/返回值分配、16B 栈对齐、TLS
 │   └── frame.go          (~220)  pair-wise save/restore、frame record (fp/lr)
 ├── x86_64/
@@ -311,12 +311,12 @@ src/native/                          ← nocg 总控
 │   ├── section.go        (~260)  Section + Fragment 容器（对标 MCSection.h:580/:45）
 │   ├── fragment.go       (~200)  Fragment 类型体系：Data/Align/Fill/Relaxable/Dwarf
 │   ├── fixup.go          (~180)  Fixup + value 表达（对标 MCFixup / MCValue）
-│   ├── assembler.go      (~320)  layout + relaxation **不动点** + 写符section data
+│   ├── assembler.go      (~320)  layout + relaxation **不动点** + 写 section data
 │   └── relax.go          (~160)  Relaxation 策略；AArch64 branch/jump + x86 jcc/jmp
 ├── obj/
 │   ├── object.go         (~150)  统一的 Object IR：Section/Symbol/Relocation 表（形式无关）
 │   ├── macho.go          (~900)  写 Mach-O arm64
-│   ├── elf.go            (~1200) 写 ELF64 REL thisisasectatio
+│   ├── elf.go            (~1200) 写 ELF64 REL 可重定位对象
 │   ├── coff.go           (~1200) 写 COFF PE32+ object
 │   └── encode_testonly.go (~120) 测试用：从外部 objdump/otool 反解回来做断言
 ├── asm/                            ← 可选：汇编文本输出（配合 -native=asm 档位，用于调试）
@@ -352,7 +352,7 @@ src/link/                            ← nold（对标 lld）
     └── x86_64_pe.go      (~400)  PE x86-64 IMAGE_REL_AMD64_* 处理
 ```
 
-**规模估算**：nocg ≈ 20k 行，nold ≈ 10k 行，司机层 ≈ 1k 行，测试 ≈ 10k 行 → **约 40–50k 行 Go**。加上"两架构而非一架构"的乘数，保守估计 **60k 行量级**。这是必须在路线图里诚实的数字（§9）。
+**规模估算**：nocg ≈ 20k 行，nold ≈ 10k 行，driver 层 ≈ 1k 行，测试 ≈ 10k 行 → **约 40–50k 行 Go**。加上"两架构而非一架构"的乘数，保守估计 **60k 行量级**。这是必须在路线图里诚实的数字（§9）。
 
 ### 5.2 Machine IR（MI）设计要点
 
@@ -380,7 +380,7 @@ type Inst struct {
 ```
 
 三条设计约束：
-1. **虚拟 opcode 集合保持极小**：只够表达 Nolang semantics。加法不会溢出成对 Aktion而行。
+1. **虚拟 opcode 集合保持极小**：只够表达 Nolang 的语义即可，不追求通用性。
 2. **抽象栈槽 FrameIndex 而不是具体 `[sp, #imm]`**：PEI 之前不提交帧布局，与 LLVM 一致（`PrologEpilogInserter`）。
 3. **MI Verifier 必须前置**：替代 `verifyMIRIRViaOpt`。检查项：定义先于使用（支配性）、寄存器类一致、调用点不在延迟槽内（x86 无延迟槽，arm64 亦然）、块出口合法（非 fallthrough 到无后继）。**这是 C1 的守护者**。
 
@@ -400,7 +400,7 @@ layout():
        └─ 无法解析者 → writer.recordRelocation()
 ```
 
-> ⚠️ **第 3 步的不动点必须有轮数上限**（LLVM 用 `-relax-all` 之外依赖 layout 内部 while；若我们不加上限会死循环）。建议：relax 轮上限 32，超出报 "`relaxation did not converge`"。这是恢复defensive 工程的体现——对应 Qo 边形 de C4（fail loud）。
+> ⚠️ **第 3 步的不动点必须有轮数上限**（LLVM 用 `-relax-all` 之外依赖 layout 内部 while；若我们不加上限会死循环）。建议：relax 轮上限 32，超出报 `relaxation did not converge`。这是防御式工程的体现——对应 §2.3 的 C4（fail loud）。
 
 ### 5.4 对象写出层
 
@@ -486,9 +486,9 @@ MachO arm64 不需要（只用 thunk 不用 branch island，插入是单向的�
 | 1 | `__PAGEZERO` | `Writer.cpp:1087-1089`；`LP64::pageZeroSize = 1<<32` | arm64 是 **4 GiB**，不是 x86_64 的 4 KiB |
 | 2 | Load Commands：`LC_SEGMENT_64`×N、`LC_SYMTAB`、`LC_DYSYMTAB`、`LC_LOAD_DYLINKER`、`LC_LOAD_DYLIB`×N、`LC_MAIN`、`LC_BUILD_VERSION`、`LC_UUID` | `createLoadCommands` `Writer.cpp:824-978` | 缺 `LC_BUILD_VERSION` 会被拒绝加载 |
 | 3 | `__LINKEDIT`：symbol table + string table + indirect symtab | `SymtabSection::finalizeContents` `SyntheticSections.cpp:1323` | |
-| 4 | **rebase + bind opcode** | `RebaseSection::finalizeContents` `SyntheticSections.cpp:277-297`；`BindingSection` `:626-655` | 链接 dylib 必不可能少 |
+| 4 | **rebase + bind opcode** | `RebaseSection::finalizeContents` `SyntheticSections.cpp:277-297`；`BindingSection` `:626-655` | 链接 dylib 必不可少 |
 | 5 | `LC_DYLD_INFO_ONLY`（先实现 classic dyld opcode） | `Writer.cpp:831-837` 二选一 | **chained fixups 后置**（macOS 13+ 默认，但 classic 仍被接受） |
-| 6 | **ad-hoc 代码签名** | `CodeSignatureSection` `SyntheticSections.h:520-543`；`shouldAdhocSignByDefault` `Driver.cpp:1217-1225` | ⚠️ **arm64/arm64e + macOS 默认必须签**，否则进程无法启动。`blockSize = 1<<12`（4 KiB，与 16 KiB 段页:Sigue不同概念，勿混） |
+| 6 | **ad-hoc 代码签名** | `CodeSignatureSection` `SyntheticSections.h:520-543`；`shouldAdhocSignByDefault` `Driver.cpp:1217-1225` | ⚠️ **arm64/arm64e + macOS 默认必须签**，否则进程无法启动。`blockSize = 1<<12`（4 KiB，与 16 KiB 段对齐页**不是同一概念**，勿混） |
 | 7 | **16 KiB 段对齐** | `Target.h:100` `getPageSize()`；`ARM64Common.h:30` `return 16*1024`；使用点 `Writer.cpp:1186-1187` | 常见坑：用了 4 KiB 段会对齐失败或运行时崩溃 |
 | 8 | arm64 **stub / thunk** | `ConcatOutputSection.cpp:66-197` | `bl` 范围 ±128 MiB，跨 dylib 调用必须走 `__stubs` + `__stub_helper` |
 | 9 | `__TEXT,__unwind_info` | `UnwindInfoSection.cpp`（32 KB） | arm64 ABI **要求**；MVP 可为每个函数生成一条最小的 unwind 项 | 
@@ -534,7 +534,7 @@ MachO arm64 不需要（只用 thunk 不用 branch island，插入是单向的�
 
 ### 6.5 重定位类型最小集
 
-Nolang 自己发的 ++一小撮++。三个平台各取所需，**超出范围的一律报诊断而非静默放过**（C4）：
+Nolang 自己发出的重定位只是一小撮。三个平台各取所需，**超出范围的一律报诊断而非静默放过**（C4）：
 
 | 语义 | Mach-O arm64 | ELF x86-64 | COFF x86-64 |
 |---|---|---|---|
@@ -584,16 +584,16 @@ type Target struct {
 | 管线装配顺序 | `TargetPassConfig.cpp:966-1161` | ⚠️ **大幅精简**：只留 `addISelPasses → RA → PEI → block placement → AsmPrinter`，每阶段留空 hook |
 | **完整的 30+ pass 管线** | 同上 | ❌ 不抄：MVP 阶段只有 ISel+RA+PEI 三个阶段 |
 | MI → MCInst lower + AsmPrinter hooks | `AsmPrinter.h:622-653` | ✅ 照抄 **6 个 hook** 的划分；不抄 DwarfDebug/CodeView 那套 Handlers 观察者（先只做 debug 透传） |
-| **MC 层的存储布局** | `MCSection.h:101-109` / `:602-638` | ✅ **照抄**：VMContentFixup 三池 + Fragment 只存索引 |
+| **MC 层的存储布局** | `MCSection.h:101-109` / `:602-638` | ✅ **照抄**：Content / Fixup / MCOperand 三池 + Fragment 只存索引 |
 | **单一格式分派** | `MCAsmBackend.cpp:31-63` | ✅ **照抄**（最值得抄的一个函数） |
-| TableGen 生成的 matcher | `AArch64GenAsmMatcher.inc` | ❌ 不抄：手写感想式 ISel 表，规模可控 |
+| TableGen 生成的 matcher | `AArch64GenAsmMatcher.inc` | ❌ 不抄：改用手写表驱动 ISel，规模可控 |
 | SelectionDAG / GlobalISel | `CodeGen/SelectionDAG` / `GlobalISel` | ⏸ 接口预留，MVP 用 SimpleISel |
 
 **平台差异的隔离策略**——这是 LLVM 用二十年试错得出的一条重要经验：
 
 > 优先用 **`TargetLoweringObjectFile` 子类 + `MCTargetStreamer`** 下沉格式差异，**而不是在 AsmPrinter 里到处 `if (isMachO)`**。
 >
-> 佐证：AArch64 有三个 TLOF 子类（`AArch64TargetMachine.cpp:137-144`：MachO / COFF / ELF）。而 X86AsmPrinter 的 `emitFunctionBodyStart`（`X86AsmPrinter.cpp:121-137`）虽然看起来是全 ATTRibute的 FPO，实际是由"只在于 COFF 路径置位的 `EmitFPOData` 状态标志"驱动，不是格式分支——**数据驱动优于分支驱动**。
+> 佐证：AArch64 有三个 TLOF 子类（`AArch64TargetMachine.cpp:137-144`：MachO / COFF / ELF）。而 X86AsmPrinter 的 `emitFunctionBodyStart`（`X86AsmPrinter.cpp:121-137`）虽然看起来是无条件发射的 FPO，实际是由"只在 COFF 路径置位的 `EmitFPOData` 状态标志"驱动，不是格式分支——**数据驱动优于分支驱动**。
 
 → **本方案**：`arch.go` 的 `Arch` 接口负责"架构差异"，`mc.Context` + target-specific streamer 负责"格式差异"，二者正交。禁止在 nocg 主体里出现 `if target.OS == Darwin`。
 
@@ -623,9 +623,9 @@ type Target struct {
 
 | | LLVM | Nolang 本方案 |
 |---|---|---|
-| IR→机器码 | `llc`（`llcdriver.cpp` 916 行 + CodeGen 数十万行） | `src/native` **nocg**（约 20k 行，砍掉 DAG/GAIS/TableGen/scheduler macro-fusion 等） |
-| 链接 | `lld`（ELF 端口 ~45k 行） | `src/link` **nold**（约 10k 行，砍掉 script/LTO/ICF/符号版本/符号品种矩阵） |
-| 支撑语言学asm的广度 | 通用 C/C++/Rust/… | **只有 Nolang**——这是规模能压缩 5–10 倍的根本原因 |
+| IR→机器码 | `llc`（`llcdriver.cpp` 916 行 + CodeGen 数十万行） | `src/native` **nocg**（约 20k 行，砍掉 DAG/GlobalISel/TableGen/scheduler/macro-fusion 等） |
+| 链接 | `lld`（ELF 端口 ~45k 行） | `src/link` **nold**（约 10k 行，砍掉 linker script/LTO/ICF/符号版本/符号品种矩阵） |
+| 支撑语言的广度 | 通用 C/C++/Rust/… | **只有 Nolang**——这是规模能压缩 5–10 倍的根本原因 |
 
 ---
 
@@ -668,9 +668,9 @@ type Target struct {
 | **M4 — x86_64 ELF 全套**（约 5k 行） | x86_64 ISel/encode/abi(SysV) + `obj/elf.go` + `driver/crt_linux.go` + `link/elf` + **收敛循环** | Linux x64 `-native=link` | ① 同上的差分门禁 ② `readelf -a` 结构合规、`readelf -l` 有 PT_INTERP/PT_DYNAMIC/PT_GNU_STACK ③ PIE 行为与今日 `-no-pie` 一致 ④ 交叉构建验证（macOS 上交叉出 Linux ELF 并放到容器里跑） |
 | **M5 — x86_64 Windows 全套**（约 5k 行） | x86_64 ABI(MSVC) + `obj/coff.go` + `driver/crt_windows.go`（`.drectve`） + `link/pe`（`.idata`/`.reloc`/`.pdata`） | Windows x64 `-native=link` | ① 同上差分门禁（含 `-lws2_32`，对齐 `builder.go:836-838`） ② `dumpbin` 结构合规 ③ MSVC 与 MinGW 两条 toolchain 各跑一遍 |
 | **M6 — 水位提升**（~2k 行） | 块布局、栈槽着色、简单 peephole、MachO thunk/stub 完善、ELF TLS 松弛 | 性能贴近 `-O2` | ① `bench/` 现有 fib/md5 基准：native vs external，差距 ≤ 15% ② 体积差 ≤ 10% |
-| **M7 — 优化 eats own dog food** | 把外部 `opt -O2` 也内化（`src/mir/opt.go` 扩展）；`-native` 不再需要任何 LLVM | **完全自举后端** | ① `PATH` 中完全无 LLVM 工具仍能 `no build/run/test` ② 全差分门禁绿 |
+| **M7 — 内化 opt（真正零依赖）** | 把外部 `opt -O2` 也换成内部实现（`src/mir/opt.go` 扩展）；`-native` 不再需要任何 LLVM | **完全自举后端** | ① `PATH` 中完全无 LLVM 工具仍能 `no build/run/test` ② 全差分门禁绿 |
 
-> **规模诚实提示**：M0–M5 估计 **20k–25k 行**（含测试），M6–M7 再加 5k–8k，总计 **25k–35k 行**（比 §5.1 的粗估保守，因为很多list is会因函数形态而被淘汰）。按"一次一件事"的节奏，这是一个**多季度**级别的工程，**不应在单个变更里推进多个 M**。
+> **规模诚实提示**：M0–M5 估计 **20k–25k 行**（含测试），M6–M7 再加 5k–8k，总计 **25k–35k 行**（比 §5.1 的粗估低，因为 Nolang 的函数形态固定，大量通用 ISel 规则根本不必实现）。按"一次一件事"的节奏，这是一个**多季度**级别的工程，**不应在单个变更里推进多个 M**。
 
 ---
 
@@ -699,7 +699,7 @@ type Target struct {
     llvm-mc/llvm-as  ────┘
 ```
 
-把一个 `--disasm-all` 的opcode space 全量对拍一遍，能一次性消灭 encoder 层绝大部分 bug，而且**外部工具只用于测试、不用于运行时**（不违反 G2）。
+把使用到的 opcode 全空间对拍一遍，能一次性消灭 encoder 层绝大部分 bug，而且**外部工具只用于测试、不用于运行时**（不违反 G2）。
 
 ### 10.3 单元测试判别力要求
 
@@ -735,7 +735,7 @@ func TestNativeNeverShellsOut(t *testing.T) { … }
 | ID | 风险 | 等级 | 缓解 |
 |---|---|---|---|
 | **R1** | **规模失控**——低估了 ISel/encode 的工作量 | 🔴 高 | M2/M4/M5 是最大的三块。**每个 M 独立可交付、可回滚**；任一 M 发现失控立即收缩范围（如 M5 只做 MinGW 不做 MSVC） |
-| **R2** | macOS arm64 **代码签名**漏做 → 二进制不能跑 | 🔴 高 | M3 门禁显式要求 `codesign -v` 通过；:`shouldAdhocSignByDefault` 的逻辑（arm64+macOS 才默认签）照抄 `Driver.cpp:1217-1225` |
+| **R2** | macOS arm64 **代码签名**漏做 → 二进制不能跑 | 🔴 高 | M3 门禁显式要求 `codesign -v` 通过；`shouldAdhocSignByDefault` 的逻辑（arm64+macOS 才默认签）照抄 `Driver.cpp:1217-1225` |
 | **R3** | Darwin arm64 **红区语义**未核实 → 间歇性崩溃 | 🟠 中高 | 见 §6.2：做成 target hook + 实测固化，**不猜** |
 | **R4** | 16 KiB vs 4 KiB **页对齐混淆**（段对齐 16K，codesign block 4K） | 🟠 中高 | 代码里用两个不同命名常量 `SegmentPageSize` / `CodesignBlockSize`，禁止共用；加注释直指 `ARM64Common.h:30` 与 `SyntheticSections.h:525-526` 的区别 |
 | **R5** | Windows `.drectve` MSVC 生态依赖复杂 | 🟠 中高 | M5 先做 MinGW 路径（规则简单），MSVC 后置；`.drectve` 解析限定只处理 `defaultlib`/`nodefaultlib`/`subsystem` 三个指令，其余报 unsupported |
@@ -747,7 +747,7 @@ func TestNativeNeverShellsOut(t *testing.T) { … }
 
 ---
 
-## 12. 开放问题（需決断后才能进 M1）
+## 12. 开放问题（需拍板后才能进 M1）
 
 | # | 问题 | 我的倾向 | 影响 |
 |---|---|---|---|
@@ -777,7 +777,7 @@ func TestNativeNeverShellsOut(t *testing.T) { … }
 | Triple 处理（三张表） | `builder.go:25` `DetectTarget`；`builder.go:202` `parseTargetPlatform`；`src/package/platform.go:6` `PlatformKeys` |
 | MIR 目标平台单例 | `src/mir/platform.go:17` `mirTarget`；`SetTargetPlatform` `:33` |
 | **IR triple 硬编码（设计债）** | `src/mir/codegen.go:2523` |
-| opt 阶段（内核 MIR 优化器） | `src/mir/opt.go:74` `MIROptLevel()`；调用点 `src/mir/hir2mir.go:1408` |
+| opt 阶段（内部 MIR 优化器） | `src/mir/opt.go:74` `MIROptLevel()`；调用点 `src/mir/hir2mir.go:1408` |
 | 开关范式样板 | `src/cmd/no/main.go:64` `parseOptFlag`；`main.go:3072-3074`（为什么用环境变量而不是传参） |
 | 默认-OFF 开关样板 | `src/mir/mir.go:38` `FieldPtrLayout`；`src/mir/spawn_graph.go:781` |
 | Windows msvcrt shim | `src/mir/builtin_win_shims.go`、`src/mir/forward_call.go` |
@@ -802,7 +802,7 @@ func TestNativeNeverShellsOut(t *testing.T) { … }
 | **单一格式分派**（最值得照抄的第二处） | `llvm/lib/MC/MCAsmBackend.cpp:31-63` |
 | ObjectWriter 写出入口 | ELF `llvm/lib/MC/ELFObjectWriter.cpp:1000`/`:1412`；MachO `llvm/lib/MC/MachObjectWriter.cpp:795`；COFF `llvm/lib/MC/WinCOFFObjectWriter.cpp:1064`/`:1277` |
 | lld 端口入口与分派 | `lld/include/lld/Common/Driver.h:25-67`；`lld/Common/DriverDispatcher.cpp:127-150` |
-| Context 主张（MachO 端口的反面教材） | `lld/include/lld/Common/CommonLinkerContext.h:32-45`；`lld/MachO/Driver.cpp:1770-1796` |
+| **Context 容器**（MachO 端口的反面教材） | `lld/include/lld/Common/CommonLinkerContext.h:32-45`；`lld/MachO/Driver.cpp:1770-1796` |
 | 错误模型 | `lld/include/lld/Common/ErrorHandler.h:9-66` |
 | MachO link 全阶段 | `lld/MachO/Driver.cpp:1764-2562`；`lld/MachO/Writer.cpp:1370-1423` |
 | MachO 裸结构体解析路线 | `lld/MachO/InputFiles.cpp:1044-1112`；`lld/MachO/MachOStructs.h:22-43` |
