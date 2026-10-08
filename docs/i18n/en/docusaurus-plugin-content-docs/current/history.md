@@ -7,6 +7,13 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.3.16
+
+- fix(codegen): add windows unsupported checks and Linux sysctl procfs fallback
+- chore(audit): remove obsolete Nolang audit and ownership model documents
+- docs(design): add native backend (nocg/nold) forward design
+- docs(design): fix garbled text in native backend design
+
 ## v0.3.15
 
 - feat(mir): add an in-compiler MIR optimiser behind `-opt[=N]` / `NOLANG_MIR_OPT`

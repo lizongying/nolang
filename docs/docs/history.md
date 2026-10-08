@@ -6,6 +6,13 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.3.16
+
+- fix(codegen): add windows unsupported checks and Linux sysctl procfs fallback
+- chore(audit): remove obsolete Nolang audit and ownership model documents
+- docs(design): add native backend (nocg/nold) forward design
+- docs(design): fix garbled text in native backend design
+
 ## v0.3.15
 
 - feat(mir): add an in-compiler MIR optimiser behind `-opt[=N]` / `NOLANG_MIR_OPT`
