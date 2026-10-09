@@ -6,6 +6,10 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.3.19
+
+- fix(os): add Windows compatibility for sysconf and getpid calls
+
 ## v0.3.18
 
 - fix(ci): normalize version tags by stripping multiple leading "v" characters
