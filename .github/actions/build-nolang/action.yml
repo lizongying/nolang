@@ -119,8 +119,13 @@ runs:
             TAG=$(curl -fsSL -H "Accept: application/vnd.github+json" "$API" | jq -r .tag_name)
           fi
         else
-          TAG="v${VERSION#v}"
+          TAG="v${VERSION}"
         fi
+        # Normalise the tag: strip ALL leading "v" then re-add exactly one, so
+        # inputs like "0.3.17", "v0.3.17" or a doubled "vv0.3.17" all resolve to
+        # the single-v release tag. Without this, a version that already carries
+        # a "v" (e.g. `no version` printing "v0.3.17") becomes "vv0.3.17".
+        TAG="v$(printf '%s' "$TAG" | sed 's/^v*//')"
         VERSION_NO_V="${TAG#v}"
         echo "Resolved nolang version: $TAG"
         echo "nolang-version=$VERSION_NO_V" >> "$GITHUB_OUTPUT"

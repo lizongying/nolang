@@ -26,7 +26,7 @@ jobs:
       - name: Set Version Name
         id: set_version_name
         run: |
-          VERSION_WITHOUT_V=$(echo '${{ github.ref_name }}' | sed 's/^v//')
+          VERSION_WITHOUT_V=$(echo '${{ github.ref_name }}' | sed 's/^v*//')
           echo "version_name=${VERSION_WITHOUT_V}" >> $GITHUB_ENV
           echo "build_date=$(date -u '+%s')" >> $GITHUB_ENV
 
