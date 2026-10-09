@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -2025,6 +2026,12 @@ func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStar
 	if _, ok := node.Value.(*parser.MapLiteral); ok {
 		return fmtRemoval{}, false
 	}
+	// 十六進位字面量防禦（AST + 文本雙重檢查）：值運算式含 0xNN 時，移除型別
+	// 標註會把字面量從 checker 推斷的 byte 退化成編譯器預設的 i64，改壞語義
+	// （見本函式頂部註釋）。故一律不移除——寧可保守，不可改壞語義。
+	if containsHexLiteral(src, lineStarts, node.Value) {
+		return fmtRemoval{}, false
+	}
 	pos := node.Type.Pos()
 	sl, sc := pos.Line, pos.Column
 	if sl < 1 || sl > len(lineStarts) {
@@ -2073,6 +2080,81 @@ func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStar
 		break
 	}
 	return fmtRemoval{wsStart, typeEndExcl}, true
+}
+
+// containsHexLiteral 回傳值運算式是否含蓄十六進位字面量（0xNN）。
+// 雙重檢查：(1) AST 走查 IntegerLiteral.Raw 前綴（精準，不會把字串裡的 "0x"
+// 誤判）；(2) 值源碼 span 文字掃描兜底，捕捉 AST 走查未涵蓋的巢狀形態
+// （如二元/呼叫運算元中的 hex）。任一命中即視為含 hex。
+func containsHexLiteral(src string, lineStarts []int, e parser.Expression) bool {
+	if e == nil {
+		return false
+	}
+	if walkHasHexLiteral(e) {
+		return true
+	}
+	start, end := exprSpan(lineStarts, e)
+	if start >= 0 && end > start && end <= len(src) {
+		sub := src[start:end]
+		if strings.Contains(sub, "0x") || strings.Contains(sub, "0X") {
+			return true
+		}
+	}
+	return false
+}
+
+// walkHasHexLiteral 遞迴走查表達式樹，尋找任何以 0x/0X（可帶正負號）開頭的
+// 整數字面量。巢狀陣列/切片/映射字面量均展開其元素與鍵值。其他表達式形態
+// （二元/呼叫/if 等）不遞迴——交由 containsHexLiteral 的文字掃描兜底。
+func walkHasHexLiteral(e parser.Expression) bool {
+	switch v := e.(type) {
+	case *parser.IntegerLiteral:
+		r := strings.ToLower(v.Raw)
+		return strings.HasPrefix(r, "0x") || strings.HasPrefix(r, "-0x") || strings.HasPrefix(r, "+0x")
+	case *parser.ArrayLiteral:
+		if v.Size != nil && walkHasHexLiteral(v.Size) {
+			return true
+		}
+		for _, el := range v.Elements {
+			if walkHasHexLiteral(el) {
+				return true
+			}
+		}
+		return false
+	case *parser.SliceLiteral:
+		for _, el := range v.Elements {
+			if walkHasHexLiteral(el) {
+				return true
+			}
+		}
+		return false
+	case *parser.MapLiteral:
+		for _, p := range v.Pairs {
+			if walkHasHexLiteral(p.Key) || walkHasHexLiteral(p.Value) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+// exprSpan 回傳表達式在 src 中覆蓋的 [start, end) byte 區間（由行/列經 lineStarts
+// 換算）。無法定位時回傳 (-1, -1)。EndPos 取最末 token 的起點列，已足夠包含該
+// token 的 "0x" 前綴，故文字掃描不會漏判 hex。
+func exprSpan(lineStarts []int, e parser.Expression) (int, int) {
+	pos := e.Pos()
+	end := e.EndPos()
+	if pos.Line < 1 || pos.Line > len(lineStarts) || end.Line < 1 || end.Line > len(lineStarts) {
+		return -1, -1
+	}
+	start := lineStarts[pos.Line-1] + (pos.Column - 1)
+	endOff := lineStarts[end.Line-1] + (end.Column - 1)
+	if start < 0 || endOff < start {
+		return -1, -1
+	}
+	return start, endOff
 }
 
 // sourceParses 回傳 source 是否可在 formatter 的解析選項下成功解析（無解析錯誤）。
@@ -3050,8 +3132,9 @@ func vetCommand(args []string) {
 	fs := flag.NewFlagSet("vet", flag.ExitOnError)
 	reuseStdAST := fs.Bool("reuse-std-ast", false, "reuse already-parsed std Program AST for 'no vet src/std' (experimental, skips re-parsing each std module)")
 	strict := fs.Bool("strict", false, "upgrade lint warnings/hints to errors")
+	jsonMode := fs.Bool("json", false, "emit machine-readable JSON diagnostics instead of text")
 	fs.Usage = func() {
-		fmt.Println("Usage: no vet [--strict] [<file|dir>]")
+		fmt.Println("Usage: no vet [--strict] [--json] [<file|dir>]")
 		fmt.Println("")
 		fmt.Println("Validate Nolang source files without producing output.")
 		fmt.Println("If directory, validates all .no files in that directory.")
@@ -3060,12 +3143,14 @@ func vetCommand(args []string) {
 		fmt.Println("Flags:")
 		fmt.Println("  --strict         upgrade all lint warnings/hints to errors")
 		fmt.Println("  --reuse-std-ast  reuse already-parsed std Program AST (experimental)")
+		fmt.Println("  --json           emit structured JSON diagnostics (CI/tooling friendly)")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no vet                     validate main.no in current dir")
 		fmt.Println("  no vet main.no             validate main.no")
 		fmt.Println("  no vet src/std/            validate all .no files in src/std/")
 		fmt.Println("  no vet --strict src/std/   fail if any lint warning/hint is found")
+		fmt.Println("  no vet --json src/std/     emit diagnostics as JSON")
 	}
 	_ = fs.Parse(args)
 
@@ -3208,6 +3293,14 @@ func vetCommand(args []string) {
 	}
 
 	// 輸出結構化診斷到 stdout（與 LSP vet 格式一致），統計到 stderr
+	if *jsonMode {
+		errorCount := printLintResultsJSON(allLints)
+		if errorCount > 0 {
+			os.Exit(1)
+		}
+		return
+	}
+
 	errorCount := printLintResults(allLints)
 
 	if errorCount > 0 {
@@ -3217,6 +3310,81 @@ func vetCommand(args []string) {
 	if verbose {
 		fmt.Println("Validation successful")
 	}
+}
+
+// vetDiagnostic 是單條診斷的機器可讀表示（JSON 輸出用）。
+// 欄位直接對應 checker.LintResult 的富結構，便於 CI / LSP / 工具消費。
+type vetDiagnostic struct {
+	File      string `json:"file"`
+	Line      int    `json:"line"`
+	Column    int    `json:"column"`
+	EndColumn int    `json:"endColumn,omitempty"`
+	Severity  string `json:"severity"` // error | warning | hint（小寫，對齊 LintSeverity 枚舉）
+	Rule      string `json:"rule"`     // 規則代碼，例如 nolang-index / nolang-overflow
+	Message   string `json:"message"`
+	TraceID   string `json:"traceId,omitempty"`
+}
+
+// vetReport 是 `no vet --json` 的頂層結構：扁平診斷陣列 + 嚴重性摘要。
+type vetReport struct {
+	Diagnostics []vetDiagnostic `json:"diagnostics"`
+	Summary     vetSummary      `json:"summary"`
+}
+
+// vetSummary 統計各嚴重性級別的診斷數量。
+type vetSummary struct {
+	Errors   int `json:"errors"`
+	Warnings int `json:"warnings"`
+	Hints    int `json:"hints"`
+}
+
+// flattenLints 將文件級聚合結果拍平為單條診斷陣列，並做去重與嚴重性計數。
+// 去重邏輯與舊版文字輸出一致：vet 目錄模式下，每個檔案的 merged 程式都包含
+// 同一批導入模組，同一條診斷會隨依賴鏈重複產生；且主檔副本（相對路徑）與合併
+// 副本（絕對路徑）路徑寫法不同。按（正規化檔案, 行, 列, 嚴重性, 來源, 消息）去重。
+// 返回順序為遍歷順序（不排序），呼叫方可自行決定輸出排序。
+func flattenLints(results []nbuild.LintResult) (diags []vetDiagnostic, errors, warnings, hints int) {
+	diags = make([]vetDiagnostic, 0)
+	seen := map[string]bool{}
+	for _, fileResult := range results {
+		for _, l := range fileResult.Lints {
+			// 優先使用 lint 結果攜帶的 File（來自 merged 程式中語句的原始檔案路徑），
+			// 為空時回退到 fileResult.File（vet 命令遍歷的輸入檔案路徑）。
+			filePath := l.File
+			if filePath == "" {
+				filePath = fileResult.File
+			}
+			sev := strings.ToUpper(string(l.Severity))
+			dedupKey := filePath
+			if abs, err := filepath.Abs(filePath); err == nil {
+				dedupKey = abs
+			}
+			dedupKey = fmt.Sprintf("%s:%d:%d:%s:%s:%s", dedupKey, l.Line, l.Column, sev, l.Source, l.Message)
+			if seen[dedupKey] {
+				continue
+			}
+			seen[dedupKey] = true
+			diags = append(diags, vetDiagnostic{
+				File:      filePath,
+				Line:      l.Line,
+				Column:    l.Column,
+				EndColumn: l.EndColumn,
+				Severity:  string(l.Severity),
+				Rule:      l.Source,
+				Message:   l.Message,
+				TraceID:   l.TraceID,
+			})
+			switch l.Severity {
+			case nbuild.LintError:
+				errors++
+			case nbuild.LintWarning:
+				warnings++
+			case nbuild.LintHint:
+				hints++
+			}
+		}
+	}
+	return diags, errors, warnings, hints
 }
 
 // printLintResults 輸出結構化診斷到 stdout（格式與 LSP vet 一致），
@@ -3236,47 +3404,15 @@ func printLintResults(results []nbuild.LintResult) int {
 		return true
 	})
 
-	errorCount := 0
-	warnCount := 0
-	hintCount := 0
-	// 去重：vet 目錄模式下，每個檔案的 merged 程式都包含同一批導入模組，
-	// 同一條診斷（如 number.no 的無效 overflow 註解）會隨依賴鏈在被 vet
-	// 的每個檔案中重複產生；且主檔副本（相對路徑回退）與合併副本（絕對
-	// 路徑）路徑寫法不同。按（正規化檔案, 行, 列, 嚴重性, 來源, 消息）去重。
-	seen := map[string]bool{}
-	for _, fileResult := range results {
-		for _, l := range fileResult.Lints {
-			sev := strings.ToUpper(string(l.Severity))
-			// 優先使用 lint 結果攜帶的 File（來自 merged 程式中語句的原始檔案路徑），
-			// 為空時回退到 fileResult.File（vet 命令遍歷的輸入檔案路徑）。
-			filePath := l.File
-			if filePath == "" {
-				filePath = fileResult.File
-			}
-			dedupKey := filePath
-			if abs, err := filepath.Abs(filePath); err == nil {
-				dedupKey = abs
-			}
-			dedupKey = fmt.Sprintf("%s:%d:%d:%s:%s:%s", dedupKey, l.Line, l.Column, sev, l.Source, l.Message)
-			if seen[dedupKey] {
-				continue
-			}
-			seen[dedupKey] = true
-			if l.Line > 0 {
-				fmt.Printf("%s:%d:%d: [%s] %s: %s [%s]\n",
-					filePath, l.Line, l.Column, sev, l.Source, l.Message, l.TraceID)
-			} else {
-				fmt.Printf("%s: [%s] %s: %s [%s]\n",
-					filePath, sev, l.Source, l.Message, l.TraceID)
-			}
-			switch l.Severity {
-			case nbuild.LintError:
-				errorCount++
-			case nbuild.LintWarning:
-				warnCount++
-			case nbuild.LintHint:
-				hintCount++
-			}
+	diags, errorCount, warnCount, hintCount := flattenLints(results)
+	for _, d := range diags {
+		sev := strings.ToUpper(d.Severity)
+		if d.Line > 0 {
+			fmt.Printf("%s:%d:%d: [%s] %s: %s [%s]\n",
+				d.File, d.Line, d.Column, sev, d.Rule, d.Message, d.TraceID)
+		} else {
+			fmt.Printf("%s: [%s] %s: %s [%s]\n",
+				d.File, sev, d.Rule, d.Message, d.TraceID)
 		}
 	}
 	if errorCount > 0 || warnCount > 0 || hintCount > 0 {
@@ -3285,6 +3421,37 @@ func printLintResults(results []nbuild.LintResult) int {
 	} else {
 		fmt.Println("No issues found.")
 	}
+	return errorCount
+}
+
+// buildVetReport 由聚合結果構建 JSON 報告（拍平 + 去重 + 按 file/line/column 排序）。
+func buildVetReport(results []nbuild.LintResult) (vetReport, int) {
+	diags, errors, warnings, hints := flattenLints(results)
+	sort.SliceStable(diags, func(i, j int) bool {
+		if diags[i].File != diags[j].File {
+			return diags[i].File < diags[j].File
+		}
+		if diags[i].Line != diags[j].Line {
+			return diags[i].Line < diags[j].Line
+		}
+		return diags[i].Column < diags[j].Column
+	})
+	return vetReport{
+		Diagnostics: diags,
+		Summary:     vetSummary{Errors: errors, Warnings: warnings, Hints: hints},
+	}, errors
+}
+
+// printLintResultsJSON 以機器可讀 JSON 輸出診斷（頂層含 diagnostics 陣列與
+// summary 摘要），供 CI / LSP / 外部工具消費。返回 error 數量。
+func printLintResultsJSON(results []nbuild.LintResult) int {
+	report, errorCount := buildVetReport(results)
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to marshal diagnostics: %v\n", err)
+		return errorCount
+	}
+	fmt.Println(string(out))
 	return errorCount
 }
 

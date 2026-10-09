@@ -860,12 +860,19 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
-	// 未處理的越界索引（arr/vec/slice 索引 b[i]）目前「只」作為 LSP / `no vet`
-	// 診斷（見 checker.ValidateUnhandledIndex → RunAllLints 的 "nolang-index"
-	// 來源），不作為編譯硬錯誤：既有程式碼（含 std 與大量範例/測試）廣泛以舊式
-	// 「越界 panic」寫法使用 b = arr[i]，若在此升級為硬錯誤會讓 `no build` /
-	// `no run` / `no test` 對既有程式碼全面失敗。編輯器與 `no vet` 已能提供紅色
-	// 診斷並附 `#{index-out = 0}` quickfix，引導使用者顯式處理（?= 上拋或加註解）。
+	// 未處理的越界索引（編譯硬錯誤）：arr/vec/slice 索引 b[i] 越界時預設回傳
+	// option<elem>，若結果未被 ?= 上拋 / match 解構 / #{index-out = DEF} 註解處理
+	// / 作為 ?T 返回或宣告，即「沉默泄漏」，必須顯式處理。與「未處理溢位」(20d,
+	// 上方 ValidateUnhandledOverflow) 同口徑升為編譯硬錯誤：設計取捨從「僅 lint」
+	// 翻轉為「直接硬錯」，使 `no build` / `no run` / `no test` 對未處理越界索引
+	// 直接失敗，與編輯器 / `no vet` 的紅色診斷一致。既有以舊式「越界 panic」寫法
+	// `b = arr[i]` 的程式碼須改寫為 `b ?= arr[i]` / `match` / `#{index-out = 0}` 等
+	// 顯式處理形式。
+	if idxErrs := checker.ValidateUnhandledIndex(program, t.sourcePath); len(idxErrs) > 0 {
+		for _, e := range idxErrs {
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
+		}
+	}
 	// ?T 輸出參數未初始化檢查（case6）
 	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
 		for _, e := range uninitErrs {
