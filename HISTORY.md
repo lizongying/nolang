@@ -1,5 +1,9 @@
 # 更新日誌
 
+## v0.3.17
+
+- fix(build): update version handling and add Windows builtin support
+
 ## v0.3.16
 
 - fix(codegen): add windows unsupported checks and Linux sysctl procfs fallback
