@@ -14,7 +14,7 @@
     // "github.com/lizongying/nolang/test2": "*",
   },
   "compiler": {
-    "version": "0.1.0",
+    "version": "v0.1.0",
     "link-libs": [],
     "anonymous-fn-type": false,
   },

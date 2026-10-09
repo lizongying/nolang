@@ -2,9 +2,9 @@
 
 GO        ?= go
 BINDIR    ?= bin
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+GIT_VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u '+%s' 2>/dev/null || echo "0")
-LD_FLAGS  ?= -ldflags="-s -w -X main.version=$(GIT_COMMIT) -X main.buildDate=$(BUILD_DATE)"
+LD_FLAGS  ?= -ldflags="-s -w -X main.version=$(GIT_VERSION) -X main.buildDate=$(BUILD_DATE)"
 SRCMOD     = src/go.mod
 GO_SOURCES := $(shell find src -name '*.go' -type f)
 NO_SOURCES := $(shell find src/std -name '*.no' -type f)

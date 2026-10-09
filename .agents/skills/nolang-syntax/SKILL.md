@@ -360,12 +360,12 @@ no uninstall pkg-name
 
 ### Project Configuration
 
-The `package.jsonc` file in the project root directory describes project information:
+The `package.jsonc` file in the project root directory describes project information. Version values are conventionally written with a leading `v` (e.g. `"v0.1.0"`); the compiler parses them prefix-insensitively, so `"v0.1.0"` and `"0.1.0"` are treated as the same version.
 
 ```jsonc
 {
   "name": "my-project",
-  "version": "0.1.0",
+  "version": "v0.1.0",
   "description": "A new Nolang project",
   "keywords": [],
   "author": "",
@@ -380,7 +380,7 @@ The `package.jsonc` file in the project root directory describes project informa
     "fmt": "*",
   },
   "compiler": {
-    "version": "0.1.0",
+    "version": "v0.1.0",
   },
   "output": "./dist",
   "ignore": [],

@@ -464,7 +464,7 @@ func newProject(name string) {
 
 	config := ProjectConfig{
 		Name:         name,
-		Version:      "0.1.0",
+		Version:      "v0.1.0",
 		Author:       gitInfo.Author,
 		Email:        gitInfo.Email,
 		Repository:   gitInfo.Repository,
@@ -472,7 +472,7 @@ func newProject(name string) {
 		Dependencies: map[string]string{},
 		Main:         "main.no",
 		Compiler: CompilerConfig{
-			Version: "0.1.0",
+			Version: "v0.1.0",
 		},
 		Output: "/dist",
 	}

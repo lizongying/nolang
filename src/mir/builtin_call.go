@@ -890,6 +890,56 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		if spec := forwardCSpecOf("readlink"); spec != nil {
 			return c.emitCCall(inst, spec)
 		}
+	case "win-find-first-file":
+		// fs.list-dir's Win32 body only compiles for win-* targets; the trio has
+		// no C-call-table shape (heap-threaded handle), so lower it bespoke.
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinFindFirstFile(inst)
+		}
+	case "win-find-next-file":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinFindNextFile(inst)
+		}
+	case "win-find-close":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinFindClose(inst)
+		}
+	case "win-create-pipe":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinCreatePipe(inst)
+		}
+	case "win-close-handle":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinCloseHandle(inst)
+		}
+	case "win-write-pipe":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinWritePipe(inst)
+		}
+	case "win-read-pipe":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinReadPipe(inst)
+		}
+	case "win-get-std-handle":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinGetStdHandle(inst)
+		}
+	case "win-wait-process":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinWaitProcess(inst)
+		}
+	case "win-get-exit-code":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinGetExitCode(inst)
+		}
+	case "win-terminate-process":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinTerminateProcess(inst)
+		}
+	case "win-create-process":
+		if targetGOOS() == "windows" {
+			return c.emitBuiltinWinCreateProcess(inst)
+		}
 	}
 	// Generic C call: the whole point of forward_call.go. Consulted LAST so a
 	// bespoke handler always wins, but it turns "add a POSIX builtin" from a new

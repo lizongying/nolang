@@ -402,7 +402,7 @@ no uninstall pkg-name
 ```jsonc
 {
   "name": "my-project",
-  "version": "0.1.0",
+  "version": "v0.1.0",
   "description": "A new Nolang project",
   "keywords": [],
   "author": "",
@@ -417,7 +417,7 @@ no uninstall pkg-name
     "fmt": "*",
   },
   "compiler": {
-    "version": "0.1.0",
+    "version": "v0.1.0",
   },
   "output": "./dist",
   "ignore": [],

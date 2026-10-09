@@ -116,14 +116,16 @@ type BuildOptions struct {
 }
 
 // versionCompatible 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本兼容。
+// package.jsonc 的 version 約定帶前導 v（如 "v0.1.0"），但解析時前後綴皆相容：
+// 一律先剝除前導 "v" 再比較，因此 "v0.1.0" 與 "0.1.0" 視為同一版本。
 // 採用語義化版本規則：
 //   - major >= 1 時，major 版本相同即視為兼容（1.2.0 與 1.3.1 兼容）
 //   - major == 0 時（初始開發階段），API 不穩定，以 minor 作為兼容性判斷依據
 //     （0.1.0 與 0.1.5 兼容，但 0.1.0 與 0.2.0 不兼容）
 //   - 若無法解析為 semver，則要求精確匹配
 func versionCompatible(required, current string) bool {
-	required = strings.TrimSpace(required)
-	current = strings.TrimSpace(current)
+	required = strings.TrimPrefix(strings.TrimSpace(required), "v")
+	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
 	if required == "" || current == "" {
 		return true
 	}

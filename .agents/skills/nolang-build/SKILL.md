@@ -34,7 +34,7 @@ Run from the **project root directory** (where the `Makefile` lives):
 |----------|---------|-------------|
 | `GO` | `go` | Go compiler binary |
 | `BINDIR` | `bin` | Output directory for `no` binary |
-| `LD_FLAGS` | `-ldflags="-s -w -X main.version=... -X main.buildDate=..."` | Linker flags (auto-injects Git commit and build date) |
+| `LD_FLAGS` | `-ldflags="-s -w -X main.version=... -X main.buildDate=..."` | Linker flags. `main.version` is auto-injected from `git describe --tags --dirty --always` (e.g. `v0.3.16`, `v0.3.16-dirty`, or a short commit hash when no tag exists); `main.buildDate` is the UTC build epoch |
 | `PLAYGROUND_PORT` | `3000` | Port for `playground-smoke` dev server |
 
 ## Build Dependencies

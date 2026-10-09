@@ -3122,12 +3122,12 @@ neural = () {
 
 ## package.jsonc 編譯器配置
 
-`package.jsonc` 中的 `compiler` 區塊控制編譯器行為。
+`package.jsonc` 中的 `compiler` 區塊控制編譯器行為。`version` 值約定帶前導 `v`（如 `"v0.1.0"`）；編譯器內部解析時對前綴不敏感，`"v0.1.0"` 與 `"0.1.0"` 皆視為同一版本。
 
 ```jsonc
 {
   "compiler": {
-    "version": "0.1.0",
+    "version": "v0.1.0",
     "anonymous-fn-type": false,
     "emit": "js"
   }

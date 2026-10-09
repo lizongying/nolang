@@ -98,6 +98,13 @@ declare i64 @CreateToolhelp32Snapshot(i32, i32)
 declare i32 @Process32FirstW(i64, i8*)
 declare i32 @Process32NextW(i64, i8*)
 declare i32 @GetEnvironmentVariableA(i8*, i8*, i32)
+declare i32 @CreatePipe(i64*, i64*, i8*, i32)
+declare i32 @WriteFile(i64, i8*, i32, i32*, i8*)
+declare i32 @ReadFile(i64, i8*, i32, i32*, i8*)
+declare i64 @GetStdHandle(i32)
+declare i32 @WaitForSingleObject(i64, i32)
+declare i32 @GetExitCodeProcess(i64, i32*)
+declare i32 @CreateProcessA(i8*, i8*, i8*, i8*, i32, i32, i8*, i8*, i8*, i8*)
 ; llvm.memcpy/memset are already declared by the main prelude (emitPrelude);
 ; repeating them here makes the two spellings (i8* vs ptr) collide in opt.
 
@@ -521,6 +528,151 @@ entry:
   %ncopy = select i1 %has, i64 %n64, i64 0
   %g256 = getelementptr i8, i8* %buf, i64 256
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %g256, i8* %nb, i64 %ncopy, i1 false)
+  ret i32 0
+}
+
+; --- Windows subprocess pipeline (process.cmd's #{win-*} body). These back the
+; win-create-pipe / win-read-pipe / win-write-pipe / win-close-handle /
+; win-get-std-handle / win-wait-process / win-get-exit-code /
+; win-terminate-process / win-create-process ForwardFunc builtins, which the MIR
+; backend never lowered (same gap as win-find-*). Handles are i64 (Win64 &
+; WinARM pointer size). Only kernel32 entry points are used.
+
+; win_create_pipe: CreatePipe(&r,&w,NULL,0) → packed (read<<32)|write, 0 on fail.
+; NOTE: the std contract packs two handles into one i64 via 32-bit halves; that
+; relies on Windows handle values fitting in 32 bits (true for the pipe handles
+; CreatePipe returns). Mirrors how std/process.no splits them back out.
+define i64 @nolang.win_create_pipe() {
+entry:
+  %rp = alloca i64, align 8
+  %wp = alloca i64, align 8
+  %r = call i32 @CreatePipe(i64* %rp, i64* %wp, i8* null, i32 0)
+  %ok = icmp ne i32 %r, 0
+  br i1 %ok, label %pack, label %fail
+pack:
+  %rd = load i64, i64* %rp
+  %wr = load i64, i64* %wp
+  %rlo = and i64 %rd, 4294967295
+  %rsh = shl i64 %rlo, 32
+  %wlo = and i64 %wr, 4294967295
+  %pk = or i64 %rsh, %wlo
+  ret i64 %pk
+fail:
+  ret i64 0
+}
+
+define i32 @nolang.win_close_handle(i64 %h) {
+entry:
+  %r = call i32 @CloseHandle(i64 %h)
+  ret i32 %r
+}
+
+; win_write_pipe(h, data, len) → bytes written, or -1 on error.
+define i64 @nolang.win_write_pipe(i64 %h, i8* %data, i64 %len) {
+entry:
+  %np = alloca i32, align 4
+  %len32 = trunc i64 %len to i32
+  %r = call i32 @WriteFile(i64 %h, i8* %data, i32 %len32, i32* %np, i8* null)
+  %ok = icmp ne i32 %r, 0
+  %n = load i32, i32* %np
+  %n64 = zext i32 %n to i64
+  %res = select i1 %ok, i64 %n64, i64 -1
+  ret i64 %res
+}
+
+; win_read_pipe(h, buf, max) → bytes read (0 = EOF), or -1 on error.
+define i64 @nolang.win_read_pipe(i64 %h, i8* %buf, i64 %max) {
+entry:
+  %np = alloca i32, align 4
+  %max32 = trunc i64 %max to i32
+  %r = call i32 @ReadFile(i64 %h, i8* %buf, i32 %max32, i32* %np, i8* null)
+  %ok = icmp ne i32 %r, 0
+  br i1 %ok, label %have, label %err
+have:
+  %n = load i32, i32* %np
+  %n64 = zext i32 %n to i64
+  ret i64 %n64
+err:
+  ret i64 -1
+}
+
+; win_get_std_handle(which) → handle; which = -10 input / -11 output / -12 error.
+define i64 @nolang.win_get_std_handle(i64 %which) {
+entry:
+  %wi = trunc i64 %which to i32
+  %h = call i64 @GetStdHandle(i32 %wi)
+  ret i64 %h
+}
+
+; win_wait_process(h, ms) → 0=timeout, 1=exited, -1=error. WAIT_TIMEOUT=258.
+define i64 @nolang.win_wait_process(i64 %h, i64 %ms) {
+entry:
+  %ms32 = trunc i64 %ms to i32
+  %r = call i32 @WaitForSingleObject(i64 %h, i32 %ms32)
+  %isexit = icmp eq i32 %r, 0
+  %istimeout = icmp eq i32 %r, 258
+  %known = or i1 %isexit, %istimeout
+  %mapped = select i1 %isexit, i64 1, i64 0
+  %fin = select i1 %known, i64 %mapped, i64 -1
+  ret i64 %fin
+}
+
+; win_get_exit_code(h, *out) → BOOL; *out is the raw exit code (259 = STILL_ACTIVE).
+define i32 @nolang.win_get_exit_code(i64 %h, i32* %out) {
+entry:
+  %r = call i32 @GetExitCodeProcess(i64 %h, i32* %out)
+  ret i32 %r
+}
+
+define i32 @nolang.win_terminate_process(i64 %h, i32 %code) {
+entry:
+  %r = call i32 @TerminateProcess(i64 %h, i32 %code)
+  ret i32 %r
+}
+
+; win_create_process(cmdline, dir, si, so, se, *procOut) → 1 ok / 0 fail.
+; STARTUPINFOA (LLP64): cb@0, dwFlags@60 (STARTF_USESTDHANDLES=0x100),
+; hStdInput@80, hStdOutput@88, hStdError@96; sizeof 104 (alloc 112 for slack).
+; PROCESS_INFORMATION: hProcess@0, hThread@8. bInheritHandles=TRUE,
+; CREATE_NO_WINDOW (0x08000000). dir=="" lowers to NULL (inherit current dir).
+define i32 @nolang.win_create_process(i8* %cmdline, i8* %dir, i64 %si, i64 %so, i64 %se, i64* %procOut) {
+entry:
+  %sib = alloca [112 x i8], align 8
+  call void @llvm.memset.p0i8.i64(i8* %sib, i8 0, i64 112, i1 false)
+  %cbp = bitcast i8* %sib to i32*
+  store i32 104, i32* %cbp
+  %fg0 = getelementptr i8, i8* %sib, i64 60
+  %fgp = bitcast i8* %fg0 to i32*
+  store i32 256, i32* %fgp
+  %sip0 = getelementptr i8, i8* %sib, i64 80
+  %sip = bitcast i8* %sip0 to i64*
+  store i64 %si, i64* %sip
+  %sop0 = getelementptr i8, i8* %sib, i64 88
+  %sop = bitcast i8* %sop0 to i64*
+  store i64 %so, i64* %sop
+  %sep0 = getelementptr i8, i8* %sib, i64 96
+  %sep = bitcast i8* %sep0 to i64*
+  store i64 %se, i64* %sep
+  %pib = alloca [32 x i8], align 8
+  call void @llvm.memset.p0i8.i64(i8* %pib, i8 0, i64 32, i1 false)
+  %d0 = load i8, i8* %dir
+  %dempty = icmp eq i8 %d0, 0
+  %dirArg = select i1 %dempty, i8* null, i8* %dir
+  %r = call i32 @CreateProcessA(i8* null, i8* %cmdline, i8* null, i8* null, i32 1, i32 134217728, i8* null, i8* %dirArg, i8* %sib, i8* %pib)
+  %ok = icmp ne i32 %r, 0
+  br i1 %ok, label %got, label %nofail
+got:
+  %hp0 = getelementptr i8, i8* %pib, i64 0
+  %hp = bitcast i8* %hp0 to i64*
+  %proc = load i64, i64* %hp
+  store i64 %proc, i64* %procOut
+  %th0 = getelementptr i8, i8* %pib, i64 8
+  %thp = bitcast i8* %th0 to i64*
+  %th = load i64, i64* %thp
+  call i32 @CloseHandle(i64 %th)
+  ret i32 1
+nofail:
+  store i64 0, i64* %procOut
   ret i32 0
 }
 `

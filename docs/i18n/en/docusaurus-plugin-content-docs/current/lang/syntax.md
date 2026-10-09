@@ -3291,12 +3291,12 @@ Use `os.get-arch()` to get the current architecture at runtime, and platform ann
 
 ## package.jsonc Compiler Configuration
 
-The `compiler` block in `package.jsonc` controls compiler behavior.
+The `compiler` block in `package.jsonc` controls compiler behavior. The `version` value is conventionally written with a leading `v` (e.g. `"v0.1.0"`); the compiler's internal parsing is prefix-insensitive, treating `"v0.1.0"` and `"0.1.0"` as the same version.
 
 ```jsonc
 {
   "compiler": {
-    "version": "0.1.0",
+    "version": "v0.1.0",
     "anonymous-fn-type": false,
     "emit": "js"
   }
