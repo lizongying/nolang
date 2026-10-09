@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/lizongying/nolang/builtin"
 )
 
 // ---------------------------------------------------------------------------
@@ -196,6 +198,17 @@ var windowsVerifiedExports = map[string]bool{
 	"GetEnvironmentVariableA": true,
 	// kernel32 — error handling
 	"GetLastError": true,
+	// kernel32 — subprocess pipeline + system info (win_create_pipe / *_pipe /
+	// std-handle / wait / exit-code / create-process shims, and win_sysconf).
+	// These declares predate this list; re-added so the gate is green again.
+	"CreatePipe":           true,
+	"ReadFile":             true,
+	"WriteFile":            true,
+	"GetStdHandle":         true,
+	"WaitForSingleObject":  true,
+	"GetExitCodeProcess":   true,
+	"CreateProcessA":       true,
+	"GetSystemInfo":        true,
 }
 
 // TestWindowsShimDeclaresAreRealExports is the class-level guard: it parses the
@@ -229,5 +242,119 @@ func TestWindowsShimDeclaresAreRealExports(t *testing.T) {
 	sort.Strings(stale)
 	for _, name := range stale {
 		t.Errorf("windowsVerifiedExports lists %q but windowsShimsIR no longer declares it", name)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Class-level guard for the OTHER half of the Windows link story.
+//
+// TestWindowsShimDeclaresAreRealExports only validates the `declare` block INSIDE
+// the shim prelude. It does not look at the symbols the generic CLibCall path
+// emits at the CALL SITE. `os.sysconf` is exactly that gap: it registered a bare
+// CLibCall{FuncName:"sysconf"} with no windows variant, so a `*-windows-gnu`
+// cross build emitted `call @sysconf` and died at lld-link with
+//
+//	undefined symbol: sysconf
+//
+// because msvcrt has no sysconf(3). The per-symbol tests (set-env, truncate) each
+// covered one regression but nothing swept the WHOLE registry, so a builtin that
+// was simply never exercised on Windows slipped through.
+//
+// This test closes that: for the windows target it resolves EVERY CLibCall
+// builtin the way codegen does (clibResolve) and asserts the chosen symbol is
+// linkable — either a nolang.win_* shim that is actually DEFINED in the prelude,
+// a runtime/intrinsic symbol (nolang.*/llvm.*), or a bare name on the verified
+// CRT/WinSDK list. Adding a POSIX-only builtin without an AltFuncs/shim now fails
+// here, on any host, without needing to run the Windows linker.
+// ---------------------------------------------------------------------------
+
+// windowsCLibCRT are the bare C symbols the CLibCall path legitimately resolves
+// to on Windows: the `_`-prefixed UCRT i/o + process entries, the ISO C names
+// UCRT exports (exit/getenv/rename/system/signal), and gethostname (ws2_32, which
+// the builder links for every windows target). Kept as a list rather than
+// wildcarded so a NEW bare POSIX name is rejected until someone checks it.
+var windowsCLibCRT = map[string]bool{
+	"_chdir": true, "_chmod": true, "_close": true, "_dup2": true,
+	"_getcwd": true, "_getpid": true, "_mkdir": true, "_open": true,
+	"_putenv_s": true, "_read": true, "_rmdir": true, "_unlink": true,
+	"_write": true,
+	"exit": true, "getenv": true, "gethostname": true, "rename": true,
+	"signal": true, "system": true,
+}
+
+// definedWinShims returns the set of nolang.win_* entry points the prelude
+// actually DEFINES (not merely declares), so an AltFuncs pointing at a shim that
+// was never written is caught rather than silently left undefined.
+func definedWinShims() map[string]bool {
+	re := regexp.MustCompile(`(?m)^define\s+[^@]*@(nolang\.win_[A-Za-z0-9_]+)\s*\(`)
+	defs := map[string]bool{}
+	for _, m := range re.FindAllStringSubmatch(windowsShimsIR(), -1) {
+		defs[m[1]] = true
+	}
+	return defs
+}
+
+func TestWindowsCLibSymbolsAreResolvable(t *testing.T) {
+	withTarget(t, "windows", "amd64")
+	defs := definedWinShims()
+	for _, m := range builtin.BuiltinMethodList {
+		if m.CLibCall == nil || m.CLibCall.FuncName == "" {
+			continue
+		}
+		fn, _, _ := clibResolve(m.CLibCall)
+		switch {
+		case strings.HasPrefix(fn, "nolang.win_"):
+			if !defs[fn] {
+				t.Errorf("windows: %s routes to shim %q which is not defined in windowsShimsIR", m.MethodName, fn)
+			}
+		case strings.HasPrefix(fn, "nolang."), strings.HasPrefix(fn, "llvm."):
+			// runtime-provided / intrinsic, always resolvable.
+		case windowsCLibCRT[fn]:
+			// verified Windows CRT/WinSDK export.
+		default:
+			t.Errorf("windows: builtin %q emits bare %q, which the Windows CRT does not "+
+				"export — add AltFuncs{windows: ...} (a CRT spelling or a nolang.win_* "+
+				"shim). This is the sysconf-class bug: it only surfaces at lld-link on a "+
+				"windows target, so it must be caught statically here.", m.MethodName, fn)
+		}
+	}
+}
+
+// TestSysconfWindowsShim: the specific regression. os.sysconf must lower to the
+// nolang.win_sysconf shim on Windows and never reference bare @sysconf; the POSIX
+// targets keep the real sysconf(3).
+func TestSysconfWindowsShim(t *testing.T) {
+	src := `main = () () {
+  n = os.sysconf(84)
+  print(n)
+}
+`
+	withTarget(t, "windows", "amd64")
+	ir, err := lowerSourceForTest(t, src).EmitLLVM()
+	if err != nil {
+		t.Fatalf("windows sysconf must lower: %v", err)
+	}
+	if !strings.Contains(ir, "@nolang.win_sysconf") {
+		t.Errorf("windows IR must call @nolang.win_sysconf, got:\n%s", ir)
+	}
+	if strings.Contains(ir, "@sysconf(") {
+		t.Errorf("windows IR must not reference @sysconf (msvcrt has no sysconf(3))")
+	}
+	// The shim body comes from the prelude; require a define of the symbol, in
+	// either the typed- or opaque-pointer spelling.
+	if !regexp.MustCompile(`define [^@]*@nolang\.win_sysconf`).MatchString(ir) {
+		t.Errorf("windows IR must define @nolang.win_sysconf")
+	}
+
+	withTarget(t, "linux", "amd64")
+	ir, err = lowerSourceForTest(t, src).EmitLLVM()
+	if err != nil {
+		t.Fatalf("linux sysconf must lower: %v", err)
+	}
+	if !strings.Contains(ir, "@sysconf(") {
+		t.Errorf("linux IR must keep calling @sysconf, got:\n%s", ir)
+	}
+	if strings.Contains(ir, "nolang.win_") {
+		t.Errorf("linux IR must not reference the Windows shims")
 	}
 }

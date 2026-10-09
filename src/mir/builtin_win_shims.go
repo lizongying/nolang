@@ -48,7 +48,15 @@ func windowsShimsIR() string {
 	line := "@.win.u.machine = private constant [" + itoa(machLen) + " x i8] c\"" + machine + "\\00\"\n"
 	out := strings.Replace(windowsShimsConst, "@MACHINE@\n", line, 1)
 	out = strings.ReplaceAll(out, "@MACHTY@", "["+itoa(machLen)+" x i8]")
-	return strings.ReplaceAll(out, "@MACHN@", itoa(machLen))
+	out = strings.ReplaceAll(out, "@MACHN@", itoa(machLen))
+	// dwNumberOfProcessors offset within SYSTEM_INFO: 32 on LLP64 ( pointers are
+	// 8 bytes), 20 on i386 (everything is 4 bytes wide). Used by win_sysconf.
+	nprocOff := "32"
+	if targetGOARCH() == "386" {
+		nprocOff = "20"
+	}
+	out = strings.ReplaceAll(out, "@NPROCOFF@", nprocOff)
+	return out
 }
 
 // itoa keeps the import surface at "strings" for a one-line integer render.
@@ -105,6 +113,7 @@ declare i64 @GetStdHandle(i32)
 declare i32 @WaitForSingleObject(i64, i32)
 declare i32 @GetExitCodeProcess(i64, i32*)
 declare i32 @CreateProcessA(i8*, i8*, i8*, i8*, i32, i32, i8*, i8*, i8*, i8*)
+declare void @GetSystemInfo(i8*)
 ; llvm.memcpy/memset are already declared by the main prelude (emitPrelude);
 ; repeating them here makes the two spellings (i8* vs ptr) collide in opt.
 
@@ -451,6 +460,47 @@ entry:
   %ok = icmp ne i32 %t, 0
   %p = select i1 %ok, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.win.con, i64 0, i64 0), i8* null
   ret i8* %p
+}
+
+; sysconf(3): msvcrt has no sysconf, so a raw "sysconf" reference dies at
+; lld-link with "undefined symbol: sysconf". Serve the _SC_* queries that map
+; onto SYSTEM_INFO (page size + processor count) and report -1 + EINVAL for the
+; rest (the POSIX error convention). Name constants differ per libc, so accept
+; the common glibc / darwin spellings:
+;   _SC_NPROCESSORS_ONLN glibc 84 / darwin 58, _SC_NPROCESSORS_CONF glibc 85 -> dwNumberOfProcessors
+;   _SC_PAGESIZE / _SC_PAGE_SIZE glibc 30/59 / darwin 29                     -> dwPageSize
+; SYSTEM_INFO (LLP64): dwPageSize @4, dwNumberOfProcessors @32 (@20 on i386).
+define i64 @nolang.win_sysconf(i32 %name) {
+entry:
+  %si = alloca [64 x i8], align 8
+  call void @GetSystemInfo(i8* %si)
+  %ps0 = getelementptr i8, i8* %si, i64 4
+  %ps32 = bitcast i8* %ps0 to i32*
+  %psv = load i32, i32* %ps32
+  %ps64 = zext i32 %psv to i64
+  %np0 = getelementptr i8, i8* %si, i64 @NPROCOFF@
+  %np32 = bitcast i8* %np0 to i32*
+  %npv = load i32, i32* %np32
+  %np64 = zext i32 %npv to i64
+  %is84 = icmp eq i32 %name, 84
+  %is58 = icmp eq i32 %name, 58
+  %is85 = icmp eq i32 %name, 85
+  %isn1 = or i1 %is84, %is58
+  %isn = or i1 %isn1, %is85
+  %is30 = icmp eq i32 %name, 30
+  %is59 = icmp eq i32 %name, 59
+  %is29 = icmp eq i32 %name, 29
+  %isp1 = or i1 %is30, %is59
+  %isp = or i1 %isp1, %is29
+  %known = or i1 %isn, %isp
+  br i1 %known, label %val, label %unk
+unk:
+  call void @nolang.win_seterrno(i32 22) ; EINVAL
+  ret i64 -1
+val:
+  %a = select i1 %isn, i64 %np64, i64 -1
+  %b = select i1 %isp, i64 %ps64, i64 %a
+  ret i64 %b
 }
 
 ; getpwuid(3)/getgrgid(3): Windows has no passwd/group database; return NULL so

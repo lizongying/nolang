@@ -68,7 +68,7 @@ func init() {
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Get the current process ID",
-		CLibCall:     &CLibCall{FuncName: "getpid", ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
+		CLibCall:     &CLibCall{FuncName: "getpid", AltFuncs: altWin("_getpid"), ArgTypes: []LLVMArgType{}, RetType: LLVMI32, RetExt: &i64Type},
 	})
 
 	// host-name: get the hostname (uses @.os-buf)
@@ -800,7 +800,7 @@ func init() {
 		Params:       []parser.Type{parser.TypeI64},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Query system configuration value (POSIX _SC_* constant). Returns -1 on error",
-		CLibCall:     &CLibCall{FuncName: "sysconf", ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
+		CLibCall:     &CLibCall{FuncName: "sysconf", AltFuncs: altWin("nolang.win_sysconf"), ArgTypes: []LLVMArgType{LLVMI32}, RetType: LLVMI64, TruncArgs: map[int]LLVMArgType{0: LLVMI32}},
 	})
 
 	// num-cpu: get number of online CPUs (wraps sysconf(_SC_NPROCESSORS_ONLN))
