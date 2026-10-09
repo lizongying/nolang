@@ -120,7 +120,7 @@ jobs:
           asset_name: no_${{ env.version_name }}_windows_amd64.exe
           asset_content_type: application/octet-stream
 
-  wasm-smoke:
+  pr-verify:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
@@ -250,3 +250,43 @@ jobs:
           echo "Output: $output"
           echo "$output" | grep -q "^version:" || (echo "ERROR: lsp.wasm version output mismatch" && exit 1)
           echo "lsp.wasm version check passed"
+
+      # ---- PR 门禁：编译/测试质量闸 ----
+      # 说明：本作业已安装 LLVM 21（opt/llc），故可同时跑原生编译闸，无需二次安装。
+      # 各步骤设计原则：只闸「当前全绿」的项；已知 pre-existing 失败的项（见下）
+      # 暂不纳入硬闸，避免误伤所有 PR，待对应修复后补回。
+      - name: Go unit tests (green packages)
+        # 注：go test ./... 当前有 7 个 pre-existing 失败（build 4 + checker 2 + fmt 1），
+        # 故闸只覆盖已知全绿的包：build / cmd/no / mir。
+        run: |
+          cd ./src
+          go test ./build/... ./cmd/no/... ./mir/...
+
+      - name: no test (std library functional suite)
+        run: ./bin/no test test/std/
+
+      - name: no vet (program corpus: src/std + example + test)
+        # 注：set.no 的 3 个 pre-existing idxhndld（131/168/198）已于 2026-10-09 用
+        # `#{index-out=zero}` 修复，src/std 现无 ERROR/WARN/idxhndld/ovfhndld，故纳入硬闸。
+        # 若后续 std 再出现 idxhndld 编译硬错但 no test 路径不触发，需先修 std 再放开本闸。
+        run: ./bin/no vet src/std example test
+
+      - name: Corpus build smoke (representative programs)
+        # 代表性子集（均已本地验证可编译通过，且不传递依赖会触发 set.no 的 pre-existing 硬错）。
+        # 完整语料（tests/ 527 文件）build 冒烟过重，按需后续可拆出 nightly 作业。
+        run: |
+          for f in \
+            example/test1 \
+            example/test2 \
+            tests/arr.no \
+            tests/vec.no \
+            tests/str.no \
+            tests/json.no \
+            tests/option.no \
+            tests/safe-index-containers.no \
+            tests/heap.no \
+            tests/match-it-scope.no; do
+            echo "::group::build $f"
+            ./bin/no build "$f" || exit 1
+            echo "::endgroup::"
+          done

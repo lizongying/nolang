@@ -494,11 +494,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		if !versionCompatible(pkg.Compiler.Version, opts.CompilerVersion) {
 			msg := fmt.Sprintf("warning: compiler version mismatch: package.jsonc requires %q, current compiler is %q\n",
 				pkg.Compiler.Version, opts.CompilerVersion)
-			if buffered {
-				fmt.Fprint(os.Stderr, msg)
-			} else {
-				fmt.Fprint(os.Stderr, msg)
-			}
+			fmt.Fprint(os.Stderr, msg)
 		}
 	}
 
@@ -629,35 +625,11 @@ func vprintf(sink *bytes.Buffer, format string, args ...any) {
 	}
 }
 
-// ─── 型別指標 → opaque pointer 遷移 ───────────────────────────────────────────
-// nolang 的程式碼產生器原本輸出 LLVM <17 的「型別化指標」IR（例如 i8*、%str-long*、
-// [5 x i8]*）。LLVM 17+ 徹底移除了型別化指標，只接受 opaque pointer（ptr）。
-// 本機安裝的 opt/llc 已是 LLVM 21，會拒絕舊語法。為在不改動上千處 IR 字串的情況下
-// 讓編譯器繼續工作，這裡在 IR 寫檔前做一次「純文字」重寫：把所有指標型別 token 轉成 ptr。
-// 這是語意等價的（opaque pointer 只是丟棄指標所載的元素型別，load/store/getelementptr
-// 的值/元素型別仍保留），且對已經是 ptr 的 IR 是冪等的。
-// 註：僅影響編譯管線輸出的 LLVM IR；Go 原始碼不受影響。
-//
-// ⚠️ 這些 pattern 必須帶「左邊界」guard（`(^|[^A-Za-z0-9_%])`）：型別名稱裡可以
-// 合法地含有基本型別片段，MIR 的 per-payload option 型別就是如此——
-// `%option___i64`（= `%option_` + sanitize("[]i64")）。沒有 guard 時，prim
-// pattern 會在識別字「內部」匹配 `i64*` 並只把它換成 `ptr`，產出**不存在的型別名**
-// `%option___ptr`，於是 `alloca %option___i64` 與 `store ..., %option___ptr %x`
-// 型別不一致 → `opt` 驗證失敗（`'%v3.s' defined with type 'ptr' but expected
-// '%option___ptr = type opaque'`，tests/test-uninit-output.no 等 opt-verify 族）。
-var (
-	reOpaqueArr   = regexp.MustCompile(`(^|[^A-Za-z0-9_%])\[[0-9]+ x [^\]]+\]\*+`)
-	reOpaquePrim  = regexp.MustCompile(`(^|[^A-Za-z0-9_%])(?:void|i1|i8|i16|i32|i64|f16|f32|f64|half|double|fp128|x86_fp80|ppc_fp128)\*+`)
-	reOpaqueNamed = regexp.MustCompile(`%+[A-Za-z][A-Za-z0-9_]*\*+`)
-)
-
-// toOpaquePointers 把型別化指標語法重寫為 opaque pointer（ptr）。
-func toOpaquePointers(code string) string {
-	code = reOpaqueArr.ReplaceAllString(code, "${1}ptr")
-	code = reOpaquePrim.ReplaceAllString(code, "${1}ptr")
-	code = reOpaqueNamed.ReplaceAllString(code, "ptr")
-	return code
-}
+// ─── 型別指標（typed pointer）的處理 ───────────────────────────────────────────
+// codegen 仍輸出 LLVM <17 風格的型別化指標 IR（i8*、%str-long*、[5 x i8]* 等）。
+// 早期版本在此做一次「純文字」重寫把它轉成 opaque pointer（ptr），但實測證明 LLVM 17+
+// 的 IR 解析器會自動把型別化指標升級為 opaque `ptr`（opt/llc 靜默接受、無 warning），
+// 故該 toOpaquePointers 重寫層是死代碼，已於 2026-10-09 刪除——不要再加回來。
 
 // buildLLVMInternal writes LLVM IR and compiles it to an executable via opt + llc + cc.
 // If sink is non-nil, output is buffered to avoid interleaving in parallel builds.
@@ -684,8 +656,8 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	}
 
 	llPath := filepath.Join(tempDir, fileName+".ll")
-	// 將型別化指標 IR 重寫為 opaque pointer，兼容 LLVM 17+（本機 opt/llc 為 21）。
-	code = toOpaquePointers(code)
+	// LLVM 17+ 的 IR 解析器會自動把 typed pointer（i8*、%vec* 等）升級為 opaque
+	// `ptr`，故不再需要 toOpaquePointers 文本重寫層（死代碼，2026-10-09 刪除）。
 	err = os.WriteFile(llPath, []byte(code), 0644)
 	if err != nil {
 		return fmt.Errorf("writing LLVM IR file: %w", err)

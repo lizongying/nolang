@@ -1645,8 +1645,8 @@ func verifyMIRIRViaOpt(ll string) error {
 		defer os.RemoveAll(dir)
 	}
 	inPath := filepath.Join(dir, "m.ll")
-	// 將型別化指標 IR 重寫為 opaque pointer，兼容 LLVM 17+（本機 opt/llc 為 21）。
-	if err := os.WriteFile(inPath, []byte(toOpaquePointers(ll)), 0644); err != nil {
+	// LLVM 17+ 解析器自動升級 typed pointer → opaque `ptr`，無需 toOpaquePointers 重寫層（死代碼，2026-10-09 刪除）。
+	if err := os.WriteFile(inPath, []byte(ll), 0644); err != nil {
 		return nil
 	}
 	// Stage 1: IR verification. See the function comment: the default runs only

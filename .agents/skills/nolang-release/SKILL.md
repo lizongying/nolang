@@ -196,6 +196,9 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
   说明上次 tag 推上去但 CI 失败了——此时**必须复用当前 tag而不是 +1**，并按强制重推命令删远端旧 tag 重新 push 以重新触发 action。
 - **提交前与推送前各重查一次真实状态**（`git status` / `git log -1` / `git tag --list`）——
   仓库常有并行 session，`git commit` 报 `nothing to commit` 就是它已经替你提交了。
+- 刷新 MIR 后端 golden 基线（REGRESS）前，必须先让 `no test test/std/` 与语料 build 冒烟全绿：
+  基线冻结于 2026-09-22（63895e59），其后大量 commit 未刷新，REGRESS 数字不可全信、须逐档二分；
+  只有 `no test` 跑通后的基线才可信，故把「`no test` 跑通」作为刷新基线的前置条件纳入发版流程。
 - commit message 用 `chore(release): vX.Y.Z`。
 - 若用户只要「写日志、先别发」，执行到第 3 步为止，明确说明尚未提交、未打 tag。
 
