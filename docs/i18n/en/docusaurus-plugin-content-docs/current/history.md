@@ -7,6 +7,10 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.3.18
+
+- fix(ci): normalize version tags by stripping multiple leading "v" characters
+
 ## v0.3.17
 
 - fix(build): update version handling and add Windows builtin support

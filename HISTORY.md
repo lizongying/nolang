@@ -1,5 +1,9 @@
 # 更新日誌
 
+## v0.3.18
+
+- fix(ci): normalize version tags by stripping multiple leading "v" characters
+
 ## v0.3.17
 
 - fix(build): update version handling and add Windows builtin support
