@@ -1,0 +1,10 @@
+{
+  "name": "compiler",
+  "mirrors": [],
+  "dependencies": {},
+  "compiler": {
+    "version": "dev",
+    "link-libs": [],
+    "anonymous-fn-type": false,
+  },
+}

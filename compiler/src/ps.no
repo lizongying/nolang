@@ -1,0 +1,821 @@
+; ═════════════════════════════════════════════════════════════════
+; ps — Nolang 語法分析器（M2 的第一片）
+; ═════════════════════════════════════════════════════════════════
+;
+; 目標（M2，見 docs/design/nolang-selfhost.md §5.3）：把 token 串
+; （lx.scan-all 的產物）解析成 ast 的 arena，使 `noc ast <file>` 的 dump
+; 與 L2 oracle `no ast <file>` **逐位元組相同**。
+;
+; ⚠️ 本檔是【第一片】——只涵蓋足以重現下列最小 fixture 的子集合：
+;   * `42`                                  ExpressionStatement + IntegerLiteral
+;   * `main = () { 42 }`                    FunctionDefinition + BlockStatement
+;   * `x = 1` / `b = true` / `s = 'hi'`     LetStatement + 型別推論（i64/bool/str）
+;   尚未涵蓋：明示型別標註、infix/前綴運算式、多數陳述與運算式種類、參數
+;   型別與預設值、註解、annotations。這些是後續增量擴充的目標。
+;
+; ── arena 的建構順序（關鍵不變式）──────────────────────────────────
+; `ast.add` 在呼叫當下把 `kid0` 固定成「目前 kids 陣列的長度」。因此必須
+; **先建子節點（含它們的子樹），再建父節點並 kid-add 子節點**（自底向上），
+; 這樣每個節點的 kid0 才會正確指到它在 kids 陣列裡的子樹起點。所有
+; ps-parse-* 都遵守這個順序。
+;
+; ── 必須複製的是「建構路徑」，不只是語義（§5.3.2）──────────────────
+;   `x = 1` 的型別不是寫在原始碼裡的，而是 Go 端 lowering 推論出 `i64`、
+;   並在 NamedType 上標 `inferred: true`。noc 要綠燈就必須在同一路徑上
+;   合成這個 NamedType——本檔的 ps-infer-type 就是做這件事。
+;
+; ── SHS 合規 ──────────────────────────────────────────────────────
+;   無模組級可變狀態、無一等函式值、無指針、無 map 欄位。
+; ⚠️ 整數運算預設回 option<int>：每條算術陳述都要 #{overflow=wrap}。
+; ⚠️ 讀 `arr[i]`（i 非字面量）要 #{index-out=zero}。
+; ⚠️ `;` 是**行註解**，不是陳述分隔符。
+; ⚠️ `(cond) { … }` 才是迴圈；`v: { … }` 是 match 臂。
+;
+; ── 結構體回傳值的釋放陷阱（oracle 後端缺陷，見 docs/design/
+;    nolang-selfhost.md §2.2.x / 記憶）─────────────────────────────
+;   tk 結構體含 7 個 str 欄位。**實測（noc 編譯产物，M2）**：「把
+;   []tk 的元素讀進一個結構體暫存值」是**淺別名**（`t = p.toks[i]` 不
+;   深拷貝 str 欄位），於是任何持有這份別名的區域變數在作用域結束時
+;   會釋放**仍住在 toks 向量裡**的字串緩衝：第一次釋放僥倖無事，第二
+;   次（同一元素的另一份別名、或向量自身解構時）就是 malloc abort
+;   （RC=134「pointer being freed was not allocated」）。「先指派給區
+;   域變數」並**不能**防住這個坑。
+;   ⇒ 本檔守則（已驗證有效）：
+;     · 只需型別時用 `ps-peek` / `ps-peek-at`（回傳 i64，用鏈式欄位讀
+;       `p.toks[i].typ`，不產生結構體別名）；
+;     · 需要完整 token 時 `ps-peek-token` 逐欄位重建，str 欄位一律
+;       `.copy()`（強制新分配，切斷與向量元素的共享）；
+;     · `ps-bump` 只前進 pos，**不得**用 `_ = ps-peek-token(p)` 來表達
+;       「吃 token」的意圖。
+
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/tok
+
+; ── 解析器狀態 ──
+; ⚠️ 結構體名 psst（不是 ps）：模組短名是 ps（來自 `# /compiler/src/ps`），
+;    若結構體也叫 ps 會和模組名撞名，導致 EmitLLVM: unknown callee ps.new。
+;   跨模組呼叫寫 ps.new / ps.parse —— 必須對應【裸】函式名 `new` / `parse`
+;   （lx.no 的 lx.dump → 裸 `dump` 是同樣規則）。
+psst {
+    toks []tk
+    pos i64
+    warn i64
+}
+
+; new：掃描原始碼，建立解析器（跨模組呼叫寫 ps.new → 必須是裸函式名 `new`）
+new = (src str) (r psst) {
+    r = psst {
+        toks: lx.scan-all(src)
+        pos: 0
+        warn: 0
+    }
+}
+
+; ps-peek：目前 token 的型別（越界視為 EOF）。回傳 i64——避免回傳帶字串欄位
+;   的 tk 結構體當作暫存值（會觸發釋放崩潰）。
+ps-peek = (p psst) (typ i64) {
+    i = p.pos
+    i >= p.toks.len() -> {
+        typ = tok.EOF
+        return
+    }
+
+    #{index-out=zero}
+    typ = p.toks[i].typ
+}
+
+; ps-peek-token：目前 token 的完整結構體。逐欄位重建 + str `.copy()`，
+;   回傳的 tk 持有全新字串，呼叫端可安全指派/讀欄位（見檔頭守則）。
+ps-peek-token = (p psst) (t tk) {
+    t = tk {
+        ln: 0
+        cl: 0
+        typ: 0
+        lit: ''
+        raw: ''
+        mk: ''
+        emsg: ''
+    }
+    p.pos >= p.toks.len() -> return
+
+    #{index-out=zero}
+    t.ln = p.toks[p.pos].ln
+    t.cl = p.toks[p.pos].cl
+    t.typ = p.toks[p.pos].typ
+    t.lit = p.toks[p.pos].lit.copy()
+    t.raw = p.toks[p.pos].raw.copy()
+    t.mk = p.toks[p.pos].mk.copy()
+    t.emsg = p.toks[p.pos].emsg.copy()
+}
+
+; ps-peek-at：向前看 k 個 token（0 = 目前）的型別（越界視為 EOF）。
+ps-peek-at = (p psst, k i64) (typ i64) {
+
+    #{overflow=wrap}
+    i = p.pos + k
+    i >= p.toks.len() -> {
+        typ = tok.EOF
+        return
+    }
+
+    #{index-out=zero}
+    typ = p.toks[i].typ
+}
+
+; ps-is-func：判斷【目前 pos（LPAREN）】起是否為 `(...) {` 形式（即
+;   `name = ` 右側是 FunctionLiteral）。⚠️ 單看首個 LPAREN 不够：實測
+;   `a = (x)` 被误判成函式定義 → 進入 ps-parse-block 後找不到 RBRACE 永轉。
+;   從 LPAREN 掃到平衡的 RPAREN，再確認下一個非 trivia token 是 LBRACE。
+ps-is-func = (p psst) (r i64) {
+    r = 0
+    depth = 0
+    i = 0
+    go = true
+    (go) {
+        t = ps-peek-at(p, i)
+        t == tok.EOF -> go = false
+        go -> {
+            t == tok.LPAREN -> {
+
+                #{overflow=wrap}
+                depth = depth + 1
+            }
+            t == tok.RPAREN -> {
+
+                #{overflow=wrap}
+                depth = depth - 1
+                depth == 0 -> {
+
+                    ; 閉合瞭：往後找第一個非 trivia token
+                    #{overflow=wrap}
+                    k = i + 1
+                    nt = ps-peek-at(p, k)
+                    (nt == tok.NEWLINE) {
+
+                        #{overflow=wrap}
+                        k = k + 1
+                        nt = ps-peek-at(p, k)
+                    }
+                    (nt == tok.COMMENT) {
+
+                        #{overflow=wrap}
+                        k = k + 1
+                        nt = ps-peek-at(p, k)
+                    }
+                    nt == tok.LBRACE -> r = 1
+                    go = false
+                }
+            }
+
+            #{overflow=wrap}
+            i = i + 1
+        }
+    }
+}
+
+; ps-bump：消費目前 token 並前進（回傳 void）。
+; ⚠️ 這裡**不能**寫 `_ = ps-peek-token(p)`「消費暫存值」：捨棄回傳的 tk
+;    會觸發「釋放不存在的指標」（見檔頭「結構體回傳值的釋放陷阱」）。
+;    bump 只需要前進 pos，不讀 token。
+ps-bump = (p psst) {
+
+    #{overflow=wrap}
+    p.pos = p.pos + 1
+}
+
+; ps-skip-trivia：跳過 NEWLINE / COMMENT（詞法上不影響 AST 結構）
+ps-skip-trivia = (p psst) {
+    go = true
+    (go) {
+        t = ps-peek(p)
+        {
+            t == tok.NEWLINE -> ps-bump(p)
+
+            t == tok.COMMENT -> ps-bump(p)
+
+            -> go = false
+        }
+    }
+}
+
+; ps-expect：若目前 token 是 want 就消費它（容錯：不符也繼續）
+ps-expect = (p psst, want i64) {
+    ps-peek(p) == want -> ps-bump(p)
+
+    -> {}
+}
+
+; ── 進入點 ──
+; ps-parse：解析整份原始碼，回傳 Program 節點索引。
+;
+; ⚠️ 單一回傳值（i64）：arena `t` 與解析器 `p` 由呼叫端建立並作為【輸入參數】
+;    傳入。單一回傳值的函式會【借用】結構體輸入參數（不會在函式內釋放），
+;    與 ast_test.no 中反覆呼叫 `ast.add(t, …)` 同形——呼叫端在 ps-parse 返回
+;    後仍能安全使用 `t`（例如 ast.dump(t, root)）。
+;    （多回傳值含結構體 `(r ast, root i64)` 在 oracle 後端會被錯誤 lowering：
+;     函式本體不執行、回傳 0，見本次除錯紀錄。）
+;
+; ⚠️ arena 建構順序（關乎正確性，不只是風格外）：`ast.add` 在呼叫當下把
+;    kid0 固定為「當時 kids.len()」，而父節點自己【不】佔 kids 槽位。因此
+;    必須【先解析完全部子節點（它們的子樹已依序追加），再 add 父節點，
+;    最後依序 kid-add 子節點】——即本函式把 Program 留到最後才 add。
+;    （若先 add 父再建子，子的子樹會插在父的 kid 範圍前面，dump 會把孫
+;     節點錯置成父的直接子節點——實測 `42` 曾因此少印 ExpressionStatement。）
+parse = (t ast, p psst) (root i64) {
+    stmts []i64 = with-cap(4)
+    ps-skip-trivia(p)
+    (ps-peek(p) != tok.EOF) {
+        pos0 = p.pos
+        s = ps-parse-stmt(t, p)
+        s > 0 -> stmts.push(s)
+
+        ; ⚠️ 進度守則：未覆蓋的語法會回 idx=0 且不吃 token，無此守則時
+        ;    迴圈永轉（實測：`noc ast src/std/char.no` busy-spin）。
+        ;    對齊 oracle 的錯誤恢復屬於 M3/L3 的範疇；在此之前以
+        ;    「強制前進一律終止」取代當機。
+        p.pos == pos0 -> ps-bump(p)
+        ps-skip-trivia(p)
+    }
+    root = ast.add(t, asp.K_PROGRAM)
+    j = 0
+    (j < stmts.len()) {
+        ast.kid-add(t, root, stmts[j])
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+
+    ; Program 的 HDR 有 SCALAR warnings（pol=COUNT）→ 設為 '0' 即不印出
+    ; ⚠️ warnings 計數：oracle 每 parse 一個 if/elif/else 就 saveWarning 一次
+    ;   （src/parser/expr.go::parseIfExpression），Program.warnings 累加。
+    ast.set-count(t, root, 0, stmts.len())
+    ast.set-slot(t, root, 0, ast.put-str(t, p.warn.to-str()))
+    root
+}
+
+; ps-parse-stmt：解析一條陳述（頂層或區塊內通用）
+ps-parse-stmt = (t ast, p psst) (idx i64) {
+    idx = 0
+    ps-skip-trivia(p)
+    tk = ps-peek-token(p)
+    {
+        tk.typ == tok.IF -> {
+            inner = ps-parse-if(t, p)
+            inner > 0 -> {
+                idx = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+                ast.kid-add(t, idx, inner)
+            }
+        }
+
+        tk.typ == tok.IDENT -> {
+            name = tk.lit
+            nxt_typ = ps-peek-at(p, 1)
+            nxt2_typ = ps-peek-at(p, 2)
+
+            ; ⚠️ 用 `handled` 旗標而非裸 `-> ...` 預設臂：實測同块多臂時，尾
+            ;   臂 `-> idx = expr` 會被當作**尾隨無條件陳述**執行，覆寫前面
+            ;   ASSIGN 臂已經算好的 idx（表現為 `x = 1` dump 出 `Program{}`）。
+            ;   原 `-> {}` 不傷是因為它是 no-op。
+            handled = 0
+            nxt_typ == tok.ASSIGN -> {
+                ps-bump(p); 消費 IDENT
+                ps-bump(p); 消費 ASSIGN
+                a2 = ps-peek-token(p)
+                a2.typ == tok.LPAREN -> {
+
+                    ; `= (...) {` 才是函式定義；`= (expr)` 是括號運算式（見 ps-is-func）
+                    ps-is-func(p) == 1 -> idx = ps-parse-func(t, p, name)
+
+                    -> idx = ps-parse-let(t, p, name)
+                }
+
+                -> idx = ps-parse-let(t, p, name)
+                handled = 1
+            }
+
+            ; 明示型別標註：`name TYPE = expr`（第一片只認 NamedType 形式的標註）
+            nxt_typ == tok.IDENT && nxt2_typ == tok.ASSIGN -> {
+                ps-bump(p); 消費 IDENT
+
+                ; 先取型別名（仍在 IDENT 之后的位置），然后手动前进到 ASSIGN 之后
+                tt = ps-peek-token(p)
+                tn = tt.lit
+                ps-bump(p); 消費型別名
+                ps-bump(p); 消費 ASSIGN
+                val = ps-parse-expr(t, p)
+                typ = ast.add(t, asp.K_NAMED_TYPE)
+                ast.set-slot(t, typ, 0, ast.put-str(t, tn))
+
+                ; 明示標註：不設 inferred（slot1 留 0 → dump 不印 inferred: true）
+                idx = ast.add(t, asp.K_LET_STATEMENT)
+                ast.set-slot(t, idx, 0, ast.put-str(t, name))
+                ast.kid-add(t, idx, typ)
+                ast.kid-add(t, idx, val)
+                handled = 1
+            }
+
+            ; 其他 IDENT 開頭的句法（呼叫語、運算子等）一律走運算式陳述，
+            ;   不先消費 IDENT（否则會把 `f(1,2)` 拆成兩個 token）。
+            handled == 0 -> idx = ps-parse-expr-stmt(t, p)
+        }
+
+        -> idx = ps-parse-expr-stmt(t, p)
+    }
+    idx
+}
+
+; ps-parse-expr-stmt：運算式陳述 `42`
+ps-parse-expr-stmt = (t ast, p psst) (idx i64) {
+    idx = 0
+    e = ps-parse-expr(t, p)
+    e > 0 -> {
+        idx = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+        ast.kid-add(t, idx, e)
+    }
+    idx
+}
+
+; ps-parse-expr：解析一個運算式（預設最低優先級）
+ps-parse-expr = (t ast, p psst) (idx i64) {
+    idx = ps-parse-expr-prec(t, p, 0)
+}
+
+; ps-op-prec：中綴 token 型別 → 優先級（照抄 src/parser/expr.go 的 precedences map）。
+;   LOWEST=0 / COMMA=1 / CONDITIONAL=2 / LOGICAL_OR=3 / LOGICAL_AND=4 /
+;   EQUALS=5 / LESSGREATER=6 / SUM=7 / PRODUCT=8 / PREFIX=9 / CALL=10。
+;   回 0 = 不是中綴運算子（含 COMMA/QUESTION/AS/LPAREN──它倆在 Go 裡進這張表
+;   但不在 infixOperators 集合，這裡一視同仁不作為二元運算子處理）。
+; ⚠️ Go 表的 quirks 必須復刻：SHL/SHR/AND 是 PRODUCT(8)；OR/XOR 是 SUM(7)。
+ps-op-prec = (typ i64) (r i64) {
+    r = 0
+    {
+        typ == tok.LOR -> r = 3
+
+        typ == tok.LAND -> r = 4
+
+        typ == tok.EQUALS -> r = 5
+
+        typ == tok.NOT_EQUALS -> r = 5
+
+        typ == tok.LESS -> r = 6
+
+        typ == tok.LESS_EQUALS -> r = 6
+
+        typ == tok.GREATER -> r = 6
+
+        typ == tok.GREATER_EQUALS -> r = 6
+
+        typ == tok.OR -> r = 7
+
+        typ == tok.XOR -> r = 7
+
+        typ == tok.ADD -> r = 7
+
+        typ == tok.SUB -> r = 7
+
+        typ == tok.SHL -> r = 8
+
+        typ == tok.SHR -> r = 8
+
+        typ == tok.AND -> r = 8
+
+        typ == tok.MUL -> r = 8
+
+        typ == tok.QUO -> r = 8
+
+        typ == tok.MOD -> r = 8
+
+        -> {
+        }
+    }
+}
+
+; ps-parse-expr-prec：優先級爬升解析（對應 Go parseExpression(precedence)）。
+;   左結合：只吞「優先級**嚴格大於** prec」的運算子（Go 的迴圈條件
+;   `currentPrecedence() > precedence`）。遞迴右運算元時傳入**運算子自身**
+;   的優先級（Go parseInfixExpression 的 `parseExpression(precedence)`）。
+ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
+
+    ; 運算式開頭跳過 trivia（Go 只跳 NEWLINE；本實作連 COMMENT 一齊跳，
+    ; 與 Go 的差異僅在「運算子後紧跟行內註解」的罕見排版，L2 差分可偵測）
+    ps-skip-trivia(p)
+    idx = 0
+    tk = ps-peek-token(p)
+    {
+        tk.typ == tok.INT -> {
+
+            ; value：解析成 i64 再轉十進位字串（與 Go 的 %v 對齊）
+            ; raw：原始碼文字（直接解析的字串字面量不設 Raw，見 §5.3.2）
+            v = tk.lit.to-i64().to-str()
+            idx = ast.add(t, asp.K_INTEGER_LITERAL)
+            ast.set-slot(t, idx, 0, ast.put-str(t, v))
+            ast.set-slot(t, idx, 1, ast.put-str(t, tk.lit))
+            ps-bump(p)
+        }
+
+        tk.typ == tok.FLOAT -> {
+
+            ; value = ParseFloat 後的 %v 呈現（'1.0'⇒1、'1.50'⇒1.5）；raw = 原 token 文字
+            v = tk.lit.to-f64().to-str()
+            idx = ast.add(t, asp.K_FLOAT_LITERAL)
+            ast.set-slot(t, idx, 0, ast.put-str(t, v))
+            ast.set-slot(t, idx, 1, ast.put-str(t, tk.lit))
+            ps-bump(p)
+        }
+
+        tk.typ == tok.STRING -> {
+            idx = ast.add(t, asp.K_STRING_LITERAL)
+            ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+
+            ; raw 留 0（直接解析 → 不印 raw）
+            ps-bump(p)
+        }
+
+        tk.typ == tok.TRUE -> {
+            idx = ast.add(t, asp.K_BOOLEAN_LITERAL)
+            ast.set-slot(t, idx, 0, ast.put-str(t, 'true'))
+            ps-bump(p)
+        }
+
+        tk.typ == tok.FALSE -> {
+            idx = ast.add(t, asp.K_BOOLEAN_LITERAL)
+            ast.set-slot(t, idx, 0, ast.put-str(t, 'false'))
+            ps-bump(p)
+        }
+
+        tk.typ == tok.NIL -> {
+            idx = ast.add(t, asp.K_NIL_LITERAL)
+            ps-bump(p)
+        }
+
+        tk.typ == tok.IDENT -> {
+            idx = ast.add(t, asp.K_IDENTIFIER)
+            ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+            ps-bump(p)
+        }
+
+        tk.typ == tok.LPAREN -> {
+
+            ; (expr) → GroupedExpression{ expr }（dump 無標頭欄位，僅一個子節點）
+            ps-bump(p)
+            inner = ps-parse-expr-prec(t, p, 0)
+            ps-skip-trivia(p)
+            ps-expect(p, tok.RPAREN)
+            idx = ast.add(t, asp.K_GROUPED_EXPRESSION)
+            inner > 0 -> ast.kid-add(t, idx, inner)
+        }
+
+        tk.typ == tok.SUB -> {
+
+            ; 前綴負號：不折進字面量（Oracle：-3 ⇒ PrefixExpression{-} / IntegerLiteral{3, raw:3}）
+            ps-bump(p)
+            right = ps-parse-expr-prec(t, p, 9); PREFIX 優先級
+            idx = ast.add(t, asp.K_PREFIX_EXPRESSION)
+            ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+            right > 0 -> ast.kid-add(t, idx, right)
+        }
+
+        tk.typ == tok.NOT -> {
+            ps-bump(p)
+            right = ps-parse-expr-prec(t, p, 9); PREFIX 優先級
+            idx = ast.add(t, asp.K_PREFIX_EXPRESSION)
+            ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+            right > 0 -> ast.kid-add(t, idx, right)
+        }
+
+        tk.typ == tok.LBRACKET -> {
+
+            ; [e1, e2, …] → SliceLiteral{elements: N}
+            ; 規則源於 Go parseSliceLiteral：跳 LBRACKET、跳 NEWLINE、空 [] 直接回；
+            ; 否則逗號分隔解析運算式直到 RBRACKET。
+            ps-bump(p)
+            els []i64 = with-cap(4)
+            ps-skip-trivia(p)
+            {
+                ps-peek(p) == tok.RBRACKET -> {
+                    ps-bump(p)
+                }
+
+                -> {
+                    (ps-peek(p) != tok.RBRACKET && ps-peek(p) != tok.EOF) {
+                        pos0 = p.pos
+                        e = ps-parse-expr-prec(t, p, 0)
+                        e > 0 -> els.push(e)
+                        ps-skip-trivia(p)
+
+                        ; ⚠️ 展開多行：`;` 是行註解，單行寫法會吃掉閉合 `}`
+                        ps-peek(p) == tok.COMMA -> {
+                            ps-bump(p)
+                            ps-skip-trivia(p)
+                        }
+                        p.pos == pos0 -> ps-bump(p)
+                    }
+                    ps-expect(p, tok.RBRACKET)
+                }
+            }
+            idx = ast.add(t, asp.K_SLICE_LITERAL)
+            ast.set-slot(t, idx, 0, ast.put-str(t, els.len().to-str()))
+            ast.set-count(t, idx, 0, els.len())
+            m = 0
+            (m < els.len()) {
+                ast.kid-add(t, idx, els[m])
+
+                #{overflow=wrap}
+                m = m + 1
+            }
+        }
+
+        -> {
+        }
+    }
+
+    ; ---------- 後綴迴圈：呼叫 `f(...)` / 成員 `a.b` ----------
+    ; Go 在 parseExpression 的主循環中將 LPAREN 歸為 CALL(10)
+    ; 優先級最高 ⇒ 只要能看见就必須绑定（outer prec 永远 < 10）。
+    ; DOT 不在 precedences 表中，Go 在链式呼叫/成员访问中直接处理
+    ; ⇒ 這裡一律绑定，不比較 prec。
+    pgo = true
+    (pgo) {
+        nt = ps-peek(p)
+        nt == tok.LPAREN -> {
+
+            ; 消耗 LPAREN，依逗號分隔解析实参，直到 RPAREN
+            ps-bump(p)
+            args []i64 = with-cap(4)
+            ps-skip-trivia(p)
+            (ps-peek(p) != tok.RPAREN) {
+                pos0 = p.pos
+                a = ps-parse-expr-prec(t, p, 0)
+                a > 0 -> args.push(a)
+                ps-skip-trivia(p)
+                ps-peek(p) == tok.COMMA -> {
+                    ps-bump(p)
+                    ps-skip-trivia(p)
+                }
+
+                ; 防呆：未消耗任何 token 则前进一步避免永转
+                p.pos == pos0 -> ps-bump(p)
+            }
+            ps-expect(p, tok.RPAREN)
+
+            ; arena 順序：Function (idx) 与 args 子树已完成 → add 父后依序 kid-add
+            call = ast.add(t, asp.K_CALL_EXPRESSION)
+
+            ; slot 0 = "args" 纯量的预渲染（kvc=NON-ZERO 政策：0 不印）
+            ast.set-slot(t, call, 0, ast.put-str(t, args.len().to-str()))
+
+            ; count slot 0 = KIDS 迭代次数（Arguments 切片长度）
+            ast.set-count(t, call, 0, args.len())
+            ast.kid-add(t, call, idx)
+            k = 0
+            (k < args.len()) {
+                ast.kid-add(t, call, args[k])
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+            idx = call
+        }
+        nt == tok.DOT -> {
+            ps-bump(p)
+            ps-skip-trivia(p)
+            pn = ps-peek-token(p)
+            pname = pn.lit
+            ps-expect(p, tok.IDENT)
+
+            ; DotExpression dump 只一个 CHILD(Receiver)；property 是字串槽 0
+            dot = ast.add(t, asp.K_DOT_EXPRESSION)
+            ast.set-slot(t, dot, 0, ast.put-str(t, pname))
+            ast.kid-add(t, dot, idx)
+            idx = dot
+        }
+
+        -> pgo = false
+    }
+
+    ; 中綴迴圈（Go：for currentToken != EOF && currentPrecedence() > precedence）
+    ; 注意：**不**在檢查運算子前跳 trivia──句尾 NEWLINE 優先級 0 自然終止迴圈。
+    go = true
+    (go) {
+        optyp = ps-peek(p)
+        oprec = ps-op-prec(optyp)
+        go = oprec > prec
+        go -> {
+            otk = ps-peek-token(p)
+            ps-bump(p)
+            right = ps-parse-expr-prec(t, p, oprec)
+            right > 0 -> {
+
+                ; arena 順序：左右子樹均已完成 → 先 add 父，再依序 kid-add
+                node = ast.add(t, asp.K_INFIX_EXPRESSION)
+                ast.set-slot(t, node, 0, ast.put-str(t, otk.lit))
+                ast.kid-add(t, node, idx)
+                ast.kid-add(t, node, right)
+                idx = node
+            }
+
+            ; 右運算元缺失：Go 報錯後回左值；這裡保留左值並終止迴圈
+            right <= 0 -> go = false
+        }
+    }
+    idx
+}
+
+; ps-parse-let：解析 `name = expr`（推論型別：字面量→NamedType，SliceLiteral→SliceType(NamedType)）
+ps-parse-let = (t ast, p psst, name str) (idx i64) {
+    val = ps-parse-expr(t, p)
+    typ = 0
+
+    ; SliceLiteral RHS → 建 SliceType(inferred) 包 NamedType(elemType, inferred)
+    ; 復刻 Go stmt.go 中 `case *SliceLiteral: stmt.Type = &SliceType{...}` 的路徑
+    val > 0 -> {
+        d = ast.nd-at(t, val)
+        {
+            d.kind == asp.K_SLICE_LITERAL -> {
+                elem = ps-elem-type-of(t, val)
+                inner = ast.add(t, asp.K_NAMED_TYPE)
+                ast.set-slot(t, inner, 0, ast.put-str(t, elem))
+                ast.set-slot(t, inner, 1, ast.put-str(t, 'true'))
+                typ = ast.add(t, asp.K_SLICE_TYPE)
+                ast.set-slot(t, typ, 0, ast.put-str(t, 'true'))
+                ast.kid-add(t, typ, inner)
+            }
+
+            -> {
+                tn = ps-infer-type(t, val)
+                tn != '' -> {
+                    typ = ast.add(t, asp.K_NAMED_TYPE)
+                    ast.set-slot(t, typ, 0, ast.put-str(t, tn))
+                    ast.set-slot(t, typ, 1, ast.put-str(t, 'true'))
+                }
+            }
+        }
+    }
+    idx = ast.add(t, asp.K_LET_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, name))
+    ast.kid-add(t, idx, typ)
+    ast.kid-add(t, idx, val)
+    idx
+}
+
+; ps-elem-type-of：从 SliceLiteral 的首元素推論元素型别名（空切片默认 i64）
+;   規則同 Go stmt.go:1177-1201：IntegerLiteral→i64, Float→f64,
+;   String→str, Bool→bool, default→i64。
+ps-elem-type-of = (t ast, sl i64) (r str) {
+    r = 'i64'
+    d = ast.nd-at(t, sl)
+    d.nkid <= 0 -> return
+    firstKid = ast.kid-at(t, d.kid0)
+    firstKid <= 0 -> return
+    e = ast.nd-at(t, firstKid)
+    {
+        e.kind == asp.K_INTEGER_LITERAL -> r = 'i64'
+
+        e.kind == asp.K_FLOAT_LITERAL -> r = 'f64'
+
+        e.kind == asp.K_STRING_LITERAL -> r = 'str'
+
+        e.kind == asp.K_BOOLEAN_LITERAL -> r = 'bool'
+
+        -> r = 'i64'
+    }
+}
+
+; ps-infer-type：依 RHS 字面量種類推論預設型別（§5.3.2 的 desugar 路徑）。
+;   回 '' = 不推斷（Oracle 對非标量 RHS 不建 NamedType）。
+ps-infer-type = (t ast, val i64) (r str) {
+    r = ''
+    val <= 0 -> return
+    d = ast.nd-at(t, val)
+    {
+        d.kind == asp.K_INTEGER_LITERAL -> r = 'i64'
+
+        d.kind == asp.K_FLOAT_LITERAL -> r = 'f64'
+
+        d.kind == asp.K_BOOLEAN_LITERAL -> r = 'bool'
+
+        d.kind == asp.K_STRING_LITERAL -> r = 'str'
+
+        -> r = ''
+    }
+}
+
+; ps-parse-func：解析 `name = (params) { body }`
+ps-parse-func = (t ast, p psst, name str) (idx i64) {
+    ps-bump(p); 消費 LPAREN
+    params []i64 = with-cap(4)
+    (ps-peek(p) != tok.RPAREN) {
+        pn = ps-parse-param(t, p)
+        pn > 0 -> params.push(pn)
+        pn == 0 -> ps-bump(p); 防呆：沒解析出參數也要前進
+    }
+    ps-bump(p); 消費 RPAREN
+    ps-skip-trivia(p)
+    ps-expect(p, tok.LBRACE); 進入 body
+    body = ps-parse-block(t, p)
+    ps-expect(p, tok.RBRACE); 結束 body
+    idx = ast.add(t, asp.K_FUNCTION_DEFINITION)
+    ast.set-slot(t, idx, 0, ast.put-str(t, name))
+
+    ; SIG：泛型參數 0 / 參數 params.len() / 回傳值 0
+    ast.set-sig(t, idx, 0, params.len(), 0)
+    j = 0
+    (j < params.len()) {
+        ast.kid-add(t, idx, params[j])
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+    ast.kid-add(t, idx, body)
+    idx
+}
+
+; ps-parse-param：解析一個參數 `name [type]`（第一片：型別為可選的 NamedType）
+ps-parse-param = (t ast, p psst) (idx i64) {
+    idx = 0
+    tk = ps-peek-token(p)
+    tk.typ != tok.IDENT -> return
+    pname = tk.lit
+    ps-bump(p); 消費參數名
+    typ = 0
+    nxt = ps-peek-token(p)
+    nxt.typ == tok.IDENT -> {
+        tn = nxt.lit
+        ps-bump(p)
+        typ = ast.add(t, asp.K_NAMED_TYPE)
+        ast.set-slot(t, typ, 0, ast.put-str(t, tn))
+    }
+    idx = ast.add(t, asp.K_PARAMETER)
+    ast.set-slot(t, idx, 0, ast.put-str(t, pname))
+    typ > 0 -> ast.kid-add(t, idx, typ)
+    idx
+}
+
+; ps-parse-block：解析 `{ stmts }`（同 parse：子節點全建完才 add 父節點）
+ps-parse-block = (t ast, p psst) (idx i64) {
+    stmts []i64 = with-cap(4)
+    ps-skip-trivia(p)
+    (ps-peek(p) != tok.RBRACE) {
+        pos0 = p.pos
+        s = ps-parse-stmt(t, p)
+        s > 0 -> stmts.push(s)
+        p.pos == pos0 -> ps-bump(p)
+        ps-skip-trivia(p)
+    }
+    idx = ast.add(t, asp.K_BLOCK_STATEMENT)
+    j = 0
+    (j < stmts.len()) {
+        ast.kid-add(t, idx, stmts[j])
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+    ast.set-count(t, idx, 0, stmts.len())
+    idx
+}
+
+; ps-parse-if：解析 `if cond { ... } [else { ... }]`
+;   ⚠️ Oracle 在 expr.go::parseIfExpression 每遇到一個 if 關鍵字就 saveWarning 一次；
+;     需同步 p.warn 的計數，Program 的 dump 才能出現 `warnings: N`。
+;   ⚠️ ELIF 舆 `if/else` 共享同一入口（Go 将 elif desugar 为 else { if ... }），
+;     本增量先不支援 ELIF（待下一個 t14）。
+;   ⚠️ spec CHILD 數 = 3 (Condition/Consequence/Alternative)——缺 Alternative
+;     時也要 push 0 占位（否則 dumper 的 cur 指標會跟 kid 陣列位置錯位）。
+ps-parse-if = (t ast, p psst) (idx i64) {
+
+    ; 消費 if 關鍵字 + 记一笔警告
+    ps-bump(p)
+
+    #{overflow=wrap}
+    p.warn = p.warn + 1
+
+    ; 條件運算式（LOWEST 優先級，與 Go parseExpression(LOWEST) 一致）
+    cond = ps-parse-expr(t, p)
+
+    ; 條件到 LBRACE 之間可能有 NEWLINE/COMMENT——一律跳過
+    ps-skip-trivia(p)
+    ps-expect(p, tok.LBRACE)
+    then = ps-parse-block(t, p)
+    ps-expect(p, tok.RBRACE)
+
+    ; 探測 else（允许 `}\nelse {` 或 `} else {`）
+    ; Go 端先跳 NEWLINE 再检查 ELSE，此处同构
+    ps-skip-trivia(p)
+    alt = 0
+    ps-peek(p) == tok.ELSE -> {
+        ps-bump(p)
+        ps-skip-trivia(p)
+        ps-expect(p, tok.LBRACE)
+        alt = ps-parse-block(t, p)
+        ps-expect(p, tok.RBRACE)
+    }
+
+    ; arena：先建 cond/then/alt 子樹，再建父，依序 kid-add
+    idx = ast.add(t, asp.K_IF_EXPRESSION)
+    ast.kid-add(t, idx, cond)
+    ast.kid-add(t, idx, then)
+    ast.kid-add(t, idx, alt)
+    idx
+}

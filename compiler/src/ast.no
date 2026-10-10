@@ -1,0 +1,1417 @@
+; ═══════════════════════════════════════════════════════════════════
+; ast — AST arena（POD）+ `no ast` dump 解譯器
+; ═══════════════════════════════════════════════════════════════════
+;
+; 目標（M2，見 docs/design/nolang-selfhost.md §5.3）：讓 `noc ast <file>` 的輸出
+; 與 L2 oracle `no ast <file>` **逐位元組相同**。
+;
+; ── 為什麼是 arena + i64 索引（§5.1.1）─────────────────────────────
+; AST 是有向圖（型別互相引用、符號互相引用，可能成環）。Nolang 的所有權模型
+; 無法表達環。而且 `[]T` 擴容會重新分配，任何指向舊緩衝的位址立即失效。
+; 索引永遠有效，且環可以自由表達。
+;
+; ⚠️ `nd` 必須是 **POD**：全部欄位都是 i64，字串以 id 指向 strs / aux 池。
+;    這一條是硬約定（§5.1.1）：含擁有堆的欄位會在 push 時被深拷貝，
+;    而 POD 的拷貝成本是固定的。
+;
+; ── 為什麼是「規格表 + 解譯器」而不是 71 個手寫函式 ────────────────
+; 規格表在 compiler/src/asp.no（**自動生成**，來源是 dump.go 的型別 switch）。
+; 同一份表已經在 Go 上重放並與 dump.go 對拍：src/parser/dump/spec_gen_test.go
+; 走全語料 528 檔、逐位元組一致 ⇒ **表本身已被證明忠實**。
+; 本檔只需要忠實「解譯」那張表，不必再承擔 71 段輸出序列的轉錄風險。
+;
+; ── 表的槽位模型（與 asp.no 檔頭同步）────────────────────────────
+; HDR     = (op, name-id, braces, child-ordinal(node_of)+1 或 0, absent-id)
+; SCALAR  = (op, policy, render, of, label-id | ref<<24)
+;   ref：OF-TYPE / OF-NODE-STRING / OF-LOCAL(render=nodeString)
+;        → **CHILD 序號**（值來自子節點，不佔槽位）
+;        其餘 → 節點的字串槽序號 s0..s8（parser 已預先渲染好）
+; CHILD   = (op, field-id, guard, 0, 0)
+; KIDS    = (op, field-id, skip_nil, ptr, 0)
+; HELPER  = (op, field-id, skip_nil, helper-id, 0)
+; SELFHELPER = (op, helper-id, 0, 0, 0)
+; 其餘    = (op, 0, 0, 0, 0)
+;
+; ⚠️ **為什麼純量槽一律是「字串槽」而不是「字串槽 + 整數槽」**：
+;    render 包含 float，而 Go 的 `%v` 對 float64 的輸出無法從 i64 還原。
+;    改由 parser 預先渲染成字串後，解譯器只需 `wanted(policy, val)` 一個決策點。
+;
+; ── 本檔目前的覆蓋範圍（M2 進行中，**刻意可量測**）────────────────
+;   已接線：OP-HDR / OP-SCALAR / OP-COMMENTS / OP-CHILD / OP-KIDS /
+;           OP-FREE / OP-BETWEEN / OP-TRAILING / OP-CLOSING /
+;           OP-IMPLEMENTS / OP-SIG / OP-HELPER（僅 taggedEnumField）
+;   未接線：OP-SELF-HELPER（AnnotationEntry）、OP-HELPER 的
+;           interfaceMethod / annotationStructField 兩支
+; ⚠️ 未接線的指令會讓 `.unsup` 計數 +1（**不是**靜默略過），
+;    所以「這個 fixture 的 dump 可不可信」是可判定的：ast.unsupported(t) == 0。
+;
+; ⚠️ **OP-ANNOTS 是 no-op，且這不是遺漏**：Go 端的規格表本身也不模擬
+;    `Options.Annotations`（見 spec_gen_test.go 的 opAnnots 註解）。
+;    因此本檔的 dump 對應的是 **`-annotations` 關閉** 的情形。
+;    語料的 L2 對拍（528 檔）也全是在 annotations 關閉下做的。
+;
+; ── `.gaps`：不影響輸出、但「不可重現」的診斷計數 ─────────────────
+;   * `exprToString` 的 `default: fmt.Sprintf("%v", e)` 印的是 Go 結構體
+;     傾印（含 lexer.Token），**無法**在 Nolang 重現。
+;   * 已實測：全語料 262 個 ArrayType.Size 全部是 *IntegerLiteral
+;     （見 §5.3.1 的探針），故此分支目前不可達。
+;   命中時輸出 `<expr?(` + 型別名 + `)>`（刻意醜，避免被當成正確輸出），
+;   並讓 ast.gaps(t) > 0。
+;
+; ── SHS 合規 ──────────────────────────────────────────────────────
+;   無模組級可變狀態、無一等函式值、無指針、無 map 欄位。
+; ⚠️ 一律用【普通函式 + 顯式結構體參數】，不用方法：
+;    帶 map 欄位的結構體 + 方法 + 跨模組會炸（見 compiler/src/util/intern.no 檔頭）。
+; ⚠️ 整數運算預設回 option<int>：每條算術陳述都要 #{overflow=wrap}。
+; ⚠️ 讀 `x = arr[i]`（i 非字面量）要 #{index-out=zero}；寫入位置不需要。
+;
+; ⚠️ 為什麼 type-string / expr-string 在本檔而不是 ty.no：
+;    §4.3 的依賴圖是 `ast ──► ty`（ast 在上游）。dump 需要 `Type.String()`，
+;    若把它放進 ty.no 就會形成 ast ⇄ ty 循環。故**dump 專用的兩個摘要印表機**
+;    留在 ast.no；ty.no 負責型別的**文法解析**與語意查詢。
+
+# /compiler/src/asp
+# /compiler/src/util/sb.sb
+
+; ── 節點資料（POD；字串一律以 id 指向 ast.strs / ast.aux）──────────
+;
+; 槽位分區（每一區都從 0 起算，互不重疊）：
+;   c0..c2   KIDS 各組的元素數（由 ast.set-count 填入）
+;   c3..c5   SIG 的三組節點數：泛型參數 / 參數 / 回傳值
+;   s0..s8   純量字串槽（MAX-STR-SLOTS = 9，由生成器實測）
+;   varunion / varflag   SIG 的 VariadicUnion 字串 id / IsVariadic
+;   doc / cmt            Doc / Comment 的**首條**註解文字 id（0 = 無群組，-1 = 空群組）
+;   free / btw           FreeComments / BetweenComments 的註解條數（-1 = 無群組）
+;   ct0                  ast.aux 的起點：本節點的 [trailing][closing][implements] 區段
+;   ntrail / nclos / nimp  三段各自的條數（-1 = 無群組 / 0 = 無）
+;   hcount / hbase       HELPER 的元素數 / aux 中 (name-id, tnode) 成對區段的起點
+nd {
+    kind i64
+    kid0 i64
+    nkid i64
+    c0 i64
+    c1 i64
+    c2 i64
+    c3 i64
+    c4 i64
+    c5 i64
+    s0 i64
+    s1 i64
+    s2 i64
+    s3 i64
+    s4 i64
+    s5 i64
+    s6 i64
+    s7 i64
+    s8 i64
+    varunion i64
+    varflag i64
+    doc i64
+    cmt i64
+    free i64
+    btw i64
+    ct0 i64
+    ntrail i64
+    nclos i64
+    nimp i64
+    hcount i64
+    hbase i64
+}
+
+ast {
+    nodes []nd
+    kids []i64
+    strs []str
+    aux []i64
+    tape []i64
+    kinds []i64
+    n i64
+    unsup i64
+    gaps i64
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 建構
+; ═══════════════════════════════════════════════════════════════════
+
+zero-nd = () (d nd) {
+    d = nd {
+        kind: 0
+        kid0: 0
+        nkid: 0
+        c0: 0
+        c1: 0
+        c2: 0
+        c3: 0
+        c4: 0
+        c5: 0
+        s0: 0
+        s1: 0
+        s2: 0
+        s3: 0
+        s4: 0
+        s5: 0
+        s6: 0
+        s7: 0
+        s8: 0
+        varunion: 0
+        varflag: 0
+        doc: 0
+        cmt: 0
+        free: -1
+        btw: -1
+        ct0: 0
+        ntrail: -1
+        nclos: -1
+        nimp: 0
+        hcount: 0
+        hbase: 0
+    }
+}
+
+; make: 建立空 arena（索引 0 保留為「無節點」；strs/aux 的索引 0 亦保留）
+make = () (r ast) {
+    r = ast {
+        nodes: []
+        nd
+        kids: []
+        i64
+        strs: asp.strs()
+        aux: []
+        i64
+        tape: asp.tape()
+        kinds: asp.kinds()
+        n: 0
+        unsup: 0
+        gaps: 0
+    }
+    z = ast.zero-nd()
+    r.nodes.push(z)
+    r.aux.push(0)
+    r.n = 1
+}
+
+; add: 新增節點，回傳其索引（>= 1）
+add = (t ast, kind i64) (idx i64) {
+    d = ast.zero-nd()
+    d.kind = kind
+    d.kid0 = t.kids.len()
+    t.nodes.push(d)
+
+    #{overflow=wrap}
+    t.n = t.n + 1
+
+    #{overflow=wrap}
+    idx = t.n - 1
+}
+
+; kid-add: 把子節點索引附加到節點 i 的 kids 區段
+kid-add = (t ast, i i64, c i64) {
+    t.kids.push(c)
+    d = ast.nd-at(t, i)
+
+    #{overflow=wrap}
+    d.nkid = d.nkid + 1
+    ast.nd-put(t, i, d)
+}
+
+; set-count: 第 slot 個 KIDS 指令的元素數（slot 從 0 起）
+set-count = (t ast, i i64, slot i64, v i64) {
+    d = ast.nd-at(t, i)
+    {
+        slot == 0 -> d.c0 = v
+
+        slot == 1 -> d.c1 = v
+
+        slot == 2 -> d.c2 = v
+
+        -> {
+        }
+    }
+    ast.nd-put(t, i, d)
+}
+
+; set-sig: SIG 的三組節點數（泛型參數 / 參數 / 回傳值）
+set-sig = (t ast, i i64, ng i64, np i64, nr i64) {
+    d = ast.nd-at(t, i)
+    d.c3 = ng
+    d.c4 = np
+    d.c5 = nr
+    ast.nd-put(t, i, d)
+}
+
+; set-slot: 第 slot 個純量字串槽（slot 從 0 起；**不含** doc/cmt）
+set-slot = (t ast, i i64, slot i64, v i64) {
+    d = ast.nd-at(t, i)
+    {
+        slot == 0 -> d.s0 = v
+
+        slot == 1 -> d.s1 = v
+
+        slot == 2 -> d.s2 = v
+
+        slot == 3 -> d.s3 = v
+
+        slot == 4 -> d.s4 = v
+
+        slot == 5 -> d.s5 = v
+
+        slot == 6 -> d.s6 = v
+
+        slot == 7 -> d.s7 = v
+
+        slot == 8 -> d.s8 = v
+
+        -> {
+        }
+    }
+    ast.nd-put(t, i, d)
+}
+
+; set-sig-extras: SIG 的 VariadicUnion 與 IsVariadic
+set-sig-extras = (t ast, i i64, union i64, variadic i64) {
+    d = ast.nd-at(t, i)
+    d.varunion = union
+    d.varflag = variadic
+    ast.nd-put(t, i, d)
+}
+
+; set-doc / set-cmt: 節點自己的 Doc / Comment（存**首條**註解文字的 str id；
+; 0 = 無群組，-1 = 有群組但空的 —— 後者 dump.go 會印出沒有換行的 "Doc: "）
+set-doc = (t ast, i i64, v i64) {
+    d = ast.nd-at(t, i)
+    d.doc = v
+    ast.nd-put(t, i, d)
+}
+
+set-cmt = (t ast, i i64, v i64) {
+    d = ast.nd-at(t, i)
+    d.cmt = v
+    ast.nd-put(t, i, d)
+}
+
+; set-comments: free / btw 的註解條數（-1 = 無群組）
+set-comments = (t ast, i i64, free i64, btw i64) {
+    d = ast.nd-at(t, i)
+    d.free = free
+    d.btw = btw
+    ast.nd-put(t, i, d)
+}
+
+; aux-begin: 開始本節點的 aux 區段（trailing → closing → implements 依序 append）
+aux-begin = (t ast, i i64) (base i64) {
+    base = t.aux.len()
+    d = ast.nd-at(t, i)
+    d.ct0 = base
+    ast.nd-put(t, i, d)
+}
+
+; aux-add: 追加一個 aux 值（註解文字 id / implements 字串 id）
+aux-add = (t ast, v i64) {
+    t.aux.push(v)
+}
+
+; set-aux-counts: 三段 aux 區段的條數
+set-aux-counts = (t ast, i i64, ntrail i64, nclos i64, nimp i64) {
+    d = ast.nd-at(t, i)
+    d.ntrail = ntrail
+    d.nclos = nclos
+    d.nimp = nimp
+    ast.nd-put(t, i, d)
+}
+
+; helper-begin: 開始本節點的 HELPER 區段（每個元素 2 個 aux 值：name-id, tnode）
+helper-begin = (t ast, i i64, count i64) (base i64) {
+    base = t.aux.len()
+    d = ast.nd-at(t, i)
+    d.hcount = count
+    d.hbase = base
+    ast.nd-put(t, i, d)
+}
+
+; put-str: 把字串駐留進池，回傳其**索引**（空字串回 0）
+;
+; ⚠️ 回傳值是**索引**不是「1 起算的 id」：asp.strs() 已經在索引 0 放了一個
+;    空字串，所以表的 id（1..N）與池的索引**恰好重合**（strs[sid] 就是那個
+;    字串）。新增的字串接在後面，索引就是 len-1。
+;    早期版本回傳 len（1 起算），會讓 str-at 讀到隔壁一格 —— 症狀是
+;    `warnings: ` 少印、而 `value` 印成下一個字串的內容。
+put-str = (t ast, s str) (id i64) {
+    id = 0
+    s.len-bytes() == 0 -> return
+    i <- [0..t.strs.len()): {
+
+        #{index-out=zero}
+        cur = t.strs[i]
+        cur.eq-full(s) -> {
+            id = i
+            return
+        }
+    }
+    t.strs.push(s)
+
+    #{overflow=wrap}
+    id = t.strs.len() - 1
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 存取
+; ═══════════════════════════════════════════════════════════════════
+nd-at = (t ast, i i64) (d nd) {
+    d = ast.zero-nd()
+    i <= 0 -> return
+    i >= t.n -> return
+
+    #{index-out=zero}
+    d = t.nodes[i]
+}
+
+nd-put = (t ast, i i64, d nd) {
+    i <= 0 -> return
+    i >= t.n -> return
+    t.nodes[i] = d
+}
+
+kid-at = (t ast, i i64) (v i64) {
+    v = 0
+    i < 0 -> return
+    i >= t.kids.len() -> return
+
+    #{index-out=zero}
+    v = t.kids[i]
+}
+
+; ins: 第 i 條指令的第 j 欄（每條 5 個 i64）
+ins = (t ast, i i64, j i64) (v i64) {
+    v = 0
+
+    #{overflow=wrap}
+    p = i * 5
+
+    #{overflow=wrap}
+    p = p + j
+    p < 0 -> return
+    p >= t.tape.len() -> return
+
+    #{index-out=zero}
+    v = t.tape[p]
+}
+
+; kind-f: 節點種類 k 的第 j 欄（每種 4 個 i64）
+kind-f = (t ast, k i64, j i64) (v i64) {
+    v = 0
+
+    #{overflow=wrap}
+    p = k * 4
+
+    #{overflow=wrap}
+    p = p + j
+    p < 0 -> return
+    p >= t.kinds.len() -> return
+
+    #{index-out=zero}
+    v = t.kinds[p]
+}
+
+str-at = (t ast, id i64) (r str) {
+    r = ''
+    id <= 0 -> return
+    id >= t.strs.len() -> return
+
+    #{index-out=zero}
+    r = t.strs[id]
+}
+
+aux-at = (t ast, idx i64) (v i64) {
+    v = 0
+    idx <= 0 -> return
+    idx >= t.aux.len() -> return
+
+    #{index-out=zero}
+    v = t.aux[idx]
+}
+
+nd-c = (d nd, j i64) (v i64) {
+    v = 0
+    {
+        j == 0 -> v = d.c0
+
+        j == 1 -> v = d.c1
+
+        j == 2 -> v = d.c2
+
+        -> {
+        }
+    }
+}
+
+nd-s = (d nd, j i64) (v i64) {
+    v = 0
+    {
+        j == 0 -> v = d.s0
+
+        j == 1 -> v = d.s1
+
+        j == 2 -> v = d.s2
+
+        j == 3 -> v = d.s3
+
+        j == 4 -> v = d.s4
+
+        j == 5 -> v = d.s5
+
+        j == 6 -> v = d.s6
+
+        j == 7 -> v = d.s7
+
+        j == 8 -> v = d.s8
+
+        -> {
+        }
+    }
+}
+
+; child-at: 預掃出來的 CHILD 節點索引陣列的第 ref 項（越界回 0）
+child-at = (t ast, childs []i64, ref i64) (v i64) {
+    v = 0
+    ref < 0 -> return
+    ref >= childs.len() -> return
+
+    #{index-out=zero}
+    v = childs[ref]
+}
+
+; ── 讀回存取器（給測試與除錯用；ps.no 不需要）────────────────────
+kind-at = (t ast, i i64) (v i64) {
+    d = ast.nd-at(t, i)
+    v = d.kind
+}
+
+slot-at = (t ast, i i64, j i64) (v i64) {
+    d = ast.nd-at(t, i)
+    v = ast.nd-s(d, j)
+}
+
+count-at = (t ast, i i64, j i64) (v i64) {
+    d = ast.nd-at(t, i)
+    v = ast.nd-c(d, j)
+}
+
+nkid-at = (t ast, i i64) (v i64) {
+    d = ast.nd-at(t, i)
+    v = d.nkid
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 輸出輔助
+; ═══════════════════════════════════════════════════════════════════
+indent = (o sb, depth i64) {
+    j = 0
+    (j < depth) {
+        o.push('    ')
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+}
+
+; line: 「縮排 + s + 換行」
+line = (o sb, depth i64, s str) {
+    ast.indent(o, depth)
+    o.push(s)
+    o.push-byte(10)
+}
+
+; sub: 位元組切片（等價於 Go 的 s[a:b]，a/b 都是位元組索引）
+sub = (s str, a i64, b i64) (r str) {
+    t = sb.init(16)
+    i = a
+    (i < b) {
+        t.push-byte(s.byte(i))
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    r = t.str()
+}
+
+; trim-nl: 去掉尾端的換行（等價於 Go 的 strings.TrimRight(s, "\n")）
+trim-nl = (s str) (r str) {
+    n = s.len-bytes()
+    (n > 0) {
+
+        #{overflow=wrap}
+        b = s.byte(n - 1)
+        b != 10 -> break
+
+        #{overflow=wrap}
+        n = n - 1
+    }
+    r = ast.sub(s, 0, n)
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; nodeString：標頭行裡的行內摘要（dump.go 的 (*dumper).nodeString）
+; ═══════════════════════════════════════════════════════════════════
+;
+; ⚠️ 與 typeString 的差別：nodeString **不**特判 nil，`%T` of nil 是 "<nil>"，
+;    所以 nil 節點要印成 "<nil>"；typeString 對 nil 回空字串。
+;
+; ⚠️ 7 個具名分支一律讀 **s0**：這是各節點自己的表中該欄位所在的槽位
+;    （Identifier.name / IntegerLiteral.value / FloatLiteral.value /
+;     StringLiteral.value / CharLiteral.value / BooleanLiteral.value 皆為 slot 0，
+;     已由生成器逐一驗證）。BooleanLiteral 的 bool 由 parser 預先渲染成
+;     'true'/'false'。
+node-string = (t ast, i i64) (r str) {
+    r = '<nil>'
+    i <= 0 -> return
+    d = ast.nd-at(t, i)
+    d.kind <= 0 -> return
+    k = d.kind
+    {
+        k == asp.K_IDENTIFIER -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_INTEGER_LITERAL -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_FLOAT_LITERAL -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_STRING_LITERAL -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_CHAR_LITERAL -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_BOOLEAN_LITERAL -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_NIL_LITERAL -> r = 'nil'
+
+        -> r = asp.kind-name(k)
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; typeString：型別摘要（等價於 dump.go 的 typeString → Type.String()）
+; ═══════════════════════════════════════════════════════════════════
+;
+; ⚠️ 這與「型別子節點也要遞迴印出」是兩件事：標頭行需要摘要，
+;    子節點行才是權威內容（§5.3.1 契約第 4 條）。
+;
+; ⚠️ 未列出的節點種類走 `default: fmt.Sprintf("%T", n)` ⇒ 印成
+;    `*parser.<型別名>`。這對 UnionType 是**精確**的（typeString 的
+;    switch 裡沒有 UnionType），且因為 kinds 表的名字就是 Go 的結構體名，
+;    對任何未列出的種類都精確。
+type-string = (t ast, i i64) (r str) {
+    r = ''
+    i <= 0 -> return
+    d = ast.nd-at(t, i)
+    d.kind <= 0 -> return
+    k = d.kind
+    {
+        k == asp.K_NAMED_TYPE -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_SLICE_TYPE -> r = '[]' - ast.type-string(t, ast.kid-at(t, d.kid0))
+
+        k == asp.K_ARRAY_TYPE -> {
+
+            ; ArrayType.String()：Size == nil ⇒ "[?]"；否則 "[" + exprToString(Size) + "]"
+            inner = '?'
+            sz = ast.kid-at(t, d.kid0)
+            sz > 0 -> inner = ast.expr-string(t, sz)
+
+            #{overflow=wrap}
+            r = '[' - inner - ']' - ast.type-string(t, ast.kid-at(t, d.kid0 + 1))
+        }
+
+        k == asp.K_MAP_TYPE -> {
+            r = '[' - ast.type-string(t, ast.kid-at(t, d.kid0))
+
+            #{overflow=wrap}
+            r = r - ']' - ast.type-string(t, ast.kid-at(t, d.kid0 + 1))
+        }
+
+        k == asp.K_NULLABLE_TYPE -> r = '?' - ast.type-string(t, ast.kid-at(t, d.kid0))
+
+        k == asp.K_POINTER_TYPE -> r = '*' - ast.type-string(t, ast.kid-at(t, d.kid0))
+
+        k == asp.K_VIEW_TYPE -> r = '&' - ast.type-string(t, ast.kid-at(t, d.kid0))
+
+        k == asp.K_FUNCTION_TYPE -> r = ast.fn-str(t, d)
+
+        -> r = '*parser.' - asp.kind-name(k)
+    }
+}
+
+; expr-string: 等價於 parser.exprToString（ArrayType 的大小運算式）
+expr-string = (t ast, i i64) (r str) {
+    r = ''
+    i <= 0 -> return
+    d = ast.nd-at(t, i)
+    k = d.kind
+    {
+        k == asp.K_INTEGER_LITERAL -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_IDENTIFIER -> r = ast.str-at(t, d.s0)
+
+        k == asp.K_STRING_LITERAL -> {
+            raw = ast.str-at(t, d.s1)
+            raw.len-bytes() > 0 -> r = raw
+
+            -> r = "'" - ast.str-at(t, d.s0) - "'"
+        }
+
+        k == asp.K_INFIX_EXPRESSION -> {
+            folded = ast.fold-int(t, d)
+            folded.len-bytes() > 0 -> r = folded
+
+            -> {
+                r = ast.expr-string(t, ast.kid-at(t, d.kid0))
+                r = r - ' ' - ast.str-at(t, d.s0) - ' '
+
+                #{overflow=wrap}
+                r = r - ast.expr-string(t, ast.kid-at(t, d.kid0 + 1))
+            }
+        }
+
+        -> {
+
+            ; ⚠️ Go 的 default 是 fmt.Sprintf("%v", e)：結構體傾印，無法重現。
+            #{overflow=wrap}
+            t.gaps = t.gaps + 1
+            r = '<expr?(' - asp.kind-name(k) - ')>'
+        }
+    }
+}
+
+; fold-int: 等價於 parser.evalConstIntExpr。可折疊時回十進位字串，否則回 ''
+;
+; ⚠️ 用 '' 當「不可折疊」的哨兵是安全的：成功折疊的結果一律非空（連 "0" 也非空）。
+fold-int = (t ast, d nd) (r str) {
+    r = ''
+    l = ast.kid-at(t, d.kid0)
+
+    #{overflow=wrap}
+    rr = ast.kid-at(t, d.kid0 + 1)
+    l <= 0 -> return
+    rr <= 0 -> return
+    ld = ast.nd-at(t, l)
+    rd = ast.nd-at(t, rr)
+    ld.kind != asp.K_INTEGER_LITERAL -> return
+    rd.kind != asp.K_INTEGER_LITERAL -> return
+    a = ast.str-at(t, ld.s0).to-i64()
+    b = ast.str-at(t, rd.s0).to-i64()
+    op = ast.str-at(t, d.s0)
+    {
+        op.eq-full('+') -> {
+
+            #{overflow=wrap}
+            r = ast.int-str(a + b)
+        }
+
+        op.eq-full('-') -> {
+
+            #{overflow=wrap}
+            r = ast.int-str(a - b)
+        }
+
+        op.eq-full('*') -> {
+
+            #{overflow=wrap}
+            r = ast.int-str(a * b)
+        }
+
+        op.eq-full('/') -> {
+            b != 0 -> {
+
+                #{overflow=wrap}
+                r = ast.int-str(a / b)
+            }
+        }
+
+        -> {
+        }
+    }
+}
+
+; int-str: i64 → 十進位字串（避免各處重複寫 `-` 的型別推斷問題）
+int-str = (v i64) (r str) {
+    r = v.to-str()
+}
+
+; fn-str: 等價於 FunctionType.String()
+fn-str = (t ast, d nd) (r str) {
+    r = 'fn('
+    np = d.c0
+    base = d.kid0
+    j = 0
+    (j < np) {
+        j > 0 -> r = r - ','
+
+        #{overflow=wrap}
+        r = r - ast.param-type(t, ast.kid-at(t, base + j))
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+    r = r - ')'
+    nr = d.c1
+    nr > 0 -> {
+        r = r - '('
+
+        #{overflow=wrap}
+        rb = base + np
+        m = 0
+        (m < nr) {
+            m > 0 -> r = r - ','
+
+            #{overflow=wrap}
+            r = r - ast.param-type(t, ast.kid-at(t, rb + m))
+
+            #{overflow=wrap}
+            m = m + 1
+        }
+        r = r - ')'
+    }
+}
+
+; param-type: Parameter.Type 的 typeString（Parameter 的第一個 CHILD 就是 Type）
+param-type = (t ast, pi i64) (r str) {
+    r = ''
+    pi <= 0 -> return
+    p = ast.nd-at(t, pi)
+    r = ast.type-string(t, ast.kid-at(t, p.kid0))
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; dump：解譯 asp.no 的指令帶
+; ═══════════════════════════════════════════════════════════════════
+
+; dump: 走訪 root 子樹，回傳完整文字（**不帶**尾端換行，與 dump.go 相同）
+dump = (t ast, root i64) (r str) {
+    o = sb.init(4096)
+    ast.node(t, o, root, 0)
+    r = ast.trim-nl(o.str())
+}
+
+; unsupported: 這次 dump 遇到幾個「尚未接線」的指令（0 ⇒ dump 可信）
+unsupported = (t ast) (n i64) {
+    n = t.unsup
+}
+
+; gaps: 幾個「不可重現」的摘要分支被命中（不影響 unsup，但值得追）
+gaps = (t ast) (n i64) {
+    n = t.gaps
+}
+
+; node: 印出節點 i 及其子樹
+node = (t ast, o sb, i i64, depth i64) {
+    i <= 0 -> {
+        ast.line(o, depth, '<nil>')
+        return
+    }
+    d = ast.nd-at(t, i)
+    d.kind <= 0 -> {
+        ast.line(o, depth, '<nil>')
+        return
+    }
+    first = ast.kind-f(t, d.kind, 1)
+    num = ast.kind-f(t, d.kind, 2)
+
+    #{overflow=wrap}
+    last = first + num
+
+    ; 預掃：把 CHILD / KIDS / SIG / HELPER 指到的節點索引依序收進 childs[]。
+    ; OF-TYPE / OF-NODE-STRING 的純量在**標頭行**就要用到它們，
+    ; 而 CHILD 指令排在標頭行之後 ⇒ 必須先掃一遍。
+    childs []i64 = with-cap(8)
+    cur = d.kid0
+    cslot = 0
+    j = 0
+    (j < num) {
+
+        #{overflow=wrap}
+        op = ast.ins(t, first + j, 0)
+        op == asp.OP-CHILD -> {
+            childs.push(ast.kid-at(t, cur))
+
+            #{overflow=wrap}
+            cur = cur + 1
+        }
+        op == asp.OP-KIDS -> {
+
+            #{overflow=wrap}
+            cur = cur + ast.nd-c(d, cslot)
+
+            #{overflow=wrap}
+            cslot = cslot + 1
+        }
+        op == asp.OP-SIG -> {
+
+            ; SIG 的三組節點（泛型參數 / 參數 / 回傳值）連續排在 kid 區
+            #{overflow=wrap}
+            cur = cur + d.c3
+
+            #{overflow=wrap}
+            cur = cur + d.c4
+
+            #{overflow=wrap}
+            cur = cur + d.c5
+        }
+        op == asp.OP-HELPER -> {
+
+            #{overflow=wrap}
+            cur = cur + d.hcount
+        }
+
+        -> {}
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+
+    ; 主掃：逐指令輸出
+    cur = d.kid0
+    kslot = 0
+    j = 0
+    (j < num) {
+
+        #{overflow=wrap}
+        ins = first + j
+        op = ast.ins(t, ins, 0)
+        {
+            op == asp.OP-HDR -> ast.header(t, o, d, ins, last, childs, depth)
+
+            op == asp.OP-SCALAR -> {
+            }
+
+            op == asp.OP-COMMENTS -> ast.comments(t, o, d, depth)
+
+            op == asp.OP-CHILD -> {
+                v = ast.kid-at(t, cur)
+
+                #{overflow=wrap}
+                cur = cur + 1
+                guard = ast.ins(t, ins, 2)
+                {
+                    v <= 0 -> {
+                        guard == 0 -> {
+
+                            #{overflow=wrap}
+                            ast.line(o, depth + 1, '<nil>')
+                        }
+
+                        -> {
+                        }
+                    }
+
+                    -> {
+
+                        #{overflow=wrap}
+                        ast.node(t, o, v, depth + 1)
+                    }
+                }
+            }
+
+            op == asp.OP-KIDS -> {
+                n = ast.nd-c(d, kslot)
+                skip = ast.ins(t, ins, 2)
+
+                #{overflow=wrap}
+                kslot = kslot + 1
+                m = 0
+                (m < n) {
+                    v = ast.kid-at(t, cur)
+
+                    #{overflow=wrap}
+                    cur = cur + 1
+                    {
+                        v <= 0 -> {
+                            skip == 0 -> {
+
+                                #{overflow=wrap}
+                                ast.line(o, depth + 1, '<nil>')
+                            }
+
+                            -> {
+                            }
+                        }
+
+                        -> {
+
+                            #{overflow=wrap}
+                            ast.node(t, o, v, depth + 1)
+                        }
+                    }
+
+                    #{overflow=wrap}
+                    m = m + 1
+                }
+            }
+
+            op == asp.OP-SIG -> {
+                ast.signature(t, o, d, depth)
+
+                #{overflow=wrap}
+                cur = cur + d.c3
+
+                #{overflow=wrap}
+                cur = cur + d.c4
+
+                #{overflow=wrap}
+                cur = cur + d.c5
+            }
+
+            op == asp.OP-HELPER -> {
+                hname = ast.str-at(t, ast.ins(t, ins, 3))
+                ast.helper(t, o, d, hname, cur, depth)
+
+                #{overflow=wrap}
+                cur = cur + d.hcount
+            }
+
+            op == asp.OP-FREE -> ast.free-comments(t, o, d, depth)
+
+            op == asp.OP-BETWEEN -> ast.between-comments(t, o, d, depth)
+
+            op == asp.OP-TRAILING -> ast.trailing-comments(t, o, d, depth)
+
+            op == asp.OP-CLOSING -> ast.closing-comments(t, o, d, depth)
+
+            op == asp.OP-IMPLEMENTS -> ast.implements(t, o, d, depth)
+
+            op == asp.OP-ANNOTS -> {
+            }
+
+            -> {
+
+                ; 尚未接線：計數，**不靜默略過**
+
+                #{overflow=wrap}
+                t.unsup = t.unsup + 1
+            }
+        }
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 註解
+; ═══════════════════════════════════════════════════════════════════
+
+; comments: Doc: //… 與 Comment: //…
+; ⚠️ commentGroupInline 只印群組的**第一條**註解（dump.go 的既有行為）。
+;    doc == -1 表示「群組存在但空」⇒ dump.go 只印出 "Doc: "，**沒有換行**。
+comments = (t ast, o sb, d nd, depth i64) {
+    d.doc != 0 -> {
+
+        #{overflow=wrap}
+        ast.indent(o, depth + 1)
+        o.push('Doc: ')
+        d.doc > 0 -> {
+            o.push('//')
+            o.push(ast.str-at(t, d.doc))
+            o.push-byte(10)
+        }
+    }
+    d.cmt != 0 -> {
+
+        #{overflow=wrap}
+        ast.indent(o, depth + 1)
+        o.push('Comment: ')
+        d.cmt > 0 -> {
+            o.push('//')
+            o.push(ast.str-at(t, d.cmt))
+            o.push-byte(10)
+        }
+    }
+}
+
+free-comments = (t ast, o sb, d nd, depth i64) {
+    d.free >= 0 -> {
+
+        #{overflow=wrap}
+        ast.indent(o, depth + 1)
+        o.push('FreeComments: ')
+        o.push(d.free.to-str())
+        o.push(' group(s)')
+        o.push-byte(10)
+    }
+}
+
+between-comments = (t ast, o sb, d nd, depth i64) {
+    d.btw >= 0 -> {
+
+        #{overflow=wrap}
+        ast.indent(o, depth + 1)
+        o.push('BetweenComments: ')
+        o.push(d.btw.to-str())
+        o.push(' group(s)')
+        o.push-byte(10)
+    }
+}
+
+; trailing / closing：aux[ct0 .. ct0+ntrail) 與 aux[ct0+ntrail .. +nclos)
+trailing-comments = (t ast, o sb, d nd, depth i64) {
+    d.ntrail >= 0 -> {
+
+        #{overflow=wrap}
+        ast.indent(o, depth + 1)
+        o.push('TrailingComments')
+        o.push-byte(10)
+        j = 0
+        (j < d.ntrail) {
+
+            #{overflow=wrap}
+            ast.indent(o, depth + 2)
+            o.push('//')
+
+            #{overflow=wrap}
+            o.push(ast.str-at(t, ast.aux-at(t, d.ct0 + j)))
+            o.push-byte(10)
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+    }
+}
+
+closing-comments = (t ast, o sb, d nd, depth i64) {
+    d.nclos >= 0 -> {
+
+        #{overflow=wrap}
+        ast.indent(o, depth + 1)
+        o.push('ClosingBraceComment')
+        o.push-byte(10)
+        base = d.ct0
+        d.ntrail > 0 -> {
+
+            #{overflow=wrap}
+            base = d.ct0 + d.ntrail
+        }
+        j = 0
+        (j < d.nclos) {
+
+            #{overflow=wrap}
+            ast.indent(o, depth + 2)
+            o.push('//')
+
+            #{overflow=wrap}
+            o.push(ast.str-at(t, ast.aux-at(t, base + j)))
+            o.push-byte(10)
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+    }
+}
+
+; implements: InterfaceDefinition.Implements []string，Go 端用 %v ⇒ "[a b c]"
+implements = (t ast, o sb, d nd, depth i64) {
+    d.nimp > 0 -> {
+
+        #{overflow=wrap}
+        ast.indent(o, depth + 1)
+        o.push('Implements: [')
+        base = d.ct0
+        d.ntrail > 0 -> {
+
+            #{overflow=wrap}
+            base = base + d.ntrail
+        }
+        d.nclos > 0 -> {
+
+            #{overflow=wrap}
+            base = base + d.nclos
+        }
+        j = 0
+        (j < d.nimp) {
+            j > 0 -> o.push(' ')
+
+            #{overflow=wrap}
+            o.push(ast.str-at(t, ast.aux-at(t, base + j)))
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+        o.push(']')
+        o.push-byte(10)
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 共用子結構
+; ═══════════════════════════════════════════════════════════════════
+
+; signature: FunctionDefinition / FunctionLiteral 的參數與回傳值區塊。
+;
+; ⚠️ 注意這裡的子節點印在 **depth**（不是 depth+1），與 dump.go 一致。
+; ⚠️ 泛型參數是 `[]*Identifier`，只印**名字**（不當節點遞迴）；
+;    nil 元素被跳過，且分隔符以「已附加的個數」為準（= strings.Join 語意）。
+signature = (t ast, o sb, d nd, depth i64) {
+    base = d.kid0
+    d.c3 > 0 -> {
+        ast.indent(o, depth)
+        o.push('GenericParams: ')
+        j = 0
+        k = 0
+        (j < d.c3) {
+
+            #{overflow=wrap}
+            v = ast.kid-at(t, base + j)
+            v > 0 -> {
+                k > 0 -> o.push(', ')
+                o.push(ast.node-string(t, v))
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+        o.push-byte(10)
+    }
+    d.varflag != 0 -> {
+        ast.indent(o, depth)
+        o.push('Variadic{')
+        u = ast.str-at(t, d.varunion)
+        u.len-bytes() > 0 -> {
+            o.push('union: ')
+            o.push(u)
+        }
+        o.push('}')
+        o.push-byte(10)
+    }
+
+    #{overflow=wrap}
+    p0 = base + d.c3
+    j = 0
+    (j < d.c4) {
+
+        #{overflow=wrap}
+        v = ast.kid-at(t, p0 + j)
+        v > 0 -> ast.node(t, o, v, depth)
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+
+    #{overflow=wrap}
+    r0 = p0 + d.c4
+    j = 0
+    (j < d.c5) {
+
+        #{overflow=wrap}
+        v = ast.kid-at(t, r0 + j)
+        v > 0 -> ast.node(t, o, v, depth)
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+}
+
+; helper: 分派非 Node 的子結構（dump.go 的 (*dumper).helper）
+;
+; ⚠️ 目前只接線 taggedEnumField —— 語料中**唯一可達**的一支
+;    （TaggedEnumVariant.Fields）。interfaceMethod（InterfaceDefinition）與
+;    annotationStructField（AnnotationStructValue）尚未接線，會計入 .unsup。
+;
+; 元素編碼：aux[hbase + 2j] = name 的 str id；
+;           aux[hbase + 2j + 1] = Type 節點索引（0 = 無 Type，-1 = 元素本身為 nil）
+helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
+    hname.eq-full('taggedEnumField') -> {
+        j = 0
+        (j < d.hcount) {
+
+            #{overflow=wrap}
+            nm = ast.str-at(t, ast.aux-at(t, d.hbase + 2 * j))
+
+            #{overflow=wrap}
+            ty = ast.aux-at(t, d.hbase + 2 * j + 1)
+            ty < 0 -> {
+
+                #{overflow=wrap}
+                ast.line(o, depth + 1, '<nil>')
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                ast.indent(o, depth + 1)
+                o.push('TaggedEnumField{name: ')
+                o.push(nm)
+                ts = ast.type-string(t, ty)
+                ts.len-bytes() > 0 -> {
+                    o.push(', type: ')
+                    o.push(ts)
+                }
+                o.push('}')
+                o.push-byte(10)
+                ty > 0 -> {
+
+                    #{overflow=wrap}
+                    ast.node(t, o, ty, depth + 2)
+                }
+            }
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+    }
+
+    -> {
+
+        #{overflow=wrap}
+        t.unsup = t.unsup + 1
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 標頭行與純量
+; ═══════════════════════════════════════════════════════════════════
+
+; header: 印一條 OP-HDR 指令（含其後緊跟的 OP-SCALAR 指令）
+;
+; ⚠️ SCALAR 的掃描必須**以本種類的指令範圍 last 為界**，不能只靠
+;    「下一條是不是 OP-SCALAR」——那會在跨越種類邊界時誤吞下一種的指令。
+header = (t ast, o sb, d nd, ins i64, last i64, childs []i64, depth i64) {
+    name = ast.str-at(t, ast.ins(t, ins, 1))
+    braces = ast.ins(t, ins, 2)
+    nof = ast.ins(t, ins, 3)
+    absent = ast.str-at(t, ast.ins(t, ins, 4))
+
+    ast.indent(o, depth)
+    o.push(name)
+    braces == 0 -> {
+        o.push-byte(10)
+        return
+    }
+    o.push('{')
+    nof > 0 -> {
+
+        ; 標頭內容是「某個子節點的行內摘要」；nil 時改用 absent
+
+        #{overflow=wrap}
+        v = ast.child-at(t, childs, nof - 1)
+        v <= 0 -> o.push(absent)
+
+        -> o.push(ast.node-string(t, v))
+    }
+
+    -> {
+
+        ; ⚠️ 分隔符必須寫在**值之前**，所以 scalar 回傳文字而不是直接寫進 o。
+        ;    早期版本先寫值、再推 ", "，結果每個節點都變成
+        ;    `IntegerLiteral{value: 42raw: 42, }`（逗號全部右移一格）。
+        sep = ''
+        k = ins
+
+        #{overflow=wrap}
+        k = k + 1
+        (k < last) {
+            ast.ins(t, k, 0) == asp.OP-SCALAR -> {
+                shown, txt = ast.scalar(t, d, k, childs)
+                shown == 1 -> {
+                    o.push(sep)
+                    o.push(txt)
+                    sep = ', '
+                }
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+
+            -> break
+        }
+    }
+    o.push('}')
+    o.push-byte(10)
+}
+
+; scalar: 渲染第 k 條 OP-SCALAR 指令，回傳 (是否印出, 文字)
+;
+; 指令欄位：(op, policy, render, of, label-id | ref<<24)
+scalar = (t ast, d nd, k i64, childs []i64) (shown i64, text str) {
+    shown = 0
+    text = ''
+    pol = ast.ins(t, k, 1)
+    ren = ast.ins(t, k, 2)
+    of = ast.ins(t, k, 3)
+    ddd = ast.ins(t, k, 4)
+
+    #{overflow=wrap}
+    ref = ddd / 16777216
+
+    #{overflow=wrap}
+    label = ast.str-at(t, ddd - ref * 16777216)
+    val = ''
+    {
+        of == asp.OF-TYPE -> val = ast.type-string(t, ast.child-at(t, childs, ref))
+
+        of == asp.OF-NODE-STRING -> val = ast.node-string(t, ast.child-at(t, childs, ref))
+
+        of == asp.OF-LOCAL -> {
+            ren == asp.R-NODE-STRING -> {
+                v = ast.child-at(t, childs, ref)
+                v <= 0 -> val = ''
+
+                -> val = ast.node-string(t, v)
+            }
+
+            -> val = ast.str-at(t, ast.nd-s(d, ref))
+        }
+
+        -> val = ast.str-at(t, ast.nd-s(d, ref))
+    }
+    shown = ast.wanted(pol, val)
+    shown == 1 -> {
+        b = sb.init(32)
+        label.len-bytes() > 0 -> {
+            b.push(label)
+            b.push(': ')
+        }
+        b.push(val)
+        text = b.str()
+    }
+}
+
+; wanted: 純量印出政策（dump.go 的 kv / kvs / kvb / kvn / kvc）
+wanted = (pol i64, val str) (yes i64) {
+    yes = 1
+    {
+        pol == asp.P-NON-EMPTY -> {
+            yes = 0
+            val.len-bytes() > 0 -> yes = 1
+        }
+
+        pol == asp.P-TRUE -> {
+            yes = 0
+            val.eq-full('true') -> yes = 1
+        }
+
+        pol == asp.P-NON-ZERO -> {
+            yes = 0
+            val.eq-full('0') -> {}
+
+            -> yes = 1
+        }
+
+        pol == asp.P-COUNT -> {
+            yes = 0
+            val.eq-full('0') -> {}
+
+            -> yes = 1
+        }
+
+        -> {
+        }
+    }
+}
+
+; [TEST] 結構體參數數量實驗
+one-ast = (a ast) (r i64) {
+    r = 0
+}
+
+two-ast = (a ast, b ast) (r i64) {
+    r = 0
+}

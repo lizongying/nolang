@@ -1,0 +1,257 @@
+; ═══════════════════════════════════════════════════════════════════
+; tok — TokenType 常量、名字表、關鍵字查找
+; ═══════════════════════════════════════════════════════════════════
+;
+; ⚠️ 常量區與 name() **由生成器產出，不要手改**。
+;    權威來源：src/lexer/token.go 的 iota 區塊。
+;    生成器：/tmp/notok/gen（以 lexer.TokenType(i).String() 取值；任何 UNKNOWN
+;    或缺名都讓生成**失敗**，而不是產出殘表）。
+;    為什麼要生成：92 常量 + 92 名字手抄必有轉錄風險，而「編號錯一位」肉眼最難發現。
+;    生成 + L1 全語料差分是兩道獨立的鎖。
+;
+; 命名：常量名**照抄 Go 的識別符**（含底線，如 NOT_EQUALS），使本檔與
+;    src/lexer/token.go 逐項對得上。跨模組引用寫 tok.IF / tok.NOT_EQUALS。
+;
+; ⚠️ 順序即編號，**不得重排**。
+;
+; SHS 合規：無結構體（避開方法命名雷區）、無一等函式值、無 map 欄位。
+; 三個自由函式的定義名**不含半形句點**（SHS S6）；跨模組呼叫寫 tok.name(c)。
+;
+; ⚠️ 定義順序：str-eq 必須在 keyword **之前**（本 repo 的呼叫一律向後引用）。
+
+; ── 常量（ILLEGAL=0 … TILDE=91）──
+ILLEGAL = 0
+EOF = 1
+NEWLINE = 2
+COMMENT = 3
+IDENT = 4
+INT = 5
+FLOAT = 6
+STRING = 7
+CHAR = 8
+REGEX = 9
+TRUE = 10
+FALSE = 11
+NIL = 12
+IF = 13
+ELIF = 14
+ELSE = 15
+RETURN = 16
+FOR = 17
+IN = 18
+BREAK = 19
+CONTINUE = 20
+SUPER = 21
+SELF = 22
+IT = 23
+USE = 24
+LABEL = 25
+HASH_LBRACE = 26
+AS = 27
+CHAN = 28
+PTR = 29
+SWITCH = 30
+CASE = 31
+DEFAULT = 32
+MATCH = 33
+MAP = 34
+RUN = 35
+AWY = 36
+CO = 37
+ASSIGN = 38
+ADD = 39
+SUB = 40
+MUL = 41
+QUO = 42
+MOD = 43
+EQUALS = 44
+NOT_EQUALS = 45
+LESS = 46
+LESS_EQUALS = 47
+GREATER = 48
+GREATER_EQUALS = 49
+LAND = 50
+LOR = 51
+INC = 52
+DEC = 53
+NOT = 54
+XOR = 55
+SHL = 56
+SHR = 57
+ARROW = 58
+RARROW = 59
+AND = 60
+OR = 61
+AND_NOT = 62
+STAR_STAR = 63
+BANG_BANG = 64
+ELLIPSIS = 65
+ADD_ASSIGN = 66
+SUB_ASSIGN = 67
+MUL_ASSIGN = 68
+QUO_ASSIGN = 69
+MOD_ASSIGN = 70
+AND_ASSIGN = 71
+OR_ASSIGN = 72
+XOR_ASSIGN = 73
+SHL_ASSIGN = 74
+SHR_ASSIGN = 75
+AND_NOT_ASSIGN = 76
+QUESTION_ASSIGN = 77
+LPAREN = 78
+RPAREN = 79
+LBRACE = 80
+RBRACE = 81
+LBRACKET = 82
+RBRACKET = 83
+COMMA = 84
+SEMICOLON = 85
+COLON = 86
+DOT = 87
+UNDERSCORE = 88
+AT = 89
+QUESTION = 90
+TILDE = 91
+
+; ── str-eq：逐位元組比較 ──
+; ⚠️ 必須先比 len-bytes()，否則前綴相同的短字串會誤判相等。
+;    注意 str.len() 回的是【碼點數】，不是位元組數。
+str-eq = (a str, b str) (yes bool) {
+    yes = false
+    na = a.len-bytes()
+    nb = b.len-bytes()
+    na != nb -> return
+    i <- [0..na): {
+        ca = a.byte(i)
+        cb = b.byte(i)
+        ca != cb -> return
+    }
+    yes = true
+}
+
+; ── name：code -> 識別符名（L1 差分實際比較的就是它）──
+name = (c i64) (r str) {
+    r = 'UNKNOWN'
+    c == ILLEGAL -> r = 'ILLEGAL'
+    c == EOF -> r = 'EOF'
+    c == NEWLINE -> r = 'NEWLINE'
+    c == COMMENT -> r = 'COMMENT'
+    c == IDENT -> r = 'IDENT'
+    c == INT -> r = 'INT'
+    c == FLOAT -> r = 'FLOAT'
+    c == STRING -> r = 'STRING'
+    c == CHAR -> r = 'CHAR'
+    c == REGEX -> r = 'REGEX'
+    c == TRUE -> r = 'TRUE'
+    c == FALSE -> r = 'FALSE'
+    c == NIL -> r = 'NIL'
+    c == IF -> r = 'IF'
+    c == ELIF -> r = 'ELIF'
+    c == ELSE -> r = 'ELSE'
+    c == RETURN -> r = 'RETURN'
+    c == FOR -> r = 'FOR'
+    c == IN -> r = 'IN'
+    c == BREAK -> r = 'BREAK'
+    c == CONTINUE -> r = 'CONTINUE'
+    c == SUPER -> r = 'SUPER'
+    c == SELF -> r = 'SELF'
+    c == IT -> r = 'IT'
+    c == USE -> r = 'USE'
+    c == LABEL -> r = 'LABEL'
+    c == HASH_LBRACE -> r = 'HASH_LBRACE'
+    c == AS -> r = 'AS'
+    c == CHAN -> r = 'CHAN'
+    c == PTR -> r = 'PTR'
+    c == SWITCH -> r = 'SWITCH'
+    c == CASE -> r = 'CASE'
+    c == DEFAULT -> r = 'DEFAULT'
+    c == MATCH -> r = 'MATCH'
+    c == MAP -> r = 'MAP'
+    c == RUN -> r = 'RUN'
+    c == AWY -> r = 'AWY'
+    c == CO -> r = 'CO'
+    c == ASSIGN -> r = 'ASSIGN'
+    c == ADD -> r = 'ADD'
+    c == SUB -> r = 'SUB'
+    c == MUL -> r = 'MUL'
+    c == QUO -> r = 'QUO'
+    c == MOD -> r = 'MOD'
+    c == EQUALS -> r = 'EQUALS'
+    c == NOT_EQUALS -> r = 'NOT_EQUALS'
+    c == LESS -> r = 'LESS'
+    c == LESS_EQUALS -> r = 'LESS_EQUALS'
+    c == GREATER -> r = 'GREATER'
+    c == GREATER_EQUALS -> r = 'GREATER_EQUALS'
+    c == LAND -> r = 'LAND'
+    c == LOR -> r = 'LOR'
+    c == INC -> r = 'INC'
+    c == DEC -> r = 'DEC'
+    c == NOT -> r = 'NOT'
+    c == XOR -> r = 'XOR'
+    c == SHL -> r = 'SHL'
+    c == SHR -> r = 'SHR'
+    c == ARROW -> r = 'ARROW'
+    c == RARROW -> r = 'RARROW'
+    c == AND -> r = 'AND'
+    c == OR -> r = 'OR'
+    c == AND_NOT -> r = 'AND_NOT'
+    c == STAR_STAR -> r = 'STAR_STAR'
+    c == BANG_BANG -> r = 'BANG_BANG'
+    c == ELLIPSIS -> r = 'ELLIPSIS'
+    c == ADD_ASSIGN -> r = 'ADD_ASSIGN'
+    c == SUB_ASSIGN -> r = 'SUB_ASSIGN'
+    c == MUL_ASSIGN -> r = 'MUL_ASSIGN'
+    c == QUO_ASSIGN -> r = 'QUO_ASSIGN'
+    c == MOD_ASSIGN -> r = 'MOD_ASSIGN'
+    c == AND_ASSIGN -> r = 'AND_ASSIGN'
+    c == OR_ASSIGN -> r = 'OR_ASSIGN'
+    c == XOR_ASSIGN -> r = 'XOR_ASSIGN'
+    c == SHL_ASSIGN -> r = 'SHL_ASSIGN'
+    c == SHR_ASSIGN -> r = 'SHR_ASSIGN'
+    c == AND_NOT_ASSIGN -> r = 'AND_NOT_ASSIGN'
+    c == QUESTION_ASSIGN -> r = 'QUESTION_ASSIGN'
+    c == LPAREN -> r = 'LPAREN'
+    c == RPAREN -> r = 'RPAREN'
+    c == LBRACE -> r = 'LBRACE'
+    c == RBRACE -> r = 'RBRACE'
+    c == LBRACKET -> r = 'LBRACKET'
+    c == RBRACKET -> r = 'RBRACKET'
+    c == COMMA -> r = 'COMMA'
+    c == SEMICOLON -> r = 'SEMICOLON'
+    c == COLON -> r = 'COLON'
+    c == DOT -> r = 'DOT'
+    c == UNDERSCORE -> r = 'UNDERSCORE'
+    c == AT -> r = 'AT'
+    c == QUESTION -> r = 'QUESTION'
+    c == TILDE -> r = 'TILDE'
+}
+
+; ── keyword：識別符 -> 關鍵字 code（照抄 src/lexer/token.go 的 lookupKeyword）──
+; 回 ILLEGAL(0) 表示不是關鍵字，呼叫端應視為 IDENT。
+; 刻意用相等比較鏈而非 map：SHS 禁「map 欄位 + 方法」，且只有 23 個關鍵字。
+keyword = (s str) (r i64) {
+    r = ILLEGAL
+    str-eq(s, 'if') -> r = IF
+    str-eq(s, 'elif') -> r = ELIF
+    str-eq(s, 'else') -> r = ELSE
+    str-eq(s, 'switch') -> r = SWITCH
+    str-eq(s, 'case') -> r = CASE
+    str-eq(s, 'default') -> r = DEFAULT
+    str-eq(s, 'match') -> r = MATCH
+    str-eq(s, 'for') -> r = FOR
+    str-eq(s, 'while') -> r = FOR
+    str-eq(s, 'in') -> r = IN
+    str-eq(s, 'return') -> r = RETURN
+    str-eq(s, 'break') -> r = BREAK
+    str-eq(s, 'continue') -> r = CONTINUE
+    str-eq(s, 'true') -> r = TRUE
+    str-eq(s, 'false') -> r = FALSE
+    str-eq(s, 'nil') -> r = NIL
+    str-eq(s, 'as') -> r = AS
+    str-eq(s, 'ptr') -> r = PTR
+    str-eq(s, 'chan') -> r = CHAN
+    str-eq(s, 'use') -> r = USE
+    str-eq(s, 'run') -> r = RUN
+    str-eq(s, 'awy') -> r = AWY
+    str-eq(s, 'co') -> r = CO
+}

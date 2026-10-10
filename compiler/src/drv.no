@@ -1,0 +1,188 @@
+; drv — CLI 分派（noc 的入口邏輯）
+;
+; M0 範圍：version / help 可用；tokens / ast / build 是明確的「未實作」骨架，
+; 以 rc=EXIT-NOTIMPL(3) 退出——讓差分 harness 能把「未實作」與「失敗」分開。
+;
+; 退出碼約定：
+;   0  EXIT-OK          成功
+;   1  EXIT-FAIL        一般失敗（編譯錯誤等）
+;   2  EXIT-USAGE       用法錯誤（未知子命令 / 缺參數）
+;   3  EXIT-NOTIMPL     尚未實作的子命令（M0 佔位）
+;
+; ⚠️ SHS：無模組級可變狀態、無一等函式值、無指針。
+
+; ⚠️ 導入寫 `# /compiler/src/lx`（**模組**形式），呼叫寫 lx.dump(...)。
+;    `# /path/mod.Type` 是【型別】導入形式（配 `<Type>.<method>` 呼叫）；
+;    lx.no 沒有宣告結構體，用型別形式會得到 `unknown callee lx.dump`。
+# /compiler/src/lx
+# /compiler/src/ast
+# /compiler/src/ps
+# /compiler/src/asp
+
+; ⚠️ 本檔的 drv.* 是**含點的自由函式**（沒有宣告 struct drv），因此受 SHS S6
+;    約束：每個定義的 out-param 至多 1 個，否則執行期 SIGSEGV。見 docs 附錄 A.6。
+
+EXIT-OK = 0
+EXIT-FAIL = 1
+EXIT-USAGE = 2
+EXIT-NOTIMPL = 3
+
+NOC-NAME = 'noc'
+NOC-VERSION = 'v0.0.1-m0'
+
+drv.name = () (r str) {
+    r = NOC-NAME
+}
+
+drv.version = () (r str) {
+    r = NOC-VERSION
+}
+
+; usage: 打印用法
+drv.usage = () {
+    print(NOC-NAME - ' — Nolang compiler (self-hosted, M0 skeleton)')
+    print('')
+    print('Usage: noc <command> [args]')
+    print('')
+    print('Commands:')
+    print('  version            print version')
+    print('  help               print this help')
+    print('  tokens <file>      dump token stream (not implemented in M0)')
+    print('  ast <file>         dump AST (not implemented in M0)')
+    print('  build <file|dir>   compile to executable (not implemented in M0)')
+}
+
+drv.cmd-version = () {
+    print(NOC-NAME - ' ' - NOC-VERSION)
+}
+
+; not-implemented: 統一的「未實作」出口
+drv.not-implemented = (what str) (code i64) {
+    eprint(NOC-NAME - ': command "' - what - '" is not implemented yet (M0 skeleton)')
+    code = EXIT-NOTIMPL
+}
+
+; cmd-tokens: dump 詞法 token 流
+; 輸出格式與 L1 oracle 逐位元組相同（見 compiler/src/lx.no 檔頭）。
+; ⚠️ 不要用 print 印「已帶尾端 \n 的字串」——print 自己會補一個 \n，
+;    那會多出一個空行。lx.dump 回的字串刻意**不帶**尾端 \n。
+drv.cmd-tokens = () (code i64) {
+    code = EXIT-OK
+    n = args.count()
+    n < 3 -> {
+        eprint(NOC-NAME - ': tokens requires a file argument')
+        code = EXIT-USAGE
+        return
+    }
+    path = args.get(2)
+
+    ; ⚠️ 必須用 read-bytes + to-bytes-str，**不能**用 fs.read-str：
+    ;    fs.read-str 最終呼叫 []byte.to-str()，而該方法（2026-09-06 起）
+    ;    是「byte → 碼點 → UTF-8 重新編碼」，對 >= 0x80 的位元組會二次編碼。
+    ;    實測：5 位元組檔 `; \xe7\xbb\xbc\n` 讀進來變成 15 位元組
+    ;    （每個高位元組變成 4 位元組）。詞法分析器必須看到**原始位元組**。
+    ;    見 docs/design/nolang-selfhost.md §8 P0-⑥。
+    ; ⚠️ nil = **檔案存在但長度為 0**（實測：fs.read-bytes 對 0 位元組檔回 nil，
+    ;    對不存在的路徑回 err）。空檔案是**合法**原始碼（詞法分析器應吐單一 EOF），
+    ;    所以 nil **不是**錯誤。不處理的話 `noc tokens <空檔>` 會 rc=1 而 oracle rc=0
+    ;    ⇒ L1 假 DIFF（語料中目前沒有空檔，故此缺陷目前是**潛伏**的）。
+    c = fs.read-bytes(path)
+    src = ''
+    got = false
+    c: {
+        ok -> {
+            src = it.to-bytes-str()
+            got = true
+        }
+
+        nil -> {
+            got = true
+        }
+
+        err -> {
+        }
+    }
+    got == false -> {
+        eprint(NOC-NAME - ': cannot read ' - path)
+        code = EXIT-FAIL
+        return
+    }
+    print(lx.dump(src))
+}
+
+; cmd-ast: 解析並 dump AST（M2）
+; 輸出與 L2 oracle `no ast <file>` 逐位元組相同（見 compiler/src/ast.no 檔頭）。
+; 讀檔走 read-bytes + to-bytes-str（與 cmd-tokens 同理由，§8 P0-⑥）。
+drv.cmd-ast = () (code i64) {
+    code = EXIT-OK
+    n = args.count()
+    n < 3 -> {
+        eprint(NOC-NAME - ': ast requires a file argument')
+        code = EXIT-USAGE
+        return
+    }
+    path = args.get(2)
+    c = fs.read-bytes(path)
+    src = ''
+    got = false
+    c: {
+        ok -> {
+            src = it.to-bytes-str()
+            got = true
+        }
+
+        nil -> {
+            got = true
+        }
+
+        err -> {
+        }
+    }
+    got == false -> {
+        eprint(NOC-NAME - ': cannot read ' - path)
+        code = EXIT-FAIL
+        return
+    }
+    t = ast.make()
+    p = ps.new(src)
+    root = ps.parse(t, p)
+    out = ast.dump(t, root)
+    print(out)
+}
+
+; dispatch: 依 argv[1] 分派；回傳行程退出碼
+drv.dispatch = () (code i64) {
+    code = EXIT-OK
+    n = args.count()
+    {
+        n <= 1 -> {
+            drv.usage()
+            code = EXIT-USAGE
+        }
+
+        -> {
+            cmd = args.get(1)
+            {
+                cmd == 'version' -> drv.cmd-version()
+
+                cmd == 'help' -> drv.usage()
+
+                cmd == '--help' -> drv.usage()
+
+                cmd == '-h' -> drv.usage()
+
+                cmd == 'tokens' -> code = drv.cmd-tokens()
+
+                cmd == 'ast' -> code = drv.cmd-ast()
+
+                cmd == 'build' -> code = drv.not-implemented('build')
+
+                -> {
+                    eprint(NOC-NAME - ': unknown command "' - cmd - '"')
+                    drv.usage()
+                    code = EXIT-USAGE
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,1476 @@
+; ═══════════════════════════════════════════════════════════════════
+; lx — 詞法分析器（M1）
+; ═══════════════════════════════════════════════════════════════════
+;
+; 忠實移植 src/lexer/lexer.go 的 scanToken() 與其所有輔助函式。
+; 「忠實」是字面意思：連 Go 的**缺陷**都照抄（見下方 raw string 一節），
+; 因為 L1 門禁比的是「與 no 逐 token 相同」，不是「比較正確」。
+;
+; 輸出格式（與 L1 oracle /tmp/notok 相同，逐位元組可比）：
+;     <line>:<col> <NAME> <lit> <raw> <marker> <err>
+;   - 六個欄位以單一空白分隔，行尾一個 \n
+;   - lit/raw/marker/err 經過 esc()：空字串寫成 `-`
+;   - esc：\\ → \\\\ 、\n → \\n 、\t → \\t 、\r → \\r 、
+;           < 0x20 或 >= 0x7f → \\xHH（小寫十六進位）、其餘原樣
+;
+; ── 為什麼 esc 要這麼囉唆 ──
+; 字面量可以含換行（塊註釋、raw string）與任意位元組。若直接輸出，
+; 一個 token 會佔多行，逐行 diff 就失去意義。十六進位轉義讓每個 token
+; 恰好一行，且**沒有歧義**（不需要猜「這個字面量原本長什麼樣」）。
+;
+; ── 已實測的關鍵事實（不要憑常識改）──
+; 1. `column` 數的是**位元組**，不是碼點（readChar 一次前進一個 byte）。
+; 2. NEWLINE token 的 column 恆為 0：readChar 見到 '\n' 時把 column 歸零，
+;    而 token 的位置是在 skipWhitespace 之後才取樣的。
+; 3. 識別符可以含 `-` 與 `_`（isLetter 含這兩個），所以 `foo-bar` 是**一個**
+;    IDENT，而 `a - b` 是三個 token。
+; 4. isDigit 對 >= 0x80 的位元組**恆為 false**（已實測：128 個位元組中 0 個）。
+; 5. isLetter 對 >= 0x80 只有 65 個位元組為真（拉丁-1 補充字母），見 lx-is-letter。
+; 6. `"..."` 是 **char** 字面量（必須恰好 1 個碼點），`'...'` 才是字串。
+;
+; ── ⚠️ 已知缺陷：raw string 的續行會吃掉字元（照抄，不修）──
+; src/lexer/lexer.go 的 readRawString 用 SaveState/RestoreState「回捲」，
+; 但 LexerState 只存 pos（token 索引，預掃描期間恆為 0）與 prevTokenType，
+; **沒有存字元位置** ⇒ 回捲是空操作。於是每一續行會先被跳過前導空白，
+; 再多吃掉一個字元。實測：
+;     反引號 + 換行 + "line1" + 換行 + "    indented" + 換行 + 反引號
+;   ⇒ 得到 "line1\nndented"（4 個空白消失，且 'i' 被吃掉）
+; 本檔**照抄此行為**（L1 要比逐位元組相同）。語料中沒有任何真正的
+; raw string 字面量（130 個檔案含反引號，但全在註解裡），故此缺陷目前
+; **不可達**。已記錄於 docs/design/nolang-selfhost.md §8。
+;
+; ── SHS 合規 ──
+; 無結構體方法（避開方法命名雷區）、無一等函式值、無 map 欄位、
+; 所有自由函式定義名**不含半形句點**（SHS S6）。
+
+; ⚠️ 導入形式有兩種，用錯會得到 "unknown callee / not defined"：
+;      `# /path/mod.Type`  → **型別**導入（配 `<Type>.<method>` 呼叫）
+;      `# /path/mod`       → **模組**導入（配 `<mod>.<定義名>` 呼叫）
+;    sb 是**結構體**，所以要用型別形式；tok 沒有結構體，用模組形式。
+;
+; 🔴 額外前提（否則本檔的 tok.X 全部讀成 0，且 `rc` 測不出來）：
+;    模組的頂層綁定**只有在【入口檔直接 import 該模組】時才會被生成**。
+;    本檔是依賴模組（main → drv → lx），所以 `compiler/main.no` 必須**直接**
+;    列出 `# /compiler/src/tok`（以及 sb），**即使 main 從不使用它們**。
+;    漏掉的話：`typ = tok.IDENT` 會靜默得到 0（= ILLEGAL），而
+;    `p == tok.X ->` 這種「常數當運算元」的寫法會**硬編譯失敗**（NoVal）。
+;    最小重現與完整判準：docs/design/nolang-selfhost.md §2.2.8 / §8 P0-⑤。
+# /compiler/src/tok
+# /compiler/src/util/sb.sb
+
+; ── 位元組常量 ──
+B-LF = 10
+B-TAB = 9
+B-CR = 13
+B-SP = 32
+B-BANG = 33
+B-DQ = 34
+B-HASH = 35
+B-PERCENT = 37
+B-AMP = 38
+B-SQ = 39
+B-LP = 40
+B-RP = 41
+B-STAR = 42
+B-PLUS = 43
+B-COMMA = 44
+B-MINUS = 45
+B-DOT = 46
+B-SLASH = 47
+B-DIG0 = 48
+B-DIG9 = 57
+B-COLON = 58
+B-SEMI = 59
+B-LT = 60
+B-EQ = 61
+B-GT = 62
+B-QM = 63
+B-AT = 64
+B-UP-A = 65
+B-UP-Z = 90
+B-LB = 91
+B-BS = 92
+B-RB = 93
+B-CARET = 94
+B-US = 95
+B-BT = 96
+B-LO-A = 97
+B-LO-Z = 122
+B-LC = 123
+B-PIPE = 124
+B-RC = 125
+B-TILDE = 126
+B-LOWER-X = 120
+B-UPPER-X = 88
+B-ESC-N = 110
+B-ESC-T = 116
+B-ESC-R = 114
+B-ESC-X = 120
+
+; ── 詞法狀態 ──
+; 欄位名刻意與 src/lexer/lexer.go 的 Lexer 對齊，方便逐行對照。
+lxst {
+    input str
+    pos i64     ; Go: position   目前字元（位元組）索引
+    rpos i64    ; Go: readPosition
+    ch i64      ; Go: ch（byte；0 = EOF）
+    line i64
+    col i64     ; Go: column
+    prev i64    ; Go: prevTokenType
+    last i64    ; 本檔自用：最後產出的 token 型別（供 dump 迴圈判斷 EOF）
+    count i64   ; 本檔自用：已產出的 token 數（決定要不要在行首補 \n）
+}
+
+; ── 一個 token 的記錄（M2 起：掃描與渲染分離）──
+;
+; 為什麼要有這個結構：M1 時 lx-scan-token 直接「掃描 + 渲染成字串」，只有 dump
+; 一個消費者。M2 的解析器需要**結構化的 token 陣列**；若為此另寫一份掃描邏輯，
+; 兩份必然漂移，而 L1 門禁只保護其中一份。⇒ 改成：掃描只填這個結構，渲染
+; （lx-fmt）與陣列化（scan-all）都是它的下游，兩條路徑不可能分歧。
+;
+; ⚠️ 欄位名 emsg 不能叫 err（err 是保留標識符，見下方 lx-fmt 的註釋）。
+; ⚠️ 結構體名 >= 2 字元（SHS）；`tk` 不與模組短名 `lx` 衝突。
+tk {
+    ln i64
+    cl i64
+    typ i64
+    lit str
+    raw str
+    mk str
+    emsg str
+}
+
+; tk.new：建立一個空 token（避免每個呼叫端各寫一次七行字面量）
+tk.new = () (r tk) {
+    r = tk {
+        ln: 0
+        cl: 0
+        typ: 0
+        lit: ''
+        raw: ''
+        mk: ''
+        emsg: ''
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 位元組分類（照抄 lexer.go 的 isLetter / isDigit / isHex）
+; ═══════════════════════════════════════════════════════════════════
+
+lx-in-range = (c i64, lo i64, hi i64) (yes bool) {
+    yes = false
+    c < lo -> return
+    c > hi -> return
+    yes = true
+}
+
+; isLetter：ASCII 快路徑 a-z A-Z _ -，加上 >= 0x80 的拉丁-1 字母。
+; ⚠️ 那 65 個位元組是**實測**來的（unicode.IsLetter(rune(byte)) 的論域
+;    只到 0xFF，所以是一張固定的 128 項表），不是從 Unicode 表推的。
+lx-is-letter = (c i64) (yes bool) {
+    yes = false
+    lx-in-range(c, B-LO-A, B-LO-Z) -> yes = true
+    lx-in-range(c, B-UP-A, B-UP-Z) -> yes = true
+    c == B-US -> yes = true
+    c == B-MINUS -> yes = true
+    c == 170 -> yes = true
+    c == 181 -> yes = true
+    c == 186 -> yes = true
+    lx-in-range(c, 192, 214) -> yes = true
+    lx-in-range(c, 216, 246) -> yes = true
+    lx-in-range(c, 248, 255) -> yes = true
+}
+
+; isDigit：**只有** ASCII 0-9（實測：>= 0x80 的 128 個位元組全部為 false）
+lx-is-digit = (c i64) (yes bool) {
+    yes = false
+    lx-in-range(c, B-DIG0, B-DIG9) -> yes = true
+}
+
+lx-is-ident-char = (c i64) (yes bool) {
+    yes = false
+    a = lx-is-letter(c)
+    a -> yes = true
+    b = lx-is-digit(c)
+    b -> yes = true
+}
+
+lx-is-hex = (c i64) (yes bool) {
+    yes = false
+    d = lx-is-digit(c)
+    d -> yes = true
+    lx-in-range(c, B-LO-A, 102) -> yes = true
+    lx-in-range(c, B-UP-A, 70) -> yes = true
+}
+
+; hex-val：0-15，非十六進位回 -1（照抄 lexer.go 的 hexVal）
+; ⚠️ 每一臂都要自己的 #{overflow=wrap}：該註解只作用於**緊跟的一條敘述**，
+;    寫在 `lx-in-range(...) ->` 之前不會生效（`no vet` 會報 option 未處理）。
+lx-hex-val = (c i64) (v i64) {
+    v = -1
+    lx-in-range(c, B-DIG0, B-DIG9) -> {
+        #{overflow=wrap}
+        v = c - B-DIG0
+    }
+    lx-in-range(c, B-LO-A, 102) -> {
+        #{overflow=wrap}
+        v = (c - B-LO-A) + 10
+    }
+    lx-in-range(c, B-UP-A, 70) -> {
+        #{overflow=wrap}
+        v = (c - B-UP-A) + 10
+    }
+}
+
+lx-is-ws = (c i64) (yes bool) {
+    yes = false
+    c == B-SP -> yes = true
+    c == B-TAB -> yes = true
+    c == B-CR -> yes = true
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 字串小工具
+; ═══════════════════════════════════════════════════════════════════
+
+; sub：取 s[a..b)（用 sb 組，不依賴 str 的 substring API）
+lx-sub = (s str, a i64, b i64) (r str) {
+    t = sb.init(16)
+    i = a
+    #{overflow=wrap}
+    (i < b) {
+        t.push-byte(s.byte(i))
+        #{overflow=wrap}
+        i = i + 1
+    }
+    r = t.str()
+}
+
+; ch-str：把單一位元組變成 1 字元的 str（對應 Go 的 charLits[l.ch]）
+lx-ch-str = (c i64) (r str) {
+    t = sb.init(1)
+    t.push-byte(c)
+    r = t.str()
+}
+
+lx-hex-digit = (v i64) (c i64) {
+    #{overflow=wrap}
+    c = v + B-DIG0
+    v >= 10 -> {
+        #{overflow=wrap}
+        c = v + 87
+    }
+}
+
+lx-esc-hex = (b sb, c i64) () {
+    b.push-byte(B-BS)
+    b.push-byte(B-LOWER-X)
+    #{overflow=wrap}
+    hi = c / 16
+    #{overflow=wrap}
+    lo = c % 16
+    b.push-byte(lx-hex-digit(hi))
+    b.push-byte(lx-hex-digit(lo))
+}
+
+; esc-byte：把一個位元組按約定轉義後追加到 b
+lx-esc-byte = (b sb, c i64) () {
+    c == B-BS -> {
+        b.push-byte(B-BS)
+        b.push-byte(B-BS)
+        return
+    }
+    c == B-LF -> {
+        b.push-byte(B-BS)
+        b.push-byte(B-ESC-N)
+        return
+    }
+    c == B-TAB -> {
+        b.push-byte(B-BS)
+        b.push-byte(B-ESC-T)
+        return
+    }
+    c == B-CR -> {
+        b.push-byte(B-BS)
+        b.push-byte(B-ESC-R)
+        return
+    }
+    c < 32 -> {
+        lx-esc-hex(b, c)
+        return
+    }
+    c >= 127 -> {
+        lx-esc-hex(b, c)
+        return
+    }
+    b.push-byte(c)
+}
+
+; esc：空字串 -> "-"，否則逐位元組轉義
+lx-esc = (s str) (r str) {
+    n = s.len-bytes()
+    n == 0 -> {
+        r = '-'
+        return
+    }
+    #{overflow=wrap}
+    b = sb.init(n + 8)
+    i <- [0..n): {
+        lx-esc-byte(b, s.byte(i))
+    }
+    r = b.str()
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 狀態操作（照抄 readChar / peekChar / skipWhitespace）
+; ═══════════════════════════════════════════════════════════════════
+
+lx-new = (src str) (r lxst) {
+    r = lxst {
+        input: src
+        pos: 0
+        rpos: 0
+        ch: 0
+        line: 1
+        col: 0
+        prev: 0
+        last: 0
+        count: 0
+    }
+    lx-read-char(r)
+}
+
+; readChar：前進一個位元組。column 逐位元組遞增；見到 '\n' 時 line++ 且 column 歸零。
+; ⚠️ 這裡「先取 ch 再前進」的順序是照抄的，別改成先前進。
+lx-read-char = (lx lxst) () {
+    n = lx.input.len-bytes()
+    lx.rpos >= n -> lx.ch = 0
+    lx.rpos < n -> lx.ch = lx.input.byte(lx.rpos)
+    lx.pos = lx.rpos
+    #{overflow=wrap}
+    lx.rpos = lx.rpos + 1
+    #{overflow=wrap}
+    lx.col = lx.col + 1
+    lx.ch == B-LF -> {
+        #{overflow=wrap}
+        lx.line = lx.line + 1
+        lx.col = 0
+    }
+}
+
+lx-peek = (lx lxst) (c i64) {
+    n = lx.input.len-bytes()
+    c = 0
+    lx.rpos < n -> c = lx.input.byte(lx.rpos)
+}
+
+lx-skip-ws = (lx lxst) () {
+    (lx-is-ws(lx.ch)) {
+        lx-read-char(lx)
+    }
+}
+
+; skip-to-eol：前進到 '\n' 或 EOF（不消耗換行）
+lx-skip-to-eol = (lx lxst) () {
+    stop = false
+    (stop == false) {
+        c = lx.ch
+        c == B-LF -> stop = true
+        c == 0 -> stop = true
+        stop == false -> lx-read-char(lx)
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 讀取器
+; ═══════════════════════════════════════════════════════════════════
+
+lx-read-ident = (lx lxst) (r str) {
+    start = lx.pos
+    (lx-is-ident-char(lx.ch)) {
+        lx-read-char(lx)
+    }
+    r = lx-sub(lx.input, start, lx.pos)
+}
+
+lx-contains-dot = (s str) (yes bool) {
+    yes = false
+    n = s.len-bytes()
+    i <- [0..n): {
+        c = s.byte(i)
+        c == B-DOT -> yes = true
+    }
+}
+
+lx-read-number = (lx lxst) (r str) {
+    start = lx.pos
+    hex = false
+    lx.ch == B-DIG0 -> {
+        pk = lx-peek(lx)
+        pk == B-LOWER-X -> hex = true
+        pk == B-UPPER-X -> hex = true
+    }
+    hex -> {
+        lx-read-char(lx)
+        lx-read-char(lx)
+        (lx-is-hex(lx.ch)) {
+            lx-read-char(lx)
+        }
+        r = lx-sub(lx.input, start, lx.pos)
+        return
+    }
+    (lx-is-digit(lx.ch)) {
+        lx-read-char(lx)
+    }
+    lx.ch == B-DOT -> {
+        pk2 = lx-peek(lx)
+        d2 = lx-is-digit(pk2)
+        d2 -> {
+            lx-read-char(lx)
+            (lx-is-digit(lx.ch)) {
+                lx-read-char(lx)
+            }
+        }
+    }
+    r = lx-sub(lx.input, start, lx.pos)
+}
+
+; read-string：處理 '...' 與 "..."。回 (literal, raw)。
+; ⚠️ Go 版有一條「無轉義」的零分配快路徑；這裡只實作一般路徑。
+;    兩者**輸出相同**（快路徑只是省配置），所以不影響差分。
+lx-read-string = (lx lxst) (lit str, raw str) {
+    quote = lx.ch
+    rawstart = lx.pos
+    lx-read-char(lx)
+    buf = sb.init(32)
+    stop = false
+    (stop == false) {
+        c = lx.ch
+        c == quote -> stop = true
+        c == 0 -> stop = true
+        stop == false -> {
+            c == B-BS -> {
+                tr = lx-str-esc(lx, buf)
+                tr -> lx-read-char(lx)
+            }
+            (c == B-BS) == false -> {
+                buf.push-byte(c)
+                lx-read-char(lx)
+            }
+        }
+    }
+    lx.ch == quote -> lx-read-char(lx)
+    raw = lx-sub(lx.input, rawstart, lx.pos)
+    lit = buf.str()
+}
+
+; esc-simple-ok：\n \t \r \\ \' \" \0 這七個簡單轉義
+lx-esc-simple-ok = (e i64) (yes bool) {
+    yes = true
+    e == B-ESC-N -> return
+    e == B-ESC-T -> return
+    e == B-ESC-R -> return
+    e == B-BS -> return
+    e == B-SQ -> return
+    e == B-DQ -> return
+    e == B-DIG0 -> return
+    yes = false
+}
+
+lx-esc-simple = (e i64) (v i64) {
+    v = e
+    e == B-ESC-N -> v = B-LF
+    e == B-ESC-T -> v = B-TAB
+    e == B-ESC-R -> v = B-CR
+    e == B-DIG0 -> v = 0
+}
+
+; str-esc：處理一個反斜線轉義。回 trailing（true = 呼叫端還要再 readChar 一次）。
+; ⚠️ 回 trailing=false 的路徑對應 Go 的 `continue`：它**跳過**迴圈尾端的
+;    l.readChar()。這不是風格問題，是行為差異（`\x4Z` 會吃掉那個 '4'）。
+lx-str-esc = (lx lxst, buf sb) (trailing bool) {
+    trailing = true
+    lx-read-char(lx)
+    e = lx.ch
+    simple = lx-esc-simple-ok(e)
+    simple -> buf.push-byte(lx-esc-simple(e))
+    simple == false -> {
+        e == B-ESC-X -> {
+            lx-read-char(lx)
+            hi = lx-hex-val(lx.ch)
+            hi < 0 -> {
+                buf.push-byte(B-BS)
+                buf.push-byte(B-LOWER-X)
+                trailing = false
+                return
+            }
+            lx-read-char(lx)
+            lo = lx-hex-val(lx.ch)
+            lo < 0 -> {
+                buf.push-byte(B-BS)
+                buf.push-byte(B-LOWER-X)
+                trailing = false
+                return
+            }
+            #{overflow=wrap}
+            buf.push-byte((hi * 16) + lo)
+        }
+        (e == B-ESC-X) == false -> {
+            buf.push-byte(B-BS)
+            buf.push-byte(e)
+        }
+    }
+}
+
+; read-raw：反引號 raw string。
+; ⚠️ 照抄 src/lexer/lexer.go 的 readRawString —— **包含它的缺陷**。
+;    Go 用 SaveState/RestoreState「回捲」，但那個 state 不含字元位置，
+;    回捲是空操作 ⇒ 每個續行先跳過前導空白、再多吃一個字元。
+;    這裡刻意用同樣的「跳過空白後不回捲」寫法，以保證 L1 逐位元組相同。
+;    修 Go 側的缺陷時，這裡也要一起改（並更新本註解）。
+lx-read-raw = (lx lxst) (r str) {
+    lx-read-char(lx)
+    lx.ch != B-LF -> {
+        lx-skip-to-eol(lx)
+        r = ''
+        return
+    }
+    lx-read-char(lx)
+    buf = sb.init(32)
+    stop = false
+    (stop == false) {
+        lx.ch == 0 -> {
+            r = buf.str()
+            stop = true
+        }
+        (lx.ch == 0) == false -> {
+            lx.ch == B-LF -> {
+                lx-read-char(lx)
+                lx-skip-ws(lx)
+                lx.ch == B-BT -> {
+                    lx-read-char(lx)
+                    r = buf.str()
+                    stop = true
+                }
+                (lx.ch == B-BT) == false -> {
+                    buf.push-byte(B-LF)
+                    lx-read-char(lx)
+                }
+            }
+            (lx.ch == B-LF) == false -> {
+                buf.push-byte(lx.ch)
+                lx-read-char(lx)
+            }
+        }
+    }
+}
+
+; read-regex：JS 風格正則 /pattern/flags。回 (pattern, flags, ok)。
+; ok=false 表示這個 '/' 其實不是正則（未閉合 / 跨行）—— 呼叫端要退回除法。
+lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
+    lx-read-char(lx)
+    buf = sb.init(16)
+    ok = false
+    stop = false
+    (stop == false) {
+        c = lx.ch
+        (c == B-SLASH) -> stop = true
+        (c == 0) -> stop = true
+        ((c == B-SLASH) == false) -> {
+            ((c == 0) == false) -> {
+                c == B-BS -> {
+                    buf.push-byte(c)
+                    lx-read-char(lx)
+                    lx.ch != 0 -> {
+                        buf.push-byte(lx.ch)
+                        lx-read-char(lx)
+                    }
+                }
+                (c == B-BS) == false -> {
+                    c == B-LF -> {
+                        pat = buf.str()
+                        flags = ''
+                        return
+                    }
+                    (c == B-LF) == false -> {
+                        c == B-LB -> {
+                            buf.push-byte(c)
+                            lx-read-char(lx)
+                            stop2 = false
+                            (stop2 == false) {
+                                d = lx.ch
+                                d == B-RB -> stop2 = true
+                                d == 0 -> stop2 = true
+                                d == B-LF -> stop2 = true
+                                stop2 == false -> {
+                                    d == B-BS -> {
+                                        buf.push-byte(d)
+                                        lx-read-char(lx)
+                                        lx.ch != 0 -> {
+                                            buf.push-byte(lx.ch)
+                                            lx-read-char(lx)
+                                        }
+                                    }
+                                    (d == B-BS) == false -> {
+                                        buf.push-byte(d)
+                                        lx-read-char(lx)
+                                    }
+                                }
+                            }
+                            lx.ch == B-RB -> {
+                                buf.push-byte(lx.ch)
+                                lx-read-char(lx)
+                            }
+                        }
+                        (c == B-LB) == false -> {
+                            buf.push-byte(c)
+                            lx-read-char(lx)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    lx.ch != B-SLASH -> {
+        pat = buf.str()
+        flags = ''
+        return
+    }
+    lx-read-char(lx)
+    fb = sb.init(8)
+    ; ⚠️ 這裡的「跳出」必須在**迴圈體內**設旗標（Go 是 `else { break }`）。
+    ;    若只把 hit 當迴圈條件，遇到「不是字母」時迴圈體不推進也不改條件
+    ;    ⇒ 無限迴圈（實測：`/a/` 在 EOF 後掛死）。
+    stop = false
+    (stop == false) {
+        f = lx.ch
+        isup = lx-in-range(f, B-UP-A, B-UP-Z)
+        islo = lx-in-range(f, B-LO-A, B-LO-Z)
+        isl = false
+        isup -> isl = true
+        islo -> isl = true
+        isl -> {
+            fb.push-byte(f)
+            lx-read-char(lx)
+        }
+        isl == false -> stop = true
+    }
+    pat = buf.str()
+    flags = fb.str()
+    ok = true
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 塊註釋 ;; ... ;;
+; ═══════════════════════════════════════════════════════════════════
+
+; block-boundary：從第二個 ';' 之後起到行尾是否只有空白（⇒ 是塊註釋定界符）。
+; Go 的 isBlockCommentStart 與 isBlockCommentEnd 是**同一個函式**，故合併。
+lx-block-boundary = (lx lxst) (yes bool) {
+    n = lx.input.len-bytes()
+    #{overflow=wrap}
+    i = lx.rpos + 1
+    yes = true
+    go = true
+    (go) {
+        i < n -> {
+            c = lx.input.byte(i)
+            c == B-LF -> go = false
+            c != B-LF -> {
+                w = lx-is-ws(c)
+                w -> {
+                    #{overflow=wrap}
+                    i = i + 1
+                }
+                w == false -> {
+                    yes = false
+                    go = false
+                }
+            }
+        }
+        (i < n) == false -> go = false
+    }
+}
+
+lx-read-block = (lx lxst) (tx str) {
+    lx-read-char(lx)
+    lx-read-char(lx)
+    lx-skip-ws(lx)
+    lx.ch == B-LF -> lx-read-char(lx)
+    start = lx.pos
+    tx = ''
+    go = true
+    (go) {
+        lx.ch == 0 -> {
+            tx = lx-sub(lx.input, start, lx.pos)
+            return
+        }
+        hit = false
+        lx.ch == B-SEMI -> {
+            pk = lx-peek(lx)
+            pk == B-SEMI -> hit = true
+        }
+        hit -> {
+            be = lx-block-boundary(lx)
+            be -> {
+                tx = lx-sub(lx.input, start, lx.pos)
+                lx-read-char(lx)
+                lx-read-char(lx)
+                lx-skip-ws(lx)
+                return
+            }
+        }
+        lx-read-char(lx)
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 正則 vs 除法（照抄 isRegexStart）
+; ═══════════════════════════════════════════════════════════════════
+
+lx-regex-start = (lx lxst) (yes bool) {
+    p = lx.prev
+    yes = true
+    p == 0 -> return
+    p == tok.NEWLINE -> return
+    p == tok.COMMENT -> return
+
+    p == tok.IDENT -> {
+
+        yes = false
+
+        return
+
+    }
+    p == tok.INT -> {
+        yes = false
+        return
+    }
+    p == tok.FLOAT -> {
+        yes = false
+        return
+    }
+    p == tok.STRING -> {
+        yes = false
+        return
+    }
+    p == tok.CHAR -> {
+        yes = false
+        return
+    }
+    p == tok.REGEX -> {
+        yes = false
+        return
+    }
+    p == tok.TRUE -> {
+        yes = false
+        return
+    }
+    p == tok.FALSE -> {
+        yes = false
+        return
+    }
+    p == tok.NIL -> {
+        yes = false
+        return
+    }
+    p == tok.RPAREN -> {
+        yes = false
+        return
+    }
+    p == tok.RBRACKET -> {
+        yes = false
+        return
+    }
+    p == tok.RBRACE -> {
+        yes = false
+        return
+    }
+    p == tok.INC -> {
+        yes = false
+        return
+    }
+    p == tok.DEC -> {
+        yes = false
+        return
+    }
+    p == tok.SELF -> {
+        yes = false
+        return
+    }
+    p == tok.IT -> {
+        yes = false
+        return
+    }
+    p == tok.SUPER -> {
+        yes = false
+        return
+    }
+    p == tok.UNDERSCORE -> {
+        yes = false
+        return
+    }
+    p == tok.DOT -> {
+        yes = false
+        return
+    }
+
+    p == tok.USE -> {
+
+        yes = false
+
+        return
+
+    }
+    p == tok.LABEL -> {
+        yes = false
+        return
+    }
+    p == tok.HASH_LBRACE -> {
+        yes = false
+        return
+    }
+    p == tok.AT -> {
+        yes = false
+        return
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; 輸出
+; ═══════════════════════════════════════════════════════════════════
+
+; lx-fmt：把一個 token 渲染成 `<line>:<col> <NAME> <lit> <raw> <marker> <err>`
+;
+; ⚠️ 回傳值**不含**尾端 \n；行與行之間由呼叫端用 \n **分隔**。
+;    原因：nolang 的 print() 自己會補一個 \n，而 oracle（/tmp/notok）是每行
+;    都以 \n 結尾。若這裡也帶尾端 \n，SUT 輸出會多一個空行，L1 永遠 DIFF。
+;    「首行不補、其餘每行前補」正好讓 print() 補上的那一個成為唯一的尾端 \n。
+; ⚠️ 第 6 個欄位（錯誤訊息）在結構與程式碼中叫 emsg，**不能叫 err**：
+;    `err` 是 nolang 的保留標識符（option 的 match 臂標籤，如 `c: { ok -> … err -> … }`）。
+;    用它當參數名或局部變數名會讓整個函式**不被註冊**，而錯誤訊息只會說
+;    「'<函式名>' is not defined」——指向呼叫端，完全誤導。
+;    這個坑讓 lx-emit 與 lx-scan-token 兩個函式同時消失（它們是唯二用到 err 的）。
+lx-fmt = (t tk) (r str) {
+    b = sb.init(64)
+    b.push(t.ln.to-str())
+    b.push-byte(B-COLON)
+    b.push(t.cl.to-str())
+    b.push-byte(B-SP)
+    b.push(tok.name(t.typ))
+    b.push-byte(B-SP)
+    b.push(lx-esc(t.lit))
+    b.push-byte(B-SP)
+    b.push(lx-esc(t.raw))
+    b.push-byte(B-SP)
+    b.push(lx-esc(t.mk))
+    b.push-byte(B-SP)
+    b.push(lx-esc(t.emsg))
+    r = b.str()
+}
+; ═══════════════════════════════════════════════════════════════════
+; scan-token：照抄 src/lexer/lexer.go 的 scanToken()
+; ═══════════════════════════════════════════════════════════════════
+;
+; Go 用 defer 更新 prevTokenType；這裡在函式尾端更新（效果相同：
+; isRegexStart 讀到的永遠是**前一個** token 的型別）。
+; Go 有若干 `return tok` 早退，這裡用 done 旗標表示「不再做尾端的 readChar」。
+
+lx-scan-token = (lx lxst, t tk) () {
+    lx-skip-ws(lx)
+    ln = lx.line
+    cl = lx.col
+    c = lx.ch
+    typ = tok.ILLEGAL
+    lit = ''
+    raw = ''
+    mk = ''
+    emsg = ''
+    done = false
+
+    {
+        c == B-EQ -> {
+            pk = lx-peek(lx)
+            pk == B-EQ -> {
+                lx-read-char(lx)
+                typ = tok.EQUALS
+                lit = '=='
+            }
+            pk != B-EQ -> {
+                typ = tok.ASSIGN
+                lit = '='
+            }
+        }
+
+        c == B-BANG -> {
+            pk = lx-peek(lx)
+            pk == B-EQ -> {
+                lx-read-char(lx)
+                typ = tok.NOT_EQUALS
+                lit = '!='
+            }
+            (pk == B-EQ) == false -> {
+                pk == B-BANG -> {
+                    lx-read-char(lx)
+                    typ = tok.BANG_BANG
+                    lit = '!!'
+                }
+                (pk == B-BANG) == false -> {
+                    typ = tok.NOT
+                    lit = '!'
+                }
+            }
+        }
+
+        c == B-LT -> {
+            pk = lx-peek(lx)
+            pk == B-LT -> {
+                lx-read-char(lx)
+                pk2 = lx-peek(lx)
+                pk2 == B-EQ -> {
+                    lx-read-char(lx)
+                    typ = tok.SHL_ASSIGN
+                    lit = '<<='
+                }
+                pk2 != B-EQ -> {
+                    typ = tok.SHL
+                    lit = '<<'
+                }
+            }
+            (pk == B-LT) == false -> {
+                pk == B-EQ -> {
+                    lx-read-char(lx)
+                    typ = tok.LESS_EQUALS
+                    lit = '<='
+                }
+                (pk == B-EQ) == false -> {
+                    pk == B-MINUS -> {
+                        lx-read-char(lx)
+                        typ = tok.ARROW
+                        lit = '<-'
+                    }
+                    (pk == B-MINUS) == false -> {
+                        typ = tok.LESS
+                        lit = '<'
+                    }
+                }
+            }
+        }
+
+        c == B-GT -> {
+            pk = lx-peek(lx)
+            pk == B-GT -> {
+                lx-read-char(lx)
+                pk2 = lx-peek(lx)
+                pk2 == B-EQ -> {
+                    lx-read-char(lx)
+                    typ = tok.SHR_ASSIGN
+                    lit = '>>='
+                }
+                pk2 != B-EQ -> {
+                    typ = tok.SHR
+                    lit = '>>'
+                }
+            }
+            (pk == B-GT) == false -> {
+                pk == B-EQ -> {
+                    lx-read-char(lx)
+                    typ = tok.GREATER_EQUALS
+                    lit = '>='
+                }
+                (pk == B-EQ) == false -> {
+                    typ = tok.GREATER
+                    lit = '>'
+                }
+            }
+        }
+
+        c == B-PLUS -> {
+            pk = lx-peek(lx)
+            pk == B-PLUS -> {
+                lx-read-char(lx)
+                typ = tok.INC
+                lit = '++'
+            }
+            (pk == B-PLUS) == false -> {
+                pk == B-EQ -> {
+                    lx-read-char(lx)
+                    typ = tok.ADD_ASSIGN
+                    lit = '+='
+                }
+                (pk == B-EQ) == false -> {
+                    typ = tok.ADD
+                    lit = '+'
+                }
+            }
+        }
+
+        c == B-MINUS -> {
+            pk = lx-peek(lx)
+            pk == B-MINUS -> {
+                lx-read-char(lx)
+                typ = tok.DEC
+                lit = '--'
+            }
+            (pk == B-MINUS) == false -> {
+                pk == B-GT -> {
+                    lx-read-char(lx)
+                    typ = tok.RARROW
+                    lit = '->'
+                }
+                (pk == B-GT) == false -> {
+                    pk == B-EQ -> {
+                        lx-read-char(lx)
+                        typ = tok.SUB_ASSIGN
+                        lit = '-='
+                    }
+                    (pk == B-EQ) == false -> {
+                        typ = tok.SUB
+                        lit = '-'
+                    }
+                }
+            }
+        }
+
+        c == B-STAR -> {
+            pk = lx-peek(lx)
+            pk == B-STAR -> {
+                lx-read-char(lx)
+                typ = tok.STAR_STAR
+                lit = '**'
+            }
+            (pk == B-STAR) == false -> {
+                pk == B-EQ -> {
+                    lx-read-char(lx)
+                    typ = tok.MUL_ASSIGN
+                    lit = '*='
+                }
+                (pk == B-EQ) == false -> {
+                    typ = tok.MUL
+                    lit = '*'
+                }
+            }
+        }
+
+        c == B-SLASH -> {
+            pk = lx-peek(lx)
+            pk == B-SLASH -> {
+                lx-read-char(lx)
+                lx-read-char(lx)
+                s1 = lx.pos
+                lx-skip-to-eol(lx)
+                typ = tok.COMMENT
+                lit = lx-sub(lx.input, s1, lx.pos)
+                mk = '//'
+                done = true
+            }
+            (pk == B-SLASH) == false -> {
+                rs = lx-regex-start(lx)
+                rs -> {
+                    p1, f1, ok1 = lx-read-regex(lx)
+                    ok1 -> {
+                        typ = tok.REGEX
+                        lit = p1
+                        raw = f1
+                        done = true
+                    }
+                    ok1 == false -> {
+                        pk2 = lx-peek(lx)
+                        pk2 == B-EQ -> {
+                            lx-read-char(lx)
+                            typ = tok.QUO_ASSIGN
+                            lit = '/='
+                        }
+                        pk2 != B-EQ -> {
+                            typ = tok.QUO
+                            lit = '/'
+                        }
+                    }
+                }
+                rs == false -> {
+                    pk2 = lx-peek(lx)
+                    pk2 == B-EQ -> {
+                        lx-read-char(lx)
+                        typ = tok.QUO_ASSIGN
+                        lit = '/='
+                    }
+                    pk2 != B-EQ -> {
+                        typ = tok.QUO
+                        lit = '/'
+                    }
+                }
+            }
+        }
+
+        c == B-PERCENT -> {
+            pk = lx-peek(lx)
+            pk == B-EQ -> {
+                lx-read-char(lx)
+                typ = tok.MOD_ASSIGN
+                lit = '%='
+            }
+            pk != B-EQ -> {
+                typ = tok.MOD
+                lit = '%'
+            }
+        }
+
+        c == B-AMP -> {
+            pk = lx-peek(lx)
+            pk == B-AMP -> {
+                lx-read-char(lx)
+                typ = tok.LAND
+                lit = '&&'
+            }
+            (pk == B-AMP) == false -> {
+                pk == B-CARET -> {
+                    lx-read-char(lx)
+                    pk2 = lx-peek(lx)
+                    pk2 == B-EQ -> {
+                        lx-read-char(lx)
+                        typ = tok.AND_NOT_ASSIGN
+                        lit = '&^='
+                    }
+                    pk2 != B-EQ -> {
+                        typ = tok.AND_NOT
+                        lit = '&^'
+                    }
+                }
+                (pk == B-CARET) == false -> {
+                    pk == B-EQ -> {
+                        lx-read-char(lx)
+                        typ = tok.AND_ASSIGN
+                        lit = '&='
+                    }
+                    (pk == B-EQ) == false -> {
+                        typ = tok.AND
+                        lit = '&'
+                    }
+                }
+            }
+        }
+
+        c == B-CARET -> {
+            pk = lx-peek(lx)
+            pk == B-EQ -> {
+                lx-read-char(lx)
+                typ = tok.XOR_ASSIGN
+                lit = '^='
+            }
+            pk != B-EQ -> {
+                typ = tok.XOR
+                lit = '^'
+            }
+        }
+
+        c == B-PIPE -> {
+            pk = lx-peek(lx)
+            pk == B-PIPE -> {
+                lx-read-char(lx)
+                typ = tok.LOR
+                lit = '||'
+            }
+            (pk == B-PIPE) == false -> {
+                pk == B-EQ -> {
+                    lx-read-char(lx)
+                    typ = tok.OR_ASSIGN
+                    lit = '|='
+                }
+                (pk == B-EQ) == false -> {
+                    typ = tok.OR
+                    lit = '|'
+                }
+            }
+        }
+
+        c == B-LP -> {
+
+            typ = tok.LPAREN
+
+            lit = '('
+
+        }
+        c == B-RP -> {
+            typ = tok.RPAREN
+            lit = ')'
+        }
+        c == B-LC -> {
+            typ = tok.LBRACE
+            lit = '{'
+        }
+        c == B-RC -> {
+            typ = tok.RBRACE
+            lit = '}'
+        }
+        c == B-LB -> {
+            typ = tok.LBRACKET
+            lit = '['
+        }
+        c == B-RB -> {
+            typ = tok.RBRACKET
+            lit = ']'
+        }
+        c == B-COMMA -> {
+            typ = tok.COMMA
+            lit = ','
+        }
+
+        c == B-SEMI -> {
+            pk = lx-peek(lx)
+            pk == B-SEMI -> {
+                bs = lx-block-boundary(lx)
+                bs -> {
+                    tx1 = lx-read-block(lx)
+                    typ = tok.COMMENT
+                    lit = tx1
+                    mk = ';;block'
+                    done = true
+                }
+                bs == false -> {
+                    lx-read-char(lx)
+                    lx-read-char(lx)
+                    s2 = lx.pos
+                    lx-skip-to-eol(lx)
+                    typ = tok.COMMENT
+                    lit = lx-sub(lx.input, s2, lx.pos)
+                    mk = ';;'
+                    done = true
+                }
+            }
+            pk != B-SEMI -> {
+                lx-read-char(lx)
+                s3 = lx.pos
+                lx-skip-to-eol(lx)
+                typ = tok.COMMENT
+                lit = lx-sub(lx.input, s3, lx.pos)
+                mk = ';'
+                done = true
+            }
+        }
+
+        c == B-COLON -> {
+
+            typ = tok.COLON
+
+            lit = ':'
+
+        }
+
+        c == B-US -> {
+            pk = lx-peek(lx)
+            a1 = lx-is-letter(pk)
+            a2 = lx-is-digit(pk)
+            ident-start = false
+            a1 -> ident-start = true
+            a2 -> ident-start = true
+            ident-start -> {
+                id1 = lx-read-ident(lx)
+                kw1 = tok.keyword(id1)
+                typ = tok.IDENT
+                kw1 != tok.ILLEGAL -> typ = kw1
+                lit = id1
+                done = true
+            }
+            ident-start == false -> {
+                typ = tok.UNDERSCORE
+                lit = '_'
+            }
+        }
+
+        c == B-DOT -> {
+            pk = lx-peek(lx)
+            pk == B-DOT -> {
+                lx-read-char(lx)
+                typ = tok.ELLIPSIS
+                lit = '..'
+            }
+            pk != B-DOT -> {
+                typ = tok.DOT
+                lit = '.'
+            }
+        }
+
+        c == B-AT -> {
+
+            typ = tok.AT
+
+            lit = '@'
+
+        }
+        c == B-TILDE -> {
+            typ = tok.TILDE
+            lit = '~'
+        }
+
+        c == B-HASH -> {
+            pk = lx-peek(lx)
+            pk == B-LC -> {
+                lx-read-char(lx)
+                lx-read-char(lx)
+                typ = tok.HASH_LBRACE
+                lit = '#{'
+                done = true
+            }
+            (pk == B-LC) == false -> {
+                a3 = lx-is-digit(pk)
+                a3 -> {
+                    lx-read-char(lx)
+                    s4 = lx.pos
+                    (lx-is-digit(lx.ch)) {
+                        lx-read-char(lx)
+                    }
+                    typ = tok.LABEL
+                    lit = lx-sub(lx.input, s4, lx.pos)
+                    done = true
+                }
+                (a3 == false) -> {
+                    typ = tok.USE
+                    lit = '#'
+                }
+            }
+        }
+
+        c == B-QM -> {
+            pk = lx-peek(lx)
+            pk == B-EQ -> {
+                lx-read-char(lx)
+                typ = tok.QUESTION_ASSIGN
+                lit = '?='
+            }
+            pk != B-EQ -> {
+                typ = tok.QUESTION
+                lit = '?'
+            }
+        }
+
+        c == B-SQ -> {
+            lt1, rw1 = lx-read-string(lx)
+            typ = tok.STRING
+            lit = lt1
+            raw = rw1
+            done = true
+        }
+
+        c == B-DQ -> {
+            ct1, rw2 = lx-read-string(lx)
+            nr = ct1.len()
+            typ = tok.CHAR
+            lit = ct1
+            raw = rw2
+            nr == 0 -> {
+                typ = tok.ILLEGAL
+                emsg = 'empty double-quoted literal; double quotes are for char literals only; if this is a string, use single quotes: \'text\''
+            }
+            (nr != 1) -> {
+                (nr != 0) -> {
+                    typ = tok.ILLEGAL
+                    emsg = 'multi-character literal in double quotes; double quotes are for char literals only; if this is a string, use single quotes: \'text\''
+                }
+            }
+            done = true
+        }
+
+        c == B-BT -> {
+            typ = tok.STRING
+            lit = lx-read-raw(lx)
+            done = true
+        }
+
+        c == 0 -> {
+            typ = tok.EOF
+            lit = ''
+            done = true
+        }
+
+        c == B-LF -> {
+            typ = tok.NEWLINE
+            lit = lx-ch-str(B-LF)
+        }
+
+        -> {
+            a5 = lx-is-letter(c)
+            a6 = lx-is-digit(c)
+            a5 -> {
+                id2 = lx-read-ident(lx)
+                kw2 = tok.keyword(id2)
+                typ = tok.IDENT
+                kw2 != tok.ILLEGAL -> typ = kw2
+                lit = id2
+                done = true
+            }
+            (a5 == false) -> {
+                a6 -> {
+                    num = lx-read-number(lx)
+                    typ = tok.INT
+                    dot = lx-contains-dot(num)
+                    dot -> typ = tok.FLOAT
+                    lit = num
+                    done = true
+                }
+                (a6 == false) -> {
+                    typ = tok.ILLEGAL
+                    lit = lx-ch-str(c)
+                }
+            }
+        }
+    }
+
+    done == false -> lx-read-char(lx)
+    lx.prev = typ
+    lx.last = typ
+    ; 掃描的產物一律寫進 t（M2 起：不再直接渲染）
+    t.ln = ln
+    t.cl = cl
+    t.typ = typ
+    t.lit = lit
+    t.raw = raw
+    t.mk = mk
+    t.emsg = emsg
+    #{overflow=wrap}
+    lx.count = lx.count + 1
+}
+
+; dump：把整份原始碼的 token 流 dump 成字串（與 /tmp/notok 逐位元組可比）
+;
+; ⚠️ 對外進入點刻意**不加 `lx-` 前綴**：
+;    跨模組呼叫的寫法是 `<模組短名>.<定義名>`，所以叫 dump 才能寫成 lx.dump(src)。
+;    若命名為 lx-dump，呼叫端就得寫 lx.lx-dump(...)（可讀性差）。
+;    內部輔助函式一律保留 lx- 前綴（對外不可見，只為在本檔內區隔）。
+dump = (src str) (out str) {
+    lx = lx-new(src)
+    b = sb.init(1024)
+    t = tk.new()
+    go = true
+    first = true
+    (go) {
+        lx-scan-token(lx, t)
+        first == false -> b.push-byte(B-LF)
+        b.push(lx-fmt(t))
+        first = false
+        lx.last == tok.EOF -> go = false
+    }
+    out = b.str()
+}
+
+; scan-all：掃描整份原始碼，回傳 token 陣列（**含**結尾的 EOF）
+;
+; M2 解析器的進入點。與 dump 共用同一個 lx-scan-token ⇒ 兩條路徑不可能漂移
+; （L1 門禁因此同時保護了 dump 與 scan-all）。
+;
+; ⚠️ 回傳 `[]tk`（元素含 str 欄位）。push 會**深拷貝**元素（已實測：跨模組
+;    push 後各元素互不影響），所以可以放心重複使用同一個 t。
+; ⚠️ 元素型別必須由**宣告註解**決定：`out []tk = with-cap(n)`。
+;    裸寫 `out = []tk` 會被推成 `[]i64`（實測：vec.push 報
+;    "cannot push a value of type 'tk' into '[]i64'"）。
+scan-all = (src str) (r []tk) {
+    lx = lx-new(src)
+    out []tk = with-cap(256)
+    t = tk.new()
+    go = true
+    (go) {
+        lx-scan-token(lx, t)
+        out.push(t)
+        lx.last == tok.EOF -> go = false
+    }
+    r = out
+}

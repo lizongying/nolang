@@ -1,0 +1,25 @@
+; noc — Nolang 自舉編譯器（M0 骨架）
+;
+; 構建：  ./bin/no build -o /tmp/noc-s0 compiler
+; 執行：  /tmp/noc-s0 version
+;
+; 設計文檔：docs/design/nolang-selfhost.md
+
+# /compiler/src/drv.dispatch
+; ⚠️ 直接（未使用）導入所有子模組：見 docs/design/nolang-selfhost.md §2.2.8。
+;   模組的頂層綁定（常量 / 全局）**只有在入口檔直接 import 它時才會被生成**；
+;   只被間接依賴（main → drv → ps → asp/ast/lx）時，從子模組內讀到的跨模組常量
+;   會**靜默變成 0**，作為呼叫引數 / 運算式運算元時升級為硬編譯失敗（bug #85）。
+;   noc 現在讀 asp.K_*（ps.parse）、lx.*（ps.new）、ast.*（ps.parse）、tok.*（ps.*），
+;   所以入口檔必須把它們**全部**直接列出——即使 main 本身從不使用。
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/util/sb.sb
+
+main = () {
+    code = drv.dispatch()
+    os.exit(code)
+}

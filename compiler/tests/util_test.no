@@ -1,0 +1,146 @@
+; util_test.no — compiler/src/util 的單元測試
+;
+; 執行： ./bin/no run compiler/tests/util_test.no
+; 或：   ./bin/no test compiler/tests
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    os.exit(1)，否則差分 harness 會把失敗讀成通過。
+
+# /test/runner.eq
+# /test/runner.str-eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/util/sb.sb
+# /compiler/src/util/intern.intern
+
+; ═══════════════════════════════════════════════
+; sb — 字串構建器
+; ═══════════════════════════════════════════════
+
+test-sb = () {
+    b = sb.init(64)
+    runner.eq(b.len(), 0, 'sb.init -> len 0')
+
+    b.push('hello')
+    runner.eq(b.len(), 5, 'sb.push 5 bytes')
+
+    b.push(' world')
+    runner.eq(b.len(), 11, 'sb.push total 11 bytes')
+
+    s = b.str()
+    runner.str-eq(s, 'hello world', 11, 'sb.str content')
+
+    ; 空 push 不改變長度
+    b.push('')
+    runner.eq(b.len(), 11, 'sb.push empty is no-op')
+
+    ; 多位元組 UTF-8：'中' 是 3 位元組，但只有 1 個碼點
+    b.clear()
+    runner.eq(b.len(), 0, 'sb.clear')
+    b.push('中')
+    runner.eq(b.len(), 3, 'sb.push utf8 uses bytes not code points')
+
+    ; push-byte
+    b.clear()
+    b.push-byte(65)
+    b.push-byte(66)
+    s2 = b.str()
+    runner.str-eq(s2, 'AB', 2, 'sb.push-byte')
+}
+
+; ═══════════════════════════════════════════════
+; intern — 字串駐留（M0 線性掃描；雜湊版待缺陷修復，見 src/util/intern.no 檔頭）
+; ═══════════════════════════════════════════════
+
+test-intern = () {
+    t = intern.make()
+    runner.eq(intern.count(t), 0, 'intern.make -> count 0')
+
+    ; get 不登記
+    runner.eq(intern.get(t, 'alpha'), 0, 'intern.get on empty table -> 0')
+    runner.eq(intern.count(t), 0, 'intern.get does not register')
+
+    ; put 登記，id 從 1 開始
+    id-a = intern.put(t, 'alpha')
+    runner.eq(id-a, 1, 'intern.put first id == 1')
+
+    id-b = intern.put(t, 'beta')
+    runner.eq(id-b, 2, 'intern.put second id == 2')
+
+    ; 駐留的核心保證：同字串同 id
+    runner.eq(intern.put(t, 'alpha'), 1, 'intern.put is stable')
+    runner.eq(intern.count(t), 2, 'intern.count stays 2 after repeat')
+
+    ; get 現在找得到
+    runner.eq(intern.get(t, 'alpha'), 1, 'intern.get finds registered')
+    runner.eq(intern.get(t, 'nope'), 0, 'intern.get unknown -> 0')
+
+    ; 空字串是保留值 0，不登記
+    runner.eq(intern.get(t, ''), 0, 'intern.get empty -> 0')
+    runner.eq(intern.put(t, ''), 0, 'intern.put empty -> 0')
+    runner.eq(intern.count(t), 2, 'intern.count unchanged by empty')
+
+    ; 反查
+    s = intern.at(t, 2)
+    runner.str-eq(s, 'beta', 4, 'intern.at roundtrip')
+
+    ; 越界回空字串
+    s0 = intern.at(t, 99)
+    runner.eq(s0.len-bytes(), 0, 'intern.at out-of-range -> empty')
+    s1 = intern.at(t, 0)
+    runner.eq(s1.len-bytes(), 0, 'intern.at id 0 -> empty')
+}
+
+; 規模測試：塞入大量鍵，驗證 (a) 全部可查 (b) id 唯一且穩定
+test-intern-many = () {
+    t = intern.make()
+
+    keys []str = []
+    k <- [0..100): {
+        s = 'key-' + k.to-str()
+        keys.push(s)
+        intern.put(t, s)
+    }
+    runner.eq(intern.count(t), 100, 'intern.put 100 keys')
+
+    ; 每個鍵都要查得到，且 id == k+1
+    ok-count = 0
+    k <- [0..100): {
+        id = intern.get(t, keys[k])
+
+        #{overflow=wrap}
+        expect = k + 1
+        {
+            id == expect -> {
+
+                #{overflow=wrap}
+                ok-count = ok-count + 1
+            }
+
+            -> {
+            }
+        }
+    }
+    runner.eq(ok-count, 100, 'intern ids are stable and unique')
+
+    ; 重複 put 不得增加計數
+    intern.put(t, 'key-50')
+    runner.eq(intern.count(t), 100, 'intern.put is idempotent')
+
+    ; 反查
+    back = intern.at(t, 100)
+    runner.str-eq(back, 'key-99', 6, 'intern.at roundtrip at scale')
+}
+
+; ═══════════════════════════════════════════════
+test-sb()
+test-intern()
+test-intern-many()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> os.exit(1)
+
+    -> os.exit(0)
+}

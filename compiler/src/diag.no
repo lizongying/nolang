@@ -1,0 +1,41 @@
+; diag — 診斷模型
+;
+; 對齊 no 的兩種輸出形狀（見 docs/design/nolang-selfhost.md §5.4）：
+;   面向使用者：<file>:<line>:<col>: [LEVEL] <source>: <message> [<code>]
+;   中間串    ：<channel>: [<file>: ]line L, column C: <message> [<code>]
+;
+; ⚠️ line / col 從 1 開始（1-based）。
+; ⚠️ code 是 8 字元 base36 TraceID；M0 尚未接上生成器，先用固定佔位。
+
+LEVEL-HINT = 0
+LEVEL-WARNING = 1
+LEVEL-ERROR = 2
+
+diag {
+    file str
+    line i64
+    col i64
+    level i64
+    src str
+    msg str
+    code str
+}
+
+; level-name: 診斷級別的名稱
+diag.level-name = () (r str) {
+    {
+        .level == LEVEL-ERROR -> r = 'ERROR'
+        .level == LEVEL-WARNING -> r = 'WARNING'
+        -> r = 'HINT'
+    }
+}
+
+; render: 面向使用者的單行輸出
+diag.render = () (r str) {
+    r = .file + ':' + .line.to-str() + ':' + .col.to-str() + ': [' + .level-name() + '] ' + .src + ': ' + .msg + ' [' + .code + ']'
+}
+
+; render-mid: 中間編譯錯誤串的一條（無檔名前綴）
+diag.render-mid = () (r str) {
+    r = 'line ' + .line.to-str() + ', column ' + .col.to-str() + ': ' + .msg + ' [' + .code + ']'
+}

@@ -1,0 +1,49 @@
+; sb — 字串構建器（以 []byte 支撐）
+;
+; 為什麼自己寫：str 的 + 是 @str_concat，每次 O(n) 拷貝。用它拼 IR 文本是
+; O(n^2)。sb 以 []byte 攤還 O(1) 追加，最後一次 to-bytes-str 轉回 str。
+;
+; SHS 合規（見 docs/design/nolang-selfhost.md §2.3）：
+;   - 無模組級可變狀態
+;   - 無一等函式值、無指針、無匿名函式型別
+;   - 結構體名 >= 2 字元
+;
+; ⚠️ 位元組邊界一律用 len-bytes()。str.len() 回的是【碼點數】，不是位元組數。
+
+sb {
+    buf []byte
+}
+
+; init: 建立預分配 cap 位元組的構建器
+sb.init = (cap i64) (r sb) {
+    r = sb {
+        buf: with-cap(cap)
+    }
+}
+
+; push: 追加 str 的全部 UTF-8 位元組（原樣，不解碼）
+sb.push = (s str) {
+    i <- [0..s.len-bytes()): {
+        .buf.push(s.byte(i))
+    }
+}
+
+; push-byte: 追加單一位元組
+sb.push-byte = (b i64) {
+    .buf.push(b)
+}
+
+; str: 轉為 str（一次拷貝）
+sb.str = () (r str) {
+    r = .buf.to-bytes-str()
+}
+
+; len: 目前位元組數
+sb.len = () (n i64) {
+    n = .buf.len()
+}
+
+; clear: 清空內容（保留已配置容量）
+sb.clear = () {
+    .buf.clear()
+}
