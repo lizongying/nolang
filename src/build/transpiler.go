@@ -2,6 +2,7 @@ package build
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -178,6 +179,23 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Tier 1: on-disk content-addressed AST cache. Skips lex+parse for every
+	// unchanged user file across builds. The salt captures the non-source
+	// ParseProgram inputs (injected cross-file signatures, the anonymous-fn
+	// flag, std key) so a restored AST is always identical to a fresh parse.
+	if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
+		salt := t.astCacheSalt()
+		key := dc.KeyFor(string(source), salt)
+		if cached, ok := dc.Get(key); ok {
+			if os.Getenv("NOLANG_DEBUG_IT") != "" {
+				fmt.Fprintf(os.Stderr, "[debug-it] parseFile DISK CACHE HIT: %s\n", filePath)
+			}
+			if t.fileCache != nil {
+				t.fileCache[filePath] = cached
+			}
+			return cached, nil
+		}
+	}
 	l := lexer.NewCached(filePath, string(source))
 	p := parser.New(l)
 	p.AllowAnonymousFnType = t.allowAnonymousFn
@@ -200,7 +218,27 @@ func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
 	if t.fileCache != nil {
 		t.fileCache[filePath] = prog
 	}
+	// Tier 1: store the freshly parsed AST so the next build reuses it.
+	if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
+		dc.Put(dc.KeyFor(string(source), t.astCacheSalt()), prog)
+	}
 	return prog, nil
+}
+
+// astCacheSalt summarizes every ParseProgram input that is not the raw source
+// text, so the Tier 1 on-disk AST cache key stays correct. Two builds that
+// differ only in these inputs must NOT share a cached AST, because the parser's
+// semantic side-table (sem.VarTypes / sem.EnumVariants, consumed during
+// lowering) is shaped by them.
+func (t *Transpiler) astCacheSalt() string {
+	b, _ := json.Marshal(struct {
+		FuncSigs     map[string][]string         `json:"f"`
+		MethodSigs   map[string][]string         `json:"m"`
+		StructFields map[string]map[string]string `json:"s"`
+		AllowAnon    bool                        `json:"a"`
+		StdKey       string                      `json:"k"`
+	}{t.externFuncSigs, t.externMethodSigs, t.externStructFields, t.allowAnonymousFn, checker.StdSigKey})
+	return string(b)
 }
 
 // parseEmbeddedProgram 從內嵌 FS 的位元組資料解析 Nolang 程式。
@@ -373,6 +411,10 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		// 1. 直接路徑：std/<relPath>.no
 		if relPath != "" {
 			embedPath := "std/" + relPath + ".no"
+			// Tier 0: 优先用烤进二进制的 std AST（gzip+gob），省掉 lex+parse。
+			if prog, ok := checker.StdASTFor(embedPath); ok {
+				return prog, nil
+			}
 			if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
 				return t.parseEmbeddedProgram(embedPath, data)
 			}
@@ -381,6 +423,9 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		for _, info := range checker.KnownStdModules() {
 			if info.ShortPath == relPath {
 				embedPath := "std/" + info.FullPath + ".no"
+				if prog, ok := checker.StdASTFor(embedPath); ok {
+					return prog, nil
+				}
 				if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
 					return t.parseEmbeddedProgram(embedPath, data)
 				}
@@ -712,6 +757,20 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 	}
 	if program == nil {
+		// Tier 1: on-disk content-addressed AST cache for the entry file. The
+		// salt captures the non-source ParseProgram inputs (preloaded cross-file
+		// signatures, anonym-fntype flag, std key) so a restored AST is identical
+		// to a fresh parse under the same inputs.
+		if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
+			if cached, ok := dc.Get(dc.KeyFor(source, t.astCacheSalt())); ok {
+				if os.Getenv("NOLANG_DEBUG_IT") != "" {
+					fmt.Fprintf(os.Stderr, "[debug-it] entry DISK CACHE HIT: %s\n", t.sourcePath)
+				}
+				program = cached
+			}
+		}
+	}
+	if program == nil {
 		l := lexer.NewCached(t.sourcePath, source)
 		p := parser.New(l)
 		p.AllowAnonymousFnType = t.allowAnonymousFn
@@ -731,15 +790,18 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if len(p.Errors()) > 0 {
 			return "", fmt.Errorf("parser errors: %s", parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
 		}
-		// 移除標準庫內建樁函式（#{buildin=...}）：其真實實作位於 Go runtime，
-		// nolang 函式體僅為聲明，編譯器不處理（不校驗、不 codegen）。
-		stripBuiltinStubs(program)
 		// 收集主程序中链式 -> 条件的 lint 提示（仅主程序，不含自动载入的 std 库，
 		// 避免库代码触发噪音）。buildWithPkg 会在编译成功后打印。
 		t.chainedIfHints = p.WarningsByCode(parser.WarnChainedIf)
-		// W_SEMI_EAT warnings are handled by LSP diagnostics; build path no longer
-		// emits them to stderr to avoid noise during compilation.
+		// Tier 1: store the freshly parsed entry AST for the next build.
+		if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
+			dc.Put(dc.KeyFor(source, t.astCacheSalt()), program)
+		}
 	}
+	// 移除標準庫內建樁函式（#{buildin=...}）：其真實實作位於 Go runtime，
+	// nolang 函式體僅為聲明，編譯器不處理（不校驗、不 codegen）。幂等，
+	// 缓存命中與全新解析都執行一次。
+	stripBuiltinStubs(program)
 	// 注入 -ld-KEY=VALUE 全域常量（在 embed 處理之前，使注入變數可被後續 pass 使用）
 	if t.ldFlags != nil {
 		injectLDFlags(program, t.ldFlags)

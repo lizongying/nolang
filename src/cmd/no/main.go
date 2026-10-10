@@ -22,6 +22,7 @@ import (
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/parser/dump"
+	"github.com/lizongying/nolang/checker/stdastembed"
 )
 
 type ProjectConfig struct {
@@ -79,6 +80,10 @@ func parseOptFlag(args []string) []string {
 }
 
 func main() {
+	// 安裝烤进二进制的 std AST blob（Tier 0 增量编译缓存）。blob 缺失/过期时
+	// checker.StdASTFor 自动回退到从 StdFS 解析，构建不受影响。
+	checker.SetStdASTBlob(stdastembed.Blob, stdastembed.Key)
+
 	// 全局 flags
 	os.Args = parseOptFlag(os.Args)
 	for i, arg := range os.Args[1:] {

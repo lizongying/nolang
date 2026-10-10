@@ -112,7 +112,7 @@ const (
 
 // SemanticContext 是解析/语义分离后的“副表”。
 //
-//   - nodeSem：以 AST 節點（指針，包裝為 Node 接口）為鍵的語義信息表。
+//   - NodeSem：以 AST 節點（指針，包裝為 Node 接口）為鍵的語義信息表。
 //   - VarTypes / EnumVariants / DeclaredVars：類型推斷結果
 //     （原 parser.varDeclTypes / enumVariantNames / declaredVars）。nolang 是單遍
 //     遞歸下降解析器，部分類型感知（如 match arm 分類、方法返回型別推斷）必須在
@@ -177,7 +177,7 @@ func NewSemanticContext() *SemanticContext {
 
 // Merge 將另一份語義副表合併進本表（模塊合併時使用：merged program 匯集多個
 // 模塊的 AST 節點，各節點的語義信息也必須匯集到同一張 side-table）。
-// nodeSem 以節點指針為鍵，不會衝突；名稱級映射（VarTypes 等）僅在本表缺失時填入。
+// NodeSem 以節點指針為鍵，不會衝突；名稱級映射（VarTypes 等）僅在本表缺失時填入。
 func (s *SemanticContext) Merge(other *SemanticContext) {
 	if s == nil || other == nil {
 		return

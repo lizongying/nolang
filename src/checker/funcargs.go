@@ -454,6 +454,16 @@ func parseProgramFile(filePath string) *parser.Program {
 	if cached, ok := parseProgramFileCache.Get(ck); ok {
 		return cached
 	}
+	// Tier 1: on-disk content-addressed AST cache. This standalone parse injects
+	// no cross-file signatures, so the only non-source parse input is the std
+	// signature key — fold it into the salt.
+	if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
+		dkey := dc.KeyFor(string(source), StdSigKey)
+		if cached, ok := dc.Get(dkey); ok {
+			parseProgramFileCache.Put(ck, cached)
+			return cached
+		}
+	}
 	l := lexer.NewCached(filePath, string(source))
 	p := parser.New(l)
 	prog := p.ParseProgram()
@@ -461,6 +471,10 @@ func parseProgramFile(filePath string) *parser.Program {
 		return nil
 	}
 	parseProgramFileCache.Put(ck, prog)
+	// Tier 1: store for the next process (LSP restart / next build).
+	if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
+		dc.Put(dc.KeyFor(string(source), StdSigKey), prog)
+	}
 	return prog
 }
 
