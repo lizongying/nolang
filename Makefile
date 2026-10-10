@@ -26,7 +26,7 @@ PLAYGROUND_PORT ?= 3000
 # same IDs.
 TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/checker/option_compare.go src/lsp/vet.go
 
-.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke gen stamp-traceid install
+.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke gen stamp-traceid install test
 
 all: $(NO_BIN) $(LSP_BIN) install
 
@@ -53,6 +53,33 @@ $(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/go.mod src/go.sum
 .PHONY: gen
 gen: $(STDSIG_GEN)
 
+# ── TEST (must go through make so StdSigKey is injected) ──
+# `go test` directly leaves StdSigKey empty, which now hard-fails
+# CollectStdModuleSignatures — the only valid build path is `make`. Inject the
+# same key the binaries get (see LD_FLAGS_WITH_SIG) so tests exercise the real
+# embedded-table fast path instead of erroring. Packages that don't import
+# checker simply ignore the -X (verified), so scoping is only for speed.
+.PHONY: test
+test: $(STDSIG_GEN)
+	cd src && $(GO) test $(LD_FLAGS_WITH_SIG) ./build/... ./mir/... ./checker/... ./lsp/... ./fmt/... ./hir/...
+
+# ── STD SIG KEY (injected at build time) ──────────
+# The independent genstdsig tool hashes the CURRENT on-disk src/std tree from
+# scratch and prints the key (`-key-only`). We capture that into STD_SIG_KEY
+# and inject it via -X (checker.StdSigKey). This is deliberate: the key is
+# computed independently of the baked literal in stdsig_gen.go, so at runtime
+# comparing the injected key against embeddedStdSigKey actually catches a
+# STALE signature table. (Grepping embeddedStdSigKey out of stdsig_gen.go
+# would make the two always identical and validate nothing.)
+# STD_SIG_KEY is a recursive var, so the tool runs at recipe time — after
+# `make gen` has regenerated stdsig_gen.go from the same src/std.
+STD_SIG_KEY = $(shell cd src && $(GO) run ./checker/genstdsig -key-only 2>/dev/null)
+STD_SIG_X   = -X github.com/lizongying/nolang/checker.StdSigKey=$(STD_SIG_KEY)
+# Merge the injected std-sig key INTO -ldflags (Go rejects -X outside
+# -ldflags), so it sits alongside version/buildDate. Preserves any user
+# override of LD_FLAGS.
+LD_FLAGS_WITH_SIG = $(subst -ldflags=",-ldflags="$(STD_SIG_X) ,$(LD_FLAGS))
+
 # ── STAMP TRACE ID ────────────────────────────────
 # Replace every PLACEHOLDER in checker source files with a unique
 # 8-char random base36 string.  Only replaces when placeholders are
@@ -64,7 +91,7 @@ stamp-traceid: FORCE
 # ── NO ────────────────────────────────
 $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
 	$(MAKE) stamp-traceid
-	cd src && $(GO) build $(LD_FLAGS) -o ../$(NO_BIN) ./cmd/no
+	cd src && $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$(NO_BIN) ./cmd/no
 	chmod +x $(NO_BIN)
 
 # ── INSTALL ────────────────────────────
@@ -81,7 +108,7 @@ install: $(NO_BIN)
 $(LSP_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum
 	$(MAKE) stamp-traceid
 	mkdir -p $(dir $@)
-	cd src && $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
+	cd src && $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/lsp
 	chmod +x $@
 
 package: FORCE
@@ -95,7 +122,7 @@ no-wasm: $(NO_WASM)
 
 $(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
 	$(MAKE) stamp-traceid
-	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/no
+	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/no
 
 $(WASM_DIR):
 	mkdir -p $@
@@ -106,7 +133,7 @@ lsp-wasm: $(LSP_WASM)
 
 $(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
 	$(MAKE) stamp-traceid
-	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS) -o ../$@ ./cmd/lsp
+	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/lsp
 
 # ── PLAYGROUND ────────────────────────────
 # Build no.wasm + lsp.wasm + Docusaurus site for the playground.

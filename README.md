@@ -129,6 +129,21 @@ make clean      # 清理構建產物
 make help       # 查看所有構建目標
 ```
 
+> ⚠️ **構建 Nolang 必須使用 `make`，切勿用 `cd src && go build` 直接構建。**
+>
+> `make` 在建構前會自動執行 `make gen`，重新產生 `src/checker/stdsig_gen.go`
+> —— 一份**內嵌進二進位**的標準庫簽名表（`funcSigs` / `methodSigs` /
+> `funcParams` / `methodParams` / `structFields` / `aliases` / `structMod` /
+> `enumVariants`）。有了它，每次 `no build` 都跳過「全量解析所有 std」的
+> PASS1，啟動明顯更快。
+>
+> 如果你修改過 `src/std` 卻**沒有**先 `make gen` 就直接 `go build`，編譯器會
+> 偵測到內嵌簽名表與 `src/std` 內容不一致，並**直接報錯拒絕建構**（提示你執行
+> `make no`）。這是刻意設計：過去靜默退化為全量解析會讓每次編譯都變慢且不易
+> 察覺。修改 `src/std` 後請一律執行 `make no`（它會先 `make gen` 再建構）。
+>
+> 執行測試也請用 `make test`：**直接 `go test` 會因未注入簽名 key（`StdSigKey` 為空）而報錯拒絕**。`make test` 在建構測試二進位時注入同樣的 key，使其走內嵌簽名表快路徑。
+
 ---
 
 ## 相關項目

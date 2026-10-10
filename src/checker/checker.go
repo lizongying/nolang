@@ -8394,21 +8394,41 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// ---- embedded signature table (compiled-in Go literals) ----
 		// Preferred path: stdsig_gen.go bakes the five signature tables into
 		// the binary as Go source literals, so PASS1 is skipped on EVERY build.
-		// Only used when the embedded key matches the current embedded std
-		// content; if src/std changed without regenerating stdsig_gen.go, the
-		// keys differ and we fall through to full collection.
+		//
+		// StdSigKey is injected at build time via -X (Makefile LD_FLAGS_WITH_SIG)
+		// by the independent genstdsig tool, which hashes the CURRENT src/std
+		// tree from scratch. embeddedStdSigKey is baked by the SAME tool from
+		// the SAME src/std. Comparing the two validates "baked table == current
+		// src/std" without re-hashing every std source file on each build.
+		//
+		// StdSigKey == "" means this binary was NOT built via `make` (e.g.
+		// `go test` or `cd src && go build`). That is not the normal path, so
+		// we hard-fail and require `make no` — there is NO fallback to
+		// computeStdSigKey, otherwise developers would silently always take the
+		// slow path and never notice they skipped signature generation.
 		if embeddedStdSigReady {
-			if key, err := computeStdSigKey(); err == nil && embeddedStdSigKey == key {
+			if StdSigKey == "" {
+				fmt.Fprintln(os.Stderr, "[no] ERROR: 標準庫簽名 key 未注入（StdSigKey 為空）。")
+				fmt.Fprintln(os.Stderr, "[no]   這個二進位不是透過 `make` 建構的——直接 `go build` / `go test`")
+				fmt.Fprintln(os.Stderr, "[no]   會跳過簽名表產生與 key 注入，編譯器無法驗證內嵌簽名表。")
+				fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make no`（它會先 `make gen` 再建構並注入 key）。")
+				os.Exit(1)
+			}
+			if StdSigKey == embeddedStdSigKey {
 				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdFuncParams, embeddedStdMethodParams, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
-				warmStdTokenCache()
 				return
 			}
+			fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌標準庫簽名表與建構時注入的簽名 key 不符（建構不一致）。")
+			fmt.Fprintln(os.Stderr, "[no]   原因：stdsig_gen.go 與目前 src/std 不一致（例如只改了 src/std 卻沒重跑 `make gen`）。")
+			fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make no`（它會先跑 `make gen` 再建構並注入 key）。")
+			os.Exit(1)
 		}
 
 		// ---- full collection from embedded StdFS ----
+		// 僅在 stdsig_gen.go 完全不存在時才會走到（例如第一次 `make gen` 之前）。
+		// 正常建構中該表一定存在且新鮮，因此此分支是例外而非常態。
 		funcSigs, methodSigs, funcParams, methodParams, structFields, aliases, structMod, enumVariants, _ := collectStdSigsFromFS(nolang.StdFS)
 		setStdSigCaches(funcSigs, methodSigs, funcParams, methodParams, structFields, aliases, structMod, enumVariants)
-		warmStdTokenCache()
 	})
 	return stdSigsCache, stdFieldsCache
 }
