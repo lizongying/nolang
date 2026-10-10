@@ -822,11 +822,18 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		}
 	}
 
+	// .ll 是否落盤：
+	//   - verbose（debug）：必須寫（opt 要吃它）
+	//   - 走 LLVM C API：IR 直接從內存餵給 C API，磁碟上那份沒人讀 → 跳過
+	//     （但 NOLANG_KEEP_IR 是顯式的調試意圖，此時仍寫，保留可分析的產物）
+	//   - 其餘（clang 單進程 / 開關開但無 CAPI 後端而回退）：必須寫
 	llPath := filepath.Join(tempDir, fileName+".ll")
-	// LLVM 17+ 的 IR 解析器會自動把 typed pointer（i8*、%vec* 等）升級為 opaque
-	// `ptr`，故不再需要 toOpaquePointers 文本重寫層（死代碼，2026-10-09 刪除）。
-	if err = os.WriteFile(llPath, []byte(code), 0644); err != nil {
-		return fmt.Errorf("writing LLVM IR file: %w", err)
+	if !useCAPI || keepIR {
+		// LLVM 17+ 的 IR 解析器會自動把 typed pointer（i8*、%vec* 等）升級為 opaque
+		// `ptr`，故不再需要 toOpaquePointers 文本重寫層（死代碼，2026-10-09 刪除）。
+		if err = os.WriteFile(llPath, []byte(code), 0644); err != nil {
+			return fmt.Errorf("writing LLVM IR file: %w", err)
+		}
 	}
 
 	// 保留 .ll 供分析（僅 -v 時輸出）
