@@ -946,7 +946,13 @@ node = (t ast, o sb, i i64, depth i64) {
             }
 
             op == asp.OP-SIG -> {
-                ast.signature(t, o, d, depth)
+
+                ; ⚠️ 子節點（泛型/參數/回傳）必須印在 depth+1：
+                ;   dump.go FunctionDefinition(:281)/FunctionLiteral(:409) 皆 `d.signature(sig, depth+1)`，
+                ;   signature() 內部再以它收到的 depth 渲染 `d.node(p, depth)` ⇒ 實際是 FD 本層的 depth+1。
+                ;   先前誤傳 `depth` ⇒ 0 參數時不可見、≥1 參數時 Parameter 塌成 Program 同層兄弟。
+                #{overflow=wrap}
+                ast.signature(t, o, d, depth + 1)
 
                 #{overflow=wrap}
                 cur = cur + d.c3

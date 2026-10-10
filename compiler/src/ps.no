@@ -316,6 +316,100 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 handled = 1
             }
 
+            ; 定長陣列標註：`name [N]T = [e1, …, eN]`（本片只認 `[ INT ] IDENT ASSIGN` 單行形）
+            ;   偏移：+0 IDENT name / +1 LBRACKET / +2 INT / +3 RBRACKET / +4 IDENT elem / +5 ASSIGN
+            ;   +2 必須是 INT（尺寸字面量）；若是 IDENT ⇒ 是 `[K]V` map 標註（見下臂）
+            nxt_typ == tok.LBRACKET && ps-peek-at(p, 2) == tok.INT && ps-peek-at(p, 3) == tok.RBRACKET && ps-peek-at(p, 5) == tok.ASSIGN -> {
+                ps-bump(p); 消費 IDENT name
+                ps-bump(p); 消費 LBRACKET
+                sz = ps-parse-expr(t, p); 尺寸運算式（IntegerLiteral）
+                ps-expect(p, tok.RBRACKET)
+                et = ps-peek-token(p)
+                en = et.lit
+                ps-bump(p); 消費 elem 型別名
+                ps-expect(p, tok.ASSIGN)
+
+                ; RHS 為 [..]：在陣列上下文直接建 ArrayLiteral（復刻 Go stmt.go:1210-1218 的轉換）
+                al = ps-parse-arr-lit(t, p, sz)
+
+                ; 子先於父：elem NamedType → ArrayType（含 size、elem 兩 kid）→ LetStatement
+                ntyp = ast.add(t, asp.K_NAMED_TYPE)
+                ast.set-slot(t, ntyp, 0, ast.put-str(t, en))
+                at = ast.add(t, asp.K_ARRAY_TYPE)
+                ast.set-slot(t, at, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
+                ast.kid-add(t, at, sz)
+                ast.kid-add(t, at, ntyp)
+
+                idx = ast.add(t, asp.K_LET_STATEMENT)
+                ast.set-slot(t, idx, 0, ast.put-str(t, name))
+                ast.kid-add(t, idx, at)
+                ast.kid-add(t, idx, al)
+                handled = 1
+            }
+
+            ; Map 標註：`name [K]V = { k1: v1, … }`（單行形）
+            ;   偏移：+0 IDENT name / +1 LBRACKET / +2 IDENT keyType / +3 RBRACKET / +4 IDENT valType / +5 ASSIGN / +6 LBRACE
+            ;   復刻 Go parseMapLiteral（只在有 MapType 標註時走此路）
+            nxt_typ == tok.LBRACKET && ps-peek-at(p, 2) == tok.IDENT && ps-peek-at(p, 3) == tok.RBRACKET && ps-peek-at(p, 4) == tok.IDENT && ps-peek-at(p, 5) == tok.ASSIGN -> {
+                ps-bump(p); 消費 IDENT name
+                ps-bump(p); 消費 LBRACKET
+                kt = ps-peek-token(p)
+                kn = kt.lit
+                ps-bump(p); 消費 key 型別名
+                ps-expect(p, tok.RBRACKET)
+                vt = ps-peek-token(p)
+                vn = vt.lit
+                ps-bump(p); 消費 value 型別名
+                ps-expect(p, tok.ASSIGN)
+
+                ; 先建 key/value NamedType → MapType（子先於父），再作為共用節點傳给 map 字面量
+                ktyp = ast.add(t, asp.K_NAMED_TYPE)
+                ast.set-slot(t, ktyp, 0, ast.put-str(t, kn))
+                vtyp = ast.add(t, asp.K_NAMED_TYPE)
+                ast.set-slot(t, vtyp, 0, ast.put-str(t, vn))
+                mt = ast.add(t, asp.K_MAP_TYPE)
+                ast.set-slot(t, mt, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
+                ast.kid-add(t, mt, ktyp)
+                ast.kid-add(t, mt, vtyp)
+
+                ml = ps-parse-map-lit(t, p, mt)
+
+                idx = ast.add(t, asp.K_LET_STATEMENT)
+                ast.set-slot(t, idx, 0, ast.put-str(t, name))
+                ast.kid-add(t, idx, mt)
+                ast.kid-add(t, idx, ml)
+                handled = 1
+            }
+
+            ; 切片型別標註：`name []T = [e1, …]`（單行形，T 為單一 IDENT）
+            ;   偏移：+0 IDENT name / +1 LBRACKET / +2 RBRACKET（空括）/ +3 IDENT elem / +4 ASSIGN
+            ;   舆 `[N]T`（+2 INT）/`[K]V`（+2 IDENT）互斥：此臂要求 +2 為 RBRACKET
+            nxt_typ == tok.LBRACKET && ps-peek-at(p, 2) == tok.RBRACKET && ps-peek-at(p, 3) == tok.IDENT && ps-peek-at(p, 4) == tok.ASSIGN -> {
+                ps-bump(p); 消費 IDENT name
+                ps-bump(p); 消費 LBRACKET
+                ps-bump(p); 消費 RBRACKET
+                et = ps-peek-token(p)
+                en = et.lit
+                ps-bump(p); 消費 elem 型別名
+                ps-expect(p, tok.ASSIGN)
+
+                ; RHS `[..]` 經 primary 自然建 SliceLiteral（含空 `[]`）
+                ps-skip-trivia(p)
+                val = ps-parse-expr(t, p)
+
+                ntyp = ast.add(t, asp.K_NAMED_TYPE)
+                ast.set-slot(t, ntyp, 0, ast.put-str(t, en))
+                styp = ast.add(t, asp.K_SLICE_TYPE)
+                ast.set-slot(t, styp, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
+                ast.kid-add(t, styp, ntyp)
+
+                idx = ast.add(t, asp.K_LET_STATEMENT)
+                ast.set-slot(t, idx, 0, ast.put-str(t, name))
+                ast.kid-add(t, idx, styp)
+                ast.kid-add(t, idx, val)
+                handled = 1
+            }
+
             ; 其他 IDENT 開頭的句法（呼叫語、運算子等）一律走運算式陳述，
             ;   不先消費 IDENT（否则會把 `f(1,2)` 拆成兩個 token）。
             handled == 0 -> idx = ps-parse-expr-stmt(t, p)
@@ -433,6 +527,14 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             ps-bump(p)
         }
 
+        tk.typ == tok.CHAR -> {
+
+            ; `"a"` ⇒ CharLiteral{value: a}（Nolang 雙引號=字元）；raw 留 0 → kvs 不印
+            idx = ast.add(t, asp.K_CHAR_LITERAL)
+            ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+            ps-bump(p)
+        }
+
         tk.typ == tok.TRUE -> {
             idx = ast.add(t, asp.K_BOOLEAN_LITERAL)
             ast.set-slot(t, idx, 0, ast.put-str(t, 'true'))
@@ -539,6 +641,12 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
     pgo = true
     (pgo) {
         nt = ps-peek(p)
+
+        ; ⚠️ 用 `handled` 旗標而非裸 `-> { pgo = false }` 預設臂：實測在 `(pgo)` 迴圈
+        ;   內的多臂 match，尾隨預設臂與其他臂的**跨臂接連迭代**會誤編（新增第三個
+        ;   區塊臂後 DOT→LPAREN / LPAREN→LBRACKET / LBRACKET→LBRACKET 各有其一會斷）。
+        ;   `handled` 把終止條件變成**顯式陳述**，不依賴 match 落 semantics。
+        handled = 0
         nt == tok.LPAREN -> {
 
             ; 消耗 LPAREN，依逗號分隔解析实参，直到 RPAREN
@@ -577,6 +685,7 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
                 k = k + 1
             }
             idx = call
+            handled = 1
         }
         nt == tok.DOT -> {
             ps-bump(p)
@@ -590,9 +699,85 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             ast.set-slot(t, dot, 0, ast.put-str(t, pname))
             ast.kid-add(t, dot, idx)
             idx = dot
+            handled = 1
         }
+        nt == tok.LBRACKET -> {
 
-        -> pgo = false
+            ; `left[...]` ⇒ 純索引 `a[i]` 走 IndexExpression；含 `..` 的範圍走 SliceExpression{Range}。
+            ; 對應 Go parseSliceExpression：LOWEST 優先級、leftInc=true（開 `[`）、右閉 `]`⇒rightInc=true。
+            ; ⚠️ hasStart 先存快照：兩個臂的條件必須互斥且不随位置变化重评，否则 A 臂解析后 B 臂会误跑。
+            ps-bump(p)
+            st = 0
+            en = 0
+            isRange = 0
+            hasStart = ps-peek(p) != tok.ELLIPSIS
+            hasStart == 0 -> {
+
+                ; [..end] / [..]：無 start
+                ps-bump(p)
+                isRange = 1
+                ps-peek(p) != tok.RBRACKET -> en = ps-parse-expr-prec(t, p, 0)
+            }
+            hasStart == 1 -> {
+
+                ; [expr..] / [expr]：先解 start（或索引）
+                st = ps-parse-expr-prec(t, p, 0)
+                ps-peek(p) == tok.ELLIPSIS -> {
+                    ps-bump(p)
+                    isRange = 1
+                    ps-peek(p) != tok.RBRACKET -> en = ps-parse-expr-prec(t, p, 0)
+                }
+            }
+            ps-skip-trivia(p)
+
+            ; 閉合可能是 `]`（rightInc=true）或 `)`（rightInc=false）——Go 兩者皆接受
+            cl = ps-peek(p)
+            ri = 'false'
+            cl == tok.RBRACKET -> ri = 'true'
+            ps-bump(p); 消費閉合 `]` 或 `)`
+
+            ; 組節點：Range 兩 kid 固定為 [Start, End]，缺席者以 0 占位（node-string(0)='<nil>'）
+            isRange == 1 -> {
+                rg = ast.add(t, asp.K_RANGE_EXPRESSION)
+                ast.set-slot(t, rg, 0, ast.put-str(t, 'true')); leftInc（開 `[`）
+                ast.set-slot(t, rg, 1, ast.put-str(t, ri)); rightInc
+                ast.kid-add(t, rg, st)
+                ast.kid-add(t, rg, en)
+                se = ast.add(t, asp.K_SLICE_EXPRESSION)
+                ast.kid-add(t, se, idx)
+                ast.kid-add(t, se, rg)
+                idx = se
+            }
+            isRange == 0 -> {
+                ie = ast.add(t, asp.K_INDEX_EXPRESSION)
+                ast.kid-add(t, ie, idx)
+                ast.kid-add(t, ie, st)
+                idx = ie
+            }
+            handled = 1
+        }
+        nt == tok.LBRACE && ps-is-struct-lit(p) -> {
+
+            ; `Ident{ field: val, … }` ⇒ StructLiteral（對應 Go parseStructLiteral）。
+            ; 型别名用 ps-dotted-name：単 IDENT→`Point`、限定名 DotExpression 链→`net.Conn`。
+            ty = ps-dotted-name(t, idx)
+            sl = ps-parse-struct-lit(t, p, ty)
+            idx = sl
+            handled = 1
+        }
+        nt == tok.COLON && ps-peek-at(p, 1) == tok.LBRACE && ast.kind-at(t, idx) == asp.K_IDENTIFIER -> {
+
+            ; 明示 match：`subj: { pat -> body … }` ⇒ desugar 成 if/else 鏈（見 ps-parse-match）。
+            ; ⚠️ 只認「識別元主體」；複雜主體（呼叫/索引）延後。`:` 與 `{` 須同行（空格已被詞法过滤）。
+            subjName = ast.node-string(t, idx)
+            ps-bump(p); 消費 COLON
+            ps-bump(p); 消費 LBRACE
+            mm = ps-parse-match(t, p, subjName)
+            ps-expect(p, tok.RBRACE)
+            idx = mm
+            handled = 1
+        }
+        handled == 0 -> pgo = false
     }
 
     ; 中綴迴圈（Go：for currentToken != EOF && currentPrecedence() > precedence）
@@ -658,6 +843,239 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
     ast.kid-add(t, idx, typ)
     ast.kid-add(t, idx, val)
     idx
+}
+
+; ps-parse-arr-lit：在**陣列型別上下文**下直接把 RHS `[e1, …, eN]` 建為
+;   ArrayLiteral{size, elements, wasSliceLiteral: true}（不經 SliceLiteral 中转）。
+;   對應 Go stmt.go:1210-1218：ArrayType.Size>0 且 RHS 為 SliceLiteral 時的轉換。
+;   kid 序：child0=Size（沿用型別側的 sz 節點），child1..N=Elements（KIDS 迭代）。
+ps-parse-arr-lit = (t ast, p psst, sz i64) (idx i64) {
+    ps-skip-trivia(p)
+    ps-expect(p, tok.LBRACKET)
+    els []i64 = with-cap(4)
+    ps-skip-trivia(p)
+    {
+        ps-peek(p) == tok.RBRACKET -> {
+            ps-bump(p)
+        }
+
+        -> {
+            (ps-peek(p) != tok.RBRACKET && ps-peek(p) != tok.EOF) {
+                pos0 = p.pos
+                e = ps-parse-expr-prec(t, p, 0)
+                e > 0 -> els.push(e)
+                ps-skip-trivia(p)
+                ps-peek(p) == tok.COMMA -> {
+                    ps-bump(p)
+                    ps-skip-trivia(p)
+                }
+                p.pos == pos0 -> ps-bump(p)
+            }
+            ps-expect(p, tok.RBRACKET)
+        }
+    }
+    idx = ast.add(t, asp.K_ARRAY_LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, els.len().to-str())); elements
+    ast.set-slot(t, idx, 1, ast.put-str(t, 'true')); wasSliceLiteral
+    ast.set-count(t, idx, 0, els.len())
+    ast.kid-add(t, idx, sz); Size（child0）
+    m = 0
+    (m < els.len()) {
+        ast.kid-add(t, idx, els[m])
+
+        #{overflow=wrap}
+        m = m + 1
+    }
+}
+
+; ps-parse-map-lit：在 **Map 型別上下文**下把 RHS `{ k1: v1, … }` 建為
+;   MapLiteral{pairs}，對應 Go parseMapLiteral。
+;   kid 序（遵從 dump 源碼序）：child0..N-1 = MapPair（KIDS 迭代），最末 kid = MapType（CHILD）。
+;   注意舆 ArrayLiteral 相反：MapLiteral 的 KIDS 在前、CHILD(MapType) 在後。
+ps-parse-map-lit = (t ast, p psst, mt i64) (idx i64) {
+    ps-skip-trivia(p)
+    ps-expect(p, tok.LBRACE)
+    pvs []i64 = with-cap(4); 每個 MapPair 節點索引
+    {
+        ps-peek(p) == tok.RBRACE -> {
+            ps-bump(p); 空 map {}
+        }
+
+        -> {
+            (ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF) {
+                pos0 = p.pos
+                ps-skip-trivia(p)
+                k = ps-parse-expr-prec(t, p, 0)
+                ps-skip-trivia(p)
+                ps-expect(p, tok.COLON)
+                ps-skip-trivia(p)
+                v = ps-parse-expr-prec(t, p, 0)
+
+                ; MapPair{Key, Value}：裸標頭 + 兩 kid（Key=child0、Value=child1）
+                mp = ast.add(t, asp.K_MAP_PAIR)
+                ast.kid-add(t, mp, k)
+                ast.kid-add(t, mp, v)
+                mp > 0 -> pvs.push(mp)
+                ps-skip-trivia(p)
+                ps-peek(p) == tok.COMMA -> {
+                    ps-bump(p)
+                    ps-skip-trivia(p)
+                }
+                p.pos == pos0 -> ps-bump(p)
+            }
+            ps-expect(p, tok.RBRACE)
+        }
+    }
+    idx = ast.add(t, asp.K_MAP_LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, pvs.len().to-str())); pairs（OF-LEN 字串槽）
+    ast.set-count(t, idx, 0, pvs.len()); KIDS 迭代數
+    m = 0
+    (m < pvs.len()) {
+        ast.kid-add(t, idx, pvs[m])
+
+        #{overflow=wrap}
+        m = m + 1
+    }
+    ast.kid-add(t, idx, mt); MapType（CHILD，永遠排最後）
+}
+
+; ps-is-struct-lit：判斷【目前 pos 為 LBRACE】起是否為結構體字面量形：
+;   空 `{}` 或 `{ IDENT : … }`（首個非 trivia token 為 IDENT 且紧跟 COLON）。
+;   match 用 `->`、enum 用 `,`/`=`，皆不會误中此形。不消耗 p.pos。
+ps-is-struct-lit = (p psst) (r i64) {
+    r = 0
+
+    #{index-out=zero}
+    p.toks[p.pos].typ == tok.LBRACE -> {
+
+        ; 定位首個非 trivia token
+        #{overflow=wrap}
+        i = p.pos + 1
+        go = true
+        (go && i < p.toks.len()) {
+
+            #{index-out=zero}
+            tt = p.toks[i].typ
+            tt == tok.NEWLINE -> {
+
+                #{overflow=wrap}
+                i = i + 1
+            }
+            tt == tok.COMMENT -> {
+
+                #{overflow=wrap}
+                i = i + 1
+            }
+            -> go = false
+        }
+
+        #{index-out=zero}
+        t1 = p.toks[i].typ
+        t1 == tok.RBRACE -> r = 1
+        t1 == tok.IDENT -> {
+
+            ; IDENT 後首個非 trivia token 必須是 COLON
+            #{overflow=wrap}
+            j = i + 1
+            go2 = true
+            (go2 && j < p.toks.len()) {
+
+                #{index-out=zero}
+                tj = p.toks[j].typ
+                tj == tok.NEWLINE -> {
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+                tj == tok.COMMENT -> {
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+                -> go2 = false
+            }
+
+            #{index-out=zero}
+            t2 = p.toks[j].typ
+            t2 == tok.COLON -> r = 1
+        }
+    }
+}
+
+; ps-dotted-name：把 `net.Conn` / `a.b.C` 的 DotExpression 链重組為點分型名字串。
+;   DotExpression：slot0=property 名、kid0=Receiver（递归展开）；Identifier：slot0=名。
+;   其他節點 → 回退 node-string（不该出现在限定名的位置）。
+ps-dotted-name = (t ast, n i64) (r str) {
+    r = ''
+    n <= 0 -> return
+    d = ast.nd-at(t, n)
+    {
+        d.kind == asp.K_DOT_EXPRESSION -> {
+            rc = 0
+            d.nkid > 0 -> rc = ast.kid-at(t, d.kid0)
+            r = ps-dotted-name(t, rc) + '.' + ast.str-at(t, d.s0)
+        }
+
+        d.kind == asp.K_IDENTIFIER -> r = ast.str-at(t, d.s0)
+
+        -> r = ast.node-string(t, n)
+    }
+}
+
+; ps-parse-struct-lit：把 `{ field: val, … }` 建為 StructLiteral{type, fields}。
+;   slot0=型别名(字串)、slot1=fields 數(OF-LEN 字串槽)、count0=KIDS 迭代數；kid 序=各 StructField。
+;   每個 StructField：slot0=name、kid0=Type(0 占位)、kid1=Value（對應 dump CHILD 序）。
+ps-parse-struct-lit = (t ast, p psst, ty str) (idx i64) {
+    ps-expect(p, tok.LBRACE)
+    flds []i64 = with-cap(4); 每個 StructField 節點索引
+    {
+        ps-peek(p) == tok.RBRACE -> {
+            ps-bump(p); 空 {}
+        }
+
+        -> {
+            (ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF) {
+                pos0 = p.pos
+                ps-skip-trivia(p)
+                ft = ps-peek-token(p)
+                fname = ft.lit
+                ps-peek(p) == tok.IDENT -> ps-bump(p); 消費欄位名
+                ps-skip-trivia(p)
+                val = 0
+                ps-peek(p) == tok.COLON -> {
+                    ps-bump(p); 消費 :
+                    ps-skip-trivia(p)
+                    val = ps-parse-expr-prec(t, p, 0)
+                }
+
+                ; StructField{name}：裸標頭 + [Type=0 占位, Value]
+                sf = ast.add(t, asp.K_STRUCT_FIELD)
+                ast.set-slot(t, sf, 0, ast.put-str(t, fname))
+                ast.set-slot(t, sf, 1, ast.put-str(t, '0')); arraySize（kvn NON-ZERO：'0' → 略過）
+                ast.kid-add(t, sf, 0)
+                ast.kid-add(t, sf, val)
+                sf > 0 -> flds.push(sf)
+                ps-skip-trivia(p)
+                ps-peek(p) == tok.COMMA -> {
+                    ps-bump(p)
+                    ps-skip-trivia(p)
+                }
+                p.pos == pos0 -> ps-bump(p)
+            }
+            ps-expect(p, tok.RBRACE)
+        }
+    }
+    idx = ast.add(t, asp.K_STRUCT_LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, ty)); type
+    ast.set-slot(t, idx, 1, ast.put-str(t, flds.len().to-str())); fields（OF-LEN 字串槽）
+    ast.set-count(t, idx, 0, flds.len()); KIDS 迭代數
+    m = 0
+    (m < flds.len()) {
+        ast.kid-add(t, idx, flds[m])
+
+        #{overflow=wrap}
+        m = m + 1
+    }
 }
 
 ; ps-elem-type-of：从 SliceLiteral 的首元素推論元素型别名（空切片默认 i64）
@@ -749,7 +1167,12 @@ ps-parse-param = (t ast, p psst) (idx i64) {
     }
     idx = ast.add(t, asp.K_PARAMETER)
     ast.set-slot(t, idx, 0, ast.put-str(t, pname))
-    typ > 0 -> ast.kid-add(t, idx, typ)
+
+    ; ⚠️ Parameter spec 有兩個 guarded CHILD（Type、DefaultExpr），dumper 是**位置式**讀 kid0/kid0+1；
+    ;   少 push 一槽 ⇒ kid0+1 读到下一個全域 kid（如 body 的 Identifier）⇒ 多出一個幽靈子節點。
+    ;   Nolang 形 `name [type]` 無預設值 ⇒ DefaultExpr 恒 0；Type 缺席時也 push 0 佔位。
+    ast.kid-add(t, idx, typ)
+    ast.kid-add(t, idx, 0)
     idx
 }
 
@@ -818,4 +1241,183 @@ ps-parse-if = (t ast, p psst) (idx i64) {
     ast.kid-add(t, idx, then)
     ast.kid-add(t, idx, alt)
     idx
+}
+
+; ═══ match desugar（明示形 `subj: { pat -> body … }`）═══════════════════
+; 見設計文檔 §6.3。bin/no 於 parse 期就將 match 展開為 if/else 鏈（非 SurfaceMatch）。
+; 範圍：識別元主體、字面量/識別元/wildcard 型樣、運算式/區塊臂、if/else 鏈。
+; 延後：守衛、option/enum 完整型樣、複雜主體（呼叫/索引）。
+
+; ps-mk-ident：建 Identifier 葉節點（僅 slot0=name）——供 desugar 多处複用運算元
+ps-mk-ident = (t ast, name str) (idx i64) {
+    idx = ast.add(t, asp.K_IDENTIFIER)
+    ast.set-slot(t, idx, 0, ast.put-str(t, name))
+    idx
+}
+
+; ps-mk-it-let：建 `it = subj` 合成 LetStatement（synthetic: true、無 Type）
+;   dump：LetStatement{name: it, value: subj, synthetic: true} + kid[0=Type(0),1=Ident]
+ps-mk-it-let = (t ast, subj str) (idx i64) {
+    val = ps-mk-ident(t, subj)
+    idx = ast.add(t, asp.K_LET_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, 'it'))
+    ast.set-slot(t, idx, 1, ast.put-str(t, 'true')); synthetic
+    ast.kid-add(t, idx, 0); Type 缺席→0 佔位（守 guarded-CHILD 位置）
+    ast.kid-add(t, idx, val)
+    idx
+}
+
+; ps-mk-true：wildcard 條件 = IntegerLiteral{value: 1}（無 raw，故不印 raw）
+ps-mk-true = (t ast) (idx i64) {
+    idx = ast.add(t, asp.K_INTEGER_LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '1'))
+    ast.set-slot(t, idx, 1, ast.put-str(t, ''))
+    idx
+}
+
+; ps-mk-eq：InfixExpression{==}[l, r]（l/r 必須已完整建成）
+ps-mk-eq = (t ast, l i64, r i64) (idx i64) {
+    idx = ast.add(t, asp.K_INFIX_EXPRESSION)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '=='))
+    ast.kid-add(t, idx, l)
+    ast.kid-add(t, idx, r)
+    idx
+}
+
+; ps-parse-match：解析 `subj: { pat -> body … }` 的**臂區**（已消費 `:` 與 `{`），
+;   停在閉合 `}` 前（呼叫端 ps-expect(RBRACE)）。desugar 為 if/else 鏈：
+;   • 非 wildcard 臂：cond = subj==pat，consequence = 臂區塊（先塞 it 合成綁定）
+;   • wildcard `_`：其區塊直接作前一 if 的 alternative
+;   • 相鄰非 wildcard 臂：後臂包成 else 區塊 BlockStatement{}[ExpressionStatement{if}]
+;   ⚠️ arena 共享 kids 游標（add 設 kid0=kids.len）→ 父節點務必最後 add、再 kid-add。
+ps-parse-match = (t ast, p psst, subj str) (idx i64) {
+    wildA []i64 = with-cap(4)
+    patA  []i64 = with-cap(4)
+    blkA  []i64 = with-cap(4)
+    ps-skip-trivia(p)
+    (ps-peek(p) != tok.RBRACE) {
+        pos0 = p.pos
+
+        ; 型樣：`_` → wildcard；否則解析成表達式（int/float/bool/str/char/ident）
+        ; ⚠️ 用快照 at 令兩臂互斥（ps-peek 随位置重评会误触发，見 ps.no LBRACKET 臂同构写法）
+        wild = 0
+        pat = 0
+        at = ps-peek(p)
+        {
+            at == tok.UNDERSCORE -> {
+                ps-bump(p)
+                wild = 1
+            }
+            at != tok.UNDERSCORE -> {
+                pat = ps-parse-expr-prec(t, p, 0)
+            }
+        }
+
+        ps-skip-trivia(p)
+        ps-expect(p, tok.RARROW)
+        ps-skip-trivia(p)
+
+        ; 先完整建成 it 合成綁定 + body（父後建、kid 區段才不與子樹重疊）
+        itl = ps-mk-it-let(t, subj)
+        kids []i64 = with-cap(4)
+        kids.push(itl)
+        inline = 0
+        hd2 = 0
+        ps-peek(p) == tok.LBRACE -> {
+            ; 區塊臂（非內聯）：展開 `{
+            ps-bump(p)
+            ps-skip-trivia(p)
+            (ps-peek(p) != tok.RBRACE) {
+                s0 = p.pos
+                s = ps-parse-stmt(t, p)
+                s > 0 -> kids.push(s)
+                p.pos == s0 -> ps-bump(p)
+                ps-skip-trivia(p)
+            }
+            ps-expect(p, tok.RBRACE)
+            hd2 = 1
+        }
+        hd2 == 0 -> {
+            ; 運算式臂（內聯）：BlockStatement{inline: true}[it, ExpressionStatement{e}]
+            e = ps-parse-expr-prec(t, p, 0)
+            es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+            ast.kid-add(t, es, e)
+            kids.push(es)
+            inline = 1
+        }
+
+        ; 父後建：先 add blk，再依序 kid-add 已建好的子節點
+        blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+        j = 0
+        (j < kids.len()) {
+            ast.kid-add(t, blk, kids[j])
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+        ast.set-count(t, blk, 0, kids.len())
+        inline == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true'))
+
+        wildA.push(wild)
+        patA.push(pat)
+        blkA.push(blk)
+        p.pos == pos0 -> ps-bump(p)
+        ps-skip-trivia(p)
+    }
+
+    ; 由末臂往回組 if/else 鏈
+    res = 0
+
+    #{overflow=wrap}
+    i = blkA.len() - 1
+    (i >= 0) {
+        #{index-out=zero}
+        w = wildA[i]
+        #{index-out=zero}
+        b = blkA[i]
+        hd3 = 0
+        w == 1 -> {
+            ; wildcard：其區塊直接作前一 if 的 alternative
+            res = b
+            hd3 = 1
+        }
+        hd3 == 0 -> {
+            #{index-out=zero}
+            cond = ps-mk-eq(t, ps-mk-ident(t, subj), patA[i])
+            ; 決定 alternative
+            alt = 0
+            hd4 = 0
+            res > 0 && ast.kind-at(t, res) == asp.K_IF_EXPRESSION -> {
+                ; 後臂是 if → 包成非內聯 else 區塊 [ExpressionStatement{if}]
+                es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+                ast.kid-add(t, es, res)
+                wb = ast.add(t, asp.K_BLOCK_STATEMENT)
+                ast.kid-add(t, wb, es)
+                ast.set-count(t, wb, 0, 1)
+                alt = wb
+                hd4 = 1
+            }
+            res > 0 && hd4 == 0 -> alt = res
+            ; 父後建
+            ie = ast.add(t, asp.K_IF_EXPRESSION)
+            ast.kid-add(t, ie, cond)
+            ast.kid-add(t, ie, b)
+            ast.kid-add(t, ie, alt)
+            res = ie
+        }
+
+        #{overflow=wrap}
+        i = i - 1
+    }
+
+    ; 若最外層只是 wildcard 區塊（無 if 包裹，如 `z: { _ -> 0 }`）→ 包成 if(cond=true){blk}
+    res > 0 && ast.kind-at(t, res) == asp.K_BLOCK_STATEMENT -> {
+        cond = ps-mk-true(t)
+        ie = ast.add(t, asp.K_IF_EXPRESSION)
+        ast.kid-add(t, ie, cond)
+        ast.kid-add(t, ie, res)
+        ast.kid-add(t, ie, 0)
+        res = ie
+    }
+    idx = res
 }

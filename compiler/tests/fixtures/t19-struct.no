@@ -1,0 +1,4 @@
+p = Point{x: 1, y: 2}
+q = Empty{}
+r = Box{v: "a"}
+s = Outer{inner: Point{x: 1}}
