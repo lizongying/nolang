@@ -683,6 +683,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	goos, goarch := parseTargetPlatform(opts.Target)
 	compiler.SetTargetPlatform(goos, goarch)
 	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
+	compiler.SetVerbose(opts.Verbose)
 	compiler.SetOptionInlineThreshold(opts.OptionInlineThreshold)
 	compiler.SetLDFlags(opts.LDFlags)
 	code, err := compiler.Compile(string(source))
@@ -755,7 +756,12 @@ func vprintf(sink *bytes.Buffer, format string, args ...any) {
 // 的 IR 解析器會自動把型別化指標升級為 opaque `ptr`（opt/llc 靜默接受、無 warning），
 // 故該 toOpaquePointers 重寫層是死代碼，已於 2026-10-09 刪除——不要再加回來。
 
-// buildLLVMInternal writes LLVM IR and compiles it to an executable via opt + llc + cc.
+// buildLLVMInternal writes LLVM IR and compiles it to an executable.
+// Default (non-verbose): a single clang/zig cc process compiles the .ll
+// directly — opt + llc + link all happen inside clang (one spawn, minimal
+// toolchain dependency: only clang, not opt/llc). With -v, the standalone
+// opt + llc stages are kept so intermediate artifacts (<out>_opt.ll / <out>.s)
+// are emitted for inspection.
 // If sink is non-nil, output is buffered to avoid interleaving in parallel builds.
 func buildLLVMInternal(code string, fileName string, outPath string, cc string, target string, verbose bool, linkLibs []string, sink *bytes.Buffer) error {
 	// WASM 建構下無法呼叫本機 LLVM 工具鏈（opt/llc/clang）。
@@ -799,94 +805,100 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		}
 	}
 
-	// opt -O2 最佳化
-	if verbose {
-		vprintf(sink, "Generated LLVM IR: %s\n", llPath)
-	}
-	optPath := filepath.Join(tempDir, fileName+"_opt.ll")
+	// 後端管線（native / WASI 共用）：
+	//   預設（非 verbose）＝ 單進程：直接把 .ll 交給 clang / zig cc，
+	//     由 clang 在內部完成 optimize + lower + link（等同 `clang -x ir`），
+	//     不再分別 spawn opt / llc。這是 MIR 後端的標準路徑，依賴面最小
+	//     （只需 clang，不須 Homebrew LLVM 的 opt / llc）。
+	//   verbose ＝ 保留 opt -O2 + llc 兩段，產出可檢視的中間檔
+	//     （<out>_opt.ll 與 <out>.s），方便除錯。
 	optLevel := os.Getenv("NOLANG_OPT_LEVEL")
 	if optLevel == "" {
 		optLevel = "-O2"
 	}
-	optCmd := exec.Command("opt", optLevel, llPath, "-S", "-o", optPath)
-	if sink != nil {
-		optCmd.Stdout = sink
-		optCmd.Stderr = sink
-	} else {
-		optCmd.Stdout = os.Stdout
-		optCmd.Stderr = os.Stderr
-	}
-	if verbose {
-		vprintf(sink, "Running: opt %s %s -o %s\n", optLevel, llPath, optPath)
-	}
-	if err := optCmd.Run(); err != nil {
-		// 區分 "opt 不存在" 和 "IR 錯誤"
-		if _, lookErr := exec.LookPath("opt"); lookErr != nil {
-			if verbose {
-				vprintf(sink, "opt not available, using unoptimized IR\n")
-			}
-			optPath = llPath
-		} else {
-			return fmt.Errorf("LLVM optimization failed: %w", err)
-		}
-	}
-	if optPath != llPath && verbose {
-		raw, _ := os.ReadFile(optPath)
-		os.WriteFile(outPath+"_opt.ll", raw, 0644)
-	}
-	llPath = optPath
+	singleShot := !verbose
 
-	// llc → .s (assembly)
-	// --fp-contract=fast enables FMA synthesis (e.g. fmul+fadd → fmadd).
-	// This matches the default behavior of gcc -O2 / clang -O2 on C code,
-	// where FP_CONTRACT is permitted by the standard. Only the last bit of
-	// rounding may differ, which is acceptable for Nolang programs and
-	// yields significant performance gains on FP-intensive workloads
-	// (e.g. mandelbrot inner loop: fmul+fadd → single fmadd instruction).
-	//
-	// WASI 目標跳過 llc：clang/zig cc 可直接編譯 LLVM IR，且 WASM 組譯器
-	// 不支援 llc 生成的引號識別符（如 @"HEX-UPPER"），直接傳 .ll 給 cc 避免
-	// 組譯階段的符號解析問題。
-	sPath := filepath.Join(tempDir, fileName+".s")
-	if !isWasiTarget {
-		// MIR-emitted IR carries the `!nolang.mir.backend` marker (added by
-		// mir.codegen). Its instruction shape lets llc fuse `fmul`+`fadd`
-		// into an FMA where the legacy IR does not, so fusing shifts float
-		// results by 1 ulp relative to the legacy backend — which is what
-		// MIR is validated against (test-tmp-nbody-debug: vz[0]
-		// ...052e-05 vs legacy ...048e-05). Nolang has no FMA semantics, so
-		// MIR builds use strict (unfused) evaluation. Legacy keeps `fast`
-		// for the documented FP-throughput win.
-		fpContract := "fast"
-		if strings.Contains(code, "!nolang.mir.backend") {
-			fpContract = "off"
+	// MIR IR 關閉 FP contraction（避免 fmul+fadd 融合成 FMA，與 MIR 驗證基準一致）；
+	// 其餘（理論上已移除的 legacy）才用 fast。
+	fpContract := "fast"
+	if strings.Contains(code, "!nolang.mir.backend") {
+		fpContract = "off"
+	}
+
+	var sPath string
+	if !singleShot {
+		// ---- verbose：保留 opt + llc，供檢視中間產物 ----
+		if verbose {
+			vprintf(sink, "Generated LLVM IR: %s\n", llPath)
 		}
-		llcArgs := []string{"--fp-contract=" + fpContract, llPath, "-o", sPath}
-		if target != "" {
-			llcArgs = append([]string{"-mtriple=" + target}, llcArgs...)
-		}
-		llcCmd := exec.Command("llc", llcArgs...)
+		optPath := filepath.Join(tempDir, fileName+"_opt.ll")
+		optCmd := exec.Command("opt", optLevel, llPath, "-S", "-o", optPath)
 		if sink != nil {
-			llcCmd.Stdout = sink
-			llcCmd.Stderr = sink
+			optCmd.Stdout = sink
+			optCmd.Stderr = sink
 		} else {
-			llcCmd.Stdout = os.Stdout
-			llcCmd.Stderr = os.Stderr
+			optCmd.Stdout = os.Stdout
+			optCmd.Stderr = os.Stderr
 		}
 		if verbose {
-			vprintf(sink, "Running: llc %s -o %s\n", llPath, sPath)
-			if target != "" {
-				vprintf(sink, "  target: %s\n", target)
+			vprintf(sink, "Running: opt %s %s -o %s\n", optLevel, llPath, optPath)
+		}
+		if err := optCmd.Run(); err != nil {
+			// 區分 "opt 不存在" 和 "IR 錯誤"
+			if _, lookErr := exec.LookPath("opt"); lookErr != nil {
+				if verbose {
+					vprintf(sink, "opt not available, using unoptimized IR\n")
+				}
+				optPath = llPath
+			} else {
+				return fmt.Errorf("LLVM optimization failed: %w", err)
 			}
 		}
-		if err = llcCmd.Run(); err != nil {
-			return fmt.Errorf("LLVM assembly failed: %w", err)
+		if optPath != llPath && verbose {
+			raw, _ := os.ReadFile(optPath)
+			os.WriteFile(outPath+"_opt.ll", raw, 0644)
 		}
-	} else if verbose {
-		vprintf(sink, "Skipping llc for WASI target (clang reads .ll directly)\n")
+		llPath = optPath
+
+		sPath = filepath.Join(tempDir, fileName+".s")
+		if !isWasiTarget {
+			llcArgs := []string{"--fp-contract=" + fpContract, llPath, "-o", sPath}
+			if target != "" {
+				llcArgs = append([]string{"-mtriple=" + target}, llcArgs...)
+			}
+			llcCmd := exec.Command("llc", llcArgs...)
+			if sink != nil {
+				llcCmd.Stdout = sink
+				llcCmd.Stderr = sink
+			} else {
+				llcCmd.Stdout = os.Stdout
+				llcCmd.Stderr = os.Stderr
+			}
+			if verbose {
+				vprintf(sink, "Running: llc %s -o %s\n", llPath, sPath)
+				if target != "" {
+					vprintf(sink, "  target: %s\n", target)
+				}
+			}
+			if err = llcCmd.Run(); err != nil {
+				return fmt.Errorf("LLVM assembly failed: %w", err)
+			}
+		} else if verbose {
+			vprintf(sink, "Skipping llc for WASI target (clang reads .ll directly)\n")
+		}
 	}
 
-	// cc → executable (assemble + link)
+	// ---- clang / zig cc：組譯 + 連結 ----
+	// 單進程路徑（非 verbose）：clang 直接吃 .ll（需 -x ir + 優化等級 + fp-contract）。
+	// verbose 路徑：非 WASI 吃 llc 產出的 .s；WASI 仍跳 llc、吃 .ll。
+	var clangIn string
+	if singleShot {
+		clangIn = llPath
+	} else if isWasiTarget {
+		clangIn = llPath
+	} else {
+		clangIn = sPath
+	}
 	var clangArgs []string
 	if isWasiTarget {
 		// WASI 目標：跳過所有原生平台 -l<lib> 連結（包含 -lws2_32 等 Windows 專屬函式庫）。
@@ -905,7 +917,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 			}
 			clangArgs = append(clangArgs, "--sysroot="+sysroot)
 		}
-		clangArgs = append(clangArgs, llPath, "-o", outPath)
+		clangArgs = append(clangArgs, clangIn, "-o", outPath)
 	} else {
 		if target != "" {
 			clangArgs = append(clangArgs, "--target="+target)
@@ -915,7 +927,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 			tGoos, _ := parseTargetPlatform(target)
 			isWindowsTarget = tGoos == "windows"
 		}
-		clangArgs = append(clangArgs, sPath, "-o", outPath)
+		clangArgs = append(clangArgs, clangIn, "-o", outPath)
 		// Linux 發行版預設以 PIE 連結；本後端經 llc 產出的物件使用
 		// R_X86_64_32 絕對重定位（如 .rodata 中的常數查表），無法連結成
 		// PIE 可執行檔。對 Linux 目標改用 -no-pie 產生非 PIE 二進位。
@@ -934,6 +946,10 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		if isWindowsTarget {
 			clangArgs = append(clangArgs, "-lws2_32")
 		}
+	}
+	if singleShot {
+		// 單進程：告訴 clang 輸入是 LLVM IR，並在內部做優化 + 程式碼生成 + 連結。
+		clangArgs = append([]string{optLevel, "-ffp-contract=" + fpContract, "-x", "ir"}, clangArgs...)
 	}
 	var clangCmd *exec.Cmd
 	if cc == "zig" {
@@ -954,7 +970,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		if cc == "zig" {
 			cmdStr = "zig cc"
 		}
-		vprintf(sink, "Running: %s %s -o %s\n", cmdStr, sPath, outPath)
+		vprintf(sink, "Running: %s %s -o %s\n", cmdStr, clangIn, outPath)
 	}
 	if err = clangCmd.Run(); err != nil {
 		return fmt.Errorf("linking failed: %w", err)

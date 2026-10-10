@@ -29,7 +29,7 @@ make         # build everything (no + lsp)
 `make` runs `make gen` before compiling. `make gen` regenerates
 `src/checker/stdsig_gen.go`, a **baked-in** signature table for the standard
 library (`funcSigs` / `methodSigs` / `funcParams` / `methodParams` /
-`structFields` / `aliases` / `structMod` / `enumVariants`). With it, every
+`structFields` / `aliases` / `structMod` / `enumVariants` / `embeddedStdModules`). With it, every
 `no build` skips the full std-parse PASS1 and starts much faster.
 
 If you edit `src/std` and build **without** regenerating that table, the compiler

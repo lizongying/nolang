@@ -8259,7 +8259,7 @@ func debugCountHashFns(stage string, merged *parser.Program) {
 // nolang.StdFS (embedded), while the signature-table generator uses an
 // os.DirFS over src/ on disk. Both yield identical module lists because the
 // embed source and the disk source are the same files.
-func listStdModules(fsys fs.FS) []StdModuleInfo {
+func ListStdModules(fsys fs.FS) []StdModuleInfo {
 	var infos []StdModuleInfo
 	seen := make(map[string]bool)
 
@@ -8306,8 +8306,26 @@ func listStdModules(fsys fs.FS) []StdModuleInfo {
 }
 
 func knownStdModules() []StdModuleInfo {
+	if embeddedStdSigReady {
+		// 与 CollectStdModuleSignatures 一致：用透过 make 注入的 key 校验内嵌
+		// 模块列表（embeddedStdModules），避免每次都走 FS walk。空 key = 非
+		// make 途径，直接报错；key 不符 = 表过期，也报错。两者都强制走 `make no`。
+		if StdSigKey == "" {
+			fmt.Fprintln(os.Stderr, "[no] ERROR: 標準庫簽名 key 未注入（StdSigKey 為空）。")
+			fmt.Fprintln(os.Stderr, "[no]   這個二進位不是透過 `make` 建構的——直接 `go build` / `go test`")
+			fmt.Fprintln(os.Stderr, "[no]   會跳過簽名表產生與 key 注入。修正：執行 `make no`。")
+			os.Exit(1)
+		}
+		if StdSigKey == embeddedStdSigKey {
+			return embeddedStdModules
+		}
+		fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌標準庫模組列表與建構時注入的簽名 key 不符（建構不一致）。")
+		fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make no`（它會先跑 `make gen` 再建構並注入 key）。")
+		os.Exit(1)
+	}
+	// 表不存在（如第一次 `make gen` 前）：退回 FS walk（sync.Once 缓存）。
 	knownStdModulesOnce.Do(func() {
-		knownStdModulesList = listStdModules(nolang.StdFS)
+		knownStdModulesList = ListStdModules(nolang.StdFS)
 	})
 	return knownStdModulesList
 }
@@ -8462,7 +8480,7 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 	var mods []parsedMod
 	// 並行解析：各模組的 lex+parse 相互獨立，僅共用有鎖的 token LRU。
 	// 結果按模組原順序寫回，保持 last-wins 合併語義不變。
-	known := listStdModules(fsys)
+	known := ListStdModules(fsys)
 	parsed := make([]*parser.Program, len(known))
 	parsedCK := make([]string, len(known))
 	hirPkgs := make([]*hir.Package, len(known))

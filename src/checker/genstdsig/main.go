@@ -69,6 +69,10 @@ func main() {
 	if err != nil {
 		fatal(fmt.Sprintf("genstdsig: key failed: %v", err))
 	}
+	// Module list (9th baked table). Enumerated from the SAME on-disk src/std
+	// via the exported ListStdModules, so it is consistent with the key and the
+	// other 8 tables — all derive from src/std.
+	mods := checker.ListStdModules(fsys)
 
 	var buf bytes.Buffer
 	buf.WriteString(header)
@@ -96,6 +100,8 @@ func main() {
 	writeMapStringInline(&buf, structMod)
 	buf.WriteString("\tembeddedStdEnumVariants = ")
 	writeMapStringSliceInline(&buf, enumVariants)
+	buf.WriteString("\tembeddedStdModules = ")
+	writeModuleInfos(&buf, mods)
 	buf.WriteString("}\n")
 
 	formatted, err := goformat.Source(buf.Bytes())
@@ -167,6 +173,22 @@ func writeMapStringMapInline(buf *bytes.Buffer, m map[string]map[string]string) 
 			fmt.Fprintf(buf, "\t\t%s: %s,\n", strconv.Quote(ik), strconv.Quote(inner[ik]))
 		}
 		buf.WriteString("\t},\n")
+	}
+	buf.WriteString("}\n")
+}
+
+func writeModuleInfos(buf *bytes.Buffer, mods []checker.StdModuleInfo) {
+	sorted := append([]checker.StdModuleInfo(nil), mods...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].FullPath < sorted[j].FullPath })
+
+	if len(sorted) == 0 {
+		buf.WriteString("[]StdModuleInfo{}\n")
+		return
+	}
+	buf.WriteString("[]StdModuleInfo{\n")
+	for _, m := range sorted {
+		fmt.Fprintf(buf, "\t{ShortName: %s, FullPath: %s, ShortPath: %s},\n",
+			strconv.Quote(m.ShortName), strconv.Quote(m.FullPath), strconv.Quote(m.ShortPath))
 	}
 	buf.WriteString("}\n")
 }

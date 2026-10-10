@@ -134,7 +134,7 @@ make help       # 查看所有構建目標
 > `make` 在建構前會自動執行 `make gen`，重新產生 `src/checker/stdsig_gen.go`
 > —— 一份**內嵌進二進位**的標準庫簽名表（`funcSigs` / `methodSigs` /
 > `funcParams` / `methodParams` / `structFields` / `aliases` / `structMod` /
-> `enumVariants`）。有了它，每次 `no build` 都跳過「全量解析所有 std」的
+> `enumVariants` / `embeddedStdModules`）。有了它，每次 `no build` 都跳過「全量解析所有 std」的
 > PASS1，啟動明顯更快。
 >
 > 如果你修改過 `src/std` 卻**沒有**先 `make gen` 就直接 `go build`，編譯器會

@@ -48,6 +48,11 @@ type Transpiler struct {
 	targetGoos    string
 	targetGoarch  string
 	noBoundsCheck bool // skip bounds checks in generated code (unsafe mode)
+	// verbose 對應 build/run 的 -v：非 verbose 時後端走單進程 clang -x ir，
+	// 且跳過 MIR IR 的 opt 驗證門禁（verifyMIRIRViaOpt）以做到嚴格 1 spawn；
+	// verbose 時才保留 opt 驗證 + opt/llc 中間檔。NOLANG_MIR_PREFLIGHT=full
+	// 也強制跑驗證門禁（保留該除錯開關的語意）。
+	verbose bool
 	// ldFlags: -ld-KEY=VALUE pairs injected as compile-time global constants.
 	// Set via SetLDFlags before Compile; the synthetic LetStatements are
 	// prepended to the parsed program in CompileTarget.
@@ -105,6 +110,14 @@ func (t *Transpiler) SetOptionInlineThreshold(n int) {
 
 func (t *Transpiler) SetNoBoundsCheck(skip bool) {
 	t.noBoundsCheck = skip
+}
+
+// SetVerbose mirrors the build/run -v flag into the transpiler so the MIR IR
+// verification gate (verifyMIRIRViaOpt) only runs when the user opts into
+// verbose output; non-verbose builds keep the backend at a strict single
+// clang -x ir spawn.
+func (t *Transpiler) SetVerbose(v bool) {
+	t.verbose = v
 }
 
 // SetLDFlags sets the -ld-KEY=VALUE pairs to inject as compile-time global constants.
@@ -1774,11 +1787,18 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 			fmt.Fprintf(os.Stderr, "[MIR] emitted LLVM -> %s\n", f.Name())
 		}
 	}
-	if verr := verifyMIRIRViaOpt(ll); verr != nil {
-		if debug {
-			fmt.Fprintf(os.Stderr, "[MIR] opt verification failed: %v\n", verr)
+	// verify 門禁（opt -passes=verify）僅 verbose（或 NOLANG_MIR_PREFLIGHT=full）
+	// 時保留：非 verbose 走單進程 clang -x ir，嚴格 1 spawn，不再 spawn opt。
+	// IR 若有錯，clang 自身會在 parse 期執行同一套 LLVM verifier 並報錯
+	//（僅訊息不如 MIR 專屬錯誤具體）。
+	runVerify := t.verbose || os.Getenv("NOLANG_MIR_PREFLIGHT") == "full"
+	if runVerify {
+		if verr := verifyMIRIRViaOpt(ll); verr != nil {
+			if debug {
+				fmt.Fprintf(os.Stderr, "[MIR] opt verification failed: %v\n", verr)
+			}
+			return "", fmt.Sprintf("opt-verify: %v", verr)
 		}
-		return "", fmt.Sprintf("opt-verify: %v", verr)
 	}
 	return ll, ""
 }
