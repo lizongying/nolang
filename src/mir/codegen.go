@@ -8218,76 +8218,154 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	_ = v
 }
 
-// ensureStrLongBuffer makes a `s[i] = x` store safe for the %str-long at arrSlot:
-// if the backing byte buffer is null (a string declared with no capacity, or a
-// moved-from / dropped buffer), it mallocs a default-capacity buffer so the
-// store never writes through a null i8*. This is the %str-long analogue of
-// ensureVecBuffer's case 1 (the null-data allocation).
+// ensureStrLongBuffer makes a `s[i] = x` store safe for the %str-long at arrSlot.
+// There are two cases, mirroring ensureVecBuffer:
 //
-// Unlike %vec (whose data is stored as an i64 and inttoptr'd at use), a
-// %str-long's data is a real i8* pointer, so the malloc here operates on i8*
-// directly — no ptrtoint/inttoptr round-trip. The buffer is byte-addressed
-// (see elemAddrRaw: `getelementptr i8, i8* d, i64 idxV`), so a write at byte
-// index idxV needs at least idxV+1 bytes; we size the fresh buffer to
-// max(strDefaultCap, idxV+1) so any caller index is in range.
+//   - null data (case 1): a string declared with no capacity, or a moved-from /
+//     dropped buffer — malloc a default-capacity buffer so the store never writes
+//     through a null i8*.
 //
-// This only covers the null-data case. The %str-long growth case (idxV >= cap
-// with a NON-NULL data pointer) is a separate concern — str mutation grows via
-// re-encode — and is deliberately NOT addressed here; a borrowed view
-// (string -> []byte coercion: cap==0, non-null data aliasing the source
-// string) must be left alone exactly as before, and growing it would free a
-// buffer the string still owns.
+//   - non-null data (case 2, the growth guard): the buffer exists but is too
+//     small for element idxV — i.e. idxV+1 > cap. A write at that index would
+//     land PAST the allocated buffer: a heap-buffer-overflow / use-after-free of
+//     adjacent heap memory. This is the "%str-long 下標寫無增長護欄" memory-safety
+//     gap. We realloc to max(cap*2, idxV+1), copy the live bytes, and free the
+//     old buffer — exactly like ensureVecBuffer's grow block.
+//
+// Both cases size the buffer to at least idxV+1 bytes, so the subsequent
+// `getelementptr i8, i8* d, i64 idxV` (see elemAddrRaw) is always in range.
+//
+// Borrowed views (cap == 0, non-null data aliasing someone else's storage, e.g.
+// a string -> []byte coercion) are LEFT ALONE: we must not grow or free a buffer
+// the source string still owns. The `cap > 0` guard in the check block makes the
+// grow apply only to owned buffers; cap == 0 falls straight through to done.
 func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT string) {
 	const strDefaultCap = int64(1024)
+	const strMinCap = int64(4)
 	_ = elemT
 	_ = v
 
-	// Fresh buffer size: at least idxV+1 bytes, but never smaller than the
-	// default capacity (so a string written only near the front keeps a
-	// reasonable slack, matching the vec convention).
+	// need = idxV + 1 bytes at minimum.
 	c.loadSeq++
 	needReg := fmt.Sprintf("%%slbn%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", needReg, idxV))
-	c.loadSeq++
-	overDefault := fmt.Sprintf("%%slbo%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %d\n", overDefault, needReg, strDefaultCap))
-	c.loadSeq++
-	sizeReg := fmt.Sprintf("%%slbs%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %d\n", sizeReg, overDefault, needReg, strDefaultCap))
 
-	// Load data (field 2) once, in the entry block, so it dominates both
-	// branches below.
+	// Load data (field 2) and cap (field 1) once so they dominate every branch
+	// below.
 	c.loadSeq++
 	dg := fmt.Sprintf("%%slbdg%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dg, arrSlot))
 	c.loadSeq++
 	di := fmt.Sprintf("%%slbdi%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", di, dg))
-
-	c.loadSeq++
-	isnull := fmt.Sprintf("%%slbnl%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8* %s, null\n", isnull, di))
-
-	c.loadSeq++
-	lAlloc := fmt.Sprintf("slbA%d", c.loadSeq)
-	lDone := fmt.Sprintf("slbD%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lDone))
-
-	// alloc block (case 1): malloc the default buffer, store data + cap.
-	c.sb.WriteString(fmt.Sprintf("%s:\n", lAlloc))
-	c.loadSeq++
-	buf := fmt.Sprintf("%%slbbuf%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sizeReg))
-	// Zero it: the bytes are owned (and a %str-long element that aliases a
-	// garbage pointer would free() an arbitrary address on drop), so a fresh
-	// buffer starts clean exactly like the vec path.
-	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sizeReg))
-	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", buf, dg))
 	c.loadSeq++
 	cg := fmt.Sprintf("%%slbcg%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", cg, arrSlot))
+	c.loadSeq++
+	ci := fmt.Sprintf("%%slbci%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", ci, cg))
+
+	// null data -> allocate (case 1); non-null -> check for growth (case 2).
+	c.loadSeq++
+	isnull := fmt.Sprintf("%%slbnl%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8* %s, null\n", isnull, di))
+	c.loadSeq++
+	lAlloc := fmt.Sprintf("slbA%d", c.loadSeq)
+	lCheck := fmt.Sprintf("slbC%d", c.loadSeq)
+	lGrow := fmt.Sprintf("slbG%d", c.loadSeq)
+	lDone := fmt.Sprintf("slbD%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lCheck))
+
+	// alloc block (case 1): malloc max(default, need), store data + cap.
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lAlloc))
+	c.loadSeq++
+	overDefault := fmt.Sprintf("%%slbo%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %d\n", overDefault, needReg, strDefaultCap))
+	c.loadSeq++
+	sizeReg := fmt.Sprintf("%%slbs%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %d\n", sizeReg, overDefault, needReg, strDefaultCap))
+	c.loadSeq++
+	buf := fmt.Sprintf("%%slbbuf%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sizeReg))
+	// Zero it: the bytes are owned, so a fresh buffer starts clean exactly like
+	// the vec path (a %str-long element that aliases a garbage pointer would
+	// free() an arbitrary address on drop).
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sizeReg))
+	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", buf, dg))
 	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", sizeReg, cg))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lDone))
+
+	// check block (case 2): an owned buffer (cap > 0) that is too small for
+	// element idxV must grow. A borrowed view (cap == 0) or an in-range write is
+	// left alone — growing a borrowed view would free a buffer the source still
+	// owns (UAF).
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lCheck))
+	c.loadSeq++
+	posCap := fmt.Sprintf("%%slbpc%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, 0\n", posCap, ci))
+	c.loadSeq++
+	full0 := fmt.Sprintf("%%slbf0%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", full0, needReg, ci))
+	c.loadSeq++
+	full := fmt.Sprintf("%%slbf%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", full, posCap, full0))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", full, lGrow, lDone))
+
+	// grow block (case 2): newCap = max(cap*2, need, strMinCap); copy the live
+	// bytes, then free the old buffer. Freeing is safe: the bytes are MOVED (a
+	// shallow copy of the payload), not duplicated — the new buffer takes over
+	// ownership of the same character data, and the %str-long's own drop later
+	// frees only the current (new) data pointer. This is the %str-long sibling of
+	// ensureVecBuffer's grow block.
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lGrow))
+	c.loadSeq++
+	dbl := fmt.Sprintf("%%slbdl%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 2\n", dbl, ci))
+	c.loadSeq++
+	ovr := fmt.Sprintf("%%slbov%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", ovr, dbl, needReg))
+	c.loadSeq++
+	// NOTE: prefix must NOT be a digit-extension of another `slb*` name.
+	// `slbn1` would collide with `slbn`+`1...` (e.g. `slbn`+`1963` ==
+	// `slbn1`+`963` == "slbn1963"), which is exactly the base32.no
+	// "multiple definition of local value" regression. Use `slbw` ("w" for
+	// the new width) so the textual boundary is unambiguous.
+	n1 := fmt.Sprintf("%%slbw%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", n1, ovr, dbl, needReg))
+	c.loadSeq++
+	sm := fmt.Sprintf("%%slbsm%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, %d\n", sm, n1, strMinCap))
+	c.loadSeq++
+	newCap := fmt.Sprintf("%%slbnc%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %d, i64 %s\n", newCap, sm, strMinCap, n1))
+	c.loadSeq++
+	gbuf := fmt.Sprintf("%%slbgb%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", gbuf, newCap))
+	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", gbuf, newCap))
+	// Copy min(len, cap) live bytes — never more than the old buffer holds.
+	c.loadSeq++
+	lg := fmt.Sprintf("%%slblg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lg, arrSlot))
+	c.loadSeq++
+	li := fmt.Sprintf("%%slbli%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", li, lg))
+	c.loadSeq++
+	lenOver := fmt.Sprintf("%%slblo%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", lenOver, li, ci))
+	c.loadSeq++
+	copyN := fmt.Sprintf("%%slbcn%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", copyN, lenOver, ci, li))
+	c.decl("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)")
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", gbuf, di, copyN))
+	c.decl("declare void @free(i8*)")
+	// Release the old buffer. It is an @nolang_rc_alloc block (string literal,
+	// with-cap, concat, clone all allocate through it), so @nolang_free's
+	// refcount check passes; a borrowed view (cap==0) never reaches here.
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", di))
+	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", gbuf, dg))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", newCap, cg))
 	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lDone))
 
 	// done block: merge point; the caller's subsequent store lands here.
@@ -8983,9 +9061,6 @@ func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 	slot := c.valSlot[v]
 	tid := c.localTypeOf(v)
 	if slot == "" || tid == NoType {
-		return slot, tid, false
-	}
-	if os.Getenv("NOLANG_MIR_NO_LVALUE") != "" {
 		return slot, tid, false
 	}
 	defIID, ok := c.defInst[v]
@@ -12619,7 +12694,17 @@ func (c *codegen) vecFromArraySink(argT, arrSlot string, elemID TypeID) string {
 				return cl
 			}
 		}
-		return s
+		// Fallback (only reached when the element TypeID is unresolvable and
+		// vecDeepClone therefore cannot be built): NEVER return the cap==0
+		// borrow view `s` — that points at the source array's STACK storage and
+		// dangles the instant the owning frame pops (the "vecFromArraySink 悬垂"
+		// memory-safety item). Instead produce a heap-owned copy via
+		// vecOwnedFromArray: it memcpy's the array into fresh heap storage, so at
+		// worst it aliases the element's owned leaves (a bounded leak on drop,
+		// never a use-after-free). The caller's arrayElemTypeID lookup should
+		// resolve in every well-formed emit context, so this branch is the
+		// safety net that guarantees no dangling view can escape this function.
+		return c.vecOwnedFromArray(argT, arrSlot)
 	}
 }
 

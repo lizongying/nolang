@@ -169,6 +169,16 @@ func checkArgCountInStmt(stmt parser.Statement, sigs map[string]*funcSig) []Vali
 		if s.Value != nil {
 			return checkArgCountInExpr(s.Value, sigs)
 		}
+	case *parser.BlockStatement:
+		// 入口程序頂層 `{ ... }` 區塊（如 `no run` 的腳本式入口）也是一條
+		// 頂層陳述句，必須遞迴其內部陳述，否則塊內對 std 函式（如
+		// sha1.sha1-hex() 漏參）的呼叫會被合併後的數量檢查漏掉——完整型別
+		// 檢查 checkCallArgsInStmtWithResultParams 已有此分支，此處對齊。
+		var results []ValidateResult
+		for _, bs := range s.Statements {
+			results = append(results, checkArgCountInStmt(bs, sigs)...)
+		}
+		return results
 	case *parser.FunctionDefinition:
 		var results []ValidateResult
 		if s.Body != nil {

@@ -29,8 +29,7 @@ import (
 // It is behind a switch purely for ATTRIBUTION. The workspace carries other
 // people's uncommitted changes, so the frozen golden baseline is not a valid
 // "before" reference; the only reliable way to attribute a moved test is to
-// compare the SAME binary with this on and off (same precedent as
-// NOLANG_MIR_NO_LVALUE). Enable with NOLANG_FIELD_PTR=1.
+// compare the SAME binary with this on and off. Enable with NOLANG_FIELD_PTR=1.
 //
 // Default OFF until the flip is complete, because a half-applied flip is worse
 // than none: with the layout changed but the borrow mechanism not yet in place,

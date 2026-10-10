@@ -408,6 +408,82 @@ test-struct-array-clone = () (ok bool) {
     c0b.name == 'Charlie' -> ok = true
 }
 
+; ============================================================
+; 測試 13：[][]i64 透過 insert 深層 clone — 插入後來源重新賦值不導致 UAF
+; 這是「%vec 缺 clone」三個 by-value 元素寫入（push / 賦值 / insert）中最後一個
+; 漏掉 clone 的：insert 只 clone %str-long 元素，對 %vec（嵌套切片）元素共享
+; 來源緩衝區，來源 drop 後容器元素懸垂（UAF / double-free）。
+; ============================================================
+test-insert-nested-clone = () (ok bool) {
+    outer [][]i64
+    inner []i64 = [7, 8, 9]
+    outer.insert(0, inner)
+    ; 重新賦值 inner —— 舊值 [7,8,9] 的 drop 會釋放其緩衝區。
+    ; 若 insert 共享緩衝區（修復前），outer[0] 會懸垂，讀回垃圾甚至崩潰。
+    inner = [100, 200, 300]
+
+    #{index-out=zero}
+    got = outer[0]
+    got[0] == 7 -> ok = true
+    got[1] == 8 -> ok = true
+    got[2] == 9 -> ok = true
+    got.len() == 3 -> ok = true
+
+    ; 第二個元素獨立
+    inner2 []i64 = [1, 2]
+    outer.insert(1, inner2)
+    inner2 = [9, 9, 9, 9]
+    #{index-out=zero}
+    got2 = outer[1]
+    got2[0] == 1 -> ok = true
+    got2[1] == 2 -> ok = true
+    got2.len() == 2 -> ok = true
+}
+
+; ============================================================
+; 測試 14：[][]str 透過 insert 深層 clone — 字串元素 insert 同樣須獨立拷貝
+; ============================================================
+test-insert-nested-str-clone = () (ok bool) {
+    outer [][]str
+    inner []str = ['a', 'b', 'c']
+    outer.insert(0, inner)
+    inner = ['x', 'y', 'z']
+
+    #{index-out=zero}
+    got = outer[0]
+    got[0] == 'a' -> ok = true
+    got[1] == 'b' -> ok = true
+    got[2] == 'c' -> ok = true
+    got.len() == 3 -> ok = true
+}
+
+; ============================================================
+; 測試 15：固定陣列 [N]str → []str 透過 vecFromArraySink 深層 clone
+; build-from-fixed 把固定陣列 arr 賦給結果參數 s 後返回 —— arr 的框退出時
+; 其堆上的字串緩衝區被 drop 釋放。若 vecFromArraySink 回傳 cap==0 的借用視圖
+; （指向 arr 的堆疊儲存），s 會在讀取前懸垂（UAF）；deep-clone 讓 s 持有
+; 自己的拷貝。這是 vecFromArraySink 懸垂記憶體安全項的釘子測試。
+; ============================================================
+build-from-fixed = () (s []str) {
+    arr [3]str = ['p', 'q', 'r']
+    s = arr
+    return
+}
+
+test-fixed-array-sink-clone = () (ok bool) {
+    s = build-from-fixed()
+    #{index-out=zero}
+    a = s[0]
+    #{index-out=zero}
+    b = s[1]
+    #{index-out=zero}
+    c = s[2]
+    a == 'p' -> ok = true
+    b == 'q' -> ok = true
+    c == 'r' -> ok = true
+    s.len() == 3 -> ok = true
+}
+
 main = () {
     ok1 = test-nested-clone-vec()
     print('test-nested-clone-vec: {ok1}')
@@ -444,4 +520,13 @@ main = () {
 
     ok12 = test-struct-array-clone()
     print('test-struct-array-clone: {ok12}')
+
+    ok13 = test-insert-nested-clone()
+    print('test-insert-nested-clone: {ok13}')
+
+    ok14 = test-insert-nested-str-clone()
+    print('test-insert-nested-str-clone: {ok14}')
+
+    ok15 = test-fixed-array-sink-clone()
+    print('test-fixed-array-sink-clone: {ok15}')
 }

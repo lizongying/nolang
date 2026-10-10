@@ -1936,23 +1936,32 @@ func (c *codegen) elemInfoOfVec(recv ValueID) (elemLL string, stride int64) {
 	raw := c.rawTypeOf(recv)
 	elem := strings.TrimPrefix(raw, "[]")
 	elem = strings.TrimPrefix(elem, "?")
-	switch elem {
-	case "i8", "u8", "byte", "bool":
+	switch {
+	case elem == "i8", elem == "u8", elem == "byte", elem == "bool":
 		return "i8", 1
-	case "i16", "u16":
+	case elem == "i16", elem == "u16":
 		return "i16", 2
-	case "i32", "u32":
+	case elem == "i32", elem == "u32":
 		return "i32", 4
-	case "i64", "u64":
+	case elem == "i64", elem == "u64":
 		return "i64", 8
-	case "i128", "u128":
+	case elem == "i128", elem == "u128":
 		return "i128", 16
-	case "f32":
+	case elem == "f32":
 		return "float", 4
-	case "f64":
+	case elem == "f64":
 		return "double", 8
-	case "str":
+	case elem == "str":
 		return "%str-long", 24
+	// A nested-slice element: `outer [][]i64`'s element is `[]i64`, which
+	// lowers to `%vec` (24 bytes), NOT i64. Without this case the in-place
+	// slice mutators (insert/reverse/remove/sort) used an 8-byte stride and an
+	// `i64` element type for nested slices — corrupting the backing store — and
+	// emitBuiltinVecInsert's `if elemLL == "%vec"` clone guard (the third and
+	// last of the three by-value element writes that must deep-clone a nested
+	// %vec) could never fire.
+	case strings.HasPrefix(elem, "[]"):
+		return "%vec", 24
 	default:
 		return "i64", 8
 	}
@@ -2286,6 +2295,39 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 		cl := c.treg("ivc2")
 		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, elemV))
 		elemV = cl
+	}
+	// A %vec element (a nested slice, e.g. `outer.insert(0, inner)` with
+	// `outer [][]i64`) would otherwise be stored by value, sharing the inserted
+	// slice's backing buffer with the temp it came from. The temp's drop frees
+	// that buffer out from under the vec element — the exact UAF / double-free
+	// the PUSH path (the `elemLL == "%vec"` branch in emitBuiltinVecPush) and the
+	// assignment path (emitIndexStore's `elemT == "%vec" && valT == "%vec"`
+	// branch) already guard against. This is the third and last of the three
+	// by-value element writes (vec.push / vec.insert / v[i] = x) that
+	// cloneStructElemLeaves names, and insert was the one that never got the
+	// clone — so insert aliased nested slices while push and assignment gave
+	// the container its own copy.
+	//
+	// T is the RECEIVER's element's element type. For `outer [][]i64` the
+	// receiver's element is `[]i64`, so T is `i64`, and vecDeepClone(`i64`, 0)
+	// copies the inserted slice's buffer (its elements are i64) — which is
+	// exactly the clone the push path performs with vecElemTypeID(elem). We
+	// derive T from the receiver's RAW type (rawTypeOf, already used by
+	// elemInfoOfVec just above and resolved in every emit context) rather than
+	// from the inserted value's type, so this path does not depend on the full
+	// analysis/drop-insertion pass poppingulating the value's LocalTypes — the
+	// clone and the matching free (emitDrop's sliceElemTypeOfRaw) cannot drift
+	// apart. vecDeepClone specialises on T and recurses for nested slices.
+	if elemLL == "%vec" {
+		raw := strings.TrimPrefix(c.rawTypeOf(recv), "[]")
+		raw = strings.TrimPrefix(raw, "?")
+		if et := c.sliceElemTypeOfRaw(raw); et != NoType {
+			if cl := c.vecDeepClone(et, 0); cl != "" {
+				cv := c.treg("ivcv")
+				c.sb.WriteString(fmt.Sprintf("  %s = call %%vec %s(%%vec %s)\n", cv, cl, elemV))
+				elemV = cv
+			}
+		}
 	}
 	eptr := c.treg("ivep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemLL, elemLL, ebase, idxClamp2))

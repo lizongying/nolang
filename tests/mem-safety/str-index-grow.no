@@ -1,0 +1,46 @@
+; %str-long 下標寫增長護欄測試（repro + 修復後回歸）
+; 修復前：s[i] = c 在 i >= cap（owned 緩衝）越界寫入已分配緩衝之外 → 堆溢出 / SIGSEGV
+; 修復後：ensureStrLongBuffer 增長分支在 idxV+1 > cap 時 realloc 並拷貝
+
+; 測試 1：with-cap(n) 字串用動態索引寫到超過 cap — 必須增長，不溢出
+test-str-grow = () (ok bool) {
+    s str = with-cap(4)
+    n i64 = 5
+    s[0] = 'a'
+    s[1] = 'b'
+    s[2] = 'c'
+    s[3] = 'd'
+    s[n] = 'e'            ; i=5 >= cap=4 → 越界，須增長
+    m i64 = 6
+    s[m] = 'f'
+    p i64 = 7
+    s[p] = 'g'
+
+    ; 讀回並逐一比對（動態索引讀回）
+    ok = s[0] == 'a'
+    ok = ok && s[1] == 'b'
+    ok = ok && s[2] == 'c'
+    ok = ok && s[3] == 'd'
+    ok = ok && s[n] == 'e'
+    ok = ok && s[m] == 'f'
+    ok = ok && s[p] == 'g'
+}
+
+; 測試 2：字串字面量（cap==len）動態遠越界 — 修復前必 SIGSEGV（offset 100000 跨分頁寫入未映射記憶體）
+; 讀回 s[i] 使 store 存活（避免被 opt 當死代碼刪除），並作為增長後正確性的觀察點
+test-str-far-oob = () (ok bool) {
+    s str = 'abc'        ; len=3, cap=3, 非 null 3 字節堆緩衝
+    i i64 = 100000
+    s[i] = 'X'           ; 遠越界，offset 100000 跨越分頁邊界 → 修復前 SIGSEGV
+    ok = s[i] == 'X'     ; 讀回：修復前亦越界讀 → 崩潰；修復後增長到 idxV+1 → 'X'
+}
+
+main = () {
+    ok1 = test-str-grow()
+    print('test-str-grow: {ok1}')
+
+    ok2 = test-str-far-oob()
+    print('test-str-far-oob: {ok2}')
+
+    print('all done')
+}

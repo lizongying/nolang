@@ -168,9 +168,10 @@ func TestStrFieldReadWhileSourceAliveStillForwards(t *testing.T) {
 // `x = o.c; x.n = 7` writes a dead copy and the mutation the whole lvalueAddrOf
 // mechanism exists for is lost again.
 //
-// This is also what distinguishes the fix from the NOLANG_MIR_NO_LVALUE kill
-// switch: that env var also stops the markdown crash, by disabling projection
-// for everything — which silently re-breaks every mutating std method.
+// This is also what makes the fix surgical rather than a blanket "never
+// project a cloned field": disabling projection for everything (the old
+// behaviour before lvalueAddrOf existed) also stops the markdown crash, but
+// silently re-breaks every mutating std method.
 func TestNonStrFieldReadStillLvalueForwarded(t *testing.T) {
 	ir := strFieldLvalueIR(t, `counter { n i64 }
 holder { c counter }
