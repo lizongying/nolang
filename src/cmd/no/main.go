@@ -1085,7 +1085,7 @@ func installCommand(args []string) {
 	}
 
 	fmt.Printf("Building %s...\n", binName)
-	if err := nbuild.BuildFile(buildDir, opts); err != nil {
+	if _, err := nbuild.BuildFile(buildDir, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error building: %v\n", err)
 		return
 	}
@@ -2490,17 +2490,9 @@ func buildCommand(args []string) {
 		targetStr = nbuild.DetectTarget()
 	}
 
-	// 如果未通過命令列指定後端，檢查 package.jsonc 的 emit 配置自動選擇 JS 後端
-	useJS := *jsBackend
-	if !useJS && !*wasmDirect {
-		checkDir := inputPath
-		if info, err := os.Stat(inputPath); err == nil && !info.IsDir() {
-			checkDir = filepath.Dir(inputPath)
-		}
-		if pkg, _ := nbuild.LoadPackage(checkDir); pkg != nil && pkg.Compiler.Emit == "js" {
-			useJS = true
-		}
-	}
+	// 後端選擇（JS / Direct-WASM / LLVM 的 auto-detect）已集中至 build 層的
+	// nbuild.ResolveBackend；此處不再複製 package.jsonc emit=="js" 的判斷邏輯
+	// （見下方 ResolveBackend 呼叫）。
 
 	opts := nbuild.BuildOptions{
 		CC:                    *cc,
@@ -2510,120 +2502,15 @@ func buildCommand(args []string) {
 		NoBoundsCheck:         *unsafe,
 		OptionInlineThreshold: *optInlineThreshold,
 		UseDirectWasm:         *wasmDirect,
-		UseJS:                 useJS,
+		UseJS:                 *jsBackend,
 		BrowserMode:           *browserMode,
 		CompilerVersion:       version,
 		LDFlags:               ldFlags,
 	}
 
-	// JS 後端路徑：繞過 LLVM 工具鏈，直接發射 JavaScript 原始碼（型別擦除）。
-	if useJS {
-		// 如果 inputPath 是目錄，嘗試解析為 main.no
-		if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
-			mainPath := filepath.Join(inputPath, "main.no")
-			if _, err := os.Stat(mainPath); err == nil {
-				inputPath = mainPath
-			} else {
-				fmt.Fprintln(os.Stderr, "Error: JS backend requires an explicit input file or main.no (workspace mode not supported)")
-				os.Exit(1)
-			}
-		}
-
-		if *browserMode {
-			// Browser mode: output both .html and .js
-			baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
-			if baseName == "main" {
-				if pkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
-					baseName = pkg.Name
-				}
-			}
-
-			outDir := "dist"
-			outJs := filepath.Join(outDir, baseName+".js")
-			outHtml := filepath.Join(outDir, baseName+".html")
-			os.MkdirAll(outDir, 0755)
-
-			jsCode, htmlCode, err := nbuild.BuildJSBrowser(inputPath, nbuild.BuildOptions{
-				Verbose:     verbose,
-				UseJS:       true,
-				BrowserMode: true,
-			}, baseName+".js")
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-
-			if err := os.WriteFile(outJs, []byte(jsCode), 0644); err != nil {
-				fmt.Fprintf(os.Stderr, "Error writing JS: %v\n", err)
-				os.Exit(1)
-			}
-			if err := os.WriteFile(outHtml, []byte(htmlCode), 0644); err != nil {
-				fmt.Fprintf(os.Stderr, "Error writing HTML: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Built: %s\n", outJs)
-			fmt.Printf("Built: %s\n", outHtml)
-			fmt.Printf("Open in browser: %s\n", outHtml)
-			return
-		}
-
-		jsCode, err := nbuild.BuildJS(inputPath, opts)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		out := *outputFile
-		if out == "" {
-			// 預設輸出路徑：dist/<base-name>.js
-			baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
-			if baseName == "main" {
-				// 嘗試從同目錄的 package.jsonc 取得套件名稱
-				if pkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
-					baseName = pkg.Name
-				}
-			}
-			out = filepath.Join("dist", baseName+".js")
-			os.MkdirAll("dist", 0755)
-		}
-		if err := os.WriteFile(out, []byte(jsCode), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Built: %s\n", out)
-		return
-	}
-
-	// Direct WASM 後端路徑：繞過 LLVM 工具鏈，直接發射 WASM 字節碼。
-	// 觸發條件：
-	//   (a) 用戶明確指定 --wasm-direct
-	//   (b) 於 wasip1 平台下且目標含 wasm32（無 LLVM 可用，自動啟用並警告）
-	if *wasmDirect || (runtime.GOOS == "wasip1" && strings.Contains(targetStr, "wasm32")) {
-		if !*wasmDirect && runtime.GOOS == "wasip1" {
-			fmt.Fprintln(os.Stderr, "[warn] wasip1 runtime: auto-switching to Direct WASM backend (LLVM toolchain unavailable)")
-		}
-		out := *outputFile
-		if out == "" {
-			out = "a.wasm"
-		}
-		// workspace 模式不適用 Direct WASM（單一輸出檔案）；要求明確輸入檔案。
-		if inputPath == "." {
-			fmt.Fprintln(os.Stderr, "Error: --wasm-direct requires an explicit input file (workspace mode not supported)")
-			os.Exit(1)
-		}
-		wasmBytes, err := nbuild.BuildDirectWasm(inputPath, opts)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		if err := os.WriteFile(out, wasmBytes, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Built: %s\n", out)
-		return
-	}
-
-	// 無參數時，優先檢查 workspace.jsonc 並行編譯
+	// 後端決策集中化：ResolveBackend 是唯一決策點（Direct-WASM > JS > LLVM），
+	// BuildBackend 是唯一分發點。命令層不再複製三後端的判斷與寫盤邏輯。
+	// 無參數時，優先檢查 workspace.jsonc 並行編譯（workspace 模式不走 BuildBackend）。
 	if len(fs.Args()) == 0 {
 		if _, err := os.Stat("workspace.jsonc"); err == nil {
 			if err := nbuild.BuildWorkspace(".", opts); err != nil {
@@ -2634,9 +2521,37 @@ func buildCommand(args []string) {
 		}
 	}
 
-	if err := nbuild.BuildFile(inputPath, opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	// 為 ResolveBackend 載入 package（emit=="js" 自動偵測與目錄→main.no 解析）。
+	checkDir := inputPath
+	if info, err := os.Stat(inputPath); err == nil && !info.IsDir() {
+		checkDir = filepath.Dir(inputPath)
+	}
+	pkg, _ := nbuild.LoadPackage(checkDir)
+
+	kind := nbuild.ResolveBackend(opts, pkg)
+	// 確保後端子函式拿到正確開關（BuildBackend 依 kind 分發，但 BuildJS /
+	// BuildDirectWasm 仍會讀 opts 旗標）。
+	if kind == nbuild.BackendJS {
+		opts.UseJS = true
+	} else if kind == nbuild.BackendWASMDirect {
+		opts.UseDirectWasm = true
+	}
+
+	outPath, berr := nbuild.BuildBackend(kind, inputPath, opts)
+	if berr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
 		os.Exit(1)
+	}
+
+	// Part B：始終顯示產物路徑（原僅 -v 才印 Build successful）。
+	// Browser 模式額外印 .js 與「Open in browser」提示（buildJSBackend 回傳 .html 路徑）。
+	if kind == nbuild.BackendJS && opts.BrowserMode {
+		jsPath := strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".js"
+		fmt.Printf("Built: %s\n", jsPath)
+		fmt.Printf("Built: %s\n", outPath)
+		fmt.Printf("Open in browser: %s\n", outPath)
+	} else {
+		fmt.Printf("Build successful: %s\n", outPath)
 	}
 }
 
@@ -2712,89 +2627,83 @@ func runCommand(args []string) {
 		targetStr = nbuild.DetectTarget()
 	}
 
-	// 如果未通過命令列指定後端，檢查 package.jsonc 的 emit 配置自動選擇 JS 後端
-	useJS := *jsBackend
-	if !useJS && !*wasmDirect {
-		checkDir := filepath.Dir(inputPath)
-		if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
-			checkDir = inputPath
-		}
-		if pkg, _ := nbuild.LoadPackage(checkDir); pkg != nil && pkg.Compiler.Emit == "js" {
-			useJS = true
-		}
+	// 後端決策集中化：ResolveBackend 是唯一決策點（Direct-WASM > JS > LLVM），
+	// BuildBackend 是唯一分發點。命令層只做「依 kind 選擇執行方式」（node /
+	// 瀏覽器 / wasmtime / 原生二進位），不再複製三後端的判斷與寫盤邏輯。
+	opts := nbuild.BuildOptions{
+		CC:                    *cc,
+		Target:                targetStr,
+		Verbose:               verbose,
+		NoBoundsCheck:         *unsafe,
+		OptionInlineThreshold: *optInlineThreshold,
+		UseDirectWasm:         *wasmDirect,
+		UseJS:                 *jsBackend,
+		BrowserMode:           *browserMode,
+		CompilerVersion:       version,
+		LDFlags:               ldFlags,
 	}
 
-	// JS 後端路徑：編譯為 .js 後以 node 執行。
-	if useJS {
-		// 若 inputPath 是目錄，解析為 main.no
-		if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
-			inputPath = filepath.Join(inputPath, "main.no")
-		}
+	// 為 ResolveBackend 載入 package（emit=="js" 自動偵測與目錄→main.no 解析）。
+	checkDir := filepath.Dir(inputPath)
+	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
+		checkDir = inputPath
+	}
+	pkg, _ := nbuild.LoadPackage(checkDir)
+	kind := nbuild.ResolveBackend(opts, pkg)
 
+	// 依後端決定暫存產物路徑（run/test 統一產出到 tmpDir）。
+	switch kind {
+	case nbuild.BackendJS:
 		if *browserMode {
-			// Browser mode: build HTML + JS, then open in default browser
 			baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
 			if baseName == "main" {
-				if pkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
-					baseName = pkg.Name
+				if p, _ := nbuild.LoadPackage(filepath.Dir(inputPath)); p != nil && p.Name != "" {
+					baseName = p.Name
 				}
 			}
+			opts.Output = filepath.Join(tmpDir, baseName+".js")
+		} else {
+			opts.Output = filepath.Join(tmpDir, "out.js")
+		}
+	case nbuild.BackendWASMDirect:
+		opts.Output = filepath.Join(tmpDir, "out.wasm")
+	default: // BackendLLVM
+		opts.Output = filepath.Join(tmpDir, "out")
+	}
 
-			outJs := filepath.Join(tmpDir, baseName+".js")
-			outHtml := filepath.Join(tmpDir, baseName+".html")
+	// wasip1 瀏覽器沙箱不支援 spawn 子行程，除 LLVM 靜態產出外皆不可執行。
+	if runtime.GOOS == "wasip1" && kind != nbuild.BackendLLVM {
+		fmt.Fprintln(os.Stderr, "Error: running compiled output not supported in browser playground")
+		os.Exit(1)
+	}
 
-			jsCode, htmlCode, berr := nbuild.BuildJSBrowser(inputPath, nbuild.BuildOptions{
-				Verbose:     verbose,
-				UseJS:       true,
-				BrowserMode: true,
-			}, baseName+".js")
-			if berr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
-				os.Exit(1)
-			}
+	outPath, berr := nbuild.BuildBackend(kind, inputPath, opts)
+	if berr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+		os.Exit(1)
+	}
 
-			if werr := os.WriteFile(outJs, []byte(jsCode), 0644); werr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
-				os.Exit(1)
-			}
-			if werr := os.WriteFile(outHtml, []byte(htmlCode), 0644); werr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
-				os.Exit(1)
-			}
-
+	switch kind {
+	case nbuild.BackendJS:
+		if *browserMode {
 			// Open in default browser
 			var openCmd *exec.Cmd
 			switch runtime.GOOS {
 			case "darwin":
-				openCmd = exec.Command("open", outHtml)
+				openCmd = exec.Command("open", outPath)
 			case "linux":
-				openCmd = exec.Command("xdg-open", outHtml)
+				openCmd = exec.Command("xdg-open", outPath)
 			case "windows":
-				openCmd = exec.Command("cmd", "/c", "start", outHtml)
+				openCmd = exec.Command("cmd", "/c", "start", outPath)
 			default:
-				fmt.Printf("Open in browser: %s\n", outHtml)
+				fmt.Printf("Open in browser: %s\n", outPath)
 				return
 			}
 			if err := openCmd.Run(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to open browser: %v\n", err)
-				fmt.Printf("Open manually: %s\n", outHtml)
+				fmt.Printf("Open manually: %s\n", outPath)
 			}
 			return
-		}
-
-		outPath := filepath.Join(tmpDir, "out.js")
-		jsCode, berr := nbuild.BuildJS(inputPath, nbuild.BuildOptions{
-			Target:  targetStr,
-			UseJS:   true,
-			Verbose: verbose,
-		})
-		if berr != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
-			os.Exit(1)
-		}
-		if werr := os.WriteFile(outPath, []byte(jsCode), 0644); werr != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
-			os.Exit(1)
 		}
 		// 以 node 執行編譯產物（若不可用則提示使用者安裝）。
 		if _, lerr := exec.LookPath("node"); lerr != nil {
@@ -2811,34 +2720,7 @@ func runCommand(args []string) {
 			os.Exit(1)
 		}
 		return
-	}
-
-	// Direct WASM 後端路徑：編譯為 .wasm 後嘗試以 wasmtime 執行。
-	// 觸發條件與 buildCommand 一致（明確指定 --wasm-direct 或 wasip1 下自動啟用）。
-	if *wasmDirect || (runtime.GOOS == "wasip1" && strings.Contains(targetStr, "wasm32")) {
-		if !*wasmDirect && runtime.GOOS == "wasip1" {
-			fmt.Fprintln(os.Stderr, "[warn] wasip1 runtime: auto-switching to Direct WASM backend (LLVM toolchain unavailable)")
-		}
-		// wasip1 瀏覽器沙箱不支援 spawn 子行程，無法執行編譯產物。
-		if runtime.GOOS == "wasip1" {
-			fmt.Fprintln(os.Stderr, "Error: running compiled WASM not supported in browser playground; use 'no build --wasm-direct' instead")
-			os.Exit(1)
-		}
-		outPath := filepath.Join(tmpDir, "out.wasm")
-		wasmBytes, berr := nbuild.BuildDirectWasm(inputPath, nbuild.BuildOptions{
-			Target:        targetStr,
-			UseDirectWasm: true,
-			Verbose:       verbose,
-			NoBoundsCheck: *unsafe,
-		})
-		if berr != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
-			os.Exit(1)
-		}
-		if werr := os.WriteFile(outPath, wasmBytes, 0755); werr != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
-			os.Exit(1)
-		}
+	case nbuild.BackendWASMDirect:
 		// 以 wasmtime 執行編譯產物（若不可用則提示使用者手動執行）。
 		if _, lerr := exec.LookPath("wasmtime"); lerr != nil {
 			fmt.Fprintf(os.Stderr, "Built: %s\n", outPath)
@@ -2854,49 +2736,20 @@ func runCommand(args []string) {
 			os.Exit(1)
 		}
 		return
-	}
-
-	outPath := filepath.Join(tmpDir, "out")
-	opts := nbuild.BuildOptions{
-		CC:                    *cc,
-		Target:                targetStr,
-		Output:                outPath,
-		Verbose:               verbose,
-		NoBoundsCheck:         *unsafe,
-		OptionInlineThreshold: *optInlineThreshold,
-		UseDirectWasm:         *wasmDirect,
-		CompilerVersion:       version,
-		LDFlags:               ldFlags,
-	}
-	// Build + run. There is no transparent retry: MIR is the only backend, so a
-	// build error or a non-zero runtime exit is reported as-is.
-	//
-	// Until §13.3.13 this wrapped both stages in a strangler-fig retry: if the MIR
-	// backend had emitted the binary and EITHER stage failed, it rebuilt with the
-	// legacy HIR path and re-ran, so the user never saw a worse result than legacy.
-	// That covered a link error (a MIR-emitted module can pass the opt/llc
-	// pre-flight yet reference a symbol the codegen did not emit — the pre-flight
-	// never runs the linker) and a latent runtime double-free/UAF the memory
-	// analysis missed. It also meant a MIR miscompile was silently replaced by
-	// another backend's output. Note the retry was only reachable under
-	// NOLANG_MIR=2 (it was gated on LastMIREmitted, which the MIR-only path never
-	// set), so removing it does not change the default path's behaviour.
-	if buildErr := nbuild.BuildFile(inputPath, opts); buildErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", buildErr)
-		os.Exit(1)
-	}
-	if runtime.GOOS == "wasip1" {
-		// WASM 下無法執行編譯產物（瀏覽器沙箱不支援 spawn 子行程）。
-		fmt.Fprintln(os.Stderr, "Error: running compiled binary not supported in browser playground")
-		os.Exit(1)
-	}
-	runCmd := exec.Command(outPath, fs.Args()[1:]...)
-	runCmd.Stdin = os.Stdin
-	runCmd.Stdout = os.Stdout
-	runCmd.Stderr = os.Stderr
-	if runErr := runCmd.Run(); runErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", runErr)
-		os.Exit(1)
+	default: // BackendLLVM
+		if runtime.GOOS == "wasip1" {
+			// WASM 下無法執行編譯產物（瀏覽器沙箱不支援 spawn 子行程）。
+			fmt.Fprintln(os.Stderr, "Error: running compiled binary not supported in browser playground")
+			os.Exit(1)
+		}
+		runCmd := exec.Command(outPath, fs.Args()[1:]...)
+		runCmd.Stdin = os.Stdin
+		runCmd.Stdout = os.Stdout
+		runCmd.Stderr = os.Stderr
+		if runErr := runCmd.Run(); runErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", runErr)
+			os.Exit(1)
+		}
 	}
 }
 
@@ -3052,18 +2905,17 @@ func testCommand(args []string) {
 
 			if useDirectWasm {
 				outPath := filepath.Join(tmpDir, "out.wasm")
-				wasmBytes, berr := nbuild.BuildDirectWasm(f, nbuild.BuildOptions{
+				// 後端分發集中化：BuildBackend(BackendWASMDirect) 負責 BuildDirectWasm
+				// + 寫盤（原 testCommand 在此重複了寫盤邏輯）。
+				_, berr := nbuild.BuildBackend(nbuild.BackendWASMDirect, f, nbuild.BuildOptions{
 					Target:        targetStr,
 					UseDirectWasm: true,
 					Verbose:       false,
 					LDFlags:       ldFlags,
+					Output:        outPath,
 				})
 				if berr != nil {
 					results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: berr}
-					return
-				}
-				if werr := os.WriteFile(outPath, wasmBytes, 0755); werr != nil {
-					results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: werr}
 					return
 				}
 				results[idx] = testBuildResult{testFile: f, binPath: outPath, tmpDir: tmpDir}
@@ -3079,7 +2931,7 @@ func testCommand(args []string) {
 				UseDirectWasm: *wasmDirect,
 				LDFlags:       ldFlags,
 			}
-			if err := nbuild.BuildFile(f, opts); err != nil {
+			if _, err := nbuild.BuildBackend(nbuild.BackendLLVM, f, opts); err != nil {
 				results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: err}
 				return
 			}
@@ -3474,15 +3326,26 @@ func pubCommand(args []string) {
 
 func astCommand(args []string) {
 	fs := flag.NewFlagSet("ast", flag.ExitOnError)
+	annotations := fs.Bool("annotations", false,
+		"also dump the #{...} annotation entries attached to each node")
 	fs.Usage = func() {
-		fmt.Println("Usage: no ast <file>")
+		fmt.Println("Usage: no ast [-annotations] <file>")
 		fmt.Println("")
 		fmt.Println("Parse a Nolang source file and print its AST to stdout.")
-		fmt.Println("This is useful for debugging parser output.")
+		fmt.Println("This is the L2 oracle of the self-hosting effort: the output is")
+		fmt.Println("compared byte-for-byte against `noc ast`, so the format is a spec.")
+		fmt.Println("")
+		fmt.Println("The #{...} annotation system lives in a semantic side-table rather")
+		fmt.Println("than in the node fields, so it is omitted by default; pass")
+		fmt.Println("-annotations to include it.")
+		fmt.Println("")
+		fmt.Println("⚠️ Flags must precede the file name (Go's flag package stops")
+		fmt.Println("   parsing at the first positional argument).")
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  no ast main.no           print AST for main.no")
-		fmt.Println("  no ast src/std/vec.no    print AST for vec.no")
+		fmt.Println("  no ast main.no                    print AST for main.no")
+		fmt.Println("  no ast -annotations main.no       ... including #{...} annotations")
+		fmt.Println("  no ast src/std/vec.no             print AST for vec.no")
 	}
 	_ = fs.Parse(args)
 
@@ -3510,7 +3373,10 @@ func astCommand(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Println(dump.Dump(program))
+	fmt.Println(dump.DumpWithOptions(program, dump.Options{
+		Annotations: *annotations,
+		Sem:         program.Sem,
+	}))
 }
 
 // isValidFileName 檢查檔案名（不含 .no 副檔名）是否符合變量名規則：

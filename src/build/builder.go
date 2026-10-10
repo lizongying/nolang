@@ -241,10 +241,10 @@ func parseTargetPlatform(target string) (goos, goarch string) {
 }
 
 // BuildFile compiles a .no source file and produces the output binary/file.
-func BuildFile(inputPath string, opts BuildOptions) error {
+func BuildFile(inputPath string, opts BuildOptions) (string, error) {
 	// 工具鏈檢查
 	if err := CheckToolchain(opts.CC); err != nil {
-		return err
+		return "", err
 	}
 
 	// 若指定的是目錄，先找目錄內的 package.jsonc
@@ -256,7 +256,7 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 		pkg, _ = LoadPackage(inputPath)
 		if pkg != nil {
 			if _, err := pkg.EnsureDependencies(10); err != nil {
-				return fmt.Errorf("dependency resolution failed: %w", err)
+				return "", fmt.Errorf("dependency resolution failed: %w", err)
 			}
 			mainFile := pkg.Main
 			if mainFile == "" {
@@ -270,7 +270,7 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
 		mainPath := filepath.Join(inputPath, "main.no")
 		if _, err := os.Stat(mainPath); err != nil {
-			return fmt.Errorf("main.no not found in %s", inputPath)
+			return "", fmt.Errorf("main.no not found in %s", inputPath)
 		}
 		inputPath = mainPath
 	}
@@ -281,12 +281,138 @@ func BuildFile(inputPath string, opts BuildOptions) error {
 		pkg, _ = LoadPackage(pkgDir)
 		if pkg != nil {
 			if _, err := pkg.EnsureDependencies(10); err != nil {
-				return fmt.Errorf("dependency resolution failed: %w", err)
+				return "", fmt.Errorf("dependency resolution failed: %w", err)
 			}
 		}
 	}
 
 	return buildWithPkg(inputPath, pkg, opts, false)
+}
+
+// ─── 後端選擇（集中化） ──────────────────────────────────────────────────────
+// 三個後端（LLVM / JS / Direct-WASM）的「選哪個」決策原本散落在 buildCommand /
+// runCommand / testCommand 三處命令層，外加 buildWithPkg 一處編排層（共 4 份重複的
+// 判斷邏輯）。任何「新增後端 / 改預設行為」都要同時改多處，極易遺漏。這裡把它
+// 收斂成單一決策 ResolveBackend + 單一分發 BuildBackend，命令層只做調用。
+type BackendKind int
+
+const (
+	BackendLLVM BackendKind = iota
+	BackendJS
+	BackendWASMDirect
+)
+
+// ResolveBackend 是唯一的後端決策點。優先級：Direct-WASM > JS > LLVM。
+//   - Direct-WASM：明確 --wasm-direct，或 wasip1 平台下目標含 wasm32（無 LLVM 可用）。
+//   - JS：命令列 -js，或 package.jsonc 的 compiler.emit == "js"。
+//   - 其餘皆為 LLVM（MIR 後端）。
+func ResolveBackend(opts BuildOptions, pkg *Package) BackendKind {
+	if opts.UseDirectWasm || (runtime.GOOS == "wasip1" && strings.Contains(opts.Target, "wasm32")) {
+		return BackendWASMDirect
+	}
+	if opts.UseJS || (pkg != nil && pkg.Compiler.Emit == "js") {
+		return BackendJS
+	}
+	return BackendLLVM
+}
+
+// BuildBackend 是唯一的後端分發點：依 ResolveBackend 的結果呼叫對應的具體建構
+// 路徑，並把產物寫入 opts.Output（若為空則由各後端使用預設路徑）。返回產物路徑，
+// 供 run/test 執行、或供 build 提示使用者產物位置（見下方「預設輸出路徑不直觀」修正）。
+// 函式本身不打印任何訊息——路徑的提示由呼叫方統一處理，避免 run/test 被多餘輸出干擾。
+func BuildBackend(kind BackendKind, inputPath string, opts BuildOptions) (outPath string, err error) {
+	switch kind {
+	case BackendWASMDirect:
+		return buildWasmDirect(inputPath, opts)
+	case BackendJS:
+		return buildJSBackend(inputPath, opts)
+	default: // BackendLLVM
+		return BuildFile(inputPath, opts)
+	}
+}
+
+// buildWasmDirect 對應原 main.go 的 --wasm-direct 分支：繞過 LLVM 工具鏈，直接
+// 發射 WASM 字節碼並寫入 opts.Output（預設 a.wasm）。
+func buildWasmDirect(inputPath string, opts BuildOptions) (string, error) {
+	if !opts.UseDirectWasm && runtime.GOOS == "wasip1" {
+		fmt.Fprintln(os.Stderr, "[warn] wasip1 runtime: auto-switching to Direct WASM backend (LLVM toolchain unavailable)")
+	}
+	out := opts.Output
+	if out == "" {
+		out = "a.wasm"
+	}
+	if inputPath == "." {
+		return "", fmt.Errorf("--wasm-direct requires an explicit input file (workspace mode not supported)")
+	}
+	wasmBytes, err := BuildDirectWasm(inputPath, opts)
+	if err != nil {
+		return "", fmt.Errorf("WASM build error: %w", err)
+	}
+	if err := os.WriteFile(out, wasmBytes, 0755); err != nil {
+		return "", fmt.Errorf("writing WASM output %s: %w", out, err)
+	}
+	return out, nil
+}
+
+// buildJSBackend 對應原 main.go 的 -js 分支：繞過 LLVM 工具鏈，發射 JS 原始碼並寫入
+// opts.Output（預設 dist/<name>.js）。BrowserMode 時額外產出 HTML 包裝並返回 .html 路徑。
+func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
+	// 目錄 → main.no（workspace 模式不支援 JS 後端，要求明確輸入檔）。
+	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
+		mainPath := filepath.Join(inputPath, "main.no")
+		if _, err := os.Stat(mainPath); err == nil {
+			inputPath = mainPath
+		} else {
+			return "", fmt.Errorf("JS backend requires an explicit input file or main.no (workspace mode not supported)")
+		}
+	}
+
+	if opts.BrowserMode {
+		baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
+		if baseName == "main" {
+			if pkg, _ := LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
+				baseName = pkg.Name
+			}
+		}
+		outJs := filepath.Join("dist", baseName+".js")
+		outHtml := filepath.Join("dist", baseName+".html")
+		if opts.Output != "" {
+			outJs = opts.Output
+			outHtml = strings.TrimSuffix(opts.Output, filepath.Ext(opts.Output)) + ".html"
+		}
+		os.MkdirAll("dist", 0755)
+		jsCode, htmlCode, err := BuildJSBrowser(inputPath, BuildOptions{Verbose: opts.Verbose, UseJS: true, BrowserMode: true}, baseName+".js")
+		if err != nil {
+			return "", fmt.Errorf("JS build error: %w", err)
+		}
+		if err := os.WriteFile(outJs, []byte(jsCode), 0644); err != nil {
+			return "", fmt.Errorf("writing JS output %s: %w", outJs, err)
+		}
+		if err := os.WriteFile(outHtml, []byte(htmlCode), 0644); err != nil {
+			return "", fmt.Errorf("writing HTML output %s: %w", outHtml, err)
+		}
+		return outHtml, nil
+	}
+
+	jsCode, err := BuildJS(inputPath, opts)
+	if err != nil {
+		return "", fmt.Errorf("JS build error: %w", err)
+	}
+	out := opts.Output
+	if out == "" {
+		baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
+		if baseName == "main" {
+			if pkg, _ := LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
+				baseName = pkg.Name
+			}
+		}
+		out = filepath.Join("dist", baseName+".js")
+		os.MkdirAll("dist", 0755)
+	}
+	if err := os.WriteFile(out, []byte(jsCode), 0644); err != nil {
+		return "", fmt.Errorf("writing JS output %s: %w", out, err)
+	}
+	return out, nil
 }
 
 // VetFile performs syntax and semantic validation on a .no source file without
@@ -488,7 +614,7 @@ func parseCompileErrorToLints(err error) []checker.LintResult {
 
 // buildWithPkg 是核心編譯邏輯，使用已載入的 Package（可為 nil）。
 // BuildFile 和 BuildWorkspace 共用此函數，避免重複載入 Package。
-func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bool) error {
+func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bool) (string, error) {
 	// 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本匹配
 	if pkg != nil && pkg.Compiler.Version != "" && opts.CompilerVersion != "" {
 		if !versionCompatible(pkg.Compiler.Version, opts.CompilerVersion) {
@@ -500,7 +626,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		return fmt.Errorf("reading input file: %w", err)
+		return "", fmt.Errorf("reading input file: %w", err)
 	}
 
 	// 決定輸出名稱：main 檔 → 套件名稱，lib 檔 → lib-套件名稱
@@ -532,7 +658,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		}
 		distDir := filepath.Join(rootDir, outDir)
 		if err = os.MkdirAll(distDir, 0755); err != nil {
-			return fmt.Errorf("creating dist directory: %w", err)
+			return "", fmt.Errorf("creating dist directory: %w", err)
 		}
 		outPath = filepath.Join(distDir, fileName)
 	}
@@ -545,7 +671,10 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 
 	// 如果 package.jsonc 指定 emit: js，使用 JS 後端發射 JavaScript
 	if pkg != nil && pkg.Compiler.Emit == "js" {
-		return buildJSPkg(source, inputPath, pkg, opts, outPath, sink)
+		if err := buildJSPkg(source, inputPath, pkg, opts, outPath, sink); err != nil {
+			return "", err
+		}
+		return outPath, nil
 	}
 
 	// LLVM 路徑
@@ -565,7 +694,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	}
 
 	if err != nil {
-		return fmt.Errorf("compilation error: %w", err)
+		return "", fmt.Errorf("compilation error: %w", err)
 	}
 
 	var linkLibs []string
@@ -597,23 +726,18 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		}
 	}
 
-	err = buildLLVMInternal(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, linkLibs, sink)
-	if err != nil {
+	if err := buildLLVMInternal(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, linkLibs, sink); err != nil {
 		if sink != nil && sink.Len() > 0 {
 			fmt.Fprint(os.Stderr, sink.String())
 		}
-		return fmt.Errorf("build error: %w", err)
+		return "", fmt.Errorf("build error: %w", err)
 	}
 
 	if sink != nil && sink.Len() > 0 {
 		fmt.Fprint(os.Stderr, sink.String())
 	}
 
-	if opts.Verbose {
-		fmt.Printf("Build successful: %s\n", outPath)
-	}
-
-	return nil
+	return outPath, nil
 }
 
 // vprintf 輸出 verbose 訊息到 sink（若 nil 則寫 os.Stderr）
@@ -969,7 +1093,6 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 		return fmt.Errorf("writing JS output: %w", err)
 	}
 
-	vprintf(sink, "Built: %s\n", outPath)
 	return nil
 }
 
@@ -1423,8 +1546,8 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 			projectOpts := opts
 			projectOpts.Output = "" // use default per-project output
 
-			fmt.Fprintf(os.Stderr, "Building %s: %s\n", t.projectName, t.filePath)
-			err := buildWithPkg(t.filePath, t.pkg, projectOpts, true)
+		fmt.Fprintf(os.Stderr, "Building %s: %s\n", t.projectName, t.filePath)
+		_, err := buildWithPkg(t.filePath, t.pkg, projectOpts, true)
 			results <- buildResult{target: t, err: err}
 		}(t)
 	}
