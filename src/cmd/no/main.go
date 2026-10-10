@@ -16,6 +16,7 @@ import (
 	"time"
 
 	nbuild "github.com/lizongying/nolang/build"
+	nllvmapi "github.com/lizongying/nolang/build/llvmapi"
 	"github.com/lizongying/nolang/checker"
 	nfmt "github.com/lizongying/nolang/fmt"
 	"github.com/lizongying/nolang/lexer"
@@ -342,6 +343,28 @@ func parseLDFlags(args []string) (map[string]string, []string) {
 		}
 	}
 	return ldFlags, filtered
+}
+
+// parseLLVMCAPIFlag 摘出 --llvm-capi / -llvm-capi 旗標，轉寫成環境變數
+// NOLANG_LLVM_CAPI，讓 build / run / test 三個命令共用同一個開關，而無需在各自的
+// FlagSet 裡重複定義（與 -ld-KEY=VALUE 的預處理慣例一致：旗標解析前先從 args 摘出）。
+//
+// 對應後端：非 debug（未加 -v）模式下改用 LLVM C API 在進程內把 IR 編成 .o。
+// 默認關閉；且只有以 `make no-capi`（-tags llvm_capi）構建的二進位才真正可用，
+// 否則會印一行 warning 並回退到既有 clang 路徑。
+func parseLLVMCAPIFlag(args []string) []string {
+	var filtered []string
+	for _, arg := range args {
+		switch strings.ToLower(arg) {
+		case "--llvm-capi", "-llvm-capi", "--llvm-capi=1", "-llvm-capi=1", "--llvm-capi=on", "-llvm-capi=on":
+			nllvmapi.SetEnabled(true)
+		case "--llvm-capi=0", "-llvm-capi=0", "--llvm-capi=off", "-llvm-capi=off":
+			nllvmapi.SetEnabled(false)
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+	return filtered
 }
 
 func versionCommand() {
@@ -2441,6 +2464,7 @@ func buildCommand(args []string) {
 	nbuild.ClearCaches()
 	// Extract -ld-KEY=VALUE pairs before flag parsing
 	ldFlags, args := parseLDFlags(args)
+	args = parseLLVMCAPIFlag(args)
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	outputFile := fs.String("o", "", "Output file path")
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
@@ -2465,6 +2489,7 @@ func buildCommand(args []string) {
 		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript source (Node.js/browser-compatible).")
 		fmt.Println("Use --browser with --js to generate browser-targeted JS and an HTML wrapper.")
 		fmt.Println("Use -v to emit LLVM IR (.ll) files for analysis alongside the build.")
+		fmt.Println("Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default).")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no build                  build current directory or workspace.jsonc projects")
@@ -2564,6 +2589,7 @@ func runCommand(args []string) {
 	nbuild.ClearCaches()
 	// Extract -ld-KEY=VALUE pairs before flag parsing
 	ldFlags, args := parseLDFlags(args)
+	args = parseLLVMCAPIFlag(args)
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
@@ -2589,6 +2615,7 @@ func runCommand(args []string) {
 		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
 		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript (run with node).")
 		fmt.Println("Use --js --browser to emit browser JS + HTML and open in the default browser.")
+		fmt.Println("Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default).")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no run                       build and run main.no in current dir")
@@ -2762,6 +2789,7 @@ func testCommand(args []string) {
 	nbuild.ClearCaches()
 	// Extract -ld-KEY=VALUE pairs before flag parsing
 	ldFlags, args := parseLDFlags(args)
+	args = parseLLVMCAPIFlag(args)
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")

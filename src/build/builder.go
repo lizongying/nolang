@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/lizongying/nolang/build/js"
+	"github.com/lizongying/nolang/build/llvmapi"
 	"github.com/lizongying/nolang/build/wasm"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
@@ -779,30 +780,11 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	}
 	// 中間產物（.ll/.s）每次建構可達數百 MB，必須清理，否則會撐爆系統暫存目錄。
 	// 需要保留 IR 供分析時設 NOLANG_KEEP_IR（與 cmd/no run 路徑同一約定）。
-	if os.Getenv("NOLANG_KEEP_IR") == "" {
+	keepIR := os.Getenv("NOLANG_KEEP_IR") != ""
+	if !keepIR {
 		defer os.RemoveAll(tempDir)
 	} else {
 		fmt.Fprintf(os.Stderr, "[debug] keep build tmp dir: %s\n", tempDir)
-	}
-
-	llPath := filepath.Join(tempDir, fileName+".ll")
-	// LLVM 17+ 的 IR 解析器會自動把 typed pointer（i8*、%vec* 等）升級為 opaque
-	// `ptr`，故不再需要 toOpaquePointers 文本重寫層（死代碼，2026-10-09 刪除）。
-	err = os.WriteFile(llPath, []byte(code), 0644)
-	if err != nil {
-		return fmt.Errorf("writing LLVM IR file: %w", err)
-	}
-
-	// 保留 .ll 供分析（僅 -v 時輸出）
-	if verbose {
-		llOut := outPath + ".ll"
-		if mkErr := os.MkdirAll(filepath.Dir(llOut), 0755); mkErr == nil {
-			if wErr := os.WriteFile(llOut, []byte(code), 0644); wErr != nil {
-				fmt.Fprintf(os.Stderr, "[debug] failed to write %s: %v\n", llOut, wErr)
-			} else {
-				fmt.Fprintf(os.Stderr, "[debug] wrote %s (%d bytes)\n", llOut, len(code))
-			}
-		}
 	}
 
 	// 後端管線（native / WASI 共用）：
@@ -823,6 +805,59 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	fpContract := "fast"
 	if strings.Contains(code, "!nolang.mir.backend") {
 		fpContract = "off"
+	}
+
+	// ─── LLVM C API 進程內編譯（僅非 debug 模式；開關默認關閉）───────────────
+	// 非 verbose（singleShot）時，原本的路徑是把 .ll 寫盤後 spawn `clang -x ir`，
+	// 由 clang 在內部完成 optimize + codegen + link。開關開啟（NOLANG_LLVM_CAPI=1
+	// 或 --llvm-capi）且本二進位帶有 llvm_capi build tag 時，改成在進程內用 LLVM C API
+	// 把 IR 直接編成 .o，後續只讓 cc 做連結。
+	// debug（-v）模式不受本開關影響：仍走 opt + llc + clang，保留可檢視的中間產物。
+	useCAPI := false
+	if singleShot && llvmapi.Enabled() {
+		if !llvmapi.Available() {
+			vprintf(sink, "[warn] %s=1 but this binary has no LLVM C API backend; falling back to clang (rebuild with: make no-capi)\n", llvmapi.EnvSwitch)
+		} else {
+			useCAPI = true
+		}
+	}
+
+	llPath := filepath.Join(tempDir, fileName+".ll")
+	// LLVM 17+ 的 IR 解析器會自動把 typed pointer（i8*、%vec* 等）升級為 opaque
+	// `ptr`，故不再需要 toOpaquePointers 文本重寫層（死代碼，2026-10-09 刪除）。
+	if err = os.WriteFile(llPath, []byte(code), 0644); err != nil {
+		return fmt.Errorf("writing LLVM IR file: %w", err)
+	}
+
+	// 保留 .ll 供分析（僅 -v 時輸出）
+	if verbose {
+		llOut := outPath + ".ll"
+		if mkErr := os.MkdirAll(filepath.Dir(llOut), 0755); mkErr == nil {
+			if wErr := os.WriteFile(llOut, []byte(code), 0644); wErr != nil {
+				fmt.Fprintf(os.Stderr, "[debug] failed to write %s: %v\n", llOut, wErr)
+			} else {
+				fmt.Fprintf(os.Stderr, "[debug] wrote %s (%d bytes)\n", llOut, len(code))
+			}
+		}
+	}
+
+	// ─── LLVM C API：真正執行編譯（是否走這條路的決策已在寫 .ll 之前做完）─────
+	var capiObject string
+	if useCAPI {
+		objPath := filepath.Join(tempDir, fileName+".o")
+		capiOpts := llvmapi.Options{
+			IR:         code,
+			Triple:     target,
+			OptLevel:   llvmapi.ParseOptLevel(optLevel),
+			FPContract: fpContract,
+		}
+		if cerr := llvmapi.CompileToObject(capiOpts, objPath); cerr != nil {
+			return fmt.Errorf("in-process LLVM C API compile failed (disable with %s=0): %w", llvmapi.EnvSwitch, cerr)
+		}
+		capiObject = objPath
+		if verbose {
+			vprintf(sink, "Compiled in-process via LLVM C API: %s\n", objPath)
+		}
 	}
 
 	var sPath string
@@ -892,7 +927,10 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	// 單進程路徑（非 verbose）：clang 直接吃 .ll（需 -x ir + 優化等級 + fp-contract）。
 	// verbose 路徑：非 WASI 吃 llc 產出的 .s；WASI 仍跳 llc、吃 .ll。
 	var clangIn string
-	if singleShot {
+	if capiObject != "" {
+		// LLVM C API 已產出 .o，cc 只需連結。
+		clangIn = capiObject
+	} else if singleShot {
 		clangIn = llPath
 	} else if isWasiTarget {
 		clangIn = llPath
@@ -947,8 +985,9 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 			clangArgs = append(clangArgs, "-lws2_32")
 		}
 	}
-	if singleShot {
+	if singleShot && capiObject == "" {
 		// 單進程：告訴 clang 輸入是 LLVM IR，並在內部做優化 + 程式碼生成 + 連結。
+		// （走 LLVM C API 時 optimize + codegen 已在本進程完成，此處只連結 .o。）
 		clangArgs = append([]string{optLevel, "-ffp-contract=" + fpContract, "-x", "ir"}, clangArgs...)
 	}
 	var clangCmd *exec.Cmd

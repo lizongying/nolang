@@ -94,6 +94,31 @@ $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(B
 	cd src && $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$(NO_BIN) ./cmd/no
 	chmod +x $(NO_BIN)
 
+# ── LLVM C API（實驗開關，默認關閉）───────────────────────────────────
+# 默認構建（make no）必須保持純 Go：不引入 cgo、不鏈接 LLVM 開發庫，否則 wasip1
+# 交叉構建（playground 的 no.wasm / lsp.wasm）與 CI 都會被 LLVM 綁死。
+# `make no-capi` 額外產出一個帶 `-tags llvm_capi` 的 bin/no-capi：只有在這個二進位裡
+# NOLANG_LLVM_CAPI=1（或 --llvm-capi）才真的走「進程內用 LLVM C API 把 IR 編成 .o」；
+# 其他二進位遇到該開關會印一行 warning 並回退到既有 clang 路徑。
+# 此目標刻意不 install：~/no/bin/no 維持純 Go 版本。
+LLVM_CONFIG ?= llvm-config
+LLVM_CAPI_CFLAGS  := $(shell $(LLVM_CONFIG) --cflags 2>/dev/null)
+LLVM_CAPI_LDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs --link-shared 2>/dev/null)
+# macOS：CommandLineTools 下沒有 /usr/include，cgo 需要明確的 SDKROOT，
+# 否則會在 runtime/cgo 階段報 'stdlib.h' file not found。
+ifeq ($(shell uname -s),Darwin)
+LLVM_CAPI_CGO_ENV := SDKROOT=$(shell xcrun --show-sdk-path 2>/dev/null)
+endif
+
+.PHONY: no-capi
+no-capi: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
+	@command -v $(LLVM_CONFIG) >/dev/null 2>&1 || { echo "llvm-config not found: set LLVM_CONFIG=/path/to/llvm-config (macOS: brew install llvm)"; exit 1; }
+	$(MAKE) stamp-traceid
+	cd src && $(LLVM_CAPI_CGO_ENV) CGO_ENABLED=1 CGO_CFLAGS="$(LLVM_CAPI_CFLAGS)" CGO_LDFLAGS="$(LLVM_CAPI_LDFLAGS)" \
+		$(GO) build -tags llvm_capi $(LD_FLAGS_WITH_SIG) -o ../$(BINDIR)/no-capi ./cmd/no
+	chmod +x $(BINDIR)/no-capi
+	@echo "Built: $(BINDIR)/no-capi (LLVM C API backend; enable with NOLANG_LLVM_CAPI=1 or --llvm-capi)"
+
 # ── INSTALL ────────────────────────────
 # 每次 make 都強制重裝全局 no：binary 存到 ~/no/bin/，並在 /usr/local/bin/ 建軟鏈接
 # （與 `no install` 的安裝約定一致）。install 會先 unlink 目標，覆蓋運行中的 binary 也安全。
@@ -176,6 +201,7 @@ help:
 	@echo "Nolang 構建目標："
 	@echo "  make            構建所有目標"
 	@echo "  make no         構建 bin/no 並重裝全局 no"
+	@echo "  make no-capi    構建 bin/no-capi（帶 LLVM C API 後端，開關默認關閉）"
 	@echo "  make install    強制重裝全局 no（~/no/bin/no + /usr/local/bin/no 軟鏈接）"
 	@echo "  make lsp        構建 vscode-nolang/server/lsp"
 	@echo "  make gen        gen stdsig_gen.go"
