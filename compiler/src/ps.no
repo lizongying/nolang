@@ -787,6 +787,18 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 idx = ps-parse-struct-def(t, p, name)
                 handled = 1
             }
+
+            ; 無值明示型別裸宣告：`name TYPE`（TYPE=NamedType/SliceType/ArrayType），僅當型別後
+            ;   緊接陳述邊界。上方各含值臂皆要求 `=`，此處 handled==0 表示那些臂都未命中⇒可能為裸宣告
+            ;   或索引運算式；ps-parse-typedecl-noval 只在【真裸宣告】回 >0，其餘還原交由下方 expr-stmt。
+            ;   守衛限 nxt_typ∈{IDENT,LBRACKET}（QUESTION 由上方可為空臂；COMMA/ARROW/DOT/LBRACE 非型別）。
+            handled == 0 && (nxt_typ == tok.LBRACKET || nxt_typ == tok.IDENT) -> {
+                td = ps-parse-typedecl-noval(t, p, name)
+                td > 0 -> {
+                    idx = td
+                    handled = 1
+                }
+            }
             handled == 0 -> idx = ps-parse-expr-stmt(t, p)
         }
 
@@ -2261,6 +2273,39 @@ ps-parse-type = (t ast, p psst) (idx i64) {
         }
     }
     idx
+}
+
+; ps-parse-typedecl-noval：解析【無值】的明示型別裸宣告 `name TYPE`（換行/區塊尾/檔尾收尾）。
+;   對應 Go parseLetStatement 的 no-value 分支（stmt.go:1051–1060）：型別解析完後若【非】`=`
+;   而是陳述邊界，即回傳僅帶 Type、Value=nil 的 LetStatement（dump 為 `type: X, value: `）。
+;   型別經 ps-parse-type（NamedType / SliceType / ArrayType / NullableType 全形，含巢狀 `[]`）。
+;   ⚠️ 復用 ps-parse-type 會【先建節點】；若最後判定非裸宣告（有 `=`、或型別後接運算子如索引
+;   `x[i]`）則還原 p.pos，讓既有含值臂 / 運算式陳述重新解析——所建節點因不被任何 kid 引用而成為
+;   孤兒，dumper 自 root 沿 kid 走訪永不觸及（見 ast.dump），故零回歸、僅耗少許 arena。
+;   ⚠️ 只認【無值】：見 `=` 即還原（含值宣告由上方各 `nxt_typ==…ASSIGN` 臂處理），避免雙臂重複建節。
+ps-parse-typedecl-noval = (t ast, p psst, name str) (idx i64) {
+    idx = 0
+    savePos = p.pos
+    ps-bump(p); 消費 name IDENT
+    ty = ps-parse-type(t, p); 明示型別（子先於父）
+    ty == 0 -> p.pos = savePos
+    ty != 0 -> {
+        ; 預取型別之後首個 token（同 ps-parse-for-kw 守則：勿在補集雙臂各重取）
+        hd = ps-peek(p)
+        bnd = 0
+        hd == tok.NEWLINE -> bnd = 1
+        hd == tok.RBRACE -> bnd = 1
+        hd == tok.EOF -> bnd = 1
+        hd == tok.SEMICOLON -> bnd = 1
+        hd == tok.COMMENT -> bnd = 1
+        bnd == 1 -> {
+            idx = ast.add(t, asp.K_LET_STATEMENT)
+            ast.set-slot(t, idx, 0, ast.put-str(t, name))
+            ast.kid-add(t, idx, ty); guarded CHILD=Type
+            ast.kid-add(t, idx, 0); guarded CHILD=Value 缺席→0 佔位（dump 印 `value: `）
+        }
+        bnd == 0 -> p.pos = savePos
+    }
 }
 
 ; ps-is-struct-def：判斷【目前 pos=IDENT name】起是否為「乾淨」的結構體定義形

@@ -147,10 +147,11 @@ jobs:
   #
   # 注意：cgo 無法交叉編譯（darwin 目標需要 macOS SDK、windows 需要 MSVC），
   # 所以這裡是矩陣「原生 runner 原生構建」，而非一次交叉出全部平台。
-  # darwin/amd64 因 GitHub 已退役 x64 macOS runner，改在 macos-latest(arm64) 上
-  # 用 Rosetta(arch -x86_64) 跑 x86_64 工具鏈做原生構建。Homebrew 已停止支援
-  # x86_64（installer 直接報「only supported on Apple Silicon processors!」），
-  # x86_64 LLVM 改從 llvm/llvm-project 官方 release 的 x86_64-apple-darwin 預編譯包取得。
+  # darwin/amd64 內置 LLVM 變體已移除：GitHub 已退役 x64 macOS runner，而 LLVM 22
+  # 起上游不再發行 x86_64-apple-darwin 預編譯包（22.1.8 的 macOS 資產只剩
+  # LLVM-<ver>-macOS-ARM64.tar.xz）。cgo 又無法交叉編譯，Rosetta 下無從取得 x86_64
+  # 的 LLVM 靜態庫，故不構建這個變體；darwin/amd64 使用者仍拿純 Go 版
+  # no_darwin_amd64（build-release 以 CGO_ENABLED=0 交叉編譯）。
   # windows/* 為實驗性（continue-on-error）：上游 LLVM 未發行 Windows/arm64 靜態庫，
   # 且 windows/amd64 以 zig cc 鏈接 MSVC 靜態庫的運行時匹配可能需就地迭代。
   # 代價：全後端產物比純 Go 版（~12 MB）大得多，故作為額外 asset 而非替換現有產物。
@@ -184,17 +185,6 @@ jobs:
             go_arch: arm64
             zig_arch: aarch64
             llvm_host_target: aarch64
-            ext: ""
-          # darwin/amd64：GitHub 已退役 x64 macOS runner，故在 macos-latest(arm64) 上
-          # 以 Rosetta(arch -x86_64) 跑 x86_64 工具鏈原生構建（cgo 無法交叉編譯）。
-          # x86_64 工具鏈來自 LLVM 官方 x86_64-apple-darwin 預編譯包（Homebrew 已放棄支援 x86_64）。
-          - os: macos-latest
-            asset: no-llvm_darwin_amd64
-            llvm_pkg: ""
-            go_arch: x64
-            zig_arch: x86_64
-            llvm_host_target: x86
-            rosetta: true
             ext: ""
           # windows/amd64：實驗性。cgo 用 zig cc 鏈接官方 LLVM 22 的 MSVC 靜態庫；
           # libc++/MSVC 運行時匹配可能需就地迭代，故 continue-on-error 不阻斷發布。
@@ -236,43 +226,13 @@ jobs:
           llvm-config-22 --version
 
       - name: "Install LLVM 22 (macOS arm64 - brew)"
-        if: runner.os == 'macOS' && !matrix.rosetta
+        if: runner.os == 'macOS'
         run: |
           brew install llvm@22 zstd z3 libxml2 || brew install llvm zstd z3 libxml2
           LLVM_PREFIX=$(brew --prefix llvm@22 2>/dev/null || brew --prefix llvm)
           echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
           # brew 的 llvm 是 keg-only，二進位就叫 llvm-config；我們統一用 llvm-config-22 指代
           sudo ln -sf "$LLVM_PREFIX/bin/llvm-config" /usr/local/bin/llvm-config-22
-          llvm-config-22 --version
-
-      - name: "Install LLVM 22 (macOS amd64 - Rosetta + official LLVM tarball)"
-        if: runner.os == 'macOS' && matrix.rosetta
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # GitHub 已退役 x64 macOS runner；在 arm64 runner 上用 Rosetta 跑 x86_64
-          # 工具鏈做原生構建（cgo 無法交叉編譯）。
-          # ⚠️ 不能走 x86_64 Homebrew：Homebrew 已停止支援 x86_64，installer 在
-          # Rosetta 下直接報「Homebrew on macOS is only supported on Apple Silicon
-          # processors!」而退出。改用 llvm/llvm-project 官方釋出的
-          # clang+llvm-<ver>-x86_64-apple-darwin 預編譯包（含 llvm-config 與靜態庫），
-          # 版本對齊 zig 0.17.0 內嵌的 LLVM 22.1.8。
-          softwareupdate --install-rosetta --agree-to-license || true
-          LLVM_VER=22.1.8
-          ASSET_URL=$(gh api "repos/llvm/llvm-project/releases/tags/llvmorg-${LLVM_VER}" \
-            --jq '.assets[].browser_download_url | select(test("x86_64-apple-darwin.*\\.tar\\.xz$"))' | head -1)
-          [ -n "$ASSET_URL" ] || { echo "::error::no x86_64-apple-darwin asset in llvmorg-${LLVM_VER} release"; exit 1; }
-          echo "Downloading: $ASSET_URL"
-          curl -L -f -o llvm.tar.xz "$ASSET_URL"
-          mkdir -p "$HOME/llvm-x86_64"
-          tar -xf llvm.tar.xz -C "$HOME/llvm-x86_64" --strip-components=1
-          rm -f llvm.tar.xz
-          echo "$HOME/llvm-x86_64/bin" >> $GITHUB_PATH
-          # 官方包的二進位就叫 llvm-config；統一用 llvm-config-22 指代（同 brew 分支約定）
-          sudo ln -sf "$HOME/llvm-x86_64/bin/llvm-config" /usr/local/bin/llvm-config-22
-          # 釘住「確實是 x86_64 工具鏈」：arm64 包混進來會在後面靜態鏈接期才爆架構錯誤
-          lipo -archs "$HOME/llvm-x86_64/bin/llvm-config" | grep -q x86_64
-          # Rosetta 已就緒，直接執行即可（llvm-config 不依賴 SIP 例外）
           llvm-config-22 --version
 
       - name: "Install build tools + LLVM 22 (Windows - official installer)"
@@ -334,13 +294,6 @@ jobs:
             export CC=zigcc CXX=zigcxx
             export LLVM_STATIC_EXTRA_LIBS="-lc++"
             make no-llvm FULLLLVM=1 LLVM_CONFIG="C:/Program Files/LLVM/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
-          elif [ "${{ matrix.rosetta }}" = "true" ]; then
-            # 顯式傳 LLVM_STATIC_EXTRA_LIBS：Makefile 在 macOS 上預設會探測 brew --prefix
-            # 並把 -L 指到 /opt/homebrew/lib（arm64 庫目錄，Rosetta x86_64 鏈接不可用），
-            # 這裡改指官方 tarball 的 lib/（其依賴靜態庫都打包在內）。
-            EXTRA="-L$HOME/llvm-x86_64/lib -lc++ -lz"
-            [ -e "$HOME/llvm-x86_64/lib/libzstd.a" ] && EXTRA="$EXTRA -lzstd"
-            arch -x86_64 make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}" LLVM_STATIC_EXTRA_LIBS="$EXTRA"
           else
             make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           fi
@@ -351,25 +304,15 @@ jobs:
         shell: bash
         run: |
           BIN="./bin/no-llvm${{ matrix.ext }}"
-          if [ "${{ matrix.rosetta }}" = "true" ]; then
-            arch -x86_64 "$BIN" build -cc zig -o /tmp/embedded-smoke tests/heap.no
-            /tmp/embedded-smoke
-          else
-            "$BIN" build -cc zig -o /tmp/embedded-smoke${{ matrix.ext }} tests/heap.no
-            /tmp/embedded-smoke${{ matrix.ext }}
-          fi
+          "$BIN" build -cc zig -o /tmp/embedded-smoke${{ matrix.ext }} tests/heap.no
+          /tmp/embedded-smoke${{ matrix.ext }}
 
       - name: Verify the fallback switch still works
         shell: bash
         run: |
           BIN="./bin/no-llvm${{ matrix.ext }}"
-          if [ "${{ matrix.rosetta }}" = "true" ]; then
-            NOLANG_LLVM_CAPI=0 arch -x86_64 "$BIN" build -cc zig -o /tmp/embedded-fallback tests/heap.no
-            /tmp/embedded-fallback
-          else
-            NOLANG_LLVM_CAPI=0 "$BIN" build -cc zig -o /tmp/embedded-fallback${{ matrix.ext }} tests/heap.no
-            /tmp/embedded-fallback${{ matrix.ext }}
-          fi
+          NOLANG_LLVM_CAPI=0 "$BIN" build -cc zig -o /tmp/embedded-fallback${{ matrix.ext }} tests/heap.no
+          /tmp/embedded-fallback${{ matrix.ext }}
 
       - name: Cross-compile smoke test (non-host arch)
         # 釘住「全後端」這個前提：為非宿主架構產生程式碼必須有對應的 LLVM 後端。
@@ -381,11 +324,7 @@ jobs:
         run: |
           BIN="./bin/no-llvm${{ matrix.ext }}"
           OUT="/tmp/embedded-cross-aarch64"
-          if [ "${{ matrix.rosetta }}" = "true" ]; then
-            arch -x86_64 "$BIN" build -cc zig -target aarch64-linux-gnu -o "$OUT" tests/heap.no
-          else
-            "$BIN" build -cc zig -target aarch64-linux-gnu -o "$OUT" tests/heap.no
-          fi
+          "$BIN" build -cc zig -target aarch64-linux-gnu -o "$OUT" tests/heap.no
           [ -s "$OUT" ] || { echo "::error::cross-compiled output is empty"; exit 1; }
           echo "cross-compiled aarch64-linux-gnu: $(wc -c < "$OUT") bytes"
 
