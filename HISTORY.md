@@ -1,5 +1,11 @@
 # 更新日誌
 
+## v0.4.4
+
+- fix(build): quote LLVM_CONFIG in Makefile to handle Windows paths with spaces
+- fix(ci): poll for llvm-config.exe and add timeout/error handling in the Windows LLVM install step
+- fix(ci): set CC/CXX to `zig cc`/`zig c++` directly and drop broken zig wrapper scripts on Windows
+
 ## v0.4.3
 
 - feat(parser): add support for no-value explicit type declarations
