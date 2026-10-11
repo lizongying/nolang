@@ -775,10 +775,8 @@ download = (url str, dest str) (ok bool) {
     path str
     host-only = ''
     port-str = ''
-    crc char = 13
-    cr = crc.to-str()
-    lfc char = 10
-    lf = lfc.to-str()
+    cr = '\r'
+    lf = '\n'
     crlf = cr - lf
     sep-str = crlf - crlf
     req = ''
