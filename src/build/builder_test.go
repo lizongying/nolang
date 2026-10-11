@@ -137,6 +137,61 @@ func runDirectWasmWithWasmtime(t *testing.T, src string) (string, bool) {
 	return stdout.String(), true
 }
 
+// TestZigTargetTriple 驗證 zig 的 Apple target 轉換：zig 連結已編譯好的
+// arm64-apple-darwin object 時，若 --target 仍用 LLVM 的 "apple-darwin" 會報
+// "unable to parse target query '...': UnknownOperatingSystem"；zig 的 OS 名是
+// "macos"，故必須轉成 <arch>-macos。非 Apple 目標應原樣返回（冪等）。
+func TestZigTargetTriple(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"aarch64-apple-darwin", "aarch64-macos"},
+		{"x86_64-apple-darwin", "x86_64-macos"},
+		{"aarch64-apple-darwin27.0.0", "aarch64-macos"},
+		{"x86_64-apple-darwin22.5.0", "x86_64-macos"},
+		{"wasm32-wasi", "wasm32-wasi"},
+		{"wasm32-unknown-wasi", "wasm32-unknown-wasi"},
+		{"x86_64-linux-gnu", "x86_64-linux-gnu"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := zigTargetTriple(c.in); got != c.want {
+			t.Errorf("zigTargetTriple(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestBuildLLVMInternalZigDarwinLinks 端到端驗證：以 cc="zig"、target 為
+// aarch64-apple-darwin 呼叫 buildLLVMInternal，連結階段必須把 --target 翻成
+// aarch64-macos，否則 zig 會報 UnknownOperatingSystem。
+//
+// 跳過條件：opt/llc/zig 任一不在 PATH，或 zig 不可用。
+func TestBuildLLVMInternalZigDarwinLinks(t *testing.T) {
+	for _, tool := range []string{"opt", "llc", "zig"} {
+		if !toolAvailable(tool) {
+			t.Skipf("skipping: %s not in PATH", tool)
+		}
+	}
+	// 最小合法 LLVM IR：定義 main 回傳 0，object triple 為 arm64-apple-darwin。
+	const code = `target triple = "arm64-apple-darwin"
+define i32 @main() {
+  ret i32 0
+}
+`
+	// 走 verbose 路徑（opt + llc 產生 .s，再交 zig cc 組譯 + 連結），
+	// 該路徑不會對 zig 附加 -x ir（zig 不支援 -x ir），
+	// 正好用來驗證 darwin triple 在連結期的 zig 翻譯。
+	out := t.TempDir()
+	outBin := filepath.Join(out, "a.out")
+	if err := buildLLVMInternal(code, "main", outBin, "zig", "aarch64-apple-darwin", true, nil, nil); err != nil {
+		t.Fatalf("buildLLVMInternal (zig, aarch64-apple-darwin) failed: %v", err)
+	}
+	if _, statErr := os.Stat(outBin); statErr != nil {
+		t.Fatalf("expected linked binary %s: %v", outBin, statErr)
+	}
+}
+
 // TestBuildDirectWasmHelloWorld 驗證 Direct WASM 後端能編譯 `print('Hello, World!')`
 // 並產出可被 wasmtime 執行的 .wasm，stdout 應包含 "Hello, World!"。
 // 若 wasmtime 不在 $PATH 則 t.Skip。

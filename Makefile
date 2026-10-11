@@ -185,7 +185,14 @@ ifeq ($(LLVM_HOST_TARGET),arm)
 LLVM_TARGET_DEFINES += -DNOLANG_LLVM_TARGET_ARM
 endif
 endif
-LLVM_STATIC_CGO_LDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs --link-static --system-libs $(LLVM_STATIC_COMPONENTS) 2>/dev/null)
+# 某些發行版 LLVM（如 Linux arm64）在 --link-static 時會由 `passes` 元件帶出
+# -lPolly / -lPollyISL，但套件並未隨附對應的靜態庫，導致 ld 報
+# "cannot find -lPolly"。Polly 是選用的 polyhedral 最佳化庫，nolang 只用
+# PassBuilder / LLVMRunPasses 的標準 passes，不依賴 Polly。scripts/llvm-link-flags.sh
+# 會執行 llvm-config 並丟棄「在 $(llvm-config --libdir) 中確實不存在」的 -lPolly*
+# 旗標；存在則維持原樣，以免影響已正常鏈接的環境（如 macOS、x86_64 Linux）。
+# （過濾邏輯放進獨立 script，避免 Make 在 $(shell ...) 裡解析複雜 shell 管線出錯。）
+LLVM_STATIC_CGO_LDFLAGS := $(shell bash $(CURDIR)/scripts/llvm-link-flags.sh $(LLVM_CONFIG) $(LLVM_STATIC_COMPONENTS) 2>/dev/null)
 # 連結期丟棄未參考的 LLVM 段／目標碼。macOS 的 ld64 不認 --gc-sections，改用 -dead_strip。
 ifeq ($(shell uname -s),Darwin)
 LLVM_GC_FLAGS ?= -Wl,-dead_strip

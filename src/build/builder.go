@@ -62,6 +62,29 @@ func DetectTarget() string {
 	return llvmArch + "-" + llvmOS
 }
 
+// zigTargetTriple 把 Apple 的 LLVM triple（如 "aarch64-apple-darwin"）轉成
+// zig 接受的長相（"aarch64-macos"）。zig 連結已編譯好的 object 時，若
+// --target 仍用 "apple-darwin" 會報
+// "unable to parse target query 'aarch64-apple-darwin': UnknownOperatingSystem"
+// —— zig 的 OS 名是 "macos" 而非 LLVM 的 "darwin"。clang 原生接受 apple-darwin，
+// 不走此轉換。非 Apple 目標原樣返回（冪等）。
+func zigTargetTriple(t string) string {
+	if t == "" {
+		return t
+	}
+	parts := strings.Split(t, "-")
+	if len(parts) < 2 {
+		return t
+	}
+	for _, p := range parts[1:] {
+		// 任何 darwin 組件（darwin / darwin25.0.0 / apple-darwin）都視為 Apple 平台。
+		if p == "darwin" || p == "apple-darwin" || strings.HasPrefix(p, "darwin") {
+			return parts[0] + "-macos"
+		}
+	}
+	return t
+}
+
 // CheckToolchain verifies that LLVM toolchain (llvm-config) and the chosen
 // C compiler (clang or zig) are available.
 // Returns an error with OS-specific install instructions if not found.
@@ -770,6 +793,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	if runtime.GOOS == "wasip1" {
 		return fmt.Errorf("LLVM toolchain not available in WASM build; use --wasm-direct flag")
 	}
+
 	// 偵測 WASI 目標：wasm32-wasi / wasm32-wasi-threads / wasm32-unknown-wasi 等。
 	// WASI 目標需要 --sysroot=$WASI_SYSROOT，且跳過 -lws2_32 等原生平台連結旗標。
 	isWasiTarget := strings.Contains(target, "wasm32-wasi") || strings.Contains(target, "wasm32-unknown-wasi") || strings.Contains(target, "wasm32-wasi-threads")
@@ -945,11 +969,19 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		clangIn = sPath
 	}
 	var clangArgs []string
+	// zig 的 Apple OS 名是 "macos" 而非 LLVM 的 "darwin"：用 apple-darwin 作
+	// --target 連結已編譯好的 object 會報
+	// "unable to parse target query '...': UnknownOperatingSystem"。故 zig 時
+	// 把 darwin triple 轉成 <arch>-macos；clang 原生接受 apple-darwin，不轉。
+	linkTarget := target
+	if cc == "zig" {
+		linkTarget = zigTargetTriple(target)
+	}
 	if isWasiTarget {
 		// WASI 目標：跳過所有原生平台 -l<lib> 連結（包含 -lws2_32 等 Windows 專屬函式庫）。
 		// zig cc 自帶 wasi-libc，無需 $WASI_SYSROOT；clang 則需要 wasi-sysroot。
 		// 直接傳 .ll 給 cc（跳過 llc），避免 WASM 組譯器不支援引號識別符。
-		clangArgs = append(clangArgs, "--target="+target)
+		clangArgs = append(clangArgs, "--target="+linkTarget)
 		if cc != "zig" {
 			sysroot := os.Getenv("WASI_SYSROOT")
 			if sysroot == "" {
@@ -965,7 +997,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		clangArgs = append(clangArgs, clangIn, "-o", outPath)
 	} else {
 		if target != "" {
-			clangArgs = append(clangArgs, "--target="+target)
+			clangArgs = append(clangArgs, "--target="+linkTarget)
 		}
 		isWindowsTarget := runtime.GOOS == "windows"
 		if !isWindowsTarget {

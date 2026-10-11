@@ -1,0 +1,9 @@
+SEP = "/"
+DOT = "."
+H = 0x41
+HBIG = 0Xff
+DEC = 65
+ZRO = 0x0
+ARRHEX = [0x50, 0x4b, 0]
+ARRDEC = [1, 2, 3]
+ARRCHAR = ["a", "b"]

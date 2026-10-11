@@ -148,7 +148,9 @@ jobs:
   # 注意：cgo 無法交叉編譯（darwin 目標需要 macOS SDK、windows 需要 MSVC），
   # 所以這裡是矩陣「原生 runner 原生構建」，而非一次交叉出全部平台。
   # darwin/amd64 因 GitHub 已退役 x64 macOS runner，改在 macos-latest(arm64) 上
-  # 用 Rosetta(arch -x86_64) 跑 x86_64 工具鏈做原生構建。
+  # 用 Rosetta(arch -x86_64) 跑 x86_64 工具鏈做原生構建。Homebrew 已停止支援
+  # x86_64（installer 直接報「only supported on Apple Silicon processors!」），
+  # x86_64 LLVM 改從 llvm/llvm-project 官方 release 的 x86_64-apple-darwin 預編譯包取得。
   # windows/* 為實驗性（continue-on-error）：上游 LLVM 未發行 Windows/arm64 靜態庫，
   # 且 windows/amd64 以 zig cc 鏈接 MSVC 靜態庫的運行時匹配可能需就地迭代。
   # 代價：全後端產物比純 Go 版（~12 MB）大得多，故作為額外 asset 而非替換現有產物。
@@ -185,6 +187,7 @@ jobs:
             ext: ""
           # darwin/amd64：GitHub 已退役 x64 macOS runner，故在 macos-latest(arm64) 上
           # 以 Rosetta(arch -x86_64) 跑 x86_64 工具鏈原生構建（cgo 無法交叉編譯）。
+          # x86_64 工具鏈來自 LLVM 官方 x86_64-apple-darwin 預編譯包（Homebrew 已放棄支援 x86_64）。
           - os: macos-latest
             asset: no-llvm_darwin_amd64
             llvm_pkg: ""
@@ -242,33 +245,64 @@ jobs:
           sudo ln -sf "$LLVM_PREFIX/bin/llvm-config" /usr/local/bin/llvm-config-22
           llvm-config-22 --version
 
-      - name: "Install LLVM 22 (macOS amd64 - Rosetta + x86_64 Homebrew)"
+      - name: "Install LLVM 22 (macOS amd64 - Rosetta + official LLVM tarball)"
         if: runner.os == 'macOS' && matrix.rosetta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # GitHub 已退役 x64 macOS runner；在 arm64 runner 上用 Rosetta 跑 x86_64
           # 工具鏈做原生構建（cgo 無法交叉編譯）。
+          # ⚠️ 不能走 x86_64 Homebrew：Homebrew 已停止支援 x86_64，installer 在
+          # Rosetta 下直接報「Homebrew on macOS is only supported on Apple Silicon
+          # processors!」而退出。改用 llvm/llvm-project 官方釋出的
+          # clang+llvm-<ver>-x86_64-apple-darwin 預編譯包（含 llvm-config 與靜態庫），
+          # 版本對齊 zig 0.17.0 內嵌的 LLVM 22.1.8。
           softwareupdate --install-rosetta --agree-to-license || true
-          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          arch -x86_64 /usr/local/bin/brew install llvm@22 zstd z3 libxml2
-          LLVM_PREFIX=$(arch -x86_64 /usr/local/bin/brew --prefix llvm@22)
-          echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
-          sudo ln -sf "$LLVM_PREFIX/bin/llvm-config" /usr/local/bin/llvm-config-22
+          LLVM_VER=22.1.8
+          ASSET_URL=$(gh api "repos/llvm/llvm-project/releases/tags/llvmorg-${LLVM_VER}" \
+            --jq '.assets[].browser_download_url | select(test("x86_64-apple-darwin.*\\.tar\\.xz$"))' | head -1)
+          [ -n "$ASSET_URL" ] || { echo "::error::no x86_64-apple-darwin asset in llvmorg-${LLVM_VER} release"; exit 1; }
+          echo "Downloading: $ASSET_URL"
+          curl -L -f -o llvm.tar.xz "$ASSET_URL"
+          mkdir -p "$HOME/llvm-x86_64"
+          tar -xf llvm.tar.xz -C "$HOME/llvm-x86_64" --strip-components=1
+          rm -f llvm.tar.xz
+          echo "$HOME/llvm-x86_64/bin" >> $GITHUB_PATH
+          # 官方包的二進位就叫 llvm-config；統一用 llvm-config-22 指代（同 brew 分支約定）
+          sudo ln -sf "$HOME/llvm-x86_64/bin/llvm-config" /usr/local/bin/llvm-config-22
+          # 釘住「確實是 x86_64 工具鏈」：arm64 包混進來會在後面靜態鏈接期才爆架構錯誤
+          lipo -archs "$HOME/llvm-x86_64/bin/llvm-config" | grep -q x86_64
+          # Rosetta 已就緒，直接執行即可（llvm-config 不依賴 SIP 例外）
           llvm-config-22 --version
 
-      - name: "Install build tools + LLVM 22 (Windows - winget)"
+      - name: "Install build tools + LLVM 22 (Windows - official installer)"
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install -y make unzip
-          winget install --exact --id LLVM.LLVM --version 22.1.8 -e --accept-package-agreements --accept-source-agreements
+          # 不用 winget：GH windows runner 上 winget 不一定在 pwsh 會話的 PATH 中
+          # （本 job 之前正是因此報「The term 'winget' is not recognized」而失敗），
+          # 且指定版本的 LLVM 是否已入 winget 源不可靠。改用 llvm/llvm-project 官方
+          # release 的 win64 安裝包——與 macOS 分支同樣走官方預編譯，版本對齊 zig
+          # 0.17.0 內嵌的 LLVM 22.1.8。NSIS 安裝包預設落到 C:\Program Files\LLVM，
+          # 正是下方 Build 步驟引用的 LLVM_CONFIG 路徑。
+          $LLVM_VER = "22.1.8"
+          $installer = "LLVM-$LLVM_VER-win64.exe"
+          curl.exe -L -f -o $installer "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VER/$installer"
+          # -S：NSIS 靜默安裝（同 macOS 分支钉住官方包的做法，避免交互式提示卡住 CI）
+          Start-Process -Wait -FilePath ".\$installer" -ArgumentList "-S"
           echo "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
           & "C:\Program Files\LLVM\bin\llvm-config.exe" --version
 
       - name: Install Zig 0.17.0 (bundles clang/lld/libc matching LLVM 22.1.8)
         shell: bash
         run: |
+          # 必須按 matrix.zig_arch 取宿主架構的 zig：Linux 分支早期寫死 x86_64，
+          # 在 ubuntu-24.04-arm（no-llvm_linux_arm64）上鏈的是 x86_64 二進位，
+          # 直接 `cannot execute binary file: Exec format error`。
+          # Windows 仍鎖定 x86_64：zig 官方沒有 windows/aarch64 宿主包（見上方 matrix 註解）。
           case "${{ runner.os }}" in
-            Linux) ZIG_TARBALL=zig-x86_64-linux-0.17.0.tar.xz ;;
+            Linux) ZIG_TARBALL=zig-${{ matrix.zig_arch }}-linux-0.17.0.tar.xz ;;
             macOS) ZIG_TARBALL=zig-${{ matrix.zig_arch }}-macos-0.17.0.tar.xz ;;
             Windows) ZIG_TARBALL=zig-x86_64-windows-0.17.0.zip ;;
           esac
@@ -301,7 +335,12 @@ jobs:
             export LLVM_STATIC_EXTRA_LIBS="-lc++"
             make no-llvm FULLLLVM=1 LLVM_CONFIG="C:/Program Files/LLVM/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           elif [ "${{ matrix.rosetta }}" = "true" ]; then
-            arch -x86_64 make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+            # 顯式傳 LLVM_STATIC_EXTRA_LIBS：Makefile 在 macOS 上預設會探測 brew --prefix
+            # 並把 -L 指到 /opt/homebrew/lib（arm64 庫目錄，Rosetta x86_64 鏈接不可用），
+            # 這裡改指官方 tarball 的 lib/（其依賴靜態庫都打包在內）。
+            EXTRA="-L$HOME/llvm-x86_64/lib -lc++ -lz"
+            [ -e "$HOME/llvm-x86_64/lib/libzstd.a" ] && EXTRA="$EXTRA -lzstd"
+            arch -x86_64 make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}" LLVM_STATIC_EXTRA_LIBS="$EXTRA"
           else
             make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           fi

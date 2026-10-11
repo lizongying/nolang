@@ -520,6 +520,16 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
         ; `# path` 匯入（tok.USE；`#` 非 `#{` 时詞法回 USE）——此前無臂→走 expr-stmt⇒ 把路徑拆成 `/` 除法運算式。
         tk.typ == tok.USE -> idx = ps-parse-use(t, p)
 
+        ; `!! { }` 無限循環 / `! { }` 恆假循環（stmt.go:528-540 → parseBangLoop 2577）：
+        ;   僅當 bang【緊接】LBRACE 才成立，否則退回運算式陳述（`!x` 取反）。
+        tk.typ == tok.BANG_BANG && ps-peek-at(p, 1) == tok.LBRACE -> idx = ps-parse-bang-loop(t, p, 1)
+
+        tk.typ == tok.NOT && ps-peek-at(p, 1) == tok.LBRACE -> idx = ps-parse-bang-loop(t, p, 0)
+
+        ; `(cond) { }` 前置條件循環（stmt.go:381 isCondLoopPrefix → parseCondLoopPrefix 2686）：
+        ;   僅當平衡 `)` 後【立即】是 `{` 且括號內容非參數列才成立，否則退回 `(expr)` 運算式陳述。
+        tk.typ == tok.LPAREN && ps-is-cond-loop-prefix(p) == 1 -> idx = ps-parse-cond-loop(t, p)
+
         tk.typ == tok.IDENT -> {
             name = tk.lit
             nxt_typ = ps-peek-at(p, 1)
@@ -1590,9 +1600,16 @@ ps-parse-struct-lit = (t ast, p psst, ty str) (idx i64) {
     }
 }
 
+; ps-intlit-hex：整數字面量原始文字是否為 `0x`/`0X` 十六進位形（Go stmt.go:1233 口徑）。
+;   僅按【進位制前綴】判定，不看數值範圍（與 ps-int-lit-value 的 base 偵測同一寫法）。
+ps-intlit-hex = (raw str) (r i64) {
+    r = 0
+    raw.len-bytes() > 2 && raw.byte(0) == 48 && (raw.byte(1) == 120 || raw.byte(1) == 88) -> r = 1
+}
+
 ; ps-elem-type-of：从 SliceLiteral 的首元素推論元素型别名（空切片默认 i64）
-;   規則同 Go stmt.go:1177-1201：IntegerLiteral→i64, Float→f64,
-;   String→str, Bool→bool, default→i64。
+;   規則同 Go stmt.go:1274-1300：IntegerLiteral→i64（十六進位 0x⇒byte）, Float→f64,
+;   String→str, Bool→bool, Char→char, default→i64。
 ps-elem-type-of = (t ast, sl i64) (r str) {
     r = 'i64'
     d = ast.nd-at(t, sl)
@@ -1601,13 +1618,20 @@ ps-elem-type-of = (t ast, sl i64) (r str) {
     firstKid <= 0 -> return
     e = ast.nd-at(t, firstKid)
     {
-        e.kind == asp.K_INTEGER_LITERAL -> r = 'i64'
+        e.kind == asp.K_INTEGER_LITERAL -> {
+            ; Go stmt.go:1279-1288：0x/0X 十六進位元素⇒ byte，否則 i64
+            raw = ast.str-at(t, ast.nd-s(e, 1))
+            r = 'i64'
+            ps-intlit-hex(raw) == 1 -> r = 'byte'
+        }
 
         e.kind == asp.K_FLOAT_LITERAL -> r = 'f64'
 
         e.kind == asp.K_STRING_LITERAL -> r = 'str'
 
         e.kind == asp.K_BOOLEAN_LITERAL -> r = 'bool'
+
+        e.kind == asp.K_CHAR_LITERAL -> r = 'char'
 
         -> r = 'i64'
     }
@@ -1620,13 +1644,20 @@ ps-infer-type = (t ast, val i64) (r str) {
     val <= 0 -> return
     d = ast.nd-at(t, val)
     {
-        d.kind == asp.K_INTEGER_LITERAL -> r = 'i64'
+        d.kind == asp.K_INTEGER_LITERAL -> {
+            ; Go stmt.go:1229-1240：十六進位字面量（0xNN）推 byte，十進位推 i64
+            raw = ast.str-at(t, ast.nd-s(d, 1))
+            r = 'i64'
+            ps-intlit-hex(raw) == 1 -> r = 'byte'
+        }
 
         d.kind == asp.K_FLOAT_LITERAL -> r = 'f64'
 
         d.kind == asp.K_BOOLEAN_LITERAL -> r = 'bool'
 
         d.kind == asp.K_STRING_LITERAL -> r = 'str'
+
+        d.kind == asp.K_CHAR_LITERAL -> r = 'char'
 
         -> r = ''
     }
@@ -1908,6 +1939,114 @@ ps-parse-for-kw = (t ast, p psst) (idx i64) {
     #{overflow=wrap}
     p.warn = p.warn + warn
     idx
+}
+
+; ps-parse-bang-loop：`!! { }`（恆真、無限循環）與 `! { }`（恆假、不執行）。
+;   對應 Go parseBangLoop（stmt.go:2577）：Condition=BooleanLiteral{loop}、Body=BlockStatement。
+;   此二形【不】saveWarning（新式語法），故不累加 p.warn。其餘 4 個 guarded CHILD 以 0 佔位。
+ps-parse-bang-loop = (t ast, p psst, loop i64) (idx i64) {
+    ps-bump(p); 消費 !! / !
+    ps-expect(p, tok.LBRACE)
+    body = ps-parse-block(t, p)
+    ps-expect(p, tok.RBRACE)
+    cond = ast.add(t, asp.K_BOOLEAN_LITERAL)
+    lit = 'false'
+    loop == 1 -> lit = 'true'
+    ast.set-slot(t, cond, 0, ast.put-str(t, lit))
+    idx = ast.add(t, asp.K_FOR_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '')); label（kv 恆印 `label: `）
+    ast.kid-add(t, idx, 0); Init
+    ast.kid-add(t, idx, cond); Condition
+    ast.kid-add(t, idx, 0); Update
+    ast.kid-add(t, idx, 0); CountExpr
+    ast.kid-add(t, idx, 0); IterRange
+    ast.kid-add(t, idx, body); Body
+}
+
+; ps-is-cond-loop-prefix：判定【目前 pos（LPAREN）】是否為 `(cond) {` 前置條件循環。
+;   對應 Go isCondLoopPrefix（stmt.go:2615）：(1) 掃至平衡 `)`；(2) 其【立即】下一 token 須為 `{`
+;   （不跳 trivia—換行後的 `{` 屬後綴式循環，非本形）；(3) 括號內容含 `,` 或「恰好兩個 IDENT」
+;   （參數名+型別）⇒ 是匿名函式參數列，非循環。其餘（含 `()`、單 IDENT `(flag)`）⇒ 循環。
+ps-is-cond-loop-prefix = (p psst) (r i64) {
+    r = 0
+    depth = 0
+    i = 0
+    closed = -1
+    go = true
+    (go) {
+        t = ps-peek-at(p, i)
+        t == tok.EOF -> go = false
+        go == true -> {
+            t == tok.LPAREN -> {
+                #{overflow=wrap}
+                depth = depth + 1
+            }
+            t == tok.RPAREN -> {
+                #{overflow=wrap}
+                depth = depth - 1
+                depth == 0 -> {
+                    closed = i
+                    go = false
+                }
+            }
+            #{overflow=wrap}
+            i = i + 1
+        }
+    }
+    closed < 0 -> return
+    #{overflow=wrap}
+    after = closed + 1
+    ps-peek-at(p, after) != tok.LBRACE -> return
+    hasComma = 0
+    identCnt = 0
+    innerCnt = 0
+    z = 1
+    (z < closed) {
+        it = ps-peek-at(p, z)
+        it == tok.COMMA -> hasComma = 1
+        it == tok.IDENT -> {
+            #{overflow=wrap}
+            identCnt = identCnt + 1
+        }
+        #{overflow=wrap}
+        innerCnt = innerCnt + 1
+        #{overflow=wrap}
+        z = z + 1
+    }
+    hasComma == 1 -> return
+    innerCnt == 2 && identCnt == 2 -> return
+    r = 1
+}
+
+; ps-parse-cond-loop：`(cond) { body }` 前置條件循環。對應 Go parseCondLoopPrefix（stmt.go:2686）。
+;   空括號 `()` ⇒ Condition=BooleanLiteral{false}（不執行）；`(true)`/`(expr)` ⇒ Condition=expr。
+;   Body=BlockStatement。不 saveWarning（新式語法）。
+ps-parse-cond-loop = (t ast, p psst) (idx i64) {
+    ps-bump(p); 消費 (
+    cond = 0
+    ; ⚠️ 預先取 hd（同 ps-parse-for-kw 守則）：若每臂各呼叫 ps-peek(p)，首臂消費 `)` 後
+    ;   次臂重取會看到 `{` ⇒ 雙臂皆執行（match 非互斥 switch），cond 被第二臂覆寫成 0。
+    hd = ps-peek(p)
+    hd == tok.RPAREN -> {
+        cond = ast.add(t, asp.K_BOOLEAN_LITERAL)
+        ast.set-slot(t, cond, 0, ast.put-str(t, 'false'))
+        ps-bump(p); 消費 )
+    }
+    hd != tok.RPAREN -> {
+        cond = ps-parse-expr(t, p)
+        ps-expect(p, tok.RPAREN)
+    }
+    ps-expect(p, tok.LBRACE)
+    body = ps-parse-block(t, p)
+    ps-expect(p, tok.RBRACE)
+    idx = ast.add(t, asp.K_FOR_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '')); label
+    ast.kid-add(t, idx, 0); Init
+    ast.kid-add(t, idx, cond); Condition
+    ast.kid-add(t, idx, 0); Update
+    ast.kid-add(t, idx, 0); CountExpr
+    ast.kid-add(t, idx, 0); IterRange
+    ast.kid-add(t, idx, body); Body
 }
 
 ; ps-parse-break-continue：解析 `break` / `continue`（對應 Go parseBreakStatement / parseContinueStatement）。
