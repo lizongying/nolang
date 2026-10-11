@@ -1,5 +1,11 @@
 # 更新日誌
 
+## v0.4.1
+
+- fix(astcache): make the Tier-0 std AST blob reproducible and config-checked
+- refactor(build): embed LLVM with all backends for no-llvm releases
+- fix(parser): correct depth handling and overflow wrapping behaviors
+
 ## v0.4.0
 
 - feat(build): add embedded static-libLLVM variant with LLVM C API backend trimmed per host arch

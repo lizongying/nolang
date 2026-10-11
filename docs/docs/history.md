@@ -6,6 +6,12 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.1
+
+- fix(astcache): make the Tier-0 std AST blob reproducible and config-checked
+- refactor(build): embed LLVM with all backends for no-llvm releases
+- fix(parser): correct depth handling and overflow wrapping behaviors
+
 ## v0.4.0
 
 - feat(build): add embedded static-libLLVM variant with LLVM C API backend trimmed per host arch
