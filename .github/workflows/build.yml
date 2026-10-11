@@ -68,67 +68,32 @@ jobs:
           output=$(./history.sh)
           echo "$output" > history.md
 
-      - name: Create Release
+      - name: Create Release (idempotent)
         id: create_release
-        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-          body_path: history.md
+        run: |
+          TAG="${{ github.ref_name }}"
+          # 重跑 / 強制重推 tag 時，若該 tag 的 release 已存在（例如前次失敗的
+          # release 重建），不可再用 actions/create-release（會報 422 已存在）；
+          # 此處改為「不存在才建立」，使 build-release 可安全重入。
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Release $TAG" --notes-file history.md
+          fi
 
-      - name: Upload Release Asset linux_amd64
-        uses: actions/upload-release-asset@v1
+      - name: Upload Release Assets (idempotent, clobber)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/no_linux_amd64
-          asset_name: no_${{ env.version_name }}_linux_amd64
-          asset_content_type: application/octet-stream
-
-      - name: Upload Release Asset linux_arm64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/no_linux_arm64
-          asset_name: no_${{ env.version_name }}_linux_arm64
-          asset_content_type: application/octet-stream
-
-      - name: Upload Release Asset darwin_amd64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/no_darwin_amd64
-          asset_name: no_${{ env.version_name }}_darwin_amd64
-          asset_content_type: application/octet-stream
-
-      - name: Upload Release Asset darwin_arm64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/no_darwin_arm64
-          asset_name: no_${{ env.version_name }}_darwin_arm64
-          asset_content_type: application/octet-stream
-
-      - name: Upload Release Asset windows_amd64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/no_windows_amd64.exe
-          asset_name: no_${{ env.version_name }}_windows_amd64.exe
-          asset_content_type: application/octet-stream
+        run: |
+          TAG="${{ github.ref_name }}"
+          # --clobber：覆寫同 tag 前次 run 已上傳的 asset（避免「asset 同名已存在」報錯）。
+          # 與下方 build-llvm-variants 的 `gh release upload ... --clobber` 模式一致。
+          gh release upload "$TAG" --clobber \
+            ./bin/no_linux_amd64 \
+            ./bin/no_linux_arm64 \
+            ./bin/no_darwin_amd64 \
+            ./bin/no_darwin_arm64 \
+            ./bin/no_windows_amd64.exe
 
   # ── 內置 LLVM 的發布變體（靜態 libLLVM）─────────────────────────────────
   # 與上面的純 Go 產物並存：產物自帶 LLVM，使用者不必安裝 LLVM；配合 `-cc zig`
