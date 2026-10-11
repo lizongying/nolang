@@ -788,12 +788,13 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 handled = 1
             }
 
-            ; 無值明示型別裸宣告：`name TYPE`（TYPE=NamedType/SliceType/ArrayType），僅當型別後
-            ;   緊接陳述邊界。上方各含值臂皆要求 `=`，此處 handled==0 表示那些臂都未命中⇒可能為裸宣告
-            ;   或索引運算式；ps-parse-typedecl-noval 只在【真裸宣告】回 >0，其餘還原交由下方 expr-stmt。
+            ; 複合型明示宣告（限定名/巢狀）：`name TYPE [= value]`，TYPE 為各特化含值臂未覆蓋的
+            ;   限定 NamedType（`a.b`）/巢狀 SliceType・ArrayType（`[][]T`、`[N][]T`）。上方各特化臂
+            ;   皆要求特定偏移的 `=`，此處 handled==0 表示都未命中⇒可能為複合型宣告或索引運算式；
+            ;   ps-parse-typedecl 只在【真宣告】(型別後為 `=` 或陳述邊界)回 >0，其餘還原交由下方 expr-stmt。
             ;   守衛限 nxt_typ∈{IDENT,LBRACKET}（QUESTION 由上方可為空臂；COMMA/ARROW/DOT/LBRACE 非型別）。
             handled == 0 && (nxt_typ == tok.LBRACKET || nxt_typ == tok.IDENT) -> {
-                td = ps-parse-typedecl-noval(t, p, name)
+                td = ps-parse-typedecl(t, p, name)
                 td > 0 -> {
                     idx = td
                     handled = 1
@@ -2222,51 +2223,69 @@ ps-mk-standalone-if = (t ast, p psst, cond i64) (idx i64) {
 }
 
 ; ps-parse-type：在當前位置解析一個型別並回傳其節點索引（**子先於父**）。
-;   支持：NamedType（IDENT）、NullableType（? T，遞迴）、SliceType（[] T）。
+;   支持：NamedType（IDENT，含限定名 `a.b.c`）、NullableType（? T，遞迴）、
+;   SliceType（[] T，T 可為巢狀 `[][]T`/限定 `[]a.b`/可為空 `[]?T`）、
+;   ArrayType（[ N ] T，T 亦可巢狀）。
 ;   明示標註一律不設 inferred（dump 不印 `inferred: true`）。回 0 = 当前位置非合法型別起點。
-;   ⚠️ 各臂用快照 `tk`（非活 `ps-peek`）分派，避免跨臂重評誤觸；臂内地變數名互不碰撞。
+;   ⚠️ 限定名對齊 Go stmt.go:1034 的 `for cur==DOT { name += "." + next IDENT }`：
+;      整條 `tls.conn` 存進 NamedType 的 name 槽（type-string 直接讀 s0，不另建節點）。
+;   ⚠️ 巢狀元素經【遞迴】ps-parse-type 取得（子先於父），故 `[][]i64` 建為
+;      SliceType{ SliceType{ NamedType{i64} } }；type-string(ast.no:610) 遞迴印 `[][]i64`。
+;   ⚠️ 用 `handled` 旗標（非互斥條件）防同块多臂重評：某臂已建 idx 後，後續臂不得再跑
+;      （match 非排他，實測裸條件會因前一臂已消費 token 使後臂的活 ps-peek-at 誤命中）。
 ps-parse-type = (t ast, p psst) (idx i64) {
     ps-skip-trivia(p)
     tk = ps-peek-token(p)
     idx = 0
+    handled = 0
     {
-        tk.typ == tok.IDENT -> {
-            ps-bump(p); 消費型別名
+        handled == 0 && tk.typ == tok.IDENT -> {
+            handled = 1
+            ps-bump(p); 消費首段型別名
+            nm = tk.lit
+            go = true
+            (go) {
+                ps-peek(p) == tok.DOT && ps-peek-at(p, 1) == tok.IDENT -> {
+                    ps-bump(p); 消費 .
+                    seg = ps-lit-at(p, 0)
+                    ps-bump(p); 消費 段名
+                    nm = nm + '.' + seg
+                }
+
+                -> go = false
+            }
             idx = ast.add(t, asp.K_NAMED_TYPE)
-            ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+            ast.set-slot(t, idx, 0, ast.put-str(t, nm))
         }
 
-        tk.typ == tok.QUESTION -> {
+        handled == 0 && tk.typ == tok.QUESTION -> {
+            handled = 1
             ps-bump(p); 消費 ?
             pti = ps-parse-type(t, p); 內層型別（遞迴）
             idx = ast.add(t, asp.K_NULLABLE_TYPE)
             ast.kid-add(t, idx, pti); 唯一 guarded CHILD=Type
         }
 
-        tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.RBRACKET && ps-peek-at(p, 2) == tok.IDENT -> {
+        handled == 0 && tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.RBRACKET && (ps-peek-at(p, 2) == tok.IDENT || ps-peek-at(p, 2) == tok.LBRACKET || ps-peek-at(p, 2) == tok.QUESTION) -> {
+            handled = 1
             ps-bump(p); 消費 [
             ps-bump(p); 消費 ]
-            pts = ps-peek-token(p)
-            ps-bump(p); 消費 elem 型別名
-            ptne = ast.add(t, asp.K_NAMED_TYPE)
-            ast.set-slot(t, ptne, 0, ast.put-str(t, pts.lit))
+            elem = ps-parse-type(t, p); 元素型別（遞迴，子先於父）
             idx = ast.add(t, asp.K_SLICE_TYPE)
             ast.set-slot(t, idx, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
-            ast.kid-add(t, idx, ptne)
+            ast.kid-add(t, idx, elem)
         }
 
-        tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.INT && ps-peek-at(p, 2) == tok.RBRACKET && ps-peek-at(p, 3) == tok.IDENT -> {
+        handled == 0 && tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.INT && ps-peek-at(p, 2) == tok.RBRACKET && (ps-peek-at(p, 3) == tok.IDENT || ps-peek-at(p, 3) == tok.LBRACKET || ps-peek-at(p, 3) == tok.QUESTION) -> {
+            handled = 1
             ps-bump(p); 消費 [
             sz = ps-parse-expr(t, p); 尺寸 IntegerLiteral
             ps-expect(p, tok.RBRACKET); 消費 ]
-            ete = ps-peek-token(p)
-            ps-bump(p); 消費 elem 型別名
-            etne = ast.add(t, asp.K_NAMED_TYPE)
-            ast.set-slot(t, etne, 0, ast.put-str(t, ete.lit))
+            elem = ps-parse-type(t, p); 元素型別（遞迴）
             idx = ast.add(t, asp.K_ARRAY_TYPE)
             ast.set-slot(t, idx, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
             ast.kid-add(t, idx, sz)
-            ast.kid-add(t, idx, etne)
+            ast.kid-add(t, idx, elem)
         }
 
         -> {
@@ -2275,36 +2294,49 @@ ps-parse-type = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-typedecl-noval：解析【無值】的明示型別裸宣告 `name TYPE`（換行/區塊尾/檔尾收尾）。
-;   對應 Go parseLetStatement 的 no-value 分支（stmt.go:1051–1060）：型別解析完後若【非】`=`
-;   而是陳述邊界，即回傳僅帶 Type、Value=nil 的 LetStatement（dump 為 `type: X, value: `）。
-;   型別經 ps-parse-type（NamedType / SliceType / ArrayType / NullableType 全形，含巢狀 `[]`）。
-;   ⚠️ 復用 ps-parse-type 會【先建節點】；若最後判定非裸宣告（有 `=`、或型別後接運算子如索引
-;   `x[i]`）則還原 p.pos，讓既有含值臂 / 運算式陳述重新解析——所建節點因不被任何 kid 引用而成為
-;   孤兒，dumper 自 root 沿 kid 走訪永不觸及（見 ast.dump），故零回歸、僅耗少許 arena。
-;   ⚠️ 只認【無值】：見 `=` 即還原（含值宣告由上方各 `nxt_typ==…ASSIGN` 臂處理），避免雙臂重複建節。
-ps-parse-typedecl-noval = (t ast, p psst, name str) (idx i64) {
+; ps-parse-typedecl：解析【通用明示型別宣告】`name TYPE [= value]`——補齊各特化含值臂未覆蓋的
+;   複合型形（限定名 `a.b`、巢狀 `[][]T`/`[N][]T`）之裸宣告與含值兩形。裸形對應 Go parseLetStatement
+;   的 no-value 分支（stmt.go:1051–1060：型別後遇陳述邊界即 Value=nil，dump 為 `type: X, value: `）；
+;   含值形對應 Go 的 `= expr` 分支（dump 為 `type: X, value: <expr>`）。
+;   型別經 ps-parse-type（NamedType / SliceType / ArrayType / NullableType 全形，含限定/巢狀）。
+;   ⚠️ 只在【上方各特化臂都未命中】（handled==0）時由分派處呼叫：`name IDENT = v`（+2==ASSIGN）
+;   由單名含值臂、`[]T=[..]`/`[N]T=[..]`/`[K]V={..}` 由對應陣列/映射特化臂先行處理（它們有 ArrayLiteral
+;   /MapLiteral desugar），故本函式只接住那些臂遺漏的複合型形，RHS 一律走 ps-parse-expr。
+;   ⚠️ 復用 ps-parse-type 會【先建節點】；若型別後既非 `=` 亦非陳述邊界（如索引 `x[i]`、運算子）
+;   則還原 p.pos、回 0，交由運算式陳述重解——所建節點不被任何 kid 引用即為孤兒，dumper 自 root
+;   沿 kid 走訪永不觸及（見 ast.dump），故零回歸、僅耗少許 arena。
+ps-parse-typedecl = (t ast, p psst, name str) (idx i64) {
     idx = 0
     savePos = p.pos
     ps-bump(p); 消費 name IDENT
     ty = ps-parse-type(t, p); 明示型別（子先於父）
     ty == 0 -> p.pos = savePos
     ty != 0 -> {
+
         ; 預取型別之後首個 token（同 ps-parse-for-kw 守則：勿在補集雙臂各重取）
         hd = ps-peek(p)
-        bnd = 0
-        hd == tok.NEWLINE -> bnd = 1
-        hd == tok.RBRACE -> bnd = 1
-        hd == tok.EOF -> bnd = 1
-        hd == tok.SEMICOLON -> bnd = 1
-        hd == tok.COMMENT -> bnd = 1
-        bnd == 1 -> {
+
+        ; 含值形：型別後接 `=` ⇒ LetStatement{name, type, value}
+        hd == tok.ASSIGN -> {
+            ps-bump(p); 消費 =
+            ps-skip-trivia(p)
+            val = ps-parse-expr(t, p)
+            idx = ast.add(t, asp.K_LET_STATEMENT)
+            ast.set-slot(t, idx, 0, ast.put-str(t, name))
+            ast.kid-add(t, idx, ty); guarded CHILD=Type
+            ast.kid-add(t, idx, val); guarded CHILD=Value
+        }
+
+        ; 裸形：型別後為陳述邊界 ⇒ LetStatement{name, type, value:0 佔位}
+        (hd == tok.NEWLINE || hd == tok.RBRACE || hd == tok.EOF || hd == tok.SEMICOLON || hd == tok.COMMENT) -> {
             idx = ast.add(t, asp.K_LET_STATEMENT)
             ast.set-slot(t, idx, 0, ast.put-str(t, name))
             ast.kid-add(t, idx, ty); guarded CHILD=Type
             ast.kid-add(t, idx, 0); guarded CHILD=Value 缺席→0 佔位（dump 印 `value: `）
         }
-        bnd == 0 -> p.pos = savePos
+
+        ; 既非 `=` 亦非邊界：非宣告（索引/運算式）→ 還原，回 0 交運算式陳述
+        (hd != tok.ASSIGN && hd != tok.NEWLINE && hd != tok.RBRACE && hd != tok.EOF && hd != tok.SEMICOLON && hd != tok.COMMENT) -> p.pos = savePos
     }
 }
 

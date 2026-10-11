@@ -249,8 +249,9 @@ jobs:
           $LLVM_VER = "22.1.8"
           $installer = "LLVM-$LLVM_VER-win64.exe"
           curl.exe -L -f -o $installer "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VER/$installer"
-          # -S：NSIS 靜默安裝（同 macOS 分支钉住官方包的做法，避免交互式提示卡住 CI）
-          Start-Process -Wait -FilePath ".\$installer" -ArgumentList "-S"
+          # /S：NSIS 靜默安裝開關（注意是「前斜線 /S」，不是 -S；NSIS 不認 -S 會退化成
+          #   互動式 GUI 安裝精靈，在無頭 runner 上永遠等不到點擊而卡死 CI）。
+          Start-Process -Wait -FilePath ".\$installer" -ArgumentList "/S"
           echo "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
           & "C:\Program Files\LLVM\bin\llvm-config.exe" --version
 

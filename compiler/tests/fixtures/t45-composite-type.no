@@ -1,0 +1,33 @@
+box {
+    n i64
+}
+box.f = (w io.writer, m [][]i64) {
+
+    ; 限定 NamedType：無值裸宣告（`a.b` 整條存進 NamedType.name 槽）
+    c tls.conn
+
+    ; 巢狀 SliceType：[][]T 建為 SliceType{ SliceType{ NamedType } }
+    a [][]i64
+
+    ; 巢狀 ArrayType：[N][]T
+    z [16][]byte
+
+    ; 限定 NullableType・含值：?a.b = call（走 ps-parse-param/可為空臂 → ps-parse-type）
+    f ?fs.file = call-fs()
+
+    ; 對照：含值複合型別宣告走通用 ps-parse-typedecl 的 ASSIGN 分支
+    d tls.conn = call-tls()
+
+    ; 參數型別（io.writer / [][]i64）已由 ps-parse-param → ps-parse-type 覆蓋
+    box.g = (k hpack.tables) {
+        k.n = c.n
+    }
+}
+
+call-fs = () (out ?fs.file) {
+    out
+}
+
+call-tls = () (out tls.conn) {
+    out
+}
