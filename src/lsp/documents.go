@@ -317,7 +317,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		// Module parses are cached by path+modtime (see parseModuleFile), so the
 		// std library is only parsed once per session, not on every keystroke.
 		for _, info := range checker.GetStdModules() {
-			modFilePath := checker.ResolveStdModulePath(info.ShortPath)
+			modFilePath := checker.ResolveStdModulePath(info.FullPath)
 			if modFilePath == "" {
 				continue
 			}

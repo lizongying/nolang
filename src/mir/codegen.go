@@ -13378,11 +13378,14 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// module in opt-verify:
 			//   call void @str_replace_char(%str-long* %v0.s, i32 %lv1, ...)
 			//   opt: '%lv1' defined with type '%str-long' but expected 'i32'
-			// The user-visible symptom was bad: `no vet` reported 0 errors — std
-			// method signatures carry only RETURN types (embeddedStdFuncSigs is
-			// map[string][]string), so method arguments are never type-checked —
-			// and only `no run` failed, with an internal opt-verify dump pointing
-			// at a temp .ll file. Repro:
+		// The user-visible symptom was bad: `no vet` reported 0 errors — std
+		// method signatures used to carry only RETURN types (the old
+		// embeddedStdFuncSigs was map[string][]string), so method arguments
+		// were never type-checked. They now live as one merged table of
+		// checker.StdSigEntry{Params, Results} (embeddedStdFuncSigs /
+		// embeddedStdMethodSigs), and the guard below reads the Params half —
+		// and only `no run` failed, with an internal opt-verify dump pointing
+		// at a temp .ll file. Repro:
 			//   s str = 'hello'
 			//   r str = s.replace-char('-', '*')   ; '-' is a STR, not a char
 			// (the correct spelling uses char literals: "-", "*").

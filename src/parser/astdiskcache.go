@@ -20,7 +20,13 @@ import (
 // cached blob decode into a structurally different tree. It is folded into
 // every on-disk cache key, so bumping it invalidates all stale entries at
 // once without scanning the directory.
-const ASTVersion = "2026-10-10.1"
+// 2026-10-11.1 — walkProgramNodes switched from per-unique-node to
+// per-occurrence indexing (see the comment on walkProgramNodes): the old
+// encoding attached nodeSem entries to the wrong nodes after a gob round-trip.
+// The uint32 keys keep their type, so old entries would still DECODE — they
+// must be invalidated by this bump or a stale blob would restore a wrong
+// mapping instead of failing.
+const ASTVersion = "2026-10-11.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

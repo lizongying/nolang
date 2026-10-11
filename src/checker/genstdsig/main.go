@@ -63,7 +63,7 @@ func main() {
 		return
 	}
 
-	funcSigs, methodSigs, funcParams, methodParams, structFields, aliases, structMod, enumVariants, err := checker.CollectStdSigsFromFS(fsys)
+	funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, err := checker.CollectStdSigsFromFS(fsys)
 	if err != nil {
 		fatal(fmt.Sprintf("genstdsig: collect failed: %v", err))
 	}
@@ -123,21 +123,11 @@ func main() {
 	var buf bytes.Buffer
 	buf.WriteString(header)
 	buf.WriteString("func init() {\n")
-	buf.WriteString("\tembeddedStdSigReady = true\n")
-	// Bumped to 2: the table now carries PARAMETER types alongside result
-	// types (embeddedStdFuncParams / embeddedStdMethodParams). A binary built
-	// against version 1 has no param tables, so the version guard is what
-	// tells them apart.
-	buf.WriteString("\tembeddedStdSigVersion = 2\n")
 	fmt.Fprintf(&buf, "\tembeddedStdSigKey = %s\n", strconv.Quote(key))
 	buf.WriteString("\tembeddedStdFuncSigs = ")
-	writeMapStringSliceInline(&buf, funcSigs)
+	writeMapStringSigInline(&buf, funcSigs)
 	buf.WriteString("\tembeddedStdMethodSigs = ")
-	writeMapStringSliceInline(&buf, methodSigs)
-	buf.WriteString("\tembeddedStdFuncParams = ")
-	writeMapStringSliceInline(&buf, funcParams)
-	buf.WriteString("\tembeddedStdMethodParams = ")
-	writeMapStringSliceInline(&buf, methodParams)
+	writeMapStringSigInline(&buf, methodSigs)
 	buf.WriteString("\tembeddedStdStructFields = ")
 	writeMapStringMapInline(&buf, structFields)
 	buf.WriteString("\tembeddedStdAliases = ")
@@ -164,8 +154,8 @@ func main() {
 	if err := os.WriteFile(outPath, formatted, 0o644); err != nil {
 		fatal(fmt.Sprintf("genstdsig: write %s: %v", outPath, err))
 	}
-	fmt.Printf("genstdsig: wrote %s (%d funcSigs, %d methodSigs, %d funcParams, %d methodParams, %d structs, %d aliases, %d enumTypes)\n",
-		outPath, len(funcSigs), len(methodSigs), len(funcParams), len(methodParams), len(structFields), len(aliases), len(enumVariants))
+	fmt.Printf("genstdsig: wrote %s (%d func sigs (params+results), %d method sigs (params+results), %d structs, %d aliases, %d enumTypes)\n",
+		outPath, len(funcSigs), len(methodSigs), len(structFields), len(aliases), len(enumVariants))
 }
 
 func writeMapStringSliceInline(buf *bytes.Buffer, m map[string][]string) {
@@ -190,6 +180,42 @@ func writeMapStringSliceInline(buf *bytes.Buffer, m map[string][]string) {
 			buf.WriteString(strconv.Quote(v))
 		}
 		buf.WriteString("},\n")
+	}
+	buf.WriteString("}\n")
+}
+
+// writeMapStringSigInline writes a map[string]checker.StdSigEntry literal. Each
+// value carries both its PARAMETER types (Params) and RESULT types (Results),
+// merging the old *Sigs + *Params tables into one entry — see stdsig_cache.go.
+func writeMapStringSigInline(buf *bytes.Buffer, m map[string]checker.StdSigEntry) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	if len(keys) == 0 {
+		buf.WriteString("map[string]StdSigEntry{}\n")
+		return
+	}
+	buf.WriteString("map[string]StdSigEntry{\n")
+	for _, k := range keys {
+		e := m[k]
+		fmt.Fprintf(buf, "\t%s: StdSigEntry{Params: []string{", strconv.Quote(k))
+		for i, v := range e.Params {
+			if i > 0 {
+				buf.WriteString(", ")
+			}
+			buf.WriteString(strconv.Quote(v))
+		}
+		buf.WriteString("}, Results: []string{")
+		for i, v := range e.Results {
+			if i > 0 {
+				buf.WriteString(", ")
+			}
+			buf.WriteString(strconv.Quote(v))
+		}
+		buf.WriteString("}},\n")
 	}
 	buf.WriteString("}\n")
 }
@@ -233,8 +259,8 @@ func writeModuleInfos(buf *bytes.Buffer, mods []checker.StdModuleInfo) {
 	}
 	buf.WriteString("[]StdModuleInfo{\n")
 	for _, m := range sorted {
-		fmt.Fprintf(buf, "\t{ShortName: %s, FullPath: %s, ShortPath: %s},\n",
-			strconv.Quote(m.ShortName), strconv.Quote(m.FullPath), strconv.Quote(m.ShortPath))
+		fmt.Fprintf(buf, "\t{ShortName: %s, FullPath: %s},\n",
+			strconv.Quote(m.ShortName), strconv.Quote(m.FullPath))
 	}
 	buf.WriteString("}\n")
 }

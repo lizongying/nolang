@@ -210,6 +210,72 @@ ps-skip-trivia = (p psst) {
     }
 }
 
+; ps-cur-lit：複製目前 token 的 lit（字串欄位）回傳，供讀取註解文字。
+;   .copy() 切斷與 toks 向量元素的共享（見檔頭釋放守則）。
+ps-cur-lit = (p psst) (s str) {
+    s = ''
+    p.pos < p.toks.len() -> {
+        #{index-out=zero}
+        s = p.toks[p.pos].lit.copy()
+    }
+}
+
+; ps-lit-at：向前看 k 個 token（0 = 目前）的 lit（字串）。
+;   .copy() 切斷與 toks 向量元素的共享（見檔頭釋放守則）。
+ps-lit-at = (p psst, k i64) (s str) {
+    s = ''
+    #{overflow=wrap}
+    i = p.pos + k
+    i < p.toks.len() -> {
+        #{index-out=zero}
+        s = p.toks[i].lit.copy()
+    }
+}
+
+; ps-skip-trivia-doc：跳過 NEWLINE / COMMENT，同時完成「註解歸位」——
+;   · 行前註解（其前已見換行，或無前兄弟 prevIdx==0）⇒ 取【首條】作為回傳 docId
+;     （dump.go 只渲染群組第一條，故 docTaken 守衛只留一條）
+;   · 行尾註解（緊接前一兄弟陳述的同一行、其前無換行）⇒ 掛到 prevIdx 的 Comment:
+; 回傳 0 表示無 doc 群組。對齊 Go collectDocComments + attachInlineComment：
+;   Doc 附著於【其後】那條陳述、行尾 Comment 附著於【其前】那條陳述。
+; ⚠️ 換行偵測靠【保留在 token 串中的 NEWLINE token】（本解析器不預先丟棄換行）。
+ps-skip-trivia-doc = (t ast, p psst, prevIdx i64) (docId i64) {
+    docId = 0
+    docTaken = 0
+    cmtTaken = 0
+    sawNL = 0
+    go = true
+    (go) {
+        tt = ps-peek(p)
+        {
+            tt == tok.NEWLINE -> {
+                sawNL = 1
+                ps-bump(p)
+            }
+
+            tt == tok.COMMENT -> {
+                isTrailing = sawNL == 0 && prevIdx > 0
+                isTrailing -> {
+                    cmtTaken == 0 -> {
+                        ast.set-cmt(t, prevIdx, ast.put-str(t, ps-cur-lit(p)))
+                        cmtTaken = 1
+                    }
+                }
+                isTrailing == false -> {
+                    docTaken == 0 -> {
+                        docId = ast.put-str(t, ps-cur-lit(p))
+                        docTaken = 1
+                    }
+                }
+                ps-bump(p)
+            }
+
+            -> go = false
+        }
+    }
+    docId
+}
+
 ; ps-expect：若目前 token 是 want 就消費它（容錯：不符也繼續）
 ps-expect = (p psst, want i64) {
     ps-peek(p) == want -> ps-bump(p)
@@ -235,18 +301,23 @@ ps-expect = (p psst, want i64) {
 ;     節點錯置成父的直接子節點——實測 `42` 曾因此少印 ExpressionStatement。）
 parse = (t ast, p psst) (root i64) {
     stmts []i64 = with-cap(4)
-    ps-skip-trivia(p)
+    prev = 0
+    docId = ps-skip-trivia-doc(t, p, 0)
     (ps-peek(p) != tok.EOF) {
         pos0 = p.pos
         s = ps-parse-stmt(t, p)
-        s > 0 -> stmts.push(s)
+        s > 0 -> {
+            docId != 0 -> ast.set-doc(t, s, docId)
+            stmts.push(s)
+            prev = s
+        }
 
         ; ⚠️ 進度守則：未覆蓋的語法會回 idx=0 且不吃 token，無此守則時
         ;    迴圈永轉（實測：`noc ast src/std/char.no` busy-spin）。
         ;    對齊 oracle 的錯誤恢復屬於 M3/L3 的範疇；在此之前以
         ;    「強制前進一律終止」取代當機。
         p.pos == pos0 -> ps-bump(p)
-        ps-skip-trivia(p)
+        docId = ps-skip-trivia-doc(t, p, prev)
     }
     root = ast.add(t, asp.K_PROGRAM)
     j = 0
@@ -483,6 +554,27 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
             nxt_typ == tok.ARROW -> {
                 idx = ps-parse-for(t, p, name)
                 handled = 1
+            }
+
+            ; 方法定義：`recvType.method = (params) [ (results) ] { body }`（僅函式形）
+            ;   對應 Go parseMethodDefinition（stmt.go:292–301）。偏移：+0 recv IDENT / +1 DOT /
+            ;   +2 method IDENT / +3 ASSIGN / +4 LPAREN。`obj.field = value` 因 +4 非 LPAREN、
+            ;   或 `= (expr)` 非 `(...) {`（ps-is-func==0）而回退（不誤吞，退回運算式陳述）。
+            nxt_typ == tok.DOT && nxt2_typ == tok.IDENT && ps-peek-at(p, 3) == tok.ASSIGN && ps-peek-at(p, 4) == tok.LPAREN -> {
+                recvType = name
+                methodName = ps-lit-at(p, 2)
+                fullName = recvType + '.' + methodName
+                savePos = p.pos
+                ps-bump(p); 消費 recv IDENT
+                ps-bump(p); 消費 DOT
+                ps-bump(p); 消費 method IDENT
+                ps-bump(p); 消費 ASSIGN
+                isf = ps-is-func(p)
+                isf == 1 -> {
+                    idx = ps-parse-method-func(t, p, fullName, recvType)
+                    handled = 1
+                }
+                isf == 0 -> p.pos = savePos
             }
 
             handled == 0 -> idx = ps-parse-expr-stmt(t, p)
@@ -1350,6 +1442,75 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     idx
 }
 
+; ps-parse-method-func：方法定義 `recvType.method = (params) [ (results) ] { body }` 的主體。
+;   進入時 p.pos 落在輸入參數群的 LPAREN。對應 Go parseMethodDefinition：
+;     · name = 點分全名（'recvType.method'）、methodDef 欄位 = 'true'（FunctionDefinition slot2）。
+;     · self 合成為【首個輸出參數】（Results，非 inputs）：Parameter{name:'self', Type:NamedType{recvType}}。
+;       ⇒ kid 區序 [inputs…][self][results…][body]，set-sig 的 results 數 = 1 + 宣告的 outs 數。
+;   ⚠️ Parameter 有 2 個 guarded CHILD（Type、DefaultExpr）：Type=selfnt、DefaultExpr=0 佔位。
+ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
+    ps-bump(p); 消費 LPAREN（輸入參數群）
+    params []i64 = with-cap(4)
+    (ps-peek(p) != tok.RPAREN) {
+        pn = ps-parse-param(t, p)
+        pn > 0 -> params.push(pn)
+        pn == 0 -> ps-bump(p); 防呆：沒解析出參數也要前進
+    }
+    ps-bump(p); 消費 RPAREN
+    ps-skip-trivia(p)
+
+    ; 回傳值群組（可選）：`(out T, …)`
+    outs []i64 = with-cap(4)
+    ps-peek(p) == tok.LPAREN -> {
+        ps-bump(p); 消費第二個 LPAREN
+        (ps-peek(p) != tok.RPAREN) {
+            ro = ps-parse-param(t, p)
+            ro > 0 -> outs.push(ro)
+            ro == 0 -> ps-bump(p); 防呆
+        }
+        ps-bump(p); 消費第二個 RPAREN
+        ps-skip-trivia(p)
+    }
+
+    ; self 合成接收者（先建子樹 NamedType，再建 Parameter 父節點）
+    selfnt = ast.add(t, asp.K_NAMED_TYPE)
+    ast.set-slot(t, selfnt, 0, ast.put-str(t, recvType))
+    selfp = ast.add(t, asp.K_PARAMETER)
+    ast.set-slot(t, selfp, 0, ast.put-str(t, 'self'))
+    ast.kid-add(t, selfp, selfnt)
+    ast.kid-add(t, selfp, 0)
+
+    ps-expect(p, tok.LBRACE); 進入 body
+    body = ps-parse-block(t, p)
+    ps-expect(p, tok.RBRACE); 結束 body
+
+    idx = ast.add(t, asp.K_FUNCTION_DEFINITION)
+    ast.set-slot(t, idx, 0, ast.put-str(t, fullName))
+    ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); methodDef（P-TRUE：僅 'true' 才印）
+
+    rs = outs.len()
+    #{overflow=wrap}
+    rs = rs + 1; +self
+    ast.set-sig(t, idx, 0, params.len(), rs)
+    j = 0
+    (j < params.len()) {
+        ast.kid-add(t, idx, params[j])
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+    ast.kid-add(t, idx, selfp)
+    m = 0
+    (m < outs.len()) {
+        ast.kid-add(t, idx, outs[m])
+
+        #{overflow=wrap}
+        m = m + 1
+    }
+    ast.kid-add(t, idx, body)
+    idx
+}
+
 ; ps-for-source：解析 range 迭代來源（`<-` 右側），對應 Go parseForRange。
 ;   `[`/`(` → RangeExpression 填 src(kid0)；其他（陣列 IDENT/呼叫等）→ 運算式填 srcExpr(kid1)。
 ;   進入時呼叫端已消費 `<-`，本函式先 skip-trivia。回傳 (src, srcExpr)（皆 i64、無結構體⇒安全多回傳）。
@@ -1725,13 +1886,18 @@ ps-parse-param = (t ast, p psst) (idx i64) {
 ; ps-parse-block：解析 `{ stmts }`（同 parse：子節點全建完才 add 父節點）
 ps-parse-block = (t ast, p psst) (idx i64) {
     stmts []i64 = with-cap(4)
-    ps-skip-trivia(p)
+    prev = 0
+    docId = ps-skip-trivia-doc(t, p, 0)
     (ps-peek(p) != tok.RBRACE) {
         pos0 = p.pos
         s = ps-parse-stmt(t, p)
-        s > 0 -> stmts.push(s)
+        s > 0 -> {
+            docId != 0 -> ast.set-doc(t, s, docId)
+            stmts.push(s)
+            prev = s
+        }
         p.pos == pos0 -> ps-bump(p)
-        ps-skip-trivia(p)
+        docId = ps-skip-trivia-doc(t, p, prev)
     }
     idx = ast.add(t, asp.K_BLOCK_STATEMENT)
     j = 0

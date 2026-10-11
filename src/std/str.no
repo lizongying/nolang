@@ -1927,7 +1927,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
 
     #{overflow=wrap}
     ax >= upper -> e = e + 1
-    bpw f64 = e.to-f64() * ln10
+    bpw = e.to-f64() * ln10
     base = bpw.exp()
 
     #{overflow=wrap}
@@ -2127,7 +2127,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
     #{overflow=wrap}
     ax >= upper -> e = e + 1
-    bpw f64 = e.to-f64() * ln10
+    bpw = e.to-f64() * ln10
     base = bpw.exp()
 
     #{overflow=wrap}

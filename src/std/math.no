@@ -75,6 +75,7 @@ pow = (x f64, y f64) (res f64) {
     x < 0.0 -> {
         yi f64 = y.trunc()
         yi != y -> {
+
             ; 负底数 + 非整数指数 ⇒ NaN
             res = 0.0 / 0.0
             return

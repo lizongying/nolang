@@ -4,4 +4,4 @@
 
 package stdastembed
 
-var Key = "da91f155e036c1451fda976aa72d10e92873f893be3ff12084b39418dc57f71d"
+var Key = "5cc9be27ef2a9761eaf2a88b6dba7b71140b1880a8b7dfe6c3fb7a60f0493654"

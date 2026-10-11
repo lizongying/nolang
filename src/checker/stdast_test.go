@@ -1,9 +1,16 @@
 package checker
 
 import (
+	"fmt"
+	"io/fs"
+	"reflect"
+	"strings"
 	"testing"
 
+	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/checker/stdastembed"
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
 )
 
 // TestStdASTForDecodes proves Tier 0 actually decodes the baked std AST blob
@@ -30,4 +37,151 @@ func TestStdASTForDecodes(t *testing.T) {
 	if len(prog.Statements) == 0 {
 		t.Fatal("decoded std/math.no program has no statements")
 	}
+}
+
+// TestStdASTBlobMatchesFreshParse guards the Tier 0 invariant that the baked
+// std AST blob must restore its nodeSem side-table onto the SAME nodes a fresh
+// parse attaches it to.
+//
+// The blob stores nodeSem as map[uint32]*NodeSemantics, keyed by the position
+// of a node OCCURRENCE in a deterministic reflection walk (parser.SerializeNodeSem);
+// parser.RestoreNodeSem replays that walk over the decoded tree. If the walk
+// used at bake time (genstdsig) and at restore time (this binary) ever disagree
+// — for instance because walkProgramNodes changed but the blob was not re-baked
+// — every index after the first divergence points at the wrong node and the
+// annotations silently land on unrelated statements.
+//
+// That is not hypothetical. walkProgramNodes used to deduplicate nodes by
+// pointer identity, which encoding/gob breaks (it flattens pointers), so the
+// blob's index space was SHORTER than the restore walk's. The consequence was a
+// `no vet` false positive: `nolang-overflow-ineffective` reported for perfectly
+// valid `#{overflow=wrap}` annotations (e.g. src/std/archive/bzip2.no:108)
+// because the annotation had been restored onto the wrong statement.
+//
+// The comparison is walk-ORDER agnostic: one local walk is applied to both
+// programs, so the test fails only when the blob's restored CONTENT differs —
+// which is exactly the invariant. It also fails when the blob is stale because
+// src/std was edited without re-running `make gen`.
+func TestStdASTBlobMatchesFreshParse(t *testing.T) {
+	StdSigKey = stdastembed.Key // mirror the injected build key
+	SetStdASTBlob(stdastembed.Blob, stdastembed.Key)
+
+	checked := 0
+	annotated := 0
+	for _, info := range ListStdModules(nolang.StdFS) {
+		embedPath := "std/" + info.FullPath + ".no"
+		src, err := fs.ReadFile(nolang.StdFS, embedPath)
+		if err != nil {
+			t.Fatalf("read %s: %v", embedPath, err)
+		}
+		p := parser.New(lexer.NewCached(embedPath, string(src)))
+		fresh := p.ParseProgram()
+		if fresh == nil || len(p.Errors()) > 0 {
+			t.Fatalf("fresh parse %s failed: %v", embedPath, p.Errors())
+		}
+		blobProg, ok := StdASTFor(embedPath)
+		if !ok {
+			t.Fatalf("StdASTFor(%s) returned false; the baked blob is missing this module "+
+				"(regenerate with `make gen`)", embedPath)
+		}
+
+		before := nodeSemFingerprint(fresh)
+		after := nodeSemFingerprint(blobProg)
+		checked++
+		for _, s := range before {
+			if strings.Contains(s, "|") {
+				annotated++
+				break
+			}
+		}
+
+		if len(before) != len(after) {
+			t.Fatalf("%s: node occurrence count differs between a fresh parse (%d) and "+
+				"the baked blob (%d) — the blob is stale; run `make gen`",
+				embedPath, len(before), len(after))
+		}
+		shown := 0
+		mismatches := 0
+		for i := range before {
+			if before[i] != after[i] {
+				if shown < 3 {
+					t.Errorf("%s: occurrence %d differs\n  fresh=%s\n  blob =%s",
+						embedPath, i, before[i], after[i])
+					shown++
+				}
+				mismatches++
+			}
+		}
+		if mismatches > 0 {
+			t.Fatalf("%s: %d of %d node/annotation slots were restored onto the wrong "+
+				"node — the baked std AST blob is stale; run `make gen`",
+				embedPath, mismatches, len(before))
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no std modules were checked")
+	}
+	if annotated == 0 {
+		t.Fatal("no annotated std module was checked; the comparison is vacuous")
+	}
+	t.Logf("baked std AST blob agrees with a fresh parse on %d modules (%d annotated)",
+		checked, annotated)
+}
+
+// nodeSemFingerprint enumerates node OCCURRENCES (type@line:col, plus the
+// annotations attached to each) using the same semantics as
+// parser.walkProgramNodes — mirrored locally so the test stays independent of
+// the unexported production walk, and so a change to that walk cannot make the
+// comparison agree with itself.
+func nodeSemFingerprint(prog *parser.Program) []string {
+	var out []string
+	onPath := make(map[parser.Node]bool)
+	var rec func(v reflect.Value)
+	rec = func(v reflect.Value) {
+		switch v.Kind() {
+		case reflect.Invalid:
+			return
+		case reflect.Interface:
+			if !v.IsNil() {
+				rec(v.Elem())
+			}
+		case reflect.Ptr:
+			if v.IsNil() {
+				return
+			}
+			if v.CanInterface() {
+				if n, ok := v.Interface().(parser.Node); ok {
+					if onPath[n] {
+						return
+					}
+					onPath[n] = true
+					var sb strings.Builder
+					fmt.Fprintf(&sb, "%T@%d:%d", n, n.Pos().Line, n.Pos().Column)
+					for _, e := range prog.Sem.AnnotationsOf(n) {
+						fmt.Fprintf(&sb, "|%s@%d:%d", e.Key, e.Pos().Line, e.Pos().Column)
+					}
+					out = append(out, sb.String())
+					rec(v.Elem())
+					delete(onPath, n)
+					return
+				}
+			}
+			rec(v.Elem())
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < v.Len(); i++ {
+				rec(v.Index(i))
+			}
+		case reflect.Struct:
+			for i := 0; i < v.NumField(); i++ {
+				if f := v.Field(i); f.CanInterface() {
+					rec(f)
+				}
+			}
+		}
+	}
+	for _, s := range prog.Statements {
+		rec(reflect.ValueOf(s))
+	}
+	return out
 }

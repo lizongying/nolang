@@ -12,7 +12,7 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// stdModuleLookup 建立 std 模組 shortName/shortPath → info 的查表。
+// stdModuleLookup 建立 std 模組 shortName/fullPath → info 的查表。
 // 供「第二遍按需載入 std」判斷某個 module.fn() 的 module 是否為已知 std 模組。
 // KnownStdModules 本身已 sync.Once 快取，此處每呼叫重建 O(n) 查表（n 為 std
 // 模組數，約百位），並發安全且開銷可忽略。
@@ -20,7 +20,7 @@ func stdModuleLookup() map[string]checker.StdModuleInfo {
 	m := make(map[string]checker.StdModuleInfo)
 	for _, info := range checker.KnownStdModules() {
 		m[info.ShortName] = info
-		m[info.ShortPath] = info
+		m[info.FullPath] = info
 	}
 	return m
 }
@@ -293,7 +293,7 @@ func (t *Transpiler) programUsesPrint(progs ...*parser.Program) bool {
 // 已合併好的 HIR Package，不回碰 HIR，也不負責發現新依賴。
 //
 // 與舊 alwaysAutoLoadStd 的「整模組無條件載入」不同，這裡只合併被推斷引入的
-// 模組。同一模組檔可能被 ShortName（如 "map"）與 ShortPath（如 "collection/map"）
+// 模組。同一模組檔可能被 ShortName（如 "map"）與 FullPath（如 "collection/map"）
 // 同時引用，皆指向同一份 std/collection/map.no，故以 path 去重避免重複合併。
 func (t *Transpiler) loadStdModuleBody(sp string, merged *parser.Program, typeOwner map[string]string, mainVarNames map[string]bool, mergedGlobalConsts map[string]bool, globalVarTypes map[string]string, loadedStd map[string]bool, explicitStdModules map[string]bool) ([]string, error) {
 	return t.loadStdModuleBodyForce(sp, merged, typeOwner, mainVarNames, mergedGlobalConsts, globalVarTypes, loadedStd, explicitStdModules, nil)
@@ -319,11 +319,11 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 	if _, isVar := globalVarTypes[info.ShortName]; isVar && !forcePrintDeps[sp] {
 		return nil, nil
 	}
-	path := "std/" + info.ShortPath
+	path := "std/" + info.FullPath
 	if explicitStdModules[path] {
 		return nil, nil
 	}
-	// 同一模組檔以 path 去重（ShortName/ShortPath 可能指向同一份 .no）。
+	// 同一模組檔以 path 去重（ShortName/FullPath 可能指向同一份 .no）。
 	if loadedStd[path] {
 		return nil, nil
 	}
@@ -541,8 +541,8 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			// [K]V 語法隱含引用 std/collection/map.no 模組（hashmap 模板特化）。
 			// 若不標記為已引用，map.no 不會被載入，hashmap-K-V 結構體類型定義缺失，
 			// 導致 LLVM alloca unsized type 編譯錯誤。
-			// ShortName="map", ShortPath="collection/map"，兩者皆需標記
-			// （collectReferencedStdModules 的查表鍵為 ShortName 或 ShortPath）。
+			// ShortName="map", FullPath="collection/map"，兩者皆需標記
+			// （collectReferencedStdModules 的查表鍵為 ShortName 或 FullPath）。
 			addRef("map")
 			addRef("collection/map")
 			walkType(ty.Key)

@@ -2059,7 +2059,7 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string, entryFile ..
 // that owns it, or "" when the file is not a std module (user code, standalone
 // test programs, empty paths). The path is normalized to its std-relative form
 // (everything after a "/std/" component, ".no" trimmed) and matched against the
-// known std modules by FullPath / ShortPath / ShortName.
+// known std modules by FullPath / ShortName.
 func stdModuleForSourceFile(file string) string {
 	if file == "" {
 		return ""
@@ -2076,7 +2076,7 @@ func stdModuleForSourceFile(file string) string {
 		return ""
 	}
 	for _, info := range knownStdModules() {
-		if rel == info.FullPath || rel == info.ShortPath || rel == info.ShortName {
+		if rel == info.FullPath || rel == info.ShortName {
 			return info.ShortName
 		}
 	}
@@ -6626,7 +6626,7 @@ func GetModuleExports(moduleNames []string) []ModuleExport {
 }
 func parseModuleExports(moduleName string) []ModuleExport {
 	for _, info := range knownStdModules() {
-		if info.ShortPath == moduleName || info.FullPath == moduleName || info.ShortName == moduleName {
+		if info.FullPath == moduleName || info.ShortName == moduleName {
 			embedPath := "std/" + info.FullPath + ".no"
 			if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
 				return parseModuleExportsFromSource(data)
@@ -6741,13 +6741,13 @@ func collectModuleExports(program *parser.Program, moduleNames []string) []Modul
 }
 func resolveModulePath(moduleName string) string {
 	// 1. Consult knownStdModules lookup table.
-	//    Match by ShortPath (or FullPath as fallback), resolve via FullPath.
+	//    Match by ShortName / FullPath, resolve via FullPath.
 	//    - "math"   → FullPath: "math"      → std/math.no
 	//    - "net"    → FullPath: "net/net"   → std/net/net.no
 	//    - "client" → FullPath: "net/client"→ std/net/client.no
 	//    - "hmac"   → FullPath: "crypto/hmac" → std/crypto/hmac.no
 	for _, info := range knownStdModules() {
-		if info.ShortPath == moduleName || info.FullPath == moduleName || info.ShortName == moduleName {
+		if info.FullPath == moduleName || info.ShortName == moduleName {
 			stdFile := pkg.GetStdSourceFile(info.FullPath)
 			if _, err := os.Stat(stdFile); err == nil {
 				return stdFile
@@ -8173,12 +8173,16 @@ var (
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
 	stdSigsOnce        sync.Once
-	stdSigsCache       map[string][]string // 模塊函數簽名（鍵：module.fn 或裸名 fn）
-	stdMethodSigsCache map[string][]string // 結構體方法簽名（鍵：module.struct.method）
-	// 參數型別表，與上面兩張「回傳型別表」同鍵。有了它 checker 才能檢查
-	// std 呼叫的引數；沒有它，方法引數從來沒被走訪過（見 checkCallArgsInExpr）。
-	stdFuncParamsCache   map[string][]string // 模塊函數參數型別（鍵同 stdSigsCache）
-	stdMethodParamsCache map[string][]string // 方法參數型別（鍵同 stdMethodSigsCache）
+	// Merged std signature tables: each entry carries both PARAMETER and RESULT
+	// types, keyed exactly like the old result-only tables
+	// (func: "module.fn" / bare "fn"; method: "module.struct.method").
+	stdSigsCache       map[string]StdSigEntry // 模塊函數簽名（鍵：module.fn 或裸名 fn）
+	stdMethodSigsCache map[string]StdSigEntry // 結構體方法簽名（鍵：module.struct.method）
+	// Derived RESULT-only maps returned by the public accessors so the
+	// results consumers (parser/lsp/transpiler) need no change; the entry
+	// tables above stay the single source of truth for both params and results.
+	stdFuncResultsCache   map[string][]string
+	stdMethodResultsCache map[string][]string
 	stdFieldsCache       map[string]map[string]string
 	stdAliasesCache      map[string]string   // 單具體型別別名快取（如 "fd" → "i64"）
 	stdStructModCache    map[string]string   // struct name → module short name（如 "conn" → "tls"）
@@ -8246,7 +8250,6 @@ func stdHirForSource(source []byte) *hir.Package {
 type StdModuleInfo struct {
 	ShortName string // last path segment of FullPath, e.g. "rand", "math"
 	FullPath  string // relative to std/, e.g. "crypto/rand", "net/net", "math"
-	ShortPath string // FullPath with redundant dir omitted when dir==file, e.g. "net", "crypto/hmac", "math"
 }
 
 func debugCountHashFns(stage string, merged *parser.Program) {
@@ -8282,21 +8285,10 @@ func ListStdModules(fsys fs.FS) []StdModuleInfo {
 					if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
 						shortName = fullPath[idx+1:]
 					}
-					// ShortPath: omit the redundant directory name when
-					// file name equals directory name (e.g. "net/net" → "net").
-					shortPath := fullPath
-					if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-						dir := fullPath[:idx]
-						file := fullPath[idx+1:]
-						if dir == file {
-							shortPath = file
-						}
-					}
-					infos = append(infos, StdModuleInfo{
-						ShortName: shortName,
-						FullPath:  fullPath,
-						ShortPath: shortPath,
-					})
+				infos = append(infos, StdModuleInfo{
+					ShortName: shortName,
+					FullPath:  fullPath,
+				})
 				}
 			}
 		}
@@ -8306,7 +8298,7 @@ func ListStdModules(fsys fs.FS) []StdModuleInfo {
 }
 
 func knownStdModules() []StdModuleInfo {
-	if embeddedStdSigReady {
+	if embeddedStdSigKey != "" {
 		// 与 CollectStdModuleSignatures 一致：用透过 make 注入的 key 校验内嵌
 		// 模块列表（embeddedStdModules），避免每次都走 FS walk。空 key = 非
 		// make 途径，直接报错；key 不符 = 表过期，也报错。两者都强制走 `make no`。
@@ -8336,7 +8328,6 @@ func GetStdModules() []StdModuleInfo {
 type JsModuleInfo struct {
 	ShortName string // 檔名去掉 .no 與目錄前綴，如 "console-log"
 	FullPath  string // 相對於 js/，如 "console-log"
-	ShortPath string // 與 FullPath 相同（JS 相容層目前無子目錄，dir==file 的情況不適用）
 }
 
 var (
@@ -8364,23 +8355,14 @@ func knownJsModules() []JsModuleInfo {
 					fullPath := strings.TrimSuffix(rel, ".no")
 					if !seen[fullPath] {
 						seen[fullPath] = true
-						shortName := fullPath
-						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-							shortName = fullPath[idx+1:]
-						}
-						shortPath := fullPath
-						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-							dirName := fullPath[:idx]
-							file := fullPath[idx+1:]
-							if dirName == file {
-								shortPath = file
-							}
-						}
-						infos = append(infos, JsModuleInfo{
-							ShortName: shortName,
-							FullPath:  fullPath,
-							ShortPath: shortPath,
-						})
+					shortName := fullPath
+					if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
+						shortName = fullPath[idx+1:]
+					}
+					infos = append(infos, JsModuleInfo{
+						ShortName: shortName,
+						FullPath:  fullPath,
+					})
 					}
 				}
 			}
@@ -8396,11 +8378,19 @@ func GetJsModules() []JsModuleInfo {
 
 //go:generate go run ./genstdsig
 
-func setStdSigCaches(funcSigs map[string][]string, methodSigs map[string][]string, funcParams map[string][]string, methodParams map[string][]string, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string, enumVariants map[string][]string) {
+func setStdSigCaches(funcSigs map[string]StdSigEntry, methodSigs map[string]StdSigEntry, structFields map[string]map[string]string, aliases map[string]string, structMod map[string]string, enumVariants map[string][]string) {
 	stdSigsCache = funcSigs
 	stdMethodSigsCache = methodSigs
-	stdFuncParamsCache = funcParams
-	stdMethodParamsCache = methodParams
+	// Derive the RESULT-only maps the public accessors return; every merged
+	// entry carries its Results slice, so this is a cheap shallow copy.
+	stdFuncResultsCache = make(map[string][]string, len(funcSigs))
+	for k, e := range funcSigs {
+		stdFuncResultsCache[k] = e.Results
+	}
+	stdMethodResultsCache = make(map[string][]string, len(methodSigs))
+	for k, e := range methodSigs {
+		stdMethodResultsCache[k] = e.Results
+	}
 	stdFieldsCache = structFields
 	stdAliasesCache = aliases
 	stdStructModCache = structMod
@@ -8410,7 +8400,7 @@ func setStdSigCaches(funcSigs map[string][]string, methodSigs map[string][]strin
 func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]string) {
 	stdSigsOnce.Do(func() {
 		// ---- embedded signature table (compiled-in Go literals) ----
-		// Preferred path: stdsig_gen.go bakes the five signature tables into
+		// Preferred path: stdsig_gen.go bakes the signature tables into
 		// the binary as Go source literals, so PASS1 is skipped on EVERY build.
 		//
 		// StdSigKey is injected at build time via -X (Makefile LD_FLAGS_WITH_SIG)
@@ -8423,8 +8413,8 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// `go test` or `cd src && go build`). That is not the normal path, so
 		// we hard-fail and require `make no` — there is NO fallback to
 		// computeStdSigKey, otherwise developers would silently always take the
-		// slow path and never notice they skipped signature generation.
-		if embeddedStdSigReady {
+	// slow path and never notice they skipped signature generation.
+	if embeddedStdSigKey != "" {
 			if StdSigKey == "" {
 				fmt.Fprintln(os.Stderr, "[no] ERROR: 標準庫簽名 key 未注入（StdSigKey 為空）。")
 				fmt.Fprintln(os.Stderr, "[no]   這個二進位不是透過 `make` 建構的——直接 `go build` / `go test`")
@@ -8433,7 +8423,7 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 				os.Exit(1)
 			}
 			if StdSigKey == embeddedStdSigKey {
-				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdFuncParams, embeddedStdMethodParams, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
+				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
 				return
 			}
 			fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌標準庫簽名表與建構時注入的簽名 key 不符（建構不一致）。")
@@ -8445,29 +8435,28 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		// ---- full collection from embedded StdFS ----
 		// 僅在 stdsig_gen.go 完全不存在時才會走到（例如第一次 `make gen` 之前）。
 		// 正常建構中該表一定存在且新鮮，因此此分支是例外而非常態。
-		funcSigs, methodSigs, funcParams, methodParams, structFields, aliases, structMod, enumVariants, _ := collectStdSigsFromFS(nolang.StdFS)
-		setStdSigCaches(funcSigs, methodSigs, funcParams, methodParams, structFields, aliases, structMod, enumVariants)
+		funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, _ := collectStdSigsFromFS(nolang.StdFS)
+		setStdSigCaches(funcSigs, methodSigs, structFields, aliases, structMod, enumVariants)
 	})
-	return stdSigsCache, stdFieldsCache
+	return stdFuncResultsCache, stdFieldsCache
 }
 
 // CollectStdSigsFromFS is the exported, FS-parameterized entry point used by
 // the signature-table generator (genstdsig) to collect the five signature
 // tables from the on-disk src/ tree at `no` build time.
-func CollectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
+func CollectStdSigsFromFS(fsys fs.FS) (map[string]StdSigEntry, map[string]StdSigEntry, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
 	return collectStdSigsFromFS(fsys)
 }
 
 // collectStdSigsFromFS parses every std module under fsys and collects the
-// five signature tables (func return types, method return types, struct fields,
-// type aliases, struct→module map) needed by the parser's type inference. It is
-// the FS-parameterized core of CollectStdModuleSignatures: the runtime passes
-// nolang.StdFS, the generator passes an os.DirFS over src/ on disk.
-// Returns (funcSigs, methodSigs, funcParams, methodParams, structFields,
-// aliases, structMod, enumVariants, error). The two *Params tables are keyed
-// exactly like their result-type counterparts and carry the declared
-// PARAMETER types, so callers can type-check arguments.
-func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string, map[string][]string, map[string][]string, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
+// signature tables (func + method entry maps carrying both PARAMETER and RESULT
+// types, plus struct fields, type aliases, struct→module map) needed by the
+// parser's type inference. It is the FS-parameterized core of
+// CollectStdModuleSignatures: the runtime passes nolang.StdFS, the generator
+// passes an os.DirFS over src/ on disk.
+// Returns (funcSigs, methodSigs, structFields, aliases, structMod, enumVariants,
+// error), where funcSigs/methodSigs are merged entry maps (Params + Results).
+func collectStdSigsFromFS(fsys fs.FS) (map[string]StdSigEntry, map[string]StdSigEntry, map[string]map[string]string, map[string]string, map[string]string, map[string][]string, error) {
 	// PASS 1: 解析所有模組並暫存，同時統計裸 struct 名的跨模組定義數。
 	// 多模組同名結構體（如 server-conn 定義於 server/tls/sse/ws）的裸名
 	// 有歧義：函數簽名快照若記錄裸名（?server-conn），解析期 it 綁定會
@@ -8543,7 +8532,26 @@ func collectStdSigsFromFS(fsys fs.FS) (map[string][]string, map[string][]string,
 	}
 	st := hir.CollectModuleSignatures(modulePkgs)
 
-	return st.Funcs, st.Methods, st.FuncParams, st.MethodParams, st.Structs, st.Aliases, st.StructMod, st.Enums, nil
+	// Merge each key's RESULT and PARAMETER types into one entry map. The two
+	// hir tables share keys exactly, so every func/method key gets a single
+	// StdSigEntry carrying both halves.
+	funcSigs := make(map[string]StdSigEntry, len(st.Funcs))
+	for k, results := range st.Funcs {
+		e := StdSigEntry{Results: results}
+		if params, ok := st.FuncParams[k]; ok {
+			e.Params = params
+		}
+		funcSigs[k] = e
+	}
+	methodSigs := make(map[string]StdSigEntry, len(st.Methods))
+	for k, results := range st.Methods {
+		e := StdSigEntry{Results: results}
+		if params, ok := st.MethodParams[k]; ok {
+			e.Params = params
+		}
+		methodSigs[k] = e
+	}
+	return funcSigs, methodSigs, st.Structs, st.Aliases, st.StructMod, st.Enums, nil
 }
 func CollectStdConcreteAliases() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
@@ -8606,7 +8614,7 @@ func CollectStdStructModules() map[string]string {
 // 與 CollectStdModuleSignatures（模組函數簽名）分離存放，避免同名衝突。
 func CollectStdMethodSigs() map[string][]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取
-	return stdMethodSigsCache
+	return stdMethodResultsCache
 }
 
 // CollectStdEnumVariants 返回 std 模組中所有枚舉型別的變體名列表。

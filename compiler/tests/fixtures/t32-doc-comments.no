@@ -1,0 +1,17 @@
+; leading doc for x
+
+; second line of the same group
+x = 1 ; trailing comment on x
+y = 2
+// slash-style doc for f
+f = () {
+    ; doc for inner
+    z = 3
+    w = 4 ; trailing inner
+}
+; doc before expr-statement
+42
+; doc before loop
+for 3 {
+    a = 1
+}

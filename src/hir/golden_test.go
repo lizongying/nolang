@@ -67,10 +67,26 @@ func stdModules(t *testing.T) []hir.ModulePackage {
 // migration: all six signature tables, produced from HIR slices, must equal
 // the ones the checker produces by parsing.
 func TestSignatureTablesMatchChecker(t *testing.T) {
-	wantFuncs, wantMethods, wantFuncParams, wantMethodParams, wantStructs, wantAliases, wantStructMod, wantEnums, err :=
+	wantFuncSigs, wantMethodSigs, wantStructs, wantAliases, wantStructMod, wantEnums, err :=
 		checker.CollectStdSigsFromFS(nolang.StdFS)
 	if err != nil {
 		t.Fatalf("checker.CollectStdSigsFromFS: %v", err)
+	}
+
+	// CollectStdSigsFromFS now returns merged func/method entries (each carrying
+	// Params + Results); split them back into the separate result/param maps the
+	// hir.ModuleSignatures uses, so the diff below stays apples-to-apples.
+	wantFuncs := make(map[string][]string, len(wantFuncSigs))
+	wantFuncParams := make(map[string][]string, len(wantFuncSigs))
+	for k, e := range wantFuncSigs {
+		wantFuncs[k] = e.Results
+		wantFuncParams[k] = e.Params
+	}
+	wantMethods := make(map[string][]string, len(wantMethodSigs))
+	wantMethodParams := make(map[string][]string, len(wantMethodSigs))
+	for k, e := range wantMethodSigs {
+		wantMethods[k] = e.Results
+		wantMethodParams[k] = e.Params
 	}
 
 	got := hir.CollectModuleSignatures(stdModules(t))
@@ -111,12 +127,12 @@ func TestModuleExportsMatchChecker(t *testing.T) {
 	infos := checker.GetStdModules()
 
 	// checker.parseModuleExports resolves a module name by scanning the module
-	// list and taking the first entry whose ShortPath, FullPath or ShortName
-	// matches. Only compare modules whose ShortPath resolves back to
+	// list and taking the first entry whose FullPath or ShortName
+	// matches. Only compare modules whose FullPath resolves back to
 	// themselves, so an ambiguous short path is not misread as a mismatch.
 	resolves := func(name string) int {
 		for i, info := range infos {
-			if info.ShortPath == name || info.FullPath == name || info.ShortName == name {
+			if info.FullPath == name || info.ShortName == name {
 				return i
 			}
 		}
@@ -131,7 +147,7 @@ func TestModuleExportsMatchChecker(t *testing.T) {
 
 	var compared, skipped int
 	for i, info := range infos {
-		if resolves(info.ShortPath) != i {
+		if resolves(info.FullPath) != i {
 			skipped++
 			continue
 		}
@@ -141,18 +157,18 @@ func TestModuleExportsMatchChecker(t *testing.T) {
 			continue
 		}
 
-		want := checker.GetModuleExports([]string{info.ShortPath})
+		want := checker.GetModuleExports([]string{info.FullPath})
 		got := dedupExports(hir.ExportedSymbols(pkgs[0]))
 
 		if len(want) != len(got) {
 			t.Errorf("module %s: %d exports from checker, %d from HIR\n  checker: %v\n  hir:     %v",
-				info.ShortPath, len(want), len(got), exportNames(want), got)
+				info.FullPath, len(want), len(got), exportNames(want), got)
 			continue
 		}
 		for j := range want {
 			if want[j].Name != got[j].Name || want[j].Value != got[j].Value || want[j].Type != got[j].Type {
 				t.Errorf("module %s export #%d: checker {%q %q %q} != hir {%q %q %q}",
-					info.ShortPath, j,
+					info.FullPath, j,
 					want[j].Name, want[j].Value, want[j].Type,
 					got[j].Name, got[j].Value, got[j].Type)
 			}

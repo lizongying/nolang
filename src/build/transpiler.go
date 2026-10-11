@@ -315,7 +315,7 @@ func resolveModuleFile(modPath, workspaceRoot string) string {
 		}
 		// Try lookup table (e.g. "net" → "net/net")
 		for _, info := range checker.KnownStdModules() {
-			if info.ShortPath == relPath {
+			if info.ShortName == relPath || info.FullPath == relPath {
 				if p := GetStdSourceFile(info.FullPath); p != "" {
 					if _, err := os.Stat(p); err == nil {
 						return p
@@ -399,7 +399,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				}
 			}
 			for _, info := range checker.KnownStdModules() {
-				if info.ShortPath == relPath {
+				if info.ShortName == relPath || info.FullPath == relPath {
 					if prog, err := tryDisk(info.FullPath); prog != nil {
 						return prog, nil
 					} else if err != nil {
@@ -419,9 +419,9 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				return t.parseEmbeddedProgram(embedPath, data)
 			}
 		}
-		// 2. Lookup table: match ShortPath to FullPath (e.g. "net" → "net/net")
+		// 2. Lookup table: match ShortName/FullPath to FullPath (e.g. "net" → "net/net")
 		for _, info := range checker.KnownStdModules() {
-			if info.ShortPath == relPath {
+			if info.ShortName == relPath || info.FullPath == relPath {
 				embedPath := "std/" + info.FullPath + ".no"
 				if prog, ok := checker.StdASTFor(embedPath); ok {
 					return prog, nil
@@ -450,7 +450,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		}
 		// 2. Lookup table: match ShortName to FullPath（與 std/ 的 checker.knownStdModules 機制平行）
 		for _, info := range checker.KnownJsModules() {
-			if info.ShortPath == relPath || info.ShortName == relPath {
+			if info.FullPath == relPath || info.ShortName == relPath {
 				embedPath := "js/" + info.FullPath + ".no"
 				if data, err := nolang.JsFS.ReadFile(embedPath); err == nil {
 					return t.parseEmbeddedProgram(embedPath, data)
@@ -2185,7 +2185,7 @@ var validateFuncStrReturns map[string]bool
 // top-level LetStatement names (constants) and function names.
 
 // resolveModulePath tries to locate a .no file for the given module name.
-// It consults the checker.KnownStdModules() lookup table, matching by ShortPath
+// It consults the checker.KnownStdModules() lookup table, matching by ShortName/FullPath
 // (which omits the redundant directory name when dir==file), then uses
 // FullPath to resolve the actual file.
 

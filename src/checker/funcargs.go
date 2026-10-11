@@ -1382,10 +1382,10 @@ func initStdStructMethodMods() {
 			stdStructMethodMods[rest][key[:dot]] = true
 		}
 		CollectStdModuleSignatures() // warm the caches (sync.Once)
-		for k := range stdMethodParamsCache {
+		for k := range stdMethodSigsCache {
 			record(k)
 		}
-		for k := range stdFuncParamsCache {
+		for k := range stdSigsCache {
 			record(k)
 		}
 	})
@@ -1486,11 +1486,11 @@ func stdMethodParamTypes(recvType, method string) ([]string, string, bool) {
 		if structMethodIsAmbiguous(key) {
 			continue // several modules define it: parameters are a coin flip
 		}
-		if params, ok := stdMethodParamsCache[key]; ok {
-			return params, key, false
+		if entry, ok := stdMethodSigsCache[key]; ok {
+			return entry.Params, key, false
 		}
-		if params, ok := stdFuncParamsCache[key]; ok {
-			return params, key, false
+		if entry, ok := stdSigsCache[key]; ok {
+			return entry.Params, key, false
 		}
 	}
 	params, key := builtinSliceMethodParamTypes(recvType, method)

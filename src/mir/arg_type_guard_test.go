@@ -14,9 +14,11 @@ import (
 // (`recv.method(args)` lowers to a CallExpression whose Function is a
 // *parser.DotExpression, and checkCallArgsInExpr only handles the Identifier
 // case). On top of that, the baked std signature table
-// (embeddedStdFuncSigs) carries RETURN types only — map[string][]string — so
-// even a hypothetical DotExpression branch would have no parameter types to
-// check against.
+// (embeddedStdFuncSigs / embeddedStdMethodSigs, type checker.StdSigEntry) now
+// carries both RETURN types (Results) and PARAMETER types (Params), so a
+// hypothetical DotExpression branch would have parameter types to check against
+// — but checkCallArgsInExpr still only handles the Identifier case, which is
+// what these guards cover.
 //
 // The result was a "vet passes, run explodes" class of failure: `no vet`
 // reported 0 errors, and only `no run` failed — either with an internal

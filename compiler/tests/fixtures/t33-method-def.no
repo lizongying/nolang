@@ -1,0 +1,9 @@
+point.zero = () (self point, ok i64) {
+    ok = 1
+}
+vec.push = (v i64) {
+    x = v
+}
+grid.cell = (r i64, c i64) (idx i64) {
+    idx = r
+}
