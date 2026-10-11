@@ -7,6 +7,19 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.0
+
+- feat(build): add embedded static-libLLVM variant with LLVM C API backend trimmed per host arch
+- feat(build): rework backend pipeline with single-process clang -x ir, centralized backend selection, and embedded std module list
+- feat(build): implement generic monomorphization and overload mangling
+- feat(compiler): add incremental-build AST cache (Tier 0 baked std AST + Tier 1 on-disk) and initial self-hosting compiler
+- feat(parser): enhance AST parsing for arrays, maps, slices, ranges, structs, and match expressions
+- fix(checker): inject std sig key via independent tool; hard-fail when not built with make
+- fix(mir): add percent-str-long index-store growth guard and mem-safety tests
+- fix(build): enforce compile error on unhandled out-of-bounds indexing
+- refactor(build): drop dead toOpaquePointers regex and skip the IR emit step on the C API path
+- chore(checker): remove generated stdsig_gen.go and embedded standard signatures
+
 ## v0.3.19
 
 - fix(os): add Windows compatibility for sysconf and getpid calls
