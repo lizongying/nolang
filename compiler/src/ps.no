@@ -1619,6 +1619,7 @@ ps-elem-type-of = (t ast, sl i64) (r str) {
     e = ast.nd-at(t, firstKid)
     {
         e.kind == asp.K_INTEGER_LITERAL -> {
+
             ; Go stmt.go:1279-1288：0x/0X 十六進位元素⇒ byte，否則 i64
             raw = ast.str-at(t, ast.nd-s(e, 1))
             r = 'i64'
@@ -1645,6 +1646,7 @@ ps-infer-type = (t ast, val i64) (r str) {
     d = ast.nd-at(t, val)
     {
         d.kind == asp.K_INTEGER_LITERAL -> {
+
             ; Go stmt.go:1229-1240：十六進位字面量（0xNN）推 byte，十進位推 i64
             raw = ast.str-at(t, ast.nd-s(d, 1))
             r = 'i64'
@@ -1978,10 +1980,12 @@ ps-is-cond-loop-prefix = (p psst) (r i64) {
         t == tok.EOF -> go = false
         go == true -> {
             t == tok.LPAREN -> {
+
                 #{overflow=wrap}
                 depth = depth + 1
             }
             t == tok.RPAREN -> {
+
                 #{overflow=wrap}
                 depth = depth - 1
                 depth == 0 -> {
@@ -1989,11 +1993,13 @@ ps-is-cond-loop-prefix = (p psst) (r i64) {
                     go = false
                 }
             }
+
             #{overflow=wrap}
             i = i + 1
         }
     }
     closed < 0 -> return
+
     #{overflow=wrap}
     after = closed + 1
     ps-peek-at(p, after) != tok.LBRACE -> return
@@ -2005,11 +2011,14 @@ ps-is-cond-loop-prefix = (p psst) (r i64) {
         it = ps-peek-at(p, z)
         it == tok.COMMA -> hasComma = 1
         it == tok.IDENT -> {
+
             #{overflow=wrap}
             identCnt = identCnt + 1
         }
+
         #{overflow=wrap}
         innerCnt = innerCnt + 1
+
         #{overflow=wrap}
         z = z + 1
     }
@@ -2024,6 +2033,7 @@ ps-is-cond-loop-prefix = (p psst) (r i64) {
 ps-parse-cond-loop = (t ast, p psst) (idx i64) {
     ps-bump(p); 消費 (
     cond = 0
+
     ; ⚠️ 預先取 hd（同 ps-parse-for-kw 守則）：若每臂各呼叫 ps-peek(p)，首臂消費 `)` 後
     ;   次臂重取會看到 `{` ⇒ 雙臂皆執行（match 非互斥 switch），cond 被第二臂覆寫成 0。
     hd = ps-peek(p)
