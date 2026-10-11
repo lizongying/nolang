@@ -42,8 +42,18 @@ func stdModules(t *testing.T) []hir.ModulePackage {
 	}
 
 	out := make([]hir.ModulePackage, 0, len(infos))
-	for _, info := range infos {
-		embedPath := "std/" + info.FullPath + ".no"
+	// 以 FullPath 排序後再迭代：struct/method 的合併是「先到先贏」，而 checker
+	// 端 CollectStdSigsFromFS 走 ListStdModules 的確定順序；若此處用 map 的隨機
+	// 遍歷順序，會讓 TestSignatureTablesMatchChecker 非確定性失敗。舊版
+	// GetStdModules 回傳的是按 FullPath 排序的 slice，這裡用同樣的順序。
+	fulls := make([]string, 0, len(infos))
+	for _, full := range infos {
+		fulls = append(fulls, full)
+	}
+	sort.Strings(fulls)
+	for _, full := range fulls {
+		short := checker.ModuleShortName(full)
+		embedPath := "std/" + full + ".no"
 		source, err := nolang.StdFS.ReadFile(embedPath)
 		if err != nil {
 			t.Fatalf("reading %s: %v", embedPath, err)
@@ -54,8 +64,8 @@ func stdModules(t *testing.T) []hir.ModulePackage {
 			continue // the checker skips these too
 		}
 		pkg := parser.ASTToHIR(prog)
-		pkg.Name = info.ShortName
-		out = append(out, hir.ModulePackage{Short: info.ShortName, Pkg: pkg})
+		pkg.Name = short
+		out = append(out, hir.ModulePackage{Short: short, Pkg: pkg})
 	}
 	if len(out) < 100 {
 		t.Fatalf("only %d of %d std modules parsed cleanly", len(out), len(infos))
@@ -126,19 +136,6 @@ func TestSignatureTablesMatchChecker(t *testing.T) {
 func TestModuleExportsMatchChecker(t *testing.T) {
 	infos := checker.GetStdModules()
 
-	// checker.parseModuleExports resolves a module name by scanning the module
-	// list and taking the first entry whose FullPath or ShortName
-	// matches. Only compare modules whose FullPath resolves back to
-	// themselves, so an ambiguous short path is not misread as a mismatch.
-	resolves := func(name string) int {
-		for i, info := range infos {
-			if info.FullPath == name || info.ShortName == name {
-				return i
-			}
-		}
-		return -1
-	}
-
 	mods := stdModules(t)
 	byShort := map[string][]*hir.Package{}
 	for i := range mods {
@@ -146,29 +143,25 @@ func TestModuleExportsMatchChecker(t *testing.T) {
 	}
 
 	var compared, skipped int
-	for i, info := range infos {
-		if resolves(info.FullPath) != i {
-			skipped++
-			continue
-		}
-		pkgs := byShort[info.ShortName]
+	for short, full := range infos {
+		pkgs := byShort[short]
 		if len(pkgs) != 1 {
 			skipped++ // ambiguous short name; not this test's subject
 			continue
 		}
 
-		want := checker.GetModuleExports([]string{info.FullPath})
+		want := checker.GetModuleExports([]string{full})
 		got := dedupExports(hir.ExportedSymbols(pkgs[0]))
 
 		if len(want) != len(got) {
 			t.Errorf("module %s: %d exports from checker, %d from HIR\n  checker: %v\n  hir:     %v",
-				info.FullPath, len(want), len(got), exportNames(want), got)
+				full, len(want), len(got), exportNames(want), got)
 			continue
 		}
 		for j := range want {
 			if want[j].Name != got[j].Name || want[j].Value != got[j].Value || want[j].Type != got[j].Type {
 				t.Errorf("module %s export #%d: checker {%q %q %q} != hir {%q %q %q}",
-					info.FullPath, j,
+					full, j,
 					want[j].Name, want[j].Value, want[j].Type,
 					got[j].Name, got[j].Value, got[j].Type)
 			}
@@ -401,8 +394,8 @@ func TestNoUnknownNodesInUserCorpus(t *testing.T) {
 func TestLoweringIsDeterministic(t *testing.T) {
 	infos := checker.GetStdModules()
 	var checked, nonEmpty int
-	for _, info := range infos {
-		path := "std/" + info.FullPath + ".no"
+	for _, full := range infos {
+		path := "std/" + full + ".no"
 		source, err := nolang.StdFS.ReadFile(path)
 		if err != nil {
 			continue
@@ -423,7 +416,7 @@ func TestLoweringIsDeterministic(t *testing.T) {
 			continue
 		}
 		if dumps[0] != dumps[1] {
-			t.Errorf("module %s lowered to two different trees across runs", info.FullPath)
+			t.Errorf("module %s lowered to two different trees across runs", full)
 		}
 		// An empty tree is only correct for a module with no statements at
 		// all. std ships several documentation-only files (any.no is empty,
@@ -431,9 +424,9 @@ func TestLoweringIsDeterministic(t *testing.T) {
 		// checked against the AST rather than asserted away.
 		switch {
 		case stmts == 0 && dumps[0] != "":
-			t.Errorf("module %s has no statements yet lowered to a non-empty tree", info.FullPath)
+			t.Errorf("module %s has no statements yet lowered to a non-empty tree", full)
 		case stmts > 0 && dumps[0] == "":
-			t.Errorf("module %s has %d statements but lowered to an empty tree", info.FullPath, stmts)
+			t.Errorf("module %s has %d statements but lowered to an empty tree", full, stmts)
 		}
 		checked++
 		if stmts > 0 {
@@ -464,8 +457,8 @@ func TestAnnotationsSurviveLowering(t *testing.T) {
 	// quietly become vacuous.
 	var withAnns, entries int
 
-	for _, info := range checker.GetStdModules() {
-		path := "std/" + info.FullPath + ".no"
+	for _, full := range checker.GetStdModules() {
+		path := "std/" + full + ".no"
 		source, err := nolang.StdFS.ReadFile(path)
 		if err != nil {
 			continue
@@ -480,7 +473,7 @@ func TestAnnotationsSurviveLowering(t *testing.T) {
 		if len(prog.Statements) != len(pkg.Top) {
 			t.Fatalf("module %s: %d statements lowered to %d top-level nodes; the "+
 				"index-wise comparison below assumes they line up",
-				info.FullPath, len(prog.Statements), len(pkg.Top))
+				full, len(prog.Statements), len(pkg.Top))
 		}
 		for i, stmt := range prog.Statements {
 			want := prog.Sem.AnnotationsOf(stmt)
@@ -488,20 +481,20 @@ func TestAnnotationsSurviveLowering(t *testing.T) {
 			if len(want) != len(gotKeys) {
 				t.Errorf("module %s stmt #%d (%T): %d annotations in the AST side table, "+
 					"%d reachable from HIR (%v)",
-					info.FullPath, i, stmt, len(want), len(gotKeys), gotKeys)
+					full, i, stmt, len(want), len(gotKeys), gotKeys)
 				continue
 			}
 			for j := range want {
 				if want[j].Key != gotKeys[j] {
 					t.Errorf("module %s stmt #%d annotation %d: key %q in AST != %q in HIR",
-						info.FullPath, i, j, want[j].Key, gotKeys[j])
+						full, i, j, want[j].Key, gotKeys[j])
 				}
 				// A bare key (#{linux-amd64}) has a nil Value; that is the
 				// only thing matchesPlatform looks at, so the distinction has
 				// to round-trip.
 				if hadValue := want[j].Value != nil; hadValue != gotHasValue[j] {
 					t.Errorf("module %s stmt #%d annotation %q: hasValue %v in AST != %v in HIR",
-						info.FullPath, i, want[j].Key, hadValue, gotHasValue[j])
+						full, i, want[j].Key, hadValue, gotHasValue[j])
 				}
 			}
 			if len(want) > 0 {
@@ -588,8 +581,8 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 	}
 
 	var dropped int
-	for _, info := range checker.GetStdModules() {
-		path := "std/" + info.FullPath + ".no"
+	for _, full := range checker.GetStdModules() {
+		path := "std/" + full + ".no"
 		source, err := nolang.StdFS.ReadFile(path)
 		if err != nil {
 			continue
@@ -601,7 +594,7 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 		}
 		pkg := parser.ASTToHIR(prog)
 		if len(prog.Statements) != len(pkg.Top) {
-			t.Fatalf("module %s: statement/top-level count mismatch", info.FullPath)
+			t.Fatalf("module %s: statement/top-level count mismatch", full)
 		}
 
 		for _, tgt := range targets {
@@ -616,13 +609,13 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 			}
 			if len(keptAST) != len(keptHIR) {
 				t.Errorf("module %s on %s/%s: AST filter keeps %d statements, HIR filter keeps %d",
-					info.FullPath, tgt.goos, tgt.goarch, len(keptAST), len(keptHIR))
+					full, tgt.goos, tgt.goarch, len(keptAST), len(keptHIR))
 				continue
 			}
 			for j := range keptHIR {
 				if keptAST[j] != keptHIR[j] {
 					t.Errorf("module %s on %s/%s: kept statement #%d differs between filters",
-						info.FullPath, tgt.goos, tgt.goarch, j)
+						full, tgt.goos, tgt.goarch, j)
 					break
 				}
 			}

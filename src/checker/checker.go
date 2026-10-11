@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -2075,10 +2076,10 @@ func stdModuleForSourceFile(file string) string {
 	if rel == "" || strings.Contains(rel, ".") {
 		return ""
 	}
-	for _, info := range knownStdModules() {
-		if rel == info.FullPath || rel == info.ShortName {
-			return info.ShortName
-		}
+	// rel 可能是 ShortName（"math"）或 FullPath（"crypto/rand"）：兩者都歸約到
+	// 最後一段短名，直接查表即可（內嵌表 key 即 ShortName）。
+	if _, ok := knownStdModules()[moduleShortName(rel)]; ok {
+		return moduleShortName(rel)
 	}
 	return ""
 }
@@ -6561,10 +6562,10 @@ func collectModuleNames(program *parser.Program) []string {
 	seen := make(map[string]bool)
 	var names []string
 
-	for _, info := range knownStdModules() {
-		if !seen[info.ShortName] {
-			seen[info.ShortName] = true
-			names = append(names, info.ShortName)
+	for short := range knownStdModules() {
+		if !seen[short] {
+			seen[short] = true
+			names = append(names, short)
 		}
 	}
 
@@ -6625,13 +6626,19 @@ func GetModuleExports(moduleNames []string) []ModuleExport {
 	return exports
 }
 func parseModuleExports(moduleName string) []ModuleExport {
-	for _, info := range knownStdModules() {
-		if info.FullPath == moduleName || info.ShortName == moduleName {
-			embedPath := "std/" + info.FullPath + ".no"
-			if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
-				return parseModuleExportsFromSource(data)
-			}
+	// moduleName 可能是 ShortName（"math"）或 FullPath（"crypto/rand"）。
+	// 內嵌表以 ShortName 為 key，命中即解析到對應 FullPath 的 .no；
+	// 否則僅當 std/<moduleName>.no 確實存在（即 moduleName 本身就是合法 FullPath）才繼續。
+	full, ok := knownStdModules()[moduleName]
+	if !ok {
+		if _, err := nolang.StdFS.ReadFile("std/" + moduleName + ".no"); err != nil {
+			return nil
 		}
+		full = moduleName
+	}
+	embedPath := "std/" + full + ".no"
+	if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
+		return parseModuleExportsFromSource(data)
 	}
 	return nil
 }
@@ -6746,12 +6753,17 @@ func resolveModulePath(moduleName string) string {
 	//    - "net"    → FullPath: "net/net"   → std/net/net.no
 	//    - "client" → FullPath: "net/client"→ std/net/client.no
 	//    - "hmac"   → FullPath: "crypto/hmac" → std/crypto/hmac.no
-	for _, info := range knownStdModules() {
-		if info.FullPath == moduleName || info.ShortName == moduleName {
-			stdFile := pkg.GetStdSourceFile(info.FullPath)
+	// 1. Consult knownStdModules lookup table.
+	//    Match by ShortName / FullPath, resolve via FullPath.
+	if full, ok := knownStdModules()[moduleName]; ok {
+		if stdFile := pkg.GetStdSourceFile(full); stdFile != "" {
 			if _, err := os.Stat(stdFile); err == nil {
 				return stdFile
 			}
+		}
+	} else if stdFile := pkg.GetStdSourceFile(moduleName); stdFile != "" {
+		if _, err := os.Stat(stdFile); err == nil {
+			return stdFile
 		}
 	}
 
@@ -8166,8 +8178,11 @@ func moduleShortName(path string) string {
 }
 
 var (
-	knownStdModulesOnce sync.Once
-	knownStdModulesList []StdModuleInfo
+	// knownStdModulesCached caches the FS-fallback std module KV map
+	// (ShortName -> FullPath) for builds without an injected sig key.
+	// The embedded build path returns embeddedStdModules directly.
+	knownStdModulesOnce   sync.Once
+	knownStdModulesCached map[string]string
 
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
@@ -8297,7 +8312,11 @@ func ListStdModules(fsys fs.FS) []StdModuleInfo {
 	return infos
 }
 
-func knownStdModules() []StdModuleInfo {
+// knownStdModules 回傳內嵌 std 模組的 KV 表（ShortName -> FullPath）。
+// 內嵌構建（有注入的 sig key）直接回傳烤進二進位的 embeddedStdModules；
+// 非 make 途徑（無 key）退回 FS walk 並以 sync.Once 快取。兩者都直接查表，
+// 不再 materialize 成 []StdModuleInfo。
+func knownStdModules() map[string]string {
 	if embeddedStdSigKey != "" {
 		// 与 CollectStdModuleSignatures 一致：用透过 make 注入的 key 校验内嵌
 		// 模块列表（embeddedStdModules），避免每次都走 FS walk。空 key = 非
@@ -8317,11 +8336,16 @@ func knownStdModules() []StdModuleInfo {
 	}
 	// 表不存在（如第一次 `make gen` 前）：退回 FS walk（sync.Once 缓存）。
 	knownStdModulesOnce.Do(func() {
-		knownStdModulesList = ListStdModules(nolang.StdFS)
+		knownStdModulesCached = make(map[string]string)
+		for _, info := range ListStdModules(nolang.StdFS) {
+			knownStdModulesCached[info.ShortName] = info.FullPath
+		}
 	})
-	return knownStdModulesList
+	return knownStdModulesCached
 }
-func GetStdModules() []StdModuleInfo {
+
+// GetStdModules 回傳內嵌 std 模組的 KV 表（ShortName -> FullPath）。
+func GetStdModules() map[string]string {
 	return knownStdModules()
 }
 
@@ -8584,18 +8608,18 @@ func CollectStdUnionAliases() map[string]*parser.TypeAlias {
 	stdUnionAliasesOnce.Do(func() {
 		out := make(map[string]*parser.TypeAlias)
 		outMod := make(map[string]string)
-		for _, info := range knownStdModules() {
-			source, err := fs.ReadFile(nolang.StdFS, "std/"+info.FullPath+".no")
+		for short, full := range knownStdModules() {
+			source, err := fs.ReadFile(nolang.StdFS, "std/"+full+".no")
 			if err != nil {
 				continue
 			}
-			l := lexer.NewCached("std/"+info.FullPath+".no", string(source))
+			l := lexer.NewCached("std/"+full+".no", string(source))
 			prog := parser.New(l).ParseProgram()
 			for _, stmt := range prog.Statements {
 				if ta, ok := stmt.(*parser.TypeAlias); ok && ta.IsUnion() {
 					if _, exists := out[ta.Name]; !exists {
 						out[ta.Name] = ta
-						outMod[ta.Name] = info.ShortName
+						outMod[ta.Name] = short
 					}
 				}
 			}
@@ -8641,8 +8665,8 @@ var (
 func buildStdFuncOwner() {
 	CollectStdModuleSignatures() // warm stdSigsCache
 	modules := make(map[string]bool)
-	for _, info := range knownStdModules() {
-		modules[info.ShortName] = true
+	for short := range knownStdModules() {
+		modules[short] = true
 	}
 	owner := make(map[string]string)
 	globals := make(map[string]bool)
@@ -9020,18 +9044,20 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 }
 func GetStdModuleShortNames() []string {
 	infos := knownStdModules()
-	names := make([]string, len(infos))
-	for i, info := range infos {
-		names[i] = info.ShortName
+	names := make([]string, 0, len(infos))
+	for short := range infos {
+		names = append(names, short)
 	}
+	sort.Strings(names)
 	return names
 }
 func GetStdModuleFullPaths() []string {
 	infos := knownStdModules()
-	paths := make([]string, len(infos))
-	for i, info := range infos {
-		paths[i] = info.FullPath
+	paths := make([]string, 0, len(infos))
+	for _, full := range infos {
+		paths = append(paths, full)
 	}
+	sort.Strings(paths)
 	return paths
 }
 func resolveModuleCalls(program *parser.Program, importedModules []string, prefixedFns map[string]bool) {

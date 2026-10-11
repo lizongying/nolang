@@ -1,0 +1,9 @@
+point {
+    x i64
+    y i64
+}
+buffer {
+    data []byte
+    pos i64
+    table [8]i64
+}

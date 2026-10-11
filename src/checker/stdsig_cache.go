@@ -70,12 +70,14 @@ var (
 	embeddedStdAliases       = map[string]string{}
 	embeddedStdStructMod     = map[string]string{}
 	embeddedStdEnumVariants = map[string][]string{}
-	// embeddedStdModules is the 9th baked table: the list of every std module
-	// (ShortName/FullPath), enumerated from src/std by genstdsig.
-	// KnownStdModules returns it directly (no FS walk) once embeddedStdSigKey
-// is set and the injected key matches — validated by the SAME key as the other 6
-// signature tables, since genstdsig derives both from the same src/std.
-	embeddedStdModules      = []StdModuleInfo{}
+	// embeddedStdModules is the baked module KV map (ShortName -> FullPath), the
+	// compact successor to the old []StdModuleInfo slice. ShortName is unique
+	// across std modules (genstdsig hard-fails on a collision), so it is a safe
+	// map key. KnownStdModules / GetStdModules return this map directly (no
+	// slice materialization); it is validated by embeddedStdSigKey against the
+	// injected StdSigKey — the SAME key as the other 6 signature tables, since
+	// genstdsig derives both from the same src/std.
+	embeddedStdModules      = map[string]string{}
 )
 
 // ComputeStdSigKeyFromFS is the exported, FS-parameterised variant used by

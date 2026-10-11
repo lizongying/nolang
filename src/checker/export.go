@@ -6,8 +6,8 @@ package checker
 
 import "github.com/lizongying/nolang/parser"
 
-// KnownStdModules 回傳全部 std 模組的路徑/短名資訊（sync.Once 快取）。
-func KnownStdModules() []StdModuleInfo { return knownStdModules() }
+// KnownStdModules 回傳內嵌 std 模組的 KV 表（ShortName -> FullPath）。
+func KnownStdModules() map[string]string { return knownStdModules() }
 
 // KnownJsModules 回傳全部 js 模組資訊。
 func KnownJsModules() []JsModuleInfo { return knownJsModules() }

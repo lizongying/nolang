@@ -316,8 +316,8 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		// Index auto-imported std module files with location info for go-to-definition.
 		// Module parses are cached by path+modtime (see parseModuleFile), so the
 		// std library is only parsed once per session, not on every keystroke.
-		for _, info := range checker.GetStdModules() {
-			modFilePath := checker.ResolveStdModulePath(info.FullPath)
+		for _, full := range checker.GetStdModules() {
+			modFilePath := checker.ResolveStdModulePath(full)
 			if modFilePath == "" {
 				continue
 			}
@@ -331,7 +331,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 				// so that built-in functions like `read`/`write` get their
 				// comment declaration location before any struct method
 				// (e.g. `file.read`) registers the same short name.
-				m.indexBuiltinComments(index, string(source), modURI, info.ShortName)
+				m.indexBuiltinComments(index, string(source), modURI, checker.ModuleShortName(full))
 				for _, ms := range modProg.Statements {
 					m.indexModuleStatement(index, ms, modURI)
 				}

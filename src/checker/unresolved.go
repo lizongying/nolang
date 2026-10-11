@@ -156,8 +156,8 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 
 	// 1. 收集已知 std 模組短名
 	stdMods := make(map[string]bool)
-	for _, m := range knownStdModules() {
-		stdMods[m.ShortName] = true
+	for short := range knownStdModules() {
+		stdMods[short] = true
 	}
 
 	// 1b. 收集本地變數名（函數參數 + 賦值 LHS 識別符）。

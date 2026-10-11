@@ -215,6 +215,7 @@ ps-skip-trivia = (p psst) {
 ps-cur-lit = (p psst) (s str) {
     s = ''
     p.pos < p.toks.len() -> {
+
         #{index-out=zero}
         s = p.toks[p.pos].lit.copy()
     }
@@ -224,9 +225,11 @@ ps-cur-lit = (p psst) (s str) {
 ;   .copy() 切斷與 toks 向量元素的共享（見檔頭釋放守則）。
 ps-lit-at = (p psst, k i64) (s str) {
     s = ''
+
     #{overflow=wrap}
     i = p.pos + k
     i < p.toks.len() -> {
+
         #{index-out=zero}
         s = p.toks[i].lit.copy()
     }
@@ -428,7 +431,6 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ast.set-slot(t, at, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
                 ast.kid-add(t, at, sz)
                 ast.kid-add(t, at, ntyp)
-
                 idx = ast.add(t, asp.K_LET_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
                 ast.kid-add(t, idx, at)
@@ -460,9 +462,7 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ast.set-slot(t, mt, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
                 ast.kid-add(t, mt, ktyp)
                 ast.kid-add(t, mt, vtyp)
-
                 ml = ps-parse-map-lit(t, p, mt)
-
                 idx = ast.add(t, asp.K_LET_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
                 ast.kid-add(t, idx, mt)
@@ -485,13 +485,11 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ; RHS `[..]` 經 primary 自然建 SliceLiteral（含空 `[]`）
                 ps-skip-trivia(p)
                 val = ps-parse-expr(t, p)
-
                 ntyp = ast.add(t, asp.K_NAMED_TYPE)
                 ast.set-slot(t, ntyp, 0, ast.put-str(t, en))
                 styp = ast.add(t, asp.K_SLICE_TYPE)
                 ast.set-slot(t, styp, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
                 ast.kid-add(t, styp, ntyp)
-
                 idx = ast.add(t, asp.K_LET_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
                 ast.kid-add(t, idx, styp)
@@ -507,7 +505,6 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ps-expect(p, tok.ASSIGN)
                 ps-skip-trivia(p)
                 nlval = ps-parse-expr(t, p)
-
                 idx = ast.add(t, asp.K_LET_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
                 ast.kid-add(t, idx, nltyp)
@@ -532,7 +529,6 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ps-skip-trivia(p)
                 ps-expect(p, tok.ASSIGN)
                 maVal = ps-parse-expr(t, p)
-
                 idx = ast.add(t, asp.K_MULTI_ASSIGN_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, maTargets.len().to-str()))
                 ast.set-count(t, idx, 0, maTargets.len())
@@ -577,6 +573,13 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 isf == 0 -> p.pos = savePos
             }
 
+            ; 結構體定義：`name { field TYPE ... }`（陳述位置，peek==LBRACE 且分類器認可）
+            ;   對應 Go stmt.go:277 classifyBlock()==blockStruct。僅在 ps-is-struct-def 回 1 時走此路；
+            ;   枚舉/介面/實作清單/限定型別等一律回退原運算式陳述路徑（零回歸）。
+            nxt_typ == tok.LBRACE && ps-is-struct-def(p) == 1 -> {
+                idx = ps-parse-struct-def(t, p, name)
+                handled = 1
+            }
             handled == 0 -> idx = ps-parse-expr-stmt(t, p)
         }
 
@@ -1479,16 +1482,14 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     ast.set-slot(t, selfp, 0, ast.put-str(t, 'self'))
     ast.kid-add(t, selfp, selfnt)
     ast.kid-add(t, selfp, 0)
-
     ps-expect(p, tok.LBRACE); 進入 body
     body = ps-parse-block(t, p)
     ps-expect(p, tok.RBRACE); 結束 body
-
     idx = ast.add(t, asp.K_FUNCTION_DEFINITION)
     ast.set-slot(t, idx, 0, ast.put-str(t, fullName))
     ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); methodDef（P-TRUE：僅 'true' 才印）
-
     rs = outs.len()
+
     #{overflow=wrap}
     rs = rs + 1; +self
     ast.set-sig(t, idx, 0, params.len(), rs)
@@ -1854,8 +1855,198 @@ ps-parse-type = (t ast, p psst) (idx i64) {
             ast.kid-add(t, idx, ptne)
         }
 
+        ; [N]T → ArrayType（dump: ArrayType{size:N} + [IntegerLiteral, NamedType]）
+        ;   偏移 +0 [ / +1 INT / +2 ] / +3 IDENT elem。泛型 [n]T（+1 IDENT）不在此形，回退不建。
+        tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.INT && ps-peek-at(p, 2) == tok.RBRACKET && ps-peek-at(p, 3) == tok.IDENT -> {
+            ps-bump(p); 消費 [
+            sz = ps-parse-expr(t, p); 尺寸 IntegerLiteral
+            ps-expect(p, tok.RBRACKET); 消費 ]
+            ete = ps-peek-token(p)
+            ps-bump(p); 消費 elem 型別名
+            etne = ast.add(t, asp.K_NAMED_TYPE)
+            ast.set-slot(t, etne, 0, ast.put-str(t, ete.lit))
+            idx = ast.add(t, asp.K_ARRAY_TYPE)
+            ast.set-slot(t, idx, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
+            ast.kid-add(t, idx, sz)
+            ast.kid-add(t, idx, etne)
+        }
+
         -> {
         }
+    }
+    idx
+}
+
+; ps-is-struct-def：判斷【目前 pos=IDENT name】起是否為「乾淨」的結構體定義形
+;   `name { field TYPE ... }`，TYPE ∈ {IDENT, []IDENT, [INT]IDENT}，欄位以換行或尾隨逗號分隔，
+;   區塊以 } 收尾。僅作分派守衛（不消費 token）：枚舉(`a, b`)、介面(`m()`)、實作清單
+;   (`name impl {`)、註解、限定型別(`a.b`)、可為空(`?T`)等一律回 0 → 交回原運算式陳述路徑（零回歸）。
+ps-is-struct-def = (p psst) (r i64) {
+    r = 0
+    ps-peek(p) != tok.IDENT -> return
+    ps-peek-at(p, 1) != tok.LBRACE -> return
+    i = 2
+    nfield = 0
+    go = true
+    (go) {
+        t = ps-peek-at(p, i)
+        {
+            t == tok.RBRACE -> {
+                go = false
+                nfield > 0 -> r = 1
+                nfield == 0 -> r = 0
+            }
+
+            t == tok.EOF -> {
+                go = false
+                r = 0
+            }
+
+            t == tok.NEWLINE -> {
+                #{overflow=wrap}
+                i = i + 1
+            }
+
+            t == tok.COMMENT -> {
+                #{overflow=wrap}
+                i = i + 1
+            }
+
+            ; 欄位：IDENT name 後接受支援型別，且型別後必須是欄位結尾（換行/}/,）
+            t == tok.IDENT -> {
+                #{overflow=wrap}
+                i = i + 1; 消費欄位名
+                tt = ps-peek-at(p, i)
+                okType = 0
+                tt == tok.IDENT -> {
+                    #{overflow=wrap}
+                    i = i + 1
+                    okType = 1
+                }
+                tt == tok.LBRACKET -> {
+                    #{overflow=wrap}
+                    a1 = i + 1
+                    #{overflow=wrap}
+                    a2 = i + 2
+                    #{overflow=wrap}
+                    a3 = i + 3
+                    p1 = ps-peek-at(p, a1)
+                    p2 = ps-peek-at(p, a2)
+                    p3 = ps-peek-at(p, a3)
+                    p1 == tok.RBRACKET && p2 == tok.IDENT -> {
+                        #{overflow=wrap}
+                        i = i + 3; [] T
+                        okType = 1
+                    }
+                    p1 == tok.INT && p2 == tok.RBRACKET && p3 == tok.IDENT -> {
+                        #{overflow=wrap}
+                        i = i + 4; [N] T
+                        okType = 1
+                    }
+                }
+                okType == 0 -> {
+                    go = false
+                    r = 0
+                }
+                okType == 1 -> {
+                    et = ps-peek-at(p, i)
+                    {
+                        et == tok.NEWLINE -> {
+                            #{overflow=wrap}
+                            i = i + 1
+                            #{overflow=wrap}
+                            nfield = nfield + 1
+                        }
+                        et == tok.COMMA -> {
+                            #{overflow=wrap}
+                            i = i + 1
+                            #{overflow=wrap}
+                            nfield = nfield + 1
+                        }
+                        et == tok.RBRACE -> {
+                            #{overflow=wrap}
+                            nfield = nfield + 1
+                        }
+                        et == tok.EOF -> {
+                            #{overflow=wrap}
+                            nfield = nfield + 1
+                        }
+                        -> {
+                            go = false
+                            r = 0
+                        }
+                    }
+                }
+            }
+
+            -> {
+                go = false
+                r = 0
+            }
+        }
+    }
+}
+
+; ps-parse-struct-def：把陳述位置的 `name { field TYPE ... }` 建為 StructDefinition。
+;   StructDefinition：slot0=name、slot1=implements 數('0' 省略)、slot2=fields 數(OF-LEN)、
+;     count0=KIDS 迭代數、kid 序=各 StructField。
+;   StructField：slot0=name、slot1=arraySize(kvn '0'省略)、slot2=slice(kvb 'true')、slot3=readonly、slot4=sealed；
+;     kid0=Type(子先於父)、kid1=Value(定義恒 0)。`type:` 文字由 dumper 自 kid0 合成(OF-TYPE)，不佔槽。
+ps-parse-struct-def = (t ast, p psst, name str) (idx i64) {
+    ps-bump(p); 消費 name IDENT
+    ps-bump(p); 消費 LBRACE
+    flds []i64 = with-cap(4)
+    (ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF) {
+        pos0 = p.pos
+        ps-skip-trivia(p)
+        fname = ps-lit-at(p, 0)
+        ps-peek(p) == tok.IDENT -> ps-bump(p); 消費欄位名
+        ps-skip-trivia(p)
+        ty = 0
+        arrSize = '0'
+        sliceFlag = ''
+        tt = ps-peek(p)
+        {
+            tt == tok.LBRACKET && ps-peek-at(p, 1) == tok.RBRACKET -> {
+                ty = ps-parse-type(t, p); []T → SliceType
+                sliceFlag = 'true'
+            }
+            tt == tok.LBRACKET && ps-peek-at(p, 1) == tok.INT -> {
+                arrSize = ps-lit-at(p, 1); 尺寸字面量文字
+                ty = ps-parse-type(t, p); [N]T → ArrayType
+            }
+            -> {
+                ty = ps-parse-type(t, p); IDENT → NamedType
+            }
+        }
+        sf = ast.add(t, asp.K_STRUCT_FIELD)
+        ast.set-slot(t, sf, 0, ast.put-str(t, fname))
+        ast.set-slot(t, sf, 1, ast.put-str(t, arrSize))
+        ast.set-slot(t, sf, 2, ast.put-str(t, sliceFlag))
+        ast.set-slot(t, sf, 3, ast.put-str(t, ''))
+        ast.set-slot(t, sf, 4, ast.put-str(t, ''))
+        ast.kid-add(t, sf, ty)
+        ast.kid-add(t, sf, 0)
+        sf > 0 -> flds.push(sf)
+        ps-skip-trivia(p)
+        ps-peek(p) == tok.COMMA -> {
+            ps-bump(p)
+            ps-skip-trivia(p)
+        }
+        p.pos == pos0 -> ps-bump(p)
+    }
+    ps-expect(p, tok.RBRACE)
+    idx = ast.add(t, asp.K_STRUCT_DEFINITION)
+    ast.set-slot(t, idx, 0, ast.put-str(t, name))
+    ast.set-slot(t, idx, 1, ast.put-str(t, '0')); implements 數 → 0（省略）
+    ast.set-slot(t, idx, 2, ast.put-str(t, flds.len().to-str())); fields 數（OF-LEN）
+    ast.set-count(t, idx, 0, flds.len()); KIDS 迭代數
+    m = 0
+    (m < flds.len()) {
+        ast.kid-add(t, idx, flds[m])
+
+        #{overflow=wrap}
+        m = m + 1
     }
     idx
 }

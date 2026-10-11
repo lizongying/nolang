@@ -148,8 +148,8 @@ func buildOwnership(root string) {
 
 	// module ShortName set (only real std modules count as owners)
 	validMod := map[string]bool{}
-	for _, info := range checker.KnownStdModules() {
-		validMod[info.ShortName] = true
+	for short := range checker.KnownStdModules() {
+		validMod[short] = true
 	}
 
 	// ---- function owners from the generated signature table ----
@@ -172,8 +172,8 @@ func buildOwnership(root string) {
 	// ---- module ShortName per disk file, plus constant owners ----
 	// map std/-relative fullpath -> ShortName
 	pathToShort := map[string]string{}
-	for _, info := range checker.KnownStdModules() {
-		pathToShort[info.FullPath] = info.ShortName
+	for short, full := range checker.KnownStdModules() {
+		pathToShort[full] = short
 	}
 
 	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {

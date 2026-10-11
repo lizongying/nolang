@@ -314,12 +314,10 @@ func resolveModuleFile(modPath, workspaceRoot string) string {
 			}
 		}
 		// Try lookup table (e.g. "net" → "net/net")
-		for _, info := range checker.KnownStdModules() {
-			if info.ShortName == relPath || info.FullPath == relPath {
-				if p := GetStdSourceFile(info.FullPath); p != "" {
-					if _, err := os.Stat(p); err == nil {
-						return p
-					}
+		if full, ok := checker.KnownStdModules()[relPath]; ok {
+			if p := GetStdSourceFile(full); p != "" {
+				if _, err := os.Stat(p); err == nil {
+					return p
 				}
 			}
 		}
@@ -398,13 +396,11 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 					return nil, err
 				}
 			}
-			for _, info := range checker.KnownStdModules() {
-				if info.ShortName == relPath || info.FullPath == relPath {
-					if prog, err := tryDisk(info.FullPath); prog != nil {
-						return prog, nil
-					} else if err != nil {
-						return nil, err
-					}
+			if full, ok := checker.KnownStdModules()[relPath]; ok {
+				if prog, err := tryDisk(full); prog != nil {
+					return prog, nil
+				} else if err != nil {
+					return nil, err
 				}
 			}
 		}
@@ -419,16 +415,14 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				return t.parseEmbeddedProgram(embedPath, data)
 			}
 		}
-		// 2. Lookup table: match ShortName/FullPath to FullPath (e.g. "net" → "net/net")
-		for _, info := range checker.KnownStdModules() {
-			if info.ShortName == relPath || info.FullPath == relPath {
-				embedPath := "std/" + info.FullPath + ".no"
-				if prog, ok := checker.StdASTFor(embedPath); ok {
-					return prog, nil
-				}
-				if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
-					return t.parseEmbeddedProgram(embedPath, data)
-				}
+		// 2. Lookup table: match ShortName to FullPath (e.g. "net" → "net/net")
+		if full, ok := checker.KnownStdModules()[relPath]; ok {
+			embedPath := "std/" + full + ".no"
+			if prog, ok := checker.StdASTFor(embedPath); ok {
+				return prog, nil
+			}
+			if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
+				return t.parseEmbeddedProgram(embedPath, data)
 			}
 		}
 		// 找不到模組 → 返回語意化錯誤（不再回退到磁碟）
@@ -830,8 +824,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	var importedModules []string
 	mainVarNames := make(map[string]bool)
 	// 預填充已知 std 模塊的 ShortName，允許 math.degrees()、base64.encode-std() 等呼叫無需顯式導入
-	for _, info := range checker.KnownStdModules() {
-		importedModules = append(importedModules, info.ShortName)
+	for short := range checker.KnownStdModules() {
+		importedModules = append(importedModules, short)
 	}
 	for _, stmt := range program.Statements {
 		// (1) ..any 標準庫限制檢查
@@ -2197,15 +2191,20 @@ var validateFuncStrReturns map[string]bool
 // moduleShortName extracts the last path segment as the module name.
 // "std/math" → "math", "fmt" → "fmt", "crypto/md5" → "md5"
 
-// checker.StdModuleInfo holds information about a standard library module.
+// checker.StdModuleInfo holds information about a standard library module and is
+// still used by the FS-walk path (ListStdModules). The consumer-facing API is
+// now the KV map (ShortName -> FullPath) returned by checker.KnownStdModules /
+// checker.GetStdModules — no []StdModuleInfo materialization.
 
 // debugCountHashFns is a no-op placeholder retained for call-site compatibility.
 // All temporary debugging output has been removed.
 
-// checker.knownStdModules returns all embedded standard library modules.
-// Uses //go:embed to discover all .no files in src/std/ at compile time.
+// checker.knownStdModules returns the embedded std module KV map
+// (ShortName -> FullPath). When an injected sig key is present it returns the
+// baked embeddedStdModules directly; otherwise it falls back to an FS walk.
 
-// checker.GetStdModules returns checker.StdModuleInfo for all embedded standard library modules.
+// checker.GetStdModules returns the embedded std module KV map
+// (ShortName -> FullPath) for all embedded standard library modules.
 
 // checker.JsModuleInfo 描述一個 JS 相容層模組（src/js/ 下的 .no 檔案）。
 // 與 checker.StdModuleInfo 結構相同，但用於 js/ 命名空間。

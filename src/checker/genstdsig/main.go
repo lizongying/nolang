@@ -249,18 +249,31 @@ func writeMapStringMapInline(buf *bytes.Buffer, m map[string]map[string]string) 
 	buf.WriteString("}\n")
 }
 
+// writeModuleInfos emits the std module list as a compact KV map literal
+// (ShortName -> FullPath) instead of a []StdModuleInfo slice. ShortName is
+// unique across std modules; a collision would silently drop a module from the
+// baked table, so we fail loudly instead of losing data.
 func writeModuleInfos(buf *bytes.Buffer, mods []checker.StdModuleInfo) {
-	sorted := append([]checker.StdModuleInfo(nil), mods...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].FullPath < sorted[j].FullPath })
+	m := make(map[string]string, len(mods))
+	for _, mod := range mods {
+		if prev, dup := m[mod.ShortName]; dup && prev != mod.FullPath {
+			fatal(fmt.Sprintf("genstdsig: duplicate std module ShortName %q (FullPath %q vs %q)", mod.ShortName, prev, mod.FullPath))
+		}
+		m[mod.ShortName] = mod.FullPath
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 
-	if len(sorted) == 0 {
-		buf.WriteString("[]StdModuleInfo{}\n")
+	if len(keys) == 0 {
+		buf.WriteString("map[string]string{}\n")
 		return
 	}
-	buf.WriteString("[]StdModuleInfo{\n")
-	for _, m := range sorted {
-		fmt.Fprintf(buf, "\t{ShortName: %s, FullPath: %s},\n",
-			strconv.Quote(m.ShortName), strconv.Quote(m.FullPath))
+	buf.WriteString("map[string]string{\n")
+	for _, k := range keys {
+		fmt.Fprintf(buf, "\t%s: %s,\n", strconv.Quote(k), strconv.Quote(m[k]))
 	}
 	buf.WriteString("}\n")
 }

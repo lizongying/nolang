@@ -12,15 +12,15 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// stdModuleLookup 建立 std 模組 shortName/fullPath → info 的查表。
+// stdModuleLookup 建立 std 模組 shortName/fullPath → FullPath 的查表。
 // 供「第二遍按需載入 std」判斷某個 module.fn() 的 module 是否為已知 std 模組。
-// KnownStdModules 本身已 sync.Once 快取，此處每呼叫重建 O(n) 查表（n 為 std
-// 模組數，約百位），並發安全且開銷可忽略。
-func stdModuleLookup() map[string]checker.StdModuleInfo {
-	m := make(map[string]checker.StdModuleInfo)
-	for _, info := range checker.KnownStdModules() {
-		m[info.ShortName] = info
-		m[info.FullPath] = info
+// KnownStdModules 本身已回傳 KV 表（short→full），此處額外以 full→full 索引，
+// 使 short 或 full 都能直接查到對應的 FullPath（O(1) 查表，不再 materialize 成 slice）。
+func stdModuleLookup() map[string]string {
+	m := make(map[string]string)
+	for short, full := range checker.KnownStdModules() {
+		m[short] = full
+		m[full] = full
 	}
 	return m
 }
@@ -306,20 +306,21 @@ func (t *Transpiler) loadStdModuleBody(sp string, merged *parser.Program, typeOw
 // 載入，呼叫端將得到 `unknown callee fmt-str`（見 r4 回歸：頂層 fmt 變量 +
 // print('{x}')）。模組內的全局變量合併仍受 mainVarNames 保護，不會重複聲明。
 func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, typeOwner map[string]string, mainVarNames map[string]bool, mergedGlobalConsts map[string]bool, globalVarTypes map[string]string, loadedStd map[string]bool, explicitStdModules map[string]bool, forcePrintDeps map[string]bool) ([]string, error) {
-	info, ok := stdModuleLookup()[sp]
+	full, ok := stdModuleLookup()[sp]
 	if !ok {
 		return nil, nil
 	}
+	short := checker.ModuleShortName(full)
 	// 頂層變量名與模塊名衝突 → 跳過自動載入（與原全量自動載入邏輯一致）。
 	// 註：必須用 globalVarTypes（僅頂層變數），不能用 varTypes（含函數體內的局部變數），
 	// 否則函數內的局部變數（如 test-arr-reverse 中的 arr [4] = ...）會導致
 	// arr 模組被錯誤跳過，使 [n]t 方法無法載入。
 	// 例外：print 內建依賴的 fmt/io/str/byte 不跳過（其函數體是具名格式欄位的
 	// codegen 依賴，缺失會造成 MIR `unknown callee fmt-*`）。
-	if _, isVar := globalVarTypes[info.ShortName]; isVar && !forcePrintDeps[sp] {
+	if _, isVar := globalVarTypes[checker.ModuleShortName(full)]; isVar && !forcePrintDeps[sp] {
 		return nil, nil
 	}
-	path := "std/" + info.FullPath
+	path := "std/" + full
 	if explicitStdModules[path] {
 		return nil, nil
 	}
@@ -357,7 +358,7 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 	modFile := resolveModuleFile(path, t.workspaceRoot())
 	merged.Sem.Merge(modProg.Sem)
 	// 為自動載入模組的型別定義加上模組前綴（如 result → sql.result）
-	prefixModuleStatements(modProg.Statements, info.ShortName, typeOwner)
+	prefixModuleStatements(modProg.Statements, short, typeOwner)
 	for _, ms := range modProg.Statements {
 		if fd, ok := ms.(*parser.FunctionDefinition); ok {
 			// 內建樁函式（#{buildin=...}）僅為聲明，真實實作位於 Go runtime，
@@ -366,7 +367,7 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 				continue
 			}
 			merged.Statements = append(merged.Statements, fd)
-			parser.SetModuleOwner(fd, info.ShortName)
+			parser.SetModuleOwner(fd, short)
 			parser.SetSourceFileDeep(fd, modFile)
 		}
 		if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
@@ -388,7 +389,7 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 					mergedGlobalConsts[ls.Name.Value] = true
 				}
 				merged.Statements = append(merged.Statements, ls)
-				parser.SetModuleOwner(ls, info.ShortName)
+				parser.SetModuleOwner(ls, short)
 				parser.SetSourceFileDeep(ls, modFile)
 				if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
 					ls.IsModuleConst = true
@@ -636,8 +637,8 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				// 則將該模組標記為被引用。這處理 std 模組之間以裸名相互呼叫
 				// 的情況（如 x25519.no 呼叫 rand(state)），使傳遞閉包能正確
 				// 載入依賴模組。
-				if info, ok := lookup[ident.Value]; ok {
-					if info.ShortName == ident.Value {
+				if full, ok := lookup[ident.Value]; ok {
+					if checker.ModuleShortName(full) == ident.Value {
 						addRef(ident.Value)
 					}
 				}
