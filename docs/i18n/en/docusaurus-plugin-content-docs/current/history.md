@@ -19,6 +19,9 @@ This page collects Nolang release records for each version, kept consistent with
 - fix(build): enforce compile error on unhandled out-of-bounds indexing
 - refactor(build): drop dead toOpaquePointers regex and skip the IR emit step on the C API path
 - chore(checker): remove generated stdsig_gen.go and embedded standard signatures
+- feat(parser): add doc comment attachment and method definition parsing
+- refactor(stdmodule): replace std module info slice with map KV for lookup
+- fix(build): embed std sig key in cross-compiled binaries
 
 ## v0.3.19
 
