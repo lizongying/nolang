@@ -216,9 +216,24 @@ jobs:
           curl.exe -L -f -o $installer "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VER/$installer"
           # /S：NSIS 靜默安裝開關（注意是「前斜線 /S」，不是 -S；NSIS 不認 -S 會退化成
           #   互動式 GUI 安裝精靈，在無頭 runner 上永遠等不到點擊而卡死 CI）。
+          # ⚠️ NSIS 是 GUI 子系統程式，且會二次提權重啟真正寫檔的進程；Start-Process -Wait
+          #   只等到那個「不等待提權子進程」的存根退出就返回，於是下一個 & llvm-config.exe
+          #   可能在文件尚未落地前就執行，報「The term '...llvm-config.exe' is not recognized」。
+          #   故這裡用輪詢等 llvm-config.exe 真的出現後再驗證，而不是假設 -Wait 已裝完。
+          $LLVMBin = "C:\Program Files\LLVM\bin"
           Start-Process -Wait -FilePath ".\$installer" -ArgumentList "/S"
-          echo "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
-          & "C:\Program Files\LLVM\bin\llvm-config.exe" --version
+          # 官方 win64 安裝包預設落盤到 $LLVMBin（不需也不能帶 /D：路徑含空格，NSIS 的
+          # /D 不接受引號，Start-Process 會把它拆成兩個參數而裝錯位置）。
+          $deadline = (Get-Date).AddMinutes(5)
+          while (-not (Test-Path "$LLVMBin\llvm-config.exe")) {
+            if ((Get-Date) -gt $deadline) {
+              Write-Error "LLVM install did not produce $LLVMBin\llvm-config.exe within 5 min"
+              exit 1
+            }
+            Start-Sleep -Seconds 2
+          }
+          echo $LLVMBin | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+          & "$LLVMBin\llvm-config.exe" --version
 
       - name: Install Zig 0.17.0 (bundles clang/lld/libc matching LLVM 22.1.8)
         shell: bash
@@ -253,11 +268,16 @@ jobs:
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            # cgo 用 zig cc 作驅動，鏈接官方 LLVM 22 的 MSVC 靜態庫
-            printf '#!/bin/sh\nexec zig cc "$@"\n' > /usr/local/bin/zigcc
-            printf '#!/bin/sh\nexec zig c++ "$@"\n' > /usr/local/bin/zigcxx
-            chmod +x /usr/local/bin/zigcc /usr/local/bin/zigcxx
-            export CC=zigcc CXX=zigcxx
+            # cgo 用 zig cc 作驅動，鏈接官方 LLVM 22 的 MSVC 靜態庫。
+            # 不要再寫 /usr/local/bin/zigcc 包裝腳本 —— Git-for-Windows 的 bash
+            # 裡 /usr/local/bin 目錄預設不存在（本步驟之前正是因此報
+            # 「No such file or directory」而 exit 1），且 Windows 上 cgo 是
+            # 透過 CreateProcess 直接 exec CC 指向的檔案，POSIX shebang 腳本
+            # 也無法被 cgo 當成可執行檔調用。改為把 CC/CXX 直接傳給 cgo：
+            # Go 的 findTool 用 strings.Fields 拆解 CC，會將「zig cc」解析成
+            # 指令 zig + 預設參數 cc，語義等价於原本的包裝腳本。zig 已由上一
+            # 步驟把 $HOME/zig 加入 PATH，這裡直接可見。
+            export CC="zig cc" CXX="zig c++"
             export LLVM_STATIC_EXTRA_LIBS="-lc++"
             make no-llvm FULLLLVM=1 LLVM_CONFIG="C:/Program Files/LLVM/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           else

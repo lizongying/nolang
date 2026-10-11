@@ -108,9 +108,13 @@ $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(B
 # NOLANG_LLVM_CAPI=1（或 --llvm-capi）才真的走「進程內用 LLVM C API 把 IR 編成 .o」；
 # 其他二進位遇到該開關會印一行 warning 並回退到既有 clang 路徑。
 # 此目標刻意不 install：~/no/bin/no 維持純 Go 版本。
+# ⚠️ 一律給 $(LLVM_CONFIG) 加引号 —— CI 在 Windows 上傳入的路徑是
+# "C:/Program Files/LLVM/bin/llvm-config.exe"（含空格），不加引号会被 sh
+# 拆成多個 token，使 llvm-config 静默失敗、後續 cgo 鏈接全面崩。引號在
+# Linux/macOS 的無空格路徑（llvm-config / llvm-config-22）上等价於原行。
 LLVM_CONFIG ?= llvm-config
-LLVM_CAPI_CFLAGS  := $(shell $(LLVM_CONFIG) --cflags 2>/dev/null)
-LLVM_CAPI_LDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs --link-shared 2>/dev/null)
+LLVM_CAPI_CFLAGS  := $(shell "$(LLVM_CONFIG)" --cflags 2>/dev/null)
+LLVM_CAPI_LDFLAGS := $(shell "$(LLVM_CONFIG)" --ldflags --libs --link-shared 2>/dev/null)
 # 靜態鏈接 libLLVM 時要補的 C++ 運行時等系統庫（llvm-config --system-libs 在
 # macOS 上為空，Linux 上也常漏掉 C++ 運行時）。可用 LLVM_STATIC_EXTRA_LIBS 覆寫。
 #
@@ -141,7 +145,7 @@ HOST_M := $(shell uname -m 2>/dev/null)
 
 ifeq ($(FULLLLVM),1)
 # 完整 LLVM：所有元件 + 所有 target 定義都開。
-LLVM_STATIC_COMPONENTS := $(shell $(LLVM_CONFIG) --components 2>/dev/null)
+LLVM_STATIC_COMPONENTS := $(shell "$(LLVM_CONFIG)" --components 2>/dev/null)
 LLVM_TARGET_DEFINES := -DNOLANG_LLVM_TARGET_X86 -DNOLANG_LLVM_TARGET_AARCH64 -DNOLANG_LLVM_TARGET_ARM -DNOLANG_LLVM_TARGET_WEBASSEMBLY
 else
 # 按宿主平台裁剪：先推導宿主 target（可被 LLVM_HOST_TARGET 覆寫）。
@@ -192,7 +196,7 @@ endif
 # 會執行 llvm-config 並丟棄「在 $(llvm-config --libdir) 中確實不存在」的 -lPolly*
 # 旗標；存在則維持原樣，以免影響已正常鏈接的環境（如 macOS、x86_64 Linux）。
 # （過濾邏輯放進獨立 script，避免 Make 在 $(shell ...) 裡解析複雜 shell 管線出錯。）
-LLVM_STATIC_CGO_LDFLAGS := $(shell bash $(CURDIR)/scripts/llvm-link-flags.sh $(LLVM_CONFIG) $(LLVM_STATIC_COMPONENTS) 2>/dev/null)
+LLVM_STATIC_CGO_LDFLAGS := $(shell bash $(CURDIR)/scripts/llvm-link-flags.sh "$(LLVM_CONFIG)" $(LLVM_STATIC_COMPONENTS) 2>/dev/null)
 # 連結期丟棄未參考的 LLVM 段／目標碼。macOS 的 ld64 不認 --gc-sections，改用 -dead_strip。
 ifeq ($(shell uname -s),Darwin)
 LLVM_GC_FLAGS ?= -Wl,-dead_strip
@@ -217,7 +221,7 @@ endif
 
 .PHONY: no-capi
 no-capi: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
-	@command -v $(LLVM_CONFIG) >/dev/null 2>&1 || { echo "llvm-config not found: set LLVM_CONFIG=/path/to/llvm-config (macOS: brew install llvm)"; exit 1; }
+	@command -v "$(LLVM_CONFIG)" >/dev/null 2>&1 || { echo "llvm-config not found: set LLVM_CONFIG=/path/to/llvm-config (macOS: brew install llvm)"; exit 1; }
 	$(MAKE) stamp-traceid
 	cd src && $(LLVM_CAPI_CGO_ENV) CGO_ENABLED=1 CGO_CFLAGS="$(LLVM_CAPI_CFLAGS)" CGO_LDFLAGS="$(LLVM_CAPI_LDFLAGS)" \
 		$(GO) build -tags llvm_capi $(LD_FLAGS_WITH_SIG) -o ../$(BINDIR)/no-capi ./cmd/no
@@ -234,7 +238,7 @@ no-capi: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BIN
 # cgo 無法交叉編譯，故本目標只能在目標平台的原生 runner 上構建（見 CI）。
 .PHONY: no-llvm
 no-llvm: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
-	@command -v $(LLVM_CONFIG) >/dev/null 2>&1 || { echo "llvm-config not found: set LLVM_CONFIG=/path/to/llvm-config"; exit 1; }
+	@command -v "$(LLVM_CONFIG)" >/dev/null 2>&1 || { echo "llvm-config not found: set LLVM_CONFIG=/path/to/llvm-config"; exit 1; }
 	$(MAKE) stamp-traceid
 	cd src && $(LLVM_CAPI_CGO_ENV) CGO_ENABLED=1 CGO_CFLAGS="$(LLVM_CAPI_CFLAGS) $(LLVM_TARGET_DEFINES)" CGO_LDFLAGS="$(LLVM_STATIC_CGO_LDFLAGS) $(LLVM_STATIC_EXTRA_LIBS) $(LLVM_GC_FLAGS)" \
 		$(GO) build -tags llvm_capi $(LD_FLAGS_WITH_SIG_ON) -o ../$(BINDIR)/no-llvm ./cmd/no
