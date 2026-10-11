@@ -85,20 +85,30 @@ func zigTargetTriple(t string) string {
 	return t
 }
 
-// CheckToolchain verifies that LLVM toolchain (llvm-config) and the chosen
-// C compiler (clang or zig) are available.
-// Returns an error with OS-specific install instructions if not found.
+// CheckToolchain verifies that the tools the chosen build path actually needs
+// are available, returning OS-specific install instructions otherwise.
+//
+// 註：llvm-config 在整個「.no 程式构建」流程中從不被 exec（build 期只用
+// opt/llc/clang/zig，llvm-config 僅在 make 階段為 no 二進位取 cflags/ldflags），
+// 這裡只把它當成「系統是否裝了 LLVM」的哨兵。有兩條路徑根本不需要系統 LLVM，
+// 故跳過該哨兵，否則「零外部工具鏈」的 CI smoke test 會因 runner 只裝了
+// llvm-config-22（沒有同名 llvm-config）而誤報「未檢測到 LLVM 工具鏈」：
+//  1. 內置 LLVM 的 no-llvm 變體（Enabled && Available）：optimize+codegen 全在進程內，
+//     cc 只做連結，完全不碰外部 LLVM；
+//  2. cc == "zig"：zig 自帶 clang+lld+libc，單進程即可完成最佳化/程式碼生成/連結。
 func CheckToolchain(cc string) error {
 	// WASM 建構下無法呼叫本機 LLVM 工具鏈（opt/llc/clang）；
 	// 應改用 --wasm-direct 直接產生 WASM 的路徑。
 	if runtime.GOOS == "wasip1" {
 		return fmt.Errorf("LLVM toolchain not available in WASM build; use --wasm-direct flag")
 	}
-	if _, err := exec.LookPath("llvm-config"); err != nil {
-		return fmt.Errorf(`未檢測到 LLVM 工具鏈
+	if capiActive := llvmapi.Enabled() && llvmapi.Available(); !capiActive && cc != "zig" {
+		if _, err := exec.LookPath("llvm-config"); err != nil {
+			return fmt.Errorf(`未檢測到 LLVM 工具鏈
   macOS: brew install llvm
   Ubuntu: sudo apt install llvm-dev clang
   Windows: winget install LLVM.LLVM`)
+		}
 	}
 
 	switch cc {
@@ -1025,9 +1035,17 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		}
 	}
 	if singleShot && capiObject == "" {
-		// 單進程：告訴 clang 輸入是 LLVM IR，並在內部做優化 + 程式碼生成 + 連結。
-		// （走 LLVM C API 時 optimize + codegen 已在本進程完成，此處只連結 .o。）
-		clangArgs = append([]string{optLevel, "-ffp-contract=" + fpContract, "-x", "ir"}, clangArgs...)
+		// 單進程：在內部做優化 + 程式碼生成 + 連結。
+		// clang 用 -x ir 標註輸入是 LLVM IR；zig 不認 -x ir（報
+		// "language not recognized: \"ir\""），但能透過 .ll 副檔名自動識別 IR
+		// （見 TestBuildLLVMInternalZigDarwinLinksSingleShot），故 zig 不加 -x ir，
+		// 僅保留 -O2 / -ffp-contract 優化參數。
+		// （走 LLVM C API 時 optimize + codegen 已在本進程完成，此處只連結 .o，不會走到這裡。）
+		if cc == "zig" {
+			clangArgs = append([]string{optLevel, "-ffp-contract=" + fpContract}, clangArgs...)
+		} else {
+			clangArgs = append([]string{optLevel, "-ffp-contract=" + fpContract, "-x", "ir"}, clangArgs...)
+		}
 	}
 	var clangCmd *exec.Cmd
 	if cc == "zig" {

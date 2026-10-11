@@ -192,6 +192,35 @@ define i32 @main() {
 	}
 }
 
+// TestBuildLLVMInternalZigDarwinLinksSingleShot 覆蓋 singleShot（非 verbose）路徑下
+// cc="zig" 的連結：此路徑會對 clang 附加 -x ir 讓 clang 直接吃 .ll，但 zig 不認 -x ir
+// （報 "language not recognized: \"ir\""）。修復後 zig 改靠 .ll 副檔名識別 IR（不加 -x ir），
+// 本測試即為該回歸用例——對應 CI 的 embedded-fallback 步驟（NOLANG_LLVM_CAPI=0 + -cc zig）。
+//
+// 跳過條件：zig 不在 PATH。
+func TestBuildLLVMInternalZigDarwinLinksSingleShot(t *testing.T) {
+	if !toolAvailable("zig") {
+		t.Skip("skipping: zig not in PATH")
+	}
+	// 與 CI embedded-fallback 一致：關閉 C API，強制走 singleShot 的 zig cc 路徑
+	// （否則 no-llvm 會在進程內用 LLVM C API 產 .o，根本不會碰到 -x ir 分支）。
+	t.Setenv("NOLANG_LLVM_CAPI", "0")
+	const code = `target triple = "arm64-apple-darwin"
+define i32 @main() {
+  ret i32 0
+}
+`
+	out := t.TempDir()
+	outBin := filepath.Join(out, "a.out")
+	// verbose=false ⇒ singleShot；cc="zig" 且關閉 C API ⇒ 走 -x ir 分支（修復前會掛）。
+	if err := buildLLVMInternal(code, "main", outBin, "zig", "aarch64-apple-darwin", false, nil, nil); err != nil {
+		t.Fatalf("buildLLVMInternal (zig, singleShot) failed: %v", err)
+	}
+	if _, statErr := os.Stat(outBin); statErr != nil {
+		t.Fatalf("expected linked binary %s: %v", outBin, statErr)
+	}
+}
+
 // TestBuildDirectWasmHelloWorld 驗證 Direct WASM 後端能編譯 `print('Hello, World!')`
 // 並產出可被 wasmtime 執行的 .wasm，stdout 應包含 "Hello, World!"。
 // 若 wasmtime 不在 $PATH 則 t.Skip。
