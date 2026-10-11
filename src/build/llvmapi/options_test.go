@@ -2,6 +2,7 @@ package llvmapi
 
 import (
 	"errors"
+	"os"
 	"testing"
 )
 
@@ -31,6 +32,29 @@ func TestEnabledUnknownSpellingTreatedAsOff(t *testing.T) {
 		if Enabled() {
 			t.Fatalf("Enabled() = true for unknown %s=%q, want false", EnvSwitch, v)
 		}
+	}
+}
+
+// 內置 LLVM 的發布變體（make no-llvm）用 -X 注入 defaultOn=1：
+// 未設環境變數時默認開，但顯式 NOLANG_LLVM_CAPI=0 仍要能關回 clang 路徑。
+func TestEnabledBuildDefaultOn(t *testing.T) {
+	old := defaultOn
+	defaultOn = "1"
+	t.Cleanup(func() { defaultOn = old })
+
+	prev, had := os.LookupEnv(EnvSwitch)
+	os.Unsetenv(EnvSwitch)
+	if !Enabled() {
+		t.Fatal("defaultOn=1 with env unset: Enabled() = false, want true")
+	}
+	t.Setenv(EnvSwitch, "0")
+	if Enabled() {
+		t.Fatalf("defaultOn=1 with %s=0: Enabled() = true, want false (explicit override wins)", EnvSwitch)
+	}
+	if had {
+		t.Setenv(EnvSwitch, prev)
+	} else {
+		os.Unsetenv(EnvSwitch)
 	}
 }
 

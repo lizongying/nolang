@@ -1,0 +1,25 @@
+a = [1, 2, 3]
+n = 3
+
+i <- [0..3]: {
+    break
+}
+
+for {
+    continue
+}
+
+for j <- a {
+    break #1
+}
+
+for n > 0 {
+    continue #2
+    n = n - 1
+}
+
+for x <- a {
+    if x > 1 {
+        break
+    }
+}

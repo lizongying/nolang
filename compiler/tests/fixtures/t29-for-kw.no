@@ -1,0 +1,26 @@
+a = [1, 2, 3]
+n = 3
+
+for {
+    x = 1
+}
+
+for n > 0 {
+    n = n - 1
+}
+
+for i <- a {
+    y = i
+}
+
+for j <- a: {
+    z = j
+}
+
+while n > 0 {
+    n = n - 1
+}
+
+for k <- [0..3] {
+    w = k
+}

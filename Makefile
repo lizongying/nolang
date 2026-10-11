@@ -79,6 +79,11 @@ STD_SIG_X   = -X github.com/lizongying/nolang/checker.StdSigKey=$(STD_SIG_KEY)
 # -ldflags), so it sits alongside version/buildDate. Preserves any user
 # override of LD_FLAGS.
 LD_FLAGS_WITH_SIG = $(subst -ldflags=",-ldflags="$(STD_SIG_X) ,$(LD_FLAGS))
+# Same set of flags plus the LLVM C API build default, for the statically
+# linked "no-llvm" variant (see the no-llvm target). Go rejects -X outside
+# -ldflags, so it is merged in the same way as the std-sig key.
+LLVM_CAPI_ON_X       = -X github.com/lizongying/nolang/build/llvmapi.defaultOn=1
+LD_FLAGS_WITH_SIG_ON = $(subst -ldflags=",-ldflags="$(LLVM_CAPI_ON_X) ,$(LD_FLAGS_WITH_SIG))
 
 # ── STAMP TRACE ID ────────────────────────────────
 # Replace every PLACEHOLDER in checker source files with a unique
@@ -104,10 +109,96 @@ $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(B
 LLVM_CONFIG ?= llvm-config
 LLVM_CAPI_CFLAGS  := $(shell $(LLVM_CONFIG) --cflags 2>/dev/null)
 LLVM_CAPI_LDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs --link-shared 2>/dev/null)
+# 靜態鏈接 libLLVM 時要補的 C++ 運行時等系統庫（llvm-config --system-libs 在
+# macOS 上為空，Linux 上也常漏掉 C++ 運行時）。可用 LLVM_STATIC_EXTRA_LIBS 覆寫。
+#
+# 內置 LLVM 變體（make no-llvm）採「按宿主平台裁剪」策略：每個發布平台的二進位只鏈接
+# 「構建宿主的架構 backend」+ 額外目標（預設 WebAssembly——Nolang 的瀏覽器 / Edge
+# 輸出，與宿主無關）+ passes（PassBuilder / LLVMRunPasses 所在）。其餘 target
+# （powerpc / mips / sparc / amdgpu / ...）與未用到的元件靠 llvm-config 的傳遞依賴
+# 自然排除；連結期再靠 --gc-sections / -dead_strip 丟棄未參考的段／目標碼，進一步縮小
+# 二進位。所以不同 target 的產物各自最小（x86_64 runner 的二進位不含 aarch64 / arm
+# backend，反之亦然）。設 FULLLLVM=1 可退回「鏈接完整 LLVM」（仍只註冊宿主 + wasm，
+# 見 src/build/llvmapi/llvmapi_capi.go）。
+#
+# 宿主 target 預設由 uname -m 推導（x86_64→x86, aarch64/arm64→aarch64, arm*→arm），
+# 可用 LLVM_HOST_TARGET=<x86|aarch64|arm> 顯式覆寫（CI 在每個 matrix 條目裡個別指定，
+# 因為 Windows 下 uname -m 不可靠，且 Rosetta 的 x86_64 需要明確指定）。額外 target
+# 用 LLVM_EXTRA_TARGETS 調整（設為空 = 嚴格只鏈宿主平台，不含 wasm）。
+#
+# 注意：真正鏈接進來的 target 必須與 llvmapi_capi.go 裡實際註冊的 target 完全一致——
+# Makefile 會據此產生 NOLANG_LLVM_TARGET_* 預處理器定義（見下方 LLVM_TARGET_DEFINES），
+# 只對「真有鏈接」的 target 呼叫其 LLVMInitializeXxx* 註冊函式；若註冊了未鏈接的
+# target，連結期會出現未定義符號錯誤。
+HOST_M := $(shell uname -m 2>/dev/null)
+
+ifeq ($(FULLLLVM),1)
+# 完整 LLVM：所有元件 + 所有 target 定義都開。
+LLVM_STATIC_COMPONENTS := $(shell $(LLVM_CONFIG) --components 2>/dev/null)
+LLVM_TARGET_DEFINES := -DNOLANG_LLVM_TARGET_X86 -DNOLANG_LLVM_TARGET_AARCH64 -DNOLANG_LLVM_TARGET_ARM -DNOLANG_LLVM_TARGET_WEBASSEMBLY
+else
+# 按宿主平台裁剪：先推導宿主 target（可被 LLVM_HOST_TARGET 覆寫）。
+ifeq ($(LLVM_HOST_TARGET),)
+ifeq ($(HOST_M),x86_64)
+LLVM_HOST_TARGET := x86
+endif
+ifeq ($(HOST_M),aarch64)
+LLVM_HOST_TARGET := aarch64
+endif
+ifeq ($(HOST_M),arm64)
+LLVM_HOST_TARGET := aarch64
+endif
+ifneq ($(LLVM_HOST_TARGET),)
+else
+ifneq ($(filter arm%,$(HOST_M)),)
+LLVM_HOST_TARGET := arm
+endif
+endif
+ifeq ($(LLVM_HOST_TARGET),)
+LLVM_HOST_TARGET := x86
+endif
+endif
+
+# 額外固定鏈接的 target（預設 wasm；設 LLVM_EXTRA_TARGETS= 可只留宿主平台）。
+LLVM_EXTRA_TARGETS ?= webassembly
+LLVM_STATIC_COMPONENTS := $(LLVM_HOST_TARGET) $(LLVM_EXTRA_TARGETS) passes
+
+# 依實際鏈接的 target 產生預處理器定義，供 llvmapi_capi.go 決定要註冊哪些 target。
+LLVM_TARGET_DEFINES :=
+ifneq ($(filter webassembly,$(LLVM_EXTRA_TARGETS)),)
+LLVM_TARGET_DEFINES += -DNOLANG_LLVM_TARGET_WEBASSEMBLY
+endif
+ifeq ($(LLVM_HOST_TARGET),x86)
+LLVM_TARGET_DEFINES += -DNOLANG_LLVM_TARGET_X86
+endif
+ifeq ($(LLVM_HOST_TARGET),aarch64)
+LLVM_TARGET_DEFINES += -DNOLANG_LLVM_TARGET_AARCH64
+endif
+ifeq ($(LLVM_HOST_TARGET),arm)
+LLVM_TARGET_DEFINES += -DNOLANG_LLVM_TARGET_ARM
+endif
+endif
+LLVM_STATIC_CGO_LDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs --link-static --system-libs $(LLVM_STATIC_COMPONENTS) 2>/dev/null)
+# 連結期丟棄未參考的 LLVM 段／目標碼。macOS 的 ld64 不認 --gc-sections，改用 -dead_strip。
+ifeq ($(shell uname -s),Darwin)
+LLVM_GC_FLAGS ?= -Wl,-dead_strip
+else
+LLVM_GC_FLAGS ?= -Wl,--gc-sections
+endif
+BREW_PREFIX := $(shell command -v brew >/dev/null 2>&1 && brew --prefix 2>/dev/null)
+ifeq ($(shell uname -s),Darwin)
 # macOS：CommandLineTools 下沒有 /usr/include，cgo 需要明確的 SDKROOT，
 # 否則會在 runtime/cgo 階段報 'stdlib.h' file not found。
-ifeq ($(shell uname -s),Darwin)
 LLVM_CAPI_CGO_ENV := SDKROOT=$(shell xcrun --show-sdk-path 2>/dev/null)
+# LLVM 的間接依賴（zstd / z3 / xml2）在 Homebrew 下多為 keg-only，不在默認庫搜索
+# 路徑裡，必須顯式給 -L$(brew --prefix)/lib，否則 ld 會報 `library 'zstd' not found`。
+ifeq ($(BREW_PREFIX),)
+LLVM_STATIC_EXTRA_LIBS ?= -lc++
+else
+LLVM_STATIC_EXTRA_LIBS ?= -L$(BREW_PREFIX)/lib -lc++
+endif
+else
+LLVM_STATIC_EXTRA_LIBS ?= -lstdc++ -lm
 endif
 
 .PHONY: no-capi
@@ -118,6 +209,23 @@ no-capi: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BIN
 		$(GO) build -tags llvm_capi $(LD_FLAGS_WITH_SIG) -o ../$(BINDIR)/no-capi ./cmd/no
 	chmod +x $(BINDIR)/no-capi
 	@echo "Built: $(BINDIR)/no-capi (LLVM C API backend; enable with NOLANG_LLVM_CAPI=1 or --llvm-capi)"
+
+# ── 內置 LLVM 的發布變體（靜態 libLLVM，默認啟用 C API）─────────────────
+# 與 no-capi 的差別只有兩點：
+#   1. 靜態鏈接 libLLVM（--link-static），二進位自帶 LLVM → 使用者不必安裝 LLVM；
+#      配合 `-cc zig`（zig 自帶 clang + lld + libc，且其 LLVM 版本與此處對齊）
+#      就能做到零外部工具鏈構建。代價：產物從 ~12 MB 變成上百 MB。
+#   2. 注入 defaultOn=1，讓這個變體「開箱即用」地走 C API；顯式
+#      NOLANG_LLVM_CAPI=0（或 --llvm-capi=0）仍可關回外部 clang 路徑。
+# cgo 無法交叉編譯，故本目標只能在目標平台的原生 runner 上構建（見 CI）。
+.PHONY: no-llvm
+no-llvm: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
+	@command -v $(LLVM_CONFIG) >/dev/null 2>&1 || { echo "llvm-config not found: set LLVM_CONFIG=/path/to/llvm-config"; exit 1; }
+	$(MAKE) stamp-traceid
+	cd src && $(LLVM_CAPI_CGO_ENV) CGO_ENABLED=1 CGO_CFLAGS="$(LLVM_CAPI_CFLAGS) $(LLVM_TARGET_DEFINES)" CGO_LDFLAGS="$(LLVM_STATIC_CGO_LDFLAGS) $(LLVM_STATIC_EXTRA_LIBS) $(LLVM_GC_FLAGS)" \
+		$(GO) build -tags llvm_capi $(LD_FLAGS_WITH_SIG_ON) -o ../$(BINDIR)/no-llvm ./cmd/no
+	chmod +x $(BINDIR)/no-llvm
+	@echo "Built: $(BINDIR)/no-llvm (static libLLVM; C API on by default, disable with NOLANG_LLVM_CAPI=0)"
 
 # ── INSTALL ────────────────────────────
 # 每次 make 都強制重裝全局 no：binary 存到 ~/no/bin/，並在 /usr/local/bin/ 建軟鏈接
@@ -202,6 +310,7 @@ help:
 	@echo "  make            構建所有目標"
 	@echo "  make no         構建 bin/no 並重裝全局 no"
 	@echo "  make no-capi    構建 bin/no-capi（帶 LLVM C API 後端，開關默認關閉）"
+	@echo "  make no-llvm    構建 bin/no-llvm（靜態內置 LLVM，C API 默認開啟）"
 	@echo "  make install    強制重裝全局 no（~/no/bin/no + /usr/local/bin/no 軟鏈接）"
 	@echo "  make lsp        構建 vscode-nolang/server/lsp"
 	@echo "  make gen        gen stdsig_gen.go"

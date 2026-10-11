@@ -18,16 +18,31 @@ import (
 // EnvSwitch 是控制本後端的環境變數名。
 const EnvSwitch = "NOLANG_LLVM_CAPI"
 
+// defaultOn 是構建期默認值，供「內置 LLVM」的發布變體（make no-llvm）以
+//
+//	-ldflags "-X github.com/lizongying/nolang/build/llvmapi.defaultOn=1"
+//
+// 注入。默認（純 Go 構建的 bin/no）為 "0"，即開關默認關閉、後端與今日逐字相同。
+// 之所以需要它：內置變體已經把靜態 libLLVM（上百 MB）鏈進二進位，若還要求使用者
+// 顯式開關才生效，那這份體積就白付了；而顯式設 NOLANG_LLVM_CAPI=0/--llvm-capi=0
+// 仍可關回外部 clang 路徑。
+var defaultOn = "0"
+
 var warnOnce sync.Once
 
 // Enabled 報告本次構建是否要用 LLVM C API 路徑。
 // 值域（大小寫與空白皆不敏感）：
 //   - 未設定 / "" / "0" / "off" / "false" / "no" → 關閉（默認）
 //   - "1" / "on" / "true" / "yes"               → 開啟
+//   - 完全未設定 → 看構建期默認（純 Go 構建＝關；內置 LLVM 變體＝開）
 //   - 其他未知拼寫 → 一律按關閉處理（並在 stderr 提示一次）
 //     （與 mir.MIROptLevel 的容錯口徑一致，避免拼錯就悄悄換後端）
 func Enabled() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv(EnvSwitch)))
+	raw, set := os.LookupEnv(EnvSwitch)
+	if !set && defaultOn == "1" {
+		return true
+	}
+	v := strings.ToLower(strings.TrimSpace(raw))
 	switch v {
 	case "", "0", "off", "false", "no":
 		return false

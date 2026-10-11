@@ -120,6 +120,208 @@ jobs:
           asset_name: no_${{ env.version_name }}_windows_amd64.exe
           asset_content_type: application/octet-stream
 
+  # ── 內置 LLVM 的發布變體（靜態 libLLVM）─────────────────────────────────
+  # 與上面的純 Go 產物並存：產物自帶 LLVM，使用者不必安裝 LLVM；配合 `-cc zig`
+  # （zig 自帶 clang + lld + libc）即可做到零外部工具鏈構建。
+  # LLVM 版本對齊 zig 0.17.0 所用的 22.1.8（見 https://ziglang.org/download/0.17.0/release-notes.html
+  # 「This release of Zig upgrades to LLVM 22.1.8」），讓 `zig cc` 與內嵌 LLVM 同源。
+  #
+  # 注意：cgo 無法交叉編譯（darwin 目標需要 macOS SDK、windows 需要 MSVC），
+  # 所以這裡是矩陣「原生 runner 原生構建」，而非一次交叉出全部平台。
+  # darwin/amd64 因 GitHub 已退役 x64 macOS runner，改在 macos-latest(arm64) 上
+  # 用 Rosetta(arch -x86_64) 跑 x86_64 工具鏈做原生構建。
+  # windows/* 為實驗性（continue-on-error）：上游 LLVM 未發行 Windows/arm64 靜態庫，
+  # 且 windows/amd64 以 zig cc 鏈接 MSVC 靜態庫的運行時匹配可能需就地迭代。
+  # 代價：產物 ~160 MB（純 Go 版 ~12 MB），故作為額外 asset 而非替換現有產物。
+  build-llvm-variants:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: no-llvm_linux_amd64
+            llvm_pkg: llvm-22-dev
+            go_arch: x64
+            zig_arch: x86_64
+            llvm_host_target: x86
+            ext: ""
+          # ubuntu-24.04-arm 為 public repo 的原生 ARM runner（cgo 需要原生構建）
+          - os: ubuntu-24.04-arm
+            asset: no-llvm_linux_arm64
+            llvm_pkg: llvm-22-dev
+            go_arch: arm64
+            zig_arch: aarch64
+            llvm_host_target: aarch64
+            ext: ""
+          - os: macos-latest
+            asset: no-llvm_darwin_arm64
+            llvm_pkg: ""
+            go_arch: arm64
+            zig_arch: aarch64
+            llvm_host_target: aarch64
+            ext: ""
+          # darwin/amd64：GitHub 已退役 x64 macOS runner，故在 macos-latest(arm64) 上
+          # 以 Rosetta(arch -x86_64) 跑 x86_64 工具鏈原生構建（cgo 無法交叉編譯）。
+          - os: macos-latest
+            asset: no-llvm_darwin_amd64
+            llvm_pkg: ""
+            go_arch: x64
+            zig_arch: x86_64
+            llvm_host_target: x86
+            rosetta: true
+            ext: ""
+          # windows/amd64：實驗性。cgo 用 zig cc 鏈接官方 LLVM 22 的 MSVC 靜態庫；
+          # libc++/MSVC 運行時匹配可能需就地迭代，故 continue-on-error 不阻斷發布。
+          - os: windows-latest
+            asset: no-llvm_windows_amd64
+            go_arch: x64
+            zig_arch: x86_64
+            llvm_host_target: x86
+            ext: ".exe"
+            experimental: true
+          # windows/arm64：上游 LLVM 未發行 Windows/arm64 靜態庫，且 zig 無
+          # windows/arm64 宿主；暫列實驗性，預期會失敗，不阻斷發布。
+          - os: windows-11-arm
+            asset: no-llvm_windows_arm64
+            go_arch: arm64
+            zig_arch: aarch64
+            llvm_host_target: aarch64
+            ext: ".exe"
+            experimental: true
+    continue-on-error: ${{ matrix.experimental || false }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Golang
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          architecture: ${{ matrix.go_arch }}
+
+      - name: "Install LLVM 22 (Linux - headers + static libs)"
+        if: runner.os == 'Linux'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
+          sudo apt-get install -y ${{ matrix.llvm_pkg }} libzstd-dev libz3-dev libxml2-dev
+          sudo ln -sf /usr/lib/llvm-22/bin/llvm-config /usr/local/bin/llvm-config-22
+          llvm-config-22 --version
+
+      - name: "Install LLVM 22 (macOS arm64 - brew)"
+        if: runner.os == 'macOS' && !matrix.rosetta
+        run: |
+          brew install llvm@22 zstd z3 libxml2 || brew install llvm zstd z3 libxml2
+          LLVM_PREFIX=$(brew --prefix llvm@22 2>/dev/null || brew --prefix llvm)
+          echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
+          # brew 的 llvm 是 keg-only，二進位就叫 llvm-config；我們統一用 llvm-config-22 指代
+          sudo ln -sf "$LLVM_PREFIX/bin/llvm-config" /usr/local/bin/llvm-config-22
+          llvm-config-22 --version
+
+      - name: "Install LLVM 22 (macOS amd64 - Rosetta + x86_64 Homebrew)"
+        if: runner.os == 'macOS' && matrix.rosetta
+        run: |
+          # GitHub 已退役 x64 macOS runner；在 arm64 runner 上用 Rosetta 跑 x86_64
+          # 工具鏈做原生構建（cgo 無法交叉編譯）。
+          softwareupdate --install-rosetta --agree-to-license || true
+          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          arch -x86_64 /usr/local/bin/brew install llvm@22 zstd z3 libxml2
+          LLVM_PREFIX=$(arch -x86_64 /usr/local/bin/brew --prefix llvm@22)
+          echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
+          sudo ln -sf "$LLVM_PREFIX/bin/llvm-config" /usr/local/bin/llvm-config-22
+          llvm-config-22 --version
+
+      - name: "Install build tools + LLVM 22 (Windows - winget)"
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install -y make unzip
+          winget install --exact --id LLVM.LLVM --version 22.1.8 -e --accept-package-agreements --accept-source-agreements
+          echo "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+          & "C:\Program Files\LLVM\bin\llvm-config.exe" --version
+
+      - name: Install Zig 0.17.0 (bundles clang/lld/libc matching LLVM 22.1.8)
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Linux) ZIG_TARBALL=zig-x86_64-linux-0.17.0.tar.xz ;;
+            macOS) ZIG_TARBALL=zig-${{ matrix.zig_arch }}-macos-0.17.0.tar.xz ;;
+            Windows) ZIG_TARBALL=zig-x86_64-windows-0.17.0.zip ;;
+          esac
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            curl -L -o zig.zip "https://ziglang.org/download/0.17.0/$ZIG_TARBALL"
+            mkdir -p "$HOME/zig-tmp"
+            unzip -q zig.zip -d "$HOME/zig-tmp"
+            mkdir -p "$HOME/zig"
+            mv "$HOME/zig-tmp"/*/* "$HOME/zig"
+          else
+            curl -L -o zig.tar.xz "https://ziglang.org/download/0.17.0/$ZIG_TARBALL"
+            mkdir -p "$HOME/zig"
+            tar -xf zig.tar.xz -C "$HOME/zig" --strip-components=1
+          fi
+          echo "$HOME/zig" >> $GITHUB_PATH
+          "$HOME/zig/zig" version
+
+      - name: Build statically linked no (embedded LLVM)
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # cgo 用 zig cc 作驅動，鏈接官方 LLVM 22 的 MSVC 靜態庫
+            printf '#!/bin/sh\nexec zig cc "$@"\n' > /usr/local/bin/zigcc
+            printf '#!/bin/sh\nexec zig c++ "$@"\n' > /usr/local/bin/zigcxx
+            chmod +x /usr/local/bin/zigcc /usr/local/bin/zigcxx
+            export CC=zigcc CXX=zigcxx
+            export LLVM_STATIC_EXTRA_LIBS="-lc++"
+            make no-llvm LLVM_CONFIG="C:/Program Files/LLVM/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+          elif [ "${{ matrix.rosetta }}" = "true" ]; then
+            arch -x86_64 make no-llvm LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+          else
+            make no-llvm LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+          fi
+
+      - name: Smoke test with zero external toolchain (-cc zig)
+        # C API 預設開啟，且連結交給 zig cc（自帶 clang + lld + libc）：
+        # 全程不需要系統 LLVM / clang / linker。
+        shell: bash
+        run: |
+          BIN="./bin/no-llvm${{ matrix.ext }}"
+          if [ "${{ matrix.rosetta }}" = "true" ]; then
+            arch -x86_64 "$BIN" build -cc zig -o /tmp/embedded-smoke tests/heap.no
+            /tmp/embedded-smoke
+          else
+            "$BIN" build -cc zig -o /tmp/embedded-smoke${{ matrix.ext }} tests/heap.no
+            /tmp/embedded-smoke${{ matrix.ext }}
+          fi
+
+      - name: Verify the fallback switch still works
+        shell: bash
+        run: |
+          BIN="./bin/no-llvm${{ matrix.ext }}"
+          if [ "${{ matrix.rosetta }}" = "true" ]; then
+            NOLANG_LLVM_CAPI=0 arch -x86_64 "$BIN" build -cc zig -o /tmp/embedded-fallback tests/heap.no
+            /tmp/embedded-fallback
+          else
+            NOLANG_LLVM_CAPI=0 "$BIN" build -cc zig -o /tmp/embedded-fallback${{ matrix.ext }} tests/heap.no
+            /tmp/embedded-fallback${{ matrix.ext }}
+          fi
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VERSION_WITHOUT_V=$(echo '${{ github.ref_name }}' | sed 's/^v*//')
+          OUT="bin/${{ matrix.asset }}_${VERSION_WITHOUT_V}${{ matrix.ext }}"
+          cp "bin/no-llvm${{ matrix.ext }}" "$OUT"
+          chmod +x "$OUT" || true
+          du -h "$OUT"
+          gh release upload "${{ github.ref_name }}" "$OUT" --clobber
+
   pr-verify:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -200,6 +402,14 @@ jobs:
 
       - name: Build no binary
         run: make no
+
+      - name: Build & smoke the LLVM C API binary (cgo path)
+        # 動態鏈接的 no-capi：確保 cgo / LLVM C API 代碼不會在 PR 裡悄悄編譯不過
+        # 或退化。（靜態內置 LLVM 的變體只在 tag 時構建，見 build-llvm-variants。）
+        run: |
+          make no-capi
+          NOLANG_LLVM_CAPI=1 ./bin/no-capi build -cc zig -o /tmp/capi-smoke tests/heap.no
+          /tmp/capi-smoke
 
       - name: Build and run test-wasi-hello
         run: |

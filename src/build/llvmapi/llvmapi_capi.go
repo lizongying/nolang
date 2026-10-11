@@ -11,6 +11,40 @@ package llvmapi
 #include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
 #include <llvm-c/Transforms/PassBuilder.h>
+
+// 只註冊 no-llvm 實際嵌入的 target。哪些 target 被嵌入由 Makefile 決定：
+// Makefile 會按「構建宿主架構 + LLVM_EXTRA_TARGETS」選出要鏈接的 target，並產生
+// NOLANG_LLVM_TARGET_* 預處理器定義（見 Makefile 的 LLVM_TARGET_DEFINES）；
+// 這裡用 #ifdef 只對「真有鏈接」的 target 呼叫其 LLVMInitializeXxx* 註冊函式。
+// 原本的 LLVMInitializeAllTargets() 會參考每一個 target 的註冊符號，迫使連結器把
+// 全部 target 靜態庫都拉進二進位；逐 target 註冊 + 逐 target 鏈接，才能把二進位砍到最小。
+// FULLLLVM=1 時 Makefile 會把 4 個 NOLANG_LLVM_TARGET_* 全開，故全部註冊。
+static void nolang_init_llvm_targets(void) {
+#ifdef NOLANG_LLVM_TARGET_X86
+  LLVMInitializeX86TargetInfo();
+  LLVMInitializeX86Target();
+  LLVMInitializeX86TargetMC();
+  LLVMInitializeX86AsmPrinter();
+#endif
+#ifdef NOLANG_LLVM_TARGET_AARCH64
+  LLVMInitializeAArch64TargetInfo();
+  LLVMInitializeAArch64Target();
+  LLVMInitializeAArch64TargetMC();
+  LLVMInitializeAArch64AsmPrinter();
+#endif
+#ifdef NOLANG_LLVM_TARGET_ARM
+  LLVMInitializeARMTargetInfo();
+  LLVMInitializeARMTarget();
+  LLVMInitializeARMTargetMC();
+  LLVMInitializeARMAsmPrinter();
+#endif
+#ifdef NOLANG_LLVM_TARGET_WEBASSEMBLY
+  LLVMInitializeWebAssemblyTargetInfo();
+  LLVMInitializeWebAssemblyTarget();
+  LLVMInitializeWebAssemblyTargetMC();
+  LLVMInitializeWebAssemblyAsmPrinter();
+#endif
+}
 */
 import "C"
 
@@ -40,10 +74,7 @@ var (
 
 func ensureInit() {
 	initOnce.Do(func() {
-		C.LLVMInitializeAllTargetInfos()
-		C.LLVMInitializeAllTargets()
-		C.LLVMInitializeAllTargetMCs()
-		C.LLVMInitializeAllAsmPrinters()
+		C.nolang_init_llvm_targets()
 	})
 }
 

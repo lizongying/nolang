@@ -37,3 +37,6 @@ docs/.docusaurus
 *.wasm
 /*.no
 __pycache__
+
+src/checker/stdastembed/std_ast.bin
+src/checker/stdsig_gen.go

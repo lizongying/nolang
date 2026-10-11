@@ -1,0 +1,7 @@
+a, b = foo()
+
+p, q, r = bar(1)
+
+x, y = get-pair()
+
+m, ok = fs.read()

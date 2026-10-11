@@ -164,8 +164,18 @@ ps-is-func = (p psst) (r i64) {
                         k = k + 1
                         nt = ps-peek-at(p, k)
                     }
-                    nt == tok.LBRACE -> r = 1
-                    go = false
+
+                    ; 群組閉合後第一個非 trivia：`{` ⇒ 函式；`(` ⇒ 回傳元組（續掃）；其他 ⇒ 非函式
+                    nt == tok.LBRACE -> {
+                        r = 1
+                        go = false
+                    }
+
+                    ; 回傳元組：`(...)` 後接 `(` ⇒ 不中斷（go 保持 true），續掃下一群組
+                    nt == tok.LPAREN -> {}
+
+                    ; 既非 `{` 亦非 `(`（含 EOF）⇒ 不是函式定義，停止（r 維持 0）
+                    nt != tok.LBRACE && nt != tok.LPAREN -> go = false
                 }
             }
 
@@ -268,6 +278,14 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ast.kid-add(t, idx, inner)
             }
         }
+
+        ; `for`/`while` 关键字迴圈（无限 / 条件 / range），對應 Go parseForStatement 的 FOR 分支
+        tk.typ == tok.FOR -> idx = ps-parse-for-kw(t, p)
+
+        ; `break` / `continue`（可带同列标签），對應 Go parseBreak/ContinueStatement
+        tk.typ == tok.BREAK -> idx = ps-parse-break-continue(t, p, 1)
+
+        tk.typ == tok.CONTINUE -> idx = ps-parse-break-continue(t, p, 0)
 
         tk.typ == tok.IDENT -> {
             name = tk.lit
@@ -410,8 +428,63 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 handled = 1
             }
 
+            ; Nullable 型別標註：`name ?T = expr`（? 後接命名/切片/巢狀可為空型別）⇒ LetStatement{type: NullableType, value}。
+            ;   分派守衛 `nxt_typ == QUESTION`：`IDENT ?` 於陳述層只可能是可為空標註（傳導 `?=` 是 QUESTION_ASSIGN 另一 token）。
+            nxt_typ == tok.QUESTION -> {
+                ps-bump(p); 消費 IDENT name
+                nltyp = ps-parse-type(t, p); 消費 ? 與內層型別
+                ps-expect(p, tok.ASSIGN)
+                ps-skip-trivia(p)
+                nlval = ps-parse-expr(t, p)
+
+                idx = ast.add(t, asp.K_LET_STATEMENT)
+                ast.set-slot(t, idx, 0, ast.put-str(t, name))
+                ast.kid-add(t, idx, nltyp)
+                ast.kid-add(t, idx, nlval)
+                handled = 1
+            }
+
+            ; 多重指派：`a, b, … = expr`（RHS 常為多返回值呼叫）⇒ MultiAssignStatement{targets: N}。
+            ; kid 序依 dump 源碼序：先 targets（KIDS、count slot0=N）、後 value（guarded CHILD）。
+            ; ⚠️ slot0=targets 顯示數（kvc NON-ZERO，未設會印空 `targets: `）；overflow slot1 留''。
+            ; ⚠️ 父後建：先解析完所有 target/value 子樹，再 add 父、依序 kid-add（共享 kids 游標）。
+            nxt_typ == tok.COMMA -> {
+                maTargets []i64 = with-cap(4)
+                maT0 = ps-parse-expr-prec(t, p, 0)
+                maT0 > 0 -> maTargets.push(maT0)
+                (ps-peek(p) == tok.COMMA) {
+                    ps-bump(p); 消費 COMMA
+                    ps-skip-trivia(p)
+                    maTn = ps-parse-expr-prec(t, p, 0)
+                    maTn > 0 -> maTargets.push(maTn)
+                }
+                ps-skip-trivia(p)
+                ps-expect(p, tok.ASSIGN)
+                maVal = ps-parse-expr(t, p)
+
+                idx = ast.add(t, asp.K_MULTI_ASSIGN_STATEMENT)
+                ast.set-slot(t, idx, 0, ast.put-str(t, maTargets.len().to-str()))
+                ast.set-count(t, idx, 0, maTargets.len())
+                maK = 0
+                (maK < maTargets.len()) {
+                    ast.kid-add(t, idx, maTargets[maK])
+
+                    #{overflow=wrap}
+                    maK = maK + 1
+                }
+                ast.kid-add(t, idx, maVal); guarded CHILD=Value（缺席以 0 佔位）
+                handled = 1
+            }
+
             ; 其他 IDENT 開頭的句法（呼叫語、運算子等）一律走運算式陳述，
             ;   不先消費 IDENT（否则會把 `f(1,2)` 拆成兩個 token）。
+            ; 兵列迭代（bare range-for）：`var <- range-or-array [:] { body }`（不使用 `for` 關鍵字）。
+            ;   分派守衛 `nxt_typ == ARROW`：`IDENT <-` 於述層即迭代表達式（對應 Go parseForStatement bare 分支）。
+            nxt_typ == tok.ARROW -> {
+                idx = ps-parse-for(t, p, name)
+                handled = 1
+            }
+
             handled == 0 -> idx = ps-parse-expr-stmt(t, p)
         }
 
@@ -420,11 +493,35 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-expr-stmt：運算式陳述 `42`
+; ps-parse-expr-stmt：運算式陳述 `42`，並復刻 Go parseExpressionStatement 的
+;   **獨立 if-then desugar**（`cond -> body` / wildcard `-> body`，無外層 `{ }`）。
+;   Go 在陳述層看到 `expr` 後紧跟 `->` 就把整條包成 IfExpression{cond,inline-body,alt}；
+;   行首即為 `->` 時 cond 是 wildcard 標記 IntegerLiteral{value:1}（ps-mk-true，無 raw）。
+;   ⚠️ 檢查 `->` 用【活】ps-peek（不跳 trivia）——對齊 Go 只看 currentToken==RARROW，
+;     `a \n -> b`（arrow 換行）不構成獨立 if，`-> b` 之後另起為 wildcard 陳述。
 ps-parse-expr-stmt = (t ast, p psst) (idx i64) {
     idx = 0
+
+    ; (A) wildcard 獨立 if：行首 `-> body`
+    ps-peek(p) == tok.RARROW -> {
+        cond = ps-mk-true(t)
+        ie = ps-mk-standalone-if(t, p, cond)
+        idx = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+        ast.kid-add(t, idx, ie)
+        return
+    }
     e = ps-parse-expr(t, p)
     e > 0 -> {
+
+        ; (B) `cond -> body`：運算式 e 之後同位即 `->` ⇒ 獨立 if-then
+        ;   ⚠️ Go parseExpressionStatement 回的是 ExpressionStatement{IfExpression}——
+        ;     standalone IfExpression 需包一層 ExpressionStatement 作為陳述。
+        ps-peek(p) == tok.RARROW -> {
+            ie = ps-mk-standalone-if(t, p, e)
+            idx = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+            ast.kid-add(t, idx, ie)
+            return
+        }
         idx = ast.add(t, asp.K_EXPRESSION_STATEMENT)
         ast.kid-add(t, idx, e)
     }
@@ -486,7 +583,86 @@ ps-op-prec = (typ i64) (r i64) {
     }
 }
 
-; ps-parse-expr-prec：優先級爬升解析（對應 Go parseExpression(precedence)）。
+; ps-int-lit-value：復刻 Go parseIntegerLiteral 的 value 計算（expr.go:652-688）。
+;   規則：`0x/0X` 前綴⇒ base16，否則 base10（Go 用 base=0 自動偵測僅限 0x 形）。
+;   折疊低 64 位並套 overflow=wrap ⇒ 自動得 int64(uval) 的兩倍補數語意（如 2^64-1⇒-1）；
+;   若數值超出 u64（i128/u128 範圍）⇒ value=0（Go 走 isBareIntToken 分支保留 Raw 文字）。
+;   僅回傳十進位字串（對齊 dumper 的 `%d`）；Raw 仍由呼叫端直接取 token 文字。
+ps-int-lit-value = (raw str) (out str) {
+    len = raw.len-bytes()
+    len == 0 -> {
+        out = '0'
+        return
+    }
+
+    ; 偵測 base 與其實位元起始（跳過 `0x`/`0X` 前綴）
+    start = 0
+    base = 10
+    len > 2 && raw.byte(0) == 48 && (raw.byte(1) == 120 || raw.byte(1) == 88) -> {
+        base = 16
+        start = 2
+    }
+
+    ; 跳過前導 0，定位有效首位（全 0 ⇒ s=len ⇒ sig=0 ⇒ 折疊得 0）
+    s = start
+
+    #{overflow=wrap}
+    (s < len && raw.byte(s) == 48) {
+        s = s + 1
+    }
+
+    #{overflow=wrap}
+    sig = len - s
+
+    ; 是否超出 u64：hex 只要有效位 >16 即超（16 個 F 恰為 2^64-1）；
+    ;   decimal 有效位 >20 即超，==20 需與 '18446744073709551615' 逐位比較。
+    exceeds = 0
+    base == 16 -> {
+        sig > 16 -> exceeds = 1
+    }
+
+    #{overflow=wrap}
+    base == 10 -> {
+        sig > 20 -> exceeds = 1
+        sig == 20 -> {
+            maxd = '18446744073709551615'
+            i = 0
+            cmp = 0
+            (i < 20 && cmp == 0) {
+                d = raw.byte(s + i)
+                m = maxd.byte(i)
+                d > m -> cmp = 1
+                d < m -> cmp = -1
+                i = i + 1
+            }
+            cmp == 1 -> exceeds = 1
+        }
+    }
+    exceeds == 1 -> {
+        out = '0'
+        return
+    }
+
+    ; 折疊低 64 位（wrap ⇒ 自動得 int64(uval) 兩倍補數）
+    val = 0
+    j = s
+
+    #{overflow=wrap}
+    (j < len) {
+        c = raw.byte(j)
+        dv = 0
+        c >= 48 && c <= 57 -> dv = c - 48
+        base == 16 -> {
+            c >= 97 && c <= 102 -> dv = c - 97 + 10
+            c >= 65 && c <= 70 -> dv = c - 65 + 10
+        }
+        val = val * base + dv
+        j = j + 1
+    }
+    out = val.to-str()
+}
+
+; ps-parse-expr-prec：優先級爬升解析（對應 Go parseExpression(precedence)。
 ;   左結合：只吞「優先級**嚴格大於** prec」的運算子（Go 的迴圈條件
 ;   `currentPrecedence() > precedence`）。遞迴右運算元時傳入**運算子自身**
 ;   的優先級（Go parseInfixExpression 的 `parseExpression(precedence)`）。
@@ -502,7 +678,7 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
 
             ; value：解析成 i64 再轉十進位字串（與 Go 的 %v 對齊）
             ; raw：原始碼文字（直接解析的字串字面量不設 Raw，見 §5.3.2）
-            v = tk.lit.to-i64().to-str()
+            v = ps-int-lit-value(tk.lit)
             idx = ast.add(t, asp.K_INTEGER_LITERAL)
             ast.set-slot(t, idx, 0, ast.put-str(t, v))
             ast.set-slot(t, idx, 1, ast.put-str(t, tk.lit))
@@ -966,6 +1142,7 @@ ps-is-struct-lit = (p psst) (r i64) {
                 #{overflow=wrap}
                 i = i + 1
             }
+
             -> go = false
         }
 
@@ -992,6 +1169,7 @@ ps-is-struct-lit = (p psst) (r i64) {
                     #{overflow=wrap}
                     j = j + 1
                 }
+
                 -> go2 = false
             }
 
@@ -1120,9 +1298,9 @@ ps-infer-type = (t ast, val i64) (r str) {
     }
 }
 
-; ps-parse-func：解析 `name = (params) { body }`
+; ps-parse-func：解析 `name = (params) { body }` 或 `name = (params) (results) { body }`
 ps-parse-func = (t ast, p psst, name str) (idx i64) {
-    ps-bump(p); 消費 LPAREN
+    ps-bump(p); 消費 LPAREN（輸入參數群）
     params []i64 = with-cap(4)
     (ps-peek(p) != tok.RPAREN) {
         pn = ps-parse-param(t, p)
@@ -1131,14 +1309,29 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     }
     ps-bump(p); 消費 RPAREN
     ps-skip-trivia(p)
+
+    ; 回傳值群組（可選）：`(out T, …)`。Nolang 把回傳值建為 FunctionDefinition 上的 Parameter，
+    ;   於 signature() 渲染時接在輸入參數之後（[inputs][results] 連續）。
+    outs []i64 = with-cap(4)
+    ps-peek(p) == tok.LPAREN -> {
+        ps-bump(p); 消費第二個 LPAREN
+        (ps-peek(p) != tok.RPAREN) {
+            ro = ps-parse-param(t, p)
+            ro > 0 -> outs.push(ro)
+            ro == 0 -> ps-bump(p); 防呆
+        }
+        ps-bump(p); 消費第二個 RPAREN
+        ps-skip-trivia(p)
+    }
     ps-expect(p, tok.LBRACE); 進入 body
     body = ps-parse-block(t, p)
     ps-expect(p, tok.RBRACE); 結束 body
     idx = ast.add(t, asp.K_FUNCTION_DEFINITION)
     ast.set-slot(t, idx, 0, ast.put-str(t, name))
 
-    ; SIG：泛型參數 0 / 參數 params.len() / 回傳值 0
-    ast.set-sig(t, idx, 0, params.len(), 0)
+    ; SIG：泛型參數 0 / 輸入參數 params.len() / 回傳值 outs.len()
+    ;   kid 區序：[inputs…][results…] 連續（signature() 由 base 依 c3/c4/c5 切片），body 為其後 guarded CHILD
+    ast.set-sig(t, idx, 0, params.len(), outs.len())
     j = 0
     (j < params.len()) {
         ast.kid-add(t, idx, params[j])
@@ -1146,11 +1339,367 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         #{overflow=wrap}
         j = j + 1
     }
+    m = 0
+    (m < outs.len()) {
+        ast.kid-add(t, idx, outs[m])
+
+        #{overflow=wrap}
+        m = m + 1
+    }
     ast.kid-add(t, idx, body)
     idx
 }
 
-; ps-parse-param：解析一個參數 `name [type]`（第一片：型別為可選的 NamedType）
+; ps-for-source：解析 range 迭代來源（`<-` 右側），對應 Go parseForRange。
+;   `[`/`(` → RangeExpression 填 src(kid0)；其他（陣列 IDENT/呼叫等）→ 運算式填 srcExpr(kid1)。
+;   進入時呼叫端已消費 `<-`，本函式先 skip-trivia。回傳 (src, srcExpr)（皆 i64、無結構體⇒安全多回傳）。
+;   ⚠️ 守衛用快照 op，避免活 ps-peek 於 ps-bump 後重評誤觸（跨臂坑）。
+ps-for-source = (t ast, p psst) (src i64, srcExpr i64) {
+    ps-skip-trivia(p)
+    src = 0
+    srcExpr = 0
+    op = ps-peek(p)
+    op == tok.LBRACKET || op == tok.LPAREN -> {
+        ps-bump(p); 消費 `[` 或 `(`
+        leftInc = 'true'
+        op == tok.LPAREN -> leftInc = 'false'
+        st = 0
+        en = 0
+        ps-peek(p) != tok.ELLIPSIS -> st = ps-parse-expr-prec(t, p, 0)
+        ps-expect(p, tok.ELLIPSIS); 消費 ..
+        nc = ps-peek(p)
+        nc != tok.RBRACKET && nc != tok.RPAREN -> en = ps-parse-expr-prec(t, p, 0)
+        cl = ps-peek(p)
+        ri = 'false'
+        cl == tok.RBRACKET -> ri = 'true'
+        ps-bump(p); 消費閉合 `]` 或 `)`
+        src = ast.add(t, asp.K_RANGE_EXPRESSION)
+        ast.set-slot(t, src, 0, ast.put-str(t, leftInc)); leftInc
+        ast.set-slot(t, src, 1, ast.put-str(t, ri)); rightInc
+        ast.kid-add(t, src, st)
+        ast.kid-add(t, src, en)
+    }
+    op != tok.LBRACKET && op != tok.LPAREN -> {
+
+        ; 陣列/切片源：若為 **裸 IDENT 後接 `:`**（`i <- a: { }`），不能走 ps-parse-expr——
+        ;   否則 `ident : {` 會誤觸明示-match 後綴分支（ps.no 的 `IDENT COLON LBRACE` 臂）吃掉本體 ⇒ SIGBUS。
+        ;   直接建 Identifier 並只消費 ident，把 `:` 留給呼叫端冒號檢查。其他形仍走 ps-parse-expr。
+        srcTk = ps-peek-token(p)
+        bareIdentColon = srcTk.typ == tok.IDENT && ps-peek-at(p, 1) == tok.COLON
+        bareIdentColon -> {
+            srcExpr = ast.add(t, asp.K_IDENTIFIER)
+            ast.set-slot(t, srcExpr, 0, ast.put-str(t, srcTk.lit))
+            ps-bump(p); 消費 ident
+        }
+        bareIdentColon == 0 -> srcExpr = ps-parse-expr(t, p)
+    }
+}
+
+; ps-parse-for：解析 bare range-for 迭代 `vname <- range-or-array [:] { body }`（不使用 `for` 關鍵字）。
+;   對應 Go parseForStatement 的 bare 分支 + parseForRange。回傳 ForStatement 節點索引。
+ps-parse-for = (t ast, p psst, vname str) (idx i64) {
+    ps-bump(p); 消費 IDENT（迴圈變數）
+    ps-bump(p); 消費 ARROW (<-)
+    src, srcExpr = ps-for-source(t, p)
+
+    ; 冒號：有 `:` 消費（無警告）；無 `:` ⇒ deprecated 形，p.warn + 1（對應 Go parseForStatement saveWarning）
+    hd = ps-peek(p)
+    hd == tok.COLON -> ps-bump(p)
+
+    #{overflow=wrap}
+    hd != tok.COLON -> p.warn = p.warn + 1
+
+    ; 迴圈本體
+    ps-skip-trivia(p)
+    ps-expect(p, tok.LBRACE)
+    body = ps-parse-block(t, p)
+    ps-expect(p, tok.RBRACE)
+
+    ; IterationExpr（子先於父：src/srcExpr 已建）；2 個 guarded CHILD：Range(kid0)、RangeExpr(kid1)
+    ie = ast.add(t, asp.K_ITERATION_EXPR)
+    ast.set-slot(t, ie, 0, ast.put-str(t, vname)); var 名（kvs，空則不印）
+    ast.kid-add(t, ie, src)
+    ast.kid-add(t, ie, srcExpr)
+
+    ; ForStatement：6 個 guarded CHILD（Init,Condition,Update,CountExpr,IterRange,Body），僅後兩者非零
+    idx = ast.add(t, asp.K_FOR_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '')); label（kv 恆印 `label: `）
+    ast.kid-add(t, idx, 0)
+    ast.kid-add(t, idx, 0)
+    ast.kid-add(t, idx, 0)
+    ast.kid-add(t, idx, 0)
+    ast.kid-add(t, idx, ie)
+    ast.kid-add(t, idx, body)
+    idx
+}
+
+; ps-parse-for-kw：解析 `for`/`while` 關鍵字迴圈（對應 Go parseForStatement 的 FOR 分支）。
+;   僅支援帶 `{ }` 本體的三種形體（無大括號 inline / C-style `,;` / 比較運算子退路等罕見形暫不覆蓋）：
+;     · `for { }`                → Condition=BooleanLiteral{true}，p.warn+1（2297）
+;     · `for v <- range [:] { }` → Condition=Identifier{v} + IterRange=IterationExpr，無警告（ARROW 分支）
+;     · `for expr { }` / `while` → Condition=expr，p.warn+1（2407 for / 2402 while）
+;   ⚠️ `;` 在 Nolang 是行註解 ⇒ C-style `for a; b; c` 天然退化，不實作。
+ps-parse-for-kw = (t ast, p psst) (idx i64) {
+    ps-bump(p); 消費 for/while 關鍵字
+    ps-skip-trivia(p)
+    warn = 0
+    cond = 0
+    ie = 0
+    body = 0
+    hd = ps-peek(p)
+
+    ; 無限迴圈：for { }
+    hd == tok.LBRACE -> {
+        cond = ast.add(t, asp.K_BOOLEAN_LITERAL)
+        ast.set-slot(t, cond, 0, ast.put-str(t, 'true'))
+        warn = 1
+        ps-expect(p, tok.LBRACE)
+        body = ps-parse-block(t, p)
+        ps-expect(p, tok.RBRACE)
+    }
+    hd != tok.LBRACE -> {
+        tk1 = ps-peek-token(p)
+        tk2 = ps-peek-at(p, 1)
+        isRange = tk1.typ == tok.IDENT && tk2 == tok.ARROW
+
+        ; range 形：for v <- src { }（ARROW 分支無警告；IN 形暫不覆蓋）
+        isRange -> {
+            ps-bump(p); 消費 ident（迴圈變數）
+            ps-bump(p); 消費 ARROW (<-)
+            src, srcExpr = ps-for-source(t, p)
+            hc = ps-peek(p)
+            hc == tok.COLON -> ps-bump(p)
+            ps-skip-trivia(p)
+            ps-expect(p, tok.LBRACE)
+            body = ps-parse-block(t, p)
+            ps-expect(p, tok.RBRACE)
+            ie = ast.add(t, asp.K_ITERATION_EXPR)
+            ast.set-slot(t, ie, 0, ast.put-str(t, tk1.lit))
+            ast.kid-add(t, ie, src)
+            ast.kid-add(t, ie, srcExpr)
+            cond = ast.add(t, asp.K_IDENTIFIER)
+            ast.set-slot(t, cond, 0, ast.put-str(t, tk1.lit))
+        }
+
+        ; 條件形：for expr { } / while expr { }
+        isRange == 0 -> {
+            cond = ps-parse-expr(t, p)
+            hc = ps-peek(p)
+            hc == tok.COLON -> ps-bump(p)
+            ps-skip-trivia(p)
+            ps-expect(p, tok.LBRACE)
+            body = ps-parse-block(t, p)
+            ps-expect(p, tok.RBRACE)
+            warn = 1
+        }
+    }
+
+    ; ForStatement：6 個 guarded CHILD（Init,Condition,Update,CountExpr,IterRange,Body）
+    idx = ast.add(t, asp.K_FOR_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '')); label（kv 恆印 `label: `）
+    ast.kid-add(t, idx, 0)
+    ast.kid-add(t, idx, cond)
+    ast.kid-add(t, idx, 0)
+    ast.kid-add(t, idx, 0)
+    ast.kid-add(t, idx, ie)
+    ast.kid-add(t, idx, body)
+
+    #{overflow=wrap}
+    p.warn = p.warn + warn
+    idx
+}
+
+; ps-parse-break-continue：解析 `break` / `continue`（對應 Go parseBreakStatement / parseContinueStatement）。
+;   節點無 CHILD，仅雨個字串 slot：slot0=label（`kv` 恆印，空⇒`label: `）、slot1=kind（`kv` 恆印，'none'/'text'/'numeric'）。
+;   brk=1⇒BreakStatement，brk=0⇒ContinueStatement。
+;   標籤侦测对齐 Go：消費关键字後直接看**紧邻** token（不跳 trivia）——LABEL(`#N`)⇒numeric、IDENT⇒text（同列才成立）；
+;   否则（NEWLINE/RBRACE 等）⇒裸 break（label=''、kind='none'）。⚠️ 不同列的 IDENT 属于下一条陈述，不能当标签。
+ps-parse-break-continue = (t ast, p psst, brk i64) (idx i64) {
+    ps-bump(p); 消費 break/continue 关键字
+    label = ''
+    kind = 'none'
+    nt = ps-peek(p)
+    nt == tok.LABEL -> {
+        ltk = ps-peek-token(p)
+        label = ltk.lit
+        kind = 'numeric'
+        ps-bump(p)
+    }
+    nt == tok.IDENT -> {
+        itk = ps-peek-token(p)
+        label = itk.lit
+        kind = 'text'
+        ps-bump(p)
+    }
+    nodekind = asp.K_BREAK_STATEMENT
+    brk == 0 -> nodekind = asp.K_CONTINUE_STATEMENT
+    idx = ast.add(t, nodekind)
+    ast.set-slot(t, idx, 0, ast.put-str(t, label)); label
+    ast.set-slot(t, idx, 1, ast.put-str(t, kind)); kind
+    idx
+}
+
+; ps-rarrow-same-line：目前是否為【與前一個 token 同列】的 `->`（對應 Go
+;   `currentToken==RARROW && prevToken.Type != NEWLINE`）。⚠️ NEWLINE 在 ps.no
+;   raw token 流中【保留】，故直接看 p.pos-1 的型別即可判是否換行。
+ps-rarrow-same-line = (p psst) (yes i64) {
+    yes = 0
+    ps-peek(p) == tok.RARROW -> {
+        prevTyp = 0
+        p.pos >= 1 -> {
+
+            #{index-out=zero, overflow=wrap}
+            prevTyp = p.toks[p.pos - 1].typ
+        }
+        prevTyp != tok.NEWLINE -> yes = 1
+    }
+}
+
+; ps-standalone-body：解析獨立 if-then 的本體（已消費其前面的 `->`），對應
+;   Go parseStandaloneBody。回傳 (blk, tail)：blk=BlockStatement 節點；tail=可再鏈式
+;   的單一運算式節點（僅運算式本體非 0；區塊/陳述本體為 0，不可鏈）。
+;   ⚠️ 不跳 trivia——對齊 Go 直接看 currentToken：`-> \n` 之類換行→回空非內聯 Block。
+ps-standalone-body = (t ast, p psst) (blk i64, tail i64) {
+    blk = 0
+    tail = 0
+    hd = ps-peek(p)
+
+    ; 區塊本體 `{ stmts }` → 非內聯 Block（ps-parse-block 不自動吃大括號）
+    hd == tok.LBRACE -> {
+        ps-bump(p); 消費 {
+        blk = ps-parse-block(t, p)
+        ps-expect(p, tok.RBRACE)
+        return
+    }
+
+    ; 終止符（換行/}/EOF）→ 空非內聯 Block
+    hd == tok.NEWLINE || hd == tok.RBRACE || hd == tok.EOF -> {
+        blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+        ast.set-count(t, blk, 0, 0)
+        return
+    }
+
+    ; 陳述型本體：關鍵字（return/break/continue）或 `IDENT =/,`（let/multi-assign）
+    ;   → 內聯 Block{[stmt]}、tail=0（非 ExprStmt ⇒ 不可鏈）
+    isStmt = 0
+    hd == tok.RETURN || hd == tok.BREAK || hd == tok.CONTINUE || hd == tok.MUL || hd == tok.STAR_STAR -> isStmt = 1
+    hd == tok.IDENT && (ps-peek-at(p, 1) == tok.ASSIGN || ps-peek-at(p, 1) == tok.COMMA) -> isStmt = 1
+    isStmt == 1 -> {
+        s = ps-parse-stmt(t, p)
+        blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+        s > 0 -> {
+            ast.kid-add(t, blk, s)
+            ast.set-count(t, blk, 0, 1)
+        }
+        ast.set-slot(t, blk, 0, ast.put-str(t, 'true')); inline
+        return
+    }
+
+    ; 運算式本體 → 內聯 Block{[ExprStmt{e}]}、tail=e（可鏈）
+    e = ps-parse-expr(t, p)
+    es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+    ast.kid-add(t, es, e)
+    blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+    ast.kid-add(t, blk, es)
+    ast.set-count(t, blk, 0, 1)
+    ast.set-slot(t, blk, 0, ast.put-str(t, 'true')); inline
+    tail = e
+}
+
+; ps-wrap-chain：獨立 if-then 的【鏈式 `->`】處理，對應 Go wrapStandaloneChainDepth。
+;   當 blk 是單一內聯 ExprStmt（tail>0）且後面跟【同列】`->` 時，tail 變成巢狀 if 的
+;   cond：`a -> b -> c` → if(a){ inline[ExprStmt{ if(b){ inline[ExprStmt{c}] } }] }。
+;   ⚠️ 遞迴把後續所有同列 `->` 吃光，故本層只需一次判定（不需 while 迴圈）。
+;   ⚠️ lint：进入时 linkIdx==2 代整條鏈已達第 3 個條件 ⇒ saveWarning(WarnChainedIf) 一次（
+;     與鏈長無關）；單條 `a -> b`（链只一層， recurse 到 linkIdx==2 時已無同列 ->，不進本支）不告警。
+;   ⚠️ arena：tail（cond）與 nextBlk（遞迴产物）均已先建，再【父後建】 chained→es→newblk。
+ps-wrap-chain = (t ast, p psst, blk i64, tail i64, linkIdx i64) (blk2 i64) {
+    blk2 = blk
+    tail > 0 && ps-rarrow-same-line(p) -> {
+
+        #{overflow=wrap}
+        linkIdx == 2 -> p.warn = p.warn + 1
+        ps-bump(p); 消費 ->
+        nextBlk, nextTail = ps-standalone-body(t, p)
+
+        #{overflow=wrap}
+        nextBlk = ps-wrap-chain(t, p, nextBlk, nextTail, linkIdx + 1)
+        chained = ast.add(t, asp.K_IF_EXPRESSION)
+        ast.kid-add(t, chained, tail)
+        ast.kid-add(t, chained, nextBlk)
+        ast.kid-add(t, chained, 0)
+        es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+        ast.kid-add(t, es, chained)
+        newblk = ast.add(t, asp.K_BLOCK_STATEMENT)
+        ast.kid-add(t, newblk, es)
+        ast.set-count(t, newblk, 0, 1)
+        ast.set-slot(t, newblk, 0, ast.put-str(t, 'true')); inline
+        blk2 = newblk
+    }
+}
+
+; ps-mk-standalone-if：由 cond 組裝整個獨立 if-then。前置條件：目前 token 為 cond
+;   之後的第一個 `->`（呼叫端已確認 ps-peek==RARROW）。對應 Go parseExpressionStatement
+;   的 standalone 分支：吃 `->` → body → wrap-chain →（可能）else 分支 → 組 IfExpression。
+ps-mk-standalone-if = (t ast, p psst, cond i64) (idx i64) {
+    ps-bump(p); 消費 cond 之後的 ->
+    blk, tail = ps-standalone-body(t, p)
+    blk = ps-wrap-chain(t, p, blk, tail, 1)
+
+    ; else 分支：`cond -> {block} -> elseBody`（罕見；链已吃光同列 -> 後仅剩此情形）
+    alt = 0
+    ps-rarrow-same-line(p) -> {
+        ps-bump(p); 消費 ->
+        ablk, altail = ps-standalone-body(t, p)
+        alt = ps-wrap-chain(t, p, ablk, altail, 1)
+    }
+    idx = ast.add(t, asp.K_IF_EXPRESSION)
+    ast.kid-add(t, idx, cond)
+    ast.kid-add(t, idx, blk)
+    ast.kid-add(t, idx, alt)
+}
+
+; ps-parse-type：在當前位置解析一個型別並回傳其節點索引（**子先於父**）。
+;   支持：NamedType（IDENT）、NullableType（? T，遞迴）、SliceType（[] T）。
+;   明示標註一律不設 inferred（dump 不印 `inferred: true`）。回 0 = 当前位置非合法型別起點。
+;   ⚠️ 各臂用快照 `tk`（非活 `ps-peek`）分派，避免跨臂重評誤觸；臂内地變數名互不碰撞。
+ps-parse-type = (t ast, p psst) (idx i64) {
+    ps-skip-trivia(p)
+    tk = ps-peek-token(p)
+    idx = 0
+    {
+        tk.typ == tok.IDENT -> {
+            ps-bump(p); 消費型別名
+            idx = ast.add(t, asp.K_NAMED_TYPE)
+            ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+        }
+
+        tk.typ == tok.QUESTION -> {
+            ps-bump(p); 消費 ?
+            pti = ps-parse-type(t, p); 內層型別（遞迴）
+            idx = ast.add(t, asp.K_NULLABLE_TYPE)
+            ast.kid-add(t, idx, pti); 唯一 guarded CHILD=Type
+        }
+
+        tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.RBRACKET && ps-peek-at(p, 2) == tok.IDENT -> {
+            ps-bump(p); 消費 [
+            ps-bump(p); 消費 ]
+            pts = ps-peek-token(p)
+            ps-bump(p); 消費 elem 型別名
+            ptne = ast.add(t, asp.K_NAMED_TYPE)
+            ast.set-slot(t, ptne, 0, ast.put-str(t, pts.lit))
+            idx = ast.add(t, asp.K_SLICE_TYPE)
+            ast.set-slot(t, idx, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
+            ast.kid-add(t, idx, ptne)
+        }
+
+        -> {
+        }
+    }
+    idx
+}
+
+; ps-parse-param：解析一個參數 `name [type]`（型別可為 NamedType / NullableType / SliceType）
 ps-parse-param = (t ast, p psst) (idx i64) {
     idx = 0
     tk = ps-peek-token(p)
@@ -1159,11 +1708,8 @@ ps-parse-param = (t ast, p psst) (idx i64) {
     ps-bump(p); 消費參數名
     typ = 0
     nxt = ps-peek-token(p)
-    nxt.typ == tok.IDENT -> {
-        tn = nxt.lit
-        ps-bump(p)
-        typ = ast.add(t, asp.K_NAMED_TYPE)
-        ast.set-slot(t, typ, 0, ast.put-str(t, tn))
+    nxt.typ == tok.IDENT || nxt.typ == tok.QUESTION || nxt.typ == tok.LBRACKET -> {
+        typ = ps-parse-type(t, p)
     }
     idx = ast.add(t, asp.K_PARAMETER)
     ast.set-slot(t, idx, 0, ast.put-str(t, pname))
@@ -1292,8 +1838,8 @@ ps-mk-eq = (t ast, l i64, r i64) (idx i64) {
 ;   ⚠️ arena 共享 kids 游標（add 設 kid0=kids.len）→ 父節點務必最後 add、再 kid-add。
 ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     wildA []i64 = with-cap(4)
-    patA  []i64 = with-cap(4)
-    blkA  []i64 = with-cap(4)
+    patA []i64 = with-cap(4)
+    blkA []i64 = with-cap(4)
     ps-skip-trivia(p)
     (ps-peek(p) != tok.RBRACE) {
         pos0 = p.pos
@@ -1308,11 +1854,11 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
                 ps-bump(p)
                 wild = 1
             }
+
             at != tok.UNDERSCORE -> {
                 pat = ps-parse-expr-prec(t, p, 0)
             }
         }
-
         ps-skip-trivia(p)
         ps-expect(p, tok.RARROW)
         ps-skip-trivia(p)
@@ -1324,6 +1870,7 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
         inline = 0
         hd2 = 0
         ps-peek(p) == tok.LBRACE -> {
+
             ; 區塊臂（非內聯）：展開 `{
             ps-bump(p)
             ps-skip-trivia(p)
@@ -1338,6 +1885,7 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
             hd2 = 1
         }
         hd2 == 0 -> {
+
             ; 運算式臂（內聯）：BlockStatement{inline: true}[it, ExpressionStatement{e}]
             e = ps-parse-expr-prec(t, p, 0)
             es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
@@ -1357,7 +1905,6 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
         }
         ast.set-count(t, blk, 0, kids.len())
         inline == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true'))
-
         wildA.push(wild)
         patA.push(pat)
         blkA.push(blk)
@@ -1371,23 +1918,29 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     #{overflow=wrap}
     i = blkA.len() - 1
     (i >= 0) {
+
         #{index-out=zero}
         w = wildA[i]
+
         #{index-out=zero}
         b = blkA[i]
         hd3 = 0
         w == 1 -> {
+
             ; wildcard：其區塊直接作前一 if 的 alternative
             res = b
             hd3 = 1
         }
         hd3 == 0 -> {
+
             #{index-out=zero}
             cond = ps-mk-eq(t, ps-mk-ident(t, subj), patA[i])
+
             ; 決定 alternative
             alt = 0
             hd4 = 0
             res > 0 && ast.kind-at(t, res) == asp.K_IF_EXPRESSION -> {
+
                 ; 後臂是 if → 包成非內聯 else 區塊 [ExpressionStatement{if}]
                 es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
                 ast.kid-add(t, es, res)
@@ -1398,6 +1951,7 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
                 hd4 = 1
             }
             res > 0 && hd4 == 0 -> alt = res
+
             ; 父後建
             ie = ast.add(t, asp.K_IF_EXPRESSION)
             ast.kid-add(t, ie, cond)
