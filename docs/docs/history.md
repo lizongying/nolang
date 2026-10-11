@@ -6,6 +6,11 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.3
+
+- feat(parser): add support for no-value explicit type declarations
+- fix(build): consume LLVM IR via .ll extension for zig instead of unsupported `-x ir`
+
 ## v0.4.2
 
 - fix(build): translate Apple LLVM target triple to zig's `macos` OS name for zig-based linking
