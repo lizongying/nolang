@@ -440,28 +440,28 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
             {
                 tk.typ == tok.EOF -> depth = 0
 
-                ; 開括（值內的 #{ [ ( {）：深度 +1、離開鍵期待
                 tk.typ == tok.HASH_LBRACE || tk.typ == tok.LBRACE || tk.typ == tok.LBRACKET || tk.typ == tok.LPAREN -> {
+
                     #{overflow=wrap}
                     depth = depth + 1
                     expect_key = false
                     ps-bump(p)
                 }
 
-                ; 閉括：深度 -1（群組自身 `}` 使 depth→0 結束本群組）
                 tk.typ == tok.RBRACE || tk.typ == tok.RBRACKET || tk.typ == tok.RPAREN -> {
+
                     #{overflow=wrap}
                     depth = depth - 1
                     ps-bump(p)
                 }
 
-                ; 頂層鍵名：expect_key 且 IDENT 於 depth==1 ⇒ 去重入 keys；若接 `=` 則取 overflow 值供附著
                 tk.typ == tok.IDENT && expect_key && depth == 1 -> {
                     kn = tk.lit
                     found = 0
                     z = 0
                     (z < keys.len()) {
                         keys[z] == kn -> found = 1
+
                         #{overflow=wrap}
                         z = z + 1
                     }
@@ -475,7 +475,6 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                     }
                 }
 
-                ; 頂層逗號 ⇒ 下一 token 為鍵名
                 tk.typ == tok.COMMA && depth == 1 -> {
                     expect_key = true
                     ps-bump(p)
@@ -629,7 +628,6 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                     ps-skip-trivia(p)
                     val = ps-parse-expr(t, p)
                 }
-
                 idx = ast.add(t, asp.K_LET_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
                 ast.kid-add(t, idx, at)
