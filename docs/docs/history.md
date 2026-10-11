@@ -6,6 +6,13 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.2
+
+- fix(build): translate Apple LLVM target triple to zig's `macos` OS name for zig-based linking
+- fix(build): filter out missing `-lPolly*` static libraries during no-llvm static linking
+- build(ci): harden release workflow for cross-platform LLVM toolchains
+- fix(parser): correct parsing logic and add overflow wrapping indicators
+
 ## v0.4.1
 
 - fix(astcache): make the Tier-0 std AST blob reproducible and config-checked

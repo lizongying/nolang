@@ -7,6 +7,13 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.2
+
+- fix(build): translate Apple LLVM target triple to zig's `macos` OS name for zig-based linking
+- fix(build): filter out missing `-lPolly*` static libraries during no-llvm static linking
+- build(ci): harden release workflow for cross-platform LLVM toolchains
+- fix(parser): correct parsing logic and add overflow wrapping indicators
+
 ## v0.4.1
 
 - fix(astcache): make the Tier-0 std AST blob reproducible and config-checked
