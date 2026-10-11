@@ -26,7 +26,11 @@ import (
 // The uint32 keys keep their type, so old entries would still DECODE — they
 // must be invalidated by this bump or a stale blob would restore a wrong
 // mapping instead of failing.
-const ASTVersion = "2026-10-11.1"
+// 2026-10-11.2 — CachedProgram now implements GobEncoder/GobDecoder, so its
+// serialization changed from "gob of the struct" to "gob of a deterministic
+// shadow with key-sorted maps" (see astcache_det.go). Old entries decode into
+// a different wire shape and must be invalidated.
+const ASTVersion = "2026-10-11.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

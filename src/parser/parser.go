@@ -29,6 +29,18 @@ type Parser struct {
 	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
 	methodSignatures  map[string][]string          // 結構體方法 → 結果型別字串列表（鍵：module.struct.method）
 	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
+
+	// extern* 記錄 SetExternSignatures / SetExternEnumVariants 收到的**注入**
+	// 表（僅記引用，不複製）。刻意與 funcSignatures/methodSignatures/structFields
+	// 分開：後三者在解析過程中會被本地定義續寫（decl.go），而這裡要回答的是
+	// 「這個 parser 被配置成什麼」，不是「解析後累積了什麼」。
+	// 消費者：ExternSignatureFingerprint —— Tier-0 用它在 blob 裡烤下
+	// 「生成時實際使用的解析配置」，執行期再與內嵌表推導出的期望值比對，
+	// 使「用裸 parser 烤 blob」這類配置漂移無法靜默通過（見 checker/stdast.go）。
+	externFuncSigs     map[string][]string
+	externMethodSigs   map[string][]string
+	externStructFields map[string]map[string]string
+	externEnumVariants map[string][]string
 	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
 	typeAliasNames    map[string]bool              // 已定義的類型別名名稱（用於等號語法偵測）
 
@@ -1044,6 +1056,9 @@ func (p *Parser) setVarType(name, typ string) {
 // SetExternSignatures 注入外部（跨文件）函數簽名和 struct 欄位型別，
 // 供 parseLetStatement 的型別推斷使用。由 transpiler 在解析前呼叫。
 func (p *Parser) SetExternSignatures(funcSigs map[string][]string, methodSigs map[string][]string, structFields map[string]map[string]string) {
+	p.externFuncSigs = funcSigs
+	p.externMethodSigs = methodSigs
+	p.externStructFields = structFields
 	if p.funcSignatures == nil {
 		p.funcSignatures = make(map[string][]string)
 	}
@@ -1068,6 +1083,7 @@ func (p *Parser) SetExternSignatures(funcSigs map[string][]string, methodSigs ma
 // 供 match desugar 使用，使跨模組枚舉 match 能正確識別型別。
 // 由 transpiler 在解析前呼叫。
 func (p *Parser) SetExternEnumVariants(enumVariants map[string][]string) {
+	p.externEnumVariants = enumVariants
 	if p.sem.EnumVariants == nil {
 		p.sem.EnumVariants = make(map[string][]string)
 	}

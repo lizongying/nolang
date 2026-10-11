@@ -1,9 +1,14 @@
 package checker
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/gob"
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -12,6 +17,143 @@ import (
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
+
+// TestStdASTBlobCarriesParseConfig pins the Tier-0 parse-configuration guard.
+//
+// Parsing is not inference-free: lowering consults the injected cross-module
+// tables, so the same std source parses into a DIFFERENT AST depending on the
+// configuration. The blob therefore bakes a fingerprint of the configuration
+// that produced it (parser.Parser.ExternSignatureFingerprint, read back off the
+// parser — not recomputed from the tables the caller meant to inject) and
+// loadStdAST compares it against the configuration this binary would use.
+//
+// Without it the only Tier-0 guard was the src/std content key, which does not
+// move when the PARSER CONFIGURATION changes. That is how std/txt.no's
+// `txt.replace-n` shipped a wrong AST: SerializeStdAST parsed std with a bare
+// parser.New, the key was unaffected, and the divergent AST was used silently.
+//
+// The test is three-sided on purpose:
+//   - the blob must carry a non-empty fingerprint;
+//   - a parser configured the way build.parseEmbeddedProgram configures std
+//     modules must reproduce it exactly;
+//   - a bare parser must fingerprint DIFFERENTLY, otherwise the guard compares
+//     two always-equal values and proves nothing.
+func TestStdASTBlobCarriesParseConfig(t *testing.T) {
+	zr, err := gzip.NewReader(bytes.NewReader(stdastembed.Blob))
+	if err != nil {
+		t.Fatalf("gunzip baked blob: %v", err)
+	}
+	defer zr.Close()
+	var blob StdASTBlob
+	if err := gob.NewDecoder(zr).Decode(&blob); err != nil {
+		t.Fatalf("decode baked blob: %v", err)
+	}
+	if len(blob.Mods) == 0 {
+		t.Fatal("baked blob carries no modules")
+	}
+	if blob.Config == "" {
+		t.Fatal("baked blob carries no parse-configuration fingerprint; " +
+			"loadStdAST's guard is disarmed (regenerate with `make gen`)")
+	}
+
+	want := stdParseConfigFingerprint(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdEnumVariants)
+	if blob.Config != want {
+		t.Fatalf("baked blob's parse-configuration fingerprint is %s but this binary's\n"+
+			"signature tables imply %s — the blob was produced with a different parser\n"+
+			"configuration than the build path uses; regenerate with `make gen`",
+			blob.Config, want)
+	}
+
+	// The guard must have teeth: an unconfigured parser (the shape of the bug
+	// this fingerprint exists to catch) must NOT fingerprint the same.
+	bare := parser.New(lexer.NewCached("bare.no", ""))
+	if got := bare.ExternSignatureFingerprint(); got == want {
+		t.Fatal("a parser with no injected tables fingerprints identically to the build " +
+			"path's configuration — the Tier-0 guard could never fire")
+	}
+
+	// And the configuration the blob was baked with is the one std modules are
+	// parsed with at build time.
+	tables, err := stdParseTablesFor(nolang.StdFS)
+	if err != nil {
+		t.Fatalf("collect std parse tables: %v", err)
+	}
+	full := parser.New(lexer.NewCached("full.no", ""))
+	full.SetExternSignatures(tables.FuncSigs, tables.MethodSigs, tables.StructFields)
+	if len(tables.EnumVariants) > 0 {
+		full.SetExternEnumVariants(tables.EnumVariants)
+	}
+	if got := full.ExternSignatureFingerprint(); got != blob.Config {
+		t.Fatalf("a build-path-configured parser fingerprints %s, but the baked blob "+
+			"carries %s — the blob is stale; regenerate with `make gen`", got, blob.Config)
+	}
+}
+
+// buildPathStdParser reproduces the parser configuration build.parseEmbeddedProgram
+// uses for a std module body — the call StdASTFor replaces at build time.
+//
+// It deliberately does NOT call the production newStdModuleParser helper. That
+// helper is exactly what the generator must keep using, so sharing it here would
+// make the test agree with the generator no matter what the helper does: remove
+// the SetExternSignatures call and both sides fall back to a bare parse, the
+// comparison passes, and the divergence ships. That is not hypothetical — it is
+// how the `txt.replace-n` regression below reached a release. Spelling the
+// configuration out independently is what gives these tests their teeth.
+func buildPathStdParser(embedPath, src string, tables stdParseTables) *parser.Parser {
+	p := parser.New(lexer.NewCached(embedPath, src))
+	p.Filename = filepath.Base(embedPath)
+	p.SetExternSignatures(tables.FuncSigs, tables.MethodSigs, tables.StructFields)
+	if len(tables.EnumVariants) > 0 {
+		p.SetExternEnumVariants(tables.EnumVariants)
+	}
+	return p
+}
+
+// safeIndexSubjectBindings lists the `__match_subj_L_C` bindings buildMatchDesugar
+// synthesises for an option match whose subject is a safe index (`parts[i]: { ok -> ... }`).
+// Their presence is the observable marker of the safe-index normalisation, and
+// the normalisation only fires when the base's container type resolves — which
+// requires the cross-module signature tables to be injected at parse time.
+func safeIndexSubjectBindings(prog *parser.Program) []string {
+	var out []string
+	seen := make(map[uintptr]bool)
+	var rec func(v reflect.Value)
+	rec = func(v reflect.Value) {
+		switch v.Kind() {
+		case reflect.Invalid:
+			return
+		case reflect.Interface:
+			if !v.IsNil() {
+				rec(v.Elem())
+			}
+		case reflect.Ptr:
+			if v.IsNil() {
+				return
+			}
+			if ptr := v.Pointer(); !seen[ptr] {
+				seen[ptr] = true
+				if ls, ok := v.Interface().(*parser.LetStatement); ok &&
+					ls.Name != nil && strings.HasPrefix(ls.Name.Value, "__match_subj_") {
+					out = append(out, ls.Name.Value)
+				}
+				rec(v.Elem())
+			}
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < v.Len(); i++ {
+				rec(v.Index(i))
+			}
+		case reflect.Struct:
+			for i := 0; i < v.NumField(); i++ {
+				if f := v.Field(i); f.CanInterface() {
+					rec(f)
+				}
+			}
+		}
+	}
+	rec(reflect.ValueOf(prog))
+	sort.Strings(out)
+	return out
+}
 
 // TestStdASTForDecodes proves Tier 0 actually decodes the baked std AST blob
 // (not silently falling back to parsing std from source). It is a regression
@@ -58,6 +200,16 @@ func TestStdASTForDecodes(t *testing.T) {
 // valid `#{overflow=wrap}` annotations (e.g. src/std/archive/bzip2.no:108)
 // because the annotation had been restored onto the wrong statement.
 //
+// The baseline parse MUST reproduce build.parseEmbeddedProgram's configuration
+// (see buildPathStdParser). Lowering is not inference-free — buildMatchDesugar's
+// safe-index normalisation needs the cross-module signature tables — so a bare
+// parser.New baseline agrees with a bare-parsed blob while BOTH differ from what
+// the build actually compiles. That is precisely how the `txt.replace-n`
+// regression shipped: the blob left `parts[i]` as a bare element read, the
+// baseline reproduced the same mistake, and the comparison passed. The baseline
+// is spelled out independently of the production helper so that removing the
+// injection from the generator cannot make this test agree with it again.
+//
 // The comparison is walk-ORDER agnostic: one local walk is applied to both
 // programs, so the test fails only when the blob's restored CONTENT differs —
 // which is exactly the invariant. It also fails when the blob is stale because
@@ -65,6 +217,11 @@ func TestStdASTForDecodes(t *testing.T) {
 func TestStdASTBlobMatchesFreshParse(t *testing.T) {
 	StdSigKey = stdastembed.Key // mirror the injected build key
 	SetStdASTBlob(stdastembed.Blob, stdastembed.Key)
+
+	tables, err := stdParseTablesFor(nolang.StdFS)
+	if err != nil {
+		t.Fatalf("collect std parse tables: %v", err)
+	}
 
 	checked := 0
 	annotated := 0
@@ -74,7 +231,7 @@ func TestStdASTBlobMatchesFreshParse(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", embedPath, err)
 		}
-		p := parser.New(lexer.NewCached(embedPath, string(src)))
+		p := buildPathStdParser(embedPath, string(src), tables)
 		fresh := p.ParseProgram()
 		if fresh == nil || len(p.Errors()) > 0 {
 			t.Fatalf("fresh parse %s failed: %v", embedPath, p.Errors())
@@ -127,6 +284,64 @@ func TestStdASTBlobMatchesFreshParse(t *testing.T) {
 	}
 	t.Logf("baked std AST blob agrees with a fresh parse on %d modules (%d annotated)",
 		checked, annotated)
+}
+
+// TestStdASTBlobHasSafeIndexNormalisation pins the regression that made
+// `no test test/std/txt.no` report
+//
+//	FAIL: str-eq - replace-n limit 1
+//	FAIL: str-eq - replace-n limit 2
+//
+// only on the Tier-0 blob path (unset NOLANG_STD_SRC): SerializeStdAST parsed
+// std with a bare parser.New, so `parts = .split(old)` in std/txt.no resolved to
+// no type, parser.isSafeIndexBase reported false, and buildMatchDesugar left
+// `parts[i]: { ok -> s = it ... }` as a bare element read. The `ok` arm then
+// bound a `txt` where an option payload was expected, and replace-n emitted the
+// separator for every part: `u.replace-n('one', '1', 1)` returned "1one"
+// instead of "1 two one".
+//
+// The assertion is deliberately two-sided. Comparing the blob against a
+// build-path parse alone is not enough: a bare baseline is empty too, so both
+// sides agree and the check passes vacuously — the exact false-pass shape that
+// let this ship. Requiring the baseline to be NON-empty as well means the test
+// can only pass when the normalisation genuinely happened, and comparing the
+// two sets (rather than hard-coding a line number) keeps it robust to edits in
+// src/std/txt.no.
+func TestStdASTBlobHasSafeIndexNormalisation(t *testing.T) {
+	StdSigKey = stdastembed.Key // mirror the injected build key
+	SetStdASTBlob(stdastembed.Blob, stdastembed.Key)
+
+	const embedPath = "std/txt.no"
+	tables, err := stdParseTablesFor(nolang.StdFS)
+	if err != nil {
+		t.Fatalf("collect std parse tables: %v", err)
+	}
+	src, err := fs.ReadFile(nolang.StdFS, embedPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", embedPath, err)
+	}
+	p := buildPathStdParser(embedPath, string(src), tables)
+	want := safeIndexSubjectBindings(p.ParseProgram())
+	if len(want) == 0 {
+		t.Fatalf("%s: a build-path parse produced no __match_subj_* bindings at all; "+
+			"the safe-index normalisation did not run, so this test would be vacuous", embedPath)
+	}
+
+	blobProg, ok := StdASTFor(embedPath)
+	if !ok {
+		t.Fatalf("StdASTFor(%s) returned false; the baked blob is missing this module "+
+			"(regenerate with `make gen`)", embedPath)
+	}
+	got := safeIndexSubjectBindings(blobProg)
+
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("%s: baked blob lost safe-index match-subject bindings\n  build path = %v\n  baked blob = %v\n"+
+			"The Tier-0 AST blob must be produced with the same parser configuration as "+
+			"build.parseEmbeddedProgram (see SerializeStdAST); regenerate with `make gen`.",
+			embedPath, want, got)
+	}
+	t.Logf("%s: baked blob preserves %d safe-index match-subject bindings (%v)",
+		embedPath, len(got), got)
 }
 
 // nodeSemFingerprint enumerates node OCCURRENCES (type@line:col, plus the

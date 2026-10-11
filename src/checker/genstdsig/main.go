@@ -82,13 +82,13 @@ func main() {
 	// AST instead of lexing+parsing src/std on every invocation.
 	// map[embedPath][]byte is gob's natural form; the binary is gzipped to keep
 	// the embedded size down.
-	astMap, err := checker.SerializeStdAST(fsys)
+	astBlob, err := checker.SerializeStdAST(fsys)
 	if err != nil {
 		fatal(fmt.Sprintf("genstdsig: std AST serialize failed: %v", err))
 	}
 	var astRaw bytes.Buffer
 	azw := gzip.NewWriter(&astRaw)
-	if err := gob.NewEncoder(azw).Encode(astMap); err != nil {
+	if err := gob.NewEncoder(azw).Encode(astBlob); err != nil {
 		fatal(fmt.Sprintf("genstdsig: std AST encode failed: %v", err))
 	}
 	if err := azw.Close(); err != nil {
