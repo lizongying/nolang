@@ -361,6 +361,12 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
 
         tk.typ == tok.CONTINUE -> idx = ps-parse-break-continue(t, p, 0)
 
+        tk.typ == tok.RETURN -> {
+            ps-bump(p); 消費 return
+            idx = ast.add(t, asp.K_RETURN_STATEMENT)
+            ast.kid-add(t, idx, 0); guarded CHILD=ReturnValue 缺席→以 0 占位（否則 pre-scan 會讀到後續節點的 kid、node_of 標籤錯位）
+        }
+
         tk.typ == tok.IDENT -> {
             name = tk.lit
             nxt_typ = ps-peek-at(p, 1)
@@ -1074,6 +1080,25 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
 
             ; 右運算元缺失：Go 報錯後回左值；這裡保留左值並終止迴圈
             right <= 0 -> go = false
+        }
+    }
+
+    ; 陳述/運算式層級的 lvalue 賦值：`obj.field = expr` / `arr[i] = expr` / `mp[k] = expr`。
+    ;   對應 Go parseExpression 尾（expr.go:598–637）：`=` 非中綴運算子（優先級 0），中綴迴圈天然停在 ASSIGN；
+    ;   若此時左值是 Dot/Index ⇒ 消費 `=`、以 LOWEST 解右值、建 AssignExpression{Left,Value}（右結合、無純量槽）。
+    ;   僅 plain ASSIGN（`?=` → UnwrapAssignStatement 為另一節點，本片延後）。檢查用【活】ps-peek：`=` 前若換行則 currentToken 為 NEWLINE、不觸發（對齊 Go）。
+    ps-peek(p) == tok.ASSIGN -> {
+        k0 = ast.kind-at(t, idx)
+        isLval = 0
+        k0 == asp.K_DOT_EXPRESSION -> isLval = 1
+        k0 == asp.K_INDEX_EXPRESSION -> isLval = 1
+        isLval == 1 -> {
+            ps-bump(p); 消費 =
+            val = ps-parse-expr(t, p)
+            ae = ast.add(t, asp.K_ASSIGN_EXPRESSION)
+            ast.kid-add(t, ae, idx)
+            ast.kid-add(t, ae, val)
+            idx = ae
         }
     }
     idx
@@ -1855,8 +1880,6 @@ ps-parse-type = (t ast, p psst) (idx i64) {
             ast.kid-add(t, idx, ptne)
         }
 
-        ; [N]T → ArrayType（dump: ArrayType{size:N} + [IntegerLiteral, NamedType]）
-        ;   偏移 +0 [ / +1 INT / +2 ] / +3 IDENT elem。泛型 [n]T（+1 IDENT）不在此形，回退不建。
         tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.INT && ps-peek-at(p, 2) == tok.RBRACKET && ps-peek-at(p, 3) == tok.IDENT -> {
             ps-bump(p); 消費 [
             sz = ps-parse-expr(t, p); 尺寸 IntegerLiteral
@@ -1903,42 +1926,50 @@ ps-is-struct-def = (p psst) (r i64) {
             }
 
             t == tok.NEWLINE -> {
+
                 #{overflow=wrap}
                 i = i + 1
             }
 
             t == tok.COMMENT -> {
+
                 #{overflow=wrap}
                 i = i + 1
             }
 
-            ; 欄位：IDENT name 後接受支援型別，且型別後必須是欄位結尾（換行/}/,）
             t == tok.IDENT -> {
+
                 #{overflow=wrap}
                 i = i + 1; 消費欄位名
                 tt = ps-peek-at(p, i)
                 okType = 0
                 tt == tok.IDENT -> {
+
                     #{overflow=wrap}
                     i = i + 1
                     okType = 1
                 }
                 tt == tok.LBRACKET -> {
+
                     #{overflow=wrap}
                     a1 = i + 1
+
                     #{overflow=wrap}
                     a2 = i + 2
+
                     #{overflow=wrap}
                     a3 = i + 3
                     p1 = ps-peek-at(p, a1)
                     p2 = ps-peek-at(p, a2)
                     p3 = ps-peek-at(p, a3)
                     p1 == tok.RBRACKET && p2 == tok.IDENT -> {
+
                         #{overflow=wrap}
                         i = i + 3; [] T
                         okType = 1
                     }
                     p1 == tok.INT && p2 == tok.RBRACKET && p3 == tok.IDENT -> {
+
                         #{overflow=wrap}
                         i = i + 4; [N] T
                         okType = 1
@@ -1952,25 +1983,35 @@ ps-is-struct-def = (p psst) (r i64) {
                     et = ps-peek-at(p, i)
                     {
                         et == tok.NEWLINE -> {
+
                             #{overflow=wrap}
                             i = i + 1
+
                             #{overflow=wrap}
                             nfield = nfield + 1
                         }
+
                         et == tok.COMMA -> {
+
                             #{overflow=wrap}
                             i = i + 1
+
                             #{overflow=wrap}
                             nfield = nfield + 1
                         }
+
                         et == tok.RBRACE -> {
+
                             #{overflow=wrap}
                             nfield = nfield + 1
                         }
+
                         et == tok.EOF -> {
+
                             #{overflow=wrap}
                             nfield = nfield + 1
                         }
+
                         -> {
                             go = false
                             r = 0
@@ -2011,10 +2052,12 @@ ps-parse-struct-def = (t ast, p psst, name str) (idx i64) {
                 ty = ps-parse-type(t, p); []T → SliceType
                 sliceFlag = 'true'
             }
+
             tt == tok.LBRACKET && ps-peek-at(p, 1) == tok.INT -> {
                 arrSize = ps-lit-at(p, 1); 尺寸字面量文字
                 ty = ps-parse-type(t, p); [N]T → ArrayType
             }
+
             -> {
                 ty = ps-parse-type(t, p); IDENT → NamedType
             }

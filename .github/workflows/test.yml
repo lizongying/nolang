@@ -20,6 +20,12 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+      - name: Generate std artifacts (stdsig_gen.go, std_ast.bin)
+        # `make` always runs this first; plain `cd src && go build ./...` would
+        # otherwise fail to compile: //go:embed std_ast.bin is missing and the
+        # generated signature tables (embeddedStdFuncSigs, etc.) are undefined.
+        # Keep CI consistent with `make`.
+        run: make gen
       - name: Build toolchain
         run: cd src && go build ./...
       - name: Vet toolchain

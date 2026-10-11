@@ -185,6 +185,13 @@ t-f32-math = () {
     w f32 = 27.0
     cb f32 = w.cbrt()
     runner.f64-eq(f32-to-f64(cb), 3.0, 0.00001, 'f32: 27.0.cbrt() == 3')
+    ; 負數：f32.cbrt 走「f32-to-f64 → d.cbrt() → to-f32」，符號必須保留。
+    ; d.cbrt() 的接收者是具名區域變數 d，不是外層接收者 —— 這是
+    ; resolveCallee 把「型別前綴 == 接收者型別」的呼叫一律當成隱式 self
+    ; 時踩到的 codegen 缺陷（詳見 f64.cbrt 的 ax.log()）。
+    wn f32 = 0.0 - 8.0
+    cbn f32 = wn.cbrt()
+    runner.f64-eq(f32-to-f64(cbn), -2.0, 0.00001, 'f32: (-8.0).cbrt() == -2')
 }
 
 t-i64-math = () {

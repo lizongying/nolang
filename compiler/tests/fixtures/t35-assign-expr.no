@@ -1,0 +1,7 @@
+obj = point
+obj.x = 1
+obj.y = obj.z
+arr = [1, 2, 3]
+arr[0] = 9
+arr[i] = arr[j]
+a.b = c.d = 7

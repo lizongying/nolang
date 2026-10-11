@@ -7230,6 +7230,49 @@ func (l *lowerer) dotExprAsString(id int32) string {
 	return ""
 }
 
+// implicitSelfCall reports whether the call n may borrow the enclosing
+// method's receiver (`l.curRecv`) as its receiver argument. calleeName is the
+// callee ident read from the call's `fn` slot (e.g. "f64.log"); it is used
+// only to look up the callee's declared parameter count.
+//
+// nolang spells an implicit-self call `.method(args)`; the HIR then lists the
+// receiver as the FIRST argument — an ident named "self". An EXPLICIT receiver
+// (`local.method(args)`) lowers to the very same bare `Type.method` callee
+// ident, so the callee name alone cannot tell the two apart. What differs is
+// the argument list: the explicit form's first argument is the receiver
+// EXPRESSION, and its count covers the callee's declared parameters exactly as
+// written (receiver + real args).
+//
+// 🔴 Without this distinction `resolveCallee` rewrote `ax.log()` inside
+// `f64.cbrt` into `self.log(ax)`: curRecv was prepended as the receiver and the
+// real receiver `ax` slid into parameter position. `f64.log` then logged the
+// ENCLOSING receiver, so `(-8.0).cbrt()` computed log(-8) = nan and the
+// negative branch returned 0 instead of -2 (test/std/math.no asserts
+// `(-8.0).cbrt() == -2`).
+//
+// Deliberately conservative: the rewrite is refused ONLY when the call
+// demonstrably carries an explicit receiver — a non-`self` first argument AND
+// more arguments than the callee declares. A receiver-less implicit-self call
+// (real first argument, count == param count) keeps the previous behaviour.
+func (l *lowerer) implicitSelfCall(n *hir.Node, calleeName string) bool {
+	args := l.slotArgs(n.Id, "arg")
+	if len(args) == 0 {
+		return true
+	}
+	if an := l.pkg.Node(args[0]); an != nil && an.Kind == hir.KIdent && l.pkg.Str(an.S) == "self" {
+		return true
+	}
+	paramCount := 0
+	if fid, ok := l.funcNames[calleeName]; ok {
+		for _, c := range l.pkg.Children(fid) {
+			if cn := l.pkg.Node(c); cn != nil && cn.Kind == hir.KParam {
+				paramCount++
+			}
+		}
+	}
+	return len(args) <= paramCount
+}
+
 // resolveCallee determines the callee symbol and (for a method call) the
 // receiver value of a KCall node. Shared by the single-result expression path
 // and the multi-assign statement path.
@@ -7286,7 +7329,7 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 				// (`[]t`). Match the mangled form too, and route slice/array
 				// builtins (len/cap) through sliceMethodBuiltin to avoid the
 				// self-recursive call `_xt.len` -> `_xt.len`.
-				if recvRaw != "" && (tname == recvRaw || tname == sliceMangledName(recvRaw)) {
+				if recvRaw != "" && (tname == recvRaw || tname == sliceMangledName(recvRaw)) && l.implicitSelfCall(n, name) {
 					if bm := sliceMethodBuiltin(recvRaw, method); bm != "" {
 						return bm, l.curRecv
 					}

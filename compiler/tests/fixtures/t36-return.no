@@ -1,0 +1,17 @@
+f = (x i64) (out i64) {
+    out = x
+    return
+}
+
+g = (flag i64) (out i64) {
+    flag == 1 -> {
+        out = 9
+        return
+    }
+    out = 0
+}
+
+h = () (out i64) {
+    return
+    out = 1
+}

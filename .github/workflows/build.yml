@@ -30,6 +30,16 @@ jobs:
           echo "version_name=${VERSION_WITHOUT_V}" >> $GITHUB_ENV
           echo "build_date=$(date -u '+%s')" >> $GITHUB_ENV
 
+      - name: Generate std artifacts
+        # `make no` / `make gen` generates stdsig_gen.go + std_ast.bin before
+        # building; the hand-rolled cross-compile below needs both or it fails on
+        # the missing //go:embed std_ast.bin and the undefined signature tables.
+        run: make gen
+
+      - name: Compute std sig key
+        id: sigkey
+        run: echo "key=$(cd src && go run ./checker/genstdsig -key-only 2>/dev/null)" >> "$GITHUB_OUTPUT"
+
       - name: Build
         run: |
           cd ./src
@@ -37,15 +47,15 @@ jobs:
 
           go vet ./cmd/no
 
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_linux_amd64 ./cmd/no
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}' -X 'github.com/lizongying/nolang/checker.StdSigKey=${{ steps.sigkey.outputs.key }}'" -o ./../bin/no_linux_amd64 ./cmd/no
 
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_linux_arm64 ./cmd/no
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}' -X 'github.com/lizongying/nolang/checker.StdSigKey=${{ steps.sigkey.outputs.key }}'" -o ./../bin/no_linux_arm64 ./cmd/no
 
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_darwin_amd64 ./cmd/no
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}' -X 'github.com/lizongying/nolang/checker.StdSigKey=${{ steps.sigkey.outputs.key }}'" -o ./../bin/no_darwin_amd64 ./cmd/no
 
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_darwin_arm64 ./cmd/no
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}' -X 'github.com/lizongying/nolang/checker.StdSigKey=${{ steps.sigkey.outputs.key }}'" -o ./../bin/no_darwin_arm64 ./cmd/no
 
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}'" -o ./../bin/no_windows_amd64.exe ./cmd/no
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}' -X 'github.com/lizongying/nolang/checker.StdSigKey=${{ steps.sigkey.outputs.key }}'" -o ./../bin/no_windows_amd64.exe ./cmd/no
 
           # Ensure executable bit on non-Windows binaries (GitHub release
           # downloads may not preserve permissions; set +x before upload).
