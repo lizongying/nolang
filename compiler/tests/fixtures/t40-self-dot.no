@@ -1,0 +1,10 @@
+reader {
+    pos i64
+    avail i64
+    buf []byte
+}
+reader.fill = () (ok bool) {
+    ok = .fill()
+    b = .buf[.pos]
+    .pos = .avail
+}

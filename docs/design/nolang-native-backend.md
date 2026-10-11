@@ -654,7 +654,7 @@ type Target struct {
 | 编号 | 任务 | 理由 |
 |---|---|---|
 | **PRE-1** | 修 `codegen.go:2523` 让 `emitPrelude` 写出真实 triple | IR 里的假 triple 是当前的设计债；native 绕过它不等于可以不管 |
-| **PRE-2** | 将 `src/build/builder.go:317-329` CI 脚本里的 triple 表（`triple_for()`）**下沉进 Go**（对齐 `PlatformKeys`） | 目前 CI 脚本（`.github/actions/build-nolang/action.yml:317-329`）里有一张 triple 表、Go 里有两张不全的（builder.go:25 / :202）；必须先统一，否则 native 后端会引入第四张 |
+| **PRE-2** | 将 `src/build/builder.go:317-329` CI 脚本里的 triple 表（`triple_for()`）**下沉进 Go**（对齐 `PlatformKeys`） | 目前 CI 脚本（`.github/actions/build-nolang/action.yml:318-331`）里有一张 triple 表、Go 里有两张不全的（builder.go:25 / :202）；必须先统一，否则 native 后端会引入第四张 |
 | **PRE-3** | 建立双路差分基线（§10.1） | 没有基线就无法证明"行为不变" |
 
 ### 主体里程碑

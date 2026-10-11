@@ -339,10 +339,161 @@ parse = (t ast, p psst) (root i64) {
     root
 }
 
+; ps-normalize-overflow：復刻 Go NormalizeOverflowMode（annotation.go）。
+;   語料中 overflow 值幾乎恆為 `wrap`；此處認五個正規值，其餘回 ''（丢弃、不寫槽）。
+ps-normalize-overflow = (s str) (r str) {
+    r = ''
+    {
+        s == 'wrap' -> r = s
+
+        s == 'clamp0' -> r = s
+
+        s == 'min' -> r = s
+
+        s == 'max' -> r = s
+
+        s == 'saturate' -> r = s
+    }
+    r
+}
+
+; ps-parse-annotation 已【內聯】進 ps-parse-stmt 的前置註解迴圈（增量 V）：
+;   原实装只回傳 overflow 並吞掉整段 `#{...}`，但 oracle 對「不可附著」的語句級註解
+;   會保留独立 AnnotationStatement{entries: N} 節點，需在同段掃描中累計【去重頂層鍵名】數，
+;   故改於 ps-parse-stmt 內聯完成（同時產出 ovf 與 keys）。ps-normalize-overflow 仍復用。
+
+; ps-apply-overflow：把 overflow 模式寫到緊後陳述節點對應的純量槽。
+;   只有 dump overflow 的節點型別才渲染（槽序依 spec 非 child-derived 純量順序）：
+;     LetStatement=6 / ForStatement=2 / MultiAssignStatement=1 / FunctionDefinition=4。
+;   ExpressionStatement/ReturnStatement 雖有 OverflowMode 欄位但 dump 不渲染 ⇒ 略過。
+ps-apply-overflow = (t ast, idx i64, mode str) {
+    idx > 0 -> {
+        k = ast.kind-at(t, idx)
+        sid = ast.put-str(t, mode)
+        {
+            k == asp.K_LET_STATEMENT -> ast.set-slot(t, idx, 6, sid)
+
+            k == asp.K_FOR_STATEMENT -> ast.set-slot(t, idx, 2, sid)
+
+            k == asp.K_MULTI_ASSIGN_STATEMENT -> ast.set-slot(t, idx, 1, sid)
+
+            k == asp.K_FUNCTION_DEFINITION -> ast.set-slot(t, idx, 4, sid)
+        }
+    }
+}
+
+; ps-parse-use：`# path` 匯入陳述（對應 Go parseUseStatement、stmt.go:45）。
+;   path 由可選前導 `/`（QUO）與以 `/`、`.` 分隔的 IDENT 段串接（joinPathParts）。
+;   語料恆為純路徑（無 `.fn` / `as`）⇒ function/alias 恆空、as 恆 false。
+;   UseStatement 槽：path=s0、function=s1（kv 恆渲染、置空字串）、alias=s2（同）、
+;   as=s3（kvb policy=true、不設即省略）。
+ps-parse-use = (t ast, p psst) (idx i64) {
+    ps-bump(p); 消費 # (USE)
+    path = ''
+    ps-peek(p) == tok.QUO -> {
+        path = path + '/'
+        ps-bump(p)
+    }
+    (ps-peek(p) == tok.IDENT) {
+        path = path + ps-cur-lit(p)
+        ps-bump(p)
+
+        ; 段間分隔符：`/` 或 `.`（github.com 類）——兩個獨立 standalone-if，至多一個觸發
+        ps-peek(p) == tok.QUO -> {
+            path = path + '/'
+            ps-bump(p)
+        }
+        ps-peek(p) == tok.DOT -> {
+            path = path + '.'
+            ps-bump(p)
+        }
+    }
+    idx = ast.add(t, asp.K_USE_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, path))
+    ast.set-slot(t, idx, 1, ast.put-str(t, ''))
+    ast.set-slot(t, idx, 2, ast.put-str(t, ''))
+    idx
+}
+
 ; ps-parse-stmt：解析一條陳述（頂層或區塊內通用）
 ps-parse-stmt = (t ast, p psst) (idx i64) {
     idx = 0
     ps-skip-trivia(p)
+
+    ; 前置語句級 `#{...}` 註解群組：連續消費全部 `#{...}`、去重累計【頂層鍵名】、提取 overflow 模式。
+    ;   對應 Go parseAnnotationStatement（annotation.go:188–309）+ attachAnnotations。之後依「緊後陳述首 token」分流：
+    ;     · 首 token ∈ {IDENT, IN, RARROW} ⇒【附著】到緊後陳述（Go 247 分支：回傳 parseStatement 結果、不產生独立節點；
+    ;       overflow 由 ps-apply-overflow 寫入 Let/For/MultiAssign/Func 的純量欄）——落到下方 dispatch + 尾端 ovf 套用。
+    ;     · 否則（DOT `.field=`、LPAREN、LBRACE… 不可附著形）⇒ 產生独立 `AnnotationStatement{entries: N}` 節點（N=去重鍵名數），
+    ;       並【就此回傳】，緊後陳述留待下一輪 ps-parse-stmt（兩者在語句集合中為兄弟，對齊 dump.go:306）。
+    ;   鍵名判定鏡像 Go parseAnnotationBody（annotation.go:990）：群組為扁平 `key [= value]` 逗號序列——鍵 IDENT 只出現在
+    ;   `#{` 後或頂層 `,` 後（expect_key）；值內 ident（如 wrap）/ 括號（[ ] ( )）不計。去重鏡像 dedupeAnnotationEntries（同鍵名計一次）。
+    ;   ⚠️ 連群組（空行分隔）合併後一起去重；keys 空（無註解）時整段跳過 ⇒ 對無 `#{...}` 檔案零回歸。
+    ovf = ''
+    keys []str = with-cap(4)
+    (ps-peek(p) == tok.HASH_LBRACE) {
+        ps-bump(p); 消費 #{（進入群組，depth=1）
+        depth = 1
+        expect_key = true
+        (depth > 0) {
+            tk = ps-peek-token(p)
+            {
+                tk.typ == tok.EOF -> depth = 0
+
+                ; 開括（值內的 #{ [ ( {）：深度 +1、離開鍵期待
+                tk.typ == tok.HASH_LBRACE || tk.typ == tok.LBRACE || tk.typ == tok.LBRACKET || tk.typ == tok.LPAREN -> {
+                    #{overflow=wrap}
+                    depth = depth + 1
+                    expect_key = false
+                    ps-bump(p)
+                }
+
+                ; 閉括：深度 -1（群組自身 `}` 使 depth→0 結束本群組）
+                tk.typ == tok.RBRACE || tk.typ == tok.RBRACKET || tk.typ == tok.RPAREN -> {
+                    #{overflow=wrap}
+                    depth = depth - 1
+                    ps-bump(p)
+                }
+
+                ; 頂層鍵名：expect_key 且 IDENT 於 depth==1 ⇒ 去重入 keys；若接 `=` 則取 overflow 值供附著
+                tk.typ == tok.IDENT && expect_key && depth == 1 -> {
+                    kn = tk.lit
+                    found = 0
+                    z = 0
+                    (z < keys.len()) {
+                        keys[z] == kn -> found = 1
+                        #{overflow=wrap}
+                        z = z + 1
+                    }
+                    found == 0 -> keys.push(kn)
+                    ps-bump(p); 消費鍵名
+                    expect_key = false
+                    ps-peek(p) == tok.ASSIGN -> {
+                        ps-bump(p); 消費 =
+                        vt = ps-peek-token(p)
+                        kn == 'overflow' && (vt.typ == tok.IDENT || vt.typ == tok.STRING) -> ovf = ps-normalize-overflow(vt.lit)
+                    }
+                }
+
+                ; 頂層逗號 ⇒ 下一 token 為鍵名
+                tk.typ == tok.COMMA && depth == 1 -> {
+                    expect_key = true
+                    ps-bump(p)
+                }
+
+                ; 其他 token（值 ident/string/number、`...`、運算子、非鍵頂層 ident）：跳過
+                -> ps-bump(p)
+            }
+        }
+        ps-skip-trivia(p)
+    }
+
+    ; 有註解且緊後首 token 不可附著 ⇒ 產生独立 AnnotationStatement 節點、就此回傳（keys 空即跳過＝零回歸）
+    keys.len() > 0 && ps-peek(p) != tok.IDENT && ps-peek(p) != tok.IN && ps-peek(p) != tok.RARROW -> {
+        idx = ast.add(t, asp.K_ANNOTATION_STATEMENT)
+        ast.set-slot(t, idx, 0, ast.put-str(t, keys.len().to-str()))
+        return
+    }
     tk = ps-peek-token(p)
     {
         tk.typ == tok.IF -> {
@@ -366,6 +517,9 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
             idx = ast.add(t, asp.K_RETURN_STATEMENT)
             ast.kid-add(t, idx, 0); guarded CHILD=ReturnValue 缺席→以 0 占位（否則 pre-scan 會讀到後續節點的 kid、node_of 標籤錯位）
         }
+
+        ; `# path` 匯入（tok.USE；`#` 非 `#{` 时詞法回 USE）——此前無臂→走 expr-stmt⇒ 把路徑拆成 `/` 除法運算式。
+        tk.typ == tok.USE -> idx = ps-parse-use(t, p)
 
         tk.typ == tok.IDENT -> {
             name = tk.lit
@@ -441,6 +595,45 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
                 ast.kid-add(t, idx, at)
                 ast.kid-add(t, idx, al)
+                handled = 1
+            }
+
+            ; 推論元素型別的定長陣列：`name [N] = [e1, …, eN]`（`]` 後直接 `=`、無元素型別名）
+            ;   偏移：+0 IDENT name / +1 LBRACKET / +2 INT / +3 RBRACKET / +4 ASSIGN / +5 LBRACKET
+            ;   與明示臂（+4 IDENT elem / +5 ASSIGN）互斥：此臂要求 +4==ASSIGN 且 +5==LBRACKET。
+            ;   此前無臂 → `name [N]` 被誤解析為 IndexExpression、`= [..]` 成 AssignExpression。
+            ;   元素型別恆為 i64（Go stmt.go:957：省略元素型別時補 NamedType{i64, inferred}，
+            ;   【不】依首元素推論）；ArrayType.IsInferred=false（formatter 必須印回 [N]）。
+            ;   僅 Size>0 才把 RHS 轉 ArrayLiteral（Go stmt.go:1210）；Size==0 保留 SliceLiteral。
+            nxt_typ == tok.LBRACKET && ps-peek-at(p, 2) == tok.INT && ps-peek-at(p, 3) == tok.RBRACKET && ps-peek-at(p, 4) == tok.ASSIGN && ps-peek-at(p, 5) == tok.LBRACKET -> {
+                sz_lit = ps-lit-at(p, 2)
+                ps-bump(p); 消費 IDENT name
+                ps-bump(p); 消費 LBRACKET
+                sz = ps-parse-expr(t, p); 尺寸運算式（IntegerLiteral）
+                ps-expect(p, tok.RBRACKET)
+                ps-expect(p, tok.ASSIGN)
+
+                ; 子先於父：elem NamedType(i64, inferred) → ArrayType（含 size、elem 兩 kid）
+                ntyp = ast.add(t, asp.K_NAMED_TYPE)
+                ast.set-slot(t, ntyp, 0, ast.put-str(t, 'i64'))
+                ast.set-slot(t, ntyp, 1, ast.put-str(t, 'true')); i64 元素 → inferred: true
+                at = ast.add(t, asp.K_ARRAY_TYPE)
+                ast.set-slot(t, at, 0, ast.put-str(t, 'false')); 明示 [N] → 不 inferred
+                ast.kid-add(t, at, sz)
+                ast.kid-add(t, at, ntyp)
+
+                ; Size>0：RHS [..] 直接建 ArrayLiteral；Size==0：保留 SliceLiteral（走 primary expr）
+                val = 0
+                sz_lit != '0' -> val = ps-parse-arr-lit(t, p, sz)
+                sz_lit == '0' -> {
+                    ps-skip-trivia(p)
+                    val = ps-parse-expr(t, p)
+                }
+
+                idx = ast.add(t, asp.K_LET_STATEMENT)
+                ast.set-slot(t, idx, 0, ast.put-str(t, name))
+                ast.kid-add(t, idx, at)
+                ast.kid-add(t, idx, val)
                 handled = 1
             }
 
@@ -591,6 +784,7 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
 
         -> idx = ps-parse-expr-stmt(t, p)
     }
+    ovf != '' -> ps-apply-overflow(t, idx, ovf)
     idx
 }
 
@@ -903,6 +1097,28 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
 
                 #{overflow=wrap}
                 m = m + 1
+            }
+        }
+
+        tk.typ == tok.DOT -> {
+            ps-bump(p); 消費 DOT
+            pn = ps-peek-token(p)
+            pn.typ == tok.IDENT -> {
+
+                ; .property → 先建 self Identifier（子）再建 DotExpression（父）：子先於父
+                selfid = ast.add(t, asp.K_IDENTIFIER)
+                ast.set-slot(t, selfid, 0, ast.put-str(t, 'self'))
+                dot = ast.add(t, asp.K_DOT_EXPRESSION)
+                ast.set-slot(t, dot, 0, ast.put-str(t, pn.lit))
+                ast.kid-add(t, dot, selfid)
+                idx = dot
+                ps-bump(p); 消費 property IDENT
+            }
+
+            ; 裸 `.`（無緊接 IDENT）→ self
+            pn.typ != tok.IDENT -> {
+                idx = ast.add(t, asp.K_IDENTIFIER)
+                ast.set-slot(t, idx, 0, ast.put-str(t, 'self'))
             }
         }
 

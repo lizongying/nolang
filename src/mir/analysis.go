@@ -489,6 +489,29 @@ func (m *Module) Analyze() *Report {
 	// a build gate — so DumpTiers is no longer the only observable, it is the
 	// measurement surface. Still a no-op unless NOLANG_MIR_TIER=1 is set.
 	m.DumpTiers()
+	// DETERMINISTIC DIAGNOSTIC ORDER. Several checks append their diagnostics
+	// while ranging a Go map (checkDropCount's `for v := range declared`, and
+	// the drop-count walk itself), so a build that hard-fails could print the
+	// same set of `[missing-drop]` lines in a different order on every run.
+	// That makes CI logs and any diff-based triage non-reproducible. The order
+	// carries no meaning — sort it. Sorting is stable on the full tuple, so
+	// identical diagnostics keep their relative order.
+	sort.SliceStable(rep.Diagnostics, func(i, j int) bool {
+		a, b := rep.Diagnostics[i], rep.Diagnostics[j]
+		if a.Func != b.Func {
+			return a.Func < b.Func
+		}
+		if a.Block != b.Block {
+			return a.Block < b.Block
+		}
+		if a.Inst != b.Inst {
+			return a.Inst < b.Inst
+		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		return a.Msg < b.Msg
+	})
 	return rep
 }
 
@@ -2328,21 +2351,44 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 		}
 		dropAtStart[bid] = kept
 	}
-	for bid, vs := range dropAtStart {
+	// DETERMINISM. dropAtStart/dropAtEnd are keyed by BlockID and their VALUE
+	// LISTS were appended to while ranging Go maps (the per-block `def` set at
+	// the pass-(B) loop above, and the live-in set `li` at the pass-(A) loop),
+	// so both the block order and the within-block value order were randomized
+	// per run. insertDropAt PREPENDS a start-drop into blk.Insts, so that value
+	// order is directly the emitted instruction order: two compiles of one
+	// source produced modules with identical line SETS but permuted
+	// `call void @str_free` / `call void @__nolang_drop_*` runs (measured on
+	// test/std/aes-ctr.no). Sort both axes — it is order-only, every value
+	// still gets exactly one drop at exactly the same place.
+	//
+	// `order` is already the ascending block list built for the redundancy pass
+	// above (every bid still has its key: that pass rewrites the slice, never
+	// deletes the map entry), so reuse it for dropAtStart.
+	for _, bid := range order {
+		vs := dropAtStart[bid]
 		if m.Block(bid) == nil {
 			continue
 		}
+		sort.Slice(vs, func(i, j int) bool { return vs[i] < vs[j] })
 		for _, v := range vs {
 			m.insertDropAt(bid, v, true, releaseVals[v])
 			rep.DropsInserted++
 		}
 	}
 	// Emit intra-block / return drops at the END of the block (before terminator).
-	for bid, vs := range dropAtEnd {
+	endOrder := make([]BlockID, 0, len(dropAtEnd))
+	for bid := range dropAtEnd {
+		endOrder = append(endOrder, bid)
+	}
+	sort.Slice(endOrder, func(i, j int) bool { return endOrder[i] < endOrder[j] })
+	for _, bid := range endOrder {
 		blk := m.Block(bid)
 		if blk == nil {
 			continue
 		}
+		vs := dropAtEnd[bid]
+		sort.Slice(vs, func(i, j int) bool { return vs[i] < vs[j] })
 		for _, v := range vs {
 			m.insertDropAt(bid, v, false, releaseVals[v])
 			rep.DropsInserted++

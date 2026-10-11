@@ -2,7 +2,9 @@ name: Setup Nolang
 description: >-
   Download a specific nolang release (the `no` compiler binary) for the current
   runner platform and the matching standard-library source, then put `no` on
-  PATH and point NOLANG_STD_SRC / NOLANG_SRC at the downloaded std lib.
+  PATH and point NOLANG_STD_SRC / NOLANG_SRC at the downloaded std lib. Prefers
+  the self-contained `no-llvm_*` binary (LLVM embedded, all backends), so no
+  separate LLVM / opt / llc installation is required.
 
 branding:
   icon: download
@@ -28,6 +30,16 @@ inputs:
       only needed for private repos or to raise rate limits.
     required: false
     default: ${{ github.token }}
+  flavor:
+    description: >-
+      Which release binary to install. "auto" (default) prefers the
+      self-contained `no-llvm_*` asset and falls back to the pure-Go `no_*` one
+      with a warning. "embedded" requires `no-llvm_*` and fails if the release
+      does not publish it. "plain" forces the pure-Go `no_*` binary: smaller,
+      but it shells out to `opt`/`llc`, which this action does NOT install, so
+      you must put them on PATH yourself.
+    required: false
+    default: auto
 
 outputs:
   version:
@@ -36,6 +48,8 @@ outputs:
     description: Absolute path to the downloaded `no` executable.
   std-src:
     description: Absolute path to the downloaded standard-library source directory (src/std).
+  flavor:
+    description: Which binary was actually installed — "embedded" (`no-llvm_*`) or "plain" (`no_*`).
 
 runs:
   using: composite
@@ -47,25 +61,47 @@ runs:
         REPO: ${{ inputs.repo }}
         VERSION: ${{ inputs.version }}
         TOKEN: ${{ inputs.token }}
+        FLAVOR: ${{ inputs.flavor }}
       run: |
         set -euo pipefail
 
-        # ── 1. Resolve the release tag ──────────────────────────────────────
-        if [ "$VERSION" = "latest" ]; then
-          API="https://api.github.com/repos/${REPO}/releases/latest"
+        # Fetch a releases API URL, authenticating when a token is available.
+        # Kept as a function rather than an array of curl args on purpose: the
+        # macOS runners ship bash 3.2, where `"${arr[@]}"` on an *empty* array
+        # aborts with "unbound variable" under `set -u` (fixed only in bash 4.4).
+        gh_get() {
           if [ -n "$TOKEN" ]; then
-            TAG=$(curl -fsSL -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.github+json" "$API" | jq -r .tag_name)
+            curl -fsSL -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" "$1"
           else
-            TAG=$(curl -fsSL -H "Accept: application/vnd.github+json" "$API" | jq -r .tag_name)
+            curl -fsSL -H "Accept: application/vnd.github+json" "$1"
           fi
+        }
+
+        # ── 1. Resolve the release tag and fetch its asset list ─────────────
+        # The asset list is needed in both branches now: we no longer guess the
+        # asset name, we look it up (see step 2).
+        #
+        # Normalise the requested version into a single-v tag BEFORE the API
+        # lookup: `releases/tags/<tag>` needs the final tag, so a version that
+        # already carries a "v" (e.g. `no version` printing "v0.3.17") must not
+        # be turned into "vv0.3.17" first — that lookup would 404.
+        if [ "$VERSION" = "latest" ]; then
+          if ! REL_JSON=$(gh_get "https://api.github.com/repos/${REPO}/releases/latest"); then
+            echo "::error::could not resolve the latest release of ${REPO}" >&2
+            exit 1
+          fi
+          TAG=$(printf '%s' "$REL_JSON" | jq -r .tag_name)
         else
-          TAG="v${VERSION}"
+          TAG="v$(printf '%s' "$VERSION" | sed 's/^v*//')"
+          if ! REL_JSON=$(gh_get "https://api.github.com/repos/${REPO}/releases/tags/${TAG}"); then
+            echo "::error::release ${TAG} not found in ${REPO}" >&2
+            exit 1
+          fi
         fi
-        # Normalise the tag: strip ALL leading "v" then re-add exactly one, so
-        # inputs like "0.3.17", "v0.3.17" or a doubled "vv0.3.17" all resolve to
-        # the single-v release tag. Without this, a version that already carries
-        # a "v" (e.g. `no version` printing "v0.3.17") becomes "vv0.3.17".
+        # Belt-and-braces: the latest release's own tag_name could in principle
+        # carry a doubled "v", so normalise whatever we ended up with as well.
+        # Inputs like "0.3.17", "v0.3.17" or "vv0.3.17" all land on one tag.
         TAG="v$(printf '%s' "$TAG" | sed 's/^v*//')"
         VERSION_NO_V="${TAG#v}"
         echo "Resolved nolang version: $TAG"
@@ -74,25 +110,74 @@ runs:
 
         # ── 2. Pick the release asset for this runner ───────────────────────
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
-          Linux-X64)   ASSET="no_${VERSION_NO_V}_linux_amd64" ;;
-          Linux-ARM64) ASSET="no_${VERSION_NO_V}_linux_arm64" ;;
-          macOS-X64)   ASSET="no_${VERSION_NO_V}_darwin_amd64" ;;
-          macOS-ARM64) ASSET="no_${VERSION_NO_V}_darwin_arm64" ;;
-          Windows-X64) ASSET="no_${VERSION_NO_V}_windows_amd64.exe" ;;
+          Linux-X64)   SUFFIX="linux_amd64" ;;
+          Linux-ARM64) SUFFIX="linux_arm64" ;;
+          macOS-X64)   SUFFIX="darwin_amd64" ;;
+          macOS-ARM64) SUFFIX="darwin_arm64" ;;
+          Windows-X64) SUFFIX="windows_amd64.exe" ;;
           *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
         esac
-        echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
 
-    # ── Cache nolang binary + std source by version + platform ──────────────
+        # Prefer the self-contained `no-llvm_*` asset. It links a static libLLVM
+        # built with all backends (x86 + aarch64 + arm + wasm) and compiles
+        # in-process via the LLVM C API, so opt/llc are never invoked — `-cc zig`
+        # supplies the assembler/linker. Releases older than v0.4.0 do not
+        # publish it; fall back to the pure-Go `no_*` asset, which *does* shell
+        # out to opt/llc, so the caller must provide them (this action does not
+        # install LLVM).
+        EMBEDDED="no-llvm_${VERSION_NO_V}_${SUFFIX}"
+        PLAIN="no_${VERSION_NO_V}_${SUFFIX}"
+        ASSET_NAMES=$(printf '%s' "$REL_JSON" | jq -r '.assets[]?.name')
+        has_asset() { printf '%s\n' "$ASSET_NAMES" | grep -qxF -- "$1"; }
+
+        case "$FLAVOR" in
+          auto)
+            if has_asset "$EMBEDDED"; then
+              ASSET="$EMBEDDED"; PICKED="embedded"
+            elif has_asset "$PLAIN"; then
+              ASSET="$PLAIN"; PICKED="plain"
+              echo "::warning::${TAG} does not publish ${EMBEDDED}; falling back to the pure-Go ${PLAIN}. That binary shells out to opt/llc, which this action does not install — put them on PATH yourself, or pin a release that ships ${EMBEDDED}."
+            else
+              echo "::error::release ${TAG} has neither ${EMBEDDED} nor ${PLAIN}" >&2
+              exit 1
+            fi
+            ;;
+          embedded)
+            if ! has_asset "$EMBEDDED"; then
+              echo "::error::flavor=embedded but release ${TAG} does not publish ${EMBEDDED}" >&2
+              exit 1
+            fi
+            ASSET="$EMBEDDED"; PICKED="embedded"
+            ;;
+          plain)
+            if ! has_asset "$PLAIN"; then
+              echo "::error::flavor=plain but release ${TAG} does not publish ${PLAIN}" >&2
+              exit 1
+            fi
+            ASSET="$PLAIN"; PICKED="plain"
+            ;;
+          *)
+            echo "::error::invalid flavor '${FLAVOR}' (expected auto, embedded or plain)" >&2
+            exit 1
+            ;;
+        esac
+        echo "Picked asset: ${ASSET} (flavor: ${PICKED})"
+        echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+        echo "flavor=$PICKED" >> "$GITHUB_OUTPUT"
+
+    # ── Cache nolang binary + std source by version + platform + flavor ─────
     # When the version matches a previous run, the cache is restored and the
-    # download is skipped entirely.
+    # download is skipped entirely. The flavor is part of the key because the
+    # cached `no` differs between the embedded-LLVM and pure-Go assets; without
+    # it a cached pure-Go binary could be reused for a run that expects the
+    # self-contained one (and then fail on the missing opt/llc).
     - name: Cache nolang download
       id: cache
       uses: actions/cache@v6
       with:
         path: |
           ${{ runner.temp }}/nolang-cache
-        key: nolang-${{ steps.resolve.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+        key: nolang-${{ steps.resolve.outputs.version }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.flavor }}
 
     - name: Download and install nolang
       if: steps.cache.outputs.cache-hit != 'true'
@@ -147,6 +232,7 @@ runs:
         echo "$CACHE_DIR/bin" >> "$GITHUB_PATH"
         echo "nolang-path=$CACHE_DIR/bin/no" >> "$GITHUB_OUTPUT"
         echo "std-src=$STD_SRC" >> "$GITHUB_OUTPUT"
+        echo "flavor=${{ steps.resolve.outputs.flavor }}" >> "$GITHUB_OUTPUT"
         {
           echo "NOLANG_STD_SRC=$STD_SRC"
           echo "NOLANG_SRC=$SRC_ROOT"

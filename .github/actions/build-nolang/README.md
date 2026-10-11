@@ -12,18 +12,25 @@ The standalone [`setup-nolang`](../setup-nolang/README.md) action is still
 available for workflows that only need the compiler without the build step.
 
 > **Requirements:** the job that uses this action must run on **`ubuntu-latest`**
-> (the toolchain install step uses `apt`/`sudo` for LLVM, and Zig cross-compiles
-> all targets from Linux). The `js` target still needs `ubuntu-latest` because the
-> shared toolchain-install step is conditioned on the targets list.
+> (the Zig install step fetches the `x86_64-linux` tarball, and Zig
+> cross-compiles all targets from Linux). **No LLVM installation is needed** —
+> the action uses the self-contained `no-llvm_*` release asset, which embeds
+> LLVM.
 
 ## How cross-compilation works
 
-- **Zig** (`cc: zig`, default) is the cross-compiler: a single Linux runner can
-  target Linux, macOS, Windows and WASI. It also bundles `wasi-libc`, so the
-  `wasm32-wasi` target needs no extra sysroot.
-- **LLVM 21** `opt`/`llc` are required for every target except the pure-JS
-  backend, so they are installed automatically (Ubuntu runners).
+- The action prefers the **self-contained `no-llvm_*`** release asset. It links
+  a static libLLVM built with **all backends** (x86 + aarch64 + arm + wasm) and
+  does optimization + codegen **in-process via the LLVM C API**, so `opt`/`llc`
+  are never invoked and no LLVM has to be installed.
+- **Zig** (`cc: zig`, default) is the cross-compiler *and* the linker: a single
+  Linux runner can target Linux, macOS, Windows and WASI. It also bundles
+  `wasi-libc`, so the `wasm32-wasi` target needs no extra sysroot.
 - The JS backend (`--js`) emits JavaScript with no LLVM toolchain at all.
+- **Older releases** (before the `no-llvm_*` assets were published) fall back to
+  the pure-Go `no_*` asset, which *does* shell out to `opt`/`llc`. The action
+  emits a warning in that case and expects them to be on `PATH` — it will not
+  install them.
 
 ### Target tokens → triples
 
@@ -55,8 +62,7 @@ available for workflows that only need the compiler without the build step.
 | `name`             | `app` | Base name for output binaries. |
 | `cc`               | `zig` | C compiler: `zig` (cross) or `clang` (native only). |
 | `zig-version`      | `0.16.0` | Zig version when `cc: zig`. |
-| `llvm-version`     | `21` | LLVM version providing `opt`/`llc`. |
-| `install-toolchain`| `true` | Install LLVM/Zig as needed. |
+| `install-toolchain`| `true` | Install Zig when `cc: zig`. LLVM is never installed. |
 | `output-dir`       | `dist` | Output directory for binaries. |
 | `fail-on-error`    | `false`| Fail the job if any target fails (else report & continue). |
 | `extra-flags`      | `""`   | Extra flags appended to every `no build` (e.g. `-unsafe`). |

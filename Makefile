@@ -66,11 +66,13 @@ test: $(STDSIG_GEN)
 # ── STD SIG KEY (injected at build time) ──────────
 # The independent genstdsig tool hashes the CURRENT on-disk src/std tree from
 # scratch and prints the key (`-key-only`). We capture that into STD_SIG_KEY
-# and inject it via -X (checker.StdSigKey). This is deliberate: the key is
-# computed independently of the baked literal in stdsig_gen.go, so at runtime
-# comparing the injected key against embeddedStdSigKey actually catches a
-# STALE signature table. (Grepping embeddedStdSigKey out of stdsig_gen.go
-# would make the two always identical and validate nothing.)
+# and inject it via -X (checker.StdSigKey). At runtime the ONLY thing that
+# matters is whether StdSigKey is empty: empty means the binary was NOT built
+# via `make` (e.g. `cd src && go build` or bare `go test`), so the checker
+# hard-fails and demands `make no`; non-empty means `make gen` baked the
+# signature tables from this same src/std before compiling, so they are present
+# and fresh and are used directly. There is no stale-table comparison — the
+# build path (`make` always runs `make gen` first) guarantees freshness.
 # STD_SIG_KEY is a recursive var, so the tool runs at recipe time — after
 # `make gen` has regenerated stdsig_gen.go from the same src/std.
 STD_SIG_KEY = $(shell cd src && $(GO) run ./checker/genstdsig -key-only 2>/dev/null)
@@ -118,8 +120,13 @@ LLVM_CAPI_LDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs --link-shared 2>/de
 # （powerpc / mips / sparc / amdgpu / ...）與未用到的元件靠 llvm-config 的傳遞依賴
 # 自然排除；連結期再靠 --gc-sections / -dead_strip 丟棄未參考的段／目標碼，進一步縮小
 # 二進位。所以不同 target 的產物各自最小（x86_64 runner 的二進位不含 aarch64 / arm
-# backend，反之亦然）。設 FULLLLVM=1 可退回「鏈接完整 LLVM」（仍只註冊宿主 + wasm，
-# 見 src/build/llvmapi/llvmapi_capi.go）。
+# backend，反之亦然）。設 FULLLLVM=1 則改為「鏈接完整 LLVM 並註冊全部後端」
+# （x86 + aarch64 + arm + wasm，見下方 LLVM_TARGET_DEFINES 的 FULLLLVM 分支），
+# 代價是產物大得多。
+# ⚠️ 發布的 no-llvm_* 資產一律用 FULLLLVM=1：`no build -target <非宿主架構>` 需要
+# 對應後端，否則 llvmapi 會硬錯（LLVMGetTargetFromTriple 失敗，不回退 clang），
+# 而 `.github/actions/build-nolang` 要靠它「單一 Linux runner 交叉編譯全部目標」。
+# 見 .github/workflows/build.yml 的 build-llvm-variants。
 #
 # 宿主 target 預設由 uname -m 推導（x86_64→x86, aarch64/arm64→aarch64, arm*→arm），
 # 可用 LLVM_HOST_TARGET=<x86|aarch64|arm> 顯式覆寫（CI 在每個 matrix 條目裡個別指定，

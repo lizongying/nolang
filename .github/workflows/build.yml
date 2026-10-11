@@ -136,13 +136,22 @@ jobs:
   # LLVM 版本對齊 zig 0.17.0 所用的 22.1.8（見 https://ziglang.org/download/0.17.0/release-notes.html
   # 「This release of Zig upgrades to LLVM 22.1.8」），讓 `zig cc` 與內嵌 LLVM 同源。
   #
+  # 🔴 以 FULLLLVM=1 構建，讓內嵌 LLVM 註冊「全部後端」（x86 + aarch64 + arm + wasm）。
+  # 這是必需的，不是可選的最佳化：預設（非 FULLLLVM）的內嵌變體按宿主裁剪，只註冊
+  # 「宿主架構 + wasm」（見 Makefile 的 LLVM_STATIC_COMPONENTS / LLVM_TARGET_DEFINES），
+  # 因此 x86_64 runner 上的產物無法為 aarch64 產生程式碼——llvmapi 對未註冊的後端
+  # 會直接硬錯（LLVMGetTargetFromTriple 失敗，見 src/build/llvmapi/llvmapi_capi.go），
+  # 而非回退到 clang。`.github/actions/build-nolang` 的職責正是「單一 Linux runner
+  # 交叉編譯到全部目標」，它改用本變體後不再安裝 opt/llc，故這裡必須是全後端。
+  # 下方 "Cross-compile smoke test" 步驟釘住這個能力（改回宿主裁剪會讓它失敗）。
+  #
   # 注意：cgo 無法交叉編譯（darwin 目標需要 macOS SDK、windows 需要 MSVC），
   # 所以這裡是矩陣「原生 runner 原生構建」，而非一次交叉出全部平台。
   # darwin/amd64 因 GitHub 已退役 x64 macOS runner，改在 macos-latest(arm64) 上
   # 用 Rosetta(arch -x86_64) 跑 x86_64 工具鏈做原生構建。
   # windows/* 為實驗性（continue-on-error）：上游 LLVM 未發行 Windows/arm64 靜態庫，
   # 且 windows/amd64 以 zig cc 鏈接 MSVC 靜態庫的運行時匹配可能需就地迭代。
-  # 代價：產物 ~160 MB（純 Go 版 ~12 MB），故作為額外 asset 而非替換現有產物。
+  # 代價：全後端產物比純 Go 版（~12 MB）大得多，故作為額外 asset 而非替換現有產物。
   build-llvm-variants:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build-release
@@ -277,7 +286,10 @@ jobs:
           echo "$HOME/zig" >> $GITHUB_PATH
           "$HOME/zig/zig" version
 
-      - name: Build statically linked no (embedded LLVM)
+      - name: Build statically linked no (embedded LLVM, all backends)
+        # FULLLLVM=1：註冊 x86 + aarch64 + arm + wasm 全部後端，使產物能為非宿主
+        # 架構產生程式碼（交叉編譯的前提）。開啟後 LLVM_HOST_TARGET 不再影響
+        # 要鏈接/註冊哪些後端，仍傳入以保持 matrix 設定完整。
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
@@ -287,11 +299,11 @@ jobs:
             chmod +x /usr/local/bin/zigcc /usr/local/bin/zigcxx
             export CC=zigcc CXX=zigcxx
             export LLVM_STATIC_EXTRA_LIBS="-lc++"
-            make no-llvm LLVM_CONFIG="C:/Program Files/LLVM/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+            make no-llvm FULLLLVM=1 LLVM_CONFIG="C:/Program Files/LLVM/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           elif [ "${{ matrix.rosetta }}" = "true" ]; then
-            arch -x86_64 make no-llvm LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+            arch -x86_64 make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           else
-            make no-llvm LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+            make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           fi
 
       - name: Smoke test with zero external toolchain (-cc zig)
@@ -319,6 +331,24 @@ jobs:
             NOLANG_LLVM_CAPI=0 "$BIN" build -cc zig -o /tmp/embedded-fallback${{ matrix.ext }} tests/heap.no
             /tmp/embedded-fallback${{ matrix.ext }}
           fi
+
+      - name: Cross-compile smoke test (non-host arch)
+        # 釘住「全後端」這個前提：為非宿主架構產生程式碼必須有對應的 LLVM 後端。
+        # 若退回宿主裁剪（FULLLLVM=0 的預設），這裡會硬錯：
+        #   LLVM C API: resolving target for triple "aarch64-linux-gnu" failed:
+        #   No available targets are compatible with triple "aarch64-linux-gnu"
+        # 只 build 不 run（執行需要 qemu / 對應的 OS）。
+        shell: bash
+        run: |
+          BIN="./bin/no-llvm${{ matrix.ext }}"
+          OUT="/tmp/embedded-cross-aarch64"
+          if [ "${{ matrix.rosetta }}" = "true" ]; then
+            arch -x86_64 "$BIN" build -cc zig -target aarch64-linux-gnu -o "$OUT" tests/heap.no
+          else
+            "$BIN" build -cc zig -target aarch64-linux-gnu -o "$OUT" tests/heap.no
+          fi
+          [ -s "$OUT" ] || { echo "::error::cross-compiled output is empty"; exit 1; }
+          echo "cross-compiled aarch64-linux-gnu: $(wc -c < "$OUT") bytes"
 
       - name: Upload release asset
         env:

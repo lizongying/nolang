@@ -20,9 +20,9 @@ import (
 // The serialized std AST blob is produced by genstdsig and embedded into the
 // binary by the separate `checker/stdastembed` package (so that genstdsig
 // itself — which compiles this package — does not require the blob to already
-// exist). The embed package populates Blob/Key at program init; cmd/no hands
-// them to checker via SetStdASTBlob before any build. A nil blob makes
-// StdASTFor fall back to on-the-fly parsing, so the build still works.
+// exist). The embed package populates Blob at program init; cmd/no hands it to
+// checker via SetStdASTBlob before any build. A nil blob makes StdASTFor fall
+// back to on-the-fly parsing, so the build still works.
 //
 // The format is parser.CachedProgram (Program + flattened nodeSem side-table);
 // see parser/astcache.go. AST only — MIR/LLVM IR is never cached here, so the
@@ -30,17 +30,17 @@ import (
 var (
 	stdASTMu     sync.Mutex
 	stdASTBlob   []byte
-	stdASTKey    string
 	stdASTMap    map[string][]byte
 	stdASTLoaded bool
 )
 
-// SetStdASTBlob installs the baked std AST blob (and its key) into the checker
-// at process start. Called by cmd/no from the stdastembed package.
-func SetStdASTBlob(blob []byte, key string) {
+// SetStdASTBlob installs the baked std AST blob into the checker at process
+// start. Called by cmd/no from the stdastembed package. The blob's staleness is
+// guarded by its parse-configuration fingerprint (see StdASTBlob.Config) and by
+// the build-path StdSigKey emptiness check — there is no separate content key.
+func SetStdASTBlob(blob []byte) {
 	stdASTMu.Lock()
 	stdASTBlob = blob
-	stdASTKey = key
 	stdASTLoaded = false // force re-decode on next use
 	stdASTMap = nil
 	stdASTMu.Unlock()
@@ -99,17 +99,6 @@ func loadStdAST() {
 	if len(stdASTBlob) == 0 {
 		return
 	}
-	// Stale blob (regenerated signatures but not AST, or vice versa): error
-	// instead of silently falling back to parsing. A key mismatch means the
-	// blob was built from a different src/std than the binary's injected key —
-	// a build inconsistency. Mirror the std signature tables' policy
-	// (CollectStdModuleSignatures / knownStdModules hard-fail) and force
-	// `make no` (which runs `make gen` first) so the blob and key stay in sync.
-	if stdASTKey != "" && StdSigKey != "" && stdASTKey != StdSigKey {
-		fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌 std AST blob 與建構時注入的簽名 key 不符（建構不一致）。")
-		fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make no`（它會先跑 `make gen` 再建構並注入 key）。")
-		os.Exit(1)
-	}
 	zr, err := gzip.NewReader(bytes.NewReader(stdASTBlob))
 	if err != nil {
 		return
@@ -127,8 +116,8 @@ func loadStdAST() {
 	//
 	// Skipped when the signature tables are not baked (no stdsig_gen.go), where
 	// there is no expectation to compare against; that build already hard-fails
-	// on the signature tables themselves.
-	if blob.Config != "" && embeddedStdSigKey != "" {
+	// on the signature tables themselves (StdSigKey is empty).
+	if blob.Config != "" && StdSigKey != "" {
 		want := stdParseConfigFingerprint(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdEnumVariants)
 		if blob.Config != want {
 			fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌 std AST blob 的「解析配置指紋」與本二進位不符（建構不一致）。")

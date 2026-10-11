@@ -3,7 +3,9 @@ description: >-
   Download a nolang release and cross-compile a Nolang project for one or more
   target platforms using `no build -cc zig -target <triple>`. Produces one binary
   per target into the output directory. Self-contained — does not depend on a
-  local setup-nolang action, so it works when called cross-repo.
+  local setup-nolang action, so it works when called cross-repo. Uses the
+  self-contained `no-llvm_*` release asset (LLVM embedded, all backends), so no
+  separate LLVM / opt / llc installation is required.
 
 branding:
   icon: package
@@ -50,14 +52,12 @@ inputs:
     description: Zig version to install when cc=zig (used for cross-compilation).
     required: false
     default: "0.16.0"
-  llvm-version:
-    description: LLVM version providing opt/llc for native + wasi builds (Ubuntu only).
-    required: false
-    default: "21"
   install-toolchain:
     description: >-
-      When "true", install LLVM (opt/llc) and/or Zig as required by the chosen
-      targets/cc. Set "false" if the runner already provides them.
+      When "true", install Zig when required by the chosen cc. Set "false" if
+      the runner already provides it. LLVM is NOT installed: the
+      self-contained `no-llvm_*` release asset embeds LLVM (all backends) and
+      compiles in-process via the LLVM C API, so opt/llc are never invoked.
     required: false
     default: "true"
   output-dir:
@@ -110,21 +110,36 @@ runs:
       run: |
         set -euo pipefail
 
-        if [ "$VERSION" = "latest" ]; then
-          API="https://api.github.com/repos/${REPO}/releases/latest"
+        # Fetch a releases API URL, authenticating when a token is available.
+        # Kept as a function rather than an array of curl args on purpose: the
+        # macOS runners ship bash 3.2, where `"${arr[@]}"` on an *empty* array
+        # aborts with "unbound variable" under `set -u` (fixed only in bash 4.4).
+        gh_get() {
           if [ -n "$TOKEN" ]; then
-            TAG=$(curl -fsSL -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.github+json" "$API" | jq -r .tag_name)
+            curl -fsSL -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" "$1"
           else
-            TAG=$(curl -fsSL -H "Accept: application/vnd.github+json" "$API" | jq -r .tag_name)
+            curl -fsSL -H "Accept: application/vnd.github+json" "$1"
           fi
+        }
+
+        # Normalise the requested version into a single-v tag BEFORE the API
+        # lookup below: `releases/tags/<tag>` needs the final tag, so a version
+        # that already carries a "v" (e.g. `no version` printing "v0.3.17")
+        # must not be turned into "vv0.3.17" first — that lookup would 404.
+        if [ "$VERSION" = "latest" ]; then
+          REL_JSON=$(gh_get "https://api.github.com/repos/${REPO}/releases/latest")
+          TAG=$(printf '%s' "$REL_JSON" | jq -r .tag_name)
         else
-          TAG="v${VERSION}"
+          TAG="v$(printf '%s' "$VERSION" | sed 's/^v*//')"
+          if ! REL_JSON=$(gh_get "https://api.github.com/repos/${REPO}/releases/tags/${TAG}"); then
+            echo "::error::release ${TAG} not found in ${REPO}" >&2
+            exit 1
+          fi
         fi
-        # Normalise the tag: strip ALL leading "v" then re-add exactly one, so
-        # inputs like "0.3.17", "v0.3.17" or a doubled "vv0.3.17" all resolve to
-        # the single-v release tag. Without this, a version that already carries
-        # a "v" (e.g. `no version` printing "v0.3.17") becomes "vv0.3.17".
+        # Belt-and-braces: the latest release's own tag_name could in principle
+        # carry a doubled "v", so normalise whatever we ended up with as well.
+        # Inputs like "0.3.17", "v0.3.17" or "vv0.3.17" all land on one tag.
         TAG="v$(printf '%s' "$TAG" | sed 's/^v*//')"
         VERSION_NO_V="${TAG#v}"
         echo "Resolved nolang version: $TAG"
@@ -133,23 +148,51 @@ runs:
         echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
-          Linux-X64)   ASSET="no_${VERSION_NO_V}_linux_amd64" ;;
-          Linux-ARM64) ASSET="no_${VERSION_NO_V}_linux_arm64" ;;
-          macOS-X64)   ASSET="no_${VERSION_NO_V}_darwin_amd64" ;;
-          macOS-ARM64) ASSET="no_${VERSION_NO_V}_darwin_arm64" ;;
-          Windows-X64) ASSET="no_${VERSION_NO_V}_windows_amd64.exe" ;;
+          Linux-X64)   SUFFIX="linux_amd64" ;;
+          Linux-ARM64) SUFFIX="linux_arm64" ;;
+          macOS-X64)   SUFFIX="darwin_amd64" ;;
+          macOS-ARM64) SUFFIX="darwin_arm64" ;;
+          Windows-X64) SUFFIX="windows_amd64.exe" ;;
           *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
         esac
-        echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
 
-    # ── 1b. Cache nolang binary + std source by version + platform ──────────
+        # Prefer the self-contained `no-llvm_*` asset. It links a static libLLVM
+        # built with all backends (x86 + aarch64 + arm + wasm) and compiles
+        # in-process via the LLVM C API, so opt/llc are never invoked — `-cc zig`
+        # supplies the assembler/linker. Releases older than v0.4.0 do not
+        # publish it; fall back to the pure-Go `no_*` asset, which *does* shell
+        # out to opt/llc, so the caller must provide them (this action no longer
+        # installs LLVM).
+        EMBEDDED="no-llvm_${VERSION_NO_V}_${SUFFIX}"
+        PLAIN="no_${VERSION_NO_V}_${SUFFIX}"
+        ASSET_NAMES=$(printf '%s' "$REL_JSON" | jq -r '.assets[]?.name')
+        has_asset() { printf '%s\n' "$ASSET_NAMES" | grep -qxF -- "$1"; }
+
+        if has_asset "$EMBEDDED"; then
+          ASSET="$EMBEDDED"; FLAVOR="embedded"
+        elif has_asset "$PLAIN"; then
+          ASSET="$PLAIN"; FLAVOR="plain"
+          echo "::warning::${TAG} does not publish ${EMBEDDED}; falling back to the pure-Go ${PLAIN}. That binary shells out to opt/llc, which this action no longer installs — put them on PATH yourself, or use a release that ships ${EMBEDDED}."
+        else
+          echo "::error::release ${TAG} has neither ${EMBEDDED} nor ${PLAIN}" >&2
+          exit 1
+        fi
+        echo "Picked asset: ${ASSET} (flavor: ${FLAVOR})"
+        echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+        echo "flavor=$FLAVOR" >> "$GITHUB_OUTPUT"
+
+    # ── 1b. Cache nolang binary + std source by version + platform + flavor ──
+    # The flavor is part of the key because the cached `no` differs between the
+    # embedded-LLVM and pure-Go assets; without it a cached pure-Go binary could
+    # be reused for a run that expects the self-contained one (and then fail on
+    # the missing opt/llc that this action no longer installs).
     - name: Cache nolang download
       id: nolang-cache
       uses: actions/cache@v6
       with:
         path: |
           ${{ runner.temp }}/nolang-cache
-        key: nolang-${{ steps.resolve.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+        key: nolang-${{ steps.resolve.outputs.version }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.flavor }}
 
     # ── 1c. Download only when cache misses ─────────────────────────────────
     - name: Download nolang release
@@ -210,23 +253,22 @@ runs:
         "$CACHE_DIR/bin/no" version
 
     # ── 2. Determine toolchain requirements ─────────────────────────────────
+    # Only Zig is ever installed: the embedded-LLVM `no` performs optimization +
+    # codegen in-process via the LLVM C API, so opt/llc are never invoked. If the
+    # pure-Go fallback asset was picked instead, the warning emitted while
+    # resolving the release already told the caller to provide opt/llc.
     - name: Determine toolchain requirements
       if: inputs.install-toolchain == 'true'
       id: toolchain-needs
       shell: bash
       env:
-        TARGETS: ${{ inputs.targets }}
         CC: ${{ inputs.cc }}
       run: |
         set -euo pipefail
-        NEED_LLVM=0
         NEED_ZIG=0
-        case "$TARGETS" in
-          *js*) ;;
-          *) NEED_LLVM=1 ;;
-        esac
-        [ "$CC" = "zig" ] && NEED_ZIG=1
-        echo "need-llvm=$NEED_LLVM" >> "$GITHUB_OUTPUT"
+        if [ "$CC" = "zig" ]; then
+          NEED_ZIG=1
+        fi
         echo "need-zig=$NEED_ZIG" >> "$GITHUB_OUTPUT"
 
     # ── 2a. Cache Zig (portable tarball, easy to cache) ─────────────────────
@@ -257,48 +299,6 @@ runs:
       run: |
         echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
         "$RUNNER_TEMP/zig/zig" version
-
-    # ── 2b. Cache LLVM (apt-installed, cache the installed files) ───────────
-    # LLVM via apt takes ~2 min; caching the installed tree avoids re-running
-    # apt on every workflow run when the version hasn't changed.
-    - name: Cache LLVM
-      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1'
-      id: llvm-cache
-      uses: actions/cache@v6
-      with:
-        path: |
-          /usr/lib/llvm-${{ inputs.llvm-version }}
-          /usr/local/bin/opt
-          /usr/local/bin/llc
-        key: llvm-${{ inputs.llvm-version }}-ubuntu-latest
-
-    - name: Install LLVM
-      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1' && steps.llvm-cache.outputs.cache-hit != 'true'
-      shell: bash
-      env:
-        LLVM_VER: ${{ inputs.llvm-version }}
-      run: |
-        set -euo pipefail
-        echo "Installing LLVM $LLVM_VER (opt/llc)..."
-        wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "$LLVM_VER"
-        sudo apt-get install -y "llvm-$LLVM_VER"
-        sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/opt" /usr/local/bin/opt
-        sudo ln -sf "/usr/lib/llvm-$LLVM_VER/bin/llc" /usr/local/bin/llc
-
-    - name: Add LLVM to PATH
-      if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-llvm == '1'
-      shell: bash
-      env:
-        LLVM_VER: ${{ inputs.llvm-version }}
-      run: |
-        set -euo pipefail
-        LLVM_BIN="/usr/lib/llvm-${LLVM_VER}/bin"
-        # Ensure symlinks exist even when restored from cache (cache restores
-        # files but symlinks may not survive intact across runners).
-        sudo ln -sf "${LLVM_BIN}/opt" /usr/local/bin/opt
-        sudo ln -sf "${LLVM_BIN}/llc" /usr/local/bin/llc
-        echo "${LLVM_BIN}" >> "$GITHUB_PATH"
-        "${LLVM_BIN}/opt" --version
 
     # ── 3. Build all targets ──────────────────────────────────────────────
     - name: Build targets

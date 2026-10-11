@@ -6313,6 +6313,33 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				}
 			}
 		}
+		// The 128-bit sibling of the rule above: a 128-bit OPERAND makes the
+		// result 128-bit, whatever the node's inferred type says. typeOfNode
+		// takes an infix's type from its LEFT operand (see its KInfix case), so
+		// `0 - d` with an i128 `d` infers i64 while `d - 100` correctly infers
+		// i128 — the asymmetry is the whole bug. With an i64 result both
+		// operands are `trunc`-ed to 64 bits and the answer is silently wrong
+		// for any value that does not fit (`r = 0 - d` printed
+		// 18446744073709551609 instead of -7; the same shape in std's
+		// `int.to-str__i128` writes `d = 0 - d`). Only widen; never narrow, so
+		// every existing 64-bit and narrower path is untouched.
+		if !isCmp && isArithOrBitwiseOp(op) {
+			if rt := l.mod.Type(resTyp); rt != nil && rt.Raw != "i128" && rt.Raw != "u128" {
+				for _, side := range [...]ValueID{lv, rv} {
+					if side == NoVal {
+						continue
+					}
+					st := l.valueTypeOf(side)
+					if st == l.voidType || st == NoType {
+						continue
+					}
+					if stt := l.mod.Type(st); stt != nil && (stt.Raw == "i128" || stt.Raw == "u128") {
+						resTyp = st
+						break
+					}
+				}
+			}
+		}
 		v := l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
 		// Carry the statement/function-level `#{overflow = ...}` annotation onto
 		// the arithmetic instruction so codegen's option-wrapping path skips the

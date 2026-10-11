@@ -2835,17 +2835,21 @@ emit:
 ; print_i128 renders a 128-bit integer as decimal. LLVM has no native i128->
 ; decimal and @digits is i64-only, so the digit loop runs on i128 udiv/urem (the
 ; target lowers these to libcalls). Signed: MIN is guarded by an isMin select so
-; the magnitude negate never produces poison; the buffer is 40 bytes (max 39
-; decimal digits of 2^127 plus a leading '-').
+; the magnitude negate never produces poison. The buffer is 41 bytes: the NUL
+; terminator sits at %end = &buf[40], the 39 digits of 2^127 occupy %end-1 .. %end-39,
+; and the leading '-' goes one byte below that, at &buf[0]. Sizing this at 40 (as
+; it was) pushed the '-' to &buf[-1] -- a one-byte stack UNDERFLOW that ASan
+; reports as "stack-buffer-underflow ... 'buf' [32,72)" whenever i128.MIN is
+; printed. Same defect and same arithmetic as @str_from_i128 below.
 define void @print_i128(i128 %v) {
 entry:
-  %buf = alloca [40 x i8]
+  %buf = alloca [41 x i8]
   %neg = icmp slt i128 %v, 0
   %isMin = icmp eq i128 %v, -170141183460469231731687303715884105728
   %negv = sub i128 0, %v
   %absNeg = select i1 %isMin, i128 170141183460469231731687303715884105728, i128 %negv
   %abs = select i1 %neg, i128 %absNeg, i128 %v
-  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
+  %end = getelementptr [41 x i8], [41 x i8]* %buf, i64 0, i64 40
   store i8 0, i8* %end
   br label %loop
 loop:
@@ -3324,17 +3328,28 @@ emit:
 ; str_from_i128 renders a SIGNED 128-bit integer as a freshly-allocated
 ; %str-long (decimal). LLVM has no native i128->decimal and @digits is i64-only,
 ; so the digit loop runs on i128 udiv/urem, mirroring print_i128. MIN is guarded
-; by an isMin select so the negate never poisons; the buffer is 40 bytes (max 39
-; digits of 2^127 plus a leading '-'). Used by i128-to-str for interpolation.
+; by an isMin select so the negate never poisons; the buffer is 41 bytes (max 39
+; digits of 2^127, a leading '-', and the NUL terminator). Used by i128-to-str
+; for interpolation.
+;
+; The buffer must hold the sign INSIDE the alloca. Sizing it at exactly 40
+; (39 digits + NUL) left no slot for '-', so the sign was written one byte
+; BEFORE %buf (%pp - 1 == &buf[-1]) and the emit memcpy read 40 bytes starting
+; there: a stack-buffer-underflow (ASan: "stack-buffer-underflow ... 'buf'
+; [32,72)"). It only triggers for i128 values in [-2^127, -10^38], i.e. 39-digit
+; negatives such as i128.MIN, and whether the stray byte survived depended on
+; the toolchain/stack layout -- i128.MIN.to-str() intermittently rendered
+; without its leading '-' (test/std/number.no "str-eq - i128.MIN"). One extra
+; byte keeps the sign at &buf[0] and every access in bounds.
 define %str-long @str_from_i128(i128 %v) {
 entry:
-  %buf = alloca [40 x i8]
+  %buf = alloca [41 x i8]
   %neg = icmp slt i128 %v, 0
   %isMin = icmp eq i128 %v, -170141183460469231731687303715884105728
   %negv = sub i128 0, %v
   %absNeg = select i1 %isMin, i128 170141183460469231731687303715884105728, i128 %negv
   %abs = select i1 %neg, i128 %absNeg, i128 %v
-  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
+  %end = getelementptr [41 x i8], [41 x i8]* %buf, i64 0, i64 40
   store i8 0, i8* %end
   br label %loop
 loop:
@@ -6837,6 +6852,33 @@ func (c *codegen) emitMove(inst *Inst) error {
 		conv := c.strValueFromTxt(srcSlot)
 		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", conv, dstSlot))
 		return nil
+	}
+	// Integer move into a 128-BIT slot from a narrower source. `r i128 = a` (an
+	// i64 `a`), or a 128-bit destination receiving a value the lowerer left at
+	// its default i64 width (`r = 0` in i128.sqrt's `n < 0` arm, because the
+	// re-assignment's hint comes from the checker's inferred RHS type rather
+	// than the target's declared type), must CONVERT the value. The generic tail
+	// below loads by the DESTINATION type, so it emitted
+	// `load i128, i128* <8-byte i64 slot>`: a 16-byte read whose upper half is
+	// whatever the stack happened to hold next. That is the whole `-O0` defect —
+	// `i128.MIN.sqrt` returned stack garbage (masked at -O2, which folds the
+	// alloca away and happens to leave zeros), and `0 - d` printed
+	// 18446744073709551609 instead of -7.
+	//
+	// Gated on a 128-bit destination on purpose. MIR flattens every narrower
+	// integer to i64, so i64 -> i64 is already width-correct, and every other
+	// narrower pair is pre-existing behaviour this change must not disturb:
+	// only the 128-bit lane is wide enough for the destination's `load` to read
+	// past the source's own slot. coerceInt picks truncation vs extension, so
+	// the value is converted instead of type-punned.
+	if dstT == "i128" && srcT != dstT && srcT != "" {
+		if _, sok := intWidth(srcT); sok {
+			_, sv := c.loadVal(inst.Args[0])
+			if cv := c.coerce(srcT, sv, dstT); cv != "" && cv != sv {
+				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, cv, dstT, dstSlot))
+				return nil
+			}
+		}
 	}
 	// #83 SROA guard: for large aggregate types (user structs like %json_json
 	// at ~22KB, or their containing option/struct types), a `load T, T* src`
@@ -10873,7 +10915,23 @@ func arraySizeOf(lt string) (int64, bool) {
 // is declared later in the module), so a single concrete pass is both sufficient
 // and correct regardless of field-dependency order.
 func (c *codegen) emitStructTypes() {
-	for raw, fields := range c.mod.StructFields {
+	// DETERMINISTIC DECLARATION ORDER. StructFields is a Go map, so ranging it
+	// directly emitted the `%name = type { ... }` lines in a per-run random
+	// order: two compiles of the SAME source produced byte-different modules
+	// whose line SETS were identical (measured on test/std/aes-ctr.no: 3
+	// compiles, 3 hashes, `%err_error`/`%txt`/`%fs_file_opts` permuted). That
+	// breaks reproducible builds and every golden-IR comparison. Sort the keys
+	// — the same hazard is already documented and handled at sanitizedStructKey
+	// and in DumpAnnotated. Declaring a struct BEFORE the structs it references
+	// is legal LLVM (named types may be forward-referenced), so the sort is
+	// order-independent as well as deterministic.
+	structKeys := make([]string, 0, len(c.mod.StructFields))
+	for raw := range c.mod.StructFields {
+		structKeys = append(structKeys, raw)
+	}
+	sort.Strings(structKeys)
+	for _, raw := range structKeys {
+		fields := c.mod.StructFields[raw]
 		if raw == "str" || raw == "vec" {
 			continue // declared in the prelude
 		}
@@ -10934,7 +10992,15 @@ func (c *codegen) emitStructTypes() {
 		c.emitOptionPrintHelper(payloadLT)
 	}
 	// Tagged enums: %tenum_<name> = type { i64, [N x i64] }.
-	for raw, ei := range c.mod.TaggedEnums {
+	// Sorted for the same reason as structKeys above — TaggedEnums is a map and
+	// its iteration order is randomized per run.
+	enumKeys := make([]string, 0, len(c.mod.TaggedEnums))
+	for raw := range c.mod.TaggedEnums {
+		enumKeys = append(enumKeys, raw)
+	}
+	sort.Strings(enumKeys)
+	for _, raw := range enumKeys {
+		ei := c.mod.TaggedEnums[raw]
 		n := ei.PayloadSlots
 		if n < 1 {
 			n = 1

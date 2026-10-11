@@ -8178,12 +8178,6 @@ func moduleShortName(path string) string {
 }
 
 var (
-	// knownStdModulesCached caches the FS-fallback std module KV map
-	// (ShortName -> FullPath) for builds without an injected sig key.
-	// The embedded build path returns embeddedStdModules directly.
-	knownStdModulesOnce   sync.Once
-	knownStdModulesCached map[string]string
-
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
@@ -8313,35 +8307,17 @@ func ListStdModules(fsys fs.FS) []StdModuleInfo {
 }
 
 // knownStdModules 回傳內嵌 std 模組的 KV 表（ShortName -> FullPath）。
-// 內嵌構建（有注入的 sig key）直接回傳烤進二進位的 embeddedStdModules；
-// 非 make 途徑（無 key）退回 FS walk 並以 sync.Once 快取。兩者都直接查表，
-// 不再 materialize 成 []StdModuleInfo。
+// 只判斷 StdSigKey 是否為空：空 = 非 make 途徑（直接 go build / go test），
+// 直接報錯並要求 `make no`；非空 = 透過 make 建構，直接回傳烤進二進位的
+// embeddedStdModules（make 建構保證 stdsig_gen.go 與 src/std 一致）。
 func knownStdModules() map[string]string {
-	if embeddedStdSigKey != "" {
-		// 与 CollectStdModuleSignatures 一致：用透过 make 注入的 key 校验内嵌
-		// 模块列表（embeddedStdModules），避免每次都走 FS walk。空 key = 非
-		// make 途径，直接报错；key 不符 = 表过期，也报错。两者都强制走 `make no`。
-		if StdSigKey == "" {
-			fmt.Fprintln(os.Stderr, "[no] ERROR: 標準庫簽名 key 未注入（StdSigKey 為空）。")
-			fmt.Fprintln(os.Stderr, "[no]   這個二進位不是透過 `make` 建構的——直接 `go build` / `go test`")
-			fmt.Fprintln(os.Stderr, "[no]   會跳過簽名表產生與 key 注入。修正：執行 `make no`。")
-			os.Exit(1)
-		}
-		if StdSigKey == embeddedStdSigKey {
-			return embeddedStdModules
-		}
-		fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌標準庫模組列表與建構時注入的簽名 key 不符（建構不一致）。")
-		fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make no`（它會先跑 `make gen` 再建構並注入 key）。")
+	if StdSigKey == "" {
+		fmt.Fprintln(os.Stderr, "[no] ERROR: 標準庫簽名 key 未注入（StdSigKey 為空）。")
+		fmt.Fprintln(os.Stderr, "[no]   這個二進位不是透過 `make` 建構的——直接 `go build` / `go test`")
+		fmt.Fprintln(os.Stderr, "[no]   會跳過簽名表產生與 key 注入。修正：執行 `make no`。")
 		os.Exit(1)
 	}
-	// 表不存在（如第一次 `make gen` 前）：退回 FS walk（sync.Once 缓存）。
-	knownStdModulesOnce.Do(func() {
-		knownStdModulesCached = make(map[string]string)
-		for _, info := range ListStdModules(nolang.StdFS) {
-			knownStdModulesCached[info.ShortName] = info.FullPath
-		}
-	})
-	return knownStdModulesCached
+	return embeddedStdModules
 }
 
 // GetStdModules 回傳內嵌 std 模組的 KV 表（ShortName -> FullPath）。
@@ -8429,38 +8405,21 @@ func CollectStdModuleSignatures() (map[string][]string, map[string]map[string]st
 		//
 		// StdSigKey is injected at build time via -X (Makefile LD_FLAGS_WITH_SIG)
 		// by the independent genstdsig tool, which hashes the CURRENT src/std
-		// tree from scratch. embeddedStdSigKey is baked by the SAME tool from
-		// the SAME src/std. Comparing the two validates "baked table == current
-		// src/std" without re-hashing every std source file on each build.
-		//
-		// StdSigKey == "" means this binary was NOT built via `make` (e.g.
-		// `go test` or `cd src && go build`). That is not the normal path, so
-		// we hard-fail and require `make no` — there is NO fallback to
-		// computeStdSigKey, otherwise developers would silently always take the
-	// slow path and never notice they skipped signature generation.
-	if embeddedStdSigKey != "" {
-			if StdSigKey == "" {
-				fmt.Fprintln(os.Stderr, "[no] ERROR: 標準庫簽名 key 未注入（StdSigKey 為空）。")
-				fmt.Fprintln(os.Stderr, "[no]   這個二進位不是透過 `make` 建構的——直接 `go build` / `go test`")
-				fmt.Fprintln(os.Stderr, "[no]   會跳過簽名表產生與 key 注入，編譯器無法驗證內嵌簽名表。")
-				fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make no`（它會先 `make gen` 再建構並注入 key）。")
-				os.Exit(1)
-			}
-			if StdSigKey == embeddedStdSigKey {
-				setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
-				return
-			}
-			fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌標準庫簽名表與建構時注入的簽名 key 不符（建構不一致）。")
-			fmt.Fprintln(os.Stderr, "[no]   原因：stdsig_gen.go 與目前 src/std 不一致（例如只改了 src/std 卻沒重跑 `make gen`）。")
-			fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make no`（它會先跑 `make gen` 再建構並注入 key）。")
+		// tree from scratch. The ONLY runtime check is whether StdSigKey is
+		// empty: empty means this binary was NOT built via `make` (e.g.
+		// `go test` or `cd src && go build`), so we hard-fail and require
+		// `make no`. A non-empty StdSigKey means the binary was built via
+		// `make` (which runs `make gen` first), so the baked tables are present
+		// and fresh and are used directly — there is no stale-table comparison
+		// and no FS-walk fallback.
+		if StdSigKey == "" {
+			fmt.Fprintln(os.Stderr, "[no] ERROR: 標準庫簽名 key 未注入（StdSigKey 為空）。")
+			fmt.Fprintln(os.Stderr, "[no]   這個二進位不是透過 `make` 建構的——直接 `go build` / `go test`")
+			fmt.Fprintln(os.Stderr, "[no]   會跳過簽名表產生與 key 注入，編譯器無法驗證內嵌簽名表。")
+			fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make no`（它會先 `make gen` 再建構並注入 key）。")
 			os.Exit(1)
 		}
-
-		// ---- full collection from embedded StdFS ----
-		// 僅在 stdsig_gen.go 完全不存在時才會走到（例如第一次 `make gen` 之前）。
-		// 正常建構中該表一定存在且新鮮，因此此分支是例外而非常態。
-		funcSigs, methodSigs, structFields, aliases, structMod, enumVariants, _ := collectStdSigsFromFS(nolang.StdFS)
-		setStdSigCaches(funcSigs, methodSigs, structFields, aliases, structMod, enumVariants)
+		setStdSigCaches(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdAliases, embeddedStdStructMod, embeddedStdEnumVariants)
 	})
 	return stdFuncResultsCache, stdFieldsCache
 }
