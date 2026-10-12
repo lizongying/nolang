@@ -208,11 +208,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ env.RELEASE_TAG }}"
+          # 本 workflow 無 actions/checkout，CWD 不是 git 倉庫，gh 無法自動推目標倉庫
+          # （報「failed to run git: fatal: not a git repository」）。必須顯式帶 --repo。
+          REPO="${{ github.repository }}"
           # 兩個矩陣 job 都會跑到這一步。第一個創建 tag，第二個 view 成功就跳過 create。
           # race condition（同時 create）：第二個失敗於「已存在」，用 || true 吞掉。
-          gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" \
+          gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$REPO" \
                  --title "Pre-built Windows LLVM ${LLVM_VERSION} (zig/MinGW) for no-llvm" \
                  --notes "Built on Linux via zig cc/c++ targeting windows-gnu (MinGW + libc++). Two-stage cross build; contains a Linux-runnable llvm-config + Windows COFF static libs (libLLVM*.a). Consumed by build.yml build-llvm-variants (cross-windows entries)." \
             || true  # tag 已被另一個 job 創建，忽略
-          gh release upload "$TAG" "${{ env.ASSET }}" --clobber
+          gh release upload "$TAG" "${{ env.ASSET }}" --repo "$REPO" --clobber

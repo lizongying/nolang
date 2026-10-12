@@ -17,7 +17,8 @@
 | D4 | 空 `->` 臂语义 | **默认零值**（0 / 0.0 / false / '' / 空容器 / 零值结构体）。它同时充当**兜底臂**，满足 match 穷尽性。 |
 | D5 | `-> return` | **新增**：值-match 的臂体为 `return` 时直接从当前函数返回，该臂不参与"各臂值类型一致"检查。 |
 | D6 | 统一规则作用范围 | 整数 `+ - * / %`、容器索引 `arr[i]`、`str`/`txt` 索引 `s[i]`。**不含**浮点算术、`char` 算术（保持现状）。 |
-| D7 | in-bounds 豁免 | **取消**。`bounds.go` 的"可证明在界内"分析整套下线；`for i <- [0..N) { x = arr[i] }` 也照常产生 option，不处理即报错。惯用替代写法是**直接迭代容器**：`for i <- arr { x = i }`。 |
+| D7 | in-bounds 豁免 | **保留（D7-R1 反轉）**。`bounds.go` 的"可证明在界内"分析照舊上線：編譯器**能證明**不會溢出 / 不會除零 / 不會越界的運算式，**直接消除 option 包裝、消除解包、也消除對應的 match 分支**；LSP 僅在"可能出錯"處提示 warning。用戶定案理由：寫下看似冗餘的程式碼是「有備無患」——不寫就得自己判斷會不會出錯，反而提高思考成本。 |
+| D7-R1 | D7 的适用边界 | 只有**靜態可證明安全**的讀取才豁免：定長陣列 `[N]T` + 界內字面量/區間下標（`bounds.go`）。切片、`str`/`txt`、動態長度容器、跨函式不可見的下標**一律照常產生 option**。豁免由 codegen / `no vet` / `no fmt` 三方共用同一份判定（`p.inBoundsIdx`），口徑不一致會造成「`no fmt` 刪了註解 → `no vet` 報錯」的假回歸。 |
 | D8 | match 穷尽性 | **规则不变**：必须能覆盖 `ok`/`nil`/`err`。但 `->` **兜底臂即可满足**，所以 **`nil`/`err` 臂可以不写**——`{ ok -> it, -> }` 合法，`{ ok -> it }`（无兜底）仍报 `must handle all branches`。注解不改变这一点。 |
 
 ### D1 的直接后果（必须写进预期）
@@ -239,8 +240,8 @@ a = ao: {
 | `lowering.go` `maybeCaptureOptionAssign` | ①根为纯算术 Infix 且 `len(nodes)==0` 时改为**整体捕获**（合成 `?T` 注解），而不是返回 nil；②**删除**所有注解短路（`ls.OverflowMode != ""`、`l.enclosingOvf`、`RawAnnotationsOf` 的 `overflow` / `index-out` 分支）——D1：注解不再豁免。 |
 | `lowering.go` `maybeIndexOutAssign`(959) | `#{index-out=DEF}` 的语义由"改成 plain + 默认值"改为"**结果仍是 `?elem`**，越界时 `ok(DEF)` 而非 `nil`"。不再合成 plain 类型。 |
 | `lowering.go` `synthesizeNullableType` | 内部类型来源补上 str/txt 索引（`char`）。 |
-| `type.go` `isSafeIndexBase` | ①接受 str/txt 基底（`inferIndexElemType` 返回 `char`）；②**删除** `p.inBoundsIdx[idx]` 早退（D7）。 |
-| `bounds.go` | **整套下线**（D7）：`AnalyzInBoundsForFunc`、`p.inBoundsIdx`、`p.recordIndexLocalType` 中的 in-bounds 记录、`checker.ValidateUnhandledIndex` 的 in-bounds 分支、`fmt.AnalyzeInBoundsIndex` 与"删除冗余 `#{index-out}`"逻辑。净删代码，但要连带清理测试。 |
+| `type.go` `isSafeIndexBase` | ①接受 str/txt 基底（`inferIndexElemType` 返回 `char`）；②**保留** `p.inBoundsIdx[idx]` 早退（D7-R1）——可證明在界內的讀取不降級成 option。 |
+| `bounds.go` | **整套保留**（D7-R1 反轉）：`AnalyzInBoundsForFunc` / `p.inBoundsIdx` / `RecordIndexLocalType` 的 in-bounds 記錄、`checker.ValidateUnhandledIndex` 的 in-bounds 分支、`fmt.AnalyzeInBoundsIndex` 與"刪除冗餘 `#{index-out}`"邏輯全部恢復上線。 |
 | `desugar.go` `validateMatchArmReturns` | 允许 `return` 结尾臂（§4.1）。 |
 | `lowering.go` `lowerSurfaceMatch` | 空臂合成零值（§4.2）。 |
 | `expr.go` `parseMatchExprFrom` | inline 臂体支持 `return`（§4.1）。 |
@@ -419,13 +420,18 @@ diff <(grep -E '\[ERROR\]' /tmp/cur.vet.out) <(grep -E '\[ERROR\]' /tmp/ctl.vet.
 
 ### 8.1 已定案的取舍
 
-**(a) in-bounds 豁免：取消（D7）。** 理由：定长数组 + 字面量区间的"在界内"判定**范围不好
-界定**（要证明下标恒在 `[0,N)` 需要绕开重绑定、嵌套同名 for-range、切片/vec 的未知长度…），
-与其留一个半可信的豁免，不如统一按"可能越界"处理并照常报错。
-- `bounds.go` 整套下线（净删代码），`no fmt` 的"删除冗余 `#{index-out}`"一并下线。
-- 惯用替代写法是**直接迭代容器**：`for i <- arr { x = i }`（`i` 即元素，无 option）。
-  需要下标本身时保留 `i <- [0..N)` 并对 `arr[i]` 显式解包。
-- 新增 `rngidx` HINT 引导这个改写（§5.2）。
+**(a) in-bounds 豁免：保留（D7-R1 反轉）。** 原判決是取消（D7：區域不好界定，`for i <-
+[0..N) { x = arr[i] }` 也照常產生 option），用戶復核後定案**保留**：
+- 編譯器**能證明安全**就**消除 option 包裝、解包與 match 分支**。這是特性而非漏洞 ——
+  用戶不必為「看得出來不會越界」的下標寫防禦碼。
+- LSP 在「可能出錯」處提示 **warning**（不是 forcing 顯式處理），把「會不會出錯」的
+  判斷成本從用戶轉移給編譯器。
+- `bounds.go` 整套保留（`AnalyzInBoundsForFunc` / `p.inBoundsIdx` /
+  `AnalyzeInBoundsIndex`），`no fmt` 的"刪除冗餘 `#{index-out}`"一併恢復。**三方共用
+  同一份判定**：codegen（`isSafeIndexBase` 早退）、`no vet`（`ValidateUnhandledIndex`
+  放過）、`no fmt`（移除死註解）。任一方漏接就會出現「`no fmt` 刪了註解 → `no vet`
+  報錯」的假回歸。
+- `rngidx` HINT 的定位隨之改變：從"引導改用容器迭代"改為"在豁免範圍之外提示"。
 
 **(b) `s[i]`：先测量再分期（D1-b）。** 影响面最大（`src/std` 大量文本解析，且历史上刚把
 109 处 `s[i]` 改成 `s.byte(i)`）。按 §7.1 的 ③ 测出数量：

@@ -45,7 +45,12 @@ import (
 // changes to the gob layout. The cache key is (content, ASTVersion, sigSalt) —
 // it cannot see the compiler build, so a semantics-only change would otherwise
 // be masked by cached blobs.
-const ASTVersion = "2026-10-12.1"
+//
+// 2026-10-12.3：D7-R1 反轉 —— 重新載入 bounds.go 的「可證明越界安全」豁免
+// （p.inBoundsIdx / isSafeIndexBase 早退 / AnalyzInBoundsForFunc 合併 /
+// checker + fmt 三方位接）。這會改變 lowering 的輸出形狀（無數取不再被降級成
+// option、不再插入 __cap_N / match 區塊），屬必 bump 的 lowering 變更。
+const ASTVersion = "2026-10-12.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

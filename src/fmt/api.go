@@ -254,15 +254,19 @@ func formatProgramASTWithOverflow(program *parser.Program, code string, style Lo
 	}
 
 	sourceLines := strings.Split(code, "\n")
-	// D7（2026-10-12）：原本這裡會呼叫 parser.AnalyzeInBoundsIndex 取得「可證明越界
-	// 安全」的陳述集合，讓 formatter 移除冗餘的 #{index-out} 註解。該豁免已整套下線
-	// （bounds.go 已刪）—— 沒有「恆在界內」這回事，`no fmt` 不再刪任何 index-out 註解。
+	// 「可證明越界安全」的讀取（定長陣列 + 界內下標）不會產生 option，附加/管轄
+	// 於這類陳述的 `#{index-out}` 因此是冗餘的：lowering 已不對它降級，codegen /
+	// no vet 也不會把它當 option 來源。no fmt 在這裡移除該註解，使輸出不帶死碼
+	// （bounds.go 的靜態分析同時服務 codegen / vet / fmt，三方口徑一致）。
+	inb := parser.AnalyzeInBoundsIndex(program)
 	f := &formatter{
-		sourceLines:      sourceLines,
-		sem:              program.Sem,
-		loopStyle:        style,
-		overflowRelevant: relevant,
-		overflowGoverned: governed,
+		sourceLines:          sourceLines,
+		sem:                  program.Sem,
+		loopStyle:            style,
+		overflowRelevant:     relevant,
+		overflowGoverned:     governed,
+		indexOutRemovable:    inb.StmtRemovable,
+		indexOutAnnRemovable: inb.AnnRemovable,
 	}
 	f.formatProgram(program)
 

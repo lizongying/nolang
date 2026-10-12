@@ -102,10 +102,10 @@ keccak-f1600 = (state []u64) {
             y <- [0..5): {
 
                 #{overflow=wrap}
-                rc = KECCAK-RHO[x + 5 * y]
+                rc u64 = KECCAK-RHO[x + 5 * y]
 
                 #{index-out=zero, overflow=wrap}
-                val = state[x + 5 * y]
+                val u64 = state[x + 5 * y]
 
                 rotated = rotl64(val, rc)
 

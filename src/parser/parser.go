@@ -91,6 +91,13 @@ type Parser struct {
 	// 的 `__idx_out_N` 區塊（見 no fmt 的 reparse/idempotency 測試）。
 	SkipSafeIndexLowering bool
 
+	// inBoundsIdx 由 lowering 在進入每個函數時計算（bounds.go）：目前函數內
+	// 「可證明越界安全」的索引讀取節點集合。isSafeIndexBase 據此對這類讀取回傳
+	// false，使其不再被包裝成 option、無 option 可解包、也不需要 match 分支 ——
+	// 用戶不必為「看得出來不會越界」的下標寫防禦碼。codegen、no vet、no fmt
+	// 三方共用同一份判定以保持一致。
+	inBoundsIdx map[*IndexExpression]bool
+
 	// LegacyBlockOverflowPropagation 啟用「區塊級 #{overflow=...}」的**遺留**
 	// 傳播語意（propagateBlockScopedOverflow）。預設 false。
 	//

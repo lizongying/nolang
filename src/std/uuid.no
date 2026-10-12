@@ -227,13 +227,16 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     v0 = parse-hex-byte(s, pos)
 
     #{overflow=wrap}
-    v1 = parse-hex-byte(s, pos + 2)
+    ppos2 i64 = pos + 2
+    v1 = parse-hex-byte(s, ppos2)
 
     #{overflow=wrap}
-    v2 = parse-hex-byte(s, pos + 4)
+    ppos4 i64 = pos + 4
+    v2 = parse-hex-byte(s, ppos4)
 
     #{overflow=wrap}
-    v3 = parse-hex-byte(s, pos + 6)
+    ppos6 i64 = pos + 6
+    v3 = parse-hex-byte(s, ppos6)
 
     out.bytes[0] = v0
 
@@ -251,10 +254,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    v4 = parse-hex-byte(s, pos + 9)
+    ppos9 i64 = pos + 9
+    v4 = parse-hex-byte(s, ppos9)
 
     #{overflow=wrap}
-    v5 = parse-hex-byte(s, pos + 11)
+    ppos11 i64 = pos + 11
+    v5 = parse-hex-byte(s, ppos11)
 
     out.bytes[4] = v4
 
@@ -267,10 +272,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    v6 = parse-hex-byte(s, pos + 14)
+    ppos14 i64 = pos + 14
+    v6 = parse-hex-byte(s, ppos14)
 
     #{overflow=wrap}
-    v7 = parse-hex-byte(s, pos + 16)
+    ppos16 i64 = pos + 16
+    v7 = parse-hex-byte(s, ppos16)
 
     out.bytes[6] = v6
 
@@ -283,10 +290,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    v8 = parse-hex-byte(s, pos + 19)
+    ppos19 i64 = pos + 19
+    v8 = parse-hex-byte(s, ppos19)
 
     #{overflow=wrap}
-    v9 = parse-hex-byte(s, pos + 21)
+    ppos21 i64 = pos + 21
+    v9 = parse-hex-byte(s, ppos21)
 
     out.bytes[8] = v8
 
@@ -299,22 +308,28 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    v10 = parse-hex-byte(s, pos + 24)
+    ppos24 i64 = pos + 24
+    v10 = parse-hex-byte(s, ppos24)
 
     #{overflow=wrap}
-    v11 = parse-hex-byte(s, pos + 26)
+    ppos26 i64 = pos + 26
+    v11 = parse-hex-byte(s, ppos26)
 
     #{overflow=wrap}
-    v12 = parse-hex-byte(s, pos + 28)
+    ppos28 i64 = pos + 28
+    v12 = parse-hex-byte(s, ppos28)
 
     #{overflow=wrap}
-    v13 = parse-hex-byte(s, pos + 30)
+    ppos30 i64 = pos + 30
+    v13 = parse-hex-byte(s, ppos30)
 
     #{overflow=wrap}
-    v14 = parse-hex-byte(s, pos + 32)
+    ppos32 i64 = pos + 32
+    v14 = parse-hex-byte(s, ppos32)
 
     #{overflow=wrap}
-    v15 = parse-hex-byte(s, pos + 34)
+    ppos34 i64 = pos + 34
+    v15 = parse-hex-byte(s, ppos34)
 
     out.bytes[10] = v10
 

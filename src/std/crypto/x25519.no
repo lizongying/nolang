@@ -1433,7 +1433,7 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
         bit-idx = t % 8
 
         #{index-out=zero}
-        b = (k[byte-idx] >> bit-idx) & 1
+        b i64 = (k[byte-idx] >> bit-idx) & 1
 
         ; 條件交換
         swap = swap ^ b
@@ -1601,7 +1601,7 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
         bit-idx = t % 8
 
         #{index-out=zero}
-        b = (k[byte-idx] >> bit-idx) & 1
+        b i64 = (k[byte-idx] >> bit-idx) & 1
 
         swap = swap ^ b
         fe-cswap(x2, x3, swap)

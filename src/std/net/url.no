@@ -508,10 +508,14 @@ url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
     i <- [0..count): {
 
         #{index-out=zero}
-        enc-k = url-encode(keys[i])
+        k str = keys[i]
+
+        enc-k = url-encode(k)
 
         #{index-out=zero}
-        enc-v = url-encode(values[i])
+        vv str = values[i]
+
+        enc-v = url-encode(vv)
 
         out.len-bytes() > 0 -> out = out - '&'
 

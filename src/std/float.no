@@ -18,10 +18,12 @@ float.is-nan = () (yes bool) {
 }
 
 ; is-inf: 判斷是否為無窮大
+; 注意：不能寫 `. + . == .`——對 ±0.0 也成立（0+0==0），會把零誤判為無窮。
+; 加上非零條件後才是無窮的充要條件（有限非零數 x+x!=x；NaN 的比較恆 false）。
 float.is-inf = () (yes bool) {
 
     #{overflow=wrap}
-    yes = . + . == .
+    yes = . != 0.0 && . + . == .
 }
 
 ; 注意：不定義 float.to-str 聯合方法。原因：

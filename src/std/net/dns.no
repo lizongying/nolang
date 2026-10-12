@@ -247,7 +247,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                 jumped == false -> end-pos = pos + 2
 
                 #{index-out=zero}
-                pointer = ((len-byte & 0x3f) << 8) | (data[pos + 1])
+                pointer i64 = ((len-byte & 0x3f) << 8) | (data[pos + 1])
                 pos = pointer
                 jumped = true
             }

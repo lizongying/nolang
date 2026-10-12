@@ -890,6 +890,15 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 handled = 1
             }
 
+            ; 枚舉定義：裸 `name { red, green, blue }`（回 1）/ 標籤 `name { ok(v t), fail }`（回 2）
+            ;   對應 Go stmt.go:279–283 classifyBlock() ∈ {blockEnum, blockTaggedEnum}。
+            ;   守衛 ps-is-enum-def 保守識別（欄位形 `n i64`、介面形 `m() (r t)`、括號全無裸變體 ⇒ 回 0 交回原路）。
+            handled == 0 && nxt_typ == tok.LBRACE && ps-is-enum-def(p) > 0 -> {
+                edk = ps-is-enum-def(p)
+                idx = ps-parse-enum-def(t, p, name, edk)
+                handled = 1
+            }
+
             ; 複合型明示宣告（限定名/巢狀）：`name TYPE [= value]`，TYPE 為各特化含值臂未覆蓋的
             ;   限定 NamedType（`a.b`）/巢狀 SliceType・ArrayType（`[][]T`、`[N][]T`）。上方各特化臂
             ;   皆要求特定偏移的 `=`，此處 handled==0 表示都未命中⇒可能為複合型宣告或索引運算式；
@@ -2773,6 +2782,281 @@ ps-parse-struct-def = (t ast, p psst, name str) (idx i64) {
 
         #{overflow=wrap}
         m = m + 1
+    }
+    idx
+}
+
+; ps-is-enum-def：枚舉定義分派守衛（不消費 token，索引前視）。pos=IDENT name 且 +1=LBRACE 時掃描區塊：
+;   成員 ∈ {IDENT/NIL 變體名、`名(欄位…)` 括號載荷、`名 = INT` 顯式值、`#{…}` 註解、NEWLINE/COMMA 分隔符}。
+;   回 2（標籤）：同時出現括號變體與裸變體（語料全形：`ok(v str), fail,`；介面形含「`) (`回傳群組」或
+;   首成員 `t.` ⇒ 被拒）；回 1（裸）：僅裸變體/顯式賦值、無任何括號成員；其餘回 0（含純括號無裸變體者—
+;   —保守排除全括號標籤枚舉與介面，只改善不回歸）。⚠️ 掃描中任何非預期 token ⇒ bad=1 回 0。
+ps-is-enum-def = (p psst) (r i64) {
+    r = 0
+    ps-peek(p) != tok.IDENT -> return
+    ps-peek-at(p, 1) != tok.LBRACE -> return
+    i = 2
+    sawParen = 0
+    sawUnit = 0
+    nmem = 0
+    bad = 0
+    go = true
+    (go && bad == 0) {
+        t = ps-peek-at(p, i)
+        {
+            t == tok.NEWLINE || t == tok.COMMA || t == tok.COMMENT -> {
+
+                #{overflow=wrap}
+                i = i + 1
+            }
+
+            t == tok.RBRACE -> go = false
+
+            t == tok.EOF -> {
+                go = false
+                bad = 1
+            }
+
+            t == tok.HASH_LBRACE -> i = ps-skip-annot-idx(p, i)
+
+            t == tok.IDENT || t == tok.NIL -> {
+
+                #{overflow=wrap}
+                i = i + 1
+
+                #{overflow=wrap}
+                nmem = nmem + 1
+                et = ps-peek-at(p, i)
+                {
+                    et == tok.LPAREN -> {
+                        ; 括號載荷欄位掃描：( [NEWLINE|COMMA]* ( IDENT [型別] )*[,] )；非預期 token ⇒ okf=0
+                        fi = i
+                        okf = 1
+                        gof = true
+                        (gof && okf == 1) {
+                            ft = ps-peek-at(p, fi)
+                            {
+                                ft == tok.LPAREN || ft == tok.NEWLINE || ft == tok.COMMA || ft == tok.COMMENT -> {
+
+                                    #{overflow=wrap}
+                                    fi = fi + 1
+                                }
+
+                                ft == tok.RPAREN -> {
+                                    gof = false
+
+                                    #{overflow=wrap}
+                                    fi = fi + 1
+                                }
+
+                                ft == tok.IDENT -> {
+                                    ; `名 型別`（nt=型別起）或裸 `名`（nt∈{,, ),NEWLINE,COMMENT}）
+
+                                    #{overflow=wrap}
+                                    nt = ps-peek-at(p, fi + 1)
+                                    nt == tok.COMMA || nt == tok.RPAREN || nt == tok.NEWLINE || nt == tok.COMMENT -> {
+
+                                        #{overflow=wrap}
+                                        fi = fi + 1
+                                    }
+
+                                    -> {
+
+                                        #{overflow=wrap}
+                                        fi = fi + 1
+                                        ts = ps-skip-type-idx(p, fi)
+                                        ts >= 0 -> fi = ts
+
+                                        ts < 0 -> okf = 0
+                                    }
+                                }
+
+                                ft == tok.EOF -> {
+                                    gof = false
+                                    okf = 0
+                                }
+
+                                -> okf = 0
+                            }
+                        }
+                        okf == 0 -> bad = 1
+                        okf == 1 -> {
+                            i = fi
+                            sawParen = 1
+
+                            ps-peek-at(p, i) == tok.LPAREN -> bad = 1; `) (` 第二回傳群組 ⇒ 介面方法形，拒
+                        }
+                    }
+
+                    et == tok.COMMA || et == tok.NEWLINE || et == tok.RBRACE || et == tok.EOF || et == tok.COMMENT -> {
+                        sawUnit = 1
+                        ; 不前進：分隔符交由迴圈頂Consumption
+                    }
+
+                    et == tok.HASH_LBRACE -> {
+                        sawUnit = 1
+                        i = ps-skip-annot-idx(p, i)
+                    }
+
+                    et == tok.ASSIGN -> {
+
+                        #{overflow=wrap}
+                        vt = ps-peek-at(p, i + 1)
+                        vt == tok.INT -> {
+                            sawUnit = 1
+
+                            #{overflow=wrap}
+                            i = i + 2
+                        }
+
+                        vt != tok.INT -> bad = 1
+                    }
+
+                    -> {
+                        bad = 1
+                    }
+                }
+            }
+
+            -> {
+                bad = 1
+            }
+        }
+    }
+    bad == 1 -> return
+    nmem == 0 -> return
+    sawParen == 1 && sawUnit == 1 -> r = 2
+    sawParen == 0 && sawUnit == 1 -> r = 1
+}
+
+; ps-parse-enum-def：於陳述位解析守衛已認可的枚舉定義（kind=1 裸 EnumDefinition / kind=2 標籤 TaggedEnumDefinition）。
+;   EnumValue：s0=名、s1=value 十進制文字（恒印）、s2=explicit('true'/''，P-TRUE 隱空)；無子節點。
+;   TaggedEnumVariant：s0=名、s1=index 文字（P-NON-ZERO：'0' 隱、'1' 印）、s2=fields 數（P-COUNT）；
+;     kid0=Type（恒加：單元變體 0 佔位 ⇒ OF-TYPE 讀空 ⇒ 隱）；HELPER taggedEnumField 成對：
+;     aux[hbase+2j]=欄位名 id、aux[hbase+2j+1]=欄位型節點（0=無型）。變體 index 恒遞增；
+;     EnumValue 的 nextVal 仅在非顯式賦值時遞增（鏡像 Go decl.go:807–821）。
+;   父：EnumDefinition{s0=名、s1=values 數}；TaggedEnumDefinition{s0=名、s1=builtin ''（隱）、s2=variants 數}；
+;     均 set-count(c0)=成員數並逐一 kid-add（父後建）。
+ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
+    ps-bump(p); 消費 name IDENT
+    ps-bump(p); 消費 LBRACE
+    mems []i64 = with-cap(4)
+    ctr = 0
+    (ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF) {
+        pos0 = p.pos
+        ps-skip-trivia(p)
+        ps-peek(p) == tok.HASH_LBRACE -> {
+            ps-skip-annot(p); 變體上方獨立成行註解（dump 不渲染 ⇒ 跳過）
+            ps-skip-trivia(p)
+        }
+        mt = ps-peek-token(p)
+        mt.typ == tok.IDENT || mt.typ == tok.NIL -> {
+            vname = mt.lit
+            ps-bump(p); 消費變體名
+            fns []str = with-cap(2)
+            fty []i64 = with-cap(2)
+            valstr = ctr.to-str()
+            expstr = ''
+            expf = 0
+            hd = ps-peek(p)
+            hd == tok.LPAREN && kind == 2 -> {
+                ps-bump(p); 消費 (
+                (ps-peek(p) != tok.RPAREN && ps-peek(p) != tok.EOF) {
+                    pf0 = p.pos
+                    ps-skip-trivia(p)
+                    ps-peek(p) == tok.COMMA -> ps-bump(p); 欄位間逗號
+                    ps-skip-trivia(p)
+                    ft = ps-peek-token(p)
+                    ft.typ == tok.IDENT -> {
+                        fname = ft.lit
+                        ps-bump(p); 消費欄位名（或裸型別名）
+                        tyi = 0
+                        nt = ps-peek(p)
+                        nt == tok.IDENT || nt == tok.QUESTION || nt == tok.LBRACKET -> tyi = ps-parse-type(t, p)
+                        fns.push(fname)
+                        fty.push(tyi)
+                    }
+                    p.pos == pf0 -> ps-bump(p)
+                }
+                ps-peek(p) == tok.RPAREN -> ps-bump(p); 消費 )
+            }
+            hd == tok.ASSIGN && kind == 1 -> {
+                ps-bump(p); 消費 =
+                vt = ps-peek-token(p)
+                vt.typ == tok.INT -> {
+                    valstr = ps-int-lit-value(vt.lit)
+                    expstr = 'true'
+                    expf = 1
+                    ps-bump(p); 消費 INT
+                }
+            }
+            v = 0
+            kind == 1 -> {
+                v = ast.add(t, asp.K_ENUM_VALUE)
+                ast.set-slot(t, v, 0, ast.put-str(t, vname))
+                ast.set-slot(t, v, 1, ast.put-str(t, valstr))
+                ast.set-slot(t, v, 2, ast.put-str(t, expstr))
+                expf == 0 -> {
+
+                    #{overflow=wrap}
+                    ctr = ctr + 1
+                }
+            }
+            kind == 2 -> {
+                v = ast.add(t, asp.K_TAGGED_ENUM_VARIANT)
+                ast.set-slot(t, v, 0, ast.put-str(t, vname))
+                ast.set-slot(t, v, 1, ast.put-str(t, ctr.to-str()))
+                ast.set-slot(t, v, 2, ast.put-str(t, fns.len().to-str()))
+                ty0 = 0
+                fns.len() > 0 -> {
+                    #{index-out=zero}
+                    ty0 = fty[0]
+                }
+                ast.kid-add(t, v, ty0)
+                ast.helper-begin(t, v, fns.len())
+                j = 0
+                (j < fns.len()) {
+                    #{index-out=zero}
+                    ast.aux-add(t, ast.put-str(t, fns[j]))
+                    #{index-out=zero}
+                    ast.aux-add(t, fty[j])
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+
+                #{overflow=wrap}
+                ctr = ctr + 1
+            }
+            v > 0 -> mems.push(v)
+        }
+        ps-skip-trivia(p)
+        ps-peek(p) == tok.COMMA -> {
+            ps-bump(p)
+            ps-skip-trivia(p)
+        }
+        p.pos == pos0 -> ps-bump(p)
+    }
+    ps-expect(p, tok.RBRACE)
+    kind == 1 -> {
+        idx = ast.add(t, asp.K_ENUM_DEFINITION)
+        ast.set-slot(t, idx, 0, ast.put-str(t, name))
+        ast.set-slot(t, idx, 1, ast.put-str(t, mems.len().to-str()))
+    }
+    kind == 2 -> {
+        idx = ast.add(t, asp.K_TAGGED_ENUM_DEFINITION)
+        ast.set-slot(t, idx, 0, ast.put-str(t, name))
+        ast.set-slot(t, idx, 1, ast.put-str(t, '')); builtin 旗標（非內建 ⇒ 空、隱）
+        ast.set-slot(t, idx, 2, ast.put-str(t, mems.len().to-str()))
+    }
+    ast.set-count(t, idx, 0, mems.len())
+    m2 = 0
+    (m2 < mems.len()) {
+        #{index-out=zero}
+        ast.kid-add(t, idx, mems[m2])
+
+        #{overflow=wrap}
+        m2 = m2 + 1
     }
     idx
 }

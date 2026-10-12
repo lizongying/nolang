@@ -64,6 +64,12 @@ func (p *Parser) lowerProgram(prog *Program) {
 		fmt.Fprintf(os.Stderr, "[debug-it] lowerProgram called, %d top-level statements\n", len(prog.Statements))
 	}
 	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}}
+	// 全域先行算一份「可證明越界安全」讀取集合，供還沒進入函數作用域時使用
+	// （bounds.go）。進入各函數時會再以該函數的本地型別表精算並合併進來。
+	p.inBoundsIdx = AnalyzeInBoundsIndex(prog).Reads
+	if p.inBoundsIdx == nil {
+		p.inBoundsIdx = map[*IndexExpression]bool{}
+	}
 	l.walk(reflect.ValueOf(prog))
 }
 
@@ -246,10 +252,18 @@ func (l *lowerer) walk(v reflect.Value) {
 						l.declaredLocals[prm.Name] = true
 					}
 				}
-				// 預掃描區域變數容器型別（如 `av = a.to-vec()`），使其被安全索引
-				// 降級辨識（isSafeIndexBase / inferIndexElemType 依賴 FuncVarType）。
-				l.collectLocalTypes(fd)
-				isFuncDef = true
+			// 預掃描區域變數容器型別（如 `av = a.to-vec()`），使其被安全索引
+			// 降級辨識（isSafeIndexBase / inferIndexElemType 依賴 FuncVarType）。
+			l.collectLocalTypes(fd)
+			// 以本函數的本地型別表精算「可證明越界安全」讀取集合並合併
+			// （bounds.go）。合併而非取代：頂層/全域陳述的結果已由 lowerProgram
+			// 先行算入，丟棄會讓函數外讀取失去豁免。
+			if l.p.idxLocalTypes != nil {
+				for k, v := range AnalyzInBoundsForFunc(l.p.sem, fd, l.p.idxLocalTypes[fd.Name]) {
+					l.p.inBoundsIdx[k] = v
+				}
+			}
+			isFuncDef = true
 			}
 		}
 		for i := 0; i < v.NumField(); i++ {

@@ -1,0 +1,18 @@
+; float-is-inf-zero.no — is-inf must be false for 0.0
+; Run: no test tests/float-is-inf-zero.no
+
+test-is-inf-zero = () {
+    z = 0.0
+    nz = 0.0 - 0.0
+    h = 1.0 / 0.0
+    hn = 0.0 - 1.0 / 0.0
+    nan = 0.0 / 0.0
+    z.is-inf() -> print('FAIL +0 reported inf')
+    nz.is-inf() -> print('FAIL -0 reported inf')
+    nan.is-inf() -> print('FAIL nan reported inf')
+    !h.is-inf() -> print('FAIL +inf not detected')
+    !hn.is-inf() -> print('FAIL -inf not detected')
+    print('DONE')
+}
+
+test-is-inf-zero()

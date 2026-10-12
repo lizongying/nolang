@@ -49,7 +49,7 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     maj = (a & b) ^ (a & c) ^ (b & c)
 
     #{index-out=zero, overflow=wrap}
-    t1 = h + s1 + ch + 4794697086780616226 + s[0]
+    t1 u64 = h + s1 + ch + 4794697086780616226 + s[0]
 
     #{overflow=wrap}
     t2 = s0 + maj

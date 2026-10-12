@@ -435,7 +435,11 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
     ; 計算 q 的長度（Nolang && 不短路，需用旗標變數）
     #{overflow=wrap}
-    local-qn = (bits / 32) + 1
+    qn-step = (bits / 32) + 1
+    local-qn = qn-step: {
+        ok -> it
+        ->
+    }
     keep-trimming = true
     (keep-trimming) {
 

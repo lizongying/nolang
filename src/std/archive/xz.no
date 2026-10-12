@@ -629,7 +629,7 @@ lzma-decompress = (data []byte) (out []byte) {
 
     ; 解析 dict size (4 bytes LE)
     #{index-out=zero}
-    dict-size = data[1] | (data[2] << 8) | (data[3] << 16) | (data[4] << 24)
+    dict-size i64 = data[1] | (data[2] << 8) | (data[3] << 16) | (data[4] << 24)
 
     ; 解析 unpacked size (8 bytes LE)
     #{index-out=zero}

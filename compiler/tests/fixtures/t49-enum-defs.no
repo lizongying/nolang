@@ -1,0 +1,19 @@
+; 裸枚舉（自動序號 + 顯式賦值混用，鏡像 Go decl.go:807–821 的 nextVal 語義）
+color {
+    red,
+    green,
+    blue = 10,
+    navy,
+}
+
+; 標籤枚舉：單欄位/多欄位/單元變體 + 巢狀切片載荷
+opt2 {
+    some(v []i64),
+    none,
+}
+
+shape2 {
+    circle(r f64),
+    rect(w i64, h i64),
+    point,
+}
