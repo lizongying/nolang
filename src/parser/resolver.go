@@ -108,6 +108,11 @@ const (
 	// 打印分支輸出 `cond: { body }`，而該寫法會重新解析成 match-as-value，
 	// 靜默改變語義（`x = 2 > 1 -> 42` 變 `x = 2 > 1: { 42 }` 後 x 變成布爾 1）。
 	RTPipelineValue
+	// RTEmptyArmDefault 標記值-match 的空臂（`->` 後不寫任何東西）在 lowering
+	// 時被合成為「被匹配 option 內部型別的零值」語句。Formatter 據此把該臂還原成
+	// 空臂輸出（否則 `->` 會被改寫成 `-> 0`，破壞 `no fmt` 冪等）。見 buildMatchDesugar（D4）。
+	// 「值語境 vs 陳述語境」的區分記在 matchArm.valueCtx（不進序列化），不用 RTFlag。
+	RTEmptyArmDefault
 )
 
 // SemanticContext 是解析/语义分离后的“副表”。

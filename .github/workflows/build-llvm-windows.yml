@@ -207,8 +207,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ env.RELEASE_TAG }}"
+          # 本 workflow 沒有 actions/checkout，工作目录不是 git 倉庫，gh 無法自動推
+          # 目標倉庫（報「fatal: not a git repository」）。故每条 gh 都顯式帶 --repo。
+          $repo = "${{ github.repository }}"
           # tag 不存在才建；已存在就覆寫同名 asset（重跑/改版時不必手动清）。
-          if (-not (gh release view $tag 2>$null)) {
-            gh release create $tag --title "Pre-built Windows LLVM (${{ steps.ver.outputs.llvm_version }}) for no-llvm" --notes "Manually built via .github/workflows/build-llvm-windows.yml with zig cc/zig c++ (windows-gnu, libc++ ABI). Contains llvm-config.exe + static libs missing from the official win64 installer. Consumed by build.yml build-llvm-variants (Windows)."
+          if (-not (gh release view $tag --repo $repo 2>$null)) {
+            gh release create $tag --repo $repo --title "Pre-built Windows LLVM (${{ steps.ver.outputs.llvm_version }}) for no-llvm" --notes "Manually built via .github/workflows/build-llvm-windows.yml with zig cc/zig c++ (windows-gnu, libc++ ABI). Contains llvm-config.exe + static libs missing from the official win64 installer. Consumed by build.yml build-llvm-variants (Windows)."
           }
-          gh release upload $tag "${{ env.ZIP_NAME }}" --clobber
+          gh release upload $tag "${{ env.ZIP_NAME }}" --repo $repo --clobber

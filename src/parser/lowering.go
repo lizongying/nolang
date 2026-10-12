@@ -1970,6 +1970,46 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			elemType = matchedVarType
 		}
 	}
+	if elemType == "" && subjElem != "" {
+		// 索引主體歸一化（上方 subjName）已確定內部型別時，以其為準。
+		elemType = subjElem
+	}
+
+	// D4：值-match 的空臂（`->` 後不寫任何東西）= 被匹配 option 內部型別的預設零值。
+	// 僅對**值語境**的臂生效（matchArm.valueCtx，由 validateMatchArmReturns 寫入）；
+	// 陳述語境的空臂是 no-op（既有行為，如 `parsed: { ok -> {...}  nil ->  err -> }`）。
+	// 值語境但型別推不出來時報錯（不猜）。裸 match（buildBareMatchDesugar）不走本路徑。
+	for i := range arms {
+		if !arms[i].valueCtx {
+			continue
+		}
+		if arms[i].body != nil && len(arms[i].body.Statements) > 0 {
+			continue
+		}
+		if elemType == "" {
+			p.saveError(fmt.Sprintf("line %d, column %d: empty match arm cannot determine a value (matched expression type is unknown)",
+				tok.Line, tok.Column))
+			continue
+		}
+		zb := &BlockStatement{
+			Token: tok,
+			Statements: []Statement{
+				&ExpressionStatement{Token: tok, Expression: scalarZeroLiteral(tok, elemType)},
+			},
+		}
+		// 標記合成語句本身（而非 body 區塊）：desugar 可能把 body 重新包成新的
+		// BlockStatement，區塊指標不保證存活到 formatter；語句指標則一定存活。
+		// Formatter 據此把該語句濾掉、還原成空臂輸出（否則 `->` 會被改寫成 `-> 0`，
+		// 破壞 `no fmt` 冪等）。
+		p.sem.SetRTFlag(zb.Statements[0], RTEmptyArmDefault)
+		if arms[i].body != nil {
+			zb.IsInline = arms[i].body.IsInline
+			zb.TrailingComments = arms[i].body.TrailingComments
+			zb.ClosingBraceComment = arms[i].body.ClosingBraceComment
+			zb.RBrace = arms[i].body.RBrace
+		}
+		arms[i].body = zb
+	}
 
 	// Shared it binding (used for hasRawCond or fallback)
 	itStmt := p.buildItBinding(tok, matched)

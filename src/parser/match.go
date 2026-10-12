@@ -703,6 +703,13 @@ type matchArm struct {
 	// sentinel arms that just return or substitute a default) opt out of the
 	// synthetic `it` binding, so a sentinel arm's %str-long/nil `it` type can't
 	// clobber the ok arm's element-type `it` (which would corrupt codegen).
+	//
+	// valueCtx 標記本臂所屬的 match 出現在「值語境」（賦值右值 / 回傳值 / 呼叫實參），
+	// 而非陳述語境（值被丟棄）。由 validateMatchArmReturns（僅在值語境被呼叫）寫入。
+	// 只有值語境的空臂（`->`）才在 lowering 合成零值；陳述語境的空臂是 no-op
+	// （既有行為，如 `parsed: { ok -> {...}  nil ->  err -> }`）。見 buildMatchDesugar（D4）。
+	// 本欄位不進 gob 序列化：SurfaceMatch 在 ParseProgram 內即被 lowering 展開掉。
+	valueCtx bool
 }
 
 func (p *Parser) parseMatchExpression() Expression {
@@ -875,17 +882,25 @@ func (p *Parser) parseMatchExpression() Expression {
 			}
 		} else {
 			// Expression form: single expression
-			p.ctx.push(CTX_MATCH_ARM)
-			expr := p.parseExpression(LOWEST)
-			p.ctx.pop()
-			ma.body = &BlockStatement{
-				Token: tok,
-				Statements: []Statement{
-					&ExpressionStatement{
-						Token:      tok,
-						Expression: expr,
+			if p.currentToken.Type == lexer.RETURN {
+				// D5：`-> return` 早退臂（與 parseMatchExprFrom 的 inline 路徑一致）。
+				ma.body = &BlockStatement{
+					Token:      tok,
+					Statements: []Statement{p.parseReturnStatement()},
+				}
+			} else {
+				p.ctx.push(CTX_MATCH_ARM)
+				expr := p.parseExpression(LOWEST)
+				p.ctx.pop()
+				ma.body = &BlockStatement{
+					Token: tok,
+					Statements: []Statement{
+						&ExpressionStatement{
+							Token:      tok,
+							Expression: expr,
+						},
 					},
-				},
+				}
 			}
 		}
 

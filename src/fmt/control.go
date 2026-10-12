@@ -335,6 +335,12 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 			}
 			continue
 		}
+		// D4：值-match 的空臂（`->`）在 lowering 時被合成為「被匹配 option 內部型別的
+		// 零值」語句。Formatter 必須把該合成語句濾掉、還原成空臂輸出，否則
+		// `->` 會被改寫成 `-> 0`（第一次 `no fmt` 就改動用戶源碼、且非冪等）。
+		if f.sem.HasRTFlag(stmt, parser.RTEmptyArmDefault) {
+			continue
+		}
 		statements = append(statements, stmt)
 	}
 	bindingSuffix := ""
