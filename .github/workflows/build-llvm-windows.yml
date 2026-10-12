@@ -80,7 +80,10 @@ jobs:
           tar -xf llvm-src.tar.xz
           # 解壓後目錄名為 llvm-project-<ver>.src
           Rename-Item -Path "llvm-project-$v.src" -NewName "llvm-src"
-          (Get-Content llvm-src/llvm/CMakeLists.txt | Select-String -Pattern "set(LLVM_VERSION_MAJOR" | Select-Object -First 1)
+          # 僅供確認源碼版本的資訊性輸出：用 -SimpleMatch 做字面比對，否則
+          # Select-String 會把「set(LLVM_VERSION_MAJOR」的「(」當成正則分組，
+          # 因「Not enough )'s」直接報錯退出（本步驟之前正是因此 exit 1）。
+          Get-Content llvm-src/llvm/CMakeLists.txt | Select-String -SimpleMatch -Pattern "set(LLVM_VERSION_MAJOR" | Select-Object -First 1
 
       - name: Configure LLVM (Release, all needed backends, static libs only)
         shell: pwsh
