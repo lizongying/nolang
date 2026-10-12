@@ -92,6 +92,9 @@ jobs:
           # BUILD_SHARED_LIBS=OFF → 產出各元件靜態 .lib（llvm-config --link-static 要的正是這些）。
           # LLVM_DISTRIBUTION_COMPONENTS：只 build+install「llvm-config / 頭 / 靜態庫」，
           #   跳過 clang、opt、llc 等 CLI 工具，省时省碟。
+          #   ⚠️ 元件名必須用 LLVM 內定的安裝 component 名：靜態庫是「llvm-libraries」
+          #   （不是 llvm-libs，否則 LLVMDistributionSupport.cmake 報「doesn't have an
+          #   install target」使 configure 直接失敗）；頭文件是「llvm-headers」。
           # 關掉 zlib/zstd/libxml2/terminfo 等可選依賴，避免 Windows 上找不到的鏈接問題。
           cmake -G Ninja -S llvm-src/llvm -B llvm-build -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_PREFIX }}" `
@@ -107,7 +110,7 @@ jobs:
             -DLLVM_INCLUDE_EXAMPLES=OFF `
             -DLLVM_INCLUDE_DOCS=OFF `
             -DLLVM_BUILD_UTILS=ON `
-            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-config;llvm-headers;llvm-libs" `
+            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-config;llvm-headers;llvm-libraries" `
             -DLLVM_PARALLEL_LINK_JOBS=2
 
       - name: Build + install the distribution subset
