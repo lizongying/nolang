@@ -6,13 +6,16 @@ import (
 	"github.com/lizongying/nolang/lexer"
 )
 
-// option_divmod_infer_test.go — 有號整數 `/` `%` 的 option 型別推斷。
+// option_divmod_infer_test.go — 有號整數 `+ - * / %` 的 option 型別推斷（D6）。
 //
-// 背景：`a / b`、`a % b`（有號整數）本身就產生 option（除零/溢出為 err），
-// 因此 `q = a / b` 的綁定型別必然是 `?T`，無需用戶顯式標註。lowering pass
-// （inferOptionDivMod）就地補上合成的 `?T` 註解，使 checker / MIR / LSP 復用
-// 顯式寫法 `q ?int = a / b` 的既有路徑。反之，推斷不出時必須保持不改寫
+// 背景：`a OP b`（有號整數，OP ∈ {+ - * / %}）本身就產生 option（溢位／除零為
+// err），因此 `q = a OP b` 的綁定型別必然是 `?T`，無需用戶顯式標註。lowering
+// pass（inferOptionArith）就地補上合成的 `?T` 註解，使 checker / MIR / LSP 復用
+// 顯式寫法 `q ?int = a OP b` 的既有路徑。反之，推斷不出時必須保持不改寫
 // （無標註 → 由 ovfhndld 引導），否則會改動既有語義。
+//
+// D1：`#{overflow=...}` 不再讓結果型別退回 plain int —— 註解只影響「失敗時怎麼
+// 取值」的行為，綁定仍是 `?T`。
 
 // letTypeOf 解析 src，回傳 named 為 `name` 的 LetStatement 之型別字串
 // （無型別註解回 ""），並附帶該變數在語義表中的型別。
@@ -88,17 +91,31 @@ func TestOptionDivModInference(t *testing.T) {
 			want:    "?int",
 		},
 		{
-			// `+ - *` 不屬於本推斷（仍由 ovfhndld 要求顯式處理）。
-			name:    "addition not inferred",
+			// D6：`+` 也屬統一 option 規則。
+			name:    "addition inferred ?int",
 			src:     "a int = 10\nb int = 2\nc = a + b\n",
 			varName: "c",
-			want:    "",
+			want:    "?int",
 		},
 		{
-			name:    "multiplication not inferred",
+			name:    "multiplication inferred ?int",
 			src:     "a int = 10\nb int = 2\nc = a * b\n",
 			varName: "c",
-			want:    "",
+			want:    "?int",
+		},
+		{
+			name:    "subtraction inferred ?int",
+			src:     "a int = 10\nb int = 2\nc = a - b\n",
+			varName: "c",
+			want:    "?int",
+		},
+		{
+			// 巢狀算術運算元：右運算元 `b * d` 自身即 option，其 payload 型別
+			// 由 signedIntOperandType 的遞歸分支判定（否則根推不出 ?T）。
+			name:    "nested arithmetic operand inferred ?int",
+			src:     "a int = 10\nb int = 2\nd int = 3\nc = a + b * d\n",
+			varName: "c",
+			want:    "?int",
 		},
 		{
 			// 無號除法是普通整數值，不產生 option。
@@ -121,11 +138,19 @@ func TestOptionDivModInference(t *testing.T) {
 			want:    "",
 		},
 		{
-			// `#{overflow=wrap}` 是用戶已顯式處理溢出的標記，不可覆寫。
-			name:    "overflow annotation wins",
+			// D1：`#{overflow=wrap}` 不再把結果降級成 plain int，只改「失敗時怎麼
+			// 取值」的行為（溢位 → ok(wrapped) 而非 err）。綁定仍是 ?int。
+			name:    "overflow annotation no longer unwraps",
 			src:     "a int = 10\nb int = 2\n#{overflow=wrap}\nq = a / b\n",
 			varName: "q",
-			want:    "",
+			want:    "?int",
+		},
+		{
+			// D1：`+` 帶註解同樣保留 ?T（回歸：不可讓註解短路推斷）。
+			name:    "overflow annotation on addition keeps ?int",
+			src:     "a int = 10\nb int = 2\n#{overflow=wrap}\nc = a + b\n",
+			varName: "c",
+			want:    "?int",
 		},
 		{
 			// 運算元型別未知 → 保守不改寫。

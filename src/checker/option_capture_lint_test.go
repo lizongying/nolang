@@ -3,15 +3,17 @@ package checker
 import "testing"
 
 // 本檔案是「Option 捕獲賦值」（見 .trae/documents/option-capture-assign.md §4）
-// 在 checker 側的回歸測試：捕獲推斷（lowering 合成 `?T`）之後，
-//   - `_ = expr`（顯式捨棄）豁免 ovfhndld / idxhndld / ovf-int-default；
-//   - 被就地捕獲的賦值不再報「沉默泄漏」；
+// 在 checker 側的回歸測試。D1/D2 之後，「捕獲」只決定 option 存在於哪個變數，
+// 不再等於「已處理」：
+//   - `_ = expr`（顯式捨棄）豁免 ovfhndld / idxhndld / ovf-int-default，也不報 optunuse；
+//   - 被就地捕獲的賦值 → 產生處 HINT ovfhndld，且該變數仍必須被消費；
+//   - 捕獲了卻從未被讀取 → ERROR optunuse；
 //   - 沒有捕獲點的場景（非 option 函式內的根索引、return 運算式、索引寫入 LHS、
 //     裸表達式陳述）仍照報。
 //
 // 這些規則由 parser 單測（src/parser/option_capture_test.go）與
 // tests/option-capture.no 的執行期輸出覆蓋了改寫形狀，但 checker 的偵測面
-// （ovfhndld / idxhndld / ovf-int-default 三條 lint 的豁免與仍報）此前沒有
+// （ovfhndld / idxhndld / ovf-int-default / optunuse 的豁免與仍報）此前沒有
 // 專屬單元測試，故補上。
 
 // lintCounts 回傳 RunAllLints 結果中每個 TraceID 的出現次數。
@@ -80,78 +82,140 @@ func TestCaptureDiscardUnderscoreExempt(t *testing.T) {
 	}
 }
 
-// TestCaptureAssignmentNotReported 驗證被就地捕獲的賦值不再被報成沉默泄漏。
-// 這是本次語義變更的核心：`a = expr`（expr 含可錯源）推斷 a 為 `?T` 並把
-// nil/err 存進 a，於是「option 未被處理」的前提不成立。
-func TestCaptureAssignmentNotReported(t *testing.T) {
+// TestCaptureAssignmentStillNeedsConsumption 驗證捕獲推斷（lowering 合成 `?T`）
+// **不是**消費路徑：綁定本身仍必須被讀取。
+//
+// 這是 D1/D2 與舊語義的分界線。舊語義把「捕獲成功」等同於「已處理」，於是
+// `a = b + c / 2` 之後 a 從此沒人讀也完全靜默。D1 明定註解／推斷都不消費 option，
+// 所以：
+//   - 產生處 → HINT ovfhndld（「該變數是 ?T，記得 match 或 ?=」，見 D2 分級）；
+//   - 從未被讀取 → ERROR optunuse（錯誤被靜默丟棄，唯一該阻斷建置的診斷）。
+//
+// 舊斷言是「captured assignment must not raise ovfhndld」——它同時掩蓋了
+// 「a 從未被讀取」這一事實，正是本次要修掉的盲點。
+func TestCaptureAssignmentStillNeedsConsumption(t *testing.T) {
 	cases := []struct {
-		name string
-		src  string
+		name   string
+		src    string
+		traces map[string]int
 	}{
 		{
-			// 內部可錯子表達式（`c / 2`）被就地捕獲 → 不再 ovfhndld。
+			// 內部可錯子表達式（`c / 2`）被就地捕獲 → 不再被當成沉默泄漏的硬錯誤，
+			// 但仍要提示 + 仍要消費。
 			name: "capture_inner_div_in_plain_fn",
 			src: `f = (b i64, c i64) () {
     a = b + c / 2
     io.outln('done')
 }`,
+			traces: map[string]int{"ovfhndld": 1, "optunuse": 1, "idxhndld": 0},
 		},
 		{
-			// 根即除法的推斷（inferOptionDivMod）→ 維持既有豁免。
+			// 根即除法（inferOptionArith）→ 同上。
 			name: "capture_root_div_in_plain_fn",
 			src: `f = (b i64, c i64) () {
     a = b / c
     io.outln('done')
 }`,
+			traces: map[string]int{"ovfhndld": 1, "optunuse": 1, "idxhndld": 0},
 		},
 		{
-			// option 結果函式內裸 `a = arr[i]` → 就地捕獲（取代舊的自動 `?=`）。
+			// option 結果函式內裸 `a = arr[i]` → 就地捕獲；索引不是算術，無 ovfhndld。
 			name: "capture_root_safe_index_in_option_fn",
 			src: `f = (arr []i64, i i64) (r ?i64) {
     a = arr[i]
     io.outln('done')
 }`,
+			traces: map[string]int{"ovfhndld": 0, "optunuse": 1, "idxhndld": 0},
 		},
 		{
-			// option 型運算元作為可錯源被捕獲。
+			// option 型運算元作為可錯源被捕獲：捕獲的是運算元，不是本陳述的算術。
 			name: "capture_option_operand",
 			src: `f = (x ?i64) () {
     a = x + 1
     io.outln('done')
 }`,
+			traces: map[string]int{"ovfhndld": 0, "optunuse": 1, "idxhndld": 0},
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if n := len(ValidateUnhandledIndex(parseProg(t, c.src), "src/app.no")); n != 0 {
-				t.Fatalf("captured assignment must not raise idxhndld, got %d", n)
-			}
-			if n := len(ValidateUnhandledOverflow(parseProg(t, c.src), "src/app.no")); n != 0 {
-				t.Fatalf("captured assignment must not raise ovfhndld, got %d", n)
-			}
 			counts := lintCounts(t, c.src)
-			for _, id := range []string{"idxhndld", "ovfhndld", "ovf-int-default"} {
-				if counts[id] != 0 {
-					t.Fatalf("captured assignment must not raise %s, got %d (%v)", id, counts[id], counts)
+			for id, want := range c.traces {
+				if counts[id] != want {
+					t.Fatalf("%s: %s count = %d, want %d (all: %v)", c.name, id, counts[id], want, counts)
 				}
 			}
 		})
 	}
 }
 
-// TestCaptureTopLevelNotReported 驗證頂層指令稿的捕獲同樣不被 ovf-int-default
-// 誤報：`a = b + c / d` 展開成 `a ?T = nil` 預宣告 + ok 臂最終賦值，被 collectTopLevelLets
-// 登記為 `?T` 而豁免。
-func TestCaptureTopLevelNotReported(t *testing.T) {
+// TestCaptureAssignmentConsumedIsClean 是上面那條的正面對照：同一個捕獲形狀，
+// 只要把 option 真正消費掉（match / `?=` / `_ =`），三條診斷全消失。沒有這一條，
+// 上面的 optunuse 斷言就無法區分「規則太嚴」與「確實未消費」。
+func TestCaptureAssignmentConsumedIsClean(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			// 標準 4 行解包形態（D4/D8：空 `->` 兜底臂 = 默認零值 + 滿足窮盡性）。
+			// 注意空臂必須獨立成行——`{ ok -> it, -> }` 的逗號形態不受支援
+			//（`,` 在語句層被當作多重賦值分隔符），見 docs/design/option-unified.md §4.2。
+			name: "consumed_by_match_empty_arm",
+			src: `f = (b i64, c i64) () {
+    a = b + c / 2
+    d = a: {
+        ok -> it
+        ->
+    }
+    io.outln(d)
+}`,
+		},
+		{
+			name: "consumed_by_explicit_discard",
+			src: `f = (b i64, c i64) () {
+    a = b + c / 2
+    _ = a
+    io.outln('done')
+}`,
+		},
+		{
+			name: "consumed_by_propagate",
+			src: `f = (b i64, c i64) (r ?i64) {
+    a = b + c / 2
+    r ?= a
+}`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			counts := lintCounts(t, c.src)
+			for _, id := range []string{"idxhndld", "optunuse"} {
+				if counts[id] != 0 {
+					t.Fatalf("%s: consumed option must not raise %s, got %d (%v)", c.name, id, counts[id], counts)
+				}
+			}
+		})
+	}
+}
+
+// TestCaptureTopLevelStillNeedsConsumption 驗證頂層指令碼的捕獲同樣不是消費路徑：
+// `a = b + c / 2` 展開成 `a ?T = nil` 預宣告 + ok 臂最終賦值，a 從此沒人讀時
+// 仍是 optunuse。
+func TestCaptureTopLevelStillNeedsConsumption(t *testing.T) {
 	const src = `b i64 = 6
 c i64 = 2
 a = b + c / 2
 io.outln('done')`
 	counts := lintCounts(t, src)
-	for _, id := range []string{"idxhndld", "ovfhndld", "ovf-int-default"} {
-		if counts[id] != 0 {
-			t.Fatalf("top-level capture must not raise %s, got %d (%v)", id, counts[id], counts)
-		}
+	if counts["idxhndld"] != 0 {
+		t.Fatalf("top-level capture must not raise idxhndld, got %d (%v)", counts["idxhndld"], counts)
+	}
+	if counts["ovfhndld"] != 1 {
+		t.Fatalf("top-level capture must raise one ovfhndld HINT, got %d (%v)", counts["ovfhndld"], counts)
+	}
+	if counts["optunuse"] != 1 {
+		t.Fatalf("top-level unconsumed option must raise optunuse, got %d (%v)", counts["optunuse"], counts)
 	}
 }
 
@@ -191,13 +255,16 @@ func TestCaptureNoCapturePointStillReported(t *testing.T) {
 			traces: map[string]int{"idxhndld": 1},
 		},
 		{
-			// 純算術（無可錯源）不做捕獲，裸賦值仍是沉默溢出。
+			// 純算術綁定：lowering 推斷 x 為 ?i64，故產生處只報 ovfhndld HINT
+			//（ovf-int-default 的「建議加註解」被「目標已是 ?T」吸收——見
+			// TestCaptureOptionalTargetSuppressesIntOverflow）。x 被 io.outln 讀取
+			// 故不報 optunuse。
 			name: "plain_arith_assignment",
 			src: `f = (a i64, b i64) () {
     x = a + b
     io.outln(x)
 }`,
-			traces: map[string]int{"ovfhndld": 1, "ovf-int-default": 1},
+			traces: map[string]int{"ovfhndld": 1, "ovf-int-default": 0, "optunuse": 0},
 		},
 		{
 			// 裸表達式陳述（無 `_ =`）多半是誤寫，與 `_ =` 豁免區分開。

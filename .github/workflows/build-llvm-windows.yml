@@ -1,42 +1,38 @@
 name: build-llvm-windows
 
-# ── 手動預編譯：Windows 版 LLVM 22.1.8（含 llvm-config.exe + 靜態庫）──────────
+# ── 手動預編譯：Windows LLVM 22.1.8 llvm-dev（含 llvm-config + 靜態庫）──────────
 # 觸發方式：Actions 頁 →「Run workflow」→ 手動 dispatch。
 #
-# 為什麼需要這個 workflow：
-#   build.yml 的 build-llvm-variants 要產出「靜態內嵌 libLLVM」的 no-llvm_windows_*
-#   變體，Makefile 靠 `llvm-config` 取得 --cflags / --link-static 庫清單與 --libdir。
-#   但官方 pre-built 的 Windows 包（llvm/llvm-project release 的 LLVM-<ver>-win64.exe
-#   NSIS 安裝檔）「只是 clang/llvm 工具鏈」——不含 llvm-config.exe，也不含可鏈接的
-#   LLVM 靜態庫（其 lib/cmake/llvm 僅有 LLVMConfigExtensions.cmake，無 LLVMConfig.cmake）。
-#   見 llvm discourse #57692 與 llvm-project#53052。因此 build.yml 之前輪詢等
-#   C:\Program Files\LLVM\bin\llvm-config.exe 永遠等不到 → 5 分鐘超時失敗。
+# 🔴 為什麼在 Linux 上交叉編譯，不在 Windows runner 上編：
+#   官方 pre-built Windows 包不含 llvm-config，也不含可鏈接的 LLVM 靜態庫（見
+#   llvm discourse #57692、llvm-project#53052）。之前試過在 Windows runner 用 MSVC
+#   從源碼編，靜態庫為 MSVC ABI，與 consumer 端的 zig cc（windows-gnu + libc++）ABI
+#   不一致 → cgo 鏈接必失敗。現統一為 zig cc -target windows-gnu（MinGW + libc++）
+#   在 Linux 交叉編譯，兩端同工具鏈、同 C++ 標準庫、同 ABI，靜態鏈對稱。zig 自带全部
+#   mingw headers + libc + libc++ + lld，不需 Windows SDK / MSVC / xwin。
 #
-#   解法：自己從源碼編一份 Windows LLVM，產出 llvm-config + 各元件靜態庫，
-#   打包成 zip 發佈到一個固定的 GitHub Release（tag 見下方 RELEASE_TAG）。
-#   build.yml 直接下載這個預編譯包解壓使用，不必每次發布都重編 LLVM。
+# 🔴 兩階段交叉（LLVM 交叉編譯的固有要求）：
+#   LLVM 構建期要跑 host 工具 llvm-tblgen（生成 *.inc）。若只覆蓋 CMAKE_C_COMPILER
+#   為 zig 的 windows 交叉編譯器，CMake 會以為是 native build、嘗試執行 Windows PE
+#   的 tblgen → 在 Linux 上「Exec format error」崩潰。故：
+#     Stage A（native，系統 gcc/clang）：只編 llvm-tblgen + llvm-config，產出可在
+#       Linux 跑的 host 工具。
+#     Stage B（cross，zig -target windows-gnu + CMAKE_SYSTEM_NAME=Windows）：用
+#       -DLLVM_NATIVE_TOOL_DIR 指向 Stage A 的 bin，讓交叉構建復用 native tblgen，
+#       專心產出 Windows COFF 靜態庫（llvm-libs）與頭文件。
+#   打包時把 Stage A 的 native llvm-config（Linux ELF）放進包 bin/——build.yml 在
+#   Linux 上執行它取 --cflags/--link-static；它按自身位置推前綴，對可遷移解壓路徑
+#   正確，且同版本同佈局，輸出的 -I/-L/-l 與 Windows 庫一致。
 #
-# 🔴 ABI 對齊（Option A：zig / MinGW）：
-#   這裡「用 zig cc / zig c++ 編 LLVM」，目標 windows-gnu（MinGW + libc++），產出的
-#   靜態庫是 libLLVM*.a（GNU 命名 / GNU ABI / libc++）。build.yml 端 cgo 也用
-#   CC="zig cc"、LLVM_STATIC_EXTRA_LIBS="-lc++"——兩邊同工具鏈、同 C++ 標準庫、同 ABI，
-#   llvm-config --link-static 吐的也是 mingw 風格 -l 旗標，正好能被 zig cc（lld）解析。
-#   （舊版曾改用 MSVC cl.exe 編，靜態庫為 MSVC ABI + libcpmt，與 zig cc/libc++ 對不上，
-#   靜態鏈接必失敗——現已切到 zig 統一。）
-#   ⚠️ 全量 LLVM 用 zig 編在 Windows 上仍可能踩個別編譯／鏈接坑，故 build.yml 端保留
-#      continue-on-error。本 workflow 失敗不影響 Linux/macOS 發布。
+# 矩陣：
+#   linux-amd64 (ubuntu-latest)      → 交叉編 x86_64-windows-gnu  → win-x64 包
+#   linux-arm64 (ubuntu-24.04-arm)   → 交叉編 aarch64-windows-gnu → win-arm64 包
+#   產物發佈到同一 Release tag，各自用不同 asset name。build.yml 按矩陣下載匹配的。
 #
-# 成本與取捨：
-#   全後端源碼編譯很慢（windows-latest 上約 1~3 小時），故只在手動 dispatch 跑；
-#   產物可被 release 反覆下載。用 LLVM_DISTRIBUTION_COMPONENTS 只構建
-#   「llvm-config + 頭文件 + llvm-libraries（靜態庫）」，跳過 clang / opt / llc 等 CLI
-#   工具，縮短構建時間並省磁碟（no-llvm 只需在進程內用 LLVM C API，靠 zig cc 連結）。
-#
-# 產物內容（安裝前後綴 C:/llvm 的可遷移佈局）：
-#   bin/llvm-config.exe   —— 自帶，從自身位置推導 prefix，故解壓到任意路徑都能用
-#   include/              —— llvm / llvm-c 頭文件（cgo 的 -I 目標）
-#   lib/*.a               —— 各元件靜態庫（mingw 命名）+ lib/cmake/llvm（cgo 的 -L/-l 目標）
-#   上面三者 zip 成 LLVM-<ver>-win-x64-llvm-dev.zip 上傳到 RELEASE_TAG。
+# 產物佈局（解壓前後綴可遷移；llvm-config 為 Linux ELF，在 Linux consumer 跑）：
+#   bin/llvm-config          ← Linux 宿主 ELF（Stage A 產出）
+#   include/                 ← llvm / llvm-c 頭（含交叉專用的 llvm/Config/*.h）
+#   lib/libLLVM*.a           ← Windows COFF 格式靜態庫（zig lld 讀取）
 
 on:
   workflow_dispatch:
@@ -50,168 +46,171 @@ permissions:
   contents: write
 
 env:
-  # 固定發佈 tag：build.yml 用 `gh release download <此 tag>` 取包。改版就改這裡。
-  RELEASE_TAG: "llvm-22.1.8-win-x64"
-  # 安裝前後綴（無空格；也直接對應 build.yml 解壓後引用路徑）
-  INSTALL_PREFIX: "C:/llvm"
-  # zig 宿主架構 + 版本（對齊 LLVM 22.1.8：zig 0.17.0 內嵌 clang/lld/libc 同源）
+  # 統一發佈 tag（含兩個 asset：x64 + arm64）
+  RELEASE_TAG: "llvm-22.1.8-windows"
   ZIG_VER: "0.17.0"
+  LLVM_VERSION: "22.1.8"
 
 jobs:
   build-llvm-windows:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x86_64-windows-gnu：在 linux/amd64 runner 上原生交叉，zig 自帶 mingw sysroot。
+          - runner: ubuntu-latest
+            zig_arch: x86_64
+            target: x86_64-windows-gnu
+            cmake_system_processor: AMD64
+            arch_label: win-x64
+          # aarch64-windows-gnu：需 linux/arm64 原生 runner（zig aarch64-linux）。
+          - runner: ubuntu-24.04-arm
+            zig_arch: aarch64
+            target: aarch64-windows-gnu
+            cmake_system_processor: ARM64
+            arch_label: win-arm64
+
+    runs-on: ${{ matrix.runner }}
 
     steps:
-      - name: Resolve version
-        id: ver
-        shell: pwsh
+      - name: Install Zig ${{ env.ZIG_VER }}
         run: |
-          $v = "${{ github.event.inputs.llvm_version }}"
-          if ([string]::IsNullOrWhiteSpace($v)) { $v = "22.1.8" }
-          echo "llvm_version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          curl -L -o zig.tar.xz "https://ziglang.org/download/${{ env.ZIG_VER }}/zig-${{ matrix.zig_arch }}-linux-${{ env.ZIG_VER }}.tar.xz"
+          mkdir -p "$HOME/zig"
+          tar -xf zig.tar.xz -C "$HOME/zig" --strip-components=1
+          echo "$HOME/zig" >> "$GITHUB_PATH"
+          "$HOME/zig/zig" version
 
-      - name: Install Zig (provides clang/lld/libc++ used as the C/C++ toolchain)
-        shell: pwsh
+      - name: Create zig cc/c++/ar/ranlib wrappers for ${{ matrix.target }}
         run: |
-          # 不再用 ilammy/msvc-dev-cmd（MSVC）：改用 zig cc/zig c++ 作編譯器，
-          # 讓靜態庫與 build.yml 端 cgo（zig cc + -lc++）同 ABI。見頂部 Option A 說明。
-          $zv = "${{ env.ZIG_VER }}"
-          curl.exe -L -f -o zig.zip "https://ziglang.org/download/$zv/zig-x86_64-windows-$zv.zip"
-          Expand-Archive -Path zig.zip -DestinationPath C:\zigraw -Force
-          $zigExe = (Get-ChildItem C:\zigraw -Recurse -Filter zig.exe | Select-Object -First 1).FullName
-          $zigDir = Split-Path $zigExe
-          # 讓後續步驟（含 cmake 內部呼叫）能找到 zig，並把 exe 絕對路徑留給包裝腳本。
-          echo $zigDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
-          echo "ZIG_EXE=$zigExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          & $zigExe version
+          # zig 是 multi-call，CMake 需要單一可執行檔。Linux 上用 #!/bin/sh 腳本即可
+          # （不像 Windows 需要 .cmd）。-target 寫死進腳本，讓 Stage B 全程以該 Windows
+          # ABI 產出 COFF 物件與靜態庫。
+          ZIG="$HOME/zig/zig"
+          printf '#!/bin/sh\nexec "%s" cc -target %s "$@"\n' "$ZIG" "${{ matrix.target }}" > "$HOME/zig/zigcc"
+          printf '#!/bin/sh\nexec "%s" c++ -target %s "$@"\n' "$ZIG" "${{ matrix.target }}" > "$HOME/zig/zigcxx"
+          printf '#!/bin/sh\nexec "%s" ar "$@"\n' "$ZIG" > "$HOME/zig/zigar"
+          printf '#!/bin/sh\nexec "%s" ranlib "$@"\n' "$ZIG" > "$HOME/zig/zigranlib"
+          chmod +x "$HOME/zig/zigcc" "$HOME/zig/zigcxx" "$HOME/zig/zigar" "$HOME/zig/zigranlib"
 
-      - name: Create zig cc / zig c++ / zig ar / zig ranlib wrappers
-        shell: pwsh
+      - name: Download LLVM ${{ env.LLVM_VERSION }} source
         run: |
-          # CMake 需要「單一可執行檔」當編譯器／歸檔器，但 zig 是 multi-call：`zig cc`、
-          # `zig c++`、`zig ar`、`zig ranlib` 都是子命令。故寫 .cmd 包裝腳本轉發參數。
-          # 路徑無空格（C:\zig、D:\a\...），%* 直傳即可；clang 也支援 @rsp 回應檔。
-          $z = $env:ZIG_EXE
-          $wrap = "C:\zig"
-          New-Item -ItemType Directory -Force -Path $wrap | Out-Null
-          function Make-Cmd($name, $sub) {
-            $body = "@echo off`r`n`"$z`" $sub %*`r`n"
-            Set-Content -Path (Join-Path $wrap $name) -Value $body -Encoding ascii
-          }
-          Make-Cmd "zigcc.cmd"     "cc"
-          Make-Cmd "zigcxx.cmd"    "c++"
-          Make-Cmd "zig-ar.cmd"    "ar"
-          Make-Cmd "zig-ranlib.cmd" "ranlib"
-          Get-ChildItem $wrap -Filter *.cmd | ForEach-Object { Write-Host $_.FullName }
-
-      - name: Download LLVM source
-        shell: pwsh
-        run: |
-          $v = "${{ steps.ver.outputs.llvm_version }}"
-          $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$v/llvm-project-$v.src.tar.xz"
-          curl.exe -L -f -o llvm-src.tar.xz $url
-          # Windows 內建 tar（bsdtar）支援 .tar.xz 解壓
+          v="${{ env.LLVM_VERSION }}"
+          curl -L -f -o llvm-src.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-$v/llvm-project-$v.src.tar.xz"
           tar -xf llvm-src.tar.xz
-          # 解壓後目錄名為 llvm-project-<ver>.src
-          Rename-Item -Path "llvm-project-$v.src" -NewName "llvm-src"
-          # 僅供確認源碼版本的資訊性輸出：用 -SimpleMatch 做字面比對，否則
-          # Select-String 會把「set(LLVM_VERSION_MAJOR」的「(」當成正則分組，
-          # 因「Not enough )'s」直接報錯退出（本步驟之前正是因此 exit 1）。
-          Get-Content llvm-src/llvm/CMakeLists.txt | Select-String -SimpleMatch -Pattern "set(LLVM_VERSION_MAJOR" | Select-Object -First 1
+          mv "llvm-project-$v.src" llvm-src
 
-      - name: Configure LLVM (Release, all needed backends, static libs only, zig toolchain)
-        shell: pwsh
+      - name: Stage A - configure & build NATIVE llvm-tblgen + llvm-config
         run: |
-          # CMAKE_*_COMPILER 全指向 zig 包裝腳本：C 用 zigcc，C++/歸檔用 zigcxx/zig-ar。
-          # zig cc 在 windows 宿主預設目標 x86_64-w64-windows-gnu（MinGW），CMake 認成
-          # Clang + GNU ABI，於是不會注入 MSVC 專用旗標，靜態庫命名走 lib*.a。
-          # LLVM_TARGETS_TO_BUILD 對齊 no-llvm 的 FULLLLVM=1（x86 + AArch64 + ARM + WebAssembly）。
-          # BUILD_SHARED_LIBS=OFF → 產出各元件靜態庫（llvm-config --link-static 要的正是這些）。
-          # LLVM_DISTRIBUTION_COMPONENTS：只 build+install「llvm-config / 頭 / 靜態庫」，
-          #   跳過 clang、opt、llc 等 CLI 工具，省时省碟。
-          #   ⚠️ 元件名必須用 LLVM 內定的安裝 component 名：靜態庫是「llvm-libraries」
-          #   （不是 llvm-libs，否則 LLVMDistributionSupport.cmake 報「doesn't have an
-          #   install target」使 configure 直接失敗）；頭文件是「llvm-headers」。
-          # 關掉 zlib/zstd/libxml2/terminfo 等可選依賴，避免 Windows 上找不到的鏈接問題。
-          cmake -G Ninja -S llvm-src/llvm -B llvm-build -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_PREFIX }}" `
-            -DCMAKE_C_COMPILER="C:/zig/zigcc.cmd" `
-            -DCMAKE_CXX_COMPILER="C:/zig/zigcxx.cmd" `
-            -DCMAKE_ASM_COMPILER="C:/zig/zigcc.cmd" `
-            -DCMAKE_AR="C:/zig/zig-ar.cmd" `
-            -DCMAKE_RANLIB="C:/zig/zig-ranlib.cmd" `
-            -DLLVM_ENABLE_ASSERTIONS=OFF `
-            -DBUILD_SHARED_LIBS=OFF `
-            -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM;WebAssembly" `
-            -DLLVM_ENABLE_TERMINFO=OFF `
-            -DLLVM_ENABLE_ZLIB=OFF `
-            -DLLVM_ENABLE_ZSTD=OFF `
-            -DLLVM_ENABLE_LIBXML2=OFF `
-            -DLLVM_INCLUDE_TESTS=OFF `
-            -DLLVM_INCLUDE_BENCHMARKS=OFF `
-            -DLLVM_INCLUDE_EXAMPLES=OFF `
-            -DLLVM_INCLUDE_DOCS=OFF `
-            -DLLVM_BUILD_UTILS=ON `
-            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-config;llvm-headers;llvm-libraries" `
-            -DLLVM_PARALLEL_LINK_JOBS=2
+          # 用系統 gcc/clang（Linux 原生 ELF），產出可在本 runner 執行的 host 工具。
+          # 只編 tblgen（構建期生成 .inc 用）與 llvm-config（打包進 bin/，consumer 端跑）。
+          # ⚠️ LLVM_TARGETS_TO_BUILD 必須與 Stage B 一致（四後端）：打包進去的 llvm-config
+          #    的 --components/--targets-built 由這個宏決定，consumer 端 Makefile 據 --components
+          #    推 LLVM_STATIC_COMPONENTS 再 --link-static 鏈庫；若這裡只有 X86，FULLLLVM=1
+          #    要初始化的 AArch64/ARM/WebAssembly 後端會漏鏈 libLLVM*.a → undefined symbol。
+          #    本階段只 --target llvm-tblgen llvm-config，不會真編後端庫，配置成四後端即可。
+          sudo apt-get update && sudo apt-get install -y build-essential ninja-build cmake
+          cmake -G Ninja -S llvm-src/llvm -B llvm-native \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM;WebAssembly" \
+            -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_BUILD_UTILS=OFF
+          cmake --build llvm-native --target llvm-tblgen llvm-config
+          test -x llvm-native/bin/llvm-tblgen || { echo "::error::native llvm-tblgen missing"; exit 1; }
+          test -x llvm-native/bin/llvm-config || { echo "::error::native llvm-config missing"; exit 1; }
 
-      - name: Build + install llvm-config / headers / static libs to the prefix
-        shell: pwsh
+      - name: Stage B - configure CROSS build (zig windows-gnu, static libs)
         run: |
-          # 1) 先用 zig 把「llvm-config 工具 + 全部靜態庫（llvm-libs meta-target）」編出來。
-          cmake --build llvm-build --target llvm-config llvm-libs
-          # 2) 再把三個需要的元件「安裝」到 CMAKE_INSTALL_PREFIX（C:/llvm）。
-          #    ⚠️ 不能用 `--target distribution`：LLVM 的 distribution 是把元件 stage 到
-          #    <build>/llvm-dist 再打包，不會落到 CMAKE_INSTALL_PREFIX——之前正是因此
-          #    C:/llvm/bin/llvm-config.exe 一直不存在，Verify 步 `&` 報「not recognized as a
-          #    ... executable program」。改用 llvm_distribution_add_targets 依
-          #    LLVM_DISTRIBUTION_COMPONENTS 生成的 install-<component> 目標，直接裝到 prefix。
-          cmake --build llvm-build --target install-llvm-config install-llvm-headers install-llvm-libraries
-          # 落地檢查：裝完必須能在 prefix/bin 看到 llvm-config.exe，否則後續 Verify/Packaging 都無意義。
-          $prefix = "${{ env.INSTALL_PREFIX }}"
-          if (-not (Test-Path "$prefix/bin/llvm-config.exe")) {
-            Write-Host "---- $prefix tree ----"
-            Get-ChildItem -Recurse $prefix -ErrorAction SilentlyContinue | Select-Object -First 50 FullName
-            Write-Host "----------------------"
-            Write-Error "install did not produce $prefix/bin/llvm-config.exe (check install-<component> targets above)"
+          # BUILD_SHARED_LIBS=OFF → 產出各元件靜態 .a（llvm-config --link-static 要這些）。
+          # CMAKE_SYSTEM_NAME=Windows 讓 LLVM/CMake 進入交叉模式：不嘗試執行目標端工具，
+          #   改用 LLVM_NATIVE_TOOL_DIR 裡的 Stage A native tblgen。
+          # CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY → configure 期的編譯器測試只編
+          #   靜態庫、不去鏈接/運行 exe（避免 Windows PE 在 Linux 上跑不了）。
+          # 元件名必須用「llvm-libraries」（不是 llvm-libs，否則 configure 報 install target 缺失）。
+          # 關掉 zlib/zstd/libxml2/terminfo 等可選依賴，避免交叉鏈接找不到的問題。
+          # LLVM_TARGETS_TO_BUILD：x86 + AArch64 + ARM + WebAssembly（對齊 consumer 的 FULLLLVM=1）。
+          PREFIX="$GITHUB_WORKSPACE/llvm-dev-${{ matrix.arch_label }}"
+          mkdir -p "$PREFIX"
+          NATIVE_BIN="$GITHUB_WORKSPACE/llvm-native/bin"
+          cmake -G Ninja -S llvm-src/llvm -B llvm-cross \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.cmake_system_processor }} \
+            -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DCMAKE_C_COMPILER="$HOME/zig/zigcc" \
+            -DCMAKE_CXX_COMPILER="$HOME/zig/zigcxx" \
+            -DCMAKE_ASM_COMPILER="$HOME/zig/zigcc" \
+            -DCMAKE_AR="$HOME/zig/zigar" \
+            -DCMAKE_RANLIB="$HOME/zig/zigranlib" \
+            -DLLVM_NATIVE_TOOL_DIR="$NATIVE_BIN" \
+            -DLLVM_HOST_TRIPLE=${{ matrix.target }} \
+            -DLLVM_DEFAULT_TARGET_TRIPLE=${{ matrix.target }} \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM;WebAssembly" \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_BUILD_UTILS=OFF \
+            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-headers;llvm-libraries"
+
+      - name: Stage B - build Windows COFF static libraries
+        run: |
+          # 交叉構建全部靜態庫（llvm-libs meta-target）。tblgen 用 LLVM_NATIVE_TOOL_DIR 的 native 版。
+          cmake --build llvm-cross --target llvm-libs
+
+      - name: Install headers + libs to prefix, then add native llvm-config
+        run: |
+          PREFIX="$GITHUB_WORKSPACE/llvm-dev-${{ matrix.arch_label }}"
+          # 用 install-<component> 目標直接裝到 CMAKE_INSTALL_PREFIX（不用 distribution
+          # target——它只 stage 到 <build>/llvm-dist 再打包，不落 prefix）。
+          cmake --build llvm-cross --target install-llvm-headers install-llvm-libraries
+          # 把 Stage A 的 native（Linux ELF）llvm-config 放進包 bin/，consumer 在 Linux 執行它。
+          mkdir -p "$PREFIX/bin"
+          cp "$GITHUB_WORKSPACE/llvm-native/bin/llvm-config" "$PREFIX/bin/llvm-config"
+          # 落地驗證
+          if [ ! -x "$PREFIX/bin/llvm-config" ]; then
+            echo "::error::install did not produce $PREFIX/bin/llvm-config"
+            find "$PREFIX" -maxdepth 3 -print | head -50
             exit 1
-          }
+          fi
+          "$PREFIX/bin/llvm-config" --version
+          LIBDIR=$("$PREFIX/bin/llvm-config" --libdir)
+          echo "libdir=$LIBDIR"
+          COUNT=$(find "$LIBDIR" -name 'libLLVM*.a' | wc -l)
+          echo "static libs: $COUNT"
+          [ "$COUNT" -ge 1 ] || { echo "::error::no static libLLVM*.a found under $LIBDIR"; exit 1; }
 
-      - name: Verify llvm-config + libs landed
-        shell: pwsh
+      - name: Package llvm-dev archive
         run: |
-          $prefix = "${{ env.INSTALL_PREFIX }}"
-          & "$prefix/bin/llvm-config.exe" --version
-          & "$prefix/bin/llvm-config.exe" --includedir
-          & "$prefix/bin/llvm-config.exe" --libdir
-          # 至少要能看到幾個元件靜態庫，否則後續 cgo 一定鏈不起來。
-          # zig/MinGW 產的是 lib*.a（GNU 命名）；保留 *.lib 過濾以防後續改回 MSVC ABI。
-          $libdir = & "$prefix/bin/llvm-config.exe" --libdir
-          $libcount = (Get-ChildItem -Path $libdir -Include *.a,*.lib -Recurse | Measure-Object).Count
-          if ($libcount -lt 1) { Write-Error "no static libs (.a/.lib) under $libdir"; exit 1 }
-          Write-Host "static libs found: $libcount"
-
-      - name: Package the installed tree into a zip
-        shell: pwsh
-        run: |
-          $v = "${{ steps.ver.outputs.llvm_version }}"
-          $zip = "LLVM-$v-win-x64-llvm-dev.zip"
-          # 把整個安裝前後綴（bin/include/lib）打包；解壓端保留相對結構即可直接用。
-          Compress-Archive -Path "${{ env.INSTALL_PREFIX }}/*" -DestinationPath $zip -CompressionLevel Optimal
-          echo "ZIP_NAME=$zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host ("zip bytes: " + (Get-Item $zip).Length)
+          PREFIX="$GITHUB_WORKSPACE/llvm-dev-${{ matrix.arch_label }}"
+          ASSET="LLVM-${{ env.LLVM_VERSION }}-${{ matrix.arch_label }}-llvm-dev.tgz"
+          # -C "$PREFIX" . → 归档根就是 bin/include/lib（无外层目录），consumer 直接
+          # tar -xzf 到目标前缀即得 <prefix>/bin/llvm-config。与旧 zip 的 Compress-Archive 'prefix/*' 对齐。
+          tar -czf "$ASSET" -C "$PREFIX" .
+          echo "ASSET=$ASSET" >> "$GITHUB_ENV"
+          ls -lh "$ASSET"
 
       - name: Upload to GitHub Release (idempotent)
-        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = "${{ env.RELEASE_TAG }}"
-          # 本 workflow 沒有 actions/checkout，工作目录不是 git 倉庫，gh 無法自動推
-          # 目標倉庫（報「fatal: not a git repository」）。故每条 gh 都顯式帶 --repo。
-          $repo = "${{ github.repository }}"
-          # tag 不存在才建；已存在就覆寫同名 asset（重跑/改版時不必手动清）。
-          if (-not (gh release view $tag --repo $repo 2>$null)) {
-            gh release create $tag --repo $repo --title "Pre-built Windows LLVM (${{ steps.ver.outputs.llvm_version }}) for no-llvm" --notes "Manually built via .github/workflows/build-llvm-windows.yml with zig cc/zig c++ (windows-gnu, libc++ ABI). Contains llvm-config.exe + static libs missing from the official win64 installer. Consumed by build.yml build-llvm-variants (Windows)."
-          }
-          gh release upload $tag "${{ env.ZIP_NAME }}" --repo $repo --clobber
+          TAG="${{ env.RELEASE_TAG }}"
+          # 兩個矩陣 job 都會跑到這一步。第一個創建 tag，第二個 view 成功就跳過 create。
+          # race condition（同時 create）：第二個失敗於「已存在」，用 || true 吞掉。
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" \
+                 --title "Pre-built Windows LLVM ${LLVM_VERSION} (zig/MinGW) for no-llvm" \
+                 --notes "Built on Linux via zig cc/c++ targeting windows-gnu (MinGW + libc++). Two-stage cross build; contains a Linux-runnable llvm-config + Windows COFF static libs (libLLVM*.a). Consumed by build.yml build-llvm-variants (cross-windows entries)." \
+            || true  # tag 已被另一個 job 創建，忽略
+          gh release upload "$TAG" "${{ env.ASSET }}" --clobber

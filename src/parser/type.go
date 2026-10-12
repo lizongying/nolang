@@ -308,14 +308,14 @@ func (p *Parser) inferIndexElemType(idx *IndexExpression) string {
 // (generateOptionAssign's IndexExpression case). Struct-field indexing is
 // intentionally excluded here so it is never desugared into the safe form
 // (which the codegen does not yet handle for DotExpression bases).
+//
+// D7（2026-10-12）：原本這裡會對「可證明越界安全」的讀取（定長陣列 + 界內下標，
+// 由 bounds.go 靜態分析得出）早退回 false，使其免於 option 化。用戶定案取消這個
+// 豁免 —— 範圍不好判定，`for i <- [0..N) { x = arr[i] }` 這種寫法也照常產生
+// option、不處理即報錯；慣用替代是直接迭代容器 `for i <- arr { x = i }`。
+// 該分析（bounds.go）已整套下線。
 func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
 	if idx == nil || idx.Left == nil {
-		return false
-	}
-	// 可證明越界安全的讀取（定長陣列 + 界內下標）不再是 option 基底：lowering 已
-	// 於進入函數時算好此集合（bounds.go），使這類讀取不被降級成 option、無需
-	// `#{index-out}`。codegen / no vet / no fmt 共用同一判定。
-	if p.inBoundsIdx[idx] {
 		return false
 	}
 	ident, ok := idx.Left.(*Identifier)

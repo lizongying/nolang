@@ -30,7 +30,22 @@ import (
 // serialization changed from "gob of the struct" to "gob of a deterministic
 // shadow with key-sorted maps" (see astcache_det.go). Old entries decode into
 // a different wire shape and must be invalidated.
-const ASTVersion = "2026-10-11.2"
+// 2026-10-12.1 — the unified option rule (D6/D1) changed what ParseProgram
+// PRODUCES without changing the wire shape: `x = a + b` (and `a - b`, `a * b`,
+// and annotated arithmetic) now gets a synthesized `?T` type annotation from
+// the lowering pass, and `#{overflow=…}` no longer downgrades it to a plain
+// int. The added `matchArm.valueCtx` field is unexported, so gob ignores it and
+// old blobs still decode — but they decode into the PRE-CHANGE lowering result.
+// A stale entry therefore silently resurrects the old semantics (measured: a
+// `no vet` false-positive `ovf-int-default` on `main` as the sole function with
+// a 2-statement body, reproducible only on a cache HIT and gone under
+// NOLANG_AST_CACHE_OFF=1). Bump so every stale entry is invalidated.
+//
+// Rule of thumb: bump this for any change to the lowering pass, not just for
+// changes to the gob layout. The cache key is (content, ASTVersion, sigSalt) —
+// it cannot see the compiler build, so a semantics-only change would otherwise
+// be masked by cached blobs.
+const ASTVersion = "2026-10-12.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

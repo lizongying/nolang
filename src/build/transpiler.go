@@ -921,27 +921,25 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
-	// 未處理的溢出 option 檢查（編譯硬錯誤）：未標註 #{overflow} 的整數運算預設回傳
-	// option<int>，若結果未被 ?= 上拋 / match 解構 / 作為 ?T 返回或宣告，即「沉默泄漏」，
-	// 必須顯式處理（加 #{overflow} 註解回普通 int、用 ?= 上拋、或顯式宣告 ?T）。
+	// option 生命週期檢查（D2 分級）。同一趟 ValidateUnhandledOverflow 產出兩種 trace：
+	//   - ovfhndld（HINT）：整數運算產生 option 並綁定到變數。統一 option 規則（D6）下
+	//     這是常態，只提示「該變數是 ?T，記得 match 或 ?=」——**不是**硬錯誤。
+	//   - optunuse（ERROR）：該 option 既沒上拋（?=）也沒解包（match / `_ =`），錯誤被
+	//     靜默丟棄 —— 這才是唯一該讓 no build / no run / no test 失敗的診斷。
+	// 因此這裡必須逐條依 TraceID 過濾，不能整批當硬錯誤（否則每個 `x = a + b` 都會
+	// 讓建置失敗，而它其實是合法且常見的寫法）。
 	if leakErrs := checker.ValidateUnhandledOverflow(program, t.sourcePath); len(leakErrs) > 0 {
 		for _, e := range leakErrs {
+			if e.TraceID != checker.OptUnuseTraceID {
+				continue
+			}
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
-	// 未處理的越界索引（編譯硬錯誤）：arr/vec/slice 索引 b[i] 越界時預設回傳
-	// option<elem>，若結果未被 ?= 上拋 / match 解構 / #{index-out = DEF} 註解處理
-	// / 作為 ?T 返回或宣告，即「沉默泄漏」，必須顯式處理。與「未處理溢位」(20d,
-	// 上方 ValidateUnhandledOverflow) 同口徑升為編譯硬錯誤：設計取捨從「僅 lint」
-	// 翻轉為「直接硬錯」，使 `no build` / `no run` / `no test` 對未處理越界索引
-	// 直接失敗，與編輯器 / `no vet` 的紅色診斷一致。既有以舊式「越界 panic」寫法
-	// `b = arr[i]` 的程式碼須改寫為 `b ?= arr[i]` / `match` / `#{index-out = 0}` 等
-	// 顯式處理形式。
-	if idxErrs := checker.ValidateUnhandledIndex(program, t.sourcePath); len(idxErrs) > 0 {
-		for _, e := range idxErrs {
-			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
-		}
-	}
+	// 未處理的越界索引（D2：降為 HINT，不再阻斷建置）。arr/vec/slice 索引 b[i] 越界時
+	// 預設回傳 option<elem>，這是統一規則的常態；「沒解包」由上面的 optunuse 兜底。
+	// 診斷仍會經 RunAllLints 出現在 no vet / LSP（灰色提示），故此處不再呼叫
+	// checker.ValidateUnhandledIndex。
 	// ?T 輸出參數未初始化檢查（case6）
 	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
 		for _, e := range uninitErrs {

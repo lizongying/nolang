@@ -16,6 +16,9 @@ get-default = (arr []i64, i i64) (res i64) {
 
 auto-prop = (arr []i64, i i64) (res ?i64) {
     x = arr[i]
+    ; D1：本函式只驗證「裸 x = v[i] 會被就地捕獲、越界不崩潰」，不驗證取值，
+    ; 故對捕獲到的 option 顯式丟棄（三條消費路徑之一）。
+    _ = x
 }
 
 ; 顯式識別符 RHS 的 ?= 解箱（inner ?= res 形）：驗證 Identifier-RHS 路徑

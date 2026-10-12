@@ -582,8 +582,12 @@ toml.parse = (s str) (result ?toml-doc) {
 
         i >= lines.len() -> break
 
+        ; D1：索引讀取 `lines[i]` 恆為 `?str`，而 `#{index-out}` 只在「根為索引」的
+        ; 綁定上生效（maybeIndexOutAssign）。拆成兩條：先用註解把越界折成 ''，
+        ; 再以純 str 傳給 toml-strip-comment（原本的寫法讓 option 直接流入 i64/str 形參）。
         #{index-out=zero}
-        line = toml-strip-comment(lines[i])
+        line-raw = lines[i]
+        line = toml-strip-comment(line-raw)
 
         #{overflow=wrap}
         line-no = i + 1
@@ -684,8 +688,10 @@ toml.parse = (s str) (result ?toml-doc) {
                 (j < lines.len()) {
                     j >= lines.len() -> break
 
+                    ; D1：同上 —— 索引讀取是 `?str`，先以 `#{index-out}` 折成 '' 再用。
                     #{index-out=zero}
-                    next-line = toml-strip-comment(lines[j])
+                    next-line-raw = lines[j]
+                    next-line = toml-strip-comment(next-line-raw)
 
                     raw-value = raw-value - '\n' - next-line
                     complete = toml-value-complete(raw-value)

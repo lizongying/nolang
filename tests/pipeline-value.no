@@ -34,8 +34,10 @@ main = () {
     print('5 ?T node short-circuits the tail')
     bad = 7
 
+    ; D1：`-` 的結果恆為 `?i64`。此處要的是回繞的普通整數（本測試只驗證管道
+    ; 短路，不取用 good），顯式 plain i64 抑制 option 化。
     #{overflow=wrap}
-    good = 0 - 3
+    good i64 = 0 - 3
     r = 5
     r = print('A')
     might-fail(bad) -> 99

@@ -881,8 +881,9 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
             ver == 4 -> {
 
                 ; IHL = (byte 0 & 0x0F) * 4
+                ; D1：`*` 的結果恆為 `?i64`，此處要的是普通整數 → 顯式 plain i64。
                 #{index-out=zero, overflow=wrap}
-                ihl = (recv-buf[0] & 15) * 4
+                ihl i64 = (recv-buf[0] & 15) * 4
                 offset = ihl
             }
         }

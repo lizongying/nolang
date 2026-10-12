@@ -340,13 +340,20 @@ func TestOptEvalCmp(t *testing.T) {
 }
 
 // foldSrc is a program whose two arithmetic statements have all-constant
-// operands and a wrapping (`#{overflow=wrap}`) destination, i.e. the exact shape
-// the folder is allowed to rewrite: `(2+3)*4 == 20`.
+// operands and a PLAIN (non-option) destination, i.e. the exact shape the folder
+// is allowed to rewrite: `(2+3)*4 == 20`.
+//
+// The destination must be spelled out as `i64`. Since the unified-option rule
+// (D1) `#{overflow=wrap}` no longer unwraps: `a = 2 + 3` is `a : ?i64` whatever
+// annotations it carries, and the folder refuses option-typed arithmetic (see
+// TestOptLeavesOptionArithmeticAlone). The annotation is kept because it is what
+// makes the destination the *wrapping* one; the explicit `i64` is what makes it
+// plain.
 const foldSrc = `main = () () {
     #{overflow=wrap}
-    a = 2 + 3
+    a i64 = 2 + 3
     #{overflow=wrap}
-    b = a * 4
+    b i64 = a * 4
     print(b)
 }
 `

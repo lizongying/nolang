@@ -1,6 +1,7 @@
 # 方案：算术与索引统一返回 option
 
-> 状态：**待实施**（设计决策已与用户确认，见 §1）
+> 状态：**实施中**（M1a/M2 已落地；M6 首批迁移完成 —— `src/std` 与 `tests/` 均 0 error。
+> 实测勘误见 §11，其中 §11.3/§11.8/§11.10 推翻了正文三处前提，§11.9/§11.15 是未闭合项）
 > 涉及层：parser / checker / mir / lsp / fmt / build / 语料迁移
 > 相关既有文档：`docs/docs/lang/syntax.md`〈整数运算溢出〉〈可空类型(option)〉、`NOLANG-OWNERSHIP-MODEL.md`
 
@@ -25,7 +26,12 @@
 
 - `#{overflow=wrap}` ⏎ `x = a + b` ⇒ `x : ?i64`（**不再**是 plain `int`）。要拿到值必须 `x: { ok -> it, … }` 或 `x ?=`。
 - `#{index-out=zero}` ⏎ `x = arr[i]` ⇒ `x : ?elem`（**不再**是 plain `elem`）。
-- 因此 **`src/std` 的 3557 个 `#{overflow}` 与 1007 个 `#{index-out}` 站点本次全部需要迁移**（这正是原需求里"可能需要插入很多前面的解包操作"所指）。
+- 因此 ~~**`src/std` 的 3557 个 `#{overflow}` 与 1007 个 `#{index-out}` 站点本次全部需要迁移**~~
+  （这正是原需求里"可能需要插入很多前面的解包操作"所指）。
+  🔴 **勘误（§11.3 实测）**：这些站点**不会**因 D1 而编译失败 —— 「option 赋给 plain 变量」
+  目前是静默接受（隐式取 payload），所以它们照旧编译、照旧运行。实测 `src/std` 全量
+  `no vet` 在 SUT 上只新增 **8** 条诊断（全是 `fxxoptarg`，即 option 流入 plain **形参**），
+  `optunuse` 与 `ovfhndld` 均为 **0**。真正的迁移量取决于 §11.4 那条**尚未定案**的规则。
 - §2.2 里"std 已 100% 标注 ⇒ 本次无需改动"的推论**作废**，见修订后的 §2.2。
 
 ### 尚待定案（见 §8.1）
@@ -138,7 +144,14 @@ x = <产生 option 的表达式>      ; x 为新变量、无显式类型注解
 | 未标注索引读取绑定到新变量 | ERROR | **HINT** | `idxhndld` |
 | **option 既没上抛也没解包**（含"写了注解但没 match"） | — | **ERROR** | `optunuse`（新） |
 | 区间索引惯用法建议（`for i <- [0..N) { x = arr[i] }`） | — | **HINT**（建议 `for i <- arr { x = i }`） | `rngidx`（新） |
-| option 赋给 plain 变量 / 传给 plain 形参 | ERROR | ERROR（不变） | 既有 `ValidateTypes` |
+| option 赋给 plain 变量 / 传给 plain 形参 | ~~ERROR~~ **实为静默接受** | **暂不变**（缺口未闭合，见 §11.3） | 既有 `ValidateTypes`（**不生效**） |
+
+> 🔴 末行是**勘误**：实测「option 赋给 plain 变量」既不报 `cannot assign` 也不报
+> 任何其他诊断，运行期静默取 payload。方案原稿把它当成现成的硬错误来兜底，
+> 因此高估了安全网、低估了缺口。详见 §11.3 / §11.4。
+>
+> 🔴 `ovfhndld` 一行也要补一句：它只对**未标注**站点发出（**已标注**站点不发，
+> 见 §11.8 的实测决策），而 `optunuse`（ERROR）对两者一视同仁。
 
 `optunuse` 的判定（单趟、函数作用域内）：
 收集本函数内由 §3.1 规则产生、且被绑定到局部变量的 option 值；对每个这样的变量检查它是否
@@ -181,8 +194,22 @@ a = ao: {
 ```
 
 - **`else` 可以不写**：`nil` / `err` 臂无需显式列出，`->` 兜底臂已经覆盖它们。
-  实测：`{ ok -> it, -> 0 }` 通过并输出 `3`；`{ ok -> it }`（无兜底）报
-  `option match must handle all branches: err, nil, ok (missing: err, nil)`。
+  实测：`{ ok -> it }`（无兜底）报
+  `non-exhaustive match on option 'a': missing arm(s): nil, err — add a `-> ` (else) arm, or handle every variant`。
+- 🔴 **空臂必须独立成行**（实测，2026-10-12）：逗号分隔的 inline 形态
+  `{ ok -> it, -> }` / `{ ok -> it, -> 0 }` / `{ ok -> it, err -> 0 }` **一律解析失败**——
+  `,` 在语句层被 `parseExpressionStatement`（`stmt.go:1745`）当作**多重赋值**分隔符，
+  报 `expected variable name after ','`。本方案里所有 inline 逗号写法都是**错误转述**，
+  实际合法形态是逐行：
+
+  ```no
+  d = a: {
+      ok -> it
+      ->
+  }
+  ```
+
+  §6 的 `--fix=unwrap` 因此只能产出逐行形态（本来也就是 §8.1(c) 的 4 行标准形）。
 - 空臂在 `lowerSurfaceMatch` 展开时，按**被匹配 option 的内部类型**合成零值表达式
   （直接复用 `zeroValueLiteralFor(tok, elem)`，与 `#{index-out=zero}` 同一张表）。
 - 内部类型由 `inferIndexElemType` / `inferExprType` 得到；推断不出时**报错**（不猜）。
@@ -225,11 +252,18 @@ a = ao: {
   - 产生处 → 记入本函数"待消费集合"，产出 **HINT**（`ovfhndld` / `idxhndld`）。
   - 消费处（`?=` / `x: {…}` / `_ =`）→ 从集合移除。**注解不参与**（D1）。
   - 趟末仍未消费 → **ERROR** `optunuse`（D2）。
-- **删除** `stmtOverflowAnnotated`(4346) 与 `effOverflow` 的"注解即豁免"传递逻辑：注解不再让
-  子树的算术免于检查（D1）。`isDirectOverflowValue`(4393) 保留（仍用于判定"是不是整数运算"）。
+- ~~**删除** `stmtOverflowAnnotated`(4346) 与 `effOverflow` 的"注解即豁免"传递逻辑：注解不再让
+  子树的算术免于检查（D1）。~~ **实测推翻，改为保留（仅豁免 HINT）**：直接删除会在
+  `src/std` 上爆出 **2029 条** `ovfhndld` HINT（143 `6kryrbsq` / 8 `fxxoptarg` / 2 `tcpoxtfd`
+  不变），不可用；且该删除是**冗余**的 —— D1 要拦的「标注了却没消费」已由 `optunuse`
+  （ERROR，**不受** `effOverflow` 门控）覆盖。见 §11.8。
+  `isDirectOverflowValue`(4393) 保留（仍用于判定"是不是整数运算"）。
 - `lint.go`：20c(507)、20d(538)、20e(558) 的 `Severity` 由 `LintError` → `LintHint`；新增
   `optunuse`（ERROR）与 `rngidx`（HINT，建议 `for i <- arr { x = i }`）的接线。
-- **不动**：`ValidateTypes` 的 `cannot assign ?T value to T variable`（这是"用在 plain 语境"的硬错误，保留）。
+- **不动**：~~`ValidateTypes` 的 `cannot assign ?T value to T variable`（这是"用在 plain 语境"的硬错误，保留）。~~
+  🔴 **勘误（§11.3）**：这条诊断**根本不存在** —— `y i64 = g()`（g 返回 `?i64`）与
+  `y i64 = x`（x 是 `?i64`）都是 `No issues found`，运行期静默取 payload。
+  「option 用在 plain 语境」目前**无人把关**，是本方案最大的未闭合缺口。
 - **不动**：`match_exhaustive.go` 的穷尽性规则本身（D8：`->` 兜底臂即可满足穷尽性，
   规则不变，只是**不必**写 `nil`/`err`）。
 - `ValidateUninitOutputParams` / `ValidateUnassignedReturns` 需复核：新增 `-> return` 后
@@ -410,6 +444,8 @@ a = ao: {
 
 不必列 `nil` / `err`。注解不改变这一点。空兜底臂的零值语义见 D4，批量修复产出的正是这个形态。
 
+⚠️ 这 4 行**不能压成一行** `a = ao: { ok -> it, -> }`——逗号 inline 形态解析失败，见 §4.2。
+
 ### 8.2 其它风险
 
 | 风险 | 表现 | 缓解 |
@@ -460,3 +496,276 @@ a = ao: {
   - in-bounds 豁免取消，并给出 `for i <- arr { x = i }` 这一惯用替代写法。
 - EN 镜像 `docs/i18n/en/.../lang/*.md` 同步（历史上 EN 常落后，需显式跟进）。
 - `docs/docs/lang/memory.md`（若有 option/ownership 相关段落）复核。
+
+---
+
+## 11. 实施勘误（M1a / M2 实测，2026-10-12）
+
+> 这一节记录**实施过程中被实测推翻**的前提。方案正文（§1–§10）保留原样以便对照，
+> 以本节为准。
+
+### 11.1 🔴 AST 磁盘缓存会静默服务过期的 lowering 结果
+
+缓存位于 `~/.cache/nolang/ast`，键 = `(文件内容, ASTVersion, sigSalt)`。**它看不见
+编译器二进制**：改了 lowering 却忘了 bump `ASTVersion`，同一份源码会继续拿到**改动前**
+的降级结果。
+
+实测症状：`x i64 = 0` ⏎ `x = a + b` 在有缓存时**静默通过**（缓存里是旧的「已合成 ?T」
+版本），`NOLANG_AST_CACHE_OFF=1` 才报 `ovfhndld`。这会把任何 A/B 结论引向错误方向。
+
+**纪律（已并入 skill）**：
+- 所有涉及 lowering 的 A/B 一律带 `NOLANG_AST_CACHE_OFF=1`；
+- 每次改 lowering 都要 bump `ASTVersion`（本次 `2026-10-11.2` → `2026-10-12.1`，
+  见 `src/parser/astdiskcache.go` 的说明块）；
+- bump 后必须重跑 `cd src && go run ./checker/genstdsig`（重烤 `stdsig_gen.go` 与
+  `stdastembed/std_ast.bin`），否则 `TestStdASTBlobMatchesFreshParse` 失败。
+
+### 11.2 `inferOptionArith` 必须复用 `captureTargetAllowsOption`（已修）
+
+M1a 第一版只删了注解短路，**没有**加目标闸门，于是它会替**已存在的 plain 变量**
+合成 `?T`——`x i64 = 0` 之后的 `x = a + b`、以及纯量出参 `r i64` 都中招。这不是
+「推断」而是「就地改掉一个已存在变量的型别」。
+
+实测后果（最刺眼的一例）：`wrapped = (a i64, b i64) (r i64) { #{overflow=wrap} \n r = a / b }`
+的 `r` 被合成 `?i64`，整个除法从 **plain 路径**被拖到 **option 路径**，
+`@__nolang_div_zero_report` 的 stderr 报告消失 →
+`TestDivZeroGuardSurvivesOverflowAnnotation` 失败。
+
+补上 `if !l.captureTargetAllowsOption(s) { return }` 后该测试**一行不改**即通过。
+（`captureTargetAllowsOption` 与 `maybeCaptureOptionAssign` 用的是同一条规则：
+「已存在的变量不改变其型别」。）
+
+顺带闭合了一个**既有**漏洞：`x i64 = 0` ⏎ `x = a / b` 在改动前是**静默通过**的
+（`inferOptionDivMod` 同样没有闸门），现在按 §3.2 报 `ovfhndld`。
+
+### 11.3 🔴 §3.4 的前提有误：`option 赋给 plain 变量` 目前**不是**错误
+
+§3.4 写着「option 赋给 plain 变量 / 传给 plain 形参 → ERROR（不变，既有 `ValidateTypes`）」。
+实测**不成立**：
+
+```no
+g = () (q ?i64) { q = 1 }
+f = () (r i64) {
+    y i64 = g()      ; 无诊断
+    r = y
+}
+```
+```no
+f = () (r i64) {
+    x ?i64 = ok(1)
+    y i64 = x        ; 无诊断
+    r = y
+}
+```
+两种写法在 CTL 与 SUT 上都是 `No issues found`，运行期静默取 payload。
+
+两个直接后果：
+
+1. **好消息**：D1 让 std 的 4564 个已标注站点「全变 `?T`」，**不会**因此爆出大批
+   `cannot assign ?i64 value to i64 variable` —— 它们照旧编译、照旧运行（隐式取 payload）。
+   §2.2 的「1.8 万行迁移」在**编译**意义上被高估了；真正的迁移压力来自下面的 2。
+2. **坏消息**：`optunuse` 只看「该变量**有没有被读**」，不看「**怎么被读**」。
+   `x = a + b` ⏎ `r = x`（r 是 plain）是**合法且静默**的 —— option 的 err 被丢掉却无人报。
+   D1 真正想拦的「option 被当作普通值用掉」目前**无人把关**。见 §11.4。
+
+### 11.4 新增风险：`optunuse` 的口径偏松
+
+`optunuse` 用「本函数内是否出现过该标识符的读取」判定，覆盖不到：
+
+- 被**当普通值**用掉（`r = x`、`io.outln(x)`、`f(x)`）——隐式取 payload，err 丢失；
+- 只被**写**过（`x = a + b` 之后再 `x = c + d`）——旧值被覆盖，第一次的 err 丢失。
+
+若要把 D1 落完整，需要第二条规则：「option 型变量出现在**非 option 语境**（赋给 plain
+变量 / 传给 plain 形参 / 参与非 option 运算）」→ ERROR。这会与 11.3 的「隐式取 payload」
+现状正面冲突，**必须单独定案**（放开隐式取 payload，还是全语料补 match）。在定案之前，
+§6 的迁移量无法准确估计。
+
+### 11.5 逗号 inline match 形态不受支持（§4.2 已修）
+
+`{ ok -> it, -> }` / `{ ok -> it, -> 0 }` / `{ ok -> it, err -> 0 }` **一律解析失败**
+（`,` 在语句层被 `parseExpressionStatement`（`stmt.go:1745`）当成**多重赋值**分隔符）。
+合法形态只有逐行。§4.2 与 §8.1(c) 里的逗号写法均为错误转述，已就地更正；
+§6 的 `--fix=unwrap` 只能产出逐行形态。
+
+### 11.6 诊断分级落地点（已实现）
+
+- `ValidateUnhandledOverflow` **一趟**产出两种 trace：`ovfhndld`（HINT）与
+  `optunuse`（ERROR）；严重度在 `src/checker/lint.go` 20d **逐条依 TraceID** 决定，
+  不能整批套用。
+- 20c（`ovf-int-default`）、20e（`idxhndld`）整批降 `LintHint`。
+- `ovfhndld` 的豁免由「`declaredOption` 一刀切」改为「只豁免用户**显式**写下的 `?T`」
+  （`NullableType.IsInferred`）。改动前 `x = a + b` 被推断成 `?T` 后**完全无声**——
+  既没有 HINT（被 `declaredOption` 吃掉）也没有 ERROR。
+- 两条消息文本按 D1 重写：删掉「加 `#{overflow = wrap}` 注解回普通 int」这一**已不成立**
+  的建议，改为「注解只改变失败时怎么取值，结果仍是 `?T`」。
+
+### 11.7 测试面同步（已完成）
+
+| 文件 | 改动 |
+| --- | --- |
+| `src/mir/div_zero_guard_test.go` | **未改**（11.2 修好后自动通过） |
+| `src/mir/opt_test.go` | `foldSrc` 的 `a = 2 + 3` → `a i64 = 2 + 3`：D1 之后只有显式 plain 型别才落得到 folder 的 plain 路径 |
+| `src/checker/unhandled_overflow_test.go` | 新增 `TestUnhandledOverflowOptionBindingMustBeConsumed`（`x ?i64 = a + b` 不再算「已处理」）；`explicit_option_declaration` / `div_mod_binding_inferred_to_option` 从「允许」移到「必须报 optunuse」 |
+| `src/checker/option_capture_lint_test.go` | `TestCaptureAssignmentNotReported` → `TestCaptureAssignmentStillNeedsConsumption`（捕獲 ≠ 消费）；新增 `TestCaptureAssignmentConsumedIsClean`（三条消费路径的正面对照）；`plain_arith_assignment` 的 `ovf-int-default` 期望 1 → 0（目标已是 `?T`，lint 被吸收） |
+| `src/build/lib_export_sem_test.go` | 末段断言不再看 `Severity`（D2 把 `ovf-int-default`/`ovfhndld` 都降 HINT），只看「第 4 行有没有报」；`checker` import 随之删除 |
+
+### 11.8 🔴 §5.2「删除 `effOverflow`」被实测推翻：保留，但**只豁免 HINT**
+
+§5.2 要求删掉 `stmtOverflowAnnotated` 与 `effOverflow`，理由是「注解不再让子树的算术免于
+检查（D1）」。实测把 `stmtOverflowAnnotated` 强制返回 `false`（等价于删除）后：
+
+| | `src/std` 的 `no vet` 输出 |
+| --- | --- |
+| SUT（保留豁免） | `6kryrbsq` 143、`fxxoptarg` 8、`tcpoxtfd` 2 |
+| 探针（删除豁免） | **`ovfhndld` 2029**、`6kryrbsq` 143、`fxxoptarg` 8、`tcpoxtfd` 2 |
+
+**2029 条 HINT** 全来自 std 里既有的 `#{overflow=wrap}` / `#{index-out=…}` 标注站点 ——
+每一处 `#{overflow=wrap} p = pos + 1` 都会新增一条 HINT。这既淹没真正的诊断，也与 HINT
+的语义不符：
+
+- **语义上不成立**：标注站点的 option **恒为 `ok`**（`wrap`/`clamp0`/`min`/`max`/`saturate`
+  都保证有值，只是值不同），**不存在失败分支**。而 `ovfhndld` 的消息讲的是
+  「默认在溢出时返回 option<T>」——那是**未标注**站点的情形。对标注站点发这条 HINT
+  是**指错方向**（用户会去找一个永远不会出现的 `nil`/`err`）。
+- **功能上冗余**：D1 真正要拦的「标注了却没上抛也没解包」由 `optunuse`（ERROR）覆盖，
+  而 `optunuse` 的判定**刻意不看** `effOverflow`（`checker.go` 中 `reportOptUnuse`
+  调用点无该门控）。实测确认：`#{overflow=wrap}` ⏎ `x = a + b` ⏎ `io.outln('done')`
+  在保留豁免与删除豁免两种构建上**都**报 `optunuse` ERROR。
+
+**结论**：`stmtOverflowAnnotated` / `effOverflow` **保留**，语义收窄为「只豁免 `ovfhndld`
+HINT，不豁免 `optunuse`」。§5.2 的删除项作废（已就地划掉）。
+
+> 一般化教训：HINT 的「豁免口径」与 ERROR 的「豁免口径」必须**分开设计**。方案原稿把
+> 两者当成同一套豁免（删掉就一起删），结果一个合法的小改动把 HINT 变成洪水。
+> 判定「某个豁免该不该留」不能只看语义推演，必须**实测规模**（2029 vs 0）。
+
+### 11.9 待办（本次未做）
+
+- `rngidx` HINT（§5.2 末条）**未实现**。它是 in-bounds 豁免取消（D7）后的替代引导，
+  但依赖 M1b 的 `bounds.go` 下线与 `isSafeIndexBase` 改造，故排在 M1b 之后。
+- 「option 用在 plain 语境」的**完整**规则仍未定案：§11.10 只闭合了「**裸标识符/调用
+  结果**赋给 plain 变量」这一半，§11.15 记录了另一半（内联算式的 option 性未被
+  `inferExprType` 建模）的现状与影响。
+
+### 11.10 🔴 §11.4 的缺口已定位并闭合：`isArgTypeCompatible` 的 `?T → T` 豁免
+
+§11.4 说「option 被当普通值用掉无人把关」。**根因找到了**，在
+`src/checker/funcargs.go:1054-1058`：
+
+```go
+// ?T 到 T 的隱式解包：在 ok 分支中，?T 變數已確認為有值，
+// 傳給期望 T 的參數是安全的（代碼生成器會自動取值）。
+if strings.HasPrefix(argType, "?") && argType[1:] == expectedType {
+    return true
+}
+```
+
+这条豁免自述的前提是「**在 ok 分支中**」，但 `isArgTypeCompatible` 是通用助手，被
+**赋值路径**一并调用（`checker.go` 的 LetStatement / AssignExpression / MultiAssign 三处），
+前提不成立的地方也被放行 —— `y i64 = x`（x 是 `?i64`）于是完全静默。
+
+**而语言对同一情形在「调用引数」上早已明令禁止**：`funcargs.go:1753` 的 Phase-2 规则
+（trace `fxxoptarg`）写着 *"Implicit unwrap of option arguments is not allowed"*，且同一段
+注释指出 match 臂内的 `it` 绑定会解析成 plain T、**根本不会**走到该分支 —— 也就是说
+1054 那条豁免宣称要服务的「ok 分支」情境实际由 `it` 承担，**豁免本身没有存在必要**。
+
+**修法**（最小侵入）：不动通用助手（`?T = ?T` 是拷贝，仍须放行），只在三处赋值判据上
+用 `(!isArgTypeCompatible(...) || optionImplicitUnwrapRejected(target, value))` 把
+`?T → T` 强制翻回「不相容」。新增 `optionImplicitUnwrapRejected` /
+`optionUnwrapAssignHint`（`checker.go`，紧邻 `optionTypesCompatible`），命中时附上
+可行修法而不是只报「cannot assign」。
+
+实测（`NOLANG_AST_CACHE_OFF=1`，`/tmp/no_guard` 对 `/tmp/no_sut`）：
+
+| | `src/std` ERROR | 明细 |
+| --- | --- | --- |
+| 闭合前（SUT） | 8 | 全是 `fxxoptarg` |
+| 闭合后 | 19 | `15w45dqk` **11** + `fxxoptarg` 8 |
+
+**11 个新 error 就是 D1 在 std 的真实迁移量**（不是 §2.2 估的 4564）。11 处全是
+`?i64` 裸拷贝：`argon2:615`、`rsa:222`、`x509:73`、`json:440`、`net/net:886`、
+`quic:601`、`str:2185/2292`、`txt:219`、`yaml:229/1404`。
+
+### 11.11 🔴 `optunuse` 的两个**误报**（已修）
+
+M2 的 `optunuse` 上线后，`tests/` 语料爆出 110 条 ERROR，其中**绝大多数是伪阳**。
+两类根因：
+
+**(a) 具名格式字串的 `{field}` 没被算作「读取」。** `print('result: {result}')` 里的
+`result` 是真正的读取，但插值只在 MIR 才降级（`hir2mir.go:7902`：
+*"substituted ONLY at a print-family call site"*），checker 看到的仍是一个含 `{...}`
+的 `StringLiteral`，而 `collectReadNamesInExpr` 的注释写着「Literals … don't read
+variables」。修法：在 `CallExpression` 分支按 `isPrintFormatCall` 判定，用
+`parser.ParseFormatString` 抽出字段名（取基底标识符）登记为读取
+（新增 `collectFormatFieldReads`）。
+
+**(b) 顶层（指令稿）作用域从不填 `curReadNames`。** 它只在 `FunctionDefinition` /
+`FunctionLiteral` 分支被赋值，于是**所有顶层 option 绑定**都被判成「从未被消费」——
+`tests/fs-error-*.no`、`tests/heap.no` 等指令稿全中。修法：进入顶层循环前
+`curReadNames, curResultTypes = functionScopeFacts(program.Statements, nil)`
+（`collectReadNames` 不递归函数体，所以只收顶层）。
+
+修后 `tests/` 的 `optunuse` 从 **110 → 16**，且这 16 条经人工核对**全部为真**
+（`fs-error-final.no` 的 `f1..f4`、`uninit-output.no` 的 `r1..r5`、
+`option-copy.no`、`safe-index.no` 的 `auto-prop` 等：绑定了 option 却从不消费）。
+
+### 11.12 `_` 被写进 `varTypes`（既有缺陷，迁移中被暴露）
+
+`ValidateTypes` 的 LetStatement 分支把 `_ = expr` 当普通绑定处理，于是
+`varTypes["_"]` 记下了**第一条** `_ = …` 的型别，之后每条 `_ = …` 都拿它比对 →
+`uninit-output.no` 出现 `cannot assign ?[]i64 value to ?uninit-struct variable '_'`。
+
+`_` 是显式丢弃、不是变量，三條 option 消费路径之一就是 `_ = expr`，它必须永远可用。
+修法：在 LetStatement 分支（`checker.go:7865` 起）于合成语句判断之后加一道
+`if s.Name != nil && s.Name.Value == "_" { break }`，既不登记也不检查。
+
+### 11.13 `tcpoxtfd` 与 D1 互相打架（已修）
+
+`#{overflow=wrap} p i64 = pos + 1` 里的 `i64` **不是**冗余标注 —— 它正是抑制 option
+化的那个开关（`inferOptionArith` 见 `s.Type != nil` 即返回；`captureTargetAllowsOption`
+「已存在的变量不改其型别」）。但 `checkRedundantTypeInAnnotation` 只比
+`inferExprType(s.Value) == annotatedType`（两者都是 `i64`），于是要求把它删掉 ——
+删掉立刻变 `?i64`，触发 `15w45dqk`。两条提示自相矛盾，迁移无法收敛。
+
+修法：`checkRedundantTypeInStmt` 增加 `optionProducing` 判据（`!HasPrefix(annotated,"?")
+&& isDirectOverflowValue(...)`，复用同一套运算元型别推断），命中则不报冗余。
+
+### 11.14 迁移结果（M6 首批）
+
+| 语料 | 迁移前 ERROR | 迁移后 ERROR | HINT |
+| --- | --- | --- | --- |
+| `src/std` | 19（11 `15w45dqk` + 8 `fxxoptarg`） | **0** | 145（与基线**逐条相同**） |
+| `tests/` | 16（全 `optunuse`） | **0** | — |
+
+修法形态只有两种，都**保持既有运行时语义**：
+
+1. **显式 plain 型别**（11 处 `15w45dqk` + 8 处 `fxxoptarg` 中的大多数）：`p = pos + 1`
+   → `p i64 = pos + 1`。D1 之前这些站点因注解短路本就是 plain 算术，补上型别即**精确
+   复原**旧语义（回绕 + 除零守卫强制 0）。
+2. **拆成两条 + `#{index-out}`**（`toml.no:586/688`）：`#{index-out=zero}` 只在「根为
+   索引」的绑定上生效（`maybeIndexOutAssign`），`toml-strip-comment(lines[i])` 的根是
+   调用，注解空转、option 直接流入 `str` 形参。改为先 `line-raw = lines[i]`（注解生效，
+   越界折成 `''`）再以纯 `str` 调用。
+3. **`_ = x` 显式丢弃**（`tests/` 的 16 处）：这些测试的意图本就是「不取值、只看行为」。
+
+另：改动 `src/std/**` 后必须重跑 `cd src && go run ./checker/genstdsig` 重烤
+`stdastembed/std_ast.bin`，否则 `TestStdASTBlobMatchesFreshParse` /
+`TestStdASTBlobHasSafeIndexNormalisation` 失败（本次已重烤，2538795 字节）。
+
+### 11.15 ⚠️ 仍未闭合：内联算式的 option 性未被 `inferExprType` 建模
+
+§3.2 写着「已存在的 plain 变量仍是错误（`x i64 = 0` 之后的 `x = a + b`）」。实测
+**不成立**：
+
+```no
+f = (a i64, b i64) () { x i64 = 0 \n x = a + b \n print(x) }   ; 0 error
+```
+
+原因是 `inferExprType` 对 **InfixExpression** 只在**运算元本身就是 option 变量**时才
+把结果标成 `?T`（`x = y` 其中 `y ?i64` 会报；`x = a + b` 其中 a/b 是 plain 不会报）。
+所以 11.10 的守卫实际只抓「**裸标识符 / 调用结果**赋给 plain 变量」这一半。
+
+**影响是「漏报」而不是「误报」**：现有代码不会被误伤，只是「plain 变量 = 算式」这类
+泄漏仍未被拦。要不要补齐取决于 §11.4 那条完整规则怎么定案 —— 补齐会让
+`x = a + b` 这类写法在全语料（含 std 的 3944 个 overflow 标注站点）都需要显式型别，
+**规模远超 11 处**，故本次**刻意不做**，留给下一次单独定案。

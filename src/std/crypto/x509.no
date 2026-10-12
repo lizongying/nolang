@@ -61,8 +61,10 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
 der-skip = (data []byte, pos i64) (next i64) {
 
     ; 跳過標籤（1 位元組）
+    ; D1：`+` 的結果恆為 `?i64`，此處要的是「回繞的普通整數」，故顯式標註 plain
+    ; i64 —— 標註本身就是抑制 option 化的開關（見 checker 的 captureTargetAllowsOption）。
     #{overflow=wrap}
-    p = pos + 1
+    p i64 = pos + 1
     l, adv = der-len(data, p)
 
     #{overflow=wrap}

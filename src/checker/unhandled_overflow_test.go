@@ -2,9 +2,14 @@ package checker
 
 import "testing"
 
-// 本檔案是 ValidateUnhandledOverflow 的回歸測試：未標註 #{overflow} 的整數運算
-// 預設回傳 option<int>，若結果既沒被 ?= 上拋、也沒被宣告/返回為 ?T，即「沉默
-// 泄漏」，必須報錯（編譯硬錯誤，TraceID = ovfhndld）。
+// 本檔案是 ValidateUnhandledOverflow 的回歸測試。D1/D2 之後這一趟產出兩種診斷：
+//
+//   - ovfhndld（HINT）：整數運算產生 option 並綁定到變數。統一 option 規則（D6）
+//     下這是常態，故只提示「該變數是 ?T，記得 match 或 ?=」。
+//   - optunuse（ERROR）：該 option 既沒上拋（?=）、也沒解包（match / `_ =`），
+//     錯誤被靜默丟棄 —— 這是唯一該阻斷建置的診斷。
+//
+// 兩者的嚴重度在 RunAllLints 逐條依 TraceID 決定（見 lint.go 20d）。
 
 const leakSrc = `main = () () {
     a i64 = 5
@@ -96,24 +101,6 @@ func TestUnhandledOverflowAllowed(t *testing.T) {
 }`,
 		},
 		{
-			// 顯式宣告為 option 型別 → 已處理。
-			name: "explicit_option_declaration",
-			src: `f = (a i64, b i64) () {
-    x ?i64 = a + b
-    io.outln('done')
-}`,
-		},
-		{
-			// 有號整數 `/` `%` 本身就產生 option，故 `q = a / b` 的綁定型別由
-			// lowering 推斷為 `?T`（無需用戶顯式標註），不得再報沉默泄漏。
-			name: "div_mod_binding_inferred_to_option",
-			src: `f = (a i64, b i64) (ok bool) {
-    q = a / b
-    r = a % b
-    ok = true
-}`,
-		},
-		{
 			// 字串拼接：str 的 `-` 不是整數運算，不產生 option，不得誤報。
 			name: "string_concat_not_int_arith",
 			src: `f = (seg str) () {
@@ -187,6 +174,51 @@ io.outln(z)`,
 			res := ValidateUnhandledOverflow(parseProg(t, c.src), "src/app.no")
 			if len(res) != 0 {
 				t.Fatalf("expected no error for %s, got: %+v", c.name, res)
+			}
+		})
+	}
+}
+
+// TestUnhandledOverflowOptionBindingMustBeConsumed 是 D1 的關鍵回歸釘：
+// **宣告成 option 不等於消費**。`x ?i64 = a + b` 只是把 option 存進一個名字，
+// 既沒上拋也沒解包；x 從此沒人讀 → ERROR optunuse（D2）。
+//
+// 這條以前是「允許」用例（顯式宣告 ?T 就算已處理），本次刻意翻轉：D1 明定
+// 註解與型別宣告都不消費 option，三條合法消費路徑只有 `?=` / match / `_ =`。
+func TestUnhandledOverflowOptionBindingMustBeConsumed(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			// 顯式宣告 ?T 但沒解包。
+			name: "explicit_option_declaration",
+			src: `f = (a i64, b i64) () {
+    x ?i64 = a + b
+    io.outln('done')
+}`,
+		},
+		{
+			// `/` `%` 由 lowering 推斷為 ?T，同樣要消費。
+			name: "div_mod_binding_inferred_to_option",
+			src: `f = (a i64, b i64) (ok bool) {
+    q = a / b
+    r = a % b
+    ok = true
+}`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res := ValidateUnhandledOverflow(parseProg(t, c.src), "src/app.no")
+			n := 0
+			for _, r := range res {
+				if r.TraceID == optUnuseTraceID {
+					n++
+				}
+			}
+			if n == 0 {
+				t.Fatalf("expected at least one %s error for %s, got: %+v", optUnuseTraceID, c.name, res)
 			}
 		})
 	}

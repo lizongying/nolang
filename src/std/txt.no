@@ -214,8 +214,9 @@ txt.append-str = (s str) {
     sn i64 = s.len-bytes()
     n i64 = .len-bytes()
 
+    ; D1：`-` 的結果恆為 `?i64`，remain 當普通整數用 → 顯式 plain i64。
     #{overflow=wrap}
-    remain = 255 - n
+    remain i64 = 255 - n
     sn > remain -> sn = remain
     i <- [0..sn): {
 

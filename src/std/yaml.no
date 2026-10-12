@@ -222,8 +222,9 @@ yaml-parser.line-start-of = (i i64) (ls i64) {
     (ls > 0) {
         ls <= 0 -> return
 
+        ; D1：`-` 的結果恆為 `?i64`，p 只作游標用 → 顯式 plain i64。
         #{overflow=wrap}
-        p = ls - 1
+        p i64 = ls - 1
         c = .byte-at(p)
         c == 10 || c == 13 -> return
         ls = p
@@ -1395,7 +1396,8 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
     }
 
     #{overflow=wrap}
-    parent-indent = cont-min - 1
+    ; D1：`-` 的結果恆為 `?i64`，parent-indent 只作縮排整數用 → 顯式 plain i64。
+    parent-indent i64 = cont-min - 1
 
     content-ind = 0
     ind-ind > 0 -> {
@@ -2861,8 +2863,10 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
 
         nd.kind == YAML-KIND-SEQ -> {
 
+            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，顯式 plain i64 抑制 option 化
+            ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
-            d = depth + 1
+            d i64 = depth + 1
             out = '['
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
@@ -2875,8 +2879,10 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
 
         nd.kind == YAML-KIND-MAP -> {
 
+            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，顯式 plain i64 抑制 option 化
+            ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
-            d = depth + 1
+            d i64 = depth + 1
             out = '{'
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
@@ -3060,8 +3066,10 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
     {
         nd.kind == YAML-KIND-SEQ -> {
 
+            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，顯式 plain i64 抑制 option 化
+            ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
-            d = depth + 1
+            d i64 = depth + 1
             nd.kids.len() == 0 -> {
                 out = '[]'
                 return
@@ -3081,8 +3089,9 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                     }
                     pool.nodes[k].kids.len() > 0 -> {
 
+                        ; D1：`+` 的結果恆為 `?i64`；cut 是普通縮排整數 → 顯式 plain i64。
                         #{overflow=wrap}
-                        cut = indent + 2
+                        cut i64 = indent + 2
                         inner = yaml-emit(pool, k, cut, d)
                         inner.len-bytes() > 0 -> {
                             rest = inner.slice-bytes(cut, inner.len-bytes())
@@ -3102,8 +3111,10 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
 
         nd.kind == YAML-KIND-MAP -> {
 
+            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，顯式 plain i64 抑制 option 化
+            ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
-            d = depth + 1
+            d i64 = depth + 1
             nd.kids.len() == 0 -> {
                 out = '{}'
                 return

@@ -67,6 +67,8 @@ test-struct-option = () {
 
     ; u 離開作用域時應釋放 box + struct fields 的堆數據（name.data）
     ; 不直接讀取 u.name/u.count（option-struct 字段讀取是另一個獨立問題）
+    ; D1：option 綁定後必須消費（上拋 / match / `_ =`）；本測試只驗證作用域釋放。
+    _ = u
     print('struct-option-created')
 }
 test-struct-option()

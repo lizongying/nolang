@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/lizongying/nolang/checker"
 )
 
 // TestVetLibExportFilteredModuleKeepsOverflowAnnotation 是「套件带 lib.no 匯出時，
@@ -87,16 +85,20 @@ func TestVetLibExportFilteredModuleKeepsOverflowAnnotation(t *testing.T) {
 	}
 	found := false
 	for _, l := range lints {
-		if l.Severity != checker.LintError || l.Line != 4 {
+		if l.Line != 4 {
 			continue
 		}
 		// 未標註的 `r = a + b`：以 ovf-int-default（建議加註解）或 ovfhndld
 		// （option 產生卻未處理）報出皆屬正確偵測。
+		//
+		// 本斷言只看「有沒有報」，不看嚴重度：D2 把兩者都降為 HINT（統一 option
+		// 規則下「產生 option」是常態，真正該硬攔的是 optunuse）。側表過濾若把
+		// 診斷整體吃掉，這裡仍然抓得到 —— 那才是本測試要防的迴歸。
 		if l.TraceID == "ovf-int-default" || l.TraceID == "ovfhndld" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("未標註的 `r = a + b` 必須仍被報為溢出錯誤，實際 lints: %+v", lints)
+		t.Errorf("未標註的 `r = a + b` 必須仍被報出溢出診斷，實際 lints: %+v", lints)
 	}
 }

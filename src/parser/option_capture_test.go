@@ -11,11 +11,16 @@ import (
 //
 // 語意（見 .trae/documents/option-capture-assign.md §1）：
 //
-//	a = b + c / d     →  a 推斷為 ?T，nil/err 就地存進 a，流程繼續
+//	a = g(b / c)     →  a 推斷為 ?T，nil/err 就地存進 a，流程繼續
 //
 // 取代了舊的「option 回傳函式內裸 `x = v[i]` 自動改寫為 `x ?= v[i]`」上拋語意
-// （maybeAutoPropagateIndex 已移除）。純算術（+ - * 取負 shl）本身不是可錯源，
-// 否則所有算術都會變成 option；但在捕獲路徑（結果已是 option）觸發運行期溢出檢查。
+// （maybeAutoPropagateIndex 已移除）。
+//
+// D6（統一 option 規則）改變了分工：**根為算術（`+ - * / %`）時不再結構 desugar**，
+// 由 inferOptionArith 就地合成 `?T`（巢狀可錯子運算式交由 codegen 逐層包裹）；
+// 本 pass 只負責「根不是算術」的情形 —— 例如 `a = g(b / c)`（捕獲點在引數內）、
+// `a = x + 1`（x 為 ?T，根雖是 `+` 但 inferOptionArith 因運算元非純量而推斷失敗）。
+// 索引捕獲（根為安全索引）見 TestCaptureRootSafeIndex。
 
 // parseFnBody 解析 src 並回傳名為 fnName 的函式（方法取 `recv.name` 的尾段）
 // 之函式體陳述。解析錯誤直接致命。
@@ -97,42 +102,29 @@ func capTmpNames(stmts []Statement) []string {
 	return names
 }
 
-// TestCaptureInnerDivMod 驗證 `a = b + c / d` 這種「內部可錯子表達式」被就地
-// 捕獲：生成 `__cap_1 ?i64 = c / d` + 三臂 match + ok 臂 `a = b + __cap_1`。
-func TestCaptureInnerDivMod(t *testing.T) {
+// TestCaptureRootArithLeftToInfer 釘住 D6 的分工：根為算術（`+ - * / %`）時
+// 不再結構 desugar，由 inferOptionArith 就地合成 `?T`（巢狀可錯子運算式由
+// codegen 逐層包裹）。`a = b + c / d` 必須得到 `a : ?i64`、零個 `__cap_N`、
+// 且不新增陳述。
+func TestCaptureRootArithLeftToInfer(t *testing.T) {
 	const src = `f = (b i64, c i64, d i64) {
     a = b + c / d
     print(a)
 }`
 	body := parseFnBody(t, src, "f")
 
-	if got := capTmpNames(body); len(got) != 1 || got[0] != "__cap_1" {
-		t.Fatalf("want exactly one __cap_1 binding, got %v", got)
+	if got := capTmpNames(body); len(got) != 0 {
+		t.Fatalf("root arithmetic must be left to inferOptionArith, got %v", got)
 	}
-	capBind := findLet(body, "__cap_1")
-	if capBind == nil {
-		t.Fatal("missing __cap_1 binding")
+	a := findLet(body, "a")
+	if a == nil {
+		t.Fatal("missing a")
 	}
-	if capBind.Type == nil || typeString(capBind.Type) != "?i64" {
-		t.Fatalf("__cap_1 type = %v, want ?i64", capBind.Type)
+	if a.Type == nil || typeString(a.Type) != "?i64" {
+		t.Fatalf("a type = %v, want ?i64 (inferOptionArith)", a.Type)
 	}
-	if !capBind.IsSynthetic {
-		t.Error("__cap_1 binding must be IsSynthetic (guard against re-lowering)")
-	}
-	inf, ok := capBind.Value.(*InfixExpression)
-	if !ok || inf.Operator != "/" {
-		t.Fatalf("__cap_1 value = %T, want InfixExpression `/`", capBind.Value)
-	}
-	// 最終賦值：ok 臂內的 `a = b + __cap_1`，且 a 被推斷為 ?i64。
-	final := findLet(body, "a")
-	if final == nil {
-		t.Fatal("missing final assignment to a")
-	}
-	if final.Type == nil || typeString(final.Type) != "?i64" {
-		t.Fatalf("a type = %v, want ?i64 (capture)", final.Type)
-	}
-	if !final.IsSynthetic {
-		t.Error("final assignment must be IsSynthetic")
+	if len(body) != 2 {
+		t.Fatalf("root arithmetic must not add statements, body len = %d", len(body))
 	}
 }
 
@@ -204,34 +196,29 @@ func TestCaptureOptionOperand(t *testing.T) {
 	}
 }
 
-// TestCaptureNestedDivMod 驗證巢狀雙除法只取最外層節點：`a = x + (b / c) / d`
-// 只合成一個 `__cap_N`（節點是整個 `(b / c) / d`），不遞歸展開內層除法
-// （方案 §8：與 `?=` 現狀對齊，不擴大捕獲範圍）。
-func TestCaptureNestedDivMod(t *testing.T) {
+// TestCaptureNestedArithLeftToInfer 釘住巢狀算術同樣交給 inferOptionArith：
+// `a = x + (b / c) / d` 根為 `+`、右運算元為巢狀 `/`，兩者皆屬 D6，故不生成
+// `__cap_N`，只合成 `a : ?i64`（巢狀包裹由 codegen 負責）。
+func TestCaptureNestedArithLeftToInfer(t *testing.T) {
 	const src = `f = (x i64, b i64, c i64, d i64) {
     a = x + (b / c) / d
     print(a)
 }`
 	body := parseFnBody(t, src, "f")
-	if got := capTmpNames(body); len(got) != 1 {
-		t.Fatalf("nested divmod must capture only the outermost node, got %v", got)
-	}
-	capBind := findLet(body, "__cap_1")
-	if capBind == nil {
-		t.Fatal("missing __cap_1 binding")
-	}
-	inf, ok := capBind.Value.(*InfixExpression)
-	if !ok || inf.Operator != "/" {
-		t.Fatalf("__cap_1 value = %T, want the whole `(b / c) / d` InfixExpression `/`", capBind.Value)
+	if got := capTmpNames(body); len(got) != 0 {
+		t.Fatalf("nested arithmetic must be left to inferOptionArith, got %v", got)
 	}
 	a := findLet(body, "a")
 	if a == nil || a.Type == nil || typeString(a.Type) != "?i64" {
 		t.Fatalf("a type = %v, want ?i64", a)
 	}
+	if len(body) != 2 {
+		t.Fatalf("nested arithmetic must not add statements, body len = %d", len(body))
+	}
 }
 
 // TestCaptureRootDivModLeftToInfer 釘住分工：根即 `/` `%` 時由
-// inferOptionDivMod 就地合成 `?T` 註解（無結構 desugar），捕獲 pass 不介入
+// inferOptionArith 就地合成 `?T` 註解（無結構 desugar），捕獲 pass 不介入
 // —— 兩者對「根除法」不得同時改寫，否則同一節點被重複展開。
 func TestCaptureRootDivModLeftToInfer(t *testing.T) {
 	const src = `f = (b i64, d i64) {
@@ -240,11 +227,11 @@ func TestCaptureRootDivModLeftToInfer(t *testing.T) {
 }`
 	body := parseFnBody(t, src, "f")
 	if got := capTmpNames(body); len(got) != 0 {
-		t.Fatalf("root divmod must be left to inferOptionDivMod, got %v", got)
+		t.Fatalf("root divmod must be left to inferOptionArith, got %v", got)
 	}
 	a := findLet(body, "a")
 	if a == nil || a.Type == nil || typeString(a.Type) != "?i64" {
-		t.Fatalf("a type = %v, want ?i64 (inferOptionDivMod)", a)
+		t.Fatalf("a type = %v, want ?i64 (inferOptionArith)", a)
 	}
 	if len(body) != 2 {
 		t.Fatalf("root divmod must not add statements, body len = %d", len(body))
@@ -286,18 +273,25 @@ func TestCaptureSkippedCases(t *testing.T) {
 		wantCap  int
 	}{
 		{
-			name: "overflow annotation on the statement",
+			// D1：`#{overflow=wrap}` 不再讓結果退回 plain int（也不再讓子樹免於
+			// 捕獲）。根為算術 → inferOptionArith 合成 ?i64，零個 __cap_N。
+			name: "overflow annotation no longer unwraps",
 			src: `f = (b i64, c i64, d i64) {
     #{overflow=wrap}
     a = b + c / d
     print(a)
 }`,
-			varName: "a", wantType: "", wantCap: 0,
+			varName: "a", wantType: "?i64", wantCap: 0,
 		},
 		{
-			// 外層陳述帶行註解 → 整棵子樹（含臂體）跳過。AES key-expand 迴歸。
-			// 用 option 結果函式，否則索引捕獲本就被閘門擋下，測不到 enclosingOvf。
-			name: "enclosing overflow annotation covers arm bodies",
+			// D1 + D7：外層 `#{overflow=wrap}` 不再讓臂體免於捕獲。臂體內的兩個
+			// 安全索引 `v[i]` / `v[i+1]`（v: []i64，i 為參數）各自成為可錯源，
+			// 被就地捕獲 → w 推斷為 ?i64、生成 2 個 __cap_N。
+			//
+			// 註：`<<` 與 `|` 不屬 D6 的 `+ - * / %`，故運算子本身不產生 option；
+			// 觸發源是索引讀取。此案例原為 AES key-expand 的「靜默漏檢」迴歸，
+			// 統一規則下改為顯式捕獲（遷移由 `no fmt --fix=unwrap` 處理）。
+			name: "enclosing overflow annotation no longer covers arm bodies",
 			src: `f = (v []i64, i i64) (r ?i64) {
     #{overflow=wrap}
     {
@@ -307,7 +301,7 @@ func TestCaptureSkippedCases(t *testing.T) {
         }
     }
 }`,
-			varName: "w", wantType: "", wantCap: 0,
+			varName: "w", wantType: "?i64", wantCap: 2,
 		},
 		{
 			name: "explicit plain annotation is user intent",
@@ -337,13 +331,13 @@ func TestCaptureSkippedCases(t *testing.T) {
 			varName: "a", wantType: "", wantCap: 0,
 		},
 		{
-			// 純算術、無可錯源 → 不是捕獲觸發源（否則所有算術都變 option）。
-			name: "pure arithmetic is not a capture source",
+			// D6：純算術本身就是可錯源 → 推斷為 ?T，但不走結構捕獲（根為算術）。
+			name: "pure arithmetic becomes option without capture",
 			src: `f = (b i64, c i64) {
     a = b + c
     print(a)
 }`,
-			varName: "a", wantType: "", wantCap: 0,
+			varName: "a", wantType: "?i64", wantCap: 0,
 		},
 	}
 	for _, tc := range cases {
@@ -386,10 +380,12 @@ func TestCaptureUnderscoreTarget(t *testing.T) {
 }
 
 // TestCaptureIdempotent 驗證生成的語句皆為 IsSynthetic，不會被 walk 二次改寫
-// （重解析同一份已改寫的 AST 不應再長出新的 __cap_N）。
+// （重解析同一份已改寫的 AST 不應再長出新的 __cap_N）。用呼叫引數內的除法作為
+// 仍走結構捕獲的形態（根為算術者已由 inferOptionArith 處理，見上）。
 func TestCaptureIdempotent(t *testing.T) {
-	const src = `f = (b i64, c i64, d i64) {
-    a = b + c / d
+	const src = `g = (v i64) (r i64) { r = v }
+f = (b i64, c i64) {
+    a = g(b / c)
     print(a)
 }`
 	body := parseFnBody(t, src, "f")

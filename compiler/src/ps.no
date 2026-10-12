@@ -279,6 +279,100 @@ ps-skip-trivia-doc = (t ast, p psst, prevIdx i64) (docId i64) {
     docId
 }
 
+; ps-trail-region：向前掃描（不消費 token）——若跳過全部 NEWLINE/COMMENT 後首個
+;   實 token 是 RBRACE 或 EOF，回 1，代表當前處於「尾註解區」：其後不會再有陳述，
+;   因此緊接的 standalone 註解应歸本區塊/程式的 TrailingComments（對齊 Go stmt.go:2141
+;   block.TrailingComments = collectDocComments()，其後无语句）。回 0 = 其後仍有陳述
+;   （那些 standalone 註解是下一條陳述的 leading Doc，不在此處理）。
+ps-trail-region = (p psst) (r i64) {
+    r = 0
+    k = 0
+    go = true
+    (go) {
+        tt = ps-peek-at(p, k)
+        {
+            tt == tok.NEWLINE -> {
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+
+            tt == tok.COMMENT -> {
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+
+            tt == tok.RBRACE -> {
+                r = 1
+                go = false
+            }
+
+            tt == tok.EOF -> {
+                r = 1
+                go = false
+            }
+
+            -> go = false
+        }
+    }
+}
+
+; ps-collect-tail：消費「尾註解區」的 NEWLINE/COMMENT 直到 RBRACE/EOF。
+;   · 緊接 prev 同一行、其前無換行的首條註解 → 掛 prev 的 inline Comment（對齊 Go 行尾註解）；
+;   · 其餘 standalone 註解 → 其 str-id 依序收集進 trail（本區塊/程式的 TrailingComments 各條）。
+;   ⚠️ 與 ps-skip-trivia-doc 同形（用旗標 sawNL/cmtTaken，非互斥補集重取），只在 ps-trail-region
+;   回 1 時由呼叫端使用；對無尾註解的區塊 trail 空 → 後續 ps-attach-trailing 不建節點（零回歸）。
+ps-collect-tail = (t ast, p psst, prev i64, trail []i64) {
+    sawNL = 0
+    cmtTaken = 0
+    go = true
+    (go) {
+        tt = ps-peek(p)
+        {
+            tt == tok.NEWLINE -> {
+                sawNL = 1
+                ps-bump(p)
+            }
+
+            tt == tok.COMMENT -> {
+                inline = sawNL == 0 && prev > 0 && cmtTaken == 0
+                inline -> {
+                    ast.set-cmt(t, prev, ast.put-str(t, ps-cur-lit(p)))
+                    cmtTaken = 1
+                }
+                inline == false -> {
+                    trail.push(ast.put-str(t, ps-cur-lit(p)))
+                }
+                sawNL = 0
+                ps-bump(p)
+            }
+
+            -> go = false
+        }
+    }
+}
+
+; ps-attach-trailing：把 trail（註解文字 str-id 向量）落成區塊/程式節點的 TrailingComments。
+;   對應 ast.no trailing-comments 渲染（OP-TRAILING）：節點需 ct0（aux 起點）+ ntrail（條數）。
+;   子先於父原則下 aux 區段獨立於 kids，故於節點 add 之後再 aux-begin/aux-add/set-aux-counts。
+;   trail 空 → 不建任何 aux、不設 ntrail（維持預設 -1 → dumper 跳過印出，零回歸）。
+ps-attach-trailing = (t ast, idx i64, trail []i64) {
+    trail.len() > 0 -> {
+        base = ast.aux-begin(t, idx)
+        base >= 0 -> {
+            k = 0
+            (k < trail.len()) {
+                ast.aux-add(t, trail[k])
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+        }
+        ast.set-aux-counts(t, idx, trail.len(), -1, 0)
+    }
+}
+
 ; ps-expect：若目前 token 是 want 就消費它（容錯：不符也繼續）
 ps-expect = (p psst, want i64) {
     ps-peek(p) == want -> ps-bump(p)
@@ -304,8 +398,11 @@ ps-expect = (p psst, want i64) {
 ;     節點錯置成父的直接子節點——實測 `42` 曾因此少印 ExpressionStatement。）
 parse = (t ast, p psst) (root i64) {
     stmts []i64 = with-cap(4)
+    trail []i64 = with-cap(4)
     prev = 0
-    docId = ps-skip-trivia-doc(t, p, 0)
+    docId = 0
+    ps-trail-region(p) == 1 -> ps-collect-tail(t, p, 0, trail)
+    ps-trail-region(p) == 0 -> docId = ps-skip-trivia-doc(t, p, 0)
     (ps-peek(p) != tok.EOF) {
         pos0 = p.pos
         s = ps-parse-stmt(t, p)
@@ -320,7 +417,11 @@ parse = (t ast, p psst) (root i64) {
         ;    對齊 oracle 的錯誤恢復屬於 M3/L3 的範疇；在此之前以
         ;    「強制前進一律終止」取代當機。
         p.pos == pos0 -> ps-bump(p)
-        docId = ps-skip-trivia-doc(t, p, prev)
+        ps-trail-region(p) == 1 -> {
+            ps-collect-tail(t, p, prev, trail)
+            ; 尾註解區：其後僅剩 EOF，收集完即讓迴圈自然終止
+        }
+        ps-trail-region(p) == 0 -> docId = ps-skip-trivia-doc(t, p, prev)
     }
     root = ast.add(t, asp.K_PROGRAM)
     j = 0
@@ -336,6 +437,7 @@ parse = (t ast, p psst) (root i64) {
     ;   （src/parser/expr.go::parseIfExpression），Program.warnings 累加。
     ast.set-count(t, root, 0, stmts.len())
     ast.set-slot(t, root, 0, ast.put-str(t, p.warn.to-str()))
+    ps-attach-trailing(t, root, trail)
     root
 }
 
@@ -2382,6 +2484,140 @@ ps-parse-typedecl = (t ast, p psst, name str) (idx i64) {
     }
 }
 
+; ps-skip-annot-idx：鏡像 ps-parse-stmt 的 `#{...}` 群組掃描，但以【索引前視】方式（不消費
+;   token）回傳跳過自索引 i 起全部相鄰 `#{...}` 群組後的索引；非 `#{` 起 ⇒ 原樣回 i。
+;   深度計數：`#{ [ ( {` → +1、`} ) ]` → −1（`#{` 自身計作一個開大括號），與 ps-parse-stmt 同口徑。
+ps-skip-annot-idx = (p psst, i i64) (j i64) {
+    j = i
+    (ps-peek-at(p, j) == tok.HASH_LBRACE) {
+        depth = 1
+
+        #{overflow=wrap}
+        j = j + 1; 消費 #{
+        (depth > 0) {
+            t = ps-peek-at(p, j)
+            {
+                t == tok.EOF -> depth = 0
+
+                t == tok.HASH_LBRACE || t == tok.LBRACE || t == tok.LBRACKET || t == tok.LPAREN -> {
+
+                    #{overflow=wrap}
+                    depth = depth + 1
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+
+                t == tok.RBRACE || t == tok.RBRACKET || t == tok.RPAREN -> {
+
+                    #{overflow=wrap}
+                    depth = depth - 1
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+
+                -> {
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+            }
+        }
+    }
+}
+
+; ps-skip-annot：【消費】自目前 pos 起全部相鄰 `#{...}` 群組。用於結構體欄位尾的
+;   `#{inline=…}` 等註解——`no ast`（無 -annotations）根本不渲染欄位註解 ⇒ 跳過即可。
+ps-skip-annot = (p psst) {
+    (ps-peek(p) == tok.HASH_LBRACE) {
+        ps-bump(p); 消費 #{
+        depth = 1
+        (depth > 0) {
+            tk = ps-peek-token(p)
+            {
+                tk.typ == tok.EOF -> depth = 0
+
+                tk.typ == tok.HASH_LBRACE || tk.typ == tok.LBRACE || tk.typ == tok.LBRACKET || tk.typ == tok.LPAREN -> {
+
+                    #{overflow=wrap}
+                    depth = depth + 1
+                    ps-bump(p)
+                }
+
+                tk.typ == tok.RBRACE || tk.typ == tok.RBRACKET || tk.typ == tok.RPAREN -> {
+
+                    #{overflow=wrap}
+                    depth = depth - 1
+                    ps-bump(p)
+                }
+
+                -> ps-bump(p)
+            }
+        }
+    }
+}
+
+; ps-skip-type-idx：以【索引前视】（不消費 token）復刻 ps-parse-type 的型別語法，回傳吃完整
+;   條型別後的索引；非法型別起 ⇒ 回 −1（呼叫者據此拒绝）。鏡像 ps-parse-type 四形：
+;   `a.b`（IDENT (.IDENT)*）、`?T`、`[]T`、`[N]T`（N=單 INT）；元素皆可遞迴 ∈ {IDENT, [, ?}。
+ps-skip-type-idx = (p psst, i i64) (j i64) {
+    j = -1
+    t0 = ps-peek-at(p, i)
+
+    #{overflow=wrap}
+    t1 = ps-peek-at(p, i + 1)
+
+    #{overflow=wrap}
+    t2 = ps-peek-at(p, i + 2)
+    {
+        t0 == tok.IDENT -> {
+
+            #{overflow=wrap}
+            j = i + 1; 消費首段型別名
+            go = true
+            (go) {
+
+                #{overflow=wrap}
+                jp = j + 1
+                ps-peek-at(p, j) == tok.DOT && ps-peek-at(p, jp) == tok.IDENT -> {
+
+                    #{overflow=wrap}
+                    j = j + 2; 消費 .段
+                }
+
+                -> go = false
+            }
+        }
+
+        t0 == tok.QUESTION -> {
+
+            #{overflow=wrap}
+            qi = i + 1
+            inner = ps-skip-type-idx(p, qi)
+            inner >= 0 -> j = inner
+        }
+
+        t0 == tok.LBRACKET && t1 == tok.RBRACKET -> {
+
+            #{overflow=wrap}
+            ei = i + 2
+            inner = ps-skip-type-idx(p, ei); []T
+            inner >= 0 -> j = inner
+        }
+
+        t0 == tok.LBRACKET && t1 == tok.INT && t2 == tok.RBRACKET -> {
+
+            #{overflow=wrap}
+            ei = i + 3
+            inner = ps-skip-type-idx(p, ei); [N]T
+            inner >= 0 -> j = inner
+        }
+
+        -> j = -1
+    }
+}
+
 ; ps-is-struct-def：判斷【目前 pos=IDENT name】起是否為「乾淨」的結構體定義形
 ;   `name { field TYPE ... }`，TYPE ∈ {IDENT, []IDENT, [INT]IDENT}，欄位以換行或尾隨逗號分隔，
 ;   區塊以 } 收尾。僅作分派守衛（不消費 token）：枚舉(`a, b`)、介面(`m()`)、實作清單
@@ -2423,45 +2659,14 @@ ps-is-struct-def = (p psst) (r i64) {
 
                 #{overflow=wrap}
                 i = i + 1; 消費欄位名
-                tt = ps-peek-at(p, i)
-                okType = 0
-                tt == tok.IDENT -> {
-
-                    #{overflow=wrap}
-                    i = i + 1
-                    okType = 1
-                }
-                tt == tok.LBRACKET -> {
-
-                    #{overflow=wrap}
-                    a1 = i + 1
-
-                    #{overflow=wrap}
-                    a2 = i + 2
-
-                    #{overflow=wrap}
-                    a3 = i + 3
-                    p1 = ps-peek-at(p, a1)
-                    p2 = ps-peek-at(p, a2)
-                    p3 = ps-peek-at(p, a3)
-                    p1 == tok.RBRACKET && p2 == tok.IDENT -> {
-
-                        #{overflow=wrap}
-                        i = i + 3; [] T
-                        okType = 1
-                    }
-                    p1 == tok.INT && p2 == tok.RBRACKET && p3 == tok.IDENT -> {
-
-                        #{overflow=wrap}
-                        i = i + 4; [N] T
-                        okType = 1
-                    }
-                }
-                okType == 0 -> {
+                ti = ps-skip-type-idx(p, i); IDENT/[]T/[N]T/?T/限定/嵌套（镜像 ps-parse-type）
+                ti < 0 -> {
                     go = false
                     r = 0
                 }
-                okType == 1 -> {
+                ti >= 0 -> {
+                    i = ti
+                    i = ps-skip-annot-idx(p, i); 跳过栏位尾 `#{...}` 注解（dump 不渲染）
                     et = ps-peek-at(p, i)
                     {
                         et == tok.NEWLINE -> {
@@ -2544,6 +2749,7 @@ ps-parse-struct-def = (t ast, p psst, name str) (idx i64) {
                 ty = ps-parse-type(t, p); IDENT → NamedType
             }
         }
+        ps-skip-annot(p); 欄位尾 `#{inline=…}` 註解（dump 不渲染 ⇒ 跳過）
         sf = ast.add(t, asp.K_STRUCT_FIELD)
         ast.set-slot(t, sf, 0, ast.put-str(t, fname))
         ast.set-slot(t, sf, 1, ast.put-str(t, arrSize))
@@ -2602,9 +2808,12 @@ ps-parse-param = (t ast, p psst) (idx i64) {
 ; ps-parse-block：解析 `{ stmts }`（同 parse：子節點全建完才 add 父節點）
 ps-parse-block = (t ast, p psst) (idx i64) {
     stmts []i64 = with-cap(4)
+    trail []i64 = with-cap(4)
     prev = 0
-    docId = ps-skip-trivia-doc(t, p, 0)
-    (ps-peek(p) != tok.RBRACE) {
+    docId = 0
+    ps-trail-region(p) == 1 -> ps-collect-tail(t, p, 0, trail)
+    ps-trail-region(p) == 0 -> docId = ps-skip-trivia-doc(t, p, 0)
+    (ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF) {
         pos0 = p.pos
         s = ps-parse-stmt(t, p)
         s > 0 -> {
@@ -2613,7 +2822,8 @@ ps-parse-block = (t ast, p psst) (idx i64) {
             prev = s
         }
         p.pos == pos0 -> ps-bump(p)
-        docId = ps-skip-trivia-doc(t, p, prev)
+        ps-trail-region(p) == 1 -> ps-collect-tail(t, p, prev, trail)
+        ps-trail-region(p) == 0 -> docId = ps-skip-trivia-doc(t, p, prev)
     }
     idx = ast.add(t, asp.K_BLOCK_STATEMENT)
     j = 0
@@ -2624,6 +2834,7 @@ ps-parse-block = (t ast, p psst) (idx i64) {
         j = j + 1
     }
     ast.set-count(t, idx, 0, stmts.len())
+    ps-attach-trailing(t, idx, trail)
     idx
 }
 

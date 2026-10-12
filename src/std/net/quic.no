@@ -590,7 +590,10 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     pn-mask = pn-win - 1
 
     ; 恢復完整封包號碼
-    candidate-pn = (expected-pn & (-1 - pn-mask)) | truncated-pn
+    ; D1：`pn-mask = pn-win - 1` 是 `?i64`，經 `(-1 - pn-mask)` 傳染後讓本行被
+    ; 捕獲成 `?i64`。此處 candidate-pn 全程只做整數比較／位移／位元運算，
+    ; 顯式 plain i64 即恢復「就地取 payload」的既有語意（值完全相同）。
+    candidate-pn i64 = (expected-pn & (-1 - pn-mask)) | truncated-pn
 
     #{overflow=wrap}
     {

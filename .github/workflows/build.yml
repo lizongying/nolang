@@ -117,12 +117,17 @@ jobs:
   # LLVM-<ver>-macOS-ARM64.tar.xz）。cgo 又無法交叉編譯，Rosetta 下無從取得 x86_64
   # 的 LLVM 靜態庫，故不構建這個變體；darwin/amd64 使用者仍拿純 Go 版
   # no_darwin_amd64（build-release 以 CGO_ENABLED=0 交叉編譯）。
-  # windows/* 為實驗性（continue-on-error）：官方 pre-built Windows 包不含 llvm-config
-  # 與靜態庫，改用 .github/workflows/build-llvm-windows.yml 手動預編譯、發佈到 GitHub
-  # Release 的 llvm-dev 包。該包以 zig cc / zig c++（windows-gnu / MinGW + libc++ ABI）
-  # 編譯，與下方 Build 步驟的 cgo（CC=zig cc、LLVM_STATIC_EXTRA_LIBS=-lc++）同源同 ABI，
-  # 故靜態鏈接可對齊；仍標實驗性是因為全量 LLVM 用 zig 構建可能遇到個別編譯／鏈接坑，
-  # 不阻斷發布。
+  # windows/* 改為「端到端 Linux 交叉編譯」（不再用 Windows runner）：
+  #   windows-amd64 LLVM ← linux-amd64 (ubuntu-latest) 用 zig 交叉 x86_64-windows-gnu
+  #   windows-arm64 LLVM ← linux-arm64 (ubuntu-24.04-arm) 用 zig 交叉 aarch64-windows-gnu
+  # zig cc -target *-windows-gnu 自带全部 mingw headers + libc + libc++ + lld（COFF），
+  # 不需 Windows SDK / MSVC / xwin；预编译包与本 workflow 的 cgo 同工具链、同 ABI
+  # （MinGW + libc++），静态链接天然对齐（-lc++）。
+  # LLVM 预编译包由 .github/workflows/build-llvm-windows.yml（手动 dispatch）在同样
+  # 的 Linux runner 上用 zig 编好 llvm-config（Linux ELF）+ 头 + Windows COFF 静态库，
+  # 发布到 Release tag llvm-22.1.8-windows。cross-windows 条目 can_run: false（Linux
+  # 无法执行 .exe），故只构建产物、跳过执行类测试。仍标 experimental（continue-on-error），
+  # 因为全量 LLVM 用 zig 交叉构建可能踩个别编译/链接坑，不阻断发布。
   # 代價：全後端產物比純 Go 版（~12 MB）大得多，故作為額外 asset 而非替換現有產物。
   build-llvm-variants:
     if: startsWith(github.ref, 'refs/tags/')
@@ -155,25 +160,36 @@ jobs:
             zig_arch: aarch64
             llvm_host_target: aarch64
             ext: ""
-          # windows/amd64：實驗性。預編譯 LLVM 以 zig cc/zig c++（windows-gnu / libc++）編成，
-          # cgo 也用 zig cc + -lc++ 同 ABI 靜態鏈接；因全量 LLVM 用 zig 構建仍可能踩個別
-          # 坑，故 continue-on-error 不阻斷發布。
-          - os: windows-latest
+          # windows/* 端到端 Linux 交叉編譯（zig cc/c++ -target *-windows-gnu）。
+          # LLVM 預編譯包由 build-llvm-windows.yml 在同一對 Linux runner 上用 zig 編好，
+          # 兩邊同工具鏈 / 同 ABI (MinGW + libc++)，cgo 靜態鏈接天然對齊。
+          # can_run: false 表示 Linux runner 無法執行 .exe，跳過 run 測試。
+          - os: ubuntu-latest
             asset: no-llvm_windows_amd64
             go_arch: x64
             zig_arch: x86_64
             llvm_host_target: x86
             ext: ".exe"
+            cross: "windows"
+            goos: windows
+            goarch: amd64
+            zig_target: x86_64-windows-gnu
+            llvm_asset: LLVM-22.1.8-win-x64-llvm-dev.tgz
+            can_run: false
             experimental: true
-          # windows/arm64（內置 LLVM 變體）已移除：此目標在現行上游工具鏈下無法成立——
-          #   1) llvm/llvm-project 不發行 Windows/ARM64 預編譯包，只有 win64（x86_64）靜態庫，
-          #      而 x86_64 的 LLVM .lib 無法鏈進 GOARCH=arm64 的產物；
-          #   2) zig 官方亦無 windows/aarch64 宿主，只能跑 x86_64 zig（_emulation_），其預設目標
-          #      與交叉目標都產不出可鏈接 arm64 Go 的物件。
-          # 之前保留為 experimental（continue-on-error），但它在 Build 步驟必然失敗、無任何產出，
-          # 只是常駐紅叉，故移除。若日後需要 windows/arm64，走 build-release 的純 Go 交叉編譯
-          # （CGO_ENABLED=0，不需內嵌 LLVM）即可，與本 LLVM 變體無關。
-          # （Build 步驟的 cgo 找不到 zig 已修：見下方 Install Zig 步的 cygpath 轉換。）
+          - os: ubuntu-24.04-arm
+            asset: no-llvm_windows_arm64
+            go_arch: arm64
+            zig_arch: aarch64
+            llvm_host_target: aarch64
+            ext: ".exe"
+            cross: "windows"
+            goos: windows
+            goarch: arm64
+            zig_target: aarch64-windows-gnu
+            llvm_asset: LLVM-22.1.8-win-arm64-llvm-dev.tgz
+            can_run: false
+            experimental: true
     continue-on-error: ${{ matrix.experimental || false }}
     runs-on: ${{ matrix.os }}
 
@@ -188,7 +204,9 @@ jobs:
           architecture: ${{ matrix.go_arch }}
 
       - name: "Install LLVM 22 (Linux - headers + static libs)"
-        if: runner.os == 'Linux'
+        # 跳過 cross=windows 的條目：它們不需要宿主 Linux LLVM，而是用預編譯
+        # 的 windows llvm-dev 包（下一步）。僅 linux_amd64 / linux_arm64 原生變體用 apt.llvm.org。
+        if: runner.os == 'Linux' && matrix.cross != 'windows'
         run: |
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
           sudo apt-get install -y ${{ matrix.llvm_pkg }} libzstd-dev libz3-dev libxml2-dev
@@ -205,93 +223,65 @@ jobs:
           sudo ln -sf "$LLVM_PREFIX/bin/llvm-config" /usr/local/bin/llvm-config-22
           llvm-config-22 --version
 
-      - name: "Install build tools + LLVM 22 (Windows - pre-built llvm-dev from our release)"
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: "Download pre-built LLVM 22 (cross-windows llvm-dev from our release)"
+        if: matrix.cross == 'windows'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          choco install -y make unzip
-          # 不用官方 pre-built Windows 包（LLVM-<ver>-win64.exe NSIS）：它「只是
-          # clang/llvm 工具鏈」，不含 llvm-config.exe，也不含可鏈接的 LLVM 靜態庫
-          # （lib/cmake/llvm 僅有 LLVMConfigExtensions.cmake）。見 llvm discourse
-          # #57692 與 llvm-project#53052。no-llvm 需要 llvm-config + 各元件靜態 .lib，
-          # 官方包永遠給不出——之前正是因此輪詢等 C:\Program Files\LLVM\bin\llvm-config.exe
-          # 5 分鐘超時失敗。
-          #
+          # 不用官方 pre-built Windows 包（LLVM-<ver>-win64.exe NSIS）：它不含 llvm-config，
+          # 也不含可鏈接的 LLVM 靜態庫（見 llvm discourse #57692、llvm-project#53052）。
           # 改用自己預編譯的包：由 .github/workflows/build-llvm-windows.yml（手動 dispatch）
-          # 從源碼用 zig cc / zig c++（windows-gnu / MinGW + libc++ ABI）編好 llvm-config +
-          # 頭文件 + 靜態庫，發佈成固定 tag 的 GitHub Release。這裡直接下載解壓到 C:\llvm
-          # （無空格，llvm-config 可遷移），與下方 Build 步驟的 LLVM_CONFIG=C:/llvm/bin/llvm-config.exe
-          # 對齊；因預編譯與 cgo 都用 zig/libc++ 同 ABI，靜態鏈接才能對得上。
+          # 在 Linux 上用 zig cc/c++ -target *-windows-gnu（MinGW + libc++）從源碼編好
+          # llvm-config（Linux ELF 宿主工具）+ 頭文件 + Windows COFF 靜態庫，發佈到同一
+          # Release tag（llvm-22.1.8-windows）下、按架構分不同 asset。這裡按 matrix.llvm_asset 下載。
+          # 因預編譯與本 workflow 的 cgo 都用 zig/libc++ 同 ABI，靜態鏈接才能對齊。
           # 若要升級 LLVM 版本：先跑 build-llvm-windows.yml 出新包，再同步這裡的
-          # $Tag/$Asset 與 Build 步驟的 LLVM_CONFIG 路徑。
-          $Tag = "llvm-22.1.8-win-x64"
-          $Asset = "LLVM-22.1.8-win-x64-llvm-dev.zip"
-          $Prefix = "C:\llvm"
+          # $Tag / matrix.llvm_asset 與 Build 步驟的 LLVM_CONFIG 路徑。
+          Tag="llvm-22.1.8-windows"
+          Asset="${{ matrix.llvm_asset }}"
           # 先確認本倉庫的 Release 與資產確實存在，不存在就給出清晰指引（而非讓
           # gh 抛「Release not found」這種看不出前因後果的錯）——這個包需要手動跑
           # build-llvm-windows.yml 預編譯才會生成，首次發版很容易漏。
-          if (-not (gh release view $Tag 2>$null)) {
-            Write-Host "::error::Windows LLVM 預編譯包不存在：本倉庫尚無 Release tag '$Tag'"
-            Write-Error "找不到 Release '$Tag'。請先在默認分支手動觸發 .github/workflows/build-llvm-windows.yml（Actions → Run workflow，llvm_version=22.1.8）生成並上傳 '$Asset'，再重跑本發布。"
+          if ! gh release view "$Tag" >/dev/null 2>&1; then
+            echo "::error::Windows LLVM 預編譯包不存在：本倉庫尚無 Release tag '$Tag'"
+            echo "找不到 Release '$Tag'。請先在默認分支手動觸發 .github/workflows/build-llvm-windows.yml（Actions → Run workflow，llvm_version=22.1.8）生成並上傳 '$Asset'，再重跑本發布。"
             exit 1
-          }
-          $assets = gh release view $Tag --json assets --jq '.assets[].name'
-          if ($assets -notcontains $Asset) {
-            Write-Host "::error::Release '$Tag' 存在，但裡面沒有資產 '$Asset'"
-            Write-Error "Release '$Tag' 已存在但缺少預編譯資產 '$Asset'（可能上次預編譯未跑完或被刪）。請重跑 build-llvm-windows.yml 以 --clobber 重新上傳。"
+          fi
+          if ! gh release view "$Tag" --json assets --jq '.assets[].name' | grep -qxF "$Asset"; then
+            echo "::error::Release '$Tag' 存在，但裡面沒有資產 '$Asset'"
+            echo "Release '$Tag' 已存在但缺少預編譯資產 '$Asset'（可能上次預編譯未跑完或被刪）。請重跑 build-llvm-windows.yml 以 --clobber 重新上傳。"
             exit 1
-          }
-          # 從本倉庫的 release 下載（同倉庫，GITHUB_TOKEN 即可讀）。
-          gh release download $Tag -p $Asset
-          if (Test-Path $Prefix) { Remove-Item -Recurse -Force $Prefix }
-          # zip 根即 bin/include/lib（打包端對安裝前後綴做 Compress-Archive 'prefix/*'），
-          # 直接展開到 C:\llvm 即得 C:\llvm\bin\llvm-config.exe。
-          Expand-Archive -Path $Asset -DestinationPath $Prefix -Force
-          if (-not (Test-Path "$Prefix\bin\llvm-config.exe")) {
-            Write-Error "pre-built llvm-dev missing bin/llvm-config.exe after unpack: $Prefix"
+          fi
+          gh release download "$Tag" -p "$Asset"
+          PREFIX="$GITHUB_WORKSPACE/llvm-dev"
+          rm -rf "$PREFIX"; mkdir -p "$PREFIX"
+          # tgz 根即 bin/include/lib（打包端 tar -czf -C prefix .），直接解到 $PREFIX。
+          tar -xzf "$Asset" -C "$PREFIX"
+          if [ ! -x "$PREFIX/bin/llvm-config" ]; then
+            echo "::error::pre-built llvm-dev missing bin/llvm-config after unpack: $PREFIX"
+            find "$PREFIX" -maxdepth 3 -print | head -50
             exit 1
-          }
-          echo "$Prefix\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
-          & "$Prefix\bin\llvm-config.exe" --version
-          & "$Prefix\bin\llvm-config.exe" --libdir
+          fi
+          # 把前綴路徑傳給後續 Build 步（LLVM_CONFIG）。
+          echo "LLVM_DEV=$PREFIX" >> "$GITHUB_ENV"
+          "$PREFIX/bin/llvm-config" --version
+          "$PREFIX/bin/llvm-config" --host-target
 
-      - name: Install Zig 0.17.0 (bundles clang/lld/libc matching LLVM 22.1.8)
+      - name: Install Zig 0.17.0 (bundles clang/lld/libc/libcxx matching LLVM 22.1.8)
         shell: bash
         run: |
-          # 必須按 matrix.zig_arch 取宿主架構的 zig：Linux 分支早期寫死 x86_64，
-          # 在 ubuntu-24.04-arm（no-llvm_linux_arm64）上鏈的是 x86_64 二進位，
-          # 直接 `cannot execute binary file: Exec format error`。
-          # Windows 仍鎖定 x86_64：zig 官方沒有 windows/aarch64 宿主包（見上方 matrix 註解）。
+          # 按宿主架構取 zig：Linux 用 zig_arch 選 x86_64/aarch64（ubuntu-24.04-arm 上不能
+          # 鏈 x86_64 二進位，否则 `cannot execute binary file`）。現在所有變體都在
+          # Linux/macOS runner 上跑（windows 改為 Linux 交叉），不再有 Windows 宿主分支。
           case "${{ runner.os }}" in
             Linux) ZIG_TARBALL=zig-${{ matrix.zig_arch }}-linux-0.17.0.tar.xz ;;
             macOS) ZIG_TARBALL=zig-${{ matrix.zig_arch }}-macos-0.17.0.tar.xz ;;
-            Windows) ZIG_TARBALL=zig-x86_64-windows-0.17.0.zip ;;
           esac
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            curl -L -o zig.zip "https://ziglang.org/download/0.17.0/$ZIG_TARBALL"
-            mkdir -p "$HOME/zig-tmp"
-            unzip -q zig.zip -d "$HOME/zig-tmp"
-            mkdir -p "$HOME/zig"
-            mv "$HOME/zig-tmp"/*/* "$HOME/zig"
-          else
-            curl -L -o zig.tar.xz "https://ziglang.org/download/0.17.0/$ZIG_TARBALL"
-            mkdir -p "$HOME/zig"
-            tar -xf zig.tar.xz -C "$HOME/zig" --strip-components=1
-          fi
-          # ⚠️ Windows 上必須用 cygpath 把 zig 目錄轉成 Windows 路徑再寫入 GITHUB_PATH。
-          #   Git-Bash 的 $HOME 是 POSIX 形式（/c/Users/.../），直接 echo 進 GITHUB_PATH 會
-          #   變成一個非法的 Windows PATH 條目：bash 步內 `$HOME/zig/zig version` 能跑（bash
-          #   會解析 POSIX 路徑），但後續「原生」進程 —— cgo 的 exec.Command("zig")、以及產物
-          #   運行時的 `-cc zig` —— 用 Windows LookPath 掃 PATH，找不到 /c/... 這種條目，於是報
-          #   「cgo: C compiler "zig" not found: exec: "zig": executable file not found in %PATH%」。
-          #   cygpath -w 轉成 C:\Users\...\zig 才是 Windows PATH 認識的形式。
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            echo "$(cygpath -w "$HOME/zig")" >> "$GITHUB_PATH"
-          else
-            echo "$HOME/zig" >> "$GITHUB_PATH"
-          fi
+          curl -L -o zig.tar.xz "https://ziglang.org/download/0.17.0/$ZIG_TARBALL"
+          mkdir -p "$HOME/zig"
+          tar -xf zig.tar.xz -C "$HOME/zig" --strip-components=1
+          echo "$HOME/zig" >> "$GITHUB_PATH"
           "$HOME/zig/zig" version
 
       - name: Build statically linked no (embedded LLVM, all backends)
@@ -300,21 +290,20 @@ jobs:
         # 要鏈接/註冊哪些後端，仍傳入以保持 matrix 設定完整。
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            # cgo 用 zig cc 作驅動，鏈接預編譯包（build-llvm-windows.yml 以 zig cc /
-            # zig c++ 即 windows-gnu / libc++ ABI 編成）的 LLVM 靜態庫——兩邊同用 zig
-            # 與 libc++，ABI 一致，-lc++ 只有這樣纔對得上，靜態鏈接才能成功。
-            # 不要再寫 /usr/local/bin/zigcc 包裝腳本 —— Git-for-Windows 的 bash
-            # 裡 /usr/local/bin 目錄預設不存在（本步驟之前正是因此報
-            # 「No such file or directory」而 exit 1），且 Windows 上 cgo 是
-            # 透過 CreateProcess 直接 exec CC 指向的檔案，POSIX shebang 腳本
-            # 也無法被 cgo 當成可執行檔調用。改為把 CC/CXX 直接傳給 cgo：
-            # Go 的 findTool 用 strings.Fields 拆解 CC，會將「zig cc」解析成
-            # 指令 zig + 預設參數 cc，語義等价於原本的包裝腳本。zig 已由上一
-            # 步驟把 $HOME/zig 加入 PATH，這裡直接可見。
-            export CC="zig cc" CXX="zig c++"
+          if [ "${{ matrix.cross }}" = "windows" ]; then
+            # 端到端 Linux 交叉編譯 GOOS=windows 的 no-llvm.exe：
+            #   • CC/CXX = zig cc/c++ -target <arch>-windows-gnu（zig 自带 mingw headers+libc+libc+++lld，
+            #     不需 Windows SDK/xwin）；cgo 用它编译 C 胶水并用 lld 以 COFF 模式链接出 .exe。
+            #   • GOOS/GOARCH 由 Go 侧控制；CGO_ENABLED=1 配非宿主 GOOS 会自动走外部链接器（=CC）。
+            #   • 链接预编译包（build-llvm-windows.yml 以同一 zig/-target windows-gnu/libc++ ABI 编成）
+            #     的 LLVM 静态库——两边同工具链/同 libc++，-lc++ 只对得上，静态链接才能成功。
+            #   • LLVM_CONFIG 指向预编译包里的 Linux ELF 宿主 llvm-config，它输出的 --cflags/--link-static
+            #     描述的是交叉编译产物（include 路径 + libLLVM*.a 名），正是 cgo 需要的。
+            export CC="zig cc -target ${{ matrix.zig_target }}"
+            export CXX="zig c++ -target ${{ matrix.zig_target }}"
+            export GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" CGO_ENABLED=1
             export LLVM_STATIC_EXTRA_LIBS="-lc++"
-            make no-llvm FULLLLVM=1 LLVM_CONFIG="C:/llvm/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+            make no-llvm FULLLLVM=1 LLVM_CONFIG="$LLVM_DEV/bin/llvm-config" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           else
             make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           fi
@@ -322,6 +311,8 @@ jobs:
       - name: Smoke test with zero external toolchain (-cc zig)
         # C API 預設開啟，且連結交給 zig cc（自帶 clang + lld + libc）：
         # 全程不需要系統 LLVM / clang / linker。
+        # 跳過 cross-windows：Linux runner 無法執行 .exe（can_run: false）。
+        if: matrix.can_run != false
         shell: bash
         run: |
           BIN="./bin/no-llvm${{ matrix.ext }}"
@@ -329,6 +320,7 @@ jobs:
           /tmp/embedded-smoke${{ matrix.ext }}
 
       - name: Verify the fallback switch still works
+        if: matrix.can_run != false
         shell: bash
         run: |
           BIN="./bin/no-llvm${{ matrix.ext }}"
@@ -341,6 +333,8 @@ jobs:
         #   LLVM C API: resolving target for triple "aarch64-linux-gnu" failed:
         #   No available targets are compatible with triple "aarch64-linux-gnu"
         # 只 build 不 run（執行需要 qemu / 對應的 OS）。
+        # 跳過 cross-windows：Linux runner 無法執行 .exe（can_run: false）。
+        if: matrix.can_run != false
         shell: bash
         run: |
           BIN="./bin/no-llvm${{ matrix.ext }}"

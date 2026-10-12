@@ -153,6 +153,8 @@ main = () {
     ; 10) 逃逸：包進 `?e-res`（OpOptionWrap）⇒ 不可在此釋放
     b10 e-res = ok('ten')
     o10 ?e-res = b10
+    ; D1：option 綁定後必須消費（上拋 / match / `_ =`）；本 case 只驗證逃逸行為。
+    _ = o10
     print('case10')
 
     ; 11) 🔴 經結果參數交還（`move dst=0 args=[q r]` 的編碼）⇒ q 不可被標

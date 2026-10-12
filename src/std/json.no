@@ -409,8 +409,10 @@ json-pool.skip-ws = (s str, pos i64) (p i64) {
 json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     ok = false
 
+    ; D1：`+` 的結果恆為 `?i64`。`i` 在本函式全程是普通游標（`i = i + 1` 多處），
+    ; 顯式 plain i64 讓整條鏈回到 plain 算術，也讓 `next-pos = i + 1` 不再被傳染。
     #{overflow=wrap}
-    i = pos + 1
+    i i64 = pos + 1
     j = 0
     c = 0
 
@@ -436,8 +438,9 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
 
                 .strs[node-idx] = sv
 
+                ; D1：`+` 的結果恆為 `?i64`，此處要的是回繞的普通整數 → 顯式 plain i64。
                 #{overflow=wrap}
-                next-pos = i + 1
+                next-pos i64 = i + 1
                 ok = true
                 return
             }

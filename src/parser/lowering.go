@@ -64,9 +64,6 @@ func (p *Parser) lowerProgram(prog *Program) {
 		fmt.Fprintf(os.Stderr, "[debug-it] lowerProgram called, %d top-level statements\n", len(prog.Statements))
 	}
 	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}}
-	// 預先計算頂層（函數外）讀取的「可證明越界安全」集合；函數內的定長陣列型別
-	// 要到 collectLocalTypes 才已知，故各函數另於下方進入時增量合併（見 struct 分支）。
-	p.inBoundsIdx = AnalyzeInBoundsIndex(prog).Reads
 	l.walk(reflect.ValueOf(prog))
 }
 
@@ -77,11 +74,6 @@ type lowerer struct {
 	curFuncDef  *FunctionDefinition // current function definition, for result param lookup
 	optTmpSeq   int                 // 單調計數器：為 compound `?=` 的 __opt_N 暫存變數產生全函式唯一名
 	capTmpSeq   int                 // 單調計數器：為捕獲賦值的 __cap_N 暫存變數產生全函式唯一名
-	// enclosingOvf 表示當前子樹位於一條帶 `#{overflow=...}` 行註解的陳述之內。
-	// 行註解只作用「下一條陳述」及其整個子樹（含 if/match 臂體），捕獲 pass
-	// 必須據此跳過 —— 否則 `#{overflow=wrap}` 底下 `{ ... -> { w = a[i] | ... } }`
-	// 這種臂體內的索引/除法仍會被改寫成 option，靜默改變語意（AES key-expand）。
-	enclosingOvf bool
 	// declaredLocals 記錄「本函式內已經出現過的 LetStatement 目標名」，按 walk
 	// 順序累積。用途有二：
 	//  1. 判斷捕獲目標是否為首次宣告 —— 只有首次宣告才需要補 `a ?T = nil`
@@ -158,10 +150,6 @@ func (l *lowerer) walk(v reflect.Value) {
 			//   2. option 回傳函式內的裸 `x = v[5]`（arr/vec）→ 視為 `x ?= v[5]`，
 			//      越界時向上傳播錯誤。
 			replaced := false
-			// 行註解 `#{overflow=...}` 作用於本陳述及其整棵子樹（含 match/if
-			// 臂體）。把「已顯式處理溢出」的狀態向下傳遞，使臂體內的捕獲 pass
-			// 一併跳過；走完本陳述後還原。
-			savedOvf := l.enclosingOvf
 			if v.Index(i).CanSet() {
 				stmt := v.Index(i).Interface()
 				// carryFrom 保存「未展開」的外層陳述：行註解（`#{overflow=...}`）
@@ -170,11 +158,6 @@ func (l *lowerer) walk(v reflect.Value) {
 				var carryFrom Node
 				if n, isNode := stmt.(Node); isNode {
 					carryFrom = n
-				}
-				// 行註解 `#{overflow=...}` 作用於本陳述及其整棵子樹（含 match/if
-				// 臂體）：在下方 walk 進入子樹前把狀態設為 true。
-				if !isNil(carryFrom) && l.stmtHasOverflowAnnotation(carryFrom) {
-					l.enclosingOvf = true
 				}
 				// 展开 ExpressionStatement → AssignExpression：索引寫入
 				//（`k[i] = key[i]`、`obj.field = arr[i]`）在 AST 上為
@@ -213,12 +196,12 @@ func (l *lowerer) walk(v reflect.Value) {
 				// fmt 路徑跳過，formatter 永遠看不到合成註解。
 				if !l.p.SkipUnwrapLowering {
 					if ls, ok := stmt.(*LetStatement); ok {
-						l.inferOptionDivMod(ls)
+						l.inferOptionArith(ls)
 					}
 				}
 				// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
 				// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
-				// 必須排在 inferOptionDivMod 之後：根為 `/` `%` 的情形由它處理。
+				// 必須排在 inferOptionArith 之後：根為算術的情形由它處理。
 				if !l.p.SkipUnwrapLowering && !l.p.SkipSafeIndexLowering {
 					if ls, ok := stmt.(*LetStatement); ok && !replaced {
 						if repl := l.maybeCaptureOptionAssign(ls); repl != nil {
@@ -238,7 +221,6 @@ func (l *lowerer) walk(v reflect.Value) {
 				}
 			}
 			l.walk(v.Index(i))
-			l.enclosingOvf = savedOvf
 			_ = replaced
 		}
 	case reflect.Struct:
@@ -248,7 +230,6 @@ func (l *lowerer) walk(v reflect.Value) {
 		var savedFuncName string
 		var savedFuncDef *FunctionDefinition
 		var savedDeclared map[string]bool
-		savedOvf := l.enclosingOvf
 		isFuncDef := false
 		if v.CanAddr() {
 			if fd, ok := v.Addr().Interface().(*FunctionDefinition); ok {
@@ -257,10 +238,6 @@ func (l *lowerer) walk(v reflect.Value) {
 				savedDeclared = l.declaredLocals
 				l.curFuncName = fd.Name
 				l.curFuncDef = fd
-				// 函式體是獨立作用域：不繼承外層陳述的 `#{overflow=...}` 註解，
-				// 否則外層註解會靜默掩蓋巢狀函式體內真正未處理的溢出
-				//（與 checker 的 ValidateUnhandledOverflow 同一規則）。
-				l.enclosingOvf = false
 				// 已宣告名單同樣獨立作用域：參數先入帳，函式內同名變數才不會
 				// 被誤判為首次宣告。
 				l.declaredLocals = map[string]bool{}
@@ -272,14 +249,6 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 預掃描區域變數容器型別（如 `av = a.to-vec()`），使其被安全索引
 				// 降級辨識（isSafeIndexBase / inferIndexElemType 依賴 FuncVarType）。
 				l.collectLocalTypes(fd)
-				// 型別表就緒後，計算本函數「可證明越界安全」的索引讀取，併入
-				// p.inBoundsIdx（isSafeIndexBase 據此對這類讀取回傳 false）。
-				if l.p.inBoundsIdx == nil {
-					l.p.inBoundsIdx = map[*IndexExpression]bool{}
-				}
-				for idx := range AnalyzInBoundsForFunc(l.p.sem, fd, l.p.idxLocalTypes[fd.Name]) {
-					l.p.inBoundsIdx[idx] = true
-				}
 				isFuncDef = true
 			}
 		}
@@ -294,7 +263,6 @@ func (l *lowerer) walk(v reflect.Value) {
 			l.curFuncDef = savedFuncDef
 			l.declaredLocals = savedDeclared
 		}
-		l.enclosingOvf = savedOvf
 		// 標籤條件迴圈包裝（`#N cond: { body }`）：解析期只掛上 SurfaceMatch，
 		// lowering 後補齊 Body = IfExpression.Consequence（與舊解析期行為一致）。
 		if v.CanAddr() {
@@ -496,14 +464,19 @@ func (l *lowerer) recordIndexLocalType(funcName, name, lt string) {
 	l.p.idxLocalTypes[funcName][name] = lt
 }
 
-// inferOptionDivMod — 有號整數 `/` `%` 本身產生 option（除零/溢出為 err），
-// 故普通 `=` 綁定其結果時變數型別必然是 `?T`，無需用戶顯式標註：在
+// inferOptionArith — 有號整數 `+ - * / %`（D6）本身產生 option（溢位／除零為
+// err），故普通 `=` 綁定其結果時變數型別必然是 `?T`：無需用戶顯式標註，在
 // lowering 階段就地補上推斷出的 `?T` 型別註解（合成 NullableType）並註冊
 // 變數型別，使 checker（ovfhndld declaredOption 豁免、ovf-int-default lint）
-// 與 MIR（KLet typeHint → 除零守衛）完全復用顯式路徑 `q ?int = a / b`。
-// 推斷不出（運算元型別未知/非有號整數/已標註/帶 overflow 註解）時保守
-// 不改寫，維持原有行為。
-func (l *lowerer) inferOptionDivMod(s *LetStatement) {
+// 與 MIR（KLet typeHint → 溢位／除零守衛）完全復用顯式路徑 `q ?int = a + b`。
+// 推斷不出（運算元型別未知／非有號整數）時保守不改寫，維持原有行為。
+//
+// D1：`#{overflow=...}` 註解不再阻止本推斷 —— 註解只影響「失敗時怎麼取值」的
+// 行為（wrap／clamp0／…），不再把結果型別降級成 plain int。註解本身由
+// carryOverflowAnnotation 原樣保留，MIR 端以 Inst.OvfAnnotated 消費（結果仍是
+// %option，只是溢位臂不再點亮 tag=2）。字串拼接的 `+` 由 signedIntOperandType
+// 的型別判定自然排除（str 非有號整數）。
+func (l *lowerer) inferOptionArith(s *LetStatement) {
 	if s == nil || s.IsSynthetic || s.Name == nil || s.Value == nil {
 		return
 	}
@@ -511,20 +484,17 @@ func (l *lowerer) inferOptionDivMod(s *LetStatement) {
 	if s.Type != nil {
 		return
 	}
+	// 目標已宣告為非 option（`x i64 = 0` 之後的 `x = a + b`、純量出參 `r i64`）
+	// → 不改寫。合成 `?T` 會就地改掉一個已存在變數的型別：它先前的所有普通值
+	// 使用會突然拿到 option，且出參的 option 會被靜默取 payload 回傳（錯誤被丟
+	// 棄）。交由既有診斷處理，維持與 maybeCaptureOptionAssign 同一條規則
+	//（captureTargetAllowsOption）。
+	if !l.captureTargetAllowsOption(s) {
+		return
+	}
 	inf, ok := unwrapLowerExpr(s.Value).(*InfixExpression)
-	if !ok || (inf.Operator != "/" && inf.Operator != "%") {
+	if !ok || !isOptionArithOperator(inf.Operator) {
 		return
-	}
-	// `#{overflow=...}` 行註解表示用戶已顯式處理溢出語義（wrap 等），不改寫。
-	if s.OverflowMode != "" {
-		return
-	}
-	if l.p.sem != nil {
-		for _, e := range l.p.sem.RawAnnotationsOf(s) {
-			if e != nil && e.Key == "overflow" {
-				return
-			}
-		}
 	}
 	lt, okLT := l.signedIntOperandType(inf.Left)
 	rt, okRT := l.signedIntOperandType(inf.Right)
@@ -572,11 +542,16 @@ type captureNode struct {
 	name  string     // 綁定用的臨時變數名 __cap_N
 }
 
-// captureInfixInner 回報 `a / b` / `a % b` 這類自身即為可錯源的 Infix 的內部型別
-// （提升後的有號整型）。非 `/` `%`、或運算元型別不可判定時回傳 ""。
-// 純算術（+ - * 取負 shl）本身不是可錯源 —— 否則所有算術都會變成 option。
+// captureInfixInner 回報 `a + b` / `a - b` / `a * b` / `a / b` / `a % b` 這類
+// 自身即為可錯源的 Infix 的內部型別（提升後的有號整型）。非 D6 涵蓋的算術運算子、
+// 或運算元型別不可判定時回傳 ""。
+//
+// D6（2026-10-12）：運算子集合由 `/ %` 放寬為 `+ - * / %` —— 有號整數的這五個運算
+// 一律可能溢位（`/ %` 另有除零），故自身即為 option 來源。原本的註解寫著「純算術
+// 本身不是可錯源，否則所有算術都會變成 option」，正是本次要取消的舊規則。
+// 無號整數、浮點、`str` 拼接、`char` 算術仍由 signedIntOperandType 排除。
 func (l *lowerer) captureInfixInner(inf *InfixExpression) string {
-	if inf == nil || (inf.Operator != "/" && inf.Operator != "%") {
+	if inf == nil || !isOptionArithOperator(inf.Operator) {
 		return ""
 	}
 	lt, okLT := l.signedIntOperandType(inf.Left)
@@ -600,28 +575,6 @@ func (l *lowerer) callOptionInner(c *CallExpression) string {
 		return inferred[1:]
 	}
 	return ""
-}
-
-// enclosingFuncHasOptResult 回報當前所在函式是否具有 option 結果參數（`?T`）。
-//
-// 安全索引的捕獲以此為閘門，鏡像被取代的 maybeAutoPropagateIndex 的既有範圍：
-// 那條路徑只在「有 option 結果參數的函式內」把裸 `x = v[i]` 改寫為 `x ?= v[i]`，
-// 於是 `x = v[i]` 變成 option 的語義也只在同一範圍內成立。
-//
-// 範圍若放大到所有函式與指令稿，`x = v[i]` 會把純量變數靜默變成 option，凡是
-// 之後以普通值使用它的地方（呼叫引數、結構體欄位賦值…）都會踩到 option→純量
-// 尚未支援的 codegen 路徑（tests/x25519-vec.no、tests/diff-debug.no 即為此類）。
-// 頂層指令稿（curFuncDef == nil）一律不啟用，與舊行為一致。
-func (l *lowerer) enclosingFuncHasOptResult() bool {
-	if l.curFuncDef == nil {
-		return false
-	}
-	for _, res := range l.curFuncDef.Results {
-		if res != nil && res.Type != nil && strings.HasPrefix(typeString(res.Type), "?") {
-			return true
-		}
-	}
-	return false
 }
 
 // addCaptureNode 把 e 登記為捕獲節點（分配 __cap_N、註冊型別），回傳替代 e 的識別符。
@@ -662,7 +615,12 @@ func (l *lowerer) collectCaptureNodes(e Expression, out *[]captureNode, tok lexe
 		if v.Index != nil {
 			v.Index = l.collectCaptureNodes(v.Index, out, tok, false)
 		}
-		if l.p.isSafeIndexBase(v) && l.enclosingFuncHasOptResult() {
+		// D7/D6：安全索引的捕獲不再以「所在函式有 ?T 結果參數」為閘門 ——
+		// `x = arr[i]` 在任何函式（含頂層指令稿）裡都產生 `?elem`，與
+		// `x = a + b` 的待遇一致（§3.2）。原本的閘門會讓非 ?T 函式裡的
+		// `x = arr[i]` 保持 plain，只在 checker 端留下一條 idxhndld HINT，
+		// 於是同一種寫法在不同函式裡語意不同。
+		if l.p.isSafeIndexBase(v) {
 			if elem := l.p.inferIndexElemType(v); elem != "" {
 				return l.addCaptureNode(v, elem, out, tok)
 			}
@@ -702,9 +660,8 @@ func (l *lowerer) collectCaptureNodes(e Expression, out *[]captureNode, tok lexe
 // 多個可錯源時綁定放進上一層的 ok 臂，保持由左至右的求值順序。
 //
 // 保守跳過的情形（維持今日行為，交由 checker 或既有路徑處理）：
-//   - 已帶 `#{overflow=...}` / `#{index-out=...}` 註解或 OverflowMode
 //   - 顯式標註非 option 型別、或變數已確定為非 option（無法把 option 存進 plain）
-//   - 根為 `/` `%`（inferOptionDivMod 已處理）、根為 option 變數（賦值即拷貝）
+//   - 根為算術且 inferOptionArith 已合成 `?T`、根為 option 變數（賦值即拷貝）
 //   - 根為安全索引（僅合成 ?elem 註解，無結構 desugar）
 //   - 根為呼叫但回傳型別未知、或回傳本身已是 option（整體拷貝語意）
 //   - 根為其他型別（字面量、欄位存取…）語意未定
@@ -714,21 +671,9 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 	if !ok || ls == nil || ls.IsSynthetic || ls.Name == nil || ls.Value == nil {
 		return nil
 	}
-	if ls.OverflowMode != "" {
-		return nil
-	}
-	// 外層陳述帶 `#{overflow=...}` 行註解 → 整棵子樹（含 match/if 臂體）已由用戶
-	// 顯式處理溢出語義，不改寫（鏡像 checker 的 effOverflow 傳遞規則）。
-	if l.enclosingOvf {
-		return nil
-	}
-	if l.p.sem != nil {
-		for _, e := range l.p.sem.RawAnnotationsOf(ls) {
-			if e != nil && (e.Key == "overflow" || e.Key == "index-out") {
-				return nil
-			}
-		}
-	}
+	// D1：`#{overflow=...}` / `#{index-out=...}` 註解不再豁免捕獲 —— 註解只影響
+	// 「失敗時怎麼取值」的行為，不再把結果型別降級成 plain int（也不再讓子樹免於
+	// 檢查）。已標註的陳述同樣是「未消費的 option」，正是本次遷移的主體。
 	// 顯式標註非 option 型別 → 用戶強制 plain，交 checker 報錯。
 	//
 	// 例外：parse 期替 `v = arr[i]` 推斷出的元素型別（IsInferred，見
@@ -751,8 +696,17 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 		return nil
 	}
 	root := unwrapLowerExpr(ls.Value)
-	// 根為 `/` `%`：inferOptionDivMod 已處理（且它會自行合成 ?T）。
-	if inf, isInf := root.(*InfixExpression); isInf && (inf.Operator == "/" || inf.Operator == "%") {
+	// 根為算術（`+ - * / %`）且已帶型別節點（inferOptionArith 剛合成的推斷型別，
+	// 或用戶顯式寫的 ?T）→ 本 pass 不介入。
+	//
+	// 合成的 `?T` 即整體捕獲語意：巢狀的可錯子運算式（`a + b / c`、`a + b * c`）
+	// 由 codegen 逐層包裹，不需結構 desugar（實測 m1／n1–n3 皆正確）。用戶顯式
+	// `?T` 同理，且必須原樣保留（否則顯式標註會被改寫成捕獲，破壞冪等）。
+	//
+	// 只有「型別節點仍為空」才讓路：此時 inferOptionArith 推斷失敗，繼續走下方
+	// 捕獲路徑，讓巢狀的 option 運算元（`a + b / c` 中 b 為 ?T）／安全索引仍被就地
+	// 捕獲，不比今日更漏。
+	if inf, isInf := root.(*InfixExpression); isInf && isOptionArithOperator(inf.Operator) && ls.Type != nil {
 		return nil
 	}
 	// 根為 option 變數：賦值本身即整體拷貝，現有行為已正確。
@@ -760,10 +714,10 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 		return nil
 	}
 	// 根為安全索引（無內部可錯子表達式）：只合成 ?elem，越界 → nil 即捕獲。
+	//
+	// D7/D6：不再要求「所在函式有 ?T 結果參數」（原 `enclosingFuncHasOptResult`
+	// 閘門已刪）—— 索引捕獲全函式生效，`x = arr[i]` 一律得到 `?elem`。
 	if idx, isIdx := root.(*IndexExpression); isIdx && l.p.isSafeIndexBase(idx) {
-		if !l.enclosingFuncHasOptResult() {
-			return nil
-		}
 		if elem := l.p.inferIndexElemType(idx); elem != "" {
 			l.synthesizeNullableType(ls, elem)
 		}
@@ -853,8 +807,12 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 			Token:       tok,
 			Name:        &Identifier{Token: tok, Value: n.name},
 			IsSynthetic: true,
-			Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: n.inner}},
-			Value:       n.expr,
+			// IsInferred：這個 `?inner` 是 lowering 合成的，原始碼裡沒有。
+			// 少了它，checker 的冗餘型別標註 lint（tcpoxtfd）會把它當成用戶寫的
+			// 顯式標註並建議刪除——指向一個用戶根本看不到的臨時變數
+			//（`__cap_1 ?i64 = …`）。
+			Type:  &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: n.inner}, IsInferred: true},
+			Value: n.expr,
 		}
 		body = &BlockStatement{Token: tok, Statements: []Statement{
 			bind,
@@ -869,8 +827,10 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 			Token:       tok,
 			Name:        ls.Name,
 			IsSynthetic: true,
-			Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: inner}},
-			Value:       &NilLiteral{Token: tok},
+			// IsInferred：同上方 bind 的說明——合成的預宣告 `a ?T = nil` 不是
+			// 用戶寫的標註，不得被 tcpoxtfd 建議刪除。
+			Type:  &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: inner}, IsInferred: true},
+			Value: &NilLiteral{Token: tok},
 		})
 	}
 	stmts = append(stmts, body)
@@ -899,9 +859,36 @@ func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
 			}
 		}
 		return lowerSignedIntName(typ)
+	case *InfixExpression:
+		// 巢狀算術運算元（`a + b * c` 的右運算元 `b * c`）：其值為 option 的
+		// 內部 payload，型別即兩側較寬的有號整數型別。這是 D6 統一規則的必要
+		// 條件 —— 否則根運算元判定不出型別，整個綁定就推不出 `?T`。
+		if !isOptionArithOperator(x.Operator) {
+			return "", false
+		}
+		lt, okLT := l.signedIntOperandType(x.Left)
+		rt, okRT := l.signedIntOperandType(x.Right)
+		if !okLT || !okRT {
+			return "", false
+		}
+		if len(rt) > len(lt) {
+			return rt, true
+		}
+		return lt, true
 	default:
 		return "", false
 	}
+}
+
+// isOptionArithOperator 回報運算子是否屬「統一 option 規則」（D6）涵蓋的整數
+// 算術運算：`+ - * / %`。字串拼接的 `+`、浮點／char／無號運算皆由
+// signedIntOperandType 的型別判定排除，不在此另作區分。
+func isOptionArithOperator(op string) bool {
+	switch op {
+	case "+", "-", "*", "/", "%":
+		return true
+	}
+	return false
 }
 
 // lowerSelfType 回傳當前方法 receiver（self）的有號整數型別；非方法或

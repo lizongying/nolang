@@ -502,13 +502,14 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	}
 
 	// 20c. 整數四則運算溢出提示（#{overflow = wrap|clamp0|min|max|saturate} 註解）
-	// 已由「溢出改成error」需求从 HINT 升为 ERROR：未标注 #{overflow} 的整数
-	// 运算直接报校验错误，强制显式标注或显式处理 option。
+	// D2：由 ERROR 降為 HINT。統一 option 規則（D6）下 `a OP b` 一律產生
+	// option，產生處本身不再代表「錯誤」——真正該硬攔的是「既沒上拋也沒解包」
+	// （見下方 20d 的 optunuse）。這裡只提示「可以補註解指定溢出行為」。
 	for _, u := range ValidateIntOverflow(program) {
 		results = append(results, LintResult{
 			File: u.File, // 節點級來源檔；空則由下方行號範圍回退歸因
 			Line: u.Line, Column: u.Column,
-			Severity: LintError, Source: "nolang-overflow",
+			Severity: LintHint, Source: "nolang-overflow",
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
@@ -531,10 +532,13 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, u)
 	}
 
-	// 20d. 未處理的溢出 option（編譯硬錯誤，與 20c 互補：20c 是「建議加註解」的
-	// Hint，本規則是「option 被產生卻未被處理」的 ERROR）。未標註 #{overflow} 的
-	// 整數運算預設回傳 option<int>；若結果既沒被 ?= 上拋、沒被 match 解構、也沒作為
-	// ?T 顯式返回/宣告，就處於「沉默泄漏」狀態（option 值飄著未被處理）。
+	// 20d. option 生命週期（D2）——產生處 HINT、未消費 ERROR。
+	// 本規則由同一趟 ValidateUnhandledOverflow 產出兩種 trace：
+	//   - ovfhndld（HINT）：整數運算產生 option 並綁定到變數。D6 下這是常態，
+	//     後續通常確有處理，故只提示「該變數是 ?T，記得 match 或 ?=」。
+	//   - optunuse（ERROR）：該 option 在本函式內既沒上拋（?=）、也沒解包
+	//     （match / `_ =`），錯誤被靜默丟棄。這是唯一該阻斷建置的診斷。
+	// 嚴重度因此逐條依 TraceID 決定，不能整批套用。
 	for _, u := range ValidateUnhandledOverflow(program, opts.SourcePath) {
 		// 與 20e（idxhndld）一致：攜帶 ValidateResult.File（陳述所屬模組），
 		// 避免合併 std vet 時把 std 函式內的未處理溢位誤歸因到呼叫端測試檔案
@@ -544,17 +548,20 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		if file == "" {
 			file = opts.SourcePath
 		}
+		sev := LintHint
+		if u.TraceID == optUnuseTraceID {
+			sev = LintError
+		}
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
-			Severity: LintError, Source: "nolang-overflow",
+			Severity: sev, Source: "nolang-overflow",
 			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 
-	// 20e. 未處理的越界索引（編譯硬錯誤，與 20d 同源：arr/vec/slice 索引 b[i]
-	// 越界時預設回傳 option<elem>，若既沒被 `?=` 上拋、沒被 `#{index-out = DEF}`
-	// 註解處理、也沒在返回 ?T 的函式中被就地捕獲，就處於「沉默泄漏」狀態。
+	// 20e. 未處理的越界索引（D2：產生處由 ERROR 降為 HINT，理由同 20c ——
+	// 索引讀取產生 option 是統一規則的常態，「沒解包」由 20d 的 optunuse 兜底）。
 	for _, u := range ValidateUnhandledIndex(program, opts.SourcePath) {
 		file := u.File
 		if file == "" {
@@ -562,7 +569,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		}
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
-			Severity: LintError, Source: "nolang-index",
+			Severity: LintHint, Source: "nolang-index",
 			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
 		})

@@ -1,0 +1,18 @@
+; 結構體欄位：限定型別 `net.conn`、巢狀切片 `[][]str`、含大小 `[32]bool`，
+;   以及欄位尾 `#{inline=…}` 註解——後者在 `no ast`（無 -annotations）完全不渲染。
+
+node {
+    v i64
+    next node #{inline=false}
+}
+
+matrix {
+    rows [][]str
+    name str
+}
+
+pool {
+    host str
+    conns [32]net.conn
+    in-use [32]bool
+}

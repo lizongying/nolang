@@ -2534,6 +2534,35 @@ func collectReadNames(stmts []parser.Statement, read map[string]bool) {
 		}
 	}
 }
+
+// collectFormatFieldReads 把具名格式字串（`'x={v}'`）裡的欄位名登記為「被讀取」。
+// 只在 print 家族呼叫點呼叫（見 collectReadNamesInExpr 的 CallExpression 分支）。
+//
+// 欄位名可能是點路徑（`content.len`）或整段表達式（`{hash[i] & 255:02x}`，IsExpr），
+// 兩者都取其**基底識別符**——那才是被讀取的變數。解析失敗（未配對的 `{`）時靜默略過：
+// 這種字串在 MIR 端也不會被當格式字串處理。
+func collectFormatFieldReads(s string, read map[string]bool) {
+	if !strings.Contains(s, "{") {
+		return
+	}
+	segs, err := parser.ParseFormatString(s)
+	if err != nil {
+		return
+	}
+	for _, seg := range segs {
+		if seg.Field == nil {
+			continue
+		}
+		name := seg.Field.Name
+		if i := strings.IndexAny(name, ".[ "); i > 0 {
+			name = name[:i]
+		}
+		if name != "" {
+			read[name] = true
+		}
+	}
+}
+
 func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 	if expr == nil {
 		return
@@ -2543,6 +2572,21 @@ func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 		read[e.Value] = true
 	case *parser.CallExpression:
 		collectReadNamesInExpr(e.Function, read)
+		// 具名格式字串的 `{field}` 欄位只在 **print 家族呼叫點**被替換成變數的值
+		//（mir/hir2mir.go 的 reportUnloweredInterp 寫明：「substituted ONLY at a
+		// print-family call site」），故此處是真正的**讀取**。
+		//
+		// 少了這一支，`#{overflow=wrap}` ⏎ `result = a + b` ⏎
+		// `print('result: {result}')` 會被 optunuse 誤報成「從未被消費」——
+		// tests/ 語料裡有 110 處這種寫法，全是偽陽性（interpolation 在 MIR 才降級，
+		// checker 看到的仍是一個含 `{...}` 的 StringLiteral）。
+		if id, ok := e.Function.(*parser.Identifier); ok && isPrintFormatCall(id.Value) {
+			for _, arg := range e.Arguments {
+				if sl, ok := arg.(*parser.StringLiteral); ok {
+					collectFormatFieldReads(sl.Value, read)
+				}
+			}
+		}
 		for _, arg := range e.Arguments {
 			collectReadNamesInExpr(arg, read)
 		}
@@ -2931,7 +2975,19 @@ func checkRedundantTypeInStmt(stmt parser.Statement, file string, varTypes map[s
 			// 定長陣列標註決定表示形式（固定棧陣列 vs 堆切片），刪掉會改語意：不報冗餘。
 			if !isFixedArrayAnnotation(s.Type) {
 				inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
-				if inferredType != "" && inferredType == annotatedType {
+				// D1：有號整數 `+ - * / %` 的結果恆為 `?T`，因此寫在目標上的 plain `T`
+				// 標註**不是**冗餘 —— 它正是抑制 option 化的那個開關（見
+				// `inferOptionArith` 的 target 閘門與 `captureTargetAllowsOption`：
+				// 「已存在的變數不改其型別」）。少了這一條，D1 遷移時
+				// 「補上 i64」與「刪掉多餘的 i64」兩條提示會互相打架，
+				// `#{overflow=wrap} p i64 = pos + 1` 會被要求改成 `p = pos + 1`
+				// —— 而後者立刻變成 `?i64`，觸發 15w45dqk。
+				//
+				// 判準沿用 ValidateUnhandledOverflow 的 isDirectOverflowValue
+				// （同一套運算元型別推斷），避免兩處口徑漂移。
+				optionProducing := !strings.HasPrefix(annotatedType, "?") &&
+					isDirectOverflowValue(s.Value, varTypes, "")
+				if !optionProducing && inferredType != "" && inferredType == annotatedType {
 					results = append(results, ValidateResult{
 						TraceID: "tcpoxtfd",
 						File:    file,
@@ -3644,7 +3700,7 @@ var stdPrimitiveFloatMethodTypes = map[string]string{
 // registerInferredNonIntLet 對「未標註型別的 let」補一層推斷：僅當右值推斷結果
 // 確定為非整數家族時才登記進型別表。整數家族（i64/u8/…）刻意不登記，維持既有
 // 「未知 → 保守視為有號整數」口徑，避免把真正的未處理整數溢位洗白成漏報
-//（見 overflow_inferred_float_test.go 的 control-int 對照組）。
+// （見 overflow_inferred_float_test.go 的 control-int 對照組）。
 //
 // 背景缺陷（str.no:2046/2270，2026-10-05 math/number 拆分後暴露）：
 // `base = bpw.exp()` 無標註，f64.exp 是 std/number.no 的 #{buildin} 方法，
@@ -3809,7 +3865,7 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 			File:    file,
 			Line:    line,
 			Column:  col,
-			Message: "整數運算 `a OP b` 預設在溢出時回傳 option<int>，現已列為錯誤。請二選一：①加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位），或用型別前綴形式如 `#{overflow = u8-max}`、`#{overflow = i8-min}` 回普通 int；②以 `?T` 接收（`a ?i64 = x + y`）或直接 `a = x + y` 讓編譯器推斷成 option 就地捕獲錯誤，再用 `?=` / match 處理；③`_ = x + y` 顯式丟棄。",
+			Message: "整数运算 `a OP b` 默认在溢出时返回 option<T>，结果类型恒为 `?T`。三选一：①用 `?T` 接收（`a ?i64 = x + y`，或直接 `a = x + y` 让编译器推断成 option），再用 `?=` 上抛或 `a: { ok -> it, -> 0 }` 解包；②加注解 `#{overflow = wrap}`（无声回绕）/`clamp0`（下溢归零）/`min`/`max`/`saturate`（饱和箝位）或型别前缀形式如 `#{overflow = u8-max}` 指定溢出行為——注意注解只改变失败时怎么取值，结果仍是 `?T`，仍须解包；③`_ = x + y` 显式丢弃。",
 			TraceID: "ovf-int-default",
 		})
 	}
@@ -4518,6 +4574,44 @@ func isIntExpr(e parser.Expression, varTypes map[string]string, selfType string)
 	return isIntType(t)
 }
 
+// optUnuseTraceID 是「option 綁定了卻從未消費」的診斷碼（D2）。
+const optUnuseTraceID = "optunuse"
+
+// OptUnuseTraceID 是 optUnuseTraceID 的導出別名。建置路徑（build/transpiler.go）
+// 需要逐條依 trace 決定是否為硬錯誤：只有 optunuse 該讓 no build 失敗，ovfhndld
+// 只是 HINT。見 lint.go 20d 的同一分級。
+const OptUnuseTraceID = optUnuseTraceID
+
+// functionScopeFacts 收集單一函式作用域的兩項事實，供 option 生命週期判定使用：
+//
+//  1. read：函式體內被讀取的識別符名集合（沿用既有的 collectReadNames——它已
+//     顯式覆蓋 match 解構（IfExpression）、AssignExpression、for 的迭代範圍等
+//     形態，不會隨 AST 新增節點而漂移）。
+//  2. resultTypes：結果參數（out-param）名 → 簽名中宣告的型別。
+//
+// 結果參數會被**預先**計入 read。這是必要的：out-param 就是函式的回傳值，對它
+// 賦值即等於「把值交給呼叫端」，本身就是消費。少了這一條，std 的
+// `int.div = (b int) (q ?int) { q = . / b }` 會被誤報 optunuse —— 而那正是本
+// 規則想鼓勵的寫法。resultTypes 同時讓呼叫端能區分「簽名已宣告 ?T 的結果參數」
+// 與「lowering 剛替 `x = a + b` 合成的 ?T」，前者不該再報 ovfhndld HINT。
+func functionScopeFacts(body []parser.Statement, results []*parser.Parameter) (map[string]bool, map[string]string) {
+	read := map[string]bool{}
+	collectReadNames(body, read)
+	resultTypes := map[string]string{}
+	for _, rp := range results {
+		if rp == nil || rp.Name == "" {
+			continue
+		}
+		t := ""
+		if rp.Type != nil {
+			t = rp.Type.String()
+		}
+		resultTypes[rp.Name] = t
+		read[rp.Name] = true
+	}
+	return read, resultTypes
+}
+
 // ValidateUnhandledOverflow 報告所有「可能溢出但未被處理」的整數運算，作為編譯
 // 硬錯誤（亦由 RunAllLints 納入 no vet / LSP 診斷）。
 func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []ValidateResult {
@@ -4625,6 +4719,37 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 		})
 	}
 
+	// curReadNames 保存「當前所在函式內被讀取的識別符名集合」（含結果參數），
+	// curResultTypes 保存「結果參數名 → 簽名宣告型別」。兩者都是函式作用域，
+	// 故在 FunctionDefinition / 方法字面量兩處 save/restore（與 varTypes 的
+	// seedVarTypes 同一節奏）。見 functionScopeFacts。
+	curReadNames := map[string]bool{}
+	curResultTypes := map[string]string{}
+
+	// reportOptUnuse 報告「option 綁定了卻從未被讀取」——既沒上拋（?=）也沒解包
+	// （match / _ =），錯誤被靜默丟棄。D2 明定這是 ERROR（唯一會阻斷建置的新診斷），
+	// 與 ovfhndld 的 HINT 分工不同。
+	//
+	// 判定刻意不區分「宣告式 ?T」與「推斷式 ?T」：兩者都是使用者手上的一個 option，
+	// 未消費即泄漏。也不看 fnReturnsOption —— 在回傳 ?T 的函式裡 `x = a + b` 同樣
+	// 不會自動上拋，仍必須自己解包或回傳。
+	reportOptUnuse := func(stmt parser.Statement, name, curFile string) {
+		msg := "option 绑定后从未被消费：既没有上抛（`?=`），也没有解包（`x: { … }` / `_ = x`），错误被静默丢弃。" +
+			"请用 `" + name + " = expr: { ok -> it, -> 0 }` 解包，或 `" + name + " ?= expr` 上抛，或 `_ = " + name + "` 显式丢弃。"
+		key := fmt.Sprintf("%s|%d:%d:%s", canonPath(curFile), stmt.Pos().Line, stmt.Pos().Column, optUnuseTraceID)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		results = append(results, ValidateResult{
+			Line:    stmt.Pos().Line,
+			Column:  stmt.Pos().Column,
+			File:    curFile,
+			Message: msg,
+			TraceID: optUnuseTraceID,
+		})
+	}
+
 	walkExpr = func(e parser.Expression, fnReturnsOption, enclosingOverflow, valueCtx bool, varTypes map[string]string, selfType, curFile string) {
 		if e == nil {
 			return
@@ -4701,9 +4826,12 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			if s.Body != nil {
 				// 函式體是獨立作用域，只受其自身註解約束；不繼承外層 enclosingOverflow，
 				// 以免外層註解靜默掩蓋巢狀函式體內的真實泄漏。
+				savedReads, savedResults := curReadNames, curResultTypes
+				curReadNames, curResultTypes = functionScopeFacts(s.Body.Statements, s.Results)
 				for _, b := range s.Body.Statements {
 					walkStmt(b, fnOpt, false, vt, st, cf)
 				}
+				curReadNames, curResultTypes = savedReads, savedResults
 			}
 			return
 		case *parser.LetStatement:
@@ -4724,9 +4852,12 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 				}
 				vt, st := seedVarTypes(fl.Parameters, fl.Results, false)
 				if fl.Body != nil {
+					savedReads, savedResults := curReadNames, curResultTypes
+					curReadNames, curResultTypes = functionScopeFacts(fl.Body.Statements, fl.Results)
 					for _, b := range fl.Body.Statements {
 						walkStmt(b, fnOpt, false, vt, st, cf)
 					}
+					curReadNames, curResultTypes = savedReads, savedResults
 				}
 				return
 			}
@@ -4751,11 +4882,45 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// 求值本身在執行期是安全的（捕獲推斷會讓除零/越界走 option 路徑，不 UB），
 			// 故豁免。這與「裸表達式陳述」（無 `_ =`，下方 ExpressionStatement 分支）
 			// 不同：後者多半是誤寫，仍報錯。
-			if !fnReturnsOption && !effOverflow {
-				declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
-				discarded := s.Name != nil && s.Name.Value == "_"
-				if !declaredOption && !discarded && isDirectOverflowValue(s.Value, varTypes, selfType) {
-					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<int>。此 option 未被处理：请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛（如 `x ?= a + b`），或显式声明为 option 类型（如 `x ?i64 = a + b`）以就地捕获错误，或用 `_ = a + b` 显式丢弃。", curFile)
+			declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
+			// 結果參數的型別寫在簽名上，不在陳述的型別節點上：`int.div = (b int) (q ?int) { q = . / b }`
+			// 的 `q` 是顯式 `?int`，只是 `s.Type == nil`。少了這一條，簽名已宣告的
+			// 結果參數會被當成「未標註的新變數」而多報一次 ovfhndld HINT。
+			if !declaredOption && s.Name != nil {
+				if rt, ok := curResultTypes[s.Name.Value]; ok && strings.HasPrefix(rt, "?") {
+					declaredOption = true
+				}
+			}
+			discarded := s.Name != nil && s.Name.Value == "_"
+			// inferredOption 區分「用戶顯式寫下的 ?T」與「lowering 為 `x = a + b`
+			// 合成的 ?T」（NullableType.IsInferred）。
+			//
+			// D2 的 ovfhndld HINT 只針對後者：用戶自己寫了 ?T 就代表他知道這是
+			// option，不必再提示；而 `x = a + b` 由規則自動變成 ?T 時必須提示，
+			// 否則「型別悄悄變成 option」對用戶完全不可見。M1a 之前這裡用
+			// declaredOption 一刀切豁免，合成路徑因此既沒有 HINT 也沒有 ERROR。
+			inferredOption := false
+			if nt, ok := s.Type.(*parser.NullableType); ok && nt.IsInferred {
+				inferredOption = true
+			}
+			explicitOption := declaredOption && !inferredOption
+			// D2：option 型綁定若在本函式內從未被讀取 → 既沒上拋也沒解包，錯誤被
+			// 靜默丟棄 → ERROR optunuse。此判定不受 fnReturnsOption 影響（回傳 ?T 的
+			// 函式裡 option 同樣不會自動上拋），也不受 effOverflow 影響（D1：註解只改
+			// 失敗時怎麼取值，不解包、也不消費）。
+			if declaredOption && !discarded && s.Name != nil && !curReadNames[s.Name.Value] {
+				reportOptUnuse(s, s.Name.Value, curFile)
+			}
+			if !fnReturnsOption && !effOverflow && !s.IsSynthetic {
+				// !s.IsSynthetic：合成陳述是 lowering 的內部產物（捕獲用的
+				// `__cap_N ?T = expr`、預宣告 `a ?T = nil`），用戶看不到它們，
+				// 對它們報 HINT 只會指向原始碼裡不存在的行。合成陳述仍參與
+				// optunuse 判定（上方），因為捕獲展開後「用戶那個綁定是否被
+				// 消費」只剩合成陳述可以承載。
+				if !explicitOption && !discarded && isDirectOverflowValue(s.Value, varTypes, selfType) {
+					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<T>，此处绑定到 `"+s.Name.Value+"`（类型 `?T`）。"+
+						"请用 `"+s.Name.Value+" = expr: { ok -> it, -> 0 }` 解包、`"+s.Name.Value+" ?= expr` 上抛，或 `_ = expr` 显式丢弃。"+
+						"若希望溢出时回绕而不是报错，可加 `#{overflow = wrap}`——注意注解只改变溢出行為，结果仍是 `?T`。", curFile)
 				}
 			}
 			if s.Value != nil {
@@ -4827,6 +4992,13 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 	// 中不可見，運算元被當成「型別未知」而保守視為整數 → 對浮點/字串運算誤報
 	// 「未處理整數溢出」（tmp-arr-test / test-str-concat 等）。函式體仍各自
 	// 建立獨立作用域（seedVarTypes），不受影響。
+	//
+	// 頂層（指令稿）作用域同樣要算一次讀取集合：optunuse 的判定完全依賴
+	// curReadNames，而它此前只在 FunctionDefinition / FunctionLiteral 分支被填。
+	// 少了這一行，**所有頂層 option 綁定**都會被誤報成「從未被消費」——
+	// tests/ 的指令稿（`f1 ?fs.file = fs.open(…)` ⏎ `f1: { err -> … }`）全中。
+	// collectReadNames 不遞迴 FunctionDefinition 體，故這裡只收頂層讀取。
+	curReadNames, curResultTypes = functionScopeFacts(program.Statements, nil)
 	topTypes := map[string]string{}
 	for _, stmt := range program.Statements {
 		walkStmt(stmt, false, false, topTypes, "", mainFile)
@@ -4860,12 +5032,10 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	var results []ValidateResult
 	seen := map[string]bool{}
 
-	// 可證明越界安全的索引讀取（定長陣列 + 界內下標，見 parser/bounds.go）不再是
-	// option 基底，也就無需 `#{index-out}` 處理。codegen（isSafeIndexBase）已對這類
-	// 讀取停止降級，`no fmt` 會移除其冗餘註解；此處必須用同一份判定跳過上報，否則
-	// 註解被移除後 `no vet` 立刻新增「未處理越界索引」ERROR（與 #{overflow} 移除同源
-	// 的三方一致性要求）。
-	inBoundsIdx := parser.ProvablyInBoundsIndexReads(program)
+	// D7（2026-10-12）：原本這裡用 parser.ProvablyInBoundsIndexReads 跳過「可證明
+	// 越界安全」的讀取（定長陣列 + 界內下標），與 codegen / no fmt 共用同一份判定。
+	// 該豁免已整套下線 —— 範圍不好判定，`for i <- [0..N) { x = arr[i] }` 也照常產生
+	// option，未處理即在此上報。
 
 	// 合併程式中同一份 std 原始檔可能因載入路徑不同而帶兩種 SourceFile 字串，
 	// 去重鍵對路徑做 filepath.Abs 正規化（見 ValidateUnhandledOverflow）。
@@ -4912,10 +5082,6 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	}
 
 	report := func(idx *parser.IndexExpression, curFile string) {
-		// 可證明越界安全的讀取：不報（見上方 inBoundsIdx 說明）。
-		if inBoundsIdx[idx] {
-			return
-		}
 		// 標準庫（std）不再豁免（自 2026-09-11 起，與 overflow 規則一致）。未處理
 		// 越界索引必須逐站以 `#{index-out = DEF}` 或 `?=` 修復，使 `no vet` 與
 		// 合併程式的 lint 對 std 保持乾淨。
@@ -6739,6 +6905,7 @@ func moduleExprValue(expr parser.Expression) string {
 		return ""
 	}
 }
+
 // collectModuleExports returns the raw export records (name + constant
 // Type/Value) for the given modules so ValidateUndefinedVars can tell a
 // constant (bare-callable) apart from a module-scoped function (must be
@@ -7554,6 +7721,33 @@ func optionTypesCompatible(inferred, existing string) bool {
 	return false
 }
 
+// optionImplicitUnwrapRejected 報告 `target = value` 是否是一次**非法的隱式解包**
+// —— 目標是 plain `T`，值卻是 `?T`。
+//
+// 為什麼需要這條獨立判斷：`isArgTypeCompatible`（funcargs.go:1054）有一條
+// `?T → T` 豁免，其註解自述前提是「在 ok 分支中，?T 變數已確認為有值」。但該函式
+// 是通用助手，被賦值路徑一併調用，於是前提不成立的地方也被放行了。
+//
+// 賦值路徑上前提**不成立**：`y i64 = x`（x 是 ?i64）只是把 option **拷貝**過去，
+// 失敗分支（nil / err）被靜默丟棄 —— 這不是解包。語言對同一情形在**呼叫引數**上
+// 早已明令禁止：`funcargs.go:1753` 的 Phase-2 規則寫著「Implicit unwrap of option
+// arguments is not allowed」（trace `fxxoptarg`），且同一段註解指出 match 臂內的
+// `it` 綁定會解析成 plain T，因此**根本不會**走到該分支 —— 也就是說 1054 那條豁免
+// 宣稱要服務的「ok 分支」情境，實際由 `it` 承擔，豁免本身沒有存在必要。
+//
+// 本函式讓賦值路徑與引數路徑口徑一致（`?T = ?T` 是拷貝，不算解包，仍放行）。
+func optionImplicitUnwrapRejected(targetType, valueType string) bool {
+	return strings.HasPrefix(valueType, "?") && !strings.HasPrefix(targetType, "?")
+}
+
+// optionUnwrapAssignHint 為 optionImplicitUnwrapRejected 命中的診斷補上可行修法，
+// 避免使用者只看到「cannot assign ?i64 value to i64 variable」而不知從何下手。
+func optionUnwrapAssignHint(valueType string) string {
+	inner := strings.TrimPrefix(valueType, "?")
+	return fmt.Sprintf("；option 不能隐式解包（这只是拷贝，失败分支会被丢弃）。请用 `: { ok -> it, -> <默认值> }` 解包、"+
+		"`?=` 上抛，或把目标声明为 `?%s`。若本意就是回绕/钳位，用显式型别：`x %s = a OP b` 搭配 `#{overflow = wrap}`。", inner, inner)
+}
+
 // isContainerLenOwner reports whether a value of type t owns a read-only `len`
 // (and `cap` / `len-bytes`) field that must never be written directly: strings,
 // arrays, slices and vec. Everything else — including a user struct that happens
@@ -7676,6 +7870,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				// "cannot assign err value to ?i64 variable"（trace 15w45dqk）。
 				delete(varTypes, "it")
 			}
+			break
+		}
+		// `_ = expr` 是顯式丟棄：`_` 不是變數，既不登記型別、也不做型別相容檢查。
+		// 少了這一條，`_` 會被寫進 varTypes，之後每一條 `_ = …` 都拿第一次的型別
+		// 去比對，於是 `_ = f()`（?uninit-struct）之後的 `_ = g()`（?[]i64）會誤報
+		// 15w45dqk「cannot assign ?[]i64 value to ?uninit-struct variable '_'」。
+		// 三條 option 消費路徑之一就是 `_ = expr`，它必須永遠可用、不受前文型別干擾。
+		if s.Name != nil && s.Name.Value == "_" {
 			break
 		}
 		// Compiler-generated `result = __unwrap_N` propagation assignment
@@ -7884,18 +8086,25 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						}
 					}
 					if inferredType != "" && !typeNamesEquivalent(inferredType, existingType) && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
-						!isArgTypeCompatible(existingType, inferredType, s.Value) && !optionTypesCompatible(inferredType, existingType) &&
+						// 隱式解包禁令：isArgTypeCompatible 的 `?T → T` 豁免會把這類賦值
+						// 放行，故此處把它強制翻回「不相容」（見 optionImplicitUnwrapRejected）。
+						(!isArgTypeCompatible(existingType, inferredType, s.Value) || optionImplicitUnwrapRejected(existingType, inferredType)) &&
+						!optionTypesCompatible(inferredType, existingType) &&
 						!isViewBorrow(existingType, inferredType) &&
 						// 整數值（i64/byte/u*/i*）指派給 char 變數：char 即 Unicode 碼點，按值放行
 						!intToCharAssignOK(existingType, inferredType) &&
 						// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
 						!isIntLiteralNarrowingToDeclared(s.Value, existingType) {
 						valPos := s.Value.Pos()
+						msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType))
+						if optionImplicitUnwrapRejected(existingType, inferredType) {
+							msg += optionUnwrapAssignHint(inferredType)
+						}
 						results = append(results, ValidateResult{
 							TraceID: "15w45dqk",
 							Line:    valPos.Line,
 							Column:  valPos.Column,
-							Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType)),
+							Message: msg,
 						})
 					}
 				} else {
@@ -8028,7 +8237,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							}
 						}
 						if valType != "" && !typeNamesEquivalent(valType, existingType) && isConcreteType(existingType) && !isOptionCtor &&
-							!isArgTypeCompatible(existingType, valType, assign.Value) && !optionTypesCompatible(valType, existingType) &&
+							// 隱式解包禁令：覆寫 isArgTypeCompatible 的 `?T → T` 豁免。
+							(!isArgTypeCompatible(existingType, valType, assign.Value) || optionImplicitUnwrapRejected(existingType, valType)) &&
+							!optionTypesCompatible(valType, existingType) &&
 							// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
 							!isIntLiteralNarrowingToDeclared(assign.Value, existingType) {
 							// Check if this is an array/slice literal assignment to a typed array variable
@@ -8061,6 +8272,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType))
 								if subDefaultOpt && !strings.HasPrefix(existingType, "?") {
 									msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", strings.TrimPrefix(valType, "?"), ident.Value, existingType, ident.Value, strings.TrimPrefix(valType, "?"))
+								} else if optionImplicitUnwrapRejected(existingType, valType) {
+									msg += optionUnwrapAssignHint(valType)
 								}
 								results = append(results, ValidateResult{
 									TraceID: "1mf3x79l",
@@ -8145,12 +8358,17 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							if inferredType != "" && existingType != "" &&
 								inferredType != existingType &&
 								isConcreteType(existingType) &&
-								!isArgTypeCompatible(existingType, inferredType, nil) {
+								// 隱式解包禁令：覆寫 isArgTypeCompatible 的 `?T → T` 豁免。
+								(!isArgTypeCompatible(existingType, inferredType, nil) || optionImplicitUnwrapRejected(existingType, inferredType)) {
+								msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, ident.Value)
+								if optionImplicitUnwrapRejected(existingType, inferredType) {
+									msg += optionUnwrapAssignHint(inferredType)
+								}
 								results = append(results, ValidateResult{
 									TraceID: "35gh0yw4",
 									Line:    s.Token.Line,
 									Column:  s.Token.Column,
-									Message: fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, ident.Value),
+									Message: msg,
 								})
 							}
 						} else {
@@ -8181,7 +8399,7 @@ var (
 	// Cache for CollectStdModuleSignatures: parsing all std modules is
 	// expensive (~0.5s). VetFile is called once per .no file, so without
 	// caching a full std vet spends ~95% of its time re-parsing modules.
-	stdSigsOnce        sync.Once
+	stdSigsOnce sync.Once
 	// Merged std signature tables: each entry carries both PARAMETER and RESULT
 	// types, keyed exactly like the old result-only tables
 	// (func: "module.fn" / bare "fn"; method: "module.struct.method").
@@ -8192,10 +8410,10 @@ var (
 	// tables above stay the single source of truth for both params and results.
 	stdFuncResultsCache   map[string][]string
 	stdMethodResultsCache map[string][]string
-	stdFieldsCache       map[string]map[string]string
-	stdAliasesCache      map[string]string   // 單具體型別別名快取（如 "fd" → "i64"）
-	stdStructModCache    map[string]string   // struct name → module short name（如 "conn" → "tls"）
-	stdEnumVariantsCache map[string][]string // enum type name → variant names (如 "file-mode" → ["read","write","append","read-write"])
+	stdFieldsCache        map[string]map[string]string
+	stdAliasesCache       map[string]string   // 單具體型別別名快取（如 "fd" → "i64"）
+	stdStructModCache     map[string]string   // struct name → module short name（如 "conn" → "tls"）
+	stdEnumVariantsCache  map[string][]string // enum type name → variant names (如 "file-mode" → ["read","write","append","read-write"])
 	// stdProgramsCache 緩存 CollectStdModuleSignatures PASS1 已解析的 std 模組
 	// Program，按「內容哈希」(cache.ContentKey) 索引。no vet src/std 的第二遍
 	// 可直接復用，跳過磁盤文件的重新 parse；內容與 embed 不一致時自然不命中，
@@ -8294,10 +8512,10 @@ func ListStdModules(fsys fs.FS) []StdModuleInfo {
 					if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
 						shortName = fullPath[idx+1:]
 					}
-				infos = append(infos, StdModuleInfo{
-					ShortName: shortName,
-					FullPath:  fullPath,
-				})
+					infos = append(infos, StdModuleInfo{
+						ShortName: shortName,
+						FullPath:  fullPath,
+					})
 				}
 			}
 		}
@@ -8355,14 +8573,14 @@ func knownJsModules() []JsModuleInfo {
 					fullPath := strings.TrimSuffix(rel, ".no")
 					if !seen[fullPath] {
 						seen[fullPath] = true
-					shortName := fullPath
-					if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
-						shortName = fullPath[idx+1:]
-					}
-					infos = append(infos, JsModuleInfo{
-						ShortName: shortName,
-						FullPath:  fullPath,
-					})
+						shortName := fullPath
+						if idx := strings.LastIndex(fullPath, "/"); idx >= 0 {
+							shortName = fullPath[idx+1:]
+						}
+						infos = append(infos, JsModuleInfo{
+							ShortName: shortName,
+							FullPath:  fullPath,
+						})
 					}
 				}
 			}
