@@ -164,17 +164,19 @@ jobs:
             -DLLVM_BUILD_UTILS=OFF \
             -DLLVM_DISTRIBUTION_COMPONENTS="llvm-headers;llvm-libraries"
 
-      - name: Stage B - build Windows COFF static libraries
+      - name: Stage B - build + install Windows COFF static libraries
         run: |
-          # 交叉構建全部靜態庫（llvm-libs meta-target）。tblgen 用 LLVM_NATIVE_TOOL_DIR 的 native 版。
-          cmake --build llvm-cross --target llvm-libs
+          # 用 install-<component> 目標驅動構建：install-llvm-libraries 依賴全部靜態庫
+          # target，故會先交叉編出（tblgen 用 LLVM_NATIVE_TOOL_DIR 的 native 版）再裝到
+          # CMAKE_INSTALL_PREFIX。不能用 `--target llvm-libs`：那個 umbrella 在當前
+          # LLVM/ninja 配置下不存在（ninja: unknown target 'llvm-libs'）；也別用
+          # `distribution`（只 stage 到 <build>/llvm-dist 再打包，不落 prefix）。
+          # 元件名用 'llvm-libraries'（不是 'llvm-libs'）。
+          cmake --build llvm-cross --target install-llvm-headers install-llvm-libraries
 
-      - name: Install headers + libs to prefix, then add native llvm-config
+      - name: Add native llvm-config + verify prefix
         run: |
           PREFIX="$GITHUB_WORKSPACE/llvm-dev-${{ matrix.arch_label }}"
-          # 用 install-<component> 目標直接裝到 CMAKE_INSTALL_PREFIX（不用 distribution
-          # target——它只 stage 到 <build>/llvm-dist 再打包，不落 prefix）。
-          cmake --build llvm-cross --target install-llvm-headers install-llvm-libraries
           # 把 Stage A 的 native（Linux ELF）llvm-config 放進包 bin/，consumer 在 Linux 執行它。
           mkdir -p "$PREFIX/bin"
           cp "$GITHUB_WORKSPACE/llvm-native/bin/llvm-config" "$PREFIX/bin/llvm-config"
