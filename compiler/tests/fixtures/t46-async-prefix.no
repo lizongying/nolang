@@ -1,0 +1,18 @@
+worker = (n i64) (r i64) {
+    r = n
+}
+main = () {
+    ; 無色 async 前綴：run/co/awy 各建單 guarded CHILD 的包裝節點
+    h = run worker(3)
+    k = co worker(4)
+    v = awy h
+    ; 歧義消解：`co`/`run` 緊接 `.` 時是模組名（DotExpression），非 async 關鍵字
+    m = co.pool()
+    ; 對照：普通呼叫不受影響（CallExpression）
+    w = worker(5)
+    print(h)
+    print(k)
+    print(v)
+    print(m)
+    print(w)
+}

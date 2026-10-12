@@ -110,7 +110,7 @@ jobs:
   # 交叉編譯到全部目標」，它改用本變體後不再安裝 opt/llc，故這裡必須是全後端。
   # 下方 "Cross-compile smoke test" 步驟釘住這個能力（改回宿主裁剪會讓它失敗）。
   #
-  # 注意：cgo 無法交叉編譯（darwin 目標需要 macOS SDK、windows 需要 MSVC），
+  # 注意：cgo 無法交叉編譯（darwin 目標需要 macOS SDK、windows 需要原生工具鏈），
   # 所以這裡是矩陣「原生 runner 原生構建」，而非一次交叉出全部平台。
   # darwin/amd64 內置 LLVM 變體已移除：GitHub 已退役 x64 macOS runner，而 LLVM 22
   # 起上游不再發行 x86_64-apple-darwin 預編譯包（22.1.8 的 macOS 資產只剩
@@ -119,8 +119,10 @@ jobs:
   # no_darwin_amd64（build-release 以 CGO_ENABLED=0 交叉編譯）。
   # windows/* 為實驗性（continue-on-error）：官方 pre-built Windows 包不含 llvm-config
   # 與靜態庫，改用 .github/workflows/build-llvm-windows.yml 手動預編譯、發佈到 GitHub
-  # Release 的 llvm-dev 包；且 windows 以 zig cc 鏈接 MSVC 靜態庫的 ABI/運行時匹配可能需
-  # 就地迭代，故不阻斷發布。
+  # Release 的 llvm-dev 包。該包以 zig cc / zig c++（windows-gnu / MinGW + libc++ ABI）
+  # 編譯，與下方 Build 步驟的 cgo（CC=zig cc、LLVM_STATIC_EXTRA_LIBS=-lc++）同源同 ABI，
+  # 故靜態鏈接可對齊；仍標實驗性是因為全量 LLVM 用 zig 構建可能遇到個別編譯／鏈接坑，
+  # 不阻斷發布。
   # 代價：全後端產物比純 Go 版（~12 MB）大得多，故作為額外 asset 而非替換現有產物。
   build-llvm-variants:
     if: startsWith(github.ref, 'refs/tags/')
@@ -153,8 +155,9 @@ jobs:
             zig_arch: aarch64
             llvm_host_target: aarch64
             ext: ""
-          # windows/amd64：實驗性。cgo 用 zig cc 鏈接官方 LLVM 22 的 MSVC 靜態庫；
-          # libc++/MSVC 運行時匹配可能需就地迭代，故 continue-on-error 不阻斷發布。
+          # windows/amd64：實驗性。預編譯 LLVM 以 zig cc/zig c++（windows-gnu / libc++）編成，
+          # cgo 也用 zig cc + -lc++ 同 ABI 靜態鏈接；因全量 LLVM 用 zig 構建仍可能踩個別
+          # 坑，故 continue-on-error 不阻斷發布。
           - os: windows-latest
             asset: no-llvm_windows_amd64
             go_arch: x64
@@ -217,14 +220,29 @@ jobs:
           # 5 分鐘超時失敗。
           #
           # 改用自己預編譯的包：由 .github/workflows/build-llvm-windows.yml（手動 dispatch）
-          # 從源碼用 MSVC 編好 llvm-config + 頭文件 + 靜態庫，發佈成固定 tag 的 GitHub
-          # Release。這裡直接下載解壓到 C:\llvm（無空格， llvm-config 可遷移），與
-          # 下方 Build 步驟引用的 LLVM_CONFIG=C:/llvm/bin/llvm-config.exe 對齊。
+          # 從源碼用 zig cc / zig c++（windows-gnu / MinGW + libc++ ABI）編好 llvm-config +
+          # 頭文件 + 靜態庫，發佈成固定 tag 的 GitHub Release。這裡直接下載解壓到 C:\llvm
+          # （無空格，llvm-config 可遷移），與下方 Build 步驟的 LLVM_CONFIG=C:/llvm/bin/llvm-config.exe
+          # 對齊；因預編譯與 cgo 都用 zig/libc++ 同 ABI，靜態鏈接才能對得上。
           # 若要升級 LLVM 版本：先跑 build-llvm-windows.yml 出新包，再同步這裡的
           # $Tag/$Asset 與 Build 步驟的 LLVM_CONFIG 路徑。
           $Tag = "llvm-22.1.8-win-x64"
           $Asset = "LLVM-22.1.8-win-x64-llvm-dev.zip"
           $Prefix = "C:\llvm"
+          # 先確認本倉庫的 Release 與資產確實存在，不存在就給出清晰指引（而非讓
+          # gh 抛「Release not found」這種看不出前因後果的錯）——這個包需要手動跑
+          # build-llvm-windows.yml 預編譯才會生成，首次發版很容易漏。
+          if (-not (gh release view $Tag 2>$null)) {
+            Write-Host "::error::Windows LLVM 預編譯包不存在：本倉庫尚無 Release tag '$Tag'"
+            Write-Error "找不到 Release '$Tag'。請先在默認分支手動觸發 .github/workflows/build-llvm-windows.yml（Actions → Run workflow，llvm_version=22.1.8）生成並上傳 '$Asset'，再重跑本發布。"
+            exit 1
+          }
+          $assets = gh release view $Tag --json assets --jq '.assets[].name'
+          if ($assets -notcontains $Asset) {
+            Write-Host "::error::Release '$Tag' 存在，但裡面沒有資產 '$Asset'"
+            Write-Error "Release '$Tag' 已存在但缺少預編譯資產 '$Asset'（可能上次預編譯未跑完或被刪）。請重跑 build-llvm-windows.yml 以 --clobber 重新上傳。"
+            exit 1
+          }
           # 從本倉庫的 release 下載（同倉庫，GITHUB_TOKEN 即可讀）。
           gh release download $Tag -p $Asset
           if (Test-Path $Prefix) { Remove-Item -Recurse -Force $Prefix }
@@ -283,7 +301,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            # cgo 用 zig cc 作驅動，鏈接官方 LLVM 22 的 MSVC 靜態庫。
+            # cgo 用 zig cc 作驅動，鏈接預編譯包（build-llvm-windows.yml 以 zig cc /
+            # zig c++ 即 windows-gnu / libc++ ABI 編成）的 LLVM 靜態庫——兩邊同用 zig
+            # 與 libc++，ABI 一致，-lc++ 只有這樣纔對得上，靜態鏈接才能成功。
             # 不要再寫 /usr/local/bin/zigcc 包裝腳本 —— Git-for-Windows 的 bash
             # 裡 /usr/local/bin 目錄預設不存在（本步驟之前正是因此報
             # 「No such file or directory」而 exit 1），且 Windows 上 cgo 是

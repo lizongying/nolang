@@ -483,6 +483,6 @@
 0 782492d8e68dda8e01236e231e7eb1509b0fa47fa84b0947d8f90936da8a0c55 tests/tagged-enum-payload-ownership.no
 0 0e2ebc2770ae17e5a90404d4c9c265f8889f2a05d8ccd4ab5a31e552fd8750af tests/tagged-enum-two-match.no
 0 a534e33c83fa0222b794c71a724fe8cf1247ecdbd2453dcf81181aa6cc38a4fb tests/tagged-enum-zero-match.no
-0 106cae32d5baa64c4a483ba871af71857020f7699fbeb9fb8b8c91409d5b6e27 tests/test-div-mod-option.no
-0 be5a2759da2c6510a940d9ab05907e23722f1de0d14641dc3801c9492556742a tests/test-div-zero.no
+0 25e006a7ee8f249db7034588f08e5555e241dc4af2200d438ed154aa699baa85 tests/test-div-mod-option.no
+0 85c29086df85a9a1443bd2a0e8a2984a2d630b9fc8fe6a6be44919103c1ea98b tests/test-div-zero.no
 0 841ca25622b26db375afbb9cc4dc6fefede3ca66257577bcff4a25f74d4d202c tests/range-open.no

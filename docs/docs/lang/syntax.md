@@ -2337,6 +2337,35 @@ dec = (x i8) (r i8) {
 
 > **為什麼默認是 option 而非 wrap？** 靜默回繞會隱藏溢出 bug；預設回傳 `option` 強制呼叫方顯式處理溢出（或主動標註 `wrap` 表明「我接受回繞語義」），把「是否容許溢出」變成可見的設計決策。
 
+### 除零（division by zero）
+
+整數 `/` 與 `%` 的除數為 `0` 是**未定義行為（UB）**，與溢出是**兩件獨立的事**——沒有任何註解能豁免它：
+
+- **編譯期可判定**：除數是**字面常數 0**（`10 / 0`、`a % 0`、`x / 0`）⇒ **硬錯誤**（trace id `div-by-zero`）。`#{overflow = wrap}` 不豁免它（該註解管的是溢出，不是除零）。
+- **執行期才知道**：除數來自變數／外部輸入 ⇒ 編譯器在**兩條路徑上都插入零檢查**，差別只在「怎麼報告」：
+
+| 結果型別 | 觸發條件 | 除數為 0 時 |
+| --- | --- | --- |
+| `?int`（預設） | 陳述未標註 | option tag = `err`，用 `?=` / match 處理 |
+| plain `int` | 陳述帶 `#{overflow = ...}` | 結果強制為 `0`，並在 **stderr** 印出 `nolang: integer division or remainder by zero ...` |
+
+```nolang
+safe = (a i64, b i64) (r ?i64) {
+    r = a / b                ; b == 0 → err（呼叫方必須處理）
+}
+
+#{overflow = wrap}
+fast = (a i64, b i64) (r i64) {
+    r = a / b                ; b == 0 → 0 並印一行 stderr 診斷（不再是裸 sdiv 的 UB）
+}
+```
+
+> **為什麼 `#{overflow = wrap}` 不能豁免零除守衛**：它改變的是**結果型別**（`?int` → plain `int`），不是除數的安全性。若讓它豁免，編譯器就會發出裸 `sdiv`，最佳化器便有權假設除數永遠非 0（把 `a / 0` 折成任意值），而 x86-64 的 `idiv` 直接以 #DE 崩潰——既 UB、又沒有任何診斷。因此 zero-divisor 守衛**獨立於註解**存在；plain 路徑之所以多印一行 stderr，正是因為該路徑沒有 option 可供呼叫方檢查。
+>
+> **同一守衛也覆蓋 `sdiv (INT_MIN, -1)`**（結果不可表示，同屬 UB；x86-64 上會 SIGFPE）。option 路徑把它併入 `err`；plain 路徑取 2 補數回繞值（`INT_MIN / -1 → INT_MIN`、`INT_MIN % -1 → 0`）。
+
+浮點除法不受管轄：`1.0 / 0.0` 由 IEEE-754 定義為 `inf` / `nan`，不是 UB。
+
 ### 未標註運算列為錯誤（`ovf-int-default`）
 
 `no vet` 把**未標註**的整數運算回報為**錯誤**（trace id `ovf-int-default`），而非提示。原因：預設的 `option<int>` 一旦被當成普通整數使用就是靜默的語意漂移，必須顯式二選一——加 `#{overflow = ...}` 註解，或用 `?T` + `?=` / match 顯式處理。

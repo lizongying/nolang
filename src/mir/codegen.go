@@ -105,6 +105,12 @@ type codegen struct {
 	// correct program's IR is perturbed by it.
 	awaitConsumedMsgEmitted bool
 
+	// divZeroMsgEmitted gates the one-shot emission of the diagnostic string
+	// constant used by divZeroReport (the plain-int integer division-by-zero
+	// guard). Same lazy rule: only a module that divides on the plain-int path
+	// gets the constant.
+	divZeroMsgEmitted bool
+
 	// optPrintHelper maps an option PAYLOAD LLVM type to the dedicated print
 	// helper function name (e.g. @print_option_str) that performs the nil-tag
 	// check and prints "nil" or the payload inside its OWN function body.
@@ -5280,25 +5286,47 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			op = "urem"
 		}
 	}
-	// Integer / and % are option-producing operations when wrapResult is true.
-	// LLVM treats sdiv/srem/udiv/urem by zero as undefined behaviour, so select
-	// a harmless divisor before emitting the arithmetic and make the option tag
-	// conditional: tag=2 (err) for zero, tag=0 (ok) otherwise. The payload of an
-	// err is deliberately zero-like/ignored; ?int has no owned payload to drop.
-	// `sdiv`/`srem` with (MIN, -1) is UB for the same reason (the result is not
-	// representable), so it joins the same "dangerous divisor" set — but only
-	// when no overflow annotation asked for the old wrapping behaviour.
+	// Integer / and % must never be emitted as a bare sdiv/srem/udiv/urem with a
+	// dangerous divisor: LLVM defines division by zero — and signed sdiv/srem
+	// with (MIN, -1) — as UB, so the optimizer is licensed to assume the divisor
+	// is never 0 (it folds X/X to 1, and folds `a / 0` into whatever it likes).
+	//
+	// The guard therefore runs on EVERY integer / and %, NOT only on the option
+	// path. `#{overflow=wrap}` changes the RESULT TYPE (plain int instead of
+	// ?int); it does not make a zero divisor safe. Before this, the annotation
+	// silently deleted the whole guard and left a raw `sdiv` behind — the worst
+	// of both worlds: undefined behaviour AND no diagnostic. The two paths now
+	// differ only in how the danger is REPORTED:
+	//
+	//	option path (wrapResult): a harmless divisor is selected and the tag is
+	//	    made conditional — tag=2 (err) when dangerous, tag=0 (ok) otherwise.
+	//	    The payload is the harmless-divisor result (a/1 = a), deliberately NOT
+	//	    zeroed: ?int has no owned payload to drop, and the tag is authoritative,
+	//	    so a caller that inspects it never reads the value. (A bare
+	//	    `print(opt)` still prints that payload — pre-existing behaviour, not
+	//	    changed here.)
+	//	plain path (!wrapResult): the program has no option to inspect, so the
+	//	    result is made DEFINED — divisor 0 -> 0, and MIN/-1 -> the
+	//	    2's-complement wrap value (which the safe divisor 1 yields for both
+	//	    / and %) — and the site reports itself on stderr once per execution
+	//	    (divZeroReport). Silence is exactly what this guard exists to prevent.
+	//
 	// errCond is the single i1 "this operation produced an err" flag for the
 	// whole instruction (divisor guard OR arithmetic overflow).
 	errCond := ""
 	badDiv := ""
-	if wrapResult && !isFloat && (inst.Op == OpDiv || inst.Op == OpMod || inst.Op == OpUDiv || inst.Op == OpUMod) {
+	zeroDiv := ""
+	if !isFloat && (inst.Op == OpDiv || inst.Op == OpMod || inst.Op == OpUDiv || inst.Op == OpUMod) {
 		c.loadSeq++
-		zeroDiv := fmt.Sprintf("%%dz%d", c.loadSeq)
+		zeroDiv = fmt.Sprintf("%%dz%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", zeroDiv, resLT, bV))
 		badDiv = zeroDiv
-		signedDiv := inst.Op == OpDiv || inst.Op == OpMod
-		if signedDiv && !inst.OvfAnnotated {
+		// `sdiv`/`srem` with (MIN, -1) is UB for the same reason (the result is
+		// not representable), so it joins the same "dangerous divisor" set. It is
+		// deliberately NOT gated on the overflow annotation: skipping the guard
+		// there hands the optimizer the same license (and traps with SIGFPE on
+		// x86-64, where `idiv` raises #DE for this exact pair).
+		if inst.Op == OpDiv || inst.Op == OpMod {
 			if minLit, ok := intMinLiteral(resLT); ok {
 				c.loadSeq++
 				isMin := fmt.Sprintf("%%dmn%d", c.loadSeq)
@@ -5318,7 +5346,9 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 		safeDivisor := fmt.Sprintf("%%ds%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %s 1, %s %s\n", safeDivisor, badDiv, resLT, resLT, bV))
 		bV = safeDivisor
-		errCond = badDiv
+		if wrapResult {
+			errCond = badDiv
+		}
 	}
 	// add/sub/mul: signed/unsigned overflow becomes err, but ONLY on the option
 	// path (wrapResult) and only when the statement did not opt out with an
@@ -5357,7 +5387,21 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 		}
 		c.optStoreInlinePayload(slot, resLT, resVal)
 	} else {
-		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+		// Plain-int path (the statement carries an #{overflow=...} annotation, or
+		// the destination is an explicit plain int): there is no option for the
+		// caller to inspect, so a zero divisor must still not become LLVM poison.
+		// Force a defined result (0, matching the option path's zero-like err
+		// payload) and report the site on stderr. See the guard above for why the
+		// report is unconditional w.r.t. the annotation.
+		outV := resVal
+		if zeroDiv != "" {
+			c.loadSeq++
+			zr := fmt.Sprintf("%%dzr%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %s 0, %s %s\n", zr, zeroDiv, resLT, resLT, outV))
+			outV = zr
+			c.sb.WriteString("  " + c.divZeroReport(zeroDiv) + "\n")
+		}
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, outV, lt, slot))
 	}
 	return nil
 }
@@ -14581,6 +14625,61 @@ func (c *codegen) awaitConsumedMsg() string {
 	}
 	return fmt.Sprintf("call i64 @write(i32 2, i8* getelementptr inbounds ([%d x i8], [%d x i8]* @nolang_msg_await_consumed, i64 0, i64 0), i64 %d)",
 		len(msg), len(msg), len(msg))
+}
+
+// divZeroMsgText is the diagnostic written by divZeroReport. It names the SITE
+// semantics rather than the annotation, because the same message is emitted for
+// any integer / or % whose result is a plain int (i.e. the statement carries an
+// #{overflow=...} annotation) and whose divisor is 0 at run time.
+const divZeroMsgText = "nolang: integer division or remainder by zero (the divisor is 0; result forced to 0)\n"
+
+// divZeroMsgCall emits (once per module) the diagnostic string constant and
+// returns the LLVM call that writes it to stderr. Same lazy rule as
+// awaitConsumedMsg: only a module that divides on the plain-int path gets it.
+func (c *codegen) divZeroMsgCall() string {
+	if !c.divZeroMsgEmitted {
+		c.divZeroMsgEmitted = true
+		var lit strings.Builder
+		for i := 0; i < len(divZeroMsgText); i++ {
+			fmt.Fprintf(&lit, "\\%02X", divZeroMsgText[i])
+		}
+		c.extraGlobals = append(c.extraGlobals, fmt.Sprintf(
+			"@nolang_msg_div_zero = private unnamed_addr constant [%d x i8] c\"%s\"\n",
+			len(divZeroMsgText), lit.String()))
+	}
+	return fmt.Sprintf("call i64 @write(i32 2, i8* getelementptr inbounds ([%d x i8], [%d x i8]* @nolang_msg_div_zero, i64 0, i64 0), i64 %d)",
+		len(divZeroMsgText), len(divZeroMsgText), len(divZeroMsgText))
+}
+
+// divZeroReport emits (once per module) a helper that writes the division-by-zero
+// diagnostic to stderr when its argument is true, and returns the call
+// instruction that invokes it with `cond`.
+//
+// WHY A GENERATED HELPER AND NOT AN INLINE BRANCH: emitArith writes into the
+// MIDDLE of the enclosing basic block, so a conditional write would require
+// terminating that block and opening new ones under the caller's feet. A call is
+// a single instruction and leaves the block structure untouched. (Same reason
+// the option-print helpers exist.)
+//
+// The helper is only reachable from the plain-int path: on the option path the
+// danger is reported through the err tag, so a correct program never gets the
+// constant, the function, or the call.
+func (c *codegen) divZeroReport(cond string) string {
+	const fn = "__nolang_div_zero_report"
+	if !c.extraFuncs[fn] {
+		c.extraFuncs[fn] = true
+		var b strings.Builder
+		fmt.Fprintf(&b, "define void @%s(i1 %%bad) {\n", fn)
+		b.WriteString("entry:\n")
+		b.WriteString("  br i1 %bad, label %report, label %done\n")
+		b.WriteString("report:\n")
+		b.WriteString("  " + c.divZeroMsgCall() + "\n")
+		b.WriteString("  br label %done\n")
+		b.WriteString("done:\n")
+		b.WriteString("  ret void\n}\n")
+		c.extraFuncsBody.WriteString(b.String())
+	}
+	return fmt.Sprintf("call void @%s(i1 %s)", fn, cond)
 }
 
 // emitTaskRetain emits the R-tier retain for a handle copy (OpTaskRetain).

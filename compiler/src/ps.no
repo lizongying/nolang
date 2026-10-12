@@ -1079,6 +1079,48 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             right > 0 -> ast.kid-add(t, idx, right)
         }
 
+        ; 無色 async 前綴運算子（Go expr.go:305–357）：`run e` → RunExpression{Call:e}、
+        ;   `co e` → CoExpression{Call:e}、`awy e` → AwaitExpression{Right:e}（子先於父：先 parse 內層再 add 父）。
+        ;   ⚠️ `run`/`co` 若緊接 `.`（peek-at(1)==DOT）【不是】async 關鍵字，而是模組名（`run.list(...)`）
+        ;      ⇒ 建普通 Identifier{lit}、停在 DOT 交給後綴 DOT 迴圈（Go 同口徑）；`awy` 無此歧義。
+        ;   ⚠️ 用預先算好的 `dotAfter` 旗標（非互斥條件）防 match 非排他：兩臂各重取 ps-peek-at 會因首臂消費 token 而誤觸。
+        tk.typ == tok.RUN -> {
+            dotAfter = ps-peek-at(p, 1) == tok.DOT
+            dotAfter == 1 -> {
+                idx = ast.add(t, asp.K_IDENTIFIER)
+                ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+                ps-bump(p); 消費 run（停在 DOT）
+            }
+            dotAfter == 0 -> {
+                ps-bump(p); 消費 run
+                child = ps-parse-expr-prec(t, p, 0); 內層呼叫運算式（LOWEST）
+                idx = ast.add(t, asp.K_RUN_EXPRESSION)
+                child > 0 -> ast.kid-add(t, idx, child); guarded CHILD=Call
+            }
+        }
+
+        tk.typ == tok.CO -> {
+            dotAfter = ps-peek-at(p, 1) == tok.DOT
+            dotAfter == 1 -> {
+                idx = ast.add(t, asp.K_IDENTIFIER)
+                ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+                ps-bump(p); 消費 co（停在 DOT）
+            }
+            dotAfter == 0 -> {
+                ps-bump(p); 消費 co
+                child = ps-parse-expr-prec(t, p, 0); 內層呼叫運算式（LOWEST）
+                idx = ast.add(t, asp.K_CO_EXPRESSION)
+                child > 0 -> ast.kid-add(t, idx, child); guarded CHILD=Call
+            }
+        }
+
+        tk.typ == tok.AWY -> {
+            ps-bump(p); 消費 awy
+            child = ps-parse-expr-prec(t, p, 0); 內層運算式（LOWEST）
+            idx = ast.add(t, asp.K_AWAIT_EXPRESSION)
+            child > 0 -> ast.kid-add(t, idx, child); guarded CHILD=Right
+        }
+
         tk.typ == tok.LBRACKET -> {
 
             ; [e1, e2, …] → SliceLiteral{elements: N}

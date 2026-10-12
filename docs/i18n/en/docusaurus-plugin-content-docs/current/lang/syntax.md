@@ -2472,6 +2472,46 @@ The remaining rules:
 > default forces the caller to handle overflow explicitly (or to annotate `wrap` and declare "I accept wrapping
 > semantics"), turning "is overflow acceptable here?" into a visible design decision.
 
+### Division by zero
+
+A `0` divisor for integer `/` and `%` is **undefined behaviour (UB)**, and it is **independent of overflow** — no
+annotation can exempt it:
+
+- **Decidable at compile time:** the divisor is the **literal constant 0** (`10 / 0`, `a % 0`, `x / 0`) ⇒ a **hard
+  error** (trace id `div-by-zero`). `#{overflow = wrap}` does not exempt it (that annotation governs overflow, not
+  division by zero).
+- **Known only at run time:** the divisor comes from a variable or external input ⇒ the compiler inserts a zero check
+  on **both paths**, and they differ only in how the danger is *reported*:
+
+| Result type | Trigger | When the divisor is 0 |
+| --- | --- | --- |
+| `?int` (default) | statement unannotated | option tag = `err`, handled with `?=` / match |
+| plain `int` | statement carries `#{overflow = ...}` | result is forced to `0`, and a diagnostic is written to **stderr**: `nolang: integer division or remainder by zero ...` |
+
+```no
+safe = (a i64, b i64) (r ?i64) {
+    r = a / b                ; b == 0 → err (the caller must handle it)
+}
+
+#{overflow = wrap}
+fast = (a i64, b i64) (r i64) {
+    r = a / b                ; b == 0 → 0 plus one stderr diagnostic (no longer a raw sdiv / UB)
+}
+```
+
+> **Why `#{overflow = wrap}` cannot exempt the zero-divisor guard:** it changes the **result type** (`?int` → plain
+> `int`), not the safety of the divisor. If it exempted the guard, the compiler would emit a raw `sdiv` and the
+> optimizer would be licensed to assume the divisor is never 0 (folding `a / 0` into anything it likes), while `idiv`
+> on x86-64 raises #DE outright — undefined behaviour *and* no diagnostic. The zero-divisor guard therefore exists
+> **independently of the annotation**; the plain path writes a stderr line precisely because that path has no option
+> for the caller to inspect.
+>
+> **The same guard covers `sdiv (INT_MIN, -1)`** (the result is not representable, so it is UB in the same way, and it
+> raises SIGFPE on x86-64). The option path folds it into `err`; the plain path yields the two's-complement wrap
+> value (`INT_MIN / -1 → INT_MIN`, `INT_MIN % -1 → 0`).
+
+Floating-point division is out of scope: IEEE-754 defines `1.0 / 0.0` as `inf` / `nan`, which is not UB.
+
 ### Unannotated operations reported as errors (`ovf-int-default`)
 
 `no vet` reports **unannotated** integer arithmetic as an **error** (trace id `ovf-int-default`), not a hint. The
