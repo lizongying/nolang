@@ -20,20 +20,24 @@ func TestDiscardExemptsUnhandledIndex(t *testing.T) {
 }
 
 // TestBareIndexStillReportedWithoutDiscard（對照組）：plain 函式內裸 `x = arr[i]`
-// 仍須報 idxhndld。
+// 仍須被報。
+//
+// 🔴 2026-10-12 勘誤：原本斷言「報 idxhndld」，且只跑 ValidateUnhandledIndex。D6 的
+// 捕獲加寬（collectCaptureNodes 的 IndexExpression 分支不再受
+// enclosingFuncHasOptResult 把關）之後，`x = arr[i]` 會被就地捕獲成 `x ?i64`，
+// 捕獲把**產生處的 idxhndld HINT 整條吸收**，只剩「從未被讀取」的 optunuse ERROR
+// —— 而 optunuse 由 ValidateUnhandledOverflow 產出，所以這裡必須走 RunAllLints
+// （lintCounts）才看得到。放寬的是嚴重度分級（D2），不是「不報」。
+//
+// 產生處 idxhndld 仍在的形態是「沒有捕獲點」的賦值（結果參數 `r = arr[i]`），
+// 由 option_capture_lint_test.go 的 index_into_plain_result_param 負責釘住。
 func TestBareIndexStillReportedWithoutDiscard(t *testing.T) {
 	src := `f = (arr []i64, i i64) () {
     x = arr[i]
 }`
-	res := ValidateUnhandledIndex(parseProg(t, src), "src/app.no")
-	found := false
-	for _, r := range res {
-		if r.TraceID == unhandledIndexTraceID {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected idxhndld for bare `x = arr[i]` in plain function, got %+v", res)
+	counts := lintCounts(t, src)
+	if counts[optUnuseTraceID] != 1 {
+		t.Fatalf("expected 1 optunuse for bare `x = arr[i]` in plain function, got %v", counts)
 	}
 }
 

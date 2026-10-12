@@ -2960,6 +2960,22 @@ func isFixedArrayAnnotation(t parser.Type) bool {
 // 傳入（合併模式只有頂層語句被 SetSourceFile 標記，巢狀語句的 SourceFile 為空），
 // 節點若確有自身 SourceFile 則覆蓋——否則 tcpoxtfd 的行號是相對於來源檔的，
 // RunAllLints 的行號範圍回退歸因會把 std 的提示對到被 vet 的主檔頭上。
+// producesOptionIndex 報告 e 是否為「統一 option 規則下恆產生 option」的索引讀取。
+//
+// D6：整數 `+ - * / %` 之外，**索引讀取**（容器切片 / 定長陣列 / vec / str / txt）
+// 的結果同樣恆為 `?elem`。因此寫在綁定目標上的 plain 標註（`c char = s[i]`、
+// `v i64 = a[i]`）**不是**冗餘 —— 它與 `p i64 = pos + 1` 一樣，是那個把結果
+// 拉回 plain 的開關（lower 期 `s.Type != nil` 即短路合成）。
+//
+// 判準刻意只看「是不是索引表達式」：#index-out 註解與 in-bounds 靜態證明
+// （bounds.go）都會把某些讀取降回 plain，那些情形標註確實可省略，但少報一條
+// 冗餘提示無害，多報一條則與 ValidateUnhandledIndex 的豁免正面衝突
+// （一邊要使用者刪註解、一邊要使用者處理 option），故一律保守不報。
+func producesOptionIndex(e parser.Expression) bool {
+	_, ok := e.(*parser.IndexExpression)
+	return ok
+}
+
 func checkRedundantTypeInStmt(stmt parser.Statement, file string, varTypes map[string]string) []ValidateResult {
 	if stmt == nil {
 		return nil
@@ -2986,7 +3002,7 @@ func checkRedundantTypeInStmt(stmt parser.Statement, file string, varTypes map[s
 				// 判準沿用 ValidateUnhandledOverflow 的 isDirectOverflowValue
 				// （同一套運算元型別推斷），避免兩處口徑漂移。
 				optionProducing := !strings.HasPrefix(annotatedType, "?") &&
-					isDirectOverflowValue(s.Value, varTypes, "")
+					(isDirectOverflowValue(s.Value, varTypes, "") || producesOptionIndex(s.Value))
 				if !optionProducing && inferredType != "" && inferredType == annotatedType {
 					results = append(results, ValidateResult{
 						TraceID: "tcpoxtfd",
@@ -5270,7 +5286,15 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 				if idx, ok := s.Value.(*parser.IndexExpression); ok {
 					discarded := s.Name != nil && s.Name.Value == "_"
 					annotated := indexOutAnnotated(s)
-					if isSafeBase(curFunc, idx) && !discarded && !annotated && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) {
+					// D6：顯式 **plain** 型別（`c char = s[i]` / `v i64 = a[i]`）
+					// 與 `?T` 一樣會讓這條讀取保持 plain —— lower 期的合成
+					// （synthesizeNullableType）在 s.Type != nil 時直接短路。
+					// 這種讀取壓根不產生 option，自無「未處理」可言；不豁免
+					// 就會出現「補上 char → option 消失 → 仍被催著處理 option」
+					// 的自相矛盾，與 checkRedundantTypeInStmt 的 tcpoxtfd 豁免
+					// （producesOptionIndex）是同一件事的兩面。
+					plainDeclared := s.Type != nil && !strings.HasPrefix(s.Type.String(), "?")
+					if isSafeBase(curFunc, idx) && !discarded && !annotated && !plainDeclared && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) {
 						cf := s.SourceFile
 						if cf == "" {
 							cf = curFile

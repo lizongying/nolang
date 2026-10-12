@@ -1523,19 +1523,24 @@ view[0] = 99         ; 修改 view 的元素
 
 ```no
 
-; 字符串索引 → 回傳 char（Unicode 碼點，不是字節）
-c char = str[i]
+; 字符串索引 → 回傳 ?char（Unicode 碼點，不是字節）
+c char = s[i]              ; 顯式 plain 型別把結果拉回 char（見〈安全索引〉）
 
  ; arr、vec獲取元素
-arr[i]
-vec[i]
+arr[i]                     ; → ?elem
+vec[i]                     ; → ?elem
 
  ; map 獲取 value
 map[str]
 
 ```
 
-> **`str[i]` 的型別是 `char`**（Unicode 碼點）；**`str[a..b]` 切片回傳 `str`**（碼點語義視圖，共享底層記憶體）。
+> **索引讀取的結果恆為 `?T`**：`arr[i]` / `vec[i]` / 定長陣列 / `slice` → `?elem`，
+> `str` / `txt` 索引 `s[i]` → `?char`（D6，與整數算術同一套統一規則）。
+> 因此 `str[i]` 的**推斷型別是 `?char`**；要拿回 plain `char` 有兩條路：
+> 在綁定上寫顯式 plain 型別（`c char = s[i]`，lower 期即短路合成，讀回 plain 值），
+> 或用 match / `?=` 解包。
+> `str[a..b]` 切片仍回傳 `str`（碼點語義視圖，共享底層記憶體）。
 > `char` 可**隱式轉換為 `str`**（編碼為單字元字串），因此下列寫法皆合法，無需手動呼叫 `char.to-str()`：
 
 ```no
@@ -1549,11 +1554,13 @@ ok     = s[0] == 'h'        ; char 與 str 比較時隱式轉為 str
 
 ### 安全索引（Safe Indexing）
 
-對 `arr` / `vec` / `slice`（`[]T`）的直接索引 `v[i]`，若索引越界，普通寫法會直接 abort（runtime error: index out of bounds）。Nolang 提供三種**安全**寫法，保證越界時絕不靜默崩潰：
+對 `arr` / `vec` / `slice`（`[]T`）/ 定長陣列 / `str` / `txt` 的索引 `v[i]`，**結果一律是 `?T`**：越界時回傳 `nil`，在界內回傳 `ok(值)`，絕不會 abort（runtime error: index out of bounds）。這與整數 `+ - * / %` 的未標註溢出行為是同一條規則（見〈整數運算溢出〉）。
+
+要把 `?T` 用掉，有四條路：
 
 **1. `x ?= v[i]` —— 向上傳播錯誤**
 
-安全索引會把 `v[i]` 視為回傳 `?elem` 的運算：越界時回傳 `None`，否則回傳 `some(元素)`。配合 `?=` 解箱，越界錯誤會自動向上傳播（函式回傳 `?T` 時）。
+`?=` 把越界錯誤直接拋給所在函式的 `?T` 結果參數（因此要求函式回傳 `?T`）。
 
 ```no
 safe-get = (arr []i64, i i64) (res ?i64) {
@@ -1587,25 +1594,36 @@ get-ch = (arr []byte, i i64) (res byte) {
 ```
 
 > 註解也可以獨立成行、置於賦值上方：`#{index-out=zero}` ⏎ `res = arr[i]`。寫在賦值**前方同一行**（`#{index-out=zero} res = arr[i]`）則會報錯（見〈註解位置〉）。
+>
+> ⚠️ `#{index-out=…}` **只決定「失敗時怎麼取值」，不解包**：結果型別仍是 `?T`。上面範例能編過，是因為 `res i64` 這個**顯式 plain 型別**把結果拉回了 plain（見第 4 條）。
 
-**3. option 回傳函式內的裸 `x = v[i]` —— 就地捕獲**
+**3. match 解包 —— `x = v[i]: { ok -> it, -> }`**
 
-當所在函式回傳 `?T` 結果時，裸的安全索引賦值 `x = v[i]` 會讓 `x` 推斷為 `?elem`：越界時 `x` **就地存為 `nil`**（不崩潰、也不提前 `return`），流程繼續，之後用 `x: { ... }` 消費。這與第 1 種 `?=` 的差別在於「錯誤留在原地」而不是「向上拋」：
+把 `?T` 就地解開；空兜底臂取目標型別的零值（D4）。
 
 ```no
-capture-prop = (arr []i64, i i64) (res ?i64) {
-    x = arr[i]        ; x 推斷為 ?i64；越界 → x = nil
-    x: {
-        nil -> {}     ; 越界：就地處理
-        err -> {}
-        -> { res = it }   ; 成功：res = 元素值
+get-elem = (arr []i64, i i64) (out i64) {
+    x-opt = arr[i]
+    x = x-opt: {
+        ok -> it
+        ->              ; 空臂 = 零值（i64 → 0）
     }
+    out = x
 }
 ```
 
-> **適用範圍（重要）：** 這條捕獲規則**只在回傳 `?T` 結果的函式內生效**，與 `?=` 的適用範圍一致。在沒有 option 結果參數的函式、以及頂層指令稿中，`x = v[i]` 維持原本的「普通元素讀取」語義 —— 若需要越界安全，請用第 1 種 `?=`（要求 option 結果參數）或第 2 種 `#{index-out=DEF}`。
+**4. 顯式 plain 型別 —— `x i64 = v[i]`**
 
-`vec`（含由 `to-vec()` 產生的未標註區域變數）同樣安全：
+綁定目標上寫的顯式 plain 型別會讓 lower 期短路合成，讀回 plain 值。這是「我知道越界時要零值」最簡短的寫法，與 `#{index-out=zero}` 等價，但不需要註解：
+
+```no
+get-plain = (arr []i64, i i64) (out i64) {
+    v i64 = arr[i]        ; 越界 → 0（不崩潰）
+    out = v
+}
+```
+
+`vec`（含由 `to-vec()` 產生的未標註區域變數）同樣適用：
 
 ```no
 get-vec-default = (a [4]i64, i i64) (res i64) {
@@ -1614,8 +1632,13 @@ get-vec-default = (a [4]i64, i i64) (res i64) {
 }
 ```
 
-> **適用範圍：** 安全索引僅對 `arr` / `vec` / `slice` 的**直接變數索引**生效（`v[i]`，`v` 為識別符）。`str` / `txt` 索引仍回傳字元（語義不同）；`receiver.field[i]`（結構體欄位索引）走原有 bounds-check 路徑，不會被改寫為安全形式。
+> **適用範圍（重要）：** 以上四條對 `arr` / `vec` / `slice` / 定長陣列 / `str` / `txt` 一律有效。
+> 只有**可證明在界內**的讀取（定長陣列 + 字面量界內下標，或 `for i <- [0..N)` 配 `[N]T` 基底）會被靜態消除 option 包裝 —— 這時寫 `x i64 = a[i]` 與寫 `x = a[i]` 等價。
 >
+> `receiver.field[i]`（結構體欄位索引）走原有 bounds-check 路徑，不會被改寫為安全形式。
+
+> **批量遷移：** `no fmt --fix=unwrap` 會把「產生 option 卻從未消費」的綁定自動改成第 1 條（所在函式已有 `?T` 結果參數）或第 3 條（match 解包），重跑冪等。
+
 > **核心保證：** 無論用哪一種寫法，越界都不會讓程式靜默崩潰——或回傳 `None`、或回傳預設值、或向上傳播錯誤。
 
 ## 結構體
@@ -2212,14 +2235,19 @@ Nolang 不支援 panic——任何可能溢出的操作都必須以 `option` 或
 
 > 無號整數（`u8`/`u16`/`u32`/`u64`/`u128`）的 `+ - *` 與有號整數**遵循完全相同的規則**：未標註時同樣預設回傳 `option<int>`，溢出 → `err`。這是設計上的刻意選擇——「只要無法在編譯期證明不可能溢出，就按相同規則處理」。
 
-| 模式 | 註解 | 溢出時 | 返回型別 | 適用場景 |
+| 模式 | 註解 | 溢出時 | 結果型別 | 適用場景 |
 | --- | --- | --- | --- | --- |
-| **默認（未標註）** | — | 溢出 → `err`，正常 → `ok(value)` | `option<int>` | 需要偵測溢出的運算 |
-| **回繞** | `#{overflow = wrap}` | 靜默 2's 補數回繞 | `int`（plain） | 哈希、密碼學、計數器等語義上容許回繞 |
-| **歸零** | `#{overflow = clamp0}` | 溢出（上溢或下溢）取 `0` | `int`（plain） | 差值不得為負的語義（如剩餘量） |
-| **最小值箝位** | `#{overflow = min}` | 溢出箝位到型別最小值 | `int`（plain） | 計數器下限、索引保護 |
-| **最大值箝位** | `#{overflow = max}` | 溢出箝位到型別最大值 | `int`（plain） | 容量上限、飽和累加 |
-| **飽和** | `#{overflow = saturate}` | 上溢→最大值、下溢→最小值 | `int`（plain） | 訊號/顏色飽和等 |
+| **默認（未標註）** | — | 溢出 → `err`，正常 → `ok(value)` | `?int` | 需要偵測溢出的運算 |
+| **回繞** | `#{overflow = wrap}` | 靜默 2's 補數回繞 | `?int` | 哈希、密碼學、計數器等語義上容許回繞 |
+| **歸零** | `#{overflow = clamp0}` | 溢出（上溢或下溢）取 `0` | `?int` | 差值不得為負的語義（如剩餘量） |
+| **最小值箝位** | `#{overflow = min}` | 溢出箝位到型別最小值 | `?int` | 計數器下限、索引保護 |
+| **最大值箝位** | `#{overflow = max}` | 溢出箝位到型別最大值 | `?int` | 容量上限、飽和累加 |
+| **飽和** | `#{overflow = saturate}` | 上溢→最大值、下溢→最小值 | `?int` | 訊號/顏色飽和等 |
+
+> ⚠️ **註解不解包**（D1）：`#{overflow = …}` / `#{index-out = …}` **只決定「失敗時怎麼取值」**，
+> 結果型別恆為 `?T`。要把結果拉回 plain，請寫**顯式 plain 型別**
+> （`w i64 = a - b  #{overflow=wrap}`）或用 match / `?=` 消費 ——
+> 兩者對「溢出行為」的影響完全相同，只是型別不同。
 
 此外，所有模式都支援**型別前綴形式**，精確指定某個窄型別的飽和界限，例如 `#{overflow = u8-max}`、`#{overflow = i8-min}`、`#{overflow = u16-saturate}`。
 
@@ -2227,7 +2255,7 @@ Nolang 不支援 panic——任何可能溢出的操作都必須以 `option` 或
 >
 > ⚠️ **放在函數定義上方不再涵蓋整個函數體**。它只會讓 `ovf-int-default` lint 跳過整個函式（清單層面看起來「乾淨」），但函式體內的未標註運算**仍會觸發 `ovfhndld` 硬錯誤**，實測與完全不寫註解無異。請逐陳述標註；`no fmt --fix=overflow` 產生的正是這種逐陳述形式。
 
-> **LSP 快速修復**：編輯器（nolang-lsp）會對未標註的整數運算報出**錯誤**（`nolang-overflow`，trace id `ovf-int-default`），並提供五個 quickfix——**Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`**——自動在該運算所在語句上方、以與該行一致的縮排插入對應註解，把預設的 `option<int>` 結果改為 plain `int`。命令列等價物為 `no fmt --fix=overflow`（見下文）。
+> **LSP 快速修復**：編輯器（nolang-lsp）會對未標註的整數運算報出**提示**（`nolang-overflow`，trace id `ovfhndld`），並提供五個 quickfix——**Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`**——自動在該運算所在語句上方、以與該行一致的縮排插入對應註解，指定溢出行為（結果仍是 `?T`，需另用 match / `?=` / 顯式 plain 型別消費）。命令列等價物為 `no fmt --fix=overflow`（見下文）。
 
 ### 默認：返回 `option<int>`
 
@@ -2253,7 +2281,7 @@ main()
 ```nolang
 #{overflow = wrap}
 sub-wrap = (a i64, b i64) (r i64) {
-    r = a - b              ; 溢出時靜默 2's 補數回繞，返回 plain i64
+    r = a - b              ; 溢出時靜默 2's 補數回繞；r 是 plain i64（顯式型別）
 }
 ```
 
@@ -2360,7 +2388,7 @@ fast = (a i64, b i64) (r i64) {
 }
 ```
 
-> **為什麼 `#{overflow = wrap}` 不能豁免零除守衛**：它改變的是**結果型別**（`?int` → plain `int`），不是除數的安全性。若讓它豁免，編譯器就會發出裸 `sdiv`，最佳化器便有權假設除數永遠非 0（把 `a / 0` 折成任意值），而 x86-64 的 `idiv` 直接以 #DE 崩潰——既 UB、又沒有任何診斷。因此 zero-divisor 守衛**獨立於註解**存在；plain 路徑之所以多印一行 stderr，正是因為該路徑沒有 option 可供呼叫方檢查。
+> **為什麼 `#{overflow = wrap}` 不能豁免零除守衛**：它改變的是**溢出行為**（結果型別仍恆為 `?int`），不是除數的安全性。若讓它豁免，編譯器就會發出裸 `sdiv`，最佳化器便有權假設除數永遠非 0（把 `a / 0` 折成任意值），而 x86-64 的 `idiv` 直接以 #DE 崩潰——既 UB、又沒有任何診斷。因此 zero-divisor 守衛**獨立於註解**存在；plain 路徑之所以多印一行 stderr，正是因為該路徑沒有 option 可供呼叫方檢查。
 >
 > **同一守衛也覆蓋 `sdiv (INT_MIN, -1)`**（結果不可表示，同屬 UB；x86-64 上會 SIGFPE）。option 路徑把它併入 `err`；plain 路徑取 2 補數回繞值（`INT_MIN / -1 → INT_MIN`、`INT_MIN % -1 → 0`）。
 
@@ -2368,7 +2396,7 @@ fast = (a i64, b i64) (r i64) {
 
 ### 未標註運算列為錯誤（`ovf-int-default`）
 
-`no vet` 把**未標註**的整數運算回報為**錯誤**（trace id `ovf-int-default`），而非提示。原因：預設的 `option<int>` 一旦被當成普通整數使用就是靜默的語意漂移，必須顯式二選一——加 `#{overflow = ...}` 註解，或用 `?T` + `?=` / match 顯式處理。
+`no vet` 把**未標註**的整數運算回報為**提示**（trace id `ovfhndld`，HINT）。原因：預設的 `?T` 對使用者不可見，必須讓他知情——可加 `#{overflow = ...}` 指定溢出行為，或用 `?T` + `?=` / match / 顯式 plain 型別消費。真正該阻斷建置的是 `optunuse`（option 既沒上拋也沒解包）。
 
 ### 自動修復：`no fmt --fix=overflow`
 
@@ -2425,6 +2453,35 @@ m = make-map()
 - **含十六進位字面量的值一律保留標註**（保守例外）。`no vet` 的型別推斷對 `0xNN` 採用「推斷為 `byte`」的啟發式，與編譯器「無標註時整数字面量預設 `i64`」的實際語義不同，因此 `IP-TBL [64]byte = [0x3a, ...]`、`s []byte = [0x50, 0x4b]` 會被誤判為冗餘；一旦移除，字面量會退化成 `i64` 元素而產生 `expected '[]byte', got '[]i64'` 之類的型別錯誤。故只要值運算式文本中出現 `0x`/`0X`，hint 與移除都不會發生。
 
 不論走預設 `no fmt` 還是 `--fix=redundant`，移除都只刪除被報告的那個型別標註及其前導空白、重跑冪等（已移除者不再變動）。修復後建議再跑一次 `no vet` 確認 `tcpoxtfd` 歸零。
+
+### 自動修復：消費 option（`--fix=unwrap`）
+
+統一規則下「產生 option 卻從未消費」是唯一該阻斷建置的診斷（trace `optunuse`）。批量把它改成顯式消費形式，用 `--fix=unwrap`：
+
+```bash
+no fmt --fix=unwrap -w src/std            # 就地修復整個目錄
+no fmt --fix=unwrap -d src/std/str.no     # 只印 diff，不寫檔
+no fmt --fix=unwrap src/std/str.no        # 印出修復後的內容
+```
+
+修復形態（見〈安全索引〉）：**所在函式已有 `?T` 結果參數** → 上拋（`x ?= <expr>`）；否則 → 改名 + match 解包：
+
+```nolang
+; 修復前
+x = a + b
+
+; 修復後（所在函式有 ?T 結果參數）
+x ?= a + b
+
+; 修復後（否則，4 行標準形；空兜底臂 = 零值）
+x-opt = a + b
+x = x-opt: {
+    ok -> it
+    ->
+}
+```
+
+與其他 fix 類別一樣：手術式文字替換、不改排版、不動陳述上方的 `#{overflow=…}` / `#{index-out=…}` 註解（它們仍負責「失敗時怎麼取值」），重跑冪等。修復後請再跑一次 `no vet` 確認 `optunuse` 歸零。
 
 ### 註解綁定與單行合併
 

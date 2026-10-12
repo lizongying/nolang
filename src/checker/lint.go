@@ -406,9 +406,14 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		if u.EndColumn > 0 {
 			endCol = u.EndColumn
 		}
+		// 複合賦算運算符（`+=` 一族）按用戶定案是 WARNING；棄用函數是 HINT。
+		sev := LintHint
+		if u.TraceID == deprecatedAssignTraceID {
+			sev = LintWarning
+		}
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
-			Severity: LintHint, Source: "nolang-lint",
+			Severity: sev, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
@@ -572,6 +577,41 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Severity: LintHint, Source: "nolang-index",
 			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
+	// 20f. option match 的空 `->` 兜底臂（D9）。两种状态、两种严重度：
+	//   - arm-unreach（HINT）：可证明主体恒为 ok → 该臂是死代码，告知用户但仍
+	//     须保留（match 穷尽性 + 未来语义变化时语法不变）。
+	//   - arm-should（WARNING）：无法证明 → 该臂可能会被执行，提示用户决定失败
+	//     时应做什么（如 `log('...')` / `print('...')`），而非静默取默认零值。
+	// 两者都只提示不阻断（D4：空臂合法）。严重度逐条依 TraceID 决定，同 20d。
+	for _, a := range ValidateCatchAllArms(program) {
+		sev := LintWarning
+		if a.TraceID == armUnreachTraceID {
+			sev = LintHint
+		}
+		results = append(results, LintResult{
+			Line: a.Line, Column: a.Column,
+			Severity: sev, Source: "nolang-match-arm",
+			Message: a.Message, TraceID: a.TraceID,
+		})
+	}
+
+	// 20g. 手動按下標遍歷容器（`for i <- [a..b) { … arr[i] … }`）→ HINT `rngidx`，
+	// 建議改用容器迭代。只在**編譯器證明不了越界安全**的讀取上提示（§8.1(a)：
+	// 可證明安全處 option 已被消除，沒有代價可省，提示純屬噪音）。
+	// 不自動改寫 —— 兩種寫法語義不等價（手動下標需要下標本身）。
+	for _, r := range ValidateRangeIndexLoops(program, opts.SourcePath) {
+		file := r.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: r.Line, Column: r.Column,
+			Severity: LintHint, Source: "nolang-range-index",
+			File:    file,
+			Message: r.Message, TraceID: r.TraceID,
 		})
 	}
 

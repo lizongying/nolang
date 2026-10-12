@@ -243,8 +243,10 @@ decode = (in str) (out []byte) {
         ; 將字元映射回 5-bit 值
         i <- [0..8): {
 
+            ; D6：`in[pos + i]` 的結果是 ?char；這裡要的是舊的行為（plain char，
+            ; 越界得到 -1，下面三個比較都不成立），故顯式標註 char 型別。
             #{overflow=wrap}
-            c = in[pos + i]
+            c char = in[pos + i]
             val = 0
 
             {

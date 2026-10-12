@@ -1593,19 +1593,21 @@ view[0] = 99         ; modify an element of view
 
 ```no
 
-; String indexing → returns char (a Unicode code point, not a byte)
-c char = str[i]
+; String indexing → returns ?char (a Unicode code point, not a byte)
+c char = str[i]           ; explicit plain type pulls the result back to char
 
  ; Get an element from arr or vec
-arr[i]
-vec[i]
+arr[i]                    ; → ?elem
+vec[i]                    ; → ?elem
 
  ; Get a value from a map
 map[str]
 
 ```
 
-> **The type of `str[i]` is `char`** (a Unicode code point); **the slice `str[a..b]` returns `str`** (a code-point-semantics view that shares the underlying memory).
+> **An index read always has type `?T`**: `arr[i]` / `vec[i]` / fixed-length arrays / `slice` → `?elem`, and indexing a `str` / `txt` `s[i]` → `?char` (D6 — the same unified rule as integer arithmetic).
+> The **inferred type of `str[i]` is therefore `?char`**; to get a plain `char` back, either write an explicit plain type on the binding (`c char = s[i]`, which short-circuits during lowering), or unwrap it with a match / `?=`.
+> **The slice `str[a..b]` still returns `str`** (a code-point-semantics view that shares the underlying memory).
 > A `char` **converts implicitly to `str`** (encoded as a single-character string), so all of the following are legal — there is no need to call `char.to-str()` by hand:
 
 ```no
@@ -1619,11 +1621,13 @@ ok     = s[0] == 'h'        ; comparing a char with a str converts it to str imp
 
 ### Safe Indexing
 
-For a direct index `v[i]` on `arr` / `vec` / `slice` (`[]T`), an out-of-range index aborts outright in the ordinary form (runtime error: index out of bounds). Nolang provides three **safe** forms that guarantee no silent crash on out-of-range access:
+For an index `v[i]` on `arr` / `vec` / `slice` (`[]T`) / fixed-length arrays / `str` / `txt`, the result is **always `?T`**: out of range yields `nil`, in range yields `ok(value)` — it never aborts (runtime error: index out of bounds). This is the same rule as the unannotated overflow behaviour of integer `+ - * / %` (see "Integer Overflow").
+
+There are four ways to consume that `?T`:
 
 **1. `x ?= v[i]` — propagate the error upwards**
 
-Safe indexing treats `v[i]` as an operation returning `?elem`: out of range yields `None`, otherwise `some(element)`. Combined with `?=` unwrapping, the out-of-range error propagates upwards automatically (when the function returns `?T`).
+`?=` hands the out-of-range error straight to the enclosing function's `?T` result param (which is why the function must return `?T`).
 
 ```no
 safe-get = (arr []i64, i i64) (res ?i64) {
@@ -1657,25 +1661,36 @@ get-ch = (arr []byte, i i64) (res byte) {
 ```
 
 > The annotation may also go on its own line above the assignment: `#{index-out=zero}` ⏎ `res = arr[i]`. Writing it on the **same line in front of** the assignment (`#{index-out=zero} res = arr[i]`) is an error (see "Annotation Placement").
+>
+> ⚠️ `#{index-out=…}` **only decides "what value to take on failure" — it does not unwrap**: the result type is still `?T`. The examples above compile because `res i64` — an **explicit plain type** — pulls the result back to plain (see form 4).
 
-**3. A bare `x = v[i]` inside a function returning an option — captured in place**
+**3. Unwrap with a match — `x = v[i]: { ok -> it, -> }`**
 
-When the enclosing function returns a `?T` result, a bare safe-index assignment `x = v[i]` makes `x` infer `?elem`: on an out-of-range index, `x` is stored as `nil` **in place** (no crash, and no early `return`), and flow continues. Consume it later with `x: { ... }`. The difference from form 1 (`?=`) is that the failure **stays where it happened** rather than propagating upwards:
+Take the `?T` apart right where it is produced; an empty catch-all arm takes the zero value of the target type (D4).
 
 ```no
-capture-prop = (arr []i64, i i64) (res ?i64) {
-    x = arr[i]        ; x infers ?i64; out of range → x = nil
-    x: {
-        nil -> {}     ; out of range: handled right here
-        err -> {}
-        -> { res = it }   ; success: res = the element
+get-elem = (arr []i64, i i64) (out i64) {
+    x-opt = arr[i]
+    x = x-opt: {
+        ok -> it
+        ->              ; empty arm = zero value (i64 → 0)
     }
+    out = x
 }
 ```
 
-> **Scope (important):** this capture rule fires **only inside functions that return a `?T` result** — the same scope as `?=`. In functions without an option result param, and in top-level scripts, `x = v[i]` keeps its ordinary "plain element read" meaning; for out-of-range safety there use form 1 (`?=`, which requires an option result param) or form 2 (`#{index-out=DEF}`).
+**4. An explicit plain type — `x i64 = v[i]`**
 
-`vec` (including an unannotated local produced by `to-vec()`) is just as safe:
+An explicit plain type on the binding makes lowering short-circuit, reading the plain value back. This is the shortest form for "I know out-of-range means zero", and is equivalent to `#{index-out=zero}` — but without needing an annotation:
+
+```no
+get-plain = (arr []i64, i i64) (out i64) {
+    v i64 = arr[i]        ; out of range → 0 (no crash)
+    out = v
+}
+```
+
+`vec` (including an unannotated local produced by `to-vec()`) works the same way:
 
 ```no
 get-vec-default = (a [4]i64, i i64) (res i64) {
@@ -1684,8 +1699,13 @@ get-vec-default = (a [4]i64, i i64) (res i64) {
 }
 ```
 
-> **Scope:** safe indexing only applies to a **direct variable index** on `arr` / `vec` / `slice` (`v[i]`, where `v` is an identifier). Indexing a `str` / `txt` still returns a character (different semantics); `receiver.field[i]` (indexing a struct field) goes through the original bounds-check path and is not rewritten into the safe form.
+> **Scope (important):** all four forms apply to `arr` / `vec` / `slice` / fixed-length arrays / `str` / `txt` alike.
+> Only reads that are **provably in bounds** (fixed-length array with a literal in-range index, or `for i <- [0..N)` over an `[N]T` base) have their option wrapper statically eliminated — there, `x i64 = a[i]` and `x = a[i]` are equivalent.
 >
+> `receiver.field[i]` (indexing a struct field) goes through the original bounds-check path and is not rewritten into the safe form.
+
+> **Bulk migration:** `no fmt --fix=unwrap` rewrites bindings that "produce an option but never consume it" into form 1 (when the function already has a `?T` result param) or form 3 (match unwrapping), and is idempotent when re-run.
+
 > **Core guarantee:** whichever form you use, an out-of-range index never makes the program crash silently — it either returns `None`, returns the default value, or propagates the error upwards.
 
 ## Structs
@@ -2326,14 +2346,19 @@ arithmetic operations** is controlled by the `#{overflow = ...}` annotation:
 > integers: unannotated, they also default to returning `option<int>`, with overflow → `err`. This is a deliberate
 > design choice — "if it cannot be proven at compile time that overflow is impossible, treat it by the same rules".
 
-| Mode | Annotation | On overflow | Return type | Suitable for |
+| Mode | Annotation | On overflow | Result type | Suitable for |
 | --- | --- | --- | --- | --- |
-| **Default (unannotated)** | — | overflow → `err`, otherwise → `ok(value)` | `option<int>` | operations that need overflow detection |
-| **Wrap** | `#{overflow = wrap}` | silent two's-complement wrap | `int` (plain) | hashing, cryptography, counters — semantics that tolerate wrapping |
-| **Clamp to zero** | `#{overflow = clamp0}` | overflow (above or below) becomes `0` | `int` (plain) | semantics where a difference must not go negative (e.g. a remaining amount) |
-| **Clamp to minimum** | `#{overflow = min}` | overflow clamps to the type's minimum | `int` (plain) | counter lower bounds, index protection |
-| **Clamp to maximum** | `#{overflow = max}` | overflow clamps to the type's maximum | `int` (plain) | capacity limits, saturating accumulation |
-| **Saturate** | `#{overflow = saturate}` | above → maximum, below → minimum | `int` (plain) | signal/colour saturation, etc. |
+| **Default (unannotated)** | — | overflow → `err`, otherwise → `ok(value)` | `?int` | operations that need overflow detection |
+| **Wrap** | `#{overflow = wrap}` | silent two's-complement wrap | `?int` | hashing, cryptography, counters — semantics that tolerate wrapping |
+| **Clamp to zero** | `#{overflow = clamp0}` | overflow (above or below) becomes `0` | `?int` | semantics where a difference must not go negative (e.g. a remaining amount) |
+| **Clamp to minimum** | `#{overflow = min}` | overflow clamps to the type's minimum | `?int` | counter lower bounds, index protection |
+| **Clamp to maximum** | `#{overflow = max}` | overflow clamps to the type's maximum | `?int` | capacity limits, saturating accumulation |
+| **Saturate** | `#{overflow = saturate}` | above → maximum, below → minimum | `?int` | signal/colour saturation, etc. |
+
+> ⚠️ **Annotations do not unwrap** (D1): `#{overflow = …}` / `#{index-out = …}` **only decide "what value to take on
+> failure"** — the result type is always `?T`. To pull the result back to plain, write an **explicit plain type**
+> (`w i64 = a - b  #{overflow=wrap}`) or consume it with a match / `?=`. Both affect "what happens on overflow"
+> identically; only the type differs.
 
 All modes also support a **type-prefixed form** that pins the saturation bound to a specific narrow type, e.g.
 `#{overflow = u8-max}`, `#{overflow = i8-min}`, `#{overflow = u16-saturate}`.
@@ -2347,11 +2372,12 @@ All modes also support a **type-prefixed form** that pins the saturation bound t
 > the body **still raise the `ovfhndld` hard error** — measured to behave exactly like writing no annotation at
 > all. Annotate statement by statement; `no fmt --fix=overflow` emits exactly this per-statement form.
 
-> **LSP quick fix**: the editor (nolang-lsp) reports unannotated integer arithmetic as an **error**
-> (`nolang-overflow`, trace id `ovf-int-default`) and offers five quickfixes — **Add `#{overflow = wrap}`** /
+> **LSP quick fix**: the editor (nolang-lsp) reports unannotated integer arithmetic as a **hint**
+> (`nolang-overflow`, trace id `ovfhndld`) and offers five quickfixes — **Add `#{overflow = wrap}`** /
 > **`clamp0`** / **`min`** / **`max`** / **`saturate`** — which insert the corresponding annotation above the
-> statement holding the operation, using that line's indentation, turning the default `option<int>` result into a
-> plain `int`. The command-line equivalent is `no fmt --fix=overflow`.
+> statement holding the operation, using that line's indentation, pinning the overflow behaviour (the result is
+> still `?T`, so it must be consumed separately with a match / `?=` / an explicit plain type). The command-line
+> equivalent is `no fmt --fix=overflow`.
 
 ### Default: returns `option<int>`
 

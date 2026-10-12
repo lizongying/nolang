@@ -227,14 +227,25 @@ func (p *Parser) filterInferableType(retType string) string {
 
 // containerElemType returns the element type of a container type string used
 // for arr/vec/slice indexing, or "" if lt is not an indexable container.
-// str/txt are intentionally excluded (their s[i] returns char, not Option).
+// str/txt ARE included since D6 (their s[i] yields Option<char>); see below.
+// The result doubles as the "this base is option-indexed" predicate, so adding
+// a kind here changes isSafeIndexBase / maybeCaptureOptionAssign as one.
 func containerElemType(lt string) string {
 	if lt == "" {
 		return ""
 	}
-	if lt == "str" || lt == "txt" {
-		return "" // char, not option-indexed
-	}
+// D6（2026-10-13）：str/txt 索引一样产生 option —— `s[i]` 越界 → `nil`，
+// 成功 → `ok(char)`。此前这里返回 ""，注释写着 "char, not option-indexed"，
+// 是 D1-b「先测量再分期」留下的豁免。§7.1 ③ 的测量结果否掉了分期：
+// src/std 11 处、tests 34 处需要迁移（几乎全是同一个 x25519 十六进制解析块
+// 在 16 个文件里的副本），规模可接受，故与主体同期落地。
+//
+// 注意两者的元素型别口径必须与 hir2mir 的 elemTypeOfType 一致：那里对 str 与
+// txt 都回 `char`（尽管 txt 在历史上曾写成 i8），不统一会让
+// `x ?char = s[i]` 的舱体尺寸与实际读取错位。
+if lt == "str" || lt == "txt" {
+	return "char"
+}
 	if strings.HasPrefix(lt, "[]") {
 		return lt[2:]
 	}

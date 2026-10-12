@@ -1,7 +1,10 @@
 # 方案：算术与索引统一返回 option
 
-> 状态：**实施中**（M1a/M2 已落地；M6 首批迁移完成 —— `src/std` 与 `tests/` 均 0 error。
-> 实测勘误见 §11，其中 §11.3/§11.8/§11.10 推翻了正文三处前提，§11.9/§11.15 是未闭合项）
+> 状态：**实施中**（M1a/M2 已落地；D7-R1 已落地：隐式验证 —— 可证明安全即消除 option 包装/解包/分支）；D9 空兜底臂
+> 雙態診斷已落地。M4（str/txt 索引 option 化）已落地 —— §11.14 記錄了它的實測遷移量；M5（`--fix=unwrap`）已落地，
+> §11.9 的 `rngidx` 已補上。**D10（複合賦算運算符廢棄 + 自動重寫）已落地。**
+> M6 首批迁移完成 —— `src/std` 与 `tests/` 均 0 error。
+> 实测勘误见 §11，其中 §11.3/§11.8/§11.10 推翻了正文三处前提，§11.9 已大部分閉合，§11.15 是未閉合项）
 > 涉及层：parser / checker / mir / lsp / fmt / build / 语料迁移
 > 相关既有文档：`docs/docs/lang/syntax.md`〈整数运算溢出〉〈可空类型(option)〉、`NOLANG-OWNERSHIP-MODEL.md`
 
@@ -13,13 +16,15 @@
 | --- | --- | --- |
 | D1 | `#{overflow=…}` / `#{index-out=…}` 注解 | **保留，但只影响行为、不解包**。仍可写、仍生效（overflow 决定 wrap/clamp0/min/max/saturate；index-out 决定越界取值），但**结果类型恒为 `?T`**。注解**不是**消费路径 —— 仍须 `?=` 或 match 解包。 |
 | D2 | 诊断分级 | 产生 option 处（`ovfhndld` / `idxhndld` / `ovf-int-default`）由 **ERROR → HINT**；"既没上抛、也没解包"另立 **ERROR**（新 trace `optunuse`）。 |
-| D3 | `no fmt --fix=<新类>` 修复形态 | **能上抛就上抛，否则 match 解包**：所在函数已有 `?T` 结果参数 → `x ?= <expr>`；否则 → `__o = <expr>` + `x = __o: { ok -> it, -> }`（空臂 = 默认零值，D4）。 |
+| D3 | `no fmt --fix=<新类>` 修复形态 | **能上抛就上抛，否则 match 解包**：所在函数已有 `?T` 结果参数 → `x ?= <expr>`；否则 → `<x>-opt = <expr>` + `x = <x>-opt: { ok -> it, -> }`（空臂 = 默认零值，D4）。🔴 勘误：暫存名**不能**用 `__o`（`__` 前綴識別字在源碼中不可書寫，見 §11.16），改用 `<x>-opt`。 |
 | D4 | 空 `->` 臂语义 | **默认零值**（0 / 0.0 / false / '' / 空容器 / 零值结构体）。它同时充当**兜底臂**，满足 match 穷尽性。 |
 | D5 | `-> return` | **新增**：值-match 的臂体为 `return` 时直接从当前函数返回，该臂不参与"各臂值类型一致"检查。 |
 | D6 | 统一规则作用范围 | 整数 `+ - * / %`、容器索引 `arr[i]`、`str`/`txt` 索引 `s[i]`。**不含**浮点算术、`char` 算术（保持现状）。 |
-| D7 | in-bounds 豁免 | **保留（D7-R1 反轉）**。`bounds.go` 的"可证明在界内"分析照舊上線：編譯器**能證明**不會溢出 / 不會除零 / 不會越界的運算式，**直接消除 option 包裝、消除解包、也消除對應的 match 分支**；LSP 僅在"可能出錯"處提示 warning。用戶定案理由：寫下看似冗餘的程式碼是「有備無患」——不寫就得自己判斷會不會出錯，反而提高思考成本。 |
-| D7-R1 | D7 的适用边界 | 只有**靜態可證明安全**的讀取才豁免：定長陣列 `[N]T` + 界內字面量/區間下標（`bounds.go`）。切片、`str`/`txt`、動態長度容器、跨函式不可見的下標**一律照常產生 option**。豁免由 codegen / `no vet` / `no fmt` 三方共用同一份判定（`p.inBoundsIdx`），口徑不一致會造成「`no fmt` 刪了註解 → `no vet` 報錯」的假回歸。 |
+| D7 | 可证明安全的表达式 | **不是取消、是隐式验证 + 优化**（D7-R1）。`bounds.go` 一类静默分析照旧上線：編譯器**能證明**不會溢出 / 不會除零 / 不會越界的運算式，**直接消除 option 包裝、消除解包、也消除對應的 match 分支**；LSP 僅在"可能出錯"處提示 warning。用戶定案理由：寫下看似冗餘的程式碼是「有備無患」——不寫就得自己判斷會不會出錯，反而提高思考成本。 |
+| D7-R1 | D7 的适用边界 | 只有**靜態可證明安全**的讀取才享受此优化：定長陣列 `[N]T` + 界內字面量/區間下標（`bounds.go`）。切片、`str`/`txt`、動態長度容器、跨函式不可見的下標**一律照常產生 option**。判定由 codegen / `no vet` / `no fmt` 三方共用同一份（`p.inBoundsIdx`），口徑不一致會造成「`no fmt` 刪了註解 → `no vet` 報錯」的假回歸。 |
 | D8 | match 穷尽性 | **规则不变**：必须能覆盖 `ok`/`nil`/`err`。但 `->` **兜底臂即可满足**，所以 **`nil`/`err` 臂可以不写**——`{ ok -> it, -> }` 合法，`{ ok -> it }`（无兜底）仍报 `must handle all branches`。注解不改变这一点。 |
+| D9 | 空 `->` 兜底臂的双态诊断 | 兜底臂**不能移除**（D8 穷尽性）、**也不改语法**（保留还有一层意义：未来可能出错、也可能正确，语法不用动）。编译器改为把状态告诉用户：可证明主体恒为 ok → **HINT** `arm-unreach`「这个分支不会走到」；无法证明 → **WARNING** `arm-should`「这个分支可能会走到，请决定它该做什么（如 `log('...')` / `print('...')`）」。两者都只提示、不阻断。 |
+| D10 | 复合赋算运算符 `+=` `-=` `*=` `/=` `%=` | **提示废弃 + 自动重写**。LSP / `no vet` / `no build` 在每個出現處發 **WARNING**（`nolang-deprecated-compound-assign` / `W_COMPOUND_ASSIGN`）；**保存時 `no fmt` 自動改寫**成 `a ?= a + 1`（等價：統一 option 規則下右式是 `?T`，走 `?=` 的解包 + 失敗上拋路徑）。實現上 parser 直接降糖成 `UnwrapAssignStatement`（`DeprecatedOp` 記下原運算符），formatter 渲染 surface AST 時輸出的就是重寫後的寫法。位元複合賦算（`&=` / `|=` / `<<=` …）不產生 option，**不在廢棄名單**；`a[i] += 1` / `d.f += 1` 也會重複求值下標，同樣不降糖（維持 parse error）。 |
 
 ### D1 的直接后果（必须写进预期）
 
@@ -75,7 +80,7 @@
 | --- | --- | --- |
 | 已标注 `#{overflow}` | 3 557 | D1：不再解包 ⇒ 变 `?T` |
 | 已标注 `#{index-out}` | 1 007 | D1：不再解包 ⇒ 变 `?T` |
-| 未标注但当前不报错的索引读取 | 待测 | D7：in-bounds 豁免取消后新增 |
+| 未标注但当前不报错的索引读取 | 待测 | D7-R1：编译器的隐式验证（可证明在界内 ⇒ 消除 option 包装）覆盖不到的部分 |
 | `str`/`txt` 索引 `s[i]` | 待测 | D6：`char` → `?char` |
 
 后两块的数量必须先用 §7.1 的探针测出来，再决定 §8 的分期。前两块的数量是确定的，
@@ -145,6 +150,7 @@ x = <产生 option 的表达式>      ; x 为新变量、无显式类型注解
 | 未标注索引读取绑定到新变量 | ERROR | **HINT** | `idxhndld` |
 | **option 既没上抛也没解包**（含"写了注解但没 match"） | — | **ERROR** | `optunuse`（新） |
 | 区间索引惯用法建议（`for i <- [0..N) { x = arr[i] }`） | — | **HINT**（建议 `for i <- arr { x = i }`） | `rngidx`（新） |
+| 复合赋算运算符 `a += 1` 一族（D10） | 原為 parse 後結構損壞（編譯期報錯） | **WARNING**（廢棄；`no fmt` 保存時自動重寫為 `a ?= a + 1`） | `nolang-deprecated-compound-assign`（LSP）/ `W_COMPOUND_ASSIGN`（parser 診斷） |
 | option 赋给 plain 变量 / 传给 plain 形参 | ~~ERROR~~ **实为静默接受** | **暂不变**（缺口未闭合，见 §11.3） | 既有 `ValidateTypes`（**不生效**） |
 
 > 🔴 末行是**勘误**：实测「option 赋给 plain 变量」既不报 `cannot assign` 也不报
@@ -308,8 +314,8 @@ a = ao: {
 x = <expr>                      =>   x ?= <expr>
 
 ; 情况 B：否则（标准形态，4 行）
-x = <expr>                      =>   __o<N> = <expr>
-                                     x = __o<N>: {
+x = <expr>                      =>   x-opt = <expr>
+                                     x = x-opt: {
                                          ok -> it
                                          ->
                                      }
@@ -322,7 +328,7 @@ x = <expr>                      =>   __o<N> = <expr>
   同样是"未消费"，是本次迁移的**主体**）。注解**原样保留**在原陈述上方 —— 它仍承担
   "失败时怎么取值"的行为职责，只是不再解包。
 - `x` 已存在且非 `?T`：跳过并在 stderr 记一行"需人工处理"（不猜语义）。
-- 变量名 `__o<N>`：`__` 前缀在 Nolang 源码中不可书写（见 skill），不会与用户符号冲突。
+- 变量名 `<x>-opt`：由目标名派生、可读；`__` 前缀在 Nolang 源码中**根本不可书写**（`__o1 = 5` 之后 `out = __o1` 直接 `expected expression, got nil instead`），所以原计划的 `__o<N>` 不可用 —— 见 §11.16。碰撞（檔案中已出現同名識別字）時追加序號 `<x>-opt2`、`<x>-opt3`……
 - 写索引 `k[i] = v` 与读索引分别处理：写路径本就无 option（除非下标表达式本身产生），
   不要误改。
 
@@ -337,10 +343,16 @@ x = <expr>                      =>   __o<N> = <expr>
 
 ### 6.3 不做的事
 
-- 不跑 `no fmt -w` 全量重排（diff 不可审）。注：D7 下线 in-bounds 分析后，`no fmt` 也不再
-  会"删除冗余 `#{index-out}`"，此前的这条顾虑消失，但仍不批量重排。
+- 不跑 `no fmt -w` 全量重排（diff 不可审）。注：D7-R1 恢复 in-bounds 分析后，`no fmt`
+  仍会"删除冗余 `#{index-out}`"（`fmt.AnalyzeInBoundsIndex` 与 codegen / vet 共用同一份
+  判定，口径一致才安全），所以这条顾虑依在，仍不批量重排。
 - 不自动删除既有 `#{overflow=…}` / `#{index-out=…}`（D1 保留其行为职责）。
 - 不自动改写函数签名为 `?T`（保守；`?=` 只在**已有** `?T` 结果参数时使用）。
+- **不覆盖 `15w45dqk`（option 赋给 plain 变量）与 `fxxoptarg`（option 流入 plain 形参）**：
+  两者由 `validateStmtTypes`（未导出）产出，且前者常常**没有**可绑定的新变量名可派生
+  暫存名（`out = x` 的 `out` 早已存在）。本次只处理 `optunuse`（未消費的綁定），
+  其餘三类 ERROR 留人工 —— 实测三者在 `compiler/` 合计仅 16 处，且与对照二进位
+  的 ERROR 集合逐行相同（非本次新增）。
 - 不自动把 `for i <- [0..N) { x = arr[i] }` 改写成 `for i <- arr { x = i }`——只报 `rngidx` HINT，
   改写交人工（两者语义不完全等价：前者需要下标本身）。
 
@@ -365,7 +377,7 @@ done
 | # | 统计对象 | 用途 |
 | --- | --- | --- |
 | ① | 已标注 `#{overflow}` / `#{index-out}` 站点（std = 4564，已确定） | 迁移主体工作量 |
-| ② | in-bounds 豁免取消后新增的索引读取（D7） | 决定是否要为 `[N]T` + 字面量区间单独留后门 |
+| ② | 未被隐式验证覆盖的索引读取（定长数组 + 界内下标之外，即 `bounds.go` 证明不了安全的部分） | 决定这些读取是否需要显式解包，以及 `rngidx` HINT 的提示范围 |
 | ③ | `str`/`txt` 索引 `s[i]`（D6 / D1-b） | 决定是否分期 |
 | ④ | 纯算术绑定（`x = a + b`） | 主体工作量 |
 
@@ -420,10 +432,12 @@ diff <(grep -E '\[ERROR\]' /tmp/cur.vet.out) <(grep -E '\[ERROR\]' /tmp/ctl.vet.
 
 ### 8.1 已定案的取舍
 
-**(a) in-bounds 豁免：保留（D7-R1 反轉）。** 原判決是取消（D7：區域不好界定，`for i <-
-[0..N) { x = arr[i] }` 也照常產生 option），用戶復核後定案**保留**：
+**(a) 可证明安全 ⇒ 隐式验证 + 优化（D7-R1；原文把这条写成"取消"是错的）。** 原判決是取消（D7：區域不好界定，`for i <-
+[0..N) { x = arr[i] }` 也照常產生 option），用戶復核後定案**保留，并把它的性质说清楚** ——
+这不是"给库作者开后门"的豁免，而是**编译器的静默证明与代价消除**：
 - 編譯器**能證明安全**就**消除 option 包裝、解包與 match 分支**。這是特性而非漏洞 ——
-  用戶不必為「看得出來不會越界」的下標寫防禦碼。
+  用戶不必為「看得出來不會越界」的下標寫防禦碼；用戶側照常写的 match 也不會被删掉，
+  只由 LSP 以 HINT 说明该臂不会走到（D9 `arm-unreach`）。
 - LSP 在「可能出錯」處提示 **warning**（不是 forcing 顯式處理），把「會不會出錯」的
   判斷成本從用戶轉移給編譯器。
 - `bounds.go` 整套保留（`AnalyzInBoundsForFunc` / `p.inBoundsIdx` /
@@ -431,7 +445,46 @@ diff <(grep -E '\[ERROR\]' /tmp/cur.vet.out) <(grep -E '\[ERROR\]' /tmp/ctl.vet.
   同一份判定**：codegen（`isSafeIndexBase` 早退）、`no vet`（`ValidateUnhandledIndex`
   放過）、`no fmt`（移除死註解）。任一方漏接就會出現「`no fmt` 刪了註解 → `no vet`
   報錯」的假回歸。
-- `rngidx` HINT 的定位隨之改變：從"引導改用容器迭代"改為"在豁免範圍之外提示"。
+- `rngidx` HINT 的定位隨之改變：從"引導改用容器迭代"改為"在优化範圍之外提示"。
+
+**(a-2) D9：空 `->` 兜底臂的双态诊断（2026-10-12 用户定案）。** 用户的出發點是這段看起來
+很多餘的程式碼：
+
+```
+ao = 1 + 2
+a  = ao: {
+    ok -> it
+    ->          ; ← 主要是影响这里
+}
+```
+
+定案：**這個分支不能移除**（match 必须所有分支），**也不改语法**（保留还有作用：未来可能
+出错、可能正确，语法不用改）。編譯器该做的是把狀態說清楚：
+
+| 判定 | 诊断 | 嚴重度 | 语义 |
+| --- | --- | --- | --- |
+| 可证明主体恒为 ok | `arm-unreach` | HINT | 这个分支不会走到 |
+| 无法证明 | `arm-should` | WARNING | 这个分支可能会走到，请决定它该做什么（`log` / `print`） |
+
+**实现位置**：`src/checker/match_arm_reach.go`（新檔），由 `lint.go` 的 20f 步依 trace
+逐條決定嚴重度（同 20d 的 ovfhndld/optunuse 分工）。
+
+**"可证明恒为 ok"的判定**（与 D7-R1 的 bounds.go 同一套静態分析，口径一致）：
+- 索引讀取 `a[i]`：可证明在界内（`parser.ProvablyInBoundsIndexReads`）；
+- 整數算術：
+  - `+ - *`：整棵可常量折疊且不溢位；
+  - `/` `%`：**除數為非零字面量**（且不是 -1，`MIN / -1` 會溢位）——被除數是普通變數也
+    無妨（`x / 2` 可證明不除零），但被除數若是算術就必須同樣可證明（`(a+b)/2` 的
+    `a+b` 自己會溢位）；
+  - 標識符：追蹤到其唯一初始器後遞迴（綁定多次一律保守剔除）。
+
+**安全方向**：宁可多報 WARNING，不可把"其實会失败"的臂說成死臂。因此 `-> 0` 與 `->`
+在 AST 上無法區分（D4：空臂語義就是默認零值），兩者一視同仁——語義本來就相同。
+寫了實際動作的臂（`-> log('bad')`）完全不提示。
+
+**已知限制**：以索引為主體的 match（`x = a[0]: { ... }`）降級後的 IfExpression 沒有
+`MatchedExpr`，`collectMatchRoots` 看不見它，故暫不提示。由
+`TestCatchAllArmIndexSubjectLimitation` 釘住現況。
 
 **(b) `s[i]`：先测量再分期（D1-b）。** 影响面最大（`src/std` 大量文本解析，且历史上刚把
 109 处 `s[i]` 改成 `s.byte(i)`）。按 §7.1 的 ③ 测出数量：
@@ -481,7 +534,7 @@ a = ao: {
 | --- | --- | --- |
 | **M0** 测量 | §7.1 探针（`NOLANG_OPT_UNIFIED=1`）；确定 D1-b 分期 | 四张计数表 + 分期决定 |
 | **M1** parser 语义 | `inferOptionArith`、删注解短路、索引捕获去门、`isSafeIndexBase` 改、`maybeIndexOutAssign` 语义改 | `go test ./parser/...` 绿；新单测（含负对照） |
-| **M1b** 删 bounds | `bounds.go` 整套 + `inBoundsIdx` + fmt 的 `AnalyzeInBoundsIndex` 下线 | 相关测试清理完毕；`go test ./...` 绿 |
+| **M1b** ~~删 bounds~~ → **D7-R1：保留 bounds 作为隐式验证** | `bounds.go` 整套 + `inBoundsIdx` + fmt 的 `AnalyzeInBoundsIndex` **保留上線**，作為「可证明安全 ⇒ 消除 option 包装/解包/分支」的优化 | 相关测试随优化恢复；`go test ./...` 绿；`idxhndld` 与 CTL 一致 |
 | **M2** checker 诊断 | 合并生命周期检查、删 `effOverflow` 豁免、严重度下调、`optunuse` + `rngidx` | `go test ./checker/...` 绿；vet ERROR 集合可解释 |
 | **M3** 语法 | `-> return`、空臂零值、fmt 打印 | parser/fmt 测试绿；roundtrip 幂等 |
 | **M4** MIR | str/txt 索引 option 化（按 M0 决定是否同期） | 全语料编译通过；尺寸相关测试绿 |
@@ -499,7 +552,9 @@ a = ao: {
   - 统一规则 + **三条**消费路径（`?=` / match / `_ =`）+ 诊断分级表；
   - **明确写出注解只影响行为、不解包**（`#{overflow=wrap}` ⏎ `x = a + b` 的 `x` 仍是 `?i64`）；
   - `-> return` / 空臂零值；
-  - in-bounds 豁免取消，并给出 `for i <- arr { x = i }` 这一惯用替代写法。
+  - **隐式验证**：编译器能证明不会溢出 / 不会除零 / 在界内时，静默消除 option 包装、
+    解包与 match 分支（用户侧无需写防御码）；证明不了的地方照常产生 option，
+    LSP 提示 warning（`arm-should` / `rngidx`）。
 - EN 镜像 `docs/i18n/en/.../lang/*.md` 同步（历史上 EN 常落后，需显式跟进）。
 - `docs/docs/lang/memory.md`（若有 option/ownership 相关段落）复核。
 
@@ -613,7 +668,12 @@ f = () (r i64) {
 | `src/mir/opt_test.go` | `foldSrc` 的 `a = 2 + 3` → `a i64 = 2 + 3`：D1 之后只有显式 plain 型别才落得到 folder 的 plain 路径 |
 | `src/checker/unhandled_overflow_test.go` | 新增 `TestUnhandledOverflowOptionBindingMustBeConsumed`（`x ?i64 = a + b` 不再算「已处理」）；`explicit_option_declaration` / `div_mod_binding_inferred_to_option` 从「允许」移到「必须报 optunuse」 |
 | `src/checker/option_capture_lint_test.go` | `TestCaptureAssignmentNotReported` → `TestCaptureAssignmentStillNeedsConsumption`（捕獲 ≠ 消费）；新增 `TestCaptureAssignmentConsumedIsClean`（三条消费路径的正面对照）；`plain_arith_assignment` 的 `ovf-int-default` 期望 1 → 0（目标已是 `?T`，lint 被吸收） |
+| `src/checker/discard_exempt_test.go` | 2026-10-12 D7-R1/D6 勘误：`TestBareIndexStillReportedWithoutDiscard` 原断言「报 `idxhndld`」，改为断言 `optunuse`（D6 捕獲加寬後產生處 HINT 被捕獲吸收），並改走 `RunAllLints`（`optunuse` 由 `ValidateUnhandledOverflow` 產出） |
+| `src/parser/option_capture_test.go` | `TestCaptureRootSafeIndexGatedOutOfOptionFunc` → `TestCaptureRootSafeIndexAppliesOutsideOptionFunc`（閘門 `enclosingFuncHasOptResult` 已删，改斷言 `a` 為 `?i64`；另新增 D7-R1 對照 `TestCaptureRootProvablyInBoundsIndexNotCaptured`）；`enclosing_overflow_annotation_no_longer_covers_arm_bodies` 的 `wantCap` 2 → 3 |
 | `src/build/lib_export_sem_test.go` | 末段断言不再看 `Severity`（D2 把 `ovf-int-default`/`ovfhndld` 都降 HINT），只看「第 4 行有没有报」；`checker` import 随之删除 |
+| `src/parser/compound_assign_test.go` | **D10 新增**：五個運算符各自降糖成 `UnwrapAssignStatement` + `DeprecatedOp`；解析期 `W_COMPOUND_ASSIGN` 警告逐條落位；兩組對照（`a[i] += 1` 與位元複合賦算**不**降糖、不警告，手寫 `?=` 不警告） |
+| `src/checker/compound_assign_lint_test.go` | **D10 新增**：WARNING 嚴重度經 `RunAllLints` 路由後仍是 WARNING；五個站點各一條、逐行定位；對照組守住「棄用函數 HINT 不被波及」與「手寫 `?=` 不報廢棄」 |
+| `src/fmt/compound_assign_test.go` | **D10 新增**：`no fmt` 把五個運算符重寫成 `a ?= a <op> <expr>`、冪等、右式可為任意表達式、`a[i] += 1` 不得被誤改寫 |
 
 ### 11.8 🔴 §5.2「删除 `effOverflow`」被实测推翻：保留，但**只豁免 HINT**
 
@@ -645,13 +705,29 @@ HINT，不豁免 `optunuse`」。§5.2 的删除项作废（已就地划掉）�
 > 两者当成同一套豁免（删掉就一起删），结果一个合法的小改动把 HINT 变成洪水。
 > 判定「某个豁免该不该留」不能只看语义推演，必须**实测规模**（2029 vs 0）。
 
-### 11.9 待办（本次未做）
+### 11.9 待办（`rngidx` 已實現，其餘仍未閉合）
 
-- `rngidx` HINT（§5.2 末条）**未实现**。它是 in-bounds 豁免取消（D7）后的替代引导，
-  但依赖 M1b 的 `bounds.go` 下线与 `isSafeIndexBase` 改造，故排在 M1b 之后。
+- ~~`rngidx` HINT（§5.2 末条）未实现~~ → **已實現**（2026-10-13）：
+  `src/checker/range_index_lint.go` 的 `ValidateRangeIndexLoops`，在
+  `src/checker/lint.go` 以 20g 接入 `RunAllLints`（`LintHint` /
+  `Source: "nolang-range-index"`）。判據：`for i <- [a..b)` 且體內有以該迴圈變數
+  為下標、基底是另一識別字的 `IndexExpression`；用
+  `parser.ProvablyInBoundsIndexReads(program)` 剔除可證明在界內的讀取，故與
+  D7-R1 的豁免邊界一致（不會在 `a [3]i64` + `[0..3)` 上誤報）。
+  **不自動改寫**（§6.3）：兩種寫法語意不等價（前者需要下標本身）。
+  回歸：`src/checker/range_index_lint_test.go` 三例（切片 + 手動下標 → 1 條；
+  容器迭代 → 0 條；可證明在界內 → 0 條）。
 - 「option 用在 plain 语境」的**完整**规则仍未定案：§11.10 只闭合了「**裸标识符/调用
   结果**赋给 plain 变量」这一半，§11.15 记录了另一半（内联算式的 option 性未被
   `inferExprType` 建模）的现状与影响。
+- **D9 的索引主體支援**（仍未閉合）：以索引為主體的 match 降級後沒有 `MatchedExpr`，
+  `collectMatchRoots` 看不見它（見 §8.1(a-2)「已知限制」），故 `arm-unreach` /
+  `arm-should` 目前只覆蓋「標識字 / 呼叫 / 屬性」主體。要把
+  `x = a[0]: { ok -> it, -> }` 也納入，需要擴充 match 走訪（會動到
+  `CollectNonExhaustiveMatches` 共用的 `collectMatchRoots`，需一併評估風險）。
+  ⚠️ 注意：`--fix=unwrap` 的情況 B **刻意**先 `x-opt = <expr>` 再 `x = x-opt: { … }`，
+  正是為了讓 match 主體落成「標識字」—— 這樣一來修復產物自動享有 D9 的雙態診斷，
+  不必等這一項做完。
 
 ### 11.10 🔴 §11.4 的缺口已定位并闭合：`isArgTypeCompatible` 的 `?T → T` 豁免
 
@@ -775,3 +851,165 @@ f = (a i64, b i64) () { x i64 = 0 \n x = a + b \n print(x) }   ; 0 error
 泄漏仍未被拦。要不要补齐取决于 §11.4 那条完整规则怎么定案 —— 补齐会让
 `x = a + b` 这类写法在全语料（含 std 的 3944 个 overflow 标注站点）都需要显式型别，
 **规模远超 11 处**，故本次**刻意不做**，留给下一次单独定案。
+
+### 11.16 🔴 `__` 前綴識別字在 Nolang 源碼中**不可書寫**（`--fix=unwrap` 的暫存名因此改設計）
+
+§6.1 原本指定情況 B 的暫存變數叫 `__o<N>`，理由是「`__` 前綴在 Nolang 源碼中不可書寫，
+不會與用戶符號衝突」。實測這個理由**用反了** —— 它不是「用戶不能寫、但編譯器可以寫」，
+而是**源碼裡根本不能出現**：
+
+```no
+f = () (out i64) {
+    __o1 = 5        ; 這行parse過了
+    out = __o1      ; ERROR: expected expression, got nil instead
+}
+```
+
+（`out = o1` 完全正常；`out = __o1` 在同一行同一欄位報錯。）
+
+**結論**：`--fix=unwrap` 的暫存名改用 **`<x>-opt`**（`-` 是合法識別字字元，且由目標名
+派生、可讀）。碰撞時追加序號：`<x>-opt2`、`<x>-opt3`……。碰撞集合刻意取保守的
+「整份檔案出現過的識別字狀 token」（切成 token 而非 substring 比對，避免 `abc` 誤命中
+`xabc`）。§6.1 正文與 D3 決策表已就地更正。
+
+### 11.17 M4 / M5 實測（2026-10-13）
+
+#### M4：str/txt 索引 option 化的真實遷移量
+
+回答 §7.1 表 ③（「決定是否分期」）：**規模可接受，與主體同期落地，不分期**。
+
+| 對象 | 站點數 | 說明 |
+| --- | --- | --- |
+| `src/std` | 11 | `crypto/base32.no` 1、`encoding/base64.no` 4、`fmt.no` 4；另有 `regexp.no` 7 處是因 `?char` 流入 `i64` 形參而 **SIGSEGV**，補顯式 `char` 後消失 |
+| `tests/` | 34 | 幾乎全是同一個 x25519 十六進制解析塊（`hi/lo char = hex-str[i * 2( + 1)]`）在 16 個檔案裡的副本 |
+| `compiler/` | 0 | ERROR 集合與對照二進位**逐行相同**（76 → 76，無新增） |
+
+**修法**：在綁定上補顯式 plain 型別（`c char = s[i]`），把結果拉回 plain。這與
+§11.13 的 `tcpoxtfd` 豁免（`producesOptionIndex`）是同一件事的兩面 ——
+一邊不催你刪註解，另一邊就不能再催你處理 option。
+
+配套的實作細節（均已落）：
+
+- `src/parser/type.go` 的 `containerElemType` 把 `str` / `txt` 從「回傳 `''`
+  （char，非 option 索引）」改為回傳 `"char"`，`isSafeIndexBase` /
+  `inferIndexElemType` 因此自動收編（一處改、三處口徑一致）。
+- `src/mir/hir2mir.go` 新增 `isUTF8IndexReceiver` / `lowerSafeUTF8Index`：
+  **先讀、再與 `-1` 哨兵比較**，而不是先比長度。根因是 `OpLen` 是**位元組數**、
+  而下標是**碼點數**，`'héllo'[5]`（位元組長度 6）會被誤判在界內、把哨兵 `-1`
+  當 ok 交出（實測 `it=4294967295`）。修好後 `s[4] ok it=111`、`s[5]` / `s[99]`
+  都落到 fallback 分支。
+- `src/mir/codegen.go` 的 `emitCast` 補窄化分支（此前只發 sext/zext，LLVM 對
+  `i64 → i32` 直接報 `invalid cast opcode`）。
+- `src/mir/borrow_release_test.go`：D6 後 borrow 被 option-wrap，不再有獨立
+  `OpRelease`；改為 IR 層判據（必須有 `@vec_retain`，且必須走 `@vec_free` /
+  `@__nolang_vec_free_`，**不能**有裸 `@nolang_free(i8* …)`）。
+- `src/mir/spawn_arg_move_test.go` / `spawn_arg_retain_test.go`：D6 讓
+  `m = a[1]` 變成界比較 + 兩分支，drop 被複製到兩條分支；全函式計數失真但
+  **每條路徑仍只釋放一次**。新增 `dropsPerPath`（沿 CFG 走到每個終結塊、
+  環用 `seen` map 防無限展開）改按路徑斷言。
+
+**全語料門禁**（`scripts/mir_golden.sh`，`MIR_GOLDEN_JOBS=6`；CTL = 對照二進位）：
+
+| | SAME | DIVERGE | REGRESS | NEW |
+| --- | --- | --- | --- | --- |
+| CTL | 446 | 13 | 22 | 48 |
+| SUT（修完 `zz-strindex-lint.no` 後） | **446** | **13** | **22** | **48** |
+
+**完全一致**。過程中唯一出現過的差異是 `tests/zz-strindex-lint.no`（SUT 一度新增
+rc=1）：該檔是 `STR_INDEX_COMPLEXITY` lint 的語料，D6 後 `ch = b[i]` 變成未被消費的
+option → `optunuse` ERROR。修法：5 處 str 索引讀取補顯式 `char`（把語義拉回 D6 之前，
+golden 輸出不變），並把第二個迴圈的 `ch` 改名 `ch2`（同一函式作用域內兩個 `ch`
+在 plain 型別下會報 `duplicate variable`；option 型別因捕獲合成規避了它）。
+
+`no vet` 的 ERROR 集合同樣**逐行相同**：`tests/` 27 → 27（零差異，hint 因 `rngidx`
+從 133 增至 165）、`compiler/` 76 → 76、`src/std` 0。
+
+#### M5：`no fmt --fix=unwrap`
+
+- 新檔案 `src/cmd/no/unwrap_fix.go` + `src/cmd/no/unwrap_fix_test.go`；
+  `fmtOverflowFixes` 增分支 `case "unwrap"`，`-fix` 的 help 文案同步。
+- 站點來源：**完整解析**（含 lowering）跑 `checker.ValidateUnhandledOverflow` 過濾
+  `optunuse` 行號；再用 **surface 解析**（`SkipUnwrapLowering` /
+  `SkipSafeIndexLowering`）取使用者寫下的那條陳述（名稱 token 的確切行列、型別
+  標註、語句跨度、所屬函式）。lowering 會把 `x = arr[i]` 換成合成區塊，靠它拿不到
+  「使用者寫的那個名字」，故必須兩次解析、以行號 join。
+- 多行陳述曾有一個 bug：`EndPos().Line` 有時指到陳述**之後**那一行，續行被重複
+  輸出（`t8-multiline-infix.no` 末尾的 `2` 印出兩次）。已收斂到最後一個有內容的行，
+  並把 `[start+1, end]` 標記為「已被吃掉」不再輸出；回歸測試
+  `multiline_statement_continuation_consumed` 釘住。
+- 冪等實測：對 `t1.no` 連跑兩趟 `-w`，第二趟 `ok=false`（無改動）。
+- 語料 dry-run（`no fmt --fix=unwrap compiler`）：命中 5 個檔案，全是
+  `compiler/tests/fixtures/` 下的極小語料（`t25-nullable` / `t4-infix-prec` /
+  `t45-composite-type` / `t7-group-nil-float` / `t8-multiline-infix`）。
+  **刻意不套用**：這些是自舉編譯器 parser 覆蓋率的語料，改寫會動到它自己的測試
+  基準；且其 optunuse 屬於「頂層指令稿的死綁定」，語意上本就該人工決定。
+
+---
+
+### 11.18 D10 實測：複合賦算運算符廢棄 + 自動重寫（2026-10-13）
+
+§1 的 D10 落地。語料盤點先行：**`src/std` / `tests/` / `example/` / `compiler/`
+沒有任何一處真正使用 `+=` 一族**（grep 命中的全在註解與字面量裡），所以這是一個
+「零遷移成本」的廢棄 —— 舊語法本來就編不過（`a += 1` 會被解析成無值綁定 + 裸字面量，
+編程期報錯或結構損壞），本次只是把這條死路換成「能用 + 提示 + 自動重寫」。
+
+**三層面各自的位置**：
+
+| 消費路徑 | 落點 | 形態 |
+| --- | --- | --- |
+| LSP 實時診斷 | `checker.ValidateDeprecatedCalls`（surface AST 看得見 `DeprecatedOp`） | WARNING，`nolang-deprecated-compound-assign` |
+| `no vet` / `no build` | parser 期 `W_COMPOUND_ASSIGN` 警告（lowering 後 surface AST 已消失） | WARNING / stderr |
+| 保存時 `no fmt` | parser 降糖成 `UnwrapAssignStatement`，formatter 渲染即輸出新寫法 | 自動重寫 |
+
+為什麼必須有 parser 期那一條：CLI 管線在 `ParseProgram` 裡就跑完 lowering，
+`UnwrapAssignStatement` 被展開成 `__unwrap_N` 區塊，`RunAllLints` 看到的 merged
+program 裡已經沒有 `DeprecatedOp`；而 LSP 主解析刻意設 `SkipUnwrapLowering=true`
+保住 surface AST（格式-on-save 需要），所以兩邊分工、不會重複
+（`p.Errors()` 只回 ERROR 級，LSP 的 diagnostics 不消費 parser warning）。
+
+**A/B 實測**（同一凍結樹，`NOLANG_AST_CACHE_OFF=1`）：
+
+| 語料 | 改前 rc / ERROR | 改後 rc / ERROR | 新增 WARNING |
+| --- | --- | --- | --- |
+| `src/std` | 0 / 0 | 0 / 0 | **0** |
+| `tests/` | 1 / 27 | 1 / 27 | **0**（ERROR 行逐條相同） |
+
+**語義等價實測**：`a += 1` → `a ?= a + 1` 之後，五個運算符串接的函式
+（`41 +=1 -=1 *=2 /=2 %= 3`）在新舊寫法下都印 `2`；`a += 1; b = a*2; b /= 3`
+（`f(10)`）重寫前後都印 `7`。`no fmt` 冪等（第二遍零 diff）。
+
+**刻意不做**（留下一條清楚的界線）：
+
+- `a[i] += 1` / `d.f += 1`：不降糖。重複求值下標，且下標自己現在就是 option
+  （`a[i]` 是 `?T`，`a[i] ?= a[i] + 1` 語義是錯的）。維持原來的 parse error，
+  由 `TestCompoundAssignIndexTargetNotDesugared` 釘住。
+- 位元複合賦算（`&=` / `|=` / `^=` / `<<=` / `>>=` / `&^=``）：不產生 option，
+  與本次統一規則無關，不進廢棄名單，同樣維持 parse error。
+
+### 11.18 ⚠️ 新發現的自相矛盾：`p1 i64 = f(n - 1)` 同時被「要求寫」與「要求刪」
+
+遷移 `tests/wasi-fib.no`（既有 3 個 option ERROR，對照二進位上一樣有）時撞到一對
+與 §11.13 同型的矛盾，但**發生在「巢狀 option 運算元」而非「索引讀取」上：
+
+```no
+#{overflow=wrap}
+p1 = fib-rec(n - 1)     ; ERROR fxxoptarg：`n - 1` 是 ?i64，不能傳給 plain 形參
+```
+
+加顯式 plain 型別即可消除：
+
+```no
+#{overflow=wrap}
+p1 i64 = fib-rec(n - 1) ; 0 error —— 但接著被 tcpoxtfd 要求刪掉 `i64`
+```
+
+（`i64` 確實等於推斷型別 —— `fib-rec` 回傳 `i64`，所以 `tcpoxtfd` 沒錯；
+但刪掉它 `fxxoptarg` 就回來了。）根因是 `#{overflow=wrap}` **只讓「根運算元位置」的
+option 被自動解包**（`a + b + c`、`f(b + c)`，見 §11.15 末段），而**不涵蓋函式引數**；
+顯式 plain 型別走的才是另一條（`captureTargetAllowsOption`）路徑。
+
+**本次不修**：要閉合需要讓 `checkRedundantTypeInStmt` 的 `optionProducing` 判據認出
+「RHS 任意深處含 option 產生式子運算式」，而那會把一大批合法站點的 `tcpoxtfd`
+提示一起吞掉（口徑比 §11.13 的 `producesOptionIndex` 寬得多，風險不對稱）。
+已記入待辦；`tests/wasi-fib.no` 因此**保持原樣**（其 3 個 ERROR 與對照二進位一致，
+非本次新增，且它是 wasm32-wasi 專用語料）。

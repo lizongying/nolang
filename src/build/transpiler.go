@@ -39,6 +39,12 @@ type Transpiler struct {
 	// chainedIfHints 收集主程序（非 std 库）中链式 -> 条件的 lint 提示，
 	// 由 buildWithPkg 在编译成功后打印到 stderr，提醒用户改用合并条件或 { } 块。
 	chainedIfHints []string
+	// compoundAssignHints 收集主程序中 `+=` / `-=` / `*=` / `/=` / `%=` 的廢棄提示。
+	// 這五個運算符在 parser 就降糖成 `a ?= a + 1`（UnwrapAssignStatement），
+	// lowering 之後 surface AST 消失，checker 的 deprecated lint 不再看得到，
+	// 故 CLI 管線靠這條 parser warning 補上（LSP 實時診斷走 surface AST，
+	// 由 checker 負責，兩邊不會重複）。
+	compoundAssignHints []parser.Diagnostic
 	// externFuncSigs/externStructFields: 預載入的跨文件函數簽名和 struct 欄位型別，
 	// 注入到所有 parser 實例中以支援 let 型別推斷
 	externFuncSigs     map[string][]string
@@ -153,6 +159,26 @@ func (t *Transpiler) VetLints() []checker.LintResult {
 // 仅包含用户主程序（不含自动载入的 std 库），由 build 命令打印到 stderr。
 func (t *Transpiler) ChainedIfHints() []string {
 	return t.chainedIfHints
+}
+
+// CompoundAssignHints 返回主程序中「複合賦算運算符已廢棄」的解析期警告
+// （parser 診斷，含位置）。vet 模式會把它們轉成 LintResult 輸出；
+// build 模式由 buildWithPkg 打印到 stderr。
+func (t *Transpiler) CompoundAssignHints() []parser.Diagnostic {
+	return t.compoundAssignHints
+}
+
+// parserWarningsByCode 回傳 parser 診斷中指定碼的 WARNING 級 Diagnostic（含位置）。
+// parser 只對外暴露格式化後的字串版 WarningsByCode；這裡需要行號/列號以轉成
+// LintResult（vet 輸出）或在 stderr 印出，故自行過濾 Diagnostics()。
+func parserWarningsByCode(p *parser.Parser, code string) []parser.Diagnostic {
+	var out []parser.Diagnostic
+	for _, d := range p.Diagnostics() {
+		if d.Severity == parser.SeverityWarning && d.Code == code {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 type Target int
@@ -787,6 +813,8 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		// 收集主程序中链式 -> 条件的 lint 提示（仅主程序，不含自动载入的 std 库，
 		// 避免库代码触发噪音）。buildWithPkg 会在编译成功后打印。
 		t.chainedIfHints = p.WarningsByCode(parser.WarnChainedIf)
+		// 同理收集 `+=` 一族复合赋算的廢棄提示（parser 期診斷，含位置）。
+		t.compoundAssignHints = parserWarningsByCode(p, parser.WarnCompoundAssign)
 		// Tier 1: store the freshly parsed entry AST for the next build.
 		if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
 			dc.Put(dc.KeyFor(source, t.astCacheSalt()), program)
@@ -1569,13 +1597,22 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 在返回前對 merged 執行全部 lint 校驗（命名、未用變數、embed、
 	// 接口實現、字串拼接等），使 CI 路徑與編輯器診斷保持一致。
 	if t.vetMode {
-		t.vetLints = checker.RunAllLints(merged, checker.LintOptions{
+		// `+=` 一族的廢棄提示：parser 期診斷，轉成 LintResult 讓 `no vet`
+		// 以 warning 輸出（位置/文案與 LSP 一致：W_COMPOUND_ASSIGN 碼）。
+		for _, d := range t.compoundAssignHints {
+			t.vetLints = append(t.vetLints, checker.LintResult{
+				Line: d.Pos.Line, Column: d.Pos.Column, File: d.Filename,
+				Severity: checker.LintWarning, Source: "nolang-lint",
+				Message: d.Message, TraceID: d.Code,
+			})
+		}
+		t.vetLints = append(t.vetLints, checker.RunAllLints(merged, checker.LintOptions{
 			SourcePath:       t.sourcePath,
 			RootDir:          filepath.Dir(t.sourcePath),
 			Strict:           t.vetStrict,
 			MainFileVarNames: mainVarNames,
 			SkipTypeChecks:   true,
-		})
+		})...)
 		return "", nil
 	}
 	// The checked AST is lowered to HIR; the MIR backend consumes the HIR package

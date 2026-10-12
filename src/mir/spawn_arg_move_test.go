@@ -108,6 +108,54 @@ func dropsOf(mod *Module, fn string, v ValueID) int {
 	return n
 }
 
+// dropsPerPath 回傳 fn 中「從入口到每一個終結塊的每条执行路径」上各自落的
+// OpDrop(v) 次數。
+//
+// 🔴 為什麼需要它（2026-10-13 勘誤）：dropsOf 數的是**整個函式**的指令條數，
+// 只在直線程式碼裡等於「執行時釋放幾次」。統一 option 規則（D6）之後，
+// `m = a[1]` 這類原本直線的索引讀取會降級成「界比較 + 兩條分支 + option-wrap」，
+// 於是同一個值的釋放被複製到兩條分支裡各一次 —— dropsOf 看到 2，
+// 但**任一條執行路徑仍然只釋放一次**，既沒有雙重釋放也沒有洩漏。真正的意图
+// （「每條路徑恰好釋放一次」）必須按路徑量測，dropsOf 在含分支的 CFG 上失真。
+func dropsPerPath(mod *Module, fn string, v ValueID) []int {
+	fid, ok := mod.FuncByName[fn]
+	if !ok {
+		return nil
+	}
+	f := mod.Func(fid)
+	var out []int
+	seen := map[BlockID]bool{}
+	var walk func(b BlockID, n int)
+	walk = func(b BlockID, n int) {
+		if seen[b] {
+			// 環（迴圈）：同一條路径上不重複拜訪，避免無窮展開。
+			out = append(out, n)
+			return
+		}
+		seen[b] = true
+		defer delete(seen, b)
+		blk := mod.Block(b)
+		if blk == nil {
+			return
+		}
+		for _, iid := range blk.Insts {
+			inst := mod.Inst(iid)
+			if inst != nil && inst.Op == OpDrop && len(inst.Args) > 0 && inst.Args[0] == v {
+				n++
+			}
+		}
+		if len(blk.Succs) == 0 {
+			out = append(out, n)
+			return
+		}
+		for _, s := range blk.Succs {
+			walk(s, n)
+		}
+	}
+	walk(f.Entry, 0)
+	return out
+}
+
 // irFunc returns the text of the `define ... @name(...)` block in ir, or "".
 // The generated IR always closes a definition with a line that is exactly "}".
 //

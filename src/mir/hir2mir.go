@@ -3832,6 +3832,88 @@ func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID) ValueID
 	return sink
 }
 
+// isUTF8IndexReceiver reports whether indexing v must go through the UTF-8
+// code-point read rather than a byte/element GEP — i.e. whether v is a `str`
+// or a `txt` (codegen.isStrReceiver / isTxtReceiver express the same test, but
+// that is the codegen's own view; here we read the MIR type directly).
+func (l *lowerer) isUTF8IndexReceiver(v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	t := NoType
+	if f := l.mod.Func(l.curFunc); f != nil {
+		if tt, ok := f.LocalTypes[v]; ok {
+			t = tt
+		}
+	}
+	if t == NoType {
+		if val := l.mod.Value(v); val != nil {
+			t = val.Type
+		}
+	}
+	if t == NoType {
+		return false
+	}
+	ty := l.mod.Type(t)
+	return ty != nil && (ty.Raw == "str" || ty.Raw == "txt")
+}
+
+// lowerSafeUTF8Index lowers a bounds-checked CODE POINT read `s[i]` on a str /
+// txt receiver whose binding is an option: in range -> ok(code point), out of
+// range -> nil (tag 1).
+//
+// 🔴 为什么不能用 lowerSafeIndex（OpLen 比较）：str 的 OpLen 是**字节**长度，
+// 而 `s[i]` 的下标是**码点**下标；多字节串里后者恒不大于前者，却可以严格更小。
+// `'héllo'` 的 OpLen=6 而只有 5 个码点，`s[5]` 于是通过 `5 < 6` 的界比较进入
+// ok 分支，读到 @nolang.utf8_cp_at 的越界哨兵 -1，并把它当作 ok(-1) 交出去
+// （实测：`ok branch it=4294967295`）。普通容器没有这个问题：那里的下标单位与
+// OpLen 的单位同为「元素个数」。
+//
+// 修法是反过来信哨兵：先读，再拿读数与 -1 比较。这要求读数保持 i64 精度 ——
+// 若 OpIndex 的目标型别是 i8/i32，-1 会被截断成 0xFF / 0xFFFFFFFF 而永远不等
+// 于 -1，所以这里显式以 i64 发射读取，成功分支再 cast 回 elemT。
+func (l *lowerer) lowerSafeUTF8Index(arrV, idxV ValueID, elemT, optT TypeID) ValueID {
+	i64T := l.b.Type("i64")
+	boolT := l.b.Type("bool")
+	if i64T == l.voidType || boolT == l.voidType {
+		return l.lowerSafeIndex(arrV, idxV, elemT, optT)
+	}
+	// Read at i64 so the -1 sentinel survives (see the comment above).
+	cp := l.b.Emit(OpIndex, i64T, []ValueID{arrV, idxV}, "")
+	if cp == NoVal {
+		return NoVal
+	}
+	minusOne := l.b.EmitInt(OpConst, i64T, -1, "")
+	inRange := l.b.Emit(OpNe, boolT, []ValueID{cp, minusOne}, "")
+
+	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
+
+	okBlk := l.b.NewBlock("cp.ok")
+	noneBlk := l.b.NewBlock("cp.none")
+	mergeBlk := l.b.NewBlock("cp.merge")
+	l.b.Terminate(OpCondBr, []ValueID{inRange}, []BlockID{okBlk, noneBlk}, "")
+
+	l.b.SetBlock(okBlk)
+	e := cp
+	if elemT != i64T {
+		e = l.b.Emit(OpCast, elemT, []ValueID{cp}, "")
+	}
+	wrapped := l.b.EmitOptionWrap(optT, 0, e)
+	l.b.EmitMoveInto(sink, wrapped)
+	if l.mod.Block(okBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	// The none arm leaves the slot at its nil initial value.
+	l.b.SetBlock(noneBlk)
+	if l.mod.Block(noneBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	l.b.SetBlock(mergeBlk)
+	return sink
+}
+
 func (l *lowerer) lowerFor(n *hir.Node) {
 	iterID := l.slot(n.Id, "iter")
 	if iterID != hir.NoID {
@@ -5610,6 +5692,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// (tests/safe-index.no: `get-default OOB`).
 		if l.typeHint != NoType && l.typeHint != l.voidType {
 			if ht := l.mod.Type(l.typeHint); ht != nil && ht.Kind == KindOption {
+				// D6：str/txt 的下标是**码点**下标，而 OpLen 给的是**字节**长度。
+				// 用 lowerSafeIndex 的 OpLen 比较会放过「字节数之内、码点数之外」
+				// 的下标（`'héllo'[5]`：OpLen=6 → 误判在界内），读出来却是
+				// @nolang.utf8_cp_at 的越界哨兵 -1，于是把它当成 ok(-1) 交给用户。
+				// 这两类接收者必须改用哨兵判定。
+				if l.isUTF8IndexReceiver(arrV) {
+					return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint)
+				}
 				return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint)
 			}
 		}

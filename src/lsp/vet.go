@@ -79,6 +79,25 @@ func VetFile(filePath string) []VetResult {
 		})
 	}
 
+	// 1b. parser 期 WARNING 診斷（目前只有 `+=` 一族的 W_COMPOUND_ASSIGN）。
+	// 實時診斷（server.go）走 surface AST，由 checker 的 deprecated lint 負責；
+	// 這條路徑啟用了 lowering，surface AST 已被展開，只能從 parser 診斷補回。
+	// 與 real-time 不會重複：兩者不在同一條管線上。
+	for _, d := range p.Diagnostics() {
+		if d.Severity != parser.SeverityWarning {
+			continue
+		}
+		results = append(results, VetResult{
+			File:     filePath,
+			Line:     d.Pos.Line,
+			Column:   d.Pos.Column,
+			Severity: "warning",
+			Source:   "nolang-parser",
+			TraceID:  d.Code,
+			Message:  d.Message,
+		})
+	}
+
 	if prog == nil {
 		return results
 	}

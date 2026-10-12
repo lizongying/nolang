@@ -137,6 +137,15 @@ func (p *Parser) parseStatement() Statement {
 				}
 				return stmt
 			}
+		} else if compoundAssignOps[p.peekToken.Type] != "" && p.currentToken.Type == lexer.IDENT {
+			// a += 1 一族（已廢棄，見 parseCompoundAssignStatement）
+			stmt := p.parseCompoundAssignStatement()
+			if stmt != nil {
+				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+					p.skipToStatementEnd()
+				}
+				return stmt
+			}
 		} else if p.peekToken.Type == lexer.ASSIGN {
 			// 先檢查是否為函數定義：name = (params) { ... }
 			if p.isFunctionDefinition() {
@@ -823,6 +832,77 @@ func (p *Parser) parseAssignTarget() Expression {
 		return &IndexExpression{Token: tok, Left: ident, Index: index}
 	}
 	return ident
+}
+
+// WarnCompoundAssign 是「複合賦算運算符已廢棄」警告的穩定診斷碼。
+// `+=` / `-=` / `*=` / `/=` / `%=` 在統一 option 規則下等價於 `a ?= a + 1`，
+// parser 已直接降糖；此警告在有 lowering 的管線（no vet / no build）裡補上
+// surface AST 已被抹掉的那條提示。LSP 實時診斷走 surface AST，由 checker 的
+// deprecated lint 負責（見 src/checker/deprecated.go），兩邊不會重複：
+// p.Errors() 只回 ERROR 級，publishDocumentDiagnostics 不消費 parser warning。
+const WarnCompoundAssign = "W_COMPOUND_ASSIGN"
+
+// compoundAssignOps 把五個「算術複合賦算」token 映射回其二元運算符字面量。
+// 這五個運算符（`+=` / `-=` / `*=` / `/=` / `%=`）已廢棄：統一 option 規則下
+// `a + 1` 的型別是 `?i64`，`a += 1` 的語義就是「把 option 解包後賦值、失敗就上拋」，
+// 與 `a ?= a + 1` 完全等價，故直接降糖過去。位元複合賦算（`&=` / `|=` / `<<=` …）
+// 不在這張表裡：它們不產生 option，維持原樣（parser 本就不支援，仍是 parse error）。
+var compoundAssignOps = map[lexer.TokenType]string{
+	lexer.ADD_ASSIGN: "+",
+	lexer.SUB_ASSIGN: "-",
+	lexer.MUL_ASSIGN: "*",
+	lexer.QUO_ASSIGN: "/",
+	lexer.MOD_ASSIGN: "%",
+}
+
+// parseCompoundAssignStatement 解析已廢棄的 `a += 1` 一族（currentToken = IDENT，
+// peekToken = 複合賦算 token），降糖成 `a ?= a + 1`：
+//
+//   - 語義：UnwrapAssignStatement，與手寫 `?=` 同一條 lowering / codegen 路徑；
+//   - 提示：DeprecatedOp 記下原運算符，checker 逐點發 WARNING；
+//   - 自動修復：no fmt 渲染 surface AST，輸出的正是重寫後的 `a ?= a + 1`。
+//
+// 只支援識別字 LHS。`a[i] += 1` / `d.f += 1` 會重複求值下標（且下標自己現在就是
+// option），不給它開降糖後門，維持原來的 parse error。
+func (p *Parser) parseCompoundAssignStatement() Statement {
+	// currentToken = IDENT (variable name), peekToken = compound assign token
+	nameTok := p.currentToken
+	opTok := p.peekToken
+	op := compoundAssignOps[opTok.Type]
+	p.nextToken() // skip IDENT → current = compound op
+	p.nextToken() // skip compound op → current = start of expr
+
+	p.ctx.push(CTX_EXPR)
+	val := p.parseExpression(LOWEST)
+	p.ctx.pop()
+
+	if val == nil {
+		return nil
+	}
+
+	// 解析期就發一條 WARNING：lowering 會把降糖結果展開成區塊，CLI 管線
+	// （no vet / no build）到 Lint 階段已看不到 surface AST，那時只剩這條。
+	p.diags = append(p.diags, Diagnostic{
+		Filename: p.Filename,
+		Pos:      lexer.Position{Line: nameTok.Line, Column: nameTok.Column},
+		Severity: SeverityWarning,
+		Code:     WarnCompoundAssign,
+		Message: fmt.Sprintf(
+			"`%s` is deprecated; it is rewritten to `%s ?= %s %s <expr>` (the right side of a compound assignment is now ?T, so errors propagate through `?=`) — `no fmt` rewrites it on save",
+			opTok.Literal, nameTok.Literal, nameTok.Literal, op),
+	})
+
+	return &UnwrapAssignStatement{
+		Token: opTok,
+		Name:  &Identifier{Token: nameTok, Value: nameTok.Literal},
+		Value: &InfixExpression{
+			Token:    opTok,
+			Operator: op,
+			Left:     &Identifier{Token: nameTok, Value: nameTok.Literal},
+			Right:    val,
+		},
+		DeprecatedOp: opTok.Literal,
+	}
 }
 
 func (p *Parser) parseUnwrapAssignStatement() Statement {

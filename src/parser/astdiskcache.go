@@ -50,7 +50,7 @@ import (
 // （p.inBoundsIdx / isSafeIndexBase 早退 / AnalyzInBoundsForFunc 合併 /
 // checker + fmt 三方位接）。這會改變 lowering 的輸出形狀（無數取不再被降級成
 // option、不再插入 __cap_N / match 區塊），屬必 bump 的 lowering 變更。
-const ASTVersion = "2026-10-12.3"
+const ASTVersion = "2026-10-13.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

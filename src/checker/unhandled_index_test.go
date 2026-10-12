@@ -60,6 +60,17 @@ func TestUnhandledIndexDetectsLeaks(t *testing.T) {
 }`,
 			wantMin: 1,
 		},
+		{
+			// D6：str 索引 `s[i]` 自 M4 起納入統一 option 規則，結果是 `?char`
+			// 而非 plain char。承接它的結果參數若宣告為 plain `char`，option
+			// 就沒人處理 → 必須報（M1a 之前此處的前提「str 索引回傳非 option」
+			// 已被推翻，見 docs/design/option-unified.md §11）。
+			name: "str_index_returns_option_char",
+			src: `f = (s str, i i64) (res char) {
+    res = s[i]
+}`,
+			wantMin: 1,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -112,10 +123,22 @@ func TestUnhandledIndexAllowed(t *testing.T) {
 }`,
 		},
 		{
-			// str 索引回傳字元（非 option），不應報。
-			name: "str_index_returns_char",
-			src: `f = (s str, i i64) (res char) {
+			// D6 後 str 索引同樣產生 option，故「不報」的正當寫法是把承接者
+			// 宣告為 `?char`（結果參數為 ?T 時 lowering 就地捕獲，已處理）。
+			name: "str_index_explicit_option_result",
+			src: `f = (s str, i i64) (res ?char) {
     res = s[i]
+}`,
+		},
+		{
+			// 顯式 **plain** 區域綁定（`c char = s[i]`）是「把結果拉回 plain」的
+			// 開關（lower 期 s.Type != nil 即短路合成），壓根不產生 option → 不報。
+			// 這是 checkRedundantTypeInStmt 的 tcpoxtfd 豁免（producesOptionIndex）
+			// 的另一面：一邊不催你刪註解，這邊就不能再催你處理 option。
+			name: "str_index_plain_declared_local",
+			src: `f = (s str, i i64) (out char) {
+    c char = s[i]
+    out = c
 }`,
 		},
 	}

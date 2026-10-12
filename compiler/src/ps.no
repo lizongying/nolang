@@ -2829,6 +2829,7 @@ ps-is-enum-def = (p psst) (r i64) {
                 et = ps-peek-at(p, i)
                 {
                     et == tok.LPAREN -> {
+
                         ; 括號載荷欄位掃描：( [NEWLINE|COMMA]* ( IDENT [型別] )*[,] )；非預期 token ⇒ okf=0
                         fi = i
                         okf = 1
@@ -2850,6 +2851,7 @@ ps-is-enum-def = (p psst) (r i64) {
                                 }
 
                                 ft == tok.IDENT -> {
+
                                     ; `名 型別`（nt=型別起）或裸 `名`（nt∈{,, ),NEWLINE,COMMENT}）
 
                                     #{overflow=wrap}
@@ -2866,7 +2868,6 @@ ps-is-enum-def = (p psst) (r i64) {
                                         fi = fi + 1
                                         ts = ps-skip-type-idx(p, fi)
                                         ts >= 0 -> fi = ts
-
                                         ts < 0 -> okf = 0
                                     }
                                 }
@@ -2883,7 +2884,6 @@ ps-is-enum-def = (p psst) (r i64) {
                         okf == 1 -> {
                             i = fi
                             sawParen = 1
-
                             ps-peek-at(p, i) == tok.LPAREN -> bad = 1; `) (` 第二回傳群組 ⇒ 介面方法形，拒
                         }
                     }
@@ -2908,7 +2908,6 @@ ps-is-enum-def = (p psst) (r i64) {
                             #{overflow=wrap}
                             i = i + 2
                         }
-
                         vt != tok.INT -> bad = 1
                     }
 
@@ -3009,6 +3008,7 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 ast.set-slot(t, v, 2, ast.put-str(t, fns.len().to-str()))
                 ty0 = 0
                 fns.len() > 0 -> {
+
                     #{index-out=zero}
                     ty0 = fty[0]
                 }
@@ -3016,8 +3016,10 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 ast.helper-begin(t, v, fns.len())
                 j = 0
                 (j < fns.len()) {
+
                     #{index-out=zero}
                     ast.aux-add(t, ast.put-str(t, fns[j]))
+
                     #{index-out=zero}
                     ast.aux-add(t, fty[j])
 
@@ -3052,6 +3054,7 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
     ast.set-count(t, idx, 0, mems.len())
     m2 = 0
     (m2 < mems.len()) {
+
         #{index-out=zero}
         ast.kid-add(t, idx, mems[m2])
 
@@ -3185,6 +3188,23 @@ ps-mk-it-let = (t ast, subj str) (idx i64) {
     idx
 }
 
+; ps-mk-it-let-arm：变体臂合成绑定（Go lowering.go buildItBindingForArm）——
+;   对 err/nil 关键字臂（含被匹配型别未知时的兼容形）建
+;   `LetStatement{name: it, type: <变体>, value: subj, synthetic: true, armBinding: true}`
+;   槽位：s1=synthetic、s2=armBinding（asp.no LetStatement 模板 ref 序）；Type kid = NamedType{变体}（无 inferred）。
+ps-mk-it-let-arm = (t ast, subj str, kvar str) (idx i64) {
+    val = ps-mk-ident(t, subj)
+    nt = ast.add(t, asp.K_NAMED_TYPE)
+    ast.set-slot(t, nt, 0, ast.put-str(t, kvar))
+    idx = ast.add(t, asp.K_LET_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, 'it'))
+    ast.set-slot(t, idx, 1, ast.put-str(t, 'true')); synthetic
+    ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); armBinding
+    ast.kid-add(t, idx, nt)
+    ast.kid-add(t, idx, val)
+    idx
+}
+
 ; ps-mk-true：wildcard 條件 = IntegerLiteral{value: 1}（無 raw，故不印 raw）
 ps-mk-true = (t ast) (idx i64) {
     idx = ast.add(t, asp.K_INTEGER_LITERAL)
@@ -3205,8 +3225,9 @@ ps-mk-eq = (t ast, l i64, r i64) (idx i64) {
 ; ps-parse-match：解析 `subj: { pat -> body … }` 的**臂區**（已消費 `:` 與 `{`），
 ;   停在閉合 `}` 前（呼叫端 ps-expect(RBRACE)）。desugar 為 if/else 鏈：
 ;   • 非 wildcard 臂：cond = subj==pat，consequence = 臂區塊（先塞 it 合成綁定）
-;   • wildcard `_`：其區塊直接作前一 if 的 alternative
+;   • wildcard `_` 或裸 `->`（尾隨無型樣臂＝else）：其區塊直接作前一 if 的 alternative
 ;   • 相鄰非 wildcard 臂：後臂包成 else 區塊 BlockStatement{}[ExpressionStatement{if}]
+;   • err/nil 关键字臂（型樣為裸关键字且緊接 `->`）：綁定带 type+armBinding（對齊 Go buildItBindingForArm）
 ;   ⚠️ arena 共享 kids 游標（add 設 kid0=kids.len）→ 父節點務必最後 add、再 kid-add。
 ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     wildA []i64 = with-cap(4)
@@ -3216,18 +3237,29 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     (ps-peek(p) != tok.RBRACE) {
         pos0 = p.pos
 
-        ; 型樣：`_` → wildcard；否則解析成表達式（int/float/bool/str/char/ident）
+        ; 型樣：`_` 或裸 `->`（無型樣＝else 臂）→ wildcard；否則解析成表達式（int/float/bool/str/char/ident）
         ; ⚠️ 用快照 at 令兩臂互斥（ps-peek 随位置重评会误触发，見 ps.no LBRACKET 臂同构写法）
+        ; ⚠️ err/nil 关键字臂（緊接 `->`）記 kvar ⇒ 綁定带 type+armBinding（Go buildItBindingForArm）
         wild = 0
         pat = 0
+        kvar = ''
         at = ps-peek(p)
+        tk0 = ps-peek-token(p)
         {
             at == tok.UNDERSCORE -> {
                 ps-bump(p)
                 wild = 1
             }
 
-            at != tok.UNDERSCORE -> {
+            at == tok.RARROW -> wild = 1; 裸尾臂＝else（不消費，交由下方 expect(RARROW)）
+
+            at != tok.UNDERSCORE && at != tok.RARROW -> {
+                kwt = 0
+                tk0.typ == tok.NIL && ps-peek-at(p, 1) == tok.RARROW -> {
+                    kvar = 'nil'
+                    kwt = 1
+                }
+                kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'err' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'err'
                 pat = ps-parse-expr-prec(t, p, 0)
             }
         }
@@ -3236,7 +3268,14 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
         ps-skip-trivia(p)
 
         ; 先完整建成 it 合成綁定 + body（父後建、kid 區段才不與子樹重疊）
-        itl = ps-mk-it-let(t, subj)
+        ;   err/nil 变体臂 → 带 type+armBinding 的綁定；其餘 → 裸 synthetic 綁定
+        itl = 0
+        hd5 = 0
+        kvar != '' -> {
+            itl = ps-mk-it-let-arm(t, subj, kvar)
+            hd5 = 1
+        }
+        hd5 == 0 -> itl = ps-mk-it-let(t, subj)
         kids []i64 = with-cap(4)
         kids.push(itl)
         inline = 0

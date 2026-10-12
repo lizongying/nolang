@@ -200,12 +200,30 @@ func TestBorrowReadEmitsPairedRelease(t *testing.T) {
 // TestReleaseIsShallowForNestedElementType pins the reason OpRelease is a
 // separate op from OpDrop. For a value whose element type owns heap, emitDrop
 // selects the deep free; the release must not.
+//
+// 🔴 2026-10-13 勘误（统一 option 规则 D6）：本测试钉的东西**换了机制**。
+//
+// D6 之下 `x = a[0]` 这类索引读取在任何函数里都产生 option，`probe` 里的 borrow
+// 因此不再是「直接拿到的 [][]i64 值」，而是先被 option-wrap 成 `?[][]i64`：
+//
+//	probe.bb1: index -> retain(v9) -> option-wrap(v10) -> move v10 -> v8(x)
+//	probe.bb3: peel(v10 -> v11) 时由 codegen **深拷贝**（@__nolang_vec_clone_）
+//	           -> len(v11) -> vec_free 选项载荷 -> vec_free 克隆
+//
+// 也就是说：`insertBorrowRetains` 仍然对 borrow 元素 retain 一次，但「归还引用」
+// 的动作由 **选项载荷**的析构承担，而不是一条独立的 OpRelease。这条路径的安全
+// 性不是靠「浅」而是靠 **refcount 判据**：emitOptionDrop 的 %vec 分支走
+// vecDeepFree，其 `rc > 1 ⇒ release 而不 free 内容`（见 codegen.go 中该处的注释
+// —— 它明确写的就是「边界检查后的索引读取 `a[0]` 会把元素做成 RETAINED BORROW
+// 并包进 option」这一形态，measured: tests/mem-safety/nested-container-clone.no）。
+// 所以 release/op 计数这条断言需要换成 IR 层的判据：**必须经 refcount 守卫的
+// free，绝不能是对载荷数据指针的裸 @nolang_free**。
 func TestReleaseIsShallowForNestedElementType(t *testing.T) {
 	mod := lowerForTest(t, deepBorrowReleaseSrc)
 	c := opCountsInFunc(t, mod, "probe")
-	if c[OpRetain] != 1 || c[OpRelease] != 1 {
-		t.Fatalf("probe should retain once and release once, got %d retain / %d release\n%s",
-			c[OpRetain], c[OpRelease], mod.DumpAnnotated())
+	if c[OpRetain] != 1 {
+		t.Fatalf("probe should retain the borrowed element exactly once, got %d\n%s",
+			c[OpRetain], mod.DumpAnnotated())
 	}
 
 	ir := mustEmit(t, deepBorrowReleaseSrc)
@@ -213,12 +231,20 @@ func TestReleaseIsShallowForNestedElementType(t *testing.T) {
 	if body == "" {
 		t.Fatalf("could not locate @probe in the emitted IR")
 	}
-	if !strings.Contains(body, "call void @vec_free(") {
-		t.Errorf("the borrow release does not lower to the shallow @vec_free:\n%s", body)
+	if !strings.Contains(body, "call void @vec_retain(") {
+		t.Errorf("the borrow read is not refcounted; without the retain a grow of the owner "+
+			"frees a buffer this value still points at:\n%s", body)
 	}
-	if strings.Contains(body, "@__nolang_vec_free_") {
-		t.Errorf("the borrow release was routed through the DEEP free. A borrow does not own "+
-			"its elements, so this frees buffers the container still owns:\n%s", body)
+	// 载荷必须交给 refcount 守卫的释放器（@__nolang_vec_free_<T> / @vec_free），
+	// 二者都在 rc>1 时只做减计数 —— 这正是 borrow 需要的「浅归还」语义。
+	if !strings.Contains(body, "@__nolang_vec_free_") && !strings.Contains(body, "call void @vec_free(") {
+		t.Errorf("the option payload holding the retained borrow is not released at all; "+
+			"an unreleased retain pins the buffer forever:\n%s", body)
+	}
+	// 反向钉：绝不能是对数据指针的裸释放（绕过 refcount 判据 = 双重释放）。
+	if strings.Contains(body, "call void @nolang_free(i8* ") {
+		t.Errorf("the borrow's buffer is raw-freed instead of refcount-released. A borrow does "+
+			"not own its elements, so this frees buffers the container still owns:\n%s", body)
 	}
 }
 

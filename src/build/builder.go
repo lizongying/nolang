@@ -728,6 +728,13 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
+	// 打印 `+=` / `-=` / `*=` / `/=` / `%=` 的廢棄提示。與上面同理在 err 檢查前：
+	// 這幾條由 parser 期診斷帶來，與編譯成敗無關；格式走 Diagnostic.Error()，
+	// 與 W_CHAIN_IF 的輸出一致。
+	for _, d := range compiler.CompoundAssignHints() {
+		fmt.Fprintln(os.Stderr, d.Error())
+	}
+
 	if err != nil {
 		return "", fmt.Errorf("compilation error: %w", err)
 	}

@@ -1,0 +1,32 @@
+; 明示 match：nil/err 關鍵字形臂＋裸尾臂（else）——鏡像 Go lowering.go buildItBindingForArm
+;   err/nil 臂（緊接 `->`）的 it 合成綁定帶 type:<變體> + armBinding:true；
+;   裸尾 `-> expr`＝前一 if 的 alternative（BlockStatement 直接作 else），不另造條件臂。
+a = [1, 2, 3]
+v = a.at(0)
+v: {
+    nil -> print('nil')
+
+    -> print('ok')
+}
+
+; err/nil/通配三臂：kvar 偵測 + wildcard 區塊作 else
+w = a.at(1)
+w: {
+    err -> print('err')
+
+    nil -> print('nil')
+
+    -> print('other')
+}
+
+; 非關鍵字型樣臂：普通 synthetic 綁定（不带 armBinding），區塊臂形式
+n = a.at(2)
+n: {
+    1 -> {
+        print('one')
+    }
+
+    -> {
+        print('other')
+    }
+}

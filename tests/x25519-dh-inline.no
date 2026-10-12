@@ -15,10 +15,10 @@ parse-hex-into = (hex-str str, target key-holder) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hi = hex-str[i * 2]
+        hi char = hex-str[i * 2r]
 
         #{overflow=wrap}
-        lo = hex-str[i * 2 + 1]
+        lo char = hex-str[i * 2r]
         hi-v = 0
         lo-v = 0
         {
@@ -61,10 +61,10 @@ test-dh = () (pass bool) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hi = alice-hex[i * 2]
+        hi char = alice-hex[i * 2x]
 
         #{overflow=wrap}
-        lo = alice-hex[i * 2 + 1]
+        lo char = alice-hex[i * 2x]
         hi-v = 0
         lo-v = 0
         {
@@ -103,10 +103,10 @@ test-dh = () (pass bool) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hi = bob-hex[i * 2]
+        hi char = bob-hex[i * 2x]
 
         #{overflow=wrap}
-        lo = bob-hex[i * 2 + 1]
+        lo char = bob-hex[i * 2x]
         hi-v = 0
         lo-v = 0
         {

@@ -9,10 +9,10 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hi = hex-str[i * 2]
+        hi char = hex-str[i * 2r]
 
         #{overflow=wrap}
-        lo = hex-str[i * 2 + 1]
+        lo char = hex-str[i * 2r]
         hi-v = 0
         lo-v = 0
         {

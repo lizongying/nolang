@@ -83,8 +83,17 @@ func TestSpawnArgRetainTakenForLiveUnwrittenVec(t *testing.T) {
 	if !mod.spawnArgRetains[arg] {
 		t.Fatalf("value %d is not in spawnArgRetains; the share was not taken for a live, never-written argument", arg)
 	}
-	if n := dropsOf(mod, "main", arg); n != 1 {
-		t.Errorf("main has %d OpDrop of the shared argument %d, want exactly 1 (the caller's release)", n, arg)
+	// 按**每条执行路径**計數（見 dropsPerPath 的註解）：D6 把 `m = a[1]` 降級成
+	// 「界比較 + 兩條分支」，釋放被複製到各分支一次，全函式總數因此不再等於
+	// 「執行時釋放幾次」。不變量本身沒變 —— 任一條路徑仍須恰好釋放一次。
+	counts := dropsPerPath(mod, "main", arg)
+	if len(counts) == 0 {
+		t.Fatalf("no return path found in main; CFG shape changed unexpectedly")
+	}
+	for _, n := range counts {
+		if n != 1 {
+			t.Errorf("some execution path of main has %d OpDrop of the shared argument %d, want exactly 1 on every path (the caller's release); paths=%v", n, arg, counts)
+		}
 	}
 	ir, err := mod.EmitLLVM()
 	if err != nil {

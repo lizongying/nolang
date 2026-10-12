@@ -157,16 +157,23 @@ decode = (s str, table str) (out ?[]byte) {
     #{overflow=wrap}
     (i + 4 <= n) {
 
-        v0 = b64-val(s[i], table)
+        ; D6：`s[i]` 的結果是 ?char。b64-val 吃的是 i64，option 不能隱式解包，
+        ; 這裡要的仍是舊的行為（plain char，越界 -1 落不到任何分支），故先以
+        ; 顯式 `char` 型別取出再傳入（註解留在算術那一行，行為不變）。
+        c0 char = s[i]
+        v0 = b64-val(c0, table)
 
         #{overflow=wrap}
-        v1 = b64-val(s[i + 1], table)
+        c1 char = s[i + 1]
+        v1 = b64-val(c1, table)
 
         #{overflow=wrap}
-        v2 = b64-val(s[i + 2], table)
+        c2 char = s[i + 2]
+        v2 = b64-val(c2, table)
 
         #{overflow=wrap}
-        v3 = b64-val(s[i + 3], table)
+        c3 char = s[i + 3]
+        v3 = b64-val(c3, table)
         v0 < 0 || v1 < 0 -> {
             out = err('invalid base64 character')
             return

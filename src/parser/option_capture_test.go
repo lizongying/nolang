@@ -154,11 +154,16 @@ func TestCaptureRootSafeIndex(t *testing.T) {
 	}
 }
 
-// TestCaptureRootSafeIndexGatedOutOfOptionFunc 釘住閘門：非 option 結果的函式
-// （以及頂層指令稿）內，裸 `a = v[i]` 維持舊行為（純量元素型別，不改寫成
-// option）—— 否則之後以普通值使用 a 的地方（呼叫引數、結構體欄位）會踩到
-// option→純量尚未支援的 codegen 路徑。
-func TestCaptureRootSafeIndexGatedOutOfOptionFunc(t *testing.T) {
+// TestCaptureRootSafeIndexAppliesOutsideOptionFunc 釘住 D6 捕獲加寬：**非**
+// option 結果的函式（以及頂層指令稿）內，裸 `a = v[i]` 現在也照常捕獲 ——
+// 閘門 `enclosingFuncHasOptResult()` 已移除，索引捕獲全函式生效（統一規則：
+// 索引讀取一律產生 option，與函式結果型別無關）。
+//
+// 🔴 2026-10-12 勘誤：本例原名 TestCaptureRootSafeIndexGatedOutOfOptionFunc，
+// 斷言「a 維持純量元素型別、不改寫」。D6 放寬後舊斷言失效（預期 `a` 為 `?i64`
+// 且生成 `__cap_1`）。保留此案例作為**新行為的迴歸釘**，並在下方補一條
+// D7-R1 的對照：可證明界內的定長陣列讀取不被捕獲。
+func TestCaptureRootSafeIndexAppliesOutsideOptionFunc(t *testing.T) {
 	const src = `f = (v []i64, i i64) {
     a = v[i]
     print(a)
@@ -168,11 +173,36 @@ func TestCaptureRootSafeIndexGatedOutOfOptionFunc(t *testing.T) {
 	if a == nil {
 		t.Fatal("missing a")
 	}
-	if a.Type != nil && strings.HasPrefix(typeString(a.Type), "?") {
-		t.Fatalf("a type = %v, want plain element type (capture gated off)", typeString(a.Type))
+	if a.Type == nil || !strings.HasPrefix(typeString(a.Type), "?") {
+		t.Fatalf("a type = %v, want ?i64 (capture widened to plain functions)", typeString(a.Type))
+	}
+	// 根就是索引讀取時走「根為索引」路徑：直接推斷 ?T，不落地成 __cap_N 暫存
+	// （暫存只在索引嵌在複合運算式裡、需要先算出來時才生成）。
+	if got := capTmpNames(body); len(got) != 0 {
+		t.Fatalf("root-index capture should infer the type without a __cap_N temp, got %v", got)
+	}
+}
+
+// TestCaptureRootProvablyInBoundsIndexNotCaptured（D7-R1 對照）：同樣是裸索引
+// 讀取，但基底是**定長陣列 + 界內下標**（bounds.go 可證明在界內）→ 不產生
+// option、不捕獲、`a` 維持純量型別。這是「可證明安全就消除 option 包裝」的
+// 落地點，也是本檔兩條案例的分界。
+func TestCaptureRootProvablyInBoundsIndexNotCaptured(t *testing.T) {
+	const src = `f = (i i64) {
+    a [4]i64 = [1, 2, 3, 4]
+    b = a[1]
+    print(b)
+}`
+	body := parseFnBody(t, src, "f")
+	b := findLet(body, "b")
+	if b == nil {
+		t.Fatal("missing b")
+	}
+	if b.Type != nil && strings.HasPrefix(typeString(b.Type), "?") {
+		t.Fatalf("b type = %v, want plain element type (provably in bounds)", typeString(b.Type))
 	}
 	if got := capTmpNames(body); len(got) != 0 {
-		t.Fatalf("no capture expected outside option-result functions, got %v", got)
+		t.Fatalf("provably-in-bounds read must not capture, got %v", got)
 	}
 }
 
@@ -286,11 +316,18 @@ func TestCaptureSkippedCases(t *testing.T) {
 		{
 			// D1 + D7：外層 `#{overflow=wrap}` 不再讓臂體免於捕獲。臂體內的兩個
 			// 安全索引 `v[i]` / `v[i+1]`（v: []i64，i 為參數）各自成為可錯源，
-			// 被就地捕獲 → w 推斷為 ?i64、生成 2 個 __cap_N。
+			// 被就地捕獲 → w 推斷為 ?i64、生成 3 個 __cap_N。
 			//
-			// 註：`<<` 與 `|` 不屬 D6 的 `+ - * / %`，故運算子本身不產生 option；
-			// 觸發源是索引讀取。此案例原為 AES key-expand 的「靜默漏檢」迴歸，
-			// 統一規則下改為顯式捕獲（遷移由 `no fmt --fix=unwrap` 處理）。
+			// 🔴 2026-10-12 勘誤：原本 wantCap=2。實測 `v[i]`+`v[i]` 得 2、
+			// `v[i]`+`v[i+1]` 得 3 —— 多出的一個來自**索引表達式 `i + 1` 本身**：
+			// D6 把 `+` 也列為可錯源，`i + 1` 產生 ?i64，作為索引餵給 `v[...]`
+			// 時同樣被收集進捕獲集合。（`v[i]` / `v[i+1]` 單獨出現時計數為 0 ——
+			// 單一可錯源走的是「根為索引」路徑，不落地成 __cap_N 暫存；這裡的 3
+			// 來自 `<<`/`|` 組合出的複合運算式使兩處索引都成為 compound 節點。）
+			//
+			// 註：`<<` 與 `|` 不屬 D6 的 `+ - * / %`，故運算子本身不產生 option。
+			// 此案例原為 AES key-expand 的「靜默漏檢」迴歸，統一規則下改為顯式
+			// 捕獲（遷移由 `no fmt --fix=unwrap` 處理）。
 			name: "enclosing overflow annotation no longer covers arm bodies",
 			src: `f = (v []i64, i i64) (r ?i64) {
     #{overflow=wrap}
@@ -301,7 +338,7 @@ func TestCaptureSkippedCases(t *testing.T) {
         }
     }
 }`,
-			varName: "w", wantType: "?i64", wantCap: 2,
+			varName: "w", wantType: "?i64", wantCap: 3,
 		},
 		{
 			name: "explicit plain annotation is user intent",

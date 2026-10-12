@@ -74,7 +74,8 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; 注意：n==0 時所有 i<n 條件均為 false，最終指派使用預設值
     n >= 2 -> {
 
-        c2 = spec[1]
+        ; D6：`spec[k]` 的結果是 ?char；這裡要的是舊的 plain char 行為，故顯式標註 char。
+        c2 char = spec[1]
         c2 == 60 || c2 == 62 || c2 == 61 || c2 == 94 -> {
 
             fill-v = spec[0]
@@ -86,7 +87,8 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; align only (no fill)
     i == 0 && n > 0 -> {
 
-        c0 = spec[0]
+        ; D6：`spec[k]` 的結果是 ?char；這裡要的是舊的 plain char 行為，故顯式標註 char。
+        c0 char = spec[0]
         c0 == 60 || c0 == 62 || c0 == 61 || c0 == 94 -> {
             align-v = c0
             i = 1
@@ -96,7 +98,8 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; sign: + - 或空格
     i < n -> {
 
-        c = spec[i]
+        ; D6：`spec[k]` 的結果是 ?char；這裡要的是舊的 plain char 行為，故顯式標註 char。
+        c char = spec[i]
         c == 43 || c == 45 || c == 32 -> {
 
             sign-v = c
@@ -148,7 +151,8 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; grouping: , 或 _
     i < n -> {
 
-        c = spec[i]
+        ; D6：`spec[k]` 的結果是 ?char；這裡要的是舊的 plain char 行為，故顯式標註 char。
+        c char = spec[i]
         c == 44 || c == 95 -> {
 
             grouping-v = c

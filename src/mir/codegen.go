@@ -5490,6 +5490,22 @@ func (c *codegen) emitCast(inst *Inst) error {
 	// `byte`/`u8` zero-extend (see coerceInt); only genuinely signed widths
 	// sign-extend. Note `i8` is zero-extended too — MIR maps byte/u8/i8 onto
 	// the same LLVM i8, and unsigned bytes dominate the corpus.
+	// signed := ... (below)
+	//
+	// NARROWING must be `trunc`, and it used NOT TO BE HANDLED AT ALL: emitCast
+	// only ever emitted sext/zext, which LLVM rejects outright for i64 -> i32
+	// ("invalid cast opcode"). No existing producer could reach it, because
+	// every cast the language emitted was widening; D6's option-wrapped code
+	// point read is the first narrowing one — it reads at i64 to keep the
+	// @nolang.utf8_cp_at sentinel (-1) intact and then narrows to `char` (i32).
+	// See lowerSafeUTF8Index.
+	if fw, fok := intWidth(srcT); fok {
+		if tw, tok := intWidth(dstLT); tok && fw > tw {
+			c.sb.WriteString(fmt.Sprintf("  %%c%d = trunc %s %s to %s\n", inst.Dst, srcT, srcV, dstLT))
+			c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", dstLT, inst.Dst, dstLT, slot))
+			return nil
+		}
+	}
 	signed := strings.HasPrefix(srcRaw, "i") && srcRaw != "i1" && srcRaw != "i8"
 	if signed {
 		c.sb.WriteString(fmt.Sprintf("  %%c%d = sext %s %s to %s\n", inst.Dst, srcT, srcV, dstLT))

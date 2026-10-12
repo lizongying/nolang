@@ -1215,7 +1215,7 @@ func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, "write result to source file")
 	diffMode := fs.Bool("d", false, "output colored diff instead of formatted result")
-	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), or 'match' (adds the missing nil/err arms to non-exhaustive option matches)")
+	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + `x = x-opt: { ok -> it -> }` on the following lines)")
 	loopStyle := fs.String("loop-style", "prefix", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'")
 	fs.Usage = func() {
 		fmt.Println("Usage: no fmt [flags] <file|dir>")
@@ -1561,8 +1561,11 @@ func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
 		fx, ferr := fixMatchArmsFixes(arg)
 		return fx, ferr
 	}
+	if fixClass == "unwrap" {
+		return fixUnwrapFixes(arg), nil
+	}
 	if fixClass != "overflow" {
-		return nil, fmt.Errorf("unknown fix class %q (supported: overflow, redundant, match)", fixClass)
+		return nil, fmt.Errorf("unknown fix class %q (supported: overflow, redundant, match, unwrap)", fixClass)
 	}
 	info, err := os.Stat(arg)
 	if err != nil {

@@ -1,17 +1,26 @@
 package checker
 
-// deprecated.go — std 弃用函數呼叫提示（HINT）。
+// deprecated.go — 弃用语法/函數的提示。
 //
-// std 中部分早期以「自由函數」形式提供的工具，後來都有了等價的方法形式
-// （接收者即參數）。舊函數保留兼容不刪除，但 lint 在每個呼叫點發出 HINT，
-// 建議改用新方法。例：math.char-to-str(c) 的取代是 char.to-str()（std/char.no），
-// 呼叫點可改寫為 c.to-str()。
+// 兩類棄用：
+//
+//  1. std 棄用函數呼叫（`nolang-deprecated-call`，HINT）：早期以「自由函數」形式
+//     提供的工具後來有了等價的方法形式（接收者即參數）。舊函數保留兼容不刪除，
+//     但 lint 在每個呼叫點發出 HINT，建議改用新方法。例：math.char-to-str(c) 的
+//     取代是 char.to-str()（std/char.no），呼叫點可改寫為 c.to-str()。
+//
+//  2. 複合賦算運算符（`nolang-deprecated-compound-assign`，WARNING）：`+=` / `-=` /
+//     `*=` / `/=` / `%=` 五個。統一 option 規則下 `a + 1` 的型別是 `?T`，這些運算符
+//     的語義等價於 `a ?= a + 1`（解包 + 失敗上拋），parser 已直接降糖成
+//     UnwrapAssignStatement，所以**保存後經 no fmt 就會自動重寫**；lint 只負責在
+//     源碼裡還是舊寫法時提示一次。位元複合賦算（`&=` 等）不產生 option，不在此列。
 //
 // callee 識別與 listdir.go 相同：未合併（LSP/單測）時 `math.char-to-str`
 // 是 DotExpression；模組合併（no vet）後可能成為 Value="math.char-to-str"
 // 的點分 Identifier，故統一按「點號最後一段（base）」匹配，兩種形態都能命中。
 //
-// 嚴重級別：HINT（不阻斷編譯；--strict 升級為 error）。
+// 嚴重級別：棄用函數 HINT（不阻斷編譯；--strict 升級為 error）；複合賦算 WARNING
+// （按用戶定案：LSP 提示 warning，不阻斷）。
 
 import (
 	"fmt"
@@ -21,6 +30,9 @@ import (
 )
 
 const deprecatedCallTraceID = "nolang-deprecated-call"
+
+// deprecatedAssignTraceID 用於複合賦算運算符（`+=` 一族）的棄用提示。
+const deprecatedAssignTraceID = "nolang-deprecated-compound-assign"
 
 // deprecatedCallReplacements 是「棄用函數 base 名 → 替代信息」表。
 // 新增棄用項只需在此加一行，RunAllLints 無需改動。
@@ -107,6 +119,36 @@ func (v *deprecatedVisitor) walkStmt(s parser.Statement, file, curFn string) {
 	case *parser.MultiAssignStatement:
 		v.walkExpr(st.Value, file, curFn)
 	case *parser.UnwrapAssignStatement:
+		// 複合賦算降糖來的（DeprecatedOp 非空）：提示廢棄 + 給出改寫形式。
+		if st.DeprecatedOp != "" {
+			target := st.TargetName()
+			// Value 恆為 parser 降糖出的 `<target> <op> <expr>`，直接還原而非
+			// 泛印表達式（避免依賴通用 expression printer）。
+			op := "+"
+			rhs := ""
+			if inf, ok := st.Value.(*parser.InfixExpression); ok {
+				op = inf.Operator
+				if inf.Right != nil {
+					rhs = fmt.Sprintf("%v", inf.Right)
+				}
+			}
+			repl := fmt.Sprintf("%s ?= %s %s %s", target, target, op, rhs)
+			msg := fmt.Sprintf("`%s` 已廢棄，請改寫為 `%s`（複合賦算的右式現在是 ?T，統一走 ?= 解包/上拋）；no fmt 保存時也會自動重寫",
+				st.DeprecatedOp, repl)
+			pos := st.Pos()
+			end := pos.Column + len(target)
+			if st.Name != nil {
+				pos = st.Name.Pos()
+			}
+			v.results = append(v.results, ValidateResult{
+				Line:      pos.Line,
+				Column:    pos.Column,
+				EndColumn: end,
+				File:      file,
+				Message:   msg,
+				TraceID:   deprecatedAssignTraceID,
+			})
+		}
 		v.walkExpr(st.Value, file, curFn)
 	case *parser.ReturnStatement:
 		v.walkExpr(st.ReturnValue, file, curFn)

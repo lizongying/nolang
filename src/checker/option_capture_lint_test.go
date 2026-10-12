@@ -231,11 +231,14 @@ func TestCaptureNoCapturePointStillReported(t *testing.T) {
 			// 非 option 函式內的根索引：捕獲閘門（enclosingFuncHasOptResult）
 			// 不成立，維持純量元素型別 → 越界 option 未被處理。
 			name: "root_index_outside_option_fn",
+			// 2026-10-12 勘誤：原本斷言 idxhndld=1。D6 捕獲加寬後 `a = arr[i]`
+			// 就地捕獲成 `a ?i64`，產生處 HINT 被吸收；`a` 從未被讀取，只剩
+			// optunuse ERROR（D2：未消費才是唯一該阻斷的診斷）。
 			src: `f = (arr []i64, i i64) () {
     a = arr[i]
     io.outln('done')
 }`,
-			traces: map[string]int{"idxhndld": 1},
+			traces: map[string]int{"idxhndld": 0, "optunuse": 1},
 		},
 		{
 			// return / 結果參數賦值：非 LetStatement 綁定形狀，無捕獲點。

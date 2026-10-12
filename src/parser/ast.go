@@ -577,6 +577,12 @@ type UnwrapAssignStatement struct {
 	// 或 `target = it`（AssignExpression）。
 	Target Expression
 	Value  Expression
+	// DeprecatedOp 非空表示這條 `?=` 是由「複合賦值運算符」降糖而來 —— 用戶原本
+	// 寫的是 `a += 1` / `a -= 1` / `a *= 1` / `a /= 1` / `a %= 1`。這五個運算符已
+	// 廢棄：統一 option 規則下右式是 `?T`，語義等價於 `a ?= a + 1`，所以 parser 直接
+	// 降糖成 UnwrapAssignStatement（no fmt 因此會輸出重寫後的寫法）。原運算符字面量
+	// 只保留給 checker 發廢棄提示用；lowering / codegen 一律不讀。
+	DeprecatedOp string
 	CommentedNode
 }
 
