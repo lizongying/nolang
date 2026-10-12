@@ -3207,7 +3207,15 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		})
 	} else {
 		// No option result param — emit a parse error placeholder body.
-		l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column))
+		//
+		// 複合賦算降糖來的（DeprecatedOp != ""）不重複報 generic 錯誤：parser 在
+		// 函式定義解析完時已就「所在函式沒有 option 結果參數」發過一條更具體的
+		// ERROR（含 `a + 1: { ok -> a = it, -> }` 這兩種可寫法，見
+		// flushCompoundAssigns）。同一行再補一句「`?=` can only be used …」只會
+		// 讓用戶以為解決方案是去掉 `?=`，而去掉之後仍是條死路。
+		if uas.DeprecatedOp == "" {
+			l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column))
+		}
 		arms = append(arms, matchArm{
 			condition:     &Identifier{Token: tok, Value: "nil"},
 			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},

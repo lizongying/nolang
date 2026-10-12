@@ -159,7 +159,8 @@ mysql-pkt-send = (fd fd, seq i64, payload str, payload-len i64) (ok bool) {
 ; 返回 val=整數值, is-null=是否為 NULL, new-pos=新位置
 mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
     is-null = false
-    first = data[pos]
+    ; D6：`data[pos]` 現在推斷為 `?char`；顯式 plain 型別把結果拉回 char
+    first char = data[pos]
 
     ; 預設：< 251 的單位元組值
     val = first

@@ -1,0 +1,17 @@
+; postfix `(...)` range 切片——鏡像 Go expr.go LPAREN 臂 isRange 探視 + parseSliceExpression
+;   `(` 後為 ELLIPSIS 或 INT/IDENT 緊接 ELLIPSIS ⇒ SliceExpression{Range}（leftInc=false）；
+;   否則普通 CallExpression。閉合 `]`⇒rightInc=true（印出），`)`⇒false（預設不印）。
+x = [10, 20, 30, 40, 50]
+a = x(1..4]
+b = x(1..4)
+c = x(..4)
+d = x(2..)
+
+; 探視失敗：call 形不受影響
+s = 'HelloWorld'
+n = s.len-bytes()
+
+; 函數呼叫位置 ident..ident 亦走 range（Go: IDENT + ELLIPSIS）
+lo = 1
+hi = 3
+e = x(lo..hi]

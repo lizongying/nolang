@@ -118,10 +118,10 @@ test-scalarmult-base = () (pass bool) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hi char = hex-str[i * 2r]
+        hi char = hex-str[i * 2]
 
         #{overflow=wrap}
-        lo char = hex-str[i * 2r]
+        lo char = hex-str[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {

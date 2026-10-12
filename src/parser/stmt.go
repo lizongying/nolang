@@ -856,11 +856,14 @@ var compoundAssignOps = map[lexer.TokenType]string{
 }
 
 // parseCompoundAssignStatement 解析已廢棄的 `a += 1` 一族（currentToken = IDENT，
-// peekToken = 複合賦算 token），降糖成 `a ?= a + 1`：
+// peekToken = 複合賦算 token），一律先降糖成 `a ?= a + 1`：
 //
 //   - 語義：UnwrapAssignStatement，與手寫 `?=` 同一條 lowering / codegen 路徑；
-//   - 提示：DeprecatedOp 記下原運算符，checker 逐點發 WARNING；
-//   - 自動修復：no fmt 渲染 surface AST，輸出的正是重寫後的 `a ?= a + 1`。
+//   - 診斷：DeprecatedOp 記下原運算符，**等所屬函式解析完**才定案發言
+//     （見 flushCompoundAssigns）—— 所在函式有 option 結果參數才是合法的上拋，
+//     沒有就只能由用戶自己寫 match；
+//   - 自動修復：no fmt 渲染 surface AST，輸出的正是重寫後的 `a ?= a + 1`
+//     （僅在合法的那條路上；另一條路是 parse ERROR，fmt 整份不動）。
 //
 // 只支援識別字 LHS。`a[i] += 1` / `d.f += 1` 會重複求值下標（且下標自己現在就是
 // option），不給它開降糖後門，維持原來的 parse error。
@@ -880,19 +883,7 @@ func (p *Parser) parseCompoundAssignStatement() Statement {
 		return nil
 	}
 
-	// 解析期就發一條 WARNING：lowering 會把降糖結果展開成區塊，CLI 管線
-	// （no vet / no build）到 Lint 階段已看不到 surface AST，那時只剩這條。
-	p.diags = append(p.diags, Diagnostic{
-		Filename: p.Filename,
-		Pos:      lexer.Position{Line: nameTok.Line, Column: nameTok.Column},
-		Severity: SeverityWarning,
-		Code:     WarnCompoundAssign,
-		Message: fmt.Sprintf(
-			"`%s` is deprecated; it is rewritten to `%s ?= %s %s <expr>` (the right side of a compound assignment is now ?T, so errors propagate through `?=`) — `no fmt` rewrites it on save",
-			opTok.Literal, nameTok.Literal, nameTok.Literal, op),
-	})
-
-	return &UnwrapAssignStatement{
+	stmt := &UnwrapAssignStatement{
 		Token: opTok,
 		Name:  &Identifier{Token: nameTok, Value: nameTok.Literal},
 		Value: &InfixExpression{
@@ -902,6 +893,59 @@ func (p *Parser) parseCompoundAssignStatement() Statement {
 			Right:    val,
 		},
 		DeprecatedOp: opTok.Literal,
+	}
+	// 先掛在 pending 上：警告還是錯誤、文案怎麼寫，取決於所屬函式的結果型別，
+	// 而那要等函式定義（含結果參數）解析完才知道。
+	p.pendingCompoundAssigns = append(p.pendingCompoundAssigns, stmt)
+	return stmt
+}
+
+// flushCompoundAssigns 對「剛解析完的函式主體」收集到的複合賦算語句逐條定案：
+//
+//   - def 有 option 型別的結果參數 → 降糖成的 `a ?= a + 1` 合法（失敗即上拋），
+//     發棄用 WARNING（W_COMPOUND_ASSIGN）；
+//   - 否則 → **不代為降糖**：非 ok 分支怎麼處理（保留原值？歸零？記日誌？）只能
+//     用戶自己決定，編譯器不能替她選。發 ERROR，並把兩種可寫法都印出來。
+//
+// def 為 nil 表示函式外的頂層程式碼（同樣沒有 option 結果可上拋）。
+// 以 save/restore 包住每個函式主體的解析來保證歸屬正確（見 decl.go）。
+func (p *Parser) flushCompoundAssigns(def *FunctionDefinition) {
+	pending := p.pendingCompoundAssigns
+	p.pendingCompoundAssigns = nil
+	if len(pending) == 0 {
+		return
+	}
+
+	hasOptionResult := false
+	if def != nil {
+		for _, res := range def.Results {
+			if res != nil && res.Type != nil && strings.HasPrefix(typeString(res.Type), "?") {
+				hasOptionResult = true
+				break
+			}
+		}
+	}
+
+	for _, uas := range pending {
+		target, op, rhs, ok := uas.CompoundParts()
+		if !ok {
+			continue
+		}
+		pos := lexer.Position{Line: uas.Token.Line, Column: uas.Token.Column}
+		if uas.Name != nil {
+			pos = lexer.Position{Line: uas.Name.Token.Line, Column: uas.Name.Token.Column}
+		}
+		if hasOptionResult {
+			p.saveWarningWithCode(WarnCompoundAssign, fmt.Sprintf(
+				"line %d, column %d: `%s %s= %s` 已废弃；所在函数结果是 option，保存时 `no fmt` 会自动改写为 `%s ?= %s %s %s`（复合赋值的右式现在是 ?T，走 `?=` 解包/上抛）",
+				pos.Line, pos.Column, target, op, rhs, target, target, op, rhs))
+			continue
+		}
+		p.saveError(fmt.Sprintf(
+			"line %d, column %d: `%s %s= %s` 已废弃，且所在函数的结果不是 option，无法上抛：请改写成 `%s %s %s: { ok -> %s = it, -> }`（非 ok 分支如何处理由你决定），或把结果参数改成 `?T` 后写 `%s ?= %s %s %s`",
+			pos.Line, pos.Column, target, op, rhs,
+			target, op, rhs, target,
+			target, target, op, rhs))
 	}
 }
 

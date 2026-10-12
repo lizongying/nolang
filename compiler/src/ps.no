@@ -1311,43 +1311,83 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
         handled = 0
         nt == tok.LPAREN -> {
 
-            ; 消耗 LPAREN，依逗號分隔解析实参，直到 RPAREN
-            ps-bump(p)
-            args []i64 = with-cap(4)
-            ps-skip-trivia(p)
-            (ps-peek(p) != tok.RPAREN) {
-                pos0 = p.pos
-                a = ps-parse-expr-prec(t, p, 0)
-                a > 0 -> args.push(a)
-                ps-skip-trivia(p)
-                ps-peek(p) == tok.COMMA -> {
-                    ps-bump(p)
-                    ps-skip-trivia(p)
+            ; Go expr.go LPAREN 臂：先探視 `(` 後是否 range 切片（ELLIPSIS，或 INT/IDENT 緊接 ELLIPSIS），
+            ;   是 ⇒ parseSliceExpression（tok=LPAREN ⇒ leftInc=false，右閉 `]`⇒rightInc=true）；否 ⇒ 普通 CALL。
+            t1 = ps-peek-at(p, 1)
+            t2 = ps-peek-at(p, 2)
+            isRng = t1 == tok.ELLIPSIS || (t1 == tok.INT && t2 == tok.ELLIPSIS) || (t1 == tok.IDENT && t2 == tok.ELLIPSIS)
+            isRng == 1 -> {
+                ps-bump(p); 消費 (
+                pst0 = 0
+                pen0 = 0
+                phas = ps-peek(p) != tok.ELLIPSIS
+                phas == 0 -> {
+                    ps-bump(p); 消費 ..
+                    ps-peek(p) != tok.RBRACKET && ps-peek(p) != tok.RPAREN -> pen0 = ps-parse-expr-prec(t, p, 0)
                 }
-
-                ; 防呆：未消耗任何 token 则前进一步避免永转
-                p.pos == pos0 -> ps-bump(p)
+                phas == 1 -> {
+                    pst0 = ps-parse-expr-prec(t, p, 0)
+                    ps-peek(p) == tok.ELLIPSIS -> {
+                        ps-bump(p); 消費 ..
+                        ps-peek(p) != tok.RBRACKET && ps-peek(p) != tok.RPAREN -> pen0 = ps-parse-expr-prec(t, p, 0)
+                    }
+                }
+                ps-skip-trivia(p)
+                pcl = ps-peek(p)
+                pri = 'false'
+                pcl == tok.RBRACKET -> pri = 'true'
+                ps-bump(p); 消費閉合 `]` 或 `)`
+                prg = ast.add(t, asp.K_RANGE_EXPRESSION)
+                ast.set-slot(t, prg, 0, ast.put-str(t, 'false')); leftInc（開 `(`）
+                ast.set-slot(t, prg, 1, ast.put-str(t, pri)); rightInc
+                ast.kid-add(t, prg, pst0)
+                ast.kid-add(t, prg, pen0)
+                pse = ast.add(t, asp.K_SLICE_EXPRESSION)
+                ast.kid-add(t, pse, idx)
+                ast.kid-add(t, pse, prg)
+                idx = pse
+                handled = 1
             }
-            ps-expect(p, tok.RPAREN)
+            isRng == 0 -> {
 
-            ; arena 順序：Function (idx) 与 args 子树已完成 → add 父后依序 kid-add
-            call = ast.add(t, asp.K_CALL_EXPRESSION)
+                ; 消耗 LPAREN，依逗號分隔解析实参，直到 RPAREN
+                ps-bump(p)
+                args []i64 = with-cap(4)
+                ps-skip-trivia(p)
+                (ps-peek(p) != tok.RPAREN) {
+                    pos0 = p.pos
+                    a = ps-parse-expr-prec(t, p, 0)
+                    a > 0 -> args.push(a)
+                    ps-skip-trivia(p)
+                    ps-peek(p) == tok.COMMA -> {
+                        ps-bump(p)
+                        ps-skip-trivia(p)
+                    }
 
-            ; slot 0 = "args" 纯量的预渲染（kvc=NON-ZERO 政策：0 不印）
-            ast.set-slot(t, call, 0, ast.put-str(t, args.len().to-str()))
+                    ; 防呆：未消耗任何 token 则前进一步避免永转
+                    p.pos == pos0 -> ps-bump(p)
+                }
+                ps-expect(p, tok.RPAREN)
 
-            ; count slot 0 = KIDS 迭代次数（Arguments 切片长度）
-            ast.set-count(t, call, 0, args.len())
-            ast.kid-add(t, call, idx)
-            k = 0
-            (k < args.len()) {
-                ast.kid-add(t, call, args[k])
+                ; arena 順序：Function (idx) 与 args 子树已完成 → add 父后依序 kid-add
+                call = ast.add(t, asp.K_CALL_EXPRESSION)
 
-                #{overflow=wrap}
-                k = k + 1
+                ; slot 0 = "args" 纯量的预渲染（kvc=NON-ZERO 政策：0 不印）
+                ast.set-slot(t, call, 0, ast.put-str(t, args.len().to-str()))
+
+                ; count slot 0 = KIDS 迭代次数（Arguments 切片长度）
+                ast.set-count(t, call, 0, args.len())
+                ast.kid-add(t, call, idx)
+                k = 0
+                (k < args.len()) {
+                    ast.kid-add(t, call, args[k])
+
+                    #{overflow=wrap}
+                    k = k + 1
+                }
+                idx = call
+                handled = 1
             }
-            idx = call
-            handled = 1
         }
         nt == tok.DOT -> {
             ps-bump(p)
@@ -1378,7 +1418,7 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
                 ; [..end] / [..]：無 start
                 ps-bump(p)
                 isRange = 1
-                ps-peek(p) != tok.RBRACKET -> en = ps-parse-expr-prec(t, p, 0)
+                ps-peek(p) != tok.RBRACKET && ps-peek(p) != tok.RPAREN -> en = ps-parse-expr-prec(t, p, 0)
             }
             hasStart == 1 -> {
 
@@ -1387,7 +1427,7 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
                 ps-peek(p) == tok.ELLIPSIS -> {
                     ps-bump(p)
                     isRange = 1
-                    ps-peek(p) != tok.RBRACKET -> en = ps-parse-expr-prec(t, p, 0)
+                    ps-peek(p) != tok.RBRACKET && ps-peek(p) != tok.RPAREN -> en = ps-parse-expr-prec(t, p, 0)
                 }
             }
             ps-skip-trivia(p)

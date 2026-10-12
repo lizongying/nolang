@@ -2,6 +2,10 @@ package checker
 
 // compound_assign_lint_test.go — `+=` 一族複合賦算的棄用提示（WARNING）。
 //
+// 2026-10-13 定案的兩條路（見 parser/compound_assign_test.go）：
+//   - 所在函式結果是 option ⇒ WARNING（`a ?= a + 1` 可上拋，fmt 會自動重寫）；
+//   - 所在函式結果不是 option ⇒ parser 直接報 ERROR，lint 一條都不發。
+//
 // 這是 LSP 實時診斷路徑的迴歸釘：LSP 主解析保留 surface AST
 // （parser.SkipUnwrapLowering=true，見 lsp/documents.go），所以 checker 的
 // deprecated lint 看得到 parser 打上的 DeprecatedOp 標記；而 CLI 管線
@@ -28,6 +32,17 @@ func parseProgSurface(t *testing.T, src string) *parser.Program {
 		t.Fatalf("parse errors: %v", errs)
 	}
 	return prog
+}
+
+// parseProgSurfaceAllowErrors 與 parseProgSurface 相同，但容忍解析期錯誤 ——
+// 非 option 結果函式裡的複合賦算現在由 parser 直接報 ERROR（見
+// parser/compound_assign_test.go），而 LSP 仍要顯示 surface AST 上的 lint 結果，
+// 所以這條路徑必須能在有 parse error 的 program 上跑完。
+func parseProgSurfaceAllowErrors(t *testing.T, src string) *parser.Program {
+	t.Helper()
+	p := parser.New(lexer.New(src))
+	p.SkipUnwrapLowering = true
+	return p.ParseProgram()
 }
 
 // TestCompoundAssignWarnsOncePerSite 五個運算符各一次 WARNING，文案要點名原運算符、
@@ -87,6 +102,28 @@ func TestCompoundAssignWarnSeverityIsWarning(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no %s in RunAllLints output: %+v", deprecatedAssignTraceID, lints)
+	}
+}
+
+// TestCompoundAssignInPlainFunctionNoLint 非 option 結果函式裡的 `a += 1` 由
+// parser 報 ERROR（不是棄用警告，因為沒有 option 結果可以上拋），所以 checker
+// 的 deprecated lint 一條都不該發 —— 否則同一個 site 會被報兩次。
+func TestCompoundAssignInPlainFunctionNoLint(t *testing.T) {
+	src := `f = (x i64) () {
+    a i64 = x
+    a += 1
+    io.outln(a)
+}
+`
+	res := ValidateDeprecatedCalls(parseProgSurfaceAllowErrors(t, src))
+	if got := countTrace(res, deprecatedAssignTraceID); got != 0 {
+		t.Fatalf("plain-function compound assign must be a parser ERROR, not a lint warning, got %d: %+v", got, res)
+	}
+	lints := RunAllLints(parseProgSurfaceAllowErrors(t, src), LintOptions{SourcePath: "src/app.no"})
+	for _, l := range lints {
+		if l.TraceID == deprecatedAssignTraceID {
+			t.Errorf("RunAllLints must not emit %s for a plain-function compound assign: %+v", deprecatedAssignTraceID, l)
+		}
 	}
 }
 

@@ -2,7 +2,9 @@
 
 > 状态：**实施中**（M1a/M2 已落地；D7-R1 已落地：隐式验证 —— 可证明安全即消除 option 包装/解包/分支）；D9 空兜底臂
 > 雙態診斷已落地。M4（str/txt 索引 option 化）已落地 —— §11.14 記錄了它的實測遷移量；M5（`--fix=unwrap`）已落地，
-> §11.9 的 `rngidx` 已補上。**D10（複合賦算運算符廢棄 + 自動重寫）已落地。**
+> §11.9 的 `rngidx` 已補上。**D10（複合賦算運算符廢棄）已落地**：結果是 option 的函式裡
+> WARNING + `no fmt` 自動重寫為 `a ?= a + 1`；結果不是 option 的**報 ERROR 且不降糖**
+> （非 ok 分支只能用戶自己決定），見 §11.18。
 > M6 首批迁移完成 —— `src/std` 与 `tests/` 均 0 error。
 > 实测勘误见 §11，其中 §11.3/§11.8/§11.10 推翻了正文三处前提，§11.9 已大部分閉合，§11.15 是未閉合项）
 > 涉及层：parser / checker / mir / lsp / fmt / build / 语料迁移
@@ -24,7 +26,7 @@
 | D7-R1 | D7 的适用边界 | 只有**靜態可證明安全**的讀取才享受此优化：定長陣列 `[N]T` + 界內字面量/區間下標（`bounds.go`）。切片、`str`/`txt`、動態長度容器、跨函式不可見的下標**一律照常產生 option**。判定由 codegen / `no vet` / `no fmt` 三方共用同一份（`p.inBoundsIdx`），口徑不一致會造成「`no fmt` 刪了註解 → `no vet` 報錯」的假回歸。 |
 | D8 | match 穷尽性 | **规则不变**：必须能覆盖 `ok`/`nil`/`err`。但 `->` **兜底臂即可满足**，所以 **`nil`/`err` 臂可以不写**——`{ ok -> it, -> }` 合法，`{ ok -> it }`（无兜底）仍报 `must handle all branches`。注解不改变这一点。 |
 | D9 | 空 `->` 兜底臂的双态诊断 | 兜底臂**不能移除**（D8 穷尽性）、**也不改语法**（保留还有一层意义：未来可能出错、也可能正确，语法不用动）。编译器改为把状态告诉用户：可证明主体恒为 ok → **HINT** `arm-unreach`「这个分支不会走到」；无法证明 → **WARNING** `arm-should`「这个分支可能会走到，请决定它该做什么（如 `log('...')` / `print('...')`）」。两者都只提示、不阻断。 |
-| D10 | 复合赋算运算符 `+=` `-=` `*=` `/=` `%=` | **提示废弃 + 自动重写**。LSP / `no vet` / `no build` 在每個出現處發 **WARNING**（`nolang-deprecated-compound-assign` / `W_COMPOUND_ASSIGN`）；**保存時 `no fmt` 自動改寫**成 `a ?= a + 1`（等價：統一 option 規則下右式是 `?T`，走 `?=` 的解包 + 失敗上拋路徑）。實現上 parser 直接降糖成 `UnwrapAssignStatement`（`DeprecatedOp` 記下原運算符），formatter 渲染 surface AST 時輸出的就是重寫後的寫法。位元複合賦算（`&=` / `|=` / `<<=` …）不產生 option，**不在廢棄名單**；`a[i] += 1` / `d.f += 1` 也會重複求值下標，同樣不降糖（維持 parse error）。 |
+| D10 | 复合赋算运算符 `+=` `-=` `*=` `/=` `%=` | **提示废弃 +（僅在能上拋處）自動重寫**，按所在函式的結果型別分成兩條路（2026-10-13 用戶定案）：① **結果是 option** ⇒ 每個出現處發 **WARNING**（`nolang-deprecated-compound-assign` / `W_COMPOUND_ASSIGN`），**保存時 `no fmt` 自動改寫**成 `a ?= a + 1`（等價：統一 option 規則下右式是 `?T`，走 `?=` 的解包 + 失敗上拋路徑）；② **結果不是 option（或頂層）** ⇒ **ERROR，不降糖** —— 編譯器沒辦法替用戶決定非 ok 分支怎麼處理，只提示「可以這麼寫」：`a + 1: { ok -> a = it, -> }`，或把結果參數改成 `?T` 後寫 `a ?= a + 1`。實現上 parser 只在 option 結果函式裡把複合賦算降糖成 `UnwrapAssignStatement`（`DeprecatedOp` 記下原運算符），formatter 渲染 surface AST 時輸出的就是重寫後的寫法；非 option 分支只出診斷、AST 不動，所以 `no fmt` 對它原樣退回。位元複合賦算（`&=` / `|=` / `<<=` …）不產生 option，**不在廢棄名單**；`a[i] += 1` / `d.f += 1` 也會重複求值下標，同樣不降糖（維持 parse error）。 |
 
 ### D1 的直接后果（必须写进预期）
 
@@ -150,7 +152,7 @@ x = <产生 option 的表达式>      ; x 为新变量、无显式类型注解
 | 未标注索引读取绑定到新变量 | ERROR | **HINT** | `idxhndld` |
 | **option 既没上抛也没解包**（含"写了注解但没 match"） | — | **ERROR** | `optunuse`（新） |
 | 区间索引惯用法建议（`for i <- [0..N) { x = arr[i] }`） | — | **HINT**（建议 `for i <- arr { x = i }`） | `rngidx`（新） |
-| 复合赋算运算符 `a += 1` 一族（D10） | 原為 parse 後結構損壞（編譯期報錯） | **WARNING**（廢棄；`no fmt` 保存時自動重寫為 `a ?= a + 1`） | `nolang-deprecated-compound-assign`（LSP）/ `W_COMPOUND_ASSIGN`（parser 診斷） |
+| 复合赋算运算符 `a += 1` 一族（D10） | 原為 parse 後結構損壞（編譯期報錯） | 結果是 option 的函式裡：**WARNING**（廢棄；`no fmt` 保存時自動重寫為 `a ?= a + 1`）；結果不是 option（或頂層）：**ERROR**（提示 `a + 1: { ok -> a = it, -> }` 或改結果參數為 `?T` 再上拋，不降糖） | `nolang-deprecated-compound-assign`（LSP）/ `W_COMPOUND_ASSIGN`（parser 診斷） |
 | option 赋给 plain 变量 / 传给 plain 形参 | ~~ERROR~~ **实为静默接受** | **暂不变**（缺口未闭合，见 §11.3） | 既有 `ValidateTypes`（**不生效**） |
 
 > 🔴 末行是**勘误**：实测「option 赋给 plain 变量」既不报 `cannot assign` 也不报
@@ -671,9 +673,9 @@ f = () (r i64) {
 | `src/checker/discard_exempt_test.go` | 2026-10-12 D7-R1/D6 勘误：`TestBareIndexStillReportedWithoutDiscard` 原断言「报 `idxhndld`」，改为断言 `optunuse`（D6 捕獲加寬後產生處 HINT 被捕獲吸收），並改走 `RunAllLints`（`optunuse` 由 `ValidateUnhandledOverflow` 產出） |
 | `src/parser/option_capture_test.go` | `TestCaptureRootSafeIndexGatedOutOfOptionFunc` → `TestCaptureRootSafeIndexAppliesOutsideOptionFunc`（閘門 `enclosingFuncHasOptResult` 已删，改斷言 `a` 為 `?i64`；另新增 D7-R1 對照 `TestCaptureRootProvablyInBoundsIndexNotCaptured`）；`enclosing_overflow_annotation_no_longer_covers_arm_bodies` 的 `wantCap` 2 → 3 |
 | `src/build/lib_export_sem_test.go` | 末段断言不再看 `Severity`（D2 把 `ovf-int-default`/`ovfhndld` 都降 HINT），只看「第 4 行有没有报」；`checker` import 随之删除 |
-| `src/parser/compound_assign_test.go` | **D10 新增**：五個運算符各自降糖成 `UnwrapAssignStatement` + `DeprecatedOp`；解析期 `W_COMPOUND_ASSIGN` 警告逐條落位；兩組對照（`a[i] += 1` 與位元複合賦算**不**降糖、不警告，手寫 `?=` 不警告） |
-| `src/checker/compound_assign_lint_test.go` | **D10 新增**：WARNING 嚴重度經 `RunAllLints` 路由後仍是 WARNING；五個站點各一條、逐行定位；對照組守住「棄用函數 HINT 不被波及」與「手寫 `?=` 不報廢棄」 |
-| `src/fmt/compound_assign_test.go` | **D10 新增**：`no fmt` 把五個運算符重寫成 `a ?= a <op> <expr>`、冪等、右式可為任意表達式、`a[i] += 1` 不得被誤改寫 |
+| `src/parser/compound_assign_test.go` | **D10 新增**：五個運算符各自降糖成 `UnwrapAssignStatement` + `DeprecatedOp`；解析期 `W_COMPOUND_ASSIGN` 警告逐條落位（僅 option 結果函式）；兩組對照（`a[i] += 1` 與位元複合賦算**不**降糖、不警告，手寫 `?=` 不警告）；**普通函式／頂層 ⇒ ERROR** 且不得同時發警告、建議文案還原真實右式（`g(y) * 2`）、兩函式接連定義時各自按自己的結果型別定案 |
+| `src/checker/compound_assign_lint_test.go` | **D10 新增**：WARNING 嚴重度經 `RunAllLints` 路由後仍是 WARNING；五個站點各一條、逐行定位；**普通函式裡 0 條 lint**（那一路由 parser 報 ERROR，避免同一站點被報兩次）；對照組守住「棄用函數 HINT 不被波及」與「手寫 `?=` 不報廢棄」 |
+| `src/fmt/compound_assign_test.go` | **D10 新增**：`no fmt` 把五個運算符重寫成 `a ?= a <op> <expr>`、冪等、右式可為任意表達式、`a[i] += 1` 不得被誤改寫；**普通函式裡原樣退回**（輸出逐位元組等於輸入）並把 ERROR 透出來 |
 
 ### 11.8 🔴 §5.2「删除 `effOverflow`」被实测推翻：保留，但**只豁免 HINT**
 
@@ -946,26 +948,49 @@ golden 輸出不變），並把第二個迴圈的 `ch` 改名 `ch2`（同一函�
 
 ---
 
-### 11.18 D10 實測：複合賦算運算符廢棄 + 自動重寫（2026-10-13）
+### 11.18 D10 實測：複合賦算運算符廢棄 —— option 結果自動重寫，其餘報錯（2026-10-13）
 
 §1 的 D10 落地。語料盤點先行：**`src/std` / `tests/` / `example/` / `compiler/`
 沒有任何一處真正使用 `+=` 一族**（grep 命中的全在註解與字面量裡），所以這是一個
 「零遷移成本」的廢棄 —— 舊語法本來就編不過（`a += 1` 會被解析成無值綁定 + 裸字面量，
 編程期報錯或結構損壞），本次只是把這條死路換成「能用 + 提示 + 自動重寫」。
 
+**最終語義按「所在函式的結果型別」分裂**（用戶 2026-10-13 定案：`error吧`）：
+
+| 情境 | 診斷 | 降糖／重寫 |
+| --- | --- | --- |
+| 函式結果是 `?T` | **WARNING**（`W_COMPOUND_ASSIGN` / `nolang-deprecated-compound-assign`） | parser 降糖成 `UnwrapAssignStatement`（`DeprecatedOp` 記下原運算符），`no fmt` 保存時輸出 `a ?= a + 1` |
+| 函式結果不是 `?T` | **ERROR**，文案點名兩種可寫法 | **不降糖**，AST 原樣，`no fmt` 原樣退回（rc=1） |
+
+ERROR 文案（`a += 1` 在普通函式裡）：
+
+```text
+line 3, column 5: [E_GENERAL] `a += 1` 已废弃，且所在函数的结果不是 option，无法上抛：
+请改写成 `a + 1: { ok -> a = it, -> }`（非 ok 分支如何处理由你决定），
+或把结果参数改成 `?T` 后写 `a ?= a + 1`
+```
+
+為什麼非 option 一路**不降糖**：`a + 1` 是 `?i64`，普通函式裡沒有 option 結果可以
+上拋，唯一的出路是 `a + 1: { ok -> a = it, -> }`，而**非 ok 分支做什麼（丟棄？
+記日誌？中斷？）只能由用戶決定**。編譯器代寫 match 就是把這個決定權偷走了，
+所以只提示、不動 AST —— 也正因為 AST 不動，`no fmt` 走既有的
+「parse 錯 ⇒ 原樣退回」路徑，不會把壞東西寫回檔案。
+
 **三層面各自的位置**：
 
 | 消費路徑 | 落點 | 形態 |
 | --- | --- | --- |
-| LSP 實時診斷 | `checker.ValidateDeprecatedCalls`（surface AST 看得見 `DeprecatedOp`） | WARNING，`nolang-deprecated-compound-assign` |
-| `no vet` / `no build` | parser 期 `W_COMPOUND_ASSIGN` 警告（lowering 後 surface AST 已消失） | WARNING / stderr |
-| 保存時 `no fmt` | parser 降糖成 `UnwrapAssignStatement`，formatter 渲染即輸出新寫法 | 自動重寫 |
+| LSP 實時診斷 | `checker.ValidateDeprecatedCalls`（surface AST 看得見 `DeprecatedOp`；只在 option 結果函式裡發） | WARNING |
+| `no vet` / `no build` | parser 期 `W_COMPOUND_ASSIGN`（option 結果）／`saveError`（其餘，lowering 後 surface AST 已消失） | WARNING / **ERROR** |
+| 保存時 `no fmt` | parser 降糖 ⇒ formatter 渲染即輸出新寫法；非 option 一路 parse 報錯 ⇒ 原樣退回 | 自動重寫 / 不改 |
 
 為什麼必須有 parser 期那一條：CLI 管線在 `ParseProgram` 裡就跑完 lowering，
 `UnwrapAssignStatement` 被展開成 `__unwrap_N` 區塊，`RunAllLints` 看到的 merged
 program 裡已經沒有 `DeprecatedOp`；而 LSP 主解析刻意設 `SkipUnwrapLowering=true`
 保住 surface AST（格式-on-save 需要），所以兩邊分工、不會重複
-（`p.Errors()` 只回 ERROR 級，LSP 的 diagnostics 不消費 parser warning）。
+（`p.Errors()` 只回 ERROR 級，LSP 的 diagnostics 不消費 parser warning；
+複合賦算的歸屬靠 `pendingCompoundAssigns` 佇列在每個函式定義收尾時
+save/flush/restore 定案，見 `parser.stmt.flushCompoundAssigns`）。
 
 **A/B 實測**（同一凍結樹，`NOLANG_AST_CACHE_OFF=1`）：
 
@@ -976,7 +1001,14 @@ program 裡已經沒有 `DeprecatedOp`；而 LSP 主解析刻意設 `SkipUnwrapL
 
 **語義等價實測**：`a += 1` → `a ?= a + 1` 之後，五個運算符串接的函式
 （`41 +=1 -=1 *=2 /=2 %= 3`）在新舊寫法下都印 `2`；`a += 1; b = a*2; b /= 3`
-（`f(10)`）重寫前後都印 `7`。`no fmt` 冪等（第二遍零 diff）。
+（`f(10)`）重寫前後都印 `7`。`no fmt` 冪等（第二遍零 diff）；對普通函式裡的
+`a += 1` 跑 `no fmt -w` 回 rc=1 且檔案**逐位元組不變**。
+
+**歸屬與文案細節**（`parser/compound_assign_test.go` 採樣釘住）：兩個函式接連定義時，
+各自的複合賦算按**自己**的結果型別定案（option 函式出 WARNING、普通函式出 ERROR，
+互不污染）；建議文案還原使用者原本的右式（`a += g(y) * 2` ⇒ 建議
+`a + g(y) * 2: { ok -> a = it, -> }`，靠 `UnwrapAssignStatement.CompoundParts()`
++ `parser.exprToString` 印出來 —— 後者因此補齊了 bare `%v` 結構傾瀉的問題）。
 
 **刻意不做**（留下一條清楚的界線）：
 
@@ -986,7 +1018,7 @@ program 裡已經沒有 `DeprecatedOp`；而 LSP 主解析刻意設 `SkipUnwrapL
 - 位元複合賦算（`&=` / `|=` / `^=` / `<<=` / `>>=` / `&^=``）：不產生 option，
   與本次統一規則無關，不進廢棄名單，同樣維持 parse error。
 
-### 11.18 ⚠️ 新發現的自相矛盾：`p1 i64 = f(n - 1)` 同時被「要求寫」與「要求刪」
+### 11.19 ⚠️ 新發現的自相矛盾：`p1 i64 = f(n - 1)` 同時被「要求寫」與「要求刪」
 
 遷移 `tests/wasi-fib.no`（既有 3 個 option ERROR，對照二進位上一樣有）時撞到一對
 與 §11.13 同型的矛盾，但**發生在「巢狀 option 運算元」而非「索引讀取」上：

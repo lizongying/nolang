@@ -534,8 +534,14 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	// type entries in FuncVarTypes, preventing cross-function pollution.
 	prevFuncName := p.curFuncName
 	p.curFuncName = def.Name
+	// 複合賦算語句的歸屬：存起外層（若有）的 pending，本函式主體單獨收集，
+	// 解析完再連同本函式的結果型別一起定案（flushCompoundAssigns）。
+	prevCompound := p.pendingCompoundAssigns
+	p.pendingCompoundAssigns = nil
 	def.Body = p.parseBlockStatement()
 	p.curFuncName = prevFuncName
+	p.flushCompoundAssigns(def)
+	p.pendingCompoundAssigns = prevCompound
 	p.ctx.pop()
 
 	// Move inline comment on the same line as { from OpeningBraceComment to
@@ -1777,8 +1783,13 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 
 	p.ctx.push(CTX_FUNC_BODY)
 	// curFuncName 已於參數註冊前設定為 def.Name（見上方），body 解析沿用。
+	// 複合賦算語句同理單獨收集，解析完連同結果型別定案（同上方 decl.go:531 一處）。
+	prevCompound := p.pendingCompoundAssigns
+	p.pendingCompoundAssigns = nil
 	def.Body = p.parseBlockStatement()
 	p.curFuncName = prevFuncName
+	p.flushCompoundAssigns(def)
+	p.pendingCompoundAssigns = prevCompound
 	p.ctx.pop()
 
 	// Move inline comment on the same line as { from OpeningBraceComment to

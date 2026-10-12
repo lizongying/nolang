@@ -17,7 +17,9 @@ eq-str = (got str, want str, msg str) {
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
-w = ip.ip-parse('0.0.0.0')
+; 方法呼叫前需一次 ip-parse 觸發跨模組實例化（工具鏈特性）。
+; 結果本身用不到 → `_ =` 顯式丟棄（D2 的豁免路徑），避免 optunuse。
+_ = ip.ip-parse('0.0.0.0')
 
 t-parse = () {
     a = ip.ip-addr {}

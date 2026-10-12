@@ -66,18 +66,48 @@ func isSelfImplCall(curFn, base string) bool {
 	return curIsDeprecated
 }
 
-// ValidateDeprecatedCalls 報告 program 中所有對棄用函數的呼叫。
+// ValidateDeprecatedCalls 報告 program 中所有對棄用函數的呼叫，以及所在函式
+// 結果為 option 的複合賦算（`a += 1` 一族，DeprecatedOp 非空）。
+//
+// 後者只對「有 option 結果參數」的函式發言：沒有 option 結果的函式裡這條語法
+// 根本編不過（parser 期已發 ERROR 並給出 `a + 1: { ok -> a = it, -> }` 的改寫
+// 建議，見 parser.flushCompoundAssigns），這裡再補一條 WARNING 只是重複，
+// 且文案（「fmt 會自動改寫」）在那條路上是錯的。
 func ValidateDeprecatedCalls(program *parser.Program) []ValidateResult {
 	if program == nil {
 		return nil
 	}
-	v := &deprecatedVisitor{}
+	v := &deprecatedVisitor{optResultFuncs: funcsWithOptionResult(program)}
 	v.walkBlock(program.Statements, "", "")
 	return v.results
 }
 
+// funcsWithOptionResult 收集「至少有一個 option 型別結果參數」的頂層函式名。
+// 判定用 `*parser.NullableType`（`?T` 的解析形態），與 checker 其他處一致
+// （checker.go:2131/2203）。鍵採函式名（合併後可能帶模組前綴），只用於
+// HINT 級的上下文判斷。
+func funcsWithOptionResult(program *parser.Program) map[string]bool {
+	out := map[string]bool{}
+	for _, s := range program.Statements {
+		fd, ok := s.(*parser.FunctionDefinition)
+		if !ok {
+			continue
+		}
+		for _, res := range fd.Results {
+			if _, isOpt := res.Type.(*parser.NullableType); isOpt {
+				out[fd.Name] = true
+				break
+			}
+		}
+	}
+	return out
+}
+
 type deprecatedVisitor struct {
 	results []ValidateResult
+	// optResultFuncs 記錄哪些函式有 option 型別的結果參數（見
+	// funcsWithOptionResult）。空名（頂層程式碼）一律視為「沒有」。
+	optResultFuncs map[string]bool
 }
 
 // walkBlock 遍歷語句列表；file/curFn 為外層上下文（來源檔、外層頂層函數名），
@@ -120,34 +150,30 @@ func (v *deprecatedVisitor) walkStmt(s parser.Statement, file, curFn string) {
 		v.walkExpr(st.Value, file, curFn)
 	case *parser.UnwrapAssignStatement:
 		// 複合賦算降糖來的（DeprecatedOp 非空）：提示廢棄 + 給出改寫形式。
-		if st.DeprecatedOp != "" {
-			target := st.TargetName()
-			// Value 恆為 parser 降糖出的 `<target> <op> <expr>`，直接還原而非
-			// 泛印表達式（避免依賴通用 expression printer）。
-			op := "+"
-			rhs := ""
-			if inf, ok := st.Value.(*parser.InfixExpression); ok {
-				op = inf.Operator
-				if inf.Right != nil {
-					rhs = fmt.Sprintf("%v", inf.Right)
+		//
+		// 只在所在函式有 option 結果參數時發言 —— 沒有的那條路是 parser 期的
+		// ERROR（帶 `a + 1: { ok -> a = it, -> }` 改寫建議），編不過；這裡再補
+		// 一條「fmt 會自動改寫成 ?=」只會誤導。
+		if st.DeprecatedOp != "" && curFn != "" && v.optResultFuncs[curFn] {
+			target, op, rhs, ok := st.CompoundParts()
+			if ok {
+				repl := fmt.Sprintf("%s ?= %s %s %s", target, target, op, rhs)
+				msg := fmt.Sprintf("`%s %s= %s` 已廢棄，請改寫為 `%s`（複合賦算的右式現在是 ?T，統一走 ?= 解包/上拋）；no fmt 保存時也會自動重寫",
+					st.DeprecatedOp, op, rhs, repl)
+				pos := st.Pos()
+				end := pos.Column + len(target)
+				if st.Name != nil {
+					pos = st.Name.Pos()
 				}
+				v.results = append(v.results, ValidateResult{
+					Line:      pos.Line,
+					Column:    pos.Column,
+					EndColumn: end,
+					File:      file,
+					Message:   msg,
+					TraceID:   deprecatedAssignTraceID,
+				})
 			}
-			repl := fmt.Sprintf("%s ?= %s %s %s", target, target, op, rhs)
-			msg := fmt.Sprintf("`%s` 已廢棄，請改寫為 `%s`（複合賦算的右式現在是 ?T，統一走 ?= 解包/上拋）；no fmt 保存時也會自動重寫",
-				st.DeprecatedOp, repl)
-			pos := st.Pos()
-			end := pos.Column + len(target)
-			if st.Name != nil {
-				pos = st.Name.Pos()
-			}
-			v.results = append(v.results, ValidateResult{
-				Line:      pos.Line,
-				Column:    pos.Column,
-				EndColumn: end,
-				File:      file,
-				Message:   msg,
-				TraceID:   deprecatedAssignTraceID,
-			})
 		}
 		v.walkExpr(st.Value, file, curFn)
 	case *parser.ReturnStatement:

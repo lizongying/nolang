@@ -71,10 +71,26 @@ func (at *ArrayType) String() string {
 	return "[?]" + at.Elem.String()
 }
 
+// exprToString renders an expression back to (roughly) its source form.
+//
+// It exists for diagnostics that must echo the user's own code — e.g. the
+// `a += 1` deprecation error suggests the concrete rewrite
+// `a + 1: { ok -> a = it, -> }`, so the RHS has to survive the round trip.
+// Unknown nodes render through their String() method and, failing even that,
+// as a readable type placeholder — never Go's `%v` struct dump, which would
+// leak `&{Token{...} 0x14000…}` into user-facing text.
 func exprToString(e Expression) string {
+	if e == nil {
+		return "?"
+	}
 	switch ex := e.(type) {
 	case *IntegerLiteral:
 		return strconv.FormatInt(ex.Value, 10)
+	case *FloatLiteral:
+		if ex.Raw != "" {
+			return ex.Raw
+		}
+		return strconv.FormatFloat(ex.Value, 'g', -1, 64)
 	case *Identifier:
 		return ex.Value
 	case *StringLiteral:
@@ -82,15 +98,100 @@ func exprToString(e Expression) string {
 			return ex.Raw
 		}
 		return "'" + ex.Value + "'"
+	case *CharLiteral:
+		if ex.Raw != "" {
+			return ex.Raw
+		}
+		return `"` + ex.Value + `"`
+	case *BooleanLiteral:
+		if ex.Value {
+			return "true"
+		}
+		return "false"
+	case *NilLiteral:
+		return "nil"
 	case *InfixExpression:
 		// Constant fold integer expressions for display: 160+16 → 176
 		if isInt, val := evalConstIntExpr(ex); isInt {
 			return strconv.FormatInt(val, 10)
 		}
 		return exprToString(ex.Left) + " " + ex.Operator + " " + exprToString(ex.Right)
+	case *PrefixExpression:
+		return ex.Operator + exprToString(ex.Right)
+	case *GroupedExpression:
+		return "(" + exprToString(ex.Expression) + ")"
+	case *CallExpression:
+		return exprToString(ex.Function) +
+			exprListToString(ex.GenericArgs, "<", ">", false) +
+			exprListToString(ex.Arguments, "(", ")", true)
+	case *DotExpression:
+		return exprToString(ex.Receiver) + "." + ex.Property
+	case *IndexExpression:
+		return exprToString(ex.Left) + "[" + exprToString(ex.Index) + "]"
+	case *SliceExpression:
+		if se := ex.Range; se != nil {
+			l, r := "[", "]"
+			if !se.LeftInc {
+				l = "("
+			}
+			if !se.RightInc {
+				r = ")"
+			}
+			return exprToString(ex.Left) + l + exprToString(se.Start) + ".." + exprToString(se.End) + r
+		}
+		return exprToString(ex.Left) + "[..]"
+	case *RangeExpression:
+		l, r := "[", "]"
+		if !ex.LeftInc {
+			l = "("
+		}
+		if !ex.RightInc {
+			r = ")"
+		}
+		return l + exprToString(ex.Start) + ".." + exprToString(ex.End) + r
+	case *ConditionalExpression:
+		return exprToString(ex.Condition) + " ? " +
+			exprToString(ex.Consequence) + " : " + exprToString(ex.Alternative)
+	case *RegexLiteral:
+		return "/" + ex.Pattern + "/" + ex.Flags
+	case *RunExpression:
+		return "run " + exprToString(ex.Call)
+	case *CoExpression:
+		return "co " + exprToString(ex.Call)
+	case *AwaitExpression:
+		return "awy " + exprToString(ex.Right)
+	case *ArrayLiteral:
+		return exprListToString(ex.Elements, "[", "]", true)
+	case *SliceLiteral:
+		return exprListToString(ex.Elements, "[", "]", true)
+	case *UnwrapAssignStatement:
+		return ex.String()
 	default:
-		return fmt.Sprintf("%v", e)
+		if s, ok := e.(interface{ String() string }); ok {
+			return s.String()
+		}
+		return fmt.Sprintf("<%T>", e)
 	}
+}
+
+// exprListToString renders a comma-separated list wrapped in the given
+// delimiters. An empty list prints nothing unless always is set — call
+// arguments do need their parens (`f()`), generic arguments do not (`f` not
+// `f<>`).
+func exprListToString(list []Expression, open, close string, always bool) string {
+	if len(list) == 0 && !always {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(open)
+	for i, a := range list {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(exprToString(a))
+	}
+	sb.WriteString(close)
+	return sb.String()
 }
 
 // evalConstIntExpr evaluates a constant integer InfixExpression (e.g., 160+16).
@@ -596,6 +697,24 @@ func (uas *UnwrapAssignStatement) TargetName() string {
 		return exprToString(uas.Target)
 	}
 	return ""
+}
+
+// CompoundParts 拆出「複合賦算降糖」的三個部件：目標、二元運算符、使用者原本
+// 寫在運算符右側的算式。只對 DeprecatedOp != "" 的節點有意义（一般 `?=`
+// 的右式形態不定，無法這麼拆）。
+//
+// 用途：診斷文案要把 `a += 1` 的建議改寫形式印得具體（`a ?= a + 1` 或
+// `a + 1: { ok -> a = it, -> }`），而不是只說「請改用 match」。
+func (uas *UnwrapAssignStatement) CompoundParts() (target, op, rhs string, ok bool) {
+	if uas.DeprecatedOp == "" {
+		return "", "", "", false
+	}
+	target = uas.TargetName()
+	inf, isInfix := uas.Value.(*InfixExpression)
+	if !isInfix || inf.Right == nil {
+		return target, "", "", false
+	}
+	return target, inf.Operator, exprToString(inf.Right), true
 }
 
 func (uas *UnwrapAssignStatement) statementNode()         {}

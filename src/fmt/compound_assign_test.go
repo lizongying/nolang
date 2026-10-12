@@ -80,6 +80,26 @@ func TestFormatCompoundAssignComplexRhs(t *testing.T) {
 	}
 }
 
+// TestFormatRefusesCompoundAssignInPlainFunction 非 option 結果函式裡的
+// `a += 1` 是 parser ERROR，`no fmt` 不得重寫（無從決定非 ok 分支）：
+// 輸出必須與輸入逐位元組相同，並把錯誤透出來讓用戶看到改寫建議。
+func TestFormatRefusesCompoundAssignInPlainFunction(t *testing.T) {
+	in := "f = (x i64) () {\n    a i64 = x\n    a += 1\n    io.outln(a)\n}\n"
+	out, errs := FormatFileWithErrors(in)
+	if out != in {
+		t.Fatalf("plain-function compound assign must be left untouched:\n--- in ---\n%s\n--- out ---\n%s", in, out)
+	}
+	if len(errs) == 0 {
+		t.Fatalf("expected the parser error to be surfaced, got none")
+	}
+	joined := strings.Join(errs, "\n")
+	for _, want := range []string{"`a += 1`", "`a + 1: { ok -> a = it, -> }`", "`a ?= a + 1`"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("error does not suggest %q:\n%s", want, joined)
+		}
+	}
+}
+
 // TestFormatCompoundAssignBadTargetUntouched 對照組：`a[0] += 1` 這類非識別字
 // 目標不降糖（parser 側刻意不支援，見 parser/compound_assign_test.go的對照組），
 // formatter 不得把它變成錯誤的 `a[0] ?= ...`。

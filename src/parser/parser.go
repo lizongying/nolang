@@ -65,6 +65,17 @@ type Parser struct {
 	// 將其接續附加到陳述序列，確保多載群組的每個定義都進入 AST。
 	pendingOverloadDefs []Statement
 
+	// pendingCompoundAssigns 暫存「目前函式主體內」解析出的複合賦算語句
+	// （`a += 1` 一族，見 parseCompoundAssignStatement）。它們必須等所屬函式
+	// 定義解析完才能定案，因為建議形態取決於**所在函式有沒有 option 型別的
+	// 結果參數**：
+	//   - 有 → 降糖成 `a ?= a + 1`（失敗即上拋），發棄用 WARNING；
+	//   - 沒有 → 不能上拋，也不代為降糖成 match（非 ok 分支怎麼處理只能用戶
+	//     自己決定），改發 ERROR 並把兩種可寫法都印出來。
+	// 以 save/restore 包住每個函式主體的解析（同 prevFuncName 的手法），
+	// 頂層（函式外）的殘留由 ParseProgram 收尾。
+	pendingCompoundAssigns []*UnwrapAssignStatement
+
 	// Filename is the source file name (e.g. "sqlite.no").
 	// Used for diagnostics and error reporting.
 	Filename string
@@ -1538,6 +1549,9 @@ func (p *Parser) ParseProgram() *Program {
 	// checker 的 ValidateUnhandledIndex 複現 isSafeIndexBase 的型別查詢（parser
 	// 實例在 ParseProgram 返回後即被丟棄）。
 	program.Sem.IdxLocalTypes = p.idxLocalTypes
+
+	// 函式外的頂層複合賦算（沒有任何 option 結果可上拋）在此收尾定案。
+	p.flushCompoundAssigns(nil)
 
 	program.TrailingComments = p.collectDocComments()
 	program.Warnings = append([]string{}, p.Warnings()...)
