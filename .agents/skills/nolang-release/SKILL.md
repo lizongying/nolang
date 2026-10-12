@@ -1,6 +1,6 @@
 ---
 name: nolang-release
-description: 给当前 git 仓库发版——检测工作树是否干净（不干净就中断交还给用户）、先检查最新已发布 release 是否与最高本地 tag 一致（不一致则说明上次 tag 的 release action 失败，复用当前 tag 而不是 +1 并强制重推）、根据已有 tag 推导版本号（默认末位 +1）、在仓库根 HISTORY.md 顶部新增英文变更日志条目（GitHub Actions 会读取它作为 Release 正文，并同步到文档站 `docs/docs/history.md`）、打 tag，最后在用户确认后才执行 git push。当用户说「publish」「发版」「发布」「release」「打个 tag」「发 v0.3.0」或提到版本号与 HISTORY.md 时使用。
+description: 给当前 git 仓库发版——先检查最新已发布 release 是否与最高本地 tag 一致（不一致则说明上次 tag 的 release action 失败，复用当前 tag 而不是 +1 并强制重推）、根据已有 tag 推导版本号（默认末位 +1）、在仓库根 HISTORY.md 顶部新增英文变更日志条目（GitHub Actions 会读取它作为 Release 正文，并同步到文档站 `docs/docs/history.md`）、打 tag；工作树不干净**不中断**——未提交改动会与 HISTORY.md 一起打进同一个发布提交（`git add -A`），最后在用户确认后才执行 git push。当用户说「publish」「发版」「发布」「release」「打个 tag」「发 v0.3.0」或提到版本号与 HISTORY.md 时使用。
 agent_created: true
 ---
 
@@ -30,15 +30,16 @@ agent_created: true
 
 ## 工作流
 
-### 0. 前置检查：工作树必须干净（不干净就中断）
+### 0. 前置检查：工作树不干净也照常继续（不中断）
 
-`plan` 会先跑 `git status --porcelain`。**只要有任何未提交改动，它就打印清单并以 exit code 2 退出。**
+`plan` 会跑 `git status --porcelain`，但**脏工作树不再是障碍**。
+若有未提交改动，`plan` 会列出清单并说明：这些改动会与 HISTORY.md 一起，
+在后面的发布提交里用 `git add -A` 打包进**同一个 commit**。
 
-此时**立刻中断整个发版流程**，把清单转给用户，请用户自己先提交（或 stash），然后重新发起发版。
-不要替用户提交——选哪些文件、拆成几个 commit、写什么 message 都需要人的判断，
-仓库里可能还混着并行 session 的未提交改动，机器无从判断归属。
-
-不在这一步代劳，也不要「先暂存起来发完版再恢复」。中断就是中断。
+不要再中断流程、也不要请用户先去手动提交或 stash——直接继续走第 1 步。
+发布提交本就是「版本号 + HISTORY.md + 当前所有待发布改动」的快照，把并行 session
+的改动一起带上是可接受的默认行为；但如果 `plan` 列出的脏文件里有**看起来不该进这次发版**的
+（例如临时调试产物、明显无关的大改动），在第四步确认时向用户点出，由用户决定要不要继续。
 
 ### 1. 解析版本（先检查最新 release）
 
@@ -117,7 +118,7 @@ python3 <skill-dir>/scripts/release.py apply --version vX.Y.Z --body-file /tmp/n
 
 脚本会挡住三类问题：重复版本、空正文、以及**非英文 / 不符合 conventional 格式的条目**
 （exit 3，逐行报 offending line）。看到 exit 3 就按提示重写，不要用 `--allow-non-english` 绕过。
-写完后脚本还会再查一次工作树：若除 HISTORY.md 与文档站历史镜像（CN `docs/docs/history.md` + EN `docs/i18n/en/docusaurus-plugin-content-docs/current/history.md`）之外还有别的脏文件，报 exit 2 并阻止提交。
+写完后脚本还会再查一次工作树：除 HISTORY.md 与文档站历史镜像（CN `docs/docs/history.md` + EN `docs/i18n/en/docusaurus-plugin-content-docs/current/history.md`）之外的脏文件**不再报错**，`apply` 只会列出它们并说明这些待发布改动会一并用 `git add -A` 打进发布提交。
 
 `apply` 在写入根 `HISTORY.md` 的同时，会把同一 `## vX.Y.Z` 段落**镜像写入文档站历史页**（中文 `docs/docs/history.md` 与英文 `docs/i18n/en/docusaurus-plugin-content-docs/current/history.md`）。每个目标保留各自的 frontmatter / 标题 / 导言，版本段落 body 共用（英文 conventional-commit 行本身语言中立）；EN 档若不存在则由 `apply` 用其 locale 前綴自动建立。因此执行完 `apply` 后，工作树预期多出这两个 docs 历史档的改动——脚本已将其列入允许清单，不会误报 exit 2。
 
@@ -135,17 +136,18 @@ python3 <skill-dir>/scripts/release.py verify
 
 1. 版本号（含上一个 tag，便于核对）
 2. HISTORY.md 新增段落全文
-3. 将依次执行的命令：
+3. 将依次执行的命令（**commit message 直接用本次 HISTORY.md 版本段落内容**）：
    ```bash
+   python3 <skill-dir>/scripts/release.py body --version vX.Y.Z > /tmp/release-msg.txt
    git add -A
-   git commit -m "chore(release): vX.Y.Z"
+   git commit -F /tmp/release-msg.txt
    python3 <skill-dir>/scripts/release.py tag --version vX.Y.Z
    git push origin main
    git push origin vX.Y.Z
    ```
 
-此时工作树里理论上只剩 HISTORY.md 一个改动（`apply` 已校验过）。
-`git add -A` 只是为了省事，若提交前 `git status` 冒出别的路径，停下来问用户。
+此时工作树里会有 HISTORY.md、文档站历史镜像，以及发版前就存在的待发布改动（`apply` 已列出）。
+`git add -A` 会把它们全部打包进同一个发布提交。若 `plan` / `apply` 列出的待提交清单里有**明显不该进这次发版的文件**（临时调试产物、无关大改动），在确认时向用户点出，由用户拍板是否继续。
 
 **未获确认前，不得执行 add / commit / tag / push 中的任何一步。**
 
@@ -155,7 +157,7 @@ python3 <skill-dir>/scripts/release.py verify
 在提交前和推送前各查一次：
 
 ```bash
-git status --porcelain            # 应该只有 M HISTORY.md
+git status --porcelain            # HISTORY.md + 文档站镜像 + 发版前就存在的待发布改动
 git log -1 --oneline              # HEAD 是否是预期的最后一个业务提交
 git tag --list vX.Y.Z             # 本地 tag 是否已存在
 git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
@@ -163,7 +165,7 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
 
 据此分三种情况处理：
 
-- **正常**：`git add -A` → `git commit -m "chore(release): vX.Y.Z"` → `python3 <skill-dir>/scripts/release.py tag --version vX.Y.Z`
+- **正常**：`python3 <skill-dir>/scripts/release.py body --version vX.Y.Z > /tmp/release-msg.txt`（commit message = 本次 HISTORY.md 版本段落）→ `git add -A` → `git commit -F /tmp/release-msg.txt` → `python3 <skill-dir>/scripts/release.py tag --version vX.Y.Z`
   → `git push origin <branch>` → `git push origin vX.Y.Z`
 - **commit 已存在**（`git commit` 回 `nothing to commit`）：说明别处已经提交了。
   不要重试、不要 `--amend`，直接核对 `git log -1 --stat` 确认内容对得上，然后只补 `python3 <skill-dir>/scripts/release.py tag --version vX.Y.Z` 和 push。
@@ -185,7 +187,7 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
 
 ## 硬性规则
 
-- **工作树不干净就中断**：把未提交清单交给用户，等用户自己提交完再从头走流程。代提交是禁区。
+- **工作树不干净不中断**：待提交改动会与 HISTORY.md 一起用 `git add -A` 打进同一个发布提交。仅当 `plan` / `apply` 列出的清单里出现**明显不该进这次发版的文件**（临时调试产物、无关大改动）时，在确认环节向用户点出，由用户决定是否继续。
 - 不确认不推送。版本号、日志内容、命令三者都要用户点头。
 - 只改写 `HISTORY.md` 与文档站历史镜像两个文件（`docs/docs/history.md` 中文 + `docs/i18n/en/docusaurus-plugin-content-docs/current/history.md` 英文；英文档由 `apply` 自动建立/同步）；不要顺手改代码、不要改版本号常量（版本由 CI 用 ldflag 注入）。
 - 文档站历史页（CN + EN i18n）应与根 `HISTORY.md` 保持一致：每次 `apply` 自动同步新版本进两个目标；若发现历史段落缺失（例如曾漏同步），执行 `python3 <skill-dir>/scripts/release.py sync-docs` 一次性补齐——它把根 `HISTORY.md` 的所有 `## vX.Y.Z` 段落幂等镜像进两个目标（已存在的原地重写、缺失的插入或新建，旧→新序处理保证最新版在顶），可放心重跑。
@@ -199,7 +201,7 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
 - 刷新 MIR 后端 golden 基线（REGRESS）前，必须先让 `no test test/std/` 与语料 build 冒烟全绿：
   基线冻结于 2026-09-22（63895e59），其后大量 commit 未刷新，REGRESS 数字不可全信、须逐档二分；
   只有 `no test` 跑通后的基线才可信，故把「`no test` 跑通」作为刷新基线的前置条件纳入发版流程。
-- commit message 用 `chore(release): vX.Y.Z`。
+- commit message **用本次 HISTORY.md 版本段落内容**（由 `release.py body --version vX.Y.Z` 输出，经 `git commit -F /tmp/release-msg.txt` 写入）；不再写死 `chore(release): vX.Y.Z`。
 - 若用户只要「写日志、先别发」，执行到第 3 步为止，明确说明尚未提交、未打 tag。
 
 ## 退出码
@@ -207,10 +209,10 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
 | code | 含义 | 应对 |
 | --- | --- | --- |
 | 0 | ok | 继续 |
-| 2 | 工作树不干净 / 出现预期外的脏文件 | 交给用户处理，流程中断 |
+| 2 | 保留给特殊情况（脏树不再是障碍，不会回 2） | 一般不出现 |
 | 3 | 日志正文非英文或格式不合规范 | 重写条目 |
 
 ## 参考
 
 - `references/release-pipeline.md` —— CI 细节、`history.sh` 行为、回滚 tag 的方法
-- `scripts/release.py` —— `plan` / `apply` / `verify` 三个子命令，`plan` 与 `verify` 只读
+- `scripts/release.py` —— `plan` / `apply` / `verify` / `body` / `tag` / `sync-docs` 子命令；`plan`、`verify`、`body` 只读（`body` 输出某版本的 HISTORY.md 段落，用作 `git commit -F` 的提交信息）

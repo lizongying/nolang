@@ -117,8 +117,10 @@ jobs:
   # LLVM-<ver>-macOS-ARM64.tar.xz）。cgo 又無法交叉編譯，Rosetta 下無從取得 x86_64
   # 的 LLVM 靜態庫，故不構建這個變體；darwin/amd64 使用者仍拿純 Go 版
   # no_darwin_amd64（build-release 以 CGO_ENABLED=0 交叉編譯）。
-  # windows/* 為實驗性（continue-on-error）：上游 LLVM 未發行 Windows/arm64 靜態庫，
-  # 且 windows/amd64 以 zig cc 鏈接 MSVC 靜態庫的運行時匹配可能需就地迭代。
+  # windows/* 為實驗性（continue-on-error）：官方 pre-built Windows 包不含 llvm-config
+  # 與靜態庫，改用 .github/workflows/build-llvm-windows.yml 手動預編譯、發佈到 GitHub
+  # Release 的 llvm-dev 包；且 windows 以 zig cc 鏈接 MSVC 靜態庫的 ABI/運行時匹配可能需
+  # 就地迭代，故不阻斷發布。
   # 代價：全後端產物比純 Go 版（~12 MB）大得多，故作為額外 asset 而非替換現有產物。
   build-llvm-variants:
     if: startsWith(github.ref, 'refs/tags/')
@@ -160,15 +162,15 @@ jobs:
             llvm_host_target: x86
             ext: ".exe"
             experimental: true
-          # windows/arm64：上游 LLVM 未發行 Windows/arm64 靜態庫，且 zig 無
-          # windows/arm64 宿主；暫列實驗性，預期會失敗，不阻斷發布。
-          - os: windows-11-arm
-            asset: no-llvm_windows_arm64
-            go_arch: arm64
-            zig_arch: aarch64
-            llvm_host_target: aarch64
-            ext: ".exe"
-            experimental: true
+          # windows/arm64（內置 LLVM 變體）已移除：此目標在現行上游工具鏈下無法成立——
+          #   1) llvm/llvm-project 不發行 Windows/ARM64 預編譯包，只有 win64（x86_64）靜態庫，
+          #      而 x86_64 的 LLVM .lib 無法鏈進 GOARCH=arm64 的產物；
+          #   2) zig 官方亦無 windows/aarch64 宿主，只能跑 x86_64 zig（_emulation_），其預設目標
+          #      與交叉目標都產不出可鏈接 arm64 Go 的物件。
+          # 之前保留為 experimental（continue-on-error），但它在 Build 步驟必然失敗、無任何產出，
+          # 只是常駐紅叉，故移除。若日後需要 windows/arm64，走 build-release 的純 Go 交叉編譯
+          # （CGO_ENABLED=0，不需內嵌 LLVM）即可，與本 LLVM 變體無關。
+          # （Build 步驟的 cgo 找不到 zig 已修：見下方 Install Zig 步的 cygpath 轉換。）
     continue-on-error: ${{ matrix.experimental || false }}
     runs-on: ${{ matrix.os }}
 
@@ -200,40 +202,42 @@ jobs:
           sudo ln -sf "$LLVM_PREFIX/bin/llvm-config" /usr/local/bin/llvm-config-22
           llvm-config-22 --version
 
-      - name: "Install build tools + LLVM 22 (Windows - official installer)"
+      - name: "Install build tools + LLVM 22 (Windows - pre-built llvm-dev from our release)"
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           choco install -y make unzip
-          # 不用 winget：GH windows runner 上 winget 不一定在 pwsh 會話的 PATH 中
-          # （本 job 之前正是因此報「The term 'winget' is not recognized」而失敗），
-          # 且指定版本的 LLVM 是否已入 winget 源不可靠。改用 llvm/llvm-project 官方
-          # release 的 win64 安裝包——與 macOS 分支同樣走官方預編譯，版本對齊 zig
-          # 0.17.0 內嵌的 LLVM 22.1.8。NSIS 安裝包預設落到 C:\Program Files\LLVM，
-          # 正是下方 Build 步驟引用的 LLVM_CONFIG 路徑。
-          $LLVM_VER = "22.1.8"
-          $installer = "LLVM-$LLVM_VER-win64.exe"
-          curl.exe -L -f -o $installer "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VER/$installer"
-          # /S：NSIS 靜默安裝開關（注意是「前斜線 /S」，不是 -S；NSIS 不認 -S 會退化成
-          #   互動式 GUI 安裝精靈，在無頭 runner 上永遠等不到點擊而卡死 CI）。
-          # ⚠️ NSIS 是 GUI 子系統程式，且會二次提權重啟真正寫檔的進程；Start-Process -Wait
-          #   只等到那個「不等待提權子進程」的存根退出就返回，於是下一個 & llvm-config.exe
-          #   可能在文件尚未落地前就執行，報「The term '...llvm-config.exe' is not recognized」。
-          #   故這裡用輪詢等 llvm-config.exe 真的出現後再驗證，而不是假設 -Wait 已裝完。
-          $LLVMBin = "C:\Program Files\LLVM\bin"
-          Start-Process -Wait -FilePath ".\$installer" -ArgumentList "/S"
-          # 官方 win64 安裝包預設落盤到 $LLVMBin（不需也不能帶 /D：路徑含空格，NSIS 的
-          # /D 不接受引號，Start-Process 會把它拆成兩個參數而裝錯位置）。
-          $deadline = (Get-Date).AddMinutes(5)
-          while (-not (Test-Path "$LLVMBin\llvm-config.exe")) {
-            if ((Get-Date) -gt $deadline) {
-              Write-Error "LLVM install did not produce $LLVMBin\llvm-config.exe within 5 min"
-              exit 1
-            }
-            Start-Sleep -Seconds 2
+          # 不用官方 pre-built Windows 包（LLVM-<ver>-win64.exe NSIS）：它「只是
+          # clang/llvm 工具鏈」，不含 llvm-config.exe，也不含可鏈接的 LLVM 靜態庫
+          # （lib/cmake/llvm 僅有 LLVMConfigExtensions.cmake）。見 llvm discourse
+          # #57692 與 llvm-project#53052。no-llvm 需要 llvm-config + 各元件靜態 .lib，
+          # 官方包永遠給不出——之前正是因此輪詢等 C:\Program Files\LLVM\bin\llvm-config.exe
+          # 5 分鐘超時失敗。
+          #
+          # 改用自己預編譯的包：由 .github/workflows/build-llvm-windows.yml（手動 dispatch）
+          # 從源碼用 MSVC 編好 llvm-config + 頭文件 + 靜態庫，發佈成固定 tag 的 GitHub
+          # Release。這裡直接下載解壓到 C:\llvm（無空格， llvm-config 可遷移），與
+          # 下方 Build 步驟引用的 LLVM_CONFIG=C:/llvm/bin/llvm-config.exe 對齊。
+          # 若要升級 LLVM 版本：先跑 build-llvm-windows.yml 出新包，再同步這裡的
+          # $Tag/$Asset 與 Build 步驟的 LLVM_CONFIG 路徑。
+          $Tag = "llvm-22.1.8-win-x64"
+          $Asset = "LLVM-22.1.8-win-x64-llvm-dev.zip"
+          $Prefix = "C:\llvm"
+          # 從本倉庫的 release 下載（同倉庫，GITHUB_TOKEN 即可讀）。
+          gh release download $Tag -p $Asset
+          if (Test-Path $Prefix) { Remove-Item -Recurse -Force $Prefix }
+          # zip 根即 bin/include/lib（打包端對安裝前後綴做 Compress-Archive 'prefix/*'），
+          # 直接展開到 C:\llvm 即得 C:\llvm\bin\llvm-config.exe。
+          Expand-Archive -Path $Asset -DestinationPath $Prefix -Force
+          if (-not (Test-Path "$Prefix\bin\llvm-config.exe")) {
+            Write-Error "pre-built llvm-dev missing bin/llvm-config.exe after unpack: $Prefix"
+            exit 1
           }
-          echo $LLVMBin | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
-          & "$LLVMBin\llvm-config.exe" --version
+          echo "$Prefix\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+          & "$Prefix\bin\llvm-config.exe" --version
+          & "$Prefix\bin\llvm-config.exe" --libdir
 
       - name: Install Zig 0.17.0 (bundles clang/lld/libc matching LLVM 22.1.8)
         shell: bash
@@ -258,7 +262,18 @@ jobs:
             mkdir -p "$HOME/zig"
             tar -xf zig.tar.xz -C "$HOME/zig" --strip-components=1
           fi
-          echo "$HOME/zig" >> $GITHUB_PATH
+          # ⚠️ Windows 上必須用 cygpath 把 zig 目錄轉成 Windows 路徑再寫入 GITHUB_PATH。
+          #   Git-Bash 的 $HOME 是 POSIX 形式（/c/Users/.../），直接 echo 進 GITHUB_PATH 會
+          #   變成一個非法的 Windows PATH 條目：bash 步內 `$HOME/zig/zig version` 能跑（bash
+          #   會解析 POSIX 路徑），但後續「原生」進程 —— cgo 的 exec.Command("zig")、以及產物
+          #   運行時的 `-cc zig` —— 用 Windows LookPath 掃 PATH，找不到 /c/... 這種條目，於是報
+          #   「cgo: C compiler "zig" not found: exec: "zig": executable file not found in %PATH%」。
+          #   cygpath -w 轉成 C:\Users\...\zig 才是 Windows PATH 認識的形式。
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            echo "$(cygpath -w "$HOME/zig")" >> "$GITHUB_PATH"
+          else
+            echo "$HOME/zig" >> "$GITHUB_PATH"
+          fi
           "$HOME/zig/zig" version
 
       - name: Build statically linked no (embedded LLVM, all backends)
@@ -279,7 +294,7 @@ jobs:
             # 步驟把 $HOME/zig 加入 PATH，這裡直接可見。
             export CC="zig cc" CXX="zig c++"
             export LLVM_STATIC_EXTRA_LIBS="-lc++"
-            make no-llvm FULLLLVM=1 LLVM_CONFIG="C:/Program Files/LLVM/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+            make no-llvm FULLLLVM=1 LLVM_CONFIG="C:/llvm/bin/llvm-config.exe" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           else
             make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           fi
