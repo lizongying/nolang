@@ -6,6 +6,10 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.7
+
+- fix(build): adjust LLVM static linking flags for Windows targets
+
 ## v0.4.6
 
 - fix(build): ensure host environment for genstdsig and correct release tag check

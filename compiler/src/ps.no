@@ -1097,6 +1097,7 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
         ; s57：`N * { }` / `-N * { }` 前置計數循環（stmt.go:395 INT/SUB 臂：isCountLoopPrefix 過 ⇒
         ;   parseCountLoopPrefix，否則 parseExpressionStatement）。閘門不過⇒原樣落預設 expr-stmt 臂。
         (tk.typ == tok.INT || tk.typ == tok.SUB) && s57-count-prefix-p(p) > 0 -> idx = s57-parse-count-loop-prefix(t, p)
+
         -> idx = ps-parse-expr-stmt(t, p)
     }
     ovf != '' -> ps-apply-overflow(t, idx, ovf)

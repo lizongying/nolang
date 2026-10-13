@@ -7,6 +7,10 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.7
+
+- fix(build): adjust LLVM static linking flags for Windows targets
+
 ## v0.4.6
 
 - fix(build): ensure host environment for genstdsig and correct release tag check
