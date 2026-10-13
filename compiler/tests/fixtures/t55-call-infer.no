@@ -1,0 +1,43 @@
+; s51：同檔裸名呼叫的回傳型別推斷（parse 期 funcSignatures + filter + 閘門）
+get = (i i64) (val ?str) {
+    val = 'x'
+    return
+}
+
+plain = (k i64) (r str) {
+    r = 'y'
+    return
+}
+
+num = (k i64) (r i64) {
+    r = k
+    return
+}
+
+list = (k i64) (r []str) {
+    r = ['a']
+    return
+}
+
+twice = (k i64) (o str) {
+    a = get(k)      ; 首個宣告 → 推斷 ?str（NullableType 不印 inferred，子節點印）
+    a = get(k)      ; 同名重指派 → 閘門擋下 → 無型別
+    s = plain(k)    ; 首個 → str, inferred
+    s = plain(k)    ; → 無型別
+    n = num(k)      ; i64 回傳 → filterInferableType 排除 → 無型別
+    l = list(k)     ; []str → SliceType inferred + 元素 inferred
+    s = 'z'         ; 字面量分支無閘門 → 永遠蓋 str inferred
+    o = ''
+    return
+}
+
+later = (k i64) (t str) {
+    u = after(k)    ; 被呼函式定義在後（順序註冊）→ 不推斷
+    t = ''
+    return
+}
+
+after = (k i64) (r str) {
+    r = 'w'
+    return
+}

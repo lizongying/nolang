@@ -1478,4 +1478,4 @@ shs-main = () (code i64) {
 }
 
 code = shs-main()
-os.exit(code)
+exit(code)

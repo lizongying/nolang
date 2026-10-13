@@ -4,7 +4,7 @@
 ; 或：   ./bin/no test compiler/tests
 ;
 ; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
-;    os.exit(1)，否則差分 harness 會把失敗讀成通過。
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
 
 # /test/runner.eq
 # /test/runner.str-eq
@@ -140,7 +140,7 @@ test-intern-many()
 runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

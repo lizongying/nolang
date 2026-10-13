@@ -8858,7 +8858,7 @@ func CollectStdEnumVariants() map[string][]string {
 // ── Cross-module qualification enforcement (global.no contract) ──────────
 //
 // global.no documents the rule: only print / eprint / format / with-cap /
-// with-len / with-cap-len may be called bare; every other std function must
+// with-len / with-cap-len / exit may be called bare; every other std function must
 // carry its module prefix from another module (async.cancelled, math.max, ...).
 // stdFuncModule / isTrulyGlobalStdFunc classify a bare name from the generated
 // module-function signature table (stdSigsCache, keyed "module.fn").

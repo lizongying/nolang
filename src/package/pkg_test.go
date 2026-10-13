@@ -16,8 +16,10 @@ func TestLoadPackageTestDir(t *testing.T) {
 	if pkg.Name != "my-project" {
 		t.Errorf("Name = %q, want %q", pkg.Name, "my-project")
 	}
-	if pkg.Version != "1.0.0" {
-		t.Errorf("Version = %q, want %q", pkg.Version, "1.0.0")
+	// package.jsonc 的 version 約定帶前導 v（見 commit 3f88ca23 與 docs/docs/usage.md），
+	// 編譯器僅在比較時對前綴不敏感，解析結果原樣保留前導 v。
+	if pkg.Version != "v1.0.0" {
+		t.Errorf("Version = %q, want %q", pkg.Version, "v1.0.0")
 	}
 	if len(pkg.Keywords) != 1 || pkg.Keywords[0] != "nolang" {
 		t.Errorf("Keywords = %v, want [nolang]", pkg.Keywords)

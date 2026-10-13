@@ -8,7 +8,7 @@
 
 print('start')
 
-; 以 os.exit(1) 標記任何斷言失敗
+; 以 exit(1) 標記任何斷言失敗
 fail = false
 
 ; ── 1. 大陣列：2000 個元素（遠超舊 128 節點 / 32 子元素上限）──
@@ -127,7 +127,7 @@ cnt = b.arr-len()
     }
 }
 {
-    fail -> os.exit(1)
+    fail -> exit(1)
 
     -> print('ok: all heap-pool cap tests done')
 }

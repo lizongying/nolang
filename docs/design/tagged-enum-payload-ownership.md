@@ -25,11 +25,9 @@ B 的最小重現：
 ```no
 e-res { ok(v str), fail, }
 
-main = () {
-    q e-res = ok('hi')
-    q: { ok(v) -> print('first: '  - v)  fail -> print('no') }
-    q: { ok(v) -> print('second: ' - v)  fail -> print('no') }   ; 印出空字串
-}
+q e-res = ok('hi')
+q: { ok(v) -> print('first: '  - v)  fail -> print('no') }
+q: { ok(v) -> print('second: ' - v)  fail -> print('no') }   ; 印出空字串
 ```
 
 ## 2. 設計原則（使用者指定）
@@ -690,7 +688,7 @@ R5 的第一版直接造成**靜默 use-after-free**（比洩漏更糟）：
 
 ```no
 make = () (r e-res) { q e-res = ok('made')  r = q }
-main = () { x e-res = make()  x: { ok(v) -> print('got: ' - v)  fail -> ... } }
+x e-res = make()  x: { ok(v) -> print('got: ' - v)  fail -> ... }
 ```
 
 | 二進位 | 輸出 |

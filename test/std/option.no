@@ -22,7 +22,7 @@
 ;         (c) 拆成兩行 `v ?i64` / `v = 7`        ← 多數正常，但 foo 這種名字會變 NIL
 ;     重現：/tmp/rule_{a,b,foo}_{inline,split,uppercase,fnret}.no、
 ;           /tmp/ltr_*.no（26 個單字母掃描：只有 a/w/x/y 正常）
-;     判定法：臂裡放 `os.exit(3)`，看退出碼 —— /tmp/arm_b.no 走到 `os.exit(9)`，
+;     判定法：臂裡放 `exit(3)`，看退出碼 —— /tmp/arm_b.no 走到 `exit(9)`，
 ;             證明「沒有任何臂被執行」，而不是印到別的地方。
 ;
 ;   已知 bug 2（?bool 載荷恆為 false）：
@@ -334,7 +334,7 @@ p6, f6 = runner.test('option.ret/field', t-ret-and-field)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

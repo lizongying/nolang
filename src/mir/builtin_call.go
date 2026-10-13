@@ -4563,7 +4563,7 @@ func (c *codegen) emitBuiltinWaitpidNohang(inst *Inst) error {
 // emitBuiltinExecShell lowers `process.exec-shell(cmd)` -> replaces the current
 // process image with `sh -c cmd` via execlp(3). It returns only on failure
 // (parent never sees a usable value because the child's image is replaced); the
-// Nolang `spawn` uses it inside the child branch and calls os.exit(127) after,
+// Nolang `spawn` uses it inside the child branch and calls exit(127) after,
 // so the result is ignored. The "sh" and "-c" literals are emitted as private
 // module constants.
 func (c *codegen) emitBuiltinExecShell(inst *Inst) error {

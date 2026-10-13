@@ -522,7 +522,7 @@ os.ch-dir(dir)
 os.mkdir(path, mode)
 
 // Process
-os.exit(code)
+exit(code)    // End the process (global builtin, no `os.` prefix — see global)
 pid = os.get-pid()
 
 // System information
@@ -2919,7 +2919,7 @@ yes = async.cancelled()            // Returns true if current task has been canc
 
 ### global — Global Built-in Functions
 
-Functions callable without module prefix. Only these 6 global functions exist; all other cross-module calls require module prefix (e.g. `fs.read`, `os.exit`).
+Functions callable without module prefix. Only these 7 global functions exist; all other cross-module calls require module prefix (e.g. `fs.read`, `os.get-env`).
 
 ```no
 // Capacity/length constructors (type inferred from assignment target)
@@ -2938,6 +2938,9 @@ v = [].with-len-cap(100, 200)           // length 100, capacity 200
 print('x={x}')                          // Named format, stdout + newline
 eprint('err {x}')                       // Named format, stderr + newline
 s = format('x={x}')                      // Returns formatted string
+
+// Process control
+exit(0)                                  // End process with status code (was os.exit, now global)
 ```
 
 ### magic — File Type Detection

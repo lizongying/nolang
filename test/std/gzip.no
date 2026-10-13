@@ -58,7 +58,7 @@ p4, f4 = runner.test('gzip.inflate stored', t-inflate-stored)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

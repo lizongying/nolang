@@ -19,7 +19,7 @@ os.ch-dir(dir)
 os.mkdir(path, mode)
 
 ; Process
-os.exit(code)
+exit(code)    ; End the process (promoted to a global builtin; no `os.` prefix — see global)
 pid = os.get-pid()
 
 ; System information

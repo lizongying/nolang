@@ -6,7 +6,7 @@ sidebar_position: 4.3
 
 ### global — Global Built-in Functions
 
-Declares built-in functions that can be called without a module prefix. Only the following 6 functions may be called without a module name; all other cross-module calls require a module prefix (e.g. `fs.read`, `os.exit`):
+Declares built-in functions that can be called without a module prefix. Only the following 7 functions may be called without a module name; all other cross-module calls require a module prefix (e.g. `fs.read`, `os.get-env`):
 
 ```no
 ; Capacity/length constructors (type inferred from left-hand side)
@@ -31,6 +31,9 @@ s = format('x={x}')               ; Returns formatted string (no newline)
 print(a, b, c)                    ; Multiple args: space-separated, one trailing newline
 print('result={val}', 42, 'result={val}')  ; With multiple args, each literal is a template
                                   ; ({val} resolves from call-site scope — not a C-style format string)
+
+; Process control
+exit(0)                             ; End the process with status code 0 (was os.exit, now global)
 ```
 
 ---

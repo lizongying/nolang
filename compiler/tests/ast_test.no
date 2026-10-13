@@ -3,7 +3,7 @@
 ; 執行： ./bin/no run compiler/tests/ast_test.no
 ;
 ; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
-;    os.exit(1)，否則差分 harness 會把失敗讀成通過。
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
 ;
 ; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
 ;
@@ -332,6 +332,6 @@ test-kind-table()
 runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
-    -> os.exit(0)
+    f > 0 -> exit(1)
+    -> exit(0)
 }

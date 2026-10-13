@@ -3,7 +3,7 @@
 ; 執行： ./bin/no run compiler/tests/lx_test.no
 ;
 ; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
-;    os.exit(1)，否則差分 harness 會把失敗讀成通過。
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
 ;
 ; ── 為什麼需要本檔（L1 門禁不夠嗎？）──
 ; L1 比的是 **dump()** 的輸出。M2 起解析器改用 **scan-all()**（token 陣列）。
@@ -173,6 +173,6 @@ test-comment-marker()
 runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
-    -> os.exit(0)
+    f > 0 -> exit(1)
+    -> exit(0)
 }

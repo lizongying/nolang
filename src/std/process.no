@@ -356,7 +356,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
             }
 
             ; exec 失敗
-            os.exit(127)
+            exit(127)
         }
 
         pid < 0 -> {
@@ -834,7 +834,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             }
 
             ; exec 失敗
-            os.exit(127)
+            exit(127)
         }
 
         pid < 0 -> {
@@ -1319,7 +1319,7 @@ spawn = (cmd str) (pid i64) {
             process-exec-shell(cmd)
 
             ; exec 失敗，退出
-            os.exit(127)
+            exit(127)
         }
 
         pid < 0 -> {

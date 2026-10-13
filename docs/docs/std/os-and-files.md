@@ -19,7 +19,7 @@ os.ch-dir(dir)
 os.mkdir(path, mode)
 
 ; 行程
-os.exit(code)
+exit(code)    ; 結束行程（已提升為全域內建，無需 os 前綴，見 global）
 pid = os.get-pid()
 
 ; 系統資訊

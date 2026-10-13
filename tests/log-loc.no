@@ -4,7 +4,7 @@
 ; 「檔案:行:列」常數；且僅對被標記者生效、呼叫端顯式傳入時不被覆寫。
 ; 另驗證 std/log 的 set-format / 分級輸出整合路徑不崩潰。
 ;
-; 通过判準（no test 以結束碼 0 為通過）：以下任一斷言失敗即 os.exit(非0)。
+; 通过判準（no test 以結束碼 0 為通過）：以下任一斷言失敗即 exit(非0)。
 
 ; probe：標記 #{track-caller}，回傳注入的 loc 槽，便於斷言而無需擷取 stderr
 #{track-caller}
@@ -21,19 +21,19 @@ a = probe('first')
 b = probe('second')
 
 ; 1. 注入字串必須帶本測試檔名
-! a.starts-with('log-loc.no:') -> os.exit(1)
-! b.starts-with('log-loc.no:') -> os.exit(2)
+! a.starts-with('log-loc.no:') -> exit(1)
+! b.starts-with('log-loc.no:') -> exit(2)
 
 ; 2. 兩個不同呼叫點 → 行號不同 → 位置字串必須不同
-a == b -> os.exit(3)
+a == b -> exit(3)
 
 ; 3. 顯式傳入 loc 時不得被覆寫（封裝轉發場景）
 c = probe('x', 'MY-LOC')
-c != 'MY-LOC' -> os.exit(4)
+c != 'MY-LOC' -> exit(4)
 
 ; 4. 非 track-caller 省略末位 → 維持預設空字串
 d = plain('x')
-! d.empty() -> os.exit(5)
+! d.empty() -> exit(5)
 
 ; 5. std/log 整合：格式位 + 分級輸出（含注入呼叫點）正常執行不崩潰
 log.set-format(log.F-LEVEL | log.F-LOC)

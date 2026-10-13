@@ -235,7 +235,7 @@ p15, f15 = runner.test('number.i128/u128 is-prime', t-int128-is-prime)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

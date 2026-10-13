@@ -20,4 +20,4 @@
 # /compiler/src/util/sb.sb
 
 code = drv.dispatch()
-os.exit(code)
+exit(code)

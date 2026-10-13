@@ -12,8 +12,8 @@
 ;   p, f = runner.test('name', t-func)
 ;   runner.summary()
 ;   f-count = runner.failed-count()
-;   f-count > 0 -> os.exit(1)
-;   os.exit(0)
+;   f-count > 0 -> exit(1)
+;   exit(0)
 ;
 ; 用法（顯式參數模式）：
 ;   runner.summary(passed, failed)

@@ -251,11 +251,9 @@ greet = (name str) (msg str) {
     print(msg)
 }
 
-main = () {
-    total = 1 + 2
-    greet('world')
-    print(total)
-}
+total = 1 + 2
+greet('world')
+print(total)
 ```
 
 补丁 `patch.json`：
@@ -293,11 +291,9 @@ greet = (name str) (msg str) {
     print(msg)
 }
 
-main = () {
-    sum = 1 + 2 + 100
-    greet('earth')
-    print(sum)
-}
+sum = 1 + 2 + 100
+greet('earth')
+print(sum)
 ```
 
 ## 已知限制

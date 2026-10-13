@@ -15,18 +15,18 @@ x box
 
 ca = "A"
 x.ch = ca
-x.ch != 65 -> os.exit(1)
+x.ch != 65 -> exit(1)
 
 cz = "z"
 x.b = cz
-x.b != 122 -> os.exit(2)
+x.b != 122 -> exit(2)
 
 t = true
 f = false
 x.flag = t
-x.flag != 1 -> os.exit(3)
+x.flag != 1 -> exit(3)
 
 x.flag = f
-x.flag != 0 -> os.exit(4)
+x.flag != 0 -> exit(4)
 
 print('char-to-i64-field passed')

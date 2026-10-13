@@ -40,10 +40,11 @@ import (
 	"github.com/lizongying/nolang/checker"
 )
 
-// the 6 truly-global functions documented in global.no (plus deprecated aliases)
+// the 7 truly-global functions documented in global.no (plus deprecated aliases)
 var defaultGlobals = map[string]bool{
 	"print": true, "eprint": true, "format": true,
 	"with-cap": true, "with-len": true, "with-cap-len": true,
+	"exit": true,
 	"printf": true, "eprintf": true, "sprintf": true, // deprecated, kept bare
 }
 

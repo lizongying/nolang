@@ -145,11 +145,11 @@ allok = allok && check(! ss.contains('apple'), 'str set: apple removed')
 {
     allok -> {
         print('set test ALL PASSED')
-        os.exit(0)
+        exit(0)
     }
 
     -> {
         print('set test FAILED')
-        os.exit(1)
+        exit(1)
     }
 }

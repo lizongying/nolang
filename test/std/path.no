@@ -91,7 +91,7 @@ p8, f8 = runner.test('path.is-abs-empty', t-is-abs-empty)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

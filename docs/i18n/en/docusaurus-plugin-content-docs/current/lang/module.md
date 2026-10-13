@@ -73,9 +73,9 @@ Keep the same convention when importing across modules:
 
 The following cases do not require a prefix:
 
-### 1. Global Functions (`with-cap` / `with-len` / `with-cap-len` / `print` / `eprint` / `format`)
+### 1. Global Functions (`with-cap` / `with-len` / `with-cap-len` / `print` / `eprint` / `format` / `exit`)
 
-These 6 functions are language-level global builtins that can be used directly without a module prefix. Their comment declarations are centralized in `std/global.no` for easy reference.
+These 7 functions are language-level global builtins that can be used directly without a module prefix. Their comment declarations are centralized in `std/global.no` for easy reference.
 
 **Capacity/Length Constructors:**
 
@@ -90,6 +90,10 @@ Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing va
 - `print(s)` / `print(s0, s1, ...)` — writes to stdout, multiple args separated by spaces, **auto-appends newline**
 - `eprint(s)` / `eprint(s0, s1, ...)` — writes to stderr, multiple args separated by spaces, **auto-appends newline**
 - `format(s)` — returns the formatted string (replaces `sprintf`), no newline
+
+**Process Control:**
+
+- `exit(code)` — end the process with a status code (formerly `os.exit`, now a global builtin; no `os.` prefix needed)
 
 **With multiple arguments, each string literal is a template — not a C-style format string.** In `print('result={val}', 42, 'result={val}')`, every string literal is a template **in its own right**: its `{val}` is resolved from the scope at the **call site**, independently of the other arguments in the same call. A literal **never** describes or consumes the following arguments — it is not `printf('%d', 42)`-style substitution. Non-literal arguments (variables, expressions) are handled as ordinary variadic arguments, separated by spaces, with a single trailing newline for the whole call.
 

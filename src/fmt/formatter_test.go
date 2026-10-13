@@ -2482,7 +2482,7 @@ test-match = () {
         }
         -> {
             eprint('err')
-            os.exit(1)
+            exit(1)
         }
         }
     }
@@ -2498,7 +2498,7 @@ test-match = () {
 
             -> {
                 eprint('err')
-                os.exit(1)
+                exit(1)
             }
         }
     }

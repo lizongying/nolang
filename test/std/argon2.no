@@ -78,7 +78,7 @@ p3 = runner.test('argon2.salt-sensitive', t-salt-sensitive)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

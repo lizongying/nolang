@@ -2,7 +2,7 @@
 ;
 ; 執行：no test test/std/log.no
 ; 覆蓋：set-level / debug / info / warn / error
-; 注意：fatal 會呼叫 os.exit，不在此測試
+; 注意：fatal 會呼叫 exit，不在此測試
 
 # /test/runner
 
@@ -67,7 +67,7 @@ p5, f5 = runner.test('log.set-level-debug', t-set-level-debug)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

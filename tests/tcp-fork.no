@@ -31,7 +31,7 @@ test-tcp-fork-basic = () (pass bool) {
             client-fd = net.net-accept(listen-fd)
             client-fd < 0 -> {
                 io.errln('[TEST] tcp: child accept failed')
-                os.exit(1)
+                exit(1)
             }
             io.errln('[TEST] tcp: child accepted')
 
@@ -44,7 +44,7 @@ test-tcp-fork-basic = () (pass bool) {
             ; 回應
             net.net-send(client-fd, 'hello from server', 17)
             fs.close(client-fd)
-            os.exit(0)
+            exit(0)
         }
     }
 

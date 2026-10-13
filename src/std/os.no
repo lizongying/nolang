@@ -40,10 +40,7 @@ mkdir = (p str, mode i64) (ok bool) {
 ; 行程
 ; ═══════════════════════════════════════════════
 
-; exit: 結束行程
-#{buildin}
-exit = (c i64) {
-}
+; exit 已提升为全局内建函式（見 global.no），可不加模組前綴直接呼叫 exit(c)
 
 ; get-pid: 取得行程 ID
 #{buildin}

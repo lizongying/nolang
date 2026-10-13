@@ -162,5 +162,5 @@ error = (msg str, loc str = '') {
 #{track-caller}
 fatal = (msg str, code i64, loc str = '') {
     log-emit('FATAL', msg, loc)
-    os.exit(code)
+    exit(code)
 }

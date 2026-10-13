@@ -8,16 +8,16 @@ uname = os.getpwuid-name(uid)
 gname = os.getgrgid-name(gid)
 uname.len() == 0 -> {
     print('get-pw-gr-name FAILED: current user name empty')
-    os.exit(1)
+    exit(1)
 }
 gname.len() == 0 -> {
     print('get-pw-gr-name FAILED: current group name empty')
-    os.exit(1)
+    exit(1)
 }
 nobody = os.getpwuid-name(4294967295)
 nobody.len() != 0 -> {
     print('get-pw-gr-name FAILED: unknown uid should be empty, got ')
     print(nobody)
-    os.exit(1)
+    exit(1)
 }
 print('get-pw-gr-name passed')

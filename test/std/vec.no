@@ -207,7 +207,7 @@ p16, f16 = runner.test('vec.sort-asc/sort-desc', t-sort)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

@@ -8,11 +8,11 @@ user = os.getpwuid-name(ruid)
 gids, n = os.getgrouplist(user, rgid)
 gids.len() == 0 -> {
     print('getgrouplist FAILED: empty membership for current user')
-    os.exit(1)
+    exit(1)
 }
 n != gids.len() -> {
     print('getgrouplist FAILED: count != slice length')
-    os.exit(1)
+    exit(1)
 }
 found = false
 i <- [0..gids.len()): {
@@ -20,6 +20,6 @@ i <- [0..gids.len()): {
 }
 found == false -> {
     print('getgrouplist FAILED: base gid not present in membership')
-    os.exit(1)
+    exit(1)
 }
 print('getgrouplist passed')

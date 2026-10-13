@@ -86,7 +86,7 @@ p5, f5 = runner.test('magic.detect-type-nonexistent', t-detect-type-nonexistent)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

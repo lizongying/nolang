@@ -39,7 +39,7 @@ p2, f2 = runner.test('cross-perm', t-cross-perm)
 total = runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
+    f > 0 -> exit(1)
 
-    -> os.exit(0)
+    -> exit(0)
 }

@@ -3,7 +3,7 @@
 ; 執行： ./bin/no run compiler/tests/tok_test.no
 ;
 ; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
-;    os.exit(1)，否則差分 harness 會把失敗讀成通過。
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
 ;
 ; ⚠️ 本檔驗的是「常量的值與名字表」；它**不能**取代 L1 全語料差分 ——
 ;    這裡只釘住幾個代表值，真正保證 tok.no 與 src/lexer/token.go 一致的是
@@ -130,6 +130,6 @@ test-keyword()
 runner.summary()
 f = runner.failed-count()
 {
-    f > 0 -> os.exit(1)
-    -> os.exit(0)
+    f > 0 -> exit(1)
+    -> exit(0)
 }

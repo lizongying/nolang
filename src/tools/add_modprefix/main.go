@@ -39,8 +39,8 @@ var methodDefRe = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_-]*)\.([a-zA-Z][a-zA-
 var commentRe = regexp.MustCompile(`^\s*(;|//)`)
 
 // builtinFuncs are functions that don't need a module prefix.
-// These are the 6 "truly global" functions documented in global.no
-// (print / eprint / format / with-cap / with-len / with-cap-len) — they are
+// These are the 7 "truly global" functions documented in global.no
+// (print / eprint / format / with-cap / with-len / with-cap-len / exit) — they are
 // always bare-callable and must NEVER get a module prefix.
 // printf/eprintf/sprintf are deprecated but kept for backward compat.
 var builtinFuncs = map[string]bool{
@@ -50,6 +50,7 @@ var builtinFuncs = map[string]bool{
 	"with-cap":     true,
 	"with-len":     true,
 	"with-cap-len": true,
+	"exit":         true,
 	"printf":       true, // deprecated, kept for backward compat
 	"sprintf":      true, // deprecated, kept for backward compat
 	"eprintf":      true, // deprecated, kept for backward compat

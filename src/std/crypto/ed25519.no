@@ -413,11 +413,8 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             ; lower/codegen 對「切片索引讀取」的安全索引路徑（即便 bounds 分析判定越界
             ; 安全），導致該陳述處理異常、控制流在迴圈內提前返回零值。先以獨立
             ; `pv = prod[idx]`（配 #{index-out=zero}）取出 plain i64 再參與算術即正常。
-            #{index-out=zero}
-            pv i64 = prod[idx]
-
-            #{overflow=wrap}
-            v = pv + a[i] * b[j] + carry
+            #{index-out=zero, overflow=wrap}
+            v = prod[idx] + a[i] * b[j] + carry
 
             prod[idx] = v & 255
 
@@ -428,11 +425,8 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         k = i + 32
         (k < 64 && carry != 0) {
 
-            #{index-out=zero}
-            pk i64 = prod[k]
-
-            #{overflow=wrap}
-            v = pk + carry
+            #{index-out=zero, overflow=wrap}
+            v = prod[k] + carry
 
             prod[k] = v & 255
 
@@ -447,11 +441,8 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     carry = 0
     i <- [0..32): {
 
-        #{index-out=zero}
-        pc i64 = prod[i]
-
-        #{overflow=wrap}
-        v = pc + c[i] + carry
+        #{index-out=zero, overflow=wrap}
+        v = prod[i] + c[i] + carry
 
         prod[i] = v & 255
 
@@ -460,11 +451,8 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     i = 32
     (i < 64 && carry != 0) {
 
-        #{index-out=zero}
-        pc2 i64 = prod[i]
-
-        #{overflow=wrap}
-        v = pc2 + carry
+        #{index-out=zero, overflow=wrap}
+        v = prod[i] + carry
 
         prod[i] = v & 255
 
@@ -478,9 +466,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     pb []byte = with-len(64)
     i <- [0..64): {
 
-        #{index-out=zero}
-        pp i64 = prod[i]
-        pb[i] = pp
+        pb[i] = prod[i]
     }
     s = sc-reduce(pb)
 }

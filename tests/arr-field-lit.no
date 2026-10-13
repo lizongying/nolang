@@ -13,10 +13,10 @@ o = oid {
     id: [1, 2, 3]
     n: [10, 20, 30]
 }
-o.id[0] != 1 -> os.exit(1)
-o.id[1] != 2 -> os.exit(2)
-o.id[2] != 3 -> os.exit(3)
-o.n[0] != 10 -> os.exit(4)
-o.n[1] != 20 -> os.exit(5)
-o.n[2] != 30 -> os.exit(6)
+o.id[0] != 1 -> exit(1)
+o.id[1] != 2 -> exit(2)
+o.id[2] != 3 -> exit(3)
+o.n[0] != 10 -> exit(4)
+o.n[1] != 20 -> exit(5)
+o.n[2] != 30 -> exit(6)
 print('arr-field-lit passed')
