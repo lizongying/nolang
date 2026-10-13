@@ -68,6 +68,8 @@ psst {
     lastTp i64
     sigN []str
     sigP []i64
+    msN []str; s58：方法簽名表鍵 'recv.method'（Go methodSignatures）
+    msP []i64; s58：值=回傳值型別起始 token 下標（-1=無型別）
     dclF []str
     dclV []str
     gclN []str
@@ -104,6 +106,8 @@ new = (src str) (r psst) {
         lastTp: -1
         sigN: with-cap(4)
         sigP: with-cap(4)
+        msN: with-cap(4)
+        msP: with-cap(4)
         dclF: with-cap(8)
         dclV: with-cap(8)
         gclN: with-cap(8)
@@ -1733,6 +1737,21 @@ ps-sig-find = (p psst, fname str) (pos i64) {
     }
 }
 
+; s58：ps-msig-find：方法簽名表查 'recv.method' 鍵（同 ps-sig-find 反掃覆前口徑）。
+ps-msig-find = (p psst, key str) (pos i64) {
+    pos = -1
+    i = p.msN.len()
+    (i > 0) {
+
+        #{overflow=wrap}
+        i = i - 1
+        p.msN[i].copy() == key -> {
+            pos = p.msP[i]
+            return
+        }
+    }
+}
+
 ; ps-set-var-type：登記變數型別。頂層（fn==''）進全域 VarTypes；函式內僅進 FuncVarTypes
 ;   （Go parser.go:1050-1066：函式區域變數不污染全域表）。
 ps-set-var-type = (p psst, vname str, ty str) {
@@ -2424,6 +2443,14 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                 ps-set-var-type(p, name, '[]' - elem); Go SliceLiteral 臂同步登記「[]elem」
             }
 
+            ; s58：StructLiteral RHS → 僅登記 varType（Go stmt.go case *StructLiteral：!exists 時
+            ;   setVarType(name, v.Type)，不盖 stmt.Type——oracle 渲染 `LetStatement{name: p, value: StructLiteral}` 無型別）。
+            ;   登記後方法推斷臂可 resolveReceiverType（`p = view-point {…}` → `p.self-view()` 推出 &view-point）。
+            d.kind == asp.K_STRUCT_LITERAL -> {
+                st = ast.str-at(t, d.s0)
+                ps-var-type(p, name) == '' -> ps-set-var-type(p, name, st)
+            }
+
             -> {
                 tn = ps-infer-type(t, val)
                 tn != '' -> {
@@ -2481,6 +2508,58 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                         keep == 1 -> {
                             ps-mark-inferred(t, tn2)
                             typ = tn2
+                        }
+                    }
+                }
+            }
+
+            ; s58：方法呼叫回傳型別推斷（Go returnTypeFromCallExpr 的 DotExpression 臂：
+            ;   resolveReceiverType(recv) → methodSignatures['recv.method']）——仅覆盖
+            ;   【同檔裸名接收者】形（recv 是 IDENT 且 varType 表已知，如 `p = view-point{…}` /
+            ;   `nd view-node = …`）；模組路径/hashmap 鍵換算等語料未用形不建。
+            ;   克隆舆上方裸名臂同法（跳 token 重跑 ps-parse-type，未采用即孤兒零回歸）。
+            ast.kind-at(t, fc) == asp.K_DOT_EXPRESSION -> {
+                fd = ast.nd-at(t, fc)
+                rc = ast.kid-at(t, fd.kid0)
+                ast.kind-at(t, rc) == asp.K_IDENTIFIER -> {
+                    rd = ast.nd-at(t, rc)
+                    rty = ps-var-type(p, ast.str-at(t, rd.s0))
+                    rty != '' -> {
+                        mkey = rty + '.' + ast.str-at(t, fd.s0)
+                        tp2 = ps-msig-find(p, mkey)
+                        tp2 >= 0 -> {
+                            oldpos2 = p.pos
+                            p.pos = tp2
+                            tn3 = ps-parse-type(t, p)
+                            p.pos = oldpos2
+                            ts3 = ''
+                            tn3 > 0 -> ts3 = ast.type-string(t, tn3)
+                            tn3 > 0 && ps-filter-ok(t, tn3, ts3) == 1 -> {
+                                keep2 = 0
+                                ps-is-declared(p, name) == 0 -> {
+                                    keep2 = 1
+                                    ps-set-var-type(p, name, ts3)
+                                }
+
+                                -> {
+                                    iso2 = 0
+                                    ast.kind-at(t, tn3) == asp.K_NULLABLE_TYPE -> iso2 = 1
+                                    iso2 == 1 -> {
+                                        ps-set-var-type(p, name, ts3)
+                                    }
+                                    iso2 == 0 -> {
+                                        ex2 = ps-var-type(p, name)
+                                        ex2 == '' || ex2 == 'i64' -> {
+                                            keep2 = 1
+                                            ps-set-var-type(p, name, ts3)
+                                        }
+                                    }
+                                }
+                                keep2 == 1 -> {
+                                    ps-mark-inferred(t, tn3)
+                                    typ = tn3
+                                }
+                            }
                         }
                     }
                 }
@@ -2917,11 +2996,15 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
 
     ; 回傳值群組（可選）：`(out T, …)`
     outs []i64 = with-cap(4)
+    opos []i64 = with-cap(4); s58：同步記回傳值型別起始 token（方法推斷用）
     ps-peek(p) == tok.LPAREN -> {
         ps-bump(p); 消費第二個 LPAREN
         (ps-peek(p) != tok.RPAREN) {
             ro = ps-parse-param(t, p)
-            ro > 0 -> outs.push(ro)
+            ro > 0 -> {
+                outs.push(ro)
+                opos.push(p.lastTp)
+            }
             ro == 0 -> ps-bump(p); 防呆
         }
         ps-bump(p); 消費第二個 RPAREN
@@ -2963,6 +3046,13 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     body = ps-parse-block(t, p)
     ps-expect(p, tok.RBRACE); 結束 body
     p.fn = ofn
+
+    ; s58：body 完成後註冊單回傳值方法簽名（Go decl.go methodSignatures 尾注冊語意；
+    ;   鍵='recv.method'，舆裸名 sigN 相斥——Go returnTypeFromCallExpr 雨表分查）。
+    outs.len() == 1 -> {
+        p.msN.push(fullName)
+        p.msP.push(opos[0])
+    }
     idx = ast.add(t, asp.K_FUNCTION_DEFINITION)
     ast.set-slot(t, idx, 0, ast.put-str(t, fullName))
     ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); methodDef（P-TRUE：僅 'true' 才印）
@@ -4231,6 +4321,23 @@ ps-parse-type = (t ast, p psst) (idx i64) {
             }
             idx = ast.add(t, asp.K_NAMED_TYPE)
             ast.set-slot(t, idx, 0, ast.put-str(t, nm))
+
+            ; s58：指標後綴 `T*` / `T**` 正規化為前綴形（Go type.go:1064-1070：typeLit = '*' + typeLit，
+            ;   `*` 綁在 base 上、先於 ?/& 包裹——遞迴位置天然一致）
+            (ps-peek(p) == tok.MUL) {
+                ps-bump(p); 消費後綴 *
+                pt = ast.add(t, asp.K_POINTER_TYPE)
+                ast.kid-add(t, pt, idx)
+                idx = pt
+            }
+            ps-peek(p) == tok.STAR_STAR -> {
+                ps-bump(p); 消費後綴 **
+                q1 = ast.add(t, asp.K_POINTER_TYPE)
+                ast.kid-add(t, q1, idx)
+                q2 = ast.add(t, asp.K_POINTER_TYPE)
+                ast.kid-add(t, q2, q1)
+                idx = q2
+            }
         }
 
         handled == 0 && tk.typ == tok.QUESTION -> {
@@ -4239,6 +4346,36 @@ ps-parse-type = (t ast, p psst) (idx i64) {
             pti = ps-parse-type(t, p); 內層型別（遞迴）
             idx = ast.add(t, asp.K_NULLABLE_TYPE)
             ast.kid-add(t, idx, pti); 唯一 guarded CHILD=Type
+        }
+
+        ; s58：指標/view 前綴型 `*T` / `**T` / `&T`——Go parseParamTypeAfterName 以字串
+        ;   收集前綴再 buildType 遞迴剝前綴（type.go:1023-1040/1206）；此處直接節點化：
+        ;   遞迴先在內層建 base，再建外層包裹（子先於父），與 buildType 逐層包裹等價。
+        ;   `?&T` 形由上方 QUESTION 臂遞迴進本組臂天然覆蓋（規範序 ? 最外、& 次之、* 貼 base）。
+        handled == 0 && tk.typ == tok.MUL -> {
+            handled = 1
+            ps-bump(p); 消費 *
+            inner = ps-parse-type(t, p)
+            idx = ast.add(t, asp.K_POINTER_TYPE)
+            ast.kid-add(t, idx, inner); guarded CHILD=Type
+        }
+
+        handled == 0 && tk.typ == tok.STAR_STAR -> {
+            handled = 1
+            ps-bump(p); 消費 **（詞法器合併為單 token）
+            inner = ps-parse-type(t, p)
+            p1 = ast.add(t, asp.K_POINTER_TYPE)
+            ast.kid-add(t, p1, inner)
+            idx = ast.add(t, asp.K_POINTER_TYPE)
+            ast.kid-add(t, idx, p1); **T ⇒ PointerType{PointerType{T}}
+        }
+
+        handled == 0 && tk.typ == tok.AND -> {
+            handled = 1
+            ps-bump(p); 消費 &
+            inner = ps-parse-type(t, p)
+            idx = ast.add(t, asp.K_VIEW_TYPE)
+            ast.kid-add(t, idx, inner); guarded CHILD=Type
         }
 
         handled == 0 && tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.RBRACKET && (ps-peek-at(p, 2) == tok.IDENT || ps-peek-at(p, 2) == tok.LBRACKET || ps-peek-at(p, 2) == tok.QUESTION) -> {
@@ -4898,12 +5035,15 @@ ps-parse-param = (t ast, p psst) (idx i64) {
     idx = 0
     p.lastTp = -1
     tk = ps-peek-token(p)
-    tk.typ != tok.IDENT -> return
+    ; s58：參數名位允許 IN token（Go parseFunctionBody：`!= IDENT && != IN`，如 `in []byte` 參數名）
+    tk.typ != tok.IDENT && tk.typ != tok.IN -> return
     pname = tk.lit
     ps-bump(p); 消費參數名
     typ = 0
     nxt = ps-peek-token(p)
-    nxt.typ == tok.IDENT || nxt.typ == tok.QUESTION || nxt.typ == tok.LBRACKET -> {
+    ; s58：型別起點 token 集擴展 MUL(*T)/STAR_STAR(**T)/AND(&T)——鏡像 Go
+    ;   parseParamTypeAfterName 的前綴循環（type.go:1023-1040）
+    nxt.typ == tok.IDENT || nxt.typ == tok.QUESTION || nxt.typ == tok.LBRACKET || nxt.typ == tok.MUL || nxt.typ == tok.STAR_STAR || nxt.typ == tok.AND -> {
         p.lastTp = p.pos; s51：记下型別起始 token，供回传值签名克隆重解析
         typ = ps-parse-type(t, p)
     }

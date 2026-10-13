@@ -1,6 +1,6 @@
 # 方案：算术与索引统一返回 option
 
-> 状态：**待实施**（设计决策已与用户确认，见 §1）  
+> 状态：**已实施（见 §11）**——主体 M1–M5 与 M4(str/txt→?char) 已落地；D7 被主动 revert（in-bounds 豁免保留、bounds.go 未删）。本文件曾长期停留「待实施」草稿，§11 为 2026-10-13 实测复核结论。  
 > 涉及层：parser / checker / mir / lsp / fmt / build / 语料迁移  
 > 相关既有文档：`docs/docs/lang/syntax.md`〈整数运算溢出〉〈可空类型(option)〉、`NOLANG-OWNERSHIP-MODEL.md`
 
@@ -31,6 +31,7 @@
 ### 尚待定案（见 §8.1）
 
 - **D1-b**：`s[i]` 变 `?char` 的影响面最大（`src/std` 大量文本解析），先按 §7.1 测量再决定是否分期。
+  **状态（2026-10-13）：已与主体同期落地。** §7.1③ 测得 src/std 11 处 + tests 34 处需迁移（几乎全是同一 x25519 十六进制解析块在 16 文件的副本），< 50 阈值，故直接同期做；`parser/type.go` 的 `containerElemType` 对 str/txt 返回 `char`，`s[i]` → `?char` 已生效（详见 §11.3）。
 
 ---
 
@@ -204,11 +205,15 @@ a = ao: {
   需要下标本身时保留 `i <- [0..N)` 并对 `arr[i]` 显式解包。
 - 新增 `rngidx` HINT 引导这个改写（§5.2）。
 
+> **⚠️ 状态（2026-10-13）：本条被主动 revert，未落地。** 提交 `deac8377 "revert in-bounds index exemption and restore bounds.go checks"` 撤銷了豁免移除——`parser/type.go:339` 仍使用 `p.inBoundsIdx`、`bounds.go` 仍活跃，in-bounds 读取**仍不降级为 `?T`**。即 D7 按原文字面未实现，实际**保留**豁免。详见 §11.3。
+
 **(b) `s[i]`：先测量再分期（D1-b）。** 影响面最大（`src/std` 大量文本解析，且历史上刚把  
 109 处 `s[i]` 改成 `s.byte(i)`）。按 §7.1 的 ③ 测出数量：
 
 - < ~50 处 → 与主体同期做；
 - 上百处 → 拆成独立里程碑：先落主体（算术 + 容器索引），再落 str/txt 索引。
+
+> **状态（2026-10-13）：已与主体同期落地。** 实测 src/std 11 处 + tests 34 处（< 50 阈值），故未拆独立里程碑，直接同期做。`s[i]` → `?char` 已生效。
 
 **(c) 注解失败臂的冗余：不放宽穷尽性（D8，已定案）。** 注解把失败情形变成"有值"  
 （wrap ⇒ ok(回绕值)；index-out ⇒ ok(DEF)），`nil`/`err` 臂永不触发，但**仍必须写**——  
@@ -266,3 +271,38 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
   - in-bounds 豁免取消，并给出 `for i <- arr { x = i }` 这一惯用替代写法。
 - EN 镜像 `docs/i18n/en/.../lang/*.md` 同步（历史上 EN 常落后，需显式跟进）。
 - `docs/docs/lang/memory.md`（若有 option/ownership 相关段落）复核。
+
+---
+
+## 11. 实施状态复核（2026-10-13）
+
+> 本节为代码实测结论，覆盖 M0–M8 与 D1–D8。原 §1–§10 为设计稿，部分已偏离实际实现（本节纠正）。
+
+### 11.1 里程碑落地
+
+| 阶段 | 状态 | 证据 |
+| --- | --- | --- |
+| M0 测量 | ✅ | §7.1 探针 + §11.2 实测计数 |
+| M1 parser 语义 | ✅ | `parser/lowering.go:493 inferOptionArith`；`maybeIndexOutAssign`/`maybeCaptureOptionAssign` 保留 `?T` |
+| M1b 删 bounds | ❌ 反向 | 见 §11.3（D7 被 revert） |
+| M2 checker 诊断 | ✅ | `optunuse`(新 ERROR) + `rngidx`(HINT) + 严重度下调，均在 `checker.go`/`lint.go` |
+| M3 语法 | ✅ | `-> return` 早退臂、空 `->` 臂零值、fmt 打印（提交 c721fe6c / 853ef9ca） |
+| M4 str/txt→?char | ✅ | `parser/type.go:230-247` containerElemType 对 str/txt 返回 char；迁移 src/std 11 + tests 34 |
+| M5 `--fix=unwrap` | ✅ | `cmd/no/unwrap_fix.go` |
+| M6 std 迁移 | ⚠️ 待复核 | 见 §11.2 |
+| M7 tests 迁移 | ⚠️ 待复核 | 见 §11.2 |
+| M8 收尾 / §10 文档 | ⚠️ 部分 | 用户文档 `docs/docs/lang/syntax.md` 已同步统一规则；本设计文档长期停留「待实施」草稿，§11 为补录 |
+
+### 11.2 M6/M7 迁移验证（跑 `no vet src/std` / `no vet tests`）
+- 设计预期：`no vet src/std` ERROR=0（允许 HINT）。
+- 历史计数（§2.2）：std 已标注 `#{overflow}` 3557 + `#{index-out}` 1007 = 4564 站点需补消费；D1-b 额外 11 处 str 索引。
+- 实际结果（2026-10-13，见运行日志）：_待回填_。
+
+### 11.3 与文档设计的背离（务必知悉）
+1. **D7 被主动 revert**：原设计「取消 in-bounds 豁免 + 删 bounds.go」。实际提交 `deac8377 "revert in-bounds index exemption and restore bounds.go checks"` 撤銷了豁免移除——`parser/type.go:339` 仍使用 `p.inBoundsIdx`、`bounds.go` 仍活跃，in-bounds 读取**仍不降级为 `?T`**。即 D7 按字面未落地，实际**保留**豁免。
+2. **D1-b 已落地但原稿标「待定」**：§8.1(b) 仍写「先测量再分期」，代码已与主体同期做（阈值 <50）。
+3. **文档状态头长期错误**：文件头 `状态：待实施` 与实际「已基本实施」不符，本次补录 §11 纠正。
+
+### 11.4 后续
+- 跑 `no vet src/std` / `no vet tests` 确认 ERROR=0，把结果回填 §11.2。
+- 本设计文档状态头与 §8.1(a)(b) 已加「状态」注记，避免误导后续读者。

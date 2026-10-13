@@ -312,6 +312,10 @@ jobs:
             export LLVM_LD_FLAGS_DROP="-lrt -ldl"
             export LLVM_STATIC_EXTRA_LIBS="-lc++ -lole32"
             make no-llvm FULLLLVM=1 LLVM_CONFIG="$LLVM_DEV/bin/llvm-config" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
+            # Makefile 的 no-llvm 目标固定输出 bin/no-llvm（go build -o 不会按 GOOS 加 .exe）；
+            # 后续 Smoke/Upload 步骤按 bin/no-llvm${{ matrix.ext }} 引用产物，故给 Windows
+            # 交叉产物补上 .exe 后缀（Linux/macOS 变体 ext 为空，无需改名）。
+            mv -f bin/no-llvm "bin/no-llvm${{ matrix.ext }}"
           else
             make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           fi

@@ -1,0 +1,45 @@
+; t62-type-shapes — s58：參數/型別特殊形狀 + 方法回傳型別推斷
+;
+; 正形：*T / **T / T*（後綴正規化）/ &T（results）/ ?&T（results+推斷）/
+;   []byte 參數（對照組，s41 已支援）；結構體字面量 varType 登記→方法呼叫推斷。
+; 負形：`3 & 5`、`x * y`（運算式內 &/* 不得被型別臂誤吞）。
+
+ff = (task *i8) {
+}
+fg = (a **u8, b i8*) {
+}
+fh = (in []byte, n i64) {
+}
+
+view-pt {
+    x i64
+}
+
+view-pt.borrow = () (v &view-pt) {
+    v = .
+}
+
+view-pt.maybe = (k i64) (v ?&view-pt) {
+    v = nil
+    k > 0 -> {
+        v = .
+    }
+}
+
+p = view-pt {
+    x: 7
+}
+
+; 推斷形：q 的型別由方法簽名 '&view-pt' 推得（inferred，無明示）
+q = p.borrow()
+print(q.x)
+
+; ?&T 推斷 + 綁定後不展開（只取 ok 前存在性檢查語法由 match 簇負責，此處僅 let）
+b = p.maybe(1)
+print(b)
+
+; 負形：運算子位 & 與 * 保持 InfixExpression
+m1 = 3 & 5
+m2 = 6 * 7
+print(m1)
+print(m2)

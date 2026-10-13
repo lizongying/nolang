@@ -7,6 +7,12 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.8
+
+- fix(ci): append .exe suffix for windows no-llvm cross-build artifact
+- feat(parser): support pointer/view type prefixes and method signature table in ps.no
+- docs(design): record implemented status of unified arithmetic/index option returns
+
 ## v0.4.7
 
 - fix(build): adjust LLVM static linking flags for Windows targets

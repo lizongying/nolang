@@ -6,6 +6,12 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.8
+
+- fix(ci): append .exe suffix for windows no-llvm cross-build artifact
+- feat(parser): support pointer/view type prefixes and method signature table in ps.no
+- docs(design): record implemented status of unified arithmetic/index option returns
+
 ## v0.4.7
 
 - fix(build): adjust LLVM static linking flags for Windows targets
