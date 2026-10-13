@@ -64,20 +64,31 @@ psst {
     warn i64
     inBlk i64
     inMatch i64
-    ; ── s51：parse 期型別推斷表（對齊 Go parser 的 funcSignatures / VarTypes / FuncVarTypes / DeclaredVars）──
-    fn str          ; 當前函式名（'' = 頂層）；Go p.curFuncName
-    lastTp i64      ; ps-parse-param 最近一次型別起始 token 下標（-1=無型別）
-    sigN []str      ; 同檔函式簽名：函式名（最後註冊覆蓋先前的）
-    sigP []i64      ; 對應回傳值型別起始 token 下標
-    dclF []str      ; FuncDeclaredVars 對：(函式名, 變數名)
+    fn str
+    lastTp i64
+    sigN []str
+    sigP []i64
+    dclF []str
     dclV []str
-    gclN []str      ; DeclaredVars（全域，頂層 let 亦記此）
-    fvF []str       ; FuncVarTypes 對：(函式名, 變數名) → 型別字串
+    gclN []str
+    fvF []str
     fvV []str
     fvT []str
-    gvN []str       ; VarTypes（模組級）
+    gvN []str
     gvT []str
 }
+
+; ── s51：parse 期型別推斷表（對齊 Go parser 的 funcSignatures / VarTypes / FuncVarTypes / DeclaredVars）──
+; 當前函式名（'' = 頂層）；Go p.curFuncName
+; ps-parse-param 最近一次型別起始 token 下標（-1=無型別）
+; 同檔函式簽名：函式名（最後註冊覆蓋先前的）
+; 對應回傳值型別起始 token 下標
+; FuncDeclaredVars 對：(函式名, 變數名)
+
+; DeclaredVars（全域，頂層 let 亦記此）
+; FuncVarTypes 對：(函式名, 變數名) → 型別字串
+
+; VarTypes（模組級）
 
 ; new：掃描原始碼，建立解析器（跨模組呼叫寫 ps.new → 必須是裸函式名 `new`）
 new = (src str) (r psst) {
@@ -178,6 +189,7 @@ ps-is-func = (p psst) (r i64) {
                 depth == 0 -> {
 
                     ; 閉合瞭：往後找第一個非 trivia token
+
                     #{overflow=wrap}
                     k = i + 1
                     nt = ps-peek-at(p, k)
@@ -1591,6 +1603,7 @@ ps-sig-find = (p psst, fname str) (pos i64) {
     pos = -1
     i = p.sigN.len()
     (i > 0) {
+
         #{overflow=wrap}
         i = i - 1
         p.sigN[i].copy() == fname -> {
@@ -1607,6 +1620,7 @@ ps-set-var-type = (p psst, vname str, ty str) {
         p.gvN.push(vname)
         p.gvT.push(ty)
     }
+
     -> {
         p.fvF.push(p.fn)
         p.fvV.push(vname)
@@ -1619,6 +1633,7 @@ ps-var-type = (p psst, vname str) (ty str) {
     ty = ''
     i = p.fvF.len()
     (i > 0) {
+
         #{overflow=wrap}
         i = i - 1
         p.fvF[i].copy() == p.fn && p.fvV[i].copy() == vname -> {
@@ -1628,6 +1643,7 @@ ps-var-type = (p psst, vname str) (ty str) {
     }
     j = p.gvN.len()
     (j > 0) {
+
         #{overflow=wrap}
         j = j - 1
         p.gvN[j].copy() == vname -> {
@@ -1653,6 +1669,7 @@ ps-is-declared = (p psst, vname str) (r i64) {
     tracked = 0
     i = p.dclF.len()
     (i > 0) {
+
         #{overflow=wrap}
         i = i - 1
         p.dclF[i].copy() == p.fn -> tracked = 1
@@ -1660,6 +1677,7 @@ ps-is-declared = (p psst, vname str) (r i64) {
     p.fn != '' && tracked == 1 -> {
         j = p.dclF.len()
         (j > 0) {
+
             #{overflow=wrap}
             j = j - 1
             p.dclF[j].copy() == p.fn && p.dclV[j].copy() == vname -> r = 1
@@ -1668,6 +1686,7 @@ ps-is-declared = (p psst, vname str) (r i64) {
     }
     k = p.gclN.len()
     (k > 0) {
+
         #{overflow=wrap}
         k = k - 1
         p.gclN[k].copy() == vname -> r = 1
@@ -1709,6 +1728,7 @@ ps-mark-inferred = (t ast, tn i64) {
         k == asp.K_ARRAY_TYPE -> {
             ast.set-slot(t, tn, 0, ast.put-str(t, 'true'))
             d = ast.nd-at(t, tn)
+
             #{overflow=wrap}
             e = ast.kid-at(t, d.kid0 + 1)
             e > 0 -> ps-mark-inferred(t, e)
@@ -1718,6 +1738,7 @@ ps-mark-inferred = (t ast, tn i64) {
             ast.set-slot(t, tn, 0, ast.put-str(t, 'true'))
             d = ast.nd-at(t, tn)
             a = ast.kid-at(t, d.kid0)
+
             #{overflow=wrap}
             b = ast.kid-at(t, d.kid0 + 1)
             a > 0 -> ps-mark-inferred(t, a)
@@ -1774,6 +1795,7 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
             }
         }
     }
+
     ; s51：同檔裸名函式呼叫回傳型別推斷（Go stmt.go:1502-1533 CallExpression 臂）。
     ;   仅当无明示型別且未被字面量/切片臂填上 typ 時触发；顺序依赖：签名字表只含【已解析完】的函数
     ;   （故前向引用/递归调用推不到，与 Go 一致）。克隆 = 把 p.pos 跳到回传值型別起点重跑 ps-parse-type，
@@ -1799,7 +1821,9 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             keep = 1
                             ps-set-var-type(p, name, ts2)
                         }
+
                         -> {
+
                             ; 已宣告：option 仅更新 varType 不盖型別注标（Go stmt.go:1518-1521）；
                             ;   非 option 当现有型別为空或 i64 时才补（Go stmt.go:1523-1530）。
                             iso = 0
@@ -1963,6 +1987,7 @@ ps-is-struct-lit = (p psst) (r i64) {
         t1 == tok.IDENT -> {
 
             ; IDENT 後首個非 trivia token 必須是 COLON
+
             #{overflow=wrap}
             j = i + 1
             go2 = true
@@ -2134,6 +2159,7 @@ ps-infer-type = (t ast, val i64) (r str) {
 
 ; ps-parse-func：解析 `name = (params) { body }` 或 `name = (params) (results) { body }`
 ps-parse-func = (t ast, p psst, name str) (idx i64) {
+
     ; s51：body 解析期间设定当前函式名（Go parseFunctionBody 起始 curFuncName=def.Name），
     ;   退出时还原，支持嵌套函式链。
     ofn = p.fn
@@ -2173,6 +2199,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         pd = ast.nd-at(t, params[rp])
         pt = ast.kid-at(t, pd.kid0)
         pt > 0 -> ps-set-var-type(p, ast.str-at(t, pd.s0), ast.type-string(t, pt))
+
         #{overflow=wrap}
         rp = rp + 1
     }
@@ -2181,10 +2208,10 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         od = ast.nd-at(t, outs[rr])
         ot = ast.kid-at(t, od.kid0)
         ot > 0 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
+
         #{overflow=wrap}
         rr = rr + 1
     }
-
     ps-expect(p, tok.LBRACE); 進入 body
     body = ps-parse-block(t, p)
     ps-expect(p, tok.RBRACE); 結束 body
@@ -2229,6 +2256,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
 ;       ⇒ kid 區序 [inputs…][self][results…][body]，set-sig 的 results 數 = 1 + 宣告的 outs 數。
 ;   ⚠️ Parameter 有 2 個 guarded CHILD（Type、DefaultExpr）：Type=selfnt、DefaultExpr=0 佔位。
 ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
+
     ; s51：方法体内设当前函式名（Go curFuncName=def.Name='recv.method'）；方法签名存 methodSignatures，
     ;   不入裸名 sigN（裸名查找不会命中，与 Go 一致）。
     ofn = p.fn
@@ -2270,6 +2298,7 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
         pd = ast.nd-at(t, params[rp])
         pt = ast.kid-at(t, pd.kid0)
         pt > 0 -> ps-set-var-type(p, ast.str-at(t, pd.s0), ast.type-string(t, pt))
+
         #{overflow=wrap}
         rp = rp + 1
     }
@@ -2278,10 +2307,10 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
         od = ast.nd-at(t, outs[rr])
         ot = ast.kid-at(t, od.kid0)
         ot > 0 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
+
         #{overflow=wrap}
         rr = rr + 1
     }
-
     ps-expect(p, tok.LBRACE); 進入 body
     body = ps-parse-block(t, p)
     ps-expect(p, tok.RBRACE); 結束 body
@@ -3770,7 +3799,6 @@ ps-is-enum-def = (p psst) (r i64) {
                                 ft == tok.IDENT -> {
 
                                     ; `名 型別`（nt=型別起）或裸 `名`（nt∈{,, ),NEWLINE,COMMENT}）
-
                                     #{overflow=wrap}
                                     nt = ps-peek-at(p, fi + 1)
                                     nt == tok.COMMA || nt == tok.RPAREN || nt == tok.NEWLINE || nt == tok.COMMENT -> {
