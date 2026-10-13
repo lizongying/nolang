@@ -1,0 +1,67 @@
+; vec-struct-writeback-field.no — 全域 vec-of-struct 的「區域拷贝 + 整體重赋 vec 欄位 + 寫回 slot」必須生效
+;
+; 缺陷：`node = _p.nodes[i]` 讀出一個結構體副本（owned=false），`node.keys = nk` 被
+; emitSetField 的 lvalue 投影重導到真實 slot，但區域 alloca 仍是舊值；接著 `_p.nodes[i] = node`
+; 把舊的區域 alloca 覆寫回 slot，令剛寫的 nk 遺失。修法：當被投影的值在函式內被「整體存取」
+; （作為 indexstore / setfield 的值運算元）時，關閉投影，寫進該值自己的 alloca，再由寫回傳播。
+;
+; 判定：T1/T2 為缺陷場景（修好前 len 保持 4、順序含 3；修好後 len=3、順序 1,2,4）。
+;       T3/T4 為對照組（直接寫欄位 / 拷贝後 push），修前後都必須正確。
+
+jv-value {
+    keys []i64
+    elems []i64
+}
+jv-pool {
+    nodes []jv-value
+}
+_p jv-pool
+
+seed = () {
+    _p.nodes = with-len(1)
+    ks []i64 = with-len(4)
+    ks[0]=1 #{index-out=0}
+    ks[1]=2 #{index-out=0}
+    ks[2]=3 #{index-out=0}
+    ks[3]=4 #{index-out=0}
+    _p.nodes[0].keys = ks #{index-out=0}
+}
+
+; rebuild keys excluding `drop`, via local copy + wholesale field reassign + writeback
+del-via-copy = (i i64, drop i64) {
+    node jv-value = _p.nodes[i]
+    nk []i64 = with-len(0)
+    k i64 = 0
+    (k < node.keys.len()) {
+        kk i64 = node.keys[k] #{index-out=0}
+        kk != drop -> nk.push(kk)
+        k = k + 1 #{overflow=wrap}
+    }
+    node.keys = nk
+    _p.nodes[i] = node
+}
+
+seed()
+del-via-copy(0, 3)
+t1len i64 = _p.nodes[0].keys.len()
+t1a i64 = _p.nodes[0].keys[0] #{index-out=0}
+t1b i64 = _p.nodes[0].keys[1] #{index-out=0}
+t1c i64 = _p.nodes[0].keys[2] #{index-out=0}
+io.outln('T1 len=' - t1len.to-str() - ' order=' - t1a.to-str() - ',' - t1b.to-str() - ',' - t1c.to-str())
+
+; 對照組 a：直接寫 slot 欄位
+seed()
+nk []i64 = with-len(2)
+nk[0]=7 #{index-out=0}
+nk[1]=8 #{index-out=0}
+_p.nodes[0].keys = nk
+t3len i64 = _p.nodes[0].keys.len()
+io.outln('T3 len=' - t3len.to-str())
+
+; 對照組 b：拷贝後 push（共享緩衝）
+seed()
+node jv-value = _p.nodes[0]
+node.keys.push(99)
+_p.nodes[0] = node
+t4len i64 = _p.nodes[0].keys.len()
+io.outln('T4 len=' - t4len.to-str())

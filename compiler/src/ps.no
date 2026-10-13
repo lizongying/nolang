@@ -441,6 +441,64 @@ ps-expect = (p psst, want i64) {
 ;    最後依序 kid-add 子節點】——即本函式把 Program 留到最後才 add。
 ;    （若先 add 父再建子，子的子樹會插在父的 kid 範圍前面，dump 會把孫
 ;     節點錯置成父的直接子節點——實測 `42` 曾因此少印 ExpressionStatement。）
+; ps-semi-eat-count：復刻 Go buffer.go::warnSemiSwallow 的 W_SEMI_EAT 計數（s56）。
+;   nolang 中單個 `;` 是行註釋，行尾其後的代碼（含大括號）整體被吞。Go 在
+;   advanceCollect 收集每個符合條件的 COMMENT token 時發一條 SeverityWarning，
+;   Program.warnings 匯總所有 warning（parser.go::Warnings）。
+;   啟發式是純詞法的 ⇒ 對 toks 做一次前向預掃即可得同計數：Go 的
+;   warnedSemiEat[idx] 去重是防「回溯後重放同註釋」，預掃天然每 token 一遇。
+;   條件（全滿足才計）：
+;     1. mk == ';'（單分號行註釋；`;;` / `;;block` 的 Marker 不同、永不警告）
+;     2. lit 含 '{'(123) 或 '}'(125)（疑似吞掉語句與右大括號）
+;     3. 前一個非 COMMENT token 存在、非 NEWLINE 且與其同線（行尾註釋而非行首）
+ps-semi-eat-count = (p psst) (n i64) {
+    n = 0
+    last = -1
+    i = 0
+    (i < p.toks.len()) {
+
+        #{index-out=zero}
+        typ = p.toks[i].typ
+        typ != tok.COMMENT -> last = i
+        typ == tok.COMMENT -> {
+
+            #{index-out=zero}
+            mk = p.toks[i].mk.copy()
+            mk == ';' -> {
+
+                #{index-out=zero}
+                lit = p.toks[i].lit.copy()
+                has = 0
+                j = 0
+                jl = lit.len-bytes()
+                (j < jl) {
+                    b = lit.byte(j)
+                    b == 123 || b == 125 -> has = 1
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+                has == 1 && last >= 0 -> {
+
+                    #{index-out=zero}
+                    pt = p.toks[last].typ
+
+                    #{index-out=zero}
+                    lnP = p.toks[last].ln
+
+                    #{index-out=zero}
+                    lnC = p.toks[i].ln
+                    pt != tok.NEWLINE && lnP == lnC -> n = n + 1
+                }
+            }
+        }
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    n
+}
+
 parse = (t ast, p psst) (root i64) {
     stmts []i64 = with-cap(4)
     trail []i64 = with-cap(4)
@@ -480,7 +538,9 @@ parse = (t ast, p psst) (root i64) {
     ; Program 的 HDR 有 SCALAR warnings（pol=COUNT）→ 設為 '0' 即不印出
     ; ⚠️ warnings 計數：oracle 每 parse 一個 if/elif/else 就 saveWarning 一次
     ;   （src/parser/expr.go::parseIfExpression），Program.warnings 累加。
+    ;   s56：疊加 W_SEMI_EAT（行尾 `;` 註釋吞大括號）的純詞法預掃計數。
     ast.set-count(t, root, 0, stmts.len())
+    p.warn = p.warn + ps-semi-eat-count(p)
     ast.set-slot(t, root, 0, ast.put-str(t, p.warn.to-str()))
     ps-attach-trailing(t, root, trail)
     root
@@ -1034,6 +1094,9 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
             handled == 0 -> idx = ps-parse-expr-stmt(t, p)
         }
 
+        ; s57：`N * { }` / `-N * { }` 前置計數循環（stmt.go:395 INT/SUB 臂：isCountLoopPrefix 過 ⇒
+        ;   parseCountLoopPrefix，否則 parseExpressionStatement）。閘門不過⇒原樣落預設 expr-stmt 臂。
+        (tk.typ == tok.INT || tk.typ == tok.SUB) && s57-count-prefix-p(p) > 0 -> idx = s57-parse-count-loop-prefix(t, p)
         -> idx = ps-parse-expr-stmt(t, p)
     }
     ovf != '' -> ps-apply-overflow(t, idx, ovf)
@@ -2541,7 +2604,6 @@ ps-is-struct-lit = (p psst) (r i64) {
     p.toks[p.pos].typ == tok.LBRACE -> {
 
         ; 定位首個非 trivia token
-
         #{overflow=wrap}
         i = p.pos + 1
         go = true
@@ -2569,7 +2631,6 @@ ps-is-struct-lit = (p psst) (r i64) {
         t1 == tok.IDENT -> {
 
             ; IDENT 後首個非 trivia token 必須是 COLON
-
             #{overflow=wrap}
             j = i + 1
             go2 = true
@@ -2937,10 +2998,67 @@ ps-for-source = (t ast, p psst) (src i64, srcExpr i64) {
     src = 0
     srcExpr = 0
     op = ps-peek(p)
-    op == tok.LBRACKET || op == tok.LPAREN -> {
-        ps-bump(p); 消費 `[` 或 `(`
-        leftInc = 'true'
-        op == tok.LPAREN -> leftInc = 'false'
+
+    ; s57：`[` 源鏡像 Go parseForRange 的 LBRACKET 分類（stmt.go:2582）——saveState/restoreState
+    ;   前掃 distinguishing range（含 `..`）vs 匿名切片字面量（`,`/`]` 收尾）。分類期所建節點
+    ;   不被任何 kid 引用即孤兒，dumper 沿 kid 走訪永不觸及（ps-parse-typedecl 同法）⇒ 零回歸。
+    ;   kind==1 → 走原 range 路徑；kind==2 → 整段 `[...]` 由 ps-parse-expr 的 LBRACKET 前綴臂
+    ;   建 SliceLiteral 填 RangeExpr(kid1)；kind==0（Go saveError 形）無以復現 ⇒ 保持舊無分類行為。
+    op == tok.LBRACKET -> {
+        save = p.pos
+        kind = 0
+        ps-bump(p); 消費 `[`（僅分類期）
+        ps-peek(p) == tok.ELLIPSIS -> kind = 1
+        ps-peek(p) != tok.ELLIPSIS -> {
+            u = ps-parse-expr-prec(t, p, 0)
+            nc = ps-peek(p)
+            nc == tok.ELLIPSIS -> kind = 1
+            nc == tok.COMMA || nc == tok.RBRACKET -> kind = 2
+        }
+        p.pos = save; restoreState
+        kind == 1 -> {
+            ps-bump(p); 消費 `[`
+            leftInc = 'true'
+            st = 0
+            en = 0
+            ps-peek(p) != tok.ELLIPSIS -> st = ps-parse-expr-prec(t, p, 0)
+            ps-expect(p, tok.ELLIPSIS); 消費 ..
+            nc = ps-peek(p)
+            nc != tok.RBRACKET && nc != tok.RPAREN -> en = ps-parse-expr-prec(t, p, 0)
+            cl = ps-peek(p)
+            ri = 'false'
+            cl == tok.RBRACKET -> ri = 'true'
+            ps-bump(p); 消費閉合 `]`
+            src = ast.add(t, asp.K_RANGE_EXPRESSION)
+            ast.set-slot(t, src, 0, ast.put-str(t, leftInc)); leftInc
+            ast.set-slot(t, src, 1, ast.put-str(t, ri)); rightInc
+            ast.kid-add(t, src, st)
+            ast.kid-add(t, src, en)
+        }
+        kind == 2 -> srcExpr = ps-parse-expr(t, p)
+        kind == 0 -> {
+            ps-bump(p); 消費 `[`
+            leftInc = 'true'
+            st = 0
+            en = 0
+            ps-peek(p) != tok.ELLIPSIS -> st = ps-parse-expr-prec(t, p, 0)
+            ps-expect(p, tok.ELLIPSIS); 消費 ..
+            nc = ps-peek(p)
+            nc != tok.RBRACKET && nc != tok.RPAREN -> en = ps-parse-expr-prec(t, p, 0)
+            cl = ps-peek(p)
+            ri = 'false'
+            cl == tok.RBRACKET -> ri = 'true'
+            ps-bump(p); 消費閉合 `]` 或 `)`
+            src = ast.add(t, asp.K_RANGE_EXPRESSION)
+            ast.set-slot(t, src, 0, ast.put-str(t, leftInc)); leftInc
+            ast.set-slot(t, src, 1, ast.put-str(t, ri)); rightInc
+            ast.kid-add(t, src, st)
+            ast.kid-add(t, src, en)
+        }
+    }
+    op == tok.LPAREN -> {
+        ps-bump(p); 消費 `(`
+        leftInc = 'false'
         st = 0
         en = 0
         ps-peek(p) != tok.ELLIPSIS -> st = ps-parse-expr-prec(t, p, 0)
@@ -3107,6 +3225,180 @@ ps-parse-bang-loop = (t ast, p psst, loop i64) (idx i64) {
     ast.kid-add(t, idx, 0); CountExpr
     ast.kid-add(t, idx, 0); IterRange
     ast.kid-add(t, idx, body); Body
+}
+
+; s57-count-prefix-p：判定【目前 pos】是否為前置計數循環 `N * { }` / `-N * { }`—鏡像 Go
+;   isCountLoopPrefix（stmt.go:2842）。【直接索引扫描】而非多次 ps-peek-at——實證同一函式體
+;   內多點前視（含變量偏位）會讀到陳宅寞存器（MIR 冷路径審查，見 ps-bm-scan 直接索引澉演）。
+;   nolang 語法下 COMMENT 恆為行首（`;` 吞至行尾）⇙ Go look() 跳 COMMENT 在本形與原樣索引等價。
+;   回 1=`INT MUL LBRACE`、2=`SUB INT MUL LBRACE`、0=非。
+s57-count-prefix-p = (p psst) (r i64) {
+    r = 0
+
+    #{index-out=zero}
+    cur = p.toks[p.pos].typ
+
+    #{index-out=zero}
+    t1 = p.toks[p.pos + 1].typ
+    cur == tok.INT -> {
+
+        #{index-out=zero}
+        t2 = p.toks[p.pos + 2].typ
+        t1 == tok.MUL && t2 == tok.LBRACE -> r = 1
+    }
+    cur == tok.SUB && t1 == tok.INT -> {
+
+        #{index-out=zero}
+        t2 = p.toks[p.pos + 2].typ
+
+        #{index-out=zero}
+        t3 = p.toks[p.pos + 3].typ
+        t2 == tok.MUL && t3 == tok.LBRACE -> r = 2
+    }
+    r
+}
+
+; s57-count-blockfirst-p：判定【目前 pos（LBRACE）】是否為 `{ body } * [(-)?] N` 計數循環——
+;   鏡像 Go isCountedLoopBlockFirst（stmt.go:3085）：平衡大括號掃描，`#{` 群組整體跳過
+;   （同 isCondLoopBlockFirst 守剉，其 `}` 不得提前收合）；匹配 `}` 後須為 MUL [SUB] INT，
+;   且 INT 後須為語句結束（NEWLINE/EOF/SEMICOLON/RBRACE），避免與 `} * n` 乘法混淆。
+;   直接索引扫描（同上點審查）；會員取出均帶 index-out=zero。回 1=是、0=否。
+s57-count-blockfirst-p = (p psst) (r i64) {
+    r = 0
+    depth = 1
+    i = 1
+    go = true
+    (go) {
+
+        #{index-out=zero}
+        t = p.toks[p.pos + i].typ
+        t == tok.EOF -> go = false
+        t == tok.HASH_LBRACE -> {
+
+            #{overflow=wrap}
+            i = i + 1; 消費 #{
+            inner = true
+            (inner) {
+
+                #{index-out=zero}
+                tt = p.toks[p.pos + i].typ
+                tt == tok.EOF -> {
+                    inner = false
+                    go = false
+                }
+                inner == true -> {
+
+                    #{overflow=wrap}
+                    i = i + 1
+                    tt == tok.RBRACE -> inner = false
+                }
+            }
+        }
+        go == true && t != tok.HASH_LBRACE -> {
+            t == tok.LBRACE -> {
+
+                #{overflow=wrap}
+                depth = depth + 1
+            }
+            t == tok.RBRACE -> {
+
+                #{overflow=wrap}
+                depth = depth - 1
+                depth == 0 -> {
+                    go = false
+
+                    #{index-out=zero}
+                    mt = p.toks[p.pos + i + 1].typ
+                    mt == tok.MUL -> {
+
+                        #{index-out=zero}
+                        st = p.toks[p.pos + i + 2].typ
+                        j = i + 2
+                        st == tok.SUB -> {
+
+                            #{overflow=wrap}
+                            j = i + 3
+                        }
+
+                        #{index-out=zero}
+                        it = p.toks[p.pos + j].typ
+                        it == tok.INT -> {
+
+                            #{index-out=zero}
+                            at = p.toks[p.pos + j + 1].typ
+                            at == tok.NEWLINE || at == tok.EOF || at == tok.SEMICOLON || at == tok.RBRACE -> r = 1
+                        }
+                    }
+                }
+            }
+
+            #{overflow=wrap}
+            i = i + 1
+        }
+    }
+    r
+}
+
+; s57-parse-count-loop-prefix：`N * { body }` 前置計數循環（鏡像 Go parseCountLoopPrefix
+;   stmt.go:2867）。CountExpr=IntegerLiteral{value}（無 raw ⇒ slot1 置空串，dumper 不印）；
+;   負號形把字面量取負（Go intToken.Literal = "-"+lit）。數字直接讀 token 字面量，
+;   不走 ps-parse-expr（避免冷路徕前視壞）。前提：閘門已過。
+s57-parse-count-loop-prefix = (t ast, p psst) (idx i64) {
+    neg = 0
+    ps-peek(p) == tok.SUB -> {
+        neg = 1
+        ps-bump(p); 消費 -
+    }
+    tk = ps-peek-token(p)
+    lit = tk.lit
+    neg == 1 -> lit = '-' + lit
+    ps-bump(p); 消費 INT
+    ps-expect(p, tok.MUL); 消費 *
+    ps-expect(p, tok.LBRACE); 進入 body
+    body = ps-parse-block(t, p)
+    ps-expect(p, tok.RBRACE)
+    cnt = ast.add(t, asp.K_INTEGER_LITERAL)
+    ast.set-slot(t, cnt, 0, ast.put-str(t, lit))
+    ast.set-slot(t, cnt, 1, ast.put-str(t, '')); raw 空 ⇒ 不印
+    idx = ast.add(t, asp.K_FOR_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '')); label（kv 恆印 `label: `）
+    ast.kid-add(t, idx, 0); Init
+    ast.kid-add(t, idx, 0); Condition
+    ast.kid-add(t, idx, 0); Update
+    ast.kid-add(t, idx, cnt); CountExpr
+    ast.kid-add(t, idx, 0); IterRange
+    ast.kid-add(t, idx, body); Body
+    idx
+}
+
+; s57-parse-count-loop-blockfirst：`{ body } * [(-)?] N` 後置計數循環（鏡像 Go
+;   parseCountedLoopBlockFirst stmt.go:3134）。前提閘門已過。其餘同 prefix 形。
+s57-parse-count-loop-blockfirst = (t ast, p psst) (idx i64) {
+    ps-bump(p); 消費 {
+    body = ps-parse-block(t, p)
+    ps-expect(p, tok.RBRACE); 結束 body
+    ps-expect(p, tok.MUL); 消費 *
+    neg = 0
+    ps-peek(p) == tok.SUB -> {
+        neg = 1
+        ps-bump(p); 消費 -
+    }
+    tk = ps-peek-token(p)
+    lit = tk.lit
+    neg == 1 -> lit = '-' + lit
+    ps-bump(p); 消費 INT
+    cnt = ast.add(t, asp.K_INTEGER_LITERAL)
+    ast.set-slot(t, cnt, 0, ast.put-str(t, lit))
+    ast.set-slot(t, cnt, 1, ast.put-str(t, '')); raw 空 ⇒ 不印
+    idx = ast.add(t, asp.K_FOR_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '')); label（kv 恆印 `label: `）
+    ast.kid-add(t, idx, 0); Init
+    ast.kid-add(t, idx, 0); Condition
+    ast.kid-add(t, idx, 0); Update
+    ast.kid-add(t, idx, cnt); CountExpr
+    ast.kid-add(t, idx, 0); IterRange
+    ast.kid-add(t, idx, body); Body
+    idx
 }
 
 ; ps-is-cond-loop-prefix：判定【目前 pos（LPAREN）】是否為 `(cond) {` 前置條件循環。
@@ -3883,7 +4175,11 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
 ps-parse-brace-stmt = (t ast, p psst) (idx i64) {
     savePos = p.pos
     idx = 0
-    ps-bm-scan(p) == 1 -> {
+
+    ; s57：`{ body } * N` 後置計數循環優先於裸 match/普通區塊（鏡像 Go stmt.go:402-406 LBRACE 臂序：
+    ;   isCountedLoopBlockFirst 先測）。閘門為純前視、不消費 token ⇒ 不過則零副作用落原路徑。
+    s57-count-blockfirst-p(p) == 1 -> idx = s57-parse-count-loop-blockfirst(t, p)
+    idx == 0 -> ps-bm-scan(p) == 1 -> {
         bm = ps-parse-bare-match(t, p)
         bm > 0 -> {
             idx = ast.add(t, asp.K_EXPRESSION_STATEMENT)
@@ -4880,6 +5176,7 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
 
             #{index-out=zero}
             onil = listed[2]
+
             ; 全列 ok/err/nil ⇒ wildcard 臂為死碼（Go skipItBinding，lowering.go:2214）——不建任何 it 綁定
             ol == 1 && oe == 1 && onil == 1 -> dead = 1
             ol == 1 && oe == 0 && onil == 1 -> bt = 'err'

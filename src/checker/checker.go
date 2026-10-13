@@ -6435,6 +6435,20 @@ func ValidatePrintFormat(program *parser.Program) []ValidateResult {
 	// 走訪頂層敘述，追蹤變數作用域
 	// 頂層變數共用同一作用域（模組級），故使用單一 varTypes map
 	varTypes := make(map[string]string)
+	// transpiler 會把頂層 MultiAssignStatement（`a, b = f()`）改寫成巢狀呼叫語法
+	// （`f(a, b)`），改寫後 merged program 頂層不再存在 MultiAssignStatement 節點，
+	// 下面 checkPrintFormatInStmt 的 MultiAssign 分支不會觸發，導致目标變數名（a/b）
+	// 未註冊，format string 裡引用它們時被誤報為 undefined variable。transpiler 在
+	// 改寫前已把這些目標登記進 Sem.DeclaredVars，故在此以未知型別（空字串）預填——
+	// 與 ValidateUndefinedVars/CollectDefinedVars 同一口徑；型別未知時
+	// validatePrintFormatCall 會跳過型別相容性檢查。
+	if program.Sem != nil {
+		for name := range program.Sem.DeclaredVars {
+			if _, exists := varTypes[name]; !exists {
+				varTypes[name] = ""
+			}
+		}
+	}
 	for _, stmt := range program.Statements {
 		results = append(results, checkPrintFormatInStmt(stmt, varTypes, structFields)...)
 	}
@@ -6468,7 +6482,9 @@ func checkPrintFormatInStmt(stmt parser.Statement, varTypes map[string]string, s
 			if s.Name != nil {
 				if s.Type != nil && s.Type.String() != "" {
 					varTypes[s.Name.Value] = s.Type.String()
-				} else if _, exists := varTypes[s.Name.Value]; !exists {
+				} else if existing, exists := varTypes[s.Name.Value]; !exists || existing == "" {
+					// 尚未註冊，或被 ValidatePrintFormat 以未知型別（空字串）預填
+					// （見 Sem.DeclaredVars 預填）：此時依 right-hand value 推導真實型別。
 					varTypes[s.Name.Value] = inferExprType(s.Value, varTypes, validationFuncTypes, "")
 				}
 			}
@@ -6720,20 +6736,25 @@ func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
 		// 無類型字元：任何變數型別皆可
 		return ""
 	}
+	// 看穿 option/nullable 包裝（`?T`）：格式規格套用的是 option 的內層值
+	// （runtime 對 option 會自動解包後格式化），因此以內層型別判斷相容性。
+	// 例如 `tvx = vx[0]`（vx 為 []f64，索引回傳 ?f64）搭配 `{tvx:.17g}` 的 'g'
+	// 規格，其內層 f64 属浮點，應視為相容。
+	baseType := strings.TrimPrefix(varType, "?")
 	switch typeChar {
 	case 'b', 'c', 'd', 'o', 'p', 'x', 'X':
 		// 整數類型（p = 指針地址，亦為整數）
-		if !isIntegerTypeStr(varType) {
+		if !isIntegerTypeStr(baseType) {
 			return fmt.Sprintf("format spec '%c' requires integer type, got '%s' (spec: %q)", typeChar, varType, specStr)
 		}
 	case 'e', 'E', 'f', 'F', 'g', 'G', '%':
 		// 浮點數類型
-		if !isFloatTypeStr(varType) {
+		if !isFloatTypeStr(baseType) {
 			return fmt.Sprintf("format spec '%c' requires float type, got '%s' (spec: %q)", typeChar, varType, specStr)
 		}
 	case 's':
 		// 字串或布林值
-		if varType != "str" && varType != "bool" && !isIntegerTypeStr(varType) {
+		if baseType != "str" && baseType != "bool" && !isIntegerTypeStr(baseType) {
 			return fmt.Sprintf("format spec 's' requires str/bool/integer type, got '%s' (spec: %q)", varType, specStr)
 		}
 	case 't':

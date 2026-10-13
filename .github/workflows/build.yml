@@ -299,10 +299,18 @@ jobs:
             #     的 LLVM 静态库——两边同工具链/同 libc++，-lc++ 只对得上，静态链接才能成功。
             #   • LLVM_CONFIG 指向预编译包里的 Linux ELF 宿主 llvm-config，它输出的 --cflags/--link-static
             #     描述的是交叉编译产物（include 路径 + libLLVM*.a 名），正是 cgo 需要的。
+            #   • 但 --system-libs 是 stage-A「原生 Linux」构建时烘进去的（-lrt -ldl -lm），描述的是
+            #     宿主而非 Windows 目标：mingw 没有 librt/libdl 导入库，zig 链接直接报
+            #     "unable to find dynamic system library \"rt\"/\"dl\""。故用 LLVM_LD_FLAGS_DROP
+            #     丢掉这两个 -l 旗标，并显式补上 LLVM 静态库真正需要的 Windows 系统库：
+            #     libLLVMSupport 的 Windows/Path.inc 会调 CoInitializeEx/CoCreateInstance 等 COM
+            #     API，需要 -lole32；其余（kernel32/advapi32/shell32/user32 等）由 zig 的
+            #     mingw 默认链接规格提供（实测最小集即 -lc++ -lole32）。
             export CC="zig cc -target ${{ matrix.zig_target }}"
             export CXX="zig c++ -target ${{ matrix.zig_target }}"
             export GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" CGO_ENABLED=1
-            export LLVM_STATIC_EXTRA_LIBS="-lc++"
+            export LLVM_LD_FLAGS_DROP="-lrt -ldl"
+            export LLVM_STATIC_EXTRA_LIBS="-lc++ -lole32"
             make no-llvm FULLLLVM=1 LLVM_CONFIG="$LLVM_DEV/bin/llvm-config" LLVM_STATIC_EXTRA_LIBS="$LLVM_STATIC_EXTRA_LIBS" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           else
             make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"

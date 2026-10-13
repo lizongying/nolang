@@ -1,0 +1,22 @@
+; t60 — W_SEMI_EAT：行尾單個 `;` 註釋吞大括號的 warnings 計數（s56）
+;   規則（Go buffer.go::warnSemiSwallow，全滿足才 +1）：
+;     1. Marker == ';'（單分號；`;;` 系列永不警告）
+;     2. 註釋文字含 '{' 或 '}'
+;     3. 前一個非註釋 token 為同一行的代碼 token（行尾而非行首）
+
+main = () {
+    x i64 = 1
+    print(x); expect: {a: 1}
+
+    ; 行首整行註釋含 { } ⇒ 不警告
+    print(x); tail } more
+
+    ; 無括號的行尾註釋 ⇒ 不警告
+    print(x); plain tail comment
+    print(x); 斜線註釋含 { } ⇒ 不警告
+    print(x); d {e} f; g {h}
+    print(x)
+}
+
+;; 頂層雙分號含 { } ⇒ 不警告
+main()

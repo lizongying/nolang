@@ -18,9 +18,20 @@ shift
 
 LIBDIR="$("$LLVM_CONFIG" --libdir 2>/dev/null || true)"
 
+# LLVM_LD_FLAGS_DROP: space-separated linker flags to remove verbatim, e.g.
+# "-lrt -ldl". Needed when the llvm-config being queried was BUILT FOR ANOTHER
+# PLATFORM than the link target: our cross-windows LLVM packages ship a native
+# Linux stage-A llvm-config whose --system-libs are the Linux host's (-lrt
+# -ldl -lm). On the Windows target those import libs do not exist, and zig
+# fails the link with "unable to find dynamic system library". The consumer
+# (build.yml cross-windows entry) drops them here and supplies the Windows
+# system libs itself via LLVM_STATIC_EXTRA_LIBS.
+DROP=" ${LLVM_LD_FLAGS_DROP:-} "
+
 "$LLVM_CONFIG" --ldflags --libs --link-static --system-libs "$@" 2>/dev/null \
   | tr ' ' '\n' \
   | while IFS= read -r t; do
+      case "$DROP" in *" $t "*) continue;; esac
       case "$t" in
         -lPolly*)
           lib="${t#-l}"

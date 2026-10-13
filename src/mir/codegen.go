@@ -9300,6 +9300,55 @@ func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 	return slot, tid, false
 }
 
+// valueStoredAsWhole reports whether `v` is consumed as a COMPLETE aggregate
+// anywhere in the current function — i.e. it is the VALUE operand of an
+// OpIndexStore (`container[i] = v`) or an OpSetField (`o.f = v`).
+//
+// A value read out of a container by OpIndex/OpGetField is otherwise treated as
+// a VIEW: emitSetField redirects a field write through lvalueAddrOf to the real
+// storage and never touches the value's own alloca. That is sound only while the
+// value is used solely as a view. The moment the whole aggregate is stored
+// somewhere (`node = nodes[i]; node.keys = nk; nodes[i] = node`), the projection
+// makes `node.keys = nk` land in nodes[i] while `node`'s alloca keeps the stale
+// keys, and the write-back then re-overwrites nodes[i] with that stale copy —
+// the mutation is silently lost. Detecting the whole-value store lets the caller
+// disable the projection so the field write lands in `node`'s own alloca and the
+// write-back carries it. (tests/vec-struct-writeback-field.no)
+func (c *codegen) valueStoredAsWhole(v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	f := c.mod.Func(c.cf)
+	if f == nil {
+		return false
+	}
+	for _, bid := range f.Blocks {
+		blk := c.mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := c.mod.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			switch inst.Op {
+			case OpIndexStore:
+				// Args = [container, index, value]
+				if len(inst.Args) >= 3 && inst.Args[2] == v {
+					return true
+				}
+			case OpSetField:
+				// Args = [receiver, value]
+				if len(inst.Args) >= 2 && inst.Args[1] == v {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // projectionWasCloned reports whether the value v — which must be defined by a
 // projection (OpGetField or OpIndex) — was read BY VALUE, i.e. the emitter
 // handed it an independent copy of the field / element instead of an alias of
@@ -9911,7 +9960,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// container element (`self.pool.nodes[i].kind = x`, `o.i.v = n`), its alloca
 	// holds a COPY and the store below would be lost. Redirect the write at the
 	// real storage (GEP chain from the addressable base) instead.
-	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0], inst); projected && p != "" && os.Getenv("NOLANG_LV_FIELD") == "" {
+	if p, ptid, projected := c.lvalueAddrOf(inst.Args[0], inst); projected && p != "" && os.Getenv("NOLANG_LV_FIELD") == "" && !c.valueStoredAsWhole(inst.Args[0]) {
 		if pt := c.mod.Type(ptid); pt != nil {
 			recvSlot = p
 			recvTy = pt
@@ -14961,6 +15010,13 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 		return fmt.Errorf("builtin %s: no receiver slot", inst.Sym)
 	}
 	_, idxV := c.loadVal(inst.Args[1])
+	idxVT, _ := c.ptype(inst.Args[1])
+	// Mirror emitBuiltinRawBytePut (set-byte) and emitStrCpIndex ([i]): the
+	// index may be an option (a bare `j = <expr> #{overflow=wrap}` lowers to
+	// ?i64), which opt rejects as a GEP index. coerceIndex unwraps the payload
+	// and normalises integer width. Without it `s.byte(j)` failed opt-verify
+	// where `s[j]` and `s.set-byte(j, b)` both worked.
+	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
 	var dataPtr string
 	c.loadSeq++
 	dGEP := fmt.Sprintf("%%rbdg%d", c.loadSeq)

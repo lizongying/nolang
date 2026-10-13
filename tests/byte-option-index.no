@@ -1,0 +1,34 @@
+; byte-option-index.no — `s.byte(i)` 的下標可以是 option（?i64），必須與 `[i]` / set-byte 對稱
+;
+; 缺陷：一個裸賦值 `j = <expr> #{overflow=wrap}` 會被推成 ?i64（%option = {i64 tag, [N x i64] slot}）。
+; 把它餵給 `all.byte(j)` 時，emitBuiltinRawByteAt 只 loadVal(Args[1])，沒有像兄弟函式
+; emitBuiltinRawBytePut（set-byte）與 emitStrCpIndex（[i]）那樣呼叫 coerceIndex 剝出 payload，
+; 於是把整個 %option 結構體當成 GEP 的 i64 下標，opt 驗證失敗：
+;     %lv defined with type '%option={i64,[3xi64]}' but expected 'i64'
+; 修法：reader 補 idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)，與 writer / [i] 對稱。
+;
+; 判定：f-byte 與 f-idx（走 coerceIndex 的 [i] 路徑）結果都必須是 195（'abc'[1]=98 + 'abc'[0]=97）。
+;       修好前 f-byte 直接編譯失敗；修好後兩者一致。
+
+f-byte = (all str, k i64) (out i64) {
+    s i64 = 0
+    i <- [0..k): {
+        j = k - 1 - i #{overflow=wrap}
+        b i64 = all.byte(j)
+        s = s + b #{overflow=wrap}
+    }
+    out = s
+}
+
+f-idx = (all str, k i64) (out i64) {
+    s i64 = 0
+    i <- [0..k): {
+        j = k - 1 - i #{overflow=wrap}
+        b i64 = all[j]
+        s = s + b #{overflow=wrap}
+    }
+    out = s
+}
+
+io.outln('byte=' - f-byte('abc', 2).to-str())
+io.outln('idx=' - f-idx('abc', 2).to-str())

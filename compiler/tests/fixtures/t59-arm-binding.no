@@ -1,0 +1,60 @@
+; s55 fixture：match armBinding 之 it 合成綁定型別蓋印（Go lowering.go buildItBindingForArm）
+; 主題為靜态可知 option 型別 `?T` 時，各臂 it 依变體收窄：err 臂→err、nil 臂→nil、ok 臂→T、
+; wildcard 臂取補集（僅列 err+nil→T；僅列 ok→err | nil；列 ok+nil→err；列 ok+err→nil；全不列→T）。
+n ?i64 = 42
+
+; err + nil + wildcard（補集 = i64）
+a = n: {
+    err -> 1
+
+    nil -> 2
+
+    -> 3
+}
+
+; ok + wildcard（補集 = err | nil）
+b = n: {
+    ok -> 1
+
+    -> 2
+}
+
+; 僅 err + wildcard（補集 = i64）
+c = n: {
+    err -> 1
+
+    -> 2
+}
+
+; 僅 nil + wildcard（補集 = i64）
+d = n: {
+    nil -> 1
+
+    -> 2
+}
+
+; 純 wildcard（無關鍵字臂 → 補集 = i64）
+f = n: {
+    -> 1
+}
+
+; str 載荷：ok 臂→str、nil 臂→nil、wildcard（列 ok+nil）→err
+m ?str = 'x'
+g = m: {
+    ok -> 1
+
+    nil -> 2
+
+    -> 3
+}
+
+; 巢狀 match：内層 it 型別不污染外層（逐臂登記與還原）
+h = n: {
+    err -> n: {
+        nil -> 1
+
+        -> 2
+    }
+
+    -> 3
+}
