@@ -119,13 +119,11 @@ probe-else = () (out str) {
     }
 }
 
-main = () {
-    s1 = probe-min()
-    check-str('nested-ok-arm', s1, '42/42')
+s1 = probe-min()
+check-str('nested-ok-arm', s1, '42/42')
 
-    s2 = probe-deep()
-    check-str('nested-three-levels', s2, '42-7-42-7-42')
+s2 = probe-deep()
+check-str('nested-three-levels', s2, '42-7-42-7-42')
 
-    s3 = probe-else()
-    check-str('nested-else-arm', s3, '42/42')
-}
+s3 = probe-else()
+check-str('nested-else-arm', s3, '42/42')

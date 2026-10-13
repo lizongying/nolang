@@ -10,23 +10,20 @@
 ; 本測試在 MIR=2（legacy）與 MIR=3（純 MIR）下都應編譯通過並輸出相同結果。
 ; 若 MIR=3 再次回歸，會 CRASH（編譯失敗）→ mir_cov 標記為非 MATCH。
 
-main = () {
+; str（堆分配可變長字串）的 raw-byte 存取
+s = 'ABC'
+print(s.byte(0))
+print(s.byte(1))
+print(s.byte(2))
 
-    ; str（堆分配可變長字串）的 raw-byte 存取
-    s = 'ABC'
-    print(s.byte(0))
-    print(s.byte(1))
-    print(s.byte(2))
+; txt（棧分配固定長度字串）的 raw-byte 存取
+t txt = 'ABC'
+print(t.byte(0))
+print(t.byte(1))
+print(t.byte(2))
 
-    ; txt（棧分配固定長度字串）的 raw-byte 存取
-    t txt = 'ABC'
-    print(t.byte(0))
-    print(t.byte(1))
-    print(t.byte(2))
-
-    ; 非 ASCII（多字節 UTF-8）也應正確取出底層位元組
-    u = 'Aé'
-    print(u.byte(0))
-    print(u.byte(1))
-    print(u.byte(2))
-}
+; 非 ASCII（多字節 UTF-8）也應正確取出底層位元組
+u = 'Aé'
+print(u.byte(0))
+print(u.byte(1))
+print(u.byte(2))

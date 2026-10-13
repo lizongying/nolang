@@ -234,11 +234,9 @@ test-dh = () (pass bool) {
     pass = true
 }
 
-main = () {
-    p = test-dh()
-    {
-        p == true -> print('PASS: X25519 DH test')
+p = test-dh()
+{
+    p == true -> print('PASS: X25519 DH test')
 
-        p == false -> print('FAIL: X25519 DH test')
-    }
+    p == false -> print('FAIL: X25519 DH test')
 }

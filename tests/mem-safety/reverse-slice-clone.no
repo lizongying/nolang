@@ -71,27 +71,25 @@ test-vec-reverse-simple = () (ok bool) {
     b.len() == 3 -> ok = true
 }
 
-main = () {
-    ok1 = test-forward-slice()
-    print('test-forward-slice: {ok1}')
+ok1 = test-forward-slice()
+print('test-forward-slice: {ok1}')
 
-    ok2 = test-vec-reverse-inclusive()
-    print('test-vec-reverse-inclusive: {ok2}')
+ok2 = test-vec-reverse-inclusive()
+print('test-vec-reverse-inclusive: {ok2}')
 
-    ok3 = test-vec-reverse-exclusive()
-    print('test-vec-reverse-exclusive: {ok3}')
+ok3 = test-vec-reverse-exclusive()
+print('test-vec-reverse-exclusive: {ok3}')
 
-    ok4 = test-vec-reverse-left-excl()
-    print('test-vec-reverse-left-excl: {ok4}')
+ok4 = test-vec-reverse-left-excl()
+print('test-vec-reverse-left-excl: {ok4}')
 
-    ok5 = test-str-reverse()
-    print('test-str-reverse: {ok5}')
+ok5 = test-str-reverse()
+print('test-str-reverse: {ok5}')
 
-    ok6 = test-vec-reverse-independence()
-    print('test-vec-reverse-independence: {ok6}')
+ok6 = test-vec-reverse-independence()
+print('test-vec-reverse-independence: {ok6}')
 
-    ok7 = test-vec-reverse-simple()
-    print('test-vec-reverse-simple: {ok7}')
+ok7 = test-vec-reverse-simple()
+print('test-vec-reverse-simple: {ok7}')
 
-    print('all done')
-}
+print('all done')

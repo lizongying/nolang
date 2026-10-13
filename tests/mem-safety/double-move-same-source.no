@@ -12,9 +12,7 @@ get-pair = () (a []i64, b []i64) {
     b = x; x 后续未引用 → move，b 接管 x 的 data
 }
 
-main = () {
-    ra, rb = get-pair()
-    print(ra.len())
-    print(rb.len())
-    print('done')
-}
+ra, rb = get-pair()
+print(ra.len())
+print(rb.len())
+print('done')

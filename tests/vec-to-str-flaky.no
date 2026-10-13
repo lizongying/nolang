@@ -14,14 +14,12 @@
 ;
 ; The leading 256 forces truncation to be visible even if the wrong body runs.
 
-main = () {
-    v []i64 = with-cap(8)
-    v.push(1)
-    v.push(2)
-    v.push(3)
-    v.push(10)
-    v.push(20)
-    v.push(256)
-    s = v.to-str()
-    print(s)
-}
+v []i64 = with-cap(8)
+v.push(1)
+v.push(2)
+v.push(3)
+v.push(10)
+v.push(20)
+v.push(256)
+s = v.to-str()
+print(s)

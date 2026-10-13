@@ -148,11 +148,9 @@ test-vec-1 = () (pass bool) {
     pass = true
 }
 
-main = () {
-    p1 = test-vec-1()
-    {
-        p1 == true -> print('PASS: X25519 RFC 7748 test vector')
+p1 = test-vec-1()
+{
+    p1 == true -> print('PASS: X25519 RFC 7748 test vector')
 
-        p1 == false -> print('FAIL: X25519 RFC 7748 test vector')
-    }
+    p1 == false -> print('FAIL: X25519 RFC 7748 test vector')
 }

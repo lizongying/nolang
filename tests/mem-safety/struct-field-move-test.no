@@ -14,13 +14,11 @@ extract-data = (c container) (out []i64) {
     ; c.data 已 move，emitStructFieldsFree 应跳过 c.data 的 free
 }
 
-main = () {
-    c container
-    c.data = [1, 2, 3, 4, 5]
-    c.name = 'test'
-    d = extract-data(c)
-    print(d.len())
-    print(d[0])
-    print(d[4])
-    print('done')
-}
+c container
+c.data = [1, 2, 3, 4, 5]
+c.name = 'test'
+d = extract-data(c)
+print(d.len())
+print(d[0])
+print(d[4])
+print('done')

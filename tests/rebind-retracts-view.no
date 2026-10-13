@@ -27,88 +27,85 @@ Holder {
     f str
 }
 
-main = () {
+; (1) 重綁定的視圖：長度必須是 trim 之後的長度
+lines = ['  a  ']
 
-    ; (1) 重綁定的視圖：長度必須是 trim 之後的長度
-    lines = ['  a  ']
+#{index-out=zero}
+line = lines[0]
+line = line.trim()
+line.len() == 1 -> print('ok 1: rebound view length')
 
-    #{index-out=zero}
-    line = lines[0]
-    line = line.trim()
-    line.len() == 1 -> print('ok 1: rebound view length')
+-> print('fail 1: rebound view length got={line.len()}')
 
-    -> print('fail 1: rebound view length got={line.len()}')
+; (2) 內容同時必須正確（修復前這裡是對的，用來證明只有長度壞掉）
+line == 'a' -> print('ok 2: rebound view content')
 
-    ; (2) 內容同時必須正確（修復前這裡是對的，用來證明只有長度壞掉）
-    line == 'a' -> print('ok 2: rebound view content')
+-> print('fail 2: rebound view content got=[{line}]')
 
-    -> print('fail 2: rebound view content got=[{line}]')
+; (3) 對照組：單一定義的切片元素接收者，set-byte 必須寫回元素本身
+rows = ['x', 'y']
+rows[0].set-byte(0, 90)
+rows[0] == 'Z' -> print('ok 3: single-def element receiver writes back')
 
-    ; (3) 對照組：單一定義的切片元素接收者，set-byte 必須寫回元素本身
-    rows = ['x', 'y']
-    rows[0].set-byte(0, 90)
-    rows[0] == 'Z' -> print('ok 3: single-def element receiver writes back')
+-> print('fail 3: element receiver got=[{rows[0]}]')
 
-    -> print('fail 3: element receiver got=[{rows[0]}]')
-
-    ; (4) 對照組：單一定義的結構體欄位接收者
-    h = Holder {
-        f: 'hello'
-    }
-    h.f.set-byte(0, 72)
-    h.f == 'Hello' -> print('ok 4: single-def struct field receiver writes back')
-
-    -> print('fail 4: struct field receiver got=[{h.f}]')
-
-    ; (5) 重綁定的**欄位**視圖：`g = h.f` 之後重綁定，長度必須是自己的
-    h2 = Holder {
-        f: '  hi  '
-    }
-    g = h2.f
-    g = g.trim()
-    g.len() == 2 -> print('ok 5: rebound field view length')
-
-    -> print('fail 5: rebound field view length got={g.len()}')
-
-    ; (6) 重綁定到**另一個**元素後，不得再讀到第一個元素
-    ls = ['aaaa', 'b']
-
-    #{index-out=zero}
-    v = ls[0]
-
-    #{index-out=zero}
-    v = ls[1]
-    v.len() == 1 -> print('ok 6: rebind to another element')
-
-    -> print('fail 6: rebind to another element got={v.len()}')
-
-    ; (7) 對照組：單一定義的視圖仍必須投影（寫回元素）
-    box = Holder {
-        f: 'xy'
-    }
-    w = box.f
-    w.set-byte(0, 90)
-    box.f == 'Zy' -> print('ok 7: single-def view still projects to the field')
-
-    -> print('fail 7: field got=[{box.f}]')
-
-    ; (8) **容器本身**被重新綁定：投影指向 &ls[0]，容器換了它就指向別的字串
-    ls2 = ['aaaa']
-
-    #{index-out=zero}
-    ln2 = ls2[0]
-    ls2 = ['bb']
-    ln2.len() == 4 -> print('ok 8: rebound container does not leak into the view')
-
-    -> print('fail 8: rebound container got={ln2.len()}')
-
-    ; (9) **欄位本身**被重新綁定：投影指向 &h.f，欄位換了它就不是 g2 了
-    h4 = Holder {
-        f: '  hi  '
-    }
-    g2 = h4.f
-    h4.f = 'zzzz'
-    g2.len() == 6 -> print('ok 9: rebound field does not leak into the view')
-
-    -> print('fail 9: rebound field got={g2.len()}')
+; (4) 對照組：單一定義的結構體欄位接收者
+h = Holder {
+    f: 'hello'
 }
+h.f.set-byte(0, 72)
+h.f == 'Hello' -> print('ok 4: single-def struct field receiver writes back')
+
+-> print('fail 4: struct field receiver got=[{h.f}]')
+
+; (5) 重綁定的**欄位**視圖：`g = h.f` 之後重綁定，長度必須是自己的
+h2 = Holder {
+    f: '  hi  '
+}
+g = h2.f
+g = g.trim()
+g.len() == 2 -> print('ok 5: rebound field view length')
+
+-> print('fail 5: rebound field view length got={g.len()}')
+
+; (6) 重綁定到**另一個**元素後，不得再讀到第一個元素
+ls = ['aaaa', 'b']
+
+#{index-out=zero}
+v = ls[0]
+
+#{index-out=zero}
+v = ls[1]
+v.len() == 1 -> print('ok 6: rebind to another element')
+
+-> print('fail 6: rebind to another element got={v.len()}')
+
+; (7) 對照組：單一定義的視圖仍必須投影（寫回元素）
+box = Holder {
+    f: 'xy'
+}
+w = box.f
+w.set-byte(0, 90)
+box.f == 'Zy' -> print('ok 7: single-def view still projects to the field')
+
+-> print('fail 7: field got=[{box.f}]')
+
+; (8) **容器本身**被重新綁定：投影指向 &ls[0]，容器換了它就指向別的字串
+ls2 = ['aaaa']
+
+#{index-out=zero}
+ln2 = ls2[0]
+ls2 = ['bb']
+ln2.len() == 4 -> print('ok 8: rebound container does not leak into the view')
+
+-> print('fail 8: rebound container got={ln2.len()}')
+
+; (9) **欄位本身**被重新綁定：投影指向 &h.f，欄位換了它就不是 g2 了
+h4 = Holder {
+    f: '  hi  '
+}
+g2 = h4.f
+h4.f = 'zzzz'
+g2.len() == 6 -> print('ok 9: rebound field does not leak into the view')
+
+-> print('fail 9: rebound field got={g2.len()}')

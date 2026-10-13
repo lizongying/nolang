@@ -72,15 +72,13 @@ test-three-callbacks = () (ok bool) {
     a == 111 && b == 222 && c == 333 -> ok = true
 }
 
-main = () {
-    ok1 = test-single-callback()
-    print('test-single-callback: {ok1}')
+ok1 = test-single-callback()
+print('test-single-callback: {ok1}')
 
-    ok2 = test-two-callbacks()
-    print('test-two-callbacks: {ok2}')
+ok2 = test-two-callbacks()
+print('test-two-callbacks: {ok2}')
 
-    ok3 = test-three-callbacks()
-    print('test-three-callbacks: {ok3}')
+ok3 = test-three-callbacks()
+print('test-three-callbacks: {ok3}')
 
-    print('all done')
-}
+print('all done')

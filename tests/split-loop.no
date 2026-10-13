@@ -1,22 +1,20 @@
 ; Test str.index-from in a loop
-main = () {
-    s = 'hello,world'
-    sep = ','
-    start = 0
+s = 'hello,world'
+sep = ','
+start = 0
+pos = s.index-from(sep, start)
+
+print('first pos: ' + pos.to-str())
+
+; simulate split loop
+(pos >= 0) {
+
+    print('loop: pos=' + pos.to-str() + ' start=' + start.to-str())
+
+    #{overflow=wrap}
+    start = pos + sep.len-bytes()
     pos = s.index-from(sep, start)
 
-    print('first pos: ' + pos.to-str())
-
-    ; simulate split loop
-    (pos >= 0) {
-
-        print('loop: pos=' + pos.to-str() + ' start=' + start.to-str())
-
-        #{overflow=wrap}
-        start = pos + sep.len-bytes()
-        pos = s.index-from(sep, start)
-
-        print('next: pos=' + pos.to-str() + ' start=' + start.to-str())
-    }
-    print('done')
+    print('next: pos=' + pos.to-str() + ' start=' + start.to-str())
 }
+print('done')

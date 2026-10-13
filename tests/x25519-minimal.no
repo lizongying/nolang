@@ -69,11 +69,9 @@ test-min = () (pass bool) {
     alice-pub[0] == 133 -> pass = true
 }
 
-main = () {
-    p = test-min()
-    {
-        p == true -> print('PASS: minimal test')
+p = test-min()
+{
+    p == true -> print('PASS: minimal test')
 
-        p == false -> print('FAIL: minimal test')
-    }
+    p == false -> print('FAIL: minimal test')
 }

@@ -13,7 +13,5 @@ test1 = () (ok bool) {
     b0[2] == 100 -> ok = true
 }
 
-main = () {
-    ok1 = test1()
-    print('test1: {ok1}')
-}
+ok1 = test1()
+print('test1: {ok1}')

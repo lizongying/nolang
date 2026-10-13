@@ -39,16 +39,14 @@ test-pass-str = () (ok bool) {
     r.len-bytes() > 0 -> ok = true
 }
 
-main = () {
-    ok1 = test-found()
-    print('test-found: {ok1}')
+ok1 = test-found()
+print('test-found: {ok1}')
 
-    ok2 = test-not-found()
-    print('test-not-found: {ok2}')
+ok2 = test-not-found()
+print('test-not-found: {ok2}')
 
-    ok3 = test-repeat()
-    print('test-repeat: {ok3}')
+ok3 = test-repeat()
+print('test-repeat: {ok3}')
 
-    ok4 = test-pass-str()
-    print('test-pass-str: {ok4}')
-}
+ok4 = test-pass-str()
+print('test-pass-str: {ok4}')

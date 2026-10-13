@@ -418,6 +418,7 @@ test-insert-nested-clone = () (ok bool) {
     outer [][]i64
     inner []i64 = [7, 8, 9]
     outer.insert(0, inner)
+
     ; 重新賦值 inner —— 舊值 [7,8,9] 的 drop 會釋放其緩衝區。
     ; 若 insert 共享緩衝區（修復前），outer[0] 會懸垂，讀回垃圾甚至崩潰。
     inner = [100, 200, 300]
@@ -433,6 +434,7 @@ test-insert-nested-clone = () (ok bool) {
     inner2 []i64 = [1, 2]
     outer.insert(1, inner2)
     inner2 = [9, 9, 9, 9]
+
     #{index-out=zero}
     got2 = outer[1]
     got2[0] == 1 -> ok = true
@@ -472,10 +474,13 @@ build-from-fixed = () (s []str) {
 
 test-fixed-array-sink-clone = () (ok bool) {
     s = build-from-fixed()
+
     #{index-out=zero}
     a = s[0]
+
     #{index-out=zero}
     b = s[1]
+
     #{index-out=zero}
     c = s[2]
     a == 'p' -> ok = true
@@ -484,49 +489,47 @@ test-fixed-array-sink-clone = () (ok bool) {
     s.len() == 3 -> ok = true
 }
 
-main = () {
-    ok1 = test-nested-clone-vec()
-    print('test-nested-clone-vec: {ok1}')
+ok1 = test-nested-clone-vec()
+print('test-nested-clone-vec: {ok1}')
 
-    ok2 = test-nested-clone-modify()
-    print('test-nested-clone-modify: {ok2}')
+ok2 = test-nested-clone-modify()
+print('test-nested-clone-modify: {ok2}')
 
-    ok3 = test-nested-element-assign()
-    print('test-nested-element-assign: {ok3}')
+ok3 = test-nested-element-assign()
+print('test-nested-element-assign: {ok3}')
 
-    ok4 = test-nested-reassign()
-    print('test-nested-reassign: {ok4}')
+ok4 = test-nested-reassign()
+print('test-nested-reassign: {ok4}')
 
-    ok5 = test-nested-clone-str()
-    print('test-nested-clone-str: {ok5}')
+ok5 = test-nested-clone-str()
+print('test-nested-clone-str: {ok5}')
 
-    ok6 = test-struct-clone-str()
-    print('test-struct-clone-str: {ok6}')
+ok6 = test-struct-clone-str()
+print('test-struct-clone-str: {ok6}')
 
-    ok7 = test-struct-clone-vec-field()
-    print('test-struct-clone-vec-field: {ok7}')
+ok7 = test-struct-clone-vec-field()
+print('test-struct-clone-vec-field: {ok7}')
 
-    ok8 = test-nested-struct-clone()
-    print('test-nested-struct-clone: {ok8}')
+ok8 = test-nested-struct-clone()
+print('test-nested-struct-clone: {ok8}')
 
-    ok9 = test-map-clone()
-    print('test-map-clone: {ok9}')
+ok9 = test-map-clone()
+print('test-map-clone: {ok9}')
 
-    ok10 = test-map-vec-value-clone()
-    print('test-map-vec-value-clone: {ok10}')
+ok10 = test-map-vec-value-clone()
+print('test-map-vec-value-clone: {ok10}')
 
-    ok11 = test-struct-nested-vec-clone()
-    print('test-struct-nested-vec-clone: {ok11}')
+ok11 = test-struct-nested-vec-clone()
+print('test-struct-nested-vec-clone: {ok11}')
 
-    ok12 = test-struct-array-clone()
-    print('test-struct-array-clone: {ok12}')
+ok12 = test-struct-array-clone()
+print('test-struct-array-clone: {ok12}')
 
-    ok13 = test-insert-nested-clone()
-    print('test-insert-nested-clone: {ok13}')
+ok13 = test-insert-nested-clone()
+print('test-insert-nested-clone: {ok13}')
 
-    ok14 = test-insert-nested-str-clone()
-    print('test-insert-nested-str-clone: {ok14}')
+ok14 = test-insert-nested-str-clone()
+print('test-insert-nested-str-clone: {ok14}')
 
-    ok15 = test-fixed-array-sink-clone()
-    print('test-fixed-array-sink-clone: {ok15}')
-}
+ok15 = test-fixed-array-sink-clone()
+print('test-fixed-array-sink-clone: {ok15}')

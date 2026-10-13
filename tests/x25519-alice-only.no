@@ -53,38 +53,35 @@ bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
     }
 }
 
-main = () {
+; Alice private: 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a
+; Alice public:  8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
 
-    ; Alice private: 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a
-    ; Alice public:  8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
+alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
 
-    alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+eprint('alice-priv: ')
+i <- [0..32): {
+    eprint(alice-priv[i])
+    eprint(' ')
+}
+alice-pub = x25519.x25519-scalarmult-base(alice-priv)
 
-    eprint('alice-priv: ')
-    i <- [0..32): {
-        eprint(alice-priv[i])
-        eprint(' ')
-    }
-    alice-pub = x25519.x25519-scalarmult-base(alice-priv)
+eprint('alice-pub: ')
+i <- [0..32): {
+    eprint(alice-pub[i])
+    eprint(' ')
+}
+alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
 
-    eprint('alice-pub: ')
-    i <- [0..32): {
-        eprint(alice-pub[i])
-        eprint(' ')
-    }
-    alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+ok = bytes-eq(alice-pub, alice-pub-expected)
+{
+    ok == true -> print('PASS: Alice only')
 
-    ok = bytes-eq(alice-pub, alice-pub-expected)
-    {
-        ok == true -> print('PASS: Alice only')
-
-        ok == false -> {
-            print('FAIL: Alice only')
-            eprint('expected: ')
-            i <- [0..32): {
-                eprint(alice-pub-expected[i])
-                eprint(' ')
-            }
+    ok == false -> {
+        print('FAIL: Alice only')
+        eprint('expected: ')
+        i <- [0..32): {
+            eprint(alice-pub-expected[i])
+            eprint(' ')
         }
     }
 }

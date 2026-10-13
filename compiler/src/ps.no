@@ -605,6 +605,11 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
             }
         }
 
+        ; 陳述位裸區塊 `{ … }`——鏡像 Go parseStatement 的 LBRACE 臂（stmt.go:402）：
+        ;   含深度 0 `->` ⇒ 裸 match desugared 單陳述；否則普通 BlockStatement 陳述。
+        ;   此前此位無臂 ⇒ 防呆前进吃掉 `{`，區塊 wrapper 消失（語句外洩一層）。
+        tk.typ == tok.LBRACE -> idx = ps-parse-brace-stmt(t, p)
+
         ; `for`/`while` 关键字迴圈（无限 / 条件 / range），對應 Go parseForStatement 的 FOR 分支
         tk.typ == tok.FOR -> idx = ps-parse-for-kw(t, p)
 
@@ -612,6 +617,21 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
         tk.typ == tok.BREAK -> idx = ps-parse-break-continue(t, p, 1)
 
         tk.typ == tok.CONTINUE -> idx = ps-parse-break-continue(t, p, 0)
+
+        ; `*` 語句起始 = break 速寫（Go stmt.go:552 parseStarBreakOrExpr）：僅當緊後 token
+        ;   ∈ {NEWLINE,EOF,SEMI,RBRACE,LABEL,IDENT} 才成立，否則退回表達式陳述。
+        tk.typ == tok.MUL -> idx = ps-parse-star-break(t, p)
+
+        ; `**` 語句起始 = continue 速寫（Go stmt.go:558 parseStarStarContinue，無前探閘門）
+        tk.typ == tok.STAR_STAR -> idx = ps-parse-star-star-cont(t, p)
+
+        tk.typ == tok.LABEL -> {
+            lval = tk.lit
+            ps-bump(p); 消費 #N
+            inner = ps-parse-stmt(t, p)
+            idx = inner
+            inner > 0 && ast.kind-at(t, inner) == asp.K_FOR_STATEMENT -> ast.set-slot(t, inner, 0, ast.put-str(t, lval))
+        }
 
         tk.typ == tok.RETURN -> {
             ps-bump(p); 消費 return
@@ -2290,6 +2310,69 @@ ps-parse-break-continue = (t ast, p psst, brk i64) (idx i64) {
     idx
 }
 
+; ps-mk-break-cont：建 Break/Continue 節點（label/kind 兩純量槽），供速寫復用。
+ps-mk-break-cont = (t ast, brk i64, label str, kind str) (idx i64) {
+    nodekind = asp.K_BREAK_STATEMENT
+    brk == 0 -> nodekind = asp.K_CONTINUE_STATEMENT
+    idx = ast.add(t, nodekind)
+    ast.set-slot(t, idx, 0, ast.put-str(t, label)); label
+    ast.set-slot(t, idx, 1, ast.put-str(t, kind)); kind
+    idx
+}
+
+; ps-star-label：消費速寫關鍵字後的【可選】標籤（LABEL `#N`→numeric / IDENT→text），
+;   對應 Go parseBreak/parseStar* 的尾部 label 吸收。回傳 kind：0=none / 1=numeric或text（label 写入 out）。
+ps-star-label = (p psst, out []str) (k i64) {
+    k = 0
+    nt = ps-peek(p)
+    nt == tok.LABEL -> {
+        ltk = ps-peek-token(p)
+        out[0] = ltk.lit
+        out[1] = 'numeric'
+        k = 1
+        ps-bump(p)
+    }
+    nt == tok.IDENT -> {
+        itk = ps-peek-token(p)
+        out[0] = itk.lit
+        out[1] = 'text'
+        k = 1
+        ps-bump(p)
+    }
+    k
+}
+
+; ps-parse-star-break：語句位 `*` → BreakStatement 速寫（Go parseStarBreakOrExpr stmt.go:2913）。
+;   閘門：peek(1) ∈ {NEWLINE,EOF,SEMICOLON,RBRACE,LABEL,IDENT} 才視作 break；否則退回表達式陳述。
+;   ⚠️ 閘門含 IDENT——`* x` 在 Go 即 break+label x（怪异但必须逐位元組鏡像）。
+ps-parse-star-break = (t ast, p psst) (idx i64) {
+    idx = 0
+    nt = ps-peek-at(p, 1)
+    isBrk = 0
+    nt == tok.NEWLINE || nt == tok.EOF || nt == tok.SEMICOLON || nt == tok.RBRACE || nt == tok.LABEL || nt == tok.IDENT -> isBrk = 1
+    isBrk == 1 -> {
+        ps-bump(p); 消費 *
+        lab []str = with-cap(2)
+        lab.push('')
+        lab.push('none')
+        ps-star-label(p, lab)
+        idx = ps-mk-break-cont(t, 1, lab[0], lab[1])
+    }
+    isBrk == 0 -> idx = ps-parse-expr-stmt(t, p)
+    idx
+}
+
+; ps-parse-star-star-cont：語句位 `**` → ContinueStatement 速寫（Go parseStarStarContinue stmt.go:2937，無閘門）。
+ps-parse-star-star-cont = (t ast, p psst) (idx i64) {
+    ps-bump(p); 消費 **
+    lab []str = with-cap(2)
+    lab.push('')
+    lab.push('none')
+    ps-star-label(p, lab)
+    idx = ps-mk-break-cont(t, 0, lab[0], lab[1])
+    idx
+}
+
 ; ps-rarrow-same-line：目前是否為【與前一個 token 同列】的 `->`（對應 Go
 ;   `currentToken==RARROW && prevToken.Type != NEWLINE`）。⚠️ NEWLINE 在 ps.no
 ;   raw token 流中【保留】，故直接看 p.pos-1 的型別即可判是否換行。
@@ -2408,6 +2491,453 @@ ps-mk-standalone-if = (t ast, p psst, cond i64) (idx i64) {
     ast.kid-add(t, idx, cond)
     ast.kid-add(t, idx, blk)
     ast.kid-add(t, idx, alt)
+}
+
+; ================= 陳述位 `{ … }`：裸 match desugar + 普通區塊陳述（s48） =================
+; 對應 Go parseStatement LBRACE 臂（stmt.go:402–531）與 buildBareMatchDesugar
+; （lowering.go:1727）：所有臂非 wildcard 且 >1 ⇒ 包一層 IfExpression{IntegerLiteral 1,
+; Block{各臂 if(無 else) 為兄弟}}；否則由末臂往回組 elif 鏈（尾 wildcard ⇒ If{1,body}，
+; 普通臂 else = 非內聯 Block{ExpressionStatement{後續鏈}}）。
+; 保守退讓（回 0 交呼叫端還原）：臂首 `#{...}` 前置註解、`ok->` isDotVal 綁定、
+; wildcard 出現在鏈中間（Go 要 mutation 已建節點的 else，s48 不支持）。
+
+; ps-scan-nont：從 from 起第一個非 trivia（NEWLINE/COMMENT）的 token 下標；越界回 toks.len()。
+ps-scan-nont = (p psst, from i64) (i i64) {
+    i = from
+
+    #{index-out=zero}
+    (i < p.toks.len() && (p.toks[i].typ == tok.NEWLINE || p.toks[i].typ == tok.COMMENT)) {
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    i
+}
+
+; ps-arrow-scan0：從當前 token 往後、同一 logical 行內（NEWLINE/;/RBRACE/EOF 即停）
+;   是否出現深度 0 的 `->`。鏡像 Go scanForArrowAtDepth0（match.go:607：只跟 ( ) [ ]，
+;   RBRACE 屬停止集）。
+ps-arrow-scan0 = (p psst) (yes i64) {
+    yes = 0
+    depth = 0
+    done = false
+
+    #{overflow=wrap}
+    i = p.pos + 1
+    (done == false && i < p.toks.len()) {
+
+        #{index-out=zero}
+        tt = p.toks[i].typ
+        tt == tok.NEWLINE || tt == tok.SEMICOLON || tt == tok.RBRACE || tt == tok.EOF -> done = true
+        tt == tok.LPAREN || tt == tok.LBRACKET -> {
+
+            #{overflow=wrap}
+            depth = depth + 1
+        }
+        tt == tok.RPAREN || tt == tok.RBRACKET -> {
+
+            #{overflow=wrap}
+            depth = depth - 1
+            depth < 0 -> done = true
+        }
+        tt == tok.RARROW && depth == 0 -> {
+            yes = 1
+            done = true
+        }
+        done == false -> {
+
+            #{overflow=wrap}
+            i = i + 1
+        }
+    }
+    yes
+}
+
+; ps-is-arm-start：目前 token（呼叫前已跳 trivia）是否新臂開頭。鏡像 Go isArmStart
+;   （match.go:563）：INT/_/:/-> 直接；IDENT 後 :/-> 或 LOR+{err,nil,ok} 或比較運算子後
+;   同行探 `->`；NIL 後 :/->/LOR；NOT/?/. 後緊接 ->。
+ps-is-arm-start = (p psst) (yes i64) {
+    yes = 0
+    t0 = ps-peek(p)
+    t1 = ps-peek-at(p, 1)
+    t0 == tok.INT || t0 == tok.UNDERSCORE || t0 == tok.COLON || t0 == tok.RARROW -> yes = 1
+    t0 == tok.IDENT && (t1 == tok.COLON || t1 == tok.RARROW) -> yes = 1
+    tk0 = ps-peek-token(p)
+    t0 == tok.IDENT && t1 == tok.LOR && (tk0.lit == 'err' || tk0.lit == 'nil' || tk0.lit == 'ok') -> yes = 1
+    t0 == tok.IDENT && (t1 == tok.EQUALS || t1 == tok.NOT_EQUALS || t1 == tok.LESS || t1 == tok.GREATER || t1 == tok.LESS_EQUALS || t1 == tok.GREATER_EQUALS || t1 == tok.LAND || t1 == tok.LOR) -> yes = ps-arrow-scan0(p)
+    t0 == tok.NIL && (t1 == tok.COLON || t1 == tok.RARROW || t1 == tok.LOR) -> yes = 1
+    (t0 == tok.NOT || t0 == tok.QUESTION || t0 == tok.DOT) && t1 == tok.RARROW -> yes = 1
+    yes
+}
+
+; ps-la-sep：行首 `->`（p.pos 即 RARROW）是否為「臂分隔符」而非 wildcard 本身。
+;   鏡像 Go leadingArrowIsSeparator（match.go:530）：往後遇 NEWLINE/;/EOF ⇒ 非分隔符
+;   （=wildcard 本體開頭）；深度 0 再見 `->` ⇒ 是分隔符（`-> cond -> body` 形）。
+ps-la-sep = (p psst) (yes i64) {
+    yes = 0
+    depth = 0
+    done = false
+
+    #{overflow=wrap}
+    i = p.pos + 1
+    (done == false && i < p.toks.len()) {
+
+        #{index-out=zero}
+        tt = p.toks[i].typ
+        tt == tok.NEWLINE || tt == tok.SEMICOLON || tt == tok.EOF -> done = true
+        tt == tok.LPAREN || tt == tok.LBRACKET || tt == tok.LBRACE -> {
+
+            #{overflow=wrap}
+            depth = depth + 1
+        }
+        tt == tok.RPAREN || tt == tok.RBRACKET || tt == tok.RBRACE -> {
+
+            #{overflow=wrap}
+            depth = depth - 1
+            depth < 0 -> done = true
+        }
+        tt == tok.RARROW && depth == 0 -> {
+            yes = 1
+            done = true
+        }
+        done == false -> {
+
+            #{overflow=wrap}
+            i = i + 1
+        }
+    }
+    yes
+}
+
+; ps-bm-scan：粗探【p.pos 為 LBRACE】的區塊是否裸 match（含深度 0 `->` 才嘗試）。
+;   鏡像 Go classifyBlockAtCurrent(blockMatch) + stmt.go:418 例外：`{ name: { … } }`
+;   （首非 trivia 為 IDENT 且第二/三非 trivia 依序 COLON、LBRACE）強制走普通區塊。
+ps-bm-scan = (p psst) (yes i64) {
+    yes = 0
+
+    #{index-out=zero}
+    p.toks[p.pos].typ == tok.LBRACE -> {
+
+        #{overflow=wrap}
+        i = ps-scan-nont(p, p.pos + 1)
+
+        #{overflow=wrap}
+        j = ps-scan-nont(p, i + 1)
+
+        #{overflow=wrap}
+        k = ps-scan-nont(p, j + 1)
+        excl = false
+        (i < p.toks.len() && j < p.toks.len() && k < p.toks.len()) -> {
+
+            #{index-out=zero}
+            excl = p.toks[i].typ == tok.IDENT && p.toks[j].typ == tok.COLON && p.toks[k].typ == tok.LBRACE
+        }
+
+        #{index-out=zero}
+        excl == false && i < p.toks.len() -> {
+            depth = 0
+            done = false
+            m = i
+            (done == false && m < p.toks.len()) {
+
+                #{index-out=zero}
+                tt = p.toks[m].typ
+                tt == tok.EOF -> done = true
+                tt == tok.RBRACE && depth == 0 -> done = true
+                tt == tok.RARROW && depth == 0 -> {
+                    yes = 1
+                    done = true
+                }
+                tt == tok.LBRACE || tt == tok.LBRACKET || tt == tok.LPAREN -> {
+
+                    #{overflow=wrap}
+                    depth = depth + 1
+                }
+                tt == tok.RBRACE && depth > 0 -> {
+
+                    #{overflow=wrap}
+                    depth = depth - 1
+                }
+                tt == tok.RBRACKET || tt == tok.RPAREN -> {
+
+                    #{overflow=wrap}
+                    depth = depth - 1
+                }
+                done == false -> {
+
+                    #{overflow=wrap}
+                    m = m + 1
+                }
+            }
+        }
+    }
+    yes
+}
+
+; ps-parse-bare-match：解析裸 match 區塊（p.pos 於 LBRACE），回 desugared 外層
+;   IfExpression 索引；回 0 ⇒ 失敗（p.pos 不定，呼叫端自行還原重解析）。臂形鏡像
+;   Go parseBareMatchExpr：`expr -> body`／`_ -> body`／`-> body`（含 `-> cond -> body`
+;   分隔符形）；body 三形：`{ … }` 區塊（可內層再套裸 match）、換行 block 形（語句
+;   至臂界）、同行單陳述（後兩者 Block{inline:true}）。
+ps-parse-bare-match = (t ast, p psst) (res i64) {
+    res = 0
+    fail = 0
+    ps-bump(p); 消費 {
+    condA []i64 = with-cap(4); wildcard 臂存 0
+    bodyA []i64 = with-cap(4)
+    wildA []i64 = with-cap(4)
+    done = false
+    (done == false && fail == 0) {
+        ps-skip-trivia(p)
+        hd = ps-peek(p)
+        hd == tok.RBRACE || hd == tok.EOF -> done = true
+        hd == tok.SEMICOLON -> ps-bump(p); 臂間分號（Go 同跳）
+        hd == tok.HASH_LBRACE -> fail = 1; 臂首前置註解不支持 → 退讓
+        hd != tok.RBRACE && hd != tok.EOF && hd != tok.SEMICOLON && hd != tok.HASH_LBRACE -> {
+            wild = 0
+            cond = 0
+            A = ps-peek(p)
+            A == tok.UNDERSCORE -> {
+                ps-bump(p)
+                wild = 1
+            }
+            A == tok.RARROW && ps-la-sep(p) == 1 -> ps-bump(p); 分隔符 `->`，續解析條件
+            A == tok.RARROW && ps-la-sep(p) == 0 -> {
+                ps-bump(p)
+                wild = 1
+            }
+            tk0 = ps-peek-token(p)
+
+            ; `ok->` isDotVal 綁定需 it 合成，s48 保守退讓
+            tk0.typ == tok.IDENT && tk0.lit == 'ok' && ps-peek-at(p, 1) == tok.RARROW -> fail = 1
+
+            ; wildcard 臂：`_` 後必須緊接 `->`；RARROW 形已在上支消費
+            ; ⚠️ ad 快照旗標：arrow 已吃後第二行不得因【重取 ps-peek】誤判 fail（match 塊非互斥）
+            fail == 0 && wild == 1 -> {
+                ad = 0
+                ps-peek(p) == tok.RARROW -> {
+                    ps-bump(p)
+                    ad = 1
+                }
+                ad == 0 && A == tok.UNDERSCORE -> fail = 1
+            }
+
+            ; 條件臂：完整布爾式後【同行】緊接 `->`（Go：currentToken 非 RARROW 即回 nil）
+            fail == 0 && wild == 0 -> {
+                cond = ps-parse-expr(t, p)
+                (cond == 0 || ps-peek(p) != tok.RARROW) -> fail = 1
+                fail == 0 -> ps-bump(p); 消費 ->
+            }
+
+            ; ── 臂本體三形 ──
+            blk = 0
+            fail == 0 -> {
+                hd2 = ps-peek(p)
+                hd2 == tok.LBRACE -> {
+
+                    ; 先試內層裸 match（Go：classify==blockMatch 時 parseStatement 優试），
+                    ;   成則 body Block 含單 ExpressionStatement；敗則【還原 nsave】吃大括號走普通 block
+                    ; ⚠️ ps-parse-bare-match 失敗時 p.pos 已在其自身 `{`/cond 處推進，不還原會雙重消費（http.no 掛死根因）
+                    nested = 0
+                    nsave = p.pos
+                    ps-bm-scan(p) == 1 -> nested = ps-parse-bare-match(t, p)
+                    nested == 0 -> {
+                        p.pos = nsave
+                        ps-bump(p); 消費 {
+                        blk = ps-parse-block(t, p)
+                        ps-expect(p, tok.RBRACE)
+                    }
+                    nested > 0 -> {
+                        es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+                        ast.kid-add(t, es, nested)
+                        blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+                        ast.kid-add(t, blk, es)
+                        ast.set-count(t, blk, 0, 1)
+                    }
+                }
+                hd2 == tok.NEWLINE -> {
+
+                    ; block 形（無大括號）：語句解析至臂界/}`；Go 將 bodyBlock.IsInline=true
+                    sl []i64 = with-cap(4)
+                    bdone = false
+                    (bdone == false && fail == 0) {
+                        ps-skip-trivia(p)
+                        hd3 = ps-peek(p)
+                        hd3 == tok.RBRACE || hd3 == tok.EOF -> bdone = true
+                        wild == 0 && bdone == false && ps-is-arm-start(p) == 1 -> bdone = true
+                        bdone == false && fail == 0 -> {
+                            pos0 = p.pos
+                            s = ps-parse-stmt(t, p)
+                            s > 0 -> sl.push(s)
+                            p.pos == pos0 -> ps-bump(p)
+                        }
+                    }
+                    blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+                    j = 0
+                    (j < sl.len()) {
+                        ast.kid-add(t, blk, sl[j])
+
+                        #{overflow=wrap}
+                        j = j + 1
+                    }
+                    ast.set-count(t, blk, 0, sl.len())
+                    ast.set-slot(t, blk, 0, ast.put-str(t, 'true')); inline
+                }
+                hd2 != tok.LBRACE && hd2 != tok.NEWLINE -> {
+
+                    ; 同行單陳述本體：Block{inline:true, [stmt]}
+                    pos0 = p.pos
+                    s = ps-parse-stmt(t, p)
+                    (s == 0 || p.pos == pos0) -> fail = 1
+                    fail == 0 -> {
+                        blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+                        ast.kid-add(t, blk, s)
+                        ast.set-count(t, blk, 0, 1)
+                        ast.set-slot(t, blk, 0, ast.put-str(t, 'true')); inline
+                    }
+                }
+            }
+            fail == 0 -> {
+                condA.push(cond)
+                bodyA.push(blk)
+                wildA.push(wild)
+            }
+        }
+    }
+
+    ; 閉合 `}`（有才吃，鏡像 Go）；空臂區 ⇒ 失敗
+    ps-peek(p) == tok.RBRACE -> ps-bump(p)
+    fail == 0 && condA.len() == 0 -> fail = 1
+
+    ; ── desugar 組裝（buildBareMatchDesugar）──
+    wc = 0
+    z = 0
+    (z < wildA.len()) {
+
+        #{index-out=zero}
+        wildA[z] == 1 -> {
+
+            #{overflow=wrap}
+            wc = wc + 1
+        }
+
+        #{overflow=wrap}
+        z = z + 1
+    }
+    n = condA.len()
+    bail = 0
+
+    ; 全非 wildcard 且多臂 ⇒ 包一層 If{1, Block{各臂 if(無 else)}}（independent-guard fast path）
+    fail == 0 && wc == 0 && n > 1 -> {
+        kids []i64 = with-cap(4)
+        z2 = 0
+        (z2 < n) {
+            ie = ast.add(t, asp.K_IF_EXPRESSION)
+            ast.kid-add(t, ie, condA[z2])
+            ast.kid-add(t, ie, bodyA[z2])
+            ast.kid-add(t, ie, 0)
+            es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+            ast.kid-add(t, es, ie)
+            kids.push(es)
+
+            #{overflow=wrap}
+            z2 = z2 + 1
+        }
+        wb = ast.add(t, asp.K_BLOCK_STATEMENT)
+        j2 = 0
+        (j2 < kids.len()) {
+            ast.kid-add(t, wb, kids[j2])
+
+            #{overflow=wrap}
+            j2 = j2 + 1
+        }
+        ast.set-count(t, wb, 0, kids.len())
+        ct = ps-mk-true(t)
+        res = ast.add(t, asp.K_IF_EXPRESSION)
+        ast.kid-add(t, res, ct)
+        ast.kid-add(t, res, wb)
+        ast.kid-add(t, res, 0)
+    }
+
+    ; 否則：由末臂往回組 elif 鏈
+    fail == 0 && res == 0 && (wc > 0 || n == 1) -> {
+
+        #{overflow=wrap}
+        i = n - 1
+        (i >= 0 && bail == 0) {
+
+            #{index-out=zero}
+            w = wildA[i]
+
+            #{index-out=zero}
+            b = bodyA[i]
+            hdw = 0
+            w == 1 && res == 0 && bail == 0 -> {
+
+                ; 尾 wildcard ⇒ If{IntegerLiteral 1(synthetic), body}無 else
+                ct = ps-mk-true(t)
+                ie = ast.add(t, asp.K_IF_EXPRESSION)
+                ast.kid-add(t, ie, ct)
+                ast.kid-add(t, ie, b)
+                ast.kid-add(t, ie, 0)
+                res = ie
+                hdw = 1
+            }
+
+            ; 鏈中間 wildcard：Go 要改寫已建節點的 else，保守退讓
+            ; ⚠️ hdw 快照守衛：上支剛建的 res 不得令本臂【誤復發】bail（match 塊非互斥）
+            w == 1 && res > 0 && hdw == 0 -> {
+                bail = 1
+                hdw = 1
+            }
+            hdw == 0 -> {
+                alt = 0
+                res > 0 -> {
+
+                    ; else = 非內聯 Block{ExpressionStatement{後續鏈}}
+                    es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+                    ast.kid-add(t, es, res)
+                    wb = ast.add(t, asp.K_BLOCK_STATEMENT)
+                    ast.kid-add(t, wb, es)
+                    ast.set-count(t, wb, 0, 1)
+                    alt = wb
+                }
+                ie = ast.add(t, asp.K_IF_EXPRESSION)
+                ast.kid-add(t, ie, condA[i])
+                ast.kid-add(t, ie, b)
+                ast.kid-add(t, ie, alt)
+                res = ie
+            }
+
+            #{overflow=wrap}
+            i = i - 1
+        }
+    }
+    fail == 1 || bail == 1 -> res = 0
+    res
+}
+
+; ps-parse-brace-stmt：陳述位 `{ … }` 統一入口（對齐 Go stmt.go:402 LBRACE 臂）：
+;   含深度 0 `->` ⇒ 試裸 match，成則 ExpressionStatement{if鏈}；敗/非 match ⇒
+;   還原後走普通 BlockStatement（ps-parse-block + 吃 `}`，語句不外洩）。
+ps-parse-brace-stmt = (t ast, p psst) (idx i64) {
+    savePos = p.pos
+    idx = 0
+    ps-bm-scan(p) == 1 -> {
+        bm = ps-parse-bare-match(t, p)
+        bm > 0 -> {
+            idx = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+            ast.kid-add(t, idx, bm)
+        }
+        bm == 0 -> p.pos = savePos; 還原，區塊内容改由普通 block 重解析
+    }
+    idx == 0 -> {
+        ps-bump(p); 消費 {
+        blk = ps-parse-block(t, p)
+        ps-expect(p, tok.RBRACE)
+        idx = blk
+    }
+    idx
 }
 
 ; ps-parse-type：在當前位置解析一個型別並回傳其節點索引（**子先於父**）。
@@ -2893,7 +3423,6 @@ ps-is-enum-def = (p psst) (r i64) {
                                 ft == tok.IDENT -> {
 
                                     ; `名 型別`（nt=型別起）或裸 `名`（nt∈{,, ),NEWLINE,COMMENT}）
-
                                     #{overflow=wrap}
                                     nt = ps-peek-at(p, fi + 1)
                                     nt == tok.COMMA || nt == tok.RPAREN || nt == tok.NEWLINE || nt == tok.COMMENT -> {

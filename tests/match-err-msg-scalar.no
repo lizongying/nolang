@@ -32,77 +32,74 @@ fail-str = () (out ?str) {
     out = err('boom-str')
 }
 
-main = () {
+; 1. ?i64：err 臂的 it 是訊息，不是整數也不是整顆 option
+a = fail-i64()
+got1 = ''
+a: {
+    err -> got1 = it
 
-    ; 1. ?i64：err 臂的 it 是訊息，不是整數也不是整顆 option
-    a = fail-i64()
-    got1 = ''
-    a: {
-        err -> got1 = it
+    nil -> got1 = 'nil'
 
-        nil -> got1 = 'nil'
-
-        -> got1 = 'val=' - it.to-str()
-    }
-    check-str('?i64 err message', got1, 'boom-i64')
-
-    ; 2. ?bool：同上（bool 的載荷只有 1 位元，最能逼出這個 bug）
-    b = fail-bool()
-    got2 = ''
-    b: {
-        err -> got2 = it
-
-        nil -> got2 = 'nil'
-
-        -> got2 = 'val=' - it.to-str()
-    }
-    check-str('?bool err message', got2, 'boom-bool')
-
-    ; 3. 對照組：?str 本來就讀得到（非純量載荷槽塞得下）
-    c = fail-str()
-    got3 = ''
-    c: {
-        err -> got3 = it
-
-        nil -> got3 = 'nil'
-
-        -> got3 = 'val=' - it
-    }
-    check-str('?str err message', got3, 'boom-str')
-
-    ; 4. 訊息必須完整（len 正確），不能被截斷成前幾個字節
-    d = fail-i64()
-    got4 = ''
-    d: {
-        err -> got4 = 'len=' - it.len().to-str()
-
-        nil -> got4 = 'nil'
-
-        -> got4 = 'val'
-    }
-    check-str('?i64 err message len', got4, 'len=8')
-
-    ; 5. 對照組：ok 臂的 it 仍然是原本的純量值（不能被 err 的處理邏輯污染）
-    e ?i64 = 42
-    got5 = ''
-    e: {
-        err -> got5 = 'err'
-
-        nil -> got5 = 'nil'
-
-        -> got5 = it.to-str()
-    }
-    check-str('?i64 ok payload', got5, '42')
-
-    ; 6. 對照組：nil 臂
-    f ?i64 = nil
-    got6 = ''
-    f: {
-        err -> got6 = 'err'
-
-        nil -> got6 = 'nil'
-
-        -> got6 = 'val=' - it.to-str()
-    }
-    check-str('?i64 nil', got6, 'nil')
+    -> got1 = 'val=' - it.to-str()
 }
+check-str('?i64 err message', got1, 'boom-i64')
+
+; 2. ?bool：同上（bool 的載荷只有 1 位元，最能逼出這個 bug）
+b = fail-bool()
+got2 = ''
+b: {
+    err -> got2 = it
+
+    nil -> got2 = 'nil'
+
+    -> got2 = 'val=' - it.to-str()
+}
+check-str('?bool err message', got2, 'boom-bool')
+
+; 3. 對照組：?str 本來就讀得到（非純量載荷槽塞得下）
+c = fail-str()
+got3 = ''
+c: {
+    err -> got3 = it
+
+    nil -> got3 = 'nil'
+
+    -> got3 = 'val=' - it
+}
+check-str('?str err message', got3, 'boom-str')
+
+; 4. 訊息必須完整（len 正確），不能被截斷成前幾個字節
+d = fail-i64()
+got4 = ''
+d: {
+    err -> got4 = 'len=' - it.len().to-str()
+
+    nil -> got4 = 'nil'
+
+    -> got4 = 'val'
+}
+check-str('?i64 err message len', got4, 'len=8')
+
+; 5. 對照組：ok 臂的 it 仍然是原本的純量值（不能被 err 的處理邏輯污染）
+e ?i64 = 42
+got5 = ''
+e: {
+    err -> got5 = 'err'
+
+    nil -> got5 = 'nil'
+
+    -> got5 = it.to-str()
+}
+check-str('?i64 ok payload', got5, '42')
+
+; 6. 對照組：nil 臂
+f ?i64 = nil
+got6 = ''
+f: {
+    err -> got6 = 'err'
+
+    nil -> got6 = 'nil'
+
+    -> got6 = 'val=' - it.to-str()
+}
+check-str('?i64 nil', got6, 'nil')

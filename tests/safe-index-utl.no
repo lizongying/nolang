@@ -26,15 +26,13 @@ safe-utl = (i i64) (res ?i64) {
     res = x
 }
 
-main = () {
-    ib = 1
-    oob = 9
+ib = 1
+oob = 9
 
-    ; 範圍內：x 正確捕獲為 ok(20)，印出 20
-    safe-utl(ib)
+; 範圍內：x 正確捕獲為 ok(20)，印出 20
+safe-utl(ib)
 
-    ; 越界：x 捕獲為 nil，不提前 return、不輸出、不崩潰
-    safe-utl(oob)
-    io.out('utl OOB: no-crash')
-    print('')
-}
+; 越界：x 捕獲為 nil，不提前 return、不輸出、不崩潰
+safe-utl(oob)
+io.out('utl OOB: no-crash')
+print('')

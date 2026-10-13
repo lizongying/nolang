@@ -62,6 +62,4 @@ test-struct-clone-vec-field = () (ok bool) {
     g2.members.len() == 2 -> ok = true
 }
 
-main = () {
-    print('hello')
-}
+print('hello')

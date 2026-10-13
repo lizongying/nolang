@@ -53,10 +53,8 @@ test-view-chain = () {
     print(c)
 }
 
-main = () {
-    test-print-view()
-    test-view-survives-rebind()
-    test-view-elements()
-    test-view-in-loop()
-    test-view-chain()
-}
+test-print-view()
+test-view-survives-rebind()
+test-view-elements()
+test-view-in-loop()
+test-view-chain()

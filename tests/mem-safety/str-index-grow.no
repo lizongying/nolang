@@ -10,7 +10,7 @@ test-str-grow = () (ok bool) {
     s[1] = 'b'
     s[2] = 'c'
     s[3] = 'd'
-    s[n] = 'e'            ; i=5 >= cap=4 → 越界，須增長
+    s[n] = 'e'; i=5 >= cap=4 → 越界，須增長
     m i64 = 6
     s[m] = 'f'
     p i64 = 7
@@ -29,18 +29,16 @@ test-str-grow = () (ok bool) {
 ; 測試 2：字串字面量（cap==len）動態遠越界 — 修復前必 SIGSEGV（offset 100000 跨分頁寫入未映射記憶體）
 ; 讀回 s[i] 使 store 存活（避免被 opt 當死代碼刪除），並作為增長後正確性的觀察點
 test-str-far-oob = () (ok bool) {
-    s str = 'abc'        ; len=3, cap=3, 非 null 3 字節堆緩衝
+    s str = 'abc'; len=3, cap=3, 非 null 3 字節堆緩衝
     i i64 = 100000
-    s[i] = 'X'           ; 遠越界，offset 100000 跨越分頁邊界 → 修復前 SIGSEGV
-    ok = s[i] == 'X'     ; 讀回：修復前亦越界讀 → 崩潰；修復後增長到 idxV+1 → 'X'
+    s[i] = 'X'; 遠越界，offset 100000 跨越分頁邊界 → 修復前 SIGSEGV
+    ok = s[i] == 'X'; 讀回：修復前亦越界讀 → 崩潰；修復後增長到 idxV+1 → 'X'
 }
 
-main = () {
-    ok1 = test-str-grow()
-    print('test-str-grow: {ok1}')
+ok1 = test-str-grow()
+print('test-str-grow: {ok1}')
 
-    ok2 = test-str-far-oob()
-    print('test-str-far-oob: {ok2}')
+ok2 = test-str-far-oob()
+print('test-str-far-oob: {ok2}')
 
-    print('all done')
-}
+print('all done')

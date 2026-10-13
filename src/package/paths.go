@@ -1,8 +1,10 @@
 package pkg
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -86,4 +88,72 @@ func ResolveEmbedBase(sourcePath string) string {
 		return pr
 	}
 	return filepath.Dir(sourcePath)
+}
+
+// SourcePathSegmentRe 匹配合法的源碼路徑段：小寫字母 (a-z)、數字 (0-9) 與中劃線 (-)。
+// 底線 (_)、大寫字母與其他字元皆被拒絕。
+var SourcePathSegmentRe = regexp.MustCompile(`^[a-z0-9-]+$`)
+
+// isValidSourceSegment 檢查單一路徑段（目錄名或去副檔名的檔名）是否符合
+// 源碼命名規範：只允許小寫字母、數字與中劃線，且不能以中劃線開頭/結尾、不能有連續中劃線。
+// 底線與大寫字母因不在字元集內而自然被拒。
+func isValidSourceSegment(name string) bool {
+	if name == "" {
+		return false
+	}
+	if name[0] == '-' || name[len(name)-1] == '-' {
+		return false
+	}
+	if strings.Contains(name, "--") {
+		return false
+	}
+	return SourcePathSegmentRe.MatchString(name)
+}
+
+// ValidateSourcePathName 強制執行 Nolang 源碼路徑命名規範：
+// 路徑的每一段（目錄名與檔名主體；.no 副檔名不計入）都只能由小寫字母、數字與中劃線組成，
+// 不得以中劃線開頭/結尾、不得出現連續中劃線。底線、大寫字母與其他字元皆直接報錯。
+//
+// 無論資料夾或檔案都會檢查：例如 "tmp/zz_stridx/r_index.no" 因 "zz_stridx" 與 "r_index"
+// 含底線而被拒。
+//
+// 絕對 OS 路徑（如 /Users/me/proj/a.no）只驗證落在目前工作目錄下的部分，
+// 因此 "Users" 等宿主目錄名不會觸發假陽性。
+func ValidateSourcePathName(path string) error {
+	rel := sourcePathRelativeToCwd(path)
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	segs := strings.Split(clean, "/")
+	for i, seg := range segs {
+		if seg == "" || seg == "." || seg == ".." {
+			continue
+		}
+		name := seg
+		if i == len(segs)-1 && strings.HasSuffix(name, ".no") {
+			name = strings.TrimSuffix(name, ".no")
+		}
+		if !isValidSourceSegment(name) {
+			return fmt.Errorf("源文件路径不符合命名规范：%s\n  其中的路径段 %q 含有不允许的字符（只允许小写字母、数字和中划线，禁止下划线；且不能以中划线开头/结尾、不能连续出现中划线）\n  合规示例：tmp/zz-stridx/r-index.no", path, seg)
+		}
+	}
+	return nil
+}
+
+// sourcePathRelativeToCwd 把絕對路徑轉為相對於目前工作目錄的路徑；
+// 若不在目前工作目錄下（宿主系統路徑），回傳空字串以跳過驗證，避免對 OS 路徑誤報。
+func sourcePathRelativeToCwd(path string) string {
+	if !filepath.IsAbs(path) {
+		return path
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return path
+	}
+	rel, err := filepath.Rel(cwd, path)
+	if err != nil {
+		return ""
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return rel
 }

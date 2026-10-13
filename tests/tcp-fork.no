@@ -81,13 +81,11 @@ test-tcp-fork-basic = () (pass bool) {
     process.process-waitpid(pid, 0)
 }
 
-main = () {
-    io.errln('=== TCP Fork Tests ===')
-    p = test-tcp-fork-basic()
-    {
-        p -> print('PASS: tcp-fork-basic')
+io.errln('=== TCP Fork Tests ===')
+p = test-tcp-fork-basic()
+{
+    p -> print('PASS: tcp-fork-basic')
 
-        p == false -> print('FAIL: tcp-fork-basic')
-    }
-    io.errln('=== TCP Fork Tests Done ===')
+    p == false -> print('FAIL: tcp-fork-basic')
 }
+io.errln('=== TCP Fork Tests Done ===')

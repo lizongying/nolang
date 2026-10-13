@@ -1,21 +1,17 @@
 ; 最简单的 option match 测试
 
-main = () {
-    print('start')
-    v ?str = 'hello'
-    print('assigned')
+print('start')
+v ?str = 'hello'
+print('assigned')
 
-    ; 直接比较
-    {
-        v == ok -> {
-            print('ok branch')
-        }
-
-        -> {
-            print('not ok')
-        }
+; 直接比较
+{
+    v == ok -> {
+        print('ok branch')
     }
-    print('end')
-}
 
-main()
+    -> {
+        print('not ok')
+    }
+}
+print('end')

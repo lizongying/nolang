@@ -44,51 +44,48 @@ mk = () (out ?thing) {
     }
 }
 
-main = () {
+; 1. 臂內顯式 ?T 宣告 + 巢狀 match：前後的 it 都必須仍是 thing
+a = mk()
+got1 = ''
+a: {
+    nil -> print('a nil')
 
-    ; 1. 臂內顯式 ?T 宣告 + 巢狀 match：前後的 it 都必須仍是 thing
-    a = mk()
-    got1 = ''
-    a: {
-        nil -> print('a nil')
+    err -> print('a err')
 
-        err -> print('a err')
+    -> {
+        got1 = it.show()
+        w ?bool = it.get()
+        w: {
+            nil -> print('  w nil')
 
-        -> {
-            got1 = it.show()
-            w ?bool = it.get()
-            w: {
-                nil -> print('  w nil')
+            err -> print('  w err')
 
-                err -> print('  w err')
-
-                -> got1 = got1 - '|w=' - it.to-str()
-            }
-            got1 = got1 - '|after=' - it.show()
+            -> got1 = got1 - '|w=' - it.to-str()
         }
+        got1 = got1 - '|after=' - it.show()
     }
-    check-str('explicit-?T-in-arm', got1, 'n=7|w=true|after=n=7')
-
-    ; 2. 對照組：不帶 ?T 的寫法
-    b = mk()
-    got2 = ''
-    b: {
-        nil -> print('b nil')
-
-        err -> print('b err')
-
-        -> {
-            got2 = it.show()
-            w = it.get()
-            w: {
-                nil -> print('  w nil')
-
-                err -> print('  w err')
-
-                -> got2 = got2 - '|w=' - it.to-str()
-            }
-            got2 = got2 - '|after=' - it.show()
-        }
-    }
-    check-str('inferred-in-arm', got2, 'n=7|w=true|after=n=7')
 }
+check-str('explicit-?T-in-arm', got1, 'n=7|w=true|after=n=7')
+
+; 2. 對照組：不帶 ?T 的寫法
+b = mk()
+got2 = ''
+b: {
+    nil -> print('b nil')
+
+    err -> print('b err')
+
+    -> {
+        got2 = it.show()
+        w = it.get()
+        w: {
+            nil -> print('  w nil')
+
+            err -> print('  w err')
+
+            -> got2 = got2 - '|w=' - it.to-str()
+        }
+        got2 = got2 - '|after=' - it.show()
+    }
+}
+check-str('inferred-in-arm', got2, 'n=7|w=true|after=n=7')

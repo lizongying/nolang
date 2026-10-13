@@ -54,48 +54,45 @@ get-child = (obj outer, i i64) (c ?outer) {
     }
 }
 
-main = () {
+; 情境一：父物件是具名局部變數
+a = mk-owned()
+check-str('寫入前父物件', a.p.name, 'alice')
+c1 = get-child(a, 1)
+c1: {
+    nil -> print('fail: c1 nil')
 
-    ; 情境一：父物件是具名局部變數
-    a = mk-owned()
-    check-str('寫入前父物件', a.p.name, 'alice')
-    c1 = get-child(a, 1)
-    c1: {
-        nil -> print('fail: c1 nil')
+    err -> print('fail: c1 err')
 
-        err -> print('fail: c1 err')
-
-        -> check-str('子視圖', it.p.name, 'alice')
-    }
-    check-str('子視圖釋放後父物件仍完好', a.p.name, 'alice')
-
-    ; 情境二：父物件來自 option
-    b = mk-opt()
-    b: {
-        nil -> print('fail: b nil')
-
-        err -> print('fail: b err')
-
-        -> {
-            doc = it
-            check-str('option 父物件', doc.p.name, 'alice')
-            c2 ?outer = get-child(doc, 1)
-            c2: {
-                nil -> print('fail: c2 nil')
-
-                err -> print('fail: c2 err')
-
-                -> check-str('option 子視圖', it.p.name, 'alice')
-            }
-            check-str('option 父物件仍完好', doc.p.name, 'alice')
-        }
-    }
-
-    ; 直接指派（不是字面量）也不能共用緩衝區
-    src = mk-owned()
-    dst = mk-owned()
-    dst.p = src.p
-    src.p.name = 'bob'
-    check-str('指派後目標不受來源影響', dst.p.name, 'alice')
-    check-str('來源自身正確', src.p.name, 'bob')
+    -> check-str('子視圖', it.p.name, 'alice')
 }
+check-str('子視圖釋放後父物件仍完好', a.p.name, 'alice')
+
+; 情境二：父物件來自 option
+b = mk-opt()
+b: {
+    nil -> print('fail: b nil')
+
+    err -> print('fail: b err')
+
+    -> {
+        doc = it
+        check-str('option 父物件', doc.p.name, 'alice')
+        c2 ?outer = get-child(doc, 1)
+        c2: {
+            nil -> print('fail: c2 nil')
+
+            err -> print('fail: c2 err')
+
+            -> check-str('option 子視圖', it.p.name, 'alice')
+        }
+        check-str('option 父物件仍完好', doc.p.name, 'alice')
+    }
+}
+
+; 直接指派（不是字面量）也不能共用緩衝區
+src = mk-owned()
+dst = mk-owned()
+dst.p = src.p
+src.p.name = 'bob'
+check-str('指派後目標不受來源影響', dst.p.name, 'alice')
+check-str('來源自身正確', src.p.name, 'bob')

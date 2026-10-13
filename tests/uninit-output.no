@@ -44,18 +44,17 @@ case7-slice = () (out ?[]i64) {
     print(n)
 }
 
-main = () {
-    r1 = case7-assign-then-read()
-    r2 = case7-nil-check()
-    r3 = case8-empty()
-    r4 = case3-return-nil()
-    r5 = case7-slice()
-    ; D1：option 綁定後必須消費（上拋 / match / `_ =`）；本測試只驗證各 case
-    ; 不崩潰，故顯式丟棄回傳的 option。
-    _ = r1
-    _ = r2
-    _ = r3
-    _ = r4
-    _ = r5
-    print('all case6 tests passed')
-}
+r1 = case7-assign-then-read()
+r2 = case7-nil-check()
+r3 = case8-empty()
+r4 = case3-return-nil()
+r5 = case7-slice()
+
+; D1：option 綁定後必須消費（上拋 / match / `_ =`）；本測試只驗證各 case
+; 不崩潰，故顯式丟棄回傳的 option。
+_ = r1
+_ = r2
+_ = r3
+_ = r4
+_ = r5
+print('all case6 tests passed')

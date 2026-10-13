@@ -17,29 +17,27 @@ plain = (msg str, extra str = '') (out str) {
     out = extra
 }
 
-main = () {
-    a = probe('first')
-    b = probe('second')
+a = probe('first')
+b = probe('second')
 
-    ; 1. 注入字串必須帶本測試檔名
-    ! a.starts-with('log-loc.no:') -> os.exit(1)
-    ! b.starts-with('log-loc.no:') -> os.exit(2)
+; 1. 注入字串必須帶本測試檔名
+! a.starts-with('log-loc.no:') -> os.exit(1)
+! b.starts-with('log-loc.no:') -> os.exit(2)
 
-    ; 2. 兩個不同呼叫點 → 行號不同 → 位置字串必須不同
-    a == b -> os.exit(3)
+; 2. 兩個不同呼叫點 → 行號不同 → 位置字串必須不同
+a == b -> os.exit(3)
 
-    ; 3. 顯式傳入 loc 時不得被覆寫（封裝轉發場景）
-    c = probe('x', 'MY-LOC')
-    c != 'MY-LOC' -> os.exit(4)
+; 3. 顯式傳入 loc 時不得被覆寫（封裝轉發場景）
+c = probe('x', 'MY-LOC')
+c != 'MY-LOC' -> os.exit(4)
 
-    ; 4. 非 track-caller 省略末位 → 維持預設空字串
-    d = plain('x')
-    ! d.empty() -> os.exit(5)
+; 4. 非 track-caller 省略末位 → 維持預設空字串
+d = plain('x')
+! d.empty() -> os.exit(5)
 
-    ; 5. std/log 整合：格式位 + 分級輸出（含注入呼叫點）正常執行不崩潰
-    log.set-format(log.F-LEVEL | log.F-LOC)
-    log.info('integration-ok')
-    log.warn('integration-warn')
+; 5. std/log 整合：格式位 + 分級輸出（含注入呼叫點）正常執行不崩潰
+log.set-format(log.F-LEVEL | log.F-LOC)
+log.info('integration-ok')
+log.warn('integration-warn')
 
-    print('log-loc: passed')
-}
+print('log-loc: passed')

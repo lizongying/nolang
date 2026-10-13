@@ -27,16 +27,14 @@ worker-with-child = (n i64) (r i64) {
     r = n + c
 }
 
-main = () {
-    a i64
-    b i64
-    c i64
-    d i64
-    a = worker(10); 同步呼叫 -> 11
-    {
-        b = co worker(20); 單態 worker-async -> 21
-        c = co worker(30); 單態 worker-async -> 31
-    }
-    d = co worker-with-child(5); 5 + (5*10) = 55
-    print('a=' + a.to-str() + ' b=' + b.to-str() + ' c=' + c.to-str() + ' d=' + d.to-str())
+a i64
+b i64
+c i64
+d i64
+a = worker(10); 同步呼叫 -> 11
+{
+    b = co worker(20); 單態 worker-async -> 21
+    c = co worker(30); 單態 worker-async -> 31
 }
+d = co worker-with-child(5); 5 + (5*10) = 55
+print('a=' + a.to-str() + ' b=' + b.to-str() + ' c=' + c.to-str() + ' d=' + d.to-str())

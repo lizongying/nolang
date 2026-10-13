@@ -9,39 +9,37 @@ might-fail = (n i64) (r ?i64) {
     r = n
 }
 
-main = () {
-    print('1 trailing value')
-    x = 2 > 1 -> 42
-    print(x)
+print('1 trailing value')
+x = 2 > 1 -> 42
+print(x)
 
-    print('2 false cond keeps previous value')
-    y = 7
-    y = 1 > 2 -> 42
-    print(y)
+print('2 false cond keeps previous value')
+y = 7
+y = 1 > 2 -> 42
+print(y)
 
-    print('3 fresh binding, false cond -> zero')
-    z = 1 > 2 -> 42
-    print(z)
+print('3 fresh binding, false cond -> zero')
+z = 1 > 2 -> 42
+print(z)
 
-    print('4 owned value')
-    s = 'old'
-    s = 1 > 2 -> 'new'
-    print(s)
-    s2 = 'old2'
-    s2 = 2 > 1 -> 'new2'
-    print(s2)
+print('4 owned value')
+s = 'old'
+s = 1 > 2 -> 'new'
+print(s)
+s2 = 'old2'
+s2 = 2 > 1 -> 'new2'
+print(s2)
 
-    print('5 ?T node short-circuits the tail')
-    bad = 7
+print('5 ?T node short-circuits the tail')
+bad = 7
 
-    ; D1：`-` 的結果恆為 `?i64`。此處要的是回繞的普通整數（本測試只驗證管道
-    ; 短路，不取用 good），顯式 plain i64 抑制 option 化。
-    #{overflow=wrap}
-    good i64 = 0 - 3
-    r = 5
-    r = print('A')
-    might-fail(bad) -> 99
-}
+; D1：`-` 的結果恆為 `?i64`。此處要的是回繞的普通整數（本測試只驗證管道
+; 短路，不取用 good），顯式 plain i64 抑制 option 化。
+#{overflow=wrap}
+good i64 = 0 - 3
+r = 5
+r = print('A')
+might-fail(bad) -> 99
 print(r)
 r = print('B')
 might-fail(good) -> 99

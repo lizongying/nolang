@@ -75,58 +75,55 @@ holder {
     bare pt #{inline}
 }
 
-main = () {
+; 註解不影響列舉值引用
+c color = color.green
+print(c)
 
-    ; 註解不影響列舉值引用
-    c color = color.green
-    print(c)
+; 註解不影響 tag 順序：full = 0, empty = 1
+; （變數名用 bx，避開 plain 的變體 b —— 見檔首「注意 ②」）
+bx box = full(7)
+bx: {
+    full(v) -> print(v)
 
-    ; 註解不影響 tag 順序：full = 0, empty = 1
-    ; （變數名用 bx，避開 plain 的變體 b —— 見檔首「注意 ②」）
-    bx box = full(7)
-    bx: {
-        full(v) -> print(v)
-
-        empty -> print('empty')
-    }
-
-    ; 註解不影響多欄位載荷的按位置綁定
-    s shape = rect(2.0, 3.0)
-    s: {
-        circle(r) -> print(r)
-
-        rect(w, h) -> print(w * h)
-
-        dot -> print('dot')
-    }
-
-    ; inline=false 的列舉照常工作
-    p plain = plain.a
-    p: {
-        a -> print('a')
-
-        b -> print('b')
-    }
-
-    ; 結構體欄位照常賦值／讀取
-    h = holder {
-        inl: pt {
-            x: 1
-            y: 2
-        }
-        out: pt {
-            x: 3
-            y: 4
-        }
-        bare: pt {
-            x: 5
-            y: 6
-        }
-    }
-    print(h.inl.x)
-    print(h.out.y)
-    print(h.bare.x)
+    empty -> print('empty')
 }
+
+; 註解不影響多欄位載荷的按位置綁定
+s shape = rect(2.0, 3.0)
+s: {
+    circle(r) -> print(r)
+
+    rect(w, h) -> print(w * h)
+
+    dot -> print('dot')
+}
+
+; inline=false 的列舉照常工作
+p plain = plain.a
+p: {
+    a -> print('a')
+
+    b -> print('b')
+}
+
+; 結構體欄位照常賦值／讀取
+h = holder {
+    inl: pt {
+        x: 1
+        y: 2
+    }
+    out: pt {
+        x: 3
+        y: 4
+    }
+    bare: pt {
+        x: 5
+        y: 6
+    }
+}
+print(h.inl.x)
+print(h.out.y)
+print(h.bare.x)
 
 ; ── 已知的既有 bug（與本檔主題無關，僅記錄於此）────────────────────────────
 ;

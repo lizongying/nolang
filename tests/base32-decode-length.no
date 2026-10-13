@@ -16,89 +16,86 @@
 ; 本檔用 RFC 4648 §10 的五個測試向量（覆蓋 5 種 padding：0/1/3/4/6），
 ; 每個都同時驗長度與內容位元組。
 
-main = () {
+; ─────────────────────────────────────────────
+; 1. "f" → "MY======"  (pad 6 → 1 byte)
+; ─────────────────────────────────────────────
+a = base32.decode('MY======')
+an = a.len()
 
-    ; ─────────────────────────────────────────────
-    ; 1. "f" → "MY======"  (pad 6 → 1 byte)
-    ; ─────────────────────────────────────────────
-    a = base32.decode('MY======')
-    an = a.len()
+#{index-out=zero}
+a0 = a[0]
+(an == 1 && a0 == 102) -> print('PASS: 1 MY====== decodes to 1 byte f')
 
-    #{index-out=zero}
-    a0 = a[0]
-    (an == 1 && a0 == 102) -> print('PASS: 1 MY====== decodes to 1 byte f')
+-> print('FAIL: 1 len={an.to-str()} b0={a0.to-str()}')
 
-    -> print('FAIL: 1 len={an.to-str()} b0={a0.to-str()}')
+; ─────────────────────────────────────────────
+; 2. "fo" → "MZXQ===="  (pad 4 → 2 bytes)
+; ─────────────────────────────────────────────
+b = base32.decode('MZXQ====')
+bn = b.len()
 
-    ; ─────────────────────────────────────────────
-    ; 2. "fo" → "MZXQ===="  (pad 4 → 2 bytes)
-    ; ─────────────────────────────────────────────
-    b = base32.decode('MZXQ====')
-    bn = b.len()
+#{index-out=zero}
+b0 = b[0]
 
-    #{index-out=zero}
-    b0 = b[0]
+#{index-out=zero}
+b1 = b[1]
+(bn == 2 && b0 == 102 && b1 == 111) -> print('PASS: 2 MZXQ==== decodes to 2 bytes fo')
 
-    #{index-out=zero}
-    b1 = b[1]
-    (bn == 2 && b0 == 102 && b1 == 111) -> print('PASS: 2 MZXQ==== decodes to 2 bytes fo')
+-> print('FAIL: 2 len={bn.to-str()}')
 
-    -> print('FAIL: 2 len={bn.to-str()}')
+; ─────────────────────────────────────────────
+; 3. "foo" → "MZXW6==="  (pad 3 → 3 bytes)
+; ─────────────────────────────────────────────
+c = base32.decode('MZXW6===')
+cn = c.len()
 
-    ; ─────────────────────────────────────────────
-    ; 3. "foo" → "MZXW6==="  (pad 3 → 3 bytes)
-    ; ─────────────────────────────────────────────
-    c = base32.decode('MZXW6===')
-    cn = c.len()
+#{index-out=zero}
+c0 = c[0]
 
-    #{index-out=zero}
-    c0 = c[0]
+#{index-out=zero}
+c1 = c[1]
 
-    #{index-out=zero}
-    c1 = c[1]
+#{index-out=zero}
+c2 = c[2]
+(cn == 3 && c0 == 102 && c1 == 111 && c2 == 111) -> print('PASS: 3 MZXW6=== decodes to 3 bytes foo')
 
-    #{index-out=zero}
-    c2 = c[2]
-    (cn == 3 && c0 == 102 && c1 == 111 && c2 == 111) -> print('PASS: 3 MZXW6=== decodes to 3 bytes foo')
+-> print('FAIL: 3 len={cn.to-str()}')
 
-    -> print('FAIL: 3 len={cn.to-str()}')
+; ─────────────────────────────────────────────
+; 4. "foob" → "MZXW6YQ="  (pad 1 → 4 bytes)
+; ─────────────────────────────────────────────
+d = base32.decode('MZXW6YQ=')
+dn = d.len()
 
-    ; ─────────────────────────────────────────────
-    ; 4. "foob" → "MZXW6YQ="  (pad 1 → 4 bytes)
-    ; ─────────────────────────────────────────────
-    d = base32.decode('MZXW6YQ=')
-    dn = d.len()
+#{index-out=zero}
+d3 = d[3]
+(dn == 4 && d3 == 98) -> print('PASS: 4 MZXW6YQ= decodes to 4 bytes foob')
 
-    #{index-out=zero}
-    d3 = d[3]
-    (dn == 4 && d3 == 98) -> print('PASS: 4 MZXW6YQ= decodes to 4 bytes foob')
+-> print('FAIL: 4 len={dn.to-str()}')
 
-    -> print('FAIL: 4 len={dn.to-str()}')
+; ─────────────────────────────────────────────
+; 5. "fooba" → "MZXW6YTB"  (pad 0 → 5 bytes)
+; ─────────────────────────────────────────────
+e = base32.decode('MZXW6YTB')
+en = e.len()
 
-    ; ─────────────────────────────────────────────
-    ; 5. "fooba" → "MZXW6YTB"  (pad 0 → 5 bytes)
-    ; ─────────────────────────────────────────────
-    e = base32.decode('MZXW6YTB')
-    en = e.len()
+#{index-out=zero}
+e4 = e[4]
+(en == 5 && e4 == 97) -> print('PASS: 5 MZXW6YTB decodes to 5 bytes fooba')
 
-    #{index-out=zero}
-    e4 = e[4]
-    (en == 5 && e4 == 97) -> print('PASS: 5 MZXW6YTB decodes to 5 bytes fooba')
+-> print('FAIL: 5 len={en.to-str()}')
 
-    -> print('FAIL: 5 len={en.to-str()}')
+; ─────────────────────────────────────────────
+; 6. encode/decode 往返（6 bytes → 16 符號 → 6 bytes）
+; ─────────────────────────────────────────────
+s = 'foobar'.to-bytes()
+enc = base32.encode(s)
+enc == 'MZXW6YTBOI======' -> print('PASS: 6 encode(foobar)=MZXW6YTBOI======')
 
-    ; ─────────────────────────────────────────────
-    ; 6. encode/decode 往返（6 bytes → 16 符號 → 6 bytes）
-    ; ─────────────────────────────────────────────
-    s = 'foobar'.to-bytes()
-    enc = base32.encode(s)
-    enc == 'MZXW6YTBOI======' -> print('PASS: 6 encode(foobar)=MZXW6YTBOI======')
+-> print('FAIL: 6 enc=[{enc}]')
 
-    -> print('FAIL: 6 enc=[{enc}]')
+back = base32.decode(enc)
+backn = back.len()
+backn == 6 -> print('PASS: 7 round-trip decodes back to 6 bytes')
 
-    back = base32.decode(enc)
-    backn = back.len()
-    backn == 6 -> print('PASS: 7 round-trip decodes back to 6 bytes')
-
-    -> print('FAIL: 7 round-trip len={backn.to-str()}')
-}
+-> print('FAIL: 7 round-trip len={backn.to-str()}')

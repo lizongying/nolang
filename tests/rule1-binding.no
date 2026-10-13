@@ -99,31 +99,29 @@ test-opt-vec-source-dead = () {
     print(p.len()); expect: 3
 }
 
-main = () {
-    print('== str independence')
-    test-str-independence()
+print('== str independence')
+test-str-independence()
 
-    print('== str readonly')
-    test-str-readonly()
+print('== str readonly')
+test-str-readonly()
 
-    print('== vec independence')
-    test-vec-independence()
+print('== vec independence')
+test-vec-independence()
 
-    print('== vec readonly')
-    test-vec-readonly()
+print('== vec readonly')
+test-vec-readonly()
 
-    print('== struct independence')
-    test-struct-independence()
+print('== struct independence')
+test-struct-independence()
 
-    print('== str source-dead move')
-    test-str-source-dead-move()
+print('== str source-dead move')
+test-str-source-dead-move()
 
-    print('== opt str independence')
-    test-opt-str-independence()
+print('== opt str independence')
+test-opt-str-independence()
 
-    print('== opt vec independence')
-    test-opt-vec-independence()
+print('== opt vec independence')
+test-opt-vec-independence()
 
-    print('== opt vec source-dead')
-    test-opt-vec-source-dead()
-}
+print('== opt vec source-dead')
+test-opt-vec-source-dead()

@@ -14,45 +14,42 @@ bag {
     arr [4]str
 }
 
-main = () {
+; (1) 結構體欄位：str 從零值增長到 3 後可寫可讀
+b = bag {}
+b.s.len = 3
+b.s[0] = 97
+b.s[1] = 98
+b.s[2] = 99
+b.s.len() == 3 -> print('ok: str field grow from null')
 
-    ; (1) 結構體欄位：str 從零值增長到 3 後可寫可讀
-    b = bag {}
-    b.s.len = 3
-    b.s[0] = 97
-    b.s[1] = 98
-    b.s[2] = 99
-    b.s.len() == 3 -> print('ok: str field grow from null')
+-> print('fail: str field len got=' - b.s.len().to-str())
 
-    -> print('fail: str field len got=' - b.s.len().to-str())
+; (2) 增長出來的緩衝區是真的可寫的（能讀回寫進去的位元組）
+b.s == 'abc' -> print('ok: grown str buffer is writable')
 
-    ; (2) 增長出來的緩衝區是真的可寫的（能讀回寫進去的位元組）
-    b.s == 'abc' -> print('ok: grown str buffer is writable')
+-> print('fail: grown str got=[{b.s}]')
 
-    -> print('fail: grown str got=[{b.s}]')
+; (3) 結構體欄位：slice 從零值增長到 2 後可寫可讀
+b.v.len = 2
+b.v[0] = 7
+b.v[1] = 8
+b.v[0] == 7 && b.v[1] == 8 -> print('ok: slice field grow from null')
 
-    ; (3) 結構體欄位：slice 從零值增長到 2 後可寫可讀
-    b.v.len = 2
-    b.v[0] = 7
-    b.v[1] = 8
-    b.v[0] == 7 && b.v[1] == 8 -> print('ok: slice field grow from null')
+-> print('fail: slice field grow')
 
-    -> print('fail: slice field grow')
+; (4) 陣列元素（巢狀路徑）—— 原本崩潰的形狀
+b.arr[1].len = 2
+b.arr[1][0] = 65
+b.arr[1][1] = 66
+b.arr[1] == 'AB' -> print('ok: array element str grow from null')
 
-    ; (4) 陣列元素（巢狀路徑）—— 原本崩潰的形狀
-    b.arr[1].len = 2
-    b.arr[1][0] = 65
-    b.arr[1][1] = 66
-    b.arr[1] == 'AB' -> print('ok: array element str grow from null')
+-> print('fail: array element grow got=[' - b.arr[1] - ']')
 
-    -> print('fail: array element grow got=[' - b.arr[1] - ']')
+; (5) 已指派過的容器做 .len = n 仍是純欄位寫入（縮短）——
+;     這裡用欄位是因為一般變數的 `s.len = n` 本來就被 validator 擋下
+;     （cannot modify read-only field 'len' of string）。
+b.s = 'abcd'
+b.s.len = 2
+b.s == 'ab' -> print('ok: shrink on an allocated str still works')
 
-    ; (5) 已指派過的容器做 .len = n 仍是純欄位寫入（縮短）——
-    ;     這裡用欄位是因為一般變數的 `s.len = n` 本來就被 validator 擋下
-    ;     （cannot modify read-only field 'len' of string）。
-    b.s = 'abcd'
-    b.s.len = 2
-    b.s == 'ab' -> print('ok: shrink on an allocated str still works')
-
-    -> print('fail: shrink got=[{b.s}]')
-}
+-> print('fail: shrink got=[{b.s}]')

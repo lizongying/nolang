@@ -16,6 +16,7 @@ get-default = (arr []i64, i i64) (res i64) {
 
 auto-prop = (arr []i64, i i64) (res ?i64) {
     x = arr[i]
+
     ; D1：本函式只驗證「裸 x = v[i] 會被就地捕獲、越界不崩潰」，不驗證取值，
     ; 故對捕獲到的 option 顯式丟棄（三條消費路徑之一）。
     _ = x
@@ -110,100 +111,98 @@ get-default-char = (arr []char, i i64) (res char) {
     res = arr[i]
 }
 
-main = () {
-    a = [10, 20, 30]
+a = [10, 20, 30]
 
-    ; 1) ?= 傳播：越界回傳 none/err，不崩潰
-    safe-get(a, 5)
-    io.out('safe-get OOB: no-crash')
-    print('')
+; 1) ?= 傳播：越界回傳 none/err，不崩潰
+safe-get(a, 5)
+io.out('safe-get OOB: no-crash')
+print('')
 
-    ; 2) #{index-out} 預設值：越界回傳 0
-    d = get-default(a, 5)
-    io.out('get-default OOB -> ')
-    io.out(d)
-    print('')
+; 2) #{index-out} 預設值：越界回傳 0
+d = get-default(a, 5)
+io.out('get-default OOB -> ')
+io.out(d)
+print('')
 
-    ; 3) 自動傳播：越界回傳 none/err，不崩潰
-    auto-prop(a, 5)
-    io.out('auto-prop OOB: no-crash')
-    print('')
+; 3) 自動傳播：越界回傳 none/err，不崩潰
+auto-prop(a, 5)
+io.out('auto-prop OOB: no-crash')
+print('')
 
-    ; 3b) 顯式識別符 RHS 的 ?= 解箱（inner ?= res）：範圍內解箱為 42，不崩潰
-    unwrap-ident(42)
+; 3b) 顯式識別符 RHS 的 ?= 解箱（inner ?= res）：範圍內解箱為 42，不崩潰
+unwrap-ident(42)
 
-    ; 3c) 廣義 ?T RHS 的 ?= 解箱（CallExpression / 變數 / InfixExpression）：
-    ;     預期 unwrap-call-rhs a = 21 / unwrap-var-rhs res = 21 / unwrap-infix-rhs a = 63
-    unwrap-call-rhs(21)
-    unwrap-var-rhs(21)
-    unwrap-infix-rhs(21)
+; 3c) 廣義 ?T RHS 的 ?= 解箱（CallExpression / 變數 / InfixExpression）：
+;     預期 unwrap-call-rhs a = 21 / unwrap-var-rhs res = 21 / unwrap-infix-rhs a = 63
+unwrap-call-rhs(21)
+unwrap-var-rhs(21)
+unwrap-infix-rhs(21)
 
-    ; 4a) #{index-out} 範圍內取值正確（i64）
-    ok = get-default(a, 1)
-    io.out('get-default in-bounds[1] -> ')
-    io.out(ok)
-    print('')
+; 4a) #{index-out} 範圍內取值正確（i64）
+ok = get-default(a, 1)
+io.out('get-default in-bounds[1] -> ')
+io.out(ok)
+print('')
 
-    ; 4b) ?= 範圍內取值正確（解箱後印字元碼）
-    v = safe-get(a, 2)
-    v
-    nil -> io.out('safe-get in-bounds: none')
+; 4b) ?= 範圍內取值正確（解箱後印字元碼）
+v = safe-get(a, 2)
+v
+nil -> io.out('safe-get in-bounds: none')
 
-    -> io.out('safe-get in-bounds: some')
-    print('')
+-> io.out('safe-get in-bounds: some')
+print('')
 
-    ; 5) float 預設值 + 範圍內
-    fa = [1.0, 2.0, 3.0]
-    fdef = get-default-f(fa, 9)
-    io.out('get-default-f OOB -> ')
-    io.out(fdef)
-    print('')
-    fok = get-default-f(fa, 1)
-    io.out('get-default-f in-bounds[1] -> ')
-    io.out(fok)
-    print('')
+; 5) float 預設值 + 範圍內
+fa = [1.0, 2.0, 3.0]
+fdef = get-default-f(fa, 9)
+io.out('get-default-f OOB -> ')
+io.out(fdef)
+print('')
+fok = get-default-f(fa, 1)
+io.out('get-default-f in-bounds[1] -> ')
+io.out(fok)
+print('')
 
-    ; 6) str 預設值 + 範圍內
-    sa = ['a', 'b', 'c']
-    sdef = get-default-str(sa, 9)
-    io.out('get-default-str OOB -> ')
-    io.out(sdef)
-    print('')
-    sok = get-default-str(sa, 1)
-    io.out('get-default-str in-bounds[1] -> ')
-    io.out(sok)
-    print('')
+; 6) str 預設值 + 範圍內
+sa = ['a', 'b', 'c']
+sdef = get-default-str(sa, 9)
+io.out('get-default-str OOB -> ')
+io.out(sdef)
+print('')
+sok = get-default-str(sa, 1)
+io.out('get-default-str in-bounds[1] -> ')
+io.out(sok)
+print('')
 
-    ; 7) bool 預設值 + 範圍內
-    ba = [false, true, false]
-    bdef = get-default-bool(ba, 9)
-    io.out('get-default-bool OOB -> ')
-    io.out(bdef)
-    print('')
-    bok = get-default-bool(ba, 1)
-    io.out('get-default-bool in-bounds[1] -> ')
-    io.out(bok)
-    print('')
+; 7) bool 預設值 + 範圍內
+ba = [false, true, false]
+bdef = get-default-bool(ba, 9)
+io.out('get-default-bool OOB -> ')
+io.out(bdef)
+print('')
+bok = get-default-bool(ba, 1)
+io.out('get-default-bool in-bounds[1] -> ')
+io.out(bok)
+print('')
 
-    ; 8) byte 預設值 + 範圍內
-    xa []u8 = [1, 2, 3]
-    xdef = get-default-byte(xa, 9)
-    io.out('get-default-byte OOB -> ')
-    io.out(xdef)
-    print('')
-    xok = get-default-byte(xa, 2)
-    io.out('get-default-byte in-bounds[2] -> ')
-    io.out(xok)
-    print('')
+; 8) byte 預設值 + 範圍內
+xa []u8 = [1, 2, 3]
+xdef = get-default-byte(xa, 9)
+io.out('get-default-byte OOB -> ')
+io.out(xdef)
+print('')
+xok = get-default-byte(xa, 2)
+io.out('get-default-byte in-bounds[2] -> ')
+io.out(xok)
+print('')
 
-    ; 9) char 預設值 + 範圍內
-    ca = ["p", "q", "r"]
-    cdef = get-default-char(ca, 9)
-    io.out('get-default-char OOB -> ')
-    io.out(cdef)
-    print('')
-    cok = get-default-char(ca, 1)
-    io.out('get-default-char in-bounds[1] -> ')
-    io.out(cok)
-    print('')
-}
+; 9) char 預設值 + 範圍內
+ca = ["p", "q", "r"]
+cdef = get-default-char(ca, 9)
+io.out('get-default-char OOB -> ')
+io.out(cdef)
+print('')
+cok = get-default-char(ca, 1)
+io.out('get-default-char in-bounds[1] -> ')
+io.out(cok)
+print('')

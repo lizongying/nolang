@@ -1,0 +1,43 @@
+; 陳述位 `{ … }`——鏡像 Go stmt.go:402 LBRACE 臂 + buildBareMatchDesugar（s48）
+c = 3
+
+; ① 普通區塊陳述：oracle 保留 BlockStatement wrapper
+{
+    d = 2
+}
+
+; ② 全非 wildcard 多臂 ⇒ If{IntegerLiteral 1, Block{各臂 if 兄弟}}
+{
+    c == 1 -> {
+        print('a')
+    }
+
+    c == 2 -> {
+        print('b')
+    }
+}
+
+; ③ 尾 wildcard ⇒ elif 鏈，末端 If{1, body}
+{
+    c == 1 -> {
+        print('x')
+    }
+
+    -> {
+        print('y')
+    }
+}
+
+; ④ 單臂 + 同行單陳述本體 + block 形（換行本體）
+{
+    c == 4 -> print('p')
+
+    c == 5 ->
+        print('q')
+        print('r')
+}
+
+; ⑤ `_ ->` wildcard 臂
+{
+    _ -> print('u')
+}

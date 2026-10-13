@@ -1215,7 +1215,7 @@ func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, "write result to source file")
 	diffMode := fs.Bool("d", false, "output colored diff instead of formatted result")
-	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + `x = x-opt: { ok -> it -> }` on the following lines)")
+	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + `x = x-opt: { ok -> it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)")
 	loopStyle := fs.String("loop-style", "prefix", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'")
 	fs.Usage = func() {
 		fmt.Println("Usage: no fmt [flags] <file|dir>")
@@ -1293,6 +1293,12 @@ func fmtCommand(args []string) {
 
 	hadError := false
 	for _, arg := range remaining {
+		// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+		if verr := pkg.ValidateSourcePathName(arg); verr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", verr)
+			hadError = true
+			continue
+		}
 		info, err := os.Stat(arg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error accessing %s: %v\n", arg, err)
@@ -1318,6 +1324,10 @@ func fmtCommand(args []string) {
 }
 
 func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle) error {
+	// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+	if verr := pkg.ValidateSourcePathName(filename); verr != nil {
+		return verr
+	}
 	if fixClass != "" {
 		return fmtProcessFixFile(filename, writeInPlace, diffMode, fixClass)
 	}
@@ -1402,6 +1412,14 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 			return nil
 		}
 		if !strings.HasSuffix(path, ".no") {
+			return nil
+		}
+		// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+		if verr := pkg.ValidateSourcePathName(path); verr != nil {
+			fmt.Fprintf(os.Stderr, "%s: format error: %s\n", path, verr)
+			if firstErr == nil {
+				firstErr = verr
+			}
 			return nil
 		}
 		// 跳過 ignore 列表中匹配的檔案
@@ -1564,8 +1582,11 @@ func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
 	if fixClass == "unwrap" {
 		return fixUnwrapFixes(arg), nil
 	}
+	if fixClass == "main" {
+		return fixMainFixes(arg), nil
+	}
 	if fixClass != "overflow" {
-		return nil, fmt.Errorf("unknown fix class %q (supported: overflow, redundant, match, unwrap)", fixClass)
+		return nil, fmt.Errorf("unknown fix class %q (supported: overflow, redundant, match, unwrap, main)", fixClass)
 	}
 	info, err := os.Stat(arg)
 	if err != nil {
@@ -2517,6 +2538,13 @@ func buildCommand(args []string) {
 	} else {
 		inputPath = fs.Args()[0]
 	}
+	// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+	if inputPath != "." {
+		if verr := pkg.ValidateSourcePathName(inputPath); verr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", verr)
+			os.Exit(1)
+		}
+	}
 	// 未指定 target 時自動檢測當前平台
 	targetStr := *target
 	if targetStr == "" {
@@ -2638,6 +2666,13 @@ func runCommand(args []string) {
 	var runArg string
 	if len(fs.Args()) > 0 {
 		runArg = fs.Args()[0]
+	}
+	// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線（見 ValidateSourcePathName）。
+	if runArg != "" && runArg != "." {
+		if verr := pkg.ValidateSourcePathName(runArg); verr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", verr)
+			os.Exit(1)
+		}
 	}
 	inputPath, rerr := resolveRunTarget(runArg)
 	if rerr != nil {
@@ -2827,6 +2862,12 @@ func testCommand(args []string) {
 		inputPath = filepath.Join(".", "tests")
 	}
 
+	// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+	if verr := pkg.ValidateSourcePathName(inputPath); verr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", verr)
+		os.Exit(1)
+	}
+
 	info, err := os.Stat(inputPath)
 	if err != nil {
 		if len(fs.Args()) == 0 {
@@ -2860,6 +2901,11 @@ func testCommand(args []string) {
 			// 跳過 ignore 列表中匹配的檔案
 			if testPkg != nil && testPkg.IsIgnored(path) {
 				return nil
+			}
+			// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+			if verr := pkg.ValidateSourcePathName(path); verr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", verr)
+				os.Exit(1)
 			}
 			testFiles = append(testFiles, path)
 			return nil
@@ -3089,15 +3135,14 @@ func vetCommand(args []string) {
 				if vetPkg != nil && vetPkg.IsIgnored(path) {
 					return nil
 				}
-				// 檢查檔案名是否符合變量名規則：小寫字母、數字、中劃線
-				base := strings.TrimSuffix(filepath.Base(path), ".no")
-				if !isValidFileName(base) {
+				// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+				if verr := pkg.ValidateSourcePathName(path); verr != nil {
 					allLints = append(allLints, nbuild.LintResult{
 						File: path,
 						Lints: []checker.LintResult{{
 							Severity: checker.LintError,
 							Source:   "nolang-lint",
-							Message:  fmt.Sprintf("file name '%s.no' does not match naming convention: lowercase letters, digits, and hyphens only", base),
+							Message:  verr.Error(),
 							TraceID:  "fn-rule",
 						}},
 					})
@@ -3154,15 +3199,14 @@ func vetCommand(args []string) {
 		}
 	} else {
 		// 文件模式：驗證單個文件
-		// 檢查檔案名是否符合變量名規則
-		base := strings.TrimSuffix(filepath.Base(inputPath), ".no")
-		if !isValidFileName(base) {
+		// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+		if verr := pkg.ValidateSourcePathName(inputPath); verr != nil {
 			allLints = append(allLints, nbuild.LintResult{
 				File: inputPath,
 				Lints: []checker.LintResult{{
 					Severity: checker.LintError,
 					Source:   "nolang-lint",
-					Message:  fmt.Sprintf("file name '%s.no' does not match naming convention: lowercase letters, digits, and hyphens only", base),
+					Message:  verr.Error(),
 					TraceID:  "fn-rule",
 				}},
 			})
@@ -3391,6 +3435,11 @@ func astCommand(args []string) {
 	}
 
 	inputPath := fs.Args()[0]
+	// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+	if verr := pkg.ValidateSourcePathName(inputPath); verr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", verr)
+		os.Exit(1)
+	}
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -3415,6 +3464,9 @@ func astCommand(args []string) {
 	}))
 }
 
+// validateSourcePathName 已取代本函式（見 package.ValidateSourcePathName，同時檢查目錄名），
+// 保留此處僅為向後相容的段落標記。
+//
 // isValidFileName 檢查檔案名（不含 .no 副檔名）是否符合變量名規則：
 // 只允許小寫字母 (a-z)、數字 (0-9) 和中劃線 (-)，且不以中劃線開頭或結尾。
 func isValidFileName(name string) bool {

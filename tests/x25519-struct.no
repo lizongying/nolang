@@ -173,17 +173,15 @@ test-func-output = () (pass bool) {
     pass = true
 }
 
-main = () {
-    p1 = test-struct-field()
-    {
-        p1 == true -> print('PASS: struct-field scalarmult')
+p1 = test-struct-field()
+{
+    p1 == true -> print('PASS: struct-field scalarmult')
 
-        p1 == false -> print('FAIL: struct-field scalarmult')
-    }
-    p2 = test-func-output()
-    {
-        p2 == true -> print('PASS: func-output scalarmult')
+    p1 == false -> print('FAIL: struct-field scalarmult')
+}
+p2 = test-func-output()
+{
+    p2 == true -> print('PASS: func-output scalarmult')
 
-        p2 == false -> print('FAIL: func-output scalarmult')
-    }
+    p2 == false -> print('FAIL: func-output scalarmult')
 }

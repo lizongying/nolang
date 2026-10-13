@@ -10,21 +10,19 @@ point {
     y i64
 }
 
-main = () {
-    p = point {
-        x: 1
-        y: 2
-    }
-    s = ['a', 'b']
-    m [str]i64 = { 'a': 1, 'b': 2 }
-
-    ; stdout (print):
-    print(p); expect: {x: 1, y: 2}
-    print(s); expect: [a, b]
-    print(m); expect: {b: 2, a: 1}
-
-    ; stderr (eprint):
-    eprint(p); expect(stderr): {x: 1, y: 2}
-    eprint(s); expect(stderr): [a, b]
-    eprint(m); expect(stderr): {b: 2, a: 1}
+p = point {
+    x: 1
+    y: 2
 }
+s = ['a', 'b']
+m [str]i64 = { 'a': 1, 'b': 2 }
+
+; stdout (print):
+print(p); expect: {x: 1, y: 2}
+print(s); expect: [a, b]
+print(m); expect: {b: 2, a: 1}
+
+; stderr (eprint):
+eprint(p); expect(stderr): {x: 1, y: 2}
+eprint(s); expect(stderr): [a, b]
+eprint(m); expect(stderr): {b: 2, a: 1}

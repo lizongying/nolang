@@ -40,136 +40,133 @@ list-res {
     fail,
 }
 
-main = () {
+; (1) 單欄位 str 載荷 match 兩次：第二次必須仍讀到 'hi'
+q1 e-res = ok('hi')
+q1: {
+    ok(v) -> print('1a: {v}')
 
-    ; (1) 單欄位 str 載荷 match 兩次：第二次必須仍讀到 'hi'
-    q1 e-res = ok('hi')
-    q1: {
-        ok(v) -> print('1a: {v}')
+    fail -> print('fail 1a')
+}
+q1: {
+    ok(v) -> print('1b: {v}')
 
-        fail -> print('fail 1a')
+    fail -> print('fail 1b')
+}
+
+; (2) 改名綁定 ×2：單欄位變體的析構名是任意的
+q2 e-res = ok('renamed')
+q2: {
+    ok(s) -> print('2a: {s}')
+
+    fail -> print('fail 2a')
+}
+q2: {
+    ok(t) -> print('2b: {t}')
+
+    fail -> print('fail 2b')
+}
+
+; (3) 多欄位變體 ×2：兩個欄位都要在兩次 match 裡讀對
+;     注意這正是「單次 match 抽 2 個 slot ≠ 兩次 match」的守門案例：
+;     q3 只被 match 兩次，但每次抽 slot 0 與 slot 1。
+q3 shape = rect(3, 4)
+q3: {
+    circle(r) -> print('fail 3a: circle')
+
+    rect(w, h) -> {
+        print('3a: rect')
+        print(w)
+        print(h)
     }
-    q1: {
-        ok(v) -> print('1b: {v}')
 
-        fail -> print('fail 1b')
+    dot -> print('fail 3a: dot')
+}
+q3: {
+    circle(r) -> print('fail 3b: circle')
+
+    rect(w, h) -> {
+        print('3b: rect')
+        print(w)
+        print(h)
     }
 
-    ; (2) 改名綁定 ×2：單欄位變體的析構名是任意的
-    q2 e-res = ok('renamed')
-    q2: {
-        ok(s) -> print('2a: {s}')
+    dot -> print('fail 3b: dot')
+}
 
-        fail -> print('fail 2a')
-    }
-    q2: {
-        ok(t) -> print('2b: {t}')
-
-        fail -> print('fail 2b')
-    }
-
-    ; (3) 多欄位變體 ×2：兩個欄位都要在兩次 match 裡讀對
-    ;     注意這正是「單次 match 抽 2 個 slot ≠ 兩次 match」的守門案例：
-    ;     q3 只被 match 兩次，但每次抽 slot 0 與 slot 1。
-    q3 shape = rect(3, 4)
-    q3: {
-        circle(r) -> print('fail 3a: circle')
-
-        rect(w, h) -> {
-            print('3a: rect')
-            print(w)
-            print(h)
+; (4) 切片載荷 ×2：抽取是**借用**（無 @vec_clone），由 enum 的 drop 釋放一次
+l4 = ['p', 'q']
+q4 list-res = ok(l4)
+q4: {
+    ok(items) -> {
+        for x <- items: {
+            print('4a: {x}')
         }
-
-        dot -> print('fail 3a: dot')
     }
-    q3: {
-        circle(r) -> print('fail 3b: circle')
 
-        rect(w, h) -> {
-            print('3b: rect')
-            print(w)
-            print(h)
+    fail -> print('fail 4a')
+}
+q4: {
+    ok(items) -> {
+        for x <- items: {
+            print('4b: {x}')
         }
-
-        dot -> print('fail 3b: dot')
     }
 
-    ; (4) 切片載荷 ×2：抽取是**借用**（無 @vec_clone），由 enum 的 drop 釋放一次
-    l4 = ['p', 'q']
-    q4 list-res = ok(l4)
-    q4: {
-        ok(items) -> {
-            for x <- items: {
-                print('4a: {x}')
-            }
+    fail -> print('fail 4b')
+}
+
+; (5) match 三次
+q5 e-res = ok('three')
+q5: {
+    ok(v) -> print('5a: {v}')
+
+    fail -> print('fail 5a')
+}
+q5: {
+    ok(v) -> print('5b: {v}')
+
+    fail -> print('fail 5b')
+}
+q5: {
+    ok(v) -> print('5c: {v}')
+
+    fail -> print('fail 5c')
+}
+
+; (6) 兩次 match 之間插入其他語句（含配置與釋放），載荷必須活到第二次
+q6 e-res = ok('between')
+q6: {
+    ok(v) -> print('6a: {v}')
+
+    fail -> print('fail 6a')
+}
+filler = 'noi' - 'se'
+print('6m: {filler}')
+q6: {
+    ok(v) -> print('6b: {v}')
+
+    fail -> print('fail 6b')
+}
+
+; (7) 巢狀：外層 arm 裡對**另一個** enum match 兩次
+;     外層 e1 只抽 1 次（move），內層 e2 抽 2 次（owning）—— 兩者互不干擾
+e1 e-res = ok('outer')
+e2 e-res = ok('inner')
+e1: {
+    ok(v) -> {
+        print('7a: {v}')
+        e2: {
+            ok(w) -> print('7b: {w}')
+
+            fail -> print('fail 7b')
         }
+        e2: {
+            ok(w) -> print('7c: {w}')
 
-        fail -> print('fail 4a')
-    }
-    q4: {
-        ok(items) -> {
-            for x <- items: {
-                print('4b: {x}')
-            }
+            fail -> print('fail 7c')
         }
-
-        fail -> print('fail 4b')
+        print('7d: {v}')
     }
 
-    ; (5) match 三次
-    q5 e-res = ok('three')
-    q5: {
-        ok(v) -> print('5a: {v}')
-
-        fail -> print('fail 5a')
-    }
-    q5: {
-        ok(v) -> print('5b: {v}')
-
-        fail -> print('fail 5b')
-    }
-    q5: {
-        ok(v) -> print('5c: {v}')
-
-        fail -> print('fail 5c')
-    }
-
-    ; (6) 兩次 match 之間插入其他語句（含配置與釋放），載荷必須活到第二次
-    q6 e-res = ok('between')
-    q6: {
-        ok(v) -> print('6a: {v}')
-
-        fail -> print('fail 6a')
-    }
-    filler = 'noi' - 'se'
-    print('6m: {filler}')
-    q6: {
-        ok(v) -> print('6b: {v}')
-
-        fail -> print('fail 6b')
-    }
-
-    ; (7) 巢狀：外層 arm 裡對**另一個** enum match 兩次
-    ;     外層 e1 只抽 1 次（move），內層 e2 抽 2 次（owning）—— 兩者互不干擾
-    e1 e-res = ok('outer')
-    e2 e-res = ok('inner')
-    e1: {
-        ok(v) -> {
-            print('7a: {v}')
-            e2: {
-                ok(w) -> print('7b: {w}')
-
-                fail -> print('fail 7b')
-            }
-            e2: {
-                ok(w) -> print('7c: {w}')
-
-                fail -> print('fail 7c')
-            }
-            print('7d: {v}')
-        }
-
-        fail -> print('fail 7')
-    }
+    fail -> print('fail 7')
 }

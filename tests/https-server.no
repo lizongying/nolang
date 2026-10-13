@@ -350,35 +350,33 @@ test-https-e2e-12 = () (pass bool) {
 }
 
 ; 主函數
-main = () {
-    p1 = test-https-listen()
-    {
-        p1 == true -> print('PASS: https-server.listen')
+p1 = test-https-listen()
+{
+    p1 == true -> print('PASS: https-server.listen')
 
-        p1 == false -> print('FAIL: https-server.listen')
-    }
-    p2 = test-tls-server-init()
-    {
-        p2 == true -> print('PASS: server-init')
+    p1 == false -> print('FAIL: https-server.listen')
+}
+p2 = test-tls-server-init()
+{
+    p2 == true -> print('PASS: server-init')
 
-        p2 == false -> print('FAIL: server-init')
-    }
-    p3 = test-https-server-struct()
-    {
-        p3 == true -> print('PASS: https-server-conn struct')
+    p2 == false -> print('FAIL: server-init')
+}
+p3 = test-https-server-struct()
+{
+    p3 == true -> print('PASS: https-server-conn struct')
 
-        p3 == false -> print('FAIL: https-server-conn struct')
-    }
-    p4 = test-https-e2e()
-    {
-        p4 == true -> print('PASS: https-e2e')
+    p3 == false -> print('FAIL: https-server-conn struct')
+}
+p4 = test-https-e2e()
+{
+    p4 == true -> print('PASS: https-e2e')
 
-        p4 == false -> print('FAIL: https-e2e')
-    }
-    p5 = test-https-e2e-12()
-    {
-        p5 == true -> print('PASS: https-e2e-tls12')
+    p4 == false -> print('FAIL: https-e2e')
+}
+p5 = test-https-e2e-12()
+{
+    p5 == true -> print('PASS: https-e2e-tls12')
 
-        p5 == false -> print('FAIL: https-e2e-tls12')
-    }
+    p5 == false -> print('FAIL: https-e2e-tls12')
 }

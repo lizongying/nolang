@@ -56,59 +56,56 @@ bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
     }
 }
 
-main = () {
+; Alice private: 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a
+; Alice public:  8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
 
-    ; Alice private: 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a
-    ; Alice public:  8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
+; 測試 1: 用 local [32]byte 呼叫 scalarmult-base（對照組）
+local-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+local-pub = x25519.x25519-scalarmult-base(local-priv)
 
-    ; 測試 1: 用 local [32]byte 呼叫 scalarmult-base（對照組）
-    local-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
-    local-pub = x25519.x25519-scalarmult-base(local-priv)
+expected-pub = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
 
-    expected-pub = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+ok1 = bytes-eq(local-pub, expected-pub)
+{
+    ok1 == true -> print('PASS: local priv -> correct pub')
 
-    ok1 = bytes-eq(local-pub, expected-pub)
-    {
-        ok1 == true -> print('PASS: local priv -> correct pub')
+    ok1 == false -> print('FAIL: local priv -> wrong pub')
+}
 
-        ok1 == false -> print('FAIL: local priv -> wrong pub')
-    }
+; 測試 2: 用 global [32]byte 呼叫 scalarmult-base
+g-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
 
-    ; 測試 2: 用 global [32]byte 呼叫 scalarmult-base
-    g-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+; 印出 g-priv 確認值正確
+eprint('g-priv: ')
+s = ''
+i <- [0..32): {
 
-    ; 印出 g-priv 確認值正確
-    eprint('g-priv: ')
-    s = ''
-    i <- [0..32): {
+    s = s - (g-priv[i]).to-str() - ' '
+}
+eprint(s)
 
-        s = s - (g-priv[i]).to-str() - ' '
-    }
-    eprint(s)
+global-pub = x25519.x25519-scalarmult-base(g-priv)
 
-    global-pub = x25519.x25519-scalarmult-base(g-priv)
+; 印出 global-pub
+eprint('global-pub: ')
+s = ''
+i <- [0..32): {
 
-    ; 印出 global-pub
-    eprint('global-pub: ')
-    s = ''
-    i <- [0..32): {
+    s = s - (global-pub[i]).to-str() - ' '
+}
+eprint(s)
 
-        s = s - (global-pub[i]).to-str() - ' '
-    }
-    eprint(s)
+ok2 = bytes-eq(global-pub, expected-pub)
+{
+    ok2 == true -> print('PASS: global priv -> correct pub')
 
-    ok2 = bytes-eq(global-pub, expected-pub)
-    {
-        ok2 == true -> print('PASS: global priv -> correct pub')
+    ok2 == false -> print('FAIL: global priv -> wrong pub')
+}
 
-        ok2 == false -> print('FAIL: global priv -> wrong pub')
-    }
+; 測試 3: 比較 local-pub 和 global-pub
+ok3 = bytes-eq(local-pub, global-pub)
+{
+    ok3 == true -> print('PASS: local pub == global pub')
 
-    ; 測試 3: 比較 local-pub 和 global-pub
-    ok3 = bytes-eq(local-pub, global-pub)
-    {
-        ok3 == true -> print('PASS: local pub == global pub')
-
-        ok3 == false -> print('FAIL: local pub != global pub (global passing bug)')
-    }
+    ok3 == false -> print('FAIL: local pub != global pub (global passing bug)')
 }

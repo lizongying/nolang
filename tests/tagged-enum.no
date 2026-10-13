@@ -58,40 +58,37 @@ make-rect = () (s shape) {
     s = rect(3.0, 4.0)
 }
 
-main = () {
+; 單元變體匹配
+c color = green
+print(color-name(c))
 
-    ; 單元變體匹配
-    c color = green
-    print(color-name(c))
+; 單欄位載荷綁定
+b box = full(7)
+b: {
+    full(v) -> print('full')
 
-    ; 單欄位載荷綁定
-    b box = full(7)
-    b: {
-        full(v) -> print('full')
+    empty -> print('empty')
+}
 
-        empty -> print('empty')
-    }
+; 多欄位載荷 + 表達式位置建構（內聯傳參）
+x = area(rect(2.0, 3.0))
+print(x)
 
-    ; 多欄位載荷 + 表達式位置建構（內聯傳參）
-    x = area(rect(2.0, 3.0))
-    print(x)
+; 枚舉作為回傳值，再以變數匹配
+s = make-rect()
+y = area(s)
+print(y)
 
-    ; 枚舉作為回傳值，再以變數匹配
-    s = make-rect()
-    y = area(s)
-    print(y)
+; 命名空間：同名變體、不同 tag 順序
+p a-res = ok(5)
+p: {
+    fail -> print('a-fail')
 
-    ; 命名空間：同名變體、不同 tag 順序
-    p a-res = ok(5)
-    p: {
-        fail -> print('a-fail')
+    ok(v) -> print('a-ok')
+}
+q b-res = ok('hi')
+q: {
+    ok(v) -> print(v)
 
-        ok(v) -> print('a-ok')
-    }
-    q b-res = ok('hi')
-    q: {
-        ok(v) -> print(v)
-
-        fail -> print('b-fail')
-    }
+    fail -> print('b-fail')
 }

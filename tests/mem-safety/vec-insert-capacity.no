@@ -106,18 +106,16 @@ test-insert-middle-keeps-elements = () (ok bool) {
     v[3] == 3 -> ok = true
 }
 
-main = () {
-    ok1 = test-struct-insert-after-push()
-    print('test-struct-insert-after-push: {ok1}')
+ok1 = test-struct-insert-after-push()
+print('test-struct-insert-after-push: {ok1}')
 
-    ok2 = test-insert-when-len-equals-cap()
-    print('test-insert-when-len-equals-cap: {ok2}')
+ok2 = test-insert-when-len-equals-cap()
+print('test-insert-when-len-equals-cap: {ok2}')
 
-    ok3 = test-i64-insert-after-push()
-    print('test-i64-insert-after-push: {ok3}')
+ok3 = test-i64-insert-after-push()
+print('test-i64-insert-after-push: {ok3}')
 
-    ok4 = test-insert-middle-keeps-elements()
-    print('test-insert-middle-keeps-elements: {ok4}')
+ok4 = test-insert-middle-keeps-elements()
+print('test-insert-middle-keeps-elements: {ok4}')
 
-    print('all done')
-}
+print('all done')

@@ -9,24 +9,22 @@
 ;   s=hello
 ;   sum=30
 ; 預期 stderr：io.err / io.errln 的輸出（err-msg）
-main = () {
-    io.out('int=')
-    io.outln(42)
-    io.out('f64=')
-    io.outln(3.14)
-    io.out('bool=')
-    io.outln(true)
-    n = -7
-    io.out('n=')
-    io.outln(n)
-    s = 'hello'
-    io.out('s=')
-    io.outln(s)
-    io.err('err-')
-    io.errln('msg')
-    io.out('sum=')
+io.out('int=')
+io.outln(42)
+io.out('f64=')
+io.outln(3.14)
+io.out('bool=')
+io.outln(true)
+n = -7
+io.out('n=')
+io.outln(n)
+s = 'hello'
+io.out('s=')
+io.outln(s)
+io.err('err-')
+io.errln('msg')
+io.out('sum=')
 
-    #{overflow=wrap}
-    io.outln(10 + 20)
-    print('')
-}
+#{overflow=wrap}
+io.outln(10 + 20)
+print('')

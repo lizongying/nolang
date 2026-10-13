@@ -1,0 +1,56 @@
+; t53: 語句位 `*`/`**` 速寫（break/continue shorthand）
+;   鏡像 Go parseStarBreakOrExpr（stmt.go:2913）與 parseStarStarContinue（stmt.go:2937）。
+
+test-star-block = () {
+
+    i <- [0..10): {
+
+        i >= 5 -> *
+
+        **
+
+        print(i)
+    }
+}
+
+test-star-in-brace = () {
+
+    !! {
+
+        x = 1
+
+        x == 1 -> {
+            *
+        }
+        *
+    }
+}
+
+test-star-labels = () {
+
+    #1 j <- [0..5): {
+
+        k <- [0..5): {
+
+            k == 2 -> * #1
+
+            ** #1
+        }
+        j == 4 -> *
+    }
+}
+
+test-standalone-chain = () {
+
+    m <- [0..3): {
+
+        #{overflow=wrap}
+        a = m * 2
+
+        a > 4 -> *
+
+        a == 0 -> **
+
+        print(a)
+    }
+}

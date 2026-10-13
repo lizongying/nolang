@@ -105,17 +105,15 @@ test-via-i64 = () (pass bool) {
 }
 
 ; main
-main = () {
-    p1 = test-via-inner()
-    {
-        p1 == true -> print('PASS: via inner')
+p1 = test-via-inner()
+{
+    p1 == true -> print('PASS: via inner')
 
-        p1 == false -> print('FAIL: via inner')
-    }
-    p2 = test-via-i64()
-    {
-        p2 == true -> print('PASS: via i64')
+    p1 == false -> print('FAIL: via inner')
+}
+p2 = test-via-i64()
+{
+    p2 == true -> print('PASS: via i64')
 
-        p2 == false -> print('FAIL: via i64')
-    }
+    p2 == false -> print('FAIL: via i64')
 }

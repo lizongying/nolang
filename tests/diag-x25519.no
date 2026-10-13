@@ -51,60 +51,58 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
     }
 }
 
-main = () {
-    expected [32]byte
-    priv = hex-to-bytes('0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20')
-    pub = x25519.x25519-scalarmult-base(priv)
+expected [32]byte
+priv = hex-to-bytes('0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20')
+pub = x25519.x25519-scalarmult-base(priv)
 
-    expected[0] = 7
-    expected[1] = 163
-    expected[2] = 124
-    expected[3] = 188
-    expected[4] = 20
-    expected[5] = 32
-    expected[6] = 147
-    expected[7] = 200
-    expected[8] = 183
-    expected[9] = 85
-    expected[10] = 220
-    expected[11] = 27
-    expected[12] = 16
-    expected[13] = 232
-    expected[14] = 108
-    expected[15] = 180
-    expected[16] = 38
-    expected[17] = 55
-    expected[18] = 74
-    expected[19] = 209
-    expected[20] = 106
-    expected[21] = 168
-    expected[22] = 83
-    expected[23] = 237
-    expected[24] = 11
-    expected[25] = 223
-    expected[26] = 192
-    expected[27] = 178
-    expected[28] = 184
-    expected[29] = 109
-    expected[30] = 28
-    expected[31] = 124
+expected[0] = 7
+expected[1] = 163
+expected[2] = 124
+expected[3] = 188
+expected[4] = 20
+expected[5] = 32
+expected[6] = 147
+expected[7] = 200
+expected[8] = 183
+expected[9] = 85
+expected[10] = 220
+expected[11] = 27
+expected[12] = 16
+expected[13] = 232
+expected[14] = 108
+expected[15] = 180
+expected[16] = 38
+expected[17] = 55
+expected[18] = 74
+expected[19] = 209
+expected[20] = 106
+expected[21] = 168
+expected[22] = 83
+expected[23] = 237
+expected[24] = 11
+expected[25] = 223
+expected[26] = 192
+expected[27] = 178
+expected[28] = 184
+expected[29] = 109
+expected[30] = 28
+expected[31] = 124
 
-    eq = true
-    i <- [0..32): {
-        pub[i] != expected[i] -> {
-            eq = false
-            break
-        }
+eq = true
+i <- [0..32): {
+    pub[i] != expected[i] -> {
+        eq = false
+        break
     }
+}
 
-    {
-        eq == true -> print('PASS: scalarmult-base([1..32]) matches reference')
+{
+    eq == true -> print('PASS: scalarmult-base([1..32]) matches reference')
 
-        eq == false -> {
-            print('FAIL: scalarmult-base([1..32]) mismatch')
-            i <- [0..32): {
-                eprint(pub[i])
-            }
+    eq == false -> {
+        print('FAIL: scalarmult-base([1..32]) mismatch')
+        i <- [0..32): {
+            eprint(pub[i])
         }
     }
 }

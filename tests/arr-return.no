@@ -80,17 +80,15 @@ test-param-pass = () (pass bool) {
 }
 
 ; main
-main = () {
-    p1 = test-direct-return()
-    {
-        p1 == true -> print('PASS: direct return')
+p1 = test-direct-return()
+{
+    p1 == true -> print('PASS: direct return')
 
-        p1 == false -> print('FAIL: direct return')
-    }
-    p2 = test-param-pass()
-    {
-        p2 == true -> print('PASS: param pass')
+    p1 == false -> print('FAIL: direct return')
+}
+p2 = test-param-pass()
+{
+    p2 == true -> print('PASS: param pass')
 
-        p2 == false -> print('FAIL: param pass')
-    }
+    p2 == false -> print('FAIL: param pass')
 }

@@ -36,41 +36,39 @@ safe-get-vec = (i i64) (res ?i64) {
     res = av[i]
 }
 
-main = () {
-    oob = 9
-    ib = 1
+oob = 9
+ib = 1
 
-    ; 固定陣列：#{index-out} 越界 → 0
-    dao = get-default-arr(oob)
-    io.out('arr #{index-out} OOB -> ')
-    io.out(dao)
-    print('')
+; 固定陣列：#{index-out} 越界 → 0
+dao = get-default-arr(oob)
+io.out('arr #{index-out} OOB -> ')
+io.out(dao)
+print('')
 
-    ; 固定陣列：範圍內正確
-    dao2 = get-default-arr(ib)
-    io.out('arr #{index-out} in-bounds[1] -> ')
-    io.out(dao2)
-    print('')
+; 固定陣列：範圍內正確
+dao2 = get-default-arr(ib)
+io.out('arr #{index-out} in-bounds[1] -> ')
+io.out(dao2)
+print('')
 
-    ; vec：#{index-out} 越界 → 0
-    dvo = get-default-vec(oob)
-    io.out('vec #{index-out} OOB -> ')
-    io.out(dvo)
-    print('')
+; vec：#{index-out} 越界 → 0
+dvo = get-default-vec(oob)
+io.out('vec #{index-out} OOB -> ')
+io.out(dvo)
+print('')
 
-    ; vec：範圍內正確
-    dvo2 = get-default-vec(2)
-    io.out('vec #{index-out} in-bounds[2] -> ')
-    io.out(dvo2)
-    print('')
+; vec：範圍內正確
+dvo2 = get-default-vec(2)
+io.out('vec #{index-out} in-bounds[2] -> ')
+io.out(dvo2)
+print('')
 
-    ; 固定陣列：?= 越界不崩（回傳 none）
-    safe-get-arr(oob)
-    io.out('arr ?= OOB: no-crash')
-    print('')
+; 固定陣列：?= 越界不崩（回傳 none）
+safe-get-arr(oob)
+io.out('arr ?= OOB: no-crash')
+print('')
 
-    ; vec：?= 越界不崩
-    safe-get-vec(oob)
-    io.out('vec ?= OOB: no-crash')
-    print('')
-}
+; vec：?= 越界不崩
+safe-get-vec(oob)
+io.out('vec ?= OOB: no-crash')
+print('')

@@ -67,10 +67,8 @@ test-push-control = () {
     print(outer[0][0]); 5
 }
 
-main = () {
-    test-vec-elem()
-    test-vec-elem-inplace()
-    test-vec-nested()
-    test-map-value()
-    test-push-control()
-}
+test-vec-elem()
+test-vec-elem-inplace()
+test-vec-nested()
+test-map-value()
+test-push-control()

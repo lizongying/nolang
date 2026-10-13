@@ -1,13 +1,11 @@
 ; test-dowhile — 測試 do-while 語法
-main = () {
-    i = 0
-    (i < 5) {
-        eprint(i)
-        eprint(' ')
+i = 0
+(i < 5) {
+    eprint(i)
+    eprint(' ')
 
-        #{overflow=wrap}
-        i = i + 1
-    }
-    print('')
-    print('done')
+    #{overflow=wrap}
+    i = i + 1
 }
+print('')
+print('done')

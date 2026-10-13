@@ -36,6 +36,4 @@ test-tcp-client = () {
 }
 
 ; 主入口：只驗證編譯通過，不實際連接
-main = () {
-    print('typeOwner duplicate test: ok')
-}
+print('typeOwner duplicate test: ok')

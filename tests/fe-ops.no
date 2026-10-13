@@ -190,35 +190,33 @@ test-scalarmult-base = () (pass bool) {
     pass = true
 }
 
-main = () {
-    p1 = test-fe-add()
-    {
-        p1 == true -> print('PASS: fe-add')
+p1 = test-fe-add()
+{
+    p1 == true -> print('PASS: fe-add')
 
-        p1 == false -> print('FAIL: fe-add')
-    }
-    p2 = test-fe-mul()
-    {
-        p2 == true -> print('PASS: fe-mul')
+    p1 == false -> print('FAIL: fe-add')
+}
+p2 = test-fe-mul()
+{
+    p2 == true -> print('PASS: fe-mul')
 
-        p2 == false -> print('FAIL: fe-mul')
-    }
-    p3 = test-fe-sq()
-    {
-        p3 == true -> print('PASS: fe-sq')
+    p2 == false -> print('FAIL: fe-mul')
+}
+p3 = test-fe-sq()
+{
+    p3 == true -> print('PASS: fe-sq')
 
-        p3 == false -> print('FAIL: fe-sq')
-    }
-    p4 = test-fe-frombytes()
-    {
-        p4 == true -> print('PASS: fe-frombytes')
+    p3 == false -> print('FAIL: fe-sq')
+}
+p4 = test-fe-frombytes()
+{
+    p4 == true -> print('PASS: fe-frombytes')
 
-        p4 == false -> print('FAIL: fe-frombytes')
-    }
-    p5 = test-scalarmult-base()
-    {
-        p5 == true -> print('PASS: scalarmult-base')
+    p4 == false -> print('FAIL: fe-frombytes')
+}
+p5 = test-scalarmult-base()
+{
+    p5 == true -> print('PASS: scalarmult-base')
 
-        p5 == false -> print('FAIL: scalarmult-base')
-    }
+    p5 == false -> print('FAIL: scalarmult-base')
 }

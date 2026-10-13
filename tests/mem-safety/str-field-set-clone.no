@@ -86,18 +86,16 @@ test-param-into-field-option = () (ok bool) {
     got == 'B' -> ok = true
 }
 
-main = () {
-    ok1 = test-field-survives-source-reassign()
-    print('test-field-survives-source-reassign: {ok1}')
+ok1 = test-field-survives-source-reassign()
+print('test-field-survives-source-reassign: {ok1}')
 
-    ok2 = test-field-from-literal()
-    print('test-field-from-literal: {ok2}')
+ok2 = test-field-from-literal()
+print('test-field-from-literal: {ok2}')
 
-    ok3 = test-param-into-field-plain()
-    print('test-param-into-field-plain: {ok3}')
+ok3 = test-param-into-field-plain()
+print('test-param-into-field-plain: {ok3}')
 
-    ok4 = test-param-into-field-option()
-    print('test-param-into-field-option: {ok4}')
+ok4 = test-param-into-field-option()
+print('test-param-into-field-option: {ok4}')
 
-    print('all done')
-}
+print('all done')

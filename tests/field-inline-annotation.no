@@ -51,54 +51,51 @@ owner-ptr {
     who person #{inline=false}
 }
 
-main = () {
+; ① 遞迴欄位可寫可讀 —— 這本身就證明了它是指標
+n node
+n.v = 1
+n.next.v = 2
+print(n.v)
+print(n.next.v)
 
-    ; ① 遞迴欄位可寫可讀 —— 這本身就證明了它是指標
-    n node
-    n.v = 1
-    n.next.v = 2
-    print(n.v)
-    print(n.next.v)
+; ②③ 三種寫法讀寫一致
+a by-value
+a.p.x = 10
+print(a.p.x)
 
-    ; ②③ 三種寫法讀寫一致
-    a by-value
-    a.p.x = 10
-    print(a.p.x)
+b explicit-ptr
+b.p.x = 20
+print(b.p.x)
 
-    b explicit-ptr
-    b.p.x = 20
-    print(b.p.x)
+c bare
+c.p.x = 30
+print(c.p.x)
 
-    c bare
-    c.p.x = 30
-    print(c.p.x)
+; 指標欄位的 pointee 必須是獨立的：`d = b` 之後改 d 不動 b
+d = b
+d.p.x = 21
+print(b.p.x)
+print(d.p.x)
 
-    ; 指標欄位的 pointee 必須是獨立的：`d = b` 之後改 d 不動 b
-    d = b
-    d.p.x = 21
-    print(b.p.x)
-    print(d.p.x)
+; inline 欄位帶 owned 葉子：覆寫舊值不能造成懸垂/雙重釋放
+oi owner-inline
+oi.who.name = 'alice'
+oi.who.age = 1
+print(oi.who.name)
+oi.who.name = 'bob'
+print(oi.who.name)
 
-    ; inline 欄位帶 owned 葉子：覆寫舊值不能造成懸垂/雙重釋放
-    oi owner-inline
-    oi.who.name = 'alice'
-    oi.who.age = 1
-    print(oi.who.name)
-    oi.who.name = 'bob'
-    print(oi.who.name)
+; 指標欄位帶 owned 葉子：pointee 的葉子也要被釋放
+op owner-ptr
+op.who.name = 'carol'
+op.who.age = 2
+print(op.who.name)
+op.who.name = 'dave'
+print(op.who.name)
 
-    ; 指標欄位帶 owned 葉子：pointee 的葉子也要被釋放
-    op owner-ptr
-    op.who.name = 'carol'
-    op.who.age = 2
-    print(op.who.name)
-    op.who.name = 'dave'
-    print(op.who.name)
-
-    ; 反覆分配／釋放指標欄位的 pointee：洩漏或 double free 都會在這裡顯形
-    i <- [0..2000): {
-        t explicit-ptr
-        t.p.x = i
-    }
-    print('ok')
+; 反覆分配／釋放指標欄位的 pointee：洩漏或 double free 都會在這裡顯形
+i <- [0..2000): {
+    t explicit-ptr
+    t.p.x = i
 }
+print('ok')

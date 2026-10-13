@@ -53,38 +53,35 @@ bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
     }
 }
 
-main = () {
+; Bob private:   5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb
+; Bob public:    de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f
 
-    ; Bob private:   5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb
-    ; Bob public:    de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f
+bob-priv = hex-to-bytes('5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
 
-    bob-priv = hex-to-bytes('5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
+eprint('bob-priv: ')
+i <- [0..32): {
+    eprint(bob-priv[i])
+    eprint(' ')
+}
+bob-pub = x25519.x25519-scalarmult-base(bob-priv)
 
-    eprint('bob-priv: ')
-    i <- [0..32): {
-        eprint(bob-priv[i])
-        eprint(' ')
-    }
-    bob-pub = x25519.x25519-scalarmult-base(bob-priv)
+eprint('bob-pub: ')
+i <- [0..32): {
+    eprint(bob-pub[i])
+    eprint(' ')
+}
+bob-pub-expected = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
 
-    eprint('bob-pub: ')
-    i <- [0..32): {
-        eprint(bob-pub[i])
-        eprint(' ')
-    }
-    bob-pub-expected = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
+ok = bytes-eq(bob-pub, bob-pub-expected)
+{
+    ok == true -> print('PASS: Bob only')
 
-    ok = bytes-eq(bob-pub, bob-pub-expected)
-    {
-        ok == true -> print('PASS: Bob only')
-
-        ok == false -> {
-            print('FAIL: Bob only')
-            eprint('expected: ')
-            i <- [0..32): {
-                eprint(bob-pub-expected[i])
-                eprint(' ')
-            }
+    ok == false -> {
+        print('FAIL: Bob only')
+        eprint('expected: ')
+        i <- [0..32): {
+            eprint(bob-pub-expected[i])
+            eprint(' ')
         }
     }
 }

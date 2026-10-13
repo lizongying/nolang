@@ -83,40 +83,38 @@ discard = (b i64, c i64) {
     print('discard: no-error')
 }
 
-main = () {
-    print('-- div-capture --')
-    div-capture(1, 6, 2)
-    div-capture(1, 6, 0)
+print('-- div-capture --')
+div-capture(1, 6, 2)
+div-capture(1, 6, 0)
 
-    print('-- oob-capture --')
-    oob-capture(1)
-    oob-capture(100)
+print('-- oob-capture --')
+oob-capture(1)
+oob-capture(100)
 
-    print('-- overflow --')
-    overflow-add(1)
-    overflow-add(9223372036854775807)
-    overflow-mul(1)
-    overflow-mul(9223372036854775807)
-    overflow-neg(1)
+print('-- overflow --')
+overflow-add(1)
+overflow-add(9223372036854775807)
+overflow-mul(1)
+overflow-mul(9223372036854775807)
+overflow-neg(1)
 
-    print('-- propagate --')
-    p1 = propagate(6, 2)
-    p1: {
-        err -> print('prop: err')
+print('-- propagate --')
+p1 = propagate(6, 2)
+p1: {
+    err -> print('prop: err')
 
-        nil -> print('prop: nil')
+    nil -> print('prop: nil')
 
-        -> print('prop: ok')
-    }
-    p2 = propagate(6, 0)
-    p2: {
-        err -> print('prop: err')
-
-        nil -> print('prop: nil')
-
-        -> print('prop: ok')
-    }
-
-    print('-- discard --')
-    discard(1, 0)
+    -> print('prop: ok')
 }
+p2 = propagate(6, 0)
+p2: {
+    err -> print('prop: err')
+
+    nil -> print('prop: nil')
+
+    -> print('prop: ok')
+}
+
+print('-- discard --')
+discard(1, 0)

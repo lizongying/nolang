@@ -93,16 +93,14 @@ test-insert-struct-leaf = () (ok bool) {
     v.len() == 2 -> ok = true
 }
 
-main = () {
-    ok1 = test-push-struct-leaf-independent()
-    print('test-push-struct-leaf-independent: {ok1}')
+ok1 = test-push-struct-leaf-independent()
+print('test-push-struct-leaf-independent: {ok1}')
 
-    ok2 = test-push-two-structs()
-    print('test-push-two-structs: {ok2}')
+ok2 = test-push-two-structs()
+print('test-push-two-structs: {ok2}')
 
-    ok3 = test-index-store-struct-leaf()
-    print('test-index-store-struct-leaf: {ok3}')
+ok3 = test-index-store-struct-leaf()
+print('test-index-store-struct-leaf: {ok3}')
 
-    ok4 = test-insert-struct-leaf()
-    print('test-insert-struct-leaf: {ok4}')
-}
+ok4 = test-insert-struct-leaf()
+print('test-insert-struct-leaf: {ok4}')
