@@ -13,8 +13,7 @@ import (
 // operands, failing codegen with "ordering comparison ge with a string operand".
 // It surfaced as `no build` failing on notools' sdiff-run over a []str.
 func TestSafeIndexStrComputedIndex(t *testing.T) {
-	src := `main = () () {
-  lines []str
+	src := `lines []str
   lines.push('a')
   lines.push('b')
   pre = 0
@@ -25,7 +24,6 @@ func TestSafeIndexStrComputedIndex(t *testing.T) {
     a-line = lines[pre + k]
     print(a-line)
   }
-}
 `
 	t2 := NewTranspiler(nil)
 	_, err := t2.Compile(src)

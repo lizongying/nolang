@@ -1912,15 +1912,13 @@ worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
 }
-main = () {
-    r1 i64
-    r2 i64
-    {
-        r1 = go worker(1)   ; auto-monomorphizes worker-async and spawns
-        r2 = go worker(2)   ; runs concurrently with r1
-    }
-    print(r1.to-str() + ' ' + r2.to-str())
+r1 i64
+r2 i64
+{
+    r1 = go worker(1)   ; auto-monomorphizes worker-async and spawns
+    r2 = go worker(2)   ; runs concurrently with r1
 }
+print(r1.to-str() + ' ' + r2.to-str())
 ```
 
 Rules:
@@ -3810,16 +3808,13 @@ dec = (x i8) (r i8) {
     r = x - 1              ; x = -128 → -128 (no wrap to 127)
 }
 
-main = () {
-    x i64 = -9223372036854775807
-    #{overflow = clamp0}
-    c i64 = x - 2         ; underflow → 0
-    print(c)
+x i64 = -9223372036854775807
+#{overflow = clamp0}
+c i64 = x - 2         ; underflow → 0
+print(c)
 
-    d ?i64 = x - 1        ; default: option<i64>
-    d: { err -> print(-1); nil -> print(0); -> print(1) }
-}
-main()
+d ?i64 = x - 1        ; default: option<i64>
+d: { err -> print(-1); nil -> print(0); -> print(1) }
 ```
 
 **Propagating overflow with `?=` (bare arithmetic):** `?=` works on any `option`-returning integer operation, not just function calls — so `v ?= a - b` auto-returns `err` on overflow without a temporary binding:

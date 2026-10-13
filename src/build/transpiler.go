@@ -820,6 +820,36 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			dc.Put(dc.KeyFor(source, t.astCacheSalt()), program)
 		}
 	}
+	// 保留字檢查：'main' 是程式入口的保留名。Nolang 的入口由頂層語句自動
+	// 合成（見 hir2mir.synthesizeMainForTopLevel），不需要也不允許使用者顯式
+	// 定義名為 main 的函式（含方法 .main、嵌套函式）。顯式定義 main 直接報錯。
+	// 遞迴走訪所有函式定義（含嵌套在其它函式 / 區塊內的），確保任何層級的
+	// main 都被攔截，而不只是頂層。
+	var mainErr error
+	var walkForMain func(stmts []parser.Statement)
+	walkForMain = func(stmts []parser.Statement) {
+		for _, stmt := range stmts {
+			if mainErr != nil {
+				return
+			}
+			switch s := stmt.(type) {
+			case *parser.FunctionDefinition:
+				if s.Name == "main" || strings.HasSuffix(s.Name, ".main") {
+					mainErr = fmt.Errorf("line %d, column %d: 'main' is a reserved name and cannot be used as a function name; use top-level statements instead (the entry point is synthesized automatically)", s.Token.Line, s.Token.Column)
+					return
+				}
+				if s.Body != nil {
+					walkForMain(s.Body.Statements)
+				}
+			case *parser.BlockStatement:
+				walkForMain(s.Statements)
+			}
+		}
+	}
+	walkForMain(program.Statements)
+	if mainErr != nil {
+		return "", mainErr
+	}
 	// 移除標準庫內建樁函式（#{buildin=...}）：其真實實作位於 Go runtime，
 	// nolang 函式體僅為聲明，編譯器不處理（不校驗、不 codegen）。幂等，
 	// 缓存命中與全新解析都執行一次。

@@ -19,7 +19,5 @@
 # /compiler/src/tok
 # /compiler/src/util/sb.sb
 
-main = () {
-    code = drv.dispatch()
-    os.exit(code)
-}
+code = drv.dispatch()
+os.exit(code)

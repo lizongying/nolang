@@ -47,15 +47,13 @@ worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
 }
-main = () {
-    r1 i64
-    r2 i64
-    {
-        r1 = co worker(1)   ; auto-monomorphizes worker-async and spawns
-        r2 = co worker(2)   ; runs concurrently with r1
-    }
-    print(r1.to-str() + ' ' + r2.to-str())
+r1 i64
+r2 i64
+{
+    r1 = co worker(1)   ; auto-monomorphizes worker-async and spawns
+    r2 = co worker(2)   ; runs concurrently with r1
 }
+print(r1.to-str() + ' ' + r2.to-str())
 ```
 
 Rules:

@@ -1477,7 +1477,5 @@ shs-main = () (code i64) {
     print('shs_check: OK')
 }
 
-main = () {
-    code = shs-main()
-    os.exit(code)
-}
+code = shs-main()
+os.exit(code)

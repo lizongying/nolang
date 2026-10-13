@@ -3,9 +3,6 @@ test-u128-basic = () (r i64) {
     return
 }
 
-main = () {
-    r
-    i64 i64
-    r = test-u128-basic()
-    return
-}
+r
+i64 i64
+r = test-u128-basic()

@@ -33,6 +33,7 @@ package main
 //     不計入——那些節點升頂層後仍是嵌套節點，語義不變）。
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -84,7 +85,14 @@ func fixMainFixes(arg string) map[string]string {
 
 // fixMainInFile 讀入單檔（磁碟內容），把每個可省略的 `main = () {…}` 包裹去掉並重新
 // 格式化；無可省 main 或改動後無法再解析時回傳 ok=false（不動檔案）。
-func fixMainInFile(filename string) (string, bool) {
+// 底層 parser 在个别語料上會 panic（如 MultiAssignStatement.EndPos 空指標），
+// 必须將 panic 吞掉並視為 skip：一個壞檔不能拖垮整批修復。
+func fixMainInFile(filename string) (fixed string, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			fixed, ok = "", false
+		}
+	}()
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return "", false
@@ -102,21 +110,34 @@ func fixMainInFile(filename string) (string, bool) {
 	for _, stmt := range program.Statements {
 		fd, ok := stmt.(*parser.FunctionDefinition)
 		if !ok || !isOmittableMain(fd) {
+			if os.Getenv("FIXMAIN_DEBUG") != "" && ok && fd != nil && fd.Name == "main" {
+				fmt.Fprintf(os.Stderr, "[fix=main SKIP] %s: isOmittableMain=false (params=%d results=%d inline=%v rbrace=%d)\n",
+					filename, len(fd.Parameters), len(parser.DeclaredResults(fd)), fd.Body != nil && fd.Body.IsInline, rbraceLineOf(fd))
+			}
 			continue
 		}
 		start := fd.Pos().Line
 		end := fd.Body.RBrace.Line // 配對 `}` 所在行
 		if start < 1 || end < start || end > len(lines) {
+			if os.Getenv("FIXMAIN_DEBUG") != "" {
+				fmt.Fprintf(os.Stderr, "[fix=main SKIP] %s: span out-of-range start=%d end=%d len(lines)=%d\n", filename, start, end, len(lines))
+			}
 			continue
 		}
 		// 閘門：首行裁剪後必須恰為 `main = () {`、末行裁剪後必須恰為 `}`，
-		// 否則說明写法非規範區塊形（行內、後同行有註解等），保守跳過。
+		// 否则說明写法非規範區塊形（行內、後同行有註解等），保守跳過。
 		if strings.TrimSpace(lines[start-1]) != "main = () {" ||
 			strings.TrimSpace(lines[end-1]) != "}" {
+			if os.Getenv("FIXMAIN_DEBUG") != "" {
+				fmt.Fprintf(os.Stderr, "[fix=main SKIP] %s: shape guard first=%q last=%q\n", filename, lines[start-1], lines[end-1])
+			}
 			continue
 		}
 		// 閘門：main 主體直接含 return → 升頂層後 return 非法，跳過。
 		if blockHasDirectReturn(fd.Body) {
+			if os.Getenv("FIXMAIN_DEBUG") != "" {
+				fmt.Fprintf(os.Stderr, "[fix=main SKIP] %s: blockHasDirectReturn\n", filename)
+			}
 			continue
 		}
 		hoisted = append(hoisted, span{start, end})
@@ -140,6 +161,9 @@ func fixMainInFile(filename string) (string, bool) {
 	//     字串/註解中的 `main` 不是 IDENT、不計入。若 actual 更大，代碼中另有不可刪除的
 	//     main 引用（被當值傳、帶參呼叫、方法調用等），整體跳過——絕不留懸空呼叫。
 	if countMainIdentTokens(src) != len(hoisted)+len(calls) {
+		if os.Getenv("FIXMAIN_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[fix=main SKIP] %s: ident-count actual=%d expected=%d\n", filename, countMainIdentTokens(src), len(hoisted)+len(calls))
+		}
 		return "", false
 	}
 
@@ -168,9 +192,26 @@ func fixMainInFile(filename string) (string, bool) {
 	// 再走一次正常 `no fmt`：縮排與空行自動歸位；解析失敗則保守放棄（不改壞原檔）。
 	out, perrs := nfmt.FormatFileWithErrors(reduced)
 	if len(perrs) > 0 || out == src {
+		if os.Getenv("FIXMAIN_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "[fix=main SKIP] %s: reparse fails or unchanged (perrs=%d unchanged=%v)\n", filename, len(perrs), out == src)
+			for i, e := range perrs {
+				if i >= 3 {
+					break
+				}
+				fmt.Fprintf(os.Stderr, "    perr: %v\n", e)
+			}
+		}
 		return "", false
 	}
 	return out, true
+}
+
+// rbraceLineOf 安全取得 fd.Body.RBrace.Line（供 debug 輸出用，body 可能为 nil）。
+func rbraceLineOf(fd *parser.FunctionDefinition) int {
+	if fd == nil || fd.Body == nil {
+		return -1
+	}
+	return fd.Body.RBrace.Line
 }
 
 // isOmittableMain 判斷 fd 是否為可省略的 `main`：頂層、名字為 main、非方法、

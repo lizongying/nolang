@@ -1466,15 +1466,13 @@ worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
 }
-main = () {
-    r1 i64
-    r2 i64
-    {
-        r1 = co worker(1)   ; auto-monomorphizes worker-async and spawns
-        r2 = co worker(2)   ; runs concurrently with r1
-    }
-    print(r1.to-str() + ' ' + r2.to-str())
+r1 i64
+r2 i64
+{
+    r1 = co worker(1)   ; auto-monomorphizes worker-async and spawns
+    r2 = co worker(2)   ; runs concurrently with r1
 }
+print(r1.to-str() + ' ' + r2.to-str())
 ```
 
 Rules:
@@ -2385,16 +2383,13 @@ Unannotated, the result type of `a - b` is `option<int>`. The receiver must be a
 must destructure the three branches `err` / `nil` / `ok`:
 
 ```no
-main = () {
-    x i64 = 100
-    d ?i64 = x - 1          ; default: returns option<i64>
-    d: {
-        err -> print(-1)    ; overflow (e.g. x - 2^63 underflow)
-        nil -> print(0)
-        -> print(1)         ; ok(value): the normal result
-    }
+x i64 = 100
+d ?i64 = x - 1          ; default: returns option<i64>
+d: {
+    err -> print(-1)    ; overflow (e.g. x - 2^63 underflow)
+    nil -> print(0)
+    -> print(1)         ; ok(value): the normal result
 }
-main()
 ```
 
 > `%option`'s `data` field is an `i64`; a narrow type's result (`i8`/`i16`/`i32`) is sign-extended (sext) before being

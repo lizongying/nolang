@@ -62,6 +62,8 @@ psst {
     toks []tk
     pos i64
     warn i64
+    inBlk i64
+    inMatch i64
 }
 
 ; new：掃描原始碼，建立解析器（跨模組呼叫寫 ps.new → 必須是裸函式名 `new`）
@@ -70,6 +72,8 @@ new = (src str) (r psst) {
         toks: lx.scan-all(src)
         pos: 0
         warn: 0
+        inBlk: 0
+        inMatch: 0
     }
 }
 
@@ -2475,6 +2479,14 @@ ps-wrap-chain = (t ast, p psst, blk i64, tail i64, linkIdx i64) (blk2 i64) {
 ; ps-mk-standalone-if：由 cond 組裝整個獨立 if-then。前置條件：目前 token 為 cond
 ;   之後的第一個 `->`（呼叫端已確認 ps-peek==RARROW）。對應 Go parseExpressionStatement
 ;   的 standalone 分支：吃 `->` → body → wrap-chain →（可能）else 分支 → 組 IfExpression。
+;   s50：另復刻 Go parseBlockStatement 迴圈開頭的【換行後 `-> else` 續接】（stmt.go:2168–2186）：
+;   同列 else 未命中（alt==0）且尚在區塊層級（inBlk=1、非臂內 inMatch=0）時，前探跳過
+;   NEWLINE/SEMICOLON；若碰到的恰是 `->`，就地吃掉它並把 body 寫進 alt 槽——節點尚未組装，
+;   無需 kids 原地覆寫（曾試过 ast.no 加 kid-set 原地覆寫方案，因需等到節點建好後再改，
+;   参數/生命周期復杂度 higher 而放弃；s50 一度誤判其「汚染代碼生成」，實為誤用主樹
+;   bin/no 當工具链的误编译——自 host 構建必須用 /tmp/nolang-v44 钉死的 v44 工具链）。
+;   Go 對照：已挂 alt 的 if 不二次續接（ie.Alternative==nil 守衛）——本實现在同一陳述内
+;   最多一次前探續接，語義相同。
 ps-mk-standalone-if = (t ast, p psst, cond i64) (idx i64) {
     ps-bump(p); 消費 cond 之後的 ->
     blk, tail = ps-standalone-body(t, p)
@@ -2486,6 +2498,27 @@ ps-mk-standalone-if = (t ast, p psst, cond i64) (idx i64) {
         ps-bump(p); 消費 ->
         ablk, altail = ps-standalone-body(t, p)
         alt = ps-wrap-chain(t, p, ablk, altail, 1)
+    }
+
+    ; 換行後續接：僅區塊層級、非臂內、同列 else 未命中時前探
+    alt == 0 && p.inBlk == 1 && p.inMatch == 0 -> {
+        k = 0
+        (ps-peek-at(p, k) == tok.NEWLINE || ps-peek-at(p, k) == tok.SEMICOLON) {
+            #{overflow=wrap}
+            k = k + 1
+        }
+        ps-peek-at(p, k) == tok.RARROW -> {
+            m = 0
+            (m < k) {
+                ps-bump(p); 跳過 NEWLINE/SEMI trivia
+
+                #{overflow=wrap}
+                m = m + 1
+            }
+            ps-bump(p); 消費 ->
+            ablk, altail = ps-standalone-body(t, p)
+            alt = ps-wrap-chain(t, p, ablk, altail, 1)
+        }
     }
     idx = ast.add(t, asp.K_IF_EXPRESSION)
     ast.kid-add(t, idx, cond)
@@ -2683,6 +2716,11 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
     res = 0
     fail = 0
     ps-bump(p); 消費 {
+    ; 臂解析狀態：換行後 `->` 在 Go 由臂迴圈消化（wildcard 臂），不是區塊層級續接
+    ;   （stmt.go:2168 只在 parseBlockStatement 迴圈開頭）⇒ 抑制 ps-mk-standalone-if 前探。
+    ;   臂 body 若為 { } 區塊，ps-parse-block 會自行清零 inMatch ✔。
+    oldMat = p.inMatch
+    p.inMatch = 1
     condA []i64 = with-cap(4); wildcard 臂存 0
     bodyA []i64 = with-cap(4)
     wildA []i64 = with-cap(4)
@@ -2914,6 +2952,7 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
         }
     }
     fail == 1 || bail == 1 -> res = 0
+    p.inMatch = oldMat
     res
 }
 
@@ -3662,6 +3701,12 @@ ps-parse-block = (t ast, p psst) (idx i64) {
     trail []i64 = with-cap(4)
     prev = 0
     docId = 0
+    ; 區塊層級標記：換行後 `-> else` 續接只在區塊迴圈生效（Go parseBlockStatement）；
+;   臂解析狀態在此【清零】——臂 body 若為 { } 區塊，區塊开头的續接在 Go 同樣生效。
+    oldBlk = p.inBlk
+    oldMat = p.inMatch
+    p.inBlk = 1
+    p.inMatch = 0
     ps-trail-region(p) == 1 -> ps-collect-tail(t, p, 0, trail)
     ps-trail-region(p) == 0 -> docId = ps-skip-trivia-doc(t, p, 0)
     (ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF) {
@@ -3676,6 +3721,8 @@ ps-parse-block = (t ast, p psst) (idx i64) {
         ps-trail-region(p) == 1 -> ps-collect-tail(t, p, prev, trail)
         ps-trail-region(p) == 0 -> docId = ps-skip-trivia-doc(t, p, prev)
     }
+    p.inBlk = oldBlk
+    p.inMatch = oldMat
     idx = ast.add(t, asp.K_BLOCK_STATEMENT)
     j = 0
     (j < stmts.len()) {
@@ -3802,6 +3849,9 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     wildA []i64 = with-cap(4)
     patA []i64 = with-cap(4)
     blkA []i64 = with-cap(4)
+    ; 同 ps-parse-bare-match：臂迴圈自行消化 `->`，抑制區塊層級續接前探
+    oldMat = p.inMatch
+    p.inMatch = 1
     ps-skip-trivia(p)
     (ps-peek(p) != tok.RBRACE) {
         pos0 = p.pos
@@ -3953,5 +4003,6 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
         ast.kid-add(t, ie, 0)
         res = ie
     }
+    p.inMatch = oldMat
     idx = res
 }

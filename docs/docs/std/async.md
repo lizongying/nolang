@@ -35,15 +35,13 @@ worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
 }
-main = () {
-    r1 i64
-    r2 i64
-    {
-        r1 = co worker(1)   ; 自動單態 worker-async 並 spawn
-        r2 = co worker(2)   ; 與 r1 並發執行
-    }
-    print(r1.to-str() + ' ' + r2.to-str())
+r1 i64
+r2 i64
+{
+    r1 = co worker(1)   ; 自動單態 worker-async 並 spawn
+    r2 = co worker(2)   ; 與 r1 並發執行
 }
+print(r1.to-str() + ' ' + r2.to-str())
 ```
 
 規則：

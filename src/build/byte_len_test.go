@@ -66,11 +66,9 @@ func TestSliceMethodLenCall(t *testing.T) {
 	src := `[]byte.test-len = () (n i64) {
     n = .len()
 }
-main = () {
-    b []byte = [1, 2, 3]
-    n = b.test-len()
-    print(n)
-}
+b []byte = [1, 2, 3]
+n = b.test-len()
+print(n)
 `
 	llvmIR := compileWith(t, src, "src/std/byte.no")
 
@@ -102,11 +100,9 @@ func TestSliceMethodLenCallOnI64(t *testing.T) {
 	src := `[]i64.test-len = () (n i64) {
     n = .len()
 }
-main = () {
-    v []i64 = [1, 2, 3]
-    n = v.test-len()
-    print(n)
-}
+v []i64 = [1, 2, 3]
+n = v.test-len()
+print(n)
 `
 	// If the callee were mis-resolved to the generic stub, Compile would fail
 	// with "unknown callee []t.test-len" and compileWith would t.Fatalf.
@@ -131,11 +127,9 @@ func TestSliceMethodLenCallOnStr(t *testing.T) {
 	src := `str.test-len = () (n i64) {
     n = .len()
 }
-main = () {
-    s = 'hello'
-    n = s.test-len()
-    print(n)
-}
+s = 'hello'
+n = s.test-len()
+print(n)
 `
 	llvmIR := compileWith(t, src, "src/std/str.no")
 

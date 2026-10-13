@@ -1,0 +1,48 @@
+f = (k i64) (out str) {
+    out = ''
+    {
+        k == 1 -> {
+            out = 'a'
+        }
+
+        -> out = 'b'
+        return
+    }
+    out
+}
+
+g = (k i64) (out str) {
+    out = ''
+    {
+        k == 1 -> {
+            out = 'x'
+        }
+
+        -> {
+            out = 'y'
+        }
+        return
+    }
+    out
+}
+
+h = (m i64) (out str) {
+    out = ''
+    {
+        -> out = 'p'
+
+        -> out = 'q'
+
+        -> out = 'r'
+        return
+    }
+    out
+}
+
+print('t54')
+c = 1
+c == 1 -> {
+    print('m')
+}
+
+-> print('n')

@@ -32,10 +32,14 @@ fib-rec = (n i64) (r i64) {
     }
 
     #{overflow=wrap}
-    p1 = fib-rec(n - 1)
+    n1 i64 = n - 1
+    #{overflow=wrap}
+    n2 i64 = n - 2
+    #{overflow=wrap}
+    p1 = fib-rec(n1)
 
     #{overflow=wrap}
-    p2 = fib-rec(n - 2)
+    p2 = fib-rec(n2)
 
     #{overflow=wrap}
     r = p1 + p2

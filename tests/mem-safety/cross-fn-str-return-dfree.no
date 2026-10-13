@@ -3,26 +3,26 @@
 ; 导致 LLVM -O3 inline 后 store 到 null → unreachable →
 ; 全局变量释放和 ret i32 0 被删除 → SIGTRAP。
 
-; 测试 1：函数返回 str，main 有 (out i64) 返回值
+; 測試 1：函數返回 str
 f = () (out str) {
     s = 'hello world'
     out = s
 }
 
-; 测试 2：函数返回 vec，main 有 (out i64) 返回值
+; 測試 2：函數返回 vec
 g = () (out []i64) {
     v = [10, 20, 30]
     out = v
 }
 
-main = () (out i64) {
-    a = f()
-    a.len-bytes() == 11 -> out = 1
-    print(a.len-bytes())
+; 入口（頂層語句自動合成）：out 為普通局部變數，最終重設為 0，與原 main 行為一致。
+out i64 = 0
+a = f()
+a.len-bytes() == 11 -> out = 1
+print(a.len-bytes())
 
-    b = g()
-    b.len() == 3 -> out = 2
-    print(b.len())
+b = g()
+b.len() == 3 -> out = 2
+print(b.len())
 
-    out = 0
-}
+out = 0

@@ -405,7 +405,8 @@ result = match-text(/\d+/, text)
 **函數命名慣例（強烈建議）：**
 - **不要在函數名前加上模組名前綴**。模組內的函數只需用簡短直觀的名稱，模組前綴由跨模組調用時的 `ShortName.` 自動帶出。例如在 `tail.no` 中定義入口函數 `tail` 而非 `tail-run`，定義輔助函數 `atoi` 而非 `tail-atoi`。這樣程式碼更簡潔，跨模組調用時形如 `tail.tail()` 也更直觀。
 - **入口函數**建議直接使用模組名本身（如 `ping.no` → `ping`、`cat.no` → `cat`）。跨模組導入形如 `# /src/tail.tail`。
-- **注意避開關鍵字**：`run`（async 關鍵字）、`match`（條件匹配關鍵字）等不能用作函數名。如需對應語義，改用其他名稱（如 `main` 已廢棄，直接用模組名）。
+- **注意避開關鍵字**：`run`（async 關鍵字）、`match`（條件匹配關鍵字）等不能用作函數名。如需對應語義，改用其他名稱。
+- **`main` 是保留名，不可用作函數名**：Nolang 的程式入口由**頂層語句自動合成**（見 `hir2mir.synthesizeMainForTopLevel`），因此無需、也**不允許**顯式定義 `main`。一旦出現 `main = (...) { ... }`——包含方法 `recv.main`、嵌套在其它函數內的 `main`——編譯器直接報錯（`'main' is a reserved name and cannot be used as a function name`）。要作為入口，把陳述直接寫在頂層即可。
 
 > **全局變量必須大寫字母開頭**，這是強制規則，不是慣例。小寫開頭的頂層變量會被編譯器視為局部變量，可能導致未定義引用等錯誤。
 
@@ -1387,15 +1388,14 @@ worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
 }
-main = () {
-    r1 i64
-    r2 i64
-    {
-        r1 = co worker(1)   ; 自動單態 worker-async 並 spawn
-        r2 = co worker(2)   ; 與 r1 並發執行
-    }
-    print(r1.to-str() + ' ' + r2.to-str())
+; 入口由頂層語句自動合成（無需、也不允許顯式 `main`）
+r1 i64
+r2 i64
+{
+    r1 = co worker(1)   ; 自動單態 worker-async 並 spawn
+    r2 = co worker(2)   ; 與 r1 並發執行
 }
+print(r1.to-str() + ' ' + r2.to-str())
 ```
 
 規則：
@@ -2270,16 +2270,13 @@ Nolang 不支援 panic——任何可能溢出的操作都必須以 `option` 或
 未標註時，`a - b` 的結果型別是 `option<int>`。接收端必須是 `?T`（可空型別），並用 match 解構 `err` / `nil` / `ok` 三個分支：
 
 ```nolang
-main = () {
-    x i64 = 100
-    d ?i64 = x - 1          ; 默認：返回 option<i64>
-    d: {
-        err -> print(-1)    ; 溢出（如 x - 2^63 下溢）
-        nil -> print(0)
-        -> print(1)         ; ok(value)：正常結果
-    }
+x i64 = 100
+d ?i64 = x - 1          ; 默認：返回 option<i64>
+d: {
+    err -> print(-1)    ; 溢出（如 x - 2^63 下溢）
+    nil -> print(0)
+    -> print(1)         ; ok(value)：正常結果
 }
-main()
 ```
 
 > `%option` 的 `data` 欄為 `i64`；窄型別（`i8`/`i16`/`i32`）的結果會先符號擴展（sext）再存入，解包時再截斷回原寬度。

@@ -14,12 +14,10 @@ import (
 // belongs), which opt-verify rejected with "expected value token". It surfaced
 // as `no build` failing on noimg's tga-load-rle (?i64 stored into a byte).
 func TestOptionStoreToScalarElem(t *testing.T) {
-	src := `main = () () {
-  px [4]byte
+	src := `px [4]byte
   v ?i64 = 200
   px[0] = v
   print(px[0])
-}
 `
 	t2 := NewTranspiler(nil)
 	_, err := t2.Compile(src)
