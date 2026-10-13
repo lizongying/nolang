@@ -4866,6 +4866,7 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
             elem = st.slice-bytes(1, st.len-bytes())
         }
         bt = ''
+        dead = 0
         sopt == 1 && kvar == 'err' -> bt = 'err'
         sopt == 1 && kvar == 'nil' -> bt = 'nil'
         sopt == 1 && kvar == 'ok' -> bt = elem
@@ -4879,7 +4880,8 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
 
             #{index-out=zero}
             onil = listed[2]
-            ol == 1 && oe == 1 && onil == 1 -> bt = ''
+            ; 全列 ok/err/nil ⇒ wildcard 臂為死碼（Go skipItBinding，lowering.go:2214）——不建任何 it 綁定
+            ol == 1 && oe == 1 && onil == 1 -> dead = 1
             ol == 1 && oe == 0 && onil == 1 -> bt = 'err'
             ol == 1 && oe == 1 && onil == 0 -> bt = 'nil'
             ol == 1 && oe == 0 && onil == 0 -> bt = 'err | nil'
@@ -4889,18 +4891,18 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
         sopt == 0 && kvar == 'nil' -> bt = 'nil'
         itl = 0
         hd5 = 0
-        bt != '' -> {
+        dead == 0 && bt != '' -> {
             itl = ps-mk-it-let-t(t, subj, bt, 'it')
             hd5 = 1
         }
-        hd5 == 0 -> itl = ps-mk-it-let(t, subj)
+        dead == 0 && hd5 == 0 -> itl = ps-mk-it-let(t, subj)
 
         ; it 型別逐層登記與還原（Go collectVarTypesFromBody 作用域掃描；與 MIR 端值還原對稱）：
         ;   巢狀 match/下一臂不得污染外層 it。
         oldit = ps-var-type(p, 'it')
         bt != '' -> ps-set-var-type(p, 'it', bt)
         kids []i64 = with-cap(4)
-        kids.push(itl)
+        dead == 0 -> kids.push(itl)
         inline = 0
         hd2 = 0
         ps-peek(p) == tok.LBRACE -> {

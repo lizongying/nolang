@@ -1,5 +1,9 @@
 # 更新日誌
 
+## v0.4.6
+
+- fix(build): ensure host environment for genstdsig and correct release tag check
+
 ## v0.4.5
 
 - feat(parser): implement bare match desugaring, star break/continue shorthand, and err/nil arm bindings

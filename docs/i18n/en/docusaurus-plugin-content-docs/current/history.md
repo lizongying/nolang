@@ -7,6 +7,10 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.6
+
+- fix(build): ensure host environment for genstdsig and correct release tag check
+
 ## v0.4.5
 
 - feat(parser): implement bare match desugaring, star break/continue shorthand, and err/nil arm bindings
