@@ -289,14 +289,24 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
 | M3 语法 | ✅ | `-> return` 早退臂、空 `->` 臂零值、fmt 打印（提交 c721fe6c / 853ef9ca） |
 | M4 str/txt→?char | ✅ | `parser/type.go:230-247` containerElemType 对 str/txt 返回 char；迁移 src/std 11 + tests 34 |
 | M5 `--fix=unwrap` | ✅ | `cmd/no/unwrap_fix.go` |
-| M6 std 迁移 | ⚠️ 待复核 | 见 §11.2 |
-| M7 tests 迁移 | ⚠️ 待复核 | 见 §11.2 |
+| M6 std 迁移 | ✅ | §11.2：0 error / 59 warn / 328 hint |
+| M7 tests 迁移 | ✅ | §11.2：0 error / 165 warn / 202 hint |
 | M8 收尾 / §10 文档 | ⚠️ 部分 | 用户文档 `docs/docs/lang/syntax.md` 已同步统一规则；本设计文档长期停留「待实施」草稿，§11 为补录 |
 
-### 11.2 M6/M7 迁移验证（跑 `no vet src/std` / `no vet tests`）
-- 设计预期：`no vet src/std` ERROR=0（允许 HINT）。
+### 11.2 全目录迁移验证（2026-10-13，`bin/no` v0.4.7-dirty 重建后实测）
+- 设计预期：所有含 nolang 源码的目录 `no vet <dir>` ERROR=0（允许 HINT/WARN）。
 - 历史计数（§2.2）：std 已标注 `#{overflow}` 3557 + `#{index-out}` 1007 = 4564 站点需补消费；D1-b 额外 11 处 str 索引。
-- 实际结果（2026-10-13，见运行日志）：_待回填_。
+- **实测结果（均 exit 0）：**
+
+  | 目录 | error | warning | hint | 说明 |
+  | --- | --- | --- | --- | --- |
+  | `src/std` | 0 | 59 | 328 | 59 warning 全为 `arm-should`（D4 空 `->` 兜底臂「可能被执行」）；328 hint = `6kryrbsq`×143 + `rngidx`×103 + `idxhndld`×78 + `tcpoxtfd`×4 |
+  | `tests` | 0 | 165 | 202 | warning 含 `STR_INDEX_COMPLEXITY`（M4 str/txt→?char 后新 lint：循环内 `s[i]` 为 O(n²)）与 `arm-should` |
+  | `test` | 0 | 5 | 785 | hint 多为 `tcpoxtfd`（类型注解可省略） |
+  | `bench` | 0 | 0 | 1 | 仅 1 处 `sink` 未使用 hint |
+  | `example` | 0 | 6 | 6 | 6 warning 为 `nolang-overflow-ineffective`（注解对应陈述无整数运算，建议删除） |
+
+- 结论：**全部 5 个目录迁移完成，无阻塞错误（0 ERROR）**。剩余 warning/hint 均为新诊断（D4 空臂、`arm-should`、M4 str 索引复杂度、类型注解省略建议、溢出注解无效提示）的风格/健壮性建议，非正确性阻断；与 §2.2「0 error / 0 warning / 145 hint」基线的差异来自本次新增诊断类别，属预期。
 
 ### 11.3 与文档设计的背离（务必知悉）
 1. **D7 被主动 revert**：原设计「取消 in-bounds 豁免 + 删 bounds.go」。实际提交 `deac8377 "revert in-bounds index exemption and restore bounds.go checks"` 撤銷了豁免移除——`parser/type.go:339` 仍使用 `p.inBoundsIdx`、`bounds.go` 仍活跃，in-bounds 读取**仍不降级为 `?T`**。即 D7 按字面未落地，实际**保留**豁免。
@@ -304,5 +314,5 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
 3. **文档状态头长期错误**：文件头 `状态：待实施` 与实际「已基本实施」不符，本次补录 §11 纠正。
 
 ### 11.4 后续
-- 跑 `no vet src/std` / `no vet tests` 确认 ERROR=0，把结果回填 §11.2。
+- `no vet src/std` / `no vet tests` / `no vet test` / `no vet bench` / `no vet example` 已于 2026-10-13 实测回填 §11.2（5 个目录均 0 error）。
 - 本设计文档状态头与 §8.1(a)(b) 已加「状态」注记，避免误导后续读者。

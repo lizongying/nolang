@@ -68,8 +68,8 @@ psst {
     lastTp i64
     sigN []str
     sigP []i64
-    msN []str; s58：方法簽名表鍵 'recv.method'（Go methodSignatures）
-    msP []i64; s58：值=回傳值型別起始 token 下標（-1=無型別）
+    msN []str
+    msP []i64
     dclF []str
     dclV []str
     gclN []str
@@ -81,6 +81,9 @@ psst {
     alN []str
     dclT []str
 }
+
+; s58：方法簽名表鍵 'recv.method'（Go methodSignatures）
+; s58：值=回傳值型別起始 token 下標（-1=無型別）
 
 ; ── s51：parse 期型別推斷表（對齊 Go parser 的 funcSignatures / VarTypes / FuncVarTypes / DeclaredVars）──
 ; 當前函式名（'' = 頂層）；Go p.curFuncName
@@ -5035,12 +5038,14 @@ ps-parse-param = (t ast, p psst) (idx i64) {
     idx = 0
     p.lastTp = -1
     tk = ps-peek-token(p)
+
     ; s58：參數名位允許 IN token（Go parseFunctionBody：`!= IDENT && != IN`，如 `in []byte` 參數名）
     tk.typ != tok.IDENT && tk.typ != tok.IN -> return
     pname = tk.lit
     ps-bump(p); 消費參數名
     typ = 0
     nxt = ps-peek-token(p)
+
     ; s58：型別起點 token 集擴展 MUL(*T)/STAR_STAR(**T)/AND(&T)——鏡像 Go
     ;   parseParamTypeAfterName 的前綴循環（type.go:1023-1040）
     nxt.typ == tok.IDENT || nxt.typ == tok.QUESTION || nxt.typ == tok.LBRACKET || nxt.typ == tok.MUL || nxt.typ == tok.STAR_STAR || nxt.typ == tok.AND -> {
