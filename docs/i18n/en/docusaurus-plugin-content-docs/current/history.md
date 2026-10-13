@@ -7,6 +7,19 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.5
+
+- feat(parser): implement bare match desugaring, star break/continue shorthand, and err/nil arm bindings
+- feat(parser): infer types of local variables and function return values during parsing
+- feat(compiler): support range slice expressions in function call parsing
+- fix(parser): support empty and early return arms in value match expressions
+- fix(parser): restore bounds checks and revert the in-bounds index exemption
+- fix(compiler): support async prefix operators and trailing comments
+- refactor(main): remove explicit main function definitions
+- build(llvm-windows): switch to zig cc/zig c++ for the Windows LLVM build and packaging
+- fix(ci): fix LLVM version extraction and LLVM distribution component names
+- chore(release): allow a dirty working tree in the release process
+
 ## v0.4.4
 
 - fix(build): quote LLVM_CONFIG in Makefile to handle Windows paths with spaces
