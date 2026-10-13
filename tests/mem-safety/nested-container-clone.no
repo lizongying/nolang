@@ -416,7 +416,7 @@ test-struct-array-clone = () (ok bool) {
 ; ============================================================
 test-insert-nested-clone = () (ok bool) {
     outer [][]i64
-    inner []i64 = [7, 8, 9]
+    inner = [7, 8, 9]
     outer.insert(0, inner)
 
     ; 重新賦值 inner —— 舊值 [7,8,9] 的 drop 會釋放其緩衝區。
@@ -431,7 +431,7 @@ test-insert-nested-clone = () (ok bool) {
     got.len() == 3 -> ok = true
 
     ; 第二個元素獨立
-    inner2 []i64 = [1, 2]
+    inner2 = [1, 2]
     outer.insert(1, inner2)
     inner2 = [9, 9, 9, 9]
 
@@ -447,7 +447,7 @@ test-insert-nested-clone = () (ok bool) {
 ; ============================================================
 test-insert-nested-str-clone = () (ok bool) {
     outer [][]str
-    inner []str = ['a', 'b', 'c']
+    inner = ['a', 'b', 'c']
     outer.insert(0, inner)
     inner = ['x', 'y', 'z']
 

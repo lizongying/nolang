@@ -11,15 +11,15 @@
 t-add-contains = () {
     buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
     s = set.init(buf)
-    n1 i64 = s.add(1)
+    n1 = s.add(1)
     runner.eq(n1, 1, 'add 1 -> size 1')
-    n2 i64 = s.add(2)
+    n2 = s.add(2)
     runner.eq(n2, 2, 'add 2 -> size 2')
-    n3 i64 = s.add(1)
+    n3 = s.add(1)
     runner.eq(n3, 2, 'add duplicate -> size 2')
-    yes bool = s.contains(2)
+    yes = s.contains(2)
     runner.is-true(yes, 'contains 2')
-    no bool = s.contains(99)
+    no = s.contains(99)
     runner.is-false(no, 'not contains 99')
 }
 
@@ -29,22 +29,22 @@ t-remove-size = () {
     s.add(1)
     s.add(2)
     s.add(3)
-    n i64 = s.remove(2)
+    n = s.remove(2)
     runner.eq(n, 2, 'remove -> size 2')
-    yes bool = s.contains(2)
+    yes = s.contains(2)
     runner.is-false(yes, 'removed 2 gone')
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 2, 'size reflects field')
-    empty bool = s.is-empty()
+    empty = s.is-empty()
     runner.is-false(empty, 'non-empty == false')
 }
 
 t-is-empty = () {
     buf [4]i64 = [0, 0, 0, 0]
     s = set.init(buf)
-    yes bool = s.is-empty()
+    yes = s.is-empty()
     runner.is-true(yes, 'empty set == true')
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 0, 'empty size == 0')
 }
 

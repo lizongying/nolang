@@ -1,0 +1,51 @@
+; t63-comment-attach — s59：match 臂区/区块尾 注释附着
+;
+; 覆盖形：armDoc（型樣前獨立行註解→inline 體首陳述 Doc）、臂體行尾 Comment、
+;   明示 match 區塊臂內部 doc/行尾/TrailingComments（armDoc 併入最前）、
+;   裸 match 同線單陳述與換行區塊體同協議、if 區塊後函式尾註解（預看不消費）。
+; 負形：區塊中段的 standalone 註解仍是【其後】陳述的 Doc（非前行 Comment）。
+
+fn = (v i64) {
+    {
+        ; doc-arm-1
+        v == 1 -> print(1); tail-arm-1
+
+        ; doc-arm-2
+        -> print(2)
+    }
+}
+
+opt ?i64 = 5
+opt: {
+    ok -> {
+
+        ; doc-ok-arm
+
+        ; inner-doc-first
+        a = it
+        a = a + 1; inner-tail
+        ; inner-trail-1
+        ; inner-trail-2
+    }
+
+    err -> print(9); tail-err-arm
+
+    -> {
+        b = 0
+        print(b)
+    }
+}
+
+; fn 尾註解群（if 區塊之前無、最後一陳述為一般呼叫）
+fn(5)
+
+; 頂層 standalone-if 行尾註解
+c = 1
+c == 1 -> print(3); tail-standalone
+
+; 負形：中段 standalone 註解屬其後陳述之 Doc
+d = 2
+
+; not-comment-of-d
+e = d + 1
+print(e)

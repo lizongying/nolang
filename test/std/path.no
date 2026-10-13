@@ -57,7 +57,7 @@ t-is-abs = () {
     p = path {
         p: '/a/b'
     }
-    yes bool = p.is-abs()
+    yes = p.is-abs()
     runner.is-true(yes, 'is-abs /a/b == true')
 }
 
@@ -65,7 +65,7 @@ t-is-abs-relative = () {
     p = path {
         p: 'a/b'
     }
-    yes bool = p.is-abs()
+    yes = p.is-abs()
     runner.is-false(yes, 'is-abs a/b == false')
 }
 
@@ -73,7 +73,7 @@ t-is-abs-empty = () {
     p = path {
         p: ''
     }
-    yes bool = p.is-abs()
+    yes = p.is-abs()
     runner.is-false(yes, 'is-abs empty == false')
 }
 

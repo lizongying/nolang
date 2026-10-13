@@ -152,7 +152,7 @@ t-copy-file = () {
     }
 
     ; 複製
-    ok bool = fs.copy-file(TMP-FILE, TMP-FILE2)
+    ok = fs.copy-file(TMP-FILE, TMP-FILE2)
     runner.is-true(ok, 'copy-file returns true')
 
     ; 驗證目標檔案存在

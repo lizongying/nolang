@@ -16,7 +16,7 @@ g = () (out []i64) {
 }
 
 ; 入口（頂層語句自動合成）：out 為普通局部變數，最終重設為 0，與原 main 行為一致。
-out i64 = 0
+out = 0
 a = f()
 a.len-bytes() == 11 -> out = 1
 print(a.len-bytes())

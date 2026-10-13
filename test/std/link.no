@@ -34,7 +34,7 @@ t-empty = () {
         free-head: 0
         size: 0
     }
-    e1 bool = le.empty()
+    e1 = le.empty()
     runner.is-true(e1, 'size 0 => empty')
     lz = link {
         head: -1
@@ -42,7 +42,7 @@ t-empty = () {
         free-head: 0
         size: 0
     }
-    e2 bool = lz.empty()
+    e2 = lz.empty()
     runner.is-true(e2, 'empty is size<=0')
     lfull = link {
         head: 0
@@ -50,7 +50,7 @@ t-empty = () {
         free-head: -1
         size: 3
     }
-    e3 bool = lfull.empty()
+    e3 = lfull.empty()
     runner.is-false(e3, 'size 3 => not empty')
 }
 
@@ -63,7 +63,7 @@ t-full = () {
         free-head: -1
         size: 6
     }
-    f1 bool = l1.full()
+    f1 = l1.full()
     runner.is-true(f1, 'free-head -1 => full')
     l2 = link {
         head: 0
@@ -71,7 +71,7 @@ t-full = () {
         free-head: 3
         size: 3
     }
-    f2 bool = l2.full()
+    f2 = l2.full()
     runner.is-false(f2, 'free-head >=0 => not full')
     l3 = link {
         head: -1
@@ -79,7 +79,7 @@ t-full = () {
         free-head: 0
         size: 0
     }
-    f3 bool = l3.full()
+    f3 = l3.full()
     runner.is-false(f3, 'fresh pool not full')
 }
 
@@ -93,9 +93,9 @@ t-state-consistency = () {
         size: 3
     }
     runner.eq(l.size(), 3, 'after 3 pushes size 3')
-    r bool = l.empty()
+    r = l.empty()
     runner.is-false(r, 'not empty')
-    f bool = l.full()
+    f = l.full()
     runner.is-false(f, 'not full yet (cap 8)')
 
     ; 模擬填滿至 cap=3：free-head=-1
@@ -106,7 +106,7 @@ t-state-consistency = () {
         size: 3
     }
     runner.eq(lfull.size(), 3, 'full size 3')
-    ff bool = lfull.full()
+    ff = lfull.full()
     runner.is-true(ff, 'pool exhausted => full')
 }
 p1 = runner.test('link.size', t-size)

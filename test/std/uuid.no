@@ -8,9 +8,9 @@
 
 t-new-v4 = () {
     u = uuid.new-v4(12345)
-    v i64 = u.version()
+    v = u.version()
     runner.eq(v, 4, 'new-v4 version == 4')
-    var i64 = u.variant()
+    var = u.variant()
     runner.eq(var, 2, 'new-v4 variant == 2 (RFC4122)')
 }
 
@@ -32,7 +32,7 @@ t-to-str = () {
 
 t-validate = () {
     u = uuid.new-v4(99)
-    ok bool = u.validate()
+    ok = u.validate()
     runner.is-true(ok, 'new-v4 validate ok')
 }
 
@@ -40,37 +40,37 @@ t-from-str = () {
     u = uuid.new-v4(77)
     s = u.to-str()
     u2 uuid
-    ok bool = uuid.from-str(s, u2)
+    ok = uuid.from-str(s, u2)
     runner.is-true(ok, 'from-str ok')
-    yes bool = u.eq(u2)
+    yes = u.eq(u2)
     runner.is-true(yes, 'from-str roundtrip eq')
 }
 
 t-from-str-dashes = () {
     u uuid
-    ok bool = uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u)
+    ok = uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u)
     runner.is-true(ok, 'from-str with dashes ok')
-    v i64 = u.version()
+    v = u.version()
     runner.eq(v, 4, 'parsed version == 4')
 }
 
 t-is-nil = () {
     u uuid
     uuid.nil-uuid(u)
-    yes bool = u.is-nil()
+    yes = u.is-nil()
     runner.is-true(yes, 'nil-uuid is-nil')
     u2 = uuid.new-v4(55)
-    no bool = u2.is-nil()
+    no = u2.is-nil()
     runner.is-false(no, 'new-v4 not nil')
 }
 
 t-eq = () {
     u1 = uuid.new-v4(11)
     u2 = uuid.new-v4(11)
-    yes bool = u1.eq(u2)
+    yes = u1.eq(u2)
     runner.is-true(yes, 'same seed eq')
     u3 = uuid.new-v4(22)
-    no bool = u1.eq(u3)
+    no = u1.eq(u3)
     runner.is-false(no, 'different seed not eq')
 }
 
@@ -78,7 +78,7 @@ t-cmp = () {
     u1 uuid
     uuid.nil-uuid(u1)
     u2 = uuid.new-v4(99)
-    r i64 = u1.cmp(u2)
+    r = u1.cmp(u2)
     runner.lt(r, 0, 'nil < non-nil')
 }
 

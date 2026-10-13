@@ -447,8 +447,8 @@ txt.trim = () (val txt) {
     ; （end = n - 1、m = end - start + 1）會被推斷成 ?i64，之後 .byte(end)
     ; 的索引、val.len = m 的字段寫入拿到 option 即報型別錯誤。先宣告再賦值
     ; 可讓迴圈內的算術保持 plain（與 pos = pos + 1 同一機制）。
-    end i64 = 0
-    m i64 = 0
+    end = 0
+    m = 0
     start <- [0..n): {
 
         c = .byte(start)

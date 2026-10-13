@@ -3091,7 +3091,36 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			if l.globalVisible(name) && !armScoped {
 				if gv := l.lowerGlobalRef(name); gv != NoVal && !l.isOwnedLocal(gv) {
 					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
-						if vt := l.valueTypeOf(val); vt == gvt {
+						vt := l.valueTypeOf(val)
+						// 「重新繫結一個模組級全域」有兩種寫入型別：
+						//   1. 同型別：`px2 f64` 全域收到 f64 值，直接寫回。
+						//   2. 值是 option、全域是 plain：D6 統一規則把有號整數
+						//      算術（`+ - * / %`）一律產出 `?T`，`#{overflow=...}`
+						//      註解亦同（見 parser/lowering inferOptionArith 的 D1）。
+						//      於是 `cnt = cnt + 1 #{overflow=wrap}` 的右側在 MIR
+						//      層被型別成 `?i64`，但目標 `cnt` 是頂層宣告的 plain
+						//      i64 全域。這是对「已宣告純量全域」的重新赋值，绝不
+						//      能落進下面的「新綁定」路徑（那會把 name 繫到一個區域
+						//      slot、對 plain 全域 slot 的寫回整个丟失 → 全域永不
+						//      更新。實測 nojq 詞法器 lx-bump 的 `_lx-pos = _lx-pos
+						//      + 1 #{overflow=wrap}` 卡死：全域遊標不前進 → 死迴圈
+						//      + 記憶體失控）。§13.1 option→plain sink 契約：把
+						//      `?T` 剝成 payload 寫回 plain slot。codegen emitMove
+						//      的 `!isOptionType(dstT) && isOptionType(srcT)` 分支
+						//      已負責剝出（owned payload 會 clone），此處只需確認
+						//      剝出的內部型別與 plain 全域同型。外層 `!isOwnedLocal
+						//      (gv)` 已排除 owned 全域，故僅純量全域走到這條。
+						writeback := vt == gvt
+						if !writeback && vt != NoType && vt != l.voidType {
+							if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption {
+								if gty := l.mod.Type(gvt); gty != nil && gty.Kind != KindOption {
+									if elem, ok := parseOptionElem(vty.Raw); ok && elem == l.typeRaw(gvt) {
+										writeback = true
+									}
+								}
+							}
+						}
+						if writeback {
 							l.b.EmitMoveInto(gv, val)
 							l.carryAsyncResType(gv, val)
 							l.locals[name] = gv

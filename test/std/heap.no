@@ -15,18 +15,18 @@ t-push-pop = () {
     h.push(3)
     h.push(7)
     h.push(1)
-    sz i64 = h.size()
+    sz = h.size()
     runner.eq(sz, 4, 'push 4 -> size 4')
-    yes bool = h.empty()
+    yes = h.empty()
     runner.is-false(yes, 'not empty')
 }
 
 t-size-empty = () {
     data [4]i64 = [0, 0, 0, 0]
     h = heap.init(data)
-    sz i64 = h.size()
+    sz = h.size()
     runner.eq(sz, 0, 'size == 0')
-    yes bool = h.empty()
+    yes = h.empty()
     runner.is-true(yes, 'empty == true')
 }
 

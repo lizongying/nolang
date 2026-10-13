@@ -9,7 +9,7 @@
 
 # /test/runner
 
-hex-chars str = '0123456789abcdef'
+hex-chars = '0123456789abcdef'
 
 ; 位元組陣列 → hex 字串（逐字元建構，避免格式化補零問題）
 bhex = (data []byte) (hex str) {
@@ -54,7 +54,7 @@ priv [32]byte = [
 ]
 
 ; 對應未壓縮公鑰 04 || Gx || Gy（OpenSSL 產生）
-PUB_HEX str = '04a3061cc2ace0dffeccad1f68f19db8c6bbd76665d55e0a5f7994f21cdf30d5ac9aa1c6e9fa2acaa67bd77f63e546070f7a7417b860f2d999dd03ff6f731898a8'
+PUB_HEX = '04a3061cc2ace0dffeccad1f68f19db8c6bbd76665d55e0a5f7994f21cdf30d5ac9aa1c6e9fa2acaa67bd77f63e546070f7a7417b860f2d999dd03ff6f731898a8'
 
 ; 訊息 'Nolang ECDSA P-256 vector'（固定陣列，測試內轉為 vec 傳入）
 MSG25 [25]byte = [
@@ -115,7 +115,7 @@ PUBB [65]byte = [
     0x1f, 0x9f, 0x9d, 0x4a, 0xd1, 0xf7, 0xea, 0x53, 0x0b, 0xf0, 0x39, 0x05, 0xab, 0x10, 0x4b, 0x6f,
     0x86,
 ]
-SHARED_HEX str = '1a2f302d6abd7412640912417406ce0496a94c59103e390dd76a336631438dbf'
+SHARED_HEX = '1a2f302d6abd7412640912417406ce0496a94c59103e390dd76a336631438dbf'
 
 ; P-256 ECDH 已知答案：dA * pubB 共享秘密必須等於 SHARED
 t-ecdh-a = () {

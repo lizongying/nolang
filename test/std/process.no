@@ -12,7 +12,7 @@
 t-new = () {
     p = process.new()
     runner.eq(p.pid, 0, 'new process pid == 0')
-    yes bool = p.is-running()
+    yes = p.is-running()
     runner.is-false(yes, 'new process not running')
 }
 

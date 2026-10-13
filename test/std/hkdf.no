@@ -34,7 +34,7 @@ t-extract = () {
         0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
     ]
     prk = hkdf.hkdf-extract(salt, ikm)
-    pv []byte = [
+    pv = [
         prk[0],
         prk[1],
         prk[2],

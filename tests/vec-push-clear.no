@@ -9,7 +9,7 @@ data.push(20)
 data.push(30)
 print('pushed 3 elements')
 
-n i64 = data.len()
+n = data.len()
 print(n)
 
 print(data[0])

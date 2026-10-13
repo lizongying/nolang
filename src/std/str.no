@@ -1921,7 +1921,7 @@ f64-to-str-sci = (x f64, precision i64) (out str) {
     ln10 = 2.302585092994046
     lg10 = ax.log10()
     flr = lg10.floor()
-    e i64 = flr.to-i64()
+    e = flr.to-i64()
     epw f64 = (e + 1).to-f64() * ln10
     upper = epw.exp()
 
@@ -2121,7 +2121,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     ln10 = 2.302585092994046
     lg10 = ax.log10()
     flr = lg10.floor()
-    e i64 = flr.to-i64()
+    e = flr.to-i64()
     epw f64 = (e + 1).to-f64() * ln10
     upper = epw.exp()
 

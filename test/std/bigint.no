@@ -45,11 +45,11 @@ t-zero-one = () {
 t-cmp = () {
     a = bigint.from-i64(10)
     b = bigint.from-i64(20)
-    r i64 = a.cmp(b)
+    r = a.cmp(b)
     runner.eq(r, -1, 'cmp(10, 20) == -1')
-    r2 i64 = b.cmp(a)
+    r2 = b.cmp(a)
     runner.eq(r2, 1, 'cmp(20, 10) == 1')
-    r3 i64 = a.cmp(a)
+    r3 = a.cmp(a)
     runner.eq(r3, 0, 'cmp(10, 10) == 0')
 }
 
@@ -57,27 +57,27 @@ t-eq = () {
     a = bigint.from-i64(42)
     b = bigint.from-i64(42)
     c = bigint.from-i64(43)
-    yes1 bool = a.eq(b)
+    yes1 = a.eq(b)
     runner.is-true(yes1, 'eq(42, 42) == true')
-    yes2 bool = a.eq(c)
+    yes2 = a.eq(c)
     runner.is-false(yes2, 'eq(42, 43) == false')
 }
 
 t-is-zero = () {
     z = bigint.zero()
-    yes1 bool = z.is-zero()
+    yes1 = z.is-zero()
     runner.is-true(yes1, 'zero is-zero == true')
     n = bigint.from-i64(5)
-    yes2 bool = n.is-zero()
+    yes2 = n.is-zero()
     runner.is-false(yes2, '5 is-zero == false')
 }
 
 t-is-neg = () {
     n = bigint.from-i64(-42)
-    yes1 bool = n.is-neg()
+    yes1 = n.is-neg()
     runner.is-true(yes1, '-42 is-neg == true')
     p = bigint.from-i64(42)
-    yes2 bool = p.is-neg()
+    yes2 = p.is-neg()
     runner.is-false(yes2, '42 is-neg == false')
 }
 
@@ -138,7 +138,7 @@ t-div-mod = () {
 
 t-mod-i64 = () {
     a = bigint.from-i64(100)
-    r i64 = bigint.mod-i64(a, 7)
+    r = bigint.mod-i64(a, 7)
     runner.eq(r, 2, 'mod-i64(100, 7) == 2')
 }
 

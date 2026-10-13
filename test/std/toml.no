@@ -144,8 +144,8 @@ t-parse-error = () {
 }
 
 t-helpers = () {
-    u str = ''
-    uo bool = false
+    u = ''
+    uo = false
     u, uo = toml.toml-unquote('"hi"')
     runner.is-true(uo, 'unquote ok')
     runner.str-eq(u, 'hi', 2, 'unquote basic string')
@@ -153,18 +153,18 @@ t-helpers = () {
     sc = toml.toml-strip-comment('a = 1 # note')
     eq-str(sc, 'a = 1', 'strip inline comment')
 
-    hv i64 = 0
-    ho bool = false
+    hv = 0
+    ho = false
     hv, ho = toml.toml-parse-i64('0xFF')
     runner.is-true(ho, 'hex parse ok')
     runner.eq(hv, 255, 'hex 0xFF == 255')
-    uv i64 = 0
-    uo2 bool = false
+    uv = 0
+    uo2 = false
     uv, uo2 = toml.toml-parse-i64('1_000')
     runner.is-true(uo2, 'underscore parse ok')
     runner.eq(uv, 1000, 'underscore 1_000 == 1000')
-    dv i64 = 0
-    do2 bool = false
+    dv = 0
+    do2 = false
     dv, do2 = toml.toml-parse-i64('-123')
     runner.eq(dv, -123, 'decimal -123')
 }
@@ -176,8 +176,8 @@ t-build-roundtrip = () {
     runner.is-true(o1, 'put title ok')
     runner.is-true(o2, 'put n ok')
     runner.eq(doc.count, 2, 'built doc count 2')
-    s str = ''
-    so bool = false
+    s = ''
+    so = false
     s, so = toml.get-str(doc, 'title')
     runner.str-eq(s, 'hello', 5, 'roundtrip get-str')
     st = toml.stringify(doc)

@@ -16,19 +16,19 @@ failed = 0
 
 t-to-i64-be = () {
     data []byte = [0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56]
-    v i64 = data.to-i64-be()
+    v = data.to-i64-be()
     runner.eq(v, 0x123456, 'to-i64-be == 0x123456')
 }
 
 t-to-i64-le = () {
     data []byte = [0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00]
-    v i64 = data.to-i64-le()
+    v = data.to-i64-le()
     runner.eq(v, 0x123456, 'to-i64-le == 0x123456')
 }
 
 t-to-i64-le-short = () {
     data []byte = [0x34, 0x12]
-    v i64 = data.to-i64-le()
+    v = data.to-i64-le()
     runner.eq(v, 0x1234, 'to-i64-le 2 bytes == 0x1234')
 }
 

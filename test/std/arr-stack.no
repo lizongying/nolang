@@ -13,11 +13,11 @@ t-init-empty = () {
         cap: 16
         top: 0
     }
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 0, 'init size == 0')
-    yes bool = s.empty()
+    yes = s.empty()
     runner.is-true(yes, 'init empty == true')
-    no bool = s.full()
+    no = s.full()
     runner.is-false(no, 'init not full')
 }
 
@@ -28,9 +28,9 @@ t-size-after-push = () {
         cap: 16
         top: 3
     }
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 3, 'after 3 pushes size == 3')
-    yes bool = s.empty()
+    yes = s.empty()
     runner.is-false(yes, 'not empty after pushes')
 }
 
@@ -39,9 +39,9 @@ t-full = () {
         cap: 4
         top: 4
     }
-    yes bool = s.full()
+    yes = s.full()
     runner.is-true(yes, 'arr-stack full when top == cap')
-    no bool = s.empty()
+    no = s.empty()
     runner.is-false(no, 'full stack not empty')
 }
 
@@ -51,9 +51,9 @@ t-clear = () {
         top: 5
     }
     s.clear()
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 0, 'after clear size == 0')
-    yes bool = s.empty()
+    yes = s.empty()
     runner.is-true(yes, 'after clear empty == true')
 }
 

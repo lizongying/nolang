@@ -239,7 +239,7 @@ m: 1', 'stringify roundtrip')
 t-error-and-nohang = () {
 
     ; valid-of: 良好輸入 true
-    g bool = yaml.valid-of('a: 1')
+    g = yaml.valid-of('a: 1')
     runner.is-true(g, 'valid-of good')
 
     ; 回歸：未闭合流式集合不得無限迴圈卡死（skip-flow-ws EOF 修復）

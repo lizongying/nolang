@@ -52,7 +52,7 @@ print(t.slice(7, 12))
 print(t.slice(0, 5).len())
 
 ; bug 1：方法回傳 txt 後再賦值會走 OpTxtFromStr
-u txt = t.slice(0, 5)
+u = t.slice(0, 5)
 print(u)
 
 print(t.index('World'))
@@ -86,7 +86,7 @@ print(q.len())
 print(q.truncate(4))
 print(q.len())
 
-r txt = t.copy()
+r = t.copy()
 print(r)
 r.append-str('!')
 print(r)

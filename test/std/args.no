@@ -47,8 +47,8 @@ t-get-option-absent = () {
 }
 
 t-get-positional-absent = () {
-    pv str = ''
-    po bool = false
+    pv = ''
+    po = false
     pv, po = args.get-positional(0)
     runner.is-false(po, 'no positional => false')
 }

@@ -425,6 +425,36 @@ ps-attach-trailing = (t ast, idx i64, trail []i64) {
     }
 }
 
+; ps-premerge-trailing：s59——把 armDoc 置前併入既有 TrailingComments 群
+;   （Go match.go:443-451：merged = armDoc ++ existing；無既有群⇒等同 ps-attach-trailing
+;   單條）。aux 只append：新區段複製舊條目，舊區段成孤兒（不影走訪，零回歸）。
+ps-premerge-trailing = (t ast, blk i64, head i64) {
+    head != 0 -> {
+        d = ast.nd-at(t, blk)
+        d.ntrail < 0 -> {
+            tr []i64 = with-cap(1)
+            tr.push(head)
+            ps-attach-trailing(t, blk, tr)
+        }
+        d.ntrail >= 0 -> {
+
+            #{overflow=wrap}
+            nt = d.ntrail
+            c0 = d.ct0
+            ast.aux-begin(t, blk)
+            ast.aux-add(t, head)
+            j = 0
+            (j < nt) {
+                ast.aux-add(t, ast.aux-at(t, c0 + j))
+
+                #{overflow=wrap}
+                j = j + 1
+            }
+            ast.set-aux-counts(t, blk, nt + 1, d.nclos, d.nimp)
+        }
+    }
+}
+
 ; ps-expect：若目前 token 是 want 就消費它（容錯：不符也繼續）
 ps-expect = (p psst, want i64) {
     ps-peek(p) == want -> ps-bump(p)
@@ -2446,9 +2476,6 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                 ps-set-var-type(p, name, '[]' - elem); Go SliceLiteral 臂同步登記「[]elem」
             }
 
-            ; s58：StructLiteral RHS → 僅登記 varType（Go stmt.go case *StructLiteral：!exists 時
-            ;   setVarType(name, v.Type)，不盖 stmt.Type——oracle 渲染 `LetStatement{name: p, value: StructLiteral}` 無型別）。
-            ;   登記後方法推斷臂可 resolveReceiverType（`p = view-point {…}` → `p.self-view()` 推出 &view-point）。
             d.kind == asp.K_STRUCT_LITERAL -> {
                 st = ast.str-at(t, d.s0)
                 ps-var-type(p, name) == '' -> ps-set-var-type(p, name, st)
@@ -4033,7 +4060,9 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
     wildA []i64 = with-cap(4)
     done = false
     (done == false && fail == 0) {
-        ps-skip-trivia(p)
+
+        ; s59：臂首 armDoc 收集（Go match.go:208）；行尾註解由各體形当场 tail-attach
+        armDoc = ps-skip-trivia-doc(t, p, 0)
         hd = ps-peek(p)
         hd == tok.RBRACE || hd == tok.EOF -> done = true
         hd == tok.SEMICOLON -> ps-bump(p); 臂間分號（Go 同跳）
@@ -4091,6 +4120,9 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
                         ps-bump(p); 消費 {
                         blk = ps-parse-block(t, p)
                         ps-expect(p, tok.RBRACE)
+
+                        ; s59：大括號臂 armDoc → 區塊尾註群最前（Go match.go:443 merged）
+                        armDoc != 0 -> ps-premerge-trailing(t, blk, armDoc)
                     }
                     nested > 0 -> {
                         es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
@@ -4106,17 +4138,29 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
                     sl []i64 = with-cap(4)
                     bdone = false
                     (bdone == false && fail == 0) {
-                        ps-skip-trivia(p)
+
+                        ; s59：對齊 Go match.go:355-359（collectDoc→parseStatement→setDoc→attachInlineComment）
+                        sdoc = ps-skip-trivia-doc(t, p, 0)
                         hd3 = ps-peek(p)
                         hd3 == tok.RBRACE || hd3 == tok.EOF -> bdone = true
                         wild == 0 && bdone == false && ps-is-arm-start(p) == 1 -> bdone = true
                         bdone == false && fail == 0 -> {
                             pos0 = p.pos
                             s = ps-parse-stmt(t, p)
-                            s > 0 -> sl.push(s)
+                            s > 0 -> {
+                                sdoc != 0 -> ast.set-doc(t, s, sdoc)
+                                ps-peek(p) == tok.COMMENT -> {
+                                    ast.set-cmt(t, s, ast.put-str(t, ps-cur-lit(p)))
+                                    ps-bump(p)
+                                }
+                                sl.push(s)
+                            }
                             p.pos == pos0 -> ps-bump(p)
                         }
                     }
+
+                    ; s59：IsInline 區塊體（Go match.go:441-442）：armDoc 覆寫首陳述 Doc
+                    armDoc != 0 && sl.len() > 0 -> ast.set-doc(t, sl[0], armDoc)
                     blk = ast.add(t, asp.K_BLOCK_STATEMENT)
                     j = 0
                     (j < sl.len()) {
@@ -4139,6 +4183,14 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
                         ast.kid-add(t, blk, s)
                         ast.set-count(t, blk, 0, 1)
                         ast.set-slot(t, blk, 0, ast.put-str(t, 'true')); inline
+
+                        ; s59：armDoc → body 陳述 Doc（Go IsInline⇒setDoc(bodyStmts[0])）；
+                        ;   行尾 `; cmt` → 該陳述 Comment（Go attachInlineComment）
+                        armDoc != 0 -> ast.set-doc(t, s, armDoc)
+                        ps-peek(p) == tok.COMMENT -> {
+                            ast.set-cmt(t, s, ast.put-str(t, ps-cur-lit(p)))
+                            ps-bump(p)
+                        }
                     }
                 }
             }
@@ -4351,10 +4403,6 @@ ps-parse-type = (t ast, p psst) (idx i64) {
             ast.kid-add(t, idx, pti); 唯一 guarded CHILD=Type
         }
 
-        ; s58：指標/view 前綴型 `*T` / `**T` / `&T`——Go parseParamTypeAfterName 以字串
-        ;   收集前綴再 buildType 遞迴剝前綴（type.go:1023-1040/1206）；此處直接節點化：
-        ;   遞迴先在內層建 base，再建外層包裹（子先於父），與 buildType 逐層包裹等價。
-        ;   `?&T` 形由上方 QUESTION 臂遞迴進本組臂天然覆蓋（規範序 ? 最外、& 次之、* 貼 base）。
         handled == 0 && tk.typ == tok.MUL -> {
             handled = 1
             ps-bump(p); 消費 *
@@ -5130,10 +5178,25 @@ ps-parse-if = (t ast, p psst) (idx i64) {
     ps-expect(p, tok.RBRACE)
 
     ; 探測 else（允许 `}\nelse {` 或 `} else {`）
-    ; Go 端先跳 NEWLINE 再检查 ELSE，此处同构
-    ps-skip-trivia(p)
+    ; s59：預看【不消費】——直接索引掃到首個非 trivia token；是 ELSE 才把 pos 跳到該處。
+    ;   找不到 ELSE 時 pos 原封不動：其間註釋留給外層區塊的 doc/TrailingComments 收集器
+    ;   （Go 語義：預看期間註釋只進 p.comments 緩衝、不被吃掉——舊 ps-skip-trivia 預看會吞掉
+    ;    if 區塊之後的函式尾註釋，move-clone-liveness 即此根因）。
+    k = p.pos
+    kscan = true
+    (kscan) {
+
+        #{index-out=zero}
+        kt = p.toks[k].typ
+        kt == tok.NEWLINE || kt == tok.COMMENT -> k = k + 1
+        kt != tok.NEWLINE && kt != tok.COMMENT -> kscan = false
+    }
     alt = 0
-    ps-peek(p) == tok.ELSE -> {
+
+    #{index-out=zero}
+    kt2 = p.toks[k].typ
+    kt2 == tok.ELSE -> {
+        p.pos = k
         ps-bump(p)
         ps-skip-trivia(p)
         ps-expect(p, tok.LBRACE)
@@ -5255,7 +5318,6 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     ; 同 ps-parse-bare-match：臂迴圈自行消化 `->`，抑制區塊級續接前探
     oldMat = p.inMatch
     p.inMatch = 1
-    ps-skip-trivia(p)
 
     ; s55：預掃关键字臂名單（Go hasExplicitOk/Err/Nil）——供 wildcard 臂補集判定
     listed []i64 = with-cap(3)
@@ -5263,133 +5325,171 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     listed.push(0)
     listed.push(0)
     ps-match-listed(p, listed)
-    (ps-peek(p) != tok.RBRACE) {
-        pos0 = p.pos
 
-        ; 型樣：`_` 或裸 `->`（無型樣＝else 臂）→ wildcard；否則解析成表達式（int/float/bool/str/char/ident）
-        ; ⚠️ 用快照 at 令兩臂互斥（ps-peek 随位置重评会误触发，見 ps.no LBRACKET 臂同构写法）
-        ; ⚠️ err/nil 关键字臂（緊接 `->`）記 kvar ⇒ 綁定带 type+armBinding（Go buildItBindingForArm）
-        wild = 0
-        pat = 0
-        kvar = ''
-        at = ps-peek(p)
-        tk0 = ps-peek-token(p)
-        {
-            at == tok.UNDERSCORE -> {
-                ps-bump(p)
-                wild = 1
-            }
+    ; s59：臂首 armDoc 收集（Go match.go:208 collectDocComments）——行尾註解已在上一臂
+    ;   body 解析完當場被 tail-attach 取走，迴圈頭所見註解恆為 standalone⇒prev=0 純 doc。
+    ;   套用規則（Go match.go:440-452）：inline 體→setDoc(bodyStmts[0])；區塊體→置入尾註群。
+    ;   ⚠️ 舊首/尾 ps-skip-trivia  destructive 吞註解是缺 Doc 的根因。
+    blkTrail []i64 = with-cap(4)
+    hasTrail = 0
+    armGo = true
+    (armGo) {
+        armDoc = ps-skip-trivia-doc(t, p, 0)
+        armGo = ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF
+        armGo -> {
+            pos0 = p.pos
 
-            at == tok.RARROW -> wild = 1; 裸尾臂＝else（不消費，交由下方 expect(RARROW)）
-
-            at != tok.UNDERSCORE && at != tok.RARROW -> {
-                kwt = 0
-                tk0.typ == tok.NIL && ps-peek-at(p, 1) == tok.RARROW -> {
-                    kvar = 'nil'
-                    kwt = 1
+            ; 型樣：`_` 或裸 `->`（無型樣＝else 臂）→ wildcard；否則解析成表達式（int/float/bool/str/char/ident）
+            ; ⚠️ 用快照 at 令兩臂互斥（ps-peek 随位置重评会误触发，見 ps.no LBRACKET 臂同构写法）
+            ; ⚠️ err/nil 关键字臂（緊接 `->`）記 kvar ⇒ 綁定带 type+armBinding（Go buildItBindingForArm）
+            wild = 0
+            pat = 0
+            kvar = ''
+            at = ps-peek(p)
+            tk0 = ps-peek-token(p)
+            {
+                at == tok.UNDERSCORE -> {
+                    ps-bump(p)
+                    wild = 1
                 }
-                kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'err' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'err'
-                kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'ok' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'ok'
-                pat = ps-parse-expr-prec(t, p, 0)
+
+                at == tok.RARROW -> wild = 1; 裸尾臂＝else（不消費，交由下方 expect(RARROW)）
+
+                at != tok.UNDERSCORE && at != tok.RARROW -> {
+                    kwt = 0
+                    tk0.typ == tok.NIL && ps-peek-at(p, 1) == tok.RARROW -> {
+                        kvar = 'nil'
+                        kwt = 1
+                    }
+                    kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'err' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'err'
+                    kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'ok' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'ok'
+                    pat = ps-parse-expr-prec(t, p, 0)
+                }
             }
-        }
-        ps-skip-trivia(p)
-        ps-expect(p, tok.RARROW)
-        ps-skip-trivia(p)
-
-        ; 先完整建成 it 合成綁定 + body（父後建、kid 區段才不與子樹重疊）
-        ; s55：綁定型別計算（Go buildItBindingForArm）——主題靜態可知 `?T` 時：err/nil 臂取變體名、
-        ;   ok 臂取載荷 T、wildcard 臂取補集（全列⇒死臂裸綁定；型別未知時維持 s46 兼容形：僅 err/nil 帶名）。
-        st = ps-var-type(p, subj)
-        sopt = 0
-        elem = ''
-        st.starts-with('?') -> {
-            sopt = 1
-            elem = st.slice-bytes(1, st.len-bytes())
-        }
-        bt = ''
-        dead = 0
-        sopt == 1 && kvar == 'err' -> bt = 'err'
-        sopt == 1 && kvar == 'nil' -> bt = 'nil'
-        sopt == 1 && kvar == 'ok' -> bt = elem
-        sopt == 1 && wild == 1 -> {
-
-            #{index-out=zero}
-            ol = listed[0]
-
-            #{index-out=zero}
-            oe = listed[1]
-
-            #{index-out=zero}
-            onil = listed[2]
-
-            ; 全列 ok/err/nil ⇒ wildcard 臂為死碼（Go skipItBinding，lowering.go:2214）——不建任何 it 綁定
-            ol == 1 && oe == 1 && onil == 1 -> dead = 1
-            ol == 1 && oe == 0 && onil == 1 -> bt = 'err'
-            ol == 1 && oe == 1 && onil == 0 -> bt = 'nil'
-            ol == 1 && oe == 0 && onil == 0 -> bt = 'err | nil'
-            ol == 0 -> bt = elem
-        }
-        sopt == 0 && kvar == 'err' -> bt = 'err'
-        sopt == 0 && kvar == 'nil' -> bt = 'nil'
-        itl = 0
-        hd5 = 0
-        dead == 0 && bt != '' -> {
-            itl = ps-mk-it-let-t(t, subj, bt, 'it')
-            hd5 = 1
-        }
-        dead == 0 && hd5 == 0 -> itl = ps-mk-it-let(t, subj)
-
-        ; it 型別逐層登記與還原（Go collectVarTypesFromBody 作用域掃描；與 MIR 端值還原對稱）：
-        ;   巢狀 match/下一臂不得污染外層 it。
-        oldit = ps-var-type(p, 'it')
-        bt != '' -> ps-set-var-type(p, 'it', bt)
-        kids []i64 = with-cap(4)
-        dead == 0 -> kids.push(itl)
-        inline = 0
-        hd2 = 0
-        ps-peek(p) == tok.LBRACE -> {
-
-            ; 區塊臂（非內聯）：展開 `{
-            ps-bump(p)
             ps-skip-trivia(p)
-            (ps-peek(p) != tok.RBRACE) {
-                s0 = p.pos
-                s = ps-parse-stmt(t, p)
-                s > 0 -> kids.push(s)
-                p.pos == s0 -> ps-bump(p)
-                ps-skip-trivia(p)
+            ps-expect(p, tok.RARROW)
+            ps-skip-trivia(p)
+
+            ; 先完整建成 it 合成綁定 + body（父後建、kid 區段才不與子樹重疊）
+            ; s55：綁定型別計算（Go buildItBindingForArm）——主題靜態可知 `?T` 時：err/nil 臂取變體名、
+            ;   ok 臂取載荷 T、wildcard 臂取補集（全列⇒死臂裸綁定；型別未知時維持 s46 兼容形：僅 err/nil 帶名）。
+            st = ps-var-type(p, subj)
+            sopt = 0
+            elem = ''
+            st.starts-with('?') -> {
+                sopt = 1
+                elem = st.slice-bytes(1, st.len-bytes())
             }
-            ps-expect(p, tok.RBRACE)
-            hd2 = 1
-        }
-        hd2 == 0 -> {
+            bt = ''
+            dead = 0
+            sopt == 1 && kvar == 'err' -> bt = 'err'
+            sopt == 1 && kvar == 'nil' -> bt = 'nil'
+            sopt == 1 && kvar == 'ok' -> bt = elem
+            sopt == 1 && wild == 1 -> {
 
-            ; 運算式臂（內聯）：BlockStatement{inline: true}[it, ExpressionStatement{e}]
-            e = ps-parse-expr-prec(t, p, 0)
-            es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
-            ast.kid-add(t, es, e)
-            kids.push(es)
-            inline = 1
-        }
+                #{index-out=zero}
+                ol = listed[0]
 
-        ; 父後建：先 add blk，再依序 kid-add 已建好的子節點
-        blk = ast.add(t, asp.K_BLOCK_STATEMENT)
-        j = 0
-        (j < kids.len()) {
-            ast.kid-add(t, blk, kids[j])
+                #{index-out=zero}
+                oe = listed[1]
 
-            #{overflow=wrap}
-            j = j + 1
+                #{index-out=zero}
+                onil = listed[2]
+
+                ; 全列 ok/err/nil ⇒ wildcard 臂為死碼（Go skipItBinding，lowering.go:2214）——不建任何 it 綁定
+                ol == 1 && oe == 1 && onil == 1 -> dead = 1
+                ol == 1 && oe == 0 && onil == 1 -> bt = 'err'
+                ol == 1 && oe == 1 && onil == 0 -> bt = 'nil'
+                ol == 1 && oe == 0 && onil == 0 -> bt = 'err | nil'
+                ol == 0 -> bt = elem
+            }
+            sopt == 0 && kvar == 'err' -> bt = 'err'
+            sopt == 0 && kvar == 'nil' -> bt = 'nil'
+            itl = 0
+            hd5 = 0
+            dead == 0 && bt != '' -> {
+                itl = ps-mk-it-let-t(t, subj, bt, 'it')
+                hd5 = 1
+            }
+            dead == 0 && hd5 == 0 -> itl = ps-mk-it-let(t, subj)
+
+            ; it 型別逐層登記與還原（Go collectVarTypesFromBody 作用域掃描；與 MIR 端值還原對稱）：
+            ;   巢狀 match/下一臂不得污染外層 it。
+            oldit = ps-var-type(p, 'it')
+            bt != '' -> ps-set-var-type(p, 'it', bt)
+            kids []i64 = with-cap(4)
+            dead == 0 -> kids.push(itl)
+            inline = 0
+            hd2 = 0
+            hasTrail = 0
+            ps-peek(p) == tok.LBRACE -> {
+
+                ; s59：區塊臂內部 = Go parseBlockStatement 協議（match.go:285→stmt.go 區塊迴圈）：
+                ;   行首 doc 附於其後陳述、行尾 Comment 附於其前陳述、閉合 } 前 standalone 歸 TrailingComments。
+                ;   ⚠️ 明示主體 match 的 armDoc 實測（p4/t63 oracle 钉死）：【覆寫】首條真實陳述的 Doc
+                ;   （內部首陳述原有 doc 被丢），不同裸 match 大括號臂（那路是尾註群併入）。
+                btrail []i64 = with-cap(4)
+                bprev = 0
+                bfirst = 0
+                bdoc = 0
+                ps-bump(p)
+                ps-trail-region(p) == 1 -> ps-collect-tail(t, p, 0, btrail)
+                ps-trail-region(p) == 0 -> bdoc = ps-skip-trivia-doc(t, p, 0)
+                (ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF) {
+                    s0 = p.pos
+                    s = ps-parse-stmt(t, p)
+                    s > 0 -> {
+                        bdoc != 0 -> ast.set-doc(t, s, bdoc)
+                        kids.push(s)
+                        bprev = s
+                        bfirst == 0 -> bfirst = s
+                    }
+                    p.pos == s0 -> ps-bump(p)
+                    ps-trail-region(p) == 1 -> ps-collect-tail(t, p, bprev, btrail)
+                    ps-trail-region(p) == 0 -> bdoc = ps-skip-trivia-doc(t, p, bprev)
+                }
+                ps-expect(p, tok.RBRACE)
+                armDoc != 0 && bfirst > 0 -> ast.set-doc(t, bfirst, armDoc)
+                armDoc != 0 && bfirst == 0 -> btrail.push(armDoc)
+                blkTrail = btrail
+                hasTrail = 1
+                hd2 = 1
+            }
+            hd2 == 0 -> {
+
+                ; 運算式臂（內聯）：BlockStatement{inline: true}[it, ExpressionStatement{e}]
+                e = ps-parse-expr-prec(t, p, 0)
+                es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+                ast.kid-add(t, es, e)
+                kids.push(es)
+                inline = 1
+
+                ; s59：armDoc → body 陳述的 Doc；行尾 `; cmt` → es 的 Comment（Go attachInlineComment）
+                armDoc != 0 -> ast.set-doc(t, es, armDoc)
+                ps-peek(p) == tok.COMMENT -> {
+                    ast.set-cmt(t, es, ast.put-str(t, ps-cur-lit(p)))
+                    ps-bump(p)
+                }
+            }
+
+            ; 父後建：先 add blk，再依序 kid-add 已建好的子節點
+            blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+            j = 0
+            (j < kids.len()) {
+                ast.kid-add(t, blk, kids[j])
+
+                #{overflow=wrap}
+                j = j + 1
+            }
+            ast.set-count(t, blk, 0, kids.len())
+            inline == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true'))
+            hasTrail == 1 -> ps-attach-trailing(t, blk, blkTrail)
+            ps-set-var-type(p, 'it', oldit)
+            wildA.push(wild)
+            patA.push(pat)
+            blkA.push(blk)
+            p.pos == pos0 -> ps-bump(p)
         }
-        ast.set-count(t, blk, 0, kids.len())
-        inline == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true'))
-        ps-set-var-type(p, 'it', oldit)
-        wildA.push(wild)
-        patA.push(pat)
-        blkA.push(blk)
-        p.pos == pos0 -> ps-bump(p)
-        ps-skip-trivia(p)
     }
 
     ; 由末臂往回組 if/else 鏈

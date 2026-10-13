@@ -15,33 +15,33 @@ t-now-s = () {
 }
 
 t-duration-between = () {
-    d i64 = time.duration-between(100, 150)
+    d = time.duration-between(100, 150)
     runner.eq(d, 50, 'duration-between 100..150 == 50')
-    d2 i64 = time.duration-between(200, 100)
+    d2 = time.duration-between(200, 100)
     runner.eq(d2, -100, 'duration-between reversed == -100')
 }
 
 ; ── 閏年 ──────────────────────────────────────
 
 t-is-leap = () {
-    yes2000 bool = time.is-leap(2000)
+    yes2000 = time.is-leap(2000)
     runner.is-true(yes2000, '2000 is leap')
-    no1900 bool = time.is-leap(1900)
+    no1900 = time.is-leap(1900)
     runner.is-false(no1900, '1900 not leap')
-    yes2024 bool = time.is-leap(2024)
+    yes2024 = time.is-leap(2024)
     runner.is-true(yes2024, '2024 is leap')
-    no2023 bool = time.is-leap(2023)
+    no2023 = time.is-leap(2023)
     runner.is-false(no2023, '2023 not leap')
 }
 
 t-days-in-month = () {
-    d1 i64 = time.days-in-month-fn(2024, 2)
+    d1 = time.days-in-month-fn(2024, 2)
     runner.eq(d1, 29, '2024 Feb has 29 days')
-    d2 i64 = time.days-in-month-fn(2023, 2)
+    d2 = time.days-in-month-fn(2023, 2)
     runner.eq(d2, 28, '2023 Feb has 28 days')
-    d3 i64 = time.days-in-month-fn(2024, 1)
+    d3 = time.days-in-month-fn(2024, 1)
     runner.eq(d3, 31, '2024 Jan has 31 days')
-    d4 i64 = time.days-in-month-fn(2024, 4)
+    d4 = time.days-in-month-fn(2024, 4)
     runner.eq(d4, 30, '2024 Apr has 30 days')
 }
 
@@ -67,7 +67,7 @@ t-date-to-unix = () {
     d.hour = 0
     d.min = 0
     d.sec = 0
-    ts i64 = time.date-to-unix(d)
+    ts = time.date-to-unix(d)
     runner.eq(ts, 0, 'date-to-unix 1970-01-01 == 0')
 
     d2 date
@@ -77,7 +77,7 @@ t-date-to-unix = () {
     d2.hour = 0
     d2.min = 0
     d2.sec = 0
-    ts2 i64 = time.date-to-unix(d2)
+    ts2 = time.date-to-unix(d2)
     runner.gt(ts2, 1700000000, 'date-to-unix 2024-01-01 > 1.7e9')
 }
 
@@ -85,7 +85,7 @@ t-roundtrip = () {
     orig = 1700000000
     d date
     d = time.unix-to-date(orig)
-    back i64 = time.date-to-unix(d)
+    back = time.date-to-unix(d)
     runner.eq(back, orig, 'unix-to-date/date-to-unix roundtrip')
 }
 
@@ -147,9 +147,9 @@ t-timer = () {
         start-ts: 1000
         end-ts: 1500
     }
-    ms i64 = tm.elapsed-ms()
+    ms = tm.elapsed-ms()
     runner.eq(ms, 500, 'timer elapsed-ms == 500')
-    s i64 = tm.elapsed-s()
+    s = tm.elapsed-s()
     runner.eq(s, 0, 'timer elapsed-s == 0')
 }
 

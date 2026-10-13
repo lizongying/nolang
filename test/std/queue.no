@@ -14,11 +14,11 @@ t-init-empty = () {
         head: 0
         tail: 0
     }
-    sz i64 = q.size()
+    sz = q.size()
     runner.eq(sz, 0, 'init size == 0')
-    yes bool = q.empty()
+    yes = q.empty()
     runner.is-true(yes, 'init empty == true')
-    no bool = q.full()
+    no = q.full()
     runner.is-false(no, 'init not full')
 }
 
@@ -30,9 +30,9 @@ t-size-after-enqueue = () {
         head: 0
         tail: 3
     }
-    sz i64 = q.size()
+    sz = q.size()
     runner.eq(sz, 3, 'after 3 pushes size == 3')
-    yes bool = q.empty()
+    yes = q.empty()
     runner.is-false(yes, 'not empty after pushes')
 }
 
@@ -44,9 +44,9 @@ t-full = () {
         head: 0
         tail: 3
     }
-    yes bool = q.full()
+    yes = q.full()
     runner.is-true(yes, 'queue full when tail-head == cap-1')
-    no bool = q.empty()
+    no = q.empty()
     runner.is-false(no, 'full queue not empty')
 }
 
@@ -57,9 +57,9 @@ t-clear = () {
         tail: 10
     }
     q.clear()
-    sz i64 = q.size()
+    sz = q.size()
     runner.eq(sz, 0, 'after clear size == 0')
-    yes bool = q.empty()
+    yes = q.empty()
     runner.is-true(yes, 'after clear empty == true')
 }
 

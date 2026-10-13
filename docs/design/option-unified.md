@@ -302,9 +302,9 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
   | --- | --- | --- | --- | --- |
   | `src/std` | 0 | 59 | 328 | 59 warning 全为 `arm-should`（D4 空 `->` 兜底臂「可能被执行」）；328 hint = `6kryrbsq`×143 + `rngidx`×103 + `idxhndld`×78 + `tcpoxtfd`×4 |
   | `tests` | 0 | 165 | 202 | warning 含 `STR_INDEX_COMPLEXITY`（M4 str/txt→?char 后新 lint：循环内 `s[i]` 为 O(n²)）与 `arm-should` |
-  | `test` | 0 | 5 | 785 | hint 多为 `tcpoxtfd`（类型注解可省略） |
+  | `test` | 0 | 5 | 785 | 5 warning = 2 `nolang-overflow-ineffective` + 3 `arm-should`；785 hint 中 450 为 `tcpoxtfd`（类型注解可省略），余为 `idxhndld`/`rngidx` 等 |
   | `bench` | 0 | 0 | 1 | 仅 1 处 `sink` 未使用 hint |
-  | `example` | 0 | 6 | 6 | 6 warning 为 `nolang-overflow-ineffective`（注解对应陈述无整数运算，建议删除） |
+  | `example` | 0 | 6 | 6 | 6 warning = 4 `STR_INDEX_COMPLEXITY`（M4 str→?char 后新 lint：循环内 `s[i]` O(n²)）+ 2 `nolang-overflow-ineffective`（注解对应陈述无整数运算，建议删）；6 hint 为 `idxhndld`/`nolang-deprecated-call` |
 
 - 结论：**全部 5 个目录迁移完成，无阻塞错误（0 ERROR）**。剩余 warning/hint 均为新诊断（D4 空臂、`arm-should`、M4 str 索引复杂度、类型注解省略建议、溢出注解无效提示）的风格/健壮性建议，非正确性阻断；与 §2.2「0 error / 0 warning / 145 hint」基线的差异来自本次新增诊断类别，属预期。
 

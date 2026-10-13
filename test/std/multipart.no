@@ -42,7 +42,7 @@ t-boundary = () {
     eq-str(g2, g, 'gen deterministic same seed')
     c = multipart.multipart-create()
     made = false
-    cv str = ''
+    cv = ''
     c: {
         ok -> {
             made = true

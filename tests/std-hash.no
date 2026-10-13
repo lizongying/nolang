@@ -648,8 +648,8 @@ print('')
 ; ═══════════════════════════════════════════
 
 b2-empty []byte = with-len(0)
-b2-abc []byte = 'abc'.to-bytes()
-b2-fox []byte = 'The quick brown fox jumps over the lazy dog'.to-bytes()
+b2-abc = 'abc'.to-bytes()
+b2-fox = 'The quick brown fox jumps over the lazy dog'.to-bytes()
 
 ; blake2b("")=786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce
 b2-out [64]byte

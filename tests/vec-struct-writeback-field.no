@@ -31,7 +31,7 @@ seed = () {
 del-via-copy = (i i64, drop i64) {
     node jv-value = _p.nodes[i]
     nk []i64 = with-len(0)
-    k i64 = 0
+    k = 0
     (k < node.keys.len()) {
         kk i64 = node.keys[k] #{index-out=0}
         kk != drop -> nk.push(kk)

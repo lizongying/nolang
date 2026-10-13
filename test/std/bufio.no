@@ -71,7 +71,7 @@ t-reader-read-byte = () {
     r = bufio.reader.init(fd, buf)
 
     ; fill 緩衝區
-    ok bool = r.fill()
+    ok = r.fill()
     runner.is-true(ok, 'fill returns true')
 
     ; 讀取第一個位元組

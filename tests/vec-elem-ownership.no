@@ -48,7 +48,7 @@ test-map-value = () {
     m [str][]i64 = { }
     m.put('k', list1)
     list1 = [9, 9, 9]
-    v ?[]i64 = m.get('k')
+    v = m.get('k')
     v: {
         ok(x) -> print(x[0]); 1
 

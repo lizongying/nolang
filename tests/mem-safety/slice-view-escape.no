@@ -40,7 +40,7 @@ print(v[1]); 預期 300
 test-explicit-type = () {
     local = [10, 20, 30, 40, 50]
     view = local[1..4]
-    v []i64 = view; 顯式 []T 型別，應 clone
+    v = view; 顯式 []T 型別，應 clone
     print(v[0]); 預期 20
     print(v[1]); 預期 30
     print(v[2]); 預期 40

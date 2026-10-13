@@ -11,9 +11,9 @@ t-init-empty = () {
         data: buf
         n: 0
     }
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 0, 'init size == 0')
-    yes bool = s.empty()
+    yes = s.empty()
     runner.is-true(yes, 'init empty == true')
 }
 
@@ -26,7 +26,7 @@ t-push-pop = () {
     s.push(10)
     s.push(20)
     s.push(30)
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 3, 'push x3 size == 3')
 
     ; LIFO: pop 順序應為 30, 20, 10
@@ -57,7 +57,7 @@ t-push-pop = () {
     }
     runner.is-true(ok3, 'pop 3rd == 10')
 
-    yes bool = s.empty()
+    yes = s.empty()
     runner.is-true(yes, 'after pop all empty == true')
 }
 
@@ -79,7 +79,7 @@ t-peek = () {
     }
     runner.is-true(ok, 'peek == 20 (top)')
 
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 2, 'peek does not remove, size == 2')
 }
 
@@ -118,9 +118,9 @@ t-clear = () {
     s.push(2)
     s.push(3)
     s.clear()
-    sz i64 = s.size()
+    sz = s.size()
     runner.eq(sz, 0, 'after clear size == 0')
-    yes bool = s.empty()
+    yes = s.empty()
     runner.is-true(yes, 'after clear empty == true')
 }
 

@@ -23,8 +23,8 @@ t-put-get = () {
     runner.eq(m.len(), 2, 'len == 2')
 
     r = m.get(2)
-    hit bool = false
-    val i64 = -1
+    hit = false
+    val = -1
     r: {
         ok -> {
             hit = true
@@ -52,7 +52,7 @@ t-overwrite = () {
     runner.is-false(n, 're-put not new')
     runner.eq(m.len(), 1, 'len stays 1')
     r = m.get(5)
-    got i64 = -1
+    got = -1
     r: {
         ok -> got = it
 

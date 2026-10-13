@@ -9,23 +9,23 @@ t-init = () {
     s = str-set {}
     s.init()
     runner.eq(s.len(), 0, 'init len == 0')
-    e bool = s.is-empty()
+    e = s.is-empty()
     runner.is-true(e, 'init is-empty')
 }
 
 t-add-contains = () {
     s = str-set {}
     s.init()
-    n1 bool = s.add('hello')
+    n1 = s.add('hello')
     runner.is-true(n1, 'add hello is-new')
-    n2 bool = s.add('world')
+    n2 = s.add('world')
     runner.is-true(n2, 'add world is-new')
-    n3 bool = s.add('hello')
+    n3 = s.add('hello')
     runner.is-false(n3, 'add hello again not new')
     runner.eq(s.len(), 2, 'len == 2')
-    yes bool = s.contains('hello')
+    yes = s.contains('hello')
     runner.is-true(yes, 'contains hello')
-    no bool = s.contains('zzz')
+    no = s.contains('zzz')
     runner.is-false(no, 'not contains zzz')
 }
 
@@ -35,12 +35,12 @@ t-remove = () {
     s.add('a')
     s.add('bb')
     s.add('ccc')
-    rm bool = s.remove('bb')
+    rm = s.remove('bb')
     runner.is-true(rm, 'remove bb ok')
     runner.eq(s.len(), 2, 'len == 2 after remove')
-    no bool = s.contains('bb')
+    no = s.contains('bb')
     runner.is-false(no, 'removed bb not found')
-    rm2 bool = s.remove('missing')
+    rm2 = s.remove('missing')
     runner.is-false(rm2, 'remove non-existent false')
 }
 
@@ -51,7 +51,7 @@ t-clear = () {
     s.add('y')
     s.clear()
     runner.eq(s.len(), 0, 'clear => len 0')
-    e bool = s.is-empty()
+    e = s.is-empty()
     runner.is-true(e, 'clear => is-empty')
 }
 

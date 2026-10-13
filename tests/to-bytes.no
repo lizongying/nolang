@@ -8,7 +8,7 @@ n i64 = s.len-bytes()
 print('after len')
 print(n)
 print('before to-bytes')
-b []byte = s.to-bytes()
+b = s.to-bytes()
 print('after to-bytes')
 b[0] != 116 -> {
     print('FAIL: expected t')

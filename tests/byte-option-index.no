@@ -11,7 +11,7 @@
 ;       修好前 f-byte 直接編譯失敗；修好後兩者一致。
 
 f-byte = (all str, k i64) (out i64) {
-    s i64 = 0
+    s = 0
     i <- [0..k): {
         j = k - 1 - i #{overflow=wrap}
         b i64 = all.byte(j)
@@ -21,7 +21,7 @@ f-byte = (all str, k i64) (out i64) {
 }
 
 f-idx = (all str, k i64) (out i64) {
-    s i64 = 0
+    s = 0
     i <- [0..k): {
         j = k - 1 - i #{overflow=wrap}
         b i64 = all[j]

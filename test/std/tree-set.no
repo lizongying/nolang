@@ -56,13 +56,13 @@ t-order = () {
     s.add(20)
     s.add(5)
     s.add(40)
-    f1 bool = false
-    mn i64 = 0
+    f1 = false
+    mn = 0
     f1, mn = unwrap(s.first())
     runner.is-true(f1, 'first found')
     runner.eq(mn, 5, 'first == min 5')
-    f2 bool = false
-    mx i64 = 0
+    f2 = false
+    mx = 0
     f2, mx = unwrap(s.last())
     runner.is-true(f2, 'last found')
     runner.eq(mx, 40, 'last == max 40')
@@ -76,25 +76,25 @@ t-bound = () {
     s.add(30)
     s.add(40)
 
-    o1 bool = false
-    lb20 i64 = 0
+    o1 = false
+    lb20 = 0
     o1, lb20 = unwrap(s.lower-bound(20))
     runner.is-true(o1, 'lower-bound 20 found')
     runner.eq(lb20, 20, 'lower-bound 20 == 20')
-    o2 bool = false
-    lb15 i64 = 0
+    o2 = false
+    lb15 = 0
     o2, lb15 = unwrap(s.lower-bound(15))
     runner.eq(lb15, 20, 'lower-bound 15 == 20')
-    o3 bool = false
-    ub20 i64 = 0
+    o3 = false
+    ub20 = 0
     o3, ub20 = unwrap(s.upper-bound(20))
     runner.eq(ub20, 30, 'upper-bound 20 == 30')
-    f100 bool = false
-    d1 i64 = 0
+    f100 = false
+    d1 = 0
     f100, d1 = unwrap(s.lower-bound(100))
     runner.is-false(f100, 'lower-bound 100 => nil')
-    f40 bool = false
-    d2 i64 = 0
+    f40 = false
+    d2 = 0
     f40, d2 = unwrap(s.upper-bound(40))
     runner.is-false(f40, 'upper-bound 40 => nil')
 }
@@ -147,8 +147,8 @@ t-stress-order = () {
     ; 逐一下界走訪：從 first 開始每次 upper-bound 應嚴格递增
     prev = -1
     steps = 0
-    f bool = false
-    cur i64 = 0
+    f = false
+    cur = 0
     f, cur = unwrap(s.first())
     (f) {
         cur >= prev -> {

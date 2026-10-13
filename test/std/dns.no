@@ -25,7 +25,6 @@ make-resp = (rtype-hi i64, rtype-lo i64, rcode i64, ancount i64) (data []byte) {
     data[2] = 0x81
     data[3] = 0x80 | rcode
 
-    #{overflow=wrap}
     data[4] = (1 >> 8) & 255
     data[5] = 1 & 255
     data[6] = (ancount >> 8) & 255

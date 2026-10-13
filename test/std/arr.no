@@ -30,7 +30,7 @@ t-mutate = () {
 
 t-max = () {
     a = [1, 2, 3]
-    mx ?i64 = a.max()
+    mx = a.max()
     mx: {
         ok(v) -> runner.eq(v, 3, 'arr.max == 3')
 
@@ -42,7 +42,7 @@ t-max = () {
 
 t-min = () {
     a = [3, 1, 2]
-    mn ?i64 = a.min()
+    mn = a.min()
     mn: {
         ok(v) -> runner.eq(v, 1, 'arr.min == 1')
 

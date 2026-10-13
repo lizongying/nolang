@@ -25,19 +25,19 @@
 ; ── # std/number：f64.sqrt（唯一仍為 LLVM 硬件內建的 f64 方法）──
 ; 修復前 4.0.sqrt() 讀到未初始化堆疊，實測值為 500000 或 0（不確定）。
 t-sqrt = () {
-    four f64 = 4.0
-    r f64 = four.sqrt()
+    four = 4.0
+    r = four.sqrt()
     runner.f64-eq(r, 2.0, 0.000001, '# std/number: 4.0.sqrt() == 2')
 
-    two f64 = 2.0
-    r2 f64 = two.sqrt()
+    two = 2.0
+    r2 = two.sqrt()
     runner.f64-eq(r2, 1.4142135623730951, 0.000001, '# std/number: 2.0.sqrt() == 1.41421')
 }
 
 ; asin/acos/cbrt 都是 .no 實作，但它們內部呼叫 .sqrt()——
 ; 樁被遮蔽時它們會一起壞掉（asin(0.5) 曾回傳 pi/2）。
 t-inverse-trig-needs-sqrt = () {
-    h f64 = 0.5
+    h = 0.5
     runner.f64-eq(h.asin(), 0.5235987755982989, 0.000001, '# std/number: asin(0.5)')
     runner.f64-eq(h.acos(), 1.0471975511965979, 0.000001, '# std/number: acos(0.5)')
 }
@@ -64,12 +64,12 @@ t-get-wd = () {
 
 ; ── # std/vec：vec-push（切片自動增長）──
 t-vec-push = () {
-    a []i64 = [1, 2, 3]
+    a = [1, 2, 3]
     a.push(4)
     runner.eq(len(a), 4, '# std/vec: push 後 len == 4')
 
     ; 逐元素讀回（避免靜態下標越界檢查），和必須是 10
-    sum i64 = 0
+    sum = 0
     i <- [0..len(a)): {
         #{overflow=wrap}
         sum = sum + a[i]

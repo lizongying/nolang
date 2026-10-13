@@ -17,7 +17,7 @@ salt16 = () (s []byte) {
     s = with-cap(16)
     i <- [0..16): {
 
-        #{index-out=zero, overflow=wrap}
+        #{index-out=zero}
         s[i] = i
     }
 }

@@ -9,7 +9,7 @@
 
 # /test/runner
 
-hex-chars str = '0123456789abcdef'
+hex-chars = '0123456789abcdef'
 
 ; 位元組陣列 → hex 字串（逐字元建構）
 bhex = (data []byte) (hex str) {
@@ -106,10 +106,10 @@ DER [512]byte = [
 ]
 
 ; OpenSSL 導出之期望值
-MOD_HEX str = 'cbac4e71d8a87e7552823ca65444818e46b866c024bf886579f3ca507c82d359488d7ba203ad5cd3ff8a3f9b3eb49b31c32a1126685175a8cf256e385912d2b0d90f9aa77e4fead03cf28b1a847fe359da40b6bf6c9b53ef7cc777d1f424d7bff1dd0d9b2cad35c25f6c5569b8058232dbe9ba07425d5dba96e5f09dfc35f5c5'
+MOD_HEX = 'cbac4e71d8a87e7552823ca65444818e46b866c024bf886579f3ca507c82d359488d7ba203ad5cd3ff8a3f9b3eb49b31c32a1126685175a8cf256e385912d2b0d90f9aa77e4fead03cf28b1a847fe359da40b6bf6c9b53ef7cc777d1f424d7bff1dd0d9b2cad35c25f6c5569b8058232dbe9ba07425d5dba96e5f09dfc35f5c5'
 
 ; TBSCertificate 之 SHA-256（openssl dgst），以 8 個大端 32-bit 字表示
-FP str = 'feed7a6de5a9a299ba84ada12e2a157d04de84ead0db84d596058a84712f043f'
+FP = 'feed7a6de5a9a299ba84ada12e2a157d04de84ead0db84d596058a84712f043f'
 
 ; TBS 範圍應指向內層 SEQUENCE（跳過外層 SEQUENCE 標籤+長度）
 t-tbs-range = () {

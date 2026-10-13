@@ -42,8 +42,8 @@ t-get = () {
     m.init()
     m.put('city', 'Tokyo')
     r = m.get('city')
-    hit bool = false
-    val str = ''
+    hit = false
+    val = ''
     r: {
         ok -> {
             hit = true
@@ -58,7 +58,7 @@ t-get = () {
     runner.str-eq(val, 'Tokyo', 5, 'get returns correct value')
 
     miss = m.get('nope')
-    found bool = false
+    found = false
     miss: {
         ok -> found = true
 

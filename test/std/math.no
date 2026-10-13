@@ -17,11 +17,11 @@
 # /test/runner
 
 t-sqrt = () {
-    four f64 = 4.0
-    r f64 = four.sqrt()
+    four = 4.0
+    r = four.sqrt()
     runner.f64-eq(r, 2.0, 0.000001, '4.0.sqrt() == 2')
-    two f64 = 2.0
-    r2 f64 = two.sqrt()
+    two = 2.0
+    r2 = two.sqrt()
     runner.f64-eq(r2, 1.4142135623730951, 0.000001, '2.0.sqrt()')
 }
 
@@ -55,16 +55,16 @@ t-hypot = () {
 
 t-trig = () {
     z = 0.0
-    s f64 = z.sin()
+    s = z.sin()
     runner.f64-eq(s, 0.0, 0.000001, 'sin(0) == 0')
-    c f64 = z.cos()
+    c = z.cos()
     runner.f64-eq(c, 1.0, 0.000001, 'cos(0) == 1')
-    t f64 = z.tan()
+    t = z.tan()
     runner.f64-eq(t, 0.0, 0.000001, 'tan(0) == 0')
 
     ; sin(pi/2) == 1
     half = 3.141592653589793 / 2.0
-    s2 f64 = half.sin()
+    s2 = half.sin()
     runner.f64-eq(s2, 1.0, 0.000001, 'sin(pi/2) == 1')
 
     ; asin/cos 互逆：asin(sin(0.5)) == 0.5
@@ -73,7 +73,7 @@ t-trig = () {
     runner.f64-eq(v1, 0.5, 0.000001, 'asin(sin(0.5)) == 0.5')
     v2 f64 = a.cos().acos()
     runner.f64-eq(v2, 0.5, 0.000001, 'acos(cos(0.5)) == 0.5')
-    v3 f64 = a.atan()
+    v3 = a.atan()
     runner.f64-eq(v3, 0.4636476090008061, 0.000001, 'atan(0.5)')
 }
 
@@ -86,13 +86,13 @@ t-fmod = () {
 
 t-deg-rad = () {
     pi = 3.141592653589793
-    d f64 = pi.degrees()
+    d = pi.degrees()
     runner.f64-eq(d, 180.0, 0.000001, 'pi.degrees() == 180')
-    half180 f64 = 180.0
-    r f64 = half180.radians()
+    half180 = 180.0
+    r = half180.radians()
     runner.f64-eq(r, pi, 0.000001, '180.0.radians() == pi')
-    zero f64 = 0.0
-    d2 f64 = zero.degrees()
+    zero = 0.0
+    d2 = zero.degrees()
     runner.f64-eq(d2, 0.0, 0.000001, '0.0.degrees() == 0')
 }
 
@@ -106,119 +106,119 @@ t-clamp = () {
 }
 
 t-cbrt = () {
-    v27 f64 = 27.0
-    r f64 = v27.cbrt()
+    v27 = 27.0
+    r = v27.cbrt()
     runner.f64-eq(r, 3.0, 0.000001, '27.0.cbrt() == 3')
-    neg8 f64 = 0.0 - 8.0
-    n f64 = neg8.cbrt()
+    neg8 = 0.0 - 8.0
+    n = neg8.cbrt()
     runner.f64-eq(n, -2.0, 0.000001, '(-8.0).cbrt() == -2')
 }
 
 t-rounding = () {
-    v1 f64 = 2.1
-    c f64 = v1.ceil()
+    v1 = 2.1
+    c = v1.ceil()
     runner.f64-eq(c, 3.0, 0.000001, 'ceil(2.1) == 3')
-    v2 f64 = 2.9
-    f f64 = v2.floor()
+    v2 = 2.9
+    f = v2.floor()
     runner.f64-eq(f, 2.0, 0.000001, 'floor(2.9) == 2')
-    v3 f64 = 2.5
-    r f64 = v3.round()
+    v3 = 2.5
+    r = v3.round()
     runner.f64-eq(r, 3.0, 0.000001, 'round(2.5) == 3')
-    v4 f64 = 2.4
-    r2 f64 = v4.round()
+    v4 = 2.4
+    r2 = v4.round()
     runner.f64-eq(r2, 2.0, 0.000001, 'round(2.4) == 2')
-    v5 f64 = 2.9
-    t f64 = v5.trunc()
+    v5 = 2.9
+    t = v5.trunc()
     runner.f64-eq(t, 2.0, 0.000001, 'trunc(2.9) == 2')
-    v6 f64 = -2.9
-    n f64 = v6.trunc()
+    v6 = -2.9
+    n = v6.trunc()
     runner.f64-eq(n, -2.0, 0.000001, 'trunc(-2.9) == -2')
 }
 
 t-hyperbolic = () {
-    z f64 = 0.0
-    s f64 = z.sinh()
+    z = 0.0
+    s = z.sinh()
     runner.f64-eq(s, 0.0, 0.000001, 'sinh(0) == 0')
-    c f64 = z.cosh()
+    c = z.cosh()
     runner.f64-eq(c, 1.0, 0.000001, 'cosh(0) == 1')
-    t f64 = z.tanh()
+    t = z.tanh()
     runner.f64-eq(t, 0.0, 0.000001, 'tanh(0) == 0')
-    one f64 = 1.0
-    s2 f64 = one.sinh()
+    one = 1.0
+    s2 = one.sinh()
     runner.f64-eq(s2, 1.1752011936438014, 0.000001, 'sinh(1)')
 }
 
 t-exp-log = () {
-    z f64 = 0.0
-    e f64 = z.exp()
+    z = 0.0
+    e = z.exp()
     runner.f64-eq(e, 1.0, 0.000001, 'exp(0) == 1')
-    one f64 = 1.0
-    l f64 = one.log()
+    one = 1.0
+    l = one.log()
     runner.f64-eq(l, 0.0, 0.000001, 'log(1) == 0')
-    h f64 = 2.718281828459045
-    lh f64 = h.log()
+    h = 2.718281828459045
+    lh = h.log()
     runner.f64-eq(lh, 1.0, 0.000001, 'log(e) == 1')
-    t10 f64 = 1000.0
-    l10 f64 = t10.log10()
+    t10 = 1000.0
+    l10 = t10.log10()
     runner.f64-eq(l10, 3.0, 0.000001, 'log10(1000) == 3')
-    t8 f64 = 8.0
-    l2 f64 = t8.log2()
+    t8 = 8.0
+    l2 = t8.log2()
     runner.f64-eq(l2, 3.0, 0.000001, 'log2(8) == 3')
 }
 
 t-f32-math = () {
     v f32 = 4.0
-    s f32 = v.sqrt()
+    s = v.sqrt()
     runner.f64-eq(f32-to-f64(s), 2.0, 0.000001, 'f32: 4.0.sqrt() == 2')
     a f32 = 0.0
-    sn f32 = a.sin()
+    sn = a.sin()
     runner.f64-eq(f32-to-f64(sn), 0.0, 0.000001, 'f32: 0.0.sin() == 0')
     ee f32 = 2.7182817
-    lg f32 = ee.log()
+    lg = ee.log()
     runner.f64-eq(f32-to-f64(lg), 1.0, 0.00001, 'f32: e.log() == 1')
     x f32 = 2.5
-    c f32 = x.ceil()
+    c = x.ceil()
     runner.f64-eq(f32-to-f64(c), 3.0, 0.000001, 'f32: 2.5.ceil() == 3')
     pi f32 = 3.1415927
-    dg f32 = pi.degrees()
+    dg = pi.degrees()
     runner.f64-eq(f32-to-f64(dg), 180.0, 0.0001, 'f32: pi.degrees() == 180')
     w f32 = 27.0
-    cb f32 = w.cbrt()
+    cb = w.cbrt()
     runner.f64-eq(f32-to-f64(cb), 3.0, 0.00001, 'f32: 27.0.cbrt() == 3')
     ; 負數：f32.cbrt 走「f32-to-f64 → d.cbrt() → to-f32」，符號必須保留。
     ; d.cbrt() 的接收者是具名區域變數 d，不是外層接收者 —— 這是
     ; resolveCallee 把「型別前綴 == 接收者型別」的呼叫一律當成隱式 self
     ; 時踩到的 codegen 缺陷（詳見 f64.cbrt 的 ax.log()）。
     wn f32 = 0.0 - 8.0
-    cbn f32 = wn.cbrt()
+    cbn = wn.cbrt()
     runner.f64-eq(f32-to-f64(cbn), -2.0, 0.00001, 'f32: (-8.0).cbrt() == -2')
 }
 
 t-i64-math = () {
-    v i64 = 100
+    v = 100
     s i64 = v.sqrt()
     runner.eq(s, 10, '100.sqrt() == 10')
-    big i64 = 9223372036854775807
+    big = 9223372036854775807
     bs i64 = big.sqrt()
     runner.eq(bs, 3037000499, 'i64.MAX.sqrt() == 3037000499')
-    neg i64 = -9
+    neg = -9
     ns i64 = neg.sqrt()
     runner.eq(ns, 0, '(-9).sqrt() == 0（負數域無解）')
-    zero i64 = 0
+    zero = 0
     zs i64 = zero.sqrt()
     runner.eq(zs, 0, '0.sqrt() == 0')
-    one i64 = 1
+    one = 1
     os i64 = one.sqrt()
     runner.eq(os, 1, '1.sqrt() == 1')
-    p i64 = 97
+    p = 97
     runner.is-true(p.is-prime(), '97.is-prime()')
-    twosq i64 = 2
+    twosq = 2
     runner.is-true(twosq.is-prime(), '2.is-prime()')
-    four i64 = 4
+    four = 4
     runner.is-false(four.is-prime(), '4.is-prime() == false')
-    one2 i64 = 1
+    one2 = 1
     runner.is-false(one2.is-prime(), '1.is-prime() == false')
-    zero2 i64 = 0
+    zero2 = 0
     runner.is-false(zero2.is-prime(), '0.is-prime() == false')
 }
 

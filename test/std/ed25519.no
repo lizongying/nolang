@@ -9,7 +9,7 @@
 
 # /test/runner
 
-hex-chars str = '0123456789abcdef'
+hex-chars = '0123456789abcdef'
 
 ; 小端位元組陣列 → hex 字串（逐字元建構，避免格式化補零問題）
 bhex = (data []byte) (hex str) {

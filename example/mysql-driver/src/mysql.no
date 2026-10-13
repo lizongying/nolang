@@ -1096,7 +1096,6 @@ stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
     #{overflow=wrap}
     after = cur.slice(pos + 1, cur.len-bytes())
 
-    #{overflow=wrap}
     .bound = before - vstr - after
     ok = true
 }
@@ -1120,7 +1119,6 @@ stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     #{overflow=wrap}
     after = cur.slice(pos + 1, cur.len-bytes())
 
-    #{overflow=wrap}
     .bound = before - q - sval - q - after
     ok = true
 }

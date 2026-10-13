@@ -35,7 +35,7 @@ req.init('PUT', 'http://example.com/api/item', '{"name":"test"}')
 }
 
 ; ── 測試 2: add-header ──
-ok1 bool = req.add-header('Content-Type', 'application/json')
+ok1 = req.add-header('Content-Type', 'application/json')
 {
     ok1 -> print('ok: add-header Content-Type')
 
@@ -46,7 +46,7 @@ ok1 bool = req.add-header('Content-Type', 'application/json')
 
     -> print('fail: header-count after add')
 }
-ok2 bool = req.add-header('Authorization', 'Bearer token123')
+ok2 = req.add-header('Authorization', 'Bearer token123')
 {
     ok2 && req.header-count == 2 -> print('ok: add-header Authorization')
 

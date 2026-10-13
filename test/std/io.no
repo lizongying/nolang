@@ -12,25 +12,25 @@
 ; ── 標準輸出 ──────────────────────────────────
 
 t-out = () {
-    n i64 = io.out('A')
+    n = io.out('A')
     runner.gt(n, 0, 'out returns > 0')
 }
 
 t-outln = () {
-    n i64 = io.outln('B')
+    n = io.outln('B')
     runner.gt(n, 0, 'outln returns > 0')
 }
 
 ; ── 標準錯誤 ──────────────────────────────────
 
 t-err = () {
-    n i64 = io.err('E')
+    n = io.err('E')
     ok = n >= 0
     runner.is-true(ok, 'err returns >= 0')
 }
 
 t-errln = () {
-    n i64 = io.errln('F')
+    n = io.errln('F')
     runner.gt(n, 0, 'errln returns > 0')
 }
 
@@ -38,19 +38,19 @@ t-errln = () {
 
 t-writer-stdout = () {
     w = writer.from-stdout()
-    n i64 = w.write-str('hello')
+    n = w.write-str('hello')
     runner.gt(n, 0, 'writer.write-str returns > 0')
 }
 
 t-writer-write-byte = () {
     w = writer.from-stdout()
-    n i64 = w.write-byte(65)
+    n = w.write-byte(65)
     runner.gt(n, 0, 'writer.write-byte(65) returns > 0')
 }
 
 t-writer-write-line = () {
     w = writer.from-stdout()
-    n i64 = w.write-line('test')
+    n = w.write-line('test')
     runner.gt(n, 0, 'writer.write-line returns > 0')
 }
 
@@ -58,7 +58,7 @@ t-writer-write-line = () {
 
 t-writer-stderr = () {
     w = writer.from-stderr()
-    n i64 = w.write-str('error-msg')
+    n = w.write-str('error-msg')
     runner.gt(n, 0, 'writer.stderr write-str returns > 0')
 }
 
