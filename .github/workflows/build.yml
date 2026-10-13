@@ -57,6 +57,8 @@ jobs:
 
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}' -X 'github.com/lizongying/nolang/checker.StdSigKey=${{ steps.sigkey.outputs.key }}'" -o ./../bin/no_windows_amd64.exe ./cmd/no
 
+          GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=${{ env.version_name }}' -X 'main.buildDate=${{ env.build_date }}' -X 'github.com/lizongying/nolang/checker.StdSigKey=${{ steps.sigkey.outputs.key }}'" -o ./../bin/no_windows_arm64.exe ./cmd/no
+
           # Ensure executable bit on non-Windows binaries (GitHub release
           # downloads may not preserve permissions; set +x before upload).
           chmod +x ./../bin/no_linux_amd64 ./../bin/no_linux_arm64 ./../bin/no_darwin_amd64 ./../bin/no_darwin_arm64
@@ -93,7 +95,8 @@ jobs:
             ./bin/no_linux_arm64 \
             ./bin/no_darwin_amd64 \
             ./bin/no_darwin_arm64 \
-            ./bin/no_windows_amd64.exe
+            ./bin/no_windows_amd64.exe \
+            ./bin/no_windows_arm64.exe
 
   # ── 內置 LLVM 的發布變體（靜態 libLLVM）─────────────────────────────────
   # 與上面的純 Go 產物並存：產物自帶 LLVM，使用者不必安裝 LLVM；配合 `-cc zig`
@@ -110,13 +113,14 @@ jobs:
   # 交叉編譯到全部目標」，它改用本變體後不再安裝 opt/llc，故這裡必須是全後端。
   # 下方 "Cross-compile smoke test" 步驟釘住這個能力（改回宿主裁剪會讓它失敗）。
   #
-  # 注意：cgo 無法交叉編譯（darwin 目標需要 macOS SDK、windows 需要原生工具鏈），
-  # 所以這裡是矩陣「原生 runner 原生構建」，而非一次交叉出全部平台。
-  # darwin/amd64 內置 LLVM 變體已移除：GitHub 已退役 x64 macOS runner，而 LLVM 22
-  # 起上游不再發行 x86_64-apple-darwin 預編譯包（22.1.8 的 macOS 資產只剩
-  # LLVM-<ver>-macOS-ARM64.tar.xz）。cgo 又無法交叉編譯，Rosetta 下無從取得 x86_64
-  # 的 LLVM 靜態庫，故不構建這個變體；darwin/amd64 使用者仍拿純 Go 版
-  # no_darwin_amd64（build-release 以 CGO_ENABLED=0 交叉編譯）。
+  # 注意：cgo 無法交叉編譯（windows 需原生工具鏈），所以這裡是矩陣「原生 runner 原生構建」
+  # 為主；windows/* 與 darwin/amd64 例外——它們用 zig 交叉 + 預編 LLVM 包（見下方註釋）。
+  # darwin/amd64（Intel Mac）內置 LLVM 變體：GitHub 已退役 Intel macOS runner、LLVM 22 起
+  # 上游不再發行 x86_64-apple-darwin 預編譯包。解法：build-llvm-darwin-x64.yml（手動
+  # dispatch）在 macos-latest(arm64) 上用 zig cc -target x86_64-macos.11.0.0 + 通用 SDK
+  # 兩階段交叉編好 x86_64 Mach-O 靜態庫，發佈到 Release tag llvm-22.1.8-darwin-x64；
+  # 本 workflow 的 cross=darwin 條目在 arm64 runner 上交叉消費該包（GOARCH=amd64 cgo）。
+  # arm64 runner 沒有 Rosetta，故 can_run: false（只建產物、跳過執行類測試）。
   # windows/* 改為「端到端 Linux 交叉編譯」（不再用 Windows runner）：
   #   windows-amd64 LLVM ← linux-amd64 (ubuntu-latest) 用 zig 交叉 x86_64-windows-gnu
   #   windows-arm64 LLVM ← linux-arm64 (ubuntu-24.04-arm) 用 zig 交叉 aarch64-windows-gnu
@@ -160,6 +164,22 @@ jobs:
             zig_arch: aarch64
             llvm_host_target: aarch64
             ext: ""
+          # darwin/amd64：在 arm64 mac runner 上用 zig 交叉編譯 GOARCH=amd64 的 Mach-O，
+          # LLVM 靜態庫由 build-llvm-darwin-x64.yml（手動 dispatch）預編好。
+          # arm64 runner 無 Rosetta 跑不了 x86_64 產物 → can_run: false。
+          - os: macos-latest
+            asset: no-llvm_darwin_amd64
+            go_arch: arm64
+            zig_arch: aarch64
+            llvm_host_target: x86
+            ext: ""
+            cross: "darwin"
+            goos: darwin
+            goarch: amd64
+            zig_target: x86_64-macos.11.0.0
+            llvm_tag: llvm-22.1.8-darwin-x64
+            llvm_asset: LLVM-22.1.8-darwin-x64-llvm-dev.tgz
+            can_run: false
           # windows/* 端到端 Linux 交叉編譯（zig cc/c++ -target *-windows-gnu）。
           # LLVM 預編譯包由 build-llvm-windows.yml 在同一對 Linux runner 上用 zig 編好，
           # 兩邊同工具鏈 / 同 ABI (MinGW + libc++)，cgo 靜態鏈接天然對齊。
@@ -174,6 +194,7 @@ jobs:
             goos: windows
             goarch: amd64
             zig_target: x86_64-windows-gnu
+            llvm_tag: llvm-22.1.8-windows
             llvm_asset: LLVM-22.1.8-win-x64-llvm-dev.tgz
             can_run: false
           - os: ubuntu-24.04-arm
@@ -186,6 +207,7 @@ jobs:
             goos: windows
             goarch: arm64
             zig_target: aarch64-windows-gnu
+            llvm_tag: llvm-22.1.8-windows
             llvm_asset: LLVM-22.1.8-win-arm64-llvm-dev.tgz
             can_run: false
     # 所有 matrix 任务（含 cross-windows）都是硬闸：任一失败即整个 workflow 失败。
@@ -214,7 +236,9 @@ jobs:
           llvm-config-22 --version
 
       - name: "Install LLVM 22 (macOS arm64 - brew)"
-        if: runner.os == 'macOS'
+        # 跳過 cross=darwin（darwin_amd64）條目：它用預編譯的 darwin-x64 llvm-dev 包
+        # （同 windows 條目的模式），brew 的 arm64 庫鏈不了 x86_64 產物。
+        if: runner.os == 'macOS' && matrix.cross != 'darwin'
         run: |
           brew install llvm@22 zstd z3 libxml2 || brew install llvm zstd z3 libxml2
           LLVM_PREFIX=$(brew --prefix llvm@22 2>/dev/null || brew --prefix llvm)
@@ -223,8 +247,9 @@ jobs:
           sudo ln -sf "$LLVM_PREFIX/bin/llvm-config" /usr/local/bin/llvm-config-22
           llvm-config-22 --version
 
-      - name: "Download pre-built LLVM 22 (cross-windows llvm-dev from our release)"
-        if: matrix.cross == 'windows'
+      - name: "Download pre-built LLVM 22 (cross llvm-dev from our release)"
+        # windows 交叉用 zig/MinGW 包；darwin_amd64 交叉用 zig + 通用 SDK 的 x86_64 Mach-O 包。
+        if: matrix.cross == 'windows' || matrix.cross == 'darwin'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -236,21 +261,22 @@ jobs:
           # llvm-config（Linux ELF 宿主工具）+ 頭文件 + Windows COFF 靜態庫，發佈到同一
           # Release tag（llvm-22.1.8-windows）下、按架構分不同 asset。這裡按 matrix.llvm_asset 下載。
           # 因預編譯與本 workflow 的 cgo 都用 zig/libc++ 同 ABI，靜態鏈接才能對齊。
-          # 若要升級 LLVM 版本：先跑 build-llvm-windows.yml 出新包，再同步這裡的
-          # $Tag / matrix.llvm_asset 與 Build 步驟的 LLVM_CONFIG 路徑。
-          Tag="llvm-22.1.8-windows"
+          # 若要升級 LLVM 版本：先跑對應的預編 workflow（windows → build-llvm-windows.yml，
+          # darwin-amd64 → build-llvm-darwin-x64.yml）出新包，再同步這裡的
+          # Tag="${{ matrix.llvm_tag }}" / matrix.llvm_asset 與 Build 步驟的 LLVM_CONFIG 路徑。
+          Tag="${{ matrix.llvm_tag }}"
           Asset="${{ matrix.llvm_asset }}"
           # 先確認本倉庫的 Release 與資產確實存在，不存在就給出清晰指引（而非讓
           # gh 抛「Release not found」這種看不出前因後果的錯）——這個包需要手動跑
           # build-llvm-windows.yml 預編譯才會生成，首次發版很容易漏。
           if ! gh release view "$Tag" >/dev/null 2>&1; then
-            echo "::error::Windows LLVM 預編譯包不存在：本倉庫尚無 Release tag '$Tag'"
-            echo "找不到 Release '$Tag'。請先在默認分支手動觸發 .github/workflows/build-llvm-windows.yml（Actions → Run workflow，llvm_version=22.1.8）生成並上傳 '$Asset'，再重跑本發布。"
+            echo "::error::LLVM 預編譯包不存在：本倉庫尚無 Release tag '$Tag'"
+            echo "找不到 Release '$Tag'。請先在默認分支手動觸發對應 workflow（windows → build-llvm-windows.yml，darwin-amd64 → build-llvm-darwin-x64.yml；Actions → Run workflow，llvm_version=22.1.8）生成並上傳 '$Asset'，再重跑本發布。"
             exit 1
           fi
           if ! gh release view "$Tag" --json assets --jq '.assets[].name' | grep -qxF "$Asset"; then
             echo "::error::Release '$Tag' 存在，但裡面沒有資產 '$Asset'"
-            echo "Release '$Tag' 已存在但缺少預編譯資產 '$Asset'（可能上次預編譯未跑完或被刪）。請重跑 build-llvm-windows.yml 以 --clobber 重新上傳。"
+            echo "Release '$Tag' 已存在但缺少預編譯資產 '$Asset'（可能上次預編譯未跑完或被刪）。請重跑對應預編 workflow 以 --clobber 重新上傳。"
             exit 1
           fi
           gh release download "$Tag" -p "$Asset"
@@ -316,6 +342,27 @@ jobs:
             # 后续 Smoke/Upload 步骤按 bin/no-llvm${{ matrix.ext }} 引用产物，故给 Windows
             # 交叉产物补上 .exe 后缀（Linux/macOS 变体 ext 为空，无需改名）。
             mv -f bin/no-llvm "bin/no-llvm${{ matrix.ext }}"
+          elif [ "${{ matrix.cross }}" = "darwin" ]; then
+            # arm64 mac runner 交叉編譯 GOARCH=amd64 的 no-llvm（Mach-O x86_64）：
+            #   • CC/CXX = zig cc/c++ -target x86_64-macos.11.0.0（zig 0.17 只認自家 triple，
+            #     不認 clang 式 x86_64-apple-macos11）；SDK 通用（.tbd stub 含 x86_64 slice），
+            #     zig 自帶 lld 以 Mach-O 模式鏈接，實測交叉可 link。
+            #   • 必須顯式補 SDK 搜索路徑：Go 的 darwin cgo 鏈接會自帶 -lresolv 與
+            #     -framework CoreFoundation/Security（runtime/cgo、net 的需求），而 zig 0.17
+            #     交叉 -target 時不會把 -isysroot/SDKROOT 的默認 usr/lib、System/Library/Frameworks
+            #     加進搜索路徑（報 "unable to find ... searched paths: none"）。實測湊齊
+            #     -isysroot（解析 tbd 裡的絕對依賴如 /usr/lib/libobjc.A.dylib）+ -L$SDK/usr/lib
+            #     + -F$SDK/System/Library/Frameworks 三者才能鏈通——CLT SDK 即可，全 Xcode 同路徑結構。
+            #   • LLVM_CONFIG 指向預編包裡的 arm64 Mach-O llvm-config（預編機與本機同宿主，
+            #     --system-libs 天然對路，無 windows 包那種 host/target 錯位、不需 LLVM_LD_FLAGS_DROP）。
+            #   • 顯式傳 LLVM_STATIC_EXTRA_LIBS=-lc++，蓋掉 Makefile 在 Darwin 分支預設追加的
+            #     -L$(brew --prefix)/lib（brew 路徑對交叉無意義，zig 自帶 libc++，實測靜鏈 libc++）。
+            #   • GOOS=darwin GOARCH=amd64 的 cgo 交叉由 Go 官方支持（同機不同 arch）。
+            MAC_SDK="$(xcrun --show-sdk-path)"
+            export CC="zig cc -target ${{ matrix.zig_target }} -isysroot $MAC_SDK -L$MAC_SDK/usr/lib -F$MAC_SDK/System/Library/Frameworks"
+            export CXX="zig c++ -target ${{ matrix.zig_target }} -isysroot $MAC_SDK -L$MAC_SDK/usr/lib -F$MAC_SDK/System/Library/Frameworks"
+            export GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" CGO_ENABLED=1
+            make no-llvm FULLLLVM=1 LLVM_CONFIG="$LLVM_DEV/bin/llvm-config" LLVM_STATIC_EXTRA_LIBS="-lc++" LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           else
             make no-llvm FULLLLVM=1 LLVM_CONFIG=llvm-config-22 LLVM_HOST_TARGET="${{ matrix.llvm_host_target }}"
           fi

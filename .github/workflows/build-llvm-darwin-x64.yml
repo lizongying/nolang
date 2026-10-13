@@ -1,0 +1,201 @@
+name: build-llvm-darwin-x64
+
+# ── 手動預編譯：macOS x86_64 (Intel) LLVM 22.1.8 llvm-dev（含 llvm-config + 靜態庫）──
+# 觸發方式：Actions 頁 →「Run workflow」→ 手動 dispatch。
+#
+# 🔴 為什麼要預編：GitHub 已退役 Intel macOS runner，而 LLVM 22 起上游不再發行
+#   x86_64-apple-darwin 預編譯包（22.1.8 的 macOS 資產只剩 LLVM-<ver>-macOS-ARM64.tar.xz），
+#   brew 在 macos-latest（arm64）也只給 arm64 bottle。consumer（build.yml 的 darwin_amd64
+#   條目）要在 arm64 runner 上交叉鏈出 no-llvm_darwin_amd64，缺的就是 x86_64 的
+#   LLVM 靜態庫——在這裡用 zig cc/c++ -target x86_64-macos.11.0.0 + 通用 macOS SDK
+#   （SDK 的 .tbd stub 含 x86_64 slice，實測 zig 交叉鏈 Mach-O x86_64 可行）從源碼編好。
+#   注意 zig 0.17 只認自家 triple 寫法 x86_64-macos.11.0.0，不認 clang 式
+#   x86_64-apple-macos11（報 UnknownOperatingSystem）。
+#
+# 🔴 兩階段交叉（同 build-llvm-windows.yml 的固有要求）：
+#   LLVM 構建期要跑 host 工具 llvm-tblgen（生成 *.inc）。只覆蓋編譯器為 zig 交叉器時
+#   CMake 會嘗試執行 x86_64 的 tblgen——arm64 runner 沒裝 Rosetta 就跑不了。故：
+#     Stage A（native，系統 Apple clang）：只編 llvm-tblgen + llvm-config，產出 arm64
+#       原生 host 工具。
+#     Stage B（cross，zig -target x86_64-macos.11.0.0 + CMAKE_SYSTEM_NAME=Darwin）：用
+#       -DLLVM_NATIVE_TOOL_DIR 指向 Stage A 的 bin，專心產出 x86_64 Mach-O 靜態庫與頭文件。
+#   打包時把 Stage A 的 arm64 llvm-config 放進包 bin/——consumer 在 macos-latest（arm64）
+#   執行它取 --cflags/--link-static；它按自身位置推前綴，對可遷移解壓路徑正確。
+#   與 windows 包不同點：這顆 llvm-config 的宿主就是 consumer 的宿主（macOS），
+#   --system-libs 天然對路（不存在 -lrt/-ldl 那種 host/target 錯位問題）。
+#
+# 產物佈局（解壓前後綴可遷移；llvm-config 為 arm64 Mach-O，在 arm64 consumer 跑）：
+#   bin/llvm-config          ← arm64 macOS 宿主 ELF/Mach-O（Stage A 產出）
+#   include/                 ← llvm / llvm-c 頭（含交叉專用的 llvm/Config/*.h）
+#   lib/libLLVM*.a           ← x86_64 Mach-O 格式靜態庫（zig lld 讀取）
+#
+# ⏱ LLVM Release 全量 ~2500+ targets，macos-latest（4 核）上約 1.5~3 小時；
+#   只在升 LLVM 版本時重跑，結果發佈到 Release tag 供 build.yml 反覆消費。
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_version:
+        description: "LLVM 版本（源碼 tag：llvmorg-<ver>，需與 zig 內嵌版本對齊，預設 22.1.8）"
+        required: true
+        default: "22.1.8"
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: "llvm-22.1.8-darwin-x64"
+  ZIG_VER: "0.17.0"
+  LLVM_VERSION: "22.1.8"
+  # zig 0.17 的 darwin triple 寫法（不認 clang 式 x86_64-apple-macos11）
+  ZIG_TARGET: "x86_64-macos.11.0.0"
+
+jobs:
+  build-llvm-darwin-x64:
+    runs-on: macos-latest
+
+    steps:
+      - name: Install deps (zig + cmake/ninja fallback)
+        run: |
+          curl -L -o zig.tar.xz "https://ziglang.org/download/${{ env.ZIG_VER }}/zig-aarch64-macos-${{ env.ZIG_VER }}.tar.xz"
+          mkdir -p "$HOME/zig"
+          tar -xf zig.tar.xz -C "$HOME/zig" --strip-components=1
+          echo "$HOME/zig" >> "$GITHUB_PATH"
+          "$HOME/zig/zig" version
+          # GitHub macOS image 自帶 cmake/ninja；缺失才 brew（防 image 精簡）
+          command -v cmake >/dev/null || brew install cmake
+          command -v ninja >/dev/null || brew install ninja
+
+      - name: Create zig cc/c++/ar/ranlib wrappers for ${{ env.ZIG_TARGET }}
+        run: |
+          # zig 是 multi-call，CMake 需要單一可執行檔（同 build-llvm-windows.yml）。
+          # -target 寫死進腳本，讓 Stage B 全程以 x86_64 macOS ABI 產出 Mach-O 物件與靜態庫。
+          ZIG="$HOME/zig/zig"
+          printf '#!/bin/sh\nexec "%s" cc -target %s "$@"\n' "$ZIG" "${{ env.ZIG_TARGET }}" > "$HOME/zig/zigcc"
+          printf '#!/bin/sh\nexec "%s" c++ -target %s "$@"\n' "$ZIG" "${{ env.ZIG_TARGET }}" > "$HOME/zig/zigcxx"
+          printf '#!/bin/sh\nexec "%s" ar "$@"\n' "$ZIG" > "$HOME/zig/zigar"
+          printf '#!/bin/sh\nexec "%s" ranlib "$@"\n' "$ZIG" > "$HOME/zig/zigranlib"
+          chmod +x "$HOME/zig/zigcc" "$HOME/zig/zigcxx" "$HOME/zig/zigar" "$HOME/zig/zigranlib"
+
+      - name: Download LLVM ${{ env.LLVM_VERSION }} source
+        run: |
+          v="${{ env.LLVM_VERSION }}"
+          curl -L -f -o llvm-src.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-$v/llvm-project-$v.src.tar.xz"
+          tar -xf llvm-src.tar.xz
+          mv "llvm-project-$v.src" llvm-src
+
+      - name: Stage A - configure & build NATIVE llvm-tblgen + llvm-config
+        run: |
+          # 用系統 Apple clang（arm64 原生 Mach-O），產出可在本 runner 執行的 host 工具。
+          # ⚠️ LLVM_TARGETS_TO_BUILD 必須與 Stage B 一致（四後端）：打包進去的 llvm-config
+          #    的 --components/--targets-built 由這個宏決定，consumer 端 Makefile 據 --components
+          #    推 LLVM_STATIC_COMPONENTS 再 --link-static 鏈庫；後端漏了會 undefined symbol。
+          cmake -G Ninja -S llvm-src/llvm -B llvm-native \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM;WebAssembly" \
+            -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_BUILD_UTILS=OFF
+          cmake --build llvm-native --target llvm-tblgen llvm-config
+          test -x llvm-native/bin/llvm-tblgen || { echo "::error::native llvm-tblgen missing"; exit 1; }
+          test -x llvm-native/bin/llvm-config || { echo "::error::native llvm-config missing"; exit 1; }
+
+      - name: Stage B - configure CROSS build (zig x86_64-macos, static libs)
+        run: |
+          # BUILD_SHARED_LIBS=OFF → 產出各元件靜態 .a（llvm-config --link-static 要這些）。
+          # CMAKE_SYSTEM_NAME=Darwin + CMAKE_OSX_ARCHITECTURES=x86_64 → CMake 進入交叉模式：
+          #   不嘗試執行目標端工具，改用 LLVM_NATIVE_TOOL_DIR 的 Stage A arm64 tblgen；
+          #   -arch x86_64 旗標 zig cc 接受（實測 ok）。
+          # CMAKE_OSX_SYSROOT：SDK 的 .tbd stub 含 x86_64 slice，交叉鏈 Mach-O 靠它。
+          # CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY → configure 期測試只編靜態庫、
+          #   不去鏈接/運行 x86_64 exe（arm64 runner 無 Rosetta 會 bad CPU type）。
+          # 元件名必須用「llvm-libraries」（不是 llvm-libs）。關掉可選外部依賴避免交叉找不到。
+          PREFIX="$GITHUB_WORKSPACE/llvm-dev-darwin-x64"
+          mkdir -p "$PREFIX"
+          NATIVE_BIN="$GITHUB_WORKSPACE/llvm-native/bin"
+          cmake -G Ninja -S llvm-src/llvm -B llvm-cross \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DCMAKE_SYSTEM_NAME=Darwin \
+            -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)" \
+            -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DCMAKE_C_COMPILER="$HOME/zig/zigcc" \
+            -DCMAKE_CXX_COMPILER="$HOME/zig/zigcxx" \
+            -DCMAKE_ASM_COMPILER="$HOME/zig/zigcc" \
+            -DCMAKE_AR="$HOME/zig/zigar" \
+            -DCMAKE_RANLIB="$HOME/zig/zigranlib" \
+            -DLLVM_NATIVE_TOOL_DIR="$NATIVE_BIN" \
+            -DLLVM_HOST_TRIPLE=x86_64-apple-macos11 \
+            -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-apple-macos11 \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM;WebAssembly" \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_BUILD_UTILS=OFF \
+            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-headers;llvm-libraries"
+
+      - name: Stage B - build + install x86_64 Mach-O static libraries
+        run: |
+          # install-<component> 目標驅動構建（同 windows 版；不要用 llvm-libs umbrella
+          # 或 distribution 目標——前者不存在、後者不落 prefix）。
+          cmake --build llvm-cross --target install-llvm-headers install-llvm-libraries
+
+      - name: Add native llvm-config + verify prefix
+        run: |
+          PREFIX="$GITHUB_WORKSPACE/llvm-dev-darwin-x64"
+          # 把 Stage A 的 arm64 llvm-config 放進包 bin/，consumer 在 arm64 runner 執行它。
+          mkdir -p "$PREFIX/bin"
+          cp "$GITHUB_WORKSPACE/llvm-native/bin/llvm-config" "$PREFIX/bin/llvm-config"
+          if [ ! -x "$PREFIX/bin/llvm-config" ]; then
+            echo "::error::install did not produce $PREFIX/bin/llvm-config"
+            find "$PREFIX" -maxdepth 3 -print | head -50
+            exit 1
+          fi
+          "$PREFIX/bin/llvm-config" --version
+          LIBDIR=$("$PREFIX/bin/llvm-config" --libdir)
+          echo "libdir=$LIBDIR"
+          COUNT=$(find "$LIBDIR" -name 'libLLVM*.a' | wc -l)
+          echo "static libs: $COUNT"
+          [ "$COUNT" -ge 1 ] || { echo "::error::no static libLLVM*.a found under $LIBDIR"; exit 1; }
+          # 抽一顆庫驗證 arch 必須是 x86_64（防交叉配置靜默失效、又編出 arm64 庫）
+          SAMPLE=$(find "$LIBDIR" -name 'libLLVMSupport.a' | head -1)
+          file "$SAMPLE"
+          file "$SAMPLE" | grep -q "x86_64" || { echo "::error::$SAMPLE is not x86_64 Mach-O"; exit 1; }
+
+      - name: Package llvm-dev archive
+        run: |
+          PREFIX="$GITHUB_WORKSPACE/llvm-dev-darwin-x64"
+          ASSET="LLVM-${{ env.LLVM_VERSION }}-darwin-x64-llvm-dev.tgz"
+          # -C "$PREFIX" . → 归档根就是 bin/include/lib（无外层目录），consumer 直接
+          # tar -xzf 到目标前缀即得 <prefix>/bin/llvm-config。
+          tar -czf "$ASSET" -C "$PREFIX" .
+          echo "ASSET=$ASSET" >> "$GITHUB_ENV"
+          ls -lh "$ASSET"
+
+      - name: Upload to GitHub Release (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ env.RELEASE_TAG }}"
+          # 本 workflow 無 actions/checkout，CWD 不是 git 倉庫，gh 無法自動推目標倉庫
+          # （報「failed to run git: fatal: not a git repository」）。必須顯式帶 --repo。
+          REPO="${{ github.repository }}"
+          gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$REPO" \
+                 --title "Pre-built macOS x86_64 LLVM ${LLVM_VERSION} (zig + universal SDK) for no-llvm" \
+                 --notes "Cross-built on arm64 macOS via zig cc/c++ -target x86_64-macos.11.0.0 against the universal macOS SDK. Two-stage cross build; contains an arm64-runnable llvm-config + x86_64 Mach-O static libs (libLLVM*.a). Consumed by build.yml build-llvm-variants (cross=darwin entry)." \
+            || true
+          gh release upload "$TAG" "${{ env.ASSET }}" --repo "$REPO" --clobber
