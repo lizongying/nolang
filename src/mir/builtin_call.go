@@ -572,6 +572,14 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		ev++
 		if _, truncated := cl.TruncArgs[i]; truncated {
 			srcTy, srcVal := c.loadVal(av)
+			// D6 unified option rule: signed-int arithmetic yields `?T` even under
+			// `#{overflow=...}` (the annotation only suppresses the err arm), so a
+			// truncated builtin arg can arrive as %option. Peel the scalar payload
+			// before coercing — `coerce("%option", …, iN)` has no widening rule and
+			// would fail the build. Mirrors emitArith's operand unwrap.
+			if tl := clibLLVMType(cl.TruncArgs[i]); srcTy == "%option" && isIntType(tl) {
+				srcTy, srcVal = c.unwrapOptionOperand(av, srcTy, srcVal, tl)
+			}
 			v := c.coerce(srcTy, srcVal, clibLLVMType(cl.TruncArgs[i]))
 			if v == "" {
 				c.fail("builtin %s: cannot coerce arg %d from %s to %s in func %s", inst.Sym, i, srcTy, lt, f.Name)
@@ -605,6 +613,11 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			continue
 		}
 		srcTy, srcVal := c.loadVal(av)
+		// %option into a scalar C argument: peel the payload (see the TruncArgs
+		// note above — same D6 unified-option-rule rationale).
+		if srcTy == "%option" && isIntType(lt) {
+			srcTy, srcVal = c.unwrapOptionOperand(av, srcTy, srcVal, lt)
+		}
 		v := c.coerce(srcTy, srcVal, lt)
 		if v == "" {
 			c.fail("builtin %s: cannot coerce arg %d from %s to %s in func %s", inst.Sym, i, srcTy, lt, f.Name)

@@ -9,9 +9,10 @@ Subcommands
 -----------
 plan     Resolve the version to release, list commits since the last tag and
          print the exact commands to run. Never mutates the repo.
-         First checks the latest *published* release: if the highest local tag
-         has no matching release (the tag push action failed), it REUSES that
-         tag instead of bumping +1 and prints force re-push commands.
+         First checks whether the highest local tag has a *published* release
+         (/releases/tags/<tag>); if not, the tag push action failed, so it
+         REUSES that tag instead of bumping +1 and prints force re-push
+         commands.
          A dirty working tree is NOT a blocker: pending changes are reported and
          get committed together with HISTORY.md in the release commit.
 apply    Prepend a `## vX.Y.Z` section to HISTORY.md and mirror it into the
@@ -211,42 +212,55 @@ def github_owner_repo(repo: str) -> tuple[str, str] | None:
     return m.group(1), m.group(2)
 
 
-def latest_release_tag(repo: str) -> str | None:
-    """Tag of the newest *published* GitHub Release.
+def tag_release_state(repo: str, tag: str) -> bool | None:
+    """Does a GitHub Release exist for `tag`?
 
     Returns:
-      ''      -> the repo has no releases yet
-      tag str -> the release that CI actually created (e.g. 'v0.3.4')
-      None    -> cannot tell (non-GitHub remote / offline / private without auth)
+      True  -> published (the tag push action succeeded)
+      False -> no release for that tag (the action failed, or the repo has
+               published none yet)
+      None  -> cannot tell (non-GitHub remote / offline / private without auth)
 
-    Used to detect the case where a tag was pushed but its release action
-    failed: the highest local tag then sits ahead of the latest published
-    release. Local tags are always >= any published release, so the check is
-    a single equality probe against /releases/latest -- no listing needed.
-    Query the public API first (no auth, works for public repos); `gh` is only
-    a fallback for private repos where `gh` carries credentials.
+    Asks about the exact tag rather than reading /releases/latest. The local
+    tag is already known, so the per-tag endpoint is directly addressable and
+    unambiguous: `latest` is ranked by *publish time*, so an unrelated release
+    (nolang ships toolchain releases such as `llvm-22.1.8-windows`) can take it
+    over and say nothing about the version tag.
+
+    Only the HTTP status is needed, so the body is discarded
+    (--compressed + -o /dev/null: ~18.6 KB -> ~2.3 KB).
+
+    `gh` is consulted to confirm a 404 when it can actually answer -- a `gh`
+    that is installed but unauthenticated (HTTP 401) must not override curl.
     """
     orr = github_owner_repo(repo)
     if not orr:
         return None
     owner, name = orr
+    endpoint = f"repos/{owner}/{name}/releases/tags/{tag}"
     curl = _try(
-        ["curl", "-s", "-f",
-            f"https://api.github.com/repos/{owner}/{name}/releases/latest"]
+        ["curl", "-s", "--compressed", "-o", os.devnull, "-w", "%{http_code}",
+         f"https://api.github.com/{endpoint}"]
     )
-    if curl is not None and curl.returncode == 0 and curl.stdout.strip():
-        m = re.search(r'"tag_name"\s*:\s*"([^"]+)"', curl.stdout)
-        if m:
-            return m.group(1)
-        if re.search(r'"message"\s*:\s*"Not Found"', curl.stdout):
-            return ""
-    gh = _try(
-        ["gh", "api", f"repos/{owner}/{name}/releases/latest", "--jq", ".tag_name"])
+    if curl is not None and curl.returncode == 0:
+        code = curl.stdout.strip()
+        if code == "200":
+            return True
+        if code == "404":
+            # An anonymous 404 is authoritative for a public repo; a private
+            # repo returns the same 404, so let an authenticated `gh` override
+            # it when it can.
+            gh = _try(["gh", "api", endpoint, "--jq", ".tag_name"])
+            if gh is not None and gh.returncode == 0:
+                return True
+            return False
+        return None
+    gh = _try(["gh", "api", endpoint, "--jq", ".tag_name"])
     if gh is not None:
         if gh.returncode == 0:
-            return gh.stdout.strip()
-        if "Not Found" in gh.stderr or "no releases" in gh.stderr.lower():
-            return ""
+            return True
+        if "Not Found" in gh.stderr or "404" in gh.stderr:
+            return False
     return None
 
 
@@ -262,9 +276,9 @@ def resolve_version(
     """Return (version, previous_version, failed_release).
 
     failed_release is '' normally. When it is set (a release tag), it means the
-    highest local tag was pushed but no matching release was published -- the
-    tag push action failed. In that case `version` reuses the current highest
-    tag instead of bumping +1, and the caller must force re-push that tag.
+    highest local tag has no published release -- the tag push action failed.
+    In that case `version` reuses the current highest tag instead of bumping +1,
+    and the caller must force re-push that tag.
     """
     vers = all_tags(repo)
     if not vers:
@@ -278,16 +292,11 @@ def resolve_version(
             raise SystemExit(
                 f"tag {requested} already exists; choose another version")
         return requested, prev, ""
-    # Default flow: before bumping +1, check whether the latest published
-    # release lags behind the highest local tag (a failed release action).
-    if check_release:
-        rel = latest_release_tag(repo)
-        if (
-            rel
-            and TAG_RE.match(rel)
-            and parse_version(rel) < prev_tuple
-        ):
-            return prev, prev, rel
+    # Default flow: before bumping +1, check whether the highest local tag was
+    # actually published. If it was not, the release action failed and the tag
+    # must be reused (not bumped) so re-pushing retriggers CI.
+    if check_release and tag_release_state(repo, prev) is False:
+        return prev, prev, prev
     nxt = "v%d.%d.%d" % (prev_tuple[0], prev_tuple[1], prev_tuple[2] + 1)
     if nxt in ["v%d.%d.%d" % v for v in vers]:
         raise SystemExit(
@@ -432,7 +441,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
     if failed_release:
         print("!!! RELEASE CHECK: the previous tag push FAILED its release action !!!")
         print(f"    highest local tag: {version}")
-        print(f"    latest published release: {failed_release}")
+        print(
+            f"    no published release found at /releases/tags/{failed_release}")
         print(
             f"    {version} was pushed but no GitHub Release was created -- CI failed.")
         print(
@@ -714,7 +724,7 @@ def main() -> int:
     p.add_argument(
         "--no-release-check",
         action="store_true",
-        help="skip the online latest-release check (offline / non-GitHub remote)",
+        help="skip the online release check (offline / non-GitHub remote)",
     )
     p.set_defaults(func=cmd_plan)
 

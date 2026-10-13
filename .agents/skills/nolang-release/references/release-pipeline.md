@@ -95,13 +95,17 @@ push tag 后 `build.yml` 负责交叉编译并 `create-release`。如果这次 a
 `release.py plan` 的发版前检查专门处理这个情况：
 
 1. 拿仓库里最高的本地 tag（`all_tags` 末位）。
-2. 联网查最新的**已发布** release（`latest_release_tag`：默认直接打公开的
-   `curl https://api.github.com/repos/<owner>/<repo>/releases/latest`，`gh api` 只在私有仓库时作为兜底）。
-   非 GitHub 远端 / 离线 / 私有未授权 → 返回 None，跳过检查。
-   本地 tag 永远 ≥ 任何已发布 release，所以只需一次等值比对，人工复核可用：
-   `git tag --list 'v*' | sort -V | tail -1` 对 `curl -sS -f .../releases/latest | grep -o '"tag_name"[^,]*'`。
-3. 若 `release tag < 最高本地 tag`，判定为 action 失败：
-   - **不 +1**，直接复用最高本地 tag（`resolve_version` 返回 `(prev, prev, rel)`）。
+2. 按 tag 精确查这个 tag 有没有**已发布** release（`tag_release_state`）：
+   `curl -s --compressed -o /dev/null -w '%{http_code}' https://api.github.com/repos/<owner>/<repo>/releases/tags/<tag>`。
+   `200` → 已发布；`404` → 未发布；非 GitHub 远端 / 离线 / 私有未授权 → `None`，跳过检查。
+   人工复核：`git tag --list 'v*' | sort -V | tail -1` 取最高 tag，再对该 tag 打上面的 curl。
+   本地已经知道要问哪个 tag，所以这个端点可直接寻址、无歧义；`/releases/latest` 按**发布时间**排名，
+   本仓库的工具链 release（如 `llvm-22.1.8-windows`）会顶掉版本 release，导致误判
+   （实测最高本地 tag `v0.4.4` 时 `latest` 回 `llvm-22.1.8-windows`），所以不用它。
+   只需要状态码，正文 `-o /dev/null` 丢弃 + `--compressed`（约 18.6 KB → 2.3 KB）。
+   `gh` 只在 curl 不可用时介入、以及用于确认匿名 404；装了但未授权的 `gh`（HTTP 401）**不会**覆盖 curl 的结论。
+3. 若 `tag_release_state` 返回 `False`（该 tag 无 release），判定为 action 失败：
+   - **不 +1**，直接复用最高本地 tag（`resolve_version` 返回 `(prev, prev, prev)`）。
    - 输出 `!!! RELEASE CHECK !!!` 与强制重推命令。
    - **因为重推会 `git tag -f` 把 tag 对齐到当前 HEAD**，tag 之后的新提交会进入同一个 release，
      所以必须用 `apply --version <tag> --update-existing` **重写现有 `## <tag>` 段落正文**（把新提交归纳进去），
@@ -112,8 +116,9 @@ GitHub Actions 的 `on: push: tags` 只在 tag **新建**时触发；同 commit 
 
 ```bash
 python3 <skill-dir>/scripts/release.py apply --version vX.Y.Z --update-existing --body-file /tmp/notes.md
+python3 <skill-dir>/scripts/release.py body --version vX.Y.Z > /tmp/release-msg.txt
 git add -A
-git commit -m "chore(release): vX.Y.Z"       # HISTORY.md 已包含新提交
+git commit -F /tmp/release-msg.txt        # commit message = HISTORY.md 段落（含新提交）
 git tag -f vX.Y.Z                        # 把 tag 对齐到当前 HEAD（含新提交）
 git push origin <branch>                 # 先推分支，保证 CI checkout 拿得到新 HISTORY.md
 git push origin :refs/tags/vX.Y.Z        # 删掉远端那个「有 tag 无 release」的旧 tag
@@ -121,7 +126,7 @@ git push origin vX.Y.Z                   # 重新 push，触发 create-release a
 ```
 
 这是唯一允许对同名 tag 施 `-f` / 删远端重推的场景——目的是重跑失败的 action，而不是篡改一个已发布的版本。
-正常发版（release 与本地 tag 一致）下，碰到已存在的 tag 仍一律改用更高版本号，绝不复用。
+正常发版（最高本地 tag 已有 release）下，碰到已存在的 tag 仍一律改用更高版本号，绝不复用。
 
 离线或非 GitHub 远端跳过联网检查：`release.py plan --no-release-check`。
 

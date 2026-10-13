@@ -1,0 +1,26 @@
+; t57-type-alias.no — s53 钉桩：頂層型別別名（union / 單型 / fn 型 / 登記表）與反例
+;   正例：union 平坦 UnionType；單型 slot1 摘要 + CHILD NamedType；
+;         別名引用別名（typeAliasNames）；fn 型單群 `()` 與雙群 `(n i64) (r i64)`。
+;   反例：頂層 `1 | 2` 位元或 let；頂層 `x = (expr)` 括號式；函式內 `bv | (1 << 2)`。
+
+uni = i8 | f64 | str
+
+single-alias = i64
+
+ref-alias = single-alias
+
+cb0 = ()
+cb2 = (n i64) (r i64)
+
+or-value = 1 | 2
+
+x = (or-value)
+
+runner = (v uni) (acc str) {
+
+    #{overflow=wrap}
+    bv = 3
+    t0 = bv | (1 << 2)
+    acc = 'u'
+    acc = t0
+}

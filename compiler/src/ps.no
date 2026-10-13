@@ -76,6 +76,8 @@ psst {
     fvT []str
     gvN []str
     gvT []str
+    alN []str
+    dclT []str
 }
 
 ; ── s51：parse 期型別推斷表（對齊 Go parser 的 funcSignatures / VarTypes / FuncVarTypes / DeclaredVars）──
@@ -110,6 +112,8 @@ new = (src str) (r psst) {
         fvT: with-cap(8)
         gvN: with-cap(8)
         gvT: with-cap(8)
+        alN: with-cap(4)
+        dclT: with-cap(8)
     }
 }
 
@@ -525,6 +529,31 @@ ps-apply-overflow = (t ast, idx i64, mode str) {
     }
 }
 
+; ps-apply-builtin：s52——把前置 `#{buildin}`/`#{intrinsic}` 註解標記寫到緊後陳述節點。
+;   Go attachAnnotations（annotation.go:349–378）：對 FunctionDefinition——
+;     e.Key=='intrinsic' ⇒ fd.Intrinsic（渲染 slot5 'true'）；
+;     e.Key=='buildin' ⇒ fd.BuiltinStub（slot6 'true'）；`#{buildin=NAME}` 之 Value ⇒ fd.BuiltinName（slot7 字串，語料暫無此形、預留）；
+;   對 TaggedEnumDefinition——`#{buildin}` ⇒ n.Builtin（slot1 'true'，name=slot0、variants=c2）。
+;   槽序由 dump.go:272–279／371–374 渲染欄位序列導出（name0, colonSyntax1, methodDef2, skipNamingCheck3, overflow4, intrinsic5, builtinStub6, builtinName7, builtinGroup8）。
+ps-apply-builtin = (t ast, idx i64, bs i64, intr i64, bn str) {
+    idx > 0 -> {
+        k = ast.kind-at(t, idx)
+        {
+            k == asp.K_FUNCTION_DEFINITION -> {
+                intr == 1 -> ast.set-slot(t, idx, 5, ast.put-str(t, 'true'))
+
+                bs == 1 -> ast.set-slot(t, idx, 6, ast.put-str(t, 'true'))
+
+                bn != '' -> ast.set-slot(t, idx, 7, ast.put-str(t, bn))
+            }
+
+            k == asp.K_TAGGED_ENUM_DEFINITION -> {
+                bs == 1 -> ast.set-slot(t, idx, 1, ast.put-str(t, 'true'))
+            }
+        }
+    }
+}
+
 ; ps-parse-use：`# path` 匯入陳述（對應 Go parseUseStatement、stmt.go:45）。
 ;   path 由可選前導 `/`（QUO）與以 `/`、`.` 分隔的 IDENT 段串接（joinPathParts）。
 ;   語料恆為純路徑（無 `.fn` / `as`）⇒ function/alias 恆空、as 恆 false。
@@ -573,6 +602,9 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
     ;   `#{` 後或頂層 `,` 後（expect_key）；值內 ident（如 wrap）/ 括號（[ ] ( )）不計。去重鏡像 dedupeAnnotationEntries（同鍵名計一次）。
     ;   ⚠️ 連群組（空行分隔）合併後一起去重；keys 空（無註解）時整段跳過 ⇒ 對無 `#{...}` 檔案零回歸。
     ovf = ''
+    bs = 0; s52：`#{buildin}` 標記（鏡像 Go fd.BuiltinStub）
+    intr = 0; s52：`#{intrinsic}` 標記（鏡像 Go fd.Intrinsic）
+    bn = ''; s52：`#{buildin=NAME}` 之 NAME（語料暫無、預留）
     keys []str = with-cap(4)
     (ps-peek(p) == tok.HASH_LBRACE) {
         ps-bump(p); 消費 #{（進入群組，depth=1）
@@ -609,12 +641,17 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                         z = z + 1
                     }
                     found == 0 -> keys.push(kn)
+
+                    ; s52：buildin/intrinsic 為 FunctionDefinition・TaggedEnum 的標記鍵（重複出現無害，Go 去重後仍命中）
+                    kn == 'buildin' -> bs = 1
+                    kn == 'intrinsic' -> intr = 1
                     ps-bump(p); 消費鍵名
                     expect_key = false
                     ps-peek(p) == tok.ASSIGN -> {
                         ps-bump(p); 消費 =
                         vt = ps-peek-token(p)
                         kn == 'overflow' && (vt.typ == tok.IDENT || vt.typ == tok.STRING) -> ovf = ps-normalize-overflow(vt.lit)
+                        kn == 'buildin' && (vt.typ == tok.IDENT || vt.typ == tok.STRING) -> bn = vt.lit
                     }
                 }
 
@@ -704,18 +741,34 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
             ;   原 `-> {}` 不傷是因為它是 no-op。
             handled = 0
             nxt_typ == tok.ASSIGN -> {
-                ps-bump(p); 消費 IDENT
-                ps-bump(p); 消費 ASSIGN
-                a2 = ps-peek-token(p)
-                a2.typ == tok.LPAREN -> {
 
-                    ; `= (...) {` 才是函式定義；`= (expr)` 是括號運算式（見 ps-is-func）
-                    ps-is-func(p) == 1 -> idx = ps-parse-func(t, p, name)
+                ; s53：頂層型別別名分派（Go stmt.go:151-170：isFnDef → isFnTypeAlias → looksLikeEqAlias → let）。
+                ;   FD 判定仍由原 ps-is-func 臂兜后；别名形在 ps-is-func 场景必回 false，故先判别名。
+                ;   ⚠️ 全臂带守卫（aliased == 0 &&）——同块尾裸 `->` 臂会被当尾随无条件陈述执行（见 handled 守则），
+                ;   若不守卫生成别名后默认臂会重消费 token 并覆写 idx。
+                aliased = 0
+                p.fn == '' && ps-peek-at(p, 2) == tok.LPAREN && ps-fn-alias-shape(p) == 1 -> {
+                    idx = ps-parse-fn-type-alias(t, p, name)
+                    aliased = 1
+                }
+                aliased == 0 && p.fn == '' && ps-peek-at(p, 2) != tok.LPAREN && ps-looks-eq-alias(p) == 1 -> {
+                    idx = ps-parse-type-alias(t, p, name)
+                    aliased = 1
+                }
+                aliased == 0 -> {
+                    ps-bump(p); 消費 IDENT
+                    ps-bump(p); 消費 ASSIGN
+                    a2 = ps-peek-token(p)
+                    a2.typ == tok.LPAREN -> {
+
+                        ; `= (...) {` 才是函式定義；`= (expr)` 是括號運算式（見 ps-is-func）
+                        ps-is-func(p) == 1 -> idx = ps-parse-func(t, p, name)
+
+                        -> idx = ps-parse-let(t, p, name)
+                    }
 
                     -> idx = ps-parse-let(t, p, name)
                 }
-
-                -> idx = ps-parse-let(t, p, name)
                 handled = 1
             }
 
@@ -984,6 +1037,9 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
         -> idx = ps-parse-expr-stmt(t, p)
     }
     ovf != '' -> ps-apply-overflow(t, idx, ovf)
+
+    ; s52：`#{buildin}`/`#{intrinsic}` 標記僅對 FunctionDefinition/TaggedEnumDefinition 生效（其餘 kind 由 helper 忽略）
+    bs == 1 || intr == 1 -> ps-apply-builtin(t, idx, bs, intr, bn)
     idx
 }
 
@@ -1654,12 +1710,16 @@ ps-var-type = (p psst, vname str) (ty str) {
 }
 
 ; ps-mark-dcl：let 解析尾部登記宣告（Go parseLetStatement 尾：DeclaredVars 恒記 + SetFuncDeclared）。
+;   dclT【僅頂層】登記——鏡像 lowerer walk 的 declaredLocals：函式作用域每次進入 FunctionDefinition
+;   即重置（lowering.go:249），頂層名單不得被函式内區域 let 污染（s54 回歸教訓：ip/sha256-simplified/
+;   number-div-mod-clamp 皆「本作用域已出現、型别表無entry → captureTargetAllowsOption 拒」）。
 ps-mark-dcl = (p psst, vname str) {
     p.gclN.push(vname)
     p.fn != '' -> {
         p.dclF.push(p.fn)
         p.dclV.push(vname)
     }
+    p.fn == '' -> p.dclT.push(vname)
 }
 
 ; ps-is-declared：IsFuncDeclared 語意（Go resolver.go:519）——函式已被追蹤時【只】查函式對表，
@@ -1764,7 +1824,522 @@ ps-reg-let = (t ast, p psst, name str, tn i64) {
     ps-mark-dcl(p, name)
 }
 
+; ── s53：頂層型別別名（TypeAlias / UnionType / FunctionType）─────────────────────
+;   Go 權威：type.go:554 looksLikeEqualsTypeAlias、type.go:626 scanIsUnionTypeAlias、
+;   type.go:688 parseTypeAlias、type.go:433 isFunctionTypeAliasShape、type.go:512 parseFunctionTypeAlias；
+;   分派序 stmt.go:151-170（isFnDef → isFnTypeAlias → looksLikeEqAlias → let）。
+;   槽位（dump.go:316-324 渲染序）：TypeAlias slot0=name、slot1=type 摘要字串；guarded CHILD Type(kid0)、Union(kid1)。
+;   UnionType：單 KIDS 組 set-count slot0=types；FunctionType：KIDS slot0=params、slot1=results。
+;   ⚠️ 偏離說明：Go 的 isFunctionTypeAlias 無 CTX 閘、靠第二趟 saveState 試解析驗內容；
+;   noc 無法廉价試解析，統一以 p.fn == ''（頂層）閘控替代——語料函式內無 `x = (T)(T)` 別名形。
+
+; ps-is-builtin-type：Go builtInTypeNames（type.go:540）。
+ps-is-builtin-type = (s str) (r i64) {
+    {
+        s == 'i8' || s == 'i16' || s == 'i32' || s == 'i64' || s == 'i128' -> r = 1
+
+        s == 'u8' || s == 'u16' || s == 'u32' || s == 'u64' || s == 'u128' -> r = 1
+
+        s == 'f32' || s == 'f64' -> r = 1
+
+        s == 'byte' || s == 'bool' || s == 'str' || s == 'any' -> r = 1
+
+        -> {
+        }
+    }
+}
+
+; ps-alias-registered：Go p.typeAliasNames 登記表（ps-parse-type-alias/fn 式成功後 push）。
+ps-alias-registered = (p psst, s str) (r i64) {
+    i = 0
+    (i < p.alN.len()) {
+        p.alN[i].copy() == s -> r = 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; ps-scan-union：Go scanIsUnionTypeAlias（type.go:626）。呼叫點 current=IDENT name。look(j) ≙ ps-peek-at(p, 2 + j)。
+;   depth 0 下僅容 `|` 與型別操作元；陳述結束符（NEWLINE/EOF/SEMICOLON/未配对閉括號）⇒ 別名；其他二元運算子 ⇒ 位元或運算式。
+ps-scan-union = (p psst) (r i64) {
+    depth = 0
+    j = 0
+    go = true
+    (go) {
+        {
+            j > 1024 -> go = false
+
+            -> {
+                t = ps-peek-at(p, 2 + j)
+                {
+                    t == tok.NEWLINE || t == tok.EOF || t == tok.SEMICOLON -> {
+                        depth == 0 -> {
+                            r = 1
+                            go = false
+                        }
+                    }
+
+                    t == tok.LPAREN -> {
+                        okk = 1
+                        depth == 0 -> {
+                            inside = ps-peek-at(p, 3 + j)
+                            {
+                                inside == tok.IDENT || inside == tok.IN || inside == tok.RPAREN -> {
+                                }
+
+                                -> okk = 0
+                            }
+                        }
+                        okk == 1 -> depth = depth + 1
+                        okk == 0 -> {
+                            r = 0
+                            go = false
+                        }
+                    }
+
+                    t == tok.LBRACKET || t == tok.LBRACE -> depth = depth + 1
+
+                    t == tok.RBRACKET || t == tok.RPAREN || t == tok.RBRACE -> {
+                        depth == 0 -> {
+                            r = 1
+                            go = false
+                        }
+
+                        depth > 0 -> depth = depth - 1
+                    }
+
+                    t == tok.ADD || t == tok.SUB || t == tok.MUL || t == tok.QUO || t == tok.MOD || t == tok.SHL || t == tok.SHR || t == tok.AND || t == tok.XOR || t == tok.EQUALS || t == tok.NOT_EQUALS || t == tok.LESS || t == tok.LESS_EQUALS || t == tok.GREATER || t == tok.GREATER_EQUALS || t == tok.LOR || t == tok.LAND || t == tok.ASSIGN || t == tok.COLON || t == tok.QUESTION || t == tok.ARROW || t == tok.RARROW -> {
+                        depth == 0 -> {
+                            r = 0
+                            go = false
+                        }
+                    }
+
+                    -> {
+                    }
+                }
+                go == true -> {
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+            }
+        }
+    }
+}
+
+; ps-looks-eq-alias：Go looksLikeEqualsTypeAlias（type.go:554）。呼叫點 current=IDENT name、+1=ASSIGN。
+ps-looks-eq-alias = (p psst) (r i64) {
+    p.fn != '' -> return
+    t1 = ps-peek-at(p, 2)
+    t2 = ps-peek-at(p, 3)
+    {
+        t1 == tok.IDENT && t2 == tok.OR -> r = ps-scan-union(p)
+
+        t1 == tok.IDENT && (t2 == tok.NEWLINE || t2 == tok.EOF || t2 == tok.SEMICOLON) -> {
+            l1 = ps-lit-at(p, 2)
+            ps-is-builtin-type(l1) == 1 -> r = 1
+            ps-alias-registered(p, l1) == 1 -> r = 1
+        }
+
+        t1 == tok.LBRACKET && t2 == tok.RBRACKET && ps-peek-at(p, 4) == tok.IDENT -> r = 1
+
+        t1 == tok.LBRACKET && t2 == tok.INT && ps-peek-at(p, 4) == tok.RBRACKET && ps-peek-at(p, 5) == tok.IDENT -> r = 1
+
+        t1 == tok.QUESTION && t2 == tok.IDENT -> r = 1
+
+        -> {
+        }
+    }
+}
+
+; ps-fn-alias-shape：Go isFunctionTypeAliasShape（type.go:433）。look(j) ≙ ps-peek-at(p, 2 + j)。
+;   第一組 `(...)` 後必須是陳述結束符或第二組 `(...)`+陳述結束符。
+ps-fn-alias-shape = (p psst) (r i64) {
+    ps-peek-at(p, 2) != tok.LPAREN -> return
+    depth = 0
+    i = 0
+    done = 0
+    (done == 0 && i <= 256) {
+        t = ps-peek-at(p, 2 + i)
+        {
+            t == tok.EOF -> done = 1
+
+            t == tok.LPAREN -> depth = depth + 1
+
+            t == tok.RPAREN -> {
+                depth = depth - 1
+                depth == 0 -> {
+                    done = 1
+                    nx = ps-peek-at(p, 3 + i)
+                    {
+                        nx == tok.NEWLINE || nx == tok.EOF || nx == tok.SEMICOLON -> r = 1
+
+                        nx == tok.LPAREN -> {
+                            d2 = 0
+                            jj = i + 1
+                            stop2 = 0
+                            (stop2 == 0 && jj <= 256) {
+                                t2 = ps-peek-at(p, 2 + jj)
+                                {
+                                    t2 == tok.EOF -> stop2 = 1
+
+                                    t2 == tok.LPAREN -> d2 = d2 + 1
+
+                                    t2 == tok.RPAREN -> {
+                                        d2 = d2 - 1
+                                        d2 == 0 -> {
+                                            stop2 = 1
+                                            n2 = ps-peek-at(p, 3 + jj)
+                                            n2 == tok.NEWLINE || n2 == tok.EOF || n2 == tok.SEMICOLON -> r = 1
+                                        }
+                                    }
+
+                                    -> {
+                                    }
+                                }
+
+                                #{overflow=wrap}
+                                jj = jj + 1
+                            }
+                        }
+
+                        -> {
+                        }
+                    }
+                }
+            }
+
+            -> {
+            }
+        }
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; ps-parse-type-alias：Go parseTypeAlias（type.go:688）。呼叫點 current=IDENT name。
+;   union 形：平坦收集 `|` 分隔型別 → UnionType；單型形：slot1=typeString + CHILD Type。
+ps-parse-type-alias = (t ast, p psst, name str) (idx i64) {
+    ps-bump(p); 消費 IDENT
+    ps-bump(p); 消費 ASSIGN
+    ty = ps-parse-type(t, p)
+    ut = 0
+    {
+        ps-peek(p) == tok.OR -> {
+            mem []i64 = with-cap(4)
+            ty > 0 -> mem.push(ty)
+            (ps-peek(p) == tok.OR) {
+                ps-bump(p); 消費 |
+                (ps-peek(p) == tok.NEWLINE) {
+                    ps-bump(p); union 內允許換行（Go parseTypeAlias 的 NEWLINE skip 迴圈）
+                }
+                m = ps-parse-type(t, p)
+                m > 0 -> mem.push(m)
+                m == 0 -> {
+
+                    ; 防呆：解析不出就前進，避免卡死在 `|`
+                    (ps-peek(p) != tok.EOF && ps-peek(p) != tok.NEWLINE) {
+                        ps-bump(p)
+                    }
+                }
+            }
+            ut = ast.add(t, asp.K_UNION_TYPE)
+            ast.set-slot(t, ut, 0, ast.put-str(t, mem.len().to-str())); header kvc 预渲染（P-COUNT：'0' 不印）
+            ast.set-count(t, ut, 0, mem.len())
+            k = 0
+            (k < mem.len()) {
+                ast.kid-add(t, ut, mem[k])
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+            ty = 0; Go union 形 Type=nil ⇒ CHILD Type 以 0 佔位
+        }
+
+        -> {
+        }
+    }
+    idx = ast.add(t, asp.K_TYPE_ALIAS)
+    ast.set-slot(t, idx, 0, ast.put-str(t, name))
+    ut == 0 && ty > 0 -> ast.set-slot(t, idx, 1, ast.put-str(t, ast.type-string(t, ty)))
+    ast.kid-add(t, idx, ty); guarded CHILD=Type（缺席 0 佔位）
+    ast.kid-add(t, idx, ut); guarded CHILD=Union
+    p.alN.push(name); Go typeAliasNames[name]=true
+}
+
+; ps-parse-ftype-param：fn 型別名的參數/回傳值解析（Go parseFunctionType 參數規則，≠ ps-parse-func 的 FD 參數）：
+;   `name TYPE` ⇒ 有名帶型；裸 `IDENT` ⇒ **無名帶型**參數（Parameter{name: '', type: NamedType}，
+;   s53 測得 oracle 對 `x = (or-value)` 输出 `Parameter{name: , type: or-value}`）。idx=0 表非參數起點（呼叫端防呆前進）。
+ps-parse-ftype-param = (t ast, p psst) (idx i64) {
+    tk = ps-peek-token(p)
+    tk.typ != tok.IDENT -> return
+    ps-bump(p); 消費首段 IDENT
+    nxt = ps-peek(p)
+    typ = 0
+    {
+        nxt == tok.IDENT || nxt == tok.QUESTION || nxt == tok.LBRACKET -> {
+
+            ; 有名帶型：首段為參數名，其後為型別
+            typ = ps-parse-type(t, p)
+            idx = ast.add(t, asp.K_PARAMETER)
+            ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+        }
+
+        nxt != tok.IDENT && nxt != tok.QUESTION && nxt != tok.LBRACKET -> {
+
+            ; 裸 IDENT ⇒ 無名帶型：名字空槽 + NamedType
+            nt = ast.add(t, asp.K_NAMED_TYPE)
+            ast.set-slot(t, nt, 0, ast.put-str(t, tk.lit))
+            typ = nt
+            idx = ast.add(t, asp.K_PARAMETER)
+        }
+
+        -> {
+        }
+    }
+    idx > 0 -> {
+        ast.kid-add(t, idx, typ); CHILD=Type
+        ast.kid-add(t, idx, 0); CHILD=DefaultExpr 缺席佔位
+    }
+}
+
+; ps-parse-fn-type-alias：Go parseFunctionTypeAlias（type.go:512）。呼叫點 current=IDENT、+1=ASSIGN、+2=LPAREN。
+ps-parse-fn-type-alias = (t ast, p psst, name str) (idx i64) {
+    ps-bump(p); 消費 IDENT
+    ps-bump(p); 消費 ASSIGN
+    ps-bump(p); 消費 LPAREN（參數群）
+    params []i64 = with-cap(4)
+    (ps-peek(p) != tok.RPAREN && ps-peek(p) != tok.EOF) {
+        pn = ps-parse-ftype-param(t, p)
+        pn > 0 -> params.push(pn)
+        pn == 0 -> ps-bump(p); 防呆
+    }
+    ps-bump(p); 消費 RPAREN
+    outs []i64 = with-cap(4)
+
+    ; 結果群前只跳換行（Go parseFunctionType 跳 NEWLINE 找結果群；COMMENT 屬下一陳述的 doc）；
+    ;   ⚠️ 未命中第二群时必须還原 pos——吃掉陳述末換行會令頂層 doc 收集器把下行註解誤判為行尾 Comment（s53 測得）。
+    sp = p.pos
+    (ps-peek(p) == tok.NEWLINE) {
+        ps-bump(p)
+    }
+    second = 0
+    ps-peek(p) == tok.LPAREN -> {
+        ps-bump(p)
+        (ps-peek(p) != tok.RPAREN && ps-peek(p) != tok.EOF) {
+            ro = ps-parse-ftype-param(t, p)
+            ro > 0 -> outs.push(ro)
+            ro == 0 -> ps-bump(p); 防呆
+        }
+        ps-bump(p); 消費第二個 RPAREN
+        second = 1
+    }
+    second == 0 -> p.pos = sp; 單群形：退回陳述末換行
+    ft = ast.add(t, asp.K_FUNCTION_TYPE)
+    ast.set-slot(t, ft, 0, ast.put-str(t, params.len().to-str())); header params 预渲染
+    ast.set-slot(t, ft, 1, ast.put-str(t, outs.len().to-str())); header results 预渲染
+    ast.set-count(t, ft, 0, params.len())
+    ast.set-count(t, ft, 1, outs.len())
+    k = 0
+    (k < params.len()) {
+        ast.kid-add(t, ft, params[k])
+
+        #{overflow=wrap}
+        k = k + 1
+    }
+    m = 0
+    (m < outs.len()) {
+        ast.kid-add(t, ft, outs[m])
+
+        #{overflow=wrap}
+        m = m + 1
+    }
+    idx = ast.add(t, asp.K_TYPE_ALIAS)
+    ast.set-slot(t, idx, 0, ast.put-str(t, name))
+    ast.set-slot(t, idx, 1, ast.put-str(t, ast.type-string(t, ft)))
+    ast.kid-add(t, idx, ft); CHILD=Type
+    ast.kid-add(t, idx, 0); CHILD=Union 缺席佔位
+    p.alN.push(name)
+}
+
 ; ps-parse-let：解析 `name = expr`（推論型別：字面量→NamedType，SliceLiteral→SliceType(NamedType)）
+; ── s54：D6 算術 option 推斷（inferOptionArith）───────────────────────
+;   Go 權威：src/parser/lowering.go:493 inferOptionArith（walk 於 parse 後逐 LetStatement 執行）：
+;   無明示型別、非合成、值（剝括號後）為 op ∈ {+ - * / %} 的 InfixExpression 且兩側運算元
+;   皆「静态可知有號整數」時，就地合成 NullableType{NamedType{base}}（不標 inferred——
+;   dumper 對 NullableType 頭不印）並 setVarType(name, "?base")。
+;   偏離記錄：Go 在 parse 完成後才 walk，運算元查表能看到「後方才宣告」的變數；
+;   noc 單趟解析在 let 處即時查表——僅影響前向引用形（語料未見，探針釘死現狀行為）。
+
+; ps-unwrap-grouped： mirrors Go unwrapLowerExpr（lowering.go:922）——剝尽 GroupedExpression 外殼，回傳內層節點。
+ps-unwrap-grouped = (t ast, e i64) (r i64) {
+    r = e
+    go = true
+    (go) {
+        d = ast.nd-at(t, r)
+        d.kind == asp.K_GROUPED_EXPRESSION -> {
+            c = ast.kid-at(t, d.kid0)
+            c > 0 -> r = c
+            c == 0 -> go = false
+        }
+        d.kind != asp.K_GROUPED_EXPRESSION -> go = false
+    }
+}
+
+; ps-is-arith-op： Go isOptionArithOperator（lowering.go:900）——統一 option 規則覆蓋 + - * / %。
+ps-is-arith-op = (op str) (r i64) {
+    r = 0
+    op == '+' || op == '-' || op == '*' || op == '/' || op == '%' -> r = 1
+}
+
+; ps-lower-signed-int-name： Go lowerSignedIntName（lowering.go:936）——靜態型別字串是否可產生 option 的
+;   有號整數型：拒 ''/?T 前綴；剝前導 *；取最後一個 '.' 後的裸名；僅收 {int,i8,i16,i32,i64}。
+;   拒無號/i128/f32/f64/bool/byte/char/str/fd 及一切已宣告複合名（如 union 別名 num2）。
+ps-lower-signed-int-name = (typ str) (r str) {
+    r = ''
+    typ.len-bytes() == 0 -> return
+    typ.starts-with('?') -> return
+    typ.starts-with('*') -> {
+        r = ps-lower-signed-int-name(typ.slice-bytes(1, typ.len-bytes()))
+        return
+    }
+    typ == 'int' || typ.ends-with('.int') -> r = 'int'
+    typ == 'i8' || typ.ends-with('.i8') -> r = 'i8'
+    typ == 'i16' || typ.ends-with('.i16') -> r = 'i16'
+    typ == 'i32' || typ.ends-with('.i32') -> r = 'i32'
+    typ == 'i64' || typ.ends-with('.i64') -> r = 'i64'
+}
+
+; ps-signed-int-operand： Go signedIntOperandType（lowering.go:860）——回傳運算元的有號整數型別名，
+;   推不出回 ''。整數字面量恆 i64；識別符查 ps-var-type（FuncVarType 同款 fn→全域回落；
+;   self 靠 ps-parse-method-func 預登記接收者型別，鏡像 Go lowerSelfType 讀 Results[0]）；
+;   巢狀算術遞迴取較寬者（len 比較、平手取左，Go 同法）。其餘 kind（呼叫/索引/欄位…）一律拒。
+ps-signed-int-operand = (t ast, p psst, e i64) (r str) {
+    r = ''
+    e <= 0 -> return
+    u = ps-unwrap-grouped(t, e)
+    d = ast.nd-at(t, u)
+    {
+        d.kind == asp.K_INTEGER_LITERAL -> r = 'i64'
+
+        d.kind == asp.K_IDENTIFIER -> {
+            nm = ast.str-at(t, d.s0)
+            r = ps-lower-signed-int-name(ps-var-type(p, nm))
+        }
+
+        d.kind == asp.K_INFIX_EXPRESSION -> {
+            op = ast.str-at(t, d.s0)
+            ps-is-arith-op(op) == 1 -> {
+                lt = ps-signed-int-operand(t, p, ast.kid-at(t, d.kid0))
+                rt = ps-signed-int-operand(t, p, ast.kid-at(t, d.kid0 + 1))
+                lt != '' && rt != '' -> {
+                    r = lt
+                    rt.len() > lt.len() -> r = rt
+                }
+            }
+        }
+
+        -> {
+        }
+    }
+}
+
+; ps-walk-declared： Go lowerer.declaredLocals 成員判定（lowering.go:226 walk 序登記、:249 函式重置、
+;   :252 形參先入帳）——本作用域已出現的 let 目標名（含形參，無論有無型別）。
+;   函式内：dcl 對（本函式 let）+ fv 對（參數/已登記區域變數）；頂層：dclT（僅頂層 let）。
+ps-walk-declared = (p psst, vname str) (r i64) {
+    r = 0
+    i = 0
+    (i < p.dclF.len()) {
+        p.dclF[i].copy() == p.fn && p.dclV[i].copy() == vname -> r = 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    p.fn == '' -> {
+        j = 0
+        (j < p.dclT.len()) {
+            p.dclT[j].copy() == vname -> r = 1
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+    }
+    r == 0 -> {
+        k = 0
+        (k < p.fvF.len()) {
+            p.fvF[k].copy() == p.fn && p.fvV[k].copy() == vname -> r = 1
+
+            #{overflow=wrap}
+            k = k + 1
+        }
+    }
+}
+
+; ps-local-type： Go localDeclaredType（lowering.go:3377）——【僅本作用域】型別查詢，
+;   刻意不做 FuncVarType 的全域回退（防其他函式同名參數污染，Go 碼内事故註釋同述）。
+;   回 '' = 未找到（ok=false）；正序掃描後寫覆蓋＝Go map 賦值語義。
+ps-local-type = (p psst, vname str) (ty str) {
+    ty = ''
+    i = 0
+    (i < p.fvF.len()) {
+        p.fvF[i].copy() == p.fn && p.fvV[i].copy() == vname -> ty = p.fvT[i].copy()
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    p.fn == '' -> {
+        j = 0
+        (j < p.gvN.len()) {
+            p.gvN[j].copy() == vname -> ty = p.gvT[j].copy()
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+    }
+}
+
+; ps-mk-opt-arith-type： inferOptionArith 主體——回傳合成的 NullableType 節點（0=不改寫）。
+;   閘門順序照 Go：①本 let 無明示/已推斷型（呼叫端 typ==0 保證 s.Type==nil）；
+;   ②captureTargetAllowsOption（lowering.go:3424）：已出現（declaredLocals 成員）则必須本就是
+;     ?T（型别表查無 entry 也拒——字面量 let 只入名單不入型别表）；首次出現则拒本作用域純量宣告；
+;   ③運算子與兩側運算元判定；④base=較寬者。
+;   成功同步 ps-set-var-type(name, "?base")（Go setVarType，影響後續推斷/閘門）。
+ps-mk-opt-arith-type = (t ast, p psst, name str, val i64) (typ i64) {
+    typ = 0
+    declared = ps-walk-declared(p, name)
+    ty = ps-local-type(p, name)
+    opt = 0
+    ty.starts-with('?') -> opt = 1
+    okk = 0
+    declared == 1 && opt == 1 -> okk = 1
+    declared == 0 && opt == 1 -> okk = 1
+    declared == 0 && ty == '' -> okk = 1
+    okk == 1 -> {
+        e = ps-unwrap-grouped(t, val)
+        d = ast.nd-at(t, e)
+        d.kind == asp.K_INFIX_EXPRESSION -> {
+            op = ast.str-at(t, d.s0)
+            ps-is-arith-op(op) == 1 -> {
+                lt = ps-signed-int-operand(t, p, ast.kid-at(t, d.kid0))
+                rt = ps-signed-int-operand(t, p, ast.kid-at(t, d.kid0 + 1))
+                lt != '' && rt != '' -> {
+                    base = lt
+                    rt.len() > lt.len() -> base = rt
+                    inner = ast.add(t, asp.K_NAMED_TYPE)
+                    ast.set-slot(t, inner, 0, ast.put-str(t, base))
+                    typ = ast.add(t, asp.K_NULLABLE_TYPE)
+                    ast.kid-add(t, typ, inner)
+                    ps-set-var-type(p, name, '?' - base)
+                }
+            }
+        }
+    }
+}
+
 ps-parse-let = (t ast, p psst, name str) (idx i64) {
     val = ps-parse-expr(t, p)
     typ = 0
@@ -1847,6 +2422,12 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                 }
             }
         }
+    }
+
+    ; s54：根為有號整數算術的無型別綁定 → 合成 `?base`（Go inferOptionArith；
+    ;   D1：`#{overflow=...}` 不再豁免——sha3/time 等探針釘死仍蓋印）。
+    typ == 0 && val > 0 -> {
+        typ = ps-mk-opt-arith-type(t, p, name, val)
     }
     idx = ast.add(t, asp.K_LET_STATEMENT)
     ast.set-slot(t, idx, 0, ast.put-str(t, name))
@@ -1960,6 +2541,7 @@ ps-is-struct-lit = (p psst) (r i64) {
     p.toks[p.pos].typ == tok.LBRACE -> {
 
         ; 定位首個非 trivia token
+
         #{overflow=wrap}
         i = p.pos + 1
         go = true
@@ -2292,7 +2874,7 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     ast.kid-add(t, selfp, selfnt)
     ast.kid-add(t, selfp, 0)
 
-    ; s51：body 前登記輸入參數型別（Go decl.go 只登 Parameters；self 是 body 後才附加，不登）
+    ; s51：body 前登記輸入參數型別（Go decl.go 只登 Parameters；self 不隨 params 登）
     rp = 0
     (rp < params.len()) {
         pd = ast.nd-at(t, params[rp])
@@ -2311,6 +2893,10 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
         #{overflow=wrap}
         rr = rr + 1
     }
+
+    ; s54：預登記 self=接收者型別，供 ps-signed-int-operand 查表（鏡像 Go lowerSelfType
+    ;   於 parse 完成後的 walk 中讀 Results[0]；noc 單趟需在 body 前就可解析 `.`）。
+    ps-set-var-type(p, 'self', recvType)
     ps-expect(p, tok.LBRACE); 進入 body
     body = ps-parse-block(t, p)
     ps-expect(p, tok.RBRACE); 結束 body
@@ -3799,6 +4385,7 @@ ps-is-enum-def = (p psst) (r i64) {
                                 ft == tok.IDENT -> {
 
                                     ; `名 型別`（nt=型別起）或裸 `名`（nt∈{,, ),NEWLINE,COMMENT}）
+
                                     #{overflow=wrap}
                                     nt = ps-peek-at(p, fi + 1)
                                     nt == tok.COMMA || nt == tok.RPAREN || nt == tok.NEWLINE || nt == tok.COMMENT -> {
@@ -4144,21 +4731,54 @@ ps-mk-it-let = (t ast, subj str) (idx i64) {
     idx
 }
 
-; ps-mk-it-let-arm：变体臂合成绑定（Go lowering.go buildItBindingForArm）——
-;   对 err/nil 关键字臂（含被匹配型别未知时的兼容形）建
-;   `LetStatement{name: it, type: <变体>, value: subj, synthetic: true, armBinding: true}`
-;   槽位：s1=synthetic、s2=armBinding（asp.no LetStatement 模板 ref 序）；Type kid = NamedType{变体}（无 inferred）。
-ps-mk-it-let-arm = (t ast, subj str, kvar str) (idx i64) {
+; ps-mk-it-let-t：变体臂合成绑定（Go lowering.go buildItBindingForArm）——
+;   bt 非空時建 `LetStatement{name: bname, type: NamedType{bt}, value: subj, synthetic: true, armBinding: true}`；
+;   bt 空形同 ps-mk-it-let（裸 shared 綁定、無 armBinding）。槽位 s1=synthetic、s2=armBinding（
+;   asp.no LetStatement 模板 ref 序）；NamedType 無 inferred 標記。
+ps-mk-it-let-t = (t ast, subj str, bt str, bname str) (idx i64) {
     val = ps-mk-ident(t, subj)
-    nt = ast.add(t, asp.K_NAMED_TYPE)
-    ast.set-slot(t, nt, 0, ast.put-str(t, kvar))
+    tn = 0
+    bt != '' -> {
+        tn = ast.add(t, asp.K_NAMED_TYPE)
+        ast.set-slot(t, tn, 0, ast.put-str(t, bt))
+    }
     idx = ast.add(t, asp.K_LET_STATEMENT)
-    ast.set-slot(t, idx, 0, ast.put-str(t, 'it'))
+    ast.set-slot(t, idx, 0, ast.put-str(t, bname))
     ast.set-slot(t, idx, 1, ast.put-str(t, 'true')); synthetic
-    ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); armBinding
-    ast.kid-add(t, idx, nt)
+    bt != '' -> ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); armBinding
+    ast.kid-add(t, idx, tn)
     ast.kid-add(t, idx, val)
     idx
+}
+
+; ps-match-listed：掃描當前 match 臂區 token（不消費、不建節點），收集「緊接 `->` 的
+;   关键字型樣」：fl[0]=ok fl[1]=err fl[2]=nil（Go hasExplicitOk/Err/Nil，lowering.go:2090-2120）。
+;   僅深度 0（本區塊自己的臂）計入——嵌套 {…}/(…)/[…] 增深度，防内層 match 的 `nil ->` 污染補集判定。
+ps-match-listed = (p psst, fl []i64) {
+    j = 0
+    depth = 0
+    go = true
+    (go) {
+        t = ps-peek-at(p, j)
+        {
+            t == tok.EOF -> go = false
+
+            depth == 0 && t == tok.RBRACE -> go = false
+
+            t == tok.LBRACE || t == tok.LBRACKET || t == tok.LPAREN -> depth = depth + 1
+
+            depth > 0 && (t == tok.RBRACE || t == tok.RBRACKET || t == tok.RPAREN) -> depth = depth - 1
+
+            depth == 0 && t == tok.NIL && ps-peek-at(p, j + 1) == tok.RARROW -> fl[2] = 1
+
+            depth == 0 && t == tok.IDENT && ps-lit-at(p, j) == 'err' && ps-peek-at(p, j + 1) == tok.RARROW -> fl[1] = 1
+
+            depth == 0 && t == tok.IDENT && ps-lit-at(p, j) == 'ok' && ps-peek-at(p, j + 1) == tok.RARROW -> fl[0] = 1
+        }
+
+        #{overflow=wrap}
+        j = j + 1
+    }
 }
 
 ; ps-mk-true：wildcard 條件 = IntegerLiteral{value: 1}（無 raw，故不印 raw）
@@ -4190,10 +4810,17 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     patA []i64 = with-cap(4)
     blkA []i64 = with-cap(4)
 
-    ; 同 ps-parse-bare-match：臂迴圈自行消化 `->`，抑制區塊層級續接前探
+    ; 同 ps-parse-bare-match：臂迴圈自行消化 `->`，抑制區塊級續接前探
     oldMat = p.inMatch
     p.inMatch = 1
     ps-skip-trivia(p)
+
+    ; s55：預掃关键字臂名單（Go hasExplicitOk/Err/Nil）——供 wildcard 臂補集判定
+    listed []i64 = with-cap(3)
+    listed.push(0)
+    listed.push(0)
+    listed.push(0)
+    ps-match-listed(p, listed)
     (ps-peek(p) != tok.RBRACE) {
         pos0 = p.pos
 
@@ -4220,6 +4847,7 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
                     kwt = 1
                 }
                 kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'err' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'err'
+                kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'ok' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'ok'
                 pat = ps-parse-expr-prec(t, p, 0)
             }
         }
@@ -4228,14 +4856,49 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
         ps-skip-trivia(p)
 
         ; 先完整建成 it 合成綁定 + body（父後建、kid 區段才不與子樹重疊）
-        ;   err/nil 变体臂 → 带 type+armBinding 的綁定；其餘 → 裸 synthetic 綁定
+        ; s55：綁定型別計算（Go buildItBindingForArm）——主題靜態可知 `?T` 時：err/nil 臂取變體名、
+        ;   ok 臂取載荷 T、wildcard 臂取補集（全列⇒死臂裸綁定；型別未知時維持 s46 兼容形：僅 err/nil 帶名）。
+        st = ps-var-type(p, subj)
+        sopt = 0
+        elem = ''
+        st.starts-with('?') -> {
+            sopt = 1
+            elem = st.slice-bytes(1, st.len-bytes())
+        }
+        bt = ''
+        sopt == 1 && kvar == 'err' -> bt = 'err'
+        sopt == 1 && kvar == 'nil' -> bt = 'nil'
+        sopt == 1 && kvar == 'ok' -> bt = elem
+        sopt == 1 && wild == 1 -> {
+
+            #{index-out=zero}
+            ol = listed[0]
+
+            #{index-out=zero}
+            oe = listed[1]
+
+            #{index-out=zero}
+            onil = listed[2]
+            ol == 1 && oe == 1 && onil == 1 -> bt = ''
+            ol == 1 && oe == 0 && onil == 1 -> bt = 'err'
+            ol == 1 && oe == 1 && onil == 0 -> bt = 'nil'
+            ol == 1 && oe == 0 && onil == 0 -> bt = 'err | nil'
+            ol == 0 -> bt = elem
+        }
+        sopt == 0 && kvar == 'err' -> bt = 'err'
+        sopt == 0 && kvar == 'nil' -> bt = 'nil'
         itl = 0
         hd5 = 0
-        kvar != '' -> {
-            itl = ps-mk-it-let-arm(t, subj, kvar)
+        bt != '' -> {
+            itl = ps-mk-it-let-t(t, subj, bt, 'it')
             hd5 = 1
         }
         hd5 == 0 -> itl = ps-mk-it-let(t, subj)
+
+        ; it 型別逐層登記與還原（Go collectVarTypesFromBody 作用域掃描；與 MIR 端值還原對稱）：
+        ;   巢狀 match/下一臂不得污染外層 it。
+        oldit = ps-var-type(p, 'it')
+        bt != '' -> ps-set-var-type(p, 'it', bt)
         kids []i64 = with-cap(4)
         kids.push(itl)
         inline = 0
@@ -4276,6 +4939,7 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
         }
         ast.set-count(t, blk, 0, kids.len())
         inline == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true'))
+        ps-set-var-type(p, 'it', oldit)
         wildA.push(wild)
         patA.push(pat)
         blkA.push(blk)

@@ -1,0 +1,54 @@
+; s54 fixture：D6 有號整數算術的 option 型別推斷（Go lowering.go inferOptionArith）
+fd = (a i64, b i64) {
+    m1 = a * b
+    m2 = (a) / (b)
+    m3 = a - b * 2
+}
+
+; 純量出參不改寫（captureTargetAllowsOption 拒）
+hold = (a i64, b i64) (r i64) {
+    r = a + b
+}
+
+dtop i64 = 7
+dtwo i64 = 3
+qa = dtop / dtwo
+qb = dtop + 1
+qc = (dtop) - (dtwo)
+qd = dtop + dtwo * 2
+qe = dtop % dtwo
+qf = dtop * dtwo
+
+ua u8 = 2
+ub u8 = 3
+neg1 = ua + ub
+
+lit1 = 5
+lit2 = 6
+neg2 = lit1 + lit2
+
+sc i64 = 0
+sc = dtop + dtwo
+
+#{overflow=wrap}
+ovf = dtop - dtwo
+
+num2 = i8 | i16 | i32 | i64
+num2.m1 = (b i64) {
+    y = . + b
+}
+
+i64.w = (b i64) {
+    z = . * b
+    w2 = b / 2
+}
+
+; 已出現於本作用域但型別表無 entry（先字面量 let）→ 重指派算术拒蓋
+; （captureTargetAllowsOption：declaredLocals 成員且 localDeclaredType 查無 → 拒）
+pna = 0
+pna = 1 + 3
+
+fnb = () {
+    x = 0
+    x = 1 + 3
+}

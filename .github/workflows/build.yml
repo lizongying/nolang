@@ -126,8 +126,8 @@ jobs:
   # LLVM 预编译包由 .github/workflows/build-llvm-windows.yml（手动 dispatch）在同样
   # 的 Linux runner 上用 zig 编好 llvm-config（Linux ELF）+ 头 + Windows COFF 静态库，
   # 发布到 Release tag llvm-22.1.8-windows。cross-windows 条目 can_run: false（Linux
-  # 无法执行 .exe），故只构建产物、跳过执行类测试。仍标 experimental（continue-on-error），
-  # 因为全量 LLVM 用 zig 交叉构建可能踩个别编译/链接坑，不阻断发布。
+  # 无法执行 .exe），故只构建产物、跳过执行类测试。不标 experimental——所有任务
+  # （含 windows 交叉）必须全部成功才算发布成功，任一失败即阻断整个 workflow。
   # 代價：全後端產物比純 Go 版（~12 MB）大得多，故作為額外 asset 而非替換現有產物。
   build-llvm-variants:
     if: startsWith(github.ref, 'refs/tags/')
@@ -176,7 +176,6 @@ jobs:
             zig_target: x86_64-windows-gnu
             llvm_asset: LLVM-22.1.8-win-x64-llvm-dev.tgz
             can_run: false
-            experimental: true
           - os: ubuntu-24.04-arm
             asset: no-llvm_windows_arm64
             go_arch: arm64
@@ -189,8 +188,9 @@ jobs:
             zig_target: aarch64-windows-gnu
             llvm_asset: LLVM-22.1.8-win-arm64-llvm-dev.tgz
             can_run: false
-            experimental: true
-    continue-on-error: ${{ matrix.experimental || false }}
+    # 所有 matrix 任务（含 cross-windows）都是硬闸：任一失败即整个 workflow 失败。
+    # fail-fast: false 只表示「不因单个任务失败而取消其他任务」，失败的 job 仍会把
+    # workflow 标红，保证能看到全部任务的结果。
     runs-on: ${{ matrix.os }}
 
     steps:

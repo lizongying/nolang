@@ -15222,7 +15222,16 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 		c.fail("builtin %s expects an argument", ff)
 		return fmt.Errorf("builtin %s arity", ff)
 	}
-	_, capV := c.loadVal(inst.Args[0])
+	// Overflow-default arithmetic yields ?T, and parse-time inference now types
+	// such a binding `?i64` at the declaration — so a size expression like
+	// `n * 2` reaches here as an %option value. The alloc size, memset size and
+	// the vec/str-long {len,cap} fields are all raw i64; passing the %option
+	// struct through emitted `call i8* @nolang_rc_alloc(i64 %lvN)` with %lvN
+	// defined as `%option`, which opt-verify rejects ("defined with type
+	// '%option' but expected 'i64'"). Peel the scalar payload first, mirroring
+	// emitArith's operand unwrap.
+	capT, capRaw := c.loadVal(inst.Args[0])
+	_, capV := c.unwrapOptionOperand(inst.Args[0], capT, capRaw, "i64")
 	var lenV string
 	switch ff {
 	case "with-cap":
@@ -15231,7 +15240,8 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 		lenV = capV
 	case "with-cap-len":
 		if len(inst.Args) > 1 {
-			_, lenV = c.loadVal(inst.Args[1])
+			lenT, lenRaw := c.loadVal(inst.Args[1])
+			_, lenV = c.unwrapOptionOperand(inst.Args[1], lenT, lenRaw, "i64")
 		} else {
 			lenV = capV
 		}

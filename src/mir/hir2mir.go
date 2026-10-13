@@ -3561,6 +3561,19 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 			}
 		}
 		l.captureArmValue(armVal)
+		// A safe-index read inside the arm body (`lowerSafeIndex`) terminates the
+		// arm's ENTRY block with a cond-br and resumes lowering in its own merge
+		// block, so the body ends in a block different from `thenBlk`. That final
+		// block is left unterminated and `ensureReturn` would otherwise patch it
+		// with `ret void`, severing the arm's value from the rest of the function
+		// (e.g. compound arithmetic with an embedded slice-index read:
+		// `v = prod[idx] + a[i]*b[j] + carry` under `#{index-out=zero}`). Branch
+		// the final block to mergeBlk so control continues past the match.
+		if l.b.CurBlock != thenBlk && l.b.CurBlock != mergeBlk {
+			if blk := l.mod.Block(l.b.CurBlock); blk != nil && blk.Term == nil {
+				l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+			}
+		}
 	}
 	if l.mod.Block(thenBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
@@ -3596,6 +3609,15 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 			}
 		}
 		l.captureArmValue(armVal)
+		// Mirror the then-arm guard: a safe-index read in the else body switches
+		// the current block to its own merge block, leaving the body's final
+		// block unterminated. Branch it to mergeBlk so control continues past
+		// the match instead of being dropped by ensureReturn's `ret void`.
+		if l.b.CurBlock != elseBlk && l.b.CurBlock != mergeBlk {
+			if blk := l.mod.Block(l.b.CurBlock); blk != nil && blk.Term == nil {
+				l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+			}
+		}
 	}
 	if l.mod.Block(elseBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")

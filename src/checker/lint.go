@@ -646,7 +646,14 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 用語句的 SourceFile 欄位填充每條結果的 File 欄位。
 	// 構建行號範圍 → 檔案路徑的映射：對 FunctionDefinition 記錄
 	// [startLine, endLine]；對其他語句記錄單行 startLine。
-	// 當沒有語句帶有 SourceFile（LSP 路徑）時跳過，File 留空。
+	//
+	// ⚠️ 僅在「單一檔案」程式（LSP 路徑，所有語句屬同一個 SourceFile 或都無
+	// SourceFile）下才做行號範圍回退歸因。合併多模組（no vet 主檔）程式裡，不同
+	// 檔案的行號座標會重疊：一條空 File 的診斷若只憑行號去比對各模組的 [start,end]
+	// 範圍，極易比到「恰好同行號的另一個模組函式」，被誤歸因到錯誤檔案（常見為
+	// 報在「函式定義行」或「無關陳述」上，正是 option-unified.md 記錄的
+	// 「位置不可靠」症狀）。多模組程式下，每條診斷必須自帶正確的 File（由各
+	// Validate* 從節點 SourceFile 填入）；行號回退只會幫倒忙，故直接跳過。
 	{
 		type lineRange struct {
 			startLine int
@@ -654,10 +661,17 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			file      string
 		}
 		var ranges []lineRange
+		singleFile := true
+		var refFile string
 		for _, stmt := range program.Statements {
 			file := parser.GetSourceFile(stmt)
 			if file == "" {
 				continue
+			}
+			if refFile == "" {
+				refFile = file
+			} else if file != refFile {
+				singleFile = false
 			}
 			startLine := stmt.Pos().Line
 			endLine := stmt.EndPos().Line
@@ -666,7 +680,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			}
 			ranges = append(ranges, lineRange{startLine, endLine, file})
 		}
-		if len(ranges) > 0 {
+		if singleFile && len(ranges) > 0 {
 			for i := range results {
 				if results[i].File != "" {
 					continue

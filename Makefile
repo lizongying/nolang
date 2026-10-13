@@ -1,6 +1,15 @@
 # Nolang 構建
 
 GO        ?= go
+# GOHOST runs host-side build TOOLS (genstdsig) that must build AND execute on
+# the BUILD host, never inheriting a cross-compile environment. `make no-llvm`
+# for the Windows target exports GOOS=windows/GOARCH/CC=zig-...-windows-gnu; the
+# STDSIG_GEN prerequisite would then cross-build genstdsig into a .exe and fail to
+# exec it on the Linux runner ("fork/exec .../genstdsig.exe: exec format error").
+# Force host defaults (empty GOOS/GOARCH => host) and pure-Go (the generator's
+# checker/hir/parser/lexer deps need no cgo). The real no/no-llvm binaries are
+# still built with the ambient GOOS/GOARCH so cross-compilation keeps working.
+GOHOST     = env GOOS= GOARCH= CGO_ENABLED=0 $(GO)
 BINDIR    ?= bin
 GIT_VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u '+%s' 2>/dev/null || echo "0")
@@ -48,7 +57,7 @@ STDSIG_GEN_SRCS := $(wildcard src/checker/genstdsig/*.go) src/checker/checker.go
 	$(wildcard src/hir/*.go) $(wildcard src/parser/*.go) $(wildcard src/lexer/*.go)
 
 $(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/go.mod src/go.sum
-	cd src && $(GO) run ./checker/genstdsig
+	cd src && $(GOHOST) run ./checker/genstdsig
 
 .PHONY: gen
 gen: $(STDSIG_GEN)
@@ -75,7 +84,7 @@ test: $(STDSIG_GEN)
 # build path (`make` always runs `make gen` first) guarantees freshness.
 # STD_SIG_KEY is a recursive var, so the tool runs at recipe time — after
 # `make gen` has regenerated stdsig_gen.go from the same src/std.
-STD_SIG_KEY = $(shell cd src && $(GO) run ./checker/genstdsig -key-only 2>/dev/null)
+STD_SIG_KEY = $(shell cd src && GOOS= GOARCH= CGO_ENABLED=0 $(GO) run ./checker/genstdsig -key-only 2>/dev/null)
 STD_SIG_X   = -X github.com/lizongying/nolang/checker.StdSigKey=$(STD_SIG_KEY)
 # Merge the injected std-sig key INTO -ldflags (Go rejects -X outside
 # -ldflags), so it sits alongside version/buildDate. Preserves any user

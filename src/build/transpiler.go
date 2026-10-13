@@ -347,7 +347,21 @@ func resolveModuleFile(modPath, workspaceRoot string) string {
 				}
 			}
 		}
-		return ""
+		// Disk source unavailable (production embeds std via StdFS, and the
+		// gob AST cache carries no on-disk path). Return the *logical* std path
+		// so merged std statements still carry a std-recognizable SourceFile.
+		// This lets `no vet` attribute and filter std-internal diagnostics
+		// correctly instead of leaking them as empty-File lints at unrelated
+		// line numbers (the "位置不可靠（报在无关语句 / 函数定义行）" symptom,
+		// e.g. a std-internal lint at line 266 mis-attributed to a user module
+		// because that module happens to have a function spanning that line).
+		if relPath == "" {
+			return "std"
+		}
+		if full, ok := checker.KnownStdModules()[relPath]; ok {
+			return "std/" + full
+		}
+		return "std/" + relPath
 	}
 	// User module: resolve relative to workspace root
 	relPath := strings.TrimPrefix(modPath, "/")

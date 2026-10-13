@@ -409,10 +409,10 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             #{overflow=wrap}
             idx = i + j
 
-            ; 預載切片讀取為 plain：直接把切片讀取（prod[idx]）放進二元算術會觸發
-            ; lower/codegen 對「切片索引讀取」的安全索引路徑（即便 bounds 分析判定越界
-            ; 安全），導致該陳述處理異常、控制流在迴圈內提前返回零值。先以獨立
-            ; `pv = prod[idx]`（配 #{index-out=zero}）取出 plain i64 再參與算術即正常。
+            ; 切片索引讀取直接內嵌於二元算術（#{index-out} 作用下走安全索引路徑）：
+            ; MIR lowering 已修正巢狀安全索引 match 的延續邊（lowerIf 在 arm body
+            ; 切換 current block 時補 br mergeBlk），不再於迴圈內提前 return 零值，
+            ; 故無需先以 `pv = prod[idx]` 預載為 plain i64。
             #{index-out=zero, overflow=wrap}
             v = prod[idx] + a[i] * b[j] + carry
 

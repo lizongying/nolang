@@ -1,0 +1,35 @@
+; s52：前置 `#{buildin}`/`#{intrinsic}` 註解標記 ⇒ FunctionDefinition/TaggedEnumDefinition 節點旗標
+#{buildin}
+a = (k i64) {
+}
+
+#{buildin}
+b = (k i64) (r str) {
+}
+
+#{buildin, intrinsic}
+c = (s str) (out str) {
+}
+
+#{intrinsic}
+d = (x i64) (r i64) {
+    r = x
+    return
+}
+
+; 無註解者不受影響（零回歸釘）
+c2 = (k i64) (out str) {
+    out = ''
+    return
+}
+
+; 標記僅限函式/標籤列舉：一般 let 不吸收旗標
+#{buildin}
+e = 1
+
+#{buildin}
+opt2 {
+    ok(v t),
+    nil,
+    err(e2 str),
+}

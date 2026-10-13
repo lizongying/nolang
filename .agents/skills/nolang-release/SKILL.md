@@ -1,6 +1,6 @@
 ---
 name: nolang-release
-description: 给当前 git 仓库发版——先检查最新已发布 release 是否与最高本地 tag 一致（不一致则说明上次 tag 的 release action 失败，复用当前 tag 而不是 +1 并强制重推）、根据已有 tag 推导版本号（默认末位 +1）、在仓库根 HISTORY.md 顶部新增英文变更日志条目（GitHub Actions 会读取它作为 Release 正文，并同步到文档站 `docs/docs/history.md`）、打 tag；工作树不干净**不中断**——未提交改动会与 HISTORY.md 一起打进同一个发布提交（`git add -A`），最后在用户确认后才执行 git push。当用户说「publish」「发版」「发布」「release」「打个 tag」「发 v0.3.0」或提到版本号与 HISTORY.md 时使用。
+description: 给当前 git 仓库发版——先按 tag 精确查询最高本地 tag 是否已有已发布 release（查不到则说明上次 tag 的 release action 失败，复用当前 tag 而不是 +1 并强制重推；不用 /releases/latest，它会被同仓库的工具链 release 顶掉）、根据已有 tag 推导版本号（默认末位 +1）、在仓库根 HISTORY.md 顶部新增英文变更日志条目（GitHub Actions 会读取它作为 Release 正文，并同步到文档站 `docs/docs/history.md`）、打 tag；工作树不干净**不中断**——未提交改动会与 HISTORY.md 一起打进同一个发布提交（`git add -A`），最后在用户确认后才执行 git push。当用户说「publish」「发版」「发布」「release」「打个 tag」「发 v0.3.0」或提到版本号与 HISTORY.md 时使用。
 agent_created: true
 ---
 
@@ -8,8 +8,8 @@ agent_created: true
 
 ## 目的
 
-把「发版」这件容易出错的事固化为固定流程：**检查最新 release 是否与最高本地 tag 一致**→ 推导版本号 → 写 HISTORY.md → **停下来问用户** → 打 tag 并推送。
-若上次 tag 的 release action 失败（最高本地 tag 没有对应 release），不 +1，而是复用当前 tag 并强制重推以重新触发 CI。
+把「发版」这件容易出错的事固化为固定流程：**检查最高本地 tag 是否已有已发布 release** → 推导版本号 → 写 HISTORY.md → **停下来问用户** → 打 tag 并推送。
+若上次 tag 的 release action 失败（最高本地 tag 查不到对应 release），不 +1，而是复用当前 tag 并强制重推以重新触发 CI。
 
 **不绑定任何具体仓库**：仓库根、remote、分支都由脚本在运行时用 `git rev-parse --show-toplevel` /
 `git remote get-url origin` 探测，脚本从仓库内任意子目录执行都可以。只对「仓库根有 `HISTORY.md`
@@ -41,7 +41,7 @@ agent_created: true
 的改动一起带上是可接受的默认行为；但如果 `plan` 列出的脏文件里有**看起来不该进这次发版**的
 （例如临时调试产物、明显无关的大改动），在第四步确认时向用户点出，由用户决定要不要继续。
 
-### 1. 解析版本（先检查最新 release）
+### 1. 解析版本（先检查最高本地 tag 是否已发布）
 
 ```bash
 python3 <skill-dir>/scripts/release.py plan [--version vX.Y.Z] [--no-release-check]
@@ -51,31 +51,40 @@ python3 <skill-dir>/scripts/release.py plan [--version vX.Y.Z] [--no-release-che
 `commits since <last tag>`、待执行命令（含发布页 URL，由 origin 推出）。
 不带 `--version` 时按惯例**末位 +1**（`vX.Y.Z` → `vX.Y.(Z+1)`）。
 
-**`plan` 会先联网查最新的已发布 release**——默认直接打公开 API `https://api.github.com/repos/<owner>/<repo>/releases/latest`（不需要 token；`gh` 只在私有仓库时才作为兜底），拿它和仓库里最高的本地 tag 比对：
+**`plan` 会先联网确认「最高本地 tag 是否已经发布」**——按 tag 精确查询公开 API
+`https://api.github.com/repos/<owner>/<repo>/releases/tags/<最高本地 tag>`（不需要 token；
+`gh` 只在 curl 不可用时介入，以及用于确认匿名 404 —— 装了但未授权的 `gh`（HTTP 401）**不会**覆盖
+curl 的结论），按 HTTP 状态码判定：
 
-- **release == 最高本地 tag**：上次发版成功，走正常 +1 流程。
-- **release < 最高本地 tag**（例如本地已有 `v0.3.4`，但最新 release 还是 `v0.3.3`）：
-  说明 **`v0.3.4` 的 tag 推上去后 release action 失败了**。此时 `plan` **不会 +1**，
-  而是直接复用当前这个 `v0.3.4`，并打印一段 `!!! RELEASE CHECK !!!` 与**强制重推命令**。
-  因为重推会用 `git tag -f v0.3.4` 把 tag 对齐到当前 HEAD，**tag 之后的新提交会被折叠进同一个 release**，
-  所以**必须同步更新 HISTORY.md**（用 `apply --version v0.3.4 --update-existing` 重写现有 `## v0.3.4` 段落正文，
+- **200（该 tag 已有已发布 release）**：上次发版成功，走正常 +1 流程。
+- **404（该 tag 查不到 release）**：说明 **tag 推上去后 release action 失败了**（也涵盖「仓库还从未
+  发布过任何 release」）。此时 `plan` **不会 +1**，而是直接复用当前这个 tag，并打印一段
+  `!!! RELEASE CHECK !!!` 与**强制重推命令**。
+  因为重推会用 `git tag -f <tag>` 把 tag 对齐到当前 HEAD，**tag 之后的新提交会被折叠进同一个 release**，
+  所以**必须同步更新 HISTORY.md**（用 `apply --version <tag> --update-existing` 重写现有 `## <tag>` 段落正文，
   把新提交归纳进去），**不要新增版本号段落**。随后按强制重推命令：提交 → `git tag -f` → `push origin <branch>` →
-  删远端旧 tag → `push origin v0.3.4` 重新触发 CI。
+  删远端旧 tag → `push origin <tag>` 重新触发 CI。
 - 查不到（非 GitHub 远端 / 离线 / 私有未授权）：退回普通 +1 流程。
+
+本地已经知道要问哪个 tag，所以这个端点**可直接寻址、无歧义**；而 `/releases/latest` 按**发布时间**排名，
+本仓库会为**工具链**单独发 release（例如 `llvm-22.1.8-windows`），这类与版本号无关的 release 只要比版本
+release 更晚就会顶掉 `latest`（实测：最高本地 tag 是 `v0.4.4` 时 `latest` 回 `llvm-22.1.8-windows`），
+所以不要用它做判断。
+
+只需要 HTTP 状态码，正文用 `-o /dev/null` 丢弃、再加 `--compressed`（约 18.6 KB → 2.3 KB）。
 
 离线或非 GitHub 远端想跳过联网检查，加 `--no-release-check`。
 
-本地 tag 永远 ≥ 任何已发布 release（发版流程只会往上打 tag），所以检查只需要一次等值比对：
-**最高本地 tag 有没有出现在 `/releases/latest` 里**，一个 grep 就能自行复核 `plan` 的结论：
+一个 `curl` 就能自行复核 `plan` 的结论：
 
 ```bash
-git tag --list 'v*' | sort -V | tail -1   # 最高本地 tag
-curl -sS -f https://api.github.com/repos/<owner>/<repo>/releases/latest | grep -o '"tag_name"[^,]*'
+git tag --list 'v*' | sort -V | tail -1        # 最高本地 tag
+curl -sS --compressed -o /dev/null -w '%{http_code}\n' \
+  https://api.github.com/repos/<owner>/<repo>/releases/tags/<最高本地 tag>
 ```
 
-两条输出的 tag 一致才是 +1 的前提；若本地 tag 比 release 高（`releases/latest` 回 404 表示仓库还没有任何
-release），走下面的复用 tag 分支，即使 `plan` 没提示也要按这个分支处理；只有离线或非 GitHub 远端
-才允许跳过。
+`200` = 已发布（+1 的前提）；`404` = 未发布 ⇒ 走上面的复用 tag 分支，即使 `plan` 没提示也要按这个分支
+处理；只有离线或非 GitHub 远端才允许跳过。
 
 用户给的版本号可以是**不完整的**，脚本会自动补全成 `vMAJOR.MINOR.PATCH`，并在输出里打一行 `note:` 说明补全结果：
 

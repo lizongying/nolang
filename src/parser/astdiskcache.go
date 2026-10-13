@@ -50,7 +50,21 @@ import (
 // （p.inBoundsIdx / isSafeIndexBase 早退 / AnalyzInBoundsForFunc 合併 /
 // checker + fmt 三方位接）。這會改變 lowering 的輸出形狀（無數取不再被降級成
 // option、不再插入 __cap_N / match 區塊），屬必 bump 的 lowering 變更。
-const ASTVersion = "2026-10-13.1"
+//
+// 2026-10-13.2：15c72ccd 之後的提交（c721fe6c 裸 match 降級 + */** 速寫、
+// 762ea045/33055cc5 解析期推斷區域變數與函式回傳型別）都改變了 ParseProgram
+// 的**輸出形狀**卻沒有 bump——按上方 rule of thumb 這就該 bump。影響面只到
+// Tier 1（入口檔 + 本地模組，見 build.parseFile / CompileTarget）：開發期設了
+// NOLANG_STD_SRC 時，std 模組走 parseEmbeddedProgram，既不讀也不寫 Tier 1；
+// Tier 0 blob 由 make 的 STDSIG_GEN 依賴（含 src/parser/*.go）自動重烤，加上
+// ExternSignatureFingerprint 折入了 ASTVersion，雙重自洽，無需靠本次 bump。
+// （更正：先前把 `no test test/std/ed25519.no` 的簽名 S 全 0 歸因於陳舊 Tier 1
+// blob，為誤判——該症狀是 std 模組的 MIR 降級缺陷：lowerIf 在 arm body 走安全
+// 索引後未替當前 block 接上 terminator，已由 src/mir/hir2mir.go 修正。當時 scratch
+// 檔的內容是新增的，Tier 1 必然 miss；sc-muladd 所在的 std 又不經過 Tier 1，所以
+// NOLANG_AST_CACHE_OFF 兩側看到的其實是不同世代的 bin/no（平行 session 在中間
+// 重建過），那個 A/B 不成立。）
+const ASTVersion = "2026-10-13.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent
