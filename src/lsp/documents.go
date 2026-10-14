@@ -75,6 +75,51 @@ func (m *DocumentManager) parseModuleFile(modFilePath string) (*parser.Program, 
 	return prog, string(source), nil
 }
 
+// parseStdModuleFile parses a std module, preferring the Tier-0 std AST blob
+// (checker.StdASTFor) over a fresh parse.
+//
+// The fallback is a BARE parser.New — no SetExternSignatures, no enum variants.
+// Parsing is not inference-free: lowering's safe-index normalisation and match
+// desugaring consult the injected cross-module tables, so that fallback produces
+// a DIFFERENT AST than the build path for the same source (see checker.StdASTBlob
+// for the shipped `txt.replace-n` bug that came from exactly that divergence).
+// The blob is produced with build.parseEmbeddedProgram's configuration, so
+// preferring it makes the indexed std symbols the ones the compiler actually
+// compiles.
+//
+// The source text is still read from disk even on a Tier-0 hit: the caller needs
+// the real path for symbol locations, and indexBuiltinComments scans the text.
+func (m *DocumentManager) parseStdModuleFile(embedPath, modFilePath string) (*parser.Program, string, error) {
+	info, err := os.Stat(modFilePath)
+	if err != nil {
+		return nil, "", err
+	}
+	source, err := os.ReadFile(modFilePath)
+	if err != nil {
+		return nil, "", err
+	}
+	m.moduleMu.Lock()
+	if e, ok := m.moduleCache[modFilePath]; ok && e.modTime.Equal(info.ModTime()) && e.source == string(source) {
+		m.moduleMu.Unlock()
+		return e.prog, e.source, nil
+	}
+	m.moduleMu.Unlock()
+
+	prog, ok := checker.StdASTFor(embedPath)
+	if !ok {
+		l := lexer.New(string(source))
+		p := parser.New(l)
+		prog = p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			return nil, "", fmt.Errorf("parse errors in module %s", modFilePath)
+		}
+	}
+	m.moduleMu.Lock()
+	m.moduleCache[modFilePath] = &moduleCacheEntry{modTime: info.ModTime(), prog: prog, source: string(source)}
+	m.moduleMu.Unlock()
+	return prog, string(source), nil
+}
+
 func (m *DocumentManager) OpenDocument(uri string, text string) (*TextDocument, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -314,14 +359,15 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		}
 
 		// Index auto-imported std module files with location info for go-to-definition.
-		// Module parses are cached by path+modtime (see parseModuleFile), so the
-		// std library is only parsed once per session, not on every keystroke.
+		// Module parses are cached by path+modtime (see parseStdModuleFile), so the
+		// std library is only parsed once per session, not on every keystroke — and
+		// on a Tier-0 hit it is not parsed at all.
 		for _, full := range checker.GetStdModules() {
 			modFilePath := checker.ResolveStdModulePath(full)
 			if modFilePath == "" {
 				continue
 			}
-			modProg, source, err := m.parseModuleFile(modFilePath)
+			modProg, source, err := m.parseStdModuleFile("std/"+full+".no", modFilePath)
 			if err != nil || modProg == nil {
 				continue
 			}

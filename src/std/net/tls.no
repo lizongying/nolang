@@ -338,11 +338,7 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     ; 直接傳遞會造成越界讀取。因此用臨時 [32]byte 接收後複製到 []byte。
     a-tmp [32]byte
     a-tmp = hmac.hmac-sha256(secret, ls)
-    a []byte = with-len(32)
-    i <- [0..32): {
-
-        a[i] = a-tmp[i]
-    }
+    a = a-tmp[..32)
     out-off = 0
     (out-off < out-len) {
 
@@ -352,11 +348,7 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
 
         p-tmp [32]byte
         p-tmp = hmac.hmac-sha256(secret, a-and-ls)
-        p []byte = with-len(32)
-        i <- [0..32): {
-
-            p[i] = p-tmp[i]
-        }
+        p = p-tmp[..32)
 
         ; 複製到輸出
         copy-n = 32
@@ -1794,11 +1786,7 @@ conn.send-finished = () (ok bool) {
     ; 計算 handshake hash
     hs-hash-arr [32]byte
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; verify_data = PRF(master, "client finished", hash, 12)
     verify []byte
@@ -1867,11 +1855,7 @@ conn.read-finished = () (ok bool) {
     ; 驗證 verify_data（hash 不包含 server Finished）
     hs-hash-arr [32]byte
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
     verify []byte
     verify = prf(.master-secret, 'server finished', hs-hash, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
@@ -2649,11 +2633,7 @@ conn.derive-handshake-keys-13 = () {
     ; 5. 計算 transcript hash = SHA-256(ClientHello + ServerHello)
     ; .hs-buf 目前包含 ClientHello 和 ServerHello
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; 6. client_handshake_traffic_secret = Derive-Secret(HS, "c hs traffic", transcript)
     c-hs-secret []byte
@@ -2749,11 +2729,7 @@ conn.derive-application-keys-13 = () {
 
     ; transcript hash = SHA-256(ClientHello..server Finished)
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; client_application_traffic_secret
     c-ap-secret []byte
@@ -3145,11 +3121,7 @@ conn.send-finished-13 = () (ok bool) {
 
     ; transcript hash = SHA-256(ClientHello..server Finished)
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; verify_data = HMAC-SHA256(finished_key, transcript_hash)
     verify []byte
@@ -4294,11 +4266,7 @@ server-conn.read-finished = () (ok bool) {
     ; 驗證 verify_data（hash 不包含 client Finished）
     hs-hash-arr [32]byte
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
     verify []byte
     verify = prf(.master-secret, 'client finished', hs-hash, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
@@ -4324,11 +4292,7 @@ server-conn.send-finished = () (ok bool) {
     ; 計算 handshake hash（包含 client Finished）
     hs-hash-arr [32]byte
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; verify_data = PRF(master, "server finished", hash, 12)
     verify []byte
@@ -4575,11 +4539,7 @@ server-conn.derive-handshake-keys-13 = () {
 
     ; 5. transcript hash = SHA-256(ClientHello + ServerHello)
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; 6. client_handshake_traffic_secret
     c-hs-secret []byte
@@ -4679,11 +4639,7 @@ server-conn.derive-application-keys-13 = () {
         pre-cf-buf[i] = .hs-buf[i]
     }
     hs-hash-arr = sha256.sha256(pre-cf-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; client_application_traffic_secret
     c-ap-secret []byte
@@ -5030,11 +4986,7 @@ server-conn.send-finished-13 = () (ok bool) {
 
     ; transcript hash = SHA-256(ClientHello..Certificate) (不含 server Finished)
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; verify_data = HMAC-SHA256(finished_key, transcript_hash)
     verify []byte
@@ -5083,11 +5035,7 @@ server-conn.read-client-finished-13 = () (ok bool) {
 
     ; transcript hash = SHA-256(ClientHello..server Finished) (不含 client Finished)
     hs-hash-arr = sha256.sha256(.hs-buf)
-    hs-hash []byte = with-len(32)
-    i <- [0..32): {
-
-        hs-hash[i] = hs-hash-arr[i]
-    }
+    hs-hash = hs-hash-arr[..32)
 
     ; verify_data = HMAC-SHA256(finished_key, transcript_hash)
     verify []byte

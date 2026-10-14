@@ -37,6 +37,11 @@ var lhsInferredBuiltins = map[string]bool{
 	"vec.with-len":   true,
 	"vec.with-cap":   true,
 	"vec.with-len-cap": true,
+	// new: `txt.new(cs)` / `str.new(cs)` — same empty-Return + LHS-inferred
+	// contract as with-len. Registered under the BARE name "new"; module-qualified
+	// callees (`txt.new`, `str.new`) are matched by bareCalleeName in
+	// builtinResultOf below.
+	"new":            true,
 }
 
 // builtinResult describes what a builtin call produces.
@@ -113,7 +118,7 @@ func builtinResultOf(callee string) builtinResult {
 			return builtinResult{Known: true, Raw: raw}
 		}
 	}
-	if lhsInferredBuiltins[callee] {
+	if lhsInferredBuiltins[bareCalleeName(callee)] {
 		return builtinResult{Known: true, LHSInferred: true}
 	}
 	return builtinResult{Known: true} // known builtin, void result

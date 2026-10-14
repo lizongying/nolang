@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lsp"
 )
 
@@ -21,6 +22,14 @@ var version = "dev"
 var buildDate = ""
 
 func main() {
+	// Install the std AST (Tier 0) before anything else, so both the server and
+	// the `vet` subcommand see it. The `no` binary gets this blob embedded
+	// (checker/stdastembed); the LSP does not link that package, so it reads the
+	// same payload from the on-disk cache file instead — materialising it on
+	// first use. Without it the LSP parses every std module with a bare parser,
+	// whose AST differs from the build path's (see checker.StdASTBlob).
+	installStdAST()
+
 	// Check for "vet" subcommand before flag parsing
 	if len(os.Args) > 1 && os.Args[1] == "vet" {
 		vetCommand(os.Args[2:])
@@ -83,6 +92,23 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+// installStdAST loads the Tier-0 std AST blob from the on-disk cache
+// (checker.EnsureStdASTCache), generating the cache file from the std sources
+// when it is missing, and installs it into the checker.
+//
+// It is deliberately best-effort: the LSP worked before this file existed by
+// re-parsing std from source, so a missing/unwritable cache must degrade to that
+// rather than refuse to start. The one-line log is the only signal, and only on
+// failure.
+func installStdAST() {
+	blob, err := checker.EnsureStdASTCache()
+	if err != nil {
+		log.Printf("std AST cache unavailable (%v); std modules will be parsed from source", err)
+		return
+	}
+	checker.SetStdASTBlob(blob)
 }
 
 func printUsage() {

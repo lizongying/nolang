@@ -1423,6 +1423,13 @@ str.with-len-cap = (len i64, cap i64) (out str) {
     out = with-cap-len(cap, len)
 }
 
+; str.new: 從 char 切片構造 str（模組級構造器）
+; 編譯期內建（ForwardFunc: chars-new）：[]char 直接逐位元組轉成 bytes 並一次性設定長度，
+; 無逐位元組 .no 迴圈。str 是內建類型，位元組/長度無法在用戶代碼裡操作，故整體轉換由編譯器生成 IR。
+#{buildin}
+new = (cs []char) (s str) {
+}
+
 ; ═══════════════════════════════════════════════
 ; 十六進制解碼
 ; ═══════════════════════════════════════════════
@@ -2650,4 +2657,13 @@ str.to-txt = () (out txt) {
         out.set-byte(i, .byte(i))
     }
     out.len = n
+}
+
+; ─── TEMP PRIVATE-BUILTIN SMOKE (REMOVE AFTER VERIFY) ───
+str.__priv-smoke = () (out i64) {
+    a i64 = ._len()
+    b i64 = ._cap()
+    ._set-len(7)
+    c i64 = ._len()
+    out = a + b + c
 }

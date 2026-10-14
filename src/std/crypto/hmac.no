@@ -113,11 +113,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 hmac-sha256-vec = (key []byte, msg []byte) (out []byte) {
     h [32]byte
     h = hmac-sha256(key, msg)
-    out = with-len(32)
-    i <- [0..32): {
-
-        out[i] = h[i]
-    }
+    out = h[..32)
     out.truncate(32)
 }
 
@@ -201,11 +197,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 hmac-sha1-vec = (key []byte, msg []byte) (out []byte) {
     h [20]byte
     h = hmac-sha1(key, msg)
-    out = with-cap(20)
-    i <- [0..20): {
-
-        out[i] = h[i]
-    }
+    out = h[..20)
 }
 
 ; ─── HMAC-SHA512 ─────────────────────────────────
@@ -289,11 +281,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 hmac-sha512-vec = (key []byte, msg []byte) (out []byte) {
     h [64]byte
     h = hmac-sha512(key, msg)
-    out = with-cap(64)
-    i <- [0..64): {
-
-        out[i] = h[i]
-    }
+    out = h[..64)
 }
 
 ; ─── HMAC-SHA384 ─────────────────────────────────
@@ -370,11 +358,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 hmac-sha384-vec = (key []byte, msg []byte) (out []byte) {
     h [48]byte
     h = hmac-sha384(key, msg)
-    out = with-cap(48)
-    i <- [0..48): {
-
-        out[i] = h[i]
-    }
+    out = h[..48)
 }
 
 ; ─── HMAC-MD5 ───────────────────────────────────
@@ -451,9 +435,5 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 hmac-md5-vec = (key []byte, msg []byte) (out []byte) {
     h [16]byte
     h = hmac-md5(key, msg)
-    out = with-cap(16)
-    i <- [0..16): {
-
-        out[i] = h[i]
-    }
+    out = h[..16)
 }

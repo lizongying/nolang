@@ -622,7 +622,7 @@ ps-expect = (p psst, want i64) {
 ;
 ; ⚠️ 單一回傳值（i64）：arena `t` 與解析器 `p` 由呼叫端建立並作為【輸入參數】
 ;    傳入。單一回傳值的函式會【借用】結構體輸入參數（不會在函式內釋放），
-;    與 ast_test.no 中反覆呼叫 `ast.add(t, …)` 同形——呼叫端在 ps-parse 返回
+;    與 ast-test.no 中反覆呼叫 `ast.add(t, …)` 同形——呼叫端在 ps-parse 返回
 ;    後仍能安全使用 `t`（例如 ast.dump(t, root)）。
 ;    （多回傳值含結構體 `(r ast, root i64)` 在 oracle 後端會被錯誤 lowering：
 ;     函式本體不執行、回傳 0，見本次除錯紀錄。）

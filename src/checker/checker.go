@@ -4502,11 +4502,19 @@ func isDirectOverflowValue(v parser.Expression, varTypes map[string]string, self
 // 使用者明確要求：`k i64 = i + 1 #{overflow=wrap}` 必須是**錯誤**。理由是按設計
 // 有號整數 `+ - * / %` 的結果恆為 `?T`，`#{overflow=...}` 註解只改變「失敗時怎麼
 // 取值」（wrap／clamp0），**不改變結果型別**（見 parser/lowering.go
-// inferOptionArith 的 D1 段）。因此下列三種形狀全部等價，都必須拒絕：
+// inferOptionArith 的 D1 段）。因此帶不帶註解，只要**標註寫在收到算術的那一行**
+// 就是同一件事：
 //
 //	k i64 = a + b                 ; 未標註
 //	k i64 = a + b #{overflow=wrap}  ; 已標註
-//	r i64 = a + b                 ; r 是結果參數（宣告在簽名上，s.Type == nil）
+//
+// 反過來，plain 目標**不是**本規則要管的（見 upgradeOptionArithTargetType 的
+// 開火條件）：
+//
+//	k = a + b                     ; 無標註的新綁定 → lowering 就地合成 ?T，合法
+//	x i64 = 0; x = a + b          ; plain 宣告在別行 → 合成被「已存在變數不改
+//	                              ; 型別」否決，是自洽的 plain，合法
+//	f = (r i64) (r = a + b)       ; 結果參數同理，合法（由 HINT 提示）
 //
 // 實作方式不是另立一條診斷，而是把「右值本質」升格為 `?T`，讓下方既有的
 // 15w45dqk / 1mf3x79l 判定自然開火 —— 訊息、trace、硬錯誤分級全部沿用既有管道。
@@ -4626,18 +4634,40 @@ func ovfOptionArithPayloadType(v parser.Expression, varTypes map[string]string, 
 	return lt
 }
 
-// upgradeOptionArithTargetType 實作 D1 嚴格模式：當綁定目標**已宣告為 plain 整數
-// 型別**、而右值本質是 option 算術時，回傳升格後的推斷型別 `?T`。
+// upgradeOptionArithTargetType 實作 D1 嚴格模式：當**本 let 帶著使用者親手寫下的
+// plain 整數標註**、而右值本質是 option 算術時，回傳升格後的推斷型別 `?T`，
+// 交由下方既有的 15w45dqk 判定開火（硬錯誤、訊息、trace 全部沿用既有管道）。
 //
-// 只在「目標已有 plain 整數宣告」時開火，因此：
-//   - `x ?i64 = a + b`（目標已宣告 option）→ 不升格，既有相容比對放行；
-//   - `x = a + b`（全新未標註綁定）→ 不升格，維持 lowering 合成的推断 ?T 路徑；
-//   - lowering 的合成預宣告 `__cap_N ?T = expr` / `mzwb28br` 前置宣告 →
-//     s.Type 是 IsInferred 的 NullableType，目標型別帶 `?`，不升格。
+// 🔴 為什麼只看「本陳述的標註」（explicitPlain），不看 varTypes 的現值？
 //
-// targetType 為已宣告型別（let 的 s.Type.String()，或賦值路徑 varTypes[name]）。
-func upgradeOptionArithTargetType(value parser.Expression, targetType string, varTypes map[string]string, selfType string) string {
-	if value == nil || targetType == "" {
+// compiler 對三種「plain 目標」的處置完全不同（parser/lowering.go
+// inferOptionArith / maybeCaptureOptionAssign → captureTargetAllowsOption），
+// checker 必須逐字鏡像，否則會漂移出兩種事故：
+//   - 「vet 說非法、build 卻接受」（誤報既有設計決策）；
+//   - 更常見的：把 corpus／std 裡大量自洽的 plain 程式一次全軍覆沒（誤報）。
+//
+// 鏡像表（lowering 的否決點 → checker 的處置）：
+//
+//	k i64 = a + b            ; lowering `s.Type != nil → return`：option 合成被
+//	                          ; **這一行**的明文標註吞掉 → ERROR（本規則唯一的
+//	                          ; 開火條件：靜默解包）
+//	k = a + b                ; 新綁定、本行無標註 → lowering 合成 `?T`
+//	                          ; → 合法（k 就是 option，未消費由 optunuse 管）
+//	x i64 = 0; x = a + b     ; 重指派，標註在**前一行** →
+//	                          ; captureTargetAllowsOption 以「已存在變數不改型別」
+//	                          ; 否決合成 → 合法（自洽 plain）
+//	f = (r i64) { r = a + b } ; 結果參數同上 → 合法（由 ovf-int-default／ovfhndld
+//	                          ; HINT 提示，severity 由 D2 刻意壓到 HINT）
+//
+// 換言之：明文標註只有寫在「收到 option 算術的那一行」上才是靜默解包開關；寫在
+// 別處只是聲明「這個變數是 plain」，而 plain 變數配 plain 運算元是自洽的。
+//
+// 已知會開火的形狀皆由呼叫端保證：
+//   - explicitPlain == false（無標註／推斷標註）→ 不升格；
+//   - targetType 已帶 `?`／`&`（目標本來就是 option／借用）→ 不升格；
+//   - targetType 非整數家族 → 不升格（那類錯由別的規則負責）。
+func upgradeOptionArithTargetType(explicitPlain bool, value parser.Expression, targetType string, varTypes map[string]string, selfType string) string {
+	if !explicitPlain || value == nil || targetType == "" {
 		return ""
 	}
 	if strings.HasPrefix(targetType, "?") || strings.HasPrefix(targetType, "&") {
@@ -8191,10 +8221,17 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
-			// D1 嚴格模式：目標已宣告為 plain 整數、右值本質是 option 算術時升格為 `?T`，
-			// 交由下方 15w45dqk 拒絕（明文標註不是把 option 拉回 plain 的開關）。
-			if s.Name != nil {
-				if up := upgradeOptionArithTargetType(s.Value, varTypes[s.Name.Value], varTypes, selfType); up != "" {
+			// D1 嚴格模式：本行帶著使用者親手寫下的 plain 整數標註、右值本質是 option
+			// 算術時升格為 `?T`，交由下方 15w45dqk 拒絕（明文標註不是把 option 拉回
+			// plain 的開關，而是靜默丟掉 err 分支的隱含解包）。
+			//
+			// 只在 hasRealTypeAnnotation 為真時開火：無標註的新綁定由 lowering
+			// inferOptionArith 就地合成 `?T`（本就是 option，合法）；「先 plain 宣告、
+			// 之後重指派」（`x i64 = 0; x = a + b`）與結果參數重綁定則被
+			// captureTargetAllowsOption 的「已存在變數不改型別」否決合成，是自洽的
+			// plain，刻意不報（見 upgradeOptionArithTargetType 的鏡像表）。
+			if s.Name != nil && hasRealTypeAnnotation(s) {
+				if up := upgradeOptionArithTargetType(true, s.Value, s.Type.String(), varTypes, selfType); up != "" {
 					inferredType = up
 				}
 			}
@@ -8438,14 +8475,16 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				if !isNilAssign {
 					if existingType, exists := varTypes[ident.Value]; exists {
 						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
-						// D1 嚴格模式：目標已宣告為 plain 整數、右值本質是 option 算術時
-						// 升格為 `?T`，交由下方 1mf3x79l 拒絕。這條路徑覆蓋結果參數
-						// （`(r i64) { r = a + b }`）與「先宣告 plain 再指派」
-						// （`x i64 = 0; x = a + b`）——兩者的宣告都在簽名或先前的
-						// let 上，不在本陳述的型別節點上。
-						if up := upgradeOptionArithTargetType(assign.Value, existingType, varTypes, selfType); up != "" {
-							valType = up
-						}
+						// D1 嚴格模式的升格點只在 LetStatement 那邊（同一行明文標註）。
+						// 這邊刻意不再呼叫 upgradeOptionArithTargetType：ExpressionStatement
+						// 的 AssignExpression 只由 parser/expr.go 為 `a.b = v` / `a[i] = v`
+						// 產生（裸識別符 `x = v` 一律解析成 LetStatement），LHS 永遠不是
+						// Identifier，上面 `assign.Left.(*parser.Identifier)` 的分支理論上
+						// 走不到；既有的 lowering desugar 產物（UnwrapAssignStatement 的
+						// ok 臂、#{index-out} 的 match 臂）右值也都是 `it`／字面量，不是
+						// option 算術。留下來只會是一條永不執行、卻會在未來 parser 改動時
+						// 誤開火的死規則。
+						//
 						// 有符號整數相減溢位：未標註時預設回傳 option<int>。
 						subDefaultOpt := false
 						if valType != "" {

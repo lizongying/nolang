@@ -185,11 +185,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
 b = (data []byte) (hash [64]byte) {
 
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | out_len
-    h []u64
-    i <- [0..8): {
-
-        h[i] = BLAKE2B-IV[i]
-    }
+    h = BLAKE2B-IV[..8)
 
     #{index-out=zero}
     h[0] = (h[0] ^ 16842816) & BLAKE2B-MASK
@@ -269,11 +265,7 @@ b = (data []byte) (hash [64]byte) {
 b-256 = (data []byte) (hash [32]byte) {
 
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | 32
-    h []u64
-    i <- [0..8): {
-
-        h[i] = BLAKE2B-IV[i]
-    }
+    h = BLAKE2B-IV[..8)
 
     #{index-out=zero}
     h[0] = (h[0] ^ 16842784) & BLAKE2B-MASK
@@ -521,11 +513,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
 ; 返回 hash [32]byte: 32 位元組雜湊值
 s = (data []byte) (hash [32]byte) {
 
-    h []u32
-    i <- [0..8): {
-
-        h[i] = BLAKE2S-IV[i]
-    }
+    h = BLAKE2S-IV[..8)
 
     #{index-out=zero}
     h[0] = (h[0] ^ 16842784) & BLAKE2S-MASK

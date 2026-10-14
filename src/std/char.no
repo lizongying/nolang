@@ -128,12 +128,7 @@ char.to-bytes = () (out []byte) {
             len = 4
         }
     }
-    out = with-len(len)
-    i <- [0..len): {
-
-        #{index-out=zero}
-        out[i] = buf[i]
-    }
+    out = buf[..len)
 }
 
 ; to-str: 轉為 UTF-8 編碼的字串

@@ -434,6 +434,14 @@ txt.from-chars = (cs []char) (t ?txt) {
     t = val
 }
 
+; txt.new: 从 char 切片构造 txt（模块级构造器，返回具体 txt）
+; 编译期内建（ForwardFunc: chars-new）：[]char 直接逐字节转成 bytes 并一次性写入长度，
+; 无逐字节 .no 循环。txt 是内置类型，字节/长度无法在用户代码里操作，故整体转换由编译器生成 IR。
+; 超过 255 字节的部分自动丢弃（长度字节 clamp 到 255）。
+#{buildin}
+new = (cs []char) (t txt) {
+}
+
 ; ═══════════════════════════════════════════════
 ; 裁剪
 ; ═══════════════════════════════════════════════
@@ -443,6 +451,7 @@ txt.from-chars = (cs []char) (t ?txt) {
 txt.trim = () (val txt) {
 
     n i64 = .len-bytes()
+
     ; 預先宣告 end/m 為 plain i64：統一 option 規則（D6）下，首現算術賦值
     ; （end = n - 1、m = end - start + 1）會被推斷成 ?i64，之後 .byte(end)
     ; 的索引、val.len = m 的字段寫入拿到 option 即報型別錯誤。先宣告再賦值
@@ -450,7 +459,6 @@ txt.trim = () (val txt) {
     end = 0
     m = 0
     start <- [0..n): {
-
         c = .byte(start)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
@@ -458,7 +466,6 @@ txt.trim = () (val txt) {
     #{overflow=wrap}
     end = n - 1
     (end >= start) {
-
         c = .byte(end)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
@@ -480,15 +487,12 @@ txt.trim = () (val txt) {
 ; txt.trim-char: 去除首尾指定字元（UTF-8 碼點）
 ; 返回新 txt
 txt.trim-char = (ch char) (val txt) {
-
     n i64 = .len-bytes()
     start = 0
     (start < n) {
-
         b = .byte(start)
         cp i64 = b
         clen = 1
-
         {
             b < 0x80 -> {
                 cp = b
@@ -518,11 +522,9 @@ txt.trim-char = (ch char) (val txt) {
     end = start
     i = start
     (i < n) {
-
         b = .byte(i)
         cp = b
         clen = 1
-
         {
             b < 0x80 -> {
                 cp = b
@@ -596,7 +598,6 @@ txt.count = () (cnt i64) {
     n i64 = .len-bytes()
     i = 0
     (i < n) {
-
         b = .byte(i)
 
         #{overflow=wrap}
@@ -623,7 +624,6 @@ txt.count = () (cnt i64) {
 ; 返回首次出現位置，未找到返回 -1
 txt.index-from = (target txt, from i64) (pos i64) {
     r-from = from
-
     pos = -1
     r-from < 0 -> r-from = 0
     n i64 = .len-bytes()
@@ -654,7 +654,6 @@ txt.index-from = (target txt, from i64) (pos i64) {
 ; txt.rindex: 反向查找子串最後出現位置
 ; 返回位置，未找到 -1
 txt.rindex = (target txt) (pos i64) {
-
     pos = -1
     n i64 = .len-bytes()
     m = target.len-bytes()
@@ -689,7 +688,6 @@ txt.last-index = (target txt) (pos i64) {
 ; txt.rindex-from: 從 from 位置反向查找子串（返回位置 >= from 的最後一次出現）
 txt.rindex-from = (target txt, from i64) (pos i64) {
     r-from = from
-
     pos = -1
     r-from < 0 -> r-from = 0
     n i64 = .len-bytes()
@@ -813,7 +811,6 @@ txt.to-u8 = () (val ?u8) {
         }
     }
     i <- [start..n-len): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -858,7 +855,6 @@ txt.to-u16 = () (val ?u16) {
         }
     }
     i <- [start..n-len): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -903,7 +899,6 @@ txt.to-u32 = () (val ?u32) {
         }
     }
     i <- [start..n-len): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -939,7 +934,6 @@ txt.to-u64 = () (val ?u64) {
     start = 0
     c == 43 -> start = 1
     i <- [start..n-len): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -980,7 +974,6 @@ txt.to-byte = () (val ?byte) {
         }
     }
     i <- [start..n-len): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -1058,11 +1051,9 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
     pos = 0
     i = 0
     (i < n) {
-
         b = .byte(i)
         cp i64 = b
         clen = 1
-
         {
             b < 0x80 -> {
                 cp = b
@@ -1094,6 +1085,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                 ;  與 replace-str 相同的迴圈寫法才可靠。）
                 encw i64 = 1
                 lead i64 = 0
+
                 ; 預先宣告 shift/bv 為 plain i64：統一 option 規則（D6）下，迴圈內
                 ; 的裸賦值若為首現宣告（shift = (encw-1-enc)*6）會被推斷成 ?i64，
                 ; 之後 set-byte 的值參數拿到 option 即報 bad value type。先宣告再賦值
@@ -1125,14 +1117,11 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
 
                     #{overflow=wrap}
                     shift = (encw - 1 - enc) * 6
-
                     bv = 0x80 | ((new-ch >> shift) & 0x3f)
                     enc == 0 -> {
-
                         bv = lead | (new-ch >> shift)
                     }
                     pos < cap -> {
-
                         val.set-byte(pos, bv)
                         pos = pos + 1
                     }
@@ -1195,7 +1184,6 @@ txt.replace-str = (old txt, new txt) (val txt) {
 
                 #{overflow=wrap}
                 pos < cap -> {
-
                     val.set-byte(pos, new.byte(k))
                     pos = pos + 1
                 }
@@ -1209,7 +1197,6 @@ txt.replace-str = (old txt, new txt) (val txt) {
 
             #{overflow=wrap}
             pos < cap -> {
-
                 val.set-byte(pos, .byte(i))
                 pos = pos + 1
             }
@@ -1224,7 +1211,6 @@ txt.replace-str = (old txt, new txt) (val txt) {
 ; txt.replace-n: 限定替換次數
 ; old txt, new txt, n i64: 最大替換次數（n<=0 不替換）
 txt.replace-n = (old txt, new txt, n i64) (val txt) {
-
     n <= 0 -> {
         val = .slice(0, .len-bytes())
         return
@@ -1279,7 +1265,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             i > repl -> sep = old
             j <- [0..sep.len-bytes()): {
                 pos < cap -> {
-
                     val.set-byte(pos, sep.byte(j))
                     pos = pos + 1
                 }
@@ -1298,7 +1283,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
 
             #{overflow=wrap}
             pos < cap -> {
-
                 val.set-byte(pos, s.byte(j))
                 pos = pos + 1
             }
@@ -1322,7 +1306,6 @@ txt.split = (sep txt) (out []txt) {
     start = 0
     pos = .index-from(sep, start)
     (pos >= 0) {
-
         result.push(.slice(start, pos))
 
         #{overflow=wrap}
@@ -1350,7 +1333,6 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
     pos = .index-from(sep, start)
     count = 0
     (pos >= 0) {
-
         count >= maxsplit -> {
             result.push(.slice(start, .len-bytes()))
             out = result
@@ -1383,7 +1365,6 @@ txt-join = (parts []txt, sep txt) (out txt) {
         i > 0 -> {
             sj <- [0..sep.len-bytes()): {
                 pos < cap -> {
-
                     out.set-byte(pos, sep.byte(sj))
 
                     #{overflow=wrap}
@@ -1403,7 +1384,6 @@ txt-join = (parts []txt, sep txt) (out txt) {
         sl i64 = s.len-bytes()
         sj <- [0..sl): {
             pos < cap -> {
-
                 out.set-byte(pos, s.byte(sj))
 
                 #{overflow=wrap}
@@ -1447,12 +1427,10 @@ txt.lines = () (out []txt) {
     start = 0
     i = 0
     (i < n) {
-
         c = .byte(i)
 
         #{overflow=wrap}
         c == 10 -> {
-
             end = i
             i > start -> {
 

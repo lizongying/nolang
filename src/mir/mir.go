@@ -1185,6 +1185,14 @@ func KindOfRaw(raw string) TypeKind {
 		//   fn(i64)         -> one i64 param, no results
 		//   fn(i64)(i64)    -> one i64 param, one i64 result
 		return KindFunc
+	case strings.HasPrefix(raw, "*"):
+		// A raw pointer type (`*byte`, `*i64`, ...). It lowers to a bare
+		// `i8*` at the LLVM level (see llvmTypeOf's KindPtr branch); the
+		// pointee kind is irrelevant for codegen because nolang never
+		// dereferences through it — the only consumers are the private str/txt
+		// field accessors (`str._data()` / `txt._data()`), which hand the
+		// pointer to memcpy / raw stores and never read its pointee.
+		return KindPtr
 	case raw == "":
 		return KindUnknown
 	}

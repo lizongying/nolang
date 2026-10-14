@@ -2754,10 +2754,7 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     ; 1. 計算 SHA-256 雜湊
     h-arr [32]byte
     h-arr = sha256.sha256(data)
-    hash []byte = with-len(32)
-    i <- [0..32): {
-        hash[i] = h-arr[i]
-    }
+    hash = h-arr[..32)
     hash.truncate(32)
 
     ; 2. DigestInfo = SEQUENCE { SEQUENCE { OID sha256, NULL }, OCTET STRING hash }

@@ -6,6 +6,19 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.9
+
+- feat(parser): add tagged enum variant arms with payload destructuring, blank-identifier discard, and static type-match dispatch for union types
+- feat(builtin/mir): add private str/txt field accessors/mutators lowered inline by MIR (emitBuiltinPrivateField)
+- feat(checker): enforce compile-time privacy on underscore-prefixed builtin calls and add incremental on-disk std AST cache
+- fix(type-inference): enforce strict option arithmetic type rules in assignment and binding
+- feat(lint): add range-index and range-ellipsis (implicit-self `...`) lint checks
+- feat(std): update crypto (aes-gcm/blake2/hmac/x25519/x509), tls, str, txt and char modules; use slice-to-slice copies in tls
+- feat(lsp): add std type definition lookup backed by the shared std AST cache
+- fix(fmt): preserve LHS name for inferred view types in --fix=redundant
+- fix(build/ci): rename Windows no-llvm binary with .exe suffix; verify x86_64 static libs via lipo and stub macOS librt on darwin prebuild
+- refactor(compiler): remove redundant standalone ast/lx/tok/util test files and update self-host design doc
+
 ## v0.4.8
 
 - fix(ci): append .exe suffix for windows no-llvm cross-build artifact

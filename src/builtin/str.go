@@ -142,6 +142,124 @@ func init() {
 		ForwardFunc:  "with-cap-len",
 	})
 
+	// new: build a str or txt directly from a []char (module-level constructor).
+	// Builtin syntax: txt.new(cs) / str.new(cs) — result type inferred from LHS.
+	// Each char (i32 code point) is written as ONE raw byte and the length is set
+	// in a single pass (no UTF-8 re-encode, no per-byte std loop): txt/str are
+	// built-in types whose bytes/length cannot be manipulated from user code, so
+	// the whole conversion is lowered by the compiler (ForwardFunc "chars-new").
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "new",
+		Params:       []parser.Type{&parser.SliceType{Elem: parser.TypeChar}},
+		Return:       []parser.Type{},
+		Doc:          "Build a str or txt from a []char (raw bytes + length in one pass, type inferred from LHS)",
+		ForwardFunc:  "chars-new",
+	})
+
+	// ------------------------------------------------------------------
+	// str / txt PRIVATE field accessors / mutators (OWNER-MODULE ONLY).
+	//
+	// These underscore-prefixed compiler builtins read/write the INTERNAL
+	// layout fields of %str-long / %txt directly — there is no other way for
+	// std code to touch them, because str/txt bytes+length are opaque to user
+	// code:
+	//
+	//   str (%str-long = { i64 len, i64 cap, i8* data }):
+	//     _len()  -> i64      read field 0 (logical byte length)
+	//     _cap()  -> i64      read field 1 (capacity)
+	//     _data() -> *byte    read field 2 (i8* data pointer)
+	//     _set-len(n i64)     write field 0
+	//     _set-cap(n i64)     write field 1
+	//     _set-data(p *byte)  write field 2
+	//
+	//   txt (%txt = { [255 x i8] data, i8 len }) — no capacity; the 255-byte
+	//   buffer is inline:
+	//     _len()  -> i64      read field 1 (i8 byte length, zext to i64)
+	//     _data() -> *byte    read field 0 (inline buffer start, bitcast i8*)
+	//     _set-len(n i64)     write field 1 (trunc i64 to i8)
+	//
+	// The underscore prefix is a PRIVATE marker: the checker rejects ANY call
+	// from outside the owning std module (src/std/str.no / src/std/txt.no) at
+	// compile time — see checkPrivateBuiltinMethodCall in checker/funcargs.go.
+	// The ForwardFuncs expand inline to GEP+load/store on the receiver
+	// aggregate (emitBuiltinPrivateField) and never lower as real std functions.
+	// ReceiverType is ReceiverStr only for table-matching purposes (there is
+	// no ReceiverTxt); dispatch is by the qualified MethodName.
+	// ------------------------------------------------------------------
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str._len",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "PRIVATE(str): read the logical length field of %str-long",
+		ForwardFunc:  "str-_len",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str._cap",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "PRIVATE(str): read the capacity field of %str-long",
+		ForwardFunc:  "str-_cap",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str._data",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{&parser.PointerType{Type: parser.TypeByte}},
+		Doc:          "PRIVATE(str): read the data pointer (i8*) of %str-long",
+		ForwardFunc:  "str-_data",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str._set-len",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "PRIVATE(str): write the logical length field of %str-long",
+		ForwardFunc:  "str-_set-len",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str._set-cap",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "PRIVATE(str): write the capacity field of %str-long",
+		ForwardFunc:  "str-_set-cap",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str._set-data",
+		Params:       []parser.Type{&parser.PointerType{Type: parser.TypeByte}},
+		Return:       []parser.Type{},
+		Doc:          "PRIVATE(str): write the data pointer (i8*) of %str-long",
+		ForwardFunc:  "str-_set-data",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "txt._len",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeI64},
+		Doc:          "PRIVATE(txt): read the byte-length field of %txt",
+		ForwardFunc:  "txt-_len",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "txt._data",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{&parser.PointerType{Type: parser.TypeByte}},
+		Doc:          "PRIVATE(txt): read the inline buffer start (i8*) of %txt",
+		ForwardFunc:  "txt-_data",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "txt._set-len",
+		Params:       []parser.Type{parser.TypeI64},
+		Return:       []parser.Type{},
+		Doc:          "PRIVATE(txt): write the byte-length field of %txt",
+		ForwardFunc:  "txt-_set-len",
+	})
+
 	// vec.with-cap: method form of with-cap for vec/slice receivers
 	//   v []i64 = [].with-cap(100) → %vec { len=0, cap=100, data=malloc(100*8) }
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{

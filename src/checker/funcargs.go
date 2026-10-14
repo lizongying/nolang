@@ -36,6 +36,19 @@ func StructFieldTypeString(f *parser.StructField) string {
 	return structFieldTypeString(f)
 }
 
+// validationCurModule holds the std module ShortName that owns the top-level
+// statement currently being walked by ValidateFuncArgs (set per statement in
+// the loop below, before the recursive argument walk begins). It lets the
+// per-call-site private-builtin check (checkPrivateBuiltinMethodCall) attribute
+// a method call to its enclosing module WITHOUT threading the module through
+// every recursive checkCallArgs* signature.
+//
+// Safe as package state because ValidateFuncArgs is the sole driver of this
+// walk and is serialized by validationMu; the recursive walk of one statement
+// completes (synchronously) before the loop advances to the next statement, so
+// validationCurModule is always correct for the call site being checked.
+var validationCurModule string
+
 // isConcreteType 檢查型別名稱是否為已知具體型別
 func isConcreteType(typeName string) bool {
 	switch typeName {
@@ -363,6 +376,10 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 				continue
 			}
 		}
+		// Attribute the statement to its owning std module so the private
+		// builtin-method check can reject underscore-prefixed str/txt field
+		// accesses called from outside their own module.
+		validationCurModule = stdModuleForSourceFile(parser.GetSourceFile(stmt))
 		results = append(results, checkCallArgsInStmt(stmt, sigs, topLevelVarTypes, structFields)...)
 	}
 	return results
@@ -1651,6 +1668,57 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 	return results
 }
 
+// checkPrivateBuiltinMethodCall enforces that the underscore-prefixed builtin
+// methods on str/txt — PRIVATE field accessors/mutators registered in
+// src/builtin (str._len / str._cap / str._data / str._set-len / str._set-cap /
+// str._set-data / txt._len / txt._data / txt._set-len) — are ONLY callable
+// from within their OWNING std module:
+//
+//   - str._*  may only be called from src/std/str.no
+//   - txt._*  may only be called from src/std/txt.no
+//
+// Any call from user code (or from any other std module) is a COMPILE-TIME
+// error. The owner module is derived from the receiver type (str/txt); curModule
+// is the std module ShortName of the enclosing top-level statement (set by
+// ValidateFuncArgs from parser.GetSourceFile + stdModuleForSourceFile).
+//
+// Only REGISTERED private builtins are enforced — a user-defined underscore
+// method on some other type is unrelated and left to the normal checks.
+func checkPrivateBuiltinMethodCall(e *parser.CallExpression, dot *parser.DotExpression, recvType, curModule string) []ValidateResult {
+	if dot == nil || dot.Property == "" {
+		return nil
+	}
+	if !strings.HasPrefix(dot.Property, "_") {
+		return nil
+	}
+	if recvType != "str" && recvType != "txt" {
+		return nil
+	}
+	// Only enforce for a builtin actually registered under this
+	// receiver.method (str._len, txt._data, ...). Bare-name matches are
+	// impossible here because the key is always receiver-qualified.
+	if builtin.FindBuiltinMethod(recvType + "." + dot.Property) == nil {
+		return nil
+	}
+	if curModule == recvType {
+		return nil // allowed: call site is inside the owning module
+	}
+	line, col := e.Token.Line, e.Token.Column
+	if p := dot.Pos(); p.Line > 0 {
+		line, col = p.Line, p.Column
+	}
+	where := curModule
+	if where == "" {
+		where = "user code"
+	}
+	return []ValidateResult{{
+		TraceID: "privbuiltin",
+		Line:    line,
+		Column:  col,
+		Message: fmt.Sprintf("private builtin method '%s.%s' may only be called from within module %s, not from %s", recvType, dot.Property, recvType, where),
+	}}
+}
+
 func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
 	if expr == nil {
 		return nil
@@ -1816,6 +1884,10 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 			// completely unchecked. The std signature tables now carry
 			// parameter types, so they can be checked here.
 			results = append(results, checkStdMethodCallArgs(e, dot, varTypes, structFields)...)
+			// Compile-time privacy enforcement for underscore-prefixed str/txt
+			// builtin field accessors (see checkPrivateBuiltinMethodCall).
+			recvType := resolveExprType(dot.Receiver, varTypes, structFields)
+			results = append(results, checkPrivateBuiltinMethodCall(e, dot, recvType, validationCurModule)...)
 		}
 		// Recurse into arguments for nested calls
 		for _, arg := range e.Arguments {

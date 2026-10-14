@@ -782,12 +782,16 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 	switch bm.ForwardFunc {
 	case "with-cap", "with-len", "with-cap-len":
 		return c.emitBuiltinAlloc(inst, bm.ForwardFunc)
+	case "chars-new":
+		return c.emitBuiltinCharsNew(inst)
 	case "eprint":
 		return c.emitBuiltinEprint(inst)
 	case "get-arch":
 		return c.emitBuiltinArch(inst)
 	case "str-len", "vec-len", "str-len-bytes":
 		return c.emitBuiltinLen(inst, bm.ForwardFunc)
+	case "str-_len", "str-_cap", "str-_data", "str-_set-len", "str-_set-cap", "str-_set-data", "txt-_len", "txt-_data", "txt-_set-len":
+		return c.emitBuiltinPrivateField(inst, bm.ForwardFunc)
 	case "str-clear":
 		return c.emitBuiltinStrClear(inst)
 	case "math-clamp":
@@ -1388,6 +1392,65 @@ func (c *codegen) emitBuiltinArch(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_const(i8* getelementptr inbounds ([%d x i8], [%d x i8]* @.mir.arch, i64 0, i64 0), i64 %d)\n",
 		r, len(arch), len(arch), len(arch)))
 	c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", r, dstSlot))
+	return nil
+}
+
+// emitBuiltinCharsNew lowers the `new` builtin (ForwardFunc "chars-new") that
+// backs `txt.new(cs)` / `str.new(cs)`: build a str or txt directly from a []char
+// in ONE pass — the []char is converted to raw bytes and the length is assigned
+// together, with no per-byte loop in Nolang source. txt/str are built-in types
+// whose bytes/length cannot be manipulated from user code, so the whole
+// conversion lives here.
+//
+// The result type (inst.Dst) selects the path: a %str-long destination calls
+// @_mir_str_from_chars and stores the returned struct; a %txt destination
+// projects the inline [255 x i8] buffer (field 0) and the i8 length field
+// (field 1) into raw pointers and calls @_mir_txt_from_chars to fill them.
+// The argument is the []char %vec: field 0 is the element count, field 2 the
+// data pointer (i64-held); each element is an i32 code point.
+func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
+	if len(inst.Args) == 0 {
+		return fmt.Errorf("builtin chars-new: missing char slice")
+	}
+	if inst.Dst <= NoVal {
+		return nil
+	}
+	dstLT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("builtin chars-new: no result slot")
+	}
+	ct, cv := c.loadVal(inst.Args[0])
+	if ct != "%vec" {
+		c.fail("builtin chars-new: expected []char slice, got %s", ct)
+		return fmt.Errorf("builtin chars-new: bad arg type %s", ct)
+	}
+	// n = vec field 0 (element count); data = vec field 2 (i64-held pointer).
+	nReg := c.treg("cn")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", nReg, cv))
+	dReg := c.treg("cd")
+	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dReg, cv))
+	cReg := c.treg("cp")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", cReg, dReg))
+	switch dstLT {
+	case "%str-long":
+		r := c.treg("cns")
+		c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @_mir_str_from_chars(i8* %s, i64 %s)\n", r, cReg, nReg))
+		c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", r, dstSlot))
+	case "%txt":
+		// %txt = { [255 x i8] data, i8 len }. field 0 GEP at index 0 is the
+		// inline buffer address (bitcast to i8*); field 1 GEP is the i8 length.
+		dataGep := c.treg("tnd")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dataGep, dstSlot))
+		dataPtr := c.treg("tnp")
+		c.sb.WriteString(fmt.Sprintf("  %s = bitcast [255 x i8]* %s to i8*\n", dataPtr, dataGep))
+		lenPtr := c.treg("tnl")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lenPtr, dstSlot))
+		c.sb.WriteString(fmt.Sprintf("  call void @_mir_txt_from_chars(i8* %s, i8* %s, i8* %s, i64 %s)\n", dataPtr, lenPtr, cReg, nReg))
+	default:
+		c.fail("builtin chars-new: unsupported result type %s", dstLT)
+		return fmt.Errorf("builtin chars-new: %s", dstLT)
+	}
 	return nil
 }
 

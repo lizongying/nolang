@@ -2777,6 +2777,63 @@ end:
   ret %str-long %r2
 }
 
+; _mir_str_from_chars: build a %str-long from a []char buffer in ONE pass. Backs
+; the str.new(cs) builtin (ForwardFunc chars-new). Each char is the i32 Unicode
+; scalar in the slice data; it is written as ONE raw byte (trunc i32->i8) with
+; len == cap == n — NO UTF-8 re-encode, NO per-byte std loop.
+define %str-long @_mir_str_from_chars(i8* %cdata, i64 %n) {
+entry:
+  %buf = call i8* @nolang_rc_alloc(i64 %n)
+  %c32 = bitcast i8* %cdata to i32*
+  %iszero = icmp eq i64 %n, 0
+  br i1 %iszero, label %end, label %loop
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i.next, %loop ]
+  %pi = getelementptr i32, i32* %c32, i64 %i
+  %cp = load i32, i32* %pi
+  %b = trunc i32 %cp to i8
+  %pd = getelementptr i8, i8* %buf, i64 %i
+  store i8 %b, i8* %pd
+  %i.next = add i64 %i, 1
+  %cont = icmp slt i64 %i.next, %n
+  br i1 %cont, label %loop, label %end
+end:
+  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %n, 0
+  %r1 = insertvalue %str-long %r0, i64 %n, 1
+  %r2 = insertvalue %str-long %r1, i8* %buf, 2
+  ret %str-long %r2
+}
+
+; _mir_txt_from_chars: fill a %txt from a []char buffer in ONE pass. Backs the
+; txt.new(cs) builtin (ForwardFunc chars-new). %txt is NOT referenced here
+; (its type is declared AFTER the prelude), so the caller passes the two raw
+; field pointers: %tdata = the inline [255 x i8] buffer (bitcast to i8*) and
+; %tlenp = the i8 length field. Each char (i32 code point) becomes ONE raw byte
+; via trunc; the length byte is the element count clamped to 255 (overflow
+; discarded), set once. No UTF-8 re-encode.
+define void @_mir_txt_from_chars(i8* %tdata, i8* %tlenp, i8* %cdata, i64 %n) {
+entry:
+  %c32 = bitcast i8* %cdata to i32*
+  %big = icmp ugt i64 %n, 255
+  %cnt = select i1 %big, i64 255, i64 %n
+  %cnt8 = trunc i64 %cnt to i8
+  store i8 %cnt8, i8* %tlenp
+  %iszero = icmp eq i64 %cnt, 0
+  br i1 %iszero, label %end, label %loop
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i.next, %loop ]
+  %pi = getelementptr i32, i32* %c32, i64 %i
+  %cp = load i32, i32* %pi
+  %b = trunc i32 %cp to i8
+  %pd = getelementptr i8, i8* %tdata, i64 %i
+  store i8 %b, i8* %pd
+  %i.next = add i64 %i, 1
+  %cont = icmp slt i64 %i.next, %cnt
+  br i1 %cont, label %loop, label %end
+end:
+  ret void
+}
+
 define i8* @digits(i64 %abs, i8* %end) {
 entry:
   br label %loop
@@ -15129,6 +15186,169 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 	gep := fmt.Sprintf("%%bpv%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", gep, dataPtr, idxV))
 	c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", b8, gep))
+	return nil
+}
+
+// emitBuiltinPrivateField lowers the str/txt PRIVATE field accessors/mutators
+// (str._len / str._cap / str._data / str._set-len / str._set-cap /
+// str._set-data / txt._len / txt._data / txt._set-len). These are compiler
+// builtins that read or write the INTERNAL layout fields of %str-long / %txt
+// directly; they are callable ONLY from within the owning std module (enforced
+// at the checker by checkPrivateBuiltinMethodCall). ff is the ForwardFunc
+// ("str-_len", "txt-_set-len", ...). Mirrors emitBuiltinRawByteAt / Put.
+//
+// Layouts:
+//
+//	%str-long = { i64 len, i64 cap, i8* data }   field 0/1/2
+//	%txt       = { [255 x i8] data, i8 len }      field 0/1
+func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
+	if len(inst.Args) < 1 {
+		c.fail("builtin %s: missing receiver", ff)
+		return fmt.Errorf("builtin %s: no receiver", ff)
+	}
+	rt, _ := c.ptype(inst.Args[0])
+	rslot := c.valSlot[inst.Args[0]]
+	if rslot == "" {
+		c.fail("builtin %s: receiver has no slot", ff)
+		return fmt.Errorf("builtin %s: no receiver slot", ff)
+	}
+	isTxt := rt == "%txt"
+	recvName := "%str-long"
+	if isTxt {
+		recvName = "%txt"
+	}
+
+	// Decode the operation from the ForwardFunc suffix ("str-_len" -> "_len").
+	kind := ff[strings.Index(ff, "-")+1:]
+	isWrite := strings.HasPrefix(kind, "set-")
+	isDataPtr := kind == "_data" || kind == "set-data"
+
+	var fieldIdx int
+	switch kind {
+	case "_len", "set-len":
+		fieldIdx = 0
+		if isTxt {
+			fieldIdx = 1
+		}
+	case "_cap", "set-cap":
+		fieldIdx = 1
+	case "_data", "set-data":
+		fieldIdx = 2
+		if isTxt {
+			fieldIdx = 0
+		}
+	default:
+		c.fail("unknown private field builtin %s", ff)
+		return fmt.Errorf("unknown private field builtin %s", ff)
+	}
+
+	// Writes: honour receiver write-back (lvalueAddrOf) so that
+	// `b.s._set-len(n)` mutates the REAL field, not a copy. Mirror
+	// emitBuiltinRawBytePut.
+	if isWrite {
+		if p, ptid, projected := c.lvalueAddrOf(inst.Args[0], inst); projected && p != "" && rt != "" {
+			if pt := c.mod.Type(ptid); pt != nil && c.llvmTypeOf(pt) == rt {
+				rslot = p
+			}
+		}
+	}
+
+	if isWrite {
+		if len(inst.Args) < 2 {
+			c.fail("builtin %s: missing value argument", ff)
+			return fmt.Errorf("builtin %s: no value", ff)
+		}
+		_, valV := c.loadVal(inst.Args[1])
+		valT, _ := c.ptype(inst.Args[1])
+		c.loadSeq++
+		g := fmt.Sprintf("%%pfg%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g, recvName, recvName, rslot, fieldIdx))
+		if isDataPtr {
+			// Store an i8* data pointer. txt has no data-pointer field
+			// (txt._set-data is not registered), so this only runs for str.
+			pv := valV
+			if valT != "i8*" {
+				if cv := c.coerce(valT, valV, "i8*"); cv != "" {
+					pv = cv
+				} else {
+					c.fail("builtin %s: cannot coerce %s to i8*", ff, valT)
+					return fmt.Errorf("builtin %s: bad value type %s", ff, valT)
+				}
+			}
+			c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", pv, g))
+		} else {
+			// Store an i64 (len/cap); for txt the field is i8, so trunc.
+			v := valV
+			if valT != "i64" {
+				if cv := c.coerce(valT, valV, "i64"); cv != "" {
+					v = cv
+				} else {
+					c.fail("builtin %s: cannot coerce %s to i64", ff, valT)
+					return fmt.Errorf("builtin %s: bad value type %s", ff, valT)
+				}
+			}
+			if isTxt {
+				c.loadSeq++
+				tr := fmt.Sprintf("%%pft%d", c.loadSeq)
+				c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i8\n", tr, v))
+				c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", tr, g))
+			} else {
+				c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", v, g))
+			}
+		}
+		return nil
+	}
+
+	// Reads.
+	if inst.Dst <= NoVal {
+		return nil
+	}
+	dstLT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		c.fail("builtin %s: no result slot", ff)
+		return fmt.Errorf("builtin %s: no dst slot", ff)
+	}
+	if isDataPtr {
+		c.loadSeq++
+		d := fmt.Sprintf("%%pfd%d", c.loadSeq)
+		if isTxt {
+			// field 0 is [255 x i8]; bitcast to i8*.
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0, i64 0\n", d, recvName, recvName, rslot))
+			c.loadSeq++
+			bc := fmt.Sprintf("%%pfbc%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = bitcast [255 x i8]* %s to i8*\n", bc, d))
+			c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", bc, dstSlot))
+		} else {
+			// field 2 is i8*; load it.
+			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", d, recvName, recvName, rslot, fieldIdx))
+			c.loadSeq++
+			ld := fmt.Sprintf("%%pfld%d", c.loadSeq)
+			c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", ld, d))
+			c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", ld, dstSlot))
+		}
+		return nil
+	}
+	// Integer field (len/cap).
+	c.loadSeq++
+	g := fmt.Sprintf("%%pfg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g, recvName, recvName, rslot, fieldIdx))
+	c.loadSeq++
+	l := fmt.Sprintf("%%pfl%d", c.loadSeq)
+	if isTxt {
+		c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", l, g))
+		c.loadSeq++
+		z := fmt.Sprintf("%%pfz%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", z, l))
+		v := c.coerce("i64", z, dstLT)
+		if v == "" {
+			return fmt.Errorf("builtin %s: cannot store i64 into %s", ff, dstLT)
+		}
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", l, g))
+		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", l, dstSlot))
+	}
 	return nil
 }
 

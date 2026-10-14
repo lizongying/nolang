@@ -351,11 +351,7 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     j0 = gcm-j0(iv)
 
     ; 3. 加密: CTR 從 J0+1 開始
-    ctr []byte = with-len(16)
-    i <- [0..16): {
-
-        ctr[i] = j0[i]
-    }
+    ctr = j0[..16)
     aes-ctr.ctr-inc(ctr)
     ctr0 [16]byte
     i <- [0..16): {
@@ -452,11 +448,7 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     }
 
     ; 5. 解密
-    ctr []byte = with-len(16)
-    i <- [0..16): {
-
-        ctr[i] = j0[i]
-    }
+    ctr = j0[..16)
     aes-ctr.ctr-inc(ctr)
     ctr0 [16]byte
     i <- [0..16): {

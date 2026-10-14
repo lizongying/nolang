@@ -615,6 +615,23 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 20g-bis. 區間上界以隱式 self 的 `.field` 開頭，與 `..` 連寫成 `...`（歧義：
+	// `...` 亦是 return/終止運算子）→ HINT `rng-ellipsis`，建議顯式寫 `self.field`
+	// （如 `[0..self.count)`）。詞法器目前會把 `...` 拆成 `..` + ``.`，仍能正確解析，
+	// 故只提示不阻斷（見 src/std/arr.no 頂部說明）。
+	for _, r := range ValidateRangeSelfEllipsis(program, opts.SourcePath) {
+		file := r.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: r.Line, Column: r.Column,
+			Severity: LintHint, Source: "nolang-range",
+			File:    file,
+			Message: r.Message, TraceID: r.TraceID,
+		})
+	}
+
 	// 21. parser 警告
 	for _, warnMsg := range program.Warnings {
 		var line, col int

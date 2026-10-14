@@ -338,7 +338,7 @@ echo
 # ⚠️ 子命令必須是 `run`，**不能**用 "-"：`-` 會跑 `<bin> <file>`，而 `no <file>`
 #    不是「執行」——它印出 usage 並 rc=0。那會讓**每個測試檔的 stdout 都相同**
 #    （同一份 usage），G7 於是判 oracle 無鑑別力。
-#    實測（2026-10-10）：`./bin/no compiler/tests/tok_test.no` 的 stdout 雜湊
+#    實測（2026-10-10）：`./bin/no compiler/tests/tok-test.no` 的 stdout 雜湊
 #    = febadc57…（usage），三個測試檔完全一樣；改成 `run` 後才有真訊號。
 if echo ",$LEVELS," | grep -q ',L0,'; then
   echo "--- L0 單元測試（compiler/tests/*_test.no）---"
