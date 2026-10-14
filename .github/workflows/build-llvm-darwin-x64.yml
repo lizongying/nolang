@@ -103,6 +103,28 @@ jobs:
           test -x llvm-native/bin/llvm-tblgen || { echo "::error::native llvm-tblgen missing"; exit 1; }
           test -x llvm-native/bin/llvm-config || { echo "::error::native llvm-config missing"; exit 1; }
 
+      - name: Create empty x86_64 librt.a stub (macOS has no librt)
+        run: |
+          # 🔴 交叉 Stage B 的固有坑（僅 macOS 會碰到，Windows 交叉不會）：
+          #   Stage B 用 CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY，configure 期的
+          #   check_library_exists(rt clock_gettime ...) 因此「只編不鏈」——它永遠無法真正
+          #   驗證 rt 是否存在，於是對 macOS 誤判 rt=found，把 -lrt 追加到【共享】庫 libLTO.dylib
+          #   的鏈接行尾（實測日誌：... libLLVMDemangle.a -lrt -lm）。macOS 根本沒有 librt
+          #   （clock_gettime 在 libSystem），zig 鏈 libLTO.dylib 直接報
+          #   "unable to find dynamic system library rt ... searched paths: none" 而構建失敗。
+          #   （Stage A 原生 Apple clang 用默認 EXECUTABLE try_compile，老實鏈接→ rt 判缺失→
+          #    不加 -lrt，故 arm64 llvm-config 的 --system-libs 乾淨，consumer 端不受影響。）
+          #   解法：造一顆空的 x86_64 librt.a 靜態存根放到鏈接搜索路徑，讓 -lrt 能解析。
+          #   靜態存根零符號、被 -Wl,-dead_strip 剝掉，不會給 libLTO.dylib 留下任何運行期
+          #   依賴，也不污染任何要發佈的 .a。libLTO.dylib 本身 consumer 用不到（nolang 只調
+          #   _LLVM* C API，全在靜態 libLLVM*.a 裡，不用 llvm-c/lto.h），多出的 dylib 純屬無害產物。
+          SDK="$(xcrun --show-sdk-path)"
+          mkdir -p "$HOME/rtstub"
+          printf 'static int __nolang_rt_stub_unused(void){return 0;}\n' > "$HOME/rtstub/rtstub.c"
+          "$HOME/zig/zig" cc -target "${{ env.ZIG_TARGET }}" -isysroot "$SDK" -c "$HOME/rtstub/rtstub.c" -o "$HOME/rtstub/rtstub.o"
+          "$HOME/zig/zig" ar rcs "$HOME/rtstub/librt.a" "$HOME/rtstub/rtstub.o"
+          test -f "$HOME/rtstub/librt.a" || { echo "::error::failed to create librt.a stub"; exit 1; }
+
       - name: Stage B - configure CROSS build (zig x86_64-macos, static libs)
         run: |
           # BUILD_SHARED_LIBS=OFF → 產出各元件靜態 .a（llvm-config --link-static 要這些）。
@@ -116,6 +138,7 @@ jobs:
           PREFIX="$GITHUB_WORKSPACE/llvm-dev-darwin-x64"
           mkdir -p "$PREFIX"
           NATIVE_BIN="$GITHUB_WORKSPACE/llvm-native/bin"
+          RTSTUB="$HOME/rtstub"
           cmake -G Ninja -S llvm-src/llvm -B llvm-cross \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PREFIX" \
@@ -125,6 +148,9 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
             -DCMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)" \
             -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DCMAKE_SHARED_LINKER_FLAGS="-L$RTSTUB" \
+            -DCMAKE_EXE_LINKER_FLAGS="-L$RTSTUB" \
+            -DCMAKE_MODULE_LINKER_FLAGS="-L$RTSTUB" \
             -DCMAKE_C_COMPILER="$HOME/zig/zigcc" \
             -DCMAKE_CXX_COMPILER="$HOME/zig/zigcxx" \
             -DCMAKE_ASM_COMPILER="$HOME/zig/zigcc" \
@@ -136,7 +162,6 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=OFF \
             -DBUILD_SHARED_LIBS=OFF \
             -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM;WebAssembly" \
-            -DLLVM_ENABLE_TERMINFO=OFF \
             -DLLVM_ENABLE_ZLIB=OFF \
             -DLLVM_ENABLE_ZSTD=OFF \
             -DLLVM_ENABLE_LIBXML2=OFF \
