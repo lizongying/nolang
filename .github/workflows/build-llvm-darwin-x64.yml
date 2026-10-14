@@ -197,17 +197,21 @@ jobs:
           [ "$COUNT" -ge 1 ] || { echo "::error::no static libLLVM*.a found under $LIBDIR"; exit 1; }
           # 抽一顆庫驗證 arch 必須是 x86_64（防交叉配置靜默失效、又編出 arm64 庫）。
           # ⚠️ macOS 上 `file lib*.a` 只報 "current ar archive"（不展開成員 arch，與 Linux
-          #    file 行為不同），grep x86_64 必然假失敗。改用 lipo：它會讀取靜態庫成員，
-          #    -archs 列出架構、-verify_arch x86_64 只在含該 arch 時回 0（實測 x86_64 庫：
-          #    -verify_arch x86_64 通過、-verify_arch arm64 拒絕）。
+          #    file 行為不同），grep x86_64 必然假失敗。改用 lipo -archs（會展開靜態庫成員）。
+          # ⚠️ 不要用 `lipo -verify_arch x86_64 "$SAMPLE"`：Xcode 版 lipo 把 -verify_arch 當
+          #    變長參數，會把後面的檔案路徑也當成 arch 名解析 → "unknown architecture
+          #    specification flag: <path>"。直接讀 -archs 輸出並匹配最穩（CLT/Xcode 兩版皆可）。
           SAMPLE=$(find "$LIBDIR" -name 'libLLVMSupport.a' | head -1)
-          echo "arch of $SAMPLE: $(lipo -archs "$SAMPLE")"
-          lipo -verify_arch x86_64 "$SAMPLE" || { echo "::error::$SAMPLE is not x86_64 Mach-O"; exit 1; }
+          ARCHS=$(lipo -archs "$SAMPLE")
+          echo "arch of $SAMPLE: $ARCHS"
+          case " $ARCHS " in
+            *" x86_64 "*) : ;;
+            *) echo "::error::$SAMPLE is not x86_64 Mach-O (archs: $ARCHS)"; exit 1 ;;
+          esac
           # 反向釘死：交叉配置若靜默退回宿主，會編出 arm64——這裡必須查不到 arm64。
-          if lipo -verify_arch arm64 "$SAMPLE"; then
-            echo "::error::$SAMPLE contains arm64 (cross arch config silently fell back to host)"
-            exit 1
-          fi
+          case " $ARCHS " in
+            *" arm64 "*) echo "::error::$SAMPLE contains arm64 (cross arch config silently fell back to host)"; exit 1 ;;
+          esac
 
       - name: Package llvm-dev archive
         run: |
