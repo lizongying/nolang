@@ -13,10 +13,10 @@ box.f = (w io.writer, m [][]i64) {
     z [16][]byte
 
     ; 限定 NullableType・含值：?a.b = call（走 ps-parse-param/可為空臂 → ps-parse-type）
-    f ?fs.file = call-fs()
+    f = call-fs()
 
     ; 對照：含值複合型別宣告走通用 ps-parse-typedecl 的 ASSIGN 分支
-    d tls.conn = call-tls()
+    d = call-tls()
 
     ; 參數型別（io.writer / [][]i64）已由 ps-parse-param → ps-parse-type 覆蓋
     box.g = (k hpack.tables) {

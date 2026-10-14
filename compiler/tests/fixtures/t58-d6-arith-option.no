@@ -10,8 +10,8 @@ hold = (a i64, b i64) (r i64) {
     r = a + b
 }
 
-dtop i64 = 7
-dtwo i64 = 3
+dtop = 7
+dtwo = 3
 qa = dtop / dtwo
 qb = dtop + 1
 qc = (dtop) - (dtwo)
@@ -27,7 +27,7 @@ lit1 = 5
 lit2 = 6
 neg2 = lit1 + lit2
 
-sc i64 = 0
+sc = 0
 sc = dtop + dtwo
 
 #{overflow=wrap}

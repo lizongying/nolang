@@ -1,7 +1,7 @@
-import type {ReactNode} from 'react';
+import type { ReactNode } from 'react';
 import clsx from 'clsx';
 import Heading from '@theme/Heading';
-import {translate} from '@docusaurus/Translate';
+import { translate } from '@docusaurus/Translate';
 import styles from './styles.module.css';
 
 type FeatureItem = {
@@ -12,35 +12,36 @@ type FeatureItem = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: translate({message: '無 GC'}),
+    title: translate({ message: '內存安全' }),
     // Svg: require('@site/static/img/0.svg').default,
     description: (
       <>
-        {translate({message: '不依賴垃圾回收，自动安全內存管理'})}
+        {translate({ message: '自动內存管理' })}
       </>
     ),
   },
   {
-    title: translate({message: '內存安全'}),
+    title: translate({ message: '性能強勁' }),
     // Svg: require('@site/static/img/0.svg').default,
     description: (
       <>
-        {translate({message: '作用域離開自動釋放，杜絕懸垂引用、內存泄漏'})}
+        {translate({ message: '無 GC' })}
       </>
     ),
   },
+
   {
-    title: translate({message: '語法極簡'}),
+    title: translate({ message: '語法極簡' }),
     // Svg: require('@site/static/img/0.svg').default,
     description: (
       <>
-        {translate({message: '极少關鍵字，極簡語法'})}
+        {translate({ message: '語法更簡單' })}
       </>
     ),
   },
 ];
 
-function Feature({title, description}: FeatureItem) {
+function Feature({ title, description }: FeatureItem) {
   return (
     <div className={clsx('col col--4')}>
       <div className="text--center">
@@ -48,7 +49,7 @@ function Feature({title, description}: FeatureItem) {
       </div>
       <div className="text--center padding-horiz--md">
         <Heading as="h3">{title}</Heading>
-        {/* <p>{description}</p> */}
+        <p>{description}</p>
       </div>
     </div>
   );

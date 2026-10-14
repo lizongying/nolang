@@ -2992,12 +2992,11 @@ func checkRedundantTypeInStmt(stmt parser.Statement, file string, varTypes map[s
 			if !isFixedArrayAnnotation(s.Type) {
 				inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
 				// D1：有號整數 `+ - * / %` 的結果恆為 `?T`，因此寫在目標上的 plain `T`
-				// 標註**不是**冗餘 —— 它正是抑制 option 化的那個開關（見
-				// `inferOptionArith` 的 target 閘門與 `captureTargetAllowsOption`：
-				// 「已存在的變數不改其型別」）。少了這一條，D1 遷移時
+				// 標註**不是**冗餘 —— 2026-10-14 起它甚至是**錯誤**（D1 嚴格模式：
+				// 見本檔 upgradeOptionArithTargetType）。少了這一條，D1 遷移時
 				// 「補上 i64」與「刪掉多餘的 i64」兩條提示會互相打架，
 				// `#{overflow=wrap} p i64 = pos + 1` 會被要求改成 `p = pos + 1`
-				// —— 而後者立刻變成 `?i64`，觸發 15w45dqk。
+				// —— 而後者才是唯一合法的形狀（接著用两段式 match 解包，見 optionUnwrapRecipe）。
 				//
 				// 判準沿用 ValidateUnhandledOverflow 的 isDirectOverflowValue
 				// （同一套運算元型別推斷），避免兩處口徑漂移。
@@ -3881,7 +3880,7 @@ func ValidateIntOverflow(program *parser.Program) []ValidateResult {
 			File:    file,
 			Line:    line,
 			Column:  col,
-			Message: "整数运算 `a OP b` 默认在溢出时返回 option<T>，结果类型恒为 `?T`。三选一：①用 `?T` 接收（`a ?i64 = x + y`，或直接 `a = x + y` 让编译器推断成 option），再用 `?=` 上抛或 `a: { ok -> it, -> 0 }` 解包；②加注解 `#{overflow = wrap}`（无声回绕）/`clamp0`（下溢归零）/`min`/`max`/`saturate`（饱和箝位）或型别前缀形式如 `#{overflow = u8-max}` 指定溢出行為——注意注解只改变失败时怎么取值，结果仍是 `?T`，仍须解包；③`_ = x + y` 显式丢弃。",
+			Message: "整数运算 `a OP b` 默认在溢出时返回 option<T>，结果类型恒为 `?T`。三选一：①用 `?T` 接收（`a ?i64 = x + y`，或直接 `a = x + y` 让编译器推断成 option），再用 `?=` 上抛或两段式 match 解包（`v = a: {` 换行 `ok -> it` / `-> 0`）；②加注解 `#{overflow = wrap}`（无声回绕）/`clamp0`（下溢归零）/`min`/`max`/`saturate`（饱和箝位）或型别前缀形式如 `#{overflow = u8-max}` 指定溢出行為——注意注解只改变失败时怎么取值，结果仍是 `?T`，仍须解包；③`_ = x + y` 显式丢弃。",
 			TraceID: "ovf-int-default",
 		})
 	}
@@ -4496,6 +4495,165 @@ func isDirectOverflowValue(v parser.Expression, varTypes map[string]string, self
 	return true
 }
 
+// ---------------------------------------------------------------------------
+// D1 嚴格模式（2026-10-14）：綁定目標上的 plain 型別標註不是「把 option 拉回 plain」
+// 的開關，而是把 err 分支靜默丟掉的隱含解包。
+//
+// 使用者明確要求：`k i64 = i + 1 #{overflow=wrap}` 必須是**錯誤**。理由是按設計
+// 有號整數 `+ - * / %` 的結果恆為 `?T`，`#{overflow=...}` 註解只改變「失敗時怎麼
+// 取值」（wrap／clamp0），**不改變結果型別**（見 parser/lowering.go
+// inferOptionArith 的 D1 段）。因此下列三種形狀全部等價，都必須拒絕：
+//
+//	k i64 = a + b                 ; 未標註
+//	k i64 = a + b #{overflow=wrap}  ; 已標註
+//	r i64 = a + b                 ; r 是結果參數（宣告在簽名上，s.Type == nil）
+//
+// 實作方式不是另立一條診斷，而是把「右值本質」升格為 `?T`，讓下方既有的
+// 15w45dqk / 1mf3x79l 判定自然開火 —— 訊息、trace、硬錯誤分級全部沿用既有管道。
+// ---------------------------------------------------------------------------
+
+// ovfOptionArithRootOps 是「統一 option 規則」在**根運算子**位置涵蓋的整數算術，
+// 與 parser/lowering.go isOptionArithOperator 逐字一致（含 %）。
+//
+// 刻意與本檔 lint 用的 overflowArithOps（只有 + - * /）不同：那張表服務 HINT，
+// 報多無害（% 在 std 有上千條未標註站點）；本規則會**拒絕**程式，必須與 lowering
+// 真正合成 `?T` 的條件對齊，否則會出現「vet 說非法、build 卻接受」的漂移。
+// 實測釘死：`m = a % b` 之後 `q i64 = m` 確實觸發 15w45dqk，即 m 是 ?i64。
+var ovfOptionArithRootOps = map[string]bool{
+	"+": true, "-": true, "*": true, "/": true, "%": true,
+}
+
+// signedIntPayloadName 正規化一個「靜態可知的有號整數型別名」，mirror
+// parser/lowering.go lowerSignedIntName：去指標前綴、去模組限定名，只接受
+// int/i8/i16/i32/i64。
+//
+// i128 刻意排除：%option 容納不下 128-bit payload，codegen 對其退化為回繞
+// （plain int），不產生 option。
+func signedIntPayloadName(t string) (string, bool) {
+	t = strings.TrimSpace(t)
+	if t == "" || strings.HasPrefix(t, "?") || strings.HasPrefix(t, "&") {
+		return "", false
+	}
+	for strings.HasPrefix(t, "*") {
+		t = strings.TrimSpace(t[1:])
+	}
+	if i := strings.LastIndex(t, "."); i >= 0 {
+		t = t[i+1:]
+	}
+	switch t {
+	case "int", "i8", "i16", "i32", "i64":
+		return t, true
+	}
+	return "", false
+}
+
+// ovfOptionArithOperandType 回傳運算元的靜態有號整數型別；型別未知或非有號整數
+// 回 ok=false。
+//
+// 🔴 與 HINT 路徑的 isIntExpr／operandIntKind（未知型別保守視為整數）**刻意不同**：
+// 那兩條寧可多報，本路徑用於產生 ERROR，必須向「寬鬆」方向失敗 —— 一個解析不出
+// 型別的運算元（跨模組呼叫結果、泛型參數、新類型別名）會讓整條表達式不合格，
+// 於是**不報**。漏報一條明文型別的最壞結果是維持現狀（靜默），誤報一條的最壞
+// 結果是讓原本能編譯的程式失敗。
+func ovfOptionArithOperandType(e parser.Expression, varTypes map[string]string, selfType string) (string, bool) {
+	switch x := e.(type) {
+	case *parser.GroupedExpression:
+		return ovfOptionArithOperandType(x.Expression, varTypes, selfType)
+	case *parser.IntegerLiteral:
+		return "i64", true
+	case *parser.PrefixExpression:
+		// 一元負號修飾的整數字面量（-1）
+		if x.Operator == "-" {
+			if _, ok := x.Right.(*parser.IntegerLiteral); ok {
+				return "i64", true
+			}
+		}
+		return "", false
+	case *parser.Identifier:
+		// parser 把裸 `.`（隱式 self）脫糖為 Token.Type==DOT、Value=="self" 的
+		// Identifier；顯式寫的 `self` 也走這支。
+		if x.Value == "self" || x.Value == "." {
+			if selfType == "" {
+				return "", false
+			}
+			return signedIntPayloadName(selfType)
+		}
+		return signedIntPayloadName(varTypes[x.Value])
+	case *parser.InfixExpression:
+		// 巢狀算術運算元（`a + b * c` 的右運算元 `b * c`）：遞迴取兩側較寬者。
+		if !ovfOptionArithRootOps[x.Operator] {
+			return "", false
+		}
+		lt, okLT := ovfOptionArithOperandType(x.Left, varTypes, selfType)
+		rt, okRT := ovfOptionArithOperandType(x.Right, varTypes, selfType)
+		if !okLT || !okRT {
+			return "", false
+		}
+		if len(rt) > len(lt) {
+			return rt, true
+		}
+		return lt, true
+	}
+	return "", false
+}
+
+// ovfOptionArithPayloadType 回傳「根為 + - * / % 且兩運算元皆為靜態有號整數」的
+// 算術式的 option payload 型別（如 "i64"）；否則回 ""。
+//
+// 這個判斷與 lowering 決定「`x = a + b` 是否合成 ?T」的條件**完全相同**
+// （inferOptionArith → signedIntOperandType → isOptionArithOperator），因此它
+// 回答的是唯一有意義的問題：這個右值在統一 option 規則下**本來就是** option，
+// 與是否帶 `#{overflow=...}` 註解無關。
+func ovfOptionArithPayloadType(v parser.Expression, varTypes map[string]string, selfType string) string {
+	if g, ok := v.(*parser.GroupedExpression); ok {
+		return ovfOptionArithPayloadType(g.Expression, varTypes, selfType)
+	}
+	inf, ok := v.(*parser.InfixExpression)
+	if !ok || !ovfOptionArithRootOps[inf.Operator] {
+		return ""
+	}
+	lt, okLT := ovfOptionArithOperandType(inf.Left, varTypes, selfType)
+	if !okLT {
+		return ""
+	}
+	rt, okRT := ovfOptionArithOperandType(inf.Right, varTypes, selfType)
+	if !okRT {
+		return ""
+	}
+	if len(rt) > len(lt) {
+		return rt
+	}
+	return lt
+}
+
+// upgradeOptionArithTargetType 實作 D1 嚴格模式：當綁定目標**已宣告為 plain 整數
+// 型別**、而右值本質是 option 算術時，回傳升格後的推斷型別 `?T`。
+//
+// 只在「目標已有 plain 整數宣告」時開火，因此：
+//   - `x ?i64 = a + b`（目標已宣告 option）→ 不升格，既有相容比對放行；
+//   - `x = a + b`（全新未標註綁定）→ 不升格，維持 lowering 合成的推断 ?T 路徑；
+//   - lowering 的合成預宣告 `__cap_N ?T = expr` / `mzwb28br` 前置宣告 →
+//     s.Type 是 IsInferred 的 NullableType，目標型別帶 `?`，不升格。
+//
+// targetType 為已宣告型別（let 的 s.Type.String()，或賦值路徑 varTypes[name]）。
+func upgradeOptionArithTargetType(value parser.Expression, targetType string, varTypes map[string]string, selfType string) string {
+	if value == nil || targetType == "" {
+		return ""
+	}
+	if strings.HasPrefix(targetType, "?") || strings.HasPrefix(targetType, "&") {
+		return ""
+	}
+	// 目標必須是整數家族（有號／無號／byte）——option payload 落在整數上，
+	// 對非整數目標升格只會產生意義含混的訊息（那類錯由別的規則負責）。
+	if !isIntType(stripModulePrefix(targetType)) {
+		return ""
+	}
+	if p := ovfOptionArithPayloadType(value, varTypes, selfType); p != "" {
+		return "?" + p
+	}
+	return ""
+}
+
 // infixFlaggedByOvfLint 用與 ovf-int-default lint 走查（walkExprForIntOverflow）
 // 完全相同的口径（operandIntKind）判定一個 + - * / 是否會被 lint 報告：若該 lint
 // 會報，則其所在陳述必須進入 relevant 集合——否則 `no fmt` 刪掉注解後 lint/硬
@@ -4751,7 +4909,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 	// 不會自動上拋，仍必須自己解包或回傳。
 	reportOptUnuse := func(stmt parser.Statement, name, curFile string) {
 		msg := "option 绑定后从未被消费：既没有上抛（`?=`），也没有解包（`x: { … }` / `_ = x`），错误被静默丢弃。" +
-			"请用 `" + name + " = expr: { ok -> it, -> 0 }` 解包，或 `" + name + " ?= expr` 上抛，或 `_ = " + name + "` 显式丢弃。"
+			optionUnwrapRecipe(name)
 		key := fmt.Sprintf("%s|%d:%d:%s", canonPath(curFile), stmt.Pos().Line, stmt.Pos().Column, optUnuseTraceID)
 		if seen[key] {
 			return
@@ -4935,7 +5093,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 				// 消費」只剩合成陳述可以承載。
 				if !explicitOption && !discarded && isDirectOverflowValue(s.Value, varTypes, selfType) {
 					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<T>，此处绑定到 `"+s.Name.Value+"`（类型 `?T`）。"+
-						"请用 `"+s.Name.Value+" = expr: { ok -> it, -> 0 }` 解包、`"+s.Name.Value+" ?= expr` 上抛，或 `_ = expr` 显式丢弃。"+
+						optionUnwrapRecipe(s.Name.Value)+
 						"若希望溢出时回绕而不是报错，可加 `#{overflow = wrap}`——注意注解只改变溢出行為，结果仍是 `?T`。", curFile)
 				}
 			}
@@ -7790,12 +7948,34 @@ func optionImplicitUnwrapRejected(targetType, valueType string) bool {
 	return strings.HasPrefix(valueType, "?") && !strings.HasPrefix(targetType, "?")
 }
 
+// optionUnwrapRecipe 統一產出「怎麼解包一個 option」的建議文字。
+//
+// 🔴 2026-10-14：原本四處 hint 都推薦 `k = expr: { ok -> it, -> 0 }`，實測**兩種
+// 形態都不成立**，照做會得到更壞的結果：
+//
+//  1. 逗號分隔臂是**解析錯誤**：`expected variable name after ',', got RARROW(->)`。
+//     match 臂必須**換行**分隔（`->` 是短路管線，見 parser/stmt.go）。
+//  2. `<expr>: { ... }` 只有當 `<expr>` 是**裸識別字**時才附著成 match 表達式；
+//     右值是 infix 或 call 時，par先結成 `k = <expr>`，`: { … }` 脫離成一條
+//     以 `ok` 為主體的獨立 match 陳述 —— k 保持未解包的 `?T`，錯誤被靜默丟棄。
+//
+// 因此這裡只推荐實測可用的兩段式（rsa.no / r2.no 均驗證通過）。
+func optionUnwrapRecipe(name string) string {
+	return "请用两段式解包：先 `" + name + " = <expr>`（推断为 ?T），再 `v = " + name + ": {` 换行书写 `ok -> it` 与 `-> <默认值>` 两臂；" +
+		"或用 match 语句 `" + name + ": { ok -> { … } -> { … } }`，或 `" + name + " ?= <expr>` 上抛，或 `_ = <expr>` 显式丢弃。" +
+		"注意 match 臂必须换行分隔（逗号形态是解析错误），且 `" + name + " = <expr>: { … }` 的同行写法只在 <expr> 是裸标识符时生效，否则 match 会脱离成独立语句、" + name + " 仍是未解包的 ?T。"
+}
+
 // optionUnwrapAssignHint 為 optionImplicitUnwrapRejected 命中的診斷補上可行修法，
 // 避免使用者只看到「cannot assign ?i64 value to i64 variable」而不知從何下手。
+//
+// 🔴 2026-10-14：尾句原本推薦「用显式型别 `x i64 = a OP b` 搭配 `#{overflow = wrap`」
+// 把結果拉回 plain —— 那正是 D1 嚴格模式要禁止的隱含解包，已刪除。`#{overflow=...}`
+// 註解只改變「失敗時怎麼取值」，結果仍是 `?T`。
 func optionUnwrapAssignHint(valueType string) string {
 	inner := strings.TrimPrefix(valueType, "?")
-	return fmt.Sprintf("；option 不能隐式解包（这只是拷贝，失败分支会被丢弃）。请用 `: { ok -> it, -> <默认值> }` 解包、"+
-		"`?=` 上抛，或把目标声明为 `?%s`。若本意就是回绕/钳位，用显式型别：`x %s = a OP b` 搭配 `#{overflow = wrap}`。", inner, inner)
+	return "；option 不能隐式解包（这只是拷贝，失败分支会被丢弃）。" + optionUnwrapRecipe("k") +
+		"。若本意是回绕/钳位，`#{overflow = wrap` 只改变溢出时的取值，结果仍是 `?" + inner + "`，仍须解包。"
 }
 
 // isContainerLenOwner reports whether a value of type t owns a read-only `len`
@@ -8011,6 +8191,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
+			// D1 嚴格模式：目標已宣告為 plain 整數、右值本質是 option 算術時升格為 `?T`，
+			// 交由下方 15w45dqk 拒絕（明文標註不是把 option 拉回 plain 的開關）。
+			if s.Name != nil {
+				if up := upgradeOptionArithTargetType(s.Value, varTypes[s.Name.Value], varTypes, selfType); up != "" {
+					inferredType = up
+				}
+			}
 			// `err` 是變體標記，不是真型別：match 的 `err ->` 臂會為隱式綁定 `it`
 			// 合成一條 `let it t=err`。而 err 載荷**永遠是 str**
 			// （`option { ok(v t), nil, err(e str) }`，且統一佈局後標量 option
@@ -8251,6 +8438,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				if !isNilAssign {
 					if existingType, exists := varTypes[ident.Value]; exists {
 						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+						// D1 嚴格模式：目標已宣告為 plain 整數、右值本質是 option 算術時
+						// 升格為 `?T`，交由下方 1mf3x79l 拒絕。這條路徑覆蓋結果參數
+						// （`(r i64) { r = a + b }`）與「先宣告 plain 再指派」
+						// （`x i64 = 0; x = a + b`）——兩者的宣告都在簽名或先前的
+						// let 上，不在本陳述的型別節點上。
+						if up := upgradeOptionArithTargetType(assign.Value, existingType, varTypes, selfType); up != "" {
+							valType = up
+						}
 						// 有符號整數相減溢位：未標註時預設回傳 option<int>。
 						subDefaultOpt := false
 						if valType != "" {
