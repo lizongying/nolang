@@ -1701,12 +1701,134 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	// Sync curFuncName to parser for function-scoped VarType lookups.
 	savedFuncName := l.p.curFuncName
 	l.p.curFuncName = l.curFuncName
+	// 類型解構 match 偵測：被匹配值靜態型別是 union（如 num）時，按型別臂靜態
+	// 單態化派發，完全繞開 buildMatchDesugar 的 `matched == X` 運行期條件生成。
+	if ident, ok := sm.Matched.(*Identifier); ok {
+		if t, ok2 := l.p.sem.FuncVarType(l.curFuncName, ident.Value); ok2 && l.p.isUnionType(t) {
+			result := l.p.buildTypeMatchDesugar(sm, t)
+			l.p.curFuncName = savedFuncName
+			if ifExpr, ok3 := result.(*IfExpression); ok3 && ifExpr != nil {
+				ifExpr.MatchEndPos = sm.RBracePos
+			}
+			return result
+		}
+	}
 	result := l.p.buildMatchDesugar(sm)
 	l.p.curFuncName = savedFuncName
 	if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
 		ifExpr.MatchEndPos = sm.RBracePos
 	}
 	return result
+}
+
+// buildTypeMatchDesugar 建立「類型解構 match」的核心 AST（union / type-set
+// 靜態單態化派發）。
+//
+// 被匹配值靜態型別是 union（如 num = i32 | i64 | f64）；arm 模式為型別名
+// （i32 ->）、帶綁定（v i32 ->）或預設臂（->）。不產生 `matched == X` 運行期
+// 條件：選臂在 MIR 階段按單態化後的具體型別完成（靜態派發，零執行期開銷、
+// 零 type tag）。每個型別臂內注入 `it = matched`（或 `v = matched`）並收窄為
+// 該成員型別，供 checker 型別推斷與臂內操作使用。
+func (p *Parser) buildTypeMatchDesugar(sm *SurfaceMatch, matchedVarType string) Expression {
+	tok, matched, arms := sm.Token, sm.Matched, sm.Arms
+	if len(arms) == 0 {
+		return nil
+	}
+	members := p.flattenUnion(matchedVarType, nil)
+	memberSet := make(map[string]bool, len(members))
+	for _, m := range members {
+		memberSet[m] = true
+	}
+
+	type tmArm struct {
+		typePattern string
+		bindingName string
+		isDefault   bool
+		body        *BlockStatement
+	}
+	resolved := make([]tmArm, len(arms))
+	for i := range arms {
+		a := &arms[i]
+		var ra tmArm
+		ra.body = a.body
+		if a.isTypeArm {
+			ra.typePattern = a.typePattern
+			ra.bindingName = a.typeBindingName
+			if len(members) > 0 && !memberSet[a.typePattern] {
+				p.saveError(fmt.Sprintf("line %d, column %d: type match arm pattern %q is not a member of union %q",
+					a.pos.Line, a.pos.Column, a.typePattern, matchedVarType))
+			}
+		} else if a.isWildcard {
+			ra.isDefault = true
+		} else if ident, ok := a.condition.(*Identifier); ok {
+			ra.typePattern = ident.Value
+			if len(members) > 0 && !memberSet[ident.Value] {
+				p.saveError(fmt.Sprintf("line %d, column %d: type match arm pattern %q is not a member of union %q",
+					a.pos.Line, a.pos.Column, ident.Value, matchedVarType))
+			}
+		} else {
+			p.saveError(fmt.Sprintf("line %d, column %d: type match on union %q requires type patterns (e.g. %q ->) or a default arm (->)",
+				a.pos.Line, a.pos.Column, matchedVarType, firstMember(members)))
+			ra.isDefault = true
+		}
+		// 注入收窄綁定：型別臂內 `it`（或 v）按成員型別可見。
+		if !ra.isDefault && ra.typePattern != "" {
+			bindName := ra.bindingName
+			if bindName == "" {
+				bindName = "it"
+			}
+			if bindName != "it" {
+				if p.sem.DeclaredVars == nil {
+					p.sem.DeclaredVars = make(map[string]bool)
+				}
+				p.sem.DeclaredVars[bindName] = true
+				p.sem.SetFuncVarType(p.curFuncName, bindName, ra.typePattern)
+				p.setVarType(bindName, ra.typePattern)
+			}
+			bind := &LetStatement{
+				Token:        tok,
+				Name:         &Identifier{Token: tok, Value: bindName},
+				Value:        matched,
+				Type:         &NamedType{Value: ra.typePattern},
+				IsSynthetic:  true,
+				IsArmBinding: true,
+			}
+			ra.body = p.prependStmt(ra.body, bind)
+		}
+		resolved[i] = ra
+	}
+
+	// 由內而外建 if/elif/else 鏈；MIR 按單態化後的具體型別選臂（不依賴此鏈結構）。
+	var ifExpr *IfExpression
+	for i := len(resolved) - 1; i >= 0; i-- {
+		ra := resolved[i]
+		node := &IfExpression{
+			Token:           tok,
+			Condition:       nil,
+			Consequence:     ra.body,
+			IsTypeMatch:     true,
+			TypePattern:     ra.typePattern,
+			TypeBindingName: ra.bindingName,
+			IsTypeDefault:   ra.isDefault,
+			MatchedExpr:     matched,
+		}
+		if ifExpr != nil {
+			node.Alternative = &BlockStatement{
+				Token:      tok,
+				Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
+			}
+		}
+		ifExpr = node
+	}
+	return ifExpr
+}
+
+// firstMember 回傳 union 成員清單的第一個（用於錯誤訊息示例），空則回傳 "i32"。
+func firstMember(members []string) string {
+	if len(members) > 0 {
+		return members[0]
+	}
+	return "i32"
 }
 
 // ---- desugar 構建器（原 desugar.go，現屬 lowering 層） ----

@@ -1119,6 +1119,15 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// ?-> → nil branch
 			ma.condition = &Identifier{Token: p.currentToken, Value: "nil"}
 			p.nextToken()
+		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.IDENT &&
+			p.look(0).Type == lexer.RARROW {
+			// v T -> ：帶綁定型別臂（類型解構 match）。v 為綁定名（臂內可見為 T），
+			// T 為 union 成員型別。純語法識別，成員校驗延後到 lowering/checker。
+			ma.typeBindingName = p.currentToken.Literal
+			ma.typePattern = p.peekToken.Literal
+			ma.isTypeArm = true
+			p.nextToken() // skip v
+			p.nextToken() // skip T
 		} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.INT ||
 			p.currentToken.Type == lexer.FLOAT || p.currentToken.Type == lexer.STRING ||
 			p.currentToken.Type == lexer.NIL || p.currentToken.Type == lexer.TRUE || p.currentToken.Type == lexer.FALSE {

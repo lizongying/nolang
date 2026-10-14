@@ -730,6 +730,20 @@ func (p *Parser) parseTypeAlias() Statement {
 		p.typeAliasNames = make(map[string]bool)
 	}
 	p.typeAliasNames[name] = true
+	// Record union members for type-destructuring match detection
+	// (lowering needs to know if a matched value's static type is a union).
+	if ta.Union != nil {
+		if p.unionMembers == nil {
+			p.unionMembers = make(map[string][]string)
+		}
+		members := make([]string, 0, len(ta.Union.Types))
+		for _, t := range ta.Union.Types {
+			if nt, ok := t.(*NamedType); ok {
+				members = append(members, nt.Value)
+			}
+		}
+		p.unionMembers[name] = members
+	}
 	return ta
 }
 

@@ -27,6 +27,38 @@ func (p *Parser) matchedIsOption(matched Expression) bool {
 	return false // 未知變數預設不觸發完整性檢查
 }
 
+// isUnionType 判斷型別名是否為 union 別名（如 num / int / float）。
+func (p *Parser) isUnionType(name string) bool {
+	if name == "" {
+		return false
+	}
+	_, ok := p.unionMembers[name]
+	return ok
+}
+
+// flattenUnion 遞迴展平 union 別名，回傳其葉子成員型別名集合（如
+// num → {i32,i64,i64…,f32,f64}）。用於類型解構 match 的成員校驗。
+// 避免無限遞迴：visited 記錄已展開的別名。
+func (p *Parser) flattenUnion(name string, visited map[string]bool) []string {
+	if visited == nil {
+		visited = make(map[string]bool)
+	}
+	if visited[name] {
+		return nil
+	}
+	visited[name] = true
+	direct, ok := p.unionMembers[name]
+	if !ok {
+		// 非 union 別名：本身是葉子型別
+		return []string{name}
+	}
+	var out []string
+	for _, m := range direct {
+		out = append(out, p.flattenUnion(m, visited)...)
+	}
+	return out
+}
+
 // parseTildeMatchStatement parses old-style ~match:
 //
 //	~match x { case err: ... case nil: ... default: ... }
@@ -699,6 +731,13 @@ type matchArm struct {
 	// 依位置把 `it.f0` / `it.f1` 綁到 bindingNames[0] / bindingNames[1]。
 	bindingNames  []string
 	bindingFields []string
+	// 類型解構 match（union / type-set 靜態單態化派發）：
+	// isTypeArm 標記本臂是「帶綁定型別臂」（v i32 ->），typePattern 為型別名、
+	// typeBindingName 為綁定名。由 parseMatchExprFrom 的 `IDENT IDENT RARROW`
+	// 分支設定；lowering 階段以此識別類型臂（裸型別臂 i32 -> 則以 condition 識別）。
+	isTypeArm     bool
+	typePattern   string
+	typeBindingName string
 	skipItBinding bool // generated arms that never reference `it` (e.g. ?= / #{index-out}
 	// sentinel arms that just return or substitute a default) opt out of the
 	// synthetic `it` binding, so a sentinel arm's %str-long/nil `it` type can't

@@ -826,6 +826,53 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		return c.b.Add(hir.Node{Kind: hir.KGrouped, First: c.expr(e.Expression), Line: line, Col: col})
 
 	case *IfExpression:
+		if e.IsTypeMatch {
+			// 類型解構 match（union / type-set 靜態單態化派發）：把
+			// buildTypeMatchDesugar 產生的 if/elif/else 鏈收斂成單一個
+			// KTypeMatch 節點，每個臂一個 KTypeArm 子節點。MIR 階段按單態化
+			// 後的具體型別選臂（不產生任何 OpCondBr / phi），零執行期開銷。
+			// 沿 Alternative 鏈還原所有臂（含預設臂），對齊
+			// match_exhaustive.go 的 matchChainedChild 走法。
+			var arms []int32
+			matched := e.MatchedExpr
+			for cur := e; cur != nil; {
+				armNodes := []int32{
+					c.slot("body", c.stmt(cur.Consequence)),
+				}
+				if cur.TypeBindingName != "" {
+					armNodes = append(armNodes, c.slot("bind", c.b.Add(hir.Node{
+						Kind: hir.KName, S: c.b.Intern(cur.TypeBindingName),
+					})))
+				}
+				arm := c.b.Add(hir.Node{
+					Kind:  hir.KTypeArm,
+					S:     c.b.Intern(cur.TypePattern),
+					Flags: hir.FlagTypeDefault * u32(cur.IsTypeDefault),
+					First: c.kids(armNodes),
+					Line:  line, Col: col,
+				})
+				arms = append(arms, arm)
+				// 走到下一個 if 鏈：Alternative 是單一 ExpressionStatement
+				// 包裹下一個 IsTypeMatch 的 IfExpression。
+				next := cur.Alternative
+				cur = nil
+				if next != nil {
+					for _, st := range next.Statements {
+						if es, ok := st.(*ExpressionStatement); ok {
+							if ie, ok2 := es.Expression.(*IfExpression); ok2 && ie.IsTypeMatch {
+								cur = ie
+								break
+							}
+						}
+					}
+				}
+			}
+			return c.b.Add(hir.Node{
+				Kind:  hir.KTypeMatch,
+				First: c.kids(append([]int32{c.slot("matched", c.expr(matched))}, arms...)),
+				Line:  line, Col: col,
+			})
+		}
 		nodes := []int32{
 			c.slot("cond", c.expr(e.Condition)),
 			c.slot("then", c.stmt(e.Consequence)),

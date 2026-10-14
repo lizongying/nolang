@@ -111,6 +111,10 @@ const (
 	// label ("cond", "then", "arg", ...); First holds the wrapped child.
 	KSlot
 
+	// 類型解構 match（union / type-set 靜態單態化派發）
+	KTypeMatch
+	KTypeArm
+
 	kindCount
 )
 
@@ -147,6 +151,7 @@ var KindNames = [kindCount]string{
 	KInterfaceMethod: "iface-method", KMapPair: "map-pair",
 	KName: "name", KAnnEntry: "ann-entry",
 	KGeneric: "generic", KUnionName: "union-name", KSlot: "slot",
+	KTypeMatch: "type-match", KTypeArm: "type-arm",
 }
 
 func (k Kind) String() string {
@@ -184,6 +189,11 @@ const (
 	FlagAsKeyword // `use path.fn as alias`
 	FlagSlice     // StructField.IsSlice (legacy slice modifier)
 	FlagFuncType  // declared type renders as a function type
+	// FlagTypeDefault marks a KTypeArm of a KTypeMatch that catches every union
+	// member not covered by an explicit type pattern (the `->` default arm).
+	// KTypeMatch performs static single-dispatch by the monomorphized concrete
+	// type, so the default arm is the fallback when no explicit pattern matches.
+	FlagTypeDefault uint32 = 1 << 21
 	// FlagOverflowWrap / FlagOverflowClamp0 / FlagOverflowMin / FlagOverflowMax /
 	// FlagOverflowSaturate 攜帶函數級 #{overflow = wrap|clamp0|min|max|saturate}
 	// 註解指定的「整數算術溢位」處理模式，貫穿 HIR 重建（parser -> hir ->

@@ -1637,6 +1637,17 @@ type IfExpression struct {
 	// MatchEndPos 保留 bare match 外層 `}` 的位置（由 lowering pass 設置）。
 	// EndPos() 優先返回此位置，讓格式化器能準確判斷 match 塊結束後的空行。
 	MatchEndPos lexer.Position
+	// ---- 類型解構 match（union / type-set 靜態單態化派發）----
+	// IsTypeMatch 標記本 IfExpression 鏈屬於「類型 match」：被匹配值的靜態型別
+	// 是 union（如 num），arm 模式是型別名（i32 ->）或帶綁定（v i32 ->），
+	// 或預設臂（->）。MIR 階段按單態化後的具體型別選臂，不產生任何分支。
+	IsTypeMatch bool
+	// TypePattern 是本臂匹配的型別名（如 "i32"）；空字串表示非型別臂。
+	TypePattern string
+	// TypeBindingName 是帶綁定臂（v i32 ->）的綁定名；空字串表示用隱含 it。
+	TypeBindingName string
+	// IsTypeDefault 標記本臂為預設臂（->），匹配其餘所有 union 成員。
+	IsTypeDefault bool
 }
 
 func (ie *IfExpression) expressionNode()     {}

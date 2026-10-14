@@ -1,0 +1,35 @@
+; s63 fixture：FunctionDefinition 的隱式泛型參數渲染 `GenericParams: <名, …>`。
+;   鏡像 Go detectImplicitGeneric（decl.go:2061-2089）+ dump signature()（dump.go:768-775）。
+;   涵蓋 oracle 探針釘死的邊界：
+;     ① 單字母 a-z 的 NamedType 元素 ⇒ 泛型（`[]t`、`?u`、裸 `t`）
+;     ② 大寫/多字母型別名 ⇒【非】泛型（`T`、`i64`、`heap`）
+;     ③ 去重 + 保序：先 Parameters 後 Results（`f(a []t, b ?u, c t) (r u)` ⇒ `t, u`）
+;     ④ 參數【名】為單字母但型別非泛型 ⇒ 不計（`f7(t i64)` ⇒ 無 GenericParams）
+;     ⑤ 方法定義路徑同規則（recv.method），self 接收者型別多字母不計
+;   ⚠️ 不含 `[n]T` 符號大小陣列參數——noc 目前無法把帶符號大小的陣列型別解析為
+;      ArrayType 參數（獨立既存缺陷，與本增量正交）。
+
+f = (a []t, b ?u, c t) (r u) {
+}
+
+g = (x T) {
+}
+
+h = (v t, w t) {
+}
+
+f7 = (t i64) {
+}
+
+box {
+    data []t
+    n i64
+}
+
+box.set = (v t) {
+    .n = 0
+}
+
+box.make = (d []t) (b box) {
+    b.n = 0
+}

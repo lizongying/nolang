@@ -43,6 +43,7 @@ type Parser struct {
 	externEnumVariants map[string][]string
 	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
 	typeAliasNames    map[string]bool              // 已定義的類型別名名稱（用於等號語法偵測）
+	unionMembers       map[string][]string         // union 別名名 → 直接成員型別名（用於類型解構 match 偵測）
 
 	// curFuncName tracks the current function being parsed, for function-scoped
 	// variable type tracking. Empty when parsing module-level code.

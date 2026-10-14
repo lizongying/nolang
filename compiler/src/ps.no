@@ -3073,6 +3073,57 @@ ps-infer-type = (t ast, val i64) (r str) {
     }
 }
 
+; s63：隱式泛型參數偵測——鏡像 Go detectImplicitGeneric（decl.go:2061-2089）。
+;   單字母 a-z 的 NamedType 收入泛型名（去重、保序）；Nullable/View/Pointer/Slice 遞迴 kid0；
+;   Array 先查 Size 是否單字母 IDENT、再遞迴 Elem(kid0+1)；MapType/FunctionType/其餘 Go switch 無臂 ⇒ 不處理。
+;   gnames 以 []str 累加，呼叫端據此建 Identifier 節點 prepend 於 FD kid 區首（signature() 依 c3 切片渲染 GenericParams）。
+;   ⚠️ 僅 ps-parse-func / ps-parse-method-func 兩個 FD 定義點呼叫（對應 Go decl.go:518/521、1750/1753），
+;     FunctionLiteral/FunctionType 不偵測——多處誤加會給當前 SAME 檔憑空生出 GenericParams 行而回歸。
+ps-add-generic = (g []str, nm str) {
+    found = 0
+    j = 0
+    (j < g.len()) {
+        g[j] == nm -> found = 1
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+    found == 0 -> g.push(nm)
+}
+
+ps-detect-generic = (t ast, i i64, g []str) {
+    i <= 0 -> return
+    d = ast.nd-at(t, i)
+    d.kind <= 0 -> return
+    k = d.kind
+    {
+        k == asp.K_NAMED_TYPE -> {
+            nm = ast.str-at(t, d.s0)
+            nm.len-bytes() == 1 && nm.byte(0) >= 97 && nm.byte(0) <= 122 -> ps-add-generic(g, nm)
+        }
+
+        ; Nullable/View/Pointer 遞迴 .Type、Slice 遞迴 .Elem——noc 兩者皆 kid0。
+        k == asp.K_NULLABLE_TYPE || k == asp.K_VIEW_TYPE || k == asp.K_POINTER_TYPE || k == asp.K_SLICE_TYPE -> ps-detect-generic(t, ast.kid-at(t, d.kid0), g)
+
+        k == asp.K_ARRAY_TYPE -> {
+
+            ; Size 若是單字母 IDENT（如 `[n]byte`）視為泛型大小參數（Go decl.go:2077-2080），先於 Elem 加入。
+            sz = ast.kid-at(t, d.kid0)
+            sz > 0 -> {
+                sd = ast.nd-at(t, sz)
+                sd.kind == asp.K_IDENTIFIER -> {
+                    nm2 = ast.str-at(t, sd.s0)
+                    nm2.len-bytes() == 1 && nm2.byte(0) >= 97 && nm2.byte(0) <= 122 -> ps-add-generic(g, nm2)
+                }
+            }
+            ps-detect-generic(t, ast.kid-at(t, d.kid0 + 1), g)
+        }
+
+        -> {
+        }
+    }
+}
+
 ; ps-parse-func：解析 `name = (params) { body }` 或 `name = (params) (results) { body }`
 ps-parse-func = (t ast, p psst, name str) (idx i64) {
 
@@ -3141,12 +3192,41 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         p.sigN.push(name)
         p.sigP.push(opos[0])
     }
+
+    ; s63：偵測隱式泛型參數（Go decl.go:517-522：先 Parameters 後 Results，同序去重）。
+    ;   每個參數/回傳值的型別節點（Parameter kid0）遞迴走訪，單字母 a-z 名收入 gnames。
+    gnames []str = with-cap(2)
+    gp = 0
+    (gp < params.len()) {
+        gpd = ast.nd-at(t, params[gp])
+        ps-detect-generic(t, ast.kid-at(t, gpd.kid0), gnames)
+
+        #{overflow=wrap}
+        gp = gp + 1
+    }
+    gr = 0
+    (gr < outs.len()) {
+        grd = ast.nd-at(t, outs[gr])
+        ps-detect-generic(t, ast.kid-at(t, grd.kid0), gnames)
+
+        #{overflow=wrap}
+        gr = gr + 1
+    }
     idx = ast.add(t, asp.K_FUNCTION_DEFINITION)
     ast.set-slot(t, idx, 0, ast.put-str(t, name))
 
-    ; SIG：泛型參數 0 / 輸入參數 params.len() / 回傳值 outs.len()
-    ;   kid 區序：[inputs…][results…] 連續（signature() 由 base 依 c3/c4/c5 切片），body 為其後 guarded CHILD
-    ast.set-sig(t, idx, 0, params.len(), outs.len())
+    ; SIG：泛型參數 gnames.len() / 輸入參數 params.len() / 回傳值 outs.len()
+    ;   kid 區序：[genparams…][inputs…][results…] 連續（signature() 由 base 依 c3/c4/c5 切片），body 為其後 guarded CHILD
+    ast.set-sig(t, idx, gnames.len(), params.len(), outs.len())
+    gg = 0
+    (gg < gnames.len()) {
+        gi = ast.add(t, asp.K_IDENTIFIER)
+        ast.set-slot(t, gi, 0, ast.put-str(t, gnames[gg]))
+        ast.kid-add(t, idx, gi)
+
+        #{overflow=wrap}
+        gg = gg + 1
+    }
     j = 0
     (j < params.len()) {
         ast.kid-add(t, idx, params[j])
@@ -3246,6 +3326,27 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
         p.msN.push(fullName)
         p.msP.push(opos[0])
     }
+
+    ; s63：方法定義隐式泛型偵測（Go decl.go:1750/1753：Parameters 後接 Results）。
+    ;   self 為 Results[0]（型別 selfnt），順序 params → self → outs。
+    gnames []str = with-cap(2)
+    gp = 0
+    (gp < params.len()) {
+        gpd = ast.nd-at(t, params[gp])
+        ps-detect-generic(t, ast.kid-at(t, gpd.kid0), gnames)
+
+        #{overflow=wrap}
+        gp = gp + 1
+    }
+    ps-detect-generic(t, selfnt, gnames)
+    gr = 0
+    (gr < outs.len()) {
+        grd = ast.nd-at(t, outs[gr])
+        ps-detect-generic(t, ast.kid-at(t, grd.kid0), gnames)
+
+        #{overflow=wrap}
+        gr = gr + 1
+    }
     idx = ast.add(t, asp.K_FUNCTION_DEFINITION)
     ast.set-slot(t, idx, 0, ast.put-str(t, fullName))
     ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); methodDef（P-TRUE：僅 'true' 才印）
@@ -3253,7 +3354,16 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
 
     #{overflow=wrap}
     rs = rs + 1; +self
-    ast.set-sig(t, idx, 0, params.len(), rs)
+    ast.set-sig(t, idx, gnames.len(), params.len(), rs)
+    gg = 0
+    (gg < gnames.len()) {
+        gi = ast.add(t, asp.K_IDENTIFIER)
+        ast.set-slot(t, gi, 0, ast.put-str(t, gnames[gg]))
+        ast.kid-add(t, idx, gi)
+
+        #{overflow=wrap}
+        gg = gg + 1
+    }
     j = 0
     (j < params.len()) {
         ast.kid-add(t, idx, params[j])
@@ -4341,7 +4451,6 @@ ps-bm-block-shape = (p psst) (yes i64) {
                     t4 == tok.OR || t4 == tok.AND || t4 == tok.XOR || t4 == tok.ADD || t4 == tok.SUB ||
 t4 == tok.MUL || t4 == tok.QUO || t4 == tok.MOD || t4 == tok.SHL || t4 == tok.SHR ||
 t4 == tok.LPAREN || t4 == tok.LBRACE || t4 == tok.LBRACKET -> yes = 0
-
                     t4 == tok.DOT && t5 == tok.IDENT && (t6 == tok.LPAREN || t6 == tok.OR || t6 == tok.AND || t6 == tok.XOR || t6 == tok.ADD || t6 == tok.SUB || t6 == tok.MUL || t6 == tok.QUO || t6 == tok.MOD || t6 == tok.SHL || t6 == tok.SHR || t6 == tok.NEWLINE || t6 == tok.RBRACE || t6 == tok.COMMA) -> yes = 0
                 }
 

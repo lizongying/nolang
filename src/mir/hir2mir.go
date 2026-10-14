@@ -3713,6 +3713,78 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	}
 }
 
+// lowerTypeMatch lowers a `type-match` over a union / type-set via static
+// single-dispatch. The matched value's static type is a union alias
+// (e.g. `num = i32 | i64 | f64`). The build pipeline monomorphizes every union
+// instance to a concrete type (see build/transpiler.go monomorphizeUnions), so by
+// the time MIR runs the matched value is concrete (a function `clamp0(lo, hi num)
+// (r num)` becomes `clamp0__i64(lo, hi i64) (r i64)`). We therefore DISPATCH
+// STATICALLY: read the concrete type, pick the arm whose pattern equals it (or the
+// default arm), and lower ONLY that arm's body. No OpCondBr, no phi — zero runtime
+// cost and no type tag. Each arm body is a block the parser prepended a narrowing
+// `let it = <matched>` (typed to the member) to, so the arm sees the matched value
+// with its narrowed type (mirroring the option/enum match arm convention).
+func (l *lowerer) lowerTypeMatch(n *hir.Node) ValueID {
+	matchedID := l.slot(n.Id, "matched")
+	if matchedID == hir.NoID {
+		return NoVal
+	}
+
+	// Resolve the concrete (post-monomorphization) type of the matched value.
+	// Prefer the node's recorded type; fall back to lowering the value and
+	// reading its type (e.g. when the identifier has not been materialised yet).
+	concrete := ""
+	if mt := l.typeOfNode(l.pkg.Node(matchedID)); mt != NoType && mt != l.voidType {
+		if t := l.mod.Type(mt); t != nil {
+			concrete = t.Raw
+		}
+	}
+	if concrete == "" {
+		if mv := l.lowerExpr(matchedID); mv != NoVal {
+			if t := l.valueTypeOf(mv); t != NoType && t != l.voidType {
+				if tt := l.mod.Type(t); tt != nil {
+					concrete = tt.Raw
+				}
+			}
+		}
+	}
+
+	// Walk the arms. The first exact pattern match wins; otherwise the default
+	// arm (`->`) is the fallback. A non-exhaustive match with no default is
+	// rejected by the checker (see checker/match_exhaustive.go), but we degrade
+	// to NoVal rather than crashing if one slips through.
+	var chosenBody, defaultBody int32 = hir.NoID, hir.NoID
+	for _, armID := range l.pkg.Children(n.Id) {
+		an := l.pkg.Node(armID)
+		if an == nil || an.Kind != hir.KTypeArm {
+			continue
+		}
+		bodyID := l.slot(armID, "body")
+		if an.Flags&hir.FlagTypeDefault != 0 {
+			defaultBody = bodyID
+			continue
+		}
+		if l.pkg.Str(an.S) == concrete {
+			chosenBody = bodyID
+			break
+		}
+	}
+	if chosenBody == hir.NoID {
+		chosenBody = defaultBody
+	}
+	if chosenBody == hir.NoID {
+		return NoVal
+	}
+
+	// Lower ONLY the statically-selected arm. The result is the arm body's value.
+	armVal := l.lowerBlock(chosenBody)
+	if l.exprCapture && l.exprSink != NoVal {
+		l.captureArmValue(armVal)
+		return l.exprSink
+	}
+	return armVal
+}
+
 // captureArmValue records one match/if arm's final value into the shared
 // expression slot l.exprSink. The slot is created (zero-initialized, of the
 // arm value's type) on the FIRST captured arm; later arms store into the same
@@ -6535,6 +6607,11 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		}
 		l.unsupported(l.curFuncName(), "expr-ctrl", "control flow used as expression value")
 		return NoVal
+	case hir.KTypeMatch:
+		// Type-match over a union is static single-dispatch: the matched value's
+		// concrete type is known at MIR time (after union monomorphization), so
+		// only the matching arm is lowered — see lowerTypeMatch.
+		return l.lowerTypeMatch(n)
 	case hir.KFor:
 		l.unsupported(l.curFuncName(), "expr-ctrl", "control flow used as expression value")
 		return NoVal
