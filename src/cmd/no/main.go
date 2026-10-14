@@ -2020,12 +2020,6 @@ func fixRedundantTypeSource(src string) (string, bool) {
 		return "", false
 	}
 	results := checker.ValidateRedundantTypeAnnotation(program)
-	if os.Getenv("NOLANG_FIXDBG") != "" {
-		fmt.Fprintf(os.Stderr, "[REDDBG] ValidateRedundantTypeAnnotation returned %d results\n", len(results))
-		for _, r := range results {
-			fmt.Fprintf(os.Stderr, "[REDDBG]   line=%d col=%d msg=%q\n", r.Line, r.Column, r.Message)
-		}
-	}
 	if len(results) == 0 {
 		return "", false
 	}
@@ -2074,9 +2068,6 @@ func fixRedundantTypeSource(src string) (string, bool) {
 // 值運算式含十六進位字面量時一律不移除——寧可保守，不可改壞語義。
 func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStarts []int) (fmtRemoval, bool) {
 	if node == nil || node.Type == nil || node.Value == nil || node.Name == nil {
-		if os.Getenv("NOLANG_FIXDBG") != "" {
-			fmt.Fprintf(os.Stderr, "[REDDBG] computeRedundantTypeRemoval: node nil/type-nil guard hit (node=%v type=%v)\n", node != nil, node != nil && node.Type != nil)
-		}
 		return fmtRemoval{}, false
 	}
 	// 防禦：map 字面量 `m [str]i64 = {..}` 的型別標註不可移除。一旦移除，
@@ -2096,6 +2087,16 @@ func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStar
 	pos := node.Type.Pos()
 	sl, sc := pos.Line, pos.Column
 	if sl < 1 || sl > len(lineStarts) {
+		return fmtRemoval{}, false
+	}
+	// 防禦：推斷/合成的型別（如 parser 為 `q = p.self-view()` 蓋上的 `&view-point`）
+	// 其 Pos() 與變數名重合（從未寫入原始碼），沒有可移除的真實型別文本——若照常
+	// 「從型別位置往後掃描移除」，會把變數名 `q` 本身刪掉、腐化原始碼（見
+	// tests/view-basic.no 的回歸）。只有當型別嚴格位於變數名之後（中間至少隔一個
+	// 分隔符）時，才存在可供移除的書寫型別標註。
+	namePos := node.Name.Pos()
+	nameEndCol := namePos.Column + len(node.Name.Value)
+	if pos.Line != namePos.Line || pos.Column <= nameEndCol {
 		return fmtRemoval{}, false
 	}
 	// 型別標註首 byte。注意：NamedType.EndPos() 與 Pos() 相同（都回傳 token 起點），
@@ -2330,9 +2331,6 @@ func fixRedundantTypeInFileWithVet(filename, src string) (string, bool) {
 		}
 		positions = append(positions, pos{l.Line, l.Column})
 	}
-	if os.Getenv("NOLANG_FIXDBG") != "" {
-		fmt.Fprintf(os.Stderr, "[REDDBG] vet positions: %v\n", positions)
-	}
 	if len(positions) == 0 {
 		return "", false
 	}
@@ -2349,19 +2347,9 @@ func fixRedundantTypeInFileWithVet(filename, src string) (string, bool) {
 	var removals []fmtRemoval
 	for _, pp := range positions {
 		node := findRedundantTypeNode(program, pp.line, pp.col)
-		if os.Getenv("NOLANG_FIXDBG") != "" {
-			if node != nil {
-				fmt.Fprintf(os.Stderr, "[REDDBG]   pos %d:%d -> node Name=%v Type=%v\n", pp.line, pp.col, node.Name, node.Type)
-			} else {
-				fmt.Fprintf(os.Stderr, "[REDDBG]   pos %d:%d -> NO NODE\n", pp.line, pp.col)
-			}
-		}
 		rm, ok := computeRedundantTypeRemoval(src, node, lineStarts)
 		if !ok {
 			continue
-		}
-		if os.Getenv("NOLANG_FIXDBG") != "" {
-			fmt.Fprintf(os.Stderr, "[REDDBG]   removal [%d,%d) = %q\n", rm.start, rm.end, src[rm.start:rm.end])
 		}
 		removals = append(removals, rm)
 	}

@@ -1398,6 +1398,13 @@ func (pt *PointerType) String() string { return "*" + typeString(pt.Type) }
 type ViewType struct {
 	Token lexer.Token
 	Type  Type // implements both Expression and Type
+	// IsInferred is true when the view type was synthesized by the parser's
+	// type inference (e.g. the `&T` result of a view-returning call
+	// `q = p.self-view()`), not written by the user. It mirrors the same flag
+	// on the other type nodes so markInferred / isInferredType / typeIsInferred
+	// can recognize it and the redundant-type lint / --fix=redundant won't try
+	// to "remove" an annotation that never existed in source.
+	IsInferred bool
 }
 
 func (vt *ViewType) expressionNode()     {}

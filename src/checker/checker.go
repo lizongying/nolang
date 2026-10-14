@@ -9001,6 +9001,8 @@ func isInferredType(t parser.Type) bool {
 		return tt.IsInferred || isInferredType(tt.Elem)
 	case *parser.MapType:
 		return tt.IsInferred
+	case *parser.ViewType:
+		return tt.IsInferred
 	}
 	return false
 }

@@ -100,6 +100,23 @@ func TestFixRedundantTypeInFile(t *testing.T) {
 			src:  "main = () () {\n  a [3]i64 = [1, 2, 3]\n}\n",
 			want: "",
 		},
+		// 回歸：view 回傳呼叫（如 `q = p.self-view()`）的推斷型別 `&view-point` 是
+		// parser 替呼叫結果合成、從未寫入原始碼的，其 Pos() 與變數名重合。舊版
+		// isInferredType 沒有 *parser.ViewType 分支，把它當成用戶寫下的標註，報
+		// tcpoxtfd 並在移除時從變數名位置往後掃描，把 `q ` 整個刪掉（tests/view-basic.no
+		// 的 ` = p.self-view()`）。ViewType 補上 IsInferred 後，此處視為推斷型別，
+		// 不報冗餘、不移除——期望「無可移除」。
+		{
+			name: "view-returning call: inferred &view-point must not drop LHS name",
+			src: "view-point {\n  x i64\n}\n" +
+				"view-point.self-view = () (v &view-point) {\n  v = .\n}\n" +
+				"main = () () {\n" +
+				"  p = view-point { x: 7 }\n" +
+				"  q = p.self-view()\n" +
+				"  r = q.x\n" +
+				"}\n",
+			want: "",
+		},
 	}
 
 	for _, c := range cases {

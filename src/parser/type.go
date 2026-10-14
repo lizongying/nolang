@@ -1179,6 +1179,8 @@ func markInferred(t Type) Type {
 		markInferred(typ.Value)
 	case *PointerType:
 		markInferred(typ.Type)
+	case *ViewType:
+		typ.IsInferred = true
 	}
 	return t
 }
@@ -1197,6 +1199,8 @@ func typeIsInferred(t Type) bool {
 	case *NullableType:
 		return typ.IsInferred
 	case *MapType:
+		return typ.IsInferred
+	case *ViewType:
 		return typ.IsInferred
 	}
 	return false
