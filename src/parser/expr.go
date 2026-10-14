@@ -411,8 +411,18 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		if p.currentToken.Type == lexer.DOT {
 			p.nextToken()
 			if p.currentToken.Type != lexer.IDENT {
-				msg := fmt.Sprintf("line %d, column %d: expected identifier after dot, got %s instead",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				var msg string
+				if p.currentToken.Type == lexer.ILLEGAL && p.currentToken.ErrMsg != "" {
+					// A leading double underscore ('__') now lexes as ILLEGAL
+					// with an explanatory ErrMsg (see lexer.go) instead of the
+					// confusing bare "got UNDERSCORE" the wildcard token used to
+					// produce. Surface that message so the rejection is clean.
+					msg = fmt.Sprintf("line %d, column %d: %s",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.ErrMsg)
+				} else {
+					msg = fmt.Sprintf("line %d, column %d: expected identifier after dot, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				}
 				p.saveError(msg)
 				return nil
 			}

@@ -96,18 +96,44 @@ func ensureStdASTCacheFromDir(stdDir string) ([]byte, error) {
 // per-process temp file and is renamed into place, so a concurrent LSP (or one
 // killed mid-write) can never leave a half-written blob for the next reader:
 // a reader sees either no file or a complete one.
+//
+// Every failure here is swallowed by design: the payload is already in memory,
+// so a write problem costs only the NEXT process a regeneration. That silence
+// is otherwise indistinguishable from "the cache is simply not being used", so
+// each step reports under NOLANG_DEBUG_IT (the convention already used by
+// StdASTFor) — a silent rename failure would mean every LSP start pays a full
+// regeneration of a ~2.6 MB blob with nothing to point at.
+//
+// Known limitation: a process killed in the microseconds between the write and
+// the rename leaves its <path>.<pid>.tmp behind, and nothing sweeps it. The
+// window is tiny and the file is only ever read via the final path, so this is
+// litter rather than a correctness or staleness hazard.
 func writeStdASTCache(raw []byte) {
 	path := StdASTCachePath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		debugStdASTCache("mkdir %s: %v", filepath.Dir(path), err)
 		return
 	}
 	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		debugStdASTCache("write %s: %v", tmp, err)
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		debugStdASTCache("rename %s -> %s: %v", tmp, path, err)
+		if err := os.Remove(tmp); err != nil {
+			debugStdASTCache("remove %s: %v", tmp, err)
+		}
 	}
+}
+
+// debugStdASTCache reports a best-effort cache write failure when NOLANG_DEBUG_IT
+// is set. Kept next to writeStdASTCache so the swallowed errors stay greppable.
+func debugStdASTCache(format string, args ...any) {
+	if os.Getenv("NOLANG_DEBUG_IT") == "" {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[debug-it] std AST cache: "+format+"\n", args...)
 }
 
 // stdASTBlobForDir builds the Tier-0 payload (gzip of gob of StdASTBlob) from

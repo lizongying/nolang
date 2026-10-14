@@ -1395,6 +1395,31 @@ func (p *Parser) parseLetStatement() Statement {
 				Value: v.Value,
 			}
 
+		case *Identifier:
+			// `x = y`（RHS 為識別符）：把 y 的已知型別傳播給 x。這是賦值鏈型別
+			// 傳遞的一環 —— 例如 dec-valid 的 `i = 0`（i64）→ `j = i`；若 j 不
+			// 登記型別，後續 `p-opt = j + 1` 的 signedIntOperandType 就查不到 j，
+			// inferOptionArith 保守跳過，p-opt 退成 plain i64，ok arm 永不命中
+			// （科學記數 1e3 被誤判 invalid）。
+			//
+			// 僅傳播有號整數（含 ?T）：這是 inferOptionArith 合成 ?T 唯一需要的
+			// 型別類；刻意不碰 slice/struct/map 等聚合型別，避免改變 `x = y` 的
+			// 拷貝／引用語意。僅在 LHS 尚無型別時登記（與 *IndexExpression 分支
+			// 同口徑），不覆蓋既有的顯式型別。
+			if t, ok := p.sem.FuncVarType(p.curFuncName, v.Value); ok {
+				base := t
+				if strings.HasPrefix(base, "?") {
+					base = base[1:]
+				}
+				switch base {
+				case "int", "i8", "i16", "i32", "i64":
+					if existing, ok := p.sem.FuncVarType(p.curFuncName, stmt.Name.Value); !ok || existing == "" {
+						stmt.Type = markInferred(buildType(t, nameToken))
+						p.setVarType(stmt.Name.Value, t)
+					}
+				}
+			}
+
 		case *SliceLiteral:
 			// 从元素推断切片类型
 			elemValue := "i64"
@@ -1534,6 +1559,25 @@ func (p *Parser) parseLetStatement() Statement {
 				}
 			}
 
+		}
+	}
+
+	// 補登記：裸標量字面量推斷出的型別（i64/byte/f64/str/bool/char）此前只寫入
+	// stmt.Type（IsInferred），卻未進語義表，導致 signedIntOperandType 對推斷
+	// 出的有號整數區域變數查不到型別、inferOptionArith 保守跳過 → 統一 option
+	// 語義（D1/D6）在沒有顯式型別標註的算術綁定上失效（見 nojq dec-valid 科學
+	// 記數分支：j = 1; p-opt = j + 1 的 p-opt 應推為 ?i64 卻被推成 i64，ok arm
+	// 永不命中而落到 fallback，1e3 等被誤判 invalid）。此處與上方 pre-switch 區
+	// 塊、Slice/Array/Call/Index 分支一致，把（可能為推斷的）stmt.Type 補登記進
+	// 語義表，使 FuncVarType 可見。ArrayLiteral/StructLiteral/SliceExpression 分支
+	// 不改 stmt.Type，故不會被此處覆寫。
+	if stmt.Type != nil {
+		// 僅在變數尚未有型別時補登記。字面量推斷出的型別不是用戶意圖：對一個
+		// 已宣告的變數（如 `?i64` 參數 `v`）再寫 `v = 1` 時若把型別覆寫成 `i64`，
+		// 會讓 `v: { ok -> … }` 的 option 窮盡性檢查失去 option 基底
+		// （TestOptionMatchRequiresErr）。與上方 *IndexExpression 分支同口徑。
+		if existing, ok := p.sem.FuncVarType(p.curFuncName, stmt.Name.Value); !ok || existing == "" {
+			p.setVarType(stmt.Name.Value, typeString(stmt.Type))
 		}
 	}
 

@@ -2658,12 +2658,3 @@ str.to-txt = () (out txt) {
     }
     out.len = n
 }
-
-; ─── TEMP PRIVATE-BUILTIN SMOKE (REMOVE AFTER VERIFY) ───
-str.__priv-smoke = () (out i64) {
-    a i64 = ._len()
-    b i64 = ._cap()
-    ._set-len(7)
-    c i64 = ._len()
-    out = a + b + c
-}

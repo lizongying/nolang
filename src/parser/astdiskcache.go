@@ -64,7 +64,20 @@ import (
 // 檔的內容是新增的，Tier 1 必然 miss；sc-muladd 所在的 std 又不經過 Tier 1，所以
 // NOLANG_AST_CACHE_OFF 兩側看到的其實是不同世代的 bin/no（平行 session 在中間
 // 重建過），那個 A/B 不成立。）
-const ASTVersion = "2026-10-13.2"
+//
+// 2026-10-14.1：補齊 parse 期區域變數型別推斷的兩個缺口，改變 ParseProgram 的
+// 輸出（更多 LetStatement 帶上推斷型別，進而使 inferOptionArith 為更多算術綁定
+// 合成 `?T`）：
+//   - 裸標量字面量（`j = 1` / `f = 1.5` / `s = 'x'` / `b = true` / `c = "a"`）
+//     的推斷型別原本只寫進 stmt.Type（IsInferred）而未登記語義表，導致
+//     signedIntOperandType 對「推斷出的有號整數區域變數」查不到型別；
+//   - 識別符賦值 `x = y` 未傳播 y 的已知型別，`i = 0; j = i` 這條鏈斷在 j。
+//
+// 兩者疊加使 `p-opt = j + 1` 推不出 `?i64`，ok arm 永不命中而落到 fallback。
+// 實測 nojq dec-valid 的科學記數分支：`1e3`/`1E3`/`1.5e2`/`1e0` 被誤判 invalid，
+// 且只在 Tier 1 cache HIT 時復現、`NOLANG_AST_CACHE_OFF=1` 即消失——正是本檔
+// 開頭 rule of thumb 描述的陳舊 blob 症狀。按該規則 bump 以失效所有舊條目。
+const ASTVersion = "2026-10-14.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

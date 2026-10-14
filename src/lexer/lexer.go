@@ -802,8 +802,22 @@ func (l *Lexer) scanToken() (tok Token) {
 		tok.Type = COLON
 		tok.Literal = charLits[l.ch]
 	case '_':
-		// If _ is followed by a letter or digit, it's the start of an identifier (e.g. _sqlite3-open)
-		if unicode.IsLetter(rune(l.peekChar())) || isDigit(l.peekChar()) {
+		// A name may begin with a SINGLE underscore (e.g. _sqlite3-open, _len):
+		// constants, global variables and method names may use a leading '_'
+		// as a private-style marker. A leading DOUBLE (or more) underscore
+		// '__' is reserved and is NOT a valid identifier prefix — reject it
+		// with a clear error instead of the confusing
+		// "expected identifier after dot, got UNDERSCORE".
+		// A lone '_' (not followed by a letter/digit, e.g. `_ = expr` to
+		// discard a value) stays the UNDERSCORE wildcard token.
+		if l.peekChar() == '_' {
+			// No return: fall through to the shared l.readChar() at the end
+			// of scanToken so the pre-scan loop advances past the first '_'
+			// and makes progress (otherwise it would re-lex the same '_').
+			tok.Type = ILLEGAL
+			tok.Literal = "__"
+			tok.ErrMsg = "identifier may start with at most one underscore; a leading '__' (double underscore) is not allowed"
+		} else if unicode.IsLetter(rune(l.peekChar())) || isDigit(l.peekChar()) {
 			literal := l.readIdentifier()
 			tok.Type = lookupKeyword(literal)
 			if tok.Type == 0 {
@@ -811,9 +825,10 @@ func (l *Lexer) scanToken() (tok Token) {
 			}
 			tok.Literal = literal
 			return tok
+		} else {
+			tok.Type = UNDERSCORE
+			tok.Literal = charLits[l.ch]
 		}
-		tok.Type = UNDERSCORE
-		tok.Literal = charLits[l.ch]
 	case '.':
 		if l.peekChar() == '.' {
 			l.readChar()

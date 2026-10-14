@@ -13,12 +13,18 @@ This page collects Nolang release records for each version, kept consistent with
 - feat(builtin/mir): add private str/txt field accessors/mutators lowered inline by MIR (emitBuiltinPrivateField)
 - feat(checker): enforce compile-time privacy on underscore-prefixed builtin calls and add incremental on-disk std AST cache
 - fix(type-inference): enforce strict option arithmetic type rules in assignment and binding
-- feat(lint): add range-index and range-ellipsis (implicit-self `...`) lint checks
+- feat(lint): add range-index and range-ellipsis (implicit-self '...') lint checks
 - feat(std): update crypto (aes-gcm/blake2/hmac/x25519/x509), tls, str, txt and char modules; use slice-to-slice copies in tls
 - feat(lsp): add std type definition lookup backed by the shared std AST cache
 - fix(fmt): preserve LHS name for inferred view types in --fix=redundant
 - fix(build/ci): rename Windows no-llvm binary with .exe suffix; verify x86_64 static libs via lipo and stub macOS librt on darwin prebuild
 - refactor(compiler): remove redundant standalone ast/lx/tok/util test files and update self-host design doc
+- feat(lexer): allow single-underscore identifiers for constants, globals, and method names; reject a leading double underscore with a clear lexical error
+- fix(parser): surface the lexical error message for an invalid '__' after a dot instead of the confusing 'got UNDERSCORE'
+- test(lexer): add lexer tests for single-underscore identifiers and double-underscore rejection
+- fix(parser): propagate let-binding types across 'x = y' assignments to support unified option arithmetic inference
+- fix(std): remove a temporary private-builtin smoke block from the str module
+- chore(cache): add best-effort debug logging for std and parser AST cache write failures
 
 ## v0.4.8
 
