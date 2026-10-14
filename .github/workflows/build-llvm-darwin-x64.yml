@@ -195,10 +195,19 @@ jobs:
           COUNT=$(find "$LIBDIR" -name 'libLLVM*.a' | wc -l)
           echo "static libs: $COUNT"
           [ "$COUNT" -ge 1 ] || { echo "::error::no static libLLVM*.a found under $LIBDIR"; exit 1; }
-          # 抽一顆庫驗證 arch 必須是 x86_64（防交叉配置靜默失效、又編出 arm64 庫）
+          # 抽一顆庫驗證 arch 必須是 x86_64（防交叉配置靜默失效、又編出 arm64 庫）。
+          # ⚠️ macOS 上 `file lib*.a` 只報 "current ar archive"（不展開成員 arch，與 Linux
+          #    file 行為不同），grep x86_64 必然假失敗。改用 lipo：它會讀取靜態庫成員，
+          #    -archs 列出架構、-verify_arch x86_64 只在含該 arch 時回 0（實測 x86_64 庫：
+          #    -verify_arch x86_64 通過、-verify_arch arm64 拒絕）。
           SAMPLE=$(find "$LIBDIR" -name 'libLLVMSupport.a' | head -1)
-          file "$SAMPLE"
-          file "$SAMPLE" | grep -q "x86_64" || { echo "::error::$SAMPLE is not x86_64 Mach-O"; exit 1; }
+          echo "arch of $SAMPLE: $(lipo -archs "$SAMPLE")"
+          lipo -verify_arch x86_64 "$SAMPLE" || { echo "::error::$SAMPLE is not x86_64 Mach-O"; exit 1; }
+          # 反向釘死：交叉配置若靜默退回宿主，會編出 arm64——這裡必須查不到 arm64。
+          if lipo -verify_arch arm64 "$SAMPLE"; then
+            echo "::error::$SAMPLE contains arm64 (cross arch config silently fell back to host)"
+            exit 1
+          fi
 
       - name: Package llvm-dev archive
         run: |
