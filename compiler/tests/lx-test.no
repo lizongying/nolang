@@ -1,0 +1,178 @@
+; lx-test.no — compiler/src/lx 的 scan-all 單元測試
+;
+; 執行： ./bin/no run compiler/tests/lx-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+;
+; ── 為什麼需要本檔（L1 門禁不夠嗎？）──
+; L1 比的是 **dump()** 的輸出。M2 起解析器改用 **scan-all()**（token 陣列）。
+; 兩者共用 lx-scan-token，但陣列化多了一步「把 t push 進 []tk」。若 push 是
+; **別名**而不是深拷貝，scan-all 會全錯而 dump 全對 ⇒ **L1 完全照不到**。
+; test-no-alias 就是為了釘死這件事：三個識別符的字面量必須互不相同。
+;
+; ⚠️ 期望值不是「我以為應該是什麼」，而是**已由 L1 驗證過**的 token 流
+;    （用 `noc tokens <檔>` 與 oracle 逐位元組比對過）。改動 lx.no 後若本檔紅，
+;    先確認是 lx.no 錯還是期望值過期 —— **不要直接改期望值**。
+;
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串；
+;    要在字串裡放單引號必須轉義：'\'x\'' 是三個位元組 ' x '。
+;
+; ⚠️ 每一次「讀取」切片元素都要 `#{index-out=zero}`，**即使是字面量索引**
+;    （實測：`t = ts[0]` 沒有註解會報 [idxhndld] 並拒絕編譯）。
+
+# /test/runner.eq
+# /test/runner.str-eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/tok
+# /compiler/src/lx
+
+; ═══════════════════════════════════════════════
+; 1. 空輸入：恰好一個 EOF
+; ═══════════════════════════════════════════════
+
+test-empty = () {
+    ts = lx.scan-all('')
+    runner.eq(ts.len(), 1, 'empty source -> exactly 1 token')
+    #{index-out=zero}
+    t = ts[0]
+    runner.eq(t.typ, tok.EOF, 'empty source -> that token is EOF')
+    runner.eq(t.ln, 1, 'EOF at line 1')
+    runner.eq(t.cl, 1, 'EOF at col 1')
+}
+
+; ═══════════════════════════════════════════════
+; 2. 別名偵測（本檔最重要的測試）
+;    三個識別符的字面量必須互不相同。若 push 只存指標/reference，
+;    三個元素都會讀到最後一次的 'ghi'。
+; ═══════════════════════════════════════════════
+
+test-no-alias = () {
+    ts = lx.scan-all('abc def ghi')
+    runner.eq(ts.len(), 4, 'abc def ghi -> 4 tokens')
+    #{index-out=zero}
+    t0 = ts[0]
+    #{index-out=zero}
+    t1 = ts[1]
+    #{index-out=zero}
+    t2 = ts[2]
+    runner.str-eq(t0.lit, 'abc', 3, 'elem 0 literal is abc (not aliased)')
+    runner.str-eq(t1.lit, 'def', 3, 'elem 1 literal is def (not aliased)')
+    runner.str-eq(t2.lit, 'ghi', 3, 'elem 2 literal is ghi (not aliased)')
+    runner.eq(t0.typ, tok.IDENT, 'elem 0 is IDENT')
+    runner.eq(t1.typ, tok.IDENT, 'elem 1 is IDENT')
+    runner.eq(t2.typ, tok.IDENT, 'elem 2 is IDENT')
+    runner.eq(t0.cl, 1, 'abc at col 1')
+    runner.eq(t1.cl, 5, 'def at col 5')
+    runner.eq(t2.cl, 9, 'ghi at col 9')
+}
+
+; ═══════════════════════════════════════════════
+; 3. 型別序列：a = 1
+; ═══════════════════════════════════════════════
+
+test-assign = () {
+    ts = lx.scan-all('a = 1')
+    runner.eq(ts.len(), 4, 'a = 1 -> 4 tokens')
+    #{index-out=zero}
+    a = ts[0]
+    #{index-out=zero}
+    b = ts[1]
+    #{index-out=zero}
+    c = ts[2]
+    #{index-out=zero}
+    d = ts[3]
+    runner.eq(a.typ, tok.IDENT, 'tok0 IDENT')
+    runner.eq(b.typ, tok.ASSIGN, 'tok1 ASSIGN')
+    runner.eq(c.typ, tok.INT, 'tok2 INT')
+    runner.eq(d.typ, tok.EOF, 'tok3 EOF')
+    runner.str-eq(b.lit, '=', 1, 'ASSIGN literal is =')
+    runner.eq(b.cl, 3, 'ASSIGN at col 3')
+    runner.eq(c.cl, 5, 'INT at col 5')
+    runner.eq(d.cl, 6, 'EOF at col 6')
+}
+
+; ═══════════════════════════════════════════════
+; 4. 換行 token：'1 + 2\n'
+; ═══════════════════════════════════════════════
+
+test-newline = () {
+    ts = lx.scan-all('1 + 2\n')
+    runner.eq(ts.len(), 5, '1 + 2 NL -> 5 tokens')
+    #{index-out=zero}
+    a = ts[0]
+    #{index-out=zero}
+    b = ts[1]
+    #{index-out=zero}
+    c = ts[2]
+    #{index-out=zero}
+    d = ts[3]
+    #{index-out=zero}
+    e = ts[4]
+    runner.eq(a.typ, tok.INT, 'tok0 INT')
+    runner.eq(b.typ, tok.ADD, 'tok1 ADD')
+    runner.eq(c.typ, tok.INT, 'tok2 INT')
+    runner.eq(d.typ, tok.NEWLINE, 'tok3 NEWLINE')
+    runner.eq(e.typ, tok.EOF, 'tok4 EOF')
+    runner.eq(d.ln, 2, 'NEWLINE is on line 2')
+    runner.eq(d.cl, 0, 'NEWLINE column is always 0')
+}
+
+; ═══════════════════════════════════════════════
+; 5. char（雙引號）vs string（單引號）
+; ═══════════════════════════════════════════════
+
+test-char-vs-string = () {
+    cs = lx.scan-all('"x"')
+    runner.eq(cs.len(), 2, 'char literal -> 2 tokens')
+    #{index-out=zero}
+    c = cs[0]
+    runner.eq(c.typ, tok.CHAR, 'double quotes -> CHAR')
+    runner.str-eq(c.lit, 'x', 1, 'char value is x')
+    runner.str-eq(c.raw, '"x"', 3, 'char raw keeps its quotes')
+
+    ss = lx.scan-all('\'x\'')
+    runner.eq(ss.len(), 2, 'string literal -> 2 tokens')
+    #{index-out=zero}
+    s = ss[0]
+    runner.eq(s.typ, tok.STRING, 'single quotes -> STRING')
+    runner.str-eq(s.lit, 'x', 1, 'string value is x')
+    runner.str-eq(s.raw, '\'x\'', 3, 'string raw keeps its quotes')
+}
+
+; ═══════════════════════════════════════════════
+; 6. 註釋：marker 欄位區分 `;` 與 `//`
+; ═══════════════════════════════════════════════
+
+test-comment-marker = () {
+    ts = lx.scan-all('; hi\n')
+    runner.eq(ts.len(), 3, 'semicolon comment + NL -> 3 tokens')
+    #{index-out=zero}
+    c = ts[0]
+    runner.eq(c.typ, tok.COMMENT, 'tok0 COMMENT')
+    runner.str-eq(c.mk, ';', 1, 'semicolon comment marker is ;')
+    runner.str-eq(c.lit, ' hi', 3, 'comment text keeps the leading space')
+
+    ts2 = lx.scan-all('// hi\n')
+    #{index-out=zero}
+    c2 = ts2[0]
+    runner.eq(c2.typ, tok.COMMENT, 'slash comment -> COMMENT')
+    runner.str-eq(c2.mk, '//', 2, 'slash comment marker is //')
+}
+
+; ═══════════════════════════════════════════════
+
+test-empty()
+test-no-alias()
+test-assign()
+test-newline()
+test-char-vs-string()
+test-comment-marker()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+    -> exit(0)
+}
