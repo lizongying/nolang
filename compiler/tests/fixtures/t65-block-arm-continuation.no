@@ -1,0 +1,51 @@
+; t65-block-arm-continuation — s61：區塊級裸 match 臂續接合併 + 明示臂體 inline
+;
+; 覆蓋形（對齊 Go parser.go classifyBlockAtCurrent:800-911 + stmt.go:2168 換行後續接 + expr.go:1263 inline 語句形）：
+;   1) 臂體 `{ b: { … } … }` 首陳述為 `IDENT : {` ⇒ blockMatch ⇒ 臂體 BlockStatement dump `inline: true`
+;   2) 區塊臂內 `stmt; cond -> X` 後換行裸 `-> Y` ⇒ 併入前 if 的 Alternative（非獨立 if(1) wrapper）
+;   3) 綁定臂下的具名區塊 `b: { ok/err/nil 臂 }`，內層 err(m) 綁定不污染外層 m
+;   4) 補集 else 臂與 wildcard 尾臂共存於同一明示主體
+
+; (1)+(2)+(3)
+b ?i64 = err('inner')
+outer ?i64 = err('outer-msg')
+outer: {
+    ok(v) -> print('ok\n')
+
+    err(m) -> {
+        b: {
+            ok(w) -> print('in-ok\n')
+
+            err(m) -> print('in-err {m}\n')
+
+            nil -> print('in-nil\n')
+        }
+        m == 'outer-msg' -> print('match {m}\n')
+
+        -> print('alt {m}\n')
+    }
+
+    nil -> print('nil\n')
+}
+
+; (4) 明示主體具名區塊臂 + 補集 else：`cond -> { … }` 內含嵌套裸 match 臂續接
+deep ?i64 = ok(9)
+flag ?i64 = ok(7)
+flag: {
+    ok(x) -> {
+        deep: {
+            ok(y) -> print('deep-ok\n')
+
+            err -> print('deep-err\n')
+
+            nil -> print('deep-nil\n')
+        }
+        x > 5 -> print('gt {x}\n')
+
+        -> print('le {x}\n')
+    }
+
+    err -> print('fe\n')
+
+    nil -> print('fn\n')
+}

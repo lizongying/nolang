@@ -1,0 +1,107 @@
+; t64-tagged-enum-arms — s60：tagged-enum／option 變體臂析構（desugar 綁定型別）
+;
+; 覆蓋形（對齊 Go lowering.go:2044-2334 + expr.go:1021-1065）：
+;   1) 已知 option 主體：ok(v) 綁型別=載荷、err(e) 綁型別=err（condition 恆 Identifier{ok|err}）
+;   2) 未知主體回退（namedItBinding）：ok(v) 具名無型別仍 armBinding、err(e) 仍型 err
+;   3) tagged enum：some(v) 載荷臂、單元臂 it 帶變體名、wildcard 補集 join（' | '）
+;   4) 多欄位析構 rect(a,b)：it 型 'enum.variant' + 提欄 a=it.f0、b=it.f1（無型別）
+;   5) 巢狀同名綁定：內層 full(v) 不污染外層 v；補集型別
+;   6) 裸枚舉（kind==1）：變體臂 it 帶變體名
+
+; 1) 已知 option
+a ?i64 = err('x')
+a: {
+    ok(v) -> print(v)
+
+    err(e) -> print(e)
+
+    nil -> print(0)
+}
+
+; 2) 未知主體（mk 延後定義 ⇒ 型別解析期不可知）
+g = mk64()
+g: {
+    ok(v) -> print(v)
+
+    err(e) -> print(e)
+
+    nil -> print(0)
+}
+
+mk64 = () (r ?i64) {
+    r = 1
+}
+
+; 3) 單載荷 + 單元 + 雙變體補集
+opt64 {
+    some(v str),
+    none,
+    late(f i64),
+}
+
+o opt64 = none
+o: {
+    some(v) -> print(v)
+
+    none -> print('unit')
+
+    late(f) -> print(f)
+}
+
+p64 opt64 = some('s')
+p64: {
+    some(v) -> print(v)
+
+    -> print('rest')
+}
+
+; 4) 多欄位合成結構 + 提欄
+shape64 {
+    rect64(w i64, h i64),
+    circle64(r i64),
+    blank64,
+}
+
+s64 shape64 = rect64(2, 3)
+s64: {
+    rect64(a, b) -> print(a)
+
+    circle64(r) -> print(r)
+
+    -> print('rest')
+}
+
+; 5) 巢狀同名綁定 + 補集
+box64 {
+    full64(v str),
+    empty64,
+}
+
+x64 box64 = full64('a')
+x64: {
+    full64(v) -> {
+        print(v)
+        y64 box64 = full64('b')
+        y64: {
+            full64(v) -> print(v)
+
+            -> print('inner-w')
+        }
+        print(v)
+    }
+
+    -> print('outer-w')
+}
+
+; 6) 裸枚舉（無載荷 kind==1）變體臂
+plain64 {
+    pa,
+    pb,
+}
+
+p1x plain64 = plain64.pa
+p1x: {
+    pa -> print('pa')
+
+    pb -> print('pb')
+}

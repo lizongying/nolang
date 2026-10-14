@@ -80,6 +80,13 @@ psst {
     gvT []str
     alN []str
     dclT []str
+    enN []str
+    evN []str
+    evP []str
+    evC []i64
+    efE []str
+    efV []str
+    efT []str
 }
 
 ; s58：方法簽名表鍵 'recv.method'（Go methodSignatures）
@@ -121,6 +128,154 @@ new = (src str) (r psst) {
         gvT: with-cap(8)
         alN: with-cap(4)
         dclT: with-cap(8)
+        enN: with-cap(4)
+        evN: with-cap(4)
+        evP: with-cap(4)
+        evC: with-cap(4)
+        efE: with-cap(4)
+        efV: with-cap(4)
+        efT: with-cap(4)
+    }
+}
+
+; s60：tagged-enum 登記表（Go sem.EnumVariants / SetEnumVariantPayload / SetEnumVariantFields，
+;   decl.go:1196-1224）——行 i = (enN[i] 枚舉名, evN[i] 變體名)：evP=載荷型別文字（單元=''、
+;   多欄位='enum.variant' 合成結構名）、evC=欄位數；欄位型別另存 ef* 行（依枚舉定義序）。
+;   ps-parse-enum-def（kind==2）填表；ps-parse-match 據此判定變體臂 decomp 與補集。
+ps-enum-row = (p psst, en str, v str) (r i64) {
+    r = -1
+    i = 0
+    (i < p.evN.len() && r < 0) {
+
+        #{index-out=zero}
+        p.enN[i].copy() == en && p.evN[i].copy() == v -> r = i
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+
+    ; 限定名剝落（Go enumVariantPayload：raw key 不中再試最後 '.' 後的裸名）
+    r < 0 -> {
+        d = -1
+        j = en.len-bytes() - 1
+        (j >= 0 && d < 0) {
+
+            #{index-out=zero}
+            en.byte(j) == 46 -> d = j
+
+            #{overflow=wrap}
+            j = j - 1
+        }
+        d >= 0 -> {
+            tail = en.slice-bytes(d + 1, en.len-bytes())
+            k = 0
+            (k < p.evN.len() && r < 0) {
+
+                #{index-out=zero}
+                p.enN[k].copy() == tail && p.evN[k].copy() == v -> r = k
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+        }
+    }
+    r
+}
+
+; ps-enum-has：en 是否為已登記枚舉（任一變體行即算）
+ps-enum-has = (p psst, en str) (r i64) {
+    r = 0
+    i = 0
+    (i < p.enN.len() && r == 0) {
+
+        #{index-out=zero}
+        p.enN[i].copy() == en -> r = 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    r == 0 -> {
+        d = -1
+        j = en.len-bytes() - 1
+        (j >= 0 && d < 0) {
+
+            #{index-out=zero}
+            en.byte(j) == 46 -> d = j
+
+            #{overflow=wrap}
+            j = j - 1
+        }
+        d >= 0 -> {
+            tail = en.slice-bytes(d + 1, en.len-bytes())
+            k = 0
+            (k < p.enN.len() && r == 0) {
+
+                #{index-out=zero}
+                p.enN[k].copy() == tail -> r = 1
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+        }
+    }
+    r
+}
+
+; ps-enum-payload：變體載荷型別文字（無行或單元變體 ⇒ ''）
+ps-enum-payload = (p psst, en str, v str) (s str) {
+    s = ''
+    r = ps-enum-row(p, en, v)
+    r >= 0 -> {
+
+        #{index-out=zero}
+        s = p.evP[r].copy()
+    }
+}
+
+; ps-enum-ncols：變體欄位數（無行 ⇒ 0；Go enumVariantFieldTypes 長度）
+ps-enum-ncols = (p psst, en str, v str) (n i64) {
+    n = 0
+    r = ps-enum-row(p, en, v)
+    r >= 0 -> {
+
+        #{index-out=zero}
+        n = p.evC[r]
+    }
+}
+
+; ps-enum-ftype：變體第 j 欄位型別文字（越界 ⇒ ''）——依 (enN[r],evN[r]) 匹配行計數定位
+ps-enum-ftype = (p psst, en str, v str, j i64) (s str) {
+    s = ''
+    r = ps-enum-row(p, en, v)
+    r >= 0 -> {
+        cnt = 0
+        k = 0
+        (k < p.efT.len() && s == '') {
+
+            #{index-out=zero}
+            p.efE[k].copy() == p.enN[r] && p.efV[k].copy() == p.evN[r] -> {
+                cnt == j -> s = p.efT[k].copy()
+
+                #{overflow=wrap}
+                cnt = cnt + 1
+            }
+
+            #{overflow=wrap}
+            k = k + 1
+        }
+    }
+}
+
+; ps-enum-variants：依登記序輸出枚舉全部變體名（補集計算用）
+ps-enum-variants = (p psst, en str, out []str) {
+    i = 0
+    (i < p.evN.len()) {
+
+        #{index-out=zero}
+        p.enN[i].copy() == en -> out.push(p.evN[i].copy())
+
+        #{overflow=wrap}
+        i = i + 1
     }
 }
 
@@ -4040,6 +4195,128 @@ ps-bm-scan = (p psst) (yes i64) {
     yes
 }
 
+; s61：ps-bm-block-shape：明示臂 `{ }` 體的分類前視（p.pos 已消費 LBRACE，於首個非 trivia token）。
+;   鏡像 Go classifyBlockAtCurrent（parser.go:704-945）：回 1==blockMatch ⇔ Go 走「inline 語句形」
+;   （expr.go:1263-1310：stmt 提取進臂體區塊且 IsInline=true）或 NEWLINE 臂體形（同標 inline）
+;   ⇒ dump `inline: true`；回 0 ⇒ parseBlockStatement 普通路（inline:false）。
+;   精確判据（r11/r12/r13 探针实测钉死）：`IDENT :` 開頭属 tok2==COLON 的**其他**子形（非字面值後
+;   NEWLINE/}/, 等）⇒ blockStruct(0)——`b:`+換行、`b: {`、`b: ident(\n` 皆 0；`IDENT NEWLINE` 亦 0（結構欄形）。
+;   其余首臂形（`_`/`->`/`:`/字面值/`!`/IDENT 後 `->`/比較運算子+本行深度 0 有 `->`）⇒ 1。
+;   ⚠️ 只服務明示臂體；语句级裸 `{` 仍用 ps-bm-scan（s48 保守形，不動）。
+ps-bm-block-shape = (p psst) (yes i64) {
+    yes = 0
+    i = ps-scan-nont(p, p.pos + 1)
+    i >= p.toks.len() -> return
+
+    #{index-out=zero}
+    t1 = p.toks[i].typ
+    t1 == tok.EOF || t1 == tok.RBRACE -> return
+
+    ; 首臂直接形（Go tok1 switch：COLON 屬 blockMatch；RBRACE 於非 CTX_MATCH_COND ⇒ blockStruct）
+    {
+        t1 == tok.UNDERSCORE || t1 == tok.RARROW || t1 == tok.COLON || t1 == tok.NOT -> yes = 1
+
+        t1 == tok.INT || t1 == tok.FLOAT || t1 == tok.STRING || t1 == tok.CHAR || t1 == tok.REGEX || t1 == tok.TRUE || t1 == tok.FALSE -> yes = 1
+    }
+    t1 == tok.DOT -> {
+
+        #{index-out=zero}
+        t2 = p.toks[i + 1].typ
+        t3 = tok.EOF
+        i + 2 < p.toks.len() -> {
+
+            #{index-out=zero}
+            t3 = p.toks[i + 2].typ
+        }
+
+        ; `.field ->` 臂形；`.x = ` 賦值、`.m(` 呼叫 ⇒ 普通區塊（Go parser.go:739-760）
+        t2 != tok.IDENT || (t3 != tok.ASSIGN && t3 != tok.LPAREN) -> yes = 1
+    }
+    t1 == tok.IDENT || t1 == tok.NIL || t1 == tok.IN -> {
+
+        #{index-out=zero}
+        t2 = p.toks[i + 1].typ
+        t3 = tok.EOF
+        t4 = tok.EOF
+        t5 = tok.EOF
+        t6 = tok.EOF
+        i + 2 < p.toks.len() -> {
+
+            #{index-out=zero}
+            t3 = p.toks[i + 2].typ
+        }
+        i + 3 < p.toks.len() -> {
+
+            #{index-out=zero}
+            t4 = p.toks[i + 3].typ
+        }
+        i + 4 < p.toks.len() -> {
+
+            #{index-out=zero}
+            t5 = p.toks[i + 4].typ
+        }
+        i + 5 < p.toks.len() -> {
+
+            #{index-out=zero}
+            t6 = p.toks[i + 5].typ
+        }
+
+        ; tok2 直接形
+        {
+            t2 == tok.RARROW -> yes = 1
+
+            t2 == tok.NEWLINE || t2 == tok.RBRACE || t2 == tok.COMMA -> yes = 0; Go 宣告欄位形（r13 實測 0）
+
+            t2 == tok.EQUALS || t2 == tok.NOT_EQUALS || t2 == tok.LESS || t2 == tok.GREATER || t2 == tok.LESS_EQUALS || t2 == tok.GREATER_EQUALS || t2 == tok.LAND || t2 == tok.LOR -> yes = 1; Go :943 直接 blockMatch
+
+            t2 == tok.DOT -> {
+                ; `ident . x ...`：t4 ∈ 運算子/換行/}` 者 blockStruct 預設；其餘（如 `->`）⇒ 臂
+                t4 != tok.NEWLINE && t4 != tok.RBRACE && t4 != tok.COMMA &&
+t4 != tok.LPAREN && t4 != tok.OR && t4 != tok.AND && t4 != tok.XOR &&
+t4 != tok.ADD && t4 != tok.SUB && t4 != tok.MUL && t4 != tok.QUO && t4 != tok.MOD &&
+t4 != tok.SHL && t4 != tok.SHR -> yes = 1
+            }
+
+            t2 == tok.COLON -> {
+                ; 鏡像 parser.go:800-911：默認 blockMatch(1)，僅結構欄形 → blockStruct(0)
+                yes = 1
+
+                ; name : TYPE \n|}|,
+                t3 == tok.IDENT || t3 == tok.PTR -> t4 == tok.NEWLINE || t4 == tok.RBRACE || t4 == tok.COMMA -> yes = 0
+
+                ; name : 字面值 \n|}|,
+                t3 == tok.STRING || t3 == tok.INT || t3 == tok.TRUE || t3 == tok.FALSE || t3 == tok.NIL -> t4 == tok.NEWLINE || t4 == tok.RBRACE || t4 == tok.COMMA -> yes = 0
+
+                ; name : -INT \n|}|,
+                t3 == tok.SUB && t4 == tok.INT && (t5 == tok.NEWLINE || t5 == tok.RBRACE || t5 == tok.COMMA) -> yes = 0
+
+                ; name : .field（臂絕不有此形）
+                t3 == tok.DOT -> yes = 0
+
+                ; name : IDENT <op|(|{|[ ⇒ 結構欄；name : IDENT . IDENT <tail> ⇒ 結構欄
+                t3 == tok.IDENT -> {
+                    t4 == tok.OR || t4 == tok.AND || t4 == tok.XOR || t4 == tok.ADD || t4 == tok.SUB ||
+t4 == tok.MUL || t4 == tok.QUO || t4 == tok.MOD || t4 == tok.SHL || t4 == tok.SHR ||
+t4 == tok.LPAREN || t4 == tok.LBRACE || t4 == tok.LBRACKET -> yes = 0
+
+                    t4 == tok.DOT && t5 == tok.IDENT && (t6 == tok.LPAREN || t6 == tok.OR || t6 == tok.AND || t6 == tok.XOR || t6 == tok.ADD || t6 == tok.SUB || t6 == tok.MUL || t6 == tok.QUO || t6 == tok.MOD || t6 == tok.SHL || t6 == tok.SHR || t6 == tok.NEWLINE || t6 == tok.RBRACE || t6 == tok.COMMA) -> yes = 0
+                }
+
+                ; isStructFieldValueShape：t3 ∈ {LBRACKET,LPAREN,NOT,UNDERSCORE,FLOAT,CHAR,REGEX}
+                t3 == tok.LBRACKET || t3 == tok.LPAREN || t3 == tok.NOT || t3 == tok.UNDERSCORE ||
+t3 == tok.FLOAT || t3 == tok.CHAR || t3 == tok.REGEX -> yes = 0
+
+                ; isFieldValueStart(t3) && isBinaryOp(t4)：name : <value><binop>
+                t3 == tok.INT || t3 == tok.STRING || t3 == tok.TRUE || t3 == tok.FALSE || t3 == tok.NIL ||
+t3 == tok.FLOAT || t3 == tok.CHAR || t3 == tok.REGEX || t3 == tok.LBRACKET || t3 == tok.LPAREN || t3 == tok.NOT || t3 == tok.UNDERSCORE -> {
+                    t4 == tok.ADD || t4 == tok.SUB || t4 == tok.MUL || t4 == tok.QUO || t4 == tok.MOD || t4 == tok.AND || t4 == tok.OR || t4 == tok.XOR || t4 == tok.SHL || t4 == tok.SHR || t4 == tok.EQUALS || t4 == tok.NOT_EQUALS || t4 == tok.LESS || t4 == tok.LESS_EQUALS || t4 == tok.GREATER || t4 == tok.GREATER_EQUALS || t4 == tok.LAND || t4 == tok.LOR -> yes = 0
+                }
+            }
+        }
+    }
+    yes
+}
+
 ; ps-parse-bare-match：解析裸 match 區塊（p.pos 於 LBRACE），回 desugared 外層
 ;   IfExpression 索引；回 0 ⇒ 失敗（p.pos 不定，呼叫端自行還原重解析）。臂形鏡像
 ;   Go parseBareMatchExpr：`expr -> body`／`_ -> body`／`-> body`（含 `-> cond -> body`
@@ -5048,6 +5325,43 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 ctr = ctr + 1
             }
             v > 0 -> mems.push(v)
+
+            ; s60：登記枚舉變體（Go decl.go:1196-1224，kind==2）：payload 單欄位=欄型別、
+            ;   多欄位='enum.variant' 合成結構名、單元=''；欄位型別逐欄存 ef* 行。
+            ;   裸枚舉 kind==1 亦登記（Go decl.go:858：EnumVariants[ed.Name]，payload 恒 ''、ncols 0）——
+            ;   供 `p plain = plain.a; p: { a -> }` 的變體臂綁定型別（oracle 实测 it typed 'a'）。
+            kind == 1 -> {
+                p.enN.push(name)
+                p.evN.push(vname)
+                p.evP.push('')
+                p.evC.push(0)
+            }
+            kind == 2 -> {
+                p.enN.push(name)
+                p.evN.push(vname)
+                pay = ''
+                fns.len() == 1 -> {
+
+                    #{index-out=zero}
+                    pay = ast.type-string(t, fty[0])
+                }
+                fns.len() > 1 -> pay = name + '.' + vname
+                p.evP.push(pay)
+                p.evC.push(fns.len())
+                g = 0
+                (g < fty.len()) {
+                    fts = ''
+
+                    #{index-out=zero}
+                    fty[g] > 0 -> fts = ast.type-string(t, fty[g])
+                    p.efE.push(name)
+                    p.efV.push(vname)
+                    p.efT.push(fts)
+
+                    #{overflow=wrap}
+                    g = g + 1
+                }
+            }
         }
         ps-skip-trivia(p)
         ps-peek(p) == tok.COMMA -> {
@@ -5238,8 +5552,9 @@ ps-mk-it-let = (t ast, subj str) (idx i64) {
 
 ; ps-mk-it-let-t：变体臂合成绑定（Go lowering.go buildItBindingForArm）——
 ;   bt 非空時建 `LetStatement{name: bname, type: NamedType{bt}, value: subj, synthetic: true, armBinding: true}`；
-;   bt 空形同 ps-mk-it-let（裸 shared 綁定、無 armBinding）。槽位 s1=synthetic、s2=armBinding（
-;   asp.no LetStatement 模板 ref 序）；NamedType 無 inferred 標記。
+;   bt 空且 bname=='it' 形同 ps-mk-it-let（裸 shared 綁定、無 armBinding）；
+;   s60：bt 空但具名綁定（未知主體 ok(v)，Go namedItBinding 回退 :2919-2927）仍 armBinding=true。
+;   槽位 s1=synthetic、s2=armBinding（asp.no LetStatement 模板 ref 序）；NamedType 無 inferred 標記。
 ps-mk-it-let-t = (t ast, subj str, bt str, bname str) (idx i64) {
     val = ps-mk-ident(t, subj)
     tn = 0
@@ -5250,16 +5565,36 @@ ps-mk-it-let-t = (t ast, subj str, bt str, bname str) (idx i64) {
     idx = ast.add(t, asp.K_LET_STATEMENT)
     ast.set-slot(t, idx, 0, ast.put-str(t, bname))
     ast.set-slot(t, idx, 1, ast.put-str(t, 'true')); synthetic
-    bt != '' -> ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); armBinding
+    bt != '' || bname != 'it' -> ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); armBinding
     ast.kid-add(t, idx, tn)
     ast.kid-add(t, idx, val)
+    idx
+}
+
+; ps-mk-ext-let：s60 多欄位析構提欄（Go lowering.go:2307-2334）——
+;   `LetStatement{name: fname, value: DotExpression{receiver: recv, property: f{j}}, synthetic, armBinding}`，
+;   無 Type 子節點（0 佔位）
+ps-mk-ext-let = (t ast, fname str, recv str, j i64) (idx i64) {
+    rid = ps-mk-ident(t, recv)
+    dot = ast.add(t, asp.K_DOT_EXPRESSION)
+    ast.set-slot(t, dot, 0, ast.put-str(t, 'f' + j.to-str()))
+    ast.kid-add(t, dot, rid)
+    idx = ast.add(t, asp.K_LET_STATEMENT)
+    ast.set-slot(t, idx, 0, ast.put-str(t, fname))
+    ast.set-slot(t, idx, 1, ast.put-str(t, 'true')); synthetic
+    ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); armBinding
+    ast.kid-add(t, idx, 0)
+    ast.kid-add(t, idx, dot)
     idx
 }
 
 ; ps-match-listed：掃描當前 match 臂區 token（不消費、不建節點），收集「緊接 `->` 的
 ;   关键字型樣」：fl[0]=ok fl[1]=err fl[2]=nil（Go hasExplicitOk/Err/Nil，lowering.go:2090-2120）。
 ;   僅深度 0（本區塊自己的臂）計入——嵌套 {…}/(…)/[…] 增深度，防内層 match 的 `nil ->` 污染補集判定。
-ps-match-listed = (p psst, fl []i64) {
+;   s60：補集掃描改在 desugar 前（Go 是在 call→Identifier 改寫後掃）——故 ok(v)/err(e) 析構形
+;   （expr.go:1021-1065 規範化為 dotVal/Identifier{err}）也計入 fl；並收集變體臂候補
+;   cN/cA（裸 `X ->` 記 -1、`X(a,b) ->` 記參數數；ok/err/nil 排除——Go 关键字優先 :2107-2116）。
+ps-match-listed = (p psst, fl []i64, cN []str, cA []i64) {
     j = 0
     depth = 0
     go = true
@@ -5279,6 +5614,40 @@ ps-match-listed = (p psst, fl []i64) {
             depth == 0 && t == tok.IDENT && ps-lit-at(p, j) == 'err' && ps-peek-at(p, j + 1) == tok.RARROW -> fl[1] = 1
 
             depth == 0 && t == tok.IDENT && ps-lit-at(p, j) == 'ok' && ps-peek-at(p, j + 1) == tok.RARROW -> fl[0] = 1
+
+            depth == 0 && t == tok.IDENT && (ps-lit-at(p, j) == 'ok' || ps-lit-at(p, j) == 'err') && ps-peek-at(p, j + 1) == tok.LPAREN && ps-peek-at(p, j + 2) == tok.IDENT && ps-peek-at(p, j + 3) == tok.RPAREN && ps-peek-at(p, j + 4) == tok.RARROW -> {
+                ps-lit-at(p, j) == 'ok' -> fl[0] = 1
+                ps-lit-at(p, j) == 'err' -> fl[1] = 1
+            }
+
+            depth == 0 && t == tok.IDENT && ps-peek-at(p, j + 1) == tok.RARROW && ps-lit-at(p, j) != 'ok' && ps-lit-at(p, j) != 'err' && ps-lit-at(p, j) != 'nil' -> {
+                cN.push(ps-lit-at(p, j))
+                cA.push(-1)
+            }
+
+            depth == 0 && t == tok.IDENT && ps-peek-at(p, j + 1) == tok.LPAREN && ps-peek-at(p, j + 2) == tok.IDENT -> {
+                kb = j + 2
+                bcnt = 0
+                okC = 1
+                (okC == 1) {
+                    hit = 0
+                    ps-peek-at(p, kb) == tok.IDENT -> {
+                        hit = 1
+                        bcnt = bcnt + 1
+                        kb = kb + 1
+                        ps-peek-at(p, kb) == tok.COMMA -> kb = kb + 1
+                    }
+                    hit == 0 && ps-peek-at(p, kb) == tok.RPAREN -> {
+                        hit = 1
+                        ps-peek-at(p, kb + 1) == tok.RARROW -> {
+                            cN.push(ps-lit-at(p, j))
+                            cA.push(bcnt)
+                        }
+                        okC = 0
+                    }
+                    hit == 0 -> okC = 0
+                }
+            }
         }
 
         #{overflow=wrap}
@@ -5314,17 +5683,28 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
     wildA []i64 = with-cap(4)
     patA []i64 = with-cap(4)
     blkA []i64 = with-cap(4)
+    bshape = 0
 
     ; 同 ps-parse-bare-match：臂迴圈自行消化 `->`，抑制區塊級續接前探
     oldMat = p.inMatch
     p.inMatch = 1
 
     ; s55：預掃关键字臂名單（Go hasExplicitOk/Err/Nil）——供 wildcard 臂補集判定
+    ; s60：另收變體臂候補 cN/cA（補集 = evs − 候補∩變體）
     listed []i64 = with-cap(3)
     listed.push(0)
     listed.push(0)
     listed.push(0)
-    ps-match-listed(p, listed)
+    cN []str = with-cap(8)
+    cA []i64 = with-cap(8)
+    ps-match-listed(p, listed, cN, cA)
+
+    ; s60：主題靜態型別與枚舉判定（Go matchedVarType/isEnumType/enumVariants，lowering.go:1927-1941）
+    st0 = ps-var-type(p, subj)
+    isenum = 0
+    ps-enum-has(p, st0) == 1 -> isenum = 1
+    evs []str = with-cap(8)
+    isenum == 1 -> ps-enum-variants(p, st0, evs)
 
     ; s59：臂首 armDoc 收集（Go match.go:208 collectDocComments）——行尾註解已在上一臂
     ;   body 解析完當場被 tail-attach 取走，迴圈頭所見註解恆為 standalone⇒prev=0 純 doc。
@@ -5345,6 +5725,13 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
             wild = 0
             pat = 0
             kvar = ''
+            bname = ''
+            kvarE = ''
+            bmulti = 0
+            bns2 []str = with-cap(4)
+            fxv []str = with-cap(4)
+            fxo []str = with-cap(4)
+            reg = ''
             at = ps-peek(p)
             tk0 = ps-peek-token(p)
             {
@@ -5357,13 +5744,75 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
 
                 at != tok.UNDERSCORE && at != tok.RARROW -> {
                     kwt = 0
+                    caseA = 0
+                    caseB = 0
                     tk0.typ == tok.NIL && ps-peek-at(p, 1) == tok.RARROW -> {
                         kvar = 'nil'
                         kwt = 1
                     }
                     kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'err' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'err'
                     kwt == 0 && tk0.typ == tok.IDENT && tk0.lit == 'ok' && ps-peek-at(p, 1) == tok.RARROW -> kvar = 'ok'
-                    pat = ps-parse-expr-prec(t, p, 0)
+
+                    ; s60 case A：ok(v)/err(e) 析構綁定（expr.go:1021-1065 _parse 期規範化）——
+                    ;   括內單裸識別符 ⇒ 型樣 condition 換 Identifier{ok|err}、綁定名 v/e
+                    kwt == 0 && tk0.typ == tok.IDENT && (tk0.lit == 'ok' || tk0.lit == 'err') && ps-peek-at(p, 1) == tok.LPAREN &&
+ps-peek-at(p, 2) == tok.IDENT && ps-peek-at(p, 3) == tok.RPAREN -> {
+                        caseA = 1
+                        bname = ps-lit-at(p, 2)
+                        kvar = tk0.lit.copy()
+                        pat = ps-mk-ident(t, tk0.lit)
+                        ps-bump(p)
+                        ps-bump(p)
+                        ps-bump(p)
+                        ps-bump(p)
+                    }
+
+                    ; s60 case B：枚舉變體呼叫臂（Go 泛化改寫 lowering.go:2049-2090）——全裸識別符
+                    ;   參數且元數==欄位數 ⇒ 型樣換 Identifier{X}、參數名入綁定（>1 ⇒ 提欄）
+                    caseA == 0 && isenum == 1 && tk0.typ == tok.IDENT && ps-peek-at(p, 1) == tok.LPAREN && ps-peek-at(p, 2) == tok.IDENT -> {
+                        kb = 2
+                        bcnt = 0
+                        okB = 1
+                        (okB == 1) {
+                            hb = 0
+                            ps-peek-at(p, kb) == tok.IDENT -> {
+                                hb = 1
+                                bns2.push(ps-lit-at(p, kb))
+                                bcnt = bcnt + 1
+                                kb = kb + 1
+                                ps-peek-at(p, kb) == tok.COMMA -> kb = kb + 1
+                            }
+                            hb == 0 && ps-peek-at(p, kb) == tok.RPAREN -> {
+                                hb = 1
+                                nc = ps-enum-ncols(p, st0, tk0.lit)
+                                nc > 0 && nc == bcnt -> caseB = 1
+                                okB = 0
+                            }
+                            hb == 0 -> okB = 0
+                        }
+                        caseB == 1 -> {
+                            k = 0
+                            (k <= kb) {
+                                ps-bump(p)
+
+                                #{overflow=wrap}
+                                k = k + 1
+                            }
+                            pat = ps-mk-ident(t, tk0.lit)
+                            kvarE = tk0.lit.copy()
+                            bcnt == 1 -> {
+
+                                #{index-out=zero}
+                                bname = bns2[0]
+                            }
+                            bcnt > 1 -> bmulti = 1
+                        }
+                    }
+
+                    ; s60：裸變體臂（非关键字、已登記枚舉之變體）→ kvarE（Go :2243-2250）
+                    caseA == 0 && caseB == 0 && kwt == 0 && isenum == 1 && tk0.typ == tok.IDENT && ps-peek-at(p, 1) == tok.RARROW &&
+tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, tk0.lit) >= 0 -> kvarE = tk0.lit.copy()
+                    caseA == 0 && caseB == 0 -> pat = ps-parse-expr-prec(t, p, 0)
                 }
             }
             ps-skip-trivia(p)
@@ -5405,10 +5854,66 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
             }
             sopt == 0 && kvar == 'err' -> bt = 'err'
             sopt == 0 && kvar == 'nil' -> bt = 'nil'
+
+            ; s60：枚舉綁定型別（Go armType :2176-2251；buildItBindingForArm isEnumType ⇒ typeStr=armType :2900-2902）
+            isenum == 1 && kvar == 'ok' -> {
+                bt = 'ok'
+                bname != '' -> {
+                    pt = ps-enum-payload(p, st0, 'ok')
+                    pt != '' -> bt = pt
+                }
+            }
+            isenum == 1 && kvarE != '' -> {
+                bt = kvarE
+                pt2 = ps-enum-payload(p, st0, kvarE)
+                pt2 != '' -> bt = pt2
+            }
+            isenum == 1 && wild == 1 && kvar == '' && kvarE == '' -> {
+
+                ; 補集 = 登記序變體 − 已列變體臂（Go :2189-2208）；空 ⇒ 死臂 skipItBinding
+                bt = ''
+                i2 = 0
+                (i2 < evs.len()) {
+                    hit2 = 0
+                    q2 = 0
+                    (q2 < cN.len() && hit2 == 0) {
+
+                        #{index-out=zero}
+                        cN[q2].copy() == evs[i2] &&
+(cA[q2] == -1 ||
+cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
+
+                        #{overflow=wrap}
+                        q2 = q2 + 1
+                    }
+                    hit2 == 0 -> {
+                        hd7 = 0
+                        bt == '' -> {
+                            bt = evs[i2].copy()
+                            hd7 = 1
+                        }
+                        hd7 == 0 -> bt = bt + ' | ' + evs[i2]
+                    }
+
+                    #{overflow=wrap}
+                    i2 = i2 + 1
+                }
+                bt == '' -> dead = 1
+            }
+
+            ; s60：綁定名 varType 登記值（Go :2276-2296：elemType→armBindingType→err且非枚舉='str'）
+            bn = 'it'
+            bname != '' -> bn = bname
+            bname != '' -> {
+                reg = elem
+                isenum == 1 -> reg = st0
+                kvar == 'err' && isenum == 0 -> reg = 'str'
+                bt != '' && bt != 'ok' && bt != 'err' && bt != 'nil' -> reg = bt
+            }
             itl = 0
             hd5 = 0
-            dead == 0 && bt != '' -> {
-                itl = ps-mk-it-let-t(t, subj, bt, 'it')
+            dead == 0 && (bt != '' || bname != '') -> {
+                itl = ps-mk-it-let-t(t, subj, bt, bn)
                 hd5 = 1
             }
             dead == 0 && hd5 == 0 -> itl = ps-mk-it-let(t, subj)
@@ -5417,12 +5922,56 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
             ;   巢狀 match/下一臂不得污染外層 it。
             oldit = ps-var-type(p, 'it')
             bt != '' -> ps-set-var-type(p, 'it', bt)
+            oldb = ''
+            reg != '' -> {
+                oldb = ps-var-type(p, bname)
+                ps-set-var-type(p, bname, reg)
+            }
             kids []i64 = with-cap(4)
             dead == 0 -> kids.push(itl)
+
+            ; s60：多欄位提欄（Go :2307-2334 逆序 prepend ⇒ 最終序 it; a; b; body）；
+            ;   綁定名 varType 登记欄位型別並存舊值待還原
+            bmulti == 1 && hd5 == 1 -> {
+                q3 = 0
+                (q3 < bns2.len()) {
+
+                    #{index-out=zero}
+                    nm3 = bns2[q3].copy()
+                    fxv.push(nm3)
+                    fxo.push(ps-var-type(p, nm3))
+                    ft3 = ps-enum-ftype(p, st0, kvarE, q3)
+                    ft3 != '' -> ps-set-var-type(p, nm3, ft3)
+
+                    #{overflow=wrap}
+                    q3 = q3 + 1
+                }
+                q4 = 0
+                (q4 < bns2.len()) {
+
+                    #{index-out=zero}
+                    kids.push(ps-mk-ext-let(t, bns2[q4], bn, q4))
+
+                    #{overflow=wrap}
+                    q4 = q4 + 1
+                }
+            }
             inline = 0
+            bshape = 0; s61：每臂重置（避免上一臂 blockMatch 泄漏至本臂）
             hd2 = 0
             hasTrail = 0
             ps-peek(p) == tok.LBRACE -> {
+
+                ; s61：明示臂大括號體 = Go parseBlockStatement 上下文（match.go:272-282 非 blockMatch 路）：
+                ;   inBlk=1/inMatch=0 ⇒ 启用换行後 `-> else` 續接（stmt.go:2168），
+                ;   `stmt; cond -> X; -> Y` 的尾 wildcard 并入前 if 的 alternative 而非獨立 if(1)。
+                ;   classifier==blockMatch（首臂形，如 `b:` 開頭）⇒ Go 走臂體提取路，
+                ;   desugar 重建臂體區塊 prependStmt 保留 IsInline ⇒ dump `inline: true`（q2/r1 探针钉死）。
+                oldBkM = p.inBlk
+                oldMtM = p.inMatch
+                p.inBlk = 1
+                p.inMatch = 0
+                ps-bm-block-shape(p) == 1 -> bshape = 1
 
                 ; s59：區塊臂內部 = Go parseBlockStatement 協議（match.go:285→stmt.go 區塊迴圈）：
                 ;   行首 doc 附於其後陳述、行尾 Comment 附於其前陳述、閉合 } 前 standalone 歸 TrailingComments。
@@ -5449,6 +5998,8 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
                     ps-trail-region(p) == 0 -> bdoc = ps-skip-trivia-doc(t, p, bprev)
                 }
                 ps-expect(p, tok.RBRACE)
+                p.inBlk = oldBkM
+                p.inMatch = oldMtM
                 armDoc != 0 && bfirst > 0 -> ast.set-doc(t, bfirst, armDoc)
                 armDoc != 0 && bfirst == 0 -> btrail.push(armDoc)
                 blkTrail = btrail
@@ -5483,8 +6034,19 @@ ps-parse-match = (t ast, p psst, subj str) (idx i64) {
             }
             ast.set-count(t, blk, 0, kids.len())
             inline == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true'))
+            inline == 0 && bshape == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true')); s61：blockMatch 體 ⇒ inline
             hasTrail == 1 -> ps-attach-trailing(t, blk, blkTrail)
             ps-set-var-type(p, 'it', oldit)
+            reg != '' -> ps-set-var-type(p, bname, oldb)
+            q5 = 0
+            (q5 < fxv.len()) {
+
+                #{index-out=zero}
+                ps-set-var-type(p, fxv[q5], fxo[q5])
+
+                #{overflow=wrap}
+                q5 = q5 + 1
+            }
             wildA.push(wild)
             patA.push(pat)
             blkA.push(blk)

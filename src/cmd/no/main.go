@@ -2020,6 +2020,12 @@ func fixRedundantTypeSource(src string) (string, bool) {
 		return "", false
 	}
 	results := checker.ValidateRedundantTypeAnnotation(program)
+	if os.Getenv("NOLANG_FIXDBG") != "" {
+		fmt.Fprintf(os.Stderr, "[REDDBG] ValidateRedundantTypeAnnotation returned %d results\n", len(results))
+		for _, r := range results {
+			fmt.Fprintf(os.Stderr, "[REDDBG]   line=%d col=%d msg=%q\n", r.Line, r.Column, r.Message)
+		}
+	}
 	if len(results) == 0 {
 		return "", false
 	}
@@ -2068,6 +2074,9 @@ func fixRedundantTypeSource(src string) (string, bool) {
 // 值運算式含十六進位字面量時一律不移除——寧可保守，不可改壞語義。
 func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStarts []int) (fmtRemoval, bool) {
 	if node == nil || node.Type == nil || node.Value == nil || node.Name == nil {
+		if os.Getenv("NOLANG_FIXDBG") != "" {
+			fmt.Fprintf(os.Stderr, "[REDDBG] computeRedundantTypeRemoval: node nil/type-nil guard hit (node=%v type=%v)\n", node != nil, node != nil && node.Type != nil)
+		}
 		return fmtRemoval{}, false
 	}
 	// 防禦：map 字面量 `m [str]i64 = {..}` 的型別標註不可移除。一旦移除，
@@ -2321,6 +2330,9 @@ func fixRedundantTypeInFileWithVet(filename, src string) (string, bool) {
 		}
 		positions = append(positions, pos{l.Line, l.Column})
 	}
+	if os.Getenv("NOLANG_FIXDBG") != "" {
+		fmt.Fprintf(os.Stderr, "[REDDBG] vet positions: %v\n", positions)
+	}
 	if len(positions) == 0 {
 		return "", false
 	}
@@ -2337,9 +2349,19 @@ func fixRedundantTypeInFileWithVet(filename, src string) (string, bool) {
 	var removals []fmtRemoval
 	for _, pp := range positions {
 		node := findRedundantTypeNode(program, pp.line, pp.col)
+		if os.Getenv("NOLANG_FIXDBG") != "" {
+			if node != nil {
+				fmt.Fprintf(os.Stderr, "[REDDBG]   pos %d:%d -> node Name=%v Type=%v\n", pp.line, pp.col, node.Name, node.Type)
+			} else {
+				fmt.Fprintf(os.Stderr, "[REDDBG]   pos %d:%d -> NO NODE\n", pp.line, pp.col)
+			}
+		}
 		rm, ok := computeRedundantTypeRemoval(src, node, lineStarts)
 		if !ok {
 			continue
+		}
+		if os.Getenv("NOLANG_FIXDBG") != "" {
+			fmt.Fprintf(os.Stderr, "[REDDBG]   removal [%d,%d) = %q\n", rm.start, rm.end, src[rm.start:rm.end])
 		}
 		removals = append(removals, rm)
 	}
