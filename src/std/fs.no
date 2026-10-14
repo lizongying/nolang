@@ -261,7 +261,7 @@ read-stdin-str = () (content ?str) {
         nil -> return
 
         -> {
-            s = it.to-str()
+            s = it.to-bytes-str()
             content = s
         }
     }
@@ -543,7 +543,7 @@ file.read-line = () (line ?str) {
     .fd < 0 -> return
     buf []byte = with-cap(4096)
     n = read(.fd, buf, 4096)
-    n > 0 -> line = buf.to-str()
+    n > 0 -> line = buf.to-bytes-str()
 }
 
 ; write: 將 data 的前 n 位元組寫入檔案
@@ -595,7 +595,7 @@ file.read-str = () (content ?str) {
 
         nil -> return
 
-        -> content = it.to-str()
+        -> content = it.to-bytes-str()
     }
 }
 

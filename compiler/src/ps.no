@@ -982,6 +982,12 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
         ;   僅當平衡 `)` 後【立即】是 `{` 且括號內容非參數列才成立，否則退回 `(expr)` 運算式陳述。
         tk.typ == tok.LPAREN && ps-is-cond-loop-prefix(p) == 1 -> idx = ps-parse-cond-loop(t, p)
 
+        tk.typ == tok.UNDERSCORE && ps-peek-at(p, 1) == tok.ASSIGN -> {
+            ps-bump(p); 消費 _
+            ps-bump(p); 消費 =
+            idx = ps-parse-let(t, p, '_')
+        }
+
         tk.typ == tok.IDENT -> {
             name = tk.lit
             nxt_typ = ps-peek-at(p, 1)
@@ -2754,7 +2760,9 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
 
     ; s54：根為有號整數算術的無型別綁定 → 合成 `?base`（Go inferOptionArith；
     ;   D1：`#{overflow=...}` 不再豁免——sha3/time 等探針釘死仍蓋印）。
-    typ == 0 && val > 0 -> {
+    ; s62：name == '_'（空白標識符捨棄陳述）豁免——Go captureTargetAllowsOption 拒 blank 目標，
+    ;   探針 b2 `_ = zz * 2` / a3 `_ = 1 / zz` 釘死 oracle 對 `_` 不蓋 `?base`（不同於字面量/slice/call 推斷）。
+    typ == 0 && val > 0 && name != '_' -> {
         typ = ps-mk-opt-arith-type(t, p, name, val)
     }
     idx = ast.add(t, asp.K_LET_STATEMENT)
@@ -4074,6 +4082,46 @@ ps-arrow-scan0 = (p psst) (yes i64) {
     yes
 }
 
+; ps-arrow-scan-line：從 from 起在同一首陳述內前視深度 0 的 `->`（鏡像 Go parser.go:912-942）。
+;   NEWLINE/EOF/RPAREN/RBRACKET/RBRACE 於深度 0 → 無臂（回 0）；深度 0 `->` → 臂（回 1）。
+;   服務 `IDENT .` 開頭首臂：`it.v = 99`（無 `->`）⇒ 0；`obj.m() -> ...`⇒ 1。上限 40 token。
+ps-arrow-scan-line = (p psst, from i64) (yes i64) {
+    yes = 0
+    depth = 0
+    done = false
+    i = from
+    stop = from + 40
+    (done == false && i < p.toks.len() && i < stop) {
+
+        #{index-out=zero}
+        tt = p.toks[i].typ
+        tt == tok.EOF || tt == tok.NEWLINE -> depth == 0 -> done = true
+        tt == tok.LPAREN || tt == tok.LBRACE || tt == tok.LBRACKET -> {
+
+            #{overflow=wrap}
+            depth = depth + 1
+        }
+        tt == tok.RPAREN || tt == tok.RBRACKET || tt == tok.RBRACE -> {
+            depth == 0 -> done = true
+            depth > 0 -> {
+
+                #{overflow=wrap}
+                depth = depth - 1
+            }
+        }
+        tt == tok.RARROW -> depth == 0 -> {
+            yes = 1
+            done = true
+        }
+        done == false -> {
+
+            #{overflow=wrap}
+            i = i + 1
+        }
+    }
+    yes
+}
+
 ; ps-is-arm-start：目前 token（呼叫前已跳 trivia）是否新臂開頭。鏡像 Go isArmStart
 ;   （match.go:563）：INT/_/:/-> 直接；IDENT 後 :/-> 或 LOR+{err,nil,ok} 或比較運算子後
 ;   同行探 `->`；NIL 後 :/->/LOR；NOT/?/. 後緊接 ->。
@@ -4269,15 +4317,10 @@ ps-bm-block-shape = (p psst) (yes i64) {
 
             t2 == tok.EQUALS || t2 == tok.NOT_EQUALS || t2 == tok.LESS || t2 == tok.GREATER || t2 == tok.LESS_EQUALS || t2 == tok.GREATER_EQUALS || t2 == tok.LAND || t2 == tok.LOR -> yes = 1; Go :943 直接 blockMatch
 
-            t2 == tok.DOT -> {
-                ; `ident . x ...`：t4 ∈ 運算子/換行/}` 者 blockStruct 預設；其餘（如 `->`）⇒ 臂
-                t4 != tok.NEWLINE && t4 != tok.RBRACE && t4 != tok.COMMA &&
-t4 != tok.LPAREN && t4 != tok.OR && t4 != tok.AND && t4 != tok.XOR &&
-t4 != tok.ADD && t4 != tok.SUB && t4 != tok.MUL && t4 != tok.QUO && t4 != tok.MOD &&
-t4 != tok.SHL && t4 != tok.SHR -> yes = 1
-            }
+            t2 == tok.DOT -> yes = ps-arrow-scan-line(p, i + 2); Go :912-942 前視深度 0 `->`（如 `it.v = 99` 無臂→ blockUnknown 0）
 
             t2 == tok.COLON -> {
+
                 ; 鏡像 parser.go:800-911：默認 blockMatch(1)，僅結構欄形 → blockStruct(0)
                 yes = 1
 

@@ -1,0 +1,24 @@
+; s62 fixture：`_ = expr` 空白標識符捨棄陳述 ⇒ `LetStatement{name: _, value: expr}`。
+;   鏡像 Go parseStatement stmt.go:49（含 UNDERSCORE）→ :149（peek==ASSIGN）→ :172 parseLetStatement。
+;   涵蓋 oracle 探針釘死的四類邊界：
+;     ① 右值為裸 ident ⇒ 無型別推斷（`_ = a`）
+;     ② 右值為字面量 ⇒ 觸發型別推斷（`_ = true`→bool、`_ = [1,2,3]`→[]i64）
+;     ③ 右值為裸名呼叫 ⇒ 觸發回傳型別推斷（`_ = g()`→?str）
+;     ④ 右值為有號整數算術 ⇒【抑制】option 推斷（`_ = zz * 2`⇒無型別，不同於普通名會蓋 ?i64）
+;   另含：緊接於其他陳述之後的 `_`（語句邊界）、同檔多次 `_ =` 丟棄。
+
+g = () (r ?str) {
+    r = 'x'
+}
+a = 5
+_ = a
+_ = true
+
+_ = [1, 2, 3]
+
+_ = g()
+
+zz = 3
+_ = zz * 2
+b = 7
+_ = b
