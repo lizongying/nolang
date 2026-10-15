@@ -1082,8 +1082,13 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 			return r
 		}
 	}
-	// double/float -> integer: the reverse direction (fptosi).
+	// double/float -> integer: the reverse direction, via the SATURATING
+	// intrinsic — a bare fptosi on NaN/Inf/out-of-range input is poison and
+	// opt deletes (or corrupts) everything downstream of it.
 	if (fromT == "double" || fromT == "float") && toT != "double" && toT != "float" {
+		if r := c.emitFptSatReg(fromT, v, toT, false); r != "" {
+			return r
+		}
 		c.loadSeq++
 		r := fmt.Sprintf("%%cv%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = fptosi %s %s to %s\n", r, fromT, v, toT))
@@ -1116,6 +1121,22 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 		c.sb.WriteString(fmt.Sprintf("  %s = zext %s %s to %s\n", r, fromT, v, toT))
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  %s = sext %s %s to %s\n", r, fromT, v, toT))
+	}
+	return r
+}
+
+// emitFptSatReg is the coerceInt-side wrapper around emitFptSat (defined in
+// builtin_call.go): mints a fresh register, emits the saturating float->int
+// call, and returns it. Returns "" when toLT is not a concrete integer width
+// (the caller keeps its own bare-fptosi fallback).
+func (c *codegen) emitFptSatReg(srcTy, srcVal, toLT string, unsig bool) string {
+	if _, ok := intWidth(toLT); !ok {
+		return ""
+	}
+	c.loadSeq++
+	r := fmt.Sprintf("%%cv%d", c.loadSeq)
+	if err := c.emitFptSat(r, srcTy, srcVal, toLT, unsig); err != nil {
+		return ""
 	}
 	return r
 }
@@ -2970,58 +2991,114 @@ emit:
   ret void
 }
 @.dot = private constant [2 x i8] c".\00"
-; @print_double formats a double with the SAME %g convention the legacy backend
-; uses (legacy print(f64) routes through std f64-to-str, which replaced sprintf
-; %g). We implement it BY HAND instead of calling libc snprintf, because the
-; variadic snprintf call is mis-lowered by the opaque-pointer rewrite / opt on
-; this toolchain: the double argument arrives corrupted, printing garbage like
-; 5.3e-315 instead of 3.14. The hand-rolled formatter (a) applies the sign to
-; the INTEGER part only and passes the absolute magnitude to @digits (which
-; expects a non-negative i64), and (b) emits the fractional part with trailing
-; zeros trimmed (matching %g: 1500 -> "1500", 3.14 -> "3.14", -2.5 -> "-2.5"),
-; instead of the old fixed 6-decimal "1500.000000" / negative-garbage output.
-define void @print_double(double %v) {
+; @f64_render is the SINGLE double->decimal formatter shared by print_double,
+; eprint_double and str_from_double (they were two hand-rolled copies that
+; drifted apart). We implement it BY HAND instead of calling libc snprintf,
+; because the variadic snprintf call is mis-lowered by the opaque-pointer
+; rewrite / opt on this toolchain (the double argument arrives corrupted).
+; Contract: render v into the caller's %out buffer and return the byte length.
+; Grammar mirrors the legacy %g convention: NaN -> "nan", +Inf -> "inf",
+; -Inf -> "-inf", zero -> "0"; a finite value prints its integer part, then
+; up to 6 fraction digits with trailing zeros trimmed (1500 -> "1500",
+; 3.14 -> "3.14", -2.5 -> "-2.5"). A magnitude that would overflow the i64
+; digit buffer (>= 9e18) is normalised into a [1,10) mantissa and printed in
+; scientific form ("1.23457e+20"): the OLD bare fptosi turned those values
+; (and NaN/Inf) into poison, so opt silently deleted every statement after
+; them (exit 0, nothing printed). Float->int uses llvm.fptosi.sat throughout
+; so no input is ever poison. NOTE: @digits expects a NON-NEGATIVE i64.
+define i64 @f64_render(double %v, i8* %out) {
 entry:
+  %isna = fcmp une double %v, %v
+  br i1 %isna, label %rna, label %chkzero
+chkzero:
+  %isz0 = fcmp oeq double %v, 0.0
+  br i1 %isz0, label %rzero, label %chkinf
+chkinf:
+  %d2 = fadd double %v, %v
+  %isinf = fcmp oeq double %d2, %v
+  br i1 %isinf, label %pinf, label %sign
+pinf:
+  %vlt = fcmp olt double %v, 0.0
+  br i1 %vlt, label %rminf, label %rinf
+rna:
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %out, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.knan, i64 0, i64 0), i64 3, i1 0)
+  ret i64 3
+rzero:
+  store i8 48, i8* %out
+  ret i64 1
+rinf:
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %out, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.kinf, i64 0, i64 0), i64 3, i1 0)
+  ret i64 3
+rminf:
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %out, i8* getelementptr inbounds ([4 x i8], [4 x i8]* @.kminf, i64 0, i64 0), i64 4, i1 0)
+  ret i64 4
+sign:
   %isneg = fcmp olt double %v, 0.0
   %negv = fneg double %v
-  %abs = select i1 %isneg, double %negv, double %v
-  %ipart = fptosi double %abs to i64
+  %abs0 = select i1 %isneg, double %negv, double %v
+  %big = fcmp oge double %abs0, 9000000000000000000.0
+  br i1 %big, label %norm0, label %userval
+norm0:
+  %x0 = fdiv double %abs0, 10.0
+  br label %norm
+norm:
+  %xs = phi double [ %x0, %norm0 ], [ %xd, %norm ]
+  %es = phi i64 [ 1, %norm0 ], [ %ed, %norm ]
+  %ge10 = fcmp oge double %xs, 10.0
+  %xd = fdiv double %xs, 10.0
+  %ed = add i64 %es, 1
+  br i1 %ge10, label %norm, label %uservaln
+uservaln:
+  br label %userval
+userval:
+  %mv = phi double [ %abs0, %sign ], [ %xs, %uservaln ]
+  %ev = phi i64 [ 0, %sign ], [ %es, %uservaln ]
+  %sci = phi i1 [ false, %sign ], [ true, %uservaln ]
+  %ipart = call i64 @llvm.fptosi.sat.i64.f64(double %mv)
   %ipartd = sitofp i64 %ipart to double
-  %fpart = fsub double %abs, %ipartd
-  %buf = alloca [40 x i8]
-  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
-  store i8 0, i8* %end
-  %sp = call i8* @digits(i64 %ipart, i8* %end)
-  %ep = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
-  %epp = ptrtoint i8* %ep to i64
+  %fpart = fsub double %mv, %ipartd
+  %tb = alloca [24 x i8]
+  %tend = getelementptr [24 x i8], [24 x i8]* %tb, i64 0, i64 23
+  store i8 0, i8* %tend
+  %sp = call i8* @digits(i64 %ipart, i8* %tend)
+  %eptr = getelementptr [24 x i8], [24 x i8]* %tb, i64 0, i64 23
+  %epp = ptrtoint i8* %eptr to i64
   %spp = ptrtoint i8* %sp to i64
   %ilen = sub i64 %epp, %spp
   br i1 %isneg, label %negw, label %intw
 negw:
-  store i8 45, i8* %end
-  %dw = call i64 @write(i32 1, i8* %end, i64 1)
-  br label %intw
+  store i8 45, i8* %out
+  %onext = getelementptr i8, i8* %out, i64 1
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %onext, i8* %sp, i64 %ilen, i1 0)
+  %tlen_neg = add i64 %ilen, 1
+  br label %frac
 intw:
-  %iw = call i64 @write(i32 1, i8* %sp, i64 %ilen)
-  %isz = fcmp oeq double %fpart, 0.0
-  br i1 %isz, label %done, label %frac
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %out, i8* %sp, i64 %ilen, i1 0)
+  %tlen_int = add i64 %ilen, 0
+  br label %frac
 frac:
-  %dotw = call i64 @write(i32 1, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @.dot, i64 0, i64 0), i64 1)
+  %tlen = phi i64 [ %tlen_neg, %negw ], [ %tlen_int, %intw ]
+  %isz = fcmp oeq double %fpart, 0.0
+  br i1 %isz, label %maybeexp, label %fracbuild
+fracbuild:
+  %dotpos = getelementptr i8, i8* %out, i64 %tlen
+  store i8 46, i8* %dotpos
+  %tlen2 = add i64 %tlen, 1
   %scaled = fmul double %fpart, 1.0e6
-  %fi = fptosi double %scaled to i64
+  %fi = call i64 @llvm.fptosi.sat.i64.f64(double %scaled)
   %q1 = sdiv i64 %fi, 10
   %d0 = srem i64 %fi, 10
   %q2 = sdiv i64 %q1, 10
   %d1 = srem i64 %q1, 10
   %q3 = sdiv i64 %q2, 10
-  %d2 = srem i64 %q2, 10
+  %d2v = srem i64 %q2, 10
   %q4 = sdiv i64 %q3, 10
   %d3 = srem i64 %q3, 10
   %q5 = sdiv i64 %q4, 10
   %d4 = srem i64 %q4, 10
   %nz0 = icmp ne i64 %d0, 0
   %nz1 = icmp ne i64 %d1, 0
-  %nz2 = icmp ne i64 %d2, 0
+  %nz2 = icmp ne i64 %d2v, 0
   %nz3 = icmp ne i64 %d3, 0
   %nz4 = icmp ne i64 %d4, 0
   %nz5 = icmp ne i64 %q5, 0
@@ -3036,56 +3113,115 @@ frac:
   %p3 = icmp sge i64 3, %tz
   %p2 = icmp sge i64 2, %tz
   %p1 = icmp sge i64 1, %tz
-  %p0 = icmp eq i64 %tz, 0
-  %ob = alloca i8
   br i1 %p5, label %w5, label %c4
 w5:
   %c5 = trunc i64 %q5 to i8
   %cc5 = add i8 %c5, 48
-  store i8 %cc5, i8* %ob
-  %ww5 = call i64 @write(i32 1, i8* %ob, i64 1)
+  %wp5 = getelementptr i8, i8* %out, i64 %tlen2
+  store i8 %cc5, i8* %wp5
+  %tlen3 = add i64 %tlen2, 1
   br label %c4
 c4:
+  %tlen4 = phi i64 [ %tlen3, %w5 ], [ %tlen2, %fracbuild ]
   br i1 %p4, label %w4, label %c3
 w4:
   %c4v = trunc i64 %d4 to i8
   %cc4 = add i8 %c4v, 48
-  store i8 %cc4, i8* %ob
-  %ww4 = call i64 @write(i32 1, i8* %ob, i64 1)
+  %wp4 = getelementptr i8, i8* %out, i64 %tlen4
+  store i8 %cc4, i8* %wp4
+  %tlen5 = add i64 %tlen4, 1
   br label %c3
 c3:
+  %tlen6 = phi i64 [ %tlen5, %w4 ], [ %tlen4, %c4 ]
   br i1 %p3, label %w3, label %c2
 w3:
   %c3v = trunc i64 %d3 to i8
   %cc3 = add i8 %c3v, 48
-  store i8 %cc3, i8* %ob
-  %ww3 = call i64 @write(i32 1, i8* %ob, i64 1)
+  %wp3 = getelementptr i8, i8* %out, i64 %tlen6
+  store i8 %cc3, i8* %wp3
+  %tlen7 = add i64 %tlen6, 1
   br label %c2
 c2:
+  %tlen8 = phi i64 [ %tlen7, %w3 ], [ %tlen6, %c3 ]
   br i1 %p2, label %w2, label %c1
 w2:
-  %c2v = trunc i64 %d2 to i8
+  %c2v = trunc i64 %d2v to i8
   %cc2 = add i8 %c2v, 48
-  store i8 %cc2, i8* %ob
-  %ww2 = call i64 @write(i32 1, i8* %ob, i64 1)
+  %wp2 = getelementptr i8, i8* %out, i64 %tlen8
+  store i8 %cc2, i8* %wp2
+  %tlen9 = add i64 %tlen8, 1
   br label %c1
 c1:
+  %tlen10 = phi i64 [ %tlen9, %w2 ], [ %tlen8, %c2 ]
   br i1 %p1, label %w1, label %c0
 w1:
   %c1v = trunc i64 %d1 to i8
   %cc1 = add i8 %c1v, 48
-  store i8 %cc1, i8* %ob
-  %ww1 = call i64 @write(i32 1, i8* %ob, i64 1)
+  %wp1 = getelementptr i8, i8* %out, i64 %tlen10
+  store i8 %cc1, i8* %wp1
+  %tlen11 = add i64 %tlen10, 1
   br label %c0
 c0:
-  br i1 %p0, label %w0, label %done
+  %tlen12 = phi i64 [ %tlen11, %w1 ], [ %tlen10, %c1 ]
+  %p0 = icmp eq i64 %tz, 0
+  br i1 %p0, label %w0, label %maybeexp
 w0:
   %c0v = trunc i64 %d0 to i8
   %cc0 = add i8 %c0v, 48
-  store i8 %cc0, i8* %ob
-  %ww0 = call i64 @write(i32 1, i8* %ob, i64 1)
-  br label %done
-done:
+  %wp0 = getelementptr i8, i8* %out, i64 %tlen12
+  store i8 %cc0, i8* %wp0
+  %tlen13 = add i64 %tlen12, 1
+  br label %maybeexp
+maybeexp:
+  %flen0 = phi i64 [ %tlen, %frac ], [ %tlen12, %c0 ], [ %tlen13, %w0 ]
+  br i1 %sci, label %expw, label %fin
+expw:
+  %epos = getelementptr i8, i8* %out, i64 %flen0
+  store i8 101, i8* %epos
+  %flen1 = add i64 %flen0, 1
+  %epos2 = getelementptr i8, i8* %out, i64 %flen1
+  store i8 43, i8* %epos2
+  %flen2 = add i64 %flen1, 1
+  %eb = alloca [8 x i8]
+  %ee = getelementptr [8 x i8], [8 x i8]* %eb, i64 0, i64 7
+  store i8 0, i8* %ee
+  %esp = call i8* @digits(i64 %ev, i8* %ee)
+  %see = ptrtoint i8* %ee to i64
+  %ses = ptrtoint i8* %esp to i64
+  %elen = sub i64 %see, %ses
+  %edst = getelementptr i8, i8* %out, i64 %flen2
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %edst, i8* %esp, i64 %elen, i1 0)
+  %flen3 = add i64 %flen2, %elen
+  br label %fin
+fin:
+  %flen = phi i64 [ %flen0, %maybeexp ], [ %flen3, %expw ]
+  ret i64 %flen
+}
+
+@.knan = private constant [3 x i8] c"nan"
+@.kinf = private constant [3 x i8] c"inf"
+@.kminf = private constant [4 x i8] c"-inf"
+
+; print_double: render v and stream it to stdout (fd 1). The trailing newline
+; is emitted by @print_nl at the call site (never inside), matching the other
+; print_* helpers.
+define void @print_double(double %v) {
+entry:
+  %buf = alloca [48 x i8]
+  %p = getelementptr [48 x i8], [48 x i8]* %buf, i64 0, i64 0
+  %len = call i64 @f64_render(double %v, i8* %p)
+  %w = call i64 @write(i32 1, i8* %p, i64 %len)
+  ret void
+}
+
+; eprint_double mirrors print_double but writes to stderr (fd 2) and appends no
+; newline, so the variadic eprint can lay out one space-separated line.
+define void @eprint_double(double %v) {
+entry:
+  %buf = alloca [48 x i8]
+  %p = getelementptr [48 x i8], [48 x i8]* %buf, i64 0, i64 0
+  %len = call i64 @f64_render(double %v, i8* %p)
+  %w = call i64 @write(i32 2, i8* %p, i64 %len)
   ret void
 }
 
@@ -3890,139 +4026,19 @@ alloc:
   ret %str-long %s2
 }
 
-; str_from_double: render a double as a freshly-allocated %str-long, mirroring
-; print_double's %g convention (sign on integer part, trailing zeros trimmed).
-; Used by emitCall's i64/double -> str auto-coercion when a double value is
-; passed to a str parameter (e.g. io.out(3.14)).
+; str_from_double: render a double as a freshly-allocated %str-long, delegating
+; the formatting to @f64_render (identical grammar to print_double). Used by
+; emitCall's i64/double -> str auto-coercion when a double value is passed to a
+; str parameter (e.g. io.out(3.14)).
 define %str-long @str_from_double(double %v) {
 entry:
-  %isneg = fcmp olt double %v, 0.0
-  %negv = fneg double %v
-  %abs = select i1 %isneg, double %negv, double %v
-  %ipart = fptosi double %abs to i64
-  %ipartd = sitofp i64 %ipart to double
-  %fpart = fsub double %abs, %ipartd
-  %buf = alloca [40 x i8]
-  %end = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 39
-  store i8 0, i8* %end
-  %sp = call i8* @digits(i64 %ipart, i8* %end)
-  %epp = ptrtoint i8* %end to i64
-  %spp = ptrtoint i8* %sp to i64
-  %ilen = sub i64 %epp, %spp
-  %wpos = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 0
-  br i1 %isneg, label %negw, label %intw
-negw:
-  store i8 45, i8* %wpos
-  %wnext = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 1
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %wnext, i8* %sp, i64 %ilen, i1 0)
-  %tlen_neg = add i64 %ilen, 1
-  br label %frac
-intw:
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %wpos, i8* %sp, i64 %ilen, i1 0)
-  %tlen_int = add i64 %ilen, 0
-  br label %frac
-frac:
-  %tlen = phi i64 [ %tlen_neg, %negw ], [ %tlen_int, %intw ]
-  %isz = fcmp oeq double %fpart, 0.0
-  br i1 %isz, label %done, label %fracbuild
-fracbuild:
-  %dotpos = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen
-  store i8 46, i8* %dotpos
-  %tlen2 = add i64 %tlen, 1
-  %scaled = fmul double %fpart, 1.0e6
-  %fi = fptosi double %scaled to i64
-  %q1 = sdiv i64 %fi, 10
-  %d0 = srem i64 %fi, 10
-  %q2 = sdiv i64 %q1, 10
-  %d1 = srem i64 %q1, 10
-  %q3 = sdiv i64 %q2, 10
-  %d2 = srem i64 %q2, 10
-  %q4 = sdiv i64 %q3, 10
-  %d3 = srem i64 %q3, 10
-  %q5 = sdiv i64 %q4, 10
-  %d4 = srem i64 %q4, 10
-  %nz0 = icmp ne i64 %d0, 0
-  %nz1 = icmp ne i64 %d1, 0
-  %nz2 = icmp ne i64 %d2, 0
-  %nz3 = icmp ne i64 %d3, 0
-  %nz4 = icmp ne i64 %d4, 0
-  %nz5 = icmp ne i64 %q5, 0
-  %tz5 = select i1 %nz5, i64 5, i64 6
-  %tz4 = select i1 %nz4, i64 4, i64 %tz5
-  %tz3 = select i1 %nz3, i64 3, i64 %tz4
-  %tz2 = select i1 %nz2, i64 2, i64 %tz3
-  %tz1 = select i1 %nz1, i64 1, i64 %tz2
-  %tz = select i1 %nz0, i64 0, i64 %tz1
-  %p5 = icmp sge i64 5, %tz
-  %p4 = icmp sge i64 4, %tz
-  %p3 = icmp sge i64 3, %tz
-  %p2 = icmp sge i64 2, %tz
-  %p1 = icmp sge i64 1, %tz
-  br i1 %p5, label %w5, label %c4
-w5:
-  %c5 = trunc i64 %q5 to i8
-  %cc5 = add i8 %c5, 48
-  %wp5 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen2
-  store i8 %cc5, i8* %wp5
-  %tlen3 = add i64 %tlen2, 1
-  br label %c4
-c4:
-  %tlen4 = phi i64 [ %tlen3, %w5 ], [ %tlen2, %fracbuild ]
-  br i1 %p4, label %w4, label %c3
-w4:
-  %c4v = trunc i64 %d4 to i8
-  %cc4 = add i8 %c4v, 48
-  %wp4 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen4
-  store i8 %cc4, i8* %wp4
-  %tlen5 = add i64 %tlen4, 1
-  br label %c3
-c3:
-  %tlen6 = phi i64 [ %tlen5, %w4 ], [ %tlen4, %c4 ]
-  br i1 %p3, label %w3, label %c2
-w3:
-  %c3v = trunc i64 %d3 to i8
-  %cc3 = add i8 %c3v, 48
-  %wp3 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen6
-  store i8 %cc3, i8* %wp3
-  %tlen7 = add i64 %tlen6, 1
-  br label %c2
-c2:
-  %tlen8 = phi i64 [ %tlen7, %w3 ], [ %tlen6, %c3 ]
-  br i1 %p2, label %w2, label %c1
-w2:
-  %c2v = trunc i64 %d2 to i8
-  %cc2 = add i8 %c2v, 48
-  %wp2 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen8
-  store i8 %cc2, i8* %wp2
-  %tlen9 = add i64 %tlen8, 1
-  br label %c1
-c1:
-  %tlen10 = phi i64 [ %tlen9, %w2 ], [ %tlen8, %c2 ]
-  br i1 %p1, label %w1, label %c0
-w1:
-  %c1v = trunc i64 %d1 to i8
-  %cc1 = add i8 %c1v, 48
-  %wp1 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen10
-  store i8 %cc1, i8* %wp1
-  %tlen11 = add i64 %tlen10, 1
-  br label %c0
-c0:
-  %tlen12 = phi i64 [ %tlen11, %w1 ], [ %tlen10, %c1 ]
-  %p0 = icmp eq i64 %tz, 0
-  br i1 %p0, label %w0, label %done
-w0:
-  %c0v = trunc i64 %d0 to i8
-  %cc0 = add i8 %c0v, 48
-  %wp0 = getelementptr [40 x i8], [40 x i8]* %buf, i64 0, i64 %tlen12
-  store i8 %cc0, i8* %wp0
-  %tlen13 = add i64 %tlen12, 1
-  br label %done
-done:
-  %flen = phi i64 [ %tlen, %frac ], [ %tlen12, %c0 ], [ %tlen13, %w0 ]
-  %nbuf = call i8* @nolang_rc_alloc(i64 %flen)
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %wpos, i64 %flen, i1 0)
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %flen, 0
-  %s1 = insertvalue %str-long %s0, i64 %flen, 1
+  %buf = alloca [48 x i8]
+  %p = getelementptr [48 x i8], [48 x i8]* %buf, i64 0, i64 0
+  %len = call i64 @f64_render(double %v, i8* %p)
+  %nbuf = call i8* @nolang_rc_alloc(i64 %len)
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %p, i64 %len, i1 0)
+  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
+  %s1 = insertvalue %str-long %s0, i64 %len, 1
   %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
   ret %str-long %s2
 }

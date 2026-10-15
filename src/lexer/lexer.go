@@ -87,6 +87,23 @@ func (l *Lexer) peekChar() byte {
 	return l.input[l.readPosition]
 }
 
+// exponentDigitFollows 判断当前字符（应为 e/E）之后是否紧跟指数数字：
+// e40 / e+40 / e-40 返回 true；e、e*、e( 等普通字母后缀返回 false。
+// 仅用于科学计数法字面量的报错检测，不消耗输入。
+func exponentDigitFollows(l *Lexer) bool {
+	next := l.peekChar()
+	if isDigit(next) {
+		return true
+	}
+	if next == '+' || next == '-' {
+		i := l.readPosition + 1
+		if i < len(l.input) {
+			return isDigit(l.input[i])
+		}
+	}
+	return false
+}
+
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
 		l.readChar()
@@ -941,6 +958,16 @@ func (l *Lexer) scanToken() (tok Token) {
 			tok.Literal = literal
 			if containsDot(literal) {
 				tok.Type = FLOAT
+			}
+			// 科学计数法字面量（如 1e40、3.5e-2）不被支持：历史上会被切成
+			// INT(1) + IDENT("e40")，报出误导性的「'e40' is not defined」与
+			// 型别错误。这里在数字结束处直接检测 [eE][0-9+-digit] 并产出
+			// 带说明的 ILLEGAL token（parser 会报告 ErrMsg，见 expr.go）。
+			if l.ch == 'e' || l.ch == 'E' {
+				if exponentDigitFollows(l) {
+					tok.Type = ILLEGAL
+					tok.ErrMsg = "scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)"
+				}
 			}
 			return tok
 		} else {

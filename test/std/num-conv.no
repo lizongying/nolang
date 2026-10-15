@@ -1,0 +1,141 @@
+; std-num-conv.no — 数值类型窄化/转换回归测试
+;
+; 执行：no test test/std/num-conv.no
+; 覆盖：
+;   B1  f64→整数走 saturating（越界钳到 MIN/MAX、NaN→0），不再是 LLVM poison
+;   B2  f64→str 打印 NaN/Inf/±Inf/大值的科学计数法
+;   B3  f64→f32 真实 fptrunc+fpext 往返（可观测精度损失）
+;   B6  转换 API 矩阵（u64/i128/u128.to-f64、f64.to-{u64,u32,i32}、i64.to-i32）
+; 编译期用例（B4 char 越界、B5 f64→f32 需显式、B7 科学计数法字面量报错）
+;   见文件末尾 t-compile-* 注释块，需 `no run` 观察错误，无法纳入 runtime 断言。
+
+# /test/runner
+
+; ── B1：float→int 饱和，绝不产生 poison ──────────────────────
+t-float-int-sat = () {
+
+    ; 范围内：向零截断
+    r f64 = 3.9
+    runner.eq(r.to-i64(), 3, '3.9.to-i64 == 3')
+    rn f64 = 0.0 - 3.9
+    runner.eq(rn.to-i64(), -3, '-3.9.to-i64 == -3')
+
+    ; 超上界 → i64.MAX（而非回绕/poison）
+    over f64 = 93.0 * 100000000000000000.0
+    runner.eq(over.to-i64(), i64.MAX, 'f64 超上界 → i64.MAX')
+
+    ; 超下界 → i64.MIN
+    under f64 = 0.0 - over
+    runner.eq(under.to-i64(), i64.MIN, 'f64 超下界 → i64.MIN')
+
+    ; 1e30 巨大值 → i64.MAX
+    huge f64 = math.pow(10.0, 30.0)
+    runner.eq(huge.to-i64(), i64.MAX, '1e30.to-i64 → i64.MAX')
+
+    ; NaN → 0
+    za f64 = 0.0
+    zb f64 = 0.0
+    nan f64 = za / zb
+    runner.eq(nan.to-i64(), 0, 'NaN.to-i64 → 0')
+
+    ; ±Inf → i64.MAX / i64.MIN
+    oa f64 = 1.0
+    inf f64 = oa / zb
+    runner.eq(inf.to-i64(), i64.MAX, '+Inf.to-i64 → i64.MAX')
+    ninf f64 = 0.0 - inf
+    runner.eq(ninf.to-i64(), i64.MIN, '-Inf.to-i64 → i64.MIN')
+}
+
+; ── B2：f64→str 的 NaN/Inf/大值渲染 ──────────────────────────
+t-f64-str = () {
+    za f64 = 0.0
+    zb f64 = 0.0
+    nan f64 = za / zb
+    runner.str-eq(nan.to-str(), 'nan', 3, 'NaN → "nan"')
+    oa f64 = 1.0
+    inf f64 = oa / zb
+    runner.str-eq(inf.to-str(), 'inf', 3, '+Inf → "inf"')
+    ninf f64 = 0.0 - inf
+    runner.str-eq(ninf.to-str(), '-inf', 4, '-Inf → "-inf"')
+
+    ; 普通值仍按十进制打印
+    z f64 = 0.0
+    runner.str-eq(z.to-str(), '0', 1, '0.0 → "0"')
+    a f64 = 1500.0
+    runner.str-eq(a.to-str(), '1500', 4, '1500.0 → "1500"')
+
+    ; 超 i64 位缓冲的大值归一化成科学计数法（2^63）。注意：.to-str() 走 std/math.no
+    ; 的 %g 格式化（6 位有效数字），与 print 的 @f64_render（整数位+6 小数）语法不同，
+    ; 这里锁定 %g 口径；关键是“不再因 poison 打印成乱码/空”。
+    two63 f64 = 9223372036854775808.0
+    runner.str-eq(two63.to-str(), '9.22337e+18', 11, '2^63 → 9.22337e+18')
+}
+
+; ── B3：f64→f32 真实精度损失（fptrunc+fpext 往返）──────────────
+t-f32-precision = () {
+
+    ; 0.1 在 f32 无法精确表示，拓宽回 f64 后与原值不同
+    x f64 = 0.1
+    y f32 = x.to-f32()
+    back f64 = y
+    diff = back - x
+    {
+        diff < 0.0 -> diff = 0.0 - diff
+
+        -> {
+        }
+    }
+    runner.is-true(diff > 0.0, 'f64→f32→f64 丢失精度（0.1 往返不相等）')
+
+    ; 但仍在 f32 的相对误差量级内（约 1e-8）
+    runner.is-true(diff < 0.000001, '误差量级合理 (<1e-6)')
+
+    ; 可精确表示的值往返无损
+    w f64 = 0.5
+    w32 f32 = w.to-f32()
+    wb f64 = w32
+    runner.f64-eq(wb, 0.5, 0.000001, '0.5 经 f32 往返无损')
+}
+
+; ── B6：转换 API 矩阵 ────────────────────────────────────────
+t-conv-matrix = () {
+    a u64 = 1000
+    runner.f64-eq(a.to-f64(), 1000.0, 0.000001, 'u64.to-f64')
+
+    b i128 = 123
+    runner.f64-eq(b.to-f64(), 123.0, 0.000001, 'i128.to-f64')
+    c u128 = 456
+    runner.f64-eq(c.to-f64(), 456.0, 0.000001, 'u128.to-f64')
+    x f64 = 3.9
+    runner.eq(x.to-u64(), 3, 'f64.to-u64 → 3')
+    runner.eq(x.to-u32(), 3, 'f64.to-u32 → 3')
+    runner.eq(x.to-i32(), 3, 'f64.to-i32 → 3')
+
+    ; i64→i32 低 32 位截断（wrap，非 UB）：5000000000 → 705032704
+    big i64 = 5000000000
+    runner.eq(big.to-i32(), 705032704, 'i64.to-i32 截断低 32 位')
+
+    ; f64→u32 负数饱和到 0
+    neg f64 = 0.0 - 5.0
+    runner.eq(neg.to-u32(), 0, 'f64 负值.to-u32 → 0')
+}
+
+; ── 编译期用例（B4/B5/B7）：无法在 runtime 断言，保留为文档 ─────────
+; 以下写法应被 checker/lexer 拒绝，用 `no run` 单独验证：
+;   B7:  x f64 = 1e40           → lexer 报「scientific notation ... not supported」
+;   B4:  c char = 1114112       → checker 报「out of Unicode code point range」
+;   B5:  a f64 = 1.5; b f32 = a → checker 报「f64 -> f32 ... must be explicit」
+;   B5+: a f32 = 1.5.to-f32(); b f64 = a → 允许（隐式拓宽），编译通过
+
+; ── 执行 ────────────────────────────────────────────────────
+p1, f1 = runner.test('B1 float→int saturating', t-float-int-sat)
+p2, f2 = runner.test('B2 f64→str render', t-f64-str)
+p3, f3 = runner.test('B3 f64→f32 precision', t-f32-precision)
+p4, f4 = runner.test('B6 conv matrix', t-conv-matrix)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/parser"
 )
 
 // clibLLVMType maps a builtin.LLVMArgType to its LLVM type spelling.
@@ -95,6 +96,7 @@ var runtimeFns = map[string]bool{
 	"str_from_i128":             true,
 	"str_from_u128":             true,
 	"print_double":              true,
+	"f64_render":                true,
 	"print_bool":                true,
 	"print_space":               true,
 	"print_option":              true,
@@ -341,7 +343,11 @@ func (c *codegen) coerce(srcTy, srcVal, wantTy string) string {
 		// (every `ok(b) -> print(b)` over a `?bool` reported false; see bug #2).
 		c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i1\n", r, srcVal))
 	case srcTy == "double" && wantTy == "i64":
-		c.sb.WriteString(fmt.Sprintf("  %s = fptosi double %s to i64\n", r, srcVal))
+		r2 := c.treg("cv")
+		if err := c.emitFptSat(r2, srcTy, srcVal, wantTy, false); err != nil {
+			return ""
+		}
+		return r2
 	case srcTy == "i8" && wantTy == "i64":
 		c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", r, srcVal))
 	case srcTy == "i1" && wantTy == "i64":
@@ -360,7 +366,11 @@ func (c *codegen) coerce(srcTy, srcVal, wantTy string) string {
 	case srcTy == "i32" && wantTy == "double":
 		c.sb.WriteString(fmt.Sprintf("  %s = sitofp i32 %s to double\n", r, srcVal))
 	case srcTy == "double" && wantTy == "i32":
-		c.sb.WriteString(fmt.Sprintf("  %s = fptosi double %s to i32\n", r, srcVal))
+		r2 := c.treg("cv")
+		if err := c.emitFptSat(r2, srcTy, srcVal, wantTy, false); err != nil {
+			return ""
+		}
+		return r2
 	case srcTy == "i8*" && wantTy == "i64":
 		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", r, srcVal))
 	case srcTy == "i64" && wantTy == "i8*":
@@ -724,10 +734,14 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 // LLVMConv: scalar conversions
 // ---------------------------------------------------------------------------
 
-// emitBuiltinConv lowers the LLVMConv flavour (i64<->f64, f32<->f64). The MIR
-// type system has no f32, so both float kinds are spelled `double` and the
-// f32<->f64 pair is a no-op copy — matching the legacy emitter, which also
-// keeps f32 values in doubles.
+// emitBuiltinConv lowers the LLVMConv flavour (i64<->f64, f32<->f64, and the
+// unsigned / narrowing members of the conversion matrix). The MIR type system
+// has no f32 — every float is spelled `double` — so the f32<->f64 pair cannot
+// change storage width; instead F64ToF32 round-trips the value through a real
+// `float` (fptrunc+fpext) to reproduce f32 precision loss, and F32ToF64 is a
+// no-op copy. Float→int conversions use the saturating intrinsics (see
+// emitFptSat) — a bare fptosi on an out-of-range/NaN operand is poison and
+// lets opt delete or corrupt the following code.
 func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMethod) error {
 	if len(inst.Args) == 0 {
 		return fmt.Errorf("builtin %s: missing operand", inst.Sym)
@@ -747,27 +761,168 @@ func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMe
 	if dstSlot == "" {
 		return fmt.Errorf("builtin %s: no result slot", inst.Sym)
 	}
-	var op string
+	// 參數型別攜帶 MIR 丟失的小數寬度（u64 攤平為 i64、f32 一律以 double
+	// 承載）：I64ToFP/UIToFP 的源操作數寬度按 Params[0] 还原，Trunc/FPTo*
+	// 的目標寬度按 Return[0] 判 i32/i16/i8，符號性另由 builtinIsUnsigned 现取。
+	paramSrcLT := srcTy
+	if len(bm.Params) > 0 {
+		if lt := llvmLTOfParam(bm.Params[0]); lt != "" {
+			paramSrcLT = lt
+		}
+	}
+	r := c.treg("cnv")
 	switch *bm.LLVMConv {
 	case builtin.LLVMConvI64ToFP:
-		op = "sitofp"
+		c.sb.WriteString(fmt.Sprintf("  %s = sitofp %s %s to %s\n", r, paramSrcLT, srcVal, dstLT))
+	case builtin.LLVMConvUIToFP:
+		c.sb.WriteString(fmt.Sprintf("  %s = uitofp %s %s to %s\n", r, paramSrcLT, srcVal, dstLT))
 	case builtin.LLVMConvFPToI64:
-		op = "fptosi"
-	case builtin.LLVMConvF64ToF32, builtin.LLVMConvF32ToF64:
-		op = "" // no-op: f32 is represented as double throughout MIR
-	}
-	if op == "" {
+		// 饱和目标宽度取「语言型别」（Return[0]）：MIR 把 i32 摊平为 i64，
+		// 若直接饱和到 i64 会漏掉 i32 上界。先 sat 到语言宽度，再按符号性
+		// 拓宽回摊平的槽位宽度。
+		dstUnsig := len(bm.Return) > 0 && builtinIsUnsigned(bm.Return[0])
+		langLT := dstLT
+		if len(bm.Return) > 0 {
+			if lt := llvmLTOfParam(bm.Return[0]); lt != "" {
+				langLT = lt
+			}
+		}
+		if err := c.emitFptSat(r, srcTy, srcVal, langLT, dstUnsig); err != nil {
+			return fmt.Errorf("builtin %s: %w", inst.Sym, err)
+		}
+		if w := c.widenToSlot(r, langLT, dstLT, dstUnsig); w != "" {
+			r = w
+		}
+	case builtin.LLVMConvFPToUI:
+		// 無號與否由「目標」型別決定（f64-to-u64 的 Params[0] 是 f64）。
+		dstUnsig := len(bm.Return) > 0 && builtinIsUnsigned(bm.Return[0])
+		langLT := dstLT
+		if len(bm.Return) > 0 {
+			if lt := llvmLTOfParam(bm.Return[0]); lt != "" {
+				langLT = lt
+			}
+		}
+		if err := c.emitFptSat(r, srcTy, srcVal, langLT, dstUnsig); err != nil {
+			return fmt.Errorf("builtin %s: %w", inst.Sym, err)
+		}
+		if w := c.widenToSlot(r, langLT, dstLT, dstUnsig); w != "" {
+			r = w
+		}
+	case builtin.LLVMConvTrunc:
+		toLT := dstLT
+		if len(bm.Return) > 0 {
+			if lt := llvmLTOfParam(bm.Return[0]); lt != "" {
+				toLT = lt
+			}
+		}
+		c.sb.WriteString(fmt.Sprintf("  %s = trunc %s %s to %s\n", r, srcTy, srcVal, toLT))
+		if w := c.widenToSlot(r, toLT, dstLT, false); w != "" {
+			r = w
+		}
+	case builtin.LLVMConvF64ToF32:
+		// f32 在 MIR 以 double 存儲，無法縮窄槽位；用真實的
+		// fptrunc double→float + fpext float→double 往返，讓
+		// 「f64 轉 f32 損失精度」的語義可見（0.1 → 0.10000000149...）。
+		t32 := c.treg("f32t")
+		c.sb.WriteString(fmt.Sprintf("  %s = fptrunc double %s to float\n", t32, srcVal))
+		c.sb.WriteString(fmt.Sprintf("  %s = fpext float %s to double\n", r, t32))
+	case builtin.LLVMConvF32ToF64:
+		// no-op: f32 全鏈路以 double 承載，寬度已足夠。
 		v := c.coerce(srcTy, srcVal, dstLT)
 		if v == "" {
 			return fmt.Errorf("builtin %s: cannot coerce %s to %s", inst.Sym, srcTy, dstLT)
 		}
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		return nil
+	default:
+		return fmt.Errorf("builtin %s: unknown LLVMConv kind %d", inst.Sym, *bm.LLVMConv)
 	}
-	r := c.treg("cnv")
-	c.sb.WriteString(fmt.Sprintf("  %s = %s %s %s to %s\n", r, op, srcTy, srcVal, dstLT))
-	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, r, dstLT, dstSlot))
+	// 發射結果可能比槽位窄（如 Trunc 到 i32 而 MIR 槽位攤平為 i64），
+	// 統一經 coerce 补齐到 dstLT 再入槽。
+	out := c.coerce(dstLT, r, dstLT)
+	if out == "" {
+		return fmt.Errorf("builtin %s: cannot coerce %s to %s", inst.Sym, r, dstLT)
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, out, dstLT, dstSlot))
 	return nil
+}
+
+// builtinIsUnsigned reports whether a registered parameter/return type is one
+// of the unsigned integer kinds. MIR flattens u64 to i64, so conversion
+// emitters must read signedness from the language-level type.
+func builtinIsUnsigned(t parser.Type) bool {
+	switch t {
+	case parser.TypeU8, parser.TypeU16, parser.TypeU32, parser.TypeU64, parser.TypeU128, parser.TypeByte:
+		return true
+	}
+	return false
+}
+
+// emitFptSat emits a SATURATING float→int conversion into register r.
+// A bare `fptosi`/`fptoui` on NaN/±Inf/an out-of-range operand is poison in
+// LLVM: opt is entitled to delete every instruction that consumes the result
+// (observed: print statements after an overflowing conversion simply never
+// executed, exit 0). The saturating intrinsics clamp to the target's min/max
+// instead (NaN → 0), which matches the legacy backend's sprintf behavior of
+// always producing a definite number. dstLT must be a concrete integer LLVM
+// type (i8/i16/i32/i64); float sources go through llvm.fptosi.sat.f32 via the
+// src type name embedded in the intrinsic id.
+func (c *codegen) emitFptSat(r, srcTy, srcVal, dstLT string, unsig bool) error {
+	if _, ok := intWidth(dstLT); !ok {
+		return fmt.Errorf("saturating conversion: non-integer destination %q", dstLT)
+	}
+	fn := fmt.Sprintf("llvm.fptosi.sat.%s.%s", dstLT, srcTy)
+	if unsig {
+		fn = fmt.Sprintf("llvm.fptoui.sat.%s.%s", dstLT, srcTy)
+	}
+	c.sb.WriteString(fmt.Sprintf("  %s = call %s @%s(%s %s)\n", r, dstLT, fn, srcTy, srcVal))
+	return nil
+}
+
+// widenToSlot widens a value emitted at the language width (fromLT, e.g. i32
+// for an i32/u32 target) back up to the flattened MIR slot width (toLT, e.g.
+// i64). MIR flattens every narrow integer to i64, so saturating/truncating only
+// to the language width would leave an i32 that must be extended before it can
+// be stored through the i64 slot. Signed targets use sext, unsigned use zext —
+// using the wrong one sign-extends a u32 (0xFFFFFFFF → -1). Returns "" when no
+// widening is needed (fromLT already equals or exceeds toLT).
+func (c *codegen) widenToSlot(v, fromLT, toLT string, unsig bool) string {
+	if fromLT == toLT {
+		return ""
+	}
+	fw, fok := intWidth(fromLT)
+	tw, tok := intWidth(toLT)
+	if !fok || !tok || fw >= tw {
+		return ""
+	}
+	op := "sext"
+	if unsig {
+		op = "zext"
+	}
+	r := c.treg("ws")
+	c.sb.WriteString(fmt.Sprintf("  %s = %s %s %s to %s\n", r, op, fromLT, v, toLT))
+	return r
+}
+
+// llvmLTOfParam maps a registered parser.Type to its LLVM scalar type, only for
+// the integer/float scalars the conversion emitters enumerate (returns "" for
+// composites so the caller keeps the value-derived type).
+func llvmLTOfParam(t parser.Type) string {
+	switch t {
+	case parser.TypeI8, parser.TypeU8, parser.TypeByte:
+		return "i8"
+	case parser.TypeI16, parser.TypeU16:
+		return "i16"
+	case parser.TypeI32, parser.TypeU32:
+		return "i32"
+	case parser.TypeI64, parser.TypeU64:
+		return "i64"
+	case parser.TypeI128, parser.TypeU128:
+		return "i128"
+	case parser.TypeF32, parser.TypeF64:
+		return "double"
+	}
+	return ""
 }
 
 // ---------------------------------------------------------------------------

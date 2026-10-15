@@ -71,6 +71,14 @@ const (
 	LLVMConvFPToI64
 	LLVMConvF64ToF32
 	LLVMConvF32ToF64
+	// LLVMConvUIToFP: 無號整數 → 浮點（uitofp）。MIR 把 u64 攤平為 i64，
+	// 符號性只能從註冊的 Params[0]（parser.Type）判讀，不能看 LLVM 型別。
+	LLVMConvUIToFP
+	// LLVMConvFPToUI: 浮點 → 無號整數（llvm.fptoui.sat，饱和截断）。
+	// 同样按 Params[0] 的无号性发射。
+	LLVMConvFPToUI
+	// LLVMConvTrunc: 整数位宽收窄（如 i64.to-i32），低比特截断。
+	LLVMConvTrunc
 )
 
 type BuiltinMethod struct {

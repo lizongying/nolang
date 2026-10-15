@@ -53,7 +53,7 @@ var validationCurModule string
 func isConcreteType(typeName string) bool {
 	switch typeName {
 	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
-		"byte", "f64", "str", "txt", "bool", "char", "void":
+		"byte", "f32", "f64", "str", "txt", "bool", "char", "void":
 		return true
 	}
 	// 複合型別：切片、陣列、可空、指針、view（借用）
@@ -873,6 +873,19 @@ func intToCharAssignOK(targetType, srcType string) bool {
 	return ok
 }
 
+// charLiteralOutOfRange 在 expr 為整數字面量（含負號字面量）時，檢查其值是否
+// 落在合法 Unicode 碼點視窗 [0, 0x10FFFF] 之外。intToCharAssignOK 放行「整數值
+// → char」是針對執行期值（如從 buf 讀出的碼點）；但一個寫死超出 Unicode 範圍
+// 的字面量（如 1114112）是確定的邏輯錯誤，必須拒絕，否則 char 會承載一個
+// 永遠無法編碼的「碼點」，在 char-to-str / UTF-8 編碼階段產生非法位元組。
+func charLiteralOutOfRange(expr parser.Expression) bool {
+	val, ok := integerLiteralValue(expr)
+	if !ok {
+		return false
+	}
+	return val < 0 || val > 1114111 // 0x10FFFF
+}
+
 // integerBitWidth returns the bit width of an integer type (8, 16, 32, 64, 128).
 // Returns 0 for non-integer types.
 func integerBitWidth(t string) int {
@@ -952,6 +965,41 @@ func isIntLiteralNarrowingToDeclared(expr parser.Expression, targetType string) 
 	return val >= -(int64(1) << uint(w-1))
 }
 
+// isFloatLiteralToDeclared 放行「浮點常量 → 已宣告浮點變數」的常量轉換。
+// 小數字面量一律推斷為 f64，但 `v f32 = 4.0`、`wn f32 = 0.0 - 8.0` 這類
+// 寫法是编译器可折叠的常量表达式（与整数字面量窄化同口径），不应被当成
+// 执行期 f64→f32 丢精度而拒绝。真正的 f64→f32 窄化限「f64 变量/执行期值」，
+// 必须显式 .to-f32()。
+func isFloatLiteralToDeclared(expr parser.Expression, targetType string) bool {
+	if targetType != "f32" && targetType != "f64" {
+		return false
+	}
+	return isConstFloatExpr(expr)
+}
+
+// isConstFloatExpr reports whether expr is a compile-time constant built only
+// from float literals and float arithmetic (+ - * / % and unary -). An
+// identifier (a runtime f64 value) is intentionally NOT a constant, so a real
+// f64→f32 narrowing still gets rejected.
+func isConstFloatExpr(expr parser.Expression) bool {
+	switch e := expr.(type) {
+	case *parser.FloatLiteral:
+		return true
+	case *parser.PrefixExpression:
+		if e.Operator == "-" || e.Operator == "+" {
+			return isConstFloatExpr(e.Right)
+		}
+		return false
+	case *parser.InfixExpression:
+		switch e.Operator {
+		case "+", "-", "*", "/", "%":
+			return isConstFloatExpr(e.Left) && isConstFloatExpr(e.Right)
+		}
+		return false
+	}
+	return false
+}
+
 // narrowingHint 回傳一個可操作的窄化修復提示。當 fromType 的值需要賦值給
 // 更窄的 toType 時，提示使用者如何用位元運算安全窄化。
 //
@@ -967,6 +1015,11 @@ func narrowingHint(fromType, toType string) string {
 		if _, _, ok := intTypeRange(fromType); ok {
 			return "; hint: char holds a Unicode code point in 0..=0x10FFFF (1114111 is the last valid value)"
 		}
+	}
+	// B5: f64 → f32 是唯一的隐式浮点窄化（f32 → f64 已隐式放行），
+	// 会丢精度，提示显式转换 API。
+	if toType == "f32" && fromType == "f64" {
+		return "; hint: f64 -> f32 loses precision and must be explicit (e.g. `x.to-f32()`, std/number.no)"
 	}
 	fromBits := intTypeBits(fromType)
 	toBits := intTypeBits(toType)
@@ -1031,6 +1084,13 @@ func isBitwiseConstructExpr(expr parser.Expression) bool {
 //     the boundary (STDIN-FD fd = 0 is allowed).
 func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bool {
 	if argType == expectedType {
+		return true
+	}
+	// B5: 浮點隱式拓寬 — f32 → f64 放行。f32 的值域與精度都是 f64 的子集，
+	// 拓宽无损（底层 MIR 以 double 承载所有浮点），与整数的隐式拓宽同一口径。
+	// 反向 f64 → f32 刻意**不**放行：会丢精度，必须显式 .to-f32()（std/number.no，
+	// 底层真实 fptrunc+fpext 往返）。
+	if expectedType == "f64" && argType == "f32" {
 		return true
 	}
 	// Map type ↔ hashmap specialization compatibility:

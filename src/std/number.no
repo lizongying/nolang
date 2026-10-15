@@ -153,6 +153,41 @@ f64.to-f32 = () (out f32) {
     out = math.f64-to-f32(.)
 }
 
+; u64.to-f64: 無號整數轉浮點
+u64.to-f64 = () (out f64) {
+    out = math.u64-to-f64(.)
+}
+
+; i128.to-f64: 128 位有號整數轉浮點
+i128.to-f64 = () (out f64) {
+    out = math.i128-to-f64(.)
+}
+
+; u128.to-f64: 128 位無號整數轉浮點
+u128.to-f64 = () (out f64) {
+    out = math.u128-to-f64(.)
+}
+
+; f64.to-u64: 浮點轉 64 位無號整數（饱和）
+f64.to-u64 = () (out u64) {
+    out = math.f64-to-u64(.)
+}
+
+; f64.to-u32: 浮點轉 32 位無號整數（饱和）
+f64.to-u32 = () (out u32) {
+    out = math.f64-to-u32(.)
+}
+
+; f64.to-i32: 浮點轉 32 位有號整數（饱和）
+f64.to-i32 = () (out i32) {
+    out = math.f64-to-i32(.)
+}
+
+; i64.to-i32: 整數位寬收窄（低 32 位截斷）
+i64.to-i32 = () (out i32) {
+    out = math.i64-to-i32(.)
+}
+
 ; 注意：不定義 float.to-str 聯合方法（原因見 std/float.no 末尾說明）。
 
 ; int.div / int.mod 已移至 std/int.no；float.div 已移至 std/float.no
@@ -679,10 +714,11 @@ i8.sqrt = () (r i8) {
     (lo <= hi) {
 
         mid i8 = 0
+
         #{overflow=wrap}
         mid = (lo + hi) / 2
-
         q i8 = 0
+
         #{overflow=wrap}
         q = n / mid
         {
@@ -708,8 +744,8 @@ i8.is-prime = () (yes bool) {
         yes = false
         return
     }
-
     m2 i8 = 0
+
     #{overflow=wrap}
     m2 = n % 2
     m2 == 0 -> {
@@ -721,8 +757,8 @@ i8.is-prime = () (yes bool) {
     #{overflow=wrap}
     lim = n / d
     (d <= lim) {
-
         md i8 = 0
+
         #{overflow=wrap}
         md = n % d
         md == 0 -> {
@@ -756,12 +792,13 @@ i16.sqrt = () (r i16) {
     hi = n / 2
     r = 1
     (lo <= hi) {
-
         mid i16 = 0
+
         #{overflow=wrap}
         mid = (lo + hi) / 2
 
         q i16 = 0
+
         #{overflow=wrap}
         q = n / mid
         {
@@ -787,8 +824,8 @@ i16.is-prime = () (yes bool) {
         yes = false
         return
     }
-
     m2 i16 = 0
+
     #{overflow=wrap}
     m2 = n % 2
     m2 == 0 -> {
@@ -800,8 +837,8 @@ i16.is-prime = () (yes bool) {
     #{overflow=wrap}
     lim = n / d
     (d <= lim) {
-
         md i16 = 0
+
         #{overflow=wrap}
         md = n % d
         md == 0 -> {
@@ -835,12 +872,12 @@ i32.sqrt = () (r i32) {
     hi = n / 2
     r = 1
     (lo <= hi) {
-
         mid i32 = 0
+
         #{overflow=wrap}
         mid = (lo + hi) / 2
-
         q i32 = 0
+
         #{overflow=wrap}
         q = n / mid
         {
@@ -866,8 +903,8 @@ i32.is-prime = () (yes bool) {
         yes = false
         return
     }
-
     m2 i32 = 0
+
     #{overflow=wrap}
     m2 = n % 2
     m2 == 0 -> {
@@ -879,8 +916,8 @@ i32.is-prime = () (yes bool) {
     #{overflow=wrap}
     lim = n / d
     (d <= lim) {
-
         md i32 = 0
+
         #{overflow=wrap}
         md = n % d
         md == 0 -> {
@@ -913,7 +950,6 @@ u8.sqrt = () (r u8) {
 
         #{overflow=wrap}
         mid u8 = (lo + hi) / 2
-
         q u8 = n / mid
         {
             mid <= q -> {
@@ -946,7 +982,6 @@ u8.is-prime = () (yes bool) {
         return
     }
     d u8 = 3
-
     lim = n / d
     (d <= lim) {
 
@@ -959,7 +994,6 @@ u8.is-prime = () (yes bool) {
 
         #{overflow=wrap}
         d = d + 2
-
         lim = n / d
     }
     yes = true
@@ -981,7 +1015,6 @@ u16.sqrt = () (r u16) {
 
         #{overflow=wrap}
         mid u16 = (lo + hi) / 2
-
         q u16 = n / mid
         {
             mid <= q -> {
@@ -1014,7 +1047,6 @@ u16.is-prime = () (yes bool) {
         return
     }
     d u16 = 3
-
     lim = n / d
     (d <= lim) {
 
@@ -1027,7 +1059,6 @@ u16.is-prime = () (yes bool) {
 
         #{overflow=wrap}
         d = d + 2
-
         lim = n / d
     }
     yes = true
@@ -1049,7 +1080,6 @@ u32.sqrt = () (r u32) {
 
         #{overflow=wrap}
         mid u32 = (lo + hi) / 2
-
         q u32 = n / mid
         {
             mid <= q -> {
@@ -1082,7 +1112,6 @@ u32.is-prime = () (yes bool) {
         return
     }
     d u32 = 3
-
     lim = n / d
     (d <= lim) {
 
@@ -1095,7 +1124,6 @@ u32.is-prime = () (yes bool) {
 
         #{overflow=wrap}
         d = d + 2
-
         lim = n / d
     }
     yes = true
@@ -1117,7 +1145,6 @@ u64.sqrt = () (r u64) {
 
         #{overflow=wrap}
         mid u64 = (lo + hi) / 2
-
         q u64 = n / mid
         {
             mid <= q -> {
@@ -1150,7 +1177,6 @@ u64.is-prime = () (yes bool) {
         return
     }
     d u64 = 3
-
     lim = n / d
     (d <= lim) {
 
@@ -1163,7 +1189,6 @@ u64.is-prime = () (yes bool) {
 
         #{overflow=wrap}
         d = d + 2
-
         lim = n / d
     }
     yes = true

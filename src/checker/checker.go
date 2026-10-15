@@ -8368,7 +8368,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						// 整數值（i64/byte/u*/i*）指派給 char 變數：char 即 Unicode 碼點，按值放行
 						!intToCharAssignOK(existingType, inferredType) &&
 						// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
-						!isIntLiteralNarrowingToDeclared(s.Value, existingType) {
+						!isIntLiteralNarrowingToDeclared(s.Value, existingType) &&
+						// 浮點字面量指派給 f32/f64 變數：常量轉換（如 `v f32 = 4.0`），不視為執行期 f64→f32 丢精度
+						!isFloatLiteralToDeclared(s.Value, existingType) {
 						valPos := s.Value.Pos()
 						msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType))
 						if optionImplicitUnwrapRejected(existingType, inferredType) {
@@ -8379,6 +8381,18 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							Line:    valPos.Line,
 							Column:  valPos.Column,
 							Message: msg,
+						})
+					}
+					// B4: char 是 Unicode 碼點，合法視窗為 [0, 0x10FFFF]。
+					// intToCharAssignOK 放行「整數值 → char」是針對執行期值；
+					// 但寫死超出範圍的字面量（如 1114112）必須單獨拒絕。
+					if existingType == "char" && charLiteralOutOfRange(s.Value) {
+						valPos := s.Value.Pos()
+						results = append(results, ValidateResult{
+							TraceID: "crange01",
+							Line:    valPos.Line,
+							Column:  valPos.Column,
+							Message: fmt.Sprintf("cannot assign integer literal to char variable '%s': value out of Unicode code point range (0..0x10FFFF)", s.Name.Value),
 						})
 					}
 				} else {
