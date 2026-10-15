@@ -36,7 +36,7 @@ inputs:
       windows/arm64, wasm32/wasi, js. Example:
       "linux/amd64,linux/arm64,darwin/arm64,wasm32/wasi,js"
     required: false
-    default: linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,wasm32/wasi
+    default: linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64,windows/arm64,wasm32/wasi
   name:
     description: Base name for output binaries (e.g. "myapp" -> myapp-linux-amd64).
     required: false
@@ -147,12 +147,15 @@ runs:
         echo "version=$VERSION_NO_V" >> "$GITHUB_OUTPUT"
         echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+        # SUFFIX is the asset base (os_arch); EXT is the trailing file extension,
+        # kept separate so the version can be inserted BEFORE the .exe, matching
+        # exactly how the release workflow (build.yml) names its assets.
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
-          Linux-X64)   SUFFIX="linux_amd64" ;;
-          Linux-ARM64) SUFFIX="linux_arm64" ;;
-          macOS-X64)   SUFFIX="darwin_amd64" ;;
-          macOS-ARM64) SUFFIX="darwin_arm64" ;;
-          Windows-X64) SUFFIX="windows_amd64.exe" ;;
+          Linux-X64)   SUFFIX="linux_amd64";   EXT="" ;;
+          Linux-ARM64) SUFFIX="linux_arm64";   EXT="" ;;
+          macOS-X64)   SUFFIX="darwin_amd64";  EXT="" ;;
+          macOS-ARM64) SUFFIX="darwin_arm64";  EXT="" ;;
+          Windows-X64) SUFFIX="windows_amd64"; EXT=".exe" ;;
           *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
         esac
 
@@ -163,8 +166,8 @@ runs:
         # publish it; fall back to the pure-Go `no_*` asset, which *does* shell
         # out to opt/llc, so the caller must provide them (this action no longer
         # installs LLVM).
-        EMBEDDED="no-llvm_${VERSION_NO_V}_${SUFFIX}"
-        PLAIN="no_${VERSION_NO_V}_${SUFFIX}"
+        EMBEDDED="no-llvm_${SUFFIX}_${VERSION_NO_V}${EXT}"
+        PLAIN="no_${SUFFIX}${EXT}"
         ASSET_NAMES=$(printf '%s' "$REL_JSON" | jq -r '.assets[]?.name')
         has_asset() { printf '%s\n' "$ASSET_NAMES" | grep -qxF -- "$1"; }
 
@@ -272,6 +275,8 @@ runs:
         echo "need-zig=$NEED_ZIG" >> "$GITHUB_OUTPUT"
 
     # ── 2a. Cache Zig (portable tarball, easy to cache) ─────────────────────
+    # The key carries the host arch: a cached x86_64 Zig must never be reused on
+    # an ARM runner (Exec format error), and vice versa.
     - name: Cache Zig
       if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-zig == '1'
       id: zig-cache
@@ -279,7 +284,7 @@ runs:
       with:
         path: |
           ${{ runner.temp }}/zig
-        key: zig-${{ inputs.zig-version }}-linux-x86_64
+        key: zig-${{ inputs.zig-version }}-${{ runner.os }}-${{ runner.arch }}
 
     - name: Install Zig
       if: inputs.install-toolchain == 'true' && steps.toolchain-needs.outputs.need-zig == '1' && steps.zig-cache.outputs.cache-hit != 'true'
@@ -289,7 +294,16 @@ runs:
       run: |
         set -euo pipefail
         echo "Installing Zig $ZIG_VER..."
-        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VER/zig-x86_64-linux-$ZIG_VER.tar.xz"
+        # Resolve the tarball from the HOST arch (RUNNER_ARCH on Linux): hardcoding
+        # x86_64 breaks on ubuntu-*-arm runners with "cannot execute binary file".
+        # Zig cross-compiles every target (incl. aarch64-windows-gnu) from either
+        # host, so only the host arch matters here.
+        case "${RUNNER_ARCH}" in
+          X64)    ZIG_ARCH=x86_64 ;;
+          ARM64)  ZIG_ARCH=aarch64 ;;
+          *) echo "::error::Unsupported runner arch ${RUNNER_ARCH} for Zig install" >&2; exit 1 ;;
+        esac
+        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VER/zig-${ZIG_ARCH}-linux-$ZIG_VER.tar.xz"
         mkdir -p "$RUNNER_TEMP/zig"
         tar -xf /tmp/zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
 
