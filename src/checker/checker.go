@@ -5236,11 +5236,11 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	var results []ValidateResult
 	seen := map[string]bool{}
 
-	// 可證明越界安全的讀取（定長陣列 + 界內下標）不再是 option 基底：lowering 已
-	// 把它從 isSafeIndexBase 的白名單剔除，codegen 也不會為它產生 option。若此處
-	// 仍上報，`no fmt` 移除冗餘 `#{index-out}` 後 `no vet` 就會新增 ERROR（口徑必須
-	// 三方一致）。bounds.go 的靜態分析同時服務 codegen / vet / fmt。
-	inBoundsIdx := parser.ProvablyInBoundsIndexReads(program)
+	// D7 最终定案（2026-10-15 两层分离）：in-bounds 读取在用户侧仍产生 option，
+	// 「内部消除」只是 codegen/MIR 优化，不改变用户可见的消费义务。故此处**不再**
+	// 依据 inBoundsIdx 放过未处理的索引读取——in-bounds 与其它读取一样照常上报
+	// idxhndld / optunuse。bounds.go 分析改由 codegen 消费（内部消除）与 rngidx
+	// 降噪使用，不影响本检查的正确性判定。
 
 	// 合併程式中同一份 std 原始檔可能因載入路徑不同而帶兩種 SourceFile 字串，
 	// 去重鍵對路徑做 filepath.Abs 正規化（見 ValidateUnhandledOverflow）。
@@ -5287,10 +5287,6 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	}
 
 	report := func(idx *parser.IndexExpression, curFile string) {
-		// 可證明越界安全的讀取不產生 option，無從「未處理」——直接放過。
-		if inBoundsIdx[idx] {
-			return
-		}
 		// 標準庫（std）不再豁免（自 2026-09-11 起，與 overflow 規則一致）。未處理
 		// 越界索引必須逐站以 `#{index-out = DEF}` 或 `?=` 修復，使 `no vet` 與
 		// 合併程式的 lint 對 std 保持乾淨。

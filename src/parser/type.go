@@ -320,23 +320,18 @@ func (p *Parser) inferIndexElemType(idx *IndexExpression) string {
 // intentionally excluded here so it is never desugared into the safe form
 // (which the codegen does not yet handle for DotExpression bases).
 //
-// D7-R1（2026-10-12 用戶定案）：可證明越界安全的讀取（定長陣列 + 界內下標，
-// 由 bounds.go 靜態分析得出）**保留豁免**，提前回 false。這是特性而非漏洞：
-// 編譯器既然能證明「不會溢出 / 不會除零 / 不會越界」，就應當消除 option 包裝、
-// 消除解包、也消除對應的 match 分支；LSP 僅在「可能出錯」處提示 warning。用戶
-// 角度上寫下看似冗餘的程式碼是「有備無患」——不寫就得自己判斷會不會出錯。
+// D7 最终定案（2026-10-15 两层分离）：可证明越界安全的读取（定长数组 + 界内下标，
+// 由 bounds.go 静态分析得出）在**用户侧仍一律产生 option**——`x = arr[i]` 的 x 仍是
+// `?elem`，必须 match / `?=` / `_ =` 解包。「内部消除」（codegen/MIR 在可证明安全时
+// 省略 nil 检查、直接走 ok 分支）只是不可见的代码生成优化，不改变用户可见类型。
+// 故此处**不再**依据 p.inBoundsIdx 早退：in-bounds 读取照常返回 true、照常降级为
+// option。bounds.go 分析改由 codegen/MIR 消费（内部消除）与 rngidx 等诊断降噪使用。
 func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
 	if idx == nil || idx.Left == nil {
 		return false
 	}
 	ident, ok := idx.Left.(*Identifier)
 	if !ok {
-		return false
-	}
-	// 可證明越界安全的讀取（定長陣列 + 界內下標）不再是 option 基底：lowering 已
-	// 於進入函數時算好此集合（bounds.go），使這類讀取不被降級成 option、無需
-	// `#{index-out}`。codegen / no vet / no fmt 共用同一判定。
-	if p.inBoundsIdx[idx] {
 		return false
 	}
 	lt := ""

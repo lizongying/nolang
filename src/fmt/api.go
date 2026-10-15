@@ -254,10 +254,12 @@ func formatProgramASTWithOverflow(program *parser.Program, code string, style Lo
 	}
 
 	sourceLines := strings.Split(code, "\n")
-	// 「可證明越界安全」的讀取（定長陣列 + 界內下標）不會產生 option，附加/管轄
-	// 於這類陳述的 `#{index-out}` 因此是冗餘的：lowering 已不對它降級，codegen /
-	// no vet 也不會把它當 option 來源。no fmt 在這裡移除該註解，使輸出不帶死碼
-	// （bounds.go 的靜態分析同時服務 codegen / vet / fmt，三方口徑一致）。
+	// D7 最終定案（兩層分離）後，`#{index-out}` 只在「死碼」情形移除：純寫入
+	//（讀取位置完全沒有索引）或無主註解（其後無可支配實語句）。in-bounds 讀取
+	// **不再**觸發移除——那類讀取在用戶側仍產生 option，註解承載 maybeIndexOutAssign
+	// 的 DEF-match 解包，刪除會把「有解包」變成「無解包」，製造 idxhndld 假回歸。
+	// StmtRemovable / AnnRemovable 的口徑已由 parser/bounds.go computeRemovable
+	// 收窄為僅死碼情形。
 	inb := parser.AnalyzeInBoundsIndex(program)
 	f := &formatter{
 		sourceLines:          sourceLines,

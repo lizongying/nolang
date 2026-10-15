@@ -275,6 +275,7 @@ func snippetCorpus(t *testing.T) []*hir.Package {
 		"regex-literal": "r = /ab+/i\n",
 		"async":         "h = run w()\nr = awy h\n",
 		"extern-c":      "#{c}\nputs = (s *byte) (r i32)\n",
+		"type-match":    "num = i32 | i64\nf = (x num) (r i64) {\n  r = x: {\n    i64 -> 1\n    i32 -> 2\n    -> 0\n  }\n}\n",
 	}
 	out := make([]*hir.Package, 0, len(snippets))
 	for name, src := range snippets {

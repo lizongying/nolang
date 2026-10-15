@@ -2,8 +2,8 @@
 //
 // 背景：arr/vec/slice 的直接變數索引「讀取」`v[i]` 預設回傳 option<elem>（越界為
 // nil），必須被顯式處理（`?=` 上拋 / `#{index-out = DEF}` 取預設 / 宣告為 option /
-// `_ =` 丟棄）。但當編譯期就能證明下標恆落於 `[0, len)` 時，該讀取永遠不會越界，
-// option 包裝（以及配套的 `#{index-out}` 註解）其實是冗餘的。
+// `_ =` 丟棄）。這一定義**用戶側一律成立**，即使編譯器能證明下標恆落於 `[0, len)`
+// （D7 最終定案，兩層分離）——用戶仍須寫 option 並解包。
 //
 // 本檔提供一個**保守**的判定：只有在下列全部成立時，才把一個索引讀取標為
 // 「可證明在界內」（in-bounds）——
@@ -13,16 +13,20 @@
 //  2. 下標 `i` 可證明恆在 `[0, N)`：
 //     a) 整數字面量 `k` 且 `0 <= k < N`；或
 //     b) `i` 恰為「外層 for-range 迴圈變數」，該迴圈形如 `i <- [a..b)`（端點皆整數
-//     字面量），套用開閉區間後取值區間 `[lo..hi]` 滿足 `lo >= 0 && hi < N`，且
-//     迴圈體內從未對 `i` 賦值 / 重新宣告 / 被巢狀同名 for-range 重綁。
+//        字面量），套用開閉區間後取值區間 `[lo..hi]` 滿足 `lo >= 0 && hi < N`，且
+//        迴圈體內從未對 `i` 賦值 / 重新宣告 / 被巢狀同名 for-range 重綁。
 //
-// codegen（lowering）、`no vet`（ValidateUnhandledIndex）、`no fmt`（移除冗餘
-// `#{index-out}`）三方必須共用同一份判定，否則會出現「fmt 刪了註解 → vet/編譯立刻
-// 報未處理越界」的口徑不一致回歸（與 #{overflow} 移除的教訓同源）。故本檔把判定
-// 集中在此，三个消费者分别调用：
-//   - parser lowering：AnalyzInBoundsForFunc（每函數一份，喂給 isSafeIndexBase）
-//   - checker：ProvablyInBoundsIndexReads（全程式，跳過 in-bounds 讀取的上報）
-//   - fmt：AnalyzeInBoundsIndex（全程式，取 StmtRemovable 決定刪哪條註解）
+// 判定的用途（D7 兩層分離）：
+//   - **內部消除（codegen/MIR）**：可證明安全的讀取，option 包裝與解包在生成碼中
+//     被省略（nil 檢查、match 分支消除），這是**不可見的優化**，不改變用戶可見類型。
+//   - **診斷降噪**：`rngidx` 等 HINT 在可證明安全處可選擇性降噪（僅影響提示頻率，
+//     不影響 idxhndld / optunuse 的正確性判定——用戶側仍需解包）。
+//   - **fmt**：`AnalyzeInBoundsIndex` 仍可供 `no fmt` 判定可移除的「死」`#{index-out}`
+//     註解（失敗分支永不觸發），但**不影響**用戶側的 option 類型與消費義務。
+//
+// 注意：判定結果**不再**影響 isSafeIndexBase / 用戶側類型推斷——in-bounds 讀取
+// 照常降級為 option。三方若共用本判定，必須各自只在其「優化 / 提示」層面消費，
+// 不得洩漏到用戶側類型。
 package parser
 
 import (
@@ -308,14 +312,18 @@ func (a *boundsAnalyzer) markStmts(list []Statement, ctx boundsCtx) {
 	a.scanAnn(list)
 }
 
-// computeRemovable：標記 s 為可移除 `#{index-out}`。判準以「讀取位置的索引」（不问
-// 基底是否解析為容器，見 enumReadIndexAll）為準，而非「容器索引讀取」：
-//  1. 讀取位置完全沒有索引：純寫入（`nl[0] = 10`）或無索引運算。`#{index-out}` 的降級
-//     只在指派右側值為索引讀取時生效（maybeIndexOutAssign：value 非 IndexExpression
-//     即早退），寫入走獨立 bounds_check → 注解是死代碼，移除安全，checker 從不對寫入上報。
-//  2. 有讀取位置索引，但全部可證明 in-bounds（定長陣列 / with-len 字面量切片）。
+// computeRemovable：標記 s 為可移除 `#{index-out}`。D7 最終定案（兩層分離，2026-10-15）
+// 後，判準收窄為**僅「讀取位置完全沒有索引」**（純寫入 `nl[0] = 10` 或無索引運算）：
+// `#{index-out}` 的降級只在指派右側值為索引讀取時生效（maybeIndexOutAssign：value 非
+// IndexExpression 即早退），寫入走獨立 bounds_check → 注解是死代碼，移除安全，
+// checker 從不對寫入上報。
 //
-// 反之，只要有任何一個讀取位置索引不在 a.inb（可能越界），就必須保留注解。這包括
+// 此前還包含「有讀取位置索引但全部可證明 in-bounds ⇒ 可移除」——那是 D7-R1（用戶側
+// 豁免）的口徑：in-bounds 讀取不產生 option，註解真死。新定案下 in-bounds 讀取在
+// 用戶側**仍產生 option**，註解觸發 maybeIndexOutAssign 生成 DEF-match 解包，**不是
+// 死碼**；fmt 若刪除會把「有解包」變成「無解包」，製造 idxhndld 假回歸。故此分支廢除。
+//
+// 反之，只要有任何一個讀取位置索引，就必須保留注解（不論能否證明在界內）。這包括
 // 「基底型別在本作用域未被解析成容器的真实讀取」（如 `names = fs.list-dir()` 後的
 // `names[i]`）——若只看 enumContainerReads 會把它們当空集合而誤刪（commit 23038595
 // 引入的回归），故這裡刻意用不問基底的 enumReadIndexAll 兜底。
@@ -324,14 +332,14 @@ func (a *boundsAnalyzer) computeRemovable(s Statement) {
 		return
 	}
 	reads := a.enumReadIndexAll(s)
-	for idx := range reads {
-		if !a.inb[idx] {
-			return
+	if len(reads) == 0 {
+		// 純寫入 / 無讀取位置索引：註解死碼，可移除。
+		if a.removable != nil {
+			a.removable[s] = true
 		}
+		return
 	}
-	if a.removable != nil {
-		a.removable[s] = true
-	}
+	// 有讀取位置索引：不論 in-bounds 與否，註解都承載 DEF-match 解包，保留。
 }
 
 // scanAnn 掃描同一清單內「獨立成行」的 #{index-out} 註解：
@@ -508,13 +516,16 @@ func (a *boundsAnalyzer) enumReadIndexAll(s Statement) map[*IndexExpression]bool
 
 // InBoundsIndex 是分析結果。
 type InBoundsIndex struct {
-	// Reads：可證明在界內的索引讀取節點集合（供 codegen / checker 跳過 option 處理）。
+	// Reads：可證明在界內的索引讀取節點集合（供 codegen/MIR 內部消除與 rngidx
+	// 等診斷降噪使用；**不影響**用戶側類型——in-bounds 讀取仍產生 option）。
 	Reads map[*IndexExpression]bool
-	// StmtRemovable：其「整棵子樹」所有容器索引讀取皆可證明在界內（且至少一個）的陳述。
-	// formatter 據此移除附加/管轄於該陳述的 `#{index-out}` 註解。
+	// StmtRemovable：其「整棵子樹」**讀取位置完全沒有索引**（純寫入 / 無索引運算）
+	// 的陳述。formatter 據此移除附加/管轄於該陳述的死 `#{index-out}` 註解。
+	// 注意：D7 最終定案後，「全部 in-bounds ⇒ 可移除」分支已廢——in-bounds 讀取
+	// 仍產生 option，註解承載 DEF-match 解包，不是死碼。
 	StmtRemovable map[Statement]bool
-	// AnnRemovable：獨立成行的 `#{index-out}` 註解陳述（其管轄的下一條陳述全部讀取
-	// 在界內），formatter 據此移除整條獨立註解。
+	// AnnRemovable：獨立成行的 `#{index-out}` 註解陳述（其管轄的下一條陳述可移除
+	// 或其後無可支配實語句）。formatter 據此移除整條死獨立註解。
 	AnnRemovable map[*AnnotationStatement]bool
 }
 

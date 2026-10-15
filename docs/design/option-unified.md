@@ -1,6 +1,6 @@
 # 方案：算术与索引统一返回 option
 
-> 状态：**已实施（见 §11）**——主体 M1–M5 与 M4(str/txt→?char) 已落地；D7 被主动 revert（in-bounds 豁免保留、bounds.go 未删）。本文件曾长期停留「待实施」草稿，§11 为 2026-10-13 实测复核结论。  
+> 状态：**已实施（见 §11）**——主体 M1–M5 与 M4(str/txt→?char) 已落地；D7 定案为「用户侧恒 option + 内部消除」（§8.1(a) 最终修订，2026-10-15）。本文件曾长期停留「待实施」草稿，§11 为 2026-10-13 实测复核结论。  
 > 涉及层：parser / checker / mir / lsp / fmt / build / 语料迁移  
 > 相关既有文档：`docs/docs/lang/syntax.md`〈整数运算溢出〉〈可空类型(option)〉、`NOLANG-OWNERSHIP-MODEL.md`
 
@@ -16,7 +16,7 @@
 | D4 | 空 `->` 臂语义                            | **默认零值**（0 / 0.0 / false / '' / 空容器 / 零值结构体）。                                                                                             |
 | D5 | `-> return`                           | **新增**：值-match 的臂体为 `return` 时直接从当前函数返回，该臂不参与"各臂值类型一致"检查。                                                                                 |
 | D6 | 统一规则作用范围                              | 整数 `+ - * / %`、容器索引 `arr[i]`、`str`/`txt` 索引 `s[i]`。**不含**浮点算术、`char` 算术（保持现状）。                                                            |
-| D7 | in-bounds 豁免                          | **取消**。`bounds.go` 的"可证明在界内"分析整套下线；`for i <- [0..N) { x = arr[i] }` 也照常产生 option，不处理即报错。惯用替代写法是**直接迭代容器**：`for i <- arr { x = i }`。       |
+| D7 | in-bounds 豁免 | **最终定案（2026-10-15）：两层分离。** ①**用户侧**：即使编译器能静态证明不会溢出/除零/越界，`arr[i]` / 算术**一律产生 `?T`**，后续使用必须解包（match / `?=` / `_ =`）——**无任何用户侧豁免**。②**语言内部**：编译器在能证明安全时**内部消除** option 包装与解包（codegen/MIR 优化，如省略 nil 检查、直接走 ok 分支），用户不可见。`bounds.go` 静态分析保留，服务内部消除与诊断，**不影响用户侧类型**。 |
 | D8 | match 穷尽性                             | **不放宽**。注解使失败情形变成"有值"，`nil`/`err` 臂虽永不触发仍**必须写**——值终究要靠 match 解包出来，match 是唯一的解包语法。不引入"注解后只需 `ok` 臂"的特例。                                   |
 
 ### D1 的直接后果（必须写进预期）
@@ -196,16 +196,12 @@ a = ao: {
 
 ### 8.1 已定案的取舍
 
-**(a) in-bounds 豁免：取消（D7）。** 理由：定长数组 + 字面量区间的"在界内"判定**范围不好  
-界定**（要证明下标恒在 `[0,N)` 需要绕开重绑定、嵌套同名 for-range、切片/vec 的未知长度…），  
-与其留一个半可信的豁免，不如统一按"可能越界"处理并照常报错。
+**(a) in-bounds 豁免：两层分离（D7 最终定案，2026-10-15）。** 原稿写「取消」（用户侧一律 option），实施中一度做成「保留用户侧豁免」（D7-R1：可证明在界内的读取不产生 `?T`）。用户复核后定案为**两层分离**，纠正了「内部消除 = 用户侧豁免」的误解：
 
-- `bounds.go` 整套下线（净删代码），`no fmt` 的"删除冗余 `#{index-out}`"一并下线。
-- 惯用替代写法是**直接迭代容器**：`for i <- arr { x = i }`（`i` 即元素，无 option）。  
-  需要下标本身时保留 `i <- [0..N)` 并对 `arr[i]` 显式解包。
-- 新增 `rngidx` HINT 引导这个改写（§5.2）。
-
-> **⚠️ 状态（2026-10-13）：本条被主动 revert，未落地。** 提交 `deac8377 "revert in-bounds index exemption and restore bounds.go checks"` 撤銷了豁免移除——`parser/type.go:339` 仍使用 `p.inBoundsIdx`、`bounds.go` 仍活跃，in-bounds 读取**仍不降级为 `?T`**。即 D7 按原文字面未实现，实际**保留**豁免。详见 §11.3。
+- **用户侧（语言表面语义）**：**一律 option，必须解包**。即使编译器能静态证明 `arr[i]` 不会越界、`a+b` 不会溢出、`a/b` 不会除零，`x = arr[i]` / `x = a + b` 的 `x` 仍是 `?T`，后续使用必须 match / `?=` / `_ =` 解包。**不存在**「可证明安全 → plain 类型」的用户侧捷径。诊断同理：`optunuse` / `idxhndld` 等对 in-bounds 读取照常生效。
+- **语言内部（编译器优化）**：编译器在能证明安全时**内部消除** option 包装与解包——codegen/MIR 据 `bounds.go` 分析省略 nil 检查、直接走 ok 分支、不生成冗余 match 分支。这是**不可见的代码生成优化**，不改变用户可见的类型与消费义务。
+- `bounds.go` 整套**保留**，服务两个消费方：①内部消除（codegen/MIR 优化依据）；②诊断口径（`rngidx` 等 HINT 在可证明安全处降噪，仅影响提示频率、不影响 ERROR/HINT 的正确性判定）。**三方共用同一份判定**（codegen 优化 / vet 提示 / fmt 删注解），但判定结果**只影响优化与提示**，不影响用户侧类型。
+- 惯用替代写法仍是**直接迭代容器**：`for i <- arr { x = i }`（`i` 即元素，无下标即无 option），`rngidx` HINT 引导这个改写（§5.2）。
 
 **(b) `s[i]`：先测量再分期（D1-b）。** 影响面最大（`src/std` 大量文本解析，且历史上刚把  
 109 处 `s[i]` 改成 `s.byte(i)`）。按 §7.1 的 ③ 测出数量：
@@ -284,7 +280,7 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
 | --- | --- | --- |
 | M0 测量 | ✅ | §7.1 探针 + §11.2 实测计数 |
 | M1 parser 语义 | ✅ | `parser/lowering.go:493 inferOptionArith`；`maybeIndexOutAssign`/`maybeCaptureOptionAssign` 保留 `?T` |
-| M1b 删 bounds | ❌ 反向 | 见 §11.3（D7 被 revert） |
+| M1b in-bounds 口径 | ✅ 修订 | D7 最终定案两层分离（§8.1(a)）：用户侧恒 option、内部消除保留 bounds.go |
 | M2 checker 诊断 | ✅ | `optunuse`(新 ERROR) + `rngidx`(HINT) + 严重度下调，均在 `checker.go`/`lint.go` |
 | M3 语法 | ✅ | `-> return` 早退臂、空 `->` 臂零值、fmt 打印（提交 c721fe6c / 853ef9ca） |
 | M4 str/txt→?char | ✅ | `parser/type.go:230-247` containerElemType 对 str/txt 返回 char；迁移 src/std 11 + tests 34 |
@@ -309,7 +305,7 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
 - 结论：**全部 5 个目录迁移完成，无阻塞错误（0 ERROR）**。剩余 warning/hint 均为新诊断（D4 空臂、`arm-should`、M4 str 索引复杂度、类型注解省略建议、溢出注解无效提示）的风格/健壮性建议，非正确性阻断；与 §2.2「0 error / 0 warning / 145 hint」基线的差异来自本次新增诊断类别，属预期。
 
 ### 11.3 与文档设计的背离（务必知悉）
-1. **D7 被主动 revert**：原设计「取消 in-bounds 豁免 + 删 bounds.go」。实际提交 `deac8377 "revert in-bounds index exemption and restore bounds.go checks"` 撤銷了豁免移除——`parser/type.go:339` 仍使用 `p.inBoundsIdx`、`bounds.go` 仍活跃，in-bounds 读取**仍不降级为 `?T`**。即 D7 按字面未落地，实际**保留**豁免。
+1. **D7 最终定案为两层分离（2026-10-15 修订）**：原稿「取消」与中途实现「保留用户侧豁免」（D7-R1）均被纠正。用户侧**一律 option、必须解包**（in-bounds 读取照常产生 `?T`，`optunuse`/`idxhndld` 照常生效）；编译器**内部**在可证明安全时消除 option 包装/解包（codegen/MIR 优化，用户不可见）。`bounds.go` 保留但只服务内部消除与诊断降噪，不再影响用户侧类型。详见 §8.1(a)。
 2. **D1-b 已落地但原稿标「待定」**：§8.1(b) 仍写「先测量再分期」，代码已与主体同期做（阈值 <50）。
 3. **文档状态头长期错误**：文件头 `状态：待实施` 与实际「已基本实施」不符，本次补录 §11 纠正。
 

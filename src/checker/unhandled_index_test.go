@@ -152,18 +152,17 @@ func TestUnhandledIndexAllowed(t *testing.T) {
 	}
 }
 
-// TestUnhandledIndexProvablyInBounds 驗證「可證明越界安全」的定長陣列讀取不再被
-// 上報（見 parser/bounds.go）：基底為定長 [N]T、下標為整數字面量 0<=k<N，或下標恰
-// 為 for-range 迴圈變數且其字面量取值區間恆在 [0,N) 時，讀取永不越界，也就無需
-// `#{index-out}` 處理。此判定必須與 codegen（isSafeIndexBase）、`no fmt`（移除冗餘
-// 註解）三方一致，否則「fmt 刪註解 → vet 立刻新增 ERROR」。
+// TestUnhandledIndexProvablyInBounds 驗證 D7 最終定案（兩層分離）：「可證明越界安全」
+// 的定長陣列讀取在**用戶側仍產生 option**，未處理時照常上報 idxhndld——「內部消除」
+// （codegen/MIR 省略 nil 檢查）是不可見優化，不改變用戶側消費義務。此前 D7-R1 曾
+// 在此豁免（in-bounds 不上報），已廢。
 func TestUnhandledIndexProvablyInBounds(t *testing.T) {
-	allowed := []struct {
+	reported := []struct {
 		name string
 		src  string
 	}{
 		{
-			// 定長陣列 + 字面量下標在界內。
+			// 定長陣列 + 字面量下標在界內：仍產生 option，未處理應報。
 			name: "fixed_array_literal_index",
 			src: `f = () (res i64) {
     a [4]i64 = [10, 20, 30, 40]
@@ -171,7 +170,7 @@ func TestUnhandledIndexProvablyInBounds(t *testing.T) {
 }`,
 		},
 		{
-			// 定長陣列 + for-range 迴圈變數下標（[0..4) → 取值 [0..3] 恆 < 4）。
+			// 定長陣列 + for-range 迴圈變數下標（[0..4) → 取值 [0..3] 恆 < 4）：仍應報。
 			name: "fixed_array_loop_index",
 			src: `f = () (res i64) {
     a [4]i64 = [10, 20, 30, 40]
@@ -181,50 +180,7 @@ func TestUnhandledIndexProvablyInBounds(t *testing.T) {
 }`,
 		},
 	}
-	for _, c := range allowed {
-		t.Run(c.name, func(t *testing.T) {
-			if res := ValidateUnhandledIndex(parseProg(t, c.src), "src/app.no"); len(res) != 0 {
-				t.Fatalf("expected no error for provably-in-bounds %s, got: %+v", c.name, res)
-			}
-		})
-	}
-
-	blocked := []struct {
-		name string
-		src  string
-	}{
-		{
-			// 切片（[]T）運行期長度未知，保守視為可能越界。
-			name: "slice_base_still_reported",
-			src: `f = (v []i64) (res i64) {
-    i <- [0..4): {
-        res = v[i]
-    }
-}`,
-		},
-		{
-			// for-range 端點非字面量（n 為參數）→ 無法證明界內。
-			name: "non_literal_loop_bound",
-			src: `f = (n i64) (res i64) {
-    a [4]i64 = [10, 20, 30, 40]
-    i <- [0..n): {
-        res = a[i]
-    }
-}`,
-		},
-		{
-			// 下標為複合算式（i + 1），非純字面量 / 迴圈變數。
-			name: "composite_index",
-			src: `f = () (res i64) {
-    a [8]i64 = [0, 1, 2, 3, 4, 5, 6, 7]
-    i <- [0..4): {
-        #{overflow=wrap}
-        res = a[i + 1]
-    }
-}`,
-		},
-	}
-	for _, c := range blocked {
+	for _, c := range reported {
 		t.Run(c.name, func(t *testing.T) {
 			var idxErrs int
 			for _, r := range ValidateUnhandledIndex(parseProg(t, c.src), "src/app.no") {
@@ -233,7 +189,35 @@ func TestUnhandledIndexProvablyInBounds(t *testing.T) {
 				}
 			}
 			if idxErrs == 0 {
-				t.Fatalf("expected unhandled-index error for non-provable %s, got none", c.name)
+				t.Fatalf("expected unhandled-index error for provably-in-bounds %s (user side is still option), got none", c.name)
+			}
+		})
+	}
+
+	// 正當消費路徑：加註解 / match 解包後不報。
+	allowed := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "fixed_array_with_index_out",
+			src: `f = () (res i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    res = a[0] #{index-out=zero}
+}`,
+		},
+		{
+			name: "fixed_array_with_option_result",
+			src: `f = () (res ?i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    res = a[0]
+}`,
+		},
+	}
+	for _, c := range allowed {
+		t.Run(c.name, func(t *testing.T) {
+			if res := ValidateUnhandledIndex(parseProg(t, c.src), "src/app.no"); len(res) != 0 {
+				t.Fatalf("expected no error for properly-consumed %s, got: %+v", c.name, res)
 			}
 		})
 	}
@@ -328,19 +312,24 @@ func TestUnhandledIndexSurfaceAnnotationNotReported(t *testing.T) {
 	}
 }
 
-// TestUnhandledIndexWithLenLiteralSliceInBounds 驗證 `buf []T = with-len(<字面量 K>)`
-// 且本函數內未被重賦值的切片，其字面量下標 `< K` 被視為可證明界內——既不需要
-// `#{index-out}`，也不應被上報（surface AST 與降級 AST 兩端口徑一致）。
-func TestUnhandledIndexWithLenLiteralSliceInBounds(t *testing.T) {
+// TestUnhandledIndexWithLenLiteralSliceReported 驗證 D7 最終定案：`buf []T =
+// with-len(<字面量 K>)` 且本函數內未被重賦值的切片，其字面量下標 `< K` 雖可靜態
+// 證明界內，用戶側仍產生 option，未處理照常上報（surface AST 與降級 AST 兩端口徑
+// 一致）。此前 D7-R1 曾在此豁免，已廢。
+func TestUnhandledIndexWithLenLiteralSliceReported(t *testing.T) {
 	src := `get = () (res i64) {
     buf []i64 = with-len(4)
     res = buf[0]
 }`
 	for _, prog := range []*parser.Program{parseProg(t, src), parseSurfaceProg(t, src)} {
+		found := false
 		for _, r := range ValidateUnhandledIndex(prog, "src/app.no") {
 			if r.TraceID == unhandledIndexTraceID {
-				t.Fatalf("with-len literal slice in-bounds read wrongly reported: L%d:C%d %s", r.Line, r.Column, r.Message)
+				found = true
 			}
+		}
+		if !found {
+			t.Fatalf("expected unhandled-index report for with-len literal slice read (user side is still option)")
 		}
 	}
 }

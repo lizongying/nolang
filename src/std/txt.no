@@ -560,7 +560,12 @@ txt.trim-char = (ch char) (val txt) {
     }
 
     #{overflow=wrap}
-    m = end - start
+    m-opt = end - start
+    m = 0
+    m-opt: {
+        ok -> m = it
+        -> m = 0
+    }
     m < 0 -> return
     j <- [0..m): {
 

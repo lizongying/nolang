@@ -161,8 +161,8 @@ func TestCaptureRootSafeIndex(t *testing.T) {
 //
 // 🔴 2026-10-12 勘誤：本例原名 TestCaptureRootSafeIndexGatedOutOfOptionFunc，
 // 斷言「a 維持純量元素型別、不改寫」。D6 放寬後舊斷言失效（預期 `a` 為 `?i64`
-// 且生成 `__cap_1`）。保留此案例作為**新行為的迴歸釘**，並在下方補一條
-// D7-R1 的對照：可證明界內的定長陣列讀取不被捕獲。
+// 且生成 `__cap_1`）。保留此案例作為**新行為的迴歸釘**；下方另有一條 D7 最終
+// 定案（兩層分離）的對照：可證明界內的定長陣列讀取在用戶側同樣降級為 option。
 func TestCaptureRootSafeIndexAppliesOutsideOptionFunc(t *testing.T) {
 	const src = `f = (v []i64, i i64) {
     a = v[i]
@@ -183,11 +183,12 @@ func TestCaptureRootSafeIndexAppliesOutsideOptionFunc(t *testing.T) {
 	}
 }
 
-// TestCaptureRootProvablyInBoundsIndexNotCaptured（D7-R1 對照）：同樣是裸索引
-// 讀取，但基底是**定長陣列 + 界內下標**（bounds.go 可證明在界內）→ 不產生
-// option、不捕獲、`a` 維持純量型別。這是「可證明安全就消除 option 包裝」的
-// 落地點，也是本檔兩條案例的分界。
-func TestCaptureRootProvablyInBoundsIndexNotCaptured(t *testing.T) {
+// TestCaptureRootProvablyInBoundsIndexStillCaptured（D7 最終定案，兩層分離）：
+// 同樣是裸索引讀取，基底是**定長陣列 + 界內下標**（bounds.go 可證明在界內）——
+// 但用戶側**仍一律產生 option**：`b` 推斷為 `?i64`，照常需要解包。「內部消除」
+// （codegen/MIR 在可證明安全時省略 nil 檢查）是不可見的優化，不改變用戶可見類型。
+// 此前 D7-R1 曾在此處豁免（plain、不降級），已廢。
+func TestCaptureRootProvablyInBoundsIndexStillCaptured(t *testing.T) {
 	const src = `f = (i i64) {
     a [4]i64 = [1, 2, 3, 4]
     b = a[1]
@@ -198,11 +199,13 @@ func TestCaptureRootProvablyInBoundsIndexNotCaptured(t *testing.T) {
 	if b == nil {
 		t.Fatal("missing b")
 	}
-	if b.Type != nil && strings.HasPrefix(typeString(b.Type), "?") {
-		t.Fatalf("b type = %v, want plain element type (provably in bounds)", typeString(b.Type))
+	if b.Type == nil || typeString(b.Type) != "?i64" {
+		t.Fatalf("b type = %v, want ?i64 (in-bounds read still option on the user side)", typeString(b.Type))
 	}
+	// 根就是索引讀取時走「根為索引」路徑：直接推斷 ?T，不落地成 __cap_N 暫存
+	// （與 TestCaptureRootSafeIndexAppliesOutsideOptionFunc 同一口徑）。
 	if got := capTmpNames(body); len(got) != 0 {
-		t.Fatalf("provably-in-bounds read must not capture, got %v", got)
+		t.Fatalf("root-index capture should infer the type without a __cap_N temp, got %v", got)
 	}
 }
 

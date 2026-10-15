@@ -9,14 +9,18 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// REGRESSION GUARD (redundant #{index-out=...} on provably-in-bounds reads is
-// removed by `no fmt`).
+// REGRESSION GUARD (#{index-out=...} removal under D7 final decision, two-layer
+// separation, 2026-10-15).
 //
-// When the base of a container index READ is a fixed-length array `[N]T` and the
-// index is statically known to lie in `[0, N)` (an integer literal, or a for-range
-// loop variable whose literal bounds fit inside the array), the read can never go
-// out of bounds. codegen (isSafeIndexBase) therefore stops wrapping it in an
-// option, so a `#{index-out = DEF}` handling is redundant. `no fmt` must strip it.
+// User side: even when the compiler statically proves a container index read is
+// in-bounds, the read STILL produces an option (`?elem`) and MUST be unpacked.
+// The `#{index-out = DEF}` annotation is therefore NOT dead for such reads — it
+// triggers maybeIndexOutAssign's DEF-match desugaring (the consumption path).
+// `no fmt` must NOT strip it.
+//
+// fmt only removes #{index-out} when it is genuinely dead:
+//   - pure-write statements (no read-position index at all);
+//   - orphan standalone annotations (no governed statement follows).
 //
 // The decision is shared with codegen and `no vet` via parser/bounds.go, so that
 // "fmt deletes the annotation" never causes "vet/compile immediately errors".
@@ -34,9 +38,11 @@ func parseFull(t *testing.T, src string) *parser.Program {
 	return prog
 }
 
-// TestFormatRemovesProvablyInBoundsIndexOut: a fixed-array read whose index is a
-// for-range loop variable provably in `[0, N)` loses its `#{index-out=zero}`.
-func TestFormatRemovesProvablyInBoundsIndexOut(t *testing.T) {
+// TestFormatPreservesProvablyInBoundsIndexOut: a fixed-array read whose index is a
+// for-range loop variable provably in `[0, N)` KEEPS its `#{index-out=zero}` — under
+// D7 final decision the read still produces an option on the user side, and the
+// annotation carries the DEF-match consumption. fmt must not strip it.
+func TestFormatPreservesProvablyInBoundsIndexOut(t *testing.T) {
 	input := "main = () {\n" +
 		"    p-tmp [32]byte\n" +
 		"    p []byte = with-len(32)\n" +
@@ -50,11 +56,8 @@ func TestFormatRemovesProvablyInBoundsIndexOut(t *testing.T) {
 		t.Fatal("failed to parse test input")
 	}
 	out := FormatProgramWithOverflow(program, input, nil, nil)
-	if strings.Contains(out, "index-out") {
-		t.Errorf("provably-in-bounds #{index-out} was not removed:\n%s", out)
-	}
-	if !strings.Contains(out, "p[i] = p-tmp[i]") {
-		t.Errorf("statement body changed unexpectedly:\n%s", out)
+	if !strings.Contains(out, "index-out") {
+		t.Errorf("provably-in-bounds #{index-out} was wrongly removed (still carries DEF-match):\n%s", out)
 	}
 	// Idempotency: a second pass must not change anything.
 	program2 := parseForTest(out)
@@ -66,9 +69,9 @@ func TestFormatRemovesProvablyInBoundsIndexOut(t *testing.T) {
 	}
 }
 
-// TestFormatRemovesAttachedInBoundsIndexOut covers the *attached* (trailing on the
-// same line) annotation path.
-func TestFormatRemovesAttachedInBoundsIndexOut(t *testing.T) {
+// TestFormatPreservesAttachedInBoundsIndexOut covers the *attached* (trailing on the
+// same line) annotation path — must also be preserved under D7 final decision.
+func TestFormatPreservesAttachedInBoundsIndexOut(t *testing.T) {
 	input := "get = () (res i64) {\n" +
 		"    a [4]i64 = [10, 20, 30, 40]\n" +
 		"    i <- [0..4): {\n" +
@@ -80,8 +83,8 @@ func TestFormatRemovesAttachedInBoundsIndexOut(t *testing.T) {
 		t.Fatal("failed to parse test input")
 	}
 	out := FormatProgramWithOverflow(program, input, nil, nil)
-	if strings.Contains(out, "index-out") {
-		t.Errorf("attached provably-in-bounds #{index-out} was not removed:\n%s", out)
+	if !strings.Contains(out, "index-out") {
+		t.Errorf("attached provably-in-bounds #{index-out} was wrongly removed:\n%s", out)
 	}
 }
 
@@ -124,12 +127,14 @@ func TestFormatPreservesIndexOutForParamBound(t *testing.T) {
 	}
 }
 
-// TestIndexOutRemovalConsistentWithChecker is the crux of three-way agreement:
-// after `no fmt` strips a redundant `#{index-out}`, the checker (which `no vet`
-// runs on the lowered program) must NOT then report the read as an unhandled
-// out-of-bounds index. If fmt removed something the checker still needs, vet would
+// TestIndexOutPreservedConsistentWithChecker is the crux of three-way agreement:
+// under D7 final decision, `#{index-out}` on a provably-in-bounds read is PRESERVED
+// by fmt (it carries the DEF-match consumption). The checker (which `no vet` runs
+// on the lowered program) must NOT then report the read as an unhandled
+// out-of-bounds index — maybeIndexOutAssign's match consumes it. If fmt were to
+// strip the annotation, the read would become an unconsumed option and vet would
 // newly error — the exact regression class shared with #{overflow} removal.
-func TestIndexOutRemovalConsistentWithChecker(t *testing.T) {
+func TestIndexOutPreservedConsistentWithChecker(t *testing.T) {
 	input := "main = () {\n" +
 		"    p-tmp [32]byte\n" +
 		"    p []byte = with-len(32)\n" +
@@ -143,24 +148,24 @@ func TestIndexOutRemovalConsistentWithChecker(t *testing.T) {
 		t.Fatal("failed to parse test input")
 	}
 	out := FormatProgramWithOverflow(program, input, nil, nil)
-	if strings.Contains(out, "index-out") {
-		t.Fatalf("precondition: annotation should have been removed:\n%s", out)
+	if !strings.Contains(out, "index-out") {
+		t.Fatalf("precondition: annotation should have been preserved:\n%s", out)
 	}
-	// Feed the annotation-free output through the checker pipeline.
+	// Feed the (still-annotated) output through the checker pipeline.
 	res := checker.ValidateUnhandledIndex(parseFull(t, out), "src/app.no")
 	for _, r := range res {
 		if strings.Contains(r.Message, "越界") || r.TraceID == "idxhndld" {
-			t.Fatalf("fmt removed the annotation but checker still reports unhandled index: %+v\n(source after fmt)\n%s", r, out)
+			t.Fatalf("annotation preserved but checker still reports unhandled index: %+v\n(source after fmt)\n%s", r, out)
 		}
 	}
 }
 
-// TestFormatRemovesWithLenSliceFixedLenRead: a slice base whose length is fixed by a
+// TestFormatPreservesWithLenSliceFixedLenRead: a slice base whose length is fixed by a
 // top-level `buf []T = with-len(<literal>)` and never reassigned has a statically known
-// length, so a literal index within it is provably in-bounds — the `#{index-out=zero}`
-// is redundant and `no fmt` strips it. This extends the old conservative rule (which
-// treated every `[]T` as runtime-length) to the with-len-literal case.
-func TestFormatRemovesWithLenSliceFixedLenRead(t *testing.T) {
+// length, so a literal index within it is provably in-bounds. Under D7 final decision
+// the read STILL produces an option on the user side, so the `#{index-out=zero}` (which
+// carries the DEF-match consumption) must be PRESERVED.
+func TestFormatPreservesWithLenSliceFixedLenRead(t *testing.T) {
 	input := "get = () (res i64) {\n" +
 		"    buf []i64 = with-len(4)\n" +
 		"    #{index-out=zero}\n" +
@@ -171,20 +176,17 @@ func TestFormatRemovesWithLenSliceFixedLenRead(t *testing.T) {
 		t.Fatal("failed to parse test input")
 	}
 	out := FormatProgramWithOverflow(program, input, nil, nil)
-	if strings.Contains(out, "index-out") {
-		t.Errorf("with-len literal slice in-bounds read #{index-out} was not removed:\n%s", out)
-	}
-	if !strings.Contains(out, "res = buf[0]") {
-		t.Errorf("statement body changed unexpectedly:\n%s", out)
+	if !strings.Contains(out, "index-out") {
+		t.Errorf("with-len literal slice in-bounds read #{index-out} was wrongly stripped:\n%s", out)
 	}
 	// Idempotency.
 	if out2 := FormatProgramWithOverflow(parseForTest(out), out, nil, nil); out2 != out {
 		t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
 	}
-	// Three-way consistency: after removal, the checker must NOT report the read.
+	// Three-way consistency: with the annotation preserved, the checker must NOT report the read.
 	for _, r := range checker.ValidateUnhandledIndex(parseFull(t, out), "src/app.no") {
 		if r.TraceID == "idxhndld" {
-			t.Fatalf("fmt removed annotation but checker reports unhandled index: %+v\n%s", r, out)
+			t.Fatalf("annotation preserved but checker reports unhandled index: %+v\n%s", r, out)
 		}
 	}
 }
@@ -214,6 +216,8 @@ func TestFormatPreservesIndexOutForReassignedSlice(t *testing.T) {
 // case in src/std/collection/map.no). checker never reads it (no indexed read statement
 // carries it) and codegen never applies it (maybeIndexOutAssign fires only for an
 // annotation attached to an index-read) → dead code, `no fmt` must strip it.
+// (The final `r = x[0] #{index-out=zero}` read is annotated separately so it stays
+// consumed under D7 final decision — the test isolates orphan removal only.)
 func TestFormatRemovesOrphanIndexOutAnnotation(t *testing.T) {
 	input := "rebuild = (n i64) (r i64) {\n" +
 		"    x []i64 = with-len(8)\n" +
@@ -221,15 +225,17 @@ func TestFormatRemovesOrphanIndexOutAnnotation(t *testing.T) {
 		"        x[i] = i\n" +
 		"        #{index-out=zero}\n" +
 		"    }\n" +
-		"    r = x[0]\n" +
+		"    r = x[0] #{index-out=zero}\n" +
 		"}\n"
 	program := parseForTest(input)
 	if program == nil {
 		t.Fatal("failed to parse test input")
 	}
 	out := FormatProgramWithOverflow(program, input, nil, nil)
-	if strings.Contains(out, "index-out") {
-		t.Errorf("orphan #{index-out} (end of block, no governed statement) was not removed:\n%s", out)
+	// The orphan (end-of-loop-body, governing nothing) must be gone; the attached
+	// one on `r = x[0]` must remain.
+	if strings.Count(out, "index-out") != 1 {
+		t.Errorf("orphan #{index-out} not removed (or attached one wrongly stripped):\n%s", out)
 	}
 	// Orphan removal must not create a checker unhandled-index error.
 	for _, r := range checker.ValidateUnhandledIndex(parseFull(t, out), "src/app.no") {

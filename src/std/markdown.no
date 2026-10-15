@@ -366,10 +366,22 @@ markdown.inline = (s str) (out str) {
                 end > close + 2 -> {
 
                     #{overflow=wrap}
-                    alt = s.slice-bytes(i + 2, close)
+                    alt-start-opt = i + 2
+                    alt-start = 0
+                    alt-start-opt: {
+                        ok -> alt-start = it
+                        -> alt-start = 0
+                    }
+                    alt = s.slice-bytes(alt-start, close)
 
                     #{overflow=wrap}
-                    url = s.slice-bytes(close + 2, end)
+                    img-url-start-opt = close + 2
+                    img-url-start = 0
+                    img-url-start-opt: {
+                        ok -> img-url-start = it
+                        -> img-url-start = 0
+                    }
+                    url = s.slice-bytes(img-url-start, end)
 
                     result = result - '<img src="' - markdown.escape-html(url) - '" alt="' - markdown.escape-html(alt) - '">'
 
@@ -399,10 +411,22 @@ markdown.inline = (s str) (out str) {
                 end > close + 2 -> {
 
                     #{overflow=wrap}
-                    label = s.slice-bytes(i + 1, close)
+                    label-start-opt = i + 1
+                    label-start = 0
+                    label-start-opt: {
+                        ok -> label-start = it
+                        -> label-start = 0
+                    }
+                    label = s.slice-bytes(label-start, close)
 
                     #{overflow=wrap}
-                    url = s.slice-bytes(close + 2, end)
+                    url-start-opt = close + 2
+                    url-start = 0
+                    url-start-opt: {
+                        ok -> url-start = it
+                        -> url-start = 0
+                    }
+                    url = s.slice-bytes(url-start, end)
 
                     result = result - '<a href="' - markdown.escape-html(url) - '">' - markdown.inline(label) - '</a>'
 
@@ -426,7 +450,13 @@ markdown.inline = (s str) (out str) {
             close > i -> {
 
                 #{overflow=wrap}
-                target = s.slice-bytes(i + 1, close)
+                target-start-opt = i + 1
+                target-start = 0
+                target-start-opt: {
+                    ok -> target-start = it
+                    -> target-start = 0
+                }
+                target = s.slice-bytes(target-start, close)
                 target.starts-with('http://') || target.starts-with('https://') || target.starts-with('mailto:') -> {
 
                     result = result - '<a href="' - markdown.escape-html(target) - '">' - markdown.escape-html(target) - '</a>'

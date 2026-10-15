@@ -77,7 +77,12 @@ import (
 // 實測 nojq dec-valid 的科學記數分支：`1e3`/`1E3`/`1.5e2`/`1e0` 被誤判 invalid，
 // 且只在 Tier 1 cache HIT 時復現、`NOLANG_AST_CACHE_OFF=1` 即消失——正是本檔
 // 開頭 rule of thumb 描述的陳舊 blob 症狀。按該規則 bump 以失效所有舊條目。
-const ASTVersion = "2026-10-14.1"
+//
+// 2026-10-15.1：D7 最終定案（兩層分離）—— isSafeIndexBase 不再依據 p.inBoundsIdx
+// 對「可證明越界安全」的讀取早退，in-bounds 讀取照常降級為 option（用戶側必須
+// 解包；內部消除改由 codegen/MIR 負責）。這改變 lowering 輸出形狀（更多 __cap_N
+// / match 區塊），屬必 bump 的 lowering 變更。
+const ASTVersion = "2026-10-15.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

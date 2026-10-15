@@ -104,10 +104,10 @@ type Parser struct {
 	SkipSafeIndexLowering bool
 
 	// inBoundsIdx 由 lowering 在進入每個函數時計算（bounds.go）：目前函數內
-	// 「可證明越界安全」的索引讀取節點集合。isSafeIndexBase 據此對這類讀取回傳
-	// false，使其不再被包裝成 option、無 option 可解包、也不需要 match 分支 ——
-	// 用戶不必為「看得出來不會越界」的下標寫防禦碼。codegen、no vet、no fmt
-	// 三方共用同一份判定以保持一致。
+	// 「可證明越界安全」的索引讀取節點集合。D7 最終定案（兩層分離）後，
+	// isSafeIndexBase **不再**据此对这类读取回传 false——用户侧照常降级为 option、
+	// 照常需要解包。该集合改由 codegen/MIR（内部消除）与 rngidx 等诊断消费，
+	// 不再影响用户侧类型。
 	inBoundsIdx map[*IndexExpression]bool
 
 	// LegacyBlockOverflowPropagation 啟用「區塊級 #{overflow=...}」的**遺留**

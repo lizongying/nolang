@@ -18,10 +18,10 @@ const rngidxTraceID = "rngidx"
 // 要麼承擔一個靜默的默認值。容器迭代（for x <- arr）根本沒有下標，
 // 也就不存在這個問題。
 //
-// 定位（§8.1(a) 的修訂）：只在**編譯器證明不了安全**的地方提示。
-// 靜態分析（bounds.go）能證明在界內的讀取已經被消除了 option 包裝與解包，
-// 沒有代價可省，提示只會製造噪音；因此這裡用 ProvablyInBoundsIndexReads
-// 把那些讀取整批剔除，與 codegen / vet / fmt 三方共用同一份判定。
+// 定位（D7 兩層分離，2026-10-15）：**不論**編譯器能否證明在界內，用戶側都需寫
+// option 並解包（in-bounds 只是 codegen 內部消除，不改變用戶負擔），故這裡對
+// in-bounds 讀取**照常提示**——容器迭代消除的正是這份用戶側解包負擔。此前依
+// ProvablyInBoundsIndexReads 剔除 in-bounds 是 D7-R1（用戶側豁免）的舊口徑，已廢。
 //
 // 不做的事：不自動改寫。兩種寫法語義並不等價 —— 手動下標遍歷需要下標本身
 // （`arr[i] = v`、`print(i)`、跨陣列對齊），改寫會丟掉它，故交給人工決定。
@@ -29,7 +29,6 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 	if program == nil {
 		return nil
 	}
-	inBounds := parser.ProvablyInBoundsIndexReads(program)
 	var results []ValidateResult
 	seen := map[*parser.IndexExpression]bool{}
 
@@ -108,10 +107,10 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 						case *parser.ExpressionStatement:
 							reads = indexReadsByName(b.Expression, name)
 						}
-						for _, idx := range reads {
-							if seen[idx] || inBounds[idx] {
-								continue
-							}
+					for _, idx := range reads {
+						if seen[idx] {
+							continue
+						}
 							seen[idx] = true
 							base := ""
 							if b, ok := idx.Left.(*parser.Identifier); ok {

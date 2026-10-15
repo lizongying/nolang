@@ -35,9 +35,10 @@ func TestRangeIndexLoopNoHintForContainerIteration(t *testing.T) {
 	}
 }
 
-// TestRangeIndexLoopNoHintWhenProvablyInBounds：下標可證明在界內時，option 已被
-// 靜默消除（D7-R1），沒有代價可省 —— 提示只會是噪音，故不報（§8.1(a)）。
-func TestRangeIndexLoopNoHintWhenProvablyInBounds(t *testing.T) {
+// TestRangeIndexLoopHintWhenProvablyInBounds：D7 最終定案（兩層分離）後，下標可證明
+// 在界內時用戶側**仍需寫 option 並解包**——容器迭代消除的正是這份解包負擔，故
+// rngidx 提示照常發出。此前 D7-R1 曾在此降噪（in-bounds 不提示），已廢。
+func TestRangeIndexLoopHintWhenProvablyInBounds(t *testing.T) {
 	src := `f = (a [3]i64) (r i64) {
     sum = 0
     for i <- [0..3): {
@@ -47,7 +48,7 @@ func TestRangeIndexLoopNoHintWhenProvablyInBounds(t *testing.T) {
     r = sum
 }`
 	counts := lintCounts(t, src)
-	if counts[rngidxTraceID] != 0 {
-		t.Fatalf("provably in-bounds loop index must not be hinted, got %v", counts)
+	if counts[rngidxTraceID] != 1 {
+		t.Fatalf("provably in-bounds loop index should still be hinted (user side is still option), got %v", counts)
 	}
 }

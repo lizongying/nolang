@@ -111,14 +111,13 @@ func TestProvablyInBoundsReads(t *testing.T) {
 	}
 }
 
-// TestAnalyzeInBoundsIndexRemovable verifies the formatter-facing result: a
-// statement whose every container read is provably in-bounds is marked
-// StmtRemovable. Note: a standalone `#{index-out=zero}` on its own line is ATTACHED
-// to the following statement by the parser (the governed statement is the sole
-// list entry), so removal flows through StmtRemovable; AnnRemovable only covers
-// annotation nodes that survive as standalone statements (e.g. block-governed),
-// which is exercised end-to-end by the fmt package tests.
-func TestAnalyzeInBoundsIndexRemovable(t *testing.T) {
+// TestAnalyzeInBoundsIndexReadNotRemovable verifies the formatter-facing result:
+// under D7 final decision, a statement WITH a read-position index is NOT marked
+// StmtRemovable even when that index is provably in-bounds — the #{index-out}
+// annotation carries DEF-match consumption and must be preserved. (Statements
+// with no read-position index at all, e.g. pure declarations, remain removable —
+// that is exercised by TestAnalyzeInBoundsIndexPureWriteRemovableOnly.)
+func TestAnalyzeInBoundsIndexReadNotRemovable(t *testing.T) {
 	prog := parseSurface(t, `f = () {
     p-tmp [32]byte
     p []byte = with-len(32)
@@ -128,8 +127,30 @@ func TestAnalyzeInBoundsIndexRemovable(t *testing.T) {
     }
 }`)
 	res := AnalyzeInBoundsIndex(prog)
+	// The for-loop body statement `p[i] = p-tmp[i]` has a read-position index
+	// (p-tmp[i]) → must NOT be removable.
+	for stmt := range res.StmtRemovable {
+		if s, ok := stmt.(*ExpressionStatement); ok {
+			if assign, ok := s.Expression.(*AssignExpression); ok {
+				if _, isIdx := assign.Value.(*IndexExpression); isIdx {
+					t.Errorf("statement with a read-position index must NOT be removable: %v", assign)
+				}
+			}
+		}
+	}
+}
+
+// TestAnalyzeInBoundsIndexPureWriteRemovableOnly: a pure write with no read-position
+// index IS removable (dead annotation).
+func TestAnalyzeInBoundsIndexPureWriteRemovableOnly(t *testing.T) {
+	prog := parseSurface(t, `f = () {
+    p []byte = with-len(32)
+    #{index-out=zero}
+    p[0] = 10
+}`)
+	res := AnalyzeInBoundsIndex(prog)
 	if len(res.StmtRemovable) == 0 {
-		t.Fatalf("expected at least one removable statement, got none")
+		t.Fatalf("pure-write statement should be removable, got none")
 	}
 }
 
