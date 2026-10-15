@@ -7,15 +7,12 @@
 //
 // zip 佈局：
 //
-//	manifest.mm    版本 / 模組名 / 分片數 / 節點數 / 根森林大小 / 原始碼 sha256
-//	chunk-0000.mm  根森林分片（每片編碼後 ≤ maxWire 位元組）
-//	chunk-0001.mm
+//	manifest.mm  版本 / 模組名 / 節點數 / 原始碼 sha256
+//	tree.mm      整棵完整遞歸 AST 樹（parser.ASTTree，單一 mm 文檔）
 //
-// 為什麼要分片：mm 對「單一容器/字串編碼後」有 65535 位元組的硬限制
-// （實測：`array too long, max length: 65535`）。實測 std 有 8/159 個模組光是
-// gob+gzip 就超過 64KB（net/tls.no 181KB），所以分片不是優化而是必需。
-// 自 mm v0.2.11 起載體是遞歸根森林（parser.ASTTree）：每棵樹的深度/載入
-// 已由 parser 側切割提升有界，這裡只按位元組把根流裝進分片。
+// 自 mm v0.2.13 起容器上限放開到 4GB（字串仍 64KB，超長字串的分段在 parser 側
+// 用 splitLongCells 處理），一棵模組 AST 樹可原樣塞進單一 mm 文檔——因此這裡不再
+// 有「按位元組把根森林切分片」那一套：只寫一個 tree.mm，讀也讀一個 tree.mm。
 package mmast
 
 import (
@@ -25,7 +22,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	pkgspec "github.com/lizongying/nolang/package"
@@ -33,19 +29,17 @@ import (
 	mm "github.com/metamessage/metamessage"
 )
 
-// maxWire 是單一 mm 文檔的位元組上限（留出協議頭的餘量，低於 mm 的 65535）。
-const maxWire = 60000
+// ZipVer 是 zip 容器本身的版本（佈局/清單規則變化時 bump）。
+// 2026-10-15.3：載體從「根森林分片（chunk-*.mm）」改成「單棵完整遞歸樹單文檔（tree.mm）」。
+const ZipVer = "2026-10-15.3"
 
-// ZipVer 是 zip 容器本身的版本（分塊/清單規則變化時 bump）。
-// 2026-10-15.2：分片載體從扁平節點表改成根森林。
-const ZipVer = "2026-10-15.2"
+// 單文檔在 zip 內的條目名。
+const (
+	manifestName = "manifest.mm"
+	treeName     = "tree.mm"
+)
 
 // ── mm 側的具體結構（帶 allow_empty：mm 不接受任何零值/空容器）─────────────
-
-type mmChunk struct {
-	I     int32            `mm:"allow_empty;desc=分片序號"`
-	Roots []parser.ASTNode `mm:"allow_empty;desc=根森林分片"`
-}
 
 type mmManifest struct {
 	ZipVer string `mm:"desc=zip 容器版本"`
@@ -54,14 +48,13 @@ type mmManifest struct {
 	Tool   string `mm:"allow_empty;desc=模組/工具名"`
 	Src    string `mm:"allow_empty;desc=來源檔名"`
 	SrcSHA string `mm:"allow_empty;desc=來源 sha256"`
-	Chunks int32  `mm:"desc=分片數"`
 	Nodes  int32  `mm:"desc=節點總數"`
-	Roots  int32  `mm:"desc=根森林大小"`
 }
 
 // ── 寫出 ────────────────────────────────────────────────────────────────────
 
 // ZipStats 是打包結果的統計（CI 日誌 / `no pack` 輸出用）。
+// Chunks 恆為 1（單文檔佈局），保留欄位以兼容既有日誌格式。
 type ZipStats struct {
 	Nodes  int
 	Chunks int
@@ -83,18 +76,13 @@ func WriteASTZipWithStats(w io.Writer, prog *parser.Program, tool, src, srcSHA s
 	if err != nil {
 		return nil, fmt.Errorf("mmast: encode ast tree: %w", err)
 	}
-	chunks, err := chunkRoots(tree.Roots)
-	if err != nil {
-		return nil, err
+	if tree.Root == nil {
+		return nil, fmt.Errorf("mmast: ast tree has no root")
 	}
 
-	zw := zip.NewWriter(w)
 	cw := &countingWriter{w: w}
-	zw = zip.NewWriter(cw)
-	mw, err := zw.Create("manifest.mm")
-	if err != nil {
-		return nil, err
-	}
+	zw := zip.NewWriter(cw)
+
 	man := mmManifest{
 		ZipVer: ZipVer,
 		Wire:   tree.Ver,
@@ -102,9 +90,11 @@ func WriteASTZipWithStats(w io.Writer, prog *parser.Program, tool, src, srcSHA s
 		Tool:   tool,
 		Src:    src,
 		SrcSHA: srcSHA,
-		Chunks: int32(len(chunks)),
 		Nodes:  tree.Nodes,
-		Roots:  int32(len(tree.Roots)),
+	}
+	mw, err := zw.Create(manifestName)
+	if err != nil {
+		return nil, err
 	}
 	mbs, err := mm.EncodeFromValue(man, "")
 	if err != nil {
@@ -114,26 +104,22 @@ func WriteASTZipWithStats(w io.Writer, prog *parser.Program, tool, src, srcSHA s
 		return nil, err
 	}
 
-	for i, c := range chunks {
-		cw2, err := zw.Create(fmt.Sprintf("chunk-%04d.mm", i))
-		if err != nil {
-			return nil, err
-		}
-		wire, err := mm.EncodeFromValue(mmChunk{I: int32(i), Roots: c}, "")
-		if err != nil {
-			return nil, fmt.Errorf("mmast: encode chunk %d: %w", i, err)
-		}
-		if len(wire) > maxWire {
-			return nil, fmt.Errorf("mmast: chunk %d is %d bytes, over the mm 64KB container limit", i, len(wire))
-		}
-		if _, err := cw2.Write(wire); err != nil {
-			return nil, err
-		}
+	tw, err := zw.Create(treeName)
+	if err != nil {
+		return nil, err
 	}
+	tbs, err := mm.EncodeFromValue(*tree, "")
+	if err != nil {
+		return nil, fmt.Errorf("mmast: encode ast tree: %w", err)
+	}
+	if _, err := tw.Write(tbs); err != nil {
+		return nil, err
+	}
+
 	if err := zw.Close(); err != nil {
 		return nil, err
 	}
-	return &ZipStats{Nodes: int(tree.Nodes), Chunks: len(chunks), Bytes: cw.n}, nil
+	return &ZipStats{Nodes: int(tree.Nodes), Chunks: 1, Bytes: cw.n}, nil
 }
 
 // countingWriter 統計實際寫出的位元組數（打包統計用）。
@@ -148,92 +134,6 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// chunkRoots 把根森林切成若干片，使每片編碼後 ≤ maxWire。
-//
-// 難點：mm 超標時是**編碼失敗**（`array too long`）而不是回傳一個太大的 buffer，
-// 所以不能「先編再量」。這裡先用根的載入位元組數估一個批量，真的失敗就對半回縮
-// 重試，成功後用實測密度更新估計值（收斂很快）。根不可分（提升根的切割發生在
-// parser 側），單根超標是編碼端 bug，直接硬錯。
-func chunkRoots(roots []*parser.ASTNode) ([][]parser.ASTNode, error) {
-	if len(roots) == 0 {
-		return nil, fmt.Errorf("mmast: empty root forest")
-	}
-	loads := make([]int64, len(roots))
-	for i, r := range roots {
-		loads[i] = parser.ASTNodeWireEstimate(r)
-		if loads[i] > maxWire {
-			return nil, fmt.Errorf("mmast: root %d (%s) estimates %d bytes, over the mm %d-byte limit; the cut budget in parser is too high",
-				i, r.K, loads[i], maxWire)
-		}
-	}
-	var out [][]parser.ASTNode
-	batch := estimateRootBatch(loads, 0)
-	start := 0
-	for start < len(roots) {
-		if batch < 1 {
-			batch = 1
-		}
-		end := start + batch
-		if end > len(roots) {
-			end = len(roots)
-		}
-		slice := toRootValues(roots[start:end])
-		wire, err := mm.EncodeFromValue(mmChunk{I: int32(len(out)), Roots: slice}, "")
-		for (err != nil || len(wire) > maxWire) && end-start > 1 {
-			batch = (end - start) / 2
-			if batch < 1 {
-				batch = 1
-			}
-			end = start + batch
-			slice = toRootValues(roots[start:end])
-			wire, err = mm.EncodeFromValue(mmChunk{I: int32(len(out)), Roots: slice}, "")
-		}
-		if err != nil {
-			return nil, fmt.Errorf("mmast: encode chunk at root %d: %w", start, err)
-		}
-		if len(wire) > maxWire {
-			return nil, fmt.Errorf("mmast: root %d alone encodes to %d bytes, over the mm container limit",
-				start, len(wire))
-		}
-		out = append(out, slice)
-		start = end
-		batch = estimateRootBatch(loads[start:], min(24, len(loads)-start))
-	}
-	return out, nil
-}
-
-// estimateRootBatch 依根的 wire 估算（parser.ASTNodeWireEstimate 同口徑）
-// 估算「幾棵根會落在 maxWire 內」；再留 15% 餘量。
-func estimateRootBatch(loads []int64, sample int) int {
-	if len(loads) == 0 {
-		return 8
-	}
-	if sample > len(loads) {
-		sample = len(loads)
-	}
-	total := int64(0)
-	for i := 0; i < sample; i++ {
-		total += loads[i]
-	}
-	if total == 0 {
-		return 64
-	}
-	per := float64(total) / float64(sample)
-	b := int(float64(maxWire) * 0.85 / per)
-	if b < 1 {
-		return 1
-	}
-	return b
-}
-
-func toRootValues(rs []*parser.ASTNode) []parser.ASTNode {
-	out := make([]parser.ASTNode, 0, len(rs))
-	for _, r := range rs {
-		out = append(out, *r)
-	}
-	return out
-}
-
 // ── 讀入 ────────────────────────────────────────────────────────────────────
 
 // ASTZip 描述讀入的 zip（供呼叫方做進一步校驗）。
@@ -244,7 +144,7 @@ type ASTZip struct {
 	SrcSHA   string
 }
 
-// readZipEntries 讀出 zip 的所有條目（測試用：逐條校驗分片大小）。
+// readZipEntries 讀出 zip 的所有條目（測試用：逐條校驗佈局）。
 func readZipEntries(data []byte) (map[string][]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -316,28 +216,15 @@ func cachePathPart(s string) string {
 }
 
 // ReadASTZip 解析 <tool>.ast.zip 的內容，還原成 *Program。
-// 版本/分片/節點數任一不符即硬錯（與 incremental 的 hard-error 口徑一致）。
+// 版本不符即硬錯（與 incremental 的 hard-error 口徑一致）。
 func ReadASTZip(data []byte) (*parser.Program, *ASTZip, error) {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	byName, err := readZipEntries(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("mmast: open zip: %w", err)
 	}
-	byName := map[string][]byte{}
-	for _, f := range zr.File {
-		rc, err := f.Open()
-		if err != nil {
-			return nil, nil, err
-		}
-		b, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return nil, nil, err
-		}
-		byName[f.Name] = b
-	}
-	mb, ok := byName["manifest.mm"]
+	mb, ok := byName[manifestName]
 	if !ok {
-		return nil, nil, fmt.Errorf("mmast: manifest.mm missing from zip")
+		return nil, nil, fmt.Errorf("mmast: %s missing from zip", manifestName)
 	}
 	var man mmManifest
 	if err := mm.DecodeToValue(mb, &man); err != nil {
@@ -347,49 +234,16 @@ func ReadASTZip(data []byte) (*parser.Program, *ASTZip, error) {
 		return nil, nil, fmt.Errorf("mmast: zip version mismatch: blob %q, this compiler %q", man.ZipVer, ZipVer)
 	}
 
-	// 分片檔按名字排序讀取，順序不依賴 zip 內的條目順序
-	var names []string
-	for n := range byName {
-		if n != "manifest.mm" {
-			names = append(names, n)
-		}
+	tb, ok := byName[treeName]
+	if !ok {
+		return nil, nil, fmt.Errorf("mmast: %s missing from zip", treeName)
 	}
-	sort.Strings(names)
-	if len(names) != int(man.Chunks) {
-		return nil, nil, fmt.Errorf("mmast: manifest says %d chunks, zip has %d", man.Chunks, len(names))
+	var tree parser.ASTTree
+	if err := mm.DecodeToValue(tb, &tree); err != nil {
+		return nil, nil, fmt.Errorf("mmast: decode ast tree: %w", err)
 	}
-
-	nodes := make([]parser.ASTNode, 0, man.Roots)
-	for _, n := range names {
-		var c mmChunk
-		if err := mm.DecodeToValue(byName[n], &c); err != nil {
-			return nil, nil, fmt.Errorf("mmast: decode %s: %w", n, err)
-		}
-		for _, r := range c.Roots {
-			// mm 的空 slice（allow_empty）解碼回來是「一個零值元素」而不是空
-			// （實測）。合法節點的 K 永遠非空，可以直接丟；節點內部的退化項
-			// 由 parser.DecodeASTTree 的 sanitize 統一剔除。
-			if r.K == "" {
-				continue
-			}
-			nodes = append(nodes, r)
-		}
-	}
-	if int32(len(nodes)) != man.Roots {
-		return nil, nil, fmt.Errorf("mmast: manifest says %d roots, decoded %d", man.Roots, len(nodes))
-	}
-
-	roots := make([]*parser.ASTNode, len(nodes))
-	for i := range nodes {
-		n := nodes[i]
-		roots[i] = &n
-	}
-	prog, err := parser.DecodeASTTree(&parser.ASTTree{
-		Ver:    man.Wire,
-		AstVer: man.AstVer,
-		Nodes:  man.Nodes,
-		Roots:  roots,
-	})
+	// 樹本身自帶版本欄位，DecodeASTTree 會做 wire/ast 版本校驗並硬錯。
+	prog, err := parser.DecodeASTTree(&tree)
 	if err != nil {
 		return nil, nil, err
 	}

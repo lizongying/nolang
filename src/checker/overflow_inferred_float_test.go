@@ -31,9 +31,9 @@ func TestOverflowInferredFloatVarNotReported(t *testing.T) {
 	const expDiv = `main = (x f64) (out str) {
     ax = x
     e i64 = 2
-    bpw f64 = math.i64-to-f64(e) * 2.302585092994046
+    bpw f64 = e.to-f64() * 2.302585092994046
     base = bpw.exp()
-    m = math.f64-to-i64(ax / base * 100000.0 + 0.5)
+    m = (ax / base * 100000.0 + 0.5).to-i64()
     out = m.to-str()
 }
 `
@@ -41,7 +41,7 @@ func TestOverflowInferredFloatVarNotReported(t *testing.T) {
 	const logFloor = `main = (ax f64) (e i64) {
     lg10 = ax.log10()
     flr = lg10.floor()
-    e = math.f64-to-i64(flr)
+    e = flr.to-i64()
 }
 `
 	// 對照組：型別確實無法推斷的未知運算元仍必須被報告（保守視為整數），

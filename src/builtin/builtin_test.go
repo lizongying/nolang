@@ -78,10 +78,10 @@ func TestLLVMConvMethods(t *testing.T) {
 		name string
 		conv LLVMConvKind
 	}{
-		{"i64-to-f64", LLVMConvI64ToFP},
-		{"f64-to-i64", LLVMConvFPToI64},
-		{"f64-to-f32", LLVMConvF64ToF32},
-		{"f32-to-f64", LLVMConvF32ToF64},
+		{"i64.to-f64", LLVMConvI64ToFP},
+		{"f64.to-i64", LLVMConvFPToI64},
+		{"f64.to-f32", LLVMConvF64ToF32},
+		{"f32.to-f64", LLVMConvF32ToF64},
 	}
 	for _, tt := range tests {
 		found := false

@@ -7,6 +7,15 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.10
+
+- refactor(mmast): switch AST encoding to a recursive root forest structure
+- feat(conversion): complete numeric type conversion matrix with saturating float-to-int
+- refactor(std): migrate numeric conversion and to-str methods to number module
+- refactor(bounds): finalize two-layer option handling for in-bounds index reads
+- fix(checker): reject out-of-range char literals and unsupported scientific notation
+- refactor(tests): remove obsolete compiler unit tests and fix comment typo
+
 ## v0.4.9
 
 - feat(parser): add tagged enum variant arms with payload destructuring, blank-identifier discard, and static type-match dispatch for union types

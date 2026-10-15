@@ -10664,10 +10664,10 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 			return nil
 		}
 		c.fail("len/cap unsupported on struct %s in func %d", ty.Raw, c.cf)
-		return fmt.Errorf("lencap struct")
+		return fmt.Errorf("lencap struct: len/cap unsupported on struct %s in func %d", ty.Raw, c.cf)
 	default:
 		c.fail("len/cap unsupported on %s (%s) in func %d", ty.Raw, ty.Kind, c.cf)
-		return fmt.Errorf("lencap kind")
+		return fmt.Errorf("lencap kind: len/cap unsupported on %s (%s) in func %d", ty.Raw, ty.Kind, c.cf)
 	}
 }
 

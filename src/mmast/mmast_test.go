@@ -47,8 +47,7 @@ func TestASTZipRoundTrip(t *testing.T) {
 		if info.Manifest.Nodes == 0 || info.SrcSHA != "deadbeef" {
 			t.Fatalf("%s: bad manifest %+v", rel, info.Manifest)
 		}
-		t.Logf("%-16s zip=%7d bytes  nodes=%6d  chunks=%3d",
-			rel, buf.Len(), info.Manifest.Nodes, info.Manifest.Chunks)
+		t.Logf("%-16s zip=%7d bytes  nodes=%6d", rel, buf.Len(), info.Manifest.Nodes)
 	}
 }
 
@@ -85,8 +84,9 @@ func TestPackFlowRoundTrip(t *testing.T) {
 	t.Logf("pack flow: nodes=%d chunks=%d bytes=%d", st.Nodes, st.Chunks, st.Bytes)
 }
 
-// TestASTZipChunkLimit：每個分片編碼後都必須 ≤ mm 的 65535 位元組上限。
-func TestASTZipChunkLimit(t *testing.T) {
+// TestASTZipLayout：zip 必須恰好含 manifest.mm + tree.mm 兩個條目（單文檔佈局）。
+// mm 的容器上限已放開到 4GB，整棵樹原樣塞進 tree.mm，不再按位元組切片。
+func TestASTZipLayout(t *testing.T) {
 	prog := parseStd(t, "net/tls.no")
 	var buf bytes.Buffer
 	if err := WriteASTZip(&buf, prog, "tls", "net/tls.no", ""); err != nil {
@@ -96,19 +96,48 @@ func TestASTZipChunkLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(zr) < 2 {
-		t.Fatalf("expected manifest + at least one chunk, got %d entries", len(zr))
+	if len(zr) != 2 {
+		t.Fatalf("expected manifest.mm + tree.mm (2 entries), got %d: %v", len(zr), keysOf(zr))
 	}
-	mmChunkMax := 65535
-	for name, data := range zr {
-		if name == "manifest.mm" {
-			continue
-		}
-		if len(data) > mmChunkMax {
-			t.Fatalf("%s is %d bytes, over mm's %d-byte container limit", name, len(data), mmChunkMax)
-		}
+	if _, ok := zr[manifestName]; !ok {
+		t.Fatalf("missing %s", manifestName)
 	}
-	t.Logf("tls.no: %d zip entries, all chunks within the mm limit", len(zr))
+	if _, ok := zr[treeName]; !ok {
+		t.Fatalf("missing %s", treeName)
+	}
+	t.Logf("tls.no: %d bytes -> %v", buf.Len(), keysOf(zr))
+}
+
+func keysOf(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// TestASTZipTiny：極小模組走完整 mm→zip→mm 路徑（樹 <64KB，不依賴 4GB 容器）。
+// 驗證單文檔佈局的編解碼本身正確（大模組要等 mm 容器放開到 4GB）。
+func TestASTZipTiny(t *testing.T) {
+	src := "x = 1\ny = x + 2\nz = y * 3\n"
+	p := parser.New(lexer.New(src))
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse: %v", errs)
+	}
+	var buf bytes.Buffer
+	if err := WriteASTZip(&buf, prog, "tiny", "tiny.no", "abc123"); err != nil {
+		t.Fatalf("write zip: %v", err)
+	}
+	back, info, err := ReadASTZip(buf.Bytes())
+	if err != nil {
+		t.Fatalf("read zip: %v", err)
+	}
+	opts := dump.Options{Annotations: true}
+	if want, got := dump.DumpWithOptions(prog, opts), dump.DumpWithOptions(back, opts); want != got {
+		t.Fatal("dump mismatch after tiny pack/unpack")
+	}
+	t.Logf("tiny: zip=%d bytes nodes=%d", buf.Len(), info.Manifest.Nodes)
 }
 
 // TestASTZipVersionGuard：zip/節點表版本不符必須硬錯。

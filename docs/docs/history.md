@@ -6,6 +6,15 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.10
+
+- refactor(mmast): switch AST encoding to a recursive root forest structure
+- feat(conversion): complete numeric type conversion matrix with saturating float-to-int
+- refactor(std): migrate numeric conversion and to-str methods to number module
+- refactor(bounds): finalize two-layer option handling for in-bounds index reads
+- fix(checker): reject out-of-range char literals and unsupported scientific notation
+- refactor(tests): remove obsolete compiler unit tests and fix comment typo
+
 ## v0.4.9
 
 - feat(parser): add tagged enum variant arms with payload destructuring, blank-identifier discard, and static type-match dispatch for union types
