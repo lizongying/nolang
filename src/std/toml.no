@@ -684,7 +684,12 @@ toml.parse = (s str) (result ?toml-doc) {
             complete == false -> {
 
                 #{overflow=wrap}
-                j = i + 1
+                j-opt = i + 1
+                j = 0
+                j-opt: {
+                    ok -> j = it
+                    -> j = 0
+                }
                 (j < lines.len()) {
                     j >= lines.len() -> break
 
@@ -707,7 +712,12 @@ toml.parse = (s str) (result ?toml-doc) {
                 }
 
                 #{overflow=wrap}
-                i = j - 1
+                i-opt = j - 1
+                i = 0
+                i-opt: {
+                    ok -> i = it
+                    -> i = 0
+                }
             }
         }
         valid-value = toml-valid-value(raw-value)

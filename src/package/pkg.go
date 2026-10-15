@@ -416,10 +416,16 @@ func (p *Package) MatchDependency(importPath string) (string, string, bool) {
 	var matchedVer string
 
 	for key, version := range p.Dependencies {
-		// 依賴鍵必須是 importPath 的前綴
-		// 且 importPath 中的後續部分應以 / 開頭
-		if strings.HasPrefix(importPath, key) {
-			remainder := strings.TrimPrefix(importPath, key)
+		// 依賴鍵必須是 importPath 的前綴，且後續部分以 / 開頭。
+		//
+		// 預編 AST 依賴的鍵形如 `nogit@github.com/lizongying/notools`：原始碼裡寫的是
+		// `use nogit`（工具名）或 `use github.com/lizongying/notools/nogit`（倉庫路徑），
+		// 兩者都不是鍵的字面前綴，所以對這種鍵額外展開兩個候選前綴再比。
+		for _, cand := range dependencyPrefixes(key) {
+			if !strings.HasPrefix(importPath, cand) {
+				continue
+			}
+			remainder := strings.TrimPrefix(importPath, cand)
 			if remainder == "" || strings.HasPrefix(remainder, "/") {
 				if len(key) > len(matchedKey) {
 					matchedKey = key
@@ -433,6 +439,27 @@ func (p *Package) MatchDependency(importPath string) (string, string, bool) {
 		return "", "", false
 	}
 	return matchedKey, matchedVer, true
+}
+
+// dependencyPrefixes 返回依賴鍵在 import path 上可比對的前綴集合。
+// 普通鍵（github.com/o/r）就是它自己；預編 AST 鍵（tool@host/owner/repo）另外
+// 展開成工具名與 host/owner/repo 兩種寫法，讓 `use nogit` 與
+// `use github.com/lizongying/notools/nogit` 都能命中。
+func dependencyPrefixes(key string) []string {
+	at := strings.Index(key, "@")
+	if at <= 0 {
+		return []string{key}
+	}
+	tool := key[:at]
+	repo := key[at+1:]
+	out := []string{tool, repo}
+	return out
+}
+
+// IsASTDependencyKey 報告依賴鍵是否為預編 AST 依賴（<tool>@<host>/<owner>/<repo>）。
+func IsASTDependencyKey(key string) bool {
+	at := strings.Index(key, "@")
+	return at > 0 && strings.Count(key[at+1:], "/") >= 2
 }
 
 // PackageShortName 從依賴鍵中提取短名稱（最後一段）
@@ -802,6 +829,11 @@ func (p *Package) resolveFromScratch(graph *DependencyGraph, maxDepth int) (*Dep
 	for key, version := range p.Dependencies {
 		// 跳過標準庫依賴
 		if isStdDependency(key) {
+			continue
+		}
+		// 跳過預編 AST 依賴（nogit@host/owner/repo）：發布產物是 <tool>.ast.zip，
+		// 沒有原始碼套件可下載，由 transpiler 在遇到 use 時按需抓取（見 mmast.EnsureModuleAST）。
+		if IsASTDependencyKey(key) {
 			continue
 		}
 		// 跳過 workspace 本地套件，由 transpiler 在編譯時解析

@@ -177,9 +177,16 @@ compute-accept = (key str) (accept str) {
 ; 以全域計數器與簡單 LCG 組合
 next-rand = () (r i64) {
 
+    ; D1：RAND-COUNTER 是全域，註解式重綁不會把結果折回 plain；
+    ; `+ 0` 讓它落回一般的 `?i64` 算術，再以兩段式解包取回 plain i64。
     #{overflow=wrap}
     RAND-COUNTER = RAND-COUNTER + 1
-    c = RAND-COUNTER
+    rand-val = RAND-COUNTER + 0
+    c = 0
+    rand-val: {
+        ok -> c = it
+        -> c = 0
+    }
 
     ; LCG: r = (c * 1103515245 + 12345) & 0x7fffffff
     r = (c * 1103515245 + 12345) & 2147483647

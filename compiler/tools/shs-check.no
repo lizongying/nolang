@@ -903,7 +903,11 @@ shs-map-at = (ln str, i i64) (yes bool) {
         #{index-out=zero}
         ch = ln.byte(j)
         ch == B-RB -> {
-            rb = j
+            rb-opt = j
+            rb-opt: {
+                ok -> rb = it
+                ->
+            }
             closed = true
             j = n
         }
@@ -1260,7 +1264,11 @@ shs-check-file = (path str, acc []finding) (r []finding) {
     got = false
     c: {
         ok -> {
-            src = c
+            src-opt = c
+            src-opt: {
+                ok -> src = it
+                ->
+            }
             got = true
         }
 

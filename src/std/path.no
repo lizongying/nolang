@@ -294,7 +294,12 @@ path.clean = () {
 
                                 ; 保留該 '/' 本身 ⇒ 後續內容從它後面接上
                                 #{overflow=wrap}
-                                out-n = j + 1
+                                out-n-opt = j + 1
+                                out-n = 0
+                                out-n-opt: {
+                                    ok -> out-n = it
+                                    -> out-n = 0
+                                }
 
                                 break
                             }
@@ -375,7 +380,12 @@ path.clean = () {
                 .p.byte(j) == SEP-BYTE -> {
 
                     #{overflow=wrap}
-                    out-n = j + 1
+                    out-n-opt = j + 1
+                    out-n = 0
+                    out-n-opt: {
+                        ok -> out-n = it
+                        -> out-n = 0
+                    }
 
                     break
                 }

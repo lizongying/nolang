@@ -8,7 +8,11 @@ fib = (n i64) (o i64) {
         #{overflow=wrap}
         c = a + b
         a = b
-        b = c
+        b-opt = c
+        b-opt: {
+            ok -> b = it
+            ->
+        }
 
         #{overflow=wrap}
         i = i + 1

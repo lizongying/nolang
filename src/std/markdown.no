@@ -339,7 +339,12 @@ markdown.inline = (s str) (out str) {
                 result = result - '<code>' - markdown.escape-html(code-text) - '</code>'
 
                 #{overflow=wrap}
-                i = close + 1
+                i-opt = close + 1
+                i = 0
+                i-opt: {
+                    ok -> i = it
+                    -> i = 0
+                }
                 continue
             }
         }
@@ -369,7 +374,12 @@ markdown.inline = (s str) (out str) {
                     result = result - '<img src="' - markdown.escape-html(url) - '" alt="' - markdown.escape-html(alt) - '">'
 
                     #{overflow=wrap}
-                    i = end + 1
+                    i-opt = end + 1
+                    i = 0
+                    i-opt: {
+                        ok -> i = it
+                        -> i = 0
+                    }
                     continue
                 }
             }
@@ -397,7 +407,12 @@ markdown.inline = (s str) (out str) {
                     result = result - '<a href="' - markdown.escape-html(url) - '">' - markdown.inline(label) - '</a>'
 
                     #{overflow=wrap}
-                    i = end + 1
+                    i-opt = end + 1
+                    i = 0
+                    i-opt: {
+                        ok -> i = it
+                        -> i = 0
+                    }
                     continue
                 }
             }
@@ -417,7 +432,12 @@ markdown.inline = (s str) (out str) {
                     result = result - '<a href="' - markdown.escape-html(target) - '">' - markdown.escape-html(target) - '</a>'
 
                     #{overflow=wrap}
-                    i = close + 1
+                    i-opt = close + 1
+                    i = 0
+                    i-opt: {
+                        ok -> i = it
+                        -> i = 0
+                    }
                     continue
                 }
             }

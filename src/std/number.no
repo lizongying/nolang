@@ -678,11 +678,13 @@ i8.sqrt = () (r i8) {
     r = 1
     (lo <= hi) {
 
+        mid i8 = 0
         #{overflow=wrap}
-        mid i8 = (lo + hi) / 2
+        mid = (lo + hi) / 2
 
+        q i8 = 0
         #{overflow=wrap}
-        q i8 = n / mid
+        q = n / mid
         {
             mid <= q -> {
                 r = mid
@@ -707,8 +709,9 @@ i8.is-prime = () (yes bool) {
         return
     }
 
+    m2 i8 = 0
     #{overflow=wrap}
-    m2 i8 = n % 2
+    m2 = n % 2
     m2 == 0 -> {
         yes = (n == 2)
         return
@@ -719,8 +722,9 @@ i8.is-prime = () (yes bool) {
     lim = n / d
     (d <= lim) {
 
+        md i8 = 0
         #{overflow=wrap}
-        md i8 = n % d
+        md = n % d
         md == 0 -> {
             yes = false
             return
@@ -753,11 +757,13 @@ i16.sqrt = () (r i16) {
     r = 1
     (lo <= hi) {
 
+        mid i16 = 0
         #{overflow=wrap}
-        mid i16 = (lo + hi) / 2
+        mid = (lo + hi) / 2
 
+        q i16 = 0
         #{overflow=wrap}
-        q i16 = n / mid
+        q = n / mid
         {
             mid <= q -> {
                 r = mid
@@ -782,8 +788,9 @@ i16.is-prime = () (yes bool) {
         return
     }
 
+    m2 i16 = 0
     #{overflow=wrap}
-    m2 i16 = n % 2
+    m2 = n % 2
     m2 == 0 -> {
         yes = (n == 2)
         return
@@ -794,8 +801,9 @@ i16.is-prime = () (yes bool) {
     lim = n / d
     (d <= lim) {
 
+        md i16 = 0
         #{overflow=wrap}
-        md i16 = n % d
+        md = n % d
         md == 0 -> {
             yes = false
             return
@@ -828,11 +836,13 @@ i32.sqrt = () (r i32) {
     r = 1
     (lo <= hi) {
 
+        mid i32 = 0
         #{overflow=wrap}
-        mid i32 = (lo + hi) / 2
+        mid = (lo + hi) / 2
 
+        q i32 = 0
         #{overflow=wrap}
-        q i32 = n / mid
+        q = n / mid
         {
             mid <= q -> {
                 r = mid
@@ -857,8 +867,9 @@ i32.is-prime = () (yes bool) {
         return
     }
 
+    m2 i32 = 0
     #{overflow=wrap}
-    m2 i32 = n % 2
+    m2 = n % 2
     m2 == 0 -> {
         yes = (n == 2)
         return
@@ -869,8 +880,9 @@ i32.is-prime = () (yes bool) {
     lim = n / d
     (d <= lim) {
 
+        md i32 = 0
         #{overflow=wrap}
-        md i32 = n % d
+        md = n % d
         md == 0 -> {
             yes = false
             return

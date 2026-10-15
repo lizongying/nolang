@@ -227,15 +227,42 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     v0 = parse-hex-byte(s, pos)
 
     #{overflow=wrap}
-    ppos2 i64 = pos + 2
+    ppos2-opt = pos + 2
+    ppos2 i64 = 0
+    ppos2-opt: {
+        ok -> {
+            ppos2 = it
+        }
+        -> {
+            ppos2 = 0
+        }
+    }
     v1 = parse-hex-byte(s, ppos2)
 
     #{overflow=wrap}
-    ppos4 i64 = pos + 4
+    ppos4-opt = pos + 4
+    ppos4 i64 = 0
+    ppos4-opt: {
+        ok -> {
+            ppos4 = it
+        }
+        -> {
+            ppos4 = 0
+        }
+    }
     v2 = parse-hex-byte(s, ppos4)
 
     #{overflow=wrap}
-    ppos6 i64 = pos + 6
+    ppos6-opt = pos + 6
+    ppos6 i64 = 0
+    ppos6-opt: {
+        ok -> {
+            ppos6 = it
+        }
+        -> {
+            ppos6 = 0
+        }
+    }
     v3 = parse-hex-byte(s, ppos6)
 
     out.bytes[0] = v0
@@ -254,11 +281,29 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    ppos9 i64 = pos + 9
+    ppos9-opt = pos + 9
+    ppos9 i64 = 0
+    ppos9-opt: {
+        ok -> {
+            ppos9 = it
+        }
+        -> {
+            ppos9 = 0
+        }
+    }
     v4 = parse-hex-byte(s, ppos9)
 
     #{overflow=wrap}
-    ppos11 i64 = pos + 11
+    ppos11-opt = pos + 11
+    ppos11 i64 = 0
+    ppos11-opt: {
+        ok -> {
+            ppos11 = it
+        }
+        -> {
+            ppos11 = 0
+        }
+    }
     v5 = parse-hex-byte(s, ppos11)
 
     out.bytes[4] = v4
@@ -272,11 +317,29 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    ppos14 i64 = pos + 14
+    ppos14-opt = pos + 14
+    ppos14 i64 = 0
+    ppos14-opt: {
+        ok -> {
+            ppos14 = it
+        }
+        -> {
+            ppos14 = 0
+        }
+    }
     v6 = parse-hex-byte(s, ppos14)
 
     #{overflow=wrap}
-    ppos16 i64 = pos + 16
+    ppos16-opt = pos + 16
+    ppos16 i64 = 0
+    ppos16-opt: {
+        ok -> {
+            ppos16 = it
+        }
+        -> {
+            ppos16 = 0
+        }
+    }
     v7 = parse-hex-byte(s, ppos16)
 
     out.bytes[6] = v6
@@ -290,11 +353,29 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    ppos19 i64 = pos + 19
+    ppos19-opt = pos + 19
+    ppos19 i64 = 0
+    ppos19-opt: {
+        ok -> {
+            ppos19 = it
+        }
+        -> {
+            ppos19 = 0
+        }
+    }
     v8 = parse-hex-byte(s, ppos19)
 
     #{overflow=wrap}
-    ppos21 i64 = pos + 21
+    ppos21-opt = pos + 21
+    ppos21 i64 = 0
+    ppos21-opt: {
+        ok -> {
+            ppos21 = it
+        }
+        -> {
+            ppos21 = 0
+        }
+    }
     v9 = parse-hex-byte(s, ppos21)
 
     out.bytes[8] = v8
@@ -308,27 +389,81 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    ppos24 i64 = pos + 24
+    ppos24-opt = pos + 24
+    ppos24 i64 = 0
+    ppos24-opt: {
+        ok -> {
+            ppos24 = it
+        }
+        -> {
+            ppos24 = 0
+        }
+    }
     v10 = parse-hex-byte(s, ppos24)
 
     #{overflow=wrap}
-    ppos26 i64 = pos + 26
+    ppos26-opt = pos + 26
+    ppos26 i64 = 0
+    ppos26-opt: {
+        ok -> {
+            ppos26 = it
+        }
+        -> {
+            ppos26 = 0
+        }
+    }
     v11 = parse-hex-byte(s, ppos26)
 
     #{overflow=wrap}
-    ppos28 i64 = pos + 28
+    ppos28-opt = pos + 28
+    ppos28 i64 = 0
+    ppos28-opt: {
+        ok -> {
+            ppos28 = it
+        }
+        -> {
+            ppos28 = 0
+        }
+    }
     v12 = parse-hex-byte(s, ppos28)
 
     #{overflow=wrap}
-    ppos30 i64 = pos + 30
+    ppos30-opt = pos + 30
+    ppos30 i64 = 0
+    ppos30-opt: {
+        ok -> {
+            ppos30 = it
+        }
+        -> {
+            ppos30 = 0
+        }
+    }
     v13 = parse-hex-byte(s, ppos30)
 
     #{overflow=wrap}
-    ppos32 i64 = pos + 32
+    ppos32-opt = pos + 32
+    ppos32 i64 = 0
+    ppos32-opt: {
+        ok -> {
+            ppos32 = it
+        }
+        -> {
+            ppos32 = 0
+        }
+    }
     v14 = parse-hex-byte(s, ppos32)
 
     #{overflow=wrap}
-    ppos34 i64 = pos + 34
+    ppos34-opt = pos + 34
+    ppos34 i64 = 0
+    ppos34-opt: {
+        ok -> {
+            ppos34 = it
+        }
+        -> {
+            ppos34 = 0
+        }
+    }
     v15 = parse-hex-byte(s, ppos34)
 
     out.bytes[10] = v10

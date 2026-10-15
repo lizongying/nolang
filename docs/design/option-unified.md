@@ -316,3 +316,51 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
 ### 11.4 后续
 - `no vet src/std` / `no vet tests` / `no vet test` / `no vet bench` / `no vet example` 已于 2026-10-13 实测回填 §11.2（5 个目录均 0 error）。
 - 本设计文档状态头与 §8.1(a)(b) 已加「状态」注记，避免误导后续读者。
+
+### 11.5 2026-10-14 复核：D1 收紧后的重新迁移（`fbd38fb4` / tag `v0.4.9`）
+
+**背景**：提交 `3837fcdd`（2026-10-14 17:28）「fix(type-inference): enforce strict option arithmetic type rules」把
+「**显式 plain 型别 + 算术**」由「压平」改成**硬错** `15w45dqk`（`cannot assign ?i64 value to i64 variable`）。用户同日定案：
+
+> `k = i + 1 #{overflow=wrap}` 必须是 option；`k i64 = i + 1 #{overflow=wrap}` 是**错的**。
+
+这使 §11.2 的「0 error」失效：**HEAD（`fbd38fb4`）的 `no vet src/std` 回退到 44 error**
+（`uuid.no` / `number.no` / `yaml.no` / `net/tls.no` / … 里用显式 plain 型别压平算术的站点全部报错）。
+
+**编译器侧修复（已在 HEAD）**：`parser/stmt.go parseLetStatement` 增 `*Identifier` 型别传播分支
+（`x = y` 时把 y 的已知有号整型传给 x，仅当 x 尚无型别），使 `x-opt = pos + N` 这类链式推断不再退化成 plain；
+`parser/astdiskcache.go ASTVersion` bump 到 `2026-10-14.1`（磁盘 AST 缓存键 = 内容 + ASTVersion + sigSalt，
+**不含编译器二进制** ⇒ 改推断逻辑必须 bump 版本号，否则读到过期缓存）。
+
+**语料侧重新迁移（本次）** —— 修法统一为**陈述式 match（两段式解包）**，保留 `#{overflow=wrap}`（回绕语义不变）：
+
+```no
+#{overflow=wrap}
+z-opt = a + b
+z = 0
+z-opt: {
+    ok -> z = it
+    -> z = 0
+}
+```
+
+三条**实测**边界（迁移时必须遵守）：
+1. **窄型别 i8/i16/i32**：算术恒把结果拓宽成 `?i64`，`ok -> it` 拿到的是 i64，赋回窄型别报
+   narrowing（`cannot assign i64 value to i8 variable`）⇒ 改用「先声明窄型别 plain + 注解式重绑」：
+   `z i8 = 0` ⏎ `#{overflow=wrap}` ⏎ `z = a + b`。
+2. **同行内联 `z = z-opt: { ok -> it` ⏎ `-> 0 }` 会坏**：整段被推成 `err | nil` 而非 `T`，下游当引数用时报
+   `6fgg3htw` / `stdargtyp`（`expected 'i64', got 'err | nil'`）。**一律用多行陈述式 match。**
+3. **全域**重绑加 `#{overflow=wrap}` **不会**折回 plain（局部会）⇒ `net/ws.no` 的 `RAND-COUNTER` 需
+   `+ 0` 落回一般 `?i64` 算术再解包。
+
+**实测（2026-10-14，`bin/no` @ `fbd38fb4`，`NOLANG_AST_CACHE_OFF=1`）**：
+
+| 目录 | error | warning | hint |
+| --- | --- | --- | --- |
+| `src/std` | **0** | 59（全 `arm-should`） | 389 |
+
+- **无 warning 回退**：59 与 §11.2 的 59 持平（此前一度出现的 1247 warning 是上述第 2 条内联写法造出的假象，已消除）。
+- `std_ast.bin` 已随本次 std 改动重烤（`go run ./checker/genstdsig`）；`stdsig_gen.go` 未变（无签名改动）。
+- `go test ./checker/ ./parser/ ./mir/ ./fmt/ ./lexer/` 全绿；`hir TestKindCoverageAcrossBothCorpora`
+  为**既有**失败（`[type-arm type-match]`），与本次改动无关。
+- `notools` 侧（`~/IdeaProjects/notools`）沿用同一修法，见其 `docs/design/option-unified.md`。

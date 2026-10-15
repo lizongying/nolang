@@ -33,10 +33,17 @@ print(s2)
 print('5 ?T node short-circuits the tail')
 bad = 7
 
-; D1：`-` 的結果恆為 `?i64`。此處要的是回繞的普通整數（本測試只驗證管道
-; 短路，不取用 good），顯式 plain i64 抑制 option 化。
+; D1：`-` 的結果恆為 `?i64`，plain i64 標註不再抑制 option 化（那是硬錯
+; 15w45dqk）。此處要的是回繞的普通整數（本測試只驗證管道短路，不取用
+; good），故用兩段式解包：先推斷為 ?T，再 match 取 ok 值，err/nil 臂
+; 空轉（good 保持預宣告的零值）。
 #{overflow=wrap}
-good i64 = 0 - 3
+good-opt = 0 - 3
+good i64 = 0
+good-opt: {
+    ok -> good = it
+    ->
+}
 r = 5
 r = print('A')
 might-fail(bad) -> 99

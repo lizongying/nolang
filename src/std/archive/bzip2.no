@@ -349,7 +349,12 @@ bzip2-decompress = (data []byte) (out []byte) {
             alpha-size = n-in-use + 2
 
             #{overflow=wrap}
-            eob = n-in-use + 1
+            eob-opt = n-in-use + 1
+            eob = 0
+            eob-opt: {
+                ok -> eob = it
+                -> eob = 0
+            }
 
             ; ── 讀取 Huffman 碼表 ──
             ; 碼表數量 (3 bits, 2-6)

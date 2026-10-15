@@ -70,7 +70,7 @@ gen: $(STDSIG_GEN)
 # checker simply ignore the -X (verified), so scoping is only for speed.
 .PHONY: test
 test: $(STDSIG_GEN)
-	cd src && $(GO) test $(LD_FLAGS_WITH_SIG) ./build/... ./mir/... ./checker/... ./lsp/... ./fmt/... ./hir/...
+	cd src && $(GO) test $(LD_FLAGS_WITH_SIG) ./build/... ./mir/... ./checker/... ./lsp/... ./fmt/... ./hir/... ./mmast/... ./package/... ./parser/...
 
 # ── STD SIG KEY (injected at build time) ──────────
 # The independent genstdsig tool hashes the CURRENT on-disk src/std tree from

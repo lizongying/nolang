@@ -1319,7 +1319,12 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     sep < 0 -> return
 
     #{overflow=wrap}
-    body-start = sep + 4
+    body-start-opt = sep + 4
+    body-start = 0
+    body-start-opt: {
+        ok -> body-start = it
+        -> body-start = 0
+    }
 
     ; ── 標頭文字（ASCII，取 [0..sep) 逐位元組）──
     hdr []byte

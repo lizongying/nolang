@@ -197,9 +197,14 @@ rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     }
 
     ; 計算實際長度（使用局部變數避免輸出參數 aliasing 問題）
-    ; D1：`+` 的結果恆為 `?i64`，此處要的是回繞的普通整數 → 顯式標註 plain i64。
+    ; D1：`+` 的結果恆為 `?i64`，此處要的是回繞的普通整數 → 以兩段式 match 解包。
     #{overflow=wrap}
-    local-cn i64 = an + bn
+    local-cn-opt = an + bn
+    local-cn = 0
+    local-cn-opt: {
+        ok -> local-cn = it
+        -> local-cn = 0
+    }
     keep-trimming = true
     (keep-trimming) {
 

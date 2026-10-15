@@ -1719,6 +1719,24 @@ func checkPrivateBuiltinMethodCall(e *parser.CallExpression, dot *parser.DotExpr
 	}}
 }
 
+// isLoweringTempArg reports whether e is an identifier naming a
+// lowering-synthesized temporary.
+//
+// Every such name starts with `__`, and a `__`-prefixed name CANNOT be written
+// in Nolang source — `__x = 1` and `print(__x)` both fail to parse — so any
+// identifier carrying that prefix was produced by the lowering passes in
+// `src/parser/lowering.go` (`__cap_N` capture temps, `__unwrap_N` / `__opt_N`
+// `?=` temporaries, `__match_subj_L_C` safe-index match subjects).
+//
+// They are all typed `?T` by construction, but their own `ok` arm uses them as
+// the unwrapped payload, and codegen lowers them that way. The argument option
+// check (fxxoptarg) must therefore skip them; see the call site for the
+// measured evidence.
+func isLoweringTempArg(e parser.Expression) bool {
+	id, ok := e.(*parser.Identifier)
+	return ok && strings.HasPrefix(id.Value, "__")
+}
+
 func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
 	if expr == nil {
 		return nil
@@ -1837,6 +1855,25 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						// bare-arithmetic-argument rule (f10x20nf) below. Inside a `?=`
 						// RHS, a ?T argument is auto-unwrapped and any none propagates
 						// upward, which is exactly `?=`'s purpose.
+						// Lowering-synthesized temporaries (`__cap_N`, `__unwrap_N`,
+						// `__opt_N`, `__match_subj_L_C`) are typed `?T`, but inside
+						// their own `ok` arm they denote the UNWRAPPED payload —
+						// the same convention as an arm's `it` binding, and the one
+						// codegen implements (the argument reaches the callee as a
+						// plain `T`; verified on `r0 = g(3, j - 1)`, whose desugared
+						// ok arm emits `call void @g(i64 %lv80, …)` and prints the
+						// correct value).
+						//
+						// The checker cannot track arm context for these temps, so the
+						// option test must be skipped for them — otherwise every
+						// desugared `x = f(a, b - 1)` (a call whose argument carries
+						// an option source) reports a spurious `fxxoptarg`. Exempting
+						// them cannot mask a user's mistake: a `__`-prefixed name
+						// cannot be written in Nolang source (`__x = …` and
+						// `print(__x)` both fail to parse).
+						if isLoweringTempArg(arg) {
+							continue
+						}
 						if !underUnwrap && strings.HasPrefix(argType, "?") && strings.TrimPrefix(argType, "?") == expectedType {
 							results = append(results, ValidateResult{
 								TraceID: "fxxoptarg",

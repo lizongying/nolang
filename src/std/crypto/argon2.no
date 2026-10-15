@@ -321,9 +321,14 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     ; 計算記憶體區塊數
     ; D1：`/` `*` 的結果恆為 `?T`（除零／溢位），此處要的是普通整數（除零由
-    ; codegen 守衛強制 0），故顯式標註 plain i64 抑制 option 化。
+    ; codegen 守衛強制 0），故以以兩段式 match 解包。
     #{overflow=wrap}
-    m i64 = memory-cost / (4 * parallelism) * 4 * parallelism
+    m-opt = memory-cost / (4 * parallelism) * 4 * parallelism
+    m = 0
+    m-opt: {
+        ok -> m = it
+        -> m = 0
+    }
 
     #{overflow=wrap}
     m < 8 * parallelism -> m = 8 * parallelism
@@ -331,7 +336,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     blocks = m
 
     #{overflow=wrap}
-    blocks-per-lane i64 = blocks / lanes
+    blocks-per-lane-opt = blocks / lanes
+    blocks-per-lane = 0
+    blocks-per-lane-opt: {
+        ok -> blocks-per-lane = it
+        -> blocks-per-lane = 0
+    }
 
     ; 構建 H0 輸入
     ; H0 = Blake2b(p || tau || m || t || v || y || len(P) || P || len(S) || S || len(K) || K || len(X) || X)

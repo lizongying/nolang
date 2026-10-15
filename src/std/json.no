@@ -410,9 +410,14 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
     ok = false
 
     ; D1：`+` 的結果恆為 `?i64`。`i` 在本函式全程是普通游標（`i = i + 1` 多處），
-    ; 顯式 plain i64 讓整條鏈回到 plain 算術，也讓 `next-pos = i + 1` 不再被傳染。
+    ; 兩段式 match 解包 讓整條鏈回到 plain 算術，也讓 `next-pos = i + 1` 不再被傳染。
     #{overflow=wrap}
-    i i64 = pos + 1
+    i-opt = pos + 1
+    i = 0
+    i-opt: {
+        ok -> i = it
+        -> i = 0
+    }
     j = 0
     c = 0
 
@@ -438,9 +443,14 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
 
                 .strs[node-idx] = sv
 
-                ; D1：`+` 的結果恆為 `?i64`，此處要的是回繞的普通整數 → 顯式 plain i64。
+                ; D1：`+` 的結果恆為 `?i64`，此處要的是回繞的普通整數 → 兩段式 match 解包。
                 #{overflow=wrap}
-                next-pos i64 = i + 1
+                next-pos-opt = i + 1
+                next-pos = 0
+                next-pos-opt: {
+                    ok -> next-pos = it
+                    -> next-pos = 0
+                }
                 ok = true
                 return
             }

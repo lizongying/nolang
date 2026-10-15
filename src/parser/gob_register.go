@@ -14,78 +14,87 @@ import "encoding/gob"
 //
 // When a new node type is added to ast.go it MUST be added here too, or the
 // AST-cache tests (TestProgramGobRoundTrip) will fail fast.
-func init() {
+// gobNodeTypes 是所有可能出現在介面背後的具體節點型別，供 gob 註冊與
+// MetaMessage 的 kind 註冊表共用（見 mm_kinds.go）：兩者必須完全一致，
+// 否則 mm 反序列化會對某些 kind 找不到型別。
+var gobNodeTypes = []any{
 	// ---- Statements ----
-	gob.Register(&UseStatement{})
-	gob.Register(&ExportStatement{})
-	gob.Register(&MultiAssignStatement{})
-	gob.Register(&UnwrapAssignStatement{})
-	gob.Register(&LetStatement{})
-	gob.Register(&ReturnStatement{})
-	gob.Register(&ExpressionStatement{})
-	gob.Register(&BlockStatement{})
-	gob.Register(&FunctionDefinition{})
-	gob.Register(&ExternStatement{})
-	gob.Register(&AnnotationStatement{})
-	gob.Register(&ForStatement{})
-	gob.Register(&BreakStatement{})
-	gob.Register(&ContinueStatement{})
-	gob.Register(&EnumDefinition{})
-	gob.Register(&TypeAlias{})
-	gob.Register(&TaggedEnumDefinition{})
-	gob.Register(&InterfaceDefinition{})
-	gob.Register(&StructDefinition{})
+	&UseStatement{},
+	&ExportStatement{},
+	&MultiAssignStatement{},
+	&UnwrapAssignStatement{},
+	&LetStatement{},
+	&ReturnStatement{},
+	&ExpressionStatement{},
+	&BlockStatement{},
+	&FunctionDefinition{},
+	&ExternStatement{},
+	&AnnotationStatement{},
+	&ForStatement{},
+	&BreakStatement{},
+	&ContinueStatement{},
+	&EnumDefinition{},
+	&TypeAlias{},
+	&TaggedEnumDefinition{},
+	&InterfaceDefinition{},
+	&StructDefinition{},
 
 	// ---- Expressions ----
-	gob.Register(&Identifier{})
-	gob.Register(&Parameter{})
-	gob.Register(&FunctionLiteral{})
-	gob.Register(&CallExpression{})
-	gob.Register(&DotExpression{})
-	gob.Register(&GroupedExpression{})
-	gob.Register(&IntegerLiteral{})
-	gob.Register(&FloatLiteral{})
-	gob.Register(&StringLiteral{})
-	gob.Register(&CharLiteral{})
-	gob.Register(&RegexLiteral{})
-	gob.Register(&BooleanLiteral{})
-	gob.Register(&NilLiteral{})
-	gob.Register(&PrefixExpression{})
-	gob.Register(&InfixExpression{})
-	gob.Register(&RunExpression{})
-	gob.Register(&CoExpression{})
-	gob.Register(&AwaitExpression{})
-	gob.Register(&IfExpression{})
-	gob.Register(&RangeExpression{})
-	gob.Register(&SliceExpression{})
-	gob.Register(&IndexExpression{})
-	gob.Register(&AssignExpression{})
-	gob.Register(&ConditionalExpression{})
-	gob.Register(&CastExpression{})
-	gob.Register(&IterationExpr{})
-	gob.Register(&ArrayLiteral{})
-	gob.Register(&MapLiteral{})
-	gob.Register(&SliceLiteral{})
-	gob.Register(&StructLiteral{})
+	&Identifier{},
+	&Parameter{},
+	&FunctionLiteral{},
+	&CallExpression{},
+	&DotExpression{},
+	&GroupedExpression{},
+	&IntegerLiteral{},
+	&FloatLiteral{},
+	&StringLiteral{},
+	&CharLiteral{},
+	&RegexLiteral{},
+	&BooleanLiteral{},
+	&NilLiteral{},
+	&PrefixExpression{},
+	&InfixExpression{},
+	&RunExpression{},
+	&CoExpression{},
+	&AwaitExpression{},
+	&IfExpression{},
+	&RangeExpression{},
+	&SliceExpression{},
+	&IndexExpression{},
+	&AssignExpression{},
+	&ConditionalExpression{},
+	&CastExpression{},
+	&IterationExpr{},
+	&ArrayLiteral{},
+	&MapLiteral{},
+	&SliceLiteral{},
+	&StructLiteral{},
 
 	// ---- Types ----
-	gob.Register(&NamedType{})
-	gob.Register(&ArrayType{})
-	gob.Register(&SliceType{})
-	gob.Register(&MapType{})
-	gob.Register(&FunctionType{})
-	gob.Register(&NullableType{})
-	gob.Register(&PointerType{})
-	gob.Register(&ViewType{})
-	gob.Register(&UnionType{})
+	&NamedType{},
+	&ArrayType{},
+	&SliceType{},
+	&MapType{},
+	&FunctionType{},
+	&NullableType{},
+	&PointerType{},
+	&ViewType{},
+	&UnionType{},
 
 	// ---- Annotation values (behind the AnnotationValue interface in
 	// AnnotationEntry.Value) ----
-	gob.Register(&AnnotationBoolValue{})
-	gob.Register(&AnnotationIntValue{})
-	gob.Register(&AnnotationStringValue{})
-	gob.Register(&AnnotationIdentValue{})
-	gob.Register(&AnnotationArrayValue{})
-	gob.Register(&AnnotationStructValue{})
-	gob.Register(&AnnotationRangeValue{})
+	&AnnotationBoolValue{},
+	&AnnotationIntValue{},
+	&AnnotationStringValue{},
+	&AnnotationIdentValue{},
+	&AnnotationArrayValue{},
+	&AnnotationStructValue{},
+	&AnnotationRangeValue{},
+}
+
+func init() {
+	for _, t := range gobNodeTypes {
+		gob.Register(t)
+	}
 }

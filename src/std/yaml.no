@@ -222,9 +222,14 @@ yaml-parser.line-start-of = (i i64) (ls i64) {
     (ls > 0) {
         ls <= 0 -> return
 
-        ; D1：`-` 的結果恆為 `?i64`，p 只作游標用 → 顯式 plain i64。
+        ; D1：`-` 的結果恆為 `?i64`，p 只作游標用 → 兩段式 match 解包。
         #{overflow=wrap}
-        p i64 = ls - 1
+        p-opt = ls - 1
+        p = 0
+        p-opt: {
+            ok -> p = it
+            -> p = 0
+        }
         c = .byte-at(p)
         c == 10 || c == 13 -> return
         ls = p
@@ -769,7 +774,12 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         #{overflow=wrap}
                         cp = cp * 16 + d
                     }
-                    i = j
+                    i-opt = j
+                    i = 0
+                    i-opt: {
+                        ok -> i = it
+                        -> i = 0
+                    }
                     ucp1 char = cp
                     out = out - ucp1.to-str()
                     continue
@@ -796,7 +806,12 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         #{overflow=wrap}
                         cp = cp * 16 + d
                     }
-                    i = j
+                    i-opt = j
+                    i = 0
+                    i-opt: {
+                        ok -> i = it
+                        -> i = 0
+                    }
                     ucp2 char = cp
                     out = out - ucp2.to-str()
                     continue
@@ -823,7 +838,12 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         #{overflow=wrap}
                         cp = cp * 16 + d
                     }
-                    i = j
+                    i-opt = j
+                    i = 0
+                    i-opt: {
+                        ok -> i = it
+                        -> i = 0
+                    }
                     ucp3 char = cp
                     out = out - ucp3.to-str()
                     continue
@@ -1396,8 +1416,13 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
     }
 
     #{overflow=wrap}
-    ; D1：`-` 的結果恆為 `?i64`，parent-indent 只作縮排整數用 → 顯式 plain i64。
-    parent-indent i64 = cont-min - 1
+    ; D1：`-` 的結果恆為 `?i64`，parent-indent 只作縮排整數用 → 兩段式 match 解包。
+    parent-indent-opt = cont-min - 1
+    parent-indent = 0
+    parent-indent-opt: {
+        ok -> parent-indent = it
+        -> parent-indent = 0
+    }
 
     content-ind = 0
     ind-ind > 0 -> {
@@ -2863,10 +2888,15 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
 
         nd.kind == YAML-KIND-SEQ -> {
 
-            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，顯式 plain i64 抑制 option 化
+            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
             ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
-            d i64 = depth + 1
+            d-opt = depth + 1
+            d = 0
+            d-opt: {
+                ok -> d = it
+                -> d = 0
+            }
             out = '['
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
@@ -2879,10 +2909,15 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
 
         nd.kind == YAML-KIND-MAP -> {
 
-            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，顯式 plain i64 抑制 option 化
+            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
             ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
-            d i64 = depth + 1
+            d-opt = depth + 1
+            d = 0
+            d-opt: {
+                ok -> d = it
+                -> d = 0
+            }
             out = '{'
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
@@ -3066,10 +3101,15 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
     {
         nd.kind == YAML-KIND-SEQ -> {
 
-            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，顯式 plain i64 抑制 option 化
+            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
             ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
-            d i64 = depth + 1
+            d-opt = depth + 1
+            d = 0
+            d-opt: {
+                ok -> d = it
+                -> d = 0
+            }
             nd.kids.len() == 0 -> {
                 out = '[]'
                 return
@@ -3089,9 +3129,14 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                     }
                     pool.nodes[k].kids.len() > 0 -> {
 
-                        ; D1：`+` 的結果恆為 `?i64`；cut 是普通縮排整數 → 顯式 plain i64。
+                        ; D1：`+` 的結果恆為 `?i64`；cut 是普通縮排整數 → 兩段式 match 解包。
                         #{overflow=wrap}
-                        cut i64 = indent + 2
+                        cut-opt = indent + 2
+                        cut = 0
+                        cut-opt: {
+                            ok -> cut = it
+                            -> cut = 0
+                        }
                         inner = yaml-emit(pool, k, cut, d)
                         inner.len-bytes() > 0 -> {
                             rest = inner.slice-bytes(cut, inner.len-bytes())
@@ -3111,10 +3156,15 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
 
         nd.kind == YAML-KIND-MAP -> {
 
-            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，顯式 plain i64 抑制 option 化
+            ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
             ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
-            d i64 = depth + 1
+            d-opt = depth + 1
+            d = 0
+            d-opt: {
+                ok -> d = it
+                -> d = 0
+            }
             nd.kids.len() == 0 -> {
                 out = '{}'
                 return

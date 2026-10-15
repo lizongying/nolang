@@ -230,7 +230,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             i <- [0..32): {
 
                 src-byte = i
-                dst-byte-start = (i * 8 + shift) / 8
+                _ = (i * 8 + shift) / 8
                 ; 簡化：只在 byte 邊界對齊時處理
             }
             ; 由於位元級移位複雜，使用更簡單的方法

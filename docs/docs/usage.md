@@ -32,15 +32,16 @@ sudo mv nolang /usr/local/bin/no
 | `no build [-o <file>] [-cc <s>] [-target <s>] [-opt[=N]] [<file\|dir>]` | 構建（輸出 executable） |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 構建並執行（包名/目錄/文件） |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | 執行測試                |
-| `no add <pkg>`                                               | 添加依賴                |
+| `no add <tool>[:<version>]@<host>/<owner>/<repo>`            | 添加依賴（預編 AST 模組）|
 | `no remove <pkg>`                                            | 移除依賴                |
 | `no update <pkg>`                                            | 更新依賴                |
 | `no update-all`                                              | 更新所有依賴            |
 | `no list`                                                    | 列出依賴                |
 | `no sync`                                                    | 同步依賴                |
-| `no install [-u] [<pkg>@<version>]`                          | 安裝 binary             |
+| `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]`  | 安裝 binary             |
 | `no uninstall <name>`                                        | 移除 binary             |
-| `no pub --token <token> [--registry <url>]`                  | 發布至 registry         |
+| `no pack [-o <file>] [<dir\|file.no>]`                       | 打包 AST（`<tool>.ast.zip`）|
+| `no pub [-o <file>]`                                         | 同 `no pack`（registry 上傳未實現）|
 
 ## 快速開始
 
@@ -367,25 +368,28 @@ no test -target x86_64-windows-gnu
 ### 安裝
 
 ```bash
-# 安裝當前目錄的包
+# 安裝當前目錄的包（本地構建）
 no install
+no install -u                                   # 強制重構（更新）
 
-# 強制重構（更新）
-no install -u
-
-# 從遠端倉庫安裝指定版本
-no install pkg-name@1.0
-
-# 更新已安裝的包
-no install -u pkg-name@1.0
+# 從 GitHub Release 安裝預編 binary（推薦）：<tool>[:<version>]@<host>/<owner>/<repo>
+no install nogit@github.com/lizongying/notools            # 最新版
+no install nogit:v0.1.33@github.com/lizongying/notools    # 指定版本
+no install nogit@lizongying/notools                       # 省略 host，默認 github.com
+no install -u nogit@github.com/lizongying/notools         # 強制重新下載
 ```
+
+遠端安裝抓的是**預編二進位**，不是源碼：資產名為 `<tool>-<os>-<arch>`（Windows 帶
+`.exe`），其中 `<os>-<arch>` 取自 `no` 自身運行的平台（如 `darwin-arm64`、
+`linux-amd64`），因此不需要本地 LLVM 工具鏈，被安裝的工具也不必是 Nolang 寫的。
+版本省略時查 `releases/latest`；設 `$GITHUB_TOKEN`（或 `$GH_TOKEN`）可避免 GitHub
+API 限流。
 
 安裝流程：
 
-1. 下載包源碼（遠端包）或使用當前目錄（本地包）
-2. 自動執行構建
-3. 將 binary 複製到 `~/no/bin/`
-4. 在 `/usr/local/bin/` 建立軟鏈接
+1. 遠端：解析 spec → 定位 release 資產 → 下載；本地：使用當前目錄構建
+2. 將 binary 寫入 `~/no/bin/`
+3. 在 `/usr/local/bin/` 建立軟鏈接
 
 ### 卸載
 
@@ -427,8 +431,10 @@ no uninstall pkg-name
 ### 依賴管理
 
 ```bash
-# 添加依賴（版本號可省略，倉庫中不寫版本號）
-no add pkg-name
+# 添加依賴：<tool>[:<version>]@<host>/<owner>/<repo>
+# 版本號可省略（取最新 release）；寫入 package.jsonc 的鍵是 <tool>@<host>/<owner>/<repo>
+no add nogit@github.com/lizongying/notools
+no add nogit:v0.1.33@github.com/lizongying/notools
 
 # 移除依賴
 no remove pkg-name
@@ -444,6 +450,26 @@ no list
 
 # 同步依賴（下載並生成鎖文件）
 no sync
+```
+
+### 預編 AST 依賴
+
+`no add <tool>@<host>/<owner>/<repo>` 這類依賴**只有 AST、沒有源碼**：編譯時從 release 抓
+`<tool>.ast.zip`（MetaMessage + zip），解碼後直接注入編譯管線。用法：
+
+```nolang
+use nogit            ; 或 use <host>/<owner>/<repo>/nogit
+```
+
+一個 zip 就是一個模組，不支持 `use <repo>/<submod>` 這種更深的路徑。版本必須是具體值
+（`no sync` / 編譯時遇到 `""` 或 `"*"` 會報錯）。zip 會快取到 `~/no/cache/ast/`，
+可用 `$NOLANG_AST_CACHE_DIR` 覆寫。
+
+產出資產用 `no pack`（只需 lexer + parser，不需要 LLVM 工具鏈，適合 CI）：
+
+```bash
+no pack -o nogit.ast.zip nogit.no      # 單個源文件
+no pack -o nogit.ast.zip ./nogit       # 一個包目錄
 ```
 
 ### 依賴類型與版本號規則

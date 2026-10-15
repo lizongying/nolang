@@ -19,6 +19,7 @@ import (
 	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/mir"
+	"github.com/lizongying/nolang/mmast"
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
@@ -375,6 +376,54 @@ func resolveModuleFile(modPath, workspaceRoot string) string {
 	return ""
 }
 
+// resolveASTDependency 嘗試把已匹配的依賴鍵當成「預編 AST 依賴」處理：
+// 鍵形如 nogit@github.com/lizongying/notools，發布產物是 <tool>.ast.zip。
+//
+// 這類依賴沒有原始碼可下載（zip 裡就是 AST），所以不能走
+// ResolveDependencyModule → DownloadPackage 那條路；命中時直接回傳
+// mmast 解出的 *parser.Program。
+//
+// 回傳 (prog, true, err) 表示這是 AST 依賴（成功或失敗都由它定奪）；
+// (nil, false, nil) 表示不是 AST 依賴，呼叫方續走原本的磁碟/下載解析。
+func (t *Transpiler) resolveASTDependency(key, version, importPath string) (*parser.Program, bool, error) {
+	if !pkg.IsASTDependencyKey(key) {
+		return nil, false, nil
+	}
+	// 一個 zip = 一個模組。只接受 `use nogit`（工具名）與
+	// `use <host/owner/repo>/nogit`（倉庫路徑 + 工具名）兩種寫法；
+	// 指向更深的模組路徑時明確報錯，不靜默回退成「找不到檔案」。
+	at := strings.Index(key, "@")
+	tool, repo := key[:at], key[at+1:]
+	rest, hit := subPathAfter(importPath, tool)
+	if !hit {
+		rest, hit = subPathAfter(importPath, repo)
+		if !hit {
+			return nil, true, fmt.Errorf(
+				"import %q does not match AST dependency %s (use %q or %q)",
+				importPath, key, tool, repo+"/"+tool)
+		}
+	}
+	if rest != "" && rest != tool {
+		return nil, true, fmt.Errorf(
+			"dependency %s ships a single prebuilt module %q; cannot import subpath %q",
+			key, tool, importPath)
+	}
+	prog, err := mmast.EnsureModuleAST(key, version)
+	if err != nil {
+		return nil, true, err
+	}
+	return prog, true, nil
+}
+
+// subPathAfter 回傳 importPath 去掉前綴 p 之後的剩餘段（已去掉前導 "/"）。
+// hit 為 false 表示 importPath 不以 p 開頭（該前綴沒命中）。
+func subPathAfter(importPath, p string) (rest string, hit bool) {
+	if !strings.HasPrefix(importPath, p) {
+		return "", false
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(importPath, p), "/"), true
+}
+
 func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, error) {
 	// use path.fn → 載入 path.no 並取出 fn 函數
 	path := use.Path
@@ -389,7 +438,12 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	if strings.HasPrefix(path, "/") {
 		// 先嘗試作為依賴鍵匹配（如 "/example/test2/utils.greet" 匹配依賴 "/example/test2"）
 		if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
-			if _, _, matched := t.pkg.MatchDependency(path); matched {
+			if key, ver, matched := t.pkg.MatchDependency(path); matched {
+				// 預編 AST 依賴（nogit@host/owner/repo）不落原始碼，直接從
+				// <tool>.ast.zip 取回解碼後的 AST。
+				if prog, ok, err := t.resolveASTDependency(key, ver, path); ok {
+					return prog, err
+				}
 				modPath, err := t.pkg.ResolveDependencyModule(path)
 				if err != nil {
 					return nil, err
@@ -505,7 +559,11 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	first := strings.SplitN(path, "/", 2)[0]
 	isURLStyle := strings.Contains(first, ".")
 	if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
-		if _, _, matched := t.pkg.MatchDependency(path); matched {
+		if key, ver, matched := t.pkg.MatchDependency(path); matched {
+			// 同上：預編 AST 依賴走 .ast.zip，不下載原始碼。
+			if prog, ok, err := t.resolveASTDependency(key, ver, path); ok {
+				return prog, err
+			}
 			modPath, err := t.pkg.ResolveDependencyModule(path)
 			if err != nil {
 				return nil, err

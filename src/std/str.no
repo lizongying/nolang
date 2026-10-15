@@ -2182,9 +2182,14 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     ; 找最後一個非零位（用於去尾隨零）
     last-nz = 0
 
-    ; D1：`-` 的結果恆為 `?i64`，`i` 全程當普通整數用 → 顯式 plain i64。
+    ; D1：`-` 的結果恆為 `?i64`，`i` 全程當普通整數用 → 兩段式 match 解包。
     #{overflow=wrap}
-    i i64 = precision - 1
+    i-opt = precision - 1
+    i = 0
+    i-opt: {
+        ok -> i = it
+        -> i = 0
+    }
     (i >= 0) {
 
         #{overflow=wrap}
@@ -2293,7 +2298,7 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     #{overflow=wrap}
     e >= 0 -> {
 
-        ; D1：`+` 的結果恆為 `?i64`，`int-digits` 全程當普通整數用 → 顯式 plain i64。
+        ; D1：`+` 的結果恆為 `?i64`，`int-digits` 全程當普通整數用 → 兩段式 match 解包。
         #{overflow=wrap}
         int-digits i64 = e + 1
         frac-digits = 0

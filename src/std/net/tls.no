@@ -391,7 +391,13 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
         tmp str = with-len(n - total)
 
         #{overflow=wrap}
-        r = net-recv-wait(fd, tmp, n - total)
+        n-total-opt = n - total
+        n-total = 0
+        n-total-opt: {
+            ok -> n-total = it
+            -> n-total = 0
+        }
+        r = net-recv-wait(fd, tmp, n-total)
         r <= 0 -> return
         i <- [0..r): {
 
@@ -466,7 +472,13 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         tmp str = with-len(5 - hdr-total)
 
         #{overflow=wrap}
-        r = net-recv-wait(fd, tmp, 5 - hdr-total)
+        hdr-remain-opt = 5 - hdr-total
+        hdr-remain = 0
+        hdr-remain-opt: {
+            ok -> hdr-remain = it
+            -> hdr-remain = 0
+        }
+        r = net-recv-wait(fd, tmp, hdr-remain)
         r <= 0 -> {
             return
         }
@@ -505,7 +517,13 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         tmp2 str = with-len(rlen - body-total)
 
         #{overflow=wrap}
-        r = net-recv-wait(fd, tmp2, rlen - body-total)
+        body-remain-opt = rlen - body-total
+        body-remain = 0
+        body-remain-opt: {
+            ok -> body-remain = it
+            -> body-remain = 0
+        }
+        r = net-recv-wait(fd, tmp2, body-remain)
         r <= 0 -> {
             ct = -1
             return
@@ -1438,15 +1456,25 @@ conn.send-client-hello = () (ok bool) {
 
     ; 填入擴展總長度
 
-    #{overflow=wrap}
-    ext-total = pos - ext-len-pos - 2
-    put-u16(hs, ext-len-pos, ext-total)
+            #{overflow=wrap}
+            ext-total-opt = pos - ext-len-pos - 2
+            ext-total = 0
+            ext-total-opt: {
+                ok -> ext-total = it
+                -> ext-total = 0
+            }
+            put-u16(hs, ext-len-pos, ext-total)
 
     ; 填入 length
 
-    #{overflow=wrap}
-    body-len = pos - 4
-    put-u24(hs, 1, body-len)
+            #{overflow=wrap}
+            body-len-opt = pos - 4
+            body-len = 0
+            body-len-opt: {
+                ok -> body-len = it
+                -> body-len = 0
+            }
+            put-u24(hs, 1, body-len)
 
     ; 設定實際長度（否則 send-raw/append-hs 會把 with-len 的尾隨 0 位元組一併送出，
     ; 伺服器會把它們當成下一個交握訊息 → fatal unexpected_message）
@@ -1605,8 +1633,14 @@ conn.read-server-key-exchange = () (ok bool) {
 
     ; named curve 必須是我方支援的 x25519 / secp256r1
 
-    #{overflow=wrap}
-    group = get-u16(buf, pos + 1)
+            #{overflow=wrap}
+            g-pos-opt = pos + 1
+            g-pos = 0
+            g-pos-opt: {
+                ok -> g-pos = it
+                -> g-pos = 0
+            }
+            group = get-u16(buf, g-pos)
     (group != TLS-GROUP-X25519 && group != TLS-GROUP-SECP256R1) -> return
     .kx-group = group
 
@@ -2412,15 +2446,25 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; 填入擴展總長度
 
-    #{overflow=wrap}
-    ext-total = pos - ext-len-pos - 2
-    put-u16(hs, ext-len-pos, ext-total)
+            #{overflow=wrap}
+            ext-total-opt = pos - ext-len-pos - 2
+            ext-total = 0
+            ext-total-opt: {
+                ok -> ext-total = it
+                -> ext-total = 0
+            }
+            put-u16(hs, ext-len-pos, ext-total)
 
     ; 填入 handshake message length
 
-    #{overflow=wrap}
-    body-len = pos - 4
-    put-u24(hs, 1, body-len)
+            #{overflow=wrap}
+            body-len-opt = pos - 4
+            body-len = 0
+            body-len-opt: {
+                ok -> body-len = it
+                -> body-len = 0
+            }
+            put-u24(hs, 1, body-len)
 
     ; 設定實際長度
     hs.truncate(pos)
@@ -3565,7 +3609,13 @@ server-conn.read-client-hello = () (ok bool) {
         j < cs-len -> {
 
             #{overflow=wrap}
-            cs = get-u16(buf, pos + j)
+            cs-pos-opt = pos + j
+            cs-pos = 0
+            cs-pos-opt: {
+                ok -> cs-pos = it
+                -> cs-pos = 0
+            }
+            cs = get-u16(buf, cs-pos)
             {
                 cs == TLS-CIPHER-RSA-AES128-CBC-SHA256 -> found-12 = true
 
@@ -3596,13 +3646,23 @@ server-conn.read-client-hello = () (ok bool) {
     pos + 2 <= rlen + 5 -> {
         ext-total = get-u16(buf, pos)
         pos = pos + 2
-        ext-end = pos + ext-total
+        ext-end-opt = pos + ext-total
+        ext-end = 0
+        ext-end-opt: {
+            ok -> ext-end = it
+            -> ext-end = 0
+        }
         (pos + 4 <= ext-end) {
 
             #{overflow=wrap}
             pos + 4 <= ext-end -> {
-                ext-type = get-u16(buf, pos)
-                ext-data-len = get-u16(buf, pos + 2)
+                edl-pos-opt = pos + 2
+                edl-pos = 0
+                edl-pos-opt: {
+                    ok -> edl-pos = it
+                    -> edl-pos = 0
+                }
+                ext-data-len = get-u16(buf, edl-pos)
                 pos = pos + 4
 
                 ; supported_versions (43)
@@ -3612,8 +3672,18 @@ server-conn.read-client-hello = () (ok bool) {
 
                     #{index-out=zero}
                     sv-list-len = buf[pos]
-                    sv-pos = pos + 1
-                    sv-end = sv-pos + sv-list-len
+                    sv-pos-opt = pos + 1
+                    sv-pos = 0
+                    sv-pos-opt: {
+                        ok -> sv-pos = it
+                        -> sv-pos = 0
+                    }
+                    sv-end-opt = sv-pos + sv-list-len
+                    sv-end = 0
+                    sv-end-opt: {
+                        ok -> sv-end = it
+                        -> sv-end = 0
+                    }
                     (sv-pos + 2 <= sv-end) {
 
                         #{overflow=wrap}
@@ -3631,14 +3701,29 @@ server-conn.read-client-hello = () (ok bool) {
                 ; key_share (51)
                 ext-type == TLS-EXT-KEY-SHARE -> {
                     ks-list-len = get-u16(buf, pos)
-                    ks-pos = pos + 2
-                    ks-end = ks-pos + ks-list-len
+                    ks-pos-opt = pos + 2
+                    ks-pos = 0
+                    ks-pos-opt: {
+                        ok -> ks-pos = it
+                        -> ks-pos = 0
+                    }
+                    ks-end-opt = ks-pos + ks-list-len
+                    ks-end = 0
+                    ks-end-opt: {
+                        ok -> ks-end = it
+                        -> ks-end = 0
+                    }
                     (ks-pos + 4 <= ks-end) {
 
                         #{overflow=wrap}
                         ks-pos + 4 <= ks-end -> {
-                            ks-group = get-u16(buf, ks-pos)
-                            ks-key-len = get-u16(buf, ks-pos + 2)
+                            kkl-pos-opt = ks-pos + 2
+                            kkl-pos = 0
+                            kkl-pos-opt: {
+                                ok -> kkl-pos = it
+                                -> kkl-pos = 0
+                            }
+                            ks-key-len = get-u16(buf, kkl-pos)
                             ks-group == TLS-GROUP-X25519 && ks-key-len == 32 -> {
                                 i <- [0..32): {
 
@@ -3730,9 +3815,14 @@ server-conn.send-server-hello = () (ok bool) {
 
     ; 填入 length
 
-    #{overflow=wrap}
-    body-len = pos - 4
-    put-u24(hs, 1, body-len)
+            #{overflow=wrap}
+            body-len-opt = pos - 4
+            body-len = 0
+            body-len-opt: {
+                ok -> body-len = it
+                -> body-len = 0
+            }
+            put-u24(hs, 1, body-len)
     hs.truncate(pos)
     .append-hs(hs)
     send-raw(.fd, TLS-CT-HANDSHAKE, hs)
@@ -4462,14 +4552,24 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     ; 填入擴展總長度
 
-    #{overflow=wrap}
-    ext-total = pos - ext-len-pos - 2
-    put-u16(hs, ext-len-pos, ext-total)
+            #{overflow=wrap}
+            ext-total-opt = pos - ext-len-pos - 2
+            ext-total = 0
+            ext-total-opt: {
+                ok -> ext-total = it
+                -> ext-total = 0
+            }
+            put-u16(hs, ext-len-pos, ext-total)
 
     ; 填入 handshake message length
-    #{overflow=wrap}
-    body-len = pos - 4
-    put-u24(hs, 1, body-len)
+            #{overflow=wrap}
+            body-len-opt = pos - 4
+            body-len = 0
+            body-len-opt: {
+                ok -> body-len = it
+                -> body-len = 0
+            }
+            put-u24(hs, 1, body-len)
     hs.truncate(pos)
 
     ; 追加到交握緩衝區

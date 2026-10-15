@@ -17,7 +17,12 @@ bit-len = dlen * 8
 print('bit-len')
 print(bit-len)
 
-mod-val i64 = (dlen + 9) % 64
+mod-val-opt = (dlen + 9) % 64
+mod-val i64 = 0
+mod-val-opt: {
+    ok -> mod-val = it
+    ->
+}
 print('mod-val')
 print(mod-val)
 

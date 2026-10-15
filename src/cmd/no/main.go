@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	"github.com/lizongying/nolang/checker"
 	nfmt "github.com/lizongying/nolang/fmt"
 	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/mmast"
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/parser/dump"
@@ -117,7 +120,14 @@ func main() {
 		newProject(os.Args[2])
 	case "add":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: no add <package-name>")
+			fmt.Println("Usage: no add <tool>[:<version>]@<host>/<owner>/<repo>")
+			fmt.Println("")
+			fmt.Println("Add a dependency (prebuilt AST package: <tool>.ast.zip).")
+			fmt.Println("")
+			fmt.Println("Examples:")
+			fmt.Println("  no add nogit:v0.1.33@github.com/lizongying/notools")
+			fmt.Println("  no add nogit@github.com/lizongying/notools        latest release")
+			fmt.Println("  no add nogit@lizongying/notools                   host defaults to github.com")
 			return
 		}
 		addDependency(os.Args[2])
@@ -143,6 +153,8 @@ func main() {
 		uninstallCommand(os.Args[2:])
 	case "pub":
 		pubCommand(os.Args[2:])
+	case "pack":
+		packCommand(os.Args[2:])
 	case "sync":
 		syncDependencies()
 	case "fmt":
@@ -269,18 +281,43 @@ func printUsage() {
 	fmt.Println("")
 	fmt.Println("  no info               Show environment and source directory info")
 	fmt.Println("")
-	fmt.Println("  no add <pkg>        Add a dependency")
+	fmt.Println("  no add <tool>[:<version>]@<host>/<owner>/<repo>")
+	fmt.Println("                    Add a dependency (prebuilt AST: <tool>.ast.zip)")
+	fmt.Println("                    Version omitted = latest release; key written to")
+	fmt.Println("                    package.jsonc is <tool>@<host>/<owner>/<repo>.")
+	fmt.Println("    Examples:")
+	fmt.Println("      no add nogit@github.com/lizongying/notools")
+	fmt.Println("      no add nogit:v0.1.33@github.com/lizongying/notools")
+	fmt.Println("      no add nogit@lizongying/notools   host defaults to github.com")
 	fmt.Println("  no remove <pkg>     Remove a dependency")
 	fmt.Println("  no update <pkg>     Update a specific dependency")
 	fmt.Println("  no update-all        Update all dependencies")
 	fmt.Println("  no list              List dependencies")
-	fmt.Println("  no install [-u] [<pkg>@<version>]")
-	fmt.Println("                    Install a package binary (store in ~/no/bin/, symlink in /usr/local/bin/)")
-	fmt.Println("                    -u    force re-download and re-build")
+	fmt.Println("  no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]")
+	fmt.Println("                    Install a binary (store in ~/no/bin/, symlink in /usr/local/bin/)")
+	fmt.Println("                    Downloads a prebuilt GitHub release asset for the platform")
+	fmt.Println("                    `no` runs on (<tool>-<os>-<arch>, e.g. nogit-darwin-arm64).")
+	fmt.Println("                    With no argument: build and install the current package.")
+	fmt.Println("                    -u    force re-download and re-install")
+	fmt.Println("    Examples:")
+	fmt.Println("      no install nogit@github.com/lizongying/notools")
+	fmt.Println("      no install nogit:v0.1.33@github.com/lizongying/notools")
+	fmt.Println("      no install nogit@lizongying/notools   host defaults to github.com")
+	fmt.Println("      no install -u nogit@github.com/lizongying/notools")
 	fmt.Println("  no uninstall <name>")
-	fmt.Println("                    Remove installed package binary and symlink")
+	fmt.Println("                    Remove installed binary and symlink")
+	fmt.Println("    Examples:")
+	fmt.Println("      no uninstall nogit")
 	fmt.Println("  no sync              Sync/download dependencies")
-	fmt.Println("  no pub               Publish package")
+	fmt.Println("  no pack [-o <file>] [<dir|file.no>]")
+	fmt.Println("                    Pack a module's AST as <tool>.ast.zip (MetaMessage + zip).")
+	fmt.Println("                    Lexer+parser only — no LLVM toolchain, safe for CI.")
+	fmt.Println("    Examples:")
+	fmt.Println("      no pack                     pack current package -> dist/<name>.ast.zip")
+	fmt.Println("      no pack -o nogit.ast.zip    explicit output path (CI friendly)")
+	fmt.Println("      no pack nogit.no            pack a single source file")
+	fmt.Println("  no pub [-o <file>]  Pack (same as no pack) and publish; registry upload")
+	fmt.Println("                    is not implemented yet, so it only packs today")
 	fmt.Println("")
 	fmt.Println("  -ld-KEY=VALUE  Inject compile-time global constants (build, run, test)")
 	fmt.Println("    Multiple -ld flags can be used. The -ld prefix is stripped, and")
@@ -891,20 +928,43 @@ func createTestDirectory() {
 	}
 }
 
-func addDependency(name string) {
-	config, err := loadProjectConfig()
+// addDependency 加入一個依賴，spec 與 `no install` 同形：
+//
+//	<tool>[:<version>]@<host>/<owner>/<repo>
+//
+// package.jsonc 裡的鍵是 `<tool>@<host>/<owner>/<repo>`，值是具體版本
+// （省略版本時查 releases/latest 解析成具體 tag，不寫 "*"，避免下次解析漂移）。
+func addDependency(specStr string) {
+	spec, err := pkg.ParseToolSpec(specStr)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
 
+	version := spec.Version
+	if version == "" {
+		version, err = pkg.LatestReleaseTag(spec.Host, spec.Owner, spec.Repo)
+		if err != nil {
+			fmt.Printf("Error resolving latest release: %v\n", err)
+			return
+		}
+		fmt.Printf("Latest release of %s/%s: %s\n", spec.Owner, spec.Repo, version)
+	}
+
+	config, err := loadProjectConfig()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
 	if config.Dependencies == nil {
 		config.Dependencies = make(map[string]string)
 	}
 
-	config.Dependencies[name] = "*"
+	key := spec.DepKey()
+	config.Dependencies[key] = version
 	createConfigFile(*config)
-	fmt.Printf("Added dependency: %s\n", name)
+	fmt.Printf("Added dependency: %s = %s\n", key, version)
+	fmt.Printf("  asset: %s\n", pkg.ReleaseASTZipURL(spec, version))
 }
 
 func loadProjectConfig() (*ProjectConfig, error) {
@@ -987,27 +1047,49 @@ func listDependencies() {
 func syncDependencies() {
 	fmt.Println("Syncing dependencies...")
 
-	pkg, err := nbuild.LoadPackage(".")
+	p, err := nbuild.LoadPackage(".")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
-	if pkg == nil {
+	if p == nil {
 		fmt.Println("Error: package.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
 		return
 	}
-	if len(pkg.Dependencies) == 0 {
+	if len(p.Dependencies) == 0 {
 		fmt.Println("No dependencies to sync.")
 		return
 	}
 
-	graph, err := pkg.EnsureDependencies(10)
+	graph, err := p.EnsureDependencies(10)
 	if err != nil {
 		fmt.Printf("Error syncing dependencies: %v\n", err)
 		return
 	}
 
 	count := len(graph.Resolved())
+
+	// 預編 AST 依賴不進依賴圖（沒有原始碼套件可下載），在這裡單獨預取
+	// <tool>.ast.zip 並快取到 ~/no/cache/ast/，讓後續編譯離線可用。
+	astCount := 0
+	for key, ver := range p.Dependencies {
+		if !pkg.IsASTDependencyKey(key) {
+			continue
+		}
+		prog, err := mmast.EnsureModuleAST(key, ver)
+		if err != nil {
+			fmt.Printf("Error syncing AST dependency %s: %v\n", key, err)
+			return
+		}
+		if prog == nil {
+			fmt.Printf("Error syncing AST dependency %s: empty module\n", key)
+			return
+		}
+		astCount++
+		fmt.Printf("  ast  %s %s\n", key, ver)
+	}
+	count += astCount
+
 	fmt.Printf("Synced %d dependencies.\n", count)
 	fmt.Println("Lock file and integrity sums saved.")
 }
@@ -1015,189 +1097,6 @@ func syncDependencies() {
 // nolangBinDir 返回 ~/no/bin 目錄
 func nolangBinDir() string {
 	return filepath.Join(nbuild.NoHomeDir(), "bin")
-}
-
-func installCommand(args []string) {
-	fs := flag.NewFlagSet("install", flag.ExitOnError)
-	update := fs.Bool("u", false, "Force re-download and re-build")
-	fs.Usage = func() {
-		fmt.Println("Usage: no install [-u] [<pkg>@<version>]")
-		fmt.Println("")
-		fmt.Println("Install a package binary to system.")
-		fmt.Println("  no install            build and install current package")
-		fmt.Println("  no install -u         force rebuild current package")
-		fmt.Println("  no install pkg@1.0    download and install remote package")
-		fmt.Println("")
-		fmt.Println("Flags:")
-		fs.PrintDefaults()
-	}
-	_ = fs.Parse(args)
-
-	remaining := fs.Args()
-	var pkgSpec string
-	if len(remaining) > 0 {
-		pkgSpec = remaining[0]
-	}
-
-	var buildDir string
-	var binName string
-
-	if pkgSpec == "" {
-		// 無參數：安裝當前目錄的包
-		pkg, err := nbuild.LoadPackage(".")
-		if err != nil || pkg == nil {
-			fmt.Fprintf(os.Stderr, "Error: package.jsonc not found in current directory\n")
-			return
-		}
-		buildDir = "."
-		binName = pkg.Name
-		if !*update {
-			fmt.Printf("Installing current package: %s\n", binName)
-		} else {
-			fmt.Printf("Updating current package: %s\n", binName)
-		}
-	} else {
-		// 解析 <pkg>@<version>
-		parts := strings.SplitN(pkgSpec, "@", 2)
-		pkgKey := parts[0]
-		version := "*"
-		if len(parts) == 2 {
-			version = parts[1]
-		}
-
-		if !*update {
-			// 檢查是否已安裝
-			binDir := nolangBinDir()
-			installed := filepath.Join(binDir, nbuild.PackageShortName(pkgKey))
-			if _, err := os.Stat(installed); err == nil {
-				// 檢查軟鏈接
-				symlink := filepath.Join("/usr/local/bin", nbuild.PackageShortName(pkgKey))
-				if _, err := os.Stat(symlink); err == nil {
-					fmt.Printf("%s already installed. Use -u to update.\n", pkgSpec)
-					return
-				}
-			}
-		}
-
-		fmt.Printf("Downloading %s@%s...\n", pkgKey, version)
-
-		// 從遠端下載包源碼
-		pkgDir, _, err := nbuild.DownloadPackage(pkgKey, version, nil)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error downloading %s: %v\n", pkgSpec, err)
-			return
-		}
-
-		buildDir = pkgDir
-		binName = nbuild.PackageShortName(pkgKey)
-	}
-
-	// 建立臨時目錄用於構建
-	tmpDir, err := os.MkdirTemp("", "nolang-install")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return
-	}
-	if os.Getenv("NOLANG_KEEP_IR") == "" {
-		defer os.RemoveAll(tmpDir)
-	} else {
-		fmt.Fprintf(os.Stderr, "[debug] keep build tmp dir: %s\n", tmpDir)
-	}
-
-	outPath := filepath.Join(tmpDir, binName)
-	opts := nbuild.BuildOptions{
-		CC:              "clang",
-		Output:          outPath,
-		Verbose:         verbose,
-		CompilerVersion: version,
-	}
-
-	fmt.Printf("Building %s...\n", binName)
-	if _, err := nbuild.BuildFile(buildDir, opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error building: %v\n", err)
-		return
-	}
-
-	// 確保 ~/.nolang/bin 目錄存在
-	binDir := nolangBinDir()
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating %s: %v\n", binDir, err)
-		return
-	}
-
-	// 複製 binary 到 ~/.nolang/bin/<name>
-	dst := filepath.Join(binDir, binName)
-	data, err := os.ReadFile(outPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading built binary: %v\n", err)
-		return
-	}
-	if err := os.WriteFile(dst, data, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", dst, err)
-		return
-	}
-
-	// 在 /usr/local/bin/ 建立軟鏈接
-	symlink := filepath.Join("/usr/local/bin", binName)
-	// 移除舊的軟鏈接/文件
-	if _, err := os.Lstat(symlink); err == nil {
-		os.Remove(symlink)
-	}
-	if err := os.Symlink(dst, symlink); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating symlink %s: %v\n", symlink, err)
-		fmt.Printf("Try: sudo ln -sf %s %s\n", dst, symlink)
-		return
-	}
-
-	fmt.Printf("Installed %s\n", binName)
-	fmt.Printf("  binary: %s\n", dst)
-	fmt.Printf("  symlink: %s\n", symlink)
-}
-
-func uninstallCommand(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: no uninstall <name>")
-		fmt.Println("")
-		fmt.Println("Uninstall a package binary.")
-		fmt.Println("  no uninstall pkg    remove pkg binary and symlink")
-		return
-	}
-
-	name := args[0]
-	binDir := nolangBinDir()
-	binary := filepath.Join(binDir, name)
-	symlink := filepath.Join("/usr/local/bin", name)
-
-	removed := false
-
-	// 移除軟鏈接
-	if _, err := os.Lstat(symlink); err == nil {
-		if err := os.Remove(symlink); err != nil {
-			fmt.Fprintf(os.Stderr, "Error removing symlink %s: %v\n", symlink, err)
-			fmt.Printf("Try: sudo no uninstall %s\n", name)
-			return
-		}
-		fmt.Printf("Removed symlink: %s\n", symlink)
-		removed = true
-	} else {
-		fmt.Printf("Symlink not found: %s\n", symlink)
-	}
-
-	// 移除 binary
-	if _, err := os.Stat(binary); err == nil {
-		if err := os.Remove(binary); err != nil {
-			fmt.Fprintf(os.Stderr, "Error removing %s: %v\n", binary, err)
-			return
-		}
-		fmt.Printf("Removed binary: %s\n", binary)
-		removed = true
-	} else {
-		fmt.Printf("Binary not found: %s\n", binary)
-	}
-
-	if !removed {
-		fmt.Printf("%s is not installed.\n", name)
-	}
 }
 
 // stdinIsPiped 報告 stdin 是否為管道或重定向（非交互式終端）。
@@ -1215,7 +1114,7 @@ func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, "write result to source file")
 	diffMode := fs.Bool("d", false, "output colored diff instead of formatted result")
-	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + `x = x-opt: { ok -> it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)")
+	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)")
 	loopStyle := fs.String("loop-style", "prefix", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'")
 	fs.Usage = func() {
 		fmt.Println("Usage: no fmt [flags] <file|dir>")
@@ -3397,21 +3296,144 @@ func printLintResultsJSON(results []nbuild.LintResult) int {
 	return errorCount
 }
 
-func pubCommand(args []string) {
-	fs := flag.NewFlagSet("pub", flag.ExitOnError)
-	token := fs.String("token", "", "Registry authentication token")
-	registry := fs.String("registry", "", "Package registry URL")
-	_ = fs.Parse(args)
-
-	if *token == "" {
-		fmt.Println("Error: --token is required for publishing")
-		fs.Usage()
-		os.Exit(1)
+// packAST 把一個包（或單個 .no 檔）打包成預編 AST 包 <tool>.ast.zip。
+//
+// target 可以是：
+//   - 目錄（預設 "."）：讀 package.jsonc，入口取 main 欄位（預設 main.no），
+//     模組名取 name 欄位；
+//   - 單一 .no 檔：模組名取檔名（去掉副檔名）——CI 常這樣用，不必有 package.jsonc。
+//
+// out 為空時輸出到 dist/<tool>.ast.zip。回傳實際寫出的 zip 路徑與統計。
+// 這是 `no pack` 與未來 `no pub`（打包 + 上傳）共用的唯一打包入口。
+func packAST(target, out string) (string, *mmast.ZipStats, error) {
+	var name, src string
+	if strings.HasSuffix(target, ".no") {
+		src = target
+		name = strings.TrimSuffix(filepath.Base(target), ".no")
+	} else {
+		p, err := nbuild.LoadPackage(target)
+		if err != nil || p == nil {
+			return "", nil, fmt.Errorf("package.jsonc not found in %s", target)
+		}
+		name = p.Name
+		src = p.Main
+		if src == "" {
+			src = "main.no"
+		}
+		src = filepath.Join(target, src)
 	}
 
-	fmt.Println("no pub: publishing is not yet implemented.")
-	fmt.Printf("  token: %s\n", *token)
-	fmt.Printf("  registry: %s\n", *registry)
+	raw, err := os.ReadFile(src)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading %s: %w", src, err)
+	}
+	// 與 build 管線一致的解析入口（見 build/builder.go BuildDirectWasm）：
+	// 只需要 lexer+parser，不需要 LLVM 工具鏈，因此可以直接在 CI 裡跑。
+	pp := parser.New(lexer.NewCached(src, string(raw)))
+	pp.Filename = filepath.Base(src)
+	prog := pp.ParseProgram()
+	if prog == nil {
+		return "", nil, fmt.Errorf("%s: parser returned nil program", src)
+	}
+	if errs := pp.Errors(); len(errs) > 0 {
+		return "", nil, fmt.Errorf("%s: %v", src, errs[0])
+	}
+
+	dst := out
+	if dst == "" {
+		dst = filepath.Join("dist", name+".ast.zip")
+	}
+	if dir := filepath.Dir(dst); dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return "", nil, err
+		}
+	}
+	f, err := os.Create(dst)
+	if err != nil {
+		return "", nil, err
+	}
+	sum := sha256.Sum256(raw)
+	st, err := mmast.WriteASTZipWithStats(f, prog, name, src, hex.EncodeToString(sum[:]))
+	if cerr := f.Close(); err == nil && cerr != nil {
+		err = cerr
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	return dst, st, nil
+}
+
+func packCommand(args []string) {
+	fs := flag.NewFlagSet("pack", flag.ExitOnError)
+	out := fs.String("o", "", "Output zip path (default: dist/<tool>.ast.zip)")
+	fs.Usage = func() {
+		fmt.Println("Usage: no pack [-o <file>] [<dir|file.no>]")
+		fmt.Println("")
+		fmt.Println("Pack a module's AST as MetaMessage + zip (<tool>.ast.zip).")
+		fmt.Println("Only lexing/parsing is needed — no LLVM toolchain — so this runs")
+		fmt.Println("in CI to produce the asset `no add` downloads:")
+		fmt.Println("  <host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip")
+		fmt.Println("")
+		fmt.Println("Flags:")
+		fs.PrintDefaults()
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  no pack                          pack current package -> dist/<name>.ast.zip")
+		fmt.Println("  no pack -o nogit.ast.zip         explicit output (CI friendly)")
+		fmt.Println("  no pack nogit.no                 pack a single source file")
+		fmt.Println("  no pack ./nogit                  pack a package directory")
+	}
+	_ = fs.Parse(args)
+
+	target := "."
+	if rest := fs.Args(); len(rest) > 0 {
+		target = rest[0]
+	}
+	dst, st, err := packAST(target, *out)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Packed AST: %s\n", dst)
+	fmt.Printf("  bytes:  %d\n  nodes:  %d\n  chunks: %d\n", st.Bytes, st.Nodes, st.Chunks)
+}
+
+// pubCommand 把當前包打包成預編 AST 包 <name>.ast.zip（MetaMessage + zip）。
+// 這是 `no add <tool>@<host>/<owner>/<repo>` 會去 GitHub Releases 抓的產物
+// （見 docs/design/nolang-mm-ast.md）。上傳 registry 尚未實作：給了
+// --registry/--token 也只會提示，不會靜默假裝成功。
+func pubCommand(args []string) {
+	fs := flag.NewFlagSet("pub", flag.ExitOnError)
+	token := fs.String("token", "", "Registry authentication token (unused: upload not implemented)")
+	registry := fs.String("registry", "", "Package registry URL (unused: upload not implemented)")
+	out := fs.String("o", "", "Output zip path (default: dist/<name>.ast.zip)")
+	fs.Usage = func() {
+		fmt.Println("Usage: no pub [-o <file>]")
+		fmt.Println("")
+		fmt.Println("Package the current package's AST as MetaMessage + zip.")
+		fmt.Println("The result is what `no add <tool>@<host>/<owner>/<repo>` downloads:")
+		fmt.Println("<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip")
+		fmt.Println("")
+		fmt.Println("Flags:")
+		fs.PrintDefaults()
+		fmt.Println("")
+		fmt.Println("Examples:")
+		fmt.Println("  no pub                       write dist/<name>.ast.zip")
+		fmt.Println("  no pub -o nogit.ast.zip      write an explicit path")
+	}
+	_ = fs.Parse(args)
+
+	// 打包與 `no pack` 共用同一個入口；pub 只多一步「上傳」（尚未實作）。
+	dst, st, err := packAST(".", *out)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Packed AST: %s\n", dst)
+	fmt.Printf("  bytes:  %d\n  nodes:  %d\n  chunks: %d\n", st.Bytes, st.Nodes, st.Chunks)
+	if *registry != "" || *token != "" {
+		fmt.Println("Note: registry upload is not implemented yet; upload this zip to a GitHub release.")
+	}
 }
 
 func astCommand(args []string) {

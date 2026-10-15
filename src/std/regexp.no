@@ -531,7 +531,12 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             }
             c != 92 -> .set-class-bit(cls-idx, c)
         }
-        ri = next-i
+        ri-opt = next-i
+        ri = 0
+        ri-opt: {
+            ok -> ri = it
+            -> ri = 0
+        }
     }
 
     ; 反向
