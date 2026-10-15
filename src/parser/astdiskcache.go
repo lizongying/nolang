@@ -82,7 +82,11 @@ import (
 // 對「可證明越界安全」的讀取早退，in-bounds 讀取照常降級為 option（用戶側必須
 // 解包；內部消除改由 codegen/MIR 負責）。這改變 lowering 輸出形狀（更多 __cap_N
 // / match 區塊），屬必 bump 的 lowering 變更。
-const ASTVersion = "2026-10-15.2"
+// 2026-10-15.3：D9 place-match 寫入（`a[i]: { ok -> it = v, -> _ }`）—— lowering
+// 在 statement 語境的安全索引 match ok 臂內把 `it = v` 改寫為寫回序列，並新增
+// AssignExpression.IsSynthetic 欄位（gob 編碼形狀改變，舊緩存缺該欄位會讓
+// idxwrite 檢查漏跳合成節點，故必須 bump）。
+const ASTVersion = "2026-10-15.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

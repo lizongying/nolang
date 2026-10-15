@@ -1,6 +1,6 @@
 # 方案：算术与索引统一返回 option
 
-> 状态：**已实施（见 §11）**——主体 M1–M5 与 M4(str/txt→?char) 已落地；D7 定案为「用户侧恒 option + 内部消除」（§8.1(a) 最终修订，2026-10-15）。本文件曾长期停留「待实施」草稿，§11 为 2026-10-13 实测复核结论。  
+> 状态：**已实施（见 §11）**——主体 M1–M5 与 M4(str/txt→?char) 已落地；D7 定案为「用户侧恒 option + 内部消除」（§8.1(a) 最终修订，2026-10-15）。**D9「下标写入必须显式解包」于 2026-10-15 定案，见 §12（编译器实现与全仓迁移进行中）**。本文件曾长期停留「待实施」草稿，§11 为 2026-10-13 实测复核结论。  
 > 涉及层：parser / checker / mir / lsp / fmt / build / 语料迁移  
 > 相关既有文档：`docs/docs/lang/syntax.md`〈整数运算溢出〉〈可空类型(option)〉、`NOLANG-OWNERSHIP-MODEL.md`
 
@@ -18,6 +18,7 @@
 | D6 | 统一规则作用范围                              | 整数 `+ - * / %`、容器索引 `arr[i]`、`str`/`txt` 索引 `s[i]`。**不含**浮点算术、`char` 算术（保持现状）。                                                            |
 | D7 | in-bounds 豁免 | **最终定案（2026-10-15）：两层分离。** ①**用户侧**：即使编译器能静态证明不会溢出/除零/越界，`arr[i]` / 算术**一律产生 `?T`**，后续使用必须解包（match / `?=` / `_ =`）——**无任何用户侧豁免**。②**语言内部**：编译器在能证明安全时**内部消除** option 包装与解包（codegen/MIR 优化，如省略 nil 检查、直接走 ok 分支），用户不可见。`bounds.go` 静态分析保留，服务内部消除与诊断，**不影响用户侧类型**。 |
 | D8 | match 穷尽性                             | **不放宽**。注解使失败情形变成"有值"，`nil`/`err` 臂虽永不触发仍**必须写**——值终究要靠 match 解包出来，match 是唯一的解包语法。不引入"注解后只需 `ok` 臂"的特例。                                   |
+| D9 | 下标写入（index store）                   | **必须显式解包**（2026-10-15 定案）：`a[i] = v` 为 ERROR（新 trace `idxwrite`），正确写法为 place-match `a[i]: { ok -> it = v, -> _ }` 或错误上抛 `a[i] ?= v`；map（`[K]V`）不受影响；D7 两层分离延伸到写入侧（可证明界内 → 内部消除、零开销；用户侧无豁免）。详见 §12。 |
 
 ### D1 的直接后果（必须写进预期）
 
@@ -265,6 +266,7 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
   - **明确写出注解只影响行为、不解包**（`#{overflow=wrap}` ⏎ `x = a + b` 的 `x` 仍是 `?i64`）；
   - `-> return` / 空臂零值；
   - in-bounds 豁免取消，并给出 `for i <- arr { x = i }` 这一惯用替代写法。
+  - **下标写入必须显式解包（D9，§12）**：`a[i] = v` 不允许，必须 place-match `a[i]: { ok -> it = v, -> _ }` 或 `a[i] ?= v`；写入侧同样「用户侧恒 option、内部消除」。
 - EN 镜像 `docs/i18n/en/.../lang/*.md` 同步（历史上 EN 常落后，需显式跟进）。
 - `docs/docs/lang/memory.md`（若有 option/ownership 相关段落）复核。
 
@@ -360,3 +362,136 @@ z-opt: {
 - `go test ./checker/ ./parser/ ./mir/ ./fmt/ ./lexer/` 全绿；`hir TestKindCoverageAcrossBothCorpora`
   为**既有**失败（`[type-arm type-match]`），与本次改动无关。
 - `notools` 侧（`~/IdeaProjects/notools`）沿用同一修法，见其 `docs/design/option-unified.md`。
+
+---
+
+## 12. 下标写入必须显式解包（D9，2026-10-15 定案）
+
+> 决策来源（用户定案原话，两轮综合）：「`a[1] = 2` 这样的应该报错，错误提示正确写法
+> `a[1]: { ok -> it = 2; -> _ }`；另一种写法 `a[1] ?= 2`（也就是错误上抛，在返回值是 option
+> 情况下）也要在报错信息中加上。对于明确推断没有越界的，内部消除，会直接赋值，没有开销，
+> 但对用户来说必须使用解包语法，所有 `.no` 都要处理。」
+
+### 12.1 决策
+
+| # | 决策 | 结论 |
+|---|---|---|
+| D9 | 下标写入（index store） | **必须显式解包**。`a[i] = v`（赋值目标为 IndexExpression）为 **ERROR**（新 trace `idxwrite`），报错信息给出两种正确写法；用户层无豁免（D7 两层分离延伸到写入侧）；map 不受影响；全仓 `.no` 迁移完成后才启用 ERROR。 |
+
+### 12.2 rationale：为什么「option 赋值不合理」（现状实测，2026-10-15）
+
+读侧与写侧今天**不对称**，而写侧是裸的：
+
+| 侧 | 写法 | 今天的行为 | 实测锚点 |
+|---|---|---|---|
+| 读 | `x = a[i]` | 恒为 `?elem`（越界 → nil），必须 `?=` / match / `_ =` 解包（D6/D7） | `parser/type.go:233 containerElemType` |
+| 写 | `a[i] = v` | `emitIndexStore` = GEP + store，**无边界检查**；常量越界仅编译期拦（`checkConstIndexBounds`），运行期越界 = raw OOB write | `mir/codegen.go:8930 emitIndexStore`；`build/transpiler_validate.go:1051` |
+
+「索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写」——这与语言「无 GC、
+内存安全」的目标直接冲突，且逼迫用户读侧解包、写侧裸奔，规则不统一。D9 把写侧拉到与读侧同一
+纪律：**要么显式处理越界臂，要么上抛**。
+
+另两项实测事实（直接影响实现）：
+
+1. `a[i] ?= v` 的 parser 支持已存在（`parser/expr.go:632-638` 构造
+   `UnwrapAssignStatement{Target: IndexExpression}`，结构见 `parser/ast.go:673-679`），但
+   `lowerUnwrapAssign`（`parser/lowering.go:3097`）把 `Value` 当 option 降糖
+   （`__unwrap_N = Value`）——对读取目标 `v ?= arr[i]` 正确，对**写入目标** `a[i] ?= 2`
+   是错的，需修（ok 臂 `target = it` 的既有结构 `lowering.go:3360` 可复用）。
+2. place-match 的**读侧**形态已存在（安全索引 match 主体 `parts[i]: { ok -> ... }`，
+   `checker/stdast_test.go:112-117`；臂文法 `ok -> body` / `-> body` 通配臂，
+   `parser/match.go:96-145`）。D9 把 statement 语境的 `a[i]: { ok -> it = v, -> _ }`
+   定为**写入**形态。
+
+### 12.3 语义规格：两种正确写法
+
+**(1) place-match（自行处理越界臂）**
+
+```no
+a[1]: {
+    ok -> it = 2      ; it = 元素位置（可读可写）：it = 2 是写入，it = it + 1 亦可
+    -> _              ; 越界臂：行为由用户自定
+}
+```
+
+- 求值 `a[i]` 为 option-place；ok 臂 `it` 绑定**元素位置**（不是值副本）——读 = load，
+  `it = v` = store through place。实现复用 MIR 既有 lvalue/view 机制（`lvalueAddrOf`
+  投影链地址计算，`mir/codegen.go:8982` 一带）。
+- 通配臂（nil / 越界）行为由用户自定：`-> _` 显式丢弃 / 空臂 `->`（D4 默认零值语义）/
+  `-> { log('oob'); return }` 等。
+- 与 §11.5 迁移惯用法同构：**多行陈述式 match**。同行内联（`z = z-opt: { ok -> it` ⏎
+  `-> 0 }`）实测会坏（§11.5 边界 2：整段被推成 `err | nil`），codemod 与文档范例一律多行。
+
+**(2) 错误上抛 `?=`（要求所在函数有 option 结果参数）**
+
+```no
+f = (i i64) (res ?i64) {
+    a = [1, 2, 3]
+    a[i] ?= 2          ; ok → 写入；越界 → res = <option>; return
+    res = nil
+}
+```
+
+- 降糖（修正 `lowerUnwrapAssign`）：`__o_N = a[i]`（option 读）→ match；ok 臂 `a[i] = v`；
+  nil/err 臂 `result = __o_N; return`。
+- 所在函数**没有** option 结果参数 → 报错并引导 place-match（与
+  `parser/compound_assign_test.go:121` 既定口径一致：那是 ERROR 而非 WARNING——`?=` 在
+  那种函数里不合法，编译器也不能猜用户想要什么）。
+
+### 12.4 范围界定
+
+| 形态 | 处置 |
+|---|---|
+| `a[i] = v`（单赋值，基底 = 直接变数 arr/slice/vec/str/txt） | **ERROR `idxwrite`** |
+| `x, a[i] = f()`（多赋值目标，`parser/stmt.go:776-835`） | **ERROR `idxwrite`** |
+| `a[i] += v`（复合赋值） | 维持 parse error（`parser/stmt.go:858-869`，复合赋值只支持 IDENT LHS）；文案补两种正确写法 |
+| map `[K]V`（`MapType`） | 不受影响（无下标赋值语法，走 put/get）。型别判定**必须先判 `MapType`**——`containerElemType("[str]i64")` 会把 map 型别字串误判为数组（返回 `"i64"`） |
+| `self.keys[i] = v`（struct-field 基底，str-map.no 等大量存在） | **wave 1 豁免**：其读侧走 legacy 非 option 路径（`isSafeIndexBase` 明确排除 DotExpression 基底，`parser/type.go:313-321`；`lowerUnwrapAssign:3197` 对 `receiver.field[i]` 直接报错）。待 field-base 索引统一后二期 |
+
+### 12.5 零开销：D7 两层分离延伸到写入
+
+- **用户侧**：无豁免。即使 `a[1]` 常量界内，也必须写解包语法（与 D7 读侧口径完全一致）。
+- **语言内部**：`bounds.go` 判据（定长数组 + 字面量下标；for-range 循环变量 + 字面量区间；
+  `with-len(K)` 固定长切片）扩展到**写入位**索引（`collectWriteTargets`，`bounds.go:476`
+  已收集写入目标，补 in-bounds 判定）；MIR 在可证明界内时消除边界检查与死臂 → 直接
+  GEP+store。不可证明时成本 = 一次边界检查 + 分支（与读侧解包同构）。
+- 验证：IR 级断言——可证明界内的写入站点无 bounds check、无 nil 分支（与读侧内部消除同一
+  机制，D7 已落地）。
+
+### 12.6 错误文案定稿（`idxwrite`，ERROR 级，`no vet` 同步）
+
+```
+不能通过下标直接赋值 'a[1] = 2'：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。正确写法：
+    a[1]: { ok -> it = 2, -> _ }    ; place-match：自行处理越界臂
+    a[1] ?= 2                        ; 错误上抛（要求所在函数有 option 结果参数）
+```
+
+实现要点：checker 新增 `ValidateIndexWrite`（仿 `ValidateUnhandledIndex` 架构：
+walkStmt/walkExpr + report + seen 去重 + canonPath 归属，`checker/checker.go:4868-4924`）；
+**必须跳过合成节点**（`IsSynthetic`）——`?=` / match 降糖内部就产生 `a[i] = it`，不能误伤
+（`parser/verify_test.go:154` 有先例）。
+
+### 12.7 迁移与启用顺序
+
+1. 编译器侧落地：两种写法可编译可运行；`idxwrite` 可报；写侧 BCE。
+2. codemod：`BASE[IDX] = VALUE` → 多行陈述式 place-match（python 精确替换、先断言命中计数、
+   保留缩进与行尾注释、不碰 `#{...}` 注解行与注释行、struct-field 基底站点跳过）。
+   review 清单：① 依赖「常量越界 = 编译错误」的测试（tests/oob-slice-assign.no 等）改为显式
+   越界臂行为；② 所在函数有 option 结果参数的热点站人工改 `?=`；③ str/txt 字节写
+   （str.no 大量 `val[i] = .byte(i)`）确认 growth guard 行为不变；④ 多赋值目标形态专门设计。
+3. 验证门：`make gen no` 重编 → `no vet src/std` 0 error → `no test test/std/` 47/47 →
+   `tests/mem-safety/` 全绿 → 三后端冒烟 → `make test` 基线（build 4 + checker 2 + fmt 1
+   为既有失败，新增即回归）。
+4. 打开 `idxwrite` ERROR，全仓 vet/build 清零后收尾。
+
+规模实测（2026-10-15）：约 **330 个 `.no` 文件**命中 `X[...] = v` 模式（含注释误报），主体
+`src/std`（str.no 87、tls.no 294、x25519 282、hpack 163、argon2 96…）、`tests/`、
+`test/std/`、`compiler/`、`example/`、`bench/`。
+
+### 12.8 开放问题
+
+- `-> _` 与空臂 `->` 的规范写法以探针定稿（全仓 `.no` 现有 0 处 `-> _` 用法，属新形式；
+  bare `_` 作臂体若不过 checker，规范写法定空臂 `->` 并在文档注明）。
+- 多赋值目标 codemod 形态（`x, a[i] = f()` 整体包 match 还是逐目标）。
+- LSP「插入解包」quickfix（仿现有 `#{index-out = 0}` quickfix，`lsp/server.go:903`）不在
+  本决策范围，后续另开。

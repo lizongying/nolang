@@ -2048,6 +2048,33 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		}
 	}
 
+	// D9 place-write 準備：statement 語境的安全索引 match（`a[i]: { ok -> it = v,
+	// -> _ }`）的 ok 臂裡，`it` 指代**元素位置**而非載荷副本。為了讓「option 讀取」
+	// 與「寫回 store」共用同一次下標求值（下標表達式可能有副作用，只能求值一次），
+	// 把原下標表達式綁定到合成變數 __idx_L_C，讀取與寫回都透過它索引。只有臂裡
+	// 真的出現 `it = v` 時才產生這個綁定（placeWriteUsed）——純讀取 match 零額外
+	// 開銷。origIdxExpr 必須在任何改寫之前捕獲（寫回前讀取的 Index 會被替換成
+	// 暫存識別符）。
+	var origIdxExpr Expression
+	idxTempName := ""
+	baseName := ""
+	if subjName != "" {
+		if idx, ok := origMatched.(*IndexExpression); ok {
+			origIdxExpr = idx.Index
+			idxTempName = fmt.Sprintf("__idx_%d_%d", tok.Line, tok.Column)
+			if id, ok2 := idx.Left.(*Identifier); ok2 {
+				baseName = id.Value
+			}
+		}
+	}
+	placeWriteUsed := false
+	anyArmValueCtx := false
+	for _, a := range arms {
+		if a.valueCtx {
+			anyArmValueCtx = true
+		}
+	}
+
 	// 類型推斷結果取自語義副表（Resolver pass 寫入 p.sem），不再依賴解析期快照。
 	// Use function-scoped lookup (curFuncName) to avoid cross-function type
 	// pollution when same-named locals exist in different functions.
@@ -2371,13 +2398,20 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						armBindingType = pt
 					}
 				}
-			} else if _, ok := arm.condition.(*NilLiteral); ok {
-				armType = "nil"
-			} else if arm.isDotVal {
-				// ok-> arm (dotVal wildcard): it should be the unwrapped elemType
-				armType = "ok"
-			}
-			if armType != "" {
+		} else if _, ok := arm.condition.(*NilLiteral); ok {
+			armType = "nil"
+		} else if arm.isDotVal {
+			// ok-> arm (dotVal wildcard): it should be the unwrapped elemType
+			armType = "ok"
+		}
+		// D9 place-write：statement 語境 + 安全索引主體 + ok 路徑臂 ⇒ 臂內使用者
+		// 寫的 `it = v`（let / assign 形態）改寫為「求值一次 → 寫回元素 → 重綁 it」。
+		// 值語境（anyArmValueCtx）的 match 保持讀語義：it 是載荷副本，`it = v` 只
+		// 重綁局部，與今天一致。nil/err 臂沒有元素位置可寫，不改寫。
+		if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) {
+			arm.body = p.rewriteItPlaceWrites(arm.body, tok, baseName, idxTempName, elemType, &placeWriteUsed)
+		}
+		if armType != "" {
 				// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
 				// 嵌套 match 時這能保住外層的 `it`（否則內層會把它覆蓋掉）。
 				bindName := arm.bindingName
@@ -2702,6 +2736,20 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	// 外層，使 match 主體（__match_subj）成為安全索引產生的 %option 變數，
 	// 後續 arm 的 `it` 綁定與 `== ok/nil/err` 條件都走識別符 option 路徑。
 	if subjName != "" && subjElem != "" && ifExpr != nil {
+		// D9：place-write 發生過 ⇒ 先綁定下標暫存（__idx_L_C = 原下標表達式），
+		// 讀取改走暫存，使「越界檢查的讀」與「ok 臂的寫回」共用同一次下標求值。
+		var preStmts []Statement
+		if placeWriteUsed && origIdxExpr != nil {
+			preStmts = append(preStmts, &LetStatement{
+				Token:       tok,
+				Name:        &Identifier{Token: tok, Value: idxTempName},
+				IsSynthetic: true,
+				Value:       origIdxExpr,
+			})
+			if idx, ok := origMatched.(*IndexExpression); ok {
+				idx.Index = &Identifier{Token: tok, Value: idxTempName}
+			}
+		}
 		subjAssign := &LetStatement{
 			Token:       tok,
 			Name:        &Identifier{Token: tok, Value: subjName},
@@ -2709,15 +2757,15 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: subjElem}},
 			Value:       origMatched,
 		}
+		wrapperStmts := make([]Statement, 0, len(preStmts)+2)
+		wrapperStmts = append(wrapperStmts, preStmts...)
+		wrapperStmts = append(wrapperStmts, subjAssign, &ExpressionStatement{Token: tok, Expression: ifExpr})
 		ifExpr = &IfExpression{
 			Token:     tok,
 			Condition: &IntegerLiteral{Token: tok, Value: 1},
 			Consequence: &BlockStatement{
-				Token: tok,
-				Statements: []Statement{
-					subjAssign,
-					&ExpressionStatement{Token: tok, Expression: ifExpr},
-				},
+				Token:       tok,
+				Statements:  wrapperStmts,
 			},
 			MatchedExpr: &Identifier{Token: tok, Value: subjName},
 		}
@@ -2835,6 +2883,163 @@ func (p *Parser) buildItBinding(tok lexer.Token, matched Expression) *LetStateme
 		Value:       matched,
 		IsSynthetic: true,
 	}
+}
+
+// isOKPathArmType reports whether an arm's computed type includes the ok
+// variant — i.e. the arm body executes on the ok path where the element place
+// exists. D9 place-write only rewrites `it = v` in such arms; nil/err arms
+// have no element to write through.
+func isOKPathArmType(t string) bool {
+	switch t {
+	case "ok", "ok_err", "ok_nil", "ok_err_nil":
+		return true
+	}
+	return false
+}
+
+// itAssignParts recognises a user-written `it = v` binding in a match arm
+// body. Two surface shapes reach lowering: a LetStatement (the common arm
+// form — `it = 2` parses as a redeclaration) and an AssignExpression wrapped
+// in an ExpressionStatement (when `it` is already declared in an enclosing
+// scope). Compiler-generated bindings (IsSynthetic) are never rewritten.
+func itAssignParts(s Statement) (Expression, bool) {
+	switch n := s.(type) {
+	case *LetStatement:
+		if n.IsSynthetic || n.Name == nil || n.Name.Value != "it" || n.Value == nil {
+			return nil, false
+		}
+		return n.Value, true
+	case *ExpressionStatement:
+		if as, ok := n.Expression.(*AssignExpression); ok && !as.IsSynthetic {
+			if id, ok := as.Left.(*Identifier); ok && id.Value == "it" && as.Value != nil {
+				return as.Value, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// rewriteItPlaceWrites rewrites user-written `it = v` bindings inside a
+// place-match ok arm into a write-through sequence (D9):
+//
+//	it = v   ⇒   __place_L_C = v
+//	             a[__idx_L_C] = __place_L_C
+//	             it = __place_L_C
+//
+// The arm's synthetic `it = <payload>` binding (prepended by the caller after
+// this rewrite) still gives reads the element VALUE; the trailing rebind keeps
+// `it` coherent for read-after-write inside the same arm. The index store is
+// marked IsSynthetic so the idxwrite validator does not reject the compiler's
+// own output, and both the read (__match_subj) and this store index through
+// the shared __idx_L_C temp, so a side-effecting index expression is
+// evaluated exactly once.
+//
+// Nested matches — already lowered into RTBareMatch-flagged IfExpressions by
+// the time this runs — are skipped: their `it` belongs to the inner match.
+// User-written if/for blocks are descended into.
+func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool) *BlockStatement {
+	if body == nil || baseName == "" || idxTempName == "" {
+		return body
+	}
+	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseName, idxTempName, elemType, used)
+	if !changed {
+		return body // nothing rewritten
+	}
+	nb := &BlockStatement{Token: body.Token, Statements: stmts, IsInline: body.IsInline}
+	nb.TrailingComments = body.TrailingComments
+	nb.ClosingBraceComment = body.ClosingBraceComment
+	nb.RBrace = body.RBrace
+	return nb
+}
+
+func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool) ([]Statement, bool) {
+	changed := false
+	out := make([]Statement, 0, len(stmts)+2)
+	for _, s := range stmts {
+		if val, ok := itAssignParts(s); ok {
+			pos := s.Pos()
+			placeName := fmt.Sprintf("__place_%d_%d", pos.Line, pos.Column)
+			// 讓 checker / codegen 知道暫存型別（與 subjName 同一節奏：函數作用域
+			// 優先，全域快照兜底；避免 std 常見同名全域變數污染）。
+			if elemType != "" {
+				p.sem.SetFuncVarType(p.curFuncName, placeName, elemType)
+				p.setVarType(placeName, elemType)
+			}
+			out = append(out,
+				&LetStatement{
+					Token:       tok,
+					Name:        &Identifier{Token: tok, Value: placeName},
+					Type:        &NamedType{Token: tok, Value: elemType},
+					Value:       val,
+					IsSynthetic: true,
+				},
+				&ExpressionStatement{Token: tok, Expression: &AssignExpression{
+					Token:       tok,
+					Left:        &IndexExpression{Token: tok, Left: &Identifier{Token: tok, Value: baseName}, Index: &Identifier{Token: tok, Value: idxTempName}},
+					Value:       &Identifier{Token: tok, Value: placeName},
+					IsSynthetic: true,
+				}},
+				&LetStatement{
+					Token:       tok,
+					Name:        &Identifier{Token: tok, Value: "it"},
+					Type:        &NamedType{Token: tok, Value: elemType},
+					Value:       &Identifier{Token: tok, Value: placeName},
+					IsSynthetic: true,
+				},
+			)
+			*used = true
+			changed = true
+			continue
+		}
+		// 下降：使用者寫的區塊 / if / for 裡可能也有 `it = v`（指的是本層 it）。
+		// 已降糖的巢狀 match（RTBareMatch 旗標）整棵跳過——它的 it 屬於內層。
+		switch n := s.(type) {
+		case *BlockStatement:
+			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseName, idxTempName, elemType, used); ch {
+				n.Statements = ns
+				changed = true
+			}
+		case *ExpressionStatement:
+			if ie, ok := n.Expression.(*IfExpression); ok && !p.sem.HasRTFlag(ie, RTBareMatch) {
+				if ie.Consequence != nil {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used); ch {
+						ie.Consequence.Statements = ns
+						changed = true
+					}
+				}
+				if ie.Alternative != nil {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used); ch {
+						ie.Alternative.Statements = ns
+						changed = true
+					}
+				}
+			}
+		case *IfExpression:
+			if !p.sem.HasRTFlag(n, RTBareMatch) {
+				if n.Consequence != nil {
+					if ns, ch := p.rewriteItPlaceWritesStmts(n.Consequence.Statements, tok, baseName, idxTempName, elemType, used); ch {
+						n.Consequence.Statements = ns
+						changed = true
+					}
+				}
+				if n.Alternative != nil {
+					if ns, ch := p.rewriteItPlaceWritesStmts(n.Alternative.Statements, tok, baseName, idxTempName, elemType, used); ch {
+						n.Alternative.Statements = ns
+						changed = true
+					}
+				}
+			}
+		case *ForStatement:
+			if n.Body != nil {
+				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseName, idxTempName, elemType, used); ch {
+					n.Body.Statements = ns
+					changed = true
+				}
+			}
+		}
+		out = append(out, s)
+	}
+	return out, changed
 }
 
 // unionElemType 從聯合型別字串中提取 payload（非 err/nil）型別。

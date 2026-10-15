@@ -1724,6 +1724,12 @@ type AssignExpression struct {
 	Token lexer.Token
 	Left  Expression // DotExpression
 	Value Expression
+	// IsSynthetic marks a compiler-generated assignment — today the write-back
+	// store inside the D9 place-match desugar (`a[i]: { ok -> it = v, -> _ }`
+	// lowers to `a[__idx] = __place`). Like LetStatement.IsSynthetic it keeps
+	// validators (e.g. the idxwrite check) from rejecting constructs the
+	// compiler itself emits.
+	IsSynthetic bool
 }
 
 func (ae *AssignExpression) expressionNode()     {}
