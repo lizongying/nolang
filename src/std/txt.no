@@ -220,6 +220,7 @@ txt.append-str = (s str) {
     remain = 0
     remain-opt: {
         ok -> remain = it
+
         -> remain = 0
     }
     sn > remain -> sn = remain
@@ -235,7 +236,6 @@ txt.append-str = (s str) {
 
 ; txt.append-txt: 追加 txt（不超出 255 限制）
 txt.append-txt = (t txt) {
-
     tn = t.len-bytes()
     n i64 = .len-bytes()
 
@@ -314,7 +314,6 @@ txt.reverse = () (out txt) {
 txt.slice = (start i64, end i64) (out txt) {
     r-start = start
     r-end = end
-
     r-start < 0 -> r-start = 0
     cur-len i64 = .len-bytes()
     r-end > cur-len -> r-end = cur-len
@@ -454,7 +453,6 @@ new = (cs []char) (t txt) {
 ; txt.trim: 去除首尾空白字元
 ; 返回新 txt
 txt.trim = () (val txt) {
-
     n i64 = .len-bytes()
 
     ; 預先宣告 end/m 為 plain i64：統一 option 規則（D6）下，首現算術賦值
@@ -564,6 +562,7 @@ txt.trim-char = (ch char) (val txt) {
     m = 0
     m-opt: {
         ok -> m = it
+
         -> m = 0
     }
     m < 0 -> return

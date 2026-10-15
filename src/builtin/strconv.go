@@ -21,18 +21,29 @@ func init() {
 		ForwardFunc:  "str-to-bool",
 	})
 
-	// Integer to-str methods (i8/i16/i32/i64/u8/u16/u32/u64/byte.to-str) and
-	// the char-to-str global are now implemented in Nolang (src/std/number.no),
-	// replacing the previous sprintf CLibCall builtins. f64.to-str and f32.to-str
-	// are also implemented in Nolang (f64-to-str function in number.no via
-	// f32-to-f64 conversion).
+	// Integer to-str methods: i64.to-str 走原生 @str_from_i64（本檔下方
+	// ForwardFunc "i64-to-str" 註冊，由 codegen 按名 interception 命中原生內聯）。
+	// u64/i32/i16/i8/u32/u16/u8/byte.to-str 與 f64/f32.to-str 皆在 std/number.no
+	// 以 Nolang 直接實現（窄整型拓寬複用 i64/u64；u64 走十進位迴圈、f64 走 %g
+	// 例程、f32 拓寬複用 f64）——後端僅有 i64 原生格式化器，故其餘不設 #{buildin}。
+	// char.to-str 見 std/char.no。
+
+	// i64.to-str: i64 轉字串（方法，底層走原生 @str_from_i64）
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverI64,
+		MethodName:   "i64.to-str",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Format an i64 as a decimal string (method)",
+		ForwardFunc:  "i64-to-str",
+	})
 
 	// f32-to-f64: f32 to f64 conversion (fpext)
 	convF32ToF64 := LLVMConvF32ToF64
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "f32-to-f64",
-		Params:       []parser.Type{parser.TypeF32},
+		ReceiverType: ReceiverF32,
+		MethodName:   "f32.to-f64",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Convert f32 to f64",
 		LLVMConv:     &convF32ToF64,
@@ -51,9 +62,9 @@ func init() {
 	// i64-to-f64: integer to float conversion
 	convI64ToFP := LLVMConvI64ToFP
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "i64-to-f64",
-		Params:       []parser.Type{parser.TypeI64},
+		ReceiverType: ReceiverI64,
+		MethodName:   "i64.to-f64",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Convert i64 to f64",
 		LLVMConv:     &convI64ToFP,
@@ -62,9 +73,9 @@ func init() {
 	// f64-to-i64: float to integer conversion
 	convFPToI64 := LLVMConvFPToI64
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "f64-to-i64",
-		Params:       []parser.Type{parser.TypeF64},
+		ReceiverType: ReceiverF64,
+		MethodName:   "f64.to-i64",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI64},
 		Doc:          "Convert f64 to i64",
 		LLVMConv:     &convFPToI64,
@@ -73,9 +84,9 @@ func init() {
 	// f64-to-f32: double to float conversion (fptrunc)
 	convF64ToF32 := LLVMConvF64ToF32
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "f64-to-f32",
-		Params:       []parser.Type{parser.TypeF64},
+		ReceiverType: ReceiverF64,
+		MethodName:   "f64.to-f32",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeF32},
 		Doc:          "Convert f64 to f32",
 		LLVMConv:     &convF64ToF32,
@@ -90,9 +101,9 @@ func init() {
 	// u64-to-f64: 無號整數轉浮點（uitofp）
 	convUIToFP := LLVMConvUIToFP
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "u64-to-f64",
-		Params:       []parser.Type{parser.TypeU64},
+		ReceiverType: ReceiverU64,
+		MethodName:   "u64.to-f64",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Convert u64 to f64",
 		LLVMConv:     &convUIToFP,
@@ -101,9 +112,9 @@ func init() {
 	// i128-to-f64: 128 位有號整數轉浮點（sitofp）
 	convI128ToFP := LLVMConvI64ToFP
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "i128-to-f64",
-		Params:       []parser.Type{parser.TypeI128},
+		ReceiverType: ReceiverI128,
+		MethodName:   "i128.to-f64",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Convert i128 to f64",
 		LLVMConv:     &convI128ToFP,
@@ -112,9 +123,9 @@ func init() {
 	// u128-to-f64: 128 位無號整數轉浮點（uitofp）
 	convU128ToFP := LLVMConvUIToFP
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "u128-to-f64",
-		Params:       []parser.Type{parser.TypeU128},
+		ReceiverType: ReceiverU128,
+		MethodName:   "u128.to-f64",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeF64},
 		Doc:          "Convert u128 to f64",
 		LLVMConv:     &convU128ToFP,
@@ -123,9 +134,9 @@ func init() {
 	// f64-to-u64: 浮點轉 64 位無號整數（llvm.fptoui.sat，饱和）
 	convFPToUI64 := LLVMConvFPToUI
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "f64-to-u64",
-		Params:       []parser.Type{parser.TypeF64},
+		ReceiverType: ReceiverF64,
+		MethodName:   "f64.to-u64",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeU64},
 		Doc:          "Convert f64 to u64 (saturating)",
 		LLVMConv:     &convFPToUI64,
@@ -134,9 +145,9 @@ func init() {
 	// f64-to-u32: 浮點轉 32 位無號整數（llvm.fptoui.sat）
 	convFPToUI32 := LLVMConvFPToUI
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "f64-to-u32",
-		Params:       []parser.Type{parser.TypeF64},
+		ReceiverType: ReceiverF64,
+		MethodName:   "f64.to-u32",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeU32},
 		Doc:          "Convert f64 to u32 (saturating)",
 		LLVMConv:     &convFPToUI32,
@@ -145,9 +156,9 @@ func init() {
 	// f64-to-i32: 浮點轉 32 位有號整數（llvm.fptosi.sat）
 	convFPToI32 := LLVMConvFPToI64
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "f64-to-i32",
-		Params:       []parser.Type{parser.TypeF64},
+		ReceiverType: ReceiverF64,
+		MethodName:   "f64.to-i32",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI32},
 		Doc:          "Convert f64 to i32 (saturating)",
 		LLVMConv:     &convFPToI32,
@@ -156,9 +167,9 @@ func init() {
 	// i64-to-i32: 整數位寬收窄（trunc，低比特截斷）
 	convI64ToI32 := LLVMConvTrunc
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "i64-to-i32",
-		Params:       []parser.Type{parser.TypeI64},
+		ReceiverType: ReceiverI64,
+		MethodName:   "i64.to-i32",
+		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeI32},
 		Doc:          "Truncate i64 to i32",
 		LLVMConv:     &convI64ToI32,

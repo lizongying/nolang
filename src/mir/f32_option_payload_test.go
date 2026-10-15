@@ -22,7 +22,7 @@ import (
 // `return "i64"`. The boxed double was stored into an i64-typed slot and read
 // back as an integer, so the payload came out as the raw IEEE-754 bit pattern:
 //
-//	b ?f32 = number.f64-to-f32(3.5)
+//	b ?f32 = (3.5).to-f32()
 //	print(b)     -> 4615063718147915776   ; 0x400C000000000000
 //
 // where `?f64` (correctly typed `double`) printed 3.5 and `?i64` printed 7.
@@ -58,7 +58,7 @@ func TestOptionF32PayloadUsesDoubleType(t *testing.T) {
 func TestOptionF32PeelEmitsDoubleLoad(t *testing.T) {
 	mod := lowerForTest(t, `main = () {
     d f64 = 3.5
-    b ?f32 = number.f64-to-f32(d)
+    b ?f32 = d.to-f32()
     print(b)
 }
 `)
@@ -80,7 +80,7 @@ func TestOptionF32PeelEmitsDoubleLoad(t *testing.T) {
 // and the classification's failure mode is the refusal message below.
 func TestFormatFieldF32Lowers(t *testing.T) {
 	mod := lowerForTest(t, `main = () {
-    g f32 = number.f64-to-f32(3.5)
+    g f32 = (3.5).to-f32()
     print('g={g}')
 }
 `)

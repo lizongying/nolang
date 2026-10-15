@@ -1,13 +1,16 @@
 ; number — 數字操作（方法形式 API）
 ;
 ; std 數字系全部「方法形式」API 集中於本模組：具體型別 to-str
-; （i64/i32/i16/i8/u64/u32/u16/u8/byte/f64/f32）、f64/f32 數學方法
+; （i64/i32/i16/i8/u64/u32/u16/u8/byte/f64/f32）、數值寬度轉換方法
+; （f64.to-i64、i64.to-f64、f32.to-f64 等 #{buildin}）、f64/f32 數學方法
 ; （sqrt, cbrt, 三角/雙曲, ceil/floor/round/trunc, exp/log, degrees/radians）、
 ; 整數 sqrt / is-prime。
 ; 「函數形式」API（max, min, pow, hypot, atan2, fmod, clamp, even, odd, gcd,
-; lcm, div, mod, swap, arr-zero, 型別轉換, 數字轉字串底層函數, 位元操作）
-; 全部在 math 模組（std/math.no）；唯一例外：整數冪 pow（int 泛型）與
+; lcm, div, mod, swap, arr-zero, char-to-str, 位元操作）
+; 在 math 模組（std/math.no）；唯一例外：整數冪 pow（int 泛型）與
 ; math 的 pow（f64）同名衝突，留在本模組。
+; 注：舊函數形式的型別寬度轉換（math.i64-to-f64 等）與整數/浮點 to-str
+; （math.i64/u64/f64-to-str）已刪除——改由上述本模組方法直接承載。
 ; 聯合型別別名與成員方法：num → std/num.no, int → std/int.no,
 ; float → std/float.no。
 ; 範圍常數（用於範圍檢查，如 str.to-i8 等）：i8/i16/i32/i64/u8/u16/u32/u64
@@ -70,122 +73,441 @@ INF = 1.0 / 0.0
 ; int.to-str 聯合方法已移至 std/int.no（此處保留具體型別 i64.to-str 等方法）
 
 ; i64.to-str: i64 轉字串
+; #{buildin}：底層走原生 @str_from_i64（builtin strconv.go 註冊 ForwardFunc "i64-to-str"，
+; 由 codegen 按名命中原生內聯路徑）。i64 有原生格式化器，故直接 builtin、不再包裝 Nolang 迴圈。
+#{buildin}
 i64.to-str = () (out str) {
-    out = math.i64-to-str(.)
 }
 
-; i32.to-str: i32 轉字串（隱式拓寬至 i64）
+; i32.to-str: i32 轉字串（隱式拓寬至 i64 後複用 i64.to-str 原生路徑）
 i32.to-str = () (out str) {
-    out = math.i64-to-str(.)
+    v i64 = .
+    out = v.to-str()
 }
 
-; i16.to-str: i16 轉字串
+; i16.to-str: i16 轉字串（拓寬至 i64 複用）
 i16.to-str = () (out str) {
-    out = math.i64-to-str(.)
+    v i64 = .
+    out = v.to-str()
 }
 
-; i8.to-str: i8 轉字串
+; i8.to-str: i8 轉字串（拓寬至 i64 複用）
 i8.to-str = () (out str) {
-    out = math.i64-to-str(.)
+    v i64 = .
+    out = v.to-str()
 }
 
-; u64.to-str: u64 轉字串
+; u64.to-str: u64 轉字串（直接 Nolang 實現：後端無原生 u64 格式化器，
+; 故把原 math.u64-to-str 的十進位迴圈內聯進方法本體，取代已刪除的函數）
 u64.to-str = () (out str) {
-    out = math.u64-to-str(.)
+
+    ru u64 = .
+    ru == 0 -> {
+        out = with-cap(1)
+
+        out[0] = 48
+        return
+    }
+    tmp = ru
+    digits = 0
+    (tmp > 0) {
+
+        #{overflow=wrap}
+        digits = digits + 1
+
+        #{overflow=wrap}
+        tmp = tmp / 10
+    }
+    out = with-cap(digits)
+
+    #{overflow=wrap}
+    pos = digits - 1
+    (ru > 0) {
+
+        #{overflow=wrap}
+        d = ru % 10
+
+        #{overflow=wrap}
+        ascii = d + 48
+
+        out[pos] = ascii
+
+        #{overflow=wrap}
+        ru = ru / 10
+
+        #{overflow=wrap}
+        pos = pos - 1
+    }
 }
 
-; u32.to-str: u32 轉字串（隱式拓寬至 u64）
+; u32.to-str: u32 轉字串（隱式拓寬至 u64 後複用 u64.to-str）
 u32.to-str = () (out str) {
-    out = math.u64-to-str(.)
+    v u64 = .
+    out = v.to-str()
 }
 
-; u16.to-str: u16 轉字串
+; u16.to-str: u16 轉字串（拓寬至 u64 複用）
 u16.to-str = () (out str) {
-    out = math.u64-to-str(.)
+    v u64 = .
+    out = v.to-str()
 }
 
-; u8.to-str: u8 轉字串
+; u8.to-str: u8 轉字串（拓寬至 u64 複用）
 u8.to-str = () (out str) {
-    out = math.u64-to-str(.)
+    v u64 = .
+    out = v.to-str()
 }
 
-; byte.to-str: byte 轉字串（無號，等同 u8）
+; byte.to-str: byte 轉字串（無號，拓寬至 u64 複用）
 byte.to-str = () (out str) {
-    out = math.u64-to-str(.)
+    v u64 = .
+    out = v.to-str()
 }
 
-; f64.to-str: f64 轉字串（方法）
+; f64.to-str: f64 轉字串（直接 Nolang 實現，模擬 C %g 格式）
+; 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號。
+; 後端無原生 f64 格式化器（sprintf CLibCall 已移除），故把原 math.f64-to-str
+; 的 %g 例程內聯進方法本體，取代已刪除的函數。LN10 仍沿用 math 模組常量。
 f64.to-str = () (out str) {
-    out = math.f64-to-str(.)
+
+    x f64 = .
+
+    ; 特殊值處理
+    ; 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
+    {
+        x != x -> {
+            out = 'nan'.copy()
+            return
+        }
+
+        x == 0.0 -> {
+            out = '0'.copy()
+            return
+        }
+
+        x + x == x -> {
+            x < 0.0 -> {
+                out = '-inf'.copy()
+                return
+            }
+            out = 'inf'.copy()
+            return
+        }
+    }
+
+    ; 符號處理
+    neg = 0
+    ax = x
+
+    x < 0.0 -> {
+
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    ; 計算指數 e = floor(log10(ax))
+    lg10 = ax.log10()
+    flr = lg10.floor()
+    e = flr.to-i64()
+
+    ; 邊界調整：若 ax >= 10^(e+1)，則 e++
+    #{overflow=wrap}
+    epw = (e + 1).to-f64() * math.LN10
+    upper = epw.exp()
+
+    #{overflow=wrap}
+    ax >= upper -> e = e + 1
+
+    ; 計算 6 位有效數字的整數尾數
+    ; m = round(ax / 10^e * 100000)
+    #{overflow=wrap}
+    bpw = e.to-f64() * math.LN10
+    base = bpw.exp()
+
+    #{overflow=wrap}
+    ax < base -> {
+
+        #{overflow=wrap}
+        e = e - 1
+
+        #{overflow=wrap}
+        bpw2 f64 = e.to-f64() * math.LN10
+        base = bpw2.exp()
+    }
+
+    m = (ax / base * 100000.0 + 0.5).to-i64()
+
+    ; 四捨五入溢出處理
+    #{overflow=wrap}
+    m >= 1000000 -> {
+
+        #{overflow=wrap}
+        m = m / 10
+        e = e + 1
+    }
+
+    ; 將 m 轉為 6 位數字字串（補前導零）
+    digits str = with-cap(6)
+    tmp = m
+    i = 5
+    (i >= 0) {
+
+        #{overflow=wrap}
+        digits[i] = (tmp % 10) + 48
+
+        #{overflow=wrap}
+        tmp = tmp / 10
+
+        #{overflow=wrap}
+        i = i - 1
+    }
+
+    ; 找最後一個非零位（用於去尾隨零）
+    last-nz = 0
+    i = 5
+    (i >= 0) {
+
+        digits[i] != 48 -> {
+            last-nz = i
+            i = -1
+        }
+
+        #{overflow=wrap}
+        i = i - 1
+    }
+
+    ; 決定格式
+    use-sci = 0
+    {
+        e < -4 -> use-sci = 1
+
+        e >= 6 -> use-sci = 1
+    }
+
+    #{overflow=wrap}
+    use-sci == 1 -> {
+
+        ; 科學記號：d.ddddde±NN
+        out = with-cap(20)
+        pos = 0
+        neg == 1 -> {
+
+            out[pos] = 45
+            pos = pos + 1
+        }
+
+        out[pos] = digits[0]
+        pos = pos + 1
+        last-nz >= 1 -> {
+
+            out[pos] = 46
+            pos = pos + 1
+            j = 1
+            (j <= last-nz) {
+
+                out[pos] = digits[j]
+                pos = pos + 1
+                j = j + 1
+            }
+        }
+
+        out[pos] = 101
+        pos = pos + 1
+        ae i64 = e
+        {
+            ae < 0 -> {
+                out[pos] = 45
+                pos = pos + 1
+                ae = 0 - ae
+            }
+
+            -> {
+                out[pos] = 43
+                pos = pos + 1
+            }
+        }
+        estr = ae.to-str()
+        estr.len-bytes() == 1 -> {
+
+            out[pos] = 48
+            pos = pos + 1
+        }
+        j = 0
+        (j < estr.len-bytes()) {
+
+            out[pos] = estr[j]
+            pos = pos + 1
+            j = j + 1
+        }
+        return
+    }
+
+    ; 固定記號
+    #{overflow=wrap}
+    e >= 0 -> {
+
+        #{overflow=wrap}
+        int-digits = e + 1
+        total = int-digits
+        neg == 1 -> total = total + 1
+        last-nz >= int-digits -> {
+
+            #{overflow=wrap}
+            total = total + 1
+            total = total + (last-nz - int-digits + 1)
+        }
+        out = with-cap(total)
+        pos = 0
+        neg == 1 -> {
+
+            out[pos] = 45
+            pos = pos + 1
+        }
+        j = 0
+        (j < int-digits) {
+
+            out[pos] = digits[j]
+            pos = pos + 1
+            j = j + 1
+        }
+        last-nz >= int-digits -> {
+
+            out[pos] = 46
+            pos = pos + 1
+            j = int-digits
+            (j <= last-nz) {
+
+                out[pos] = digits[j]
+                pos = pos + 1
+                j = j + 1
+            }
+        }
+        return
+    }
+
+    ; e < 0: 0.00dddd
+    #{overflow=wrap}
+    lead-zeros = 0 - e - 1
+
+    #{overflow=wrap}
+    total = 2 + lead-zeros + last-nz + 1
+
+    #{overflow=wrap}
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+    pos = 0
+
+    #{overflow=wrap}
+    neg == 1 -> {
+
+        out[pos] = 45
+        pos = pos + 1
+    }
+
+    out[pos] = 48
+
+    #{overflow=wrap}
+    pos = pos + 1
+
+    out[pos] = 46
+
+    #{overflow=wrap}
+    pos = pos + 1
+    j = 0
+    (j < lead-zeros) {
+
+        out[pos] = 48
+
+        #{overflow=wrap}
+        pos = pos + 1
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+    j = 0
+    (j <= last-nz) {
+
+        out[pos] = digits[j]
+
+        #{overflow=wrap}
+        pos = pos + 1
+
+        #{overflow=wrap}
+        j = j + 1
+    }
 }
 
 ; f32.to-str: f32 轉字串（方法）
-; 透過 f32-to-f64 拓寬後委託 f64-to-str，取代 sprintf %g CLibCall
+; 透過 f32.to-f64（#{buildin} 拓寬）後複用 f64.to-str 的 Nolang %g 實現。
 f32.to-str = () (out str) {
-    d = math.f32-to-f64(.)
-    out = math.f64-to-str(d)
+    d = .to-f64()
+    out = d.to-str()
 }
 
 ; ═══════════════════════════════════════════════
-; 數值寬度轉換方法（取代已棄用的 math 函數形式）
+; 數值寬度轉換方法（已取代、刪除舊的 math 函數形式）
 ;   f64-to-i64(.) -> .to-i64()   i64-to-f64(.) -> .to-f64()
 ;   f32-to-f64(.) -> .to-f64()   f64-to-f32(.) -> .to-f32()
-; 底層仍委託 #{buildin} 的 math.* 內在函數。
+; 每個方法即 #{buildin}：無 Nolang 包裝、也不委託 math.* 內在函數——
+; 底層直接走 builtin.LLVMConv（strconv.go 以 Receiver<型別> + "<型別>.to-<目標>"
+; 註冊，浮點轉整數一律用 saturating intrinsic）。上方 to-str 方法同理：
+; 有原生格式化器（i64）者走 #{buildin}，僅有 Nolang 例程（u64/f64）者直接在
+; 方法本體以 Nolang 實現，窄整型則拓寬複用上述方法。
 ; ═══════════════════════════════════════════════
 
 ; f64.to-i64: 浮點轉整數（截斷）
+#{buildin}
 f64.to-i64 = () (out i64) {
-    out = math.f64-to-i64(.)
 }
 
 ; i64.to-f64: 整數轉浮點
+#{buildin}
 i64.to-f64 = () (out f64) {
-    out = math.i64-to-f64(.)
 }
 
 ; f32.to-f64: 將 f32 提升為 f64
+#{buildin}
 f32.to-f64 = () (out f64) {
-    out = math.f32-to-f64(.)
 }
 
 ; f64.to-f32: 將 f64 降為 f32（可能損失精度）
+#{buildin}
 f64.to-f32 = () (out f32) {
-    out = math.f64-to-f32(.)
 }
 
 ; u64.to-f64: 無號整數轉浮點
+#{buildin}
 u64.to-f64 = () (out f64) {
-    out = math.u64-to-f64(.)
 }
 
 ; i128.to-f64: 128 位有號整數轉浮點
+#{buildin}
 i128.to-f64 = () (out f64) {
-    out = math.i128-to-f64(.)
 }
 
 ; u128.to-f64: 128 位無號整數轉浮點
+#{buildin}
 u128.to-f64 = () (out f64) {
-    out = math.u128-to-f64(.)
 }
 
 ; f64.to-u64: 浮點轉 64 位無號整數（饱和）
+#{buildin}
 f64.to-u64 = () (out u64) {
-    out = math.f64-to-u64(.)
 }
 
 ; f64.to-u32: 浮點轉 32 位無號整數（饱和）
+#{buildin}
 f64.to-u32 = () (out u32) {
-    out = math.f64-to-u32(.)
 }
 
 ; f64.to-i32: 浮點轉 32 位有號整數（饱和）
+#{buildin}
 f64.to-i32 = () (out i32) {
-    out = math.f64-to-i32(.)
 }
 
 ; i64.to-i32: 整數位寬收窄（低 32 位截斷）
+#{buildin}
 i64.to-i32 = () (out i32) {
-    out = math.i64-to-i32(.)
 }
 
 ; 注意：不定義 float.to-str 聯合方法（原因見 std/float.no 末尾說明）。
@@ -208,7 +530,7 @@ f64.sqrt = () (res f64) {
 }
 
 f32.sqrt = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.sqrt().to-f32()
 }
 
@@ -236,7 +558,7 @@ f64.cbrt = () (res f64) {
 }
 
 f32.cbrt = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.cbrt().to-f32()
 }
 
@@ -292,7 +614,7 @@ f64.sin = () (res f64) {
 }
 
 f32.sin = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.sin().to-f32()
 }
 
@@ -301,7 +623,7 @@ f64.cos = () (res f64) {
 }
 
 f32.cos = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.cos().to-f32()
 }
 
@@ -313,7 +635,7 @@ f64.tan = () (res f64) {
 }
 
 f32.tan = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.tan().to-f32()
 }
 
@@ -324,7 +646,7 @@ f64.asin = () (res f64) {
 }
 
 f32.asin = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.asin().to-f32()
 }
 
@@ -335,7 +657,7 @@ f64.acos = () (res f64) {
 }
 
 f32.acos = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.acos().to-f32()
 }
 
@@ -344,7 +666,7 @@ f64.atan = () (res f64) {
 }
 
 f32.atan = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.atan().to-f32()
 }
 
@@ -356,7 +678,7 @@ f64.sinh = () (res f64) {
 }
 
 f32.sinh = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.sinh().to-f32()
 }
 
@@ -367,7 +689,7 @@ f64.cosh = () (res f64) {
 }
 
 f32.cosh = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.cosh().to-f32()
 }
 
@@ -379,13 +701,13 @@ f64.tanh = () (res f64) {
 }
 
 f32.tanh = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.tanh().to-f32()
 }
 
 ; 取整（f64/f32 方法；整數型別上取整為恆等，故不提供泛型版本）
 f64.ceil = () (res f64) {
-    t = math.i64-to-f64(math.f64-to-i64(.))
+    t = (.to-i64()).to-f64()
     . == t -> {
         res = t
     }
@@ -399,12 +721,12 @@ f64.ceil = () (res f64) {
 }
 
 f32.ceil = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.ceil().to-f32()
 }
 
 f64.floor = () (res f64) {
-    t = math.i64-to-f64(math.f64-to-i64(.))
+    t = (.to-i64()).to-f64()
     . == t -> {
         res = t
     }
@@ -418,12 +740,12 @@ f64.floor = () (res f64) {
 }
 
 f32.floor = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.floor().to-f32()
 }
 
 f64.round = () (res f64) {
-    t = math.i64-to-f64(math.f64-to-i64(.))
+    t = (.to-i64()).to-f64()
     f = . - t
     . >= 0.0 -> {
         f >= 0.5 -> {
@@ -447,16 +769,16 @@ f64.round = () (res f64) {
 }
 
 f32.round = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.round().to-f32()
 }
 
 f64.trunc = () (res f64) {
-    res = math.i64-to-f64(math.f64-to-i64(.))
+    res = (.to-i64()).to-f64()
 }
 
 f32.trunc = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.trunc().to-f32()
 }
 
@@ -502,7 +824,7 @@ f64.exp = () (res f64) {
 }
 
 f32.exp = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = exp-f64(d).to-f32()
 }
 
@@ -546,7 +868,7 @@ f64.log = () (res f64) {
 }
 
 f32.log = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.log().to-f32()
 }
 
@@ -555,7 +877,7 @@ f64.log10 = () (res f64) {
 }
 
 f32.log10 = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.log10().to-f32()
 }
 
@@ -564,7 +886,7 @@ f64.log2 = () (res f64) {
 }
 
 f32.log2 = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.log2().to-f32()
 }
 
@@ -574,7 +896,7 @@ f64.degrees = () (res f64) {
 }
 
 f32.degrees = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.degrees().to-f32()
 }
 
@@ -584,7 +906,7 @@ f64.radians = () (res f64) {
 }
 
 f32.radians = () (res f32) {
-    d = math.f32-to-f64(.)
+    d = .to-f64()
     res = d.radians().to-f32()
 }
 

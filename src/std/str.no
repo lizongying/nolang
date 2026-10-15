@@ -2300,7 +2300,11 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
         ; D1：`+` 的結果恆為 `?i64`，`int-digits` 全程當普通整數用 → 兩段式 match 解包。
         #{overflow=wrap}
-        int-digits i64 = e + 1
+        tmp-int-digits = e + 1
+        int-digits = tmp-int-digits: {
+            ok -> it
+            -> 0
+        }
         frac-digits = 0
         last-nz >= int-digits -> frac-digits = last-nz - int-digits + 1
         total = int-digits

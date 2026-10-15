@@ -488,8 +488,22 @@ func (p *Parser) classifyBlock() blockType {
 	case lexer.IDENT, lexer.NIL:
 		// Distinguish struct field (name type\n) from tagged enum variant (name type, ...)
 		tok3 := p.look(skip + 2)
+		// Type-match binding arm: `v T -> ...` (tok1=bind, tok2=type, tok3=->).
+		// Must be checked before the struct-field scan below, which would
+		// otherwise walk past the `->` and misclassify the block as blockStruct.
+		if tok3.Type == lexer.RARROW {
+			return blockMatch
+		}
 		if tok3.Type == lexer.NEWLINE || tok3.Type == lexer.RBRACE {
 			return blockStruct
+		}
+		// Trailing field annotation: `name type #{...}` — struct field form.
+		if tok3.Type == lexer.HASH_LBRACE {
+			return blockStruct
+		}
+		// `name type = value` is a let statement, not a struct field.
+		if tok3.Type == lexer.ASSIGN {
+			return blockUnknown
 		}
 		if tok3.Type == lexer.COMMA {
 			// Pure tagged enum: read, write, append, ...
@@ -508,8 +522,22 @@ func (p *Parser) classifyBlock() blockType {
 		// For tagged enum: pattern is IDENT , (then next IDENT, or end)
 		for i := skip + 3; i < skip+30; i++ {
 			t := p.look(i)
+			// Skip annotation groups `#{...}` — their contents must not be
+			// mistaken for struct-field / match-arm tokens.
+			if t.Type == lexer.HASH_LBRACE {
+				for i < skip+30 && t.Type != lexer.RBRACE {
+					i++
+					t = p.look(i)
+				}
+				continue
+			}
 			if t.Type == lexer.NEWLINE || t.Type == lexer.RBRACE || t.Type == lexer.EOF {
 				return blockStruct
+			}
+			// `->` encountered during the scan means this is a match arm
+			// (e.g. type-match binding arm), not a struct field.
+			if t.Type == lexer.RARROW {
+				return blockMatch
 			}
 			if t.Type == lexer.COMMA {
 				// Look at next: if IDENT, could still be struct (more fields) or tagged enum (more variants)
@@ -947,8 +975,22 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 	case lexer.IDENT, lexer.NIL:
 		// Distinguish struct field (name type\n) from tagged enum variant (name type, ...)
 		tok3 := p.look(base + 2)
+		// Type-match binding arm: `v T -> ...` (tok1=bind, tok2=type, tok3=->).
+		// Must be checked before the struct-field scan below, which would
+		// otherwise walk past the `->` and misclassify the block as blockStruct.
+		if tok3.Type == lexer.RARROW {
+			return blockMatch
+		}
 		if tok3.Type == lexer.NEWLINE || tok3.Type == lexer.RBRACE {
 			return blockStruct
+		}
+		// Trailing field annotation: `name type #{...}` — struct field form.
+		if tok3.Type == lexer.HASH_LBRACE {
+			return blockStruct
+		}
+		// `name type = value` is a let statement, not a struct field.
+		if tok3.Type == lexer.ASSIGN {
+			return blockUnknown
 		}
 		if tok3.Type == lexer.COMMA {
 			return blockTaggedEnum
@@ -957,8 +999,22 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		// Scan forward to find comma (tagged enum) or newline (struct)
 		for i := base + 3; i < base+15; i++ {
 			t := p.look(i)
+			// Skip annotation groups `#{...}` — their contents must not be
+			// mistaken for struct-field / match-arm tokens.
+			if t.Type == lexer.HASH_LBRACE {
+				for i < base+15 && t.Type != lexer.RBRACE {
+					i++
+					t = p.look(i)
+				}
+				continue
+			}
 			if t.Type == lexer.COMMA {
 				return blockTaggedEnum
+			}
+			// `->` encountered during the scan means this is a match arm
+			// (e.g. type-match binding arm), not a struct field.
+			if t.Type == lexer.RARROW {
+				return blockMatch
 			}
 			if t.Type == lexer.NEWLINE || t.Type == lexer.RBRACE || t.Type == lexer.EOF {
 				return blockStruct

@@ -111,13 +111,16 @@ t-div-mod = () {
 
 ; ── 整數轉字串 ────────────────────────────────
 t-i64-to-str = () {
-    s = math.i64-to-str(42)
+    v42 i64 = 42
+    s = v42.to-str()
     runner.eq(s.len-bytes(), 2, 'i64-to-str 42 len')
     runner.str-eq(s, '42', 2, 'i64-to-str 42 content')
-    n = math.i64-to-str(-456)
+    vn i64 = -456
+    n = vn.to-str()
     runner.eq(n.len-bytes(), 4, 'i64-to-str -456 len')
     runner.str-eq(n, '-456', 4, 'i64-to-str -456 content')
-    z = math.i64-to-str(0)
+    v0 i64 = 0
+    z = v0.to-str()
     runner.eq(z.len-bytes(), 1, 'i64-to-str 0 len')
     runner.str-eq(z, '0', 1, 'i64-to-str 0 content')
 }
@@ -136,19 +139,23 @@ t-i64-method-to-str = () {
 }
 
 t-u64-to-str = () {
-    s = math.u64-to-str(255)
+    u255 u64 = 255
+    s = u255.to-str()
     runner.eq(s.len(), 3, 'u64-to-str 255 len')
     runner.str-eq(s, '255', 3, 'u64-to-str 255 content')
-    z = math.u64-to-str(0)
+    u0 u64 = 0
+    z = u0.to-str()
     runner.eq(z.len(), 1, 'u64-to-str 0 len')
     runner.str-eq(z, '0', 1, 'u64-to-str 0 content')
 }
 
 ; ── 浮點轉字串 ────────────────────────────────
 t-f64-to-str = () {
-    s = math.f64-to-str(3.14)
+    f314 f64 = 3.14
+    s = f314.to-str()
     runner.str-eq(s, '3.14', 4, 'f64-to-str 3.14')
-    z = math.f64-to-str(0.0)
+    f0 f64 = 0.0
+    z = f0.to-str()
     runner.str-eq(z, '0', 1, 'f64-to-str 0.0')
 }
 
@@ -224,10 +231,10 @@ p4, f4 = runner.test('math.gcd', t-gcd)
 p5, f5 = runner.test('math.lcm', t-lcm)
 p6, f6 = runner.test('number.pow', t-pow)
 p7, f7 = runner.test('math.div/mod', t-div-mod)
-p8, f8 = runner.test('math.i64-to-str', t-i64-to-str)
+p8, f8 = runner.test('i64.to-str', t-i64-to-str)
 p9, f9 = runner.test('number.i64.to-str', t-i64-method-to-str)
-p10, f10 = runner.test('math.u64-to-str', t-u64-to-str)
-p11, f11 = runner.test('math.f64-to-str', t-f64-to-str)
+p10, f10 = runner.test('u64.to-str', t-u64-to-str)
+p11, f11 = runner.test('f64.to-str', t-f64-to-str)
 p12, f12 = runner.test('number.f64.to-str', t-f64-method-to-str)
 p13, f13 = runner.test('number.i128/u128 range const', t-int128-range-const)
 p14, f14 = runner.test('number.i128/u128 sqrt', t-int128-sqrt)

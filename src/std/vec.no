@@ -453,7 +453,7 @@ vec-reverse = (a i64) {
 
 ; []t.to-str: 字串表示
 ; 格式如 '[1, 2, 3]'
-; 元素轉字串：i64 用 i64-to-str（在 number.no 中定義，自動加載）
+; 元素轉字串：逐元素呼叫其自身的 .to-str() 方法（具體型別見 number.no）
 []t.to-str = () (out str) {
     {
         .len() == 0 -> out = '[]'
@@ -466,7 +466,7 @@ vec-reverse = (a i64) {
             last = last - 1
             i <- [0...len()): {
 
-                out = out - math.i64-to-str(.[i])
+                out = out - .[i].to-str()
 
                 i < last -> out = out - ', '
             }

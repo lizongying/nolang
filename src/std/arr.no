@@ -227,7 +227,7 @@
 
 ; [n]t.to-str: 字串表示
 ; 返回 out str: 格式如 '[1, 2, 3]'
-; 元素轉字串：i64 用 i64-to-str（在 number.no 中定義，自動加載）
+; 元素轉字串：逐元素呼叫其自身的 .to-str() 方法（具體型別見 number.no）
 [n]t.to-str = () (out str) {
     {
         n == 0 -> out = '[]'
@@ -239,7 +239,7 @@
             last = n - 1
             i <- [0..n): {
 
-                out = out - math.i64-to-str(.[i])
+                out = out - .[i].to-str()
 
                 i < last -> out = out - ', '
             }
