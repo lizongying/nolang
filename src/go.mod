@@ -3,7 +3,7 @@ module github.com/lizongying/nolang
 go 1.25.4
 
 require (
-	github.com/metamessage/metamessage v0.2.10
+	github.com/metamessage/metamessage v0.2.13
 	go.lsp.dev/jsonrpc2 v0.10.0
 )
 

@@ -2177,7 +2177,13 @@ f64-to-str-general = (x f64, precision i64) (out str) {
     pad = 0
 
     #{overflow=wrap}
-    mn < precision -> pad = precision - mn
+    mn < precision -> {
+        tmp-pad = precision - mn
+        pad = tmp-pad: {
+            ok -> it
+            -> 0
+        }
+    }
 
     ; 找最後一個非零位（用於去尾隨零）
     last-nz = 0
@@ -2305,12 +2311,19 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             ok -> it
             -> 0
         }
-        frac-digits = 0
-        last-nz >= int-digits -> frac-digits = last-nz - int-digits + 1
-        total = int-digits
-        neg == 1 -> total = total + 1
-        frac-digits > 0 -> total = total + 1 + frac-digits
-        out = with-cap(total)
+        frac-digits-opt = 0
+        last-nz >= int-digits -> {
+            #{overflow=wrap}
+            frac-digits-opt = last-nz - int-digits + 1
+        }
+        frac-digits = frac-digits-opt: {
+            ok -> it
+            -> 0
+        }
+        total2 = int-digits
+        neg == 1 -> total2 = total2 + 1
+        frac-digits > 0 -> total2 = total2 + 1 + frac-digits
+        out = with-cap(total2)
         pos = 0
         neg == 1 -> {
             out[pos] = 45
@@ -2331,16 +2344,16 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             }
             pos = pos + 1
         }
-        frac-digits > 0 -> {
+            frac-digits > 0 -> {
             out[pos] = 46
             pos = pos + 1
             j <- [0..frac-digits): {
 
                 #{overflow=wrap}
-                idx = int-digits + j - pad
+                idx2 = int-digits + j - pad
                 {
-                    idx >= 0 && idx < mn -> {
-                        out[pos] = mstr.byte(idx)
+                    idx2 >= 0 && idx2 < mn -> {
+                        out[pos] = mstr.byte(idx2)
                     }
 
                     -> {

@@ -671,6 +671,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 報在「函式定義行」或「無關陳述」上，正是 option-unified.md 記錄的
 	// 「位置不可靠」症狀）。多模組程式下，每條診斷必須自帶正確的 File（由各
 	// Validate* 從節點 SourceFile 填入）；行號回退只會幫倒忙，故直接跳過。
+	singleFile := true
 	{
 		type lineRange struct {
 			startLine int
@@ -678,7 +679,6 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			file      string
 		}
 		var ranges []lineRange
-		singleFile := true
 		var refFile string
 		for _, stmt := range program.Statements {
 			file := parser.GetSourceFile(stmt)
@@ -729,10 +729,15 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 以節點指標為鍵）查不到而產生大量假警報——實測 src/std/arr.no:68 已存在
 	// `#{overflow=wrap}`，merged vet 仍報 :69 未處理溢位；同一份 std 單獨 vet 卻是
 	// 乾淨的。把 std 內部診斷算進使用者/測試檔的 vet 結果只會誤導，故在此過濾。
+	// merged 模式（多檔程式）下跨檔行號無法歸因（singleFile=false → File 為空）
+	// 的診斷也一併過濾——這些幾乎都是 std 內部洩漏。單檔程式（LSP/測試）不走此分支。
 	if !isStdPath(opts.SourcePath) {
 		filtered := results[:0]
 		for _, r := range results {
 			if isStdPath(r.File) {
+				continue
+			}
+			if !singleFile && r.File == "" {
 				continue
 			}
 			filtered = append(filtered, r)

@@ -169,29 +169,29 @@ t-exp-log = () {
 t-f32-math = () {
     v f32 = 4.0
     s = v.sqrt()
-    runner.f64-eq(f32-to-f64(s), 2.0, 0.000001, 'f32: 4.0.sqrt() == 2')
+    runner.f64-eq(s.to-f64(), 2.0, 0.000001, 'f32: 4.0.sqrt() == 2')
     a f32 = 0.0
     sn = a.sin()
-    runner.f64-eq(f32-to-f64(sn), 0.0, 0.000001, 'f32: 0.0.sin() == 0')
+    runner.f64-eq(sn.to-f64(), 0.0, 0.000001, 'f32: 0.0.sin() == 0')
     ee f32 = 2.7182817
     lg = ee.log()
-    runner.f64-eq(f32-to-f64(lg), 1.0, 0.00001, 'f32: e.log() == 1')
+    runner.f64-eq(lg.to-f64(), 1.0, 0.00001, 'f32: e.log() == 1')
     x f32 = 2.5
     c = x.ceil()
-    runner.f64-eq(f32-to-f64(c), 3.0, 0.000001, 'f32: 2.5.ceil() == 3')
+    runner.f64-eq(c.to-f64(), 3.0, 0.000001, 'f32: 2.5.ceil() == 3')
     pi f32 = 3.1415927
     dg = pi.degrees()
-    runner.f64-eq(f32-to-f64(dg), 180.0, 0.0001, 'f32: pi.degrees() == 180')
+    runner.f64-eq(dg.to-f64(), 180.0, 0.0001, 'f32: pi.degrees() == 180')
     w f32 = 27.0
     cb = w.cbrt()
-    runner.f64-eq(f32-to-f64(cb), 3.0, 0.00001, 'f32: 27.0.cbrt() == 3')
+    runner.f64-eq(cb.to-f64(), 3.0, 0.00001, 'f32: 27.0.cbrt() == 3')
     ; 負數：f32.cbrt 走「f32-to-f64 → d.cbrt() → to-f32」，符號必須保留。
     ; d.cbrt() 的接收者是具名區域變數 d，不是外層接收者 —— 這是
     ; resolveCallee 把「型別前綴 == 接收者型別」的呼叫一律當成隱式 self
     ; 時踩到的 codegen 缺陷（詳見 f64.cbrt 的 ax.log()）。
     wn f32 = 0.0 - 8.0
     cbn = wn.cbrt()
-    runner.f64-eq(f32-to-f64(cbn), -2.0, 0.00001, 'f32: (-8.0).cbrt() == -2')
+    runner.f64-eq(cbn.to-f64(), -2.0, 0.00001, 'f32: (-8.0).cbrt() == -2')
 }
 
 t-i64-math = () {

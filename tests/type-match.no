@@ -2,11 +2,11 @@
 num = i32 | i64 | f64
 
 ; 用戶範例：按被匹配值的具體型別靜態選臂
-num.clamp0 = (lo num, hi num) (r num) {
-  r = r: {
+clamp0 = (x num, lo num, hi num) (r num) {
+  r = x: {
     i32 -> lo
     i64 -> hi
-    -> r
+    -> x
   }
 }
 
@@ -32,29 +32,27 @@ add1 = (x num) {
   print(r)
 }
 
-main = {
-  ; ---- clamp0 ----
-  ai64 i64 = 5
-  hi64 i64 = 10
-  a = clamp0(ai64, hi64)           ; -> i64 臂 -> hi = 10
-  print(a)
-  bi32 i32 = 3
-  hi32 i32 = 9
-  b = clamp0(bi32, hi32)           ; -> i32 臂 -> lo = 3
-  print(b)
-  bf64 f64 = 2.5
-  hf64 f64 = 9.0
-  c = clamp0(bf64, hf64)           ; -> 無 f64 臂 -> 預設臂 -> r = 2.5
-  print(c)
+; ---- clamp0 ----
+ai64 i64 = 5
+hi64 i64 = 10
+a = clamp0(ai64, 0, hi64)         ; -> i64 臂 -> hi = 10
+print(a)
+bi32 i32 = 3
+hi32 i32 = 9
+b = clamp0(bi32, bi32, 0)         ; -> i32 臂 -> lo = 3
+print(b)
+bf64 f64 = 2.5
+hf64 f64 = 9.0
+c = clamp0(bf64, bf64, hf64)      ; -> 無 f64 臂 -> 預設臂 -> r = x = 2.5
+print(c)
 
-  ; ---- classify ----
-  bi64 i64 = 7
-  classify(bi64)                 ; -> "7"
-  classify(bi32)                 ; -> "7"
-  classify(bf64)                 ; -> "7.5"
+; ---- classify ----
+bi64 i64 = 7
+classify(bi64)                 ; -> "7"
+classify(bi32)                 ; -> "7"
+classify(bf64)                 ; -> "7.5"
 
-  ; ---- add1 ----
-  add1(bi64)                    ; -> 11
-  add1(bi32)                    ; -> 12
-  add1(bf64)                    ; -> 13
-}
+; ---- add1 ----
+add1(bi64)                    ; -> 11
+add1(bi32)                    ; -> 12
+add1(bf64)                    ; -> 13

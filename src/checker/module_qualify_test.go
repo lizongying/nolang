@@ -90,26 +90,26 @@ func TestUndefinedVarsUnionMethodShortFormStaysBare(t *testing.T) {
 }
 
 // TestUndefinedVarsSelfModuleBareIsAllowed verifies the module-aware carve-out:
-// a std module calling its OWN function bare (math.no calling f64-to-i64) is
+// a std module calling its OWN function bare (math.no calling char-to-str) is
 // legal, while the same call from another module is still flagged. The entry
 // file resolves to the current module; the merged self-module statements carry
 // an empty SourceFile and fall back to it.
 func TestUndefinedVarsSelfModuleBareIsAllowed(t *testing.T) {
 	// Within math.no (owner == curModule) -> no diagnostic.
-	prog := mustParse(t, "x = f64-to-i64(1.5)\n")
+	prog := mustParse(t, "x = char-to-str('a')\n")
 	results := ValidateUndefinedVars(prog, "", "/repo/src/std/math.no")
-	if msg := undefinedFor(results, "f64-to-i64"); msg != "" {
-		t.Fatalf("self-module bare 'f64-to-i64' inside math.no must be allowed, got: %q\nall: %+v", msg, results)
+	if msg := undefinedFor(results, "char-to-str"); msg != "" {
+		t.Fatalf("self-module bare 'char-to-str' inside math.no must be allowed, got: %q\nall: %+v", msg, results)
 	}
 	// From a different module (str.no) -> still a cross-module violation.
-	prog2 := mustParse(t, "x = f64-to-i64(1.5)\n")
+	prog2 := mustParse(t, "x = char-to-str('a')\n")
 	results2 := ValidateUndefinedVars(prog2, "", "/repo/src/std/str.no")
-	msg2 := undefinedFor(results2, "f64-to-i64")
+	msg2 := undefinedFor(results2, "char-to-str")
 	if msg2 == "" {
-		t.Fatalf("cross-module bare 'f64-to-i64' from str.no must be flagged, got: %+v", results2)
+		t.Fatalf("cross-module bare 'char-to-str' from str.no must be flagged, got: %+v", results2)
 	}
-	if !strings.Contains(msg2, "math.f64-to-i64") {
-		t.Fatalf("expected hint to name 'math.f64-to-i64', got: %q", msg2)
+	if !strings.Contains(msg2, "math.char-to-str") {
+		t.Fatalf("expected hint to name 'math.char-to-str', got: %q", msg2)
 	}
 }
 

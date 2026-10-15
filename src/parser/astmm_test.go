@@ -25,9 +25,9 @@ func parseFile(t *testing.T, path string) *parser.Program {
 	return prog
 }
 
-// TestNodeTableRoundTripStd：對 std 語料逐模組做 編碼→解碼，用 L2 oracle
+// TestASTTreeRoundTripStd：對 std 語料逐模組做 編碼→解碼，用 L2 oracle
 // （dump 文本）做逐位元組等價判據——含註解副表，所以 nodeSem 的往返也被覆蓋。
-func TestNodeTableRoundTripStd(t *testing.T) {
+func TestASTTreeRoundTripStd(t *testing.T) {
 	root := filepath.Join("..", "std")
 	var files []string
 	filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
@@ -44,13 +44,13 @@ func TestNodeTableRoundTripStd(t *testing.T) {
 	failed := 0
 	for _, f := range files {
 		prog := parseFile(t, f)
-		nt, err := parser.EncodeNodeTable(prog, "")
+		nt, err := parser.EncodeASTTree(prog, "")
 		if err != nil {
 			t.Errorf("%s: encode: %v", f, err)
 			failed++
 			continue
 		}
-		back, err := parser.DecodeNodeTable(nt)
+		back, err := parser.DecodeASTTree(nt)
 		if err != nil {
 			t.Errorf("%s: decode: %v", f, err)
 			failed++
@@ -69,25 +69,25 @@ func TestNodeTableRoundTripStd(t *testing.T) {
 		_ = strings.TrimSpace
 	}
 	if failed != 0 {
-		t.Fatalf("%d/%d modules failed the mm node-table round trip", failed, len(files))
+		t.Fatalf("%d/%d modules failed the mm ast-tree round trip", failed, len(files))
 	}
 	t.Logf("round-tripped %d std modules", len(files))
 }
 
-// TestNodeTableVersionGuard：版本不符必須硬錯，不靜默解出結構不同的樹。
-func TestNodeTableVersionGuard(t *testing.T) {
+// TestASTTreeVersionGuard：版本不符必須硬錯，不靜默解出結構不同的樹。
+func TestASTTreeVersionGuard(t *testing.T) {
 	prog := parseFile(t, filepath.Join("..", "std", "vec.no"))
-	nt, err := parser.EncodeNodeTable(prog, "")
+	nt, err := parser.EncodeASTTree(prog, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	nt.Ver = "1900-01-01.0"
-	if _, err := parser.DecodeNodeTable(nt); err == nil {
+	if _, err := parser.DecodeASTTree(nt); err == nil {
 		t.Fatal("expected wire version mismatch error")
 	}
 	nt.Ver = parser.MMWireVersion
 	nt.AstVer = "1900-01-01.0"
-	if _, err := parser.DecodeNodeTable(nt); err == nil {
+	if _, err := parser.DecodeASTTree(nt); err == nil {
 		t.Fatal("expected AST version mismatch error")
 	}
 }
