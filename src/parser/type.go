@@ -1303,6 +1303,18 @@ func buildType(typeStr string, tok lexer.Token) Type {
 // 區分規則：[ 後至 ] 的內容若為空（[]）或純數字（[3]）或問號（[?]，
 // 視為陣列/切片型別，返回 nil；否則視為 map 型別 [K]V，返回 MapType。
 // 例如 "[str]i64" → MapType{Key:str, Value:i64}，"[3]i64" → nil。
+// IsMapTypeString 報告型別字串 s 是否為 map 型別 `[K]V`（導出供 checker 使用）。
+//
+// 必須在「容器分類」之前先判 map：`containerElemType("[str]i64")` 會把 map 的
+// 型別字串誤判為陣列（回傳 "i64"），若不先排除，map 的下標寫入 `m[k] = v`
+// 就會被 idxwrite 之類的檢查誤傷。判定走 parseMapTypeString（[] / [?] / [數字]
+// 都視為陣列或切片而非 map），因此涵蓋**所有**鍵型別，不限於內建鍵名——
+// 比 checker 側只認 str/bool/整數鍵的 checkerKeyCategory 更嚴謹，且與 parser
+// 的型別解析同口徑。
+func IsMapTypeString(s string) bool {
+	return parseMapTypeString(s, lexer.Token{}) != nil
+}
+
 func parseMapTypeString(s string, tok lexer.Token) *MapType {
 	if len(s) < 4 || s[0] != '[' {
 		return nil

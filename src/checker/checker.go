@@ -5560,6 +5560,245 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	return results
 }
 
+const indexWriteTraceID = "idxwrite"
+
+// IndexWriteTraceID 是 indexWriteTraceID 的導出別名：`no build` 需要按 TraceID
+// 挑出下標直寫錯誤並阻斷建置（照 optUnuseTraceID / OptUnuseTraceID 的雙常量模式）。
+const IndexWriteTraceID = indexWriteTraceID
+
+// ValidateIndexWrite 報告所有「下標直寫」——`a[i] = v`（D9 定案：編譯錯誤）。
+//
+// 背景：讀側 `a[i]` 在越界時回傳 option（永不 panic），但寫側今天走
+// `emitIndexStore` 的原始 GEP+store，**沒有任何邊界檢查**；常量越界只由
+// `checkConstIndexBounds` 在編譯期攔，運行期越界就是 raw OOB write。讀側
+// option / 寫側 raw 的不對稱是實打實的記憶體安全洞。
+//
+// 因此下標寫入必須先顯式解包，二選一：
+//  1. place-match（多行；ok 臂的 `it` 綁定元素**位置**，可讀可寫）：
+//     a[i]: {
+//         ok -> it = v
+//         -> _
+//     } —— 越界臂由用戶自選行為；
+//  2. 錯誤上拋：`a[i] ?= v` —— 越界時上拋 nil（要求所在函數有 option 結果參數）。
+//
+// 三道閘門（缺一即誤報）：
+//   - `ae.IsSynthetic` 跳過：D9 place-write 降糖自己就產生 `a[__idx] = __place`，
+//     不跳會把編譯器的產物當成用戶直寫（先例見本函式下方的 `!ae.IsSynthetic`）；
+//   - map `[K]V` 放行：map 無下標寫入語義、走 put/get；且
+//     `containerElemType("[str]i64")` 會把 map 型別字串誤判為陣列，故**必須先判
+//     map 再判容器**；
+//   - 只認直接變數基底（`*parser.Identifier`）：struct-field 基底
+//     （`self.keys[i] = v`）是 wave 1 豁免區，其讀側本就走 legacy 非 option 路徑。
+func ValidateIndexWrite(program *parser.Program, mainFile string) []ValidateResult {
+	if program == nil {
+		return nil
+	}
+	sem := program.Sem
+	var results []ValidateResult
+	seen := map[string]bool{}
+
+	// 與 ValidateUnhandledIndex 同款：合併 std 的 vet 會讓同一份原始檔帶兩種
+	// SourceFile 字串，去重鍵對路徑做正規化。
+	canonPath := func(f string) string {
+		if f == "" {
+			return ""
+		}
+		if i := strings.Index(f, "/std/"); i >= 0 {
+			return "std" + f[i+len("/std/"):]
+		}
+		if strings.HasPrefix(f, "std/") {
+			return f
+		}
+		if a, err := filepath.Abs(f); err == nil {
+			return a
+		}
+		return f
+	}
+
+	report := func(idx *parser.IndexExpression, curFile string, msg string, endCol int) {
+		// 錨在基底識別符（`a` of `a[1] = 2`）而非 `[`：診斷跨到 EndColumn
+		// 正好覆蓋整條指派，LSP 底線落在「哪個容器被直寫」上最直觀。
+		// idx.Pos() 是 `[` 的位置（col 6），會讓底線從 `[` 起、漏掉容器名。
+		p := idx.Pos()
+		if id, ok := idx.Left.(*parser.Identifier); ok {
+			p = id.Pos()
+		}
+		line, col := p.Line, p.Column
+		key := fmt.Sprintf("%s|%d:%d", canonPath(curFile), line, col)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		results = append(results, ValidateResult{
+			Line:      line,
+			Column:    col,
+			EndColumn: endCol,
+			File:      curFile,
+			Message:   msg,
+			TraceID:   indexWriteTraceID,
+		})
+	}
+
+	// baseTypeOf 取索引基底變數的容器型別字串；非直接變數基底回傳 ""。
+	// 與 isSafeBase 同口徑：只查 IdxLocalTypes（lower 預掃描，無跨函數污染）。
+	baseTypeOf := func(curFunc string, idx *parser.IndexExpression) string {
+		if idx == nil || idx.Left == nil {
+			return ""
+		}
+		ident, ok := idx.Left.(*parser.Identifier)
+		if !ok {
+			return ""
+		}
+		funcKeys := []string{curFunc}
+		if i := strings.Index(curFunc, "."); i >= 0 {
+			funcKeys = append(funcKeys, curFunc[i+1:])
+		}
+		if sem != nil && sem.IdxLocalTypes != nil {
+			for _, cf := range funcKeys {
+				if t, ok := sem.IdxLocalTypes[cf][ident.Value]; ok && t != "" {
+					return strings.TrimPrefix(t, "?")
+				}
+			}
+		}
+		return ""
+	}
+
+	// isContainerWriteBase 判定這個下標寫入是否落在 arr/vec/slice/str/txt 的
+	// 直接變數基底上（map 與 struct-field 基底都放行）。
+	isContainerWriteBase := func(curFunc string, idx *parser.IndexExpression) bool {
+		lt := baseTypeOf(curFunc, idx)
+		if lt == "" {
+			return false
+		}
+		// 先判 map：`containerElemType("[str]i64")` 會把 map 誤判為陣列。
+		if parser.IsMapTypeString(lt) {
+			return false
+		}
+		return parser.ContainerElemType(lt) != ""
+	}
+
+	// resolveFile 與 ValidateUnhandledIndex 同款：節點自帶 SourceFile 優先。
+	resolveFile := func(nodeFile, curFile string) string {
+		if nodeFile != "" {
+			return nodeFile
+		}
+		if curFile != "" {
+			return curFile
+		}
+		return mainFile
+	}
+
+	var walkStmt func(stmt parser.Statement, curFunc string, curFile string)
+	var walkExpr func(e parser.Expression, curFunc string, curFile string)
+
+	walkExpr = func(e parser.Expression, curFunc, curFile string) {
+		if e == nil {
+			return
+		}
+		switch x := e.(type) {
+		case *parser.IfExpression:
+			if x.Consequence != nil {
+				for _, b := range x.Consequence.Statements {
+					walkStmt(b, curFunc, curFile)
+				}
+			}
+			if x.Alternative != nil {
+				for _, b := range x.Alternative.Statements {
+					walkStmt(b, curFunc, curFile)
+				}
+			}
+		case *parser.GroupedExpression:
+			walkExpr(x.Expression, curFunc, curFile)
+		case *parser.PrefixExpression:
+			walkExpr(x.Right, curFunc, curFile)
+		case *parser.InfixExpression:
+			walkExpr(x.Left, curFunc, curFile)
+			walkExpr(x.Right, curFunc, curFile)
+		}
+	}
+
+	walkStmt = func(stmt parser.Statement, curFunc string, curFile string) {
+		if stmt == nil {
+			return
+		}
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			fcf := resolveFile(s.SourceFile, curFile)
+			if s.Body != nil {
+				for _, b := range s.Body.Statements {
+					walkStmt(b, s.Name, fcf)
+				}
+			}
+			return
+		case *parser.ExpressionStatement:
+			if ae, ok := s.Expression.(*parser.AssignExpression); ok {
+				// 合成節點跳過：D9 place-write 降糖自己就產生
+				// `a[__idx] = __place`（IsSynthetic），不能把它當用戶直寫。
+				if !ae.IsSynthetic {
+					if idx, ok := ae.Left.(*parser.IndexExpression); ok {
+						if isContainerWriteBase(curFunc, idx) {
+							tgt := parser.ExprToString(ae.Left)
+							val := parser.ExprToString(ae.Value)
+						// 本语言 match 臂以换行分隔；`,` 與 `;` 均非臂分隔符，且 `;` 是注释
+						// token。逗號形式 `{ ok -> it = v, -> _ }` 複製後被 parseExpression 的 default
+						// 分支靜默吞掉、產生畸形臂（`-> _` 通配臂丟失），故推薦多行形式。
+							msg := fmt.Sprintf("不能通过下标直接赋值 `%s = %s`：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。正确写法（二选一）：\n  1) place-match：ok 臂的 it 是元素位置，可读可写\n     %s: {\n         ok -> it = %s\n         -> _\n     }\n  2) 错误上抛（要求所在函数有 option 结果参数）：`%s ?= %s`",
+								tgt, val, tgt, val, tgt, val)
+							report(idx, resolveFile(s.SourceFile, curFile), msg, s.EndPos().Column)
+						}
+					}
+				}
+			}
+			if s.Expression != nil {
+				walkExpr(s.Expression, curFunc, curFile)
+			}
+		case *parser.MultiAssignStatement:
+			// `x, a[i] = f()`：下標出現在多指派目標裡，同樣是未經解包的直寫。
+			for _, t := range s.Targets {
+				if idx, ok := t.(*parser.IndexExpression); ok {
+					if isContainerWriteBase(curFunc, idx) {
+						tgt := parser.ExprToString(idx)
+					msg := fmt.Sprintf("多赋值中的下标写入目标 `%s` 未经解包：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。请把该目标拆出为 place-match（ok 臂的 it 是元素位置，可读可写），或改用 `?=` 在 option 结果函数中上抛。",
+						tgt)
+						report(idx, resolveFile(s.SourceFile, curFile), msg, s.EndPos().Column)
+					}
+				}
+			}
+			if s.Value != nil {
+				walkExpr(s.Value, curFunc, curFile)
+			}
+		case *parser.LetStatement:
+			if s.Value != nil {
+				walkExpr(s.Value, curFunc, curFile)
+			}
+		case *parser.ForStatement:
+			if s.Init != nil {
+				walkStmt(s.Init, curFunc, curFile)
+			}
+			if s.Condition != nil {
+				walkExpr(s.Condition, curFunc, curFile)
+			}
+			if s.Update != nil {
+				walkStmt(s.Update, curFunc, curFile)
+			}
+			if s.Body != nil {
+				for _, b := range s.Body.Statements {
+					walkStmt(b, curFunc, curFile)
+				}
+			}
+		case *parser.BlockStatement:
+			for _, b := range s.Statements {
+				walkStmt(b, curFunc, curFile)
+			}
+		}
+	}
+
+	for _, stmt := range program.Statements {
+		walkStmt(stmt, "", mainFile)
+	}
+	return results
+}
+
 func checkStringConcatInStmt(stmt parser.Statement, file string) []ValidateResult {
 	var results []ValidateResult
 	if f := parser.GetSourceFile(stmt); f != "" {

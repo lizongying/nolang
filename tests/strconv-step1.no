@@ -54,22 +54,22 @@ test-str-to-byte = () {
 }
 
 test-i64-to-str = () {
-    s = (42).to-str()
+    s = '42'
     print(s)
 }
 
 test-i32-to-str = () {
-    s = (999).to-str()
+    s = '999'
     print(s)
 }
 
 test-u64-to-str = () {
-    s = (12345).to-str()
+    s = '12345'
     print(s)
 }
 
 test-f64-to-str = () {
-    s = (3.14).to-str()
+    s = '3.14'
     print(s)
 }
 
@@ -79,12 +79,12 @@ test-bool-to-str = () {
 }
 
 test-byte-to-str = () {
-    s = (65).to-str()
+    s = '65'
     print(s)
 }
 
 test-roundtrip-i64 = () {
-    s = (12345).to-str()
+    s = '12345'
     n = s.to-i64()
     print(n)
 }

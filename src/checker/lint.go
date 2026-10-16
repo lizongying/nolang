@@ -427,6 +427,19 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		})
 	}
 
+	// 17b. 数字字面量直接转换提示（`(123).to-str()` → 直接写 `'123'`）
+	for _, u := range ValidateLiteralConversion(program) {
+		endCol := u.Column
+		if u.EndColumn > 0 {
+			endCol = u.EndColumn
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
+			Severity: LintHint, Source: "nolang-lint",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+
 	// 18. 函數引數型別校驗（no vet 路徑已在合併前執行，跳過以避免 merged program 誤報）
 	if !opts.SkipTypeChecks {
 		for _, u := range ValidateFuncArgs(program, opts.RootDir) {
@@ -629,6 +642,25 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Severity: LintHint, Source: "nolang-range",
 			File:    file,
 			Message: r.Message, TraceID: r.TraceID,
+		})
+	}
+
+	// 20h. 下標直寫 `a[i] = v`（D9）→ ERROR `idxwrite`，**阻斷建置**。
+	// 與 20e（idxhndld，HINT）不同：讀側產生 option 只是「記得解包」，而寫側
+	// 今天走 `emitIndexStore` 的原始 GEP+store、**完全沒有邊界檢查**，越界就是
+	// raw OOB write —— 這是記憶體安全洞，不是風格問題，故定為 ERROR。
+	// 正確寫法二選一，錯誤文案已直接印出：place-match
+	// 多行 place-match（match 臂以换行分隔）或錯誤上拋 `a[i] ?= v`。
+	for _, u := range ValidateIndexWrite(program, opts.SourcePath) {
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintError, Source: "nolang-index-write",
+			File:    file,
+			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
 

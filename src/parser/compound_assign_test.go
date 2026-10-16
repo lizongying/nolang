@@ -274,13 +274,24 @@ func walkStmtExpr(e Expression, walk func(Statement)) {
 
 // TestCompoundAssignIndexTargetNotDesugared 對照組：`a[i] += 1` 不給降糖後門
 // （重複求值下標，且下標自己現在就是 option）—— 必須**不產生**
-// UnwrapAssignStatement、也不許發 W_COMPOUND_ASSIGN 警告，維持原來的
-// 「parse 後結構壞掉 → 編譯期報錯」現狀，而不是靜靜變成別的語義。
+// UnwrapAssignStatement、也不許發 W_COMPOUND_ASSIGN 警告。
+//
+// D9 之前這是「parse 後結構壞掉 → 靠下游間接報錯」：`+=` 被靜默丟棄，AST 裂成
+// `a[0]` / nil / `1` 三條陳述，程式看起來能編譯但語義全錯。現在 parser 明確
+// 發 ERROR 並給出兩種正確寫法（place-match / `?=`），故本測試改為斷言「有且僅有
+// 一條 parse error」——比原來的「結構壞掉」更直接、也不再依賴下游兜底。
 func TestCompoundAssignIndexTargetNotDesugared(t *testing.T) {
 	for _, op := range []string{"+=", "-=", "*=", "/=", "%="} {
 		t.Run(op, func(t *testing.T) {
 			src := "foo = () (result ?i64) {\n    result = nil\n    a [3]i64 = [1, 2, 3]\n    a[0] " + op + " 1\n}"
-			p, prog := parseSurfaceWarn(t, src)
+			p := New(lexer.New(src))
+			prog := p.ParseProgram()
+			if n := len(p.Errors()); n != 1 {
+				t.Fatalf("`a[0] %s 1`: want exactly 1 parse error, got %d: %v", op, n, p.Errors())
+			}
+			if !strings.Contains(p.Errors()[0], "`a[0] "+op+" 1`") {
+				t.Errorf("error should quote the offending statement: %q", p.Errors()[0])
+			}
 			if n := len(p.WarningsByCode(WarnCompoundAssign)); n != 0 {
 				t.Fatalf("`a[0] %s 1` warned (%d), want no warning — index targets are not desugared", op, n)
 			}

@@ -292,13 +292,13 @@ print(13)
 ; 测试 i64-to-str (非方法)
 ; ═══════════════════════════════════════════════
 test-i64-to-str = () {
-    s1 = (123).to-str()
+    s1 = '123'
     print(s1.len-bytes()); expect: 3
-    s2 = (0).to-str()
+    s2 = '0'
     print(s2.len-bytes()); expect: 1
     s3 = (-42).to-str()
     print(s3.len-bytes()); expect: 3
-    s4 = (9999).to-str()
+    s4 = '9999'
     print(s4.len-bytes()); expect: 4
 }
 test-i64-to-str()

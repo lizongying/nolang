@@ -22,7 +22,7 @@ import (
 // `return "i64"`. The boxed double was stored into an i64-typed slot and read
 // back as an integer, so the payload came out as the raw IEEE-754 bit pattern:
 //
-//	b ?f32 = (3.5).to-f32()
+//	b ?f32 = 3.5
 //	print(b)     -> 4615063718147915776   ; 0x400C000000000000
 //
 // where `?f64` (correctly typed `double`) printed 3.5 and `?i64` printed 7.

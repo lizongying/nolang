@@ -1070,6 +1070,20 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 預設回傳 option<elem>，這是統一規則的常態；「沒解包」由上面的 optunuse 兜底。
 	// 診斷仍會經 RunAllLints 出現在 no vet / LSP（灰色提示），故此處不再呼叫
 	// checker.ValidateUnhandledIndex。
+	//
+	// 下標直寫 `a[i] = v`（D9）→ ERROR `idxwrite`，**阻斷建置**。
+	// 與上面「讀側只提示」相反：寫側走 emitIndexStore 的原始 GEP+store，
+	// **沒有任何邊界檢查**，越界即 raw OOB write，是記憶體安全洞而非風格問題。
+	// 必須先用 place-match 解包（多行形式；match 臂以换行分隔）或 `a[i] ?= v`
+	// 上拋，故在此逐條過濾 TraceID 後匯入硬錯誤。
+	if writeErrs := checker.ValidateIndexWrite(program, t.sourcePath); len(writeErrs) > 0 {
+		for _, e := range writeErrs {
+			if e.TraceID != checker.IndexWriteTraceID {
+				continue
+			}
+			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
+		}
+	}
 	// ?T 輸出參數未初始化檢查（case6）
 	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
 		for _, e := range uninitErrs {

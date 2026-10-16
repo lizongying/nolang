@@ -79,6 +79,10 @@ func (at *ArrayType) String() string {
 // Unknown nodes render through their String() method and, failing even that,
 // as a readable type placeholder — never Go's `%v` struct dump, which would
 // leak `&{Token{...} 0x14000…}` into user-facing text.
+// ExprToString 是 exprToString 的導出包裝：checker / build 的診斷文案需要還原
+// 使用者寫的原始碼片段（例如 idxwrite 要印出 `a[1] = 2`），但它們在 parser 包外。
+func ExprToString(e Expression) string { return exprToString(e) }
+
 func exprToString(e Expression) string {
 	if e == nil {
 		return "?"
@@ -1725,7 +1729,7 @@ type AssignExpression struct {
 	Left  Expression // DotExpression
 	Value Expression
 	// IsSynthetic marks a compiler-generated assignment — today the write-back
-	// store inside the D9 place-match desugar (`a[i]: { ok -> it = v, -> _ }`
+	// store inside the D9 place-match desugar (a[i]: { ok -> it = v / -> _ }, arms on separate lines; match arms separated by newline)
 	// lowers to `a[__idx] = __place`). Like LetStatement.IsSynthetic it keeps
 	// validators (e.g. the idxwrite check) from rejecting constructs the
 	// compiler itself emits.

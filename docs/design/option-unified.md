@@ -18,7 +18,7 @@
 | D6 | 统一规则作用范围                              | 整数 `+ - * / %`、容器索引 `arr[i]`、`str`/`txt` 索引 `s[i]`。**不含**浮点算术、`char` 算术（保持现状）。                                                            |
 | D7 | in-bounds 豁免 | **最终定案（2026-10-15）：两层分离。** ①**用户侧**：即使编译器能静态证明不会溢出/除零/越界，`arr[i]` / 算术**一律产生 `?T`**，后续使用必须解包（match / `?=` / `_ =`）——**无任何用户侧豁免**。②**语言内部**：编译器在能证明安全时**内部消除** option 包装与解包（codegen/MIR 优化，如省略 nil 检查、直接走 ok 分支），用户不可见。`bounds.go` 静态分析保留，服务内部消除与诊断，**不影响用户侧类型**。 |
 | D8 | match 穷尽性                             | **不放宽**。注解使失败情形变成"有值"，`nil`/`err` 臂虽永不触发仍**必须写**——值终究要靠 match 解包出来，match 是唯一的解包语法。不引入"注解后只需 `ok` 臂"的特例。                                   |
-| D9 | 下标写入（index store）                   | **必须显式解包**（2026-10-15 定案）：`a[i] = v` 为 ERROR（新 trace `idxwrite`），正确写法为 place-match `a[i]: { ok -> it = v, -> _ }` 或错误上抛 `a[i] ?= v`；map（`[K]V`）不受影响；D7 两层分离延伸到写入侧（可证明界内 → 内部消除、零开销；用户侧无豁免）。详见 §12。 |
+| D9 | 下标写入（index store）                   | **必须显式解包**（2026-10-15 定案）：`a[i] = v` 为 ERROR（新 trace `idxwrite`），正确写法为 place-match（多行形式，match 臂以换行分隔）或错误上抛 `a[i] ?= v`；map（`[K]V`）不受影响；D7 两层分离延伸到写入侧（可证明界内 → 内部消除、零开销；用户侧无豁免）。详见 §12。 |
 
 ### D1 的直接后果（必须写进预期）
 
@@ -266,7 +266,7 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
   - **明确写出注解只影响行为、不解包**（`#{overflow=wrap}` ⏎ `x = a + b` 的 `x` 仍是 `?i64`）；
   - `-> return` / 空臂零值；
   - in-bounds 豁免取消，并给出 `for i <- arr { x = i }` 这一惯用替代写法。
-  - **下标写入必须显式解包（D9，§12）**：`a[i] = v` 不允许，必须 place-match `a[i]: { ok -> it = v, -> _ }` 或 `a[i] ?= v`；写入侧同样「用户侧恒 option、内部消除」。
+  - **下标写入必须显式解包（D9，§12）**：`a[i] = v` 不允许，必须 place-match（多行形式，match 臂以换行分隔）或 `a[i] ?= v`；写入侧同样「用户侧恒 option、内部消除」。
 - EN 镜像 `docs/i18n/en/.../lang/*.md` 同步（历史上 EN 常落后，需显式跟进）。
 - `docs/docs/lang/memory.md`（若有 option/ownership 相关段落）复核。
 
@@ -400,7 +400,7 @@ z-opt: {
    是错的，需修（ok 臂 `target = it` 的既有结构 `lowering.go:3360` 可复用）。
 2. place-match 的**读侧**形态已存在（安全索引 match 主体 `parts[i]: { ok -> ... }`，
    `checker/stdast_test.go:112-117`；臂文法 `ok -> body` / `-> body` 通配臂，
-   `parser/match.go:96-145`）。D9 把 statement 语境的 `a[i]: { ok -> it = v, -> _ }`
+   `parser/match.go:96-145`）。D9 把 statement 语境的多行 place-match（`a[i]: { ok -> it = v / -> _ }`）
    定为**写入**形态。
 
 ### 12.3 语义规格：两种正确写法
@@ -461,9 +461,13 @@ f = (i i64) (res ?i64) {
 ### 12.6 错误文案定稿（`idxwrite`，ERROR 级，`no vet` 同步）
 
 ```
-不能通过下标直接赋值 'a[1] = 2'：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。正确写法：
-    a[1]: { ok -> it = 2, -> _ }    ; place-match：自行处理越界臂
-    a[1] ?= 2                        ; 错误上抛（要求所在函数有 option 结果参数）
+不能通过下标直接赋值 'a[1] = 2'：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。正确写法（二选一）：
+  1) place-match：ok 臂的 it 是元素位置，可读可写
+     a[1]: {
+         ok -> it = 2
+         -> _
+     }
+  2) 错误上抛（要求所在函数有 option 结果参数）：a[1] ?= 2
 ```
 
 实现要点：checker 新增 `ValidateIndexWrite`（仿 `ValidateUnhandledIndex` 架构：

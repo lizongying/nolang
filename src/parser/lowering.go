@@ -2408,7 +2408,11 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		// 寫的 `it = v`（let / assign 形態）改寫為「求值一次 → 寫回元素 → 重綁 it」。
 		// 值語境（anyArmValueCtx）的 match 保持讀語義：it 是載荷副本，`it = v` 只
 		// 重綁局部，與今天一致。nil/err 臂沒有元素位置可寫，不改寫。
-		if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) {
+		// SkipSafeIndexLowering（no fmt / checker / LSP 等纯 surface 场景）= true
+		// 時跳過：formatter 只能重建「__match_subj 包裝」回 surface 語法，無法重建
+		// __idx/__place 合成寫回；此時讓 match 走純讀語義（it = 載荷副本），surface
+		// 仍可被 formatter 完整往返，編譯時（SkipSafeIndexLowering=false）再真正降糖。
+		if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) && !p.SkipSafeIndexLowering {
 			arm.body = p.rewriteItPlaceWrites(arm.body, tok, baseName, idxTempName, elemType, &placeWriteUsed)
 		}
 		if armType != "" {
@@ -2738,8 +2742,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	if subjName != "" && subjElem != "" && ifExpr != nil {
 		// D9：place-write 發生過 ⇒ 先綁定下標暫存（__idx_L_C = 原下標表達式），
 		// 讀取改走暫存，使「越界檢查的讀」與「ok 臂的寫回」共用同一次下標求值。
+		// SkipSafeIndexLowering 時（no fmt 等）placeWriteUsed 必為 false（改写已
+		// 跳过），故此塊自然不進入，无需额外 gate；保留显式判断以防回归。
 		var preStmts []Statement
-		if placeWriteUsed && origIdxExpr != nil {
+		if placeWriteUsed && origIdxExpr != nil && !p.SkipSafeIndexLowering {
 			preStmts = append(preStmts, &LetStatement{
 				Token:       tok,
 				Name:        &Identifier{Token: tok, Value: idxTempName},
@@ -3010,21 +3016,6 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 				if ie.Alternative != nil {
 					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used); ch {
 						ie.Alternative.Statements = ns
-						changed = true
-					}
-				}
-			}
-		case *IfExpression:
-			if !p.sem.HasRTFlag(n, RTBareMatch) {
-				if n.Consequence != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(n.Consequence.Statements, tok, baseName, idxTempName, elemType, used); ch {
-						n.Consequence.Statements = ns
-						changed = true
-					}
-				}
-				if n.Alternative != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(n.Alternative.Statements, tok, baseName, idxTempName, elemType, used); ch {
-						n.Alternative.Statements = ns
 						changed = true
 					}
 				}
@@ -3323,6 +3314,20 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 					break
 				}
 			}
+		}
+	}
+
+	// --- D9 寫入側 ?=：`a[i] ?= v` ---
+	// 寫入目標為安全索引時，option 性來自「下標讀取」（a[i] 越界回傳 nil），
+	// **不是**右側值 v。現有 generic 檢查（`rhsDefinitelyNonOption(uas.Value)`
+	// 會把字面量 v 當非 option 報錯）在此是錯的，必須走專用分支：構造安全索引
+	// match，ok 臂把 v 經 place 寫回元素位置、nil/err 臂向上傳播錯誤。
+	// 僅當目標是「安全索引基底」（直接 arr/vec/slice 變數）時接管；struct-field
+	// 基底 / map / 未知型別落在 wave 1 豁免區，交回既有 ?= 路徑（其報錯會在 P2
+	// idxwrite 啟用後被更精確的寫入側指引取代）。
+	if uas.Name == nil {
+		if idx, ok := uas.Target.(*IndexExpression); ok && l.p.isSafeIndexBase(idx) {
+			return l.lowerUnwrapAssignToIndex(uas, idx, resultName)
 		}
 	}
 
@@ -3642,6 +3647,104 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		Token:      tok,
 		Statements: stmts,
 	}
+}
+
+// lowerUnwrapAssignToIndex desugars the D9 write-side `?=`:
+//
+//	a[i] ?= v
+//
+// into a safe-index match whose option-ness comes from the INDEX READ
+// (a[i] returns ?elem, nil on out-of-bounds) — NOT from the RHS value v:
+//
+//	a[i]: {
+//	    nil -> { result = __match_subj_L_C; return }   // OOB → 向上傳播
+//	    err -> { result = __match_subj_L_C; return }
+//	    -> { it = v }                                    // ok 臂：經 place 寫回元素位置
+//	}
+//
+// The ok arm's non-synthetic `it = v` triggers the place-write rewrite already
+// implemented in buildMatchDesugar (D9), turning it into
+//
+//	__place = v
+//	a[__idx] = __place   (IsSynthetic store — idxwrite validator 不誤傷)
+//	it = __place
+//
+// The nil/err propagation arms reference the same `__match_subj_L_C` name that
+// buildMatchDesugar synthesizes (it normalizes the index subject to a `?elem`
+// temp of exactly that name), so no separate temp is introduced here.
+func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *IndexExpression, resultName string) Statement {
+	tok := uas.Token
+
+	// 若所在函式沒有 option 結果參數，無法向上傳播越界錯誤 ⇒ 報既有口径錯誤。
+	// （D9 的 idxwrite ERROR 會在 P2 提供更具體的寫入側指引；此處保持 ?= 既有語義。）
+	if resultName == "" {
+		if uas.DeprecatedOp == "" {
+			l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column))
+		}
+		return nil
+	}
+
+	// 推不出元素型別（基底型別未知）⇒ 無法 place-write，報錯。
+	if l.p.inferIndexElemType(idx) == "" {
+		l.p.saveError(fmt.Sprintf("line %d, column %d: cannot determine element type of index target `%s` for `?=` write",
+			tok.Line, tok.Column, exprToString(uas.Target)))
+		return nil
+	}
+
+	// subjName 與 buildMatchDesugar 內部歸一化命名一致（__match_subj_L_C），
+	// 供傳播臂引用越界 option。
+	subjName := fmt.Sprintf("__match_subj_%d_%d", tok.Line, tok.Column)
+
+	// nil / err 傳播臂：result = __match_subj; return。
+	propagate := func() *BlockStatement {
+		return &BlockStatement{Token: tok, Statements: []Statement{
+			&LetStatement{
+				Token:         tok,
+				Name:          &Identifier{Token: tok, Value: resultName},
+				Value:         &Identifier{Token: tok, Value: subjName},
+				IsPropagation: true,
+			},
+			&ReturnStatement{Token: tok},
+		}}
+	}
+	arms := []matchArm{
+		{
+			condition:     &Identifier{Token: tok, Value: "nil"},
+			body:          propagate(),
+			isBlockBody:   true,
+			pos:           posFromToken(tok),
+			skipItBinding: true,
+		},
+		{
+			condition:     &Identifier{Token: tok, Value: "err"},
+			body:          propagate(),
+			isBlockBody:   true,
+			pos:           posFromToken(tok),
+			skipItBinding: true,
+		},
+		{
+			isWildcard:  true,
+			isBlockBody: true,
+			pos:         posFromToken(tok),
+			body: &BlockStatement{
+				Token: tok,
+				Statements: []Statement{
+					&LetStatement{
+						Token: tok,
+						Name:  &Identifier{Token: tok, Value: "it"},
+						Value: uas.Value, // 非合成：觸發 place-write 改寫
+					},
+				},
+			},
+		},
+	}
+
+	sm := &SurfaceMatch{
+		Token:   tok,
+		Matched: idx,
+		Arms:    arms,
+	}
+	return &ExpressionStatement{Token: tok, Expression: l.p.buildMatchDesugar(sm)}
 }
 
 // optionInnerOfVar 回傳變數 name 的 option 元素型別（? 後的 T），非 option 回傳 ""。

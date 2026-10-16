@@ -646,6 +646,26 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 	}
 
+	// D9：索引目標的複合賦算（`a[i] += 1`）不給降糖後門——會重複求值下標，且
+	// 下標自己現在就是 option（越界為 nil）。此前 `+=` 在此被**靜默丟棄**：
+	// AST 裂成 `a[1]` / nil / `1` 三條陳述，程式「看起來能編譯」但語義全錯。
+	// 必須明確報錯，並把兩種正確寫法都印出來（文案風格同 flushCompoundAssigns）。
+	if op, ok := compoundAssignOps[p.currentToken.Type]; ok {
+		if idx, ok := leftExp.(*IndexExpression); ok {
+			tok := p.currentToken
+			p.nextToken() // skip compound op → current = start of RHS
+			val := p.parseExpression(LOWEST)
+			tgt := exprToString(idx)
+			rhs := exprToString(val)
+			p.saveError(fmt.Sprintf(
+				"line %d, column %d: `%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败。请改写成（ok 臂的 it 是元素位置，可读可写）：\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   或 `%s ?= %s %s %s`（错误上抛，要求所在函数有 option 结果参数）",
+				tok.Line, tok.Column, tgt, op, rhs,
+				tgt, op, rhs,
+				tgt, tgt, op, rhs))
+			return leftExp
+		}
+	}
+
 	return leftExp
 }
 
