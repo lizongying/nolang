@@ -40,30 +40,54 @@ rotl32 = (x u32, n i64) (r u32) {
 qr = (state []u32, a i64, b i64, c i64, d i64) {
 
     #{index-out=zero}
-    state[a] = (state[a] + state[b]) & CC-MASK32
+    state[a]: {
+        ok -> it = (state[a] + state[b]) & CC-MASK32
+        -> _
+    }
 
     #{index-out=zero}
-    state[d] = rotl32(state[d] ^ state[a], 16)
+    state[d]: {
+        ok -> it = rotl32(state[d] ^ state[a], 16)
+        -> _
+    }
 
     #{index-out=zero}
-    state[c] = (state[c] + state[d]) & CC-MASK32
+    state[c]: {
+        ok -> it = (state[c] + state[d]) & CC-MASK32
+        -> _
+    }
 
     ; ⚠️ 原錯寫成 state[d] = rotl(state[d]^state[c], 12)：quarter-round 中
     ;    輪 16/8 作用於 d，輪 12/7 應作用於 b（RFC 8439 §2.1）。
     #{index-out=zero}
-    state[b] = rotl32(state[b] ^ state[c], 12)
+    state[b]: {
+        ok -> it = rotl32(state[b] ^ state[c], 12)
+        -> _
+    }
 
     #{index-out=zero}
-    state[a] = (state[a] + state[b]) & CC-MASK32
+    state[a]: {
+        ok -> it = (state[a] + state[b]) & CC-MASK32
+        -> _
+    }
 
     #{index-out=zero}
-    state[d] = rotl32(state[d] ^ state[a], 8)
+    state[d]: {
+        ok -> it = rotl32(state[d] ^ state[a], 8)
+        -> _
+    }
 
     #{index-out=zero}
-    state[c] = (state[c] + state[d]) & CC-MASK32
+    state[c]: {
+        ok -> it = (state[c] + state[d]) & CC-MASK32
+        -> _
+    }
 
     #{index-out=zero}
-    state[b] = rotl32(state[b] ^ state[c], 7)
+    state[b]: {
+        ok -> it = rotl32(state[b] ^ state[c], 7)
+        -> _
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -80,29 +104,50 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     ; 初始化狀態（16 個 32-bit 字）
     state []u32
 
-    state[0] = CC-SIGMA0
+    state[0]: {
+        ok -> it = CC-SIGMA0
+        -> _
+    }
 
-    state[1] = CC-SIGMA1
+    state[1]: {
+        ok -> it = CC-SIGMA1
+        -> _
+    }
 
-    state[2] = CC-SIGMA2
+    state[2]: {
+        ok -> it = CC-SIGMA2
+        -> _
+    }
 
-    state[3] = CC-SIGMA3
+    state[3]: {
+        ok -> it = CC-SIGMA3
+        -> _
+    }
 
     ; 金鑰（8 個 32-bit 小端字）
     i <- [0..8): {
 
         #{index-out=zero, overflow=wrap}
-        state[4 + i] = (key[i * 4]) | ((key[i * 4 + 1]) << 8) | ((key[i * 4 + 2]) << 16) | ((key[i * 4 + 3]) << 24)
+        state[4 + i]: {
+            ok -> it = (key[i * 4]) | ((key[i * 4 + 1]) << 8) | ((key[i * 4 + 2]) << 16) | ((key[i * 4 + 3]) << 24)
+            -> _
+        }
     }
 
     ; 計數器
-    state[12] = counter
+    state[12]: {
+        ok -> it = counter
+        -> _
+    }
 
     ; Nonce（3 個 32-bit 小端字）
     i <- [0..3): {
 
         #{index-out=zero, overflow=wrap}
-        state[13 + i] = (nonce[i * 4]) | ((nonce[i * 4 + 1]) << 8) | ((nonce[i * 4 + 2]) << 16) | ((nonce[i * 4 + 3]) << 24)
+        state[13 + i]: {
+            ok -> it = (nonce[i * 4]) | ((nonce[i * 4 + 1]) << 8) | ((nonce[i * 4 + 2]) << 16) | ((nonce[i * 4 + 3]) << 24)
+            -> _
+        }
     }
 
     ; 複製初始狀態
@@ -110,7 +155,10 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     i <- [0..16): {
 
         #{index-out=zero}
-        init[i] = state[i]
+        init[i]: {
+            ok -> it = state[i]
+            -> _
+        }
     }
 
     ; 20 輪（10 次雙輪）
@@ -315,7 +363,10 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     i <- [0..aad.len()): {
 
         #{index-out=zero, overflow=wrap}
-        mac-input[pos + i] = aad[i]
+        mac-input[pos + i]: {
+            ok -> it = aad[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -328,7 +379,10 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     i <- [0..pad-len): {
 
         #{overflow=wrap}
-        mac-input[pos + i] = 0
+        mac-input[pos + i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -338,7 +392,10 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     i <- [0..cipher.len()): {
 
         #{index-out=zero, overflow=wrap}
-        mac-input[pos + i] = cipher[i]
+        mac-input[pos + i]: {
+            ok -> it = cipher[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -351,7 +408,10 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     i <- [0..pad-len): {
 
         #{overflow=wrap}
-        mac-input[pos + i] = 0
+        mac-input[pos + i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -361,28 +421,52 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     aad-len = aad.len()
 
     #{overflow=wrap}
-    mac-input[pos + 0] = aad-len & 255
+    mac-input[pos + 0]: {
+        ok -> it = aad-len & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 1] = (aad-len >> 8) & 255
+    mac-input[pos + 1]: {
+        ok -> it = (aad-len >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 2] = (aad-len >> 16) & 255
+    mac-input[pos + 2]: {
+        ok -> it = (aad-len >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 3] = (aad-len >> 24) & 255
+    mac-input[pos + 3]: {
+        ok -> it = (aad-len >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 4] = 0
+    mac-input[pos + 4]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 5] = 0
+    mac-input[pos + 5]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 6] = 0
+    mac-input[pos + 6]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 7] = 0
+    mac-input[pos + 7]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 8
@@ -391,28 +475,52 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     cipher-len = cipher.len()
 
     #{overflow=wrap}
-    mac-input[pos + 0] = cipher-len & 255
+    mac-input[pos + 0]: {
+        ok -> it = cipher-len & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 1] = (cipher-len >> 8) & 255
+    mac-input[pos + 1]: {
+        ok -> it = (cipher-len >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 2] = (cipher-len >> 16) & 255
+    mac-input[pos + 2]: {
+        ok -> it = (cipher-len >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 3] = (cipher-len >> 24) & 255
+    mac-input[pos + 3]: {
+        ok -> it = (cipher-len >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 4] = 0
+    mac-input[pos + 4]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 5] = 0
+    mac-input[pos + 5]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 6] = 0
+    mac-input[pos + 6]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 7] = 0
+    mac-input[pos + 7]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 8
@@ -457,13 +565,19 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     i <- [0..cipher-len): {
 
         #{index-out=zero}
-        cipher[i] = sealed[i]
+        cipher[i]: {
+            ok -> it = sealed[i]
+            -> _
+        }
     }
     tag [16]byte
     i <- [0..16): {
 
         #{index-out=zero, overflow=wrap}
-        tag[i] = sealed[cipher-len + i]
+        tag[i]: {
+            ok -> it = sealed[cipher-len + i]
+            -> _
+        }
     }
 
     ; 3. 構建 Poly1305 輸入並計算期望 tag
@@ -472,7 +586,10 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     i <- [0..aad.len()): {
 
         #{index-out=zero, overflow=wrap}
-        mac-input[pos + i] = aad[i]
+        mac-input[pos + i]: {
+            ok -> it = aad[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -484,7 +601,10 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     i <- [0..pad-len): {
 
         #{overflow=wrap}
-        mac-input[pos + i] = 0
+        mac-input[pos + i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -493,7 +613,10 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     i <- [0..cipher.len()): {
 
         #{index-out=zero, overflow=wrap}
-        mac-input[pos + i] = cipher[i]
+        mac-input[pos + i]: {
+            ok -> it = cipher[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -505,7 +628,10 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     i <- [0..pad-len): {
 
         #{overflow=wrap}
-        mac-input[pos + i] = 0
+        mac-input[pos + i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -514,56 +640,104 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     aad-len = aad.len()
 
     #{overflow=wrap}
-    mac-input[pos + 0] = aad-len & 255
+    mac-input[pos + 0]: {
+        ok -> it = aad-len & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 1] = (aad-len >> 8) & 255
+    mac-input[pos + 1]: {
+        ok -> it = (aad-len >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 2] = (aad-len >> 16) & 255
+    mac-input[pos + 2]: {
+        ok -> it = (aad-len >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 3] = (aad-len >> 24) & 255
+    mac-input[pos + 3]: {
+        ok -> it = (aad-len >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 4] = 0
+    mac-input[pos + 4]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 5] = 0
+    mac-input[pos + 5]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 6] = 0
+    mac-input[pos + 6]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 7] = 0
+    mac-input[pos + 7]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 8
     cipher-len-val = cipher.len()
 
     #{overflow=wrap}
-    mac-input[pos + 0] = cipher-len-val & 255
+    mac-input[pos + 0]: {
+        ok -> it = cipher-len-val & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 1] = (cipher-len-val >> 8) & 255
+    mac-input[pos + 1]: {
+        ok -> it = (cipher-len-val >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 2] = (cipher-len-val >> 16) & 255
+    mac-input[pos + 2]: {
+        ok -> it = (cipher-len-val >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 3] = (cipher-len-val >> 24) & 255
+    mac-input[pos + 3]: {
+        ok -> it = (cipher-len-val >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 4] = 0
+    mac-input[pos + 4]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 5] = 0
+    mac-input[pos + 5]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 6] = 0
+    mac-input[pos + 6]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    mac-input[pos + 7] = 0
+    mac-input[pos + 7]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 8

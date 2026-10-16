@@ -1,8 +1,10 @@
 package parser_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -72,6 +74,129 @@ func TestASTTreeRoundTripStd(t *testing.T) {
 		t.Fatalf("%d/%d modules failed the mm ast-tree round trip", failed, len(files))
 	}
 	t.Logf("round-tripped %d std modules", len(files))
+}
+
+// TestASTTreeStrictEqual：比 dump 更嚴的判據——對 std 語料逐模組做 編碼→解碼，
+// 用反射逐欄位比較**所有已導出欄位**（含 Token 的 Type/Raw/Line/Column、
+// slice 的 nil vs 空、map 內容），要求與原始 parse 產物完全一致。
+func TestASTTreeStrictEqual(t *testing.T) {
+	root := filepath.Join("..", "std")
+	var files []string
+	filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+		if err == nil && !fi.IsDir() && filepath.Ext(p) == ".no" {
+			files = append(files, p)
+		}
+		return nil
+	})
+	if len(files) < 50 {
+		t.Fatalf("expected the std corpus, got %d files", len(files))
+	}
+	failed := 0
+	for _, f := range files {
+		prog := parseFile(t, f)
+		nt, err := parser.EncodeASTTree(prog, "")
+		if err != nil {
+			t.Errorf("%s: encode: %v", f, err)
+			failed++
+			continue
+		}
+		back, err := parser.DecodeASTTree(nt)
+		if err != nil {
+			t.Errorf("%s: decode: %v", f, err)
+			failed++
+			continue
+		}
+		var diffs []string
+		strictDiff(reflect.ValueOf(prog).Elem(), reflect.ValueOf(back).Elem(), "", &diffs, 12)
+		if len(diffs) != 0 {
+			t.Errorf("%s: %d strict diffs", f, len(diffs))
+			for _, d := range diffs {
+				t.Errorf("  %s", d)
+			}
+			failed++
+		}
+	}
+	if failed != 0 {
+		t.Fatalf("%d/%d modules failed strict AST equality", failed, len(files))
+	}
+	t.Logf("strictly equal on %d std modules", len(files))
+}
+
+// strictDiff 遞迴比較兩個值的所有已導出欄位；Token/Position 用 DeepEqual 整體比。
+func strictDiff(a, b reflect.Value, path string, diffs *[]string, max int) {
+	if len(*diffs) >= max || !a.IsValid() || !b.IsValid() {
+		return
+	}
+	if a.Type() != b.Type() {
+		*diffs = append(*diffs, fmt.Sprintf("%s: type %s vs %s", path, a.Type(), b.Type()))
+		return
+	}
+	switch a.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if a.IsNil() != b.IsNil() {
+			*diffs = append(*diffs, fmt.Sprintf("%s: nil %v vs %v", path, a.IsNil(), b.IsNil()))
+			return
+		}
+		if a.IsNil() {
+			return
+		}
+		strictDiff(strictDeref(a), strictDeref(b), path, diffs, max)
+	case reflect.Struct:
+		if t := a.Type(); t == reflect.TypeOf(lexer.Position{}) || t == reflect.TypeOf(lexer.Token{}) {
+			if !reflect.DeepEqual(a.Interface(), b.Interface()) {
+				*diffs = append(*diffs, fmt.Sprintf("%s: %v %v vs %v", path, t, a.Interface(), b.Interface()))
+			}
+			return
+		}
+		for i := 0; i < a.NumField(); i++ {
+			f := a.Type().Field(i)
+			if f.PkgPath != "" { // 未導出（本就不序列化）
+				continue
+			}
+			strictDiff(a.Field(i), b.Field(i), path+"."+f.Name, diffs, max)
+		}
+	case reflect.Slice, reflect.Array:
+		if a.Kind() == reflect.Slice && a.IsNil() != b.IsNil() {
+			*diffs = append(*diffs, fmt.Sprintf("%s: slice nil %v vs %v", path, a.IsNil(), b.IsNil()))
+		}
+		if a.Len() != b.Len() {
+			*diffs = append(*diffs, fmt.Sprintf("%s: len %d vs %d", path, a.Len(), b.Len()))
+			return
+		}
+		for i := 0; i < a.Len(); i++ {
+			strictDiff(a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i), diffs, max)
+		}
+	case reflect.Map:
+		if a.IsNil() != b.IsNil() {
+			*diffs = append(*diffs, fmt.Sprintf("%s: map nil %v vs %v", path, a.IsNil(), b.IsNil()))
+		}
+		if a.Len() != b.Len() {
+			*diffs = append(*diffs, fmt.Sprintf("%s: maplen %d vs %d", path, a.Len(), b.Len()))
+			return
+		}
+		for _, k := range a.MapKeys() {
+			bv := b.MapIndex(k)
+			if !bv.IsValid() {
+				*diffs = append(*diffs, fmt.Sprintf("%s[%v]: missing", path, k))
+				continue
+			}
+			strictDiff(a.MapIndex(k), bv, fmt.Sprintf("%s[%v]", path, k), diffs, max)
+		}
+	default:
+		if !reflect.DeepEqual(a.Interface(), b.Interface()) {
+			*diffs = append(*diffs, fmt.Sprintf("%s: %v=%v vs %v", path, a.Kind(), a.Interface(), b.Interface()))
+		}
+	}
+}
+
+func strictDeref(v reflect.Value) reflect.Value {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return v
+		}
+		v = v.Elem()
+	}
+	return v
 }
 
 // TestASTTreeVersionGuard：版本不符必須硬錯，不靜默解出結構不同的樹。

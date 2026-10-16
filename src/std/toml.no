@@ -360,7 +360,10 @@ toml-unquote = (raw str) (value str, ok bool) {
             }
         }
 
-        value[j] = c
+        value[j]: {
+            ok -> it = c
+            -> _
+        }
 
         #{overflow=wrap}
         j = j + 1

@@ -1770,6 +1770,17 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			f.Close()
 		}
 		hirPkg, idMap := parser.ASTToHIRWithMap(merged)
+		// H0-side desugaring can emit ERRORS (buildMatchDesugar's "empty match arm
+		// cannot determine a value"). They have nowhere else to go — the *Parser
+		// that produced the AST is long gone by this point — so they are folded
+		// into Program.Errors by ASTToHIRWithMap, and checked here. Skipping this
+		// check is what made the target pipeline (ParseProgram(SkipLowering) →
+		// ASTToHIR) silently compile a program whose match arms have no value,
+		// while the shipped path failed the same input: see the Program.Errors
+		// block comment in src/parser/ast.go.
+		if len(merged.Errors) > 0 {
+			return "", fmt.Errorf("%s: %s", t.sourcePath, strings.Join(merged.Errors, "\n"))
+		}
 		parser.PopulateInferredTypes(hirPkg, idMap)
 		if os.Getenv("NOLANG_DEBUG_SELF") != "" {
 			for _, id := range hirPkg.Top {

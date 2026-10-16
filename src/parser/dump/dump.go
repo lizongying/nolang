@@ -750,6 +750,47 @@ func (d *dumper) node(node parser.Node, depth int) {
 	case *parser.AnnotationEntry:
 		d.annotationEntry(n, depth)
 
+	// SurfaceMatch sits LAST, immediately before default. That is a readability
+	// choice, NOT an id-stability one — and the distinction was measured, not
+	// assumed.
+	//
+	// ⚠️ A previous version of this comment claimed the opposite: that
+	// gen_ast_spec.py derives the L2 kind-id table from the switch's source
+	// order, so inserting a case mid-switch would renumber every id after it.
+	// That is FALSE. Both emitters do `kinds = sorted(spec.keys())`
+	// (gen_ast_spec.py:636 and :1403) — kind ids are assigned in ALPHABETICAL
+	// order of the Go type name and are completely independent of where the
+	// case sits. Measured: moving this case from the tail to mid-switch
+	// regenerates compiler/src/asp.no and spec_gen_test.go BYTE-IDENTICALLY.
+	//
+	// The consequence is that the id shift caused by adding SurfaceMatch
+	// (ids 65–72, +1) was UNAVOIDABLE: "SurfaceMatch" sorts between
+	// "StructLiteral" (64) and "TaggedEnumDefinition" (65→66) no matter where
+	// the case is written. There was no placement that kept the diff purely
+	// additive.
+	//
+	// Why keep it at the tail then: the switch is grouped by semantic category
+	// (statements → expressions → literals → types → annotations), and
+	// SurfaceMatch is a sugar node with no natural group; and sitting adjacent
+	// to default — the `<unknown %T>` branch that TestCorpusHasNoUnknownNodes
+	// tripwires — puts the newest case next to the failure mode it exists to
+	// prevent.
+	case *parser.SurfaceMatch:
+		fmt.Fprintf(&d.buf, "%sSurfaceMatch{%s}\n", indent(depth),
+			fields(kvc("arms", len(n.Arms))))
+		d.comments(n, depth+1)
+		if n.Matched != nil {
+			d.node(n.Matched, depth+1)
+		}
+		// `&a` (a copy of the arm), not `&n.Arms[i]`: scripts/gen_ast_spec.py's
+		// HELPER classifier only accepts a bare identifier as a helper argument,
+		// so the indexed form would be reported as "unclassified for body over
+		// Arms" and SurfaceMatch would silently drop out of the L2 spec table.
+		// Dumping is read-only, so dumping the copy is equivalent.
+		for _, a := range n.Arms {
+			d.matchArm(&a, depth+1)
+		}
+
 	default:
 		// Rule 1 violation: an AST node type missing from this switch. Its
 		// entire subtree is invisible from here on. dump_completeness_test.go
@@ -829,6 +870,46 @@ func (d *dumper) annotationStructField(f parser.AnnotationStructField, depth int
 	fmt.Fprintf(&d.buf, "%sAnnotationStructField{%s}\n", indent(depth), kv("name", f.Name))
 	if f.Value != nil {
 		d.node(f.Value, depth+1)
+	}
+}
+
+// matchArm dumps one arm of a SurfaceMatch. MatchArm is not a Node, so it has
+// no case in dumpNode and is reached only through the SurfaceMatch case.
+//
+// Every field that buildMatchDesugar READS or WRITES is rendered on purpose.
+// The freeze gate (ast_freeze_test.go, G1/C6) uses this dump as its oracle, so
+// a field that is not rendered here is a field whose mutation the gate cannot
+// see — and ValueCtx / Body are exactly the fields the desugar touches.
+func (d *dumper) matchArm(a *parser.MatchArm, depth int) {
+	if a == nil {
+		fmt.Fprintf(&d.buf, "%s<nil>\n", indent(depth))
+		return
+	}
+	fmt.Fprintf(&d.buf, "%sMatchArm{%s}\n", indent(depth),
+		fields(kvb("wildcard", a.IsWildcard), kvb("dotVal", a.IsDotVal),
+			kvb("rawCond", a.IsRawCond), kvb("blockBody", a.IsBlockBody),
+			kvb("typeArm", a.IsTypeArm), kvs("typePattern", a.TypePattern),
+			kvs("typeBinding", a.TypeBindingName), kvb("skipIt", a.SkipItBinding),
+			kvb("valueCtx", a.ValueCtx), kv("binding", a.BindingName),
+			kv("bindingVariant", a.BindingVariant),
+			kvs("multiOption", strings.Join(a.MultiOptionPatterns, ",")),
+			kvc("multiValue", len(a.MultiValuePatterns)),
+			kvc("bindingNames", len(a.BindingNames)),
+			kvc("bindingFields", len(a.BindingFields))))
+	if a.Condition != nil {
+		d.node(a.Condition, depth+1)
+	}
+	for _, v := range a.MultiValuePatterns {
+		d.node(v, depth+1)
+	}
+	for _, s := range a.BindingNames {
+		fmt.Fprintf(&d.buf, "%sBindingName{%s}\n", indent(depth+1), kv("name", s))
+	}
+	for _, s := range a.BindingFields {
+		fmt.Fprintf(&d.buf, "%sBindingField{%s}\n", indent(depth+1), kv("name", s))
+	}
+	if a.Body != nil {
+		d.node(a.Body, depth+1)
 	}
 }
 

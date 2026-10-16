@@ -193,12 +193,10 @@ func (a *boundsAnalyzer) mark(e *IndexExpression, ctx boundsCtx) {
 	case *IntegerLiteral:
 		if idx.Value >= 0 && idx.Value < n {
 			a.inb[e] = true
-			e.InBounds = true
 		}
 	case *Identifier:
 		if b, ok := ctx[idx.Value]; ok && b[0] >= 0 && b[1] < n {
 			a.inb[e] = true
-			e.InBounds = true
 		}
 	}
 }
@@ -252,7 +250,7 @@ func (a *boundsAnalyzer) markExpr(e Expression, ctx boundsCtx) {
 		// 拿不到 InBounds 旗标（写侧被读侧支配）。臂体内也可能含下标读。
 		a.markExpr(v.Matched, ctx)
 		for _, arm := range v.Arms {
-			a.markBlock(arm.body, ctx)
+			a.markBlock(arm.Body, ctx)
 		}
 	case *ConditionalExpression:
 		a.markExpr(v.Condition, ctx)

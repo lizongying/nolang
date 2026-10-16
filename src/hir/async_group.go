@@ -2,6 +2,7 @@ package hir
 
 import (
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -524,8 +525,26 @@ func MonomorphizeGo(p *Package) int {
 		}
 	}
 	// Clone each async-colored function that lacks an `-async` variant.
+	//
+	// ⚠️ asyncColored is a MAP, and the clone order becomes the order the new
+	// KFuncDefs are appended to p.Top — i.e. the order functions appear in the
+	// emitted HIR. Iterating the map directly makes the compiler's output
+	// non-deterministic: the same source compiled twice in the same process
+	// produced a different function order (measured on tests/async.no, 18
+	// functions, differing from index 11 onward). That breaks any golden /
+	// hashed comparison of HIR and makes a build non-reproducible. Sorting the
+	// names first pins the order.
+	//
+	// The fixpoint loop above iterates funcByName unsorted too, but that one is
+	// safe: it only propagates booleans to a fixed point, so the final SET is
+	// order-independent even though the traversal is not.
 	n := 0
+	names := make([]string, 0, len(asyncColored))
 	for name := range asyncColored {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		if _, ok := funcByName[name+"-async"]; ok {
 			continue
 		}
@@ -539,11 +558,18 @@ func MonomorphizeGo(p *Package) int {
 		funcByName[name+"-async"] = newID
 		// The clone's body may itself contain `go` calls (to other async
 		// functions). Record their new node ids as go-spawns so the rewrite
-		// below retargets them too.
-		for oldID, newID2 := range oldToNew {
+		// below retargets them too. Sorted for the same reason: oldToNew is a
+		// map keyed by old node id, and this appends to p.GoSpawns, which
+		// later loops iterate.
+		goSpawns := make([]int32, 0, len(oldToNew))
+		for oldID := range oldToNew {
 			if goSpawnIndex(p, oldID) >= 0 {
-				p.GoSpawns = append(p.GoSpawns, newID2)
+				goSpawns = append(goSpawns, oldID)
 			}
+		}
+		sort.Slice(goSpawns, func(a, b int) bool { return goSpawns[a] < goSpawns[b] })
+		for _, oldID := range goSpawns {
+			p.GoSpawns = append(p.GoSpawns, oldToNew[oldID])
 		}
 		n++
 	}

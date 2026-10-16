@@ -247,13 +247,18 @@ f64.to-str = () (out str) {
     }
 
     ; 將 m 轉為 6 位數字字串（補前導零）
-    digits str = with-cap(6)
+    ; ⚠️ 必須給定長度 6（不能只用 with-cap(6)，那會是長度 0 的 str），
+    ; 否則 digits[i] 的 place-match 因越界永遠走 `-> _` 分支、數字寫不進去 → to-str 全亂碼。
+    digits str = '      '
     tmp = m
     i = 5
     (i >= 0) {
 
         #{overflow=wrap}
-        digits[i] = (tmp % 10) + 48
+        digits[i]: {
+            ok -> it = (tmp % 10) + 48
+            -> _
+        }
 
         #{overflow=wrap}
         tmp = tmp / 10

@@ -112,12 +112,18 @@ huffman.build = (lengths []i64, n i64) {
     offs [17]i64
     i <- [0..17): {
 
-        offs[i] = 0
+        offs[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
     i <- [1..16): {
 
         #{overflow=wrap}
-        offs[i + 1] = offs[i] + .count[i]
+        offs[i + 1]: {
+            ok -> it = offs[i] + .count[i]
+            -> _
+        }
     }
 
     ; 排序符號
@@ -134,7 +140,10 @@ huffman.build = (lengths []i64, n i64) {
             .symbol[idx] = i
 
             #{index-out=zero, overflow=wrap}
-            offs[lengths[i]] = offs[lengths[i]] + 1
+            offs[lengths[i]]: {
+                ok -> it = offs[lengths[i]] + 1
+                -> _
+            }
         }
     }
 }
@@ -233,7 +242,10 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     i <- [0..hclen): {
 
         #{index-out=zero}
-        clens[code-order[i]] = br.read-bits(3)
+        clens[code-order[i]]: {
+            ok -> it = br.read-bits(3)
+            -> _
+        }
     }
 
     ; 建構碼長度 Huffman 表
@@ -257,7 +269,10 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
         #{overflow=wrap}
         {
             sym < 16 -> {
-                lengths[idx] = sym
+                lengths[idx]: {
+                    ok -> it = sym
+                    -> _
+                }
                 idx = idx + 1
             }
 
@@ -271,7 +286,10 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 prev = lengths[idx - 1]
                 j <- [0..cnt): {
 
-                    lengths[idx] = prev
+                    lengths[idx]: {
+                        ok -> it = prev
+                        -> _
+                    }
                     idx = idx + 1
                 }
             }
@@ -283,7 +301,10 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 cnt = br.read-bits(3) + 3
                 j <- [0..cnt): {
 
-                    lengths[idx] = 0
+                    lengths[idx]: {
+                        ok -> it = 0
+                        -> _
+                    }
                     idx = idx + 1
                 }
             }
@@ -295,7 +316,10 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 cnt = br.read-bits(7) + 11
                 j <- [0..cnt): {
 
-                    lengths[idx] = 0
+                    lengths[idx]: {
+                        ok -> it = 0
+                        -> _
+                    }
                     idx = idx + 1
                 }
             }
@@ -314,7 +338,10 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     i <- [0..hdist): {
 
         #{index-out=zero, overflow=wrap}
-        dlengths[i] = lengths[hlit + i]
+        dlengths[i]: {
+            ok -> it = lengths[hlit + i]
+            -> _
+        }
     }
     dc.build(dlengths, hdist)
 }

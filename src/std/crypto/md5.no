@@ -443,7 +443,12 @@ md5 = (data []byte) (out [16]byte) {
     buf [128]byte
 
     ; 固定陣列不保證零初始化，先全部清零
-    zi <- [0..128): buf[zi] = 0
+    zi <- [0..128): {
+        buf[zi]: {
+            ok -> it = 0
+            -> _
+        }
+    }
 
     #{overflow=wrap}
     off = num-full * 64
@@ -470,11 +475,19 @@ md5 = (data []byte) (out [16]byte) {
         base = num-copy-words * 4
 
         #{index-out=zero}
-        k <- [0..copy-rem): buf[base + k] = data[off + base + k]
+        k <- [0..copy-rem): {
+            buf[base + k]: {
+                ok -> it = data[off + base + k]
+                -> _
+            }
+        }
     }
 
     ; 添加 0x80 填充
-    buf[dremain] = 128
+    buf[dremain]: {
+        ok -> it = 128
+        -> _
+    }
 
     ; 決定末塊數量：填充後需為 64 的倍數且末 8 位元組放長度
     ntail = 1

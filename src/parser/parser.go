@@ -103,12 +103,23 @@ type Parser struct {
 	// 的 `__idx_out_N` 區塊（見 no fmt 的 reparse/idempotency 測試）。
 	SkipSafeIndexLowering bool
 
-	// inBoundsIdx 由 lowering 在進入每個函數時計算（bounds.go）：目前函數內
-	// 「可證明越界安全」的索引讀取節點集合。D7 最終定案（兩層分離）後，
-	// isSafeIndexBase **不再**据此对这类读取回传 false——用户侧照常降级为 option、
-	// 照常需要解包。该集合改由 codegen/MIR（内部消除）与 rngidx 等诊断消费，
-	// 不再影响用户侧类型。
-	inBoundsIdx map[*IndexExpression]bool
+	// SkipLowering 控制是否跳過 ParseProgram 收尾的**整個** lowering pass
+	//（lowerProgram + flushCompoundAssigns）。預設 false：編譯器需要降糖後的 IR。
+	//
+	// 設為 true 時 ParseProgram 回傳**含糖 AST**：SurfaceMatch、UnwrapAssignStatement、
+	// GroupedExpression 等糖節點原樣保留，不做任何語義展開、不合成 __cap_N/__opt_N/
+	// __idx_out_N，也不發與降糖相關的 warning/error。呼叫方之後顯式呼叫
+	// (*Parser).LowerSurface(prog) 即可得到與預設路徑**逐位元相同**的輸出
+	//（門禁：src/parser/dump/lowering_seam_test.go 的 TestSkipLoweringMatchesDefaultPath）。
+	//
+	// 用途：docs/design/nolang-parser-lowering-invariants.md 遷移步驟 S1 的接縫。
+	// 含糖 AST 是「Parser 不變量」（P1）的可觀測形態，也是把 checker 前移到
+	// lowering 之前的前提 —— checker 必須能直接對糖節點做檢查。
+	//
+	// ⚠️ 與 SkipUnwrapLowering / SkipSafeIndexLowering 的關係：那兩個是**局部**
+	// 跳過（只為 formatter 保留兩種糖的原始寫法，其餘照常降糖），本開關是**整體**
+	// 跳過。三者的消費方在 S4 一併改讀糖節點後刪除。
+	SkipLowering bool
 
 	// LegacyBlockOverflowPropagation 啟用「區塊級 #{overflow=...}」的**遺留**
 	// 傳播語意（propagateBlockScopedOverflow）。預設 false。
@@ -1591,24 +1602,27 @@ func (p *Parser) ParseProgram() *Program {
 		dbgLeakState("POST-Resolve", program)
 	}
 
-	// Lowering pass：將解析期產出的表層 match 節點（SurfaceMatch）展開為核心
-	// AST（IfExpression 鏈）。必須在 Resolver 之後執行，因為 desugar 需要
-	// sem 中的類型推斷結果；也必須在拷貝 Warnings 之前執行。
-	if os.Getenv("NOLANG_DEBUG_IT") != "" {
-		fmt.Fprintf(os.Stderr, "[debug-it] ParseProgram about to lower: %d statements, filename=%s\n", len(program.Statements), p.Filename)
-	}
-	p.lowerProgram(program)
-	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
-		dbgLeakState("POST-lower", program)
+	// union 別名表：parseTypeAlias 只寫 *Parser.unionMembers，而 parser 實例在
+	// ParseProgram 返回後即被丟棄。今天沒問題（lowering 就在同一個 parser 裡），
+	// 但降糖搬到 H0 後 H0 只拿到 Program，這張表會整個消失 ⇒ isUnionType 一律回
+	// false ⇒ 所有 union match 靜默改走 `x === i32` 執行期比較。故無論是否降糖
+	// 都在這裡匯出（兩條分支之前）。
+	if p.unionMembers != nil && program.Sem != nil {
+		for name, members := range p.unionMembers {
+			program.Sem.SetUnionMembers(name, members)
+		}
 	}
 
-	// 將「安全索引專用」本地型別表（idxLocalTypes）掛到語義副表匯出，供
-	// checker 的 ValidateUnhandledIndex 複現 isSafeIndexBase 的型別查詢（parser
-	// 實例在 ParseProgram 返回後即被丟棄）。
-	program.Sem.IdxLocalTypes = p.idxLocalTypes
-
-	// 函式外的頂層複合賦算（沒有任何 option 結果可上拋）在此收尾定案。
-	p.flushCompoundAssigns(nil)
+	// Lowering pass：將解析期產出的表層糖節點（SurfaceMatch、UnwrapAssignStatement、
+	// GroupedExpression…）展開為核心 AST（IfExpression 鏈等）。必須在 Resolver 之後
+	// 執行，因為 desugar 需要 sem 中的類型推斷結果；也必須在拷貝 Warnings 之前執行。
+	//
+	// 安全索引的證明與局部型別表是解析期 side-table，不是 lowering 產物。
+	// 兩條路徑都先建立同一份資料，確保 SkipLowering→ASTToHIR 不會丟掉 HIR 標記。
+	p.prepareInBoundsMetadata(program)
+	if !p.SkipLowering {
+		p.LowerSurface(program)
+	}
 
 	program.TrailingComments = p.collectDocComments()
 	program.Warnings = append([]string{}, p.Warnings()...)

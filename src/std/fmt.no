@@ -228,12 +228,18 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             out = with-cap(width)
             i <- [0..slen): {
 
-                out[i] = s.byte(i)
+                out[i]: {
+                    ok -> it = s.byte(i)
+                    -> _
+                }
             }
             i <- [0..pad): {
 
                 #{overflow=wrap}
-                out[slen + i] = fill
+                out[slen + i]: {
+                    ok -> it = fill
+                    -> _
+                }
             }
         }
 
@@ -245,17 +251,26 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             right = pad - left
             i <- [0..left): {
 
-                out[i] = fill
+                out[i]: {
+                    ok -> it = fill
+                    -> _
+                }
             }
             i <- [0..slen): {
 
                 #{overflow=wrap}
-                out[left + i] = s.byte(i)
+                out[left + i]: {
+                    ok -> it = s.byte(i)
+                    -> _
+                }
             }
             i <- [0..right): {
 
                 #{overflow=wrap}
-                out[left + slen + i] = fill
+                out[left + slen + i]: {
+                    ok -> it = fill
+                    -> _
+                }
             }
         }
 
@@ -265,12 +280,18 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             out = with-cap(width)
             i <- [0..pad): {
 
-                out[i] = fill
+                out[i]: {
+                    ok -> it = fill
+                    -> _
+                }
             }
             i <- [0..slen): {
 
                 #{overflow=wrap}
-                out[pad + i] = s.byte(i)
+                out[pad + i]: {
+                    ok -> it = s.byte(i)
+                    -> _
+                }
             }
         }
     }
@@ -469,21 +490,30 @@ fmt-group-digits = (digits str, sep i64) (out str) {
     pos = 0
     i <- [0..first): {
 
-        out[pos] = digits.byte(i)
+        out[pos]: {
+            ok -> it = digits.byte(i)
+            -> _
+        }
 
         #{overflow=wrap}
         pos = pos + 1
     }
     g <- [1..ngroups): {
 
-        out[pos] = sep
+        out[pos]: {
+            ok -> it = sep
+            -> _
+        }
 
         #{overflow=wrap}
         pos = pos + 1
         k <- [0..3): {
 
             #{overflow=wrap}
-            out[pos] = digits.byte(first + (g - 1) * 3 + k)
+            out[pos]: {
+                ok -> it = digits.byte(first + (g - 1) * 3 + k)
+                -> _
+            }
 
             #{overflow=wrap}
             pos = pos + 1
@@ -506,7 +536,10 @@ fmt-int = (n i64, spec str) (out str) {
     typ == 99 -> {
         body str = with-cap(1)
 
-        body[0] = n & 255
+        body[0]: {
+            ok -> it = n & 255
+            -> _
+        }
         out = fmt-apply-spec(body, fill, align, width)
         return
     }
@@ -533,7 +566,10 @@ fmt-int = (n i64, spec str) (out str) {
             i <- [0..dlen-v): {
 
                 #{overflow=wrap}
-                digits[i] = full[i + 1]
+                digits[i]: {
+                    ok -> it = full[i + 1]
+                    -> _
+                }
             }
         }
 
@@ -543,7 +579,10 @@ fmt-int = (n i64, spec str) (out str) {
             dlen-v = flen
             i <- [0..dlen-v): {
 
-                digits[i] = full[i]
+                digits[i]: {
+                    ok -> it = full[i]
+                    -> _
+                }
             }
         }
     }
@@ -569,12 +608,18 @@ fmt-int = (n i64, spec str) (out str) {
             new-digits str = with-cap(target)
             i <- [0..pad): {
 
-                new-digits[i] = 48
+                new-digits[i]: {
+                    ok -> it = 48
+                    -> _
+                }
             }
             i <- [0..dlen-v): {
 
                 #{overflow=wrap}
-                new-digits[pad + i] = digits[i]
+                new-digits[pad + i]: {
+                    ok -> it = digits[i]
+                    -> _
+                }
             }
             digits = new-digits
             dlen-v = target
@@ -590,13 +635,19 @@ fmt-int = (n i64, spec str) (out str) {
     pos = 0
     sign-char != 0 -> {
 
-        body[0] = sign-char
+        body[0]: {
+            ok -> it = sign-char
+            -> _
+        }
         pos = 1
     }
     i <- [0..dlen-v): {
 
         #{overflow=wrap}
-        body[pos + i] = digits[i]
+        body[pos + i]: {
+            ok -> it = digits[i]
+            -> _
+        }
     }
 
     ; 套用寬度/對齊（零填充已填滿時為 no-op）
@@ -623,9 +674,15 @@ fmt-uint = (u u64, spec str) (out str) {
             digits = fmt-uint-base(u, 2, false)
             alt == 1 -> {
 
-                prefix[0] = 48
+                prefix[0]: {
+                    ok -> it = 48
+                    -> _
+                }
 
-                prefix[1] = 98
+                prefix[1]: {
+                    ok -> it = 98
+                    -> _
+                }
                 prefix-len = 2
             }
         }
@@ -634,9 +691,15 @@ fmt-uint = (u u64, spec str) (out str) {
             digits = fmt-uint-base(u, 8, false)
             alt == 1 -> {
 
-                prefix[0] = 48
+                prefix[0]: {
+                    ok -> it = 48
+                    -> _
+                }
 
-                prefix[1] = 111
+                prefix[1]: {
+                    ok -> it = 111
+                    -> _
+                }
                 prefix-len = 2
             }
         }
@@ -645,9 +708,15 @@ fmt-uint = (u u64, spec str) (out str) {
             digits = fmt-uint-base(u, 16, false)
             alt == 1 -> {
 
-                prefix[0] = 48
+                prefix[0]: {
+                    ok -> it = 48
+                    -> _
+                }
 
-                prefix[1] = 120
+                prefix[1]: {
+                    ok -> it = 120
+                    -> _
+                }
                 prefix-len = 2
             }
         }
@@ -657,9 +726,15 @@ fmt-uint = (u u64, spec str) (out str) {
             ; p: 指針地址，十六進制小寫，強制 0x 前綴
             digits = fmt-uint-base(u, 16, false)
 
-            prefix[0] = 48
+            prefix[0]: {
+                ok -> it = 48
+                -> _
+            }
 
-            prefix[1] = 120
+            prefix[1]: {
+                ok -> it = 120
+                -> _
+            }
             prefix-len = 2
         }
 
@@ -667,9 +742,15 @@ fmt-uint = (u u64, spec str) (out str) {
             digits = fmt-uint-base(u, 16, true)
             alt == 1 -> {
 
-                prefix[0] = 48
+                prefix[0]: {
+                    ok -> it = 48
+                    -> _
+                }
 
-                prefix[1] = 88
+                prefix[1]: {
+                    ok -> it = 88
+                    -> _
+                }
                 prefix-len = 2
             }
         }
@@ -692,12 +773,18 @@ fmt-uint = (u u64, spec str) (out str) {
             new-digits str = with-cap(target)
             i <- [0..pad): {
 
-                new-digits[i] = 48
+                new-digits[i]: {
+                    ok -> it = 48
+                    -> _
+                }
             }
             i <- [0..dlen): {
 
                 #{overflow=wrap}
-                new-digits[pad + i] = digits[i]
+                new-digits[pad + i]: {
+                    ok -> it = digits[i]
+                    -> _
+                }
             }
             digits = new-digits
             dlen = target
@@ -717,12 +804,18 @@ fmt-uint = (u u64, spec str) (out str) {
     body str = with-cap(body-len)
     i <- [0..prefix-len): {
 
-        body[i] = prefix[i]
+        body[i]: {
+            ok -> it = prefix[i]
+            -> _
+        }
     }
     i <- [0..dlen): {
 
         #{overflow=wrap}
-        body[prefix-len + i] = digits[i]
+        body[prefix-len + i]: {
+            ok -> it = digits[i]
+            -> _
+        }
     }
 
     ; 套用寬度/對齊
@@ -768,11 +861,17 @@ fmt-f64 = (x f64, spec str) (out str) {
                 #{overflow=wrap}
                 new-digits str = with-cap(dlen + 1)
 
-                new-digits[0] = 43
+                new-digits[0]: {
+                    ok -> it = 43
+                    -> _
+                }
                 i <- [0..dlen): {
 
                     #{overflow=wrap}
-                    new-digits[1 + i] = digits[i]
+                    new-digits[1 + i]: {
+                        ok -> it = digits[i]
+                        -> _
+                    }
                 }
                 digits = new-digits
             }
@@ -785,11 +884,17 @@ fmt-f64 = (x f64, spec str) (out str) {
                 #{overflow=wrap}
                 new-digits str = with-cap(dlen + 1)
 
-                new-digits[0] = 32
+                new-digits[0]: {
+                    ok -> it = 32
+                    -> _
+                }
                 i <- [0..dlen): {
 
                     #{overflow=wrap}
-                    new-digits[1 + i] = digits[i]
+                    new-digits[1 + i]: {
+                        ok -> it = digits[i]
+                        -> _
+                    }
                 }
                 digits = new-digits
             }
@@ -819,17 +924,26 @@ fmt-f64 = (x f64, spec str) (out str) {
             new-digits str = with-cap(width)
             i <- [0..sign-len): {
 
-                new-digits[i] = digits[i]
+                new-digits[i]: {
+                    ok -> it = digits[i]
+                    -> _
+                }
             }
             i <- [0..pad): {
 
                 #{overflow=wrap}
-                new-digits[sign-len + i] = 48
+                new-digits[sign-len + i]: {
+                    ok -> it = 48
+                    -> _
+                }
             }
             i <- [0..need): {
 
                 #{overflow=wrap}
-                new-digits[sign-len + pad + i] = digits[sign-len + i]
+                new-digits[sign-len + pad + i]: {
+                    ok -> it = digits[sign-len + i]
+                    -> _
+                }
             }
             digits = new-digits
         }
@@ -860,7 +974,10 @@ fmt-str = (s str, spec str) (out str) {
         body = with-cap(precision)
         i <- [0..precision): {
 
-            body[i] = s.byte(i)
+            body[i]: {
+                ok -> it = s.byte(i)
+                -> _
+            }
         }
     }
 
@@ -871,15 +988,24 @@ fmt-str = (s str, spec str) (out str) {
         #{overflow=wrap}
         quoted str = with-cap(blen + 2)
 
-        quoted[0] = 39
+        quoted[0]: {
+            ok -> it = 39
+            -> _
+        }
         i <- [0..blen): {
 
             #{overflow=wrap}
-            quoted[1 + i] = body.byte(i)
+            quoted[1 + i]: {
+                ok -> it = body.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
-        quoted[blen + 1] = 39
+        quoted[blen + 1]: {
+            ok -> it = 39
+            -> _
+        }
 
         ; 套用寬度/對齊（含引號在內計算寬度）
         out = fmt-apply-spec(quoted, fill, align, width)
@@ -908,25 +1034,52 @@ fmt-bool = (b bool, spec str) (out str) {
     body str = with-cap(5)
     {
         b == true -> {
-            body[0] = 116
+            body[0]: {
+                ok -> it = 116
+                -> _
+            }
 
-            body[1] = 114
+            body[1]: {
+                ok -> it = 114
+                -> _
+            }
 
-            body[2] = 117
+            body[2]: {
+                ok -> it = 117
+                -> _
+            }
 
-            body[3] = 101
+            body[3]: {
+                ok -> it = 101
+                -> _
+            }
         }
 
         -> {
-            body[0] = 102
+            body[0]: {
+                ok -> it = 102
+                -> _
+            }
 
-            body[1] = 97
+            body[1]: {
+                ok -> it = 97
+                -> _
+            }
 
-            body[2] = 108
+            body[2]: {
+                ok -> it = 108
+                -> _
+            }
 
-            body[3] = 115
+            body[3]: {
+                ok -> it = 115
+                -> _
+            }
 
-            body[4] = 101
+            body[4]: {
+                ok -> it = 101
+                -> _
+            }
         }
     }
 

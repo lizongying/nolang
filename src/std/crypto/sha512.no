@@ -3065,23 +3065,35 @@ sha512 = (data []byte) (hash [64]byte) {
     padded []byte
     i <- [0..total-len): {
 
-        padded[i] = 0
+        padded[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; 複製原始資料
     i <- [0..dlen): {
 
         #{index-out=zero}
-        padded[i] = data[i]
+        padded[i]: {
+            ok -> it = data[i]
+            -> _
+        }
     }
 
     ; 填充 0x80
-    padded[dlen] = 128
+    padded[dlen]: {
+        ok -> it = 128
+        -> _
+    }
 
     ; 填充 0x00
     i <- [dlen + 1..total-len - 16): {
 
-        padded[i] = 0
+        padded[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; 填充 bit-len（big-endian 128-bit）
@@ -3089,14 +3101,20 @@ sha512 = (data []byte) (hash [64]byte) {
     i <- [0..8): {
 
         #{overflow=wrap}
-        padded[total-len - 16 + i] = 0
+        padded[total-len - 16 + i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; 低 64 位元
     i <- [0..8): {
 
         #{overflow=wrap}
-        padded[total-len - 8 + i] = (bit-len >> (56 - i * 8)) & 255
+        padded[total-len - 8 + i]: {
+            ok -> it = (bit-len >> (56 - i * 8)) & 255
+            -> _
+        }
     }
 
     ; 處理每個 128 位元組區塊
@@ -3112,7 +3130,10 @@ sha512 = (data []byte) (hash [64]byte) {
         i <- [0..16): {
 
             #{index-out=zero, overflow=wrap}
-            block[i] = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]
+            block[i]: {
+                ok -> it = (padded[offset + i * 8] << 56) | (padded[offset + i * 8 + 1] << 48) | (padded[offset + i * 8 + 2] << 40) | (padded[offset + i * 8 + 3] << 32) | (padded[offset + i * 8 + 4] << 24) | (padded[offset + i * 8 + 5] << 16) | (padded[offset + i * 8 + 6] << 8) | padded[offset + i * 8 + 7]
+                -> _
+            }
         }
         h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
@@ -3262,9 +3283,15 @@ sha512-hex = (data []byte) (hex str) {
     i <- [0..64): {
 
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        hex[i * 2]: {
+            ok -> it = hex-chars[(hash[i] >> 4) & 15]
+            -> _
+        }
 
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[hash[i] & 15]
+        hex[i * 2 + 1]: {
+            ok -> it = hex-chars[hash[i] & 15]
+            -> _
+        }
     }
 }

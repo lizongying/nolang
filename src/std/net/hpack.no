@@ -327,7 +327,10 @@ tables.dyn-add = (name str, value str) {
         j <- [0..prev-name-len): {
 
             #{overflow=wrap}
-            dn-tmp[j] = .dyn-names[i - 1][j]
+            dn-tmp[j]: {
+                ok -> it = .dyn-names[i - 1][j]
+                -> _
+            }
         }
 
         .dyn-names[i] = dn-tmp
@@ -337,7 +340,10 @@ tables.dyn-add = (name str, value str) {
         j <- [0..prev-val-len): {
 
             #{overflow=wrap}
-            dv-tmp[j] = .dyn-values[i - 1][j]
+            dv-tmp[j]: {
+                ok -> it = .dyn-values[i - 1][j]
+                -> _
+            }
         }
 
         .dyn-values[i] = dv-tmp
@@ -756,7 +762,10 @@ tables.encode-header = (name str, value str) (out str) {
         ; 複製到 out
         i <- [0..idx-out.len-bytes()): {
 
-            out[i] = idx-out.byte(i)
+            out[i]: {
+                ok -> it = idx-out.byte(i)
+                -> _
+            }
         }
         out-n = idx-out.len-bytes()
 
@@ -766,7 +775,10 @@ tables.encode-header = (name str, value str) (out str) {
         i <- [0..val-out.len-bytes()): {
 
             #{overflow=wrap}
-            out[out-n + i] = val-out.byte(i)
+            out[out-n + i]: {
+                ok -> it = val-out.byte(i)
+                -> _
+            }
         }
 
         ; 加入動態表
@@ -776,7 +788,10 @@ tables.encode-header = (name str, value str) (out str) {
 
     ; 3. 全新標頭 → Literal with Incremental Indexing（6.2.1），新 name
     ; 格式：01000000（索引 0 = 新 name）
-    out[0] = 64
+    out[0]: {
+        ok -> it = 64
+        -> _
+    }
     out-n = 1
 
     ; 編碼 name
@@ -785,7 +800,10 @@ tables.encode-header = (name str, value str) (out str) {
     i <- [0..name-out.len-bytes()): {
 
         #{overflow=wrap}
-        out[out-n + i] = name-out.byte(i)
+        out[out-n + i]: {
+            ok -> it = name-out.byte(i)
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -797,7 +815,10 @@ tables.encode-header = (name str, value str) (out str) {
     i <- [0..val-out.len-bytes()): {
 
         #{overflow=wrap}
-        out[out-n + i] = val-out.byte(i)
+        out[out-n + i]: {
+            ok -> it = val-out.byte(i)
+            -> _
+        }
     }
 
     ; 加入動態表
@@ -847,14 +868,20 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 ln-tmp str = ''.with-len(lk-name.len-bytes())
                 j <- [0..lk-name.len-bytes()): {
 
-                    ln-tmp[j] = lk-name.byte(j)
+                    ln-tmp[j]: {
+                        ok -> it = lk-name.byte(j)
+                        -> _
+                    }
                 }
 
                 names[count] = ln-tmp
                 lv-tmp str = ''.with-len(lk-val.len-bytes())
                 j <- [0..lk-val.len-bytes()): {
 
-                    lv-tmp[j] = lk-val.byte(j)
+                    lv-tmp[j]: {
+                        ok -> it = lk-val.byte(j)
+                        -> _
+                    }
                 }
 
                 values[count] = lv-tmp
@@ -897,14 +924,20 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
 
-                    nb-tmp[j] = name.byte(j)
+                    nb-tmp[j]: {
+                        ok -> it = name.byte(j)
+                        -> _
+                    }
                 }
 
                 names[count] = nb-tmp
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
 
-                    vb-tmp[j] = value.byte(j)
+                    vb-tmp[j]: {
+                        ok -> it = value.byte(j)
+                        -> _
+                    }
                 }
 
                 values[count] = vb-tmp
@@ -947,14 +980,20 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
 
-                    nb-tmp[j] = name.byte(j)
+                    nb-tmp[j]: {
+                        ok -> it = name.byte(j)
+                        -> _
+                    }
                 }
 
                 names[count] = nb-tmp
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
 
-                    vb-tmp[j] = value.byte(j)
+                    vb-tmp[j]: {
+                        ok -> it = value.byte(j)
+                        -> _
+                    }
                 }
 
                 values[count] = vb-tmp
@@ -994,14 +1033,20 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
 
-                    nb-tmp[j] = name.byte(j)
+                    nb-tmp[j]: {
+                        ok -> it = name.byte(j)
+                        -> _
+                    }
                 }
 
                 names[count] = nb-tmp
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
 
-                    vb-tmp[j] = value.byte(j)
+                    vb-tmp[j]: {
+                        ok -> it = value.byte(j)
+                        -> _
+                    }
                 }
 
                 values[count] = vb-tmp

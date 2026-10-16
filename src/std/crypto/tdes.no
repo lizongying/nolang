@@ -25,13 +25,22 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
     k3 [8]byte
     i <- [0..8): {
 
-        k1[i] = key[i]
+        k1[i]: {
+            ok -> it = key[i]
+            -> _
+        }
 
         #{index-out=zero, overflow=wrap}
-        k2[i] = key[8 + i]
+        k2[i]: {
+            ok -> it = key[8 + i]
+            -> _
+        }
 
         #{index-out=zero, overflow=wrap}
-        k3[i] = key[16 + i]
+        k3[i]: {
+            ok -> it = key[16 + i]
+            -> _
+        }
     }
 
     ; 逐區塊處理（每區塊 8 位元組）
@@ -44,7 +53,10 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
         i <- [0..8): {
 
             #{index-out=zero, overflow=wrap}
-            block[i] = in[blk + i]
+            block[i]: {
+                ok -> it = in[blk + i]
+                -> _
+            }
         }
 
         ; 步驟 1: E_K1
@@ -82,13 +94,22 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     k3 [8]byte
     i <- [0..8): {
 
-        k1[i] = key[i]
+        k1[i]: {
+            ok -> it = key[i]
+            -> _
+        }
 
         #{index-out=zero, overflow=wrap}
-        k2[i] = key[8 + i]
+        k2[i]: {
+            ok -> it = key[8 + i]
+            -> _
+        }
 
         #{index-out=zero, overflow=wrap}
-        k3[i] = key[16 + i]
+        k3[i]: {
+            ok -> it = key[16 + i]
+            -> _
+        }
     }
     out = with-len(n)
     blk = 0
@@ -98,7 +119,10 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
         i <- [0..8): {
 
             #{index-out=zero, overflow=wrap}
-            block[i] = in[blk + i]
+            block[i]: {
+                ok -> it = in[blk + i]
+                -> _
+            }
         }
 
         ; 步驟 1: D_K3
@@ -137,7 +161,10 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     prev [8]byte
     i <- [0..8): {
 
-        prev[i] = iv[i]
+        prev[i]: {
+            ok -> it = iv[i]
+            -> _
+        }
     }
     out = with-len(in.len())
     blk = 0
@@ -148,7 +175,10 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         i <- [0..8): {
 
             #{index-out=zero}
-            xored[i] = (in[blk + i]) ^ (prev[i])
+            xored[i]: {
+                ok -> it = (in[blk + i]) ^ (prev[i])
+                -> _
+            }
         }
 
         ; 3DES 加密
@@ -162,7 +192,10 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             out[blk + i] = enc-block[i]
 
             #{index-out=zero}
-            prev[i] = enc-block[i]
+            prev[i]: {
+                ok -> it = enc-block[i]
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -179,7 +212,10 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     prev [8]byte
     i <- [0..8): {
 
-        prev[i] = iv[i]
+        prev[i]: {
+            ok -> it = iv[i]
+            -> _
+        }
     }
     out = with-len(in.len())
     blk = 0
@@ -189,7 +225,10 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         i <- [0..8): {
 
             #{index-out=zero, overflow=wrap}
-            cipher-block[i] = in[blk + i]
+            cipher-block[i]: {
+                ok -> it = in[blk + i]
+                -> _
+            }
         }
         dec-block []byte
         dec-block = tdes-dec(cipher-block, 8, key)
@@ -199,7 +238,10 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             #{index-out=zero, overflow=wrap}
             out[blk + i] = (dec-block[i]) ^ (prev[i])
 
-            prev[i] = cipher-block[i]
+            prev[i]: {
+                ok -> it = cipher-block[i]
+                -> _
+            }
         }
 
         #{overflow=wrap}

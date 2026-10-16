@@ -297,7 +297,7 @@ test-unsupported-is-live = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 8. 語料覆蓋：71 種節點都有 id 且名字唯一
+; 8. 語料覆蓋：72 種節點都有 id 且名字唯一
 ; ═══════════════════════════════════════════════
 
 test-kind-table = () {
@@ -309,8 +309,18 @@ test-kind-table = () {
     ;    `print(asp.kind-name(asp.K_PROGRAM))` 也正常。
     ;    觸發條件＝「跨模組常量當作**嵌套呼叫**的引數」。
     kprog = asp.K_PROGRAM
-    runner.eq(asp.KIND-COUNT, 71, 'KIND-COUNT = 71')
+    runner.eq(asp.KIND-COUNT, 72, 'KIND-COUNT = 72')
     runner.eq(kprog, 53, 'Program is kind 53')
+    ; SurfaceMatch 是 2026-10-16 新增的種類（dump.go 的 SurfaceMatch case）。
+    ; 它被**追加在 switch 尾端**（default: 之前），所以 id 65 之後的種類才位移，
+    ; 上面釘的 53/35/39 都在位移區之前，必須保持不變。
+    ; ⚠️ 如果不釘它，KIND-COUNT 就算寫錯 71 也只會被數字比對抓到，
+    ;    而 kind-name / kind-id 兩張表對這個種類的條目會是**死條目**——
+    ;    沒有任何人呼叫它，位移錯了也沒人報警。
+    ksrf = asp.K_SURFACE_MATCH
+    runner.eq(ksrf, 65, 'SurfaceMatch is kind 65')
+    runner.eq(asp.kind-id('SurfaceMatch'), ksrf, 'kind-id(SurfaceMatch) round-trips')
+    runner.is-true(asp.kind-name(ksrf).eq-full('SurfaceMatch'), 'kind-name(65) = SurfaceMatch')
     runner.eq(asp.K_IDENTIFIER, 35, 'Identifier is kind 35')
     runner.eq(asp.K_INTEGER_LITERAL, 39, 'IntegerLiteral is kind 39')
     runner.eq(asp.kind-id('Program'), kprog, 'kind-id(Program) round-trips')

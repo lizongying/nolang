@@ -24,7 +24,7 @@ import (
 type SurfaceMatch struct {
 	Token   lexer.Token // LBRACE（裸 match）或 matched match 的起始 token
 	Matched Expression  // 被匹配的表達式；nil 表示裸 match（條件直接使用）
-	Arms    []matchArm
+	Arms    []MatchArm
 
 	// OpeningBraceComment 保留裸 match `{` 同行註釋，lowering 時轉移到 IfExpression。
 	OpeningBraceComment *CommentGroup
@@ -39,15 +39,15 @@ func (sm *SurfaceMatch) EndPos() lexer.Position {
 	if sm.RBracePos.Line > 0 {
 		return sm.RBracePos
 	}
-	if n := len(sm.Arms); n > 0 && sm.Arms[n-1].body != nil {
-		return sm.Arms[n-1].body.EndPos()
+	if n := len(sm.Arms); n > 0 && sm.Arms[n-1].Body != nil {
+		return sm.Arms[n-1].Body.EndPos()
 	}
 	return posFromToken(sm.Token)
 }
 
 // newSurfaceMatch 建立表層 match 節點（不捕獲型別快照；類型推斷由 Resolver pass
 // 寫入語義副表，lowering 時自 p.sem 讀取）。
-func (p *Parser) newSurfaceMatch(tok lexer.Token, matched Expression, arms []matchArm) *SurfaceMatch {
+func (p *Parser) newSurfaceMatch(tok lexer.Token, matched Expression, arms []MatchArm) *SurfaceMatch {
 	return &SurfaceMatch{Token: tok, Matched: matched, Arms: arms}
 }
 
@@ -56,6 +56,72 @@ func (p *Parser) newSurfaceMatch(tok lexer.Token, matched Expression, arms []mat
 // lowerProgram 對整棵 AST 執行 lowering pass：以反射遍歷所有節點，
 // 將 *SurfaceMatch 就地替換為 desugar 後的 IfExpression 鏈。
 // 由 ParseProgram 在解析結束、拷貝 Warnings 之前呼叫。
+// LowerSurface runs the surface-AST lowering pass: it expands every sugar node
+// (SurfaceMatch, UnwrapAssignStatement, GroupedExpression, …) into the core AST,
+// publishes the index side table, and finalises the compound-assignment
+// diagnostics.
+//
+// This is the **single** implementation of the lowering pass. ParseProgram calls
+// it unless Parser.SkipLowering is set, so the deferred path (parse with
+// SkipLowering → … → LowerSurface) and the default path cannot drift apart;
+// src/parser/dump/lowering_seam_test.go proves they produce byte-identical trees
+// over the whole tests/ corpus.
+//
+// It exists as a named entry point so that lowering can be *moved* out of
+// ParseProgram without changing what it does — docs/design/nolang-parser-lowering-invariants.md
+// migration step S1, which needs the checker to run on the sugar-bearing AST
+// before this pass executes.
+//
+// It expects an UNLOWERED tree. Passing an already-lowered program is harmless
+// but pointless: no sugar remains to expand.
+func (p *Parser) LowerSurface(program *Program) {
+	if program == nil {
+		return
+	}
+	if os.Getenv("NOLANG_DEBUG_IT") != "" {
+		fmt.Fprintf(os.Stderr, "[debug-it] LowerSurface called: %d top-level statements, filename=%s\n",
+			len(program.Statements), p.Filename)
+	}
+
+	p.lowerProgram(program)
+	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
+		dbgLeakState("POST-lower", program)
+	}
+
+	// 將「安全索引專用」本地型別表（idxLocalTypes）掛到語義副表匯出，供
+	// checker 的 ValidateUnhandledIndex 複現 isSafeIndexBase 的型別查詢（parser
+	// 實例在 ParseProgram 返回後即被丟棄）。
+	if program.Sem != nil {
+		program.Sem.IdxLocalTypes = p.idxLocalTypes
+	}
+
+	// 函式外的頂層複合賦算（沒有任何 option 結果可上拋）在此收尾定案。
+	p.flushCompoundAssigns(nil)
+
+	// 降糖階段也會產生 warning（複合賦算的棄用提示等）。預設路徑下 ParseProgram
+	// 會在呼叫本函式之後才拷貝 Warnings，所以那裡自然涵蓋；但延後降糖的路徑
+	//（SkipLowering）在 ParseProgram 返回時就已拷貝過一次，必須在這裡補齊，
+	// 否則會靜默丟掉降糖期的診斷。
+	program.Warnings = append([]string{}, p.Warnings()...)
+}
+
+// prepareInBoundsMetadata computes proof results before lowering and stores them
+// in Program.Sem. The analysis remains read-only over the syntax AST; both the
+// default and SkipLowering ParseProgram paths prepare the same node side-table.
+func (p *Parser) prepareInBoundsMetadata(program *Program) {
+	if program == nil {
+		return
+	}
+	p.precomputeIdxLocalTypes(program)
+	if program.Sem == nil {
+		return
+	}
+	program.Sem.IdxLocalTypes = p.idxLocalTypes
+	for idx := range AnalyzeInBoundsIndex(program).Reads {
+		program.Sem.SetIndexInBounds(idx, true)
+	}
+}
+
 func (p *Parser) lowerProgram(prog *Program) {
 	if prog == nil {
 		return
@@ -64,12 +130,6 @@ func (p *Parser) lowerProgram(prog *Program) {
 		fmt.Fprintf(os.Stderr, "[debug-it] lowerProgram called, %d top-level statements\n", len(prog.Statements))
 	}
 	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}}
-	// 全域先行算一份「可證明越界安全」讀取集合，供還沒進入函數作用域時使用
-	// （bounds.go）。進入各函數時會再以該函數的本地型別表精算並合併進來。
-	p.inBoundsIdx = AnalyzeInBoundsIndex(prog).Reads
-	if p.inBoundsIdx == nil {
-		p.inBoundsIdx = map[*IndexExpression]bool{}
-	}
 	l.walk(reflect.ValueOf(prog))
 }
 
@@ -172,21 +232,32 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 直接匹配 *AssignExpression）。同時把外層 ExpressionStatement
 				// 攜帶的 `#{index-out}` 註解轉掛到內層 AssignExpression，否則
 				// 註解查不到、desugar 不觸發，越界索引仍被當成未處理。
-				if es, ok := stmt.(*ExpressionStatement); ok {
-					if ae, ok2 := es.Expression.(*AssignExpression); ok2 {
-						if l.p.sem != nil {
-							if anns := l.p.sem.RawAnnotationsOf(es); len(anns) > 0 {
-								l.p.sem.SetRawAnnotations(ae, anns)
-								// 同時填 Annotations：ResolveProgram 只對解析期直接
-								// 收到 RawAnnotations 的節點（此處為外層 es）回填
-								// Annotations，內層 ae 沒有；maybeIndexOutAssign
-								// 讀 AnnotationsOf，必須在此一併補齊，否則註解查不到。
-								l.p.sem.ensure(ae).Annotations = anns
-							}
+			if es, ok := stmt.(*ExpressionStatement); ok {
+			if l.p.sem != nil {
+				if anns := l.p.sem.RawAnnotationsOf(es); len(anns) > 0 {
+						switch tgt := es.Expression.(type) {
+						case *AssignExpression:
+							l.p.sem.SetRawAnnotations(tgt, anns)
+							// 同時填 Annotations：ResolveProgram 只對解析期直接
+							// 收到 RawAnnotations 的節點（此處為外層 es）回填
+							// Annotations，內層 ae 沒有；maybeIndexOutAssign
+							// 讀 AnnotationsOf，必須在此一併補齊，否則註解查不到。
+							l.p.sem.ensure(tgt).Annotations = anns
+							stmt = tgt
+						case *SurfaceMatch:
+							// D9 place-write：`#{index-out=DEF}` 註解套用到
+							// `v[i]: { ok -> it = ... }` 時，外層 ExpressionStatement
+							// 攜帶註解，但 desugar 主體是內層 SurfaceMatch。把
+							// index-out 條目轉掛到 sm，讓 buildMatchDesugar /
+							// rewriteItPlaceWrites 能還原「注解作用到臂內 RHS 下标
+							// 读取」的舊語意（与 maybeIndexOutAssign 对 AssignExpression
+							// 的處理一致：註解只帶外層、desugar 時才轉移進內層）。
+							l.p.sem.SetRawAnnotations(tgt, anns)
+							l.p.sem.ensure(tgt).Annotations = anns
 						}
-						stmt = ae
 					}
 				}
+			}
 				if !l.p.SkipSafeIndexLowering {
 					if repl := l.maybeIndexOutAssign(stmt); repl != nil {
 						l.carryOverflowAnnotation(carryFrom, repl)
@@ -255,20 +326,14 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 預掃描區域變數容器型別（如 `av = a.to-vec()`），使其被安全索引
 				// 降級辨識（isSafeIndexBase / inferIndexElemType 依賴 FuncVarType）。
 				l.collectLocalTypes(fd)
-				// 以本函數的本地型別表精算「可證明越界安全」讀取集合並合併
-				// （bounds.go）。合併而非取代：頂層/全域陳述的結果已由 lowerProgram
-				// 先行算入，丟棄會讓函數外讀取失去豁免。
-				if l.p.idxLocalTypes != nil {
-					for k, v := range AnalyzInBoundsForFunc(l.p.sem, fd, l.p.idxLocalTypes[fd.Name]) {
-						l.p.inBoundsIdx[k] = v
-					}
-				}
+				// Bounds proof metadata was prepared for the whole Program before
+				// this lowering walk, after precomputeIdxLocalTypes populated the table.
 				isFuncDef = true
 			}
 		}
 		for i := 0; i < v.NumField(); i++ {
 			if t.Field(i).PkgPath != "" {
-				continue // 非導出欄位（AST 子節點欄位均導出；matchArm 由 lowerSurfaceMatch 顯式處理）
+				continue // 非導出欄位（AST 子節點欄位均導出；MatchArm 由 lowerSurfaceMatch 顯式處理）
 			}
 			l.walk(v.Field(i))
 		}
@@ -417,6 +482,80 @@ func gatherLetsInFuncScope(body *BlockStatement) []*LetStatement {
 	}
 	walk(reflect.ValueOf(body))
 	return out
+}
+
+// gatherFuncDefs 以反射走訪整棵程式樹，回傳其中所有的 *FunctionDefinition
+// （含巢狀函式 / 閉包——它們各有自己的 idxLocalTypes 鍵）。只讀導出欄位、
+// 按指標去重（AST 是 DAG，可能有共享節點）。
+//
+// 存在的理由：idxLocalTypes 的填寫（collectLocalTypes）原本只在降糖 pass 的
+// reflection walk 裡發生。跳過降糖時那趟 walk 不跑，表就是空的，所有以它為鍵
+// 的規則（idxwrite / idxhndld / rngidx）會**靜默失效**——不是報錯，是沉默。
+// 這張表描述的是**原始碼的事實**（哪個區域變數是容器），不是降糖的產物，
+// 因此它必須能在不降糖的前提下算出來。見設計稿 §15.2(1)。
+func gatherFuncDefs(root interface{}) []*FunctionDefinition {
+	var out []*FunctionDefinition
+	if root == nil {
+		return out
+	}
+	seen := map[uintptr]bool{}
+	var walk func(rv reflect.Value)
+	walk = func(rv reflect.Value) {
+		switch rv.Kind() {
+		case reflect.Ptr:
+			if rv.IsNil() {
+				return
+			}
+			ptr := rv.Pointer()
+			if seen[ptr] {
+				return
+			}
+			seen[ptr] = true
+			if fd, isFn := rv.Interface().(*FunctionDefinition); isFn {
+				out = append(out, fd)
+			}
+			walk(rv.Elem())
+		case reflect.Interface:
+			if rv.IsNil() {
+				return
+			}
+			walk(rv.Elem())
+		case reflect.Slice:
+			for i := 0; i < rv.Len(); i++ {
+				walk(rv.Index(i))
+			}
+		case reflect.Struct:
+			t := rv.Type()
+			for i := 0; i < t.NumField(); i++ {
+				if t.Field(i).PkgPath != "" {
+					continue // 非導出欄位
+				}
+				walk(rv.Field(i))
+			}
+		}
+	}
+	walk(reflect.ValueOf(root))
+	return out
+}
+
+// precomputeIdxLocalTypes 在不執行降糖 pass 的前提下算出 idxLocalTypes。
+//
+// 為什麼需要獨立入口：collectLocalTypes 只**讀** AST（收集函式作用域內的容器
+// 型別區域變數），卻只被 lowerer.walk 呼叫。於是「跳過降糖」與「有這張表」
+// 被意外綁在一起——S1 要把 checker 移到降糖之前，就會踩到這個耦合。
+//
+// 行為等價性：預設路徑**不呼叫**本函式（它仍走 lowerProgram 內的原地呼叫），
+// 所以降糖路徑的行為逐位元不變；本函式只在 SkipLowering 分支補跑同一批
+// collectLocalTypes，順序與 lowerer.walk 的「先預掃描、再遞進欄位」一致
+// （即兩者都是對**未降糖**的函式體做預掃描）。
+func (p *Parser) precomputeIdxLocalTypes(prog *Program) {
+	if prog == nil {
+		return
+	}
+	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}}
+	for _, fd := range gatherFuncDefs(prog) {
+		l.collectLocalTypes(fd)
+	}
 }
 
 // toVecElemType 從 `a.to-vec()` / `a.to-vec` 這類 RHS 推導容器元素型別。
@@ -685,6 +824,20 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 	if !ok || ls == nil || ls.IsSynthetic || ls.Name == nil || ls.Value == nil {
 		return nil
 	}
+	// D9 place-write / match-payload 重綁定：`it = X` 屬 ok 臂語義，由
+	// buildMatchDesugar 的 rewriteItPlaceWrites（+ desugarIndexOutReads 還原
+	// #{index-out=DEF} 作用域）統一處理 RHS 下标读取降糖與元素寫回。若在此走
+	// 通用捕獲 pass，會把 `it = rotr64(v[d]^v[a],32)` 改寫成 capture SurfaceMatch，
+	// 使 itAssignParts 認不到、RHS 读取未被降糖（capture 產物仍被 checker 視為
+	// ?u64）→ fxxoptarg。直接跳過，交給 place-write lowering 處理。
+	//
+	// ⚠️ 僅在編譯期降糖模式（SkipSafeIndexLowering=false）跳過：此時 D9 place-write
+	// desugar 會接管 `it`。surface 模式（no fmt / LSP，SkipSafeIndexLowering=true）
+	// 不跑 desugar，`it` 可能是普通暫存變數（std 裡大量使用），必須走通用捕獲邏輯，
+	// 否則會改寫 surface AST、破壞 formatter 冪等（TestFormatIdempotent）。
+	if ls.Name.Value == "it" && !l.p.SkipSafeIndexLowering {
+		return nil
+	}
 	// D1：`#{overflow=...}` / `#{index-out=...}` 註解不再豁免捕獲 —— 註解只影響
 	// 「失敗時怎麼取值」的行為，不再把結果型別降級成 plain int（也不再讓子樹免於
 	// 檢查）。已標註的陳述同樣是「未消費的 option」，正是本次遷移的主體。
@@ -804,10 +957,10 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 				&LetStatement{Token: tok, Name: ls.Name, Value: capIdent, IsSynthetic: true, IsPropagation: true},
 			}}
 		}
-		arms := []matchArm{
-			{condition: &Identifier{Token: tok, Value: "nil"}, body: copyArm(), isBlockBody: true, pos: posFromToken(tok), skipItBinding: true},
-			{condition: &Identifier{Token: tok, Value: "err"}, body: copyArm(), isBlockBody: true, pos: posFromToken(tok), skipItBinding: true},
-			{condition: &Identifier{Token: tok, Value: "ok"}, body: &BlockStatement{Token: tok, Statements: []Statement{body}}, isBlockBody: true, pos: posFromToken(tok), skipItBinding: true},
+		arms := []MatchArm{
+			{Condition: &Identifier{Token: tok, Value: "nil"}, Body: copyArm(), IsBlockBody: true, Pos: posFromToken(tok), SkipItBinding: true},
+			{Condition: &Identifier{Token: tok, Value: "err"}, Body: copyArm(), IsBlockBody: true, Pos: posFromToken(tok), SkipItBinding: true},
+			{Condition: &Identifier{Token: tok, Value: "ok"}, Body: &BlockStatement{Token: tok, Statements: []Statement{body}}, IsBlockBody: true, Pos: posFromToken(tok), SkipItBinding: true},
 		}
 		sm := &SurfaceMatch{Token: tok, Matched: capIdent, Arms: arms}
 		savedFuncName := l.p.curFuncName
@@ -1060,9 +1213,9 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 		assignToLHS(&Identifier{Token: tok, Value: "it"}),
 	}}
 	defAssign := assignToLHS(defLit)
-	arms := []matchArm{
-		{condition: &Identifier{Token: tok, Value: "ok"}, body: okBody, isBlockBody: true, pos: posFromToken(tok)},
-		{isWildcard: true, body: &BlockStatement{Token: tok, Statements: []Statement{defAssign}}, isBlockBody: true, skipItBinding: true, pos: posFromToken(tok)},
+	arms := []MatchArm{
+		{Condition: &Identifier{Token: tok, Value: "ok"}, Body: okBody, IsBlockBody: true, Pos: posFromToken(tok)},
+		{IsWildcard: true, Body: &BlockStatement{Token: tok, Statements: []Statement{defAssign}}, IsBlockBody: true, SkipItBinding: true, Pos: posFromToken(tok)},
 	}
 	sm := &SurfaceMatch{Token: tok, Matched: tmpIdent, Arms: arms}
 	savedFuncName := l.p.curFuncName
@@ -1442,7 +1595,7 @@ func (l *lowerer) preRegisterEnumArmBindings(sm *SurfaceMatch) {
 	defer func() { p.curFuncName = saved }()
 	for i := range sm.Arms {
 		a := &sm.Arms[i]
-		call, ok := a.condition.(*CallExpression)
+		call, ok := a.Condition.(*CallExpression)
 		if !ok || len(call.Arguments) == 0 {
 			continue
 		}
@@ -1482,8 +1635,8 @@ func (l *lowerer) preRegisterEnumArmBindings(sm *SurfaceMatch) {
 
 // matchArmCovers reports which of the option's three cases (nil / err / ok) an
 // arm claims. A combined arm (`nil || err ->`) claims both.
-func matchArmCovers(a *matchArm) (nilOK, errOK, okOK bool) {
-	for _, pat := range a.multiOptionPatterns {
+func matchArmCovers(a *MatchArm) (nilOK, errOK, okOK bool) {
+	for _, pat := range a.MultiOptionPatterns {
 		switch pat {
 		case "nil":
 			nilOK = true
@@ -1493,7 +1646,7 @@ func matchArmCovers(a *matchArm) (nilOK, errOK, okOK bool) {
 			okOK = true
 		}
 	}
-	switch c := a.condition.(type) {
+	switch c := a.Condition.(type) {
 	case *NilLiteral:
 		nilOK = true
 	case *Identifier:
@@ -1507,7 +1660,7 @@ func matchArmCovers(a *matchArm) (nilOK, errOK, okOK bool) {
 		}
 	}
 	// `ok ->` is the dotVal arm; `ok(cond) ->` carries a raw boolean condition.
-	if a.isDotVal || a.isRawCond {
+	if a.IsDotVal || a.IsRawCond {
 		okOK = true
 	}
 	return nilOK, errOK, okOK
@@ -1571,16 +1724,16 @@ func (l *lowerer) rejectItInNonOkArm(sm *SurfaceMatch) {
 		a := &sm.Arms[i]
 		// Only the catch-all `->` arm is ambiguous. `ok ->` (isDotVal) and
 		// explicit pattern arms are fine.
-		if !a.isWildcard || a.isDotVal || a.skipItBinding {
+		if !a.IsWildcard || a.IsDotVal || a.SkipItBinding {
 			continue
 		}
-		if !armUsesIt(a.body) {
+		if !armUsesIt(a.Body) {
 			continue
 		}
-		line, col := a.pos.Line, a.pos.Column
-		if line == 0 && a.body != nil && len(a.body.Statements) > 0 {
-			line = a.body.Statements[0].Pos().Line
-			col = a.body.Statements[0].Pos().Column
+		line, col := a.Pos.Line, a.Pos.Column
+		if line == 0 && a.Body != nil && len(a.Body.Statements) > 0 {
+			line = a.Body.Statements[0].Pos().Line
+			col = a.Body.Statements[0].Pos().Column
 		}
 		var missing []string
 		if !nilCovered {
@@ -1676,12 +1829,12 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	l.walk(reflect.ValueOf(&sm.Matched))
 	for i := range sm.Arms {
 		a := &sm.Arms[i]
-		l.walk(reflect.ValueOf(&a.condition))
-		for j := range a.multiValuePatterns {
-			l.walk(reflect.ValueOf(&a.multiValuePatterns[j]))
+		l.walk(reflect.ValueOf(&a.Condition))
+		for j := range a.MultiValuePatterns {
+			l.walk(reflect.ValueOf(&a.MultiValuePatterns[j]))
 		}
-		if a.body != nil {
-			l.walk(reflect.ValueOf(a.body))
+		if a.Body != nil {
+			l.walk(reflect.ValueOf(a.Body))
 		}
 	}
 
@@ -1721,6 +1874,108 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	return result
 }
 
+// armPreChecks 跑展開 match 前的兩道預檢：先登記析構綁定型別（供嵌套 match 解析
+// 自身主體），再檢查 catch-all 臂裡的 `it` 用法。兩者本來都是 *lowerer 方法，
+// 但都只讀 sm 與函式作用域符號表、只寫診斷與作用域內的綁定型別表 —— 不碰 AST，
+// 所以可以掛在一隻暫存 lowerer 上給非變更的 desugarSurfaceMatch 用。
+func (p *Parser) armPreChecks(sm *SurfaceMatch) {
+	l := &lowerer{
+		p:              p,
+		curFuncName:    p.curFuncName,
+		visited:        map[uintptr]bool{},
+		declaredLocals: map[string]bool{},
+	}
+	l.preRegisterEnumArmBindings(sm)
+	l.rejectItInNonOkArm(sm)
+}
+
+// desugarSurfaceMatch returns the core-AST equivalent of sm WITHOUT writing
+// anything into sm — the H0-side entry point for match desugaring (S2).
+//
+// lowerSurfaceMatch above cannot be reused for this: it walks the tree in place
+// and rewrites arm bodies, which is exactly the AST mutation C1/P1 forbid once
+// desugaring moves out of the lowering pass and into the AST→HIR conversion.
+//
+// Non-mutation comes from copying the arm slice first. MatchArm is a VALUE type
+// living in a slice, so every `arm.Body = …` inside buildMatchDesugar /
+// buildTypeMatchDesugar / buildBareMatchDesugar lands on the copy; the statement
+// trees the arms point at are only READ, because prependStmt /
+// rewriteItPlaceWrites / namedItBinding all return fresh nodes rather than
+// editing in place. That claim is not an assumption — see the gate below.
+//
+// ⚠️ Until 2026-10-16 that claim had NO coverage at all, and the comment here
+// said the wrong test covered it. The C6 half of gate G1 lives in
+// ast_freeze_test.go's TestASTIsFrozenAcrossHIRLowering, but that walks the
+// LOWERED corpus, where the SurfaceMatch nodes are already gone — so the one
+// desugar that runs inside H0 was never exercised by it. And it could not have
+// been exercised even in principle: dump.go had no SurfaceMatch case, so a
+// mutated arm body dumped as `<unknown *parser.SurfaceMatch>` on both sides of
+// the comparison and before == after. The real gate is
+// parser/dump/sugar_dump_gate_test.go's TestASTIsFrozenAcrossHIRLoweringSugar,
+// which parses the corpus with SkipLowering and requires 168 corpus programs to
+// carry a SurfaceMatch across ASTToHIR. It is sabotage-verified: writing back
+// into the original arm slice (`sm.Arms[0].ValueCtx = true`, i.e. exactly what
+// the copy above prevents) makes it fail, naming the file and printing
+// `MatchArm{}` → `MatchArm{valueCtx: true}`.
+//
+// Nested matches are deliberately NOT pre-lowered here. HIR emission recurses
+// into the produced chain, reaches the still-sugar nested SurfaceMatch, and
+// re-enters this same path — the streaming equivalent of lowerSurfaceMatch's
+// bottom-up walk.
+//
+// ⚠️ Callers must set p.curFuncName first: buildMatchDesugar resolves the
+// subject's type through sem.FuncVarType(p.curFuncName, …), and an empty name
+// silently degrades to the weaker fallback typings instead of failing.
+func (p *Parser) desugarSurfaceMatch(sm *SurfaceMatch) Expression {
+	if sm == nil || len(sm.Arms) == 0 {
+		return nil
+	}
+	arms := make([]MatchArm, len(sm.Arms))
+	copy(arms, sm.Arms)
+	clone := *sm
+	clone.Arms = arms
+	// D9 place-write：`#{index-out=DEF}` 註解由 lowerer.walk 轉掛到原始 sm
+	//（外層 ExpressionStatement 攜帶，desugar 主體是內層 SurfaceMatch）。本函數
+	// 克隆 sm 後才呼叫 buildMatchDesugar，side-table 以節點指標為鍵，克隆會丟失
+	// 註解；此處把原始 sm 的 index-out 條目帶到克隆，使臂內 RHS 读取的降糖
+	// （rewriteItPlaceWrites → desugarIndexOutReads）能讀到註解。
+	if anns := p.sem.RawAnnotationsOf(sm); len(anns) > 0 {
+		p.sem.SetRawAnnotations(&clone, anns)
+		p.sem.ensure(&clone).Annotations = anns
+	}
+
+	// Same order as lowerSurfaceMatch: register destructuring bindings so an
+	// inner match can resolve its subject type, then validate `it` usage while
+	// it is still unambiguous (before any synthetic `let it` exists).
+	p.armPreChecks(&clone)
+
+	var result Expression
+	switch {
+	case clone.Matched == nil:
+		result = p.buildBareMatchDesugar(clone.Token, clone.Arms)
+	default:
+		// Type-destructuring match: the subject's static type is a union, so
+		// the arms dispatch statically. Detected the same way lowerSurfaceMatch
+		// detects it, so the two paths pick the same desugar.
+		if ident, ok := clone.Matched.(*Identifier); ok {
+			if t, ok2 := p.sem.FuncVarType(p.curFuncName, ident.Value); ok2 && p.isUnionType(t) {
+				result = p.buildTypeMatchDesugar(&clone, t)
+				break
+			}
+		}
+		result = p.buildMatchDesugar(&clone)
+	}
+	if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
+		// lowerSurfaceMatch stamps the closing brace position so EndPos() and
+		// the checker's "was this match synthesised?" test both work.
+		ifExpr.MatchEndPos = clone.RBracePos
+		if clone.Matched == nil {
+			p.sem.SetOpeningBraceComment(ifExpr, clone.OpeningBraceComment)
+		}
+	}
+	return result
+}
+
 // buildTypeMatchDesugar 建立「類型解構 match」的核心 AST（union / type-set
 // 靜態單態化派發）。
 //
@@ -1750,25 +2005,25 @@ func (p *Parser) buildTypeMatchDesugar(sm *SurfaceMatch, matchedVarType string) 
 	for i := range arms {
 		a := &arms[i]
 		var ra tmArm
-		ra.body = a.body
-		if a.isTypeArm {
-			ra.typePattern = a.typePattern
-			ra.bindingName = a.typeBindingName
-			if len(members) > 0 && !memberSet[a.typePattern] {
+		ra.body = a.Body
+		if a.IsTypeArm {
+			ra.typePattern = a.TypePattern
+			ra.bindingName = a.TypeBindingName
+			if len(members) > 0 && !memberSet[a.TypePattern] {
 				p.saveError(fmt.Sprintf("line %d, column %d: type match arm pattern %q is not a member of union %q",
-					a.pos.Line, a.pos.Column, a.typePattern, matchedVarType))
+					a.Pos.Line, a.Pos.Column, a.TypePattern, matchedVarType))
 			}
-		} else if a.isWildcard {
+		} else if a.IsWildcard {
 			ra.isDefault = true
-		} else if ident, ok := a.condition.(*Identifier); ok {
+		} else if ident, ok := a.Condition.(*Identifier); ok {
 			ra.typePattern = ident.Value
 			if len(members) > 0 && !memberSet[ident.Value] {
 				p.saveError(fmt.Sprintf("line %d, column %d: type match arm pattern %q is not a member of union %q",
-					a.pos.Line, a.pos.Column, ident.Value, matchedVarType))
+					a.Pos.Line, a.Pos.Column, ident.Value, matchedVarType))
 			}
 		} else {
 			p.saveError(fmt.Sprintf("line %d, column %d: type match on union %q requires type patterns (e.g. %q ->) or a default arm (->)",
-				a.pos.Line, a.pos.Column, matchedVarType, firstMember(members)))
+				a.Pos.Line, a.Pos.Column, matchedVarType, firstMember(members)))
 			ra.isDefault = true
 		}
 		// 注入收窄綁定：型別臂內 `it`（或 v）按成員型別可見。
@@ -1846,7 +2101,7 @@ func firstMember(members []string) string {
 // 逐條 lowerStmt 使每個 KIf 獨立求值。
 //
 // 含有 wildcard 臂（→ default）或僅一個臂時沿用既有 elif 鏈語義。
-func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Expression {
+func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []MatchArm) Expression {
 	if len(arms) == 0 {
 		return nil
 	}
@@ -1854,7 +2109,7 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 	// ---- independent-guard fast path ----
 	allNonWildcard := true
 	for _, arm := range arms {
-		if arm.isWildcard {
+		if arm.IsWildcard {
 			allNonWildcard = false
 			break
 		}
@@ -1864,15 +2119,15 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 		for _, arm := range arms {
 			var equalityPattern Expression
 			var rangePattern *RangeExpression
-			if rng, isRange := arm.condition.(*RangeExpression); isRange {
+			if rng, isRange := arm.Condition.(*RangeExpression); isRange {
 				rangePattern = rng
 			} else {
-				equalityPattern = arm.condition
+				equalityPattern = arm.Condition
 			}
 			newIf := &IfExpression{
 				Token:           tok,
-				Condition:       arm.condition,
-				Consequence:     arm.body,
+				Condition:       arm.Condition,
+				Consequence:     arm.Body,
 				Alternative:     nil,
 				EqualityPattern: equalityPattern,
 				RangePattern:    rangePattern,
@@ -1897,29 +2152,29 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 	var defaultBody *BlockStatement // 最內層非 dotVal wildcard body
 	for i := len(arms) - 1; i >= 0; i-- {
 		arm := arms[i]
-		if arm.isWildcard {
+		if arm.IsWildcard {
 			if ifExpr == nil {
-				if defaultBody != nil && arm.isDotVal {
+				if defaultBody != nil && arm.IsDotVal {
 					// dotVal arm (ok->) after a regular -> wildcard (else):
 					// treat as conditional arm: if ok { body } else { defaultBody }
 					newIf := &IfExpression{
 						Token:           tok,
 						Condition:       &Identifier{Token: tok, Value: "ok"},
-						Consequence:     arm.body,
+						Consequence:     arm.Body,
 						Alternative:     defaultBody,
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.body,
+						DotValBody:      arm.Body,
 					}
 					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
-				} else if arm.isDotVal {
+				} else if arm.IsDotVal {
 					// dotVal arm without prior default — treat as standalone ok condition
 					newIf := &IfExpression{
 						Token:           tok,
 						Condition:       &Identifier{Token: tok, Value: "ok"},
-						Consequence:     arm.body,
+						Consequence:     arm.Body,
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.body,
+						DotValBody:      arm.Body,
 					}
 					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
@@ -1928,48 +2183,48 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []matchArm) Express
 					ifExpr = &IfExpression{
 						Token:       tok,
 						Condition:   &IntegerLiteral{Token: tok, Value: 1},
-						Consequence: arm.body,
+						Consequence: arm.Body,
 					}
 					p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 				}
 			} else {
-				if arm.isDotVal {
+				if arm.IsDotVal {
 					// dotVal arm (ok->) when other arms already processed:
 					// wrap as outer condition
 					newIf := &IfExpression{
 						Token:       tok,
 						Condition:   &Identifier{Token: tok, Value: "ok"},
-						Consequence: arm.body,
+						Consequence: arm.Body,
 						Alternative: &BlockStatement{
 							Token:      tok,
 							Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
 						},
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.body,
+						DotValBody:      arm.Body,
 					}
 					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
 				} else {
 					if ifExpr.Alternative == nil {
-						ifExpr.Alternative = arm.body
+						ifExpr.Alternative = arm.Body
 					}
 				}
 			}
-			if !arm.isDotVal && defaultBody == nil {
-				defaultBody = arm.body
+			if !arm.IsDotVal && defaultBody == nil {
+				defaultBody = arm.Body
 			}
 		} else {
 			var equalityPattern Expression
 			var rangePattern *RangeExpression
-			if rng, isRange := arm.condition.(*RangeExpression); isRange {
+			if rng, isRange := arm.Condition.(*RangeExpression); isRange {
 				rangePattern = rng
 			} else {
-				equalityPattern = arm.condition
+				equalityPattern = arm.Condition
 			}
 			newIf := &IfExpression{
 				Token:           tok,
-				Condition:       arm.condition,
-				Consequence:     arm.body,
+				Condition:       arm.Condition,
+				Consequence:     arm.Body,
 				Alternative:     nil,
 				EqualityPattern: equalityPattern,
 				RangePattern:    rangePattern,
@@ -2019,16 +2274,16 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	if idx, ok := matched.(*IndexExpression); ok && p.isSafeIndexBase(idx) {
 		isOptMatch := false
 		for _, a := range arms {
-			if a.isDotVal {
+			if a.IsDotVal {
 				isOptMatch = true
 				break
 			}
-			if ident, ok := a.condition.(*Identifier); ok {
+			if ident, ok := a.Condition.(*Identifier); ok {
 				if ident.Value == "ok" || ident.Value == "nil" || ident.Value == "err" {
 					isOptMatch = true
 					break
 				}
-			} else if _, ok := a.condition.(*NilLiteral); ok {
+			} else if _, ok := a.Condition.(*NilLiteral); ok {
 				isOptMatch = true
 				break
 			}
@@ -2070,8 +2325,35 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	placeWriteUsed := false
 	anyArmValueCtx := false
 	for _, a := range arms {
-		if a.valueCtx {
+		if a.ValueCtx {
 			anyArmValueCtx = true
+		}
+	}
+
+	// D9 place-write 的 `#{index-out=DEF}` 注解作用域：旧 `x = v[i]` 寫法下，
+	// 注解作用於整條帶註解陳述的「全部」下标读取（RHS 读取亦变 u64，越界取 DEF）。
+	// place-write 把 RHS 读取移入 ok 臂體，註解須隨之進入臂體。walk 已把外層
+	// ExpressionStatement 攜帶的 index-out 條目轉掛到本 sm（见 lowerer.walk 的
+	// SurfaceMatch 分支），此處取出其預設值，交給 rewriteItPlaceWrites 在臂內
+	// RHS 读取上降糖（還原舊語意）。非 place-write 的 match 若帶此註解則忽略
+	// （rewriteItPlaceWrites 在 idxTempName=="" 時早退，不會誤用）。
+	var idxOutDef *AnnotationValue
+	if p.sem != nil {
+		for _, e := range p.sem.RawAnnotationsOf(sm) {
+			if e != nil && e.Key == "index-out" {
+				v := e.Value
+				idxOutDef = &v
+				break
+			}
+		}
+		if idxOutDef == nil {
+			for _, e := range p.sem.AnnotationsOf(sm) {
+				if e != nil && e.Key == "index-out" {
+					v := e.Value
+					idxOutDef = &v
+					break
+				}
+			}
 		}
 	}
 
@@ -2126,14 +2408,14 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	}
 
 	// D4：值-match 的空臂（`->` 後不寫任何東西）= 被匹配 option 內部型別的預設零值。
-	// 僅對**值語境**的臂生效（matchArm.valueCtx，由 validateMatchArmReturns 寫入）；
+	// 僅對**值語境**的臂生效（MatchArm.valueCtx，由 validateMatchArmReturns 寫入）；
 	// 陳述語境的空臂是 no-op（既有行為，如 `parsed: { ok -> {...}  nil ->  err -> }`）。
 	// 值語境但型別推不出來時報錯（不猜）。裸 match（buildBareMatchDesugar）不走本路徑。
 	for i := range arms {
-		if !arms[i].valueCtx {
+		if !arms[i].ValueCtx {
 			continue
 		}
-		if arms[i].body != nil && len(arms[i].body.Statements) > 0 {
+		if arms[i].Body != nil && len(arms[i].Body.Statements) > 0 {
 			continue
 		}
 		if elemType == "" {
@@ -2152,13 +2434,13 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		// Formatter 據此把該語句濾掉、還原成空臂輸出（否則 `->` 會被改寫成 `-> 0`，
 		// 破壞 `no fmt` 冪等）。
 		p.sem.SetRTFlag(zb.Statements[0], RTEmptyArmDefault)
-		if arms[i].body != nil {
-			zb.IsInline = arms[i].body.IsInline
-			zb.TrailingComments = arms[i].body.TrailingComments
-			zb.ClosingBraceComment = arms[i].body.ClosingBraceComment
-			zb.RBrace = arms[i].body.RBrace
+		if arms[i].Body != nil {
+			zb.IsInline = arms[i].Body.IsInline
+			zb.TrailingComments = arms[i].Body.TrailingComments
+			zb.ClosingBraceComment = arms[i].Body.ClosingBraceComment
+			zb.RBrace = arms[i].Body.RBrace
 		}
-		arms[i].body = zb
+		arms[i].Body = zb
 	}
 
 	// Shared it binding (used for hasRawCond or fallback)
@@ -2173,7 +2455,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	// (not inside arm bodies) because the condition references `it`.
 	hasRawCond := false
 	for _, arm := range arms {
-		if arm.isRawCond {
+		if arm.IsRawCond {
 			hasRawCond = true
 			break
 		}
@@ -2198,10 +2480,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	if matchedIsEnum {
 		for i := range arms {
 			a := &arms[i]
-			if a.bindingName != "" || len(a.bindingNames) > 0 {
+			if a.BindingName != "" || len(a.BindingNames) > 0 {
 				continue
 			}
-			call, ok := a.condition.(*CallExpression)
+			call, ok := a.Condition.(*CallExpression)
 			if !ok || len(call.Arguments) == 0 {
 				continue
 			}
@@ -2228,20 +2510,20 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				continue
 			}
 			if len(names) == 1 {
-				a.bindingName = names[0]
+				a.BindingName = names[0]
 			} else {
-				a.bindingNames = names
-				a.bindingFields = fieldTypes
+				a.BindingNames = names
+				a.BindingFields = fieldTypes
 			}
-			a.bindingVariant = fn.Value
-			a.condition = &Identifier{Token: fn.Token, Value: fn.Value}
+			a.BindingVariant = fn.Value
+			a.Condition = &Identifier{Token: fn.Token, Value: fn.Value}
 		}
 	}
 
 	for _, a := range arms {
-		if len(a.multiOptionPatterns) > 0 {
+		if len(a.MultiOptionPatterns) > 0 {
 			// Combined option patterns: mark all as explicit
-			for _, pat := range a.multiOptionPatterns {
+			for _, pat := range a.MultiOptionPatterns {
 				if pat == "err" {
 					hasExplicitErr = true
 				} else if pat == "nil" {
@@ -2250,10 +2532,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					hasExplicitOk = true
 				}
 			}
-		} else if a.isDotVal {
+		} else if a.IsDotVal {
 			hasExplicitOk = true
-		} else if a.condition != nil {
-			if ident, ok := a.condition.(*Identifier); ok {
+		} else if a.Condition != nil {
+			if ident, ok := a.Condition.(*Identifier); ok {
 				if ident.Value == "err" {
 					hasExplicitErr = true
 				} else if ident.Value == "nil" {
@@ -2263,7 +2545,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				} else if matchedIsEnum {
 					enumListedVariants[ident.Value] = true
 				}
-			} else if _, ok := a.condition.(*NilLiteral); ok {
+			} else if _, ok := a.Condition.(*NilLiteral); ok {
 				hasExplicitNil = true
 			}
 		}
@@ -2288,16 +2570,16 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			// 使 `some(v) ->` 的 v 與隱含 `it` 得到正確型別（如 i64/f64/str）。
 			armBindingType := ""
 			skipItBinding := false
-			if arm.skipItBinding {
+			if arm.SkipItBinding {
 				// Generated sentinel arms (e.g. ?= / #{index-out} err/nil arms)
 				// never reference `it`; opt out so a sentinel arm's %str-long/nil
 				// `it` type can't clobber the ok arm's element-type `it`.
 				skipItBinding = true
 			}
-			if len(arm.multiOptionPatterns) > 0 {
+			if len(arm.MultiOptionPatterns) > 0 {
 				// Combined option patterns: compute armType from pattern set
 				hasOk, hasErr, hasNil := false, false, false
-				for _, pat := range arm.multiOptionPatterns {
+				for _, pat := range arm.MultiOptionPatterns {
 					switch pat {
 					case "ok":
 						hasOk = true
@@ -2322,13 +2604,13 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				} else if hasNil {
 					armType = "nil"
 				}
-			} else if arm.isWildcard {
-				if arm.isDotVal {
+			} else if arm.IsWildcard {
+				if arm.IsDotVal {
 					armType = "ok" // ok-> is explicit ok case
 					// 標籤列舉：`ok(v) ->` 這類走 dotVal 路徑的析構綁定，其綁定型別
 					// 同樣取載荷型別（由 bindingVariant 在本枚舉內解析）。
-					if matchedIsEnum && arm.bindingVariant != "" {
-						if pt := p.enumVariantPayload(matchedVarType, arm.bindingVariant); pt != "" {
+					if matchedIsEnum && arm.BindingVariant != "" {
+						if pt := p.enumVariantPayload(matchedVarType, arm.BindingVariant); pt != "" {
 							armType = pt
 							armBindingType = pt
 						}
@@ -2346,9 +2628,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						if len(remaining) == 0 {
 							// All enum variants listed — the else arm is dead code
 							skipItBinding = true
-							pos := arm.pos
+							pos := arm.Pos
 							if pos.Line == 0 {
-								pos = arm.body.Pos()
+								pos = arm.Body.Pos()
 							}
 							p.saveWarning(fmt.Sprintf("line %d, column %d: '->' arm is unreachable: all enum variants have been listed",
 								pos.Line, pos.Column))
@@ -2361,9 +2643,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						if okListed && errListed && nilListed {
 							// All three option variants listed — the else arm is dead code
 							skipItBinding = true
-							pos := arm.pos
+							pos := arm.Pos
 							if pos.Line == 0 {
-								pos = arm.body.Pos()
+								pos = arm.Body.Pos()
 							}
 							p.saveWarning(fmt.Sprintf("line %d, column %d: '->' arm is unreachable: all option variants (ok, err, nil) have been listed",
 								pos.Line, pos.Column))
@@ -2384,7 +2666,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						}
 					}
 				}
-			} else if ident, ok := arm.condition.(*Identifier); ok {
+			} else if ident, ok := arm.Condition.(*Identifier); ok {
 				if ident.Value == "err" || ident.Value == "nil" {
 					armType = ident.Value
 				} else if ident.Value == "ok" {
@@ -2398,9 +2680,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						armBindingType = pt
 					}
 				}
-		} else if _, ok := arm.condition.(*NilLiteral); ok {
+		} else if _, ok := arm.Condition.(*NilLiteral); ok {
 			armType = "nil"
-		} else if arm.isDotVal {
+		} else if arm.IsDotVal {
 			// ok-> arm (dotVal wildcard): it should be the unwrapped elemType
 			armType = "ok"
 		}
@@ -2415,36 +2697,36 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) && !p.SkipSafeIndexLowering {
 			writeInBounds := false
 			if idx, ok := origMatched.(*IndexExpression); ok {
-				writeInBounds = idx.InBounds
+				writeInBounds = p.sem.IndexIsInBounds(idx)
 			}
-			arm.body = p.rewriteItPlaceWrites(arm.body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds)
+			arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds, idxOutDef)
 		}
 		if armType != "" {
 				// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
 				// 嵌套 match 時這能保住外層的 `it`（否則內層會把它覆蓋掉）。
-				bindName := arm.bindingName
+				bindName := arm.BindingName
 				if bindName == "" {
 					bindName = "it"
 				}
 				// Use per-arm position so walker/index can distinguish synthetic bindings
 				var armTok lexer.Token
-				if arm.condition != nil {
-					pos := arm.condition.Pos()
+				if arm.Condition != nil {
+					pos := arm.Condition.Pos()
 					armTok = lexer.Token{Type: lexer.IDENT, Literal: bindName, Line: pos.Line, Column: pos.Column}
-				} else if len(arm.body.Statements) > 0 {
-					pos := arm.body.Statements[0].Pos()
+				} else if len(arm.Body.Statements) > 0 {
+					pos := arm.Body.Statements[0].Pos()
 					armTok = lexer.Token{Type: lexer.IDENT, Literal: bindName, Line: pos.Line, Column: pos.Column}
 				} else {
 					armTok = tok
 				}
-				if arm.bindingName != "" {
+				if arm.BindingName != "" {
 					// 讓 checker / codegen 知道 v 的型別（等同 `it` 在 ok 臂的 elemType）。
 					// DeclaredVars 必須註冊，否則 ValidateUndefinedVars 會報
 					// "'v' is not defined"（`it` 是 checker 裡寫死的關鍵字，自訂名沒有這待遇）。
 					if p.sem.DeclaredVars == nil {
 						p.sem.DeclaredVars = make(map[string]bool)
 					}
-					p.sem.DeclaredVars[arm.bindingName] = true
+					p.sem.DeclaredVars[arm.BindingName] = true
 					bt := elemType
 					if armBindingType != "" {
 						bt = armBindingType
@@ -2455,25 +2737,25 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						bt = "str"
 					}
 					if bt != "" {
-						p.sem.SetFuncVarType(p.curFuncName, arm.bindingName, bt)
-						p.setVarType(arm.bindingName, bt)
+						p.sem.SetFuncVarType(p.curFuncName, arm.BindingName, bt)
+						p.setVarType(arm.BindingName, bt)
 					}
 				}
 				if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType, matchedVarType, isEnumType, bindName); armIt != nil {
 					// Set the synthetic end position to cover the arm body
-					bodyEnd := arm.body.EndPos()
-					if bodyEnd.Line == 0 && bodyEnd.Column == 0 && len(arm.body.Statements) > 0 {
-						bodyEnd = arm.body.Statements[len(arm.body.Statements)-1].EndPos()
+					bodyEnd := arm.Body.EndPos()
+					if bodyEnd.Line == 0 && bodyEnd.Column == 0 && len(arm.Body.Statements) > 0 {
+						bodyEnd = arm.Body.Statements[len(arm.Body.Statements)-1].EndPos()
 					}
 					armIt.SyntheticEnd = bodyEnd
 					// 多欄位析構綁定（`rect(w, h) -> ...`）：按位置把 it.f0 / it.f1
 					// 綁到各欄位名。逆序 prepend，使最終語句順序為 `it; w; h; body`。
-					if len(arm.bindingNames) > 0 {
-						for j := len(arm.bindingNames) - 1; j >= 0; j-- {
-							fname := arm.bindingNames[j]
+					if len(arm.BindingNames) > 0 {
+						for j := len(arm.BindingNames) - 1; j >= 0; j-- {
+							fname := arm.BindingNames[j]
 							ftype := ""
-							if j < len(arm.bindingFields) {
-								ftype = arm.bindingFields[j]
+							if j < len(arm.BindingFields) {
+								ftype = arm.BindingFields[j]
 							}
 							if p.sem.DeclaredVars == nil {
 								p.sem.DeclaredVars = make(map[string]bool)
@@ -2494,10 +2776,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 								IsSynthetic:  true,
 								IsArmBinding: true,
 							}
-							arm.body = p.prependStmt(arm.body, extract)
+							arm.Body = p.prependStmt(arm.Body, extract)
 						}
 					}
-					arm.body = p.prependStmt(arm.body, armIt)
+					arm.Body = p.prependStmt(arm.Body, armIt)
 				} else if !skipItBinding && !isSentinelArmType(armType) {
 					// ok/else arm whose matched type is unknown at parse time:
 					// fall back to the shared `it` binding (best-effort). Safe,
@@ -2506,23 +2788,23 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					// live variant. Sentinel (nil/err) arms must NOT receive any
 					// `it` binding here — doing so would emit an unconditional
 					// deref of the option's data field (null when nil/err).
-					arm.body = p.prependStmt(arm.body, p.namedItBinding(itStmt, bindName))
+					arm.Body = p.prependStmt(arm.Body, p.namedItBinding(itStmt, bindName))
 				}
 				// Sentinel arms with unknown matched type: intentionally bind nothing.
-			} else if !skipItBinding && !arm.isWildcard {
+			} else if !skipItBinding && !arm.IsWildcard {
 				// Non-wildcard arm: safe to bind shared `it`.
 				// Wildcard arms (->) with unknown matched type must NOT receive
 				// shared `it` binding: when the matched var is an option and the
 				// arm is the else/catch-all, the option may be nil (data=0),
 				// and the shared binding unconditionally dereferences the data
 				// field, causing null pointer dereference / segfault.
-				arm.body = p.prependStmt(arm.body, itStmt)
+				arm.Body = p.prependStmt(arm.Body, itStmt)
 			}
 		}
 
-		if arm.isWildcard {
+		if arm.IsWildcard {
 			if ifExpr == nil {
-				if defaultBody != nil && arm.isDotVal {
+				if defaultBody != nil && arm.IsDotVal {
 					// dotVal arm (ok->) after a regular -> wildcard (else):
 					// treat as conditional arm: if matched == ok { body } else { defaultBody }
 					cond := &InfixExpression{
@@ -2534,23 +2816,23 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					newIf := &IfExpression{
 						Token:           tok,
 						Condition:       cond,
-						Consequence:     arm.body,
+						Consequence:     arm.Body,
 						Alternative:     defaultBody,
 						MatchedExpr:     matched,
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.body,
+						DotValBody:      arm.Body,
 					}
 					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
 				} else {
 					// 最內層 wildcard：儲存 body 作為下一個條件 arm 的 else
-					defaultBody = arm.body
-					if arm.isDotVal {
-						defaultDotValBody = arm.body
+					defaultBody = arm.Body
+					if arm.IsDotVal {
+						defaultDotValBody = arm.Body
 					}
 				}
 			} else {
-				if arm.isDotVal {
+				if arm.IsDotVal {
 					// ok-> when other arms already processed (e.g., {ok ->, nil ->, ->}):
 					// wrap as outer condition instead of overwriting the alternative
 					cond := &InfixExpression{
@@ -2562,19 +2844,19 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 					newIf := &IfExpression{
 						Token:       tok,
 						Condition:   cond,
-						Consequence: arm.body,
+						Consequence: arm.Body,
 						Alternative: &BlockStatement{
 							Token:      tok,
 							Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
 						},
 						MatchedExpr:     matched,
 						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.body,
+						DotValBody:      arm.Body,
 					}
 					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
 				} else {
-					ifExpr.Alternative = arm.body
+					ifExpr.Alternative = arm.Body
 				}
 			}
 		} else {
@@ -2585,10 +2867,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			var optionPatterns []string
 			var valuePatterns []Expression
 			var rawCond Expression
-			if len(arm.multiOptionPatterns) > 0 {
+			if len(arm.MultiOptionPatterns) > 0 {
 				// Combined option patterns: (matched == p1) || (matched == p2) || ...
-				optionPatterns = arm.multiOptionPatterns
-				for i, pat := range arm.multiOptionPatterns {
+				optionPatterns = arm.MultiOptionPatterns
+				for i, pat := range arm.MultiOptionPatterns {
 					patCond := &InfixExpression{
 						Token:    tok,
 						Left:     matched,
@@ -2606,10 +2888,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						}
 					}
 				}
-			} else if len(arm.multiValuePatterns) > 0 {
+			} else if len(arm.MultiValuePatterns) > 0 {
 				// Combined value patterns: 1 || 3 || 5 → (matched == 1) || (matched == 3) || (matched == 5)
-				valuePatterns = arm.multiValuePatterns
-				for i, pat := range arm.multiValuePatterns {
+				valuePatterns = arm.MultiValuePatterns
+				for i, pat := range arm.MultiValuePatterns {
 					patCond := &InfixExpression{
 						Token:    tok,
 						Left:     matched,
@@ -2627,9 +2909,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						}
 					}
 				}
-			} else if arm.isRawCond {
+			} else if arm.IsRawCond {
 				// ok(cond) arm: condition is (matched == ok) && cond
-				rawCond = arm.condition
+				rawCond = arm.Condition
 				cond = &InfixExpression{
 					Token: tok,
 					Left: &InfixExpression{
@@ -2639,27 +2921,27 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						Right:    &Identifier{Token: tok, Value: "ok"},
 					},
 					Operator: "&&",
-					Right:    arm.condition,
+					Right:    arm.Condition,
 				}
-			} else if rng, isRange := arm.condition.(*RangeExpression); isRange {
+			} else if rng, isRange := arm.Condition.(*RangeExpression); isRange {
 				// Range condition: [a..b] → matched >= a && matched <= b
 				rangePattern = rng
 				cond = p.desugarRangeCondition(tok, matched, rng)
 			} else {
 				// matched == condition
 				// 對 option 變數，condition 為 err/nil 時由 transpiler 生成 tag 比較
-				equalityPattern = arm.condition
+				equalityPattern = arm.Condition
 				cond = &InfixExpression{
 					Token:    tok,
 					Left:     matched,
 					Operator: "==",
-					Right:    arm.condition,
+					Right:    arm.Condition,
 				}
 			}
 			newIf := &IfExpression{
 				Token:           tok,
 				Condition:       cond,
-				Consequence:     arm.body,
+				Consequence:     arm.Body,
 				Alternative:     nil,
 				MatchedExpr:     matched,
 				RangePattern:    rangePattern,
@@ -2947,11 +3229,11 @@ func itAssignParts(s Statement) (Expression, bool) {
 // Nested matches — already lowered into RTBareMatch-flagged IfExpressions by
 // the time this runs — are skipped: their `it` belongs to the inner match.
 // User-written if/for blocks are descended into.
-func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool) *BlockStatement {
+func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool, idxOutDef *AnnotationValue) *BlockStatement {
 	if body == nil || baseName == "" || idxTempName == "" {
 		return body
 	}
-	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds)
+	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef)
 	if !changed {
 		return body // nothing rewritten
 	}
@@ -2962,7 +3244,7 @@ func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, bas
 	return nb
 }
 
-func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool) ([]Statement, bool) {
+func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool, idxOutDef *AnnotationValue) ([]Statement, bool) {
 	changed := false
 	out := make([]Statement, 0, len(stmts)+2)
 	for _, s := range stmts {
@@ -2975,17 +3257,40 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 				p.sem.SetFuncVarType(p.curFuncName, placeName, elemType)
 				p.setVarType(placeName, elemType)
 			}
+			// D9 place-write + `#{index-out=DEF}`：舊 `x = v[i]` 寫法下註解作用於
+			// 整條陳述的全部下标读取（RHS 读取亦降為 u64，越界取 DEF）。把註解帶入
+			// 臂體後，此處先將 RHS 裡的每個安全索引读取（如 `it = rotr64(v[d]^v[a],32)`
+			// 的 `v[d]`/`v[a]`）降糖為「option 讀取 + DEF-match」的 u64 暫存，還原
+			// 舊語意；隨後的 __place 寫回使用這些 u64 暫存，rotr64 等函式不再收到
+			// 裸 option（消除 fxxoptarg）。SkipSafeIndexLowering（no fmt 等）時本
+			// 函數整體早退，不會誤觸。
+			newVal := val
+			if idxOutDef != nil {
+				var ctr int
+				if dv, pre := p.desugarIndexOutReads(val, tok, *idxOutDef, &ctr); dv != nil {
+					out = append(out, pre...)
+					newVal = dv
+				}
+			}
+			writeIndex := &IndexExpression{
+				Token: tok,
+				Left:  &Identifier{Token: tok, Value: baseName},
+				Index: &Identifier{Token: tok, Value: idxTempName},
+			}
+			if writeInBounds {
+				p.sem.SetIndexInBounds(writeIndex, true)
+			}
 			out = append(out,
 				&LetStatement{
 					Token:       tok,
 					Name:        &Identifier{Token: tok, Value: placeName},
 					Type:        &NamedType{Token: tok, Value: elemType},
-					Value:       val,
+					Value:       newVal,
 					IsSynthetic: true,
 				},
 				&ExpressionStatement{Token: tok, Expression: &AssignExpression{
 					Token:       tok,
-					Left:        &IndexExpression{Token: tok, Left: &Identifier{Token: tok, Value: baseName}, Index: &Identifier{Token: tok, Value: idxTempName}, InBounds: writeInBounds},
+					Left:        writeIndex,
 					Value:       &Identifier{Token: tok, Value: placeName},
 					IsSynthetic: true,
 				}},
@@ -3005,20 +3310,20 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 		// 已降糖的巢狀 match（RTBareMatch 旗標）整棵跳過——它的 it 屬於內層。
 		switch n := s.(type) {
 		case *BlockStatement:
-			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
+			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
 				n.Statements = ns
 				changed = true
 			}
 		case *ExpressionStatement:
 			if ie, ok := n.Expression.(*IfExpression); ok && !p.sem.HasRTFlag(ie, RTBareMatch) {
 			if ie.Consequence != nil {
-				if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
+				if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
 						ie.Consequence.Statements = ns
 						changed = true
 					}
 				}
 				if ie.Alternative != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
 						ie.Alternative.Statements = ns
 						changed = true
 					}
@@ -3026,7 +3331,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 			}
 		case *ForStatement:
 			if n.Body != nil {
-				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
+				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
 					n.Body.Statements = ns
 					changed = true
 				}
@@ -3035,6 +3340,155 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 		out = append(out, s)
 	}
 	return out, changed
+}
+
+// desugarIndexOutReads 走訪表達式 expr，把其中每個安全索引读取（base[idx]，
+// isSafeIndexBase 為真）替換為「option 讀取 + #{index-out=DEF}-match」降糖出的
+// u64 暫存，還原舊 `x = v[i]` 寫法下「注解作用到整條陳述全部下标读取」的語意。
+//
+// 用途：D9 place-write（`v[i]: { ok -> it = f(base[j], base[k]) }`）把 RHS 读取
+// 移入 ok 臂體，而 `#{index-out=DEF}` 註解必須隨之作用到這些臂內读取，否則
+// `base[j]` 仍是 ?elem，傳給 `f(..)` 會觸發 fxxoptarg（裸 option 當 T 實參）。
+//
+// 每個被替換的读取被提升為兩條合成陳述（option 讀取 __idx_out + DEF-match 綁定
+// __idx_val_u64），讀點替換為 __idx_val_u64 識別符。DEF-match 的建構複用
+// maybeIndexOutAssign 的讀取模式（ok 臂綁 payload 到 __idx_val，none 臂綁 DEF）；
+// 因為 match 走陳述語境、__idx_val 為普通 u64 區域變數，caller 之後的 __place
+// 寫回直接吃 u64，語意正確。counter 保證同一 expr 內多個读取的暫存命名不撞。
+//
+// 若某读取推不出元素型別（基底型別未知），則放行不降糖（交給下游報錯），不影響
+// 其餘读取。SkipSafeIndexLowering（no fmt 等）整條鏈不會進到此函數。
+func (p *Parser) desugarIndexOutReads(expr Expression, tok lexer.Token, defVal AnnotationValue, counter *int) (Expression, []Statement) {
+	if expr == nil {
+		return nil, nil
+	}
+	switch e := expr.(type) {
+	case *IndexExpression:
+		if p.isSafeIndexBase(e) {
+			elem := p.inferIndexElemType(e)
+			if elem == "" {
+				// 推不出元素型別就放行（交給下游報錯），不做降級。
+				return expr, nil
+			}
+			*counter++
+			outName := fmt.Sprintf("__idx_out_%d_%d_%d", tok.Line, tok.Column, *counter)
+			valName := fmt.Sprintf("__idx_val_%d_%d_%d", tok.Line, tok.Column, *counter)
+			p.sem.SetFuncVarType(p.curFuncName, outName, "?"+elem)
+			p.setVarType(outName, "?"+elem)
+			p.sem.SetFuncVarType(p.curFuncName, valName, elem)
+			p.setVarType(valName, elem)
+			// __idx_out_N = base[idx]（?elem 安全索引）。
+			outStmt := &LetStatement{
+				Token:       tok,
+				Name:        &Identifier{Token: tok, Value: outName},
+				Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: elem}},
+				Value:       e,
+				IsSynthetic: true,
+			}
+			defLit, errMsg := defaultLiteralFor(tok, elem, defVal)
+			if errMsg != "" {
+				p.saveError(fmt.Sprintf("line %d, column %d: %s", tok.Line, tok.Column, errMsg))
+				return expr, nil
+			}
+			if defLit == nil {
+				defLit = &IntegerLiteral{Token: tok, Value: 0}
+			}
+			// ok 臂：__idx_val = it（payload）；none 臂：__idx_val = DEF（SkipItBinding
+			// 避免 none 臂的 %str-long/nil 型別 it 覆寫 ok 臂元素型別 it）。
+			okArm := MatchArm{
+				Condition:   &Identifier{Token: tok, Value: "ok"},
+				Body:        &BlockStatement{Token: tok, Statements: []Statement{&LetStatement{Token: tok, Name: &Identifier{Token: tok, Value: valName}, Type: &NamedType{Token: tok, Value: elem}, Value: &Identifier{Token: tok, Value: "it"}}}},
+				IsBlockBody: true,
+				Pos:         posFromToken(tok),
+			}
+			noneArm := MatchArm{
+				IsWildcard:    true,
+				Body:          &BlockStatement{Token: tok, Statements: []Statement{&LetStatement{Token: tok, Name: &Identifier{Token: tok, Value: valName}, Type: &NamedType{Token: tok, Value: elem}, Value: defLit}}},
+				IsBlockBody:   true,
+				SkipItBinding: true,
+				Pos:           posFromToken(tok),
+			}
+			sm := &SurfaceMatch{Token: tok, Matched: &Identifier{Token: tok, Value: outName}, Arms: []MatchArm{okArm, noneArm}}
+			lowered := p.buildMatchDesugar(sm)
+			if lowered == nil {
+				return expr, nil
+			}
+			// __idx_val_N = match（u64）。
+			valStmt := &LetStatement{
+				Token:       tok,
+				Name:        &Identifier{Token: tok, Value: valName},
+				Type:        &NamedType{Token: tok, Value: elem},
+				Value:       lowered,
+				IsSynthetic: true,
+			}
+			return &Identifier{Token: tok, Value: valName}, []Statement{outStmt, valStmt}
+		}
+		// 遞歸進入索引的左右子表達式（如 `a[b[c]]`）。
+		newLeft, ls := p.desugarIndexOutReads(e.Left, tok, defVal, counter)
+		newIndex, is := p.desugarIndexOutReads(e.Index, tok, defVal, counter)
+		if newLeft != nil || newIndex != nil {
+			ne := *e
+			if newLeft != nil {
+				ne.Left = newLeft
+			}
+			if newIndex != nil {
+				ne.Index = newIndex
+			}
+			return &ne, append(ls, is...)
+		}
+		return expr, nil
+	case *CallExpression:
+		changed := false
+		var pre []Statement
+		args := make([]Expression, 0, len(e.Arguments))
+		for _, a := range e.Arguments {
+			nr, ps := p.desugarIndexOutReads(a, tok, defVal, counter)
+			pre = append(pre, ps...)
+			if nr != nil {
+				args = append(args, nr)
+				changed = true
+			} else {
+				args = append(args, a)
+			}
+		}
+		if changed {
+			ne := *e
+			ne.Arguments = args
+			return &ne, pre
+		}
+		return expr, nil
+	case *InfixExpression:
+		newLeft, ls := p.desugarIndexOutReads(e.Left, tok, defVal, counter)
+		newRight, rs := p.desugarIndexOutReads(e.Right, tok, defVal, counter)
+		if newLeft != nil || newRight != nil {
+			ne := *e
+			if newLeft != nil {
+				ne.Left = newLeft
+			}
+			if newRight != nil {
+				ne.Right = newRight
+			}
+			return &ne, append(ls, rs...)
+		}
+		return expr, nil
+	case *PrefixExpression:
+		nr, ps := p.desugarIndexOutReads(e.Right, tok, defVal, counter)
+		if nr != nil {
+			ne := *e
+			ne.Right = nr
+			return &ne, ps
+		}
+		return expr, nil
+	case *GroupedExpression:
+		nr, ps := p.desugarIndexOutReads(e.Expression, tok, defVal, counter)
+		if nr != nil {
+			ne := *e
+			ne.Expression = nr
+			return &ne, ps
+		}
+		return expr, nil
+	}
+	return expr, nil
 }
 
 // unionElemType 從聯合型別字串中提取 payload（非 err/nil）型別。
@@ -3468,7 +3922,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	}
 
 	// Build match arms.
-	var arms []matchArm
+	var arms []MatchArm
 
 	var preStmts []Statement
 	// 傳播賦值目標是否「就是」option 結果參數本身（`r ?= ...`）。
@@ -3499,19 +3953,19 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		// `matched == nil || matched == err` 組合條件），因為組合 OR 條件會
 		// 觸發 option 變數的「值比較」代碼路徑（對 err/nil 關鍵字做 load，
 		// 產生未定義的 %err / 錯誤的 %nil 比較）；獨立 arm 走 tag 比較路徑。
-		arms = append(arms, matchArm{
-			condition:     &Identifier{Token: tok, Value: "nil"},
-			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
-			isBlockBody:   true,
-			pos:           posFromToken(tok),
-			skipItBinding: true,
+		arms = append(arms, MatchArm{
+			Condition:     &Identifier{Token: tok, Value: "nil"},
+			Body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			IsBlockBody:   true,
+			Pos:           posFromToken(tok),
+			SkipItBinding: true,
 		})
-		arms = append(arms, matchArm{
-			condition:     &Identifier{Token: tok, Value: "err"},
-			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
-			isBlockBody:   true,
-			pos:           posFromToken(tok),
-			skipItBinding: true,
+		arms = append(arms, MatchArm{
+			Condition:     &Identifier{Token: tok, Value: "err"},
+			Body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			IsBlockBody:   true,
+			Pos:           posFromToken(tok),
+			SkipItBinding: true,
 		})
 	} else if resultName != "" {
 		// 非結果參數目標（`v ?= ...` 且 v != 結果參數）：把 option 結構的傳播
@@ -3527,19 +3981,19 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 				&ReturnStatement{Token: tok},
 			}}
 		}
-		arms = append(arms, matchArm{
-			condition:     &Identifier{Token: tok, Value: "nil"},
-			body:          propagate(),
-			isBlockBody:   true,
-			pos:           posFromToken(tok),
-			skipItBinding: true,
+		arms = append(arms, MatchArm{
+			Condition:     &Identifier{Token: tok, Value: "nil"},
+			Body:          propagate(),
+			IsBlockBody:   true,
+			Pos:           posFromToken(tok),
+			SkipItBinding: true,
 		})
-		arms = append(arms, matchArm{
-			condition:     &Identifier{Token: tok, Value: "err"},
-			body:          propagate(),
-			isBlockBody:   true,
-			pos:           posFromToken(tok),
-			skipItBinding: true,
+		arms = append(arms, MatchArm{
+			Condition:     &Identifier{Token: tok, Value: "err"},
+			Body:          propagate(),
+			IsBlockBody:   true,
+			Pos:           posFromToken(tok),
+			SkipItBinding: true,
 		})
 	} else {
 		// No option result param — emit a parse error placeholder body.
@@ -3552,19 +4006,19 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		if uas.DeprecatedOp == "" {
 			l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column))
 		}
-		arms = append(arms, matchArm{
-			condition:     &Identifier{Token: tok, Value: "nil"},
-			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
-			isBlockBody:   true,
-			pos:           posFromToken(tok),
-			skipItBinding: true,
+		arms = append(arms, MatchArm{
+			Condition:     &Identifier{Token: tok, Value: "nil"},
+			Body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			IsBlockBody:   true,
+			Pos:           posFromToken(tok),
+			SkipItBinding: true,
 		})
-		arms = append(arms, matchArm{
-			condition:     &Identifier{Token: tok, Value: "err"},
-			body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
-			isBlockBody:   true,
-			pos:           posFromToken(tok),
-			skipItBinding: true,
+		arms = append(arms, MatchArm{
+			Condition:     &Identifier{Token: tok, Value: "err"},
+			Body:          &BlockStatement{Token: tok, Statements: []Statement{&ReturnStatement{Token: tok}}},
+			IsBlockBody:   true,
+			Pos:           posFromToken(tok),
+			SkipItBinding: true,
 		})
 	}
 
@@ -3611,11 +4065,11 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		Token:      tok,
 		Statements: okStmts,
 	}
-	arms = append(arms, matchArm{
-		isWildcard:  true,
-		body:        okBody,
-		isBlockBody: true,
-		pos:         posFromToken(tok),
+	arms = append(arms, MatchArm{
+		IsWildcard:  true,
+		Body:        okBody,
+		IsBlockBody: true,
+		Pos:         posFromToken(tok),
 	})
 
 	// Build SurfaceMatch and desugar it.
@@ -3711,26 +4165,26 @@ func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *Inde
 			&ReturnStatement{Token: tok},
 		}}
 	}
-	arms := []matchArm{
+	arms := []MatchArm{
 		{
-			condition:     &Identifier{Token: tok, Value: "nil"},
-			body:          propagate(),
-			isBlockBody:   true,
-			pos:           posFromToken(tok),
-			skipItBinding: true,
+			Condition:     &Identifier{Token: tok, Value: "nil"},
+			Body:          propagate(),
+			IsBlockBody:   true,
+			Pos:           posFromToken(tok),
+			SkipItBinding: true,
 		},
 		{
-			condition:     &Identifier{Token: tok, Value: "err"},
-			body:          propagate(),
-			isBlockBody:   true,
-			pos:           posFromToken(tok),
-			skipItBinding: true,
+			Condition:     &Identifier{Token: tok, Value: "err"},
+			Body:          propagate(),
+			IsBlockBody:   true,
+			Pos:           posFromToken(tok),
+			SkipItBinding: true,
 		},
 		{
-			isWildcard:  true,
-			isBlockBody: true,
-			pos:         posFromToken(tok),
-			body: &BlockStatement{
+			IsWildcard:  true,
+			IsBlockBody: true,
+			Pos:         posFromToken(tok),
+			Body: &BlockStatement{
 				Token: tok,
 				Statements: []Statement{
 					&LetStatement{
@@ -4012,21 +4466,21 @@ func (l *lowerer) makePropagateGuard(optName, resultName string, tok lexer.Token
 		}
 		return &BlockStatement{Token: tok, Statements: []Statement{assignRes, &ReturnStatement{Token: tok}}}
 	}
-	nilArm := matchArm{
-		condition:     &Identifier{Token: tok, Value: "nil"},
-		body:          mkBody(),
-		isBlockBody:   true,
-		pos:           posFromToken(tok),
-		skipItBinding: true,
+	nilArm := MatchArm{
+		Condition:     &Identifier{Token: tok, Value: "nil"},
+		Body:          mkBody(),
+		IsBlockBody:   true,
+		Pos:           posFromToken(tok),
+		SkipItBinding: true,
 	}
-	errArm := matchArm{
-		condition:     &Identifier{Token: tok, Value: "err"},
-		body:          mkBody(),
-		isBlockBody:   true,
-		pos:           posFromToken(tok),
-		skipItBinding: true,
+	errArm := MatchArm{
+		Condition:     &Identifier{Token: tok, Value: "err"},
+		Body:          mkBody(),
+		IsBlockBody:   true,
+		Pos:           posFromToken(tok),
+		SkipItBinding: true,
 	}
-	sm := &SurfaceMatch{Token: tok, Matched: tmpIdent, Arms: []matchArm{nilArm, errArm}}
+	sm := &SurfaceMatch{Token: tok, Matched: tmpIdent, Arms: []MatchArm{nilArm, errArm}}
 	saved := l.p.curFuncName
 	l.p.curFuncName = l.curFuncName
 	desugared := l.p.buildMatchDesugar(sm)

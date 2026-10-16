@@ -506,12 +506,26 @@ func (p *Parser) applyLineIndexOutAnnotations(block *BlockStatement) {
 				if _, isAnn := next.(*AnnotationStatement); isAnn {
 					break
 				}
-				// 行注解語意：index-out 條目合併進下一條陳述的 side-table，
-				// 供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。
-				// 若下一條陳述已自帶 index-out，不覆蓋（避免重複套用）。
-				if p.indexOutEntries(p.sem.RawAnnotationsOf(next)) == nil {
-					p.mergeIndexOutAnnotations(next, entries)
+			// 行注解語意：index-out 條目合併進下一條陳述的 side-table，
+			// 供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。
+			// 若下一條陳述已自帶 index-out，不覆蓋（避免重複套用）。
+			if p.indexOutEntries(p.sem.RawAnnotationsOf(next)) == nil {
+				p.mergeIndexOutAnnotations(next, entries)
+			}
+			// D9 place-write：`#{index-out=DEF}` 套用到 `v[i]: { ok -> it = ... }`
+			// 時，下一條陳述是 ExpressionStatement 包裹的 SurfaceMatch，desugar
+			// 主體是內層 SurfaceMatch。把 index-out 條目也合併進內層 sm，使
+			// buildMatchDesugar / rewriteItPlaceWrites 能直接從 sm 讀到註解、
+			// 還原「注解作用到臂內 RHS 下标读取」的舊語意（無須依賴 walk 從外層
+			// ExpressionStatement 轉移，且對 desugarSurfaceMatch 克隆 sm 的路徑
+			// 也生效，因為此處直接寫在原始 sm 上）。
+			if es, ok := next.(*ExpressionStatement); ok {
+				if sm, ok2 := es.Expression.(*SurfaceMatch); ok2 {
+					if p.indexOutEntries(p.sem.RawAnnotationsOf(sm)) == nil {
+						p.mergeIndexOutAnnotations(sm, entries)
+					}
 				}
+			}
 				// 若下一條是 for 迴圈（含 `k <- [0..N):` 計數迴圈），其體內的
 				// 索引讀取 `buf[base+k] = data[off+base+k]` 才是真正需要降級的
 				// 目標。desugar 只對 LetStatement / AssignExpression / ExpressionStatement

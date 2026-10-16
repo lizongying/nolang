@@ -979,7 +979,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 	tok := p.currentToken // LBRACE
 	p.nextToken()         // skip {
 
-	var arms []matchArm
+	var arms []MatchArm
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		// Skip newlines and semicolons between arms
@@ -1028,25 +1028,25 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: arm loop start cur=%s(%s) peek=%s\n", p.currentToken.Type.String(), p.currentToken.Literal, p.peekToken.Type.String())
 		}
 
-		var ma matchArm
-		ma.pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
+		var ma MatchArm
+		ma.Pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 		// If the arm starts with `{` classified as blockMatch, treat it as a
 		// wildcard arm whose body is a bare match expression. Without this,
 		// the `{` is parsed as an arm condition (via parseExpression) and the
 		// entire match fails (no `->` separator), causing fallback to while-loop.
 		if p.currentToken.Type == lexer.LBRACE && p.classifyBlockAtCurrent() == blockMatch {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 		} else if p.currentToken.Type == lexer.COLON {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 		} else if p.currentToken.Type == lexer.UNDERSCORE {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.RARROW {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 		} else if p.currentToken.Type == lexer.DOT && p.peekToken.Type == lexer.RARROW {
 			// .-> → val branch (specific, not catch-all)
-			ma.isWildcard = true
-			ma.isDotVal = true
+			ma.IsWildcard = true
+			ma.IsDotVal = true
 			p.nextToken() // consume DOT
 		} else if p.currentToken.Type == lexer.IDENT && p.currentToken.Literal == "ok" && p.peekToken.Type == lexer.LPAREN {
 			// ok(...) 有兩種含義，用「有界前瞻 1 個 token」在 parser 內部消歧，
@@ -1061,10 +1061,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			p.nextToken() // skip ok
 			p.nextToken() // skip (
 			if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RPAREN {
-				ma.bindingName = p.currentToken.Literal
-				ma.bindingVariant = "ok"
-				ma.isWildcard = true
-				ma.isDotVal = true
+				ma.BindingName = p.currentToken.Literal
+				ma.BindingVariant = "ok"
+				ma.IsWildcard = true
+				ma.IsDotVal = true
 				p.nextToken() // skip name
 				p.nextToken() // skip )
 			} else {
@@ -1075,8 +1075,8 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 					return nil
 				}
 				p.nextToken() // skip )
-				ma.isRawCond = true
-				ma.condition = okCond
+				ma.IsRawCond = true
+				ma.Condition = okCond
 			}
 		} else if p.currentToken.Type == lexer.IDENT && p.currentToken.Literal == "err" && p.peekToken.Type == lexer.LPAREN &&
 			p.look(0).Type == lexer.IDENT && p.look(1).Type == lexer.RPAREN {
@@ -1086,9 +1086,9 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// 巢狀 match 時用處最大 —— 外層的 `it` 不會被內層覆蓋。
 			// 條件規範化為 Identifier{"err"}，使 option 完整性檢查把本臂計入 err 臂，
 			// 並復用 `err ->` 的 desugar/codegen 路徑（綁定型別在 lowering 補全）。
-			ma.condition = &Identifier{Token: p.currentToken, Value: "err"}
-			ma.bindingName = p.look(0).Literal
-			ma.bindingVariant = "err"
+			ma.Condition = &Identifier{Token: p.currentToken, Value: "err"}
+			ma.BindingName = p.look(0).Literal
+			ma.BindingVariant = "err"
 			p.nextToken() // skip err
 			p.nextToken() // skip (
 			p.nextToken() // skip name
@@ -1098,18 +1098,18 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// err-> nil-> → option pattern
 			// ok-> → val branch (specific, not catch-all)
 			if p.currentToken.Literal == "ok" {
-				ma.isWildcard = true
-				ma.isDotVal = true
+				ma.IsWildcard = true
+				ma.IsDotVal = true
 			} else {
-				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+				ma.Condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 			}
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.IDENT && p.currentToken.Literal == "ok" &&
 			(p.peekToken.Type == lexer.NEWLINE || p.peekToken.Type == lexer.RBRACE) {
 			// ok without -> (e.g. "nil -> err -> ok\n body...")
 			// Treat as ok val branch with body on subsequent lines
-			ma.isWildcard = true
-			ma.isDotVal = true
+			ma.IsWildcard = true
+			ma.IsDotVal = true
 			p.nextToken()
 		} else if (p.currentToken.Type == lexer.NIL ||
 			(p.currentToken.Type == lexer.IDENT &&
@@ -1140,22 +1140,22 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 					break
 				}
 			}
-			ma.multiOptionPatterns = patterns
+			ma.MultiOptionPatterns = patterns
 		} else if p.currentToken.Type == lexer.NOT && p.peekToken.Type == lexer.RARROW {
 			// !-> → err branch
-			ma.condition = &Identifier{Token: p.currentToken, Value: "err"}
+			ma.Condition = &Identifier{Token: p.currentToken, Value: "err"}
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.QUESTION && p.peekToken.Type == lexer.RARROW {
 			// ?-> → nil branch
-			ma.condition = &Identifier{Token: p.currentToken, Value: "nil"}
+			ma.Condition = &Identifier{Token: p.currentToken, Value: "nil"}
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.IDENT &&
 			p.look(0).Type == lexer.RARROW {
 			// v T -> ：帶綁定型別臂（類型解構 match）。v 為綁定名（臂內可見為 T），
 			// T 為 union 成員型別。純語法識別，成員校驗延後到 lowering/checker。
-			ma.typeBindingName = p.currentToken.Literal
-			ma.typePattern = p.peekToken.Literal
-			ma.isTypeArm = true
+			ma.TypeBindingName = p.currentToken.Literal
+			ma.TypePattern = p.peekToken.Literal
+			ma.IsTypeArm = true
 			p.nextToken() // skip v
 			p.nextToken() // skip T
 		} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.INT ||
@@ -1164,33 +1164,33 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// 解析 match 條件（僅主要表達式，避免 | 被當作 OR）
 			switch p.currentToken.Type {
 			case lexer.INT:
-				ma.condition = p.parseIntegerLiteral()
+				ma.Condition = p.parseIntegerLiteral()
 			case lexer.FLOAT:
-				ma.condition = p.parseFloatLiteral()
+				ma.Condition = p.parseFloatLiteral()
 			case lexer.STRING:
-				ma.condition = p.parseStringLiteral()
+				ma.Condition = p.parseStringLiteral()
 			case lexer.IDENT:
 				// IDENT(...) 形式（如 val(v) 或自定義枚舉構造）需解析為 CallExpression，
 				// 否則只消費標識符而留下 (v)，會導致整個 match 解析失敗並 fallback。
 				// 注意：ok(...) 已由前面分支處理，這裡只處理其他 IDENT(...)。
 				if p.peekToken.Type == lexer.LPAREN {
 					p.ctx.push(CTX_MATCH_ARM)
-					ma.condition = p.parseExpression(LOWEST)
+					ma.Condition = p.parseExpression(LOWEST)
 					p.ctx.pop()
 				} else {
-					ma.condition = p.parseIdentifier()
+					ma.Condition = p.parseIdentifier()
 				}
 			case lexer.NIL:
-				ma.condition = p.parseNilLiteral()
+				ma.Condition = p.parseNilLiteral()
 			case lexer.TRUE, lexer.FALSE:
-				ma.condition = &BooleanLiteral{Token: p.currentToken, Value: p.currentToken.Type == lexer.TRUE}
+				ma.Condition = &BooleanLiteral{Token: p.currentToken, Value: p.currentToken.Type == lexer.TRUE}
 				p.nextToken()
 			}
 			// 收集以 || 連接的多個數值 pattern：1 || 3 || 5 || 7
 			// 僅當第一個 pattern 已解析且 currentToken 為 LOR 時觸發。
 			// option pattern（nil/err/ok）的 || 已由前面專門分支處理，不會走到這裡。
-			if p.currentToken.Type == lexer.LOR && ma.condition != nil {
-				patterns := []Expression{ma.condition}
+			if p.currentToken.Type == lexer.LOR && ma.Condition != nil {
+				patterns := []Expression{ma.Condition}
 				for p.currentToken.Type == lexer.LOR {
 					p.nextToken() // skip ||
 					// 解析下一個 pattern（與上面相同的 token 類型集合）
@@ -1224,13 +1224,13 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 					}
 				}
 			doneCollect:
-				ma.multiValuePatterns = patterns
+				ma.MultiValuePatterns = patterns
 				// 清空 condition：buildMatchDesugar 會優先檢查 multiValuePatterns
-				ma.condition = nil
+				ma.Condition = nil
 			}
 		} else {
 			p.ctx.push(CTX_MATCH_ARM)
-			ma.condition = p.parseExpression(LOWEST)
+			ma.Condition = p.parseExpression(LOWEST)
 			p.ctx.pop()
 		}
 
@@ -1239,7 +1239,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.COLON {
 			p.nextToken()
-		} else if !ma.isWildcard {
+		} else if !ma.IsWildcard {
 			if os.Getenv("NOLANG_DEBUG_IT") != "" {
 				fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: not wildcard and no ->/: cur=%s peek=%s\n", p.currentToken.Type.String(), p.peekToken.Type.String())
 			}
@@ -1255,7 +1255,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// 多行 arm body 必須使用大括號，以便 option-match desugar 能正確插入 `it` 綁定。
 			// 不推送 CTX_MATCH_ARM：block body 內的 `cond -> body` 應視為 standalone if-then，
 			// 而非 match arm 分隔符。CTX_MATCH_ARM 僅用於 arm condition 與 inline body。
-			ma.isBlockBody = true
+			ma.IsBlockBody = true
 			parsedBlock = p.parseBlockStatement()
 			if parsedBlock != nil {
 				bodyStmts = parsedBlock.Statements
@@ -1265,7 +1265,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			}
 		} else if p.currentToken.Type == lexer.NEWLINE {
 			// Block form (newline-separated statements, no braces)
-			ma.isBlockBody = true
+			ma.IsBlockBody = true
 			bodyBlock.IsInline = true
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
@@ -1282,7 +1282,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			// body 內的 standalone if-then（如 `pos >= 0 -> { ... }`）誤判為新臂，
 			// 導致 body 被截斷、match 解析失敗。wildcard 語義上是 catch-all，
 			// 必為最後一個臂，因此跳過 isArmStart() 檢查，直接解析到 }。
-			checkArmStart := !ma.isWildcard
+			checkArmStart := !ma.IsWildcard
 			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF &&
 				(!checkArmStart || !p.isArmStart()) &&
 				!isOptionPatternStart(p) {
@@ -1340,7 +1340,7 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 					}
 				} else {
 					p.restoreState(armState)
-					ma.isBlockBody = true
+					ma.IsBlockBody = true
 					parsedBlock = p.parseBlockStatement()
 					if parsedBlock != nil {
 						bodyStmts = parsedBlock.Statements
@@ -1403,17 +1403,17 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			p.sem.SetOpeningBraceComment(bodyBlock, p.sem.OpeningBraceCommentOf(parsedBlock))
 			bodyBlock.RBrace = parsedBlock.RBrace
 		}
-		ma.body = bodyBlock
+		ma.Body = bodyBlock
 		if os.Getenv("NOLANG_DEBUG_IT") != "" {
 			condStr := "nil"
-			if ma.condition != nil {
-				if ident, ok := ma.condition.(*Identifier); ok {
+			if ma.Condition != nil {
+				if ident, ok := ma.Condition.(*Identifier); ok {
 					condStr = ident.Value
 				} else {
 					condStr = "expr"
 				}
 			}
-			if ma.isWildcard {
+			if ma.IsWildcard {
 				condStr += "(wildcard)"
 			}
 			fmt.Fprintf(os.Stderr, "[debug-it] parseMatchExprFrom: arm parsed cond=%s cur=%s\n", condStr, p.currentToken.Type.String())
@@ -1431,9 +1431,9 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 	// Check option match branch completeness
 	hasErrArm, hasNilArm, hasValArm, hasElseArm := false, false, false, false
 	for _, a := range arms {
-		if len(a.multiOptionPatterns) > 0 {
+		if len(a.MultiOptionPatterns) > 0 {
 			// Combined option patterns: nil || err → mark all as covered
-			for _, pat := range a.multiOptionPatterns {
+			for _, pat := range a.MultiOptionPatterns {
 				if pat == "err" {
 					hasErrArm = true
 				} else if pat == "nil" {
@@ -1444,14 +1444,14 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			}
 			continue
 		}
-		if a.isWildcard {
-			if a.isDotVal {
+		if a.IsWildcard {
+			if a.IsDotVal {
 				hasValArm = true
 			} else {
 				hasElseArm = true
 			}
 		} else {
-			switch c := a.condition.(type) {
+			switch c := a.Condition.(type) {
 			case *Identifier:
 				if c.Value == "err" {
 					hasErrArm = true

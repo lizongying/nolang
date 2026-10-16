@@ -30,8 +30,10 @@ import (
 )
 
 // ZipVer 是 zip 容器本身的版本（佈局/清單規則變化時 bump）。
-// 2026-10-15.3：載體從「根森林分片（chunk-*.mm）」改成「單棵完整遞歸樹單文檔（tree.mm）」。
-const ZipVer = "2026-10-15.3"
+// 2026-10-16.2：節點樹改成「扁平節點表（Root 索引 + Table）」——移除 C/Kids 拆分與
+// MMSlice/MMMap/MMVal/MMBytes/MMEntry/ASTSemEntry 合成節點，並把遞歸巢狀壓平成
+// 常數嵌套深度（消除 mm 的 O(size×深度) 複製與空容器範例爆炸）。tree.mm 載體形狀隨之變。
+const ZipVer = "2026-10-16.2"
 
 // 單文檔在 zip 內的條目名。
 const (
@@ -76,8 +78,8 @@ func WriteASTZipWithStats(w io.Writer, prog *parser.Program, tool, src, srcSHA s
 	if err != nil {
 		return nil, fmt.Errorf("mmast: encode ast tree: %w", err)
 	}
-	if tree.Root == nil {
-		return nil, fmt.Errorf("mmast: ast tree has no root")
+	if tree.Root < 0 || int(tree.Root) >= len(tree.Table) {
+		return nil, fmt.Errorf("mmast: ast tree has no valid root (root=%d table=%d)", tree.Root, len(tree.Table))
 	}
 
 	cw := &countingWriter{w: w}

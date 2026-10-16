@@ -172,7 +172,10 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     #{overflow=wrap}
     i <- [0..max-symbol + 1): {
 
-        positions[i] = pos
+        positions[i]: {
+            ok -> it = pos
+            -> _
+        }
 
         #{index-out=zero}
         nc = norm-count[i]
@@ -316,7 +319,10 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
     tmp-base [16]i64
     i <- [0..16): {
 
-        tmp-base[i] = .base[i]
+        tmp-base[i]: {
+            ok -> it = .base[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -332,7 +338,10 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
             .symbol[tmp-base[l]] = i
 
             #{index-out=zero}
-            tmp-base[l] = tmp-base[l] + 1
+            tmp-base[l]: {
+                ok -> it = tmp-base[l] + 1
+                -> _
+            }
         }
     }
 }

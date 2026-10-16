@@ -241,12 +241,18 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
         #{index-out=zero}
         carry = a[i] >> 31
 
-        a[i] = new-val & 4294967295
+        a[i]: {
+            ok -> it = new-val & 4294967295
+            -> _
+        }
     }
     new-an = an
     carry != 0 -> {
 
-        a[an] = carry
+        a[an]: {
+            ok -> it = carry
+            -> _
+        }
 
         #{overflow=wrap}
         new-an = an + 1
@@ -270,7 +276,10 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
         #{index-out=zero}
         carry = a[i] & 1
 
-        a[i] = new-val & 4294967295
+        a[i]: {
+            ok -> it = new-val & 4294967295
+            -> _
+        }
 
         #{overflow=wrap}
         i = i - 1
@@ -339,9 +348,15 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     ; 初始化
     i <- [0..buf-len): {
 
-        local-r[i] = 0
+        local-r[i]: {
+            ok -> it = 0
+            -> _
+        }
 
-        local-q[i] = 0
+        local-q[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; 計算 a 的最高有效位元數
@@ -376,13 +391,19 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
             #{index-out=zero}
             carry-shl = local-r[j] >> 31
 
-            local-r[j] = new-val & 4294967295
+            local-r[j]: {
+                ok -> it = new-val & 4294967295
+                -> _
+            }
         }
 
         #{overflow=wrap}
         carry-shl != 0 -> {
 
-            local-r[local-rn] = carry-shl
+            local-r[local-rn]: {
+                ok -> it = carry-shl
+                -> _
+            }
             local-rn = local-rn + 1
         }
 
@@ -395,7 +416,10 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
         a-bit = (a[limb] >> bit-pos) & 1
 
         #{index-out=zero}
-        local-r[0] = local-r[0] | a-bit
+        local-r[0]: {
+            ok -> it = local-r[0] | a-bit
+            -> _
+        }
 
         ; 如果 r >= b: r = r - b; q 的第 i 位元設為 1
         cmp = 0
@@ -412,7 +436,10 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
             k <- [0..sub-rn): {
 
                 #{index-out=zero}
-                local-r[k] = sub-r[k]
+                local-r[k]: {
+                    ok -> it = sub-r[k]
+                    -> _
+                }
             }
 
             ; 清除剩餘的高位 limb
@@ -422,7 +449,10 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
                 #{overflow=wrap}
                 k < local-rn -> {
 
-                    local-r[k] = 0
+                    local-r[k]: {
+                        ok -> it = 0
+                        -> _
+                    }
                     k = k + 1
                 }
             }
@@ -431,7 +461,10 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
             q-bit = i % 32
 
             #{index-out=zero}
-            local-q[q-limb] = local-q[q-limb] | (1 << q-bit)
+            local-q[q-limb]: {
+                ok -> it = local-q[q-limb] | (1 << q-bit)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -514,10 +547,16 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     local-result []i64 = with-len(mn)
     i <- [0..mn): {
 
-        local-result[i] = 0
+        local-result[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
-    local-result[0] = 1
+    local-result[0]: {
+        ok -> it = 1
+        -> _
+    }
     local-rn = 1
 
     ; 計算 exp 的位元數

@@ -19,7 +19,10 @@ ctr-inc = (cb []byte) {
     (j >= 12) {
 
         #{index-out=zero}
-        cb[j] = (cb[j] + 1) & 255
+        cb[j]: {
+            ok -> it = (cb[j] + 1) & 255
+            -> _
+        }
         cb[j] != 0 -> {
             break
         }
@@ -35,7 +38,10 @@ ctr-inc = (cb []byte) {
         (j >= 0) {
 
             #{index-out=zero}
-            cb[j] = (cb[j] + 1) & 255
+            cb[j]: {
+                ok -> it = (cb[j] + 1) & 255
+                -> _
+            }
             cb[j] != 0 -> {
                 break
             }
@@ -57,7 +63,10 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     cb []byte = with-len(16)
     i <- [0..16): {
 
-        cb[i] = iv[i]
+        cb[i]: {
+            ok -> it = iv[i]
+            -> _
+        }
     }
     out = with-len(in.len())
     pos = 0
@@ -67,7 +76,10 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         blk [16]byte
         i <- [0..16): {
 
-            blk[i] = cb[i]
+            blk[i]: {
+                ok -> it = cb[i]
+                -> _
+            }
         }
         ks [16]byte
         ks = aes.enc-block(blk, ek)

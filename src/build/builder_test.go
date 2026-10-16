@@ -162,6 +162,39 @@ func TestZigTargetTriple(t *testing.T) {
 	}
 }
 
+// TestLLVMCodegenTriple 驗證 llvmCodegenTriple 把使用者 / CI 傳入的 -target
+// （可能是 zig 風格方言）映射成 LLVM 規範 triple，以便進程內 LLVM C API 後端在
+// 任何宿主上都選對 object 格式（darwin→Mach-O、windows→COFF、linux→ELF）。
+// 這正是 CI（Linux runner + no-llvm）交叉編譯 darwin/windows 失敗的根因：
+// 直接把 "x86_64-macos-none" / "aarch64-windows-gnu" 這類方言餵給 LLVM，OS 落在
+// vendor 槽位 → 判成 UnknownOS → 退回宿主 ELF，連結階段才報 TBD / unknown file type。
+func TestLLVMCodegenTriple(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		// CI 的 6 個 zig 風格方言 → 規範 triple
+		{"x86_64-macos-none", "x86_64-apple-macosx"},
+		{"aarch64-macos-none", "aarch64-apple-macosx"},
+		{"x86_64-windows-gnu", "x86_64-pc-windows-gnu"},
+		{"aarch64-windows-gnu", "aarch64-pc-windows-gnu"},
+		{"x86_64-linux-gnu", "x86_64-unknown-linux-gnu"},
+		{"aarch64-linux-gnu", "aarch64-unknown-linux-gnu"},
+		// 已規範化的 Apple/Go 拼寫也应收敛到同一 OS 槽位
+		{"aarch64-apple-darwin", "aarch64-apple-macosx"},
+		{"x86_64-apple-macos", "x86_64-apple-macosx"},
+		// wasm / 空 target 原样返回（不干涉既有行为）
+		{"wasm32-wasi", "wasm32-wasi"},
+		{"wasm32-unknown-wasi", "wasm32-unknown-wasi"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := llvmCodegenTriple(c.in); got != c.want {
+			t.Errorf("llvmCodegenTriple(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // TestBuildLLVMInternalZigDarwinLinks 端到端驗證：以 cc="zig"、target 為
 // aarch64-apple-darwin 呼叫 buildLLVMInternal，連結階段必須把 --target 翻成
 // aarch64-macos，否則 zig 會報 UnknownOperatingSystem。

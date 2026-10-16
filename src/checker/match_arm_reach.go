@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -43,12 +44,19 @@ const (
 const maxSubjectResolveDepth = 8
 
 // CatchAllArm 描述一条 option match 的**空** `->` 兜底臂。
+//
+// 两种形态归一到同一个结构：降糖后的 if/else 链（Root 非空）与糖形态的
+// SurfaceMatch（Sugar 非空）。诊断锚点因此不能只从 Root 取——Pos/EndColumn 是
+// 两种形态**共同**填写的字段（S1，见设计稿 §15.2）。
 type CatchAllArm struct {
-	Root     *parser.IfExpression // match 链的根（位置即整条 match 的位置）
-	Body     []parser.Statement   // 终端兜底臂的语句体（已知为空）
-	AlwaysOk bool                 // true = 编译器可证明主体恒为 ok（死臂）
-	Subject  string               // 可打印的主体名（诊断信息用）
-	FuncName string               // 所在函数（匹配 collectMatchRoots 的口径）
+	Root      *parser.IfExpression // 降糖形态：match 链的根；糖形态为 nil
+	Sugar     *parser.SurfaceMatch // 糖形态：match 节点；降糖形态为 nil
+	Pos       lexer.Position       // 诊断锚点（整条 match 的位置）
+	EndColumn int
+	Body      []parser.Statement // 终端兜底臂的语句体（已知为空）
+	AlwaysOk  bool               // true = 编译器可证明主体恒为 ok（死臂）
+	Subject   string             // 可打印的主体名（诊断信息用）
+	FuncName  string             // 所在函数（匹配 collectMatchRoots 的口径）
 }
 
 // CollectEmptyCatchAllArms 回傳程式中所有「以空 `->` 兜底臂結尾」的 option match，
@@ -76,20 +84,25 @@ func CollectEmptyCatchAllArms(program *parser.Program) []CatchAllArm {
 			continue
 		}
 		// 末端兜底臂：match 链最后一级的 else 体。
-		body := catchAllTailBody(root)
-		if body == nil || !catchAllArmIsDefaulting(body) {
+		body, found := catchAllTailBody(root)
+		if !found || !catchAllArmIsDefaulting(body) {
 			continue
 		}
 		fn := rootFunc[root]
 		subj := root.MatchedExpr
 		out = append(out, CatchAllArm{
-			Root:     root,
-			Body:     body,
-			AlwaysOk: optionSubjectAlwaysOk(subj, fn, inb, inits, 0),
-			Subject:  matchSubjectName(root),
-			FuncName: fn,
+			Root:      root,
+			Pos:       root.Pos(),
+			EndColumn: root.EndPos().Column,
+			Body:      body,
+			AlwaysOk:  optionSubjectAlwaysOk(subj, fn, inb, inits, 0),
+			Subject:   matchSubjectName(root),
+			FuncName:  fn,
 		})
 	}
+	// S1：糖形态下 match 是 SurfaceMatch 而不是 if/else 链，上面的循环一条也找
+	// 不到。两条路径共用同一批语义助手，故「什么叫恒为 ok」不会漂移。
+	out = append(out, collectSugarCatchAllArms(program, inb, inits)...)
 	return out
 }
 
@@ -100,12 +113,12 @@ func ValidateCatchAllArms(program *parser.Program) []ValidateResult {
 	}
 	var results []ValidateResult
 	for _, a := range CollectEmptyCatchAllArms(program) {
-		pos := a.Root.Pos()
+		pos := a.Pos
 		if a.AlwaysOk {
 			results = append(results, ValidateResult{
 				Line:      pos.Line,
 				Column:    pos.Column,
-				EndColumn: a.Root.EndPos().Column,
+				EndColumn: a.EndColumn,
 				TraceID:   armUnreachTraceID,
 				Message: fmt.Sprintf(
 					"空的 `->` 兜底臂不会被执行：编译器可证明 '%s' 恒为 ok（字面量算术不会溢出/除零，或索引可证明在界内）。该臂仍须保留以满足 match 穷尽性；保留也便于日后语义变化时无需改语法。",
@@ -116,7 +129,7 @@ func ValidateCatchAllArms(program *parser.Program) []ValidateResult {
 		results = append(results, ValidateResult{
 			Line:      pos.Line,
 			Column:    pos.Column,
-			EndColumn: a.Root.EndPos().Column,
+			EndColumn: a.EndColumn,
 			TraceID:   armShouldTraceID,
 			Message: fmt.Sprintf(
 				"空的 `->` 兜底臂可能会被执行（无法证明 '%s' 恒为 ok）。请决定失败时应该做什么，例如 `-> log('...')` / `-> print('...')`；留空则会静默取默认零值。",
@@ -126,9 +139,280 @@ func ValidateCatchAllArms(program *parser.Program) []ValidateResult {
 	return results
 }
 
+// ---- S1：糖形态的 match 根 --------------------------------------------------
+//
+// 本节以上所有逻辑都建立在**降糖后的形状**上：match 是一条 IfExpression 链，
+// 每个链节带 MatchedExpr。糖形态（Parser.SkipLowering，S1 的目标形态）下 match
+// 是 *parser.SurfaceMatch，上述机制一个都找不到它 ⇒ arm-should / arm-unreach
+// 静默失效（不报错，是沉默）。
+//
+// 没有让 collectMatchRoots 也回传 SurfaceMatch——它的回传型别是
+// []*parser.IfExpression，且 match_exhaustive.go 也在消费它。改为在这里加一条
+// 并行收集器，由 CollectEmptyCatchAllArms 两条都跑。两条路径**共用**语义助手
+// （optionSubjectAlwaysOk / localInitializers / isDefaultZeroValueExpr），因此
+// 不会在「什么叫恒为 ok」上漂移。
+//
+// 为什么这不是「加一个 walker 下降 case」：规则要的不只是「走进臂体」，而是
+// 「把整条 match 识别成一个单元」——需要主体、变体集合、末端兜底臂三样同时到手。
+// 降糖形态下这三样分散在 if 链的不同链节上（故需要 catchAllTailBody /
+// matchChainedChild / armVariantNames 去反推）；糖形态下它们就在一个节点里。
+
+// collectSugarMatchRoots 收集程式中每一个 *parser.SurfaceMatch 及其所在函数名。
+//
+// 与 collectMatchRoots 的差别：糖形态下不存在「链节」——每个 SurfaceMatch 都是
+// 用户手写的一个 match，故**全部**收集（含嵌在别的臂体里的）。降糖形态要靠
+// matchChainedChild 排除链节，这里不需要。
+func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, map[*parser.SurfaceMatch]string) {
+	var all []*parser.SurfaceMatch
+	rootFunc := make(map[*parser.SurfaceMatch]string)
+	if program == nil {
+		return all, rootFunc
+	}
+
+	var walkStmts func(fn string, stmts []parser.Statement)
+	var walkExpr func(fn string, e parser.Expression)
+
+	walkStmts = func(fn string, stmts []parser.Statement) {
+		for _, s := range stmts {
+			if s == nil {
+				continue
+			}
+			switch st := s.(type) {
+			case *parser.FunctionDefinition:
+				name := st.Name
+				if name == "" {
+					name = fn
+				}
+				if st.Body != nil {
+					walkStmts(name, st.Body.Statements)
+				}
+			case *parser.BlockStatement:
+				walkStmts(fn, st.Statements)
+			case *parser.LetStatement:
+				walkExpr(fn, st.Value)
+			case *parser.MultiAssignStatement:
+				for _, t := range st.Targets {
+					walkExpr(fn, t)
+				}
+				walkExpr(fn, st.Value)
+			case *parser.UnwrapAssignStatement:
+				walkExpr(fn, st.Value)
+			case *parser.ReturnStatement:
+				walkExpr(fn, st.ReturnValue)
+			case *parser.ExpressionStatement:
+				walkExpr(fn, st.Expression)
+			case *parser.ForStatement:
+				walkExpr(fn, st.Condition)
+				if st.Init != nil {
+					walkStmts(fn, []parser.Statement{st.Init})
+				}
+				if st.Update != nil {
+					walkStmts(fn, []parser.Statement{st.Update})
+				}
+				if st.Body != nil {
+					walkStmts(fn, st.Body.Statements)
+				}
+			}
+		}
+	}
+
+	walkExpr = func(fn string, e parser.Expression) {
+		if e == nil {
+			return
+		}
+		switch x := e.(type) {
+		case *parser.SurfaceMatch:
+			all = append(all, x)
+			rootFunc[x] = fn
+			// 臂体是语句容器，臂条件是表达式；嵌套 match 会在臂体里再次被找到。
+			walkSurfaceMatchChildren(x,
+				func(sub parser.Expression) { walkExpr(fn, sub) },
+				func(sub parser.Statement) { walkStmts(fn, []parser.Statement{sub}) })
+		case *parser.IfExpression:
+			walkExpr(fn, x.Condition)
+			if x.Consequence != nil {
+				walkStmts(fn, x.Consequence.Statements)
+			}
+			if x.Alternative != nil {
+				walkStmts(fn, x.Alternative.Statements)
+			}
+		case *parser.InfixExpression:
+			walkExpr(fn, x.Left)
+			walkExpr(fn, x.Right)
+		case *parser.PrefixExpression:
+			walkExpr(fn, x.Right)
+		case *parser.CallExpression:
+			walkExpr(fn, x.Function)
+			for _, a := range x.Arguments {
+				walkExpr(fn, a)
+			}
+		case *parser.AssignExpression:
+			walkExpr(fn, x.Left)
+			walkExpr(fn, x.Value)
+		case *parser.IndexExpression:
+			walkExpr(fn, x.Left)
+			walkExpr(fn, x.Index)
+		case *parser.SliceExpression:
+			walkExpr(fn, x.Left)
+			if x.Range != nil {
+				walkExpr(fn, x.Range.Start)
+				walkExpr(fn, x.Range.End)
+			}
+		case *parser.ArrayLiteral:
+			for _, el := range x.Elements {
+				walkExpr(fn, el)
+			}
+		case *parser.SliceLiteral:
+			for _, el := range x.Elements {
+				walkExpr(fn, el)
+			}
+		case *parser.GroupedExpression:
+			walkExpr(fn, x.Expression)
+		case *parser.AwaitExpression:
+			walkExpr(fn, x.Right)
+		case *parser.RunExpression:
+			walkExpr(fn, x.Call)
+		case *parser.CastExpression:
+			walkExpr(fn, x.Expr)
+		case *parser.ConditionalExpression:
+			walkExpr(fn, x.Condition)
+			walkExpr(fn, x.Consequence)
+			walkExpr(fn, x.Alternative)
+		case *parser.DotExpression:
+			walkExpr(fn, x.Receiver)
+		case *parser.StructLiteral:
+			for _, f := range x.Fields {
+				walkExpr(fn, f.Value)
+			}
+		case *parser.MapLiteral:
+			for _, pair := range x.Pairs {
+				walkExpr(fn, pair.Key)
+				walkExpr(fn, pair.Value)
+			}
+		}
+	}
+
+	walkStmts("", program.Statements)
+	return all, rootFunc
+}
+
+// sugarMatchVariants 回传糖形态 match 的各臂所声明的 option 变体
+// （"ok" / "nil" / "err"）。空集合表示这不是一条 option match（值 match、bare
+// guard），不在本规则的范围内——与降糖路径上 matchVariants 的过滤口径一致。
+func sugarMatchVariants(sm *parser.SurfaceMatch) map[string]bool {
+	vs := make(map[string]bool)
+	if sm == nil {
+		return vs
+	}
+	for i := range sm.Arms {
+		a := &sm.Arms[i]
+		// 合并模式（`nil || err ->`）的每个变体都要算上，否则穷尽性会误判。
+		for _, v := range a.MultiOptionPatterns {
+			if optionMatchVariants[v] {
+				vs[v] = true
+			}
+		}
+		switch c := a.Condition.(type) {
+		case *parser.Identifier:
+			if optionMatchVariants[c.Value] {
+				vs[c.Value] = true
+			}
+		case *parser.NilLiteral:
+			vs["nil"] = true
+		}
+		// `ok ->` 在糖形态是一个 dot-val 分支（Condition 为 nil、IsDotVal 为 true）。
+		if a.IsDotVal {
+			vs["ok"] = true
+		}
+	}
+	return vs
+}
+
+// sugarMatchSubjectName 是 matchSubjectName 的糖形态对应物：降糖版从 if 链的
+// MatchedExpr 取主体名，糖版直接从 SurfaceMatch.Matched 取。两者刻意保持同一套
+// 命名口径（Identifier → 名字、Dot → 属性名、Call → callee()），使诊断文案不因
+// 形态而变。
+func sugarMatchSubjectName(sm *parser.SurfaceMatch) string {
+	if sm == nil || sm.Matched == nil {
+		return "?"
+	}
+	switch m := sm.Matched.(type) {
+	case *parser.Identifier:
+		return m.Value
+	case *parser.DotExpression:
+		return m.Property
+	case *parser.CallExpression:
+		switch fn := m.Function.(type) {
+		case *parser.Identifier:
+			return fn.Value + "()"
+		case *parser.DotExpression:
+			return fn.Property + "()"
+		}
+	}
+	return "?"
+}
+
+// collectSugarCatchAllArms 是 CollectEmptyCatchAllArms 的糖形态分支。
+//
+// 判定链与降糖路径逐条对应：
+//   - 是 option match（有臂声明 ok/nil/err）↔ matchVariants(root) 非空；
+//   - 末端臂是裸 `->`（wildcard 且不是 ok 的 dot-val 分支）↔ catchAllTailBody；
+//   - 该臂「什么都没做」↔ catchAllArmIsDefaulting；
+//   - 主体可证明恒为 ok ↔ optionSubjectAlwaysOk。
+//
+// 「什么都没做」这条在两种形态下喂给 catchAllArmIsDefaulting 的东西不同：降糖形态
+// 是 `[it = <零值>（合成）, <零值表达式>]`，糖形态是 `[<零值表达式>]`（parser 不
+// 合成零值）。该函数两种形态都认（见其注释的形态 A / 形态 B）。
+func collectSugarCatchAllArms(program *parser.Program,
+	inb map[*parser.IndexExpression]bool,
+	inits map[string]map[string]parser.Expression) []CatchAllArm {
+
+	var out []CatchAllArm
+	roots, rootFunc := collectSugarMatchRoots(program)
+	for _, sm := range roots {
+		if len(sm.Arms) == 0 {
+			continue
+		}
+		if len(sugarMatchVariants(sm)) == 0 {
+			continue
+		}
+		last := &sm.Arms[len(sm.Arms)-1]
+		if !last.IsWildcard || last.IsDotVal || last.Body == nil {
+			continue
+		}
+		if !catchAllArmIsDefaulting(last.Body.Statements) {
+			continue
+		}
+		fn := rootFunc[sm]
+		out = append(out, CatchAllArm{
+			Sugar:     sm,
+			Pos:       sm.Pos(),
+			EndColumn: sm.EndPos().Column,
+			Body:      last.Body.Statements,
+			AlwaysOk:  optionSubjectAlwaysOk(sm.Matched, fn, inb, inits, 0),
+			Subject:   sugarMatchSubjectName(sm),
+			FuncName:  fn,
+		})
+	}
+	return out
+}
+
 // catchAllTailBody 沿 match 的 if/else 链走到末端，回傳终端兜底臂（else）的语句体。
-// 回傳 nil 表示这条链没有兜底臂（那种情形由 CollectNonExhaustiveMatches 负责上报）。
-func catchAllTailBody(root *parser.IfExpression) []parser.Statement {
+//
+// 🔴 第二返回值 found 不是「体非空」而是「**兜底臂存在**」。这两个问题在旧签名下被
+// 混成了一个 nil 返回值，于是「else 块存在但其 Statements 是 nil 切片」的 match 被
+// 静默漏报（S1 实测，见设计稿 §15.2）：
+//
+//	b-opt = t          ; t 是 ?i64，但 resolver 未登记 b-opt 的类型
+//	b-opt: { ok -> b = it   -> }
+//
+// 降糖时通配臂的 `it` 绑定由 buildItBindingForArm 合成，而它在 matchedVarType 未知
+// 时回 nil（lowering.go:3274）⇒ else 块保持**零语句**，且 parser 建块时用的是 nil
+// 切片而非空切片 ⇒ 旧签名把它与「根本没有兜底臂」当成同一件事。糖形态没有这层合成
+// ⇒ 反而看得见这条臂。故这是降糖路径的漏报，不是糖路径的多报。
+//
+// found=false 表示这条链没有兜底臂（那种情形由 CollectNonExhaustiveMatches 负责上报）。
+func catchAllTailBody(root *parser.IfExpression) ([]parser.Statement, bool) {
 	node := root
 	seen := make(map[*parser.IfExpression]bool)
 	for node != nil && !seen[node] {
@@ -138,11 +422,11 @@ func catchAllTailBody(root *parser.IfExpression) []parser.Statement {
 			continue
 		}
 		if node.Alternative == nil {
-			return nil // 链末端没有 else：非穷尽，不是这里的职责
+			return nil, false // 链末端没有 else：非穷尽，不是这里的职责
 		}
-		return node.Alternative.Statements
+		return node.Alternative.Statements, true
 	}
-	return nil
+	return nil, false
 }
 
 // catchAllArmIsDefaulting 報告终端兜底臂是否「什麼都沒做」——只產生 D4 的默認零值。

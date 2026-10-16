@@ -205,7 +205,10 @@ pem-decode = (pem-str str) (result ?pem-block) {
         #{overflow=wrap}
         skip == false -> {
 
-            b64-data[dst] = c
+            b64-data[dst]: {
+                ok -> it = c
+                -> _
+            }
             dst = dst + 1
         }
     }

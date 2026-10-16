@@ -1777,6 +1777,13 @@ func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line
 				usedVars[seg.Field.Name] = true
 			}
 		}
+
+	case *parser.SurfaceMatch:
+		// S1：糖形態下臂體對本 walker 不可見，頂層變數的唯一引用若落在臂內
+		// 就會被誤報 unused（trace 6kryrbsq 的主要來源）。詳見 sugar_walk.go。
+		walkSurfaceMatchChildren(e,
+			func(x parser.Expression) { markReferencesInExpr(x, varSet, usedVars) },
+			func(s parser.Statement) { markReferencesInStatement(s, varSet, usedVars) })
 	}
 }
 func CollectDefinedVars(program *parser.Program) map[string]bool {
@@ -2393,6 +2400,12 @@ func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool
 		}
 	case *parser.ConditionalExpression:
 		// ternary cond ? a : b — no statements, just expressions
+	case *parser.SurfaceMatch:
+		// S1：結果參數只在 match 臂體內被賦值（`n: { ok -> r = it, -> }`）時，
+		// 少了這一支就會被誤報 "never assigned"（i3k422u3）。見 sugar_walk.go。
+		walkSurfaceMatchChildren(e, nil, func(s parser.Statement) {
+			collectAssignedNames([]parser.Statement{s}, assigned, sem)
+		})
 	case *parser.AssignExpression:
 		// Nested assignment used as an expression (e.g. inside a loop body:
 		// `dst[i] = i`, `dst.len = n`). The left side is the write target.
@@ -2685,6 +2698,13 @@ func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 		if e.Expr != nil {
 			collectReadNamesInExpr(e.Expr, read)
 		}
+	case *parser.SurfaceMatch:
+		// S1：臂體內的讀取。本函式是 functionScopeFacts 的讀取側，餵
+		// ValidateUnhandledOverflow 的 curReadNames ⇒ 少了這一支，只在臂內
+		// 被消費的 option 會被誤報 optunuse。詳見 sugar_walk.go。
+		walkSurfaceMatchChildren(e,
+			func(x parser.Expression) { collectReadNamesInExpr(x, read) },
+			func(s parser.Statement) { collectReadNames([]parser.Statement{s}, read) })
 		// Literals (Integer, String, Float, Char, Boolean, Byte, Nil, Regex) don't read variables
 		// FunctionLiteral: don't recurse (nested function has its own scope)
 	}
@@ -3545,6 +3565,16 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 		for _, el := range x.Elements {
 			walkExprForIntOverflow(el, file, line, sem, declared, funcTypes, emit)
 		}
+	case *parser.SurfaceMatch:
+		// S1：臂體與臂條件內的整數運算（`-> r = a - b`）在糖形態下否則不可見。
+		// 見 sugar_walk.go。
+		walkSurfaceMatchChildren(x,
+			func(sub parser.Expression) {
+				walkExprForIntOverflow(sub, file, line, sem, declared, funcTypes, emit)
+			},
+			func(sub parser.Statement) {
+				walkStmtForOverflow(sub, file, sem, declared, funcTypes, emit)
+			})
 	}
 }
 
@@ -4985,6 +5015,16 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			walkExpr(x.Expression, fnReturnsOption, enclosingOverflow, valueCtx, varTypes, selfType, curFile)
 		case *parser.PrefixExpression:
 			walkExpr(x.Right, fnReturnsOption, enclosingOverflow, valueCtx, varTypes, selfType, curFile)
+		case *parser.SurfaceMatch:
+			// S1：臂體對本規則同樣必須可見——optunuse 判的是「option 綁定後
+			// 有沒有被消費」，而消費最常發生在臂體裡。見 sugar_walk.go。
+			walkSurfaceMatchChildren(x,
+				func(sub parser.Expression) {
+					walkExpr(sub, fnReturnsOption, enclosingOverflow, valueCtx, varTypes, selfType, curFile)
+				},
+				func(sub parser.Statement) {
+					walkStmt(sub, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
+				})
 		}
 	}
 
@@ -5112,9 +5152,18 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// 靜默丟棄 → ERROR optunuse。此判定不受 fnReturnsOption 影響（回傳 ?T 的
 			// 函式裡 option 同樣不會自動上拋），也不受 effOverflow 影響（D1：註解只改
 			// 失敗時怎麼取值，不解包、也不消費）。
-			if declaredOption && !discarded && s.Name != nil && !curReadNames[s.Name.Value] {
+		if declaredOption && !discarded && s.Name != nil && !curReadNames[s.Name.Value] {
+			// D9 place-write 豁免：place-match `a[i]: { ok -> it = v }` 的 ok 臂裡，
+			// `it` 是下標元素位置的綁定。編譯器為它合成 `it ?T = nil` 預宣告，臂內
+			// `it = v` 把值寫回元素位置——寫回即消費，不是「option 綁定後從未消費」。
+			// 故對隱含元素綁定名 `it` 豁免 optunuse。普通值-match 的 `it = matched`
+			// 預宣告型別為 nil（非 ?T），本就不會觸發此分支，本豁免不影響那些路徑。
+			if s.Name.Value == "it" {
+				// 下標寫入的元素位置綁定：寫回即消費，跳過 optunuse。
+			} else {
 				reportOptUnuse(s, s.Name.Value, curFile)
 			}
+		}
 			if !fnReturnsOption && !effOverflow && !s.IsSynthetic {
 				// !s.IsSynthetic：合成陳述是 lowering 的內部產物（捕獲用的
 				// `__cap_N ?T = expr`、預宣告 `a ?T = nil`），用戶看不到它們，
@@ -5426,6 +5475,13 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 			walkExpr(x.Expression, curFunc, curFile)
 		case *parser.PrefixExpression:
 			walkExpr(x.Right, curFunc, curFile)
+		case *parser.SurfaceMatch:
+			// S1：臂體內的索引讀取（含 `?=` 解包）也要被收進 handled 集合，
+			// 否則糖形態下臂子樹不可見。fnOpt 傳 false，與 IfExpression 分支
+			// 對臂體的處理一致。見 sugar_walk.go。
+			walkSurfaceMatchChildren(x,
+				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile) },
+				func(sub parser.Statement) { walkStmt(sub, curFunc, false, curFile) })
 		}
 	}
 
@@ -5714,6 +5770,13 @@ func ValidateIndexWrite(program *parser.Program, mainFile string) []ValidateResu
 		case *parser.InfixExpression:
 			walkExpr(x.Left, curFunc, curFile)
 			walkExpr(x.Right, curFunc, curFile)
+		case *parser.SurfaceMatch:
+			// S1：臂體內的直寫下標（`a[1] = 2`）也要看得到。少了這一支，
+			// 糖形態下整棵臂子樹對本規則不可見（診斷被靜默丟棄，而非報錯）。
+			// 見 sugar_walk.go。
+			walkSurfaceMatchChildren(x,
+				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile) },
+				func(sub parser.Statement) { walkStmt(sub, curFunc, curFile) })
 		}
 	}
 

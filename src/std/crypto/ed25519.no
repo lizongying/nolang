@@ -81,7 +81,10 @@ set-coord = (p []i64, off i64, src []i64) {
     i <- [0..10): {
 
         #{index-out=zero, overflow=wrap}
-        p[off + i] = src[i]
+        p[off + i]: {
+            ok -> it = src[i]
+            -> _
+        }
     }
 }
 
@@ -91,7 +94,10 @@ pcopy = (dst []i64, src []i64) {
     i <- [0..40): {
 
         #{index-out=zero}
-        dst[i] = src[i]
+        dst[i]: {
+            ok -> it = src[i]
+            -> _
+        }
     }
 }
 
@@ -202,7 +208,10 @@ ge-pack = (p []i64) (out [32]byte) {
     out = x25519.fe-tobytes-v(y)
     xb = x25519.fe-tobytes-v(x)
 
-    out[31] = out[31] | ((xb[0] & 1) << 7)
+    out[31]: {
+        ok -> it = out[31] | ((xb[0] & 1) << 7)
+        -> _
+    }
 }
 
 ; fe-pow: 回傳 base^e（e 為小端 32 位元組指數，平方-乘法）
@@ -234,9 +243,15 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     sign = (s[31] >> 7) & 1
     sc [32]byte
     i <- [0..32): {
-        sc[i] = s[i]
+        sc[i]: {
+            ok -> it = s[i]
+            -> _
+        }
     }
-    sc[31] = sc[31] & 127
+    sc[31]: {
+        ok -> it = sc[31] & 127
+        -> _
+    }
 
     ; y
     y = x25519.fe-frombytes-v(sc)
@@ -355,7 +370,10 @@ sc-reduce = (s []byte) (out [32]byte) {
             #{overflow=wrap}
             v = acc[j] * 2 + carry
 
-            acc[j] = v & 255
+            acc[j]: {
+                ok -> it = v & 255
+                -> _
+            }
 
             carry = v >> 8
         }
@@ -382,7 +400,10 @@ sc-reduce = (s []byte) (out [32]byte) {
                     -> borrow = 0
                 }
 
-                acc[j] = dv
+                acc[j]: {
+                    ok -> it = dv
+                    -> _
+                }
             }
         }
 
@@ -416,7 +437,10 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             #{index-out=zero, overflow=wrap}
             v = prod[idx] + a[i] * b[j] + carry
 
-            prod[idx] = v & 255
+            prod[idx]: {
+                ok -> it = v & 255
+                -> _
+            }
 
             carry = v >> 8
         }
@@ -428,7 +452,10 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             #{index-out=zero, overflow=wrap}
             v = prod[k] + carry
 
-            prod[k] = v & 255
+            prod[k]: {
+                ok -> it = v & 255
+                -> _
+            }
 
             carry = v >> 8
 
@@ -444,7 +471,10 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         #{index-out=zero, overflow=wrap}
         v = prod[i] + c[i] + carry
 
-        prod[i] = v & 255
+        prod[i]: {
+            ok -> it = v & 255
+            -> _
+        }
 
         carry = v >> 8
     }
@@ -454,7 +484,10 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         #{index-out=zero, overflow=wrap}
         v = prod[i] + carry
 
-        prod[i] = v & 255
+        prod[i]: {
+            ok -> it = v & 255
+            -> _
+        }
 
         carry = v >> 8
 
@@ -466,7 +499,10 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     pb []byte = with-len(64)
     i <- [0..64): {
 
-        pb[i] = prod[i]
+        pb[i]: {
+            ok -> it = prod[i]
+            -> _
+        }
     }
     s = sc-reduce(pb)
 }
@@ -485,11 +521,23 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
     i <- [0..32): {
 
         #{index-out=zero}
-        a[i] = h[i]
+        a[i]: {
+            ok -> it = h[i]
+            -> _
+        }
     }
-    a[0] = a[0] & 248
-    a[31] = a[31] & 127
-    a[31] = a[31] | 64
+    a[0]: {
+        ok -> it = a[0] & 248
+        -> _
+    }
+    a[31]: {
+        ok -> it = a[31] & 127
+        -> _
+    }
+    a[31]: {
+        ok -> it = a[31] | 64
+        -> _
+    }
 
     ; A = a * B
     point []i64 = with-len(40)
@@ -506,18 +554,33 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     i <- [0..32): {
 
         #{index-out=zero}
-        a[i] = h[i]
+        a[i]: {
+            ok -> it = h[i]
+            -> _
+        }
     }
-    a[0] = a[0] & 248
-    a[31] = a[31] & 127
-    a[31] = a[31] | 64
+    a[0]: {
+        ok -> it = a[0] & 248
+        -> _
+    }
+    a[31]: {
+        ok -> it = a[31] & 127
+        -> _
+    }
+    a[31]: {
+        ok -> it = a[31] | 64
+        -> _
+    }
 
     ; prefix = H[32:64]
     prefix [32]byte
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        prefix[i] = h[32 + i]
+        prefix[i]: {
+            ok -> it = h[32 + i]
+            -> _
+        }
     }
 
     ; 公鑰 A
@@ -530,19 +593,28 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     #{overflow=wrap}
     rin []byte = with-len(32 + msg-len)
     i <- [0..32): {
-        rin[i] = prefix[i]
+        rin[i]: {
+            ok -> it = prefix[i]
+            -> _
+        }
     }
     i <- [0..msg-len): {
 
         #{index-out=zero, overflow=wrap}
-        rin[32 + i] = msg[i]
+        rin[32 + i]: {
+            ok -> it = msg[i]
+            -> _
+        }
     }
     rh = sha512.sha512(rin)
     rhb []byte = with-len(64)
     i <- [0..64): {
 
         #{index-out=zero}
-        rhb[i] = rh[i]
+        rhb[i]: {
+            ok -> it = rh[i]
+            -> _
+        }
     }
     rsc [32]byte
     rsc = sc-reduce(rhb)
@@ -559,24 +631,36 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     #{overflow=wrap}
     kin []byte = with-len(64 + msg-len)
     i <- [0..32): {
-        kin[i] = r[i]
+        kin[i]: {
+            ok -> it = r[i]
+            -> _
+        }
     }
     i <- [0..32): {
 
         #{overflow=wrap}
-        kin[32 + i] = pub[i]
+        kin[32 + i]: {
+            ok -> it = pub[i]
+            -> _
+        }
     }
     i <- [0..msg-len): {
 
         #{index-out=zero, overflow=wrap}
-        kin[64 + i] = msg[i]
+        kin[64 + i]: {
+            ok -> it = msg[i]
+            -> _
+        }
     }
     kh = sha512.sha512(kin)
     khb []byte = with-len(64)
     i <- [0..64): {
 
         #{index-out=zero}
-        khb[i] = kh[i]
+        khb[i]: {
+            ok -> it = kh[i]
+            -> _
+        }
     }
     k [32]byte
     k = sc-reduce(khb)
@@ -585,7 +669,10 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     aarr [32]byte
     i <- [0..32): {
 
-        aarr[i] = a[i]
+        aarr[i]: {
+            ok -> it = a[i]
+            -> _
+        }
     }
     s [32]byte
     s = sc-muladd(k, aarr, rsc)
@@ -606,13 +693,19 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     ; R = sig[0:32], S = sig[32:64]
     r [32]byte
     i <- [0..32): {
-        r[i] = sig[i]
+        r[i]: {
+            ok -> it = sig[i]
+            -> _
+        }
     }
     s [32]byte
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        s[i] = sig[32 + i]
+        s[i]: {
+            ok -> it = sig[32 + i]
+            -> _
+        }
     }
 
     ; 檢查 S < L
@@ -653,24 +746,36 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     #{overflow=wrap}
     kin []byte = with-len(64 + msg-len)
     i <- [0..32): {
-        kin[i] = r[i]
+        kin[i]: {
+            ok -> it = r[i]
+            -> _
+        }
     }
     i <- [0..32): {
 
         #{overflow=wrap}
-        kin[32 + i] = pub[i]
+        kin[32 + i]: {
+            ok -> it = pub[i]
+            -> _
+        }
     }
     i <- [0..msg-len): {
 
         #{index-out=zero, overflow=wrap}
-        kin[64 + i] = msg[i]
+        kin[64 + i]: {
+            ok -> it = msg[i]
+            -> _
+        }
     }
     kh = sha512.sha512(kin)
     khb []byte = with-len(64)
     i <- [0..64): {
 
         #{index-out=zero}
-        khb[i] = kh[i]
+        khb[i]: {
+            ok -> it = kh[i]
+            -> _
+        }
     }
     k [32]byte
     k = sc-reduce(khb)

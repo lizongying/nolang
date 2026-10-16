@@ -181,22 +181,37 @@ rand-bytes = (state i64, n i64) (out []byte) {
 ; val i64: 值
 put-u16 = (buf []byte, pos i64, val i64) {
 
-    buf[pos] = (val >> 8) & 255
+    buf[pos]: {
+        ok -> it = (val >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 1] = val & 255
+    buf[pos + 1]: {
+        ok -> it = val & 255
+        -> _
+    }
 }
 
 ; put-u24: 將 24-bit 大端序值寫入緩衝區
 put-u24 = (buf []byte, pos i64, val i64) {
 
-    buf[pos] = (val >> 16) & 255
+    buf[pos]: {
+        ok -> it = (val >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 1] = (val >> 8) & 255
+    buf[pos + 1]: {
+        ok -> it = (val >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 2] = val & 255
+    buf[pos + 2]: {
+        ok -> it = val & 255
+        -> _
+    }
 }
 
 ; get-u16: 從緩衝區讀取 16-bit 大端序值
@@ -405,7 +420,10 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
             ; str[i] 是「碼點索引」且回傳 char（見 docs/docs/lang/str.md），
             ; 對 >= 0x80 的位元組會做 UTF-8 解碼，把原始位元組弄壞。
             #{overflow=wrap}
-            buf[total + i] = tmp.byte(i)
+            buf[total + i]: {
+                ok -> it = tmp.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -488,7 +506,10 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
             ; 位元組（例如 TLS 記錄長度 0x94）解碼成別的碼點再截斷，
             ; 導致 rlen 讀成 20 而不是 148 —— 這正是 e2e 握手失敗的根因。
             #{overflow=wrap}
-            buf[hdr-total + i] = tmp.byte(i)
+            buf[hdr-total + i]: {
+                ok -> it = tmp.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -533,7 +554,10 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
             ; ⚠️ .byte(i) 而非 tmp2[i]（同上：str[i] 是碼點索引）
 
             #{overflow=wrap}
-            buf[5 + body-total + i] = tmp2.byte(i)
+            buf[5 + body-total + i]: {
+                ok -> it = tmp2.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -551,15 +575,30 @@ send-raw = (fd fd, ct i64, data []byte) {
     n = data.len()
     hdr [5]byte
 
-    hdr[0] = ct & 255
+    hdr[0]: {
+        ok -> it = ct & 255
+        -> _
+    }
 
-    hdr[1] = (TLS-VERSION >> 8) & 255
+    hdr[1]: {
+        ok -> it = (TLS-VERSION >> 8) & 255
+        -> _
+    }
 
-    hdr[2] = TLS-VERSION & 255
+    hdr[2]: {
+        ok -> it = TLS-VERSION & 255
+        -> _
+    }
 
-    hdr[3] = (n >> 8) & 255
+    hdr[3]: {
+        ok -> it = (n >> 8) & 255
+        -> _
+    }
 
-    hdr[4] = n & 255
+    hdr[4]: {
+        ok -> it = n & 255
+        -> _
+    }
     net.net-send(fd, hdr, 5)
     net.net-send(fd, data, n)
 }
@@ -684,12 +723,18 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     nonce [12]byte
     i <- [0..4): {
 
-        nonce[i] = salt[i]
+        nonce[i]: {
+            ok -> it = salt[i]
+            -> _
+        }
     }
     i <- [0..8): {
 
         #{index-out=zero, overflow=wrap}
-        nonce[4 + i] = exp-nonce[i]
+        nonce[4 + i]: {
+            ok -> it = exp-nonce[i]
+            -> _
+        }
     }
 
     ; AAD = seq(8) || type(1) || version(2) || plaintext_len(2)
@@ -697,10 +742,16 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     i <- [0..8): {
 
         #{overflow=wrap}
-        aad[7 - i] = (seq >> (i * 8)) & 255
+        aad[7 - i]: {
+            ok -> it = (seq >> (i * 8)) & 255
+            -> _
+        }
     }
 
-    aad[8] = ct & 255
+    aad[8]: {
+        ok -> it = ct & 255
+        -> _
+    }
     put-u16(aad, 9, TLS-VERSION)
     put-u16(aad, 11, n)
     aad.truncate(13)
@@ -716,18 +767,27 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     #{overflow=wrap}
     rec []byte = with-len(5 + frag-len)
 
-    rec[0] = ct & 255
+    rec[0]: {
+        ok -> it = ct & 255
+        -> _
+    }
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, frag-len)
     i <- [0..8): {
 
         #{index-out=zero, overflow=wrap}
-        rec[5 + i] = exp-nonce[i]
+        rec[5 + i]: {
+            ok -> it = exp-nonce[i]
+            -> _
+        }
     }
     i <- [0..sealed.len()): {
 
         #{index-out=zero, overflow=wrap}
-        rec[13 + i] = sealed[i]
+        rec[13 + i]: {
+            ok -> it = sealed[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -758,12 +818,18 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
     nonce [12]byte
     i <- [0..4): {
 
-        nonce[i] = salt[i]
+        nonce[i]: {
+            ok -> it = salt[i]
+            -> _
+        }
     }
     i <- [0..8): {
 
         #{index-out=zero, overflow=wrap}
-        nonce[4 + i] = buf[5 + i]
+        nonce[4 + i]: {
+            ok -> it = buf[5 + i]
+            -> _
+        }
     }
 
     ; sealed = ciphertext || tag（緊接在 8-byte 顯式 nonce 之後）
@@ -774,7 +840,10 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
     i <- [0..sealed-len): {
 
         #{index-out=zero, overflow=wrap}
-        sealed[i] = buf[13 + i]
+        sealed[i]: {
+            ok -> it = buf[13 + i]
+            -> _
+        }
     }
     sealed.truncate(sealed-len)
 
@@ -786,10 +855,16 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
     i <- [0..8): {
 
         #{overflow=wrap}
-        aad[7 - i] = (seq >> (i * 8)) & 255
+        aad[7 - i]: {
+            ok -> it = (seq >> (i * 8)) & 255
+            -> _
+        }
     }
 
-    aad[8] = expected-ct & 255
+    aad[8]: {
+        ok -> it = expected-ct & 255
+        -> _
+    }
     put-u16(aad, 9, TLS-VERSION)
     put-u16(aad, 11, plain-len)
     aad.truncate(13)
@@ -832,16 +907,25 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..8): {
 
         #{overflow=wrap}
-        mac-input[7 - i] = (seq >> (i * 8)) & 255
+        mac-input[7 - i]: {
+            ok -> it = (seq >> (i * 8)) & 255
+            -> _
+        }
     }
 
-    mac-input[8] = ct & 255
+    mac-input[8]: {
+        ok -> it = ct & 255
+        -> _
+    }
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, n)
     i <- [0..n): {
 
         #{index-out=zero, overflow=wrap}
-        mac-input[13 + i] = data[i]
+        mac-input[13 + i]: {
+            ok -> it = data[i]
+            -> _
+        }
     }
     mac [32]byte
 
@@ -854,12 +938,18 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..n): {
 
         #{index-out=zero}
-        plain[i] = data[i]
+        plain[i]: {
+            ok -> it = data[i]
+            -> _
+        }
     }
     i <- [0..32): {
 
         #{overflow=wrap}
-        plain[n + i] = mac[i]
+        plain[n + i]: {
+            ok -> it = mac[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -876,7 +966,10 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..16): {
 
         #{index-out=zero}
-        iv[i] = iv-bytes[i]
+        iv[i]: {
+            ok -> it = iv-bytes[i]
+            -> _
+        }
     }
 
     ; 5. AES-128-CBC 加密
@@ -893,18 +986,27 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     ; 記錄外層 type 必須與 MAC 計算所用的 type 一致（握手記錄為 22，應用資料為 23）。
     ; 若強制為 23，對端（如 OpenSSL）會用記錄頭 type 驗 MAC → 與我方用原始 type 算出的 MAC 不符 → bad record mac。
-    rec[0] = ct & 255
+    rec[0]: {
+        ok -> it = ct & 255
+        -> _
+    }
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..16): {
 
         #{overflow=wrap}
-        rec[5 + i] = iv[i]
+        rec[5 + i]: {
+            ok -> it = iv[i]
+            -> _
+        }
     }
     i <- [0..padded.len()): {
 
         #{index-out=zero, overflow=wrap}
-        rec[5 + 16 + i] = cipher[i]
+        rec[5 + 16 + i]: {
+            ok -> it = cipher[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -945,7 +1047,10 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     i <- [0..16): {
 
         #{index-out=zero, overflow=wrap}
-        iv[i] = buf[5 + i]
+        iv[i]: {
+            ok -> it = buf[5 + i]
+            -> _
+        }
     }
 
     ; 密文
@@ -956,7 +1061,10 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     i <- [0..cipher-len): {
 
         #{index-out=zero, overflow=wrap}
-        cipher[i] = buf[5 + 16 + i]
+        cipher[i]: {
+            ok -> it = buf[5 + 16 + i]
+            -> _
+        }
     }
     cipher.truncate(cipher-len)
 
@@ -984,18 +1092,27 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     i <- [0..8): {
 
         #{overflow=wrap}
-        mac-input[7 - i] = (seq >> (i * 8)) & 255
+        mac-input[7 - i]: {
+            ok -> it = (seq >> (i * 8)) & 255
+            -> _
+        }
     }
 
     ; TLS 1.2 中加密記錄的 type 固定為 23，但 MAC 計算使用原始 type
 
-    mac-input[8] = expected-ct & 255
+    mac-input[8]: {
+        ok -> it = expected-ct & 255
+        -> _
+    }
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, content-len)
     i <- [0..content-len): {
 
         #{index-out=zero, overflow=wrap}
-        mac-input[13 + i] = plain[i]
+        mac-input[13 + i]: {
+            ok -> it = plain[i]
+            -> _
+        }
     }
     exp-mac [32]byte
 
@@ -1048,9 +1165,15 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     ; 構建填充後的訊息
     padded []byte = with-len(mod-n)
 
-    padded[0] = 0
+    padded[0]: {
+        ok -> it = 0
+        -> _
+    }
 
-    padded[1] = 2
+    padded[1]: {
+        ok -> it = 2
+        -> _
+    }
 
     ; PS: 非零隨機位元組
     state = time.now-ns()
@@ -1060,17 +1183,26 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
         b == 0 -> b = 1
 
         #{overflow=wrap}
-        padded[2 + i] = b
+        padded[2 + i]: {
+            ok -> it = b
+            -> _
+        }
     }
 
     #{overflow=wrap}
-    padded[2 + ps-len] = 0
+    padded[2 + ps-len]: {
+        ok -> it = 0
+        -> _
+    }
 
     ; 複製訊息
     i <- [0..msg-n): {
 
         #{index-out=zero, overflow=wrap}
-        padded[3 + ps-len + i] = msg[i]
+        padded[3 + ps-len + i]: {
+            ok -> it = msg[i]
+            -> _
+        }
     }
     padded-n = mod-n
     padded.truncate(padded-n)
@@ -1086,7 +1218,10 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     ; 指數轉大整數
     e-bn []i64 = with-len(1)
 
-    e-bn[0] = exp
+    e-bn[0]: {
+        ok -> it = exp
+        -> _
+    }
 
     ; RSA 加密: c = m^e mod n
     c-bn []i64
@@ -1163,7 +1298,10 @@ conn.gen-x25519-keypair = () {
     priv-slice []byte = with-len(32)
     i <- [0..32): {
 
-        priv-slice[i] = .client-priv[i]
+        priv-slice[i]: {
+            ok -> it = .client-priv[i]
+            -> _
+        }
     }
     pub-slice = x25519.x25519-scalarmult-base-bytes(priv-slice)
     i <- [0..32): {
@@ -1209,7 +1347,10 @@ conn.send-client-hello = () (ok bool) {
 
     ; msg_type = 1 (ClientHello)
 
-    hs[0] = TLS-HS-CLIENT-HELLO
+    hs[0]: {
+        ok -> it = TLS-HS-CLIENT-HELLO
+        -> _
+    }
 
     ; length (3 bytes, 填入後計算)
     pos = 4
@@ -1228,7 +1369,10 @@ conn.send-client-hello = () (ok bool) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        hs[pos + i] = rand-bytes-val[i]
+        hs[pos + i]: {
+            ok -> it = rand-bytes-val[i]
+            -> _
+        }
 
         #{index-out=zero}
         .client-random[i] = rand-bytes-val[i]
@@ -1239,7 +1383,10 @@ conn.send-client-hello = () (ok bool) {
 
     ; session_id_length = 0
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -1274,14 +1421,20 @@ conn.send-client-hello = () (ok bool) {
 
     ; compression_methods_length = 1
 
-    hs[pos] = 1
+    hs[pos]: {
+        ok -> it = 1
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
     ; compression_method = 0 (null)
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -1319,7 +1472,10 @@ conn.send-client-hello = () (ok bool) {
 
     ; name type = 0 (host_name)
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -1334,7 +1490,10 @@ conn.send-client-hello = () (ok bool) {
     i <- [0..host-n): {
 
         #{overflow=wrap}
-        hs[pos + i] = .host.byte(i)
+        hs[pos + i]: {
+            ok -> it = .host.byte(i)
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -1386,14 +1545,20 @@ conn.send-client-hello = () (ok bool) {
 
     ; formats list length = 1
 
-    hs[pos] = 1
+    hs[pos]: {
+        ok -> it = 1
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
     ; format 0 = uncompressed
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -1601,7 +1766,10 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
     i <- [0..cert-len): {
 
         #{index-out=zero, overflow=wrap}
-        cert-out[i] = buf[pos + i]
+        cert-out[i]: {
+            ok -> it = buf[pos + i]
+            -> _
+        }
     }
     cert-out.truncate(cert-len)
     ok = true
@@ -1718,14 +1886,23 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
         .kx-group == TLS-GROUP-SECP256R1 -> {
             hs []byte = with-len(70)
 
-            hs[0] = TLS-HS-CLIENT-KEY-EXCHANGE
+            hs[0]: {
+                ok -> it = TLS-HS-CLIENT-KEY-EXCHANGE
+                -> _
+            }
             put-u24(hs, 1, 66)
 
-            hs[4] = 65
+            hs[4]: {
+                ok -> it = 65
+                -> _
+            }
             i <- [0..65): {
 
                 #{overflow=wrap}
-                hs[5 + i] = .pub-p256[i]
+                hs[5 + i]: {
+                    ok -> it = .pub-p256[i]
+                    -> _
+                }
             }
             .append-hs(hs)
             send-raw(.fd, TLS-CT-HANDSHAKE, hs)
@@ -1736,14 +1913,23 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
         ; x25519：原始 32 bytes（body = 1 + 32 = 33）
         hs []byte = with-len(37)
 
-        hs[0] = TLS-HS-CLIENT-KEY-EXCHANGE
+        hs[0]: {
+            ok -> it = TLS-HS-CLIENT-KEY-EXCHANGE
+            -> _
+        }
         put-u24(hs, 1, 33)
 
-        hs[4] = 32
+        hs[4]: {
+            ok -> it = 32
+            -> _
+        }
         i <- [0..32): {
 
             #{overflow=wrap}
-            hs[5 + i] = .client-pub[i]
+            hs[5 + i]: {
+                ok -> it = .client-pub[i]
+                -> _
+            }
         }
         .append-hs(hs)
         send-raw(.fd, TLS-CT-HANDSHAKE, hs)
@@ -1775,7 +1961,10 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
     hs-len = 4 + body-len
     hs []byte = with-len(hs-len)
 
-    hs[0] = TLS-HS-CLIENT-KEY-EXCHANGE
+    hs[0]: {
+        ok -> it = TLS-HS-CLIENT-KEY-EXCHANGE
+        -> _
+    }
     put-u24(hs, 1, body-len)
 
     ; encrypted premaster length
@@ -1785,7 +1974,10 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
     i <- [0..enc-premaster.len()): {
 
         #{index-out=zero, overflow=wrap}
-        hs[6 + i] = enc-premaster[i]
+        hs[6 + i]: {
+            ok -> it = enc-premaster[i]
+            -> _
+        }
     }
     .append-hs(hs)
     send-raw(.fd, TLS-CT-HANDSHAKE, hs)
@@ -1796,18 +1988,36 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
 conn.send-change-cipher-spec = () {
     ccs [1]byte
 
-    ccs[0] = 1
+    ccs[0]: {
+        ok -> it = 1
+        -> _
+    }
     hdr [5]byte
 
-    hdr[0] = TLS-CT-CCS & 255
+    hdr[0]: {
+        ok -> it = TLS-CT-CCS & 255
+        -> _
+    }
 
-    hdr[1] = (TLS-VERSION >> 8) & 255
+    hdr[1]: {
+        ok -> it = (TLS-VERSION >> 8) & 255
+        -> _
+    }
 
-    hdr[2] = TLS-VERSION & 255
+    hdr[2]: {
+        ok -> it = TLS-VERSION & 255
+        -> _
+    }
 
-    hdr[3] = 0
+    hdr[3]: {
+        ok -> it = 0
+        -> _
+    }
 
-    hdr[4] = 1
+    hdr[4]: {
+        ok -> it = 1
+        -> _
+    }
     net.net-send(.fd, hdr, 5)
     net.net-send(.fd, ccs, 1)
 }
@@ -1832,12 +2042,18 @@ conn.send-finished = () (ok bool) {
     hs-len = 4 + TLS-FINISHED-SIZE
     hs []byte = with-len(hs-len)
 
-    hs[0] = TLS-HS-FINISHED
+    hs[0]: {
+        ok -> it = TLS-HS-FINISHED
+        -> _
+    }
     put-u24(hs, 1, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
 
         #{index-out=zero, overflow=wrap}
-        hs[4 + i] = verify[i]
+        hs[4 + i]: {
+            ok -> it = verify[i]
+            -> _
+        }
     }
 
     ; 追加到交握緩衝區（在加密之前）
@@ -1919,12 +2135,18 @@ conn.derive-keys = (premaster []byte) {
     seed []byte = with-len(64)
     i <- [0..32): {
 
-        seed[i] = .client-random[i]
+        seed[i]: {
+            ok -> it = .client-random[i]
+            -> _
+        }
     }
     i <- [0..32): {
 
         #{overflow=wrap}
-        seed[32 + i] = .server-random[i]
+        seed[32 + i]: {
+            ok -> it = .server-random[i]
+            -> _
+        }
     }
     seed.truncate(64)
     .master-secret = prf(premaster, 'master secret', seed, 48)
@@ -1933,12 +2155,18 @@ conn.derive-keys = (premaster []byte) {
     ks []byte = with-len(64)
     i <- [0..32): {
 
-        ks[i] = .server-random[i]
+        ks[i]: {
+            ok -> it = .server-random[i]
+            -> _
+        }
     }
     i <- [0..32): {
 
         #{overflow=wrap}
-        ks[32 + i] = .client-random[i]
+        ks[32 + i]: {
+            ok -> it = .client-random[i]
+            -> _
+        }
     }
     ks.truncate(64)
     cipher-is-gcm(.cipher-id) -> {
@@ -2046,9 +2274,15 @@ conn.handshake-12-body = () (ok bool) {
             pub-slice []byte = with-len(32)
             i <- [0..32): {
 
-                priv-slice[i] = .client-priv[i]
+                priv-slice[i]: {
+                    ok -> it = .client-priv[i]
+                    -> _
+                }
 
-                pub-slice[i] = .server-pub[i]
+                pub-slice[i]: {
+                    ok -> it = .server-pub[i]
+                    -> _
+                }
             }
             premaster = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
             premaster.len() != 32 -> {
@@ -2076,9 +2310,15 @@ conn.handshake-12-body = () (ok bool) {
         ; static-RSA: 48 bytes（版本前綴 + 隨機）
         premaster = with-len(48)
 
-        premaster[0] = 0x03
+        premaster[0]: {
+            ok -> it = 0x03
+            -> _
+        }
 
-        premaster[1] = 0x03
+        premaster[1]: {
+            ok -> it = 0x03
+            -> _
+        }
         rand-bytes-val = rand-bytes(.rand-state, 46)
 
         #{overflow=wrap}
@@ -2086,7 +2326,10 @@ conn.handshake-12-body = () (ok bool) {
         i <- [0..46): {
 
             #{index-out=zero, overflow=wrap}
-            premaster[2 + i] = rand-bytes-val[i]
+            premaster[2 + i]: {
+                ok -> it = rand-bytes-val[i]
+                -> _
+            }
         }
     }
 
@@ -2128,7 +2371,10 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; msg_type = 1 (ClientHello)
 
-    hs[0] = TLS-HS-CLIENT-HELLO
+    hs[0]: {
+        ok -> it = TLS-HS-CLIENT-HELLO
+        -> _
+    }
     pos = 4
 
     ; version = 0x0303（TLS 1.2，相容性）
@@ -2145,7 +2391,10 @@ conn.send-client-hello-13 = () (ok bool) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        hs[pos + i] = rand-bytes-val[i]
+        hs[pos + i]: {
+            ok -> it = rand-bytes-val[i]
+            -> _
+        }
 
         #{index-out=zero}
         .client-random[i] = rand-bytes-val[i]
@@ -2156,7 +2405,10 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; session_id_length = 0
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -2205,12 +2457,18 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; compression_methods_length = 1
 
-    hs[pos] = 1
+    hs[pos]: {
+        ok -> it = 1
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -2236,7 +2494,10 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; versions list length = 2
 
-    hs[pos] = 2
+    hs[pos]: {
+        ok -> it = 2
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -2291,14 +2552,20 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; formats list length = 1
 
-    hs[pos] = 1
+    hs[pos]: {
+        ok -> it = 1
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
     ; format 0 = uncompressed
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -2391,7 +2658,10 @@ conn.send-client-hello-13 = () (ok bool) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hs[pos + i] = .client-pub[i]
+        hs[pos + i]: {
+            ok -> it = .client-pub[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -2423,7 +2693,10 @@ conn.send-client-hello-13 = () (ok bool) {
 
     ; name type = 0 (host_name)
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -2438,7 +2711,10 @@ conn.send-client-hello-13 = () (ok bool) {
     i <- [0...host.len-bytes()): {
 
         #{overflow=wrap}
-        hs[pos + i] = .host.byte(i)
+        hs[pos + i]: {
+            ok -> it = .host.byte(i)
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -2622,9 +2898,15 @@ conn.compute-shared-secret-13 = () {
     pub-slice []byte = with-len(32)
     i <- [0..32): {
 
-        priv-slice[i] = .client-priv[i]
+        priv-slice[i]: {
+            ok -> it = .client-priv[i]
+            -> _
+        }
 
-        pub-slice[i] = .server-pub[i]
+        pub-slice[i]: {
+            ok -> it = .server-pub[i]
+            -> _
+        }
     }
     shared-slice = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
     i <- [0..32): {
@@ -2644,7 +2926,10 @@ conn.derive-handshake-keys-13 = () {
     zero-32 []byte = with-len(32)
     i <- [0..32): {
 
-        zero-32[i] = 0
+        zero-32[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
     empty-ctx []byte = with-len(0)
     early-prk [32]byte
@@ -2655,7 +2940,10 @@ conn.derive-handshake-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
 
-        empty-hash[i] = empty-hash-arr[i]
+        empty-hash[i]: {
+            ok -> it = empty-hash-arr[i]
+            -> _
+        }
     }
 
     ; 3. derived = HKDF-Expand-Label(Early, "derived", empty_hash, 32)
@@ -2748,7 +3036,10 @@ conn.derive-application-keys-13 = () {
     hs-prk []byte = with-len(32)
     i <- [0..32): {
 
-        hs-prk[i] = .hs-prk-field[i]
+        hs-prk[i]: {
+            ok -> it = .hs-prk-field[i]
+            -> _
+        }
     }
 
     ; derived = HKDF-Expand-Label(HS, "derived", empty_hash, 32)
@@ -2756,7 +3047,10 @@ conn.derive-application-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
 
-        empty-hash[i] = empty-hash-arr[i]
+        empty-hash[i]: {
+            ok -> it = empty-hash-arr[i]
+            -> _
+        }
     }
     derived-hs []byte
     derived-hs = hkdf.hkdf-expand-label-vec(hs-prk, 'derived', empty-hash, 32)
@@ -2765,7 +3059,10 @@ conn.derive-application-keys-13 = () {
     zero-32 []byte = with-len(32)
     i <- [0..32): {
 
-        zero-32[i] = 0
+        zero-32[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
     empty-ctx []byte = with-len(0)
     ms-prk [32]byte
@@ -2852,10 +3149,16 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     i <- [0..n): {
 
         #{index-out=zero}
-        plain[i] = data[i]
+        plain[i]: {
+            ok -> it = data[i]
+            -> _
+        }
     }
 
-    plain[n] = ct & 255
+    plain[n]: {
+        ok -> it = ct & 255
+        -> _
+    }
 
     #{overflow=wrap}
     plain-len = n + 1
@@ -2868,7 +3171,10 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     ; 構建 AAD = record_header(5 bytes): type(23) + version(0x0303) + length
     aad []byte = with-len(5)
 
-    aad[0] = TLS-CT-APP-DATA & 255
+    aad[0]: {
+        ok -> it = TLS-CT-APP-DATA & 255
+        -> _
+    }
     put-u16(aad, 1, TLS-VERSION)
 
     ; 密文長度 = plain_len + 16 (tag)
@@ -2889,13 +3195,19 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     #{overflow=wrap}
     rec []byte = with-len(5 + rec-len)
 
-    rec[0] = TLS-CT-APP-DATA & 255
+    rec[0]: {
+        ok -> it = TLS-CT-APP-DATA & 255
+        -> _
+    }
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
 
         #{index-out=zero, overflow=wrap}
-        rec[5 + i] = sealed[i]
+        rec[5 + i]: {
+            ok -> it = sealed[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -2926,7 +3238,10 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     i <- [0..rlen): {
 
         #{index-out=zero, overflow=wrap}
-        sealed[i] = rec[5 + i]
+        sealed[i]: {
+            ok -> it = rec[5 + i]
+            -> _
+        }
     }
 
     ; 構建 nonce
@@ -2937,19 +3252,34 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     aad []byte = with-len(5)
 
     #{index-out=zero}
-    aad[0] = rec[0]
+    aad[0]: {
+        ok -> it = rec[0]
+        -> _
+    }
 
     #{index-out=zero}
-    aad[1] = rec[1]
+    aad[1]: {
+        ok -> it = rec[1]
+        -> _
+    }
 
     #{index-out=zero}
-    aad[2] = rec[2]
+    aad[2]: {
+        ok -> it = rec[2]
+        -> _
+    }
 
     #{index-out=zero}
-    aad[3] = rec[3]
+    aad[3]: {
+        ok -> it = rec[3]
+        -> _
+    }
 
     #{index-out=zero}
-    aad[4] = rec[4]
+    aad[4]: {
+        ok -> it = rec[4]
+        -> _
+    }
 
     ; 解密
     plain []byte
@@ -3056,17 +3386,32 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     #{overflow=wrap}
     full-msg = with-len(4 + msg-len)
 
-    full-msg[0] = msg-type
+    full-msg[0]: {
+        ok -> it = msg-type
+        -> _
+    }
 
-    full-msg[1] = (msg-len >> 16) & 255
+    full-msg[1]: {
+        ok -> it = (msg-len >> 16) & 255
+        -> _
+    }
 
-    full-msg[2] = (msg-len >> 8) & 255
+    full-msg[2]: {
+        ok -> it = (msg-len >> 8) & 255
+        -> _
+    }
 
-    full-msg[3] = msg-len & 255
+    full-msg[3]: {
+        ok -> it = msg-len & 255
+        -> _
+    }
     i <- [0..msg-len): {
 
         #{overflow=wrap}
-        full-msg[4 + i] = msg-data[i]
+        full-msg[4 + i]: {
+            ok -> it = msg-data[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -3157,7 +3502,10 @@ conn.send-finished-13 = () (ok bool) {
     c-hs-secret []byte = with-len(32)
     i <- [0..32): {
 
-        c-hs-secret[i] = .hs-c-secret[i]
+        c-hs-secret[i]: {
+            ok -> it = .hs-c-secret[i]
+            -> _
+        }
     }
     finished-key []byte
     zero-ctx []byte = with-len(0)
@@ -3174,12 +3522,18 @@ conn.send-finished-13 = () (ok bool) {
     ; 構建 Finished 訊息
     hs []byte = with-len(36)
 
-    hs[0] = TLS-HS-FINISHED
+    hs[0]: {
+        ok -> it = TLS-HS-FINISHED
+        -> _
+    }
     put-u24(hs, 1, 32)
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        hs[4 + i] = verify[i]
+        hs[4 + i]: {
+            ok -> it = verify[i]
+            -> _
+        }
     }
     hs.truncate(36)
 
@@ -3422,7 +3776,10 @@ conn.recv = (buf str, n i64) (read-n i64) {
     i <- [0..copy-n): {
 
         #{index-out=zero}
-        buf[i] = plain[i]
+        buf[i]: {
+            ok -> it = plain[i]
+            -> _
+        }
     }
     read-n = copy-n
 }
@@ -3767,7 +4124,10 @@ server-conn.send-server-hello = () (ok bool) {
 
     ; msg_type = 2 (ServerHello)
 
-    hs[0] = TLS-HS-SERVER-HELLO
+    hs[0]: {
+        ok -> it = TLS-HS-SERVER-HELLO
+        -> _
+    }
     pos = 4; 跳過 type(1)+length(3)
 
     ; version = 0x0303
@@ -3784,7 +4144,10 @@ server-conn.send-server-hello = () (ok bool) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        hs[pos + i] = rand-bytes-val[i]
+        hs[pos + i]: {
+            ok -> it = rand-bytes-val[i]
+            -> _
+        }
 
         #{index-out=zero}
         .server-random[i] = rand-bytes-val[i]
@@ -3795,7 +4158,10 @@ server-conn.send-server-hello = () (ok bool) {
 
     ; session_id_length = 0
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -3808,7 +4174,10 @@ server-conn.send-server-hello = () (ok bool) {
 
     ; compression_method = 0
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -3842,7 +4211,10 @@ server-conn.send-certificate = () (ok bool) {
     hs-len = 4 + 3 + 3 + cert-len
     hs []byte = with-len(hs-len)
 
-    hs[0] = TLS-HS-CERTIFICATE
+    hs[0]: {
+        ok -> it = TLS-HS-CERTIFICATE
+        -> _
+    }
 
     #{overflow=wrap}
     body-len = 3 + 3 + cert-len
@@ -3859,7 +4231,10 @@ server-conn.send-certificate = () (ok bool) {
     i <- [0..cert-len): {
 
         #{overflow=wrap}
-        hs[10 + i] = .cert[i]
+        hs[10 + i]: {
+            ok -> it = .cert[i]
+            -> _
+        }
     }
     hs.truncate(hs-len)
     .append-hs(hs)
@@ -3873,7 +4248,10 @@ server-conn.send-server-hello-done = () (ok bool) {
     ok = false
     hs []byte = with-len(4)
 
-    hs[0] = TLS-HS-SERVER-HELLO-DONE
+    hs[0]: {
+        ok -> it = TLS-HS-SERVER-HELLO-DONE
+        -> _
+    }
     put-u24(hs, 1, 0)
     hs.truncate(4)
     .append-hs(hs)
@@ -3918,12 +4296,18 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
             shift = mod-len - raw.len()
             i <- [0..shift): {
 
-                m-bytes[i] = 0
+                m-bytes[i]: {
+                    ok -> it = 0
+                    -> _
+                }
             }
             i <- [0..raw.len()): {
 
                 #{index-out=zero, overflow=wrap}
-                m-bytes[shift + i] = raw[i]
+                m-bytes[shift + i]: {
+                    ok -> it = raw[i]
+                    -> _
+                }
             }
         }
 
@@ -3933,7 +4317,10 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
             i <- [0..mod-len): {
 
                 #{index-out=zero, overflow=wrap}
-                m-bytes[i] = raw[off + i]
+                m-bytes[i]: {
+                    ok -> it = raw[off + i]
+                    -> _
+                }
             }
         }
     }
@@ -4000,7 +4387,10 @@ server-conn.read-client-key-exchange = () (ok bool) {
     i <- [0..enc-len): {
 
         #{index-out=zero, overflow=wrap}
-        enc-premaster[i] = buf[11 + i]
+        enc-premaster[i]: {
+            ok -> it = buf[11 + i]
+            -> _
+        }
     }
     enc-premaster.truncate(enc-len)
 
@@ -4022,7 +4412,10 @@ server-conn.read-client-key-exchange = () (ok bool) {
     i <- [0..48): {
 
         #{index-out=zero}
-        fixed-premaster[i] = premaster[i]
+        fixed-premaster[i]: {
+            ok -> it = premaster[i]
+            -> _
+        }
     }
     fixed-premaster.truncate(48)
 
@@ -4039,12 +4432,18 @@ server-conn.derive-keys = (premaster []byte) {
     seed []byte = with-len(64)
     i <- [0..32): {
 
-        seed[i] = .client-random[i]
+        seed[i]: {
+            ok -> it = .client-random[i]
+            -> _
+        }
     }
     i <- [0..32): {
 
         #{overflow=wrap}
-        seed[32 + i] = .server-random[i]
+        seed[32 + i]: {
+            ok -> it = .server-random[i]
+            -> _
+        }
     }
     seed.truncate(64)
     .master-secret = prf(premaster, 'master secret', seed, 48)
@@ -4053,12 +4452,18 @@ server-conn.derive-keys = (premaster []byte) {
     ks []byte = with-len(64)
     i <- [0..32): {
 
-        ks[i] = .server-random[i]
+        ks[i]: {
+            ok -> it = .server-random[i]
+            -> _
+        }
     }
     i <- [0..32): {
 
         #{overflow=wrap}
-        ks[32 + i] = .client-random[i]
+        ks[32 + i]: {
+            ok -> it = .client-random[i]
+            -> _
+        }
     }
     ks.truncate(64)
     key-block []byte
@@ -4113,16 +4518,25 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..8): {
 
         #{overflow=wrap}
-        mac-input[7 - i] = (seq >> (i * 8)) & 255
+        mac-input[7 - i]: {
+            ok -> it = (seq >> (i * 8)) & 255
+            -> _
+        }
     }
 
-    mac-input[8] = ct & 255
+    mac-input[8]: {
+        ok -> it = ct & 255
+        -> _
+    }
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, n)
     i <- [0..n): {
 
         #{index-out=zero, overflow=wrap}
-        mac-input[13 + i] = data[i]
+        mac-input[13 + i]: {
+            ok -> it = data[i]
+            -> _
+        }
     }
     mac [32]byte
 
@@ -4135,12 +4549,18 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..n): {
 
         #{index-out=zero}
-        plain[i] = data[i]
+        plain[i]: {
+            ok -> it = data[i]
+            -> _
+        }
     }
     i <- [0..32): {
 
         #{overflow=wrap}
-        plain[n + i] = mac[i]
+        plain[n + i]: {
+            ok -> it = mac[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -4159,7 +4579,10 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     i <- [0..16): {
 
         #{index-out=zero}
-        iv[i] = iv-bytes[i]
+        iv[i]: {
+            ok -> it = iv-bytes[i]
+            -> _
+        }
     }
 
     ; 5. AES-128-CBC 加密
@@ -4175,18 +4598,27 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
     ; 記錄外層 type 必須與 MAC 所用的原始 type 一致（見 client 端說明）
 
-    rec[0] = ct & 255
+    rec[0]: {
+        ok -> it = ct & 255
+        -> _
+    }
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..16): {
 
         #{overflow=wrap}
-        rec[5 + i] = iv[i]
+        rec[5 + i]: {
+            ok -> it = iv[i]
+            -> _
+        }
     }
     i <- [0..padded.len()): {
 
         #{index-out=zero, overflow=wrap}
-        rec[5 + 16 + i] = cipher[i]
+        rec[5 + 16 + i]: {
+            ok -> it = cipher[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -4218,7 +4650,10 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     i <- [0..16): {
 
         #{index-out=zero, overflow=wrap}
-        iv[i] = buf[5 + i]
+        iv[i]: {
+            ok -> it = buf[5 + i]
+            -> _
+        }
     }
 
     ; 密文
@@ -4228,7 +4663,10 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     i <- [0..cipher-len): {
 
         #{index-out=zero, overflow=wrap}
-        cipher[i] = buf[5 + 16 + i]
+        cipher[i]: {
+            ok -> it = buf[5 + 16 + i]
+            -> _
+        }
     }
     cipher.truncate(cipher-len)
 
@@ -4254,16 +4692,25 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     i <- [0..8): {
 
         #{overflow=wrap}
-        mac-input[7 - i] = (seq >> (i * 8)) & 255
+        mac-input[7 - i]: {
+            ok -> it = (seq >> (i * 8)) & 255
+            -> _
+        }
     }
 
-    mac-input[8] = expected-ct & 255
+    mac-input[8]: {
+        ok -> it = expected-ct & 255
+        -> _
+    }
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, data-len)
     i <- [0..data-len): {
 
         #{index-out=zero, overflow=wrap}
-        mac-input[13 + i] = plain[i]
+        mac-input[13 + i]: {
+            ok -> it = plain[i]
+            -> _
+        }
     }
     exp-mac [32]byte
 
@@ -4299,18 +4746,36 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
 server-conn.send-change-cipher-spec = () {
     ccs [1]byte
 
-    ccs[0] = 1
+    ccs[0]: {
+        ok -> it = 1
+        -> _
+    }
     hdr [5]byte
 
-    hdr[0] = TLS-CT-CCS & 255
+    hdr[0]: {
+        ok -> it = TLS-CT-CCS & 255
+        -> _
+    }
 
-    hdr[1] = (TLS-VERSION >> 8) & 255
+    hdr[1]: {
+        ok -> it = (TLS-VERSION >> 8) & 255
+        -> _
+    }
 
-    hdr[2] = TLS-VERSION & 255
+    hdr[2]: {
+        ok -> it = TLS-VERSION & 255
+        -> _
+    }
 
-    hdr[3] = 0
+    hdr[3]: {
+        ok -> it = 0
+        -> _
+    }
 
-    hdr[4] = 1
+    hdr[4]: {
+        ok -> it = 1
+        -> _
+    }
     net.net-send(.fd, hdr, 5)
     net.net-send(.fd, ccs, 1)
 }
@@ -4392,12 +4857,18 @@ server-conn.send-finished = () (ok bool) {
     #{overflow=wrap}
     hs []byte = with-len(4 + TLS-FINISHED-SIZE)
 
-    hs[0] = TLS-HS-FINISHED
+    hs[0]: {
+        ok -> it = TLS-HS-FINISHED
+        -> _
+    }
     put-u24(hs, 1, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
 
         #{index-out=zero, overflow=wrap}
-        hs[4 + i] = verify[i]
+        hs[4 + i]: {
+            ok -> it = verify[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -4442,7 +4913,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     priv-slice []byte = with-len(32)
     i <- [0..32): {
 
-        priv-slice[i] = .server-priv[i]
+        priv-slice[i]: {
+            ok -> it = .server-priv[i]
+            -> _
+        }
     }
     pub-slice = x25519.x25519-scalarmult-base-bytes(priv-slice)
     i <- [0..32): {
@@ -4456,7 +4930,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     pos = 0
 
     ; msg_type = 2 (ServerHello)
-    hs[0] = TLS-HS-SERVER-HELLO
+    hs[0]: {
+        ok -> it = TLS-HS-SERVER-HELLO
+        -> _
+    }
     pos = 4
 
     ; version = 0x0303（legacy）
@@ -4473,7 +4950,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        hs[pos + i] = rand-bytes-val[i]
+        hs[pos + i]: {
+            ok -> it = rand-bytes-val[i]
+            -> _
+        }
 
         #{index-out=zero}
         .server-random[i] = rand-bytes-val[i]
@@ -4484,7 +4964,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     ; session_id_length = 0
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -4497,7 +4980,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     ; compression_method = 0
 
-    hs[pos] = 0
+    hs[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -4544,7 +5030,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hs[pos + i] = .server-pub[i]
+        hs[pos + i]: {
+            ok -> it = .server-pub[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -4588,9 +5077,15 @@ server-conn.compute-shared-secret-13 = () {
     pub-slice []byte = with-len(32)
     i <- [0..32): {
 
-        priv-slice[i] = .server-priv[i]
+        priv-slice[i]: {
+            ok -> it = .server-priv[i]
+            -> _
+        }
 
-        pub-slice[i] = .client-pub[i]
+        pub-slice[i]: {
+            ok -> it = .client-pub[i]
+            -> _
+        }
     }
     shared-slice = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
     i <- [0..32): {
@@ -4607,7 +5102,10 @@ server-conn.derive-handshake-keys-13 = () {
     zero-32 []byte = with-len(32)
     i <- [0..32): {
 
-        zero-32[i] = 0
+        zero-32[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
     empty-ctx []byte = with-len(0)
     early-prk [32]byte
@@ -4618,7 +5116,10 @@ server-conn.derive-handshake-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
 
-        empty-hash[i] = empty-hash-arr[i]
+        empty-hash[i]: {
+            ok -> it = empty-hash-arr[i]
+            -> _
+        }
     }
 
     ; 3. derived = HKDF-Expand-Label(Early, "derived", empty_hash, 32)
@@ -4703,7 +5204,10 @@ server-conn.derive-application-keys-13 = () {
     hs-prk []byte = with-len(32)
     i <- [0..32): {
 
-        hs-prk[i] = .hs-prk-field[i]
+        hs-prk[i]: {
+            ok -> it = .hs-prk-field[i]
+            -> _
+        }
     }
 
     ; derived = HKDF-Expand-Label(HS, "derived", empty_hash, 32)
@@ -4711,7 +5215,10 @@ server-conn.derive-application-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
 
-        empty-hash[i] = empty-hash-arr[i]
+        empty-hash[i]: {
+            ok -> it = empty-hash-arr[i]
+            -> _
+        }
     }
     derived-hs []byte
     derived-hs = hkdf.hkdf-expand-label-vec(hs-prk, 'derived', empty-hash, 32)
@@ -4720,7 +5227,10 @@ server-conn.derive-application-keys-13 = () {
     zero-32 []byte = with-len(32)
     i <- [0..32): {
 
-        zero-32[i] = 0
+        zero-32[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
     empty-ctx []byte = with-len(0)
     ms-prk [32]byte
@@ -4736,7 +5246,10 @@ server-conn.derive-application-keys-13 = () {
     pre-cf-buf []byte = with-len(pre-cf-len)
     i <- [0..pre-cf-len): {
 
-        pre-cf-buf[i] = .hs-buf[i]
+        pre-cf-buf[i]: {
+            ok -> it = .hs-buf[i]
+            -> _
+        }
     }
     hs-hash-arr = sha256.sha256(pre-cf-buf)
     hs-hash = hs-hash-arr[..32)
@@ -4799,10 +5312,16 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     i <- [0..n): {
 
         #{index-out=zero}
-        plain[i] = data[i]
+        plain[i]: {
+            ok -> it = data[i]
+            -> _
+        }
     }
 
-    plain[n] = ct & 255
+    plain[n]: {
+        ok -> it = ct & 255
+        -> _
+    }
 
     #{overflow=wrap}
     plain-len = n + 1
@@ -4815,7 +5334,10 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     ; 構建 AAD = record_header(5 bytes)
     aad []byte = with-len(5)
 
-    aad[0] = TLS-CT-APP-DATA & 255
+    aad[0]: {
+        ok -> it = TLS-CT-APP-DATA & 255
+        -> _
+    }
     put-u16(aad, 1, TLS-VERSION)
 
     #{overflow=wrap}
@@ -4833,13 +5355,19 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     #{overflow=wrap}
     rec []byte = with-len(5 + rec-len)
 
-    rec[0] = TLS-CT-APP-DATA & 255
+    rec[0]: {
+        ok -> it = TLS-CT-APP-DATA & 255
+        -> _
+    }
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
 
         #{index-out=zero, overflow=wrap}
-        rec[5 + i] = sealed[i]
+        rec[5 + i]: {
+            ok -> it = sealed[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -4870,7 +5398,10 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     i <- [0..rlen): {
 
         #{index-out=zero, overflow=wrap}
-        sealed[i] = rec[5 + i]
+        sealed[i]: {
+            ok -> it = rec[5 + i]
+            -> _
+        }
     }
 
     ; 構建 nonce
@@ -4881,19 +5412,34 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     aad []byte = with-len(5)
 
     #{index-out=zero}
-    aad[0] = rec[0]
+    aad[0]: {
+        ok -> it = rec[0]
+        -> _
+    }
 
     #{index-out=zero}
-    aad[1] = rec[1]
+    aad[1]: {
+        ok -> it = rec[1]
+        -> _
+    }
 
     #{index-out=zero}
-    aad[2] = rec[2]
+    aad[2]: {
+        ok -> it = rec[2]
+        -> _
+    }
 
     #{index-out=zero}
-    aad[3] = rec[3]
+    aad[3]: {
+        ok -> it = rec[3]
+        -> _
+    }
 
     #{index-out=zero}
-    aad[4] = rec[4]
+    aad[4]: {
+        ok -> it = rec[4]
+        -> _
+    }
 
     ; 解密
     plain []byte
@@ -4973,17 +5519,32 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     #{overflow=wrap}
     full-msg = with-len(4 + msg-len)
 
-    full-msg[0] = msg-type
+    full-msg[0]: {
+        ok -> it = msg-type
+        -> _
+    }
 
-    full-msg[1] = (msg-len >> 16) & 255
+    full-msg[1]: {
+        ok -> it = (msg-len >> 16) & 255
+        -> _
+    }
 
-    full-msg[2] = (msg-len >> 8) & 255
+    full-msg[2]: {
+        ok -> it = (msg-len >> 8) & 255
+        -> _
+    }
 
-    full-msg[3] = msg-len & 255
+    full-msg[3]: {
+        ok -> it = msg-len & 255
+        -> _
+    }
     i <- [0..msg-len): {
 
         #{overflow=wrap}
-        full-msg[4 + i] = msg-data[i]
+        full-msg[4 + i]: {
+            ok -> it = msg-data[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -5002,7 +5563,10 @@ server-conn.send-encrypted-extensions-13 = () (ok bool) {
     ; EncryptedExtensions: type(1) + length(3) + extensions_list_length(2) = 6 bytes
     hs []byte = with-len(6)
 
-    hs[0] = TLS-HS-ENCRYPTED-EXTENSIONS
+    hs[0]: {
+        ok -> it = TLS-HS-ENCRYPTED-EXTENSIONS
+        -> _
+    }
     put-u24(hs, 1, 2)
     put-u16(hs, 4, 0)
     hs.truncate(6)
@@ -5030,14 +5594,20 @@ server-conn.send-certificate-13 = () (ok bool) {
     hs-len = 4 + 1 + 3 + 3 + cert-len + 2
     hs []byte = with-len(hs-len)
 
-    hs[0] = TLS-HS-CERTIFICATE
+    hs[0]: {
+        ok -> it = TLS-HS-CERTIFICATE
+        -> _
+    }
 
     #{overflow=wrap}
     body-len = 1 + 3 + 3 + cert-len + 2
     put-u24(hs, 1, body-len)
 
     ; certificate_request_context length = 0
-    hs[4] = 0
+    hs[4]: {
+        ok -> it = 0
+        -> _
+    }
 
     ; certificate_list length = 3 + cert-len + 2
 
@@ -5051,7 +5621,10 @@ server-conn.send-certificate-13 = () (ok bool) {
     i <- [0..cert-len): {
 
         #{overflow=wrap}
-        hs[11 + i] = .cert[i]
+        hs[11 + i]: {
+            ok -> it = .cert[i]
+            -> _
+        }
     }
 
     ; extensions length = 0
@@ -5078,7 +5651,10 @@ server-conn.send-finished-13 = () (ok bool) {
     s-hs-secret []byte = with-len(32)
     i <- [0..32): {
 
-        s-hs-secret[i] = .hs-s-secret[i]
+        s-hs-secret[i]: {
+            ok -> it = .hs-s-secret[i]
+            -> _
+        }
     }
     finished-key []byte
     zero-ctx []byte = with-len(0)
@@ -5095,12 +5671,18 @@ server-conn.send-finished-13 = () (ok bool) {
     ; 構建 Finished 訊息
     hs []byte = with-len(36)
 
-    hs[0] = TLS-HS-FINISHED
+    hs[0]: {
+        ok -> it = TLS-HS-FINISHED
+        -> _
+    }
     put-u24(hs, 1, 32)
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        hs[4 + i] = verify[i]
+        hs[4 + i]: {
+            ok -> it = verify[i]
+            -> _
+        }
     }
     hs.truncate(36)
 
@@ -5127,7 +5709,10 @@ server-conn.read-client-finished-13 = () (ok bool) {
     c-hs-secret []byte = with-len(32)
     i <- [0..32): {
 
-        c-hs-secret[i] = .hs-c-secret[i]
+        c-hs-secret[i]: {
+            ok -> it = .hs-c-secret[i]
+            -> _
+        }
     }
     finished-key []byte
     zero-ctx []byte = with-len(0)
@@ -5334,7 +5919,10 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
     i <- [0..copy-n): {
 
         #{index-out=zero}
-        buf[i] = plain[i]
+        buf[i]: {
+            ok -> it = plain[i]
+            -> _
+        }
     }
     read-n = copy-n
 }
@@ -5490,7 +6078,10 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
                 i <- [0..rn): {
 
                     #{overflow=wrap}
-                    recv-buf[recv-len + i] = tmp.byte(i)
+                    recv-buf[recv-len + i]: {
+                        ok -> it = tmp.byte(i)
+                        -> _
+                    }
                 }
 
                 #{overflow=wrap}

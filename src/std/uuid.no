@@ -131,10 +131,16 @@ uuid.to-str = () (out str) {
 ; hex-byte: 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
 hex-byte = (b byte, pos i64, out str) {
 
-    out[pos] = HEX[(b >> 4) & 15]
+    out[pos]: {
+        ok -> it = HEX[(b >> 4) & 15]
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 1] = HEX[b & 15]
+    out[pos + 1]: {
+        ok -> it = HEX[b & 15]
+        -> _
+    }
 }
 
 ; to-str-upper: 將 UUID 格式化為大寫字串
@@ -187,10 +193,16 @@ uuid.to-str-upper = () (out str) {
 ; hex-byte-upper: 大寫 hex 位元組寫入
 hex-byte-upper = (b byte, pos i64, out str, table str) {
 
-    out[pos] = table[(b >> 4) & 15]
+    out[pos]: {
+        ok -> it = table[(b >> 4) & 15]
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 1] = table[b & 15]
+    out[pos + 1]: {
+        ok -> it = table[b & 15]
+        -> _
+    }
 }
 
 ; ═══════════════════════════════════════════════

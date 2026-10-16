@@ -484,41 +484,71 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     hdr-count = 0
 
     ; :method
-    hdr-names[hdr-count] = ':method'
+    hdr-names[hdr-count]: {
+        ok -> it = ':method'
+        -> _
+    }
 
-    hdr-values[hdr-count] = method
+    hdr-values[hdr-count]: {
+        ok -> it = method
+        -> _
+    }
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :path
-    hdr-names[hdr-count] = ':path'
+    hdr-names[hdr-count]: {
+        ok -> it = ':path'
+        -> _
+    }
 
-    hdr-values[hdr-count] = path
+    hdr-values[hdr-count]: {
+        ok -> it = path
+        -> _
+    }
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :scheme
-    hdr-names[hdr-count] = ':scheme'
+    hdr-names[hdr-count]: {
+        ok -> it = ':scheme'
+        -> _
+    }
 
-    hdr-values[hdr-count] = 'https'
+    hdr-values[hdr-count]: {
+        ok -> it = 'https'
+        -> _
+    }
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; :authority
-    hdr-names[hdr-count] = ':authority'
+    hdr-names[hdr-count]: {
+        ok -> it = ':authority'
+        -> _
+    }
 
-    hdr-values[hdr-count] = host
+    hdr-values[hdr-count]: {
+        ok -> it = host
+        -> _
+    }
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
 
     ; user-agent
-    hdr-names[hdr-count] = 'user-agent'
+    hdr-names[hdr-count]: {
+        ok -> it = 'user-agent'
+        -> _
+    }
 
-    hdr-values[hdr-count] = 'nolang-http3/1.0'
+    hdr-values[hdr-count]: {
+        ok -> it = 'nolang-http3/1.0'
+        -> _
+    }
 
     #{overflow=wrap}
     hdr-count = hdr-count + 1
@@ -526,9 +556,15 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     ; content-length（如有主體）
     body.len-bytes() > 0 -> {
 
-        hdr-names[hdr-count] = 'content-length'
+        hdr-names[hdr-count]: {
+            ok -> it = 'content-length'
+            -> _
+        }
 
-        hdr-values[hdr-count] = body.len-bytes().to-str()
+        hdr-values[hdr-count]: {
+            ok -> it = body.len-bytes().to-str()
+            -> _
+        }
 
         #{overflow=wrap}
         hdr-count = hdr-count + 1
@@ -550,7 +586,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     i <- [0..hdr-n): {
 
         #{index-out=zero, overflow=wrap}
-        stream-data[stream-pos + i] = hdr-buf[i]
+        stream-data[stream-pos + i]: {
+            ok -> it = hdr-buf[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -558,7 +597,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     i <- [0..data-n): {
 
         #{index-out=zero, overflow=wrap}
-        stream-data[stream-pos + i] = data-buf[i]
+        stream-data[stream-pos + i]: {
+            ok -> it = data-buf[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -580,7 +622,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     i <- [0..stream-ft-n): {
 
         #{index-out=zero, overflow=wrap}
-        pkt[pkt-pos + i] = stream-ft[i]
+        pkt[pkt-pos + i]: {
+            ok -> it = stream-ft[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -593,7 +638,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     i <- [0..sid-n): {
 
         #{index-out=zero, overflow=wrap}
-        pkt[pkt-pos + i] = sid-buf[i]
+        pkt[pkt-pos + i]: {
+            ok -> it = sid-buf[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -606,7 +654,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     i <- [0..off-n): {
 
         #{index-out=zero, overflow=wrap}
-        pkt[pkt-pos + i] = off-buf[i]
+        pkt[pkt-pos + i]: {
+            ok -> it = off-buf[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -619,7 +670,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     i <- [0..len-n): {
 
         #{index-out=zero, overflow=wrap}
-        pkt[pkt-pos + i] = len-buf[i]
+        pkt[pkt-pos + i]: {
+            ok -> it = len-buf[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -629,7 +683,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     i <- [0..stream-pos): {
 
         #{index-out=zero, overflow=wrap}
-        pkt[pkt-pos + i] = stream-data[i]
+        pkt[pkt-pos + i]: {
+            ok -> it = stream-data[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}

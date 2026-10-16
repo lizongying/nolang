@@ -341,6 +341,13 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		if f.sem.HasRTFlag(stmt, parser.RTEmptyArmDefault) {
 			continue
 		}
+		// 裸 `-> _`（wildcard / no-op 臂）在 desugar 後變成 Expression 為 nil 的
+		// ExpressionStatement（佔位 discard）。若原樣輸出會印成 `-> `（多餘尾隨
+		// 空白），第二輪 `-> ` 又被重新解析成空臂 → `->`，與第一輪不一致、破壞冪等。
+		// 此處把它視為空臂濾掉，使輸出穩定為 `->`（與空臂分支一致）。
+		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+			continue
+		}
 		statements = append(statements, stmt)
 	}
 	bindingSuffix := ""

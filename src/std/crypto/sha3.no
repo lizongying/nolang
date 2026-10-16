@@ -74,7 +74,10 @@ keccak-f1600 = (state []u64) {
         x <- [0..5): {
 
             #{index-out=zero, overflow=wrap}
-            c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
+            c[x]: {
+                ok -> it = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
+                -> _
+            }
         }
         d [5]u64
         x <- [0..5): {
@@ -86,13 +89,19 @@ keccak-f1600 = (state []u64) {
             x4 = (x + 4) % 5
 
             #{index-out=zero}
-            d[x] = c[x4] ^ rotl64(c[x1], 1)
+            d[x]: {
+                ok -> it = c[x4] ^ rotl64(c[x1], 1)
+                -> _
+            }
         }
         x <- [0..5): {
             y <- [0..5): {
 
                 #{index-out=zero, overflow=wrap}
-                state[x + 5 * y] = state[x + 5 * y] ^ d[x]
+                state[x + 5 * y]: {
+                    ok -> it = state[x + 5 * y] ^ d[x]
+                    -> _
+                }
             }
         }
 
@@ -116,7 +125,10 @@ keccak-f1600 = (state []u64) {
                 ny = (2 * x + 3 * y) % 5
 
                 #{overflow=wrap}
-                b[nx + 5 * ny] = rotated
+                b[nx + 5 * ny]: {
+                    ok -> it = rotated
+                    -> _
+                }
             }
         }
 
@@ -131,13 +143,19 @@ keccak-f1600 = (state []u64) {
                 x2 = (x + 2) % 5
 
                 #{index-out=zero, overflow=wrap}
-                state[x + 5 * y] = b[x + 5 * y] ^ ((SHA3-MASK64 ^ b[x1 + 5 * y]) & b[x2 + 5 * y])
+                state[x + 5 * y]: {
+                    ok -> it = b[x + 5 * y] ^ ((SHA3-MASK64 ^ b[x1 + 5 * y]) & b[x2 + 5 * y])
+                    -> _
+                }
             }
         }
 
         ; ι (iota)
         #{index-out=zero}
-        state[0] = state[0] ^ KECCAK-RC[round]
+        state[0]: {
+            ok -> it = state[0] ^ KECCAK-RC[round]
+            -> _
+        }
     }
 }
 
@@ -160,7 +178,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     state []u64 = with-len(25)
     i <- [0..25): {
 
-        state[i] = 0
+        state[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
     dlen = data.len()
 
@@ -184,7 +205,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
             w = data[absorbed + i]
 
             #{index-out=zero}
-            state[lane-idx] = state[lane-idx] ^ (w << (byte-idx * 8))
+            state[lane-idx]: {
+                ok -> it = state[lane-idx] ^ (w << (byte-idx * 8))
+                -> _
+            }
         }
 
         keccak-f1600(state)
@@ -209,7 +233,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
             w = data[absorbed + i]
 
             #{index-out=zero}
-            state[lane-idx] = state[lane-idx] ^ (w << (byte-idx * 8))
+            state[lane-idx]: {
+                ok -> it = state[lane-idx] ^ (w << (byte-idx * 8))
+                -> _
+            }
         }
     }
 
@@ -226,7 +253,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     pad-byte-idx = remaining % 8
 
     #{index-out=zero}
-    state[pad-lane-idx] = state[pad-lane-idx] ^ (s-term << (pad-byte-idx * 8))
+    state[pad-lane-idx]: {
+        ok -> it = state[pad-lane-idx] ^ (s-term << (pad-byte-idx * 8))
+        -> _
+    }
 
     #{overflow=wrap}
     last-lane-idx = (rate - 1) / 8
@@ -235,7 +265,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     last-byte-idx = (rate - 1) % 8
 
     #{index-out=zero}
-    state[last-lane-idx] = state[last-lane-idx] ^ (SHA3-PAD-HIGH << (last-byte-idx * 8))
+    state[last-lane-idx]: {
+        ok -> it = state[last-lane-idx] ^ (SHA3-PAD-HIGH << (last-byte-idx * 8))
+        -> _
+    }
 
     keccak-f1600(state)
 
@@ -330,10 +363,16 @@ sha3-224-hex = (data []byte) (hex str) {
     i <- [0..28): {
 
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        hex[i * 2]: {
+            ok -> it = hex-chars[(hash[i] >> 4) & 15]
+            -> _
+        }
 
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[hash[i] & 15]
+        hex[i * 2 + 1]: {
+            ok -> it = hex-chars[hash[i] & 15]
+            -> _
+        }
     }
 }
 
@@ -347,10 +386,16 @@ sha3-256-hex = (data []byte) (hex str) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        hex[i * 2]: {
+            ok -> it = hex-chars[(hash[i] >> 4) & 15]
+            -> _
+        }
 
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[hash[i] & 15]
+        hex[i * 2 + 1]: {
+            ok -> it = hex-chars[hash[i] & 15]
+            -> _
+        }
     }
 }
 
@@ -364,10 +409,16 @@ sha3-384-hex = (data []byte) (hex str) {
     i <- [0..48): {
 
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        hex[i * 2]: {
+            ok -> it = hex-chars[(hash[i] >> 4) & 15]
+            -> _
+        }
 
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[hash[i] & 15]
+        hex[i * 2 + 1]: {
+            ok -> it = hex-chars[hash[i] & 15]
+            -> _
+        }
     }
 }
 
@@ -381,9 +432,15 @@ sha3-512-hex = (data []byte) (hex str) {
     i <- [0..64): {
 
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(hash[i] >> 4) & 15]
+        hex[i * 2]: {
+            ok -> it = hex-chars[(hash[i] >> 4) & 15]
+            -> _
+        }
 
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[hash[i] & 15]
+        hex[i * 2 + 1]: {
+            ok -> it = hex-chars[hash[i] & 15]
+            -> _
+        }
     }
 }

@@ -586,12 +586,39 @@ func setSourceFileDeepOnExpr(e Expression, file string) {
 }
 
 // ---- Program ----
+//
+// Program.Errors is the post-ParseProgram error channel, the counterpart of
+// Warnings. Parser.diags cannot serve here: the *Parser is discarded when
+// ParseProgram returns, so a diagnostic produced by any LATER stage has nowhere
+// to go. Today the only writer is ASTToHIRWithMap, which folds in the ERRORS
+// emitted by H0-side desugaring (desugarSurfaceMatch → buildMatchDesugar).
+// Without this they were silently dropped.
+//
+// Measured, not hypothetical: `s = 'abc'` plus `k str = s: { ok -> err -> 'e'
+// nil -> 'f' }` makes buildMatchDesugar emit "empty match arm cannot determine
+// a value". On the shipped path (lowering inside ParseProgram) that error
+// reaches p.Errors() and the build fails. On the target path
+// (ParseProgram(SkipLowering) → ASTToHIR) it landed in an unread
+// hirConv.h0Diags slice: p.Errors() empty, prog.Warnings empty, HIR produced
+// anyway. Same code, same input, one path reports and the other does not —
+// which is precisely the failure class this migration exists to remove
+// (src/parser/dump/h0_diag_test.go).
+//
+// Severity is preserved rather than laundered into Warnings: an error must fail
+// the build, a warning must not, and folding errors into Warnings would have
+// made a broken program compile.
+//
+// Nothing else writes this field, so it is safe to read after any ASTToHIR*
+// call. A caller that lowers the same *Program twice would see duplicates,
+// exactly as it already does for Warnings; no shipped path does that (build
+// lowers the main program once, at build/transpiler.go's ASTToHIRWithMap call).
 
 type Program struct {
 	Statements       []Statement
 	FreeComments     []*CommentGroup // standalone comments at file start, between stmts, EOF
 	TrailingComments *CommentGroup
 	Warnings         []string         // parser warnings (e.g., dead code, deprecation)
+	Errors           []string         // post-ParseProgram errors (see the block comment above)
 	Sem              *SemanticContext // 語義副表：註解/平台鍵/embed/泛型參數/類型推斷結果（解析/语义分离）
 	// BuiltinFuncNames 記錄被 #{buildin=...} / #{intrinsic} 標記的函式名稱集合。
 	// 由 stripBuiltinStubs（編譯/ vet 管線）在移除內建樁函式時填寫，使後續
@@ -1712,11 +1739,6 @@ type IndexExpression struct {
 	Token lexer.Token // [
 	Left  Expression  // 被索引的對象
 	Index Expression  // 索引值
-	// InBounds 由 bounds 分析器證明「此索引讀取可證在界內」時置位（常量下標、
-	// for-range 歸納變數、定長切片 with-len(K)）。HIR→MIR lowering 據此跳過
-	// 安全讀取（產出 ?elem）的運行時界檢查；用戶側型別不變（D7/D9）。寫入
-	// 節點的 InBounds 由 lowering 依「寫受讀支配」從對應讀節點推導。
-	InBounds bool
 }
 
 func (ie *IndexExpression) expressionNode()     {}

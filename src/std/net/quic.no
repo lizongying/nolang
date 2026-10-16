@@ -424,7 +424,10 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     initial-salt []byte
     i <- [0..20): {
 
-        initial-salt[i] = QUIC-INITIAL-SALT[i]
+        initial-salt[i]: {
+            ok -> it = QUIC-INITIAL-SALT[i]
+            -> _
+        }
     }
     initial-secret [32]byte
     initial-secret = hkdf.hkdf-extract(initial-salt, dst-cid)
@@ -485,7 +488,10 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     i <- [0..16): {
 
         #{index-out=zero, overflow=wrap}
-        sample[i] = packet[pn-offset + 4 + i]
+        sample[i]: {
+            ok -> it = packet[pn-offset + 4 + i]
+            -> _
+        }
     }
 
     ; AES-128-ECB 加密樣本得到 mask
@@ -499,7 +505,10 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     is-long-header -> mask-bits = 0x0f
 
     #{index-out=zero}
-    packet[pn-offset] = packet[pn-offset] ^ (mask[0] & mask-bits)
+    packet[pn-offset]: {
+        ok -> it = packet[pn-offset] ^ (mask[0] & mask-bits)
+        -> _
+    }
 
     ; XOR 封包號碼的 4 位元組
     j = 0
@@ -509,7 +518,10 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
         pn-offset + j < packet.len() -> {
 
             #{index-out=zero}
-            packet[pn-offset + j] = packet[pn-offset + j] ^ mask[mask-offset + j]
+            packet[pn-offset + j]: {
+                ok -> it = packet[pn-offset + j] ^ mask[mask-offset + j]
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -855,19 +867,28 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     nonce [12]byte
     i <- [0..12): {
 
-        nonce[i] = .client-initial-iv[i]
+        nonce[i]: {
+            ok -> it = .client-initial-iv[i]
+            -> _
+        }
     }
     i <- [0..8): {
 
         #{index-out=zero, overflow=wrap}
-        nonce[4 + i] = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
+        nonce[4 + i]: {
+            ok -> it = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
+            -> _
+        }
     }
 
     ; AAD = packet[0..pn-offset]（標頭部分）
     aad []byte
     i <- [0..pn-offset): {
 
-        aad[i] = packet[i]
+        aad[i]: {
+            ok -> it = packet[i]
+            -> _
+        }
     }
 
     ; Plaintext = packet[pn_offset..pos]
@@ -878,7 +899,10 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
     i <- [0..plain-len): {
 
         #{overflow=wrap}
-        plain[i] = packet[pn-offset + i]
+        plain[i]: {
+            ok -> it = packet[pn-offset + i]
+            -> _
+        }
     }
 
     ; Encrypt
@@ -991,12 +1015,18 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     nonce [12]byte
     i <- [0..12): {
 
-        nonce[i] = .server-initial-iv[i]
+        nonce[i]: {
+            ok -> it = .server-initial-iv[i]
+            -> _
+        }
     }
     i <- [0..8): {
 
         #{index-out=zero, overflow=wrap}
-        nonce[4 + i] = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
+        nonce[4 + i]: {
+            ok -> it = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
+            -> _
+        }
     }
 
     ; AAD = buf[0..pn_offset]
@@ -1004,7 +1034,10 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     i <- [0..pn-offset): {
 
         #{index-out=zero}
-        aad[i] = buf[i]
+        aad[i]: {
+            ok -> it = buf[i]
+            -> _
+        }
     }
 
     ; Ciphertext = buf[pn_offset..pn_offset+length_val]
@@ -1012,7 +1045,10 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     i <- [0..length-val): {
 
         #{index-out=zero, overflow=wrap}
-        sealed[i] = buf[pn-offset + i]
+        sealed[i]: {
+            ok -> it = buf[pn-offset + i]
+            -> _
+        }
     }
 
     ; 解密

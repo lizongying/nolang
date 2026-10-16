@@ -1243,28 +1243,58 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         {
             cp == old-ch -> {
                 new-ch < 0x80 -> {
-                    val[j] = new-ch
+                    val[j]: {
+                        ok -> it = new-ch
+                        -> _
+                    }
                     j = j + 1
                 }
 
                 new-ch < 0x800 -> {
-                    val[j] = 0xc0 | ((new-ch >> 6) & 0x1f)
-                    val[j + 1] = 0x80 | (new-ch & 0x3f)
+                    val[j]: {
+                        ok -> it = 0xc0 | ((new-ch >> 6) & 0x1f)
+                        -> _
+                    }
+                    val[j + 1]: {
+                        ok -> it = 0x80 | (new-ch & 0x3f)
+                        -> _
+                    }
                     j = j + 2
                 }
 
                 new-ch < 0x10000 -> {
-                    val[j] = 0xe0 | ((new-ch >> 12) & 0x0f)
-                    val[j + 1] = 0x80 | ((new-ch >> 6) & 0x3f)
-                    val[j + 2] = 0x80 | (new-ch & 0x3f)
+                    val[j]: {
+                        ok -> it = 0xe0 | ((new-ch >> 12) & 0x0f)
+                        -> _
+                    }
+                    val[j + 1]: {
+                        ok -> it = 0x80 | ((new-ch >> 6) & 0x3f)
+                        -> _
+                    }
+                    val[j + 2]: {
+                        ok -> it = 0x80 | (new-ch & 0x3f)
+                        -> _
+                    }
                     j = j + 3
                 }
 
                 -> {
-                    val[j] = 0xf0 | ((new-ch >> 18) & 0x07)
-                    val[j + 1] = 0x80 | ((new-ch >> 12) & 0x3f)
-                    val[j + 2] = 0x80 | ((new-ch >> 6) & 0x3f)
-                    val[j + 3] = 0x80 | (new-ch & 0x3f)
+                    val[j]: {
+                        ok -> it = 0xf0 | ((new-ch >> 18) & 0x07)
+                        -> _
+                    }
+                    val[j + 1]: {
+                        ok -> it = 0x80 | ((new-ch >> 12) & 0x3f)
+                        -> _
+                    }
+                    val[j + 2]: {
+                        ok -> it = 0x80 | ((new-ch >> 6) & 0x3f)
+                        -> _
+                    }
+                    val[j + 3]: {
+                        ok -> it = 0x80 | (new-ch & 0x3f)
+                        -> _
+                    }
                     j = j + 4
                 }
             }
@@ -1273,7 +1303,10 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 k <- [0..clen): {
 
                     #{overflow=wrap}
-                    val[j + k] = .byte(i + k)
+                    val[j + k]: {
+                        ok -> it = .byte(i + k)
+                        -> _
+                    }
                 }
 
                 #{overflow=wrap}
@@ -1369,7 +1402,10 @@ str.trim-char = (ch char) (val str) {
     j <- [0..n): {
 
         #{overflow=wrap}
-        val[j] = .byte(start + j)
+        val[j]: {
+            ok -> it = .byte(start + j)
+            -> _
+        }
     }
 }
 
@@ -1652,7 +1688,10 @@ str.replace-str = (old str, new str) (val str) {
         match -> {
             k <- [0..new-len): {
 
-                val[pos] = new.byte(k)
+                val[pos]: {
+                    ok -> it = new.byte(k)
+                    -> _
+                }
 
                 #{overflow=wrap}
                 pos = pos + 1
@@ -1663,7 +1702,10 @@ str.replace-str = (old str, new str) (val str) {
         }
 
         -> {
-            val[pos] = .byte(i)
+            val[pos]: {
+                ok -> it = .byte(i)
+                -> _
+            }
 
             #{overflow=wrap}
             pos = pos + 1
@@ -2097,10 +2139,16 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             out = with-cap(2)
             pos = 0
             neg == 1 -> {
-                out[pos] = 45
+                out[pos]: {
+                    ok -> it = 45
+                    -> _
+                }
                 pos = pos + 1
             }
-            out[pos] = 48
+            out[pos]: {
+                ok -> it = 48
+                -> _
+            }
             return
         }
 
@@ -2234,25 +2282,37 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         out = with-cap(total)
         pos = 0
         neg == 1 -> {
-            out[pos] = 45
+            out[pos]: {
+                ok -> it = 45
+                -> _
+            }
             pos = pos + 1
         }
 
         ; 第一位數字
         {
             pad > 0 -> {
-                out[pos] = 48
+                out[pos]: {
+                    ok -> it = 48
+                    -> _
+                }
             }
 
             -> {
-                out[pos] = mstr.byte(0)
+                out[pos]: {
+                    ok -> it = mstr.byte(0)
+                    -> _
+                }
             }
         }
         pos = pos + 1
 
         ; 小數部分
         last-nz >= 1 -> {
-            out[pos] = 46
+            out[pos]: {
+                ok -> it = 46
+                -> _
+            }
             pos = pos + 1
             j <- [1..last-nz + 1): {
 
@@ -2260,11 +2320,17 @@ f64-to-str-general = (x f64, precision i64) (out str) {
                 idx = j - pad
                 {
                     idx >= 0 && idx < mn -> {
-                        out[pos] = mstr.byte(idx)
+                        out[pos]: {
+                            ok -> it = mstr.byte(idx)
+                            -> _
+                        }
                     }
 
                     -> {
-                        out[pos] = 48
+                        out[pos]: {
+                            ok -> it = 48
+                            -> _
+                        }
                     }
                 }
                 pos = pos + 1
@@ -2272,15 +2338,24 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         }
 
         ; 'e' 和符號
-        out[pos] = 101
+        out[pos]: {
+            ok -> it = 101
+            -> _
+        }
         pos = pos + 1
         {
             e < 0 -> {
-                out[pos] = 45
+                out[pos]: {
+                    ok -> it = 45
+                    -> _
+                }
             }
 
             -> {
-                out[pos] = 43
+                out[pos]: {
+                    ok -> it = 43
+                    -> _
+                }
             }
         }
         pos = pos + 1
@@ -2289,11 +2364,17 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         estr = ae.to-str()
         elen2 = estr.len-bytes()
         elen2 == 1 -> {
-            out[pos] = 48
+            out[pos]: {
+                ok -> it = 48
+                -> _
+            }
             pos = pos + 1
         }
         j <- [0..elen2): {
-            out[pos] = estr.byte(j)
+            out[pos]: {
+                ok -> it = estr.byte(j)
+                -> _
+            }
             pos = pos + 1
         }
         return
@@ -2326,7 +2407,10 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         out = with-cap(total2)
         pos = 0
         neg == 1 -> {
-            out[pos] = 45
+            out[pos]: {
+                ok -> it = 45
+                -> _
+            }
             pos = pos + 1
         }
         j <- [0..int-digits): {
@@ -2335,17 +2419,26 @@ f64-to-str-general = (x f64, precision i64) (out str) {
             idx = j - pad
             {
                 idx >= 0 && idx < mn -> {
-                    out[pos] = mstr.byte(idx)
+                    out[pos]: {
+                        ok -> it = mstr.byte(idx)
+                        -> _
+                    }
                 }
 
                 -> {
-                    out[pos] = 48
+                    out[pos]: {
+                        ok -> it = 48
+                        -> _
+                    }
                 }
             }
             pos = pos + 1
         }
             frac-digits > 0 -> {
-            out[pos] = 46
+            out[pos]: {
+                ok -> it = 46
+                -> _
+            }
             pos = pos + 1
             j <- [0..frac-digits): {
 
@@ -2353,11 +2446,17 @@ f64-to-str-general = (x f64, precision i64) (out str) {
                 idx2 = int-digits + j - pad
                 {
                     idx2 >= 0 && idx2 < mn -> {
-                        out[pos] = mstr.byte(idx2)
+                        out[pos]: {
+                            ok -> it = mstr.byte(idx2)
+                            -> _
+                        }
                     }
 
                     -> {
-                        out[pos] = 48
+                        out[pos]: {
+                            ok -> it = 48
+                            -> _
+                        }
                     }
                 }
                 pos = pos + 1
@@ -2381,19 +2480,31 @@ f64-to-str-general = (x f64, precision i64) (out str) {
 
     #{overflow=wrap}
     neg == 1 -> {
-        out[pos] = 45
+        out[pos]: {
+            ok -> it = 45
+            -> _
+        }
         pos = pos + 1
     }
-    out[pos] = 48
+    out[pos]: {
+        ok -> it = 48
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
-    out[pos] = 46
+    out[pos]: {
+        ok -> it = 46
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
     j <- [0..lead-zeros): {
-        out[pos] = 48
+        out[pos]: {
+            ok -> it = 48
+            -> _
+        }
 
         #{overflow=wrap}
         pos = pos + 1
@@ -2406,11 +2517,17 @@ f64-to-str-general = (x f64, precision i64) (out str) {
         idx = j - pad
         {
             idx >= 0 && idx < mn -> {
-                out[pos] = mstr.byte(idx)
+                out[pos]: {
+                    ok -> it = mstr.byte(idx)
+                    -> _
+                }
             }
 
             -> {
-                out[pos] = 48
+                out[pos]: {
+                    ok -> it = 48
+                    -> _
+                }
             }
         }
 

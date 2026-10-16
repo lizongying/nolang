@@ -205,3 +205,128 @@ func TestMarkerCountsAreSane(t *testing.T) {
 		}
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S2 precondition — closing the ast.go blind spot.
+//
+// Every coverage test above derives its marker set from ast.go ALONE. A node
+// type declared in any other file is therefore invisible to them, and an
+// unlowered node of that kind silently becomes hir.KUnknown.
+//
+// That is not hypothetical: SurfaceMatch is declared in lowering.go, and it was
+// the one sugar node ASTToHIR could not lower (design doc §13.4.1). sugarParserSources
+// already scans every non-test .go file and its own doc comment calls this out
+// as load-bearing — but until now nothing joined the two scans together.
+//
+// That gap is now CLOSED: `case *SurfaceMatch` landed in tohir.go's exprNode
+// (S2 core), so ASTToHIR lowers the node itself instead of relying on a
+// pre-pass. The exemption map below is therefore empty, and the gate now
+// asserts the stronger property: EVERY marker-implementing type declared
+// outside ast.go must have a lowering case.
+//
+// The map is kept rather than deleted so the forward guard survives: a future
+// node type declared outside ast.go without a case fails the `uncovered` loop
+// and is named, and the map is the documented escape hatch for a deliberate,
+// reasoned exception.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// unloweredSugarExemptions is the set of sugar node types ASTToHIR does NOT yet
+// lower. Each entry is checked three ways, and the set must match the measured
+// gap EXACTLY in both directions:
+//
+//   - it must be a registered sugar type (sugarASTTypes) — a BASE type here
+//     would be a genuinely unlowered node, not an exemption;
+//   - it must still be absent from tohir.go's type switches — the entry is live
+//     evidence of the gap, so landing the missing case flips the assertion and
+//     names this entry as stale;
+//   - together the entries must account for the WHOLE blind spot — a node type
+//     declared outside ast.go that is neither lowered nor listed here fails.
+//
+// EMPTY as of S2 core: the only entry ever recorded was SurfaceMatch, which
+// tohir.go now lowers directly.
+var unloweredSugarExemptions = map[string]string{}
+
+// TestASTToHIRCoverageHasNoAstGoBlindSpot extends the coverage gates above to
+// node types declared outside ast.go.
+//
+// This is the STATIC half of C4 ("does a case exist for every type?"). Its
+// runtime counterpart — "did anything actually fall through on the corpus?" —
+// is TestH0DropsNothingUnknown in parser/dump/h0_sugar_gap_test.go. Neither
+// subsumes the other: this one cannot see a type whose case exists but whose
+// sub-branch still drops, and that one cannot see a type the corpus never
+// exercises.
+func TestASTToHIRCoverageHasNoAstGoBlindSpot(t *testing.T) {
+	// The all-files marker set (type name -> marker names). This is the set the
+	// coverage tests above do NOT have.
+	_, allFiles := sugarParserSources(t)
+	if len(allFiles) == 0 {
+		t.Fatal("sugarParserSources found no marker-implementing types; the scan broke")
+	}
+
+	// The set the coverage tests above DO have, flattened to type names.
+	onlyAstGo := astMarkerTypes(t)
+	inAstGo := map[string]bool{}
+	for _, types := range onlyAstGo {
+		for typ := range types {
+			inAstGo[typ] = true
+		}
+	}
+
+	// The blind spot: marker-implementing types declared outside ast.go.
+	blind := map[string]bool{}
+	for typ := range allFiles {
+		if !inAstGo[typ] {
+			blind[typ] = true
+		}
+	}
+
+	// Anti-vacuity: the blind spot must be real, or this gate proves nothing.
+	if len(blind) == 0 {
+		t.Fatal("every marker-implementing type is declared in ast.go; the blind-spot " +
+			"premise broke and this gate is vacuous — delete it and say why")
+	}
+
+	// Which of them does ASTToHIR actually cover today?
+	cases := switchCaseTypes(t, "stmtNode", "exprNode", "annValue")
+	covered := union(cases["stmtNode"], cases["exprNode"], cases["annValue"])
+
+	uncovered := map[string]bool{}
+	for typ := range blind {
+		if !covered[typ] {
+			uncovered[typ] = true
+		}
+	}
+	t.Logf("ast.go covers %d marker types; %d more are declared outside it (%v); "+
+		"of those, %d are still unlowered by ASTToHIR: %v",
+		len(inAstGo), len(blind), sortedKeys(blind), len(uncovered), sortedKeys(uncovered))
+
+	// The gap must be EXACTLY the recorded exemption set — no more, no less.
+	for typ := range uncovered {
+		if _, ok := unloweredSugarExemptions[typ]; !ok {
+			t.Errorf("%s is declared outside ast.go and ASTToHIR has no case for it, so it "+
+				"silently lowers to hir.KUnknown; it is also missing from the ast.go-only "+
+				"coverage gates above. Either add a case to tohir.go, or record it in "+
+				"unloweredSugarExemptions with a rationale", typ)
+		}
+	}
+	for typ := range unloweredSugarExemptions {
+		if _, ok := sugarASTTypes[typ]; !ok {
+			t.Errorf("%s is exempted from ASTToHIR coverage but is not registered in "+
+				"sugarASTTypes; a BASE node type must be lowered, not exempted", typ)
+		}
+		if !uncovered[typ] {
+			t.Errorf("exemption %s is stale: ASTToHIR now covers it. Delete it from "+
+				"unloweredSugarExemptions (and consider enabling the sugar-HIR gate in "+
+				"hir/sugar_kinds_test.go)", typ)
+		}
+	}
+}
+
+func sortedKeys(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

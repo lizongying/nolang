@@ -62,6 +62,27 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 			}
 		case *parser.DotExpression:
 			out = append(out, indexReadsByName(x.Receiver, name)...)
+		case *parser.SurfaceMatch:
+			// S1：糖形態下臂體仍是語句容器，臂內的 `arr[i]` 讀取也要算進來。
+			// 見 sugar_walk.go。
+			out = append(out, indexReadsByName(x.Matched, name)...)
+			for i := range x.Arms {
+				arm := &x.Arms[i]
+				out = append(out, indexReadsByName(arm.Condition, name)...)
+				for _, p := range arm.MultiValuePatterns {
+					out = append(out, indexReadsByName(p, name)...)
+				}
+				if arm.Body != nil {
+					for _, bs := range arm.Body.Statements {
+						switch b := bs.(type) {
+						case *parser.LetStatement:
+							out = append(out, indexReadsByName(b.Value, name)...)
+						case *parser.ExpressionStatement:
+							out = append(out, indexReadsByName(b.Expression, name)...)
+						}
+					}
+				}
+			}
 		}
 		return out
 	}
@@ -91,6 +112,13 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 					if ie.Alternative != nil {
 						walk(ie.Alternative.Statements, file)
 					}
+				}
+				// S1：糖形態下 match 臂體也是語句容器（`for` 迴圈本身可能就長在臂裡）。
+				// 見 sugar_walk.go。
+				if sm, ok := st.Expression.(*parser.SurfaceMatch); ok {
+					walkSurfaceMatchChildren(sm, nil, func(sub parser.Statement) {
+						walk([]parser.Statement{sub}, file)
+					})
 				}
 			case *parser.ForStatement:
 				if st.IterRange != nil && st.IterRange.Range != nil && st.IterRange.Variable != "" && st.Body != nil {

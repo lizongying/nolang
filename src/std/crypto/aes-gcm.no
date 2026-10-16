@@ -42,14 +42,20 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
     z [16]byte
     i <- [0..16): {
 
-        z[i] = 0
+        z[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; v = h（V 初始化為 H，即 hash subkey，依據 GCM 規範 V_0 = Y）
     v [16]byte
     i <- [0..16): {
 
-        v[i] = h[i]
+        v[i]: {
+            ok -> it = h[i]
+            -> _
+        }
     }
 
     ; 逐位元處理 x 的每一位
@@ -69,7 +75,10 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         xi == 1 -> {
             j <- [0..16): {
 
-                z[j] = z[j] ^ v[j]
+                z[j]: {
+                    ok -> it = z[j] ^ v[j]
+                    -> _
+                }
             }
         }
 
@@ -81,18 +90,27 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         (j > 0) {
 
             #{index-out=zero}
-            v[j] = (v[j] >> 1) | ((v[j - 1] & 1) << 7)
+            v[j]: {
+                ok -> it = (v[j] >> 1) | ((v[j - 1] & 1) << 7)
+                -> _
+            }
 
             #{overflow=wrap}
             j = j - 1
         }
 
-        v[0] = v[0] >> 1
+        v[0]: {
+            ok -> it = v[0] >> 1
+            -> _
+        }
 
         ; 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
         v-lsb == 1 -> {
 
-            v[0] = v[0] ^ 225
+            v[0]: {
+                ok -> it = v[0] ^ 225
+                -> _
+            }
         }
     }
     i <- [0..16): {
@@ -113,7 +131,10 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     blk [16]byte
     i <- [0..16): {
 
-        y[i] = 0
+        y[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; 處理 AAD（每 16 位元組一區塊）
@@ -124,13 +145,19 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         i <- [0..16): {
 
             #{index-out=zero, overflow=wrap}
-            blk[i] = aad[pos + i]
+            blk[i]: {
+                ok -> it = aad[pos + i]
+                -> _
+            }
         }
 
         ; y = (y XOR block) * H
         i <- [0..16): {
 
-            y[i] = y[i] ^ blk[i]
+            y[i]: {
+                ok -> it = y[i] ^ blk[i]
+                -> _
+            }
         }
 
         y = ghash-mul(y, h)
@@ -144,16 +171,25 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     pos < aad.len() -> {
         i <- [0..16): {
 
-            blk[i] = 0
+            blk[i]: {
+                ok -> it = 0
+                -> _
+            }
         }
         i <- [0..aad.len() - pos): {
 
             #{index-out=zero, overflow=wrap}
-            blk[i] = aad[pos + i]
+            blk[i]: {
+                ok -> it = aad[pos + i]
+                -> _
+            }
         }
         i <- [0..16): {
 
-            y[i] = y[i] ^ blk[i]
+            y[i]: {
+                ok -> it = y[i] ^ blk[i]
+                -> _
+            }
         }
 
         y = ghash-mul(y, h)
@@ -167,11 +203,17 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         i <- [0..16): {
 
             #{index-out=zero, overflow=wrap}
-            blk[i] = cipher[pos + i]
+            blk[i]: {
+                ok -> it = cipher[pos + i]
+                -> _
+            }
         }
         i <- [0..16): {
 
-            y[i] = y[i] ^ blk[i]
+            y[i]: {
+                ok -> it = y[i] ^ blk[i]
+                -> _
+            }
         }
 
         y = ghash-mul(y, h)
@@ -184,16 +226,25 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     pos < cipher.len() -> {
         i <- [0..16): {
 
-            blk[i] = 0
+            blk[i]: {
+                ok -> it = 0
+                -> _
+            }
         }
         i <- [0..cipher.len() - pos): {
 
             #{index-out=zero, overflow=wrap}
-            blk[i] = cipher[pos + i]
+            blk[i]: {
+                ok -> it = cipher[pos + i]
+                -> _
+            }
         }
         i <- [0..16): {
 
-            y[i] = y[i] ^ blk[i]
+            y[i]: {
+                ok -> it = y[i] ^ blk[i]
+                -> _
+            }
         }
 
         y = ghash-mul(y, h)
@@ -203,7 +254,10 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     len-blk [16]byte
     i <- [0..16): {
 
-        len-blk[i] = 0
+        len-blk[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -213,42 +267,93 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     cipher-bits = cipher.len() * 8
 
     ; aad-bits 的高 64 位元（大端序）
-    len-blk[0] = (aad-bits >> 56) & 255
+    len-blk[0]: {
+        ok -> it = (aad-bits >> 56) & 255
+        -> _
+    }
 
-    len-blk[1] = (aad-bits >> 48) & 255
+    len-blk[1]: {
+        ok -> it = (aad-bits >> 48) & 255
+        -> _
+    }
 
-    len-blk[2] = (aad-bits >> 40) & 255
+    len-blk[2]: {
+        ok -> it = (aad-bits >> 40) & 255
+        -> _
+    }
 
-    len-blk[3] = (aad-bits >> 32) & 255
+    len-blk[3]: {
+        ok -> it = (aad-bits >> 32) & 255
+        -> _
+    }
 
-    len-blk[4] = (aad-bits >> 24) & 255
+    len-blk[4]: {
+        ok -> it = (aad-bits >> 24) & 255
+        -> _
+    }
 
-    len-blk[5] = (aad-bits >> 16) & 255
+    len-blk[5]: {
+        ok -> it = (aad-bits >> 16) & 255
+        -> _
+    }
 
-    len-blk[6] = (aad-bits >> 8) & 255
+    len-blk[6]: {
+        ok -> it = (aad-bits >> 8) & 255
+        -> _
+    }
 
-    len-blk[7] = aad-bits & 255
+    len-blk[7]: {
+        ok -> it = aad-bits & 255
+        -> _
+    }
 
     ; cipher-bits 的高 64 位元（大端序）
-    len-blk[8] = (cipher-bits >> 56) & 255
+    len-blk[8]: {
+        ok -> it = (cipher-bits >> 56) & 255
+        -> _
+    }
 
-    len-blk[9] = (cipher-bits >> 48) & 255
+    len-blk[9]: {
+        ok -> it = (cipher-bits >> 48) & 255
+        -> _
+    }
 
-    len-blk[10] = (cipher-bits >> 40) & 255
+    len-blk[10]: {
+        ok -> it = (cipher-bits >> 40) & 255
+        -> _
+    }
 
-    len-blk[11] = (cipher-bits >> 32) & 255
+    len-blk[11]: {
+        ok -> it = (cipher-bits >> 32) & 255
+        -> _
+    }
 
-    len-blk[12] = (cipher-bits >> 24) & 255
+    len-blk[12]: {
+        ok -> it = (cipher-bits >> 24) & 255
+        -> _
+    }
 
-    len-blk[13] = (cipher-bits >> 16) & 255
+    len-blk[13]: {
+        ok -> it = (cipher-bits >> 16) & 255
+        -> _
+    }
 
-    len-blk[14] = (cipher-bits >> 8) & 255
+    len-blk[14]: {
+        ok -> it = (cipher-bits >> 8) & 255
+        -> _
+    }
 
-    len-blk[15] = cipher-bits & 255
+    len-blk[15]: {
+        ok -> it = cipher-bits & 255
+        -> _
+    }
 
     i <- [0..16): {
 
-        y[i] = y[i] ^ len-blk[i]
+        y[i]: {
+            ok -> it = y[i] ^ len-blk[i]
+            -> _
+        }
     }
     y = ghash-mul(y, h)
 
@@ -271,7 +376,10 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
     cb []byte = with-len(16)
     i <- [0..16): {
 
-        cb[i] = icb[i]
+        cb[i]: {
+            ok -> it = icb[i]
+            -> _
+        }
     }
     out = with-len(data.len())
     pos = 0
@@ -281,7 +389,10 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
         blk [16]byte
         i <- [0..16): {
 
-            blk[i] = cb[i]
+            blk[i]: {
+                ok -> it = cb[i]
+                -> _
+            }
         }
         ks [16]byte
         ks = aes.enc-block(blk, ek)
@@ -329,7 +440,10 @@ gcm-h = (ek []byte) (h [16]byte) {
     zero-block [16]byte
     i <- [0..16): {
 
-        zero-block[i] = 0
+        zero-block[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
     h = aes.enc-block(zero-block, ek)
 }
@@ -356,7 +470,10 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     ctr0 [16]byte
     i <- [0..16): {
 
-        ctr0[i] = ctr[i]
+        ctr0[i]: {
+            ok -> it = ctr[i]
+            -> _
+        }
     }
     cipher []byte
     cipher = ctr-xor(ctr0, plain, ek)
@@ -371,7 +488,10 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     tag [16]byte
     i <- [0..16): {
 
-        tag[i] = (j0-enc[i]) ^ (ghash-out[i])
+        tag[i]: {
+            ok -> it = (j0-enc[i]) ^ (ghash-out[i])
+            -> _
+        }
     }
 
     ; 6. 輸出密文 + tag
@@ -415,13 +535,19 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     i <- [0..cipher-len): {
 
         #{index-out=zero}
-        cipher[i] = sealed[i]
+        cipher[i]: {
+            ok -> it = sealed[i]
+            -> _
+        }
     }
     tag [16]byte
     i <- [0..16): {
 
         #{index-out=zero, overflow=wrap}
-        tag[i] = sealed[cipher-len + i]
+        tag[i]: {
+            ok -> it = sealed[cipher-len + i]
+            -> _
+        }
     }
 
     ; 4. 驗證 tag
@@ -432,7 +558,10 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     exp-tag [16]byte
     i <- [0..16): {
 
-        exp-tag[i] = (j0-enc[i]) ^ (ghash-out[i])
+        exp-tag[i]: {
+            ok -> it = (j0-enc[i]) ^ (ghash-out[i])
+            -> _
+        }
     }
 
     ; 常數時間比較
@@ -453,7 +582,10 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     ctr0 [16]byte
     i <- [0..16): {
 
-        ctr0[i] = ctr[i]
+        ctr0[i]: {
+            ok -> it = ctr[i]
+            -> _
+        }
     }
     plain = ctr-xor(ctr0, cipher, ek)
 }

@@ -15,8 +15,8 @@ package mir
 //   - 用例 B：for-range 归纳变量写（a[i]，i∈[0,3)）—— 同上消除。
 //   - 用例 C：非可证下标写（a[i]，i 为函式参数）—— 同上块与界比较必须存在
 //     （控制组，证明消除是「条件触发」而非「从不发射」）。
-//   - 用例 D：parser/ast 单测——surface 模式 parse 后断言 IndexExpression.InBounds
-//     （const 下标 true / 非可证下标 false）。
+//   - 用例 D：parser AST/side-table 單測——surface 模式 parse 後斷言界內證明
+//     （const 下標有 side-table 標記 / 非可證下標無標記）。
 //
 // 记法：idx.ok 等块名由 lowerSafeIndex 经 NewBlock 原样保留（builder.go:173），
 // 故可在 MIR Module 上按名断言。MIR 入口为 main，故 A/B/C 的代码都落在 main
@@ -200,8 +200,9 @@ func collectIndexExprs(stmts []parser.Statement) []*parser.IndexExpression {
 				}
 			}
 		case *parser.SurfaceMatch:
-			// 仅走查被匹配表达式（a[1]）；arm 体内可能还有下标，但 matchArm.body
-			// 未导出，且本档只断言「匹配下标」自身的 InBounds 旗标，无需下钻。
+			// 仅走查被匹配表达式（a[1]）；arm 体内可能还有下标，但本档只断言
+			// 「匹配下标」自身的 InBounds 旗标，无需下钻。（MatchArm 的字段自
+			// 2026-10-16 起已导出，下钻在技术上可行，只是本档不需要。）
 			walkExpr(v.Matched)
 		case *parser.InfixExpression:
 			walkExpr(v.Left)
@@ -222,12 +223,11 @@ func indexLeftName(idx *parser.IndexExpression) string {
 	return ""
 }
 
-// TestD9IndexInBoundsFlag 用例 D：parser/ast 单测——可证界内（const 下标）的
-// 安全索引读必须标 IndexExpression.InBounds==true；非可证（函式参数下标）必须
-// 为 false。lowerSafeIndex 的零开销分支完全依赖此旗标。
+// TestD9IndexInBoundsFlag 用例 D：surface AST 必須保留原始語法節點，bounds 證明
+// 則存在 Program.Sem side-table；非可證（函式參數下標）不得帶該語義標記。
 func TestD9IndexInBoundsFlag(t *testing.T) {
-	// surface 模式：保留 place-match 原始节点，便于按名找到 a[1]/a[i]，且
-	// lowerProgram 仍会跑 AnalyzeInBoundsIndex 置位 InBounds。
+	// surface 模式保留 place-match 原始節點，便於按名找到 a[1]/a[i]；解析期
+	// bounds analysis 已將證明結果寫入 Program.Sem，而不會修改 IndexExpression。
 	parseSurface := func(src string) *parser.Program {
 		p := parser.New(lexer.New(src))
 		p.SkipUnwrapLowering = true
@@ -255,8 +255,8 @@ func TestD9IndexInBoundsFlag(t *testing.T) {
 		}
 		if lit, ok := idx.Index.(*parser.IntegerLiteral); ok && lit.Value == 1 {
 			foundConst = true
-			if !idx.InBounds {
-				t.Errorf("const in-bounds subscript a[1] not flagged IndexExpression.InBounds (mark should have set it)")
+			if !prog.Sem.IndexIsInBounds(idx) {
+				t.Errorf("const in-bounds subscript a[1] missing from Program.Sem side-table")
 			}
 		}
 	}
@@ -264,7 +264,7 @@ func TestD9IndexInBoundsFlag(t *testing.T) {
 		t.Fatalf("could not locate the const-subscript a[1] IndexExpression in the surface AST")
 	}
 
-	// 非可证下标（a[i]，i 为函式参数）不得标 InBounds。
+	// 非可證下標（a[i]，i 為函式參數）不得進入 side-table。
 	paramSrc := `foo = (i i64) () {
     a [3]i64 = [0, 0, 0]
     a[i]: {
@@ -280,8 +280,8 @@ func TestD9IndexInBoundsFlag(t *testing.T) {
 		}
 		if _, ok := idx.Index.(*parser.Identifier); ok {
 			foundParam = true
-			if idx.InBounds {
-				t.Errorf("non-provable subscript a[i] (param index) wrongly flagged IndexExpression.InBounds")
+			if prog2.Sem.IndexIsInBounds(idx) {
+				t.Errorf("non-provable subscript a[i] (param index) wrongly marked in Program.Sem")
 			}
 		}
 	}

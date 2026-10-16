@@ -44,28 +44,52 @@ rotr = (x u64, n i64) (r u64) {
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 
     #{index-out=zero}
-    v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
+    v[a]: {
+        ok -> it = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
+        -> _
+    }
 
     #{index-out=zero}
-    v[d] = rotr(v[d] ^ v[a], 32)
+    v[d]: {
+        ok -> it = rotr(v[d] ^ v[a], 32)
+        -> _
+    }
 
     #{index-out=zero}
-    v[c] = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
+    v[c]: {
+        ok -> it = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
+        -> _
+    }
 
     #{index-out=zero}
-    v[b] = rotr(v[b] ^ v[c], 24)
+    v[b]: {
+        ok -> it = rotr(v[b] ^ v[c], 24)
+        -> _
+    }
 
     #{index-out=zero}
-    v[a] = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
+    v[a]: {
+        ok -> it = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
+        -> _
+    }
 
     #{index-out=zero}
-    v[d] = rotr(v[d] ^ v[a], 16)
+    v[d]: {
+        ok -> it = rotr(v[d] ^ v[a], 16)
+        -> _
+    }
 
     #{index-out=zero}
-    v[c] = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
+    v[c]: {
+        ok -> it = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
+        -> _
+    }
 
     #{index-out=zero}
-    v[b] = rotr(v[b] ^ v[c], 63)
+    v[b]: {
+        ok -> it = rotr(v[b] ^ v[c], 63)
+        -> _
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -82,13 +106,25 @@ h-prime = (input []byte, out-len i64) (out []byte) {
     ; 輸出長度的 32-bit 小端表示
     len-bytes [4]byte
 
-    len-bytes[0] = out-len & 255
+    len-bytes[0]: {
+        ok -> it = out-len & 255
+        -> _
+    }
 
-    len-bytes[1] = (out-len >> 8) & 255
+    len-bytes[1]: {
+        ok -> it = (out-len >> 8) & 255
+        -> _
+    }
 
-    len-bytes[2] = (out-len >> 16) & 255
+    len-bytes[2]: {
+        ok -> it = (out-len >> 16) & 255
+        -> _
+    }
 
-    len-bytes[3] = (out-len >> 24) & 255
+    len-bytes[3]: {
+        ok -> it = (out-len >> 24) & 255
+        -> _
+    }
 
     {
         out-len <= 64 -> {
@@ -97,17 +133,32 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; 構建輸入: len_bytes || input
             combined []byte
 
-            combined[0] = len-bytes[0]
+            combined[0]: {
+                ok -> it = len-bytes[0]
+                -> _
+            }
 
-            combined[1] = len-bytes[1]
+            combined[1]: {
+                ok -> it = len-bytes[1]
+                -> _
+            }
 
-            combined[2] = len-bytes[2]
+            combined[2]: {
+                ok -> it = len-bytes[2]
+                -> _
+            }
 
-            combined[3] = len-bytes[3]
+            combined[3]: {
+                ok -> it = len-bytes[3]
+                -> _
+            }
             i <- [0..input.len()): {
 
                 #{index-out=zero, overflow=wrap}
-                combined[4 + i] = input[i]
+                combined[4 + i]: {
+                    ok -> it = input[i]
+                    -> _
+                }
             }
 
             ; 使用 Blake2b 自定義輸出長度
@@ -126,17 +177,32 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; V = Blake2b(len_bytes || input)
             combined []byte
 
-            combined[0] = len-bytes[0]
+            combined[0]: {
+                ok -> it = len-bytes[0]
+                -> _
+            }
 
-            combined[1] = len-bytes[1]
+            combined[1]: {
+                ok -> it = len-bytes[1]
+                -> _
+            }
 
-            combined[2] = len-bytes[2]
+            combined[2]: {
+                ok -> it = len-bytes[2]
+                -> _
+            }
 
-            combined[3] = len-bytes[3]
+            combined[3]: {
+                ok -> it = len-bytes[3]
+                -> _
+            }
             i <- [0..input.len()): {
 
                 #{index-out=zero, overflow=wrap}
-                combined[4 + i] = input[i]
+                combined[4 + i]: {
+                    ok -> it = input[i]
+                    -> _
+                }
             }
             v [64]byte
             v = blake2.b(combined)
@@ -194,7 +260,10 @@ compress = (x []byte, y []byte) (out []byte) {
     i <- [0..1024): {
 
         #{index-out=zero}
-        r[i] = (x[i]) ^ (y[i])
+        r[i]: {
+            ok -> it = (x[i]) ^ (y[i])
+            -> _
+        }
     }
 
     ; 載入為 128 個 u64（16×8 矩陣）
@@ -205,7 +274,10 @@ compress = (x []byte, y []byte) (out []byte) {
         off = i * 8
 
         #{index-out=zero}
-        v[i] = (r[off]) | ((r[off + 1]) << 8) | ((r[off + 2]) << 16) | ((r[off + 3]) << 24) | ((r[off + 4]) << 32) | ((r[off + 5]) << 40) | ((r[off + 6]) << 48) | ((r[off + 7]) << 56)
+        v[i]: {
+            ok -> it = (r[off]) | ((r[off + 1]) << 8) | ((r[off + 2]) << 16) | ((r[off + 3]) << 24) | ((r[off + 4]) << 32) | ((r[off + 5]) << 40) | ((r[off + 6]) << 48) | ((r[off + 7]) << 56)
+            -> _
+        }
     }
 
     ; 應用 P 函數（Blake2b 排列）到每行
@@ -350,96 +422,168 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     ; parallelism (32-bit LE)
     #{overflow=wrap}
-    h0-input[pos + 0] = parallelism & 255
+    h0-input[pos + 0]: {
+        ok -> it = parallelism & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = (parallelism >> 8) & 255
+    h0-input[pos + 1]: {
+        ok -> it = (parallelism >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = (parallelism >> 16) & 255
+    h0-input[pos + 2]: {
+        ok -> it = (parallelism >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = (parallelism >> 24) & 255
+    h0-input[pos + 3]: {
+        ok -> it = (parallelism >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; out-len (32-bit LE)
     #{overflow=wrap}
-    h0-input[pos + 0] = out-len & 255
+    h0-input[pos + 0]: {
+        ok -> it = out-len & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = (out-len >> 8) & 255
+    h0-input[pos + 1]: {
+        ok -> it = (out-len >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = (out-len >> 16) & 255
+    h0-input[pos + 2]: {
+        ok -> it = (out-len >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = (out-len >> 24) & 255
+    h0-input[pos + 3]: {
+        ok -> it = (out-len >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; memory-cost m (32-bit LE)
     #{overflow=wrap}
-    h0-input[pos + 0] = m & 255
+    h0-input[pos + 0]: {
+        ok -> it = m & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = (m >> 8) & 255
+    h0-input[pos + 1]: {
+        ok -> it = (m >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = (m >> 16) & 255
+    h0-input[pos + 2]: {
+        ok -> it = (m >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = (m >> 24) & 255
+    h0-input[pos + 3]: {
+        ok -> it = (m >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; time-cost t (32-bit LE)
     #{overflow=wrap}
-    h0-input[pos + 0] = time-cost & 255
+    h0-input[pos + 0]: {
+        ok -> it = time-cost & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = (time-cost >> 8) & 255
+    h0-input[pos + 1]: {
+        ok -> it = (time-cost >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = (time-cost >> 16) & 255
+    h0-input[pos + 2]: {
+        ok -> it = (time-cost >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = (time-cost >> 24) & 255
+    h0-input[pos + 3]: {
+        ok -> it = (time-cost >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; version v (32-bit LE) = 0x13
     #{overflow=wrap}
-    h0-input[pos + 0] = ARGON2-VERSION & 255
+    h0-input[pos + 0]: {
+        ok -> it = ARGON2-VERSION & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = (ARGON2-VERSION >> 8) & 255
+    h0-input[pos + 1]: {
+        ok -> it = (ARGON2-VERSION >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = 0
+    h0-input[pos + 2]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = 0
+    h0-input[pos + 3]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
 
     ; type y (32-bit LE) = 2 (Argon2id)
     #{overflow=wrap}
-    h0-input[pos + 0] = ARGON2-ID & 255
+    h0-input[pos + 0]: {
+        ok -> it = ARGON2-ID & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = 0
+    h0-input[pos + 1]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = 0
+    h0-input[pos + 2]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = 0
+    h0-input[pos + 3]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
@@ -448,23 +592,38 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     pw-len = password.len()
 
     #{overflow=wrap}
-    h0-input[pos + 0] = pw-len & 255
+    h0-input[pos + 0]: {
+        ok -> it = pw-len & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = (pw-len >> 8) & 255
+    h0-input[pos + 1]: {
+        ok -> it = (pw-len >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = (pw-len >> 16) & 255
+    h0-input[pos + 2]: {
+        ok -> it = (pw-len >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = (pw-len >> 24) & 255
+    h0-input[pos + 3]: {
+        ok -> it = (pw-len >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
     i <- [0..pw-len): {
 
         #{index-out=zero, overflow=wrap}
-        h0-input[pos + i] = password[i]
+        h0-input[pos + i]: {
+            ok -> it = password[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -474,23 +633,38 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     salt-len = salt.len()
 
     #{overflow=wrap}
-    h0-input[pos + 0] = salt-len & 255
+    h0-input[pos + 0]: {
+        ok -> it = salt-len & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = (salt-len >> 8) & 255
+    h0-input[pos + 1]: {
+        ok -> it = (salt-len >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = (salt-len >> 16) & 255
+    h0-input[pos + 2]: {
+        ok -> it = (salt-len >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = (salt-len >> 24) & 255
+    h0-input[pos + 3]: {
+        ok -> it = (salt-len >> 24) & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
     i <- [0..salt-len): {
 
         #{index-out=zero, overflow=wrap}
-        h0-input[pos + i] = salt[i]
+        h0-input[pos + i]: {
+            ok -> it = salt[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -498,31 +672,55 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     ; len(K) = 0, len(X) = 0（不使用金鑰和關聯資料）
     #{overflow=wrap}
-    h0-input[pos + 0] = 0
+    h0-input[pos + 0]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = 0
+    h0-input[pos + 1]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = 0
+    h0-input[pos + 2]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = 0
+    h0-input[pos + 3]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
 
     #{overflow=wrap}
-    h0-input[pos + 0] = 0
+    h0-input[pos + 0]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 1] = 0
+    h0-input[pos + 1]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 2] = 0
+    h0-input[pos + 2]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
-    h0-input[pos + 3] = 0
+    h0-input[pos + 3]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 4
@@ -549,31 +747,61 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     init-input []byte
     i <- [0..64): {
 
-        init-input[i] = h0[i]
+        init-input[i]: {
+            ok -> it = h0[i]
+            -> _
+        }
     }
 
     ; B[0]: H0 || 0 (32-bit LE) || 0 (32-bit LE)
-    init-input[64] = 0
+    init-input[64]: {
+        ok -> it = 0
+        -> _
+    }
 
-    init-input[65] = 0
+    init-input[65]: {
+        ok -> it = 0
+        -> _
+    }
 
-    init-input[66] = 0
+    init-input[66]: {
+        ok -> it = 0
+        -> _
+    }
 
-    init-input[67] = 0
+    init-input[67]: {
+        ok -> it = 0
+        -> _
+    }
 
-    init-input[68] = 0
+    init-input[68]: {
+        ok -> it = 0
+        -> _
+    }
 
-    init-input[69] = 0
+    init-input[69]: {
+        ok -> it = 0
+        -> _
+    }
 
-    init-input[70] = 0
+    init-input[70]: {
+        ok -> it = 0
+        -> _
+    }
 
-    init-input[71] = 0
+    init-input[71]: {
+        ok -> it = 0
+        -> _
+    }
 
     block0 []byte
     block0 = h-prime(init-input, 1024)
 
     ; B[1]: H0 || 1 (32-bit LE) || 0 (32-bit LE)
-    init-input[68] = 1
+    init-input[68]: {
+        ok -> it = 1
+        -> _
+    }
     block1 []byte
     block1 = h-prime(init-input, 1024)
 
@@ -581,10 +809,16 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     i <- [0..1024): {
 
         #{index-out=zero}
-        mem[i] = block0[i]
+        mem[i]: {
+            ok -> it = block0[i]
+            -> _
+        }
 
         #{index-out=zero, overflow=wrap}
-        mem[1024 + i] = block1[i]
+        mem[1024 + i]: {
+            ok -> it = block1[i]
+            -> _
+        }
     }
 
     ; 填充剩餘區塊
@@ -607,7 +841,10 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         i <- [0..1024): {
 
             #{index-out=zero, overflow=wrap}
-            mem[curr-idx * 1024 + i] = new-block[i]
+            mem[curr-idx * 1024 + i]: {
+                ok -> it = new-block[i]
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -634,7 +871,10 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
             i <- [0..1024): {
 
                 #{index-out=zero, overflow=wrap}
-                mem[curr-idx * 1024 + i] = (mem[curr-idx * 1024 + i]) ^ (new-block[i])
+                mem[curr-idx * 1024 + i]: {
+                    ok -> it = (mem[curr-idx * 1024 + i]) ^ (new-block[i])
+                    -> _
+                }
             }
 
             #{overflow=wrap}
@@ -651,7 +891,10 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     i <- [0..1024): {
 
         #{index-out=zero, overflow=wrap}
-        final-block[i] = mem[last-idx * 1024 + i]
+        final-block[i]: {
+            ok -> it = mem[last-idx * 1024 + i]
+            -> _
+        }
     }
 
     ; 輸出 = H'(final_block, out_len)

@@ -796,7 +796,10 @@ bigint.to-str = () (out str) {
         d = mod-i64(tmp, 10)
 
         #{overflow=wrap}
-        buf[bufn] = d + 48
+        buf[bufn]: {
+            ok -> it = d + 48
+            -> _
+        }
 
         #{overflow=wrap}
         bufn = bufn + 1

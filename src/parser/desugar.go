@@ -132,7 +132,7 @@ func (p *Parser) classifyIfExprReturn(expr *IfExpression) returnTypeInfo {
 }
 
 // validateMatchArmReturns 驗證賦值語境下 match arm 的回傳值一致性
-func (p *Parser) validateMatchArmReturns(tok lexer.Token, arms []matchArm) bool {
+func (p *Parser) validateMatchArmReturns(tok lexer.Token, arms []MatchArm) bool {
 	if len(arms) == 0 {
 		return true
 	}
@@ -143,15 +143,15 @@ func (p *Parser) validateMatchArmReturns(tok lexer.Token, arms []matchArm) bool 
 		// 本函式只在值語境被呼叫（呼叫端以 p.ctx.contains(CTX_EXPR) 閘門），
 		// 據此把每臂標為值語境——空臂的零值合成（buildMatchDesugar, D4）只對
 		// 值語境的臂生效。
-		arms[i].valueCtx = true
+		arms[i].ValueCtx = true
 		arm := arms[i]
-		if len(arm.body.Statements) == 0 {
+		if len(arm.Body.Statements) == 0 {
 			// D4：空臂 = 被匹配 option 內部型別的默认零值。零值由 buildMatchDesugar
 			// 按 elemType 合成（此处尚不知型别），本臂不参与"各臂值型别一致"检查。
 			// 裸 match（buildBareMatchDesugar）的空臂是 no-op，与本路径无关。
 			continue
 		}
-		last := arm.body.Statements[len(arm.body.Statements)-1]
+		last := arm.Body.Statements[len(arm.Body.Statements)-1]
 		// D5：`-> return` 早退臂直接从当前函数返回，不产出值，跳过一致性检查。
 		if _, isRet := last.(*ReturnStatement); isRet {
 			continue

@@ -118,7 +118,10 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         i <- [0..n): {
 
             #{overflow=wrap}
-            raw[total + i] = buf.byte(i)
+            raw[total + i]: {
+                ok -> it = buf.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -254,14 +257,23 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
             ; 生成 premaster secret
             premaster []byte
 
-            premaster[0] = 0x03
+            premaster[0]: {
+                ok -> it = 0x03
+                -> _
+            }
 
-            premaster[1] = 0x03
+            premaster[1]: {
+                ok -> it = 0x03
+                -> _
+            }
             rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
             i <- [0..46): {
 
                 #{overflow=wrap}
-                premaster[2 + i] = rand-bytes[i]
+                premaster[2 + i]: {
+                    ok -> it = rand-bytes[i]
+                    -> _
+                }
             }
             c.derive-keys(premaster)
 
@@ -346,14 +358,23 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
             }
             premaster []byte
 
-            premaster[0] = 0x03
+            premaster[0]: {
+                ok -> it = 0x03
+                -> _
+            }
 
-            premaster[1] = 0x03
+            premaster[1]: {
+                ok -> it = 0x03
+                -> _
+            }
             rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
             i <- [0..46): {
 
                 #{overflow=wrap}
-                premaster[2 + i] = rand-bytes[i]
+                premaster[2 + i]: {
+                    ok -> it = rand-bytes[i]
+                    -> _
+                }
             }
             c.derive-keys(premaster)
             ok = c.send-client-key-exchange(premaster, cert)
@@ -421,20 +442,38 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     ; 1. 握手 — 方法協商
     req []byte
 
-    req[0] = SOCKS5-VERSION
+    req[0]: {
+        ok -> it = SOCKS5-VERSION
+        -> _
+    }
     {
         username.len-bytes() > 0 -> {
-            req[1] = 2
+            req[1]: {
+                ok -> it = 2
+                -> _
+            }
 
-            req[2] = SOCKS5-METHOD-NO-AUTH
+            req[2]: {
+                ok -> it = SOCKS5-METHOD-NO-AUTH
+                -> _
+            }
 
-            req[3] = SOCKS5-METHOD-USER-PASS
+            req[3]: {
+                ok -> it = SOCKS5-METHOD-USER-PASS
+                -> _
+            }
         }
 
         -> {
-            req[1] = 1
+            req[1]: {
+                ok -> it = 1
+                -> _
+            }
 
-            req[2] = SOCKS5-METHOD-NO-AUTH
+            req[2]: {
+                ok -> it = SOCKS5-METHOD-NO-AUTH
+                -> _
+            }
         }
     }
     req-str = req.to-str()
@@ -472,22 +511,37 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         auth-req []byte
         pos = 0
 
-        auth-req[pos] = 1
+        auth-req[pos]: {
+            ok -> it = 1
+            -> _
+        }
         pos = pos + 1
 
-        auth-req[pos] = username.len-bytes() & 255
+        auth-req[pos]: {
+            ok -> it = username.len-bytes() & 255
+            -> _
+        }
         pos = pos + 1
         i <- [0..username.len-bytes()): {
 
-            auth-req[pos] = username.byte(i)
+            auth-req[pos]: {
+                ok -> it = username.byte(i)
+                -> _
+            }
             pos = pos + 1
         }
 
-        auth-req[pos] = password.len-bytes() & 255
+        auth-req[pos]: {
+            ok -> it = password.len-bytes() & 255
+            -> _
+        }
         pos = pos + 1
         i <- [0..password.len-bytes()): {
 
-            auth-req[pos] = password.byte(i)
+            auth-req[pos]: {
+                ok -> it = password.byte(i)
+                -> _
+            }
             pos = pos + 1
         }
         auth-str = auth-req.to-str()
@@ -517,45 +571,69 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     conn-req []byte
     pos = 0
 
-    conn-req[pos] = SOCKS5-VERSION
+    conn-req[pos]: {
+        ok -> it = SOCKS5-VERSION
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
-    conn-req[pos] = SOCKS5-CMD-CONNECT
+    conn-req[pos]: {
+        ok -> it = SOCKS5-CMD-CONNECT
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
-    conn-req[pos] = 0
+    conn-req[pos]: {
+        ok -> it = 0
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
     ; 使用域名地址類型
-    conn-req[pos] = SOCKS5-ATYP-DOMAIN
+    conn-req[pos]: {
+        ok -> it = SOCKS5-ATYP-DOMAIN
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
-    conn-req[pos] = target-host.len-bytes() & 255
+    conn-req[pos]: {
+        ok -> it = target-host.len-bytes() & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
     i <- [0..target-host.len-bytes()): {
 
-        conn-req[pos] = target-host.byte(i)
+        conn-req[pos]: {
+            ok -> it = target-host.byte(i)
+            -> _
+        }
 
         #{overflow=wrap}
         pos = pos + 1
     }
 
-    conn-req[pos] = (target-port >> 8) & 255
+    conn-req[pos]: {
+        ok -> it = (target-port >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1
 
-    conn-req[pos] = target-port & 255
+    conn-req[pos]: {
+        ok -> it = target-port & 255
+        -> _
+    }
 
     #{overflow=wrap}
     pos = pos + 1

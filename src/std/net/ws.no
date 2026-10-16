@@ -168,7 +168,10 @@ compute-accept = (key str) (accept str) {
 
     i <- [0..20): {
 
-        hash-vec[i] = hash[i]
+        hash-vec[i]: {
+            ok -> it = hash[i]
+            -> _
+        }
     }
     accept = base64.encode-std(hash-vec)
 }
@@ -198,13 +201,25 @@ next-rand = () (r i64) {
 gen-mask-key = (seed i64) (key str) {
     key str = with-len(4)
 
-    key[0] = (seed & 255)
+    key[0]: {
+        ok -> it = (seed & 255)
+        -> _
+    }
 
-    key[1] = ((seed >> 8) & 255)
+    key[1]: {
+        ok -> it = ((seed >> 8) & 255)
+        -> _
+    }
 
-    key[2] = ((seed >> 16) & 255)
+    key[2]: {
+        ok -> it = ((seed >> 16) & 255)
+        -> _
+    }
 
-    key[3] = ((seed >> 24) & 255)
+    key[3]: {
+        ok -> it = ((seed >> 24) & 255)
+        -> _
+    }
 }
 
 ; gen-client-key: 產生 16-byte Sec-WebSocket-Key 並 base64 編碼
@@ -217,7 +232,10 @@ gen-client-key = (seed i64) (key str) {
         #{overflow=wrap}
         s = seed + i * 31
 
-        raw[i] = (s * 1103515245 + 12345) & 255
+        raw[i]: {
+            ok -> it = (s * 1103515245 + 12345) & 255
+            -> _
+        }
     }
     rv = raw.to-bytes()
     key = base64.encode-std(rv)
@@ -248,7 +266,10 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     frame str = with-len(total)
 
     ; byte 0: FIN(1) | opcode
-    frame[0] = 128 | (opcode & 15)
+    frame[0]: {
+        ok -> it = 128 | (opcode & 15)
+        -> _
+    }
 
     ; byte 1: mask | len
     mask-bit = 0
@@ -257,23 +278,41 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     #{overflow=wrap}
     {
         dlen <= 125 -> {
-            frame[1] = mask-bit | dlen
+            frame[1]: {
+                ok -> it = mask-bit | dlen
+                -> _
+            }
         }
 
         dlen > 125 && dlen <= 65535 -> {
-            frame[1] = mask-bit | 126
+            frame[1]: {
+                ok -> it = mask-bit | 126
+                -> _
+            }
 
-            frame[2] = (dlen >> 8) & 255
+            frame[2]: {
+                ok -> it = (dlen >> 8) & 255
+                -> _
+            }
 
-            frame[3] = dlen & 255
+            frame[3]: {
+                ok -> it = dlen & 255
+                -> _
+            }
         }
 
         dlen > 65535 -> {
-            frame[1] = mask-bit | 127
+            frame[1]: {
+                ok -> it = mask-bit | 127
+                -> _
+            }
             i <- [0..8): {
 
                 #{overflow=wrap}
-                frame[2 + i] = (dlen >> (56 - i * 8)) & 255
+                frame[2 + i]: {
+                    ok -> it = (dlen >> (56 - i * 8)) & 255
+                    -> _
+                }
             }
         }
     }
@@ -292,14 +331,20 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
             i <- [0..4): {
 
                 #{overflow=wrap}
-                frame[mk-start + i] = mask-key.byte(i)
+                frame[mk-start + i]: {
+                    ok -> it = mask-key.byte(i)
+                    -> _
+                }
             }
 
             ; masked payload
             i <- [0..dlen): {
 
                 #{overflow=wrap}
-                frame[header-len + i] = (data.byte(i) ^ mask-key.byte(i % 4)) & 255
+                frame[header-len + i]: {
+                    ok -> it = (data.byte(i) ^ mask-key.byte(i % 4)) & 255
+                    -> _
+                }
             }
         }
 
@@ -309,7 +354,10 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
             i <- [0..dlen): {
 
                 #{overflow=wrap}
-                frame[header-len + i] = data.byte(i)
+                frame[header-len + i]: {
+                    ok -> it = data.byte(i)
+                    -> _
+                }
             }
         }
     }
@@ -397,7 +445,10 @@ server-conn.handshake = () {
         i <- [0..n): {
 
             #{overflow=wrap}
-            raw[total + i] = tmp.byte(i)
+            raw[total + i]: {
+                ok -> it = tmp.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -571,13 +622,22 @@ server-conn.send-close = (close-code i64, reason str) (ok bool) {
     #{overflow=wrap}
     payload str = with-len(2 + reason.len-bytes())
 
-    payload[0] = (close-code >> 8) & 255
+    payload[0]: {
+        ok -> it = (close-code >> 8) & 255
+        -> _
+    }
 
-    payload[1] = close-code & 255
+    payload[1]: {
+        ok -> it = close-code & 255
+        -> _
+    }
     i <- [0..reason.len-bytes()): {
 
         #{overflow=wrap}
-        payload[2 + i] = reason.byte(i)
+        payload[2 + i]: {
+            ok -> it = reason.byte(i)
+            -> _
+        }
     }
     ok = .send(WS-OP-CLOSE, payload)
 }
@@ -761,7 +821,10 @@ server-conn.recv = () (msg ?message) {
             i <- [0..4): {
 
                 #{overflow=wrap}
-                mask-key[i] = .recv-buf.byte(mask-start + i)
+                mask-key[i]: {
+                    ok -> it = .recv-buf.byte(mask-start + i)
+                    -> _
+                }
             }
         }
 
@@ -781,7 +844,10 @@ server-conn.recv = () (msg ?message) {
 
             b ^ mask-key.byte(i % 4)
 
-            payload[i] = b & 255
+            payload[i]: {
+                ok -> it = b & 255
+                -> _
+            }
         }
 
         ; 從 recv-buf 移除已消費的 frame
@@ -969,7 +1035,10 @@ server-conn.recv-nb = () (msg ?message) {
         k <- [0..4): {
 
             #{overflow=wrap}
-            mask-key[k] = .recv-buf.byte(mask-start + k)
+            mask-key[k]: {
+                ok -> it = .recv-buf.byte(mask-start + k)
+                -> _
+            }
         }
     }
     payload-start = mask-start
@@ -985,7 +1054,10 @@ server-conn.recv-nb = () (msg ?message) {
 
         b ^ mask-key.byte(p % 4)
 
-        payload[p] = b & 255
+        payload[p]: {
+            ok -> it = b & 255
+            -> _
+        }
     }
 
     ; 從 recv-buf 移除已消費的 frame
@@ -1120,13 +1192,22 @@ client.send-close = (close-code i64, reason str) (ok bool) {
     #{overflow=wrap}
     payload str = with-len(2 + reason.len-bytes())
 
-    payload[0] = (close-code >> 8) & 255
+    payload[0]: {
+        ok -> it = (close-code >> 8) & 255
+        -> _
+    }
 
-    payload[1] = close-code & 255
+    payload[1]: {
+        ok -> it = close-code & 255
+        -> _
+    }
     i <- [0..reason.len-bytes()): {
 
         #{overflow=wrap}
-        payload[2 + i] = reason.byte(i)
+        payload[2 + i]: {
+            ok -> it = reason.byte(i)
+            -> _
+        }
     }
     ok = .send(WS-OP-CLOSE, payload)
 }
@@ -1337,7 +1418,10 @@ client.recv = () (msg ?message) {
             i <- [0..4): {
 
                 #{overflow=wrap}
-                mask-key[i] = .recv-buf.byte(mask-start + i)
+                mask-key[i]: {
+                    ok -> it = .recv-buf.byte(mask-start + i)
+                    -> _
+                }
             }
         }
 
@@ -1356,7 +1440,10 @@ client.recv = () (msg ?message) {
 
             b ^ mask-key.byte(i % 4)
 
-            payload[i] = b & 255
+            payload[i]: {
+                ok -> it = b & 255
+                -> _
+            }
         }
         remaining-start = frame-total
 
@@ -1633,7 +1720,10 @@ connect = (url str) (c ?client) {
         i <- [0..n): {
 
             #{overflow=wrap}
-            raw[total + i] = tmp.byte(i)
+            raw[total + i]: {
+                ok -> it = tmp.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -1752,7 +1842,10 @@ connect = (url str) (c ?client) {
         remaining = raw.slice(body-start, total)
         i <- [0..remaining-len): {
 
-            rb[i] = remaining[i]
+            rb[i]: {
+                ok -> it = remaining[i]
+                -> _
+            }
         }
     }
     cli = client {

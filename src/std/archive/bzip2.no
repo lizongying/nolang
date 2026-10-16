@@ -98,7 +98,10 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     len-count [24]i64
     i <- [0..24): {
 
-        len-count[i] = 0
+        len-count[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
     i <- [0..alpha-size): {
 
@@ -106,7 +109,10 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         l = lengths[i]
 
         #{index-out=zero, overflow=wrap}
-        len-count[l] = len-count[l] + 1
+        len-count[l]: {
+            ok -> it = len-count[l] + 1
+            -> _
+        }
         {
             l < .min-len -> .min-len = l
 
@@ -140,7 +146,10 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     tmp-base [24]i64
     i <- [0..24): {
 
-        tmp-base[i] = .base[i]
+        tmp-base[i]: {
+            ok -> it = .base[i]
+            -> _
+        }
     }
     i <- [0..alpha-size): {
 
@@ -151,7 +160,10 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         .perm[tmp-base[l]] = i
 
         #{index-out=zero, overflow=wrap}
-        tmp-base[l] = tmp-base[l] + 1
+        tmp-base[l]: {
+            ok -> it = tmp-base[l] + 1
+            -> _
+        }
     }
 }
 
@@ -306,12 +318,18 @@ bzip2-decompress = (data []byte) (out []byte) {
             in-use-16 [16]i64
             i <- [0..16): {
 
-                in-use-16[i] = br.read-bit()
+                in-use-16[i]: {
+                    ok -> it = br.read-bit()
+                    -> _
+                }
             }
             in-use [256]i64
             i <- [0..256): {
 
-                in-use[i] = 0
+                in-use[i]: {
+                    ok -> it = 0
+                    -> _
+                }
             }
             n-in-use = 0
             i <- [0..16): {
@@ -323,7 +341,10 @@ bzip2-decompress = (data []byte) (out []byte) {
                         bit == 1 -> {
 
                             #{overflow=wrap}
-                            in-use[i * 16 + j] = 1
+                            in-use[i * 16 + j]: {
+                                ok -> it = 1
+                                -> _
+                            }
                             n-in-use = n-in-use + 1
                         }
                     }
@@ -339,7 +360,10 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 in-use[i] == 1 -> {
 
-                    seq-to-unseq[k] = i
+                    seq-to-unseq[k]: {
+                        ok -> it = i
+                        -> _
+                    }
                     k = k + 1
                 }
             }
@@ -373,7 +397,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             mtf-list [6]i64
             i <- [0..6): {
 
-                mtf-list[i] = i
+                mtf-list[i]: {
+                    ok -> it = i
+                    -> _
+                }
             }
             i <- [0..n-selectors): {
 
@@ -394,12 +421,21 @@ bzip2-decompress = (data []byte) (out []byte) {
                 m <- [0..j): {
 
                     #{index-out=zero, overflow=wrap}
-                    mtf-list[j - m] = mtf-list[j - m - 1]
+                    mtf-list[j - m]: {
+                        ok -> it = mtf-list[j - m - 1]
+                        -> _
+                    }
                 }
 
-                mtf-list[0] = tmp
+                mtf-list[0]: {
+                    ok -> it = tmp
+                    -> _
+                }
 
-                selectors[i] = tmp
+                selectors[i]: {
+                    ok -> it = tmp
+                    -> _
+                }
             }
 
             ; 讀取每個碼表的碼長度
@@ -428,7 +464,10 @@ bzip2-decompress = (data []byte) (out []byte) {
                     bit = br.read-bit()
                     bit == 0 -> {
 
-                        lengths[i] = curr-len
+                        lengths[i]: {
+                            ok -> it = curr-len
+                            -> _
+                        }
 
                         #{overflow=wrap}
                         i = i + 1
@@ -474,7 +513,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             i <- [0..n-in-use): {
 
                 #{index-out=zero}
-                mtf-pos[i] = seq-to-unseq[i]
+                mtf-pos[i]: {
+                    ok -> it = seq-to-unseq[i]
+                    -> _
+                }
             }
             selector-idx = 0
             group-remaining = 0
@@ -559,10 +601,16 @@ bzip2-decompress = (data []byte) (out []byte) {
                     j <- [1..mtf-idx + 1): {
 
                         #{index-out=zero, overflow=wrap}
-                        mtf-pos[mtf-idx - j + 1] = mtf-pos[mtf-idx - j]
+                        mtf-pos[mtf-idx - j + 1]: {
+                            ok -> it = mtf-pos[mtf-idx - j]
+                            -> _
+                        }
                     }
 
-                    mtf-pos[0] = val
+                    mtf-pos[0]: {
+                        ok -> it = val
+                        -> _
+                    }
 
                     bwt-out.push(val)
                 }
@@ -576,7 +624,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             count [256]i64
             i <- [0..256): {
 
-                count[i] = 0
+                count[i]: {
+                    ok -> it = 0
+                    -> _
+                }
             }
             i <- [0..bwt-n): {
 
@@ -586,7 +637,10 @@ bzip2-decompress = (data []byte) (out []byte) {
                     v < 256 -> {
 
                         #{index-out=zero, overflow=wrap}
-                        count[v] = count[v] + 1
+                        count[v]: {
+                            ok -> it = count[v] + 1
+                            -> _
+                        }
                     }
                 }
             }
@@ -596,7 +650,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             total = 0
             i <- [0..256): {
 
-                cum[i] = total
+                cum[i]: {
+                    ok -> it = total
+                    -> _
+                }
 
                 #{overflow=wrap}
                 total = total + count[i]
@@ -613,7 +670,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             rank [256]i64
             i <- [0..256): {
 
-                rank[i] = 0
+                rank[i]: {
+                    ok -> it = 0
+                    -> _
+                }
             }
             i <- [0..bwt-n): {
 
@@ -622,10 +682,16 @@ bzip2-decompress = (data []byte) (out []byte) {
                 v >= 0 -> v < 256 -> {
 
                     #{index-out=zero, overflow=wrap}
-                    lf[i] = cum[v] + rank[v]
+                    lf[i]: {
+                        ok -> it = cum[v] + rank[v]
+                        -> _
+                    }
 
                     #{index-out=zero, overflow=wrap}
-                    rank[v] = rank[v] + 1
+                    rank[v]: {
+                        ok -> it = rank[v] + 1
+                        -> _
+                    }
                 }
             }
 

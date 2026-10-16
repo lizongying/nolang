@@ -11,7 +11,7 @@ Outputs:
   docs/design/nolang-ast-spec.md  -- the same spec, human readable
   /tmp/ast_spec.json              -- the same spec, machine readable
 
-Why this exists: M2 must reproduce `no ast` byte-for-byte. Hand-transcribing 71
+Why this exists: M2 must reproduce `no ast` byte-for-byte. Hand-transcribing 72
 emission sequences is exactly the kind of transcription this project forbids
 (see docs/design/nolang-selfhost.md). So the sequence is extracted mechanically
 and then *proved* faithful by a Go interpreter test that walks the spec over the

@@ -119,7 +119,10 @@ lzma-rd.decode-bit-tree = (probs []i64, num-bits i64) (sym i64) {
         #{index-out=zero}
         bit, tmp = .decode-bit(probs[m])
 
-        probs[m] = tmp
+        probs[m]: {
+            ok -> it = tmp
+            -> _
+        }
         m = (m << 1) | bit
     }
 
@@ -136,7 +139,10 @@ lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
         #{index-out=zero}
         bit, tmp = .decode-bit(probs[m])
 
-        probs[m] = tmp
+        probs[m]: {
+            ok -> it = tmp
+            -> _
+        }
         m = (m << 1) | bit
         sym = sym | (bit << i)
     }
@@ -350,7 +356,10 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
     #{index-out=zero}
     bit, tmp = .rd.decode-bit(probs[0])
 
-    probs[0] = tmp
+    probs[0]: {
+        ok -> it = tmp
+        -> _
+    }
     bit == 0 -> {
 
         ; 低位：3 bits
@@ -362,7 +371,10 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
     #{index-out=zero}
     bit, tmp = .rd.decode-bit(probs[1])
 
-    probs[1] = tmp
+    probs[1]: {
+        ok -> it = tmp
+        -> _
+    }
 
     #{overflow=wrap}
     bit == 0 -> {

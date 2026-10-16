@@ -85,6 +85,45 @@ func zigTargetTriple(t string) string {
 	return t
 }
 
+// llvmCodegenTriple 把使用者傳入的 -target（可能是 zig 風格方言，如
+// "x86_64-macos-none" / "aarch64-windows-gnu"）映射成 LLVM 規範 triple，供
+// 進程內 LLVM C API 後端（no-llvm）決定正確的 object 格式（Mach-O / COFF / ELF）。
+//
+// 根因：LLVM 的 triple parser 依「arch-vendor-os-env」的位置解析。zig 方言把 OS
+// 名稱放在 vendor 槽位（如 "x86_64-macos-none" → vendor="macos"、os="none"；
+// "x86_64-windows-gnu" → vendor="windows"、os="gnu"），LLVM 據此把 OS 判成
+// UnknownOS，逆退回「宿主」object 格式——在 Linux runner 上就是 ELF。結接階段
+// zig 用 darwin 的 TBD 解析器讀 ELF 會報 "failed to parse TBD file"，用 lld-link
+// 讀 ELF 會報 "unknown file type"。把 OS 顯式放進對的位置（apple-macosx /
+// pc-windows-gnu）即可讓 LLVM 產出正確格式。
+//
+// 只用於 LLVM codegen 的 triple；結接仍用 zigTargetTriple(target) 頲給 zig 方言
+// （兩者拼寫不同，必須分開）。無法辨識的平台（如 wasm32／空 target）原樣返回，
+// 維持既有行為。
+func llvmCodegenTriple(target string) string {
+	goos, goarch := parseTargetPlatform(target)
+	var arch string
+	switch goarch {
+	case "amd64":
+		arch = "x86_64"
+	case "arm64":
+		arch = "aarch64"
+	default:
+		// wasm32 或未知架構：不改寫，退回呼叫端（pickTriple）以模式／宿主 triple 處理。
+		return target
+	}
+	switch goos {
+	case "darwin":
+		return arch + "-apple-macosx"
+	case "windows":
+		return arch + "-pc-windows-gnu"
+	case "linux":
+		return arch + "-unknown-linux-gnu"
+	default:
+		return target
+	}
+}
+
 // CheckToolchain verifies that the tools the chosen build path actually needs
 // are available, returning OS-specific install instructions otherwise.
 //
@@ -895,7 +934,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		objPath := filepath.Join(tempDir, fileName+".o")
 		capiOpts := llvmapi.Options{
 			IR:         code,
-			Triple:     target,
+			Triple:     llvmCodegenTriple(target),
 			OptLevel:   llvmapi.ParseOptLevel(optLevel),
 			FPContract: fpContract,
 		}

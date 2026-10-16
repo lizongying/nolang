@@ -69,6 +69,29 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 	}
 	pkg := b.Package()
 	pkg.Owners = owners
+	// Fold diagnostics produced by desugaring done inside H0 (SurfaceMatch) into
+	// the program's diagnostic channels. Without this they would be silently
+	// dropped — the exact failure mode this migration exists to remove.
+	//
+	// Severity is preserved, and deliberately so. Program.Warnings carries no
+	// severity, so it can only hold warnings; H0-side desugaring also produces
+	// ERRORS (buildMatchDesugar's "empty match arm cannot determine a value"),
+	// and those go to Program.Errors. Downgrading them to warnings would have
+	// turned a build failure into a successful build of a program whose match
+	// arms have no value — see the Program.Errors block comment for the
+	// measured witness, and src/parser/dump/h0_diag_test.go for the gate.
+	//
+	// Ordering note: this mutates the caller's Program, so it is not idempotent
+	// — lowering the same *Program twice appends twice. That is pre-existing
+	// behaviour for Warnings and no shipped path does it.
+	for _, d := range c.h0Diags {
+		switch d.Severity {
+		case SeverityWarning:
+			prog.Warnings = append(prog.Warnings, d.Message)
+		case SeverityError:
+			prog.Errors = append(prog.Errors, d.Message)
+		}
+	}
 	// Colorless async (`go`): monomorphize each `go <call>` callee into its
 	// `-async` variant and propagate the async coloring transitively. This
 	// MUST run before DesugarAsyncGroups so the rewritten bare `-async` calls
@@ -122,6 +145,23 @@ type hirConv struct {
 	// empty). Stamp onto KCall nodes so the MIR lowerer can bake a caller
 	// "file:line:col" literal for FlagTrackCaller callees (see std/log).
 	curFile string
+	// curFunc is the name of the function whose body is currently being lowered
+	// ("" at module level). It mirrors Parser.curFuncName, which the lowering
+	// pass maintains while it walks, and is needed by anything inside H0 that
+	// resolves a name against the per-function side tables — see
+	// desugarSurfaceMatch, which looks up sem.FuncVarType(curFunc, …) exactly
+	// the way buildMatchDesugar does.
+	//
+	// FunctionLiteral deliberately does NOT open a scope: the lowering pass has
+	// no case for it either, so a literal's body keeps the ENCLOSING function's
+	// name. Matching that is what keeps HIR identical whichever stage desugars.
+	curFunc string
+	// h0Diags collects diagnostics produced by desugaring done inside H0 (see
+	// desugarSurfaceMatch). They have no channel of their own, so they are
+	// gathered here and folded into Program.Warnings (warnings) / Program.Errors
+	// (errors) by ASTToHIRWithMap — without that they would be silently
+	// dropped, which is the failure mode this whole migration exists to remove.
+	h0Diags []Diagnostic
 }
 
 // remember records the HIR id assigned to an AST node so the checker can later
@@ -364,7 +404,8 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 				hir.FlagColon*u32(s.ColonSyntax)|
 				hir.FlagSkipNaming*u32(s.IsSkipNamingCheck)|
 				hir.FlagTrackCaller*u32(c.hasAnnotation(s, "track-caller"))|
-				overflowModeFlags(s.OverflowMode))
+				overflowModeFlags(s.OverflowMode),
+			s.Name)
 
 	case *ExternStatement:
 		nodes := make([]int32, 0, len(s.Parameters)+len(s.Results))
@@ -511,6 +552,7 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 func (c *hirConv) funcLike(
 	kind hir.Kind, sig *FuncSignature, name string, body *BlockStatement,
 	variadicUnion string, line, col int32, extra uint32,
+	scope string,
 ) int32 {
 	nodes := make([]int32, 0, len(sig.Parameters)+len(sig.Results)+len(sig.GenericParams)+2)
 	// Method definitions have `self` as the first output parameter (Results[0]),
@@ -552,7 +594,13 @@ func (c *hirConv) funcLike(
 		}))
 	}
 	if body != nil {
+		// scope is the function name that side-table lookups inside this body
+		// must use. FunctionDefinition passes its own name; FunctionLiteral
+		// passes the enclosing scope unchanged, matching the lowering pass.
+		saved := c.curFunc
+		c.curFunc = scope
 		nodes = append(nodes, c.slot("body", c.stmt(body)))
+		c.curFunc = saved
 	}
 	return c.b.Add(hir.Node{
 		Kind:  kind,
@@ -927,7 +975,7 @@ func (c *hirConv) exprNode(e Expression) int32 {
 			First: c.b.List([]int32{c.expr(e.Left), c.expr(e.Index)}),
 			Line:  line, Col: col,
 		}
-		if e.InBounds {
+		if c.sem.IndexIsInBounds(e) {
 			node.Flags |= hir.FlagInBounds
 		}
 		return c.b.Add(node)
@@ -1041,7 +1089,30 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		})
 
 	case *FunctionLiteral:
-		return c.funcLike(hir.KFuncLit, &e.FuncSignature, "", e.Body, e.VariadicUnion, line, col, 0)
+		// Passes c.curFunc, NOT "": the lowering pass has no FunctionLiteral
+		// case either, so a literal's body resolves names against the enclosing
+		// function. Diverging here would change which side table a nested match
+		// reads.
+		return c.funcLike(hir.KFuncLit, &e.FuncSignature, "", e.Body, e.VariadicUnion, line, col, 0, c.curFunc)
+
+	case *SurfaceMatch:
+		// S2: H0 lowers the sugar node itself instead of relying on a pre-pass
+		// having expanded it. desugarSurfaceMatch is non-mutating, and the chain
+		// it returns still contains the ORIGINAL nested SurfaceMatch nodes, so
+		// the c.expr below re-enters this case for them — the streaming
+		// equivalent of lowerSurfaceMatch's bottom-up walk.
+		//
+		// This case is unreachable on every shipped path today (lowering.go
+		// expands SurfaceMatch before H0 runs), which is why adding it cannot
+		// change existing output. parser/dump/h0_sugar_gap_test.go is what
+		// proves it produces the same HIR as the lowered path.
+		sp := c.scratchParser()
+		desugared := sp.desugarSurfaceMatch(e)
+		c.h0Diags = append(c.h0Diags, sp.diags...)
+		if desugared == nil {
+			break // nothing to lower: fall through to KUnknown, as before
+		}
+		return c.expr(desugared)
 
 	case *Parameter:
 		// Parameter satisfies expressionNode, so it is legal in expression
@@ -1065,6 +1136,38 @@ func (c *hirConv) exprNode(e Expression) int32 {
 	}
 
 	return c.b.Add(hir.Node{Kind: hir.KUnknown, S: c.b.Intern(fmt.Sprintf("%T", e)), Line: line, Col: col})
+}
+
+// scratchParser builds the minimal *Parser that H0-side desugaring needs.
+//
+// ASTToHIR takes only a Program, so hirConv has no parser of its own. Everything
+// buildMatchDesugar reaches for is either on SemanticContext (which hirConv
+// already holds), or a slice/map read that is nil-safe, so a zero-valued Parser
+// with those few fields set is enough:
+//
+//	sem          — type inference + side tables (shared, not copied)
+//	curFuncName  — c.curFunc, so FuncVarType resolves in the right scope
+//	idxLocalTypes— restored from the semantic context, which precomputeIdxLocalTypes
+//	                now fills whether or not lowering ran (see parser.go)
+//	Filename     — for diagnostic text only
+//
+// saveError/saveWarning land in this parser's own diags slice, which the caller
+// folds into c.h0Diags.
+func (c *hirConv) scratchParser() *Parser {
+	sp := &Parser{
+		sem:         c.sem,
+		curFuncName: c.curFunc,
+		Filename:    c.curFile,
+	}
+	if c.sem != nil {
+		sp.idxLocalTypes = c.sem.IdxLocalTypes
+		// Union aliases drive isUnionType, which decides whether a match is a
+		// static type-dispatch match or a runtime `x === i32` chain. Without
+		// this the two produce different HIR for the same source — see
+		// SemanticContext.UnionMembers.
+		sp.unionMembers = c.sem.UnionMembers
+	}
+	return sp
 }
 
 // ---- small helpers ----

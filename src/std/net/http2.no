@@ -101,31 +101,58 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
 ; 返回 next-pos=下一個位置
 frame.serialize = (buf str, pos i64) (next-pos i64) {
 
-    buf[pos] = (.length >> 16) & 255
+    buf[pos]: {
+        ok -> it = (.length >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 1] = (.length >> 8) & 255
+    buf[pos + 1]: {
+        ok -> it = (.length >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 2] = .length & 255
+    buf[pos + 2]: {
+        ok -> it = .length & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 3] = .frame-type & 255
+    buf[pos + 3]: {
+        ok -> it = .frame-type & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 4] = .flags & 255
+    buf[pos + 4]: {
+        ok -> it = .flags & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 5] = (.stream-id >> 24) & 127
+    buf[pos + 5]: {
+        ok -> it = (.stream-id >> 24) & 127
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 6] = (.stream-id >> 16) & 255
+    buf[pos + 6]: {
+        ok -> it = (.stream-id >> 16) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 7] = (.stream-id >> 8) & 255
+    buf[pos + 7]: {
+        ok -> it = (.stream-id >> 8) & 255
+        -> _
+    }
 
     #{overflow=wrap}
-    buf[pos + 8] = .stream-id & 255
+    buf[pos + 8]: {
+        ok -> it = .stream-id & 255
+        -> _
+    }
 
     #{overflow=wrap}
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
@@ -226,7 +253,10 @@ conn.recv-frame = () (frame ?frame) {
         i <- [0..recv-n): {
 
             #{overflow=wrap}
-            hdr-buf[hdr-total + i] = hdr-buf.byte(i)
+            hdr-buf[hdr-total + i]: {
+                ok -> it = hdr-buf.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -320,7 +350,10 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
         j <- [0..hdr-out.len-bytes()): {
 
             #{overflow=wrap}
-            block[block-n + j] = hdr-out.byte(j)
+            block[block-n + j]: {
+                ok -> it = hdr-out.byte(j)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -490,27 +523,51 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     hdr-count = 0
 
     ; :method
-    hdr-names[0] = ':method'
+    hdr-names[0]: {
+        ok -> it = ':method'
+        -> _
+    }
 
-    hdr-values[0] = method
+    hdr-values[0]: {
+        ok -> it = method
+        -> _
+    }
     hdr-count = 1
 
     ; :path
-    hdr-names[1] = ':path'
+    hdr-names[1]: {
+        ok -> it = ':path'
+        -> _
+    }
 
-    hdr-values[1] = path
+    hdr-values[1]: {
+        ok -> it = path
+        -> _
+    }
     hdr-count = 2
 
     ; :scheme
-    hdr-names[2] = ':scheme'
+    hdr-names[2]: {
+        ok -> it = ':scheme'
+        -> _
+    }
 
-    hdr-values[2] = 'http'
+    hdr-values[2]: {
+        ok -> it = 'http'
+        -> _
+    }
     hdr-count = 3
 
     ; :authority
-    hdr-names[3] = ':authority'
+    hdr-names[3]: {
+        ok -> it = ':authority'
+        -> _
+    }
 
-    hdr-values[3] = host
+    hdr-values[3]: {
+        ok -> it = host
+        -> _
+    }
     hdr-count = 4
 
     ; body 長度
@@ -520,10 +577,16 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
         has-body = true
 
         ; content-length
-        hdr-names[4] = 'content-length'
+        hdr-names[4]: {
+            ok -> it = 'content-length'
+            -> _
+        }
         blen-str = body-len.to-str()
 
-        hdr-values[4] = blen-str
+        hdr-values[4]: {
+            ok -> it = blen-str
+            -> _
+        }
         hdr-count = 5
     }
 
@@ -593,7 +656,10 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 i <- [0..f.payload.len-bytes()): {
 
                     #{overflow=wrap}
-                    resp-body[resp-n + i] = f.payload.byte(i)
+                    resp-body[resp-n + i]: {
+                        ok -> it = f.payload.byte(i)
+                        -> _
+                    }
                 }
 
                 #{overflow=wrap}

@@ -1632,7 +1632,7 @@ func (p *Parser) parseSwitchStatement() Statement {
 	p.nextToken() // skip {
 
 	// Parse case arms → desugar to if/elif/else chain
-	var arms []matchArm
+	var arms []MatchArm
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		for p.currentToken.Type == lexer.NEWLINE {
 			p.nextToken()
@@ -1641,12 +1641,12 @@ func (p *Parser) parseSwitchStatement() Statement {
 			break
 		}
 
-		var ma matchArm
+		var ma MatchArm
 		if p.currentToken.Type == lexer.CASE {
 			p.nextToken() // skip case
-			ma.condition = p.parseExpression(LOWEST)
+			ma.Condition = p.parseExpression(LOWEST)
 		} else if p.currentToken.Type == lexer.DEFAULT {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 			p.nextToken() // skip default
 		} else {
 			p.saveError(fmt.Sprintf("line %d, column %d: expected 'case' or 'default', got %s",
@@ -1680,19 +1680,19 @@ func (p *Parser) parseSwitchStatement() Statement {
 
 		if len(bodyStmts) == 1 {
 			if es, ok := bodyStmts[0].(*ExpressionStatement); ok {
-				ma.body = &BlockStatement{
+				ma.Body = &BlockStatement{
 					Token:      tok,
 					Statements: bodyStmts,
 				}
 				_ = es
 			} else {
-				ma.body = &BlockStatement{
+				ma.Body = &BlockStatement{
 					Token:      tok,
 					Statements: bodyStmts,
 				}
 			}
 		} else {
-			ma.body = &BlockStatement{
+			ma.Body = &BlockStatement{
 				Token:      tok,
 				Statements: bodyStmts,
 			}

@@ -84,7 +84,7 @@ func (p *Parser) parseTildeMatchStatement() Statement {
 	p.nextToken() // skip {
 
 	// Parse case arms → desugar to if/elif/else chain
-	var arms []matchArm
+	var arms []MatchArm
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		for p.currentToken.Type == lexer.NEWLINE {
 			p.nextToken()
@@ -93,18 +93,18 @@ func (p *Parser) parseTildeMatchStatement() Statement {
 			break
 		}
 
-		var ma matchArm
+		var ma MatchArm
 		if p.currentToken.Type == lexer.CASE {
 			p.nextToken() // skip case
 			// Parse pattern: err, nil, or expression
 			if p.currentToken.Type == lexer.IDENT {
-				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+				ma.Condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 				p.nextToken()
 			} else {
-				ma.condition = p.parseExpression(LOWEST)
+				ma.Condition = p.parseExpression(LOWEST)
 			}
 		} else if p.currentToken.Type == lexer.DEFAULT {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 			p.nextToken() // skip default
 		} else {
 			p.saveError(fmt.Sprintf("line %d, column %d: expected 'case' or 'default', got %s",
@@ -136,7 +136,7 @@ func (p *Parser) parseTildeMatchStatement() Statement {
 			}
 		}
 
-		ma.body = &BlockStatement{
+		ma.Body = &BlockStatement{
 			Token:      tok,
 			Statements: bodyStmts,
 		}
@@ -194,7 +194,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		p.comments = p.comments[i:]
 	}
 
-	var arms []matchArm
+	var arms []MatchArm
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		// Skip newlines and semicolons between arms
@@ -239,8 +239,8 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		// a later arm's body or lost.
 		armDoc := p.collectDocComments()
 
-		var ma matchArm
-		ma.pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
+		var ma MatchArm
+		ma.Pos = lexer.Position{Line: p.currentToken.Line, Column: p.currentToken.Column}
 		// An arm may be written with an explicit leading `->` separator before its
 		// condition, e.g. `-> c == 92 -> body`. This is equivalent to the canonical
 		// `c == 92 -> body`; the leading `->` is just an optional arm separator.
@@ -254,31 +254,31 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			p.nextToken()
 		}
 		if p.currentToken.Type == lexer.COLON {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 		} else if p.currentToken.Type == lexer.UNDERSCORE {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.RARROW {
-			ma.isWildcard = true
+			ma.IsWildcard = true
 		} else if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.RARROW &&
 			(p.currentToken.Literal == "err" || p.currentToken.Literal == "nil" || p.currentToken.Literal == "ok") {
 			// ok-> → val branch (specific, not catch-all)
 			// err-> / nil-> → option pattern
 			if p.currentToken.Literal == "ok" {
-				ma.isWildcard = true
-				ma.isDotVal = true
+				ma.IsWildcard = true
+				ma.IsDotVal = true
 			} else {
-				ma.condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
+				ma.Condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 			}
 			p.nextToken()
 		} else if p.currentToken.Type == lexer.NIL && p.peekToken.Type == lexer.RARROW {
 			// nil-> → option pattern
-			ma.condition = &NilLiteral{Token: p.currentToken}
+			ma.Condition = &NilLiteral{Token: p.currentToken}
 			p.nextToken()
 		} else {
 			// Parse condition as full boolean expression
 			p.ctx.push(CTX_MATCH_ARM)
-			ma.condition = p.parseExpression(LOWEST)
+			ma.Condition = p.parseExpression(LOWEST)
 			p.ctx.pop()
 		}
 
@@ -302,7 +302,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			// 處理 inline bare match；若失敗（如 block 含 match 後接其他語句），則回退為
 			// parseBlockStatement 解析為敘述區塊。
 			if p.classifyBlockAtCurrent() != blockMatch {
-				ma.isBlockBody = true
+				ma.IsBlockBody = true
 				// 不推送 CTX_MATCH_ARM：block body 內的 `cond -> return` 應視為 standalone if-then，
 				// 而非 match arm 分隔符。CTX_MATCH_ARM 僅用於 arm condition 與 inline body。
 				parsedBlock = p.parseBlockStatement()
@@ -322,7 +322,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 				armState := p.saveState()
 				stmt := p.parseStatement()
 				if stmt != nil {
-					ma.isBlockBody = true
+					ma.IsBlockBody = true
 					// When parseStatement returns a BlockStatement, it means the
 					// inner parseBareMatchExpr failed and fell back to
 					// parseBlockStatement. Extract the block's statements
@@ -350,7 +350,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 				} else {
 					// parseStatement failed — restore and parse as block
 					p.restoreState(armState)
-					ma.isBlockBody = true
+					ma.IsBlockBody = true
 					// 不推送 CTX_MATCH_ARM：fallback 為普通 block，允許 standalone if-then
 					parsedBlock = p.parseBlockStatement()
 					if parsedBlock != nil {
@@ -363,7 +363,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			}
 		} else if p.currentToken.Type == lexer.NEWLINE {
 			// Block form (newline-separated statements, no braces)
-			ma.isBlockBody = true
+			ma.IsBlockBody = true
 			bodyBlock.IsInline = true
 			for p.currentToken.Type == lexer.NEWLINE {
 				p.nextToken()
@@ -376,7 +376,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			// body 內的 standalone if-then（如 `pos >= 0 -> { ... }`）誤判為新臂，
 			// 導致 body 被截斷、match 解析失敗。wildcard 語義上是 catch-all，
 			// 必為最後一個臂，因此跳過 isArmStart() 檢查，直接解析到 }。
-			checkArmStart := !ma.isWildcard
+			checkArmStart := !ma.IsWildcard
 			for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF &&
 				(!checkArmStart || !p.isArmStart()) &&
 				!isOptionPatternStart(p) {
@@ -398,7 +398,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			// 對 catch-all arm（wildcard，如 `-> cond -> body`），不推送 CTX_MATCH_ARM，
 			// 允許 body 中的 -> 被解析為 standalone if-then，而非 match arm 分隔符。
 			bodyBlock.IsInline = true
-			if !ma.isWildcard {
+			if !ma.IsWildcard {
 				p.ctx.push(CTX_MATCH_ARM)
 			}
 			// peek 預計算可能已將 body 語句同行行尾註釋（如 `return  ; D`）
@@ -416,7 +416,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			// 重新放入同行註釋，讓 attachInlineComment 處理
 			p.comments = append(p.comments, inlineComments...)
 			stmt := p.parseStatement()
-			if !ma.isWildcard {
+			if !ma.IsWildcard {
 				p.ctx.pop()
 			}
 			if stmt != nil {
@@ -483,7 +483,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 				bodyBlock.TrailingComments = merged
 			}
 		}
-		ma.body = bodyBlock
+		ma.Body = bodyBlock
 		arms = append(arms, ma)
 	}
 
@@ -501,14 +501,14 @@ func (p *Parser) parseBareMatchExpr() Expression {
 	// Check option match branch completeness
 	hasErrArm, hasNilArm, hasValArm, hasElseArm := false, false, false, false
 	for _, a := range arms {
-		if a.isWildcard {
-			if a.isDotVal {
+		if a.IsWildcard {
+			if a.IsDotVal {
 				hasValArm = true
 			} else {
 				hasElseArm = true
 			}
 		} else {
-			switch c := a.condition.(type) {
+			switch c := a.Condition.(type) {
 			case *Identifier:
 				if c.Value == "err" {
 					hasErrArm = true
@@ -711,44 +711,53 @@ func (p *Parser) isRangePatternStart() bool {
 	}
 }
 
-// matchArm — match 的一個分支（用於 parseMatchExprFrom 和 buildMatchDesugar）
-type matchArm struct {
-	condition           Expression
-	isWildcard          bool
-	isDotVal            bool // .-> → specific val branch (not catch-all)
-	isRawCond           bool // ok(cond) → condition is a full boolean expr, use directly (no matched == wrapping)
-	body                *BlockStatement
-	isBlockBody         bool           // true = block form (newline after ->), false = inline expression form
-	pos                 lexer.Position // position of condition or -> for diagnostic use
-	multiOptionPatterns []string       // nil || err → ["nil", "err"]; combined option patterns joined by ||
-	multiValuePatterns  []Expression   // 1 || 3 || 5 → [1, 3, 5]; combined value patterns joined by ||
-	// bindingName 記錄析構綁定 `ok(v) -> ...`：把 ok 變體的載荷綁定到 v（而非隱含的
+// MatchArm — match 的一個分支（用於 parseMatchExprFrom 和 buildMatchDesugar）。
+//
+// 欄位自 2026-10-16 起**全部導出**。原因：`SurfaceMatch.Arms` 是本節點的切片，
+// 而 checker / formatter / `no ast` 都在**別的包**裡。未導出時它們只能讀
+// `len(sm.Arms)`，整棵臂子樹對所有消費方不可見——這正是「checker 前移（S1）」
+// 的根因：只要 SurfaceMatch 存活，臂內的讀會丟（變數誤報未使用）、臂內的陳述
+// 會丟（`idxwrite` 等診斷消失）。見
+// docs/design/nolang-parser-lowering-invariants.md §15（含最小復現）。
+//
+// 導出後 gob 不再忽略這些欄位（先前 `valueCtx` 未導出正是靠這一點讓舊 blob 仍可
+// 解碼），因此本次改動**必須 bump parser.ASTVersion**（見 astdiskcache.go 的政策）。
+type MatchArm struct {
+	Condition           Expression
+	IsWildcard          bool
+	IsDotVal            bool // .-> → specific val branch (not catch-all)
+	IsRawCond           bool // ok(cond) → condition is a full boolean expr, use directly (no matched == wrapping)
+	Body                *BlockStatement
+	IsBlockBody         bool           // true = block form (newline after ->), false = inline expression form
+	Pos                 lexer.Position // position of condition or -> for diagnostic use
+	MultiOptionPatterns []string       // nil || err → ["nil", "err"]; combined option patterns joined by ||
+	MultiValuePatterns  []Expression   // 1 || 3 || 5 → [1, 3, 5]; combined value patterns joined by ||
+	// BindingName 記錄析構綁定 `ok(v) -> ...`：把 ok 變體的載荷綁定到 v（而非隱含的
 	// `it`）。嵌套 match 時用處最大——外層的 `it` 不會被內層覆蓋。
 	// 為空表示沿用隱含 `it`。
-	bindingName    string
-	bindingVariant string // "ok" / "err"（option 變體的析構綁定）
-	// bindingNames/bindingFields：多欄位變體的析構綁定（`rect(w, h) -> ...`）。
-	// 依位置把 `it.f0` / `it.f1` 綁到 bindingNames[0] / bindingNames[1]。
-	bindingNames  []string
-	bindingFields []string
+	BindingName    string
+	BindingVariant string // "ok" / "err"（option 變體的析構綁定）
+	// BindingNames/BindingFields：多欄位變體的析構綁定（`rect(w, h) -> ...`）。
+	// 依位置把 `it.f0` / `it.f1` 綁到 BindingNames[0] / BindingNames[1]。
+	BindingNames  []string
+	BindingFields []string
 	// 類型解構 match（union / type-set 靜態單態化派發）：
-	// isTypeArm 標記本臂是「帶綁定型別臂」（v i32 ->），typePattern 為型別名、
-	// typeBindingName 為綁定名。由 parseMatchExprFrom 的 `IDENT IDENT RARROW`
-	// 分支設定；lowering 階段以此識別類型臂（裸型別臂 i32 -> 則以 condition 識別）。
-	isTypeArm     bool
-	typePattern   string
-	typeBindingName string
-	skipItBinding bool // generated arms that never reference `it` (e.g. ?= / #{index-out}
+	// IsTypeArm 標記本臂是「帶綁定型別臂」（v i32 ->），TypePattern 為型別名、
+	// TypeBindingName 為綁定名。由 parseMatchExprFrom 的 `IDENT IDENT RARROW`
+	// 分支設定；lowering 階段以此識別類型臂（裸型別臂 i32 -> 則以 Condition 識別）。
+	IsTypeArm       bool
+	TypePattern     string
+	TypeBindingName string
+	SkipItBinding   bool // generated arms that never reference `it` (e.g. ?= / #{index-out}
 	// sentinel arms that just return or substitute a default) opt out of the
 	// synthetic `it` binding, so a sentinel arm's %str-long/nil `it` type can't
 	// clobber the ok arm's element-type `it` (which would corrupt codegen).
 	//
-	// valueCtx 標記本臂所屬的 match 出現在「值語境」（賦值右值 / 回傳值 / 呼叫實參），
+	// ValueCtx 標記本臂所屬的 match 出現在「值語境」（賦值右值 / 回傳值 / 呼叫實參），
 	// 而非陳述語境（值被丟棄）。由 validateMatchArmReturns（僅在值語境被呼叫）寫入。
 	// 只有值語境的空臂（`->`）才在 lowering 合成零值；陳述語境的空臂是 no-op
 	// （既有行為，如 `parsed: { ok -> {...}  nil ->  err -> }`）。見 buildMatchDesugar（D4）。
-	// 本欄位不進 gob 序列化：SurfaceMatch 在 ParseProgram 內即被 lowering 展開掉。
-	valueCtx bool
+	ValueCtx bool
 }
 
 func (p *Parser) parseMatchExpression() Expression {
@@ -781,13 +790,18 @@ func (p *Parser) parseMatchExpression() Expression {
 	p.nextToken() // skip {
 
 	// Collect all arms first
-	type matchArm struct {
+	//
+	// 這是**已被取代**的舊路徑（`match` 關鍵字，見 :756 的 deprecation 警告）：
+	// 它直接合成 IfExpression 鏈，不產出 SurfaceMatch。本型別是它的私有累積器，
+	// 與包級導出的 MatchArm **無關**——刻意不叫 MatchArm，以免在這個函式作用域內
+	// 遮蔽掉包級型別（2026-10-16 導出 MatchArm 時發現的既有同名區域型別）。
+	type deprecatedMatchArm struct {
 		condition  Expression // if-condition (form 2) or pattern (form 1)
 		isWildcard bool
 		isDotVal   bool // .| → specific val branch (not catch-all)
 		body       *BlockStatement
 	}
-	var arms []matchArm
+	var arms []deprecatedMatchArm
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		// Skip newlines and semicolons between arms
@@ -799,7 +813,7 @@ func (p *Parser) parseMatchExpression() Expression {
 		}
 
 		// Parse condition/pattern (bare `:` means wildcard/default arm)
-		var ma matchArm
+		var ma deprecatedMatchArm
 		if p.currentToken.Type == lexer.COLON {
 			ma.isWildcard = true
 		} else if p.currentToken.Type == lexer.UNDERSCORE {

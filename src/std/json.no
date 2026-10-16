@@ -472,7 +472,10 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
                 ; c == 34, 92, 47 保留原樣
             }
         }
-        buf[j] = c
+        buf[j]: {
+            ok -> it = c
+            -> _
+        }
 
         #{overflow=wrap}
         j = j + 1

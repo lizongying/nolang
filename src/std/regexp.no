@@ -950,7 +950,10 @@ regexp.find = (text str) (result str) {
             j <- [0..mlen): {
 
                 #{overflow=wrap}
-                result[j] = text[sp + j]
+                result[j]: {
+                    ok -> it = text[sp + j]
+                    -> _
+                }
             }
             return
         }

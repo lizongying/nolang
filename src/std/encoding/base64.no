@@ -179,7 +179,10 @@ decode = (s str, table str) (out ?[]byte) {
             return
         }
 
-        buf[j] = (v0 << 2) | (v1 >> 4)
+        buf[j]: {
+            ok -> it = (v0 << 2) | (v1 >> 4)
+            -> _
+        }
 
         #{overflow=wrap}
         s[i + 2] != 61 -> {
@@ -189,7 +192,10 @@ decode = (s str, table str) (out ?[]byte) {
                 return
             }
 
-            buf[j + 1] = ((v1 & 15) << 4) | (v2 >> 2)
+            buf[j + 1]: {
+                ok -> it = ((v1 & 15) << 4) | (v2 >> 2)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -200,7 +206,10 @@ decode = (s str, table str) (out ?[]byte) {
                 return
             }
 
-            buf[j + 2] = ((v2 & 3) << 6) | v3
+            buf[j + 2]: {
+                ok -> it = ((v2 & 3) << 6) | v3
+                -> _
+            }
         }
 
         #{overflow=wrap}

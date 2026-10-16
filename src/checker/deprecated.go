@@ -236,6 +236,12 @@ func (v *deprecatedVisitor) walkExpr(e parser.Expression, file, curFn string) {
 		v.walkExpr(ex.Right, file, curFn)
 	case *parser.GroupedExpression:
 		v.walkExpr(ex.Expression, file, curFn)
+	case *parser.SurfaceMatch:
+		// S1：臂體與臂條件內的棄用呼叫（如 `-> math.char-to-str(c)`）在糖形態
+		// 下否則整棵不可見。見 sugar_walk.go。
+		walkSurfaceMatchChildren(ex,
+			func(sub parser.Expression) { v.walkExpr(sub, file, curFn) },
+			func(sub parser.Statement) { v.walkStmt(sub, file, curFn) })
 	case *parser.IndexExpression:
 		v.walkExpr(ex.Left, file, curFn)
 		v.walkExpr(ex.Index, file, curFn)

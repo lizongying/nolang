@@ -369,15 +369,27 @@ url-encode = (s str) (out str) {
         }
         {
             keep -> {
-                out[out.len-bytes()] = c
+                out[out.len-bytes()]: {
+                    ok -> it = c
+                    -> _
+                }
             }
 
             -> {
-                out[out.len-bytes()] = 37
+                out[out.len-bytes()]: {
+                    ok -> it = 37
+                    -> _
+                }
 
-                out[out.len-bytes()] = hex-chars[c >> 4]
+                out[out.len-bytes()]: {
+                    ok -> it = hex-chars[c >> 4]
+                    -> _
+                }
 
-                out[out.len-bytes()] = hex-chars[c & 15]
+                out[out.len-bytes()]: {
+                    ok -> it = hex-chars[c & 15]
+                    -> _
+                }
             }
         }
     }
@@ -414,15 +426,27 @@ url-encode-component = (s str) (out str) {
         }
         {
             keep -> {
-                out[out.len-bytes()] = c
+                out[out.len-bytes()]: {
+                    ok -> it = c
+                    -> _
+                }
             }
 
             -> {
-                out[out.len-bytes()] = 37
+                out[out.len-bytes()]: {
+                    ok -> it = 37
+                    -> _
+                }
 
-                out[out.len-bytes()] = hex-chars[c >> 4]
+                out[out.len-bytes()]: {
+                    ok -> it = hex-chars[c >> 4]
+                    -> _
+                }
 
-                out[out.len-bytes()] = hex-chars[c & 15]
+                out[out.len-bytes()]: {
+                    ok -> it = hex-chars[c & 15]
+                    -> _
+                }
             }
         }
     }
@@ -471,21 +495,35 @@ url-decode = (s str) (out str) {
                     ->
                 }
                 v1 >= 0 && v2 >= 0 -> {
-                    out[out.len-bytes()] = (v1 << 4) | v2
+                    out[out.len-bytes()]: {
+                        ok -> it = (v1 << 4) | v2
+                        -> _
+                    }
 
                     #{overflow=wrap}
                     i = i + 2
                 }
 
-                -> out[out.len-bytes()] = c
+                -> {
+                    out[out.len-bytes()]: {
+                        ok -> it = c
+                        -> _
+                    }
+                }
             }
 
             c == 43 -> {
-                out[out.len-bytes()] = 32; + 號轉空格
+                out[out.len-bytes()]: {
+                    ok -> it = 32
+                    -> _ ; + 號轉空格
+                }
             }
 
             -> {
-                out[out.len-bytes()] = c
+                out[out.len-bytes()]: {
+                    ok -> it = c
+                    -> _
+                }
             }
         }
 
@@ -645,7 +683,10 @@ url-parse-basic-auth = (header str) (user str, password str) {
     j <- [0..colon): {
 
         #{index-out=zero}
-        user-bytes[j] = raw[j]
+        user-bytes[j]: {
+            ok -> it = raw[j]
+            -> _
+        }
     }
     user = user-bytes.to-str()
     pass-bytes []byte
@@ -655,7 +696,10 @@ url-parse-basic-auth = (header str) (user str, password str) {
     j <- [colon + 1..raw.len()): {
 
         #{index-out=zero}
-        pass-bytes[k] = raw[j]
+        pass-bytes[k]: {
+            ok -> it = raw[j]
+            -> _
+        }
 
         #{overflow=wrap}
         k = k + 1

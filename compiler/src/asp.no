@@ -79,13 +79,13 @@ P-COUNT = 4
 ; ── 槽位上限（由生成器實測，供 ast.no 宣告 arena 用）──
 MAX-STR-SLOTS = 9
 MAX-COUNT-SLOTS = 2
-KIND-COUNT = 71
-STR-COUNT = 183
-INSTR-COUNT = 304
+KIND-COUNT = 72
+STR-COUNT = 188
+INSTR-COUNT = 309
 
 ; strs: 字串池（id 0 = 空字串，不在此列）
 strs = () (r []str) {
-    out []str = with-cap(183)
+    out []str = with-cap(188)
     out.push('')
     out.push('AnnotationArrayValue')
     out.push('')
@@ -253,6 +253,11 @@ strs = () (r []str) {
     out.push('readonly')
     out.push('sealed')
     out.push('StructLiteral')
+    out.push('SurfaceMatch')
+    out.push('arms')
+    out.push('Matched')
+    out.push('Arms')
+    out.push('matchArm')
     out.push('TaggedEnumDefinition')
     out.push('builtin')
     out.push('variants')
@@ -274,7 +279,7 @@ strs = () (r []str) {
 
 ; tape: 扁平指令帶，每 5 個 i64 一條
 tape = () (r []i64) {
-    out []i64 = with-cap(1520)
+    out []i64 = with-cap(1545)
     out.push(0)
     out.push(1)
     out.push(1)
@@ -1626,6 +1631,31 @@ tape = () (r []i64) {
     out.push(0)
     out.push(2)
     out.push(1)
+    out.push(4)
+    out.push(1)
+    out.push(1)
+    out.push(168)
+    out.push(2)
+    out.push(0)
+    out.push(0)
+    out.push(0)
+    out.push(0)
+    out.push(3)
+    out.push(169)
+    out.push(1)
+    out.push(0)
+    out.push(0)
+    out.push(5)
+    out.push(170)
+    out.push(0)
+    out.push(171)
+    out.push(0)
+    out.push(0)
+    out.push(172)
+    out.push(1)
+    out.push(0)
+    out.push(2)
+    out.push(1)
     out.push(0)
     out.push(0)
     out.push(0)
@@ -1634,24 +1664,24 @@ tape = () (r []i64) {
     out.push(2)
     out.push(3)
     out.push(0)
-    out.push(16777384)
+    out.push(16777389)
     out.push(1)
     out.push(4)
     out.push(1)
     out.push(1)
-    out.push(33554601)
+    out.push(33554606)
     out.push(2)
     out.push(0)
     out.push(0)
     out.push(0)
     out.push(0)
     out.push(4)
-    out.push(170)
+    out.push(175)
     out.push(1)
     out.push(0)
     out.push(0)
     out.push(0)
-    out.push(171)
+    out.push(176)
     out.push(1)
     out.push(0)
     out.push(2)
@@ -1669,7 +1699,7 @@ tape = () (r []i64) {
     out.push(3)
     out.push(1)
     out.push(0)
-    out.push(16777388)
+    out.push(16777393)
     out.push(1)
     out.push(4)
     out.push(1)
@@ -1683,10 +1713,10 @@ tape = () (r []i64) {
     out.push(5)
     out.push(21)
     out.push(0)
-    out.push(173)
+    out.push(178)
     out.push(0)
     out.push(0)
-    out.push(174)
+    out.push(179)
     out.push(1)
     out.push(0)
     out.push(2)
@@ -1711,12 +1741,12 @@ tape = () (r []i64) {
     out.push(0)
     out.push(0)
     out.push(3)
-    out.push(175)
+    out.push(180)
     out.push(1)
     out.push(0)
     out.push(0)
     out.push(0)
-    out.push(176)
+    out.push(181)
     out.push(1)
     out.push(0)
     out.push(2)
@@ -1724,14 +1754,14 @@ tape = () (r []i64) {
     out.push(4)
     out.push(1)
     out.push(1)
-    out.push(177)
+    out.push(182)
     out.push(4)
-    out.push(178)
+    out.push(183)
     out.push(0)
     out.push(0)
     out.push(0)
     out.push(0)
-    out.push(179)
+    out.push(184)
     out.push(1)
     out.push(0)
     out.push(2)
@@ -1746,7 +1776,7 @@ tape = () (r []i64) {
     out.push(0)
     out.push(0)
     out.push(3)
-    out.push(180)
+    out.push(185)
     out.push(1)
     out.push(0)
     out.push(0)
@@ -1756,7 +1786,7 @@ tape = () (r []i64) {
     out.push(0)
     out.push(0)
     out.push(0)
-    out.push(181)
+    out.push(186)
     out.push(1)
     out.push(0)
     out.push(2)
@@ -1786,7 +1816,7 @@ tape = () (r []i64) {
     out.push(0)
     out.push(0)
     out.push(0)
-    out.push(182)
+    out.push(187)
     out.push(0)
     out.push(0)
     out.push(2)
@@ -1800,7 +1830,7 @@ tape = () (r []i64) {
 
 ; kinds: 每 4 個 i64 一種節點 (name-id, first, num, reserved)
 kinds = () (r []i64) {
-    out []i64 = with-cap(288)
+    out []i64 = with-cap(292)
     out.push(0)
     out.push(0)
     out.push(0)
@@ -2063,30 +2093,34 @@ kinds = () (r []i64) {
     out.push(0)
     out.push(167)
     out.push(269)
-    out.push(6)
+    out.push(5)
     out.push(0)
-    out.push(171)
-    out.push(275)
-    out.push(7)
-    out.push(0)
-    out.push(174)
-    out.push(282)
+    out.push(172)
+    out.push(274)
     out.push(6)
     out.push(0)
     out.push(176)
-    out.push(288)
-    out.push(3)
+    out.push(280)
+    out.push(7)
     out.push(0)
     out.push(179)
-    out.push(291)
-    out.push(5)
-    out.push(0)
-    out.push(181)
-    out.push(296)
+    out.push(287)
     out.push(6)
     out.push(0)
-    out.push(182)
-    out.push(302)
+    out.push(181)
+    out.push(293)
+    out.push(3)
+    out.push(0)
+    out.push(184)
+    out.push(296)
+    out.push(5)
+    out.push(0)
+    out.push(186)
+    out.push(301)
+    out.push(6)
+    out.push(0)
+    out.push(187)
+    out.push(307)
     out.push(2)
     out.push(0)
     r = out
@@ -2158,13 +2192,14 @@ K_STRING_LITERAL = 61
 K_STRUCT_DEFINITION = 62
 K_STRUCT_FIELD = 63
 K_STRUCT_LITERAL = 64
-K_TAGGED_ENUM_DEFINITION = 65
-K_TAGGED_ENUM_VARIANT = 66
-K_TYPE_ALIAS = 67
-K_UNION_TYPE = 68
-K_UNWRAP_ASSIGN_STATEMENT = 69
-K_USE_STATEMENT = 70
-K_VIEW_TYPE = 71
+K_SURFACE_MATCH = 65
+K_TAGGED_ENUM_DEFINITION = 66
+K_TAGGED_ENUM_VARIANT = 67
+K_TYPE_ALIAS = 68
+K_UNION_TYPE = 69
+K_UNWRAP_ASSIGN_STATEMENT = 70
+K_USE_STATEMENT = 71
+K_VIEW_TYPE = 72
 
 ; kind-name: 節點種類 id → 型別名（供 <unknown> 與除錯用）
 kind-name = (id i64) (r str) {
@@ -2233,13 +2268,14 @@ kind-name = (id i64) (r str) {
     id == 62 -> r = 'StructDefinition'
     id == 63 -> r = 'StructField'
     id == 64 -> r = 'StructLiteral'
-    id == 65 -> r = 'TaggedEnumDefinition'
-    id == 66 -> r = 'TaggedEnumVariant'
-    id == 67 -> r = 'TypeAlias'
-    id == 68 -> r = 'UnionType'
-    id == 69 -> r = 'UnwrapAssignStatement'
-    id == 70 -> r = 'UseStatement'
-    id == 71 -> r = 'ViewType'
+    id == 65 -> r = 'SurfaceMatch'
+    id == 66 -> r = 'TaggedEnumDefinition'
+    id == 67 -> r = 'TaggedEnumVariant'
+    id == 68 -> r = 'TypeAlias'
+    id == 69 -> r = 'UnionType'
+    id == 70 -> r = 'UnwrapAssignStatement'
+    id == 71 -> r = 'UseStatement'
+    id == 72 -> r = 'ViewType'
 }
 
 ; kind-id: 型別名 → 節點種類 id（找不到回 0）
@@ -2309,11 +2345,12 @@ kind-id = (name str) (r i64) {
     name == 'StructDefinition' -> r = 62
     name == 'StructField' -> r = 63
     name == 'StructLiteral' -> r = 64
-    name == 'TaggedEnumDefinition' -> r = 65
-    name == 'TaggedEnumVariant' -> r = 66
-    name == 'TypeAlias' -> r = 67
-    name == 'UnionType' -> r = 68
-    name == 'UnwrapAssignStatement' -> r = 69
-    name == 'UseStatement' -> r = 70
-    name == 'ViewType' -> r = 71
+    name == 'SurfaceMatch' -> r = 65
+    name == 'TaggedEnumDefinition' -> r = 66
+    name == 'TaggedEnumVariant' -> r = 67
+    name == 'TypeAlias' -> r = 68
+    name == 'UnionType' -> r = 69
+    name == 'UnwrapAssignStatement' -> r = 70
+    name == 'UseStatement' -> r = 71
+    name == 'ViewType' -> r = 72
 }

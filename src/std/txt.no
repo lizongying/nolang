@@ -112,7 +112,10 @@ txt.to-bytes = () (out []byte) {
     n i64 = .len-bytes()
     b []byte = with-len(n)
     i <- [0..n): {
-        b[i] = .byte(i)
+        b[i]: {
+            ok -> it = .byte(i)
+            -> _
+        }
     }
     out = b
 }
@@ -433,7 +436,10 @@ txt.from-chars = (cs []char) (t ?txt) {
     val txt
     n = cs.len()
     i <- [0..n): {
-        val[i] = cs[i]
+        val[i]: {
+            ok -> it = cs[i]
+            -> _
+        }
     }
     t = val
 }

@@ -530,13 +530,19 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     ; 格式: base64(iv || sealed)
     combined []byte
     i <- [0..12): {
-        combined[i] = iv[i]
+        combined[i]: {
+            ok -> it = iv[i]
+            -> _
+        }
     }
     sealed-n = sealed.len()
     i <- [0..sealed-n): {
 
         #{index-out=zero, overflow=wrap}
-        combined[12 + i] = sealed[i]
+        combined[12 + i]: {
+            ok -> it = sealed[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -573,13 +579,19 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     ; 將 IV + 密文轉為 Base64
     combined []byte
     i <- [0..12): {
-        combined[i] = iv[i]
+        combined[i]: {
+            ok -> it = iv[i]
+            -> _
+        }
     }
     sealed-n = sealed.len()
     i <- [0..sealed-n): {
 
         #{index-out=zero, overflow=wrap}
-        combined[12 + i] = sealed[i]
+        combined[12 + i]: {
+            ok -> it = sealed[i]
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -622,7 +634,10 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     i <- [0..12): {
 
         #{index-out=zero}
-        iv[i] = raw[i]
+        iv[i]: {
+            ok -> it = raw[i]
+            -> _
+        }
     }
 
     ; 提取密文+tag
@@ -633,7 +648,10 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     i <- [0..sealed-n): {
 
         #{index-out=zero, overflow=wrap}
-        sealed[i] = raw[12 + i]
+        sealed[i]: {
+            ok -> it = raw[12 + i]
+            -> _
+        }
     }
 
     ; 解密

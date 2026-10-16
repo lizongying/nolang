@@ -162,33 +162,51 @@ ip-addr.to-str = () (out str) {
     out = sa.copy()
     n = out.len-bytes()
 
-    out[n] = 46
+    out[n]: {
+        ok -> it = 46
+        -> _
+    }
     sb = .b.to-str()
     tmp = sb.copy()
     j <- [0..tmp.len-bytes()): {
 
         #{overflow=wrap}
-        out[n + 1 + j] = tmp.byte(j)
+        out[n + 1 + j]: {
+            ok -> it = tmp.byte(j)
+            -> _
+        }
     }
     n = out.len-bytes()
 
-    out[n] = 46
+    out[n]: {
+        ok -> it = 46
+        -> _
+    }
     sc = .c.to-str()
     tmp = sc.copy()
     j <- [0..tmp.len-bytes()): {
 
         #{overflow=wrap}
-        out[n + 1 + j] = tmp.byte(j)
+        out[n + 1 + j]: {
+            ok -> it = tmp.byte(j)
+            -> _
+        }
     }
     n = out.len-bytes()
 
-    out[n] = 46
+    out[n]: {
+        ok -> it = 46
+        -> _
+    }
     sd = .d.to-str()
     tmp = sd.copy()
     j <- [0..tmp.len-bytes()): {
 
         #{overflow=wrap}
-        out[n + 1 + j] = tmp.byte(j)
+        out[n + 1 + j]: {
+            ok -> it = tmp.byte(j)
+            -> _
+        }
     }
 }
 

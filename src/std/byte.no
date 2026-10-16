@@ -121,7 +121,10 @@ i64.to-bytes-le = () (out [?]byte) {
         seg str = with-cap(4)
         cp < 0x80 -> {
 
-            seg[0] = cp
+            seg[0]: {
+                ok -> it = cp
+                -> _
+            }
         }
 
         -> cp < 0x800 -> {
@@ -138,13 +141,25 @@ i64.to-bytes-le = () (out [?]byte) {
             seg[2] = 0x80 | (cp & 0x3f)
         } -> {
 
-            seg[0] = 0xf0 | ((cp >> 18) & 0x07)
+            seg[0]: {
+                ok -> it = 0xf0 | ((cp >> 18) & 0x07)
+                -> _
+            }
 
-            seg[1] = 0x80 | ((cp >> 12) & 0x3f)
+            seg[1]: {
+                ok -> it = 0x80 | ((cp >> 12) & 0x3f)
+                -> _
+            }
 
-            seg[2] = 0x80 | ((cp >> 6) & 0x3f)
+            seg[2]: {
+                ok -> it = 0x80 | ((cp >> 6) & 0x3f)
+                -> _
+            }
 
-            seg[3] = 0x80 | (cp & 0x3f)
+            seg[3]: {
+                ok -> it = 0x80 | (cp & 0x3f)
+                -> _
+            }
         }
 
         r = r - seg

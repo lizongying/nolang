@@ -530,10 +530,16 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        hex-str[i * 2] = hex-chars[(mac[i] >> 4) & 15]
+        hex-str[i * 2]: {
+            ok -> it = hex-chars[(mac[i] >> 4) & 15]
+            -> _
+        }
 
         #{overflow=wrap}
-        hex-str[i * 2 + 1] = hex-chars[mac[i] & 15]
+        hex-str[i * 2 + 1]: {
+            ok -> it = hex-chars[mac[i] & 15]
+            -> _
+        }
     }
 
     signed = value - '.' - hex-str

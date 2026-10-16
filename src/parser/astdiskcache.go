@@ -86,7 +86,29 @@ import (
 // 在 statement 語境的安全索引 match ok 臂內把 `it = v` 改寫為寫回序列，並新增
 // AssignExpression.IsSynthetic 欄位（gob 編碼形狀改變，舊緩存缺該欄位會讓
 // idxwrite 檢查漏跳合成節點，故必須 bump）。
-const ASTVersion = "2026-10-16.1"
+//
+// 2026-10-16.2：`matchArm` → 導出 `MatchArm`，且**全部 18 個欄位改為導出**
+// （含原本刻意保持未導出的 `valueCtx`）。動機：`SurfaceMatch.Arms` 的載荷在別的包
+// （checker / formatter / `no ast`）完全不可見——這是「checker 前移」的根因，
+// 見 docs/design/nolang-parser-lowering-invariants.md §15。
+//
+// **本次刻意不 bump**（維持 2026-10-16.1）。理由：本檔的 bump 判準是「改變
+// ParseProgram 的**產出**」（rule of thumb：「a semantics-only change would
+// otherwise be masked by cached blobs」），而本次是純 Go 可見性改名——
+// ParseProgram 的 AST 逐位元組不變（由 532 檔語料門禁
+// TestSkipLoweringMatchesDefaultPath 與 parser/hir/mir 全套綠燈證明）。
+// gob/mm-ast 的線形確實變了（gob 只編碼導出欄位），但 `MatchArm` 值只存在於
+// `SurfaceMatch` 內，而 SurfaceMatch 在 ParseProgram 內必被 lowering 展開、
+// 永遠不會進 blob（見 MatchArm 的型別註解與 :750 的歷史註解），故沒有任何
+// 既有 blob 會含 MatchArm 資料、沒有任何快取會解碼成不同結構。
+// ⚠️ **若 S1 讓 SurfaceMatch 存活到序列化，那時必須 bump。**
+// 另：把 `parseMatchExpression` 內的既有同名區域型別改名為 `deprecatedMatchArm`，
+// 以免在該函式作用域內遮蔽包級 `MatchArm`。
+// 2026-10-16.3：InBounds 從 IndexExpression 移至 NodeSemantics side-table，且 bounds
+// analysis 在 ParseProgram 前置準備、只讀 AST。這改變 AST/gob shape 與 cached semantic
+// metadata；舊 Tier-1 blob 既沒有 side-table proof，又可能把 AST InBounds 欄位解碼丟棄，
+// 必須失效，避免 cache HIT 令 HIR 靜默漏掉 FlagInBounds。
+const ASTVersion = "2026-10-16.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

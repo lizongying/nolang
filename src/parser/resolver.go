@@ -51,6 +51,11 @@ type NodeSemantics struct {
 	// 讀取者：checker（目前唯一消費點是 ValidateUnassignedReturns 系列的
 	// collectAssignedNamesInExpr）。
 	Callee CalleeKind
+
+	// IndexInBounds 是 bounds 分析器對該 IndexExpression 的證明結果。
+	// 它屬於節點語義 side-table，不是 AST 語法欄位；因此可在保留原始 AST
+	// 的同時供 AST→HIR 消費，並隨 nodeSem 一起通過快取序列化。
+	IndexInBounds bool
 }
 
 // CalleeKind 描述一個 CallExpression 在整程式改寫後代表哪一類呼叫。
@@ -111,7 +116,9 @@ const (
 	// RTEmptyArmDefault 標記值-match 的空臂（`->` 後不寫任何東西）在 lowering
 	// 時被合成為「被匹配 option 內部型別的零值」語句。Formatter 據此把該臂還原成
 	// 空臂輸出（否則 `->` 會被改寫成 `-> 0`，破壞 `no fmt` 冪等）。見 buildMatchDesugar（D4）。
-	// 「值語境 vs 陳述語境」的區分記在 matchArm.valueCtx（不進序列化），不用 RTFlag。
+	// 「值語境 vs 陳述語境」的區分記在 MatchArm.ValueCtx（自 2026-10-16 起已導出；
+	// 但 SurfaceMatch 必在 ParseProgram 內被 lowering 展開，故它仍不會進任何 blob），
+	// 不用 RTFlag。
 	RTEmptyArmDefault
 )
 
@@ -163,6 +170,18 @@ type SemanticContext struct {
 	// parser 實例在 ParseProgram 返回後即被丟棄，故 lowering 階段將此表掛到
 	// 語義副表匯出，使 checker 能複現 isSafeIndexBase 的型別查詢。
 	IdxLocalTypes map[string]map[string]string
+
+	// UnionMembers 是「類型解構 match 偵測專用」的 union 別名表：
+	// 別名名 → 直接成員型別名（如 num → [i32, i64, f64]），由 parseTypeAlias
+	// 解析 `num = i32 | i64 | f64` 時填寫（parser/type.go:728-741）。
+	//
+	// 它原本只活在 *Parser.unionMembers 上，而 parser 實例在 ParseProgram 返回
+	// 後即被丟棄 —— 今天沒問題，因為 lowering 就跑在同一個 parser 裡。一旦
+	// 降糖搬到 H0（design doc §8 / S2），H0 只拿到 Program，這張表就整個消失，
+	// isUnionType 一律回 false，所有 union match 靜默改走 `x === i32` 執行期
+	// 比較 —— 不報錯、不炸，只是靜默產生錯誤的 HIR。type-match.no 實測即此。
+	// 故這裡掛到語義副表匯出，與 IdxLocalTypes 同一模式。
+	UnionMembers map[string][]string
 }
 
 // NewSemanticContext 建立空語義副表。
@@ -257,6 +276,23 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 			}
 		}
 	}
+	// Merge union aliases (don't overwrite existing entries).
+	for name, members := range other.UnionMembers {
+		if _, exists := s.UnionMembers[name]; !exists {
+			s.SetUnionMembers(name, members)
+		}
+	}
+}
+
+// SetUnionMembers records a union alias and its direct member type names.
+func (s *SemanticContext) SetUnionMembers(name string, members []string) {
+	if s == nil || name == "" {
+		return
+	}
+	if s.UnionMembers == nil {
+		s.UnionMembers = make(map[string][]string)
+	}
+	s.UnionMembers[name] = members
 }
 
 // SetEmbedData 設定節點的嵌入字節（由 Resolver 的 embed 解析填入 side-table）。
@@ -287,6 +323,32 @@ func (s *SemanticContext) ensure(n Node) *NodeSemantics {
 		s.nodeSem[n] = ns
 	}
 	return ns
+}
+
+// SetIndexInBounds records that an IndexExpression's read is proven in bounds.
+// The fact is semantic metadata and never changes the syntax AST.
+func (s *SemanticContext) SetIndexInBounds(n Node, yes bool) {
+	if s == nil || n == nil {
+		return
+	}
+	if !yes {
+		if ns, ok := s.nodeSem[n]; ok {
+			ns.IndexInBounds = false
+		}
+		return
+	}
+	s.ensure(n).IndexInBounds = true
+}
+
+// IndexIsInBounds reports the bounds analyzer's proof for an AST node. Nil-safe.
+func (s *SemanticContext) IndexIsInBounds(n Node) bool {
+	if s == nil || n == nil {
+		return false
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.IndexInBounds
+	}
+	return false
 }
 
 // SetRTFlag 為節點疊加 fmt 往返標誌位（parser/lowering 寫入）。

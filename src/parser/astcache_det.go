@@ -251,6 +251,7 @@ type detSem struct {
 	FuncVarTypes       []detStrMapStr
 	FuncDeclaredVars   []detStrMapBool
 	IdxLocalTypes      []detStrMapStr
+	UnionMembers       []detStrStrs
 }
 
 type detNodeSem struct {
@@ -263,6 +264,7 @@ type detNodeSem struct {
 	RTFlags             RTFlag
 	OpeningBraceComment *CommentGroup
 	Callee              CalleeKind
+	IndexInBounds       bool
 }
 
 type detProgram struct {
@@ -270,6 +272,11 @@ type detProgram struct {
 	FreeComments     []*CommentGroup
 	TrailingComments *CommentGroup
 	Warnings         []string
+	// Errors mirrors Program.Errors. Only ASTToHIRWithMap writes that field, and
+	// it runs after ParseProgram has cached the program, so a cached blob always
+	// carries an empty slice — mirroring it anyway keeps the shadow honest and
+	// stops the determinism test from having a reason to special-case it.
+	Errors []string
 	// SemPresent distinguishes a nil *SemanticContext from an empty one. gob
 	// drops zero values, so a non-nil Sem with every map empty would otherwise
 	// be indistinguishable from a nil one.
@@ -296,6 +303,7 @@ func detFromSem(s *SemanticContext) detSem {
 		FuncVarTypes:       detSortStrMapStr(s.FuncVarTypes),
 		FuncDeclaredVars:   detSortStrMapBool(s.FuncDeclaredVars),
 		IdxLocalTypes:      detSortStrMapStr(s.IdxLocalTypes),
+		UnionMembers:       detSortStrStrs(s.UnionMembers),
 	}
 }
 
@@ -311,6 +319,7 @@ func detToSem(d detSem) *SemanticContext {
 		FuncVarTypes:       detRebuildStrMapStr(d.FuncVarTypes),
 		FuncDeclaredVars:   detRebuildStrMapBool(d.FuncDeclaredVars),
 		IdxLocalTypes:      detRebuildStrMapStr(d.IdxLocalTypes),
+		UnionMembers:       detRebuildStrStrs(d.UnionMembers),
 	}
 }
 
@@ -325,6 +334,7 @@ func detFromNodeSem(ns *NodeSemantics) detNodeSem {
 		RTFlags:             ns.RTFlags,
 		OpeningBraceComment: ns.OpeningBraceComment,
 		Callee:              ns.Callee,
+		IndexInBounds:       ns.IndexInBounds,
 	}
 }
 
@@ -339,6 +349,7 @@ func detToNodeSem(d detNodeSem) *NodeSemantics {
 		RTFlags:             d.RTFlags,
 		OpeningBraceComment: d.OpeningBraceComment,
 		Callee:              d.Callee,
+		IndexInBounds:       d.IndexInBounds,
 	}
 }
 
@@ -351,6 +362,7 @@ func detFromProgram(p *Program) *detProgram {
 		FreeComments:     p.FreeComments,
 		TrailingComments: p.TrailingComments,
 		Warnings:         p.Warnings,
+		Errors:           p.Errors,
 		BuiltinFuncNames: detSortStrBool(p.BuiltinFuncNames),
 	}
 	if p.Sem != nil {
@@ -369,6 +381,7 @@ func detToProgram(d *detProgram) *Program {
 		FreeComments:     d.FreeComments,
 		TrailingComments: d.TrailingComments,
 		Warnings:         d.Warnings,
+		Errors:           d.Errors,
 		BuiltinFuncNames: detRebuildStrBool(d.BuiltinFuncNames),
 	}
 	if d.SemPresent {

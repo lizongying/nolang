@@ -582,26 +582,44 @@ enc-conn.send-encrypted = (data str) (ok bool) {
     payload-len = 12 + sealed-n
     packet []byte
 
-    packet[0] = (payload-len >> 24) & 255
+    packet[0]: {
+        ok -> it = (payload-len >> 24) & 255
+        -> _
+    }
 
-    packet[1] = (payload-len >> 16) & 255
+    packet[1]: {
+        ok -> it = (payload-len >> 16) & 255
+        -> _
+    }
 
-    packet[2] = (payload-len >> 8) & 255
+    packet[2]: {
+        ok -> it = (payload-len >> 8) & 255
+        -> _
+    }
 
-    packet[3] = payload-len & 255
+    packet[3]: {
+        ok -> it = payload-len & 255
+        -> _
+    }
 
     ; 複製 IV
     i <- [0..12): {
 
         #{overflow=wrap}
-        packet[4 + i] = iv[i]
+        packet[4 + i]: {
+            ok -> it = iv[i]
+            -> _
+        }
     }
 
     ; 複製密文
     i <- [0..sealed-n): {
 
         #{index-out=zero, overflow=wrap}
-        packet[16 + i] = sealed[i]
+        packet[16 + i]: {
+            ok -> it = sealed[i]
+            -> _
+        }
     }
     packet-str = packet.to-str()
 
@@ -635,7 +653,10 @@ enc-conn.recv-encrypted = () (data ?str) {
     iv [12]byte
     i <- [0..12): {
 
-        iv[i] = payload-buf.byte(i)
+        iv[i]: {
+            ok -> it = payload-buf.byte(i)
+            -> _
+        }
     }
 
     ; 提取密文
@@ -645,7 +666,10 @@ enc-conn.recv-encrypted = () (data ?str) {
     i <- [0..sealed-n): {
 
         #{overflow=wrap}
-        sealed[i] = payload-buf.byte(12 + i)
+        sealed[i]: {
+            ok -> it = payload-buf.byte(12 + i)
+            -> _
+        }
     }
 
     ; 解密
@@ -759,39 +783,72 @@ icmp-conn.close = () {
 icmp-conn.build-echo = (pkt []byte, seq i64) {
 
     ; Type = 8 (Echo Request)
-    pkt[0] = ICMP-ECHO-REQUEST
+    pkt[0]: {
+        ok -> it = ICMP-ECHO-REQUEST
+        -> _
+    }
 
     ; Code = 0
-    pkt[1] = 0
+    pkt[1]: {
+        ok -> it = 0
+        -> _
+    }
 
     ; Checksum = 0 (先填 0，之後計算)
-    pkt[2] = 0
+    pkt[2]: {
+        ok -> it = 0
+        -> _
+    }
 
-    pkt[3] = 0
+    pkt[3]: {
+        ok -> it = 0
+        -> _
+    }
 
     ; Identifier (big-endian)
-    pkt[4] = (.ident >> 8) & 255
+    pkt[4]: {
+        ok -> it = (.ident >> 8) & 255
+        -> _
+    }
 
-    pkt[5] = .ident & 255
+    pkt[5]: {
+        ok -> it = .ident & 255
+        -> _
+    }
 
     ; Sequence (big-endian)
-    pkt[6] = (seq >> 8) & 255
+    pkt[6]: {
+        ok -> it = (seq >> 8) & 255
+        -> _
+    }
 
-    pkt[7] = seq & 255
+    pkt[7]: {
+        ok -> it = seq & 255
+        -> _
+    }
 
     ; Payload: 填入序號作為資料（用於驗證回應）
     i <- [0..ICMP-PAYLOAD-SIZE): {
 
         #{overflow=wrap}
-        pkt[ICMP-HEADER-SIZE + i] = (seq + i) & 255
+        pkt[ICMP-HEADER-SIZE + i]: {
+            ok -> it = (seq + i) & 255
+            -> _
+        }
     }
 
     ; 計算並填入 checksum
     cksum = icmp-checksum(pkt, ICMP-PACKET-SIZE)
 
-    pkt[2] = (cksum >> 8) & 255
+    pkt[2]: {
+        ok -> it = (cksum >> 8) & 255
+        -> _
+    }
 
-    pkt[3] = cksum & 255
+    pkt[3]: {
+        ok -> it = cksum & 255
+        -> _
+    }
 }
 
 ; icmp-checksum: 計算 ICMP 校驗和（16 位元一補數和）

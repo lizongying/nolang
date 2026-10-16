@@ -444,7 +444,10 @@ client.reconnect = () (ok bool) {
         i <- [0..n): {
 
             #{overflow=wrap}
-            raw[total + i] = tmp.byte(i)
+            raw[total + i]: {
+                ok -> it = tmp.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -695,7 +698,10 @@ sse-connect = (url str) (client ?client) {
         i <- [0..n): {
 
             #{overflow=wrap}
-            raw[total + i] = tmp.byte(i)
+            raw[total + i]: {
+                ok -> it = tmp.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -755,7 +761,10 @@ sse-connect = (url str) (client ?client) {
     rb str = with-len(SSE-BUF-SIZE)
     i <- [0..remaining.len-bytes()): {
 
-        rb[i] = remaining.byte(i)
+        rb[i]: {
+            ok -> it = remaining.byte(i)
+            -> _
+        }
     }
     cli = client {
         fd: fd
@@ -875,7 +884,10 @@ server-conn.handshake = () (ok bool) {
         i <- [0..n): {
 
             #{overflow=wrap}
-            raw[total + i] = tmp.byte(i)
+            raw[total + i]: {
+                ok -> it = tmp.byte(i)
+                -> _
+            }
         }
 
         #{overflow=wrap}

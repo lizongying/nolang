@@ -106,3 +106,59 @@ func main () i64 {
 		t.Fatal("Get on unknown key should miss")
 	}
 }
+
+func TestUserASTCacheRoundTripPreservesInBoundsProof(t *testing.T) {
+	src := `f = () {
+    a [3]i64 = [0, 0, 0]
+    x = a[1]
+}`
+	orig := parseSurface(t, src)
+	var origIdx *IndexExpression
+	walkNodes(orig, func(n interface{}) {
+		if idx, ok := n.(*IndexExpression); ok {
+			origIdx = idx
+		}
+	})
+	if origIdx == nil || !orig.Sem.IndexIsInBounds(origIdx) {
+		t.Fatal("fixture did not carry its in-bounds proof in Program.Sem")
+	}
+
+	cache, err := NewUserASTCache(t.TempDir(), 4)
+	if err != nil {
+		t.Fatalf("NewUserASTCache failed: %v", err)
+	}
+	key := cache.KeyFor(src, "inbounds-side-table")
+	cache.Put(key, orig)
+	got, ok := cache.Get(key)
+	if !ok {
+		t.Fatal("cache Get returned false after Put")
+	}
+
+	var gotIdx *IndexExpression
+	walkNodes(got, func(n interface{}) {
+		if idx, ok := n.(*IndexExpression); ok {
+			gotIdx = idx
+		}
+	})
+	if gotIdx == nil || !got.Sem.IndexIsInBounds(gotIdx) {
+		t.Fatal("cache round-trip lost the IndexExpression's side-table proof")
+	}
+
+	tree, err := EncodeASTTree(orig, "")
+	if err != nil {
+		t.Fatalf("AST-tree encode: %v", err)
+	}
+	mmProgram, err := DecodeASTTree(tree)
+	if err != nil {
+		t.Fatalf("AST-tree decode: %v", err)
+	}
+	var mmIdx *IndexExpression
+	walkNodes(mmProgram, func(n interface{}) {
+		if idx, ok := n.(*IndexExpression); ok {
+			mmIdx = idx
+		}
+	})
+	if mmIdx == nil || !mmProgram.Sem.IndexIsInBounds(mmIdx) {
+		t.Fatal("AST-tree round-trip lost the IndexExpression's side-table proof")
+	}
+}

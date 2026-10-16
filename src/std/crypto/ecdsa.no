@@ -136,7 +136,10 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
     i <- [0..32): {
 
         #{index-out=zero}
-        work[i] = a[i]
+        work[i]: {
+            ok -> it = a[i]
+            -> _
+        }
     }
 
     ; 重複減去 m 直到 work < m
@@ -149,7 +152,10 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         diff, borrow = bn-sub(work, m)
         i <- [0..32): {
 
-            work[i] = diff[i]
+            work[i]: {
+                ok -> it = diff[i]
+                -> _
+            }
         }
     }
     i <- [0..32): {
@@ -165,7 +171,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     product [64]byte
     i <- [0..64): {
 
-        product[i] = 0
+        product[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; Schoolbook 乘法
@@ -180,7 +189,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             #{index-out=zero, overflow=wrap}
             val = (product[idx]) + (a[i]) * (b[j]) + carry
 
-            product[idx] = val & 255
+            product[idx]: {
+                ok -> it = val & 255
+                -> _
+            }
             carry = val >> 8
         }
 
@@ -192,7 +204,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             #{index-out=zero, overflow=wrap}
             val = (product[idx]) + carry
 
-            product[idx] = val & 255
+            product[idx]: {
+                ok -> it = val & 255
+                -> _
+            }
             carry = val >> 8
 
             #{overflow=wrap}
@@ -206,7 +221,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     work [64]byte
     i <- [0..64): {
 
-        work[i] = product[i]
+        work[i]: {
+            ok -> it = product[i]
+            -> _
+        }
     }
 
     ; 從高位開始，每次減去 m << (bit_pos)
@@ -318,7 +336,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             -> borrow = 0
                         }
 
-                        work[idx] = val
+                        work[idx]: {
+                            ok -> it = val
+                            -> _
+                        }
                     }
 
                     -> {
@@ -337,7 +358,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                                 -> borrow = 0
                             }
 
-                            work[idx] = val
+                            work[idx]: {
+                                ok -> it = val
+                                -> _
+                            }
                         }
                     }
                 }
@@ -361,7 +385,10 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                         -> borrow = 0
                     }
-                    work[idx] = val
+                    work[idx]: {
+                        ok -> it = val
+                        -> _
+                    }
 
                     #{overflow=wrap}
                     idx = idx + 1
@@ -391,12 +418,21 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     acc [64]byte
     i <- [0..32): {
 
-        acc[i] = s[i]
+        acc[i]: {
+            ok -> it = s[i]
+            -> _
+        }
     }
-    acc[32] = carry & 255
+    acc[32]: {
+        ok -> it = carry & 255
+        -> _
+    }
     i <- [33..64): {
 
-        acc[i] = 0
+        acc[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; 規約：從 shift-byte=32 開始（窗 acc[32..63]），一路減到 0
@@ -464,7 +500,10 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             -> borrow = 0
                         }
 
-                        acc[idx] = val
+                        acc[idx]: {
+                            ok -> it = val
+                            -> _
+                        }
                     }
 
                     -> {
@@ -483,7 +522,10 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                                 -> borrow = 0
                             }
 
-                            acc[idx] = val
+                            acc[idx]: {
+                                ok -> it = val
+                                -> _
+                            }
                         }
                     }
                 }
@@ -508,7 +550,10 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                         -> borrow = 0
                     }
-                    acc[idx] = val
+                    acc[idx]: {
+                        ok -> it = val
+                        -> _
+                    }
 
                     #{overflow=wrap}
                     idx = idx + 1
@@ -569,10 +614,16 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
 
     ; result = 1
     result [32]byte
-    result[0] = 1
+    result[0]: {
+        ok -> it = 1
+        -> _
+    }
     i <- [1..32): {
 
-        result[i] = 0
+        result[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
 
     ; base = a mod m
@@ -727,7 +778,10 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         i <- [0..96): {
 
             #{index-out=zero}
-            r[i] = q[i]
+            r[i]: {
+                ok -> it = q[i]
+                -> _
+            }
         }
         return
     }
@@ -743,7 +797,10 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
         i <- [0..96): {
 
             #{index-out=zero}
-            r[i] = p[i]
+            r[i]: {
+                ok -> it = p[i]
+                -> _
+            }
         }
         return
     }
@@ -808,7 +865,10 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 
             -> {
                 i <- [0..96): {
-                    r[i] = 0
+                    r[i]: {
+                        ok -> it = 0
+                        -> _
+                    }
                 }
                 return
             }
@@ -848,13 +908,22 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     z3 = bn-mulmod(h, z1, P256-P)
     z3 = bn-mulmod(z3, z2, P256-P)
     i <- [0..32): {
-        r[i] = x3[i]
+        r[i]: {
+            ok -> it = x3[i]
+            -> _
+        }
 
         #{overflow=wrap}
-        r[32 + i] = y3[i]
+        r[32 + i]: {
+            ok -> it = y3[i]
+            -> _
+        }
 
         #{overflow=wrap}
-        r[64 + i] = z3[i]
+        r[64 + i]: {
+            ok -> it = z3[i]
+            -> _
+        }
     }
 }
 
@@ -970,10 +1039,16 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        x[i] = in[1 + 31 - i]
+        x[i]: {
+            ok -> it = in[1 + 31 - i]
+            -> _
+        }
 
         #{index-out=zero, overflow=wrap}
-        y[i] = in[33 + 31 - i]
+        y[i]: {
+            ok -> it = in[33 + 31 - i]
+            -> _
+        }
     }
 
     ; Jacobian: (X, Y, Z) = (x, y, 1)
@@ -1032,7 +1107,10 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        k[i] = priv[31 - i]
+        k[i]: {
+            ok -> it = priv[31 - i]
+            -> _
+        }
     }
 
     ; 對端點解碼為 Jacobian 座標
@@ -1067,7 +1145,10 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        k[i] = priv[31 - i]
+        k[i]: {
+            ok -> it = priv[31 - i]
+            -> _
+        }
     }
 
     ; G = 基點
@@ -1097,7 +1178,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        h-le[i] = h[31 - i]
+        h-le[i]: {
+            ok -> it = h[31 - i]
+            -> _
+        }
     }
 
     ; 私鑰轉小端序
@@ -1105,7 +1189,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        d[i] = priv[31 - i]
+        d[i]: {
+            ok -> it = priv[31 - i]
+            -> _
+        }
     }
 
     ; 使用私鑰作為隨機數種子生成 k（簡化，生產環境應使用 RFC 6979）
@@ -1116,7 +1203,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         #{overflow=wrap}
         state, rand-r = rand.rand(state + d[i] + h-le[i] + i)
 
-        k[i] = state & 255
+        k[i]: {
+            ok -> it = state & 255
+            -> _
+        }
     }
 
     ; 確保 k 在 [1, n-1] 範圍內
@@ -1130,7 +1220,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
             }
         }
         all-zero == 1 -> {
-            k[0] = 1
+            k[0]: {
+                ok -> it = 1
+                -> _
+            }
         }
     }
 
@@ -1149,7 +1242,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        rx[i] = r-point-bytes[1 + 31 - i]
+        rx[i]: {
+            ok -> it = r-point-bytes[1 + 31 - i]
+            -> _
+        }
     }
     r-val [32]byte
     r-val = bn-mod(rx, P256-N)
@@ -1188,10 +1284,16 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        r-val[i] = sig[31 - i]
+        r-val[i]: {
+            ok -> it = sig[31 - i]
+            -> _
+        }
 
         #{index-out=zero, overflow=wrap}
-        s-val[i] = sig[32 + 31 - i]
+        s-val[i]: {
+            ok -> it = sig[32 + 31 - i]
+            -> _
+        }
     }
 
     ; 檢查 r, s ∈ [1, n-1]
@@ -1236,7 +1338,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        h-le[i] = h[31 - i]
+        h-le[i]: {
+            ok -> it = h[31 - i]
+            -> _
+        }
     }
 
     ; w = s^(-1) mod n
@@ -1288,7 +1393,10 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     i <- [0..32): {
 
         #{index-out=zero, overflow=wrap}
-        rx[i] = r-point-bytes[1 + 31 - i]
+        rx[i]: {
+            ok -> it = r-point-bytes[1 + 31 - i]
+            -> _
+        }
     }
     v [32]byte
     v = bn-mod(rx, P256-N)

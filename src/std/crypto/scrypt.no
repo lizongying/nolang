@@ -36,13 +36,19 @@ salsa20-8-core = (block []byte) {
         off = i * 4
 
         #{index-out=zero}
-        x[i] = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
+        x[i]: {
+            ok -> it = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
+            -> _
+        }
     }
 
     ; 保存初始值
     init [16]u32
     i <- [0..16): {
-        init[i] = x[i]
+        init[i]: {
+            ok -> it = x[i]
+            -> _
+        }
     }
 
     ; 8 輪（4 次雙輪）
@@ -51,53 +57,149 @@ salsa20-8-core = (block []byte) {
 
         ; 列輪
         ; QR(x[0], x[4], x[8], x[12])
-        x[4] = (x[4] ^ (rotl32((x[0] + x[12]) & mask, 7))) & mask
-        x[8] = (x[8] ^ (rotl32((x[4] + x[0]) & mask, 9))) & mask
-        x[12] = (x[12] ^ (rotl32((x[8] + x[4]) & mask, 13))) & mask
-        x[0] = (x[0] ^ (rotl32((x[12] + x[8]) & mask, 18))) & mask
+        x[4]: {
+            ok -> it = (x[4] ^ (rotl32((x[0] + x[12]) & mask, 7))) & mask
+            -> _
+        }
+        x[8]: {
+            ok -> it = (x[8] ^ (rotl32((x[4] + x[0]) & mask, 9))) & mask
+            -> _
+        }
+        x[12]: {
+            ok -> it = (x[12] ^ (rotl32((x[8] + x[4]) & mask, 13))) & mask
+            -> _
+        }
+        x[0]: {
+            ok -> it = (x[0] ^ (rotl32((x[12] + x[8]) & mask, 18))) & mask
+            -> _
+        }
 
         ; QR(x[5], x[9], x[13], x[1])
-        x[9] = (x[9] ^ (rotl32((x[5] + x[1]) & mask, 7))) & mask
-        x[13] = (x[13] ^ (rotl32((x[9] + x[5]) & mask, 9))) & mask
-        x[1] = (x[1] ^ (rotl32((x[13] + x[9]) & mask, 13))) & mask
-        x[5] = (x[5] ^ (rotl32((x[1] + x[13]) & mask, 18))) & mask
+        x[9]: {
+            ok -> it = (x[9] ^ (rotl32((x[5] + x[1]) & mask, 7))) & mask
+            -> _
+        }
+        x[13]: {
+            ok -> it = (x[13] ^ (rotl32((x[9] + x[5]) & mask, 9))) & mask
+            -> _
+        }
+        x[1]: {
+            ok -> it = (x[1] ^ (rotl32((x[13] + x[9]) & mask, 13))) & mask
+            -> _
+        }
+        x[5]: {
+            ok -> it = (x[5] ^ (rotl32((x[1] + x[13]) & mask, 18))) & mask
+            -> _
+        }
 
         ; QR(x[10], x[14], x[2], x[6])
-        x[14] = (x[14] ^ (rotl32((x[10] + x[6]) & mask, 7))) & mask
-        x[2] = (x[2] ^ (rotl32((x[14] + x[10]) & mask, 9))) & mask
-        x[6] = (x[6] ^ (rotl32((x[2] + x[14]) & mask, 13))) & mask
-        x[10] = (x[10] ^ (rotl32((x[6] + x[2]) & mask, 18))) & mask
+        x[14]: {
+            ok -> it = (x[14] ^ (rotl32((x[10] + x[6]) & mask, 7))) & mask
+            -> _
+        }
+        x[2]: {
+            ok -> it = (x[2] ^ (rotl32((x[14] + x[10]) & mask, 9))) & mask
+            -> _
+        }
+        x[6]: {
+            ok -> it = (x[6] ^ (rotl32((x[2] + x[14]) & mask, 13))) & mask
+            -> _
+        }
+        x[10]: {
+            ok -> it = (x[10] ^ (rotl32((x[6] + x[2]) & mask, 18))) & mask
+            -> _
+        }
 
         ; QR(x[15], x[3], x[7], x[11])
-        x[3] = (x[3] ^ (rotl32((x[15] + x[11]) & mask, 7))) & mask
-        x[7] = (x[7] ^ (rotl32((x[3] + x[15]) & mask, 9))) & mask
-        x[11] = (x[11] ^ (rotl32((x[7] + x[3]) & mask, 13))) & mask
-        x[15] = (x[15] ^ (rotl32((x[11] + x[7]) & mask, 18))) & mask
+        x[3]: {
+            ok -> it = (x[3] ^ (rotl32((x[15] + x[11]) & mask, 7))) & mask
+            -> _
+        }
+        x[7]: {
+            ok -> it = (x[7] ^ (rotl32((x[3] + x[15]) & mask, 9))) & mask
+            -> _
+        }
+        x[11]: {
+            ok -> it = (x[11] ^ (rotl32((x[7] + x[3]) & mask, 13))) & mask
+            -> _
+        }
+        x[15]: {
+            ok -> it = (x[15] ^ (rotl32((x[11] + x[7]) & mask, 18))) & mask
+            -> _
+        }
 
         ; 行輪
         ; QR(x[0], x[1], x[2], x[3])
-        x[1] = (x[1] ^ (rotl32((x[0] + x[3]) & mask, 7))) & mask
-        x[2] = (x[2] ^ (rotl32((x[1] + x[0]) & mask, 9))) & mask
-        x[3] = (x[3] ^ (rotl32((x[2] + x[1]) & mask, 13))) & mask
-        x[0] = (x[0] ^ (rotl32((x[3] + x[2]) & mask, 18))) & mask
+        x[1]: {
+            ok -> it = (x[1] ^ (rotl32((x[0] + x[3]) & mask, 7))) & mask
+            -> _
+        }
+        x[2]: {
+            ok -> it = (x[2] ^ (rotl32((x[1] + x[0]) & mask, 9))) & mask
+            -> _
+        }
+        x[3]: {
+            ok -> it = (x[3] ^ (rotl32((x[2] + x[1]) & mask, 13))) & mask
+            -> _
+        }
+        x[0]: {
+            ok -> it = (x[0] ^ (rotl32((x[3] + x[2]) & mask, 18))) & mask
+            -> _
+        }
 
         ; QR(x[5], x[6], x[7], x[4])
-        x[6] = (x[6] ^ (rotl32((x[5] + x[4]) & mask, 7))) & mask
-        x[7] = (x[7] ^ (rotl32((x[6] + x[5]) & mask, 9))) & mask
-        x[4] = (x[4] ^ (rotl32((x[7] + x[6]) & mask, 13))) & mask
-        x[5] = (x[5] ^ (rotl32((x[4] + x[7]) & mask, 18))) & mask
+        x[6]: {
+            ok -> it = (x[6] ^ (rotl32((x[5] + x[4]) & mask, 7))) & mask
+            -> _
+        }
+        x[7]: {
+            ok -> it = (x[7] ^ (rotl32((x[6] + x[5]) & mask, 9))) & mask
+            -> _
+        }
+        x[4]: {
+            ok -> it = (x[4] ^ (rotl32((x[7] + x[6]) & mask, 13))) & mask
+            -> _
+        }
+        x[5]: {
+            ok -> it = (x[5] ^ (rotl32((x[4] + x[7]) & mask, 18))) & mask
+            -> _
+        }
 
         ; QR(x[10], x[11], x[8], x[9])
-        x[11] = (x[11] ^ (rotl32((x[10] + x[9]) & mask, 7))) & mask
-        x[8] = (x[8] ^ (rotl32((x[11] + x[10]) & mask, 9))) & mask
-        x[9] = (x[9] ^ (rotl32((x[8] + x[11]) & mask, 13))) & mask
-        x[10] = (x[10] ^ (rotl32((x[9] + x[8]) & mask, 18))) & mask
+        x[11]: {
+            ok -> it = (x[11] ^ (rotl32((x[10] + x[9]) & mask, 7))) & mask
+            -> _
+        }
+        x[8]: {
+            ok -> it = (x[8] ^ (rotl32((x[11] + x[10]) & mask, 9))) & mask
+            -> _
+        }
+        x[9]: {
+            ok -> it = (x[9] ^ (rotl32((x[8] + x[11]) & mask, 13))) & mask
+            -> _
+        }
+        x[10]: {
+            ok -> it = (x[10] ^ (rotl32((x[9] + x[8]) & mask, 18))) & mask
+            -> _
+        }
 
         ; QR(x[15], x[12], x[13], x[14])
-        x[12] = (x[12] ^ (rotl32((x[15] + x[14]) & mask, 7))) & mask
-        x[13] = (x[13] ^ (rotl32((x[12] + x[15]) & mask, 9))) & mask
-        x[14] = (x[14] ^ (rotl32((x[13] + x[12]) & mask, 13))) & mask
-        x[15] = (x[15] ^ (rotl32((x[14] + x[13]) & mask, 18))) & mask
+        x[12]: {
+            ok -> it = (x[12] ^ (rotl32((x[15] + x[14]) & mask, 7))) & mask
+            -> _
+        }
+        x[13]: {
+            ok -> it = (x[13] ^ (rotl32((x[12] + x[15]) & mask, 9))) & mask
+            -> _
+        }
+        x[14]: {
+            ok -> it = (x[14] ^ (rotl32((x[13] + x[12]) & mask, 13))) & mask
+            -> _
+        }
+        x[15]: {
+            ok -> it = (x[15] ^ (rotl32((x[14] + x[13]) & mask, 18))) & mask
+            -> _
+        }
     }
 
     ; 加上初始值並寫回（小端序）
@@ -106,16 +208,28 @@ salsa20-8-core = (block []byte) {
 
         #{overflow=wrap}
         off = i * 4
-        block[off] = val & 255
+        block[off]: {
+            ok -> it = val & 255
+            -> _
+        }
 
         #{overflow=wrap}
-        block[off + 1] = (val >> 8) & 255
+        block[off + 1]: {
+            ok -> it = (val >> 8) & 255
+            -> _
+        }
 
         #{overflow=wrap}
-        block[off + 2] = (val >> 16) & 255
+        block[off + 2]: {
+            ok -> it = (val >> 16) & 255
+            -> _
+        }
 
         #{overflow=wrap}
-        block[off + 3] = (val >> 24) & 255
+        block[off + 3]: {
+            ok -> it = (val >> 24) & 255
+            -> _
+        }
     }
 }
 
@@ -141,7 +255,10 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
     i <- [0..64): {
 
         #{index-out=zero, overflow=wrap}
-        x[i] = b[(total - 1) * 64 + i]
+        x[i]: {
+            ok -> it = b[(total - 1) * 64 + i]
+            -> _
+        }
     }
 
     ; Y 陣列（2r 個 64 位元組區塊）
@@ -154,7 +271,10 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
         j <- [0..64): {
 
             #{index-out=zero}
-            x[j] = (b[i * 64 + j]) ^ (x[j])
+            x[j]: {
+                ok -> it = (b[i * 64 + j]) ^ (x[j])
+                -> _
+            }
         }
 
         ; X = Salsa20/8(X)
@@ -164,7 +284,10 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
         j <- [0..64): {
 
             #{index-out=zero, overflow=wrap}
-            y[i * 64 + j] = x[j]
+            y[i * 64 + j]: {
+                ok -> it = x[j]
+                -> _
+            }
         }
     }
 
@@ -210,7 +333,10 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     i <- [0..block-bytes): {
 
         #{index-out=zero}
-        x[i] = b[i]
+        x[i]: {
+            ok -> it = b[i]
+            -> _
+        }
     }
 
     ; 第一階段：填充 V
@@ -219,7 +345,10 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     i <- [0..block-bytes): {
 
         #{index-out=zero}
-        v[i] = x[i]
+        v[i]: {
+            ok -> it = x[i]
+            -> _
+        }
     }
     n-idx = 1
     (n-idx < n) {
@@ -229,10 +358,16 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         i <- [0..block-bytes): {
 
             #{index-out=zero}
-            x[i] = mixed[i]
+            x[i]: {
+                ok -> it = mixed[i]
+                -> _
+            }
 
             #{index-out=zero, overflow=wrap}
-            v[n-idx * block-bytes + i] = mixed[i]
+            v[n-idx * block-bytes + i]: {
+                ok -> it = mixed[i]
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -262,7 +397,10 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         i <- [0..block-bytes): {
 
             #{index-out=zero}
-            x[i] = (x[i]) ^ (v[j * block-bytes + i])
+            x[i]: {
+                ok -> it = (x[i]) ^ (v[j * block-bytes + i])
+                -> _
+            }
         }
 
         ; X = BlockMix(X)
@@ -270,7 +408,10 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         i <- [0..block-bytes): {
 
             #{index-out=zero}
-            x[i] = mixed[i]
+            x[i]: {
+                ok -> it = mixed[i]
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -315,7 +456,10 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
         j <- [0..block-bytes): {
 
             #{index-out=zero, overflow=wrap}
-            b-i[j] = b[i * block-bytes + j]
+            b-i[j]: {
+                ok -> it = b[i * block-bytes + j]
+                -> _
+            }
         }
 
         ; ROMix
@@ -325,7 +469,10 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
         j <- [0..block-bytes): {
 
             #{index-out=zero, overflow=wrap}
-            b[i * block-bytes + j] = mixed[j]
+            b[i * block-bytes + j]: {
+                ok -> it = mixed[j]
+                -> _
+            }
         }
     }
 

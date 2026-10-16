@@ -1975,7 +1975,12 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
                     break
                 }
             }
-            dup >= 0 -> vals[dup] = val
+            dup >= 0 -> {
+                vals[dup]: {
+                    ok -> it = val
+                    -> _
+                }
+            }
             dup < 0 -> {
                 keys.push(key)
                 vals.push(val)

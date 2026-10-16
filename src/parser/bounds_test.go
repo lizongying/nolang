@@ -1,8 +1,10 @@
 package parser
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
 )
 
@@ -165,5 +167,67 @@ func TestAnalyzeInBoundsIndexNotRemovableForSlice(t *testing.T) {
 	res := AnalyzeInBoundsIndex(prog)
 	if len(res.AnnRemovable) != 0 {
 		t.Fatalf("slice read #{index-out} must NOT be removable, got %d", len(res.AnnRemovable))
+	}
+}
+
+func TestInBoundsProofLivesInSemanticSideTable(t *testing.T) {
+	if _, ok := reflect.TypeOf(IndexExpression{}).FieldByName("InBounds"); ok {
+		t.Fatal("IndexExpression still carries semantic InBounds state")
+	}
+
+	prog := parseSurface(t, `f = () {
+    a [3]i64 = [0, 0, 0]
+    x = a[1]
+}`)
+	var idx *IndexExpression
+	walkNodes(prog, func(n interface{}) {
+		if e, ok := n.(*IndexExpression); ok {
+			idx = e
+		}
+	})
+	if idx == nil {
+		t.Fatal("fixture did not produce an IndexExpression")
+	}
+	if !prog.Sem.IndexIsInBounds(idx) {
+		t.Fatal("ParseProgram did not publish the in-bounds proof to Program.Sem")
+	}
+
+	pkg := ASTToHIR(prog)
+	if pkg == nil {
+		t.Fatal("ASTToHIR returned nil")
+	}
+	foundHIRProof := false
+	for i := range pkg.Nodes {
+		n := &pkg.Nodes[i]
+		if n.Kind == hir.KIndex && n.Has(hir.FlagInBounds) {
+			foundHIRProof = true
+			break
+		}
+	}
+	if !foundHIRProof {
+		t.Fatal("ASTToHIR failed to transfer the semantic proof to hir.FlagInBounds")
+	}
+
+	// AnalyzeInBoundsIndex returns its proof set but must not write either the
+	// syntax AST or the Program.Sem consumer table as a hidden side effect.
+	prog.Sem.SetIndexInBounds(idx, false)
+	res := AnalyzeInBoundsIndex(prog)
+	if !res.Reads[idx] {
+		t.Fatal("AnalyzeInBoundsIndex omitted the provably in-bounds read")
+	}
+	if prog.Sem.IndexIsInBounds(idx) {
+		t.Fatal("AnalyzeInBoundsIndex mutated Program.Sem; callers must publish results explicitly")
+	}
+
+	unknown := parseSurface(t, `f = (i i64) {
+    a [3]i64 = [0, 0, 0]
+    x = a[i]
+}`)
+	unknownHIR := ASTToHIR(unknown)
+	for i := range unknownHIR.Nodes {
+		n := &unknownHIR.Nodes[i]
+		if n.Kind == hir.KIndex && n.Has(hir.FlagInBounds) {
+			t.Fatal("ASTToHIR marked an unproven index read as in-bounds")
+		}
 	}
 }
