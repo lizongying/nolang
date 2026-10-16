@@ -922,11 +922,15 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		})
 
 	case *IndexExpression:
-		return c.b.Add(hir.Node{
+		node := hir.Node{
 			Kind:  hir.KIndex,
 			First: c.b.List([]int32{c.expr(e.Left), c.expr(e.Index)}),
 			Line:  line, Col: col,
-		})
+		}
+		if e.InBounds {
+			node.Flags |= hir.FlagInBounds
+		}
+		return c.b.Add(node)
 
 	case *AssignExpression:
 		return c.b.Add(hir.Node{

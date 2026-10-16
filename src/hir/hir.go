@@ -189,6 +189,7 @@ const (
 	FlagAsKeyword // `use path.fn as alias`
 	FlagSlice     // StructField.IsSlice (legacy slice modifier)
 	FlagFuncType  // declared type renders as a function type
+	FlagInBounds uint32 = 1 << 22 // index read proven provably in-bounds by the bounds analyzer
 	// FlagTypeDefault marks a KTypeArm of a KTypeMatch that catches every union
 	// member not covered by an explicit type pattern (the `->` default arm).
 	// KTypeMatch performs static single-dispatch by the monomorphized concrete

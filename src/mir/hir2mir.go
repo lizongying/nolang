@@ -3905,11 +3905,27 @@ func (l *lowerer) lowerCond(id int32) ValueID {
 // The result slot is created in the block that dominates both arms (as an
 // option-typed constant, i.e. nil), so the arms only ever overwrite it — MIR
 // has no phi, every branch convergence goes through such a shared slot.
-func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID) ValueID {
+func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID, inBounds bool) ValueID {
 	i64T := l.b.Type("i64")
 	boolT := l.b.Type("bool")
 	if i64T == l.voidType || boolT == l.voidType {
 		return NoVal
+	}
+	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
+	if inBounds {
+		// Provably in-bounds (constant subscript / for-range induction var /
+		// fixed-len slice): skip the runtime idx<len comparison. The read still
+		// yields ok(elem), so the user-side ?elem type is unchanged (D7/D9); the
+		// dominated place-match write also needs no separate bound check.
+		e := l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
+		if e != NoVal {
+			if et := l.mod.Type(elemT); et != nil && et.Kind == KindStr {
+				e = l.b.Emit(OpClone, elemT, []ValueID{e}, "")
+			}
+			wrapped := l.b.EmitOptionWrap(optT, 0, e)
+			l.b.EmitMoveInto(sink, wrapped)
+		}
+		return sink
 	}
 	n := l.b.Emit(OpLen, i64T, []ValueID{arrV}, "")
 	if n == NoVal {
@@ -3919,8 +3935,6 @@ func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID) ValueID
 	nonneg := l.b.Emit(OpGe, boolT, []ValueID{idxV, zero}, "")
 	inRange := l.b.Emit(OpLt, boolT, []ValueID{idxV, n}, "")
 	ok := l.b.Emit(OpAnd, boolT, []ValueID{nonneg, inRange}, "")
-
-	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
 
 	okBlk := l.b.NewBlock("idx.ok")
 	noneBlk := l.b.NewBlock("idx.none")
@@ -3995,21 +4009,31 @@ func (l *lowerer) isUTF8IndexReceiver(v ValueID) bool {
 // 修法是反过来信哨兵：先读，再拿读数与 -1 比较。这要求读数保持 i64 精度 ——
 // 若 OpIndex 的目标型别是 i8/i32，-1 会被截断成 0xFF / 0xFFFFFFFF 而永远不等
 // 于 -1，所以这里显式以 i64 发射读取，成功分支再 cast 回 elemT。
-func (l *lowerer) lowerSafeUTF8Index(arrV, idxV ValueID, elemT, optT TypeID) ValueID {
+func (l *lowerer) lowerSafeUTF8Index(arrV, idxV ValueID, elemT, optT TypeID, inBounds bool) ValueID {
 	i64T := l.b.Type("i64")
 	boolT := l.b.Type("bool")
 	if i64T == l.voidType || boolT == l.voidType {
-		return l.lowerSafeIndex(arrV, idxV, elemT, optT)
+		return l.lowerSafeIndex(arrV, idxV, elemT, optT, inBounds)
 	}
 	// Read at i64 so the -1 sentinel survives (see the comment above).
 	cp := l.b.Emit(OpIndex, i64T, []ValueID{arrV, idxV}, "")
 	if cp == NoVal {
 		return NoVal
 	}
+	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
+	if inBounds {
+		// Provably in-bounds: skip the -1 sentinel check; the code-point read
+		// at an in-range code-point index is always valid, wrap directly as ok.
+		e := cp
+		if elemT != i64T {
+			e = l.b.Emit(OpCast, elemT, []ValueID{cp}, "")
+		}
+		wrapped := l.b.EmitOptionWrap(optT, 0, e)
+		l.b.EmitMoveInto(sink, wrapped)
+		return sink
+	}
 	minusOne := l.b.EmitInt(OpConst, i64T, -1, "")
 	inRange := l.b.Emit(OpNe, boolT, []ValueID{cp, minusOne}, "")
-
-	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
 
 	okBlk := l.b.NewBlock("cp.ok")
 	noneBlk := l.b.NewBlock("cp.none")
@@ -5820,10 +5844,10 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				// 的下标（`'héllo'[5]`：OpLen=6 → 误判在界内），读出来却是
 				// @nolang.utf8_cp_at 的越界哨兵 -1，于是把它当成 ok(-1) 交给用户。
 				// 这两类接收者必须改用哨兵判定。
-				if l.isUTF8IndexReceiver(arrV) {
-					return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint)
-				}
-				return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint)
+			if l.isUTF8IndexReceiver(arrV) {
+				return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint, l.pkg.Node(id).Has(hir.FlagInBounds))
+			}
+			return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint, l.pkg.Node(id).Has(hir.FlagInBounds))
 			}
 		}
 		return l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")

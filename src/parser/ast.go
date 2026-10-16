@@ -1712,6 +1712,11 @@ type IndexExpression struct {
 	Token lexer.Token // [
 	Left  Expression  // 被索引的對象
 	Index Expression  // 索引值
+	// InBounds 由 bounds 分析器證明「此索引讀取可證在界內」時置位（常量下標、
+	// for-range 歸納變數、定長切片 with-len(K)）。HIR→MIR lowering 據此跳過
+	// 安全讀取（產出 ?elem）的運行時界檢查；用戶側型別不變（D7/D9）。寫入
+	// 節點的 InBounds 由 lowering 依「寫受讀支配」從對應讀節點推導。
+	InBounds bool
 }
 
 func (ie *IndexExpression) expressionNode()     {}

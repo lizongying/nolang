@@ -193,10 +193,12 @@ func (a *boundsAnalyzer) mark(e *IndexExpression, ctx boundsCtx) {
 	case *IntegerLiteral:
 		if idx.Value >= 0 && idx.Value < n {
 			a.inb[e] = true
+			e.InBounds = true
 		}
 	case *Identifier:
 		if b, ok := ctx[idx.Value]; ok && b[0] >= 0 && b[1] < n {
 			a.inb[e] = true
+			e.InBounds = true
 		}
 	}
 }

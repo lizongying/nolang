@@ -2413,7 +2413,11 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		// __idx/__place 合成寫回；此時讓 match 走純讀語義（it = 載荷副本），surface
 		// 仍可被 formatter 完整往返，編譯時（SkipSafeIndexLowering=false）再真正降糖。
 		if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) && !p.SkipSafeIndexLowering {
-			arm.body = p.rewriteItPlaceWrites(arm.body, tok, baseName, idxTempName, elemType, &placeWriteUsed)
+			writeInBounds := false
+			if idx, ok := origMatched.(*IndexExpression); ok {
+				writeInBounds = idx.InBounds
+			}
+			arm.body = p.rewriteItPlaceWrites(arm.body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds)
 		}
 		if armType != "" {
 				// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
@@ -2943,11 +2947,11 @@ func itAssignParts(s Statement) (Expression, bool) {
 // Nested matches — already lowered into RTBareMatch-flagged IfExpressions by
 // the time this runs — are skipped: their `it` belongs to the inner match.
 // User-written if/for blocks are descended into.
-func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool) *BlockStatement {
+func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool) *BlockStatement {
 	if body == nil || baseName == "" || idxTempName == "" {
 		return body
 	}
-	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseName, idxTempName, elemType, used)
+	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds)
 	if !changed {
 		return body // nothing rewritten
 	}
@@ -2958,7 +2962,7 @@ func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, bas
 	return nb
 }
 
-func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool) ([]Statement, bool) {
+func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool) ([]Statement, bool) {
 	changed := false
 	out := make([]Statement, 0, len(stmts)+2)
 	for _, s := range stmts {
@@ -2981,7 +2985,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 				},
 				&ExpressionStatement{Token: tok, Expression: &AssignExpression{
 					Token:       tok,
-					Left:        &IndexExpression{Token: tok, Left: &Identifier{Token: tok, Value: baseName}, Index: &Identifier{Token: tok, Value: idxTempName}},
+					Left:        &IndexExpression{Token: tok, Left: &Identifier{Token: tok, Value: baseName}, Index: &Identifier{Token: tok, Value: idxTempName}, InBounds: writeInBounds},
 					Value:       &Identifier{Token: tok, Value: placeName},
 					IsSynthetic: true,
 				}},
@@ -3001,20 +3005,20 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 		// 已降糖的巢狀 match（RTBareMatch 旗標）整棵跳過——它的 it 屬於內層。
 		switch n := s.(type) {
 		case *BlockStatement:
-			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseName, idxTempName, elemType, used); ch {
+			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
 				n.Statements = ns
 				changed = true
 			}
 		case *ExpressionStatement:
 			if ie, ok := n.Expression.(*IfExpression); ok && !p.sem.HasRTFlag(ie, RTBareMatch) {
-				if ie.Consequence != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used); ch {
+			if ie.Consequence != nil {
+				if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
 						ie.Consequence.Statements = ns
 						changed = true
 					}
 				}
 				if ie.Alternative != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used); ch {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
 						ie.Alternative.Statements = ns
 						changed = true
 					}
@@ -3022,7 +3026,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 			}
 		case *ForStatement:
 			if n.Body != nil {
-				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseName, idxTempName, elemType, used); ch {
+				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
 					n.Body.Statements = ns
 					changed = true
 				}

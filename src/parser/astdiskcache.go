@@ -86,7 +86,7 @@ import (
 // 在 statement 語境的安全索引 match ok 臂內把 `it = v` 改寫為寫回序列，並新增
 // AssignExpression.IsSynthetic 欄位（gob 編碼形狀改變，舊緩存缺該欄位會讓
 // idxwrite 檢查漏跳合成節點，故必須 bump）。
-const ASTVersion = "2026-10-15.3"
+const ASTVersion = "2026-10-16.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent
