@@ -112,6 +112,14 @@ func walkProgramNodes(prog *Program, visit func(Node)) {
 	}
 }
 
+// CountProgramNodes 回傳 SerializeNodeSem 走查會觸及的節點 occurrence 總數
+// （打包統計用；口徑與 nodeSem 副表的索引空間一致）。
+func CountProgramNodes(prog *Program) int {
+	n := 0
+	walkProgramNodes(prog, func(Node) { n++ })
+	return n
+}
+
 func walkValue(v reflect.Value, visit func(Node), onPath map[Node]bool) {
 	switch v.Kind() {
 	case reflect.Invalid:

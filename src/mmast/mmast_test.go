@@ -1,7 +1,9 @@
 package mmast
 
 import (
+	"archive/zip"
 	"bytes"
+	"encoding/gob"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,7 +33,8 @@ func TestASTZipRoundTrip(t *testing.T) {
 	for _, rel := range []string{"vec.no", "json.no", "net/tls.no", "crypto/x509.no", "str.no"} {
 		prog := parseStd(t, rel)
 		var buf bytes.Buffer
-		if err := WriteASTZip(&buf, prog, "test", rel, "deadbeef"); err != nil {
+		st, err := WriteASTZip(&buf, prog, nil)
+		if err != nil {
 			t.Fatalf("%s: write zip: %v", rel, err)
 		}
 		back, info, err := ReadASTZip(buf.Bytes())
@@ -44,10 +47,10 @@ func TestASTZipRoundTrip(t *testing.T) {
 		if want != got {
 			t.Fatalf("%s: dump mismatch (%d vs %d bytes)", rel, len(want), len(got))
 		}
-		if info.Manifest.Nodes == 0 || info.SrcSHA != "deadbeef" {
-			t.Fatalf("%s: bad manifest %+v", rel, info.Manifest)
+		if st.Nodes == 0 || info.ZipVer != ZipVer || info.AstVer != parser.ASTVersion {
+			t.Fatalf("%s: bad stats/manifest: %+v %+v", rel, st, info)
 		}
-		t.Logf("%-16s zip=%7d bytes  nodes=%6d", rel, buf.Len(), info.Manifest.Nodes)
+		t.Logf("%-16s zip=%7d bytes  nodes=%6d", rel, buf.Len(), st.Nodes)
 	}
 }
 
@@ -66,11 +69,11 @@ func TestPackFlowRoundTrip(t *testing.T) {
 		t.Fatalf("parse: %v", errs)
 	}
 	var buf bytes.Buffer
-	st, err := WriteASTZipWithStats(&buf, prog, "vec", rel, "")
+	st, err := WriteASTZip(&buf, prog, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Nodes == 0 || st.Chunks == 0 || st.Bytes != int64(buf.Len()) {
+	if st.Nodes == 0 || st.Bytes != int64(buf.Len()) {
 		t.Fatalf("bad stats: %+v (buffer %d)", st, buf.Len())
 	}
 	back, _, err := ReadASTZip(buf.Bytes())
@@ -81,26 +84,23 @@ func TestPackFlowRoundTrip(t *testing.T) {
 	if want, got := dump.DumpWithOptions(prog, opts), dump.DumpWithOptions(back, opts); want != got {
 		t.Fatal("dump mismatch after pack/unpack")
 	}
-	t.Logf("pack flow: nodes=%d chunks=%d bytes=%d", st.Nodes, st.Chunks, st.Bytes)
+	t.Logf("pack flow: nodes=%d bytes=%d", st.Nodes, st.Bytes)
 }
 
-// TestASTZipLayout：zip 必須恰好含 manifest.mm + tree.mm 兩個條目（單文檔佈局）。
-// mm 的容器上限已放開到 4GB，整棵樹原樣塞進 tree.mm，不再按位元組切片。
+// TestASTZipLayout：zip 必須恰好只含 ast.gob 一個條目（版本前置欄在流内，
+// 沒有獨立清單；gob 流没有容器上限，整棵樹原樣塞進 ast.gob）。
 func TestASTZipLayout(t *testing.T) {
 	prog := parseStd(t, "net/tls.no")
 	var buf bytes.Buffer
-	if err := WriteASTZip(&buf, prog, "tls", "net/tls.no", ""); err != nil {
+	if _, err := WriteASTZip(&buf, prog, nil); err != nil {
 		t.Fatal(err)
 	}
 	zr, err := readZipEntries(buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(zr) != 2 {
-		t.Fatalf("expected manifest.mm + tree.mm (2 entries), got %d: %v", len(zr), keysOf(zr))
-	}
-	if _, ok := zr[manifestName]; !ok {
-		t.Fatalf("missing %s", manifestName)
+	if len(zr) != 1 {
+		t.Fatalf("expected ast.gob only (1 entry), got %d: %v", len(zr), keysOf(zr))
 	}
 	if _, ok := zr[treeName]; !ok {
 		t.Fatalf("missing %s", treeName)
@@ -116,8 +116,7 @@ func keysOf(m map[string][]byte) []string {
 	return out
 }
 
-// TestASTZipTiny：極小模組走完整 mm→zip→mm 路徑（樹 <64KB，不依賴 4GB 容器）。
-// 驗證單文檔佈局的編解碼本身正確（大模組要等 mm 容器放開到 4GB）。
+// TestASTZipTiny：極小模組走完整 pack→zip→read 路徑，驗證編解碼本身正確。
 func TestASTZipTiny(t *testing.T) {
 	src := "x = 1\ny = x + 2\nz = y * 3\n"
 	p := parser.New(lexer.New(src))
@@ -126,10 +125,11 @@ func TestASTZipTiny(t *testing.T) {
 		t.Fatalf("parse: %v", errs)
 	}
 	var buf bytes.Buffer
-	if err := WriteASTZip(&buf, prog, "tiny", "tiny.no", "abc123"); err != nil {
+	st, err := WriteASTZip(&buf, prog, nil)
+	if err != nil {
 		t.Fatalf("write zip: %v", err)
 	}
-	back, info, err := ReadASTZip(buf.Bytes())
+	back, _, err := ReadASTZip(buf.Bytes())
 	if err != nil {
 		t.Fatalf("read zip: %v", err)
 	}
@@ -137,14 +137,16 @@ func TestASTZipTiny(t *testing.T) {
 	if want, got := dump.DumpWithOptions(prog, opts), dump.DumpWithOptions(back, opts); want != got {
 		t.Fatal("dump mismatch after tiny pack/unpack")
 	}
-	t.Logf("tiny: zip=%d bytes nodes=%d", buf.Len(), info.Manifest.Nodes)
+	t.Logf("tiny: zip=%d bytes nodes=%d", buf.Len(), st.Nodes)
 }
 
-// TestASTZipVersionGuard：zip/節點表版本不符必須硬錯。
+// TestASTZipVersionGuard：zip/ast 版本不符必須硬錯。gob 對 schema 漂移是静默
+// 跳過，所以閘得我們自己把：篡改 ast.gob 流内的 ZipVer/AstVer 要能被 ReadASTZip
+// 拦下（重编一個只改版本前置欄的 ast.gob，AST 本體原樣保留）。
 func TestASTZipVersionGuard(t *testing.T) {
 	prog := parseStd(t, "vec.no")
 	var buf bytes.Buffer
-	if err := WriteASTZip(&buf, prog, "vec", "vec.no", ""); err != nil {
+	if _, err := WriteASTZip(&buf, prog, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := ReadASTZip(buf.Bytes()); err != nil {
@@ -153,4 +155,81 @@ func TestASTZipVersionGuard(t *testing.T) {
 	if _, _, err := ReadASTZip([]byte("not a zip")); err == nil {
 		t.Fatal("expected zip open error")
 	}
+
+	tamper := func(t *testing.T, field string, mutate func(*astDoc)) {
+		t.Helper()
+		entries, err := readZipEntries(buf.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc astDoc
+		if err := gob.NewDecoder(bytes.NewReader(entries[treeName])).Decode(&doc); err != nil {
+			t.Fatal(err)
+		}
+		mutate(&doc)
+		var tb bytes.Buffer
+		if err := gob.NewEncoder(&tb).Encode(&doc); err != nil {
+			t.Fatal(err)
+		}
+		var zb bytes.Buffer
+		zw := zip.NewWriter(&zb)
+		tw, err := zw.Create(treeName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(tb.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := ReadASTZip(zb.Bytes()); err == nil {
+			t.Fatalf("expected hard error on tampered %s", field)
+		} else {
+			t.Logf("tampered %s rejected: %v", field, err)
+		}
+	}
+	tamper(t, "ZipVer", func(d *astDoc) { d.ZipVer = ZipVer + ".tampered" })
+	tamper(t, "AstVer", func(d *astDoc) { d.AstVer = parser.ASTVersion + ".tampered" })
+}
+
+// TestASTZipWithPackageJSONC：附 package.jsonc 打包時 zip 应多一個條目，
+// 且 ReadASTZip 回傳的位元組與寫入完全一致（原樣分發，不做任何改寫）。
+func TestASTZipWithPackageJSONC(t *testing.T) {
+	prog := parseStd(t, "vec.no")
+	pj := []byte("{\n  name: \"vec\",\n  version: \"v1.2.3\",\n  dependencies: { nogit: \"nogit@github.com/lizongying/notools\" },\n}\n")
+	var buf bytes.Buffer
+	if _, err := WriteASTZip(&buf, prog, pj); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := readZipEntries(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected ast.gob + package.jsonc, got %v", keysOf(entries))
+	}
+	back, info, err := ReadASTZip(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back == nil {
+		t.Fatal("nil program after read")
+	}
+	if !bytes.Equal(info.PackageJSONC, pj) {
+		t.Fatalf("package.jsonc round-trip mismatch: %q", info.PackageJSONC)
+	}
+	// 不附清單的入口維持單條目，且 PackageJSONC 為 nil。
+	var plain bytes.Buffer
+	if _, err := WriteASTZip(&plain, prog, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, info, err = ReadASTZip(plain.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.PackageJSONC != nil {
+		t.Fatalf("plain zip should carry no package.jsonc, got %q", info.PackageJSONC)
+	}
+	t.Logf("with package.jsonc: zip=%d bytes, round-trip OK", buf.Len())
 }

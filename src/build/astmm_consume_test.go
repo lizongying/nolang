@@ -2,8 +2,6 @@ package build
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,7 +22,7 @@ const astDepModuleSrc = "greet = (name str) (out str) {\n  out = 'hi ' + name\n}
 //
 //	生產側  no pack  →  mymod.ast.zip
 //	消費側  use mymod →  package.jsonc 的 `mymod@host/owner/repo` 依賴鍵
-//	                  →  ReleaseASTZipURL → zip → mm → *parser.Program
+//	                  →  ReleaseASTZipURL → zip → gob → *parser.Program
 //
 // 編碼/解碼的正確性由 mmast 與 parser 各自的測試覆蓋；這裡只保證三件事：
 //  1. 帶 @ 的依賴鍵能被 MatchDependency 認出來（這是過去匹配不上的地方）；
@@ -45,8 +43,7 @@ func TestResolveUseASTDependency(t *testing.T) {
 		t.Fatalf("parse: %v", errs[0])
 	}
 	var zipBuf bytes.Buffer
-	sum := sha256.Sum256([]byte(astDepModuleSrc))
-	if err := mmast.WriteASTZip(&zipBuf, want, "mymod", "mymod.no", hex.EncodeToString(sum[:])); err != nil {
+	if _, err := mmast.WriteASTZip(&zipBuf, want, nil); err != nil {
 		t.Fatalf("WriteASTZip: %v", err)
 	}
 	zipBytes := zipBuf.Bytes()

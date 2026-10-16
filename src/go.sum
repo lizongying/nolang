@@ -1,13 +1,3 @@
-github.com/metamessage/metamessage v0.2.11 h1:AZw8jZGZpujBSfz3+Z3j9BvIcjrWIVnSdvfv4/ziuRU=
-github.com/metamessage/metamessage v0.2.11/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
-github.com/metamessage/metamessage v0.2.12 h1:Vv1k88vqFJD1Q7dSjA0253nBdJbdymk2zW/E+AY9IaE=
-github.com/metamessage/metamessage v0.2.12/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
-github.com/metamessage/metamessage v0.2.13 h1:LE/LXgAnqcHsbQ4/eqO09Cs6CgTSenD/Qag2hGjdg6M=
-github.com/metamessage/metamessage v0.2.13/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
-github.com/metamessage/metamessage v0.2.14 h1:Wcon6PlYPmbnMkdRzeDr8ve3Y92yP1SApYIalg3xiqw=
-github.com/metamessage/metamessage v0.2.14/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
-github.com/metamessage/metamessage v0.2.16 h1:xLp16oXMPp/w9xdBbEuZT2jGPJsGw8oD2KBGzq0VFjM=
-github.com/metamessage/metamessage v0.2.16/go.mod h1:OnS+8VInIHjaEgUnF064VFHPzh8qX3psqUF6YoIjaf4=
 github.com/segmentio/asm v1.1.3 h1:WM03sfUOENvvKexOLp+pCqgb/WDjsi7EK8gIsICtzhc=
 github.com/segmentio/asm v1.1.3/go.mod h1:Ld3L4ZXGNcSLRg4JBsZ3//1+f/TjYl0Mzen/DQy1EJg=
 github.com/segmentio/encoding v0.3.4 h1:WM4IBnxH8B9TakiM2QD5LyNl9JSndh88QbHqVC+Pauc=

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -20,13 +18,13 @@ import (
 	nbuild "github.com/lizongying/nolang/build"
 	nllvmapi "github.com/lizongying/nolang/build/llvmapi"
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/checker/stdastembed"
 	nfmt "github.com/lizongying/nolang/fmt"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/mmast"
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/parser/dump"
-	"github.com/lizongying/nolang/checker/stdastembed"
 )
 
 type ProjectConfig struct {
@@ -310,7 +308,7 @@ func printUsage() {
 	fmt.Println("      no uninstall nogit")
 	fmt.Println("  no sync              Sync/download dependencies")
 	fmt.Println("  no pack [-o <file>] [<dir|file.no>]")
-	fmt.Println("                    Pack a module's AST as <tool>.ast.zip (MetaMessage + zip).")
+	fmt.Println("                    Pack a module's AST as <tool>.ast.zip (gob + zip).")
 	fmt.Println("                    Lexer+parser only — no LLVM toolchain, safe for CI.")
 	fmt.Println("    Examples:")
 	fmt.Println("      no pack                     pack current package -> dist/<name>.ast.zip")
@@ -3307,6 +3305,7 @@ func printLintResultsJSON(results []nbuild.LintResult) int {
 // 這是 `no pack` 與未來 `no pub`（打包 + 上傳）共用的唯一打包入口。
 func packAST(target, out string) (string, *mmast.ZipStats, error) {
 	var name, src string
+	var pkgJSONC []byte
 	if strings.HasSuffix(target, ".no") {
 		src = target
 		name = strings.TrimSuffix(filepath.Base(target), ".no")
@@ -3321,6 +3320,11 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 			src = "main.no"
 		}
 		src = filepath.Join(target, src)
+		// 隨包分發原始清單：消費端 no add 不解仓库就能拿到 name/version/dependencies。
+		// 讀失敗不致命（AST 本身已完整），缺了條目只是少帶清單。
+		if raw, err := os.ReadFile(filepath.Join(p.RootDir, "package.jsonc")); err == nil {
+			pkgJSONC = raw
+		}
 	}
 
 	raw, err := os.ReadFile(src)
@@ -3352,8 +3356,7 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	sum := sha256.Sum256(raw)
-	st, err := mmast.WriteASTZipWithStats(f, prog, name, src, hex.EncodeToString(sum[:]))
+	st, err := mmast.WriteASTZip(f, prog, pkgJSONC)
 	if cerr := f.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
@@ -3369,7 +3372,7 @@ func packCommand(args []string) {
 	fs.Usage = func() {
 		fmt.Println("Usage: no pack [-o <file>] [<dir|file.no>]")
 		fmt.Println("")
-		fmt.Println("Pack a module's AST as MetaMessage + zip (<tool>.ast.zip).")
+		fmt.Println("Pack a module's AST as gob + zip (<tool>.ast.zip).")
 		fmt.Println("Only lexing/parsing is needed — no LLVM toolchain — so this runs")
 		fmt.Println("in CI to produce the asset `no add` downloads:")
 		fmt.Println("  <host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip")
@@ -3395,10 +3398,10 @@ func packCommand(args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("Packed AST: %s\n", dst)
-	fmt.Printf("  bytes:  %d\n  nodes:  %d\n  chunks: %d\n", st.Bytes, st.Nodes, st.Chunks)
+	fmt.Printf("  bytes:  %d\n  nodes:  %d\n", st.Bytes, st.Nodes)
 }
 
-// pubCommand 把當前包打包成預編 AST 包 <name>.ast.zip（MetaMessage + zip）。
+// pubCommand 把當前包打包成預編 AST 包 <name>.ast.zip（gob + zip）。
 // 這是 `no add <tool>@<host>/<owner>/<repo>` 會去 GitHub Releases 抓的產物
 // （見 docs/design/nolang-mm-ast.md）。上傳 registry 尚未實作：給了
 // --registry/--token 也只會提示，不會靜默假裝成功。
@@ -3410,7 +3413,7 @@ func pubCommand(args []string) {
 	fs.Usage = func() {
 		fmt.Println("Usage: no pub [-o <file>]")
 		fmt.Println("")
-		fmt.Println("Package the current package's AST as MetaMessage + zip.")
+		fmt.Println("Package the current package's AST as gob + zip.")
 		fmt.Println("The result is what `no add <tool>@<host>/<owner>/<repo>` downloads:")
 		fmt.Println("<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip")
 		fmt.Println("")
@@ -3430,7 +3433,7 @@ func pubCommand(args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("Packed AST: %s\n", dst)
-	fmt.Printf("  bytes:  %d\n  nodes:  %d\n  chunks: %d\n", st.Bytes, st.Nodes, st.Chunks)
+	fmt.Printf("  bytes:  %d\n  nodes:  %d\n", st.Bytes, st.Nodes)
 	if *registry != "" || *token != "" {
 		fmt.Println("Note: registry upload is not implemented yet; upload this zip to a GitHub release.")
 	}

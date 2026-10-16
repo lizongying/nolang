@@ -143,22 +143,4 @@ func TestUserASTCacheRoundTripPreservesInBoundsProof(t *testing.T) {
 	if gotIdx == nil || !got.Sem.IndexIsInBounds(gotIdx) {
 		t.Fatal("cache round-trip lost the IndexExpression's side-table proof")
 	}
-
-	tree, err := EncodeASTTree(orig, "")
-	if err != nil {
-		t.Fatalf("AST-tree encode: %v", err)
-	}
-	mmProgram, err := DecodeASTTree(tree)
-	if err != nil {
-		t.Fatalf("AST-tree decode: %v", err)
-	}
-	var mmIdx *IndexExpression
-	walkNodes(mmProgram, func(n interface{}) {
-		if idx, ok := n.(*IndexExpression); ok {
-			mmIdx = idx
-		}
-	})
-	if mmIdx == nil || !mmProgram.Sem.IndexIsInBounds(mmIdx) {
-		t.Fatal("AST-tree round-trip lost the IndexExpression's side-table proof")
-	}
 }

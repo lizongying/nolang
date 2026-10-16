@@ -14,9 +14,8 @@ import "encoding/gob"
 //
 // When a new node type is added to ast.go it MUST be added here too, or the
 // AST-cache tests (TestProgramGobRoundTrip) will fail fast.
-// gobNodeTypes 是所有可能出現在介面背後的具體節點型別，供 gob 註冊與
-// MetaMessage 的 kind 註冊表共用（見 mm_kinds.go）：兩者必須完全一致，
-// 否則 mm 反序列化會對某些 kind 找不到型別。
+// gobNodeTypes 是所有可能出現在介面背後的具體節點型別。新增節點型別時這裡
+// MUST 同步補登，否則 gob 編解碼會 panic（"type not registered for interface"）。
 var gobNodeTypes = []any{
 	// ---- Statements ----
 	&UseStatement{},

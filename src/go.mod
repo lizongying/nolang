@@ -2,10 +2,7 @@ module github.com/lizongying/nolang
 
 go 1.25.4
 
-require (
-	github.com/metamessage/metamessage v0.2.16
-	go.lsp.dev/jsonrpc2 v0.10.0
-)
+require go.lsp.dev/jsonrpc2 v0.10.0
 
 require (
 	github.com/segmentio/asm v1.1.3 // indirect
