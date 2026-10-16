@@ -2,15 +2,17 @@ package parser
 
 // MetaMessage 承載用的 AST ↔ 節點表（ASTTree）編解碼。
 //
-// 形態：**一張扁平節點表 + 依索引的邊**，節點形状對齊原始 AST。
-//   - 每個 AST 節點 → ASTNode{K, F}：K 是 Go 結構型別名，F 是**依原始宣告順序**
-//     展開的具名字段清單（不把欄位拆成「標量 C」+「子節點 Kids」兩組、丟失交錯順序）。
+// 形態：**一張扁平節點表 + 依索引的邊 + 名字字典**，節點形状對齊原始 AST。
+//   - 每個 AST 節點 → ASTNode{K, F}：K 是 Go 結構型別名的 **u16 字典索引**（見
+//     ASTTree.Names），F 是**依原始宣告順序**展開的具名字段清單（不把欄位拆成
+//     「標量 C」+「子節點 Kids」兩組、丟失交錯順序）。
 //   - 每個欄位 → ASTField：按 Kind 承載該欄位的值。節點型欄位以「子節點在本表中的
 //     索引」引用（存進 Vals，字串化）——**沒有** MMSlice / MMMap / MMVal / MMBytes /
 //     MMEntry 這些原 AST 中不存在的合成容器節點。非節點集合（[]string / []byte / map）
-//     內聯：[]string 逐元素進 Vals；[]byte 走 base64 進 S；map 走自描述二進位 blob
-//     （base64）進 S。
-//   - 語義副表 nodeSem（未導出 map[Node]*NodeSemantics）以一個保留欄位（Kind="sem"）
+//     內聯：[]string 逐元素進 Vals；[]byte 與 map（自描述二進位 blob）以**原始位元組**
+//     直接作為字串元素進 Vals——mm 的 string cell 實為長度前位元組流（實測含 0x00/
+//     非 UTF-8 原樣透過），base64 是多餘的；只剩單條 65535 限，超標 chunk。
+//   - 語義副表 nodeSem（未導出 map[Node]*NodeSemantics）以一個保留欄位（Kind=kSem）
 //     引用本表中的 NodeSemantics 節點（Vals=[索引]），不再有 ASTSemEntry 包裝節點。
 //
 // 為何扁平：mm 的 encodeNodeObject/encodeNodeArray 在每一層 ancestor 都重新複製整棵
@@ -21,17 +23,19 @@ package parser
 // （Tree→Table→ASTNode→F→ASTField→Vals），且載體全是便宜型別（[]string／string），
 // 空範例元素只是 [0]/[""]，複製與尺寸都回到線性。
 //
-// 制約（mm ≥0.2.14）：
+// 制約（mm ≥0.2.16）：
 //   - 容器上限 4GB：整張節點表塞進單一 mm 文檔，無位元組切割。
-//   - 字串仍 65535：單一標量/位元組/blob 超標切段——用「同名同 Kind 連續欄位」表達，
-//     解碼端合併（見 scalarFields / mergeFields），**不使用 JSON、不使用 #N 後綴**。
-//   - 空容器：nil → 缺席；空的非 nil → Zero 標記欄位（解碼 MakeSlice/MakeMap 保留區分）。
-//     範例元素Artefact：mm 對空 []string 解回 [""]、空 []ASTField 解回一個 Kind="" 退化項，
-//     sanitize 統一剔除（"" 從不是合法索引也從不是合法語料字串；-1 才是 nil 元素佔位）。
+//   - 字串仍 65535：單一標量/位元組/blob 超標切成同一 Vals 的連續元素，
+//     解碼端串接（見 scalarFields / chunk / joinVals），**不使用 JSON、不使用 #N 後綴**。
+//   - 空容器：nil → 缺席欄位；空的非 nil → **欄位在場但 Vals 為空**（apply 依目標型別
+//     MakeSlice/MakeMap(0)）。mm 0.2.16 起 binder 已跳過 example 哨兵、is_null 綁 nil，
+//     空 []string／[]ASTField 老實解回 len 0，故**不再需要 "|0" 標記、cleanVals、sanitize
+//     這些對舊版 example-artefact 的绕行**。
+//   - 仍禁止空字串「元素」與整數 0「元素」上 wire（child_allow_empty 未開），故節點
+//     nil 元素用 -1 佔位、真實語料 never puts ""/0 into a scalar slice。
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"reflect"
@@ -47,25 +51,63 @@ import (
 // 2026-10-16.2：遞歸樹→**扁平節點表**（Root 索引 + Table），子節點以索引引用，
 // map 內聯成 S blob——消除 mm 的 O(size×深度) 複製與空容器範例爆炸，同時維持
 // 「按原始宣告順序的具名字段、無包裝節點、無 C/Kids 拆分」。
-const MMWireVersion = "2026-10-16.2"
+// 2026-10-16.3：依賴 mm 0.2.16（binder 跳過 example 哨兵、is_null 綁 nil）：
+// 拆掉 "|0" 零容器後綴、cleanVals、sanitize、joinVals 的 "" 剔除——空的非 nil
+// 容器改由「欄位在場且 Vals 為空」表達。舊 wire 不相容，必須 bump。
+// 2026-10-16.4：拆 base64——mm string cell 即長度前位元組流（實測 0x00/非 UTF-8
+// 原樣透過），[]byte 與 map blob 以原始位元組直接進 Vals；單條 65535 限照舊 chunk。
+// 同時拆掉所有 mm tag 的 desc=——實測 desc 是**逐 object 重發**（每個 ASTField 多
+// 數十位元組），27 萬欄位的 tree.mm raw 被描述文字淹沒。欄位語義說明改放 Go 註解。
+// Kind 改 u8 形態碼（1-based）；K／N 改 u16 索引共用 ASTTree.Names 字典（1-based，
+// 型別名/欄位名不再逐物件重發；deflate 32KB 窗口本就夠不着海量重複名，zip -40%）。
+// （也試過 ASTField.B 原生 bytes 欄位：逐欄位收 example sentinel，zip 反增 20%，回退。）
+// 舊 wire 不相容，必須 bump。
+const MMWireVersion = "2026-10-16.4"
 
 // mmCellMax 是單一欄位值字串的上限。mm 對單一字串仍有 65535 位元組硬限制，超過
-// 就切成「同名同 Kind 的連續欄位」（容器已放到 4GB，唯獨字串仍受此限）。
+// 就拆成同一 Vals 的多個 ≤mmCellMax 元素串接還原（容器已放到 4GB，唯獨字串仍受此限）。
 const mmCellMax = 56000
 
-// ASTField.Kind 取值：標量用底層型別首字母，集合/節點用形態名。
+// ASTField.Kind 取值：數字形態碼（u8，1-based：mm 拒發零值標量，0 永不上 wire）。
 const (
-	kStr   = "s"     // string → S
-	kInt   = "i"     // 任意整數（十進位文字於 S，依目標欄位型別解析）
-	kFlt   = "f"     // float（十六進位精確格式於 S）
-	kBool  = "b"     // bool（只發 true 於 S；缺席即 false）
-	kStrs  = "strs"  // 非節點 slice／定長陣列：逐元素文字存進 Vals
-	kBytes = "bytes" // []byte／[N]byte：base64 存進 S（超標切連續欄位）
-	kMap   = "map"   // map：自描述二進位 blob 的 base64 存進 S（超標切連續欄位）
-	kNode  = "node"  // 單一節點欄位（介面／指標／結構體）：Vals=[子索引]
-	kNodes = "nodes" // 節點 slice／陣列欄位：Vals=依序子索引（-1=nil 元素）
-	kSem   = "sem"   // 保留欄位：Vals=[NodeSemantics 節點索引]
+	kStr   uint8 = 1  // string → Vals 文字
+	kInt   uint8 = 2  // 任意整數（十進位文字於 Vals，依目標欄位型別解析）
+	kFlt   uint8 = 3  // float（十六進位精確格式於 Vals）
+	kBool  uint8 = 4  // bool（只發 true 於 Vals；缺席即 false）
+	kStrs  uint8 = 5  // 非節點 slice／定長陣列：逐元素文字存進 Vals
+	kBytes uint8 = 6  // []byte／[N]byte：原始位元組存進 Vals（超標切連續元素）
+	kMap   uint8 = 7  // map：自描述二進位 blob 原始位元組存進 Vals（超標切元素）
+	kNode  uint8 = 8  // 單一節點欄位（介面／指標／結構體）：Vals=[子索引]
+	kNodes uint8 = 9  // 節點 slice／陣列欄位：Vals=依序子索引（-1=nil 元素）
+	kSem   uint8 = 10 // 保留欄位：Vals=[NodeSemantics 節點索引]
 )
+
+// kindName 把形態碼還原成人類可讀名（僅供錯誤訊息/日誌）。
+func kindName(k uint8) string {
+	switch k {
+	case kStr:
+		return "s"
+	case kInt:
+		return "i"
+	case kFlt:
+		return "f"
+	case kBool:
+		return "b"
+	case kStrs:
+		return "strs"
+	case kBytes:
+		return "bytes"
+	case kMap:
+		return "map"
+	case kNode:
+		return "node"
+	case kNodes:
+		return "nodes"
+	case kSem:
+		return "sem"
+	}
+	return "?"
+}
 
 // nilChildIndex 是節點 slice 中 nil 元素的佔位索引（真索引恆 ≥0）。
 const nilChildIndex = "-1"
@@ -73,46 +115,49 @@ const nilChildIndex = "-1"
 // semFieldName 是語義欄位的保留名（不是任何 Go 欄位名，避免撞車）。
 const semFieldName = "__sem__"
 
-// ASTTree 是一整個模組 AST 的具體化表示：**扁平節點表 + 根索引**。
+// ASTTree 是一整個模組 AST 的具體化表示：**扁平節點表 + 根索引 + 名字字典**。
+// Names 把節點型別名與欄位名共用一張表，首見順序編號、**1-based**（索引 0 保留：
+// mm 拒發零值標量）；ASTNode.K／ASTField.N 只存 u16 索引，型別名/欄位名不再
+// 逐物件重發（tls：~95K 節點名 + ~274K 欄位名的文字全部收进字典一次）。
 type ASTTree struct {
 	Ver    string
 	AstVer string
 	Nodes  int32     // 節點總數（校驗/日誌）
 	Root   int32     // Program 節點在 Table 中的索引（-1 = 空）
+	Names  []string  // 名字字典：K/N 存 1-based 索引於 Names[idx-1]
 	Table  []ASTNode // 扁平節點表：所有節點都在这里，彼此以索引相連
 }
 
-// ASTNode 是表上的一個節點：型別名 + 依原始宣告順序的具名字段。
+// ASTNode 是表上的一個節點：K 型別名字典索引 + F 依原始宣告順序的具名字段。
+// 欄位順序即 wire 契約（見 ASTField 處說明：二進位 wire 不發鍵名、按位定位）。
 type ASTNode struct {
-	K string     `mm:"allow_empty;desc=節點型別名（空＝退化範例項，被剔除）"`
-	F []ASTField `mm:"allow_empty;desc=依原始宣告順序展開的具名字段"`
+	K uint16     `mm:"allow_empty"` // 型別名 → ASTTree.Names[K-1]（1-based，0 永不發出）
+	F []ASTField `mm:"allow_empty"`
 }
 
-// ASTField 是一個具名字段。只有 3 個短鍵欄位（mm 為每個物件逐一拼出鍵名，精簡
-// 鍵數/鍵長直接壓低扁平表上「海量小欄位」的原始尺寸）：
-//   - N：欄位名
-//   - Kind：值形態；尾綴 "|0" 表示「空的非 nil 容器」（Zero 標記，解碼 MakeSlice/Map）
+// ASTField 是一個具名字段，只有 3 個欄位：
+//   - N：欄位名 → ASTTree.Names[N-1]（u16，1-based 字典索引）
+//   - Kind：形態碼（u8，kStr..kSem；欄位存在即非零。空容器由「Kind 在場 + Vals 空」表達）
 //   - Vals：唯一載體，語義依 Kind：
 //     · s/i/f/b：標量文字（長文字切成連續元素，解碼串接；b 用 ["1"]）
-//     · bytes：base64（切連續元素串接）
-//     · map：自描述 blob 的 base64（切連續元素串接）
+//     · bytes：原始位元組串（切連續元素串接）
+//     · map：自描述二進位 blob 原始位元組（切連續元素串接）
 //     · strs：非節點 slice 逐元素
 //     · node/sem：子節點索引（長度 1）
 //     · nodes：依序子節點索引（-1＝nil 元素）
 //
+// ⚠ mm 的二進位 wire **不發字段鍵名**（實測：tag 短鍵 n/k/v 與預設名 kind/vals 的
+// wire 逐字節相同；鍵名只影響 DecodeToJsonc 人類視圖），物件子項按
+// **宣告順序定位**——故增删/重排下面三個欄位都屬 wire 結構變化，必須 bump MMWireVersion。
+// （tag 留空即默認綁定；僅 allow_empty 為實質編碼規則。）
+//
 // 超標（>mmCellMax）的 s/bytes/map 直接拆成同一 Vals 的多個 ≤mmCellMax 元素——
 // 陣列容器不受 65535 限（只有單一字串受），故**不再需要同名連續欄位 + mergeFields**。
 type ASTField struct {
-	N    string   `mm:"n;desc=欄位名"`
-	Kind string   `mm:"k;desc=值形態（尾綴 |0＝空的非 nil 容器）"`
-	Vals []string `mm:"v;allow_empty;desc=載體：標量/base64/blob 或 子索引/元素"`
+	N    uint16   // 欄位名 → ASTTree.Names[N-1]（1-based）
+	Kind uint8    // 形態碼 kStr..kSem（見常量表；mm 零值拒發，故碼從 1 起）
+	Vals []string `mm:"allow_empty"`
 }
-
-// zeroSuffix 標記「空的非 nil 容器」（保留 nil vs 空區分）。
-const zeroSuffix = "|0"
-
-func withZero(kind string) bool   { return strings.HasSuffix(kind, zeroSuffix) }
-func trimZero(kind string) string { return strings.TrimSuffix(kind, zeroSuffix) }
 
 // mmKindTypes 是 kind 名 → 具體型別的註冊表，供解碼用。
 // 與 gobNodeTypes 同源（見 gob_register.go），另加幾個只作為「具體結構欄位」
@@ -265,8 +310,22 @@ func MMKinds() []string {
 
 type mmEncoder struct {
 	table  []ASTNode                  // 扁平節點表（附錄式追加）
+	names  map[string]uint16          // 名字字典（K/N 共用）：首見順序編號，1-based
 	semOcc map[uintptr]*NodeSemantics // nodeSem 按底層節點指標索引（同一指標的每次出現都掛語義欄位）
 	onPath map[uintptr]bool           // 路徑棧：真環（AST 正常不該有）直接報錯
+}
+
+// intern 把名字登記進字典並回 1-based 索引（0 保留：mm 拒發零值標量）。
+func (e *mmEncoder) intern(s string) (uint16, error) {
+	if v, ok := e.names[s]; ok {
+		return v, nil
+	}
+	if len(e.names)+1 > 65535 {
+		return 0, fmt.Errorf("mm: name dictionary overflow (>65535 distinct names)")
+	}
+	v := uint16(len(e.names) + 1)
+	e.names[s] = v
+	return v, nil
 }
 
 // EncodeASTTree 把 *Program 展開成扁平節點表。srcSHA 可為空（由 manifest 承載）。
@@ -274,7 +333,7 @@ func EncodeASTTree(p *Program, srcSHA string) (*ASTTree, error) {
 	if p == nil {
 		return nil, fmt.Errorf("mm: nil program")
 	}
-	e := &mmEncoder{semOcc: map[uintptr]*NodeSemantics{}, onPath: map[uintptr]bool{}}
+	e := &mmEncoder{names: map[string]uint16{}, semOcc: map[uintptr]*NodeSemantics{}, onPath: map[uintptr]bool{}}
 	if p.Sem != nil {
 		for n, ns := range p.Sem.nodeSem {
 			if n == nil || ns == nil {
@@ -290,11 +349,16 @@ func EncodeASTTree(p *Program, srcSHA string) (*ASTTree, error) {
 	if root < 0 {
 		return nil, fmt.Errorf("mm: program root encoded to nil")
 	}
+	names := make([]string, len(e.names))
+	for s, v := range e.names {
+		names[v-1] = s
+	}
 	return &ASTTree{
 		Ver:    MMWireVersion,
 		AstVer: ASTVersion,
 		Nodes:  int32(len(e.table)),
 		Root:   root,
+		Names:  names,
 		Table:  e.table,
 	}, nil
 }
@@ -333,7 +397,11 @@ func (e *mmEncoder) node(v reflect.Value) (int32, error) {
 	if kind == "" {
 		return -1, fmt.Errorf("mm: anonymous struct type in AST")
 	}
-	n := ASTNode{K: kind}
+	ki, err := e.intern(kind)
+	if err != nil {
+		return -1, err
+	}
+	n := ASTNode{K: ki}
 
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
@@ -356,10 +424,14 @@ func (e *mmEncoder) node(v reflect.Value) (int32, error) {
 			if err != nil {
 				return -1, fmt.Errorf("mm: %s node_sem: %w", kind, err)
 			}
+			si, err := e.intern(semFieldName)
+			if err != nil {
+				return -1, err
+			}
 			if sv < 0 {
 				return -1, fmt.Errorf("mm: %s node_sem wrapped nil", kind)
 			}
-			n.F = append(n.F, ASTField{N: semFieldName, Kind: kSem, Vals: []string{idxStr(sv)}})
+			n.F = append(n.F, ASTField{N: si, Kind: kSem, Vals: []string{idxStr(sv)}})
 		}
 	}
 	return e.add(n), nil
@@ -368,6 +440,10 @@ func (e *mmEncoder) node(v reflect.Value) (int32, error) {
 // field 把一個具名欄位編成若干 ASTField（超長標量/位元組/blob 會切成同名同 Kind 的
 // 連續欄位；零值/空容器/nil 返回 nil 表示缺席）。
 func (e *mmEncoder) field(name string, fv reflect.Value) ([]ASTField, error) {
+	ni, err := e.intern(name)
+	if err != nil {
+		return nil, err
+	}
 	switch fv.Kind() {
 	case reflect.Interface, reflect.Pointer, reflect.Struct:
 		idx, err := e.node(fv)
@@ -377,15 +453,15 @@ func (e *mmEncoder) field(name string, fv reflect.Value) ([]ASTField, error) {
 		if idx < 0 {
 			return nil, nil // nil 介面/指標：缺席
 		}
-		return []ASTField{{N: name, Kind: kNode, Vals: []string{idxStr(idx)}}}, nil
+		return []ASTField{{N: ni, Kind: kNode, Vals: []string{idxStr(idx)}}}, nil
 
 	case reflect.Slice, reflect.Array:
 		if fv.Len() == 0 {
-			// nil 容器：缺席即 nil；空的非 nil 容器：Kind 加 "|0" 標記保留區分。
+			// nil 容器：缺席即 nil；空的非 nil 容器：欄位在場 + Vals 空，apply 依型別構造。
 			if fv.Kind() == reflect.Slice && fv.IsNil() {
 				return nil, nil
 			}
-			return []ASTField{{N: name, Kind: containerKind(fv.Type().Elem()) + zeroSuffix}}, nil
+			return []ASTField{{N: ni, Kind: containerKind(fv.Type().Elem())}}, nil
 		}
 		et := fv.Type().Elem()
 		if elemIsNode(et) {
@@ -402,10 +478,10 @@ func (e *mmEncoder) field(name string, fv reflect.Value) ([]ASTField, error) {
 				}
 				vals = append(vals, idxStr(idx))
 			}
-			return []ASTField{{N: name, Kind: kNodes, Vals: vals}}, nil
+			return []ASTField{{N: ni, Kind: kNodes, Vals: vals}}, nil
 		}
 		if et.Kind() == reflect.Uint8 {
-			return bytesFields(name, fv), nil
+			return bytesFields(ni, fv), nil
 		}
 		// 非節點 slice／定長陣列：逐元素文字存進 Vals。
 		strs := make([]string, 0, fv.Len())
@@ -416,70 +492,71 @@ func (e *mmEncoder) field(name string, fv reflect.Value) ([]ASTField, error) {
 			}
 			strs = append(strs, s)
 		}
-		return []ASTField{{N: name, Kind: kStrs, Vals: strs}}, nil
+		return []ASTField{{N: ni, Kind: kStrs, Vals: strs}}, nil
 
 	case reflect.Map:
 		if fv.Len() == 0 {
 			if fv.IsNil() {
 				return nil, nil
 			}
-			return []ASTField{{N: name, Kind: kMap + zeroSuffix}}, nil
+			return []ASTField{{N: ni, Kind: kMap}}, nil
 		}
 		var buf bytes.Buffer
 		if err := writeMap(&buf, fv); err != nil {
 			return nil, fmt.Errorf("mm: %s map: %w", name, err)
 		}
-		return scalarFields(name, kMap, base64.StdEncoding.EncodeToString(buf.Bytes())), nil
+		return scalarFields(ni, kMap, string(buf.Bytes())), nil
 
 	case reflect.String:
 		if fv.String() == "" {
 			return nil, nil
 		}
-		return scalarFields(name, kStr, fv.String()), nil
+		return scalarFields(ni, kStr, fv.String()), nil
 
 	case reflect.Bool:
 		if !fv.Bool() {
 			return nil, nil // false 以缺席表示
 		}
-		return []ASTField{{N: name, Kind: kBool, Vals: []string{"1"}}}, nil
+		return []ASTField{{N: ni, Kind: kBool, Vals: []string{"1"}}}, nil
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		if fv.Int() == 0 {
 			return nil, nil
 		}
-		return []ASTField{{N: name, Kind: kInt, Vals: []string{strconv.FormatInt(fv.Int(), 10)}}}, nil
+		return []ASTField{{N: ni, Kind: kInt, Vals: []string{strconv.FormatInt(fv.Int(), 10)}}}, nil
 
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		if fv.Uint() == 0 {
 			return nil, nil
 		}
-		return []ASTField{{N: name, Kind: kInt, Vals: []string{strconv.FormatUint(fv.Uint(), 10)}}}, nil
+		return []ASTField{{N: ni, Kind: kInt, Vals: []string{strconv.FormatUint(fv.Uint(), 10)}}}, nil
 
 	case reflect.Float32, reflect.Float64:
 		if fv.Float() == 0 {
 			return nil, nil
 		}
-		return []ASTField{{N: name, Kind: kFlt, Vals: []string{strconv.FormatFloat(fv.Float(), 'x', -1, 64)}}}, nil
+		return []ASTField{{N: ni, Kind: kFlt, Vals: []string{strconv.FormatFloat(fv.Float(), 'x', -1, 64)}}}, nil
 	}
 	return nil, fmt.Errorf("unsupported kind %s", fv.Kind())
 }
 
-// bytesFields 把 []byte／[]uint8／定長位元組陣列編成 base64，放進單欄 Vals（超標切元素）。
-func bytesFields(name string, fv reflect.Value) []ASTField {
+// bytesFields 把 []byte／[]uint8／定長位元組陣列的**原始位元組**放進 Vals（超標切元素）。
+// mm 的 string cell 即長度前位元組流，實測含 0x00／非 UTF-8 原樣透過，base64 多餘。
+func bytesFields(ni uint16, fv reflect.Value) []ASTField {
 	raw := make([]byte, fv.Len())
 	for i := 0; i < fv.Len(); i++ {
 		raw[i] = byte(fv.Index(i).Uint())
 	}
-	return []ASTField{{N: name, Kind: kBytes, Vals: chunk(base64.StdEncoding.EncodeToString(raw))}}
+	return []ASTField{{N: ni, Kind: kBytes, Vals: chunk(string(raw))}}
 }
 
 // scalarFields 把可能超標的標量文字切成同一欄的連續 Vals 元素（解碼端串接）。
-func scalarFields(name, kind, s string) []ASTField {
-	return []ASTField{{N: name, Kind: kind, Vals: chunk(s)}}
+func scalarFields(ni uint16, kind uint8, s string) []ASTField {
+	return []ASTField{{N: ni, Kind: kind, Vals: chunk(s)}}
 }
 
-// chunk 把一段文字按 mmCellMax 切成 ≤mmCellMax 的連續元素（s=="" → 空）。s 全為
-// 位元組安全切分（呼叫端僅對非空文字/base64/blob 切段，這些全是 ASCII，無UTF-8 割裂）。
+// chunk 把一段文字按 mmCellMax 切成 ≤mmCellMax 的連續元素（s=="" → 空）。按位元組
+// 切分對任意二進位無損（呼叫端含 raw bytes／blob，串接即還原），無 UTF-8 割裂風險。
 func chunk(s string) []string {
 	if s == "" {
 		return nil
@@ -503,9 +580,6 @@ func chunk(s string) []string {
 func joinVals(vals []string) string {
 	var b strings.Builder
 	for _, v := range vals {
-		if v == "" {
-			continue
-		}
 		b.WriteString(v)
 	}
 	return b.String()
@@ -565,8 +639,8 @@ func elemIsNode(t reflect.Type) bool {
 	return false
 }
 
-// containerKind 依 slice／陣列的元素型別選出內聯欄位的 Kind（空的非 nil 容器標記用）。
-func containerKind(et reflect.Type) string {
+// containerKind 依 slice／陣列的元素型別選出內聯欄位的形態碼（空的非 nil 容器標記用）。
+func containerKind(et reflect.Type) uint8 {
 	switch {
 	case elemIsNode(et):
 		return kNodes
@@ -854,11 +928,20 @@ func readValue(r *mapReader, t reflect.Type) (reflect.Value, error) {
 // ── 解碼 ────────────────────────────────────────────────────────────────────
 
 type mmDecoder struct {
-	table   []*ASTNode       // sanitize 後的節點表
+	names   []string         // ASTTree.Names 字典（K/N 解析目標）
+	table   []*ASTNode       // 節點表
 	built   []reflect.Value  // 索引 → 已建節點指標（惰性 memo）
 	done    []bool           // 對應 built 是否已填完
 	semCtx  *SemanticContext // 建出的唯一 SemanticContext（nodeSem 回填目標）
 	pending []semPair        // 屬主 → 語義條目（全部節點建完後統一回填）
+}
+
+// name 解析 1-based 字典索引（0 或越界＝wire 損壞）。
+func (d *mmDecoder) name(i uint16) (string, error) {
+	if i == 0 || int(i) > len(d.names) {
+		return "", fmt.Errorf("mm: name index %d out of dictionary (%d)", i, len(d.names))
+	}
+	return d.names[i-1], nil
 }
 
 type semPair struct {
@@ -881,13 +964,13 @@ func DecodeASTTree(t *ASTTree) (*Program, error) {
 		return nil, fmt.Errorf("mm: bad root index %d (table %d)", t.Root, len(t.Table))
 	}
 	d := &mmDecoder{
+		names: t.Names,
 		table: make([]*ASTNode, len(t.Table)),
 		built: make([]reflect.Value, len(t.Table)),
 		done:  make([]bool, len(t.Table)),
 	}
 	for i := range t.Table {
 		n := t.Table[i]
-		sanitize(&n)
 		d.table[i] = &n
 	}
 	v, err := d.build(int(t.Root))
@@ -921,32 +1004,40 @@ func (d *mmDecoder) build(idx int) (reflect.Value, error) {
 		return d.built[idx], nil
 	}
 	n := d.table[idx]
-	typ, ok := mmKindTypes[n.K]
+	kname, err := d.name(n.K)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	typ, ok := mmKindTypes[kname]
 	if !ok {
-		return reflect.Value{}, fmt.Errorf("mm: unknown node kind %q (registry has %d kinds)", n.K, len(mmKindTypes))
+		return reflect.Value{}, fmt.Errorf("mm: unknown node kind %q (registry has %d kinds)", kname, len(mmKindTypes))
 	}
 	pv := reflect.New(typ)
 	d.built[idx] = pv
 	d.done[idx] = true // 先標記，避免環回遞迴
-	if n.K == "SemanticContext" && d.semCtx == nil {
+	if kname == "SemanticContext" && d.semCtx == nil {
 		d.semCtx = pv.Interface().(*SemanticContext)
 	}
 	sv := pv.Elem()
 
 	for i := range n.F {
 		lf := &n.F[i]
-		if trimZero(lf.Kind) == kSem {
+		if lf.Kind == kSem {
 			if err := d.attachSem(pv, lf); err != nil {
 				return reflect.Value{}, err
 			}
 			continue
 		}
-		f := sv.FieldByName(lf.N)
+		fname, err := d.name(lf.N)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		f := sv.FieldByName(fname)
 		if !f.IsValid() {
-			return reflect.Value{}, fmt.Errorf("mm: %s has no field %q", n.K, lf.N)
+			return reflect.Value{}, fmt.Errorf("mm: %s has no field %q", kname, fname)
 		}
 		if err := d.apply(f, lf); err != nil {
-			return reflect.Value{}, fmt.Errorf("mm: %s.%s: %w", n.K, lf.N, err)
+			return reflect.Value{}, fmt.Errorf("mm: %s.%s: %w", kname, fname, err)
 		}
 	}
 	return pv, nil
@@ -954,18 +1045,9 @@ func (d *mmDecoder) build(idx int) (reflect.Value, error) {
 
 // apply 依目標欄位型別 dst 把一個欄位寫回（dst 必須可位址）。
 func (d *mmDecoder) apply(dst reflect.Value, lf *ASTField) error {
-	kind := trimZero(lf.Kind)
-	// 空的非 nil 容器（Kind 尾綴 "|0"）：直接構造空 slice／map（保留 nil vs 空區分）。
-	if withZero(lf.Kind) {
-		switch dst.Kind() {
-		case reflect.Slice:
-			dst.Set(reflect.MakeSlice(dst.Type(), 0, 0))
-			return nil
-		case reflect.Map:
-			dst.Set(reflect.MakeMap(dst.Type()))
-			return nil
-		}
-	}
+	kind := lf.Kind
+	// 空的非 nil 容器：Kind／欄位在場而 Vals 空，下方各型別驅動分支對空輸入
+	// 天然產出 len 0 非 nil 容器（nil 已由「欄位缺席」表達）。
 	switch kind {
 	case kStr:
 		if dst.Kind() != reflect.String {
@@ -992,10 +1074,7 @@ func (d *mmDecoder) apply(dst reflect.Value, lf *ASTField) error {
 		dst.SetFloat(x)
 		return nil
 	case kBytes:
-		raw, err := base64.StdEncoding.DecodeString(joinVals(lf.Vals))
-		if err != nil {
-			return fmt.Errorf("mm: base64: %w", err)
-		}
+		raw := []byte(joinVals(lf.Vals))
 		switch dst.Kind() {
 		case reflect.Slice:
 			b := reflect.MakeSlice(dst.Type(), len(raw), len(raw))
@@ -1010,11 +1089,7 @@ func (d *mmDecoder) apply(dst reflect.Value, lf *ASTField) error {
 		}
 		return nil
 	case kMap:
-		raw, err := base64.StdEncoding.DecodeString(joinVals(lf.Vals))
-		if err != nil {
-			return fmt.Errorf("mm: map base64: %w", err)
-		}
-		r := &mapReader{b: raw}
+		r := &mapReader{b: []byte(joinVals(lf.Vals))}
 		m, err := readMap(r, dst.Type())
 		if err != nil {
 			return err
@@ -1023,7 +1098,7 @@ func (d *mmDecoder) apply(dst reflect.Value, lf *ASTField) error {
 		return nil
 	case kStrs:
 		et := dst.Type().Elem()
-		vals := cleanVals(lf.Vals)
+		vals := lf.Vals
 		switch dst.Kind() {
 		case reflect.Slice:
 			sl := reflect.MakeSlice(dst.Type(), len(vals), len(vals))
@@ -1047,7 +1122,7 @@ func (d *mmDecoder) apply(dst reflect.Value, lf *ASTField) error {
 		}
 		return nil
 	case kNode:
-		vals := cleanVals(lf.Vals)
+		vals := lf.Vals
 		if len(vals) != 1 {
 			return fmt.Errorf("mm: node field has %d vals, want 1", len(vals))
 		}
@@ -1061,7 +1136,7 @@ func (d *mmDecoder) apply(dst reflect.Value, lf *ASTField) error {
 		}
 		return assignNode(dst, cv)
 	case kNodes:
-		vals := cleanVals(lf.Vals)
+		vals := lf.Vals
 		switch dst.Kind() {
 		case reflect.Slice:
 			sl := reflect.MakeSlice(dst.Type(), len(vals), len(vals))
@@ -1085,12 +1160,12 @@ func (d *mmDecoder) apply(dst reflect.Value, lf *ASTField) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("mm: unknown field kind %q", lf.Kind)
+	return fmt.Errorf("mm: unknown field kind %d", lf.Kind)
 }
 
 // setNodeElem 還原一個節點 slice 的元素；-1（nilChildIndex）是 nil 元素佔位（保零值）。
 func (d *mmDecoder) setNodeElem(dst reflect.Value, s string) error {
-	if s == nilChildIndex || s == "" {
+	if s == nilChildIndex {
 		return nil
 	}
 	idx, err := strconv.Atoi(s)
@@ -1106,7 +1181,7 @@ func (d *mmDecoder) setNodeElem(dst reflect.Value, s string) error {
 
 // attachSem 把 Kind=sem 保留欄位（Vals=[NodeSemantics 索引]）配對到屬主節點。
 func (d *mmDecoder) attachSem(owner reflect.Value, lf *ASTField) error {
-	vals := cleanVals(lf.Vals)
+	vals := lf.Vals
 	if len(vals) != 1 {
 		return fmt.Errorf("mm: sem field has %d vals, want 1", len(vals))
 	}
@@ -1130,34 +1205,7 @@ func (d *mmDecoder) attachSem(owner reflect.Value, lf *ASTField) error {
 	return nil
 }
 
-// cleanVals 剔除 mm 空 []string 解回的退化範例元素 ""（"" 從不是合法索引或語料字串）。
-func cleanVals(vals []string) []string {
-	if len(vals) == 1 && vals[0] == "" {
-		return nil
-	}
-	out := vals[:0]
-	for _, v := range vals {
-		if v == "" {
-			continue
-		}
-		out = append(out, v)
-	}
-	return out
-}
-
-// sanitize 就地清理一個節點：剔除 allow_empty 空容器解回的退化欄位（Kind==""）。
-// Vals 的 "" 範例元素由 cleanVals 於讀取時剔除。
-func sanitize(n *ASTNode) {
-	fs := n.F[:0]
-	for _, f := range n.F {
-		if f.Kind == "" {
-			continue
-		}
-		fs = append(fs, f)
-	}
-	n.F = fs
-}
-
+// setInt 依 dst 的整型寬度把十進位文字解析並寫入。
 func setInt(dst reflect.Value, s string) error {
 	switch dst.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:

@@ -33,7 +33,7 @@ import (
 // 2026-10-16.2：節點樹改成「扁平節點表（Root 索引 + Table）」——移除 C/Kids 拆分與
 // MMSlice/MMMap/MMVal/MMBytes/MMEntry/ASTSemEntry 合成節點，並把遞歸巢狀壓平成
 // 常數嵌套深度（消除 mm 的 O(size×深度) 複製與空容器範例爆炸）。tree.mm 載體形狀隨之變。
-const ZipVer = "2026-10-16.2"
+const ZipVer = "2026-10-16.4"
 
 // 單文檔在 zip 內的條目名。
 const (
@@ -44,13 +44,13 @@ const (
 // ── mm 側的具體結構（帶 allow_empty：mm 不接受任何零值/空容器）─────────────
 
 type mmManifest struct {
-	ZipVer string `mm:"desc=zip 容器版本"`
-	Wire   string `mm:"desc=節點樹格式版本"`
-	AstVer string `mm:"desc=parser.ASTVersion"`
-	Tool   string `mm:"allow_empty;desc=模組/工具名"`
-	Src    string `mm:"allow_empty;desc=來源檔名"`
-	SrcSHA string `mm:"allow_empty;desc=來源 sha256"`
-	Nodes  int32  `mm:"desc=節點總數"`
+	ZipVer string // zip 容器版本
+	Wire   string // 節點樹格式版本（parser.MMWireVersion）
+	AstVer string // parser.ASTVersion
+	Tool   string `mm:"allow_empty"` // 模組/工具名
+	Src    string `mm:"allow_empty"` // 來源檔名
+	SrcSHA string `mm:"allow_empty"` // 來源 sha256
+	Nodes  int32  // 節點總數
 }
 
 // ── 寫出 ────────────────────────────────────────────────────────────────────
