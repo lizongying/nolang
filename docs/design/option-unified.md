@@ -448,15 +448,38 @@ f = (i i64) (res ?i64) {
 | map `[K]V`（`MapType`） | 不受影响（无下标赋值语法，走 put/get）。型别判定**必须先判 `MapType`**——`containerElemType("[str]i64")` 会把 map 型别字串误判为数组（返回 `"i64"`） |
 | `self.keys[i] = v`（struct-field 基底，str-map.no 等大量存在） | **wave 1 豁免**：其读侧走 legacy 非 option 路径（`isSafeIndexBase` 明确排除 DotExpression 基底，`parser/type.go:313-321`；`lowerUnwrapAssign:3197` 对 `receiver.field[i]` 直接报错）。待 field-base 索引统一后二期 |
 
-### 12.5 零开销：D7 两层分离延伸到写入
+### 12.5 零开销：D7 两层分离延伸到写入（已实现并验证，2026-10-16）
 
 - **用户侧**：无豁免。即使 `a[1]` 常量界内，也必须写解包语法（与 D7 读侧口径完全一致）。
-- **语言内部**：`bounds.go` 判据（定长数组 + 字面量下标；for-range 循环变量 + 字面量区间；
-  `with-len(K)` 固定长切片）扩展到**写入位**索引（`collectWriteTargets`，`bounds.go:476`
-  已收集写入目标，补 in-bounds 判定）；MIR 在可证明界内时消除边界检查与死臂 → 直接
-  GEP+store。不可证明时成本 = 一次边界检查 + 分支（与读侧解包同构）。
-- 验证：IR 级断言——可证明界内的写入站点无 bounds check、无 nil 分支（与读侧内部消除同一
-  机制，D7 已落地）。
+- **语言内部（零开销消除机制，已落地）**：写侧被**读侧支配**——place-match `a[i]: { ok -> … }`
+  的下标读 `a[i]` 在 HIR→MIR 经 `lowerSafeIndex`（`src/mir/hir2mir.go:3908`）降级为 `?elem`；
+  只要该读可证界内，即跳过运行时界检查，**写侧自然同步零开销**（ok 臂仅在「读已证界内」
+  时进入，故 `it = v` 决不会越界写）。
+
+  判据运输链（in-bounds 信息从 AST 一路传到 MIR）：
+
+  1. `src/parser/bounds.go` `mark` 对可证界内的**读**下标置 `IndexExpression.InBounds = true`
+     （`src/parser/ast.go`，新增字段；写目标本身不标——`markWriteTargetExpr` 显式不标，写由
+     读支配推导）。判据：定长数组 + 字面量下标；for-range 循环变量 + 字面量区间（`markFor`）；
+     `with-len(K)` 固定长切片。⚠️ **place-match 的被匹配下标 `a[1]: { … }` 必须纳入标记**——
+     `mark`/`markExpr` 现递归 `*SurfaceMatch.Matched` 与 `*IfExpression.MatchedExpr`，否则
+     下标写入永远拿不到 `InBounds`、零开销消除形同虚设（这是 P3 落地时补的关键缺口）。
+  2. `src/parser/tohir.go` `case *IndexExpression` 把 `e.InBounds` 复制到 `hir.Node.Flags`
+     的 `hir.FlagInBounds` 位（`src/hir/hir.go`，位 `1<<22`，不扩结构体——`hir.Node` 是刻意
+     指针自由的 48 字节结构体，由 `TestNodeIsPointerFree` 断言）。
+  3. `src/mir/hir2mir.go` `KIndex` case 调 `lowerSafeIndex(..., l.pkg.Node(id).Has(hir.FlagInBounds))`：
+     - `inBounds=true` 快路径：跳过 `OpLen`/`OpGe`/`OpLt`/`OpAnd`/`OpCondBr` 与 `idx.ok`/
+       `idx.none`/`idx.merge` 三块，直接 `OpIndex` + `OptionWrap` 写入 `?elem` 槽。
+       **用户侧 `?elem` 型别不变**（D7/D9 定案：内部消除不改用户可见类型）。
+     - `inBounds=false`：原慢路径（界比较 + 三块 + nil 分支），成本 = 一次边界检查 + 分支。
+
+- 验证（IR 级断言，已落地）：`src/mir/d9_write_bce_test.go` 四个用例——
+  ① const 下标写（a[1]）MIR 无 `idx.ok`/`idx.none`/`idx.merge` 块、无 `OpLen`/`OpLt`/`OpGe`；
+  ② for-range 归纳变量写（a[i]，i∈[0,3)）同上（回圈自身的 `i<3` 用 `OpLt`，不影响断言）；
+  ③ 非可证下标写（a[i]，i 为函式参数）控制组——断言**仍含**上述块与 `OpLen`/`OpLt`，
+  证明消除是「可证界内才触发」而非「永不发射」；④ parser 单测断言 `IndexExpression.InBounds`
+  （const 下标 true / 非可证下标 false）。端到端 `bin/no run` 实测：const + for-range 写入
+  产出的 LLVM IR 不含任何 `idx.ok`/`idx.none`/`idx.merge` 基本块，且执行结果正确。
 
 ### 12.6 错误文案定稿（`idxwrite`，ERROR 级，`no vet` 同步）
 

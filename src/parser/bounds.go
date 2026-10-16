@@ -243,8 +243,17 @@ func (a *boundsAnalyzer) markExpr(e Expression, ctx boundsCtx) {
 		}
 	case *IfExpression:
 		a.markExpr(v.Condition, ctx)
+		a.markExpr(v.MatchedExpr, ctx)
 		a.markBlock(v.Consequence, ctx)
 		a.markBlock(v.Alternative, ctx)
+	case *SurfaceMatch:
+		// place-match 的被匹配表达式（a[1]: { ok -> ... } 中的 a[1]）本身是一
+		// 次安全索引读，必须纳入 in-bounds 标记；否则下标写入的零开销消除永远
+		// 拿不到 InBounds 旗标（写侧被读侧支配）。臂体内也可能含下标读。
+		a.markExpr(v.Matched, ctx)
+		for _, arm := range v.Arms {
+			a.markBlock(arm.body, ctx)
+		}
 	case *ConditionalExpression:
 		a.markExpr(v.Condition, ctx)
 		a.markExpr(v.Consequence, ctx)
