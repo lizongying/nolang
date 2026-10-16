@@ -48,7 +48,7 @@ func TestASTZipRoundTrip(t *testing.T) {
 			t.Fatalf("%s: dump mismatch (%d vs %d bytes)", rel, len(want), len(got))
 		}
 		if st.Nodes == 0 || info.ZipVer != ZipVer || info.AstVer != parser.ASTVersion {
-			t.Fatalf("%s: bad stats/manifest: %+v %+v", rel, st, info)
+			t.Fatalf("%s: bad stats/info: %+v %+v", rel, st, info)
 		}
 		t.Logf("%-16s zip=%7d bytes  nodes=%6d", rel, buf.Len(), st.Nodes)
 	}
