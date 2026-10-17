@@ -53,13 +53,16 @@ func (p *Parser) newSurfaceMatch(tok lexer.Token, matched Expression, arms []Mat
 
 // ---- lowering pass 驅動 ----
 
-// lowerProgram 對整棵 AST 執行 lowering pass：以反射遍歷所有節點，
-// 將 *SurfaceMatch 就地替換為 desugar 後的 IfExpression 鏈。
-// 由 ParseProgram 在解析結束、拷貝 Warnings 之前呼叫。
-// LowerSurface runs the surface-AST lowering pass: it expands every sugar node
-// (SurfaceMatch, UnwrapAssignStatement, GroupedExpression, …) into the core AST,
-// publishes the index side table, and finalises the compound-assignment
-// diagnostics.
+// LowerSurface 對整棵 AST 執行 lowering pass（兩階段；見 lowerProgram 與
+// DesugarSurfaceMatches）：先展開除 *SurfaceMatch 外的糖節點，再把保留的
+// *SurfaceMatch 展開為 IfExpression 鏈。由 ParseProgram 在解析結束、拷貝
+// Warnings 之前呼叫。
+// LowerSurface runs the surface-AST lowering pass in two phases: lowerProgram
+// expands every sugar node except SurfaceMatch (left intact), then
+// DesugarSurfaceMatches expands those deferred SurfaceMatch nodes into the core
+// AST. The split lets S1 delete the match-desugaring phase once the checker /
+// transpiler / H0 consume SurfaceMatch directly. It publishes the index side
+// table and finalises the compound-assignment diagnostics.
 //
 // This is the **single** implementation of the lowering pass. ParseProgram calls
 // it unless Parser.SkipLowering is set, so the deferred path (parse with
@@ -84,6 +87,9 @@ func (p *Parser) LowerSurface(program *Program) {
 	}
 
 	p.lowerProgram(program)
+	// Phase 2: expand the deferred *SurfaceMatch nodes into IfExpression chains
+	// (S1 separable pass; see DesugarSurfaceMatches).
+	p.DesugarSurfaceMatches(program)
 	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
 		dbgLeakState("POST-lower", program)
 	}
@@ -157,7 +163,32 @@ func (p *Parser) lowerProgram(prog *Program) {
 	if os.Getenv("NOLANG_DEBUG_IT") != "" {
 		fmt.Fprintf(os.Stderr, "[debug-it] lowerProgram called, %d top-level statements\n", len(prog.Statements))
 	}
-	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}}
+	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}, deferMatchDesugar: true}
+	l.walk(reflect.ValueOf(prog))
+}
+
+// DesugarSurfaceMatches expands every deferred SurfaceMatch node (left intact by
+// lowerProgram when deferMatchDesugar is set) into its core-AST IfExpression
+// chain. It is the second, separable phase of lowering — split out of the
+// reflect walk so that S1 can later delete it wholesale once the checker /
+// transpiler / H0 consume SurfaceMatch directly, without touching the rest of
+// lowering.
+//
+// It reuses the exact same walker as lowerProgram; every other sugar node is
+// already expanded, so this pass only rewrites match nodes (and re-walks their
+// already-lowered children, which is idempotent). The final tree is
+// byte-identical to the historical single-pass lowering.
+func (p *Parser) DesugarSurfaceMatches(prog *Program) {
+	if prog == nil {
+		return
+	}
+	// skipCollectLocalTypes: lowerProgram's first pass already populated the
+	// idxLocalTypes side-table (collectLocalTypes ran once there); re-running it
+	// here would write the same map twice and, because Go map iteration order is
+	// non-deterministic, can perturb the serialized blob (stdastcache comparison).
+	// Every other lowering / semantic inference still runs normally — buildMatchDesugar
+	// needs p.sem.FuncVarType etc., which must be (re)computed for the deferred matches.
+	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}, skipCollectLocalTypes: true}
 	l.walk(reflect.ValueOf(prog))
 }
 
@@ -186,6 +217,21 @@ type lowerer struct {
 	// 上多跑一次「`->` 臂不可達」判定（parser/match_warn.go）。診斷已從降糖
 	// 迴圈搬出來，故它對兩種形態都成立——見該檔案頂部的說明。
 	warnMatchArms bool
+	// deferMatchDesugar 為 true 時，walk 遇到介面欄位中的 *SurfaceMatch 不立即
+	// 展開為 IfExpression 鏈，而是遞迴走訪其子節點（讓 arms 內的其它糖節點
+	// UnwrapAssign / IndexExpression / LetStatement 仍在本輪 lowering 展開），
+	// 把 SurfaceMatch→IfExpression 的展開延後到獨立的 DesugarSurfaceMatches pass。
+	// 這是 S1 遷移的一步：使 match 降糖成為一個可單獨移除的 pass（未來 checker /
+	// transpiler / H0 直接消費 SurfaceMatch 時即可刪除），且對 build/transpiler
+	// 的 ~20 個 walker 零改動（它們仍看到 IfExpression 樹）。
+	deferMatchDesugar bool
+	// skipCollectLocalTypes 為 true 時，walk 在進入 FunctionDefinition 時不重跑
+	// collectLocalTypes（避免 idxLocalTypes 副表被寫入兩次、因 Go map 迭代順序
+	// 非確定而與單趟 lowering 產生差異）。專為 DesugarSurfaceMatches 第二階段：
+	// 第一階段 lowerProgram 已經跑過 collectLocalTypes 並填好 idxLocalTypes，第二
+	// 階段只需要補上 match 降糖，不該再動這張副表。其它糖節點展開與語義推斷仍照常
+	// 進行（buildMatchDesugar 需要 p.sem.FuncVarType 等副表，必須保留）。
+	skipCollectLocalTypes bool
 }
 
 var surfaceMatchPtrType = reflect.TypeOf((*SurfaceMatch)(nil))
@@ -224,13 +270,23 @@ func (l *lowerer) walk(v reflect.Value) {
 				l.walk(v.Elem())
 				return
 			}
-			sm := v.Interface().(*SurfaceMatch)
-			if lowered := l.lowerSurfaceMatch(sm); lowered != nil {
-				v.Set(reflect.ValueOf(lowered))
-			} else {
-				v.Set(reflect.Zero(v.Type()))
-			}
+		if l.deferMatchDesugar {
+			// S1 migration: keep the SurfaceMatch node intact so the desugaring
+			// runs as a separate, swappable pass (DesugarSurfaceMatches) after
+			// the rest of lowering. We still recurse into its children so nested
+			// sugar (UnwrapAssign / IndexExpression / LetStatement) inside the
+			// arms is lowered now; nested SurfaceMatch nodes are left for the
+			// separate pass.
+			l.walk(v.Elem())
 			return
+		}
+		sm := v.Interface().(*SurfaceMatch)
+		if lowered := l.lowerSurfaceMatch(sm); lowered != nil {
+			v.Set(reflect.ValueOf(lowered))
+		} else {
+			v.Set(reflect.Zero(v.Type()))
+		}
+		return
 		}
 	if v.Elem().Type() == unwrapAssignPtrType && v.CanSet() {
 		// UnwrapAssignStatement 一律展開為 BlockStatement（編譯器需要展開後的
@@ -315,8 +371,8 @@ func (l *lowerer) walk(v reflect.Value) {
 			// 建構）；推斷分析由 inferOptionArith + maybeCaptureOptionAssign 內
 			// 的 synthesizeNullableType 完成（後者在 analysisOnly 下提早返回）。
 			// SkipSafeIndexLowering 旗標已隨 §4.3 刪除，安全索引展開在此一律進行。
-			if !l.analysisOnly {
-				if repl := l.maybeIndexOutAssign(stmt); repl != nil {
+		if !l.analysisOnly {
+			if repl := l.maybeIndexOutAssign(stmt); repl != nil {
 					l.carryOverflowAnnotation(carryFrom, repl)
 					v.Index(i).Set(reflect.ValueOf(repl))
 					replaced = true
@@ -331,9 +387,9 @@ func (l *lowerer) walk(v reflect.Value) {
 			// analysisOnly 模式下**必須**執行：對 SkipLowering 路徑補齊
 			// `?T` 推斷事實，使 ASTToHIR 產生與預設路徑一致的 Type ID。
 			// SkipUnwrapLowering 旗標已隨 §4.3 刪除，option 算術推斷在此一律進行。
-			if ls, ok := stmt.(*LetStatement); ok {
-				l.inferOptionArith(ls)
-			}
+		if ls, ok := stmt.(*LetStatement); ok {
+			l.inferOptionArith(ls)
+		}
 			// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
 			// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
 			// 必須排在 inferOptionArith 之後：根為算術的情形由它處理。
@@ -342,8 +398,8 @@ func (l *lowerer) walk(v reflect.Value) {
 			// 不會建構取代節點。
 			// SkipUnwrapLowering / SkipSafeIndexLowering 旗標已隨 §4.3 刪除，
 			// 捕獲賦值在此一律進行。
-			if ls, ok := stmt.(*LetStatement); ok && !replaced {
-				if repl := l.maybeCaptureOptionAssign(ls); !l.analysisOnly && repl != nil {
+		if ls, ok := stmt.(*LetStatement); ok && !replaced {
+			if repl := l.maybeCaptureOptionAssign(ls); !l.analysisOnly && repl != nil {
 					l.carryOverflowAnnotation(carryFrom, repl)
 					v.Index(i).Set(reflect.ValueOf(repl))
 					replaced = true
@@ -354,9 +410,9 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 要不要補 `a ?T = nil` 預宣告。對已存在的變數補預宣告會先把它的
 				// 值清成 nil，`a = a + b / c` 的 RHS 在 ok 臂才求值，就讀到 nil）。
 				// 合成陳述（desugar 產物）不算使用者宣告。
-				if ls, ok := stmt.(*LetStatement); ok && ls.Name != nil && !ls.IsSynthetic {
-					l.declaredLocals[ls.Name.Value] = true
-				}
+			if ls, ok := stmt.(*LetStatement); ok && ls.Name != nil && !ls.IsSynthetic {
+				l.declaredLocals[ls.Name.Value] = true
+			}
 			}
 			l.walk(v.Index(i))
 			_ = replaced
@@ -386,7 +442,9 @@ func (l *lowerer) walk(v reflect.Value) {
 				}
 				// 預掃描區域變數容器型別（如 `av = a.to-vec()`），使其被安全索引
 				// 降級辨識（isSafeIndexBase / inferIndexElemType 依賴 FuncVarType）。
-				l.collectLocalTypes(fd)
+				if !l.skipCollectLocalTypes {
+					l.collectLocalTypes(fd)
+				}
 				// Bounds proof metadata was prepared for the whole Program before
 				// this lowering walk, after precomputeIdxLocalTypes populated the table.
 				isFuncDef = true
