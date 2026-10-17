@@ -9,13 +9,11 @@ package main
 // 臂內的 `x.f(...)` 呼叫不會被改寫、也不報錯。
 //
 // 兩條門禁：
-//  1. TestArmMethodifiedBothShapes —— 臂 fixture：兩形態都必須改寫、輸出逐位元
-//     相同（糖形態不可比 surface 少改；少了就是靜默丟功能）。
-//  2. TestCorpusShapeParity —— tests/（532 份）與 src/std（118 份）兩形態跑同一
+//  1. TestArmMethodifiedBothShapes —— 臂 fixture：臂內呼叫必須改寫（少了就是靜默丟功能）。
+//  2. TestCorpusShapeParity —— tests/（532 份）與 src/std（118 份）糖形態跑同一
 //     次 methodify，比對計數與輸出。**今天兩份語料都是 0 命中（空洞）**，非空洞性
-//     由 1 的 fixture 承擔；本條是前向迴歸網。語料若出現「surface 形態解析失敗
-//     但糖形態成功」，記帳跳過（surface 降糖的既有缺口，實測 src/std/crypto/rsa.no），
-//     但「糖形態解析失敗」直接 FAIL——那是正式形態的產物壞了。
+//     由 1 的 fixture 承擔；本條是前向迴歸網。糖形態（正式形態）解析失敗直接 FAIL——
+//     那是正式形態的產物壞了。舊的 surface 形態已隨 §4.3 旗標一起退役，本門禁現只覆蓋糖形態。
 import (
 	"os"
 	"path/filepath"
@@ -41,57 +39,40 @@ get-v = () (r ?i64) {
 }
 `
 
-// methodifyFileShape 以指定形態解析並 methodify（解析失敗回傳 content, 0, nil，
-// 與 methodifyFile 一致）。需要分辨「哪個形態解析失敗」的場合請用 parseRawShape。
-func methodifyFileShape(content string, sugar bool) (string, int, []string) {
-	prog := parseSurfaceShape(content, sugar)
+// methodifyFileShape 以糖形態解析並 methodify（解析失敗回傳 content, 0, nil，
+// 與 methodifyFile 一致）。
+func methodifyFileShape(content string) (string, int, []string) {
+	prog := parseSurfaceShape(content)
 	if prog == nil {
 		return content, 0, nil
 	}
 	return methodifyProgram(prog, content)
 }
 
-// parseRawShape 以指定形態解析並回傳錯誤（不吞、不印）。
-func parseRawShape(code string, sugar bool) (*parser.Program, []string) {
+// parseRawShape 以糖形態解析並回傳錯誤（不吞、不印）。
+func parseRawShape(code string) (*parser.Program, []string) {
 	l := lexer.New(code)
 	p := parser.New(l)
-	if sugar {
-		p.SkipLowering = true
-	} else {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
-	}
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	return prog, p.Errors()
 }
 
 func TestArmMethodifiedBothShapes(t *testing.T) {
-	progSurface, errs := parseRawShape(armSrc, false)
+	prog, errs := parseRawShape(armSrc)
 	if len(errs) > 0 {
-		t.Fatalf("surface 形態解析失敗: %v", errs)
+		t.Fatalf("糖形態解析失敗: %v", errs)
 	}
-	progSugar, errs := parseRawShape(armSrc, true)
-	if len(errs) > 0 {
-		t.Fatalf("sugar 形態解析失敗: %v", errs)
-	}
-	outSurface, nSurface, _ := methodifyProgram(progSurface, armSrc)
-	outSugar, nSugar, _ := methodifyProgram(progSugar, armSrc)
+	out, n, _ := methodifyProgram(prog, armSrc)
 
-	// 兩形態輸出必須逐位元相同。
-	if outSurface != outSugar {
-		t.Errorf("兩形態輸出不同：\n--- surface ---\n%s\n--- sugar ---\n%s", outSurface, outSugar)
-	}
 	// 非空洞 + 承重：臂內的呼叫必須真的被改寫成方法形態。
-	if !strings.Contains(outSugar, "1.5.to-i64()") {
-		t.Errorf("糖形態下臂內的 math.f64-to-i64(1.5) 沒有被改寫——臂子樹對走訪器不可見：\n%s", outSugar)
+	if !strings.Contains(out, "1.5.to-i64()") {
+		t.Errorf("糖形態下臂內的 math.f64-to-i64(1.5) 沒有被改寫——臂子樹對走訪器不可見：\n%s", out)
 	}
-	if strings.Contains(outSugar, "f64-to-i64(") {
-		t.Errorf("改寫後仍殘留模組前綴呼叫：\n%s", outSugar)
+	if strings.Contains(out, "f64-to-i64(") {
+		t.Errorf("改寫後仍殘留模組前綴呼叫：\n%s", out)
 	}
-	if nSurface != nSugar {
-		t.Errorf("改寫計數不同：surface=%d sugar=%d", nSurface, nSugar)
-	}
-	if nSugar == 0 {
+	if n == 0 {
 		t.Fatalf("改寫計數為 0——fixture 沒有觸發（防 0 == 0）")
 	}
 }
@@ -123,7 +104,7 @@ func corpusShapeParity(t *testing.T, root string) {
 		t.Fatalf("語料 %s 為空——門禁空洞", root)
 	}
 
-	changed, surfaceOnlyParseFail := 0, 0
+	changed := 0
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -131,36 +112,21 @@ func corpusShapeParity(t *testing.T, root string) {
 		}
 		src := string(data)
 
-		progSugar, errSugar := parseRawShape(src, true)
-		if len(errSugar) > 0 {
-			// 正式形態解析不了 = 工具在生產形態下讀不到這份檔，直接 FAIL。
-			t.Errorf("%s: 糖形態解析失敗: %v", f, errSugar)
-			continue
-		}
-		progSurface, errSurface := parseRawShape(src, false)
-		if len(errSurface) > 0 {
-			// surface 形態解析不了但糖形態可以：surface 降糖的既有缺口
-			//（實測 src/std/crypto/rsa.no 的空 match 臂），與本工具無關，
-			// 記帳跳過。該形態將隨 §4.3 旗標一起退役。
-			surfaceOnlyParseFail++
-			t.Logf("  surface-only parse fail: %s (%v)", f, errSurface[0])
+		prog, errs := parseRawShape(src)
+		if len(errs) > 0 {
+			// 糖形態（正式形態）解析不了 = 工具在生產形態下讀不到這份檔，直接 FAIL。
+			t.Errorf("%s: 糖形態解析失敗: %v", f, errs)
 			continue
 		}
 
-		outSurface, nSurface, _ := methodifyProgram(progSurface, src)
-		outSugar, nSugar, _ := methodifyProgram(progSugar, src)
-		if nSurface > 0 {
+		out, n, _ := methodifyProgram(prog, src)
+		if n > 0 {
 			changed++
 		}
-		if nSurface != nSugar {
-			t.Errorf("%s: 改寫計數不同：surface=%d sugar=%d", f, nSurface, nSugar)
-		}
-		if outSurface != outSugar {
-			t.Errorf("%s: 輸出不同（surface vs sugar）", f)
-		}
+		_ = out
 	}
-	t.Logf("語料 %s：%d 份；發生改寫 %d 份；surface-only 解析失敗 %d 份",
-		root, len(files), changed, surfaceOnlyParseFail)
+	t.Logf("語料 %s：%d 份；發生改寫 %d 份",
+		root, len(files), changed)
 	if changed == 0 {
 		// 語料尺子對本工具是空洞的（今天 tests/ 與 src/std 都 0 命中）——
 		// 非空洞性由 TestArmMethodifiedBothShapes 的 fixture 承擔。

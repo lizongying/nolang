@@ -22,8 +22,7 @@ func TestOverflowRelevantSet(t *testing.T) {
 
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		t.Fatalf("parse errors: %v", p.Errors())
@@ -92,8 +91,7 @@ func TestOverflowGovernedMap(t *testing.T) {
 
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		t.Fatalf("parse errors: %v", p.Errors())
@@ -192,8 +190,7 @@ func TestLintIneffectiveOverflow(t *testing.T) {
 
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		t.Fatalf("parse errors: %v", p.Errors())

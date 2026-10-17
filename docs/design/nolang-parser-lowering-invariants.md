@@ -198,6 +198,39 @@ H1 是**链接与命名**，不是降糖：
 
 `no fmt` / `no fix` / LSP / `astpatch` / `std_qualify` / `std_methodify` 改为**直接读糖节点**，一个真值源。
 
+### 4.3.1 实现计划（2026-10-17 起，实测校正后的真实 scope）
+
+> ⚠️ 上面「消费方已全部翻糖」的判断**已过时**。`grep` 实测：3 个工具的 **surface 分支**仍在 set 这两个旗标，约 **22 个单测**也在 set。且这些单测构造的「半降糖中间态」（只保留 `?=`/`#{index-out}` 为糖、其余照常降糖）删旗标后**不可达**。删除必须逐文件迁移，不是机械 grep 删除。
+
+**行为不变性（关键安全论据）**：默认编译路径 `SkipLowering=false` 时两旗标为零值，`lowering.go` 的 gate `if !l.p.SkipUnwrapLowering` 等恒真 → 完全展开。删旗标 = 让展开**无条件发生**，默认路径**逐位元不变** ⇒ `no build`/`no vet`/`no test` 不受影响。`no fmt`/`lsp`/正式工具路径早已只 set `SkipLowering=true`（糖），根本不碰这两个旗标 ⇒ 亦不受影响。唯一受影响的是「surface 消费方」（3 工具 surface 分支 + 22 单测）。
+
+**执行顺序（每步后用 `make test` / `go test ./parser/... ./checker/... ./fmt/... ./tools/...` 验证）**：
+
+1. **生产工具 surface 分支**（自身注释已标「随旗标一起删」）：`tools/astpatch/main.go` 的 `parseSourceShape`/`parseCodeExprShape`/`parseCodeStmtsShape` 删 `sugar=false` 分支，统一走 `SkipLowering=true`；`tools/std_qualify/main.go:293-296`、`tools/std_methodify/main.go:160-163` 同改。其形状门禁（`*_test.go` 的 surface 形态）改为只留 sugar 形态或删除。
+2. **`lowering.go` 的 gate 删除**：238/319/334/345/970-974/2841-2845/3179-3182/3413/3508 处的 `if l.p.SkipUnwrapLowering` / `if !l.p.SkipSafeIndexLowering` 全部去掉，展开无条件化。
+3. **删 `parser.go:90-104` 两旗标定义**。
+4. **迁移 22 个单测**（最重的一步，需逐文件判断）：
+   - 仅要「保留原始节点供分析」的（`bounds_test.go` 的 `AnalyzeInBoundsIndex`、`s3_inferred_side_table_test.go` 的副表推断）→ 换成 `p.SkipLowering = true`（糖形态同样保留节点）。
+   - 形状 A/B 门禁（`checker_on_sugar_test.go` 的 surface/surface-lw 形态、`hir_equivalence_test.go`、`astpatch`/`std_qualify`/`std_methodify` 的 `shape_gate_test.go`）→ 删 surface 形态，只留 lowered/sugar。
+   - 断言「`+=`→`UnwrapAssignStatement` 中间态」或「`?=`/`#{index-out}` 不降糖」的（`compound_assign_test.go`、`d9_index_write_test.go`、`option_capture_test.go` 等）→ **改写断言为最终降糖形态**（default 路径下 `UnwrapAssignStatement`→`BlockStatement`、`#{index-out}`→match 块），因为该中间态已不可达。
+   - 显式 set `= false` 的（`zz_tmp_dump_test.go`、`zz_hir_dump_test.go`、`d9_index_write_test.go` 的 default 分支）→ 直接删这两行（默认即 false）。
+5. **删 12 痕迹字段**（`ast.go:1611-1650`）+ **RTFlag 位**（`resolver.go:85-121`）+ **formatter 降糖代码**（`formatBareMatchExpressionSubj` 的 `RTMatchWrapper`/索引主体归一化反推、`writeBareMatchArm` 合成 let 打捞）。此步独立、风险更高，单独成项，不在第一步内。
+
+> `hir.KUnwrapAssign` 死 kind 一并删（golden_test.go:322 豁免随之消失）。
+
+### 4.3.2 ✅ §4.3 旗标删除已落地（2026-10-17）
+
+步骤 1–4 全部完成，验证通过：
+
+- **步骤 1（生产工具 surface 分支）**：`tools/astpatch/main.go`（`parseSourceShape`/`parseCodeExprShape`/`parseCodeStmtsShape`）、`tools/std_qualify/main.go`、`tools/std_methodify/main.go` 删 `sugar=false` 分支，统一 `p.SkipLowering = true`；其 `shape_gate_test.go` 的 surface 形态改为只留 sugar。
+- **步骤 2（lowering.go gate 删除）**：238/317/332-343/972/2843/3178 处的 `if l.p.SkipUnwrapLowering` / `if !l.p.SkipSafeIndexLowering` 全部去掉，展开无条件化（默认路径行为不变）。
+- **步骤 3（删 parser.go 定义）**：`parser.go:90-104` 的 `SkipUnwrapLowering` / `SkipSafeIndexLowering` 两字段及注释已删。
+- **步骤 4（单测迁移）**：22+ 个单测的旗标 set 已迁到 `p.SkipLowering = true`；其中「surface vs sugar」A/B 形状门禁（`no_fix_shape_gate_test.go`、`fmt/sugar_fmt_ab_test.go`、`lsp/sugar_lint_ab_test.go`、`lsp/sugar_index_ab_test.go`）改写为**糖形态单形态语料冒煙測試**（parse→format/lint/index→重解析→冪等，532 份語料不崩潰）；随 surface 退役的 obsolete allowlist（`sugarFmtKnownDivergence` / `sugarLintKnownDivergence` / `overflowShapeKnownDivergence`）一并删除。LSP 的 `fixOverflowSourceShape` / `fixMatchArmsSource` / `fixUnwrapSourceShape` 删 `sugar bool` 参数与 surface 分支。
+
+**验证**：`go build ./...` 干净；`go test` 全绿（parser / checker / fmt / lsp / tools / mir / cmd/no / mmast / package，均注入 `StdSigKey`）。默认编译路径（SkipLowering=false）与糖形态（SkipLowering=true）行为均不变 ⇒ `no build` / `no vet` / `no test` 不受影响。
+
+**步骤 5 尚未做（独立高风险项，单独排期）**：12 痕迹字段、RTFlag 位、formatter 降糖代码仍保留，待单独迁移。
+
 ---
 
 ## 5. base / sugar HIR 分类裁定（规范性）

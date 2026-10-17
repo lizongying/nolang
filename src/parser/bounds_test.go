@@ -14,8 +14,7 @@ import (
 func parseSurface(t *testing.T, src string) *Program {
 	t.Helper()
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)

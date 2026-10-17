@@ -271,7 +271,7 @@ func parseSurfaceProg(t *testing.T, src string) *parser.Program {
 	t.Helper()
 	l := lexer.New(src)
 	p := parser.New(l)
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)

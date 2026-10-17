@@ -26,7 +26,7 @@ import (
 func parseProgSurface(t *testing.T, src string) *parser.Program {
 	t.Helper()
 	p := parser.New(lexer.New(src))
-	p.SkipUnwrapLowering = true
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
@@ -41,7 +41,7 @@ func parseProgSurface(t *testing.T, src string) *parser.Program {
 func parseProgSurfaceAllowErrors(t *testing.T, src string) *parser.Program {
 	t.Helper()
 	p := parser.New(lexer.New(src))
-	p.SkipUnwrapLowering = true
+	p.SkipLowering = true
 	return p.ParseProgram()
 }
 

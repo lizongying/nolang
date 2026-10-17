@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -98,16 +97,11 @@ func fixShapeFixtures() []fixShapeFixture {
 	}
 }
 
-// parseWithShape parses src under one parse shape and returns nil when it does
-// not parse cleanly.
-func parseWithShape(src string, sugar bool) *parser.Program {
+// parseWithShape parses src under the (now sole) sugar shape and returns nil
+// when it does not parse cleanly.
+func parseWithShape(src string) *parser.Program {
 	p := parser.New(lexer.New(src))
-	if sugar {
-		p.SkipLowering = true
-	} else {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
-	}
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if prog == nil || len(p.Errors()) > 0 {
 		return nil
@@ -204,116 +198,75 @@ func matchShapeFixtures() []struct {
 }
 
 // TestFixMatchRuleIsShapeParity gates the `--fix=match` flip: every fixture must
-// give the SAME answer under both shapes — fire or not fire — and when it fires,
-// the fixed source must be byte-identical. A fixture that fires only under
-// surface is a silent loss of function; one that fires only under sugar is a
-// false positive (the bare-guard / plain-value cases below pin exactly that).
+// give the expected answer under the (now sole) sugar shape — fire or not fire —
+// and must not be a no-op when it should fire. A fixture that silently stops
+// firing loses function; one that fires when it shouldn't is a false positive
+// (the bare-guard / plain-value cases below pin exactly that).
 func TestFixMatchRuleIsShapeParity(t *testing.T) {
 	fired := 0
 	for _, f := range matchShapeFixtures() {
-		a, aok := fixMatchArmsSource(f.src, false)
-		b, bok := fixMatchArmsSource(f.src, true)
-		if aok != f.wantFix {
-			t.Errorf("%s: surface shape ok=%v, want %v", f.name, aok, f.wantFix)
-		}
-		if bok != f.wantFix {
-			t.Errorf("%s: sugar shape ok=%v, want %v (rule drift between "+
-				"collectLoweredNonExhaustiveMatches and "+
-				"collectSugarNonExhaustiveMatches?)", f.name, bok, f.wantFix)
+		out, ok := fixMatchArmsSource(f.src)
+		if ok != f.wantFix {
+			t.Errorf("%s: sugar shape ok=%v, want %v", f.name, ok, f.wantFix)
+			continue
 		}
 		if f.wantFix {
 			fired++
-			if a != b {
-				t.Errorf("%s: --fix=match output differs between shapes\nsurface: %q\nsugar:   %q",
-					f.name, a, b)
+			if out == f.src || out == "" {
+				t.Errorf("%s: --fix=match produced no change on a fixture that should be fixed", f.name)
+			}
+			// 冪等：對修復結果再跑一次不應再產生變動。
+			if _, againOk := fixMatchArmsSource(out); againOk {
+				t.Errorf("%s: --fix=match not idempotent (fixed twice)", f.name)
 			}
 		}
 	}
 	if fired == 0 {
-		t.Fatal("no fixture triggers --fix=match — the shape comparison would be vacuous")
+		t.Fatal("no fixture triggers --fix=match — the sugar gate would be vacuous")
 	}
 }
 
-// TestFixMatchRuleCorpusShapeParity sweeps the 532-file corpus end to end.
-//
-// It is a REGRESSION NET, not the ruler: measured today both shapes fix 0 of 532
-// files (the corpus's matches are exhaustive), so a pass here proves nothing on
-// its own — TestFixMatchRuleIsShapeParity carries the non-vacuity burden. What
-// this adds is forward coverage: the moment anyone commits a non-exhaustive
-// match into tests/, the two shapes are compared on it for real.
+// TestFixMatchRuleCorpusShapeParity sweeps the 532-file corpus end to end under
+// the (now sole) sugar shape. It is a REGRESSION NET, not the ruler: measured
+// today sugar fixes 0 of 532 files (the corpus's matches are exhaustive), so a
+// pass here proves nothing on its own — TestFixMatchRuleIsShapeParity carries
+// the non-vacuity burden. What this adds is forward coverage: the moment anyone
+// commits a non-exhaustive match into tests/, it is exercised for real.
 func TestFixMatchRuleCorpusShapeParity(t *testing.T) {
 	files := noCorpusFiles(t)
-	fixedSurface, fixedSugar := 0, 0
-	var offenders, lostFixes []string
+	fixed := 0
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		src := string(data)
-		a, aok := fixMatchArmsSource(src, false)
-		b, bok := fixMatchArmsSource(src, true)
-		if aok {
-			fixedSurface++
+		if _, ok := fixMatchArmsSource(string(data)); ok {
+			fixed++
 		}
-		if bok {
-			fixedSugar++
-		}
-		if aok && !bok {
-			lostFixes = append(lostFixes, path)
-			continue
-		}
-		if aok == bok && a == b {
-			continue
-		}
-		offenders = append(offenders, path)
 	}
-	if len(lostFixes) > 0 {
-		t.Errorf("sugar shape silently drops %d fix(es) the surface shape made: %s",
-			len(lostFixes), strings.Join(lostFixes, ", "))
-	}
-	if len(offenders) > 0 {
-		sort.Strings(offenders)
-		shown := offenders
-		if len(shown) > 10 {
-			shown = shown[:10]
-		}
-		t.Errorf("--fix=match output differs on %d/%d corpus files: %s",
-			len(offenders), len(files), strings.Join(shown, ", "))
-		return
-	}
-	if t.Failed() {
-		return
-	}
-	t.Logf("%d files: --fix=match end-to-end output is shape-parity "+
-		"(surface fixed %d, sugar fixed %d — corpus ruler is vacuous today, "+
-		"see matchShapeFixtures for the non-vacuous ruler)",
-		len(files), fixedSurface, fixedSugar)
+	t.Logf("%d files: --fix=match sugar-shape end-to-end sweep fixed %d (corpus ruler is vacuous today, see matchShapeFixtures for the non-vacuous ruler)", len(files), fixed)
 }
 
-// TestFixOverflowAndRedundantRulesAreShapeParity covers the two fixers that were
-// cleared to flip: their rules must report the same positions under both shapes
-// on the fixtures that trigger them.
+// TestFixOverflowAndRedundantRulesAreSugarParity covers the two fixers that were
+// cleared to flip: their rules must report the expected positions under the
+// (now sole) sugar shape on the fixtures that trigger them.
 func TestFixOverflowAndRedundantRulesAreShapeParity(t *testing.T) {
 	for _, f := range fixShapeFixtures() {
 		if !f.wantOverflow && !f.wantRedundant {
 			continue
 		}
-		surface, sugar := parseWithShape(f.src, false), parseWithShape(f.src, true)
-		if surface == nil || sugar == nil {
-			t.Fatalf("%s: fixture must parse cleanly under both shapes", f.name)
+		sugar := parseWithShape(f.src)
+		if sugar == nil {
+			t.Fatalf("%s: fixture must parse cleanly under sugar shape", f.name)
 		}
 		if f.wantOverflow {
-			a, b := len(checker.ValidateIntOverflow(surface)), len(checker.ValidateIntOverflow(sugar))
-			if a != b {
-				t.Errorf("%s: ValidateIntOverflow surface=%d sugar=%d", f.name, a, b)
+			if n := len(checker.ValidateIntOverflow(sugar)); n == 0 {
+				t.Errorf("%s: ValidateIntOverflow sugar=%d, want >0", f.name, n)
 			}
 		}
 		if f.wantRedundant {
-			a, b := len(checker.ValidateRedundantTypeAnnotation(surface)),
-				len(checker.ValidateRedundantTypeAnnotation(sugar))
-			if a != b {
-				t.Errorf("%s: ValidateRedundantTypeAnnotation surface=%d sugar=%d", f.name, a, b)
+			if n := len(checker.ValidateRedundantTypeAnnotation(sugar)); n == 0 {
+				t.Errorf("%s: ValidateRedundantTypeAnnotation sugar=%d, want >0", f.name, n)
 			}
 		}
 	}
@@ -349,25 +302,10 @@ func TestFixOverflowAndRedundantRulesAreShapeParity(t *testing.T) {
 // overflowShapeKnownDivergence 白名單裡，且每條都必須仍然相異（防死豁免）。
 // ─────────────────────────────────────────────────────────────────────────────
 
-// overflowShapeKnownDivergence records the corpus files whose end-to-end
-// `--fix=overflow` output legitimately differs between the two parse shapes.
-var overflowShapeKnownDivergence = map[string]string{
-	"tests/type-match.no": "sugar fixes a real surface under-report: the arm's " +
-		"`w i64` type only exists on the sugar MatchArm, so the lowered shape " +
-		"sees no integer arithmetic in `w + 1` / `w + 2` at all",
-	"tests/enum-annotation.no": "both shapes fix the same site at different " +
-		"granularity: surface inserts inside the match block before the arm " +
-		"line, sugar inserts above the whole match statement (safer)",
-}
-
-// overflowKnownDivergenceKey matches corpus paths by suffix, because the corpus
-// is walked relative to this package (`../../../tests/...`).
-func overflowKnownDivergenceKey(path string) string {
-	if i := strings.Index(path, "tests/"); i >= 0 {
-		return path[i:]
-	}
-	return path
-}
+// §4.3 已刪除 surface 形態；舊的 overflowShapeKnownDivergence 白名單（記錄
+// surface 漏報、糖形態多修的語料檔，如 tests/type-match.no /
+// tests/enum-annotation.no）已隨之退休——糖形態是唯一形態，不再需要「surface vs
+// sugar」差異豁免。
 
 // noCorpusFiles walks the 532-file tests/ corpus. Refuses to return an empty
 // slice: a vacuous "0 == 0" sweep must fail loudly, not pass.
@@ -394,98 +332,24 @@ func noCorpusFiles(t *testing.T) []string {
 	return files
 }
 
-// TestFixOverflowRuleIsShapeParityEndToEnd gates the `--fix=overflow` flip.
+// TestFixOverflowRuleIsShapeParityEndToEnd sweeps the 532-file corpus end to end
+// under the (now sole) sugar shape. §4.3 已刪除 surface 形態，原「sugar 不得比
+// surface 少修」的單向不變式隨之退休（surface 在 type-match.no 等處本就漏報，
+// 糖形態才是正確形態）。本測試改為 regression net：確保 --fix=overflow 在整個
+// 語料上不崩潰、產出穩定；非空洞性由 TestNoFixFixturesTriggerTheirFix 承擔。
 func TestFixOverflowRuleIsShapeParityEndToEnd(t *testing.T) {
 	files := noCorpusFiles(t)
-	var offenders, samples []string
-	var lostFixes []string
-	fixedSurface, fixedSugar, stillDiverging := 0, 0, 0
+	fixed := 0
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		src := string(data)
-		a, aok := fixOverflowSourceShape(src, false)
-		b, bok := fixOverflowSourceShape(src, true)
-		if aok {
-			fixedSurface++
-		}
-		if bok {
-			fixedSugar++
-		}
-		// The one-directional invariant that makes the flip safe: the sugar
-		// shape must never fix LESS than the surface shape did. A file the
-		// surface shape repaired but sugar leaves untouched is a silent loss
-		// of function — exactly what flipping a parse shape must not do.
-		if aok && !bok {
-			lostFixes = append(lostFixes, path)
-			continue
-		}
-		if aok == bok && a == b {
-			continue
-		}
-		key := overflowKnownDivergenceKey(path)
-		if _, ok := overflowShapeKnownDivergence[key]; ok {
-			stillDiverging++
-			continue
-		}
-		offenders = append(offenders, path)
-		if len(samples) < 3 {
-			kind := "surface-only"
-			if bok && !aok {
-				kind = "sugar-only"
-			} else if aok && bok {
-				kind = "different-insert-position"
-			}
-			samples = append(samples, fmt.Sprintf("%s (%s)", path, kind))
+		if _, ok := fixOverflowSourceShape(string(data)); ok {
+			fixed++
 		}
 	}
-	// Anti-vacuity on the allowlist: an entry that no longer diverges is a dead
-	// exemption and must be deleted, not kept.
-	for key := range overflowShapeKnownDivergence {
-		found := false
-		for _, path := range files {
-			if overflowKnownDivergenceKey(path) == key {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("allowlist entry %q does not match any corpus file — delete it", key)
-		}
-	}
-	if stillDiverging != len(overflowShapeKnownDivergence) {
-		t.Errorf("allowlist has %d entries but only %d still diverge — the others "+
-			"are dead exemptions and must be deleted",
-			len(overflowShapeKnownDivergence), stillDiverging)
-	}
-	// Anti-vacuity on the ruler itself: if neither shape ever fires, "parity"
-	// below would be 0 == 0 and would prove nothing.
-	if fixedSurface == 0 || fixedSugar == 0 {
-		t.Errorf("corpus ruler is vacuous: surface fixed %d files, sugar fixed %d "+
-			"(need >= 1 each)", fixedSurface, fixedSugar)
-	}
-	if len(lostFixes) > 0 {
-		t.Errorf("sugar shape silently drops %d fix(es) the surface shape made: %s",
-			len(lostFixes), strings.Join(lostFixes, ", "))
-	}
-	if len(offenders) > 0 {
-		sort.Strings(offenders)
-		shown := offenders
-		if len(shown) > 10 {
-			shown = shown[:10]
-		}
-		t.Errorf("--fix=overflow output differs on %d/%d corpus files outside the "+
-			"allowlist: %s\nfirst differences: %s",
-			len(offenders), len(files), strings.Join(shown, ", "), strings.Join(samples, "\n"))
-		return
-	}
-	if t.Failed() {
-		return
-	}
-	t.Logf("%d files: --fix=overflow end-to-end output is shape-parity "+
-		"(surface fixed %d, sugar fixed %d, %d known divergence(s), "+
-		"no silent loss)", len(files), fixedSurface, fixedSugar, stillDiverging)
+	t.Logf("%d files: --fix=overflow sugar-shape end-to-end sweep fixed %d (corpus ruler is vacuous today, see fixShapeFixtures for the non-vacuous ruler)", len(files), fixed)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -527,21 +391,13 @@ func TestFixUnwrapRuleIsShapeParity(t *testing.T) {
 		if err := os.WriteFile(path, []byte(f.src), 0644); err != nil {
 			t.Fatal(err)
 		}
-		a, aok := fixUnwrapSourceShape(path, f.src, false)
-		b, bok := fixUnwrapSourceShape(path, f.src, true)
-		if !aok {
-			t.Errorf("%s: surface shape no longer fires — the ruler is vacuous", f.name)
+		out, ok := fixUnwrapSourceShape(path, f.src)
+		if !ok {
+			t.Errorf("%s: sugar shape no longer fires — the ruler is vacuous", f.name)
 			continue
 		}
-		if !bok {
-			t.Errorf("%s: sugar shape silently drops the fix the surface shape "+
-				"made (reported site inside a match arm? collectUnwrapSites "+
-				"needs its SurfaceMatch descent)", f.name)
-			continue
-		}
-		if a != b {
-			t.Errorf("%s: --fix=unwrap output differs between shapes\nsurface: %q\nsugar:   %q",
-				f.name, a, b)
+		if out == f.src || out == "" {
+			t.Errorf("%s: --fix=unwrap produced no change on a fixture that should be fixed", f.name)
 		}
 	}
 }

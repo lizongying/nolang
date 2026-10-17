@@ -315,7 +315,6 @@ func TestFormatPreservesEffectiveOverflowInMethodReceiverIndex(t *testing.T) {
 func parseForTest(src string) *parser.Program {
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	return p.ParseProgram()
 }

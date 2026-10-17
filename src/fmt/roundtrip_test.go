@@ -115,7 +115,7 @@ func TestFormatUnwrapAssignKeepsDocComment(t *testing.T) {
 	// 輸出必須可再解析（冪等前提）
 	l := lexer.New(out)
 	p := parser.New(l)
-	p.SkipUnwrapLowering = true
+	p.SkipLowering = true
 	p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		t.Errorf("formatted output no longer parses: %v\noutput:\n%s", p.Errors(), out)

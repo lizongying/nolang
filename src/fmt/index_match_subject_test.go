@@ -30,7 +30,7 @@ func TestFormatIndexMatchSubjectNotDesugared(t *testing.T) {
 	}
 	l := lexer.New(out)
 	p := parser.New(l)
-	p.SkipUnwrapLowering = true
+	p.SkipLowering = true
 	p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		t.Fatalf("formatted output no longer parses: %v\noutput:\n%s", p.Errors(), out)

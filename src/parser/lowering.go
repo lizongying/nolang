@@ -232,17 +232,15 @@ func (l *lowerer) walk(v reflect.Value) {
 			}
 			return
 		}
-		if v.Elem().Type() == unwrapAssignPtrType && v.CanSet() {
-			// no fmt 等純格式化場景需要 surface AST：跳過 UnwrapAssignStatement
-			// 的展開，讓 formatter 直接渲染 `?=` / `=`（保持可重解析、冪等）。
-			if l.p.SkipUnwrapLowering {
-				return
-			}
-			if l.analysisOnly {
-				l.walk(v.Elem())
-				return
-			}
-			uas := v.Interface().(*UnwrapAssignStatement)
+	if v.Elem().Type() == unwrapAssignPtrType && v.CanSet() {
+		// UnwrapAssignStatement 一律展開為 BlockStatement（編譯器需要展開後的
+		// IR）。formatter 現走糖 AST（SkipLowering），不經此路徑，故不再需要
+		// SkipUnwrapLowering 跳過——該旗標已隨 §4.3 刪除。
+		if l.analysisOnly {
+			l.walk(v.Elem())
+			return
+		}
+		uas := v.Interface().(*UnwrapAssignStatement)
 			lowered := l.lowerUnwrapAssign(uas)
 			if lowered != nil {
 				// UnwrapAssignStatement 降級為 BlockStatement（Statement）。
@@ -312,45 +310,45 @@ func (l *lowerer) walk(v reflect.Value) {
 					}
 				}
 			}
-				// analysisOnly 模式（prepareInferredTypes）：跳過所有結構
-				// 改寫（maybeIndexOutAssign / maybeCaptureOptionAssign 的取代節點
-				// 建構）；推斷分析由 inferOptionArith + maybeCaptureOptionAssign 內
-				// 的 synthesizeNullableType 完成（後者在 analysisOnly 下提早返回）。
-				if !l.p.SkipSafeIndexLowering && !l.analysisOnly {
-					if repl := l.maybeIndexOutAssign(stmt); repl != nil {
-						l.carryOverflowAnnotation(carryFrom, repl)
-						v.Index(i).Set(reflect.ValueOf(repl))
-						replaced = true
-					}
+			// analysisOnly 模式（prepareInferredTypes）：跳過所有結構
+			// 改寫（maybeIndexOutAssign / maybeCaptureOptionAssign 的取代節點
+			// 建構）；推斷分析由 inferOptionArith + maybeCaptureOptionAssign 內
+			// 的 synthesizeNullableType 完成（後者在 analysisOnly 下提早返回）。
+			// SkipSafeIndexLowering 旗標已隨 §4.3 刪除，安全索引展開在此一律進行。
+			if !l.analysisOnly {
+				if repl := l.maybeIndexOutAssign(stmt); repl != nil {
+					l.carryOverflowAnnotation(carryFrom, repl)
+					v.Index(i).Set(reflect.ValueOf(repl))
+					replaced = true
 				}
+			}
 				// 有號整數 `/` `%` 本身就會產生 option（除零/溢出時為 err），
 				// 因此以普通 `=` 綁定其結果時，變數型別必然是 `?T`：無需用戶
 				// 顯式標註，在此就地補上推斷出的註解（等同寫 `q ?int = a / b`），
 				// 讓下游 checker（ovfhndld / ovf-int-default）與 MIR（typeHint →
 				// 除零守衛）走已驗證的顯式路徑。
 				// fmt 路徑跳過，formatter 永遠看不到合成註解。
-				// analysisOnly 模式下**必須**執行：對 SkipLowering 路徑補齊
-				// `?T` 推斷事實，使 ASTToHIR 產生與預設路徑一致的 Type ID。
-				if !l.p.SkipUnwrapLowering {
-					if ls, ok := stmt.(*LetStatement); ok {
-						l.inferOptionArith(ls)
-					}
+			// analysisOnly 模式下**必須**執行：對 SkipLowering 路徑補齊
+			// `?T` 推斷事實，使 ASTToHIR 產生與預設路徑一致的 Type ID。
+			// SkipUnwrapLowering 旗標已隨 §4.3 刪除，option 算術推斷在此一律進行。
+			if ls, ok := stmt.(*LetStatement); ok {
+				l.inferOptionArith(ls)
+			}
+			// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
+			// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
+			// 必須排在 inferOptionArith 之後：根為算術的情形由它處理。
+			// analysisOnly 模式：仍呼叫以執行內部的 synthesizeNullableType
+			// 推斷；該函式已被加上 `if l.analysisOnly { return nil }` 提早出口，
+			// 不會建構取代節點。
+			// SkipUnwrapLowering / SkipSafeIndexLowering 旗標已隨 §4.3 刪除，
+			// 捕獲賦值在此一律進行。
+			if ls, ok := stmt.(*LetStatement); ok && !replaced {
+				if repl := l.maybeCaptureOptionAssign(ls); !l.analysisOnly && repl != nil {
+					l.carryOverflowAnnotation(carryFrom, repl)
+					v.Index(i).Set(reflect.ValueOf(repl))
+					replaced = true
 				}
-				// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
-				// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
-				// 必須排在 inferOptionArith 之後：根為算術的情形由它處理。
-				// analysisOnly 模式：仍呼叫以執行內部的 synthesizeNullableType
-				// 推斷；該函式已被加上 `if l.analysisOnly { return nil }` 提早出口，
-				// 不會建構取代節點。
-				if !l.p.SkipUnwrapLowering && !l.p.SkipSafeIndexLowering {
-					if ls, ok := stmt.(*LetStatement); ok && !replaced {
-						if repl := l.maybeCaptureOptionAssign(ls); !l.analysisOnly && repl != nil {
-							l.carryOverflowAnnotation(carryFrom, repl)
-							v.Index(i).Set(reflect.ValueOf(repl))
-							replaced = true
-						}
-					}
-				}
+			}
 				// 按 walk 順序登記使用者寫下的宣告名（必須在捕獲 pass 之後：
 				// 捕獲 pass 要判斷的是「本陳述之前」是否已宣告同名變數，才能決定
 				// 要不要補 `a ?T = nil` 預宣告。對已存在的變數補預宣告會先把它的
@@ -967,11 +965,11 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 	// 使 itAssignParts 認不到、RHS 读取未被降糖（capture 產物仍被 checker 視為
 	// ?u64）→ fxxoptarg。直接跳過，交給 place-write lowering 處理。
 	//
-	// ⚠️ 僅在編譯期降糖模式（SkipSafeIndexLowering=false）跳過：此時 D9 place-write
-	// desugar 會接管 `it`。surface 模式（no fmt / LSP，SkipSafeIndexLowering=true）
-	// 不跑 desugar，`it` 可能是普通暫存變數（std 裡大量使用），必須走通用捕獲邏輯，
-	// 否則會改寫 surface AST、破壞 formatter 冪等（TestFormatIdempotent）。
-	if ls.Name.Value == "it" && !l.p.SkipSafeIndexLowering {
+	// ⚠️ 編譯期降糖模式跳過：此時 D9 place-write desugar 會接管 `it`。糖形態
+	// （no fmt / LSP，SkipLowering=true）不走此路徑，`it` 是普通暫存變數（std
+	// 裡大量使用），必須走通用捕獲邏輯。SkipSafeIndexLowering 旗標已隨 §4.3 刪除，
+	// 此處統一在編譯期（非 analysisOnly）跳過 `it` 捕獲。
+	if ls.Name.Value == "it" {
 		return nil
 	}
 	// D1：`#{overflow=...}` / `#{index-out=...}` 註解不再豁免捕獲 —— 註解只影響
@@ -2838,11 +2836,9 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		// 寫的 `it = v`（let / assign 形態）改寫為「求值一次 → 寫回元素 → 重綁 it」。
 		// 值語境（anyArmValueCtx）的 match 保持讀語義：it 是載荷副本，`it = v` 只
 		// 重綁局部，與今天一致。nil/err 臂沒有元素位置可寫，不改寫。
-		// SkipSafeIndexLowering（no fmt / checker / LSP 等纯 surface 场景）= true
-		// 時跳過：formatter 只能重建「__match_subj 包裝」回 surface 語法，無法重建
-		// __idx/__place 合成寫回；此時讓 match 走純讀語義（it = 載荷副本），surface
-		// 仍可被 formatter 完整往返，編譯時（SkipSafeIndexLowering=false）再真正降糖。
-		if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) && !p.SkipSafeIndexLowering {
+		// SkipSafeIndexLowering 旗標已隨 §4.3 刪除：編譯期一律做 place-write 寫回；
+		// 糖形態（SkipLowering=true）不走此路徑，formatter 直接渲染 surface 語法。
+		if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) {
 			writeInBounds := false
 			if idx, ok := origMatched.(*IndexExpression); ok {
 				writeInBounds = p.sem.IndexIsInBounds(idx)
@@ -3176,10 +3172,10 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	if subjName != "" && subjElem != "" && ifExpr != nil {
 		// D9：place-write 發生過 ⇒ 先綁定下標暫存（__idx_L_C = 原下標表達式），
 		// 讀取改走暫存，使「越界檢查的讀」與「ok 臂的寫回」共用同一次下標求值。
-		// SkipSafeIndexLowering 時（no fmt 等）placeWriteUsed 必為 false（改写已
-		// 跳过），故此塊自然不進入，无需额外 gate；保留显式判断以防回归。
+		// 糖形態（SkipLowering=true）不走此路徑，placeWriteUsed 在該形態下恒為
+		// false，故此塊自然不進入。SkipSafeIndexLowering 旗標已隨 §4.3 刪除。
 		var preStmts []Statement
-		if placeWriteUsed && origIdxExpr != nil && !p.SkipSafeIndexLowering {
+		if placeWriteUsed && origIdxExpr != nil {
 			preStmts = append(preStmts, &LetStatement{
 				Token:       tok,
 				Name:        &Identifier{Token: tok, Value: idxTempName},
@@ -3410,8 +3406,8 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 			// 臂體後，此處先將 RHS 裡的每個安全索引读取（如 `it = rotr64(v[d]^v[a],32)`
 			// 的 `v[d]`/`v[a]`）降糖為「option 讀取 + DEF-match」的 u64 暫存，還原
 			// 舊語意；隨後的 __place 寫回使用這些 u64 暫存，rotr64 等函式不再收到
-			// 裸 option（消除 fxxoptarg）。SkipSafeIndexLowering（no fmt 等）時本
-			// 函數整體早退，不會誤觸。
+			// 裸 option（消除 fxxoptarg）。糖形態（SkipLowering=true）不走此路徑，
+			// 本函數整體早退，不會誤觸。
 			newVal := val
 			if idxOutDef != nil {
 				var ctr int
@@ -3505,7 +3501,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 // 寫回直接吃 u64，語意正確。counter 保證同一 expr 內多個读取的暫存命名不撞。
 //
 // 若某读取推不出元素型別（基底型別未知），則放行不降糖（交給下游報錯），不影響
-// 其餘读取。SkipSafeIndexLowering（no fmt 等）整條鏈不會進到此函數。
+// 其餘读取。糖形態（SkipLowering=true）整條鏈不會進到此函數。
 func (p *Parser) desugarIndexOutReads(expr Expression, tok lexer.Token, defVal AnnotationValue, counter *int) (Expression, []Statement) {
 	if expr == nil {
 		return nil, nil

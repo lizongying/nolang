@@ -230,8 +230,8 @@ func TestD9IndexInBoundsFlag(t *testing.T) {
 	// bounds analysis 已將證明結果寫入 Program.Sem，而不會修改 IndexExpression。
 	parseSurface := func(src string) *parser.Program {
 		p := parser.New(lexer.New(src))
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
+		p.SkipLowering = true
+		p.SkipLowering = true
 		prog := p.ParseProgram()
 		if errs := p.Errors(); len(errs) > 0 {
 			t.Fatalf("surface parse errors: %v", errs)

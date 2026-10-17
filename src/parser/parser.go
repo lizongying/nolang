@@ -87,21 +87,8 @@ type Parser struct {
 	// `f = (cb test-cb) {}`) are accepted. Defaults to false (zero value).
 	AllowAnonymousFnType bool
 
-	// SkipUnwrapLowering 控制是否跳過 UnwrapAssignStatement 的 lowering
-	//（展開為 __unwrap_N 區塊）。預設 false：編譯器需要展開後的 IR。
-	// `no fmt` 設定為 true，使 formatter 取得 surface AST 中的
-	// UnwrapAssignStatement 節點，直接渲染 `?=` / `=`，避免輸出不可重解析的
-	// __unwrap_N 區塊（見 src/fmt 與 no fmt 的 reparse/idempotency 測試）。
-	SkipUnwrapLowering bool
-
-	// SkipSafeIndexLowering 控制是否跳過安全索引的 lowering（#\{index-out=DEF\}
-	// 展開為 match 區塊、option 回傳函式內裸 `x = v[i]` 就地捕獲展開為
-	// `x: ?elem` 包裝）。
-	// 預設 false：編譯器需要展開後的 IR。
-	// `no fmt` 設定為 true，使 formatter 取得 surface AST 中的 `x = v[i]` 與
-	// 獨立行上的 `#{index-out = DEF}` 註解，直接渲染原始寫法，避免輸出不可重解析
-	// 的 `__idx_out_N` 區塊（見 no fmt 的 reparse/idempotency 測試）。
-	SkipSafeIndexLowering bool
+	// §4.3（2026-10-17）已刪除 SkipUnwrapLowering / SkipSafeIndexLowering 兩個局部
+	// 跳過旗標與依賴它們的 surface 形態；唯一保留的形態開關是下方的 SkipLowering。
 
 	// SkipLowering 控制是否跳過 ParseProgram 收尾的**整個** lowering pass
 	//（lowerProgram + flushCompoundAssigns）。預設 false：編譯器需要降糖後的 IR。
@@ -116,9 +103,10 @@ type Parser struct {
 	// 含糖 AST 是「Parser 不變量」（P1）的可觀測形態，也是把 checker 前移到
 	// lowering 之前的前提 —— checker 必須能直接對糖節點做檢查。
 	//
-	// ⚠️ 與 SkipUnwrapLowering / SkipSafeIndexLowering 的關係：那兩個是**局部**
-	// 跳過（只為 formatter 保留兩種糖的原始寫法，其餘照常降糖），本開關是**整體**
-	// 跳過。三者的消費方在 S4 一併改讀糖節點後刪除。
+	// ⚠️ 歷史關係：本開關（SkipLowering，**整體**跳過 lowering）與已於 §4.3
+	//（2026-10-17）刪除的 SkipUnwrapLowering / SkipSafeIndexLowering（**局部**
+	// 跳過，只為 formatter 保留兩種糖的原始寫法）是不同層級的開關。surface 形態
+	// 隨旗標退役，糖形態（SkipLowering）成為唯一非編譯形態。
 	SkipLowering bool
 
 	// LegacyBlockOverflowPropagation 啟用「區塊級 #{overflow=...}」的**遺留**

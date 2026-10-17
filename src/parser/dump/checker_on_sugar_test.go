@@ -64,8 +64,8 @@ func loweredShape() shape {
 
 func surfaceShape() shape {
 	return shape{name: "surface", configure: func(p *parser.Parser) {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
+		p.SkipLowering = true
+		p.SkipLowering = true
 	}}
 }
 
@@ -82,8 +82,8 @@ func loweredShapeLW() shape {
 
 func surfaceShapeLW() shape {
 	return shape{name: "surface-lw", lightweight: true, configure: func(p *parser.Parser) {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
+		p.SkipLowering = true
+		p.SkipLowering = true
 	}}
 }
 

@@ -8,16 +8,19 @@ package main
 // 巢狀 match 對所有 op 不可見，**且不報錯**（switch 靜默跳過）。op.go 的
 // carriesNodes + walkSlice 值結構體分支補上這個缺口。
 //
+// 舊的 surface 形態（`SkipUnwrapLowering` + `SkipSafeIndexLowering`）已隨 §4.3 旗標
+// 一起退役，本門禁現只覆蓋糖形態（正式形態）。
+//
 // 三條門禁：
-//  1. TestArmSubtreeVisibleBothShapes —— 臂 fixture：rename 必須伸進臂內，兩形態
-//     輸出逐位元相同（糖形態不可比 surface 少改；少了就是靜默丟功能）。
+//  1. TestArmSubtreeVisibleBothShapes —— 臂 fixture：rename 必須伸進臂內，輸出
+//     須把臂內呼叫改名（少了就是靜默丟功能）。
 //  2. TestValueStructSliceBlastRadius —— 把「非 Node 但承載 Node 的結構體切片」
 //     的爆炸半徑釘死在 SurfaceMatch.Arms 一個。parser 以後若長出新的這類切片，
 //     走訪器會開始下鑽它、行為隨之改變——本門禁失敗，逼一次 review。
 //     同時釘住 MatchArm 不實作 Node（這是值結構體分支存在的理由；哪天它實作了，
 //     walkSlice 的介面路徑會對值元素呼叫 Elem() 而 panic）。
-//  3. TestCorpusRenameShapeParity —— 532 份語料兩形態跑同一條 rename，比 op 計數
-//     與輸出。語料裡有沒有臂內被改名呼叫由 1 承擔非空洞性；本條是前向迴歸網。
+//  3. TestCorpusRenameShapeParity —— 532 份語料糖形態跑同一條 rename，比 op 計數
+//     與輸出可重解析性。語料裡有沒有臂內被改名呼叫由 1 承擔非空洞性；本條是前向迴歸網。
 import (
 	"os"
 	"path/filepath"
@@ -50,17 +53,17 @@ get-v = () (r ?i64) {
 }
 `
 
-// runRename 在指定形態下解析 src 並套用 rename op，回傳（輸出, op 計數）。
-func runRename(t *testing.T, src, from, to string, sugar bool) (string, int) {
+// runRename 在糖形態下解析 src 並套用 rename op，回傳（輸出, op 計數）。
+func runRename(t *testing.T, src, from, to string) (string, int) {
 	t.Helper()
-	program, srcStr, err := parseSourceShape("probe.no", src, sugar)
+	program, srcStr, err := parseSourceShape("probe.no", src)
 	if err != nil {
-		t.Fatalf("parse (sugar=%v): %v", sugar, err)
+		t.Fatalf("parse: %v", err)
 	}
 	patch := []byte(`{"ops":[{"op":"rename","from":` + jsonStr(from) + `,"to":` + jsonStr(to) + `}]}`)
 	out, n, err := applyPatch(program, srcStr, patch)
 	if err != nil {
-		t.Fatalf("applyPatch (sugar=%v): %v", sugar, err)
+		t.Fatalf("applyPatch: %v", err)
 	}
 	return out, n
 }
@@ -70,26 +73,17 @@ func jsonStr(s string) string { return `"` + s + `"` }
 
 func TestArmSubtreeVisibleBothShapes(t *testing.T) {
 	const from, to = "inner", "innerX"
-	outSurface, nSurface := runRename(t, armSrc, from, to, false)
-	outSugar, nSugar := runRename(t, armSrc, from, to, true)
+	out, n := runRename(t, armSrc, from, to)
 
-	// 兩形態輸出必須逐位元相同。
-	if outSurface != outSugar {
-		t.Errorf("兩形態輸出不同：\n--- surface ---\n%s\n--- sugar ---\n%s", outSurface, outSugar)
-	}
 	// 非空洞：rename 必須真的伸進臂內（`inner()` → `innerX()`），
 	// 且原呼叫消失。糖形態下少改任何一處都意味著臂子樹對走訪器不可見。
-	if !strings.Contains(outSugar, "innerX()") {
-		t.Errorf("糖形態下臂內的 inner() 沒有被改名——SurfaceMatch.Arms 對走訪器不可見：\n%s", outSugar)
+	if !strings.Contains(out, "innerX()") {
+		t.Errorf("糖形態下臂內的 inner() 沒有被改名——SurfaceMatch.Arms 對走訪器不可見：\n%s", out)
 	}
-	if strings.Contains(outSugar, "inner(") {
-		t.Errorf("改名後仍殘留 inner( 呼叫：\n%s", outSugar)
+	if strings.Contains(out, "inner(") {
+		t.Errorf("改名後仍殘留 inner( 呼叫：\n%s", out)
 	}
-	// 計數也必須一致（定義 + 呼叫點）。
-	if nSurface != nSugar {
-		t.Errorf("op 計數不同：surface=%d sugar=%d", nSurface, nSugar)
-	}
-	if nSugar == 0 {
+	if n == 0 {
 		t.Fatalf("rename 計數為 0——fixture 沒有觸發（防 0 == 0）")
 	}
 }
@@ -204,19 +198,16 @@ func TestValueStructSliceBlastRadius(t *testing.T) {
 	t.Logf("語料 %d/%d 份（糖形態）；爆炸半徑 = %v", parsed, len(files), got)
 }
 
-// TestCorpusRenameShapeParity 對每份語料檔取第一個函式定義名，兩形態跑同一條
-// rename，比較 op 計數與輸出。只用 rename（不涉 replace/insert 的 snippet 拼接），
-// 因此不觸及「snippet 形態必須與主樹一致」那條獨立的坑。
+// TestCorpusRenameShapeParity 對每份語料檔取第一個函式定義名，糖形態跑同一條
+// rename，比較 op 計數並確認輸出能重新解析。只用 rename（不涉 replace/insert 的
+// snippet 拼接），因此不觸及「snippet 形態必須與主樹一致」那條獨立的坑。
 //
-// 輸出比對有一條前置：兩形態的輸出都必須能重新解析。糖形態輸出壞了 = 正式形態的
-// 產物壞了，直接 FAIL。surface 形態輸出壞了則只跳過並記帳——那是 surface 形態
-// 「降糖 + formatter 迴印」的**既有**缺口（實測 type-match.no：型別解構臂
-// `v i64 ->` 降成 if 鏈後印不回來，輸出無法重新解析），與 astpatch 的走訪完整性
-// 無關，且該形態將隨 §4.3 旗標一起退役。兩形態的 op 計數則一律比對。
+// 輸出比對前置：輸出必須能重新解析。糖形態輸出壞了 = 正式形態的產物壞了，直接 FAIL。
+// surface 形態（`SkipUnwrapLowering` + `SkipSafeIndexLowering`）已隨 §4.3 旗標一起退役，
+// 本門禁現只覆蓋糖形態（正式形態）。
 func TestCorpusRenameShapeParity(t *testing.T) {
 	files := corpusFiles(t)
 	parsed, renamed, skipped := 0, 0, 0
-	var surfaceLossy []string
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -224,60 +215,35 @@ func TestCorpusRenameShapeParity(t *testing.T) {
 		}
 		src := string(data)
 
-		progSurface, _, err := parseSourceShape(f, src, false)
-		if err != nil {
-			skipped++
-			continue
-		}
-		progSugar, _, err := parseSourceShape(f, src, true)
+		prog, _, err := parseSourceShape(f, src)
 		if err != nil {
 			skipped++
 			continue
 		}
 		parsed++
 
-		name := firstFuncName(progSugar)
+		name := firstFuncName(prog)
 		if name == "" {
-			name = "__zz_absent_name__" // 無函式定義：rename 計數兩形態都是 0，
-			// 輸出比較退化為 formatter 的形態等價網，仍有價值
+			name = "__zz_absent_name__" // 無函式定義：rename 計數為 0，仍有價值
 		}
 		to := name + "_zz"
 		patch := []byte(`{"ops":[{"op":"rename","from":` + jsonStr(name) + `,"to":` + jsonStr(to) + `}]}`)
 
-		outSurface, nSurface, err := applyPatch(progSurface, src, patch)
-		if err != nil {
-			t.Errorf("%s: surface applyPatch: %v", f, err)
-			continue
-		}
-		outSugar, nSugar, err := applyPatch(progSugar, src, patch)
+		out, n, err := applyPatch(prog, src, patch)
 		if err != nil {
 			t.Errorf("%s: sugar applyPatch: %v", f, err)
 			continue
 		}
-		if nSurface > 0 {
+		if n > 0 {
 			renamed++
 		}
-		if nSurface != nSugar {
-			t.Errorf("%s: rename %q 計數不同：surface=%d sugar=%d", f, name, nSurface, nSugar)
-		}
-		if errs := reparseErrs(outSugar); len(errs) > 0 {
+		if errs := reparseErrs(out); len(errs) > 0 {
 			t.Errorf("%s: 糖形態（正式形態）輸出無法重新解析：%v", f, errs)
 			continue
 		}
-		if errs := reparseErrs(outSurface); len(errs) > 0 {
-			surfaceLossy = append(surfaceLossy, f)
-			continue
-		}
-		if outSurface != outSugar {
-			t.Errorf("%s: rename %q 輸出不同（surface vs sugar）", f, name)
-		}
 	}
-	t.Logf("語料 %d/%d 份（parsed=%d skipped=%d）；實際發生 rename 的檔案 %d 份；"+
-		"surface 形態輸出無法迴印（既有缺口，已跳過輸出比對）%d 份",
-		len(files), len(files), parsed, skipped, renamed, len(surfaceLossy))
-	for _, f := range surfaceLossy {
-		t.Logf("  surface-lossy: %s", f)
-	}
+	t.Logf("語料 %d/%d 份（parsed=%d skipped=%d）；實際發生 rename 的檔案 %d 份",
+		len(files), len(files), parsed, skipped, renamed)
 	if renamed == 0 {
 		t.Errorf("沒有任何一份語料觸發 rename——前向迴歸網空洞（0 == 0）")
 	}

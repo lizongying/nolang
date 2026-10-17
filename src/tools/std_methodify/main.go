@@ -144,24 +144,17 @@ func methodifyFile(content string) (string, int, []string) {
 	return methodifyProgram(prog, content)
 }
 
-// parseSurfaceShape 把源码解析为 AST。sugar=true 走 SkipLowering（S4 起的正式形態），
-// sugar=false 走舊的 surface 旗標。
-//
-// 兩個形態的並存只為量測與迴歸門禁服務，S4 收尾時隨旗標一起刪除。
-// 翻到糖形態的前提：walkExpr 已長出 SurfaceMatch 分支（用
-// parser.WalkSurfaceMatchChildrenRW），否則臂內的 `x.f(...)` 會被靜默漏掉。
-func parseSurfaceShape(content string, sugar bool) *parser.Program {
+// parseSurfaceShape 把源码解析为糖 AST（SkipLowering）。舊的 surface 旗標路徑
+// （SkipUnwrapLowering + SkipSafeIndexLowering）已隨 §4.3 刪除；糖形態是唯一形態。
+// walkExpr 已長出 SurfaceMatch 分支（用 parser.WalkSurfaceMatchChildrenRW），否則臂內的
+// `x.f(...)` 會被靜默漏掉。
+func parseSurfaceShape(content string) *parser.Program {
 	if strings.TrimSpace(content) == "" {
 		return nil
 	}
 	l := lexer.New(content)
 	p := parser.New(l)
-	if sugar {
-		p.SkipLowering = true
-	} else {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
-	}
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		fmt.Fprintf(os.Stderr, "parse errors (skip): %v\n", p.Errors()[0])
@@ -171,7 +164,7 @@ func parseSurfaceShape(content string, sugar bool) *parser.Program {
 }
 
 func parseSurface(content string) *parser.Program {
-	return parseSurfaceShape(content, true)
+	return parseSurfaceShape(content)
 }
 
 func walkStmt(stmt parser.Statement, notes *[]string) int {

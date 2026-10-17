@@ -145,17 +145,16 @@ func fixUnwrapInFile(filename string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return fixUnwrapSourceShape(filename, string(data), true)
+	return fixUnwrapSourceShape(filename, string(data))
 }
 
-// fixUnwrapSourceShape 是 fixUnwrapInFile 的純字串 + 形態版：sugar=true 走
-// SkipLowering（S4 起的正式形態），sugar=false 走舊的 surface 旗標
-// （SkipUnwrapLowering + SkipSafeIndexLowering）。兩個形態的並存只為量測與
-// 迴歸門禁服務（no_fix_shape_gate_test.go），S4 收尾時隨旗標一起刪除。
+// fixUnwrapSourceShape 是 fixUnwrapInFile 的純字串版（正式路徑，糖形態）。
+// §4.3 已刪除 SkipUnwrapLowering / SkipSafeIndexLowering 兩旗標與 surface 形態，
+// 糖形態（SkipLowering）是唯一形態。
 //
 // vet 管線（第 1 步）與形態無關——它跑完整 lowering 管線，兩種形態下同一份
-// src 得到同一組行號；只有第 2 步的「使用者原句」解析隨 sugar 變化。
-func fixUnwrapSourceShape(filename, src string, sugar bool) (string, bool) {
+// src 得到同一組行號；只有第 2 步的「使用者原句」解析走糖形態。
+func fixUnwrapSourceShape(filename, src string) (string, bool) {
 	// (1) 完整 vet 管線 → optunuse / 15w45dqk 站點行號。
 	reportLines := map[int]bool{}
 	typedOptLines := map[int]bool{}
@@ -191,14 +190,9 @@ func fixUnwrapSourceShape(filename, src string, sugar bool) (string, bool) {
 		return "", false
 	}
 
-	// (2) 糖形態解析 → 使用者寫下的陳述。
+	// (2) 糖形態解析 → 使用者寫下的陳述。（§4.3 刪除 surface 旗標，糖形態唯一）
 	sp := parser.New(lexer.New(src))
-	if sugar {
-		sp.SkipLowering = true
-	} else {
-		sp.SkipUnwrapLowering = true
-		sp.SkipSafeIndexLowering = true
-	}
+	sp.SkipLowering = true
 	sprog := sp.ParseProgram()
 	if len(sp.Errors()) > 0 || sprog == nil {
 		return "", false

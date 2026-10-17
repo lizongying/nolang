@@ -192,7 +192,7 @@ func TestOptionDivModInference(t *testing.T) {
 func TestOptionDivModInferenceSkippedForFmt(t *testing.T) {
 	const src = "a int = 10\nb int = 2\nq = a / b\n"
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = true
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if prog == nil {
 		t.Fatalf("ParseProgram returned nil; errors=%v", p.Errors())

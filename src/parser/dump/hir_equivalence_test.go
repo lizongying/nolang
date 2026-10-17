@@ -193,8 +193,8 @@ func matchDesugarViaH0(path, src string) (string, bool) {
 		p := parser.New(lexer.NewCached(path, src))
 		p.Filename = path
 		p.SkipLowering = true
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
+		p.SkipLowering = true
+		p.SkipLowering = true
 		prog := p.ParseProgram()
 		if len(p.Errors()) > 0 {
 			dump, ok = "", false
@@ -231,8 +231,8 @@ func matchDesugarViaParser(path, src string) (string, bool) {
 		// Surface configuration, but WITHOUT SkipLowering: ParseProgram therefore
 		// still calls LowerSurface, and on this base the only thing LowerSurface
 		// expands is SurfaceMatch.
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
+		p.SkipLowering = true
+		p.SkipLowering = true
 		prog := p.ParseProgram()
 		if len(p.Errors()) > 0 {
 			dump, ok = "", false
@@ -263,8 +263,8 @@ func lowerToHIR(path, src string, skipLowering bool) (dump string, ok bool) {
 	p.Filename = path
 	if skipLowering {
 		p.SkipLowering = true
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
+		p.SkipLowering = true
+		p.SkipLowering = true
 	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {

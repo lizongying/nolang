@@ -100,26 +100,18 @@ func main() {
 	fmt.Fprintf(os.Stderr, "已写出: %s\n", *out)
 }
 
-// parseSource 把源码解析为 AST。sugar=true 走 SkipLowering（S4 起的正式形態），
-// sugar=false 走舊的 surface 旗標（SkipUnwrapLowering + SkipSafeIndexLowering）。
-//
-// 兩個形態的並存只為量測與迴歸門禁服務（main_test.go 的形狀 A/B），S4 收尾時隨
-// 旗標一起刪除。正式路徑只走 sugar=true。
+// parseSourceShape 把源码解析为糖 AST（SkipLowering，S4 起的正式形態）。
+// 舊的 surface 旗標（SkipUnwrapLowering + SkipSafeIndexLowering）路徑已隨 §4.3 刪除。
 //
 // 為何糖形態下不會「丟整棵 match」：parser/dump 有完整的 SurfaceMatch case
 // （含逐臂的 matchArm，且它就是 ast_freeze 門禁的 oracle），formatter 也早已
 // 支援糖形態（`no fmt` 本體就用它）。真正的盲區在 op 側——反射走訪器只看
 // 「元素是否實作 Node」，而 SurfaceMatch.Arms 是 []MatchArm（值結構體、不實作
 // Node）⇒ 已由 op.go 的 carriesNodes + walkSlice 的值結構體分支補上。
-func parseSourceShape(name, code string, sugar bool) (*parser.Program, string, error) {
+func parseSourceShape(name, code string) (*parser.Program, string, error) {
 	l := lexer.New(code)
 	p := parser.New(l)
-	if sugar {
-		p.SkipLowering = true
-	} else {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
-	}
+	p.SkipLowering = true
 	program := p.ParseProgram()
 	if errs := p.Errors(); len(errs) > 0 {
 		return nil, "", fmt.Errorf("%s: %s", name, strings.Join(errs, "\n"))
@@ -129,20 +121,14 @@ func parseSourceShape(name, code string, sugar bool) (*parser.Program, string, e
 
 // parseSource 是 parseSourceShape 的糖形態版（正式路徑）。
 func parseSource(name, code string) (*parser.Program, string, error) {
-	return parseSourceShape(name, code, true)
+	return parseSourceShape(name, code)
 }
 
 // parseCodeExprShape 把一段代码解析为单个表达式节点（用于替换表达式）。
-// sugar 必须与 parseSourceShape 一致，否则拚進主樹的節點會是另一種形態。
-func parseCodeExprShape(code string, sugar bool) (parser.Expression, error) {
+func parseCodeExprShape(code string) (parser.Expression, error) {
 	l := lexer.New(code)
 	p := parser.New(l)
-	if sugar {
-		p.SkipLowering = true
-	} else {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
-	}
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if errs := p.Errors(); len(errs) > 0 {
 		return nil, fmt.Errorf("替换代码解析失败: %s", strings.Join(errs, "; "))
@@ -158,19 +144,14 @@ func parseCodeExprShape(code string, sugar bool) (parser.Expression, error) {
 }
 
 func parseCodeExpr(code string) (parser.Expression, error) {
-	return parseCodeExprShape(code, true)
+	return parseCodeExprShape(code)
 }
 
 // parseCodeStmtsShape 把一段代码解析为若干语句节点（用于插入/替换语句，允许多行）。
-func parseCodeStmtsShape(code string, sugar bool) ([]parser.Statement, error) {
+func parseCodeStmtsShape(code string) ([]parser.Statement, error) {
 	l := lexer.New(code)
 	p := parser.New(l)
-	if sugar {
-		p.SkipLowering = true
-	} else {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
-	}
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if errs := p.Errors(); len(errs) > 0 {
 		return nil, fmt.Errorf("语句代码解析失败: %s", strings.Join(errs, "; "))
@@ -182,7 +163,7 @@ func parseCodeStmtsShape(code string, sugar bool) ([]parser.Statement, error) {
 }
 
 func parseCodeStmts(code string) ([]parser.Statement, error) {
-	return parseCodeStmtsShape(code, true)
+	return parseCodeStmtsShape(code)
 }
 
 // applyPatch 依次应用补丁里的每个 op，再把改写后的 AST 交给 formatter 重新打印。

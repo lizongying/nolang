@@ -470,8 +470,7 @@ f = (b i64, c i64) {
 func TestCaptureSkippedForFmt(t *testing.T) {
 	const src = "f = (b i64, c i64, d i64) {\n    a = b + c / d\n}\n"
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if prog == nil {
 		t.Fatalf("ParseProgram returned nil; errors=%v", p.Errors())

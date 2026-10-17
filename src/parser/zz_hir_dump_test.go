@@ -11,8 +11,7 @@ import (
 func TestZZDumpHIR(t *testing.T) {
 	src := "s []u32 = with-len(4)\ns[0]: {\n  ok -> it = 0x61626380\n  -> _\n}\nx i64 = 1633837952\nx == 1633837952 -> exit(42)\n-> exit(7)\n"
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = false
-	p.SkipSafeIndexLowering = false
+
 	prog := p.ParseProgram()
 	if prog == nil {
 		t.Fatalf("nil prog; errs=%v", p.Errors())

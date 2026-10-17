@@ -23,8 +23,7 @@ import (
 func parseSurfaceWarn(t *testing.T, src string) (*Parser, *Program) {
 	t.Helper()
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if prog == nil {
 		t.Fatalf("ParseProgram returned nil; errors=%v", p.Errors())

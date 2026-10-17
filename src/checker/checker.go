@@ -5481,9 +5481,10 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	//
 	// 為何需要：`#{index-out}` 的降級（parser/lowering.go 產生合成 __idx_out_ tmp）
 	// 只在**啟用安全索引降級**時執行。`no vet` 走降級，tmp 讓上報被豁免；但 LSP 編輯器
-	// 主解析設 SkipSafeIndexLowering=true（保住可 format-on-save 的 surface AST，見
-	// lsp/documents.go），此時註解原樣留在陳述上、不會變成 tmp——若只認 tmp，編輯器
-	// 就會對已正確標註的越界索引誤報「未處理」。此處直接讀註解，讓兩端口徑一致。
+	// 主解析走糖形態（SkipLowering=true，見 lsp/documents.go）——§4.3 已刪除
+	// SkipSafeIndexLowering 旗標，糖形態是唯一非編譯形態——此時註解原樣留在陳述上、
+	// 不會變成 tmp。若只認 tmp，編輯器就會對已正確標註的越界索引誤報「未處理」。
+	// 此處直接讀註解，讓兩端口徑一致。
 	// 與 overflowAnnotatedNode 同源：同時查 AnnotationsOf（ResolveProgram 後）與
 	// RawAnnotationsOf（解析期 side-table）。candidates 涵蓋「註解掛在外層
 	// ExpressionStatement / LetStatement」與「掛在內層 AssignExpression」兩種附着點。

@@ -1559,22 +1559,16 @@ func fixOverflowInFile(filename string) (string, bool) {
 
 // fixOverflowSource 是 fixOverflowInFile 的純字串版（正式路徑，糖形態）。
 func fixOverflowSource(src string) (string, bool) {
-	return fixOverflowSourceShape(src, true)
+	return fixOverflowSourceShape(src)
 }
 
-// fixOverflowSourceShape 是 fixOverflowInFile 的純字串 + 形態版：sugar=true 走
-// SkipLowering（S4 起的正式形態），sugar=false 走舊的 surface 旗標
-// （SkipUnwrapLowering + SkipSafeIndexLowering）。兩個形態的並存只為量測與
-// 迴歸門禁服務（no_fix_shape_gate_test.go），S4 收尾時隨旗標一起刪除。
-func fixOverflowSourceShape(src string, sugar bool) (string, bool) {
+// fixOverflowSourceShape 是 fixOverflowInFile 的純字串版（正式路徑，糖形態）。
+// §4.3 已刪除 SkipUnwrapLowering / SkipSafeIndexLowering 兩旗標與 surface 形態，
+// 糖形態（SkipLowering）是唯一形態。
+func fixOverflowSourceShape(src string) (string, bool) {
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	if sugar {
-		p.SkipLowering = true
-	} else {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
-	}
+	p.SkipLowering = true
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return "", false
@@ -1693,10 +1687,10 @@ func fixMatchArmsInFile(filename string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return fixMatchArmsSource(string(data), true)
+	return fixMatchArmsSource(string(data))
 }
 
-// fixMatchArmsSource 是 fixMatchArmsInFile 的核心，sugar 選解析形態。
+// fixMatchArmsSource 是 fixMatchArmsInFile 的核心。
 //
 // 對每個被 checker.CollectNonExhaustiveMatches 判為「非窮盡」的 option match，
 // 在其收尾 `}` 之前插入缺失的 arm（`nil -> print('nil')` / `err -> print('err')`），
@@ -1706,28 +1700,18 @@ func fixMatchArmsInFile(filename string) (string, bool) {
 // `}` 的確切行列）都取自 checker/parser，不做任何正則或行文本推斷；只有「縮排」
 // 需要從原始行複製，以盡量貼近手寫風格。重跑冪等：補齊後 match 不再被報告。
 //
-// 形態（S1）：正式路徑以 **SkipLowering**（糖形態）解析。降糖形態下插入點取自
-// IfExpression.MatchEndPos，糖形態下取自 SurfaceMatch.RBracePos；兩者已實測
-// 逐字段相同（checker 的 TestZZPosProbe），故 fixer 只讀
-// NonExhaustiveMatch.Pos / .End 這兩個**兩形態共同填寫**的欄位，不再碰 Root。
-// 規則側（match_exhaustive.go）兩條路徑都跑，13 個 match 形狀的
-// Pos/End/主體/缺失變體兩形態完全一致。
-//
-// sugar=false 的降糖形態分支**只為形態門禁存在**（no_fix_shape_gate_test.go 的
-// TestFixMatchRuleIsShapeParity）：它把翻轉前的行為釘在測試裡，讓「糖形態比
-// 降糖形態少修」這類靜默丟功能無法悄悄發生。正式路徑只走 sugar=true。
+// 形態（§4.3 收尾）：糖形態（SkipLowering）是唯一形態，插入點取自
+// SurfaceMatch.RBracePos。規則側（match_exhaustive.go）的糖路徑
+// （collectSugarNonExhaustiveMatches）對 13 個 match 形狀的
+// Pos/End/主體/缺失變體與降糖路徑逐字段一致，fixer 只讀
+// NonExhaustiveMatch.Pos / .End 這兩個欄位，不再碰 Root。
 //
 // 與 --fix=overflow 一樣刻意以「磁碟檔案自身」為分析來源（不經 `no vet <pkg>`），
 // 避免內嵌 std / 合併模組造成行號錯位而把 arm 插到錯誤的區塊。
-func fixMatchArmsSource(src string, sugar bool) (string, bool) {
+func fixMatchArmsSource(src string) (string, bool) {
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	if sugar {
-		p.SkipLowering = true
-	} else {
-		p.SkipUnwrapLowering = true
-		p.SkipSafeIndexLowering = true
-	}
+	p.SkipLowering = true
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return "", false

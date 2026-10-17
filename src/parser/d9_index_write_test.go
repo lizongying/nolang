@@ -31,8 +31,7 @@ import (
 func parseCompilePath(t *testing.T, src string) (*Parser, *Program) {
 	t.Helper()
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = false
-	p.SkipSafeIndexLowering = false
+
 	prog := p.ParseProgram()
 	if prog == nil {
 		t.Fatalf("ParseProgram returned nil; errors=%v", p.Errors())
@@ -45,8 +44,7 @@ func parseCompilePath(t *testing.T, src string) (*Parser, *Program) {
 func parseSurfaceMode(t *testing.T, src string) (*Parser, *Program) {
 	t.Helper()
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if prog == nil {
 		t.Fatalf("ParseProgram returned nil; errors=%v", p.Errors())
@@ -167,8 +165,7 @@ func TestD9UnwrapAssignToIndexLowersWithPlaceWrite(t *testing.T) {
 func TestD9UnwrapAssignToIndexInPlainFunctionIsError(t *testing.T) {
 	src := "foo = (x i64) () {\n    a [3]i64 = [1, 2, 3]\n    a[1] ?= x\n    io.outln(a[1])\n}"
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = false
-	p.SkipSafeIndexLowering = false
+
 	p.ParseProgram()
 	errs := p.Errors()
 	if len(errs) != 1 {

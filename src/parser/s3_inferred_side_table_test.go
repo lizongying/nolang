@@ -167,8 +167,7 @@ func parseProg(t *testing.T, src string) *Program {
 func skipLoweringParse(t *testing.T, src string) *Program {
 	t.Helper()
 	p := New(lexer.New(src))
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	prog := p.ParseProgram()
 	if prog == nil || len(p.Errors()) > 0 {
 		t.Fatalf("skipLowering parse failed: %v", p.Errors())

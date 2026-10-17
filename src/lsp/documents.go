@@ -270,7 +270,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	// 树，才不会在「谁看得见 match 臂」这类问题上互相漂移。
 	//
 	// 在此之前这里是两个局部 skip 旗标（SkipUnwrapLowering +
-	// SkipSafeIndexLowering），它们恰好保留 surface AST 只是因为「这两处降糖
+	// SkipSafeIndexLowering，§4.3（2026-10-17）已刪除，糖形態是唯一非編譯形態），它们恰好保留 surface AST 只是因为「这两处降糖
 	// 会把 `v ?= expr` / `#{index-out=DEF} x = v[i]` 改写成不可再解析的
 	// __unwrap_N / __idx_out_L_C 區塊，format-on-save 会把它們（且遺失
 	// DEF 字面量、變成 `x = =`）寫回使用者源碼」。SkipLowering 是同一动机的
@@ -856,9 +856,10 @@ func filenameFromURI(uri string) string {
 // collectUnwrapLoweringErrors 以「啟用 UnwrapAssign lowering」的方式重新解析一次，
 // 只為收集 `?=` 相關診斷；回傳的 AST 一律丟棄，絕不能拿來覆蓋 doc.AST。
 //
-// 背景：LSP 主解析必須設 parser.SkipUnwrapLowering=true——doc.AST 會被 format-on-save
-// 直接渲染回源碼（server.go formatNolangCode），而 lowering 展開的 __unwrap_N 區塊
-// 不可再解析，寫回即損壞檔案。代價是 lowerUnwrapAssign 裡的檢查
+// 背景：LSP 主解析走糖形態（parser.SkipLowering=true，§4.3 已刪除 SkipUnwrapLowering
+// 旗標）——doc.AST 會被 format-on-save 直接渲染回源碼（server.go formatNolangCode），
+// 而 lowering 展開的 __unwrap_N 區塊不可再解析，寫回即損壞檔案。代價是 lowerUnwrapAssign
+// 裡的檢查
 // （「`?=` 只能用在有 option 型別結果參數的函式內」等）完全不會執行，編輯器看不到
 // 這些錯誤，使用者只能在 `no build` 時才發現。
 //

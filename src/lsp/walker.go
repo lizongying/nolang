@@ -156,7 +156,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 		}
 
 	case *parser.UnwrapAssignStatement:
-		// `v ?= expr`（surface AST，SkipUnwrapLowering=true 時不會被展開）。
+		// `v ?= expr`（糖 AST，SkipLowering=true 時不會被展開）。
 		// 簡單變數目標：像 LetStatement 一樣索引符號，型別取 RHS 的返回型別並
 		// 剝掉 option 前綴（?= 賦的是解箱後的內層值）。
 		if s.Name != nil {

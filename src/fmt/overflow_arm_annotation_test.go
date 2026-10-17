@@ -54,8 +54,8 @@ func TestFormatOverflowAnnotationOnArmStaysParseable(t *testing.T) {
 
 			// 1) 輸出必須可再解析（冪等的前提，也是這個 bug 的直接症狀）。
 			p := parser.New(lexer.New(first))
-			p.SkipUnwrapLowering = true
-			p.SkipSafeIndexLowering = true
+			p.SkipLowering = true
+			p.SkipLowering = true
 			p.ParseProgram()
 			if perrs := p.Errors(); len(perrs) > 0 {
 				t.Fatalf("formatted output no longer parses: %v\n--- output ---\n%s", perrs, first)
