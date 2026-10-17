@@ -122,6 +122,34 @@ func (p *Parser) prepareInBoundsMetadata(program *Program) {
 	}
 }
 
+// prepareInferredTypes computes the parser-side inferred-type facts for every
+// LetStatement (e.g. `x = a + b` → `?int`, `x = arr[i]` → `?elem`) and publishes
+// them to Program.Sem. It is purely read-only on the AST and is invoked for both
+// the default and SkipLowering paths so the AST→HIR / checker / formatter see the
+// same ?T regardless of which pipeline produced the program.
+//
+// The SkipLowering path previously saw no inferred type at all (since the
+// lowering pass never ran), causing 24/532 corpus files to diverge in HIR
+// `t=?int` vs no-type for let-statements (see parser/dump/s3_breakdown_test.go
+// typeSynth bucket). With this preparation, both paths populate the same
+// nodeSem entry and ASTToHIR can produce identical Type IDs.
+func (p *Parser) prepareInferredTypes(program *Program) {
+	if program == nil || program.Sem == nil {
+		return
+	}
+	// Reuse the same walker as lowering so function-scope state
+	// (curFuncName / declaredLocals) and surface sugar states are mirrored
+	// exactly. The walker only invokes the pure analyzers below; no AST field
+	// is written.
+	l := &lowerer{
+		p:            p,
+		visited:      map[uintptr]bool{},
+		declaredLocals: map[string]bool{},
+		analysisOnly: true,
+	}
+	l.runInferredTypeAnalysis(program)
+}
+
 func (p *Parser) lowerProgram(prog *Program) {
 	if prog == nil {
 		return
@@ -148,6 +176,16 @@ type lowerer struct {
 	//  2. 語義表（VarTypes）不記錄由字面量推斷出的型別（`mi = 0.0`），單靠它
 	//     判斷「是否已宣告」會漏判，故這裡自行記錄。
 	declaredLocals map[string]bool
+	// analysisOnly 為 true 時，walker 只跑推斷型別分析（推斷 ?T 並寫入
+	// Program.Sem 的 InferredType side-table），不做任何結構性改寫
+	//（不替換 SurfaceMatch / UnwrapAssign / IndexExpression / LetStatement）。
+	// 由 prepareInferredTypes 用於 SkipLowering 路徑下補齊側表，使
+	// ASTToHIR / checker / formatter 看到與降糖路徑同樣的 ?T 事實。
+	analysisOnly bool
+	// warnMatchArms 為 true 時，analysisOnly 的走訪會在每個 SurfaceMatch
+	// 上多跑一次「`->` 臂不可達」判定（parser/match_warn.go）。診斷已從降糖
+	// 迴圈搬出來，故它對兩種形態都成立——見該檔案頂部的說明。
+	warnMatchArms bool
 }
 
 var surfaceMatchPtrType = reflect.TypeOf((*SurfaceMatch)(nil))
@@ -174,6 +212,18 @@ func (l *lowerer) walk(v reflect.Value) {
 			return
 		}
 		if v.Elem().Type() == surfaceMatchPtrType && v.CanSet() {
+			if l.analysisOnly {
+				// warnMatchArms 模式：由 warnMatchArmsPass 自行走訪子節點
+				//（順序與 lowerSurfaceMatch 一致），並在最後做本層判定。
+				if l.warnMatchArms {
+					l.warnMatchArmsPass(v.Interface().(*SurfaceMatch))
+					return
+				}
+				// 推斷模式：仍遞迴走訪 children 以便覆蓋其中的 LetStatement，
+				// 但不替換 SurfaceMatch 為 IfExpression 鏈。
+				l.walk(v.Elem())
+				return
+			}
 			sm := v.Interface().(*SurfaceMatch)
 			if lowered := l.lowerSurfaceMatch(sm); lowered != nil {
 				v.Set(reflect.ValueOf(lowered))
@@ -186,6 +236,10 @@ func (l *lowerer) walk(v reflect.Value) {
 			// no fmt 等純格式化場景需要 surface AST：跳過 UnwrapAssignStatement
 			// 的展開，讓 formatter 直接渲染 `?=` / `=`（保持可重解析、冪等）。
 			if l.p.SkipUnwrapLowering {
+				return
+			}
+			if l.analysisOnly {
+				l.walk(v.Elem())
 				return
 			}
 			uas := v.Interface().(*UnwrapAssignStatement)
@@ -258,7 +312,11 @@ func (l *lowerer) walk(v reflect.Value) {
 					}
 				}
 			}
-				if !l.p.SkipSafeIndexLowering {
+				// analysisOnly 模式（prepareInferredTypes）：跳過所有結構
+				// 改寫（maybeIndexOutAssign / maybeCaptureOptionAssign 的取代節點
+				// 建構）；推斷分析由 inferOptionArith + maybeCaptureOptionAssign 內
+				// 的 synthesizeNullableType 完成（後者在 analysisOnly 下提早返回）。
+				if !l.p.SkipSafeIndexLowering && !l.analysisOnly {
 					if repl := l.maybeIndexOutAssign(stmt); repl != nil {
 						l.carryOverflowAnnotation(carryFrom, repl)
 						v.Index(i).Set(reflect.ValueOf(repl))
@@ -271,6 +329,8 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 讓下游 checker（ovfhndld / ovf-int-default）與 MIR（typeHint →
 				// 除零守衛）走已驗證的顯式路徑。
 				// fmt 路徑跳過，formatter 永遠看不到合成註解。
+				// analysisOnly 模式下**必須**執行：對 SkipLowering 路徑補齊
+				// `?T` 推斷事實，使 ASTToHIR 產生與預設路徑一致的 Type ID。
 				if !l.p.SkipUnwrapLowering {
 					if ls, ok := stmt.(*LetStatement); ok {
 						l.inferOptionArith(ls)
@@ -279,9 +339,12 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
 				// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
 				// 必須排在 inferOptionArith 之後：根為算術的情形由它處理。
+				// analysisOnly 模式：仍呼叫以執行內部的 synthesizeNullableType
+				// 推斷；該函式已被加上 `if l.analysisOnly { return nil }` 提早出口，
+				// 不會建構取代節點。
 				if !l.p.SkipUnwrapLowering && !l.p.SkipSafeIndexLowering {
 					if ls, ok := stmt.(*LetStatement); ok && !replaced {
-						if repl := l.maybeCaptureOptionAssign(ls); repl != nil {
+						if repl := l.maybeCaptureOptionAssign(ls); !l.analysisOnly && repl != nil {
 							l.carryOverflowAnnotation(carryFrom, repl)
 							v.Index(i).Set(reflect.ValueOf(repl))
 							replaced = true
@@ -344,7 +407,8 @@ func (l *lowerer) walk(v reflect.Value) {
 		}
 		// 標籤條件迴圈包裝（`#N cond: { body }`）：解析期只掛上 SurfaceMatch，
 		// lowering 後補齊 Body = IfExpression.Consequence（與舊解析期行為一致）。
-		if v.CanAddr() {
+		// analysisOnly 模式跳過此結構修補。
+		if !l.analysisOnly && v.CanAddr() {
 			if fs, ok := v.Addr().Interface().(*ForStatement); ok {
 				if fs.IsCondWrapper && fs.Body == nil {
 					if ife, ok := fs.Condition.(*IfExpression); ok {
@@ -354,6 +418,20 @@ func (l *lowerer) walk(v reflect.Value) {
 			}
 		}
 	}
+}
+
+// runInferredTypeAnalysis walks the program invoking the same analyzer pipeline
+// that the lowering pass uses for inferOptionArith / synthesizeNullableType
+// (via maybeCaptureOptionAssign's root-typing branch) but in analysisOnly mode:
+// no AST field is written, no sugar node is replaced. The inferred ?T is
+// published to Program.Sem's nodeSem via publishInferredType so the
+// SkipLowering path produces the same HIR / checker / formatter output as the
+// default path.
+func (l *lowerer) runInferredTypeAnalysis(program *Program) {
+	if program == nil {
+		return
+	}
+	l.walk(reflect.ValueOf(program))
 }
 
 // collectLocalTypes 預掃描函數體，將「未標型別、但可由 RHS 推導容器型別」的
@@ -618,11 +696,13 @@ func (l *lowerer) recordIndexLocalType(funcName, name, lt string) {
 }
 
 // inferOptionArith — 有號整數 `+ - * / %`（D6）本身產生 option（溢位／除零為
-// err），故普通 `=` 綁定其結果時變數型別必然是 `?T`：無需用戶顯式標註，在
-// lowering 階段就地補上推斷出的 `?T` 型別註解（合成 NullableType）並註冊
-// 變數型別，使 checker（ovfhndld declaredOption 豁免、ovf-int-default lint）
-// 與 MIR（KLet typeHint → 溢位／除零守衛）完全復用顯式路徑 `q ?int = a + b`。
-// 推斷不出（運算元型別未知／非有號整數）時保守不改寫，維持原有行為。
+// err），故普通 `=` 綁定其結果時變數型別必然是 `?T`：無需用戶顯式標註，
+// 在 lowering 階段把推斷出的 `?T` 型別字串記入 Program.Sem 的推斷型別
+// side-table，並註冊變數型別，使 checker（ovfhndld declaredOption 豁免、
+// ovf-int-default lint）與 MIR（KLet typeHint → 溢位／除零守衛）完全復用顯式
+// 路徑 `q ?int = a + b`。P1：不再就地寫 `s.Type`（即不再於 lowering pass 內
+// 變更 AST 語法節點），所有事實留在語義副表，由 AST→HIR / checker / formatter
+// 顯式讀取。推斷不出（運算元型別未知／非有號整數）時保守不改寫，維持原有行為。
 //
 // D1：`#{overflow=...}` 註解不再阻止本推斷 —— 註解只影響「失敗時怎麼取值」的
 // 行為（wrap／clamp0／…），不再把結果型別降級成 plain int。註解本身由
@@ -658,34 +738,44 @@ func (l *lowerer) inferOptionArith(s *LetStatement) {
 	if len(rt) > len(base) {
 		base = rt
 	}
-	// 合成與顯式寫法同形的註解 `?base`（如 ?int）並註冊型別。
-	nullTok := s.Token
-	innerTok := s.Token
-	innerTok.Literal = base
-	s.Type = &NullableType{
-		Token:      nullTok,
-		Type:       &NamedType{Token: innerTok, Value: base},
-		IsInferred: true,
-	}
-	l.p.setVarType(s.Name.Value, "?"+base)
+	// 推斷結果改走語義副表（Program.Sem 的 nodeSem），不再寫 AST。
+	// byArith=true：標位讓 `maybeCaptureOptionAssign` 的根-算術短路生效，
+	// 避免同一節點被結構捕獲改寫成 `__cap_N` 包裹。
+	l.publishInferredType(s, "?"+base, true)
 }
 
-// synthesizeNullableType 就地為 s 補上推斷出的 `?inner` 註解（合成 NullableType）
-// 並註冊變數型別，使下游 checker（ovfhndld/idxhndld 的 declaredOption 豁免）與
-// MIR（KLet typeHint）完全復用「用戶顯式寫 ?T」的已驗證路徑。
+// synthesizeNullableType 把推斷出的 `?inner` 型別字串記入 Program.Sem，
+// 不再就地寫 AST `s.Type`。下游 checker（ovfhndld/idxhndld 的 declaredOption
+// 豁免）與 MIR（KLet typeHint）由 AST→HIR 透過語義副表讀到同一事實，
+// 完全復用「用戶顯式寫 ?T」的已驗證路徑。
+//
+// byArith=false：來自結構捕獲期間對索引根／混合運算元根的合成，語義
+// 標誌 InferredByOptionArith 為 false，使 `maybeCaptureOptionAssign` 的
+// 短路檢查仍可為該變數觸發結構 desugar（構造 `__cap_N` 暫存）。見
+// `publishInferredType` 的標誌位區分原則。
 func (l *lowerer) synthesizeNullableType(s *LetStatement, inner string) {
 	if s == nil || s.Name == nil || inner == "" {
 		return
 	}
-	tok := s.Token
-	innerTok := tok
-	innerTok.Literal = inner
-	s.Type = &NullableType{
-		Token:      tok,
-		Type:       &NamedType{Token: innerTok, Value: inner},
-		IsInferred: true,
+	l.publishInferredType(s, "?"+inner, false)
+}
+
+// publishInferredType 為 s 推斷 ?T 型別字串並同時登記到語義副表 + VarTypes。
+// 這是把原本 `s.Type = &NullableType{IsInferred: true}; setVarType(...)` 的
+// 「AST 寫」/「副表寫」兩步合成為單一副表操作；前者已被 P1 禁止。
+//
+// byArith=true 時同步把 `InferredByOptionArith` 標位拉起——供
+// `maybeCaptureOptionAssign` 的短路檢查區分「算術根推斷已收手（不要再被
+// 結構 desugar）」與「結構捕獲期間的合成（仍需要結構 desugar）」。
+func (l *lowerer) publishInferredType(s *LetStatement, typ string, byArith bool) {
+	if s == nil || s.Name == nil || typ == "" || l == nil || l.p == nil {
+		return
 	}
-	l.p.setVarType(s.Name.Value, "?"+inner)
+	if l.p.sem != nil {
+		l.p.sem.SetInferredType(s, typ)
+		l.p.sem.SetInferredByOptionArith(s, byArith)
+	}
+	l.p.setVarType(s.Name.Value, typ)
 }
 
 // captureNode 描述一個「可錯源」子表達式：它在運行期可能產生 nil/err。
@@ -745,10 +835,23 @@ func (l *lowerer) addCaptureNode(e Expression, inner string, out *[]captureNode,
 // inArithOperand 表示 e 目前位於「算術運算元」位置：只有在此位置才直接捕獲
 // option 變數與回傳 option 的呼叫（作為呼叫引數的 option 交給被呼叫方，與
 // guardInCallArg 的既有註釋一致）。
+//
+// analysisOnly=true（prepareInferredTypes 旗標）：讀 *out 但不改寫 AST——
+// 仍依規則找到可錯源並把它記入 *out，但 `v.Left = ...`／`v.Arguments[i] = ...`
+// 等就地改寫一律略過、回傳 nil。語義副表的 `publishInferredType` 由呼叫端
+//（maybeCaptureOptionAssign 的 synthesizeNullableType 走線）負責，與結構
+// pass 完全相同；只是不寫 AST 樹。修補 §3.2 之前 prepareInferredTypes 曾因
+// 不小心寫入 `v.Left = __cap_1` 永久破壞 `ls.Value`，讓後續 structural pass
+// 第二次 collectCaptureNodes 看不到原始的 b/c 樹——一個「sem 分析 pass」踩
+// 到 AST 的 P1 紅線。
 func (l *lowerer) collectCaptureNodes(e Expression, out *[]captureNode, tok lexer.Token, inArithOperand bool) Expression {
 	switch v := e.(type) {
 	case *GroupedExpression:
 		if v.Expression != nil {
+			if l.analysisOnly {
+				l.collectCaptureNodes(v.Expression, out, tok, inArithOperand)
+				return nil
+			}
 			v.Expression = l.collectCaptureNodes(v.Expression, out, tok, inArithOperand)
 		}
 		return v
@@ -758,10 +861,29 @@ func (l *lowerer) collectCaptureNodes(e Expression, out *[]captureNode, tok lexe
 		if inner := l.captureInfixInner(v); inner != "" {
 			return l.addCaptureNode(v, inner, out, tok)
 		}
+		if l.analysisOnly {
+			l.collectCaptureNodes(v.Left, out, tok, true)
+			l.collectCaptureNodes(v.Right, out, tok, true)
+			return nil
+		}
 		v.Left = l.collectCaptureNodes(v.Left, out, tok, true)
 		v.Right = l.collectCaptureNodes(v.Right, out, tok, true)
 		return v
 	case *IndexExpression:
+		if l.analysisOnly {
+			if v.Left != nil {
+				l.collectCaptureNodes(v.Left, out, tok, false)
+			}
+			if v.Index != nil {
+				l.collectCaptureNodes(v.Index, out, tok, false)
+			}
+			if l.p.isSafeIndexBase(v) {
+				if elem := l.p.inferIndexElemType(v); elem != "" {
+					l.addCaptureNode(v, elem, out, tok)
+				}
+			}
+			return nil
+		}
 		if v.Left != nil {
 			v.Left = l.collectCaptureNodes(v.Left, out, tok, false)
 		}
@@ -780,6 +902,17 @@ func (l *lowerer) collectCaptureNodes(e Expression, out *[]captureNode, tok lexe
 		}
 		return v
 	case *CallExpression:
+		if l.analysisOnly {
+			for _, arg := range v.Arguments {
+				l.collectCaptureNodes(arg, out, tok, false)
+			}
+			if inArithOperand {
+				if inner := l.callOptionInner(v); inner != "" {
+					l.addCaptureNode(v, inner, out, tok)
+				}
+			}
+			return nil
+		}
 		for i := range v.Arguments {
 			v.Arguments[i] = l.collectCaptureNodes(v.Arguments[i], out, tok, false)
 		}
@@ -822,6 +955,9 @@ func (l *lowerer) collectCaptureNodes(e Expression, out *[]captureNode, tok lexe
 func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 	ls, ok := stmt.(*LetStatement)
 	if !ok || ls == nil || ls.IsSynthetic || ls.Name == nil || ls.Value == nil {
+		return nil
+	}
+	if !l.captureTargetAllowsOption(ls) {
 		return nil
 	}
 	// D9 place-write / match-payload 重綁定：`it = X` 屬 ok 臂語義，由
@@ -873,7 +1009,17 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 	// 只有「型別節點仍為空」才讓路：此時 inferOptionArith 推斷失敗，繼續走下方
 	// 捕獲路徑，讓巢狀的 option 運算元（`a + b / c` 中 b 為 ?T）／安全索引仍被就地
 	// 捕獲，不比今日更漏。
+	//
+	// S3（2026-10-16.4）：inferOptionArith 不再就地寫 `s.Type`；推斷結果改放
+	// `sem.InferredType` side-table，並以 `InferredByOptionArith` 標位區分來源
+	//（見 NodeSemantics 註釋）。`a = b + c` 算術根且雙運算元為有號整數時由
+	// inferOptionArith 推斷出 `?i64`（byArith=true），本短路生效，跳過結構
+	// desugar；`a = x + 1`（x 為 option）則 inferOptionArith 推不出，
+	// byArith 標位保持 false，捕獲照走，建構 `__cap_N` 暫存。
 	if inf, isInf := root.(*InfixExpression); isInf && isOptionArithOperator(inf.Operator) && ls.Type != nil {
+		return nil
+	}
+	if inf, isInf := root.(*InfixExpression); isInf && isOptionArithOperator(inf.Operator) && l.p.sem != nil && l.p.sem.InferredByOptionArith(ls) {
 		return nil
 	}
 	// 根為 option 變數：賦值本身即整體拷貝，現有行為已正確。
@@ -938,6 +1084,12 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 		}
 	}
 	l.synthesizeNullableType(ls, inner)
+
+	// analysisOnly 模式（prepareInferredTypes）：分析到此結束，後續建巢
+	// match / 預宣告 / 取代節點的結構改寫對側表已是多餘。直接返回 nil 即可。
+	if l.analysisOnly {
+		return nil
+	}
 
 	tok := ls.Token
 	// 由最內層節點往外建巢狀 match；最內層 body 即最終賦值。
@@ -2627,13 +2779,12 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						}
 						if len(remaining) == 0 {
 							// All enum variants listed — the else arm is dead code
+							//
+							// 診斷已搬到解析期（parser/match_warn.go 的
+							// warnUnreachableArms）：這條提示原本在此發出，等於
+							// 它是「降糖的副產物」——SkipLowering 下整段不執行，
+							// 消費方翻到糖形態就靜默丟掉它（設計稿 §17.1）。
 							skipItBinding = true
-							pos := arm.Pos
-							if pos.Line == 0 {
-								pos = arm.Body.Pos()
-							}
-							p.saveWarning(fmt.Sprintf("line %d, column %d: '->' arm is unreachable: all enum variants have been listed",
-								pos.Line, pos.Column))
 						} else {
 							armType = strings.Join(remaining, " | ")
 						}
@@ -2641,14 +2792,11 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						// Three variants: ok(elemType), err, nil
 						okListed, errListed, nilListed := hasExplicitOk, hasExplicitErr, hasExplicitNil
 						if okListed && errListed && nilListed {
-							// All three option variants listed — the else arm is dead code
+							// All three option variants listed — the else arm is
+							// dead code. 診斷同列舉分支：已搬到解析期
+							// （parser/match_warn.go），這裡只保留結構性的
+							// skipItBinding。
 							skipItBinding = true
-							pos := arm.Pos
-							if pos.Line == 0 {
-								pos = arm.Body.Pos()
-							}
-							p.saveWarning(fmt.Sprintf("line %d, column %d: '->' arm is unreachable: all option variants (ok, err, nil) have been listed",
-								pos.Line, pos.Column))
 						} else if okListed && !errListed && nilListed {
 							armType = "err" // only err remains
 						} else if okListed && errListed && !nilListed {

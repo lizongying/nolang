@@ -121,11 +121,10 @@ func main() {
 	fmt.Printf("\n[%s] %d file(s), %d call(s) methodified\n", mode, touchedFiles, totalChanges)
 }
 
-func methodifyFile(content string) (string, int, []string) {
-	prog := parseSurface(content)
-	if prog == nil {
-		return content, 0, nil
-	}
+// methodifyProgram 對已解析的程式跑 methodify（walk + 有改寫時格式化）。
+// 沒改寫就回傳原內容（不格式化）——呼叫方以此判斷是否需要寫盤。
+// 抽出來是為了讓形狀門禁能餵指定形態的 AST（methodifyFile 只走糖形態）。
+func methodifyProgram(prog *parser.Program, content string) (string, int, []string) {
 	notes := []string{}
 	count := 0
 	for _, stmt := range prog.Statements {
@@ -137,20 +136,42 @@ func methodifyFile(content string) (string, int, []string) {
 	return noFmt.FormatProgram(prog, content), count, notes
 }
 
-func parseSurface(content string) *parser.Program {
+func methodifyFile(content string) (string, int, []string) {
+	prog := parseSurface(content)
+	if prog == nil {
+		return content, 0, nil
+	}
+	return methodifyProgram(prog, content)
+}
+
+// parseSurfaceShape 把源码解析为 AST。sugar=true 走 SkipLowering（S4 起的正式形態），
+// sugar=false 走舊的 surface 旗標。
+//
+// 兩個形態的並存只為量測與迴歸門禁服務，S4 收尾時隨旗標一起刪除。
+// 翻到糖形態的前提：walkExpr 已長出 SurfaceMatch 分支（用
+// parser.WalkSurfaceMatchChildrenRW），否則臂內的 `x.f(...)` 會被靜默漏掉。
+func parseSurfaceShape(content string, sugar bool) *parser.Program {
 	if strings.TrimSpace(content) == "" {
 		return nil
 	}
 	l := lexer.New(content)
 	p := parser.New(l)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	if sugar {
+		p.SkipLowering = true
+	} else {
+		p.SkipUnwrapLowering = true
+		p.SkipSafeIndexLowering = true
+	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		fmt.Fprintf(os.Stderr, "parse errors (skip): %v\n", p.Errors()[0])
 		return nil
 	}
 	return prog
+}
+
+func parseSurface(content string) *parser.Program {
+	return parseSurfaceShape(content, true)
 }
 
 func walkStmt(stmt parser.Statement, notes *[]string) int {
@@ -339,6 +360,20 @@ func walkExpr(e parser.Expression, notes *[]string, n *int) parser.Expression {
 		}
 	case *parser.DotExpression:
 		x.Receiver = walkExpr(x.Receiver, notes, n)
+		return x
+
+	case *parser.SurfaceMatch:
+		// S4：糖形態（SkipLowering）下 match 是 SurfaceMatch 而不是 if 鏈。少了這個
+		// case，整棵臂子樹對本工具不可見——臂內的 `x.f(...)` 呼叫不會被改寫成
+		// `x.f(...)` 的方法形態，且不報錯（switch 靜默跳過）。用 RW 版助手：
+		// onExpr 的回傳值寫回槽位，臂內表達式才真的被換掉。
+		parser.WalkSurfaceMatchChildrenRW(x,
+			func(sub parser.Expression) parser.Expression {
+				return walkExpr(sub, notes, n)
+			},
+			func(sub parser.Statement) {
+				*n += walkStmt(sub, notes)
+			})
 		return x
 	}
 	return e

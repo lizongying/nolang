@@ -267,6 +267,14 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			if p.currentToken.Literal == "ok" {
 				ma.IsWildcard = true
 				ma.IsDotVal = true
+				// 裸 match 沒有主語，`ok ->` 裡的 `ok` 是**原始碼裡的識別字**
+				// （`ok = c.connect(...)` 之後 `{ ok -> ... }` = `if ok { ... }`），
+				// 不是 option 的 val 關鍵字。降糖後它由 buildBareMatchDesugar
+				// 變成對該識別字的條件，因此這裡必須把識別字留在樹上：
+				// 少了它，糖樹裡不存在任何對 `ok` 的引用，checker 的未使用變數
+				// lint 就會對使用者誤報 `'ok' is defined but never used'
+				// （net-client.no / path-char.no）。P1：parser 不得丟棄源碼識別字。
+				ma.Condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 			} else {
 				ma.Condition = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
 			}

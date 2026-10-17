@@ -457,7 +457,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	// 只有本规则能兜住。详见 checker/match_exhaustive.go 的注释。
 	for _, u := range ValidateNonExhaustiveMatch(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintError, Source: "nolang-type-checker",
 			Message: u.Message, TraceID: u.TraceID,
 		})

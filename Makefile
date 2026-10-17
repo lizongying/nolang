@@ -68,9 +68,13 @@ gen: $(STDSIG_GEN)
 # same key the binaries get (see LD_FLAGS_WITH_SIG) so tests exercise the real
 # embedded-table fast path instead of erroring. Packages that don't import
 # checker simply ignore the -X (verified), so scoping is only for speed.
+# ./tools/... carries the S4 sugar-shape gates for astpatch / std_qualify /
+# std_methodify (tools/std_qualify's gate calls buildOwnership ->
+# CollectStdModuleSignatures, so it NEEDS the injected key — bare
+# `go test ./tools/...` would hard-exit on it).
 .PHONY: test
 test: $(STDSIG_GEN)
-	cd src && $(GO) test $(LD_FLAGS_WITH_SIG) ./build/... ./mir/... ./checker/... ./lsp/... ./fmt/... ./hir/... ./mmast/... ./package/... ./parser/...
+	cd src && $(GO) test $(LD_FLAGS_WITH_SIG) ./build/... ./mir/... ./checker/... ./lsp/... ./fmt/... ./hir/... ./mmast/... ./package/... ./parser/... ./tools/...
 
 # ── STD SIG KEY (injected at build time) ──────────
 # The independent genstdsig tool hashes the CURRENT on-disk src/std tree from

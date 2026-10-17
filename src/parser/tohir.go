@@ -281,6 +281,26 @@ func (c *hirConv) typeID(t Type) int32 {
 	return c.b.InternType(t.String())
 }
 
+// typeFromInferredString 把「語義副表裡的 ?T 字串」（如 "?int"）還原為 Type 節點，
+// 使 ASTToHIR 在 `s.Type == nil` 時仍能產生與舊版（直接寫 AST）相同的 HIR Type ID。
+//
+// 該節點只活在 ASTToHIR 局部棧上、不入 AST，所以 IsInferred 不必為 true（後續的
+// typeID 只讀 String()）。重建對稱型別節點以匹配舊版 NullableType/NamedType 的
+// String() 輸出（"Optional`?`包 inner"）。
+func typeFromInferredString(s string) Type {
+	if s == "" {
+		return nil
+	}
+	if strings.HasPrefix(s, "?") {
+		inner := s[1:]
+		if inner == "" {
+			return nil
+		}
+		return &NullableType{Type: &NamedType{Value: inner}}
+	}
+	return &NamedType{Value: s}
+}
+
 func pos(n Node) (line, col int32) {
 	if isNil(n) {
 		return 0, 0
@@ -367,11 +387,21 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 		})
 
 	case *LetStatement:
+		typ := s.Type
+		// lowering 不再就地寫 `s.Type = &NullableType{IsInferred: true}`，改走
+		// 語義副表 (Program.Sem.InferredType)。ASTToHIR 在 `s.Type` 為空時補讀
+		// 推斷型別，使 HIR Type ID 與「寫 AST」時代逐字節一致。typeString 內含
+		// 既有 Null/NamedType 格式化路徑，行為相容。
+		if typ == nil && c.sem != nil {
+			if inf := c.sem.InferredType(s); inf != "" {
+				typ = typeFromInferredString(inf)
+			}
+		}
 		return c.b.Add(hir.Node{
 			Kind: hir.KLet,
 			S:    c.b.Intern(idValue(s.Name)),
 			S2:   c.b.Intern(s.ItArmType),
-			Type: c.typeID(s.Type),
+			Type: c.typeID(typ),
 			Flags: hir.FlagSynthetic*u32(s.IsSynthetic) |
 				hir.FlagArmBinding*u32(s.IsArmBinding) |
 				hir.FlagModuleConst*u32(s.IsModuleConst) |

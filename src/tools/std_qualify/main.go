@@ -247,11 +247,11 @@ func uniqueCrossOwner(owners map[string]map[string]bool, name, current string) s
 
 // qualifyFile parses one std file and returns the reformatted source plus a
 // count of qualified references and human-readable notes.
-func qualifyFile(path, content string) (string, int, []string) {
-	prog := parseSurface(content)
-	if prog == nil {
-		return content, 0, nil
-	}
+// qualifyProgram 對已解析的程式跑 qualify（walk + 有改寫時格式化）。
+// path 用來查 diskToModule（同模組抑制）；tests/ 等非 std 路徑查不到，等同
+// current=""。沒改寫就回傳原內容（不格式化）。
+// 抽出來是為了讓形狀門禁能餵指定形態的 AST（qualifyFile 只走糖形態）。
+func qualifyProgram(prog *parser.Program, path, content string) (string, int, []string) {
 	current := diskToModule[path]
 
 	// names bound anywhere in this file → never qualify (shadowing safety)
@@ -269,20 +269,42 @@ func qualifyFile(path, content string) (string, int, []string) {
 	return out, count, notes
 }
 
-func parseSurface(content string) *parser.Program {
+func qualifyFile(path, content string) (string, int, []string) {
+	prog := parseSurface(content)
+	if prog == nil {
+		return content, 0, nil
+	}
+	return qualifyProgram(prog, path, content)
+}
+
+// parseSurface 把源码解析为 AST。sugar=true 走 SkipLowering（S4 起的正式形態），
+// sugar=false 走舊的 surface 旗標。
+//
+// 兩個形態的並存只為量測與迴歸門禁服務，S4 收尾時隨旗標一起刪除。
+// 翻到糖形態的前提：walkExpr 已長出 SurfaceMatch 分支（用
+// parser.WalkSurfaceMatchChildrenRW），否則臂內的呼叫/常量引用會被靜默漏掉。
+func parseSurfaceShape(content string, sugar bool) *parser.Program {
 	if strings.TrimSpace(content) == "" {
 		return nil
 	}
 	l := lexer.New(content)
 	p := parser.New(l)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	if sugar {
+		p.SkipLowering = true
+	} else {
+		p.SkipUnwrapLowering = true
+		p.SkipSafeIndexLowering = true
+	}
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		fmt.Fprintf(os.Stderr, "parse errors (skip): %v\n", p.Errors()[0])
 		return nil
 	}
 	return prog
+}
+
+func parseSurface(content string) *parser.Program {
+	return parseSurfaceShape(content, true)
 }
 
 // collectBoundNames records every identifier bound in the file: top-level and
@@ -518,6 +540,18 @@ func walkExpr(e parser.Expression, current string, bound map[string]bool, notes 
 		// qualified method/field access: recurse receiver only (never the property,
 		// and never treat the whole dotted chain as a bare reference).
 		x.Receiver = walkExpr(x.Receiver, current, bound, notes, n)
+		return x
+
+	case *parser.SurfaceMatch:
+		// S4: 糖形態（SkipLowering）下 match 是 SurfaceMatch 而不是 if 鏈。
+		// 沒有這個 case，臂內的 std 呼叫會被靜默漏改（語法形態不可見）。
+		parser.WalkSurfaceMatchChildrenRW(x,
+			func(sub parser.Expression) parser.Expression {
+				return walkExpr(sub, current, bound, notes, n)
+			},
+			func(sub parser.Statement) {
+				*n += walkStmt(sub, current, bound, notes)
+			})
 		return x
 	}
 	return e

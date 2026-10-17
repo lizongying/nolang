@@ -73,7 +73,7 @@ func CollectEmptyCatchAllArms(program *parser.Program) []CatchAllArm {
 	inits := localInitializers(program)
 
 	var out []CatchAllArm
-	roots, rootFunc := collectMatchRoots(program)
+	roots, rootFunc, _ := collectMatchRoots(program)
 	for _, root := range roots {
 		// 只要 option match（有臂测试 ok/nil/err）。值 match、bare guard 不在范围。
 		if len(matchVariants(root)) == 0 {
@@ -162,20 +162,24 @@ func ValidateCatchAllArms(program *parser.Program) []ValidateResult {
 // 与 collectMatchRoots 的差别：糖形态下不存在「链节」——每个 SurfaceMatch 都是
 // 用户手写的一个 match，故**全部**收集（含嵌在别的臂体里的）。降糖形态要靠
 // matchChainedChild 排除链节，这里不需要。
-func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, map[*parser.SurfaceMatch]string) {
+func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, map[*parser.SurfaceMatch]string, map[*parser.SurfaceMatch]string) {
 	var all []*parser.SurfaceMatch
 	rootFunc := make(map[*parser.SurfaceMatch]string)
+	rootFile := make(map[*parser.SurfaceMatch]string)
 	if program == nil {
-		return all, rootFunc
+		return all, rootFunc, rootFile
 	}
 
-	var walkStmts func(fn string, stmts []parser.Statement)
-	var walkExpr func(fn string, e parser.Expression)
+	var walkStmts func(fn, file string, stmts []parser.Statement)
+	var walkExpr func(fn, file string, e parser.Expression)
 
-	walkStmts = func(fn string, stmts []parser.Statement) {
+	walkStmts = func(fn, file string, stmts []parser.Statement) {
 		for _, s := range stmts {
 			if s == nil {
 				continue
+			}
+			if f := parser.GetSourceFile(s); f != "" {
+				file = f
 			}
 			switch st := s.(type) {
 			case *parser.FunctionDefinition:
@@ -184,39 +188,39 @@ func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, ma
 					name = fn
 				}
 				if st.Body != nil {
-					walkStmts(name, st.Body.Statements)
+					walkStmts(name, file, st.Body.Statements)
 				}
 			case *parser.BlockStatement:
-				walkStmts(fn, st.Statements)
+				walkStmts(fn, file, st.Statements)
 			case *parser.LetStatement:
-				walkExpr(fn, st.Value)
+				walkExpr(fn, file, st.Value)
 			case *parser.MultiAssignStatement:
 				for _, t := range st.Targets {
-					walkExpr(fn, t)
+					walkExpr(fn, file, t)
 				}
-				walkExpr(fn, st.Value)
+				walkExpr(fn, file, st.Value)
 			case *parser.UnwrapAssignStatement:
-				walkExpr(fn, st.Value)
+				walkExpr(fn, file, st.Value)
 			case *parser.ReturnStatement:
-				walkExpr(fn, st.ReturnValue)
+				walkExpr(fn, file, st.ReturnValue)
 			case *parser.ExpressionStatement:
-				walkExpr(fn, st.Expression)
+				walkExpr(fn, file, st.Expression)
 			case *parser.ForStatement:
-				walkExpr(fn, st.Condition)
+				walkExpr(fn, file, st.Condition)
 				if st.Init != nil {
-					walkStmts(fn, []parser.Statement{st.Init})
+					walkStmts(fn, file, []parser.Statement{st.Init})
 				}
 				if st.Update != nil {
-					walkStmts(fn, []parser.Statement{st.Update})
+					walkStmts(fn, file, []parser.Statement{st.Update})
 				}
 				if st.Body != nil {
-					walkStmts(fn, st.Body.Statements)
+					walkStmts(fn, file, st.Body.Statements)
 				}
 			}
 		}
 	}
 
-	walkExpr = func(fn string, e parser.Expression) {
+	walkExpr = func(fn, file string, e parser.Expression) {
 		if e == nil {
 			return
 		}
@@ -224,76 +228,77 @@ func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, ma
 		case *parser.SurfaceMatch:
 			all = append(all, x)
 			rootFunc[x] = fn
+			rootFile[x] = file
 			// 臂体是语句容器，臂条件是表达式；嵌套 match 会在臂体里再次被找到。
 			walkSurfaceMatchChildren(x,
-				func(sub parser.Expression) { walkExpr(fn, sub) },
-				func(sub parser.Statement) { walkStmts(fn, []parser.Statement{sub}) })
+				func(sub parser.Expression) { walkExpr(fn, file, sub) },
+				func(sub parser.Statement) { walkStmts(fn, file, []parser.Statement{sub}) })
 		case *parser.IfExpression:
-			walkExpr(fn, x.Condition)
+			walkExpr(fn, file, x.Condition)
 			if x.Consequence != nil {
-				walkStmts(fn, x.Consequence.Statements)
+				walkStmts(fn, file, x.Consequence.Statements)
 			}
 			if x.Alternative != nil {
-				walkStmts(fn, x.Alternative.Statements)
+				walkStmts(fn, file, x.Alternative.Statements)
 			}
 		case *parser.InfixExpression:
-			walkExpr(fn, x.Left)
-			walkExpr(fn, x.Right)
+			walkExpr(fn, file, x.Left)
+			walkExpr(fn, file, x.Right)
 		case *parser.PrefixExpression:
-			walkExpr(fn, x.Right)
+			walkExpr(fn, file, x.Right)
 		case *parser.CallExpression:
-			walkExpr(fn, x.Function)
+			walkExpr(fn, file, x.Function)
 			for _, a := range x.Arguments {
-				walkExpr(fn, a)
+				walkExpr(fn, file, a)
 			}
 		case *parser.AssignExpression:
-			walkExpr(fn, x.Left)
-			walkExpr(fn, x.Value)
+			walkExpr(fn, file, x.Left)
+			walkExpr(fn, file, x.Value)
 		case *parser.IndexExpression:
-			walkExpr(fn, x.Left)
-			walkExpr(fn, x.Index)
+			walkExpr(fn, file, x.Left)
+			walkExpr(fn, file, x.Index)
 		case *parser.SliceExpression:
-			walkExpr(fn, x.Left)
+			walkExpr(fn, file, x.Left)
 			if x.Range != nil {
-				walkExpr(fn, x.Range.Start)
-				walkExpr(fn, x.Range.End)
+				walkExpr(fn, file, x.Range.Start)
+				walkExpr(fn, file, x.Range.End)
 			}
 		case *parser.ArrayLiteral:
 			for _, el := range x.Elements {
-				walkExpr(fn, el)
+				walkExpr(fn, file, el)
 			}
 		case *parser.SliceLiteral:
 			for _, el := range x.Elements {
-				walkExpr(fn, el)
+				walkExpr(fn, file, el)
 			}
 		case *parser.GroupedExpression:
-			walkExpr(fn, x.Expression)
+			walkExpr(fn, file, x.Expression)
 		case *parser.AwaitExpression:
-			walkExpr(fn, x.Right)
+			walkExpr(fn, file, x.Right)
 		case *parser.RunExpression:
-			walkExpr(fn, x.Call)
+			walkExpr(fn, file, x.Call)
 		case *parser.CastExpression:
-			walkExpr(fn, x.Expr)
+			walkExpr(fn, file, x.Expr)
 		case *parser.ConditionalExpression:
-			walkExpr(fn, x.Condition)
-			walkExpr(fn, x.Consequence)
-			walkExpr(fn, x.Alternative)
+			walkExpr(fn, file, x.Condition)
+			walkExpr(fn, file, x.Consequence)
+			walkExpr(fn, file, x.Alternative)
 		case *parser.DotExpression:
-			walkExpr(fn, x.Receiver)
+			walkExpr(fn, file, x.Receiver)
 		case *parser.StructLiteral:
 			for _, f := range x.Fields {
-				walkExpr(fn, f.Value)
+				walkExpr(fn, file, f.Value)
 			}
 		case *parser.MapLiteral:
 			for _, pair := range x.Pairs {
-				walkExpr(fn, pair.Key)
-				walkExpr(fn, pair.Value)
+				walkExpr(fn, file, pair.Key)
+				walkExpr(fn, file, pair.Value)
 			}
 		}
 	}
 
-	walkStmts("", program.Statements)
-	return all, rootFunc
+	walkStmts("", "", program.Statements)
+	return all, rootFunc, rootFile
 }
 
 // sugarMatchVariants 回传糖形态 match 的各臂所声明的 option 变体
@@ -368,7 +373,7 @@ func collectSugarCatchAllArms(program *parser.Program,
 	inits map[string]map[string]parser.Expression) []CatchAllArm {
 
 	var out []CatchAllArm
-	roots, rootFunc := collectSugarMatchRoots(program)
+	roots, rootFunc, _ := collectSugarMatchRoots(program)
 	for _, sm := range roots {
 		if len(sm.Arms) == 0 {
 			continue

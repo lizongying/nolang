@@ -353,7 +353,7 @@ func TestCatchAllArmIndexSubjectLimitation(t *testing.T) {
     res = x
 }
 `
-	roots, _ := collectMatchRoots(parseProg(t, src))
+	roots, _, _ := collectMatchRoots(parseProg(t, src))
 	if len(roots) != 0 {
 		t.Errorf("expected 0 visible match roots for an index subject, got %d", len(roots))
 	}

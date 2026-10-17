@@ -5837,6 +5837,15 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// wrong answer at best, and for owned element types (str) a wild
 		// buffer pointer that SIGSEGVs on the first use
 		// (tests/safe-index.no: `get-default OOB`).
+		if os.Getenv("NOLANG_DEBUG_IDX") != "" {
+			dbgHT := "<none>"
+			if l.typeHint != NoType && l.typeHint != l.voidType {
+				if ht := l.mod.Type(l.typeHint); ht != nil {
+					dbgHT = ht.Raw
+				}
+			}
+			fmt.Fprintf(os.Stderr, "[debug-idx] arr=%v elemT=%v typeHint=%v inBounds=%v\n", l.pkg.Str(l.pkg.Node(arrID).S), elemT, dbgHT, l.pkg.Node(id).Has(hir.FlagInBounds))
+		}
 		if l.typeHint != NoType && l.typeHint != l.voidType {
 			if ht := l.mod.Type(l.typeHint); ht != nil && ht.Kind == KindOption {
 				// D6：str/txt 的下标是**码点**下标，而 OpLen 给的是**字节**长度。
@@ -6539,14 +6548,26 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					if side == NoVal {
 						continue
 					}
-					st := l.valueTypeOf(side)
-					if st == l.voidType || st == NoType {
-						continue
-					}
-					if stt := l.mod.Type(st); stt != nil && stt.Raw == "i64" {
-						resTyp = st
-						break
-					}
+				st := l.valueTypeOf(side)
+				if st == l.voidType || st == NoType {
+					continue
+				}
+				// Widen when an operand is a WIDE integer type (int / i64 /
+				// u64 / i32 / u32 / i16 / u16 / i128 / u128) — not just the
+				// literal "i64". The shift count `24` and ordinary `int`
+				// literals flatten to i64 but carry the Raw spelling "int", so
+				// the old `stt.Raw == "i64"` test missed them and left
+				// `byte << 24` truncated to a single byte — which silently
+				// corrupted std/crypto/sha1+sha256 message schedules
+				// (`(padded[i]<<24)|(padded[i+1]<<16)|...` collapsed to just the
+				// low byte). C/Go promote narrow integer operands to int before
+				// a shift/bitwise op, so this matches the intended semantics;
+				// a byte VARIABLE still wraps at 8 bits because the final store
+				// into a byte slot truncates (see the comment above).
+				if stt := l.mod.Type(st); stt != nil && stt.Kind == KindInt && stt.Raw != "byte" && stt.Raw != "u8" && stt.Raw != "i8" {
+					resTyp = st
+					break
+				}
 				}
 			}
 		}

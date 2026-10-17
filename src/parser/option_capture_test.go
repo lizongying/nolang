@@ -22,9 +22,15 @@ import (
 // `a = x + 1`（x 為 ?T，根雖是 `+` 但 inferOptionArith 因運算元非純量而推斷失敗）。
 // 索引捕獲（根為安全索引）見 TestCaptureRootSafeIndex。
 
-// parseFnBody 解析 src 並回傳名為 fnName 的函式（方法取 `recv.name` 的尾段）
-// 之函式體陳述。解析錯誤直接致命。
-func parseFnBody(t *testing.T, src, fnName string) []Statement {
+// parseFnBody 解析 src 並回傳（parser, 函式體陳述）——parser 暴露用於讀
+// `Program.Sem` 的 side-table。函式取名為 `fnName`（方法取 `recv.name` 的尾段）。
+// 解析錯誤直接致命。
+//
+// S3（2026-10-16.4）後，inferOptionArith / synthesizeNullableType 把推斷的
+// `?T` 寫進 Program.Sem.InferredType 而非 `s.Type`（AST 結構維持表層未改寫，
+// 與 `no fmt` 的合約一致）。回到這層的測試若直接讀 `ls.Type` 會靜默漏看
+// 推斷，需用 `letTypeStr(p, ls)` 而非 `typeString(ls.Type)`。
+func parseFnBody(t *testing.T, src, fnName string) (*Parser, []Statement) {
 	t.Helper()
 	p := New(lexer.New(src))
 	prog := p.ParseProgram()
@@ -40,11 +46,27 @@ func parseFnBody(t *testing.T, src, fnName string) []Statement {
 			continue
 		}
 		if fd.Name == fnName || strings.HasSuffix(fd.Name, "."+fnName) {
-			return fd.Body.Statements
+			return p, fd.Body.Statements
 		}
 	}
 	t.Fatalf("function %q not found in %q", fnName, src)
-	return nil
+	return p, nil
+}
+
+// letTypeStr 回傳 ls 的型別字串，合併 AST 與 Program.Sem 的 InferredType
+// side-table。S3 後推斷的 `?T` 改寫入 side-table，故需同時讀兩處才能拿到
+// 「對用戶可見的有效型別」。回傳 "" 表示無任何型別資訊。
+func letTypeStr(p *Parser, ls *LetStatement) string {
+	if ls == nil {
+		return ""
+	}
+	if ls.Type != nil {
+		return typeString(ls.Type)
+	}
+	if p != nil && p.sem != nil && p.sem.HasInferredType(ls) {
+		return p.sem.InferredType(ls)
+	}
+	return ""
 }
 
 // flattenStmts 深度優先展開陳述樹（BlockStatement、ExpressionStatement 內嵌的
@@ -111,7 +133,7 @@ func TestCaptureRootArithLeftToInfer(t *testing.T) {
     a = b + c / d
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 
 	if got := capTmpNames(body); len(got) != 0 {
 		t.Fatalf("root arithmetic must be left to inferOptionArith, got %v", got)
@@ -120,8 +142,8 @@ func TestCaptureRootArithLeftToInfer(t *testing.T) {
 	if a == nil {
 		t.Fatal("missing a")
 	}
-	if a.Type == nil || typeString(a.Type) != "?i64" {
-		t.Fatalf("a type = %v, want ?i64 (inferOptionArith)", a.Type)
+	if got := letTypeStr(p, a); got != "?i64" {
+		t.Fatalf("a type = %q, want ?i64 (inferOptionArith)", got)
 	}
 	if len(body) != 2 {
 		t.Fatalf("root arithmetic must not add statements, body len = %d", len(body))
@@ -138,13 +160,13 @@ func TestCaptureRootSafeIndex(t *testing.T) {
     a = v[i]
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 	a := findLet(body, "a")
 	if a == nil {
 		t.Fatal("missing a")
 	}
-	if a.Type == nil || typeString(a.Type) != "?i64" {
-		t.Fatalf("a type = %v, want ?i64 (capture of safe index)", a.Type)
+	if got := letTypeStr(p, a); got != "?i64" {
+		t.Fatalf("a type = %q, want ?i64 (capture of safe index)", got)
 	}
 	if got := capTmpNames(body); len(got) != 0 {
 		t.Fatalf("root-index capture must not desugar into __cap_N, got %v", got)
@@ -168,13 +190,14 @@ func TestCaptureRootSafeIndexAppliesOutsideOptionFunc(t *testing.T) {
     a = v[i]
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 	a := findLet(body, "a")
 	if a == nil {
 		t.Fatal("missing a")
 	}
-	if a.Type == nil || !strings.HasPrefix(typeString(a.Type), "?") {
-		t.Fatalf("a type = %v, want ?i64 (capture widened to plain functions)", typeString(a.Type))
+	got := letTypeStr(p, a)
+	if !strings.HasPrefix(got, "?") {
+		t.Fatalf("a type = %q, want ?i64 (capture widened to plain functions)", got)
 	}
 	// 根就是索引讀取時走「根為索引」路徑：直接推斷 ?T，不落地成 __cap_N 暫存
 	// （暫存只在索引嵌在複合運算式裡、需要先算出來時才生成）。
@@ -194,13 +217,13 @@ func TestCaptureRootProvablyInBoundsIndexStillCaptured(t *testing.T) {
     b = a[1]
     print(b)
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 	b := findLet(body, "b")
 	if b == nil {
 		t.Fatal("missing b")
 	}
-	if b.Type == nil || typeString(b.Type) != "?i64" {
-		t.Fatalf("b type = %v, want ?i64 (in-bounds read still option on the user side)", typeString(b.Type))
+	if got := letTypeStr(p, b); got != "?i64" {
+		t.Fatalf("b type = %q, want ?i64 (in-bounds read still option on the user side)", got)
 	}
 	// 根就是索引讀取時走「根為索引」路徑：直接推斷 ?T，不落地成 __cap_N 暫存
 	// （與 TestCaptureRootSafeIndexAppliesOutsideOptionFunc 同一口徑）。
@@ -216,13 +239,13 @@ func TestCaptureOptionOperand(t *testing.T) {
     a = x + 1
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 	a := findLet(body, "a")
 	if a == nil {
 		t.Fatal("missing a")
 	}
-	if a.Type == nil || typeString(a.Type) != "?i64" {
-		t.Fatalf("a type = %v, want ?i64 (capture of option operand)", a.Type)
+	if got := letTypeStr(p, a); got != "?i64" {
+		t.Fatalf("a type = %q, want ?i64 (capture of option operand)", got)
 	}
 	if got := capTmpNames(body); len(got) != 1 {
 		t.Fatalf("want 1 __cap_N binding for the option operand, got %v", got)
@@ -237,13 +260,13 @@ func TestCaptureNestedArithLeftToInfer(t *testing.T) {
     a = x + (b / c) / d
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 	if got := capTmpNames(body); len(got) != 0 {
 		t.Fatalf("nested arithmetic must be left to inferOptionArith, got %v", got)
 	}
 	a := findLet(body, "a")
-	if a == nil || a.Type == nil || typeString(a.Type) != "?i64" {
-		t.Fatalf("a type = %v, want ?i64", a)
+	if got := letTypeStr(p, a); got != "?i64" {
+		t.Fatalf("a type = %q, want ?i64", got)
 	}
 	if len(body) != 2 {
 		t.Fatalf("nested arithmetic must not add statements, body len = %d", len(body))
@@ -258,13 +281,13 @@ func TestCaptureRootDivModLeftToInfer(t *testing.T) {
     a = b / d
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 	if got := capTmpNames(body); len(got) != 0 {
 		t.Fatalf("root divmod must be left to inferOptionArith, got %v", got)
 	}
 	a := findLet(body, "a")
-	if a == nil || a.Type == nil || typeString(a.Type) != "?i64" {
-		t.Fatalf("a type = %v, want ?i64 (inferOptionArith)", a)
+	if got := letTypeStr(p, a); got != "?i64" {
+		t.Fatalf("a type = %q, want ?i64 (inferOptionArith)", got)
 	}
 	if len(body) != 2 {
 		t.Fatalf("root divmod must not add statements, body len = %d", len(body))
@@ -280,17 +303,17 @@ f = (b i64, c i64) {
     a = g(b / c)
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 	if got := capTmpNames(body); len(got) != 1 {
 		t.Fatalf("want 1 __cap_N binding for the div in the call argument, got %v", got)
 	}
 	capBind := findLet(body, "__cap_1")
-	if capBind == nil || capBind.Type == nil || typeString(capBind.Type) != "?i64" {
-		t.Fatalf("__cap_1 type = %v, want ?i64", capBind)
+	if got := letTypeStr(p, capBind); got != "?i64" {
+		t.Fatalf("__cap_1 type = %q, want ?i64", got)
 	}
 	a := findLet(body, "a")
-	if a == nil || a.Type == nil || typeString(a.Type) != "?i64" {
-		t.Fatalf("a type = %v, want ?i64 (capture; T = g's return type)", a)
+	if got := letTypeStr(p, a); got != "?i64" {
+		t.Fatalf("a type = %q, want ?i64 (capture; T = g's return type)", got)
 	}
 }
 
@@ -382,15 +405,12 @@ func TestCaptureSkippedCases(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body := parseFnBody(t, tc.src, "f")
+			p, body := parseFnBody(t, tc.src, "f")
 			ls := findLet(body, tc.varName)
 			if ls == nil {
 				t.Fatalf("no LetStatement named %q", tc.varName)
 			}
-			gotType := ""
-			if ls.Type != nil {
-				gotType = typeString(ls.Type)
-			}
+			gotType := letTypeStr(p, ls)
 			if gotType != tc.wantType {
 				t.Errorf("%s type = %q, want %q", tc.varName, gotType, tc.wantType)
 			}
@@ -409,13 +429,13 @@ func TestCaptureUnderscoreTarget(t *testing.T) {
     _ = v[i]
     print('done')
 }`
-	body := parseFnBody(t, src, "f")
+	p, body := parseFnBody(t, src, "f")
 	us := findLet(body, "_")
 	if us == nil {
 		t.Fatal("`_ = v[i]` must parse as a LetStatement named `_`")
 	}
-	if us.Type == nil || typeString(us.Type) != "?i64" {
-		t.Fatalf("`_` type = %v, want ?i64 (capture)", us.Type)
+	if got := letTypeStr(p, us); got != "?i64" {
+		t.Fatalf("`_` type = %q, want ?i64 (capture)", got)
 	}
 }
 
@@ -428,7 +448,7 @@ f = (b i64, c i64) {
     a = g(b / c)
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	_, body := parseFnBody(t, src, "f")
 	var all []Statement
 	flattenStmts(body, &all)
 	for _, s := range all {
@@ -492,7 +512,7 @@ h = (m i64) (r i64) {
     c = y + 1
     r = c
 }`
-	body := parseFnBody(t, src, "h")
+	p, body := parseFnBody(t, src, "h")
 	if body == nil {
 		t.Fatal("function h not found")
 	}
@@ -500,11 +520,12 @@ h = (m i64) (r i64) {
 	if c == nil {
 		t.Fatal("missing c in h")
 	}
-	if c.Type == nil || !strings.HasPrefix(typeString(c.Type), "?") {
-		t.Fatalf("h's c type = %v, want an option (capture of option operand)", c.Type)
+	got := letTypeStr(p, c)
+	if !strings.HasPrefix(got, "?") {
+		t.Fatalf("h's c type = %q, want an option (capture of option operand)", got)
 	}
-	if got := capTmpNames(body); len(got) != 1 {
-		t.Fatalf("h must capture exactly one node, got %v", got)
+	if gotCaps := capTmpNames(body); len(gotCaps) != 1 {
+		t.Fatalf("h must capture exactly one node, got %v", gotCaps)
 	}
 }
 
@@ -518,7 +539,7 @@ func TestCaptureAlreadyDeclaredLiteralTargetSkipped(t *testing.T) {
     a = a + c / d
     print(a)
 }`
-	body := parseFnBody(t, src, "f")
+	_, body := parseFnBody(t, src, "f")
 	if got := capTmpNames(body); len(got) != 0 {
 		t.Fatalf("already-declared plain target must not be captured, got %v", got)
 	}
@@ -545,7 +566,7 @@ func TestCaptureUnderscoreStatementBoundary(t *testing.T) {
     _ = z / 2
     print('done')
 }`
-	body := parseFnBody(t, src, "f")
+	_, body := parseFnBody(t, src, "f")
 	if len(body) != 4 {
 		t.Fatalf("body len = %d, want 4 (`_ =` must not be swallowed)", len(body))
 	}

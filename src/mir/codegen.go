@@ -1162,6 +1162,47 @@ func (c *codegen) coerceIntSigned(src ValueID, v, fromT, toT string) string {
 	return c.coerceInt(v, fromT, toT)
 }
 
+// wrapIntToStorage truncates an i64 computation result to the DECLARED width of
+// a narrow integer type (u8/u16/u32/i8/i16/i32) and re-extends it to i64, so
+// two's-complement overflow wraps at the correct boundary even though nolang
+// stores every integer in a 64-bit LLVM slot (c.typ maps all ints to i64 for
+// ABI simplicity). For i64/u64/i128 the value is returned unchanged.
+//
+// Why this exists: a bare `add i64` never wraps, so `u32 x = 4294967295; x+1`
+// would yield 4294967296 instead of 0 — breaking every unsigned algorithm
+// (crypto digests, checksums, bit-rotation) that relies on 32-bit overflow.
+// Keeping the storage wide (i64) means calls, assignments, returns and struct
+// fields need NO width coercion; only the arithmetic/shift result is narrowed
+// here. Signedness comes from the nolang RAW type: unsigned widens with zext
+// (high bits zero), signed with sext (so a wrapped -2147483648 stays negative).
+func (c *codegen) wrapIntToStorage(raw, v string) string {
+	if raw == "" {
+		return v
+	}
+	var w int
+	switch raw {
+	case "u8", "byte", "i8":
+		w = 8
+	case "u16", "i16":
+		w = 16
+	case "u32", "i32":
+		w = 32
+	default:
+		return v
+	}
+	c.loadSeq++
+	t := fmt.Sprintf("%%cw%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i%d\n", t, v, w))
+	c.loadSeq++
+	e := fmt.Sprintf("%%cw%d", c.loadSeq)
+	if isUnsignedRaw(raw) {
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i%d %s to i64\n", e, w, t))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = sext i%d %s to i64\n", e, w, t))
+	}
+	return e
+}
+
 // coerceIndex widens an array/slice index operand to i64. Indices are always
 // non-negative, so unsigned integer types (i8/i16/i32/i1) are ZERO-extended —
 // not sign-extended — so a byte index like 200 stays 200 instead of wrapping to a
@@ -5226,6 +5267,7 @@ func (c *codegen) unwrapOptionOperand(src ValueID, t, v, dstLT string) (string, 
 
 func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
+	dstRaw := c.rawTypeOfValue(inst.Dst)
 	slot := c.valSlot[inst.Dst]
 	aT, aV := c.loadVal(inst.Args[0])
 	bT, bV := c.loadVal(inst.Args[1])
@@ -5458,7 +5500,7 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond))
 			c.optStoreTagValue(slot, errTag)
 		}
-		c.optStoreInlinePayload(slot, resLT, resVal)
+		c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(dstRaw, resVal))
 	} else {
 		// Plain-int path (the statement carries an #{overflow=...} annotation, or
 		// the destination is an explicit plain int): there is no option for the
@@ -5474,13 +5516,14 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			outV = zr
 			c.sb.WriteString("  " + c.divZeroReport(zeroDiv) + "\n")
 		}
-		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, outV, lt, slot))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, c.wrapIntToStorage(dstRaw, outV), lt, slot))
 	}
 	return nil
 }
 
 func (c *codegen) emitNeg(inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
+	dstRaw := c.rawTypeOfValue(inst.Dst)
 	slot := c.valSlot[inst.Dst]
 	vT, v := c.loadVal(inst.Args[0])
 	resLT := lt
@@ -5522,9 +5565,9 @@ func (c *codegen) emitNeg(inst *Inst) error {
 			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond))
 			c.optStoreTagValue(slot, errTag)
 		}
-		c.optStoreInlinePayload(slot, resLT, resVal)
+		c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(dstRaw, resVal))
 	} else {
-		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, c.wrapIntToStorage(dstRaw, resVal), lt, slot))
 	}
 	return nil
 }
@@ -6026,6 +6069,7 @@ func (c *codegen) emitLogic(inst *Inst) error {
 // logical shift (lshr), matching the legacy backend (expr.go:6384).
 func (c *codegen) emitBitwise(inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
+	dstRaw := c.rawTypeOfValue(inst.Dst)
 	slot := c.valSlot[inst.Dst]
 	aT, aV := c.loadVal(inst.Args[0])
 	bT, bV := c.loadVal(inst.Args[1])
@@ -6103,9 +6147,9 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond))
 			c.optStoreTagValue(slot, errTag)
 		}
-		c.optStoreInlinePayload(slot, resLT, resVal)
+		c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(dstRaw, resVal))
 	} else {
-		c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, c.wrapIntToStorage(dstRaw, resVal), lt, slot))
 	}
 	return nil
 }

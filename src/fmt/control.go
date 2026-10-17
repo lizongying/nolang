@@ -71,6 +71,12 @@ func (f *formatter) isBareMatchBody(statements []parser.Statement) bool {
 	if !ok {
 		return false
 	}
+	// S4：糖形態下裸 match 是 *SurfaceMatch，不是降糖後的 IfExpression。它自己就
+	// 印成 `{ ... }`，故內聯同樣不改變視覺形式——與下面的 IfExpression 分支同判據。
+	// 少了這個分支，糖形態會替這種臂體多包一層大括號（json.no 的巢狀 match）。
+	if _, ok := es.Expression.(*parser.SurfaceMatch); ok {
+		return true
+	}
 	ifExpr, ok := es.Expression.(*parser.IfExpression)
 	if !ok {
 		return false
@@ -309,11 +315,76 @@ func (f *formatter) formatBareMatchExpressionSubj(e *parser.IfExpression, subjOv
 	f.write("}")
 }
 
-// writeBareMatchArm 輸出單個 arm。
-// 對於非 wildcard：cond -> body
-// 對於 wildcard：-> body
-// 若 body 只有一個簡單語句（ExpressionStatement / LetStatement / ReturnStatement 等）且無註釋，
-// 內聯輸出在同一行；若 body 有多個語句，用 { } 大括號包裹。
+// bareMatchArm 是一條「已備妥、可輸出」的 match 臂：主體語句已濾掉降糖合成的
+// 腳手架，臂模式（pattern）由 writeCond 自行輸出（不含結尾的 ` ->`）。
+//
+// 它有兩個生產者，刻意共用同一套「主體怎麼排版」的規則（內聯 / 區塊 / 註解
+// 位置）——那是排版決定，與糖無關：
+//
+//	armFromIfExpr  今日的降糖形態：IfExpression 鏈 + RTFlag + 痕跡欄位，
+//	               臂模式必須從痕跡欄位反推（MatchedExpr / OptionPatterns /
+//	               ValuePatterns / RawCond / EqualityPattern …）。
+//	armFromMatchArm  S4 的糖形態：parser.MatchArm 自帶完整表面資訊，
+//	               臂模式直接照語法讀，不需要任何反推。
+//
+// 差別因此只剩「模式從哪裡讀」。S4 完成後 armFromIfExpr 隨降糖形態一起退役。
+type bareMatchArm struct {
+	body      *parser.BlockStatement
+	stmts     []parser.Statement // body 語句，已濾掉合成腳手架
+	wildcard  bool
+	valBranch bool   // 通配臂但是 val/ok 分支（`ok` / `ok(v)`）
+	binding   string // 析構綁定後綴，如 `(v)` / `(w, h)`
+	writeCond func(*formatter)
+}
+
+// formatSurfaceMatch 直接從糖節點 SurfaceMatch 輸出 match——不經降糖、不讀痕跡
+// 欄位、不反推 if 鏈形狀。臂模式照語法原樣讀出（見 armFromMatchArm），主體排版
+// 與降糖形態共用 writeArm。
+//
+// 這是 S4 的目標形態：同一份源碼在兩種形態下的 `no fmt` 輸出必須逐字節相同，
+// 由 src/fmt/sugar_fmt_ab_test.go 的 TestSugarFmtMatchesSurfaceFmt 把守。
+//
+// 與降糖形態唯一「刻意保留」的共同點是臂之間的空行：writeArm 每條臂都以
+// f.newline() 起頭，而臂與臂之間再寫一個裸 "\n"，所以 match 的臂永遠隔一行
+// 輸出，與源碼是否留白無關（既有行為，兩種形態一致）。
+func (f *formatter) formatSurfaceMatch(sm *parser.SurfaceMatch) {
+	if sm.Matched != nil {
+		f.formatExpression(sm.Matched)
+		f.write(": {")
+	} else {
+		f.write("{")
+	}
+	// Output opening brace comment on the same line as {
+	if obc := f.matchOpeningBraceComment(sm); obc != nil && len(obc.List) > 0 {
+		f.write("; ")
+		for _, c := range obc.List {
+			f.write(strings.TrimSpace(c.Text))
+		}
+	}
+	f.indent++
+	for i := range sm.Arms {
+		if i > 0 {
+			f.write("\n")
+		}
+		f.writeMatchArm(&sm.Arms[i])
+	}
+	f.indent--
+	f.newline()
+	f.write("}")
+}
+
+// matchOpeningBraceComment 取 match 外層 `{` 的同行註釋。糖節點自己帶著它
+// （SurfaceMatch.OpeningBraceComment）；side-table 那一邊是給降糖形態用的。
+// 兩邊理論上只會有一邊非空，先查副表是為了讓「註釋已搬到 IfExpression」的
+// 混合情形不會掉註釋。
+func (f *formatter) matchOpeningBraceComment(sm *parser.SurfaceMatch) *parser.CommentGroup {
+	if f.sem != nil {
+		if g := f.sem.OpeningBraceCommentOf(sm); g != nil && len(g.List) > 0 {
+			return g
+		}
+	}
+	return sm.OpeningBraceComment
+}
 
 // writeBareMatchArm 輸出單個 arm。
 // 對於非 wildcard：cond -> body
@@ -321,6 +392,23 @@ func (f *formatter) formatBareMatchExpressionSubj(e *parser.IfExpression, subjOv
 // 若 body 只有一個簡單語句（ExpressionStatement / LetStatement / ReturnStatement 等）且無註釋，
 // 內聯輸出在同一行；若 body 有多個語句，用 { } 大括號包裹。
 func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
+	f.writeArm(f.armFromIfExpr(e))
+}
+
+// writeMatchArm 輸出糖形態的單條 match 臂（parser.MatchArm）。與
+// writeBareMatchArm 走同一條排版路徑，差別只在臂模式的來源。
+func (f *formatter) writeMatchArm(ma *parser.MatchArm) {
+	f.writeArm(f.armFromMatchArm(ma))
+}
+
+// armFromIfExpr 從降糖後的 IfExpression 還原一條臂。合成語句的辨識與析構綁定
+// 的打撈都在這裡——它們全是降糖產物，糖形態沒有這些東西。
+func (f *formatter) armFromIfExpr(e *parser.IfExpression) bareMatchArm {
+	a := bareMatchArm{
+		body:      e.Consequence,
+		wildcard:  f.hasRT(e, parser.RTMatchWildcard),
+		valBranch: e.DotValBody != nil && e.DotValBody == e.Consequence,
+	}
 	// 過濾 compiler 注入的合成語句（如 `it = matched`），同時收集析構綁定名：
 	//   - 隱式 `it` 綁定（`ok ->` / `nil ->` 等）不算顯式綁定，輸出時省略；
 	//   - 其餘合成 `name = ...`（來自 `ok(v) ->` / `rect(w, h) ->`）為顯式析構綁定，
@@ -350,10 +438,118 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		}
 		statements = append(statements, stmt)
 	}
-	bindingSuffix := ""
+	a.stmts = statements
 	if len(destructured) > 0 {
-		bindingSuffix = "(" + strings.Join(destructured, ", ") + ")"
+		a.binding = "(" + strings.Join(destructured, ", ") + ")"
 	}
+	a.writeCond = func(f *formatter) {
+		if e.MatchedExpr != nil {
+			// 按 pattern 類型依序檢查顯式欄位，避免對 desugar 後的 Condition 做啟發式推斷
+			switch {
+			case e.RangePattern != nil:
+				// [a..b) 等 range pattern
+				f.formatRangeBrackets(e.RangePattern)
+			case len(e.OptionPatterns) > 0:
+				// nil || err 等 option pattern 列表
+				f.write(strings.Join(e.OptionPatterns, " || "))
+			case len(e.ValuePatterns) > 0:
+				// 1 || 3 || 5 等 multi-value pattern 列表
+				for i, vp := range e.ValuePatterns {
+					if i > 0 {
+						f.write(" || ")
+					}
+					f.formatExpression(vp)
+				}
+			case e.RawCond != nil:
+				// ok(cond) raw cond arm
+				f.write("ok(")
+				f.formatExpression(e.RawCond)
+				f.write(")")
+			case e.EqualityPattern != nil:
+				// matched == X 等值 pattern，直接輸出 X
+				f.formatExpression(e.EqualityPattern)
+				f.write(a.binding)
+			default:
+				// 無顯式欄位：回退到格式化 Condition（向後相容）
+				f.formatExpression(e.Condition)
+				f.write(a.binding)
+			}
+			return
+		}
+		f.formatExpression(e.Condition)
+	}
+	return a
+}
+
+// armFromMatchArm 從糖節點 MatchArm 直接讀出臂模式——沒有反推、沒有痕跡欄位。
+//
+// 順序對應 parser 的臂首判定（parser/expr.go parseMatchExprFrom、
+// parser/match.go parseBareMatchExpr）：多值 / 多 option pattern 在解析時就清空
+// 了 Condition，故必須先於 Condition 檢查；`ok(v)` / `err(e)` 這類析構綁定與
+// `v T ->` 類型臂則各有自己的欄位。
+func (f *formatter) armFromMatchArm(ma *parser.MatchArm) bareMatchArm {
+	// IsDotVal 的臂（`ok ->` / `. ->` / `ok(v) ->`）在語法上是通配拼寫，但語義上
+	// 是 val 分支、不是 catch-all —— 與降糖形態的「RTMatchWildcard + DotValBody」
+	// 同構，故兩者都設、由 writeArm 輸出 `ok` 前綴。
+	a := bareMatchArm{
+		body:      ma.Body,
+		wildcard:  ma.IsWildcard,
+		valBranch: ma.IsDotVal,
+	}
+	if ma.Body != nil {
+		a.stmts = make([]parser.Statement, 0, len(ma.Body.Statements))
+		for _, stmt := range ma.Body.Statements {
+			// 糖形態沒有降糖合成的 `it` 綁定與零值語句；這裡只濾掉解析器為
+			// 空臂留下的 nil 佔位，與降糖路徑保持同一口徑。
+			if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+				continue
+			}
+			a.stmts = append(a.stmts, stmt)
+		}
+	}
+	if ma.IsDotVal && ma.BindingName != "" {
+		a.binding = "(" + ma.BindingName + ")"
+	}
+	a.writeCond = func(f *formatter) {
+		switch {
+		case len(ma.MultiOptionPatterns) > 0:
+			// nil || err 等 option pattern 列表
+			f.write(strings.Join(ma.MultiOptionPatterns, " || "))
+		case len(ma.MultiValuePatterns) > 0:
+			// 1 || 3 || 5 等 multi-value pattern 列表
+			for i, vp := range ma.MultiValuePatterns {
+				if i > 0 {
+					f.write(" || ")
+				}
+				f.formatExpression(vp)
+			}
+		case ma.IsRawCond:
+			// ok(cond) raw cond arm
+			f.write("ok(")
+			f.formatExpression(ma.Condition)
+			f.write(")")
+		case ma.IsTypeArm:
+			// v T -> 帶綁定的類型臂（union / type-set 解構）
+			f.write(ma.TypeBindingName)
+			f.write(" ")
+			f.write(ma.TypePattern)
+		case ma.BindingName != "" && ma.BindingVariant != "":
+			// err(e) 析構綁定（ok(v) 走 valBranch 分支）
+			f.write(ma.BindingVariant)
+			f.write("(")
+			f.write(ma.BindingName)
+			f.write(")")
+		default:
+			f.formatExpression(ma.Condition)
+		}
+	}
+	return a
+}
+
+// writeArm 是 match 臂排版的唯一實現。參數已由兩個生產者備妥，本函式不再關心
+// 臂模式是讀來的還是反推出來的。
+func (f *formatter) writeArm(a bareMatchArm) {
+	statements := a.stmts
 
 	// outsideComments collects arm-level doc comments that were originally
 	// before the arm body's opening brace. They are output before the condition.
@@ -366,12 +562,12 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	// and must stay in the block.
 	// This must happen BEFORE the canInline check, because outside comments
 	// should not prevent inlining — only inside comments do.
-	if e.Consequence.TrailingComments != nil &&
-		e.Consequence.ClosingBraceComment == nil &&
-		f.obcOf(e.Consequence) == nil {
-		openLine := e.Consequence.Token.Line
+	if a.body.TrailingComments != nil &&
+		a.body.ClosingBraceComment == nil &&
+		f.obcOf(a.body) == nil {
+		openLine := a.body.Token.Line
 		var outside, inside []*parser.Comment
-		for _, c := range e.Consequence.TrailingComments.List {
+		for _, c := range a.body.TrailingComments.List {
 			if c.Pos.Line < openLine {
 				outside = append(outside, c)
 			} else {
@@ -380,9 +576,9 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		}
 		// Stash outside comments to output before the condition later.
 		// We can't output them yet because we haven't written the newline.
-		e.Consequence.TrailingComments = nil
+		a.body.TrailingComments = nil
 		if len(inside) > 0 {
-			e.Consequence.TrailingComments = &parser.CommentGroup{List: inside}
+			a.body.TrailingComments = &parser.CommentGroup{List: inside}
 		}
 		// Store outside comments for output after the newline.
 		outsideComments = outside
@@ -402,11 +598,11 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	// 注意：此處必須用「含 overflow」的版本。overflow 也是會在該語句上方印出獨立一行的
 	// 行注解，內聯同樣無法還原；早期誤用不含 overflow 的版本，導致帶 overflow 的 arm
 	// body 被印成 `cond -> #{overflow=wrap}` 而二次格式化錯亂。
-	canInline := (e.Consequence.IsInline || f.isBareMatchBody(statements)) &&
+	canInline := (a.body.IsInline || f.isBareMatchBody(statements)) &&
 		len(statements) == 1 &&
-		e.Consequence.TrailingComments == nil &&
-		e.Consequence.ClosingBraceComment == nil &&
-		f.obcOf(e.Consequence) == nil &&
+		a.body.TrailingComments == nil &&
+		a.body.ClosingBraceComment == nil &&
+		f.obcOf(a.body) == nil &&
 		!f.attachedAnnotationsWillEmitAny(statements[0])
 	if canInline {
 		switch statements[0].(type) {
@@ -423,7 +619,7 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	//   - body 原始為顯式 block（IsInline=false）：doc comment 是 block 內註釋
 	//     （如 `// 部分區塊`），不內聯，走 block 路徑讓註釋在 block 內輸出。
 	if canInline && f.hasDocComment(statements[0]) {
-		if e.Consequence.IsInline {
+		if a.body.IsInline {
 			f.newline()
 			var doc *parser.CommentGroup
 			if d, ok := statements[0].(interface{ GetDoc() *parser.CommentGroup }); ok {
@@ -447,50 +643,15 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		f.newline()
 	}
 
-	if f.hasRT(e, parser.RTMatchWildcard) {
-		if e.DotValBody != nil && e.DotValBody == e.Consequence {
-			f.write("ok" + bindingSuffix + " ->")
+	if a.wildcard {
+		if a.valBranch {
+			// `ok` / `ok(v)`：val 分支不是 catch-all，模式要印出來。
+			f.write("ok" + a.binding + " ->")
 		} else {
 			f.write("->")
 		}
-	} else if e.MatchedExpr != nil {
-		// 按 pattern 類型依序檢查顯式欄位，避免對 desugar 後的 Condition 做啟發式推斷
-		switch {
-		case e.RangePattern != nil:
-			// [a..b) 等 range pattern
-			f.formatRangeBrackets(e.RangePattern)
-			f.write(" ->")
-		case len(e.OptionPatterns) > 0:
-			// nil || err 等 option pattern 列表
-			f.write(strings.Join(e.OptionPatterns, " || "))
-			f.write(" ->")
-		case len(e.ValuePatterns) > 0:
-			// 1 || 3 || 5 等 multi-value pattern 列表
-			for i, vp := range e.ValuePatterns {
-				if i > 0 {
-					f.write(" || ")
-				}
-				f.formatExpression(vp)
-			}
-			f.write(" ->")
-		case e.RawCond != nil:
-			// ok(cond) raw cond arm
-			f.write("ok(")
-			f.formatExpression(e.RawCond)
-			f.write(") ->")
-		case e.EqualityPattern != nil:
-			// matched == X 等值 pattern，直接輸出 X
-			f.formatExpression(e.EqualityPattern)
-			f.write(bindingSuffix)
-			f.write(" ->")
-		default:
-			// 無顯式欄位：回退到格式化 Condition（向後相容）
-			f.formatExpression(e.Condition)
-			f.write(bindingSuffix)
-			f.write(" ->")
-		}
 	} else {
-		f.formatExpression(e.Condition)
+		a.writeCond(f)
 		f.write(" ->")
 	}
 
@@ -498,10 +659,10 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	// 但當 body 是顯式 block（IsInline=false，如 `cond -> {}`）時，
 	// 保留空 {} 輸出以保持源碼形式。
 	if len(statements) == 0 &&
-		e.Consequence.IsInline &&
-		e.Consequence.TrailingComments == nil &&
-		e.Consequence.ClosingBraceComment == nil &&
-		f.obcOf(e.Consequence) == nil {
+		a.body.IsInline &&
+		a.body.TrailingComments == nil &&
+		a.body.ClosingBraceComment == nil &&
+		f.obcOf(a.body) == nil {
 		return
 	}
 	// 內聯簡單 body：輸出在同一行
@@ -530,9 +691,9 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 	// 多語句 body：用 { } 大括號包裹
 	f.write(" {")
 	// Output opening brace comment on the same line as {
-	if obc := f.obcOf(e.Consequence); obc != nil && len(obc.List) > 0 {
+	if obc := f.obcOf(a.body); obc != nil && len(obc.List) > 0 {
 		if os.Getenv("NOLANG_FMTDBG") != "" {
-			fmt.Fprintf(os.Stderr, "[DBG] writeBareMatchArm obcOf(e.Consequence)=%q\n", obc.List[0].Text)
+			fmt.Fprintf(os.Stderr, "[DBG] writeArm obcOf(a.body)=%q\n", obc.List[0].Text)
 		}
 		f.write("; ")
 		for _, c := range obc.List {
@@ -540,7 +701,7 @@ func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
 		}
 	}
 	f.indent++
-	f.formatBlockInner(e.Consequence, 0)
+	f.formatBlockInner(a.body, 0)
 	f.indent--
 	f.newline()
 	f.write("}")

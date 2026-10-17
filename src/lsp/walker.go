@@ -374,7 +374,71 @@ func (w *ASTWalker) walkExpression(expr parser.Expression, scope string) {
 		if e.Index != nil {
 			w.walkExpression(e.Index, scope)
 		}
+
+	case *parser.SurfaceMatch:
+		// S4：糖形態下 match 尚未展開成 if 鏈，臂體是本節點的直接子節點。少了
+		// 這一條，match 內宣告 / 引用的符號對索引完全不可見 —— hover、
+		// go-to-definition、find-references 在 match 裡全部失效，而且不報錯
+		// （純 switch、無 default，整棵子樹被靜默跳過）。
+		w.walkExpression(e.Matched, scope)
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			w.walkExpression(arm.Condition, scope)
+			for _, vp := range arm.MultiValuePatterns {
+				w.walkExpression(vp, scope)
+			}
+			// 析構綁定（`ok(v)` / `err(e)` / `rect(w, h)` / 類型臂 `v i32`）在降糖
+			// 形態下是臂體開頭的合成 `v = …` let，索引看得到；糖形態下只存在於
+			// MatchArm 的元資料裡，必須自己登記，否則這些名字在臂內查不到定義。
+			// 沒有顯式綁定名的臂沿用隱含的 `it`（SkipItBinding 的哨兵臂除外 ——
+			// 降糖也不會替它合成 `it`）。
+			names := matchArmBindingNames(arm)
+			// val 分支（`ok ->` / `. ->`）與 raw-cond 臂（`ok(cond) ->`）在降糖形態
+			// 下會被 materialize 成 `it = matched` 之外的另一條合成 let，索引因此
+			// 認得 `ok`；糖形態下 `ok` 只是臂模式關鍵字、不進 AST，這裡補登記以
+			// 保住同名條目（minimal-ok.no 的 `ok(it > 127) ->`）。
+			if arm.IsDotVal || arm.IsRawCond {
+				names = append(names, "ok")
+			}
+			if len(names) == 0 && !arm.SkipItBinding {
+				names = []string{"it"}
+			}
+			for _, name := range names {
+				if name == "" {
+					continue
+				}
+				w.addReference(name, arm.Pos)
+			}
+			if arm.Body != nil {
+				for _, inner := range arm.Body.Statements {
+					w.walkStatement(inner, scope)
+				}
+			}
+		}
 	}
+}
+
+// matchArmBindingNames 回報一個 match 臂在其臂體內**引入**的綁定名：
+// `ok(v) ->` 的 v、`err(e) ->` 的 e、`rect(w, h) ->` 的 w/h、類型臂 `v i32 ->` 的 v。
+//
+// 降糖形態下這些名字是臂體開頭的合成 `v = __unwrap_N` let（寫進 AST，索引照常收
+// 到）；糖形態下它們只活在 MatchArm 的元資料裡，必須由呼叫方自行登記，否則臂體內
+// 對這些名字的 hover / 跳轉會查無定義。
+//
+// 回傳 nil 表示該臂沿用隱含的 `it`（沒有顯式綁定名）。
+func matchArmBindingNames(arm *parser.MatchArm) []string {
+	if arm == nil {
+		return nil
+	}
+	var out []string
+	if arm.BindingName != "" {
+		out = append(out, arm.BindingName)
+	}
+	out = append(out, arm.BindingNames...)
+	if arm.TypeBindingName != "" {
+		out = append(out, arm.TypeBindingName)
+	}
+	return out
 }
 
 func (w *ASTWalker) addFunction(name string, token any, params, results []*parser.Parameter, body *parser.BlockStatement, scope string, isVariadic bool, doc string) {

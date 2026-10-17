@@ -240,5 +240,11 @@ func walkExprForRemovedPrintf(expr parser.Expression, out *[]ValidateResult) {
 				walkStmtForRemovedPrintf(sub, out)
 			}
 		}
+	case *parser.SurfaceMatch:
+		// S4：糖形態下 match 是 SurfaceMatch（表達式節點），經 ExpressionStatement
+		// 抵達本 walker；臂體對本 walker 不可見。見 sugar_walk.go。
+		walkSurfaceMatchChildren(e,
+			func(x parser.Expression) { walkExprForRemovedPrintf(x, out) },
+			func(s parser.Statement) { walkStmtForRemovedPrintf(s, out) })
 	}
 }

@@ -265,6 +265,15 @@ type detNodeSem struct {
 	OpeningBraceComment *CommentGroup
 	Callee              CalleeKind
 	IndexInBounds       bool
+	// InferredType mirrors NodeSemantics.InferredType (the ?T string recorded
+	// by lowering for `x = a + b`, `x = arr[i]`, etc.). S3 修復後 AST 不再帶
+	// 這個事實（不寫 `s.Type`），改放 side-table；快取必須鏡像才能跨進程保證
+	// HIR 與診斷輸出逐字節一致。
+	InferredType string
+	// InferredByOptionArith mirrors NodeSemantics.InferredByOptionArith
+	//（見同欄位註釋）。決定「是否還要進結構 desugar」的標誌位，必須跨
+	// 進程保留，否則快取命中後結構捕獲可能被誤跳過。
+	InferredByOptionArith bool
 }
 
 type detProgram struct {
@@ -325,31 +334,35 @@ func detToSem(d detSem) *SemanticContext {
 
 func detFromNodeSem(ns *NodeSemantics) detNodeSem {
 	return detNodeSem{
-		RawAnnotations:      ns.RawAnnotations,
-		Annotations:         ns.Annotations,
-		PlatformKeys:        ns.PlatformKeys,
-		GenericParams:       ns.GenericParams,
-		EmbedData:           ns.EmbedData,
-		EmbedFiles:          detSortStrBytes(ns.EmbedFiles),
-		RTFlags:             ns.RTFlags,
-		OpeningBraceComment: ns.OpeningBraceComment,
-		Callee:              ns.Callee,
-		IndexInBounds:       ns.IndexInBounds,
+		RawAnnotations:        ns.RawAnnotations,
+		Annotations:           ns.Annotations,
+		PlatformKeys:          ns.PlatformKeys,
+		GenericParams:         ns.GenericParams,
+		EmbedData:             ns.EmbedData,
+		EmbedFiles:            detSortStrBytes(ns.EmbedFiles),
+		RTFlags:               ns.RTFlags,
+		OpeningBraceComment:   ns.OpeningBraceComment,
+		Callee:                ns.Callee,
+		IndexInBounds:         ns.IndexInBounds,
+		InferredType:          ns.InferredType,
+		InferredByOptionArith: ns.InferredByOptionArith,
 	}
 }
 
 func detToNodeSem(d detNodeSem) *NodeSemantics {
 	return &NodeSemantics{
-		RawAnnotations:      d.RawAnnotations,
-		Annotations:         d.Annotations,
-		PlatformKeys:        d.PlatformKeys,
-		GenericParams:       d.GenericParams,
-		EmbedData:           d.EmbedData,
-		EmbedFiles:          detRebuildStrBytes(d.EmbedFiles),
-		RTFlags:             d.RTFlags,
-		OpeningBraceComment: d.OpeningBraceComment,
-		Callee:              d.Callee,
-		IndexInBounds:       d.IndexInBounds,
+		RawAnnotations:        d.RawAnnotations,
+		Annotations:           d.Annotations,
+		PlatformKeys:          d.PlatformKeys,
+		GenericParams:         d.GenericParams,
+		EmbedData:             d.EmbedData,
+		EmbedFiles:            detRebuildStrBytes(d.EmbedFiles),
+		RTFlags:               d.RTFlags,
+		OpeningBraceComment:   d.OpeningBraceComment,
+		Callee:                d.Callee,
+		IndexInBounds:         d.IndexInBounds,
+		InferredType:          d.InferredType,
+		InferredByOptionArith: d.InferredByOptionArith,
 	}
 }
 

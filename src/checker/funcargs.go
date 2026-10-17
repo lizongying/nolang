@@ -281,6 +281,13 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 			}
 		}
 		return results
+	case *parser.SurfaceMatch:
+		var results []ValidateResult
+		// S4：糖形態下 match 是 SurfaceMatch，臂體對本 walker 不可見。見 sugar_walk.go。
+		walkSurfaceMatchChildren(e,
+			func(x parser.Expression) { results = append(results, checkArgCountInExpr(x, sigs)...) },
+			func(s parser.Statement) { results = append(results, checkArgCountInStmt(s, sigs)...) })
+		return results
 	}
 	return nil
 }
@@ -2024,6 +2031,17 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 			}
 		}
 		return results
+	case *parser.SurfaceMatch:
+		var results []ValidateResult
+		// S4：糖形態下 match 是 SurfaceMatch，臂體對本 walker 不可見。見 sugar_walk.go。
+		walkSurfaceMatchChildren(e,
+			func(x parser.Expression) {
+				results = append(results, checkCallArgsInExpr(x, sigs, varTypes, structFields, underUnwrap)...)
+			},
+			func(s parser.Statement) {
+				results = append(results, checkCallArgsInStmt(s, sigs, varTypes, structFields)...)
+			})
+		return results
 	case *parser.IndexExpression:
 		var results []ValidateResult
 		if e.Left != nil {
@@ -2307,6 +2325,11 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			if e.Alternative != nil {
 				walkStmts(e.Alternative.Statements)
 			}
+		case *parser.SurfaceMatch:
+			// S4：糖形態下 match 是 SurfaceMatch，臂體對本 walker 不可見。見 sugar_walk.go。
+			walkSurfaceMatchChildren(e,
+				func(x parser.Expression) { walkExpr(x) },
+				func(s parser.Statement) { walkStmts([]parser.Statement{s}) })
 		case *parser.ArrayLiteral:
 			for _, elem := range e.Elements {
 				walkExpr(elem)

@@ -56,6 +56,28 @@ type NodeSemantics struct {
 	// 它屬於節點語義 side-table，不是 AST 語法欄位；因此可在保留原始 AST
 	// 的同時供 AST→HIR 消費，並隨 nodeSem 一起通過快取序列化。
 	IndexInBounds bool
+
+	// InferredType 記錄「lowering 為某個 LetStatement 推斷出的 ?T 型別字串」
+	//（如 `"?i64"`）。其原 AST 寫點 `s.Type = &NullableType{IsInferred: true}`
+	// 在 P1 下被禁止——lowering 不得再寫 AST；此欄位讓 ASTToHIR / checker /
+	// formatter 在不破壞語法樹的前提下讀到同樣的事實。
+	//
+	// 寫入者：parser/lowering.go 的 prepareInferredTypes（在 SkipLowering
+	// 閘門之前對兩條路徑都執行一次）。
+	// 讀取者：parser/tohir.go 的 KLet 產生、checker 的 inferredOption 判定、
+	// formatter 的 nullable 型別跳過渲染。
+	InferredType string
+
+	// InferredByOptionArith 區分 InferredType 的寫入來源：true 表示由
+	// `inferOptionArith`（D6 算術根推斷）寫入，false 表示由
+	// `synthesizeNullableType`（結構捕獲期間合成索引／捕獲根節點型別）
+	// 寫入。兩者最終都給同一個 HIR 型別，但對「根為算術的綁定是否還要進
+	// 結構 desugar」的回答不同 —— `maybeCaptureOptionAssign` 的短路檢查
+	// 需區分兩者：用戶寫 `a = b + c`（純量）時 inferOptionArith 走完即收手，
+	// 不該再被結構捕獲改寫成 `__cap_N`；用戶寫 `a = x + 1`（x 為 option）
+	// 時 inferOptionArith 推不出，但 synthesizeNullableType 仍會給 `?i64`，
+	// 仍需結構捕獲（否則溢位碼／除零守衛消失）。語義層面此差異僅一 bit。
+	InferredByOptionArith bool
 }
 
 // CalleeKind 描述一個 CallExpression 在整程式改寫後代表哪一類呼叫。
@@ -347,6 +369,54 @@ func (s *SemanticContext) IndexIsInBounds(n Node) bool {
 	}
 	if ns, ok := s.nodeSem[n]; ok {
 		return ns.IndexInBounds
+	}
+	return false
+}
+
+// SetInferredType 為一個 LetStatement 記錄 lowering 推斷出的 ?T 型別字串。
+// 這是純語義事實：不會改寫 AST，可在 SkipLowering 路徑下仍提供同一份證明。
+// empty 字串會被忽略（nil receiver / nil 節點安全）。
+func (s *SemanticContext) SetInferredType(n Node, typ string) {
+	if s == nil || n == nil || typ == "" {
+		return
+	}
+	s.ensure(n).InferredType = typ
+}
+
+// InferredType 回傳該節點的推斷 ?T 型別字串（如 `"?i64"`），未記錄時回 ""。
+// Nil receiver / nil 節點安全。
+func (s *SemanticContext) InferredType(n Node) string {
+	if s == nil || n == nil {
+		return ""
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.InferredType
+	}
+	return ""
+}
+
+// HasInferredType 報告節點是否帶推斷的 ?T 型別（Nil-safe）。
+func (s *SemanticContext) HasInferredType(n Node) bool {
+	return s.InferredType(n) != ""
+}
+
+// SetInferredByOptionArith 標記某個 LetStatement 的推斷 ?T 型別來自
+// `inferOptionArith`（D6 算術根推斷）。與 `InferredType` 寫入成對。
+func (s *SemanticContext) SetInferredByOptionArith(n Node, v bool) {
+	if s == nil || n == nil {
+		return
+	}
+	s.ensure(n).InferredByOptionArith = v
+}
+
+// InferredByOptionArith 回傳該節點的推斷是否由 option-arith 路徑寫入。
+// Nil-safe。
+func (s *SemanticContext) InferredByOptionArith(n Node) bool {
+	if s == nil || n == nil {
+		return false
+	}
+	if ns, ok := s.nodeSem[n]; ok {
+		return ns.InferredByOptionArith
 	}
 	return false
 }

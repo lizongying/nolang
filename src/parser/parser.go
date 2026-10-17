@@ -1620,6 +1620,14 @@ func (p *Parser) ParseProgram() *Program {
 	// 安全索引的證明與局部型別表是解析期 side-table，不是 lowering 產物。
 	// 兩條路徑都先建立同一份資料，確保 SkipLowering→ASTToHIR 不會丟掉 HIR 標記。
 	p.prepareInBoundsMetadata(program)
+	// LetStatement 推斷型別（`x = a + b` → `?int`、`x = arr[i]` → `?elem`）
+	// 同樣是 side-table 事實而非 AST 寫入。兩條路徑都先準備，使 ASTToHIR /
+	// checker / formatter 看到與對方同樣的 ?T。See parser/dump/s3_breakdown_test.go
+	// typeSynth 桶（24/532）—— 修補後歸零。
+	p.prepareInferredTypes(program)
+	// 「'->' 臂不可達」診斷：解析期判定（parser/match_warn.go），兩條形態都跑，
+	// 且必須在降糖之前——它讀的是 SurfaceMatch 自己的語法欄位。
+	p.warnUnreachableMatchArms(program)
 	if !p.SkipLowering {
 		p.LowerSurface(program)
 	}

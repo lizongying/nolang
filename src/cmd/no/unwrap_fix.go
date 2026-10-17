@@ -126,9 +126,12 @@ type unwrapSite struct {
 //     沒有模組上下文，模組限定的 std 呼叫（`c = fs.read-str(path)`）結果型別
 //     無法解析，這類站點在獨立解析下根本不報——實測 shs-check.no 的
 //     `src = c`（15w45dqk）就是漏網的那一個。
-//  2. surface 解析（SkipUnwrapLowering / SkipSafeIndexLowering）→ 取得使用者
-//     真正寫下的那條陳述（名稱 token 的確切行列、型別標註、語句跨度、所屬函式）。
-//     lowering 會把 `x = arr[i]` 換成合成區塊，靠它拿不到「使用者寫的那個名字」。
+//  2. 糖形態解析（SkipLowering）→ 取得使用者真正寫下的那條陳述（名稱 token 的
+//     確切行列、型別標註、語句跨度、所屬函式）。lowering 會把 `x = arr[i]` 換成
+//     合成區塊，靠它拿不到「使用者寫的那個名字」。S4 起與 formatter 內部解析
+//     （fmt/api.go）同形態；量測與門禁見 no_fix_shape_gate_test.go 的
+//     TestFixUnwrapRuleIsShapeParity（含「報告點在 match 臂內」的敏感 fixture，
+//     那是 collectUnwrapSites 需要 SurfaceMatch 下鑽的原因）。
 //
 // 兩者的行號同源（同一份 src），故以行號 join 是安全的。
 //
@@ -142,8 +145,17 @@ func fixUnwrapInFile(filename string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	src := string(data)
+	return fixUnwrapSourceShape(filename, string(data), true)
+}
 
+// fixUnwrapSourceShape 是 fixUnwrapInFile 的純字串 + 形態版：sugar=true 走
+// SkipLowering（S4 起的正式形態），sugar=false 走舊的 surface 旗標
+// （SkipUnwrapLowering + SkipSafeIndexLowering）。兩個形態的並存只為量測與
+// 迴歸門禁服務（no_fix_shape_gate_test.go），S4 收尾時隨旗標一起刪除。
+//
+// vet 管線（第 1 步）與形態無關——它跑完整 lowering 管線，兩種形態下同一份
+// src 得到同一組行號；只有第 2 步的「使用者原句」解析隨 sugar 變化。
+func fixUnwrapSourceShape(filename, src string, sugar bool) (string, bool) {
 	// (1) 完整 vet 管線 → optunuse / 15w45dqk 站點行號。
 	reportLines := map[int]bool{}
 	typedOptLines := map[int]bool{}
@@ -179,15 +191,18 @@ func fixUnwrapInFile(filename string) (string, bool) {
 		return "", false
 	}
 
-	// (2) surface 解析 → 使用者寫下的陳述。
+	// (2) 糖形態解析 → 使用者寫下的陳述。
 	sp := parser.New(lexer.New(src))
-	sp.SkipUnwrapLowering = true
-	sp.SkipSafeIndexLowering = true
+	if sugar {
+		sp.SkipLowering = true
+	} else {
+		sp.SkipUnwrapLowering = true
+		sp.SkipSafeIndexLowering = true
+	}
 	sprog := sp.ParseProgram()
 	if len(sp.Errors()) > 0 || sprog == nil {
 		return "", false
 	}
-
 	sites := collectUnwrapSites(sprog, reportLines)
 	if len(sites) == 0 {
 		return "", false
@@ -380,13 +395,20 @@ func collectUnwrapSites(prog *parser.Program, reportLines map[int]bool) []unwrap
 				if v.Name != nil {
 					bound[v.Name.Value] = true
 				}
-				if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
-					inner := map[string]bool{}
-					for k := range bound {
-						inner[k] = true
-					}
-					walk(fl.Body.Statements, firstOptionResult(fl.Results), inner)
+			if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
+				inner := map[string]bool{}
+				for k := range bound {
+					inner[k] = true
 				}
+				walk(fl.Body.Statements, firstOptionResult(fl.Results), inner)
+			}
+			// 值上下文 match：`v = x: { ok -> w = arr[i] … }`——臂體裡的站點
+			// 同樣要可見（與下面 ExpressionStatement 的 SurfaceMatch 分支同理由）。
+			if sm, ok := v.Value.(*parser.SurfaceMatch); ok {
+				parser.WalkSurfaceMatchArmBodies(sm, func(stmts []parser.Statement) {
+					walk(stmts, optRes, bound)
+				})
+			}
 			case *parser.FunctionDefinition:
 				if v.Body != nil {
 					inner := map[string]bool{}
@@ -407,16 +429,26 @@ func collectUnwrapSites(prog *parser.Program, reportLines map[int]bool) []unwrap
 				}
 			case *parser.BlockStatement:
 				walk(v.Statements, optRes, bound)
-			case *parser.ExpressionStatement:
-				if ie, ok := v.Expression.(*parser.IfExpression); ok {
-					if ie.Consequence != nil {
-						walk(ie.Consequence.Statements, optRes, bound)
-					}
-					if ie.Alternative != nil {
-						walk(ie.Alternative.Statements, optRes, bound)
-					}
+		case *parser.ExpressionStatement:
+			if ie, ok := v.Expression.(*parser.IfExpression); ok {
+				if ie.Consequence != nil {
+					walk(ie.Consequence.Statements, optRes, bound)
+				}
+				if ie.Alternative != nil {
+					walk(ie.Alternative.Statements, optRes, bound)
 				}
 			}
+			// S4 糖形態：match 不再被降糖成 if 鏈，臂體是 SurfaceMatch 的直接
+			// 子節點。少了這一條，臂內的 optunuse 站點對本 walker 不可見 ⇒
+			// `--fix=unwrap` 靜默漏修（surface 形態下同一站點走上面的
+			// IfExpression 分支、是能修的——實測 fixture 見
+			// no_fix_shape_gate_test.go 的 TestFixUnwrapRuleIsShapeParity）。
+			if sm, ok := v.Expression.(*parser.SurfaceMatch); ok {
+				parser.WalkSurfaceMatchArmBodies(sm, func(stmts []parser.Statement) {
+					walk(stmts, optRes, bound)
+				})
+			}
+		}
 		}
 	}
 	walk(prog.Statements, "", map[string]bool{})

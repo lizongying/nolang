@@ -203,5 +203,9 @@ func (v *listDirVisitor) walkExpr(e parser.Expression) {
 		if ex.Value == dotByte {
 			v.hasDotFilter = true
 		}
+	case *parser.SurfaceMatch:
+		// S4：糖形態下 match 是 SurfaceMatch（表達式節點），經 ExpressionStatement
+		// 抵達本 walker；臂體對本 walker 不可見。見 sugar_walk.go。
+		walkSurfaceMatchChildren(ex, v.walkExpr, func(s parser.Statement) { v.walkStmt(s) })
 	}
 }

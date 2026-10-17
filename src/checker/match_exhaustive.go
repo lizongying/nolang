@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -40,25 +41,50 @@ var optionMatchVariants = map[string]bool{"ok": true, "nil": true, "err": true}
 // NonExhaustiveMatch describes one option match that ValidateNonExhaustiveMatch
 // reports: the desugared root arm plus the option variants it fails to handle.
 //
-// It exists so automated fixers (see `no fmt --fix=match`) can drive off the
+// It exists so automated fixers (see `no fix`) can drive off the
 // *same* detection the diagnostic uses instead of re-deriving arm structure from
-// source text. Root is the outermost IfExpression of the match; its MatchEndPos
-// carries the source position of the match's closing `}` (set by the parser's
-// match desugar), which is where a fixer inserts the missing arms.
+// source text.
+//
+// SHAPES (S1): the rule runs on two AST shapes. Under the default lowering a
+// match is an if/else chain and Root is its outermost link; Root.MatchEndPos
+// carries the source position of the match's closing `}`. Under SkipLowering a
+// match is a single *parser.SurfaceMatch and Sugar holds it; the closing `}` is
+// at SurfaceMatch.RBracePos. Pos / End / Subject are therefore filled by BOTH
+// paths (the same normalisation CatchAllArm uses, see match_arm_reach.go) — a
+// consumer that reads only Root silently sees nothing under sugar, which is how
+// `--fix=match` lost its insertion point before the flip.
 type NonExhaustiveMatch struct {
-	Root    *parser.IfExpression
-	Missing []string // subset of ok / nil / err, in that canonical order
+	Root    *parser.IfExpression // 降糖形态：match 链的根；糖形态为 nil
+	Sugar   *parser.SurfaceMatch // 糖形态：match 节点；降糖形态为 nil
+	Pos     lexer.Position       // 诊断锚点（match 起点），两形态共同填写
+	End     lexer.Position       // match 收尾 `}` 的位置（fixer 插入点），两形态共同填写
+	Subject string               // 可打印的主体名，两形态共同填写
+	Missing []string             // subset of ok / nil / err, in that canonical order
+	File    string               // 所在源文件（顶层 stmt 的 SourceFile，由 transpiler 合并前填入）。
+	// 空表示未知：RunAllLints 在 merged 多文件模式下会据此丢弃（见 lint.go 的
+	// `!singleFile && r.File == ""` 过滤），故务必填实。
 }
 
 // CollectNonExhaustiveMatches returns every option match in program that neither
 // terminates in a catch-all arm nor handles all three option variants.
 // ValidateNonExhaustiveMatch is a thin reporting wrapper over it.
+//
+// Both shapes are collected because they are disjoint by construction: lowering
+// rewrites every SurfaceMatch into an if-chain (measured — a default-shaped
+// program contains 0 SurfaceMatch nodes, see
+// TestNonExhaustiveMatchShapesAreDisjoint), so neither path can double-report
+// the other's matches.
 func CollectNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
 	if program == nil {
 		return nil
 	}
+	out := collectLoweredNonExhaustiveMatches(program)
+	return append(out, collectSugarNonExhaustiveMatches(program)...)
+}
+
+func collectLoweredNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
 	var out []NonExhaustiveMatch
-	roots, rootFunc := collectMatchRoots(program)
+	roots, rootFunc, rootFile := collectMatchRoots(program)
 	for _, root := range roots {
 		vs := matchVariants(root)
 		// Not an option match: no arm tests ok/nil/err (bare guard blocks and
@@ -92,7 +118,14 @@ func CollectNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
 				missing = append(missing, v)
 			}
 		}
-		out = append(out, NonExhaustiveMatch{Root: root, Missing: missing})
+		out = append(out, NonExhaustiveMatch{
+			Root:    root,
+			Pos:     root.Pos(),
+			End:     root.MatchEndPos,
+			Subject: matchSubjectName(root),
+			Missing: missing,
+			File:    rootFile[root],
+		})
 	}
 	return out
 }
@@ -103,14 +136,15 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 	}
 	var results []ValidateResult
 	for _, m := range CollectNonExhaustiveMatches(program) {
-		pos := m.Root.Pos()
+		pos := m.Pos
 		results = append(results, ValidateResult{
 			TraceID: matchNonexTraceID,
 			Line:    pos.Line,
 			Column:  pos.Column,
+			File:    m.File,
 			Message: fmt.Sprintf(
 				"non-exhaustive match on option '%s': missing arm(s): %s — add a `-> ` (else) arm, or handle every variant",
-				matchSubjectName(m.Root), strings.Join(m.Missing, ", ")),
+				m.Subject, strings.Join(m.Missing, ", ")),
 		})
 	}
 	return results
@@ -128,10 +162,21 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 // the global snapshot directly, which misses parameters that now live only in
 // the per-function map.
 func subjectIsDeclaredEnum(program *parser.Program, root *parser.IfExpression, funcName string) bool {
+	if root == nil {
+		return false
+	}
+	return subjectIsDeclaredEnumExpr(program, root.MatchedExpr, funcName)
+}
+
+// subjectIsDeclaredEnumExpr is the shape-independent core of
+// subjectIsDeclaredEnum: both shapes hand over their own subject expression
+// (IfExpression.MatchedExpr / SurfaceMatch.Matched) so the enum lookup cannot
+// drift between them.
+func subjectIsDeclaredEnumExpr(program *parser.Program, subj parser.Expression, funcName string) bool {
 	if program == nil || program.Sem == nil || len(program.Sem.EnumVariants) == 0 {
 		return false
 	}
-	id, ok := root.MatchedExpr.(*parser.Identifier)
+	id, ok := subj.(*parser.Identifier)
 	if !ok {
 		return false
 	}
@@ -169,58 +214,67 @@ func matchSubjectName(ife *parser.IfExpression) string {
 
 // collectMatchRoots returns the outermost IfExpression of every match in the
 // program, together with the name of the enclosing function ("" for module-level
-// matches). Chained arms (an arm sitting in another arm's else slot) are
-// excluded so each match is reported exactly once.
-func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*parser.IfExpression]string) {
+// matches) and the source file of the enclosing top-level statement. Chained
+// arms (an arm sitting in another arm's else slot) are excluded so each match is
+// reported exactly once. The file map lets callers attribute each match to its
+// originating module in the merged (multi-file) program used by `no vet`.
+func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*parser.IfExpression]string, map[*parser.IfExpression]string) {
 	var all []*parser.IfExpression
 	children := make(map[*parser.IfExpression]bool)
 	rootFunc := make(map[*parser.IfExpression]string)
+	rootFile := make(map[*parser.IfExpression]string)
 
-	var walkExpr func(funcName string, e parser.Expression)
-	var walkStmts func(funcName string, stmts []parser.Statement)
+	var walkExpr func(funcName, file string, e parser.Expression)
+	var walkStmts func(funcName, file string, stmts []parser.Statement)
 
-	walkStmts = func(funcName string, stmts []parser.Statement) {
+	walkStmts = func(funcName, file string, stmts []parser.Statement) {
 		for _, s := range stmts {
 			if s == nil {
 				continue
+			}
+			// 陳述自身帶 SourceFile 時刷新當前檔（模組合併後由 transpiler
+			// 填入；只有頂層陳述持有，其函式體內部陳述不繼承）。與
+			// range_index_lint.go 的 curFile 下傳口徑一致。
+			if f := parser.GetSourceFile(s); f != "" {
+				file = f
 			}
 			switch st := s.(type) {
 			case *parser.FunctionDefinition:
 				fn := st.Name
 				if st.Body != nil {
-					walkStmts(fn, st.Body.Statements)
+					walkStmts(fn, file, st.Body.Statements)
 				}
 			case *parser.BlockStatement:
-				walkStmts(funcName, st.Statements)
+				walkStmts(funcName, file, st.Statements)
 			case *parser.LetStatement:
-				walkExpr(funcName, st.Value)
+				walkExpr(funcName, file, st.Value)
 			case *parser.MultiAssignStatement:
 				for _, t := range st.Targets {
-					walkExpr(funcName, t)
+					walkExpr(funcName, file, t)
 				}
-				walkExpr(funcName, st.Value)
+				walkExpr(funcName, file, st.Value)
 			case *parser.UnwrapAssignStatement:
-				walkExpr(funcName, st.Value)
+				walkExpr(funcName, file, st.Value)
 			case *parser.ReturnStatement:
-				walkExpr(funcName, st.ReturnValue)
+				walkExpr(funcName, file, st.ReturnValue)
 			case *parser.ExpressionStatement:
-				walkExpr(funcName, st.Expression)
+				walkExpr(funcName, file, st.Expression)
 			case *parser.ForStatement:
-				walkExpr(funcName, st.Condition)
+				walkExpr(funcName, file, st.Condition)
 				if st.Init != nil {
-					walkStmts(funcName, []parser.Statement{st.Init})
+					walkStmts(funcName, file, []parser.Statement{st.Init})
 				}
 				if st.Update != nil {
-					walkStmts(funcName, []parser.Statement{st.Update})
+					walkStmts(funcName, file, []parser.Statement{st.Update})
 				}
 				if st.Body != nil {
-					walkStmts(funcName, st.Body.Statements)
+					walkStmts(funcName, file, st.Body.Statements)
 				}
 			}
 		}
 	}
 
-	walkExpr = func(funcName string, e parser.Expression) {
+	walkExpr = func(funcName, file string, e parser.Expression) {
 		if e == nil {
 			return
 		}
@@ -229,47 +283,48 @@ func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*pa
 			if x.MatchedExpr != nil {
 				all = append(all, x)
 				rootFunc[x] = funcName
+				rootFile[x] = file
 				if c := matchChainedChild(x); c != nil {
 					children[c] = true
 				}
 			}
-			walkExpr(funcName, x.Condition)
+			walkExpr(funcName, file, x.Condition)
 			if x.Consequence != nil {
-				walkStmts(funcName, x.Consequence.Statements)
+				walkStmts(funcName, file, x.Consequence.Statements)
 			}
 			if x.Alternative != nil {
-				walkStmts(funcName, x.Alternative.Statements)
+				walkStmts(funcName, file, x.Alternative.Statements)
 			}
 		case *parser.InfixExpression:
-			walkExpr(funcName, x.Left)
-			walkExpr(funcName, x.Right)
+			walkExpr(funcName, file, x.Left)
+			walkExpr(funcName, file, x.Right)
 		case *parser.PrefixExpression:
-			walkExpr(funcName, x.Right)
+			walkExpr(funcName, file, x.Right)
 		case *parser.CallExpression:
-			walkExpr(funcName, x.Function)
+			walkExpr(funcName, file, x.Function)
 			for _, a := range x.Arguments {
-				walkExpr(funcName, a)
+				walkExpr(funcName, file, a)
 			}
 		case *parser.AssignExpression:
-			walkExpr(funcName, x.Left)
-			walkExpr(funcName, x.Value)
+			walkExpr(funcName, file, x.Left)
+			walkExpr(funcName, file, x.Value)
 		case *parser.IndexExpression:
-			walkExpr(funcName, x.Left)
-			walkExpr(funcName, x.Index)
+			walkExpr(funcName, file, x.Left)
+			walkExpr(funcName, file, x.Index)
 		case *parser.ArrayLiteral:
 			for _, el := range x.Elements {
-				walkExpr(funcName, el)
+				walkExpr(funcName, file, el)
 			}
 		case *parser.GroupedExpression:
-			walkExpr(funcName, x.Expression)
+			walkExpr(funcName, file, x.Expression)
 		case *parser.AwaitExpression:
-			walkExpr(funcName, x.Right)
+			walkExpr(funcName, file, x.Right)
 		case *parser.DotExpression:
-			walkExpr(funcName, x.Receiver)
+			walkExpr(funcName, file, x.Receiver)
 		}
 	}
 
-	walkStmts("", program.Statements)
+	walkStmts("", "", program.Statements)
 
 	roots := make([]*parser.IfExpression, 0, len(all))
 	for _, ife := range all {
@@ -277,7 +332,7 @@ func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*pa
 			roots = append(roots, ife)
 		}
 	}
-	return roots, rootFunc
+	return roots, rootFunc, rootFile
 }
 
 // matchChainedChild returns the next arm of the if/else chain, i.e. the match
@@ -394,4 +449,94 @@ func armVariantName(ife *parser.IfExpression) string {
 		}
 	}
 	return ""
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1：糖形态的 match（Parser.SkipLowering 下 match 是 *parser.SurfaceMatch）
+//
+// 上面的整条链路都建在**降糖后的形状**上：collectMatchRoots 走 if/else 链，
+// matchVariants 沿 matchChainedChild 逐链节收变体，matchHasCatchAll 看链末端
+// 有没有 else。糖形态下这些一条都找不到 match ⇒ match-nonex 静默失效（不报错，
+// 是沉默），`--fix=match` 也因此补不出 arm。
+//
+// 做法与 match_arm_reach.go 的 collectSugarCatchAllArms 对齐：**并行收集器 +
+// 共用语义助手**，而不是让 collectMatchRoots 也回传 SurfaceMatch（它的回传型别
+// 是 []*parser.IfExpression）。共用的助手：collectSugarMatchRoots /
+// sugarMatchVariants / sugarMatchSubjectName（match_arm_reach.go）与
+// subjectIsDeclaredEnumExpr（本档）。
+//
+// 逐条对应降糖路径的判定：
+//
+//	MatchedExpr != nil                      ↔ sm.Matched != nil
+//	matchVariants(root) 非空                 ↔ sugarMatchVariants(sm) 非空
+//	root.MatchEndPos.Line == 0 跳过          ↔ sm.RBracePos.Line == 0 跳过
+//	subjectIsDeclaredEnum(...)               ↔ subjectIsDeclaredEnumExpr(...)
+//	matchHasCatchAll(root)                  ↔ sugarMatchHasCatchAll(sm)
+//	root.Pos() / root.MatchEndPos           ↔ sm.Pos() / sm.RBracePos
+//
+// 位置等价性已实测（checker/zz_posprobe_test.go 的 TestZZPosProbe）：同一条
+// match 在两种形态下 Pos / EndPos / 收尾大括号位置**逐字段相同**——糖形态的
+// RBracePos 正是 lowering 转移到 IfExpression.MatchEndPos 的那一个位置。
+// ─────────────────────────────────────────────────────────────────────────────
+
+// collectSugarNonExhaustiveMatches 是 collectLoweredNonExhaustiveMatches 的
+// 糖形态分支。
+func collectSugarNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
+	var out []NonExhaustiveMatch
+	roots, rootFunc, rootFile := collectSugarMatchRoots(program)
+	for _, sm := range roots {
+		// 裸 guard 區塊（`{ cond -> body }`）沒有主體，降糖形態下
+		// collectMatchRoots 也以 MatchedExpr == nil 排除它。沒有這一條，
+		// `{ ok -> body }`（條件恰好叫 ok）會被誤判成缺 nil/err 的 option
+		// match——糖形態獨有的誤報。
+		if sm.Matched == nil {
+			continue
+		}
+		vs := sugarMatchVariants(sm)
+		if len(vs) == 0 {
+			continue
+		}
+		// 與降糖路徑的 MatchEndPos.Line == 0 對應。糖形態下 parser 不為合成
+		// match 建 SurfaceMatch（`?=` / 安全索引的合成 match 只存在於
+		// lowering），所以 RBracePos 為 0 只可能是異常 AST；保守跳過，與降糖
+		// 路徑「使用者沒有可改的源碼區塊就不要求窮盡」同向。
+		if sm.RBracePos.Line == 0 {
+			continue
+		}
+		if subjectIsDeclaredEnumExpr(program, sm.Matched, rootFunc[sm]) {
+			continue
+		}
+		if sugarMatchHasCatchAll(sm) || (vs["ok"] && vs["nil"] && vs["err"]) {
+			continue
+		}
+		var missing []string
+		for _, v := range []string{"ok", "nil", "err"} {
+			if !vs[v] {
+				missing = append(missing, v)
+			}
+		}
+		out = append(out, NonExhaustiveMatch{
+			Sugar:   sm,
+			Pos:     sm.Pos(),
+			End:     sm.RBracePos,
+			Subject: sugarMatchSubjectName(sm),
+			Missing: missing,
+			File:    rootFile[sm],
+		})
+	}
+	return out
+}
+
+// sugarMatchHasCatchAll 是 matchHasCatchAll 的糖形态对应物：整条 match 的最后一
+// 條臂是裸 `->`（IsWildcard 且不是 `.->` / `ok ->` 這種 dot-val 分支）。
+//
+// 為何不能只看 IsWildcard：`ok ->` 與 `->` 兩者都帶 IsWildcard=true（parser
+// 把「無條件的臂」一律標成 wildcard），差別在 IsDotVal。漏掉這個區分會把
+// `v: { ok -> a }` 誤判成已有兜底臂 ⇒ 靜默漏報 nil/err。
+func sugarMatchHasCatchAll(sm *parser.SurfaceMatch) bool {
+	if sm == nil || len(sm.Arms) == 0 {
+		return false
+	}
+	last := &sm.Arms[len(sm.Arms)-1]
+	return last.IsWildcard && !last.IsDotVal
 }

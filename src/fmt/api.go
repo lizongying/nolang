@@ -197,12 +197,16 @@ func formatProgramWithLoopStyle(code string, style LoopStyle) (out string, ok bo
 
 	l := lexer.New(code)
 	p := parser.New(l)
-	// 取得 surface AST（UnwrapAssignStatement / 安全索引展開等），直接渲染
-	// `?=` / `=` / `x = v[i]` 與獨立行上的 `#{index-out = DEF}`，而非展開為
-	// 不可重解析的 __unwrap_N / __idx_out_N 區塊（見 parser.SkipUnwrapLowering
-	// 與 parser.SkipSafeIndexLowering）。
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	// S4：取**糖 AST**（SkipLowering），formatter 直接渲染語法節點本身——
+	// `?=`、`x = v[i]`、`x: { … }` 的臂模式全部原樣輸出，不再從降糖後的形狀
+	// 反推、也不再依賴任何痕跡欄位。
+	//
+	// 舊的 SkipUnwrapLowering + SkipSafeIndexLowering（「surface」）只保留兩種糖，
+	// match 仍在解析期被展開成 if 鏈：那條路無法還原類型 match 的主語與臂模式
+	// （`no fmt` 把 `r = x: { i32 -> lo … }` 印成不可重解析的 `r = : { lo } else: { … }`）。
+	// 糖形態由 src/fmt/sugar_fmt_ab_test.go 把守：532 個語料檔案逐字節相同，
+	// 唯一相異的 type-match.no 正是這一類被修好的檔案。
+	p.SkipLowering = true
 	program := p.ParseProgram()
 
 	// 如果解析失敗，返回原始碼，不修改；並透出錯誤訊息讓上層（如 `no fmt`）回報

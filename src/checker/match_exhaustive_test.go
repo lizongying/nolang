@@ -349,3 +349,76 @@ func TestNonExhaustiveMatchErrOkCombinedMissingNil(t *testing.T) {
 		t.Errorf("expected message to list missing nil, got: %s", results[0].Message)
 	}
 }
+
+
+// TestNonExhaustiveMatchFileAttribution verifies the match-nonex diagnostic
+// carries the SourceFile of its enclosing top-level statement, so it survives the
+// multi-file (merged) filter in RunAllLints (lint.go: `!singleFile && r.File == ""`).
+// Regression gate for design §21.7 item 4: previously File was left empty and every
+// `no vet` over a std-referencing program silently dropped the diagnostic.
+func TestNonExhaustiveMatchFileAttribution(t *testing.T) {
+	src := `foo = () (v ?i64) {
+    v = 1
+}
+bar = () {
+    foo(): {
+        ok -> io.outln('ok')
+    }
+}
+`
+	prog := parseProg(t, src)
+	for _, s := range prog.Statements {
+		parser.SetSourceFile(s, "/repo/main.no")
+	}
+	results := ValidateNonExhaustiveMatch(prog)
+	if n := countMatchNonex(results); n != 1 {
+		t.Fatalf("expected 1 match-nonex, got %d: %v", n, results)
+	}
+	if results[0].File != "/repo/main.no" {
+		t.Errorf("match-nonex File = %q, want /repo/main.no (regression: empty File is dropped by RunAllLints in merged mode)", results[0].File)
+	}
+}
+
+// TestNonExhaustiveMatchVetMergedSurvivesFilter reproduces design §21.7 item 4:
+// a call-subject match in a program that also pulls in a std module (so the
+// merged program is multi-file and RunAllLints sees singleFile == false). The
+// diagnostic must still reach the output with its File set — not be silently
+// discarded by the `!singleFile && r.File == ""` filter.
+func TestNonExhaustiveMatchVetMergedSurvivesFilter(t *testing.T) {
+	mainSrc := `start = () {
+    env.lookup('host'): {
+        ok -> 1
+    }
+}
+`
+	prog := parseProg(t, mainSrc)
+	for _, s := range prog.Statements {
+		parser.SetSourceFile(s, "/repo/main.no")
+	}
+	// A second top-level statement attributed to a different (std) file forces
+	// RunAllLints into the multi-file branch (singleFile == false).
+	stdSrc := `helper = () { 1 }`
+	stdProg := parseProg(t, stdSrc)
+	for _, s := range stdProg.Statements {
+		parser.SetSourceFile(s, "/std/env/env.no")
+		prog.Statements = append(prog.Statements, s)
+	}
+
+	results := RunAllLints(prog, LintOptions{
+		SourcePath:     "/repo/main.no",
+		SkipTypeChecks: true,
+	})
+	var found *LintResult
+	for i := range results {
+		if results[i].TraceID == "match-nonex" {
+			found = &results[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("match-nonex missing from RunAllLints output in merged (multi-file) mode; got %d results: %v", len(results), results)
+	}
+	if found.File != "/repo/main.no" {
+		t.Errorf("match-nonex File = %q, want /repo/main.no (dropped by merged-mode filter?)", found.File)
+	}
+}

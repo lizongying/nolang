@@ -6,8 +6,10 @@ import (
 	"encoding/gob"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	pkgspec "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/parser/dump"
@@ -47,7 +49,7 @@ func TestASTZipRoundTrip(t *testing.T) {
 		if want != got {
 			t.Fatalf("%s: dump mismatch (%d vs %d bytes)", rel, len(want), len(got))
 		}
-		if st.Nodes == 0 || info.ZipVer != ZipVer || info.AstVer != parser.ASTVersion {
+		if st.Nodes == 0 || info == nil {
 			t.Fatalf("%s: bad stats/info: %+v %+v", rel, st, info)
 		}
 		t.Logf("%-16s zip=%7d bytes  nodes=%6d", rel, buf.Len(), st.Nodes)
@@ -140,10 +142,26 @@ func TestASTZipTiny(t *testing.T) {
 	t.Logf("tiny: zip=%d bytes nodes=%d", buf.Len(), st.Nodes)
 }
 
-// TestASTZipVersionGuard：zip/ast 版本不符必須硬錯。gob 對 schema 漂移是静默
-// 跳過，所以閘得我們自己把：篡改 ast.gob 流内的 ZipVer/AstVer 要能被 ReadASTZip
-// 拦下（重编一個只改版本前置欄的 ast.gob，AST 本體原樣保留）。
-func TestASTZipVersionGuard(t *testing.T) {
+// TestASTZipCachePathVersioned：版本键控从流内改成路徑後，ASTZipCachePath 必须
+// 同时含 ASTVersion 与 ZipVer——版本 bump 即路徑變，本機陈旧快取自动失效。
+func TestASTZipCachePathVersioned(t *testing.T) {
+	spec := pkgspec.ToolSpec{Host: "nolang-lang.org", Owner: "nolang-lang", Repo: "std", Name: "nolang-std"}
+	p := ASTZipCachePath(spec, "0.1.0")
+	base := filepath.Base(p)
+	if !strings.Contains(base, parser.ASTVersion) || !strings.Contains(base, ZipVer) {
+		t.Fatalf("cache name %q must embed ASTVersion+ZipVer", base)
+	}
+	// host:port 形式的本機 registry 路径在 Windows 上不能带 ":"
+	spec2 := pkgspec.ToolSpec{Host: "127.0.0.1:8080", Owner: "me", Repo: "tool", Name: "tool"}
+	if p2 := ASTZipCachePath(spec2, "v1"); strings.Contains(filepath.Dir(p2), ":") {
+		t.Fatalf("sanitized dir must not contain ':': %s", p2)
+	}
+}
+
+// TestASTZipForeignBlobRejected：旧代格式（如 astDoc 时代的 blob）不是
+// parser.CachedProgram，gob 型别名不匹配会硬错——这就是版本不入流后的
+// 兑底防线（静默错解只可能发生在同型别内的加字段漂移，而那由路徑键控拦截）。
+func TestASTZipForeignBlobRejected(t *testing.T) {
 	prog := parseStd(t, "vec.no")
 	var buf bytes.Buffer
 	if _, err := WriteASTZip(&buf, prog, nil); err != nil {
@@ -156,41 +174,34 @@ func TestASTZipVersionGuard(t *testing.T) {
 		t.Fatal("expected zip open error")
 	}
 
-	tamper := func(t *testing.T, field string, mutate func(*astDoc)) {
-		t.Helper()
-		entries, err := readZipEntries(buf.Bytes())
-		if err != nil {
-			t.Fatal(err)
-		}
-		var doc astDoc
-		if err := gob.NewDecoder(bytes.NewReader(entries[treeName])).Decode(&doc); err != nil {
-			t.Fatal(err)
-		}
-		mutate(&doc)
-		var tb bytes.Buffer
-		if err := gob.NewEncoder(&tb).Encode(&doc); err != nil {
-			t.Fatal(err)
-		}
-		var zb bytes.Buffer
-		zw := zip.NewWriter(&zb)
-		tw, err := zw.Create(treeName)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tw.Write(tb.Bytes()); err != nil {
-			t.Fatal(err)
-		}
-		if err := zw.Close(); err != nil {
-			t.Fatal(err)
-		}
-		if _, _, err := ReadASTZip(zb.Bytes()); err == nil {
-			t.Fatalf("expected hard error on tampered %s", field)
-		} else {
-			t.Logf("tampered %s rejected: %v", field, err)
-		}
+	// 用另一个 gob 型别（模拟上一代 astDoc 流）重建 ast.gob
+	type legacyAstDoc struct {
+		ZipVer  string
+		AstVer  string
+		Prog    *parser.Program
+		NodeSem map[uint32]*parser.NodeSemantics
 	}
-	tamper(t, "ZipVer", func(d *astDoc) { d.ZipVer = ZipVer + ".tampered" })
-	tamper(t, "AstVer", func(d *astDoc) { d.AstVer = parser.ASTVersion + ".tampered" })
+	var tb bytes.Buffer
+	if err := gob.NewEncoder(&tb).Encode(&legacyAstDoc{ZipVer: "old", AstVer: parser.ASTVersion, Prog: prog}); err != nil {
+		t.Fatal(err)
+	}
+	var zb bytes.Buffer
+	zw := zip.NewWriter(&zb)
+	tw, err := zw.Create(treeName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(tb.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadASTZip(zb.Bytes()); err == nil {
+		t.Fatal("expected hard error on foreign blob type")
+	} else {
+		t.Logf("legacy astDoc blob rejected: %v", err)
+	}
 }
 
 // TestASTZipWithPackageJSONC：附 package.jsonc 打包時 zip 应多一個條目，

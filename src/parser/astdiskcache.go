@@ -108,7 +108,14 @@ import (
 // analysis 在 ParseProgram 前置準備、只讀 AST。這改變 AST/gob shape 與 cached semantic
 // metadata；舊 Tier-1 blob 既沒有 side-table proof，又可能把 AST InBounds 欄位解碼丟棄，
 // 必須失效，避免 cache HIT 令 HIR 靜默漏掉 FlagInBounds。
-const ASTVersion = "2026-10-16.3"
+//
+// 2026-10-16.4：S3 修復——`inferOptionArith` / `synthesizeNullableType` 不再就地寫
+// `s.Type = &NullableType{IsInferred: true}`，改把推斷 `?T` 字串記入
+// `NodeSemantics.InferredType` side-table。AST 不再帶這個語義事實，舊 blob 若
+// 反序列化會得到 `s.Type == nil` + 空的 InferredType，使 ASTToHIR 的 Type ID 變成
+// NoID（不再輸出 `?i64`）；必須 bump，否則 cache HIT 會在 24/532 corpus 檔產生
+// 與預設路徑不一致的 HIR（parser/dump/s3_breakdown_test.go 的 typeSynth 桶）。
+const ASTVersion = "2026-10-16.4"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

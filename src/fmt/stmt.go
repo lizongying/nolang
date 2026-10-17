@@ -381,6 +381,15 @@ func (f *formatter) formatFunctionTypeAlias(ft *parser.FunctionType) {
 
 func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	f.formatExpression(s.Name)
+	// S3 修復後，lowering 不再就地寫 `s.Type = &NullableType{IsInferred: true}`；
+	// 推斷型別改走 Program.Sem.InferredType side-table。當 AST Type 為空但
+	// side-table 帶有推斷型別時，formatter 必須視為隱式可選型別、跳過渲染——
+	// 這與舊版 `*NullableType.IsInferred` 路徑逐字節相同。
+	// ⚠️ 必須同時要求 `s.Type == nil`：side-table 的推斷事實不問原始碼有沒有寫
+	// 型別，`res ?i64 = a[off + 1]` 這種「用戶顯式寫了 ?i64、推斷也得到 ?i64」
+	// 的陳述在糖形態下照樣會被寫入推斷。少了這個守衛，顯式標註會被當成推斷而
+	// 整段消失（`no fmt` 把 `res ?i64 = …` 印成 `res = …`）。
+	hasInferred := f.sem != nil && s.Type == nil && f.sem.HasInferredType(s)
 	// Render array/slice type: a [3]u16, v []u8, a [?]u16
 	if at, ok := s.Type.(*parser.ArrayType); ok {
 		if at.IsInferred {
@@ -409,7 +418,7 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 	} else if nt, ok := s.Type.(*parser.NamedType); ok && nt.Value != "" && !nt.IsInferred {
 		f.write(" ")
 		f.write(nt.Value)
-	} else if nt, ok := s.Type.(*parser.NullableType); ok && !nt.IsInferred {
+	} else if nt, ok := s.Type.(*parser.NullableType); ok && !nt.IsInferred && !hasInferred {
 		f.write(" ?")
 		f.write(nt.Type.String())
 	} else if mt, ok := s.Type.(*parser.MapType); ok && !mt.IsInferred {

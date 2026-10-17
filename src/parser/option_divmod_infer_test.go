@@ -19,6 +19,11 @@ import (
 
 // letTypeOf 解析 src，回傳 named 為 `name` 的 LetStatement 之型別字串
 // （無型別註解回 ""），並附帶該變數在語義表中的型別。
+//
+// S3 修復（2026-10-16.4）後，inferOptionArith 不再就地寫 `s.Type =
+// &NullableType{IsInferred: true}`，而是把推斷 ?T 記入 Program.Sem.InferredType。
+// 本輔助函數同時讀兩處並回傳合併後的字串，舊測試對「應有」單一型別字串的
+// 期望不變。
 func letTypeOf(t *testing.T, src, name string) (astType string, semType string) {
 	t.Helper()
 	p := New(lexer.New(src))
@@ -36,6 +41,11 @@ func letTypeOf(t *testing.T, src, name string) (astType string, semType string) 
 		}
 		if ls.Type != nil {
 			astType = typeString(ls.Type)
+		}
+		// S3：lowering 把推斷 ?T 寫入 Program.Sem.InferredType；AST Type 為空時
+		// 也讀此處。
+		if astType == "" && p.sem != nil && p.sem.HasInferredType(ls) {
+			astType = p.sem.InferredType(ls)
 		}
 		if p.sem != nil {
 			semType = p.sem.VarTypes[name]

@@ -3120,7 +3120,14 @@ func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, 
 
 		// Detect parser-inferred types using the IsInferred flag.
 		// Handles NamedType, NullableType (?T), SliceType, ArrayType, etc.
+		// 另需讀 Program.Sem 的 InferredType side-table——lowering 在 S3 修復
+		// 後不再就地寫 `s.Type = &NullableType{IsInferred: true}`，而是把 ?T
+		// 字串記入語義副表。AST 上的 `s.Type == nil` 仍須判定為推斷型別，否則
+		// duplicate 偵測與 ovfhndld HINT 路徑都會漏掉 24 個 corpus 文件。
 		isInferred := isInferredType(s.Type)
+		if !isInferred && sem != nil && sem.HasInferredType(s) {
+			isInferred = true
+		}
 
 		// 計算複合 key：name + "\x00" + platformKey（無平台註解則 suffix 為空）
 		// 同名 + 同平台才算衝突；不同平台或通用 vs 平台特定不衝突
@@ -4066,6 +4073,20 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 					found = true
 				}
 			}
+		case *parser.SurfaceMatch:
+			// S4：糖形態下 match 尚未展開為 if 鏈，臂體是 SurfaceMatch 的直接子
+			// 節點。少了這一條，臂體內的整數運算對 relevant 完全不可見 ⇒
+			// StatementsWithIntOverflow 漏登 ⇒ `no fmt` 把管轄真實運算的
+			// #{overflow} 註解判成無效並刪除（basic.no 的 `r = 0 - a`）。
+			walkSurfaceMatchChildren(x, func(e parser.Expression) {
+				if exprHasIntOverflow(e, declared, selfType) {
+					found = true
+				}
+			}, func(s parser.Statement) {
+				if stmtHasIntOverflow(s, declared, selfType) {
+					found = true
+				}
+			})
 		}
 		return found
 	}
@@ -4231,6 +4252,22 @@ func OverflowAnnotationRelevance(program *parser.Program) (relevant map[parser.S
 			collect(ie.Alternative.Statements)
 		}
 	}
+	// collectSurfaceMatch 下鑽糖 match 的臂體。臂體必須以**整份列表**掃描
+	// （walkSurfaceMatchArmBodies），否則「註解後面第一條陳述是誰」查不到、
+	// governed 缺項，formatter 就會把有效的 #{overflow=wrap} 當成無效刪掉。
+	// 臂條件 / 主語裡的巢狀 match 也一併下鑽。
+	var collectSurfaceMatch func(sm *parser.SurfaceMatch)
+	collectSurfaceMatch = func(sm *parser.SurfaceMatch) {
+		if sm == nil {
+			return
+		}
+		walkSurfaceMatchArmBodies(sm, func(stmts []parser.Statement) { collect(stmts) })
+		walkSurfaceMatchChildren(sm, func(e parser.Expression) {
+			if inner, ok := e.(*parser.SurfaceMatch); ok {
+				collectSurfaceMatch(inner)
+			}
+		}, nil)
+	}
 	collect = func(stmts []parser.Statement) {
 		scanList(stmts)
 		for _, s := range stmts {
@@ -4249,9 +4286,15 @@ func OverflowAnnotationRelevance(program *parser.Program) (relevant map[parser.S
 				if ie, ok := v.Expression.(*parser.IfExpression); ok {
 					collectIf(ie)
 				}
+				if sm, ok := v.Expression.(*parser.SurfaceMatch); ok {
+					collectSurfaceMatch(sm)
+				}
 			case *parser.LetStatement:
 				if ie, ok := v.Value.(*parser.IfExpression); ok {
 					collectIf(ie)
+				}
+				if sm, ok := v.Value.(*parser.SurfaceMatch); ok {
+					collectSurfaceMatch(sm)
 				}
 			}
 		}
@@ -5022,9 +5065,24 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 				func(sub parser.Expression) {
 					walkExpr(sub, fnReturnsOption, enclosingOverflow, valueCtx, varTypes, selfType, curFile)
 				},
-				func(sub parser.Statement) {
-					walkStmt(sub, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
-				})
+				nil)
+			// 🔴 臂體不能用「逐條陳述」的口徑走：值上下文下每條臂的**最後一條
+			// 表達式陳述是該臂的值**，不是被丟棄的陳述——與上方 IfExpression
+			// 分支的 walkArm 同口徑。少了這層，`r = x: { w i64 -> w + 1 }` 這類
+			// 值 match 會被誤報「整數運算結果被丟棄（未處理）」（實測：
+			// tests/type-match.no 27:14 / 28:14 的 ovfhndld）。降糖形態不會誤報
+			// 是因為臂體那時已是 IfExpression 的分支體、走 walkArm；糖形態下
+			// 必須自己補上同一規則，否則兩種形態的口徑就漂移了。
+			walkSurfaceMatchArmBodies(x, func(stmts []parser.Statement) {
+				for j, b := range stmts {
+					if valueCtx && j == len(stmts)-1 {
+						if _, isExprStmt := b.(*parser.ExpressionStatement); isExprStmt {
+							continue
+						}
+					}
+					walkStmt(b, fnReturnsOption, enclosingOverflow, varTypes, selfType, curFile)
+				}
+			})
 		}
 	}
 
@@ -5127,6 +5185,15 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// 故豁免。這與「裸表達式陳述」（無 `_ =`，下方 ExpressionStatement 分支）
 			// 不同：後者多半是誤寫，仍報錯。
 			declaredOption := s.Type != nil && strings.HasPrefix(s.Type.String(), "?")
+			// S3 修復後 `x = a + b` 的推斷 ?T 改寫進 Program.Sem.InferredType，
+			// AST `s.Type` 保持 nil——optunuse／ovfhndld 等「宣告為 option」的
+			// 判定若只看 AST 會靜默把這些站點漏報成「未標註的新變數」。補一筆
+			// side-table 讀取（同時也涵蓋 `a = v[i]` 等 synthesizeNullableType
+			// 路徑寫入的推斷）。declaredOption 視為「使用者的變數型別是 option」
+			// 的存在性，與來源無關。
+			if !declaredOption && s.Name != nil && sem != nil && sem.HasInferredType(s) {
+				declaredOption = true
+			}
 			// 結果參數的型別寫在簽名上，不在陳述的型別節點上：`int.div = (b int) (q ?int) { q = . / b }`
 			// 的 `q` 是顯式 `?int`，只是 `s.Type == nil`。少了這一條，簽名已宣告的
 			// 結果參數會被當成「未標註的新變數」而多報一次 ovfhndld HINT。
@@ -5137,7 +5204,8 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			}
 			discarded := s.Name != nil && s.Name.Value == "_"
 			// inferredOption 區分「用戶顯式寫下的 ?T」與「lowering 為 `x = a + b`
-			// 合成的 ?T」（NullableType.IsInferred）。
+			// 合成的 ?T」（NullableType.IsInferred，或 S3 修復後的
+			// Program.Sem.InferredType side-table）。
 			//
 			// D2 的 ovfhndld HINT 只針對後者：用戶自己寫了 ?T 就代表他知道這是
 			// option，不必再提示；而 `x = a + b` 由規則自動變成 ?T 時必須提示，
@@ -5145,6 +5213,9 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// declaredOption 一刀切豁免，合成路徑因此既沒有 HINT 也沒有 ERROR。
 			inferredOption := false
 			if nt, ok := s.Type.(*parser.NullableType); ok && nt.IsInferred {
+				inferredOption = true
+			}
+			if !inferredOption && sem != nil && sem.HasInferredType(s) {
 				inferredOption = true
 			}
 			explicitOption := declaredOption && !inferredOption
@@ -5534,7 +5605,12 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 					// 的自相矛盾，與 checkRedundantTypeInStmt 的 tcpoxtfd 豁免
 					// （producesOptionIndex）是同一件事的兩面。
 					plainDeclared := s.Type != nil && !strings.HasPrefix(s.Type.String(), "?")
-					if isSafeBase(curFunc, idx) && !discarded && !annotated && !plainDeclared && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) {
+					// S3：lowering 把 `a = arr[i]` 的 ?elem 推斷寫入 Program.Sem.
+					// InferredType（synthesizeNullableType）。AST 上 s.Type 為空，
+					// 與「顯式 ?T」走同一條豁免（目標本身就是 option，越界 option
+					// 已被接納，不需要另報 idxhndld）。
+					inferredOption := sem != nil && sem.HasInferredType(s)
+					if isSafeBase(curFunc, idx) && !discarded && !annotated && !plainDeclared && !(s.Type != nil && strings.HasPrefix(s.Type.String(), "?")) && !inferredOption {
 						cf := s.SourceFile
 						if cf == "" {
 							cf = curFile

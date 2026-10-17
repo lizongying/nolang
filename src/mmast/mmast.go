@@ -7,14 +7,16 @@
 //
 // zip 佈局：
 //
-//	ast.gob        唯一本體：版本前置欄（ZipVer/AstVer）+ 原始 AST
-//	               （parser.CachedProgram：*Program + nodeSem 副表）
+//	ast.gob        唯一本體：原始 AST（直接就是 parser.CachedProgram，
+//	               與磁盤 AST 快取同型別同編碼面）
 //	package.jsonc  包的原始清單（可選：源目錄有 package.jsonc 時原樣附上一份，
 //	               讓消費端 no add 不解包仓库就能拿到 name/version/dependencies）
 //
-// 曾經有個獨立的 manifest.gob 條目（Tool/Src/SrcSHA/Nodes + 版本），但生產消費側
-// 从不讀它（EnsureModuleAST 丢棄 ASTZip），版本閘又必須和載體同步存在——於是把它
-// 压成 ast.gob 流内的前置欄：一條目既是載體又是身分證，不再有雨邊不同步的風險。
+// 版本資訊不入流（先是獨立 manifest.gob 條目、後是流内 ZipVer/AstVer 前置欄，
+// 兩皆摈除）：std 的 .ast.zip 随编译器下发（同 build 產物，寫讀必同代）；
+// 第三方包的識別資訊在 package.jsonc。唯一陳舊風險是本機殘留快取——由
+// ASTZipCachePath 把 ASTVersion+ZipVer 編進檔名做路徑鍵控（與磁盤 AST 快取同法）：
+// 版本 bump 即路徑變，舊檔自然不被讀，std 走 miss→自動重建，硬錯都不需要。
 //
 // 自 ZipVer 2026-10-16.5 起載體從 MetaMessage 節點表換成 encoding/gob 直存原始
 // AST：介面欄位靠 gob 型別註冊表（parser/gob_register.go）原生落地，不需要中間
@@ -41,24 +43,16 @@ import (
 // ZipVer 是 zip 容器本身的版本（佈局/規則變化時 bump）。
 // 2026-10-16.5：AST 載體换成 gob 直存原始 AST，取代 MetaMessage 扁平節點表。
 // 2026-10-16.6：新增可選 package.jsonc 條目（原樣隨包分發）。
-// 2026-10-16.7：取消 manifest.gob——ZipVer/AstVer 壓成 ast.gob 流内前置欄。
-const ZipVer = "2026-10-16.7"
+// 2026-10-16.7：取消 manifest.gob（版本閘壓進 ast.gob 流内前置欄）。
+// 2026-10-16.8：版本資訊不入流——std 随编译器下发、第三方識別靠 package.jsonc；
+//               本機陳舊快取由 ASTZipCachePath 檔名鍵控 ASTVersion+ZipVer 自動失效。
+const ZipVer = "2026-10-16.8"
 
 // zip 內的條目名。
 const (
 	treeName    = "ast.gob"
 	packageName = "package.jsonc"
 )
-
-// astDoc 是 ast.gob 的唯一 gob 文檔：版本前置欄 + AST 本體（Prog/NodeSem
-// 與 parser.CachedProgram 同形）。寫入只經 WriteASTZip（版本由常量填充），
-// 讀入版本不符即硬錯。
-type astDoc struct {
-	ZipVer  string
-	AstVer  string
-	Prog    *parser.Program
-	NodeSem map[uint32]*parser.NodeSemantics
-}
 
 // ── 寫出 ────────────────────────────────────────────────────────────────────
 
@@ -86,13 +80,11 @@ func WriteASTZip(w io.Writer, prog *parser.Program, pkgJSONC []byte) (*ZipStats,
 	if err != nil {
 		return nil, err
 	}
-	doc := astDoc{
-		ZipVer:  ZipVer,
-		AstVer:  parser.ASTVersion,
+	cp := parser.CachedProgram{
 		Prog:    prog,
 		NodeSem: parser.SerializeNodeSem(prog),
 	}
-	if err := gob.NewEncoder(tw).Encode(&doc); err != nil {
+	if err := gob.NewEncoder(tw).Encode(&cp); err != nil {
 		return nil, fmt.Errorf("mmast: encode ast: %w", err)
 	}
 
@@ -126,10 +118,8 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 
 // ── 讀入 ────────────────────────────────────────────────────────────────────
 
-// ASTZip 描述讀入的 zip（供呼叫方做進一步校驗）。
+// ASTZip 描述讀入的 zip 的附帶資訊。
 type ASTZip struct {
-	ZipVer       string
-	AstVer       string
 	PackageJSONC []byte // zip 內附的 package.jsonc（無則 nil）
 }
 
@@ -160,7 +150,7 @@ func readZipEntries(data []byte) (map[string][]byte, error) {
 //	https://<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip
 //
 // 下載後落在 ~/no/cache/ast/... 作為快取；快取命中就不再打網路。
-// 版本不符（zip/ast 任一）由 ReadASTZip 硬錯攔下。
+// 快取檔名已含 ASTVersion+ZipVer：舊版产物天然 miss，自動重取/重建。
 func FetchASTZip(spec pkgspec.ToolSpec, version string) (*parser.Program, *ASTZip, error) {
 	if version == "" {
 		return nil, nil, fmt.Errorf("mmast: version required to fetch %s", spec.DepKey())
@@ -182,11 +172,13 @@ func FetchASTZip(spec pkgspec.ToolSpec, version string) (*parser.Program, *ASTZi
 	return ReadASTZip(data)
 }
 
-// ASTZipCachePath 返回 .ast.zip 的快取路徑。
+// ASTZipCachePath 返回 .ast.zip 的快取路徑。檔名攜帶 ASTVersion+ZipVer：版本 bump
+// 即路徑變、舊檔自動失效（std 走 miss→BuildModuleAST 重建）——取代流内版本欄位
+// 做閘，與磁盤 AST 快取（astdiskcache 以 ASTVersion 鍵控目錄）同一套做法。
 func ASTZipCachePath(spec pkgspec.ToolSpec, version string) string {
 	return filepath.Join(astCacheRoot(),
 		cachePathPart(spec.Host), cachePathPart(spec.Owner), cachePathPart(spec.Repo),
-		cachePathPart(version), spec.Name+".ast.zip")
+		fmt.Sprintf("%s@%s.ast-%s-%s.zip", spec.Name, cachePathPart(version), parser.ASTVersion, ZipVer))
 }
 
 // astCacheRoot 返回快取根目錄：預設 ~/no/cache/ast，$NOLANG_AST_CACHE_DIR 可覆寫
@@ -205,8 +197,9 @@ func cachePathPart(s string) string {
 }
 
 // ReadASTZip 解析 <tool>.ast.zip 的內容，還原成 *Program。
-// 版本不符即硬錯（與 incremental 的 hard-error 口徑一致）：gob 按欄位名綁定、
-// 對 schema 漂移静默跳過，所以容器/AST 版本閘必須由我們自己把。
+// 版本閘不在流内——由 ASTZipCachePath 的檔名鍵控（std 随编译器下发、第三方識別
+// 在 package.jsonc，跨代讀取場景不存在）。gob 型別名不匹配（舊 astDoc/mm 格式）
+// 會直接報錯，不会静默錯解。
 func ReadASTZip(data []byte) (*parser.Program, *ASTZip, error) {
 	byName, err := readZipEntries(data)
 	if err != nil {
@@ -216,20 +209,14 @@ func ReadASTZip(data []byte) (*parser.Program, *ASTZip, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("mmast: %s missing from zip", treeName)
 	}
-	var doc astDoc
-	if err := gob.NewDecoder(bytes.NewReader(tb)).Decode(&doc); err != nil {
+	var cp parser.CachedProgram
+	if err := gob.NewDecoder(bytes.NewReader(tb)).Decode(&cp); err != nil {
 		return nil, nil, fmt.Errorf("mmast: decode ast: %w", err)
 	}
-	if doc.ZipVer != ZipVer {
-		return nil, nil, fmt.Errorf("mmast: zip version mismatch: blob %q, this compiler %q", doc.ZipVer, ZipVer)
-	}
-	if doc.AstVer != parser.ASTVersion {
-		return nil, nil, fmt.Errorf("mmast: ast version mismatch: blob %q, this compiler %q", doc.AstVer, parser.ASTVersion)
-	}
-	if doc.Prog == nil {
+	if cp.Prog == nil {
 		return nil, nil, fmt.Errorf("mmast: ast.gob carries no program")
 	}
 	// 語義副表按 SerializeNodeSem 的 occurrence 順序重建（與磁盤 AST 快取同機制）。
-	parser.RestoreNodeSem(doc.Prog, doc.NodeSem)
-	return doc.Prog, &ASTZip{ZipVer: doc.ZipVer, AstVer: doc.AstVer, PackageJSONC: byName[packageName]}, nil
+	parser.RestoreNodeSem(cp.Prog, cp.NodeSem)
+	return cp.Prog, &ASTZip{PackageJSONC: byName[packageName]}, nil
 }

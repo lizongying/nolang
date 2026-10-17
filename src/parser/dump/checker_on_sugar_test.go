@@ -46,24 +46,60 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// shape describes one parsing configuration under test.
+// shape describes one parsing configuration under test. The `lightweight` flag
+// is orthogonal to the parser flags: it is forwarded to checker.RunAllLints as
+// LintOptions.LightweightMode. That mode is what the LSP path uses, and the only
+// thing it changes is that RunAllLints additionally runs CheckUnresolvedModuleCalls
+// (TraceID `ckaj3355`) — a rule that otherwise NEVER fires during the census, so
+// its behaviour across shapes was previously unmeasured (see §21.7 #5 leftover).
 type shape struct {
-	name      string
-	configure func(*parser.Parser)
+	name        string
+	lightweight bool
+	configure   func(*parser.Parser)
 }
 
-func loweredShape() shape { return shape{"lowered", func(p *parser.Parser) {}} }
+func loweredShape() shape {
+	return shape{name: "lowered", configure: func(p *parser.Parser) {}}
+}
 
 func surfaceShape() shape {
-	return shape{"surface", func(p *parser.Parser) {
+	return shape{name: "surface", configure: func(p *parser.Parser) {
 		p.SkipUnwrapLowering = true
 		p.SkipSafeIndexLowering = true
 	}}
 }
 
-func sugarShape() shape { return shape{"sugar", func(p *parser.Parser) { p.SkipLowering = true }} }
+func sugarShape() shape {
+	return shape{name: "sugar", configure: func(p *parser.Parser) { p.SkipLowering = true }}
+}
 
-func allShapes() []shape { return []shape{loweredShape(), surfaceShape(), sugarShape()} }
+// lightweight clones of the three shapes: same parser configuration, but with
+// LintOptions.LightweightMode=true so CheckUnresolvedModuleCalls (ckaj3355)
+// is exercised by the census.
+func loweredShapeLW() shape {
+	return shape{name: "lowered-lw", lightweight: true, configure: func(p *parser.Parser) {}}
+}
+
+func surfaceShapeLW() shape {
+	return shape{name: "surface-lw", lightweight: true, configure: func(p *parser.Parser) {
+		p.SkipUnwrapLowering = true
+		p.SkipSafeIndexLowering = true
+	}}
+}
+
+func sugarShapeLW() shape {
+	return shape{name: "sugar-lw", lightweight: true, configure: func(p *parser.Parser) { p.SkipLowering = true }}
+}
+
+// allShapes returns the three parser shapes in both the production (non-light)
+// and LSP (lightweight) lint modes, so the census measures ckaj3355 behaviour
+// across every shape/mode combination.
+func allShapes() []shape {
+	return []shape{
+		loweredShape(), surfaceShape(), sugarShape(),
+		loweredShapeLW(), surfaceShapeLW(), sugarShapeLW(),
+	}
+}
 
 // diagKey renders one lint result into a canonical, order-independent key.
 // Fields are `|`-separated so an empty TraceID cannot shift the other fields.
@@ -148,10 +184,11 @@ func shapeCensus(t *testing.T, shapes []shape, visit func(path string, sets []ma
 						pan = fmt.Sprint(r)
 					}
 				}()
-				for _, l := range checker.RunAllLints(progs[i], checker.LintOptions{
-					SourcePath: path,
-					RootDir:    filepath.Dir(path),
-				}) {
+			for _, l := range checker.RunAllLints(progs[i], checker.LintOptions{
+				SourcePath:      path,
+				RootDir:         filepath.Dir(path),
+				LightweightMode: sh.lightweight,
+			}) {
 					keys = append(keys, diagKey(l))
 				}
 			}()
@@ -689,7 +726,6 @@ var sugarDriftAllowlist = map[string]string{
 	"rngidx":          "ValidateRangeIndexLoops (checker/range_index_lint.go) — keys on the lowered index read; moves position as well as count",
 	"ovf-int-default": "ValidateIntOverflow (checker/checker.go) — the inferred-?T decision depends on desugared arithmetic (moves position too)",
 	"tcpoxtfd":        "ValidateRedundantTypeAnnotation (checker/checker.go) — compares the annotation against an inferred type that lowering rewrites",
-	"<no-trace>":      "LintIneffectiveOverflow (checker/lint.go) — its annotation-relevance map is shape-derived (moves position too)",
 	"idxwrite":        "ValidateIndexWrite (checker/checker.go) — one residual program (tests/range-inline.no); the 121-diagnostic bulk was fixed by making idxLocalTypes a parse-time product",
 
 	// ── ONLY fire on the sugar AST — S1 must not ship these as false positives
@@ -699,15 +735,19 @@ var sugarDriftAllowlist = map[string]string{
 	// form the bindings live in MatchArm and the walkers could not see them being
 	// used. checker/sugar_walk.go + the MatchArm export closed that. The residual
 	// counts below are what is left.
-	"6kryrbsq": "residual: ValidateUnusedVars — a few arm-scoped bindings still read as unused",
 	"optunuse": "ValidateUnhandledOverflow — its sugar count equals surface's, so this is the pre-existing lowered/surface divergence, not a new sugar bug",
 	"4bek3xc6": "ValidateUndefinedVars — its sugar count equals surface's (pre-existing lowered/surface divergence)",
 	"idxhndld": "ValidateUnhandledIndex — its sugar count equals surface's exactly. In the lowered shape the #{index-out} annotation has already been lowered into a synthetic __idx_out_ tmp which the rule treats as 'handled'; surface/sugar read the annotation directly. Pre-existing lowered/surface divergence, surfaced by S1.",
-	"ovfhndld": "ValidateUnhandledOverflow's HINT half — arm-body arithmetic is now visible (correct). surface under-reports it because it still expands SurfaceMatch, so this is S1 *fixing* a blind spot, not creating one.",
 }
 
-// ── Retired allowlist entries (kept as a record, 2026-10-16) ─────────────────
+// ── Retired allowlist entries (kept as a record) ─────────────────────────────
 //
+//   2026-10-17 (census re-run, LightweightMode now covered across 6 shapes):
+//     dropped as STALE — no longer drift in lowered↔sugar:
+//     <no-trace>  — LintIneffectiveOverflow's annotation-relevance map (shape-derived)
+//     ovfhndld    — ValidateUnhandledOverflow's HINT half (now correctly visible on sugar)
+//     6kryrbsq    — residual ValidateUnusedVars arm-scoped bindings (now resolved)
+//   2026-10-16:
 //   arm-should / arm-unreach — FIXED. ValidateCatchAllArms now has a
 //     sugar-native path (collectSugarCatchAllArms). Reconciling it surfaced a
 //     *lowered-path false negative*: catchAllTailBody returned nil both for

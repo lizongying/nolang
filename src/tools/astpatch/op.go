@@ -50,6 +50,43 @@ func implementsNode(t reflect.Type) bool {
 	return t.Implements(nodeType) || reflect.PointerTo(t).Implements(nodeType)
 }
 
+// carriesNodes 判断結構體型別是否「承載」AST 節點：至少一個導出欄位的型別
+// （或切片/指標 thereof）實作 parser.Node。
+//
+// 為什麼需要它：反射走訪器只看「元素是否實作 Node」決定要不要走訪切片，於是
+// **值結構體切片**被整條跳過。AST 裡這樣的欄位只有一個——SurfaceMatch.Arms
+// （[]parser.MatchArm；MatchArm 沒有 Pos/EndPos 語義，刻意不實作 Node）。
+// 糖形態（SkipLowering）下 match 是 SurfaceMatch，所以少了這個判據，
+// astpatch 對整棵臂子樹（臂條件、臂體、巢狀 match）完全失明——不是報錯，
+// 是沉默。實測爆炸半徑：532 份糖形態語料上「非 Node 但承載 Node 的結構體切片」
+// 只有這一個（owner=SurfaceMatch, field=Arms, elem=parser.MatchArm）。
+func carriesNodes(t reflect.Type) bool {
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		ft := f.Type
+		if implementsNode(ft) {
+			return true
+		}
+		switch ft.Kind() {
+		case reflect.Slice:
+			if implementsNode(ft.Elem()) {
+				return true
+			}
+		case reflect.Ptr:
+			if implementsNode(ft.Elem()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // runner 承载单次 op 的遍历状态。
 type runner struct {
 	o     *op
@@ -163,7 +200,11 @@ func (r *runner) walkField(fv reflect.Value) {
 		r.slotSingle(fv, cp)
 	case reflect.Slice:
 		et := fv.Type().Elem()
-		if !implementsNode(et) {
+		// 兩類切片要走訪：
+		//  ① 元素實作 Node（[]Statement / []Expression）——完整支援匹配/刪除/替換/插入；
+		//  ② 元素是「承載 Node 的結構體」（[]MatchArm）——只下鑽，見 walkSlice。
+		// 只看 ① 會漏掉 SurfaceMatch.Arms，糖形態下整棵臂子樹不可見。
+		if !implementsNode(et) && !carriesNodes(et) {
 			return
 		}
 		r.walkSlice(fv, et)
@@ -188,16 +229,30 @@ func (r *runner) walkConcrete(cv reflect.Value) {
 }
 
 // walkSlice 遍历节点切片，支持替换 / 删除 / （语句）插入，返回是否需要重建。
+//
+// 兩種元素形態：
+//   - 介面元素（[]Statement / []Expression）：完整支援匹配/刪除/替換/插入——
+//     介面槽位可 Set，故能把整筆元素換掉。
+//   - 值結構體元素（[]MatchArm）：**只下鑽**。值結構體不是節點、也沒有介面槽位，
+//     delete/replace/insert 無從談起；但切片元素本身可尋址（切片頭可尋址），
+//     所以 walkStruct 能就地改寫臂內的表達式槽位——臂條件/臂體對 rename 與
+//     replace 可見，正是糖形態下缺的那一塊。
 func (r *runner) walkSlice(fv reflect.Value, et reflect.Type) {
 	n := fv.Len()
 	if n == 0 && r.o.Kind != "insert_stmt" {
 		return
 	}
 	isStmt := et == reflect.TypeOf((*parser.Statement)(nil)).Elem()
+	valueStruct := et.Kind() == reflect.Struct
 	changed := false
 	var kept []reflect.Value
 	for i := 0; i < n; i++ {
-		ei := fv.Index(i) // 接口元素，可寻址
+		ei := fv.Index(i) // 介面元素（或值結構體），可尋址
+		if valueStruct {
+			r.walkStruct(ei)
+			kept = append(kept, ei)
+			continue
+		}
 		if ei.Kind() == reflect.Interface && ei.IsNil() {
 			kept = append(kept, reflect.Value{})
 			continue

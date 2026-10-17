@@ -363,6 +363,19 @@ func (w *optCmpWalker) walkExpr(e parser.Expression) {
 				w.walkStmt(inner, "")
 			}
 		}
+	case *parser.SurfaceMatch:
+		// S4：糖形態下 match 是 SurfaceMatch（表達式節點），經 ExpressionStatement
+		// 抵達本 walker。臂體對本 walker 不可見——與 IfExpression case 同語義：
+		// matched 是 option 時，臂內 `it` 是解包後內層值。
+		if x.Matched != nil {
+			if mt, _ := w.typeOf(x.Matched); mt != "" {
+				if inner := innerOf(mt); inner != "" {
+					w.itStack = append(w.itStack, inner)
+					defer func() { w.itStack = w.itStack[:len(w.itStack)-1] }()
+				}
+			}
+		}
+		walkSurfaceMatchChildren(x, w.walkExpr, func(s parser.Statement) { w.walkStmt(s, "") })
 	}
 }
 

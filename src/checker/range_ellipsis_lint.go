@@ -130,6 +130,12 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 			walkExpr(x.MatchedExpr, file)
 			walkBlock(x.Consequence, file)
 			walkBlock(x.Alternative, file)
+		case *parser.SurfaceMatch:
+			// S4：糖形態下 match 是 SurfaceMatch（表達式節點），經 ExpressionStatement
+			// 抵達本 walker；臂體對本 walker 不可見。見 sugar_walk.go。
+			walkSurfaceMatchChildren(x,
+				func(e parser.Expression) { walkExpr(e, file) },
+				func(s parser.Statement) { walkStmtSingle(s, file) })
 		}
 	}
 
@@ -171,10 +177,10 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 				walkExpr(st.Condition, file)
 				walkExpr(st.CountExpr, file)
 				walkStmtSingle(st.Init, file)
-				walkStmtSingle(st.Update, file)
-				walkBlock(st.Body, file)
-			}
+			walkStmtSingle(st.Update, file)
+			walkBlock(st.Body, file)
 		}
+	}
 	}
 
 	walkStmtSingle = func(s parser.Statement, file string) {

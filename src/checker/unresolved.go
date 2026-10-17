@@ -141,6 +141,12 @@ func collectLocalVarNames(program *parser.Program, out map[string]bool) {
 			for _, a := range x.Arguments {
 				walkExpr(a)
 			}
+		case *parser.SurfaceMatch:
+			// S4：糖形態下 match 還沒被展開成 if 鏈，臂條件與臂體只掛在
+			// SurfaceMatch 上。少了這個 case，臂裡綁定的區域變數一律看不見
+			// ⇒ 下面「modName 是不是本地變數」的判定會用一份不完整的名單，
+			// 既可能誤報（receiver 其實是臂內宣告的變數）也可能漏報。
+			walkSurfaceMatchChildren(x, walkExpr, walkStmt)
 		}
 	}
 
@@ -317,6 +323,12 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 			for _, elem := range x.Elements {
 				checkExpr(elem)
 			}
+		case *parser.SurfaceMatch:
+			// S4：糖形態下 match 的臂體對本規則不可見（手寫 switch 沒有這個
+			// case 就會靜默跳過整棵子樹），`client.is-connected()` 這類寫在
+			// 臂裡的模組呼叫於是被整條漏掉。實測：tests/sse.no 與
+			// tests/yaml.no 在糖形態下各少報 2 條 ckaj3355。
+			walkSurfaceMatchChildren(x, checkExpr, checkStmt)
 		}
 	}
 

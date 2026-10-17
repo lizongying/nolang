@@ -30,35 +30,33 @@ import "github.com/lizongying/nolang/parser"
 // 注意本助手**不**枚舉 MultiOptionPatterns：那是 `[]string`（`nil || err` 這種
 // 模式名），不是運算式，不承載變數引用。
 
-// walkSurfaceMatchChildren 以直接子節點回調遍歷 SurfaceMatch。
+// walkSurfaceMatchChildren 以直接子節點回調遍歷 SurfaceMatch（只讀）。
 // onExpr / onStmt 可為 nil，nil 回調即跳過該類別。
+//
+// 本函式是 parser.WalkSurfaceMatchChildren 的薄委派。S4 期間把權威實作收進
+// parser/sugar_walk.go（給 parser 包之外的消費方用），這份 checker 內的副本改成
+// 轉發，行為逐位元相同——保留函式名是為了不動 12 個呼叫點。
 func walkSurfaceMatchChildren(
 	sm *parser.SurfaceMatch,
 	onExpr func(parser.Expression),
 	onStmt func(parser.Statement),
 ) {
-	if sm == nil {
+	parser.WalkSurfaceMatchChildren(sm, onExpr, onStmt)
+}
+
+// walkSurfaceMatchArmBodies 以「臂體語句列表」為單位回調，而不是逐條語句。
+//
+// 為什麼要有這個版本：有些規則的判定依賴**列表上下文**——最典型的是
+// OverflowAnnotationRelevance 的「這條 #{overflow} 註解管轄它後面的第一條陳述」。
+// 逐條回調（walkSurfaceMatchChildren 的 onStmt）會把「後面是誰」這個資訊切碎，
+// 使註解查不到被管轄者，`no fmt` 便把有效的 overflow 註解誤刪。
+func walkSurfaceMatchArmBodies(sm *parser.SurfaceMatch, onBody func([]parser.Statement)) {
+	if sm == nil || onBody == nil {
 		return
 	}
-	if sm.Matched != nil && onExpr != nil {
-		onExpr(sm.Matched)
-	}
 	for i := range sm.Arms {
-		arm := &sm.Arms[i]
-		if onExpr != nil {
-			if arm.Condition != nil {
-				onExpr(arm.Condition)
-			}
-			for _, p := range arm.MultiValuePatterns {
-				if p != nil {
-					onExpr(p)
-				}
-			}
-		}
-		if arm.Body != nil && onStmt != nil {
-			for _, inner := range arm.Body.Statements {
-				onStmt(inner)
-			}
+		if sm.Arms[i].Body != nil {
+			onBody(sm.Arms[i].Body.Statements)
 		}
 	}
 }

@@ -1522,14 +1522,17 @@ func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
 	return fixes, nil
 }
 
-// parseProgramForFmt 以與 formatter 內部一致的選項（SkipUnwrapLowering /
-// SkipSafeIndexLowering）解析源碼，回傳 *parser.Program；解析失敗（含任何 parser
+// parseProgramForFmt 以與 formatter 內部一致的選項（S4 起為 SkipLowering，
+// 即完全不降糖的糖 AST）解析源碼，回傳 *parser.Program；解析失敗（含任何 parser
 // 錯誤）時回傳 nil，供呼叫方退回舊的格式化/錯誤回報路徑。
+//
+// ⚠️ 這裡的選項必須與 nfmt 內部解析（fmt/api.go formatProgramWithLoopStyle）
+// 保持一致，否則「先解析算 overflow 相關性、再交給 formatter 重解析」的兩次
+// 解析會看到不同形狀的樹。
 func parseProgramForFmt(src string) *parser.Program {
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil
@@ -1540,16 +1543,38 @@ func parseProgramForFmt(src string) *parser.Program {
 // fixOverflowInFile 讀入單檔（磁碟內容），將其未標註的整數運算所在陳述的首行上方
 // 插入 `#{overflow=wrap}`（或合併到緊鄰的 `#{...}` 行），回傳修復後源碼。
 // 若無任何可插入處則回傳 ok=false。
+//
+// 形態：S4 起翻到糖形態（SkipLowering），與 formatter 內部解析
+// （fmt/api.go）及 parseProgramForFmt 一致——`--fix=overflow` 的兩次解析
+// （這裡算目標行、formatter 算註解相關性）看到同一形狀的樹。翻轉前的量測：
+// 532 份語料上 fixOverflowSource 兩形態逐檔相同（見
+// no_fix_shape_gate_test.go 的 TestFixOverflowRuleIsShapeParityEndToEnd）。
 func fixOverflowInFile(filename string) (string, bool) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return "", false
 	}
-	src := string(data)
+	return fixOverflowSource(string(data))
+}
+
+// fixOverflowSource 是 fixOverflowInFile 的純字串版（正式路徑，糖形態）。
+func fixOverflowSource(src string) (string, bool) {
+	return fixOverflowSourceShape(src, true)
+}
+
+// fixOverflowSourceShape 是 fixOverflowInFile 的純字串 + 形態版：sugar=true 走
+// SkipLowering（S4 起的正式形態），sugar=false 走舊的 surface 旗標
+// （SkipUnwrapLowering + SkipSafeIndexLowering）。兩個形態的並存只為量測與
+// 迴歸門禁服務（no_fix_shape_gate_test.go），S4 收尾時隨旗標一起刪除。
+func fixOverflowSourceShape(src string, sugar bool) (string, bool) {
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	if sugar {
+		p.SkipLowering = true
+	} else {
+		p.SkipUnwrapLowering = true
+		p.SkipSafeIndexLowering = true
+	}
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return "", false
@@ -1662,28 +1687,47 @@ func fixMatchArmsFixes(arg string) (map[string]string, error) {
 	return fixes, nil
 }
 
-// fixMatchArmsInFile 讀入單檔（磁碟內容），對每個被
-// checker.CollectNonExhaustiveMatches 判為「非窮盡」的 option match，在其收尾
-// `}` 之前插入缺失的 arm（`nil -> print('nil')` / `err -> print('err')`），
-// 回傳修復後源碼；無可插入處則回傳 ok=false。
-//
-// 修復完全由 AST 驅動：判定（哪些 match 缺哪些 variant）與插入點（match 收尾
-// `}` 的確切行列，由 parser 的 match desugar 記在 IfExpression.MatchEndPos）
-// 都取自 checker/parser，不做任何正則或行文本推斷；只有「縮排」需要從原始行
-// 複製，以盡量貼近手寫風格。重跑冪等：補齊後 match 不再被報告。
-//
-// 與 --fix=overflow 一樣刻意以「磁碟檔案自身」為分析來源（不經 `no vet <pkg>`），
-// 避免內嵌 std / 合併模組造成行號錯位而把 arm 插到錯誤的區塊。
+// fixMatchArmsInFile 讀入單檔（磁碟內容）後委托 fixMatchArmsSource（糖形態）。
 func fixMatchArmsInFile(filename string) (string, bool) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return "", false
 	}
-	src := string(data)
+	return fixMatchArmsSource(string(data), true)
+}
+
+// fixMatchArmsSource 是 fixMatchArmsInFile 的核心，sugar 選解析形態。
+//
+// 對每個被 checker.CollectNonExhaustiveMatches 判為「非窮盡」的 option match，
+// 在其收尾 `}` 之前插入缺失的 arm（`nil -> print('nil')` / `err -> print('err')`），
+// 回傳修復後源碼；無可插入處則回傳 ok=false。
+//
+// 修復完全由 AST 驅動：判定（哪些 match 缺哪些 variant）與插入點（match 收尾
+// `}` 的確切行列）都取自 checker/parser，不做任何正則或行文本推斷；只有「縮排」
+// 需要從原始行複製，以盡量貼近手寫風格。重跑冪等：補齊後 match 不再被報告。
+//
+// 形態（S1）：正式路徑以 **SkipLowering**（糖形態）解析。降糖形態下插入點取自
+// IfExpression.MatchEndPos，糖形態下取自 SurfaceMatch.RBracePos；兩者已實測
+// 逐字段相同（checker 的 TestZZPosProbe），故 fixer 只讀
+// NonExhaustiveMatch.Pos / .End 這兩個**兩形態共同填寫**的欄位，不再碰 Root。
+// 規則側（match_exhaustive.go）兩條路徑都跑，13 個 match 形狀的
+// Pos/End/主體/缺失變體兩形態完全一致。
+//
+// sugar=false 的降糖形態分支**只為形態門禁存在**（no_fix_shape_gate_test.go 的
+// TestFixMatchRuleIsShapeParity）：它把翻轉前的行為釘在測試裡，讓「糖形態比
+// 降糖形態少修」這類靜默丟功能無法悄悄發生。正式路徑只走 sugar=true。
+//
+// 與 --fix=overflow 一樣刻意以「磁碟檔案自身」為分析來源（不經 `no vet <pkg>`），
+// 避免內嵌 std / 合併模組造成行號錯位而把 arm 插到錯誤的區塊。
+func fixMatchArmsSource(src string, sugar bool) (string, bool) {
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	if sugar {
+		p.SkipLowering = true
+	} else {
+		p.SkipUnwrapLowering = true
+		p.SkipSafeIndexLowering = true
+	}
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return "", false
@@ -1696,9 +1740,9 @@ func fixMatchArmsInFile(filename string) (string, bool) {
 	// line(1-based) -> 替換後的完整內容（可含換行）
 	edits := map[int]string{}
 	for _, m := range matches {
-		end := m.Root.MatchEndPos
-		// MatchEndPos 為 0 表示這個 match 是 desugar 產生的合成節點（如 `?=` 展開），
-		// 源碼裡沒有對應的 `{ ... }` 可插入，跳過。
+		end := m.End
+		// End 為 0 表示這個 match 沒有對應的源碼 `}`（合成節點或異常 AST），
+		// 源碼裡沒有可插入處，跳過。
 		if end.Line < 1 || end.Line > len(lines) || end.Column < 1 {
 			continue
 		}
@@ -1712,7 +1756,7 @@ func fixMatchArmsInFile(filename string) (string, bool) {
 		prefix := cur[:end.Column-1]
 		rest := cur[end.Column-1:]
 		indent := leadingWhitespace(cur)
-		armIndent := matchArmIndent(lines, m.Root.Pos().Line, end.Line, indent)
+		armIndent := matchArmIndent(lines, m.Pos.Line, end.Line, indent)
 		arms := make([]string, 0, len(m.Missing))
 		for _, v := range m.Missing {
 			arms = append(arms, armIndent+v+" -> print('"+v+"')")
@@ -1790,6 +1834,16 @@ func isOverflowFixableType(s parser.Statement) bool {
 // 用 span 包含而非精確行號比對，可正確處理跨行陳述（算術在續行）與嵌套：
 // 例如 `val[j] = .byte(start + j)` 跨多行時，取其最小 span 的陳述。
 // 找不到可標註節點（如同行只有 break 等非運算陳述）時回傳 nil（該報告跳過）。
+//
+// ⚠️ 刻意**不**下鑽 SurfaceMatch 的臂體（糖形態下的 match）：臂內報告的最小
+// 可標註節點會是臂體語句，而臂體常是行內形式（`w i64 -> w + 1`，語句與臂模式
+// 同一行）——把 `#{overflow=wrap}` 插到那一行上方等於插進 match 區塊、落在臂
+// 模式行之前，該位置能否被 parser/lowering 認可取決於註解附著細節，不安全。
+// 停在整個 match 語句（ExpressionStatement/LetStatement）上方反而正確：語句級
+// 註解對整棵子樹生效（checker 的 overflowAnnotatedNode 提前返回覆蓋臂體），
+// 且已實測編譯/運行/`no fmt` 保留/冪等四項均安全（見
+// no_fix_shape_gate_test.go 的 TestFixOverflowRuleIsShapeParityEndToEnd 註釋）。
+// 語料實測：糖形態下 0 條報告因此找不到目標。
 func findFixTargetNode(program *parser.Program, line int) parser.Statement {
 	var best parser.Statement
 	bestSpan := 1 << 30
@@ -1907,11 +1961,16 @@ type fmtRemoval struct {
 // 回傳修復後源碼與 ok（無可移除處時 ok=false、回傳空字串）。
 // 與 --fix=redundant 同一套手術式邏輯；被 fixRedundantTypeInFile（磁碟檔）與預設
 // `no fmt`（先去冗餘再正常格式化）共用。
+//
+// S4：解析形態改為 SkipLowering，與隨後真正做格式化的 parseProgramForFmt 同一形態
+// （此前是 surface ⇒ 同一份源碼在一次 `no fmt` 裡被解析兩次、兩種形態，正是設計稿
+// §21.7 第 4 條記的不一致）。等價性已量測：ValidateRedundantTypeAnnotation 在 532
+// 份語料上兩形態逐條相同，且三個 fixture（overflow / redundant / match）都確認能
+// 觸發對應 fix（尺子非空洞）。
 func fixRedundantTypeSource(src string) (string, bool) {
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	program := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return "", false
@@ -2117,13 +2176,12 @@ func exprSpan(lineStarts []int, e parser.Expression) (int, int) {
 }
 
 // sourceParses 回傳 source 是否可在 formatter 的解析選項下成功解析（無解析錯誤）。
-// 這裡複製 fmt 路徑的選項（SkipUnwrapLowering / SkipSafeIndexLowering），與
-// parseProgramForFmt 保持一致，避免選項差異造成誤判。
+// 這裡複製 fmt 路徑的選項（S4 起為 SkipLowering），與 parseProgramForFmt 保持一致，
+// 避免選項差異造成誤判。
 func sourceParses(source string) bool {
 	lx := lexer.New(source)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	p.ParseProgram()
 	return len(p.Errors()) == 0
 }
@@ -2234,10 +2292,12 @@ func fixRedundantTypeInFileWithVet(filename, src string) (string, bool) {
 
 	// 用本檔自身解析（允許錯誤恢復：ParseProgram 在遇到解析錯誤時仍回傳已解析的
 	// 語句）定位節點，並以 node.Value 再次確認非十六進位字面量（防禦 in depth）。
+	// S4：糖形態（SkipLowering），與 standalone 路徑的 fixRedundantTypeSource 及
+	// formatter 內部解析同形態；findRedundantTypeNode 為此補了 SurfaceMatch 下鑽
+	// （否則臂內的冗餘標註在糖形態下定位不到 ⇒ Path 2 靜默漏修）。
 	lx := lexer.New(src)
 	p := parser.New(lx)
-	p.SkipUnwrapLowering = true
-	p.SkipSafeIndexLowering = true
+	p.SkipLowering = true
 	program := p.ParseProgram()
 
 	lineStarts := buildLineStarts(src)
@@ -2364,9 +2424,17 @@ func findRedundantTypeNode(program *parser.Program, line, col int) *parser.LetSt
 						walk(ie.Alternative.Statements)
 					}
 				}
+				// S4 糖形態：match 的臂體是 SurfaceMatch 的直接子節點，與上面
+				// 的 IfExpression 分支同理由必須下鑽（臂內的冗餘標註否則定位不到）。
+				if sm, ok := v.Expression.(*parser.SurfaceMatch); ok {
+					parser.WalkSurfaceMatchArmBodies(sm, walk)
+				}
 			case *parser.LetStatement:
 				if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
 					walk(fl.Body.Statements)
+				}
+				if sm, ok := v.Value.(*parser.SurfaceMatch); ok {
+					parser.WalkSurfaceMatchArmBodies(sm, walk)
 				}
 			}
 		}

@@ -264,16 +264,18 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	l := lexer.New(text)
 	p := parser.New(l)
 	p.Filename = filenameFromURI(uri)
-	// 保留 surface AST（UnwrapAssignStatement 等）：doc.AST 會被 format-on-save
-	// 直接渲染回源碼（server.go formatNolangCode → fmt.FormatProgram）。
-	// 若啟用 lowering，`v ?= expr` 會展開成不可再解析的 __unwrap_N 區塊寫回檔案。
-	p.SkipUnwrapLowering = true
-	// 同理跳過安全索引降級：`#{index-out = DEF} x = v[i]` 若被降級成
-	// __idx_out_L_C 區塊，format-on-save 會把該區塊（且遺失 DEF 字面量、變成
-	// `x = =`）寫回使用者源碼，產生不可解析的損壞檔案。保留 surface AST 讓
-	// formatter 原樣渲染 `#{index-out}` 註解與 `x = v[i]`（見 no fmt 的
-	// formatProgramWithLoopStyle 同設此二旗標）。
-	p.SkipSafeIndexLowering = true
+	// S4：LSP 主解析改读**糖 AST**（SkipLowering，完全不降糖），与另外两个
+	// 消费方同一形态——fmt/api.go 的 formatProgramWithLoopStyle 与
+	// cmd/no/main.go 的 parseProgramForFmt 都已是 SkipLowering。三者读同一棵
+	// 树，才不会在「谁看得见 match 臂」这类问题上互相漂移。
+	//
+	// 在此之前这里是两个局部 skip 旗标（SkipUnwrapLowering +
+	// SkipSafeIndexLowering），它们恰好保留 surface AST 只是因为「这两处降糖
+	// 会把 `v ?= expr` / `#{index-out=DEF} x = v[i]` 改写成不可再解析的
+	// __unwrap_N / __idx_out_L_C 區塊，format-on-save 会把它們（且遺失
+	// DEF 字面量、變成 `x = =`）寫回使用者源碼」。SkipLowering 是同一动机的
+	// 全集：糖节点全部存活，formatter 原样渲染。
+	p.SkipLowering = true
 	// Inject std module function signatures and struct field types so that
 	// the parser can infer types from cross-module method calls (e.g.
 	// tls-c.send() → ?i64), which enables option-match `it` binding injection.
@@ -285,9 +287,9 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	errs := p.Errors()
 
 	// `?=` 的診斷（`lowerUnwrapAssign` 發出，例如「所在函式沒有 option 型別的結果參數」）
-	// 只有在**啟用** UnwrapAssign lowering 時才會產生；而 LSP 主解析必須跳過 lowering
-	// 才能保住 surface AST（見上面的 SkipUnwrapLowering）。因此另外跑一次純診斷解析，
-	// 把這批錯誤補回來。只在文件真的出現 `?=` 時才跑，避免每次擊鍵多一次完整解析。
+	// 只有在**啟用** UnwrapAssign lowering 時才會產生；而 LSP 主解析現在整把 SkipLowering
+	// 撐著（見上面的說明）。因此另外跑一次純診斷解析，把這批錯誤補回來。只在文件真的
+	// 出現 `?=` 時才跑，避免每次擊鍵多一次完整解析。
 	if ast != nil {
 		seen := make(map[string]bool, len(errs))
 		for _, e := range errs {

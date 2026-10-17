@@ -57,6 +57,8 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 		f.formatDotExpression(e)
 	case *parser.IfExpression:
 		f.formatIfExpression(e)
+	case *parser.SurfaceMatch:
+		f.formatSurfaceMatch(e)
 	case *parser.FunctionLiteral:
 		f.formatFunctionLiteral(e)
 	case *parser.IndexExpression:

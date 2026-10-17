@@ -294,6 +294,10 @@ func TestFixUnwrapFixedCompiles(t *testing.T) {
 		{"typed_fresh_predeclare", "f = (a i64, b i64) (out i64) {\n    k i64 = a + b\n    out = 0\n}\n"},
 		{"typed_overflow_annotation", "f = (a i64, b i64) (out i64) {\n    #{overflow=wrap}\n    k i64 = a + b\n    out = 0\n}\n"},
 		{"module_call_site", "f = (path str) (out i64) {\n    src = ''\n    c = fs.read-str(path)\n    c: {\n        ok -> {\n            src = c\n        }\n\n        -> {\n        }\n    }\n    out = 0\n}\n"},
+		// S4：報告點在 match 臂內的兩個形態（糖形態 SurfaceMatch 下鑽的路徑）。
+		// 沒有 collectUnwrapSites 的 SurfaceMatch 分支，這兩例在糖形態下靜默漏修。
+		{"arm_block_index", "f = (arr []i64, i i64) (out i64) {\n    1: {\n        ok -> {\n            w = arr[i]\n            z = 0\n        }\n        -> z = 0\n    }\n    out = 0\n}\n"},
+		{"arm_nested_match", "f = (arr []i64, i i64) (out i64) {\n    v = arr[i]\n    v: {\n        ok -> {\n            u = arr[i]\n            z = 0\n        }\n        -> z = 0\n    }\n    out = 0\n}\n"},
 		{"top_level_multiline", "d = 1 +\n2\n"},
 	}
 	for _, c := range cases {

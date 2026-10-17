@@ -1,6 +1,6 @@
 # 方案：Parser 忠实性与 Lowering 唯一性
 
-> 状态：**S0 + S1a 已落地**（S0 = instrumentation；S1a = lowering 接缝，默认路径逐字节不变）。S1 的剩余部分（checker 前移）与 S2 起尚未动手，但 S1 的**改写面已实测界定为 12 个 trace**（§14，并附硬门禁）。两条不变量的规范性定义、目标架构、阶段划分、关键约束（C1–C10）、门禁（G1–G7）与迁移顺序（S0–S7）已定。实施记录见 §12，S1a 落地与**设计稿修正**（R6 已被实测证伪）见 §13，S1 风险实测（三形态诊断普查）见 §14。  
+> 状态：**S0 + S1a + S1 + S2 + C8 + §19/§20 已落地**；**S4 进行中**（§21：formatter、`no fmt` 与 **LSP** 三个消费方已翻到糖形态，532 语料 A/B 逐字节相同；唯一相异都是糖形态修好了旧形态的 bug——一个 `no fmt -w` 毁档、一处诊断漏报）。S6/S7 未动。S1 的**改写面已实测界定为 12 个 trace**（§14，并附硬门禁）。两条不变量的规范性定义、目标架构、阶段划分、关键约束（C1–C10）、门禁（G1–G7）与迁移顺序（S0–S7）已定。实施记录见 §12，S1a 落地与**设计稿修正**（R6 已被实测证伪）见 §13，S1 风险实测（三形态诊断普查）见 §14。  
 > 涉及层：parser / hir / checker / mir / fmt / lsp / build / 自举 `compiler/`  
 > 相关既有文档：`docs/design/nolang-selfhost.md`（§5.3 parser、§5.5 HIR/MIR 阶段）、`docs/design/option-unified.md`（§2.3 逐条锚定了今日 `lowering.go` 的降糖点）、`docs/design/nolang-ast-grammar.md`（AST 节点目录）、`docs/design/nolang-mm-ast.md`（AST 序列化与 `ASTVersion`）、`NOLANG-OWNERSHIP-MODEL.md`  
 > 行号基准：HEAD `86131e9c`（2026-10-16）。本仓并行 session 常态在改 `src/parser/**` 与 `src/checker/**`，行号会腐坏，引用前请重新定位（本文件给出的是函数名 + 行号双锚）。
@@ -86,7 +86,7 @@ token ──[lexer]──►
 
 1. **痕迹字段**（`src/parser/ast.go:1611-1650`）：`MatchedExpr`、`DotValBody`、`RangePattern`、`EqualityPattern`、`OptionPatterns`、`ValuePatterns`、`RawCond`、`MatchEndPos`、`IsTypeMatch`、`TypePattern`、`TypeBindingName`、`IsTypeDefault`。
 2. **`RTFlag` 位**（`src/parser/resolver.go:85-121`）：`RTBareMatch`、`RTMatchWildcard`、`RTStandalone`、`RTMatchWrapper`、`RTElif`、`RTElseNewline`、`RTPipelineValue`、`RTEmptyArmDefault`。注释自述「僅 formatter 讀取，編譯管線不讀」。
-3. **按需跳过降糖的两个开关**（`parser.go:90-104`）：`SkipUnwrapLowering`、`SkipSafeIndexLowering`；消费方 `no fmt`（`cmd/no/main.go:1527`）、`no fix`（`:1687`、`cmd/no/unwrap_fix.go:184`）、`src/tools/astpatch/main.go:125`。
+3. **按需跳过降糖的两个开关**（`parser.go:90-104`）：`SkipUnwrapLowering`、`SkipSafeIndexLowering`；曾经的消费方 `no fmt` / `no fix` / LSP / `tools/astpatch` / `tools/std_qualify` / `tools/std_methodify` 已全部翻到糖形态（§21.4 / §21.9 / §21.11 / §21.12），只剩形状门禁的 `sugar=false` 分支还在设它们。
 4. **缓存键按降糖输出 bump**：`src/parser/astdiskcache.go:89` `ASTVersion`，规则自述「bump this for any change to the lowering pass」。
 
 **它们全部在 S4 一并删除** —— 糖节点保留原始表面信息后，不再需要任何痕迹。
@@ -193,10 +193,10 @@ H1 是**链接与命名**，不是降糖：
 
 - 12 个痕迹字段（`ast.go:1611-1650`）；
 - 因降糖而存在的 `RTFlag` 位（`resolver.go:85-121`）；
-- `SkipUnwrapLowering` / `SkipSafeIndexLowering` 两个开关（`parser.go:90-104`）与其全部消费方（`no fmt`、`no fix`、`astpatch`、LSP）；
+- `SkipUnwrapLowering` / `SkipSafeIndexLowering` 两个开关（`parser.go:90-104`）与其全部消费方。截至 §21.12，真实消费方已全部翻到糖形态（`no fmt` / `no fix` / LSP / `tools/astpatch` / `tools/std_qualify` / `tools/std_methodify`），剩下的 `sugar=false` 分支**只为形状门禁存在**（量测 surface 侧行为用），随门禁一起删；
 - `hir.KUnwrapAssign`（死 kind，`hir/golden_test.go:322` 的豁免条目随之消失）。
 
-`no fmt` / `no fix` / LSP / `astpatch` 改为**直接读糖节点**，一个真值源。
+`no fmt` / `no fix` / LSP / `astpatch` / `std_qualify` / `std_methodify` 改为**直接读糖节点**，一个真值源。
 
 ---
 
@@ -777,3 +777,438 @@ kind id 按 **Go 类型名的字母序**分配，与 case 在 switch 里的位�
 5. **Tier-0 标准库 blob 也要同步重烤**：`go run ./checker/genstdsig` 将 `std_ast.bin` 更新到新 ASTVersion；签名表若内容未变会保留原输出。这个步骤不可只 bump Tier-1 key，否则 checker 的 parse-configuration fingerprint 门禁会将旧 Tier-0 blob 拒绝。
 
 **反空洞门禁**：`TestInBoundsProofLivesInSemanticSideTable` 断言 AST 类型不再有 `InBounds` 字段、解析后 side-table 有正例、HIR 有 flag、参数下标负例无 flag；随后主动清空 side-table，再调用 `AnalyzeInBoundsIndex`，要求返回集合仍命中而 SemanticContext 仍为空——证明分析器既可用又不偷写。`TestUserASTCacheRoundTripPreservesInBoundsProof` 钉住 Tier-1 gob 與 AST-MM 两种 round-trip；`TestD9IndexInBoundsFlag` 检查 surface 节点与 side-table 的匹配。
+
+## §20 `LetStatement` 推断 `?T` 迁入语义 side-table（S3 收尾，P1 非变性修复）
+
+`inferOptionArith`（D6 根算术）与 `synthesizeNullableType`（结构捕获期间合成）两个推断源，过去就地写 `s.Type = &NullableType{IsInferred: true}`，再另写一行 `setVarType(...)`。前者已被 P1 禁止（lowering 不得在 `ParseProgram` 返回后改写 AST）；后者一直在 side-table。S3 把两步合并成单一副表操作，并引入 1-bit 区分写入来源，使下游能在不破坏语法树的前提下读到同样的 `?T` 事实——这是 S0/S1 之后第三次「从 lowering 移除隐式 AST 写」。
+
+本次收敛：
+
+1. **AST 不再承载推断型别**：两个推断源跑完后 `LetStatement.Type` 保持 `nil`。移除就地写 `s.Type = ...`；`*NullableType.IsInferred` 字段仍保留以向后相容（用户写 `?T` 时仍照旧）。
+2. **`NodeSemantics.InferredType` 与新字段 `InferredByOptionArith`**：前者存推断出的型别字符串（如 `"?i64"`），后者标志「是否由算术根推断写入」。`maybeCaptureOptionAssign` 的短路检查依后者决定是否要把 `x = a + b` 进一步改写成 `__cap_N`：根算术（true）已收手，结构捕获（false）仍需走结构 desugar。一个 bit 区分两个写入路径，丢失它会让 option-capture pass 重新 desugar 一个本已被算术根推断收手过的绑定、静默剥掉 `?i64` 注解。
+3. **`publishInferredType(s, typ, byArith)` 统一入口**：原 `s.Type = ...; setVarType(...)` 两步合并为单一调用，两步不会遗漏。`ParseProgram` 在 lowering 之前先 `prepareInferredTypes`（`lowerer.analysisOnly` 模式）预填 side-table；SkipLowering 路径同样补齐，避免 `ASTToHIR` 在表面形态下丢失 HIR `t=?int` 型别（见 `parser/dump/s3_breakdown_test.go` 的 `typeSynth` 桶 24/532）。
+4. **三个消费者读同一事实**：`ASTToHIR` 的 `KLet` 产生从 `Program.Sem` 补读后才走 `typeID`（否则 HIR 给 NoID，`?i64` 凭空消失）；checker 的 `inferredOption` 判定从 `NullableType.IsInferred` 改为 `HasInferredType`；formatter 在 `s.Type == nil` 且 side-table 有推断时跳过 `?` 渲染，与旧版逐字节一致。
+5. **`detNodeSem` 镜像新增 bool**：gob Tier-1 cache 随语义一起 round-trip。
+   `ASTVersion` bump 至 `2026-10-16.4`，旧 blob HIT 会丢失推断事实——这一步与 §19 的 InBounds bump 是同一条机制、同一类教训。
+6. **Tier-0 标准库 blob 同步重烤**：`go run ./checker/genstdsig` 将 `std_ast.bin` 重新生成。**这一步最易遗漏**：ASTVersion 进入 `parser.ExternSignatureFingerprint` hash 输入（`fpWriteString(h, ASTVersion)`），bump 后 `TestStdASTBlobCarriesParseConfig` 会用旧 `Config` 比新 hash、立刻失败。必须 bump ASTVersion + 同步重烤 blob，缺一即被门禁抓。**形状与 §19.5 同**，两条同类教训不必分开教——任何让 `parser.ExternSignatureFingerprint` 变得更敏感的改动都会触发同一道门禁、必须同步重烤。
+
+**反空洞门禁**：`TestInferredTypeLivesInSemanticSideTable`（`src/parser/s3_inferred_side_table_test.go`）5 个 case，每条都实测而非推断：
+
+- **字段存在性反射**：遍历 `LetStatement` 字段名，若发现 `InferredType` 或 `IsInferred` 直接 FAIL。防止「下次有人为了让 checker 简单点又把字段加回去」。
+- **`x = a + b` 路径**：parse 后 `x.Type == nil`、`Program.Sem.InferredType(x) == "?i64"`、`InferredByOptionArith == true`。
+- **`x = p[i]` 路径**（结构捕获源）：同样 `?i64`，但 `InferredByOptionArith == false`，证明 1-bit 区分真正生效。
+- **surface 路径**：`SkipUnwrapLowering + SkipSafeIndexLowering` 下 `x.Type == nil` 仍成立，`prepareInferredTypes` 在 surface 模式下跳过算术根推断（formatter 没有消费者），side-table 留空不写——这条是「AST untouched」门禁而非「side-table populated」门禁，因为后者的成立条件因 surface 模式不同而异。
+- **gob Tier-1 round-trip**：`Encode` → `Decode` 后 `InferredType` 与 `InferredByOptionArith` 都保留。
+
+`s3_breakdown_test.go` 的 `typeSynth` 桶 24/532 在补齐 `prepareInferredTypes` 后归零（两形态 `t=?int` 完全对齐）；其他 S3 桶（`structural` 24 / `other` 3）是「option-capture 的额外 `__cap_N` 改写」留下的，是预期内的 lowering 行为，不归本节管。
+
+**回归**：Go 侧 `parser` / `parser/dump` / `mir` / `hir` / `checker` / `build` / `lsp` / `cmd/no` 全绿（后四者需 `-ldflags -X …StdSigKey`）。`fmt` 的 62 个 `src/std/**` 失败仍是并行 session 改写 std 文件导致的读两次不一致，与本节无关。nolang 侧四套测试全绿（`ast-test` 47 / `lx-test` 45 / `tok-test` 62 / `util-test` 27，共 181）。
+
+## §21 S4（进行中）：formatter 改读糖节点 + `no fmt` 翻形态
+
+> 本节记录 S4 的第一刀：**让 formatter 能直接渲染糖 AST**，并把 `no fmt` 的解析形态从
+> `surface`（`SkipUnwrapLowering + SkipSafeIndexLowering`）翻到 `sugar`（`SkipLowering`）。
+> 后续各刀：LSP（§21.9）、`no fix` 五条规则（§21.11）、`tools/*` 三个工具（§21.12）均已翻完。
+> 尚未做的：两个 skip 旗标与 12 个痕迹字段的删除（§4.3）。见 §21.7。
+
+### 21.1 先做尺子，再做改动
+
+S4 的成败判据本来是散文（「formatter 改读糖节点」）。§14 的教训（「必须先有无截断的
+trace 汇总，不能读 top-12」）在这里同样适用，故第一件事是把判据变成可测的差分：
+
+`src/fmt/sugar_fmt_ab_test.go` 在 **532 个语料文件**上把同一份源碼跑两种解析形态，
+逐字节比 formatter 输出。三条门禁，各有分工：
+
+| 门禁                                            | 作用                                                     |
+| --------------------------------------------- | ------------------------------------------------------ |
+| `TestSugarFmtVsSurfaceFmtCensus`              | 普查（永不失败）：`identical / differ / 只被某一形态拒绝` 三档计数      |
+| `TestSugarFmtMatchesSurfaceFmt`               | 硬门禁：相异必须 ⊆ `sugarFmtKnownDivergence`；且登记项**必须仍在相异**（防死豁免） |
+| `TestSugarFmtDivergenceIsAlwaysSurfaceBeingWrong` | 硬门禁：对每条登记项证明**哪一边是错的**（surface 输出无法重解析；sugar 输出可重解析且幂等） |
+| `TestNoFmtSugarVsSurfaceCensus` / `TestNoFmtSugarMatchesSurface` | 同一件事，但复现 `no fmt` 的完整管线（含 `checker.OverflowAnnotationRelevance`）——见 §21.4 |
+
+反空洞（实测，不是推断）：
+
+- 拆掉 `fmt/expr.go` 的 `case *parser.SurfaceMatch` ⇒ 两条硬门禁同时 FAIL，**167/532 相异**。
+- 把 `StatementsWithIntOverflow` 里的糖臂下钻短路成 `if false && …` ⇒ `no fmt` 门禁 FAIL，**6/532 相异**（basic / database-sql / https-server / match / option / sse）。
+- `TestSugarFmtMatchesSurfaceFmt` 的「登记项仍在相异」半边，在 allowlist 键名与语料路径不同前缀时**自己先 FAIL 过一次**（`tests/type-match.no` vs `../../tests/type-match.no`），已改为后缀匹配。
+
+### 21.2 收敛过程（每一次下降都有归因）
+
+| 阶段                                     | 相异      |
+| -------------------------------------- | ------- |
+| 基线：formatter 完全不认识 `SurfaceMatch`（静默输出空串） | **169** |
+| + `case *parser.SurfaceMatch` + `writeMatchArm`  | 43      |
+| + `valBranch` 判据修正（见 §21.3(1)）          | 6       |
+| + `isBareMatchBody` 认糖臂体 + `hasInferred` 加 `s.Type == nil` 守门（§21.3(2)(3)） | **1**   |
+
+最后剩下的 1 个是 **§21.5 的真实 bug**，不是待修的差异。
+
+### 21.3 实现：一个臂排版器，两个生产者
+
+`fmt/control.go` 把 `writeBareMatchArm` 拆成：
+
+- `bareMatchArm`：臂的「已备妥」描述（主体、已滤掉合成脚手架的语句、wildcard / valBranch、绑定后缀、`writeCond`）；
+- `armFromIfExpr`：今日的降糖形态，臂模式从 `MatchedExpr` / `OptionPatterns` / `ValuePatterns` / `RawCond` / `EqualityPattern` 等**痕迹字段反推**；
+- `armFromMatchArm`：糖形态，臂模式照 `MatchArm` 语法字段直读；
+- `writeArm`：唯一的臂排版实现（内联 / 区块 / 注释位置），两边共用 —— 那是排版决定，与糖无关。
+
+差别因此只剩「模式从哪裡读」。S4 收尾时 `armFromIfExpr` 随降糖形态一起退役。
+
+三个修正点，全部由 A/B 逼出来：
+
+1. **`ok ->` 不是 catch-all**。`wildcard` 初版写成 `IsWildcard && !IsDotVal`，使 val 分支走进 `writeCond` 的 default、`Condition` 为 nil ⇒ 印成 ` ->`。正确判据与降糖形态同构：`wildcard = IsWildcard`、`valBranch = IsDotVal`（降糖那边是 `RTMatchWildcard` + `DotValBody == Consequence`）。
+2. **`isBareMatchBody` 必须认 `*SurfaceMatch`**。糖形态下臂体里的裸 match 是 `SurfaceMatch` 而非 `IfExpression`，少了这一条会替巢状 match 多包一层大括号（json.no）。
+3. **`hasInferred` 必须同时要求 `s.Type == nil`**（§20 的既有 bug，本节顺手修）。side-table 的推断事实不问源码有没有写型别；`res ?i64 = a[off + 1]` 这种「用户写了、推断也得到」的陈述在糖形态下照样被写推断，于是显式 `?i64` 被当成推断而**整段消失**（option-index.no：`no fmt` 把 `res ?i64 = …` 印成 `res = …`）。
+
+### 21.4 翻形态的第二个前提：checker 也得看得见糖臂体
+
+formatter 的 A/B 绿了**不等于**可以翻形态：`no fmt` 还会用 `checker.OverflowAnnotationRelevance`
+算出「哪些 `#{overflow=…}` 是无效的」再删掉它们。实测 532 文件：**6 个相异**，全是
+「糖形态把有效的 overflow 注解删了」（basic.no 的 `r = 0 - a`）。
+
+根因正是 §15.2(1) 那类「只在降糖形态下成立」的盲点，换了两个新 walker：
+
+- `StatementsWithIntOverflow`（`checker/checker.go`）：`switch` 没有 `case *parser.SurfaceMatch` ⇒ 臂体对 `relevant` 完全不可见 ⇒ 漏登。
+- `OverflowAnnotationRelevance` 的 `collect`：只下钻 `IfExpression`，不下钻糖臂体 ⇒ `governed` 缺项 ⇒ formatter 查到 `gov == nil` ⇒ 误删。这里还有个额外陷阱：**臂体必须以整份语句列表扫描**（新增 `walkSurfaceMatchArmBodies`），逐条回调会把「注解后面第一条陈述是谁」这个列表上下文切碎 —— 这也是为什么不能直接用既有的 `walkSurfaceMatchChildren(…, onStmt)`。
+
+补完后 `no fmt` A/B：**531/532 逐字节相同**，1 个相异即 §21.5。
+
+### 21.5 唯一的相异：糖形态修好了一个「`no fmt -w` 会毁档」的既有 bug
+
+`tests/type-match.no` 的 `r = x: { i32 -> lo  i64 -> hi  -> x }`，今日 `no fmt` 输出：
+
+```
+r = : {          ; 主語 x 不見了
+    lo           ; 臂模式 i32 -> 不見了
+} else: {
+    : {
+        hi
+    } else: { … }
+```
+
+**这份输出无法重新解析**（实测：`no fmt` 二次执行报 3 个 `expected expression, got nil`）。
+即 `no fmt -w` 会静默毁掉用户的类型 match。糖形态照语法原样输出，逐字还原源码。
+
+这一条因此进 `sugarFmtKnownDivergence`，并由
+`TestSugarFmtDivergenceIsAlwaysSurfaceBeingWrong` 把「surface 不可重解析 / sugar 可重解析且幂等」
+两半都钉住。**若哪天有人修好了降糖形态的那条路，这道门禁会 FAIL 并要求删除登记项**——
+而不是让豁免无限期留着。
+
+### 21.6 已翻的消费方
+
+| 位置                                                    | 改动                              |
+| ----------------------------------------------------- | ------------------------------- |
+| `src/fmt/api.go` `formatProgramWithLoopStyle`           | `SkipUnwrapLowering + SkipSafeIndexLowering` → `SkipLowering` |
+| `src/cmd/no/main.go` `parseProgramForFmt`（`no fmt` 主路径） | 同上（注释写明必须与 formatter 内部解析一致）     |
+
+`no fix` / `fixRedundantTypeSource` / `sourceParses` / hex 字面量扫描 / `unwrap_fix.go`
+仍是 surface 形态，**刻意未翻** —— 它们各自跑不同的 checker 规则，需要各自的 A/B（§21.7）。
+
+### 21.9 LSP：三个消费方全部过闸，已翻形态
+
+LSP 只解析一次，那棵树同时喂三个消费方，所以翻形态必须三个都过。各做一把尺子：
+
+| 消费方                 | 门禁                                                                       | 结果                          |
+| ------------------- | ------------------------------------------------------------------------ | --------------------------- |
+| format-on-save       | 复用 §21.1（`fmt.FormatProgram`）                                              | ✅ 531/532（1 个是修好的 bug）      |
+| 符号索引（hover / 跳转 / 找引用） | `src/lsp/sugar_index_ab_test.go` `TestLspIndexSugarMatchesSurface`            | ✅ 532/532                   |
+| 实时诊断（`RunAllLints`）   | `src/lsp/sugar_lint_ab_test.go` `TestLspLintsSugarMatchesSurface`            | ✅ 531/532（1 个是糖形态更正确）    |
+
+**索引那一半的修复**：`ASTWalker.walkExpression` 是手写 `switch`、无 default（§15.2(1) 的老
+问题），没有 `case *parser.SurfaceMatch` ⇒ 糖形态下 **158/532 文件的符号整体消失**。补上之后
+还需登记降糖形态由合成 let 提供、糖形态只活在 `MatchArm` 元资料里的名字：析构绑定
+（`ok(v)` / `err(e)` / `rect(w, h)` / 类型臂 `v i32`）、隐含 `it`（`SkipItBinding` 的哨兵臂除外）、
+以及 val / raw-cond 臂的 `ok` 关键字。收敛 158 → 0（基线：`case` 拆掉则 FAIL，104/532）。
+
+门禁只比**名字集合**且只查「糖形态不许丢名字」，理由写在测试里：完整条目带 `Type`/`Range`，
+而这两者在两形态下**本来就该不同**（降糖那边的绑定是 lowering 的合成 let，带推断型别但区间
+是合成的、甚至退化成 `{{3 3} {3 0}}`；糖这边是真实源码位置 + 无型别）。要求逐字节相同等于逼
+糖形态去复刻降糖的产物。`__match_subj_L_C` 这类合成临时名则反向允许消失——那正是 S4 的目的。
+
+**诊断那一半的收敛：6/532 → 4/532 → 1/532**，三个根因全部修掉（详见 §21.10）：
+
+1. ~~丢 4 条 hint~~（match-test）——`'->' arm is unreachable` 是**降糖期诊断**，
+   已搬到解析期（§21.10）。
+2. ~~丢 2 条 error~~（sse / yaml）——`checker/unresolved.go` 两个手写 walker 没有
+   `case *parser.SurfaceMatch`，臂里的 `client.is-connected()` / `yaml.parse()` 整条不可见。
+3. ~~多 2 条误报~~（net-client / path-char）——`'ok' is defined but never used`。
+   裸 match `{ ok -> … }` 里 `ok` 其实是**变量**，parser 在 `parser/match.go:263` 把它当成
+   val 分支关键字消费掉、丢弃了源码识别字。这是**糖树的 P1 忠实性 bug**：已在原分支补
+   `ma.Condition = &Identifier{...}`（附迁移说明），并用 532 份语料的降糖 dump 快照证明
+   降糖树逐字节不变。
+
+剩下 1 个 allowlist 条目（`tests/type-match.no`）方向相反：**糖形态多报 2 条** `ovf-int-default`，
+而它是正确的一方——`w i64 -> w + 1` 的 `w` 由臂自己绑成 i64，`w + 1` 确实返回 `?T`；降糖形态
+把臂改写后丢了绑定型别，反而看不见。与 §21.5 同型：旧形态是错的一边。门禁因此仍然两向
+（丢诊断 = 编辑器里的洞，多诊断 = 用户眼前的误报），并要求每个 allowlist 条目**仍在相异**，
+否则视为死豁免而失败；另有两条测试把「哪边错」钉住（`TestSugarValueCtxArmIsNotADiscardedOverflow`
+钉住顺手修掉的糖臂下钻误报，`TestSugarArmOverflowDivergenceIsSurfaceUnderReporting` 证明
+allowlist 的方向）。
+
+翻形态本身：`src/lsp/documents.go` 由两个局部 skip 旗标改为 `SkipLowering`，与
+`fmt/api.go`、`cmd/no/main.go` 三处同形态。另跑一次的纯诊断解析（`collectUnwrapLoweringErrors`，
+补 `?=` 的 lowering 期错误）与主解析形态无关，继续保留。
+
+### 21.10 诊断的形态无关化：把 `'->' arm is unreachable` 搬出降糖循环
+
+§21.9 剩下的最后一条「丢诊断」暴露了 §17.1 那一族的真实代价。这个诊断由
+`p.saveWarning` 在 `buildMatchDesugar` 展开 match 的循环**内部**发出，于是它天然是
+「降糖的副产物」：`SkipLowering` 下整段不执行，消费方翻形态后静默丢失。
+
+**做法**：判定输入从「降糖过程中的 arm 状态」改成「`SurfaceMatch` 自己携带的语法字段」，
+新开 `src/parser/match_warn.go`，在 `ParseProgram` 里、降糖**之前**执行——两种形态跑同一段
+代码，降糖与否不再影响诊断。走访复用 `lowerer.walk`（`analysisOnly + warnMatchArms`），
+因此 `curFuncName` 口径与走訪顺序都和 `lowerSurfaceMatch` 一致（嵌套 match 的诊断先后不乱）。
+原 pass **不写回 AST**：列舉載荷析構綁定（`some(v) ->`）的正規化原本是就地改寫
+`arm.Condition`，這裡只在區域變數裡記「該臂等同於列出哪個變體」——糖形態的 AST 不容許
+被這種診斷污染。降糖路徑那兩處 `saveWarning` 隨之移除（`skipItBinding = true` 是結構性
+邏輯，保留）。
+
+复刻的判定链与 `buildMatchDesugar` 逐条对应：无主語（裸 match）与 union 主語（type match）
+不走这条路 ⇒ 不报；`itStmt != nil` 等价于 `buildItBinding` 的型别开关（Identifier /
+IndexExpression）；raw-cond 臂整段跳过；主體型別取自 `sem.FuncVarType`（函式作用域）、
+列舉變體取自 `sem.EnumVariantsOf`；索引主語的 `__match_subj` 歸一化只算型別、不寫 sem。
+
+**验证**（三层，缺一层都不算数）：
+
+| 层 | 尺子 | 结果 |
+| -- | ---- | ---- |
+| 降糖路径零行为改变 | 532 份语料的 `Program.Warnings` 快照 before/after | 逐字节相同 |
+| 两形态不再漂移 | `parser/dump/warnings_shape_test.go` `TestParserWarningsAreShapeIndependent`（532 份两形态逐文件比 warnings） | ✅ 532/532 |
+| 诊断没有整体消失 | 同文件 `TestUnreachableArmHintSurvivesBothShapes`（`match-test.no` 必须仍产出 2 条，且两形态一致） | ✅ |
+
+🔴 **反空洞抓到的尺子缺陷**（值得记住）：第一轮反空洞把 `p.warnUnreachableMatchArms` 关掉后，
+**两把 sugar-vs-surface 门禁都仍然绿**——因为两种形态的这条 hint 现在同出一个 pass，关掉后
+两边一起归零，「一致」依然成立。也就是说**任何只比较两种形态的尺子，都抓不到「两形态共同
+回退」**，而这恰好是「诊断原本由 lowering 产生」这种迁移的默认失败模式。补的第三层
+（fixture 存在性断言）才能抓到：关掉 pass ⇒ `lowered: expected 2, got 0` ⇒ FAIL。
+
+### 21.7 仍未做
+
+1. **删两个 skip 旗标与 12 个痕迹字段**（§4.3 + §2.4）：`SkipUnwrapLowering` / `SkipSafeIndexLowering` 全部消费方归零之后才能删；`RTFlag` 位与 `ast.go` 的痕迹字段需先确认 `h0Diags`/`tohir.go` 不再读。（2026-10-17 量测更正：这两个旗标在编译器默认路径 `SkipLowering=false` 仍活着——`lowering.go` 的 `?=` / `#{index-out}` 展开依赖它——且被大量「部分形态单测」（`d9_index_write_test` / `hir_equivalence_test` surface 配置 / `compound_assign_test` / `bounds_test` 等）set 来单测局部形态；生产侧仅在 `SkipLowering=true` 时三旗标同设（此时整段 lowering 跳过、二者冗余/死）。⇒ 删它们 = 重写那些单测，**非小改动**，降级为需谨慎、单独立项，不再视为「顺手做」。）
+2. **formatter 里剩下的降糖形态代码**（`formatBareMatchExpressionSubj` 的 `RTMatchWrapper` / 索引主体归一化反推、`writeBareMatchArm` 的合成 let 打捞）在糖形态下是死代码，随 1 一起退役。
+3. **checker 里其余 5 个手写 walker 的 `SurfaceMatch` case —— ✅ 已完成（2026-10-17）**：`listdir.go`、`option_compare.go`、`range_ellipsis_lint.go`、`funcargs.go`（3 个 expr walker：`checkArgCountInExpr` / `checkCallArgsInExpr` / `filterByExports` 的 inline `walkExpr`）、`deprecated_printf.go` 的 `walkExprForRemovedPrintf` 全部补上 `case *parser.SurfaceMatch:` 走 `walkSurfaceMatchChildren`（option_compare 额外对齐 `itStack` 的 option 內層型別推斷，与 IfExpression case 同语义）。实证：非空洞门禁 `src/checker/sugar_match_lint_test.go`（`TestSugarMatchLint*` 5 个，臂内触发器，断言 sugar==lowered 且非零）全绿；`make test` 全绿；`TestLspLintsSugarMatchesSurface` / `TestCheckerShapeAgreementCensus` 两道 parity gate 仍绿。**注意**：`*parser.SurfaceMatch` 是 Expression 节点（缺 `statementNode`），必须加在 expr walker（经 `ExpressionStatement` 抵达），不能加在 stmt switch——初版误加在 stmt 导致 `impossible type switch case` 编译失败。
+   - **RunAllLints 三形态普查纳入 LightweightMode —— ✅ 已完成（2026-10-17）**：`shape` 结构加 `lightweight bool` 字段，新增 `loweredShapeLW()`/`surfaceShapeLW()`/`sugarShapeLW()` 三轻量克隆，`allShapes()` 现扩为 **6 形态**（lowered/surface/sugar + 各自 `-lw`），`shapeCensus` 的 `RunAllLints` 调用加 `LightweightMode: sh.lightweight`。由此 `ckaj3355`（`CheckUnresolvedModuleCalls`，仅在 `LightweightMode` 产出）现被普查覆盖。实测每形态痕量直方图：`ckaj3355` = `lowered 0 / surface 0 / sugar 0 / lowered-lw 82 / surface-lw 82 / sugar-lw 82`——只在三轻量形态出现且计数完全稳定（82/82/82），故**不 drift、无需登记进 `sugarDriftAllowlist`**（`TestCheckerSugarDriftIsWithinKnownSet` 仅 diff `lowered↔sugar`，`ckaj3355` 两侧皆为 0，天然不可见）。随此次普查顺带清理：3 条 stale allowlist 条目（`<no-trace>`/`6kryrbsq`/`ovfhndld`，在 `lowered↔sugar` 已不再 drift）从 `sugarDriftAllowlist` 删除并移入「Retired」记录段；`TestCheckerSugarDriftIsWithinKnownSet` 现 0 stale 警告、仍 PASS。
+4. **`match-nonex` 诊断到不了 `no vet` 输出 —— ✅ 已修复（2026-10-17）**（§21.11 末尾曾记此缺口，且 §21.7 旧结论误判为「`RunAllLints(merged)` 对 call-subject 形状返回 0 条，疑与 transpiler 注入 extern/std 签名、`?=` lowering 改写有关」——实测**非**语法/lowering 问题）。
+   - **根因（实测定位）**：`match-nonex` 的 `LintResult` 在 `lint.go` 的 19b 段**未填 `File` 字段**；merged / 多文件模式下 `RunAllLints` 的 `singleFile == false`，于 `lint.go` 过滤段 `if !singleFile && r.File == "" { continue }` 将该诊断**静默丢弃**。此 bug 影响**所有正常 `no vet`**（凡引用 std 即 `singleFile=false`），不只 call-subject。设计稿原例 `get-v(): { ok -> … }`（`get-v` 未定义）报的是 compile error 短路，是量测假象，并非规则漏报。
+   - **修复**：给 `NonExhaustiveMatch` 加 `File` 字段；`collectMatchRoots` / `collectSugarMatchRoots` 在 walk 进入顶层 `Statement` 时以 `parser.GetSourceFile(st)` 取 SourceFile 并下传为该函数/块内 match 根的 `File`（与 `range_index_lint.go` 的 `curFile` 下传口径一致，复用 transpiler 合并前为顶层 `FunctionDefinition` 设的 `SourceFile`）；两形态收集器产出 `NonExhaustiveMatch{ File: rootFile[…] }`；`ValidateNonExhaustiveMatch` 的 `ValidateResult` 与 `lint.go` 19b 段 `LintResult` 均填 `File: …`。这样 `RunAllLints` 的 `!singleFile && r.File == ""` 过滤不再误杀。
+   - **非空洞门禁**：`src/checker/match_exhaustive_test.go` 新增 `TestNonExhaustiveMatchFileAttribution`（断言 `ValidateNonExhaustiveMatch` 回传 `File` 已归因）与 `TestNonExhaustiveMatchVetMergedSurvivesFilter`（构造 merged 双文件程式、跑 `RunAllLints`、断言 `match-nonex` 仍产出且 `File` 非空前）。**反空洞已验证**：短路归因（`rootFile[x] = ""` / `File: u.File` → `File: ""`）两测试均 FAIL。
+   - **E2E 复现（修复后）**：`use std/env` + `start = () { env.lookup('host'): { ok -> 1 } }` 跑 `no vet` 现正确报 `/tmp/case3b.no:4:25: [nolang-type-checker] non-exhaustive match on option 'lookup()': missing arm(s): nil, err …[match-nonex]`；修复前为 `No issues found`。
+   - 注：糖形态路径（`SkipLowering`）走 `collectSugarMatchRoots` 同样下传 `File`，与降糖路径口径对齐。
+5. **surface 形态对「型别解构臂」的迴印 / 解析是坏的 —— ✅ 已诊断（2026-10-17，仅诊断，不动大重构）**：`tests/type-match.no` 与 `src/std/crypto/rsa.no` 在 surface 形态（SkipUnwrapLowering + SkipSafeIndexLowering，非 SkipLowering）下确实坏，糖形态（SkipLowering，即 `no fmt` 现走路径）完好。两处根因已实测定位，**不修，随 §4.3 旗标退役自然消失**。
+
+   - **量测方法**：临时探针以 surface / sugar 两形态解析同份源码，walk AST 直读 `IfExpression.IsTypeMatch/TypePattern/TypeBindingName/MatchedExpr` 与 `SurfaceMatch/MatchArm.IsTypeArm/TypePattern/TypeBindingName`，并收 `p.Errors()`。核心结论（下表）：
+
+     | 源 | 形态 | 结果 | 关键 AST 事实 |
+     | --- | --- | --- | --- |
+     | `type-match.no`（`x: { v i64 -> …; -> 0 }`） | surface | 0 errors，但 match 已降糖 | 3 个 `IfExpression.IsTypeMatch=true`，`TypePattern="i64"/"i32"/""`、`TypeBindingName="v"`、`MatchedExpr` 非空——**型别信息其实被 lowering 保留在 IfExpression 上** |
+     | `type-match.no` | sugar | 0 errors | 2 个 `SurfaceMatch` 型别臂，`MatchArm.TypePattern/TypeBindingName` 完整 |
+     | `rsa.no` | surface | **1 error**：line 477 `empty match arm cannot determine a value (matched expression type is unknown)` | `SurfaceMatch` 已不存在（全降糖） |
+     | `rsa.no` | sugar | 0 errors | `SurfaceMatch` 存在，空臂合法 |
+
+   - **根因 A（type-match 迴印坏）**：降糖后的型别 match 由 `buildTypeMatchDesugar`（lowering.go:2139-2231）构造成 `IfExpression` 链，并将 `IsTypeMatch` / `TypePattern` / `TypeBindingName` / `MatchedExpr` 写进节点（上表实测存在）。但 surface formatter 的唯一「降糖臂读取器」`armFromIfExpr`（fmt/control.go:406-482）的 `writeCond` switch（445-480）**只认 `RangePattern` / `OptionPatterns` / `ValuePatterns` / `RawCond` / `EqualityPattern`，没有 `IsTypeMatch` / `TypePattern` / `TypeBindingName` 分支**，全部失配就回退到 `formatExpression(e.Condition)`——而型别 match 的 `IfExpression.Condition` 为 `nil`（构造时 `Condition: nil`，lowering.go:2214）。⇒ 型别模式与綁定被静默丢弃，臂只剩 body，输出退化为 `r = : { lo } else: { … }` 这类不可重解析的形状。
+     - **补强事实**：`buildTypeMatchDesugar` 构造函数**不设 `RTBareMatch`**（lowering.go:2212-2221 无 `SetRTFlag(..., RTBareMatch)`）。所以当前 `formatIfExpression`（control.go:129）也不会把它路由到 `formatBareMatchExpression`，而是当普通 `cond: { } else: { }` if 链输出——match 语法整体被毁。无论走哪条路径，surface 都还原不出 `v i64 ->`。
+     - **对照（糖为何对）**：糖形态 `formatSurfaceMatch` → `armFromMatchArm`（control.go:490-547）的 `case ma.IsTypeArm:`（531-535）直接读 `MatchArm.TypeBindingName` + `TypePattern`，不依赖任何降糖痕迹字段。故 `no fmt`（现强制 `SkipLowering=true`，api.go:209）对 type-match 迴印完好。
+
+   - **根因 B（rsa.no 空臂解析失败）**：surface 解析 rsa.no 在 line 477 报硬错：
+     ```
+     local-qn = qn-step: {
+         ok -> it
+         ->
+     }
+     ```
+     `qn-step` 是 `(bits / 32) + 1`（`#{overflow=wrap}`）的结果，按 D1 规则其静态型别为 `?i64`。但 surface 形态跳过 `?=` / 算术 `?T` 推断（`prepareInferredTypes` 在 `SkipUnwrapLowering` 下被跳过，lowering.go:238），`qn-step` 的型别从不写入 `FuncVarTypes` ⇒ `buildMatchDesugar`（lowering.go:2562-2596）为「值语境空臂（`->` 后无语句）」合成零值时，`elemType == ""` ⇒ 直接 `saveError("empty match arm cannot determine a value (matched expression type is unknown)")`。该 match 位于赋值 RHS（值语境），故 `ValueCtx` 为真、命中此分支。sugar 形态（`SkipLowering=true`）整段 lowering 跳过，`SurfaceMatch` 原样保留、空臂合法 ⇒ 0 errors。
+
+   - **结论**：两处坏都是 surface 形态的**固有代价**——它把 match 降糖成 if 链，并跳过糖形态保留的型别推断 / 型别模式管线。`armFromIfExpr` 即便补上 `IsTypeMatch` 分支也只能救 formatter 一侧，rsa.no 的解析失败发生在 lowering 阶段、与 formatter 无关。故正确处置是**不修 surface**，等 §4.3 删两 skip 旗标后整体消失；糖形态已是 `no fmt` / CLI 的正确路径，用户侧不可见。
+
+### 21.11 `no fix` 翻形态：五条全翻（末条 `--fix=match` 也已翻）
+
+按 §21.1 纪律逐个来。**先记一个量测陷阱**：这三条规则（`ValidateIntOverflow` /
+`CollectNonExhaustiveMatches` / `ValidateRedundantTypeAnnotation`）在 532 份语料上
+**一条都不报**（算术都带注解、match 都穷尽、标注都不冗余）⇒ 拿语料当尺子会得到
+`0 == 0` 的空洞「一致」。改用针对性 fixture，且每个 fixture 都必须**真的触发**它的
+fixer（`TestNoFixFixturesTriggerTheirFix` 就是防这个的空洞闸门——把 match fixture
+的宣告顺序调回「`get-v` 在 `main` 之前」立刻 FAIL，因为那时 resolver 推不出 `v` 的
+型别、match 读起来就不是 option match）。
+
+| 位置 | 处理 | 依据 |
+| --- | --- | --- |
+| `fixRedundantTypeSource`（默认 `no fmt` 的「先去冗余」步） | ✅ 已翻 `SkipLowering` | 规则 532/532 两形态逐条相同；fixture 两形态结果数相同；`cmd/no` 既有回归全绿。这同时消掉 §21.7 第 4 条的不一致（同一份源码在一次 `no fmt` 里被解析两次、两种形态） |
+| `sourceParses`（移除后「仍可解析」防御） | ✅ 已翻 `SkipLowering` | 它的契約就是「与 `parseProgramForFmt` 同形態」，后者已是糖形态 |
+| `fixMatchArmsInFile`（`--fix=match`） | ✅ 已翻 `SkipLowering` | 规则侧先长糖路径再翻：14 个 match 形状两形态 Pos/End/Subject/Missing 逐字段相同；语料尺子仍空洞（0/532），门禁改立 fixture，详见下文 |
+| `fixOverflowInFile`（`--fix=overflow`） | ✅ 已翻 `SkipLowering` | 端到端量测 532/532：报告差异 1 份、输出差异 2 份，全部方向正确且已过安全四验证，详见下文 |
+| `fixUnwrapInFile`（`--fix=unwrap`） | ✅ 已翻 `SkipLowering` | 语料尺子空洞（0/532 命中），改立 fixture 门禁；关键是「报告点在 match 臂内」的敏感 fixture，详见下文 |
+| `fixRedundantTypeInFileWithVet`（`--fix=redundant` 的 Path 2） | ✅ 已翻 `SkipLowering` | 语料上 Path 2 零到达（9 个会被改的语料档全部由 Path 1 处理）；hex 防御经破坏实验证明仍然有效，详见下文 |
+| `unwrap_fix.go` 的 hex 字面量扫描 | ✅ 随 Path 2 一並验证 | `walkHasHexLiteral` 没有 SurfaceMatch 分支，但 `containsHexLiteral` 的**文本扫描兜底**覆蓋整條陳述 span（含臂體）；且實測「值為 match 的冗餘標註」在兩種形態下都不被規則報告，該盲區目前不可達 |
+
+**`--fix=overflow` 的翻转量测**（`fixOverflowSourceShape` 两形态逐檔比對，
+门禁 `TestFixOverflowRuleIsShapeParityEndToEnd`）：
+
+- **报告差异 1/532**：`tests/type-match.no`，surface 0 条 / sugar 2 条。方向是
+  sugar 补上 surface 的漏报——`w i64 -> w + 1` 的 `w` 型别只存在于糖节点
+  `MatchArm.TypeBindingName/TypePattern`，降糖后臂绑定失去型别、合成 let 又带
+  `?T` 被豁免 ⇒ surface 看不见这两处。
+- **输出差异 2/532**：`type-match.no`（surface 不修、sugar 修，修的正是上述真
+  漏报）与 `enum-annotation.no`（两形态都修同一站點、粒度不同——surface 把注解
+  插到 match 區塊内部臂模式行之前，sugar 插到整个 match 语句上方）。
+- **插入位置的安全性四验证**（`type-match.no`）：① `no build` 修复后文件 EXIT=0；
+  ② 运行输出与原版逐位元相同；③ `no fmt` 保留该注解（`StatementsWithIntOverflow`
+  的 SurfaceMatch 分支让臂體运算对 relevant 集合可见）⇒ 不会「fmt 删、fix 插」
+  churn；④ 重跑幂等。
+- **单向不变量**：sugar 绝不能比 surface 少修。语料上逐檔断言（surface 修 4 份：
+  `edge-i64` / `enum-annotation` / `hpack` / `test-div-zero`；sugar 修 5 份 =
+  前述 4 份 + `type-match`）。
+- **`findFixTargetNode` 刻意不下鑽 SurfaceMatch 臂體**：臂内报告的最小可標註节点
+  会是臂體语句，而行內臂（`w i64 -> w + 1`）的语句与臂模式同一行——注解插上去
+  会落在 match 區塊内、臂模式行之前，该位置能否被 parser/lowering 认可取決于註解
+  附著细节，不安全。停在整個 match 语句上方反而正確（語句級註解對整棵子樹生效）。
+  语料实测：糖形態下 0 条报告因此找不到目標。
+- **反空洞两轮**：① 让糖分支恒不修 ⇒ 三层 FAIL（fixture 不再触发 / 死豁免 / 单向
+  不变量点名 4 个文件）；② 删掉一条白名單 ⇒ FAIL 点名 `enum-annotation.no`。
+
+**`--fix=unwrap` 的翻转量测**（`fixUnwrapSourceShape` 两形态逐 fixture 比對，
+门禁 `TestFixUnwrapRuleIsShapeParity`）：
+
+- **语料尺子空洞**：`--fix=unwrap` 在 532 份语料上 0 命中（实測 `no fmt
+  --fix=unwrap -d tests/` 得 0 檔）⇒ 「两形態一致」会是 0 == 0。门禁改立 fixture，
+  且每个 fixture 必须**两种形態下都真的触发**。
+- **敏感点是「报告点在 match 臂内」**：optunuse 判「option 綁定後有沒有被消費」，
+  而臂體正是最常見的消費場所。surface 形態下 match 被降糖成 if 鏈，
+  `collectUnwrapSites` 的 IfExpression 分支看得見臂體；糖形態下 match 是
+  SurfaceMatch，walker 必須自己下鑽。三个 fixture：`plain`（臂外，形態不敏感）、
+  `arm-block-index` 与 `arm-nested-match`（臂內，敏感）。
+- **实测过的无效探针**（都**不**产生 optunuse 报告，記下來省得後人重踩）：
+  臂內算術（`ok -> w = it + 1`）、臂內第二條陳述、臂內 for 迴圈——只有臂內的
+  **索引讀取**才報。
+- **反空洞**：删掉 `collectUnwrapSites` 的 SurfaceMatch 下鑽 ⇒ 两个臂內 fixture
+  立刻 FAIL（「sugar shape silently drops the fix」），且 `TestFixUnwrapFixedCompiles`
+  的新增两例（`arm_block_index` / `arm_nested_match`，把關改寫結果真能編過）同時 FAIL。
+
+**`--fix=redundant` Path 2（vet 路徑）的翻转量测**：
+
+- **语料上零到达**：`--fix=redundant` 会改的 9 个语料档全部由 Path 1
+  （standalone，上一轮已翻）处理，Path 2 在 532 份语料上一次都没跑 ⇒ 翻转的
+  语料行为变化为 0（实測确认，非推断）。
+- **节点集差异不可达**：两种形態下 `findRedundantTypeNode` 走访找到的「带型別
+  註解的 let」節點集有 2/532 差異——surface 多两个 lowering 合成的帶型別 let
+  （`match-index-option.no` 70:15 / 85:15，翻轉後不再可見，**更安全**），sugar 多一个
+  推斷型別節點（`stmt-boundary.no` 73:13，`y = 1` 這類無手寫標註的 let 在糖形態下
+  被 prepareInferredTypes 蓋上推斷型別）。後者要造成損壞需要規則報告恰好落在那個
+  推斷位置上，而報告只攜帶**手寫標註**的位置 ⇒ 不可達；且 `computeRedundantTypeRemoval`
+  另有兩道護欄（型別必須嚴格在變數名之後、掃到分隔符才刪、跨行即拒）加上 Path 2
+  末尾的 re-vet 回歸驗證。
+- **hex 防禦仍然有效**（破壞實驗）：把 `computeRedundantTypeRemoval` 的 hex 檢查
+  改成 `false &&` ⇒ 既有回歸 `hex literal ... preserved` 立刻 FAIL，證明該防禦在
+  翻轉後的糖形態路徑上確實承重；`walkHasHexLiteral` 沒有 SurfaceMatch 分支這一盲區
+  由文本扫描兜底覆蓋，且实测不可達（值為 match 的標註兩種形態都不被報告）。
+
+**`--fix=match` 的翻转量测**（规则侧先长糖路径，再翻 `fixMatchArmsInFile`；
+门禁 `TestFixMatchRuleIsShapeParity` + `TestFixMatchRuleCorpusShapeParity`）：
+
+- **规则侧的糖路径**（`checker/match_exhaustive.go`）：新增
+  `collectSugarNonExhaustiveMatches`，与降糖路径**逐条对应**——
+  `sm.Matched != nil` ↔ `MatchedExpr != nil`、`sugarMatchVariants` ↔ `matchVariants`、
+  `sm.RBracePos.Line == 0` ↔ `MatchEndPos.Line == 0`、`subjectIsDeclaredEnumExpr` ↔
+  `subjectIsDeclaredEnum`、`sugarMatchHasCatchAll` ↔ `matchHasCatchAll`、
+  `sm.Pos()`/`sm.RBracePos` ↔ `root.Pos()`/`root.MatchEndPos`。语义助手全部复用
+  `match_arm_reach.go` 已有的糖形态版（`collectSugarMatchRoots` /
+  `sugarMatchVariants` / `sugarMatchSubjectName`），判定口径不会两套漂移。
+  模式照 `collectSugarCatchAllArms`：**并行收集器 + 共用助手**，不让
+  `collectMatchRoots` 改回传型别。
+- **位置等价性实测**：糖形态 `sm.Pos()` / `sm.EndPos()` / `sm.RBracePos` 与降糖形态
+  `root.Pos()` / `root.EndPos()` / `root.MatchEndPos` **逐字段相同**（`RBracePos` 正是
+  lowering 转移到 `MatchEndPos` 的那一个位置）。据此把 `NonExhaustiveMatch` 加上
+  两形态共同填写的 `Pos` / `End` / `Subject` 字段（`Root` 保留），fixer 只读这三个
+  字段 ⇒ 形态无关。
+- **两形态不会重复上报**：降糖后 AST 里 `SurfaceMatch` 节点数为 0（实测：default 0、
+  surface 0、sugar 1）⇒ 两条收集路径按构造不相交，`CollectNonExhaustiveMatches`
+  两条都跑是安全的。
+- **14 个 match 形状两形态一致**（`ok-only` / `ok-nil` / `nil-only` / `err-only` /
+  `ok-nil-err` / `ok-catchall` / `nil-err-combined` / `call-subject` / `nested-arm` /
+  `bare-guard-ok` / `bare-guard-cond` / `plain-value` / `multiline-brace` /
+  `module-level`），且**降糖形态（默认全降糖）也给出同一答案** ⇒ 三形态一致。
+- **语料尺子仍空洞**：532 份语料两形态各 0 命中（实測）⇒ 端到端语料 sweep 只是
+  **前向回归网**（将来谁往 `tests/` 提交一条非穷尽 match 就会被真比到），非空洞性
+  由 `matchShapeFixtures` 的 15 个 fixture 承担（8 个必须修、7 个必须不修）。
+- **反空洞三轮**：
+  ① 把 `sm.Matched == nil` 護欄改成 `false &&` ⇒ `bare-guard-ok` 立刻 FAIL
+     （糖形态獨有誤報：裸 guard 區塊 `{ ok -> print(1) }` 的條件恰好叫 `ok`，
+     `Matched` 為 nil 而 `sugarMatchVariants` 仍數出 `ok`）；
+  ② 把 `sugarMatchHasCatchAll` 的 `!last.IsDotVal` 去掉 ⇒ 5 个 fixture FAIL
+     （`ok ->` 與 `->` 兩者都帶 `IsWildcard=true`，只差 `IsDotVal`；去掉區分會把
+     `v: { ok -> a }` 誤判成已有兜底臂 ⇒ 靜默漏報 nil/err）；
+  ③ 把糖路径的 `End` 從 `sm.RBracePos` 換成 `sm.Pos()` ⇒ 全部 must-fix fixture
+     輸出不同（插入點落到 match 起點，臂插到 `{` 之前）。
+- **安全验证**（`no fix` 端到端 + CLI）：修复后文件 `no build` EXIT=0、运行输出
+  与原版一致（`1`）、二次运行幂等、`no fmt` 不重排插入的 arm（唯一 diff 是两条顶层
+  定义间的空行，该偏好在修复前的原文件上同样存在）。
+- **既有回归全绿**：`match_fix_test.go` 的 4 个形状回归（缺 nil+err / 只缺 err /
+  嵌套 match 缩排 / tab 缩排）、幂等、`LeavesExhaustiveAlone` 三例（含 tagged enum）
+  在糖形态下全部通过——这翻的是 `fixMatchArmsInFile` 唯一的形态决策点，行为不变。
+
+**顺带发现的既有缺口 —— ✅ 已修复（2026-10-17，见 §21.7 第 4 条）**：
+`match-nonex` 这条诊断**原先到不了 `no vet` 的输出**，根因是 `lint.go` 19b 段
+`LintResult` 未填 `File`，在 merged 多文件模式（`singleFile == false`）下被
+`!singleFile && r.File == ""` 过滤静默丢弃（影响所有引用 std 的 `no vet`，
+非仅 call-subject）。现已给 `NonExhaustiveMatch` 加 `File` 字段并自 `parser.GetSourceFile`
+下传归因，修复后 `no vet` 能正确产出 `match-nonex`（E2E 复现见 §21.7 第 4 条）。
+旧记的「`f = () { get-v(): { ok -> print(1) } }` 报 `No issues found`」属量测假象：
+`get-v` 未定义会先触发 compile error 短路，并非规则漏报；改用自包含 call-subject
+源码即可复现并验证修复。`no fix --fix=match` 与 checker 单测不受影响。
+
+### 21.12 `tools/*` 翻糖形态：astpatch / std_qualify / std_methodify
+
+三个工具都是「解析 .no → 走訪 AST 改寫 → formatter 重新打印」，翻到糖形态的共同前提是
+**走訪器必须能看见 SurfaceMatch 的臂子树**。但三者的盲区性质不同：
+
+| 工具 | 走訪器 | 糖形态下的盲区 | 修法 |
+| --- | --- | --- | --- |
+| `astpatch` | 反射 walker（`op.go`） | 不是「缺 case」，而是切片下鑽判据只看「元素是否實作 Node」。`SurfaceMatch.Arms` 是 `[]MatchArm`——**值结构体、刻意不实作 Node** ⇒ 整条被跳过，臂條件/臂體/巢狀 match 对所有 op 不可见，且不报错 | `carriesNodes`（结构体是否承載 Node）+ `walkSlice` 的值结构體分支（只下鑽，就地改寫臂內表達式槽位） |
+| `std_qualify` | 手写 `walkExpr` | `switch node.(type)` 没有 `case *parser.SurfaceMatch` ⇒ 臂內的 std 呼叫/常量引用不被加模組前綴，靜默 | `case *parser.SurfaceMatch` + `parser.WalkSurfaceMatchChildrenRW`（RW 版：onExpr 回傳值寫回槽位） |
+| `std_methodify` | 手写 `walkExpr` | 同上 ⇒ 臂內的 `x.f(...)` 呼叫不被改寫成方法形態，靜默 | 同 std_qualify |
+
+三个 parse site（`parseSourceShape` / `parseSurfaceShape`）都翻 `SkipLowering`；`surface`
+分支只为门禁存在，S4 收尾随旗标一起删。`parseCodeExprShape` / `parseCodeStmtsShape`
+（astpatch 的 replace/insert snippet）必須与主樹同形态——这是独立的坑，门禁只用 rename
+（不涉 snippet 拼接）绕开它。
+
+**量测与门禁**（每个工具一份 `shape_gate_test.go`；`make test` 已加入 `./tools/...`，
+因为 std_qualify 的门禁经 `buildOwnership` 依赖 `CollectStdModuleSignatures`，
+**必须注入 StdSigKey**，空 key 会 `os.Exit(1)`）：
+
+| 门禁 | astpatch | std_qualify | std_methodify |
+| --- | --- | --- | --- |
+| 臂 fixture（兩形態都觸發、輸出逐位元相同） | rename `inner`→`innerX` 伸进 `ok ->` 臂 | `sha1-hex(inner())` → `sha1.sha1-hex(inner())`（owner 唯一） | `math.f64-to-i64(1.5)` → `1.5.to-i64()` |
+| 語料網（tests/ 532 份） | **非空洞**：259/532 觸發 rename，計數與輸出全部一致 | **非空洞**：4/532 改寫（fd-newtype 1 / rand-multiassign 10 / std-unix-fs-os-2 1 / x25519-keypair-diff 2），0 差異 | 空洞：0/532 |
+| 語料網（src/std 118 份） | — | 0 命中（已全部加過前綴） | 0 命中（已全部方法化過） |
+| 附加結構門禁 | 爆炸半徑釘死 = 1（`SurfaceMatch.Arms []parser.MatchArm`）+ `MatchArm` 不實作 Node | — | — |
+
+- **astpatch 語料網为什么非空洞**：对每份语料档取第一个函式定義名跑同一条 rename，比
+  op 計數與輸出。259/532 真的發生了改名 ⇒ 这條网**当场就能抓到臂內失明**：破坏实验里
+  `yaml.no` 计数 surface=55 / sugar=6、`struct-field-leaf-clone.no` 9 vs 5。
+- **astpatch 語料網的前置條件**：两形態輸出都必须能重新解析。糖形態輸出坏 = 正式形態
+  的產物坏，直接 FAIL；surface 輸出坏只記帳跳過——那是 surface 形態「降糖 + formatter
+  迴印」的**既有缺口**（`tests/type-match.no` 型別解構臂，§21.7 第 5 条），與走訪完整性
+  無關。同类既有缺口：`src/std/crypto/rsa.no` 空 match 臂在 surface 形態直接解析失敗，
+  两个手写 walker 工具的语料网同样採「糖形態失敗 = FAIL / surface-only 失敗 = 記帳跳過」。
+- **反空洞（每个工具至少一轮，全部實測觸發）**：
+  ① astpatch：`carriesNodes` 恒 `false` ⇒ 三条门禁全 FAIL（含語料网点名 `yaml.no`）；
+     再删掉 `walkSlice` 值結構體分支的 `r.walkStruct(ei)` ⇒ 臂 fixture + 語料 FAIL
+     （爆炸半徑门禁按預期仍绿——它量的是判據、不是走訪本身）；
+  ② std_qualify：禁用 `case *parser.SurfaceMatch` ⇒ 糖形态計數 1→0、notes 變空、五條斷言全 FAIL；
+  ③ std_methodify：同上 ⇒ 計數 1→0、輸出留殘餘模組前綴呼叫。
+- **顺带重构**（都是为了可测接缝，無行为变化）：astpatch `applyPatch` 回傳值加 op 計數；
+  std_qualify `qualifyFile` 抽出 `qualifyProgram(prog, path, content)`；std_methodify
+  `methodifyFile` 抽出 `methodifyProgram(prog, content)`。
+- **`WalkSurfaceMatchChildrenRW`**（`parser/sugar_walk.go`，RW 版：onExpr 回傳值寫回槽位）
+  现有 3 个工具侧消费方 + checker 侧薄委派；只讀版 `WalkSurfaceMatchChildren` 保留原签名
+  （checker 有 12 个呼叫点，改签名会摊大 diff）。
+
+### 21.8 回归
+
+`make test` 全绿（`./tools/...` 于 §21.12 纳入）：`build` / `build/js` / `build/llvmapi` /
+`build/wasm` / `mir` / `checker` / `lsp` / `fmt` / `hir` / `mmast` / `package` / `parser` /
+`parser/dump` / `tools/astpatch` / `tools/std_methodify` / `tools/std_qualify`。
+`go build ./...` 干净；`cmd/no`（注入 key）全绿；`no build tests/basic.no` 冒烟 EXIT=0。
+checker 的两处新增 `case` 在降糖形态上**按构造不可能命中**（那里没有 `SurfaceMatch`），
+故 `no vet` / `no build` 行为不变。
