@@ -143,18 +143,37 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 		case *parser.RangeExpression:
 			checkExpr(x.Start)
 			checkExpr(x.End)
-		case *parser.IfExpression:
-			checkExpr(x.Condition)
-			if x.Consequence != nil {
-				for _, bs := range x.Consequence.Statements {
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body，不校 Matched。
+		for i := range x.Arms {
+			arm := &x.Arms[i]
+			if arm.Condition != nil {
+				checkExpr(arm.Condition)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					checkExpr(vp)
+				}
+			}
+			if arm.Body != nil {
+				for _, bs := range arm.Body.Statements {
 					checkStmt(bs)
 				}
 			}
-			if x.Alternative != nil {
-				for _, bs := range x.Alternative.Statements {
-					checkStmt(bs)
-				}
+		}
+	case *parser.IfExpression:
+		checkExpr(x.Condition)
+		if x.Consequence != nil {
+			for _, bs := range x.Consequence.Statements {
+				checkStmt(bs)
 			}
+		}
+		if x.Alternative != nil {
+			for _, bs := range x.Alternative.Statements {
+				checkStmt(bs)
+			}
+		}
 		case *parser.FunctionLiteral:
 			if x.Body != nil {
 				for _, bs := range x.Body.Statements {

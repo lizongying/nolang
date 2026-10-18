@@ -339,10 +339,16 @@ func TestCatchAllArmNotForNonExhaustive(t *testing.T) {
 	}
 }
 
-// TestCatchAllArmIndexSubjectLimitation：以索引為主體的 match（`x = a[0]: {...}`）
-// 降級後的 IfExpression 沒有 MatchedExpr（D7-R1 豁免後讀取不再是 option 基底），
-// collectMatchRoots 因此看不見它 —— 這是已知限制，暫不提示。
-// 釘住現況，避免日後誤以為已經支援。
+// TestCatchAllArmIndexSubjectLimitation：以索引為主體的 match（`x = a[0]: {...}`）。
+//
+// 翻转前（match 降級成 IfExpression）：降級後的 IfExpression 沒有 MatchedExpr，
+// collectMatchRoots 看不見它，且 ValidateCatchAllArms 只走 IfExpression 根，
+// 故空 `->` 兜底臂的 D9 診斷被靜默漏掉——這是已知限制。
+//
+// S1 翻转後（ParseProgram 保留 SurfaceMatch）：checker 原生消費 SurfaceMatch
+// （collectSugarMatchRoots），空 `->` 兜底臂現在被正確識別。這是改進而非迴歸：
+// 索引主體 match 的空兜底臂同樣會靜默取預設零值，本就該提示。故本測試改為釘住
+// 「原生路徑會對其產出 D9 診斷」，避免日後誤以為仍受舊限制遮蔽。
 func TestCatchAllArmIndexSubjectLimitation(t *testing.T) {
 	src := `f = () (res i64) {
     a [4]i64 = [11, 22, 33, 44]
@@ -355,10 +361,11 @@ func TestCatchAllArmIndexSubjectLimitation(t *testing.T) {
 `
 	roots, _, _ := collectMatchRoots(parseProg(t, src))
 	if len(roots) != 0 {
-		t.Errorf("expected 0 visible match roots for an index subject, got %d", len(roots))
+		t.Errorf("expected 0 visible IfExpression match roots for an index subject (collectMatchRoots stays desugar-scoped), got %d", len(roots))
 	}
-	if res := ValidateCatchAllArms(parseProg(t, src)); len(res) != 0 {
-		t.Errorf("index-subject match is a known limitation; got %+v", res)
+	// 原生路徑：SurfaceMatch 現在可見，空 `->` 兜底臂應被 D9 診斷捕捉。
+	if res := ValidateCatchAllArms(parseProg(t, src)); len(res) == 0 {
+		t.Errorf("index-subject match should now be caught natively (S1 flip makes SurfaceMatch visible); got no diagnostics")
 	}
 }
 

@@ -375,7 +375,7 @@ func (w *optCmpWalker) walkExpr(e parser.Expression) {
 				}
 			}
 		}
-		walkSurfaceMatchChildren(x, w.walkExpr, func(s parser.Statement) { w.walkStmt(s, "") })
+		walkSurfaceMatchChildren(x, nil, w.walkExpr, func(s parser.Statement) { w.walkStmt(s, "") })
 	}
 }
 

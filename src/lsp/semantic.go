@@ -383,6 +383,27 @@ func (sp *SemanticTokensProvider) walkExpr(expr parser.Expression, typeMap map[[
 	case *parser.IndexExpression:
 		sp.walkExpr(e.Left, typeMap, modMap)
 		sp.walkExpr(e.Index, typeMap, modMap)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：走 Matched + 各臂 Condition /
+		// MultiValuePatterns / Body（降糖 IfExpression 的 subject 內嵌於 Condition，
+		// 此處 Matched 為獨立節點，須顯式走以維持等價高亮）。
+		if e.Matched != nil {
+			sp.walkExpr(e.Matched, typeMap, modMap)
+		}
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				sp.walkExpr(arm.Condition, typeMap, modMap)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					sp.walkExpr(vp, typeMap, modMap)
+				}
+			}
+			if arm.Body != nil {
+				sp.walkStmt(arm.Body, typeMap, modMap)
+			}
+		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
 			sp.walkExpr(e.Condition, typeMap, modMap)

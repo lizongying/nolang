@@ -56,6 +56,25 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 		return b.Package(), c.astOf
 	}
 	c.sem = prog.Sem
+	// prog is threaded to the H0 match-desugar scratch parser so it can derive
+	// local variable types from source declarations when the per-function side
+	// table (FuncVarTypes) has no entry for a blob-loaded std function (S1 flip).
+	c.prog = prog
+	// S1 flip — "Lowering 唯一性": match desugaring must read idxLocalTypes (the
+	// safe-index local container-type table used by isSafeIndexBase /
+	// inferIndexElemType) from ONE source. H0 desugars SurfaceMatch WITHOUT
+	// running lowerProgram's walk, so for blob/AST-cache-loaded std modules the
+	// table is empty here. precomputeIdxLocalTypes is the single collector (also
+	// used by prepareInBoundsMetadata / lowerProgram); run it once per program at
+	// this single H0 entry so every desugar path — H0 and (where still used) the
+	// no-flip path — sees the same table. Idempotent: it only adds the entries
+	// the table is missing (overwrites with identical values otherwise).
+	if c.sem != nil {
+		if c.sem.IdxLocalTypes == nil {
+			c.sem.IdxLocalTypes = make(map[string]map[string]string)
+		}
+		(&Parser{sem: c.sem, prog: c.prog, idxLocalTypes: c.sem.IdxLocalTypes}).precomputeIdxLocalTypes(c.prog)
+	}
 	// Owners is filled while the top-level statements are lowered, because the
 	// owner is recorded per STATEMENT in the AST but is needed per NODE id by
 	// the backend (see hir.Package.Owners).
@@ -133,8 +152,11 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 }
 
 type hirConv struct {
-	b     *hir.Builder
-	sem   *SemanticContext
+	b   *hir.Builder
+	sem *SemanticContext
+	// prog is the merged Program being lowered; handed to the scratch parser so
+	// H0 match desugar can derive local variable types from source declarations.
+	prog  *Program
 	astOf map[Node]int32 // AST node -> HIR id, for checker-side TypeMap keying
 	// goSpawns accumulates the HIR node ids of `co <call>` KCalls lowered from
 	// CoExpression nodes, so ASTToHIRWithMap can hand them to the
@@ -1188,8 +1210,12 @@ func (c *hirConv) scratchParser() *Parser {
 		sem:         c.sem,
 		curFuncName: c.curFunc,
 		Filename:    c.curFile,
+		prog:        c.prog,
 	}
 	if c.sem != nil {
+		if c.sem.IdxLocalTypes == nil {
+			c.sem.IdxLocalTypes = make(map[string]map[string]string)
+		}
 		sp.idxLocalTypes = c.sem.IdxLocalTypes
 		// Union aliases drive isUnionType, which decides whether a match is a
 		// static type-dispatch match or a runtime `x === i32` chain. Without

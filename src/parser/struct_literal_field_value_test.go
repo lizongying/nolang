@@ -116,8 +116,8 @@ x: {
 		t.Fatalf("labelled block parsed as %T, want *ExpressionStatement",
 			prog.Statements[1])
 	}
-	if _, ok := es.Expression.(*IfExpression); !ok {
-		t.Fatalf("labelled block expression is %T, want *IfExpression (a match)",
+	if _, ok := es.Expression.(*SurfaceMatch); !ok {
+		t.Fatalf("labelled block expression is %T, want *SurfaceMatch (a match)",
 			es.Expression)
 	}
 }
@@ -149,8 +149,8 @@ x: {
 		t.Fatalf("labelled match parsed as %T, want *ExpressionStatement",
 			prog.Statements[2])
 	}
-	if _, ok := es.Expression.(*IfExpression); !ok {
-		t.Fatalf("labelled match expression is %T, want *IfExpression (a match)",
+	if _, ok := es.Expression.(*SurfaceMatch); !ok {
+		t.Fatalf("labelled match expression is %T, want *SurfaceMatch (a match)",
 			es.Expression)
 	}
 }

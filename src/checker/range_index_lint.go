@@ -116,9 +116,9 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 				// S1：糖形態下 match 臂體也是語句容器（`for` 迴圈本身可能就長在臂裡）。
 				// 見 sugar_walk.go。
 				if sm, ok := st.Expression.(*parser.SurfaceMatch); ok {
-					walkSurfaceMatchChildren(sm, nil, func(sub parser.Statement) {
-						walk([]parser.Statement{sub}, file)
-					})
+				walkSurfaceMatchChildren(sm, nil, nil, func(sub parser.Statement) {
+					walk([]parser.Statement{sub}, file)
+				})
 				}
 			case *parser.ForStatement:
 				if st.IterRange != nil && st.IterRange.Range != nil && st.IterRange.Variable != "" && st.Body != nil {

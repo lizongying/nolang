@@ -230,7 +230,10 @@ func TestD9IndexInBoundsFlag(t *testing.T) {
 	// bounds analysis 已將證明結果寫入 Program.Sem，而不會修改 IndexExpression。
 	parseSurface := func(src string) *parser.Program {
 		p := parser.New(lexer.New(src))
-		p.SkipLowering = true
+		// NOTE: this used to set SkipUnwrapLowering + SkipSafeIndexLowering too,
+		// but those flags were deleted with §4.3 (see parser/lowering.go:337). The
+		// replacement edit left `SkipLowering = true` written twice; collapsed to
+		// one. Whatever used to be "surface" is now just SkipLowering.
 		p.SkipLowering = true
 		prog := p.ParseProgram()
 		if errs := p.Errors(); len(errs) > 0 {

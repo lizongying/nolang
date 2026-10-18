@@ -465,6 +465,26 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			}
 		}
 		return ""
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match 作為值，型別由臂體末尾表達式決定（對應 IfExpression 分支）。
+		mt := ""
+		if id, ok := e.Matched.(*parser.Identifier); ok {
+			mt = varTypes[id.Value]
+		}
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			for _, b := range matchArmBindings(e, &e.Arms[i], mt) {
+				if b.Name != "" {
+					varTypes[b.Name] = b.Type
+				}
+			}
+			if arm.Body != nil {
+				if t := blockTrailingExprType(arm.Body, varTypes, funcTypes, selfType); t != "" {
+					return t
+				}
+			}
+		}
+		return ""
 	case *parser.IfExpression:
 		// `x = cond -> v` (short-circuit pipeline) and `x = subject: { arms }`
 		// (a match used as a value) both lower to an if-chain whose VALUE is an
@@ -919,6 +939,24 @@ func walkExprForLen(expr parser.Expression, varTypes, funcTypes map[string]strin
 	case *parser.AssignExpression:
 		// Left is a DotExpression write target; only walk the value.
 		walkExprForLen(e.Value, varTypes, funcTypes, selfType, results)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：走 Matched + 各臂 Condition /
+		// MultiValuePatterns / Body。
+		walkExprForLen(e.Matched, varTypes, funcTypes, selfType, results)
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				walkExprForLen(arm.Condition, varTypes, funcTypes, selfType, results)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					walkExprForLen(vp, varTypes, funcTypes, selfType, results)
+				}
+			}
+			if arm.Body != nil {
+				walkBlockForLen(arm.Body, varTypes, funcTypes, selfType, results)
+			}
+		}
 	case *parser.IfExpression:
 		walkExprForLen(e.Condition, varTypes, funcTypes, selfType, results)
 		walkExprForLen(e.MatchedExpr, varTypes, funcTypes, selfType, results)
@@ -1401,6 +1439,13 @@ func checkNaming(stmt parser.Statement, file string, globalVars map[string]bool)
 			if ifExpr.Alternative != nil {
 				results = append(results, checkNaming(ifExpr.Alternative, file, globalVars)...)
 			}
+		} else if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
+			// S1：糖形態 match 是 SurfaceMatch；逐臂體下鑽命名檢查。
+			for _, arm := range sm.Arms {
+				if arm.Body != nil {
+					results = append(results, checkNaming(arm.Body, file, globalVars)...)
+				}
+			}
 		}
 	}
 	return results
@@ -1444,22 +1489,32 @@ func walkStatementsForAsync(stmt parser.Statement, file string, results *[]Valid
 		for _, b := range s.Statements {
 			walkStatementsForAsync(b, file, results)
 		}
-	case *parser.ExpressionStatement:
-		if s.Expression != nil {
-			checkRunAsyncNaming(s.Expression, file, results)
-			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-				if ifExpr.Consequence != nil {
-					for _, b := range ifExpr.Consequence.Statements {
-						walkStatementsForAsync(b, file, results)
+		case *parser.ExpressionStatement:
+			if s.Expression != nil {
+				checkRunAsyncNaming(s.Expression, file, results)
+				if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+					if ifExpr.Consequence != nil {
+						for _, b := range ifExpr.Consequence.Statements {
+							walkStatementsForAsync(b, file, results)
+						}
+					}
+					if ifExpr.Alternative != nil {
+						for _, b := range ifExpr.Alternative.Statements {
+							walkStatementsForAsync(b, file, results)
+						}
 					}
 				}
-				if ifExpr.Alternative != nil {
-					for _, b := range ifExpr.Alternative.Statements {
-						walkStatementsForAsync(b, file, results)
+				// S1：糖形態 match 是 SurfaceMatch；逐臂體下鑽 async 命名檢查。
+				if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
+					for _, arm := range sm.Arms {
+						if arm.Body != nil {
+							for _, b := range arm.Body.Statements {
+								walkStatementsForAsync(b, file, results)
+							}
+						}
 					}
 				}
 			}
-		}
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
@@ -1781,7 +1836,7 @@ func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line
 	case *parser.SurfaceMatch:
 		// S1：糖形態下臂體對本 walker 不可見，頂層變數的唯一引用若落在臂內
 		// 就會被誤報 unused（trace 6kryrbsq 的主要來源）。詳見 sugar_walk.go。
-		walkSurfaceMatchChildren(e,
+		walkSurfaceMatchChildren(e, nil,
 			func(x parser.Expression) { markReferencesInExpr(x, varSet, usedVars) },
 			func(s parser.Statement) { markReferencesInStatement(s, varSet, usedVars) })
 	}
@@ -2403,7 +2458,7 @@ func collectAssignedNamesInExpr(expr parser.Expression, assigned map[string]bool
 	case *parser.SurfaceMatch:
 		// S1：結果參數只在 match 臂體內被賦值（`n: { ok -> r = it, -> }`）時，
 		// 少了這一支就會被誤報 "never assigned"（i3k422u3）。見 sugar_walk.go。
-		walkSurfaceMatchChildren(e, nil, func(s parser.Statement) {
+		walkSurfaceMatchChildren(e, nil, nil, func(s parser.Statement) {
 			collectAssignedNames([]parser.Statement{s}, assigned, sem)
 		})
 	case *parser.AssignExpression:
@@ -2702,7 +2757,7 @@ func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 		// S1：臂體內的讀取。本函式是 functionScopeFacts 的讀取側，餵
 		// ValidateUnhandledOverflow 的 curReadNames ⇒ 少了這一支，只在臂內
 		// 被消費的 option 會被誤報 optunuse。詳見 sugar_walk.go。
-		walkSurfaceMatchChildren(e,
+		walkSurfaceMatchChildren(e, nil,
 			func(x parser.Expression) { collectReadNamesInExpr(x, read) },
 			func(s parser.Statement) { collectReadNames([]parser.Statement{s}, read) })
 		// Literals (Integer, String, Float, Char, Boolean, Byte, Nil, Regex) don't read variables
@@ -3575,7 +3630,7 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 	case *parser.SurfaceMatch:
 		// S1：臂體與臂條件內的整數運算（`-> r = a - b`）在糖形態下否則不可見。
 		// 見 sugar_walk.go。
-		walkSurfaceMatchChildren(x,
+		walkSurfaceMatchChildren(x, nil,
 			func(sub parser.Expression) {
 				walkExprForIntOverflow(sub, file, line, sem, declared, funcTypes, emit)
 			},
@@ -4078,14 +4133,14 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 			// 節點。少了這一條，臂體內的整數運算對 relevant 完全不可見 ⇒
 			// StatementsWithIntOverflow 漏登 ⇒ `no fmt` 把管轄真實運算的
 			// #{overflow} 註解判成無效並刪除（basic.no 的 `r = 0 - a`）。
-			walkSurfaceMatchChildren(x, func(e parser.Expression) {
-				if exprHasIntOverflow(e, declared, selfType) {
-					found = true
-				}
-			}, func(s parser.Statement) {
-				if stmtHasIntOverflow(s, declared, selfType) {
-					found = true
-				}
+		walkSurfaceMatchChildren(x, nil, func(e parser.Expression) {
+			if exprHasIntOverflow(e, declared, selfType) {
+				found = true
+			}
+		}, func(s parser.Statement) {
+			if stmtHasIntOverflow(s, declared, selfType) {
+				found = true
+			}
 			})
 		}
 		return found
@@ -4261,8 +4316,8 @@ func OverflowAnnotationRelevance(program *parser.Program) (relevant map[parser.S
 		if sm == nil {
 			return
 		}
-		walkSurfaceMatchArmBodies(sm, func(stmts []parser.Statement) { collect(stmts) })
-		walkSurfaceMatchChildren(sm, func(e parser.Expression) {
+		walkSurfaceMatchArmBodies(sm, nil, func(stmts []parser.Statement) { collect(stmts) })
+		walkSurfaceMatchChildren(sm, nil, func(e parser.Expression) {
 			if inner, ok := e.(*parser.SurfaceMatch); ok {
 				collectSurfaceMatch(inner)
 			}
@@ -4426,6 +4481,26 @@ func walkExprDivByZero(e parser.Expression, file string, emit func(file string, 
 		walkExprDivByZero(x.Function, file, emit)
 		for _, a := range x.Arguments {
 			walkExprDivByZero(a, file, emit)
+		}
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body（不校 Matched，與降糖 IfExpression 不校
+		// MatchedExpr 一致）。
+		for i := range x.Arms {
+			arm := &x.Arms[i]
+			if arm.Condition != nil {
+				walkExprDivByZero(arm.Condition, file, emit)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					walkExprDivByZero(vp, file, emit)
+				}
+			}
+			if arm.Body != nil {
+				for _, st := range arm.Body.Statements {
+					walkStmtDivByZero(st, file, emit)
+				}
+			}
 		}
 	case *parser.IfExpression:
 		walkExprDivByZero(x.Condition, file, emit)
@@ -5061,7 +5136,7 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 		case *parser.SurfaceMatch:
 			// S1：臂體對本規則同樣必須可見——optunuse 判的是「option 綁定後
 			// 有沒有被消費」，而消費最常發生在臂體裡。見 sugar_walk.go。
-			walkSurfaceMatchChildren(x,
+			walkSurfaceMatchChildren(x, varTypes,
 				func(sub parser.Expression) {
 					walkExpr(sub, fnReturnsOption, enclosingOverflow, valueCtx, varTypes, selfType, curFile)
 				},
@@ -5073,8 +5148,8 @@ func ValidateUnhandledOverflow(program *parser.Program, mainFile string) []Valid
 			// tests/type-match.no 27:14 / 28:14 的 ovfhndld）。降糖形態不會誤報
 			// 是因為臂體那時已是 IfExpression 的分支體、走 walkArm；糖形態下
 			// 必須自己補上同一規則，否則兩種形態的口徑就漂移了。
-			walkSurfaceMatchArmBodies(x, func(stmts []parser.Statement) {
-				for j, b := range stmts {
+		walkSurfaceMatchArmBodies(x, varTypes, func(stmts []parser.Statement) {
+			for j, b := range stmts {
 					if valueCtx && j == len(stmts)-1 {
 						if _, isExprStmt := b.(*parser.ExpressionStatement); isExprStmt {
 							continue
@@ -5551,7 +5626,7 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 			// S1：臂體內的索引讀取（含 `?=` 解包）也要被收進 handled 集合，
 			// 否則糖形態下臂子樹不可見。fnOpt 傳 false，與 IfExpression 分支
 			// 對臂體的處理一致。見 sugar_walk.go。
-			walkSurfaceMatchChildren(x,
+			walkSurfaceMatchChildren(x, nil,
 				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile) },
 				func(sub parser.Statement) { walkStmt(sub, curFunc, false, curFile) })
 		}
@@ -5851,7 +5926,7 @@ func ValidateIndexWrite(program *parser.Program, mainFile string) []ValidateResu
 			// S1：臂體內的直寫下標（`a[1] = 2`）也要看得到。少了這一支，
 			// 糖形態下整棵臂子樹對本規則不可見（診斷被靜默丟棄，而非報錯）。
 			// 見 sugar_walk.go。
-			walkSurfaceMatchChildren(x,
+			walkSurfaceMatchChildren(x, nil,
 				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile) },
 				func(sub parser.Statement) { walkStmt(sub, curFunc, curFile) })
 		}
@@ -6279,6 +6354,15 @@ func hasStrIndexASCIIAnnotation(sem *parser.SemanticContext, n parser.Node) bool
 
 func scanStrIndexExpr(e parser.Expression, sem *parser.SemanticContext, asciiVars map[string]bool, funcName string) {
 	switch x := e.(type) {
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Body（不校 Condition /
+		// Matched，與降糖 IfExpression 只走 Consequence/Alternative 一致）。
+		for i := range x.Arms {
+			arm := &x.Arms[i]
+			if arm.Body != nil {
+				collectStrIndexAscii(arm.Body.Statements, sem, asciiVars, funcName)
+			}
+		}
 	case *parser.IfExpression:
 		if x.Consequence != nil {
 			collectStrIndexAscii(x.Consequence.Statements, sem, asciiVars, funcName)
@@ -6460,6 +6544,25 @@ func checkStrIndexInExpr(e parser.Expression, sem *parser.SemanticContext, ascii
 		for _, a := range x.Arguments {
 			results = append(results, checkStrIndexInExpr(a, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
 		}
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body（不校 Matched）。
+		for i := range x.Arms {
+			arm := &x.Arms[i]
+			if arm.Condition != nil {
+				results = append(results, checkStrIndexInExpr(arm.Condition, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					results = append(results, checkStrIndexInExpr(vp, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+				}
+			}
+			if arm.Body != nil {
+				for _, b := range arm.Body.Statements {
+					results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+				}
+			}
+		}
 	case *parser.IfExpression:
 		if x.Condition != nil {
 			results = append(results, checkStrIndexInExpr(x.Condition, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
@@ -6607,6 +6710,34 @@ func walkStrOrderingExpr(e parser.Expression, funcTypes, varTypes map[string]str
 	case *parser.StructLiteral:
 		for _, f := range x.Fields {
 			walkStrOrderingExpr(f.Value, funcTypes, varTypes, selfType, file, results)
+		}
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body（糖形態下 MultiValuePatterns 與 Condition 是
+		// 不同節點，需各自走；不校 Matched / DotValBody——dot-val 臂即為一條 IsDotVal
+		// 臂，Body 已在本迴圈內）。
+		mt := ""
+		if id, ok := x.Matched.(*parser.Identifier); ok {
+			mt = varTypes[id.Value]
+		}
+		for i := range x.Arms {
+			arm := &x.Arms[i]
+			for _, b := range matchArmBindings(x, &x.Arms[i], mt) {
+				if b.Name != "" {
+					varTypes[b.Name] = b.Type
+				}
+			}
+			if arm.Condition != nil {
+				walkStrOrderingExpr(arm.Condition, funcTypes, varTypes, selfType, file, results)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					walkStrOrderingExpr(vp, funcTypes, varTypes, selfType, file, results)
+				}
+			}
+			if arm.Body != nil {
+				walkStrOrderingBlock(arm.Body, funcTypes, varTypes, selfType, file, results)
+			}
 		}
 	case *parser.IfExpression:
 		// 只走 Condition（match 臂的 desugar 結果已在其中），不走 EqualityPattern /
@@ -7165,6 +7296,34 @@ func checkPrintFormatInExpr(expr parser.Expression, varTypes map[string]string, 
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
 			results = append(results, checkPrintFormatInExpr(e.Expression, varTypes, structFields)...)
+		}
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body（不校 Matched）。
+		mt := ""
+		if id, ok := e.Matched.(*parser.Identifier); ok {
+			mt = varTypes[id.Value]
+		}
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			for _, b := range matchArmBindings(e, &e.Arms[i], mt) {
+				if b.Name != "" {
+					varTypes[b.Name] = b.Type
+				}
+			}
+			if arm.Condition != nil {
+				results = append(results, checkPrintFormatInExpr(arm.Condition, varTypes, structFields)...)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					results = append(results, checkPrintFormatInExpr(vp, varTypes, structFields)...)
+				}
+			}
+			if arm.Body != nil {
+				for _, is := range arm.Body.Statements {
+					results = append(results, checkPrintFormatInStmt(is, varTypes, structFields)...)
+				}
+			}
 		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
@@ -7737,12 +7896,31 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			if strings.HasPrefix(e.Value, "_") || isAllCapsConst(e.Value) {
 				return nil
 			}
-			// Option constructors: val, err, ok are not real functions
-			// nil/it are option-pattern keywords and match-binding variables
-			if e.Value == "val" || e.Value == "err" || e.Value == "ok" ||
-				e.Value == "nil" || e.Value == "it" {
-				return nil
-			}
+		// Option constructors: val, err, ok are not real functions
+		// nil/it are option-pattern keywords and match-binding variables
+		if e.Value == "val" || e.Value == "err" || e.Value == "ok" ||
+			e.Value == "nil" || e.Value == "it" {
+			return nil
+		}
+		// S1：糖形態 match 的**裸型別臂**（`i64 ->` / `point ->`）在語法期只是
+		// 一個 Identifier 條件——parser/expr.go:1161-1180 對這種形态不做型別臂
+		// 标记（IsTypeArm 只在 1152-1158 的「v T ->」帶綁定形态設置），型別臂的
+		// 認定延後到 lowering 的 buildTypeMatchDesugar（lowering.go:2335-2336 按
+		// Identifier 條件取型別名）。翻轉前這些識別字在降糖後消失（型別臂變成
+		// IsTypeMatch 的 if 鏈、Condition 為 nil），校驗器看不見；翻轉後
+		// SurfaceMatch 活到校驗期，臂條件被當成值表達式走訪 ⇒ 每個裸型別臂都
+		// 報「'i32' is not defined」（4bek3xc6）。型別名不是值，一律放行：
+		//   - 内建型別名（i64/f64/str/bool/char/…）；char 不在 isBuiltinType
+		//     裡但確實是型別（checker.go:93 CharLiteral → "char"）。
+		//   - struct 名（CollectDefinedVars 刻意不把型別名當變數收集，見
+		//     2093-2097 的註解；union 別名則已由 CollectDefinedVars:1856-1858
+		//     收進 definedVars，無需在此重複）。
+		// 為什麽 i64 在翻轉後「僥倖」通過、i32 卻暴露：std 有點號導出
+		// （如 X.i64）会把短名註冊進 definedVars（1926-1938），i32 沒有這條
+		// 導出路線，于是同形态兩樣結果。放行型別名讓兩者一致。
+		if isBuiltinType(e.Value) || e.Value == "char" || validationStructNames[e.Value] {
+			return nil
+		}
 			// Self-module bare call: a std module calling its OWN function
 			// (e.g. math.no calling f64-to-i64, net.no calling net-recv) is
 			// legal — the module-qualification rule only constrains CROSS-module
@@ -7802,6 +7980,30 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
 			results = append(results, checkUndefinedVarsInExpr(e.Expression, definedVars, funcNames, false, curModule)...)
+		}
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body（不校 Matched）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			for _, b := range matchArmBindings(e, &e.Arms[i], "") {
+				if b.Name != "" {
+					definedVars[b.Name] = true
+				}
+			}
+			if arm.Condition != nil {
+				results = append(results, checkUndefinedVarsInExpr(arm.Condition, definedVars, funcNames, false, curModule)...)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					results = append(results, checkUndefinedVarsInExpr(vp, definedVars, funcNames, false, curModule)...)
+				}
+			}
+			if arm.Body != nil {
+				for _, innerStmt := range arm.Body.Statements {
+					results = append(results, checkUndefinedVarsInStmt(innerStmt, definedVars, funcNames, curModule)...)
+				}
+			}
 		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
@@ -8815,6 +9017,27 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				for i, bStmt := range ifExpr.Alternative.Statements {
 					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Alternative.Statements)-1, sem, overflowMode)
 					results = append(results, errs...)
+				}
+			}
+			break
+		}
+		// S1：糖形態 match 是 SurfaceMatch；逐臂體做型別校驗（臂條件不檢查 val() 構造器，同 if 分支）。
+		if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
+		mt := ""
+		if id, ok := sm.Matched.(*parser.Identifier); ok {
+			mt = varTypes[id.Value]
+		}
+		for _, arm := range sm.Arms {
+				for _, b := range matchArmBindings(sm, &arm, mt) {
+					if b.Name != "" {
+						varTypes[b.Name] = b.Type
+					}
+				}
+				if arm.Body != nil {
+					for i, bStmt := range arm.Body.Statements {
+						errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(arm.Body.Statements)-1, sem, overflowMode)
+						results = append(results, errs...)
+					}
 				}
 			}
 			break
@@ -10152,6 +10375,26 @@ func resolveModuleCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 		}
 		return e
 
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：原地改寫各臂 Condition /
+		// MultiValuePatterns / Body（不校 Matched）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				arm.Condition = resolveModuleCallsInExpr(arm.Condition, sem, modSet, moduleFns, moduleConsts, prefixedFns)
+			}
+			for j, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					arm.MultiValuePatterns[j] = resolveModuleCallsInExpr(vp, sem, modSet, moduleFns, moduleConsts, prefixedFns)
+				}
+			}
+			if arm.Body != nil {
+				for _, bodyStmt := range arm.Body.Statements {
+					resolveModuleCallsInStmt(bodyStmt, sem, modSet, moduleFns, moduleConsts, prefixedFns)
+				}
+			}
+		}
+		return e
 	case *parser.IfExpression:
 		if e.Condition != nil {
 			e.Condition = resolveModuleCallsInExpr(e.Condition, sem, modSet, moduleFns, moduleConsts, prefixedFns)
@@ -10393,6 +10636,26 @@ func resolveMethodCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 		}
 		if e.Index != nil {
 			e.Index = resolveMethodCallsInExpr(e.Index, sem, typeOwner, definedMethods)
+		}
+		return e
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：原地改寫各臂 Condition /
+		// MultiValuePatterns / Body（不校 Matched）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				arm.Condition = resolveMethodCallsInExpr(arm.Condition, sem, typeOwner, definedMethods)
+			}
+			for j, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					arm.MultiValuePatterns[j] = resolveMethodCallsInExpr(vp, sem, typeOwner, definedMethods)
+				}
+			}
+			if arm.Body != nil {
+				for _, bs := range arm.Body.Statements {
+					resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods)
+				}
+			}
 		}
 		return e
 	case *parser.IfExpression:
@@ -10662,6 +10925,17 @@ func resolveSelfInExpr(expr parser.Expression, selfType string, structFields map
 		resolveSelfInExpr(e.Right, selfType, structFields)
 	case *parser.PrefixExpression:
 		resolveSelfInExpr(e.Right, selfType, structFields)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Body（不校 Condition /
+		// Matched，與降糖 IfExpression 只走 Consequence/Alternative 一致）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Body != nil {
+				for _, s := range arm.Body.Statements {
+					resolveSelfInStmt(s, selfType, structFields)
+				}
+			}
+		}
 	case *parser.IfExpression:
 		if e.Consequence != nil {
 			for _, s := range e.Consequence.Statements {
@@ -10881,6 +11155,26 @@ func resolveModuleConstantsInExpr(expr parser.Expression, constants map[string]p
 		}
 		if e.Alternative != nil {
 			e.Alternative = resolveModuleConstantsInExpr(e.Alternative, constants, locals)
+		}
+		return e
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：原地改寫各臂 Condition /
+		// MultiValuePatterns / Body（不校 Matched）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				arm.Condition = resolveModuleConstantsInExpr(arm.Condition, constants, locals)
+			}
+			for j, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					arm.MultiValuePatterns[j] = resolveModuleConstantsInExpr(vp, constants, locals)
+				}
+			}
+			if arm.Body != nil {
+				for _, bodyStmt := range arm.Body.Statements {
+					resolveModuleConstantsInStmt(bodyStmt, constants, locals)
+				}
+			}
 		}
 		return e
 	case *parser.IfExpression:

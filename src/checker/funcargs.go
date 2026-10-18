@@ -284,7 +284,7 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 	case *parser.SurfaceMatch:
 		var results []ValidateResult
 		// S4：糖形態下 match 是 SurfaceMatch，臂體對本 walker 不可見。見 sugar_walk.go。
-		walkSurfaceMatchChildren(e,
+		walkSurfaceMatchChildren(e, nil,
 			func(x parser.Expression) { results = append(results, checkArgCountInExpr(x, sigs)...) },
 			func(s parser.Statement) { results = append(results, checkArgCountInStmt(s, sigs)...) })
 		return results
@@ -530,10 +530,25 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		if s.Expression != nil {
 			// If-as-statement: ExpressionStatement wraps an IfExpression.
 			// Descend into both branches so result-param types propagate.
-			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-				return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields, underUnwrap)
+		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+			return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields, underUnwrap)
+		}
+		// S1：糖形態 match 是 SurfaceMatch；逐臂條件/臂體下鑽 call-arg 檢查。
+		if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
+			var res []ValidateResult
+			for _, arm := range sm.Arms {
+				if arm.Condition != nil {
+					res = append(res, checkCallArgsInExpr(arm.Condition, sigs, varTypes, structFields, underUnwrap)...)
+				}
+				if arm.Body != nil {
+					for _, bs := range arm.Body.Statements {
+						res = append(res, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
+					}
+				}
 			}
-			return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields, underUnwrap)
+			return res
+		}
+		return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields, underUnwrap)
 		}
 	case *parser.LetStatement:
 		// Compiler-injected synthetic let statements (e.g. match arm `it` bindings).
@@ -2034,7 +2049,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 	case *parser.SurfaceMatch:
 		var results []ValidateResult
 		// S4：糖形態下 match 是 SurfaceMatch，臂體對本 walker 不可見。見 sugar_walk.go。
-		walkSurfaceMatchChildren(e,
+		walkSurfaceMatchChildren(e, varTypes,
 			func(x parser.Expression) {
 				results = append(results, checkCallArgsInExpr(x, sigs, varTypes, structFields, underUnwrap)...)
 			},
@@ -2327,9 +2342,9 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			}
 		case *parser.SurfaceMatch:
 			// S4：糖形態下 match 是 SurfaceMatch，臂體對本 walker 不可見。見 sugar_walk.go。
-			walkSurfaceMatchChildren(e,
-				func(x parser.Expression) { walkExpr(x) },
-				func(s parser.Statement) { walkStmts([]parser.Statement{s}) })
+		walkSurfaceMatchChildren(e, nil,
+			func(x parser.Expression) { walkExpr(x) },
+			func(s parser.Statement) { walkStmts([]parser.Statement{s}) })
 		case *parser.ArrayLiteral:
 			for _, elem := range e.Elements {
 				walkExpr(elem)

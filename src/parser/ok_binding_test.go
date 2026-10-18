@@ -44,6 +44,21 @@ func findSyntheticBindings(prog *Program) map[string]int {
 			if x.Value != nil {
 				walk(x.Value)
 			}
+		case *SurfaceMatch:
+			// S1：flip 後 ParseProgram 保留 SurfaceMatch，析構綁定編碼在
+			// MatchArm 元資料（BindingName / 隐式 it），不再以合成 `let` 注入。
+			for i := range x.Arms {
+				a := &x.Arms[i]
+				if a.BindingName != "" {
+					counts[a.BindingName]++
+				}
+				for _, bn := range a.BindingNames {
+					counts[bn]++
+				}
+				if armBindsIt(a) {
+					counts["it"]++
+				}
+			}
 		case *ExpressionStatement:
 			if x.Expression != nil {
 				walk(x.Expression)

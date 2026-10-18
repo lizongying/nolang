@@ -34,7 +34,20 @@ import (
 // commented out of LowerSurface, a comparison-only version of the test passed,
 // because both routes then skipped lowering and produced the same sugar-bearing
 // tree. The gate has to assert that the common result is the LOWERED form.
-var parserTierSugarTypes = []string{"SurfaceMatch", "UnwrapAssignStatement"}
+//
+// S1 flip: SurfaceMatch moved from "removedByParser" to "removedByH0" — ParseProgram
+// now DEFERS it (keeps the SurfaceMatch node) instead of expanding it. It therefore
+// leaves this list; see deferredSugarTypes for the inverted-polarity check.
+var parserTierSugarTypes = []string{"UnwrapAssignStatement"}
+
+// deferredSugarTypes are the sugar node types the parser DEFERS past ParseProgram
+// (tier "removedByH0" in src/parser/sugar_seam_test.go): SurfaceMatch,
+// GroupedExpression, MultiAssignStatement. The whole point of the S1 seam is to
+// make lowering movable, so the deferred route must hand back a tree that STILL
+// contains them. The anti-vacuity check for these asserts PRESENCE in the shared
+// result (not absence), so the equivalence gate cannot pass by comparing two
+// fully-lowered trees.
+var deferredSugarTypes = []string{"SurfaceMatch", "GroupedExpression", "MultiAssignStatement"}
 
 // TestSkipLoweringMatchesDefaultPath pins the S1 seam: parsing with
 // Parser.SkipLowering and then calling (*Parser).LowerSurface explicitly must
@@ -75,13 +88,24 @@ func TestSkipLoweringMatchesDefaultPath(t *testing.T) {
 		}
 
 		// Anti-vacuity, half 1: SkipLowering must have been honoured. Without this
-		// the test cannot tell "the seam defers lowering" from "nobody lowers".
+		// the test cannot tell "the seam defers lowering" from "nobody lowers". Both
+		// route classes must be present in the deferred dump: the parser-tier sugar
+		// that LowerSurface will erase, and the deferred sugar that LowerSurface
+		// must keep (the seam's whole reason for existing).
 		deferredDump := Dump(prog2)
 		hadSugar := false
 		for _, typ := range parserTierSugarTypes {
 			if strings.Contains(deferredDump, typ) {
 				hadSugar = true
 				break
+			}
+		}
+		if !hadSugar {
+			for _, typ := range deferredSugarTypes {
+				if strings.Contains(deferredDump, typ) {
+					hadSugar = true
+					break
+				}
 			}
 		}
 		if hadSugar {
@@ -91,12 +115,29 @@ func TestSkipLoweringMatchesDefaultPath(t *testing.T) {
 		p2.LowerSurface(prog2)
 		got := Dump(prog2)
 
-		// Anti-vacuity, half 2: the shared result must be the lowered form.
+		// Anti-vacuity, half 2a: parser-tier sugar must be GONE from the shared
+		// result — LowerSurface actually ran. Only check types this file exercises.
 		for _, typ := range parserTierSugarTypes {
+			if !strings.Contains(deferredDump, typ) {
+				continue
+			}
 			if strings.Contains(got, typ) {
-				t.Errorf("%s: after LowerSurface the tree still contains %s, so the "+
-					"comparison below is between two unlowered trees and proves nothing",
-					path, typ)
+				t.Errorf("%s: after LowerSurface the tree still contains %s, so LowerSurface "+
+					"did not run and the comparison below proves nothing", path, typ)
+				return nil
+			}
+		}
+		// Anti-vacuity, half 2b: deferred sugar must STILL be present — the seam
+		// must preserve it, proving the comparison exercises the deferred route
+		// rather than two fully-lowered trees. (SkipLowering removes nothing on its
+		// own, so a SurfaceMatch left standing here is exactly what we want.)
+		for _, typ := range deferredSugarTypes {
+			if !strings.Contains(deferredDump, typ) {
+				continue
+			}
+			if !strings.Contains(got, typ) {
+				t.Errorf("%s: after LowerSurface the tree no longer contains %s, so the "+
+					"S1 seam dropped deferred sugar it must preserve", path, typ)
 				return nil
 			}
 		}

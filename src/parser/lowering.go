@@ -30,6 +30,14 @@ type SurfaceMatch struct {
 	OpeningBraceComment *CommentGroup
 	// RBracePos 保留裸 match 外層 `}` 的位置，lowering 時轉移到 IfExpression.MatchEndPos。
 	RBracePos lexer.Position
+
+	// PreChecked 標記本 match 的「解析期/降糖前」預檢（preRegisterEnumArmBindings +
+	// rejectItInNonOkArm）是否已經跑過。S1 翻轉形態後，預檢從 lowerSurfaceMatch /
+	// desugarSurfaceMatch 的展開入口搬到 lowerer.walk 的 defer 分支（每個 SugarMatch
+	// 在預設路徑只走一次），以此欄位避免 js/wasm 展開路徑或 H0 desugar 二次重跑時
+	// 重複報出 `it` 非法使用等診斷。SkipLowering 路徑下節點從未經過 walk，PreChecked
+	// 為 false，desugarSurfaceMatch 仍會補跑預檢。
+	PreChecked bool
 }
 
 func (sm *SurfaceMatch) expressionNode()     {}
@@ -87,9 +95,31 @@ func (p *Parser) LowerSurface(program *Program) {
 	}
 
 	p.lowerProgram(program)
-	// Phase 2: expand the deferred *SurfaceMatch nodes into IfExpression chains
-	// (S1 separable pass; see DesugarSurfaceMatches).
-	p.DesugarSurfaceMatches(program)
+	// S1 flip (2026-10-17): the default pipeline now KEEPS *SurfaceMatch nodes
+	// intact. The match is no longer expanded here — instead:
+	//   - the native / H0 path desugars it at ASTToHIR via desugarSurfaceMatch
+	//     (parser/tohir.go case *SurfaceMatch), which calls buildMatchDesugar;
+	//   - the experimental js / wasm backends call p.DesugarSurfaceMatches(program)
+	//     explicitly from their builders (build/builder.go) before codegen.
+	//
+	// The parser-side normalisation that buildMatchDesugar bundles (safe-index
+	// subject rebind to __match_subj_*, D9 place-write, D4 empty-arm default,
+	// it bindings, enum destructuring) is preserved: it runs inside
+	// buildMatchDesugar on BOTH the H0 and js/wasm desugar paths, so the sugar
+	// node reaching those expanders is already consumable. Nothing here is lost.
+	//
+	// NOTE (design doc §15.6): flipping the default form is a user-visible change
+	// to `no vet` output. Measured 2026-10-18 against baseline ab157ea7:
+	//   - tests/*.no   : 478 files, 0 files differ.
+	//   - src/std/*.no : 110 of 115 files differ — ALL of them gain HINTs only
+	//     (median +7 hints/file; net modules such as http2 +695 / http +684 /
+	//     ws +684 / tls +675 are large because vetting them pulls in dependency
+	//     modules). 0 new ERRORs, 0 new WARNINGs, and no diagnostic disappears.
+	//   The extra hints are the S4 sugar blind spot closing: with SurfaceMatch
+	//   surviving to the checker, lint walkers now see inside match arms and
+	//   report findings (nolang-range-index / nolang-index / …) that the lowered
+	//   tree used to hide. They are true positives, not noise.
+	//   (An earlier note here said "19 programs"; that count is stale.)
 	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
 		dbgLeakState("POST-lower", program)
 	}
@@ -148,10 +178,10 @@ func (p *Parser) prepareInferredTypes(program *Program) {
 	// exactly. The walker only invokes the pure analyzers below; no AST field
 	// is written.
 	l := &lowerer{
-		p:            p,
-		visited:      map[uintptr]bool{},
+		p:              p,
+		visited:        map[uintptr]bool{},
 		declaredLocals: map[string]bool{},
-		analysisOnly: true,
+		analysisOnly:   true,
 	}
 	l.runInferredTypeAnalysis(program)
 }
@@ -270,33 +300,46 @@ func (l *lowerer) walk(v reflect.Value) {
 				l.walk(v.Elem())
 				return
 			}
-		if l.deferMatchDesugar {
-			// S1 migration: keep the SurfaceMatch node intact so the desugaring
-			// runs as a separate, swappable pass (DesugarSurfaceMatches) after
-			// the rest of lowering. We still recurse into its children so nested
-			// sugar (UnwrapAssign / IndexExpression / LetStatement) inside the
-			// arms is lowered now; nested SurfaceMatch nodes are left for the
-			// separate pass.
-			l.walk(v.Elem())
+			if l.deferMatchDesugar {
+				// S1 flip (2026-10-17): the default pipeline now KEEPS the
+				// SurfaceMatch node (H0 desugars it at ASTToHIR via
+				// desugarSurfaceMatch). We still recurse into its children so nested
+				// sugar (UnwrapAssign / IndexExpression / LetStatement) inside the
+				// arms is lowered now; nested SurfaceMatch nodes are left for the
+				// separate expand pass (js/wasm) or H0.
+				//
+				// We must ALSO run the parser-side pre-checks here (previously only
+				// done inside lowerSurfaceMatch/desugarSurfaceMatch), so `it`-
+				// validation and enum destructuring bindings still fire on the sugar
+				// path. Guarded by sm.PreChecked to avoid double-reporting when the
+				// same node is later expanded by js/wasm / H0.
+				if sm, ok := v.Elem().Interface().(*SurfaceMatch); ok {
+					if !sm.PreChecked {
+						l.preRegisterEnumArmBindings(sm)
+						l.rejectItInNonOkArm(sm)
+						sm.PreChecked = true
+					}
+				}
+				l.walk(v.Elem())
+				return
+			}
+			sm := v.Interface().(*SurfaceMatch)
+			if lowered := l.lowerSurfaceMatch(sm); lowered != nil {
+				v.Set(reflect.ValueOf(lowered))
+			} else {
+				v.Set(reflect.Zero(v.Type()))
+			}
 			return
 		}
-		sm := v.Interface().(*SurfaceMatch)
-		if lowered := l.lowerSurfaceMatch(sm); lowered != nil {
-			v.Set(reflect.ValueOf(lowered))
-		} else {
-			v.Set(reflect.Zero(v.Type()))
-		}
-		return
-		}
-	if v.Elem().Type() == unwrapAssignPtrType && v.CanSet() {
-		// UnwrapAssignStatement 一律展開為 BlockStatement（編譯器需要展開後的
-		// IR）。formatter 現走糖 AST（SkipLowering），不經此路徑，故不再需要
-		// SkipUnwrapLowering 跳過——該旗標已隨 §4.3 刪除。
-		if l.analysisOnly {
-			l.walk(v.Elem())
-			return
-		}
-		uas := v.Interface().(*UnwrapAssignStatement)
+		if v.Elem().Type() == unwrapAssignPtrType && v.CanSet() {
+			// UnwrapAssignStatement 一律展開為 BlockStatement（編譯器需要展開後的
+			// IR）。formatter 現走糖 AST（SkipLowering），不經此路徑，故不再需要
+			// SkipUnwrapLowering 跳過——該旗標已隨 §4.3 刪除。
+			if l.analysisOnly {
+				l.walk(v.Elem())
+				return
+			}
+			uas := v.Interface().(*UnwrapAssignStatement)
 			lowered := l.lowerUnwrapAssign(uas)
 			if lowered != nil {
 				// UnwrapAssignStatement 降級為 BlockStatement（Statement）。
@@ -340,79 +383,79 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 直接匹配 *AssignExpression）。同時把外層 ExpressionStatement
 				// 攜帶的 `#{index-out}` 註解轉掛到內層 AssignExpression，否則
 				// 註解查不到、desugar 不觸發，越界索引仍被當成未處理。
-			if es, ok := stmt.(*ExpressionStatement); ok {
-			if l.p.sem != nil {
-				if anns := l.p.sem.RawAnnotationsOf(es); len(anns) > 0 {
-						switch tgt := es.Expression.(type) {
-						case *AssignExpression:
-							l.p.sem.SetRawAnnotations(tgt, anns)
-							// 同時填 Annotations：ResolveProgram 只對解析期直接
-							// 收到 RawAnnotations 的節點（此處為外層 es）回填
-							// Annotations，內層 ae 沒有；maybeIndexOutAssign
-							// 讀 AnnotationsOf，必須在此一併補齊，否則註解查不到。
-							l.p.sem.ensure(tgt).Annotations = anns
-							stmt = tgt
-						case *SurfaceMatch:
-							// D9 place-write：`#{index-out=DEF}` 註解套用到
-							// `v[i]: { ok -> it = ... }` 時，外層 ExpressionStatement
-							// 攜帶註解，但 desugar 主體是內層 SurfaceMatch。把
-							// index-out 條目轉掛到 sm，讓 buildMatchDesugar /
-							// rewriteItPlaceWrites 能還原「注解作用到臂內 RHS 下标
-							// 读取」的舊語意（与 maybeIndexOutAssign 对 AssignExpression
-							// 的處理一致：註解只帶外層、desugar 時才轉移進內層）。
-							l.p.sem.SetRawAnnotations(tgt, anns)
-							l.p.sem.ensure(tgt).Annotations = anns
+				if es, ok := stmt.(*ExpressionStatement); ok {
+					if l.p.sem != nil {
+						if anns := l.p.sem.RawAnnotationsOf(es); len(anns) > 0 {
+							switch tgt := es.Expression.(type) {
+							case *AssignExpression:
+								l.p.sem.SetRawAnnotations(tgt, anns)
+								// 同時填 Annotations：ResolveProgram 只對解析期直接
+								// 收到 RawAnnotations 的節點（此處為外層 es）回填
+								// Annotations，內層 ae 沒有；maybeIndexOutAssign
+								// 讀 AnnotationsOf，必須在此一併補齊，否則註解查不到。
+								l.p.sem.ensure(tgt).Annotations = anns
+								stmt = tgt
+							case *SurfaceMatch:
+								// D9 place-write：`#{index-out=DEF}` 註解套用到
+								// `v[i]: { ok -> it = ... }` 時，外層 ExpressionStatement
+								// 攜帶註解，但 desugar 主體是內層 SurfaceMatch。把
+								// index-out 條目轉掛到 sm，讓 buildMatchDesugar /
+								// rewriteItPlaceWrites 能還原「注解作用到臂內 RHS 下标
+								// 读取」的舊語意（与 maybeIndexOutAssign 对 AssignExpression
+								// 的處理一致：註解只帶外層、desugar 時才轉移進內層）。
+								l.p.sem.SetRawAnnotations(tgt, anns)
+								l.p.sem.ensure(tgt).Annotations = anns
+							}
 						}
 					}
 				}
-			}
-			// analysisOnly 模式（prepareInferredTypes）：跳過所有結構
-			// 改寫（maybeIndexOutAssign / maybeCaptureOptionAssign 的取代節點
-			// 建構）；推斷分析由 inferOptionArith + maybeCaptureOptionAssign 內
-			// 的 synthesizeNullableType 完成（後者在 analysisOnly 下提早返回）。
-			// SkipSafeIndexLowering 旗標已隨 §4.3 刪除，安全索引展開在此一律進行。
-		if !l.analysisOnly {
-			if repl := l.maybeIndexOutAssign(stmt); repl != nil {
-					l.carryOverflowAnnotation(carryFrom, repl)
-					v.Index(i).Set(reflect.ValueOf(repl))
-					replaced = true
+				// analysisOnly 模式（prepareInferredTypes）：跳過所有結構
+				// 改寫（maybeIndexOutAssign / maybeCaptureOptionAssign 的取代節點
+				// 建構）；推斷分析由 inferOptionArith + maybeCaptureOptionAssign 內
+				// 的 synthesizeNullableType 完成（後者在 analysisOnly 下提早返回）。
+				// SkipSafeIndexLowering 旗標已隨 §4.3 刪除，安全索引展開在此一律進行。
+				if !l.analysisOnly {
+					if repl := l.maybeIndexOutAssign(stmt); repl != nil {
+						l.carryOverflowAnnotation(carryFrom, repl)
+						v.Index(i).Set(reflect.ValueOf(repl))
+						replaced = true
+					}
 				}
-			}
 				// 有號整數 `/` `%` 本身就會產生 option（除零/溢出時為 err），
 				// 因此以普通 `=` 綁定其結果時，變數型別必然是 `?T`：無需用戶
 				// 顯式標註，在此就地補上推斷出的註解（等同寫 `q ?int = a / b`），
 				// 讓下游 checker（ovfhndld / ovf-int-default）與 MIR（typeHint →
 				// 除零守衛）走已驗證的顯式路徑。
 				// fmt 路徑跳過，formatter 永遠看不到合成註解。
-			// analysisOnly 模式下**必須**執行：對 SkipLowering 路徑補齊
-			// `?T` 推斷事實，使 ASTToHIR 產生與預設路徑一致的 Type ID。
-			// SkipUnwrapLowering 旗標已隨 §4.3 刪除，option 算術推斷在此一律進行。
-		if ls, ok := stmt.(*LetStatement); ok {
-			l.inferOptionArith(ls)
-		}
-			// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
-			// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
-			// 必須排在 inferOptionArith 之後：根為算術的情形由它處理。
-			// analysisOnly 模式：仍呼叫以執行內部的 synthesizeNullableType
-			// 推斷；該函式已被加上 `if l.analysisOnly { return nil }` 提早出口，
-			// 不會建構取代節點。
-			// SkipUnwrapLowering / SkipSafeIndexLowering 旗標已隨 §4.3 刪除，
-			// 捕獲賦值在此一律進行。
-		if ls, ok := stmt.(*LetStatement); ok && !replaced {
-			if repl := l.maybeCaptureOptionAssign(ls); !l.analysisOnly && repl != nil {
-					l.carryOverflowAnnotation(carryFrom, repl)
-					v.Index(i).Set(reflect.ValueOf(repl))
-					replaced = true
+				// analysisOnly 模式下**必須**執行：對 SkipLowering 路徑補齊
+				// `?T` 推斷事實，使 ASTToHIR 產生與預設路徑一致的 Type ID。
+				// SkipUnwrapLowering 旗標已隨 §4.3 刪除，option 算術推斷在此一律進行。
+				if ls, ok := stmt.(*LetStatement); ok {
+					l.inferOptionArith(ls)
 				}
-			}
+				// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
+				// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
+				// 必須排在 inferOptionArith 之後：根為算術的情形由它處理。
+				// analysisOnly 模式：仍呼叫以執行內部的 synthesizeNullableType
+				// 推斷；該函式已被加上 `if l.analysisOnly { return nil }` 提早出口，
+				// 不會建構取代節點。
+				// SkipUnwrapLowering / SkipSafeIndexLowering 旗標已隨 §4.3 刪除，
+				// 捕獲賦值在此一律進行。
+				if ls, ok := stmt.(*LetStatement); ok && !replaced {
+					if repl := l.maybeCaptureOptionAssign(ls); !l.analysisOnly && repl != nil {
+						l.carryOverflowAnnotation(carryFrom, repl)
+						v.Index(i).Set(reflect.ValueOf(repl))
+						replaced = true
+					}
+				}
 				// 按 walk 順序登記使用者寫下的宣告名（必須在捕獲 pass 之後：
 				// 捕獲 pass 要判斷的是「本陳述之前」是否已宣告同名變數，才能決定
 				// 要不要補 `a ?T = nil` 預宣告。對已存在的變數補預宣告會先把它的
 				// 值清成 nil，`a = a + b / c` 的 RHS 在 ok 臂才求值，就讀到 nil）。
 				// 合成陳述（desugar 產物）不算使用者宣告。
-			if ls, ok := stmt.(*LetStatement); ok && ls.Name != nil && !ls.IsSynthetic {
-				l.declaredLocals[ls.Name.Value] = true
-			}
+				if ls, ok := stmt.(*LetStatement); ok && ls.Name != nil && !ls.IsSynthetic {
+					l.declaredLocals[ls.Name.Value] = true
+				}
 			}
 			l.walk(v.Index(i))
 			_ = replaced
@@ -567,7 +610,7 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 }
 
 // gatherLetsInFuncScope 以反射走訪 body 子樹，依原始碼順序回傳「本函數作用域內」
-//（含巢狀區塊 / 迴圈體 / if-match 臂體）的所有 *LetStatement；遇到巢狀
+// （含巢狀區塊 / 迴圈體 / if-match 臂體）的所有 *LetStatement；遇到巢狀
 // FunctionDefinition（閉包 / 巢狀函式）即停止下钻——那是另一個作用域、另有自己的
 // idxLocalTypes 鍵。反射僅讀取導出欄位，並按指標去重（AST 可能有共享節點）。
 func gatherLetsInFuncScope(body *BlockStatement) []*LetStatement {
@@ -895,7 +938,7 @@ func (l *lowerer) addCaptureNode(e Expression, inner string, out *[]captureNode,
 // analysisOnly=true（prepareInferredTypes 旗標）：讀 *out 但不改寫 AST——
 // 仍依規則找到可錯源並把它記入 *out，但 `v.Left = ...`／`v.Arguments[i] = ...`
 // 等就地改寫一律略過、回傳 nil。語義副表的 `publishInferredType` 由呼叫端
-//（maybeCaptureOptionAssign 的 synthesizeNullableType 走線）負責，與結構
+// （maybeCaptureOptionAssign 的 synthesizeNullableType 走線）負責，與結構
 // pass 完全相同；只是不寫 AST 樹。修補 §3.2 之前 prepareInferredTypes 曾因
 // 不小心寫入 `v.Left = __cap_1` 永久破壞 `ls.Value`，讓後續 structural pass
 // 第二次 collectCaptureNodes 看不到原始的 b/c 樹——一個「sem 分析 pass」踩
@@ -2027,13 +2070,18 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 		}
 	}
 	// 先把析構綁定名/型別登記進符號表，內層 match 才能解析其主體型別。
-	l.preRegisterEnumArmBindings(sm)
-	// `it` 只在「可證明是 ok」的臂裡有效：catch-all `->` 臂若前面沒有把 nil 與
-	// err 都處理掉，走到這裡時值仍可能是 nil 或 err，讀 `it` 沒有意義（且會
-	// 讀到未初始化的載荷）。此時若臂體用到 `it`，直接報錯——必須改用 `ok ->`
-	// 或補上 `nil ->` / `err ->`。檢查必須在 walk 之前做：walk 會把內層 match
-	// 展開成 if/else 並插入它自己的合成 `let it`，那之後就分不清 `it` 屬於哪層。
-	l.rejectItInNonOkArm(sm)
+	// PreChecked 由 lowerer.walk 的 defer 分支在預設路徑上已設（S1 翻轉後），
+	// 此處跳過以免 js/wasm 展開路徑二次重報 `it` 非法使用等診斷。
+	if !sm.PreChecked {
+		l.preRegisterEnumArmBindings(sm)
+		// `it` 只在「可證明是 ok」的臂裡有效：catch-all `->` 臂若前面沒有把 nil 與
+		// err 都處理掉，走到這裡時值仍可能是 nil 或 err，讀 `it` 沒有意義（且會
+		// 讀到未初始化的載荷）。此時若臂體用到 `it`，直接報錯——必須改用 `ok ->`
+		// 或補上 `nil ->` / `err ->`。檢查必須在 walk 之前做：walk 會把內層 match
+		// 展開成 if/else 並插入它自己的合成 `let it`，那之後就分不清 `it` 屬於哪層。
+		l.rejectItInNonOkArm(sm)
+		sm.PreChecked = true
+	}
 	l.walk(reflect.ValueOf(&sm.Matched))
 	for i := range sm.Arms {
 		a := &sm.Arms[i]
@@ -2064,8 +2112,16 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	l.p.curFuncName = l.curFuncName
 	// 類型解構 match 偵測：被匹配值靜態型別是 union（如 num）時，按型別臂靜態
 	// 單態化派發，完全繞開 buildMatchDesugar 的 `matched == X` 運行期條件生成。
+	//
+	// 臂形態是第二條（S1 翻轉後必需的）判據：union 單態化複本的主體已是具體成員
+	// 型別、且語義表沒有以複本名為鍵的條目，單靠「主體是 union」永遠判不出來
+	// ——見 armsCarryTypePatterns 的註解（tests/type-match.no 迴歸案）。
 	if ident, ok := sm.Matched.(*Identifier); ok {
-		if t, ok2 := l.p.sem.FuncVarType(l.curFuncName, ident.Value); ok2 && l.p.isUnionType(t) {
+		// 臂形前置守衛：含 option 臂（ok/nil/err）的 match 絕不可能是靜態型別
+		// 派發 match，即使 subject 型別被（跨模組污染的）全域回退解析成 union。
+		t, _ := l.p.sem.FuncVarType(l.curFuncName, ident.Value)
+		if !hasOptionMatchArm(sm.Arms) &&
+			(l.p.isUnionType(t) || l.p.armsCarryTypePatterns(sm.Arms)) {
 			result := l.p.buildTypeMatchDesugar(sm, t)
 			l.p.curFuncName = savedFuncName
 			if ifExpr, ok3 := result.(*IfExpression); ok3 && ifExpr != nil {
@@ -2093,8 +2149,106 @@ func (p *Parser) armPreChecks(sm *SurfaceMatch) {
 		visited:        map[uintptr]bool{},
 		declaredLocals: map[string]bool{},
 	}
-	l.preRegisterEnumArmBindings(sm)
-	l.rejectItInNonOkArm(sm)
+	if !sm.PreChecked {
+		l.preRegisterEnumArmBindings(sm)
+		l.rejectItInNonOkArm(sm)
+		sm.PreChecked = true
+	}
+}
+
+// findFuncDef returns the top-level FunctionDefinition named name in prog, or nil.
+func findFuncDef(prog *Program, name string) *FunctionDefinition {
+	if prog == nil || name == "" {
+		return nil
+	}
+	for _, st := range prog.Statements {
+		if fd, ok := st.(*FunctionDefinition); ok && fd != nil && fd.Name == name {
+			return fd
+		}
+	}
+	return nil
+}
+
+// astLocalVarType derives the static type of a function-local variable directly
+// from the source AST, used as the S1-flip fallback when
+// sem.FuncVarType(curFunc, subject) misses.
+//
+// Why this is needed: after the flip, std modules arrive from the baked blob in
+// SURFACE form and are desugared at H0 (AST→HIR). Their local-let types were
+// never collected into FuncVarTypes during baking (the match desugar that would
+// register them was deferred past the bake), so the H0 dispatch lookup misses
+// and would otherwise fall back to the GLOBAL, unscoped VarTypes — which can pick
+// up a SAME-NAMED variable from a DIFFERENT module and emit wrong codegen.
+// Deriving the type from the source declaration is sound and module-scoped.
+//
+// Resolution order mirrors how the variable is declared:
+//  1. a function parameter with an explicit type,
+//  2. a `let x : T = …` with an explicit annotation (typeString),
+//  3. a `let x = call(…)` whose return type is known (returnTypeFromCallExpr),
+//  4. a `let x = other` chain that resolves to one of the above.
+//
+// The parser must carry the Program (Parser.prog, set on the H0 scratch parser);
+// if it is nil we return "" and the caller keeps its existing (weaker) fallback.
+func (p *Parser) astLocalVarType(funcName, varName string) string {
+	if p == nil || p.prog == nil || varName == "" || funcName == "" {
+		return ""
+	}
+	fd := findFuncDef(p.prog, funcName)
+	if fd == nil {
+		// Monomorphized / suffixed copies keep the original declaration under a
+		// base name; strip a trailing "@…" suffix and retry.
+		if idx := strings.IndexByte(funcName, '@'); idx > 0 {
+			fd = findFuncDef(p.prog, funcName[:idx])
+		}
+	}
+	if fd == nil || fd.Body == nil {
+		return ""
+	}
+	types := map[string]string{}
+	for _, prm := range fd.Parameters {
+		if prm != nil && prm.Name != "" && prm.Type != nil {
+			if t := typeString(prm.Type); t != "" {
+				types[prm.Name] = t
+			}
+		}
+	}
+	// First pass: explicit annotations + call-RHS return types.
+	for _, ls := range gatherLetsInFuncScope(fd.Body) {
+		if ls == nil || ls.Name == nil || ls.Name.Value == "" || ls.IsSynthetic {
+			continue
+		}
+		name := ls.Name.Value
+		if _, exists := types[name]; exists {
+			continue
+		}
+		if ls.Type != nil {
+			if t := typeString(ls.Type); t != "" {
+				types[name] = t
+				continue
+			}
+		}
+		if call, ok := ls.Value.(*CallExpression); ok {
+			if rt := p.returnTypeFromCallExpr(call); rt != "" {
+				types[name] = rt
+			}
+		}
+	}
+	// Second pass: follow identifier RHS chains (`x = otherVar`).
+	for _, ls := range gatherLetsInFuncScope(fd.Body) {
+		if ls == nil || ls.Name == nil || ls.Name.Value == "" || ls.IsSynthetic {
+			continue
+		}
+		name := ls.Name.Value
+		if _, ok := types[name]; ok {
+			continue
+		}
+		if id, ok := ls.Value.(*Identifier); ok {
+			if t, ok := types[id.Value]; ok {
+				types[name] = t
+			}
+		}
+	}
+	return types[varName]
 }
 
 // desugarSurfaceMatch returns the core-AST equivalent of sm WITHOUT writing
@@ -2165,8 +2319,51 @@ func (p *Parser) desugarSurfaceMatch(sm *SurfaceMatch) Expression {
 		// Type-destructuring match: the subject's static type is a union, so
 		// the arms dispatch statically. Detected the same way lowerSurfaceMatch
 		// detects it, so the two paths pick the same desugar.
+		//
+		// 臂形態判據與 lowerSurfaceMatch 共用（armsCarryTypePatterns）：union
+		// 單態化複本的主體是具體成員型別、語義表也沒有以複本名為鍵的條目，
+		// 只靠「主體是 union」會在複本上漏判，把型別臂誤降糖成
+		// `x == i64` 執行期比較（tests/type-match.no 迴歸案）。
 		if ident, ok := clone.Matched.(*Identifier); ok {
-			if t, ok2 := p.sem.FuncVarType(p.curFuncName, ident.Value); ok2 && p.isUnionType(t) {
+			// Same arm-shape guard as lowerSurfaceMatch (see isOptionMatchArm):
+			// the H0 path is exactly where a blob-loaded std module's local
+			// resolves through the unscoped global VarTypes fallback.
+			t, _ := p.sem.FuncVarType(p.curFuncName, ident.Value)
+			if t == "" {
+				// S1 flip fallback: FuncVarType can miss for blob-loaded std
+				// functions whose local-let types were never collected. Derive
+				// the subject type from the source AST instead of the unscoped
+				// global VarTypes fallback.
+				if at := p.astLocalVarType(p.curFuncName, ident.Value); at != "" {
+					t = at
+				}
+			}
+			// S1 flip: a union-monomorphized clone carries a CONCRETE member type
+			// (e.g. i32) as the subject instead of the union (num). Recover the
+			// union so the type-destructuring match still validates its arms against
+			// the full member set (otherwise each non-matching arm errors with
+			// "not a member of union i32"). Mirrors no-flip, where the original is
+			// desugared before cloning and the clone inherits the static if-chain.
+			var armPatterns []string
+			for i := range clone.Arms {
+				a := &clone.Arms[i]
+				if a.IsTypeArm {
+					armPatterns = append(armPatterns, a.TypePattern)
+				} else if id, ok := a.Condition.(*Identifier); ok && p.isUnionMemberName(id.Value) {
+					armPatterns = append(armPatterns, id.Value)
+				}
+			}
+			// Only a match whose arms actually name union members / type patterns
+			// is a type-destructuring match. For a value match (e.g.
+			// `b bool: { true -> }`) the subject may be a union member by
+			// coincidence (bool ∈ mixed); recovering a union there and routing to
+			// buildTypeMatchDesugar would trip the "requires type patterns" error
+			// on the value arm `true ->`. Gate both the recovery and the
+			// type-match desugar on armsCarryTypePatterns so value matches always
+			// fall through to buildMatchDesugar (mirrors the no-flip behaviour,
+			// where the subject `b` is bool and never a union).
+			if !hasOptionMatchArm(clone.Arms) && p.armsCarryTypePatterns(clone.Arms) {
+				t = p.recoverUnionFromMember(t, armPatterns)
 				result = p.buildTypeMatchDesugar(&clone, t)
 				break
 			}
@@ -2184,6 +2381,114 @@ func (p *Parser) desugarSurfaceMatch(sm *SurfaceMatch) Expression {
 	return result
 }
 
+// isOptionMatchArm reports whether a match arm is an option arm (ok/nil/err)
+// rather than a type-pattern arm. hasOptionMatchArm is the slice-level form.
+//
+// Why this exists (measured, not assumed): SemanticContext.FuncVarType falls back
+// to a GLOBAL VarTypes table that has NO file/module scoping
+// (parser/resolver.go:617-628). After the S1 flip, std modules arrive from the
+// baked blob in SURFACE form and are desugared at H0, where their per-function
+// type table was never collected. A match on a LOCAL therefore resolves through
+// the global fallback and can pick up a SAME-NAMED GLOBAL from a different
+// module. Measured failure: building tests/type-match.no desugared fs.no's
+// `fs.file.read-str` match on local `b` as a *type* match, because VarTypes["b"]
+// held type-match.no's module-level `b` (type `num`, a union) — producing
+// `type match arm pattern "err" is not a member of union "num"` against arms that
+// are actually ok/nil/default.
+//
+// Arm shape is the sound discriminator: option arms and type-pattern arms are
+// mutually exclusive by construction, so a match carrying any option arm is never
+// a static type-dispatch match — whatever the subject's (possibly mis-resolved)
+// type says. Guarding on this avoids having to make VarTypes module-scoped.
+func isOptionMatchArm(a *MatchArm) bool {
+	if a == nil {
+		return false
+	}
+	switch c := a.Condition.(type) {
+	case *NilLiteral:
+		return true
+	case *CallExpression:
+		if id, ok := c.Function.(*Identifier); ok {
+			switch id.Value {
+			case "ok", "err":
+				return true
+			}
+		}
+	case *Identifier:
+		switch c.Value {
+		case "ok", "nil", "err":
+			return true
+		}
+	}
+	return a.IsDotVal
+}
+
+func hasOptionMatchArm(arms []MatchArm) bool {
+	for i := range arms {
+		if isOptionMatchArm(&arms[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// isUnionMemberName reports whether name is a member of ANY known union alias
+// (e.g. i64 is a member of `num = i32 | i64 | f64`). Only DIRECT members are
+// recorded (parser/type.go:728-741), so a member reached through a nested
+// alias (`mixed = num | str` ⇒ i64) is found because i64 is ALSO a direct
+// member of num.
+func (p *Parser) isUnionMemberName(name string) bool {
+	if name == "" || p.unionMembers == nil {
+		return false
+	}
+	for _, members := range p.unionMembers {
+		for _, m := range members {
+			if m == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// armsCarryTypePatterns reports whether any arm is a type-destructuring
+// pattern: the explicit `v T ->` form (parser sets IsTypeArm,
+// parser/expr.go:1152-1158) or a BARE `T ->` arm whose condition names a
+// union member type.
+//
+// Why the arm shape must be able to drive the dispatch on its own: both
+// dispatch sites (lowerSurfaceMatch / desugarSurfaceMatch) keyed on the
+// SUBJECT's static type being a union. After union monomorphization
+// (build/transpiler_monomorph.go cloneUnionVariant) the subject is the
+// CONCRETE member (i64) and the clone carries no
+// SemanticContext.FuncVarTypes entry under its own name, so the union test
+// can never fire for a clone. Measured regressions from the S1 flip (which
+// moved desugaring to H0, i.e. AFTER monomorphization):
+//
+//	tests/type-match.no — `v i64 -> v.to-str()` desugared as the runtime
+//	  value comparison `x == i64` against an undefined identifier ⇒
+//	  "unknown callee v.to-str in func classify__i64" (compile error).
+//	a bare-arm program (`r = x: { i32 -> lo, i64 -> hi, -> x }`) — same
+//	  mis-desugar, but it compiles and TRAPS at runtime (SIGTRAP, exit 133).
+//
+// Before the flip this could not happen: the parser desugared the match
+// BEFORE monomorphization cloned the function, so the clone carried an
+// already-desugared if-chain. The arm shape is the only signal that survives
+// cloning, and it is sound: option arms are excluded by hasOptionMatchArm,
+// and a value match never names a union member as its pattern.
+func (p *Parser) armsCarryTypePatterns(arms []MatchArm) bool {
+	for i := range arms {
+		a := &arms[i]
+		if a.IsTypeArm {
+			return true
+		}
+		if id, ok := a.Condition.(*Identifier); ok && p.isUnionMemberName(id.Value) {
+			return true
+		}
+	}
+	return false
+}
+
 // buildTypeMatchDesugar 建立「類型解構 match」的核心 AST（union / type-set
 // 靜態單態化派發）。
 //
@@ -2197,7 +2502,16 @@ func (p *Parser) buildTypeMatchDesugar(sm *SurfaceMatch, matchedVarType string) 
 	if len(arms) == 0 {
 		return nil
 	}
+	// 成員表用於「臂模式是否屬於該 union」的靜態校驗。主體型別未知時
+	// （matchedVarType == ""，例如 union 單態化複本：cloneUnionVariant 只改
+	// 函數簽名，語義表沒有以複本名為鍵的條目）跳過校驗——flattenUnion 對
+	// 未知型別會回傳 [""] 這個葉子佔位，若拿它當成員集，每個型別臂都會被
+	// 誤判成 "not a member of union \"\""（S1 翻轉後單態化複本在 H0 降糖的
+	// 必經之路，見 armsCarryTypePatterns 註釋）。
 	members := p.flattenUnion(matchedVarType, nil)
+	if matchedVarType == "" {
+		members = nil
+	}
 	memberSet := make(map[string]bool, len(members))
 	for _, m := range members {
 		memberSet[m] = true
@@ -2582,15 +2896,32 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q matchedVarType=%q\n", ident.Value, matchedVarType)
 			}
 		} else {
+			// S1 flip fallback: FuncVarType can miss for blob-loaded std
+			// functions whose local-let types were never collected into the
+			// side table (the match desugar that would register them was
+			// deferred past the bake). Derive the subject type directly from the
+			// source AST (let annotation / call return type / identifier chain)
+			// instead of the unscoped global VarTypes fallback.
+			if at := p.astLocalVarType(p.curFuncName, ident.Value); at != "" {
+				matchedVarType = at
+				if vs, ok := p.sem.EnumVariantsOf(at); ok {
+					isEnumType = true
+					enumVariants = vs
+				}
+			}
 			if os.Getenv("NOLANG_DEBUG_IT") != "" {
-				fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q FuncVarType NOT FOUND curFunc=%q\n", ident.Value, p.curFuncName)
-				// Dump FuncVarTypes for curFuncName to see what's registered
-				if vars, ok := p.sem.FuncVarTypes[p.curFuncName]; ok {
-					for k, v := range vars {
-						fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q][%q]=%q\n", p.curFuncName, k, v)
-					}
+				if matchedVarType != "" {
+					fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q AST-derived matchedVarType=%q\n", ident.Value, matchedVarType)
 				} else {
-					fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q] map not found\n", p.curFuncName)
+					fmt.Fprintf(os.Stderr, "[debug-it] buildMatchDesugar: matched=%q FuncVarType NOT FOUND curFunc=%q\n", ident.Value, p.curFuncName)
+					// Dump FuncVarTypes for curFuncName to see what's registered
+					if vars, ok := p.sem.FuncVarTypes[p.curFuncName]; ok {
+						for k, v := range vars {
+							fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q][%q]=%q\n", p.curFuncName, k, v)
+						}
+					} else {
+						fmt.Fprintf(os.Stderr, "[debug-it]   FuncVarTypes[%q] map not found\n", p.curFuncName)
+					}
 				}
 			}
 		}
@@ -2884,26 +3215,26 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 						armBindingType = pt
 					}
 				}
-		} else if _, ok := arm.Condition.(*NilLiteral); ok {
-			armType = "nil"
-		} else if arm.IsDotVal {
-			// ok-> arm (dotVal wildcard): it should be the unwrapped elemType
-			armType = "ok"
-		}
-		// D9 place-write：statement 語境 + 安全索引主體 + ok 路徑臂 ⇒ 臂內使用者
-		// 寫的 `it = v`（let / assign 形態）改寫為「求值一次 → 寫回元素 → 重綁 it」。
-		// 值語境（anyArmValueCtx）的 match 保持讀語義：it 是載荷副本，`it = v` 只
-		// 重綁局部，與今天一致。nil/err 臂沒有元素位置可寫，不改寫。
-		// SkipSafeIndexLowering 旗標已隨 §4.3 刪除：編譯期一律做 place-write 寫回；
-		// 糖形態（SkipLowering=true）不走此路徑，formatter 直接渲染 surface 語法。
-		if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) {
-			writeInBounds := false
-			if idx, ok := origMatched.(*IndexExpression); ok {
-				writeInBounds = p.sem.IndexIsInBounds(idx)
+			} else if _, ok := arm.Condition.(*NilLiteral); ok {
+				armType = "nil"
+			} else if arm.IsDotVal {
+				// ok-> arm (dotVal wildcard): it should be the unwrapped elemType
+				armType = "ok"
 			}
-			arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds, idxOutDef)
-		}
-		if armType != "" {
+			// D9 place-write：statement 語境 + 安全索引主體 + ok 路徑臂 ⇒ 臂內使用者
+			// 寫的 `it = v`（let / assign 形態）改寫為「求值一次 → 寫回元素 → 重綁 it」。
+			// 值語境（anyArmValueCtx）的 match 保持讀語義：it 是載荷副本，`it = v` 只
+			// 重綁局部，與今天一致。nil/err 臂沒有元素位置可寫，不改寫。
+			// SkipSafeIndexLowering 旗標已隨 §4.3 刪除：編譯期一律做 place-write 寫回；
+			// 糖形態（SkipLowering=true）不走此路徑，formatter 直接渲染 surface 語法。
+			if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) {
+				writeInBounds := false
+				if idx, ok := origMatched.(*IndexExpression); ok {
+					writeInBounds = p.sem.IndexIsInBounds(idx)
+				}
+				arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds, idxOutDef)
+			}
+			if armType != "" {
 				// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
 				// 嵌套 match 時這能保住外層的 `it`（否則內層會把它覆蓋掉）。
 				bindName := arm.BindingName
@@ -3258,8 +3589,8 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 			Token:     tok,
 			Condition: &IntegerLiteral{Token: tok, Value: 1},
 			Consequence: &BlockStatement{
-				Token:       tok,
-				Statements:  wrapperStmts,
+				Token:      tok,
+				Statements: wrapperStmts,
 			},
 			MatchedExpr: &Identifier{Token: tok, Value: subjName},
 		}
@@ -3518,8 +3849,8 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 			}
 		case *ExpressionStatement:
 			if ie, ok := n.Expression.(*IfExpression); ok && !p.sem.HasRTFlag(ie, RTBareMatch) {
-			if ie.Consequence != nil {
-				if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
+				if ie.Consequence != nil {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
 						ie.Consequence.Statements = ns
 						changed = true
 					}

@@ -146,7 +146,7 @@ func collectLocalVarNames(program *parser.Program, out map[string]bool) {
 			// SurfaceMatch 上。少了這個 case，臂裡綁定的區域變數一律看不見
 			// ⇒ 下面「modName 是不是本地變數」的判定會用一份不完整的名單，
 			// 既可能誤報（receiver 其實是臂內宣告的變數）也可能漏報。
-			walkSurfaceMatchChildren(x, walkExpr, walkStmt)
+			walkSurfaceMatchChildren(x, nil, walkExpr, walkStmt)
 		}
 	}
 
@@ -328,7 +328,7 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 			// case 就會靜默跳過整棵子樹），`client.is-connected()` 這類寫在
 			// 臂裡的模組呼叫於是被整條漏掉。實測：tests/sse.no 與
 			// tests/yaml.no 在糖形態下各少報 2 條 ckaj3355。
-			walkSurfaceMatchChildren(x, checkExpr, checkStmt)
+			walkSurfaceMatchChildren(x, nil, checkExpr, checkStmt)
 		}
 	}
 

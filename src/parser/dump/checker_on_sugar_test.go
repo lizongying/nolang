@@ -62,11 +62,25 @@ func loweredShape() shape {
 	return shape{name: "lowered", configure: func(p *parser.Parser) {}}
 }
 
+// ⚠️ shape COLLAPSE, deliberate and recorded (2026-10-18):
+//
+// `surface` used to mean "SkipUnwrapLowering + SkipSafeIndexLowering" — the pair
+// that switched off inferOptionArith / maybeCaptureOptionAssign /
+// maybeIndexOutAssign while leaving every other lowering pass running. Those two
+// flags were DELETED with §4.3 (parser/lowering.go:337,416,432,442 say so
+// explicitly), and the replacement edit left `p.SkipLowering = true` written
+// twice in their place. Consequently **surfaceShape and sugarShape are now the
+// SAME parser configuration** and produce byte-identical trees: `allShapes()`
+// below returns six entries but only THREE distinct trees (lowered / sugar /
+// sugar).
+//
+// Nothing asserts surface-vs-sugar differences today, so no gate is currently
+// passing vacuously on this — but any future check Keyed on "surface differs from
+// sugar" would be 0 == 0 until a real surface mode is reintroduced. The duplicate
+// assignments have been collapsed so the equivalence is visible in the source
+// rather than hidden behind two identical lines.
 func surfaceShape() shape {
-	return shape{name: "surface", configure: func(p *parser.Parser) {
-		p.SkipLowering = true
-		p.SkipLowering = true
-	}}
+	return shape{name: "surface", configure: func(p *parser.Parser) { p.SkipLowering = true }}
 }
 
 func sugarShape() shape {
@@ -81,10 +95,7 @@ func loweredShapeLW() shape {
 }
 
 func surfaceShapeLW() shape {
-	return shape{name: "surface-lw", lightweight: true, configure: func(p *parser.Parser) {
-		p.SkipLowering = true
-		p.SkipLowering = true
-	}}
+	return shape{name: "surface-lw", lightweight: true, configure: func(p *parser.Parser) { p.SkipLowering = true }}
 }
 
 func sugarShapeLW() shape {

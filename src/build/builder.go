@@ -1166,6 +1166,10 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
+	// S1：js/wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
+	// 主編譯管線（checker/transpiler/H0）已原生消費 SurfaceMatch，不走此處。
+	p.DesugarSurfaceMatches(program)
+
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)
 
@@ -1212,6 +1216,9 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	if errs := p.Errors(); len(errs) > 0 {
 		return fmt.Errorf("%s: %v", inputPath, errs)
 	}
+
+	// S1：js/wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
+	p.DesugarSurfaceMatches(program)
 
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)
@@ -1316,6 +1323,8 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		p := parser.New(l)
 		p.Filename = filepath.Base(filePath)
 		prog := p.ParseProgram()
+		// S1：js 後端為實驗性後端，合併的模組也保留降糖形態。
+		p.DesugarSurfaceMatches(prog)
 		if len(p.Errors()) > 0 {
 			return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
 		}
@@ -1497,6 +1506,9 @@ func BuildJS(inputPath string, opts BuildOptions) (string, error) {
 	if errs := p.Errors(); len(errs) > 0 {
 		return "", fmt.Errorf("%s: %v", inputPath, errs)
 	}
+
+	// S1：js/wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
+	p.DesugarSurfaceMatches(program)
 
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)

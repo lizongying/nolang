@@ -62,7 +62,10 @@ func (t sugarTier) String() string {
 // sugar node must declare who removes it, so it cannot be added without someone
 // deciding whether it is a P1 violation or an H0 obligation.
 var sugarTiers = map[string]sugarTier{
-	"SurfaceMatch":          removedByParser,
+	// S1 翻转：ParseProgram 默认路径保留 SurfaceMatch（deferMatchDesugar），
+	// 不再在 parser 内展成 if 链。SurfaceMatch 因此改由 H0（S2）擦除，
+	// 从 removedByParser 升为 removedByH0。
+	"SurfaceMatch":          removedByH0,
 	"UnwrapAssignStatement": removedByParser,
 	"GroupedExpression":     removedByH0,
 	"MultiAssignStatement":  removedByH0,

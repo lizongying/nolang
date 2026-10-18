@@ -2100,6 +2100,17 @@ func collectReassignedGlobalsInExpr(expr parser.Expression, reassignedGlobals ma
 				collectReassignedGlobals(bs, reassignedGlobals)
 			}
 		}
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。只收各臂體的重新賦值全域變數（與 IfExpression 分支
+		// 只走 Consequence/Alternative 一致，不校 Condition）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Body != nil {
+				for _, bs := range arm.Body.Statements {
+					collectReassignedGlobals(bs, reassignedGlobals)
+				}
+			}
+		}
 	case *parser.IfExpression:
 		if e.Consequence != nil {
 			for _, bs := range e.Consequence.Statements {

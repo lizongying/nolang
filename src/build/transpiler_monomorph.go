@@ -176,6 +176,142 @@ func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[str
 	}
 }
 
+// scanSurfaceMatchForGenericCalls 是 scanIfExpressionForGenericCalls 的 S1 糖形態對應。
+// 降糖後 IfExpression.Condition 已內嵌 subject 比較，故只掃 Condition；糖形態下
+// subject 在 sm.Matched、模式值在 arm.MultiValuePatterns，須顯式掃，否則會漏掉
+// 這些位置的泛型/聯合呼叫。
+func scanSurfaceMatchForGenericCalls(sm *parser.SurfaceMatch, genericFns map[string]*parser.FunctionDefinition,
+	varTypes map[string]string, program *parser.Program, newStmts *[]parser.Statement, typeOwner map[string]string) {
+	if sm.Matched != nil {
+		scanExprForGenericCalls(sm.Matched, genericFns, varTypes, program, newStmts, typeOwner)
+	}
+	// 型別解構 match 的臂綁定只在 H0 降糖（ASTToHIR 的 desugarSurfaceMatch →
+	// buildTypeMatchDesugar）才以合成 let 落地，晚於本 pass。先在臂作用域內
+	// 登記窄化型別，讓臂體的方法呼叫看得见接收者型别（見 surfaceMatchIsTypeDispatch）。
+	var unionMembers map[string][]string
+	if program != nil && program.Sem != nil {
+		unionMembers = program.Sem.UnionMembers
+	}
+	typeDispatch := surfaceMatchIsTypeDispatch(sm.Arms, unionMembers)
+	for i := range sm.Arms {
+		arm := &sm.Arms[i]
+		if arm.Condition != nil {
+			scanExprForGenericCalls(arm.Condition, genericFns, varTypes, program, newStmts, typeOwner)
+		}
+		for _, vp := range arm.MultiValuePatterns {
+			if vp != nil {
+				scanExprForGenericCalls(vp, genericFns, varTypes, program, newStmts, typeOwner)
+			}
+		}
+		if arm.Body != nil {
+			// 每個臂是獨立作用域，同 scanIfExpressionForGenericCalls 的 Consequence/Alternative。
+			blockVarTypes := make(map[string]string)
+			for k, v := range varTypes {
+				blockVarTypes[k] = v
+			}
+			if typeDispatch {
+				// 與 buildTypeMatchDesugar 的合成綁定對齊：`v i32 ->` 登記 v:i32，
+				// 裸型別臂 `i32 ->` 登記 it:i32。只写本臂的 blockVarTypes（每臂獨立
+				// 拷貝），不污染其他臂。
+				if name, t := surfaceMatchArmTypeBinding(arm, unionMembers); name != "" {
+					blockVarTypes[name] = t
+				}
+			}
+			collectVarTypesFromBody(arm.Body, blockVarTypes)
+			for _, s := range arm.Body.Statements {
+				scanStmtForGenericCalls(s, genericFns, blockVarTypes, program, newStmts, typeOwner)
+			}
+		}
+	}
+}
+
+// surfaceMatchIsOptionArm mirrors parser/lowering.go isOptionMatchArm: an
+// ok/nil/err arm (or a `.->` dot-value arm) makes the whole match an OPTION
+// match, which is dispatched by buildMatchDesugar — not buildTypeMatchDesugar.
+// The parser keeps that predicate unexported; the arm shape it tests is pure
+// syntax, so mirroring it here cannot drift with semantic side tables.
+func surfaceMatchIsOptionArm(a *parser.MatchArm) bool {
+	if a == nil {
+		return false
+	}
+	switch c := a.Condition.(type) {
+	case *parser.NilLiteral:
+		return true
+	case *parser.CallExpression:
+		if id, ok := c.Function.(*parser.Identifier); ok {
+			switch id.Value {
+			case "ok", "err":
+				return true
+			}
+		}
+	case *parser.Identifier:
+		switch c.Value {
+		case "ok", "nil", "err":
+			return true
+		}
+	}
+	return a.IsDotVal
+}
+
+// surfaceMatchIsTypeDispatch mirrors the parser's dispatch decision for a
+// SURFACE match (lowerSurfaceMatch / desugarSurfaceMatch): a match with no
+// option arm whose arms carry type patterns is lowered by
+// buildTypeMatchDesugar, which prepends a synthetic `let <bind> = <subject>`
+// narrowed to the member type. Only the ARM SHAPE is tested here — the other
+// half of the parser's condition (subject static type is a union) cannot be
+// evaluated in this pass and is redundant anyway: arm shape alone forces the
+// type-match path (see parser armsCarryTypePatterns).
+func surfaceMatchIsTypeDispatch(arms []parser.MatchArm, unionMembers map[string][]string) bool {
+	for i := range arms {
+		if surfaceMatchIsOptionArm(&arms[i]) {
+			return false
+		}
+	}
+	for i := range arms {
+		if _, t := surfaceMatchArmTypeBinding(&arms[i], unionMembers); t != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// surfaceMatchArmTypeBinding returns the narrowed binding a type arm
+// introduces: `v i32 ->` binds v (TypeBindingName) to i32 (TypePattern); a
+// bare `i32 ->` arm binds the implicit `it` to the member named by the
+// condition. The union-membership test for the bare form mirrors the
+// parser's isUnionMemberName — direct members of ANY known union alias
+// (SemanticContext.UnionMembers, exported from the parser at ParseProgram).
+func surfaceMatchArmTypeBinding(arm *parser.MatchArm, unionMembers map[string][]string) (string, string) {
+	if arm == nil {
+		return "", ""
+	}
+	if arm.IsTypeArm && arm.TypePattern != "" {
+		name := arm.TypeBindingName
+		if name == "" {
+			name = "it"
+		}
+		return name, arm.TypePattern
+	}
+	if id, ok := arm.Condition.(*parser.Identifier); ok && isUnionMemberNameIn(id.Value, unionMembers) {
+		return "it", id.Value
+	}
+	return "", ""
+}
+
+func isUnionMemberNameIn(name string, unionMembers map[string][]string) bool {
+	if name == "" {
+		return false
+	}
+	for _, members := range unionMembers {
+		for _, m := range members {
+			if m == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // scanExprForGenericCalls recursively walks an expression tree to find
 // CallExpressions (including method calls) that need generic/method resolution.
 func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*parser.FunctionDefinition,
@@ -191,6 +327,8 @@ func scanExprForGenericCalls(expr parser.Expression, genericFns map[string]*pars
 		scanExprForGenericCalls(e.Right, genericFns, varTypes, program, newStmts, typeOwner)
 	case *parser.PrefixExpression:
 		scanExprForGenericCalls(e.Right, genericFns, varTypes, program, newStmts, typeOwner)
+	case *parser.SurfaceMatch:
+		scanSurfaceMatchForGenericCalls(e, genericFns, varTypes, program, newStmts, typeOwner)
 	case *parser.IfExpression:
 		scanIfExpressionForGenericCalls(e, genericFns, varTypes, program, newStmts, typeOwner)
 	case *parser.GroupedExpression:
@@ -476,6 +614,26 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 		rewriteUnionCallExpr(e.Right, templates, varTypes)
 	case *parser.PrefixExpression:
 		rewriteUnionCallExpr(e.Right, templates, varTypes)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。降糖後 Condition 已內嵌 subject 比較與模式值，
+		// 此處分臂顯式重寫 Matched / Condition / MultiValuePatterns / Body。
+		if e.Matched != nil {
+			rewriteUnionCallExpr(e.Matched, templates, varTypes)
+		}
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				rewriteUnionCallExpr(arm.Condition, templates, varTypes)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					rewriteUnionCallExpr(vp, templates, varTypes)
+				}
+			}
+			if arm.Body != nil {
+				rewriteUnionCallStmts(arm.Body.Statements, templates, varTypes)
+			}
+		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
 			rewriteUnionCallExpr(e.Condition, templates, varTypes)
@@ -812,6 +970,31 @@ func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType stri
 		de := *e
 		de.Receiver = cloneExprForUnion(e.Receiver, oldName, newName, memberType)
 		return &de
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。克隆 Matched + 每臂 Condition / MultiValuePatterns / Body，
+		// 其餘 MatchArm 欄位（綁定名、型別臂等）隨值拷貝保留。
+		newSm := &parser.SurfaceMatch{
+			Token:   e.Token,
+			Matched: cloneExprForUnion(e.Matched, oldName, newName, memberType),
+		}
+		if len(e.Arms) > 0 {
+			newSm.Arms = make([]parser.MatchArm, len(e.Arms))
+			for i := range e.Arms {
+				arm := e.Arms[i]
+				if arm.Condition != nil {
+					arm.Condition = cloneExprForUnion(arm.Condition, oldName, newName, memberType)
+				}
+				if len(arm.MultiValuePatterns) > 0 {
+					arm.MultiValuePatterns = make([]parser.Expression, len(arm.MultiValuePatterns))
+					for j, vp := range arm.MultiValuePatterns {
+						arm.MultiValuePatterns[j] = cloneExprForUnion(vp, oldName, newName, memberType)
+					}
+				}
+				arm.Body = cloneBlockForUnion(arm.Body, oldName, newName, memberType)
+				newSm.Arms[i] = arm
+			}
+		}
+		return newSm
 	case *parser.IfExpression:
 		ie := *e
 		ie.Condition = cloneExprForUnion(e.Condition, oldName, newName, memberType)
@@ -1882,6 +2065,34 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 			Token:      e.Token,
 			Expression: substituteExpr(e.Expression, subst),
 		}
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。重建 Matched + 每臂 Condition / MultiValuePatterns / Body，
+		// 其餘 MatchArm 欄位隨值拷貝保留。對應 IfExpression 分支的 Condition /
+		// MatchedExpr / ValuePatterns / Consequence / Alternative 替換。
+		newSm := &parser.SurfaceMatch{
+			Token:   e.Token,
+			Matched: substituteExpr(e.Matched, subst),
+		}
+		if len(e.Arms) > 0 {
+			newSm.Arms = make([]parser.MatchArm, len(e.Arms))
+			for i := range e.Arms {
+				arm := e.Arms[i]
+				if arm.Condition != nil {
+					arm.Condition = substituteExpr(arm.Condition, subst)
+				}
+				if len(arm.MultiValuePatterns) > 0 && len(subst) > 0 {
+					arm.MultiValuePatterns = make([]parser.Expression, len(arm.MultiValuePatterns))
+					for j, vp := range arm.MultiValuePatterns {
+						arm.MultiValuePatterns[j] = substituteExpr(vp, subst)
+					}
+				}
+				if arm.Body != nil {
+					arm.Body = substituteBody(arm.Body, subst)
+				}
+				newSm.Arms[i] = arm
+			}
+		}
+		return newSm
 	case *parser.IfExpression:
 		var valuePatterns []parser.Expression
 		if len(e.ValuePatterns) > 0 && len(subst) > 0 {
@@ -2070,6 +2281,33 @@ func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string)
 		return
 	}
 	switch e := expr.(type) {
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。每個臂是獨立的 `it` 作用域（見 IfExpression 分支說明），
+		// 只收臂體內聲明的區域變數型別，不收 Condition / MultiValuePatterns。
+		//
+		// 每臂用**獨立拷貝**收集，臂內 let 的推斷型別不得洩漏到 match 之後：
+		// 降糖形態下臂體是 if 分支，收集順序 Consequence→Alternative→DotValBody，
+		// 而 option match 的 ok 臂落在 DotValBody（最後處理）——其 `let p = it`
+		// 不可推斷 ⇒ 把 p 從表裡刪掉，等效於「match 之後沒有 p」。
+		// 糖形態若共享表，最後一個臂的推斷型別會留下來並蓋過 HIR 的更精確型別。
+		// 實測回歸（A/B vs 基線）：tests/match-index-option.no 的
+		//   parts[i]: { ok -> { p = it }  -> { p = '' } }
+		//   print(p.to-str())
+		// 工作樹把 p 記成 str（預設臂的字面值推斷）⇒ resolveMethodCall 攤成
+		// 不存在的 @str_to_str；基線表裡沒有 p ⇒ 交給 MIR 用 HIR 型別 txt
+		// 攤成 @txt_to_str，正確。共用表還會讓值 match 的臂內宣告洩漏
+		//（`1 -> { q = 'a' }  -> { q = 'b' }` 之後 q:str——降糖形態同樣洩漏，
+		//  兩版同壞），拷貝後統一交給 HIR 裁決。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Body != nil {
+				armVT := make(map[string]string, len(varTypes))
+				for k, v := range varTypes {
+					armVT[k] = v
+				}
+				collectItScoped(armVT, func() { collectVarTypesFromBody(arm.Body, armVT) })
+			}
+		}
 	case *parser.IfExpression:
 		// Each branch is its own `it` scope: a match arm desugars to a branch
 		// whose first statement is the synthetic `let it = <subject>`, and a

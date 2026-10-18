@@ -115,7 +115,17 @@ import (
 // 反序列化會得到 `s.Type == nil` + 空的 InferredType，使 ASTToHIR 的 Type ID 變成
 // NoID（不再輸出 `?i64`）；必須 bump，否則 cache HIT 會在 24/532 corpus 檔產生
 // 與預設路徑不一致的 HIR（parser/dump/s3_breakdown_test.go 的 typeSynth 桶）。
-const ASTVersion = "2026-10-16.4"
+// 2026-10-18.1：S1 翻轉——`ParseProgram()` 的默認路徑**保留 SurfaceMatch**
+// （`deferMatchDesugar` 從「展開 match」改為「保留並只跑預檢」），
+// `LowerSurface` 不再展開 match，降糖改由 `ASTToHIR` 的 `case *SurfaceMatch`
+// 負責。ParseProgram 的**產出**因此改變：match 語句從降糖後的 IfExpression 鏈
+// 變成 SurfaceMatch 節點。緩存鍵 = 源碼哈希 + ASTVersion + salt，**不含文件路徑、
+// 不含二進制版本**（見 UserASTCache 註釋），所以不 bump 的話：舊二進制（翻轉前）
+// 解析並寫入的已降糖 AST blob 會被新二進制命中，`no build` 拿到一棵沒有
+// SurfaceMatch 的樹——S1 的行為被靜默退回翻轉前，且這種「假綠」只在緩存命中時
+// 出現（NOLANG_AST_CACHE_OFF=1 復測即暴露）。2026-10-16.2 的註釋已預言此場景
+// （「若 S1 讓 SurfaceMatch 存活到序列化，那時必須 bump」）。
+const ASTVersion = "2026-10-18.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

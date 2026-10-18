@@ -53,8 +53,10 @@ func TestFormatOverflowAnnotationOnArmStaysParseable(t *testing.T) {
 			first := FormatFile(src)
 
 			// 1) 輸出必須可再解析（冪等的前提，也是這個 bug 的直接症狀）。
+			// NOTE: SkipUnwrapLowering + SkipSafeIndexLowering used to be set here as
+			// well; they were deleted with §4.3 (parser/lowering.go:337) and the
+			// replacement left `SkipLowering = true` duplicated. Collapsed to one.
 			p := parser.New(lexer.New(first))
-			p.SkipLowering = true
 			p.SkipLowering = true
 			p.ParseProgram()
 			if perrs := p.Errors(); len(perrs) > 0 {

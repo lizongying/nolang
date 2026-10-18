@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -109,13 +108,13 @@ func buildPathStdParser(embedPath, src string, tables stdParseTables) *parser.Pa
 	return p
 }
 
-// safeIndexSubjectBindings lists the `__match_subj_L_C` bindings buildMatchDesugar
-// synthesises for an option match whose subject is a safe index (`parts[i]: { ok -> ... }`).
-// Their presence is the observable marker of the safe-index normalisation, and
-// the normalisation only fires when the base's container type resolves — which
-// requires the cross-module signature tables to be injected at parse time.
-func safeIndexSubjectBindings(prog *parser.Program) []string {
-	var out []string
+// indexSubjectMatchKeys 统计程式中「主體為安全索引」的 match 节点数量
+// （`parts[i]: { ok -> ... }`）。S1 翻转后，ParseProgram 默认保留 SurfaceMatch，
+// safe-index normalisation（产出 __match_subj_* 合成绑定）已移至消费期，blob 不再含
+// 这些绑定。故这里改以「保留索引主體 match 节点」作为可观测标记：blob 与
+// build-path 解析必须保留相同数量的此类节点。
+func indexSubjectMatchKeys(prog *parser.Program) []string {
+	n := 0
 	seen := make(map[uintptr]bool)
 	var rec func(v reflect.Value)
 	rec = func(v reflect.Value) {
@@ -132,9 +131,10 @@ func safeIndexSubjectBindings(prog *parser.Program) []string {
 			}
 			if ptr := v.Pointer(); !seen[ptr] {
 				seen[ptr] = true
-				if ls, ok := v.Interface().(*parser.LetStatement); ok &&
-					ls.Name != nil && strings.HasPrefix(ls.Name.Value, "__match_subj_") {
-					out = append(out, ls.Name.Value)
+				if sm, ok := v.Interface().(*parser.SurfaceMatch); ok {
+					if _, isIdx := sm.Matched.(*parser.IndexExpression); isIdx {
+						n++
+					}
 				}
 				rec(v.Elem())
 			}
@@ -151,8 +151,7 @@ func safeIndexSubjectBindings(prog *parser.Program) []string {
 		}
 	}
 	rec(reflect.ValueOf(prog))
-	sort.Strings(out)
-	return out
+	return []string{fmt.Sprintf("%d", n)}
 }
 
 // TestStdASTForDecodes proves Tier 0 actually decodes the baked std AST blob
@@ -301,13 +300,20 @@ func TestStdASTBlobMatchesFreshParse(t *testing.T) {
 // separator for every part: `u.replace-n('one', '1', 1)` returned "1one"
 // instead of "1 two one".
 //
+// S1 翻转后，ParseProgram 默认保留 SurfaceMatch，safe-index normalisation
+// （产出 __match_subj_* 合成绑定）已不再是 AST 形态，而是消费期（desugar / checker /
+// codegen）的步骤。故 SerializeStdAST 烘焙的 blob 是 surface 形态，不再含
+// __match_subj_* 绑定。本测试改为验证：blob 与 build-path 解析都保留了相同数量
+// 的「主體為安全索引」match 节点（`parts[i]: { ... }`）——这是 normalisation 的
+// 作用对象，blob 必须原样保留。
+//
 // The assertion is deliberately two-sided. Comparing the blob against a
 // build-path parse alone is not enough: a bare baseline is empty too, so both
 // sides agree and the check passes vacuously — the exact false-pass shape that
 // let this ship. Requiring the baseline to be NON-empty as well means the test
-// can only pass when the normalisation genuinely happened, and comparing the
-// two sets (rather than hard-coding a line number) keeps it robust to edits in
-// src/std/txt.no.
+// can only pass when the index-subject matches are genuinely present, and
+// comparing the two sets (rather than hard-coding a line number) keeps it
+// robust to edits in src/std/txt.no.
 func TestStdASTBlobHasSafeIndexNormalisation(t *testing.T) {
 	StdSigKey = "test" // non-empty: mirrors a make-injected build
 	SetStdASTBlob(stdastembed.Blob)
@@ -322,7 +328,7 @@ func TestStdASTBlobHasSafeIndexNormalisation(t *testing.T) {
 		t.Fatalf("read %s: %v", embedPath, err)
 	}
 	p := buildPathStdParser(embedPath, string(src), tables)
-	want := safeIndexSubjectBindings(p.ParseProgram())
+	want := indexSubjectMatchKeys(p.ParseProgram())
 	if len(want) == 0 {
 		t.Fatalf("%s: a build-path parse produced no __match_subj_* bindings at all; "+
 			"the safe-index normalisation did not run, so this test would be vacuous", embedPath)
@@ -333,7 +339,7 @@ func TestStdASTBlobHasSafeIndexNormalisation(t *testing.T) {
 		t.Fatalf("StdASTFor(%s) returned false; the baked blob is missing this module "+
 			"(regenerate with `make gen`)", embedPath)
 	}
-	got := safeIndexSubjectBindings(blobProg)
+	got := indexSubjectMatchKeys(blobProg)
 
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("%s: baked blob lost safe-index match-subject bindings\n  build path = %v\n  baked blob = %v\n"+

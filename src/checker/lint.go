@@ -146,6 +146,7 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 	// 附加（IDENT 起始）註解：遍歷所有陳述，檢查其 side-table 中的 overflow 條目。
 	var collect func(stmts []parser.Statement)
 	var collectIf func(ie *parser.IfExpression)
+	var collectSurfaceMatch func(sm *parser.SurfaceMatch)
 	collect = func(stmts []parser.Statement) {
 		for _, stmt := range stmts {
 			if stmt == nil {
@@ -191,9 +192,16 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 				if ie, ok := v.Expression.(*parser.IfExpression); ok {
 					collectIf(ie)
 				}
+				// S1：糖形態 match 是 SurfaceMatch；臂體亦為行註解作用域。
+				if sm, ok := v.Expression.(*parser.SurfaceMatch); ok {
+					collectSurfaceMatch(sm)
+				}
 			case *parser.LetStatement:
 				if ie, ok := v.Value.(*parser.IfExpression); ok {
 					collectIf(ie)
+				}
+				if sm, ok := v.Value.(*parser.SurfaceMatch); ok {
+					collectSurfaceMatch(sm)
 				}
 			}
 		}
@@ -208,6 +216,14 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 		if ie.Alternative != nil {
 			collect(ie.Alternative.Statements)
 		}
+	}
+	// collectSurfaceMatch 下鑽糖 match 的臂體（與 checker.OverflowAnnotationRelevance
+	// 及 range_index_lint 保持一致：臂體是行註解的作用域）。
+	collectSurfaceMatch = func(sm *parser.SurfaceMatch) {
+		if sm == nil {
+			return
+		}
+		walkSurfaceMatchArmBodies(sm, nil, func(stmts []parser.Statement) { collect(stmts) })
 	}
 	collect(program.Statements)
 	return results

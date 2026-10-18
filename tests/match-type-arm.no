@@ -1,0 +1,77 @@
+; match-type-arm.no — 型別解構 match（union 靜態派發）強化 fixture，S1 設計稿 §3 P5。
+;
+; type-match.no 已有 i32|i64|f64 全數值 union 的最小形態；本檔補強：
+;   1) 鏈式 union（union 的 union）：mixed = num | bool——臂模式校驗前
+;      flattenUnion 必須遞歸展開，直接成員 num 本身不是合法臂模式
+;   2) 非數值成員（bool）的型別臂，派發路徑與數值成員不同
+;   3) 裸型別臂（i64 -> …）與帶綁定型別臂（v bool -> …，v 臂內可見為 bool）混用
+;   4) 巢狀型別 match：型別臂體內再對具象 i64 值做型別 match（P5 × P5）
+;   5) 跨函式承擔：bool 上的值 match 由獨立函式 bool-str 完成（P1 形態）
+;
+; 已知限制（2026-10-18 實測，基線與工作樹一致，非本輪回歸）：
+;   a) union 成員若是聚合型別（str / vec / struct），單態化複本參數雖被換成
+;      具體成員，呼叫點仍以標量通路傳參，MIR codegen 報
+;      "parameter 'mixed' expects a scalar (LLVM i64) but the argument has
+;       aggregate type 'str' (LLVM %str-long)"
+;      ⇒ 本檔只收標量成員（num 族 + bool）。
+;   b) checker.ValidateUnionTypes 的 findSingleUnionName 只在「整個函數只使用
+;      同一個 union 別名」時才標 GenericUnion ⇒ 單態化只複製那種函數；帶兩個
+;      不同 union 參數的函數不會被複製，模板直接被呼叫，union 參數退化成標量、
+;      派發全落預設臂。故本檔每個函數只用一個 union（巢狀 match 的主體用具象
+;      型別的全域變數，而非第二個 union 參數）。
+;
+; 注意：普查分類器只把帶綁定的型別臂（IsTypeArm，即 `v T ->` 形）計入 P5，
+; 裸型別臂（`i64 ->`）算 P1——故本檔兩種形態都寫，覆蓋才不會有盲區。
+
+num = i32 | i64 | f64
+mixed = num | bool
+
+; (5) bool 上的值 match（P1 形態，由型別臂呼叫）
+bool-str = (b bool) (r str) {
+    r = b: {
+        true -> 'yes'
+
+        -> 'no'
+    }
+}
+
+; (1)(2)(3)(4) 裸臂 + 綁定臂混用；bool 臂內巢狀第二條型別 match。
+; 內層 match 的主體是 union 別名（num）型別的局部變數——靜態型別是 union，
+; 走 buildTypeMatchDesugar 的主體型別派發路徑（與外層 mixed 同形）。
+gi64 i64 = 7
+
+nested = (a mixed) (r str) {
+    r = a: {
+        v bool -> {
+            inner num = gi64
+            w = inner: {
+                u i64 -> 'bool+int64'
+
+                u i32 -> 'bool+int32'
+
+                u f64 -> 'bool+float64'
+
+                -> 'bool+other'
+            }
+            w
+        }
+
+        i64 -> 'bare-i64'
+
+        i32 -> 'bare-i32'
+
+        f64 -> 'bare-f64'
+
+        -> 'other'
+    }
+}
+
+; ---- 驅動：每個 concrete 成員各跑一次 ----
+ba bool = true
+b1 i64 = 7
+b2 i32 = 3
+b3 f64 = 2.5
+print(nested(ba))       ; -> bool+int64（外層 bool 臂 × 內層 i64 臂）
+print(nested(b1))       ; -> bare-i64（裸型別臂）
+print(nested(b2))       ; -> bare-i32
+print(nested(b3))       ; -> bare-f64

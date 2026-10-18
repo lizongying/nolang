@@ -537,6 +537,26 @@ func renameBareFnRefsInExpr(expr parser.Expression, rename map[string]string) {
 	case *parser.RangeExpression:
 		renameBareFnRefsInExpr(e.Start, rename)
 		renameBareFnRefsInExpr(e.End, rename)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body，不校 Matched（與降糖 IfExpression 不校
+		// MatchedExpr 一致）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				renameBareFnRefsInExpr(arm.Condition, rename)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					renameBareFnRefsInExpr(vp, rename)
+				}
+			}
+			if arm.Body != nil {
+				for _, bs := range arm.Body.Statements {
+					renameBareFnRefsInStmt(bs, rename)
+				}
+			}
+		}
 	case *parser.IfExpression:
 		renameBareFnRefsInExpr(e.Condition, rename)
 		if e.Consequence != nil {
@@ -897,6 +917,26 @@ func rewriteTypeRefsInExpr(expr parser.Expression, typeOwner map[string]string) 
 	case *parser.RangeExpression:
 		rewriteTypeRefsInExpr(e.Start, typeOwner)
 		rewriteTypeRefsInExpr(e.End, typeOwner)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body，不校 Matched（與降糖 IfExpression 不校
+		// MatchedExpr 一致）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				rewriteTypeRefsInExpr(arm.Condition, typeOwner)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					rewriteTypeRefsInExpr(vp, typeOwner)
+				}
+			}
+			if arm.Body != nil {
+				for _, bs := range arm.Body.Statements {
+					rewriteTypeRefsInStmt(bs, typeOwner)
+				}
+			}
+		}
 	case *parser.IfExpression:
 		rewriteTypeRefsInExpr(e.Condition, typeOwner)
 		if e.Consequence != nil {

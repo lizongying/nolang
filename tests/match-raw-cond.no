@@ -1,0 +1,98 @@
+; match-raw-cond.no — raw-cond 臂（ok(cond) 條件值臂）強化 fixture，S1 設計稿 §3 P4。
+;
+; minimal-ok.no 已有「單條 ok(cond) + 預設臂」的最小形態；本檔補強：
+;   1) 多條 ok(cond) 串成條件鏈（先命中先贏，if-else 語義）
+;   2) 複合布林條件 ok(lo <= it && it < hi)
+;   3) 值回傳函式內的 raw-cond：match 值經結果參數外流給呼叫方
+;   4) raw-cond 巢狀於另一條 match 的臂體內（P4 × P6）
+;   5) ?= 傳播：安全索引 / option 合成 match 的原始碼形態。該合成臂
+;      （SkipItBinding）在 lowering 內被 buildMatchDesugar 立即消費、
+;      從不存活於任何樹形，只能在原始碼層釘住——分類器注釋見
+;      src/parser/dump/hir_subform_coverage_test.go。
+
+; (1)(2)(3) 多條 raw-cond + 複合條件，值回傳
+grade = (score ?i64) (r str) {
+    r = score: {
+        ok(it >= 90) -> 'A'
+        ok(it >= 80 && it < 90) -> 'B'
+        ok(it >= 60 && it < 80) -> 'C'
+        -> 'F'
+    }
+}
+
+; (4) raw-cond 巢狀於值 match 的臂體內；外層預設臂兜住 nil/err
+classify = (v ?i64) (r str) {
+    r = v: {
+        ok(it < 0) -> {
+            w = v: {
+                ok(it < -100) -> 'very-negative'
+                -> 'negative'
+            }
+            w
+        }
+        -> 'non-negative'
+    }
+}
+
+; (5) ?= 傳播的原始碼形態（option 結果參數函式內解箱賦值）
+double = (n i64) (r ?i64) {
+    r = nil
+    n > 0 -> r = n * 2
+}
+sum-two = (a ?i64, b ?i64) (r ?i64) {
+    x ?= a
+    y ?= b
+    r = x + y
+}
+; ?= 只能在有 option 結果參數的函式內使用，故傳播驅動也包一層。
+; 注意 a / b 用普通 = 綁定（保留 ?i64 option 型別）；?= 是解箱語義。
+; double 的實參走普通變數：option 函式的裸算術實數會被 f10x20nf 規則
+; 要求先 ?= 解箱（checker/funcargs.go），与本档主题无关，故不觸發。
+drive = () (r ?i64) {
+    n1 i64 = 21
+    n2 i64 = -1
+    a = double(n1)
+    b = double(n2)
+    r = sum-two(a, b)
+}
+
+; ---- grade ----
+snil ?i64 = nil
+s95 ?i64 = 95
+s85 ?i64 = 85
+s65 ?i64 = 65
+s10 ?i64 = 10
+io.out('grade nil -> ')
+print(grade(snil))           ; -> F（nil 落入預設臂）
+io.out('grade 95 -> ')
+print(grade(s95))            ; -> A
+io.out('grade 85 -> ')
+print(grade(s85))            ; -> B
+io.out('grade 65 -> ')
+print(grade(s65))            ; -> C
+io.out('grade 10 -> ')
+print(grade(s10))            ; -> F
+
+; ---- classify ----
+c-neg ?i64 = -5
+c-vneg ?i64 = -500
+c-pos ?i64 = 7
+io.out('classify -5 -> ')
+print(classify(c-neg))       ; -> negative
+io.out('classify -500 -> ')
+print(classify(c-vneg))      ; -> very-negative
+io.out('classify 7 -> ')
+print(classify(c-pos))       ; -> non-negative
+
+; ---- ?= 傳播：double(-1) 回傳 nil，x ?= a 向上傳播，sum-two 落到 nil ----
+; 注：臂內插值用裸 {v} 而非 {v.to-str()}——後者撞上既有 MIR 缺陷
+; （i64-to-str: no result slot，HEAD 同形態亦壞，見 unknown callee fmt-str），
+; 与本档主题无关，故不觸發。
+res = drive()
+res: {
+    ok(v) -> print('sum ok: {v}')
+
+    err -> print('sum err')
+
+    nil -> print('sum nil')
+}

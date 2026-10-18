@@ -59,6 +59,86 @@ func (p *Parser) flattenUnion(name string, visited map[string]bool) []string {
 	return out
 }
 
+// recoverUnionFromMember maps a concrete union-member type (e.g. i32) back to the
+// union alias it belongs to (e.g. num = i32 | i64 | f64). This is needed after
+// the S1 flip: a union-monomorphized clone carries a CONCRETE member as the match
+// subject type (x : i32) instead of the union (x : num), so the type-destructuring
+// match must still validate its arms against the FULL union member set — otherwise
+// every non-matching arm errors with "type match arm pattern X is not a member of
+// union i32". In the no-flip pipeline the original function is desugared before
+// cloning, so the clone inherits the already-static if-chain; recovering the union
+// here makes the deferred (H0) desugar produce the same result.
+//
+// armPatterns lists the type names named by the match arms (i32 / i64 / f64 for a
+// `x: { i32 -> ; i64 -> }` match); we prefer the union whose member set is a
+// superset of them, which disambiguates when a member belongs to several unions
+// (e.g. both `int = i32 | i64` and `num = i32 | i64 | f64` contain i32, but only
+// `num` covers an f64 arm). Returns name unchanged when it is already a union or
+// not a known union member.
+func (p *Parser) recoverUnionFromMember(name string, armPatterns []string) string {
+	if name == "" || p.isUnionType(name) || !p.isUnionMemberName(name) {
+		return name
+	}
+	// Collect every union whose (recursively flattened) member set contains the
+	// concrete `name`. Direct members are not enough: a chained union such as
+	// `mixed = num | bool` contains `i32` only transitively (via num), so we must
+	// flatten before testing membership.
+	type cand struct {
+		u       string
+		flat    []string
+		members map[string]bool
+	}
+	var cands []cand
+	for u := range p.unionMembers {
+		flat := p.flattenUnion(u, nil)
+		set := make(map[string]bool, len(flat))
+		hit := false
+		for _, m := range flat {
+			set[m] = true
+			if m == name {
+				hit = true
+			}
+		}
+		if !hit {
+			continue
+		}
+		cands = append(cands, cand{u, flat, set})
+	}
+	if len(cands) == 0 {
+		return name
+	}
+	// Among candidates, prefer one whose flattened member set contains EVERY arm
+	// pattern (a valid superset); if several qualify, pick the most specific
+	// (fewest members). Otherwise fall back to the one covering the most arm
+	// patterns. This recovers `mixed` (covers {bool,i64,i32,f64}) over `num`
+	// (covers only {i64,i32,f64}) for a `x mixed: { bool->; i64->; i32->; f64-> }`
+	// match, while still recovering `num` for `x num: { i32->; i64-> }`.
+	best := cands[0]
+	bestValid := false
+	bestCover := -1
+	for _, c := range cands {
+		valid := true
+		cover := 0
+		for _, ap := range armPatterns {
+			if c.members[ap] {
+				cover++
+			} else {
+				valid = false
+			}
+		}
+		if valid {
+			if !bestValid || len(c.flat) < len(best.flat) {
+				best, bestValid = c, true
+			}
+		} else if !bestValid {
+			if cover > bestCover {
+				best, bestCover = c, cover
+			}
+		}
+	}
+	return best.u
+}
+
 // parseTildeMatchStatement parses old-style ~match:
 //
 //	~match x { case err: ... case nil: ... default: ... }

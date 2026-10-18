@@ -230,7 +230,7 @@ func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, ma
 			rootFunc[x] = fn
 			rootFile[x] = file
 			// 臂体是语句容器，臂条件是表达式；嵌套 match 会在臂体里再次被找到。
-			walkSurfaceMatchChildren(x,
+			walkSurfaceMatchChildren(x, nil,
 				func(sub parser.Expression) { walkExpr(fn, file, sub) },
 				func(sub parser.Statement) { walkStmts(fn, file, []parser.Statement{sub}) })
 		case *parser.IfExpression:

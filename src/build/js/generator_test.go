@@ -31,6 +31,8 @@ func generateJS(t *testing.T, source string) string {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
+	// S1：js 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
+	p.DesugarSurfaceMatches(program)
 	g := js.NewGenerator()
 	g.SetTargetPlatform("js", "")
 	out, err := g.Generate(program)
@@ -51,6 +53,8 @@ func generateJSWithEnv(t *testing.T, source string, env string) string {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
+	// S1：js 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
+	p.DesugarSurfaceMatches(program)
 	g := js.NewGenerator()
 	g.SetTargetPlatform("js", "")
 	if env == "browser" {

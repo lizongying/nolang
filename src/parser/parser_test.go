@@ -20,12 +20,8 @@ func TestRangeSyntaxParsing(t *testing.T) {
   -> 0
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		if prog == nil || len(prog.Statements) == 0 {
 			t.Fatalf("expected program with statements")
 		}
@@ -37,12 +33,8 @@ func TestRangeSyntaxParsing(t *testing.T) {
   -> 0
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		if prog == nil || len(prog.Statements) == 0 {
 			t.Fatalf("expected program with statements")
 		}
@@ -54,12 +46,8 @@ func TestRangeSyntaxParsing(t *testing.T) {
   -> 0
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		if prog == nil || len(prog.Statements) == 0 {
 			t.Fatalf("expected program with statements")
 		}
@@ -71,12 +59,8 @@ func TestRangeSyntaxParsing(t *testing.T) {
   -> 0
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		if prog == nil || len(prog.Statements) == 0 {
 			t.Fatalf("expected program with statements")
 		}
@@ -90,12 +74,8 @@ func TestRangeSyntaxParsing(t *testing.T) {
   -> -1
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		if prog == nil || len(prog.Statements) == 0 {
 			t.Fatalf("expected program with statements")
 		}
@@ -110,16 +90,26 @@ func TestRangeSyntaxParsing(t *testing.T) {
   -> -1
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		if prog == nil || len(prog.Statements) == 0 {
 			t.Fatalf("expected program with statements")
 		}
 	})
+}
+
+// parseDesugaredProgram 解析并显式执行 match desugar（S1 翻转后 desugar 是独立
+// 步骤，ParseProgram 默认保留 SurfaceMatch）。供验证 desugar 产物（range /
+// place-write 等）的测试使用。
+func parseDesugaredProgram(t *testing.T, src string) *Program {
+	t.Helper()
+	p := New(lexer.New(src))
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parse errors: %v", p.Errors())
+	}
+	p.DesugarSurfaceMatches(prog)
+	return prog
 }
 
 // TestRangeExpressionDesugar 驗證範圍條件正確 desugar 為布爾表達式。
@@ -134,12 +124,8 @@ func TestRangeExpressionDesugar(t *testing.T) {
   -> 0
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		// The match desugar produces an IfExpression with condition:
 		// it >= 0 && it <= 59
 		ls, ok := prog.Statements[0].(*LetStatement)
@@ -179,12 +165,8 @@ func TestRangeExpressionDesugar(t *testing.T) {
   -> 0
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		ls, ok := prog.Statements[0].(*LetStatement)
 		if !ok {
 			t.Fatalf("expected LetStatement, got %T", prog.Statements[0])
@@ -215,12 +197,8 @@ func TestRangeExpressionDesugar(t *testing.T) {
   -> 0
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		ls, ok := prog.Statements[0].(*LetStatement)
 		if !ok {
 			t.Fatalf("expected LetStatement, got %T", prog.Statements[0])
@@ -258,12 +236,8 @@ func TestRangeExpressionDesugar(t *testing.T) {
   -> 0
 }
 `
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		ls, ok := prog.Statements[0].(*LetStatement)
 		if !ok {
 			t.Fatalf("expected LetStatement, got %T", prog.Statements[0])
@@ -369,12 +343,8 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 		// [5..) → it >= 5
 		src := `x = n: { [5..) -> 1
 -> 0 }`
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		ls, ok := prog.Statements[0].(*LetStatement)
 		if !ok {
 			t.Fatalf("expected LetStatement, got %T", prog.Statements[0])
@@ -396,12 +366,8 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 		// (5..) → it > 5
 		src := `x = n: { (5..) -> 1
 -> 0 }`
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		ls, ok := prog.Statements[0].(*LetStatement)
 		if !ok {
 			t.Fatalf("expected LetStatement, got %T", prog.Statements[0])
@@ -423,12 +389,8 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 		// [..5] → it <= 5
 		src := `x = n: { [..5] -> 1
 -> 0 }`
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		ls, ok := prog.Statements[0].(*LetStatement)
 		if !ok {
 			t.Fatalf("expected LetStatement, got %T", prog.Statements[0])
@@ -450,12 +412,8 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 		// [..5) → it < 5
 		src := `x = n: { [..5) -> 1
 -> 0 }`
-		l := lexer.New(src)
-		p := New(l)
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			t.Fatalf("parse errors: %v", p.Errors())
-		}
+		prog := parseDesugaredProgram(t, src)
+
 		ls, ok := prog.Statements[0].(*LetStatement)
 		if !ok {
 			t.Fatalf("expected LetStatement, got %T", prog.Statements[0])
@@ -482,12 +440,7 @@ func TestUnboundedRangeDesugar(t *testing.T) {
 		for _, form := range forms {
 			src := fmt.Sprintf(`x = n: { %s -> 1
 -> 0 }`, form)
-			l := lexer.New(src)
-			p := New(l)
-			prog := p.ParseProgram()
-			if len(p.Errors()) > 0 {
-				t.Fatalf("parse errors for %s: %v", form, p.Errors())
-			}
+			prog := parseDesugaredProgram(t, src)
 			ls, ok := prog.Statements[0].(*LetStatement)
 			if !ok {
 				t.Fatalf("expected LetStatement, got %T", prog.Statements[0])

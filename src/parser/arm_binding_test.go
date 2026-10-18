@@ -54,6 +54,37 @@ func collectArmBindings(prog *Program) (arm, other map[string]int) {
 			if x.Value != nil {
 				walk(x.Value)
 			}
+		case *SurfaceMatch:
+			// S1：flip 後 ParseProgram 保留 SurfaceMatch，析構綁定不再以合成
+			// `let` 注入，而是編碼在 MatchArm 元資料（BindingName / BindingNames /
+			// 隐式 it）。糖形態下「臂綁定」即爲這些名稱。
+			for i := range x.Arms {
+				a := &x.Arms[i]
+				if a.BindingName != "" {
+					arm[a.BindingName]++
+				}
+				for _, bn := range a.BindingNames {
+					arm[bn]++
+				}
+				// 枚舉變體析構綁定 `full(v) ->`：綁定名在 Condition 的
+				// CallExpression 參數裡（parser 在枚舉上下文才把 arm.Condition
+				// 規範化成 Identifier；純語法期仍保留 CallExpression）。
+				if ce, ok := a.Condition.(*CallExpression); ok {
+					for _, arg := range ce.Arguments {
+						if id, ok := arg.(*Identifier); ok && id.Value != "" {
+							arm[id.Value]++
+						}
+					}
+				}
+				if armBindsIt(a) {
+					arm["it"]++
+				}
+				if a.Body != nil {
+					for _, s := range a.Body.Statements {
+						walk(s)
+					}
+				}
+			}
 		case *ExpressionStatement:
 			if x.Expression != nil {
 				walk(x.Expression)
@@ -69,6 +100,31 @@ func collectArmBindings(prog *Program) (arm, other map[string]int) {
 	}
 	walk(prog)
 	return arm, other
+}
+
+// armBindsIt 回報某臂在糖形態下是否引入隐式 `it` 綁定（與 checker 的
+// matchArmBindings 同口徑）：ok / err / 列舉變體臂、以及非 dot-val 的 catch-all
+// 臂都綁定 it；nil 臂與型別臂不綁定 it（型別臂綁定的是 TypeBindingName）。
+func armBindsIt(a *MatchArm) bool {
+	if a.SkipItBinding || a.IsTypeArm {
+		return false
+	}
+	if a.IsWildcard && !a.IsDotVal {
+		return true
+	}
+	id, ok := a.Condition.(*Identifier)
+	if !ok {
+		return false
+	}
+	switch id.Value {
+	case "ok", "err":
+		return true
+	case "nil":
+		return false
+	default:
+		// 枚舉變體臂（`s1 ->`）綁定 it。
+		return true
+	}
 }
 
 func parseArmTest(t *testing.T, src string) *Program {

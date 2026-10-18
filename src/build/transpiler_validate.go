@@ -169,6 +169,14 @@ func collectSizesFromStmt(stmt parser.Statement, sm *sizeMaps) {
 					collectSizesFromStmt(ss, sm)
 				}
 			}
+		} else if smNode, ok := s.Expression.(*parser.SurfaceMatch); ok {
+			for _, arm := range smNode.Arms {
+				if arm.Body != nil {
+					for _, ss := range arm.Body.Statements {
+						collectSizesFromStmt(ss, sm)
+					}
+				}
+			}
 		}
 	case *parser.ForStatement:
 		if s.Init != nil {
@@ -223,6 +231,14 @@ func collectArraySizesFromStmt(stmt parser.Statement, sizes map[string]int64) {
 			if ifExpr.Alternative != nil {
 				for _, ss := range ifExpr.Alternative.Statements {
 					collectArraySizesFromStmt(ss, sizes)
+				}
+			}
+		} else if smNode, ok := s.Expression.(*parser.SurfaceMatch); ok {
+			for _, arm := range smNode.Arms {
+				if arm.Body != nil {
+					for _, ss := range arm.Body.Statements {
+						collectArraySizesFromStmt(ss, sizes)
+					}
 				}
 			}
 		}
@@ -281,6 +297,14 @@ func collectSliceSizeMapFromStmt(stmt parser.Statement, slices map[string]int64)
 			if ifExpr.Alternative != nil {
 				for _, ss := range ifExpr.Alternative.Statements {
 					collectSliceSizeMapFromStmt(ss, slices)
+				}
+			}
+		} else if smNode, ok := s.Expression.(*parser.SurfaceMatch); ok {
+			for _, arm := range smNode.Arms {
+				if arm.Body != nil {
+					for _, ss := range arm.Body.Statements {
+						collectSliceSizeMapFromStmt(ss, slices)
+					}
 				}
 			}
 		}
@@ -361,6 +385,14 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 			if ifExpr.Alternative != nil {
 				for _, ss := range ifExpr.Alternative.Statements {
 					collectStringSizeMapFromStmt(ss, strSizes)
+				}
+			}
+		} else if smNode, ok := s.Expression.(*parser.SurfaceMatch); ok {
+			for _, arm := range smNode.Arms {
+				if arm.Body != nil {
+					for _, ss := range arm.Body.Statements {
+						collectStringSizeMapFromStmt(ss, strSizes)
+					}
 				}
 			}
 		}
@@ -845,6 +877,12 @@ func collectIdentsFromExpr(expr parser.Expression, idents map[string]bool) {
 		collectIdentsFromExpr(e.Condition, idents)
 		collectIdentsFromExpr(e.Consequence, idents)
 		collectIdentsFromExpr(e.Alternative, idents)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。collectIdentsFromExpr 只收 condition 等價子樹
+		// （降糖 IfExpression 僅走 Condition，其已內嵌 subject 比較與模式值），
+		// 故用 WalkSurfaceMatchChildren 只傳 onExpr（nil onStmt 跳過臂體）。
+		parser.WalkSurfaceMatchChildren(e,
+			func(x parser.Expression) { collectIdentsFromExpr(x, idents) }, nil)
 	case *parser.IfExpression:
 		collectIdentsFromExpr(e.Condition, idents)
 	case *parser.CastExpression:
@@ -1160,6 +1198,24 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		for _, elem := range e.Elements {
 			if err := validateExprArrayBounds(elem, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
 				return err
+			}
+		}
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只校 Condition 與各臂體，
+		// 不校 Matched（與降糖 IfExpression 不校 MatchedExpr 一致）。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				if err := validateExprArrayBounds(arm.Condition, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+					return err
+				}
+			}
+			if arm.Body != nil {
+				for _, ss := range arm.Body.Statements {
+					if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	case *parser.IfExpression:

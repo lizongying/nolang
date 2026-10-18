@@ -117,6 +117,10 @@ func TestVerifyItBindingTypes(t *testing.T) {
 				t.Fatalf("no statements")
 			}
 
+			// S1 翻转：match desugar 是独立步骤。it 绑定的合成 `let it` 由
+			// buildMatchDesugar 产生，故显式 desugar 后再收集其型別。
+			p.DesugarSurfaceMatches(prog)
+
 			// Find all synthetic LetStatements with name "it" and check their Type
 			var foundTypes []string
 			collectItTypes(prog, &foundTypes)

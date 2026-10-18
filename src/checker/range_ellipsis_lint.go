@@ -133,9 +133,9 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 		case *parser.SurfaceMatch:
 			// S4：糖形態下 match 是 SurfaceMatch（表達式節點），經 ExpressionStatement
 			// 抵達本 walker；臂體對本 walker 不可見。見 sugar_walk.go。
-			walkSurfaceMatchChildren(x,
-				func(e parser.Expression) { walkExpr(e, file) },
-				func(s parser.Statement) { walkStmtSingle(s, file) })
+		walkSurfaceMatchChildren(x, nil,
+			func(e parser.Expression) { walkExpr(e, file) },
+			func(s parser.Statement) { walkStmtSingle(s, file) })
 		}
 	}
 

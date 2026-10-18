@@ -69,6 +69,7 @@ var gobNodeTypes = []any{
 	&MapLiteral{},
 	&SliceLiteral{},
 	&StructLiteral{},
+	&SurfaceMatch{},
 
 	// ---- Types ----
 	&NamedType{},

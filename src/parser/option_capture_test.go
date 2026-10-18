@@ -86,17 +86,31 @@ func flattenStmts(stmts []Statement, out *[]Statement) {
 	}
 }
 
-func flattenIfExpr(e Expression, out *[]Statement) {
-	ife, ok := e.(*IfExpression)
-	if !ok || ife == nil {
+// flattenExpr 下钻表达式中的条件分支（IfExpression）与 match 臂体（SurfaceMatch）。
+// S1 翻转后 match 保留为 SurfaceMatch 表达式节点，需在此下钻其臂体。
+func flattenExpr(e Expression, out *[]Statement) {
+	if e == nil {
 		return
 	}
-	if ife.Consequence != nil {
-		flattenStmts(ife.Consequence.Statements, out)
+	switch v := e.(type) {
+	case *IfExpression:
+		if v.Consequence != nil {
+			flattenStmts(v.Consequence.Statements, out)
+		}
+		if v.Alternative != nil {
+			flattenStmts(v.Alternative.Statements, out)
+		}
+	case *SurfaceMatch:
+		for i := range v.Arms {
+			if v.Arms[i].Body != nil {
+				flattenStmts(v.Arms[i].Body.Statements, out)
+			}
+		}
 	}
-	if ife.Alternative != nil {
-		flattenStmts(ife.Alternative.Statements, out)
-	}
+}
+
+func flattenIfExpr(e Expression, out *[]Statement) {
+	flattenExpr(e, out)
 }
 
 // findLet 在展開後的陳述中尋找名為 name 的 LetStatement。

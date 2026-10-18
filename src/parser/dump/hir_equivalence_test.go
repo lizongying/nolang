@@ -38,10 +38,6 @@ package dump
 // shipped lowered pipeline) so the S3 work items stay visible and their numbers
 // only ever go down.
 //
-// The end-to-end comparison is kept as an INFORMATIONAL counter (sugar+H0 vs the
-// shipped lowered pipeline) so the S3 work items stay visible and their numbers
-// only ever go down.
-//
 // What counts as identical: Dump renders kind, interned strings, inferred type,
 // flags, value AND @line:col. Positions are included deliberately — both sides
 // run the same buildMatchDesugar code over the same SurfaceMatch token, so they
@@ -86,8 +82,9 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 		t.Skipf("no corpus at %s: %v", corpusRoot, err)
 	}
 
-	var compared, endToEndDiff int
+	var compared, endToEndDiff, exercised int
 	var diverged []string
+	var notLowered []string
 
 	walkErr := filepath.WalkDir(corpusRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
@@ -99,14 +96,26 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 		}
 		src := string(raw)
 
-		hirH0, okH0 := matchDesugarViaH0(path, src)
-		hirPar, okPar := matchDesugarViaParser(path, src)
+		hirH0, smH0, okH0 := matchDesugarViaH0(path, src)
+		hirPar, smPar, okPar := matchDesugarViaParser(path, src)
 		if !okH0 && !okPar {
 			return nil
 		}
 		if okH0 != okPar {
 			diverged = append(diverged, fmt.Sprintf("%s: h0=%v parser=%v", path, okH0, okPar))
 			return nil
+		}
+
+		// Non-vacuity, measured per file: only count this file as an exercise of
+		// the desugar when Route A actually carried SurfaceMatch nodes into H0.
+		// Files with 0 matches compare two identical trees either way.
+		if smH0 > 0 {
+			exercised++
+			// ...and Route B must have expanded them all, otherwise it is NOT the
+			// parser-desugared tree this gate claims to compare.
+			if smPar != 0 {
+				notLowered = append(notLowered, fmt.Sprintf("%s (%d left)", path, smPar))
+			}
 		}
 
 		compared++
@@ -140,6 +149,22 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 			compared)
 	}
 
+	if len(notLowered) > 0 {
+		sort.Strings(notLowered)
+		t.Errorf("%d file(s) still contain SurfaceMatch after the explicit "+
+			"DesugarSurfaceMatches pass, so Route B is not the parser-desugared tree "+
+			"this gate compares against; first 10: %v",
+			len(notLowered), notLowered[:min(10, len(notLowered))])
+	}
+	// The exercise count is the anti-vacuity gate for the WHOLE comparison. With
+	// the pre-flip shape of these helpers it was 0 and the test reported "0
+	// divergences" while comparing a pipeline to itself.
+	if exercised < hirEquivalenceMinCompared/2 {
+		t.Fatalf("only %d of %d compared programs actually carried SurfaceMatch into "+
+			"H0, so \"0 divergences\" may be 0 == 0; the two routes have collapsed "+
+			"into the same pipeline", exercised, compared)
+	}
+
 	sort.Strings(diverged)
 
 	// Allowlist must be bidirectional.
@@ -168,38 +193,45 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 	}
 
 	t.Logf("match desugar: %d programs compared, %d diverged (%d allowlisted, %d fresh); "+
+		"%d actually exercised the desugar (SurfaceMatch reached H0); "+
 		"end-to-end (sugar+H0 vs shipped pipeline) still differs on %d/%d — that is the "+
 		"S3 backlog, not this gate",
-		compared, len(diverged), len(diverged)-len(fresh), len(fresh), endToEndDiff, compared)
+		compared, len(diverged), len(diverged)-len(fresh), len(fresh), exercised,
+		endToEndDiff, compared)
 }
 
-// matchDesugarViaH0 parses with SkipLowering and lets ASTToHIR desugar the
-// matches itself — the target pipeline. SkipUnwrapLowering and
-// SkipSafeIndexLowering are set to match the surface configuration used by the
-// parser side, so the two differ ONLY in who lowers the matches.
+// matchDesugarViaH0 is ROUTE A — the pipeline that actually ships after the
+// S1 flip: ParseProgram keeps every *SurfaceMatch (deferMatchDesugar), so ASTToHIR
+// desugars them itself via tohir's `case *SurfaceMatch`.
 //
-// Bounds proofs are prepared by ParseProgram into Program.Sem before either
-// lowering route runs. This keeps H0's HIR input equivalent without an analysis
-// helper mutating IndexExpression nodes as a hidden side effect.
-func matchDesugarViaH0(path, src string) (string, bool) {
-	var dump string
-	var ok bool
+// surface is how many *SurfaceMatch nodes were still in the tree going into H0.
+// A file with 0 is not exercising the desugar at all, so the caller counts only
+// files with surface > 0 — without that the gate is 0 == 0.
+//
+// ⚠️ History (this is why the shape changed): this used to parse with the
+// "surface configuration" (SkipUnwrapLowering + SkipSafeIndexLowering) to hold
+// every other pass constant. Those two flags were DELETED with §4.3
+// (parser/lowering.go:337,416,432,442 say so explicitly), and a botched edit
+// left `p.SkipLowering = true` written three times in their place — which made
+// this route byte-identical to matchDesugarViaParser and the whole gate silently
+// vacuous. The isolation is now achieved differently: both routes use the DEFAULT
+// parse (identical everything), and only Route B additionally runs the explicit
+// expansion pass. See matchDesugarViaParser.
+func matchDesugarViaH0(path, src string) (dump string, surface int, ok bool) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				dump, ok = "", false
+				dump, surface, ok = "", 0, false
 			}
 		}()
 		p := parser.New(lexer.NewCached(path, src))
 		p.Filename = path
-		p.SkipLowering = true
-		p.SkipLowering = true
-		p.SkipLowering = true
 		prog := p.ParseProgram()
 		if len(p.Errors()) > 0 {
 			dump, ok = "", false
 			return
 		}
+		surface = countSurfaceMatches(prog)
 		pkg := parser.ASTToHIR(prog)
 		if pkg == nil {
 			dump, ok = "", false
@@ -207,37 +239,42 @@ func matchDesugarViaH0(path, src string) (string, bool) {
 		}
 		dump, ok = pkg.Dump(), true
 	}()
-	return dump, ok
+	return dump, surface, ok
 }
 
-// matchDesugarViaParser parses with the surface configuration and then lets
-// ParseProgram's own LowerSurface call do the match expansion. Same input
-// configuration as the H0 side, so the only thing that differs is WHO lowers
-// the matches.
+// matchDesugarViaParser is ROUTE B — same default parse, then the SurfaceMatch
+// nodes are expanded by the parser's own explicit pass `DesugarSurfaceMatches`
+// (the same entry point the experimental js/wasm backends call from
+// build/builder.go) before H0 runs. H0 therefore sees the lowered IfExpression
+// chain and never enters its own `case *SurfaceMatch`.
 //
-// Must run after matchDesugarViaH0: ASTToHIR is read-only over the AST, but
-// LowerSurface rewrites in place.
-func matchDesugarViaParser(path, src string) (string, bool) {
-	var dump string
-	var ok bool
+// Both routes run the SAME ParseProgram, so every other lowering step is held
+// constant and the only remaining difference is WHO expands the matches.
+// That is the isolation this gate needs, and after the S1 flip it can no longer
+// be obtained by leaving LowerSurface to do it: LowerSurface deliberately does
+// NOT expand SurfaceMatch any more (that is the flip), so a Route B built on
+// `SkipLowering = false` would now carry sugar into H0 exactly like Route A and
+// compare equal trivially.
+//
+// surface must be 0 for every file whose Route A count was non-zero: the explicit
+// pass is supposed to have removed them all. If it is not, Route B is not the
+// "parser did the desugaring" tree the gate claims to compare against.
+func matchDesugarViaParser(path, src string) (dump string, surface int, ok bool) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				dump, ok = "", false
+				dump, surface, ok = "", 0, false
 			}
 		}()
 		p := parser.New(lexer.NewCached(path, src))
 		p.Filename = path
-		// Surface configuration, but WITHOUT SkipLowering: ParseProgram therefore
-		// still calls LowerSurface, and on this base the only thing LowerSurface
-		// expands is SurfaceMatch.
-		p.SkipLowering = true
-		p.SkipLowering = true
 		prog := p.ParseProgram()
 		if len(p.Errors()) > 0 {
 			dump, ok = "", false
 			return
 		}
+		p.DesugarSurfaceMatches(prog)
+		surface = countSurfaceMatches(prog)
 		pkg := parser.ASTToHIR(prog)
 		if pkg == nil {
 			dump, ok = "", false
@@ -245,7 +282,7 @@ func matchDesugarViaParser(path, src string) (string, bool) {
 		}
 		dump, ok = pkg.Dump(), true
 	}()
-	return dump, ok
+	return dump, surface, ok
 }
 
 // lowerToHIR parses src with the requested pipeline and returns the HIR dump.
@@ -262,8 +299,6 @@ func lowerToHIR(path, src string, skipLowering bool) (dump string, ok bool) {
 	p := parser.New(lexer.NewCached(path, src))
 	p.Filename = path
 	if skipLowering {
-		p.SkipLowering = true
-		p.SkipLowering = true
 		p.SkipLowering = true
 	}
 	prog := p.ParseProgram()

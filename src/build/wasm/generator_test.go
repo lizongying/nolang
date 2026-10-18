@@ -379,6 +379,8 @@ func parseAndGenerate(t *testing.T, src string) []byte {
 	if errs := p.Errors(); len(errs) > 0 {
 		t.Fatalf("parser errors: %v", errs)
 	}
+	// S1：wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
+	p.DesugarSurfaceMatches(program)
 	g := &Generator{}
 	out, err := g.Generate(program)
 	if err != nil {

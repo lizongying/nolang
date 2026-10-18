@@ -235,6 +235,9 @@ func TestD9PlaceMatchWriteLowersWithPlaceWrite(t *testing.T) {
 			if errs := p.Errors(); len(errs) > 0 {
 				t.Fatalf("compile-path parse errors: %v", errs)
 			}
+			// S1 翻转：match desugar 是独立步骤，compile path 需显式调用
+			// （place-write 改写位于 buildMatchDesugar 内）。
+			p.DesugarSurfaceMatches(prog)
 			if !hasSyntheticIndexStore(prog.Statements) {
 				t.Errorf("D9 place-match write `%s` did NOT produce the synthetic element store — place-write rewrite missing", c.name)
 			}

@@ -1215,6 +1215,45 @@ func (s *specState) helper(name string, v any, depth int) {
 		if e.Value != nil {
 			s.node(e.Value, depth+1)
 		}
+	case "matchArm":
+		// Mirror of (*dumper).matchArm in dump.go: MatchArm is not a Node,
+		// so it is reached only through the SurfaceMatch case via opHelper.
+		var a *parser.MatchArm
+		if p, ok := v.(*parser.MatchArm); ok {
+			a = p
+		} else if val, ok := v.(parser.MatchArm); ok {
+			a = &val
+		}
+		if a == nil {
+			fmt.Fprintf(&s.buf, "%s<nil>\n", specIndent(depth))
+			return
+		}
+		fmt.Fprintf(&s.buf, "%sMatchArm{%s}\n", specIndent(depth),
+			fields(kvb("wildcard", a.IsWildcard), kvb("dotVal", a.IsDotVal),
+				kvb("rawCond", a.IsRawCond), kvb("blockBody", a.IsBlockBody),
+				kvb("typeArm", a.IsTypeArm), kvs("typePattern", a.TypePattern),
+				kvs("typeBinding", a.TypeBindingName), kvb("skipIt", a.SkipItBinding),
+				kvb("valueCtx", a.ValueCtx), kv("binding", a.BindingName),
+				kv("bindingVariant", a.BindingVariant),
+				kvs("multiOption", strings.Join(a.MultiOptionPatterns, ",")),
+				kvc("multiValue", len(a.MultiValuePatterns)),
+				kvc("bindingNames", len(a.BindingNames)),
+				kvc("bindingFields", len(a.BindingFields))))
+		if a.Condition != nil {
+			s.node(a.Condition, depth+1)
+		}
+		for _, mv := range a.MultiValuePatterns {
+			s.node(mv, depth+1)
+		}
+		for _, bn := range a.BindingNames {
+			fmt.Fprintf(&s.buf, "%sBindingName{%s}\n", specIndent(depth+1), kv("name", bn))
+		}
+		for _, bf := range a.BindingFields {
+			fmt.Fprintf(&s.buf, "%sBindingField{%s}\n", specIndent(depth+1), kv("name", bf))
+		}
+		if a.Body != nil {
+			s.node(a.Body, depth+1)
+		}
 	default:
 		panic("spec: unknown helper " + name)
 	}

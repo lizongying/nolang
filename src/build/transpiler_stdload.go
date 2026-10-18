@@ -156,6 +156,12 @@ func (t *Transpiler) programUsesPrint(progs ...*parser.Program) bool {
 				walkExpr(ex.Right)
 			case *parser.GroupedExpression:
 				walkExpr(ex.Expression)
+			case *parser.SurfaceMatch:
+				// S1：糖形態 match。WalkSurfaceMatchChildren 枚舉 Matched +
+				// 每臂 Condition / MultiValuePatterns / Body，與降糖後的
+				// IfExpression（Condition + MatchedExpr + Consequence/Alternative）
+				// 涵蓋完全相同的子運算式集合。
+				parser.WalkSurfaceMatchChildren(ex, walkExpr, walkStmt)
 			case *parser.IfExpression:
 				walkExpr(ex.Condition)
 				walkExpr(ex.MatchedExpr)
@@ -672,6 +678,12 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			walkExpr(ex.Call)
 		case *parser.AwaitExpression:
 			walkExpr(ex.Right)
+		case *parser.SurfaceMatch:
+			// S1：糖形態 match。WalkSurfaceMatchChildren 枚舉 Matched +
+			// 每臂 Condition / MultiValuePatterns / Body，與降糖後的 IfExpression
+			// 涵蓋相同的子運算式集合（RawCond/EqualityPattern/RangePattern/
+			// ValuePatterns 在糖形態下都摺進 Condition / MultiValuePatterns）。
+			parser.WalkSurfaceMatchChildren(ex, walkExpr, walkStmt)
 		case *parser.IfExpression:
 			walkExpr(ex.Condition)
 			walkExpr(ex.MatchedExpr)

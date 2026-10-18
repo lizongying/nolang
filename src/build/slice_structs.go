@@ -272,6 +272,25 @@ func scanExprForFactories(expr parser.Expression, templates map[string]*sliceTem
 	case *parser.AssignExpression:
 		scanExprForFactories(e.Left, templates, scope, program, binds)
 		scanExprForFactories(e.Value, templates, scope, program, binds)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+		// MultiValuePatterns / Body，不校 Matched。
+		for i := range e.Arms {
+			arm := &e.Arms[i]
+			if arm.Condition != nil {
+				scanExprForFactories(arm.Condition, templates, scope, program, binds)
+			}
+			for _, vp := range arm.MultiValuePatterns {
+				if vp != nil {
+					scanExprForFactories(vp, templates, scope, program, binds)
+				}
+			}
+			if arm.Body != nil {
+				for _, b := range arm.Body.Statements {
+					scanStmtForFactories(b, templates, scope, program, binds)
+				}
+			}
+		}
 	case *parser.IfExpression:
 		scanExprForFactories(e.Condition, templates, scope, program, binds)
 		if e.Consequence != nil {

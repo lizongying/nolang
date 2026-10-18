@@ -242,6 +242,13 @@ func updateCallNames(expr parser.Expression, overloads map[string][]*parser.Func
 		updateCallNames(e.Condition, overloads, mangled, varTypes)
 		updateCallNames(e.Consequence, overloads, mangled, varTypes)
 		updateCallNames(e.Alternative, overloads, mangled, varTypes)
+	case *parser.SurfaceMatch:
+		// S1：糖形態 match。WalkSurfaceMatchChildren 枚舉 Matched + 每臂
+		// Condition / MultiValuePatterns / Body，與降糖 IfExpression（Condition 內嵌
+		// subject 比較與模式值）涵蓋相同的呼叫名集合。
+		parser.WalkSurfaceMatchChildren(e,
+			func(x parser.Expression) { updateCallNames(x, overloads, mangled, varTypes) },
+			func(s parser.Statement) { updateCallNamesInStmt(s, overloads, mangled, varTypes) })
 	case *parser.IfExpression:
 		if e.Condition != nil {
 			updateCallNames(e.Condition, overloads, mangled, varTypes)

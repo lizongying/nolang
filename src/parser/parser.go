@@ -26,6 +26,13 @@ type Parser struct {
 	warnedSemiEat     map[int]bool                 // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
 	reportedIllegal   map[string]bool              // 已報告的 ILLEGAL token 位置（避免重複）
 	sem               *SemanticContext             // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
+	// prog 是正在 lower 的合併 Program（AST→HIR 階段由 hirConv 注入，
+	// 經 scratchParser 傳給 H0 match desugar）。S1 翻轉後 std 模組以 surface
+	// 形態從 blob 載入、在 H0 才降糖；其區域 let 型別在烘焙期未被收進
+	// FuncVarTypes，故 FuncVarType 查表未命中。此欄位供 astLocalVarType 在
+	// 查表未命中時直接從源碼宣告（let 標註 / 呼叫回傳型別 / 識別符鏈）推導
+	// subject 型別，取代無作用域的全域 VarTypes 回退。
+	prog              *Program
 	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
 	methodSignatures  map[string][]string          // 結構體方法 → 結果型別字串列表（鍵：module.struct.method）
 	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
