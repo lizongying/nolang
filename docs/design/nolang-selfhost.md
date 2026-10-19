@@ -979,7 +979,70 @@ $ ./bin/no ast /tmp/t2.no | grep -E 'Literal'
 
 歸因細節見 `nolang-parser-lowering-invariants.md` §11.1 第 5、6 條。
 
-**下一步**：S7 唯一待辦＝match 表示裁定（二選一，見上文）。剩餘 313 檔 DIFF 中 260+ 檔含 `SurfaceMatch`，屬單一已知分歧；其餘主要為 safe-index 解糖缺口與 `InterfaceDefinition`（`ord { t.gt(b t) (res bool) }`）尚未實作。
+### 5.3.4 S7 match 表示分歧——98% 歸因與立项規格（2026-10-20 實測）
+
+機械性缺口已挖盡，**剩餘分歧壓倒性地是單一項**。全量 313 檔 DIFF 的歸因（同一 oracle、653 檔）：
+
+| 桶 | 檔数 | 差異行數 | 佔比 |
+| --- | --- | --- | --- |
+| oracle 輸出含 `SurfaceMatch` | 264 | 218 227 | **98%** |
+| 不含 | 49 | 3 993 | 1% |
+
+抽查最大差異檔 `src/std/crypto/x25519.no`（15 583 行）前兩個 hunk **100% 是 match 表示**：oracle
+`ExpressionStatement{SurfaceMatch}` / `SurfaceMatch{arms: 2}` / `MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }`，
+noc 是 `ExpressionStatement{IndexExpression}` + `IfExpression` 鏈。**結論：不解決 match 表示，其餘所有
+收斂工作的天花板就是 1%。**（附帶更正：`InterfaceDefinition` 只出現在 4 檔 6 個節點，價值極低，不值得為它動 `asp.no` 的 id 表。）
+
+**目標結構**（`src/parser/dump/dump.go:778` 的 `case *parser.SurfaceMatch`，由 `gen_ast_spec.py` 抽出的規格）：
+
+```
+HDR      SurfaceMatch{arms: <len(Arms)>}
+COMMENTS
+CHILD    Matched          （guarded，nil 則不印）
+HELPER   Arms -> matchArm （逐臂）
+```
+
+⚠️ **`MatchArm` 不是 Node**（`dump.go:876-877`），沒有 `dumpNode` case，只經 SurfaceMatch 的
+HELPER 到達 ⇒ **`asp.no` 不需要新增 kind，`K_SURFACE_MATCH = 65` 已足**。實測
+`scripts/gen_ast_spec.py` 重生成後 `compiler/src/asp.no` **逐位元組不變**（同步正常）。
+
+**語料中 `MatchArm` 欄位普查（6 735 個臂，`kv` 恆印、`kvb`/`kvs`/`kvc` 僅非預設值才印）**：
+
+| 欄位 | 出現次數 | 型別 |
+| --- | --- | --- |
+| `binding` / `bindingVariant` | 6 735（恆印，多為空） | `kv` 字串 |
+| `wildcard` | 4 218 | `kvb` |
+| `dotVal` | 1 832 | `kvb` |
+| `blockBody` | 1 401 | `kvb` |
+| `valueCtx` | 89 | `kvb` |
+| `typeArm` / `typePattern` / `typeBinding` | 10 / 10 / 10 | `kvb` / `kvs` / `kvs` |
+| `rawCond` | 6 | `kvb` |
+| `skipIt` / `multiOption` / `multiValue` / `bindingNames` / `bindingFields` | **0（語料完全不出現）** | — |
+
+⇒ 最小切片只需 **6 個 bool + 4 個字串 + 2 個子節點（Condition、Body）**；`MultiValuePatterns` /
+`BindingNames` / `BindingFields` / `skipIt` 可先不接線（語料零命中，不影響 L2 對拍）。
+
+**落地拆分（三件，各自可獨立提交）**：
+
+1. **`compiler/src/ast.no` 的 `helper` 接線 `matchArm`**（目前只接了 `taggedEnumField`，其餘記入
+   `t.unsup`）。⚠️ 需要擴充 helper 元素的 aux 編碼：現制是每元素 2 個值
+   （`aux[hbase+2j]=name-id`、`aux[hbase+2j+1]=tnode`），matchArm 需要 6 bool + 4 字串 + 2 節點。
+   因只有 SurfaceMatch 用 matchArm，可按 kind 判別採用寬元素編碼；`d.hcount` / `d.hbase` 的
+   預掃（`ast.no:857` / `967`）需同步改為按 kind 取元素寬度。
+2. **`compiler/src/ps.no` 的 `ps-parse-match` 改發 `SurfaceMatch`**，env 開關（對齊專案既有的
+   `NOLANG_*` 開關慣例，**預設關**）。⚠️ s55/s59/s60 的語義工作（关键字臂綁定、變體臂補集、
+   armDoc 收集）**不能丟**：它們的結果要從「合成 `it` let 陳述」改寫進 `MatchArm` 的
+   `binding` / `bindingVariant` / `wildcard` / `dotVal` 槽位。
+3. **回歸測試 + A/B 量測**：`compiler/tests/ps-test.no` 加 surface 形用例；跑全量 sweep 確認
+   「開關關＝零回歸、開關開＝差異大幅收斂」。
+
+⚠️ **新發現的既有缺陷 A（生成器丟碼）**：`scripts/gen_ast_spec.py` **不會**把 `matchArm` 的
+helper case 寫進 `src/parser/dump/spec_gen_test.go`——該檔裡那 39 行是**手寫補進去的**。
+實測：重跑生成器後 `spec_gen_test.go` **靜默少 39 行**（`asp.no` 卻不變，極易被忽略）。
+今後重生成必須 `git diff src/parser/dump/spec_gen_test.go` 複核，或把 matchArm case 挪出生成器覆蓋範圍。
+
+⚠️ **新發現的既有缺陷 B（未接線）**：`ast.no` 的 `helper` 只接 `taggedEnumField`；
+`matchArm` 與 `interfaceMethod` 都記入 `t.unsup`（`ast.no:1221` 注釋已記錄）。
 
 ### 5.4 語義檢查（M3）
 

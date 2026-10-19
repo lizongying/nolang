@@ -426,7 +426,7 @@ H1 是**链接与命名**，不是降糖：
    - **歸因（A/B 同一 harness、同一 oracle、同一 653 檔，三步各自量測）**：逐檔差異行數總計 223 232 → 222 248（+s64，−984，6 改善 / **0 惡化**）→ 221 648（+s65a/b，−600，9 改善 / **0 惡化**）→ 221 626（+s65c，−22，1 改善 / **0 惡化**）。主要收斂：`arr.no` 565→153、`vec.no` 1241→964、`link.no` 1168→819、`byte.no` 546→341、`queue.no` 265→173、`arr-stack.no` 94→0、`tests/std-lib.no` 44→0、`sort.no` 99→25、`str.no` 6749→6735、`char.no` 1129→1114。
    - **verdict 集合**：基線 DIFF 309 / SAME 338 / 逾時 6 → 終局 **DIFF 313 / SAME 340 / 逾時 0**；**SAME→非 SAME 真回歸 0 檔**；2 檔轉為逐位元組一致（`collection/arr-stack.no`、`tests/std-lib.no`）。⚠️ 基線那 6 檔逾時是 8 workers × 20 s 的**假逾時**（`sha256` 14 s / `sha512` 17 s / `x509` 19 s / `yaml` 21 s 是慢非挂），90 s 逾時重測全部完成——**並行 sweep 的逾時判据不能直接當挂起**。
    - **回歸測試**：`compiler/tests/ps-test.no` 5 → **9** 個（9/9 通過）：`[n]t.len`（`GenericParams: n, t` + self 的 `ArrayType{size: n}`）、`(dst [n]t)`（單參數而非三參數）、`[]t.len`（**無** `GenericParams` —— s65c 的反回歸錨點）、`[]t.eq`（泛型來自 `b []t`）。期望字串全取自 oracle 實測。其餘 compiler 測試同綠：`ast` 47 / `lx` 45 / `tok` 62 / `util` 27。
-   - **剩餘分歧的主要成分**：313 檔 DIFF 中 260+ 檔含 `SurfaceMatch`（單一已知表示分歧，待 S7 裁定）；其餘為 safe-index 解糖缺口（`__unwrap_N` + nil/err/ok 三臂）與 **`InterfaceDefinition` 尚未實作**（`ord { t.gt(b t) (res bool) }` 被降級為 `ExpressionStatement{ord}` + `BlockStatement`）。
+   - **剩餘分歧的主要成分（全量歸因，2026-10-20）**：313 檔 DIFF 拆分為「oracle 輸出含 `SurfaceMatch`」264 檔 / **218 227 行（98%）** 與「不含」49 檔 / 3 993 行（1%）。抽查最大差異檔 `crypto/x25519.no`（15 583 行）前兩 hunk **100% 為 match 表示**。⇒ **不解決 match 表示，後續收斂的天花板就是 1%**；立项規格見 `nolang-selfhost.md` §5.3.4。非 match 殘量主要是 safe-index 解糖缺口（`__unwrap_N` + nil/err/ok 三臂）。⚠️ 附帶更正：`InterfaceDefinition` 僅 4 檔 6 節點，價值不足以動 `asp.no` 的 id 表。
 
 细节与证据表见 `nolang-selfhost.md` §5.3.3（2026-10-19 新增，2026-10-20 补构建破损修复记录、s58/s59 挂起修复记录与 s64/s65 陣列／切片接收者修复记录）。
 
