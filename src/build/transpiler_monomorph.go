@@ -2299,13 +2299,13 @@ func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string)
 			}
 		}
 	case *parser.IfExpression:
-		// Each branch is its own `it` scope: a match arm desugars to a branch
-		// whose first statement is the synthetic `let it = <subject>`, and a
-		// match NESTED inside that arm rebinds `it` to the INNER subject. The
-		// sibling branches must not see each other's `it` (see collectItScoped).
+		// S1：主管線不再降糖 match，此分支只代表三元 if（a ? b : c），其
+		// Consequence / Alternative 各自是獨立的 `it` 作用域（見 SurfaceMatch
+		// 分支說明）。DotValBody 是降糖 option match 的尾部臂載體；主管線
+		// IfExpression 分支不含 match（match 由上方 SurfaceMatch 分支處理），
+		// 故不處理——即便走到也只會是 collectVarTypesFromBody(nil) 的 no-op。
 		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.Consequence, varTypes) })
 		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.Alternative, varTypes) })
-		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.DotValBody, varTypes) })
 	case *parser.GroupedExpression:
 		collectVarTypesFromExpr(e.Expression, varTypes)
 	case *parser.ConditionalExpression:

@@ -489,7 +489,11 @@ IfExpression 分支仅保留三元 if 字段，matched 由 SurfaceMatch 分支�
 `collectReferencedStdModules` 内的 walker）原先多走的 `MatchedExpr`/`RawCond`/`EqualityPattern`/
 `RangePattern`/`ValuePatterns`/`DotValBody` 等降糖残留字段——match 子運算式已由專屬的
 `*parser.SurfaceMatch` 分支经 `WalkSurfaceMatchChildren` 枚舉，故这些读取在主管線恒为对 nil 的 no-op，
-且 JS/WASM 后端不跑这两个 Transpiler walker，删除安全。
+且 JS/WASM 后端不跑这两个 Transpiler walker，删除安全；以及 `transpiler_monomorph.go` 的
+`collectVarTypesFromExpr` 内 IfExpression 分支原先多走的 `e.DotValBody` 残留（主管線恒为 nil，
+`collectVarTypesFromBody(nil)` 即 no-op）。至此 `build/` 内 IfExpression 分支的 match 专用字段
+讀取已全部清完（`grep -n 'MatchedExpr\|DotValBody\|RawCond\|EqualityPattern\|RangePattern\
+|ValuePatterns\|OptionPatterns' build/` 在 Transpiler 階段代碼中僅餘 SurfaceMatch 分支與註釋）。
 
 #### 5.2.6 S-a 落地方式（2026-10-19 实测）
 
