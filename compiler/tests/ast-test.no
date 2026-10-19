@@ -329,6 +329,115 @@ test-kind-table = () {
 }
 
 ; ═══════════════════════════════════════════════
+; s66：matchArm —— SurfaceMatch 的臂（ast.no 的 helper 分派）
+;
+; ⚠️ MatchArm **不是 Node**（dump.go:876-877），只經 SurfaceMatch 的 HELPER
+;    到達 ⇒ ps.no 尚未產 SurfaceMatch，本測試是這條支路**唯一**的可達路徑
+;    （語料 653 檔全部走不到）。沒有它，helper 裡那一支只能被型別檢查，
+;    無法證明解譯語意正確。
+;
+; 期望字串 = oracle 對最小復現檔的實測輸出：
+;     printf 'h[0]: {\n    ok -> it = 0\n    -> _\n}\n' > /tmp/m1.no
+;     ./bin/no ast /tmp/m1.no
+; ═══════════════════════════════════════════════
+
+build-surface-match = () (t ast, root i64) {
+    t = ast.make()
+
+    ; Matched = IndexExpression{ Identifier{h}, IntegerLiteral{0} }
+    idh = ast.add(t, asp.K_IDENTIFIER)
+    ast.set-slot(t, idh, 0, ast.put-str(t, 'h'))
+    ix0 = ast.add(t, asp.K_INTEGER_LITERAL)
+    ast.set-slot(t, ix0, 0, ast.put-str(t, '0'))
+    ast.set-slot(t, ix0, 1, ast.put-str(t, '0'))
+    ix = ast.add(t, asp.K_INDEX_EXPRESSION)
+    ast.kid-add(t, ix, idh)
+    ast.kid-add(t, ix, ix0)
+
+    ; 臂 1 體：BlockStatement{inline: true} [ LetStatement{name: it, type: i64, value: 0} ]
+    ;   type / value 是 OF-TYPE / OF-LOCAL(nodeString) ⇒ ast.no 依 CHILD 序號
+    ;   自行算出，不需手填槽位。
+    nt = ast.add(t, asp.K_NAMED_TYPE)
+    ast.set-slot(t, nt, 0, ast.put-str(t, 'i64'))
+    ast.set-slot(t, nt, 1, ast.put-str(t, 'true'))
+    lv0 = ast.add(t, asp.K_INTEGER_LITERAL)
+    ast.set-slot(t, lv0, 0, ast.put-str(t, '0'))
+    ast.set-slot(t, lv0, 1, ast.put-str(t, '0'))
+    lt = ast.add(t, asp.K_LET_STATEMENT)
+    ast.set-slot(t, lt, 0, ast.put-str(t, 'it'))
+    ast.kid-add(t, lt, nt)
+    ast.kid-add(t, lt, lv0)
+    blk1 = ast.add(t, asp.K_BLOCK_STATEMENT)
+    ast.set-slot(t, blk1, 0, ast.put-str(t, 'true'))
+    ast.set-count(t, blk1, 0, 1)
+    ast.kid-add(t, blk1, lt)
+
+    ; 臂 2 體：BlockStatement{inline: true} [ ExpressionStatement{nil} ]
+    ;   （ExpressionStatement 無子節點 ⇒ HDR 的 absent 分支印 `nil`）
+    ; ⚠️ **必須預留一個 0 槽**。ast.add 把 kid0 設成「當下的 kids.len()」，而一個
+    ;    無子節點卻帶 CHILD 指令的節點，稍後被 kid-add 進父節點時**恰好落在
+    ;    kids[kid0]** ⇒ dumper 的預掃把「自己」讀成首個子節點 ⇒ 無限遞迴（實測
+    ;    挂起，rc=137）。先 kid-add(…, 0) 佔住那一格即可解除自別名。
+    ;    這不是 ast.no 的缺陷，而是 arena 構造的硬性次序要求：
+    ;    「建父節點後立刻 kid-add 其子」對**無子節點**者仍不夠。
+    esnil = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+    ast.kid-add(t, esnil, 0)
+    blk2 = ast.add(t, asp.K_BLOCK_STATEMENT)
+    ast.set-slot(t, blk2, 0, ast.put-str(t, 'true'))
+    ast.set-count(t, blk2, 0, 1)
+    ast.kid-add(t, blk2, esnil)
+
+    ; SurfaceMatch{arms: 2}：Matched 走 kid，兩臂資料走 aux（每臂 12 個值）
+    sm = ast.add(t, asp.K_SURFACE_MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, sm, ix)
+    ast.helper-begin(t, sm, 2)
+
+    ; 臂 1：wildcard + dotVal
+    ast.aux-add(t, 0); binding
+    ast.aux-add(t, 0); bindingVariant
+    ast.aux-add(t, 0); typePattern
+    ast.aux-add(t, 0); typeBinding
+    ast.aux-add(t, ast.put-str(t, 'true')); wildcard
+    ast.aux-add(t, ast.put-str(t, 'true')); dotVal
+    ast.aux-add(t, 0); rawCond
+    ast.aux-add(t, 0); blockBody
+    ast.aux-add(t, 0); typeArm
+    ast.aux-add(t, 0); valueCtx
+    ast.aux-add(t, 0); Condition（無）
+    ast.aux-add(t, blk1); Body
+
+    ; 臂 2：僅 wildcard
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); wildcard
+    ast.aux-add(t, 0); dotVal
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, blk2)
+
+    es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+    ast.kid-add(t, es, sm)
+
+    root = ast.add(t, asp.K_PROGRAM)
+    ast.set-slot(t, root, 0, ast.put-str(t, '0'))
+    ast.set-count(t, root, 0, 1)
+    ast.kid-add(t, root, es)
+}
+
+test-match-arm-helper = () {
+    t, root = build-surface-match()
+    got = ast.dump(t, root)
+    want = 'Program{}\n    ExpressionStatement{SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            IndexExpression\n                Identifier{name: h}\n                IntegerLiteral{value: 0, raw: 0}\n            MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    LetStatement{name: it, type: i64, value: 0}\n                        NamedType{name: i64, inferred: true}\n                        IntegerLiteral{value: 0, raw: 0}\n            MatchArm{wildcard: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    ExpressionStatement{nil}'
+    runner.is-true(got.eq-full(want), 'matchArm helper reproduces the oracle SurfaceMatch dump byte-for-byte')
+}
+
+; ═══════════════════════════════════════════════
 
 test-minimal()
 test-trim()
@@ -338,6 +447,7 @@ test-type-string()
 test-expr-string()
 test-unsupported-is-live()
 test-kind-table()
+test-match-arm-helper()
 
 runner.summary()
 f = runner.failed-count()

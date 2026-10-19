@@ -1044,6 +1044,31 @@ helper case 寫進 `src/parser/dump/spec_gen_test.go`——該檔裡那 39 行�
 ⚠️ **新發現的既有缺陷 B（未接線）**：`ast.no` 的 `helper` 只接 `taggedEnumField`；
 `matchArm` 與 `interfaceMethod` 都記入 `t.unsup`（`ast.no:1221` 注釋已記錄）。
 
+**✅ s66（2026-10-20）：落地三件中的第 ① 件——`ast.no` 的 `helper` 接線 `matchArm`**
+
+- 元素編碼採**寬元素**：每臂 **12 個 aux 值**（4 字串 + 6 bool + Condition/Body 兩個節點索引），
+  與 `taggedEnumField` 的 2 值編碼按 `hname` 分派互不衝突。因 `HELPER` 是 SurfaceMatch 的
+  **最後一條**指令，`cur += hcount` 的過度前進不影響任何輸出 ⇒ **`hcount` / `hbase` 的
+  預掃（`ast.no:857` / `967`）不必改動**。
+- bool 以字串 `'true'` / `''`（str id 0）表示——nolang 無位元運算，走字串最簡。
+- 欄位順序逐項對齊 `dump.go:888-895` 的 `fields(...)`；`binding` / `bindingVariant` 是 `kv`
+  （**恆印**，空值也印成 `binding: `），其餘為 `kvb` / `kvs`（僅非預設值才印）。
+- **回歸測試**：`compiler/tests/ast-test.no` 新增 `build-surface-match` + `test-match-arm-helper`
+  （48/48 通過）。它手工組出 arena，對 oracle 最小復現檔
+  `printf 'h[0]: {\n    ok -> it = 0\n    -> _\n}\n'` 的輸出**逐位元組比對**。
+  ⚠️ 這是 matchArm 支路**唯一**的可達路徑——ps.no 尚未產 SurfaceMatch，語料 653 檔全部走不到。
+- **零回歸實證**：全量 verdict sweep 與 s65c **完全相同**（DIFF 313 / SAME 340 / 逾時 0）；
+  ast 48 / lx 45 / tok 62 / util 27 / ps 9 全綠。
+
+⚠️ **新發現的 arena 構造陷阱（無子節點 + CHILD 指令 ⇒ 自別名無限遞迴）**：
+`ast.add` 把 `kid0` 設成「當下的 `kids.len()`」。一個**無子節點卻帶 CHILD 指令**的節點
+（例：`ExpressionStatement{nil}`）稍後被 `kid-add` 進父節點時，**恰好落在 `kids[kid0]`** ⇒
+dumper 的預掃把「自己」讀成首個子節點 ⇒ `ast.node` 無限遞迴（實測 **挂起，rc=137**）。
+既有的「建父節點後立刻 kid-add 其子」守則對這類節點**不夠**。
+**修法（構造側）**：先 `ast.kid-add(t, n, 0)` 佔住那一格。asm 實測：加這一行即從挂起變正常。
+⚠️ 這對 s66 的第 ② 件是**前置約束**：ps.no 一旦開始產 `SurfaceMatch`，臂體裡的
+`ExpressionStatement{nil}` 就必須這樣建，否則自舉 binary 直接挂死。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。

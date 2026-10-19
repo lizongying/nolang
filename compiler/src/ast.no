@@ -1217,13 +1217,143 @@ signature = (t ast, o sb, d nd, depth i64) {
 
 ; helper: 分派非 Node 的子結構（dump.go 的 (*dumper).helper）
 ;
-; ⚠️ 目前只接線 taggedEnumField —— 語料中**唯一可達**的一支
-;    （TaggedEnumVariant.Fields）。interfaceMethod（InterfaceDefinition）與
-;    annotationStructField（AnnotationStructValue）尚未接線，會計入 .unsup。
+; ⚠️ 已接線 taggedEnumField（TaggedEnumVariant.Fields）與 matchArm（SurfaceMatch.Arms）。
+;    interfaceMethod（InterfaceDefinition）與 annotationStructField
+;    （AnnotationStructValue）尚未接線，會計入 .unsup。
 ;
-; 元素編碼：aux[hbase + 2j] = name 的 str id；
-;           aux[hbase + 2j + 1] = Type 節點索引（0 = 無 Type，-1 = 元素本身為 nil）
+; 元素編碼（**依 hname 而異**，兩支互不衝突）：
+;   taggedEnumField: 2 個 aux 值 / 元素
+;       aux[hbase + 2j]     = name 的 str id
+;       aux[hbase + 2j + 1] = Type 節點索引（0 = 無 Type，-1 = 元素本身為 nil）
+;   matchArm:        12 個 aux 值 / 臂（見下方 s66 註解）
 helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
+    ; s66：matchArm —— SurfaceMatch 的臂。MatchArm **不是 Node**
+    ;   （dump.go:876-877 明言：非 Node、無 dumpNode case、只經 SurfaceMatch 的
+    ;   HELPER 到達）⇒ 資料全部走 aux，不佔 kid 區。
+    ;   ⚠️ 元素寬度 12（taggedEnumField 是 2）：4 個字串 + 6 個 bool + 2 個節點索引。
+    ;      因只有 SurfaceMatch 用 matchArm，按 hname 分派不會與 2-值編碼衝突；
+    ;      HELPER 是 SurfaceMatch 的最後一條指令，故「cur += hcount」的過度前進
+    ;      不影響任何後續輸出（無需改動 hcount/hbase 預掃）。
+    ;   欄位順序與 Go dump.go:888-895 的 fields(...) **逐項一致**：
+    ;      wildcard, dotVal, rawCond, blockBody, typeArm, typePattern, typeBinding,
+    ;      skipIt, valueCtx 為可選（kvb/kvs，非預設值才印）；
+    ;      binding, bindingVariant 為恆印（kv，空值也印成 `binding: `）。
+    ;   ⚠️ multiOption / multiValue / bindingNames / bindingFields 在 653 檔語料
+    ;      中**零命中**（見 nolang-selfhost.md §5.3.4 的欄位普查），本支未接線。
+    ;   ⚠️ bool 以字串 'true' / ''（str id 0）表示——nolang 無位元運算，走字串最簡。
+    hname.eq-full('matchArm') -> {
+        j = 0
+        (j < d.hcount) {
+            #{overflow=wrap}
+            hb = d.hbase + 12 * j
+
+            #{overflow=wrap}
+            mbind = ast.str-at(t, ast.aux-at(t, hb))
+
+            #{overflow=wrap}
+            mbvar = ast.str-at(t, ast.aux-at(t, hb + 1))
+
+            #{overflow=wrap}
+            mtpat = ast.str-at(t, ast.aux-at(t, hb + 2))
+
+            #{overflow=wrap}
+            mtbnd = ast.str-at(t, ast.aux-at(t, hb + 3))
+
+            #{overflow=wrap}
+            mwild = ast.str-at(t, ast.aux-at(t, hb + 4))
+
+            #{overflow=wrap}
+            mdot = ast.str-at(t, ast.aux-at(t, hb + 5))
+
+            #{overflow=wrap}
+            mraw = ast.str-at(t, ast.aux-at(t, hb + 6))
+
+            #{overflow=wrap}
+            mblk = ast.str-at(t, ast.aux-at(t, hb + 7))
+
+            #{overflow=wrap}
+            mtarm = ast.str-at(t, ast.aux-at(t, hb + 8))
+
+            #{overflow=wrap}
+            mvctx = ast.str-at(t, ast.aux-at(t, hb + 9))
+
+            #{overflow=wrap}
+            mcond = ast.aux-at(t, hb + 10)
+
+            #{overflow=wrap}
+            mbody = ast.aux-at(t, hb + 11)
+
+            ast.indent(o, depth + 1)
+            o.push('MatchArm{')
+            mfirst = 1
+            mwild.len-bytes() > 0 -> {
+                mfirst == 0 -> o.push(', ')
+                o.push('wildcard: ')
+                o.push(mwild)
+                mfirst = 0
+            }
+            mdot.len-bytes() > 0 -> {
+                mfirst == 0 -> o.push(', ')
+                o.push('dotVal: ')
+                o.push(mdot)
+                mfirst = 0
+            }
+            mraw.len-bytes() > 0 -> {
+                mfirst == 0 -> o.push(', ')
+                o.push('rawCond: ')
+                o.push(mraw)
+                mfirst = 0
+            }
+            mblk.len-bytes() > 0 -> {
+                mfirst == 0 -> o.push(', ')
+                o.push('blockBody: ')
+                o.push(mblk)
+                mfirst = 0
+            }
+            mtarm.len-bytes() > 0 -> {
+                mfirst == 0 -> o.push(', ')
+                o.push('typeArm: ')
+                o.push(mtarm)
+                mfirst = 0
+            }
+            mtpat.len-bytes() > 0 -> {
+                mfirst == 0 -> o.push(', ')
+                o.push('typePattern: ')
+                o.push(mtpat)
+                mfirst = 0
+            }
+            mtbnd.len-bytes() > 0 -> {
+                mfirst == 0 -> o.push(', ')
+                o.push('typeBinding: ')
+                o.push(mtbnd)
+                mfirst = 0
+            }
+            mvctx.len-bytes() > 0 -> {
+                mfirst == 0 -> o.push(', ')
+                o.push('valueCtx: ')
+                o.push(mvctx)
+                mfirst = 0
+            }
+
+            ; binding / bindingVariant 恆印（kv），空值也印成 `binding: `
+            mfirst == 0 -> o.push(', ')
+            o.push('binding: ')
+            o.push(mbind)
+            o.push(', ')
+            o.push('bindingVariant: ')
+            o.push(mbvar)
+            o.push('}')
+            o.push-byte(10)
+
+            ; 子節點：Go 是 Condition 先、Body 後，皆 depth+1（相對臂 = depth+2）
+            mcond > 0 -> ast.node(t, o, mcond, depth + 2)
+            mbody > 0 -> ast.node(t, o, mbody, depth + 2)
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+    }
+
     hname.eq-full('taggedEnumField') -> {
         j = 0
         (j < d.hcount) {
