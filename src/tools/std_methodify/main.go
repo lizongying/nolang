@@ -1,10 +1,10 @@
 // std_methodify: AST-based rewriter that converts deprecated function-form
 // numeric-width conversion calls into type-bound method calls.
 //
-//   math.f64-to-i64(x)  ->  x.to-i64()
-//   math.i64-to-f64(x)  ->  x.to-f64()
-//   math.f32-to-f64(x)  ->  x.to-f64()
-//   math.f64-to-f32(x)  ->  x.to-f32()
+//	math.f64-to-i64(x)  ->  x.to-i64()
+//	math.i64-to-f64(x)  ->  x.to-f64()
+//	math.f32-to-f64(x)  ->  x.to-f64()
+//	math.f64-to-f32(x)  ->  x.to-f32()
 //
 // Design safety (mirrors std_qualify; no text/regex editing):
 //   - Only the QUALIFIED callee form `math.CONV(...)` is rewritten. Bare
@@ -21,9 +21,10 @@
 //     so precedence is preserved. The file is re-serialized through `no fmt`.
 //
 // Usage:
-//   go run ./tools/std_methodify [-w] [-only a,no] [src/std]
-//     (no -w)  dry-run: print per-file summary + diff, no write
-//     -w       write methodified source back to the files
+//
+//	go run ./tools/std_methodify [-w] [-only a,no] [src/std]
+//	  (no -w)  dry-run: print per-file summary + diff, no write
+//	  -w       write methodified source back to the files
 package main
 
 import (
@@ -302,9 +303,6 @@ func walkExpr(e parser.Expression, notes *[]string, n *int) parser.Expression {
 		x.Alternative = walkExpr(x.Alternative, notes, n)
 	case *parser.IfExpression:
 		x.Condition = walkExpr(x.Condition, notes, n)
-		if x.MatchedExpr != nil {
-			x.MatchedExpr = walkExpr(x.MatchedExpr, notes, n)
-		}
 		if x.Consequence != nil {
 			for _, b := range x.Consequence.Statements {
 				*n += walkStmt(b, notes)

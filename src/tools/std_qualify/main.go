@@ -20,10 +20,11 @@
 //   - Never qualify names bound locally in the file (params/locals/top-level).
 //
 // Usage:
-//   go run ./tools/std_qualify [-w] [-only a,no] [src/std]
-//     (no -w)  dry-run: print per-file change summary + unified diff, no write
-//     -w       write qualified source back to the files
-//     -only    comma-separated module file names (without .no) to restrict scope
+//
+//	go run ./tools/std_qualify [-w] [-only a,no] [src/std]
+//	  (no -w)  dry-run: print per-file change summary + unified diff, no write
+//	  -w       write qualified source back to the files
+//	  -only    comma-separated module file names (without .no) to restrict scope
 package main
 
 import (
@@ -44,7 +45,7 @@ import (
 var defaultGlobals = map[string]bool{
 	"print": true, "eprint": true, "format": true,
 	"with-cap": true, "with-len": true, "with-cap-len": true,
-	"exit": true,
+	"exit":   true,
 	"printf": true, "eprintf": true, "sprintf": true, // deprecated, kept bare
 }
 
@@ -483,9 +484,6 @@ func walkExpr(e parser.Expression, current string, bound map[string]bool, notes 
 		x.Alternative = walkExpr(x.Alternative, current, bound, notes, n)
 	case *parser.IfExpression:
 		x.Condition = walkExpr(x.Condition, current, bound, notes, n)
-		if x.MatchedExpr != nil {
-			x.MatchedExpr = walkExpr(x.MatchedExpr, current, bound, notes, n)
-		}
 		if x.Consequence != nil {
 			for _, b := range x.Consequence.Statements {
 				*n += walkStmt(b, current, bound, notes)
