@@ -71,17 +71,11 @@ func (f *formatter) isBareMatchBody(statements []parser.Statement) bool {
 	if !ok {
 		return false
 	}
-	// S4：糖形態下裸 match 是 *SurfaceMatch，不是降糖後的 IfExpression。它自己就
-	// 印成 `{ ... }`，故內聯同樣不改變視覺形式——與下面的 IfExpression 分支同判據。
-	// 少了這個分支，糖形態會替這種臂體多包一層大括號（json.no 的巢狀 match）。
+	// 糖形態下裸 match 是 *SurfaceMatch，本身就印成 `{ ... }`，內聯不改變視覺形式，故可直接內聯。
 	if _, ok := es.Expression.(*parser.SurfaceMatch); ok {
 		return true
 	}
-	ifExpr, ok := es.Expression.(*parser.IfExpression)
-	if !ok {
-		return false
-	}
-	return f.hasRT(ifExpr, parser.RTBareMatch)
+	return false
 }
 
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {
