@@ -241,7 +241,6 @@ func (a *boundsAnalyzer) markExpr(e Expression, ctx boundsCtx) {
 		}
 	case *IfExpression:
 		a.markExpr(v.Condition, ctx)
-		a.markExpr(v.MatchedExpr, ctx)
 		a.markBlock(v.Consequence, ctx)
 		a.markBlock(v.Alternative, ctx)
 	case *SurfaceMatch:
