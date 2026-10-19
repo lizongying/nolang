@@ -163,19 +163,11 @@ func (t *Transpiler) programUsesPrint(progs ...*parser.Program) bool {
 				// 涵蓋完全相同的子運算式集合。
 				parser.WalkSurfaceMatchChildren(ex, walkExpr, walkStmt)
 			case *parser.IfExpression:
+				// S1：主管線不再降糖 match，此分支只代表三元 if（a ? b : c）。
+				// matched / 臂體等子運算式已由專屬的 *parser.SurfaceMatch 分支
+				// 經 WalkSurfaceMatchChildren 枚舉，此處無需再走 MatchedExpr /
+				// DotValBody 等降糖殘留欄位（主管線 IfExpression 分支永不含 match）。
 				walkExpr(ex.Condition)
-				walkExpr(ex.MatchedExpr)
-				// Match arms nest: the tail arm's body is carried on the
-				// DotValBody block rather than on Alternative, so it has to be
-				// walked separately or a `-> { print(...) }` tail is missed.
-				if ex.DotValBody != nil {
-					for _, st := range ex.DotValBody.Statements {
-						if used {
-							return
-						}
-						walkStmt(st)
-					}
-				}
 				if ex.Consequence != nil {
 					for _, st := range ex.Consequence.Statements {
 						if used {
@@ -685,10 +677,12 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			// ValuePatterns 在糖形態下都摺進 Condition / MultiValuePatterns）。
 			parser.WalkSurfaceMatchChildren(ex, walkExpr, walkStmt)
 		case *parser.IfExpression:
+			// S1：主管線不再降糖 match，此分支只代表三元 if（a ? b : c）。
+			// matched / 型別解構 / 值模式等子運算式已由專屬的 *parser.SurfaceMatch
+			// 分支經 WalkSurfaceMatchChildren 枚舉，此處無需再走 MatchedExpr /
+			// RawCond / EqualityPattern / RangePattern / ValuePatterns /
+			// DotValBody 等降糖殘留欄位。
 			walkExpr(ex.Condition)
-			walkExpr(ex.MatchedExpr)
-			walkExpr(ex.RawCond)
-			walkExpr(ex.EqualityPattern)
 			if ex.Consequence != nil {
 				for _, s := range ex.Consequence.Statements {
 					walkStmt(s)
@@ -698,15 +692,6 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				for _, s := range ex.Alternative.Statements {
 					walkStmt(s)
 				}
-			}
-			if ex.DotValBody != nil {
-				for _, s := range ex.DotValBody.Statements {
-					walkStmt(s)
-				}
-			}
-			walkExpr(ex.RangePattern)
-			for _, vp := range ex.ValuePatterns {
-				walkExpr(vp)
 			}
 		case *parser.RangeExpression:
 			walkExpr(ex.Start)

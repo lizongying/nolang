@@ -13,7 +13,9 @@
 - `IfExpression` 上的 12 字段（`MatchedExpr`/`DotValBody`/`RangePattern`/`EqualityPattern`/`OptionPatterns`/`ValuePatterns`/`RawCond`/`MatchEndPos`/`IsTypeMatch`/`TypePattern`/`TypeBindingName`/`IsTypeDefault`，定义见 `parser/ast.go:1642-1681`）**不是「降糖 trace」**，而是 match 的**已降糖表示**（lowered representation）。它们在默认编译路径被消费：
   - `checker/match_exhaustive.go`（17× 读 `MatchedExpr`）、`option_compare.go`（5×）
   - `parser/tohir.go:906 case *IfExpression`（14×，读全部 12 字段造 `KTypeMatch`/`KTypeArm`/`KCond`）
-  - `build/transpiler_stdload.go:159,675`、`transpiler_monomorph.go`（20× 读 12 字段）
+  - `build/transpiler_stdload.go:159,675`、`transpiler_monomorph.go`（20× 读 12 字段；
+    **二者已于 2026-10-19 S-d 同序清理**：match 改走 `*parser.SurfaceMatch` 分支经
+    `WalkSurfaceMatchChildren` 枚举，IfExpression 分支仅剩三元 if 字段）
 - `hir.KUnwrapAssign` **非死 kind**：`parser/tohir.go:383` 仍在 `Kind: hir.KUnwrapAssign` 产出。
 - `RTFlag`（`parser/resolver.go:112` 注释自称「fmt 往返專用」）实则被 `parser` 在降糖时写入、`build/transpiler_monomorph.go` 读取——非 formatter 专用。
 
@@ -482,7 +484,12 @@ flip 主路径（当前做法，两跳）：
 S-a/S-b/S-c 全部落地后，`tohir.go:928 case *IfExpression` 只剩**真正的 if/elif/else**（match 语义
 不再走它），此时 §5 清单（12 字段、`RTFlag`、`KUnwrapAssign`、formatter 降糖代码）才真正可删。
 期间注意：`transpiler_monomorph.go:2111` 读 `e.MatchedExpr` 的路径**已清理**（2026-10-19 S-d：
-IfExpression 分支仅保留三元 if 字段，matched 由 SurfaceMatch 分支经 `e.Matched` 处理）。
+IfExpression 分支仅保留三元 if 字段，matched 由 SurfaceMatch 分支经 `e.Matched` 处理）；
+同序清理亦覆盖 `transpiler_stdload.go` 两处 `case *parser.IfExpression`（`programUsesPrint` 与
+`collectReferencedStdModules` 内的 walker）原先多走的 `MatchedExpr`/`RawCond`/`EqualityPattern`/
+`RangePattern`/`ValuePatterns`/`DotValBody` 等降糖残留字段——match 子運算式已由專屬的
+`*parser.SurfaceMatch` 分支经 `WalkSurfaceMatchChildren` 枚舉，故这些读取在主管線恒为对 nil 的 no-op，
+且 JS/WASM 后端不跑这两个 Transpiler walker，删除安全。
 
 #### 5.2.6 S-a 落地方式（2026-10-19 实测）
 
