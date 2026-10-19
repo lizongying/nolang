@@ -59,11 +59,6 @@ type formatter struct {
 	sem         *parser.SemanticContext // 語義 side-table（來自 program.Sem，可為 nil）
 	loopStyle   LoopStyle               // 循環預設寫法（prefix = 條件前置）
 
-	// synthRT 存放 formatter 內部臨時合成節點的往返標誌（如
-	// formatBareMatchExpression 為 wildcard arm 合成的 IfExpression），
-	// 不污染 program.Sem。
-	synthRT map[*parser.IfExpression]parser.RTFlag
-
 	// overflowRelevant 由 checker 計算：標註「含整數溢出運算」的陳述集合。
 	// 當非 nil 時，formatter 會移除「無效」的 #{overflow = ...} 註解——亦即其
 	// 管轄陳述不在集合中的 overflow 註解（例如整行僅字串拼接，中劃線是拼接而非
@@ -82,12 +77,8 @@ type formatter struct {
 	indexOutAnnRemovable map[*parser.AnnotationStatement]bool
 }
 
-// hasRT 查詢 IfExpression 的 fmt 往返標誌：先查 formatter 本地合成表，
-// 再查語義副表（f.sem 為 nil 時安全）。
+// hasRT 查詢 IfExpression 的 fmt 往返標誌：查語義副表（f.sem 為 nil 時安全）。
 func (f *formatter) hasRT(e *parser.IfExpression, fl parser.RTFlag) bool {
-	if v, ok := f.synthRT[e]; ok && v&fl != 0 {
-		return true
-	}
 	return f.sem.HasRTFlag(e, fl)
 }
 

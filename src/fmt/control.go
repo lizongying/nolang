@@ -125,11 +125,6 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 		return
 	}
 
-	// 裸 match 表達式 `{ cond -> body }` 輸出新式語法
-	if f.hasRT(e, parser.RTBareMatch) {
-		f.formatBareMatchExpression(e)
-		return
-	}
 	// 區分 `if cond { } else { }`（deprecated，Token 為 IF 關鍵字）
 	// 與 `cond: { } else: { }`（向後相容舊式，Token 為條件首 token，非 IF）
 	isDeprecatedIf := e.Token.Type == lexer.IF
@@ -179,155 +174,12 @@ func (f *formatter) formatIfExpression(e *parser.IfExpression) {
 	}
 }
 
-// formatBareMatchExpression 將裸 match 鏈（IfExpression desugar）格式化為
-// 新式語法 `{ cond -> body }`。
-// 鏈的結構由 buildBareMatchDesugar 產生：
-//   - 若最後一個 arm 是 wildcard（else），頂層 IfExpression 可能會被包裝在
-//     ExpressionStatement 內。
-//   - 對於非 wildcard arm，Alternative 為 BlockStatement{ExpressionStatement{next IfExpression}}
-//   - 對於 wildcard arm，Alternative 為直接的 BlockStatement
-
-// formatBareMatchExpression 將裸 match 鏈（IfExpression desugar）格式化為
-// 新式語法 `{ cond -> body }`。
-// 鏈的結構由 buildBareMatchDesugar 產生：
-//   - 若最後一個 arm 是 wildcard（else），頂層 IfExpression 可能會被包裝在
-//     ExpressionStatement 內。
-//   - 對於非 wildcard arm，Alternative 為 BlockStatement{ExpressionStatement{next IfExpression}}
-//   - 對於 wildcard arm，Alternative 為直接的 BlockStatement
-func (f *formatter) formatBareMatchExpression(e *parser.IfExpression) {
-	f.formatBareMatchExpressionSubj(e, nil)
-}
-
-// formatBareMatchExpressionSubj 輸出裸 match。subjOverride 非 nil 時取代
-// e.MatchedExpr 作為 match 主體顯示——專供「索引主體歸一化」包裝層還原原始表達式
-// （如 `parts[i]: { ok -> ... }`）：parser 為讓 `it` 綁定與 ok/nil/err tag 比較正確
-// 下發，把主體替換成合成變數 `__match_subj_L_C`，但該合成名不可回填到來源碼，
-// 否則輸出會變成 `IDENT: { ... }`（標籤+區塊）而無法再解析。原始表達式保存在
-// 包裝層內那條合成的 `__match_subj_L_C = <orig>` LetStatement.Value。
-func (f *formatter) formatBareMatchExpressionSubj(e *parser.IfExpression, subjOverride parser.Expression) {
-	// RTMatchWrapper: rawCond 包裝層 `if 1 { it = matched; <if-chain> }`
-	// 跳過包裝層，直接格式化內部的 if-chain。
-	if f.hasRT(e, parser.RTMatchWrapper) {
-		if subjOverride == nil {
-			// 索引主體歸一化：從合成 LetStatement 還原原始主體表達式供顯示。
-			for _, stmt := range e.Consequence.Statements {
-				if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic && ls.Name != nil {
-					if strings.HasPrefix(ls.Name.Value, "__match_subj_") {
-						subjOverride = ls.Value
-					}
-				}
-			}
-		}
-		// 收集包裝層內的 bare-match 臂 IfExpression。independent-guard fast path 把
-		// 每個 guard 臂平成兄弟 ExpressionStatement；rawCond/索引歸一化只包一條 if 鏈
-		// （單一 ExpressionStatement，且 wrapper.MatchedExpr 非 nil 或帶合成主體）。
-		var wrapperArms []*parser.IfExpression
-		for _, stmt := range e.Consequence.Statements {
-			if es, ok := stmt.(*parser.ExpressionStatement); ok {
-				if inner, ok := es.Expression.(*parser.IfExpression); ok && f.hasRT(inner, parser.RTBareMatch) {
-					wrapperArms = append(wrapperArms, inner)
-				}
-			}
-		}
-		// independent-guard 形態（無主語、多個兄弟臂）：全部臂輸出在同一 `{ }` 內。
-		// 舊碼只遞迴第一個臂便 return，會丟棄其餘臂（revwalk.no guard 丟分支根因）。
-		if subjOverride == nil && e.MatchedExpr == nil && len(wrapperArms) > 1 {
-			f.write("{")
-			if obc := f.obcOf(e); obc != nil && len(obc.List) > 0 {
-				f.write("; ")
-				for _, c := range obc.List {
-					f.write(strings.TrimSpace(c.Text))
-				}
-			}
-			f.indent++
-			for i, arm := range wrapperArms {
-				if i > 0 {
-					f.write("\n")
-				}
-				f.writeBareMatchArm(arm)
-			}
-			f.indent--
-			f.newline()
-			f.write("}")
-			return
-		}
-		for _, inner := range wrapperArms {
-			f.formatBareMatchExpressionSubj(inner, subjOverride)
-			return
-		}
-	}
-	displaySubj := e.MatchedExpr
-	if subjOverride != nil {
-		displaySubj = subjOverride
-	}
-	if displaySubj != nil {
-		f.formatExpression(displaySubj)
-		f.write(": {")
-	} else {
-		f.write("{")
-	}
-	// Output opening brace comment on the same line as {
-	if obc := f.obcOf(e); obc != nil && len(obc.List) > 0 {
-		if os.Getenv("NOLANG_FMTDBG") != "" {
-			fmt.Fprintf(os.Stderr, "[DBG] formatBareMatchExpression obcOf(e)=%q\n", obc.List[0].Text)
-		}
-		f.write("; ")
-		for _, c := range obc.List {
-			f.write(strings.TrimSpace(c.Text))
-		}
-	}
-	f.indent++
-	// 輸出當前 arm
-	f.writeBareMatchArm(e)
-	// 處理後續 arm（Alternative 鏈）
-	for e.Alternative != nil {
-		if len(e.Alternative.Statements) == 1 {
-			if es, ok := e.Alternative.Statements[0].(*parser.ExpressionStatement); ok {
-				if next, ok := es.Expression.(*parser.IfExpression); ok && f.hasRT(next, parser.RTBareMatch) {
-					e = next
-					f.write("\n")
-					f.writeBareMatchArm(e)
-					continue
-				}
-			}
-		}
-		// Wildcard arm 的 Alternative 是直接的 BlockStatement
-		// 模擬 IfExpression 包裝後調用 writeBareMatchArm；
-		// 標誌記入 formatter 本地合成表，不污染 program.Sem。
-		wildcardIf := &parser.IfExpression{
-			Token:       e.Token,
-			Condition:   &parser.IntegerLiteral{Token: e.Token, Value: 1},
-			Consequence: e.Alternative,
-		}
-		if f.synthRT == nil {
-			f.synthRT = make(map[*parser.IfExpression]parser.RTFlag)
-		}
-		f.synthRT[wildcardIf] = parser.RTBareMatch | parser.RTMatchWildcard
-		if e.DotValBody == e.Alternative {
-			wildcardIf.DotValBody = e.Alternative
-		}
-		f.write("\n")
-		f.writeBareMatchArm(wildcardIf)
-		break
-	}
-	f.indent--
-	f.newline()
-	f.write("}")
-}
-
-// bareMatchArm 是一條「已備妥、可輸出」的 match 臂：主體語句已濾掉降糖合成的
-// 腳手架，臂模式（pattern）由 writeCond 自行輸出（不含結尾的 ` ->`）。
+// bareMatchArm 是一條「已備妥、可輸出」的 match 臂：主體語句已濾掉解析器為空臂
+// 留下的 nil 佔位，臂模式（pattern）由 writeCond 自行輸出（不含結尾的 ` ->`）。
 //
-// 它有兩個生產者，刻意共用同一套「主體怎麼排版」的規則（內聯 / 區塊 / 註解
-// 位置）——那是排版決定，與糖無關：
-//
-//	armFromIfExpr  今日的降糖形態：IfExpression 鏈 + RTFlag + 痕跡欄位，
-//	               臂模式必須從痕跡欄位反推（MatchedExpr / OptionPatterns /
-//	               ValuePatterns / RawCond / EqualityPattern …）。
-//	armFromMatchArm  S4 的糖形態：parser.MatchArm 自帶完整表面資訊，
-//	               臂模式直接照語法讀，不需要任何反推。
-//
-// 差別因此只剩「模式從哪裡讀」。S4 完成後 armFromIfExpr 隨降糖形態一起退役。
+// 它的唯一生產者是 armFromMatchArm：S-d 後 match 只以糖形態 SurfaceMatch 存在，
+// 不再有降糖 IfExpression 形態，故臂模式直接照 parser.MatchArm 的表面資訊讀出，
+// 不需要任何反推。
 type bareMatchArm struct {
 	body      *parser.BlockStatement
 	stmts     []parser.Statement // body 語句，已濾掉合成腳手架
@@ -339,14 +191,13 @@ type bareMatchArm struct {
 
 // formatSurfaceMatch 直接從糖節點 SurfaceMatch 輸出 match——不經降糖、不讀痕跡
 // 欄位、不反推 if 鏈形狀。臂模式照語法原樣讀出（見 armFromMatchArm），主體排版
-// 與降糖形態共用 writeArm。
+// 由 writeArm 統一處理。
 //
-// 這是 S4 的目標形態：同一份源碼在兩種形態下的 `no fmt` 輸出必須逐字節相同，
-// 由 src/fmt/sugar_fmt_ab_test.go 的 TestSugarFmtMatchesSurfaceFmt 把守。
+// 糖形態是 S-d 後 match 的唯一非編譯形態（no fmt 只見 SurfaceMatch），由
+// src/fmt/sugar_fmt_ab_test.go 的 TestSugarFmtCorpusSmoke 等把守（reparse + 冪等）。
 //
-// 與降糖形態唯一「刻意保留」的共同點是臂之間的空行：writeArm 每條臂都以
-// f.newline() 起頭，而臂與臂之間再寫一個裸 "\n"，所以 match 的臂永遠隔一行
-// 輸出，與源碼是否留白無關（既有行為，兩種形態一致）。
+// 臂之間的空行：writeArm 每條臂都以 f.newline() 起頭，而臂與臂之間再寫一個裸
+// "\n"，所以 match 的臂永遠隔一行輸出，與源碼是否留白無關。
 func (f *formatter) formatSurfaceMatch(sm *parser.SurfaceMatch) {
 	if sm.Matched != nil {
 		f.formatExpression(sm.Matched)
@@ -386,99 +237,10 @@ func (f *formatter) matchOpeningBraceComment(sm *parser.SurfaceMatch) *parser.Co
 	return sm.OpeningBraceComment
 }
 
-// writeBareMatchArm 輸出單個 arm。
-// 對於非 wildcard：cond -> body
-// 對於 wildcard：-> body
-// 若 body 只有一個簡單語句（ExpressionStatement / LetStatement / ReturnStatement 等）且無註釋，
-// 內聯輸出在同一行；若 body 有多個語句，用 { } 大括號包裹。
-func (f *formatter) writeBareMatchArm(e *parser.IfExpression) {
-	f.writeArm(f.armFromIfExpr(e))
-}
-
 // writeMatchArm 輸出糖形態的單條 match 臂（parser.MatchArm）。與
 // writeBareMatchArm 走同一條排版路徑，差別只在臂模式的來源。
 func (f *formatter) writeMatchArm(ma *parser.MatchArm) {
 	f.writeArm(f.armFromMatchArm(ma))
-}
-
-// armFromIfExpr 從降糖後的 IfExpression 還原一條臂。合成語句的辨識與析構綁定
-// 的打撈都在這裡——它們全是降糖產物，糖形態沒有這些東西。
-func (f *formatter) armFromIfExpr(e *parser.IfExpression) bareMatchArm {
-	a := bareMatchArm{
-		body:      e.Consequence,
-		wildcard:  f.hasRT(e, parser.RTMatchWildcard),
-		valBranch: e.DotValBody != nil && e.DotValBody == e.Consequence,
-	}
-	// 過濾 compiler 注入的合成語句（如 `it = matched`），同時收集析構綁定名：
-	//   - 隱式 `it` 綁定（`ok ->` / `nil ->` 等）不算顯式綁定，輸出時省略；
-	//   - 其餘合成 `name = ...`（來自 `ok(v) ->` / `rect(w, h) ->`）為顯式析構綁定，
-	//     需在 arm 模式後以 `(name1, name2, ...)` 還原，否則格式化會丟掉綁定、
-	//     使 body 中引用的綁定名變成未定義變數。
-	statements := make([]parser.Statement, 0, len(e.Consequence.Statements))
-	var destructured []string
-	for _, stmt := range e.Consequence.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {
-			if ls.Name != nil && ls.Name.Value != "" && ls.Name.Value != "it" {
-				destructured = append(destructured, ls.Name.Value)
-			}
-			continue
-		}
-		// D4：值-match 的空臂（`->`）在 lowering 時被合成為「被匹配 option 內部型別的
-		// 零值」語句。Formatter 必須把該合成語句濾掉、還原成空臂輸出，否則
-		// `->` 會被改寫成 `-> 0`（第一次 `no fmt` 就改動用戶源碼、且非冪等）。
-		if f.sem.HasRTFlag(stmt, parser.RTEmptyArmDefault) {
-			continue
-		}
-		// 裸 `-> _`（wildcard / no-op 臂）在 desugar 後變成 Expression 為 nil 的
-		// ExpressionStatement（佔位 discard）。若原樣輸出會印成 `-> `（多餘尾隨
-		// 空白），第二輪 `-> ` 又被重新解析成空臂 → `->`，與第一輪不一致、破壞冪等。
-		// 此處把它視為空臂濾掉，使輸出穩定為 `->`（與空臂分支一致）。
-		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
-			continue
-		}
-		statements = append(statements, stmt)
-	}
-	a.stmts = statements
-	if len(destructured) > 0 {
-		a.binding = "(" + strings.Join(destructured, ", ") + ")"
-	}
-	a.writeCond = func(f *formatter) {
-		if e.MatchedExpr != nil {
-			// 按 pattern 類型依序檢查顯式欄位，避免對 desugar 後的 Condition 做啟發式推斷
-			switch {
-			case e.RangePattern != nil:
-				// [a..b) 等 range pattern
-				f.formatRangeBrackets(e.RangePattern)
-			case len(e.OptionPatterns) > 0:
-				// nil || err 等 option pattern 列表
-				f.write(strings.Join(e.OptionPatterns, " || "))
-			case len(e.ValuePatterns) > 0:
-				// 1 || 3 || 5 等 multi-value pattern 列表
-				for i, vp := range e.ValuePatterns {
-					if i > 0 {
-						f.write(" || ")
-					}
-					f.formatExpression(vp)
-				}
-			case e.RawCond != nil:
-				// ok(cond) raw cond arm
-				f.write("ok(")
-				f.formatExpression(e.RawCond)
-				f.write(")")
-			case e.EqualityPattern != nil:
-				// matched == X 等值 pattern，直接輸出 X
-				f.formatExpression(e.EqualityPattern)
-				f.write(a.binding)
-			default:
-				// 無顯式欄位：回退到格式化 Condition（向後相容）
-				f.formatExpression(e.Condition)
-				f.write(a.binding)
-			}
-			return
-		}
-		f.formatExpression(e.Condition)
-	}
-	return a
 }
 
 // armFromMatchArm 從糖節點 MatchArm 直接讀出臂模式——沒有反推、沒有痕跡欄位。
