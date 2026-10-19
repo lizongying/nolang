@@ -198,7 +198,6 @@ func (p *Parser) lowerProgram(prog *Program) {
 	l.walk(reflect.ValueOf(prog))
 }
 
-
 // DesugarSurfaceMatchesPlain is the js/wasm re-home entry point (design doc §5
 // P7). It expands every deferred SurfaceMatch into the SAME core-AST IfExpression
 // chain the main pipeline gets, but the chain carries NO match-specific fields
@@ -2131,8 +2130,6 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 		l.p.curFuncName = savedFuncName
 		if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
 			l.p.sem.SetOpeningBraceComment(ifExpr, sm.OpeningBraceComment)
-			// 轉移外層 `}` 位置到 IfExpression，讓 EndPos() 能準確返回 `}` 行號。
-			ifExpr.MatchEndPos = sm.RBracePos
 		}
 		return result
 	}
@@ -2153,9 +2150,6 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 			(l.p.isUnionType(t) || l.p.armsCarryTypePatterns(sm.Arms)) {
 			result := l.p.buildTypeMatchDesugar(sm, t)
 			l.p.curFuncName = savedFuncName
-			if ifExpr, ok3 := result.(*IfExpression); ok3 && ifExpr != nil {
-				ifExpr.MatchEndPos = sm.RBracePos
-			}
 			return result
 		}
 	}
@@ -2168,9 +2162,6 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 		result = l.p.emitSubjectMatchPlain(prep)
 	}
 	l.p.curFuncName = savedFuncName
-	if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
-		ifExpr.MatchEndPos = sm.RBracePos
-	}
 	return result
 }
 
@@ -2286,8 +2277,6 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	}
 	return types[varName]
 }
-
-
 
 // prepareSurfaceMatch clones the match, carries the D9 index-out annotations
 // onto the clone, and runs the arm pre-checks. Every step here has side effects
@@ -2770,8 +2759,6 @@ func (p *Parser) resolveBareMatchPlan(tok lexer.Token, arms []MatchArm) *matchIf
 	return cur
 }
 
-
-
 // emitMatchIfPlain is the js/wasm re-home counterpart of emitMatchIfAST (design
 // doc §5 P7). It builds the SAME if/elif/else chain structure — identical
 // Condition / Consequence / Alternative nesting — but writes NONE of the
@@ -2812,7 +2799,6 @@ func (p *Parser) emitMatchIfPlain(tok lexer.Token, plan *matchIfPlan) Expression
 	}
 	return node
 }
-
 
 // subjectMatchPrep is the IR-agnostic state buildMatchDesugar computes BEFORE
 // it starts emitting arms (design doc §5.2.9, segments A+B+C). Everything here is
@@ -3613,7 +3599,6 @@ func (p *Parser) resolveArmCond(tok lexer.Token, matched Expression, arm MatchAr
 	return plan
 }
 
-
 // emitSubjectMatchPlain is the js/wasm re-home counterpart of emitSubjectMatchAST
 // (design doc §5 P7). It builds the SAME if/elif/else chain — identical
 // Condition / Consequence / Alternative nesting and the identical `if 1 { ... }`
@@ -4294,9 +4279,9 @@ func (p *Parser) desugarIndexOutReads(expr Expression, tok lexer.Token, defVal A
 				SkipItBinding: true,
 				Pos:           posFromToken(tok),
 			}
-		sm := &SurfaceMatch{Token: tok, Matched: &Identifier{Token: tok, Value: outName}, Arms: []MatchArm{okArm, noneArm}}
-		lowered := p.desugarSurfaceMatchToIfExpr(sm)
-		if lowered == nil {
+			sm := &SurfaceMatch{Token: tok, Matched: &Identifier{Token: tok, Value: outName}, Arms: []MatchArm{okArm, noneArm}}
+			lowered := p.desugarSurfaceMatchToIfExpr(sm)
+			if lowered == nil {
 				return expr, nil
 			}
 			// __idx_val_N = match（u64）。
