@@ -911,7 +911,7 @@ $ ./bin/no ast /tmp/t2.no | grep -E 'Literal'
 
 ⚠️ **`FloatLiteral.Value` 用 Go 的 `%v` 印**（最短可往返表示）。語料中只有 10 處（首 120 檔），值全是 `0` / `1` / `1.5` / `24` / `30` 這類簡單數 ⇒ 目前可人工處理，但**這是一個未解的演算法風險**（一般情形需要 Ryu/Grisu 級演算法）。登記於 §9 風險。
 
-#### 🔴 5.3.3 match 表示分歧 + `compiler/` 構建破損（2026-10-19 S7 調查記錄）
+#### 5.3.3 match 表示分歧 + `compiler/` 構建破損（2026-10-19 S7 調查；構建破損**已修** 2026-10-20）
 
 **背景**：S1「match 表示統一」收官後（詳見 `nolang-parser-lowering-invariants.md` §22），bin/no 的 parser **保留 `SurfaceMatch`** 不展開（翻轉 `b918dba9`、刪除舊降糖路徑 `d6965622`），降糖移到 H0 lowering pass 執行。`noc`（§6.3 t23 片）仍在 **parse 期**把 match 展開成 if/else 鏈——這在 2026-10-19 之前是兩邊的共同事實，現在成為**單邊分歧**。
 
@@ -925,19 +925,24 @@ $ ./bin/no ast /tmp/t2.no | grep -E 'Literal'
 
 ⇒ **L2 在 264/653 檔上必然偏離**；S7 的「跑滿五級」（G6）在分歧裁定前不可能全綠。
 
+**全量實測（2026-10-20，SUT＝構建修復後的 `noc-s0`）**：653 檔 DIFF=315 / SAME=338，另有 3 檔 sut 獨有 rc=124 挂起。**跨 noc 對照歸因**：同一 CTL 下，`762ea045` 之前的 noc（`b805ed06`）DIFF=355 / sut 獨有失敗 8 檔；修後 `noc-s0` DIFF=315 / 3 檔，且 DIFF 集 ⊆ 舊集（唯一例外 `tests/1-test.no`——`762ea045` 推斷移植的過度推斷，因構建破损潛伏、被修復激活，非本次修法引入），3 档挂起在舊 noc 上同樣复现。⇒ 本次修法**零新增分歧/挂起**；`762ea045` 的移植（經修復激活）淨減 40 檔分歧。歸因詳見 `nolang-parser-lowering-invariants.md` §11.1 第 4 條。
+
 **裁定（待辦，屬 S7）**：二選一——① `ps.no` 改為產出 `SurfaceMatch`（parser 忠實，即 P1；`asp.no` 的 `K_SURFACE_MATCH` 條目早已就位，§6.3/§18.3），降糖留待 M4 的 `hir.no` 重新實作；② 維持 parse 期 desugar 現狀，把分歧登記為已知缺陷並相應縮小 L2 語料。**裁定前，L2 的任何結果都不得視為綠燈。**
 
-**🔴 更嚴重的前置發現：`compiler/` 自 2026-10-13 起無法構建**（與上述分歧獨立，但阻塞 S7 全部五級驗收）：
+**🔴→✅ 前置發現：`compiler/` 曾自 2026-10-13 起無法構建（與上述分歧獨立，但曾阻塞 S7 全部五級驗收）——已於 2026-10-20 修復**：
 
 | 事實 | 證據 |
 | --- | --- |
-| `./bin/no build -o /tmp/noc-s0 compiler` 失敗 | `EmitLLVM: MIR->LLVM: func ps_parse_func` / `func ps_parse_method_func`: `consumer reads value 0 (NoVal), which no instruction produced … (bug #85)`；**HEAD `4c3dfbf7` 乾淨工作樹（`git worktree`）復現**，非併發 WIP 所致 |
+| `./bin/no build -o /tmp/noc-s0 compiler` 曾失敗 | `EmitLLVM: MIR->LLVM: func ps_parse_func` / `func ps_parse_method_func`: `consumer reads value 0 (NoVal), which no instruction produced … (bug #85)`；**HEAD `4c3dfbf7` 乾淨工作樹（`git worktree`）復現**，非併發 WIP 所致 |
 | 破壞者 commit | **`762ea045`**（2026-10-13 12:45「refactor(parser): infer types of local variables and function return values during parsing」）——手動二分實測鏈：`c721fe6c`（bare match 降糖）OK → `b805ed06` OK → **`762ea045` FAIL**（初現 8 處 NoVal，後續 commit 增至 12 處，同一對函式、同一錯誤形態） |
-| 潛在機制 | 失敗函式正是**函式定義解析器**（處理回傳值群組）；解析期類型推断改變了 `opos[0]` 一類索引讀的型別/降級路徑（待修時證實） |
-| 無人發現的時長 | **6 天**：CI 無 `no build compiler` 門禁（`.github/workflows/build.yml` 僅 build-release + wasm-smoke） |
-| 影響面 | L0–L4 全都需要可用的 `noc-s0` ⇒ **S7 驗收整體阻塞**；且 DR-1 自舉三階段（S0→S1→S2→S3 定點）每一步都以「`no` 能編譯 `compiler/`」為前提 |
+| 根因（修時證實） | `762ea045` 給 ps.no 加的型別登記循環把索引讀（`params[rp]` 等）巢置於 call 引數內 ⇒ option 捕獲合成：nil/err 臂把賦值目標（如 `pd`）定型為 `?i64`，ok 臂寫 struct，合併點後續欄位讀 `pd.kid0` 按 option 解析 ⇒ MIR NoVal（HIR/MIR dump 實證：`params[rp]` → `__cap_20 t=?i64` → 三臂 match） |
+| 修法（語言層，不動 Go 編譯器） | 索引讀提取為獨立陳述 + `#{index-out=zero}`（該注解只覆蓋陳述內直接讀、**不覆蓋巢置於 call 引數內的讀**——v1→v4 最小復現階梯實證；與 ps.no 自身 `wildA[z]` 慣用法一致）。共 **8 處**：`ps-parse-func` / `ps-parse-method-func` 各 4（params/outs 型別登記循環 + params/outs 泛型偵測循環） |
+| 修復實證 | `./bin/no build -o /tmp/noc-s0 compiler` **成功**（`noc v0.0.1-m0`）；L2 全語料歸因：修後 `noc-s0` 與 `762ea045` 之前的 noc（`c721fe6c`/`b805ed06`）在挂起檔上行為一致，**未引入新分歧**（詳見 `nolang-parser-lowering-invariants.md` §11.1 第 4 條） |
+| 無人發現的時長 | **6 天**：CI 無 `no build compiler` 門禁（`pr-verify` 此前只跑 Go 單測 / std 測試 / 語料冒煙） |
+| 影響面 | 曾阻塞 L0–L4（全都需要可用的 `noc-s0`）與 DR-1 自舉三階段（每一步都以「`no` 能編譯 `compiler/`」為前提） |
+| 防復發 | CI 已補閘：`pr-verify` 新增 `./bin/no build -o /tmp/noc-ci compiler` 步驟（2026-10-20，`.github/workflows/build.yml`） |
 
-**下一步**：先修 `762ea045` 引入的 MIR codegen 缺陷（**獨立立項**，不屬 S7 範圍——它比 S1/S7 更早），再回來做 match 表示裁定。
+**下一步**：S7 唯一待辦＝match 表示裁定（二選一，見上文）；另登記三檔 noc parser 挂起（`crypto/aes-cbc.no` / `net/net.no` / `net/tls.no`，既有缺陷，`762ea045` 之前的 noc 同樣复现）待獨立立项。
 
 ### 5.4 語義檢查（M3）
 
