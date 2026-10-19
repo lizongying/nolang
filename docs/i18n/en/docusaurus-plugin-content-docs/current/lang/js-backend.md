@@ -47,6 +47,7 @@ Implementation resides in the `src/build/js/` directory:
 | --- | --- |
 | `--js` | Use the JS backend (emit JavaScript, bypass LLVM) |
 | `--browser` | Generate browser-oriented output (HTML + JS, requires `--js`) |
+| `--esm-cdn <url>` | Override the CDN base of the browser ESM import map (default `https://esm.sh`) |
 | `-o <path>` | Specify output path |
 
 ### Build
@@ -270,6 +271,79 @@ HTML wrapper features:
 - The compiled artifact is referenced via `<script src="name.js">`
 
 Output path defaults to the `dist/` directory.
+
+## Third-party ESM imports
+
+The JS backend can consume npm packages (the TypeScript `import` equivalent)
+with **no new `import` statement** — reuse the `#` use directive with the
+reserved `npm/` prefix:
+
+```no
+# npm/lodash                ; whole module object: lodash.get(x, 'a.b')
+# npm/lodash.get as get     ; one named export: get(x, 'a.b')
+# npm/lodash.default as d   ; the package default export: d(props)
+# npm/@scope/pkg            ; scoped packages
+# npm/lodash/fp.get as fpg  ; subpath imports
+```
+
+Rules:
+
+- **JS backend only.** The LLVM and Direct-WASM backends reject `# npm/...`
+  with a pointer to `no build --js`.
+- **The package must be declared in `package.jsonc`** (`dependencies` or
+  `devDependencies`), otherwise the build fails. Subpath imports (`lodash/fp`)
+  only need the parent package (`lodash`) on the list.
+- **Short-name qualification is unchanged**: after `# npm/lodash` write
+  `lodash.get(...)`; a named import (`as get`) is called directly as
+  `get(...)`.
+- **v1 is type-transparent**: imported bindings carry no Nolang types (zero
+  checker changes), so no signature checking happens; when an import collides
+  with a local function name, the import side is renamed (`$esm` suffix).
+- **An import wins over a builtin module mapping**: after `# npm/math`,
+  `math.sin(x)` targets the npm `math` package, not `Math.sin`.
+
+### Running on Node.js
+
+The artifact is a standard ES module (`import` statements may only appear in
+module scope). `no build --js` drops a `package.json` with
+`{"type": "module"}` next to the artifact (npm convention) so node runs it as
+ESM; if that directory already has a non-ESM `package.json`, the build
+suggests emitting `-o out.mjs` instead.
+
+```bash
+npm install lodash                    # install the package first
+no build --js main.no                 # emits dist/main.js (+ dist/package.json)
+node dist/main.js                     # runs as ESM
+no run --js main.no                   # builds to a temp dir, then runs node
+```
+
+`no run --js` links the project's `node_modules` into the temp dir (node
+resolves packages by walking up from the script's directory) and fails with an
+install hint when a package is missing; `no build --js` only warns about
+missing packages (the artifact stays valid — packages are needed at run time).
+
+### Running in the browser
+
+With `--browser`, the HTML becomes a `<script type="module">` plus an import
+map that resolves bare specifiers through a CDN (default `https://esm.sh`):
+
+```html
+<script type="importmap">
+{"imports": {"lodash": "https://esm.sh/lodash"}}
+</script>
+<script type="module" src="main.js"></script>
+```
+
+Change the CDN (highest priority first):
+
+1. `no build --js --browser --esm-cdn https://cdn.jsdelivr.net/npm main.no`
+2. `"compiler": { "esm-cdn": "https://cdn.jsdelivr.net/npm" }` in
+   `package.jsonc`
+
+Because `<script type="module">` is blocked by CORS under `file://`,
+`no run --js --browser` starts a one-shot static server on `127.0.0.1` and
+opens the browser there (Ctrl+C to stop). See `example/esm-imports/` for a
+complete example.
 
 ## Complete Example
 

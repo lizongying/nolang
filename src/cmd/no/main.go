@@ -5,14 +5,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	nbuild "github.com/lizongying/nolang/build"
@@ -2457,6 +2461,7 @@ func buildCommand(args []string) {
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript source, no LLVM toolchain required)")
 	browserMode := fs.Bool("browser", false, "Generate browser-targeted output (HTML + JS, requires --js)")
+	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.jsonc compiler.esm-cdn)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
@@ -2488,6 +2493,15 @@ func buildCommand(args []string) {
 		fmt.Println("  no build --js main.no                              emit JavaScript (type erasure)")
 		fmt.Println("  no build --js -o app.js main.no                    JS backend with explicit output")
 		fmt.Println("  no build --js --browser main.no                    emit browser JS + HTML wrapper")
+		fmt.Println("")
+		fmt.Println("Third-party ESM imports (JS backend only): pull in npm packages with")
+		fmt.Println("  # npm/lodash               the whole module object (use lodash.get(...))")
+		fmt.Println("  # npm/lodash.get as get    one named/exported binding")
+		fmt.Println("  # npm/lodash.default as d  the package default export")
+		fmt.Println("Each package must be declared in package.jsonc dependencies (or")
+		fmt.Println("devDependencies) and installed with npm install before `no run --js`.")
+		fmt.Println("Browser output resolves them through an import map; point it at")
+		fmt.Println("another CDN with --esm-cdn (e.g. https://cdn.jsdelivr.net/npm).")
 	}
 	_ = fs.Parse(args)
 
@@ -2526,6 +2540,7 @@ func buildCommand(args []string) {
 		BrowserMode:           *browserMode,
 		CompilerVersion:       version,
 		LDFlags:               ldFlags,
+		ESMCDN:                *esmCDN,
 	}
 
 	// 後端決策集中化：ResolveBackend 是唯一決策點（Direct-WASM > JS > LLVM），
@@ -2573,6 +2588,15 @@ func buildCommand(args []string) {
 	} else {
 		fmt.Printf("Build successful: %s\n", outPath)
 	}
+
+	// 第三方 ESM：build 只警告不攔截——產物本身就是合法的 ESM，缺包只影響
+	// `no run --js` 執行期能否解析到模組（browser 走 CDN import map，通常無感）。
+	if kind == nbuild.BackendJS {
+		if missing, _, derr := nbuild.CheckESMDeps(inputPath); derr == nil && len(missing) > 0 {
+			fmt.Fprintf(os.Stderr, "Warning: ESM module(s) not installed: %s (run: npm install %s)\n",
+				strings.Join(missing, ", "), strings.Join(missing, " "))
+		}
+	}
 }
 
 func runCommand(args []string) {
@@ -2588,6 +2612,7 @@ func runCommand(args []string) {
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with node)")
 	browserMode := fs.Bool("browser", false, "Open in browser (requires --js)")
+	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.jsonc compiler.esm-cdn)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no run [<package|dir|file>]")
 		fmt.Println("")
@@ -2606,6 +2631,11 @@ func runCommand(args []string) {
 		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript (run with node).")
 		fmt.Println("Use --js --browser to emit browser JS + HTML and open in the default browser.")
 		fmt.Println("Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default).")
+		fmt.Println("")
+		fmt.Println("Third-party ESM imports (--js): import npm packages with `# npm/lodash`,")
+		fmt.Println("`# npm/lodash.get as get` or `# npm/lodash.default as d`. Declare them in")
+		fmt.Println("package.jsonc dependencies and npm install first; `no run --js` fails with")
+		fmt.Println("an install hint when a package is missing.")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no run                       build and run main.no in current dir")
@@ -2670,6 +2700,7 @@ func runCommand(args []string) {
 		BrowserMode:           *browserMode,
 		CompilerVersion:       version,
 		LDFlags:               ldFlags,
+		ESMCDN:                *esmCDN,
 	}
 
 	// 為 ResolveBackend 載入 package（emit=="js" 自動偵測與目錄→main.no 解析）。
@@ -2714,7 +2745,18 @@ func runCommand(args []string) {
 
 	switch kind {
 	case nbuild.BackendJS:
+		// 第三方 ESM（# npm/…）在執行期有兩個硬性要求：
+		// 1. node 版本：bundle 在 tmpDir 內，向上找不到專案的 node_modules，
+		//    必須先把 node_modules 鏈接進來；缺包直接報錯並給安裝提示。
+		// 2. browser 版本：<script type="module"> 在 file:// 下被 CORS 攔截，
+		//    必須起本地 http 服務再打開。無 ESM 時兩條路徑保持原行為。
+		esmMissing, esmNM, esmErr := nbuild.CheckESMDeps(inputPath)
+		hasESM := esmErr == nil && (len(esmMissing) > 0 || esmNM != "")
 		if *browserMode {
+			if hasESM {
+				serveESMAndOpen(tmpDir, outPath)
+				return
+			}
 			// Open in default browser
 			var openCmd *exec.Cmd
 			switch runtime.GOOS {
@@ -2733,6 +2775,19 @@ func runCommand(args []string) {
 				fmt.Printf("Open manually: %s\n", outPath)
 			}
 			return
+		}
+		if hasESM && len(esmMissing) > 0 {
+			fmt.Fprintf(os.Stderr, "Error: ESM module(s) not installed: %s\nRun: npm install %s\n",
+				strings.Join(esmMissing, ", "), strings.Join(esmMissing, " "))
+			os.Exit(1)
+		}
+		if hasESM && esmNM != "" {
+			link := filepath.Join(tmpDir, "node_modules")
+			if _, lerr := os.Lstat(link); lerr != nil {
+				if err := os.Symlink(esmNM, link); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not link node_modules for module resolution: %v\n", err)
+				}
+			}
 		}
 		// 以 node 執行編譯產物（若不可用則提示使用者安裝）。
 		if _, lerr := exec.LookPath("node"); lerr != nil {
@@ -2780,6 +2835,39 @@ func runCommand(args []string) {
 			os.Exit(1)
 		}
 	}
+}
+
+// serveESMAndOpen serves dir over http on 127.0.0.1 (ephemeral port), opens
+// htmlPath's basename in the default browser, and blocks until interrupted.
+// Browser ESM output needs an http origin: module scripts (and the import map
+// resolving bare specifiers to a CDN) are rejected under file:// by CORS.
+func serveESMAndOpen(dir, htmlPath string) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: cannot start local server (%v); open manually: %s\n", err, htmlPath)
+		return
+	}
+	srv := &http.Server{Handler: http.FileServer(http.Dir(dir))}
+	port := ln.Addr().(*net.TCPAddr).Port
+	url := fmt.Sprintf("http://127.0.0.1:%d/%s", port, filepath.Base(htmlPath))
+	go func() { _ = srv.Serve(ln) }()
+	fmt.Printf("Serving ESM output at %s (Ctrl+C to stop)\n", url)
+	opened := false
+	switch runtime.GOOS {
+	case "darwin":
+		opened = exec.Command("open", url).Run() == nil
+	case "linux":
+		opened = exec.Command("xdg-open", url).Run() == nil
+	case "windows":
+		opened = exec.Command("cmd", "/c", "start", url).Run() == nil
+	}
+	if !opened {
+		fmt.Printf("Open manually: %s\n", url)
+	}
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+	_ = srv.Close()
 }
 
 func testCommand(args []string) {

@@ -186,6 +186,12 @@ func (g *Generator) generateCallExpression(ce *parser.CallExpression) string {
 
 	// DotExpression: method call (obj.method(args)) or module call (math.sin(x))
 	if de, ok := ce.Function.(*parser.DotExpression); ok {
+		// Third-party ESM module calls (# npm/…): an explicit ESM import takes
+		// precedence over the builtin module mappings (so `# npm/math` really
+		// targets the npm package, not Math.*).
+		if js, handled := g.generateESMCall(de, ce.Arguments); handled {
+			return js
+		}
 		// Check for module mappings (math.sin → Math.sin, time.now → Date.now, etc.)
 		if js, handled := g.generateModuleCall(de, ce.Arguments); handled {
 			return js
@@ -215,6 +221,16 @@ func (g *Generator) generateCallExpression(ce *parser.CallExpression) string {
 func (g *Generator) generateDotExpression(de *parser.DotExpression) string {
 	if de == nil {
 		return ""
+	}
+	// Third-party ESM module property access (# npm/…): an explicit ESM import
+	// takes precedence over the builtin module constant mappings.
+	if ident, ok := de.Receiver.(*parser.Identifier); ok {
+		if obj, ok := g.esmObjByShort[ident.Value]; ok {
+			if local, handled := g.esmCallLocal(ident.Value, de.Property); handled {
+				return local
+			}
+			return obj + jsProp(de.Property)
+		}
 	}
 	// Module constant mappings (math.PI → Math.PI, os.args → process.argv / window.__nolang_args)
 	if ident, ok := de.Receiver.(*parser.Identifier); ok {

@@ -1,0 +1,32 @@
+; main.no — Third-party ESM import demo (JS backend)
+;
+; The `# npm/<specifier>` use directive pulls in an npm package from
+; node_modules. The package must be declared in package.jsonc
+; dependencies (or devDependencies) and installed with npm install.
+;
+; Three import shapes are supported:
+;   # npm/lodash               whole module object → lodash.get(...)
+;   # npm/lodash.get as gt     one named export    → gt(...)
+;   # npm/lodash.default as d  the default export  → d(...)
+;
+; Build: no build --js example/esm-imports/main.no
+; Run:   node dist/esm-imports.js
+;       (needs: npm install)
+
+# npm/lodash
+# npm/lodash.get as deep-get
+# npm/lodash.chunk as chunk
+
+nums = [1, 2, 3, 4, 5, 6, 7]
+
+parts = chunk(nums, 3)
+i <- parts: {
+    print('chunk:', i)
+}
+
+config [str]str = { 'feature': 'esm-imports' }
+level = deep-get(config, 'feature')
+print('deep-get feature =', level)
+print('lodash.VERSION =', lodash.VERSION)
+
+print('=== done ===')

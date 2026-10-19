@@ -30,6 +30,14 @@ func TestUseSyntax(t *testing.T) {
 		{"# /path/to/chan", "/path/to/chan", "", "", false},
 		{"# /nonpm/src.run", "/nonpm/src", "run", "", false},
 		{"# /nonpm/src.run as runner", "/nonpm/src", "run", "runner", true},
+		// ESM third-party imports (# npm/<specifier>[.fn][as alias]).
+		{"# npm/lodash", "npm/lodash", "", "", false},
+		{"# npm/lodash.get", "npm/lodash", "get", "", false},
+		{"# npm/lodash.get as gt", "npm/lodash", "get", "gt", true},
+		{"# npm/lodash.default as _", "npm/lodash", "default", "_", true},
+		{"# npm/@scope/pkg", "npm/@scope/pkg", "", "", false},
+		{"# npm/@scope/pkg.run as r", "npm/@scope/pkg", "run", "r", true},
+		{"# npm/lodash/fp.get as get", "npm/lodash/fp", "get", "get", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

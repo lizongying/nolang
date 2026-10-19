@@ -47,6 +47,7 @@ JS 後端的核心設計：
 | --- | --- |
 | `--js` | 使用 JS 後端（發射 JavaScript，繞過 LLVM） |
 | `--browser` | 生成瀏覽器導向輸出（HTML + JS，需搭配 `--js`） |
+| `--esm-cdn <url>` | 覆蓋瀏覽器 ESM import map 的 CDN 前綴（預設 `https://esm.sh`） |
 | `-o <path>` | 指定輸出路徑 |
 
 ### 構建
@@ -270,6 +271,57 @@ HTML wrapper 特性：
 - 透過 `<script src="name.js">` 引用編譯產物
 
 輸出路徑預設為 `dist/` 目錄。
+
+## 第三方 ESM 模組導入
+
+JS 後端可以直接引入 npm 生態的套件（TypeScript 的 `import` 等價物），**不需要新的 `import` 語句**——複用 `#` use 指令加上保留前綴 `npm/`：
+
+```no
+# npm/lodash                ; 整個模組物件：lodash.get(x, 'a.b')
+# npm/lodash.get as get     ; 單個命名導出：get(x, 'a.b')
+# npm/lodash.default as d   ; 套件的預設導出：d(props)
+# npm/@scope/pkg            ; scoped 套件
+# npm/lodash/fp.get as fpg  ; 子路徑導入
+```
+
+規則：
+
+- **必須是 JS 後端**。LLVM 與 Direct-WASM 後端遇到 `# npm/...` 直接報錯並提示改用 `no build --js`。
+- **套件必須宣告在 `package.jsonc`** 的 `dependencies`（或 `devDependencies`）裡，否則建置失敗。子路徑導入（`lodash/fp`）只要父套件（`lodash`）在清單中即可。
+- **短名限定的用法保持不變**：`# npm/lodash` 之後即可寫 `lodash.get(...)`；具名導入（`as get`）則直接呼叫 `get(...)`。
+- **v1 無型別直通**：導入的綁定不攜帶 Nolang 型別（checker 零改動），因此不做簽名檢查；導入項與本地同名函式碰撞時，導入側自動改名（尾碼 `$esm`）。
+- **與內建模組重名時以導入為準**：`# npm/math` 之後 `math.sin(x)` 指向 npm 的 `math` 套件而非 `Math.sin`。
+
+### Node.js 運行
+
+產物是標準 ES module（import 陳述式 + `import` 只能出現在 module 範疇）。`no build --js` 會在產物旁補一個 `package.json`（`{"type": "module"}`，npm 慣例）讓 node 以 ESM 執行；若該目錄已有不是 ESM 的 `package.json`，會提示改用 `-o out.mjs`。
+
+```bash
+npm install lodash                    # 先安裝套件
+no build --js main.no                 # 產出 dist/main.js（+ dist/package.json）
+node dist/main.js                     # 以 ESM 執行
+no run --js main.no                   # 建置到暫存目錄後自動以 node 執行
+```
+
+`no run --js` 會把專案的 `node_modules` 連結進暫存目錄（node 從腳本所在目錄向上解析套件），缺少套件時直接報錯並提示 `npm install lodash`；`no build --js` 對缺包只給 warning（產物本身仍然合法，只在執行期才需要套件）。
+
+### 瀏覽器運行
+
+`--browser` 下，產物 HTML 變成 `<script type="module">` 並帶一張 import map，把裸限定符解析到 CDN（預設 `https://esm.sh`）：
+
+```html
+<script type="importmap">
+{"imports": {"lodash": "https://esm.sh/lodash"}}
+</script>
+<script type="module" src="main.js"></script>
+```
+
+換 CDN 的方式（優先級由高到低）：
+
+1. `no build --js --browser --esm-cdn https://cdn.jsdelivr.net/npm main.no`
+2. `package.jsonc` 的 `"compiler": { "esm-cdn": "https://cdn.jsdelivr.net/npm" }`
+
+因為 `<script type="module">` 在 `file://` 下會被 CORS 攔截，`no run --js --browser` 會在 `127.0.0.1` 的臨時埠起一個一次性靜態服務再打開瀏覽器（Ctrl+C 停止）。完整範例見 `example/esm-imports/`。
 
 ## 完整示例
 

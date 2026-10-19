@@ -22,6 +22,9 @@ type CompilerOptions struct {
 	// 最小值。调大可让更大的结构体也内联；调小（最低 8）会让 err 消息也走
 	// 堆指针。小于 8 是编译错误。
 	OptionInlineThreshold int `json:"option-inline-threshold,omitempty"`
+	// ESMCDN 是 browser 模式下第三方 ESM 導入（# npm/…）的 import map CDN
+	// 前綴；空字串表示使用內建預設 https://esm.sh。
+	ESMCDN string `json:"esm-cdn,omitempty"`
 }
 
 // Package 表示 package.jsonc 定義的專案套件

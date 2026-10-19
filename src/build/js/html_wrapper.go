@@ -60,3 +60,41 @@ func RenderHTML(title string, jsFileName string) string {
 	html = strings.ReplaceAll(html, "{{JS_FILE}}", jsFileName)
 	return html
 }
+
+// DefaultESMCDN is the CDN base used for browser import maps when the package
+// manifest (compiler.esm-cdn) does not override it.
+const DefaultESMCDN = "https://esm.sh"
+
+// RenderHTMLModule is RenderHTML for ESM output: the JS is referenced as a
+// module script and bare package specifiers are resolved through an import
+// map (one exact key per specifier, plus a trailing-slash key for subpaths).
+// cdnBase empty means DefaultESMCDN.
+func RenderHTMLModule(title string, jsFileName string, imports []ESMImport, cdnBase string) string {
+	if cdnBase == "" {
+		cdnBase = DefaultESMCDN
+	}
+	cdnBase = strings.TrimRight(cdnBase, "/")
+	html := htmlTemplate
+	html = strings.ReplaceAll(html, "{{TITLE}}", title)
+	// Module script + import map (must precede the first module script).
+	var b strings.Builder
+	if len(imports) > 0 {
+		b.WriteString("    <script type=\"importmap\">\n")
+		b.WriteString("    {\"imports\": {")
+		for i, imp := range imports {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(jsLiteral(imp.Specifier) + ": " + jsLiteral(cdnBase+"/"+imp.Specifier))
+			if strings.Contains(imp.Specifier, "/") {
+				b.WriteString(", " + jsLiteral(imp.Specifier+"/") + ": " + jsLiteral(cdnBase+"/"+imp.Specifier+"/"))
+			}
+		}
+		b.WriteString("}}\n")
+		b.WriteString("    </script>\n")
+	}
+	b.WriteString("    <script type=\"module\" src=\"" + jsFileName + "\"></script>\n")
+	html = strings.ReplaceAll(html, "    <script src=\"{{JS_FILE}}\"></script>", b.String())
+	html = strings.ReplaceAll(html, "{{JS_FILE}}", jsFileName)
+	return html
+}

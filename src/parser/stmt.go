@@ -588,15 +588,23 @@ func (p *Parser) parseUseStatement() Statement {
 	}
 
 	for {
-		// use path 段接受 IDENT 及關鍵字 token（如 run、chan 等）
-		if !isPathIdent(p.currentToken.Type) {
-			msg := fmt.Sprintf("line %d, column %d: expected identifier in use path, got %s",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
-			return nil
+		// scoped package segment: AT immediately followed by an identifier is
+		// one path segment ("@scope" in "# npm/@scope/pkg.get").
+		if p.currentToken.Type == lexer.AT && isPathIdent(p.peekToken.Type) {
+			p.nextToken() // skip @
+			parts = append(parts, "@"+p.currentToken.Literal)
+			p.nextToken() // skip the identifier after @
+		} else {
+			// use path 段接受 IDENT 及關鍵字 token（如 run、chan 等）
+			if !isPathIdent(p.currentToken.Type) {
+				msg := fmt.Sprintf("line %d, column %d: expected identifier in use path, got %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+				p.saveError(msg)
+				return nil
+			}
+			parts = append(parts, p.currentToken.Literal)
+			p.nextToken()
 		}
-		parts = append(parts, p.currentToken.Literal)
-		p.nextToken()
 
 		// 預期 / 或 .
 		if p.currentToken.Type == lexer.QUO {
@@ -752,7 +760,10 @@ func joinPathParts(parts []string) string {
 // isPathIdent returns true if the token type can serve as an identifier in a
 // use/export path. This includes the normal IDENT token as well as keyword
 // tokens (RUN, CHAN, PTR, AS, MATCH, etc.) whose spelling may legitimately
-// appear as a module or function name (e.g. `# /nonpm/src/run`).
+// appear as a module or function name (e.g. `# /nonpm/src/run`). AT is
+// accepted so scoped package names parse (`# npm/@scope/pkg.get`); the
+// statement-level `@` export directive is dispatched before path parsing, so
+// the two uses of AT never meet.
 func isPathIdent(t lexer.TokenType) bool {
 	if t == lexer.IDENT {
 		return true
@@ -760,7 +771,8 @@ func isPathIdent(t lexer.TokenType) bool {
 	// Keywords that may appear as path segments. We accept all keyword tokens
 	// whose lexical form is a plain identifier (letters/digits/underscores).
 	switch t {
-	case lexer.RUN, lexer.AWY, lexer.CHAN, lexer.PTR, lexer.AS,
+	case lexer.RUN, lexer.AWY, lexer.CHAN, lexer.PTR, lexer.AS, lexer.AT,
+		lexer.UNDERSCORE,
 		lexer.SWITCH, lexer.CASE, lexer.DEFAULT, lexer.MATCH, lexer.MAP,
 		lexer.IF, lexer.ELIF, lexer.ELSE, lexer.FOR, lexer.IN, lexer.BREAK,
 		lexer.CONTINUE, lexer.RETURN, lexer.TRUE, lexer.FALSE, lexer.NIL,

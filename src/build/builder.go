@@ -186,6 +186,9 @@ type BuildOptions struct {
 	CompilerVersion       string            // current compiler version (for package.jsonc compatibility check)
 	Strict                bool              // vet mode: treat all lint warnings/hints as errors
 	LDFlags               map[string]string // -ld-KEY=VALUE pairs injected as compile-time global constants
+	// ESMCDN overrides the import-map CDN base for browser ESM output
+	// ("" = package.jsonc compiler.esm-cdn, else the built-in default).
+	ESMCDN string
 }
 
 // versionCompatible 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本兼容。
@@ -423,67 +426,6 @@ func buildWasmDirect(inputPath string, opts BuildOptions) (string, error) {
 	}
 	if err := os.WriteFile(out, wasmBytes, 0755); err != nil {
 		return "", fmt.Errorf("writing WASM output %s: %w", out, err)
-	}
-	return out, nil
-}
-
-// buildJSBackend 對應原 main.go 的 -js 分支：繞過 LLVM 工具鏈，發射 JS 原始碼並寫入
-// opts.Output（預設 dist/<name>.js）。BrowserMode 時額外產出 HTML 包裝並返回 .html 路徑。
-func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
-	// 目錄 → main.no（workspace 模式不支援 JS 後端，要求明確輸入檔）。
-	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
-		mainPath := filepath.Join(inputPath, "main.no")
-		if _, err := os.Stat(mainPath); err == nil {
-			inputPath = mainPath
-		} else {
-			return "", fmt.Errorf("JS backend requires an explicit input file or main.no (workspace mode not supported)")
-		}
-	}
-
-	if opts.BrowserMode {
-		baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
-		if baseName == "main" {
-			if pkg, _ := LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
-				baseName = pkg.Name
-			}
-		}
-		outJs := filepath.Join("dist", baseName+".js")
-		outHtml := filepath.Join("dist", baseName+".html")
-		if opts.Output != "" {
-			outJs = opts.Output
-			outHtml = strings.TrimSuffix(opts.Output, filepath.Ext(opts.Output)) + ".html"
-		}
-		os.MkdirAll("dist", 0755)
-		jsCode, htmlCode, err := BuildJSBrowser(inputPath, BuildOptions{Verbose: opts.Verbose, UseJS: true, BrowserMode: true}, baseName+".js")
-		if err != nil {
-			return "", fmt.Errorf("JS build error: %w", err)
-		}
-		if err := os.WriteFile(outJs, []byte(jsCode), 0644); err != nil {
-			return "", fmt.Errorf("writing JS output %s: %w", outJs, err)
-		}
-		if err := os.WriteFile(outHtml, []byte(htmlCode), 0644); err != nil {
-			return "", fmt.Errorf("writing HTML output %s: %w", outHtml, err)
-		}
-		return outHtml, nil
-	}
-
-	jsCode, err := BuildJS(inputPath, opts)
-	if err != nil {
-		return "", fmt.Errorf("JS build error: %w", err)
-	}
-	out := opts.Output
-	if out == "" {
-		baseName := strings.TrimSuffix(filepath.Base(inputPath), ".no")
-		if baseName == "main" {
-			if pkg, _ := LoadPackage(filepath.Dir(inputPath)); pkg != nil && pkg.Name != "" {
-				baseName = pkg.Name
-			}
-		}
-		out = filepath.Join("dist", baseName+".js")
-		os.MkdirAll("dist", 0755)
-	}
-	if err := os.WriteFile(out, []byte(jsCode), 0644); err != nil {
-		return "", fmt.Errorf("writing JS output %s: %w", out, err)
 	}
 	return out, nil
 }
@@ -1173,6 +1115,14 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)
 
+	// Third-party ESM imports (# npm/…) are JS-backend only: the Direct WASM
+	// backend cannot link JavaScript modules.
+	if imports, err := js.ExtractESMImports(program); err != nil {
+		return nil, err
+	} else if len(imports) > 0 {
+		return nil, fmt.Errorf("ESM (npm) imports are not supported by the Direct WASM backend; use the JS backend (no build --js)")
+	}
+
 	// 型別校驗（與 LLVM 路徑一致，避免型別錯誤延遲到執行期才炸）
 	if err := validateProgram(program, inputPath); err != nil {
 		return nil, err
@@ -1196,266 +1146,6 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 	return g.Generate(program)
 }
 
-// buildJSPkg 使用 JS 後端從 Nolang 源碼發射 JavaScript 並寫入輸出檔案。
-// 當 package.jsonc 的 compiler.emit 為 "js" 時由 buildWithPkg 呼叫，
-// 使 workspace 模式下的單個 JS 目標也能自動走 JS 後端。
-func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions, outPath string, sink *bytes.Buffer) error {
-	// 輸出路徑加上 .js 副檔名
-	if !strings.HasSuffix(outPath, ".js") {
-		outPath = outPath + ".js"
-	}
-
-	// 解析為 AST
-	l := lexer.NewCached(inputPath, string(source))
-	p := parser.New(l)
-	p.Filename = filepath.Base(inputPath)
-	program := p.ParseProgram()
-	if program == nil {
-		return fmt.Errorf("%s: parser returned nil program", inputPath)
-	}
-	if errs := p.Errors(); len(errs) > 0 {
-		return fmt.Errorf("%s: %v", inputPath, errs)
-	}
-
-	// S1：js/wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
-	p.DesugarSurfaceMatches(program)
-
-	// Inject -ld-KEY=VALUE compile-time global constants
-	injectLDFlags(program, opts.LDFlags)
-
-	// 解析並合併本地模組導入
-	program, err := resolveAndMergeJSModules(program, inputPath, pkg)
-	if err != nil {
-		return fmt.Errorf("module resolution: %w", err)
-	}
-
-	// 型別校驗（與 LLVM 路徑一致）
-	if err := validateProgram(program, inputPath); err != nil {
-		return err
-	}
-
-	// JS 後端 codegen（型別擦除）
-	g := js.NewGenerator()
-	g.SetTargetPlatform("js", "")
-	envMode := "node"
-	if opts.BrowserMode {
-		g.SetTargetEnv("browser")
-		envMode = "browser"
-	}
-	if opts.Verbose {
-		vprintf(sink, "[js] emit: js (type erasure), env: %s\n", envMode)
-	}
-	jsCode, err := g.Generate(program)
-	if err != nil {
-		return fmt.Errorf("JS generation error: %w", err)
-	}
-
-	// 確保輸出目錄存在
-	if dir := filepath.Dir(outPath); dir != "" {
-		_ = os.MkdirAll(dir, 0755)
-	}
-	if err := os.WriteFile(outPath, []byte(jsCode), 0644); err != nil {
-		return fmt.Errorf("writing JS output: %w", err)
-	}
-
-	return nil
-}
-
-// resolveAndMergeJSModules resolves local module imports (UseStatements with
-// paths starting with "/") and merges their statements into the main program.
-// This is necessary because the JS backend, unlike the LLVM backend, does not
-// go through the full Transpiler.Compile pipeline that handles module merging.
-//
-// Without this step, global variables and functions defined in imported local
-// modules (e.g. state.no, editor.no) would be missing from the generated JS,
-// causing runtime ReferenceErrors (e.g. "EDITOR is not defined").
-//
-// js/ modules are skipped — their function calls are mapped to JS builtins by
-// builtin.go. std/ modules are also skipped — common std functions are mapped
-// by builtin.go, and merging full std source would bloat the output.
-func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConfig *Package) (*parser.Program, error) {
-	if program == nil {
-		return program, nil
-	}
-
-	// Determine workspace root for resolving "/"-prefixed import paths.
-	var wsRoot string
-	if pkgConfig != nil {
-		wsRoot = pkgConfig.WorkspaceRoot()
-		if wsRoot == "" {
-			wsRoot = pkgConfig.RootDir
-		}
-	}
-	if wsRoot == "" {
-		if ws, ok := FindWorkspaceRoot(inputPath); ok {
-			wsRoot = ws
-		}
-	}
-
-	// Collect main program's top-level variable and function names to avoid
-	// duplicating them when merging module statements.
-	mainVarNames := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
-			mainVarNames[ls.Name.Value] = true
-		}
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			mainVarNames[fd.Name] = true
-		}
-	}
-
-	// Build the merged program: start with a fresh statement list and merge
-	// semantic contexts from the main program and all imported modules.
-	merged := &parser.Program{Statements: []parser.Statement{}}
-	merged.Sem = parser.NewSemanticContext()
-	merged.Sem.Merge(program.Sem)
-
-	loadedModules := make(map[string]bool) // track resolved file paths to avoid duplicate loading
-
-	// parseModuleFile reads and parses a .no file, applying lib.no export
-	// filtering if the module belongs to a package with exports.
-	parseModuleFile := func(filePath string) (*parser.Program, error) {
-		source, err := os.ReadFile(filePath)
-		if err != nil {
-			return nil, err
-		}
-		l := lexer.NewCached(filePath, string(source))
-		p := parser.New(l)
-		p.Filename = filepath.Base(filePath)
-		prog := p.ParseProgram()
-		// S1：js 後端為實驗性後端，合併的模組也保留降糖形態。
-		p.DesugarSurfaceMatches(prog)
-		if len(p.Errors()) > 0 {
-			return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
-		}
-		// Apply lib.no export filtering if the module's package has exports.
-		pkgRoot := FindPackageRoot(filePath)
-		if pkgRoot != "" {
-			libPath := filepath.Join(pkgRoot, "lib.no")
-			if _, err := os.Stat(libPath); err == nil {
-				prog = checker.FilterByExports(prog, libPath, filePath)
-			}
-		}
-		return prog, nil
-	}
-
-	// resolveModulePath converts a UseStatement path to a file path.
-	// Only local paths (starting with "/") are handled; std/ and js/ paths
-	// are skipped by the caller.
-	resolveModulePath := func(usePath string) string {
-		relPath := strings.TrimPrefix(usePath, "/")
-		fullPath := ResolveToWorkspaceRoot(wsRoot, relPath)
-		if !strings.HasSuffix(fullPath, ".no") {
-			fullPath = fullPath + ".no"
-		}
-		return filepath.Clean(fullPath)
-	}
-
-	// processUseAndMerge loads a module from a UseStatement, merges its
-	// non-UseStatement statements into merged, and collects its UseStatements
-	// for transitive processing.
-	var pendingUses []*parser.UseStatement
-	processUseAndMerge := func(use *parser.UseStatement) error {
-		// Only resolve local module imports (path starts with "/").
-		// Skip js/ modules (handled by builtin.go) and std/ modules
-		// (common functions handled by builtin.go).
-		if !strings.HasPrefix(use.Path, "/") {
-			return nil
-		}
-
-		modulePath := resolveModulePath(use.Path)
-		if loadedModules[modulePath] {
-			return nil
-		}
-		loadedModules[modulePath] = true
-
-		modProg, err := parseModuleFile(modulePath)
-		if err != nil {
-			return fmt.Errorf("loading module %s: %w", use.Path, err)
-		}
-		merged.Sem.Merge(modProg.Sem)
-
-		for _, ms := range modProg.Statements {
-			// Collect transitive UseStatements for recursive processing.
-			// Only local module imports (path starts with "/") are processed;
-			// std/ and js/ modules are handled by builtin.go.
-			if nestedUse, ok := ms.(*parser.UseStatement); ok {
-				if strings.HasPrefix(nestedUse.Path, "/") {
-					pendingUses = append(pendingUses, nestedUse)
-				}
-				continue
-			}
-
-			// When alias is specified, only import the specific function/constant.
-			if use.Alias != "" {
-				if fd, ok := ms.(*parser.FunctionDefinition); ok {
-					if use.Function != "" && fd.Name == use.Function {
-						fd.Name = use.Alias
-						merged.Statements = append(merged.Statements, fd)
-					}
-				}
-				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
-					if use.Function != "" && ls.Name.Value == use.Function {
-						ls.Name.Value = use.Alias
-						if !mainVarNames[ls.Name.Value] {
-							merged.Statements = append(merged.Statements, ls)
-						}
-					}
-				}
-				continue
-			}
-
-			// No alias: merge all non-UseStatement statements.
-			// Skip variables/functions that already exist in the main program.
-			if fd, ok := ms.(*parser.FunctionDefinition); ok {
-				if !mainVarNames[fd.Name] {
-					merged.Statements = append(merged.Statements, fd)
-				}
-			} else if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
-				if !mainVarNames[ls.Name.Value] {
-					merged.Statements = append(merged.Statements, ls)
-				}
-			} else if sd, ok := ms.(*parser.StructDefinition); ok {
-				merged.Statements = append(merged.Statements, sd)
-			} else if id, ok := ms.(*parser.InterfaceDefinition); ok {
-				merged.Statements = append(merged.Statements, id)
-			} else if ta, ok := ms.(*parser.TypeAlias); ok {
-				merged.Statements = append(merged.Statements, ta)
-			} else if ed, ok := ms.(*parser.EnumDefinition); ok {
-				merged.Statements = append(merged.Statements, ed)
-			} else if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
-				merged.Statements = append(merged.Statements, ted)
-			} else if es, ok := ms.(*parser.ExternStatement); ok {
-				merged.Statements = append(merged.Statements, es)
-			}
-		}
-		return nil
-	}
-
-	// Process main program's UseStatements first, then drain transitive imports.
-	for _, stmt := range program.Statements {
-		if use, ok := stmt.(*parser.UseStatement); ok {
-			if err := processUseAndMerge(use); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		// Add main program's own statements to merged (except UseStatements).
-		merged.Statements = append(merged.Statements, stmt)
-	}
-
-	// Process transitive imports: drain the pendingUses worklist.
-	for len(pendingUses) > 0 {
-		use := pendingUses[0]
-		pendingUses = pendingUses[1:]
-		if err := processUseAndMerge(use); err != nil {
-			return nil, err
-		}
-	}
-
-	return merged, nil
-}
-
 // validateProgram runs the same four semantic-validation passes that the LLVM
 // backend runs inside CompileTarget, so that the JS and Direct-WASM backends
 // are held to the same type-checking standard instead of deferring every error
@@ -1475,87 +1165,6 @@ func validateProgram(program *parser.Program, inputPath string) error {
 		fmt.Fprintf(&b, "  %s:%d:%d: %s [%s]\n", filepath.Base(inputPath), e.Line, e.Column, e.Message, e.TraceID)
 	}
 	return fmt.Errorf("%s: validation failed:\n%s", inputPath, b.String())
-}
-
-// BuildJS 使用 JS 後端從 Nolang 源碼直接產生 JavaScript 原始碼字串。
-// 當 opts.UseJS 為 true 時呼叫。輸出的 JS 可由 node 直接執行。
-//
-// 流程：
-//  1. 讀取源碼檔案
-//  2. 以 lexer + parser 解析為 *parser.Program
-//  3. 解析並合併本地模組導入（resolveAndMergeJSModules）
-//  4. 由 js.Generator.Generate(program) 直接發射 JS 原始碼（型別擦除）
-//  5. 回傳 JS 原始碼字串
-//
-// 此路徑不經過 LLVM 工具鏈（opt/llc/clang），適用於 Node.js 與瀏覽器環境。
-func BuildJS(inputPath string, opts BuildOptions) (string, error) {
-	// 1. 讀取源碼
-	source, err := os.ReadFile(inputPath)
-	if err != nil {
-		return "", fmt.Errorf("reading input file: %w", err)
-	}
-
-	// 2. 解析為 AST（與 BuildDirectWasm 一致的最小流程）
-	l := lexer.NewCached(inputPath, string(source))
-	p := parser.New(l)
-	p.Filename = filepath.Base(inputPath)
-	program := p.ParseProgram()
-	if program == nil {
-		return "", fmt.Errorf("%s: parser returned nil program", inputPath)
-	}
-	if errs := p.Errors(); len(errs) > 0 {
-		return "", fmt.Errorf("%s: %v", inputPath, errs)
-	}
-
-	// S1：js/wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
-	p.DesugarSurfaceMatches(program)
-
-	// Inject -ld-KEY=VALUE compile-time global constants
-	injectLDFlags(program, opts.LDFlags)
-
-	// 3. 解析並合併本地模組導入
-	pkgConfig, _ := LoadPackage(filepath.Dir(inputPath))
-	program, err = resolveAndMergeJSModules(program, inputPath, pkgConfig)
-	if err != nil {
-		return "", fmt.Errorf("module resolution: %w", err)
-	}
-
-	// 3.5 型別校驗（與 LLVM 路徑一致，避免型別錯誤延遲到執行期才炸）
-	if err := validateProgram(program, inputPath); err != nil {
-		return "", err
-	}
-
-	// 4. JS 後端 codegen（型別擦除）
-	g := js.NewGenerator()
-	g.SetTargetPlatform("js", "")
-	envMode := "node"
-	if opts.BrowserMode {
-		g.SetTargetEnv("browser")
-		envMode = "browser"
-	}
-	if opts.Verbose {
-		fmt.Fprintf(os.Stderr, "[js] target: js (type erasure), env: %s\n", envMode)
-	}
-	return g.Generate(program)
-}
-
-// BuildJSBrowser compiles Nolang source to browser-targeted JS and an HTML wrapper.
-// Returns (jsCode, htmlCode, error). The HTML references the JS file by name (basename only).
-func BuildJSBrowser(inputPath string, opts BuildOptions, jsFileName string) (jsCode, htmlCode string, err error) {
-	opts.BrowserMode = true
-	jsCode, err = BuildJS(inputPath, opts)
-	if err != nil {
-		return "", "", err
-	}
-
-	// Determine title from package name or filename
-	title := strings.TrimSuffix(filepath.Base(inputPath), ".no")
-	if pkg, perr := LoadPackage(filepath.Dir(inputPath)); perr == nil && pkg != nil && pkg.Name != "" {
-		title = pkg.Name
-	}
-
-	htmlCode = js.RenderHTML(title, jsFileName)
-	return jsCode, htmlCode, nil
 }
 
 // LoadWorkspaceFile reads and parses a standalone workspace.jsonc file from the given directory.

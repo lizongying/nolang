@@ -554,6 +554,11 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		}
 		return nil, fmt.Errorf("js compatibility module not found: %s", relPath)
 	}
+	// npm/ 開頭 → 第三方 ESM 模組導入（僅 JS 後端支援：LLVM 無法連結 JS 模組）。
+	if strings.HasPrefix(path, "npm/") || path == "npm" {
+		spec := strings.TrimPrefix(path, "npm/")
+		return nil, fmt.Errorf("import %q: ESM (npm) imports are only supported by the JS backend; rebuild with `no build --js` or `no run --js` (specifier %q cannot be linked into a native binary)", path, spec)
+	}
 	// 依賴解析：嘗試所有導入路徑匹配 package.jsonc 中宣告的依賴
 	// 支援 URL 風格（github.com/...）、路徑風格（/example/pkg、./pkg）、短名稱風格（test2）
 	first := strings.SplitN(path, "/", 2)[0]

@@ -24,6 +24,11 @@ dist
 node_modules
 target
 
+# example/esm-imports: npm install output and the ESM sidecar the JS backend
+# writes next to the artifact ({"type":"module"}) — both are build output.
+/example/esm-imports/package-lock.json
+/example/esm-imports/package.json
+
 vscode-nolang/server/lsp
 vscode-nolang/server/lsp.exe
 src/no

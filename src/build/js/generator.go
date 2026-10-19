@@ -51,6 +51,13 @@ type Generator struct {
 	// 用於在函式內部避免以 let 重新宣告全域變數。
 	globalVars map[string]bool
 
+	// ESM 第三方模組導入（# npm/<specifier>…）。esmBindings 為每個 specifier
+	// 一條；esmObjByShort / esmLocalByKey 供呼叫點改寫查詢
+	// （short -> 模組物件識別字；"short.fn" -> 區域綁定識別字）。
+	esmBindings   []ESMBinding
+	esmObjByShort map[string]string
+	esmLocalByKey map[string]string
+
 	// out 為輸出緩衝；Generate 入口會重置
 	out *strings.Builder
 }
@@ -128,6 +135,28 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 	if g.targetEnv == "browser" {
 		g.writeRaw(browserPrelude)
 	}
+
+	// 0c. 第三方 ESM 模組導入（# npm/<specifier>…）：在 prelude 之後、業務程式
+	// 之前發射 import 頭。無 ESM 導入時不產生任何輸出（逐位元組相容）。
+	g.esmBindings = nil
+	g.esmObjByShort = make(map[string]string)
+	g.esmLocalByKey = make(map[string]string)
+	esmImports, esmErr := ExtractESMImports(program)
+	if esmErr != nil {
+		return "", esmErr
+	}
+	esmBindings, esmErr := ResolveESMBindings(esmImports, g.collectTakenNames(program.Statements))
+	if esmErr != nil {
+		return "", esmErr
+	}
+	g.esmBindings = esmBindings
+	for _, b := range g.esmBindings {
+		g.esmObjByShort[b.ShortName] = b.ObjName
+		for from, local := range b.Locals {
+			g.esmLocalByKey[b.ShortName+"."+from] = local
+		}
+	}
+	g.emitESMImports()
 
 	// 1. 平台過濾
 	stmts := filterByPlatform(program.Sem, program.Statements, g.targetGoos, g.targetGoarch)

@@ -210,132 +210,14 @@ NOLANG_MIR_OPT=2 NOLANG_MIR_OPT_STATS=1 no build -o out main.no
 
 那份對比的核心結論值得在這裡先講：**局部清理（常數折疊、死碼消除、控制流清理）在 `opt -O2` 跑過之後邊際價值幾乎為零**（−0.06%），因為 LLVM 把同一類工作做得更徹底。真正有回報的是 LLVM **因為 linkage 而不能做**的事——也就是上面的前導裁剪。加上前導裁剪（含註解感知裁剪）後，`mir+llvm_O2` → `mir_opt+llvm_O2` 的整體邊際值是 **−19.05% 指令 / −15.83% 文本**；`mir` → `mir+mir_opt` 的文本降幅則由 −14.29% 變成 **−17.75%**（631 檔全語料）。
 
-## JS 後端（JavaScript Backend）
+## JS 後端
 
-Nolang 支援將 `.no` 原始碼直接編譯為 JavaScript，無需 LLVM 工具鏈。JS 後端採用**型別擦除**（type erasure）策略：所有 Nolang 型別標註（`int`/`str`/`bool`/`vec[T]`/`[N]T`/`?T` 等）在 JS 輸出中不保留，僅生成執行時行為。
+JS 後端（`no build --js` / `no run --js`）將 `.no` 原始碼編譯為 JavaScript（型別擦除），
+支援 Node.js 與瀏覽器兩種目標、`#{js}` / `#{js-browser}` 平台標註，以及第三方 ESM 導入
+（`# npm/<pkg>`）。
 
-### 構建為 JavaScript
-
-```bash
-# 編譯為 JS（輸出至 dist/<name>.js）
-no build --js main.no
-
-# 指定輸出路徑
-no build --js -o app.js main.no
-
-# 瀏覽器模式：生成 JS + HTML wrapper
-no build --js --browser main.no
-# 輸出: dist/<name>.js 和 dist/<name>.html
-```
-
-### 運行 JavaScript
-
-```bash
-# 編譯為 JS 並以 node 執行
-no run --js main.no
-
-# 編譯為瀏覽器 JS + HTML 並在預設瀏覽器中打開
-no run --js --browser main.no
-```
-
-### JS 後端特性
-
-| 特性 | 說明 |
-| --- | --- |
-| **無需 LLVM** | 直接從 AST 發射 JS 原始碼，不依賴 clang/LLVM 工具鏈 |
-| **型別擦除** | JS 為動態型別，Nolang 型別標註不保留 |
-| **Node.js 模式** | 預設目標，可用 `require('fs')` 等 Node API |
-| **瀏覽器模式** | `--browser` 生成 HTML wrapper，`print()` 輸出重導向至 `#nolang-output` div |
-| **平台標註** | `#{js}` 標記 JS 後端專用宣告；`#{js-browser}` 標記瀏覽器專用代碼 |
-
-### JS 後端標準庫
-
-`src/js/` 目錄提供 JS 後端專用模組，均帶有 `#{js}` 平台標註，僅在 JS 後端編譯時生效：
-
-| 模組 | 說明 |
-| --- | --- |
-| `js/dom` | DOM 操作（create-element、query-selector、set-text、set-style 等） |
-| `js/canvas` | Canvas 2D 繪圖（fill-rect、stroke、begin-path 等） |
-| `js/events` | 事件處理（on-click、on-load） |
-| `js/storage` | localStorage（set-item、get-item） |
-| `js/fetch` | Fetch API（async 獲取 URL 數據） |
-| `js/console-log` | console.log 封裝 |
-| `js/fs-read-file` | Node.js fs.readFileSync 封裝 |
-| `js/fs-write-file` | Node.js fs.writeFileSync 封裝 |
-| `js/http-fetch` | fetch API 封裝（Node 18+ / 瀏覽器） |
-| `js/process-exit` | process.exit 封裝 |
-| `js/location` | Location API（href、search、redirect） |
-| `js/history` | History API（back、forward、push） |
-| `js/animation` | 動畫幀（request-frame、cancel-frame） |
-
-### 瀏覽器應用示例
-
-```no
-; main.no — 瀏覽器應用
-# js/dom
-# js/canvas
-# js/events
-# js/storage
-
-; DOM: 創建元素並附加到 body
-heading = dom.create-element('h2')
-heading.set-text('Hello from Nolang!')
-body = dom.body()
-body.append-child(heading)
-
-; 事件: 按鈕點擊
-btn = dom.create-element('button')
-btn.set-text('Click me')
-body.append-child(btn)
-events.on-click(btn, () {
-    print('button was clicked!')
-})
-
-; localStorage: 保存和讀取
-storage.set-item('greeting', 'Hello from localStorage')
-g = storage.get-item('greeting')
-print('stored:', g)
-```
-
-構建並打開：
-
-```bash
-no build --js --browser main.no
-# 輸出: dist/main.js 和 dist/main.html
-# 在瀏覽器中打開 dist/main.html
-```
-
-### 內建函數映射
-
-JS 後端將 Nolang 內建函數映射為 JavaScript 等價物：
-
-| Nolang | JavaScript |
-| --- | --- |
-| `print(x)` | `console.log(x)` |
-| `eprint(x)` | `console.error(x)` |
-| `format(...)` | 字串拼接 |
-| `len(x)` | `x.length` |
-| `with-len(n)` | `new Array(n)` |
-
-### 平台標註
-
-使用 `#{js}` 和 `#{js-browser}` 標註控制代碼的平台可見性：
-
-```no
-; 僅在 JS 後端編譯時保留
-#{js}
-js-helper = () {
-    print('JS only code')
-}
-
-; 僅在瀏覽器模式保留
-#{js-browser}
-print('running in browser mode')
-
-; 僅在原生後端保留
-#{mac-arm64}
-print('running on macOS ARM64')
-```
+JS 相關的完整文檔（命令列參數、內建函數映射、`js/*` 標準庫、瀏覽器 import map 等）
+集中在獨立的 [JS 後端](./lang/js-backend) 文檔，本頁不再重複。
 
 ## 入口規則
 
