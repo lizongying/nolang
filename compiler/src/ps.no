@@ -5679,8 +5679,14 @@ ps-parse-if = (t ast, p psst) (idx i64) {
 }
 
 ; ═══ match desugar（明示形 `subj: { pat -> body … }`）═══════════════════
-; 見設計文檔 §6.3。bin/no 於 parse 期就將 match 展開為 if/else 鏈（非 SurfaceMatch）。
-; 範圍：識別元主體、字面量/識別元/wildcard 型樣、運算式/區塊臂、if/else 鏈。
+; 見設計文檔 §6.3（t23 片）與 nolang-parser-lowering-invariants.md §22（S1 收官）。
+; ⚠️ 2026-10-19 分歧記錄（S7）：bin/no 的 parser 現已【保留 SurfaceMatch】不展開
+;   （S1：翻轉 b918dba9、刪除舊降糖路徑 d6965622；降糖改到 H0 lowering pass 執行）。
+;   本節的 parse 期 desugar 是【noc 既有實作】，與 bin/no 現態分歧 ⇒ L2 oracle
+;   （`no ast` 逐位元組）在含 match 的語料上必然偏離（實測 264/653 檔，2026-10-19）。
+;   S7 同步時裁定：noc 改為產出 SurfaceMatch（parser 忠實，P1）或維持現狀並把
+;   分歧記入 selfhost 文檔；裁定前 L2 結果不得視為綠燈。
+; 範圍（noc 現狀）：識別元主體、字面量/識別元/wildcard 型樣、運算式/區塊臂、if/else 鏈。
 ; 延後：守衛、option/enum 完整型樣、複雜主體（呼叫/索引）。
 
 ; ps-mk-ident：建 Identifier 葉節點（僅 slot0=name）——供 desugar 多处複用運算元

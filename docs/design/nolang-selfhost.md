@@ -911,6 +911,34 @@ $ ./bin/no ast /tmp/t2.no | grep -E 'Literal'
 
 ⚠️ **`FloatLiteral.Value` 用 Go 的 `%v` 印**（最短可往返表示）。語料中只有 10 處（首 120 檔），值全是 `0` / `1` / `1.5` / `24` / `30` 這類簡單數 ⇒ 目前可人工處理，但**這是一個未解的演算法風險**（一般情形需要 Ryu/Grisu 級演算法）。登記於 §9 風險。
 
+#### 🔴 5.3.3 match 表示分歧 + `compiler/` 構建破損（2026-10-19 S7 調查記錄）
+
+**背景**：S1「match 表示統一」收官後（詳見 `nolang-parser-lowering-invariants.md` §22），bin/no 的 parser **保留 `SurfaceMatch`** 不展開（翻轉 `b918dba9`、刪除舊降糖路徑 `d6965622`），降糖移到 H0 lowering pass 執行。`noc`（§6.3 t23 片）仍在 **parse 期**把 match 展開成 if/else 鏈——這在 2026-10-19 之前是兩邊的共同事實，現在成為**單邊分歧**。
+
+**實測（2026-10-19；`bin/no` = `make bin/no` @ HEAD `4c3dfbf7` + 併發 WIP）**：
+
+| 項目 | 實測值 |
+| --- | --- |
+| L2 預設語料（`find tests src/std -name '*.no' -type f`） | **653 檔** |
+| 其中 `no ast` 產出含 `SurfaceMatch{`（⇒ noc 產 if/else 鏈，**必然 DIFF**） | **264 檔** |
+| 探針 `tests/option.no`（2 陳述層 + 1 表達式層 + 1 裸 match） | bin/no 產 **4 個 `SurfaceMatch{arms: 3}`**、零 IfExpression 鏈；noc 仍產 if/else 鏈 |
+
+⇒ **L2 在 264/653 檔上必然偏離**；S7 的「跑滿五級」（G6）在分歧裁定前不可能全綠。
+
+**裁定（待辦，屬 S7）**：二選一——① `ps.no` 改為產出 `SurfaceMatch`（parser 忠實，即 P1；`asp.no` 的 `K_SURFACE_MATCH` 條目早已就位，§6.3/§18.3），降糖留待 M4 的 `hir.no` 重新實作；② 維持 parse 期 desugar 現狀，把分歧登記為已知缺陷並相應縮小 L2 語料。**裁定前，L2 的任何結果都不得視為綠燈。**
+
+**🔴 更嚴重的前置發現：`compiler/` 自 2026-10-13 起無法構建**（與上述分歧獨立，但阻塞 S7 全部五級驗收）：
+
+| 事實 | 證據 |
+| --- | --- |
+| `./bin/no build -o /tmp/noc-s0 compiler` 失敗 | `EmitLLVM: MIR->LLVM: func ps_parse_func` / `func ps_parse_method_func`: `consumer reads value 0 (NoVal), which no instruction produced … (bug #85)`；**HEAD `4c3dfbf7` 乾淨工作樹（`git worktree`）復現**，非併發 WIP 所致 |
+| 破壞者 commit | **`762ea045`**（2026-10-13 12:45「refactor(parser): infer types of local variables and function return values during parsing」）——手動二分實測鏈：`c721fe6c`（bare match 降糖）OK → `b805ed06` OK → **`762ea045` FAIL**（初現 8 處 NoVal，後續 commit 增至 12 處，同一對函式、同一錯誤形態） |
+| 潛在機制 | 失敗函式正是**函式定義解析器**（處理回傳值群組）；解析期類型推断改變了 `opos[0]` 一類索引讀的型別/降級路徑（待修時證實） |
+| 無人發現的時長 | **6 天**：CI 無 `no build compiler` 門禁（`.github/workflows/build.yml` 僅 build-release + wasm-smoke） |
+| 影響面 | L0–L4 全都需要可用的 `noc-s0` ⇒ **S7 驗收整體阻塞**；且 DR-1 自舉三階段（S0→S1→S2→S3 定點）每一步都以「`no` 能編譯 `compiler/`」為前提 |
+
+**下一步**：先修 `762ea045` 引入的 MIR codegen 缺陷（**獨立立項**，不屬 S7 範圍——它比 S1/S7 更早），再回來做 match 表示裁定。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。
@@ -1134,7 +1162,7 @@ diag {
 | **明示切片型別標註** | `name []T = [e1, …]` ⇒ `LetStatement{type: SliceType, value: SliceLiteral}`。`SliceType{}`（裸空標頭、inferred=false 不印）：slot0=inferred、kid0=Elem（NamedType）；RHS `[..]` 經 primary 自然建 SliceLiteral（複用 t14 路徑，含空 `[]`→elements 0 不印）。舆 `[N]T`（+2 INT）/`[K]V`（+2 IDENT）**共用 `name [` 前綴**，靠 +2 令牌分流——此臂要求 +2 為 RBRACKET（空括 `[]`）、+3 IDENT elem、+4 ASSIGN。元素引號反轉同 map（`"a"`=CharLiteral）。巢狀 `[][]T` / `[]net.Conn` deferred | `t20`（`[]i64=[1,2]` / `[]str=["a","b"]` / `[]i64=[]`） |
 | **限定名 struct literal** | `net.Conn{…}` / `a.b.C{…}` 等**點分限定型名**的 StructLiteral：型别名不再是 kind-name `DotExpression`而是重組後的點分字串。新增 `ps-dotted-name(t, node)` 递归：`Identifier`→slot0名、`DotExpression`→`dotted(kid0 Receiver) + '.' + slot0 property`（slot0=property、kid0=Receiver，同後綴 DOT 臂的建法）。LBRACE 臂由 `node-string(idx)` 改调 `ps-dotted-name(idx)`；非 struct 的 dot 链（`a.b.f()` / `x.y.z`）不受影响 | `t21`（`net.Conn{host:"x"}` / `a.b.C{x:1}` / `net.Conn{}` / `pkg.Sub.K{x:1,y:2}`） |
 | **函式字面量（带型別參數）修正** | 復刻 `d.signature` 的子節點深度與 Parameter 的 kid 區。`name = (a T, b T) { body }` ⇒ `FunctionDefinition{name}` 下依序挂 `Parameter`（各带 `NamedType`）+ `BlockStatement`。**兩個真实 bug**：（一）`ast.no` OP-SIG 把 `signature` 误以 `depth`（非 `depth+1`）呼叫 ⇒ 0 參數不可見、≥1 參數時 `Parameter` 塌成 Program 同層兄胏（修正：dump.go FunctionDefinition:281 / FunctionLiteral:409 皆 `d.signature(sig, depth+1)`，ast.no 改 `depth+1`）；（二）`ps-parse-param` 只 push Type 一個 kid，但 Parameter spec 有 **2 個 guarded CHILD**（Type、DefaultExpr），dumper 位置式讀 kid0/kid0+1 ⇒ kid0+1 读到下一個全域 kid（body 的 Identifier）⇒ 多一个幽靈子節點（修正：恒 push 兩槽，Type 缺席用 0、DefaultExpr 恒 0） | `t22`（`(x i64){…}` / `(a i64,b i64){…}` / `(){…}`） |
-| **match 明示形 desugar** | `subj: { pat -> body … }` ⇒ **parse 期** desugar 成 if/else 鏈（bin/no 於此即展開、**非** SurfaceMatch，故 `DumpWithOptions` 不跑 lowering 也能印出 IfExpression——探針實測）。規則：①非 wildcard 臂 `pat` ⇒ `IfExpression{cond: InfixExpression{==}[Ident subj, pat], consequence: 臂區塊, alternative}`；②**每個臂區塊先塞合成 `LetStatement{name: it, value: subj, synthetic: true}`**（slot0='it'、slot1='true'、kid[0]=Type 缺席以 0 佔位、kid[1]=Ident）；③運算式臂 ⇒ `BlockStatement{inline: true}[it, ExpressionStatement{e}]`、區塊臂 ⇒ `BlockStatement{}[it, stmts…]`（inline 未設）；④相鄰非 wildcard 臂 ⇒ 後臂包成非內聯 `BlockStatement{}[ExpressionStatement{IfExpression}]` 作 alternative；末臂無 else 時 alt=0；⑤wildcard `_`（`tok.UNDERSCORE`=88，**非** IDENT）⇒ 其臂區塊**直接**作前一 if 的 alternative；若最外層只是 wildcard ⇒ 包成 `IfExpression{IntegerLiteral{value:1}（ps-mk-true，無 raw）, blk, 0}`。**範圍**：識別元主體 + 字面量/識別元/wildcard 型樣 + 運算式/區塊臂；**延後**守衛、option/enum 完整型樣、複雜主體（呼叫/索引）。**坑**：相鄰兩條 `cond -> {blk}` 陳述若條件用**活的** `ps-peek(p)` 會在跨臂迭代時**随位置重評**誤觸（同 §2.1.1 LBRACE 臂教訓）⇒ 改快照 `at = ps-peek(p)` 後 `{ at == UNDERSCORE -> {…}  at != UNDERSCORE -> {…} }` 互斥雙臂。另：區塊臂（`{ y = 5 }`）在 let-RHS（CTX_EXPR）為 oracle parse error「must end with expression」，只准在**陳述層** match 出現 | `t23`（`n:{1->10}` / `k=n:{1->10;2->20}` / `w=n:{1->10;_->0}` / `b=n:{true->1}` / 陳述層區塊臂） |
+| **match 明示形 desugar** | `subj: { pat -> body … }` ⇒ **parse 期** desugar 成 if/else 鏈（⚠️ **2026-10-19 分歧記錄**：此為 **noc 現態**；bin/no 的 parser 現已【保留 `SurfaceMatch`】不展開——S1 收官（翻轉 `b918dba9`、刪舊降糖路徑 `d6965622`，詳見 `nolang-parser-lowering-invariants.md` §22），故 `DumpWithOptions` 對 bin/no 會印出 `SurfaceMatch{arms: N}` 而非 IfExpression 鏈。本分歧使 L2 oracle 在含 match 的語料上偏離（實測 264/653 檔），裁定與收尾見 §5.3.3）。規則：①非 wildcard 臂 `pat` ⇒ `IfExpression{cond: InfixExpression{==}[Ident subj, pat], consequence: 臂區塊, alternative}`；②**每個臂區塊先塞合成 `LetStatement{name: it, value: subj, synthetic: true}`**（slot0='it'、slot1='true'、kid[0]=Type 缺席以 0 佔位、kid[1]=Ident）；③運算式臂 ⇒ `BlockStatement{inline: true}[it, ExpressionStatement{e}]`、區塊臂 ⇒ `BlockStatement{}[it, stmts…]`（inline 未設）；④相鄰非 wildcard 臂 ⇒ 後臂包成非內聯 `BlockStatement{}[ExpressionStatement{IfExpression}]` 作 alternative；末臂無 else 時 alt=0；⑤wildcard `_`（`tok.UNDERSCORE`=88，**非** IDENT）⇒ 其臂區塊**直接**作前一 if 的 alternative；若最外層只是 wildcard ⇒ 包成 `IfExpression{IntegerLiteral{value:1}（ps-mk-true，無 raw）, blk, 0}`。**範圍**：識別元主體 + 字面量/識別元/wildcard 型樣 + 運算式/區塊臂；**延後**守衛、option/enum 完整型樣、複雜主體（呼叫/索引）。**坑**：相鄰兩條 `cond -> {blk}` 陳述若條件用**活的** `ps-peek(p)` 會在跨臂迭代時**随位置重評**誤觸（同 §2.1.1 LBRACE 臂教訓）⇒ 改快照 `at = ps-peek(p)` 後 `{ at == UNDERSCORE -> {…}  at != UNDERSCORE -> {…} }` 互斥雙臂。另：區塊臂（`{ y = 5 }`）在 let-RHS（CTX_EXPR）為 oracle parse error「must end with expression」，只准在**陳述層** match 出現 | `t23`（`n:{1->10}` / `k=n:{1->10;2->20}` / `w=n:{1->10;_->0}` / `b=n:{true->1}` / 陳述層區塊臂） |
 
 | **多重指派（MultiAssignStatement）** | `a, b, … = expr` ⇒ `MultiAssignStatement{targets: N}`（RHS 常為多返回值呼叫）。slot0=targets 數（kvc NON-ZERO，未設會印空 `targets: `）、overflow slot1 留''（kvs 空略過）；**kid 序依 dump 源碼序**：先 N 個 targets（KIDS、`set-count(0,N)`）、後 1 個 value（guarded CHILD，缺席以 0 佔位）。**父後建**：先把所有 target 與 value 子樹解析完，再 `add(parent)`、依序 `kid-add`（共享 kids 游標）。分派守衛在 `ps-parse-stmt` 的 IDENT 分支：`nxt_typ == tok.COMMA`（首 token 為**裸識別元**且緊接逗號）；因 `ps-op-prec(COMMA)=0`，`ps-parse-expr-prec(t,p,0)` 自然在逗號處停下、不會把 `a, b` 吞成單一運算式。**範圍**：僅**識別元目標**（`a, b = f()`、`m, ok = fs.read()` 含點分方法呼叫 RHS）；**延後**索引/點分作目標（`x[0], y = f()`，首 token 非裸 IDENT、gate 漏判）與巢狀 tuple（`a, b = 1, 2` 的 `, 2` 依 oracle 現況本就被拆成獨立 ExpressionStatement，noc 復刻一致）。**坑（見 §2.1.1）**：match 去糖成的 if/else 鏈把各臂區塊的區域變數**提升到同一函式作用域**——若新臂用了兄弟臂已佔用的變數名（如 `tn` 在「明示型別標註」臂是 `tt.lit`=**str**，新臂卻當 **i64** 用），型別 checker/codegen 會合併成 str ⇒ `t0 > 0` 變成「字串做 gt 比較」、`push` 變成「str 塞進 []i64」的 MIR codegen 錯。修法：新臂所有區域變數加唯一前綴（`maTargets/maT0/maTn/maVal/maK`） | `t24`（`a, b = foo()` / `p, q, r = bar(1)` / `x, y = get-pair()` / `m, ok = fs.read()`） |
 
