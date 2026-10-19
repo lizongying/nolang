@@ -3163,7 +3163,12 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     ;   先設 curFuncName 再逐參數 setVarType），供后续 let 推斷 gate 的 existing 查询。
     rp = 0
     (rp < params.len()) {
-        pd = ast.nd-at(t, params[rp])
+        ; 索引讀提取為獨立陳述並標 #{index-out=zero}：巢置於 call 引數內的索引讀會被
+        ; option 捕獲改寫（pd 淪為 ?i64、後續欄位讀在 MIR 產 NoVal，bug #85 類）；
+        ; 迴圈守衛 rp < params.len() 已保證不越界，zero 僅為型別層面的逃生艙。
+        #{index-out=zero}
+        pni = params[rp]
+        pd = ast.nd-at(t, pni)
         pt = ast.kid-at(t, pd.kid0)
         pt > 0 -> ps-set-var-type(p, ast.str-at(t, pd.s0), ast.type-string(t, pt))
 
@@ -3172,7 +3177,11 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     }
     rr = 0
     (rr < outs.len()) {
-        od = ast.nd-at(t, outs[rr])
+        ; 索引讀提取為獨立陳述並標 #{index-out=zero}（理由同 params 循環：call 引數內的
+        ; 索引讀會被 option 捕獲改寫 ⇒ 後續欄位讀 NoVal）；迴圈守衛保證不越界。
+        #{index-out=zero}
+        oni = outs[rr]
+        od = ast.nd-at(t, oni)
         ot = ast.kid-at(t, od.kid0)
         ot > 0 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
 
@@ -3198,7 +3207,10 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     gnames []str = with-cap(2)
     gp = 0
     (gp < params.len()) {
-        gpd = ast.nd-at(t, params[gp])
+        ; 索引讀提取獨立成句 + index-out=zero（理由同 params/outs 型別登記循環）
+        #{index-out=zero}
+        gni = params[gp]
+        gpd = ast.nd-at(t, gni)
         ps-detect-generic(t, ast.kid-at(t, gpd.kid0), gnames)
 
         #{overflow=wrap}
@@ -3206,7 +3218,10 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     }
     gr = 0
     (gr < outs.len()) {
-        grd = ast.nd-at(t, outs[gr])
+        ; 索引讀提取獨立成句 + index-out=zero（理由同上）
+        #{index-out=zero}
+        goi = outs[gr]
+        grd = ast.nd-at(t, goi)
         ps-detect-generic(t, ast.kid-at(t, grd.kid0), gnames)
 
         #{overflow=wrap}
@@ -3295,7 +3310,12 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     ; s51：body 前登記輸入參數型別（Go decl.go 只登 Parameters；self 不隨 params 登）
     rp = 0
     (rp < params.len()) {
-        pd = ast.nd-at(t, params[rp])
+        ; 索引讀提取為獨立陳述並標 #{index-out=zero}：巢置於 call 引數內的索引讀會被
+        ; option 捕獲改寫（pd 淪為 ?i64、後續欄位讀在 MIR 產 NoVal，bug #85 類）；
+        ; 迴圈守衛 rp < params.len() 已保證不越界，zero 僅為型別層面的逃生艙。
+        #{index-out=zero}
+        pni = params[rp]
+        pd = ast.nd-at(t, pni)
         pt = ast.kid-at(t, pd.kid0)
         pt > 0 -> ps-set-var-type(p, ast.str-at(t, pd.s0), ast.type-string(t, pt))
 
@@ -3304,7 +3324,11 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     }
     rr = 0
     (rr < outs.len()) {
-        od = ast.nd-at(t, outs[rr])
+        ; 索引讀提取為獨立陳述並標 #{index-out=zero}（理由同 params 循環：call 引數內的
+        ; 索引讀會被 option 捕獲改寫 ⇒ 後續欄位讀 NoVal）；迴圈守衛保證不越界。
+        #{index-out=zero}
+        oni = outs[rr]
+        od = ast.nd-at(t, oni)
         ot = ast.kid-at(t, od.kid0)
         ot > 0 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
 
@@ -3332,7 +3356,10 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     gnames []str = with-cap(2)
     gp = 0
     (gp < params.len()) {
-        gpd = ast.nd-at(t, params[gp])
+        ; 索引讀提取獨立成句 + index-out=zero（理由同 params/outs 型別登記循環）
+        #{index-out=zero}
+        gni = params[gp]
+        gpd = ast.nd-at(t, gni)
         ps-detect-generic(t, ast.kid-at(t, gpd.kid0), gnames)
 
         #{overflow=wrap}
@@ -3341,7 +3368,10 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     ps-detect-generic(t, selfnt, gnames)
     gr = 0
     (gr < outs.len()) {
-        grd = ast.nd-at(t, outs[gr])
+        ; 索引讀提取獨立成句 + index-out=zero（理由同上）
+        #{index-out=zero}
+        goi = outs[gr]
+        grd = ast.nd-at(t, goi)
         ps-detect-generic(t, ast.kid-at(t, grd.kid0), gnames)
 
         #{overflow=wrap}
