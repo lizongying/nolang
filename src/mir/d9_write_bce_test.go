@@ -188,7 +188,6 @@ func collectIndexExprs(stmts []parser.Statement) []*parser.IndexExpression {
 			walkExpr(v.Value)
 		case *parser.IfExpression:
 			walkExpr(v.Condition)
-			walkExpr(v.MatchedExpr)
 			if v.Consequence != nil {
 				for _, c := range v.Consequence.Statements {
 					walkStmt(c)

@@ -28,7 +28,8 @@ type SurfaceMatch struct {
 
 	// OpeningBraceComment 保留裸 match `{` 同行註釋，lowering 時轉移到 IfExpression。
 	OpeningBraceComment *CommentGroup
-	// RBracePos 保留裸 match 外層 `}` 的位置，lowering 時轉移到 IfExpression.MatchEndPos。
+	// RBracePos 保留裸 match 外層 `}` 的位置，由 SurfaceMatch.EndPos() 與
+	// match_exhaustive（no fix 驅動）直接取用。
 	RBracePos lexer.Position
 
 	// PreChecked 標記本 match 的「解析期/降糖前」預檢（preRegisterEnumArmBindings +
@@ -2462,7 +2463,7 @@ func (p *Parser) armsCarryTypePatterns(arms []MatchArm) bool {
 // 零 type tag）。每個型別臂內注入 `it = matched`（或 `v = matched`）並收窄為
 // 該成員型別，供 checker 型別推斷與臂內操作使用。
 func (p *Parser) buildTypeMatchDesugar(sm *SurfaceMatch, matchedVarType string) Expression {
-	tok, matched, arms := sm.Token, sm.Matched, sm.Arms
+	tok, arms := sm.Token, sm.Arms
 	if len(arms) == 0 {
 		return nil
 	}
@@ -2475,14 +2476,9 @@ func (p *Parser) buildTypeMatchDesugar(sm *SurfaceMatch, matchedVarType string) 
 	for i := len(resolved) - 1; i >= 0; i-- {
 		ra := resolved[i]
 		node := &IfExpression{
-			Token:           tok,
-			Condition:       nil,
-			Consequence:     ra.body,
-			IsTypeMatch:     true,
-			TypePattern:     ra.typePattern,
-			TypeBindingName: ra.bindingName,
-			IsTypeDefault:   ra.isDefault,
-			MatchedExpr:     matched,
+			Token:       tok,
+			Condition:   nil,
+			Consequence: ra.body,
 		}
 		if ifExpr != nil {
 			node.Alternative = &BlockStatement{

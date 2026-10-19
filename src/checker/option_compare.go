@@ -330,24 +330,8 @@ func (w *optCmpWalker) walkExpr(e parser.Expression) {
 			}
 		}
 	case *parser.IfExpression:
-		// match 的 desugar：`matched == ok` 這類臂條件由 match 專用規則負責，
-		// 直接走訪 Condition 會對 `x: { 1 -> ... }` 等形態誤報，故跳過。
-		if x.MatchedExpr == nil && x.EqualityPattern == nil && len(x.OptionPatterns) == 0 {
-			w.walkExpr(x.Condition)
-		}
-		// 被 match 的表達式若為 option（?T），其 ok / err 臂裡的 `it`
-		// 綁定的是**解包後**的內層值 T（參見 MEMORY：option 在 HIR/LLVM
-		// 層本就是 tagged enum，ok 變體載荷即內層型別）。把 T 壓入堆疊，
-		// 供臂體內的 `it` 查詢——否則會把 `n = it; n <= 127` 誤報成
-		// option 比較（str.no / txt.no 的 to-i8）。
-		if x.MatchedExpr != nil {
-			if mt, _ := w.typeOf(x.MatchedExpr); mt != "" {
-				if inner := innerOf(mt); inner != "" {
-					w.itStack = append(w.itStack, inner)
-					defer func() { w.itStack = w.itStack[:len(w.itStack)-1] }()
-				}
-			}
-		}
+		// 實 if/else：match 在糖形態下是 SurfaceMatch（見下方 case），不經此路徑。
+		w.walkExpr(x.Condition)
 		if x.Consequence != nil {
 			for _, inner := range x.Consequence.Statements {
 				w.walkStmt(inner, "")
@@ -355,11 +339,6 @@ func (w *optCmpWalker) walkExpr(e parser.Expression) {
 		}
 		if x.Alternative != nil {
 			for _, inner := range x.Alternative.Statements {
-				w.walkStmt(inner, "")
-			}
-		}
-		if x.DotValBody != nil {
-			for _, inner := range x.DotValBody.Statements {
 				w.walkStmt(inner, "")
 			}
 		}

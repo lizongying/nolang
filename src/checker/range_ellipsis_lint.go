@@ -127,7 +127,6 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 			walkExpr(x.Expression, file)
 		case *parser.IfExpression:
 			walkExpr(x.Condition, file)
-			walkExpr(x.MatchedExpr, file)
 			walkBlock(x.Consequence, file)
 			walkBlock(x.Alternative, file)
 		case *parser.SurfaceMatch:

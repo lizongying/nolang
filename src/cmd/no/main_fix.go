@@ -263,8 +263,10 @@ func stmtHasDirectReturn(s parser.Statement) bool {
 	return false
 }
 
-// exprHasDirectReturn 走 if/match 的分支區塊（Consequence / Alternative / DotValBody
-// 都是 BlockStatement）。不進入 FunctionLiteral（其 body 的 return 屬該字面量自身）。
+// exprHasDirectReturn 走 if 的分支區塊（Consequence / Alternative 都是 BlockStatement）。
+// 不進入 FunctionLiteral（其 body 的 return 屬該字面量自身）。
+// 註：match 在糖形態下是 SurfaceMatch（不經 IfExpression），其直接 return 偵測由
+// SurfaceMatch 專用走訪負責，不在本函式範圍。
 func exprHasDirectReturn(e parser.Expression) bool {
 	ie, ok := e.(*parser.IfExpression)
 	if !ok || ie == nil {
@@ -273,10 +275,7 @@ func exprHasDirectReturn(e parser.Expression) bool {
 	if blockHasDirectReturn(ie.Consequence) {
 		return true
 	}
-	if blockHasDirectReturn(ie.Alternative) {
-		return true
-	}
-	return blockHasDirectReturn(ie.DotValBody)
+	return blockHasDirectReturn(ie.Alternative)
 }
 
 // topLevelMainCall 判斷頂層陳述是否為零參 `main()` 呼叫，是則回傳其所占行跨度

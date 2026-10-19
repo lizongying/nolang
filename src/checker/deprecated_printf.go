@@ -203,10 +203,8 @@ func walkExprForRemovedPrintf(expr parser.Expression, out *[]ValidateResult) {
 	case *parser.AwaitExpression:
 		walkExprForRemovedPrintf(e.Right, out)
 	case *parser.IfExpression:
-		// `x: { pattern -> body }` — the matched expression lives in MatchedExpr,
-		// the arms in Consequence / Alternative (there is no Match node).
+		// 實 if/else：match 在糖形態下是 SurfaceMatch，不經此路徑。
 		walkExprForRemovedPrintf(e.Condition, out)
-		walkExprForRemovedPrintf(e.MatchedExpr, out)
 		if e.Consequence != nil {
 			for _, sub := range e.Consequence.Statements {
 				walkStmtForRemovedPrintf(sub, out)

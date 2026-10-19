@@ -108,8 +108,7 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 // back to the global VarTypes for module-level matches.
 //
 // After S-d the only caller is the sugar-shape collector, which hands over the
-// SurfaceMatch subject directly; the legacy IfExpression.MatchedExpr branch was
-// removed with the lowered match path.
+// SurfaceMatch subject directly.
 func subjectIsDeclaredEnumExpr(program *parser.Program, subj parser.Expression, funcName string) bool {
 	if program == nil || program.Sem == nil || len(program.Sem.EnumVariants) == 0 {
 		return false
@@ -194,14 +193,7 @@ func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*pa
 		}
 		switch x := e.(type) {
 		case *parser.IfExpression:
-			if x.MatchedExpr != nil {
-				all = append(all, x)
-				rootFunc[x] = funcName
-				rootFile[x] = file
-				if c := matchChainedChild(x); c != nil {
-					children[c] = true
-				}
-			}
+			// 實 if/else：match 在糖形態下是 SurfaceMatch（見 CollectNonExhaustiveMatches），不經此路徑。
 			walkExpr(funcName, file, x.Condition)
 			if x.Consequence != nil {
 				walkStmts(funcName, file, x.Consequence.Statements)
@@ -247,24 +239,6 @@ func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*pa
 		}
 	}
 	return roots, rootFunc, rootFile
-}
-
-// matchChainedChild returns the next arm of the if/else chain, i.e. the match
-// arm that sits alone in this arm's else block. It returns nil when the else
-// block is a real catch-all body (or absent).
-func matchChainedChild(ife *parser.IfExpression) *parser.IfExpression {
-	if ife == nil || ife.Alternative == nil || len(ife.Alternative.Statements) != 1 {
-		return nil
-	}
-	es, ok := ife.Alternative.Statements[0].(*parser.ExpressionStatement)
-	if !ok {
-		return nil
-	}
-	inner, ok := es.Expression.(*parser.IfExpression)
-	if !ok || inner.MatchedExpr == nil {
-		return nil
-	}
-	return inner
 }
 
 // ────────────────────────────────────────────────────────────────────────────

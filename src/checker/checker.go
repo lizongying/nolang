@@ -959,7 +959,6 @@ func walkExprForLen(expr parser.Expression, varTypes, funcTypes map[string]strin
 		}
 	case *parser.IfExpression:
 		walkExprForLen(e.Condition, varTypes, funcTypes, selfType, results)
-		walkExprForLen(e.MatchedExpr, varTypes, funcTypes, selfType, results)
 		walkBlockForLen(e.Consequence, varTypes, funcTypes, selfType, results)
 		walkBlockForLen(e.Alternative, varTypes, funcTypes, selfType, results)
 	default:
@@ -6745,7 +6744,6 @@ func walkStrOrderingExpr(e parser.Expression, funcTypes, varTypes map[string]str
 		walkStrOrderingExpr(x.Condition, funcTypes, varTypes, selfType, file, results)
 		walkStrOrderingBlock(x.Consequence, funcTypes, varTypes, selfType, file, results)
 		walkStrOrderingBlock(x.Alternative, funcTypes, varTypes, selfType, file, results)
-		walkStrOrderingBlock(x.DotValBody, funcTypes, varTypes, selfType, file, results)
 	case *parser.FunctionLiteral:
 		// 閉包體是獨立作用域：參數 + 自身 let 各自登記。
 		local := make(map[string]string)

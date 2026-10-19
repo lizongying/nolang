@@ -1639,58 +1639,11 @@ type IfExpression struct {
 	Condition   Expression
 	Consequence *BlockStatement
 	Alternative *BlockStatement
-	// MatchedExpr holds the matched expression in `x: { pattern -> body }` syntax.
-	// When set, the formatter outputs `matched: { ... }` instead of if/else.
-	MatchedExpr Expression
-	// DotValBody marks that the wildcard alternative is an ok-> or .-> val branch
-	// (not a catch-all else). The formatter outputs `ok -> body` instead of `-> body`.
-	DotValBody *BlockStatement
-	// RangePattern 保留 match arm 中原始的 RangeExpression 條件（如 `[a..b)`）。
-	// desugar 時 Condition 會被改寫為 `matched >= a && matched < b`，但保留此欄位
-	// 供 formatter 準確反推為 range 語法，避免對布林表達式做启发式推斷。
-	RangePattern *RangeExpression
-	// EqualityPattern 保留 `matched == X` arm 中原始的右值 X。
-	// desugar 時 Condition 會被改寫為 `matched == X`，但保留此欄位讓 formatter
-	// 直接輸出 X 而不需反向匹配 InfixExpression 結構。
-	EqualityPattern Expression
-	// OptionPatterns 保留 `nil || err` 等 option pattern 列表。
-	// desugar 時 Condition 會被改寫為 `(matched==nil) || (matched==err)`，
-	// 此欄位讓 formatter 直接輸出 `nil || err` 而不需啟發式推斷。
-	OptionPatterns []string
-	// ValuePatterns 保留 `1 || 3 || 5` 等 multi-value pattern 列表。
-	// desugar 時 Condition 會被改寫為 `(matched==1) || (matched==3) || (matched==5)`，
-	// 此欄位讓 formatter 直接輸出 `1 || 3 || 5`。
-	ValuePatterns []Expression
-	// RawCond 保留 `ok(cond)` arm 中原始的 cond 表達式。
-	// desugar 時 Condition 會被改寫為 `(matched == ok) && cond`，
-	// 此欄位讓 formatter 直接輸出 `ok(cond)`。
-	RawCond Expression
-	// MatchEndPos 保留 bare match 外層 `}` 的位置（由 lowering pass 設置）。
-	// EndPos() 優先返回此位置，讓格式化器能準確判斷 match 塊結束後的空行。
-	MatchEndPos lexer.Position
-	// ---- 類型解構 match（union / type-set 靜態單態化派發）----
-	// IsTypeMatch 標記本 IfExpression 鏈屬於「類型 match」：被匹配值的靜態型別
-	// 是 union（如 num），arm 模式是型別名（i32 ->）或帶綁定（v i32 ->），
-	// 或預設臂（->）。MIR 階段按單態化後的具體型別選臂，不產生任何分支。
-	IsTypeMatch bool
-	// TypePattern 是本臂匹配的型別名（如 "i32"）；空字串表示非型別臂。
-	TypePattern string
-	// TypeBindingName 是帶綁定臂（v i32 ->）的綁定名；空字串表示用隱含 it。
-	TypeBindingName string
-	// IsTypeDefault 標記本臂為預設臂（->），匹配其餘所有 union 成員。
-	IsTypeDefault bool
 }
 
 func (ie *IfExpression) expressionNode()     {}
 func (ie *IfExpression) Pos() lexer.Position { return posFromToken(ie.Token) }
 func (ie *IfExpression) EndPos() lexer.Position {
-	// MatchEndPos 記錄了 bare match 外層 `}` 的位置，優先使用。
-	// 這對格式化器的空行判斷至關重要：沒有它，EndPos 會回退到最後一個
-	// arm body 的最後一條語句，導致 `}` 行號被遺漏，第二次格式化時
-	// 誤判 `}` 與下一條語句之間有空行。
-	if ie.MatchEndPos.Line > 0 {
-		return ie.MatchEndPos
-	}
 	if ie.Alternative != nil {
 		return ie.Alternative.EndPos()
 	}
