@@ -1,12 +1,12 @@
 package dump
 
 // ─────────────────────────────────────────────────────────────────────────────
-// S2 core: HIR EQUIVALENCE for the one desugar that moved into H0.
+// S2 core: H0-direct match desugar gate.
 //
-// Today the shipped pipeline is:
+// The shipped pipeline is:
 //
 //	ParseProgram()                 // LowerSurface runs inside the parser
-//	                     → ASTToHIR
+//	                     → ASTToHIR   // H0 desugars *SurfaceMatch while emitting
 //
 // The target pipeline (design doc §8, P1+P2) is:
 //
@@ -21,37 +21,25 @@ package dump
 // divergence inspected was an inferred type on a non-match node, written by
 // inferOptionArith / synthesizeNullableType — sugar items #4 and #5 in §4.1.)
 //
-// What IS testable now is the claim this increment actually makes: **H0 lowers
-// SurfaceMatch to exactly what the parser's lowering produced.** To hold
-// everything but the match desugar constant, both sides parse with the surface
-// configuration (SkipUnwrapLowering + SkipSafeIndexLowering), which is exactly
-// the pair of flags that gate inferOptionArith, maybeCaptureOptionAssign and
-// maybeIndexOutAssign. On that base the parser's remaining work in LowerSurface
-// IS the SurfaceMatch expansion:
-//
-//	surface AST ─┬─ LowerSurface → ASTToHIR   → HIR_par  (parser desugars matches)
-//	             └─ ASTToHIR                   → HIR_h0   (H0 desugars matches)
-//
-// HIR_h0 == HIR_par proves the desugar moved without changing behaviour.
+// History — equivalence was proven, then Route B retired. Originally this gate
+// compared two routes: Route A (H0 desugars SurfaceMatch → HIR) vs Route B (the
+// parser's legacy buildMatchDesugar expanded SurfaceMatch to an IfExpression
+// chain → HIR). After the S-a/S-b/S-c slices landed, Route A == Route B held
+// byte-for-byte across 622 corpus programs (0 diverged), proving the moved
+// desugar was behaviour-preserving. P7 (design doc §5) then DELETED the legacy
+// desugar; the js/wasm backends were re-homed onto DesugarSurfaceMatchesPlain, and
+// Route B — which depended on the deleted path — was retired. This gate is now a
+// single-route corpus exercise + regression smoke test: it runs H0-direct on every
+// standalone-parseable corpus program and asserts (1) H0 produces valid HIR (a
+// panic/checker failure is a real regression) and (2) the desugar is actually
+// exercised on a large fraction of the corpus (anti-vacuity).
 //
 // The end-to-end comparison is kept as an INFORMATIONAL counter (sugar+H0 vs the
 // shipped lowered pipeline) so the S3 work items stay visible and their numbers
 // only ever go down.
-//
-// What counts as identical: Dump renders kind, interned strings, inferred type,
-// flags, value AND @line:col. Positions are included deliberately — both sides
-// run the same buildMatchDesugar code over the same SurfaceMatch token, so they
-// must agree, and a divergence there is a real diagnostic-position regression
-// rather than a cosmetic difference.
-//
-// Ordering matters and is not incidental: ASTToHIR is read-only over the AST
-// (PopulateInferredTypes is a separate exported call, not invoked here), so the
-// H0 side runs first and leaves the tree pristine for LowerSurface, which
-// rewrites in place.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -63,14 +51,6 @@ import (
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
-
-// hirMatchDesugarAllowlist records corpus files where H0's SurfaceMatch
-// desugaring is KNOWN to differ from the parser's, with the reason. Both
-// directions are enforced: a new divergence must be recorded here with a
-// rationale (so landing a regression is a deliberate act), and an entry whose
-// file has started matching again must be deleted — which is what stops this
-// from becoming a permanent excuse.
-var hirMatchDesugarAllowlist = map[string]string{}
 
 // equivalenceCorpusRoots is every corpus this gate walks.
 //
@@ -85,18 +65,41 @@ var equivalenceCorpusRoots = []string{corpusRoot, "../../../test/std"}
 // yields too few programs, "0 divergences" means nothing.
 const hirEquivalenceMinCompared = 200
 
-// TestH0MatchDesugarMatchesParserLowering is this increment's hard gate.
+// TestH0MatchDesugarMatchesParserLowering is the H0-direct match desugar gate.
+//
+// History: this gate originally compared two routes — Route A (H0 desugars
+// SurfaceMatch while emitting HIR) against Route B (the parser's legacy
+// buildMatchDesugar expanded SurfaceMatch to an IfExpression chain, then H0 emitted
+// that). After the S-a/S-b/S-c slices landed, Route A == Route B held byte-for-byte
+// across 622 corpus programs (0 diverged), proving the moved desugar was
+// behaviour-preserving.
+//
+// P7 (design doc §5) then DELETED the legacy desugar (buildMatchDesugar /
+// emitSubjectMatchAST / desugarSurfaceMatch): its only remaining consumers were
+// Route B and the experimental js/wasm backends (the latter re-homed onto
+// DesugarSurfaceMatchesPlain, a field-less IfExpression chain). With the legacy
+// path gone, Route B can no longer exist, so this gate is now a single-route
+// corpus exercise + regression smoke test:
+//
+//	surface AST → ASTToHIR (H0 desugars SurfaceMatch) → HIR_h0
+//
+// It asserts (1) H0-direct produces valid HIR for every standalone-parseable
+// corpus program — a parse or H0 panic is a real regression; and (2) the desugar
+// is actually exercised on a large fraction of the corpus (anti-vacuity — a gate
+// that never carries SurfaceMatch into H0 reports "0" meaninglessly). The
+// end-to-end informational counter (shipped default pipeline vs the target
+// SkipLowering pipeline) is retained unchanged; it tracks the S3 backlog, not
+// this gate.
 func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 	if _, err := os.Stat(corpusRoot); err != nil {
 		t.Skipf("no corpus at %s: %v", corpusRoot, err)
 	}
 
-	var compared, endToEndDiff, exercised int
-	var diverged []string
-	var notLowered []string
+	var compared, endToEndDiff, exercised, h0Failures int
+	var failures []string
 
-	walk := func(corpusRoot string) error {
-		return filepath.WalkDir(corpusRoot, func(path string, d fs.DirEntry, err error) error {
+	walk := func(root string) error {
+		return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
 				return nil
 			}
@@ -106,31 +109,28 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 			}
 			src := string(raw)
 
-			hirH0, smH0, okH0 := matchDesugarViaH0(path, src)
-			hirPar, smPar, okPar := matchDesugarViaParser(path, src)
-			if !okH0 && !okPar {
-				return nil
-			}
-			if okH0 != okPar {
-				diverged = append(diverged, fmt.Sprintf("%s: h0=%v parser=%v", path, okH0, okPar))
+			// Standalone-parseable? Files that don't parse on their own (multi-file
+			// programs, fragments) are not a H0 regression — skip without counting.
+			pp := parser.New(lexer.NewCached(path, src))
+			pp.Filename = path
+			pprog := pp.ParseProgram()
+			if pprog == nil || len(pp.Errors()) > 0 {
 				return nil
 			}
 
-			// Non-vacuity, measured per file: only count this file as an exercise of
-			// the desugar when Route A actually carried SurfaceMatch nodes into H0.
-			// Files with 0 matches compare two identical trees either way.
-			if smH0 > 0 {
-				exercised++
-				// ...and Route B must have expanded them all, otherwise it is NOT the
-				// parser-desugared tree this gate claims to compare.
-				if smPar != 0 {
-					notLowered = append(notLowered, fmt.Sprintf("%s (%d left)", path, smPar))
+			_, smH0, okH0 := matchDesugarViaH0(path, src)
+			if okH0 {
+				// Anti-vacuity: only count this file as an exercise of the desugar
+				// when H0 actually carried SurfaceMatch nodes into HIR.
+				if smH0 > 0 {
+					exercised++
 				}
-			}
-
-			compared++
-			if hirH0 != hirPar {
-				diverged = append(diverged, path)
+				compared++
+			} else {
+				// H0-direct failed to produce HIR on a corpus program that parses
+				// standalone — a real regression (panic or checker-level failure).
+				h0Failures++
+				failures = append(failures, path)
 			}
 
 			// Informational: how far is the WHOLE target pipeline from parity?
@@ -163,59 +163,29 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 	}
 
 	if compared < hirEquivalenceMinCompared {
-		t.Fatalf("only %d programs compared; the equivalence claim would be vacuous",
+		t.Fatalf("only %d programs lowered via H0; the equivalence claim would be vacuous",
 			compared)
 	}
 
-	if len(notLowered) > 0 {
-		sort.Strings(notLowered)
-		t.Errorf("%d file(s) still contain SurfaceMatch after the explicit "+
-			"DesugarSurfaceMatches pass, so Route B is not the parser-desugared tree "+
-			"this gate compares against; first 10: %v",
-			len(notLowered), notLowered[:min(10, len(notLowered))])
+	if h0Failures > 0 {
+		sort.Strings(failures)
+		t.Errorf("%d/%d standalone-parseable corpus programs failed to lower via "+
+			"H0-direct (panic or checker failure); first 10: %v",
+			h0Failures, compared, failures[:min(10, len(failures))])
 	}
-	// The exercise count is the anti-vacuity gate for the WHOLE comparison. With
-	// the pre-flip shape of these helpers it was 0 and the test reported "0
-	// divergences" while comparing a pipeline to itself.
+
+	// Anti-vacuity for the whole run: a meaningful gate must actually carry
+	// SurfaceMatch into H0 on a large fraction of the corpus.
 	if exercised < hirEquivalenceMinCompared/2 {
-		t.Fatalf("only %d of %d compared programs actually carried SurfaceMatch into "+
-			"H0, so \"0 divergences\" may be 0 == 0; the two routes have collapsed "+
-			"into the same pipeline", exercised, compared)
+		t.Fatalf("only %d of %d lowered programs actually carried SurfaceMatch into "+
+			"H0, so the desugar may be going unexercised; the gate would be vacuous",
+			exercised, compared)
 	}
 
-	sort.Strings(diverged)
-
-	// Allowlist must be bidirectional.
-	seen := map[string]bool{}
-	var fresh []string
-	for _, f := range diverged {
-		if _, ok := hirMatchDesugarAllowlist[f]; ok {
-			seen[f] = true
-			continue
-		}
-		fresh = append(fresh, f)
-	}
-	for f := range hirMatchDesugarAllowlist {
-		if !seen[f] {
-			t.Errorf("allowlisted %s no longer diverges — H0 now produces the same "+
-				"HIR as the parser's lowering. Delete it from hirMatchDesugarAllowlist",
-				f)
-		}
-	}
-
-	if len(fresh) > 0 {
-		const show = 10
-		t.Errorf("%d/%d programs: H0's SurfaceMatch desugar produces DIFFERENT HIR "+
-			"than the parser's lowering; the first %d: %v",
-			len(fresh), compared, min(show, len(fresh)), fresh[:min(show, len(fresh))])
-	}
-
-	t.Logf("match desugar: %d programs compared, %d diverged (%d allowlisted, %d fresh); "+
-		"%d actually exercised the desugar (SurfaceMatch reached H0); "+
-		"end-to-end (sugar+H0 vs shipped pipeline) still differs on %d/%d — that is the "+
-		"S3 backlog, not this gate",
-		compared, len(diverged), len(diverged)-len(fresh), len(fresh), exercised,
-		endToEndDiff, compared)
+	t.Logf("H0-direct match desugar: %d programs lowered, %d exercised the desugar "+
+		"(SurfaceMatch reached H0), %d H0 failures; end-to-end (sugar+H0 vs shipped "+
+		"pipeline) still differs on %d/%d — that is the S3 backlog, not this gate",
+		compared, exercised, h0Failures, endToEndDiff, compared)
 }
 
 // TestBareMatchEquivalenceIsExercised is the S-b anti-vacuity witness.
@@ -223,11 +193,11 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 // Since §5.2.7 (slice S-b) a bare match — SurfaceMatch with Matched == nil — no
 // longer takes the buildBareMatchDesugar → IfExpression → case *IfExpression
 // route; tohir's lowerBareMatchToHIR emits the KIf straight from
-// resolveBareMatchPlan. TestH0MatchDesugarMatchesParserLowering still guards it
-// (Route B is exactly the old behaviour), but only for bare matches the corpus
-// actually contains. If a future edit made every bare match parse as something
-// else, that gate would report "0 divergences" over 0 bare matches and the S-b
-// emitter would go untested.
+// resolveBareMatchPlan. TestH0MatchDesugarMatchesParserLowering still exercises it
+// on every corpus program (the H0-direct route carries every bare match into H0),
+// but only for bare matches the corpus actually contains. If a future edit made
+// every bare match parse as something else, that gate would report "0 exercised"
+// over 0 bare matches and the S-b emitter would go untested.
 //
 // Measured 2026-10-19: 436 bare matches across tests/ + test/std/ (354 in tests/,
 // 82 in test/std/), so the floor below sits well under the real count — it is a
@@ -291,11 +261,11 @@ func TestBareMatchEquivalenceIsExercised(t *testing.T) {
 // complement — no longer takes the resolveSubjectMatch → IfExpression →
 // case *IfExpression route; tohir's emitSubjectMatchHIR streams the KIf chain
 // straight from resolveSubjectMatchPlan. TestH0MatchDesugarMatchesParserLowering
-// still guards it (Route B is exactly the old behaviour), but only for subject
-// matches the corpus actually contains AND that satisfy subjectMatchDirectHIR's
-// four exclusions. If a future edit made every such match decline the direct
-// route, that gate would report "0 divergences" while the S-c1 emitter went
-// untested.
+// still exercises it on every corpus program (the H0-direct route carries every
+// subject match into H0), but only for subject matches the corpus actually contains
+// AND that satisfy subjectMatchDirectHIR's four exclusions. If a future edit made
+// every such match decline the direct route, that gate would report "0 exercised"
+// while the S-c1 emitter went untested.
 //
 // The count comes from the parser's own counter (parser.SubjectMatchDirectEmits),
 // so the decision is made by the shipped predicate rather than re-derived here —
@@ -363,9 +333,9 @@ func TestSubjectMatchDirectHIRIsExercised(t *testing.T) {
 		"(%d carry a subject match)", direct, files, withSubj)
 }
 
-// matchDesugarViaH0 is ROUTE A — the pipeline that actually ships after the
-// S1 flip: ParseProgram keeps every *SurfaceMatch (deferMatchDesugar), so ASTToHIR
-// desugars them itself via tohir's `case *SurfaceMatch`.
+// matchDesugarViaH0 is the H0-direct route — the pipeline that actually ships
+// after the S1 flip: ParseProgram keeps every *SurfaceMatch (deferMatchDesugar),
+// so ASTToHIR desugars them itself via tohir's `case *SurfaceMatch`.
 //
 // surface is how many *SurfaceMatch nodes were still in the tree going into H0.
 // A file with 0 is not exercising the desugar at all, so the caller counts only
@@ -376,10 +346,12 @@ func TestSubjectMatchDirectHIRIsExercised(t *testing.T) {
 // every other pass constant. Those two flags were DELETED with §4.3
 // (parser/lowering.go:337,416,432,442 say so explicitly), and a botched edit
 // left `p.SkipLowering = true` written three times in their place — which made
-// this route byte-identical to matchDesugarViaParser and the whole gate silently
-// vacuous. The isolation is now achieved differently: both routes use the DEFAULT
-// parse (identical everything), and only Route B additionally runs the explicit
-// expansion pass. See matchDesugarViaParser.
+// this route byte-identical to the now-retired Route B (the parser's legacy match
+// desugar) and the whole gate silently vacuous. The isolation is now achieved
+// differently: this route uses the DEFAULT parse (identical everything), and the
+// gate simply runs H0-direct on every corpus program. As of P7 (design doc §5)
+// the legacy desugar was deleted and Route B retired, so this is the only route
+// the gate exercises.
 func matchDesugarViaH0(path, src string) (dump string, surface int, ok bool) {
 	func() {
 		defer func() {
@@ -394,49 +366,6 @@ func matchDesugarViaH0(path, src string) (dump string, surface int, ok bool) {
 			dump, ok = "", false
 			return
 		}
-		surface = countSurfaceMatches(prog)
-		pkg := parser.ASTToHIR(prog)
-		if pkg == nil {
-			dump, ok = "", false
-			return
-		}
-		dump, ok = pkg.Dump(), true
-	}()
-	return dump, surface, ok
-}
-
-// matchDesugarViaParser is ROUTE B — same default parse, then the SurfaceMatch
-// nodes are expanded by the parser's own explicit pass `DesugarSurfaceMatches`
-// (the same entry point the experimental js/wasm backends call from
-// build/builder.go) before H0 runs. H0 therefore sees the lowered IfExpression
-// chain and never enters its own `case *SurfaceMatch`.
-//
-// Both routes run the SAME ParseProgram, so every other lowering step is held
-// constant and the only remaining difference is WHO expands the matches.
-// That is the isolation this gate needs, and after the S1 flip it can no longer
-// be obtained by leaving LowerSurface to do it: LowerSurface deliberately does
-// NOT expand SurfaceMatch any more (that is the flip), so a Route B built on
-// `SkipLowering = false` would now carry sugar into H0 exactly like Route A and
-// compare equal trivially.
-//
-// surface must be 0 for every file whose Route A count was non-zero: the explicit
-// pass is supposed to have removed them all. If it is not, Route B is not the
-// "parser did the desugaring" tree the gate claims to compare against.
-func matchDesugarViaParser(path, src string) (dump string, surface int, ok bool) {
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				dump, surface, ok = "", 0, false
-			}
-		}()
-		p := parser.New(lexer.NewCached(path, src))
-		p.Filename = path
-		prog := p.ParseProgram()
-		if len(p.Errors()) > 0 {
-			dump, ok = "", false
-			return
-		}
-		p.DesugarSurfaceMatches(prog)
 		surface = countSurfaceMatches(prog)
 		pkg := parser.ASTToHIR(prog)
 		if pkg == nil {

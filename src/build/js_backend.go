@@ -111,8 +111,8 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 		return fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
-	// S1：js/wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
-	p.DesugarSurfaceMatches(program)
+	// P7 re-home：js 後端改走 DesugarSurfaceMatchesPlain（純 IfExpression 鏈，不含 match 專用欄位）。
+	p.DesugarSurfaceMatchesPlain(program)
 
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)
@@ -228,8 +228,8 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		p := parser.New(l)
 		p.Filename = filepath.Base(filePath)
 		prog := p.ParseProgram()
-		// S1：js 後端為實驗性後端，合併的模組也保留降糖形態。
-		p.DesugarSurfaceMatches(prog)
+		// P7 re-home：合併的模組也改走 Plain 變體（純 IfExpression 鏈）。
+		p.DesugarSurfaceMatchesPlain(prog)
 		if len(p.Errors()) > 0 {
 			return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
 		}
@@ -432,8 +432,8 @@ func BuildJSEx(inputPath string, opts BuildOptions) (*BuildJSResult, error) {
 		return nil, fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
-	// S1：js/wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
-	p.DesugarSurfaceMatches(program)
+	// P7 re-home：js 後端改走 DesugarSurfaceMatchesPlain（純 IfExpression 鏈，不含 match 專用欄位）。
+	p.DesugarSurfaceMatchesPlain(program)
 
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)

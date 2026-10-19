@@ -1212,7 +1212,11 @@ func (c *hirConv) exprNode(e Expression) int32 {
 			}
 			break // no arms: fall through to KUnknown, as before
 		}
-		return c.expr(sp.emitSubjectMatchAST(prep))
+		// resolveSubjectMatch returned nil (a 0-arm subject match, which is
+		// ill-formed): emitSubjectMatchAST(nil) would nil-panic, so fall through
+		// to KUnknown instead. P7 (design doc §5) deleted the legacy AST desugar
+		// route that used to live here.
+		break
 
 	case *Parameter:
 		// Parameter satisfies expressionNode, so it is legal in expression

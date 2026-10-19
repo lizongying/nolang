@@ -133,7 +133,7 @@ func llvmCodegenTriple(target string) string {
 // 故跳過該哨兵，否則「零外部工具鏈」的 CI smoke test 會因 runner 只裝了
 // llvm-config-22（沒有同名 llvm-config）而誤報「未檢測到 LLVM 工具鏈」：
 //  1. 內置 LLVM 的 no-llvm 變體（Enabled && Available）：optimize+codegen 全在進程內，
-//     cc 只做連結，完全不碰外部 LLVM；
+//     cc 只做連結（clang 找不到時回退 cc/gcc），完全不碰外部 LLVM；
 //  2. cc == "zig"：zig 自帶 clang+lld+libc，單進程即可完成最佳化/程式碼生成/連結。
 func CheckToolchain(cc string) error {
 	// WASM 建構下無法呼叫本機 LLVM 工具鏈（opt/llc/clang）；
@@ -141,7 +141,11 @@ func CheckToolchain(cc string) error {
 	if runtime.GOOS == "wasip1" {
 		return fmt.Errorf("LLVM toolchain not available in WASM build; use --wasm-direct flag")
 	}
-	if capiActive := llvmapi.Enabled() && llvmapi.Available(); !capiActive && cc != "zig" {
+	// 內置 LLVM（no-llvm 變體且開關啟用）：codegen 在進程內完成，不需要系統 LLVM
+	// （llvm-config 哨兵），也不需要系統 clang——連結只要任何可用的 C 連結器
+	// （clang / cc / gcc），故 default 分支改走探測回退而非硬要求 clang。
+	capiActive := llvmapi.Enabled() && llvmapi.Available()
+	if !capiActive && cc != "zig" {
 		if _, err := exec.LookPath("llvm-config"); err != nil {
 			return fmt.Errorf(`未檢測到 LLVM 工具鏈
   macOS: brew install llvm
@@ -159,6 +163,17 @@ func CheckToolchain(cc string) error {
   Windows: winget install zig.zig`)
 		}
 	default:
+		if capiActive {
+			// 內置 LLVM：只需連結器，探測 clang/cc/gcc 任一即可（實際選取在
+			// buildLLVMInternal 的連結步驟，與此處探測順序保持一致）。
+			if _, err := findLinker(); err != nil {
+				return fmt.Errorf(`未檢測到可用的 C 連結器（clang/cc/gcc）
+  macOS: xcode-select --install  (提供系統 cc/clang)
+  Ubuntu: sudo apt install build-essential
+  Windows: winget install zig.zig  (或改用 -cc zig)`)
+			}
+			return nil
+		}
 		if _, err := exec.LookPath("clang"); err != nil {
 			return fmt.Errorf(`未檢測到 clang，請確認 LLVM 工具鏈完整安裝
   macOS: brew install llvm
@@ -168,6 +183,18 @@ func CheckToolchain(cc string) error {
 	}
 
 	return nil
+}
+
+// findLinker 依優先順序探測可用作「純連結」的 C 連結器：clang → cc → gcc。
+// 僅在內置 LLVM（LLVM C API 進程內編譯）路徑使用——此時 cc 只連結已編好的
+// .o，任何 C 連結器都可勝任，不再硬要求系統安裝 LLVM 的 clang。
+func findLinker() (string, error) {
+	for _, cand := range []string{"clang", "cc", "gcc"} {
+		if p, err := exec.LookPath(cand); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("no C linker (clang/cc/gcc) found")
 }
 
 // BuildOptions holds all options for a build operation.
@@ -1040,7 +1067,18 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		clangArgs = append([]string{"cc"}, clangArgs...)
 		clangCmd = exec.Command("zig", clangArgs...)
 	} else {
-		clangCmd = exec.Command(cc, clangArgs...)
+		linker := cc
+		// 內置 LLVM 且已產出 .o（連結路徑）：cc 只負責連結，任何 C 連結器都行。
+		// 預設 cc="clang" 若系統沒裝 clang，回退到 cc/gcc（與 CheckToolchain 的
+		// findLinker 探測順序一致），讓 no-llvm 變體真正零外部 LLVM 工具鏈依賴。
+		if capiObject != "" {
+			if _, err := exec.LookPath(linker); err != nil {
+				if p, lerr := findLinker(); lerr == nil {
+					linker = p
+				}
+			}
+		}
+		clangCmd = exec.Command(linker, clangArgs...)
 	}
 	if sink != nil {
 		clangCmd.Stdout = sink
@@ -1053,6 +1091,8 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		cmdStr := cc
 		if cc == "zig" {
 			cmdStr = "zig cc"
+		} else if clangCmd != nil && clangCmd.Path != "" {
+			cmdStr = clangCmd.Path
 		}
 		vprintf(sink, "Running: %s %s -o %s\n", cmdStr, clangIn, outPath)
 	}
@@ -1108,9 +1148,12 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %v", inputPath, errs)
 	}
 
-	// S1：js/wasm 後端為實驗性後端，仍走降糖形態（保留 desugar pass）。
+	// P7 re-home：js/wasm 後端改走 DesugarSurfaceMatchesPlain —— 只產出純
+	// IfExpression 鏈（不含 12 個 match 專用欄位 / RTFlag），與主管線直出結構
+	// 一致，且脫離 buildMatchDesugar / emitSubjectMatchAST 依賴鏈，使 P7 刪除
+	// 舊降糖路徑時 js/wasm 後端不被波及（設計文件 §5 的 JS/WASM re-home）。
 	// 主編譯管線（checker/transpiler/H0）已原生消費 SurfaceMatch，不走此處。
-	p.DesugarSurfaceMatches(program)
+	p.DesugarSurfaceMatchesPlain(program)
 
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)

@@ -108,7 +108,7 @@ func parseDesugaredProgram(t *testing.T, src string) *Program {
 	if len(p.Errors()) > 0 {
 		t.Fatalf("parse errors: %v", p.Errors())
 	}
-	p.DesugarSurfaceMatches(prog)
+	p.DesugarSurfaceMatchesPlain(prog)
 	return prog
 }
 

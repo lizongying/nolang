@@ -237,12 +237,136 @@ func TestD9PlaceMatchWriteLowersWithPlaceWrite(t *testing.T) {
 			}
 			// S1 翻转：match desugar 是独立步骤，compile path 需显式调用
 			// （place-write 改写位于 buildMatchDesugar 内）。
-			p.DesugarSurfaceMatches(prog)
+			p.DesugarSurfaceMatchesPlain(prog)
 			if !hasSyntheticIndexStore(prog.Statements) {
 				t.Errorf("D9 place-match write `%s` did NOT produce the synthetic element store — place-write rewrite missing", c.name)
 			}
 		})
 	}
+}
+
+// TestD9PlaceMatchUsesNormalizedSubject 回归门禁（修复 S-d 收尾的 prep.matched
+// 归属 bug 后加入）：写入侧 place-match `a[i]: { ok -> ... }` 经过索引主体归一化
+// 必须生成 `__match_subj ?elem = a[i]`，且 ok 臂的条件必须是 `__match_subj == ok`
+// （tag 比较），而非退化成 `a[i] == 0` 这种对裸下标取值的值比较。
+//
+// 该 bug 的历史表现：resolveSubjectMatch 在索引归一化（matched 改写为 __match_subj
+// 标识符）之前就把 `prep.matched` 捕获成了原始的 `a[i]` 索引表达式，导致 ok 臂条件
+// 直接引用裸下标、H0 codegen 把它降糖成 `a[i] == 0`，写回静默失效（i64 案例打印原值、
+// str 案例报 "index-store of a 'i32' value into a '%str-long' element"）。
+func TestD9PlaceMatchUsesNormalizedSubject(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "i64 array",
+			src:  "foo = () (result ?i64) {\n    result = nil\n    arr [3]i64 = [1, 2, 3]\n    arr[1]: {\n    ok -> it = 99\n    -> _\n}\n    result = arr[1]\n}",
+		},
+		{
+			// 单引号双字符字面量是 Nolang 的 str 字面量（双引号是 char）。
+			name: "str array",
+			src:  "foo = () (result ?str) {\n    result = nil\n    a [3]str = ['x', 'y', 'z']\n    a[1]: {\n    ok -> it = 'w'\n    -> _\n}\n    result = a[1]\n}",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p, prog := parseCompilePath(t, c.src)
+			if errs := p.Errors(); len(errs) > 0 {
+				t.Fatalf("compile-path parse errors: %v", errs)
+			}
+			p.DesugarSurfaceMatchesPlain(prog)
+			if !okArmReferencesNormalizedSubject(prog.Statements) {
+				t.Errorf("D9 place-match ok-arm condition does not reference the normalized `__match_subj` identifier (prep.matched regression)")
+			}
+		})
+	}
+}
+
+// okArmReferencesNormalizedSubject walks the AST looking for the ok-arm of an
+// option match: an IfExpression whose Condition is `__match_subj == ok` (an
+// InfixExpression with a `==` operator and a left operand that is the
+// `__match_subj` Identifier). It also fails the case where the left operand is a
+// raw IndexExpression (the prep.matched bug), since that degrades the ok check
+// into a value comparison against the bare index.
+func okArmReferencesNormalizedSubject(stmts []Statement) bool {
+	found := false
+	var walkStmt func(s Statement)
+	var walkExpr func(e Expression)
+	walkStmt = func(s Statement) {
+		if s == nil || found {
+			return
+		}
+		switch v := s.(type) {
+		case *LetStatement:
+			walkExpr(v.Value)
+		case *ExpressionStatement:
+			walkExpr(v.Expression)
+		case *BlockStatement:
+			for _, c := range v.Statements {
+				walkStmt(c)
+			}
+		case *FunctionDefinition:
+			if v.Body != nil {
+				for _, c := range v.Body.Statements {
+					walkStmt(c)
+				}
+			}
+		}
+	}
+	walkExpr = func(e Expression) {
+		if e == nil || found {
+			return
+		}
+		switch v := e.(type) {
+		case *IfExpression:
+			if isOkArmCond(v.Condition) {
+				found = true
+				return
+			}
+			if v.Consequence != nil {
+				for _, c := range v.Consequence.Statements {
+					walkStmt(c)
+				}
+			}
+			if v.Alternative != nil {
+				for _, c := range v.Alternative.Statements {
+					walkStmt(c)
+				}
+			}
+		case *IndexExpression:
+			walkExpr(v.Index)
+		case *InfixExpression:
+			walkExpr(v.Left)
+			walkExpr(v.Right)
+		}
+	}
+	for _, s := range stmts {
+		walkStmt(s)
+	}
+	return found
+}
+
+// isOkArmCond reports whether cond is `__match_subj == ok` (the correct,
+// normalized option-tag check) and NOT a value comparison against a raw index
+// (e.g. `a[i] == ok` / `a[i] == 0`), which is the prep.matched regression.
+func isOkArmCond(cond Expression) bool {
+	inf, ok := cond.(*InfixExpression)
+	if !ok || inf.Operator != "==" {
+		return false
+	}
+	id, ok := inf.Left.(*Identifier)
+	if !ok {
+		return false // left operand must be the normalized __match_subj identifier
+	}
+	if !strings.Contains(id.Value, "__match_subj") {
+		return false
+	}
+	rhs, ok := inf.Right.(*Identifier)
+	if !ok || rhs.Value != "ok" {
+		return false
+	}
+	return true
 }
 
 // TestD9PlaceWriteSkippedInSafeIndexSurfaceMode 不变量：纯 surface 场景

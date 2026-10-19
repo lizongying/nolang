@@ -87,7 +87,8 @@ func CheckESMDeps(inputPath string) (missing []string, nmDir string, err error) 
 	if errs := p.Errors(); len(errs) > 0 {
 		return nil, "", fmt.Errorf("%s: %v", inputPath, errs)
 	}
-	p.DesugarSurfaceMatches(program)
+	// P7 re-home：js 後端改走 Plain 變體（純 IfExpression 鏈，不含 match 專用欄位）。
+	p.DesugarSurfaceMatchesPlain(program)
 	pkgConfig, _ := LoadPackage(filepath.Dir(inputPath))
 	program, merr := resolveAndMergeJSModules(program, inputPath, pkgConfig)
 	if merr != nil {

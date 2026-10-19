@@ -97,16 +97,17 @@ func (p *Parser) LowerSurface(program *Program) {
 	p.lowerProgram(program)
 	// S1 flip (2026-10-17): the default pipeline now KEEPS *SurfaceMatch nodes
 	// intact. The match is no longer expanded here — instead:
-	//   - the native / H0 path desugars it at ASTToHIR via desugarSurfaceMatch
-	//     (parser/tohir.go case *SurfaceMatch), which calls buildMatchDesugar;
-	//   - the experimental js / wasm backends call p.DesugarSurfaceMatches(program)
+	//   - the native / H0 path desugars it directly at ASTToHIR
+	//     (parser/tohir.go case *SurfaceMatch), which routes through the IR-agnostic
+	//     resolve layer + emitSubjectMatchHIR;
+	//   - the experimental js / wasm backends call p.DesugarSurfaceMatchesPlain(program)
 	//     explicitly from their builders (build/builder.go) before codegen.
 	//
-	// The parser-side normalisation that buildMatchDesugar bundles (safe-index
-	// subject rebind to __match_subj_*, D9 place-write, D4 empty-arm default,
-	// it bindings, enum destructuring) is preserved: it runs inside
-	// buildMatchDesugar on BOTH the H0 and js/wasm desugar paths, so the sugar
-	// node reaching those expanders is already consumable. Nothing here is lost.
+	// The parser-side normalisation (safe-index subject rebind to __match_subj_*,
+	// D9 place-write, D4 empty-arm default, it bindings, enum destructuring) lives
+	// in the shared resolveSubjectMatch / resolveBareMatchPlan prep, so it runs on
+	// BOTH the H0 and js/wasm desugar paths. P7 (design doc §5) deleted the legacy
+	// buildMatchDesugar / emitSubjectMatchAST / desugarSurfaceMatch route.
 	//
 	// NOTE (design doc §15.6): flipping the default form is a user-visible change
 	// to `no vet` output. Measured 2026-10-18 against baseline ab157ea7:
@@ -197,29 +198,54 @@ func (p *Parser) lowerProgram(prog *Program) {
 	l.walk(reflect.ValueOf(prog))
 }
 
-// DesugarSurfaceMatches expands every deferred SurfaceMatch node (left intact by
-// lowerProgram when deferMatchDesugar is set) into its core-AST IfExpression
-// chain. It is the second, separable phase of lowering — split out of the
-// reflect walk so that S1 can later delete it wholesale once the checker /
-// transpiler / H0 consume SurfaceMatch directly, without touching the rest of
-// lowering.
+
+// DesugarSurfaceMatchesPlain is the js/wasm re-home entry point (design doc §5
+// P7). It expands every deferred SurfaceMatch into the SAME core-AST IfExpression
+// chain the main pipeline gets, but the chain carries NO match-specific fields
+// (MatchedExpr / RangePattern / EqualityPattern / OptionPatterns / ValuePatterns /
+// RawCond / DotValBody) and NO RTFlag — only Condition / Consequence /
+// Alternative, exactly what the js/wasm backends consume. This decouples the
+// experimental js/wasm backends from buildMatchDesugar / emitSubjectMatchAST, so
+// P7 can delete the legacy desugar without touching them.
 //
-// It reuses the exact same walker as lowerProgram; every other sugar node is
-// already expanded, so this pass only rewrites match nodes (and re-walks their
-// already-lowered children, which is idempotent). The final tree is
-// byte-identical to the historical single-pass lowering.
-func (p *Parser) DesugarSurfaceMatches(prog *Program) {
+// Type-destructuring matches are routed through buildTypeMatchDesugar unchanged:
+// it emits a nil-Condition IfExpression that only the MIR static-dispatch path can
+// lower, so js/wasm already cannot handle them — re-homing them is out of scope.
+func (p *Parser) DesugarSurfaceMatchesPlain(prog *Program) {
 	if prog == nil {
 		return
 	}
-	// skipCollectLocalTypes: lowerProgram's first pass already populated the
-	// idxLocalTypes side-table (collectLocalTypes ran once there); re-running it
-	// here would write the same map twice and, because Go map iteration order is
-	// non-deterministic, can perturb the serialized blob (stdastcache comparison).
-	// Every other lowering / semantic inference still runs normally — buildMatchDesugar
-	// needs p.sem.FuncVarType etc., which must be (re)computed for the deferred matches.
 	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}, skipCollectLocalTypes: true}
 	l.walk(reflect.ValueOf(prog))
+}
+
+// desugarSurfaceMatchToIfExpr lowers a *SurfaceMatch to the core-AST IfExpression
+// chain, consuming the IR-agnostic resolve layer + the field-less plain emitters.
+// It is the SINGLE desugar path shared by the parser walk (lowerSurfaceMatch), the
+// experimental js/wasm backends (DesugarSurfaceMatchesPlain), and every internal
+// caller that synthesises a match (unwrap guards, capture propagation, index
+// defaulting, …). P7 (design doc §5) deleted the legacy buildMatchDesugar /
+// emitSubjectMatchAST / desugarSurfaceMatch that this now subsumes; the result
+// carries only Condition/Consequence/Alternative, which is all the IfExpression
+// consumers (ASTToHIR's case *IfExpression, the js/wasm backends) read.
+func (p *Parser) desugarSurfaceMatchToIfExpr(sm *SurfaceMatch) Expression {
+	if sm.Matched == nil {
+		if plan := p.resolveBareMatchPlan(sm.Token, sm.Arms); plan != nil {
+			return p.emitMatchIfPlain(sm.Token, plan)
+		}
+		return nil
+	}
+	if ident, ok := sm.Matched.(*Identifier); ok {
+		t, _ := p.sem.FuncVarType(p.curFuncName, ident.Value)
+		if !hasOptionMatchArm(sm.Arms) &&
+			(p.isUnionType(t) || p.armsCarryTypePatterns(sm.Arms)) {
+			return p.buildTypeMatchDesugar(sm, t)
+		}
+	}
+	if prep := p.resolveSubjectMatch(sm); p.subjectMatchDirectHIR(prep) {
+		return p.emitSubjectMatchPlain(prep)
+	}
+	return nil
 }
 
 type lowerer struct {
@@ -1216,7 +1242,7 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 		sm := &SurfaceMatch{Token: tok, Matched: capIdent, Arms: arms}
 		savedFuncName := l.p.curFuncName
 		l.p.curFuncName = l.curFuncName
-		lowered := l.p.buildMatchDesugar(sm)
+		lowered := l.p.desugarSurfaceMatchToIfExpr(sm)
 		l.p.curFuncName = savedFuncName
 		if lowered == nil {
 			return nil
@@ -1471,7 +1497,7 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	sm := &SurfaceMatch{Token: tok, Matched: tmpIdent, Arms: arms}
 	savedFuncName := l.p.curFuncName
 	l.p.curFuncName = l.curFuncName
-	lowered := l.p.buildMatchDesugar(sm)
+	lowered := l.p.desugarSurfaceMatchToIfExpr(sm)
 	l.p.curFuncName = savedFuncName
 	if lowered == nil {
 		return nil
@@ -2098,7 +2124,10 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 		// Sync curFuncName to parser for function-scoped VarType lookups.
 		savedFuncName := l.p.curFuncName
 		l.p.curFuncName = l.curFuncName
-		result := l.p.buildBareMatchDesugar(sm.Token, sm.Arms)
+		var result Expression
+		if plan := l.p.resolveBareMatchPlan(sm.Token, sm.Arms); plan != nil {
+			result = l.p.emitMatchIfPlain(sm.Token, plan)
+		}
 		l.p.curFuncName = savedFuncName
 		if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
 			l.p.sem.SetOpeningBraceComment(ifExpr, sm.OpeningBraceComment)
@@ -2111,7 +2140,7 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	savedFuncName := l.p.curFuncName
 	l.p.curFuncName = l.curFuncName
 	// 類型解構 match 偵測：被匹配值靜態型別是 union（如 num）時，按型別臂靜態
-	// 單態化派發，完全繞開 buildMatchDesugar 的 `matched == X` 運行期條件生成。
+	// 單態化派發，完全繞開 match 的 `matched == X` 運行期條件生成。
 	//
 	// 臂形態是第二條（S1 翻轉後必需的）判據：union 單態化複本的主體已是具體成員
 	// 型別、且語義表沒有以複本名為鍵的條目，單靠「主體是 union」永遠判不出來
@@ -2130,7 +2159,14 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 			return result
 		}
 	}
-	result := l.p.buildMatchDesugar(sm)
+	var result Expression
+	// P7 (design doc §5): the SINGLE desugar path is the IR-agnostic resolve layer
+	// + the field-less plain emitters; the legacy buildMatchDesugar / emitSubjectMatchAST
+	// route has been deleted, and js/wasm already went through this path via
+	// DesugarSurfaceMatchesPlain (plainMatch=true).
+	if prep := l.p.resolveSubjectMatch(sm); l.p.subjectMatchDirectHIR(prep) {
+		result = l.p.emitSubjectMatchPlain(prep)
+	}
 	l.p.curFuncName = savedFuncName
 	if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
 		ifExpr.MatchEndPos = sm.RBracePos
@@ -2251,88 +2287,7 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	return types[varName]
 }
 
-// desugarSurfaceMatch returns the core-AST equivalent of sm WITHOUT writing
-// anything into sm — the H0-side entry point for match desugaring (S2).
-//
-// lowerSurfaceMatch above cannot be reused for this: it walks the tree in place
-// and rewrites arm bodies, which is exactly the AST mutation C1/P1 forbid once
-// desugaring moves out of the lowering pass and into the AST→HIR conversion.
-//
-// Non-mutation comes from copying the arm slice first. MatchArm is a VALUE type
-// living in a slice, so every `arm.Body = …` inside buildMatchDesugar /
-// buildTypeMatchDesugar / buildBareMatchDesugar lands on the copy; the statement
-// trees the arms point at are only READ, because prependStmt /
-// rewriteItPlaceWrites / namedItBinding all return fresh nodes rather than
-// editing in place. That claim is not an assumption — see the gate below.
-//
-// ⚠️ Until 2026-10-16 that claim had NO coverage at all, and the comment here
-// said the wrong test covered it. The C6 half of gate G1 lives in
-// ast_freeze_test.go's TestASTIsFrozenAcrossHIRLowering, but that walks the
-// LOWERED corpus, where the SurfaceMatch nodes are already gone — so the one
-// desugar that runs inside H0 was never exercised by it. And it could not have
-// been exercised even in principle: dump.go had no SurfaceMatch case, so a
-// mutated arm body dumped as `<unknown *parser.SurfaceMatch>` on both sides of
-// the comparison and before == after. The real gate is
-// parser/dump/sugar_dump_gate_test.go's TestASTIsFrozenAcrossHIRLoweringSugar,
-// which parses the corpus with SkipLowering and requires 168 corpus programs to
-// carry a SurfaceMatch across ASTToHIR. It is sabotage-verified: writing back
-// into the original arm slice (`sm.Arms[0].ValueCtx = true`, i.e. exactly what
-// the copy above prevents) makes it fail, naming the file and printing
-// `MatchArm{}` → `MatchArm{valueCtx: true}`.
-//
-// Nested matches are deliberately NOT pre-lowered here. HIR emission recurses
-// into the produced chain, reaches the still-sugar nested SurfaceMatch, and
-// re-enters this same path — the streaming equivalent of lowerSurfaceMatch's
-// bottom-up walk.
-//
-// ⚠️ Callers must set p.curFuncName first: buildMatchDesugar resolves the
-// subject's type through sem.FuncVarType(p.curFuncName, …), and an empty name
-// silently degrades to the weaker fallback typings instead of failing.
-func (p *Parser) desugarSurfaceMatch(sm *SurfaceMatch) Expression {
-	if sm == nil || len(sm.Arms) == 0 {
-		return nil
-	}
-	// S-a (design doc §5.2): everything through armPreChecks has side effects
-	// that BOTH emitters depend on, so it lives in prepareSurfaceMatch instead of
-	// being duplicated by lowerTypeMatchToHIR.
-	clone := p.prepareSurfaceMatch(sm)
-	return p.desugarPreparedSurfaceMatch(clone)
-}
 
-// desugarPreparedSurfaceMatch lowers a match that prepareSurfaceMatch has
-// already run, and nothing more.
-//
-// The split exists so the HIR emitter can share the prep: surface lowering has
-// one preparation phase with real side effects (see prepareSurfaceMatch) and one
-// emission phase, and S-a's streaming path needs only the second. Calling
-// prepareSurfaceMatch twice instead would re-run armPreChecks and duplicate every
-// diagnostic it emits.
-func (p *Parser) desugarPreparedSurfaceMatch(clone *SurfaceMatch) Expression {
-	var result Expression
-	switch {
-	case clone.Matched == nil:
-		result = p.buildBareMatchDesugar(clone.Token, clone.Arms)
-	default:
-		// Type-destructuring match: the subject's static type is a union, so the
-		// arms dispatch statically. typeDestructuringSubjectType encapsulates the
-		// same detection (and union-alias recovery) the AST path uses, so the AST
-		// and HIR emitters can never disagree about which kind of match this is.
-		if t, ok := p.typeDestructuringSubjectType(clone); ok {
-			result = p.buildTypeMatchDesugar(clone, t)
-			break
-		}
-		result = p.buildMatchDesugar(clone)
-	}
-	if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
-		// lowerSurfaceMatch stamps the closing brace position so EndPos() and
-		// the checker's "was this match synthesised?" test both work.
-		ifExpr.MatchEndPos = clone.RBracePos
-		if clone.Matched == nil {
-			p.sem.SetOpeningBraceComment(ifExpr, clone.OpeningBraceComment)
-		}
-	}
-	return result
-}
 
 // prepareSurfaceMatch clones the match, carries the D9 index-out annotations
 // onto the clone, and runs the arm pre-checks. Every step here has side effects
@@ -2815,25 +2770,25 @@ func (p *Parser) resolveBareMatchPlan(tok lexer.Token, arms []MatchArm) *matchIf
 	return cur
 }
 
-func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []MatchArm) Expression {
-	plan := p.resolveBareMatchPlan(tok, arms)
-	if plan == nil {
-		return nil
-	}
-	return p.emitMatchIfAST(tok, plan)
-}
 
-// emitBareMatchAST is the AST emitter for the bare-match plan (legacy route).
-func (p *Parser) emitMatchIfAST(tok lexer.Token, plan *matchIfPlan) Expression {
+
+// emitMatchIfPlain is the js/wasm re-home counterpart of emitMatchIfAST (design
+// doc §5 P7). It builds the SAME if/elif/else chain structure — identical
+// Condition / Consequence / Alternative nesting — but writes NONE of the
+// match-specific IfExpression fields (EqualityPattern / RangePattern / DotValBody)
+// and no RTFlag. The js/wasm backends consume only the if-chain shape (they never
+// read those fields), so the emitted JS/WASM is byte-identical to the legacy
+// route while keeping js/wasm off buildMatchDesugar's dependency chain.
+func (p *Parser) emitMatchIfPlain(tok lexer.Token, plan *matchIfPlan) Expression {
 	if plan.isWrapper {
 		stmts := make([]Statement, 0, len(plan.stmts))
 		for _, s := range plan.stmts {
 			stmts = append(stmts, &ExpressionStatement{
 				Token:      tok,
-				Expression: p.emitMatchIfAST(tok, s),
+				Expression: p.emitMatchIfPlain(tok, s),
 			})
 		}
-		wrapper := &IfExpression{
+		return &IfExpression{
 			Token:     tok,
 			Condition: plan.cond,
 			Consequence: &BlockStatement{
@@ -2841,44 +2796,23 @@ func (p *Parser) emitMatchIfAST(tok lexer.Token, plan *matchIfPlan) Expression {
 				Statements: stmts,
 			},
 		}
-		p.sem.SetRTFlag(wrapper, RTBareMatch|RTMatchWrapper)
-		return wrapper
 	}
 	node := &IfExpression{
-		Token:           tok,
-		Condition:       plan.cond,
-		Consequence:     plan.body,
-		EqualityPattern: plan.eqPattern,
-		RangePattern:    plan.rangePattern,
-		DotValBody:      plan.dotValBody,
+		Token:       tok,
+		Condition:   plan.cond,
+		Consequence: plan.body,
 	}
 	if plan.alt != nil {
 		node.Alternative = &BlockStatement{
 			Token:      tok,
-			Statements: []Statement{&ExpressionStatement{Token: tok, Expression: p.emitMatchIfAST(tok, plan.alt)}},
+			Statements: []Statement{&ExpressionStatement{Token: tok, Expression: p.emitMatchIfPlain(tok, plan.alt)}},
 		}
 	} else if plan.altBody != nil {
 		node.Alternative = plan.altBody
 	}
-	p.sem.SetRTFlag(node, plan.rtFlags)
 	return node
 }
 
-// buildMatchDesugar 建立 if/elif/else 鏈
-//
-// 對 option match（含 err/nil arm），直接使用 `matched == err` / `matched == nil`
-// 比較，由 transpiler 的 generateInfixI1 識別 %option 變數並生成 tag 比較的 LLVM IR。
-// wildcard arm（含 ok/val/->）作為 else 分支。
-//
-// 型別資訊（matched 變數型別、枚舉變體）一律取自 sm 的解析期快照，
-// 不讀 parser 的活動符號表（lowering 延後執行時符號表已是整檔終態）。
-func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
-	prep := p.resolveSubjectMatch(sm)
-	if prep == nil {
-		return nil
-	}
-	return p.emitSubjectMatchAST(prep)
-}
 
 // subjectMatchPrep is the IR-agnostic state buildMatchDesugar computes BEFORE
 // it starts emitting arms (design doc §5.2.9, segments A+B+C). Everything here is
@@ -2941,7 +2875,17 @@ type subjectMatchPrep struct {
 func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	prep := &subjectMatchPrep{}
 	tok, matched, arms := sm.Token, sm.Matched, sm.Arms
-	prep.tok, prep.matched, prep.arms, prep.origMatched = tok, matched, arms, matched
+	// NOTE: prep.matched is deliberately NOT captured here. When the subject is a
+	// safe-index expression in an option match (e.g. `a[i]: { ok -> ... }`), the
+	// block below normalises `matched` to a synthetic `__match_subj` option
+	// identifier so the inner match reuses the identifier option-match path
+	// (tag comparison + correct `it` binding). prep.matched must reflect that
+	// *normalised* value, otherwise the chain conditions and `it` binding still
+	// reference the raw `a[i]` index expression and degrade into a value
+	// comparison (`a[i] == 0`) instead of a `__match_subj == ok` tag check.
+	// prep.origMatched intentionally keeps the raw index for the wrapper that
+	// builds `__match_subj ?elem = <origMatched>`.
+	prep.tok, prep.arms, prep.origMatched = tok, arms, matched
 	if len(arms) == 0 {
 		return nil
 	}
@@ -2991,6 +2935,13 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 			}
 		}
 	}
+	// Capture the (possibly normalised) subject now that the index→`__match_subj`
+	// rewrite above has run. For an option match on a safe-index subject this is
+	// the synthetic `__match_subj` identifier; for every other subject it is the
+	// original expression. The chain conditions and `it` binding in both emitters
+	// read prep.matched, so this single assignment is what makes the normalised
+	// identifier path actually used.
+	prep.matched = matched
 
 	// D9 place-write 準備：statement 語境的安全索引 match（`a[i]: { ok -> it = v,
 	// -> _ }`）的 ok 臂裡，`it` 指代**元素位置**而非載荷副本。為了讓「option 讀取」
@@ -3662,7 +3613,17 @@ func (p *Parser) resolveArmCond(tok lexer.Token, matched Expression, arm MatchAr
 	return plan
 }
 
-func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
+
+// emitSubjectMatchPlain is the js/wasm re-home counterpart of emitSubjectMatchAST
+// (design doc §5 P7). It builds the SAME if/elif/else chain — identical
+// Condition / Consequence / Alternative nesting and the identical `if 1 { ... }`
+// wrappers for the ok(cond) and index-subject-normalisation cases — but writes
+// NONE of the match-specific IfExpression fields (MatchedExpr / RangePattern /
+// EqualityPattern / OptionPatterns / ValuePatterns / RawCond / DotValBody) and no
+// RTFlag. The js/wasm backends consume only the if-chain shape, so the emitted
+// JS/WASM is byte-identical to the legacy route while keeping js/wasm off
+// buildMatchDesugar's dependency chain.
+func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 	tok := prep.tok
 	matched := prep.matched
 	arms := prep.arms
@@ -3675,34 +3636,18 @@ func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
 	itStmt := prep.itStmt
 	hasRawCond := prep.hasRawCond
 
-	// Build from last to first (inside-out). ifExpr / defaultBody /
-	// defaultDotValBody are emitter-local chain state, not plan: nothing in
-	// resolveSubjectMatch reads them, and the tail wrappers read them only after
-	// the loop has finished building the chain.
 	var ifExpr *IfExpression
-	var defaultBody *BlockStatement       // 最內層 wildcard body（直接作為 else，避免 if 1 {} 包裝）
-	var defaultDotValBody *BlockStatement // track val branch body separately
+	var defaultBody *BlockStatement
+	var defaultDotValBody *BlockStatement
 
 	for i := len(arms) - 1; i >= 0; i-- {
 		arm := arms[i]
 
-		// Create per-arm `it` binding with correct unwrapped type for LSP inference.
-		// For ?i64: err arm → it: err, nil arm → it: nil, ok arm → it: i64
-		// The per-arm path runs even when elemType == "" (matched option type
-		// unknown at parse time, e.g. a method-call result resolved later): in
-		// that case buildItBindingForArm returns nil, and we only fall back to the
-		// shared binding for the ok/else arm (safe — the option is non-nil there,
-		// so the struct-deref codegen is guarded by the live variant). Sentinel
-		// (nil/err) arms must NOT receive any `it` binding in that case, since the
-		// shared Type=nil binding would emit an unconditional deref of the option's
-		// data field, which is 0 (null) when the option is nil/err → segfault.
 		p.rewriteSubjectArm(prep, &arm)
 
 		if arm.IsWildcard {
 			if ifExpr == nil {
 				if defaultBody != nil && arm.IsDotVal {
-					// dotVal arm (ok->) after a regular -> wildcard (else):
-					// treat as conditional arm: if matched == ok { body } else { defaultBody }
 					cond := &InfixExpression{
 						Token:    tok,
 						Left:     matched,
@@ -3710,18 +3655,13 @@ func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
 						Right:    &Identifier{Token: tok, Value: "ok"},
 					}
 					newIf := &IfExpression{
-						Token:           tok,
-						Condition:       cond,
-						Consequence:     arm.Body,
-						Alternative:     defaultBody,
-						MatchedExpr:     matched,
-						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.Body,
+						Token:       tok,
+						Condition:   cond,
+						Consequence: arm.Body,
+						Alternative: defaultBody,
 					}
-					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
 				} else {
-					// 最內層 wildcard：儲存 body 作為下一個條件 arm 的 else
 					defaultBody = arm.Body
 					if arm.IsDotVal {
 						defaultDotValBody = arm.Body
@@ -3729,8 +3669,6 @@ func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
 				}
 			} else {
 				if arm.IsDotVal {
-					// ok-> when other arms already processed (e.g., {ok ->, nil ->, ->}):
-					// wrap as outer condition instead of overwriting the alternative
 					cond := &InfixExpression{
 						Token:    tok,
 						Left:     matched,
@@ -3745,11 +3683,7 @@ func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
 							Token:      tok,
 							Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
 						},
-						MatchedExpr:     matched,
-						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.Body,
 					}
-					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
 					ifExpr = newIf
 				} else {
 					ifExpr.Alternative = arm.Body
@@ -3758,41 +3692,25 @@ func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
 		} else {
 			plan := p.resolveArmCond(tok, matched, arm)
 			newIf := &IfExpression{
-				Token:           tok,
-				Condition:       plan.cond,
-				Consequence:     arm.Body,
-				Alternative:     nil,
-				MatchedExpr:     matched,
-				RangePattern:    plan.rangePattern,
-				EqualityPattern: plan.equalityPattern,
-				OptionPatterns:  plan.optionPatterns,
-				ValuePatterns:   plan.valuePatterns,
-				RawCond:         plan.rawCond,
+				Token:       tok,
+				Condition:   plan.cond,
+				Consequence: arm.Body,
+				Alternative: nil,
 			}
-			p.sem.SetRTFlag(newIf, RTBareMatch)
 			if ifExpr != nil {
 				newIf.Alternative = &BlockStatement{
 					Token:      tok,
 					Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
 				}
 			} else if defaultBody != nil {
-				// 直接使用 wildcard body 作為 else，避免 if 1 {} 包裝
 				newIf.Alternative = defaultBody
-				if defaultDotValBody == defaultBody {
-					newIf.DotValBody = defaultBody
-				}
 			}
 			ifExpr = newIf
 		}
 	}
 
-	// 若所有 arm 都是 wildcard，或只有 wildcard 而無條件 arm
 	if ifExpr == nil {
 		if defaultBody != nil {
-			// 唯一 arm 是 wildcard。
-			// 對 ok-> (dotVal) arm，生成 `matched == ok` 條件而非硬編碼 true。
-			// 否則當 option 為 nil 時仍進入 ok 分支，解引用空指針導致段錯誤。
-			// ok-> 語法本身就表示匹配 option 的 ok 變體，無需依賴類型推斷。
 			if defaultDotValBody == defaultBody {
 				ifExpr = &IfExpression{
 					Token: tok,
@@ -3802,29 +3720,21 @@ func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
 						Operator: "==",
 						Right:    &Identifier{Token: tok, Value: "ok"},
 					},
-					Consequence:     defaultBody,
-					MatchedExpr:     matched,
-					EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-					DotValBody:      defaultBody,
+					Consequence: defaultBody,
 				}
-				p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 			} else {
-				// 非 dotVal wildcard：用 if 1 {} 包裝（無法避免）
 				ifExpr = &IfExpression{
 					Token:       tok,
 					Condition:   &IntegerLiteral{Token: tok, Value: 1},
 					Consequence: defaultBody,
-					MatchedExpr: matched,
 				}
-				p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
 			}
 		} else {
 			return nil
 		}
 	}
 
-	// When ok(cond) arms exist, wrap the if-chain in `if 1 { it = matched; <if-chain> }`
-	// so that `it` is bound before the condition is evaluated.
+	// ok(cond): `if 1 { it = matched; <chain> }` — must mirror emitSubjectMatchAST.
 	if hasRawCond && itStmt != nil {
 		ifExpr = &IfExpression{
 			Token:     tok,
@@ -3836,19 +3746,11 @@ func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
 					&ExpressionStatement{Token: tok, Expression: ifExpr},
 				},
 			},
-			MatchedExpr: matched,
 		}
-		p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWrapper)
 	}
 
-	// 索引主體歸一化：把 `let __match_subj ?elem = <orig index>` 包在 `if 1 { ... }`
-	// 外層，使 match 主體（__match_subj）成為安全索引產生的 %option 變數，
-	// 後續 arm 的 `it` 綁定與 `== ok/nil/err` 條件都走識別符 option 路徑。
+	// Index-subject normalisation: `if 1 { [let __idx = <orig>;] let __match_subj ?elem = <orig>; <chain> }`.
 	if subjName != "" && subjElem != "" && ifExpr != nil {
-		// D9：place-write 發生過 ⇒ 先綁定下標暫存（__idx_L_C = 原下標表達式），
-		// 讀取改走暫存，使「越界檢查的讀」與「ok 臂的寫回」共用同一次下標求值。
-		// 糖形態（SkipLowering=true）不走此路徑，placeWriteUsed 在該形態下恒為
-		// false，故此塊自然不進入。SkipSafeIndexLowering 旗標已隨 §4.3 刪除。
 		var preStmts []Statement
 		if placeWriteUsed && origIdxExpr != nil {
 			preStmts = append(preStmts, &LetStatement{
@@ -3878,9 +3780,7 @@ func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
 				Token:      tok,
 				Statements: wrapperStmts,
 			},
-			MatchedExpr: &Identifier{Token: tok, Value: subjName},
 		}
-		p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWrapper)
 	}
 
 	return ifExpr
@@ -4394,9 +4294,9 @@ func (p *Parser) desugarIndexOutReads(expr Expression, tok lexer.Token, defVal A
 				SkipItBinding: true,
 				Pos:           posFromToken(tok),
 			}
-			sm := &SurfaceMatch{Token: tok, Matched: &Identifier{Token: tok, Value: outName}, Arms: []MatchArm{okArm, noneArm}}
-			lowered := p.buildMatchDesugar(sm)
-			if lowered == nil {
+		sm := &SurfaceMatch{Token: tok, Matched: &Identifier{Token: tok, Value: outName}, Arms: []MatchArm{okArm, noneArm}}
+		lowered := p.desugarSurfaceMatchToIfExpr(sm)
+		if lowered == nil {
 				return expr, nil
 			}
 			// __idx_val_N = match（u64）。
@@ -5065,11 +4965,11 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		Arms:    arms,
 	}
 
-	// Set the var type for the temp variable so buildMatchDesugar can infer elemType.
+	// Set the var type for the temp variable so desugarSurfaceMatchToIfExpr can infer elemType.
 	// Try to infer from the Value expression (e.g. function call returning ?T).
 	savedFuncName := l.p.curFuncName
 	l.p.curFuncName = l.curFuncName
-	lowered := l.p.buildMatchDesugar(sm)
+	lowered := l.p.desugarSurfaceMatchToIfExpr(sm)
 	l.p.curFuncName = savedFuncName
 
 	if lowered == nil {
@@ -5188,7 +5088,7 @@ func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *Inde
 		Matched: idx,
 		Arms:    arms,
 	}
-	return &ExpressionStatement{Token: tok, Expression: l.p.buildMatchDesugar(sm)}
+	return &ExpressionStatement{Token: tok, Expression: l.p.desugarSurfaceMatchToIfExpr(sm)}
 }
 
 // optionInnerOfVar 回傳變數 name 的 option 元素型別（? 後的 T），非 option 回傳 ""。
@@ -5469,7 +5369,7 @@ func (l *lowerer) makePropagateGuard(optName, resultName string, tok lexer.Token
 	sm := &SurfaceMatch{Token: tok, Matched: tmpIdent, Arms: []MatchArm{nilArm, errArm}}
 	saved := l.p.curFuncName
 	l.p.curFuncName = l.curFuncName
-	desugared := l.p.buildMatchDesugar(sm)
+	desugared := l.p.desugarSurfaceMatchToIfExpr(sm)
 	l.p.curFuncName = saved
 	if desugared == nil {
 		return &BlockStatement{Token: tok, Statements: mkBody().Statements}
