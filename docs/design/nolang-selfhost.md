@@ -1107,6 +1107,25 @@ dumper 的預掃把「自己」讀成首個子節點 ⇒ `ast.node` 無限遞迴
 大括號形（`ps-parse-bare-match`），`Matched` 須留空——`SurfaceMatch` 的 `CHILD Matched`
 是 guarded，留空即不印。
 
+**⚠️ 實測：51% 那一桶目前連 `ps-parse-match` 都進不去。**對語料主力形
+`h[0]: { ok -> it = 0 / -> _ }`，noc（`1ecb3c81` 後的 binary）根本**不把它當 match**：
+因為 `ps.no:1945` 的分派要求主體是 `K_IDENTIFIER`，而 `h[0]` 是 `IndexExpression`
+⇒ 落成 `ExpressionStatement{IndexExpression}` + 一個裸 `BlockStatement`（臂被當普通 if 解析）。
+
+**⚠️ 實測：連裸 IDENT 主體的臂迴圈本身也是壞的**（既有缺陷，與本次改動無關）。
+`z: { 1 -> a = 1 / _ -> a = 2 }`（oracle 2 臂）在 noc 上產出 **4 臂**規模的結構：
+多出 `z == <nil>` 這種臂，且主體 `a = 1` 被切成 `ExpressionStatement{a}`、
+`a = 2` 的位置也錯位。⇒ 第 ② 件**不能**假設「臂迴圈是對的、只差末端組裝」。
+
+**第 ② 件的正確拆解（依上述實測重排）**：
+1. **放行非 IDENT 主體**：`ps.no:1945` 的分派改為接受 IDENT / IndexExpression / DotExpression，
+   並把主體**節點**傳進 `ps-parse-match`（新增形參；`subj` 字串仍供降糖路用）。（覆蓋率 17%→68%）
+2. **修臂迴圈**：臂數與臂體歸屬（實測 2 臂被讀成 4 臂、主體被切碎）。這一步可獨立驗證——
+   開關關著時，看 `z: { … }` 的 if/else 鏈是否變正確即可。
+3. **surface 形關掉合成 `it` 注入**（`ps.no:6234` 的 `kids.push(itl)`）。
+4. **把 s55/s59/s60 語義搬進 MatchArm 槽位**（关键字臂綁定 / 變體臂補集 / armDoc）。
+5. 裸大括號形（32%）的 `Matched` 留空。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。
