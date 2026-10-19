@@ -400,7 +400,7 @@ H1 是**链接与命名**，不是降糖：
 
 ### 11.1 S7 调查结论（2026-10-19）
 
-五件事已实测定性：
+六件事已实测定性（第 5、6 条为 2026-10-20 的修复记录：挂起归零 + 陣列／切片接收者）：
 
 1. **分歧已实体化**。`ps.no:5682` 的旧注释「`bin/no` 在解析期把 match 展开成 if/else（非 `SurfaceMatch`）」已过时，注释已改写为记录分歧本身（`ps.no` 5681-5691）。实测：`bin/no ast` 对含 match 的语料产出 `SurfaceMatch{...}`（探针 `tests/option.no`：4 个节点、零 if/else 链），而 `ps.no` 仍在 parse 期把 match 展开为 if/else 链（裸 match desugar 组装见 4638-4740、明示形见 5681+，全程无 `K_SURFACE_MATCH` 发射）。**L2 默认语料 653 档中 264 档必然偏离**。
 2. **裁定待办**：`ps.no` 改产 `SurfaceMatch`（parser 忠实，即 P1；`asp.no` 的 `K_SURFACE_MATCH` 条目已就位，§18.3；降糖留待 M4 的 `hir.no`）还是维持 parse 期 desugar 现状并登记分歧——**未定**。裁定前 L2 的任何结果不得视为绿灯。
@@ -418,7 +418,17 @@ H1 是**链接与命名**，不是降糖：
    - ⚠️ **挂起的两个必要条件**（缺一不挂，故此前二分易被误导）：① 病理解剖出的**超深节点链**（否则 dump 只是慢）；② dump 的 `indent()` 每行 O(depth) ⇒ 总量 O(N²)。定位手法：`ast.no` 的 `node()` 加 `depth > 40` 截断守卫 ⇒ 把「挂起」变成「可完成 + 标记」，暴露 `ArrayLiteral{size: 12, elements: 33}`／深 GroupedExpression 链。
    - **回归测试**：新增 `compiler/tests/ps-test.no`（`./bin/no run compiler/tests/ps-test.no`，5/5 通过）钉死四种 `in` 形态 + 一组无 `in` 对照；期望字串全部取自 oracle 实测。**反空洞**：把 IN 臂还原为 `tok.IDENT` 后该测试**挂起**（非仅报错）——正是缺陷本身的表现。
 
-细节与证据表见 `nolang-selfhost.md` §5.3.3（2026-10-19 新增，2026-10-20 补构建破损修复记录与 s58/s59 挂起修复记录）。
+6. **✅ 已修（2026-10-20；陣列／切片型別方法定義，s64/s65）—— L2 非 match 分歧收斂**。對齊 Go `parseArrayTypeMethodDefinition`（`decl.go:192-575`）：它其實是**一個函式三種接收者**（`[n]t` / `[]t` / `[?]t`），noc 此前**一種都沒有**。
+   - **s64（泛型陣列接收者 `[N]T.method = (…) { … }`）**：`ps-parse-stmt` 無臂 ⇒ `[n]t` 被 primary 建成**幽靈 SliceLiteral 陳述**（並把後續 `Doc` 註解搶走，使 `Doc:` 掛到幽靈而非方法定義上），`t.method = (…)` 另起為普通方法定義 ⇒ 名稱丟 `[n]` 前綴、self 型別降成 `NamedType{t}`、泛型 `n` 缺席。修：新增分派臂（守衛 `[` `(IDENT|INT)` `]` `IDENT` `.` `IDENT` `=` `(`），建 ArrayType 後傳給 `ps-parse-method-func`（新增 `recvNode` 形參，>0 時直接用作 self 型別）。語料：`arr.no` 22 處、`collection/arr-stack.no`、`collection/link.no`、`collection/queue.no`、`sort.no`。
+   - **s65a（參數位陣列型別的尺寸只收 INT）**：`ps-parse-type` 的 ArrayType 臂守衛寫死 `peek-at(1) == INT` ⇒ `[n]t.clone = () (dst [n]t)` 的 `(dst [n]t)` 退化成 `dst` / `n` / `t` **三個參數**。修：對齊 Go `decl.go:301-303`（`INT || IDENT`）。
+   - **s65b（切片接收者 `[]T.method`）**：同 s64 形，語料分布最廣（`vec.no` 22 處、`byte.no` 12、`str.no`、`char.no`、`sort.no` 2）。修：新增 `[]` `IDENT` `.` `IDENT` `=` `(` 臂，建 SliceType。
+   - ⚠️ **s65c（修 s64 自身引入的偏差：隱式泛型播種範圍）**：Go 只在 `[n]t` 分支呼叫 `addImplicitGeneric(size/elem)`（`decl.go:242-243`），`[]t` / `[?]t` 分支**不**呼叫；且**三條**方法路徑（`decl.go:569` / `94` / `2037`）都在 `detectImplicitGeneric`（`516-521` / `1750-1753`）**之後**才把 `selfParam` 插進 `Results` ⇒ **self 的型別永遠不被掃描**。noc 原順序 `params → self → outs` 且對任何 `recvNode` 都播種 ⇒ 兩處偏差：① `[n]t.arr-stack-push = (s arr-stack, val t) (ok bool)` 產 `GenericParams: t, n`（oracle 為 `n, t`）；② `[]t.len = () (out i64)` 憑 self 的 `SliceType{t}` 多出 `GenericParams: t`（oracle **無**）。修：播種限 `ast.kind-at(recvNode) == K_ARRAY_TYPE`，並把 self 從探測序列移除。
+   - **歸因（A/B 同一 harness、同一 oracle、同一 653 檔，三步各自量測）**：逐檔差異行數總計 223 232 → 222 248（+s64，−984，6 改善 / **0 惡化**）→ 221 648（+s65a/b，−600，9 改善 / **0 惡化**）→ 221 626（+s65c，−22，1 改善 / **0 惡化**）。主要收斂：`arr.no` 565→153、`vec.no` 1241→964、`link.no` 1168→819、`byte.no` 546→341、`queue.no` 265→173、`arr-stack.no` 94→0、`tests/std-lib.no` 44→0、`sort.no` 99→25、`str.no` 6749→6735、`char.no` 1129→1114。
+   - **verdict 集合**：基線 DIFF 309 / SAME 338 / 逾時 6 → 終局 **DIFF 313 / SAME 340 / 逾時 0**；**SAME→非 SAME 真回歸 0 檔**；2 檔轉為逐位元組一致（`collection/arr-stack.no`、`tests/std-lib.no`）。⚠️ 基線那 6 檔逾時是 8 workers × 20 s 的**假逾時**（`sha256` 14 s / `sha512` 17 s / `x509` 19 s / `yaml` 21 s 是慢非挂），90 s 逾時重測全部完成——**並行 sweep 的逾時判据不能直接當挂起**。
+   - **回歸測試**：`compiler/tests/ps-test.no` 5 → **9** 個（9/9 通過）：`[n]t.len`（`GenericParams: n, t` + self 的 `ArrayType{size: n}`）、`(dst [n]t)`（單參數而非三參數）、`[]t.len`（**無** `GenericParams` —— s65c 的反回歸錨點）、`[]t.eq`（泛型來自 `b []t`）。期望字串全取自 oracle 實測。其餘 compiler 測試同綠：`ast` 47 / `lx` 45 / `tok` 62 / `util` 27。
+   - **剩餘分歧的主要成分**：313 檔 DIFF 中 260+ 檔含 `SurfaceMatch`（單一已知表示分歧，待 S7 裁定）；其餘為 safe-index 解糖缺口（`__unwrap_N` + nil/err/ok 三臂）與 **`InterfaceDefinition` 尚未實作**（`ord { t.gt(b t) (res bool) }` 被降級為 `ExpressionStatement{ord}` + `BlockStatement`）。
+
+细节与证据表见 `nolang-selfhost.md` §5.3.3（2026-10-19 新增，2026-10-20 补构建破损修复记录、s58/s59 挂起修复记录与 s64/s65 陣列／切片接收者修复记录）。
 
 ### 11.2 其余同步要求（不变）
 

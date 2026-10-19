@@ -107,12 +107,66 @@ test-control-no-in = () {
 }
 
 ; ═══════════════════════════════════════════════
+; 6. s64：泛型陣列接收者 `[n]t.method = (…) { … }`
+;    （舊缺陷：無臂 ⇒ `[n]t` 被當 SliceLiteral 幽靈陳述、方法名丟 `[n]` 前綴、
+;     self 降成 NamedType{t}、泛型 `n` 缺席）
+;    期望含 `GenericParams: n, t` 與 self 的 ArrayType{size: n, elem t}。
+; ═══════════════════════════════════════════════
+
+test-array-recv-generic = () {
+    got = parse-dump('[n]t.len = () (out i64) {\n    out = n\n}')
+    want = 'Program{}\n    FunctionDefinition{name: [n]t.len, methodDef: true}\n        GenericParams: n, t\n        Parameter{name: self, type: [n]t}\n            ArrayType{size: n}\n                Identifier{name: n}\n                NamedType{name: t}\n        Parameter{name: out, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, value: n}\n                Identifier{name: n}'
+    runner.is-true(got.eq-full(want), '[n]t.len -> methodDef with ArrayType receiver + GenericParams: n, t')
+}
+
+; ═══════════════════════════════════════════════
+; 7. s65a：參數位的陣列型別 `[n]t`（尺寸為 IDENT，非 INT）
+;    （舊缺陷：ps-parse-type 的 ArrayType 臂只收 INT 尺寸 ⇒ `(dst [n]t)`
+;    退化成 dst / n / t 三個參數）
+; ═══════════════════════════════════════════════
+
+test-array-param-generic-size = () {
+    got = parse-dump('[n]t.clone = () (dst [n]t) {\n    dst[0] = .[0]\n}')
+    want = 'Program{}\n    FunctionDefinition{name: [n]t.clone, methodDef: true}\n        GenericParams: n, t\n        Parameter{name: self, type: [n]t}\n            ArrayType{size: n}\n                Identifier{name: n}\n                NamedType{name: t}\n        Parameter{name: dst, type: [n]t}\n            ArrayType{size: n}\n                Identifier{name: n}\n                NamedType{name: t}\n        BlockStatement{}\n            ExpressionStatement{AssignExpression}\n                AssignExpression\n                    IndexExpression\n                        Identifier{name: dst}\n                        IntegerLiteral{value: 0, raw: 0}\n                    IndexExpression\n                        Identifier{name: self}\n                        IntegerLiteral{value: 0, raw: 0}'
+    runner.is-true(got.eq-full(want), '(dst [n]t) -> one Parameter with ArrayType (not three params)')
+}
+
+; ═══════════════════════════════════════════════
+; 8. s65b：切片接收者 `[]t.method = (…) { … }` —— 且【無】GenericParams
+;    ⚠️ 本測試是 s65b 的關鍵反回歸錨點：Go 只在 `[n]t` 分支播種隱式泛型，
+;       `[]t` 分支不播種，且 self 在三條方法路徑裡都在 detectImplicitGeneric
+;       【之後】才插入 ⇒ self 的 SliceType{t} 不得貢獻泛型。若把 self 也算進去
+;       或對 SliceType 接收者播種，本檔就會多出 `GenericParams: t` 而失敗。
+; ═══════════════════════════════════════════════
+
+test-slice-recv-no-generic = () {
+    got = parse-dump('[]t.len = () (out i64) {\n    out = 0\n}')
+    want = 'Program{}\n    FunctionDefinition{name: []t.len, methodDef: true}\n        Parameter{name: self, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: out, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, type: i64, value: 0}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 0, raw: 0}'
+    runner.is-true(got.eq-full(want), '[]t.len -> SliceType receiver and NO GenericParams (self must not seed generics)')
+}
+
+; ═══════════════════════════════════════════════
+; 9. 切片接收者 + 泛型來自參數：`[]t.eq = (b []t) (eq bool)`
+;    ⇒ GenericParams: t（來自 param `b []t`，順序在 self 之前）
+; ═══════════════════════════════════════════════
+
+test-slice-recv-generic-from-param = () {
+    got = parse-dump('[]t.eq = (b []t) (eq bool) {\n    eq = true\n}')
+    want = 'Program{}\n    FunctionDefinition{name: []t.eq, methodDef: true}\n        GenericParams: t\n        Parameter{name: b, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: self, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: eq, type: bool}\n            NamedType{name: bool}\n        BlockStatement{}\n            LetStatement{name: eq, type: bool, value: true}\n                NamedType{name: bool, inferred: true}\n                BooleanLiteral{true}'
+    runner.is-true(got.eq-full(want), '[]t.eq -> GenericParams: t sourced from param b []t')
+}
+
+; ═══════════════════════════════════════════════
 
 test-in-index-rhs()
 test-in-call-arg()
 test-in-grouped-inline-if()
 test-in-grouped-compare-let()
 test-control-no-in()
+test-array-recv-generic()
+test-array-param-generic-size()
+test-slice-recv-no-generic()
+test-slice-recv-generic-from-param()
 
 runner.summary()
 f = runner.failed-count()

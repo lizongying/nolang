@@ -988,6 +988,68 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
             idx = ps-parse-let(t, p, '_')
         }
 
+        ; s64：泛型陣列接收者的方法定義 `[N]T.method = (params) { body }`
+        ;   （語料：src/std/arr.no 22 處、collection/arr-stack.no、collection/link.no、
+        ;    sort.no…）。對應 Go parseMethodDefinition 的「接收者為 ArrayType」形。
+        ;   偏移：+0 LBRACKET / +1 尺寸（IDENT 或 INT）/ +2 RBRACKET / +3 元素型別 IDENT /
+        ;   +4 DOT / +5 方法名 IDENT / +6 ASSIGN / +7 LPAREN。
+        ; ⚠️ 此前無臂 ⇒ `[n]t` 被當 SliceLiteral 陳述、`t.method = (…)` 另起為普通方法定義
+        ;   ⇒ 接收者型別丟失（self 變 NamedType{t}）、`n` 泛型參數缺席、且多一條幽靈
+        ;   SliceLiteral 陳述（arr.no 實測 490 行差異的主體）。
+        tk.typ == tok.LBRACKET && (ps-peek-at(p, 1) == tok.IDENT || ps-peek-at(p, 1) == tok.INT) && ps-peek-at(p, 2) == tok.RBRACKET && ps-peek-at(p, 3) == tok.IDENT && ps-peek-at(p, 4) == tok.DOT && ps-peek-at(p, 5) == tok.IDENT && ps-peek-at(p, 6) == tok.ASSIGN && ps-peek-at(p, 7) == tok.LPAREN -> {
+            ps-bump(p); 消費 [
+            sz_lit = ps-lit-at(p, 0); 尺寸 token 文字（供接收者型別字串用）
+            sz = ps-parse-expr-prec(t, p, 0); 尺寸運算式（Identifier / IntegerLiteral）
+            ps-expect(p, tok.RBRACKET)
+            el_lit = ps-lit-at(p, 0); 元素型別名
+            ps-bump(p); 消費元素型別名
+            ps-bump(p); 消費 DOT
+            mname = ps-lit-at(p, 0); 方法名
+            ps-bump(p); 消費方法名
+            ps-bump(p); 消費 ASSIGN
+
+            ; 子先於父：elem NamedType → ArrayType（含 size、elem 兩 kid）
+            ent = ast.add(t, asp.K_NAMED_TYPE)
+            ast.set-slot(t, ent, 0, ast.put-str(t, el_lit))
+            at = ast.add(t, asp.K_ARRAY_TYPE)
+            ast.set-slot(t, at, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
+            ast.kid-add(t, at, sz)
+            ast.kid-add(t, at, ent)
+            rtyp = '[' + sz_lit + ']' + el_lit
+            full = rtyp + '.' + mname
+            idx = ps-parse-method-func(t, p, full, rtyp, at)
+        }
+
+        ; s65b：切片接收者的方法定義 `[]T.method = (params) { body }`——同 Go
+        ;   parseArrayTypeMethodDefinition 的「`]` 緊跟 `[`」分支（decl.go:205-211）。
+        ;   偏移：+0 LBRACKET / +1 RBRACKET / +2 元素型別 IDENT / +3 DOT / +4 方法名 IDENT /
+        ;   +5 ASSIGN / +6 LPAREN。
+        ; ⚠️ 此前無臂 ⇒ `[]` 被 primary 建成空 SliceLiteral 幽靈陳述（並把 Doc 註解搶走，
+        ;   使後續 `Doc:` 掛到幽靈而非方法定義上），`t.method = (…)` 另起為普通方法定義
+        ;   ⇒ 名稱丟失 `[]` 前綴、self 型別降成 NamedType{t}。語料分布：vec.no 22 處、
+        ;   byte.no 12、str.no、char.no、sort.no 2…
+        ; ⚠️ 不播種隱式泛型（見 ps-parse-method-func 內 gnames 段的說明）。
+        tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.RBRACKET && ps-peek-at(p, 2) == tok.IDENT && ps-peek-at(p, 3) == tok.DOT && ps-peek-at(p, 4) == tok.IDENT && ps-peek-at(p, 5) == tok.ASSIGN && ps-peek-at(p, 6) == tok.LPAREN -> {
+            ps-bump(p); 消費 [
+            ps-bump(p); 消費 ]
+            el_lit = ps-lit-at(p, 0); 元素型別名
+            ps-bump(p); 消費元素型別名
+            ps-bump(p); 消費 DOT
+            mname = ps-lit-at(p, 0); 方法名
+            ps-bump(p); 消費方法名
+            ps-bump(p); 消費 ASSIGN
+
+            ; 子先於父：elem NamedType → SliceType（唯一 kid）
+            ent = ast.add(t, asp.K_NAMED_TYPE)
+            ast.set-slot(t, ent, 0, ast.put-str(t, el_lit))
+            st = ast.add(t, asp.K_SLICE_TYPE)
+            ast.set-slot(t, st, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
+            ast.kid-add(t, st, ent)
+            rtyp = '[]' + el_lit
+            full = rtyp + '.' + mname
+            idx = ps-parse-method-func(t, p, full, rtyp, st)
+        }
+
         tk.typ == tok.IDENT -> {
             name = tk.lit
             nxt_typ = ps-peek-at(p, 1)
@@ -1266,7 +1328,7 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ps-bump(p); 消費 ASSIGN
                 isf = ps-is-func(p)
                 isf == 1 -> {
-                    idx = ps-parse-method-func(t, p, fullName, recvType)
+                    idx = ps-parse-method-func(t, p, fullName, recvType, 0)
                     handled = 1
                 }
                 isf == 0 -> p.pos = savePos
@@ -3294,7 +3356,9 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
 ;     · self 合成為【首個輸出參數】（Results，非 inputs）：Parameter{name:'self', Type:NamedType{recvType}}。
 ;       ⇒ kid 區序 [inputs…][self][results…][body]，set-sig 的 results 數 = 1 + 宣告的 outs 數。
 ;   ⚠️ Parameter 有 2 個 guarded CHILD（Type、DefaultExpr）：Type=selfnt、DefaultExpr=0 佔位。
-ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
+; s64：recvNode —— 接收者型別【節點】（>0 時直接用，如 `[n]t` 的 ArrayType）；
+;   <=0 則依 recvType 字串建 NamedType（普通 `Recv.method` 路徑，行為不變）。
+ps-parse-method-func = (t ast, p psst, fullName str, recvType str, recvNode i64) (idx i64) {
 
     ; s51：方法体内设当前函式名（Go curFuncName=def.Name='recv.method'）；方法签名存 methodSignatures，
     ;   不入裸名 sigN（裸名查找不会命中，与 Go 一致）。
@@ -3328,8 +3392,13 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     }
 
     ; self 合成接收者（先建子樹 NamedType，再建 Parameter 父節點）
-    selfnt = ast.add(t, asp.K_NAMED_TYPE)
-    ast.set-slot(t, selfnt, 0, ast.put-str(t, recvType))
+    ; s64：recvNode>0（泛型陣列接收者 `[n]t`）時直接用該節點，否則建 NamedType{recvType}。
+    selfnt = 0
+    recvNode > 0 -> selfnt = recvNode
+    recvNode <= 0 -> {
+        selfnt = ast.add(t, asp.K_NAMED_TYPE)
+        ast.set-slot(t, selfnt, 0, ast.put-str(t, recvType))
+    }
     selfp = ast.add(t, asp.K_PARAMETER)
     ast.set-slot(t, selfp, 0, ast.put-str(t, 'self'))
     ast.kid-add(t, selfp, selfnt)
@@ -3380,8 +3449,20 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
     }
 
     ; s63：方法定義隐式泛型偵測（Go decl.go:1750/1753：Parameters 後接 Results）。
-    ;   self 為 Results[0]（型別 selfnt），順序 params → self → outs。
+    ;   ⚠️ s65c：順序是 params → outs，**不含 self**（理由見下方 self 移除處的註解）。
     gnames []str = with-cap(2)
+
+    ; s64：陣列接收者 `[N]T` 的隱式泛型在【接收者解析時】就已加入——Go
+    ;   parseArrayMethodDefinition（decl.go:242-243）先 addImplicitGeneric(size)、
+    ;   再 addImplicitGeneric(elem)，兩者都【早於】Parameters/Results 的
+    ;   detectImplicitGeneric ⇒ 順序必須是 size, elem, 然後才是 params/self/outs。
+    ;   實測反例：`[n]t.arr-stack-push = (s arr-stack, val t) (ok bool)`，oracle
+    ;   產 `GenericParams: n, t`；若只按 params→self 順序則得 `t, n`（差一處順序）。
+    ;   ⚠️ 僅【陣列】接收者才播種：Go 的 addImplicitGeneric(size/elem) 只在 `[n]t` 分支呼叫，
+    ;      `[]t` / `[?]t` 分支不呼叫（decl.go:205-242）⇒ 切片接收者的泛型只能來自 params/outs。
+    ;      實測反例：`[]t.len = () (out i64)` oracle 無 GenericParams；若對 SliceType 也播種
+    ;      則多出 `GenericParams: t`（回歸）。
+    recvNode > 0 && ast.kind-at(t, recvNode) == asp.K_ARRAY_TYPE -> ps-detect-generic(t, recvNode, gnames)
     gp = 0
     (gp < params.len()) {
         ; 索引讀提取獨立成句 + index-out=zero（理由同 params/outs 型別登記循環）
@@ -3393,7 +3474,10 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str) (idx i64) {
         #{overflow=wrap}
         gp = gp + 1
     }
-    ps-detect-generic(t, selfnt, gnames)
+    ; ⚠️ self 【不】參與泛型偵測：Go 三條方法路徑（decl.go:569 / 94 / 2037）都在
+    ;   detectImplicitGeneric（516-521 / 1750-1753）【之後】才把 selfParam 插進 Results
+    ;   ⇒ self 的型別永遠不被掃描。此前多掃一次 selfnt ⇒ 切片接收者 `[]t.len = () (out i64)`
+    ;   憑 self 的 SliceType{t} 多出 `GenericParams: t`（oracle 無）⇒ 回歸。
     gr = 0
     (gr < outs.len()) {
         ; 索引讀提取獨立成句 + index-out=zero（理由同上）
@@ -4926,10 +5010,13 @@ ps-parse-type = (t ast, p psst) (idx i64) {
             ast.kid-add(t, idx, elem)
         }
 
-        handled == 0 && tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.INT && ps-peek-at(p, 2) == tok.RBRACKET && (ps-peek-at(p, 3) == tok.IDENT || ps-peek-at(p, 3) == tok.LBRACKET || ps-peek-at(p, 3) == tok.QUESTION) -> {
+        ; s65a：尺寸除 INT 外亦接受 IDENT（泛型尺寸 `[n]t`）。Go decl.go:301-303 的參數型別
+        ;   解析 `if cur==INT || cur==IDENT { paramType = "[" + lit + "]" }` 同形；此前只收 INT
+        ;   ⇒ `(dst [n]t)` 的 `[n]t` 不被當型別，逐 token 退化成 dst/n/t 三個參數（arr.no 實測）。
+        handled == 0 && tk.typ == tok.LBRACKET && (ps-peek-at(p, 1) == tok.INT || ps-peek-at(p, 1) == tok.IDENT) && ps-peek-at(p, 2) == tok.RBRACKET && (ps-peek-at(p, 3) == tok.IDENT || ps-peek-at(p, 3) == tok.LBRACKET || ps-peek-at(p, 3) == tok.QUESTION) -> {
             handled = 1
             ps-bump(p); 消費 [
-            sz = ps-parse-expr(t, p); 尺寸 IntegerLiteral
+            sz = ps-parse-expr(t, p); 尺寸 IntegerLiteral / Identifier（泛型 n）
             ps-expect(p, tok.RBRACKET); 消費 ]
             elem = ps-parse-type(t, p); 元素型別（遞迴）
             idx = ast.add(t, asp.K_ARRAY_TYPE)

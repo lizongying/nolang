@@ -955,9 +955,31 @@ $ ./bin/no ast /tmp/t2.no | grep -E 'Literal'
 - **回歸測試**：新增 `compiler/tests/ps-test.no`（`./bin/no run compiler/tests/ps-test.no`，5/5 通過）釘死四種 `in` 形態 + 一組無 `in` 對照；期望字串全取自 oracle 實測。⚠️ **反空洞**：還原 IN 臂後該測試**挂起**（不是僅報錯）——正是缺陷本身。
 - ⚠️ **新發現的既有缺陷（未修，已登記）**：`no build` / `no run` 一個導入 `compiler/src/ps` 的獨立檔案時，若入口檔**未直接導入** `tok`（lx.no 的 `tok.NEWLINE` 等跨模組常量所依賴的模組），這些常量解析不到 ⇒ MIR 降成 `const void` + `eq NoVal` ⇒ bug #85 類 `EmitLLVM` 失敗。**包內構建（`no build compiler`）不受影響**——故自舉構建與 CI 閘皆不受波及。繞開方式：測試檔導入清單補齊傳遞依賴（ps-test.no 已如此）。
 
-歸因細節見 `nolang-parser-lowering-invariants.md` §11.1 第 5 條。
+**✅ 陣列／切片型別方法定義已修（2026-10-20；s64/s65，三小步）**：接續挂起归零後的 L2 非 match 分歧收斂。對齊 Go `parseArrayTypeMethodDefinition`（`decl.go:192-575`）——它其實是**一個函式三種接收者**（`[n]t` / `[]t` / `[?]t`），noc 此前**一種都沒有**。
 
-**下一步**：S7 唯一待辦＝match 表示裁定（二選一，見上文）。
+| 步 | 缺口 | 實據（oracle vs noc） | 修法 |
+| --- | --- | --- | --- |
+| **s64** | 泛型陣列接收者 `[N]T.method = (…) { … }` | `[n]t.len` ⇒ `[]` 建成**幽靈 SliceLiteral 陳述**（並把 `Doc` 註解搶走），`t.len` 另起為普通方法 ⇒ 名稱丟 `[n]` 前綴、self 降成 `NamedType{t}`、泛型 `n` 缺席 | `ps-parse-stmt` 新增分派臂（守衛 `[ (IDENT\|INT) ] IDENT . IDENT = (`），建 ArrayType 後傳給 `ps-parse-method-func`（新增 `recvNode` 形參） |
+| **s65a** | 參數位陣列型別的尺寸只收 INT | `[n]t.clone = () (dst [n]t)` 的 `(dst [n]t)` 退化成 `dst` / `n` / `t` **三個參數**（`ps-parse-type` 的 ArrayType 臂守衛寫死 `peek-at(1) == INT`）；對齊 Go `decl.go:301-303` 的 `INT \|\| IDENT` | 守衛改 `(INT \|\| IDENT)` |
+| **s65b** | 切片接收者 `[]T.method` | 同 s64 形，語料分布最廣：`vec.no` 22 處、`byte.no` 12、`str.no`、`char.no`、`sort.no` 2 | 新增 `[] IDENT . IDENT = (` 臂，建 SliceType |
+
+- ⚠️ **s65c（修 s64 自己引入的偏差）**：隱式泛型的**播種範圍**。Go 只在 `[n]t` 分支呼叫 `addImplicitGeneric(size/elem)`（`decl.go:242-243`），`[]t` / `[?]t` 分支**不**呼叫；且三條方法路徑（`decl.go:569` / `94` / `2037`）都在 `detectImplicitGeneric`（`516-521` / `1750-1753`）**之後**才把 `selfParam` 插進 `Results` ⇒ **self 的型別永遠不被掃描**。noc 原先順序是 `params → self → outs` 且對任何 `recvNode` 都播種 ⇒ 兩處偏差：① `[n]t.arr-stack-push` 產 `t, n`（應為 `n, t`）；② `[]t.len = () (out i64)` 憑 self 的 `SliceType{t}` 多出 `GenericParams: t`（oracle **無**）。修：播種限 `kind == K_ARRAY_TYPE` 的接收者，並把 self 從探測序列移除。
+- **歸因（A/B 同一 harness、同一 oracle、同一 653 檔，三步各自量測）**：
+
+  | 步驟 | 逐檔差異行數總計 | 改善／惡化 |
+  | --- | --- | --- |
+  | 基線（`a7160791`，s58+s59） | 223 232 | — |
+  | +s64 | 222 248（−984） | 6 改善 / **0 惡化** |
+  | +s65a/b | 221 648（−600） | 9 改善 / **0 惡化** |
+  | +s65c | 221 626（−22） | 1 改善 / **0 惡化** |
+
+  主要收斂：`arr.no` 565→153、`vec.no` 1241→964、`link.no` 1168→819、`byte.no` 546→341、`queue.no` 265→173、`arr-stack.no` 94→**0**、`tests/std-lib.no` 44→**0**、`sort.no` 99→25、`str.no` 6749→6735、`char.no` 1129→1114。
+- **verdict 集合**：基線 DIFF 309 / SAME 338 / 逾時 6 → 終局 **DIFF 313 / SAME 340 / 逾時 0**；**SAME→非 SAME 真回歸 0 檔**；2 檔轉為**逐位元組一致**（`collection/arr-stack.no`、`tests/std-lib.no`）。基線 6 檔逾時實為 8 workers × 20 s 的**假逾時**（`sha256` 14 s / `sha512` 17 s / `x509` 19 s / `yaml` 21 s 等），90 s 逾時重測全部完成。
+- **回歸測試**：`compiler/tests/ps-test.no` 由 5 個擴到 **9 個**（9/9 通過），新增：`[n]t.len`、`(dst [n]t)`、`[]t.len`（**無** `GenericParams` —— s65c 的反回歸錨點）、`[]t.eq`（泛型來自 `b []t`）。期望字串全取自 oracle 實測。其餘 compiler 測試同綠：`ast` 47 / `lx` 45 / `tok` 62 / `util` 27。
+
+歸因細節見 `nolang-parser-lowering-invariants.md` §11.1 第 5、6 條。
+
+**下一步**：S7 唯一待辦＝match 表示裁定（二選一，見上文）。剩餘 313 檔 DIFF 中 260+ 檔含 `SurfaceMatch`，屬單一已知分歧；其餘主要為 safe-index 解糖缺口與 `InterfaceDefinition`（`ord { t.gt(b t) (res bool) }`）尚未實作。
 
 ### 5.4 語義檢查（M3）
 
