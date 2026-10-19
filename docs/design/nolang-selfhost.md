@@ -1069,6 +1069,44 @@ dumper 的預掃把「自己」讀成首個子節點 ⇒ `ast.node` 無限遞迴
 ⚠️ 這對 s66 的第 ② 件是**前置約束**：ps.no 一旦開始產 `SurfaceMatch`，臂體裡的
 `ExpressionStatement{nil}` 就必須這樣建，否則自舉 binary 直接挂死。
 
+### 第 ② 件的第一次嘗試：已實測否決「一次編輯就能翻」的假設
+
+把「組 if/else 鏈」那段換成「發 SurfaceMatch + MatchArm」後翻開關實測（`z: { 1 -> a = 1 / _ -> a = 2 }`）：
+
+- 臂數 **6 ≠ 2**：臂迴圈的推送次數與 oracle 的臂數不同步；
+- 臂體被塞進 `LetStatement{name: it, value: z, synthetic: true}` + `ExpressionStatement{nil}`
+  ——這是 ps.no 降糖用的**合成 `it` 綁定**，surface 形**不該有**；
+- 主體 `a = 1` 被切成 `ExpressionStatement{a}` 等碎片。
+
+⇒ 證實第 ② 件**不是**末端組裝的局部改寫，而是要在臂迴圈裡做
+「**關掉合成 `it` 注入** + 把 s55/s59/s60 的既有語義（关键字臂綁定、變體臂補集、armDoc）
+改寫進 `MatchArm` 的 `binding` / `bindingVariant` / `wildcard` / `dotVal` 槽位」。
+本次已把 ps.no **完整還原到提交態**（md5 核驗），未留下未驗證的死碼。
+
+⚠️ **開關形式的實測結論（別再踩）**：不能用 env。`# /std/os` 會讓 `no build compiler`
+去找 `<root>/std/os.no` 而失敗（實測），而修好它要動 `compiler/package.jsonc` 的
+`dependencies` —— 為一個量測開關去改自舉編譯器的依賴圖不划算。
+可行替代：**模組級常數**（`PS-SURFACE-MATCH`，翻值 + 重編即可 A/B），或把旗標放進
+`psst` 由 `drv.no` 依 CLI 參數填入。
+
+### 第 ② 件還缺的前置：主體形態覆蓋率
+
+`ps-parse-expr-prec` 的 `COLON + LBRACE` 分派臂目前**只認裸 IDENT 主體**
+（`ps.no:1945` 的 `ast.kind-at(t, idx) == asp.K_IDENTIFIER`）。但語料 2 975 個
+`SurfaceMatch` 的 `Matched` 分布是：
+
+| Matched | 數量 | 佔比 |
+| --- | --- | --- |
+| `IndexExpression` | 1 523 | 51% |
+| **無 Matched**（`Matched == nil`） | 942 | 32% |
+| `Identifier` | 509 | 17% |
+| `DotExpression` | 1 | ~0% |
+
+⇒ 只做裸 IDENT 主體，天花板約 **17%**；要吃到 51% 必須連 `IndexExpression` 主體一起放行
+（並把主體**節點**（而非名稱字串）傳進 `ps-parse-match`）。另 32%「無 Matched」對應裸 match
+大括號形（`ps-parse-bare-match`），`Matched` 須留空——`SurfaceMatch` 的 `CHILD Matched`
+是 guarded，留空即不印。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。
