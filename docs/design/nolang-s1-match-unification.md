@@ -908,13 +908,10 @@ S1 的终极目标——**H0 直接消费 `SurfaceMatch`（S2 的 LLVM 形态）
   `IfExpression` 现仅含 `Token/Condition/Consequence/Alternative`，是纯 if/elif/else 节点；  
   `tohir.go`/checker/transpiler 早已改走 `*SurfaceMatch`/`WalkSurfaceMatchChildren`，  
   故 12 字段删除**无 consumer 被删**（满足 §5.1 反向安全）。
-- ⛔ ~~P7 收尾删除（§5 清单剩余项）~~ **已决：不删（双路径终态，2026-10-19）**：`RTFlag` 匹配位、`hir.KUnwrapAssign`、formatter 降糖代码——  
-  **前提已部分满足**（§5.2.0：`tohir.go:1128` 的 S-a/S-b/S-c1 直接 HIR 路徑已落地）。剩餘：補全  
-  **S-c** 其餘切片（option / range / raw-cond / 值 / 通配 subject match）+ 移除兩跳回退  
-  （`desugarSurfaceMatchToIfExpr` 仍為 fallback）+ 差分等價門禁驅動；完成後 §5 清單死代碼方可删。
+- ⛔ ~~P7 收尾删除（§5 清单剩余项）~~ **已决：不删（双路径终态，2026-10-19）**：`RTFlag` 匹配位、`hir.KUnwrapAssign`、formatter 降糖代码——
+  **以下为旧计划描述，已被 §5.3 双路径终态决策取代**：js/wasm 仍走 AST 降糖，`desugarSurfaceMatchToIfExpr` 为本体非 fallback（6 处活调用见 §5.3），故 §5 清单除 12 字段（step6 已删）外**均保留、不再作为 S1 待删**；`no fmt` 旧 match 格式化死码清理见 §5.3 后续选项 2（非阻塞、需先证等价不可达）。
 - [x] **P2–P6 子形态覆盖已验证**（H0 desugar 覆盖）：`TestS1SubformsAreCovered` 在 **535 程序 / 705 match / 1817 arm** 上确认 P1–P6 每类均有 fixture（P1 值/通配、P2 option、P3 range、P4 raw-cond/索引合成、P5 型别解构、P6 巢狀/獨立 guard 各 2–3+ 文件）；`TestH0MatchDesugarMatchesParserLowering` 622 程序降糖、257 走 H0、0 失败（29/622 残差属 S3 backlog，非本门禁）；`TestS1{RangePattern,RawCond,TypeArm}FixturesAreExercised` 全 PASS。覆盖验证由翻转（b918dba9）完成，本步（75888810）在**隔離 worktree `/tmp/no-verify`** 重跑确认仍绿。
-- ✅ ~~S2：H0 擦除 `SurfaceMatch`~~ **已实质完成（双路径终态，AST 移除作废）**：（`removedByH0` tier 的终点）—— 依赖 P7 收尾（移除兩跳回退後，  
-  `SurfaceMatch` 在主管線不再降為 IfExpression，方可從 AST 移除）。
+- ✅ ~~S2：H0 擦除 `SurfaceMatch`~~ **已实质完成（双路径终态，AST 移除作废）**：`removedByH0` tier 的 **LLVM 形态**终点已达成（H0 直接消费 `SurfaceMatch`）；「从 AST 移除 `SurfaceMatch`」所依赖的「主管线不再降糖」在双路径终态下**不发生**（js/wasm 仍需 `SurfaceMatch`→`IfExpression` 降糖表示），故该子目标**作废**，不阻塞 S1 收官。
 
 > ✅ **已提交 `b918dba9`**（2026-10-18）：翻转 + §1.4 补齐 + §1.4.1/§1.4.2/§1.4.3 修复
 >
