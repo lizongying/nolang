@@ -927,72 +927,21 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		return c.b.Add(hir.Node{Kind: hir.KGrouped, First: c.expr(e.Expression), Line: line, Col: col})
 
 	case *IfExpression:
-		if e.IsTypeMatch {
-			// 類型解構 match（union / type-set 靜態單態化派發）：把
-			// buildTypeMatchDesugar 產生的 if/elif/else 鏈收斂成單一個
-			// KTypeMatch 節點，每個臂一個 KTypeArm 子節點。MIR 階段按單態化
-			// 後的具體型別選臂（不產生任何 OpCondBr / phi），零執行期開銷。
-			// 沿 Alternative 鏈還原所有臂（含預設臂），對齊
-			// match_exhaustive.go 的 matchChainedChild 走法。
-			var arms []int32
-			matched := e.MatchedExpr
-			for cur := e; cur != nil; {
-				armNodes := []int32{
-					c.slot("body", c.stmt(cur.Consequence)),
-				}
-				if cur.TypeBindingName != "" {
-					armNodes = append(armNodes, c.slot("bind", c.b.Add(hir.Node{
-						Kind: hir.KName, S: c.b.Intern(cur.TypeBindingName),
-					})))
-				}
-				arm := c.b.Add(hir.Node{
-					Kind:  hir.KTypeArm,
-					S:     c.b.Intern(cur.TypePattern),
-					Flags: hir.FlagTypeDefault * u32(cur.IsTypeDefault),
-					First: c.kids(armNodes),
-					Line:  line, Col: col,
-				})
-				arms = append(arms, arm)
-				// 走到下一個 if 鏈：Alternative 是單一 ExpressionStatement
-				// 包裹下一個 IsTypeMatch 的 IfExpression。
-				next := cur.Alternative
-				cur = nil
-				if next != nil {
-					for _, st := range next.Statements {
-						if es, ok := st.(*ExpressionStatement); ok {
-							if ie, ok2 := es.Expression.(*IfExpression); ok2 && ie.IsTypeMatch {
-								cur = ie
-								break
-							}
-						}
-					}
-				}
-			}
-			return c.b.Add(hir.Node{
-				Kind:  hir.KTypeMatch,
-				First: c.kids(append([]int32{c.slot("matched", c.expr(matched))}, arms...)),
-				Line:  line, Col: col,
-			})
-		}
-		nodes := []int32{
-			c.slot("cond", c.expr(e.Condition)),
-			c.slot("then", c.stmt(e.Consequence)),
-			c.slot("else", c.stmt(e.Alternative)),
-			c.slot("matched", c.expr(e.MatchedExpr)),
-			c.slot("dot-val", c.stmt(e.DotValBody)),
-			c.slot("range", c.expr(e.RangePattern)),
-			c.slot("eq", c.expr(e.EqualityPattern)),
-			c.slot("raw", c.expr(e.RawCond)),
-		}
-		for _, o := range e.OptionPatterns {
-			nodes = append(nodes, c.slot("opt", c.b.Add(hir.Node{
-				Kind: hir.KName, S: c.b.Intern(o),
-			})))
-		}
-		for _, v := range e.ValuePatterns {
-			nodes = append(nodes, c.slot("val", c.expr(v)))
-		}
-		return c.b.Add(hir.Node{Kind: hir.KIf, First: c.kids(nodes), Line: line, Col: col})
+		// S-d (2026-10-19) 把 match 降糖改为走 `case *SurfaceMatch` 流式直出
+		// base HIR（KTypeMatch/KTypeArm/KIf 由 H0 從糖節點產生）；本 case 現只
+		// 承載純 if/elif/else。match 痕迹字段（MatchedExpr/DotValBody/
+		// RangePattern/EqualityPattern/OptionPatterns/ValuePatterns/RawCond/
+		// IsTypeMatch/TypePattern/TypeBindingName/IsTypeDefault/IsTypeDefault）
+		// 已由 §5 清单待刪，此處不再消費，避免死代碼維持 12 字段存活。
+		return c.b.Add(hir.Node{
+			Kind:  hir.KIf,
+			First: c.kids([]int32{
+				c.slot("cond", c.expr(e.Condition)),
+				c.slot("then", c.stmt(e.Consequence)),
+				c.slot("else", c.stmt(e.Alternative)),
+			}),
+			Line: line, Col: col,
+		})
 
 	case *RangeExpression:
 		// Store Start/End as named slots rather than positionally: either bound
