@@ -925,7 +925,7 @@ $ ./bin/no ast /tmp/t2.no | grep -E 'Literal'
 
 ⇒ **L2 在 264/653 檔上必然偏離**；S7 的「跑滿五級」（G6）在分歧裁定前不可能全綠。
 
-**全量實測（2026-10-20，SUT＝構建修復後的 `noc-s0`）**：653 檔 DIFF=315 / SAME=338，另有 3 檔 sut 獨有 rc=124 挂起。**跨 noc 對照歸因**：同一 CTL 下，`762ea045` 之前的 noc（`b805ed06`）DIFF=355 / sut 獨有失敗 8 檔；修後 `noc-s0` DIFF=315 / 3 檔，且 DIFF 集 ⊆ 舊集（唯一例外 `tests/1-test.no`——`762ea045` 推斷移植的過度推斷，因構建破损潛伏、被修復激活，非本次修法引入），3 档挂起在舊 noc 上同樣复现。⇒ 本次修法**零新增分歧/挂起**；`762ea045` 的移植（經修復激活）淨減 40 檔分歧。歸因詳見 `nolang-parser-lowering-invariants.md` §11.1 第 4 條。
+**全量實測（2026-10-20，SUT＝構建修復後的 `noc-s0`）**：653 檔 DIFF=315 / SAME=338，另有 3 檔 sut 獨有 rc=124 挂起（**該三檔已於同日修復歸零，見下文「三檔挂起已修（s58/s59）」**）。**跨 noc 對照歸因**：同一 CTL 下，`762ea045` 之前的 noc（`b805ed06`）DIFF=355 / sut 獨有失敗 8 檔；修後 `noc-s0` DIFF=315 / 3 檔，且 DIFF 集 ⊆ 舊集（唯一例外 `tests/1-test.no`——`762ea045` 推斷移植的過度推斷，因構建破损潛伏、被修復激活，非本次修法引入），3 档挂起在舊 noc 上同樣复现。⇒ 本次修法**零新增分歧/挂起**；`762ea045` 的移植（經修復激活）淨減 40 檔分歧。歸因詳見 `nolang-parser-lowering-invariants.md` §11.1 第 4 條。
 
 **裁定（待辦，屬 S7）**：二選一——① `ps.no` 改為產出 `SurfaceMatch`（parser 忠實，即 P1；`asp.no` 的 `K_SURFACE_MATCH` 條目早已就位，§6.3/§18.3），降糖留待 M4 的 `hir.no` 重新實作；② 維持 parse 期 desugar 現狀，把分歧登記為已知缺陷並相應縮小 L2 語料。**裁定前，L2 的任何結果都不得視為綠燈。**
 
@@ -942,7 +942,22 @@ $ ./bin/no ast /tmp/t2.no | grep -E 'Literal'
 | 影響面 | 曾阻塞 L0–L4（全都需要可用的 `noc-s0`）與 DR-1 自舉三階段（每一步都以「`no` 能編譯 `compiler/`」為前提） |
 | 防復發 | CI 已補閘：`pr-verify` 新增 `./bin/no build -o /tmp/noc-ci compiler` 步驟（2026-10-20，`.github/workflows/build.yml`） |
 
-**下一步**：S7 唯一待辦＝match 表示裁定（二選一，見上文）；另登記三檔 noc parser 挂起（`crypto/aes-cbc.no` / `net/net.no` / `net/tls.no`，既有缺陷，`762ea045` 之前的 noc 同樣复现）待獨立立项。
+**✅ 三檔挂起已修（2026-10-20；兩個獨立根因，s58/s59）**：三檔 sut 獨有 rc=124 挂起全部归零。此前二分一度误判为「单方法不触发、需 struct + 多方法上下文」，实为**两个**独立缺陷：
+
+| 根因 | 位置与实据 | 修法 |
+| --- | --- | --- |
+| **A. 陣列 let 分支** | `ps-parse-stmt` 明式元素型別臂（`name [N]T = expr`）無條件呼叫 `ps-parse-arr-lit`；RHS 非 `[` 開頭（`net.no:571` 的 `iv [12]byte = .gen-iv()`）時 `ps-expect(LBRACKET)` 靜默失敗、元素循環把後續全部陳述當元素吞到 EOF | 復刻 Go `stmt.go:1333-1356`：RHS 先 `ps-skip-trivia`，為 `[` 才走 `ps-parse-arr-lit`，否則 `ps-parse-expr` |
+| **B. IN 上下文關鍵字** | `ps-parse-expr-prec` primary 缺 IN 臂——Go `expr.go:96` 是 `case IDENT, IN, MATCH: parseIdentifier()`，表達式位的 `in` 是合法識別字。`aes-cbc.no:222` / `tls.no:695` 的 `(in[i]) != pad-len -> { … }` ⇒ 空殼 GroupedExpression + pos 卡住 ⇒ 一行被撕成三個陳述 | primary 臂改 `tk.typ == tok.IDENT \|\| tk.typ == tok.IN`（MATCH 同類但語料無用例，未補） |
+
+- **故障形態（根因 B，三種）**：① `it = in[i]` ⇒ let RHS 丟失、`[i]` 拆成獨立 `SliceLiteral` 陳述；② `enc-block(in, ek)` ⇒ 引數 2→1（**靜默丟參**，比報錯危險）；③ 陳述層括號索引 + 比較 ⇒ 41+ 深 GroupedExpression 鏈 ⇒ dump 縮排 O(depth/行)、總量 O(N²) ⇒ GB 級輸出 ⇒ 表現為挂起。
+- **挂起的兩個必要條件**（缺一不挂）：① 病理解剖出的超深節點鏈；② dump 的 `indent()` 二次方縮排。定位手法：`ast.no` 的 `node()` 加 `depth > 40` 截斷守衛 ⇒ 「挂起」變成「可完成 + 標記」，暴露 `ArrayLiteral{size: 12, elements: 33}`／深 GroupedExpression 鏈。
+- **歸因（A/B 同一 harness、同一 CTL、同一 653 檔）**：verdict DIFF 309→311 / SAME 338→338 / 真挂起 2→0（+2 DIFF 係 aes-cbc、tls 由「挂起」轉為「可解析但仍帶 match 分歧」，非回歸）；**SAME→DIFF 真回歸 0 檔**。逐檔差異行數 **210 971 → 210 111（-860），7 檔改善、0 檔惡化**（`tdes` -372、`aes-ctr` -278、`rc4` -70、`aes` -56、`des` -38、`ecdsa` -26、`base32` -20）。
+- **回歸測試**：新增 `compiler/tests/ps-test.no`（`./bin/no run compiler/tests/ps-test.no`，5/5 通過）釘死四種 `in` 形態 + 一組無 `in` 對照；期望字串全取自 oracle 實測。⚠️ **反空洞**：還原 IN 臂後該測試**挂起**（不是僅報錯）——正是缺陷本身。
+- ⚠️ **新發現的既有缺陷（未修，已登記）**：`no build` / `no run` 一個導入 `compiler/src/ps` 的獨立檔案時，若入口檔**未直接導入** `tok`（lx.no 的 `tok.NEWLINE` 等跨模組常量所依賴的模組），這些常量解析不到 ⇒ MIR 降成 `const void` + `eq NoVal` ⇒ bug #85 類 `EmitLLVM` 失敗。**包內構建（`no build compiler`）不受影響**——故自舉構建與 CI 閘皆不受波及。繞開方式：測試檔導入清單補齊傳遞依賴（ps-test.no 已如此）。
+
+歸因細節見 `nolang-parser-lowering-invariants.md` §11.1 第 5 條。
+
+**下一步**：S7 唯一待辦＝match 表示裁定（二選一，見上文）。
 
 ### 5.4 語義檢查（M3）
 

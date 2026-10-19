@@ -1,0 +1,122 @@
+; ps-test.no — compiler/src/ps 的 parser 迴歸測試
+;
+; 執行： ./bin/no run compiler/tests/ps-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+;
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
+;
+; ── 這些期望字串從哪來 ────────────────────────────────────────────
+; 全部由 L2 oracle 實測取得（`./bin/no ast <檔>`），**不是**手寫猜的。
+;
+; ── 本檔釘住什麼（s59：IN 上下文關鍵字）─────────────────────────
+; Go expr.go:96 把 IN 與 IDENT 同軌（`case IDENT, IN, MATCH: parseIdentifier`），
+; `in` 在表達式位是合法識別字（std/crypto 大量用作參數名）。ps.no 的
+; ps-parse-expr-prec 曾缺 IN 臂 ⇒ 表達式位的 `in` 無 primary 可取（回 idx=0
+; 且不吃 token）：
+;   · `it = in[i]` ⇒ let RHS 丟失，`[i]` 被拆成獨立 SliceLiteral 陳述；
+;   · `enc-block(in, ek)` ⇒ 引數從 2 變 1（靜默丟參！）；
+;   · `(in[i]) != pad-len -> { … }`（陳述層）⇒ LPAREN 臂建出空殼
+;     GroupedExpression 後 pos 卡在 IN 不動，陳述級進度守則每輪強制 bump
+;     一 token ⇒ 一行被撕成「41+ 深 GroupedExpression 鏈」+ SliceLiteral
+;     + 左值 nil 的 InfixExpression 三個陳述；深鏈使 dump 縮排呈二次方
+;     ⇒ GB 級輸出 ⇒ 表現為掛起（aes-cbc.no / tls.no 實測 rc=124）。
+; 根因鏈與實證見 docs/design/nolang-selfhost.md §5.3.3。
+
+; ⚠️ 導入清單必須包含 ps 的【傳遞依賴】（tok / asp / lx / util/sb）——实测：
+;    入口檔只導入 ps 時，lx.no 裡的 `tok.NEWLINE` 等跨模組常量解析不到
+;    （MIR 降成 const void + eq NoVal ⇒ bug #85 類 EmitLLVM 失敗）；補上直接
+;    導入後即恢復。这是 oracle 端的跨模組常量解析範圍缺陷（先於本檔存在），
+;    此處以導入清單繞開，缺陷本身待獨立立项。
+# /test/runner.eq
+# /test/runner.is-true
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/tok
+# /compiler/src/ps
+
+; ═══════════════════════════════════════════════
+; helper：parse + dump（對齊 drv.cmd-ast 的管線）
+; ═══════════════════════════════════════════════
+
+parse-dump = (src str) (out str) {
+    t = ast.make()
+    p = ps.new(src)
+    root = ps.parse(t, p)
+    out = ast.dump(t, root)
+}
+
+; ═══════════════════════════════════════════════
+; 1. let RHS 索引：`it = in[i]` ⇒ IndexExpression{in, i}
+;    （舊缺陷：value 丟失 + `[i]` 被拆成獨立 SliceLiteral 陳述）
+; ═══════════════════════════════════════════════
+
+test-in-index-rhs = () {
+    got = parse-dump('it = in[i]')
+    want = 'Program{}\n    LetStatement{name: it, value: IndexExpression}\n        IndexExpression\n            Identifier{name: in}\n            Identifier{name: i}'
+    runner.is-true(got.eq-full(want), 'it = in[i] -> IndexExpression{Identifier{in}, Identifier{i}}')
+}
+
+; ═══════════════════════════════════════════════
+; 2. call 引數：`out = enc-block(in, ek)` ⇒ args: 2
+;    （舊缺陷：args: 1 —— `in` 引數被靜默丟棄）
+; ═══════════════════════════════════════════════
+
+test-in-call-arg = () {
+    got = parse-dump('out = enc-block(in, ek)')
+    want = 'Program{}\n    LetStatement{name: out, value: CallExpression}\n        CallExpression{fn: enc-block, args: 2}\n            Identifier{name: enc-block}\n            Identifier{name: in}\n            Identifier{name: ek}'
+    runner.is-true(got.eq-full(want), 'enc-block(in, ek) -> CallExpression args: 2 with Identifier{in}')
+}
+
+; ═══════════════════════════════════════════════
+; 3. 掛起觸發形（本檔最重要的回歸測試）：
+;    `(in[i]) != pad-len -> { out-n = -1; return }` 陳述層
+;    ⇒ 單一 ExpressionStatement{IfExpression}，GroupedExpression 包住
+;    IndexExpression；【不能】被撕成多個陳述、不能出深鏈、不能掛起。
+;    期望值 = oracle 對 tests 用的 a1 最小復現檔的實測輸出。
+; ═══════════════════════════════════════════════
+
+test-in-grouped-inline-if = () {
+    got = parse-dump('pad-len = 16\ni = 0\n(in[i]) != pad-len -> {\n    out-n = -1\n    return\n}')
+    want = 'Program{}\n    LetStatement{name: pad-len, type: i64, value: 16}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 16, raw: 16}\n    LetStatement{name: i, type: i64, value: 0}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 0, raw: 0}\n    ExpressionStatement{IfExpression}\n        IfExpression\n            InfixExpression{op: !=}\n                GroupedExpression\n                    IndexExpression\n                        Identifier{name: in}\n                        Identifier{name: i}\n                Identifier{name: pad-len}\n            BlockStatement{}\n                LetStatement{name: out-n, value: PrefixExpression}\n                    PrefixExpression{op: -}\n                        IntegerLiteral{value: 1, raw: 1}\n                ReturnStatement{}'
+    runner.is-true(got.eq-full(want), '(in[i]) != pad-len -> { ... } -> single IfExpression statement (no shredding)')
+}
+
+; ═══════════════════════════════════════════════
+; 4. let RHS 比較（c2 形式，無 inline-if）：同樣曾掛起
+; ═══════════════════════════════════════════════
+
+test-in-grouped-compare-let = () {
+    got = parse-dump('x = (in[i]) != pad-len')
+    want = 'Program{}\n    LetStatement{name: x, value: InfixExpression}\n        InfixExpression{op: !=}\n            GroupedExpression\n                IndexExpression\n                    Identifier{name: in}\n                    Identifier{name: i}\n            Identifier{name: pad-len}'
+    runner.is-true(got.eq-full(want), 'x = (in[i]) != pad-len -> InfixExpression over GroupedExpression')
+}
+
+; ═══════════════════════════════════════════════
+; 5. 對照組：無 `in` 的同等構造必須不受影響（零回歸錨點）
+; ═══════════════════════════════════════════════
+
+test-control-no-in = () {
+    got = parse-dump('x = (ab[i]) != pad-len')
+    want = 'Program{}\n    LetStatement{name: x, value: InfixExpression}\n        InfixExpression{op: !=}\n            GroupedExpression\n                IndexExpression\n                    Identifier{name: ab}\n                    Identifier{name: i}\n            Identifier{name: pad-len}'
+    runner.is-true(got.eq-full(want), 'control: (ab[i]) != pad-len parses identically (no regression)')
+}
+
+; ═══════════════════════════════════════════════
+
+test-in-index-rhs()
+test-in-call-arg()
+test-in-grouped-inline-if()
+test-in-grouped-compare-let()
+test-control-no-in()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+    -> exit(0)
+}

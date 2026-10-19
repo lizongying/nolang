@@ -400,7 +400,7 @@ H1 是**链接与命名**，不是降糖：
 
 ### 11.1 S7 调查结论（2026-10-19）
 
-四件事已实测定性：
+五件事已实测定性：
 
 1. **分歧已实体化**。`ps.no:5682` 的旧注释「`bin/no` 在解析期把 match 展开成 if/else（非 `SurfaceMatch`）」已过时，注释已改写为记录分歧本身（`ps.no` 5681-5691）。实测：`bin/no ast` 对含 match 的语料产出 `SurfaceMatch{...}`（探针 `tests/option.no`：4 个节点、零 if/else 链），而 `ps.no` 仍在 parse 期把 match 展开为 if/else 链（裸 match desugar 组装见 4638-4740、明示形见 5681+，全程无 `K_SURFACE_MATCH` 发射）。**L2 默认语料 653 档中 264 档必然偏离**。
 2. **裁定待办**：`ps.no` 改产 `SurfaceMatch`（parser 忠实，即 P1；`asp.no` 的 `K_SURFACE_MATCH` 条目已就位，§18.3；降糖留待 M4 的 `hir.no`）还是维持 parse 期 desugar 现状并登记分歧——**未定**。裁定前 L2 的任何结果不得视为绿灯。
@@ -408,10 +408,17 @@ H1 是**链接与命名**，不是降糖：
 4. **L2 全量实测与归因（2026-10-20；SUT＝修后 `noc-s0`，CTL＝`bin/no`；653 档）**：**DIFF=315**、SAME=338，另 3 档 sut 独有失败。
    - **match 保证分歧**：A＝CTL 输出含 `SurfaceMatch{` 的档（264 档），**A∖B=0**（全部命中，与理论一致）。
    - **非 match 分歧 51 档**（B∖A）＝既有 noc 缺口 + `762ea045` 潜伏移植缺陷。抽验差异形态：`src/std/int.no` 缺 `NamedType{inferred: true}` 发射（`762ea045` 只移植了型别登记、未移植 AST 发射）；`src/std/log.no` 丢空 `StringLiteral{value: }` 节点；`src/std/enter.no` 不识 `interface` 定义、降级为表达式语句。**唯一例外 `tests/1-test.no`**：noc 对 `result = a + b`（`#{overflow=wrap}` 下）过度推断并发射 `type: ?i64`（bin/no 不推）——来自 `762ea045` 的推断移植，因构建破损潜伏 6 天、被本次修复激活，**非本次修法引入**。
-   - **3 档 sut 独有失败＝rc=124 挂起**（`crypto/aes-cbc.no`、`net/net.no`、`net/tls.no`）：noc parser 在 `net.no:634` 方法定义（`enc-conn.recv-encrypted = () (data ?str)`，该 struct 第 4 个方法）上下文死循环；**在 `762ea045` 之前的 noc 上同样复现**（`/tmp/noc-c721fe6c`、`/tmp/noc-b805ed06`），属既有缺陷（单方法最小复现不触发，需 struct + 多方法上下文）。
+   - **3 档 sut 独有失败＝rc=124 挂起**（`crypto/aes-cbc.no`、`net/net.no`、`net/tls.no`）：noc parser 在 `net.no:634` 方法定义（`enc-conn.recv-encrypted = () (data ?str)`，该 struct 第 4 个方法）上下文死循环；**在 `762ea045` 之前的 noc 上同样复现**（`/tmp/noc-c721fe6c`、`/tmp/noc-b805ed06`），属既有缺陷（单方法最小复现不触发，需 struct + 多方法上下文）。⚠️ **此三档已全部于 2026-10-20 修复并归零**（两个独立根因，见第 3、5 条）。
    - **跨 noc 对照（最强归因）**：同一 CTL 下，`762ea045` 之前的 noc（`b805ed06`）**DIFF=355 / sut 独有失败 8 档**；修后 `noc-s0` **DIFF=315 / 3 档**。修后 DIFF 集 ⊆ 旧 DIFF 集（唯一例外即上述 `1-test.no`）；失败集 3 ⊆ 8（旧 noc 另挂 `tests/fmt-heuristic.no`、`tests/fn-type-result.no`，修后已不挂）。⇒ 本次修法**零新增分歧/挂起**；`762ea045` 的移植（经本次修复激活）净减 40 档分歧、5 档失败。挂起三档待独立立项（noc parser 完整性，不属 S7）。
 
-细节与证据表见 `nolang-selfhost.md` §5.3.3（2026-10-19 新增，2026-10-20 补构建破损修复记录）。
+5. **✅ 已修（2026-10-20；三档挂起的两个独立根因，s58/s59）**：挂起三档实为**两个**独立缺陷，各自最小复现均已定位并修复，sut 独有挂起归零。
+   - **根因 A（阵列 let 分支；`ps-parse-stmt` 明式元素型别臂）**：`name [N]T = expr` 无条件呼叫 `ps-parse-arr-lit`，RHS 非 `[` 开头（`iv [12]byte = .gen-iv()`）时 `ps-expect(LBRACKET)` 静默失败、元素循环从当前 token 起把后续全部陈述当元素吞到 EOF ⇒ 方法定义行被卷成 AssignExpression、其 RHS 又缠出超深 GroupedExpression 链 ⇒ dump 二次方缩排（每行 O(depth)、总量 O(N²)）⇒ GB 级输出 ⇒ 挂起。**实据**：`src/std/net/net.no:571`。**修法**：复刻 Go `stmt.go:1333-1356`（仅当 RHS 是 SliceLiteral 才转 ArrayLiteral）⇒ RHS 先 `ps-skip-trivia`、为 `[` 才走 `ps-parse-arr-lit`，否则 `ps-parse-expr`。修后 `net.no` 恢复解析（177 KB）。
+   - **根因 B（IN 上下文关键字；`ps-parse-expr-prec` primary 臂，s59）**：词法把 `in` 无条件归 `tok.IN`（与 Go lexer 同表），但 Go `expr.go:96` 是 `case lexer.IDENT, lexer.IN, lexer.MATCH: parseIdentifier()`——**表达式位的 `in` 是合法识别字**（`parseIdentifier` 直接取 token literal ⇒ `Identifier{name: in}`），而 ps.no 的 primary 缺 IN 臂 ⇒ 回 idx=0 且不吃 token。**三种故障形态**：① `it = in[i]` ⇒ let RHS 丢失、`[i]` 被拆成独立 `SliceLiteral` 陈述；② `enc-block(in, ek)` ⇒ 引数 2→1（**静默丢参**，比报错更危险）；③ 陈述层 `(in[i]) != pad-len -> { … }`（`aes-cbc.no:222`、`tls.no:695` 同源）⇒ LPAREN 臂建出空壳 GroupedExpression 后 pos 卡在 IN，陈述级进度守则每轮强制 bump 一 token ⇒ 一行被撕成「41+ 深 GroupedExpression 链」+ SliceLiteral + 左值 nil 的 InfixExpression 三个陈述 ⇒ 同上的二次方缩排挂起。**修法**：primary 臂改为 `tk.typ == tok.IDENT || tk.typ == tok.IN`（MATCH 同属该类但语料 653 档无 `match` 作识别字的用法，本片未补——登记为已知同类缺口）。
+   - **归因（A/B 同一 harness、同一 CTL、同一 653 档语料）**：verdict 档数 DIFF 309→311 / SAME 338→338 / 真挂起 2→0（+2 DIFF 正是 aes-cbc/tls 由「挂起」转为「可解析后仍带 match 分歧」，非回归）；**SAME→DIFF 真回归 0 档**。逐档差异行数：**总 210 971 → 210 111（-860），7 档改善、0 档恶化**（`aes-ctr` -278、`tdes` -372、`rc4` -70、`aes` -56、`ecdsa` -26、`des` -38、`base32` -20），其余档位分毫不变 ⇒ 修法零回归、且只收敛差异。
+   - ⚠️ **挂起的两个必要条件**（缺一不挂，故此前二分易被误导）：① 病理解剖出的**超深节点链**（否则 dump 只是慢）；② dump 的 `indent()` 每行 O(depth) ⇒ 总量 O(N²)。定位手法：`ast.no` 的 `node()` 加 `depth > 40` 截断守卫 ⇒ 把「挂起」变成「可完成 + 标记」，暴露 `ArrayLiteral{size: 12, elements: 33}`／深 GroupedExpression 链。
+   - **回归测试**：新增 `compiler/tests/ps-test.no`（`./bin/no run compiler/tests/ps-test.no`，5/5 通过）钉死四种 `in` 形态 + 一组无 `in` 对照；期望字串全部取自 oracle 实测。**反空洞**：把 IN 臂还原为 `tok.IDENT` 后该测试**挂起**（非仅报错）——正是缺陷本身的表现。
+
+细节与证据表见 `nolang-selfhost.md` §5.3.3（2026-10-19 新增，2026-10-20 补构建破损修复记录与 s58/s59 挂起修复记录）。
 
 ### 11.2 其余同步要求（不变）
 

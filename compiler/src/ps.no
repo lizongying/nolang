@@ -1065,8 +1065,20 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ps-bump(p); 消費 elem 型別名
                 ps-expect(p, tok.ASSIGN)
 
-                ; RHS 為 [..]：在陣列上下文直接建 ArrayLiteral（復刻 Go stmt.go:1210-1218 的轉換）
-                al = ps-parse-arr-lit(t, p, sz)
+                ; RHS 為 [..] 才走陣列字面量上下文（復刻 Go stmt.go:1333-1356：
+                ;   只有 stmt.Value 是 SliceLiteral 時才轉 ArrayLiteral）；其餘 RHS
+                ;   （呼叫／識別字／點開頭的方法呼叫…）一律走普通運算式。
+                ; ⚠️ 此處曾無條件呼叫 ps-parse-arr-lit ⇒ `iv [12]byte = .gen-iv()`
+                ;   的 RHS 被強行當陣列字面量：ps-expect(LBRACKET) 失敗後，元素迴圈
+                ;   從當前 token 起把後續全部陳述當「元素」吞掉（直到 EOF），方法定義行
+                ;   被卷成 AssignExpression，其 RHS 又在運算式解析器裡纏出超深
+                ;   GroupedExpression 鏈 ⇒ dump 二次方縮排 + GB 級輸出 ⇒ 掛起。
+                ;   實證：src/std/net/net.no:571（aes-cbc/tls 兩檔同源）；詳見
+                ;   docs/design/nolang-selfhost.md §5.3.3。
+                ps-skip-trivia(p)
+                ps-peek(p) == tok.LBRACKET -> al = ps-parse-arr-lit(t, p, sz)
+
+                -> al = ps-parse-expr(t, p)
 
                 ; 子先於父：elem NamedType → ArrayType（含 size、elem 兩 kid）→ LetStatement
                 ntyp = ast.add(t, asp.K_NAMED_TYPE)
@@ -1540,7 +1552,23 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             ps-bump(p)
         }
 
-        tk.typ == tok.IDENT -> {
+        ; s59：IN 是上下文關鍵字——表達式位可作識別字（Go expr.go:96
+        ;   `case lexer.IDENT, lexer.IN, lexer.MATCH: leftExp = p.parseIdentifier()`；
+        ;   parseIdentifier 直接用 token literal ⇒ Identifier{name: in}）。
+        ; ⚠️ 缺 IN 臂 ⇒ 表達式位的 `in` 無 primary 可取（回 idx=0 且不吃 token）：
+        ;   · `it = in[i]`：let RHS 變 IndexExpression{<nil>, i}（左值丟失）
+        ;   · `(in[i]) != pad-len -> { … }`（src/std/crypto/aes-cbc.no:222、
+        ;     src/std/net/tls.no:695 同源）：LPAREN 臂建出【空殼】GroupedExpression 後
+        ;     pos 卡在 IN 不動 ⇒ 陳述級進度守則每輪強制 bump 一 token，把一行拆成
+        ;     「41+ 深 GroupedExpression 鏈」+「SliceLiteral{i}」+「左值 nil 的
+        ;     InfixExpression」三個陳述；深鏈使 dump 每行縮排 O(depth)、總量 O(N²)
+        ;     ⇒ GB 級輸出 ⇒ 表現為掛起（rc=124）。實證：token 流
+        ;     `3:1 LPAREN / 3:2 IN in / 3:4 LBRACKET …`；oracle 產
+        ;     `GroupedExpression{IndexExpression{Identifier{in}, Identifier{i}}}`。
+        ; ⚠️ MATCH 同屬此類（Go expr.go:96 同臂、stmt.go:2122 isStatementBoundary），
+        ;   但語料（tests+src/std 653 檔）無 `match` 作識別字的用法 ⇒ 本片只補 IN，
+        ;   MATCH 留待有用例再補（避免無謂擴大差分面）。
+        tk.typ == tok.IDENT || tk.typ == tok.IN -> {
             idx = ast.add(t, asp.K_IDENTIFIER)
             ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
             ps-bump(p)
