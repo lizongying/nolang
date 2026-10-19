@@ -45,16 +45,13 @@ var optionMatchVariants = map[string]bool{"ok": true, "nil": true, "err": true}
 // *same* detection the diagnostic uses instead of re-deriving arm structure from
 // source text.
 //
-// SHAPES (S1): the rule runs on two AST shapes. Under the default lowering a
-// match is an if/else chain and Root is its outermost link; Root.MatchEndPos
-// carries the source position of the match's closing `}`. Under SkipLowering a
-// match is a single *parser.SurfaceMatch and Sugar holds it; the closing `}` is
-// at SurfaceMatch.RBracePos. Pos / End / Subject are therefore filled by BOTH
-// paths (the same normalisation CatchAllArm uses, see match_arm_reach.go) — a
-// consumer that reads only Root silently sees nothing under sugar, which is how
-// `--fix=match` lost its insertion point before the flip.
+// SHAPES (S-d): after the S-d cleanup (2026-10-19) matches only ever appear as
+// *parser.SurfaceMatch on the checker path — Lower() is never called in the
+// pipeline (only LowerSurface runs during ParseProgram, and it does not lower
+// matches), so Sugar is the sole shape and Root no longer exists. Pos / End /
+// Subject are filled from the SurfaceMatch node (the closing `}` is at
+// SurfaceMatch.RBracePos), which is what `no fix` drives off.
 type NonExhaustiveMatch struct {
-	Root    *parser.IfExpression // 降糖形态：match 链的根；糖形态为 nil
 	Sugar   *parser.SurfaceMatch // 糖形态：match 节点；降糖形态为 nil
 	Pos     lexer.Position       // 诊断锚点（match 起点），两形态共同填写
 	End     lexer.Position       // match 收尾 `}` 的位置（fixer 插入点），两形态共同填写
@@ -69,65 +66,15 @@ type NonExhaustiveMatch struct {
 // terminates in a catch-all arm nor handles all three option variants.
 // ValidateNonExhaustiveMatch is a thin reporting wrapper over it.
 //
-// Both shapes are collected because they are disjoint by construction: lowering
-// rewrites every SurfaceMatch into an if-chain (measured — a default-shaped
-// program contains 0 SurfaceMatch nodes, see
-// TestNonExhaustiveMatchShapesAreDisjoint), so neither path can double-report
-// the other's matches.
+// After S-d (2026-10-19) matches only ever appear as *parser.SurfaceMatch on the
+// checker path (Lower() is never called in the pipeline; only LowerSurface runs
+// during ParseProgram, and it does not lower matches), so a single sugar-shape
+// collector handles every match.
 func CollectNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
 	if program == nil {
 		return nil
 	}
-	out := collectLoweredNonExhaustiveMatches(program)
-	return append(out, collectSugarNonExhaustiveMatches(program)...)
-}
-
-func collectLoweredNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
-	var out []NonExhaustiveMatch
-	roots, rootFunc, rootFile := collectMatchRoots(program)
-	for _, root := range roots {
-		vs := matchVariants(root)
-		// Not an option match: no arm tests ok/nil/err (bare guard blocks and
-		// matches over plain values land here and stay unreported).
-		if len(vs) == 0 {
-			continue
-		}
-		// Matches synthesised by the `?=` / safe-index lowerings have no source
-		// block of their own (MatchEndPos stays zero): the user cannot add arms
-		// to them, so demanding completeness is both unfixable and wrong.
-		if root.MatchEndPos.Line == 0 {
-			continue
-		}
-		// Tagged-enum matches are not option matches: `q: { ok(v) -> ... fail -> ... }`
-		// matches the enum's OWN variants, and `ok` is simply a variant name that
-		// collides with the option vocabulary. Demanding nil/err arms there is a
-		// false positive — the match is already exhaustive over its enum.
-		if subjectIsDeclaredEnum(program, root, rootFunc[root]) {
-			continue
-		}
-		// Exhaustive: terminates in a catch-all `-> ` arm, or handles every
-		// option variant (ok/nil/err). err is a real variant of any ?T (std's
-		// read-stdin-str returns ?str and matches err ->), so all three are
-		// required — mirroring the parser's [RAL] completeness rule.
-		if matchHasCatchAll(root) || (vs["ok"] && vs["nil"] && vs["err"]) {
-			continue
-		}
-		var missing []string
-		for _, v := range []string{"ok", "nil", "err"} {
-			if !vs[v] {
-				missing = append(missing, v)
-			}
-		}
-		out = append(out, NonExhaustiveMatch{
-			Root:    root,
-			Pos:     root.Pos(),
-			End:     root.MatchEndPos,
-			Subject: matchSubjectName(root),
-			Missing: missing,
-			File:    rootFile[root],
-		})
-	}
-	return out
+	return collectSugarNonExhaustiveMatches(program)
 }
 
 func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
@@ -150,7 +97,7 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 	return results
 }
 
-// subjectIsDeclaredEnum reports whether the matched subject's static type is a
+// subjectIsDeclaredEnumExpr reports whether the matched subject's static type is a
 // user-declared enum (e.g. `e-res`). Such a match ranges over that enum's own
 // variants, so the option completeness rule (ok/nil/err) does not apply.
 // Only a statically known type can be excluded — unknown types stay reported,
@@ -158,20 +105,11 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 //
 // The subject is looked up with FuncVarType(funcName, ...) so function-local
 // types (parameters included) are found in the per-function map first, falling
-// back to the global VarTypes for module-level matches — rather than reading
-// the global snapshot directly, which misses parameters that now live only in
-// the per-function map.
-func subjectIsDeclaredEnum(program *parser.Program, root *parser.IfExpression, funcName string) bool {
-	if root == nil {
-		return false
-	}
-	return subjectIsDeclaredEnumExpr(program, root.MatchedExpr, funcName)
-}
-
-// subjectIsDeclaredEnumExpr is the shape-independent core of
-// subjectIsDeclaredEnum: both shapes hand over their own subject expression
-// (IfExpression.MatchedExpr / SurfaceMatch.Matched) so the enum lookup cannot
-// drift between them.
+// back to the global VarTypes for module-level matches.
+//
+// After S-d the only caller is the sugar-shape collector, which hands over the
+// SurfaceMatch subject directly; the legacy IfExpression.MatchedExpr branch was
+// removed with the lowered match path.
 func subjectIsDeclaredEnumExpr(program *parser.Program, subj parser.Expression, funcName string) bool {
 	if program == nil || program.Sem == nil || len(program.Sem.EnumVariants) == 0 {
 		return false
@@ -186,30 +124,6 @@ func subjectIsDeclaredEnumExpr(program *parser.Program, subj parser.Expression, 
 	}
 	_, isEnum := program.Sem.EnumVariants[t]
 	return isEnum
-}
-
-// matchSubjectName returns a printable name for the matched expression.
-func matchSubjectName(ife *parser.IfExpression) string {
-	if ife == nil || ife.MatchedExpr == nil {
-		return "?"
-	}
-	switch m := ife.MatchedExpr.(type) {
-	case *parser.Identifier:
-		return m.Value
-	case *parser.DotExpression:
-		return m.Property
-	case *parser.CallExpression:
-		// e.g. `foo(): { ok -> ... }` — show the callee so the diagnostic is
-		// actionable (this shape is where the parser's [RAL] check cannot
-		// fire, since it only recognises plain identifiers).
-		switch fn := m.Function.(type) {
-		case *parser.Identifier:
-			return fn.Value + "()"
-		case *parser.DotExpression:
-			return fn.Property + "()"
-		}
-	}
-	return "?"
 }
 
 // collectMatchRoots returns the outermost IfExpression of every match in the
@@ -353,134 +267,25 @@ func matchChainedChild(ife *parser.IfExpression) *parser.IfExpression {
 	return inner
 }
 
-// matchHasCatchAll reports whether the match chain terminates in an else body
-// (a `-> ` wildcard arm, or any arm placed in the default slot).
-func matchHasCatchAll(root *parser.IfExpression) bool {
-	seen := make(map[*parser.IfExpression]bool)
-	for node := root; node != nil; {
-		if seen[node] {
-			return true // defensive: malformed cycle
-		}
-		seen[node] = true
-		if node.Alternative == nil {
-			return false // chain ends without an else
-		}
-		if child := matchChainedChild(node); child != nil {
-			node = child
-			continue
-		}
-		return true // else block holds a real body
-	}
-	return true
-}
-
-// matchVariants collects the option variants (ok / nil / err) tested by the
-// arms of a match chain. An empty result means the match is not over an option.
-func matchVariants(root *parser.IfExpression) map[string]bool {
-	vs := make(map[string]bool)
-	seen := make(map[*parser.IfExpression]bool)
-	for node := root; node != nil; {
-		if seen[node] {
-			break
-		}
-		seen[node] = true
-		for _, v := range armVariantNames(node) {
-			vs[v] = true
-		}
-		node = matchChainedChild(node)
-	}
-	return vs
-}
-
-// armVariantNames returns every option variant ("ok" / "nil" / "err") a single
-// desugared arm claims. A combined arm (`nil || err ->`) records BOTH variants
-// in OptionPatterns, so collect ALL of them: returning only the first would make
-// the exhaust checker treat `nil || err` as covering just `nil` and falsely
-// report the `err` arm as missing. The parser's own [RAL] completeness check
-// already treats a combined pattern as covering every listed variant (see
-// parser/expr.go hasErrArm), so this keeps the checker consistent with it. An
-// empty result means the arm tests something other than an option variant.
-func armVariantNames(ife *parser.IfExpression) []string {
-	if ife == nil {
-		return nil
-	}
-	// Combined option patterns (`nil || err`): claim every listed variant.
-	if len(ife.OptionPatterns) > 0 {
-		var out []string
-		for _, p := range ife.OptionPatterns {
-			if optionMatchVariants[p] {
-				out = append(out, p)
-			}
-		}
-		if len(out) > 0 {
-			return out
-		}
-	}
-	if v := armVariantName(ife); v != "" {
-		return []string{v}
-	}
-	return nil
-}
-
-// armVariantName returns the single option variant a non-combined desugared arm
-// tests ("ok" / "nil" / "err"), or "" when the arm tests something else.
-func armVariantName(ife *parser.IfExpression) string {
-	if ife == nil {
-		return ""
-	}
-	if id, ok := ife.EqualityPattern.(*parser.Identifier); ok && optionMatchVariants[id.Value] {
-		return id.Value
-	}
-	// `nil ->` carries a NilLiteral pattern, not an identifier.
-	if _, ok := ife.EqualityPattern.(*parser.NilLiteral); ok {
-		return "nil"
-	}
-	// ok-> / .-> val branch: only meaningful for options.
-	if ife.DotValBody != nil {
-		return "ok"
-	}
-	// Fallback: inspect the desugared condition `matched == ok` / `matched == nil`.
-	if inf, ok := ife.Condition.(*parser.InfixExpression); ok && inf.Operator == "==" {
-		if id, ok := inf.Right.(*parser.Identifier); ok && optionMatchVariants[id.Value] {
-			return id.Value
-		}
-		if _, ok := inf.Right.(*parser.NilLiteral); ok {
-			return "nil"
-		}
-	}
-	return ""
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// S1：糖形态的 match（Parser.SkipLowering 下 match 是 *parser.SurfaceMatch）
+// ────────────────────────────────────────────────────────────────────────────
+// 糖形态的 match（S-d 后唯一形态）
 //
-// 上面的整条链路都建在**降糖后的形状**上：collectMatchRoots 走 if/else 链，
-// matchVariants 沿 matchChainedChild 逐链节收变体，matchHasCatchAll 看链末端
-// 有没有 else。糖形态下这些一条都找不到 match ⇒ match-nonex 静默失效（不报错，
-// 是沉默），`--fix=match` 也因此补不出 arm。
+// S-d（2026-10-19）删除了降糖路径：pipeline 中从不在 checker 之前把 match 降成
+// if/else 链（只有 ParseProgram 的 LowerSurface，它不降 match），所以这里只保留
+// 糖形态收集器 collectSugarNonExhaustiveMatches，直接走
+// collectSugarMatchRoots / sugarMatchVariants / sugarMatchHasCatchAll /
+// sugarMatchSubjectName（match_arm_reach.go）与 subjectIsDeclaredEnumExpr（本档）。
 //
-// 做法与 match_arm_reach.go 的 collectSugarCatchAllArms 对齐：**并行收集器 +
-// 共用语义助手**，而不是让 collectMatchRoots 也回传 SurfaceMatch（它的回传型别
-// 是 []*parser.IfExpression）。共用的助手：collectSugarMatchRoots /
-// sugarMatchVariants / sugarMatchSubjectName（match_arm_reach.go）与
-// subjectIsDeclaredEnumExpr（本档）。
-//
-// 逐条对应降糖路径的判定：
-//
-//	MatchedExpr != nil                      ↔ sm.Matched != nil
-//	matchVariants(root) 非空                 ↔ sugarMatchVariants(sm) 非空
-//	root.MatchEndPos.Line == 0 跳过          ↔ sm.RBracePos.Line == 0 跳过
-//	subjectIsDeclaredEnum(...)               ↔ subjectIsDeclaredEnumExpr(...)
-//	matchHasCatchAll(root)                  ↔ sugarMatchHasCatchAll(sm)
-//	root.Pos() / root.MatchEndPos           ↔ sm.Pos() / sm.RBracePos
-//
-// 位置等价性已实测（checker/zz_posprobe_test.go 的 TestZZPosProbe）：同一条
-// match 在两种形态下 Pos / EndPos / 收尾大括号位置**逐字段相同**——糖形态的
-// RBracePos 正是 lowering 转移到 IfExpression.MatchEndPos 的那一个位置。
-// ─────────────────────────────────────────────────────────────────────────────
+// 历史对照（已删除的降糖路径，仅作溯源）：降糖版曾用 collectMatchRoots 走
+// if/else 链、matchVariants 沿 matchChainedChild 收变体、matchHasCatchAll 看链
+// 末端 else；糖版用上面 sugar* 对应物代替，语义逐条等价（MatchedExpr ≠ nil ↔
+// sm.Matched ≠ nil）。collectMatchRoots 现仅由 match_arm_reach_test.go 的
+// desugar-scoped 回归测试使用，保留作 guard。
+// ────────────────────────────────────────────────────────────────────────────
 
-// collectSugarNonExhaustiveMatches 是 collectLoweredNonExhaustiveMatches 的
-// 糖形态分支。
+// collectSugarNonExhaustiveMatches 收集程式中所有「以空 option 变体 arm 结尾」或
+// 「缺 ok/nil/err 中某些变体」的 *parser.SurfaceMatch（S-d 后 match 的唯一形态）。
+// 语义等价于已删除的降糖版 collectLoweredNonExhaustiveMatches，但直接在糖形态上判断。
 func collectSugarNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMatch {
 	var out []NonExhaustiveMatch
 	roots, rootFunc, rootFile := collectSugarMatchRoots(program)
@@ -527,8 +332,8 @@ func collectSugarNonExhaustiveMatches(program *parser.Program) []NonExhaustiveMa
 	return out
 }
 
-// sugarMatchHasCatchAll 是 matchHasCatchAll 的糖形态对应物：整条 match 的最后一
-// 條臂是裸 `->`（IsWildcard 且不是 `.->` / `ok ->` 這種 dot-val 分支）。
+// sugarMatchHasCatchAll 判断整条糖形态 match 的最后一條臂是否为裸 `->`（IsWildcard
+// 且不是 `.->` / `ok ->` 這種 dot-val 分支）。语义等价于已删除的降糖版 matchHasCatchAll。
 //
 // 為何不能只看 IsWildcard：`ok ->` 與 `->` 兩者都帶 IsWildcard=true（parser
 // 把「無條件的臂」一律標成 wildcard），差別在 IsDotVal。漏掉這個區分會把

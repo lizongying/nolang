@@ -31,8 +31,10 @@ import (
 // 两者都只提示、不阻断：空兜底臂本身合法（D4：空臂 = 默认零值兼兜底臂）。
 //
 // 与 match_exhaustive.go 的分工：那边管「缺臂」（non-exhaustive），这边管「兜底臂
-// 是否死代码 / 是否该写点东西」。复用同一批 match 走訪工具（collectMatchRoots /
-// matchChainedChild / matchSubjectName），避免两套 AST 走法漂移。
+// 是否死代码 / 是否该写点东西」。S-d 后 match 只以糖形态 *parser.SurfaceMatch 存在，
+// 两边共用同一批糖形态走訪工具（collectSugarMatchRoots / sugarMatchVariants /
+// sugarMatchHasCatchAll / sugarMatchSubjectName / subjectIsDeclaredEnumExpr），
+// 因此「什么叫恒为 ok」不会漂移。
 const (
 	armUnreachTraceID = "arm-unreach"
 	armShouldTraceID  = "arm-should"
@@ -45,11 +47,10 @@ const maxSubjectResolveDepth = 8
 
 // CatchAllArm 描述一条 option match 的**空** `->` 兜底臂。
 //
-// 两种形态归一到同一个结构：降糖后的 if/else 链（Root 非空）与糖形态的
-// SurfaceMatch（Sugar 非空）。诊断锚点因此不能只从 Root 取——Pos/EndColumn 是
-// 两种形态**共同**填写的字段（S1，见设计稿 §15.2）。
+// S-d（2026-10-19）后 match 只以糖形态 *parser.SurfaceMatch 存在（pipeline 中
+// Lower() 不被调用，只有 ParseProgram 的 LowerSurface，它不降 match），故结构里
+// 只保留 Sugar 字段。诊断锚点来自 Sugar 节点自身（Pos/EndColumn）。
 type CatchAllArm struct {
-	Root      *parser.IfExpression // 降糖形态：match 链的根；糖形态为 nil
 	Sugar     *parser.SurfaceMatch // 糖形态：match 节点；降糖形态为 nil
 	Pos       lexer.Position       // 诊断锚点（整条 match 的位置）
 	EndColumn int
@@ -73,35 +74,8 @@ func CollectEmptyCatchAllArms(program *parser.Program) []CatchAllArm {
 	inits := localInitializers(program)
 
 	var out []CatchAllArm
-	roots, rootFunc, _ := collectMatchRoots(program)
-	for _, root := range roots {
-		// 只要 option match（有臂测试 ok/nil/err）。值 match、bare guard 不在范围。
-		if len(matchVariants(root)) == 0 {
-			continue
-		}
-		// lowering 合成的 match（`?=` / 安全索引）没有用户可改的源码头臂。
-		if root.MatchEndPos.Line == 0 {
-			continue
-		}
-		// 末端兜底臂：match 链最后一级的 else 体。
-		body, found := catchAllTailBody(root)
-		if !found || !catchAllArmIsDefaulting(body) {
-			continue
-		}
-		fn := rootFunc[root]
-		subj := root.MatchedExpr
-		out = append(out, CatchAllArm{
-			Root:      root,
-			Pos:       root.Pos(),
-			EndColumn: root.EndPos().Column,
-			Body:      body,
-			AlwaysOk:  optionSubjectAlwaysOk(subj, fn, inb, inits, 0),
-			Subject:   matchSubjectName(root),
-			FuncName:  fn,
-		})
-	}
-	// S1：糖形态下 match 是 SurfaceMatch 而不是 if/else 链，上面的循环一条也找
-	// 不到。两条路径共用同一批语义助手，故「什么叫恒为 ok」不会漂移。
+	// S-d（2026-10-19）：降糖后的 if/else 形态已删除，match 只以 *parser.SurfaceMatch
+	// 存在（pipeline 中 Lower() 不被调用）。collectSugarCatchAllArms 直接处理糖形态。
 	out = append(out, collectSugarCatchAllArms(program, inb, inits)...)
 	return out
 }
@@ -139,23 +113,17 @@ func ValidateCatchAllArms(program *parser.Program) []ValidateResult {
 	return results
 }
 
-// ---- S1：糖形态的 match 根 --------------------------------------------------
+// ---- 糖形态的 match 根（S-d 后唯一形态）-------------------------------------
 //
-// 本节以上所有逻辑都建立在**降糖后的形状**上：match 是一条 IfExpression 链，
-// 每个链节带 MatchedExpr。糖形态（Parser.SkipLowering，S1 的目标形态）下 match
-// 是 *parser.SurfaceMatch，上述机制一个都找不到它 ⇒ arm-should / arm-unreach
-// 静默失效（不报错，是沉默）。
-//
-// 没有让 collectMatchRoots 也回传 SurfaceMatch——它的回传型别是
-// []*parser.IfExpression，且 match_exhaustive.go 也在消费它。改为在这里加一条
-// 并行收集器，由 CollectEmptyCatchAllArms 两条都跑。两条路径**共用**语义助手
-// （optionSubjectAlwaysOk / localInitializers / isDefaultZeroValueExpr），因此
-// 不会在「什么叫恒为 ok」上漂移。
+// S-d（2026-10-19）删除了降糖后的 if/else 形态：pipeline 中 Lower() 不被调用，
+// match 只以 *parser.SurfaceMatch 存在。下面的 collectSugarMatchRoots /
+// collectSugarCatchAllArms 直接处理糖形态，与 match_exhaustive.go 的
+// collectSugarNonExhaustiveMatches 共用语义助手（optionSubjectAlwaysOk /
+// localInitializers / isDefaultZeroValueExpr），因此不会在「什么叫恒为 ok」上漂移。
 //
 // 为什么这不是「加一个 walker 下降 case」：规则要的不只是「走进臂体」，而是
-// 「把整条 match 识别成一个单元」——需要主体、变体集合、末端兜底臂三样同时到手。
-// 降糖形态下这三样分散在 if 链的不同链节上（故需要 catchAllTailBody /
-// matchChainedChild / armVariantNames 去反推）；糖形态下它们就在一个节点里。
+// 「把整条 match 识别成一个单元」——需要主体、变体集合、末端兜底臂三样同时到手，
+// 而糖形态下它们就在一个 SurfaceMatch 节点里。
 
 // collectSugarMatchRoots 收集程式中每一个 *parser.SurfaceMatch 及其所在函数名。
 //
@@ -303,7 +271,7 @@ func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, ma
 
 // sugarMatchVariants 回传糖形态 match 的各臂所声明的 option 变体
 // （"ok" / "nil" / "err"）。空集合表示这不是一条 option match（值 match、bare
-// guard），不在本规则的范围内——与降糖路径上 matchVariants 的过滤口径一致。
+// guard），不在本规则的范围内。
 func sugarMatchVariants(sm *parser.SurfaceMatch) map[string]bool {
 	vs := make(map[string]bool)
 	if sm == nil {
@@ -333,10 +301,9 @@ func sugarMatchVariants(sm *parser.SurfaceMatch) map[string]bool {
 	return vs
 }
 
-// sugarMatchSubjectName 是 matchSubjectName 的糖形态对应物：降糖版从 if 链的
-// MatchedExpr 取主体名，糖版直接从 SurfaceMatch.Matched 取。两者刻意保持同一套
-// 命名口径（Identifier → 名字、Dot → 属性名、Call → callee()），使诊断文案不因
-// 形态而变。
+// sugarMatchSubjectName 取糖形态 match 的主体名（等价于已删除的降糖版
+// matchSubjectName）。命名口径与降糖版一致（Identifier → 名字、Dot → 属性名、
+// Call → callee()），使诊断文案不因形态而变。
 func sugarMatchSubjectName(sm *parser.SurfaceMatch) string {
 	if sm == nil || sm.Matched == nil {
 		return "?"
@@ -357,13 +324,15 @@ func sugarMatchSubjectName(sm *parser.SurfaceMatch) string {
 	return "?"
 }
 
-// collectSugarCatchAllArms 是 CollectEmptyCatchAllArms 的糖形态分支。
+// collectSugarCatchAllArms 收集糖形态 match 的空兜底臂（S-d 后 match 的唯一形态）。
 //
-// 判定链与降糖路径逐条对应：
-//   - 是 option match（有臂声明 ok/nil/err）↔ matchVariants(root) 非空；
-//   - 末端臂是裸 `->`（wildcard 且不是 ok 的 dot-val 分支）↔ catchAllTailBody；
+// 判定链：
+//   - 是 option match（有臂声明 ok/nil/err）↔ sugarMatchVariants(sm) 非空；
+//   - 末端臂是裸 `->`（wildcard 且不是 ok 的 dot-val 分支）↔ sugar 形态下直接看末臂；
 //   - 该臂「什么都没做」↔ catchAllArmIsDefaulting；
 //   - 主体可证明恒为 ok ↔ optionSubjectAlwaysOk。
+//
+// 语义等价于已删除的降糖版 CollectEmptyCatchAllArms 的 if/else 分支。
 //
 // 「什么都没做」这条在两种形态下喂给 catchAllArmIsDefaulting 的东西不同：降糖形态
 // 是 `[it = <零值>（合成）, <零值表达式>]`，糖形态是 `[<零值表达式>]`（parser 不
@@ -400,38 +369,6 @@ func collectSugarCatchAllArms(program *parser.Program,
 		})
 	}
 	return out
-}
-
-// catchAllTailBody 沿 match 的 if/else 链走到末端，回傳终端兜底臂（else）的语句体。
-//
-// 🔴 第二返回值 found 不是「体非空」而是「**兜底臂存在**」。这两个问题在旧签名下被
-// 混成了一个 nil 返回值，于是「else 块存在但其 Statements 是 nil 切片」的 match 被
-// 静默漏报（S1 实测，见设计稿 §15.2）：
-//
-//	b-opt = t          ; t 是 ?i64，但 resolver 未登记 b-opt 的类型
-//	b-opt: { ok -> b = it   -> }
-//
-// 降糖时通配臂的 `it` 绑定由 buildItBindingForArm 合成，而它在 matchedVarType 未知
-// 时回 nil（lowering.go:3274）⇒ else 块保持**零语句**，且 parser 建块时用的是 nil
-// 切片而非空切片 ⇒ 旧签名把它与「根本没有兜底臂」当成同一件事。糖形态没有这层合成
-// ⇒ 反而看得见这条臂。故这是降糖路径的漏报，不是糖路径的多报。
-//
-// found=false 表示这条链没有兜底臂（那种情形由 CollectNonExhaustiveMatches 负责上报）。
-func catchAllTailBody(root *parser.IfExpression) ([]parser.Statement, bool) {
-	node := root
-	seen := make(map[*parser.IfExpression]bool)
-	for node != nil && !seen[node] {
-		seen[node] = true
-		if child := matchChainedChild(node); child != nil {
-			node = child
-			continue
-		}
-		if node.Alternative == nil {
-			return nil, false // 链末端没有 else：非穷尽，不是这里的职责
-		}
-		return node.Alternative.Statements, true
-	}
-	return nil, false
 }
 
 // catchAllArmIsDefaulting 報告终端兜底臂是否「什麼都沒做」——只產生 D4 的默認零值。
