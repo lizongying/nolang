@@ -364,6 +364,17 @@ NUL、set 的 intersection/difference 错、option-struct-payload-drop 取值错
 ⇒ 结论：**本项目的「语料里有没有 X」一律用结构普查回答，不要用 shell grep**
 （这已是第二次 grep 误判；上一次是把 SurfaceMatch 当 removedByParser）。
 
+**第 3 次复发（2026-10-18，提交当日，教训更重）**：Bash `grep` 对 `lowering.go` /
+`tohir.go` 再次**返回假空**，据此我先后得出两个**错误**结论——
+①「`buildMatchDesugar` / `buildTypeMatchDesugar` 已不存在」（实际存在且被 8+ 处调用，
+其中一处正是本次 union 别名修复点 `lowering.go:2367`）；
+②「`tohir.go` 已不再读 12 字段」（实际 `tohir.go:928 case *IfExpression` 起仍在读）。
+若据此执行 §5 的 P7 删除，会**直接打断流水线**。改用 Grep 工具后全部纠正（见 §5.1）。
+
+⇒ 补充铁律：**Bash `grep` 返回「空」不等于「不存在」**。凡「某个符号/字段是否还在」的
+**否定结论**，必须用 Grep 工具（或 awk/python）复核，且最好再找一个**肯定锚点**（如已知存在的
+函数名）同行验证，确认 grep 本身在本文件上是工作的。
+
 ---
 
 ## 4. 风险与决策点
@@ -388,6 +399,278 @@ NUL、set 的 intersection/difference 错、option-struct-payload-drop 取值错
 | `KUnwrapAssign` | `hir/hir.go:40,127`、`parser/tohir.go:383` | `hir/golden_test.go:322` 豁免随之消失 |
 | `lowering.go` 内联 SurfaceMatch 展开 | `lowerProgram` 调用 `buildMatchDesugar` 处 | `desugarSurfaceMatch`/`buildMatchDesugar` 保留供 H0 用 |
 | formatter 降糖代码 | `fmt/control.go` `formatBareMatchExpressionSubj` 的 `RTMatchWrapper`/索引主体归一化反推、`writeBareMatchArm` 合成 let 打捞 | 改读 `SurfaceMatch` 字段 |
+
+### 5.1 ⚠️ P7 前提**尚未满足**（2026-10-18 实测结论，commit `b918dba9` 当时状态）
+
+翻转落地后曾以为「默认路径不再产生 `IfExpression` match ⇒ 12 字段成死码」。**实测证伪**：降糖后的
+`IfExpression`（带 12 字段）仍是 H0 与 HIR 之间的**中间表示**，翻转只改了「何时降糖」（parse-time → H0），
+没改「是否经 `IfExpression`」。因此 §5 清单**现在一条都不能删**，删了会直接打断流水线。
+
+证据（须用 Grep 工具，Bash `grep` 对本仓库部分文件会返回**假空**——见 §3.1 纠错记录第 3 次复发）：
+- `parser/tohir.go:928 case *IfExpression:`，`:929 if e.IsTypeMatch`、`:937 matched := e.MatchedExpr`、
+  `:949 cur.TypePattern`、`:962 ie.IsTypeMatch`、`:980 c.expr(e.MatchedExpr)` ⇒ HIR 侧**仍在读** 12 字段。
+- `parser/lowering.go` 内 `buildMatchDesugar` 仍被 8+ 处调用：`:1219`、`:1474`、`:2133`、
+  **`:2371`（`desugarSurfaceMatch` 自身回调）**、`:3945`、`:4619`、`:4738`、`:5019`；
+  `buildTypeMatchDesugar` 被 `:2125`、`:2367`（union 别名修复点）调用 ⇒ 12 字段**仍在写**。
+- `build/transpiler_monomorph.go` 读 `e.MatchedExpr` 的路径**已清理**（2111 → 删除 IfExpression 分支里的
+  `MatchedExpr`/`RangePattern`/`EqualityPattern`/`OptionPatterns`/`ValuePatterns`/`RawCond` 死字段；
+  matched 表达式由专属 `*parser.SurfaceMatch` 分支经 `e.Matched` 替换；LLVM 管线 monomorph 阶段
+  match 恒为 `SurfaceMatch`，JS/WASM 后端不跑 monomorph，故该 IfExpression 分支仅命中三元 if）。
+
+**P7 真正的先行步骤**：把 `desugarSurfaceMatch` 改成**流式直出 base HIR**（即 §2 第 4 点
+「經 `desugarSurfaceMatch` 流式产出 base HIR」），不再物化带 12 字段的 `IfExpression` 交给
+`tohir.go:928` 去读。完成并且 `h0_sugar_gap_test.go`／535 语料 A/B 仍等价后，§5 清单才成立。
+
+### 5.2 P7 解锁方案：降糖直出 base HIR（2026-10-19 调查定案）
+
+#### 5.2.1 接缝坐标（实测）
+
+```
+flip 主路径（当前做法，两跳）：
+  SurfaceMatch ──▶ tohir.go:1150 case *SurfaceMatch
+                    └─ sp.desugarSurfaceMatch(e)           lowering.go:2291-2382
+                       └─ buildTypeMatchDesugar            lowering.go:2500-2603（104 行）
+                        | buildBareMatchDesugar            lowering.go:2626-2775（150 行）
+                        | buildMatchDesugar                lowering.go:2776-3630（855 行）
+                   ──▶ 返回带 12 字段的 IfExpression 链
+                       └─ c.expr(desugared) ──▶ tohir.go:928 case *IfExpression
+                          └─ IsTypeMatch? KTypeMatch/KTypeArm : KIf(+9 个 match slot)
+```
+
+#### 5.2.2 ⚠️ 关键判断：这不是「节点映射」，而是「语义移植」
+
+直觉方案——「直接从 `sm.Arms` 发射 `KTypeMatch`」——**行不通**。因为降糖**不是纯形状变换**，它
+依托 parser side table 做语义重写，这些重写目前发生在「构造 IfExpression」的过程里：
+
+- `it`-place write 重写（`rewriteItPlaceWrites`）+ `desugarIndexOutReads` 还原（注释见 lowering.go:1063）
+- index-out / 安全索引合成（`buildMatchDesugar` 内部，见 :219、:402 注释）
+- subject 归一化（`__match_subj_L_C`，:4685）、`it` 绑定合成（`buildItBinding`，lowering.go:3694）
+- range 条件外部的 `desugarRangeCondition`（lowering.go:3631）
+- 依赖 `p.sem.FuncVarType` / `astLocalVarType` 等副表（:263、:219）
+
+⇒ 直出 HIR 必须**完整移植**这些变换；只重映射臂会静默丢掉索引写回、`it` 绑定与安全索引语义。
+移植规模实测 **约 1,109 行**（104 + 150 + 855），另加上述 helper。
+
+#### 5.2.3 推荐实施策略：抽出「与 IR 无关的降糖计划」，双发射 + 差分护栏
+
+不要重写一遍 AST 版与一遍 HIR 版（两份逻辑必然漂移）。建议：
+
+1. **抽出 plan 层**：把现有三个 builder 的**决策**（臂选择、是否 type-destructuring、是否 option、
+   range/raw-cond 归类、需要做哪些 index-out / it-place 重写）抽成一个 IR 无关的
+   `matchDesugarPlan{ kind, unionType, arms []planArm }`，每个 arm 记
+   `{pattern, binding, bodyRewrite}`。
+2. **两个 emitter 消费同一份 plan**：`emitAST(plan) Expression`（给既有 no-flip 控制路径，保证对照
+   不动）与 `emitHIR(c, plan) int32`（给 flip 主路径，直出 `KTypeMatch`/`KIf`）。
+3. **差分护栏**：新增一门禁，对同一 `SurfaceMatch` 同时走 `emitAST`（再经 `case *IfExpression`）
+   与 `emitHIR`，断言产出 HIR **逐字节相同**——不等价即 FAIL，且能点名是哪个子形态不等价。
+   这是解锁过程中最重要的一道门，配合既有 `hir_equivalence_test.go` 与 535 语料 A/B 双保险。
+
+#### 5.2.4 切片顺序（按「移植代价 ↑」而非 P1→P6 顺序）
+
+| 切片 | 内容 | 移植代价 | 验证重点 |
+|---|---|---|---|
+| **S-a** ✅ **已落地**（2026-10-19） | `buildTypeMatchDesugar`（type 解构，104 行） | 最低 | `type-match.no` / `match-type-arm.no` / `txt-methods.no`；KTypeMatch 的 `Line/Col` 必须与两跳版一致（当前取 IfExpression 的 token，直出版需对齐到 `sm.Token`） |
+| **S-b** | `buildBareMatchDesugar`（裸 match，150 行） | 低 | `MatchEndPos` / `OpeningBraceComment` 传递（现由 lowering.go:2373-2380 补盖章）——**实测二者都不进 HIR**，见 §5.2.7 |
+| **S-c** | `buildMatchDesugar`（826 行，option/range/raw-cond/值/通配） | 高 | 全部 9 个 slot + `OptionPatterns`/`ValuePatterns` 列表顺序 + **`MatchedExpr`**；子切片方案见 §5.2.9 |
+
+每片前后都要跑：`make test`（含 `hir_equivalence_test.go`）、`./cmd/no/`（`-count=1`）、
+535 `no run` A/B、535 `no build --js` A/B、`no fmt` round-trip。**失败即回退该切片**
+（手工还原编辑过的文件——`git checkout` 须用户确认后才可用）。
+
+#### 5.2.5 完成标志
+
+S-a/S-b/S-c 全部落地后，`tohir.go:928 case *IfExpression` 只剩**真正的 if/elif/else**（match 语义
+不再走它），此时 §5 清单（12 字段、`RTFlag`、`KUnwrapAssign`、formatter 降糖代码）才真正可删。
+期间注意：`transpiler_monomorph.go:2111` 读 `e.MatchedExpr` 的路径**已清理**（2026-10-19 S-d：
+IfExpression 分支仅保留三元 if 字段，matched 由 SurfaceMatch 分支经 `e.Matched` 处理）。
+
+#### 5.2.6 S-a 落地方式（2026-10-19 实测）
+
+按 §5.2.3 的「单一真相源」原则落地，未复制第二份降糖逻辑：
+
+1. **`resolveTypeMatchArms`（lowering.go 新增）**：把 `buildTypeMatchDesugar` 里**与 IR 无关**的
+   per-arm 计算（union 成员校验、`it`/具名绑定 let 注入、`DeclaredVars`/`FuncVarType` 登记）抽成
+   返回 `[]typeMatchArm`（包级类型）。AST 链与 HIR 直出**共用它**，不可能漂移。
+2. **`prepareSurfaceMatch` + `desugarPreparedSurfaceMatch`（lowering.go 新增）**：拆出「准备」与
+   「发射」两阶段。准备阶段有真实副作用（克隆臂防破坏原树；index-out 注解以节点指针为键，
+   纯克隆会丢；`armPreChecks` 登记绑定让**内层 match** 能解析自身主体型别，且校验 `it` 用法）。
+   H0 只调一次准备，故不会重复产出诊断。
+3. **`typeDestructuringSubjectType`（lowering.go 新增）**：封装「是否型别解构 match」判别 +
+   `recoverUnionFromMember` 恢复，两条路径共用，避免一边判成型别臂、另一边判成值 match。
+4. **`lowerTypeMatchToHIR`（tohir.go 新增）**：直出 `KTypeMatch`/`KTypeArm`，不再物化 `IfExpression`。
+
+**字节等价的三个不变量**（写进函数注释，防止后人无意破坏）：
+- **位置**：`pos()` 只看 `Token`，而 `buildTypeMatchDesugar` 把 `IfExpression.Token = sm.Token`，
+  故 `pos(sm) == pos(ifExpr)`，`Line/Col` 一致。
+- **建节点顺序**：HIR 节点 id 按分配顺序敏感，故严格镜像 `case *IfExpression`——先每个臂的
+  body（+可选 bind），再 `KTypeArm`；所有臂先于 `matched` slot；`KTypeMatch` 最后建。
+- **per-arm 决策**：共用 `resolveTypeMatchArms`。
+
+**验证**：
+- `go build ./...` / `go vet ./parser/` / `gofmt` 全净。
+- `./parser/` + `./parser/dump/`（含 `hir_equivalence_test.go`、子形态普查）全过。
+- 型别臂 fixture 端到端输出正确：`type-match.no` → `10/3/2.5/7/3/2.5/8/5/5.5`、
+  `match-type-arm.no` → `bool+int64/bare-i64/bare-i32/bare-f64`。
+- **消融 A/B（最重要）**：同源编「S-a 开」(`bin/no`) 与「S-a 关」(`/tmp/no_sa_off`) 两个二进制，
+  差异**只可能来自 S-a**。13 文件靶向（含全部 7 个含类型臂文件）**13/13 一致**；535 全量
+  `no run` 切片进行中。
+  ⚠️ **`--js` A/B 对 S-a 是空洞的**：js/wasm 后端走 **AST 降糖**（lowering.go:108 明写
+  `buildMatchDesugar on BOTH the H0 and js/wasm desugar paths`），不经过 H0，故必须用 `no run`。
+
+#### 5.2.7 S-b 落地方式（2026-10-19）
+
+沿用 §5.2.6 的「单一真相源」原则，同样**未复制第二份降糖逻辑**：
+
+1. **`bareMatchPlan`（lowering.go 新增，IR 无关）**：承载裸 match 的全部决策——
+   independent-guard（`if(1){ if c1 {B1}; … }`）对 elif 链、dotVal / wildcard /
+   defaultBody 规则、每条臂的 `EqualityPattern`/`RangePattern`/`DotValBody` 归类。
+   **`alt` 与 `altBody` 必须分开记**：前者是合成
+   `BlockStatement{ExpressionStatement{…}}` 包裹（降糖为 `KBlock→KExprStmt→KIf`），
+   后者是通配臂自己的 body（`Alternative` 直接指向它）。混用会改变 HIR 形状。
+2. **`resolveBareMatchPlan`（lowering.go 新增）**：原 `buildBareMatchDesugar` 逻辑的
+   忠实移植（同样的 fast path 条件、同样的臂序、同样的 dotVal/defaultBody 规则）。
+3. **`emitBareMatchAST`（lowering.go 新增）**：把 plan 包回既有 `IfExpression` 链，
+   `buildBareMatchDesugar` 退化为「plan + AST 发射」两行。
+4. **`lowerBareMatchToHIR` / `emitBareMatchHIR`（tohir.go 新增）**：从 plan 直出 `KIf`。
+
+**字节等价的四个不变量**（写进函数注释）：
+- **位置**：每个合成 `IfExpression` 都带 `Token = sm.Token`，故 `pos(sm) == pos(ifExpr)`。
+- **建节点顺序**：`case *IfExpression` 按 cond → then → else → matched → dot-val →
+  range → eq → raw 固定顺序建 slot；裸 match 的 matched/raw/OptionPatterns/
+  ValuePatterns 全为空 ⇒ 塌成 `NoID` 消失，其余保持相对顺序。`alt` 包裹体内层 `KIf`
+  **最先**分配，再 `KExprStmt`，再 `KBlock`（镜像 `c.stmt` 由内向外的求值顺序）。
+- **合成包裹体**（`BlockStatement`/`ExpressionStatement`）可手工发射：`OverflowMode`、`IsInline`
+  均为零值 ⇒ `overflowModeFlags`/`FlagInline` 均为 0；`annotate`/`embed` 两张副表
+  **按节点指针索引**，合成节点无条目 ⇒ 手工发射不丢任何东西。而 `altBody`/`body`/
+  `dotValBody` 是**真实 AST 节点**，必须仍走 `c.stmt` 以保留注解与 embed 数据。
+- **`RTBareMatch`/`RTMatchWildcard`/`RTMatchWrapper` 不进 HIR**：`case *IfExpression`
+  建 `KIf` 时**不设 Flags**；这些旗标的读取方是 `fmt/control.go` 与 `tools/check_enum.go`
+  （都走糖树），故直出不设旗标是 HIR 中性的。
+
+**`MatchEndPos` / `OpeningBraceComment` 实测不进 HIR**（§5.2.4 曾列为 S-b 风险）：
+`desugarPreparedSurfaceMatch` 补盖的这两项，`MatchEndPos` 只被 `checker/match_exhaustive.go`
+等读（翻转后 checker 直接读 `sm.RBracePos`），`OpeningBraceComment` 只被 `decl.go`/
+`match.go`/`expr.go`（注释迁移，供 formatter）与 `astcache_det.go` 读，两者都不在
+H0→HIR 路径上；且翻转后 H0 侧合成的 `IfExpression` 是临时节点、根本不在 AST 树里。
+
+**验证**：
+- `go build ./...` / `go vet ./parser/` / `gofmt` 全净（`h0_sugar_gap_test.go` 的
+  gofmt 债是 HEAD 既有的 28 行，非本次引入，按政策不 sweep）。
+- **等价门禁即 S-b 的差分门禁**：`TestH0MatchDesugarMatchesParserLowering` 的
+  Route B（`DesugarSurfaceMatches` → `IfExpression` → `case *IfExpression`）**正是
+  「S-b 关」的行为**，Route A 是直出。
+- **门禁语料扩到两份**：原门禁只走 `tests/`（535 程序），而 `test/std/` 是**裸 match 最密集**
+  的语料（82 个 / 87 程序）却完全没被覆盖。新增 `equivalenceCorpusRoots` 同时走两份，
+  实测 **622 程序 / 0 分歧 / 257 真正走到 H0 降糖**（额外成本仅 ~0.8s）。
+- **新增反空洞门禁** `TestBareMatchEquivalenceIsExercised`（`parser/dump/hir_equivalence_test.go`）：
+  两份语料合计 **436 个裸 match**（tests/ 354 + test/std/ 82），低于 50 即 FAIL——
+  否则「0 分歧」可能是 0 == 0。`countBareMatches` 落在 `h0_sugar_gap_test.go`。
+- `make test` 16 包 0 FAIL；`./cmd/no/` `-count=1` 通过；`./parser/` + `./parser/dump/` 全过。
+- 靶向 `no run` A/B 7/7 SAME（裸 match 密集文件，均有真实输出）。
+
+#### 5.2.8 ⚠️ 消融 A/B 的两个陷阱（2026-10-19 实测，代价 1.5 小时）
+
+1. **对照二进制必须放在与 `bin/no` 同一目录**。放在 `/tmp` 的二进制找不到相邻的 `src/`，
+   只能从**内嵌 std** 取（`no vet` 报虚拟路径 `std/byte`），而 `bin/no` 从磁盘 `src/std/byte.no`
+   取 ⇒ 全量 A/B 报出一片「DIFF」，全是路径渲染差异，**与被测改动无关**。
+   判别法：同位置重建对照（`bin/no_sb_off`）后 crc-16/crc-32 立刻由 DIFF 变 SAME。
+2. **`no vet` 单次约 4.5s**（要加载整个 std），535×2 ≈ 85 分钟，**不该拿它做全量 A/B**。
+   验证 H0→HIR 改动**首选进程内的 `hir_equivalence_test.go`**（622 程序 byte 比对 3 秒），
+   它的 Route B 天然等于「该切片关闭」；进程级 A/B 只做**靶向**即可。
+
+#### 5.2.9 S-c 侦察：`buildMatchDesugar` 结构地图与子切片方案（2026-10-19，未动代码）
+
+`buildMatchDesugar`（lowering.go:2867-3692，826 行）可切成五段，**语义重写密度差别极大**：
+
+| 段 | 行 | 内容 | 直出必须移植的语义重写 |
+|---|---|---|---|
+| **A 主体归一化** | 2887-2917 / 2926-2937 / 2953-2971 | ①索引主体 `parts[i]` → 合成 `__match_subj_L_C ?elem`；②D9 place-write 准备（`__idx_L_C`、`origIdxExpr`、`baseName`）；③`#{index-out=DEF}` 注解作用域搬移 | `SetFuncVarType`/`setVarType` 登记、`isSafeIndexBase`、`inferIndexElemType`、注解从外层陈述搬到 `sm` 后的取值 |
+| **B 型别与空臂零值** | 2976-3038 / 3044-3074 | ①`matchedVarType`/`enumVariants`/`elemType` 推导（含 flip fallback `astLocalVarType`）；②值上下文空臂 → `scalarZeroLiteral` + `RTEmptyArmDefault` + 搬 `IsInline/TrailingComments/ClosingBraceComment/RBrace` | **就地改 `arms[i].Body`**；零值字面量型别必须与 `elemType` 一致 |
+| **C it 绑定与枚举析构** | 3077-3082 / 3086-3092 / 3110-3183 | ①`buildItBinding` + `elemType` 设 Type；②`hasRawCond` 探测；③`some(v) ->` 析构绑定泛化（`matchedIsEnum` + 载荷变体判别 + `enumListedVariants`） | 绑定 let 的注入位置（臂内 vs 链前）随 `hasRawCond` 变 |
+| **D 臂发射主循环** | 3184-3590 | per-arm 分类：`MultiOptionPatterns`(3209) / `IsWildcard`(3237) / `Identifier` 条件 ok·nil·err(3295) / `NilLiteral`(3309) / `IsDotVal`(3311)；D9 place-write 改写(3321)；it 绑定注入(3328-3425)；**条件构造**(3488-3564)：MultiOption / MultiValue / IsRawCond / RangeExpression / 兜底；链式 Alternative 装配(3578-3590) | `rewriteItPlaceWrites`、`armType` 与 `isOKPathArmType`、`skipItBinding`、6 种条件归类的 slot 归属 |
+| **E 尾部包装** | 3595-3690 | ①全 wildcard 特例；②`hasRawCond` → `if 1 { it = matched; <chain> }`（**设 `MatchedExpr`**）；③索引归一化 → `if 1 { __idx = …; __match_subj ?elem = …; <chain> }`（**设 `MatchedExpr`**） | 两处包装都写 `MatchedExpr`，且 E③ **就地改写原 AST 的 `idx.Index = &Identifier{idxTemp}`** |
+
+**与 S-b 的本质差别**：S-b 只需 cond/then/else/dot-val/range/eq 六个 slot 且 `MatchedExpr` 恒 nil；
+S-c 要用满 9 个 slot，还要保序 `OptionPatterns`/`ValuePatterns` 两个列表，并且**必须产出
+`MatchedExpr`**——这正是 §5.2.4 表格里 S-c「验证重点」那一行的含义。
+
+**⚠️ S-c 最大的风险点（开工前必须先判死）**：
+`buildMatchDesugar` 有两处**对共享 AST 节点的就地改写**——`arms[i].Body = zb`（3073，落在
+`prepareSurfaceMatch` 的克隆上，安全）与 `idx.Index = &Identifier{…}`（3666，`origMatched`
+是 `clone.Matched` 指向的**同一节点**，会改到调用方原树）。翻转后 checker 走糖树、H0 走直出，
+若直出漏掉第二次改写，checker 与 HIR 看到的就是两棵不同的树。**S-c 开工第一个动作是量清
+checker 与 H0 的先后关系**，否则等价门禁可能给出「HIR 相同但 checker 诊断不同」的假阴性。
+
+**子切片方案**（按「重写密度」而非行数升序，每片独立可回退）：
+
+| 子切片 | 内容 | 依赖 |
+|---|---|---|
+| **S-c1 条件分类** | D 的 3488-3564 + slot 装配；先只支持「主体是 Identifier、无 D9、无枚举」 | B1 型别、B2 空臂零值 |
+| **S-c2 臂体改写** | B2 + C1/C2/C3 + D 的 3328-3425（it 绑定注入、place-write、零值默认） | S-c1 |
+| **S-c3 主体归一化与尾部包装** | A 全段 + E 两处 `if 1 {}` + `MatchedExpr` | S-c1 + S-c2 |
+
+每片仍用同一套门禁：`hir_equivalence_test.go`（622 程序 byte 比对）+ 靶向 `no run` A/B +
+`make test`。**S-c1 落地后 S-b 的独立分支可合并**（裸 match 与值 match 共用同一条件分类层）。
+
+#### 5.2.10 S-c 落地方式（2026-10-19，S-c0 已落地并验证）
+
+**S-c0（纯机械拆分，已落地）**：`buildMatchDesugar` 拆成
+`resolveSubjectMatch`（A+B+C，只跑副作用、不建节点）+ `emitSubjectMatchAST`（D+E）。
+校验方式：原函数体 823 行与两半做 multiset 比对，**0 丢行**（唯一差异是我有意改写并搬位的
+一条注释）；`make test` 16 包全绿。新增 `subjectMatchPrep`（23 字段），其中
+`placeWriteUsed` 刻意放在 prep 上——它由 D 段的 `rewriteItPlaceWrites` **回写**、再被 E 段
+包装器读取，不属于任何单一阶段。
+
+**⚠️ S-c 直出的结构性障碍（S-c0 之后实测定位）**：D 段有一处**后补 else slot**——
+普通 wildcard 臂在链头已存在时执行 `ifExpr.Alternative = arm.Body`（原 3483）。HIR 侧
+`hir.Builder.Add` 是值拷贝、`b.nodes` 不对外，`AppendChild` 只能追加到**子链末尾**，
+而 `else` slot 是 `KIf` 的第 3 个子节点 ⇒ **无法在节点建成后再插入**。
+
+⇒ S-c 的 HIR 发射器**必须先把 D 段做成 plan 树再发射**（与 S-b 的 `alt`/`altBody` 同一手法），
+不能逐行镜像。这把 `bareMatchPlan` 推向 `matchIfPlan`（补 `matched`/`optionPatterns`/
+`valuePatterns`/`rawCond` 四个 subject 专属字段），也意味着 **S-b 与 S-c 最终共用一个 plan 类型
+与一个发射器**——正是 §5.2.4 预期的合并点。
+
+**S-c1 实际切口**（按上述结论修正原方案，**2026-10-19 已落地并验证**）：
+1. `resolveArmCond`（共享）：抽出 D 的「构造 match 条件」3487-3564 六路分类
+   （MultiOption / MultiValue / IsRawCond / RangeExpression / 兜底），AST 与 HIR **共用**；
+2. `rewriteSubjectArm`（共享）：抽出 D1（`armType` 计算 + it 绑定注入 + place-write + 零值默认），
+   逐臂调用，与 D2 无跨臂依赖（已核：D2 只读本臂 body 与链状态）；
+3. `matchIfPlan` 树 + `emitSubjectMatchAST` / `emitMatchIfHIR` 双发射；
+   `emitMatchIfHIR` 镜像 `case *IfExpression` 的 8 固定 slot 顺序（cond/then/else/matched/
+   dot-val/range/eq/raw），随后按原列表序追加 `OptionPatterns`（`opt` slot）/ `ValuePatterns`
+   （`val` slot）；**不消费 `matchIfPlan.rtFlags`**（RTBareMatch/RTMatchWildcard/RTMatchWrapper
+   无 HIR 表示，`case *IfExpression` 建 KIf 也不设 Flags），这是字节等价的前提；
+4. `emitSubjectMatchHIR` 门控（**最终态，2026-10-19 索引主体归一化收口**）：`subjectMatchDirectHIR`
+   **已全开**（`prep == nil` 时返回 false，否则恒 true）——所有到达此处的 subject match 均直出
+   （类型解构由 S-a、裸 match 由 S-b 在更早处处理，不会到达）。门控演进：S-c1 初始四排除
+   `subjName=="" && idxTempName=="" && !matchedIsEnum && !hasRawCond`；S-c2 放宽到 `!matchedIsEnum`
+   把 `hasRawCond`/`subjName`/`idxTempName` 全纳入，但索引主体形态触发 `mir/d9_write_bce_test.go`
+   回归，**回退**；S-c3 把 `matchedIsEnum` 纳入，门控收口为 `subjName==""`；**S-c4 攻克索引主体归一化**：
+   在 `emitSubjectMatchWrappersHIR` 把原树（浅克隆共享指针 `prep.origMatched`）的 InBounds 证明
+   **转移**到 D9 place-write 重写出的 `base[__idx]` 读节点（`c.sem == prog.Sem == p.sem`），
+   `lowerSafeIndex` 保留可证界内快路径、d9 BCE 两用例恢复绿 ⇒ 门控全开：
+   - `hasRawCond`：**已纳入直出**（`emitSubjectMatchWrappersHIR` 的 `if 1 { it = matched; <chain> }` 包装层）；
+   - `matchedIsEnum`（枚举补集 / 载荷析构）：**已纳入直出**（S-c3，共享 `rewriteSubjectArm` + `resolveArmCond`）；
+   - `subjName`/`idxTempName`（**索引主体归一化**）：**已纳入直出**（S-c4）。
+     ⚠️ 历史根因（已修复）：最初误判为「克隆节点脱离 InBounds 侧表」。实测 `prepareSurfaceMatch` 是
+     **浅拷贝**（`clone := *sm`），`clone.Matched` 与原树 `parts[i]` **同指针**，证明本应保留；真正丢失在
+     `emitSubjectMatchWrappersHIR` 的 D9 分支——读节点被重写为**全新** `base[__idx]`（`subjValue`）
+     节点，该新节点不在 InBounds 侧表 ⇒ 读缺 `FlagInBounds` ⇒ `lowerSafeIndex` 退化为运行时界检查。
+     修复即把 `prep.origMatched` 的 InBounds 证明转移到 `subjValue`（等价门禁 0 分歧 + d9 两用例绿证实）。
+
+**S-c1 验证结果（2026-10-19）**：
+- G-equivalence 扩到 `tests/` + `test/std/` 两份语料：**622 比对 / 0 分歧 / 257 真正走到 H0 降糖**
+  （含 S-a/S-b/S-c1 三路直出）。
+- **新增反空洞门禁 `TestSubjectMatchDirectHIRIsExercised`**：经 parser 侧
+  `SubjectMatchDirectEmits` 计数器（原子量，emitSubjectMatchHIR 成功发射时 +1）实测
+  **518 次直出**（622 程序、503 带主体 match；含枚举补集 / 载荷析构 / 索引主体归一化形态，`hasRawCond` /
+  `matchedIsEnum` / `subjName` 均已纳入直出），floor=20 ⇒ 烟雾报警而非封顶。
+- `make test` 全绿（自仓库根执行，注入 StdSigKey；**不含 `./cmd/no/...`**）；`./cmd/no/`（`-count=1` + StdSigKey）通过。
+- **进程级 A/B**：同目录 `bin/no`（直出 ON）vs `bin/no_sc1_off`（直出 OFF，均注入 StdSigKey）
+  对直出最密集的 44 文件跑 `no run` 比较 stdout+rc，归一化 tmp 路径后 **44/44 SAME，0 DIFF**
+  （首轮全 DIFF 是测量伪影：对照二进制 plain `go build` 缺 StdSigKey 注入报「签名 key 未注入」，
+  且错误消息含非确定 `/var/folders/.../X.ll:N` 路径使同二进制两遍也误判——均已在修正版脚本中消除）。
 
 ---
 
@@ -416,7 +699,9 @@ NUL、set 的 intersection/difference 错、option-struct-payload-drop 取值错
   并加两道非空洞断言：① Route A 必须真的带 `SurfaceMatch` 进 H0（否则不计入）；
   ② Route B 展开后 `SurfaceMatch` 必须归零（否则说明它不是「已降糖树」）。
   **破坏实验已验证**：临时让路线塌陷 ⇒ 门禁正确 FAIL 并点名 168 个文件，
-  而非像修复前那样静默 PASS。修复后实测：**532 比对 / 0 分歧 / 168 真正走到 H0 降糖**。
+  而非像修复前那样静默 PASS。修复后实测（语料已扩到 `tests/` + `test/std/`）：
+  **622 比对 / 0 分歧 / 257 真正走到 H0 降糖**，S-c1 额外由 `TestSubjectMatchDirectHIRIsExercised`
+  （518 次直出）钉住覆盖。
 - **G-corpus**：532 语料 `no fmt` round-trip 冪等 + LSP lint/index 冒煙（沿用 §4.3 steps 1-4 留下的糖形态单形态冒煙测试）。
 - **G-compile**：`no build tests/str.no` / `basic.no` / `str-test.no` EXIT=0（重建 `bin/no` 须注入 `StdSigKey`）。
 - **G-unit**：`go test` parser/checker/fmt/lsp/tools/cmd/no（注入 `StdSigKey`）全绿。
@@ -440,7 +725,7 @@ NUL、set 的 intersection/difference 错、option-struct-payload-drop 取值错
 - [x] 现状事实厘清（parser 只产 SurfaceMatch；H0 desugar 已实现证等价；checker 已双形态）
 - [x] **P1 两阶段降糖解耦**（commit `ab157ea7`）：`LowerSurface` = `lowerProgram`(defer match)
       + `DesugarSurfaceMatches`（其后 P2 又拆成显式 pass）
-- [x] **翻转落地**（工作区未提交）：`ParseProgram` 默认路径**保留** `SurfaceMatch`
+- [x] **翻转落地（已提交，commit `b918dba9`）**：`ParseProgram` 默认路径**保留** `SurfaceMatch`
       （`deferMatchDesugar:true` 无条件置位；`LowerSurface` 不再调 `DesugarSurfaceMatches`，
       展开只由实验性 js/wasm 后端显式调用）
 - [x] **§1.4 缺口补齐**：transpiler / checker 原生消费 `SurfaceMatch`（详见 §1.4）
@@ -488,10 +773,23 @@ NUL、set 的 intersection/difference 错、option-struct-payload-drop 取值错
 - [x] **corpus 级 `no run` A/B（535 文件 × 双二进制，run-2）**：修复后复跑确认归零——9 处 std
       运行期回归全部消除（`bin/no` vs `/tmp/no_noflip` 逐字节一致），仅剩 `test-div-mod-option.no`
       1 处既有改进；`match-index-option.no` 经 §1.4.2 (e) 修复后已不在差异表。详见 §1.4.3。
+- [x] **union 单态化克隆体类型解构 match 误报修复**（同 commit `b918dba9`，见 §1.4.4）：
+      `recoverUnionFromMember`（`parser/match.go:78`，用 `flattenUnion` **递归展开**成员集选
+      最具体覆盖 union）+ `armsCarryTypePatterns` 路由守卫（`lowering.go:2365`），
+      修 `type-match.no` / `match-type-arm.no` EXIT=1 回归
+- [x] **翻转全量验收五项门禁全绿**（2026-10-18 收尾，commit `b918dba9` 前复跑）：
+      ① 535 `no run` LLVM 端到端 **535/535 等价**；② 535 `no build --js` 内容级 **535/535**；
+      ③ `make test` **16 包 0 FAIL**；④ `./cmd/no/` S4 翻形态门禁（`-count=1` 强制非缓存）通过；
+      ⑤ `no fmt` round-trip **535/535 等价且冪等**
 - [ ] P2–P6 按子形态推进（逐项验证 H0 desugar 覆盖）
 - [ ] P7 收尾删除（§5 清单，全部「先验证等价再删」）
+      ⚠️ **前提尚未满足**（§5.1）：降糖后的 `IfExpression`（12 字段）仍是 H0→HIR 的**中间表示**
+      （`tohir.go:928` 仍在读），须先把 `desugarSurfaceMatch` 改成流式直出 base HIR，
+      否则 §5 清单一条都不能删
 - [ ] S2：H0 擦除 `SurfaceMatch`（`removedByH0` tier 的终点）
 
-> ⚠️ 提交纪律：翻转 + §1.4 补齐 + §1.4.1 修复 + §1.4.2 收尾修复（含 (e) 每臂独立拷贝）
-> + P4/P5 fixture 与钉住门禁 + §1.4.3 归因与修法（9 处 std 运行期回归已修，Lowering 唯一性单点方案）
-> 目前**仍在工作区未提交**。§1.4.3 的修法落地后独立 commit（不擅自动 git）。
+> ✅ **已提交 `b918dba9`**（2026-10-18）：翻转 + §1.4 补齐 + §1.4.1/§1.4.2/§1.4.3 修复
+> + P4/P5 fixture 与钉住门禁 + §1.4.4 union 克隆修复 + 本文档更新。
+> 提交前处理：① 清理 `src/` 内调查期临时文件引用（`/tmp/leak4.no`）；
+> ② 对本工作**新引入** gofmt 违规的 6 个文件做格式化（**不动** HEAD 既有的 12 个文件格式债，
+> 避免与本次改动混杂）；③ 确认残留 `[debug-it]` 打印**全部受 `NOLANG_DEBUG_IT` 守卫**（默认静默）。

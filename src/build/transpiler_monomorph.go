@@ -2094,26 +2094,16 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 		}
 		return newSm
 	case *parser.IfExpression:
-		var valuePatterns []parser.Expression
-		if len(e.ValuePatterns) > 0 && len(subst) > 0 {
-			valuePatterns = make([]parser.Expression, len(e.ValuePatterns))
-			for i, vp := range e.ValuePatterns {
-				valuePatterns[i] = substituteExpr(vp, subst)
-			}
-		} else {
-			valuePatterns = e.ValuePatterns
-		}
-		// 表層往返標誌（RTBareMatch 等）已遷至語義副表；泛型實例化克隆體
-		// 只進編譯管線、不進 formatter，無需複製這些標誌。
+		// S1：主編譯管線不再降糖 match，此分支在 monomorph 階段只代表三元
+		// if（a ? b : c）。matched 表達式的泛型替換已由上方專屬的
+		// *parser.SurfaceMatch 分支經 e.Matched 處理；此處 MatchedExpr /
+		// RangePattern / EqualityPattern / OptionPatterns / ValuePatterns /
+		// RawCond 恆為零值（降糖形態僅 JS/WASM 後端使用，且它們不跑 monomorph），
+		// 故不複製這些死欄位。與 scanIfExpressionForGenericCalls 的「只看
+		// Condition / Consequence / Alternative」口徑一致。
 		newIf := &parser.IfExpression{
-			Token:           e.Token,
-			Condition:       substituteExpr(e.Condition, subst),
-			MatchedExpr:     substituteExpr(e.MatchedExpr, subst),
-			RangePattern:    e.RangePattern,
-			EqualityPattern: substituteExpr(e.EqualityPattern, subst),
-			OptionPatterns:  e.OptionPatterns,
-			ValuePatterns:   valuePatterns,
-			RawCond:         substituteExpr(e.RawCond, subst),
+			Token:     e.Token,
+			Condition: substituteExpr(e.Condition, subst),
 		}
 		if e.Consequence != nil {
 			newIf.Consequence = substituteBody(e.Consequence, subst)

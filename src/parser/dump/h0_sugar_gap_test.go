@@ -163,6 +163,76 @@ func countSurfaceMatches(prog *parser.Program) int {
 	return n
 }
 
+// countBareMatches splits the SurfaceMatch census by whether the match carries a
+// subject: bare == Matched == nil (a `{ cond -> body }` match), withSubj ==
+// everything else.
+//
+// It exists because the S-b slice (design doc §5.2.7) gave bare matches their own
+// HIR emitter, while subject matches kept going through buildMatchDesugar. The
+// equivalence gate compares both routes over the whole corpus, so it proves
+// nothing about S-b unless the corpus actually contains bare matches — this
+// count is the anti-vacuity witness TestBareMatchEquivalenceIsExercised asserts
+// on. Shares countSurfaceMatches' walk shape (and its Sem carve-out) so the two
+// counts are taken over the same node set.
+func countBareMatches(prog *parser.Program) (bare, withSubj int) {
+	if prog == nil {
+		return 0, 0
+	}
+	seen := map[uintptr]bool{}
+	var walk func(v reflect.Value, depth int)
+	walk = func(v reflect.Value, depth int) {
+		if !v.IsValid() || depth > 400 {
+			return
+		}
+		switch v.Kind() {
+		case reflect.Pointer:
+			if v.IsNil() {
+				return
+			}
+			addr := v.Pointer()
+			if seen[addr] {
+				return
+			}
+			seen[addr] = true
+			if v.Elem().Type().Name() == "SurfaceMatch" {
+				if f := v.Elem().FieldByName("Matched"); f.IsValid() &&
+					f.Kind() == reflect.Interface && f.IsNil() {
+					bare++
+				} else {
+					withSubj++
+				}
+			}
+			walk(v.Elem(), depth+1)
+		case reflect.Interface:
+			if !v.IsNil() {
+				walk(v.Elem(), depth+1)
+			}
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < v.Len(); i++ {
+				walk(v.Index(i), depth+1)
+			}
+		case reflect.Struct:
+			isProgram := v.Type() == programReflectType
+			for i := 0; i < v.NumField(); i++ {
+				if isProgram {
+					switch v.Type().Field(i).Name {
+					case "Sem", "Warnings", "BuiltinFuncNames":
+						continue
+					}
+				}
+				walk(v.Field(i), depth+1)
+			}
+		case reflect.Map:
+			it := v.MapRange()
+			for it.Next() {
+				walk(it.Value(), depth+1)
+			}
+		}
+	}
+	walk(reflect.ValueOf(prog), 0)
+	return bare, withSubj
+}
+
 var programReflectType = reflect.TypeOf((*parser.Program)(nil))
 
 // TestH0DropsNothingUnknown lowers the whole tests/ corpus under every shape

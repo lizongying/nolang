@@ -72,6 +72,15 @@ import (
 // from becoming a permanent excuse.
 var hirMatchDesugarAllowlist = map[string]string{}
 
+// equivalenceCorpusRoots is every corpus this gate walks.
+//
+// tests/ is the historical corpus. test/std/ was added with slice S-b (§5.2.7):
+// the std test programs are the densest bare-match ({ cond -> body }) sources in
+// the repo — 82 bare matches over 87 programs — and bare matches got their own
+// HIR emitter, so leaving that tree out would have left the emitter covered only
+// incidentally. Cost of the extra walk is ~0.8s (measured).
+var equivalenceCorpusRoots = []string{corpusRoot, "../../../test/std"}
+
 // hirEquivalenceMinCompared guards against a vacuous run: if the corpus walk
 // yields too few programs, "0 divergences" means nothing.
 const hirEquivalenceMinCompared = 200
@@ -86,62 +95,71 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 	var diverged []string
 	var notLowered []string
 
-	walkErr := filepath.WalkDir(corpusRoot, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
-			return nil
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		src := string(raw)
-
-		hirH0, smH0, okH0 := matchDesugarViaH0(path, src)
-		hirPar, smPar, okPar := matchDesugarViaParser(path, src)
-		if !okH0 && !okPar {
-			return nil
-		}
-		if okH0 != okPar {
-			diverged = append(diverged, fmt.Sprintf("%s: h0=%v parser=%v", path, okH0, okPar))
-			return nil
-		}
-
-		// Non-vacuity, measured per file: only count this file as an exercise of
-		// the desugar when Route A actually carried SurfaceMatch nodes into H0.
-		// Files with 0 matches compare two identical trees either way.
-		if smH0 > 0 {
-			exercised++
-			// ...and Route B must have expanded them all, otherwise it is NOT the
-			// parser-desugared tree this gate claims to compare.
-			if smPar != 0 {
-				notLowered = append(notLowered, fmt.Sprintf("%s (%d left)", path, smPar))
+	walk := func(corpusRoot string) error {
+		return filepath.WalkDir(corpusRoot, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
+				return nil
 			}
-		}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			src := string(raw)
 
-		compared++
-		if hirH0 != hirPar {
-			diverged = append(diverged, path)
-		}
+			hirH0, smH0, okH0 := matchDesugarViaH0(path, src)
+			hirPar, smPar, okPar := matchDesugarViaParser(path, src)
+			if !okH0 && !okPar {
+				return nil
+			}
+			if okH0 != okPar {
+				diverged = append(diverged, fmt.Sprintf("%s: h0=%v parser=%v", path, okH0, okPar))
+				return nil
+			}
 
-		// Informational: how far is the WHOLE target pipeline from parity?
-		//
-		// ⚠️ This compares SkipLowering-alone (the real target pipeline)
-		// against the shipped default — NOT hirH0. hirH0 carries the surface
-		// flags, which are this gate's isolation mechanism and deliberately
-		// switch off inferOptionArith / maybeCaptureOptionAssign /
-		// maybeIndexOutAssign. Charging the target pipeline for work the flags
-		// had turned off overcounted the gap by ~2x (94 instead of 51) and
-		// blamed passes that were never in scope. See s3_breakdown_test.go for
-		// the honest measurement and its per-cause breakdown.
-		shipped, okShip := lowerToHIR(path, src, false)
-		target, okTarget := lowerToHIRSkipOnly(path, src)
-		if !okShip || !okTarget || shipped != target {
-			endToEndDiff++
+			// Non-vacuity, measured per file: only count this file as an exercise of
+			// the desugar when Route A actually carried SurfaceMatch nodes into H0.
+			// Files with 0 matches compare two identical trees either way.
+			if smH0 > 0 {
+				exercised++
+				// ...and Route B must have expanded them all, otherwise it is NOT the
+				// parser-desugared tree this gate claims to compare.
+				if smPar != 0 {
+					notLowered = append(notLowered, fmt.Sprintf("%s (%d left)", path, smPar))
+				}
+			}
+
+			compared++
+			if hirH0 != hirPar {
+				diverged = append(diverged, path)
+			}
+
+			// Informational: how far is the WHOLE target pipeline from parity?
+			//
+			// ⚠️ This compares SkipLowering-alone (the real target pipeline)
+			// against the shipped default — NOT hirH0. hirH0 carries the surface
+			// flags, which are this gate's isolation mechanism and deliberately
+			// switch off inferOptionArith / maybeCaptureOptionAssign /
+			// maybeIndexOutAssign. Charging the target pipeline for work the flags
+			// had turned off overcounted the gap by ~2x (94 instead of 51) and
+			// blamed passes that were never in scope. See s3_breakdown_test.go for
+			// the honest measurement and its per-cause breakdown.
+			shipped, okShip := lowerToHIR(path, src, false)
+			target, okTarget := lowerToHIRSkipOnly(path, src)
+			if !okShip || !okTarget || shipped != target {
+				endToEndDiff++
+			}
+			return nil
+		})
+	}
+
+	for _, root := range equivalenceCorpusRoots {
+		if _, err := os.Stat(root); err != nil {
+			t.Logf("corpus %s not present, skipped: %v", root, err)
+			continue
 		}
-		return nil
-	})
-	if walkErr != nil {
-		t.Fatalf("walking %s: %v", corpusRoot, walkErr)
+		if walkErr := walk(root); walkErr != nil {
+			t.Fatalf("walking %s: %v", root, walkErr)
+		}
 	}
 
 	if compared < hirEquivalenceMinCompared {
@@ -198,6 +216,151 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 		"S3 backlog, not this gate",
 		compared, len(diverged), len(diverged)-len(fresh), len(fresh), exercised,
 		endToEndDiff, compared)
+}
+
+// TestBareMatchEquivalenceIsExercised is the S-b anti-vacuity witness.
+//
+// Since §5.2.7 (slice S-b) a bare match — SurfaceMatch with Matched == nil — no
+// longer takes the buildBareMatchDesugar → IfExpression → case *IfExpression
+// route; tohir's lowerBareMatchToHIR emits the KIf straight from
+// resolveBareMatchPlan. TestH0MatchDesugarMatchesParserLowering still guards it
+// (Route B is exactly the old behaviour), but only for bare matches the corpus
+// actually contains. If a future edit made every bare match parse as something
+// else, that gate would report "0 divergences" over 0 bare matches and the S-b
+// emitter would go untested.
+//
+// Measured 2026-10-19: 436 bare matches across tests/ + test/std/ (354 in tests/,
+// 82 in test/std/), so the floor below sits well under the real count — it is a
+// smoke alarm, not a cap.
+func TestBareMatchEquivalenceIsExercised(t *testing.T) {
+	if _, err := os.Stat(corpusRoot); err != nil {
+		t.Skipf("no corpus at %s: %v", corpusRoot, err)
+	}
+
+	const minBare = 50
+
+	var files, bare, withSubj int
+	count := func(corpusRoot string) error {
+		return filepath.WalkDir(corpusRoot, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
+				return nil
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			func() {
+				// A parse panic in one corpus file must not take the gate down.
+				defer func() { _ = recover() }()
+				p := parser.New(lexer.NewCached(path, string(raw)))
+				p.Filename = path
+				prog := p.ParseProgram()
+				if prog == nil || len(p.Errors()) > 0 {
+					return
+				}
+				files++
+				n, m := countBareMatches(prog)
+				bare += n
+				withSubj += m
+			}()
+			return nil
+		})
+	}
+
+	for _, root := range equivalenceCorpusRoots {
+		if _, err := os.Stat(root); err != nil {
+			t.Logf("corpus %s not present, skipped: %v", root, err)
+			continue
+		}
+		if walkErr := count(root); walkErr != nil {
+			t.Fatalf("walking %s: %v", root, walkErr)
+		}
+	}
+	if bare < minBare {
+		t.Fatalf("corpus contains only %d bare matches (%d with a subject) over %d "+
+			"programs; the equivalence gate's S-b coverage would be vacuous",
+			bare, withSubj, files)
+	}
+	t.Logf("bare-match coverage: %d bare / %d with-subject over %d programs", bare, withSubj, files)
+}
+
+// TestSubjectMatchDirectHIRIsExercised is the S-c1 anti-vacuity witness.
+//
+// Since §5.2.9 (slice S-c1) a subject match on a plain identifier — no
+// index-subject normalisation, no D9 place-write, no ok(cond) wrapper, no enum
+// complement — no longer takes the resolveSubjectMatch → IfExpression →
+// case *IfExpression route; tohir's emitSubjectMatchHIR streams the KIf chain
+// straight from resolveSubjectMatchPlan. TestH0MatchDesugarMatchesParserLowering
+// still guards it (Route B is exactly the old behaviour), but only for subject
+// matches the corpus actually contains AND that satisfy subjectMatchDirectHIR's
+// four exclusions. If a future edit made every such match decline the direct
+// route, that gate would report "0 divergences" while the S-c1 emitter went
+// untested.
+//
+// The count comes from the parser's own counter (parser.SubjectMatchDirectEmits),
+// so the decision is made by the shipped predicate rather than re-derived here —
+// a re-derivation would be a second copy of the exclusion list, free to drift.
+func TestSubjectMatchDirectHIRIsExercised(t *testing.T) {
+	if _, err := os.Stat(corpusRoot); err != nil {
+		t.Skipf("no corpus at %s: %v", corpusRoot, err)
+	}
+
+	const minDirect = 20
+
+	before := parser.SubjectMatchDirectEmits()
+
+	var files, withSubj int
+	count := func(corpusRoot string) error {
+		return filepath.WalkDir(corpusRoot, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
+				return nil
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			func() {
+				// A parse panic in one corpus file must not take the gate down.
+				defer func() { _ = recover() }()
+				p := parser.New(lexer.NewCached(path, string(raw)))
+				p.Filename = path
+				prog := p.ParseProgram()
+				if prog == nil || len(p.Errors()) > 0 {
+					return
+				}
+				files++
+				_, m := countBareMatches(prog)
+				withSubj += m
+				// Route A: the shipped shape — the parser keeps the SurfaceMatch
+				// nodes and ASTToHIR desugars them, which is where the counter
+				// lives. A panic inside ASTToHIR is recovered by nothing here on
+				// purpose: the equivalence gate is the one that reports panics as
+				// divergences, and a panic would also leave the counter short,
+				// which this gate then reports as insufficient coverage.
+				parser.ASTToHIR(prog)
+			}()
+			return nil
+		})
+	}
+
+	for _, root := range equivalenceCorpusRoots {
+		if _, err := os.Stat(root); err != nil {
+			t.Logf("corpus %s not present, skipped: %v", root, err)
+			continue
+		}
+		if walkErr := count(root); walkErr != nil {
+			t.Fatalf("walking %s: %v", root, walkErr)
+		}
+	}
+
+	direct := int(parser.SubjectMatchDirectEmits() - before)
+	if direct < minDirect {
+		t.Fatalf("only %d subject matches took the S-c1 direct-HIR route over %d "+
+			"programs (%d carry a subject match); the equivalence gate's S-c1 "+
+			"coverage would be vacuous", direct, files, withSubj)
+	}
+	t.Logf("S-c1 direct-HIR coverage: %d direct emissions over %d programs "+
+		"(%d carry a subject match)", direct, files, withSubj)
 }
 
 // matchDesugarViaH0 is ROUTE A — the pipeline that actually ships after the

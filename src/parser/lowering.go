@@ -2292,83 +2292,36 @@ func (p *Parser) desugarSurfaceMatch(sm *SurfaceMatch) Expression {
 	if sm == nil || len(sm.Arms) == 0 {
 		return nil
 	}
-	arms := make([]MatchArm, len(sm.Arms))
-	copy(arms, sm.Arms)
-	clone := *sm
-	clone.Arms = arms
-	// D9 place-write：`#{index-out=DEF}` 註解由 lowerer.walk 轉掛到原始 sm
-	//（外層 ExpressionStatement 攜帶，desugar 主體是內層 SurfaceMatch）。本函數
-	// 克隆 sm 後才呼叫 buildMatchDesugar，side-table 以節點指標為鍵，克隆會丟失
-	// 註解；此處把原始 sm 的 index-out 條目帶到克隆，使臂內 RHS 读取的降糖
-	// （rewriteItPlaceWrites → desugarIndexOutReads）能讀到註解。
-	if anns := p.sem.RawAnnotationsOf(sm); len(anns) > 0 {
-		p.sem.SetRawAnnotations(&clone, anns)
-		p.sem.ensure(&clone).Annotations = anns
-	}
+	// S-a (design doc §5.2): everything through armPreChecks has side effects
+	// that BOTH emitters depend on, so it lives in prepareSurfaceMatch instead of
+	// being duplicated by lowerTypeMatchToHIR.
+	clone := p.prepareSurfaceMatch(sm)
+	return p.desugarPreparedSurfaceMatch(clone)
+}
 
-	// Same order as lowerSurfaceMatch: register destructuring bindings so an
-	// inner match can resolve its subject type, then validate `it` usage while
-	// it is still unambiguous (before any synthetic `let it` exists).
-	p.armPreChecks(&clone)
-
+// desugarPreparedSurfaceMatch lowers a match that prepareSurfaceMatch has
+// already run, and nothing more.
+//
+// The split exists so the HIR emitter can share the prep: surface lowering has
+// one preparation phase with real side effects (see prepareSurfaceMatch) and one
+// emission phase, and S-a's streaming path needs only the second. Calling
+// prepareSurfaceMatch twice instead would re-run armPreChecks and duplicate every
+// diagnostic it emits.
+func (p *Parser) desugarPreparedSurfaceMatch(clone *SurfaceMatch) Expression {
 	var result Expression
 	switch {
 	case clone.Matched == nil:
 		result = p.buildBareMatchDesugar(clone.Token, clone.Arms)
 	default:
-		// Type-destructuring match: the subject's static type is a union, so
-		// the arms dispatch statically. Detected the same way lowerSurfaceMatch
-		// detects it, so the two paths pick the same desugar.
-		//
-		// 臂形態判據與 lowerSurfaceMatch 共用（armsCarryTypePatterns）：union
-		// 單態化複本的主體是具體成員型別、語義表也沒有以複本名為鍵的條目，
-		// 只靠「主體是 union」會在複本上漏判，把型別臂誤降糖成
-		// `x == i64` 執行期比較（tests/type-match.no 迴歸案）。
-		if ident, ok := clone.Matched.(*Identifier); ok {
-			// Same arm-shape guard as lowerSurfaceMatch (see isOptionMatchArm):
-			// the H0 path is exactly where a blob-loaded std module's local
-			// resolves through the unscoped global VarTypes fallback.
-			t, _ := p.sem.FuncVarType(p.curFuncName, ident.Value)
-			if t == "" {
-				// S1 flip fallback: FuncVarType can miss for blob-loaded std
-				// functions whose local-let types were never collected. Derive
-				// the subject type from the source AST instead of the unscoped
-				// global VarTypes fallback.
-				if at := p.astLocalVarType(p.curFuncName, ident.Value); at != "" {
-					t = at
-				}
-			}
-			// S1 flip: a union-monomorphized clone carries a CONCRETE member type
-			// (e.g. i32) as the subject instead of the union (num). Recover the
-			// union so the type-destructuring match still validates its arms against
-			// the full member set (otherwise each non-matching arm errors with
-			// "not a member of union i32"). Mirrors no-flip, where the original is
-			// desugared before cloning and the clone inherits the static if-chain.
-			var armPatterns []string
-			for i := range clone.Arms {
-				a := &clone.Arms[i]
-				if a.IsTypeArm {
-					armPatterns = append(armPatterns, a.TypePattern)
-				} else if id, ok := a.Condition.(*Identifier); ok && p.isUnionMemberName(id.Value) {
-					armPatterns = append(armPatterns, id.Value)
-				}
-			}
-			// Only a match whose arms actually name union members / type patterns
-			// is a type-destructuring match. For a value match (e.g.
-			// `b bool: { true -> }`) the subject may be a union member by
-			// coincidence (bool ∈ mixed); recovering a union there and routing to
-			// buildTypeMatchDesugar would trip the "requires type patterns" error
-			// on the value arm `true ->`. Gate both the recovery and the
-			// type-match desugar on armsCarryTypePatterns so value matches always
-			// fall through to buildMatchDesugar (mirrors the no-flip behaviour,
-			// where the subject `b` is bool and never a union).
-			if !hasOptionMatchArm(clone.Arms) && p.armsCarryTypePatterns(clone.Arms) {
-				t = p.recoverUnionFromMember(t, armPatterns)
-				result = p.buildTypeMatchDesugar(&clone, t)
-				break
-			}
+		// Type-destructuring match: the subject's static type is a union, so the
+		// arms dispatch statically. typeDestructuringSubjectType encapsulates the
+		// same detection (and union-alias recovery) the AST path uses, so the AST
+		// and HIR emitters can never disagree about which kind of match this is.
+		if t, ok := p.typeDestructuringSubjectType(clone); ok {
+			result = p.buildTypeMatchDesugar(clone, t)
+			break
 		}
-		result = p.buildMatchDesugar(&clone)
+		result = p.buildMatchDesugar(clone)
 	}
 	if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
 		// lowerSurfaceMatch stamps the closing brace position so EndPos() and
@@ -2379,6 +2332,73 @@ func (p *Parser) desugarSurfaceMatch(sm *SurfaceMatch) Expression {
 		}
 	}
 	return result
+}
+
+// prepareSurfaceMatch clones the match, carries the D9 index-out annotations
+// onto the clone, and runs the arm pre-checks. Every step here has side effects
+// that later lowering depends on:
+//
+//   - the clone is what the emitters mutate (arm bodies get the narrowing let
+//     prepended), so the caller's SurfaceMatch stays untouched — required, since
+//     the same tree is walked more than once (checker, sugar diagnostics);
+//   - index-out annotations are keyed by node pointer, so a bare clone loses
+//     them and the arm-body rewrites (rewriteItPlaceWrites /
+//     desugarIndexOutReads) silently stop seeing the annotation;
+//   - armPreChecks registers destructuring bindings so an INNER match can
+//     resolve its own subject type, and validates `it` usage while that is
+//     still unambiguous (before any synthetic `let it` exists).
+//
+// Both the AST chain and the streaming HIR emitter call it (S-a).
+func (p *Parser) prepareSurfaceMatch(sm *SurfaceMatch) *SurfaceMatch {
+	arms := make([]MatchArm, len(sm.Arms))
+	copy(arms, sm.Arms)
+	clone := *sm
+	clone.Arms = arms
+	if anns := p.sem.RawAnnotationsOf(sm); len(anns) > 0 {
+		p.sem.SetRawAnnotations(&clone, anns)
+		p.sem.ensure(&clone).Annotations = anns
+	}
+	p.armPreChecks(&clone)
+	return &clone
+}
+
+// typeDestructuringSubjectType reports whether sm is a type-destructuring match
+// and returns the subject type to dispatch on, with the union alias recovered
+// for union-monomorphized clones (see recoverUnionFromMember).
+//
+// A union-monomorphized clone carries a CONCRETE member type (e.g. i32) as its
+// subject instead of the union (num), so agreeing on "is this a type match" is
+// not enough — the recovered type has to agree too, or the two emitters would
+// validate different member sets.
+func (p *Parser) typeDestructuringSubjectType(sm *SurfaceMatch) (string, bool) {
+	if sm == nil || sm.Matched == nil || len(sm.Arms) == 0 {
+		return "", false
+	}
+	ident, ok := sm.Matched.(*Identifier)
+	if !ok {
+		return "", false
+	}
+	t, _ := p.sem.FuncVarType(p.curFuncName, ident.Value)
+	if t == "" {
+		// S1 flip fallback: FuncVarType can miss for blob-loaded std functions
+		// whose local-let types were never collected into the side table.
+		if at := p.astLocalVarType(p.curFuncName, ident.Value); at != "" {
+			t = at
+		}
+	}
+	var armPatterns []string
+	for i := range sm.Arms {
+		a := &sm.Arms[i]
+		if a.IsTypeArm {
+			armPatterns = append(armPatterns, a.TypePattern)
+		} else if id, ok := a.Condition.(*Identifier); ok && p.isUnionMemberName(id.Value) {
+			armPatterns = append(armPatterns, id.Value)
+		}
+	}
+	if !hasOptionMatchArm(sm.Arms) && p.armsCarryTypePatterns(sm.Arms) {
+		return p.recoverUnionFromMember(t, armPatterns), true
+	}
+	return "", false
 }
 
 // isOptionMatchArm reports whether a match arm is an option arm (ok/nil/err)
@@ -2502,6 +2522,60 @@ func (p *Parser) buildTypeMatchDesugar(sm *SurfaceMatch, matchedVarType string) 
 	if len(arms) == 0 {
 		return nil
 	}
+	resolved := p.resolveTypeMatchArms(sm, matchedVarType)
+	if len(resolved) == 0 {
+		return nil
+	}
+	// 由內而外建 if/elif/else 鏈；MIR 按單態化後的具體型別選臂（不依賴此鏈結構）。
+	var ifExpr *IfExpression
+	for i := len(resolved) - 1; i >= 0; i-- {
+		ra := resolved[i]
+		node := &IfExpression{
+			Token:           tok,
+			Condition:       nil,
+			Consequence:     ra.body,
+			IsTypeMatch:     true,
+			TypePattern:     ra.typePattern,
+			TypeBindingName: ra.bindingName,
+			IsTypeDefault:   ra.isDefault,
+			MatchedExpr:     matched,
+		}
+		if ifExpr != nil {
+			node.Alternative = &BlockStatement{
+				Token:      tok,
+				Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
+			}
+		}
+		ifExpr = node
+	}
+	return ifExpr
+}
+
+// typeMatchArm is the IR-agnostic result of resolving one arm of a
+// type-destructuring match: the member type it selects, the optional binding
+// name, whether it is the default arm, and its body with the narrowing let
+// (`it = matched` / `v = matched`) already prepended.
+//
+// S-a (design doc §5.2): this is what keeps the two emitters from drifting.
+// buildTypeMatchDesugar turns it into the legacy IfExpression chain, while
+// lowerTypeMatchToHIR streams KTypeArm nodes straight out of it. Both run the
+// SAME per-arm decisions and side effects because both call
+// resolveTypeMatchArms.
+type typeMatchArm struct {
+	typePattern string
+	bindingName string
+	isDefault   bool
+	body        *BlockStatement
+}
+
+// resolveTypeMatchArms validates every arm against the union's member set and
+// injects the narrowing binding. It is deliberately IR-agnostic: it returns
+// resolved arms rather than AST nodes.
+func (p *Parser) resolveTypeMatchArms(sm *SurfaceMatch, matchedVarType string) []typeMatchArm {
+	tok, matched, arms := sm.Token, sm.Matched, sm.Arms
+	if len(arms) == 0 {
+		return nil
+	}
 	// 成員表用於「臂模式是否屬於該 union」的靜態校驗。主體型別未知時
 	// （matchedVarType == ""，例如 union 單態化複本：cloneUnionVariant 只改
 	// 函數簽名，語義表沒有以複本名為鍵的條目）跳過校驗——flattenUnion 對
@@ -2517,16 +2591,10 @@ func (p *Parser) buildTypeMatchDesugar(sm *SurfaceMatch, matchedVarType string) 
 		memberSet[m] = true
 	}
 
-	type tmArm struct {
-		typePattern string
-		bindingName string
-		isDefault   bool
-		body        *BlockStatement
-	}
-	resolved := make([]tmArm, len(arms))
+	resolved := make([]typeMatchArm, len(arms))
 	for i := range arms {
 		a := &arms[i]
-		var ra tmArm
+		var ra typeMatchArm
 		ra.body = a.Body
 		if a.IsTypeArm {
 			ra.typePattern = a.TypePattern
@@ -2574,30 +2642,7 @@ func (p *Parser) buildTypeMatchDesugar(sm *SurfaceMatch, matchedVarType string) 
 		}
 		resolved[i] = ra
 	}
-
-	// 由內而外建 if/elif/else 鏈；MIR 按單態化後的具體型別選臂（不依賴此鏈結構）。
-	var ifExpr *IfExpression
-	for i := len(resolved) - 1; i >= 0; i-- {
-		ra := resolved[i]
-		node := &IfExpression{
-			Token:           tok,
-			Condition:       nil,
-			Consequence:     ra.body,
-			IsTypeMatch:     true,
-			TypePattern:     ra.typePattern,
-			TypeBindingName: ra.bindingName,
-			IsTypeDefault:   ra.isDefault,
-			MatchedExpr:     matched,
-		}
-		if ifExpr != nil {
-			node.Alternative = &BlockStatement{
-				Token:      tok,
-				Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
-			}
-		}
-		ifExpr = node
-	}
-	return ifExpr
+	return resolved
 }
 
 // firstMember 回傳 union 成員清單的第一個（用於錯誤訊息示例），空則回傳 "i32"。
@@ -2623,7 +2668,44 @@ func firstMember(members []string) string {
 // 逐條 lowerStmt 使每個 KIf 獨立求值。
 //
 // 含有 wildcard 臂（→ default）或僅一個臂時沿用既有 elif 鏈語義。
-func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []MatchArm) Expression {
+// matchIfPlan is the IR-agnostic shape of an if/elif/else chain lowered from a
+// match — bare (no subject) and subject matches alike. One decision function per
+// match kind fills the plan, and both emitters consume it, so they cannot drift:
+//
+//   - resolveBareMatchPlan      -> buildBareMatchDesugar -> emitMatchIfAST;
+//   - resolveSubjectMatchPlan   -> emitSubjectMatchAST / emitSubjectMatchHIR (S-c1).
+//
+// alt vs altBody matters for byte-identical HIR: an else branch that is a nested
+// guard is wrapped in BlockStatement{ExpressionStatement{...}} (which lowers to
+// KBlock -> KExprStmt -> KIf), while a default arm's body is Alternative
+// directly (which lowers to that body's own KBlock).
+//
+// The subject-only fields (matched / optionPatterns / valuePatterns / rawCond)
+// are nil for a bare match, so the bare emitter ignores them; they exist because
+// a subject match's KIf carries nine slots, not six (see emitMatchIfHIR).
+type matchIfPlan struct {
+	// isWrapper marks the `if(1){ ... }` form used by the bare-match
+	// independent-guard pattern and, later, by the subject-match tail wrappers.
+	isWrapper      bool
+	cond           Expression
+	eqPattern      Expression
+	rangePattern   *RangeExpression
+	dotValBody     *BlockStatement
+	body           *BlockStatement
+	alt            *matchIfPlan
+	altBody        *BlockStatement
+	stmts          []*matchIfPlan
+	rtFlags        RTFlag
+	matched        Expression
+	optionPatterns []string
+	valuePatterns  []Expression
+	rawCond        Expression
+}
+
+// resolveBareMatchPlan builds the bare-match plan. Faithful port of the original
+// in-buildBareMatchDesugar logic: same fast path condition, same dotVal /
+// wildcard / defaultBody rules, same arm order.
+func (p *Parser) resolveBareMatchPlan(tok lexer.Token, arms []MatchArm) *matchIfPlan {
 	if len(arms) == 0 {
 		return nil
 	}
@@ -2637,29 +2719,123 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []MatchArm) Express
 		}
 	}
 	if allNonWildcard && len(arms) > 1 {
-		stmts := make([]Statement, 0, len(arms))
-		for _, arm := range arms {
-			var equalityPattern Expression
-			var rangePattern *RangeExpression
-			if rng, isRange := arm.Condition.(*RangeExpression); isRange {
-				rangePattern = rng
+		w := &matchIfPlan{
+			isWrapper: true,
+			cond:      &IntegerLiteral{Token: tok, Value: 1},
+		}
+		for i := range arms {
+			sub := &matchIfPlan{
+				cond:    arms[i].Condition,
+				body:    arms[i].Body,
+				rtFlags: RTBareMatch,
+			}
+			if rng, isRange := arms[i].Condition.(*RangeExpression); isRange {
+				sub.rangePattern = rng
 			} else {
-				equalityPattern = arm.Condition
+				sub.eqPattern = arms[i].Condition
 			}
-			newIf := &IfExpression{
-				Token:           tok,
-				Condition:       arm.Condition,
-				Consequence:     arm.Body,
-				Alternative:     nil,
-				EqualityPattern: equalityPattern,
-				RangePattern:    rangePattern,
+			w.stmts = append(w.stmts, sub)
+		}
+		return w
+	}
+
+	// ---- elif chain (original logic) ----
+	var cur *matchIfPlan
+	var defaultBody *BlockStatement
+	for i := len(arms) - 1; i >= 0; i-- {
+		arm := arms[i]
+		if arm.IsWildcard {
+			if cur == nil {
+				switch {
+				case defaultBody != nil && arm.IsDotVal:
+					// dotVal arm (ok->) after a regular -> wildcard (else):
+					// treat as conditional arm: if ok { body } else { defaultBody }
+					cur = &matchIfPlan{
+						cond:       &Identifier{Token: tok, Value: "ok"},
+						body:       arm.Body,
+						altBody:    defaultBody,
+						eqPattern:  &Identifier{Token: tok, Value: "ok"},
+						dotValBody: arm.Body,
+						rtFlags:    RTBareMatch | RTMatchWildcard,
+					}
+				case arm.IsDotVal:
+					// dotVal arm without prior default — standalone ok condition
+					cur = &matchIfPlan{
+						cond:       &Identifier{Token: tok, Value: "ok"},
+						body:       arm.Body,
+						eqPattern:  &Identifier{Token: tok, Value: "ok"},
+						dotValBody: arm.Body,
+						rtFlags:    RTBareMatch | RTMatchWildcard,
+					}
+				default:
+					// Regular wildcard (->): store as defaultBody for next arm's else
+					cur = &matchIfPlan{
+						cond:    &IntegerLiteral{Token: tok, Value: 1},
+						body:    arm.Body,
+						rtFlags: RTBareMatch | RTMatchWildcard,
+					}
+				}
+			} else {
+				if arm.IsDotVal {
+					// dotVal arm (ok->) when other arms already processed: wrap as outer condition
+					cur = &matchIfPlan{
+						cond:       &Identifier{Token: tok, Value: "ok"},
+						body:       arm.Body,
+						alt:        cur,
+						eqPattern:  &Identifier{Token: tok, Value: "ok"},
+						dotValBody: arm.Body,
+						rtFlags:    RTBareMatch | RTMatchWildcard,
+					}
+				} else {
+					if cur.alt == nil && cur.altBody == nil {
+						cur.altBody = arm.Body
+					}
+				}
 			}
-			p.sem.SetRTFlag(newIf, RTBareMatch)
-			stmts = append(stmts, &ExpressionStatement{Token: tok, Expression: newIf})
+			if !arm.IsDotVal && defaultBody == nil {
+				defaultBody = arm.Body
+			}
+		} else {
+			sub := &matchIfPlan{
+				cond:    arm.Condition,
+				body:    arm.Body,
+				rtFlags: RTBareMatch,
+			}
+			if rng, isRange := arm.Condition.(*RangeExpression); isRange {
+				sub.rangePattern = rng
+			} else {
+				sub.eqPattern = arm.Condition
+			}
+			if cur != nil {
+				sub.alt = cur
+			}
+			cur = sub
+		}
+	}
+	return cur
+}
+
+func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []MatchArm) Expression {
+	plan := p.resolveBareMatchPlan(tok, arms)
+	if plan == nil {
+		return nil
+	}
+	return p.emitMatchIfAST(tok, plan)
+}
+
+// emitBareMatchAST is the AST emitter for the bare-match plan (legacy route).
+func (p *Parser) emitMatchIfAST(tok lexer.Token, plan *matchIfPlan) Expression {
+	if plan.isWrapper {
+		stmts := make([]Statement, 0, len(plan.stmts))
+		for _, s := range plan.stmts {
+			stmts = append(stmts, &ExpressionStatement{
+				Token:      tok,
+				Expression: p.emitMatchIfAST(tok, s),
+			})
 		}
 		wrapper := &IfExpression{
 			Token:     tok,
-			Condition: &IntegerLiteral{Token: tok, Value: 1},
+			Condition: plan.cond,
 			Consequence: &BlockStatement{
 				Token:      tok,
 				Statements: stmts,
@@ -2668,101 +2844,24 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []MatchArm) Express
 		p.sem.SetRTFlag(wrapper, RTBareMatch|RTMatchWrapper)
 		return wrapper
 	}
-
-	// ---- elif chain (original logic) ----
-	var ifExpr *IfExpression
-	var defaultBody *BlockStatement // 最內層非 dotVal wildcard body
-	for i := len(arms) - 1; i >= 0; i-- {
-		arm := arms[i]
-		if arm.IsWildcard {
-			if ifExpr == nil {
-				if defaultBody != nil && arm.IsDotVal {
-					// dotVal arm (ok->) after a regular -> wildcard (else):
-					// treat as conditional arm: if ok { body } else { defaultBody }
-					newIf := &IfExpression{
-						Token:           tok,
-						Condition:       &Identifier{Token: tok, Value: "ok"},
-						Consequence:     arm.Body,
-						Alternative:     defaultBody,
-						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.Body,
-					}
-					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
-					ifExpr = newIf
-				} else if arm.IsDotVal {
-					// dotVal arm without prior default — treat as standalone ok condition
-					newIf := &IfExpression{
-						Token:           tok,
-						Condition:       &Identifier{Token: tok, Value: "ok"},
-						Consequence:     arm.Body,
-						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.Body,
-					}
-					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
-					ifExpr = newIf
-				} else {
-					// Regular wildcard (->): store as defaultBody for next arm's else
-					ifExpr = &IfExpression{
-						Token:       tok,
-						Condition:   &IntegerLiteral{Token: tok, Value: 1},
-						Consequence: arm.Body,
-					}
-					p.sem.SetRTFlag(ifExpr, RTBareMatch|RTMatchWildcard)
-				}
-			} else {
-				if arm.IsDotVal {
-					// dotVal arm (ok->) when other arms already processed:
-					// wrap as outer condition
-					newIf := &IfExpression{
-						Token:       tok,
-						Condition:   &Identifier{Token: tok, Value: "ok"},
-						Consequence: arm.Body,
-						Alternative: &BlockStatement{
-							Token:      tok,
-							Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
-						},
-						EqualityPattern: &Identifier{Token: tok, Value: "ok"},
-						DotValBody:      arm.Body,
-					}
-					p.sem.SetRTFlag(newIf, RTBareMatch|RTMatchWildcard)
-					ifExpr = newIf
-				} else {
-					if ifExpr.Alternative == nil {
-						ifExpr.Alternative = arm.Body
-					}
-				}
-			}
-			if !arm.IsDotVal && defaultBody == nil {
-				defaultBody = arm.Body
-			}
-		} else {
-			var equalityPattern Expression
-			var rangePattern *RangeExpression
-			if rng, isRange := arm.Condition.(*RangeExpression); isRange {
-				rangePattern = rng
-			} else {
-				equalityPattern = arm.Condition
-			}
-			newIf := &IfExpression{
-				Token:           tok,
-				Condition:       arm.Condition,
-				Consequence:     arm.Body,
-				Alternative:     nil,
-				EqualityPattern: equalityPattern,
-				RangePattern:    rangePattern,
-			}
-			p.sem.SetRTFlag(newIf, RTBareMatch)
-			if ifExpr != nil {
-				newIf.Alternative = &BlockStatement{
-					Token:      tok,
-					Statements: []Statement{&ExpressionStatement{Token: tok, Expression: ifExpr}},
-				}
-			}
-			ifExpr = newIf
-		}
+	node := &IfExpression{
+		Token:           tok,
+		Condition:       plan.cond,
+		Consequence:     plan.body,
+		EqualityPattern: plan.eqPattern,
+		RangePattern:    plan.rangePattern,
+		DotValBody:      plan.dotValBody,
 	}
-
-	return ifExpr
+	if plan.alt != nil {
+		node.Alternative = &BlockStatement{
+			Token:      tok,
+			Statements: []Statement{&ExpressionStatement{Token: tok, Expression: p.emitMatchIfAST(tok, plan.alt)}},
+		}
+	} else if plan.altBody != nil {
+		node.Alternative = plan.altBody
+	}
+	p.sem.SetRTFlag(node, plan.rtFlags)
+	return node
 }
 
 // buildMatchDesugar 建立 if/elif/else 鏈
@@ -2774,7 +2873,75 @@ func (p *Parser) buildBareMatchDesugar(tok lexer.Token, arms []MatchArm) Express
 // 型別資訊（matched 變數型別、枚舉變體）一律取自 sm 的解析期快照，
 // 不讀 parser 的活動符號表（lowering 延後執行時符號表已是整檔終態）。
 func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
+	prep := p.resolveSubjectMatch(sm)
+	if prep == nil {
+		return nil
+	}
+	return p.emitSubjectMatchAST(prep)
+}
+
+// subjectMatchPrep is the IR-agnostic state buildMatchDesugar computes BEFORE
+// it starts emitting arms (design doc §5.2.9, segments A+B+C). Everything here is
+// either a decision (which subject variable to match on, what `it` type each arm
+// binds, which variant a wildcard else arm stands for) or a side effect already
+// applied to the tree (arm bodies rewritten for the zero-default / place-write /
+// destructuring-binding cases).
+//
+// The split exists so the S-c HIR emitter can share the preparation exactly the
+// way S-a/S-b do: resolveSubjectMatch runs the side effects once, then
+// emitSubjectMatchAST and (S-c1) emitSubjectMatchHIR consume the same prep. Two
+// emitters over one prep is what keeps the AST and HIR routes from drifting.
+//
+// ⚠️ placeWriteUsed is MUTATED by the emitter (rewriteItPlaceWrites reports back
+// through it) and then READ by the tail wrappers, so it lives on the prep rather
+// than being a local of either phase.
+type subjectMatchPrep struct {
+	tok                lexer.Token
+	matched            Expression
+	arms               []MatchArm
+	origMatched        Expression
+	subjName           string
+	subjElem           string
+	origIdxExpr        Expression
+	idxTempName        string
+	baseName           string
+	placeWriteUsed     bool
+	anyArmValueCtx     bool
+	idxOutDef          *AnnotationValue
+	matchedVarType     string
+	isEnumType         bool
+	enumVariants       []string
+	elemType           string
+	itStmt             *LetStatement
+	hasRawCond         bool
+	hasExplicitOk      bool
+	hasExplicitErr     bool
+	hasExplicitNil     bool
+	enumListedVariants map[string]bool
+	matchedIsEnum      bool
+}
+
+// resolveSubjectMatch runs every side effect buildMatchDesugar performs on the
+// tree and on the parser side tables, and returns the resulting plan. It is
+// deliberately free of any emission: no IfExpression is built here.
+//
+// The side effects, in order (§5.2.9 segments A-C):
+//
+//	A. subject normalisation — an index-expression subject of an option match is
+//	   replaced by a synthesised `__match_subj_L_C ?elem` identifier (registered
+//	   in FuncVarType/VarTypes), and the D9 place-write scratch names are chosen;
+//	B. type inference + empty-arm defaults — matchedVarType / enumVariants /
+//	   elemType come from the semantic side tables (with the astLocalVarType
+//	   fallback), and value-context empty arms get their zero-value body;
+//	C. `it` binding + enum destructuring — the shared binding is built, hasRawCond
+//	   is probed, and `some(v) ->` payload-destructuring arms are normalised while
+//	   the explicit-variant bookkeeping (hasExplicit*, enumListedVariants) is
+//	   filled in.
+
+func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
+	prep := &subjectMatchPrep{}
 	tok, matched, arms := sm.Token, sm.Matched, sm.Arms
+	prep.tok, prep.matched, prep.arms, prep.origMatched = tok, matched, arms, matched
 	if len(arms) == 0 {
 		return nil
 	}
@@ -3000,11 +3167,6 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		}
 	}
 
-	// Build from last to first (inside-out)
-	var ifExpr *IfExpression
-	var defaultBody *BlockStatement       // 最內層 wildcard body（直接作為 else，避免 if 1 {} 包裝）
-	var defaultDotValBody *BlockStatement // track val branch body separately
-
 	// Check which variants are explicitly listed (for computing else arm complement)
 	hasExplicitOk, hasExplicitErr, hasExplicitNil := false, false, false
 	// For enum types, track which enum variant identifiers are listed
@@ -3090,6 +3252,437 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		}
 	}
 
+	prep.subjName = subjName
+	prep.subjElem = subjElem
+	prep.origIdxExpr = origIdxExpr
+	prep.idxTempName = idxTempName
+	prep.baseName = baseName
+	prep.placeWriteUsed = placeWriteUsed
+	prep.anyArmValueCtx = anyArmValueCtx
+	prep.idxOutDef = idxOutDef
+	prep.matchedVarType = matchedVarType
+	prep.isEnumType = isEnumType
+	prep.enumVariants = enumVariants
+	prep.elemType = elemType
+	prep.itStmt = itStmt
+	prep.hasRawCond = hasRawCond
+	prep.hasExplicitOk = hasExplicitOk
+	prep.hasExplicitErr = hasExplicitErr
+	prep.hasExplicitNil = hasExplicitNil
+	prep.enumListedVariants = enumListedVariants
+	prep.matchedIsEnum = matchedIsEnum
+	return prep
+}
+
+// emitSubjectMatchAST builds the IfExpression chain from a resolved prep. This is
+// the legacy route (and what the no-flip control path keeps using); the streaming
+// HIR emitter is the S-c counterpart.
+
+// rewriteSubjectArm is the per-arm body rewrite half of the D segment (§5.2.9):
+// it computes the arm's variant type, injects the `it` (or `v`) binding, applies
+// the D9 place-write rewrite, and fills in the value-context zero default. It
+// mutates arm.Body in place and registers names in the semantic side tables.
+//
+// It is shared by BOTH emitters (emitSubjectMatchAST and emitSubjectMatchHIR) so
+// the two routes cannot disagree about what an arm's body looks like. It has no
+// cross-arm dependency: armType, the injected statements and the side-table
+// registrations are all per-arm, and the only shared variable it touches is
+// prep.placeWriteUsed, which is a monotonic OR-accumulation. That is what lets
+// the emitters run this as a separate pass over the arms before assembling the
+// chain.
+func (p *Parser) rewriteSubjectArm(prep *subjectMatchPrep, arm *MatchArm) {
+	// Guard from the original in-loop code (see the comment block below on why
+	// the per-arm path is skipped when the shared binding is absent or an
+	// ok(cond) arm will bind `it` before the chain).
+	if prep.itStmt == nil || prep.hasRawCond {
+		return
+	}
+	tok := prep.tok
+	matched := prep.matched
+	itStmt := prep.itStmt
+	matchedIsEnum := prep.matchedIsEnum
+	matchedVarType := prep.matchedVarType
+	enumVariants := prep.enumVariants
+	enumListedVariants := prep.enumListedVariants
+	hasExplicitOk := prep.hasExplicitOk
+	hasExplicitErr := prep.hasExplicitErr
+	hasExplicitNil := prep.hasExplicitNil
+	elemType := prep.elemType
+	isEnumType := prep.isEnumType
+	idxTempName := prep.idxTempName
+	anyArmValueCtx := prep.anyArmValueCtx
+	origMatched := prep.origMatched
+	baseName := prep.baseName
+	idxOutDef := prep.idxOutDef
+	placeWriteUsed := prep.placeWriteUsed
+
+	var armType string
+	// 標籤列舉帶載荷的變體臂：armType/綁定型別取「載荷型別」而非變體名，
+	// 使 `some(v) ->` 的 v 與隱含 `it` 得到正確型別（如 i64/f64/str）。
+	armBindingType := ""
+	skipItBinding := false
+	if arm.SkipItBinding {
+		// Generated sentinel arms (e.g. ?= / #{index-out} err/nil arms)
+		// never reference `it`; opt out so a sentinel arm's %str-long/nil
+		// `it` type can't clobber the ok arm's element-type `it`.
+		skipItBinding = true
+	}
+	if len(arm.MultiOptionPatterns) > 0 {
+		// Combined option patterns: compute armType from pattern set
+		hasOk, hasErr, hasNil := false, false, false
+		for _, pat := range arm.MultiOptionPatterns {
+			switch pat {
+			case "ok":
+				hasOk = true
+			case "err":
+				hasErr = true
+			case "nil":
+				hasNil = true
+			}
+		}
+		if hasOk && hasErr && hasNil {
+			armType = "ok_err_nil"
+		} else if hasOk && hasErr {
+			armType = "ok_err"
+		} else if hasOk && hasNil {
+			armType = "ok_nil"
+		} else if hasErr && hasNil {
+			armType = "else" // err | nil
+		} else if hasOk {
+			armType = "ok"
+		} else if hasErr {
+			armType = "err"
+		} else if hasNil {
+			armType = "nil"
+		}
+	} else if arm.IsWildcard {
+		if arm.IsDotVal {
+			armType = "ok" // ok-> is explicit ok case
+			// 標籤列舉：`ok(v) ->` 這類走 dotVal 路徑的析構綁定，其綁定型別
+			// 同樣取載荷型別（由 bindingVariant 在本枚舉內解析）。
+			if matchedIsEnum && arm.BindingVariant != "" {
+				if pt := p.enumVariantPayload(matchedVarType, arm.BindingVariant); pt != "" {
+					armType = pt
+					armBindingType = pt
+				}
+			}
+		} else {
+			// Compute complement: which variants remain for -> else arm
+			if matchedIsEnum {
+				// For enum types, compute complement dynamically
+				var remaining []string
+				for _, v := range enumVariants {
+					if !enumListedVariants[v] {
+						remaining = append(remaining, v)
+					}
+				}
+				if len(remaining) == 0 {
+					// All enum variants listed — the else arm is dead code
+					//
+					// 診斷已搬到解析期（parser/match_warn.go 的
+					// warnUnreachableArms）：這條提示原本在此發出，等於
+					// 它是「降糖的副產物」——SkipLowering 下整段不執行，
+					// 消費方翻到糖形態就靜默丟掉它（設計稿 §17.1）。
+					skipItBinding = true
+				} else {
+					armType = strings.Join(remaining, " | ")
+				}
+			} else {
+				// Three variants: ok(elemType), err, nil
+				okListed, errListed, nilListed := hasExplicitOk, hasExplicitErr, hasExplicitNil
+				if okListed && errListed && nilListed {
+					// All three option variants listed — the else arm is
+					// dead code. 診斷同列舉分支：已搬到解析期
+					// （parser/match_warn.go），這裡只保留結構性的
+					// skipItBinding。
+					skipItBinding = true
+				} else if okListed && !errListed && nilListed {
+					armType = "err" // only err remains
+				} else if okListed && errListed && !nilListed {
+					armType = "nil" // only nil remains
+				} else if okListed && !errListed && !nilListed {
+					armType = "else" // err | nil
+				} else if !okListed && errListed && nilListed {
+					armType = "ok" // only i64 remains
+				} else if !okListed && !errListed && nilListed {
+					armType = "ok_err" // i64 | err
+				} else if !okListed && errListed && !nilListed {
+					armType = "ok_nil" // i64 | nil
+				} else if !okListed && !errListed && !nilListed {
+					armType = "ok_err_nil" // i64 | err | nil
+				}
+			}
+		}
+	} else if ident, ok := arm.Condition.(*Identifier); ok {
+		if ident.Value == "err" || ident.Value == "nil" {
+			armType = ident.Value
+		} else if ident.Value == "ok" {
+			armType = "ok"
+		} else if matchedIsEnum {
+			armType = ident.Value // Use variant name as arm type for it binding
+			// 帶載荷變體（some(v) ->）：綁定型別 = 載荷型別。
+			// 由被匹配變數的靜態型別（matchedVarType）在解析期補全查得。
+			if pt := p.enumVariantPayload(matchedVarType, ident.Value); pt != "" {
+				armType = pt
+				armBindingType = pt
+			}
+		}
+	} else if _, ok := arm.Condition.(*NilLiteral); ok {
+		armType = "nil"
+	} else if arm.IsDotVal {
+		// ok-> arm (dotVal wildcard): it should be the unwrapped elemType
+		armType = "ok"
+	}
+	// D9 place-write：statement 語境 + 安全索引主體 + ok 路徑臂 ⇒ 臂內使用者
+	// 寫的 `it = v`（let / assign 形態）改寫為「求值一次 → 寫回元素 → 重綁 it」。
+	// 值語境（anyArmValueCtx）的 match 保持讀語義：it 是載荷副本，`it = v` 只
+	// 重綁局部，與今天一致。nil/err 臂沒有元素位置可寫，不改寫。
+	// SkipSafeIndexLowering 旗標已隨 §4.3 刪除：編譯期一律做 place-write 寫回；
+	// 糖形態（SkipLowering=true）不走此路徑，formatter 直接渲染 surface 語法。
+	if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) {
+		writeInBounds := false
+		if idx, ok := origMatched.(*IndexExpression); ok {
+			writeInBounds = p.sem.IndexIsInBounds(idx)
+		}
+		arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds, idxOutDef)
+	}
+	if armType != "" {
+		// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
+		// 嵌套 match 時這能保住外層的 `it`（否則內層會把它覆蓋掉）。
+		bindName := arm.BindingName
+		if bindName == "" {
+			bindName = "it"
+		}
+		// Use per-arm position so walker/index can distinguish synthetic bindings
+		var armTok lexer.Token
+		if arm.Condition != nil {
+			pos := arm.Condition.Pos()
+			armTok = lexer.Token{Type: lexer.IDENT, Literal: bindName, Line: pos.Line, Column: pos.Column}
+		} else if len(arm.Body.Statements) > 0 {
+			pos := arm.Body.Statements[0].Pos()
+			armTok = lexer.Token{Type: lexer.IDENT, Literal: bindName, Line: pos.Line, Column: pos.Column}
+		} else {
+			armTok = tok
+		}
+		if arm.BindingName != "" {
+			// 讓 checker / codegen 知道 v 的型別（等同 `it` 在 ok 臂的 elemType）。
+			// DeclaredVars 必須註冊，否則 ValidateUndefinedVars 會報
+			// "'v' is not defined"（`it` 是 checker 裡寫死的關鍵字，自訂名沒有這待遇）。
+			if p.sem.DeclaredVars == nil {
+				p.sem.DeclaredVars = make(map[string]bool)
+			}
+			p.sem.DeclaredVars[arm.BindingName] = true
+			bt := elemType
+			if armBindingType != "" {
+				bt = armBindingType
+			} else if armType == "err" && !matchedIsEnum {
+				// 內建 option 的 err 載荷恆為 str
+				//（option { ok(v t), nil, err(e str) }），與 codegen 端
+				// hir2mir 的 err-marker 剝皮語義一致；不可誤用 ok 載荷型別。
+				bt = "str"
+			}
+			if bt != "" {
+				p.sem.SetFuncVarType(p.curFuncName, arm.BindingName, bt)
+				p.setVarType(arm.BindingName, bt)
+			}
+		}
+		if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType, matchedVarType, isEnumType, bindName); armIt != nil {
+			// Set the synthetic end position to cover the arm body
+			bodyEnd := arm.Body.EndPos()
+			if bodyEnd.Line == 0 && bodyEnd.Column == 0 && len(arm.Body.Statements) > 0 {
+				bodyEnd = arm.Body.Statements[len(arm.Body.Statements)-1].EndPos()
+			}
+			armIt.SyntheticEnd = bodyEnd
+			// 多欄位析構綁定（`rect(w, h) -> ...`）：按位置把 it.f0 / it.f1
+			// 綁到各欄位名。逆序 prepend，使最終語句順序為 `it; w; h; body`。
+			if len(arm.BindingNames) > 0 {
+				for j := len(arm.BindingNames) - 1; j >= 0; j-- {
+					fname := arm.BindingNames[j]
+					ftype := ""
+					if j < len(arm.BindingFields) {
+						ftype = arm.BindingFields[j]
+					}
+					if p.sem.DeclaredVars == nil {
+						p.sem.DeclaredVars = make(map[string]bool)
+					}
+					p.sem.DeclaredVars[fname] = true
+					if ftype != "" {
+						p.sem.SetFuncVarType(p.curFuncName, fname, ftype)
+						p.setVarType(fname, ftype)
+					}
+					extract := &LetStatement{
+						Token: tok,
+						Name:  &Identifier{Token: tok, Value: fname},
+						Value: &DotExpression{
+							Token:    tok,
+							Receiver: &Identifier{Token: tok, Value: bindName},
+							Property: fmt.Sprintf("f%d", j),
+						},
+						IsSynthetic:  true,
+						IsArmBinding: true,
+					}
+					arm.Body = p.prependStmt(arm.Body, extract)
+				}
+			}
+			arm.Body = p.prependStmt(arm.Body, armIt)
+		} else if !skipItBinding && !isSentinelArmType(armType) {
+			// ok/else arm whose matched type is unknown at parse time:
+			// fall back to the shared `it` binding (best-effort). Safe,
+			// because `it` is only meaningful in the ok arm where the
+			// option is non-nil, so the struct-deref is guarded by the
+			// live variant. Sentinel (nil/err) arms must NOT receive any
+			// `it` binding here — doing so would emit an unconditional
+			// deref of the option's data field (null when nil/err).
+			arm.Body = p.prependStmt(arm.Body, p.namedItBinding(itStmt, bindName))
+		}
+		// Sentinel arms with unknown matched type: intentionally bind nothing.
+	} else if !skipItBinding && !arm.IsWildcard {
+		// Non-wildcard arm: safe to bind shared `it`.
+		// Wildcard arms (->) with unknown matched type must NOT receive
+		// shared `it` binding: when the matched var is an option and the
+		// arm is the else/catch-all, the option may be nil (data=0),
+		// and the shared binding unconditionally dereferences the data
+		// field, causing null pointer dereference / segfault.
+		arm.Body = p.prependStmt(arm.Body, itStmt)
+	}
+	prep.placeWriteUsed = placeWriteUsed
+}
+
+// armCondPlan is the outcome of resolveArmCond: the if-condition plus the six
+// match-specific operands case *IfExpression turns into KIf slots. Keeping them
+// in one struct is what lets the AST emitter (which fills IfExpression fields)
+// and the HIR emitter (which fills KIf slots directly) share the classification
+// instead of drifting on which pattern kind an arm is.
+type armCondPlan struct {
+	cond            Expression
+	rangePattern    *RangeExpression
+	equalityPattern Expression
+	optionPatterns  []string
+	valuePatterns   []Expression
+	rawCond         Expression
+}
+
+// resolveArmCond classifies a NON-wildcard arm's condition (§5.2.9, slice S-c1's
+// shared core). Six mutually exclusive shapes, in the original order:
+//
+//	MultiOptionPatterns  -> (matched == p1) || (matched == p2) || ...
+//	MultiValuePatterns   -> (matched == v1) || (matched == v2) || ...
+//	IsRawCond            -> (matched == ok) && <arm cond>
+//	RangeExpression      -> matched >= a && matched <= b (desugarRangeCondition)
+//	otherwise            -> matched == <arm cond>
+//
+// The condition tree is built left-folded, so the FIRST pattern is the outermost
+// left operand and later patterns nest on the right; both emitters depend on that
+// shape, and it is why this is one function rather than two.
+func (p *Parser) resolveArmCond(tok lexer.Token, matched Expression, arm MatchArm) armCondPlan {
+	var plan armCondPlan
+	var cond Expression
+	var rangePattern *RangeExpression
+	var equalityPattern Expression
+	var optionPatterns []string
+	var valuePatterns []Expression
+	var rawCond Expression
+	if len(arm.MultiOptionPatterns) > 0 {
+		// Combined option patterns: (matched == p1) || (matched == p2) || ...
+		optionPatterns = arm.MultiOptionPatterns
+		for i, pat := range arm.MultiOptionPatterns {
+			patCond := &InfixExpression{
+				Token:    tok,
+				Left:     matched,
+				Operator: "==",
+				Right:    &Identifier{Token: tok, Value: pat},
+			}
+			if i == 0 {
+				cond = patCond
+			} else {
+				cond = &InfixExpression{
+					Token:    tok,
+					Left:     cond,
+					Operator: "||",
+					Right:    patCond,
+				}
+			}
+		}
+	} else if len(arm.MultiValuePatterns) > 0 {
+		// Combined value patterns: 1 || 3 || 5 → (matched == 1) || (matched == 3) || (matched == 5)
+		valuePatterns = arm.MultiValuePatterns
+		for i, pat := range arm.MultiValuePatterns {
+			patCond := &InfixExpression{
+				Token:    tok,
+				Left:     matched,
+				Operator: "==",
+				Right:    pat,
+			}
+			if i == 0 {
+				cond = patCond
+			} else {
+				cond = &InfixExpression{
+					Token:    tok,
+					Left:     cond,
+					Operator: "||",
+					Right:    patCond,
+				}
+			}
+		}
+	} else if arm.IsRawCond {
+		// ok(cond) arm: condition is (matched == ok) && cond
+		rawCond = arm.Condition
+		cond = &InfixExpression{
+			Token: tok,
+			Left: &InfixExpression{
+				Token:    tok,
+				Left:     matched,
+				Operator: "==",
+				Right:    &Identifier{Token: tok, Value: "ok"},
+			},
+			Operator: "&&",
+			Right:    arm.Condition,
+		}
+	} else if rng, isRange := arm.Condition.(*RangeExpression); isRange {
+		// Range condition: [a..b] → matched >= a && matched <= b
+		rangePattern = rng
+		cond = p.desugarRangeCondition(tok, matched, rng)
+	} else {
+		// matched == condition
+		// 對 option 變數，condition 為 err/nil 時由 transpiler 生成 tag 比較
+		equalityPattern = arm.Condition
+		cond = &InfixExpression{
+			Token:    tok,
+			Left:     matched,
+			Operator: "==",
+			Right:    arm.Condition,
+		}
+	}
+	plan.cond = cond
+	plan.rangePattern = rangePattern
+	plan.equalityPattern = equalityPattern
+	plan.optionPatterns = optionPatterns
+	plan.valuePatterns = valuePatterns
+	plan.rawCond = rawCond
+	return plan
+}
+
+func (p *Parser) emitSubjectMatchAST(prep *subjectMatchPrep) Expression {
+	tok := prep.tok
+	matched := prep.matched
+	arms := prep.arms
+	origMatched := prep.origMatched
+	subjName := prep.subjName
+	subjElem := prep.subjElem
+	origIdxExpr := prep.origIdxExpr
+	idxTempName := prep.idxTempName
+	placeWriteUsed := prep.placeWriteUsed
+	itStmt := prep.itStmt
+	hasRawCond := prep.hasRawCond
+
+	// Build from last to first (inside-out). ifExpr / defaultBody /
+	// defaultDotValBody are emitter-local chain state, not plan: nothing in
+	// resolveSubjectMatch reads them, and the tail wrappers read them only after
+	// the loop has finished building the chain.
+	var ifExpr *IfExpression
+	var defaultBody *BlockStatement       // 最內層 wildcard body（直接作為 else，避免 if 1 {} 包裝）
+	var defaultDotValBody *BlockStatement // track val branch body separately
+
 	for i := len(arms) - 1; i >= 0; i-- {
 		arm := arms[i]
 
@@ -3103,237 +3696,7 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 		// (nil/err) arms must NOT receive any `it` binding in that case, since the
 		// shared Type=nil binding would emit an unconditional deref of the option's
 		// data field, which is 0 (null) when the option is nil/err → segfault.
-		if itStmt != nil && !hasRawCond {
-			var armType string
-			// 標籤列舉帶載荷的變體臂：armType/綁定型別取「載荷型別」而非變體名，
-			// 使 `some(v) ->` 的 v 與隱含 `it` 得到正確型別（如 i64/f64/str）。
-			armBindingType := ""
-			skipItBinding := false
-			if arm.SkipItBinding {
-				// Generated sentinel arms (e.g. ?= / #{index-out} err/nil arms)
-				// never reference `it`; opt out so a sentinel arm's %str-long/nil
-				// `it` type can't clobber the ok arm's element-type `it`.
-				skipItBinding = true
-			}
-			if len(arm.MultiOptionPatterns) > 0 {
-				// Combined option patterns: compute armType from pattern set
-				hasOk, hasErr, hasNil := false, false, false
-				for _, pat := range arm.MultiOptionPatterns {
-					switch pat {
-					case "ok":
-						hasOk = true
-					case "err":
-						hasErr = true
-					case "nil":
-						hasNil = true
-					}
-				}
-				if hasOk && hasErr && hasNil {
-					armType = "ok_err_nil"
-				} else if hasOk && hasErr {
-					armType = "ok_err"
-				} else if hasOk && hasNil {
-					armType = "ok_nil"
-				} else if hasErr && hasNil {
-					armType = "else" // err | nil
-				} else if hasOk {
-					armType = "ok"
-				} else if hasErr {
-					armType = "err"
-				} else if hasNil {
-					armType = "nil"
-				}
-			} else if arm.IsWildcard {
-				if arm.IsDotVal {
-					armType = "ok" // ok-> is explicit ok case
-					// 標籤列舉：`ok(v) ->` 這類走 dotVal 路徑的析構綁定，其綁定型別
-					// 同樣取載荷型別（由 bindingVariant 在本枚舉內解析）。
-					if matchedIsEnum && arm.BindingVariant != "" {
-						if pt := p.enumVariantPayload(matchedVarType, arm.BindingVariant); pt != "" {
-							armType = pt
-							armBindingType = pt
-						}
-					}
-				} else {
-					// Compute complement: which variants remain for -> else arm
-					if matchedIsEnum {
-						// For enum types, compute complement dynamically
-						var remaining []string
-						for _, v := range enumVariants {
-							if !enumListedVariants[v] {
-								remaining = append(remaining, v)
-							}
-						}
-						if len(remaining) == 0 {
-							// All enum variants listed — the else arm is dead code
-							//
-							// 診斷已搬到解析期（parser/match_warn.go 的
-							// warnUnreachableArms）：這條提示原本在此發出，等於
-							// 它是「降糖的副產物」——SkipLowering 下整段不執行，
-							// 消費方翻到糖形態就靜默丟掉它（設計稿 §17.1）。
-							skipItBinding = true
-						} else {
-							armType = strings.Join(remaining, " | ")
-						}
-					} else {
-						// Three variants: ok(elemType), err, nil
-						okListed, errListed, nilListed := hasExplicitOk, hasExplicitErr, hasExplicitNil
-						if okListed && errListed && nilListed {
-							// All three option variants listed — the else arm is
-							// dead code. 診斷同列舉分支：已搬到解析期
-							// （parser/match_warn.go），這裡只保留結構性的
-							// skipItBinding。
-							skipItBinding = true
-						} else if okListed && !errListed && nilListed {
-							armType = "err" // only err remains
-						} else if okListed && errListed && !nilListed {
-							armType = "nil" // only nil remains
-						} else if okListed && !errListed && !nilListed {
-							armType = "else" // err | nil
-						} else if !okListed && errListed && nilListed {
-							armType = "ok" // only i64 remains
-						} else if !okListed && !errListed && nilListed {
-							armType = "ok_err" // i64 | err
-						} else if !okListed && errListed && !nilListed {
-							armType = "ok_nil" // i64 | nil
-						} else if !okListed && !errListed && !nilListed {
-							armType = "ok_err_nil" // i64 | err | nil
-						}
-					}
-				}
-			} else if ident, ok := arm.Condition.(*Identifier); ok {
-				if ident.Value == "err" || ident.Value == "nil" {
-					armType = ident.Value
-				} else if ident.Value == "ok" {
-					armType = "ok"
-				} else if matchedIsEnum {
-					armType = ident.Value // Use variant name as arm type for it binding
-					// 帶載荷變體（some(v) ->）：綁定型別 = 載荷型別。
-					// 由被匹配變數的靜態型別（matchedVarType）在解析期補全查得。
-					if pt := p.enumVariantPayload(matchedVarType, ident.Value); pt != "" {
-						armType = pt
-						armBindingType = pt
-					}
-				}
-			} else if _, ok := arm.Condition.(*NilLiteral); ok {
-				armType = "nil"
-			} else if arm.IsDotVal {
-				// ok-> arm (dotVal wildcard): it should be the unwrapped elemType
-				armType = "ok"
-			}
-			// D9 place-write：statement 語境 + 安全索引主體 + ok 路徑臂 ⇒ 臂內使用者
-			// 寫的 `it = v`（let / assign 形態）改寫為「求值一次 → 寫回元素 → 重綁 it」。
-			// 值語境（anyArmValueCtx）的 match 保持讀語義：it 是載荷副本，`it = v` 只
-			// 重綁局部，與今天一致。nil/err 臂沒有元素位置可寫，不改寫。
-			// SkipSafeIndexLowering 旗標已隨 §4.3 刪除：編譯期一律做 place-write 寫回；
-			// 糖形態（SkipLowering=true）不走此路徑，formatter 直接渲染 surface 語法。
-			if idxTempName != "" && !anyArmValueCtx && isOKPathArmType(armType) {
-				writeInBounds := false
-				if idx, ok := origMatched.(*IndexExpression); ok {
-					writeInBounds = p.sem.IndexIsInBounds(idx)
-				}
-				arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds, idxOutDef)
-			}
-			if armType != "" {
-				// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
-				// 嵌套 match 時這能保住外層的 `it`（否則內層會把它覆蓋掉）。
-				bindName := arm.BindingName
-				if bindName == "" {
-					bindName = "it"
-				}
-				// Use per-arm position so walker/index can distinguish synthetic bindings
-				var armTok lexer.Token
-				if arm.Condition != nil {
-					pos := arm.Condition.Pos()
-					armTok = lexer.Token{Type: lexer.IDENT, Literal: bindName, Line: pos.Line, Column: pos.Column}
-				} else if len(arm.Body.Statements) > 0 {
-					pos := arm.Body.Statements[0].Pos()
-					armTok = lexer.Token{Type: lexer.IDENT, Literal: bindName, Line: pos.Line, Column: pos.Column}
-				} else {
-					armTok = tok
-				}
-				if arm.BindingName != "" {
-					// 讓 checker / codegen 知道 v 的型別（等同 `it` 在 ok 臂的 elemType）。
-					// DeclaredVars 必須註冊，否則 ValidateUndefinedVars 會報
-					// "'v' is not defined"（`it` 是 checker 裡寫死的關鍵字，自訂名沒有這待遇）。
-					if p.sem.DeclaredVars == nil {
-						p.sem.DeclaredVars = make(map[string]bool)
-					}
-					p.sem.DeclaredVars[arm.BindingName] = true
-					bt := elemType
-					if armBindingType != "" {
-						bt = armBindingType
-					} else if armType == "err" && !matchedIsEnum {
-						// 內建 option 的 err 載荷恆為 str
-						//（option { ok(v t), nil, err(e str) }），與 codegen 端
-						// hir2mir 的 err-marker 剝皮語義一致；不可誤用 ok 載荷型別。
-						bt = "str"
-					}
-					if bt != "" {
-						p.sem.SetFuncVarType(p.curFuncName, arm.BindingName, bt)
-						p.setVarType(arm.BindingName, bt)
-					}
-				}
-				if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType, matchedVarType, isEnumType, bindName); armIt != nil {
-					// Set the synthetic end position to cover the arm body
-					bodyEnd := arm.Body.EndPos()
-					if bodyEnd.Line == 0 && bodyEnd.Column == 0 && len(arm.Body.Statements) > 0 {
-						bodyEnd = arm.Body.Statements[len(arm.Body.Statements)-1].EndPos()
-					}
-					armIt.SyntheticEnd = bodyEnd
-					// 多欄位析構綁定（`rect(w, h) -> ...`）：按位置把 it.f0 / it.f1
-					// 綁到各欄位名。逆序 prepend，使最終語句順序為 `it; w; h; body`。
-					if len(arm.BindingNames) > 0 {
-						for j := len(arm.BindingNames) - 1; j >= 0; j-- {
-							fname := arm.BindingNames[j]
-							ftype := ""
-							if j < len(arm.BindingFields) {
-								ftype = arm.BindingFields[j]
-							}
-							if p.sem.DeclaredVars == nil {
-								p.sem.DeclaredVars = make(map[string]bool)
-							}
-							p.sem.DeclaredVars[fname] = true
-							if ftype != "" {
-								p.sem.SetFuncVarType(p.curFuncName, fname, ftype)
-								p.setVarType(fname, ftype)
-							}
-							extract := &LetStatement{
-								Token: tok,
-								Name:  &Identifier{Token: tok, Value: fname},
-								Value: &DotExpression{
-									Token:    tok,
-									Receiver: &Identifier{Token: tok, Value: bindName},
-									Property: fmt.Sprintf("f%d", j),
-								},
-								IsSynthetic:  true,
-								IsArmBinding: true,
-							}
-							arm.Body = p.prependStmt(arm.Body, extract)
-						}
-					}
-					arm.Body = p.prependStmt(arm.Body, armIt)
-				} else if !skipItBinding && !isSentinelArmType(armType) {
-					// ok/else arm whose matched type is unknown at parse time:
-					// fall back to the shared `it` binding (best-effort). Safe,
-					// because `it` is only meaningful in the ok arm where the
-					// option is non-nil, so the struct-deref is guarded by the
-					// live variant. Sentinel (nil/err) arms must NOT receive any
-					// `it` binding here — doing so would emit an unconditional
-					// deref of the option's data field (null when nil/err).
-					arm.Body = p.prependStmt(arm.Body, p.namedItBinding(itStmt, bindName))
-				}
-				// Sentinel arms with unknown matched type: intentionally bind nothing.
-			} else if !skipItBinding && !arm.IsWildcard {
-				// Non-wildcard arm: safe to bind shared `it`.
-				// Wildcard arms (->) with unknown matched type must NOT receive
-				// shared `it` binding: when the matched var is an option and the
-				// arm is the else/catch-all, the option may be nil (data=0),
-				// and the shared binding unconditionally dereferences the data
-				// field, causing null pointer dereference / segfault.
-				arm.Body = p.prependStmt(arm.Body, itStmt)
-			}
-		}
+		p.rewriteSubjectArm(prep, &arm)
 
 		if arm.IsWildcard {
 			if ifExpr == nil {
@@ -3393,95 +3756,18 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 				}
 			}
 		} else {
-			// 構造 match 條件
-			var cond Expression
-			var rangePattern *RangeExpression
-			var equalityPattern Expression
-			var optionPatterns []string
-			var valuePatterns []Expression
-			var rawCond Expression
-			if len(arm.MultiOptionPatterns) > 0 {
-				// Combined option patterns: (matched == p1) || (matched == p2) || ...
-				optionPatterns = arm.MultiOptionPatterns
-				for i, pat := range arm.MultiOptionPatterns {
-					patCond := &InfixExpression{
-						Token:    tok,
-						Left:     matched,
-						Operator: "==",
-						Right:    &Identifier{Token: tok, Value: pat},
-					}
-					if i == 0 {
-						cond = patCond
-					} else {
-						cond = &InfixExpression{
-							Token:    tok,
-							Left:     cond,
-							Operator: "||",
-							Right:    patCond,
-						}
-					}
-				}
-			} else if len(arm.MultiValuePatterns) > 0 {
-				// Combined value patterns: 1 || 3 || 5 → (matched == 1) || (matched == 3) || (matched == 5)
-				valuePatterns = arm.MultiValuePatterns
-				for i, pat := range arm.MultiValuePatterns {
-					patCond := &InfixExpression{
-						Token:    tok,
-						Left:     matched,
-						Operator: "==",
-						Right:    pat,
-					}
-					if i == 0 {
-						cond = patCond
-					} else {
-						cond = &InfixExpression{
-							Token:    tok,
-							Left:     cond,
-							Operator: "||",
-							Right:    patCond,
-						}
-					}
-				}
-			} else if arm.IsRawCond {
-				// ok(cond) arm: condition is (matched == ok) && cond
-				rawCond = arm.Condition
-				cond = &InfixExpression{
-					Token: tok,
-					Left: &InfixExpression{
-						Token:    tok,
-						Left:     matched,
-						Operator: "==",
-						Right:    &Identifier{Token: tok, Value: "ok"},
-					},
-					Operator: "&&",
-					Right:    arm.Condition,
-				}
-			} else if rng, isRange := arm.Condition.(*RangeExpression); isRange {
-				// Range condition: [a..b] → matched >= a && matched <= b
-				rangePattern = rng
-				cond = p.desugarRangeCondition(tok, matched, rng)
-			} else {
-				// matched == condition
-				// 對 option 變數，condition 為 err/nil 時由 transpiler 生成 tag 比較
-				equalityPattern = arm.Condition
-				cond = &InfixExpression{
-					Token:    tok,
-					Left:     matched,
-					Operator: "==",
-					Right:    arm.Condition,
-				}
-			}
+			plan := p.resolveArmCond(tok, matched, arm)
 			newIf := &IfExpression{
 				Token:           tok,
-				Condition:       cond,
+				Condition:       plan.cond,
 				Consequence:     arm.Body,
 				Alternative:     nil,
 				MatchedExpr:     matched,
-				RangePattern:    rangePattern,
-				EqualityPattern: equalityPattern,
-				OptionPatterns:  optionPatterns,
-				ValuePatterns:   valuePatterns,
-				RawCond:         rawCond,
+				RangePattern:    plan.rangePattern,
+				EqualityPattern: plan.equalityPattern,
+				OptionPatterns:  plan.optionPatterns,
+				ValuePatterns:   plan.valuePatterns,
+				RawCond:         plan.rawCond,
 			}
 			p.sem.SetRTFlag(newIf, RTBareMatch)
 			if ifExpr != nil {
@@ -3598,6 +3884,173 @@ func (p *Parser) buildMatchDesugar(sm *SurfaceMatch) Expression {
 	}
 
 	return ifExpr
+}
+
+// resolveSubjectMatchPlan assembles the if/elif/else chain of a subject match as
+// a matchIfPlan tree — the plan counterpart of emitSubjectMatchAST's D segment
+// plus its all-wildcard tail.
+//
+// ⚠️ Why a tree and not a direct mirror: D's plain-wildcard branch executes
+// `ifExpr.Alternative = arm.Body`, i.e. it patches the ELSE SLOT of a node that
+// was already built. On the HIR side Builder.Add copies its argument and
+// b.nodes is unreachable from this package (AppendChild can only append at the
+// END of the child chain, while `else` is KIf's third child), so an emitted KIf
+// can never gain that slot. Building the tree first and emitting it afterwards
+// is the only way to keep the slot order identical.
+//
+// Every decision here is shared with the AST route: the per-arm body rewrites go
+// through rewriteSubjectArm and the condition classification through
+// resolveArmCond, so the two routes cannot disagree about an arm's shape.
+func (p *Parser) resolveSubjectMatchPlan(prep *subjectMatchPrep) *matchIfPlan {
+	tok, matched, arms := prep.tok, prep.matched, prep.arms
+
+	// Chain state, exactly as in emitSubjectMatchAST.
+	var head *matchIfPlan
+	var defaultBody *BlockStatement       // 最內層 wildcard body（直接作為 else，避免 if 1 {} 包裝）
+	var defaultDotValBody *BlockStatement // track val branch body separately
+
+	okCond := func() Expression {
+		return &InfixExpression{
+			Token:    tok,
+			Left:     matched,
+			Operator: "==",
+			Right:    &Identifier{Token: tok, Value: "ok"},
+		}
+	}
+	okIdent := func() Expression { return &Identifier{Token: tok, Value: "ok"} }
+
+	for i := len(arms) - 1; i >= 0; i-- {
+		arm := arms[i]
+		p.rewriteSubjectArm(prep, &arm)
+		if arm.IsWildcard {
+			if head == nil {
+				if defaultBody != nil && arm.IsDotVal {
+					// dotVal arm (ok->) after a regular -> wildcard (else):
+					// treat as conditional arm: if matched == ok { body } else { defaultBody }
+					head = &matchIfPlan{
+						cond:       okCond(),
+						body:       arm.Body,
+						altBody:    defaultBody,
+						matched:    matched,
+						eqPattern:  okIdent(),
+						dotValBody: arm.Body,
+						rtFlags:    RTBareMatch | RTMatchWildcard,
+					}
+				} else {
+					// 最內層 wildcard：儲存 body 作為下一個條件 arm 的 else
+					defaultBody = arm.Body
+					if arm.IsDotVal {
+						defaultDotValBody = arm.Body
+					}
+				}
+			} else {
+				if arm.IsDotVal {
+					// ok-> when other arms already processed (e.g., {ok ->, nil ->, ->}):
+					// wrap as outer condition instead of overwriting the alternative
+					head = &matchIfPlan{
+						cond:       okCond(),
+						body:       arm.Body,
+						alt:        head,
+						matched:    matched,
+						eqPattern:  okIdent(),
+						dotValBody: arm.Body,
+						rtFlags:    RTBareMatch | RTMatchWildcard,
+					}
+				} else {
+					// The late `ifExpr.Alternative = arm.Body` from the AST route.
+					// On a plan tree this is a plain overwrite — and it is a real
+					// overwrite: an earlier wildcard's body is discarded, which is
+					// the behaviour the AST route has too.
+					head.altBody = arm.Body
+				}
+			}
+		} else {
+			acp := p.resolveArmCond(tok, matched, arm)
+			n := &matchIfPlan{
+				cond:           acp.cond,
+				body:           arm.Body,
+				matched:        matched,
+				rangePattern:   acp.rangePattern,
+				eqPattern:      acp.equalityPattern,
+				optionPatterns: acp.optionPatterns,
+				valuePatterns:  acp.valuePatterns,
+				rawCond:        acp.rawCond,
+				rtFlags:        RTBareMatch,
+			}
+			if head != nil {
+				n.alt = head
+			} else if defaultBody != nil {
+				// 直接使用 wildcard body 作為 else，避免 if 1 {} 包裝
+				n.altBody = defaultBody
+				if defaultDotValBody == defaultBody {
+					n.dotValBody = defaultBody
+				}
+			}
+			head = n
+		}
+	}
+
+	// 若所有 arm 都是 wildcard，或只有 wildcard 而無條件 arm
+	if head == nil {
+		if defaultBody == nil {
+			return nil
+		}
+		// 唯一 arm 是 wildcard。對 ok-> (dotVal) arm 生成 `matched == ok` 條件而非
+		// 硬編碼 true——否則 option 為 nil 時仍進入 ok 分支，解引用空指針導致段錯誤。
+		if defaultDotValBody == defaultBody {
+			head = &matchIfPlan{
+				cond:       okCond(),
+				body:       defaultBody,
+				matched:    matched,
+				eqPattern:  okIdent(),
+				dotValBody: defaultBody,
+				rtFlags:    RTBareMatch | RTMatchWildcard,
+			}
+		} else {
+			// 非 dotVal wildcard：用 if 1 {} 包裝（無法避免）
+			head = &matchIfPlan{
+				cond:    &IntegerLiteral{Token: tok, Value: 1},
+				body:    defaultBody,
+				matched: matched,
+				rtFlags: RTBareMatch | RTMatchWildcard,
+			}
+		}
+	}
+	return head
+}
+
+// subjectMatchDirectHIR reports whether this subject match can be streamed to HIR
+// by emitSubjectMatchHIR. It is the S-c coverage gate: false sends the match
+// down the legacy two-hop route, so widening coverage can never change the
+// behaviour of a form this slice does not emit yet.
+//
+// Allowed forms (S-c1 + S-c2 + S-c3 + index-subject normalisation, all landed
+// and verified by the equivalence gate):
+//   - plain-identifier subject (the S-c1 case);
+//   - ok(cond) matches (hasRawCond): emitSubjectMatchWrappersHIR wraps the chain
+//     in `if 1 { it = matched; <chain> }`, with no index-subject interaction, so
+//     the InBounds side-table proof is unaffected;
+//   - matchedIsEnum (enum-complement / payload-destructuring matches): the per-arm
+//     binding type and the wildcard-else complement are computed in the SHARED
+//     rewriteSubjectArm + resolveArmCond, which both emitters call, so the HIR
+//     chain is byte-identical to the legacy IfExpression chain;
+//   - subjName != "" (index-subject normalisation, D9 place-write): the H0 direct
+//     path lowers a *shallow* clone of the SurfaceMatch (prepareSurfaceMatch), so
+//     prep.origMatched is the SAME *IndexExpression the bounds analyzer proved
+//     in-bounds. emitSubjectMatchWrappersHIR rewrites the read to a fresh
+//     `base[__idx]` node and transfers the InBounds proof onto it (c.sem ==
+//     prog.Sem == p.sem), so lowerSafeIndex keeps the provable-in-bounds fast
+//     path and mir/d9_write_bce_test.go stays green.
+//
+// The gate is now fully open: every subject match that reaches here (type-
+// destructuring and bare matches are handled earlier by S-a / S-b and never reach
+// this point) is streamed to HIR. The equivalence gate remains the byte-equality
+// backstop.
+func (p *Parser) subjectMatchDirectHIR(prep *subjectMatchPrep) bool {
+	if prep == nil {
+		return false
+	}
+	return true
 }
 
 // desugarRangeCondition 將 match arm 中的 RangeExpression 條件 desugar 為布爾表達式。

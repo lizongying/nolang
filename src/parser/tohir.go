@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 
 	"github.com/lizongying/nolang/hir"
 )
@@ -1154,17 +1155,64 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		// the c.expr below re-enters this case for them — the streaming
 		// equivalent of lowerSurfaceMatch's bottom-up walk.
 		//
-		// This case is unreachable on every shipped path today (lowering.go
-		// expands SurfaceMatch before H0 runs), which is why adding it cannot
-		// change existing output. parser/dump/h0_sugar_gap_test.go is what
-		// proves it produces the same HIR as the lowered path.
+		// Since the S1 flip (commit b918dba9) this case is the MAIN path for
+		// matches: lowering.go no longer expands SurfaceMatch, so every match
+		// reaches H0 as surface sugar and is desugared here. The "unreachable"
+		// note below is historical — it was true only before the flip, when
+		// lowerProgram expanded every match ahead of H0.
+		//
+		// Today the two paths are:
+		//   flip (shipped):    SurfaceMatch -> this case -> desugarSurfaceMatch
+		//   no-flip (control): lowerSurfaceMatch -> IfExpression -> case *IfExpression
+		// Both must yield byte-identical HIR; hir_equivalence_test.go is that gate.
+		//
+		// ⚠️ The desugar here is NOT a pure node-shape remap: buildTypeMatchDesugar /
+		// buildMatchDesugar apply semantic rewrites off parser side tables
+		// (it-place writes, index-out read/write normalisation, safe-index synthesis)
+		// and materialise an IfExpression, which case *IfExpression then folds into
+		// KTypeMatch/KIf. Any move to streaming HIR directly (see design doc §5.2)
+		// must PORT those transformations, not merely re-map the arms.
 		sp := c.scratchParser()
-		desugared := sp.desugarSurfaceMatch(e)
+		// Preparation is shared with the AST route (see prepareSurfaceMatch): it
+		// carries D9 index-out annotations onto the clone and runs armPreChecks,
+		// whose diagnostics must reach c.h0Diags exactly once.
+		clone := sp.prepareSurfaceMatch(e)
 		c.h0Diags = append(c.h0Diags, sp.diags...)
-		if desugared == nil {
-			break // nothing to lower: fall through to KUnknown, as before
+
+		// S-a (§5.2): a type-destructuring match streams straight to KTypeMatch,
+		// skipping the IfExpression chain that exists only for case *IfExpression
+		// to fold back down. Everything else still takes the legacy two-hop route.
+		if t, ok := sp.typeDestructuringSubjectType(clone); ok {
+			if id := c.lowerTypeMatchToHIR(sp, clone, t, line, col); id != hir.NoID {
+				c.h0Diags = append(c.h0Diags, sp.diags...)
+				return id
+			}
 		}
-		return c.expr(desugared)
+
+		// S-b (§5.2): a bare match — one with no subject — streams straight to
+		// KIf. Everything else still takes the legacy two-hop route.
+		if clone.Matched == nil {
+			if id := c.lowerBareMatchToHIR(sp, clone, line, col); id != hir.NoID {
+				c.h0Diags = append(c.h0Diags, sp.diags...)
+				return id
+			}
+		}
+
+		// S-c1 (§5.2.9): a subject match on a plain identifier — no index-subject
+		// normalisation, no D9 place-write, no ok(cond) wrapper, no enum complement —
+		// streams straight to KIf. resolveSubjectMatch must run only here, AFTER
+		// S-a and S-b have declined: it carries the A/B/C side effects, and running
+		// it before a slice that then returns would apply them twice.
+		prep := sp.resolveSubjectMatch(clone)
+		c.h0Diags = append(c.h0Diags, sp.diags...)
+		if sp.subjectMatchDirectHIR(prep) {
+			if id := c.emitSubjectMatchHIR(sp, prep, line, col); id != hir.NoID {
+				c.h0Diags = append(c.h0Diags, sp.diags...)
+				return id
+			}
+			break // no arms: fall through to KUnknown, as before
+		}
+		return c.expr(sp.emitSubjectMatchAST(prep))
 
 	case *Parameter:
 		// Parameter satisfies expressionNode, so it is legal in expression
@@ -1224,6 +1272,320 @@ func (c *hirConv) scratchParser() *Parser {
 		sp.unionMembers = c.sem.UnionMembers
 	}
 	return sp
+}
+
+// lowerTypeMatchToHIR emits KTypeMatch for a type-destructuring match directly
+// from the resolved arms, without materialising the IfExpression chain that
+// buildTypeMatchDesugar builds purely for case *IfExpression to fold back down.
+//
+// This is slice S-a of design doc §5.2, the first step toward retiring the 12
+// lowered-match fields on IfExpression (P7): once every match kind streams HIR,
+// nothing writes those fields any more.
+//
+// It MUST produce byte-identical HIR to the two-hop route. The invariants that
+// make that true today:
+//
+//  1. Position — pos tells them apart only via Token, and buildTypeMatchDesugar
+//     stamps IfExpression.Token = sm.Token, so pos(sm) == pos(ifExpr).
+//  2. Node creation order — HIR node ids are allocation order sensitive, so this
+//     mirrors case *IfExpression exactly: every arm's body (and optional binding
+//     name) is emitted before its KTypeArm, all arms precede the "matched" slot,
+//     and KTypeMatch is created last.
+//  3. Per-arm decisions — shared via resolveTypeMatchArms, so the two routes
+//     cannot disagree on pattern / binding / default-ness / injected let.
+func (c *hirConv) lowerTypeMatchToHIR(sp *Parser, sm *SurfaceMatch, matchedVarType string, line, col int32) int32 {
+	resolved := sp.resolveTypeMatchArms(sm, matchedVarType)
+	if len(resolved) == 0 {
+		return hir.NoID
+	}
+	arms := make([]int32, 0, len(resolved))
+	for _, ra := range resolved {
+		armNodes := []int32{c.slot("body", c.stmt(ra.body))}
+		if ra.bindingName != "" {
+			armNodes = append(armNodes, c.slot("bind", c.b.Add(hir.Node{
+				Kind: hir.KName, S: c.b.Intern(ra.bindingName),
+			})))
+		}
+		arms = append(arms, c.b.Add(hir.Node{
+			Kind:  hir.KTypeArm,
+			S:     c.b.Intern(ra.typePattern),
+			Flags: hir.FlagTypeDefault * u32(ra.isDefault),
+			First: c.kids(armNodes),
+			Line:  line, Col: col,
+		}))
+	}
+	return c.b.Add(hir.Node{
+		Kind: hir.KTypeMatch,
+		First: c.kids(append([]int32{
+			c.slot("matched", c.expr(sm.Matched)),
+		}, arms...)),
+		Line: line, Col: col,
+	})
+}
+
+// lowerBareMatchToHIR emits KIf for a bare match (a match with no subject)
+// directly from the resolved plan, without materialising the IfExpression chain
+// that buildBareMatchDesugar builds purely for case *IfExpression to fold back.
+//
+// This is slice S-b of design doc §5.2. Same contract as lowerTypeMatchToHIR:
+// byte-identical HIR or it does not ship.
+//
+//  1. Position — every synthetic IfExpression carries Token = sm.Token, so
+//     pos(sm) == pos(ifExpr) for the outer node and for each wrapper.
+//  2. Node creation order — case *IfExpression allocates slots in the fixed
+//     order cond, then, else, matched, dot-val, range, eq, raw, then the KIf
+//     itself. A bare match has no matched / raw / option / value operands, so
+//     those slots collapse to NoID and vanish; the rest keep their relative
+//     order. An `alt` arm lowers through a synthetic
+//     BlockStatement{ExpressionStatement} wrapper, which is
+//     KBlock -> KExprStmt -> KIf: the inner KIf is allocated FIRST, then
+//     KExprStmt, then KBlock, mirroring c.stmt's inside-out evaluation. An
+//     `altBody` (a wildcard arm's own body) is a real BlockStatement reached
+//     directly and must still go through c.stmt so its annotations and embed
+//     data attach. The synthetic wrappers carry no annotations and no embed
+//     data (both side tables are keyed by node pointer), so emitting them by
+//     hand drops nothing.
+//  3. Per-arm decisions — shared via resolveBareMatchPlan, so the AST and HIR
+//     emitters cannot disagree on guard-vs-elif, dotVal, or default-body rules.
+//  4. RTBareMatch / RTMatchWildcard / RTMatchWrapper are parser-side flags with
+//     no HIR representation (case *IfExpression sets no Flags on KIf); their
+//     readers are fmt/control.go and tools/check_enum.go, both of which walk
+//     the sugar tree. Dropping them here is therefore HIR-neutral.
+func (c *hirConv) lowerBareMatchToHIR(sp *Parser, sm *SurfaceMatch, line, col int32) int32 {
+	plan := sp.resolveBareMatchPlan(sm.Token, sm.Arms)
+	if plan == nil {
+		return hir.NoID
+	}
+	return c.emitMatchIfHIR(plan, line, col)
+}
+
+// emitMatchIfHIR streams a matchIfPlan as KIf nodes. It is the single HIR
+// emitter for every match kind now that bare and subject matches share the plan
+// type.
+//
+// Slot order is the one case *IfExpression uses — cond, then, else, matched,
+// dot-val, range, eq, raw, then the OptionPatterns / ValuePatterns lists in
+// their original order. A bare match leaves matched / raw / both pattern lists
+// empty, so those slots collapse to NoID and vanish, which is exactly what the
+// two-hop route produces for it.
+func (c *hirConv) emitMatchIfHIR(plan *matchIfPlan, line, col int32) int32 {
+	if plan.isWrapper {
+		// `if (1) { if c1 { B1 }; if c2 { B2 }; ... }`: each guard lowers to its
+		// own KExprStmt (hir2mir's lowerBlock evaluates them one by one, so every
+		// matching arm runs), and the wrapper KIf is allocated last.
+		stmts := make([]int32, 0, len(plan.stmts))
+		for _, sub := range plan.stmts {
+			inner := c.emitMatchIfHIR(sub, line, col)
+			stmts = append(stmts, c.b.Add(hir.Node{
+				Kind: hir.KExprStmt, First: inner, Line: line, Col: col,
+			}))
+		}
+		return c.b.Add(hir.Node{
+			Kind: hir.KIf,
+			First: c.kids([]int32{
+				c.slot("cond", c.expr(plan.cond)),
+				c.slot("then", c.b.Add(hir.Node{
+					Kind: hir.KBlock, First: c.kids(stmts), Line: line, Col: col,
+				})),
+				c.slot("matched", c.expr(plan.matched)),
+			}),
+			Line: line, Col: col,
+		})
+	}
+	alt := hir.NoID
+	switch {
+	case plan.alt != nil:
+		inner := c.emitMatchIfHIR(plan.alt, line, col)
+		alt = c.b.Add(hir.Node{
+			Kind: hir.KBlock,
+			First: c.kids([]int32{c.b.Add(hir.Node{
+				Kind: hir.KExprStmt, First: inner, Line: line, Col: col,
+			})}),
+			Line: line, Col: col,
+		})
+	case plan.altBody != nil:
+		alt = c.stmt(plan.altBody)
+	}
+	nodes := []int32{
+		c.slot("cond", c.expr(plan.cond)),
+		c.slot("then", c.stmt(plan.body)),
+		c.slot("else", alt),
+		c.slot("matched", c.expr(plan.matched)),
+		c.slot("dot-val", c.stmt(plan.dotValBody)),
+		c.slot("range", c.expr(plan.rangePattern)),
+		c.slot("eq", c.expr(plan.eqPattern)),
+		c.slot("raw", c.expr(plan.rawCond)),
+	}
+	for _, o := range plan.optionPatterns {
+		nodes = append(nodes, c.slot("opt", c.b.Add(hir.Node{
+			Kind: hir.KName, S: c.b.Intern(o),
+		})))
+	}
+	for _, v := range plan.valuePatterns {
+		nodes = append(nodes, c.slot("val", c.expr(v)))
+	}
+	return c.b.Add(hir.Node{Kind: hir.KIf, First: c.kids(nodes), Line: line, Col: col})
+}
+
+// subjectMatchDirectEmits counts how many subject matches took the S-c1
+// direct-HIR route, i.e. emitSubjectMatchHIR returned a real node id.
+//
+// It exists for the dump package's anti-vacuity gate
+// (TestSubjectMatchDirectHIRIsExercised): the byte-equivalence gate compares
+// Route A against Route B, and if the corpus never reaches the new emitter the
+// comparison is 0 == 0 — the exact failure mode that once made that gate
+// vacuous (see matchDesugarViaH0's history note). Atomic because ASTToHIR is
+// not single-threaded in every caller.
+var subjectMatchDirectEmits atomic.Int64
+
+// SubjectMatchDirectEmits reports the running total of S-c1 direct emissions
+// since process start. Test-only visibility into the counter above.
+func SubjectMatchDirectEmits() int64 { return subjectMatchDirectEmits.Load() }
+
+// emitSubjectMatchHIR streams a subject match (a match WITH a subject
+// expression) straight to KIf, bypassing the IfExpression chain that
+// emitSubjectMatchAST builds purely for case *IfExpression to fold back.
+//
+// This is slice S-c1 of design doc §5.2.9. Same contract as lowerBareMatchToHIR:
+// byte-identical HIR or it does not ship. The two extra invariants over S-b:
+//
+//  1. `matched` is a real slot here (KIf's 4th child), emitted for every arm and
+//     for the all-wildcard tail; a bare match leaves it nil so it vanishes.
+//  2. OptionPatterns / ValuePatterns become labelled "opt" / "val" slots in their
+//     original list order, AFTER the eight fixed slots — the same order
+//     case *IfExpression uses.
+//
+// The plan tree (resolveSubjectMatchPlan) exists because D's plain-wildcard
+// branch patches an already-built node's else slot, which no emitted KIf can
+// accept; see the comment there.
+func (c *hirConv) emitSubjectMatchHIR(sp *Parser, prep *subjectMatchPrep, line, col int32) int32 {
+	if !sp.subjectMatchDirectHIR(prep) {
+		return hir.NoID
+	}
+	plan := sp.resolveSubjectMatchPlan(prep)
+	if plan == nil {
+		// Only reachable when the match has no arms at all, which
+		// resolveSubjectMatch already reported by returning a nil prep. Emitting
+		// nothing matches buildMatchDesugar returning nil.
+		return hir.NoID
+	}
+	subjectMatchDirectEmits.Add(1)
+	inner := c.emitMatchIfHIR(plan, line, col)
+	// The E-segment wrappers that emitSubjectMatchAST builds around the chain
+	// must be mirrored here so the HIR is byte-identical to the legacy route.
+	// hasRawCond wraps the chain in `if 1 { it = matched; <chain> }`; subjName
+	// (index-subject normalisation) is the OUTER of the two (emitSubjectMatchAST
+	// applies it after hasRawCond), so we wrap in that order. matchedIsEnum needs
+	// no extra wrapper (its per-arm rewrite is shared via rewriteSubjectArm).
+	return c.emitSubjectMatchWrappersHIR(prep, inner, line, col)
+}
+
+// emitSubjectMatchWrappersHIR wraps the already-emitted chain KIf in the same
+// `if 1 { ... }` blocks the legacy AST route (emitSubjectMatchAST) builds for the
+// ok(cond) and index-subject-normalisation cases. It only touches prep state that
+// emitSubjectMatchAST also reads for the wrappers, so the two routes cannot
+// disagree about the wrapper shape.
+func (c *hirConv) emitSubjectMatchWrappersHIR(prep *subjectMatchPrep, inner int32, line, col int32) int32 {
+	tok := prep.tok
+	matched := prep.matched
+	// Reuse c.expr so the int-literal node is byte-identical to the one
+	// emitSubjectMatchAST produces (KIntLit with its S/S2 interned strings).
+	one := func() int32 {
+		return c.expr(&IntegerLiteral{Token: tok, Value: 1})
+	}
+	chainExpr := func(id int32) int32 {
+		return c.b.Add(hir.Node{Kind: hir.KExprStmt, First: id, Line: line, Col: col})
+	}
+
+	// ok(cond): `if 1 { it = matched; <chain> }` — bind `it` before the chain so
+	// the condition can reference it. Mirrors emitSubjectMatchAST's hasRawCond block.
+	if prep.hasRawCond && prep.itStmt != nil {
+		block := c.b.Add(hir.Node{
+			Kind: hir.KBlock,
+			First: c.kids([]int32{
+				c.stmt(prep.itStmt),
+				chainExpr(inner),
+			}),
+			Line: line, Col: col,
+		})
+		inner = c.b.Add(hir.Node{
+			Kind: hir.KIf,
+			First: c.kids([]int32{
+				c.slot("cond", one()),
+				c.slot("then", block),
+				c.slot("matched", c.expr(matched)),
+			}),
+			Line: line, Col: col,
+		})
+	}
+
+	// Index-subject normalisation: `if 1 { [let __idx = <orig>;] let __match_subj ?elem = <orig>; <chain> }`.
+	// The chained arm `it` bindings and `== ok` conditions then operate on the
+	// synthesised ?elem option variable. Mirrors emitSubjectMatchAST's subjName block.
+	if prep.subjName != "" && prep.subjElem != "" {
+		stmts := make([]int32, 0, 3)
+		if prep.placeWriteUsed && prep.origIdxExpr != nil {
+			idxLet := &LetStatement{
+				Token:       tok,
+				Name:        &Identifier{Token: tok, Value: prep.idxTempName},
+				IsSynthetic: true,
+				Value:       prep.origIdxExpr,
+			}
+			stmts = append(stmts, c.stmt(idxLet))
+		}
+		subjValue := prep.origMatched
+		if prep.placeWriteUsed && prep.origIdxExpr != nil {
+			// D9: rewrite the read index to the __idx temp so the bounds-check
+			// read and the ok-arm write-back share one index evaluation. Built
+			// fresh (never mutate prep.origMatched — H0 must not touch the AST).
+			if idx, ok := prep.origMatched.(*IndexExpression); ok {
+				subjValue = &IndexExpression{
+					Token: idx.Token,
+					Left:  idx.Left,
+					Index: &Identifier{Token: idx.Token, Value: prep.idxTempName},
+				}
+				// Transfer the InBounds proof from the original (proven) read to
+				// this fresh read node. prepareSurfaceMatch shallow-copies the
+				// SurfaceMatch, so prep.origMatched is the SAME *IndexExpression the
+				// bounds analyzer proved in-bounds in prepareInBoundsMetadata; the
+				// rewritten node reads the same element (via __idx == the original
+				// index), so it is equally in bounds. Without this, c.expr(subjValue)
+				// sees no FlagInBounds and lowerSafeIndex re-inserts a runtime check
+				// (mir/d9_write_bce_test.go regresses). c.sem == prog.Sem == p.sem.
+				if c.sem.IndexIsInBounds(prep.origMatched) {
+					c.sem.SetIndexInBounds(subjValue, true)
+				}
+			}
+		}
+		subjAssign := &LetStatement{
+			Token:       tok,
+			Name:        &Identifier{Token: tok, Value: prep.subjName},
+			IsSynthetic: true,
+			Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: prep.subjElem}},
+			Value:       subjValue,
+		}
+		stmts = append(stmts, c.stmt(subjAssign), chainExpr(inner))
+		block := c.b.Add(hir.Node{
+			Kind:  hir.KBlock,
+			First: c.kids(stmts),
+			Line:  line, Col: col,
+		})
+		// The wrapper's matched slot is the synthesised subject variable
+		// (__match_subj), NOT prep.matched: emitSubjectMatchAST sets the
+		// wrapper's MatchedExpr to &Identifier{subjName} explicitly, while
+		// prep.matched stays the original index expression. HasRawCond uses
+		// prep.matched on purpose; subjName does not.
+		inner = c.b.Add(hir.Node{
+			Kind: hir.KIf,
+			First: c.kids([]int32{
+				c.slot("cond", one()),
+				c.slot("then", block),
+				c.slot("matched", c.expr(&Identifier{Token: tok, Value: prep.subjName})),
+			}),
+			Line: line, Col: col,
+		})
+	}
+	return inner
 }
 
 // ---- small helpers ----
