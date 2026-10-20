@@ -73,38 +73,34 @@ func nativeLinkLibs(pkg *Package) []string {
 	return pkg.Compiler.LinkLibs
 }
 
-// CheckESMDeps parses inputPath (with the same module resolution the JS
-// backend uses) and reports which third-party ESM specifiers it imports are
-// not satisfiable from the nearest installed node_modules tree, plus that
-// tree's directory ("" when none is found). It backs `no run --js`, which
-// executes the emitted bundle with node: node resolves bare specifiers by
-// walking up from the script's directory, so a bundle written to a temp dir
-// needs the project's node_modules linked into it (see runCommand).
-func CheckESMDeps(inputPath string) (missing []string, nmDir string, err error) {
+// programESMImports parses inputPath with the same module resolution the JS
+// backend uses and returns every external ESM module it imports — third-party
+// packages plus the native koffi/wasm specifiers.
+func programESMImports(inputPath string) ([]js.ESMImport, error) {
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("reading input file: %w", err)
+		return nil, fmt.Errorf("reading input file: %w", err)
 	}
 	l := lexer.NewCached(inputPath, string(source))
 	p := parser.New(l)
 	p.Filename = filepath.Base(inputPath)
 	program := p.ParseProgram()
 	if program == nil {
-		return nil, "", fmt.Errorf("%s: parser returned nil program", inputPath)
+		return nil, fmt.Errorf("%s: parser returned nil program", inputPath)
 	}
 	if errs := p.Errors(); len(errs) > 0 {
-		return nil, "", fmt.Errorf("%s: %v", inputPath, errs)
+		return nil, fmt.Errorf("%s: %v", inputPath, errs)
 	}
 	// P7 re-home：js 後端改走 Plain 變體（純 IfExpression 鏈，不含 match 專用欄位）。
 	p.DesugarSurfaceMatchesPlain(program)
 	pkgConfig, _ := LoadPackage(filepath.Dir(inputPath))
 	program, merr := resolveAndMergeJSModules(program, inputPath, pkgConfig)
 	if merr != nil {
-		return nil, "", fmt.Errorf("module resolution: %w", merr)
+		return nil, fmt.Errorf("module resolution: %w", merr)
 	}
 	imports, ierr := js.ExtractESMImports(program)
 	if ierr != nil {
-		return nil, "", ierr
+		return nil, ierr
 	}
 	// 原生包呼叫：FFI 需 koffi、WASM 需其 specifier，兩者都以 ESM 形式在 node
 	// 執行期解析。這裡以 node（browser=false）視角解析；瀏覽器分支只用 hasESM
@@ -113,12 +109,52 @@ func CheckESMDeps(inputPath string) (missing []string, nmDir string, err error) 
 	if extra, xerr := js.NativeESMImports(program, false, nativeLinkLibs(pkgConfig)); xerr == nil {
 		imports = append(imports, extra...)
 	}
+	return imports, nil
+}
+
+// LocalESMAssets returns the relative (local-file) ESM specifiers the program
+// imports — e.g. `wasm = './math-wasm.mjs'`. `no run --js` executes its bundle
+// from a temp directory, so those files must be linked in (see runCommand):
+// unlike bare specifiers they are not reachable through node_modules, and they
+// resolve against the bundle's own location.
+func LocalESMAssets(inputPath string) ([]string, error) {
+	imports, err := programESMImports(inputPath)
+	if err != nil {
+		return nil, err
+	}
+	var locals []string
+	for _, imp := range imports {
+		if js.IsRelativeSpecifier(imp.Specifier) {
+			locals = append(locals, imp.Specifier)
+		}
+	}
+	return locals, nil
+}
+
+// CheckESMDeps parses inputPath (with the same module resolution the JS
+// backend uses) and reports which third-party ESM specifiers it imports are
+// not satisfiable from the nearest installed node_modules tree, plus that
+// tree's directory ("" when none is found). It backs `no run --js`, which
+// executes the emitted bundle with node: node resolves bare specifiers by
+// walking up from the script's directory, so a bundle written to a temp dir
+// needs the project's node_modules linked into it (see runCommand).
+func CheckESMDeps(inputPath string) (missing []string, nmDir string, err error) {
+	imports, err := programESMImports(inputPath)
+	if err != nil {
+		return nil, "", err
+	}
 	if len(imports) == 0 {
 		return nil, "", nil
 	}
 	nmDir = findNodeModules(filepath.Dir(inputPath))
 	for _, imp := range imports {
 		spec := imp.Specifier
+		// A relative specifier ("./math-wasm.mjs") is a file the JS engine
+		// resolves itself (node: next to the bundle; browser: next to the
+		// document) — node_modules never contains it.
+		if js.IsRelativeSpecifier(spec) {
+			continue
+		}
 		if nmDir == "" {
 			missing = append(missing, spec)
 			continue

@@ -95,6 +95,16 @@ func SanitizeSpecifier(spec string) (string, error) {
 	return spec, nil
 }
 
+// IsRelativeSpecifier reports whether a module specifier is a relative file
+// path ("./x", "../x", "/abs/x") rather than a bare npm package name. A
+// native wasm= specifier may be either: a bare specifier is an npm package
+// (declared in dependencies, resolved through the browser import map's CDN),
+// while a relative one is a local file next to the emitted JS (node) or next
+// to the HTML document (browser) and needs neither of those.
+func IsRelativeSpecifier(spec string) bool {
+	return strings.HasPrefix(spec, "./") || strings.HasPrefix(spec, "../") || strings.HasPrefix(spec, "/")
+}
+
 // esmShortName returns the last path segment of a specifier — the short name
 // cross-module call prefixes use (checker.ModuleShortName uses the same rule).
 func esmShortName(spec string) string {

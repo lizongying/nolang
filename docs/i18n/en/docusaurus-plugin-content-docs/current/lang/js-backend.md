@@ -439,16 +439,29 @@ its same-named export (`_sqlite3-open` → wasm export `sqlite3_open`).
 Initialization produces a ready Promise (**not awaited**): a synchronously
 initialized module is ready immediately, an async one flips the state when
 ready and exposes the ready Promise at `globalThis.__nolang_wasm_ready[<short>]`
-for outer JS to await. A call before readiness raises a clear error. The WASM
-specifier must be declared in `package.jsonc`'s `dependencies` /
-`dev-dependencies` (the browser import map resolves it via `--esm-cdn`, see the
-previous section).
+for outer JS to await. A call before readiness raises a clear error.
+
+The WASM specifier comes in two shapes, and the rules differ per shape:
+
+| shape | example | `dependencies` entry | browser import map | `no run --js` |
+| --- | --- | --- | --- | --- |
+| bare (npm package) | `@sqlite.org/sqlite-wasm` | **required** | resolved via `--esm-cdn` (default `https://esm.sh`) | needs `npm install` |
+| relative (local file) | `./math-wasm.mjs` | **not required** | **left out of the map** (browsers never remap relative specifiers) | the file (and its own relative imports) is linked into the temp bundle dir |
+
+The relative shape covers "the module lives in the project": a `no build --js`
+bundle placed next to the module just runs, `no run --js` links the module into
+its temp bundle directory for you, and a browser target needs the module copied
+next to `dist/` output as well (the import resolves relative to the document).
 
 ### Complete example
 
-See `example/native-libm/`: `#{bind = auto, c}` declares libm's `pow` and
-`no run --js main.no` prints `1024` (`no run` needs `npm install` in that
-directory first to install `koffi`).
+- `example/native-libm/`: `#{bind = auto, c}` declares libm's `pow` and
+  `no run --js main.no` prints `1024` (`no run` needs `npm install` in that
+  directory first to install `koffi`).
+- `example/native-wasm/`: a local WASM module (`math.wasm` + `math-wasm.mjs`,
+  zero npm dependencies); `no run --js main.no` prints `42.25` and `42`, and
+  `no build --js --browser main.no` leaves the relative specifier out of the
+  import map.
 
 ### Known limitations (v1)
 

@@ -2792,6 +2792,32 @@ func runCommand(args []string) {
 				}
 			}
 		}
+		// 本地檔案形態的 ESM 依賴（`wasm = './math-wasm.mjs'`）不在
+		// node_modules 裡，而是相對 bundle 自身位置解析，所以必須把專案目錄
+		// 下的同一個檔案鏈接進 tmpDir。其自身的相對導入（例如 wrapper 裡的
+		// `./math.wasm`）由 node 的 symlink realpath 行為自然回到專案目錄解析。
+		if localAssets, aerr := nbuild.LocalESMAssets(inputPath); aerr == nil {
+			if projectDir, aerr2 := filepath.Abs(filepath.Dir(inputPath)); aerr2 == nil {
+				for _, spec := range localAssets {
+					target := filepath.Join(projectDir, filepath.FromSlash(spec))
+					link := filepath.Join(tmpDir, filepath.FromSlash(spec))
+					if _, serr := os.Stat(target); serr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: local module %s not found (expected %s)\n", spec, target)
+						continue
+					}
+					if _, lerr := os.Lstat(link); lerr == nil {
+						continue
+					}
+					if err := os.MkdirAll(filepath.Dir(link), 0755); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: could not link local module %s: %v\n", spec, err)
+						continue
+					}
+					if err := os.Symlink(target, link); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: could not link local module %s: %v\n", spec, err)
+					}
+				}
+			}
+		}
 		// 以 --js-runtime 指定的 JS 執行期跑編譯產物（預設 node；可換 bun/deno 等）。
 		// spec 的第一個 token 是可執行檔，其餘是腳本路徑前的額外參數
 		// （如 "deno run --allow-read"）。缺執行期時給出明確提示。

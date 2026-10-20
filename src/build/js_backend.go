@@ -289,7 +289,10 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		// 行本身一貫被丟棄，那會連帶丟掉附在行上的 bind=/wasm=/lib= 註解，故對原生
 		// 導入改為保留 use 行，讓 merge 後的 CollectNativePolicy 仍讀得到策略。
 		if np, isNative := js.NativeUsePolicy(use, merged.Sem); isNative {
-			if np.WASM != "" && !esmDeclared(pkgConfig, np.WASM) {
+			// A relative wasm= specifier ("./math-wasm.mjs") is a local file
+			// next to the emitted output, not an npm package: it needs no
+			// dependencies entry and is not installed by npm.
+			if np.WASM != "" && !js.IsRelativeSpecifier(np.WASM) && !esmDeclared(pkgConfig, np.WASM) {
 				return fmt.Errorf("native wasm module %q is not declared in package.jsonc dependencies; add \"dependencies\": {\"%s\": \"^latest\"} (or dev-dependencies) and run npm install", np.WASM, np.WASM)
 			}
 			merged.Statements = append(merged.Statements, use)

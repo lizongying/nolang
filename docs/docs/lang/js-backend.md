@@ -387,14 +387,23 @@ FFI 走 [`koffi`](https://koffi.dev) 真 FFI：`koffi.load(<庫>)` + `lib.func(s
 
 ### WASM（瀏覽器 / `bind=wasm`）
 
-WASM 模式導入指定的 `.wasm` 模組，對每個 `#{c}` extern 產生**同名轉發**（`_sqlite3-open` → wasm 導出 `sqlite3_open`）。初始化產生一張 ready Promise（**不 await**）：同步初始化的模組立即就緒，非同步的會在就緒時翻轉 state，並把 ready Promise 暴露在 `globalThis.__nolang_wasm_ready[<短名>]` 供外層 JS await。呼叫早於就緒會拋明確錯誤。WASM specifier 必須宣告在 `package.jsonc` 的 `dependencies` / `dev-dependencies`（瀏覽器 import map 由 `--esm-cdn` 解析，CDN 路徑見上節）。
+WASM 模式導入指定的 `.wasm` 模組，對每個 `#{c}` extern 產生**同名轉發**（`_sqlite3-open` → wasm 導出 `sqlite3_open`）。初始化產生一張 ready Promise（**不 await**）：同步初始化的模組立即就緒，非同步的會在就緒時翻轉 state，並把 ready Promise 暴露在 `globalThis.__nolang_wasm_ready[<短名>]` 供外層 JS await。呼叫早於就緒會拋明確錯誤。
+
+WASM specifier 有兩種形態，其餘規則依形態而異：
+
+| 形態 | 例 | `dependencies` 宣告 | 瀏覽器 import map | `no run --js` |
+| --- | --- | --- | --- | --- |
+| bare（npm 套件） | `@sqlite.org/sqlite-wasm` | **必填** | 經 `--esm-cdn`（預設 `https://esm.sh`）解析 | 需 `npm install` |
+| 相對（本地檔案） | `./math-wasm.mjs` | **不需要** | **不進 map**（瀏覽器本就不重映射相對 specifier） | 自動把該檔（及其自身的相對導入）鏈接進暫存目錄 |
+
+相對形態適用「模組就在專案裡」：`no build --js` 的產物與模組同目錄即可執行，`no run --js` 會幫你把模組連結進暫存 bundle 目錄；瀏覽器目標則要把模組一併複製到 `dist/`（`import` 相對文件位置解析）。
 
 ### 完整範例
 
-見 `example/native-libm/`：`#{bind = auto, c}` 宣告 libm 的 `pow`，`no run --js main.no` 印出 `1024`（`no run` 需先在該目錄 `npm install` 裝 `koffi`）。
+- `example/native-libm/`：`#{bind = auto, c}` 宣告 libm 的 `pow`，`no run --js main.no` 印出 `1024`（`no run` 需先在該目錄 `npm install` 裝 `koffi`）。
+- `example/native-wasm/`：本地 WASM 模組（`math.wasm` + `math-wasm.mjs`，零 npm 依賴），`no run --js main.no` 印出 `42.25` 與 `42`；`no build --js --browser main.no` 的 import map 不含相對 specifier。
 
 ### 已知限制（v1）
-
 - WASM 只做**同名導出轉發**，不產生 API 適配層（例如 `better-sqlite3` → `sql.js` 這類語意差異需自行提供 nolang wrapper 模組）。
 - 策略是**程式級**的：一個 JS 建置只允許一種 `bind` 策略；多原生庫的按模組關聯留待後續。
 - FFI 只綁定 C ABI 共享庫；Node 原生 addon（`.node`）請用 `bind=wasm` 或一般 ESM 導入。

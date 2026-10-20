@@ -174,3 +174,128 @@ func TestBuildNoNativeNoMachinery(t *testing.T) {
 		t.Errorf("no-annotation program has ESMImports: %+v", res.ESMImports)
 	}
 }
+
+// writeLocalWasmProject lays out a project whose wasm specifier is a local
+// file next to main.no — no npm dependencies at all.
+func writeLocalWasmProject(t *testing.T, wasm string) string {
+	t.Helper()
+	dir := t.TempDir()
+	manifest := `{
+  "name": "localwasm",
+  "compiler": { "emit": "js" }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
+	main := `#{bind = wasm, wasm = '` + wasm + `'}
+# /math
+#{c}
+square = (x f64) (r f64)
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.no"), []byte(main), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(dir, "main.no")
+}
+
+// A relative wasm= specifier names a file next to the emitted output, not an
+// npm package, so it must build with an empty dependency set.
+func TestBuildWasmRelativeSpecifierNeedsNoDependency(t *testing.T) {
+	mainPath := writeLocalWasmProject(t, "./math-wasm.mjs")
+	res, err := BuildJSEx(mainPath, BuildOptions{UseJS: true})
+	if err != nil {
+		t.Fatalf("BuildJSEx: %v", err)
+	}
+	if !strings.Contains(res.Code, `import * as __wasm_ns_math from "./math-wasm.mjs";`) {
+		t.Errorf("local wasm import missing:\n%s", res.Code)
+	}
+	if len(res.ESMImports) != 1 || res.ESMImports[0].Specifier != "./math-wasm.mjs" {
+		t.Fatalf("unexpected ESMImports: %+v", res.ESMImports)
+	}
+}
+
+// A bare wasm= specifier is still an npm package and still needs a
+// dependencies entry — the relaxation is scoped to relative paths.
+func TestBuildWasmBareSpecifierStillRequiresDependency(t *testing.T) {
+	mainPath := writeLocalWasmProject(t, "math-wasm-demo")
+	if _, err := BuildJSEx(mainPath, BuildOptions{UseJS: true}); err == nil {
+		t.Fatal("bare wasm specifier without a dependencies entry must fail")
+	} else if !strings.Contains(err.Error(), "dependencies") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// LocalESMAssets reports the relative specifiers `no run --js` must link into
+// its temp bundle directory, and nothing else.
+func TestLocalESMAssets(t *testing.T) {
+	dir := t.TempDir()
+	manifest := `{
+  "name": "localassets",
+  "compiler": { "emit": "js" }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
+	main := `#{bind = wasm, wasm = './math-wasm.mjs'}
+# /math
+#{c}
+square = (x f64) (r f64)
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.no"), []byte(main), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LocalESMAssets(filepath.Join(dir, "main.no"))
+	if err != nil {
+		t.Fatalf("LocalESMAssets: %v", err)
+	}
+	if len(got) != 1 || got[0] != "./math-wasm.mjs" {
+		t.Fatalf("LocalESMAssets = %v, want [./math-wasm.mjs]", got)
+	}
+
+	// A program with no ESM imports at all reports none, without error.
+	plain := t.TempDir()
+	if err := os.WriteFile(filepath.Join(plain, "package.jsonc"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain, "main.no"), []byte("main = () { print('hi') }\nmain()\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = LocalESMAssets(filepath.Join(plain, "main.no"))
+	if err != nil {
+		t.Fatalf("LocalESMAssets (plain): %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("LocalESMAssets (plain) = %v, want none", got)
+	}
+}
+
+// CheckESMDeps must not report a relative specifier as a missing npm package:
+// node resolves it against the bundle itself, not node_modules.
+func TestCheckESMDepsSkipsRelativeSpecifiers(t *testing.T) {
+	dir := t.TempDir()
+	manifest := `{
+  "name": "localdeps",
+  "compiler": { "emit": "js" }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
+	main := `#{bind = wasm, wasm = './math-wasm.mjs'}
+# /math
+#{c}
+square = (x f64) (r f64)
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.no"), []byte(main), 0644); err != nil {
+		t.Fatal(err)
+	}
+	missing, _, err := CheckESMDeps(filepath.Join(dir, "main.no"))
+	if err != nil {
+		t.Fatalf("CheckESMDeps: %v", err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("relative specifier reported missing: %v", missing)
+	}
+}
