@@ -6016,6 +6016,8 @@ ps-parse-match = (t ast, p psst, subj str, subjNode i64) (idx i64) {
     blkSA []i64 = with-cap(4); surface 臂體（不含合成 it）
     bbA []i64 = with-cap(4); s66c：blockBody 標記（hd2==1 區塊臂⇒true，對齊 oracle MatchArm.blockBody）
     bshape = 0
+    rawA []i64 = with-cap(4); s66d：raw-cond 臂標記（ok(<expr>) 條件值臂⇒rawCond:true）
+    matchHasRaw = 0; s66d：match 層 raw-cond 標記（驅動 valueCtx，對齊 oracle：含 raw-cond 臂時全臂 true）
 
     ; 同 ps-parse-bare-match：臂迴圈自行消化 `->`，抑制區塊級續接前探
     oldMat = p.inMatch
@@ -6057,6 +6059,7 @@ ps-parse-match = (t ast, p psst, subj str, subjNode i64) (idx i64) {
             wild = 0
             pat = 0
             kvar = ''
+            rawc = 0; s66d：本臂是否 raw-cond 臂（ok(<expr>)）
             bname = ''
             kvarE = ''
             bmulti = 0
@@ -6144,7 +6147,17 @@ ps-peek-at(p, 2) == tok.IDENT && ps-peek-at(p, 3) == tok.RPAREN -> {
                     ; s60：裸變體臂（非关键字、已登記枚舉之變體）→ kvarE（Go :2243-2250）
                     caseA == 0 && caseB == 0 && kwt == 0 && isenum == 1 && tk0.typ == tok.IDENT && ps-peek-at(p, 1) == tok.RARROW &&
 tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, tk0.lit) >= 0 -> kvarE = tk0.lit.copy()
-                    caseA == 0 && caseB == 0 -> pat = ps-parse-expr-prec(t, p, 0)
+                    ; s66d：raw-cond 臂 ok(<expr>) — <expr> 非單裸識別符（ok(v) 值綁定由 caseA 處理）；
+                    ;   內部布林表達式即 Condition；rawCond/valueCtx 標記；不綁定、非 wildcard、非 dotVal。
+                    caseA == 0 && caseB == 0 && tk0.typ == tok.IDENT && tk0.lit == 'ok' && ps-peek-at(p, 1) == tok.LPAREN -> {
+                        rawc = 1
+                        matchHasRaw = 1
+                        ps-bump(p)
+                        ps-bump(p)
+                        pat = ps-parse-expr-prec(t, p, 0)
+                        ps-expect(p, tok.RPAREN)
+                    }
+                    caseA == 0 && caseB == 0 && rawc == 0 -> pat = ps-parse-expr-prec(t, p, 0)
                 }
             }
             ps-skip-trivia(p)
@@ -6186,6 +6199,10 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             }
             sopt == 0 && kvar == 'err' -> bt = 'err'
             sopt == 0 && kvar == 'nil' -> bt = 'nil'
+            rawc == 1 -> {
+                bt = st
+                sopt == 1 -> bt = elem
+            }
 
             ; s60：枚舉綁定型別（Go armType :2176-2251；buildItBindingForArm isEnumType ⇒ typeStr=armType :2900-2902）
             isenum == 1 && kvar == 'ok' -> {
@@ -6429,6 +6446,7 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
             condA.push(cond)
             blkSA.push(blkS)
             bbA.push(hd2)
+            rawA.push(rawc)
             p.pos == pos0 -> ps-bump(p)
         }
     }
@@ -6455,7 +6473,8 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
             hd3 == 0 -> {
 
                 #{index-out=zero}
-                cond = ps-mk-eq(t, subjNode, patA[i])
+                rawA[i] == 1 -> cond = patA[i]; s66d：raw-cond 臂直接用條件式（不包 subj ==）
+                rawA[i] == 0 -> cond = ps-mk-eq(t, subjNode, patA[i])
 
             ; 決定 alternative
             alt = 0
@@ -6518,11 +6537,13 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
             swA[i] == 0 -> ast.aux-add(t, 0); wildcard
             dotValA[i] == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
             dotValA[i] == 0 -> ast.aux-add(t, 0); dotVal
-            ast.aux-add(t, 0); rawCond
+            rawA[i] == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            rawA[i] == 0 -> ast.aux-add(t, 0); rawCond
             bbA[i] == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
             bbA[i] == 0 -> ast.aux-add(t, 0); blockBody（區塊臂⇒true，對齊 oracle）
             ast.aux-add(t, 0); typeArm
-            ast.aux-add(t, 0); valueCtx
+            matchHasRaw == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            matchHasRaw == 0 -> ast.aux-add(t, 0); valueCtx
             ast.aux-add(t, condA[i]); Condition（型樣節點；wildcard/关键字臂=0）
             ast.aux-add(t, blkSA[i]); Body
             #{overflow=wrap}

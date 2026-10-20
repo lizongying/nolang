@@ -979,19 +979,20 @@ $ ./bin/no ast /tmp/t2.no | grep -E 'Literal'
 
 歸因細節見 `nolang-parser-lowering-invariants.md` §11.1 第 5、6 條。
 
-### 5.3.4 S7 match 表示分歧——98% 歸因與立项規格（2026-10-20 實測）
+### 5.3.4 S7 match 表示分歧——形狀歸因與立项規格（2026-10-20 實測；「98%」更正見本節 L2 收斂量化）
 
-機械性缺口已挖盡，**剩餘分歧壓倒性地是單一項**。全量 313 檔 DIFF 的歸因（同一 oracle、653 檔）：
+機械性缺口已挖盡，**剩餘分歧的『形狀』壓倒性地是單一項**：oracle 輸出含 `SurfaceMatch` 的檔，其差異行數佔總差異行的 98%。全量 653 檔（tests 535 + src/std 118）、313 檔 DIFF 的歸因：
 
-| 桶 | 檔数 | 差異行數 | 佔比 |
+| 桶 | 檔数（佔 DIFF 檔） | 差異行數 | 佔 DIFF 行 |
 | --- | --- | --- | --- |
-| oracle 輸出含 `SurfaceMatch` | 264 | 218 227 | **98%** |
-| 不含 | 49 | 3 993 | 1% |
+| oracle 輸出含 `SurfaceMatch` | 264（84%） | 218 227 | **98%（按行）** |
+| 不含 | 49（16%） | 3 993 | 2%（按行） |
+
+⚠️ **「98%」是『分歧形狀』歸因，不是『第②件收斂量』**（二者不可混淆，實測見本節 L2 收斂量化小節）：第②件只翻轉 45 檔（DIFF 313→268，總 DIFF 僅降 **14.4%**）；剩餘 268 檔中仍有 184 含 match 區塊，主因是 ② 範圍內的 **raw-cond 臂缺口**（s66d 已補，再收斂 1 檔 → 267）與**正交的** option/result unwrap、type-inference 註解分歧（獨立 track）。
 
 抽查最大差異檔 `src/std/crypto/x25519.no`（15 583 行）前兩個 hunk **100% 是 match 表示**：oracle
 `ExpressionStatement{SurfaceMatch}` / `SurfaceMatch{arms: 2}` / `MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }`，
-noc 是 `ExpressionStatement{IndexExpression}` + `IfExpression` 鏈。**結論：不解決 match 表示，其餘所有
-收斂工作的天花板就是 1%。**（附帶更正：`InterfaceDefinition` 只出現在 4 檔 6 個節點，價值極低，不值得為它動 `asp.no` 的 id 表。）
+noc 是 `ExpressionStatement{IndexExpression}` + `IfExpression` 鏈。**結論：match 表示是剩餘分歧的最大單一『形狀』**；但解決它表示層（第②件）只直接對齊核心臂（ok(v)/err(e)/nil/_/binding/dotVal/blockBody），raw-cond 臂與 `?T` unwrap、type-inference 需另立項。（附帶更正：`InterfaceDefinition` 只出現在 4 檔 6 個節點，價值極低，不值得為它動 `asp.no` 的 id 表。）
 
 **目標結構**（`src/parser/dump/dump.go:778` 的 `case *parser.SurfaceMatch`，由 `gen_ast_spec.py` 抽出的規格）：
 
@@ -1160,8 +1161,43 @@ slot 2 由恆 `0` 改讀 `bvarA[i]`。
 `=1` 下 9/10（test 10 預期降糖 if/else，屬預期失敗，因 SurfaceMatch 已取代）。
 **⚠️ 自舉 harness 兩個別再踩的坑：** ① nolang 字串字面量 `{…}` 被當**字串插值**⇒ 測試來源字串必須
 **先存進變數再傳** `parse-dump(src)`，不可內嵌 `{`/`}`（否則 MIR codegen `interp not lowered` 報錯或靜默吐空）；
-② 自舉 `ps.parse` 對 `?i64` 等可空型別語法會**掛起**，故 `ok`/`err`/`nil` 的逐位元組對拍只能靠
-`bin/no ast` 取 oracle，自舉 harness 僅能用非 `?T` 主體（`x i64=0`）做槽位健全性檢查（語義與 ?T 主體同構，驗證有效）。
+② **「自舉 `ps.parse` 對 `?i64` 會掛起」是誤判**（2026-10-20 複查更正）：此前觀察到的掛起實為①的字串插值吞源陷阱，
+套用①的「先存變數」修法後，`?T` 主體（`x ?i64 = …`）在自舉 `noc ast` 下也能正常解析、不再掛起；
+`ok`/`err`/`nil` 的逐位元組對拍既可走 `bin/no ast`（Go parser oracle），也可走自舉 `noc ast`（subject 為 `?T` 亦同構有效）。
+
+### 5.3.4.x L2 收斂量化（第②件 + s66d raw-cond 擴展，2026-10-20 實測）
+
+**方法**：`compiler/src/ps.no` 在 `PS-SURFACE-MATCH=0`（降糖基線）與 `=1`（SurfaceMatch）下，分別
+`bin/no build -o /tmp/noc-s0-off compiler` / `bin/no build -o /tmp/noc-s0 compiler` 構建自舉編譯器；
+`scripts/selfhost_diff.sh --levels L2 --corpus "tests src/std"` 比對 SUT `no ast` 與 oracle `bin/no ast`
+（Go parser 產 SurfaceMatch），語料 = 653 個 `.no`。
+
+**結果（headline）**
+
+| 模式 | SAME | DIFF | 翻轉（DIFF→SAME） | 回歸（SAME→DIFF） |
+| --- | --- | --- | --- | --- |
+| flag-OFF（降糖基線） | 340 | 313 | — | — |
+| flag-ON（SurfaceMatch，核心臂） | 385 | 268 | **45**（100% 含 match 區塊） | **0** |
+| flag-ON + s66d（補 raw-cond 臂） | 386 | 267 | **+1**（`tests/minimal-ok.no`） | **0** |
+
+- 收斂：DIFF 313 → 267（**−46**），SAME 340 → 386（**+46**），全程 **0 回歸**。
+- 翻轉的 45 檔 100% 含 match 區塊 ⇒ 第②件精準消除「match 表示分歧」且未波及任何其他表示。
+
+**s66d raw-cond 臂擴展（第②件範圍內補洞）**：SurfaceMatch 發射路徑原只處理值綁定臂
+`ok(v)`/`ok`/`err(e)`/`nil`/`_`，對裸條件臂 `ok(<expr>)`（如 `ok(it >= 90)`）仍產 `CallExpression{fn: ok}`。
+s66d 在 `ps-parse-match` 補：
+- 臂首識別 `ok(<expr>)` ⇒ `rawCond: true` + `valueCtx: true`，`Condition` = 內部布林表達式（`InfixExpression`），**不綁定、非 wildcard、非 dotVal**；
+- `valueCtx` 由 **match 層標誌 `matchHasRaw`** 驅動：只要 match 含任一 raw-cond 臂，**所有臂**（含 `->` else 臂）`valueCtx: true`（對齊 oracle，與 subject 是否 `?T` 無關）；
+- 降糖（if 鏈）末端：raw-cond 臂直接用 `Condition`（不包 `subj ==`）。
+
+**獨立實證（非全量 sweep 推論）**：
+- `tests/minimal-ok.no` 在 s66d 前屬 ON DIFF 集，s66d 後 `bin/no ast` 與 `/tmp/noc-s0 ast` **逐位元組一致** ⇒ 淨收斂 +1 檔的邏輯證明（非推論）。
+- `tests/match-raw-cond.no` s66d 後 `rawCond`/`valueCtx` 相關 diff 行數 = **0**；剩餘 75 行全為正交的 `?T` unwrap / type-inference 分歧。
+
+**結論 / 更正**：
+- 「收斂 98% L2 表示分歧」**未被證實**：第②件 + s66d 總共只降總 DIFF 的 **14.7%**（46/313）。
+- 殘餘 267 DIFF 主因是**正交的** option/result `?T` unwrap lowering 與 type-inference 註解分歧（獨立 parser 收斂 track），非 match 表示本身。
+- 第②件與 s66d **零回歸**（0 個 SAME→DIFF），`PS-SURFACE-MATCH` 維持預設 `0` 安全。
 
 ### 5.4 語義檢查（M3）
 
