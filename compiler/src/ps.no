@@ -104,6 +104,11 @@ psst {
 
 ; VarTypes（模組級）
 
+; ── S7 match 表示開關（2026-10-20，見 docs/design/nolang-selfhost.md §5.3.4）──
+;   0 = 降糖成 if/else 鏈（對齊 MIR 後端，預設）；1 = 直接產 SurfaceMatch
+;   （對齊 L2 oracle，收斂 98% 的 match 表示分歧）。翻值 + 重編即可 A/B。
+PS-SURFACE-MATCH = 0
+
 ; new：掃描原始碼，建立解析器（跨模組呼叫寫 ps.new → 必須是裸函式名 `new`）
 new = (src str) (r psst) {
     r = psst {
@@ -1388,6 +1393,19 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
 ps-parse-expr-stmt = (t ast, p psst) (idx i64) {
     idx = 0
 
+    ; 裸 `_` 陳述：對齊 Go 把 `_` 當空運算式（dump 印 `ExpressionStatement{nil}`）。
+    ;   消費 `_` 並產生一個無子節點的 ExpressionStatement（kid0=0 占位，避免 dumper 把
+    ;   後續節點誤讀成首子節點）。僅在陳述位（非 `_ =` 指派、非型樣位）觸發——
+    ;   `_ = x` 由 ps-parse-stmt 提前消費，`_` 型樣由 ps-parse-match 直接消費，皆不會落到此。
+    ;   ⚠️ 修復 match 裸 `-> _` 臂：原 ps-parse-expr 回 0 且不消費 `_` ⇒ `_` 殘留被
+    ;   下一輪臂迴圈當成幽靈 wildcard 型樣臂（SurfaceMatch 多出一臂）。
+    ps-peek(p) == tok.UNDERSCORE -> {
+        ps-bump(p); 消費 _
+        idx = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+        ast.kid-add(t, idx, 0); guarded：空運算式（對齊 Go `ExpressionStatement{nil}`）
+        return
+    }
+
     ; (A) wildcard 獨立 if：行首 `-> body`
     ps-peek(p) == tok.RARROW -> {
         cond = ps-mk-true(t)
@@ -1942,14 +1960,19 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             idx = sl
             handled = 1
         }
-        nt == tok.COLON && ps-peek-at(p, 1) == tok.LBRACE && ast.kind-at(t, idx) == asp.K_IDENTIFIER -> {
+        matchSubj = 0
+        ast.kind-at(t, idx) == asp.K_IDENTIFIER -> matchSubj = 1
+        ast.kind-at(t, idx) == asp.K_INDEX_EXPRESSION -> matchSubj = 1
+        ast.kind-at(t, idx) == asp.K_DOT_EXPRESSION -> matchSubj = 1
+        nt == tok.COLON && ps-peek-at(p, 1) == tok.LBRACE && matchSubj == 1 -> {
 
             ; 明示 match：`subj: { pat -> body … }` ⇒ desugar 成 if/else 鏈（見 ps-parse-match）。
-            ; ⚠️ 只認「識別元主體」；複雜主體（呼叫/索引）延後。`:` 與 `{` 須同行（空格已被詞法过滤）。
+            ; s66c：主體放寬到 IDENT / IndexExpression / DotExpression，並把主體【節點】傳入
+            ;   ps-parse-match（subj 字串仍供降糖路用），覆蓋率 17%→68%（見 §5.3.4）。
             subjName = ast.node-string(t, idx)
             ps-bump(p); 消費 COLON
             ps-bump(p); 消費 LBRACE
-            mm = ps-parse-match(t, p, subjName)
+            mm = ps-parse-match(t, p, subjName, idx)
             ps-expect(p, tok.RBRACE)
             idx = mm
             handled = 1
@@ -5843,13 +5866,12 @@ ps-mk-ident = (t ast, name str) (idx i64) {
 
 ; ps-mk-it-let：建 `it = subj` 合成 LetStatement（synthetic: true、無 Type）
 ;   dump：LetStatement{name: it, value: subj, synthetic: true} + kid[0=Type(0),1=Ident]
-ps-mk-it-let = (t ast, subj str) (idx i64) {
-    val = ps-mk-ident(t, subj)
+ps-mk-it-let = (t ast, subjNode i64) (idx i64) {
     idx = ast.add(t, asp.K_LET_STATEMENT)
     ast.set-slot(t, idx, 0, ast.put-str(t, 'it'))
     ast.set-slot(t, idx, 1, ast.put-str(t, 'true')); synthetic
     ast.kid-add(t, idx, 0); Type 缺席→0 佔位（守 guarded-CHILD 位置）
-    ast.kid-add(t, idx, val)
+    ast.kid-add(t, idx, subjNode); value = 主體節點（識別元 / 索引 / 點運算皆可直接用）
     idx
 }
 
@@ -5858,8 +5880,7 @@ ps-mk-it-let = (t ast, subj str) (idx i64) {
 ;   bt 空且 bname=='it' 形同 ps-mk-it-let（裸 shared 綁定、無 armBinding）；
 ;   s60：bt 空但具名綁定（未知主體 ok(v)，Go namedItBinding 回退 :2919-2927）仍 armBinding=true。
 ;   槽位 s1=synthetic、s2=armBinding（asp.no LetStatement 模板 ref 序）；NamedType 無 inferred 標記。
-ps-mk-it-let-t = (t ast, subj str, bt str, bname str) (idx i64) {
-    val = ps-mk-ident(t, subj)
+ps-mk-it-let-t = (t ast, subjNode i64, bt str, bname str) (idx i64) {
     tn = 0
     bt != '' -> {
         tn = ast.add(t, asp.K_NAMED_TYPE)
@@ -5870,7 +5891,7 @@ ps-mk-it-let-t = (t ast, subj str, bt str, bname str) (idx i64) {
     ast.set-slot(t, idx, 1, ast.put-str(t, 'true')); synthetic
     bt != '' || bname != 'it' -> ast.set-slot(t, idx, 2, ast.put-str(t, 'true')); armBinding
     ast.kid-add(t, idx, tn)
-    ast.kid-add(t, idx, val)
+    ast.kid-add(t, idx, subjNode); value = 主體節點（識別元 / 索引 / 點運算皆可直接用）
     idx
 }
 
@@ -5982,10 +6003,18 @@ ps-mk-eq = (t ast, l i64, r i64) (idx i64) {
 ;   • 相鄰非 wildcard 臂：後臂包成 else 區塊 BlockStatement{}[ExpressionStatement{if}]
 ;   • err/nil 关键字臂（型樣為裸关键字且緊接 `->`）：綁定带 type+armBinding（對齊 Go buildItBindingForArm）
 ;   ⚠️ arena 共享 kids 游標（add 設 kid0=kids.len）→ 父節點務必最後 add、再 kid-add。
-ps-parse-match = (t ast, p psst, subj str) (idx i64) {
+ps-parse-match = (t ast, p psst, subj str, subjNode i64) (idx i64) {
     wildA []i64 = with-cap(4)
     patA []i64 = with-cap(4)
     blkA []i64 = with-cap(4)
+    ; s66c：surface 形專用收集（與 desugar 的 wildA/patA/blkA 平行）
+    swA []i64 = with-cap(4); surface wildcard（含关键字臂 ok/err/nil）
+    dotValA []i64 = with-cap(4)
+    bindA []str = with-cap(4); MatchArm.binding（析構綁定名，如 ok(v) 的 v）
+    bvarA []str = with-cap(4); MatchArm.bindingVariant（ok(v)→ok / err(e)→err，無綁定留空）
+    condA []i64 = with-cap(4); MatchArm.Condition（型樣節點；wildcard/关键字臂=0）
+    blkSA []i64 = with-cap(4); surface 臂體（不含合成 it）
+    bbA []i64 = with-cap(4); s66c：blockBody 標記（hd2==1 區塊臂⇒true，對齊 oracle MatchArm.blockBody）
     bshape = 0
 
     ; 同 ps-parse-bare-match：臂迴圈自行消化 `->`，抑制區塊級續接前探
@@ -6216,10 +6245,10 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
             itl = 0
             hd5 = 0
             dead == 0 && (bt != '' || bname != '') -> {
-                itl = ps-mk-it-let-t(t, subj, bt, bn)
+                itl = ps-mk-it-let-t(t, subjNode, bt, bn)
                 hd5 = 1
             }
-            dead == 0 && hd5 == 0 -> itl = ps-mk-it-let(t, subj)
+            dead == 0 && hd5 == 0 -> itl = ps-mk-it-let(t, subjNode)
 
             ; it 型別逐層登記與還原（Go collectVarTypesFromBody 作用域掃描；與 MIR 端值還原對稱）：
             ;   巢狀 match/下一臂不得污染外層 it。
@@ -6230,8 +6259,7 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
                 oldb = ps-var-type(p, bname)
                 ps-set-var-type(p, bname, reg)
             }
-            kids []i64 = with-cap(4)
-            dead == 0 -> kids.push(itl)
+            kids []i64 = with-cap(4); 臂體陳述（不含合成 it；itl 另存，desugar 才加回）
 
             ; s60：多欄位提欄（Go :2307-2334 逆序 prepend ⇒ 最終序 it; a; b; body）；
             ;   綁定名 varType 登记欄位型別並存舊值待還原
@@ -6311,34 +6339,57 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
             }
             hd2 == 0 -> {
 
-                ; 運算式臂（內聯）：BlockStatement{inline: true}[it, ExpressionStatement{e}]
-                e = ps-parse-expr-prec(t, p, 0)
-                es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
-                ast.kid-add(t, es, e)
-                kids.push(es)
+                ; 運算式臂（內聯）：解析為【陳述】（ps-parse-stmt 才能吞 `a = 1` 這類
+                ;   賦值臂，ps-parse-expr-prec 只吃到 `a` 會把 `= 1` 遺留成幻影臂——claim B）。
+                ;   不再額外包 ExpressionStatement 外殼：區塊臂路徑（L6290）也不包，二者一致。
+                s = ps-parse-stmt(t, p)
+                kids.push(s)
                 inline = 1
 
-                ; s59：armDoc → body 陳述的 Doc；行尾 `; cmt` → es 的 Comment（Go attachInlineComment）
-                armDoc != 0 -> ast.set-doc(t, es, armDoc)
+                ; s59：armDoc → body 陳述的 Doc；行尾 `; cmt` → s 的 Comment（Go attachInlineComment）
+                armDoc != 0 -> ast.set-doc(t, s, armDoc)
                 ps-peek(p) == tok.COMMENT -> {
-                    ast.set-cmt(t, es, ast.put-str(t, ps-cur-lit(p)))
+                    ast.set-cmt(t, s, ast.put-str(t, ps-cur-lit(p)))
                     ps-bump(p)
                 }
             }
 
-            ; 父後建：先 add blk，再依序 kid-add 已建好的子節點
-            blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+            ; 父後建：desugar body = [itl(若有)] + 臂體；surface body = 只臂體（不含合成 it）
+            dkids []i64 = with-cap(4)
+            dead == 0 && itl != 0 -> dkids.push(itl)
             j = 0
             (j < kids.len()) {
-                ast.kid-add(t, blk, kids[j])
-
+                dkids.push(kids[j])
                 #{overflow=wrap}
                 j = j + 1
             }
-            ast.set-count(t, blk, 0, kids.len())
+            blk = ast.add(t, asp.K_BLOCK_STATEMENT)
+            j = 0
+            (j < dkids.len()) {
+                ast.kid-add(t, blk, dkids[j])
+                #{overflow=wrap}
+                j = j + 1
+            }
+            ast.set-count(t, blk, 0, dkids.len())
             inline == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true'))
             inline == 0 && bshape == 1 -> ast.set-slot(t, blk, 0, ast.put-str(t, 'true')); s61：blockMatch 體 ⇒ inline
             hasTrail == 1 -> ps-attach-trailing(t, blk, blkTrail)
+
+            blkS = ast.add(t, asp.K_BLOCK_STATEMENT); surface 形臂體（不含 itl）
+            j = 0
+            (j < kids.len()) {
+                ast.kid-add(t, blkS, kids[j])
+                #{overflow=wrap}
+                j = j + 1
+            }
+            ast.set-count(t, blkS, 0, kids.len())
+            ; s66c：surface 形臂體 inline 判定與 blockBody 標記——對齊 oracle SurfaceMatch：
+            ;   • 內聯臂（hd2==0）：Body = BlockStatement{inline: true}
+            ;   • 區塊臂（hd2==1）：Body = BlockStatement{}（非 inline）且 MatchArm.blockBody = true
+            ;   ⚠️ 區塊臂【不】走 bshape 的 inline 化（那條是 desugar 路專用），否則與 oracle 差一反。
+            hd2 == 0 -> ast.set-slot(t, blkS, 0, ast.put-str(t, 'true'))
+            hasTrail == 1 -> ps-attach-trailing(t, blkS, blkTrail)
+
             ps-set-var-type(p, 'it', oldit)
             reg != '' -> ps-set-var-type(p, bname, oldb)
             q5 = 0
@@ -6350,9 +6401,34 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
                 #{overflow=wrap}
                 q5 = q5 + 1
             }
+            ; s66c：desugar 收集（保持原樣）
             wildA.push(wild)
             patA.push(pat)
             blkA.push(blk)
+            ; s66c surface collection
+            ;   wildcard 規則（對齊 oracle）：_/bare-> 與 ok/ok(v) ⇒ wildcard:true；
+            ;   err/nil（含綁定 err(e)/nil）一律非 wildcard，保留 Condition 型樣節點。
+            sw = wild
+            kvar == 'ok' -> sw = 1
+            dotVal = 0
+            kvar == 'ok' -> dotVal = 1
+            ; bindingVariant：僅解構綁定名存在時填（ok(v)⇒ok / err(e)⇒err）
+            bvar = ''
+            kvar == 'ok' -> {
+                bname != '' -> bvar = 'ok'
+            }
+            kvar == 'err' -> {
+                bname != '' -> bvar = 'err'
+            }
+            swA.push(sw)
+            dotValA.push(dotVal)
+            bindA.push(bname)
+            bvarA.push(bvar)
+            cond = pat
+            sw == 1 -> cond = 0
+            condA.push(cond)
+            blkSA.push(blkS)
+            bbA.push(hd2)
             p.pos == pos0 -> ps-bump(p)
         }
     }
@@ -6376,10 +6452,10 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
             res = b
             hd3 = 1
         }
-        hd3 == 0 -> {
+            hd3 == 0 -> {
 
-            #{index-out=zero}
-            cond = ps-mk-eq(t, ps-mk-ident(t, subj), patA[i])
+                #{index-out=zero}
+                cond = ps-mk-eq(t, subjNode, patA[i])
 
             ; 決定 alternative
             alt = 0
@@ -6417,6 +6493,42 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
         ast.kid-add(t, ie, res)
         ast.kid-add(t, ie, 0)
         res = ie
+    }
+    ; s66c：開關開 ⇒ 改發 SurfaceMatch（對齊 L2 oracle，收斂 98% match 表示分歧）。
+    ;   與 desugar 共用臂資料；surface 形【不】注入合成 it（it 直接寫在臂體，見 step ③）。
+    PS-SURFACE-MATCH == 1 -> {
+        n = blkA.len()
+        sm = ast.add(t, asp.K_SURFACE_MATCH)
+        ast.set-slot(t, sm, 0, ast.put-str(t, n.to-str())); arms 數
+        ast.kid-add(t, sm, subjNode); Matched（guarded：本函數必有主體節點）
+        ast.helper-begin(t, sm, n)
+        i = 0
+        (i < n) {
+            ; 12 aux / 臂：binding, bindingVariant, typePattern, typeBinding,
+            ;   wildcard, dotVal, rawCond, blockBody, typeArm, valueCtx, Condition, Body
+            ba = bindA[i]
+            ba != '' -> ast.aux-add(t, ast.put-str(t, ba))
+            ba == '' -> ast.aux-add(t, 0); binding
+            bv = bvarA[i]
+            bv != '' -> ast.aux-add(t, ast.put-str(t, bv))
+            bv == '' -> ast.aux-add(t, 0); bindingVariant（ok(v)⇒ok / err(e)⇒err）
+            ast.aux-add(t, 0); typePattern
+            ast.aux-add(t, 0); typeBinding
+            swA[i] == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            swA[i] == 0 -> ast.aux-add(t, 0); wildcard
+            dotValA[i] == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            dotValA[i] == 0 -> ast.aux-add(t, 0); dotVal
+            ast.aux-add(t, 0); rawCond
+            bbA[i] == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            bbA[i] == 0 -> ast.aux-add(t, 0); blockBody（區塊臂⇒true，對齊 oracle）
+            ast.aux-add(t, 0); typeArm
+            ast.aux-add(t, 0); valueCtx
+            ast.aux-add(t, condA[i]); Condition（型樣節點；wildcard/关键字臂=0）
+            ast.aux-add(t, blkSA[i]); Body
+            #{overflow=wrap}
+            i = i + 1
+        }
+        res = sm
     }
     p.inMatch = oldMat
     idx = res

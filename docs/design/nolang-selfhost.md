@@ -1126,6 +1126,43 @@ dumper 的預掃把「自己」讀成首個子節點 ⇒ `ast.node` 無限遞迴
 4. **把 s55/s59/s60 語義搬進 MatchArm 槽位**（关键字臂綁定 / 變體臂補集 / armDoc）。
 5. 裸大括號形（32%）的 `Matched` 留空。
 
+### ✅ 第 ② 件落地（2026-10-20）：`ps-parse-match` 改發 `SurfaceMatch`
+
+依「正確拆解」5 步落地。開關 `PS-SURFACE-MATCH`（`compiler/src/ps.no:110` 模組級常數）
+**預設關（0）**保零回歸，翻 1 即走 surface 形；`ast.no` 的 `matchArm` helper（第 ① 件）已就位。
+
+**關鍵修改（均位於 `ps-parse-match`）：**
+1. **放行非 IDENT 主體**（步①）：`COLON+LBRACE` 分派放寬為 IDENT / IndexExpression / DotExpression，
+   主體**節點**經新形參 `subjNode` 傳入（覆蓋率 17%→68%）。
+2. **修臂迴圈**（步②）：`ps-parse-expr-stmt` 頂端新增裸 `_` 陳述處理（產 `ExpressionStatement{nil}` 佔槽），
+   修掉 `-> _` 臂的幻影 wildcard 臂（claim B）；內聯臂體改以 `ps-parse-stmt` 解析，主體不再切碎。
+3. **surface 形關掉合成 `it` 注入**（步③）：surface 收集區另建 `blkS`（不含 `itl`），與降糖 `blk` 平行。
+4. **s55/s59/s60 語義搬進 `MatchArm` 槽位**（步④）：新增 `swA`/`dotValA`/`bindA`/`bvarA`/`condA`/`blkSA`/`bbA`
+   陣列，`binding`/`bindingVariant`/`wildcard`/`dotVal`/`Condition`/`blockBody` 逐臂填入。
+5. **裸大括號形 `Matched` 留空**（步⑤）：surface 發射分支 `ast.kid-add(t, sm, subjNode)`——主體為 0 時
+   `Matched` 因 guarded 自然不印。
+
+**err/nil wildcard 語義修正（本次收口重點）：**
+原 `kvar != '' -> sw = 1` 錯把 `err`/`nil` 當 wildcard；對齊 oracle 改為 **`sw = wild; kvar == 'ok' -> sw = 1`**
+——`_`/bare→ 與 `ok`/`ok(v)` 為 wildcard，`err`/`nil`（含 `err(e)`/`nil`）一律**非** wildcard 且保留
+`Condition` 型樣節點；`bindingVariant` 僅解構綁定名存在時填（`ok(v)`⇒`ok`、`err(e)`⇒`err`）。emit 端
+slot 2 由恆 `0` 改讀 `bvarA[i]`。
+
+**實證（A/B 對 oracle `bin/no ast`）：**
+| 案例 | 主體 | surface 輸出 | oracle |
+| --- | --- | --- | --- |
+| `z = 1\nz: { 1 -> a=1 / _ -> a=2 }` | Identifier | 2 臂，pattern 1 + wildcard _ | 一致 |
+| `h[0]: { ok -> it=0 / -> _ }` | IndexExpression | 2 臂，ok=bare wildcard+dotVal，_=wildcard，`ExpressionStatement{nil}` | 一致 |
+| `x i64=3\nx: { 1 -> {a=1 b=2} / _ -> a=9 }` | Identifier | 2 臂，`blockBody:true` + 非 inline `BlockStatement{}` | 一致 |
+| `x i64=0\nx: { ok(v)->y=v / err(e)->y=e / nil->y=0 / _->y=1 }` | Identifier | ok(v)=wildcard+dotVal+binding:v+bindingVariant:ok；err(e)=binding:e+bindingVariant:err+Condition=Identifier{err}；nil=Condition=NilLiteral | 一致（非 ?T 主體亦吻合） |
+
+**零回歸實證：** `PS-SURFACE-MATCH=0` 下 `ps-test.no` 10/10、`ast-test.no` 48/48 全綠；
+`=1` 下 9/10（test 10 預期降糖 if/else，屬預期失敗，因 SurfaceMatch 已取代）。
+**⚠️ 自舉 harness 兩個別再踩的坑：** ① nolang 字串字面量 `{…}` 被當**字串插值**⇒ 測試來源字串必須
+**先存進變數再傳** `parse-dump(src)`，不可內嵌 `{`/`}`（否則 MIR codegen `interp not lowered` 報錯或靜默吐空）；
+② 自舉 `ps.parse` 對 `?i64` 等可空型別語法會**掛起**，故 `ok`/`err`/`nil` 的逐位元組對拍只能靠
+`bin/no ast` 取 oracle，自舉 harness 僅能用非 `?T` 主體（`x i64=0`）做槽位健全性檢查（語義與 ?T 主體同構，驗證有效）。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。

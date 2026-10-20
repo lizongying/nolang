@@ -168,6 +168,22 @@ test-array-param-generic-size()
 test-slice-recv-no-generic()
 test-slice-recv-generic-from-param()
 
+; ═══════════════════════════════════
+; 10. s66c：match 臂迴圈修復（claim B）
+;     `z: { 1 -> a = 1 / _ -> a = 2 }` 舊缺陷：內聯臂體用 ps-parse-expr-prec
+;     只能吃到 `a`，`= 1` 遺留成幻影臂 ⇒ 產出 4 個巢狀 IfExpression、
+;     主體切碎。修復後（內聯臂體改以 ps-parse-stmt 解析）：正好 2 臂、主體完整。
+;     期望值 = ps.no 修復後的實測降糖輸出（非 oracle：oracle 產 SurfaceMatch）。
+; ═══════════════════════════════════
+
+test-match-arm-loop-fix = () {
+    got = parse-dump('z = 1\nz: {\n    1 -> a = 1\n    _ -> a = 2\n}')
+    want = 'Program{}\n    LetStatement{name: z, type: i64, value: 1}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 1, raw: 1}\n    ExpressionStatement{IfExpression}\n        IfExpression\n            InfixExpression{op: ==}\n                Identifier{name: z}\n                IntegerLiteral{value: 1, raw: 1}\n            BlockStatement{inline: true}\n                LetStatement{name: it, value: z, synthetic: true}\n                    Identifier{name: z}\n                LetStatement{name: a, type: i64, value: 1}\n                    NamedType{name: i64, inferred: true}\n                    IntegerLiteral{value: 1, raw: 1}\n            BlockStatement{inline: true}\n                LetStatement{name: it, value: z, synthetic: true}\n                    Identifier{name: z}\n                LetStatement{name: a, type: i64, value: 2}\n                    NamedType{name: i64, inferred: true}\n                    IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), 'z: {…} desugars to exactly 2 correct arms (claim B fix)')
+}
+
+test-match-arm-loop-fix()
+
 runner.summary()
 f = runner.failed-count()
 {
