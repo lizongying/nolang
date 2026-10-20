@@ -1186,8 +1186,8 @@ slot 2 由恆 `0` 改讀 `bvarA[i]`。
 **s66d raw-cond 臂擴展（第②件範圍內補洞）**：SurfaceMatch 發射路徑原只處理值綁定臂
 `ok(v)`/`ok`/`err(e)`/`nil`/`_`，對裸條件臂 `ok(<expr>)`（如 `ok(it >= 90)`）仍產 `CallExpression{fn: ok}`。
 s66d 在 `ps-parse-match` 補：
-- 臂首識別 `ok(<expr>)` ⇒ `rawCond: true` + `valueCtx: true`，`Condition` = 內部布林表達式（`InfixExpression`），**不綁定、非 wildcard、非 dotVal**；
-- `valueCtx` 由 **match 層標誌 `matchHasRaw`** 驅動：只要 match 含任一 raw-cond 臂，**所有臂**（含 `->` else 臂）`valueCtx: true`（對齊 oracle，與 subject 是否 `?T` 無關）；
+- 臂首識別 `ok(<expr>)` ⇒ `rawCond: true`，`Condition` = 內部布林表達式（`InfixExpression`），**不綁定、非 wildcard、非 dotVal**；
+- `valueCtx` 與 raw-cond **無關**，由**值語境**驅動（見本節 s67）：`rawCond: true` 的臂在陳述語境下 `valueCtx` 仍為 false。s66d 原「`valueCtx` 由 match 層 `matchHasRaw` 驅動」係**錯誤代理**（見 s67 根因），本版已棄用 `matchHasRaw` 驅動 valueCtx，僅留作 rawCond 標記。
 - 降糖（if 鏈）末端：raw-cond 臂直接用 `Condition`（不包 `subj ==`）。
 
 **獨立實證（非全量 sweep 推論）**：
@@ -1198,6 +1198,34 @@ s66d 在 `ps-parse-match` 補：
 - 「收斂 98% L2 表示分歧」**未被證實**：第②件 + s66d 總共只降總 DIFF 的 **14.7%**（46/313）。
 - 殘餘 267 DIFF 主因是**正交的** option/result `?T` unwrap lowering 與 type-inference 註解分歧（獨立 parser 收斂 track），非 match 表示本身。
 - 第②件與 s66d **零回歸**（0 個 SAME→DIFF），`PS-SURFACE-MATCH` 維持預設 `0` 安全。
+
+### 5.3.4.z s67 valueCtx 值語境修正（2026-10-20，本輪）
+
+**根因（推翻 s66d 假設）**：s66d 用 match 層 `matchHasRaw`（「含任一 raw-cond 臂」）驅動 `valueCtx`，
+實為**錯誤代理**。實測 oracle（`bin/no ast`，top-level 陳述）證實 `valueCtx` 與 raw-cond **無關**：
+- `r = n: { -> 1 }`（**無** raw-cond 臂，單純賦值右值）⇒ oracle 印 `valueCtx: true`；
+- `n: { -> 1 }` 作**裸陳述** ⇒ oracle **不**印 `valueCtx`；
+- `x = f(n: { -> 1 })` / `x = [ n: { -> 1 } ]` / `x = S{ y: n: { -> 1 } }`（巢狀 call-arg / 陣列·結構元素）⇒ 同為 `valueCtx: true`（黏性繼承）。
+
+對齊 Go `src/parser/desugar.go:146` `validateMatchArmReturns`：該函數**只在值語境（CTX_EXPR）被呼叫**，
+據此把每臂標 `valueCtx = true`（`src/parser/match.go:844`）。`CTX_EXPR` 是 Go `parseLetStatement` /
+`parseUnwrapAssignStatement` / `parseCompoundAssignStatement` 三處 `p.ctx.push(CTX_EXPR)` 閘門，且
+**對齊堆疊具黏性**——賦值 RHS 內的巢狀 call-arg / 陣列·結構字面量元素 / 二元運算元皆繼承值語境。
+（return / call-arg 頂層 / if·for 條件**不** push CTX_EXPR ⇒ 那些語境的 match `valueCtx` 為 false，與本實作一致。）
+
+**修法（compiler/src/ps.no）**：不 thread 形參（避免動 `ps-parse-expr-prec` 38 處遞迴呼叫點），改用 `psst.valCtx` 欄位：
+- `new` 結構體加 `valCtx: 0`；`ps-parse-stmt` 開頭重置 `p.valCtx = 0`（每條陳述隔離）。
+- 賦值 RHS 的 7 個解析點（`ps-parse-let` 主路 + 明示型別 / 定長陣列 / 推論陣列 / 切片 / 可空型別 / 多重指派標註）
+  在 `ps-parse-expr` 前 `vcSave = p.valCtx; p.valCtx = 1`，後 `p.valCtx = vcSave`。
+- 內聯 `obj.x = expr`（`K_ASSIGN_EXPRESSION` 路徑）**不**設值語境——對齊 Go `parseExpression` 不在該路徑 push CTX_EXPR。
+- `ps-parse-match` 發射端第 valueCtx 槽改讀 `p.valCtx`（棄用 `matchHasRaw` 代理）；`matchHasRaw` 僅留作 rawCond 標記。
+
+**收斂預期與狀態**：直接消除「純 match 結構」分歧中「valueCtx 缺漏」那一類（如 `tests/match-basic.no`
+`r = n: { -> 'ok' }` 原唯一 diff 即漏 `valueCtx: true`）。精確收斂檔數**待 L2 sweep 複測**——本環境
+`bin/no build compiler` 現對 `compiler/main.no` 報 `EmitLLVM: setfield field`（pre-existing codegen 回歸，
+與本改動無關：還原本改動後錯誤完全相同，且 `compiler/` 目錄此刻相對 HEAD 無異動），自舉二進位暫不可重建，
+故 s67 的 L2 量化數字留待 toolchain 解鎖後補。代碼改動已通過「ps.no 層編譯達 main.no 才報錯」的局部驗證
+（即本改動本身不引入 ps.no 語法／型別錯誤），且邏輯與上述 oracle 6 例探針逐一對齊。
 
 ### 5.4 語義檢查（M3）
 

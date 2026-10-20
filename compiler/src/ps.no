@@ -117,6 +117,7 @@ new = (src str) (r psst) {
         warn: 0
         inBlk: 0
         inMatch: 0
+        valCtx: 0; s67：值語境標記（對齊 Go CTX_EXPR）——賦值 RHS 期間為 1，驅動 MatchArm.valueCtx
         fn: ''
         lastTp: -1
         sigN: with-cap(4)
@@ -848,6 +849,7 @@ ps-parse-use = (t ast, p psst) (idx i64) {
 ps-parse-stmt = (t ast, p psst) (idx i64) {
     idx = 0
     ps-skip-trivia(p)
+    p.valCtx = 0; s67：每條陳述起始重置值語境（僅賦值 RHS 期間為 1）
 
     ; 前置語句級 `#{...}` 註解群組：連續消費全部 `#{...}`、去重累計【頂層鍵名】、提取 overflow 模式。
     ;   對應 Go parseAnnotationStatement（annotation.go:188–309）+ attachAnnotations。之後依「緊後陳述首 token」分流：
@@ -1106,7 +1108,10 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 tn = tt.lit
                 ps-bump(p); 消費型別名
                 ps-bump(p); 消費 ASSIGN
+                vcSave = p.valCtx; s67：明示型別標註 `name T = expr` 賦值 RHS ⇒ 值語境
+                p.valCtx = 1
                 val = ps-parse-expr(t, p)
+                p.valCtx = vcSave
                 typ = ast.add(t, asp.K_NAMED_TYPE)
                 ast.set-slot(t, typ, 0, ast.put-str(t, tn))
 
@@ -1145,7 +1150,12 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ps-skip-trivia(p)
                 ps-peek(p) == tok.LBRACKET -> al = ps-parse-arr-lit(t, p, sz)
 
-                -> al = ps-parse-expr(t, p)
+                -> {
+                    vcSave = p.valCtx; s67：定長陣列標註 `name [N]T = expr` 賦值 RHS ⇒ 值語境
+                    p.valCtx = 1
+                    al = ps-parse-expr(t, p)
+                    p.valCtx = vcSave
+                }
 
                 ; 子先於父：elem NamedType → ArrayType（含 size、elem 兩 kid）→ LetStatement
                 ntyp = ast.add(t, asp.K_NAMED_TYPE)
@@ -1191,7 +1201,10 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 sz_lit != '0' -> val = ps-parse-arr-lit(t, p, sz)
                 sz_lit == '0' -> {
                     ps-skip-trivia(p)
+                    vcSave = p.valCtx; s67：推論元素型別定長陣列 `name [N] = expr` 賦值 RHS ⇒ 值語境
+                    p.valCtx = 1
                     val = ps-parse-expr(t, p)
+                    p.valCtx = vcSave
                 }
                 idx = ast.add(t, asp.K_LET_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
@@ -1248,7 +1261,10 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
 
                 ; RHS `[..]` 經 primary 自然建 SliceLiteral（含空 `[]`）
                 ps-skip-trivia(p)
+                vcSave = p.valCtx; s67：切片型別標註 `name []T = expr` 賦值 RHS ⇒ 值語境
+                p.valCtx = 1
                 val = ps-parse-expr(t, p)
+                p.valCtx = vcSave
                 ntyp = ast.add(t, asp.K_NAMED_TYPE)
                 ast.set-slot(t, ntyp, 0, ast.put-str(t, en))
                 styp = ast.add(t, asp.K_SLICE_TYPE)
@@ -1269,7 +1285,10 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 nltyp = ps-parse-type(t, p); 消費 ? 與內層型別
                 ps-expect(p, tok.ASSIGN)
                 ps-skip-trivia(p)
+                vcSave = p.valCtx; s67：可為空型別標註 `name ?T = expr` 賦值 RHS ⇒ 值語境
+                p.valCtx = 1
                 nlval = ps-parse-expr(t, p)
+                p.valCtx = vcSave
                 idx = ast.add(t, asp.K_LET_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
                 ast.kid-add(t, idx, nltyp)
@@ -1294,7 +1313,10 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 }
                 ps-skip-trivia(p)
                 ps-expect(p, tok.ASSIGN)
+                vcSave = p.valCtx; s67：多重指派 `a, b = expr` 賦值 RHS ⇒ 值語境
+                p.valCtx = 1
                 maVal = ps-parse-expr(t, p)
+                p.valCtx = vcSave
                 idx = ast.add(t, asp.K_MULTI_ASSIGN_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, maTargets.len().to-str()))
                 ast.set-count(t, idx, 0, maTargets.len())
@@ -2731,7 +2753,10 @@ ps-mk-opt-arith-type = (t ast, p psst, name str, val i64) (typ i64) {
 }
 
 ps-parse-let = (t ast, p psst, name str) (idx i64) {
+    vcSave = p.valCtx; s67：let/賦值 RHS ⇒ 值語境（對齊 Go CTX_EXPR，驅動 MatchArm.valueCtx）
+    p.valCtx = 1
     val = ps-parse-expr(t, p)
+    p.valCtx = vcSave
     typ = 0
 
     ; SliceLiteral RHS → 建 SliceType(inferred) 包 NamedType(elemType, inferred)
@@ -6017,7 +6042,7 @@ ps-parse-match = (t ast, p psst, subj str, subjNode i64) (idx i64) {
     bbA []i64 = with-cap(4); s66c：blockBody 標記（hd2==1 區塊臂⇒true，對齊 oracle MatchArm.blockBody）
     bshape = 0
     rawA []i64 = with-cap(4); s66d：raw-cond 臂標記（ok(<expr>) 條件值臂⇒rawCond:true）
-    matchHasRaw = 0; s66d：match 層 raw-cond 標記（驅動 valueCtx，對齊 oracle：含 raw-cond 臂時全臂 true）
+    matchHasRaw = 0; s66d：match 層 raw-cond 標記（僅供 rawCond 槽使用；valueCtx 改由 psst.valCtx 驅動，見 s67）
 
     ; 同 ps-parse-bare-match：臂迴圈自行消化 `->`，抑制區塊級續接前探
     oldMat = p.inMatch
@@ -6542,8 +6567,8 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
             bbA[i] == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
             bbA[i] == 0 -> ast.aux-add(t, 0); blockBody（區塊臂⇒true，對齊 oracle）
             ast.aux-add(t, 0); typeArm
-            matchHasRaw == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
-            matchHasRaw == 0 -> ast.aux-add(t, 0); valueCtx
+            p.valCtx == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            p.valCtx == 0 -> ast.aux-add(t, 0); valueCtx（值語境：對齊 Go CTX_EXPR；s67 改由 psst.valCtx 驅動，棄用 matchHasRaw 代理）
             ast.aux-add(t, condA[i]); Condition（型樣節點；wildcard/关键字臂=0）
             ast.aux-add(t, blkSA[i]); Body
             #{overflow=wrap}
