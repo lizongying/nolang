@@ -64,6 +64,7 @@ psst {
     warn i64
     inBlk i64
     inMatch i64
+    valCtx i64; s67：值語境標記（對齊 Go CTX_EXPR）——賦值 RHS 期間為 1，驅動 MatchArm.valueCtx
     fn str
     lastTp i64
     sigN []str
