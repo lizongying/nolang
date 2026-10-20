@@ -1220,12 +1220,27 @@ s66d 在 `ps-parse-match` 補：
 - 內聯 `obj.x = expr`（`K_ASSIGN_EXPRESSION` 路徑）**不**設值語境——對齊 Go `parseExpression` 不在該路徑 push CTX_EXPR。
 - `ps-parse-match` 發射端第 valueCtx 槽改讀 `p.valCtx`（棄用 `matchHasRaw` 代理）；`matchHasRaw` 僅留作 rawCond 標記。
 
-**收斂預期與狀態**：直接消除「純 match 結構」分歧中「valueCtx 缺漏」那一類（如 `tests/match-basic.no`
-`r = n: { -> 'ok' }` 原唯一 diff 即漏 `valueCtx: true`）。精確收斂檔數**待 L2 sweep 複測**——本環境
-`bin/no build compiler` 現對 `compiler/main.no` 報 `EmitLLVM: setfield field`（pre-existing codegen 回歸，
-與本改動無關：還原本改動後錯誤完全相同，且 `compiler/` 目錄此刻相對 HEAD 無異動），自舉二進位暫不可重建，
-故 s67 的 L2 量化數字留待 toolchain 解鎖後補。代碼改動已通過「ps.no 層編譯達 main.no 才報錯」的局部驗證
-（即本改動本身不引入 ps.no 語法／型別錯誤），且邏輯與上述 oracle 6 例探針逐一對齊。
+**收斂預期與狀態（已複測，2026-10-20 末）**：
+- ⚠️ **本節舊版「toolchain 解鎖後補」歸因已迴轉**：`bin/no build compiler` 報 `EmitLLVM: setfield field`
+  **不是** toolchain 漂移 / pre-existing 回歸，而是 **s67 自己引入**——`3c0df878` 在 `psst` 字面量與 7 處賦值
+  用了 `valCtx`，卻**漏在型別定義宣告欄位** ⇒ codegen 找不到 field offset。修法 `7015c7ef`（補 `valCtx i64`）
+  ⇒ 自舉構建 **Build successful**。全 39 commits（s67 + 修 + `?T` unwrap track 設計 + 並發 JS 後端）已推
+  `origin/main`（`a58a907c`），`git ls-remote` 核實一致。
+- **L2 全量複測**（乾淨 worktree，CTL=Go `no`@HEAD → `/tmp/noc-ctl`；SUT-ON=ps.no `PS-SURFACE-MATCH=1`
+  → `/tmp/noc-s67fix`；SUT-OFF=`=0` → `/tmp/noc-s67off`；語料 `tests`+`src/std` 653 檔）：
+
+  | 模式 | SAME | DIFF |
+  | --- | --- | --- |
+  | OFF（降糖基線） | 340 | 313 |
+  | ON（SurfaceMatch + s67 valueCtx） | 385 | 268 |
+
+  - 表示切換效應（同 CTL，ON vs OFF）：**+45 SAME / −45 DIFF**（45 檔 100% 含 match 區塊 `: {`）。
+  - **s67 valueCtx 修正的 L2 效應 ≈ 0**：ON 檔數與 s66d 舊表（386/267）幾乎相同 ⇒ s67 是**語意正確性**修正，
+    非收斂量修正。
+  - **剩餘 DIFF 中 valueCtx 失配：0 / 268**（對 268 DIFF 檔逐檔 `diff <(CTL ast) <(SUT ast)` 抓 `valueCtx`）
+    ⇒ s67 **已徹底消除 valueCtx 表示分歧**；剩餘 268 全為正交分歧（`?T` unwrap / raw-cond 臂缺口 / type-inference）。
+- 「收斂 98% L2 表示分歧」說法**仍未被證實**：ON 僅比 OFF 少 14.4% DIFF（45/313），總 DIFF 仍 268/653=41% 未收斂。
+- 兩輪 sweep 均過 G1/G2/G3/G6/G7（ctl_ok=653、oracle 71/71 節點全覆蓋、binary 無 drift）；`RESULT=FAIL` 僅因未全收斂。
 
 ### 5.4 語義檢查（M3）
 
