@@ -264,7 +264,8 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 	switch stmt.(type) {
 	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement,
 		*parser.ForStatement, *parser.MultiAssignStatement, *parser.ReturnStatement,
-		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition:
+		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition,
+		*parser.UseStatement:
 		all := f.sem.AnnotationsOf(stmt)
 		// `#{index-out = ...}` 有兩種來源：
 		//  1) 獨立成行寫在本陳述正上方：parser 對 IDENT 起始的陳述會把註解直接

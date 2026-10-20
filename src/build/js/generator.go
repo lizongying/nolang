@@ -58,6 +58,18 @@ type Generator struct {
 	esmObjByShort map[string]string
 	esmLocalByKey map[string]string
 
+	// 原生包調用配置（見 native.go）。nativeFound=false 時輸出與特性上線前
+	// 逐位元組相同。
+	nativePolicy  NativePolicy
+	nativeFound   bool
+	nativeBrowser bool
+	nativeLibs    []string // compiler.link-libs（FFI koffi 庫來源）
+
+	// wasm 原生導入（P3）：namespace 識別字、短名（state/ready 鍵）與初始化導出名。
+	nativeWasmNS   string
+	nativeWasmName string
+	nativeWasmInit string
+
 	// out 為輸出緩衝；Generate 入口會重置
 	out *strings.Builder
 }
@@ -112,9 +124,11 @@ func (g *Generator) writeRaw(s string) {
 //
 // 流程：
 //  1. 平台過濾——依 targetGoos/targetGoarch 過濾 #{linux-amd64} 等標註
-//  2. 先輸出所有 struct 定義（→ JS class）
-//  3. 再輸出所有 function 定義（→ JS function）
-//  4. 最後輸出頂層語句（直接執行，不包裝 main）
+//     （必須先於 ESM/原生導入抽取，見步驟 0c）
+//  2. 抽出第三方 ESM 導入並發射 import 頭
+//  3. 輸出所有 struct 定義（→ JS class）
+//  4. 輸出所有 function 定義（→ JS function）
+//  5. 輸出頂層語句（直接執行，不包裝 main）
 func (g *Generator) Generate(program *parser.Program) (string, error) {
 	if program == nil {
 		return "", fmt.Errorf("js.Generator.Generate: program is nil")
@@ -138,19 +152,60 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 
 	// 0c. 第三方 ESM 模組導入（# npm/<specifier>…）：在 prelude 之後、業務程式
 	// 之前發射 import 頭。無 ESM 導入時不產生任何輸出（逐位元組相容）。
+	//
+	// 平台過濾必須先於本步：`#{js-browser}` / `#{js}` 的 use 行在目標不符時要
+	// 整條消失（含其 import 頭），否則會為已被過濾的導入發射 import——本地目標
+	// 引入只在 browser 存在的套件時會直接語言錯。同理，collectTakenNames 也必須
+	// 看到過濾後的清單，避免為已消失的宣告保留識別字。
+	stmts := filterByPlatform(program.Sem, program.Statements, g.targetGoos, g.targetGoarch)
+
 	g.esmBindings = nil
 	g.esmObjByShort = make(map[string]string)
 	g.esmLocalByKey = make(map[string]string)
-	esmImports, esmErr := ExtractESMImports(program)
+	esmImports, esmErr := ExtractESMImportsFromStmts(stmts)
 	if esmErr != nil {
 		return "", esmErr
 	}
-	esmBindings, esmErr := ResolveESMBindings(esmImports, g.collectTakenNames(program.Statements))
+	esmBindings, esmErr := ResolveESMBindings(esmImports, g.collectTakenNames(stmts))
 	if esmErr != nil {
 		return "", esmErr
 	}
+
+	// 原生包調用策略：與 ESM 抽取共用同一份過濾後清單。FFI 策略下把 koffi
+	// 以合成 ESMImport 形態追加進來（短名 "koffi"），複用互操作層與 sidecar
+	// 探測；WASM 策略（P3）另行合成 wasm import 與 ready Promise。無策略時此段
+	// 不產生任何東西，輸出與特性上線前逐位元組相同。
+	nativePolicy, nativeFound, nativeErr := CollectNativePolicyStmts(program.Sem, stmts)
+	if nativeErr != nil {
+		return "", fmt.Errorf("native policy: %w", nativeErr)
+	}
+	if nativeFound {
+		resolved, rerr := ResolveNativePolicy(nativePolicy, true, g.nativeBrowser, g.nativeLibs)
+		if rerr != nil {
+			return "", rerr
+		}
+		g.nativePolicy = resolved
+		g.nativeFound = true
+		switch resolved.Mode {
+		case BindFFI:
+			if len(collectFFIExterns(stmts)) == 0 {
+				return "", fmt.Errorf(
+					"native bind=ffi (import %q) requires at least one #{c} extern declaration to bind",
+					resolved.UsePath)
+			}
+			esmBindings = append(esmBindings, g.koffiBinding(esmBindings, stmts))
+		case BindWASM:
+			esmBindings = append(esmBindings, g.wasmBinding(resolved, esmBindings, stmts))
+		}
+	}
+
 	g.esmBindings = esmBindings
 	for _, b := range g.esmBindings {
+		// wasm 原生導入不是模組物件綁定：其 extern 以裸名呼叫（同名轉發），
+		// 不應把短名登記進 esmObjByShort，否則 `sqlite.xxx` 會被改寫成模組屬性。
+		if b.Bind == "wasm" {
+			continue
+		}
 		g.esmObjByShort[b.ShortName] = b.ObjName
 		for from, local := range b.Locals {
 			g.esmLocalByKey[b.ShortName+"."+from] = local
@@ -158,8 +213,14 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 	}
 	g.emitESMImports()
 
-	// 1. 平台過濾
-	stmts := filterByPlatform(program.Sem, program.Statements, g.targetGoos, g.targetGoarch)
+	// 0d. 原生包調用發射：FFI（koffi.load + 逐符號綁定）與 WASM（同名轉發 +
+	// ready 守衛）都在 ESM 頭之後、業務程式碼之前寫入，使被導入的模組已在作用域。
+	switch {
+	case g.nativeFound && g.nativePolicy.Mode == BindFFI:
+		g.emitFFIBindings(collectFFIExterns(stmts), g.nativePolicy)
+	case g.nativeFound && g.nativePolicy.Mode == BindWASM:
+		g.emitWASMBindings(collectFFIExterns(stmts))
+	}
 
 	// 1b. 收集方法定義（key = receiver type name），供 generateStructDefinition 在 class body 內發射。
 	for _, stmt := range stmts {
@@ -267,7 +328,8 @@ const browserPrelude = `// Nolang browser prelude
 // stmtAnnotations 從敘述中抽取平台註解（經由 side-table）。
 func stmtAnnotations(sem *parser.SemanticContext, stmt parser.Statement) []*parser.AnnotationEntry {
 	switch stmt.(type) {
-	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement:
+	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement,
+		*parser.UseStatement:
 		return sem.AnnotationsOf(stmt)
 	}
 	return nil

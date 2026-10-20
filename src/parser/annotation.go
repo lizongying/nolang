@@ -244,7 +244,10 @@ func (p *Parser) parseAnnotationStatement() Statement {
 	// 若不把 IN 視為可附加，註解會退化成獨立 AnnotationStatement，後續
 	// `in.len() == 0 -> ...` 的解析走 blockUnknown 分支，`in` 被吞掉，
 	// 格式化輸出變成 `.len() == 0 -> ...`（語意破壞、非冪等）。
+	// USE 亦為可附加對象：`#{bind = ffi}` ⏎ `# /src/sqlite` 需把策略掛到
+	// import 行本身（原生包調用方式由 import 行宣告，而非包內宣告）。
 	if p.currentToken.Type == lexer.IDENT ||
+		p.currentToken.Type == lexer.USE ||
 		p.currentToken.Type == lexer.IN ||
 		p.currentToken.Type == lexer.RARROW ||
 		(p.currentToken.Type == lexer.LBRACKET && p.isArrayTypeMethodDefinition()) {

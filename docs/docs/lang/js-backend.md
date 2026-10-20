@@ -48,6 +48,7 @@ JS 後端的核心設計：
 | `--js` | 使用 JS 後端（發射 JavaScript，繞過 LLVM） |
 | `--browser` | 生成瀏覽器導向輸出（HTML + JS，需搭配 `--js`） |
 | `--esm-cdn <url>` | 覆蓋瀏覽器 ESM import map 的 CDN 前綴（預設 `https://esm.sh`） |
+| `--js-runtime <cmd>` | `no run --js` 使用的 JS 執行期（預設 `node`；可換 `bun`、`deno` 等，允許附帶參數） |
 | `-o <path>` | 指定輸出路徑 |
 
 ### 構建
@@ -64,6 +65,23 @@ no build --js --browser main.no          # 輸出 dist/main.js + dist/main.html
 no run --js main.no                      # 編譯為 JS 後以 node 執行
 no run --js --browser main.no            # 編譯為瀏覽器 JS + HTML 並打開瀏覽器
 ```
+
+#### 選擇 JS 執行期
+
+`--js-runtime` 指定執行產物的執行期，**預設 `node`**（Node.js）。任何能跑 ES module 的執行期都可以：
+
+```bash
+no run --js --js-runtime bun main.no             # Bun
+no run --js --js-runtime deno run main.no        # Deno（首個 token 是可執行檔，其餘是腳本前的參數）
+no run --js --js-runtime "deno run --allow-read" main.no
+no run --js --js-runtime "node --enable-source-maps" main.no
+no run --js --js-runtime /opt/js/bin/node main.no   # 指定絕對路徑
+```
+
+- 規格的第一個空白分隔 token 是可執行檔，其餘 token 會排在腳本路徑之前；程式本身的參數照舊寫在 `.no` 檔名之後。
+- 預設（未指定 `--js-runtime`）使用 `node`；若系統只有 Debian/Ubuntu 風格的 `nodejs` 二進位，會自動回退到它。顯式指定的執行期（`bun`、絕對路徑、`node --flags`）永不回退，找不到就報錯。
+- 執行期不在 `PATH` 中時直接報錯，並提示用 `--js-runtime` 換一個（不會靜默退回 node）。
+- ESM 導入（`# npm/…`）對這些執行期同樣有效：`no run --js` 會把專案的 `node_modules` 鏈接進暫存目錄，node/bun/deno 都按相同規則解析。
 
 ## 平台標註
 
@@ -322,6 +340,64 @@ no run --js main.no                   # 建置到暫存目錄後自動以 node �
 2. `package.jsonc` 的 `"compiler": { "esm-cdn": "https://cdn.jsdelivr.net/npm" }`
 
 因為 `<script type="module">` 在 `file://` 下會被 CORS 攔截，`no run --js --browser` 會在 `127.0.0.1` 的臨時埠起一個一次性靜態服務再打開瀏覽器（Ctrl+C 停止）。完整範例見 `example/esm-imports/`。
+
+## 原生包：WASM 與 FFI
+
+JS 後端除了匯入 JS 套件，還可呼叫原生包（C ABI 共享函式庫／WASM）。方式不新增文法，而是在既有宣告上加註解選擇呼叫路徑。現有的 C 函式宣告（`#{c}` + `name = (params) (results)`，見 FFI 章）就是原生介面，JS 後端原本直接跳過；加上 `bind` 註解後，會為每個 `#{c}` extern 產生呼叫綁定。
+
+### 註解
+
+`bind` 是一條**建置策略**：可寫在 `# import` 行上方（獨立成行）或行尾，也可直接寫在 `#{c}` extern 上方的註解群組內。
+
+| 鍵 | 取值 | 說明 |
+| --- | --- | --- |
+| `bind` | `auto` / `ffi` / `wasm` | 呼叫方式；一個 JS 建置只允許一種策略 |
+| `wasm` | 字串 | WASM 模組 specifier；`bind=wasm` 或瀏覽器 `auto` 必填 |
+| `lib` | 字串 | 覆蓋 FFI 庫名（預設取 `compiler.link-libs`） |
+| `init` | 識別字 | WASM 初始化導出名，預設 `default` |
+
+```no
+; libm 的 pow：FFI 走 koffi，瀏覽器需另給 wasm= 的 specifier
+#{bind = auto, c}
+pow = (x f64, y f64) (r f64)
+```
+
+### 目標 × 策略矩陣
+
+| 目標 | `bind=ffi` | `bind=wasm` | `bind=auto` |
+| --- | --- | --- | --- |
+| node / bun / deno | koffi 綁定 extern | WASM 導入 + ready | 有 `link-libs` / `lib=` → FFI；否則需 `wasm=` → WASM；否則報錯 |
+| browser | **建置期報錯**（koffi 無法在瀏覽器運行） | WASM 導入 + ready | 有 `wasm=` → WASM；否則報錯 |
+
+附加規則：`bind=ffi` 需要至少一個 `#{c}` extern，否則報錯；既無 `link-libs` 又無 `lib=` 也報錯。多處出現互相衝突的 `bind` / `wasm` 策略時建置失敗。
+
+### FFI（本地 / node）
+
+FFI 走 [`koffi`](https://koffi.dev) 真 FFI：`koffi.load(<庫>)` + `lib.func(symbol, ret, args)`。庫來源是 `package.jsonc` 的 `compiler.link-libs`（`lib=` 可覆蓋）；多個庫依序嘗試，命中即用。每個 `#{c}` extern 產生一個綁定，本地名為 `jsIdent(name)`（`_sqlite3-open` → `_sqlite3Open`），C 符號名為去前導 `_`、`-` 換 `_`（`sqlite3_open`）。型別對映：
+
+| Nolang | koffi | Nolang | koffi |
+| --- | --- | --- | --- |
+| `i8` / `u8` / `byte` | `int8` / `uint8` | `i32` / `u32` | `int` / `uint` |
+| `i16` / `u16` | `int16` / `uint16` | `i64` / `u64` | `int64` / `uint64` |
+| `f32` / `f64` | `float` / `double` | `str` | `str` |
+| `bool` | `bool` | `void` / 無回傳 | `void` |
+| `*T` | `koffi.pointer(<T>)` | `**T` | `koffi.pointer(koffi.pointer(<T>))` |
+
+其它（切片／陣列／結構體）v1 一律 `"void *"` 兜底。`koffi` 以合成 ESM 依賴加入：`no build` 缺包只 warning，`no run --js` 缺包直接報錯並提示 `npm install koffi`（與 ESM 策略一致）。koffi 是 CJS，走 `import * as` + `.default ??` 互操作層，不用裸 named import。
+
+### WASM（瀏覽器 / `bind=wasm`）
+
+WASM 模式導入指定的 `.wasm` 模組，對每個 `#{c}` extern 產生**同名轉發**（`_sqlite3-open` → wasm 導出 `sqlite3_open`）。初始化產生一張 ready Promise（**不 await**）：同步初始化的模組立即就緒，非同步的會在就緒時翻轉 state，並把 ready Promise 暴露在 `globalThis.__nolang_wasm_ready[<短名>]` 供外層 JS await。呼叫早於就緒會拋明確錯誤。WASM specifier 必須宣告在 `package.jsonc` 的 `dependencies` / `dev-dependencies`（瀏覽器 import map 由 `--esm-cdn` 解析，CDN 路徑見上節）。
+
+### 完整範例
+
+見 `example/native-libm/`：`#{bind = auto, c}` 宣告 libm 的 `pow`，`no run --js main.no` 印出 `1024`（`no run` 需先在該目錄 `npm install` 裝 `koffi`）。
+
+### 已知限制（v1）
+
+- WASM 只做**同名導出轉發**，不產生 API 適配層（例如 `better-sqlite3` → `sql.js` 這類語意差異需自行提供 nolang wrapper 模組）。
+- 策略是**程式級**的：一個 JS 建置只允許一種 `bind` 策略；多原生庫的按模組關聯留待後續。
+- FFI 只綁定 C ABI 共享庫；Node 原生 addon（`.node`）請用 `bind=wasm` 或一般 ESM 導入。
 
 ## 完整示例
 

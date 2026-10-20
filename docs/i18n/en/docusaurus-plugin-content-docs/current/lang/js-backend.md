@@ -48,6 +48,7 @@ Implementation resides in the `src/build/js/` directory:
 | `--js` | Use the JS backend (emit JavaScript, bypass LLVM) |
 | `--browser` | Generate browser-oriented output (HTML + JS, requires `--js`) |
 | `--esm-cdn <url>` | Override the CDN base of the browser ESM import map (default `https://esm.sh`) |
+| `--js-runtime <cmd>` | JS runtime for `no run --js` (default `node`; `bun`, `deno`, … — extra args allowed) |
 | `-o <path>` | Specify output path |
 
 ### Build
@@ -64,6 +65,31 @@ no build --js --browser main.no          # outputs dist/main.js + dist/main.html
 no run --js main.no                      # compile to JS then execute with node
 no run --js --browser main.no            # compile to browser JS + HTML and open browser
 ```
+
+#### Choosing the JS runtime
+
+`--js-runtime` selects the runtime that executes the artifact; the default is
+**`node`** (Node.js). Any runtime that runs ES modules works:
+
+```bash
+no run --js --js-runtime bun main.no             # Bun
+no run --js --js-runtime deno run main.no        # Deno (first token is the executable, the rest precede the script)
+no run --js --js-runtime "deno run --allow-read" main.no
+no run --js --js-runtime "node --enable-source-maps" main.no
+no run --js --js-runtime /opt/js/bin/node main.no   # absolute path
+```
+
+- The first whitespace-separated token is the executable; the remaining tokens
+  are placed before the script path. Program arguments still go after the
+  `.no` file name, as before.
+- The default (no `--js-runtime`) is `node`; if only Debian/Ubuntu's `nodejs`
+  binary is installed, it is used as the same runtime. An explicitly chosen
+  runtime (`bun`, an absolute path, `node --flags`) is never substituted.
+- A runtime that is not in `PATH` fails with a message pointing at
+  `--js-runtime` (there is no silent fallback to node).
+- ESM imports (`# npm/…`) work with all of them: `no run --js` links the
+  project's `node_modules` into the temp dir, which node, bun and deno resolve
+  the same way.
 
 ## Platform Annotations
 
@@ -344,6 +370,95 @@ Because `<script type="module">` is blocked by CORS under `file://`,
 `no run --js --browser` starts a one-shot static server on `127.0.0.1` and
 opens the browser there (Ctrl+C to stop). See `example/esm-imports/` for a
 complete example.
+
+## Native packages: WASM and FFI
+
+Besides importing JS packages, the JS backend can also call native packages (a
+C-ABI shared library, or a WASM module). No new syntax is added — you select
+the call path with an annotation on the existing declarations. The C function
+declarations (`#{c}` + `name = (params) (results)`, see the FFI chapter) are the
+native interface and the JS backend used to skip them; with a `bind` annotation
+it emits a call binding for every `#{c}` extern.
+
+### Annotations
+
+`bind` is a **build strategy**. Write it on the `# import` line (own line above
+or trailing), or inside the annotation group above a `#{c}` extern.
+
+| key | values | meaning |
+| --- | --- | --- |
+| `bind` | `auto` / `ffi` / `wasm` | call path; only one strategy per JS build |
+| `wasm` | string | WASM module specifier; required for `bind=wasm` and browser `auto` |
+| `lib` | string | override the FFI library (defaults to `compiler.link-libs`) |
+| `init` | ident | WASM init export name (default `default`) |
+
+```no
+; libm's pow: FFI via koffi; the browser path needs a wasm= specifier
+#{bind = auto, c}
+pow = (x f64, y f64) (r f64)
+```
+
+### Target × strategy matrix
+
+| target | `bind=ffi` | `bind=wasm` | `bind=auto` |
+| --- | --- | --- | --- |
+| node / bun / deno | koffi binding of externs | WASM import + ready | with `link-libs` / `lib=` → FFI; else needs `wasm=` → WASM; else error |
+| browser | **build-time error** (koffi cannot run in a browser) | WASM import + ready | with `wasm=` → WASM; else error |
+
+Extra rules: `bind=ffi` needs at least one `#{c}` extern (else error), and a
+library from `link-libs` or `lib=` (else error). Conflicting `bind` / `wasm`
+strategies across the program fail the build.
+
+### FFI (local / node)
+
+FFI goes through [`koffi`](https://koffi.dev) (real FFI): `koffi.load(<lib>)` +
+`lib.func(symbol, ret, args)`. The library comes from `package.jsonc`'s
+`compiler.link-libs` (`lib=` overrides); multiple libraries are tried in order
+and the first hit wins. Each `#{c}` extern yields one binding whose local name
+is `jsIdent(name)` (`_sqlite3-open` → `_sqlite3Open`) and whose C symbol drops a
+leading `_` and turns `-` into `_` (`sqlite3_open`). Type mapping:
+
+| Nolang | koffi | Nolang | koffi |
+| --- | --- | --- | --- |
+| `i8` / `u8` / `byte` | `int8` / `uint8` | `i32` / `u32` | `int` / `uint` |
+| `i16` / `u16` | `int16` / `uint16` | `i64` / `u64` | `int64` / `uint64` |
+| `f32` / `f64` | `float` / `double` | `str` | `str` |
+| `bool` | `bool` | `void` / no result | `void` |
+| `*T` | `koffi.pointer(<T>)` | `**T` | `koffi.pointer(koffi.pointer(<T>))` |
+
+Everything else (slices / arrays / structs) falls back to `"void *"` in v1.
+`koffi` is added as a synthetic ESM dependency: `no build` warns when it is
+missing, `no run --js` errors and suggests `npm install koffi` (same policy as
+ESM). koffi is CJS, so it goes through the `import * as` + `.default ??`
+interop layer rather than a bare named import.
+
+### WASM (browser / `bind=wasm`)
+
+WASM mode imports the given `.wasm` module and forwards each `#{c}` extern to
+its same-named export (`_sqlite3-open` → wasm export `sqlite3_open`).
+Initialization produces a ready Promise (**not awaited**): a synchronously
+initialized module is ready immediately, an async one flips the state when
+ready and exposes the ready Promise at `globalThis.__nolang_wasm_ready[<short>]`
+for outer JS to await. A call before readiness raises a clear error. The WASM
+specifier must be declared in `package.jsonc`'s `dependencies` /
+`dev-dependencies` (the browser import map resolves it via `--esm-cdn`, see the
+previous section).
+
+### Complete example
+
+See `example/native-libm/`: `#{bind = auto, c}` declares libm's `pow` and
+`no run --js main.no` prints `1024` (`no run` needs `npm install` in that
+directory first to install `koffi`).
+
+### Known limitations (v1)
+
+- WASM is **same-name exporting only**; there is no API adapter layer (mapping
+  an API onto a different WASM package, e.g. `better-sqlite3` → `sql.js`,
+  needs your own nolang wrapper module).
+- The strategy is **per-program**: one JS build allows one `bind` strategy for
+  all `#{c}` externs; per-module association is future work.
+- FFI binds C-ABI shared libraries only; Node native addons (`.node`) should
+  use `bind=wasm` or a normal ESM import.
 
 ## Complete Example
 

@@ -65,6 +65,14 @@ func jsoncDeclaresESM(b []byte) bool {
 	return false
 }
 
+// nativeLinkLibs returns the package's compiler.link-libs entries, or nil.
+func nativeLinkLibs(pkg *Package) []string {
+	if pkg == nil {
+		return nil
+	}
+	return pkg.Compiler.LinkLibs
+}
+
 // CheckESMDeps parses inputPath (with the same module resolution the JS
 // backend uses) and reports which third-party ESM specifiers it imports are
 // not satisfiable from the nearest installed node_modules tree, plus that
@@ -97,6 +105,13 @@ func CheckESMDeps(inputPath string) (missing []string, nmDir string, err error) 
 	imports, ierr := js.ExtractESMImports(program)
 	if ierr != nil {
 		return nil, "", ierr
+	}
+	// 原生包呼叫：FFI 需 koffi、WASM 需其 specifier，兩者都以 ESM 形式在 node
+	// 執行期解析。這裡以 node（browser=false）視角解析；瀏覽器分支只用 hasESM
+	// 決定是否起 http 服務。瀏覽器＋ffi 的硬錯不會到這裡（runCommand 已先建置，
+	// 建置期就失敗）。
+	if extra, xerr := js.NativeESMImports(program, false, nativeLinkLibs(pkgConfig)); xerr == nil {
+		imports = append(imports, extra...)
 	}
 	if len(imports) == 0 {
 		return nil, "", nil

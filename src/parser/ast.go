@@ -1319,14 +1319,18 @@ func (as *AnnotationStatement) GetFFILang() string {
 	return ""
 }
 
-// isFFILang 報告給定字串是否為已知的 FFI 語言名稱。
-func isFFILang(lang string) bool {
+// IsFFILang 報告給定字串是否為已知的 FFI 語言名稱。供 codegen 後端識別
+// #{c} 等 FFI 註解建立的 ExternStatement。
+func IsFFILang(lang string) bool {
 	switch lang {
 	case "c", "cpp", "rust", "go", "zig", "objc", "asm":
 		return true
 	}
 	return false
 }
+
+// isFFILang 為 IsFFILang 的套件內別名，保留既有呼叫點。
+var isFFILang = IsFFILang
 
 type FunctionLiteral struct {
 	Token lexer.Token

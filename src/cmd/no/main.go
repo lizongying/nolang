@@ -2610,9 +2610,10 @@ func runCommand(args []string) {
 	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
 	optInlineThreshold := fs.Int("option-inline-threshold", 0, "Byte threshold for inlining an option (?T) payload into the option struct (default 24, minimum 8); payloads above it are heap-boxed")
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
-	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with node)")
+	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with --js-runtime; default node)")
 	browserMode := fs.Bool("browser", false, "Open in browser (requires --js)")
 	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.jsonc compiler.esm-cdn)")
+	jsRuntime := fs.String("js-runtime", defaultJSRuntime, "JS runtime used by --js runs: node (default), bun, deno, ... (extra args allowed, e.g. \"deno run --allow-read\")")
 	fs.Usage = func() {
 		fmt.Println("Usage: no run [<package|dir|file>]")
 		fmt.Println("")
@@ -2630,6 +2631,7 @@ func runCommand(args []string) {
 		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
 		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript (run with node).")
 		fmt.Println("Use --js --browser to emit browser JS + HTML and open in the default browser.")
+		fmt.Println("Use --js-runtime <cmd> to choose the JS runtime for `no run --js` (node, bun, deno, ...).")
 		fmt.Println("Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default).")
 		fmt.Println("")
 		fmt.Println("Third-party ESM imports (--js): import npm packages with `# npm/lodash`,")
@@ -2646,6 +2648,7 @@ func runCommand(args []string) {
 		fmt.Println("  no run -target wasm32-wasi main.no")
 		fmt.Println("  no run --wasm-direct main.no  build via Direct WASM backend then run with wasmtime (if available)")
 		fmt.Println("  no run --js main.no            build via JS backend then run with node")
+		fmt.Println("  no run --js --js-runtime bun main.no     same, with bun (node, bun, deno, ...)")
 		fmt.Println("  no run --js --browser main.no  build browser JS + HTML and open in default browser")
 	}
 	_ = fs.Parse(args)
@@ -2789,13 +2792,18 @@ func runCommand(args []string) {
 				}
 			}
 		}
-		// 以 node 執行編譯產物（若不可用則提示使用者安裝）。
-		if _, lerr := exec.LookPath("node"); lerr != nil {
+		// 以 --js-runtime 指定的 JS 執行期跑編譯產物（預設 node；可換 bun/deno 等）。
+		// spec 的第一個 token 是可執行檔，其餘是腳本路徑前的額外參數
+		// （如 "deno run --allow-read"）。缺執行期時給出明確提示。
+		rtExe, rtArgs, rtOK := resolveJSRuntime(*jsRuntime, exec.LookPath)
+		if !rtOK {
 			fmt.Fprintf(os.Stderr, "Built: %s\n", outPath)
-			fmt.Fprintln(os.Stderr, "Error: node not found in PATH; install Node.js to run JS backend output")
+			fmt.Fprintf(os.Stderr, "Error: JS runtime %q not found in PATH; install it, or pick another with --js-runtime (node, bun, deno, ...)\n", rtExe)
 			os.Exit(1)
 		}
-		cmd := exec.Command("node", append([]string{outPath}, fs.Args()[1:]...)...)
+		runArgs := append(append([]string{}, rtArgs...), outPath)
+		runArgs = append(runArgs, fs.Args()[1:]...)
+		cmd := exec.Command(rtExe, runArgs...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -2841,6 +2849,43 @@ func runCommand(args []string) {
 // htmlPath's basename in the default browser, and blocks until interrupted.
 // Browser ESM output needs an http origin: module scripts (and the import map
 // resolving bare specifiers to a CDN) are rejected under file:// by CORS.
+// defaultJSRuntime is the runtime `no run --js` uses when --js-runtime is not
+// given. It is the single source of truth: the flag default and the fallback in
+// jsRuntimeSpec both reference it.
+const defaultJSRuntime = "node"
+
+// jsRuntimeSpec splits a --js-runtime value into the executable and the extra
+// arguments that must precede the script path. The first whitespace-separated
+// token is the runtime ("node", "bun", "deno", a path, ...); the rest are
+// runtime flags, so subcommand-style runtimes work too
+// ("deno run --allow-read"). An empty spec falls back to the default runtime,
+// keeping the historical `no run --js` behavior bit-for-bit.
+func jsRuntimeSpec(spec string) (exe string, extraArgs []string) {
+	fields := strings.Fields(spec)
+	if len(fields) == 0 {
+		return defaultJSRuntime, nil
+	}
+	return fields[0], fields[1:]
+}
+
+// resolveJSRuntime picks the executable for a --js-runtime spec. When the spec
+// is left at the default and `node` is absent, Debian/Ubuntu's `nodejs` binary
+// is accepted as the same runtime; an explicit --js-runtime is never
+// overridden, and extra runtime args also disable the fallback (a spec like
+// "node --enable-source-maps" was written on purpose).
+func resolveJSRuntime(spec string, lookPath func(string) (string, error)) (exe string, extraArgs []string, ok bool) {
+	exe, extraArgs = jsRuntimeSpec(spec)
+	if _, err := lookPath(exe); err == nil {
+		return exe, extraArgs, true
+	}
+	if exe == defaultJSRuntime && len(extraArgs) == 0 {
+		if _, err := lookPath("nodejs"); err == nil {
+			return "nodejs", extraArgs, true
+		}
+	}
+	return exe, extraArgs, false
+}
+
 func serveESMAndOpen(dir, htmlPath string) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

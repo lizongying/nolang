@@ -1,0 +1,8 @@
+{
+  "name": "native-libm",
+  "description": "Native package calls from the Nolang JS backend: libm pow via FFI (node) or WASM (browser)",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "koffi": "^2.9.0"
+  }
+}

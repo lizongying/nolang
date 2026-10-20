@@ -1,0 +1,26 @@
+; ============================================================================
+; Native package calls from the JS backend (libm pow).
+;
+; `bind = auto` decides how the #{c} extern below is bound, per target:
+;   - node / bun / deno  -> koffi FFI: koffi.load(<compiler.link-libs entry>)
+;                           (here "m" -> libm.so / libm.dylib / libm.dll)
+;   - browser            -> WASM, and a `wasm = '<specifier>'` is REQUIRED
+;                           (libm cannot be loaded as WASM, so add one for a
+;                           real browser target, or use libc-style wrappers).
+;
+; The annotation may also be written on the `# import` line (own line above or
+; trailing). Putting it on the extern keeps this example self-contained.
+;
+; Run it (Node, after `npm install` in this directory):
+;   no run --js main.no          -> prints 1024
+; ============================================================================
+
+#{bind = auto, c}
+pow = (x f64, y f64) (r f64)
+
+main = () {
+    r = pow(2.0, 10.0)
+    print(r)
+}
+
+main()

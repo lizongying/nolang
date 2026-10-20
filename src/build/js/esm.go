@@ -45,6 +45,13 @@ type ESMImport struct {
 	ShortName string     // last specifier segment, the Nolang call prefix
 	Named     []ESMNamed // named/default imports (deduplicated)
 	Namespace bool       // whole-module import (no function name)
+	// Bind marks a native-package wasm import (`#{bind = wasm, wasm = ...}`).
+	// Such an import is emitted as a wasm bootstrap (init + ready Promise) rather
+	// than a plain module-object const, and its same-named #{c} externs are
+	// forwarded to its exports.
+	Bind string // "" for ordinary ESM, "wasm" for a native wasm module
+	// Init is the wasm init/export name (defaults to "default").
+	Init string
 }
 
 // IsESMUse reports whether a UseStatement imports a third-party ESM module.
@@ -104,9 +111,16 @@ func ExtractESMImports(program *parser.Program) ([]ESMImport, error) {
 	if program == nil {
 		return nil, nil
 	}
+	return ExtractESMImportsFromStmts(program.Statements)
+}
+
+// ExtractESMImportsFromStmts is ExtractESMImports over an already
+// platform-filtered statement list (the JS backend filters before importing so
+// a #{js-browser}-only import never leaks into a node build).
+func ExtractESMImportsFromStmts(stmts []parser.Statement) ([]ESMImport, error) {
 	var imports []ESMImport
 	index := make(map[string]int)
-	for _, stmt := range program.Statements {
+	for _, stmt := range stmts {
 		use, ok := stmt.(*parser.UseStatement)
 		if !ok || !IsESMUse(use) {
 			continue
@@ -260,6 +274,10 @@ func ResolveESMBindings(imports []ESMImport, taken map[string]bool) ([]ESMBindin
 // so CommonJS packages without statically-detectable named exports work).
 func (g *Generator) emitESMImports() {
 	for _, b := range g.esmBindings {
+		if b.Bind == "wasm" {
+			g.emitWASMImport(b)
+			continue
+		}
 		g.writeRaw("import * as " + b.NSName + " from " + jsLiteral(b.Specifier) + ";\n")
 		g.writeRaw("const " + b.ObjName + " = " + b.NSName + ".default ?? " + b.NSName + ";\n")
 		for _, n := range b.Named {

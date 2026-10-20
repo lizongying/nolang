@@ -283,6 +283,18 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 			}
 			return nil
 		}
+
+		// 原生包導入（#{bind = ffi|wasm}）：import 行是策略標記，不解析為本地 .no
+		// 模組——extern 由程式內的 #{c} 宣告提供。本地 / 模組的語句照例合併，但 use
+		// 行本身一貫被丟棄，那會連帶丟掉附在行上的 bind=/wasm=/lib= 註解，故對原生
+		// 導入改為保留 use 行，讓 merge 後的 CollectNativePolicy 仍讀得到策略。
+		if np, isNative := js.NativeUsePolicy(use, merged.Sem); isNative {
+			if np.WASM != "" && !esmDeclared(pkgConfig, np.WASM) {
+				return fmt.Errorf("native wasm module %q is not declared in package.jsonc dependencies; add \"dependencies\": {\"%s\": \"^latest\"} (or dev-dependencies) and run npm install", np.WASM, np.WASM)
+			}
+			merged.Statements = append(merged.Statements, use)
+			return nil
+		}
 		// Only resolve local module imports (path starts with "/").
 		// Skip js/ modules (handled by builtin.go) and std/ modules
 		// (common functions handled by builtin.go).
@@ -456,6 +468,19 @@ func BuildJSEx(inputPath string, opts BuildOptions) (*BuildJSResult, error) {
 		return nil, err
 	}
 
+	// 3.7 原生包呼叫：FFI 需 koffi、WASM 需 wasm specifier，都以合成 ESMImport
+	// 形態併入清單，使 sidecar、依賴探測與瀏覽器 import map 涵蓋它們。無原生
+	// 意圖時不新增任何項目（逐位元組相容）。
+	linkLibs := []string(nil)
+	if pkgConfig != nil {
+		linkLibs = pkgConfig.Compiler.LinkLibs
+	}
+	nativeImports, nerr := js.NativeESMImports(program, opts.BrowserMode, linkLibs)
+	if nerr != nil {
+		return nil, nerr
+	}
+	esmImports = append(esmImports, nativeImports...)
+
 	// 4. JS 後端 codegen（型別擦除）
 	g := js.NewGenerator()
 	g.SetTargetPlatform("js", "")
@@ -464,6 +489,7 @@ func BuildJSEx(inputPath string, opts BuildOptions) (*BuildJSResult, error) {
 		g.SetTargetEnv("browser")
 		envMode = "browser"
 	}
+	g.SetNativeConfig(linkLibs, opts.BrowserMode)
 	if opts.Verbose {
 		fmt.Fprintf(os.Stderr, "[js] target: js (type erasure), env: %s\n", envMode)
 	}
