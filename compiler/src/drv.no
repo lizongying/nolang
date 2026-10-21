@@ -87,11 +87,11 @@ drv.cmd-tokens = () (code i64) {
     ;    所以 nil **不是**錯誤。不處理的話 `noc tokens <空檔>` 會 rc=1 而 oracle rc=0
     ;    ⇒ L1 假 DIFF（語料中目前沒有空檔，故此缺陷目前是**潛伏**的）。
     c = fs.read-bytes(path)
-    src = ''
+    src []byte = with-cap(0)
     got = false
     c: {
         ok -> {
-            src = it.to-bytes-str()
+            src = it
             got = true
         }
 
@@ -123,11 +123,11 @@ drv.cmd-ast = () (code i64) {
     }
     path = args.get(2)
     c = fs.read-bytes(path)
-    src = ''
+    src []byte = with-cap(0)
     got = false
     c: {
         ok -> {
-            src = it.to-bytes-str()
+            src = it
             got = true
         }
 

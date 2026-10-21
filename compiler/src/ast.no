@@ -122,6 +122,9 @@ ast {
     nodes []nd
     kids []i64
     strs []str
+    strK []str; string-interning hash table (open addressing; grows on demand)
+    strV []i64; maps interned string -> index in strs
+    strN i64; live entry count in strK/strV (drives load-factor growth)
     aux []i64
     tape []i64
     kinds []i64
@@ -177,6 +180,9 @@ make = () (r ast) {
         kids: []
         i64
         strs: asp.strs()
+        strK: with-cap(256)
+        strV: with-cap(256)
+        strN: 0
         aux: []
         i64
         tape: asp.tape()
@@ -189,6 +195,13 @@ make = () (r ast) {
     r.nodes.push(z)
     r.aux.push(0)
     r.n = 1
+    ; pre-fill string-interner sentinel slots (open addressing; '' = empty)
+    hi = 0
+    (hi < 256) {
+        r.strK.push('')
+        r.strV.push(0)
+        hi = hi + 1
+    }
 }
 
 ; add: 新增節點，回傳其索引（>= 1）
@@ -336,22 +349,104 @@ helper-begin = (t ast, i i64, count i64) (base i64) {
 ;    字串）。新增的字串接在後面，索引就是 len-1。
 ;    早期版本回傳 len（1 起算），會讓 str-at 讀到隔壁一格 —— 症狀是
 ;    `warnings: ` 少印、而 `value` 印成下一個字串的內容。
+; ── 字串駐留：O(1) 開放定址雜湊（替代原 O(n) 線性掃描，修 parser O(n²)）──
+ast-str-hash = (sx str) (h i64) {
+    h = 5381
+    i = 0
+    n = sx.len-bytes()
+    (i < n) {
+        c = sx.byte(i)
+        #{overflow=wrap}
+        h = h * 31 + c
+        i = i + 1
+    }
+}
+
+; 不查重、直接插入 mapping s -> target（grow 重哈希時用，避免遞歸增長）
+ast-str-intern-raw = (t ast, s str, target i64) () {
+    n = t.strK.len()
+    h = ast-str-hash(s)
+    #{overflow=wrap}
+    h = h % n
+    (h < 0) -> h = h + n
+    i = 0
+    (i < n) {
+        k = t.strK[h]
+        k == '' -> {
+            t.strK[h] = s
+            t.strV[h] = target
+            t.strN = t.strN + 1
+            return
+        }
+        k == s -> { return }
+        #{overflow=wrap}
+        h = (h + 1) % n
+        (h < 0) -> h = h + n
+        i = i + 1
+    }
+}
+
+; 翻倍重哈希（strV 存的是 strs 下標，strs 本身不動）
+ast-str-grow = (t ast) () {
+    oldK = t.strK
+    oldV = t.strV
+    oldN = oldK.len()
+    newCap = oldN * 2
+    (newCap == 0) -> newCap = 256
+    t.strK = with-cap(newCap)
+    t.strV = with-cap(newCap)
+    hi = 0
+    (hi < newCap) {
+        t.strK.push('')
+        t.strV.push(0)
+        hi = hi + 1
+    }
+    t.strN = 0
+    hi = 0
+    (hi < oldN) {
+        kk = oldK[hi]
+        kk != '' -> ast-str-intern-raw(t, kk, oldV[hi])
+        hi = hi + 1
+    }
+}
+
+; 回傳 s 在 strs 中的駐留下標（首次出現則 append 後駐留；與原線性掃描下標完全一致）
+ast-str-intern = (t ast, s str) (idx i64) {
+    cap = t.strK.len()
+    (t.strN * 4 >= cap * 3) -> ast-str-grow(t)
+    n = t.strK.len()
+    h = ast-str-hash(s)
+    #{overflow=wrap}
+    h = h % n
+    (h < 0) -> h = h + n
+    i = 0
+    (i < n) {
+        k = t.strK[h]
+        k == s -> {
+            idx = t.strV[h]
+            return
+        }
+        k == '' -> {
+            t.strK[h] = s
+            t.strs.push(s)
+            idx = t.strs.len() - 1
+            t.strV[h] = idx
+            t.strN = t.strN + 1
+            return
+        }
+        #{overflow=wrap}
+        h = (h + 1) % n
+        (h < 0) -> h = h + n
+        i = i + 1
+    }
+    t.strs.push(s)
+    idx = t.strs.len() - 1
+}
+
 put-str = (t ast, s str) (id i64) {
     id = 0
     s.len-bytes() == 0 -> return
-    i <- [0..t.strs.len()): {
-
-        #{index-out=zero}
-        cur = t.strs[i]
-        cur.eq-full(s) -> {
-            id = i
-            return
-        }
-    }
-    t.strs.push(s)
-
-    #{overflow=wrap}
-    id = t.strs.len() - 1
+    id = ast-str-intern(t, s)
 }
 
 ; ═══════════════════════════════════════════════════════════════════

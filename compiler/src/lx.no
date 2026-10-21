@@ -110,7 +110,22 @@ B-ESC-X = 120
 ; ── 詞法狀態 ──
 ; 欄位名刻意與 src/lexer/lexer.go 的 Lexer 對齊，方便逐行對照。
 lxst {
-    input str
+    ; ⚠️ 源碼一律以 []byte 承載：入口處 str.to-bytes() 轉一次，此後全走 b[i] 遍歷。
+    ;    成因實測：以【str 字段】為接收者求值（含 `.byte(i)`）屬「借用」，每次都會
+    ;    **整塊複製**字串緩衝 ⇒ O(N)；逐位元組掃描遂退化成 O(N²)。
+    ;    200K 單 token：欄位為 str 0.852s vs 為 []byte 0.010s（85×）。
+    ; 為何「先 str.to-bytes()」而不用 len-bytes() + 快取長度：
+    ;    []byte.len() 本身就是 O(1) 的欄位讀取，故**不需要**額外的 n 欄位，
+    ;    也**不需要**呼叫 len-bytes()；且轉出來的 []byte 可直接拿來遍歷，少一份
+    ;    需與實際緩衝同步的狀態（長度快取一旦與緩衝漂移就是靜默錯）。
+    ; 補充：`str.byte(i)` 用於【區域變數】時是 O(1)（emitBuiltinRawByteAt 展開為
+    ;    GEP+load+zext），可用；但一旦接收者是【結構體字段】就觸發上列整塊複製。
+    ; 🔴 硬約束：`str.to-bytes()` 【本身】是一次 O(N) 拷貝 —— 見
+    ;    src/std/str.no:464，實作為 val = with-len(.len-bytes()) 再逐位元組複製。
+    ;    故只能在**入口／邊界**呼叫一次，絕不可放進逐位元組迴圈或每次 push，
+    ;    否則會把攤還 O(1) 重新打回 O(N²)。
+    ; 方法真名是 to-bytes()，【沒有】 str.bytes()。
+    input []byte
     pos i64     ; Go: position   目前字元（位元組）索引
     rpos i64    ; Go: readPosition
     ch i64      ; Go: ch（byte；0 = EOF）
@@ -234,12 +249,12 @@ lx-is-ws = (c i64) (yes bool) {
 ; ═══════════════════════════════════════════════════════════════════
 
 ; sub：取 s[a..b)（用 sb 組，不依賴 str 的 substring API）
-lx-sub = (s str, a i64, b i64) (r str) {
+lx-sub = (s []byte, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
     #{overflow=wrap}
     (i < b) {
-        t.push-byte(s.byte(i))
+        t.push-byte(s[i])
         #{overflow=wrap}
         i = i + 1
     }
@@ -307,8 +322,9 @@ lx-esc-byte = (b sb, c i64) () {
 }
 
 ; esc：空字串 -> "-"，否則逐位元組轉義
-lx-esc = (s str) (r str) {
-    n = s.len-bytes()
+; ⚠️ 入口先 to-bytes() 轉一次再遍歷：不必另外快取長度，也不必呼叫 len-bytes()。
+lx-esc = (s []byte) (r str) {
+    n = s.len()
     n == 0 -> {
         r = '-'
         return
@@ -316,7 +332,7 @@ lx-esc = (s str) (r str) {
     #{overflow=wrap}
     b = sb.init(n + 8)
     i <- [0..n): {
-        lx-esc-byte(b, s.byte(i))
+        lx-esc-byte(b, s[i])
     }
     r = b.str()
 }
@@ -325,7 +341,7 @@ lx-esc = (s str) (r str) {
 ; 狀態操作（照抄 readChar / peekChar / skipWhitespace）
 ; ═══════════════════════════════════════════════════════════════════
 
-lx-new = (src str) (r lxst) {
+lx-new = (src []byte) (r lxst) {
     r = lxst {
         input: src
         pos: 0
@@ -343,9 +359,9 @@ lx-new = (src str) (r lxst) {
 ; readChar：前進一個位元組。column 逐位元組遞增；見到 '\n' 時 line++ 且 column 歸零。
 ; ⚠️ 這裡「先取 ch 再前進」的順序是照抄的，別改成先前進。
 lx-read-char = (lx lxst) () {
-    n = lx.input.len-bytes()
+    n = lx.input.len()
     lx.rpos >= n -> lx.ch = 0
-    lx.rpos < n -> lx.ch = lx.input.byte(lx.rpos)
+    lx.rpos < n -> lx.ch = lx.input[lx.rpos]
     lx.pos = lx.rpos
     #{overflow=wrap}
     lx.rpos = lx.rpos + 1
@@ -359,9 +375,9 @@ lx-read-char = (lx lxst) () {
 }
 
 lx-peek = (lx lxst) (c i64) {
-    n = lx.input.len-bytes()
+    n = lx.input.len()
     c = 0
-    lx.rpos < n -> c = lx.input.byte(lx.rpos)
+    lx.rpos < n -> c = lx.input[lx.rpos]
 }
 
 lx-skip-ws = (lx lxst) () {
@@ -393,11 +409,11 @@ lx-read-ident = (lx lxst) (r str) {
     r = lx-sub(lx.input, start, lx.pos)
 }
 
-lx-contains-dot = (s str) (yes bool) {
+lx-contains-dot = (s []byte) (yes bool) {
     yes = false
-    n = s.len-bytes()
+    n = s.len()
     i <- [0..n): {
-        c = s.byte(i)
+        c = s[i]
         c == B-DOT -> yes = true
     }
 }
@@ -667,14 +683,14 @@ lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
 ; block-boundary：從第二個 ';' 之後起到行尾是否只有空白（⇒ 是塊註釋定界符）。
 ; Go 的 isBlockCommentStart 與 isBlockCommentEnd 是**同一個函式**，故合併。
 lx-block-boundary = (lx lxst) (yes bool) {
-    n = lx.input.len-bytes()
+    n = lx.input.len()
     #{overflow=wrap}
     i = lx.rpos + 1
     yes = true
     go = true
     (go) {
         i < n -> {
-            c = lx.input.byte(i)
+            c = lx.input[i]
             c == B-LF -> go = false
             c != B-LF -> {
                 w = lx-is-ws(c)
@@ -859,13 +875,13 @@ lx-fmt = (t tk) (r str) {
     b.push-byte(B-SP)
     b.push(tok.name(t.typ))
     b.push-byte(B-SP)
-    b.push(lx-esc(t.lit))
+    b.push(lx-esc(t.lit.to-bytes()))
     b.push-byte(B-SP)
-    b.push(lx-esc(t.raw))
+    b.push(lx-esc(t.raw.to-bytes()))
     b.push-byte(B-SP)
-    b.push(lx-esc(t.mk))
+    b.push(lx-esc(t.mk.to-bytes()))
     b.push-byte(B-SP)
-    b.push(lx-esc(t.emsg))
+    b.push(lx-esc(t.emsg.to-bytes()))
     r = b.str()
 }
 ; ═══════════════════════════════════════════════════════════════════
@@ -1402,7 +1418,7 @@ lx-scan-token = (lx lxst, t tk) () {
                 a6 -> {
                     num = lx-read-number(lx)
                     typ = tok.INT
-                    dot = lx-contains-dot(num)
+                    dot = lx-contains-dot(num.to-bytes())
                     dot -> typ = tok.FLOAT
                     lit = num
                     done = true
@@ -1436,7 +1452,7 @@ lx-scan-token = (lx lxst, t tk) () {
 ;    跨模組呼叫的寫法是 `<模組短名>.<定義名>`，所以叫 dump 才能寫成 lx.dump(src)。
 ;    若命名為 lx-dump，呼叫端就得寫 lx.lx-dump(...)（可讀性差）。
 ;    內部輔助函式一律保留 lx- 前綴（對外不可見，只為在本檔內區隔）。
-dump = (src str) (out str) {
+dump = (src []byte) (out str) {
     lx = lx-new(src)
     b = sb.init(1024)
     t = tk.new()
@@ -1462,7 +1478,7 @@ dump = (src str) (out str) {
 ; ⚠️ 元素型別必須由**宣告註解**決定：`out []tk = with-cap(n)`。
 ;    裸寫 `out = []tk` 會被推成 `[]i64`（實測：vec.push 報
 ;    "cannot push a value of type 'tk' into '[]i64'"）。
-scan-all = (src str) (r []tk) {
+scan-all = (src []byte) (r []tk) {
     lx = lx-new(src)
     out []tk = with-cap(256)
     t = tk.new()

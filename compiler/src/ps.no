@@ -88,6 +88,10 @@ psst {
     efE []str
     efV []str
     efT []str
+    htK []str; O(1) lookup: key -> value (open addressing; grows on demand)
+    htV []i64
+    htTy []str; type strings, indexed by htV value
+    htN i64; live entry count in htK/htV (drives load-factor growth)
 }
 
 ; s58：方法簽名表鍵 'recv.method'（Go methodSignatures）
@@ -111,7 +115,7 @@ psst {
 PS-SURFACE-MATCH = 0
 
 ; new：掃描原始碼，建立解析器（跨模組呼叫寫 ps.new → 必須是裸函式名 `new`）
-new = (src str) (r psst) {
+new = (src []byte) (r psst) {
     r = psst {
         toks: lx.scan-all(src)
         pos: 0
@@ -142,6 +146,17 @@ new = (src str) (r psst) {
         efE: with-cap(4)
         efV: with-cap(4)
         efT: with-cap(4)
+        htK: with-cap(256)
+        htV: with-cap(256)
+        htTy: with-cap(256)
+        htN: 0
+    }
+    ; pre-fill initial hash slots (open addressing; grows on demand via ps-ht-put)
+    hi = 0
+    (hi < 256) {
+        r.htK.push('')
+        r.htV.push(0)
+        hi = hi + 1
     }
 }
 
@@ -2053,38 +2068,133 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
 ; ── s51：parse 期型別推斷輔助群（復刻 Go parser 的簽名表/變數型別表/宣告表與 gate）──
 
 ; ps-sig-find：反向掃描同檔函式簽名（最後註冊覆蓋先前，對應 Go map 語意）。回傳回傳值型別起始 token 下標；-1=未找到。
-ps-sig-find = (p psst, fname str) (pos i64) {
-    pos = -1
-    i = p.sigN.len()
-    (i > 0) {
-
+; ── s51b：O(1) 字串→i64 雜湊查表（開放定址；模數按需增長 = htK.len()，負載>=0.75 翻倍重哈希）──
+ps-hash = (s str) (h i64) {
+    h = 5381
+    i = 0
+    n = s.len-bytes()
+    (i < n) {
+        c = s.byte(i)
         #{overflow=wrap}
-        i = i - 1
-        p.sigN[i].copy() == fname -> {
-            pos = p.sigP[i]
-            return
+        h = h * 31 + c
+        i = i + 1
+    }
+}
+
+ps-ht-put = (p psst, key str, val i64) () {
+    cap = p.htK.len()
+    (p.htN * 4 >= cap * 3) -> {
+        ; 負載因子 >= 0.75：把 htK/htV 翻倍並重哈希（htTy 不動，htV 存的是 htTy 下標）。
+        oldK = p.htK
+        oldV = p.htV
+        oldN = oldK.len()
+        newCap = oldN * 2
+        (newCap == 0) -> newCap = 256
+        p.htK = with-cap(newCap)
+        p.htV = with-cap(newCap)
+        hi = 0
+        (hi < newCap) {
+            p.htK.push('')
+            p.htV.push(0)
+            hi = hi + 1
+        }
+        p.htN = 0
+        hi = 0
+        (hi < oldN) {
+            k = oldK[hi]
+            k != '' -> {
+                m = p.htK.len()
+                hh = ps-hash(k)
+                #{overflow=wrap}
+                hh = hh % m
+                (hh < 0) -> hh = hh + m
+                j = 0
+                (j < m) {
+                    kk = p.htK[hh]
+                    kk == '' -> {
+                        p.htK[hh] = k
+                        p.htV[hh] = oldV[hi]
+                        p.htN = p.htN + 1
+                        j = m
+                    }
+                    kk == k -> {
+                        p.htV[hh] = oldV[hi]
+                        j = m
+                    }
+                    #{overflow=wrap}
+                    hh = (hh + 1) % m
+                    (hh < 0) -> hh = hh + m
+                    j = j + 1
+                }
+            }
+            hi = hi + 1
         }
     }
+    n = p.htK.len()
+    h = ps-hash(key)
+    #{overflow=wrap}
+    h = h % n
+    (h < 0) -> h = h + n
+    i = 0
+    (i < n) {
+        k = p.htK[h]
+        k == '' -> {
+            p.htK[h] = key
+            p.htV[h] = val
+            p.htN = p.htN + 1
+            return
+        }
+        k == key -> {
+            p.htV[h] = val
+            return
+        }
+        #{overflow=wrap}
+        h = (h + 1) % n
+        (h < 0) -> h = h + n
+        i = i + 1
+    }
+}
+
+ps-ht-get = (p psst, key str) (r i64) {
+    r = -1
+    n = p.htK.len()
+    h = ps-hash(key)
+    #{overflow=wrap}
+    h = h % n
+    (h < 0) -> h = h + n
+    i = 0
+    (i < n) {
+        k = p.htK[h]
+        k == '' -> { return }
+        k == key -> {
+            r = p.htV[h]
+            return
+        }
+        #{overflow=wrap}
+        h = (h + 1) % n
+        (h < 0) -> h = h + n
+        i = i + 1
+    }
+}
+
+ps-sig-find = (p psst, fname str) (pos i64) {
+    pos = ps-ht-get(p, 'sig:' - fname)
+    (pos < 0) -> pos = -1
 }
 
 ; s58：ps-msig-find：方法簽名表查 'recv.method' 鍵（同 ps-sig-find 反掃覆前口徑）。
 ps-msig-find = (p psst, key str) (pos i64) {
-    pos = -1
-    i = p.msN.len()
-    (i > 0) {
-
-        #{overflow=wrap}
-        i = i - 1
-        p.msN[i].copy() == key -> {
-            pos = p.msP[i]
-            return
-        }
-    }
+    pos = ps-ht-get(p, 'ms:' - key)
+    (pos < 0) -> pos = -1
 }
 
 ; ps-set-var-type：登記變數型別。頂層（fn==''）進全域 VarTypes；函式內僅進 FuncVarTypes
 ;   （Go parser.go:1050-1066：函式區域變數不污染全域表）。
 ps-set-var-type = (p psst, vname str, ty str) {
+    key = 'vt:' - p.fn - ' ' - vname
+    tidx = p.htTy.len()
+    p.htTy.push(ty)
+    ps-ht-put(p, key, tidx)
     p.fn == '' -> {
         p.gvN.push(vname)
         p.gvT.push(ty)
@@ -2094,32 +2204,20 @@ ps-set-var-type = (p psst, vname str, ty str) {
         p.fvF.push(p.fn)
         p.fvV.push(vname)
         p.fvT.push(ty)
+        ps-ht-put(p, 'fv:' - p.fn - ' ' - vname, 1)
     }
 }
 
 ; ps-var-type：FuncVarType 語意——先查當前函式，再回退全域表（Go resolver.go:485）；後寫覆蓋先寫。
 ps-var-type = (p psst, vname str) (ty str) {
     ty = ''
-    i = p.fvF.len()
-    (i > 0) {
-
-        #{overflow=wrap}
-        i = i - 1
-        p.fvF[i].copy() == p.fn && p.fvV[i].copy() == vname -> {
-            ty = p.fvT[i].copy()
-            return
-        }
+    tidx = ps-ht-get(p, 'vt:' - p.fn - ' ' - vname)
+    tidx >= 0 -> {
+        ty = p.htTy[tidx]
+        return
     }
-    j = p.gvN.len()
-    (j > 0) {
-
-        #{overflow=wrap}
-        j = j - 1
-        p.gvN[j].copy() == vname -> {
-            ty = p.gvT[j].copy()
-            return
-        }
-    }
+    gidx = ps-ht-get(p, 'vt: ' - vname)
+    gidx >= 0 -> ty = p.htTy[gidx]
 }
 
 ; ps-mark-dcl：let 解析尾部登記宣告（Go parseLetStatement 尾：DeclaredVars 恒記 + SetFuncDeclared）。
@@ -2128,11 +2226,17 @@ ps-var-type = (p psst, vname str) (ty str) {
 ;   number-div-mod-clamp 皆「本作用域已出現、型别表無entry → captureTargetAllowsOption 拒」）。
 ps-mark-dcl = (p psst, vname str) {
     p.gclN.push(vname)
+    ps-ht-put(p, 'dcg:' - vname, 1)
     p.fn != '' -> {
         p.dclF.push(p.fn)
         p.dclV.push(vname)
+        ps-ht-put(p, 'dc:' - p.fn - ' ' - vname, 1)
+        ps-ht-put(p, 'dct:' - p.fn, 1)
     }
-    p.fn == '' -> p.dclT.push(vname)
+    p.fn == '' -> {
+        p.dclT.push(vname)
+        ps-ht-put(p, 'dctop:' - vname, 1)
+    }
 }
 
 ; ps-is-declared：IsFuncDeclared 語意（Go resolver.go:519）——函式已被追蹤時【只】查函式對表，
@@ -2140,30 +2244,15 @@ ps-mark-dcl = (p psst, vname str) {
 ps-is-declared = (p psst, vname str) (r i64) {
     r = 0
     tracked = 0
-    i = p.dclF.len()
-    (i > 0) {
-
-        #{overflow=wrap}
-        i = i - 1
-        p.dclF[i].copy() == p.fn -> tracked = 1
-    }
+    tf = ps-ht-get(p, 'dct:' - p.fn)
+    tf >= 0 -> tracked = 1
     p.fn != '' && tracked == 1 -> {
-        j = p.dclF.len()
-        (j > 0) {
-
-            #{overflow=wrap}
-            j = j - 1
-            p.dclF[j].copy() == p.fn && p.dclV[j].copy() == vname -> r = 1
-        }
+        d = ps-ht-get(p, 'dc:' - p.fn - ' ' - vname)
+        d >= 0 -> r = 1
         return
     }
-    k = p.gclN.len()
-    (k > 0) {
-
-        #{overflow=wrap}
-        k = k - 1
-        p.gclN[k].copy() == vname -> r = 1
-    }
+    g = ps-ht-get(p, 'dcg:' - vname)
+    g >= 0 -> r = 1
 }
 
 ; ps-filter-ok：filterInferableType 語意（Go type.go:204-226）——option（?T，節點形即 NullableType）恒可推斷；
@@ -2665,30 +2754,15 @@ ps-signed-int-operand = (t ast, p psst, e i64) (r str) {
 ;   函式内：dcl 對（本函式 let）+ fv 對（參數/已登記區域變數）；頂層：dclT（僅頂層 let）。
 ps-walk-declared = (p psst, vname str) (r i64) {
     r = 0
-    i = 0
-    (i < p.dclF.len()) {
-        p.dclF[i].copy() == p.fn && p.dclV[i].copy() == vname -> r = 1
-
-        #{overflow=wrap}
-        i = i + 1
-    }
-    p.fn == '' -> {
-        j = 0
-        (j < p.dclT.len()) {
-            p.dclT[j].copy() == vname -> r = 1
-
-            #{overflow=wrap}
-            j = j + 1
-        }
+    d = ps-ht-get(p, 'dc:' - p.fn - ' ' - vname)
+    d >= 0 -> r = 1
+    r == 0 && p.fn == '' -> {
+        t = ps-ht-get(p, 'dctop:' - vname)
+        t >= 0 -> r = 1
     }
     r == 0 -> {
-        k = 0
-        (k < p.fvF.len()) {
-            p.fvF[k].copy() == p.fn && p.fvV[k].copy() == vname -> r = 1
-
-            #{overflow=wrap}
-            k = k + 1
-        }
+        f = ps-ht-get(p, 'fv:' - p.fn - ' ' - vname)
+        f >= 0 -> r = 1
     }
 }
 
@@ -2697,21 +2771,14 @@ ps-walk-declared = (p psst, vname str) (r i64) {
 ;   回 '' = 未找到（ok=false）；正序掃描後寫覆蓋＝Go map 賦值語義。
 ps-local-type = (p psst, vname str) (ty str) {
     ty = ''
-    i = 0
-    (i < p.fvF.len()) {
-        p.fvF[i].copy() == p.fn && p.fvV[i].copy() == vname -> ty = p.fvT[i].copy()
-
-        #{overflow=wrap}
-        i = i + 1
+    tidx = ps-ht-get(p, 'vt:' - p.fn - ' ' - vname)
+    tidx >= 0 -> {
+        ty = p.htTy[tidx]
+        return
     }
     p.fn == '' -> {
-        j = 0
-        (j < p.gvN.len()) {
-            p.gvN[j].copy() == vname -> ty = p.gvT[j].copy()
-
-            #{overflow=wrap}
-            j = j + 1
-        }
+        gidx = ps-ht-get(p, 'vt: ' - vname)
+        gidx >= 0 -> ty = p.htTy[gidx]
     }
 }
 
@@ -3339,6 +3406,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     outs.len() == 1 -> {
         p.sigN.push(name)
         p.sigP.push(opos[0])
+        ps-ht-put(p, 'sig:' - name, opos[0])
     }
 
     ; s63：偵測隱式泛型參數（Go decl.go:517-522：先 Parameters 後 Results，同序去重）。
@@ -3495,6 +3563,7 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str, recvNode i64)
     outs.len() == 1 -> {
         p.msN.push(fullName)
         p.msP.push(opos[0])
+        ps-ht-put(p, 'ms:' - fullName, opos[0])
     }
 
     ; s63：方法定義隐式泛型偵測（Go decl.go:1750/1753：Parameters 後接 Results）。

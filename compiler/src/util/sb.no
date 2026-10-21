@@ -8,7 +8,10 @@
 ;   - 無一等函式值、無指針、無匿名函式型別
 ;   - 結構體名 >= 2 字元
 ;
-; ⚠️ 位元組邊界一律用 len-bytes()。str.len() 回的是【碼點數】，不是位元組數。
+; ⚠️ 位元組邊界：一律以 []byte 為載體，取長度用 .len()（= 位元組數）。
+;    不要用 str.len() —— 它回的是【碼點數】，不是位元組數（src/std/str.no:41-44，
+;    實作為 n = .cp-index(.len-bytes())）；
+;    也不必用 len-bytes()，見 docs/design/nolang-selfhost.md §2.1.2。
 
 sb {
     buf []byte
