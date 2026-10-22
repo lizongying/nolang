@@ -87,7 +87,7 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 			}
 		}
 		if len(others) > 0 || len(overflowModes) > 0 {
-			// 多個註解合併為單行：#{intrinsic, overflow=wrap}。overflow 與
+			// 多個註解合併為單行：#{index-out=zero, overflow=wrap}。overflow 與
 			// 平台/泛型等其它鍵同屬一行，避免為 overflow 多佔一行（否則幾乎
 			// 每條含算術的陳述都自帶一行、嚴重膨脹且影響冪等）。
 			f.write("#{")
@@ -864,7 +864,7 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) boo
 	}
 	emitted := false
 	if len(others) > 0 || len(overflowModes) > 0 {
-		// 多個註解合併為單行：#{intrinsic, overflow=wrap}（與
+		// 多個註解合併為單行：#{index-out=zero, overflow=wrap}（與
 		// formatStatement 的附加註解路徑一致）。
 		f.write("#{")
 		first := true

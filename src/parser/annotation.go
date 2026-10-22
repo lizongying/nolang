@@ -268,7 +268,7 @@ func (p *Parser) parseAnnotationStatement() Statement {
 			p.pendingAnnotations = nil
 			// 將註解同時標記到緊接其後的「同名多載」函式定義。nolang 以連續
 			// `name = ...` 表達 arity 多載（如 global.no 的
-			//   #{buildin=format, intrinsic}
+			//   #{buildin=format}
 			//   format = () { }
 			//   format = (s str) (out str) { }
 			// ），若只標記首個定義，其餘多載（帶命名返回參數的變體）會被當成
@@ -359,10 +359,6 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 				if m := NormalizeOverflowMode(raw); m != "" {
 					fd.OverflowMode = m
 				}
-		case e.Key == "intrinsic":
-			// #{intrinsic} 標記函式的命名返回參數由 codegen / 内建 /
-			// 出參引用在 nolang 源碼之外賦值，跳過未賦值檢查。
-			fd.Intrinsic = true
 		case e.Key == "buildin":
 			// #{buildin} 標記此函式為標準庫內建聲明：真實實作位於 Go
 			// runtime，nolang 函式體不參與校驗與 codegen（編譯器遇到此標記直接
@@ -809,7 +805,7 @@ func (p *Parser) mergeAnnotations(n Node, entries []*AnnotationEntry) {
 	}
 	// 解析期 Annotations 尚未由 ResolveProgram 從 RawAnnotations 拷貝，若只讀
 	// Annotations 會得到空切片 → 走 else 分支直接覆寫，把語句原有的非 overflow
-	// 註解（如 #{intrinsic}）連同既有 RawAnnotations 一起丟掉。故回退讀 RawAnnotations。
+	// 註解連同既有 RawAnnotations 一起丟掉。故回退讀 RawAnnotations。
 	existing := p.sem.AnnotationsOf(n)
 	if len(existing) == 0 {
 		existing = p.sem.RawAnnotationsOf(n)

@@ -1,4 +1,4 @@
-; s52：前置 `#{buildin}`/`#{intrinsic}` 註解標記 ⇒ FunctionDefinition/TaggedEnumDefinition 節點旗標
+; s52：前置 `#{buildin}` 註解標記 ⇒ FunctionDefinition/TaggedEnumDefinition 節點旗標
 #{buildin}
 a = (k i64) {
 }
@@ -7,14 +7,8 @@ a = (k i64) {
 b = (k i64) (r str) {
 }
 
-#{buildin, intrinsic}
+#{buildin}
 c = (s str) (out str) {
-}
-
-#{intrinsic}
-d = (x i64) (r i64) {
-    r = x
-    return
 }
 
 ; 無註解者不受影響（零回歸釘）

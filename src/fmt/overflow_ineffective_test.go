@@ -16,7 +16,7 @@ import (
 // concatenation where the `-` is concat, not subtraction), the annotation does
 // nothing and must be stripped. A whole annotation line that becomes empty after
 // the overflow entry is dropped (e.g. `#{overflow=wrap}` alone, or the overflow
-// portion of `#{intrinsic, overflow=wrap}`) must also disappear, and the result
+// portion of `#{mac-arm64, overflow=wrap}`) must also disappear, and the result
 // must stay idempotent (no dangling blank line).
 //
 // The formatter receives the relevance info from the caller (checker), matching
@@ -27,7 +27,7 @@ func TestFormatRemovesIneffectiveOverflow(t *testing.T) {
 		"    s = \"a\" - \"b\"\n" +
 		"    #{overflow=wrap}\n" +
 		"    n = 1 + 2\n" +
-		"    #{intrinsic, overflow=wrap}\n" +
+		"    #{mac-arm64, overflow=wrap}\n" +
 		"    t = \"x\" - \"y\"\n" +
 		"}\n"
 	expected := "main = () {\n" +
@@ -36,7 +36,7 @@ func TestFormatRemovesIneffectiveOverflow(t *testing.T) {
 		"    #{overflow=wrap}\n" +
 		"    n = 1 + 2\n" +
 		"\n" +
-		"    #{intrinsic}\n" +
+		"    #{mac-arm64}\n" +
 		"    t = \"x\" - \"y\"\n" +
 		"}\n"
 

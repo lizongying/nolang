@@ -693,11 +693,15 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
 ; url: 'http://host:port/path'（port 可選，預設 80）
 ; body: 請求主體（空字串=無主體）
 ; 返回 names/values/header-count=回應標頭, resp-body/resp-n=回應主體, ok=true=成功
-#{intrinsic}
 do = (method str, url str, body str) (names [32]str, values [32]str, header-count i64, resp-body str, resp-n i64, ok bool) {
     ok = false
     header-count = 0
     resp-n = 0
+
+    ; 回應標頭／本文尚未回填（連線流程未完成）：先給零值
+    names [32]str
+    values [32]str
+    resp-body = ''
 
     ; 解析 URL
     host = ''

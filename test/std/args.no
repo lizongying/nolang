@@ -5,7 +5,7 @@
 ; 覆蓋：count / get / program（委派至 os.args/os.arg）
 ;       has-flag / get-option / get-positional（在無附加參數下的否定路徑）
 ;
-; 背景：args.count/get/program 原為 #{intrinsic} 空實作，實際回傳 0/空字串
+; 背景：args.count/get/program 原為空實作（以內建樁標記），實際回傳 0/空字串
 ;       （真實 bug），而底層 os.args()/os.arg() 可正常讀取 argv。現已改為
 ;       委派 os builtin。本測試驗證委派正確（count 不再為 0）。
 ;

@@ -122,7 +122,7 @@ eprint = (s str) {
 ;   s = format('{x:.2f}')       → '3.14'
 ;   s = format('{name} is {age}')  → 'Alice is 30'
 ;   ⚠️ 只接受单一格式字串（没有多参数形式）
-#{buildin, intrinsic}
+#{buildin}
 format = (s str) (out str) {
 }
 

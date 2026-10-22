@@ -227,35 +227,6 @@ main = () {
 	}
 }
 
-// TestIntrinsicAnnotationSuppressesUnassigned verifies that a function marked
-// with #{intrinsic} is exempt from the i3k422u3 "never assigned" check even if
-// its named result parameter is never assigned in the nolang source (it is
-// populated by codegen / a builtin / an out-parameter reference).
-func TestIntrinsicAnnotationSuppressesUnassigned(t *testing.T) {
-	src := `#{intrinsic}
-count = () (n i64) {
-    ; LLVM: call os.args
-}
-
-main = () {
-    x = count()
-}
-`
-	l := lexer.New(src)
-	p := parser.New(l)
-	prog := p.ParseProgram()
-	if errs := p.Errors(); len(errs) > 0 {
-		t.Fatalf("parse errors: %v", errs)
-	}
-	results := ValidateUnassignedReturns(prog)
-	for _, r := range results {
-		t.Logf("L%d:C%d %s", r.Line, r.Column, r.Message)
-	}
-	if len(results) != 0 {
-		t.Fatalf("expected #{intrinsic} to suppress the unassigned-returns warning, got %d: %v", len(results), results)
-	}
-}
-
 // TestBuiltinAnnotationSuppressesUnassigned verifies that a function marked
 // with #{buildin=NAME} is exempt from the i3k422u3 "never assigned" check.
 // Builtin stubs are declared with empty bodies in std (the real implementation
@@ -310,16 +281,16 @@ main = () {
 	}
 }
 
-// TestBuiltinOverloadContinuationSuppressed verifies that a builtin/intrinsic
+// TestBuiltinOverloadContinuationSuppressed verifies that a builtin
 // annotation attached to the FIRST of several consecutive same-name overload
 // definitions also suppresses the unassigned-returns check for the LATER
 // overloads. nolang expresses arity overloads as consecutive `name = ...`
-// definitions, and the #{buildin=...} / #{intrinsic} annotation only sits
+// definitions, and the #{buildin=...} annotation only sits
 // above the first one (e.g. global.no's `format`). Without overload
 // propagation the second definition (`format = (s str) (out str) { }`) would
 // be falsely flagged with i3k422u3.
 func TestBuiltinOverloadContinuationSuppressed(t *testing.T) {
-	src := `#{buildin=format, intrinsic}
+	src := `#{buildin=format}
 format = () (out str) { }
 format = (s str) (out str) { }
 

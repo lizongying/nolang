@@ -345,7 +345,7 @@ func cloneMethod(fd *parser.FunctionDefinition, subst map[string]string, concret
 		// 欄位攜帶、決定函數體內有號整數相減溢位處置模式的資訊，不複製會讓
 		// 具現化副本靜默丟失註解。
 		//
-		// 刻意「不」傳承 BuiltinStub / BuiltinName / BuiltinGroup / Intrinsic：
+		// 刻意「不」傳承 BuiltinStub / BuiltinName / BuiltinGroup：
 		// BuiltinStub 會讓 stripBuiltinStubs 跳過整個 codegen，而模板方法是真的
 		// 有函式體需要產生符號的；保持現狀（false）才是對的行為。
 		IsMethodDef:  fd.IsMethodDef,

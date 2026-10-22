@@ -284,6 +284,21 @@ def classify_scalar(call, ftype, owner, locals_):
         return {"label": label, "policy": policy, "src": ".".join(path),
                 "render": go_type_renderer(t), "of": "field", "gotype": t}
 
+    # Side-table accessor: `d.opts.Sem.<X>Of(n)` -- the value lives in a
+    # Program.Sem node-keyed side-table instead of an AST field (S5 moved
+    # IsModuleConst there).  The spec describes the *dump shape*, so the
+    # renderer is taken from the policy helper (kvb => bool) and `src` names
+    # the accessor.  Neither interpreter can read the side-table through the
+    # AST field, so both render "" -- and the pTrue policy hides it, which is
+    # exactly what dump.go prints for a false side-table value.  (Same shape
+    # as the pre-S5 `n.IsModuleConst` field: an unresolvable field name.)
+    semm = re.match(r"^d\.opts\.Sem\.([A-Za-z][A-Za-z0-9_]*)\(n\)$", expr)
+    if semm:
+        render = {"kv": "str", "kvs": "str", "kvb": "bool",
+                  "kvn": "float", "kvc": "int"}[fn]
+        return {"label": label, "policy": policy, "src": semm.group(1),
+                "render": render, "of": "field"}
+
     # a prelude local (valStr / name) -- resolved separately
     if re.match(r"^[A-Za-z][A-Za-z0-9_]*$", expr) and expr in locals_:
         lo = locals_[expr]
@@ -956,11 +971,11 @@ def emit_go(spec, path):
     A("\t\tfmt.Fprintf(&s.buf, \"%sGenericParams: %s\\n\", specIndent(depth), strings.Join(names, \", \"))")
     A("\t}")
     A("\tif sig.IsVariadic {")
-    A("\t\tvar parts []string")
-    A("\t\tif sig.VariadicUnion != \"\" {")
-    A("\t\t\tparts = append(parts, \"union: \"+sig.VariadicUnion)")
-    A("\t\t}")
-    A("\t\tfmt.Fprintf(&s.buf, \"%sVariadic{%s}\\n\", specIndent(depth), strings.Join(parts, \", \"))")
+    A("\t\t// S5 stage 4: VariadicUnion 已遷入 SemanticContext side-table，")
+    A("\t\t// FuncSignature 不再攜帶 union 名。本 generator 只處理純 parse 語料")
+    A("\t\t// （Dump(prog) 無 Sem、標記恆空），故 union 列無條件省略——與")
+    A("\t\t// (*dumper).signature 在 Sem=nil 時的輸出一致。")
+    A("\t\tfmt.Fprintf(&s.buf, \"%sVariadic{%s}\\n\", specIndent(depth), \"\")")
     A("\t}")
     A("\tfor _, p := range sig.Parameters {")
     A("\t\tif p != nil {")
@@ -1282,6 +1297,45 @@ def emit_go(spec, path):
     A("\t\tfmt.Fprintf(&s.buf, \"%sAnnotationEntry{%s}\\n\", specIndent(depth), strings.Join(parts, \", \"))")
     A("\t\tif e.Value != nil {")
     A("\t\t\ts.node(e.Value, depth+1)")
+    A("\t\t}")
+    A("\tcase \"matchArm\":")
+    A("\t\t// Mirror of (*dumper).matchArm in dump.go: MatchArm is not a Node,")
+    A("\t\t// so it is reached only through the SurfaceMatch case via opHelper.")
+    A("\t\tvar a *parser.MatchArm")
+    A("\t\tif p, ok := v.(*parser.MatchArm); ok {")
+    A("\t\t\ta = p")
+    A("\t\t} else if val, ok := v.(parser.MatchArm); ok {")
+    A("\t\t\ta = &val")
+    A("\t\t}")
+    A("\t\tif a == nil {")
+    A("\t\t\tfmt.Fprintf(&s.buf, \"%s<nil>\\n\", specIndent(depth))")
+    A("\t\t\treturn")
+    A("\t\t}")
+    A("\t\tfmt.Fprintf(&s.buf, \"%sMatchArm{%s}\\n\", specIndent(depth),")
+    A("\t\t\tfields(kvb(\"wildcard\", a.IsWildcard), kvb(\"dotVal\", a.IsDotVal),")
+    A("\t\t\t\tkvb(\"rawCond\", a.IsRawCond), kvb(\"blockBody\", a.IsBlockBody),")
+    A("\t\t\t\tkvb(\"typeArm\", a.IsTypeArm), kvs(\"typePattern\", a.TypePattern),")
+    A("\t\t\t\tkvs(\"typeBinding\", a.TypeBindingName), kvb(\"skipIt\", a.SkipItBinding),")
+    A("\t\t\t\tkvb(\"valueCtx\", a.ValueCtx), kv(\"binding\", a.BindingName),")
+    A("\t\t\t\tkv(\"bindingVariant\", a.BindingVariant),")
+    A("\t\t\t\tkvs(\"multiOption\", strings.Join(a.MultiOptionPatterns, \",\")),")
+    A("\t\t\t\tkvc(\"multiValue\", len(a.MultiValuePatterns)),")
+    A("\t\t\t\tkvc(\"bindingNames\", len(a.BindingNames)),")
+    A("\t\t\t\tkvc(\"bindingFields\", len(a.BindingFields))))")
+    A("\t\tif a.Condition != nil {")
+    A("\t\t\ts.node(a.Condition, depth+1)")
+    A("\t\t}")
+    A("\t\tfor _, mv := range a.MultiValuePatterns {")
+    A("\t\t\ts.node(mv, depth+1)")
+    A("\t\t}")
+    A("\t\tfor _, bn := range a.BindingNames {")
+    A("\t\t\tfmt.Fprintf(&s.buf, \"%sBindingName{%s}\\n\", specIndent(depth+1), kv(\"name\", bn))")
+    A("\t\t}")
+    A("\t\tfor _, bf := range a.BindingFields {")
+    A("\t\t\tfmt.Fprintf(&s.buf, \"%sBindingField{%s}\\n\", specIndent(depth+1), kv(\"name\", bf))")
+    A("\t\t}")
+    A("\t\tif a.Body != nil {")
+    A("\t\t\ts.node(a.Body, depth+1)")
     A("\t\t}")
     A("\tdefault:")
     A("\t\tpanic(\"spec: unknown helper \" + name)")

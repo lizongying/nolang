@@ -1135,14 +1135,16 @@ ifconfig-list = () (ifs []if-info) {
     }
 }
 
-#{mac-amd64, mac-arm64, intrinsic}
+#{mac-amd64, mac-arm64}
 ifconfig-list = () (ifs []if-info) {
     ; macOS 暫時返回空列表（需 getifaddrs(3) 系統 API）
+    ifs = []
 }
 
-#{win-amd64, win-arm64, intrinsic}
+#{win-amd64, win-arm64}
 ifconfig-list = () (ifs []if-info) {
     ; Windows 暫時返回空列表（需 GetIfTable 系統 API）
+    ifs = []
 }
 
 ; route-list: 列出核心路由表
@@ -1180,14 +1182,16 @@ route-list = () (routes []route-info) {
     }
 }
 
-#{mac-amd64, mac-arm64, intrinsic}
+#{mac-amd64, mac-arm64}
 route-list = () (routes []route-info) {
     ; macOS 暫時返回空列表（需 PF_ROUTE socket 或 sysctl CTL_NET/NET_RT_DUMP）
+    routes = []
 }
 
-#{win-amd64, win-arm64, intrinsic}
+#{win-amd64, win-arm64}
 route-list = () (routes []route-info) {
     ; Windows 暫時返回空列表（需 GetIpForwardTable 系統 API）
+    routes = []
 }
 
 ; arp-list: 列出 ARP 表
@@ -1225,14 +1229,16 @@ arp-list = () (arps []arp-info) {
     }
 }
 
-#{mac-amd64, mac-arm64, intrinsic}
+#{mac-amd64, mac-arm64}
 arp-list = () (arps []arp-info) {
     ; macOS 暫時返回空列表（需 sysctl net.inet.arp 或 ARP ioctls）
+    arps = []
 }
 
-#{win-amd64, win-arm64, intrinsic}
+#{win-amd64, win-arm64}
 arp-list = () (arps []arp-info) {
     ; Windows 暫時返回空列表（需 GetIpNetTable 系統 API）
+    arps = []
 }
 
 ; split-ws: 按空白字元（空格/定位字元）分割字串，跳過連續空白
