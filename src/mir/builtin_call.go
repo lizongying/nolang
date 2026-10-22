@@ -1928,6 +1928,12 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 
 // emitBuiltinVecPush lowers `vec.push(x)`: append `x` to the receiver vector in
 // place, growing the backing buffer (cap -> cap*2, or 1 when empty) when full.
+//
+// ⚠️ 摊还 O(1) 不变量（2026-10-21 修正）：重分配**只能**在 len==cap 时发生。
+// 早期实作把 alloc+memcpy+release 写成直线程（每次 push 都做），即便缓冲区未满
+// 也拷贝 len 个字节 ⇒ N 次 push 总拷贝 Σlen = N²/2 ⇒ **O(N²)**。这让所有经 `sb`
+// 構建的字串退化，自舉 lexer 因此成为 O(N²)（单条 200K token 的 `tokens` ~3s）。
+// 现在：满 → grow（cap×2）；未满 → 一律原地写（见下方「语义决定」）。
 // The receiver is `inst.Args[0]` (a %vec passed by its alloca slot so the
 // mutation is visible to the caller) and the element is `inst.Args[1]`.
 //
@@ -2070,17 +2076,43 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 %s\n", growCap, capZero, capDouble))
 	needGrow := c.treg("vpng")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, %s\n", needGrow, lenG, capG))
-	newCap := c.treg("vpnc")
-	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newCap, needGrow, growCap, capG))
-	sz := c.treg("vpsz")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", sz, newCap, strideOp))
-	newBuf := c.treg("vpnb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBuf, sz))
+	// bytes/srcPtr 在 **entry 块**里算出：entry 支配所有后继块，故三路都能安全引用。
 	bytes := c.treg("vpby")
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", bytes, lenG, strideOp))
 	srcPtr := c.treg("vpsp")
 	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, dataG))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes))
+	//
+	// ⚠️ O(N²) → O(N) 修正：重分配（alloc + memcpy + release）**必须只在缓冲区满时**执行。
+	//
+	// 原本这段是**直线程**：每次 push 都无条件 alloc + memcpy(len*stride) + release。
+	// 于是即便 len<cap（缓冲区还有空位），也会把既有的 len 个字节整個拷一遍 ⇒
+	// N 次 push 的总拷贝量 = Σlen = N²/2 ⇒ **O(N²)**。所有经 `sb` 構建的字串
+	// （`lx-sub`/`lx-esc`/`lx-fmt`/`lx-dump`）都因此退化，自舉 lexer 遂成 O(N²)。
+	//
+	// ── 语义决定（使用者 2026-10-21 指示）────────────────────────────────
+	// 「对 arr / vec / str 的元素操作应该原地写，包括字段是以上类型。」
+	// ⇒ 容器元素（含**结构体字段**里的容器）的写入**一律原地**，
+	//   不再为「借用别名」整块拷贝（COW）。故：
+	//     满（len==cap）→ 重新分配（唯一还会拷贝的路径，×2 摊还 O(1)）；
+	//     未满（len<cap）→ 直接在既有缓冲上写（O(1)，零分配零拷贝）。
+	//
+	// 内存安全性：未满时的原地写发生在**已分配容量内**（下标 len < cap），
+	// 属界内写入；别名各方各自的 {len,cap,data} 描述符是**按值拷贝**的，
+	// 故被别名容器的逻辑内容（下标 0..len-1）不受影响，不会损坏其可见状态。
+	// 引用计数仍平衡：借用的 retain 由借用值死亡时的 OpRelease 归还，
+	// 与 push 是否重分配无关（见 insertBorrowRetains / borrowReleaseValues）。
+	lGrow := c.label("vpgrow")
+	lFast := c.label("vpfast")
+	lJoin := c.label("vpjoin")
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", needGrow, lGrow, lFast))
+
+	// ── grow 路径：满 → 新容量 cap*2（空则 1）、搬 len*stride 字节、release 旧缓冲 ──
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lGrow))
+	growSz := c.treg("vpgsz")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", growSz, growCap, strideOp))
+	newBufG := c.treg("vpnbg")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBufG, growSz))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBufG, srcPtr, bytes))
 	// Release the old buffer. Unconditional on purpose: the grow path used to
 	// free it outright, which is a use-after-free whenever the receiver is an
 	// alias of a container element (`x = a[0]` shares a's buffer) — under the
@@ -2090,6 +2122,20 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	// buffer at the borrow, so this call is a RELEASE that only frees when the
 	// count reaches zero. See emitRetain / @vec_retain.
 	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", srcPtr))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lJoin))
+
+	// ── fast 路径：未满（len < cap）→ 原地写入，零分配、零拷贝 ──
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lFast))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lJoin))
+
+	// ── join：汇聚「缓冲指针」与「新容量」，后续逻辑不变 ──
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lJoin))
+	newBuf := c.treg("vpnb")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i8* [ %s, %%%s ], [ %s, %%%s ]\n",
+		newBuf, newBufG, lGrow, srcPtr, lFast))
+	newCap := c.treg("vpnc")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i64 [ %s, %%%s ], [ %s, %%%s ]\n",
+		newCap, growCap, lGrow, capG, lFast))
 	ebase := c.treg("vpeb")
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", ebase, newBuf, elemTy))
 	// Owned-string element: the %str-long struct is stored by value into the
@@ -2461,9 +2507,17 @@ func (c *codegen) emitBuiltinVecReverse(inst *Inst) error {
 	return nil
 }
 
-// emitBuiltinVecInsert lowers `vec.insert(idx, x)`: grow (mirroring push) if the
-// backing buffer is full, then copy [0..idx) and [idx..len) around the new
-// element via two memcpy's. idx is clamped to [0, len].
+// emitBuiltinVecInsert lowers `vec.insert(idx, x)`: if the backing buffer is
+// full, grow (mirroring push) and copy [0..idx) and [idx..len) around the new
+// element via two memcpy's; otherwise shift the tail in place with a memmove
+// and store the element. idx is clamped to [0, len].
+//
+// ⚠️ 摊还 O(1) 不变量（2026-10-21 修正，与 emitBuiltinVecPush 对齐）：
+// 重分配（alloc + memcpy + release）**只能**在 len==cap 时发生。
+// 早期实作把 alloc + 两次 memcpy + release 写成**直线程**（每次 insert 都做），
+// 即便缓冲区未满也拷遍 len 个元素 ⇒ N 次 insert 总拷贝 Σlen = N²/2 ⇒ **O(N²)**。
+// 现在：满 → grow（cap×2）；未满 → 原地后移 + 写入（零分配零释放）。
+// fast 路径必须用 **memmove**（src/dst 同缓冲且相差一个步长，区域重叠）。
 func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	if len(inst.Args) < 3 {
 		return fmt.Errorf("vec.insert: needs receiver, index, element")
@@ -2496,14 +2550,11 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 %s\n", growCap, capZero, capDouble))
 	needGrow := c.treg("ivng")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, %s\n", needGrow, lenG, capG))
-	newCap := c.treg("ivnc")
-	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newCap, needGrow, growCap, capG))
 	newLen := c.treg("ivnl")
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", newLen, lenG))
-	sz := c.treg("ivsz")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sz, newCap, stride))
-	newBuf := c.treg("ivnb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBuf, sz))
+	// srcPtr / idxClamp2 / headBytes / restBytes / dstRestOff 在**入口块**算出：
+	// 入口块支配所有后继块，故 grow 与 fast 两条路径都能安全引用
+	// （同 emitBuiltinVecPush 的做法）。
 	srcPtr := c.treg("ivsp")
 	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, dataG))
 	idxLo := c.treg("ivil")
@@ -2514,11 +2565,17 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp sgt i64 %s, %s\n", idxHi, idxClamp, lenG))
 	idxClamp2 := c.treg("ivic2")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", idxClamp2, idxHi, lenG, idxClamp))
-	bytes1 := c.treg("ivb1")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", bytes1, idxClamp2, stride))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes1))
-	ebase := c.treg("iveb")
-	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", ebase, newBuf, elemLL))
+	// 头段 [0..idx) 与尾段 [idx..len) 的位元组数；尾段要整体右移一个步长。
+	headBytes := c.treg("ivhb")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", headBytes, idxClamp2, stride))
+	restCount := c.treg("ivrc")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", restCount, lenG, idxClamp2))
+	restBytes := c.treg("ivrb")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", restBytes, restCount, stride))
+	dstRestOff := c.treg("ivdr")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, %d\n", dstRestOff, headBytes, stride))
+	// 元素的深拷贝（%str-long → str_clone，%vec → vecDeepClone）与缓冲无关，
+	// 在分支前做一次，两条路径共用克隆后的 elemV。
 	// Owned-string element: clone before storing into the vec (same reasoning
 	// as emitBuiltinVecPush — a by-value store shares the temp's buffer, which
 	// the temp's drop would free out from under the vec element).
@@ -2560,29 +2617,85 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 			}
 		}
 	}
-	eptr := c.treg("ivep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemLL, elemLL, ebase, idxClamp2))
-	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, elemV, elemLL, eptr))
+	//
+	// ⚠️ O(N) → 摊还 O(1) 修正（2026-10-21）：重分配（alloc + memcpy + release）
+	// **只能**在 len==cap 时发生，与 emitBuiltinVecPush 的不变量对齐。
+	//
+	// 原本这段是**直线程**：每次 insert 都无条件
+	// `nolang_rc_alloc(newCap*stride)` + 两次 memcpy（拷满整个缓冲）+
+	// `nolang_free(旧)`。于是即便 len<cap（还有空位），也把既有的 len 个元素
+	// 整體搬一遍 ⇒ N 次 insert 总拷贝 Σlen = N²/2 ⇒ **O(N²)**。
+	//
+	// 现在：满 → grow（cap×2）；未满 → **原地**后移尾部 + 写入，零分配零释放。
+	//
+	// 内存安全性（与 push 同一套论证）：
+	//   - fast 路径不分配也不释放，引用计数天然平衡；
+	//   - 原地后移写在**已分配容量内**（最大下标 len < cap），属界内写入；
+	//   - 别名各方各自的 {len,cap,data} 描述符按值拷贝，被别名容器的逻辑内容
+	//     （下标 0..len-1）不受影响；
+	//   - grow 路径的 release 由 insertBorrowRetains 的 retain 兜底（见 push）。
+	lGrow := c.label("vigrow")
+	lFast := c.label("vifast")
+	lJoin := c.label("vijoin")
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", needGrow, lGrow, lFast))
+
+	// ── grow 路径：满 → 新缓冲 cap*2（空则 1）、搬旧内容、release 旧缓冲 ──
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lGrow))
+	growSz := c.treg("ivgsz")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", growSz, growCap, stride))
+	newBufG := c.treg("ivnbg")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBufG, growSz))
+	// 头段 [0..idx)
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBufG, srcPtr, headBytes))
+	// 尾段 [idx..len) → [idx+1..len+1)。新旧缓冲不重叠，用 memcpy。
+	srcRestG := c.treg("ivsrg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcRestG, srcPtr, headBytes))
+	dstRestG := c.treg("ivdrg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", dstRestG, newBufG, dstRestOff))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dstRestG, srcRestG, restBytes))
+	// 写入新元素。位置 idx 与尾段的目标区 [idx+1..len] 不重叠，故先后皆可；
+	// 放在尾段之后是为了与 fast 路径保持同一次序，便于对照。
+	ebaseG := c.treg("ivebg")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", ebaseG, newBufG, elemLL))
+	eptrG := c.treg("ivepg")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptrG, elemLL, elemLL, ebaseG, idxClamp2))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, elemV, elemLL, eptrG))
 	// Same by-value sharing as emitBuiltinVecPush — see cloneStructElemLeaves.
-	c.cloneStructElemLeaves(eptr, elemLL)
-	restOff := c.treg("ivro")
-	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", restOff, idxClamp2))
-	srcRestOff := c.treg("ivsr")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", srcRestOff, idxClamp2, stride))
-	dstRestOff := c.treg("ivdr")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", dstRestOff, restOff, stride))
-	restCount := c.treg("ivrc")
-	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", restCount, lenG, idxClamp2))
-	restBytes := c.treg("ivrb")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", restBytes, restCount, stride))
-	srcRest := c.treg("ivsr2")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcRest, srcPtr, srcRestOff))
-	dstRest := c.treg("ivdr2")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", dstRest, newBuf, dstRestOff))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dstRest, srcRest, restBytes))
+	c.cloneStructElemLeaves(eptrG, elemLL)
 	// Release the old buffer; see emitBuiltinVecPush for why this is
 	// unconditional (the borrow read retained it, so this is a release).
 	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", srcPtr))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lJoin))
+
+	// ── fast 路径：未满（len < cap）→ 原地后移尾部 + 写入，零分配零释放 ──
+	//
+	// ⚠️ 必须用 **memmove** 而不是 memcpy：src/dst 落在**同一个**缓冲内且相差
+	// 一个步长（dst = src + stride），区域重叠；memcpy 对重叠区域是未定义行为
+	// （opt 可能按 16 位元组宽度整塊搬，寫出重複元素）。
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lFast))
+	srcRestF := c.treg("ivsrf")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcRestF, srcPtr, headBytes))
+	dstRestF := c.treg("ivdrf")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", dstRestF, srcPtr, dstRestOff))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memmove.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dstRestF, srcRestF, restBytes))
+	// 后移**之后**才写入新元素：位置 idx 是尾段的**源**而非目标，
+	// 先写会被尾段搬到 idx+1，原来的元素则丢失。
+	ebaseF := c.treg("ivebf")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", ebaseF, srcPtr, elemLL))
+	eptrF := c.treg("ivepf")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptrF, elemLL, elemLL, ebaseF, idxClamp2))
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemLL, elemV, elemLL, eptrF))
+	c.cloneStructElemLeaves(eptrF, elemLL)
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lJoin))
+
+	// ── join：汇聚「缓冲指针」与「新容量」，后续逻辑不变 ──
+	c.sb.WriteString(fmt.Sprintf("%s:\n", lJoin))
+	newBuf := c.treg("ivnb")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i8* [ %s, %%%s ], [ %s, %%%s ]\n",
+		newBuf, newBufG, lGrow, srcPtr, lFast))
+	newCap := c.treg("ivnc")
+	c.sb.WriteString(fmt.Sprintf("  %s = phi i64 [ %s, %%%s ], [ %s, %%%s ]\n",
+		newCap, growCap, lGrow, capG, lFast))
 	dataI64 := c.treg("ivdi")
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataI64, newBuf))
 	s0 := c.treg("ivs0")
