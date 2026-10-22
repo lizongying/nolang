@@ -705,8 +705,9 @@ XZ-MAGIC = [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]
 ;   - Blocks: Block Header + Compressed Data + Block Padding + Check
 ;   - Index
 ;   - Stream Footer: 12 bytes
-#{intrinsic}
 xz-decompress = (data []byte) (out []byte) {
+    ; 先給空結果；Block 解壓時由 lzma2-decompress-stream 的結果覆寫
+    out = []
 
     ; 檢查 XZ magic
     data.len() < 12 -> return
@@ -797,8 +798,8 @@ xz-decompress = (data []byte) (out []byte) {
         #{overflow=wrap}
         pos = pos + header-size - 2 - props-size - 2
 
-        ; 解壓 LZMA2 資料流
-        lzma2-decompress-stream(data, pos, out)
+        ; 解壓 LZMA2 資料流（LHS 綁定：結果透過具名結果參數交付）
+        out = lzma2-decompress-stream(data, pos)
 
         ; 尋找下一個區塊（跳過 padding 和 check）
         ; 簡化處理：假設只有一個區塊
@@ -809,11 +810,16 @@ xz-decompress = (data []byte) (out []byte) {
 ; lzma2-decompress-stream: 解壓縮 LZMA2 資料流
 ; LZMA2 使用控制位元組來切分資料塊：
 ;   0x00 = 結束
-;   0x01 = 未壓縮字典重置
+;   0x01 = 未壓縮字典重置（帶 4-byte 字典 ID）
 ;   0x02 = 未壓縮無字典重置
 ;   0x80-0xBF = LZMA 壓縮（可能帶字典重置）
-lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
+; out 是具名結果參數（out-parameter 語法糖）：呼叫處以 LHS 綁定接收變數。
+; 函式體內先累積到本地 res，最後 out = res 交付（與 gzip.no 的
+; inflate-decompress 等同一模式）；若把 out 宣告成普通輸入參數，輸入參數
+; 為唯讀引用，push 的結果回不到呼叫方。
+lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
     pos = start-pos
+    res []byte
 
     !! {
 
@@ -832,16 +838,19 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
         #{overflow=wrap}
         ctrl == 1 -> {
 
-            ; 讀取大小 (2 bytes)
+            ; 讀取大小 (2 bytes)；LZMA2 規格：欄位值 = 實際大小 - 1
             #{index-out=zero, overflow=wrap}
-            size = (data[pos] << 8) | data[pos + 1]
+            size = ((data[pos] << 8) | data[pos + 1]) + 1
             pos = pos + 2
+
+            ; 跳過 4-byte 字典 ID（解碼端不使用）
+            pos = pos + 4
 
             ; 複製未壓縮資料
             i <- [0..size): {
 
                 #{index-out=zero, overflow=wrap}
-                out.push(data[pos + i])
+                res.push(data[pos + i])
             }
             pos = pos + size
         }
@@ -850,13 +859,14 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
         #{overflow=wrap}
         ctrl == 2 -> {
 
+            ; LZMA2 規格：欄位值 = 實際大小 - 1
             #{index-out=zero, overflow=wrap}
-            size = (data[pos] << 8) | data[pos + 1]
+            size = ((data[pos] << 8) | data[pos + 1]) + 1
             pos = pos + 2
             i <- [0..size): {
 
                 #{index-out=zero, overflow=wrap}
-                out.push(data[pos + i])
+                res.push(data[pos + i])
             }
             pos = pos + size
         }
@@ -916,10 +926,13 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
             ; 將解壓結果附加到輸出
             i <- [0..dec.out.len()): {
 
-                out.push(dec.out[i])
+                res.push(dec.out[i])
             }
         }
     }
+
+    ; 交付結果（具名結果參數）
+    out = res
 }
 
 ; ═══════════════════════════════════════════════
@@ -933,7 +946,9 @@ lzma2-decompress-stream = (data []byte, start-pos i64, out []byte) {
 ;       完整 LZMA2 壓縮待後續實現。
 xz-compress = (data []byte) (out []byte) {
 
-    ; Stream Header: magic (6 bytes) + stream flags (2 bytes)
+    ; Stream Header: magic (6 bytes) + stream flags (2 bytes) + CRC32 (4 bytes)
+    ; 共 12 bytes（xz-decompress 跳過的正是 12 bytes，缺 CRC32 會讓 Block
+    ; 整體前移 4 bytes 而解不出來）
     i <- [0..6): {
 
         out.push(XZ-MAGIC[i])
@@ -943,9 +958,70 @@ xz-compress = (data []byte) (out []byte) {
     out.push(0x01)
     out.push(0x00)
 
-    ; Block Header (簡化)
-    ; 使用未壓縮區塊
-    ; TODO: 實現完整 LZMA2 壓縮
+    ; Stream Flags CRC32（解碼端未驗證，填 0；真實 xz 工具需要 CRC32）
+    out.push(0x00)
+    out.push(0x00)
+    out.push(0x00)
+    out.push(0x00)
+
+    ; 空輸入：不寫任何 Block，直接進 Index（與解碼端一致：pos=12 讀到
+    ; 0x00 即 Index marker，返回空結果）
+    (data.len() > 0) -> {
+
+        ; Block Header: 12 bytes
+        ;   [0] header-size 欄位 = (12/4)-1 = 2
+        ;   [1] block-flags = 0x00（1 個 filter，無壓縮/解壓大小欄位）
+        ;   [2] filter-id = 0x21（LZMA2）
+        ;   [3] filter props size = 1
+        ;   [4] LZMA2 dict props（解碼端未使用）
+        ;   [5..7] 保留 0
+        ;   [8..11] header CRC32（解碼端未驗證，填 0）
+        out.push(0x02)
+        out.push(0x00)
+        out.push(0x21)
+        out.push(0x01)
+        out.push(0x00)
+        out.push(0x00)
+        out.push(0x00)
+        out.push(0x00)
+        out.push(0x00)
+        out.push(0x00)
+        out.push(0x00)
+        out.push(0x00)
+
+        ; LZMA2 未壓縮區塊（ctrl=0x01，字典重置）
+        ; 規格：2-byte 大小欄位 = 實際大小 - 1（大端序），後跟 4-byte 字典 ID
+        out.push(0x01)
+        #{overflow=wrap}
+        n = data.len() - 1
+        hi = (n >> 8) & 0xff
+        lo = n & 0xff
+        out.push(hi)
+        out.push(lo)
+        out.push(0x00)
+        out.push(0x00)
+        out.push(0x00)
+        out.push(0x00)
+        i <- [0..data.len()): {
+
+            out.push(data[i])
+        }
+
+        ; LZMA2 結束標記
+        out.push(0x00)
+
+        ; Block Padding：Block（header + 資料）對齊到 4-byte 邊界
+        ; 已寫 12(stream) + 12(header) + 7(chunk 頭 + 字典 ID) + len + 1(結束標記)
+        ; = 32 + len，故 padding = (-len) & 0x3
+        pad = (0 - data.len()) & 0x3
+        (pad > 0) -> {
+
+            i <- [0..pad): {
+
+                out.push(0x00)
+            }
+        }
+    }
 
     ; Index
     out.push(0x00); Index indicator
