@@ -52,6 +52,27 @@ txt.len = () (n i64) {
 ; txt[i] = (i i64) (c byte) {
 ;     c = .[i]
 ; }
+;
+; txt.byte: 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
+; 與 txt[i] 的碼點索引語意不同；緩衝區逐位元組構建程式碼專用
+; 回傳 ?byte：越界（i < 0 或 i >= len-bytes()）時回傳 nil，呼叫端必須處理 option
+; 由編譯器內建處理（#{buildin}）：codegen 攔截展開為「邊界檢查 + GEP+load」，
+; 無 std 函式體；簽名註冊於 src/builtin/str.go 的 BuiltinMethodList
+; （Intercepted，經 bare-name 回落與 str.byte 共享同一條目）
+#{buildin}
+txt.byte = (i i64) (c ?byte) {
+}
+;
+; txt.set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
+; txt.byte 的配對寫者；取代 txt[i] = b（後者按碼點重新編碼並移動尾部位元組）
+;
+; b 宣告為 i64（而非 byte）：發射器只取低位元組，而 char / i64 實參在呼叫端
+; 大量存在（out.set-byte(i * 2, HEX[b >> 4])、val.set-byte(pos, bv)），表層
+; 又沒有 i64→byte 的轉型寫法，宣告成 byte 會讓它們全部變成 stdargtyp 錯誤。
+; 這與 src/builtin/str.go 的 BuiltinMethodList 條目一致。
+#{buildin}
+txt.set-byte = (i i64, b i64) {
+}
 
 ; txt.eq: 比较两个 txt 是否相等
 ; ⚠️ 2026-09-21 重写。旧实现用一条 `->` 管线（`.byte(k) - b.byte(k); c != 0 -> ok = 0;
@@ -64,6 +85,8 @@ txt.eq = (b txt) (eq bool) {
 }
 
 ; txt.copy: 复制 txt
+; ⚠️ 已废弃（DEPRECATED）：赋值 `a = b` 即为复制语义——txt 是值类型（栈上 256
+; 位元组内联缓冲区，data[255] + len），赋值即逐位元组拷贝。请改用直接赋值；保留仅为兼容。
 txt.copy = () (dst txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
@@ -340,13 +363,15 @@ txt.slice = (start i64, end i64) (out txt) {
     out.len = n
 }
 
-; txt.at: 获取指定位置的 byte
-txt.at = (idx i64) (b byte) {
-    b = 0
-    cur-len i64 = .len-bytes()
+; [deprecated] txt.at: 字符（碼點）索引讀取——請改用 t[idx]（原生索引，回傳 ?char）
+; txt.at: 獲取指定字符位置的碼點值（位元組偏移請用 t.byte(i)）
+; 返回 b ?byte: 越界返回 nil；超出 byte 範圍的碼點截斷
+txt.at = (idx i64) (b ?byte) {
+    b = nil
+    cur-len i64 = .len()
     idx < 0 -> return
     idx >= cur-len -> return
-    b = .byte(idx)
+    b = .[idx]
 }
 
 ; ═══════════════════════════════════════════════
@@ -1366,12 +1391,11 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
     out = result
 }
 
-; txt-join: 用分隔符連接 txt 切片（超過 255 位元組則截斷）
-; parts []txt: 待連接的 txt 切片
+; []txt.join: 用分隔符連接 txt 切片（超過 255 位元組則截斷）
 ; sep txt: 分隔符
 ; 返回 out txt: 連接結果
-; 注意：編譯器目前不支援 []txt 切片方法，故以全域函數提供
-txt-join = (parts []txt, sep txt) (out txt) {
+[]txt.join = (sep txt) (out txt) {
+    parts []txt = .
     n = parts.len()
     n == 0 -> return
     cap = 255

@@ -1,4 +1,4 @@
-; match-index-option.no — 索引主体 option-match 回归（txt-join / txt.replace-n 旧崩点）
+; match-index-option.no — 索引主体 option-match 回归（[]txt.join / txt.replace-n 旧崩点）
 ;
 ; 执行：no test tests/match-index-option.no
 ; 覆盖：parts[i]: { ok -> s = it -> s = '' } 的 in-bounds / 越界语义，
@@ -55,8 +55,8 @@ t-replace-n = () {
 t-join = () {
     s txt = 'a-b-c-d'
     parts = s.split('-')
-    j = txt.txt-join(parts, '.')
-    runner.str-eq(j.to-str(), 'a.b.c.d', 7, 'txt-join')
+    j = parts.join('.')
+    runner.str-eq(j.to-str(), 'a.b.c.d', 7, '[]txt.join')
 }
 
 ; 直接字面量数组（['a','b','c','d'] → []str）的索引主体 option-match：
