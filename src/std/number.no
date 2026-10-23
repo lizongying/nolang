@@ -1,7 +1,9 @@
 ; number — 數字操作（方法形式 API）
 ;
 ; std 數字系全部「方法形式」API 集中於本模組：具體型別 to-str
-; （i64/i32/i16/i8/u64/u32/u16/u8/byte/f64/f32）、數值寬度轉換方法
+; （i64/i32/i16/i8/u64/u32/u16/u8/byte/f64/f32）、f64 可配置精度 to-str
+; （f64.to-str-fixed / f64.to-str-sci / f64.to-str-general，原 str.f64-to-str-*
+; 函數已遷入本模組並改為方法形式）、數值寬度轉換方法
 ; （f64.to-i64、i64.to-f64、f32.to-f64 等 #{buildin}）、f64/f32 數學方法
 ; （sqrt, cbrt, 三角/雙曲, ceil/floor/round/trunc, exp/log, degrees/radians）、
 ; 整數 sqrt / is-prime。
@@ -447,6 +449,667 @@ f64.to-str = () (out str) {
 f32.to-str = () (out str) {
     d = .to-f64()
     out = d.to-str()
+}
+
+; ═══════════════════════════════════════════════
+; f64 轉字串（可配置精度，方法形式；原 str.f64-to-str-* 函數遷入本模組）
+; ═══════════════════════════════════════════════
+
+; f64.to-str-fixed: 定點格式轉換
+; precision i64: 小數位數（>= 0，建議 <= 17 以避免 i64 溢出）
+; 返回 out str: 字串表示（如 "3.14"、"-0.005"、"100"）
+f64.to-str-fixed = (precision i64) (out str) {
+
+    x f64 = .
+
+    ; NaN
+    ! (x == x) -> {
+        out = 'nan'.copy()
+        return
+    }
+
+    ; 零（包括 +0.0 和 -0.0）
+    #{overflow=wrap}
+    {
+        x == 0.0 -> {
+            neg = 0
+            check f64 = 1.0 / x
+            check < 0.0 -> neg = 1
+            total = 1
+            neg == 1 -> total = total + 1
+            precision > 0 -> total = total + 1 + precision
+            out = with-cap(total)
+            pos = 0
+            neg == 1 -> {
+                out[pos] = 45
+                pos = pos + 1
+            }
+            out[pos] = 48
+            pos = pos + 1
+            precision > 0 -> {
+                out[pos] = 46
+                pos = pos + 1
+                i <- [0..precision): {
+                    out[pos] = 48
+                    pos = pos + 1
+                }
+            }
+            return
+        }
+
+        x + x == x -> {
+
+            ; 無限
+            x < 0.0 -> {
+                out = '-inf'.copy()
+                return
+            }
+            out = 'inf'.copy()
+            return
+        }
+    }
+
+    ; 符號處理
+    neg = 0
+    ax = x
+    x < 0.0 -> {
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    ; m = round(ax * 10^precision)
+    scale = 1.0
+    pi <- [0..precision): {
+        scale = scale * 10.0
+    }
+    scaled = ax * scale
+
+    m i64 = (scaled + 0.5).to-i64()
+
+    ; 將 m 轉為字串
+    mstr = m.to-str()
+    mn = mstr.len-bytes()
+
+    ; 補零到至少 precision+1 位（保證整數部分至少一位）
+    pad = 0
+
+    #{overflow=wrap}
+    mn <= precision -> pad = precision + 1 - mn
+
+    ; 計算長度
+
+    #{overflow=wrap}
+    digits-len = mn + pad
+
+    #{overflow=wrap}
+    int-len = digits-len - precision
+    total = digits-len
+
+    #{overflow=wrap}
+    neg == 1 -> total = total + 1
+
+    #{overflow=wrap}
+    precision > 0 -> total = total + 1
+    out = with-cap(total)
+    pos = 0
+
+    #{overflow=wrap}
+    neg == 1 -> {
+        out[pos] = 45
+        pos = pos + 1
+    }
+
+    ; 整數部分
+    j <- [0..int-len): {
+
+        #{overflow=wrap}
+        {
+            j < pad -> {
+                out[pos] = 48
+            }
+
+            -> {
+                out[pos] = mstr.byte(j - pad)
+            }
+        }
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
+
+    ; 小數部分
+    #{overflow=wrap}
+    precision > 0 -> {
+        out[pos] = 46
+        pos = pos + 1
+        j <- [0..precision): {
+
+            #{overflow=wrap}
+            idx = int-len + j
+            {
+                idx < pad -> {
+                    out[pos] = 48
+                }
+
+                -> {
+                    out[pos] = mstr.byte(idx - pad)
+                }
+            }
+            pos = pos + 1
+        }
+    }
+}
+
+; f64.to-str-sci: 科學記號格式
+; precision i64: 小數部分位數（>= 0）
+; 返回 out str: 字串表示（如 "3.14e+2"、"-5.0e-3"）
+f64.to-str-sci = (precision i64) (out str) {
+
+    x f64 = .
+
+    ; NaN
+    ! (x == x) -> {
+        out = 'nan'.copy()
+        return
+    }
+
+    ; 零
+    #{overflow=wrap}
+    {
+        x == 0.0 -> {
+            neg = 0
+            check f64 = 1.0 / x
+            check < 0.0 -> neg = 1
+            total = 5
+            neg == 1 -> total = total + 1
+            precision > 0 -> total = total + 1 + precision
+            out = with-cap(total)
+            pos = 0
+            neg == 1 -> {
+                out[pos] = 45
+                pos = pos + 1
+            }
+            out[pos] = 48
+            pos = pos + 1
+            precision > 0 -> {
+                out[pos] = 46
+                pos = pos + 1
+                i <- [0..precision): {
+                    out[pos] = 48
+                    pos = pos + 1
+                }
+            }
+            out[pos] = 101
+            pos = pos + 1
+            out[pos] = 43
+            pos = pos + 1
+            out[pos] = 48
+            pos = pos + 1
+            out[pos] = 48
+            return
+        }
+
+        x + x == x -> {
+
+            ; 無限
+            x < 0.0 -> {
+                out = '-inf'.copy()
+                return
+            }
+            out = 'inf'.copy()
+            return
+        }
+    }
+
+    ; 符號處理
+    neg = 0
+    ax = x
+    x < 0.0 -> {
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    ; 計算指數 e = floor(log10(ax))
+    ln10 = 2.302585092994046
+    lg10 = ax.log10()
+    flr = lg10.floor()
+    e = flr.to-i64()
+    epw f64 = (e + 1).to-f64() * ln10
+    upper = epw.exp()
+
+    #{overflow=wrap}
+    ax >= upper -> e = e + 1
+    bpw = e.to-f64() * ln10
+    base = bpw.exp()
+
+    #{overflow=wrap}
+    ax < base -> {
+
+        #{overflow=wrap}
+        e = e - 1
+        bpw2 f64 = e.to-f64() * ln10
+        base = bpw2.exp()
+    }
+
+    ; m = round(ax / base * 10^precision)
+    scale = 1.0
+    pi <- [0..precision): {
+        scale = scale * 10.0
+    }
+
+    m i64 = (ax / base * scale + 0.5).to-i64()
+
+    ; 四捨五入溢出處理（m 變成 10^(precision+1)）
+    overflow = 1
+
+    #{overflow=wrap}
+    i <- [0..precision + 1): {
+
+        #{overflow=wrap}
+        overflow = overflow * 10
+    }
+
+    #{overflow=wrap}
+    m >= overflow -> {
+
+        #{overflow=wrap}
+        m = m / 10
+        e = e + 1
+    }
+
+    ; 構建 mantissa 字串
+    mstr = m.to-str()
+    mn = mstr.len-bytes()
+
+    ; 指數位數
+    ae = e
+
+    #{overflow=wrap}
+    e < 0 -> ae = 0 - ae
+    elen = 1
+    {
+        ae >= 100 -> elen = 3
+
+        ae >= 10 && ae < 100 -> elen = 2
+    }
+
+    ; 總長度
+    total = mn
+
+    #{overflow=wrap}
+    neg == 1 -> total = total + 1
+
+    #{overflow=wrap}
+    precision > 0 -> total = total + 1
+
+    #{overflow=wrap}
+    total = total + 2 + elen
+
+    #{overflow=wrap}
+    elen < 2 -> total = total + 1
+    out = with-cap(total)
+    pos = 0
+
+    #{overflow=wrap}
+    neg == 1 -> {
+        out[pos] = 45
+        pos = pos + 1
+    }
+
+    ; 第一位數字
+    out[pos] = mstr.byte(0)
+
+    #{overflow=wrap}
+    pos = pos + 1
+
+    ; 小數部分
+    #{overflow=wrap}
+    precision > 0 -> {
+        out[pos] = 46
+        pos = pos + 1
+        j <- [0..precision): {
+
+            #{overflow=wrap}
+            idx = j + 1
+            {
+                idx < mn -> {
+                    out[pos] = mstr.byte(idx)
+                }
+
+                -> {
+                    out[pos] = 48
+                }
+            }
+            pos = pos + 1
+        }
+    }
+
+    ; 'e' 和符號
+    out[pos] = 101
+
+    #{overflow=wrap}
+    pos = pos + 1
+    {
+        e < 0 -> {
+            out[pos] = 45
+        }
+
+        -> {
+            out[pos] = 43
+        }
+    }
+
+    #{overflow=wrap}
+    pos = pos + 1
+
+    ; 指數位數（至少 2 位，前導補零）
+    estr = ae.to-str()
+    elen2 = estr.len-bytes()
+
+    #{overflow=wrap}
+    elen2 == 1 -> {
+        out[pos] = 48
+        pos = pos + 1
+    }
+    j <- [0..elen2): {
+
+        out[pos] = estr.byte(j)
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
+}
+
+; f64.to-str-general: 通用格式（自動選擇定點或科學記號）
+; precision i64: 最大有效數字位數（>= 1）
+; 返回 out str: 字串表示（自動去尾隨零）
+f64.to-str-general = (precision i64) (out str) {
+
+    x f64 = .
+
+    ; NaN
+    ! (x == x) -> {
+        out = 'nan'.copy()
+        return
+    }
+
+    ; 零
+    #{overflow=wrap}
+    {
+        x == 0.0 -> {
+            neg = 0
+            check f64 = 1.0 / x
+            check < 0.0 -> neg = 1
+            out = with-cap(2)
+            pos = 0
+            neg == 1 -> {
+                out[pos] = 45
+                pos = pos + 1
+            }
+            out[pos] = 48
+            return
+        }
+
+        x + x == x -> {
+
+            ; 無限
+            x < 0.0 -> {
+                out = '-inf'.copy()
+                return
+            }
+            out = 'inf'.copy()
+            return
+        }
+    }
+
+    ; 符號處理
+    neg = 0
+    ax = x
+    x < 0.0 -> {
+        neg = 1
+        ax = 0.0 - x
+    }
+
+    ; 計算指數
+    ln10 = 2.302585092994046
+    lg10 = ax.log10()
+    flr = lg10.floor()
+    e = flr.to-i64()
+    epw f64 = (e + 1).to-f64() * ln10
+    upper = epw.exp()
+
+    #{overflow=wrap}
+    ax >= upper -> e = e + 1
+    bpw = e.to-f64() * ln10
+    base = bpw.exp()
+
+    #{overflow=wrap}
+    ax < base -> {
+
+        #{overflow=wrap}
+        e = e - 1
+        bpw2 f64 = e.to-f64() * ln10
+        base = bpw2.exp()
+    }
+
+    ; m = round(ax / base * 10^(precision-1))
+    #{overflow=wrap}
+    p-1 = precision - 1
+    scale = 1.0
+    pi <- [0..p-1): {
+        scale = scale * 10.0
+    }
+    m i64 = (ax / base * scale + 0.5).to-i64()
+
+    ; 四捨五入溢出處理
+    overflow = 1
+    i <- [0..precision): {
+
+        #{overflow=wrap}
+        overflow = overflow * 10
+    }
+
+    #{overflow=wrap}
+    m >= overflow -> {
+
+        #{overflow=wrap}
+        m = m / 10
+        e = e + 1
+    }
+
+    ; mantissa 字串
+    mstr = m.to-str()
+    mn = mstr.len-bytes()
+    pad = 0
+
+    #{overflow=wrap}
+    mn < precision -> {
+        tmp-pad = precision - mn
+        pad = tmp-pad: {
+            ok -> it
+            -> 0
+        }
+    }
+
+    ; 找最後一個非零位（用於去尾隨零）
+    last-nz = 0
+
+    ; D1：`-` 的結果恆為 `?i64`，`i` 全程當普通整數用 → 兩段式 match 解包。
+    #{overflow=wrap}
+    i-opt = precision - 1
+    i = 0
+    i-opt: {
+        ok -> i = it
+        -> i = 0
+    }
+    (i >= 0) {
+
+        #{overflow=wrap}
+        idx = i - pad
+        idx >= 0 -> mstr.byte(idx) != 48 -> {
+            last-nz = i
+            i = -1
+        }
+
+        #{overflow=wrap}
+        i = i - 1
+    }
+
+    ; 決定格式：%g 規則
+    use-sci = 0
+    {
+        e < -4 -> use-sci = 1
+
+        e >= precision -> use-sci = 1
+    }
+
+    #{overflow=wrap}
+    use-sci == 1 -> {
+
+        ; 科學記號
+        ae i64 = e
+        e < 0 -> ae = 0 - ae
+        elen = 1
+        ae >= 100 -> elen = 3
+        ae >= 10 && ae < 100 -> elen = 2
+        total = 1
+        neg == 1 -> total = total + 1
+        last-nz >= 1 -> total = total + 1 + last-nz
+        total = total + 2 + elen
+        elen < 2 -> total = total + 1
+        out = with-cap(total)
+        pos = 0
+        neg == 1 -> {
+            out[pos] = 45
+            pos = pos + 1
+        }
+
+        ; 第一位數字
+        {
+            pad > 0 -> out[pos] = 48
+            -> out[pos] = mstr.byte(0)
+        }
+        pos = pos + 1
+
+        ; 小數部分
+        last-nz >= 1 -> {
+            out[pos] = 46
+            pos = pos + 1
+            j <- [1..last-nz + 1): {
+
+                #{overflow=wrap}
+                idx = j - pad
+                {
+                    idx >= 0 && idx < mn -> out[pos] = mstr.byte(idx)
+                    -> out[pos] = 48
+                }
+                pos = pos + 1
+            }
+        }
+
+        ; 'e' 和符號
+        out[pos] = 101
+        pos = pos + 1
+        {
+            e < 0 -> out[pos] = 45
+            -> out[pos] = 43
+        }
+        pos = pos + 1
+
+        ; 指數位數（至少 2 位）
+        estr = ae.to-str()
+        elen2 = estr.len-bytes()
+        elen2 == 1 -> {
+            out[pos] = 48
+            pos = pos + 1
+        }
+        j <- [0..elen2): {
+            out[pos] = estr.byte(j)
+            pos = pos + 1
+        }
+        return
+    }
+
+    ; 定點格式（e >= 0）：委託 f64.to-str-fixed 後去除尾隨零（%g 語意）
+    #{overflow=wrap}
+    e >= 0 -> {
+        ; e 為普通 i64（非 option），直接參與運算；`-` 結果為 ?i64 → 兩段式解包
+        #{overflow=wrap}
+        dp-opt = precision - 1 - e
+        dec-places i64 = 0
+        dp-opt: {
+            ok -> dec-places = it
+            -> dec-places = 0
+        }
+        dec-places < 0 -> dec-places = 0
+        s str = x.to-str-fixed(dec-places)
+        n = s.len-bytes()
+        dot-pos = -1
+        i <- [0..n): {
+            s.byte(i) == 46 -> dot-pos = i
+        }
+        dot-pos >= 0 -> {
+            end = n
+            (end > dot-pos + 1) {
+                s.byte(end - 1) == 48 -> end = end - 1
+                -> break
+            }
+            end > dot-pos + 1 -> {
+                s.byte(end - 1) == 46 -> end = end - 1
+            }
+            out = s.slice-bytes(0, end)
+            return
+        }
+        out = s
+        return
+    }
+
+    ; 定點格式（e < 0: 0.00dddd）
+
+    #{overflow=wrap}
+    lead-zeros = 0 - e - 1
+
+    #{overflow=wrap}
+    total = 2 + lead-zeros + last-nz + 1
+
+    #{overflow=wrap}
+    neg == 1 -> total = total + 1
+    out = with-cap(total)
+    pos = 0
+
+    #{overflow=wrap}
+    neg == 1 -> {
+        out[pos] = 45
+        pos = pos + 1
+    }
+    out[pos] = 48
+
+    #{overflow=wrap}
+    pos = pos + 1
+    out[pos] = 46
+
+    #{overflow=wrap}
+    pos = pos + 1
+    j <- [0..lead-zeros): {
+        out[pos] = 48
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
+
+    #{overflow=wrap}
+    j <- [0..last-nz + 1): {
+
+        #{overflow=wrap}
+        idx = j - pad
+        {
+            idx >= 0 && idx < mn -> out[pos] = mstr.byte(idx)
+            -> out[pos] = 48
+        }
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
 }
 
 ; ═══════════════════════════════════════════════
