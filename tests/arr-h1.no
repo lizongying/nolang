@@ -1,6 +1,6 @@
 test-arr-sort-asc = () {
     arr5 [5] = [3, 1, 4, 1, 5]
-    arr5.sort-asc()
+    arr5.asc()
     print(arr5[3])
 }
 

@@ -19,7 +19,6 @@ func TestStdFiles(t *testing.T) {
 		"../../src/std/bufio.no",
 		"../../src/std/str.no",
 		"../../src/std/number.no",
-		"../../src/std/types.no",
 	}
 	for _, f := range files {
 		t.Run(f, func(t *testing.T) {

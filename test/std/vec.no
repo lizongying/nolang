@@ -175,13 +175,13 @@ t-eq = () {
 ; sort 目前僅支援固定長度陣列（[]t 切片特化未生成，預存問題）
 t-sort = () {
     arr [5] = [3, 1, 4, 1, 5]
-    arr.sort-asc()
+    arr.asc()
     runner.eq(arr[0], 1, 'sort-asc [0] == 1')
     runner.eq(arr[1], 1, 'sort-asc [1] == 1')
     runner.eq(arr[2], 3, 'sort-asc [2] == 3')
     runner.eq(arr[3], 4, 'sort-asc [3] == 4')
     runner.eq(arr[4], 5, 'sort-asc [4] == 5')
-    arr.sort-desc()
+    arr.desc()
     runner.eq(arr[0], 5, 'sort-desc [0] == 5')
     runner.eq(arr[4], 1, 'sort-desc [4] == 1')
 }

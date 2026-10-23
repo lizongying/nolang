@@ -57,8 +57,8 @@ str.gt = (b str) (res bool) {
     res = .compare(b) > 0
 }
 
-; [n]ord.sort-asc: 升序原地排序（插入排序）
-[n]ord.sort-asc = () {
+; [n]ord.asc: 升序原地排序（插入排序）
+[n]ord.asc = () {
     i <- [1..n): {
 
         key = .[i]
@@ -81,8 +81,8 @@ str.gt = (b str) (res bool) {
     }
 }
 
-; [n]ord.sort-desc: 降序原地排序（插入排序）
-[n]ord.sort-desc = () {
+; [n]ord.desc: 降序原地排序（插入排序）
+[n]ord.desc = () {
     i <- [1..n): {
 
         key = .[i]
@@ -105,8 +105,8 @@ str.gt = (b str) (res bool) {
     }
 }
 
-; []ord.sort-asc: 升序原地排序（插入排序）
-[]ord.sort-asc = () {
+; []ord.asc: 升序原地排序（插入排序）
+[]ord.asc = () {
     sz = .len()
     i <- [1..sz): {
 
@@ -130,8 +130,8 @@ str.gt = (b str) (res bool) {
     }
 }
 
-; []ord.sort-desc: 降序原地排序（插入排序）
-[]ord.sort-desc = () {
+; []ord.desc: 降序原地排序（插入排序）
+[]ord.desc = () {
     sz = .len()
     i <- [1..sz): {
 

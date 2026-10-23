@@ -515,6 +515,52 @@ f64.to-i32 = () (out i32) {
 i64.to-i32 = () (out i32) {
 }
 
+; i64.to-bytes-be: 將 int64 轉為大端序 8 位元組
+; 用法：
+;   v = 0x1234
+;   out = v.to-bytes-be()   // out = [0x00,0x00,0x00,0x00,0x00,0x00,0x12,0x34]
+i64.to-bytes-be = () (out [?]byte) {
+
+    out[0] = (. >> 56) & 255
+
+    out[1] = (. >> 48) & 255
+
+    out[2] = (. >> 40) & 255
+
+    out[3] = (. >> 32) & 255
+
+    out[4] = (. >> 24) & 255
+
+    out[5] = (. >> 16) & 255
+
+    out[6] = (. >> 8) & 255
+
+    out[7] = . & 255
+}
+
+; i64.to-bytes-le: 將 int64 轉為小端序 8 位元組
+; 用法：
+;   v = 0x1234
+;   out = v.to-bytes-le()   // out = [0x34,0x12,0x00,0x00,0x00,0x00,0x00,0x00]
+i64.to-bytes-le = () (out [?]byte) {
+
+    out[0] = . & 255
+
+    out[1] = (. >> 8) & 255
+
+    out[2] = (. >> 16) & 255
+
+    out[3] = (. >> 24) & 255
+
+    out[4] = (. >> 32) & 255
+
+    out[5] = (. >> 40) & 255
+
+    out[6] = (. >> 48) & 255
+
+    out[7] = (. >> 56) & 255
+}
+
 ; 注意：不定義 float.to-str 聯合方法（原因見 std/float.no 末尾說明）。
 
 ; int.div / int.mod 已移至 std/int.no；float.div 已移至 std/float.no

@@ -13,7 +13,7 @@ test-arr-last-first = () {
 
 test-arr-sort-asc = () {
     a3 [5] = [3, 1, 4, 1, 5]
-    a3.sort-asc()
+    a3.asc()
     print(a3[0])
     print(a3[1])
     print(a3[2])
@@ -23,7 +23,7 @@ test-arr-sort-asc = () {
 
 test-arr-sort-desc = () {
     a4 [5] = [3, 1, 4, 1, 5]
-    a4.sort-desc()
+    a4.desc()
     print(a4[0])
     print(a4[1])
     print(a4[2])

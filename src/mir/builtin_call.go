@@ -2800,7 +2800,7 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	return nil
 }
 
-// emitBuiltinVecSort lowers `vec.sort-asc`/`vec.sort-desc`: an in-place bubble
+// emitBuiltinVecSort lowers `[]t.asc`/`[]t.desc` (forward vec-sort-asc/vec-sort-desc): an in-place bubble
 // sort over the backing buffer. Elements are compared via c.emitLessThan and
 // swapped with element-sized llvm.memcpy moves through a stack temp, so
 // ownership is preserved for any element type (including %str-long). len/cap/data

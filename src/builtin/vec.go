@@ -3,16 +3,6 @@ package builtin
 import "github.com/lizongying/nolang/parser"
 
 func init() {
-	// vec-eq: compare two slices for equality
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "vec-eq",
-		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64},
-		Doc:          "Compare two slices for equality",
-		ForwardFunc:  "vec-eq",
-	})
-
 	// .len: get slice length (method on []t)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverVec,
@@ -72,50 +62,20 @@ func init() {
 		ForwardFunc:  "vec-pop",
 	})
 
-	// vec-sort: sort the slice in-place
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "vec-sort",
-		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{},
-		Doc:          "Sort the slice in ascending order",
-		ForwardFunc:  "vec-sort",
-	})
-
-	// vec-reverse: reverse the slice in-place
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "vec-reverse",
-		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{},
-		Doc:          "Reverse the slice in-place",
-		ForwardFunc:  "vec-reverse",
-	})
-
-	// arr-eq: compare two fixed-size arrays for equality
-	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
-		ReceiverType: ReceiverGlobal,
-		MethodName:   "arr-eq",
-		Params:       []parser.Type{parser.TypeI64, parser.TypeI64, parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64},
-		Doc:          "Compare two fixed-size arrays for equality",
-		ForwardFunc:  "arr-eq",
-	})
-
-	// .sort-asc: sort slice in ascending order (method on []t)
+	// .asc: sort slice in ascending order (method on []t)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverVec,
-		MethodName:   "sort-asc",
+		MethodName:   "asc",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{},
 		Doc:          "Sort the slice in ascending order in-place (insertion sort)",
 		ForwardFunc:  "vec-sort-asc",
 	})
 
-	// .sort-desc: sort slice in descending order (method on []t)
+	// .desc: sort slice in descending order (method on []t)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverVec,
-		MethodName:   "sort-desc",
+		MethodName:   "desc",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{},
 		Doc:          "Sort the slice in descending order in-place (insertion sort)",
@@ -148,8 +108,8 @@ func init() {
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.reverse", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Reverse the slice in-place", ForwardFunc: "vec-reverse"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.insert", Params: []parser.Type{parser.TypeI64, parser.TypeI64}, ElemParams: []bool{false, true}, Return: []parser.Type{}, Doc: "Insert element at index (shifts right)", ForwardFunc: "vec-insert"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.remove", Params: []parser.Type{parser.TypeI64}, Return: []parser.Type{parser.TypeI64}, Doc: "Remove element at index (shifts left, returns it)", ForwardFunc: "vec-remove"},
-		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.sort-asc", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Sort the slice in ascending order in-place (insertion sort)", ForwardFunc: "vec-sort-asc"},
-		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.sort-desc", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Sort the slice in descending order in-place (insertion sort)", ForwardFunc: "vec-sort-desc"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.asc", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Sort the slice in ascending order in-place (insertion sort)", ForwardFunc: "vec-sort-asc"},
+		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.desc", Params: []parser.Type{}, Return: []parser.Type{}, Doc: "Sort the slice in descending order in-place (insertion sort)", ForwardFunc: "vec-sort-desc"},
 		BuiltinMethod{ReceiverType: ReceiverVec, MethodName: "[]t.truncate", Params: []parser.Type{parser.TypeI64}, Return: []parser.Type{}, Doc: "Truncate slice in-place to at most n elements (len = min(len, n))", ForwardFunc: "vec-truncate"},
 	)
 }

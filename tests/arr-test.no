@@ -127,7 +127,7 @@ test-arr-last-first = () {
 ; ═══════════════════════════════════════════════
 test-arr-sort-asc = () {
     arr [5] = [3, 1, 4, 1, 5]
-    arr.sort-asc()
+    arr.asc()
     print(arr[0])
     print(arr[1])
     print(arr[2])
@@ -141,7 +141,7 @@ test-arr-sort-asc = () {
 ; ═══════════════════════════════════════════════
 test-arr-sort-desc = () {
     arr [5] = [3, 1, 4, 1, 5]
-    arr.sort-desc()
+    arr.desc()
     print(arr[0])
     print(arr[1])
     print(arr[2])
