@@ -481,9 +481,7 @@ H0 快照与最终 `pkg.Nodes` 差值可被 H1 封闭清单逐条解释。
 
 `capturefacts_test.go` 的 ③④ 两组断言同时钉住两侧，任一侧破都会红——只断言单侧时，副表可能记录到「其实没注入合成节点」的绑定（tohir 会凭空建 `KLet`+`KIf` 链），或漏掉真正注入的那一族。
 
-**⚠️ 一处误判已实测更正（2026-10-24）**：安全索引**根**（`x = p[i]`）不写表，一度被记为「S3-b 已知覆盖缺口」。实测该语料 `__cap_` 标识 = 0、合成 let = 0 ⇒ **它根本不注入合成 AST 节点，不属 V4 违规，不在 S3 范围内**；其 `?elem` 已由 S3 的 `sem.InferredType` 承载（`s3_inferred_side_table_test.go` 对 `x = p[i]` 断言 `?i64`）。
-
-因此**本表只需覆盖「结构 desugar 族」**，索引根不需记录，亦无缺口。`capturefacts_test.go` 的 ④ 组已把「无登记 ⇒ 无合成注入」钉死，未来若有人在此分支引入合成节点会立刻报警。
+> 安全索引**根**（`x = p[i]`）不写表、不注入合成 AST 节点，不属 V4 违规；其 `?elem` 已由 `sem.InferredType` 承载（见 `s3_inferred_side_table_test.go`）。本表只需覆盖「结构 desugar 族」，索引根无缺口。
 
 #### S3-b MIR 侧识别面探查结论（2026-10-24）✅ MIR 无名字依赖，可切换
 
@@ -729,134 +727,7 @@ oracle 覆盖：0 行 <unknown>（71/71 节点型别全覆盖）
 
 这是「同一件事的两个收益面」：S3 在 §13.1 是 **V4 合规**问题，在这里是 **自举收敛**问题。此前两件事被分开跟踪，是漏看的协同。
 
-**🔴 新发现：当前 `compiler/` 未提交 WIP 把 `ast` 打破成 mass-noop（2026-10-24 实测）**
-
-从**当前工作树**构建 SUT（`/tmp/noc-now`）后跑同一条 L2：
-
-```
-SAME=0  DIFF=653     ← 全部 653 档不同，且 SUT 的 stdout 哈希全部相同（4fde700016d5）
-```
-
-直查确认：**SUT 对任何输入只吐 `Program{}`（10 字节）**，而 `noc-se` / `noc-s7l` 同一档输出 2148 字节。这不是「差一点」，是 `ast` 子命令整体退化（selfhost_diff 的 G3/G7 防护本应提示「无讯号」，此处因 rc=0 且 stdout 非空而未被拦下的单一输出形态）。
-
-**⚠️ 归因更正（2026-10-24 当批晚些时候实测推翻了初判）**：初判写成「成因是 `compiler/` 的 1465 行未提交 WIP」，**错了**。二分实测：
-
-| 组合 | 结果 |
-|---|---|
-| WIP `bin/no` + **工作树 `compiler/`（含 WIP）** | mass-noop（10 字节） |
-| WIP `bin/no` + **HEAD 干净 `compiler/`**（`git worktree` 导出） | **同样 mass-noop（10 字节）** |
-
-⇒ 换掉 `compiler/` 源码毫无改变，**根因不在自举侧**。真正的变量是 **Go 侧 `src/` 的 106 个未提交 `.go`**（parser 40 / checker 28 / build 14 / mir 10 / hir 5 / fmt 4 / mmast 2 / builtin 1）。
-
-**根因链（探针逐层钉死）**：
-
-| 探针 | WIP `bin/no` 的结果 | 说明 |
-|---|---|---|
-| `fs.read-bytes(<存在的文件>)` | `BRANCH=nil` | 应为 `ok` |
-| `fs.open(...)` | `OPEN=ok` | 开档正常 |
-| `it.read-bytes()`（file 方法） | **`READ=nil`** | ← **失败点** |
-| `f = () (r ?i64) { r = 42 }` 解包 | `OPT=ok` | option 返回值机制本身正常 |
-
-⇒ 失败点是 `src/std/fs.no:607` `file.read-bytes()`：它在 `size == 0`（`fs.no:615`）或 `total == 0`（`:639`）时回 `nil`。即**主编译器 WIP 的文件 I/O 路径有回归**，自举编译器只是被它连带打挂的第一个消费者。**已下钻到具体分支，见下。**
-
-**复现（在 repo 根下，探针源码）**：
-
-```
-# tmp/probe-fs.no  → WIP 下印 BRANCH=nil（应 BRANCH=ok）
-c = fs.read-bytes('tests/func-simple.no')
-c: { ok -> print('BRANCH=ok')  nil -> print('BRANCH=nil')  err -> print('BRANCH=err') }
-
-# tmp/probe-open.no → WIP 下印 OPEN=ok / READ=nil（定位到 file.read-bytes）
-f = fs.open('tests/func-simple.no', { mode: read  perm: perm-644
-    excl: false  truncate: false  append: false })
-f: { err -> print('OPEN=err')
-     nil -> print('OPEN=nil')
-     -> { print('OPEN=ok')
-          c = it.read-bytes()
-          c: { ok -> print('READ=ok')  nil -> print('READ=nil')  err -> print('READ=err') } } }
-
-# tmp/probe-opt.no → WIP 下印 OPT=ok（option 机制正常，排除通用 option bug）
-f = () (r ?i64) { r = 42 }
-v = f()
-v: { ok -> print('OPT=ok')  nil -> print('OPT=nil')  err -> print('OPT=err') }
-```
-
-**✅ 已判定：这是 WIP 新引入的回归（2026-10-24 补做正确对照）**
-
-| 版本 | `fs.read-bytes` |
-|---|---|
-| **HEAD 全栈**（`git worktree` + 该版就地跑 `go run ./checker/genstdsig` 生成的 `std_ast.bin`） | `BRANCH=ok` ✅ |
-| WIP（`bin/no`） | `BRANCH=nil` ❌ |
-
-> ⚠️ **上一批写的「无法判定」是实验缺陷，不是事实**：当时在 worktree 里直接**复制了 WIP 的 `std_ast.bin`** 去配 HEAD 的 `src/std`，版本不匹配 ⇒ 报 `unknown callee fs.read-bytes`，被误读成「HEAD 不支持该 API」。正确做法是在 worktree 内**就地跑 `go run ./checker/genstdsig`** 生成该版自己的 `std_ast.bin`（`src/checker/genstdsig/main.go:93` 是写入点）。修正后对照立刻成立。
-
-**根因下钻到具体分支**（每步均实测复现）：
-
-| 探针 | WIP `bin/no` | 结论 |
-|---|---|---|
-| `fs.open(...)` 分支 | `OPEN=ok` | 开档正常 |
-| `fs.fstat-size(it.fd)` 分支 | `FSIZE=ok` | fstat 调用正常 |
-| fstat 解包值 `== 0`? | **`SIZE=NONZERO`** | size 非空 ⇒ **排除 `fs.no:615` 的 `size == 0`** |
-| `f = () (r ?i64) { r = 42 }` 解包 | `OPT=ok` | option 机制本身正常 |
-
-⇒ **命中 `fs.no:631` 的 `n <= 0 -> break`**（`n = read(.fd, buf[total..], size - total)`），但**真因不在 `read`——见下**。
-
-**🔬 IR 级实证：`?=` 的 payload 提取缺失（2026-10-24）**
-
-`no build -v` 会保留 IR（`-v` 写出 `<out>.ll`；`no` **没有** `--emit-ll` 选项，这是取得 IR 的路径）。直读 `fs_file_read_bytes`：
-
-```llvm
-; fstat 本身正常 —— 真值确实进了 %v7.s（option）
-%cc281 = call i32 @fstat(i32 %cv279, i8* %cbuf280)
-%fld284 = load i64, i64* %fptr283
-%optw288 = insertvalue %option %optw287, i64 %fld284, 1, 0
-store %option %optw288, %option* %v7.s        ← size 的真值在这里
-
-; …err / nil 两级 tag 比较（2610、2633）…
-
-fs_file_read_bytes.bb6:      ← ok 路径，本应在此 unwrap 出 size
-  %c138 = icmp eq i64 undef, %lv303            ← size 直接是 undef，从未被赋值
-  %ba315 = call i8* @nolang_rc_alloc(i64 undef) ; with-len(size)
-  %c144  = icmp slt i64 %lv321, undef           ; total < size
-  %c151  = sub i64 undef, %lv348                ; size - total → 就是传给 read 的 n
-  %cr355 = call i64 @read(i32 %cv350, i8* %dpp353, i64 %lv354)
-```
-
-⇒ **不是 `read` 坏**：三个参数形状全对（`trunc i64→i32` 的 fd、`inttoptr` 的 buf data、i64 的 n）。**坏的是 `n` 是 `undef`**——因为 **`size` 从未被赋值**。
-
-**HEAD vs WIP 逐块对照（同一函数，差异只有一处）**：
-
-```llvm
-; ── HEAD bb8：完整的 unwrap ──          ; ── WIP bb8：只剩一个 br ──
-%osl316 = getelementptr inbounds
-    %option, %option* %v7.s, i32 0, i32 1     (整段消失)
-%opt318 = bitcast i8* %opa317 to i64*
-%opv319 = load i64, i64* %opt318               br label %fs_file_read_bytes.bb9
-store i64 %opv319, i64* %v18.s   ← size = payload
-
-; ── HEAD bb6 ──                         ; ── WIP bb6 ──
-%lv303 = load i64, i64* %v19.s                %c138 = icmp eq i64 undef, %lv303
-%c139  = icmp eq i64 %lv303, %lv304               ↑ size 直接是 undef
-```
-
-⇒ **`size ?= fstat-size(.fd)` 的 unwrap 指令被整体丢失**（WIP 的 bb8 里一条 `getelementptr %option` 都没有），`size` 的 slot 从未被 store ⇒ 下游处处 `undef`。
-
-**已排除（每项都重建过对照，非推测）**：
-
-| 嫌疑 | 结果 |
-|---|---|
-| `fs.open` / `fstat-size` 本体 | ✅ 正常（`OPEN=ok`、`FSIZE=ok`、`SIZE=NONZERO`） |
-| `read` 的 CLibCall 参数传递 | ✅ IR 形状正确 |
-| `lowerExpr` 的 `hir.KGrouped` 处理被 WIP 删除 | ❌ 恢复后仍是 `nil` |
-| `lowerStmtInner` 的 `fromCapture`/`freshCapture` 改动 | ❌ 回退后仍是 `nil` |
-| `lowerIf` 的 `SetBlock(initBlk)` 时机改动 | ❌ 回退后仍是 `nil` |
-| `Inst.TagOnly` 设置（`bareVariant` 机制） | ❌ 禁用后仍是 `nil` |
-| `hir.KGrouped` 死灰复燃 | ✅ `sugar_kinds_test` 通过，计数恒为 0（`hir.go:85` 注明它已是 tombstone，删 mir 侧处理是**正确的**，我恢复它自然无效） |
-| `lowerUnwrapAssignToHIR` 自身失败 | ✅ **未失败**（插桩统计 0 次）⇒ gap 在它的**产物**与 MIR 之间 |
-
-**✅ 根因定案（2026-10-24 分批精炼）：`?=` 的 H0 直出产物有两层缺口，逐层定位如下**
-
-`tohir.go:495-506` 是 `?=` 的 **S3 H0 直出**：`lowerUnwrapAssignToHIR` 调 `lowerUnwrapAssign` 降成 `KBlock+KLet+KIf` 链，不再依赖 parser walk 原地展開回写 AST——与 §13.1 的 S3-b 同類迁移。插桩证明直出本身成功（失败分支 0 次命中）。
+**✅ mass-noop 已解决（2026-10-25）**：真凶是下方**缺口 4**（裸名呼叫在签名表未命中）。修复后自举编译器恢复完整 AST 输出（不再 `Program{}`），`fs.read-bytes` 正常。旧归因「Go 侧 `src/` 106 个未提交 `.go`」已失效——那些代码随 `a74c5b49` 收口，现已是 HEAD 的一部分。下钻到主编译器 `?=` 的 H0 直出（`tohir.go:495-506`，`lowerUnwrapAssignToHIR` 调 `lowerUnwrapAssign` 降成 `KBlock+KLet+KIf` 链，与 §13.1 的 S3-b 同类迁移；插桩证直出成功）产物，定位到三层缺口（逐层如下）：
 
 **缺口 1（已修，`lowerUnwrapAssign` `*CallExpression` 分支漏设 `tmpType`）**：
 `__unwrap_N = <rhs>` 的 `LetStatement.Type` 只来自 `tmpType`（`lowering.go:4925`），而 `*CallExpression` 分支只调 `setVarType(tmpName, inferred)` 漏设 `tmpType`（相邻 `*InfixExpression` / `*IndexExpression` 两分支都设了）。HIR 实测：`let s=__unwrap_5` 缺 `t=?i64`。H0 轨只从 `s.Type` 取型别 ID（不读 `FuncVarTypes`），漏设 ⇒ `?T` 变 nil ⇒ ok 臂 `it` 取值为 void ⇒ `size` 恒 undef。
@@ -876,21 +747,29 @@ block 14 (err 传播臂):
 即 `propagate()` 的 `let result = __unwrap_N`（`lowering.go:4980` 的 `Value: tmpIdent`）在 HIR→MIR 时 `__unwrap_N` 被解析成 **void 常量**，而非外层 `let __unwrap_N = <call>`（`?i64`）。nil 臂（block 12）同样用 `__unwrap_N` 却正确（`move dst=0 args=[37 35]`），唯独 err 臂解析为 void —— 说明 H0 解糖的传播臂对 `__unwrap_N` 的引用解析与 AST 轨旧解糖不一致（疑似 match 臂 HIR 转换对 `IsPropagation` let 的 `tmpIdent` 引用走错分支）。HEAD（AST 轨旧解糖）不触发此问题。
 **修复方向（待下一轮，属用户主线 S3 迁移）**：核对 `lowerUnwrapAssign` 产出的传播臂 `let result = tmpIdent` 在 H0 HIR 转换下为何解析成 void（对比 AST 轨等价产物），重点看 `stmtNode` case `*LetStatement` 对 `IsPropagation` / `tmpIdent`（与 `tmpAssign` 同指针）的解析路径。验证门禁：探针 `probe_b0.no`（`use std/fs; get = (p)(r ?i64){ fd=fs.open-read(p); size ?= fs.fstat-size(fd); r=size }`）预期 `B0-OK x=5`。
 
+**缺口 4（已修，2026-10-25 新定位 —— mass-noop 的真正残根）**：
+`returnTypeFromCallExpr`（`src/parser/type.go`）的 `*Identifier` 分支**只用裸名**查 `p.funcSignatures`。std 模組內部以**非限定**方式呼叫同模組內建——`src/std/fs.no` 的 `file.read-bytes` 寫 `size ?= fstat-size(.fd)`——而签名表（`ExternFuncSigs` / `CollectStdModuleSignatures`）統一以 `"module.fn"`（`"fs.fstat-size"`）注册；S1 翻转後 std 以 surface 形态从 blob 载入、本地宣告不再写进 `funcSignatures`，裸名 `"fstat-size"` 因而查不到 ⇒ 回传型别为空 ⇒ `?=` 的 H0 直出（`lowerUnwrapAssign`）设不出 `tmpType` ⇒ tmp 变 void ⇒ `size` 为 0 ⇒ `file.read-bytes` 对非空档也回 `nil` ⇒ 自举编译器读不到源码 ⇒ 全档只吐 `Program{}`。
+
+判别性对照（同一 `.fd`、同一 `?=`、同一 `?[]byte` 返回型别，只差限定与否）：
+
+| 调用形态 | 查表键 | 结果 |
+| --- | --- | --- |
+| `fs.fstat-size(.fd)`（限定） | `fs.fstat-size` | 命中，`size=5` ✅ |
+| `fstat-size(.fd)`（非限定，std 内部） | `fstat-size` | 未命中 ⇒ void ⇒ `size=0` ⇒ nil ❌ |
+
+**修复**：`type.go` 新增 `currentModuleName()`（由 `p.Filename` 推模組名，`fs.no → fs`）；`*Identifier` 分支在裸名未命中时回退查 `module + "." + fnName`。对使用者档案该键不存在、自然落空，不会误配到别的模組。
+**验证**：`file.read-bytes()` `RB-NIL → RB-OK`；`fs.read-bytes()` `NIL-OR-ERR → OK`；缺口 3 基线 `B0-OK x=5` 无回退；`make test` 全包 `ok`；`bin/no build compiler` 成功（此前 `EmitLLVM: setfield field` blocker 随之消失）；自举编译器 `ast` 输出与 `bin/no ast` 逐字一致（mass-noop 消除）。
+
 > 验证现状（2026-10-24 本批）：缺口 1+2 已落地，`src/parser` 单测 `TestTmpUnwrapHIR` 证实 `let __unwrap_5 t=?i64`；`?=` 对普通呼叫（探针 `probe_min.no`：`x ?= f(5); r=x`）OK 臂执行通过（`OK x=6`）；S3-b 双轨门禁（parser / parser-dump / mir / build LLVM parity）全绿无回退。缺口 3 阻塞 `src/std/fs.no read-bytes`（`size ?= fs.fstat-size(.fd)`）等内置 `?=` 场景，是 L2 自举侧 mass-noop 的残根。
 
-**⚠️ 逐包二分不可行 —— WIP 是一组原子变更**：
+**✅ 自举侧「次生缺陷」经复核不成立（2026-10-25），无需改码**：`compiler/src/drv.no` 的 `nil -> got = true` 是否算缺陷，取决于 `fs.read-bytes` 的 `nil` 语义。当时的判断建立在**坏的** `read-bytes` 上（读取失败也回 `nil`），故看起来「把失败吞成空档」。缺口 4 修复后 `nil` 只表示「空档读取成功」、`err` 才表示失败，实测两侧语义一致：
 
-```
-回退 src/mmast      → 缺 parser.SerializeNodeSem / SerializeTypeFacts  ⇒ 编译失败
-回退 src/parser     → checker 缺 SourceFileOf / SetVariadicUnionOf      ⇒ 编译失败
-回退 parser+checker → build 缺 FmtTrivia / parser.CloneProgram          ⇒ 编译失败
-```
+| 场景 | 自举 `noc ast` | Go `bin/no ast` | 一致 |
+| --- | --- | --- | --- |
+| 空档 | `Program{}` rc=0 | `Program{}` rc=0 | ✅ |
+| 缺档 | `cannot read …` rc=1 | `no such file` rc=1 | ✅（措辞异、退出码同） |
 
-parser ↔ checker ↔ build ↔ hir ↔ mir ↔ mmast 两两互相依赖新 API，只能整组回退（那就等于回退全部 WIP）。所以**隔离到单个包/函数只能靠逐 hunk 回退**，代价高。
-
-**未修**：剩余嫌疑落在 `lowerNilLit` 的 `bareVariant` / `Inst.TagOnly`（WIP 新增的 option `==` 判据）与 `src/parser`（40 档）的 `?=` 降糖之间。`src/mir` 与 `src/parser` 经 `src/mmast` 强耦合（回退 `mmast` 会因 `parser.SerializeNodeSem` 缺失而编译失败），无法安全逐包二分。属用户主线 MIR 后端 WIP 内部，擅自改动风险高。
-
-**自举侧的次生缺陷（独立、值得修）**：`compiler/src/drv.no:116` `drv.cmd-ast` 对 `fs.read-bytes` 的 `nil` 分支设 `got = true` 却**不报错**——「档案为空」与「读取失败」被吞成「成功读到一个空档案」。`cmd-tokens` 同形。**正是这个静默把一次 I/O 回归放大成 mass-noop**。修法：`nil` 应视为失败（`eprint` + `EXIT-FAIL`），或至少在 ast 为空时告警。
+⇒ `nil -> got = true` 是**正确**语义，改成 `EXIT-FAIL` 反而会破坏「空档 ⇒ `Program{}`」这个与 oracle 一致的行为。**真正需要修的只有缺口 4**；本条保留以免日后重复排查。
 
 ⇒ 两件事：
 1. **L2 是手动门禁，不在 CI 内** ⇒ 这个 mass-noop 从 2026-10-22 起一直没被发现。**已补 G8（2026-10-24）**：`scripts/selfhost_diff.sh` 的 `guard_level` 新增「SUT 在整批语料上只产生 1 种 stdout ⇒ `MASS-NOOP`」断言；SUMMARY 视为 FAIL，并额外打印「不是 N 个独立差异，是本层整体退化」。G8 与既有 G2（SUT 全挂 rc≠0）分工：G8 抓的是「每档都跑得动、却吐同一份东西」——更危险，因为它看起来像有讯号。

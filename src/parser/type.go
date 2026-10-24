@@ -93,6 +93,24 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 //   - 模組函數（mod.fn）查 p.funcSignatures
 //   - 結構體方法（receiver.method）查 p.methodSignatures
 //     本模組方法以 "struct.method" 為鍵，跨模組 std 方法以 "module.struct.method" 為鍵。
+// currentModuleName 由目前原始檔名推出所屬模組名（".../std/fs.no" → "fs"）。
+//
+// 只用於裸名呼叫在 funcSignatures 未命中時的「module.fn」回退查表；對使用者
+// 檔案（如 /tmp/x.no → "x"）該鍵不存在，自然落空，不會誤配到別的模組。
+func (p *Parser) currentModuleName() string {
+	if p == nil || p.Filename == "" {
+		return ""
+	}
+	base := p.Filename
+	if i := strings.LastIndexByte(base, '/'); i >= 0 {
+		base = base[i+1:]
+	}
+	if i := strings.LastIndexByte(base, '\\'); i >= 0 {
+		base = base[i+1:]
+	}
+	return strings.TrimSuffix(base, ".no")
+}
+
 func (p *Parser) inferTypeFromCallExpr(call *CallExpression) string {
 	return p.filterInferableType(p.returnTypeFromCallExpr(call))
 }
@@ -113,6 +131,22 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 		fnName := ident.Value
 		if p.funcSignatures != nil {
 			if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
+				return rets[0]
+			}
+		}
+		// 裸名未命中時，退回「目前模組」限定鍵（module.fn）。
+		//
+		// 情境：std 模組內部以**非限定**方式呼叫同模組的內建/函數——例如
+		// src/std/fs.no 的 `file.read-bytes` 寫 `size ?= fstat-size(.fd)`。
+		// 簽名表（ExternFuncSigs / CollectStdModuleSignatures）統一以
+		// "module.fn"（如 "fs.fstat-size"）註冊；S1 翻轉後 std 以 surface
+		// 形態從 blob 載入、本地宣告不再寫進 funcSignatures，裸名因而查不到。
+		//
+		// 後果不只是「推斷為空」：`?=` 的 H0 直出（lowerUnwrapAssign）拿不到
+		// 回傳型別就設不出 tmpType，tmp 變 void → MIR 取值為 0／解析失敗，
+		// 表現為 file.read-bytes 對非空檔也回 nil（§13.2 的 mass-noop 殘根）。
+		if mod := p.currentModuleName(); mod != "" && p.funcSignatures != nil {
+			if rets, ok := p.funcSignatures[mod+"."+fnName]; ok && len(rets) == 1 {
 				return rets[0]
 			}
 		}
