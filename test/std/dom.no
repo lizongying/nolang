@@ -1,0 +1,589 @@
+; test/std/dom.no — std/dom 模組測試
+;
+; 執行：no test test/std/dom.no
+; 覆蓋：parse-xml / parse-html / 節點導航 / 屬性 / 查詢 / 變異 / 序列化 / 實體
+
+# /test/runner
+
+; ── 解包輔助 ──────────────────────────────────
+
+u-i64 = (o ?i64) (v i64) {
+    v = -999
+    o: {
+        ok -> v = it
+
+        -> v = -999
+    }
+}
+
+u-str = (o ?str) (v str) {
+    v = ''
+    o: {
+        ok -> v = it
+
+        -> v = ''
+    }
+}
+
+; err-of: ?dom 是否為 err（1=err, 0=其他）
+err-of = (o ?dom) (yes i64) {
+    yes = 0
+    o: {
+        err -> yes = 1
+
+        -> yes = 0
+    }
+}
+
+; ── XML 解析 ──────────────────────────────────
+
+t-xml-basic = () {
+    d = dom.parse-xml('<root a="1" b="2">hello</root>')
+    k = -1
+    nm = ''
+    ac = 0
+    av = ''
+    tc = ''
+    cc = 0
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            k = doc.kind(de)
+            nm = doc.name(de)
+            ac = doc.attribute-count(de)
+            av = u-str(doc.get-attribute(de, 'b'))
+            cc = doc.child-count(de)
+            tc = doc.text-content(de)
+        }
+
+        -> {
+        }
+    }
+    runner.eq(k, dom.DOM-KIND-ELEMENT, 'xml doc-el kind')
+    runner.is-true(nm.eq-full('root'), 'xml doc-el name')
+    runner.eq(ac, 2, 'xml attr count')
+    runner.is-true(av.eq-full('2'), 'xml attr b=2')
+    runner.eq(cc, 1, 'xml child count')
+    runner.is-true(tc.eq-full('hello'), 'xml text content')
+}
+
+t-xml-tree = () {
+    d = dom.parse-xml('<a><b/><b x="1"/><c>t</c></a>')
+    cc = 0
+    n0 = ''
+    n1 = ''
+    x1 = ''
+    n2 = ''
+    t2 = ''
+    sib = -999
+    c1v = -999
+    c2v = -999
+    last = -999
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            cc = doc.child-count(de)
+            c0 = u-i64(doc.child-at(de, 0))
+            c1 = u-i64(doc.child-at(de, 1))
+            c2 = u-i64(doc.child-at(de, 2))
+            c1v = c1
+            c2v = c2
+            n0 = doc.name(c0)
+            n1 = doc.name(c1)
+            x1 = u-str(doc.get-attribute(c1, 'x'))
+            n2 = doc.name(c2)
+            t2 = doc.text-content(c2)
+            sib = doc.prev-sibling(c2)
+            last = doc.last-child(de)
+            runner.eq(doc.next-sibling(c0), c1, 'next-sibling c0->c1')
+            runner.eq(doc.first-child(de), c0, 'first-child')
+        }
+
+        -> {
+        }
+    }
+    runner.eq(cc, 3, 'xml tree child count')
+    runner.is-true(n0.eq-full('b'), 'xml child0 name b')
+    runner.is-true(n1.eq-full('b'), 'xml child1 name b')
+    runner.is-true(x1.eq-full('1'), 'xml child1 attr x')
+    runner.is-true(n2.eq-full('c'), 'xml child2 name c')
+    runner.is-true(t2.eq-full('t'), 'xml child2 text')
+    runner.eq(sib, c1v, 'prev-sibling c2->c1')
+    runner.eq(last, c2v, 'last-child is c2')
+}
+
+t-xml-nodes = () {
+    src = '<!DOCTYPE r [<!ENTITY e "x">]><?xml version="1.0"?><r><?pi data?>text<!--cm--><![CDATA[a<b]]>tail</r>'
+    d = dom.parse-xml(src)
+    root-cc = 0
+    k0 = -1
+    k1 = -1
+    pin = ''
+    piv = ''
+    r-cc = 0
+    k2 = -1
+    cmv = ''
+    cdv = ''
+    tc = ''
+    dtn = ''
+    d: {
+        ok -> {
+            doc = it
+            root-cc = doc.child-count(doc.root)
+            n0 = u-i64(doc.child-at(doc.root, 0))
+            n1 = u-i64(doc.child-at(doc.root, 1))
+            k0 = doc.kind(n0)
+            k1 = doc.kind(n1)
+            dtn = doc.name(n0)
+            pin = doc.name(n1)
+            piv = doc.value(n1)
+            de = u-i64(doc.document-element())
+            r-cc = doc.child-count(de)
+            rc = u-i64(doc.child-at(de, 2))
+            k2 = doc.kind(rc)
+            cmv = doc.value(rc)
+            rcd = u-i64(doc.child-at(de, 3))
+            cdv = doc.value(rcd)
+            tc = doc.text-content(de)
+        }
+
+        -> {
+        }
+    }
+    runner.eq(root-cc, 3, 'xml root child count')
+    runner.eq(k0, dom.DOM-KIND-DOCTYPE, 'doctype kind')
+    runner.is-true(dtn.eq-full('r'), 'doctype name')
+    runner.eq(k1, dom.DOM-KIND-PI, 'xml-decl pi kind')
+    runner.is-true(pin.eq-full('xml'), 'pi name xml')
+    runner.is-true(piv.eq-full('version="1.0"'), 'pi value')
+    runner.eq(r-cc, 5, 'r child count')
+    runner.eq(k2, dom.DOM-KIND-COMMENT, 'comment kind')
+    runner.is-true(cmv.eq-full('cm'), 'comment value')
+    runner.is-true(cdv.eq-full('a<b'), 'cdata raw value')
+    runner.is-true(tc.eq-full('texta<btail'), 'mixed text content')
+}
+
+t-xml-entities = () {
+    d = dom.parse-xml('<r>&lt;&amp;&#65;&#x41;&quot;</r>')
+    tc = ''
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            tc = doc.text-content(de)
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(tc.eq-full('<&AA"'), 'xml entity decode')
+}
+
+t-xml-errors = () {
+    runner.eq(err-of(dom.parse-xml('<a></b>')), 1, 'xml mismatched tag')
+    runner.eq(err-of(dom.parse-xml('<a/><b/>')), 1, 'xml second root')
+    runner.eq(err-of(dom.parse-xml('<r>&foo;</r>')), 1, 'xml unknown entity')
+    runner.eq(err-of(dom.parse-xml('<r>abc')), 1, 'xml unclosed element')
+    runner.eq(err-of(dom.parse-xml('<r a=1/>')), 1, 'xml unquoted attr')
+    runner.eq(err-of(dom.parse-xml('<r a="1" a="2"/>')), 1, 'xml duplicate attr')
+    runner.eq(err-of(dom.parse-xml('<r/>')), 0, 'xml valid doc ok')
+}
+
+t-xml-roundtrip = () {
+    src = '<r a="x&amp;y">t&lt;c<!--cm--><![CDATA[raw]]>tail</r>'
+    d = dom.parse-xml(src)
+    s = ''
+    ihb = false
+    d: {
+        ok -> {
+            doc = it
+            s = doc.to-string()
+            ihb = doc.is-html()
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(s.eq-full(src), 'xml roundtrip')
+    runner.is-true(ihb == false, 'xml mode not html')
+}
+
+; ── HTML 解析 ─────────────────────────────────
+
+t-html-case = () {
+    d = dom.parse-html('<DIV Id="X"><SPAN>Hi</span></DIV>')
+    nm = ''
+    snm = ''
+    idv = ''
+    has = false
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            nm = doc.name(de)
+            sp = u-i64(doc.child-at(de, 0))
+            snm = doc.name(sp)
+            idv = u-str(doc.get-attribute(de, 'id'))
+            has = doc.has-attribute(de, 'ID')
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(nm.eq-full('div'), 'html tag lowercased')
+    runner.is-true(snm.eq-full('span'), 'html close case-insensitive')
+    runner.is-true(idv.eq-full('X'), 'html attr value case kept')
+    runner.is-true(has, 'html attr name case-insensitive')
+}
+
+t-html-void = () {
+    d = dom.parse-html('<p>a<br>b<hr></p>')
+    cc = 0
+    brn = ''
+    brc = -1
+    outer = ''
+    root-cc = 0
+    ts = ''
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            cc = doc.child-count(de)
+            br = u-i64(doc.child-at(de, 1))
+            brn = doc.name(br)
+            brc = doc.child-count(br)
+            outer = doc.outer-html(de)
+            root-cc = doc.child-count(doc.root)
+            ts = doc.to-string()
+        }
+
+        -> {
+        }
+    }
+    runner.eq(cc, 3, 'html void splits text')
+    runner.is-true(brn.eq-full('br'), 'html br element')
+    runner.eq(brc, 0, 'html void has no children')
+    runner.is-true(outer.eq-full('<p>a<br>b</p>'), 'html void serialize')
+    runner.eq(root-cc, 2, 'html hr closes p')
+    runner.is-true(ts.eq-full('<p>a<br>b</p><hr>'), 'html hr sibling of p')
+}
+
+t-html-rawtext = () {
+    d = dom.parse-html('<script>if(a<b){x=&y;}</script><title>A&amp;B</title><p>x</p>')
+    root-cc = 0
+    sc = ''
+    ti = ''
+    outer = ''
+    d: {
+        ok -> {
+            doc = it
+            root-cc = doc.child-count(doc.root)
+            s0 = u-i64(doc.child-at(doc.root, 0))
+            t0 = u-i64(doc.child-at(doc.root, 1))
+            sc = doc.text-content(s0)
+            ti = doc.text-content(t0)
+            outer = doc.to-string()
+        }
+
+        -> {
+        }
+    }
+    runner.eq(root-cc, 3, 'html rawtext siblings')
+    runner.is-true(sc.eq-full('if(a<b){x=&y;}'), 'script raw text kept')
+    runner.is-true(ti.eq-full('A&B'), 'title rcdata decoded')
+    runner.is-true((outer.index('if(a<b){x=&y;}') >= 0), 'script raw in serialize')
+}
+
+t-html-autoclose = () {
+    d = dom.parse-html('<ul><li>a<li>b</ul><p>1<p>2')
+    root-cc = 0
+    ul-cc = 0
+    li0 = ''
+    outer-ul = ''
+    outer-p = ''
+    d: {
+        ok -> {
+            doc = it
+            root-cc = doc.child-count(doc.root)
+            ul = u-i64(doc.child-at(doc.root, 0))
+            ul-cc = doc.child-count(ul)
+            i0 = u-i64(doc.child-at(ul, 0))
+            li0 = doc.text-content(i0)
+            outer-ul = doc.outer-html(ul)
+            p0 = u-i64(doc.child-at(doc.root, 1))
+            outer-p = doc.outer-html(p0)
+        }
+
+        -> {
+        }
+    }
+    runner.eq(root-cc, 3, 'html implicit p split root')
+    runner.eq(ul-cc, 2, 'html auto-close li')
+    runner.is-true(li0.eq-full('a'), 'html li0 text')
+    runner.is-true(outer-ul.eq-full('<ul><li>a</li><li>b</li></ul>'), 'html ul outer')
+    runner.is-true(outer-p.eq-full('<p>1</p>'), 'html auto-close p')
+}
+
+t-html-unmatched = () {
+    d = dom.parse-html('<div>a</span>b</div>')
+    nm = ''
+    cc = 0
+    tc = ''
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            nm = doc.name(de)
+            cc = doc.child-count(de)
+            tc = doc.text-content(de)
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(nm.eq-full('div'), 'html unmatched keeps div')
+    runner.eq(cc, 2, 'html stray closer ignored')
+    runner.is-true(tc.eq-full('ab'), 'html text around stray closer')
+}
+
+t-html-entities = () {
+    nbch char = 160
+    exp = ''
+    exp = exp - '&A' - nbch.to-str() - '<&foo;'
+    d = dom.parse-html('<p>&amp;&#65;&nbsp;&lt;&foo;</p>')
+    tc = ''
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            tc = doc.text-content(de)
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(tc.eq-full(exp), 'html named+numeric entities')
+}
+
+t-html-query = () {
+    d = dom.parse-html('<div id="main"><p class="a b">1</p><p class="b">2</p><span class="b">3</span></div>')
+    idn = ''
+    tp = 0
+    tb = 0
+    ta = 0
+    d: {
+        ok -> {
+            doc = it
+            el = u-i64(doc.get-element-by-id('MAIN'))
+            idn = doc.name(el)
+            tp = doc.get-elements-by-tag-name('p').len()
+            tb = doc.get-elements-by-class-name('b').len()
+            ta = doc.get-elements-by-tag-name('*').len()
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(idn.eq-full('div'), 'html get-element-by-id')
+    runner.eq(tp, 2, 'html tag-name p count')
+    runner.eq(tb, 3, 'html class-name b count')
+    runner.eq(ta, 4, 'html star all count')
+}
+
+t-html-roundtrip = () {
+    src = '<ul class="x"><li>1<li>2</ul><br>'
+    want = '<ul class="x"><li>1</li><li>2</li></ul><br>'
+    d = dom.parse-html(src)
+    s = ''
+    ihb = false
+    d: {
+        ok -> {
+            doc = it
+            s = doc.to-string()
+            ihb = doc.is-html()
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(s.eq-full(want), 'html roundtrip normalize')
+    runner.is-true(ihb, 'html mode flag')
+}
+
+t-html-empty-pair = () {
+    d = dom.parse-html('<span></span><i/>')
+    outer = ''
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            outer = doc.outer-html(de)
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(outer.eq-full('<span></span>'), 'html empty pairs close tag')
+}
+
+; ── 屬性索引與移除 ────────────────────────────
+
+t-attr-order = () {
+    d = dom.parse-xml('<r z="1" a="2" m="3"/>')
+    n0 = ''
+    n1 = ''
+    v1 = ''
+    ac = 0
+    rm = false
+    rm2 = false
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            n0 = u-str(doc.attribute-name(de, 0))
+            n1 = u-str(doc.attribute-name(de, 1))
+            v1 = u-str(doc.attribute-value(de, 1))
+            rm = doc.remove-attribute(de, 'a')
+            ac = doc.attribute-count(de)
+            rm2 = doc.remove-attribute(de, 'a')
+        }
+
+        -> {
+        }
+    }
+    runner.is-true(n0.eq-full('z'), 'attr order 0 z')
+    runner.is-true(n1.eq-full('a'), 'attr order 1 a')
+    runner.is-true(v1.eq-full('2'), 'attr value 1')
+    runner.is-true(rm, 'remove-attr found')
+    runner.eq(ac, 2, 'attr count after remove')
+    runner.is-true(rm2 == false, 'remove-attr again miss')
+}
+
+; ── 變異 API ──────────────────────────────────
+
+t-mutation = () {
+    d = dom.new-document(false)
+    r = d.create-element('r')
+    d.append-child(d.root, r)
+    t1 = d.create-text-node('one')
+    t2 = d.create-text-node('three')
+    t0 = d.create-text-node('zero')
+    tm = d.create-text-node('two')
+    cm = d.create-comment('hello')
+    d.append-child(r, t1)
+    d.append-child(r, t2)
+    d.insert-child-before(r, t0, t1)
+    d.insert-child-before(r, tm, t2)
+    d.replace-child(r, cm, t0)
+    d.remove-child(r, tm)
+    d.set-node-value(t1, 'ONE')
+    d.set-attribute(r, 'v', '1')
+    de = u-i64(d.document-element())
+    cc = d.child-count(r)
+    s = d.outer-html(r)
+    runner.eq(de, r, 'document-element after append')
+    runner.eq(cc, 3, 'mutation final child count')
+    runner.is-true(s.eq-full('<r v="1"><!--hello-->ONEthree</r>'), 'mutation outer html')
+}
+
+t-mutation-move = () {
+    d = dom.new-document(false)
+    a = d.create-element('a')
+    b = d.create-element('b')
+    x = d.create-text-node('x')
+    d.append-child(d.root, a)
+    d.append-child(d.root, b)
+    d.append-child(a, x)
+    d.append-child(b, x)
+    runner.eq(d.child-count(a), 0, 'move detaches old parent')
+    runner.eq(d.child-count(b), 1, 'move appends new parent')
+    runner.eq(d.parent(x), b, 'parent updated on move')
+}
+
+t-esc-serialize = () {
+    d = dom.new-document(false)
+    r = d.create-element('r')
+    d.append-child(d.root, r)
+    d.set-attribute(r, 'a', 'x"y&z')
+    d.set-text-content(r, 'p<q>r&s')
+    s = d.outer-html(r)
+    cc = d.child-count(r)
+    runner.is-true(s.eq-full('<r a="x&quot;y&amp;z">p&lt;q&gt;r&amp;s</r>'), 'escape on serialize')
+    runner.eq(cc, 1, 'set-text-content single child')
+    d.set-text-content(r, '')
+    runner.eq(d.child-count(r), 0, 'set-text-content empty clears')
+}
+
+; ── 邊界與雜項 ────────────────────────────────
+
+t-misc = () {
+    d = dom.parse-xml('<r/>')
+    k = -1
+    bad = -1
+    oob = -999
+    missnil = 0
+    ihb = false
+    parent = -999
+    rootidx = -999
+    d: {
+        ok -> {
+            doc = it
+            de = u-i64(doc.document-element())
+            k = doc.kind(de)
+            bad = doc.kind(-5)
+            oob = u-i64(doc.child-at(de, 0))
+            ga = doc.get-attribute(de, 'zz')
+            ga: {
+                nil -> missnil = 1
+
+                -> missnil = 0
+            }
+            ihb = doc.is-html()
+            parent = doc.parent(de)
+            rootidx = doc.root
+            runner.is-true(doc.inner-html(de).eq-full(''), 'inner html empty')
+        }
+
+        -> {
+        }
+    }
+    runner.eq(k, dom.DOM-KIND-ELEMENT, 'misc kind')
+    runner.eq(bad, -1, 'invalid idx kind -1')
+    runner.eq(oob, -999, 'child-at out of range nil')
+    runner.eq(missnil, 1, 'get-attribute missing returns nil')
+    runner.is-true(ihb == false, 'xml is-html false')
+    runner.eq(parent, rootidx, 'root element parent is doc')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('dom.xml-basic', t-xml-basic)
+p2, f2 = runner.test('dom.xml-tree', t-xml-tree)
+p3, f3 = runner.test('dom.xml-nodes', t-xml-nodes)
+p4, f4 = runner.test('dom.xml-entities', t-xml-entities)
+p5, f5 = runner.test('dom.xml-errors', t-xml-errors)
+p6, f6 = runner.test('dom.xml-roundtrip', t-xml-roundtrip)
+p7, f7 = runner.test('dom.html-case', t-html-case)
+p8, f8 = runner.test('dom.html-void', t-html-void)
+p9, f9 = runner.test('dom.html-rawtext', t-html-rawtext)
+p10, f10 = runner.test('dom.html-autoclose', t-html-autoclose)
+p11, f11 = runner.test('dom.html-unmatched', t-html-unmatched)
+p12, f12 = runner.test('dom.html-entities', t-html-entities)
+p13, f13 = runner.test('dom.html-query', t-html-query)
+p14, f14 = runner.test('dom.html-roundtrip', t-html-roundtrip)
+p15, f15 = runner.test('dom.html-empty-pair', t-html-empty-pair)
+p16, f16 = runner.test('dom.attr-order', t-attr-order)
+p17, f17 = runner.test('dom.mutation', t-mutation)
+p18, f18 = runner.test('dom.mutation-move', t-mutation-move)
+p19, f19 = runner.test('dom.esc-serialize', t-esc-serialize)
+p20, f20 = runner.test('dom.misc', t-misc)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

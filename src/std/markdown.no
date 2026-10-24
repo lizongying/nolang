@@ -126,7 +126,11 @@ markdown.thematic-break = (line str) (yes bool) {
     i = 0
     (i < n) {
         i >= n -> break
-        c = s.byte(i)
+        c-opt = s.byte(i)
+        c = c-opt: {
+            ok -> it
+            ->
+        }
         c == 32 || c == 9 -> {
 
             #{overflow=wrap}
@@ -238,7 +242,11 @@ markdown.fence = (line str) (out markdown-fence) {
     s = line.trim()
     n = s.len-bytes()
     n >= 3 -> {
-        c = s.byte(0)
+        c-opt = s.byte(0)
+        c = c-opt: {
+            ok -> it
+            ->
+        }
         (c == 96 || c == 126) -> {
             count = markdown.prefix-count(s, c)
             count >= 3 -> {
@@ -314,7 +322,11 @@ markdown.inline = (s str) (out str) {
     n = s.len-bytes()
     (i < n) {
         i >= n -> break
-        c char = s.byte(i)
+        c-opt = s.byte(i)
+        c char = c-opt: {
+            ok -> it
+            ->
+        }
 
         ; 反斜杠转义 ASCII 标记。
         #{overflow=wrap}

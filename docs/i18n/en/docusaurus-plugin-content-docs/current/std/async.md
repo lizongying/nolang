@@ -68,8 +68,6 @@ Rules:
   equivalent to `run worker-async(1); r1 = awy <handle>`; inside a coroutine group
   the group schedules the spawn / await to obtain concurrency.
 
-Diagnostic switch: `NOLANG_ASYNC_GO=0` disables monomorphization (diagnostic only).
-
 ### async — manual primitives (deprecated, low-level reference only)
 
 A coroutine model:

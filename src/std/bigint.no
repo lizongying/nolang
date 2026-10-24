@@ -79,6 +79,9 @@ one = () (out bigint) {
 }
 
 ; bigint.copy: 深度複製 bigint
+; ⚠️ 不棄用（與 str/txt.copy 不同）：賦值 `b = a` 只複製 {sign,limbs,len} 描述符、
+; 與 a 共享同一條 limbs 緩衝區（實測 a.limbs[0] = 99 後 b.limbs[0] 同為 99），
+; 不具深拷貝語義。需要獨立快照時必須使用本方法。
 bigint.copy = () (out bigint) {
     out.limbs = with-len(.len)
     out.sign = .sign

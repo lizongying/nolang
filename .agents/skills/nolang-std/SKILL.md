@@ -133,6 +133,7 @@ Usage: `# std/xxx` (core modules do not need to be imported).
   - [json — JSON Parsing and Generation](#json--json-parsing-and-generation)
   - [toml — TOML Parsing and Generation](#toml--toml-parsing-and-generation)
   - [yaml — YAML 1.2 Parsing and Generation](#yaml--yaml-12-parsing-and-generation)
+  - [dom — XML / HTML DOM Parsing and Manipulation](#dom--xml--html-dom-parsing-and-manipulation)
 - [Others](#others)
   - [unicode — Unicode Support](#unicode--unicode-support)
   - [uuid — UUID v4 Generation and Parsing](#uuid--uuid-v4-generation-and-parsing)
@@ -452,7 +453,11 @@ out = t.reverse()            // Reverse content
 out = t.slice(start, end)   // Slice [start, end)
 r = t.compare(b txt)        // Lexicographic comparison (-1/0/1)
 b = t.at(idx i64)           // Safe index access
+c = t.byte(i i64)           // Raw BYTE read → ?byte (nil when out of range)
+ok = t.set-byte(i i64, b byte)  // Raw BYTE write → ?bool (nil + store skipped when i >= 255 physical capacity, some(true) on success)
 ```
+
+> **Raw byte pair (buffer-build escape hatch):** `t[i]` is code-point indexed; `t.byte(i)` / `t.set-byte(i, b)` are the paired BYTE-level reader/writer. `set-byte`'s bounds are checked against the receiver's **physical capacity** (a `txt` is a fixed 255-byte buffer; a `%str-long` uses its `cap` field), NOT the logical `len` — so the fill-then-set-len idiom (`out.set-byte(i, …)` in a loop, then `out.len = n`) keeps working. Out-of-range returns `nil` and the write is skipped; callers that discard the `?bool` as a bare statement are fine (optunuse only fires on bound names). Plain i64/char value args must be narrowed with `& 255`; option args (e.g. `s.byte(i)`) pass directly.
 
 > **`string` union alias (std/str.no):** `string = str | txt` mirrors `num = int | float` (std/num.no, with member aliases in std/int.no and std/float.no). Usable as function parameter/return type — the compiler monomorphizes per concrete argument type (`f__str` / `f__txt`). Same limitations as `num`: no union-typed variables, no member-method calls on the union parameter inside the body (use `len(s)` global or split concrete overloads), and never define alias methods colliding with member names (`string.len` would hijack `str.len`/`txt.len` and self-recurse).
 
@@ -2756,6 +2761,86 @@ YAML-STYLE-BLOCK = 6  FLOW = 7
 >
 > **Gotcha 2 — `.nan` has no f64 representation.** The backend emits fast-math FP, so a real NaN cannot be produced (`0.0 / 0.0` folds to `0`). Detect it with `d.is-nan()` (based on the node's source text); `d.f64()` returns `0.0` for it, `to-json()` emits `null`, and `to-yaml()` emits `.nan`.
 
+#### dom — XML / HTML DOM Parsing and Manipulation
+
+`dom` (`# std/dom`) keeps a full DOM tree in a node pool (`dom-pool`, heap vecs, no fixed capacity cap). Nodes are addressed by **i64 indices** (0 = document root) valid for the lifetime of the `dom` value; the `pool` field is `#{inline=false}`, so `dom` copies safely by value.
+
+- **XML (strict)**: `dom.parse-xml` — elements/attributes/text/comments/CDATA/PI/DOCTYPE, predefined + numeric character entities, tag matching, single-root check; malformed input returns `err` with the failing byte offset. Max nesting depth `DOM-MAX-DEPTH = 256`.
+- **HTML (lenient)**: `dom.parse-html` — never fails; case-insensitive tag/attribute names, void elements (`br/hr/img/input/...`), raw-text (`script`/`style`) and RCDATA (`title`/`textarea`) elements, implicit close rules (`p`/`li`/`dd`/`dt`/`option`/`optgroup`/`td`/`th`/`tr`/table sections), unmatched close tags auto-closed or ignored, HTML4 named entity table, unquoted attribute values.
+
+```no
+# std/dom
+d = dom.parse-xml('<root a="1">text<!--c--></root>')
+d: {
+    ok -> {
+        doc = it
+        root ?i64 = doc.document-element()
+        print(doc.name(root))                     // 'root'
+        print(doc.get-attribute(root, 'a'))       // option<str>
+        print(doc.to-string())                    // serialize whole document
+    }
+    err(e) -> print(e)
+}
+
+h = dom.parse-html('<P ID="x">hi<br><li>a<li>b</P>')
+h: {
+    ok -> {
+        doc = it
+        ps = doc.get-elements-by-tag-name('p')    // case-insensitive lookup
+        print(ps.len())                           // 1
+    }
+    ->
+}
+```
+
+API summary:
+
+```no
+// Parsing / construction
+d = dom.parse-xml(source)          // ?dom — err('... at byte N') on invalid XML
+d = dom.parse-html(source)         // ?dom — always ok
+d = dom.new-document(html bool)    // empty document (html=true selects HTML serialization)
+
+// Node access (idx i64 handles)
+k = d.kind(idx)                    // DOM-KIND-* constant, -1 = invalid index
+nm = d.name(idx)                   // element tag / PI target / doctype name
+v = d.value(idx); d.set-node-value(idx, v)   // text/CDATA/comment data, PI data
+doc-idx = d.root                   // document root node (index 0)
+p = d.parent(idx); c = d.first-child(idx); c = d.last-child(idx)
+c = d.next-sibling(idx); c = d.prev-sibling(idx)     // -1 when absent
+n = d.child-count(idx); c ?i64 = d.child-at(idx, i)
+root ?i64 = d.document-element()
+
+// Attributes (HTML mode: names case-insensitive / lowercased)
+val ?str = d.get-attribute(idx, name); yes = d.has-attribute(idx, name)
+d.set-attribute(idx, name, val); yes = d.remove-attribute(idx, name)
+n = d.attribute-count(idx); nm ?str = d.attribute-name(idx, i); val ?str = d.attribute-value(idx, i)
+
+// Query
+idx ?i64 = d.get-element-by-id(id)
+list []i64 = d.get-elements-by-tag-name(name)       // '*' = all elements
+list []i64 = d.get-elements-by-class-name(cls)
+text = d.text-content(idx)
+
+// Mutation
+idx = d.create-element(name); idx = d.create-text-node(data); idx = d.create-comment(data)
+d.append-child(parent, child)                        // moves an attached node
+d.insert-child-before(parent, child, ref)
+d.remove-child(parent, child); d.replace-child(parent, new, old)
+d.set-text-content(idx, text)                        // clears children, sets one text node
+
+// Serialization
+yes = d.is-html()
+s = d.to-string()                                    // whole document
+s = d.outer-html(idx); s = d.inner-html(idx)         // HTML mode: void elements as <br>, empty as <x></x>
+
+// Constants
+DOM-KIND-DOCUMENT = 0  ELEMENT = 1  TEXT = 2  CDATA = 3  COMMENT = 4  PI = 5  DOCTYPE = 6
+DOM-MAX-DEPTH = 256
+```
+
+> **Gotcha — keep node indices inside one `dom`.** Indices reference that document's pool only; passing an index to a different `dom` is invalid (`kind()` returns -1 and accessors no-op). Query results are plain `[]i64`; iterate with `for`/index and re-enter the same `dom`.
+
 ---
 
 ### Others
@@ -2983,6 +3068,7 @@ ext = magic.get-extension(path)                // Extract file extension
 | json                | JSON parse/generate |
 | toml                | TOML parse/generate |
 | yaml                | YAML 1.2 parse/generate |
+| dom                 | XML/HTML DOM parse, query, mutate, serialize |
 | types               | Type definitions |
 | sort                | Sort constants   |
 | set                 | Set              |

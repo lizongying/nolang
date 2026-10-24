@@ -157,16 +157,44 @@ t-to-bytes = () {
 }
 
 t-to-txt = () {
-    t txt = "A".to-txt()
-    runner.eq(t.len(), 1, 'to-txt "A" len == 1')
-    runner.str-eq(t.to-str(), 'A', 1, 'to-txt "A" value')
+    ; str.to-txt 回傳 ?txt：<= 255 位元組為 ok(txt)
+    a ?txt = "A".to-txt()
+    a: {
+        ok(t) -> {
+            runner.eq(t.len(), 1, 'to-txt "A" len == 1')
+            runner.str-eq(t.to-str(), 'A', 1, 'to-txt "A" value')
+        }
+
+        nil -> runner.is-true(false, 'to-txt "A" == nil')
+
+        err -> runner.is-true(false, 'to-txt "A" == err')
+    }
 
     ; 非 ASCII：一個碼點 -> 3 個 byte。txt.len() 也是**碼點數**，
     ;    位元組數要走 .len-bytes()（見 t-to-str 的說明）。
-    u txt = "中".to-txt()
-    runner.eq(u.len(), 1, 'to-txt non-ASCII: len is 1 CODEPOINT')
-    runner.eq(u.len-bytes(), 3, 'to-txt non-ASCII: 3 BYTES (UTF-8)')
-    runner.str-eq(u.to-str(), '中', 3, 'to-txt non-ASCII value')
+    u ?txt = "中".to-txt()
+    u: {
+        ok(t) -> {
+            runner.eq(t.len(), 1, 'to-txt non-ASCII: len is 1 CODEPOINT')
+            runner.eq(t.len-bytes(), 3, 'to-txt non-ASCII: 3 BYTES (UTF-8)')
+            runner.str-eq(t.to-str(), '中', 3, 'to-txt non-ASCII value')
+        }
+
+        nil -> runner.is-true(false, 'to-txt non-ASCII == nil')
+
+        err -> runner.is-true(false, 'to-txt non-ASCII == err')
+    }
+
+    ; 超過 255 位元組 -> nil（txt 容納不下，不再靜默截斷）
+    big str = with-len(300)
+    o ?txt = big.to-txt()
+    o: {
+        ok(v) -> runner.is-true(false, 'to-txt 300 bytes must not be ok')
+
+        nil -> runner.is-true(true, 'to-txt 300 bytes == nil')
+
+        err -> runner.is-true(false, 'to-txt 300 bytes == err')
+    }
 }
 
 ; ── []char 字面量（回歸）─────────────────────────
@@ -178,7 +206,12 @@ t-slice-char-literal = () {
     runner.eq(arr.len(), 3, '[]char len == 3')
     runner.str-eq(arr[0].to-str(), 'a', 1, '[]char[0] == a')
     runner.str-eq(arr[2].to-str(), 'c', 1, '[]char[2] == c')
-    arr[1] = "Z"
+    ; 元素寫入走 place-match（ok 臂的 it 是元素位置，可讀可寫）——
+    ;    直接 `arr[1] = "Z"` 會被 checker 的 idxwrite 規則拒掉。
+    arr[1]: {
+        ok -> it = "Z"
+        -> _
+    }
     runner.str-eq(arr[1].to-str(), 'Z', 1, '[]char[1] assign == Z')
     fixed [3]char = ["x", "y", "z"]
     runner.str-eq(fixed[0].to-str(), 'x', 1, '[3]char[0] == x')

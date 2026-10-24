@@ -692,9 +692,17 @@ server-conn.recv = () (msg ?message) {
         }
 
         ; 解析 frame header
-        b0 = .recv-buf.byte(0)
+        b0-opt = .recv-buf.byte(0)
+        b0 = b0-opt: {
+            ok -> it
+            ->
+        }
 
-        b1 = .recv-buf.byte(1)
+        b1-opt = .recv-buf.byte(1)
+        b1 = b1-opt: {
+            ok -> it
+            ->
+        }
         fin = (b0 & 128) != 0
         opcode = b0 & 15
         masked = (b1 & 128) != 0
@@ -976,9 +984,17 @@ server-conn.recv-nb = () (msg ?message) {
     ; 2) 只從已緩衝的 recv-buf 解析一個完整 frame；資料不足則回傳 nil（would-block）
     .recv-buf-len < 2 -> return
 
-    b0 = .recv-buf.byte(0)
+    b0-opt = .recv-buf.byte(0)
+    b0 = b0-opt: {
+        ok -> it
+        ->
+    }
 
-    b1 = .recv-buf.byte(1)
+    b1-opt = .recv-buf.byte(1)
+    b1 = b1-opt: {
+        ok -> it
+        ->
+    }
     fin = (b0 & 128) != 0
     opcode = b0 & 15
     masked = (b1 & 128) != 0
@@ -1262,9 +1278,17 @@ client.recv = () (msg ?message) {
             .recv-buf-len = .recv-buf-len + n
         }
 
-        b0 = .recv-buf.byte(0)
+        b0-opt = .recv-buf.byte(0)
+        b0 = b0-opt: {
+            ok -> it
+            ->
+        }
 
-        b1 = .recv-buf.byte(1)
+        b1-opt = .recv-buf.byte(1)
+        b1 = b1-opt: {
+            ok -> it
+            ->
+        }
         fin = (b0 & 128) != 0
         opcode = b0 & 15
         masked = (b1 & 128) != 0

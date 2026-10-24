@@ -122,8 +122,22 @@ str-eq = (a str, b str) (yes bool) {
     nb = b.len-bytes()
     na != nb -> return
     i <- [0..na): {
-        ca = a.byte(i)
-        cb = b.byte(i)
+
+        ; ⚠️ str.byte 現回傳 ?byte（可為空，越界回 nil）⇒ 必須解包成純 byte 再比：
+        ;   直接比兩個 option 永不「不等」（比較的是 option 本身而非位元組），
+        ;   會讓 str-eq 退化成【只比長度】——實測 `it`/`ab` 被誤判成最後一個
+        ;   二字元關鍵字 `co`（tok.CO=37），導致所有多字元識別字不再是 IDENT，
+        ;   ps-parse-stmt 的 `tk.typ == tok.IDENT` 臂全不命中（let 全失效）。
+        ca-opt = a.byte(i)
+        ca = ca-opt: {
+            ok -> it
+            -> 0
+        }
+        cb-opt = b.byte(i)
+        cb = cb-opt: {
+            ok -> it
+            -> 0
+        }
         ca != cb -> return
     }
     yes = true

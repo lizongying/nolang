@@ -405,7 +405,11 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
     digits = 0
     (i < n) {
         i >= n -> break
-        c = t.byte(i)
+        c-opt = t.byte(i)
+        c = c-opt: {
+            ok -> it
+            ->
+        }
         c == 95 -> {
 
             #{overflow=wrap}
@@ -709,7 +713,11 @@ yaml-unescape-double = (body str) (out str, ok bool) {
     n = body.len-bytes()
     (i < n) {
         i >= n -> break
-        c = body.byte(i)
+        c-opt = body.byte(i)
+        c = c-opt: {
+            ok -> it
+            ->
+        }
         c != 92 -> {
             u1 char = c
             out = out - u1.to-str()
@@ -1328,7 +1336,12 @@ yaml-parser.parse-double = () (idx i64) {
             #{overflow=wrap}
             i = .pos + 1
             i < .n -> {
-                e char = .src.byte(i)
+                e-opt = .src.byte(i)
+                e-b = e-opt: {
+                    ok -> it
+                    ->
+                }
+                e char = e-b
                 raw = raw - e.to-str()
                 .advance()
             }
@@ -2808,7 +2821,11 @@ yaml-hex-char = (v i64) (ch str) {
 yaml-json-escape = (s str) (out str) {
     out = '"'
     i <- [0..s.len-bytes()): {
-        c = s.byte(i)
+        c-opt = s.byte(i)
+        c = c-opt: {
+            ok -> it
+            ->
+        }
         {
             c == 34 -> {
                 out = out - '\\' - '"'
@@ -3011,7 +3028,11 @@ yaml-plain-safe = (s str) (yes bool) {
 yaml-quote = (s str) (out str) {
     out = '"'
     i <- [0..s.len-bytes()): {
-        c = s.byte(i)
+        c-opt = s.byte(i)
+        c = c-opt: {
+            ok -> it
+            ->
+        }
         {
             c == 34 -> {
                 out = out - '\\' - '"'

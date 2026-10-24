@@ -163,8 +163,21 @@ Prefer a faster alternative:
   ```
 - If you only need byte access (e.g. encode/decode, hashing, memcmp), use the escape hatch `s.byte(i)` — it always addresses the i-th byte directly, is **always O(1)**, and does not enter the std function body:
   ```no
-  b = s.byte(0)          ; get the 0-th byte, O(1)
+  b = s.byte(0)          ; get the 0-th byte, type ?byte, O(1)
+  out = 0
+  b: {
+      ok -> { out = it }   ; in range: ok(byte)
+      -> { out = 0 }       ; out of range: nil (empty arm synthesizes the zero value)
+  }
   ```
+  > `s.byte(i)` returns **`?byte`** (since 2026-10-21): the raw byte read used to perform no
+  > bounds check at all, so an out-of-range index was undefined behaviour. It now returns
+  > `nil` out of range, exactly like `arr[i]` / `s[i]` (design/option-unified.md §3.1 item 5).
+  > Consequently `b i64 = s.byte(0)` fails with `15w45dqk` — an explicit plain annotation
+  > next to an option call IS a silent unwrap; consume it with `?=`, a two-step match, or
+  > `_ =`. `#{index-out = DEF}` only picks the value used when the range check fails; the
+  > result stays `?byte`. `txt.byte(i)` behaves the same (`txt` stores its byte length in
+  > field 1).
 
 > The standard library (src/std) byte accesses have all been migrated to `s.byte(i)`: this covers UTF-8 encode/decode (`decode-cp`), comparison (`compare`/`starts-with`/`ends-with`), hashing, slice copy (`slice`/`repeat`/`trim`/`copy`), and `to-bytes`/`to-upper`/`to-lower`/`reverse`/`replace-char`/`count`/`index` in `str.no`/`txt.no`. `no vet` therefore no longer needs to skip standard-library files; element access `x[i]` on `[]byte`/slice/array types remains byte/element indexed and is unchanged and not warned.
 
@@ -173,7 +186,7 @@ Prefer a faster alternative:
 | `s[i]` (ASCII proven) | i-th byte = i-th char | O(1) | proven automatically, no change needed |
 | `s[i]` (ASCII not proven, in a loop) | i-th code point | O(n²) anti-pattern | triggers LSP warning |
 | `s[i]` (ASCII not proven, outside a loop) | i-th code point | O(n) single lookup | no warning |
-| `s.byte(i)` | i-th byte | O(1) | byte-access escape hatch |
+| `s.byte(i)` | i-th byte (`?byte`, nil when out of range) | O(1) | byte-access escape hatch |
 | `for c <- s` | each code point | O(n) single scan | preferred for iteration, no warning |
 
 ## String Methods
@@ -259,7 +272,7 @@ s = s.slice(0, 5)             ; code-point truncation (consistent with s[i])
 s = s.slice-bytes(0, 5)      ; byte truncation
 ```
 
-> **`str` writes are byte-level, `txt` writes are code-point level (intentional divergence)**: the `s[i] = v` above treats `v` as a single **byte** written directly into slot `i` of the underlying buffer (`len` becomes `max(len, i+1)`). For the fixed string `txt`, `t[i] = c` works on **code points**: `c` is re-encoded as UTF-8, the trailing bytes shift, it appends when `i` equals the code-point count, and bytes beyond the 255-byte cap are dropped. Both reads (`s[i]` / `t[i]`) return a code-point `char`; only the write semantics differ. To do a raw byte-level write on a `txt`, use `t.set-byte(i, b)`.
+> **`str` writes are byte-level, `txt` writes are code-point level (intentional divergence)**: the `s[i] = v` above treats `v` as a single **byte** written directly into slot `i` of the underlying buffer (`len` becomes `max(len, i+1)`). For the fixed string `txt`, `t[i] = c` works on **code points**: `c` is re-encoded as UTF-8, the trailing bytes shift, it appends when `i` equals the code-point count, and bytes beyond the 255-byte cap are dropped. Both reads (`s[i]` / `t[i]`) return a code-point `char`; only the write semantics differ. To do a raw byte-level write on a `txt`, use `t.set-byte(i, b byte)` (`b` is a `byte`, returns `?bool`: nil and the write is skipped when the index exceeds the 255-byte physical capacity, `some(true)` on success; bounds are measured against physical capacity rather than `len`).
 
 ## Pre-allocation (Builtin Syntax)
 

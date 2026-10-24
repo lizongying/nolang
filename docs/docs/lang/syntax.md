@@ -1437,8 +1437,6 @@ print(r1.to-str() + ' ' + r2.to-str())
 - **語句級 `co`（協程組之外）**：當 `co` 出現在協程組之外（例如在函式體裡 `d = co worker(5)`），編譯器會把它包成 `run worker-async(5)` + `awy` 的內聯 await，使 `d` 取到的是結果值而非 task 句柄。
 - **底層仍是染色無棧協程**：`co` 只是語法糖。`{ r1 = co worker(1); r2 = co worker(2) }` 等價於協程組展開——先後 spawn `worker-async`，最後一起 `awy`。
 
-診斷開關：`NOLANG_ASYNC_GO=0` 可停用單態化（僅作對照）。
-
 ### 多重賦值
 
 函數可以返回多個值，調用時使用多重賦值接收：
@@ -2678,6 +2676,29 @@ comp = () (result ?i64) {
 **nil vs err：** 當缺失是正常/預期的結果（空堆疊、鍵不存在、EOF）時用 `nil`；當缺失代表實際的錯誤狀態（I/O 失敗、輸入無效、連接被拒）時用 `err('msg')`。
 
 **例外：** 當函數需要返回多個獨立值（如 `(name str, value str, ok bool)`）時，可保留多返回值模式。
+
+**多返回值最多只能有一個 `?T`（硬錯誤）：** 函式宣告的返回參數中，`?T` 至多一個。`?T` 是**單一**的錯誤通道——函式體內的 `?=` 提前返回時，只能把失敗放進那個唯一的 option 返回參數；若同時宣告兩個 `?T`，編譯器只填得上第一個，呼叫方會拿到半填的 tuple（`(err, nil)`），且無從判斷哪個值代表失敗：
+
+```no
+pair = () (a ?i64, b ?i64) {     ; 錯誤：兩個 ?T 返回參數
+    a = ok(1)
+    v ?= boom()                  ; boom() 回 err('boom')
+    a = v
+    b = ok(2)                    ; 永不執行 —— 呼叫方看到 (err, nil)
+}
+```
+
+正確寫法是把獨立值宣告成 plain 型別，只留一個 `?T` 當錯誤通道：
+
+```no
+lookup = (k str) (value str, found bool, err ?str) {
+    value = ''
+    found = false
+    err = nil
+}
+```
+
+報錯訊息形如：`` function 'pair' declares 2 option (?T) results ('a', 'b'); only one result may be ?T … [moptres1] ``。方法定義的隱式 `self` 接收者是呼叫方別名的出參，不佔用這個名額；`#{c}` extern 宣告同樣受限。
 
 ### 錯誤捕獲賦值（`=` 就地捕獲）
 

@@ -1,0 +1,95 @@
+; test-setbyte-fallible: set-byte 的可失敗語意（MIR 後端）
+;
+; txt.set-byte / str.set-byte 簽名為 (i i64, b byte) (ok ?bool)：
+;   - 索引在「實體容量」內 → 回傳 some(true) 且真的寫入
+;   - 索引越界（>= 容量，或負數）→ 回傳 nil 且「跳過寫入」（緩衝區不變、不野寫）
+; 邊界以實體容量為準（txt 固定 255、%str-long 用 cap），而非 len。
+; 每次 `no run` 輸出應為純 ok 行；任何 FAIL 行都代表回歸。
+
+ck = (label str, cond bool) {
+    !cond -> print('FAIL', label)
+    cond -> print('ok', label)
+}
+
+; ── txt：255 位元組固定容量 ──
+t txt = 'abc'
+
+; 範圍內：some(true)
+present bool = false
+value bool = false
+r1 = t.set-byte(0, 90)
+r1: {
+    ok -> {
+        present = true
+        value = it
+    }
+    -> present = false
+}
+ck('txt-in-range-present', present)
+ck('txt-in-range-true', present && value)
+
+; 寫入生效
+after bool = false
+w0 = t.byte(0)
+w0: {
+    ok -> after = (it == 90)
+    -> after = false
+}
+ck('txt-write-effect', after)
+
+; 越界（255 >= 容量）：nil
+oob bool = false
+r2 = t.set-byte(255, 71)
+r2: {
+    ok -> oob = true
+    -> oob = false
+}
+ck('txt-oob-nil', !oob)
+
+; 負數索引：nil
+neg bool = false
+r3 = t.set-byte(-1, 71)
+r3: {
+    ok -> neg = true
+    -> neg = false
+}
+ck('txt-neg-nil', !neg)
+
+; 越界寫入不改變既有內容（byte 0 仍是 90）
+keep bool = false
+b0 = t.byte(0)
+b0: {
+    ok -> keep = (it == 90)
+    -> keep = false
+}
+ck('txt-oob-untouched', keep)
+
+; ── str：堆上長字串，容量取自 cap 欄位 ──
+s = 'hello world this is a longer string that is definitely stored as a str-long buffer'
+
+sp bool = false
+r4 = s.set-byte(0, 72)
+r4: {
+    ok -> sp = true
+    -> sp = false
+}
+ck('str-in-range-present', sp)
+
+so bool = false
+r5 = s.set-byte(99999, 71)
+r5: {
+    ok -> so = true
+    -> so = false
+}
+ck('str-oob-nil', !so)
+
+; str 寫入生效：首字元改為 'H'（72）
+se bool = false
+c0 = s.byte(0)
+c0: {
+    ok -> se = (it == 72)
+    -> se = false
+}
+ck('str-write-effect', se)
+
+print('done')

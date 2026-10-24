@@ -78,7 +78,7 @@
 ; 槽位分區（每一區都從 0 起算，互不重疊）：
 ;   c0..c2   KIDS 各組的元素數（由 ast.set-count 填入）
 ;   c3..c5   SIG 的三組節點數：泛型參數 / 參數 / 回傳值
-;   s0..s8   純量字串槽（MAX-STR-SLOTS = 9，由生成器實測）
+;   s0..s7   純量字串槽（MAX-STR-SLOTS = 8，由生成器實測）
 ;   varunion / varflag   SIG 的 VariadicUnion 字串 id / IsVariadic
 ;   doc / cmt            Doc / Comment 的**首條**註解文字 id（0 = 無群組，-1 = 空群組）
 ;   free / btw           FreeComments / BetweenComments 的註解條數（-1 = 無群組）
@@ -355,7 +355,11 @@ ast-str-hash = (sx str) (h i64) {
     i = 0
     n = sx.len-bytes()
     (i < n) {
-        c = sx.byte(i)
+        c-opt = sx.byte(i)
+        c = c-opt: {
+            ok -> it
+            -> 0
+        }
         #{overflow=wrap}
         h = h * 31 + c
         i = i + 1
@@ -622,7 +626,12 @@ sub = (s str, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
     (i < b) {
-        t.push-byte(s.byte(i))
+        sb-opt = s.byte(i)
+        sbv = sb-opt: {
+            ok -> it
+            -> 0
+        }
+        t.push-byte(sbv)
 
         #{overflow=wrap}
         i = i + 1
@@ -636,7 +645,11 @@ trim-nl = (s str) (r str) {
     (n > 0) {
 
         #{overflow=wrap}
-        b = s.byte(n - 1)
+        b-opt = s.byte(n - 1)
+        b = b-opt: {
+            ok -> it
+            -> 0
+        }
         b != 10 -> break
 
         #{overflow=wrap}

@@ -113,6 +113,20 @@ finding {
 ; 位元組分類
 ; ═══════════════════════════════════════════════════════════════════
 
+; shs-byte: 取 s 的第 i 個位元組（越界折成 0）。
+;
+; `s.byte(i)` 自 2026-10-21 起回傳 `?byte`（越界為 nil，見 docs/design/option-unified.md
+; §3.1）。本檔所有讀取都落在 `i < len` 的守衛迴圈內，nil 分支不可達；但型別上仍是
+; option，直接餵給 shs-is-*（`(c i64)`）會被 fxxoptarg 拒絕。這支 helper 是唯一
+; 的解包點，讓 40 餘個呼叫點維持原本的一行寫法。
+shs-byte = (s str, i i64) (b i64) {
+    o = s.byte(i)
+    b = o: {
+        ok -> it
+        ->
+    }
+}
+
 shs-is-blank = (c i64) (yes bool) {
     yes = false
     c == B-SP -> yes = true
@@ -163,7 +177,16 @@ shs-sub = (s str, a i64, b i64) (r str) {
 
     #{overflow=wrap}
     (i < b) {
-        t.push-byte(s.byte(i))
+        ; ⚠️ `str.byte(i)` 回傳 **?byte**：直接 push 進 []byte 會寫進 option 的
+        ;   內聯佈局而非碼點值（與 compiler/src/util/sb.no 的 sb.push 同一個坑），
+        ;   產出的切片內容全 NUL ⇒ 上層 `shs-byte(xs, …)` 型別判讀連鎖失真。
+        so = s.byte(i)
+        sv = so: {
+            ok -> it
+
+            -> 0
+        }
+        t.push-byte(sv)
 
         #{overflow=wrap}
         i = i + 1
@@ -180,7 +203,7 @@ shs-rest-blank = (s str, j i64) (yes bool) {
     (j < n) {
 
         #{index-out=zero}
-        c = s.byte(j)
+        c = shs-byte(s, j)
         c == B-LF -> j = n
         c != B-LF -> {
             shs-is-blank(c) -> {
@@ -225,7 +248,7 @@ shs-semi-block = (s str, i i64) (yes bool) {
     (i + 1 < n) -> {
 
         #{index-out=zero}
-        c = s.byte(i + 1)
+        c = shs-byte(s, i + 1)
         c == B-SEMI -> {
 
             #{overflow=wrap}
@@ -244,7 +267,7 @@ shs-slash-line = (s str, i i64) (yes bool) {
     (i + 1 < n) -> {
 
         #{index-out=zero}
-        c = s.byte(i + 1)
+        c = shs-byte(s, i + 1)
         c == B-SLASH -> yes = true
     }
 }
@@ -258,7 +281,7 @@ shs-block-end = (s str, i i64) (yes bool) {
     (i + 1 < n) -> {
 
         #{index-out=zero}
-        c = s.byte(i + 1)
+        c = shs-byte(s, i + 1)
         c == B-SEMI -> {
 
             #{overflow=wrap}
@@ -289,7 +312,7 @@ shs-mask = (s str) (out str) {
     (i < n) {
 
         #{index-out=zero}
-        c = s.byte(i)
+        c = shs-byte(s, i)
         st: {
             0 -> {
                 c == B-BS -> {
@@ -584,7 +607,7 @@ shs-lines = (s str) (out []str) {
     (i < n) {
 
         #{index-out=zero}
-        c = s.byte(i)
+        c = shs-byte(s, i)
         c == B-LF -> {
             out.push(cur.str())
             cur = sb.init(64)
@@ -605,7 +628,7 @@ shs-trim-range = (ln str) (a i64, b i64) {
     i <- [0..n): {
 
         #{index-out=zero}
-        c = ln.byte(i)
+        c = shs-byte(ln, i)
         shs-is-blank(c) -> {
 
             #{overflow=wrap}
@@ -621,7 +644,7 @@ shs-trim-range = (ln str) (a i64, b i64) {
     k <- [a..n): {
 
         #{index-out=zero}
-        c2 = ln.byte(k)
+        c2 = shs-byte(ln, k)
         shs-is-blank(c2) == false -> j = k
     }
 
@@ -642,13 +665,13 @@ shs-type-decl = (ln str) (yes bool, name str) {
     a != 0 -> return
 
     #{index-out=zero}
-    c0 = ln.byte(a)
+    c0 = shs-byte(ln, a)
     shs-is-ident-start(c0) == false -> return
     je = a
     k <- [a..b): {
 
         #{index-out=zero}
-        ch = ln.byte(k)
+        ch = shs-byte(ln, k)
         shs-is-ident-char(ch) -> {
 
             #{overflow=wrap}
@@ -666,7 +689,7 @@ shs-type-decl = (ln str) (yes bool, name str) {
     k2 <- [je..b): {
 
         #{index-out=zero}
-        sp = ln.byte(k2)
+        sp = shs-byte(ln, k2)
         shs-is-blank(sp) == false -> {
             j = k2
             hit = true
@@ -676,7 +699,7 @@ shs-type-decl = (ln str) (yes bool, name str) {
     hit == false -> return
 
     #{index-out=zero}
-    ch2 = ln.byte(j)
+    ch2 = shs-byte(ln, j)
     ch2 == B-LC -> {
 
         #{overflow=wrap}
@@ -696,13 +719,13 @@ shs-meth-decl = (ln str) (yes bool, owner str) {
     a != 0 -> return
 
     #{index-out=zero}
-    c0 = ln.byte(a)
+    c0 = shs-byte(ln, a)
     shs-is-ident-start(c0) == false -> return
     j = a
     k <- [a..b): {
 
         #{index-out=zero}
-        ch = ln.byte(k)
+        ch = shs-byte(ln, k)
         shs-is-ident-char(ch) -> {
 
             #{overflow=wrap}
@@ -713,7 +736,7 @@ shs-meth-decl = (ln str) (yes bool, owner str) {
     j >= b -> return
 
     #{index-out=zero}
-    ch2 = ln.byte(j)
+    ch2 = shs-byte(ln, j)
     ch2 == B-DOT -> {
         owner = shs-sub(ln, a, j)
         yes = true
@@ -734,14 +757,14 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     a != 0 -> return
 
     #{index-out=zero}
-    c0 = ln.byte(a)
+    c0 = shs-byte(ln, a)
     shs-is-ident-start(c0) == false -> return
 
     je = a
     k <- [a..b): {
 
         #{index-out=zero}
-        ch = ln.byte(k)
+        ch = shs-byte(ln, k)
         ok = false
         oc = shs-is-ident-char(ch)
         oc -> ok = true
@@ -763,7 +786,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     k2 <- [je..b): {
 
         #{index-out=zero}
-        sp = ln.byte(k2)
+        sp = shs-byte(ln, k2)
         shs-is-blank(sp) == false -> {
             j = k2
             hit = true
@@ -773,7 +796,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     hit == false -> return
 
     #{index-out=zero}
-    ce = ln.byte(j)
+    ce = shs-byte(ln, j)
     ce != B-EQ -> return
 
     ; 下一個非空白必須是 '('（從 '=' 之後開始找）
@@ -785,7 +808,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     k3 <- [q0..b): {
 
         #{index-out=zero}
-        sp2 = ln.byte(k3)
+        sp2 = shs-byte(ln, k3)
         shs-is-blank(sp2) == false -> {
             p1 = k3
             hit2 = true
@@ -795,7 +818,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     hit2 == false -> return
 
     #{index-out=zero}
-    cp = ln.byte(p1)
+    cp = shs-byte(ln, p1)
     cp != B-LP -> return
 
     ; 找第一組的配對 ')'
@@ -804,7 +827,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     k4 <- [p1..b): {
 
         #{index-out=zero}
-        q = ln.byte(k4)
+        q = shs-byte(ln, k4)
         q == B-LP -> {
 
             #{overflow=wrap}
@@ -831,7 +854,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     k5 <- [q1..b): {
 
         #{index-out=zero}
-        sp3 = ln.byte(k5)
+        sp3 = shs-byte(ln, k5)
         shs-is-blank(sp3) == false -> {
             p2 = k5
             hit3 = true
@@ -844,7 +867,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     }
 
     #{index-out=zero}
-    cp2 = ln.byte(p2)
+    cp2 = shs-byte(ln, p2)
     cp2 != B-LP -> {
         yes = true
         return
@@ -856,7 +879,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     k6 <- [p2..b): {
 
         #{index-out=zero}
-        r2 = ln.byte(k6)
+        r2 = shs-byte(ln, k6)
         r2 == B-LP -> {
 
             #{overflow=wrap}
@@ -901,7 +924,7 @@ shs-map-at = (ln str, i i64) (yes bool) {
     (j < n) {
 
         #{index-out=zero}
-        ch = ln.byte(j)
+        ch = shs-byte(ln, j)
         ch == B-RB -> {
             rb-opt = j
             rb-opt: {
@@ -924,20 +947,31 @@ shs-map-at = (ln str, i i64) (yes bool) {
     (rb > i + 1) -> {
 
         #{overflow=wrap}
-        xs = shs-sub(ln, i + 1, rb)
+        xs-opt = shs-sub(ln, i + 1, rb)
+
+        ; 兩段式解包（同 ps-hash 的 c-opt 慣用法）：shs-sub 的實參 `i + 1` 是裸
+        ;   算術（本身產生 option）⇒ 捕獲 pass 把 xs-opt 弄成 `?str`。方法呼叫
+        ;   （xs-opt.len-bytes()）有 receiver 剝離可隱式收，但函數實參沒有——
+        ;   直接拿 xs-opt 餵給 shs-byte（`(s str, i i64)`）會被 fxxoptarg 擋，
+        ;   必須先解包成 plain str。nil/err 臂折成空串：空串 len-bytes() 為 0，
+        ;   下面 `m == 0 -> return` 直接收住（空內容 ⇒ 切片，語義正確）。
+        xs = xs-opt: {
+            ok -> it
+            -> ''
+        }
         m = xs.len-bytes()
         m == 0 -> return
         alld = true
         k <- [0..m): {
 
             #{index-out=zero}
-            d = xs.byte(k)
+            d = shs-byte(xs, k)
             shs-is-digit(d) == false -> alld = false
         }
         alld -> return
 
         #{index-out=zero}
-        d0 = xs.byte(0)
+        d0 = shs-byte(xs, 0)
         (m == 1) -> {
             d0 == B-QM -> return
         }
@@ -952,7 +986,7 @@ shs-line-has-map = (ln str) (yes bool) {
     i <- [0..n): {
 
         #{index-out=zero}
-        ch = ln.byte(i)
+        ch = shs-byte(ln, i)
         ch == B-LB -> {
             r = shs-map-at(ln, i)
             r -> {
@@ -979,10 +1013,10 @@ shs-find-word = (ln str, w str) (found bool, col i64) {
         k <- [0..wn): {
 
             #{index-out=zero}
-            ca = ln.byte(i + k)
+            ca = shs-byte(ln, i + k)
 
             #{index-out=zero}
-            cb = w.byte(k)
+            cb = shs-byte(w, k)
             ca != cb -> hit = false
         }
         hit -> {
@@ -991,7 +1025,17 @@ shs-find-word = (ln str, w str) (found bool, col i64) {
             (i > 0) -> {
 
                 #{index-out=zero}
-                p = ln.byte(i - 1)
+                p-opt = shs-byte(ln, i - 1)
+                ; ⚠️ 實參 `i - 1` 是裸算術（D6：本身產生 option）⇒ 捕獲 pass 會把
+                ;   p-opt 預宣告成 `?i64` 並在 ok 臂才賦真值。直接拿 p-opt 餵給
+                ;   shs-is-ident-char（`(c i64)`）會被 fxxoptarg 拒絕，必須兩段式
+                ;   解包（與 shs-sub / sb.push 的 ?byte 解包同形）。nil/err 折成 0
+                ;   ——`i > 0` 已保證 `i - 1` 不會underflow，該兩臂實際不可達。
+                p = p-opt: {
+                    ok -> it
+
+                    -> 0
+                }
                 shs-is-ident-char(p) == false -> before-ok = true
             }
             after-ok = false
@@ -1002,7 +1046,7 @@ shs-find-word = (ln str, w str) (found bool, col i64) {
             (ae < n) -> {
 
                 #{index-out=zero}
-                q = ln.byte(ae)
+                q = shs-byte(ln, ae)
                 shs-is-ident-char(q) == false -> after-ok = true
             }
             before-ok -> {
@@ -1030,19 +1074,19 @@ shs-has-ffi-c = (ln str) (yes bool) {
     (i + 3 < n) {
 
         #{index-out=zero}
-        c0 = ln.byte(i)
+        c0 = shs-byte(ln, i)
         c0 == B-HASH -> {
 
             #{index-out=zero}
-            c1 = ln.byte(i + 1)
+            c1 = shs-byte(ln, i + 1)
             c1 == B-LC -> {
 
                 #{index-out=zero}
-                c2 = ln.byte(i + 2)
+                c2 = shs-byte(ln, i + 2)
                 c2 == B-LOWER-C -> {
 
                     #{index-out=zero}
-                    c3 = ln.byte(i + 3)
+                    c3 = shs-byte(ln, i + 3)
                     c3 == B-RC -> yes = true
                     c3 == B-SP -> yes = true
                     c3 == B-TAB -> yes = true
@@ -1070,7 +1114,7 @@ shs-name-reserved = (nm str) (yes bool) {
     n != 1 -> return
 
     #{index-out=zero}
-    c = nm.byte(0)
+    c = shs-byte(nm, 0)
     c == B-LOWER-T -> yes = true
     c == B-LOWER-N -> yes = true
     c == B-LOWER-V -> yes = true
@@ -1088,10 +1132,10 @@ shs-str-gt = (a str, b str) (yes bool) {
     i <- [0..m): {
 
         #{index-out=zero}
-        ca = a.byte(i)
+        ca = shs-byte(a, i)
 
         #{index-out=zero}
-        cb = b.byte(i)
+        cb = shs-byte(b, i)
         ca > cb -> {
             yes = true
             return
@@ -1115,10 +1159,10 @@ shs-str-eq = (a str, b str) (yes bool) {
     i <- [0..na): {
 
         #{index-out=zero}
-        ca = a.byte(i)
+        ca = shs-byte(a, i)
 
         #{index-out=zero}
-        cb = b.byte(i)
+        cb = shs-byte(b, i)
         ca != cb -> {
             yes = false
             return
@@ -1167,11 +1211,19 @@ shs-sort-strs = (arr []str) (r []str) {
         #{index-out=zero}
         t = idx[a]
 
-        #{index-out=zero}
-        idx[a] = idx[best]
+        ; D9 place-write：`idx[a] = idx[best]` 這種「下標直接賦值」被 idxwrite 拒絕
+        ;   （越界寫會變成未檢查的 OOB 寫）。改用 place-match：ok 臂的 it 是元素
+        ;   「位置」，可讀可寫；越界走 `_` 臂什麼都不做。本函式無 option 結果參數，
+        ;   用不了 `?=` 上拋。a/best 皆 < n，ok 臂必然到達。
+        idx[a]: {
+            ok -> it = idx[best]
+            -> _
+        }
 
-        #{index-out=zero}
-        idx[best] = t
+        idx[best]: {
+            ok -> it = t
+            -> _
+        }
     }
     out []str = []
     k <- [0..n): {
@@ -1197,13 +1249,13 @@ shs-is-no-file = (p str) (yes bool) {
     i = n - 3
 
     #{index-out=zero}
-    c1 = p.byte(i)
+    c1 = shs-byte(p, i)
 
     #{index-out=zero, overflow=wrap}
-    c2 = p.byte(i + 1)
+    c2 = shs-byte(p, i + 1)
 
     #{index-out=zero, overflow=wrap}
-    c3 = p.byte(n - 1)
+    c3 = shs-byte(p, n - 1)
     c1 == B-DOT -> {
         c2 == B-LOWER-N -> {
             c3 == B-LOWER-O -> yes = true
@@ -1304,7 +1356,7 @@ shs-check-file = (path str, acc []finding) (r []finding) {
         a >= b -> continue
 
         #{index-out=zero}
-        c0 = ln.byte(a)
+        c0 = shs-byte(ln, a)
         cur >= 0 -> {
             c0 == B-RC -> {
 
@@ -1313,7 +1365,15 @@ shs-check-file = (path str, acc []finding) (r []finding) {
                 continue
             }
             hm = shs-line-has-map(ln)
-            hm -> tmaps[cur] = true
+            hm -> {
+
+                ; 同 shs-sort-strs：下標直接賦值須走 place-match（idxwrite）。
+                ; cur >= 0 已由外層守衛保證，ok 臂必然到達。
+                tmaps[cur]: {
+                    ok -> it = true
+                    -> _
+                }
+            }
             continue
         }
         yes1, nm1 = shs-type-decl(ln)
@@ -1419,7 +1479,7 @@ shs-check-file = (path str, acc []finding) (r []finding) {
                     k3 <- [a3..b3): {
 
                         #{index-out=zero}
-                        ch3 = ln3.byte(k3)
+                        ch3 = shs-byte(ln3, k3)
                         shs-is-ident-char(ch3) -> {
 
                             #{overflow=wrap}

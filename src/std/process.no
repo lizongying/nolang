@@ -455,10 +455,12 @@ process.wait-nohang = () (status ?i64) {
         status = .exit-code
         return
     }
-    code = process-waitpid(.pid, WNOHANG)
-
-    ; WNOHANG returns 0 if child still running
-    code == 0 -> return
+    ; 用 waitpid-nohang：-1=子進程仍在執行，否則=退出碼(WEXITSTATUS)。
+    ; 不可用 process-waitpid(.pid, WNOHANG)——它回傳「已解碼退出碼」，
+    ; 子進程仍在執行時回傳 0，與「正常退出碼 0」無法區分，會把 rc=0
+    ; 的進程誤判為仍在執行，直到超時才返回。
+    code = process-waitpid-nohang(.pid)
+    code == -1 -> return
     .exit-code = code
     .running = 0
     status = code

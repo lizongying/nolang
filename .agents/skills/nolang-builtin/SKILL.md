@@ -271,6 +271,21 @@ lowering 写在 legacy `src/build/llvm/call_stdlib.go` 的 `callDatabase`；该�
 - 删 builtin 注册时，同步删 `src/std` 里对应的 `#{buildin}` 桩，再 `make gen` 重生 stdsig
   （否则烘焙表里仍留着这些名字）。
 
+## Intercepted 內建的可失敗（option）返回
+
+`Intercepted: true` 的內建（如 `str/txt` 的 raw-byte 讀寫器 `.byte` / `.set-byte`）由 MIR
+inline 展開、無 std 函式體。讓它們「可失敗」的做法：`BuiltinMethodList` 條目的 `Return`
+帶 `&parser.NullableType{Type: ...}`（如 `?bool`），參數用 `parser.TypeByte` 等窄型別。
+呼叫端參數檢查會**跳過 option 實參**（`funcargs.go` 的 `strings.HasPrefix(argType, "?")`
+skip），所以 `out.set-byte(i, s.byte(i))` 這類 option 值直接可用；純 i64/char 實參才需 `& 255` 窄化。
+
+emitter 注意：對**有副作用**的寫者（`set-byte`），即使結果被丟棄（`inst.Dst <= NoVal`）也
+**必須照常發射那條 store**（用 `select` 把越界的寫入導到一塊 hoist 到 entry 的 1 位元組 scratch、
+索引鉗到 0，避免野寫），只在真有 `%option` 目的欄位時才組裝 option；這與純讀者
+`emitBuiltinRawByteAt`（`Dst <= NoVal` 直接 early-return）不同。邊界以**實體容量**為準
+（`%txt` 固定 255、`%str-long` 用 `cap` 欄位 field 1）而非 `len`，否則「先填緩衝再 set len」的
+構建內建會全部失效。
+
 ## 常见问题排查
 
 ### "xxx is not defined" 错误

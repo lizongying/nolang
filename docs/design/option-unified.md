@@ -99,13 +99,28 @@
 2. **无符号整数算术** `+ - *`：与现状一致，同样产生 option（`/ %` 不产生）。
 3. **容器读取** `arr[i]`：定长数组 / 切片 / vec；越界 → `nil`。**含当前可证明在界内的读取**（D6）。
 4. **`str` / `txt` 索引** `s[i]`：越界 → `nil`，成功 → `ok(char)`（D6）。
+5. **`str.byte(i)` / `txt.byte(i)`**（2026-10-21 修订，原列在"不产生 option"）：越界 → `nil`，
+   成功 → `ok(byte)`。裸字节读取此前**完全不做边界检查**，越界索引是未定义行为；`.byte`
+   是公开方法，因此与 `arr[i]` 对齐：失败即 `nil`，不得再读越界缓冲。
 
 不产生 option（保持现状）：浮点算术、`char` 算术、位运算、比较、`&&`/`||`、  
-`str` 的 `-`/`+` 拼接、`.byte(i)` 方法调用。
+`str` 的 `-`/`+` 拼接。`.set-byte(i, b)` 无结果，同样不涉及。
 
 > **注解不改变上述分类（D1）**：`#{overflow=…}` / `#{index-out=…}` **不改变结果类型**，  
 > 只改变"失败时怎么取值"。`#{overflow=wrap}` ⏎ `x = a + b` 的 `x` **仍是 `?i64`**，  
 > 只是溢出时 `ok` 的 payload 是回绕值而非 `err`。
+>
+> **2026-10-21 修订说明（第 5 条）**：`.byte(i)` 从"保持现状"移入本列表，理由是它不是
+> 语言内部的索引语法，而是**用户可见的公开方法**，用户需求明确"可能出错"——越界必须
+> 可观测。修订一并带出两条实现约束：
+>
+> - **`str.byte` / `txt.byte` 必须在 std 有 `#{buildin}` 声明**（`str.byte = (i i64) (c ?byte)`），
+>   不允许"只有 Go 表、std 无声明"的内建——否则 LSP 找不到方法定义，签名表也会与 Go 表漂移。
+> - **"显式 plain 标注 + option 呼叫"同样是静默拆包**：`b i64 = s.byte(0)` 必须报
+>   `15w45dqk`（与 `k i64 = a + b` 同一条规则、同一个 trace）。实现见 checker.go 的
+>   `optionResultOfCallTarget`：右值是**可静态判定返回 option** 的方法呼叫时，把推断型别
+>   升格为 `?T` 交给 15w45dqk，解析来源依次是 std 签名表、Go builtin 表的 str/txt 裸名回落；
+>   结果仍带型别变参（泛型 `?v`）或多模歧义的键一律不猜。
 
 ### 3.2 绑定与类型推断（统一规则）
 
@@ -522,3 +537,69 @@ walkStmt/walkExpr + report + seen 去重 + canonPath 归属，`checker/checker.g
 - 多赋值目标 codemod 形态（`x, a[i] = f()` 整体包 match 还是逐目标）。
 - LSP「插入解包」quickfix（仿现有 `#{index-out = 0}` quickfix，`lsp/server.go:903`）不在
   本决策范围，后续另开。
+
+## 13. `==` / `!=` 的语义（2026-10-21 定案）
+
+### 13.1 两种含义，必须分开
+
+同一个 `a == b` 形状在 MIR 里承载两种完全不同的语义：
+
+| 形态 | 语义 | 比较的部分 |
+|---|---|---|
+| `o == nil` / `o == err` / `o == ok`，以及**每一个 match 臂**（`o: { ok -> ... }` 降糖成 `o == ok`） | **变体测试**（discriminant test） | 只比 tag |
+| 两个 `?T` 值互相比较（`a == b`，`a`、`b` 都是 option） | **值比较** | tag **且** payload |
+
+第二种此前也走第一种路径，于是 `==` 退化成「两边 tag 相同吗」：`ok(1) == ok(2)` 为
+**true**、`ok(1) != ok(2)` 为 false、`err('a') == err('b')` 为 true。payload 从未被读过。
+
+### 13.2 判据：bare 变体关键字
+
+两者在 MIR 里是同一条 `OpEq`，唯一可靠的区分点是**右操作数是不是 bare 变体关键字**：
+bare `ok` / `err` / `nil` / `some` 是**模式**，payload 是零常量（`nil` 干脆没有 payload）；
+`ok(1)` / `err('msg')` 是**构造真实值**，payload 是真载荷。
+
+因此：`lowerer.bareVariant` 记录 bare 关键字产生的 ValueID，KInfix 在两边任一是它时给比较
+指令打上 `Inst.TagOnly`；`emitCmp` 的 `aOpt && bOpt` 分支据此分流。
+
+⚠️ 若不做这个区分而直接给所有 option 比较加 payload，**std 里每一个 `?T` match 都会静默
+失效**：臂侧 payload 是 0，被比较的真实 payload 是 1，臂永不命中。反向同理：只比 tag 就是
+本文档描述的原始缺陷。两个方向都由 `src/mir/option_eq_test.go` 钉住（含非空洞性验证）。
+
+### 13.3 可结构比较的载荷
+
+| payload LLVM 类型 | 相等性 |
+|---|---|
+| `i1` / `i8` / `i16` / `i32` / `i64` | `icmp eq` |
+| `double` | `fcmp oeq` |
+| `%str-long` | `@str_eq`（长度 + 字节） |
+| `%txt` | `@txt_eq`（inline memcmp） |
+
+其余（`%vec` 切片、struct、定长数组、装箱载荷）**回退为只比 tag**：它们没有元素级相等性，
+按字节 memcmp 比的是堆指针，不是 `==` 在源码里的意思。回退是有意的、有注释的，不是遗漏。
+
+`nil` 无需额外守卫：`optStoreTag` 会把 payload 清零，两个 nil 的 payload 天然相等。
+
+### 13.4 实测影响（`tests/` 481 档，同一棵树 control vs 修复后）
+
+唯一行为变化是 `tests/str-test.no`，且**每一处差异都是修复**——修复后的输出与测试文件自己
+写的 `expect:` 注释逐条吻合，control 不吻合：
+
+| 站点 | `expect:` | 修复前 | 修复后 |
+|---|---|---|---|
+| `str.index('world')` / `('xyz')` | 6 / -1 | 0 / 0 | 6 / -1 |
+| `str.contains('xyz')` | 0 | 1 | 0 |
+| `str.rindex('xyz')` | -1 | 0 | -1 |
+| `str.rindex-from('l',3/2/4)` | 3 / 3 / -1 | 4 / 4 / 4 | 3 / 3 / -1 |
+| `str.replace-n('-','_',1)` | `a_b-c` | `_----` | `a_b-c` |
+| `str.replace-n('-','_',9)` | `a_b_c` | `_____` | `a_b_c` |
+| `str.split-n('-',1)` | 2 → `a`, `b-c` | 垃圾 | 正确 |
+
+即：tag-only 比较此前在静默破坏 std 的字符串查找/替换族。
+
+### 13.5 已知遗留
+
+- `?T` 的 payload 为标量而错误信息是 `str` 时（`e ?i64 = err('a')`），消息经
+  `optStoreRawBytes` 类型双关进标量槽，读回来的是 `%str-long` 的**首字段（len）**，不是消息
+  本身。于是 `err('a') == err('b')` 仍为 true（两者 len 都是 1）。这是 `?非str` 承载 err
+  消息这一既有设计的性质，与本次比较语义无关（修复前后一致）。
+

@@ -469,9 +469,20 @@ url-decode = (s str) (out str) {
                 ; %XX（僅當後兩字节均為有效十六進位才解碼，否則直通 '%'）
 
                 #{overflow=wrap}
-                h1 = s.byte(i + 1)
+                h1-opt = s.byte(i + 1)
 
-                h2 = s.byte(i + 2)
+                h1 i64 = h1-opt: {
+                    ok -> it
+                    ->
+                }
+
+                h2-opt = s.byte(i + 2)
+
+                h2 i64 = h2-opt: {
+                    ok -> it
+                    ->
+                }
+
                 v1 = -1
                 v2 = -1
 

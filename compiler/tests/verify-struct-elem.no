@@ -1,0 +1,191 @@
+; verify-struct-elem.no — 直接讀 AST 節點驗證 IndexExpression 臂的結構化元素型別。
+;
+; 繞開崩潰的 ast.dump（複雜樹會觸發 SIGTRAP：trace/BPT trap，為【獨立】既有缺陷），
+; 改用 ast.kind-at / ast.kid-at / ast.type-string / ast.str-at 直接斷言型別節點結構。
+;
+; 執行： ./bin/no run compiler/tests/verify-struct-elem.no
+;
+; 看守四個分支（對齊 Go buildType + markInferred）：
+;   ① `u [][2]i64` + `f = u[0]` ⇒ elem `[2]i64` ⇒【結構化】ArrayType{size:2, elem:i64}
+;   ② `u [][]i64`  + `f = u[0]` ⇒ elem `[]i64`  ⇒【結構化】SliceType{elem:i64}
+;   ③ `u []?i64`   + `f = u[0]` ⇒ elem `?i64`   ⇒【結構化】NullableType{elem:i64}
+;   ④ `v = [1,2,3]` + `e0 = v[0]` ⇒ elem `i64` ⇒【扁平】NamedType{i64, inferred}
+;      （test-let-idx-elem-infer 的既有行為，不得被破壞）
+;
+; ⚠️ nolang 控制流守則：同塊的【裸尾臂 `-> {…}`】會被當成尾隨無條件陳述執行
+;    （見 ps.no:1082 的 handled 守則）。故本檔所有 else 分支一律以旗標守衛。
+
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/tok
+# /compiler/src/ps
+
+; 回傳 target 具名 let 的 type 子節點索引（找不到回 0）
+find-type = (t ast, root i64, target str) (ftype i64) {
+    ftype = 0
+    rnode = ast.nd-at(t, root)
+    base = rnode.kid0
+    nk = ast.nkid-at(t, root)
+    k = 0
+    (k < nk) {
+        s = ast.kid-at(t, base + k)
+        sd = ast.nd-at(t, s)
+        sd.kind == asp.K_LET_STATEMENT -> {
+            nm = ast.str-at(t, sd.s0)
+            nm == target -> {
+                ftype = ast.kid-at(t, sd.kid0)
+            }
+        }
+        #{overflow=wrap}
+        k = k + 1
+    }
+}
+
+ok = 1
+
+; ── ① ArrayType ────────────────────────────────────────────────────
+t1 = ast.make()
+p1 = ps.new('u [][2]i64 = [[1, 2]]\nf = u[0]\n')
+r1 = ps.parse(t1, p1)
+ft1 = find-type(t1, r1, 'f')
+
+msg1 = 'CASE1 f=[2]i64 (ArrayType):\n'
+h1 = 0
+ft1 > 0 -> {
+    k1 = ast.kind-at(t1, ft1)
+    s1 = ast.type-string(t1, ft1)
+    fnd1 = ast.nd-at(t1, ft1)
+    inf1 = ast.str-at(t1, fnd1.s0)
+    sznode1 = ast.kid-at(t1, fnd1.kid0)
+    sznd1 = ast.nd-at(t1, sznode1)
+    sz1 = ast.str-at(t1, sznd1.s0)
+    elnode1 = ast.kid-at(t1, fnd1.kid0 + 1)
+    elnd1 = ast.nd-at(t1, elnode1)
+    el1 = ast.str-at(t1, elnd1.s0)
+    msg1 = msg1 - '  kind='
+    msg1 = msg1 - k1.to-str()
+    msg1 = msg1 - ' (want 11 K_ARRAY_TYPE)\n  type-string='
+    msg1 = msg1 - s1
+    msg1 = msg1 - ' (want [2]i64)\n  inferred(slot0)='
+    msg1 = msg1 - inf1
+    msg1 = msg1 - '\n  size='
+    msg1 = msg1 - sz1
+    msg1 = msg1 - ' elem='
+    msg1 = msg1 - el1
+    msg1 = msg1 - '\n'
+    k1 != 11 -> ok = 0
+    s1 != '[2]i64' -> ok = 0
+    inf1 != 'true' -> ok = 0
+    sz1 != '2' -> ok = 0
+    el1 != 'i64' -> ok = 0
+    h1 = 1
+}
+h1 == 0 -> {
+    msg1 = msg1 - '  NOT FOUND\n'
+    ok = 0
+}
+print(msg1)
+
+; ── ② SliceType ────────────────────────────────────────────────────
+t2 = ast.make()
+p2 = ps.new('u [][]i64 = [[1, 2]]\nf = u[0]\n')
+r2 = ps.parse(t2, p2)
+ft2 = find-type(t2, r2, 'f')
+
+msg2 = 'CASE2 f=[]i64 (SliceType):\n'
+h2 = 0
+ft2 > 0 -> {
+    k2 = ast.kind-at(t2, ft2)
+    s2 = ast.type-string(t2, ft2)
+    fnd2 = ast.nd-at(t2, ft2)
+    inf2 = ast.str-at(t2, fnd2.s0)
+    elnode2 = ast.kid-at(t2, fnd2.kid0)
+    elnd2 = ast.nd-at(t2, elnode2)
+    el2 = ast.str-at(t2, elnd2.s0)
+    msg2 = msg2 - '  kind='
+    msg2 = msg2 - k2.to-str()
+    msg2 = msg2 - ' (want 60 K_SLICE_TYPE)\n  type-string='
+    msg2 = msg2 - s2
+    msg2 = msg2 - ' (want []i64)\n  inferred(slot0)='
+    msg2 = msg2 - inf2
+    msg2 = msg2 - '\n  elem='
+    msg2 = msg2 - el2
+    msg2 = msg2 - '\n'
+    k2 != 60 -> ok = 0
+    s2 != '[]i64' -> ok = 0
+    inf2 != 'true' -> ok = 0
+    el2 != 'i64' -> ok = 0
+    h2 = 1
+}
+h2 == 0 -> {
+    msg2 = msg2 - '  NOT FOUND\n'
+    ok = 0
+}
+print(msg2)
+
+; ── ③ NullableType ─────────────────────────────────────────────────
+t3 = ast.make()
+p3 = ps.new('u []?i64 = [1, 2]\nf = u[0]\n')
+r3 = ps.parse(t3, p3)
+ft3 = find-type(t3, r3, 'f')
+
+msg3 = 'CASE3 f=?i64 (NullableType):\n'
+h3 = 0
+ft3 > 0 -> {
+    k3 = ast.kind-at(t3, ft3)
+    s3 = ast.type-string(t3, ft3)
+    elnode3 = ast.kid-at(t3, ast.nd-at(t3, ft3).kid0)
+    elnd3 = ast.nd-at(t3, elnode3)
+    el3 = ast.str-at(t3, elnd3.s0)
+    msg3 = msg3 - '  kind='
+    msg3 = msg3 - k3.to-str()
+    msg3 = msg3 - ' (want 49 K_NULLABLE_TYPE)\n  type-string='
+    msg3 = msg3 - s3
+    msg3 = msg3 - ' (want ?i64)\n  elem='
+    msg3 = msg3 - el3
+    msg3 = msg3 - '\n'
+    k3 != 49 -> ok = 0
+    s3 != '?i64' -> ok = 0
+    el3 != 'i64' -> ok = 0
+    h3 = 1
+}
+h3 == 0 -> {
+    msg3 = msg3 - '  NOT FOUND\n'
+    ok = 0
+}
+print(msg3)
+
+; ── ④ 扁平 NamedType（不得被破壞）─────────────────────────────────
+t4 = ast.make()
+p4 = ps.new('v = [1, 2, 3]\ne0 = v[0]\n')
+r4 = ps.parse(t4, p4)
+ft4 = find-type(t4, r4, 'e0')
+
+msg4 = 'CASE4 e0=i64 (flat NamedType):\n'
+h4 = 0
+ft4 > 0 -> {
+    k4 = ast.kind-at(t4, ft4)
+    s4 = ast.type-string(t4, ft4)
+    fnd4 = ast.nd-at(t4, ft4)
+    inf4 = ast.str-at(t4, fnd4.s1)
+    msg4 = msg4 - '  kind='
+    msg4 = msg4 - k4.to-str()
+    msg4 = msg4 - ' (want 47 K_NAMED_TYPE)\n  type-string='
+    msg4 = msg4 - s4
+    msg4 = msg4 - ' (want i64)\n  inferred(slot1)='
+    msg4 = msg4 - inf4
+    msg4 = msg4 - '\n'
+    k4 != 47 -> ok = 0
+    s4 != 'i64' -> ok = 0
+    inf4 != 'true' -> ok = 0
+    h4 = 1
+}
+h4 == 0 -> {
+    msg4 = msg4 - '  NOT FOUND\n'
+    ok = 0
+}
+print(msg4)
+
+ok == 1 -> print('VERIFY: PASS\n')
+ok == 0 -> print('VERIFY: FAIL\n')

@@ -386,6 +386,18 @@ jobs:
           NOLANG_LLVM_CAPI=0 "$BIN" build -cc zig -o /tmp/embedded-fallback${{ matrix.ext }} tests/heap.no
           /tmp/embedded-fallback${{ matrix.ext }}
 
+      - name: Built-in LLVM skips LLVM/clang toolchain detection
+        # 釘住 CheckToolchain 的新行為：內置 LLVM（Enabled && Available）時不探測
+        # llvm-config，也不硬要求名為 clang 的編譯器——codegen 在進程內完成，cc 只
+        # 連結 .o，任何 C 連結器（clang/cc/gcc）皆可。用一個系統上不存在的
+        # `-cc no-such-cc` 觸發回退：若仍走舊的「clang 名字探測」會直接報錯。
+        if: matrix.can_run != false
+        shell: bash
+        run: |
+          BIN="./bin/no-llvm${{ matrix.ext }}"
+          "$BIN" build -cc no-such-cc -o /tmp/embedded-nodetect${{ matrix.ext }} tests/heap.no
+          /tmp/embedded-nodetect${{ matrix.ext }}
+
       - name: Cross-compile smoke test (non-host arch)
         # 釘住「全後端」這個前提：為非宿主架構產生程式碼必須有對應的 LLVM 後端。
         # 若退回宿主裁剪（FULLLLVM=0 的預設），這裡會硬錯：
@@ -557,12 +569,30 @@ jobs:
       # 说明：本作业已安装 LLVM 21（opt/llc），故可同时跑原生编译闸，无需二次安装。
       # 各步骤设计原则：只闸「当前全绿」的项；已知 pre-existing 失败的项（见下）
       # 暂不纳入硬闸，避免误伤所有 PR，待对应修复后补回。
-      - name: Go unit tests (green packages)
-        # 注：go test ./... 当前有 7 个 pre-existing 失败（build 4 + checker 2 + fmt 1），
-        # 故闸只覆盖已知全绿的包：build / cmd/no / mir。
+      - name: Compute std sig key (unit tests)
+        # 必须在本作业内重算：build-release 的 `sigkey` 步骤属于另一个 job，
+        # `steps.sigkey.outputs.key` 在 pr-verify 里会解析成空串——那正好是本闸
+        # 之前红掉的那个病（空 key ⇒ build / cmd/no / checker 全 FAIL），
+        # 且会以「闸变绿」的形式静默通过，所以宁可多跑一次 `-key-only`（只打印，不写文件）。
+        id: sigkey
+        run: echo "key=$(cd src && go run ./checker/genstdsig -key-only 2>/dev/null)" >> "$GITHUB_OUTPUT"
+
+      - name: Go unit tests (all packages)
+        # StdSigKey 必须注入，否则闸本身就是红的：checker.StdSigKey 为空时
+        # `no build` 硬失败（run/vet 不受影响），所以 build / cmd/no / checker
+        # 三个包在缺 key 时必然 FAIL。此前注释里的「build 4 + checker 2」
+        # 就是这一个根因，不是被测代码的问题。
+        # 实测（2026-10-21，本地同一命令）：带 key 的 `go test ./...` 21 个包全绿；
+        # 不带 key 则 build / cmd/no / checker 直接 FAIL、fmt / mir 照常绿。
+        # 闸面同时从 3 个包根扩到 ./...：S5 的 AST 写入 pin（build/）与 S6 的缓存
+        # 保真门禁（parser/）只有被跑到才有意义，而它们此前都不在这个闸里。
+        # 外部工具依赖已核实：build/js 的 "node" 是 target env 名（不 exec），
+        # build/wasm 的 wasmtime 用例带 toolRunnable skip 守卫。
         run: |
           cd ./src
-          go test ./build/... ./cmd/no/... ./mir/...
+          go test -count=1 \
+            -ldflags "-X github.com/lizongying/nolang/checker.StdSigKey=${{ steps.sigkey.outputs.key }}" \
+            ./...
 
       - name: no test (std library functional suite)
         run: ./bin/no test test/std/
@@ -592,3 +622,12 @@ jobs:
             ./bin/no build "$f" || exit 1
             echo "::endgroup::"
           done
+
+      - name: Build self-hosted compiler (regression gate)
+        # 釘住「no 能編譯 compiler/」本身。2026-10-13 的 762ea045 曾讓 ps.no 構建失敗
+        # （MIR codegen 報 bug #85 類 NoVal，共 12 處）長達 6 天無人發現——根因就是
+        # 本閘缺失：CI 只跑 Go 單測 / std 測試 / 語料冒煙，從不構建自舉編譯器。
+        # 該缺陷的診斷與修復全記錄見 docs/design/nolang-selfhost.md §5.3.3。
+        # 產物只驗證「構建成功」，不執行（noc 的執行由 selfhost_diff.sh 的
+        # L0–L4 負責，那套需要兩支 binary 與凍結 golden，不適合放在 PR 閘內）。
+        run: ./bin/no build -o /tmp/noc-ci compiler

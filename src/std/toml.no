@@ -935,23 +935,27 @@ toml-parse-i64 = (s str) (value i64, ok bool) {
     digits = 0
     i <- [start..n): {
 
-        c = clean.byte(i)
-        c == 95 -> continue
+        ch-opt = clean.byte(i)
+        ch = ch-opt: {
+            ok -> it
+            ->
+        }
+        ch == 95 -> continue
         d = -1
-        c >= 48 && c <= 57 -> {
+        ch >= 48 && ch <= 57 -> {
 
             #{overflow=wrap}
-            d = c - 48
+            d = ch - 48
         }
-        c >= 65 && c <= 70 -> {
+        ch >= 65 && ch <= 70 -> {
 
             #{overflow=wrap}
-            d = c - 55
+            d = ch - 55
         }
-        c >= 97 && c <= 102 -> {
+        ch >= 97 && ch <= 102 -> {
 
             #{overflow=wrap}
-            d = c - 87
+            d = ch - 87
         }
         d < 0 || d >= base -> return
 

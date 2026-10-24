@@ -58,6 +58,16 @@
 
 # /test/runner
 
+; at-or: 取 ?byte 的值；nil（越界）時回傳 dflt。
+; txt.at 已廢棄（字符索引、?byte、越界 nil），斷言前先攤平。
+at-or = (b ?byte, dflt i64) (v i64) {
+    v = dflt
+    b: {
+        ok -> v = it
+        ->
+    }
+}
+
 ; ── 長度 / 空值 ────────────────────────────────
 
 t-len = () {
@@ -103,9 +113,14 @@ t-to-bytes-semantics = () {
     t txt = 'Hello, World'
     n i64 = t.len-bytes()
     runner.eq(n, 12, 'len-bytes == 12')
-    b []byte = with-len(n)
+    b []byte
     i <- [0..n): {
-        b[i] = t.byte(i)
+        ; t.byte(i) 自 2026-10-21 起回傳 ?byte（越界 nil）⇒ 不能直接寫入索引
+        bo = t.byte(i)
+        bo: {
+            ok -> b.push(it)
+            ->
+        }
     }
     runner.eq(b.len(), 12, 'byte-loop len == 12')
     runner.eq(b[0], 72, 'byte-loop [0] == 72 (H)')
@@ -172,8 +187,10 @@ t-slice-at = () {
     runner.str-eq(a.to-str(), 'Hello', 5, 'slice(0,5)')
     b = t.slice(7, 12)
     runner.str-eq(b.to-str(), 'World', 5, 'slice(7,12)')
-    runner.eq(t.at(0), 72, 'at(0) == 72')
-    runner.eq(t.at(1), 101, 'at(1) == 101')
+    ; txt.at 已廢棄：字符（碼點）索引、回傳 ?byte、越界 nil —— 新代碼請用 t[i]
+    runner.eq(at-or(t.at(0), -1), 72, 'at(0) == 72')
+    runner.eq(at-or(t.at(1), -1), 101, 'at(1) == 101')
+    runner.eq(at-or(t.at(99), -7), -7, 'at(99) nil on out of bounds')
     cp, clen = t.decode-cp(0)
     runner.eq(cp, 72, 'decode-cp(0) codepoint == 72')
     runner.eq(clen, 1, 'decode-cp(0) byte length == 1')
@@ -223,8 +240,8 @@ t-copy-fill-clear = () {
     runner.str-eq(c.to-str(), 'abc', 3, 'copy value')
     c.fill(120)
     runner.eq(c.len(), 3, 'fill keeps len')
-    runner.eq(c.at(0), 120, 'fill(120) at(0)')
-    runner.eq(c.at(2), 120, 'fill(120) at(2)')
+    runner.eq(at-or(c.at(0), -1), 120, 'fill(120) at(0)')
+    runner.eq(at-or(c.at(2), -1), 120, 'fill(120) at(2)')
     runner.str-eq(t.to-str(), 'abc', 3, 'copy is independent of source')
     c.clear()
     runner.eq(c.len(), 0, 'clear len == 0')

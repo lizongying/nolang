@@ -169,20 +169,216 @@ test-slice-recv-no-generic()
 test-slice-recv-generic-from-param()
 
 ; ═══════════════════════════════════
-; 10. s66c：match 臂迴圈修復（claim B）
-;     `z: { 1 -> a = 1 / _ -> a = 2 }` 舊缺陷：內聯臂體用 ps-parse-expr-prec
-;     只能吃到 `a`，`= 1` 遺留成幻影臂 ⇒ 產出 4 個巢狀 IfExpression、
-;     主體切碎。修復後（內聯臂體改以 ps-parse-stmt 解析）：正好 2 臂、主體完整。
-;     期望值 = ps.no 修復後的實測降糖輸出（非 oracle：oracle 產 SurfaceMatch）。
+; 10. S7 裁定①（2026-10-21）：match 產 SurfaceMatch（預設開 PS-SURFACE-MATCH=1）
+;     `z: { 1 -> a = 1 / _ -> a = 2 }` 舊缺陷（s66c claim B）：內聯臂體用
+;     ps-parse-expr-prec 只能吃到 `a`，`= 1` 遺留成幻影臂 ⇒ 產出 4 個巢狀
+;     IfExpression、主體切碎。修復後（內聯臂體改以 ps-parse-stmt 解析）：
+;     正好 2 臂、主體完整。
+;     期望值 = L2 oracle 實測（`./bin/no ast`）的 SurfaceMatch 輸出——裁定① 後
+;     noc 預設與 oracle 同形，本測試同時釘住「臂迴圈不碎」與「surface 形
+;     逐位元組對齊 oracle」。
 ; ═══════════════════════════════════
 
 test-match-arm-loop-fix = () {
     got = parse-dump('z = 1\nz: {\n    1 -> a = 1\n    _ -> a = 2\n}')
-    want = 'Program{}\n    LetStatement{name: z, type: i64, value: 1}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 1, raw: 1}\n    ExpressionStatement{IfExpression}\n        IfExpression\n            InfixExpression{op: ==}\n                Identifier{name: z}\n                IntegerLiteral{value: 1, raw: 1}\n            BlockStatement{inline: true}\n                LetStatement{name: it, value: z, synthetic: true}\n                    Identifier{name: z}\n                LetStatement{name: a, type: i64, value: 1}\n                    NamedType{name: i64, inferred: true}\n                    IntegerLiteral{value: 1, raw: 1}\n            BlockStatement{inline: true}\n                LetStatement{name: it, value: z, synthetic: true}\n                    Identifier{name: z}\n                LetStatement{name: a, type: i64, value: 2}\n                    NamedType{name: i64, inferred: true}\n                    IntegerLiteral{value: 2, raw: 2}'
-    runner.is-true(got.eq-full(want), 'z: {…} desugars to exactly 2 correct arms (claim B fix)')
+    want = 'Program{}\n    LetStatement{name: z, type: i64, value: 1}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 1, raw: 1}\n    ExpressionStatement{SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            Identifier{name: z}\n            MatchArm{binding: , bindingVariant: }\n                IntegerLiteral{value: 1, raw: 1}\n                BlockStatement{inline: true}\n                    LetStatement{name: a, type: i64, value: 1}\n                        NamedType{name: i64, inferred: true}\n                        IntegerLiteral{value: 1, raw: 1}\n            MatchArm{wildcard: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    LetStatement{name: a, type: i64, value: 2}\n                        NamedType{name: i64, inferred: true}\n                        IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), 'z: {…} -> SurfaceMatch 2 arms byte-identical to oracle (S7 ruling 1)')
 }
 
 test-match-arm-loop-fix()
+
+; ═══════════════════════════════════
+; 11. S7 裁定①續：裸 match（{ cond -> body }）產 SurfaceMatch{**無 Matched**}。
+;     舊缺陷：ps-parse-bare-match 只組 if/else 鏈、無 surface 發射 ⇒ 與 oracle
+;     的 SurfaceMatch 形 100% 分歧（L2 殘差最大單一來源，169 檔 count_gap）。
+;     期望值 = L2 oracle 實測。⚠️ Matched 必須佔一個 0 kid（不佔位 ⇒ kid0 與
+;     下一節點 kid 槽別名 ⇒ dump 無限遞迴 SIGSEGV，實測踩過）。
+; ═══════════════════════════════════
+
+test-bare-match-surface = () {
+    got = parse-dump('f = (i i64, n i64) (val ?i64) {\n    {\n        i < 0 -> val = nil\n\n        i >= n -> val = nil\n\n        -> val = 1\n    }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: i, type: i64}\n            NamedType{name: i64}\n        Parameter{name: n, type: i64}\n            NamedType{name: i64}\n        Parameter{name: val, type: ?i64}\n            NullableType\n                NamedType{name: i64}\n        BlockStatement{}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 3}\n                    MatchArm{binding: , bindingVariant: }\n                        InfixExpression{op: <}\n                            Identifier{name: i}\n                            IntegerLiteral{value: 0, raw: 0}\n                        BlockStatement{inline: true}\n                            LetStatement{name: val, value: nil}\n                                NilLiteral\n                    MatchArm{binding: , bindingVariant: }\n                        InfixExpression{op: >=}\n                            Identifier{name: i}\n                            Identifier{name: n}\n                        BlockStatement{inline: true}\n                            LetStatement{name: val, value: nil}\n                                NilLiteral\n                    MatchArm{wildcard: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            LetStatement{name: val, type: i64, value: 1}\n                                NamedType{name: i64, inferred: true}\n                                IntegerLiteral{value: 1, raw: 1}'
+    runner.is-true(got.eq-full(want), '{ cond -> … } -> SurfaceMatch 3 arms, no Matched (S7 ruling 1)')
+}
+
+; ═══════════════════════════════════
+; 12. S7 裁定①續：裸 match 的 `ok->`（dotVal 臂）——oracle match.go:347-357
+;     產 wildcard+dotVal 且【保留】Condition=Identifier{ok}（P1 不丟源碼識別字）。
+;     明示 match 的 ok-> 則 cond=0——兩路口徑不同，各自對齊各自的 oracle。
+;     舊缺陷：ps-parse-bare-match 對 ok-> 整體 fail=1 退讓。
+; ═══════════════════════════════════
+
+test-bare-match-ok-dotval = () {
+    got = parse-dump('ok = true\n{\n    ok -> print(1)\n\n    -> print(2)\n}')
+    want = 'Program{}\n    LetStatement{name: ok, type: bool, value: true}\n        NamedType{name: bool, inferred: true}\n        BooleanLiteral{true}\n    ExpressionStatement{SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                Identifier{name: ok}\n                BlockStatement{inline: true}\n                    ExpressionStatement{CallExpression}\n                        CallExpression{fn: print, args: 1}\n                            Identifier{name: print}\n                            IntegerLiteral{value: 1, raw: 1}\n            MatchArm{wildcard: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    ExpressionStatement{CallExpression}\n                        CallExpression{fn: print, args: 1}\n                            Identifier{name: print}\n                            IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), 'bare ok-> -> wildcard+dotVal with Condition=Identifier{ok} kept (S7 ruling 1)')
+}
+
+; ═══════════════════════════════════
+; 13. s67 讀點修正（s7）：明示 match 值語境 valueCtx 必須【入函快照】。
+;     舊缺陷：發射時尾讀活 p.valCtx，但臂體 ps-parse-stmt 每陳述把它重置為 0
+;     ⇒ `r = n: { -> 1 }` 漏 valueCtx: true（L2 flag_gap 一源）。
+; ═══════════════════════════════════
+
+test-match-valuectx-snapshot = () {
+    got = parse-dump('test1 = () {\n    n = 42\n    r = n: {\n        -> 1\n    }\n    print(r)\n}')
+    want = 'Program{}\n    FunctionDefinition{name: test1}\n        BlockStatement{}\n            LetStatement{name: n, type: i64, value: 42}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 42, raw: 42}\n            LetStatement{name: r, value: SurfaceMatch}\n                SurfaceMatch{arms: 1}\n                    Identifier{name: n}\n                    MatchArm{wildcard: true, valueCtx: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{1}\n                                IntegerLiteral{value: 1, raw: 1}\n            ExpressionStatement{CallExpression}\n                CallExpression{fn: print, args: 1}\n                    Identifier{name: print}\n                    Identifier{name: r}'
+    runner.is-true(got.eq-full(want), 'r = n: { -> 1 } -> MatchArm valueCtx: true survives arm-body stmt resets')
+}
+
+test-bare-match-surface()
+test-bare-match-ok-dotval()
+test-match-valuectx-snapshot()
+
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 裁定①續 C：型別臂 `v T ->` 三槽（typeArm/typePattern/typeBinding）。
+;     舊缺陷：generic expr 臂吞掉 `v bool` 兩 IDENT 後見 -> 當空 pattern
+;     ⇒ typeArm/typePattern/typeBinding 全空（L2 flag_gap 一源）。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-match-type-arm = () {
+    got = parse-dump('classify = (v i64) (out i64) {\n    out = v: {\n        v bool -> 1\n\n        -> 2\n    }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: classify}\n        Parameter{name: v, type: i64}\n            NamedType{name: i64}\n        Parameter{name: out, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, value: SurfaceMatch}\n                SurfaceMatch{arms: 2}\n                    Identifier{name: v}\n                    MatchArm{typeArm: true, typePattern: bool, typeBinding: v, valueCtx: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{1}\n                                IntegerLiteral{value: 1, raw: 1}\n                    MatchArm{wildcard: true, valueCtx: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{2}\n                                IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), 'v bool -> typeArm/typePattern/typeBinding 三槽齊')
+}
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 裁定①續 D：列舉變體解構 `circle(r) ->` 保持 CallExpression pattern。
+;     舊缺陷：PS-SURFACE-MATCH==1 仍走 parse-time 變體歸一 ⇒ binding 被填
+;     （oracle 解析期不歸一，留空 binding + CallExpression 子樹）。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-match-enum-variant-pattern = () {
+    got = parse-dump('kind = (s Shape) (out i64) {\n    out = s: {\n        circle(r) -> 1\n\n        rect(w, h) -> 2\n    }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: kind}\n        Parameter{name: s, type: Shape}\n            NamedType{name: Shape}\n        Parameter{name: out, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, value: SurfaceMatch}\n                SurfaceMatch{arms: 2}\n                    Identifier{name: s}\n                    MatchArm{valueCtx: true, binding: , bindingVariant: }\n                        CallExpression{fn: circle, args: 1}\n                            Identifier{name: circle}\n                            Identifier{name: r}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{1}\n                                IntegerLiteral{value: 1, raw: 1}\n                    MatchArm{valueCtx: true, binding: , bindingVariant: }\n                        CallExpression{fn: rect, args: 2}\n                            Identifier{name: rect}\n                            Identifier{name: w}\n                            Identifier{name: h}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{2}\n                                IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), 'circle(r) -> CallExpression pattern 保持、binding 空')
+}
+
+test-match-type-arm()
+test-match-enum-variant-pattern()
+
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 續 E：NEWLINE 臂體形 + 空臂體（oracle expr.go:1251-1376 第二支）。
+;     舊缺陷：`->` 後 ps-skip-trivia 吞換行 ⇒ NEWLINE 形不可見，`err ->\n\nnil ->`
+;     空臂體被下臂吸成 if 陳述（map.no count_gap）；blockBody+inline 雙旗漏。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-match-newline-empty-arms = () {
+    got = parse-dump('f = (val ?i64) (found bool) {\n    val: {\n        ok -> found = true\n\n        err ->\n\n        nil ->\n    }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: val, type: ?i64}\n            NullableType\n                NamedType{name: i64}\n        Parameter{name: found, type: bool}\n            NamedType{name: bool}\n        BlockStatement{}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 3}\n                    Identifier{name: val}\n                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            LetStatement{name: found, type: bool, value: true}\n                                NamedType{name: bool, inferred: true}\n                                BooleanLiteral{true}\n                    MatchArm{blockBody: true, binding: , bindingVariant: }\n                        Identifier{name: err}\n                        BlockStatement{inline: true}\n                    MatchArm{blockBody: true, binding: , bindingVariant: }\n                        NilLiteral\n                        BlockStatement{inline: true}'
+    runner.is-true(got.eq-full(want), 'err ->\n\nnil -> 空臂體 + blockBody/inline 雙旗齊')
+}
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 續 F：range 型樣 `[a..b)`（Go parseSliceLiteral range 分支）。
+;     舊缺陷：LBRACKET primary 一律建 SliceLiteral ⇒ `[0..60) ->` 被吞成
+;     SliceLiteral4（match-range-pattern.no / fmt-heuristic.no / str-order.no）。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-match-range-pattern = () {
+    got = parse-dump('grade = (score i64) (g i64) {\n    g = score: {\n        [0..60) -> 1\n\n        -> 2\n    }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: grade}\n        Parameter{name: score, type: i64}\n            NamedType{name: i64}\n        Parameter{name: g, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: g, value: SurfaceMatch}\n                SurfaceMatch{arms: 2}\n                    Identifier{name: score}\n                    MatchArm{valueCtx: true, binding: , bindingVariant: }\n                        RangeExpression{start: 0, end: 60, leftInc: true}\n                            IntegerLiteral{value: 0, raw: 0}\n                            IntegerLiteral{value: 60, raw: 60}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{1}\n                                IntegerLiteral{value: 1, raw: 1}\n                    MatchArm{wildcard: true, valueCtx: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{2}\n                                IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), '[0..60) -> RangeExpression 型樣臂（leftInc=true）')
+}
+
+test-match-newline-empty-arms()
+test-match-range-pattern()
+
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 續 G：`name ?T` 裸宣告（無 `=`）不得吞後隨陳述當 RHS。
+;     舊缺陷：ps-expect(ASSIGN) 失敗不退 ⇒ `x: {…}` 被吃成 LetStatement.value
+;     且 valCtx=1 污染 MatchArm.valueCtx（match-test.no flag_gap 根因）。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-nullable-let-no-value = () {
+    got = parse-dump('test = () {\n    x ?i64\n    x: {\n        ok -> print(1)\n\n        -> print(2)\n    }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: test}\n        BlockStatement{}\n            LetStatement{name: x, type: ?i64, value: }\n                NullableType\n                    NamedType{name: i64}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 2}\n                    Identifier{name: x}\n                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: print, args: 1}\n                                    Identifier{name: print}\n                                    IntegerLiteral{value: 1, raw: 1}\n                    MatchArm{wildcard: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: print, args: 1}\n                                    Identifier{name: print}\n                                    IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), 'x ?i64 裸宣告 value 缺席、match 獨立陳述、valueCtx 不污染')
+}
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 續 H/H2：blockMatch 分類臂體的回退塊提取口徑（err-binding.no 形）。
+;     `err(m) -> { b: {…} … }`：classify=blockMatch（labelled block/match）但
+;     內層裸 match 失敗 ⇒ oracle parseStatement 落 parseBlockStatement 回退並
+;     【提取】陳述：IsBlockBody 保持 false、IsInline=true。加 bodyDone 防
+;     NEWLINE 形分支誤觸發抬 hd2。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-match-blockmatch-fallback-extract = () {
+    got = parse-dump('f = (val ?i64) (found bool) {\n    val: {\n        ok -> found = true\n\n        err(m) -> {\n            b: {\n                ok -> found = true\n            }\n        }\n\n        nil -> found = false\n    }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: val, type: ?i64}\n            NullableType\n                NamedType{name: i64}\n        Parameter{name: found, type: bool}\n            NamedType{name: bool}\n        BlockStatement{}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 3}\n                    Identifier{name: val}\n                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            LetStatement{name: found, type: bool, value: true}\n                                NamedType{name: bool, inferred: true}\n                                BooleanLiteral{true}\n                    MatchArm{binding: m, bindingVariant: err}\n                        Identifier{name: err}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{SurfaceMatch}\n                                SurfaceMatch{arms: 1}\n                                    Identifier{name: b}\n                                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                                        BlockStatement{inline: true}\n                                            LetStatement{name: found, type: bool, value: true}\n                                                NamedType{name: bool, inferred: true}\n                                                BooleanLiteral{true}\n                    MatchArm{binding: , bindingVariant: }\n                        NilLiteral\n                        BlockStatement{inline: true}\n                            LetStatement{name: found, type: bool, value: false}\n                                NamedType{name: bool, inferred: true}\n                                BooleanLiteral{false}'
+    runner.is-true(got.eq-full(want), 'err(m) -> { b: {…} } 提取形：無 blockBody + inline 體')
+}
+
+test-nullable-let-no-value()
+test-match-blockmatch-fallback-extract()
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 續 I：嵌套 cond-if 鏈（`a -> b -> { … }`）內層 if 的本體不得丟失。
+;     舊缺陷：ps-wrap-chain 遞迴呼叫把 `linkIdx + 1`（option 算術 ?i64 雙字）
+;     內聯作實參 ⇒ 呼叫 ABI 實參錯位，callee 收到 blk=0/tail=0 ⇒ 最內層
+;     IfExpression 本體被靜默丟棄（bzip2 `sym > 1 -> sym < eob -> { … }`
+;     整塊消失、內含 match 陳述組全沒——gap I 根因）。修復：預計算 lid。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-match-nested-cond-if-chain = () {
+    got = parse-dump('f = (x i64) (r i64) {\n    a [4]i64\n    x > 1 -> x < 10 -> {\n        a[0]: {\n            ok -> it = 1\n            -> _\n        }\n    }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: x, type: i64}\n            NamedType{name: i64}\n        Parameter{name: r, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: a, type: [4]i64, value: }\n                ArrayType{size: 4}\n                    IntegerLiteral{value: 4, raw: 4}\n                    NamedType{name: i64}\n            ExpressionStatement{IfExpression}\n                IfExpression\n                    InfixExpression{op: >}\n                        Identifier{name: x}\n                        IntegerLiteral{value: 1, raw: 1}\n                    BlockStatement{inline: true}\n                        ExpressionStatement{IfExpression}\n                            IfExpression\n                                InfixExpression{op: <}\n                                    Identifier{name: x}\n                                    IntegerLiteral{value: 10, raw: 10}\n                                BlockStatement{}\n                                    ExpressionStatement{SurfaceMatch}\n                                        SurfaceMatch{arms: 2}\n                                            IndexExpression\n                                                Identifier{name: a}\n                                                IntegerLiteral{value: 0, raw: 0}\n                                            MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                                                BlockStatement{inline: true}\n                                                    LetStatement{name: it, type: i64, value: 1}\n                                                        NamedType{name: i64, inferred: true}\n                                                        IntegerLiteral{value: 1, raw: 1}\n                                            MatchArm{wildcard: true, binding: , bindingVariant: }\n                                                BlockStatement{inline: true}\n                                                    ExpressionStatement{nil}'
+    runner.is-true(got.eq-full(want), '嵌套 cond-if 鏈內層體完整（複雜主體 match 在內層塊中不丟）')
+}
+
+test-match-nested-cond-if-chain()
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 續 J：`for v <- range: stmt` 行內迴圈體——只綁一條陳述、inline: true、
+;     不偷外層收束括號。舊缺陷：ps-expect(LBRACE) 靜默放行 + ps-parse-block
+;     開區間 ⇒ 行內形吞到下一個 `}`，後隨陳述進迴圈體、外層 `}` 被偷
+;     （yaml.no parse-block-scalar 級聯誤解析根因：13,831 行 dump 發散）。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-for-inline-body = () {
+    got = parse-dump('f = (x i64) (r i64) {\n    n = 5\n    k <- [0..n):\n        r = r + 1\n        r = r + 2\n    r = 1\n}')
+    want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: x, type: i64}\n            NamedType{name: i64}\n        Parameter{name: r, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: n, type: i64, value: 5}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 5, raw: 5}\n            ForStatement{label: }\n                IterationExpr{var: k}\n                    RangeExpression{start: 0, end: n, leftInc: true}\n                        IntegerLiteral{value: 0, raw: 0}\n                        Identifier{name: n}\n                BlockStatement{inline: true}\n                    LetStatement{name: r, value: InfixExpression}\n                        InfixExpression{op: +}\n                            Identifier{name: r}\n                            IntegerLiteral{value: 1, raw: 1}\n            LetStatement{name: r, value: InfixExpression}\n                InfixExpression{op: +}\n                    Identifier{name: r}\n                    IntegerLiteral{value: 2, raw: 2}\n            LetStatement{name: r, type: i64, value: 1}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 1, raw: 1}'
+    runner.is-true(got.eq-full(want), 'for v <- range: stmt 行內體只綁一條陳述 + inline: true')
+}
+
+test-for-inline-body()
+
+; ═══════════════════════════════════════════════════════════════════════
+; s7 續 K：賦值 RHS 位裸 match 運算式（`result = { pat -> … }`）——
+;     value 掛 LetStatement、臂帶 valueCtx: true。舊缺陷：ps-parse-expr-prec
+;     primary 位無 LBRACE 臂 ⇒ RHS 回空、裸 match 落回陳述位重解析
+;     ⇒ valueCtx 全丟（build-mo flag_gap 根因）。
+; ═══════════════════════════════════════════════════════════════════════
+
+test-let-rhs-bare-match = () {
+    got = parse-dump('x = 0\nresult = {\n    x == 0 -> 1\n\n    x == x -> 0\n}')
+    want = 'Program{}\n    LetStatement{name: x, type: i64, value: 0}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 0, raw: 0}\n    LetStatement{name: result, value: SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            MatchArm{valueCtx: true, binding: , bindingVariant: }\n                InfixExpression{op: ==}\n                    Identifier{name: x}\n                    IntegerLiteral{value: 0, raw: 0}\n                BlockStatement{inline: true}\n                    ExpressionStatement{1}\n                        IntegerLiteral{value: 1, raw: 1}\n            MatchArm{valueCtx: true, binding: , bindingVariant: }\n                InfixExpression{op: ==}\n                    Identifier{name: x}\n                    Identifier{name: x}\n                BlockStatement{inline: true}\n                    ExpressionStatement{0}\n                        IntegerLiteral{value: 0, raw: 0}'
+    runner.is-true(got.eq-full(want), 'RHS 裸 match 掛 value + 臂 valueCtx: true')
+}
+
+test-let-rhs-bare-match()
+
+; ═══════════════════════════════════════════════════════════════════
+; s7 續 L：let RHS 陣列/切片索引推元素型別（Go stmt.go:1462-1494）。
+;     全域 receiver（[]i64/[]char）⇒ 補 type + NamedType{inferred}；
+;     函式內 receiver 不推（Go setVarType 函式內只寫 FuncVarTypes，
+;     IndexExpression 臂只讀全域 p.sem.VarTypes）。
+;     ⚠️ 本測試同時看守 s7l 教訓：ps-parse-let 的 IndexExpression 臂
+;     局部變數不得與 catch-all 的 tn 同名——同名會讓 codegen 串型別，
+;     ps-infer-type 回傳值被截成形別名長度（i64→"3"），汙染全域。
+; ═══════════════════════════════════════════════════════════════════
+
+test-let-idx-elem-infer = () {
+    got = parse-dump('v = [1, 2, 3]\ne0 = v[0]\ns = ["a", "b"]\ne2 = s[0]\ng = () {\n    w = [1.5, 2.5]\n    e1 = w[0]\n}')
+    want = 'Program{}\n    LetStatement{name: v, type: []i64, value: SliceLiteral}\n        SliceType{inferred: true}\n            NamedType{name: i64, inferred: true}\n        SliceLiteral{elements: 3}\n            IntegerLiteral{value: 1, raw: 1}\n            IntegerLiteral{value: 2, raw: 2}\n            IntegerLiteral{value: 3, raw: 3}\n    LetStatement{name: e0, type: i64, value: IndexExpression}\n        NamedType{name: i64, inferred: true}\n        IndexExpression\n            Identifier{name: v}\n            IntegerLiteral{value: 0, raw: 0}\n    LetStatement{name: s, type: []char, value: SliceLiteral}\n        SliceType{inferred: true}\n            NamedType{name: char, inferred: true}\n        SliceLiteral{elements: 2}\n            CharLiteral{value: a}\n            CharLiteral{value: b}\n    LetStatement{name: e2, type: char, value: IndexExpression}\n        NamedType{name: char, inferred: true}\n        IndexExpression\n            Identifier{name: s}\n            IntegerLiteral{value: 0, raw: 0}\n    FunctionDefinition{name: g}\n        BlockStatement{}\n            LetStatement{name: w, type: []f64, value: SliceLiteral}\n                SliceType{inferred: true}\n                    NamedType{name: f64, inferred: true}\n                SliceLiteral{elements: 2}\n                    FloatLiteral{value: 1.5, raw: 1.5}\n                    FloatLiteral{value: 2.5, raw: 2.5}\n            LetStatement{name: e1, value: IndexExpression}\n                IndexExpression\n                    Identifier{name: w}\n                    IntegerLiteral{value: 0, raw: 0}'
+    runner.is-true(got.eq-full(want), '索引推元素型別：全域 []i64→i64/[]char→char；函式內 receiver 不推')
+}
+
+test-let-idx-elem-infer()
 
 runner.summary()
 f = runner.failed-count()

@@ -12,6 +12,7 @@ This page collects Nolang release records for each version, kept consistent with
 - refactor(mmast): switch AST encoding to a recursive root forest structure
 - feat(conversion): complete numeric type conversion matrix with saturating float-to-int
 - refactor(std): migrate numeric conversion and to-str methods to number module
+- feat(std): make `txt.set-byte` / `str.set-byte` fallible — `(i i64, b byte) (ok ?bool)`, returns nil and skips the store when the byte index exceeds the receiver's physical capacity
 - refactor(bounds): finalize two-layer option handling for in-bounds index reads
 - fix(checker): reject out-of-range char literals and unsupported scientific notation
 - refactor(tests): remove obsolete compiler unit tests and fix comment typo

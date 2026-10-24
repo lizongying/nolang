@@ -618,7 +618,12 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     #{overflow=wrap}
     max-prefix = (1 << prefix-bits) - 1
 
-    first = data.byte(pos) & max-prefix
+    first-opt = data.byte(pos)
+    first-b = first-opt: {
+        ok -> it
+        ->
+    }
+    first = first-b & max-prefix
     val = first
 
     #{overflow=wrap}
@@ -692,7 +697,11 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
         return
     }
 
-    first = data.byte(pos)
+    first-opt = data.byte(pos)
+    first = first-opt: {
+        ok -> it
+        ->
+    }
 
     ; H bit = first & 128，本實作不支援 Huffman
     ; 長度用 7-bit prefix

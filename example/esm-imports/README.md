@@ -37,6 +37,13 @@ The emitted `dist/esm-imports.js` is an ES module — the build also drops a
 runs it as ESM. `no run --js` builds to a temp dir, links the project's
 `node_modules` into it, and runs node for you.
 
+Any ES-module runtime works; pick one with `--js-runtime` (default `node`):
+
+```bash
+no run --js --js-runtime bun main.no     # Bun
+no run --js --js-runtime deno run main.no  # Deno
+```
+
 ## Build & run (browser)
 
 ```bash

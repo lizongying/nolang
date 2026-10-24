@@ -7,7 +7,7 @@
 确认「递归具体树」不可行（见 §3.1），扁平节点表为 mm 唯一可编码形态。
 
 已落地：
-- `src/parser/astmm.go`：AST ↔ 节点表（含未导出的 `nodeSem`，按节点索引存储）。
+- `src/parser/astmm.go`：AST ↔ 节点表（含三張 node-keyed 表 `anns` / `typeFacts` / `nodeFacts`，按节点索引存储；Stage 7 前的 `nodeSem` 已刪）。
 - `src/mmast/mmast.go`：节点表 → mm 分片（每片 ≤64KB）→ `<tool>.ast.zip`；反向解回 AST。
 - `no pub`：产出 `<name>.ast.zip`；`no add`：写 `tool@host/owner/repo = <version>`。
 - 验证：std 全量 118 个模块节点表往返 dump 文本逐字节一致（含注解）；

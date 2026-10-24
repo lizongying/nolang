@@ -279,6 +279,27 @@ guard_level() {
       return 1
     fi
   fi
+  # G8：SUT 在整批語料上只吐**一種** stdout ⇒ 這一層對 SUT 而言是 mass-noop。
+  #     G7 只查控制組；這一條補 SUT 側。
+  #     實測踩過（2026-10-24）：工作樹 `compiler/` 的 1465 行未提交 WIP 把
+  #     `ast` 打破成只吐 `Program{}`（10 bytes），653 檔全部 DIFF 且 SUT 雜湊
+  #     全同（4fde700016d5）。原報表寫成「DIFF=653」，讀起來像「差一點」，
+  #     真正的結論卻是「這一層整體退化」——而且它是 rc=0、stdout 非空，
+  #     G1/G2/G3/G7 全都攔不住。
+  #     ⚠️ 與 G2 的分工：G2 是「SUT 一個都跑不動（rc!=0）」；G8 是「SUT 每個
+  #     都跑得動、卻吐同一份東西」——後者更危險，因為它看起來像有訊號。
+  if [ "$files" -ge 3 ]; then
+    local sut_distinct sut_nonempty
+    sut_distinct=$(awk '{print $4}' "$tsv" | sort -u | wc -l | tr -d ' ')
+    sut_nonempty=$(awk -v e="$EMPTY_SHA" '$4!=e' "$tsv" | wc -l | tr -d ' ')
+    if [ "$sut_distinct" = "1" ] && [ "$sut_nonempty" -gt 0 ]; then
+      echo "  [G8] SUT 在 $files 檔上只產生 1 種 stdout 雜湊 ⇒ mass-noop（本層整體退化）"
+      echo "       （不是 $files 個獨立差異；SUT 對任何輸入都吐同一份東西）"
+      echo "       典型成因：子命令未實作／Parser 退化成空 Program／分派表全落 catch-all"
+      echo "MASS-NOOP" > "$WORKDIR/$lvl.status"
+      return 1
+    fi
+  fi
   return 0
 }
 
@@ -595,6 +616,7 @@ for L in L0 L1 L2 L3 L4; do
   case "$st" in
     PASS)        npass=$((npass + 1)) ;;
     FAIL)        [ "$overall" = "0" ] && overall=1 ;;
+    MASS-NOOP)   [ "$overall" = "0" ] && overall=1 ;;   # 整層退化，視為 FAIL（但不是「差一點」）
     SELFCHECK-FAIL) overall=3 ;;
     UNAVAILABLE) [ "$overall" = "0" ] && overall=4 ;;
     NOTRUN)      [ "$overall" = "0" ] && overall=4 ;;
@@ -637,6 +659,15 @@ echo "  （ctl_ok ≈ 語料大小才是健康的；ctl_empty 偏高＝oracle �
 echo "    sut_ok=0 而 ctl_ok>0 ＝ SUT mass-noop，不是「差一點」）"
 
 echo
+# MASS-NOOP 的 FAIL 含義與一般 FAIL 不同，必須額外講清楚，
+# 否則報表會被讀成「N 檔差異、快收斂了」——而實況是整層沒實作。
+for L in L0 L1 L2 L3 L4; do
+  if [ "$(cat "$WORKDIR/$L.status" 2>/dev/null)" = "MASS-NOOP" ]; then
+    echo "⚠️  $L = MASS-NOOP：SUT 對全語料吐同一份 stdout ⇒ 本層整體退化，"
+    echo "    不是逐檔差異。先修 SUT 的這一層，再談收斂數字。"
+  fi
+done
+
 case "$overall" in
   0) echo "RESULT: PASS" ;;
   1) echo "RESULT: FAIL" ;;

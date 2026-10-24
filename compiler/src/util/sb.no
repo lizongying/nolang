@@ -25,9 +25,21 @@ sb.init = (cap i64) (r sb) {
 }
 
 ; push: 追加 str 的全部 UTF-8 位元組（原樣，不解碼）
+;
+; ⚠️ `str.byte(i)` 回傳 **?byte**（不是 byte）。直接把 option 塞進 []byte 會寫進
+;    option 的【內聯佈局】而不是碼點值——sb.str() 長度對、內容卻幾乎全 NUL
+;    （'hello-world' ⇒ len=11、內容只有一個 104），ast.dump 全線失真，複雜樹
+;    甚至 SIGTRAP / SIGKILL。故必須先解包，nil ⇒ 0。
+;    同源 bug 見 tok.no str-eq（兩個 ?byte 比較永不等 ⇒ 只比長度）。
 sb.push = (s str) {
     i <- [0..s.len-bytes()): {
-        .buf.push(s.byte(i))
+        b-opt = s.byte(i)
+        b = b-opt: {
+            ok -> it
+
+            -> 0
+        }
+        .buf.push(b)
     }
 }
 

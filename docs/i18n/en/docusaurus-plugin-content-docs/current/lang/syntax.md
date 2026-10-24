@@ -1491,8 +1491,6 @@ Rules:
   `{ r1 = co worker(1); r2 = co worker(2) }` lowers like a coroutine group — the
   two `worker-async` tasks are spawned first, then `awy`-ed together.
 
-Diagnostic switch: `NOLANG_ASYNC_GO=0` disables monomorphization (diagnostic only).
-
 ## Arrays and Slices
 
 Containers store copies of data; the original variable and the container are independent, eliminating dangling references.

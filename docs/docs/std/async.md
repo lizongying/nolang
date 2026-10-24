@@ -50,8 +50,6 @@ print(r1.to-str() + ' ' + r2.to-str())
 - **傳遞性**：若某函式內部呼叫了異步函式（例如 `worker` 內 `co child(...)`），則 `worker` 也會被單態為 `worker-async`，異步染色沿呼叫鏈向上傳遞。
 - **底層仍是染色無棧協程**：`co` 只是語法糖，等價於 `run worker-async(1); r1 = awy <handle>`；在協程組內則由協程組統一調度 spawn / await 以獲得並發。
 
-診斷開關：`NOLANG_ASYNC_GO=0` 可停用單態化（僅作對照）。
-
 ### async — 手寫原語（已廢棄，僅作底層參考）
 
 Nolang 提供協作式、單執行緒、無棧的異步協程模型：

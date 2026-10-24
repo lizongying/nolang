@@ -67,14 +67,18 @@ gen: $(STDSIG_GEN)
 # CollectStdModuleSignatures — the only valid build path is `make`. Inject the
 # same key the binaries get (see LD_FLAGS_WITH_SIG) so tests exercise the real
 # embedded-table fast path instead of erroring. Packages that don't import
-# checker simply ignore the -X (verified), so scoping is only for speed.
+# checker simply ignore the -X (verified).
+# Scope is ./... so that this target and the CI gate (pr-verify, same command)
+# cannot drift: the old hand-listed set silently omitted cmd/no, lexer, builtin,
+# cache, extract_checker and the root package. -count=1 likewise matches CI —
+# without it a cached "ok" can outlive the change that broke the package.
 # ./tools/... carries the S4 sugar-shape gates for astpatch / std_qualify /
 # std_methodify (tools/std_qualify's gate calls buildOwnership ->
 # CollectStdModuleSignatures, so it NEEDS the injected key — bare
 # `go test ./tools/...` would hard-exit on it).
 .PHONY: test
 test: $(STDSIG_GEN)
-	cd src && $(GO) test $(LD_FLAGS_WITH_SIG) ./build/... ./mir/... ./checker/... ./lsp/... ./fmt/... ./hir/... ./mmast/... ./package/... ./parser/... ./tools/...
+	cd src && $(GO) test -count=1 $(LD_FLAGS_WITH_SIG) ./...
 
 # ── STD SIG KEY (injected at build time) ──────────
 # The independent genstdsig tool hashes the CURRENT on-disk src/std tree from

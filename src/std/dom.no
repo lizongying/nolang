@@ -1,0 +1,2129 @@
+; dom — XML / HTML DOM 解析與操作
+;
+; 完整 DOM 樹模型（節點池 + 索引句柄），支援：
+;   - XML 1.0 嚴謹解析：元素 / 屬性 / 文字 / 註解 / CDATA / 處理指令 / DOCTYPE，
+;     預定義實體與數字實體解碼，標籤配對與單一根元素檢查，解析失敗返回 err。
+;   - HTML 寬鬆解析：標籤大小寫不敏感、void 元素、raw-text/RCDATA 元素
+;     （script/style/textarea/title 等）、未配對結尾標籤自動闭合與容錯忽略、
+;     常见隐式闭合规则（p/li/dd/dt/option/td/th/tr/表格节）、HTML4 命名實體表。
+;   - DOM 操作：父子/兄弟遍歷、屬性增刪查、text-content 讀取、
+;     getElementById / getElementsByTagName / getElementsByClassName、
+;     節點建立與插入/移除/替换、outer/inner 序列化（XML 與 HTML 兩種模式）。
+;
+; 節點以池索引 i64 標識（0 = document 根節點），索引在 dom 生命週期內有效。
+;
+; 用法：
+;   d = dom.parse-xml('<root a="1">text<!--c--></root>')
+;   d: {
+;       ok -> {
+;           doc = it
+;           root, found = doc.document-element()
+;           root: {
+;               ok -> {
+;                   v, has = doc.get-attribute(it, 'a')
+;                   print(doc.text-content(it))
+;               }
+;           }
+;       }
+;       err -> print(it)
+;   }
+;
+;   h = dom.parse-html('<ul><li>a<li>b</ul>')
+;   h: {
+;       ok -> {
+;           items = it.get-elements-by-tag-name('li')
+;           print(items.len())
+;       }
+;   }
+
+; ═══════════════════════════════════════════════
+; 常量
+; ═══════════════════════════════════════════════
+
+; 節點類型（對齊 W3C nodeType 編號）
+DOM-KIND-DOCUMENT = 0
+DOM-KIND-ELEMENT = 1
+DOM-KIND-TEXT = 2
+DOM-KIND-CDATA = 3
+DOM-KIND-COMMENT = 4
+DOM-KIND-PI = 5
+DOM-KIND-DOCTYPE = 6
+
+; 解析嵌套深度上限（防禦超深巢狀導致棧溢出）
+DOM-MAX-DEPTH = 256
+
+; 常用位元組值
+DOM-BYTE-SPACE = 32
+DOM-BYTE-LT = 60
+DOM-BYTE-GT = 62
+DOM-BYTE-SLASH = 47
+DOM-BYTE-BANG = 33
+DOM-BYTE-QMARK = 63
+DOM-BYTE-AMP = 38
+DOM-BYTE-HASH = 35
+DOM-BYTE-QUOTE = 34
+DOM-BYTE-SQUOTE = 39
+DOM-BYTE-EQ = 61
+DOM-BYTE-MINUS = 45
+DOM-BYTE-RBRACKET = 93
+
+; HTML void 元素（前後補空格便於整詞查找）
+DOM-VOID-BLOB = ' area base br col embed hr img input link meta param source track wbr '
+
+; HTML raw-text / RCDATA 元素：內容直到配對結尾標籤，不再詞法分析
+DOM-RAWTEXT-BLOB = ' script style textarea title xmp iframe noembed noframes '
+
+; RCDATA 集合（內容需解實體）：title / textarea；其余 raw-text 不解碼
+DOM-RCDATA-BLOB = ' title textarea '
+
+; 開新塊級標籤時會自動閉合的開放 <p>
+DOM-PBLOCK-BLOB = ' address article aside blockquote div dl fieldset footer form header hgroup hr main nav ol p pre section table ul '
+
+; HTML4 完整命名實體表（'name:codepoint' 空格分隔）+ XML 預定義實體
+DOM-ENTITY-BLOB = 'amp:38 lt:60 gt:62 quot:34 apos:39 nbsp:160 iexcl:161 cent:162 pound:163 curren:164 yen:165 brvbar:166 sect:167 uml:168 copy:169 ordf:170 laquo:171 not:172 shy:173 reg:174 macr:175 degree:176 plusmn:177 sup2:178 sup3:179 acute:180 micro:181 para:182 middot:183 cedil:184 sup1:185 ordm:186 raquo:187 frac14:188 frac12:189 frac34:190 iquest:191 Agrave:192 Aacute:193 Acirc:194 Atilde:195 Auml:196 Aring:197 AElig:198 Ccedil:199 Egrave:200 Eacute:201 Ecirc:202 Euml:203 Igrave:204 Iacute:205 Icirc:206 Iuml:207 ETH:208 Ntilde:209 Ograve:210 Oacute:211 Ocirc:212 Otilde:213 Ouml:214 times:215 Oslash:216 Ugrave:217 Uacute:218 Ucirc:219 Uuml:220 Yacute:221 THORN:222 szlig:223 agrave:224 aacute:225 acirc:226 atilde:227 auml:228 aring:229 aelig:230 ccedil:231 egrave:232 eacute:233 ecirc:234 euml:235 igrave:236 iacute:237 icirc:238 iuml:239 eth:240 ntilde:241 ograve:242 oacute:243 ocirc:244 otilde:245 ouml:246 divide:247 oslash:248 ugrave:249 uacute:250 ucirc:251 uuml:252 yacute:253 thorn:254 yuml:255 OElig:338 oelig:339 Scaron:352 scaron:353 Yuml:376 circ:710 tilde:732 ensp:8194 emsp:8195 thinsp:8201 zwnj:8204 zwj:8205 lrm:8206 rlm:8207 ndash:8211 mdash:8212 lsquo:8216 rsquo:8217 sbquo:8218 ldquo:8220 rdquo:8221 bdquo:8222 dagger:8224 Dagger:8225 bull:8226 hellip:8230 permil:8240 prime:8242 Prime:8243 oline:8254 frasl:8260 euro:8364 larr:8592 uarr:8593 rarr:8594 darr:8595 harr:8596 crarr:8629 lArr:8656 uArr:8657 rArr:8658 dArr:8659 hArr:8660 weierp:8472 real:8476 trade:8482 image:8471 mho:8487 alefsym:8501 Alpha:913 Beta:914 Gamma:915 Delta:916 Epsilon:917 Zeta:918 Eta:919 Theta:920 Iota:921 Kappa:922 Lambda:923 Mu:924 Nu:925 Xi:926 Omicron:927 Pi:928 Rho:929 Sigma:931 Tau:932 Upsilon:933 Phi:934 Chi:935 Psi:936 Omega:937 alpha:945 beta:946 gamma:947 delta:948 epsilon:949 zeta:950 eta:951 theta:952 iota:953 kappa:954 lambda:955 mu:956 nu:957 xi:958 omicron:959 pi:960 rho:961 sigmaf:962 sigma:963 tau:964 upsilon:965 phi:966 chi:967 psi:968 omega:969 thetasym:977 upsih:982 piv:982 there4:8756 kappav:954 middotv:183 forall:8704 part:8706 exist:8707 empty:8709 nabla:8711 isin:8712 notin:8713 ni:8715 prod:8719 sum:8721 minus:8722 lowast:8727 radic:8730 le:8804 ge:8805 ne:8800 equiv:8801 infin:8734 ang:8736 and:8743 or:8744 cap:8745 cup:8746 int:8747 therefore:8756 sim:8764 cong:8773 asymp:8776 nsub:8836 sube:8838 supe:8835 oplus:8853 otimes:8855 perp:8869 sdot:8901'
+
+; ═══════════════════════════════════════════════
+; 結構
+; ═══════════════════════════════════════════════
+
+; dom-node: DOM 節點（純標量欄位，可安全存放於堆 vec）
+; 樹結構以索引雙向鏈表表示：parent/prev/next/first/last
+; attr-first/attr-last/attr-count: 屬性邊表鏈表（邊索引存於 pool.an/av/ax）
+dom-node {
+    kind i64
+    parent i64
+    prev i64
+    next i64
+    first i64
+    last i64
+    count i64
+    attr-first i64
+    attr-last i64
+    attr-count i64
+}
+
+; dom-pool: 節點池（堆 vec，無容量上限）
+; nodes: 節點平行陣列；names/vals: 以節點 idx 索引的字串
+;   element→標籤名，pi→目標，doctype→原始內部文字，text/cdata/comment→值
+; an/av/ax: 屬性邊表（名、值、下一同級邊索引；-1=鏈尾）
+dom-pool {
+    nodes []dom-node
+    names []str
+    vals []str
+    an []str
+    av []str
+    ax []i64
+    stk []i64
+}
+
+; dom: 文檔句柄（節點池 + document 根索引 + 格式）
+; format: 0=XML, 1=HTML（影響序列化 void 元素與大小寫處理）
+; pool 以 #{inline=false} 存放為指標欄位，dom 按值傳遞時深拷貝池
+dom {
+    pool dom-pool #{inline=false}
+    root i64
+    format i64
+}
+
+; ═══════════════════════════════════════════════
+; 池基礎操作
+; ═══════════════════════════════════════════════
+
+; init: 初始化節點池（堆 vec 需先初始化方能安全 push）
+dom-pool.init = () {
+    .nodes = with-len(0)
+    .names = with-len(0)
+    .vals = with-len(0)
+    .an = with-len(0)
+    .av = with-len(0)
+    .ax = with-len(0)
+    .stk = with-len(0)
+}
+
+; alloc: 分配新節點（附帶平行 names/vals 槽位），返回索引
+dom-pool.alloc = (k i64) (idx i64) {
+    idx = .nodes.len()
+    v dom-node
+    v.kind = k
+    v.parent = -1
+    v.prev = -1
+    v.next = -1
+    v.first = -1
+    v.last = -1
+    v.count = 0
+    v.attr-first = -1
+    v.attr-last = -1
+    v.attr-count = 0
+    .nodes.push(v)
+    .names.push('')
+    .vals.push('')
+}
+
+; valid: 節點索引是否合法
+dom-pool.valid = (idx i64) (yes bool) {
+    yes = idx >= 0 && idx < .nodes.len()
+}
+
+; append: 將 child 附加到 parent 子鏈表尾端（已有父節點先摘除）
+dom-pool.append = (parent i64, child i64) {
+    parent < 0 || child < 0 -> return
+    .valid(parent) == false -> return
+    .valid(child) == false -> return
+    .detach(child)
+    .nodes[child].parent = parent
+    last = .nodes[parent].last
+    last >= 0 -> {
+        .nodes[last].next = child
+        .nodes[child].prev = last
+    }
+    last < 0 -> {
+        .nodes[parent].first = child
+    }
+    .nodes[parent].last = child
+    cnt = .nodes[parent].count
+    #{overflow=wrap}
+    .nodes[parent].count = cnt + 1
+}
+
+; detach: 從父節點摘除 child（保持子鏈表完整）
+dom-pool.detach = (child i64) {
+    .valid(child) == false -> return
+    p = .nodes[child].parent
+    p < 0 -> return
+    prev = .nodes[child].prev
+    next = .nodes[child].next
+    prev >= 0 -> {
+        .nodes[prev].next = next
+    }
+    prev < 0 -> {
+        .nodes[p].first = next
+    }
+    next >= 0 -> {
+        .nodes[next].prev = prev
+    }
+    next < 0 -> {
+        .nodes[p].last = prev
+    }
+    .nodes[child].parent = -1
+    .nodes[child].prev = -1
+    .nodes[child].next = -1
+    cnt = .nodes[p].count
+    #{overflow=wrap}
+    .nodes[p].count = cnt - 1
+}
+
+; insert-before: 將 node 插入 parent 的 ref 之前（ref 非法或非 parent 之子時附加到尾端）
+dom-pool.insert-before = (parent i64, node i64, ref i64) {
+    parent < 0 || node < 0 -> return
+    .valid(parent) == false -> return
+    .valid(node) == false -> return
+    ref < 0 || .valid(ref) == false || .nodes[ref].parent != parent -> {
+        .append(parent, node)
+        return
+    }
+    .detach(node)
+    prev = .nodes[ref].prev
+    .nodes[node].parent = parent
+    .nodes[node].prev = prev
+    .nodes[node].next = ref
+    .nodes[ref].prev = node
+    prev >= 0 -> {
+        .nodes[prev].next = node
+    }
+    prev < 0 -> {
+        .nodes[parent].first = node
+    }
+    cnt = .nodes[parent].count
+    #{overflow=wrap}
+    .nodes[parent].count = cnt + 1
+}
+
+; ═══════════════════════════════════════════════
+; 屬性操作（池層）
+; ═══════════════════════════════════════════════
+
+; find-attr: 查找節點 name 屬性對應的邊索引，返回 -1 表示不存在
+dom-pool.find-attr = (node i64, name str) (e i64) {
+    e = -1
+    .valid(node) == false -> return
+    p = .nodes[node].attr-first
+    (p >= 0) {
+        .an[p].eq-full(name) -> {
+            e = p
+            return
+        }
+        p = .ax[p]
+    }
+}
+
+; set-attr: 設定屬性（存在則改值，否則按文檔順序附加到尾端）
+dom-pool.set-attr = (node i64, name str, val str) {
+    .valid(node) == false -> return
+    e = .find-attr(node, name)
+    e >= 0 -> {
+        .av[e] = val
+        return
+    }
+    ne = .an.len()
+    .an.push(name)
+    .av.push(val)
+    .ax.push(-1)
+    last = .nodes[node].attr-last
+    last >= 0 -> {
+        .ax[last] = ne
+    }
+    last < 0 -> {
+        .nodes[node].attr-first = ne
+    }
+    .nodes[node].attr-last = ne
+    cnt = .nodes[node].attr-count
+    #{overflow=wrap}
+    .nodes[node].attr-count = cnt + 1
+}
+
+; remove-attr: 移除屬性，返回是否找到
+dom-pool.remove-attr = (node i64, name str) (yes bool) {
+    yes = false
+    .valid(node) == false -> return
+    prev = -1
+    e = .nodes[node].attr-first
+    (e >= 0) {
+        {
+            .an[e].eq-full(name) -> {
+                nxt = .ax[e]
+                prev >= 0 -> {
+                    .ax[prev] = nxt
+                }
+                prev < 0 -> {
+                    .nodes[node].attr-first = nxt
+                }
+                nxt < 0 && prev >= 0 -> {
+                    .nodes[node].attr-last = prev
+                }
+                nxt < 0 && prev < 0 -> {
+                    .nodes[node].attr-last = -1
+                }
+                cnt = .nodes[node].attr-count
+                #{overflow=wrap}
+                .nodes[node].attr-count = cnt - 1
+                yes = true
+                return
+            }
+        }
+        prev = e
+        e = .ax[e]
+    }
+}
+
+; attr-edge-at: 取節點第 i 條屬性邊索引（按文檔順序），-1=越界
+dom-pool.attr-edge-at = (node i64, i i64) (e i64) {
+    e = -1
+    .valid(node) == false -> return
+    i < 0 || i >= .nodes[node].attr-count -> return
+    p = .nodes[node].attr-first
+    k <- [0..i): {
+        p = .ax[p]
+    }
+    e = p
+}
+
+; ═══════════════════════════════════════════════
+; 名字判別與實體
+; ═══════════════════════════════════════════════
+
+; blob-has: 在空格補齊的詞表 blob 中查找整詞 name
+blob-has = (blob str, name str) (yes bool) {
+    yes = false
+    name.len-bytes() == 0 -> return
+    needle = ' ' - name - ' '
+    blob.index(needle) >= 0 -> yes = true
+}
+
+; is-name-byte: XML/HTML 標籤與屬性名字元（ASCII 子集 + UTF-8 高位元組放行）
+is-name-byte = (c i64) (yes bool) {
+    yes = false
+    c >= 128 -> {
+        yes = true
+        return
+    }
+    c >= 48 && c <= 57 -> {
+        yes = true
+        return
+    }
+    c >= 65 && c <= 90 -> {
+        yes = true
+        return
+    }
+    c >= 97 && c <= 122 -> {
+        yes = true
+        return
+    }
+    c == 45 || c == 95 || c == 58 || c == 46 -> yes = true
+}
+
+; find-entity: 在 DOM-ENTITY-BLOB 中查找命名實體碼點，-1=未找到
+find-entity = (name str) (cp i64) {
+    cp = -1
+    name.len-bytes() == 0 -> return
+    needle = name - ':'
+    blob = DOM-ENTITY-BLOB
+    start = 0
+    (start <= blob.len-bytes()) {
+        idx = blob.index-from(needle, start)
+        idx < 0 -> return
+        idx == 0 || blob.byte(idx - 1) == 32 -> {
+
+            ; 整詞命中：解析數字直到空格或表尾
+            d = idx + needle.len-bytes()
+            v i64 = 0
+            b = 0
+            (d < blob.len-bytes()) {
+                b = blob.byte(d)
+                b == 32 -> break
+                b < 48 || b > 57 -> break
+                v = v * 10 + (b - 48)
+                #{overflow=wrap}
+                d = d + 1
+            }
+            cp = v
+            return
+        }
+        #{overflow=wrap}
+        start = idx + 1
+    }
+}
+
+; cp-append: 把碼點 cp 以 UTF-8 追加到 out（返回新字串）
+cp-append = (out str, cp i64) (res str) {
+    res = out
+    cp <= 0 || cp > 1114111 -> return
+    cc char = cp
+    res = out - cc.to-str()
+}
+
+; decode-entities: 解碼 s[from..to) 的實體（命名實體查 DOM-ENTITY-BLOB，數字實體 &#NN;/&#xHH;）
+;   html=true：未知/未闭合實體按原文保留；html=false：未知實體判為錯誤
+; 返回 out=解碼結果, ok=是否成功（XML 模式下非法實體 ok=false）
+decode-entities = (s str, from i64, to i64, html bool) (out str, ok bool) {
+    ok = true
+    out = ''
+    n = to - from
+    n <= 0 -> return
+    seg = from
+    i = from
+    (i < to) {
+        c = s.byte(i)
+        c != 38 -> {
+            #{overflow=wrap}
+            i = i + 1
+            continue
+        }
+
+        ; '&' 命中：先把前導字面片段入結果
+        out = out - s.slice-bytes(seg, i)
+
+        ; 掃描實體名（字母/數字/#，最長 32，止於 ';' 或越界）
+        k = i + 1
+        name-start = k
+        name-len = 0
+        (k < to && name-len < 32) {
+            b = s.byte(k)
+            b == 59 -> break
+            ec = false
+            b >= 48 && b <= 57 -> ec = true
+            b >= 65 && b <= 90 -> ec = true
+            b >= 97 && b <= 122 -> ec = true
+            b == 35 -> ec = true
+            ec == false -> break
+            #{overflow=wrap}
+            k = k + 1
+            #{overflow=wrap}
+            name-len = name-len + 1
+        }
+        has-semi = false
+        k < to -> {
+            s.byte(k) == 59 -> has-semi = true
+        }
+
+        {
+            name-len == 0 -> {
+
+                ; 裸 '&'：XML 錯誤；HTML 原樣保留
+                html == false -> {
+                    out = ''
+                    ok = false
+                    return
+                }
+                out = out - '&'
+                #{overflow=wrap}
+                seg = i + 1
+                i = seg
+                continue
+            }
+
+            has-semi == false -> {
+
+                ; 未闭合實體：XML 錯誤；HTML 保留字面 '&'（名字仍作正文）
+                html == false -> {
+                    out = ''
+                    ok = false
+                    return
+                }
+                out = out - '&'
+                #{overflow=wrap}
+                seg = i + 1
+                i = seg
+                continue
+            }
+
+            ; 完整 '&...;' 形態：先試數字實體，再查命名實體
+            nb = s.byte(name-start)
+            cpv i64 = -1
+            {
+                nb == 35 -> {
+                    #{overflow=wrap}
+                    cpv = parse-numeric-entity(s, name-start + 1, k)
+                }
+                -> {
+                    nm = s.slice-bytes(name-start, k)
+                    cpv = find-entity(nm)
+                }
+            }
+            cpv < 0 -> {
+                html == false -> {
+                    out = ''
+                    ok = false
+                    return
+                }
+                ; HTML：未知實體原文保留（含分號）
+                out = out - s.slice-bytes(i, k + 1)
+                #{overflow=wrap}
+                seg = k + 1
+                i = seg
+                continue
+            }
+            out = cp-append(out, cpv)
+            #{overflow=wrap}
+            seg = k + 1
+            i = seg
+        }
+    }
+    out = out - s.slice-bytes(seg, to)
+}
+
+; parse-numeric-entity: 解析 &#...; 的十進位/十六進位碼點，非法返回 -1
+;   s[pos] 起為數字部分（可 'x'/'X' 開頭表示十六進位），end 為 ';' 位置
+parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
+    cp = -1
+    p = pos
+    hex = false
+    p < end -> {
+        fc = s.byte(p)
+        fc == 120 || fc == 88 -> {
+            hex = true
+            #{overflow=wrap}
+            p = p + 1
+        }
+    }
+    v i64 = 0
+    any = false
+    b = 0
+    (p < end) {
+        b = s.byte(p)
+        d i64 = -1
+        b >= 48 && b <= 57 -> d = b - 48
+        hex == true && b >= 65 && b <= 70 -> d = b - 55
+        hex == true && b >= 97 && b <= 102 -> d = b - 87
+        d < 0 -> return
+        any = true
+        {
+            hex == true -> {
+                #{overflow=wrap}
+                v = v * 16 + d
+            }
+            -> {
+                #{overflow=wrap}
+                v = v * 10 + d
+            }
+        }
+        #{overflow=wrap}
+        p = p + 1
+    }
+    any == false -> return
+    v > 1114111 -> return
+    cp = v
+}
+
+; ═══════════════════════════════════════════════
+; 掃描輔助
+; ═══════════════════════════════════════════════
+
+; xml-skip-ws: 跳過 XML 空白（空格/Tab/CR/LF）
+xml-skip-ws = (s str, p i64) (np i64) {
+    np = p
+    n = s.len-bytes()
+    (np < n) {
+        c = s.byte(np)
+        c != 32 && c != 9 && c != 10 && c != 13 -> return
+        #{overflow=wrap}
+        np = np + 1
+    }
+}
+
+; xml-read-name: 從 p 讀取名字（名字元序列），返回結束位置
+xml-read-name = (s str, p i64) (np i64, ok bool) {
+    n = s.len-bytes()
+    np = p
+    c = 0
+    (np < n) {
+        c = s.byte(np)
+        is-name-byte(c) == false -> break
+        #{overflow=wrap}
+        np = np + 1
+    }
+    ok = np > p
+}
+
+; strip-bom: 去掉開頭 UTF-8 BOM，返回起始偏移
+dom-strip-bom = (s str) (p i64) {
+    p = 0
+    s.len-bytes() >= 3 && s.byte(0) == 239 && s.byte(1) == 187 && s.byte(2) == 191 -> p = 3
+}
+
+; ═══════════════════════════════════════════════
+; XML 解析（嚴謹模式：不合法即失敗）
+; ═══════════════════════════════════════════════
+
+; xml-add-text: 把 s[from..to) 解碼為文字節點附加到 parent
+dom-pool.xml-add-text = (parent i64, s str, from i64, to i64) (ok bool) {
+    ok = false
+    to <= from -> {
+        ok = true
+        return
+    }
+    val, dec-ok = decode-entities(s, from, to, false)
+    dec-ok == false -> return
+    idx = .alloc(DOM-KIND-TEXT)
+    .vals[idx] = val
+    .append(parent, idx)
+    ok = true
+}
+
+; xml-parse-comment: 解析 <!--...-->，附加到 parent，返回下一位置
+dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np i64, ok bool) {
+    ok = false
+    n = s.len-bytes()
+    j = p + 4
+    found = false
+    (j + 3 <= n) {
+        ct str = s.slice-bytes(j, j + 3)
+        ct.eq-full('-->') -> {
+            found = true
+            break
+        }
+        #{overflow=wrap}
+        j = j + 1
+    }
+    found == false -> return
+    idx = .alloc(DOM-KIND-COMMENT)
+    .vals[idx] = s.slice-bytes(p + 4, j)
+    .append(parent, idx)
+    np = j + 3
+    ok = true
+}
+
+; xml-parse-cdata: 解析 <![CDATA[...]]>，附加到 parent
+dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np i64, ok bool) {
+    ok = false
+    n = s.len-bytes()
+    j = p + 9
+    found = false
+    (j + 3 <= n) {
+        ct str = s.slice-bytes(j, j + 3)
+        ct.eq-full(']]>') -> {
+            found = true
+            break
+        }
+        #{overflow=wrap}
+        j = j + 1
+    }
+    found == false -> return
+    idx = .alloc(DOM-KIND-CDATA)
+    .vals[idx] = s.slice-bytes(p + 9, j)
+    .append(parent, idx)
+    np = j + 3
+    ok = true
+}
+
+; xml-parse-pi: 解析 <?target data?>，附加到 parent
+dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np i64, ok bool) {
+    ok = false
+    n = s.len-bytes()
+    ne, nom-ok = xml-read-name(s, p + 2)
+    nom-ok == false -> return
+    tgt str = s.slice-bytes(p + 2, ne)
+    j = ne
+    found = false
+    (j + 1 < n) {
+        q str = s.slice-bytes(j, j + 2)
+        q.eq-full('?>') -> {
+            found = true
+            break
+        }
+        #{overflow=wrap}
+        j = j + 1
+    }
+    found == false -> return
+    idx = .alloc(DOM-KIND-PI)
+    .names[idx] = tgt
+    ; 值從目標名後的首個非空白起算，序列化時不致產生雙空格
+    vs = xml-skip-ws(s, ne)
+    vs > j -> vs = j
+    .vals[idx] = s.slice-bytes(vs, j)
+    .append(parent, idx)
+    np = j + 2
+    ok = true
+}
+
+; parse-doctype-node: 解析 <!DOCTYPE ...>（含內部子集與引號），XML/HTML 共用
+;   內容原樣存放（不解實體）；名稱為 '!' 後的第一個詞
+dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np i64, ok bool) {
+    ok = false
+    n = s.len-bytes()
+    j = 0
+    #{overflow=wrap}
+    j = p + 2
+    db = 0
+    inq = 0
+    found = false
+    b = 0
+    (j < n) {
+        b = s.byte(j)
+        ; 快照進入時的引號狀態 oi：這些 cond->stmt 為順序執行而非互斥 match，
+        ; 若直接用 inq == 0 判斷，開引號臂刚設完 inq 會被後續臂重複觸發
+        oi = 0
+        oi = inq
+        oi == 0 && b == 34 -> inq = 34
+        oi == 0 && b == 39 -> inq = 39
+        oi == 34 && b == 34 -> inq = 0
+        oi == 39 && b == 39 -> inq = 0
+        oi == 0 && b == 91 -> {
+            #{overflow=wrap}
+            db = db + 1
+        }
+        oi == 0 && b == 93 && db > 0 -> {
+            #{overflow=wrap}
+            db = db - 1
+        }
+        oi == 0 && b == 62 && db == 0 -> {
+            found = true
+            break
+        }
+        #{overflow=wrap}
+        j = j + 1
+    }
+    found == false -> return
+    idx = .alloc(DOM-KIND-DOCTYPE)
+    .vals[idx] = s.slice-bytes(p + 2, j)
+    ; names 存放文檔元素名（跳過 'DOCTYPE' 關鍵字後的第二個名字）
+    kw, kw-ok = xml-read-name(s, p + 2)
+    kw-ok -> {
+        ns = xml-skip-ws(s, kw)
+        ne, nom-ok = xml-read-name(s, ns)
+        nom-ok -> {
+            .names[idx] = s.slice-bytes(ns, ne)
+        }
+    }
+    .append(parent, idx)
+    np = j + 1
+    ok = true
+}
+
+; xml-parse-attr: 解析一個屬性（xml=true 時值必須加引號且重複屬性判錯）
+;   返回下一位置與成功標誌
+dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np i64, ok bool) {
+    ok = false
+    n = s.len-bytes()
+    ne, nom-ok = xml-read-name(s, p)
+    nom-ok == false -> return
+    nm str = s.slice-bytes(p, ne)
+    np = xml-skip-ws(s, ne)
+    np >= n -> return
+    c = s.byte(np)
+    c != 61 -> return
+    #{overflow=wrap}
+    np = np + 1
+    np = xml-skip-ws(s, np)
+    np >= n -> return
+    q = s.byte(np)
+    vs = 0
+    ve = 0
+    {
+        q == 34 || q == 39 -> {
+            #{overflow=wrap}
+            vs = np + 1
+            j = vs
+            fe = false
+            (j < n) {
+                s.byte(j) == q -> {
+                    fe = true
+                    break
+                }
+                #{overflow=wrap}
+                j = j + 1
+            }
+            fe == false -> return
+            ve = j
+            #{overflow=wrap}
+            np = j + 1
+        }
+
+        xml == true -> return
+
+        -> {
+
+            ; HTML 未加引號的值：直到空白或 '>'
+            vs = np
+            j = np
+            (j < n) {
+                b = s.byte(j)
+                b == 32 || b == 9 || b == 10 || b == 13 || b == 62 -> break
+                #{overflow=wrap}
+                j = j + 1
+            }
+            ve = j
+            np = j
+        }
+    }
+    ; 重複屬性：XML 違規；HTML 首個為準
+    ex = .find-attr(node, nm)
+    ex >= 0 -> {
+        xml == false -> {
+            ok = true
+            return
+        }
+        return
+    }
+    val, dec-ok = decode-entities(s, vs, ve, xml == false)
+    dec-ok == false -> return
+    .set-attr(node, nm, val)
+    ok = true
+}
+
+; xml-parse-close: 解析結尾標籤 </name>，必須與 node 的標籤名相符
+dom-pool.xml-parse-close = (node i64, s str, p i64) (np i64, ok bool) {
+    ok = false
+    n = s.len-bytes()
+    ne, nom-ok = xml-read-name(s, p + 2)
+    nom-ok == false -> return
+    cnm str = s.slice-bytes(p + 2, ne)
+    .names[node].eq-full(cnm) == false -> return
+    np = xml-skip-ws(s, ne)
+    np >= n -> return
+    s.byte(np) != 62 -> return
+    #{overflow=wrap}
+    np = np + 1
+    ok = true
+}
+
+; xml-parse-element: 解析一個元素（含子節點），附加到 parent
+;   p 指向 '<'；depth 為當前嵌套深度
+dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np i64, ok bool) {
+    ok = false
+    n = s.len-bytes()
+    depth > DOM-MAX-DEPTH -> return
+    p + 1 >= n -> return
+    ne, nom-ok = xml-read-name(s, p + 1)
+    nom-ok == false -> return
+    idx = .alloc(DOM-KIND-ELEMENT)
+    .names[idx] = s.slice-bytes(p + 1, ne)
+    .append(parent, idx)
+    np = ne
+
+    ; 屬性迴圈
+    closed-self = false
+    (np <= n) {
+        np = xml-skip-ws(s, np)
+        np >= n -> return
+        c = s.byte(np)
+        {
+            c == 47 -> {
+                np + 1 >= n -> return
+                s.byte(np + 1) != 62 -> return
+                np = np + 2
+                closed-self = true
+                break
+            }
+            c == 62 -> {
+                #{overflow=wrap}
+                np = np + 1
+                break
+            }
+            -> {
+                an, a-ok = .xml-parse-attr(idx, s, np, true)
+                a-ok == false -> return
+                np = an
+            }
+        }
+    }
+    closed-self -> {
+        ok = true
+        return
+    }
+
+    ; 子節點迴圈
+    (np < n) {
+        c = s.byte(np)
+        {
+            c != 60 -> {
+                te = np
+                (te < n) {
+                    s.byte(te) == 60 -> break
+                    #{overflow=wrap}
+                    te = te + 1
+                }
+                t-ok = .xml-add-text(idx, s, np, te)
+                t-ok == false -> return
+                np = te
+            }
+
+            -> {
+                np + 1 >= n -> return
+                h2 str = s.slice-bytes(np, np + 2)
+                is-cd = false
+                np + 8 < n -> {
+                    c9 str = s.slice-bytes(np, np + 9)
+                    c9.eq-full('<![CDATA[') -> is-cd = true
+                }
+                is-cm = false
+                np + 3 < n -> {
+                    s.byte(np + 2) == 45 && s.byte(np + 3) == 45 -> is-cm = true
+                }
+                {
+                    h2.eq-full('</') -> {
+                        cn, cl-ok = .xml-parse-close(idx, s, np)
+                        cl-ok == false -> return
+                        np = cn
+                        ok = true
+                        return
+                    }
+                    is-cd -> {
+                        cn, cd-ok = .xml-parse-cdata(idx, s, np)
+                        cd-ok == false -> return
+                        np = cn
+                    }
+                    is-cm -> {
+                        cn, cm-ok = .xml-parse-comment(idx, s, np)
+                        cm-ok == false -> return
+                        np = cn
+                    }
+                    h2.eq-full('<?') -> {
+                        cn, pi-ok = .xml-parse-pi(idx, s, np)
+                        pi-ok == false -> return
+                        np = cn
+                    }
+                    -> {
+                        #{overflow=wrap}
+                        nd = depth + 1
+                        cn, el-ok = .xml-parse-element(s, idx, np, nd)
+                        el-ok == false -> return
+                        np = cn
+                    }
+                }
+            }
+        }
+    }
+}
+
+; xml-parse-doc: 解析整份 XML 文檔，返回 document 根索引
+dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
+    ok = false
+    root = .alloc(DOM-KIND-DOCUMENT)
+    n = s.len-bytes()
+    p = dom-strip-bom(s)
+    seen = false
+    (p < n) {
+        p = xml-skip-ws(s, p)
+        p >= n -> break
+        s.byte(p) != 60 -> {
+            failpos = p
+            return
+        }
+        p + 1 >= n -> {
+            failpos = p
+            return
+        }
+        h2 str = s.slice-bytes(p, p + 2)
+        {
+            h2.eq-full('<?') -> {
+                np, pi-ok = .xml-parse-pi(root, s, p)
+                pi-ok == false -> {
+                    failpos = p
+                    return
+                }
+                p = np
+            }
+            h2.eq-full('<!') && p + 3 < n && s.byte(p + 2) == 45 && s.byte(p + 3) == 45 -> {
+                np, cm-ok = .xml-parse-comment(root, s, p)
+                cm-ok == false -> {
+                    failpos = p
+                    return
+                }
+                p = np
+            }
+            h2.eq-full('</') -> {
+                failpos = p
+                return
+            }
+            h2.eq-full('<!') -> {
+                is-dt = false
+                p + 8 < n -> {
+                    d9 str = s.slice-bytes(p, p + 9)
+                    d9.eq-full('<!DOCTYPE') -> is-dt = true
+                }
+                is-dt == false -> {
+                    failpos = p
+                    return
+                }
+                np, dt-ok = .parse-doctype-node(root, s, p)
+                dt-ok == false -> {
+                    failpos = p
+                    return
+                }
+                p = np
+            }
+            -> {
+                seen -> {
+                    failpos = p
+                    return
+                }
+                np, el-ok = .xml-parse-element(s, root, p, 1)
+                el-ok == false -> {
+                    failpos = p
+                    return
+                }
+                seen = true
+                p = np
+            }
+        }
+    }
+    seen == false -> {
+        failpos = p
+        return
+    }
+    ok = true
+    failpos = -1
+}
+
+; ═══════════════════════════════════════════════
+; HTML 解析（寬鬆模式：任何輸入都不報錯，尽力恢復）
+; ═══════════════════════════════════════════════
+
+; html-close-match: 判斷 s[pos..] 是否為 name 的結尾標籤名（大小寫不敏感，
+;   結束後必須紧跟 '>'、'/'、'=' 或空白）
+html-close-match = (s str, pos i64, name str) (yes bool) {
+    yes = false
+    n = s.len-bytes()
+    nl = name.len-bytes()
+    pos + nl > n -> return
+    i <- [0..nl): {
+        a = s.byte(pos + i)
+        b = name.byte(i)
+        ; 大小寫不敏感比較（server.no 同模式）
+        #{overflow=wrap}
+        a >= 65 && a <= 90 -> a = a + 32
+
+        #{overflow=wrap}
+        b >= 65 && b <= 90 -> b = b + 32
+        a != b -> return
+    }
+    e = pos + nl
+    e >= n -> {
+        yes = true
+        return
+    }
+    c = s.byte(e)
+    c == 62 || c == 32 || c == 9 || c == 10 || c == 13 || c == 47 || c == 61 -> yes = true
+}
+
+; dom-closers-of: 打開標籤 t 時應先閉合的開放標籤詞表（空串=無規則）
+dom-closers-of = (t str) (blob str) {
+    blob = ''
+    t == 'li' -> blob = ' li '
+    t == 'dd' || t == 'dt' -> blob = ' dd dt '
+    t == 'option' -> blob = ' option '
+    t == 'optgroup' -> blob = ' optgroup option '
+    t == 'td' || t == 'th' -> blob = ' td th '
+    t == 'tr' -> blob = ' td th tr '
+    t == 'tbody' || t == 'thead' || t == 'tfoot' -> blob = ' td th tr tbody thead tfoot '
+    t == 'p' -> blob = ' p '
+    blob == '' && blob-has(DOM-PBLOCK-BLOB, t) -> blob = ' p '
+}
+
+; html-peek-name: 查看 s[p] 起的 '<' 之後的標籤名（小寫），非法返回空串
+html-peek-name = (s str, p i64) (nm str) {
+    nm = ''
+    n = s.len-bytes()
+    p + 1 >= n -> return
+    e, nom-ok = xml-read-name(s, p + 1)
+    nom-ok == false -> return
+    nm = s.slice-bytes(p + 1, e).to-lower()
+}
+
+; html-add-text: 把 s[from..to) 按 HTML 實體規則解碼為文字節點附加到 parent
+dom-pool.html-add-text = (parent i64, s str, from i64, to i64) {
+    to <= from -> return
+    val, dec-ok = decode-entities(s, from, to, true)
+    dec-ok == false -> return
+    idx = .alloc(DOM-KIND-TEXT)
+    .vals[idx] = val
+    .append(parent, idx)
+}
+
+; html-parse-comment: 解析 <!--...-->，EOF 容錯
+dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
+    n = s.len-bytes()
+    j = p + 4
+    found = false
+    (j < n) {
+        j + 3 <= n -> {
+            ct str = s.slice-bytes(j, j + 3)
+            ct.eq-full('-->') -> {
+                found = true
+                break
+            }
+        }
+        #{overflow=wrap}
+        j = j + 1
+    }
+    cend = n
+    found -> {
+        cend = j
+    }
+    idx = .alloc(DOM-KIND-COMMENT)
+    .vals[idx] = s.slice-bytes(p + 4, cend)
+    .append(parent, idx)
+    np = n
+    found -> {
+        np = j + 3
+    }
+}
+
+; html-bogus-comment: '<!' 開頭的其他內容，直到 '>'，作為註解保存
+dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
+    n = s.len-bytes()
+    q = p
+    (q < n) {
+        s.byte(q) == 62 -> break
+        #{overflow=wrap}
+        q = q + 1
+    }
+    idx = .alloc(DOM-KIND-COMMENT)
+    .vals[idx] = s.slice-bytes(p + 2, q)
+    .append(parent, idx)
+    np = n
+    q < n -> {
+        np = q + 1
+    }
+}
+
+; html-parse-pi: '<?...>'（HTML 中按bogus comment 處理，此處保存為 PI 節點）
+dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
+    n = s.len-bytes()
+    ne, nom-ok = xml-read-name(s, p + 2)
+    nom-ok == false -> {
+        np = .html-bogus-comment(parent, s, p)
+        return
+    }
+    tgt str = s.slice-bytes(p + 2, ne)
+    j = ne
+    found = false
+    (j < n) {
+        s.byte(j) == 62 -> {
+            found = true
+            break
+        }
+        #{overflow=wrap}
+        j = j + 1
+    }
+    idx = .alloc(DOM-KIND-PI)
+    .names[idx] = tgt.to-lower()
+    vs = xml-skip-ws(s, ne)
+    dend = n
+    found -> {
+        dend = j
+        j > ne && s.byte(j - 1) == 63 -> {
+            dend = j - 1
+        }
+    }
+    vs > dend -> vs = dend
+    dend > vs -> {
+        .vals[idx] = s.slice-bytes(vs, dend)
+    }
+    .append(parent, idx)
+    np = n
+    found -> {
+        np = j + 1
+    }
+}
+
+; html-parse-attr: 解析 HTML 屬性（支持無引號值），重複屬性首個為準
+dom-pool.html-parse-attr = (node i64, s str, p i64) (np i64, ok bool) {
+    ok = false
+    n = s.len-bytes()
+    ne, nom-ok = xml-read-name(s, p)
+    nom-ok == false -> return
+    nm str = s.slice-bytes(p, ne)
+    nm = nm.to-lower()
+    np = xml-skip-ws(s, ne)
+    np < n && s.byte(np) == 61 -> {
+
+        ; 有 '='：解析值
+        #{overflow=wrap}
+        np = np + 1
+        np = xml-skip-ws(s, np)
+        vs = np
+        ve = np
+        q = 0
+        np < n -> q = s.byte(np)
+        {
+            np >= n -> {
+                .html-set-attr-once(node, nm, '')
+                ok = true
+                return
+            }
+            q == 34 || q == 39 -> {
+                #{overflow=wrap}
+                vs = np + 1
+                j = vs
+                fe = false
+                (j < n) {
+                    s.byte(j) == q -> {
+                        fe = true
+                        break
+                    }
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+                ve = j
+                np = j
+                fe -> {
+                    np = j + 1
+                }
+            }
+            q == 62 -> {
+                ; '=' 後直接 '>'：空值
+                .html-set-attr-once(node, nm, '')
+                ok = true
+                return
+            }
+            -> {
+                ; 未加引號的值：直到空白或 '>'
+                j = np
+                (j < n) {
+                    b = s.byte(j)
+                    b == 32 || b == 9 || b == 10 || b == 13 || b == 62 -> break
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+                ve = j
+                np = j
+            }
+        }
+        val, dec-ok = decode-entities(s, vs, ve, true)
+        dec-ok == false -> {
+            val = s.slice-bytes(vs, ve)
+        }
+        .html-set-attr-once(node, nm, val)
+        ok = true
+        return
+    }
+
+    ; 布爾屬性（無值）
+    .html-set-attr-once(node, nm, '')
+    ok = true
+}
+
+; html-set-attr-once: 僅當屬性不存在時設定（HTML 重複屬性首個為準）
+dom-pool.html-set-attr-once = (node i64, name str, val str) {
+    ex = .find-attr(node, name)
+    ex >= 0 -> return
+    .set-attr(node, name, val)
+}
+
+; html-parse-open: 解析開始標籤並附加元素到 cur
+;   返回 np=下一位置、el=元素索引、mode：
+;   0=非法 '<'（已作文字）、1=普通元素（調用方入棧）、2=void/自閉合、3=raw-text 已吞內容
+dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
+    n = s.len-bytes()
+    nm = html-peek-name(s, p)
+    nm == '' -> {
+        .html-add-text(cur, s, p, p + 1)
+        el = -1
+        mode = 0
+        #{overflow=wrap}
+        np = p + 1
+        return
+    }
+    el = .alloc(DOM-KIND-ELEMENT)
+    .names[el] = nm
+    #{overflow=wrap}
+    np = p + 1 + nm.len-bytes()
+
+    ; 屬性迴圈
+    done = false
+    (np < n && done == false) {
+        np = xml-skip-ws(s, np)
+        np >= n -> break
+        c = s.byte(np)
+        {
+            c == 62 -> {
+                #{overflow=wrap}
+                np = np + 1
+                done = true
+            }
+            c == 47 -> {
+                np + 1 < n && s.byte(np + 1) == 62 -> {
+                    np = np + 2
+                    .append(cur, el)
+                    mode = 2
+                    return
+                }
+                ; 孤立的 '/'：跳過繼續
+                #{overflow=wrap}
+                np = np + 1
+            }
+            -> {
+                an, a-ok = .html-parse-attr(el, s, np)
+                a-ok == false -> {
+                    ; 非法屬性起始字元：跳過避免死循環
+                    #{overflow=wrap}
+                    np = np + 1
+                    continue
+                }
+                np = an
+            }
+        }
+    }
+
+    .append(cur, el)
+    mode = 1
+
+    blob-has(DOM-VOID-BLOB, nm) -> {
+        mode = 2
+        return
+    }
+    blob-has(DOM-RAWTEXT-BLOB, nm) == false -> return
+
+    ; raw-text：吞掉直到 '</name'（script/style 原樣；title/textarea 解實體）
+    mode = 3
+    rc = blob-has(DOM-RCDATA-BLOB, nm)
+    j = np
+    found-at = -1
+    (j < n) {
+        s.byte(j) == 60 && j + 1 < n && s.byte(j + 1) == 47 -> {
+            m-ok = html-close-match(s, j + 2, nm)
+            m-ok -> {
+                found-at = j
+                break
+            }
+        }
+        #{overflow=wrap}
+        j = j + 1
+    }
+    cend = n
+    found-at >= 0 -> {
+        cend = found-at
+    }
+    cend > np -> {
+        tidx = .alloc(DOM-KIND-TEXT)
+        rc -> {
+            val, dec-ok = decode-entities(s, np, cend, true)
+            dec-ok == false -> {
+                val = s.slice-bytes(np, cend)
+            }
+            .vals[tidx] = val
+        }
+        -> {
+            .vals[tidx] = s.slice-bytes(np, cend)
+        }
+        .append(el, tidx)
+    }
+    np = n
+    found-at >= 0 -> {
+        ; 跳到結尾標籤的 '>' 之後
+        q = found-at
+        (q < n) {
+            s.byte(q) == 62 -> break
+            #{overflow=wrap}
+            q = q + 1
+        }
+        np = q
+        q < n -> {
+            np = q + 1
+        }
+    }
+}
+
+; html-parse-close-name: 解析 '</name'，返回 '>' 之後位置與小寫標籤名
+dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
+    n = s.len-bytes()
+    nm = ''
+    ok = false
+    ne, nom-ok = xml-read-name(s, p + 2)
+    nom-ok == false -> {
+        ; '</' 後無名字：當註解處理到 '>'
+        np = p
+        (np < n) {
+            s.byte(np) == 62 -> break
+            #{overflow=wrap}
+            np = np + 1
+        }
+        np < n -> {
+            #{overflow=wrap}
+            np = np + 1
+        }
+        return
+    }
+    nm = s.slice-bytes(p + 2, ne).to-lower()
+    ok = true
+    np = ne
+    (np < n) {
+        s.byte(np) == 62 -> break
+        #{overflow=wrap}
+        np = np + 1
+    }
+    np < n -> {
+        #{overflow=wrap}
+        np = np + 1
+    }
+}
+
+; html-parse-doc: 解析整份 HTML 文檔（永不失敗），返回 document 根索引
+dom-pool.html-parse-doc = (s str) (root i64) {
+    root = .alloc(DOM-KIND-DOCUMENT)
+    n = s.len-bytes()
+    p = dom-strip-bom(s)
+    ; 開啟元素棧存在池欄位 stk：區域 vec 的 push 在函式內不持久
+    .stk = with-len(0)
+    cur = root
+    m1 = 0
+    (p < n) {
+        c = s.byte(p)
+        c != 60 -> {
+            te = p + 1
+            (te < n) {
+                s.byte(te) == 60 -> break
+                #{overflow=wrap}
+                te = te + 1
+            }
+            .html-add-text(cur, s, p, te)
+            p = te
+            continue
+        }
+
+        ; 標籤開始
+        p + 1 >= n -> {
+            .html-add-text(cur, s, p, p + 1)
+            #{overflow=wrap}
+            p = p + 1
+            continue
+        }
+        m1 = s.byte(p + 1)
+        m1 == 33 -> {
+            ; '<!'：註解 / doctype / bogus
+            p + 3 < n && s.byte(p + 2) == 45 && s.byte(p + 3) == 45 -> {
+                p = .html-parse-comment(cur, s, p)
+                continue
+            }
+            is-dt = false
+            p + 8 < n -> {
+                d9 str = s.slice-bytes(p, p + 9)
+                d9.to-lower().eq-full('<!doctype') -> is-dt = true
+            }
+            is-dt -> {
+                dn, dt-ok = .parse-doctype-node(cur, s, p)
+                dt-ok -> {
+                    p = dn
+                    continue
+                }
+            }
+            p = .html-bogus-comment(cur, s, p)
+            continue
+        }
+        m1 == 63 -> {
+            p = .html-parse-pi(cur, s, p)
+            continue
+        }
+        m1 == 47 -> {
+            ; 結尾標籤：在棧中自頂向下找同名元素，找到則彈出其上所有層
+            pn, cnm, c-ok = .html-parse-close-name(s, p)
+            p = pn
+            c-ok == false -> continue
+            sl = .stk.len()
+            hit-k = -1
+            #{overflow=wrap}
+            k = sl - 1
+            (k >= 0) {
+                #{index-out=zero}
+                ti i64 = .stk[k]
+                tn str = .names[ti]
+                tn.eq-full(cnm) -> {
+                    hit-k = k
+                    break
+                }
+                #{overflow=wrap}
+                k = k - 1
+            }
+            hit-k >= 0 -> {
+                (.stk.len() > hit-k) {
+                    .stk.pop()
+                }
+                cur = root
+                #{overflow=wrap}
+                topi = .stk.len() - 1
+                topi >= 0 -> {
+                    #{index-out=zero}
+                    cur = .stk[topi]
+                }
+            }
+            continue
+        }
+        is-name-byte(m1) == false -> {
+            ; 孤立的 '<'：作普通文字
+            .html-add-text(cur, s, p, p + 1)
+            #{overflow=wrap}
+            p = p + 1
+            continue
+        }
+
+        ; 開始標籤：先做隐式閉合
+        onm = html-peek-name(s, p)
+        onm != '' -> {
+            closers = dom-closers-of(onm)
+            closers != '' -> {
+                (.stk.len() > 0) {
+                    #{overflow=wrap}
+                    topi = .stk.len() - 1
+                    #{index-out=zero}
+                    ti i64 = .stk[topi]
+                    tn str = .names[ti]
+                    blob-has(closers, tn) == false -> break
+                    .stk.pop()
+                }
+                cur = root
+                #{overflow=wrap}
+                topi = .stk.len() - 1
+                topi >= 0 -> {
+                    #{index-out=zero}
+                    cur = .stk[topi]
+                }
+            }
+        }
+        pn, el, mode = .html-parse-open(s, p, cur)
+        p = pn
+        mode == 1 -> {
+            el >= 0 -> {
+                .stk.push(el)
+                cur = el
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 轉義與序列化
+; ═══════════════════════════════════════════════
+
+; esc-text: 轉義文字中的 & < >
+esc-text = (s str) (out str) {
+    out = ''
+    seg = 0
+    n = s.len-bytes()
+    i = 0
+    (i < n) {
+        b = s.byte(i)
+        {
+            b == 38 -> {
+                out = out - s.slice-bytes(seg, i) - '&amp;'
+                #{overflow=wrap}
+                seg = i + 1
+            }
+            b == 60 -> {
+                out = out - s.slice-bytes(seg, i) - '&lt;'
+                #{overflow=wrap}
+                seg = i + 1
+            }
+            b == 62 -> {
+                out = out - s.slice-bytes(seg, i) - '&gt;'
+                #{overflow=wrap}
+                seg = i + 1
+            }
+        }
+        #{overflow=wrap}
+        i = i + 1
+    }
+    out = out - s.slice-bytes(seg, n)
+}
+
+; esc-attr: 轉義屬性值中的 & < > "
+esc-attr = (s str) (out str) {
+    out = ''
+    seg = 0
+    n = s.len-bytes()
+    i = 0
+    (i < n) {
+        b = s.byte(i)
+        {
+            b == 38 -> {
+                out = out - s.slice-bytes(seg, i) - '&amp;'
+                #{overflow=wrap}
+                seg = i + 1
+            }
+            b == 60 -> {
+                out = out - s.slice-bytes(seg, i) - '&lt;'
+                #{overflow=wrap}
+                seg = i + 1
+            }
+            b == 62 -> {
+                out = out - s.slice-bytes(seg, i) - '&gt;'
+                #{overflow=wrap}
+                seg = i + 1
+            }
+            b == 34 -> {
+                out = out - s.slice-bytes(seg, i) - '&quot;'
+                #{overflow=wrap}
+                seg = i + 1
+            }
+        }
+        #{overflow=wrap}
+        i = i + 1
+    }
+    out = out - s.slice-bytes(seg, n)
+}
+
+; ser-children: 序列化 idx 的全部子節點
+dom-pool.ser-children = (idx i64, html bool) (out str) {
+    out = ''
+    .valid(idx) == false -> return
+    c = .nodes[idx].first
+    (c >= 0) {
+        out = out - .ser(c, html)
+        c = .nodes[c].next
+    }
+}
+
+; ser: 序列化單個節點（outer）
+dom-pool.ser = (idx i64, html bool) (out str) {
+    out = ''
+    .valid(idx) == false -> return
+    k = .nodes[idx].kind
+    {
+        k == DOM-KIND-DOCUMENT -> {
+            out = .ser-children(idx, html)
+            return
+        }
+
+        k == DOM-KIND-ELEMENT -> {
+            nm str = .names[idx]
+            out = '<' - nm
+            e = .nodes[idx].attr-first
+            (e >= 0) {
+                ev str = .av[e]
+                en str = .an[e]
+                out = out - ' ' - en - '="' - esc-attr(ev) - '"'
+                e = .ax[e]
+            }
+            {
+                html && blob-has(DOM-VOID-BLOB, nm) -> {
+                    out = out - '>'
+                }
+                .nodes[idx].count == 0 -> {
+                    html -> {
+                        out = out - '>' - '</' - nm - '>'
+                    }
+                    -> {
+                        out = out - '/>'
+                    }
+                }
+                -> {
+                    out = out - '>' - .ser-children(idx, html) - '</' - nm - '>'
+                }
+            }
+            return
+        }
+
+        k == DOM-KIND-TEXT -> {
+            v str = .vals[idx]
+            p = .nodes[idx].parent
+            raw = false
+            html && p >= 0 -> {
+                pn str = .names[p]
+                blob-has(DOM-RAWTEXT-BLOB, pn) -> raw = true
+            }
+            {
+                raw -> out = v
+                -> out = esc-text(v)
+            }
+            return
+        }
+
+        k == DOM-KIND-CDATA -> {
+            v str = .vals[idx]
+            out = '<![CDATA[' - v - ']]>'
+            return
+        }
+
+        k == DOM-KIND-COMMENT -> {
+            v str = .vals[idx]
+            out = '<!--' - v - '-->'
+            return
+        }
+
+        k == DOM-KIND-PI -> {
+            nm str = .names[idx]
+            v str = .vals[idx]
+            v.len-bytes() == 0 -> {
+                out = '<?' - nm - '?>'
+                return
+            }
+            out = '<?' - nm - ' ' - v - '?>'
+            return
+        }
+
+        k == DOM-KIND-DOCTYPE -> {
+            v str = .vals[idx]
+            out = '<!' - v - '>'
+            return
+        }
+    }
+}
+
+; text-of: 遞歸收集 idx 子樹的文本內容（TEXT/CDATA）
+dom-pool.text-of = (idx i64) (out str) {
+    out = ''
+    .valid(idx) == false -> return
+    k = .nodes[idx].kind
+    {
+        k == DOM-KIND-TEXT || k == DOM-KIND-CDATA -> {
+            out = .vals[idx]
+            return
+        }
+    }
+    c = .nodes[idx].first
+    (c >= 0) {
+        out = out - .text-of(c)
+        c = .nodes[c].next
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 查詢輔助（池層）
+; ═══════════════════════════════════════════════
+
+; collect-tag: 收集 node 子樹中標籤名為 want（star=true 时所有元素）的元素索引
+dom-pool.collect-tag = (node i64, want str, star bool) (out []i64) {
+    out = with-len(0)
+    .valid(node) == false -> return
+    c = .nodes[node].first
+    (c >= 0) {
+        {
+            .nodes[c].kind == DOM-KIND-ELEMENT -> {
+                cn str = .names[c]
+                star || cn.eq-full(want) -> out.push(c)
+            }
+        }
+        sub = .collect-tag(c, want, star)
+        m <- [0..sub.len()): {
+            sv i64 = sub[m]
+            out.push(sv)
+        }
+        c = .nodes[c].next
+    }
+}
+
+; collect-class: 收集 node 子樹中 class 屬性含 cls 詞的元素索引
+dom-pool.collect-class = (node i64, cls str) (out []i64) {
+    out = with-len(0)
+    .valid(node) == false -> return
+    c = .nodes[node].first
+    (c >= 0) {
+        {
+            .nodes[c].kind == DOM-KIND-ELEMENT -> {
+                e = .find-attr(c, 'class')
+                e >= 0 -> {
+                    cv str = .av[e]
+                    class-has(cv, cls) -> out.push(c)
+                }
+            }
+        }
+        sub = .collect-class(c, cls)
+        m <- [0..sub.len()): {
+            sv i64 = sub[m]
+            out.push(sv)
+        }
+        c = .nodes[c].next
+    }
+}
+
+; find-id-node: 在 node 子樹中遞歸查找 id 屬性等於 id 的元素，-1=未找到
+dom-pool.find-id-node = (node i64, id str) (idx i64) {
+    idx = -1
+    .valid(node) == false -> return
+    c = .nodes[node].first
+    (c >= 0) {
+        {
+            .nodes[c].kind == DOM-KIND-ELEMENT -> {
+                e = .find-attr(c, 'id')
+                e >= 0 -> {
+                    tv str = .av[e]
+                    tv.eq-full(id) -> {
+                        idx = c
+                        return
+                    }
+                }
+            }
+        }
+        r = .find-id-node(c, id)
+        r >= 0 -> {
+            idx = r
+            return
+        }
+        c = .nodes[c].next
+    }
+}
+
+; class-has: class 值（空白分隔多詞）是否含詞 cls
+class-has = (val str, cls str) (yes bool) {
+    yes = false
+    val.len-bytes() == 0 -> return
+    seg = 0
+    n = val.len-bytes()
+    i = 0
+    (i < n) {
+        b = val.byte(i)
+        b == 32 || b == 9 || b == 10 || b == 13 -> {
+            tk = val.slice-bytes(seg, i)
+            tk.eq-full(cls) -> yes = true
+            #{overflow=wrap}
+            seg = i + 1
+        }
+        #{overflow=wrap}
+        i = i + 1
+    }
+    tail = val.slice-bytes(seg, n)
+    tail.eq-full(cls) -> yes = true
+}
+
+; ═══════════════════════════════════════════════
+; 公共 API：解析入口
+; ═══════════════════════════════════════════════
+
+; dom.parse-xml: 嚴謹解析 XML，失敗返回 err(含錯誤位置)
+dom.parse-xml = (source str) (out ?dom) {
+    out = nil
+    d dom
+    d.pool.init()
+    d.format = 0
+    root, failpos, ok = d.pool.xml-parse-doc(source)
+    ok == false -> {
+        out = err('xml parse error at byte ' - failpos.to-str())
+        return
+    }
+    d.root = root
+    out = d
+}
+
+; dom.parse-html: 寬鬆解析 HTML（永不失敗），返回 document
+dom.parse-html = (source str) (out ?dom) {
+    out = nil
+    d dom
+    d.pool.init()
+    d.format = 1
+    d.root = d.pool.html-parse-doc(source)
+    out = d
+}
+
+; dom.new-document: 建立空文檔
+; 用法：
+;   d = dom.new-document(true)   // HTML 文檔
+dom.new-document = (html bool) (d dom) {
+    d.pool.init()
+    d.root = d.pool.alloc(DOM-KIND-DOCUMENT)
+    html -> {
+        d.format = 1
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 公共 API：節點訪問
+; ═══════════════════════════════════════════════
+
+; dom.kind: 節點類型（DOM-KIND-* 常量，-1=非法索引）
+dom.kind = (idx i64) (k i64) {
+    k = -1
+    .pool.valid(idx) == false -> return
+    k = .pool.nodes[idx].kind
+}
+
+; dom.name: 元素標籤名 / PI 目標 / DOCTYPE 名稱
+dom.name = (idx i64) (nm str) {
+    nm = ''
+    .pool.valid(idx) == false -> return
+    nm = .pool.names[idx]
+}
+
+; dom.value: 節點值（text/cdata/comment 內容、PI 數據、DOCTYPE 原始內容）
+dom.value = (idx i64) (v str) {
+    v = ''
+    .pool.valid(idx) == false -> return
+    v = .pool.vals[idx]
+}
+
+; dom.set-node-value: 設定節點值
+dom.set-node-value = (idx i64, v str) {
+    .pool.valid(idx) == false -> return
+    .pool.vals[idx] = v
+}
+
+; dom.parent: 父節點索引（-1=無）
+dom.parent = (idx i64) (p i64) {
+    p = -1
+    .pool.valid(idx) == false -> return
+    p = .pool.nodes[idx].parent
+}
+
+; dom.first-child / last-child / next-sibling / prev-sibling
+dom.first-child = (idx i64) (c i64) {
+    c = -1
+    .pool.valid(idx) == false -> return
+    c = .pool.nodes[idx].first
+}
+
+dom.last-child = (idx i64) (c i64) {
+    c = -1
+    .pool.valid(idx) == false -> return
+    c = .pool.nodes[idx].last
+}
+
+dom.next-sibling = (idx i64) (c i64) {
+    c = -1
+    .pool.valid(idx) == false -> return
+    c = .pool.nodes[idx].next
+}
+
+dom.prev-sibling = (idx i64) (c i64) {
+    c = -1
+    .pool.valid(idx) == false -> return
+    c = .pool.nodes[idx].prev
+}
+
+; dom.child-count: 子節點數
+dom.child-count = (idx i64) (n i64) {
+    n = 0
+    .pool.valid(idx) == false -> return
+    n = .pool.nodes[idx].count
+}
+
+; dom.child-at: 第 i 個子節點（越界返回 nil）
+dom.child-at = (idx i64, i i64) (out ?i64) {
+    out = nil
+    .pool.valid(idx) == false -> return
+    i < 0 || i >= .pool.nodes[idx].count -> return
+    c = .pool.nodes[idx].first
+    k <- [0..i): {
+        c = .pool.nodes[c].next
+    }
+    out = c
+}
+
+; dom.document-element: 根元素（第一個 ELEMENT 子節點）
+dom.document-element = () (idx ?i64) {
+    idx = nil
+    .pool.valid(.root) == false -> return
+    c = .pool.nodes[.root].first
+    (c >= 0) {
+        .pool.nodes[c].kind == DOM-KIND-ELEMENT -> {
+            idx = c
+            return
+        }
+        c = .pool.nodes[c].next
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 公共 API：屬性
+; ═══════════════════════════════════════════════
+
+; dom.get-attribute: 讀取屬性值（nil=不存在；HTML 模式下名字大小寫不敏感）
+dom.get-attribute = (idx i64, name str) (val ?str) {
+    val = nil
+    want str = name
+    .format == 1 -> want = name.to-lower()
+    e = .pool.find-attr(idx, want)
+    e < 0 -> return
+    v str = .pool.av[e]
+    val = v
+}
+
+; dom.has-attribute: 是否存在屬性
+dom.has-attribute = (idx i64, name str) (yes bool) {
+    yes = false
+    want str = name
+    .format == 1 -> want = name.to-lower()
+    e = .pool.find-attr(idx, want)
+    yes = e >= 0
+}
+
+; dom.set-attribute: 設定屬性（存在則覆蓋）
+dom.set-attribute = (idx i64, name str, val str) {
+    .pool.valid(idx) == false -> return
+    want str = name
+    .format == 1 -> want = name.to-lower()
+    .pool.set-attr(idx, want, val)
+}
+
+; dom.remove-attribute: 移除屬性，返回是否找到
+dom.remove-attribute = (idx i64, name str) (yes bool) {
+    want str = name
+    .format == 1 -> want = name.to-lower()
+    yes = .pool.remove-attr(idx, want)
+}
+
+; dom.attribute-count: 屬性數量
+dom.attribute-count = (idx i64) (n i64) {
+    n = 0
+    .pool.valid(idx) == false -> return
+    n = .pool.nodes[idx].attr-count
+}
+
+; dom.attribute-name: 第 i 個屬性名（按文檔順序，越界 nil）
+dom.attribute-name = (idx i64, i i64) (nm ?str) {
+    nm = nil
+    e = .pool.attr-edge-at(idx, i)
+    e < 0 -> return
+    v str = .pool.an[e]
+    nm = v
+}
+
+; dom.attribute-value: 第 i 個屬性值（越界 nil）
+dom.attribute-value = (idx i64, i i64) (val ?str) {
+    val = nil
+    e = .pool.attr-edge-at(idx, i)
+    e < 0 -> return
+    v str = .pool.av[e]
+    val = v
+}
+
+; ═══════════════════════════════════════════════
+; 公共 API：查詢
+; ═══════════════════════════════════════════════
+
+; dom.get-element-by-id: 按 id 屬性查找元素
+dom.get-element-by-id = (id str) (idx ?i64) {
+    idx = nil
+    want str = id
+    .format == 1 -> want = id.to-lower()
+    r = .pool.find-id-node(.root, want)
+    r >= 0 -> idx = r
+}
+
+; dom.get-elements-by-tag-name: 全文檔收集指定標籤名元素；'*' 返回全部元素
+dom.get-elements-by-tag-name = (name str) (out []i64) {
+    want str = name
+    .format == 1 -> want = name.to-lower()
+    star = want == '*'
+    out = .pool.collect-tag(.root, want, star)
+}
+
+; dom.get-elements-by-class-name: 全文檔收集 class 含指定詞的元素
+dom.get-elements-by-class-name = (cls str) (out []i64) {
+    out = .pool.collect-class(.root, cls)
+}
+
+; dom.text-content: 子樹文本內容（TEXT/CDATA 遞歸串接）
+dom.text-content = (idx i64) (out str) {
+    out = .pool.text-of(idx)
+}
+
+; ═══════════════════════════════════════════════
+; 公共 API：變異
+; ═══════════════════════════════════════════════
+
+; dom.create-element: 建立游離元素節點（尚未附加）
+dom.create-element = (name str) (idx i64) {
+    nm str = name
+    .format == 1 -> nm = name.to-lower()
+    idx = .pool.alloc(DOM-KIND-ELEMENT)
+    .pool.names[idx] = nm
+}
+
+; dom.create-text-node: 建立文字節點
+dom.create-text-node = (data str) (idx i64) {
+    idx = .pool.alloc(DOM-KIND-TEXT)
+    .pool.vals[idx] = data
+}
+
+; dom.create-comment: 建立註解節點
+dom.create-comment = (data str) (idx i64) {
+    idx = .pool.alloc(DOM-KIND-COMMENT)
+    .pool.vals[idx] = data
+}
+
+; dom.append-child: 附加（或移動）子節點到 parent 尾端
+dom.append-child = (parent i64, child i64) {
+    .pool.append(parent, child)
+}
+
+; dom.insert-child-before: 將 child 插入 parent 的 ref 之前
+dom.insert-child-before = (parent i64, child i64, ref i64) {
+    .pool.insert-before(parent, child, ref)
+}
+
+; dom.remove-child: 從 parent 摘除 child
+dom.remove-child = (parent i64, child i64) {
+    .pool.detach(child)
+}
+
+; dom.replace-child: 用 new 替换 parent 的 old
+dom.replace-child = (parent i64, new i64, old i64) {
+    .pool.insert-before(parent, new, old)
+    .pool.detach(old)
+}
+
+; dom.set-text-content: 清空子節點並設為單一文字節點
+dom.set-text-content = (idx i64, text str) {
+    .pool.valid(idx) == false -> return
+    (.pool.nodes[idx].first >= 0) {
+        c = .pool.nodes[idx].first
+        .pool.detach(c)
+    }
+    text.len-bytes() == 0 -> return
+    t = .pool.alloc(DOM-KIND-TEXT)
+    .pool.vals[t] = text
+    .pool.append(idx, t)
+}
+
+; ═══════════════════════════════════════════════
+; 公共 API：序列化
+; ═══════════════════════════════════════════════
+
+; dom.is-html: 是否為 HTML 模式（影響 void 元素序列化與名字大小寫）
+dom.is-html = () (yes bool) {
+    yes = .format == 1
+}
+
+; dom.to-string: 序列化整份文檔（innerHTML of document）
+dom.to-string = () (out str) {
+    out = .pool.ser-children(.root, .format == 1)
+}
+
+; dom.outer-html: 序列化單個節點（含自身）
+dom.outer-html = (idx i64) (out str) {
+    out = .pool.ser(idx, .format == 1)
+}
+
+; dom.inner-html: 序列化節點的全部子節點
+dom.inner-html = (idx i64) (out str) {
+    out = .pool.ser-children(idx, .format == 1)
+}
