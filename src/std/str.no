@@ -66,12 +66,15 @@ str.byte = (i i64) (c ?byte) {
 ; str.byte 的配對寫者；緩衝區逐位元組構建專用（注意 s[i] = v 是位元組級寫入、
 ; txt[i] = v 是按碼點重新編碼，語意都不同）
 ;
-; b 宣告為 i64（而非 byte）：發射器只取低位元組（store i8），而 char / i64 實參
-; 在呼叫端大量存在（out.set-byte(i * 2, HEX[b >> 4])、val.set-byte(pos, bv)），
-; 表層又沒有 i64→byte 的轉型寫法，宣告成 byte 會讓它們全部變成 stdargtyp 錯誤。
+; b 宣告為 byte：表層實參若是 option（.byte(i) 等）由內建參數檢查直接放過
+; （funcargs.go 的 `?` 跳過）；若為純 i64/char 則在呼叫端以遮罩 `& 255` 窄化。
 ; 這與 src/builtin/str.go 的 BuiltinMethodList 條目一致。
+;
+; 回傳 ?bool（可失敗）：越界（i < 0 或 i >= 實體容量 cap）時回傳 nil 並**跳過寫入**，
+; 成功回傳 some(true)。邊界以 %str-long 的 cap（實體容量）為準而非 len，故「先填缓冲
+; 再 set len」的構建程式照舊可用。呼叫端以裸陳述丟棄 ?bool 合法（optunuse 只管綁定名）。
 #{buildin}
-str.set-byte = (i i64, b i64) {
+str.set-byte = (i i64, b byte) (ok ?bool) {
 }
 
 ; str.eq: 比较两个字符串的前 n 个字节是否相等

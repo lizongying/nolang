@@ -66,12 +66,16 @@ txt.byte = (i i64) (c ?byte) {
 ; txt.set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
 ; txt.byte 的配對寫者；取代 txt[i] = b（後者按碼點重新編碼並移動尾部位元組）
 ;
-; b 宣告為 i64（而非 byte）：發射器只取低位元組，而 char / i64 實參在呼叫端
-; 大量存在（out.set-byte(i * 2, HEX[b >> 4])、val.set-byte(pos, bv)），表層
-; 又沒有 i64→byte 的轉型寫法，宣告成 byte 會讓它們全部變成 stdargtyp 錯誤。
-; 這與 src/builtin/str.go 的 BuiltinMethodList 條目一致。
+; b 宣告為 byte：表層實參若是 option（.byte(i)、HEX[..] 等）由內建參數檢查直接
+; 放過（funcargs.go 的 `?` 跳過）；若為純 i64/char（如 bv、HEX[..] 的 char）則在
+; 呼叫端以位元運算遮罩 `& 255` 窄化。與 src/builtin/str.go 條目一致。
+;
+; 回傳 ?bool（可失敗）：越界（i < 0 或 i >= 255 實體容量）時回傳 nil 並**跳過寫入**，
+; 成功回傳 some(true)。邊界以「實體容量」（txt 為固定 255 位元組緩衝區）為準，而非
+; len，因此「先填缓冲再 set len」的構建程式（fill / from-str / to-hex / join）照舊可用。
+; 呼叫端以裸陳述丟棄 ?bool 是合法的（optunuse 只針對已綁定的名稱）。
 #{buildin}
-txt.set-byte = (i i64, b i64) {
+txt.set-byte = (i i64, b byte) (ok ?bool) {
 }
 
 ; txt.eq: 比较两个 txt 是否相等
@@ -156,10 +160,10 @@ txt.to-hex = () (out str) {
         b = .byte(i)
 
         #{overflow=wrap}
-        out.set-byte(i * 2, HEX[b >> 4])
+        out.set-byte(i * 2, HEX[b >> 4] & 255)
 
         #{overflow=wrap}
-        out.set-byte(i * 2 + 1, HEX[b & 15])
+        out.set-byte(i * 2 + 1, HEX[b & 15] & 255)
     }
 }
 
@@ -1162,7 +1166,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                         bv = lead | (new-ch >> shift)
                     }
                     pos < cap -> {
-                        val.set-byte(pos, bv)
+                        val.set-byte(pos, bv & 255)
                         pos = pos + 1
                     }
                 }
