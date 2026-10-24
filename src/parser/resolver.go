@@ -199,14 +199,14 @@ func NewSemanticContext() *SemanticContext {
 
 // Merge 將另一份語義副表合併進本表（模塊合併時使用：merged program 匯集多個
 // 模塊的 AST 節點，各節點的語義信息也必須匯集到同一張 side-table）。
-// 三張 node-keyed 表以節點指針為鍵，不會衝突；名稱級映射（VarTypes 等）僅在
+// 四張 node-keyed 表以節點指針為鍵，不會衝突；名稱級映射（VarTypes 等）僅在
 // 本表缺失時填入。
 func (s *SemanticContext) Merge(other *SemanticContext) {
 	if s == nil || other == nil {
 		return
 	}
-	// 合併註解表／型別事實表／節點事實表（不覆蓋既有條目）。
-	// 實例化／合併期三張表都可能為 nil（反序列化重建的 Sem 不帶表），
+	// 合併註解表／型別事實表／節點事實表／捕獲事實表（不覆蓋既有條目）。
+	// 實例化／合併期四張表都可能為 nil（反序列化重建的 Sem 不帶表），
 	// ensure 惰性建立。
 	s.anns = s.anns.ensure()
 	s.anns.Merge(other.anns)
@@ -214,6 +214,12 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	s.typeFacts.Merge(other.typeFacts)
 	s.nodeFacts = s.nodeFacts.ensure()
 	s.nodeFacts.Merge(other.nodeFacts)
+	// captureFacts 隨表帶出（S3-c 前沿 (a)）：merged/build 路徑的 checker
+	// 護欄（optunuse/ovfhndld，見 checker.go 的 CaptureFactOf 斷言）與未來的
+	// H0 直產都經 merged.Sem.CaptureFactOf 查表；少了這條合併，fresh parse
+	// 寫入的捕獲判定在 merged 路徑恆查不到（CaptureFactOf 恆 nil）。
+	s.captureFacts = s.captureFacts.ensure()
+	s.captureFacts.Merge(other.captureFacts)
 	for k, v := range other.VarTypes {
 		if _, exists := s.VarTypes[k]; !exists {
 			s.SetVarType(k, v)

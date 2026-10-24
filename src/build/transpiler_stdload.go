@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/parser"
@@ -886,4 +887,127 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 		walkStmt(s)
 	}
 	return refs
+}
+
+// std 模組按需載入（on-demand reachability），不再有 alwaysAutoLoadStd 這種
+// 「無條件整模組載入」的概念。是否引入某個 std 模組完全由推斷決定：
+//   - 顯式引用：程式（含已合併模組）中的 module.fn() DotExpression 呼叫，
+//     以及 use std/... 語句（collectReferencedStdModules 掃描）。
+//   - 型別隱含：[]T → vec、[N]T → arr、[K]V → map、txt、regexp 等（同函數內
+//     的 walkType 掃描，見 collectReferencedStdModules）。
+//   - 內建隱含：print/格式化內建（legacy codegen 路徑會發出 @fmt-int/@out/@err
+//     等裸呼叫）隱含需要 fmt/io/str 模組——此為「根據用法推斷」，不是「總是引入」。
+//     MIR 的 print builtin 是自包含的（直接發 @print_*，不依賴 fmt 模組），
+//     故對 MIR 路徑而言載入 fmt/io/str 只是 LowerHIR 會過濾掉的死代碼，無副作用。
+// 泛型實例化動態新增的依賴不在此層處理，而是由 monomorphizeGenerics 之後的
+// HIR 內部待處理佇列迭代收斂（見下方 auto-load 區塊末尾的 pending 循環）。
+
+// stdModuleMethodPrefixes lists std module short names whose generic [n]t
+// methods are called via variable.method() form (e.g. buf.queue-init()).
+// collectReferencedStdModules cannot detect these because the receiver is
+// a variable, not a module name. When a method call's property starts with
+// one of these prefixes followed by '-', the corresponding std module is
+// auto-loaded so its [n]t generic methods can be monomorphized.
+var stdModuleMethodPrefixes = []string{"queue", "arr-stack"}
+
+// stdPrimitiveTypeNames lists the scalar / union-alias receiver types whose
+// std methods are invoked through VALUES (`x.degrees()`, `i.to-str()`). The
+// static reference scan cannot see a module prefix on those calls, so the
+// owning module body would never auto-load and MIR codegen dies with
+// `unknown callee f64.degrees` in a script that never spells out `math.`.
+var stdPrimitiveTypeNames = map[string]bool{
+	"i8": true, "i16": true, "i32": true, "i64": true, "i128": true,
+	"u8": true, "u16": true, "u32": true, "u64": true, "u128": true,
+	"f32": true, "f64": true, "str": true, "char": true, "byte": true,
+	"bool": true, "int": true, "uint": true, "num": true, "float": true,
+}
+
+var (
+	stdPrimMethodModsOnce sync.Once
+	stdPrimMethodMods     map[string][]string
+)
+
+// loadStdModulesOnDemand 第二遍按需載入 std 模組體（對應審查點 ②）：
+//
+// 第一遍（簽名預收集 CollectStdModuleSignatures）已全量解析所有 std ——
+// 因為 nolang 標準庫隱式可用（無需顯式 use 即可呼叫 module.fn()），parser
+// 做 let 型別推斷需要全部 std 簽名，故第一遍必須全量、無法跳過。
+// 但 codegen 只需程式「實際引用到」的 std 模組。此處掃描 merged（含主程式
+// 與本地 use 模組）和原始 program（含頂層語句）中的 module.fn()/module.CONST/
+// use std/... 引用，取 std 模組間的可達閉包，僅載入這些模組體，其餘略過，
+// 避免為未使用的 std 付出解析 + 合併成本。與全量載入相比正確性等價：隱式
+// 分發走 builtin，不依賴此處載入；std 函數僅能經顯式 module.fn() 觸達，
+// 閉包已覆蓋。
+//
+// print/io 用法推斷引入的基礎模組（fmt/io/str/byte）記入 printInferredStd：
+// 這些模組的函數體（fmt-str/fmt-int 等）是 MIR 具名格式欄位的 codegen 硬
+// 依賴，即使與頂層變量同名也不能被衝突跳過（見 loadStdModuleBodyForce）。
+func (a *compileAssembly) loadStdModulesOnDemand() error {
+	t := a.t
+	loadedStd := a.loadedStd
+	var stdWorklist []string
+	// 掃描 merged（含已載入模組）和原始 program（含頂層語句）中的 std 模組引用。
+	// 原始 program 的頂層 LetStatement / ExpressionStatement 此時尚未加入 merged，
+	// 但其中可能引用 module.fn()（如 sha1.sha1(data)），必須在此處一併檢測，
+	// 否則這些 std 模組不會被自動載入，導致標準庫函數無法在頂層代碼中使用。
+	refs := t.collectReferencedStdModules(a.merged)
+	for sp := range t.collectReferencedStdModules(a.program) {
+		refs[sp] = true
+	}
+	for sp := range refs {
+		if !loadedStd[sp] {
+			loadedStd[sp] = true
+			stdWorklist = append(stdWorklist, sp)
+		}
+	}
+	// 內建隱含的 std 模組：print/格式化內建（legacy codegen 路徑會發出
+	// @fmt-int/@out/@err 等裸呼叫）隱含需要 fmt/io/str 模組。這是「根據用法推斷」
+	// （只有用到 print 才引入），不再是 alwaysAutoLoadStd 的「總是引入」。
+	// MIR 的 print builtin 自包含、不依賴 fmt 模組，故對 MIR 路徑只是被 LowerHIR
+	// 過濾掉的死代碼，無副作用。
+	// 此外：io 模組的 out/outln/err/errln 內部依賴 fmt/str/byte（同樣發出裸
+	// @fmt-int/@out/@err 呼叫），故只要引用 io 就視同 print 家族推斷，一併引入
+	// fmt/io/str/byte，與 alwaysAutoLoadStd 時期行為對齊（避免 io.errln 等呼叫
+	// 缺 fmt/str/byte 本體而編譯失敗）。
+	usesPrint := t.programUsesPrint(a.merged) || t.programUsesPrint(a.program)
+	usesIO := refs["io"]
+	// printInferredStd：標記由 print/io 用法推斷引入的基礎模組。這些模組的
+	// 函數體（fmt-str/fmt-int 等）是 MIR 具名格式欄位的 codegen 硬依賴，
+	// 即使與頂層變量同名也不能被衝突跳過（見 loadStdModuleBodyForce）。
+	printInferredStd := a.printInferredStd
+	if usesPrint || usesIO {
+		for _, name := range []string{"fmt", "io", "str", "byte"} {
+			printInferredStd[name] = true
+			if _, ok := stdModuleLookup()[name]; ok && !loadedStd[name] {
+				loadedStd[name] = true
+				stdWorklist = append(stdWorklist, name)
+			}
+		}
+	}
+	// 決定性載入順序：輕量型別/標量模組（tier 0）必須先於重型模組（tier 1）
+	// 載入。legacy codegen 的簽名解析依賴型別模組（str 等）先就位，否則會把
+	// str 回傳誤判為 i64（test-tcp-fork.no 回歸）。Go map 迭代順序不確定，故
+	// 顯式排序 worklist 以固定順序。
+	sort.Slice(stdWorklist, func(i, j int) bool {
+		pi, pj := stdLoadTier(stdWorklist[i]), stdLoadTier(stdWorklist[j])
+		if pi != pj {
+			return pi < pj
+		}
+		return stdWorklist[i] < stdWorklist[j]
+	})
+	for len(stdWorklist) > 0 {
+		sp := stdWorklist[0]
+		stdWorklist = stdWorklist[1:]
+		newDeps, err := t.loadStdModuleBodyForce(sp, a.merged, a.typeOwner, a.mainVarNames, a.mergedGlobalConsts, a.globalVarTypes, loadedStd, a.explicitStdModules, printInferredStd)
+		if err != nil {
+			return err
+		}
+		for _, dep := range newDeps {
+			if !loadedStd[dep] {
+				loadedStd[dep] = true
+				stdWorklist = append(stdWorklist, dep)
+			}
+		}
+	}
+	return nil
 }

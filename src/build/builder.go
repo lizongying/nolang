@@ -3,6 +3,7 @@ package build
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -518,7 +519,18 @@ func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult
 	if err != nil {
 		// 將 compile error 解析為結構化 LintResult，避免塌縮成一行
 		// （保留行號/列號/來源），使 no vet 輸出格式與 LSP 一致。
-		structured := parseCompileErrorToLints(err)
+		// 優先嘗試 errors.As 直接取出邊界處已結構化的診斷（見 DiagnosticError），
+		// 跳過 parseCompileErrorToLints 的正則反解析往返；僅當錯誤非
+		// *DiagnosticError（如 parser errors / check error）或前綴為
+		// "function argument errors"（該前綴的反解析相容性另由 reparse 保證）
+		// 時回退到 reparse，確保指紋門禁零漂移。
+		var structured []checker.LintResult
+		var diagErr *DiagnosticError
+		if errors.As(err, &diagErr) && diagErr.Prefix != "function argument errors" {
+			structured = diagErr.Lints
+		} else {
+			structured = parseCompileErrorToLints(err)
+		}
 		lints := compiler.VetLints()
 		lints = append(lints, structured...)
 		return lints, nil
@@ -1368,8 +1380,8 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 			projectOpts := opts
 			projectOpts.Output = "" // use default per-project output
 
-		fmt.Fprintf(os.Stderr, "Building %s: %s\n", t.projectName, t.filePath)
-		_, err := buildWithPkg(t.filePath, t.pkg, projectOpts, true)
+			fmt.Fprintf(os.Stderr, "Building %s: %s\n", t.projectName, t.filePath)
+			_, err := buildWithPkg(t.filePath, t.pkg, projectOpts, true)
 			results <- buildResult{target: t, err: err}
 		}(t)
 	}

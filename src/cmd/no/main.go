@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -2574,7 +2575,12 @@ func buildCommand(args []string) {
 
 	outPath, berr := nbuild.BuildBackend(kind, inputPath, opts)
 	if berr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+		if de, ok := asBuildDiagnostic(berr); ok {
+			// 結構化診斷：與 no vet 同格式（見 #6 follow-up）。
+			printLintResults([]nbuild.LintResult{{File: inputPath, Lints: de.Lints}})
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+		}
 		os.Exit(1)
 	}
 
@@ -2742,7 +2748,13 @@ func runCommand(args []string) {
 
 	outPath, berr := nbuild.BuildBackend(kind, inputPath, opts)
 	if berr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+		if de, ok := asBuildDiagnostic(berr); ok {
+			// 結構化診斷：與 no vet 同格式，直接消費 *build.DiagnosticError 的
+			// Lints，取代扁平的 err.Error() 印出（見 #6 follow-up）。
+			printLintResults([]nbuild.LintResult{{File: inputPath, Lints: de.Lints}})
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", berr)
+		}
 		os.Exit(1)
 	}
 
@@ -3143,7 +3155,13 @@ func testCommand(args []string) {
 	// Pass 2: 順序執行編譯產物（避免輸出交錯）
 	for _, r := range results {
 		if r.err != nil {
-			fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", r.testFile, r.err)
+			if de, ok := asBuildDiagnostic(r.err); ok {
+				// 結構化診斷：與 no vet 同格式（見 #6 follow-up）。
+				fmt.Fprintf(os.Stderr, "FAIL: %s\n", r.testFile)
+				printLintResults([]nbuild.LintResult{{File: r.testFile, Lints: de.Lints}})
+			} else {
+				fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", r.testFile, r.err)
+			}
 			hadFailure = true
 			if r.tmpDir != "" {
 				os.RemoveAll(r.tmpDir)
@@ -3503,6 +3521,18 @@ func printLintResultsJSON(results []nbuild.LintResult) int {
 	}
 	fmt.Println(string(out))
 	return errorCount
+}
+
+// asBuildDiagnostic 從編譯錯誤鏈中解包 *nbuild.DiagnosticError。
+// BuildBackend 的錯誤以 "compilation error: %w" 包裝（見 build/builder.go），
+// 因此可透過 errors.As 穿透取回結構化 Lints，供 run/test 以與 no vet 一致的
+// 結構化格式呈現，取代扁平 err.Error()。無結構化診斷（或 Lints 為空）時回傳 false。
+func asBuildDiagnostic(err error) (*nbuild.DiagnosticError, bool) {
+	var de *nbuild.DiagnosticError
+	if errors.As(err, &de) {
+		return de, len(de.Lints) > 0
+	}
+	return nil, false
 }
 
 // packAST 把一個包（或單個 .no 檔）打包成預編 AST 包 <tool>.ast.zip。

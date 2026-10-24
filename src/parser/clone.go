@@ -13,8 +13,8 @@
 //     快取命中路徑早就是這個語義）；
 //   - 指標以 (型別, 位址) memo 化——共享子樹拷成同一個副本，指標鍵同一性
 //     （pointer-keyed dedup / mainStmtSet 一類）在副本側完全保留；
-//   - 實作 Node 的指標同時記入 nodes 對映，供 SemanticContext 的三張
-//     node-keyed side-table（anns / typeFacts / nodeFacts）換鍵。
+//   - 實作 Node 的指標同時記入 nodes 對映，供 SemanticContext 的四張
+//     node-keyed side-table（anns / typeFacts / nodeFacts / captureFacts）換鍵。
 package parser
 
 import "reflect"
@@ -170,9 +170,9 @@ func (c *cloner) remapSem(src *SemanticContext) *SemanticContext {
 	if src == nil {
 		return out
 	}
-	out.Merge(src) // 名稱級映射 + anns + typeFacts + nodeFacts（暫為舊鍵）
-	// 註解表／型別事實表／節點事實表換鍵到副本節點（三者同口徑）。
-	// 三表已由 Merge 帶過來，這裡只需重映射鍵。
+	out.Merge(src) // 名稱級映射 + anns + typeFacts + nodeFacts + captureFacts（暫為舊鍵）
+	// 註解表／型別事實表／節點事實表／捕獲事實表換鍵到副本節點（四者同口徑）。
+	// 四表已由 Merge 帶過來，這裡只需重映射鍵。
 	if out.anns != nil && len(out.anns.entries) > 0 {
 		out.anns = out.anns.Clone(func(n Node) Node {
 			if nn, ok := c.nodes[n]; ok {
@@ -191,6 +191,14 @@ func (c *cloner) remapSem(src *SemanticContext) *SemanticContext {
 	}
 	if out.nodeFacts != nil && len(out.nodeFacts.entries) > 0 {
 		out.nodeFacts = out.nodeFacts.Clone(func(n Node) Node {
+			if nn, ok := c.nodes[n]; ok {
+				return nn
+			}
+			return n
+		})
+	}
+	if out.captureFacts != nil && len(out.captureFacts.entries) > 0 {
+		out.captureFacts = out.captureFacts.Clone(func(n Node) Node {
 			if nn, ok := c.nodes[n]; ok {
 				return nn
 			}

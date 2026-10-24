@@ -2,6 +2,7 @@ package build
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/lizongying/nolang/checker"
@@ -1243,6 +1244,194 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// buildArraySizeMap 構建變數名 → 陣列大小的映射
+// 從所有 LetStatement 中收集 ArraySize
+// sizeMaps 儲存陣列、切片、字串的大小映射，由 buildSizeMaps 單次遍歷填充。
+// 合併三個原本各自獨立遍歷 AST 的函數（buildArraySizeMap/buildSliceSizeMap/buildStringSizeMap），
+// 將遍歷次數從 3 次降至 1 次，顯著減少大型程序的校驗開銷。
+type sizeMaps struct {
+	arraySizes     map[string]int64
+	sliceSizes     map[string]int64
+	stringSizes    map[string]int64
+	funcStrReturns map[string]bool // user-defined functions returning str
+}
+
+// validateFuncStrReturns is a package-level variable that holds the
+// funcStrReturns map from buildSizeMaps. It is set before validateArrayBounds
+// runs so that collectStringSizeMapFromStmt (which is called from the
+// FunctionDefinition case of validateStmtArrayBounds with a fresh per-function
+// stringSizes map) can access funcStrReturns without a signature change.
+var validateFuncStrReturns map[string]bool
+
+// validateEntryProgram 入口程序（模組合併前）的編譯期驗證。依序執行：
+//
+//  1. 編譯期陣列邊界檢查（單次遍歷同時收集陣列、切片、字串大小映射）
+//  2. 編譯期重複變數檢查
+//  3. 頂層語句標記來源檔（使 .len 廢棄檢查等能豁免內建實作檔）
+//  4. 型別檢查七驗證器彙總（收集所有錯誤後統一報告，而非遇錯即返）
+//
+// 第 4 步的錯誤彙總語意：用戶在 no build 時能一次看到所有型別錯誤，
+// 而非逐個修復後才能看到下一個。Stage 6D：validator 已遷移至 THIR
+// 型別副表視圖（BuildTHIRView，含 H0 副作用隔離）。
+func validateEntryProgram(program *parser.Program, sourcePath string, varTypes map[string]string) error {
+	// 編譯期陣列邊界檢查（單次遍歷同時收集陣列、切片、字串大小映射）
+	sizeMap := buildSizeMaps(program)
+	validateFuncStrReturns = sizeMap.funcStrReturns
+	if err := validateArrayBounds(program, sizeMap.arraySizes, sizeMap.sliceSizes, sizeMap.stringSizes, varTypes); err != nil {
+		return err
+	}
+	// 編譯期重複變數檢查
+	if err := validateDuplicates(program); err != nil {
+		return err
+	}
+	// Tag top-level statements with their source path BEFORE type-checking so
+	// validation passes (e.g. the .len deprecation check) can exempt builtin
+	// implementation files (vec.no / byte.no / str.no) by filename. SourceFile
+	// is otherwise only set later (after module merge), which is too late for
+	// the validation phase.
+	for _, stmt := range program.Statements {
+		program.Sem.SetSourceFileOf(stmt, sourcePath)
+	}
+	// 型別檢查（收集所有錯誤後統一報告，而非遇錯即返）
+	// 這樣用戶在 no build 時能一次看到所有型別錯誤，而非逐個修復後才能看到下一個。
+	// Stage 6D：已遷移 validator 經 THIR 型別副表視圖（BuildTHIRView，含 H0
+	// 副作用隔離——validators 看到的 program 狀態與 legacy 路徑完全一致）。
+	var lints []checker.LintResult
+	thirView := checker.BuildTHIRView(program)
+	if typeErrs := checker.ValidateTypesTHIR(program, thirView); len(typeErrs) > 0 {
+		for _, e := range typeErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	// 函數呼叫引數型別檢查（包括 newtype 語義：fd 變量不能傳給 i64 參數）
+	if funcArgErrs := checker.ValidateFuncArgsTHIR(program, filepath.Dir(sourcePath), thirView); len(funcArgErrs) > 0 {
+		for _, e := range funcArgErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	// 未定義變數檢查（包括 struct 類型名直接賦值欄位，如 s.x = 7 而非 s0.x = 7）
+	if undefErrs := checker.ValidateUndefinedVars(program, filepath.Dir(sourcePath), sourcePath); len(undefErrs) > 0 {
+		for _, e := range undefErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	// 關係運算子（< <= > >=）的多字元字串運算元（編譯硬錯誤）：nolang 沒有字串
+	// 字典序比較，codegen 的 str 分支只有 @str_eq（相等），`a >= b`（a/b 為 str）
+	// 會靜默退化成恆假。單字元字串字面量（'a'）隱式當 char，仍合法。
+	if strOrderErrs := checker.ValidateStrOrderingTHIR(program, thirView); len(strOrderErrs) > 0 {
+		for _, e := range strOrderErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	// option 生命週期檢查（D2 分級）。同一趟 ValidateUnhandledOverflow 產出兩種 trace：
+	//   - ovfhndld（HINT）：整數運算產生 option 並綁定到變數。統一 option 規則（D6）下
+	//     這是常態，只提示「該變數是 ?T，記得 match 或 ?=」——**不是**硬錯誤。
+	//   - optunuse（ERROR）：該 option 既沒上拋（?=）也沒解包（match / `_ =`），錯誤被
+	//     靜默丟棄 —— 這才是唯一該讓 no build / no run / no test 失敗的診斷。
+	// 因此這裡必須逐條依 TraceID 過濾，不能整批當硬錯誤（否則每個 `x = a + b` 都會
+	// 讓建置失敗，而它其實是合法且常見的寫法）。
+	if leakErrs := checker.ValidateUnhandledOverflowTHIR(program, sourcePath, thirView); len(leakErrs) > 0 {
+		for _, e := range leakErrs {
+			if e.TraceID != checker.OptUnuseTraceID {
+				continue
+			}
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	// 未處理的越界索引（D2：降為 HINT，不再阻斷建置）。arr/vec/slice 索引 b[i] 越界時
+	// 預設回傳 option<elem>，這是統一規則的常態；「沒解包」由上面的 optunuse 兜底。
+	// 診斷仍會經 RunAllLints 出現在 no vet / LSP（灰色提示），故此處不再呼叫
+	// checker.ValidateUnhandledIndex。
+	//
+	// 下標直寫 `a[i] = v`（D9）→ ERROR `idxwrite`，**阻斷建置**。
+	// 與上面「讀側只提示」相反：寫側走 emitIndexStore 的原始 GEP+store，
+	// **沒有任何邊界檢查**，越界即 raw OOB write，是記憶體安全洞而非風格問題。
+	// 必須先用 place-match 解包（多行形式；match 臂以换行分隔）或 `a[i] ?= v`
+	// 上拋，故在此逐條過濾 TraceID 後匯入硬錯誤。
+	if writeErrs := checker.ValidateIndexWriteTHIR(program, sourcePath, thirView); len(writeErrs) > 0 {
+		for _, e := range writeErrs {
+			if e.TraceID != checker.IndexWriteTraceID {
+				continue
+			}
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	// ?T 輸出參數未初始化檢查（case6）
+	if uninitErrs := checker.ValidateUninitOutputParams(program); len(uninitErrs) > 0 {
+		for _, e := range uninitErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	if len(lints) > 0 {
+		return &DiagnosticError{Lints: lints}
+	}
+	return nil
+}
+
+// validateMergedProgram 模組合併後（單態化收斂、第二階段解析完成後）的編譯期
+// 驗證。此時 merged 包含全部主程式與模組陳述句，可檢測跨模組問題：
+//
+//  1. D16：重新執行 validateArrayBounds（導入模組內的邊界錯誤不再被靜默吞掉）
+//  2. 編譯期未初始化變數檢查（循環體內聲明、循環外使用）
+//  3. Bug 22：跨模組 with-len/with-cap/with-cap-len 無類型標註漏撿
+//  4. 問題 8：合併後重新執行函數引數數量檢查（只檢查數量不檢查型別，
+//     避免標準庫內部複雜型別推斷產生的誤報）
+//  5. 字面零除數檢查（整數 / 與 % 的除數為字面常數 0 會觸發 LLVM UB）
+func validateMergedProgram(merged *parser.Program) error {
+	// D16: 模組合併後重新執行 validateArrayBounds。
+	// 原本僅在主程式合併前執行，導入模組內的錯誤（如 out.len = 1
+	// 違反 str.len 只讀約束）被靜默吞掉，直到連結期才以 undefined symbol 報錯。
+	// 必須在所有轉換 pass 完成後執行，此時 merged 包含全部主程式與模組陳述句。
+	mergedVarTypes := buildVarTypes(merged)
+	mergedSizeMap := buildSizeMaps(merged)
+	validateFuncStrReturns = mergedSizeMap.funcStrReturns
+	if err := validateArrayBounds(merged, mergedSizeMap.arraySizes, mergedSizeMap.sliceSizes, mergedSizeMap.stringSizes, mergedVarTypes); err != nil {
+		return err
+	}
+	// 編譯期未初始化變數檢查：循環體內聲明的變數在循環外使用
+	// 必須在模組合併後執行，才能檢查到導入模組（如 md5.no）中的問題
+	if err := validateLoopScopedVars(merged); err != nil {
+		return err
+	}
+	// Bug 22: 跨模組 with-len/with-cap/with-cap-len 無類型標註漏檢。
+	// 單文件時 ValidateTypes/ValidateFuncArgs 會檢查，但模組合併發生在驗證之後，
+	// 導入模組函數體內的 with-len 無類型標註不會被檢查到。
+	// 在模組合併後對 merged 程式執行專門的 LHS-inferred builtin 檢查。
+	if lhsInfErrs := checker.ValidateLHSInferredBuiltins(merged); len(lhsInfErrs) > 0 {
+		var lints []checker.LintResult
+		for _, e := range lhsInfErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+		return &DiagnosticError{Lints: lints}
+	}
+	// 問題 8: 模組合併後重新執行函數引數數量檢查。
+	// ValidateFuncArgs 在模組合併前執行，此時標準庫函數（如
+	// sha1.sha1-hex）的函數定義尚未被合併到 program 中，sigs 中沒有它們的
+	// 簽名，因此參數數量不匹配（如 sha1-hex() 缺少參數）不會被檢測到。
+	// 在模組合併後對 merged 程式重新執行參數數量檢查，使標準庫函數的
+	// 參數數量也能被檢查。只檢查數量不檢查型別，避免標準庫內部複雜型別
+	// 推斷（泛型、單態化）產生的誤報。
+	if mergedArgCountErrs := checker.ValidateFuncArgCount(merged); len(mergedArgCountErrs) > 0 {
+		var lints []checker.LintResult
+		for _, e := range mergedArgCountErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+		return &DiagnosticError{Lints: lints, Prefix: "function argument errors"}
+	}
+	// 字面零除數檢查：整數 / 與 % 的除數為字面常數 0 會觸發 LLVM UB，編譯期攔截。
+	// 6C-optional 第三批型別精化：被除數確定為浮點時跳過（fdiv 非 UB），判據走
+	// THIRView 表達式級型別表 —— 與 lint 軌道（ValidateDivByZeroTHIR）同步精化，
+	// 兩條管道口徑一致。
+	if divZeroErrs := checker.ValidateDivByZero(merged, checker.BuildTHIRView(merged)); len(divZeroErrs) > 0 {
+		var lints []checker.LintResult
+		for _, e := range divZeroErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+		return &DiagnosticError{Lints: lints}
 	}
 	return nil
 }

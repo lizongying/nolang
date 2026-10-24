@@ -3,6 +3,7 @@ package build
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -1173,6 +1174,38 @@ func ifaceImplsOf(program *parser.Program, iface string) []string {
 	return program.Sem.IfaceImplsOf(iface)
 }
 
+// devirtualizeInterfaceVars 把「宣告型別是介面、而具體實作可靜態唯一確定」的
+// 變數具象化（devirtualization）：`ls.Type` 與 `varTypes` 一併換成具體實作型別。
+//
+// nolang 是單態化編譯器，介面宣告（`db enter, leave { ... }`，見
+// src/std/database/sql.no）表達的是「一組方法簽名的約束」，不是執行期型別。
+// `d db = sqlite.open(':memory:')` 之後 d 的實際型別就是驅動回傳的 `db-sqlite`。
+// 若不具象化，方法攤平時會依介面名生成 `sql.db.exec` —— 一個不存在的函式，
+// MIR 端報：
+//
+//	EmitLLVM: unknown callee sql.db.exec in func main
+//
+// 而且 `d.handle` 這類具體欄位存取也無從解析（介面本身沒有欄位）。
+//
+// 判據刻意保守：只有在「該介面在整個編譯單元裡恰好只有一個實作者」時才具象化。
+// 多個實作者（例如同時 import sqlite 與 mysql 驅動）時保持原樣 —— 寧可讓下游
+// 給出明確診斷，也不要猜一個實作而產生錯誤分派。
+// ifaceImplTable 記錄「介面 -> 實作者型別」映射，由 devirtualizeInterfaceVars
+// 在每次編譯時寫入 **該次編譯的 merged Program 的語義副表**（SemanticContext.
+// IfaceImpls）；resolveMethodCall 在接收者的靜態型別是介面名時靠它回退到
+// 唯一實作者 —— 介面本身只有方法簽名、沒有方法體可呼叫。
+//
+// 為什麼必須是 per-Program 而不能是全域變數：它是「單一編譯單元」的狀態。
+// 放在全域時，`no vet <dir>` 的平行處理會讓先編譯的檔案（例如引入 sqlite 驅動
+// 的 database-sql.no）把 `db -> [db-sqlite]` 留在表裡，後編譯的 ffi-mysql.no
+// 於是把自己的介面呼叫攤平成 `sqlite.db-sqlite.query` —— 該定義在這個程式裡
+// 並不存在，最終報成 `'sqlite.db-sqlite.query' is not defined` 假警報。
+//
+// 為什麼不能只靠 varTypes：合併後 buildVarTypes(merged) 會從 AST 重建一份
+// 變數型別表，重建結果與 CompileTarget 早期那張表並非同一個 map，時序上無法
+// 保證具象化寫入一定活到攤平那一刻。這張表按「介面名」查詢，與 varTypes 的
+// 生命周期解耦。key 同時含完整名（sql.db）與去掉模組前綴的裸名（db），因為
+// 不同 pass 拿到的名字形態不一致。
 func devirtualizeInterfaceVars(mainProg, merged *parser.Program,
 	varTypes map[string]string, typeOwner map[string]string) {
 	if mainProg == nil || merged == nil || varTypes == nil {
@@ -2377,4 +2410,168 @@ func makeMethodCall(varName, method string) *parser.ExpressionStatement {
 			Arguments: []parser.Expression{},
 		},
 	}
+}
+
+// unionTemplateInfo 記錄聯合型別模板函數的資訊
+type unionTemplateInfo struct {
+	origName  string
+	unionName string
+	members   []string
+}
+
+// runMonomorphizationLoop 單態化迭代收斂迴圈（頂層語句加入 merged 之後、
+// 第二階段解析之前）。迴圈體依序：
+//
+//  1. monomorphizeGenerics：泛型函數具現化（使用 globalVarTypes——僅頂層
+//     變數——避免其他函數的局部變數型別洩漏到 method resolution；傳入
+//     mainLocalOwner 以便 resolveMethodCall 為跨模組型別補上模組前綴）。
+//     迴圈頭部先跑 monomorphizeSliceStructs（切片欄位泛型結構體單態化，
+//     必須在 monomorphizeGenerics 之前執行）。
+//  2. 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）。
+//  3. 掃描合併後程式，找出泛型具現化新引入的 std 模組引用。
+//  4. 若有新引用：決定性載入順序（tier 0 先於 tier 1，map 迭代順序不確定）
+//     批次合併模組體，僅對「新合併」的陳述句重跑前綴 / 型別參考重寫。
+//  5. 重新過濾已具現化的泛型定義，直到不再出現新的 std 模組引用（收斂）。
+//
+// 泛型具現化待處理佇列（HIR 側收斂）：monomorphizeGenerics 動態新增的具體
+// 函數體可能帶入先前未載入的 std 模組依賴（例如泛型 T 實例化為 map<K,V>
+// 後，參數型別註解暴露 collection/map 依賴；或實例化後引用 vec/str 內部函數）。
+// 這類依賴不交給 MIR 處理（mir.LowerHIR 是純一次性 lowering，不回碰 HIR），
+// 而是在 HIR（build）側維護待處理佇列：反覆掃描合併後的 merged、批次合併新
+// 引用的 std 模組體、重新執行必要的前綴/解析/單態化步驟，直到不再出現新的
+// std 模組引用（迭代收斂）。
+func (a *compileAssembly) runMonomorphizationLoop() error {
+	t := a.t
+	// 切片欄位泛型結構體單態化：由工廠呼叫 `Type.init(concreteBuffer)` 推斷元素
+	// 型別，生成具現化結構體 + 方法，標註工廠結果變數型別，並移除模板。
+	// 必須在 monomorphizeGenerics 之前執行：實例方法呼叫 `h.push` 需保持為接收者
+	// 為變數的 DotExpression，交由 resolveMethodCall 依 varTypes[h]=具現化名自然攤平。
+	monomorphizeSliceStructs(a.merged, a.globalVarTypes)
+	checker.DebugCountHashFns("after-monomorphizeSliceStructs", a.merged)
+	for {
+		monomorphizeGenerics(a.merged, a.globalVarTypes, a.mainLocalOwner)
+		checker.DebugCountHashFns("after-monomorphizeGenerics", a.merged)
+		// 過濾：移除尚未具現化的泛型函數定義（只有具體版本才能產生 LLVM IR）
+		filtered := make([]parser.Statement, 0, len(a.merged.Statements))
+		for _, stmt := range a.merged.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if len(fd.GenericParams) > 0 {
+					continue // 跳過泛型函數（GenericParams 未被清空說明尚未具現化）
+				}
+			}
+			filtered = append(filtered, stmt)
+		}
+		a.merged.Statements = filtered
+		checker.DebugCountHashFns("after-filter-generic", a.merged)
+		// 掃描合併後程式，找出泛型實例化新引入的 std 模組引用
+		pendingRefs := t.collectReferencedStdModules(a.merged)
+		if t.programUsesPrint(a.merged) || t.programUsesPrint(a.program) || pendingRefs["io"] {
+			for _, name := range []string{"fmt", "io", "str", "byte"} {
+				if _, ok := stdModuleLookup()[name]; ok {
+					pendingRefs[name] = true
+				}
+			}
+		}
+		var newRefs []string
+		for ref := range pendingRefs {
+			if !a.loadedStd[ref] {
+				newRefs = append(newRefs, ref)
+			}
+		}
+		if len(newRefs) == 0 {
+			break
+		}
+		// 決定性載入順序（與主 worklist 一致）：輕量型別模組先於重型模組，
+		// 避免泛型實例化新引入的依賴因 map 迭代順序不確定而打亂 str 等型別
+		// 模組的就位次序，導致 legacy codegen 簽名解析錯誤。
+		sort.Slice(newRefs, func(i, j int) bool {
+			pi, pj := stdLoadTier(newRefs[i]), stdLoadTier(newRefs[j])
+			if pi != pj {
+				return pi < pj
+			}
+			return newRefs[i] < newRefs[j]
+		})
+		// 批次合併新引用的 std 模組體（含其傳遞閉包）
+		before := len(a.merged.Statements)
+		for _, ref := range newRefs {
+			a.loadedStd[ref] = true
+			if _, err := t.loadStdModuleBody(ref, a.merged, a.typeOwner, a.mainVarNames, a.mergedGlobalConsts, a.globalVarTypes, a.loadedStd, a.explicitStdModules); err != nil {
+				return err
+			}
+		}
+		newStmts := a.merged.Statements[before:]
+		// 僅對「新合併」的陳述句重跑前綴/型別參考重寫 pass。對整個 merged 程式
+		// 重跑 prefixMethodNames 並非安全冪等：已處理的函數（如 process.exec 回傳
+		// exec-result 的 str 欄位）會被錯誤重命名/重寫，導致 str 回傳的 sret
+		// 暫存器型別被誤判為 i64（test-tcp-fork.no 回歸）。只處理新增語句可避免
+		// 污染既有程式，同時仍讓泛型具現化新引入的 std 模組函數正確接入。
+		if len(a.typeOwner) > 0 && len(newStmts) > 0 {
+			localMainSet := make(map[parser.Statement]bool, len(a.program.Statements))
+			for _, mainStmt := range a.program.Statements {
+				localMainSet[mainStmt] = true
+			}
+			for _, ns := range newStmts {
+				if localMainSet[ns] {
+					rewriteTypeRefsInStmt(ns, a.mainLocalOwner)
+				} else {
+					rewriteTypeRefsInStmt(ns, a.typeOwner)
+				}
+			}
+			prefixMethodNames(newStmts, a.typeOwner, a.mainLocalTypes)
+		}
+		// 注意：下面的整程式（whole-merged）解析 pass（prefixCollidingFunctions /
+		// ResolveModuleConstants / ResolveModuleCalls / ResolveSelfMethodCalls /
+		// rewriteTypeRefs / ResolveMethodCalls）刻意「不」在迴圈內每輪重跑。
+		// 對整個 merged 程式重跑這些 pass 並非安全冪等：已處理的函數會被錯誤
+		// 重命名 / 重寫（如 process.exec 回傳 exec-result 的 str 欄位 sret 暫存器
+		// 被誤判為 i64，見 test-tcp-fork.no；以及 static-hashmap.put 的 insert-idx
+		// 局部變數被誤併入 first-tomb，見 test-map.no）。正確做法是：迴圈內只對
+		// 「新合併」的陳述句做前綴 / 型別參考重寫（上方 newStmts 區塊），待待處理
+		// 佇列收斂、所有 std 模組就位後，由第二階段（rewriteTypeRefs /
+		// ResolveModuleCalls / ResolveMethodCalls，見 secondStageResolution）在
+		// 「完整程式」上統一解析一次。
+		// 重新過濾已具現化的泛型定義，避免下一輪 monomorphizeGenerics 重複處理
+		filtered2 := make([]parser.Statement, 0, len(a.merged.Statements))
+		for _, stmt := range a.merged.Statements {
+			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+				if len(fd.GenericParams) > 0 {
+					continue
+				}
+			}
+			filtered2 = append(filtered2, stmt)
+		}
+		a.merged.Statements = filtered2
+	}
+	return nil
+}
+
+// finalizeMonomorphization 收斂後的最終單態化 + 名稱修飾（第二階段解析之前）。
+// 依序：
+//
+//  1. monomorphizeGenericStructs：泛型結構體單態化（掃描 map[K]V 使用點，
+//     自 hashmap-*-tmpl 模板生成具體結構與方法）。必須在 monomorphizeGenerics
+//     之後（避免與 [n]t 泛型衝突）、monomorphizeUnions 之前執行。
+//  2. monomorphizeUnions：聯合型別單態化——對帶 ..T（T 為 union alias）的函數，
+//     為 union 的每個具體型別生成一個函數版本（命名 "<原名>__<成員型別>"）。
+//  3. rewriteUnionCalls：將對聯合型別泛型函數的呼叫改為具體版本（max → max__i64）。
+//  4. mangleOverloads(merged, nil)：合併所有 std 模組後再次名稱修飾，處理跨模組
+//     的重載衝突（如 bigint.div-mod vs number.div-mod）。
+func (a *compileAssembly) finalizeMonomorphization() {
+	// 泛型結構體單態化：掃描 map[K]V 使用點，自 hashmap-*-tmpl 模板生成具體結構與方法。
+	// 必須在 monomorphizeGenerics 之後（避免與 [n]t 泛型衝突）、monomorphizeUnions 之前執行。
+	monomorphizeGenericStructs(a.merged)
+	checker.DebugCountHashFns("after-monomorphizeGenericStructs", a.merged)
+	// 聯合型別單態化：對帶 ..T（T 為 union alias）的函數，
+	// 為 union 的每個具體型別生成一個函數版本。生成函數的命名
+	// 採用 "<原名>__<成員型別>" 的形式；對函數體內對自己的呼叫也
+	// 一併替換。
+	monomorphizeUnions(a.merged)
+	checker.DebugCountHashFns("after-monomorphizeUnions", a.merged)
+	// 重寫對聯合型別泛型函數的呼叫：將 max(args) 改為 max__i64(args)
+	rewriteUnionCalls(a.merged, a.varTypes)
+	checker.DebugCountHashFns("after-rewriteUnionCalls", a.merged)
+	// 在合併所有 std 模組後再做一次名稱修飾，
+	// 處理跨模組的重載衝突（如 bigint.div-mod vs number.div-mod）
+	mangleOverloads(a.merged, nil)
+	checker.DebugCountHashFns("after-mangleOverloads", a.merged)
 }

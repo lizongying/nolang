@@ -524,12 +524,24 @@ func (l *lowerer) walk(v reflect.Value) {
 		var savedFuncName string
 		var savedFuncDef *FunctionDefinition
 		var savedDeclared map[string]bool
+		var savedPFuncName string
 		isFuncDef := false
 		if v.CanAddr() {
 			if fd, ok := v.Addr().Interface().(*FunctionDefinition); ok {
 				savedFuncName = l.curFuncName
 				savedFuncDef = l.curFuncDef
 				savedDeclared = l.declaredLocals
+				// p.curFuncName 必須與 l.curFuncName 同步：isSafeIndexBase 等函式
+				// 作用域查詢（idxLocalTypes / FuncVarType）以它為鍵。此前只有
+				// maybeIndexOutAssign（僅非 analysisOnly 路徑呼叫）會順手同步它，
+				// 於是 SkipLowering 形態（prepareInferredTypes 的 analysisOnly 走查）
+				// 整個函式體都在錯誤的（或上一個函式殘留的）作用域裡做索引查詢——
+				// 巢狀安全索引捕獲因此不漏記錄（captureFactsLen=0）、checker 的
+				// S3-c 護欄也隨之落空，LSP 診斷與 build 不一致。在此入口統一同步、
+				// 出口還原，full / H0 / SkipLowering 三形態一致；full 路徑本已由
+				// maybeIndexOutAssign 每陳述同步同值，故行為不變。
+				savedPFuncName = l.p.curFuncName
+				l.p.curFuncName = fd.Name
 				l.curFuncName = fd.Name
 				l.curFuncDef = fd
 				// 已宣告名單同樣獨立作用域：參數先入帳，函式內同名變數才不會
@@ -560,6 +572,7 @@ func (l *lowerer) walk(v reflect.Value) {
 			l.curFuncName = savedFuncName
 			l.curFuncDef = savedFuncDef
 			l.declaredLocals = savedDeclared
+			l.p.curFuncName = savedPFuncName
 		}
 		// 標籤條件迴圈包裝（`#N cond: { body }`）：解析期只掛上 SurfaceMatch，
 		// lowering 後補齊 Body = IfExpression.Consequence（與舊解析期行為一致）。

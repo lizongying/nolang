@@ -80,7 +80,9 @@ type CaptureBind struct {
 
 func (t *CaptureFacts) ensure() *CaptureFacts {
 	if t == nil {
-		return nil
+		// 與 TypeFacts 同口徑：nil receiver 回新建表（呼叫方須負責接住——
+		// 見 SemanticContext.Merge 的 `s.captureFacts = s.captureFacts.ensure()`）。
+		return &CaptureFacts{}
 	}
 	if t.entries == nil {
 		t.entries = make(map[Node]*CaptureFact)
@@ -111,6 +113,51 @@ func (t *CaptureFacts) Len() int {
 		return 0
 	}
 	return len(t.entries)
+}
+
+// Merge 把另一張表的條目併入本表（模組合併點用）。既有鍵不被覆蓋——與
+// anns / typeFacts / nodeFacts 同口徑。條目值可為 nil（「判定不捕獲」的
+// 記錄），併入時原樣帶過，不做解引用。
+func (t *CaptureFacts) Merge(other *CaptureFacts) {
+	if t == nil || other == nil || len(other.entries) == 0 {
+		return
+	}
+	t.ensure()
+	for n, f := range other.entries {
+		if _, exists := t.entries[n]; !exists {
+			t.entries[n] = f
+		}
+	}
+}
+
+// Clone 複製本表並把鍵經 remap 換到副本節點（CloneProgram 的 remapSem 用；
+// 與 typeFacts 等三表同口徑）。空表回 nil，讓呼叫方的 nil 檢查自然跳過。
+//
+// ⚠️ 條目值只做淺拷貝：CaptureFact.Binds[i].Expr 仍指向**原始** AST 節點
+// （語義副表以原始指針為鍵，副本節點查不到型別——見 CaptureFact.Binds 的
+// 註解）。當下唯一消費方（checker 的 optunuse/ovfhndld 護欄）只讀
+// Inner/WasDeclared，不碰 Binds，故淺拷貝足夠；H0 軌若要在 merged 路徑
+// 消費 Binds，須連同 Expr 一並換鍵（S3-c 切換時處理）。
+func (t *CaptureFacts) Clone(remap func(Node) Node) *CaptureFacts {
+	if t == nil || len(t.entries) == 0 {
+		return nil
+	}
+	out := &CaptureFacts{entries: make(map[Node]*CaptureFact, len(t.entries))}
+	for n, f := range t.entries {
+		key := n
+		if remap != nil {
+			if nn := remap(n); nn != nil {
+				key = nn
+			}
+		}
+		if f != nil {
+			cp := *f
+			out.entries[key] = &cp
+		} else {
+			out.entries[key] = nil
+		}
+	}
+	return out
 }
 
 // SetCaptureFact 為節點 n 登記捕獲判定結果（sem 可為 nil）。
