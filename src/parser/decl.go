@@ -547,9 +547,9 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	// Move inline comment on the same line as { from OpeningBraceComment to
 	// the function definition's Comment field, so the formatter outputs it
 	// after the { on the same line.
-	if obc := p.sem.OpeningBraceCommentOf(def.Body); obc != nil && len(obc.List) > 0 {
+	if obc := p.fmtTrivia.OpeningBraceCommentOf(def.Body); obc != nil && len(obc.List) > 0 {
 		setComment(def, obc)
-		p.sem.SetOpeningBraceComment(def.Body, nil)
+		p.fmtTrivia.SetOpeningBraceComment(def.Body, nil)
 	}
 	// Also check TrailingComments (fallback for empty blocks where the comment
 	// was collected as a trailing comment before the OpeningBraceComment fix)
@@ -1795,9 +1795,9 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	// Move inline comment on the same line as { from OpeningBraceComment to
 	// the function definition's Comment field, so the formatter outputs it
 	// after the { on the same line.
-	if obc := p.sem.OpeningBraceCommentOf(def.Body); obc != nil && len(obc.List) > 0 {
+	if obc := p.fmtTrivia.OpeningBraceCommentOf(def.Body); obc != nil && len(obc.List) > 0 {
 		setComment(def, obc)
-		p.sem.SetOpeningBraceComment(def.Body, nil)
+		p.fmtTrivia.SetOpeningBraceComment(def.Body, nil)
 	}
 	// Also check TrailingComments (fallback for empty blocks where the comment
 	// was collected as a trailing comment before the OpeningBraceComment fix)

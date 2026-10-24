@@ -367,7 +367,7 @@ func prefixCollidingFunctions(merged *parser.Program) map[string]bool {
 			if s.IsMethodDef || strings.Contains(s.Name, ".") {
 				continue
 			}
-			defs = append(defs, fnDef{stmt, s.Name, parser.GetModuleOwner(stmt)})
+			defs = append(defs, fnDef{stmt, s.Name, merged.Sem.ModuleOwnerOf(stmt)})
 			counts[s.Name]++
 		case *parser.LetStatement:
 			if s.Name == nil || strings.Contains(s.Name.Value, ".") {
@@ -376,7 +376,7 @@ func prefixCollidingFunctions(merged *parser.Program) map[string]bool {
 			if _, isFn := s.Value.(*parser.FunctionLiteral); !isFn {
 				continue
 			}
-			defs = append(defs, fnDef{stmt, s.Name.Value, parser.GetModuleOwner(stmt)})
+			defs = append(defs, fnDef{stmt, s.Name.Value, merged.Sem.ModuleOwnerOf(stmt)})
 			counts[s.Name.Value]++
 		}
 	}
@@ -410,7 +410,7 @@ func prefixCollidingFunctions(merged *parser.Program) map[string]bool {
 	// `M.connect(...)`（扁平帶點 Identifier）。模組內裸呼叫必屬本模組
 	// （跨模組呼叫依語言規範必須帶模組前綴），無歧義。
 	for _, stmt := range merged.Statements {
-		owner := parser.GetModuleOwner(stmt)
+		owner := merged.Sem.ModuleOwnerOf(stmt)
 		if owner == "" {
 			continue
 		}

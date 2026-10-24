@@ -412,6 +412,154 @@ func lowerToHIR(path, src string, skipLowering bool) (dump string, ok bool) {
 	return pkg.Dump(), true
 }
 
+// hirCaptureMinExercised is the anti-vacuity floor for the S3-b dual-track gate:
+// a run that never actually captures proves nothing, exactly the failure mode
+// that made the old Route-B comparison vacuous (see the header of this file).
+const hirCaptureMinExercised = 1
+
+// TestHIRCaptureTrackMatchesASTTrack is the S3-b dual-track corpus gate.
+//
+// Two routes, same source, byte-compared on every standalone-parseable corpus
+// program:
+//
+//	AST track (parser.HIRCaptureEnabled = false, default): the parser walk
+//	  rewrites the user's AST in place, injecting `__cap_N` + the three-arm
+//	  match — the V4 violation S3 exists to remove.
+//	H0 track (= true): the AST stays frozen; the parser walk only records the
+//	  capture decision into the CaptureFacts side table and tohir rebuilds the
+//	  same KLet + KIf chain from it.
+//
+// Both routes share buildCaptureChain (parser/lowering.go), so equality is
+// structural — but "shares the code" is exactly the kind of claim that rots,
+// so this gate re-proves it across the whole corpus rather than on a fixture.
+//
+// ⚠️ This gate is the hard prerequisite for S3-c (switch over + delete the AST
+// synthesis path). Do not switch the default while it reports any divergence.
+func TestHIRCaptureTrackMatchesASTTrack(t *testing.T) {
+	if _, err := os.Stat(corpusRoot); err != nil {
+		t.Skipf("no corpus at %s: %v", corpusRoot, err)
+	}
+	defer func() { parser.HIRCaptureEnabled = false }()
+
+	// hirCaptureKnownDivergence 列出「兩軌已知發散」的語料與原因，必須**只減不增**。
+	//
+	// 2026-10-24（S3-c 決策①：修 AST 轨註解丢失）：此清單已清空。先前唯一一條
+	// `arr-test-tmp.no`——AST 轨把被捕獲的 LetStatement 就地替換成 BlockStatement
+	// 後，原節點的 `#{index-out=0.0}` 註解進不了 HIR（H0 轨看凍結形態故保留）——已
+	// 由 lowering 的 maybeCaptureOptionAssign 在替換時把原節點註解 remap 到取代出的
+	// BlockStatement 修好（兩軌註解現都落在同一個 KBlock 上）。屬生產路徑的行為變更
+	// （被捕獲陳述的註解開始生效），已用 G7 + 全倉 + 端到端護航落地。
+	//
+	// 因此兩軌 HIR 現已逐字節相同。若未來又觀察到發散，它會以 diverged（下方）顯形，
+	// 修好後再把對應條目從本清單移除——清單只減不增。
+	var hirCaptureKnownDivergence = map[string]string{}
+
+	var compared, exercised, factsExercised, diverged, known, notLowered int
+	var firstDiffs []string
+
+	walk := func(root string) error {
+		return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
+				return nil
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			astDump, hirDump, facts, ok := captureTrackDumps(path, string(raw))
+			if !ok {
+				notLowered++
+				return nil
+			}
+			compared++
+			if facts > 0 {
+				factsExercised++
+			}
+			// 反真空依據以 **AST 軌的產物** 為準：dump 裡真的出現 `__cap_N`
+			// 才算「捕獲路徑被走到」。用副表條數會有漏——副表只在「走到寫入點」
+			// 的那一族記綠，而 dump 是 ground truth。
+			if strings.Contains(astDump, "__cap_") {
+				exercised++
+			}
+			if astDump != hirDump {
+				if _, ok := hirCaptureKnownDivergence[filepath.Base(path)]; ok {
+					known++
+				} else {
+					diverged++
+					if len(firstDiffs) < 10 {
+						firstDiffs = append(firstDiffs, path)
+					}
+				}
+			}
+			return nil
+		})
+	}
+
+	for _, root := range equivalenceCorpusRoots {
+		if _, err := os.Stat(root); err != nil {
+			t.Logf("corpus %s not present, skipped: %v", root, err)
+			continue
+		}
+		if walkErr := walk(root); walkErr != nil {
+			t.Fatalf("walking %s: %v", root, walkErr)
+		}
+	}
+
+	if exercised < hirCaptureMinExercised {
+		t.Fatalf("only %d of %d compared programs actually captured; the dual-track "+
+			"comparison would be vacuous", exercised, compared)
+	}
+	if diverged > 0 {
+		t.Errorf("%d/%d corpus programs diverge between the AST-desugar and H0-direct "+
+			"capture tracks (beyond the %d known); first %d: %v",
+			diverged, compared, known, len(firstDiffs), firstDiffs)
+	}
+	// 已知名單必須對得上：語料裡若不再發散代表 AST 軌的註解丟失已修好，
+	// 名單該被清掉；反之新增發散必須顯形，不得默默擴張。
+	if known != len(hirCaptureKnownDivergence) {
+		t.Errorf("%d known divergences observed but %d listed; the allowlist is stale "+
+			"(it must only ever shrink)", known, len(hirCaptureKnownDivergence))
+	}
+	t.Logf("S3-b dual track: %d compared, %d exercised capture (dump), %d with "+
+		"capture facts, %d diverged, %d known (allowlisted), %d not standalone-lowerable",
+		compared, exercised, factsExercised, diverged, known, notLowered)
+}
+
+// captureTrackDumps lowers the same source through both capture tracks and
+// reports (ast track dump, H0 track dump, capture-fact count, ok). facts is
+// measured on the AST track, so it reflects how much capture the program does
+// at all — the caller uses it as the anti-vacuity witness.
+func captureTrackDumps(path, src string) (astDump, hirDump string, facts int, ok bool) {
+	ok = true
+	one := func(enabled bool) (string, int, bool) {
+		defer func() {
+			if r := recover(); r != nil {
+				ok = false
+			}
+		}()
+		parser.HIRCaptureEnabled = enabled
+		p := parser.New(lexer.NewCached(path, src))
+		p.Filename = path
+		prog := p.ParseProgram()
+		if prog == nil || len(p.Errors()) > 0 {
+			return "", 0, false
+		}
+		n := prog.Sem.CaptureFactsLen()
+		pkg := parser.ASTToHIR(prog)
+		if pkg == nil {
+			return "", 0, false
+		}
+		return pkg.Dump(), n, true
+	}
+	astDump, facts, okA := one(false)
+	hirDump, _, okB := one(true)
+	parser.HIRCaptureEnabled = false
+	if !okA || !okB || !ok {
+		return "", "", 0, false
+	}
+	return astDump, hirDump, facts, true
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

@@ -15,8 +15,9 @@ import (
 // TestProgramGobRoundTrip above: it compares the annotation attachment of EVERY
 // node, not just the top-level statements.
 //
-// The shallow test cannot see this class of defect. nodeSem is restored by
-// walking the decoded program in the same order used to serialize it, so the
+// The shallow test cannot see this class of defect. The node-keyed side
+// tables are restored by walking the decoded program in the same order used to
+// serialize them, so the
 // two walks must enumerate the SAME number of nodes. Encoding/gob flattens
 // pointers, so a node shared by two fields (the lowering shares several: e.g.
 // the index-out desugar reuses one default-value literal for both match arms
@@ -79,7 +80,12 @@ func TestProgramGobRoundTripPreservesNodeSemMapping(t *testing.T) {
 					"the regression it guards cannot be exercised", occ, uniq)
 			}
 
-			cp := &CachedProgram{Prog: orig, NodeSem: SerializeNodeSem(orig)}
+			cp := &CachedProgram{
+				Prog:      orig,
+				Anns:      SerializeAnns(orig),
+				TypeFacts: SerializeTypeFacts(orig),
+				NodeFacts: SerializeNodeFacts(orig),
+			}
 			var buf bytes.Buffer
 			if err := gob.NewEncoder(&buf).Encode(cp); err != nil {
 				t.Fatalf("encode: %v", err)
@@ -88,7 +94,6 @@ func TestProgramGobRoundTripPreservesNodeSemMapping(t *testing.T) {
 			if err := gob.NewDecoder(&buf).Decode(&dcp); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
-			RestoreNodeSem(dcp.Prog, dcp.NodeSem)
 
 			before := nodeSemSequence(orig)
 			after := nodeSemSequence(dcp.Prog)
@@ -115,9 +120,12 @@ func TestProgramGobRoundTripPreservesNodeSemMapping(t *testing.T) {
 }
 
 // nodeSemSequence renders every node occurrence (type, position) together with
-// the annotations attached to it, in walk order. Two programs whose nodeSem
+// the annotations attached to it, in walk order. Two programs whose annotation
 // side-tables are equivalent produce identical sequences; a shifted mapping
 // shows up as a mismatch.
+//
+// 名字沿用 Stage 2 之前「註解還住在 nodeSem 裡」的時代；nodeSem 通道已於
+// Stage 7 刪除，這裡讀的是 `Program.Sem.AnnotationsOf`（AnnTable）。
 func nodeSemSequence(prog *Program) []string {
 	var out []string
 	walkProgramNodes(prog, func(n Node) {
@@ -242,8 +250,9 @@ func countUniqueNodes(prog *Program) int {
 // TestProgramGobRoundTrip is the feasibility gate for the incremental-build AST
 // cache (Tier 0 baked std AST + Tier 1 on-disk user-module cache).
 //
-// It proves that a fully parsed *parser.Program — including the pointer-keyed
-// nodeSem side-table and per-node annotations — can survive a gob encode/decode
+// It proves that a fully parsed *parser.Program — including its pointer-keyed
+// node-keyed side tables and per-node annotations — can survive a gob
+// encode/decode
 // round-trip without data loss, so the syntactic AST can be cached instead of
 // re-lexed + re-parsed on every build.
 func TestProgramGobRoundTrip(t *testing.T) {
@@ -290,8 +299,15 @@ func main () i64 {
 		t.Fatal("ParseProgram returned nil")
 	}
 
-	// 1) encode original via the cache wrapper (nodeSem flattened to uint32 keys)
-	cp := &CachedProgram{Prog: orig, NodeSem: SerializeNodeSem(orig)}
+	// 1) encode original via the cache wrapper (the three node-keyed side tables
+	//    are each flattened to uint32 keys; annotations travel in their own
+	//    occurrence-keyed table since Stage 3)
+	cp := &CachedProgram{
+		Prog:      orig,
+		Anns:      SerializeAnns(orig),
+		TypeFacts: SerializeTypeFacts(orig),
+		NodeFacts: SerializeNodeFacts(orig),
+	}
 	var b1 bytes.Buffer
 	if err := gob.NewEncoder(&b1).Encode(cp); err != nil {
 		t.Fatalf("gob encode original failed: %v", err)
@@ -302,7 +318,6 @@ func main () i64 {
 	if err := gob.NewDecoder(&b1).Decode(&dcp); err != nil {
 		t.Fatalf("gob decode failed: %v", err)
 	}
-	RestoreNodeSem(dcp.Prog, dcp.NodeSem)
 
 	// 3) re-encode decoded — proves the decoded structure is fully gob-encodable
 	// (no leaked unregistered dynamic type / unexported field surfaced only on
@@ -312,8 +327,8 @@ func main () i64 {
 		t.Fatalf("gob re-encode decoded failed: %v", err)
 	}
 
-	// 4) run ResolveProgram on both (populates the nodeSem side-table from raw
-	// annotations) and compare.
+	// 4) run ResolveProgram on both (materialises the derived annotation views)
+	// and compare.
 	ResolveProgram(orig)
 	ResolveProgram(dcp.Prog)
 

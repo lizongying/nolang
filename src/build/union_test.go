@@ -84,7 +84,7 @@ max = (a ..num) (r num) {
 	// but FlattenUnion will resolve `num` → `int` → {i8, i16, i32, i64}.
 	// To force the variadic to monomorphize, we can mark VariadicUnion
 	// explicitly here to simulate "num" being a union.
-	fd.VariadicUnion = "num"
+	prog.Sem.SetVariadicUnionOf(fd, "num")
 	monomorphizeUnions(prog)
 	// After monomorphization: max__num_TEMPLATE, max__i8, max__i16, max__i32, max__i64
 	names := make(map[string]bool)
@@ -153,8 +153,8 @@ abs = (a num) (r num) {
 	if abs == nil {
 		t.Fatalf("abs not found")
 	}
-	if abs.GenericUnion != "num" {
-		t.Errorf("expected GenericUnion=num, got %q", abs.GenericUnion)
+	if got := prog.Sem.GenericUnionOf(abs); got != "num" {
+		t.Errorf("expected GenericUnion=num, got %q", got)
 	}
 
 	monomorphizeUnions(prog)

@@ -182,12 +182,12 @@ func TestStdASTForDecodes(t *testing.T) {
 }
 
 // TestStdASTBlobMatchesFreshParse guards the Tier 0 invariant that the baked
-// std AST blob must restore its nodeSem side-table onto the SAME nodes a fresh
-// parse attaches it to.
+// std AST blob must restore its node-keyed side tables onto the SAME nodes a
+// fresh parse attaches them to.
 //
-// The blob stores nodeSem as map[uint32]*NodeSemantics, keyed by the position
-// of a node OCCURRENCE in a deterministic reflection walk (parser.SerializeNodeSem);
-// parser.RestoreNodeSem replays that walk over the decoded tree. If the walk
+// Each table is stored as a map[uint32]... keyed by the position of a node
+// OCCURRENCE in a deterministic reflection walk (walkProgramNodes); the restore
+// helpers replay that walk over the decoded tree. If the walk
 // used at bake time (genstdsig) and at restore time (this binary) ever disagree
 // — for instance because walkProgramNodes changed but the blob was not re-baked
 // — every index after the first divergence points at the wrong node and the
@@ -356,6 +356,10 @@ func TestStdASTBlobHasSafeIndexNormalisation(t *testing.T) {
 // parser.walkProgramNodes — mirrored locally so the test stays independent of
 // the unexported production walk, and so a change to that walk cannot make the
 // comparison agree with itself.
+//
+// 名字沿用 Stage 3 之前「註解住在 nodeSem 裡」的時代；nodeSem 通道已於 Stage 7
+// 刪除，這裡讀的是 `Program.Sem.AnnotationsOf`（AnnTable）。跨包改名成本高於收益，
+// 維持原名，只在此釘住事實。
 func nodeSemFingerprint(prog *parser.Program) []string {
 	var out []string
 	onPath := make(map[parser.Node]bool)

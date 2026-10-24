@@ -26,6 +26,10 @@ type Parser struct {
 	warnedSemiEat     map[int]bool                 // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
 	reportedIllegal   map[string]bool              // 已報告的 ILLEGAL token 位置（避免重複）
 	sem               *SemanticContext             // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
+	// fmtTrivia 是 formatter 專用的表層 trivia 表（RTFlags / `{` 同行註釋）。
+	// 與 sem 並列的第二張副表：sem 服務編譯管線，fmtTrivia 只服務 fmt / LSP。
+	// ParseProgram 收尾時掛到 program.FmtTrivia。見 fmttrivia.go 檔案頭。
+	fmtTrivia         *FmtTrivia
 	// prog 是正在 lower 的合併 Program（AST→HIR 階段由 hirConv 注入，
 	// 經 scratchParser 傳給 H0 match desugar）。S1 翻轉後 std 模組以 surface
 	// 形態從 blob 載入、在 H0 才降糖；其區域 let 型別在烘焙期未被收進
@@ -1097,6 +1101,7 @@ func New(lx *lexer.Lexer) *Parser {
 		warnedSemiEat:   map[int]bool{},
 		reportedIllegal: map[string]bool{},
 		sem:             NewSemanticContext(),
+		fmtTrivia:       NewFmtTrivia(),
 	}
 
 	p.nextToken()
@@ -1145,6 +1150,27 @@ func (p *Parser) SetExternSignatures(funcSigs map[string][]string, methodSigs ma
 	}
 	for k, v := range methodSigs {
 		p.methodSignatures[k] = v
+	}
+	// 同步快照到語義副表：H0 降糖的 scratch parser 不繼承本 Parser 的簽名表，
+	// 需要從 c.sem 讀回內置 / 跨文件簽名來推斷 ?= 解箱後的內部型別（見
+	// SemanticContext.ExternFuncSigs 註解）。不覆蓋既有鍵，保持本地優先語義。
+	if p.sem != nil {
+		if p.sem.ExternFuncSigs == nil {
+			p.sem.ExternFuncSigs = make(map[string][]string)
+		}
+		for k, v := range funcSigs {
+			if _, exists := p.sem.ExternFuncSigs[k]; !exists {
+				p.sem.ExternFuncSigs[k] = v
+			}
+		}
+		if p.sem.ExternMethodSigs == nil {
+			p.sem.ExternMethodSigs = make(map[string][]string)
+		}
+		for k, v := range methodSigs {
+			if _, exists := p.sem.ExternMethodSigs[k]; !exists {
+				p.sem.ExternMethodSigs[k] = v
+			}
+		}
 	}
 	if p.structFields == nil {
 		p.structFields = make(map[string]map[string]string)
@@ -1589,6 +1615,10 @@ func (p *Parser) ParseProgram() *Program {
 	// 語義副表：連接 parser 增量推斷結果，並執行獨立 Resolver pass
 	// （平台鍵/泛型參數/embed 由註解收尾計算），實現解析/语义分离。
 	program.Sem = p.sem
+	// 排版 trivia 表（formatter 專用，獨立於語義副表）。掛在這裡＝落在
+	// SkipLowering 分叉之前，故「含糖給 fmt/LSP」與「降糖給編譯」兩條路徑
+	// 都拿得到同一張表。
+	program.FmtTrivia = p.fmtTrivia
 	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(p.Filename, "txt") {
 		dbgLeakState("PRE-Resolve", program)
 	}

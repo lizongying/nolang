@@ -1271,6 +1271,19 @@ type Inst struct {
 	// captures overflow as err; an annotated `a = #{overflow=wrap} x + y`
 	// wraps instead of erroring, per the annotation's chosen semantics).
 	OvfAnnotated bool
+	// TagOnly marks an OpEq/OpNe whose two operands are OPTIONS and whose
+	// meaning is a VARIANT TEST (`o == nil`, `o == err`, `o == ok`) rather than
+	// a comparison of two option VALUES. Set by hir2mir when either operand is
+	// a BARE option-variant keyword — i.e. a discriminant PATTERN, not a value
+	// being built (`ok(1)` / `err('msg')` carry a payload and are NOT bare).
+	//
+	// It exists because a match desugars to `subject == <variant>` at the HIR
+	// level, so the arm test and a user-written `a == b` on two options are the
+	// same OpEq. Without this flag the structural comparison (tag AND payload)
+	// would compare the keyword's zero payload against the subject's real one:
+	// `o: { ok -> ... }` on `ok(1)` would test `1 == 0` and the arm would never
+	// fire — every match on a ?T in std.
+	TagOnly bool
 }
 
 type Term struct {

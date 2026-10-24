@@ -66,8 +66,10 @@ func TestUnwrapAssignParse(t *testing.T) {
 	}
 }
 
-// TestUnwrapAssignLowering verifies that `v ?= expr` is correctly
-// lowered to a match/if chain with proper error propagation.
+// TestUnwrapAssignLowering verifies the S3 contract: `v ?= expr` survives
+// ParseProgram as an UnwrapAssignStatement (skipSugarExpand=true defers the
+// expansion to H0 / lowerUnwrapAssignToHIR). The walk only validates and
+// writes type side-tables; it does NOT replace the node.
 func TestUnwrapAssignLowering(t *testing.T) {
 	input := `foo = (x str) (result ?i64) {
     result = nil
@@ -88,21 +90,19 @@ bar = (x str) (result ?i64) {
 		t.Fatalf("no statements parsed")
 	}
 
-	// After lowering, the UnwrapAssignStatement should have been replaced
-	// with a BlockStatement containing a LetStatement + match/if chain.
-	// The program should have no UnwrapAssignStatement nodes left.
-	// Verify by checking the AST doesn't contain any UnwrapAssignStatement.
+	// S3: the UnwrapAssignStatement should SURVIVE ParseProgram (deferred to H0).
 	hasUnwrap := false
 	for _, stmt := range program.Statements {
 		astContainsUnwrapAssign(stmt, &hasUnwrap)
 	}
-	if hasUnwrap {
-		t.Errorf("UnwrapAssignStatement should have been lowered, but still found in AST")
+	if !hasUnwrap {
+		t.Errorf("UnwrapAssignStatement should survive ParseProgram (S3 H0直出), but it was expanded in-place")
 	}
 }
 
-// TestUnwrapAssignLoweringStructure verifies the lowered structure
-// contains the proper if/match chain for error propagation.
+// TestUnwrapAssignLoweringStructure verifies the S3 contract: after ParseProgram
+// the ?= node is still UnwrapAssignStatement (not a lowered BlockStatement).
+// The actual expansion is exercised by tmp/unwrap-h0-test.no and hir_equivalence.
 func TestUnwrapAssignLoweringStructure(t *testing.T) {
 	input := `do-thing = (x str) (result ?i64) {
     result = nil
@@ -126,25 +126,21 @@ compute = (x str) (result ?i64) {
 			if fd.Name != "do-thing" {
 				continue
 			}
-			// The body should contain a BlockStatement with the lowered unwrap
 			body := fd.Body
 			if body == nil || len(body.Statements) == 0 {
 				t.Fatalf("function body is empty")
 			}
 
-			// First statement should be `result = nil` (LetStatement)
-			// Second statement should be the lowered BlockStatement
-			foundLoweredBlock := false
+			// S3: ?= should still be UnwrapAssignStatement in the body.
+			foundUnwrap := false
 			for _, s := range body.Statements {
-				if bs, ok := s.(*BlockStatement); ok && len(bs.Statements) >= 2 {
-					// Should contain a LetStatement (temp var) and
-					// an ExpressionStatement with IfExpression
-					foundLoweredBlock = true
+				if _, ok := s.(*UnwrapAssignStatement); ok {
+					foundUnwrap = true
 					break
 				}
 			}
-			if !foundLoweredBlock {
-				t.Errorf("did not find lowered block statement for ?= in function body")
+			if !foundUnwrap {
+				t.Errorf("UnwrapAssignStatement should survive ParseProgram (S3), but no ?= node found in function body")
 			}
 			return
 		}
@@ -179,13 +175,13 @@ step-b = (b str) (result ?str) {
 		t.Fatalf("no statements parsed")
 	}
 
-	// Verify no UnwrapAssignStatement remains after lowering
+	// S3: ?= nodes should survive ParseProgram (deferred to H0).
 	hasUnwrap := false
 	for _, stmt := range program.Statements {
 		astContainsUnwrapAssign(stmt, &hasUnwrap)
 	}
-	if hasUnwrap {
-		t.Errorf("UnwrapAssignStatement should have been lowered, but still found in AST")
+	if !hasUnwrap {
+		t.Errorf("UnwrapAssignStatement should survive ParseProgram (S3 H0直出), but it was expanded in-place")
 	}
 }
 
@@ -239,11 +235,11 @@ func astContainsUnwrapAssignExpr(expr Expression, found *bool) {
 	}
 }
 
-// TestUnwrapAssignErrorPropagation verifies that ?= generates proper
-// error propagation: nil/err → set result and return.
+// TestUnwrapAssignErrorPropagation verifies the S3 contract: ?= survives
+// ParseProgram as UnwrapAssignStatement. The actual error propagation
+// (nil/err → result = __unwrap_N; return) is produced by H0's
+// lowerUnwrapAssignToHIR and exercised by tmp/unwrap-h0-test.no.
 func TestUnwrapAssignErrorPropagation(t *testing.T) {
-	// This test verifies the lowered AST contains `return` in the
-	// nil||err branch (error propagation path).
 	input := `do-thing = (x str) (result ?i64) {
     result = nil
     v ?= compute(x)
@@ -260,14 +256,13 @@ compute = (x str) (result ?i64) {
 		t.Fatalf("parse errors: %v", errs)
 	}
 
-	// Check the lowered AST for the presence of ReturnStatement
-	// inside the error propagation branch.
+	// S3: ?= should survive as UnwrapAssignStatement in the body.
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*FunctionDefinition); ok && fd.Name == "do-thing" {
-			hasReturn := false
-			findReturnInBlock(fd.Body, &hasReturn)
-			if !hasReturn {
-				t.Errorf("lowered ?= should contain a return statement for error propagation")
+			hasUnwrap := false
+			astContainsUnwrapAssign(fd.Body, &hasUnwrap)
+			if !hasUnwrap {
+				t.Errorf("UnwrapAssignStatement should survive ParseProgram (S3)")
 			}
 			return
 		}
@@ -335,8 +330,8 @@ step2 = (a str) (result ?str) {
 	for _, stmt := range program.Statements {
 		astContainsUnwrapAssign(stmt, &hasUnwrap)
 	}
-	if hasUnwrap {
-		t.Errorf("UnwrapAssignStatement should have been lowered")
+	if !hasUnwrap {
+		t.Errorf("UnwrapAssignStatement should survive ParseProgram (S3 H0直出), but it was expanded in-place")
 	}
 }
 
@@ -364,8 +359,8 @@ file.read = () (result ?str) {
 	for _, stmt := range program.Statements {
 		astContainsUnwrapAssign(stmt, &hasUnwrap)
 	}
-	if hasUnwrap {
-		t.Errorf("UnwrapAssignStatement should have been lowered")
+	if !hasUnwrap {
+		t.Errorf("UnwrapAssignStatement should survive ParseProgram (S3 H0直出), but it was expanded in-place")
 	}
 }
 
@@ -512,8 +507,8 @@ func TestUnwrapAssignCompoundOptionOperands(t *testing.T) {
 		for _, stmt := range program.Statements {
 			astContainsUnwrapAssign(stmt, &hasUnwrap)
 		}
-		if hasUnwrap {
-			t.Errorf("case %d: UnwrapAssignStatement should have been lowered", i)
+		if !hasUnwrap {
+			t.Errorf("case %d: UnwrapAssignStatement should survive ParseProgram (S3 H0直出), but it was expanded in-place", i)
 		}
 	}
 }

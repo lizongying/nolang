@@ -1256,7 +1256,7 @@ func (p *Parser) parseLetStatement() Statement {
 			Consequence: conseq,
 			Alternative: alt,
 		}
-		p.sem.SetRTFlag(stmt.Value.(*IfExpression), RTPipelineValue)
+		p.fmtTrivia.SetRTFlag(stmt.Value.(*IfExpression), RTPipelineValue)
 	}
 
 	if stmt.Value == nil {
@@ -1857,7 +1857,7 @@ func (p *Parser) wrapStandaloneChainDepth(tok lexer.Token, body *BlockStatement,
 			Condition:   innerCond,
 			Consequence: nextBody,
 		}
-		p.sem.SetRTFlag(chained, RTStandalone)
+		p.fmtTrivia.SetRTFlag(chained, RTStandalone)
 		body = &BlockStatement{
 			Token: tok,
 			Statements: []Statement{
@@ -1896,7 +1896,7 @@ func (p *Parser) parseExpressionStatement() Statement {
 			Consequence: conseq,
 			Alternative: altBody,
 		}
-		p.sem.SetRTFlag(wildcardIf, RTStandalone|RTMatchWildcard)
+		p.fmtTrivia.SetRTFlag(wildcardIf, RTStandalone|RTMatchWildcard)
 		return &ExpressionStatement{
 			Token:      tok,
 			Expression: wildcardIf,
@@ -2051,7 +2051,7 @@ func (p *Parser) parseExpressionStatement() Statement {
 			Consequence: conseq,
 			Alternative: altBody,
 		}
-		p.sem.SetRTFlag(standaloneIf, RTStandalone)
+		p.fmtTrivia.SetRTFlag(standaloneIf, RTStandalone)
 		return &ExpressionStatement{
 			Token:      tok,
 			Expression: standaloneIf,
@@ -2206,7 +2206,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		openingComments = group
 		p.comments = p.comments[i:]
 	}
-	p.sem.SetOpeningBraceComment(block, openingComments)
+	p.fmtTrivia.SetOpeningBraceComment(block, openingComments)
 
 	for p.currentToken.Type != lexer.RBRACE && p.currentToken.Type != lexer.EOF {
 		// If current token is `->` (RARROW) and the last statement in the block
@@ -2225,7 +2225,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 			prevStmt := block.Statements[len(block.Statements)-1]
 			if es, ok := prevStmt.(*ExpressionStatement); ok {
 				if ie, ok := es.Expression.(*IfExpression); ok {
-					if p.sem.HasRTFlag(ie, RTStandalone) && ie.Alternative == nil {
+					if p.fmtTrivia.HasRTFlag(ie, RTStandalone) && ie.Alternative == nil {
 						tok := p.currentToken
 						p.nextToken() // skip ->
 						altBody := p.parseStandaloneBody(tok)
@@ -2237,7 +2237,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 							p.attachInlineComment(altBody.Statements[len(altBody.Statements)-1])
 						}
 						ie.Alternative = altBody
-						p.sem.SetRTFlag(ie, RTElseNewline)
+						p.fmtTrivia.SetRTFlag(ie, RTElseNewline)
 						continue
 					}
 				}

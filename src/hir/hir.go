@@ -82,6 +82,10 @@ const (
 	KCall
 	KDot
 	KFuncLit
+	// KGrouped 是 tombstone（2026-10-21 起）：括号是纯语法、无语义，H0
+	// 已抹除（tohir 透传内层表达式，§10.2），语料计数恒为 0。枚举名保留
+	// 以免搅动 KindNames/金标序号；G3 门禁（sugar_kinds_test.go）钉住零值，
+	// golden_test 的豁免条目保证「被产出即 FAIL」。
 	KGrouped
 
 	// ---- types ----
@@ -301,6 +305,14 @@ type Ann struct {
 
 // Package is a fully built, immutable HIR unit: plain data slices plus an
 // optional symbol table. It owns no maps, so copying and caching it is cheap.
+//
+// THIR (L1) spec: a Package together with its typed side tables (Anns,
+// Embeds, FuncOwners, Owners, GoSpawns, Inferred, plus SrcFile/FuncUnions
+// once the THIR side-table migration lands) IS the THIR layer — the only legal
+// program representation between the checker and MIR. Base HIR is merely the
+// conversion intermediate produced by H0; node types travel only via
+// Node.Type (declared) and Inferred (inferred), never re-derived from shape.
+// Formatter trivia (RTFlags, OpeningBraceComment) must NOT live here.
 type Package struct {
 	Name    string
 	Nodes   []Node

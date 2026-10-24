@@ -24,7 +24,7 @@ import (
 //     (structural capture) sets it false. A flag collapse here lets the
 //     option-capture pass re-desugar `a = b + c` into `__cap_N`, silently
 //     dropping the `?i64` annotation the user would otherwise see.
-//  4. The cache mirror (detNodeSem) round-trips through gob, so an
+//  4. The cache mirror (detCached.TypeFacts) round-trips through gob, so an
 //     incremental-build AST cache hit produces identical checker / formatter
 //     output to a fresh parse.
 //
@@ -120,10 +120,19 @@ f = (a i64, b i64) () {
 	// `prepareInferredTypes` skips it under `SkipUnwrapLowering`. This is
 	// why the gate is "AST untouched" not "side-table populated".
 
-	// 5. Cache round-trip: the detNodeSem mirror must carry both fields, so a
-	//    Tier-1 cache hit restores the side-table byte-for-byte (paralleling
-	//    the InBoundsProofLivesInSemanticSideTable round-trip).
-	cp := &CachedProgram{Prog: arithProg, NodeSem: SerializeNodeSem(arithProg)}
+	// 5. Cache round-trip: since Stage 4 the type facts live in their own
+	//    `CachedProgram.TypeFacts` table (occurrence-keyed, mirroring Anns)
+	//    instead of the detNodeSem mirror. A Tier-1 cache hit
+	//    must still restore both fields byte-for-byte (paralleling the
+	//    InBoundsProofLivesInSemanticSideTable round-trip).
+	//    ⚠️ All three serialize helpers must be passed: dropping TypeFacts here
+	//    is exactly the failure this test exists to catch.
+	cp := &CachedProgram{
+		Prog:      arithProg,
+		Anns:      SerializeAnns(arithProg),
+		TypeFacts: SerializeTypeFacts(arithProg),
+		NodeFacts: SerializeNodeFacts(arithProg),
+	}
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(cp); err != nil {
 		t.Fatalf("gob encode: %v", err)
@@ -132,7 +141,6 @@ f = (a i64, b i64) () {
 	if err := gob.NewDecoder(&buf).Decode(&dec); err != nil {
 		t.Fatalf("gob decode: %v", err)
 	}
-	RestoreNodeSem(dec.Prog, dec.NodeSem)
 
 	dx := findLetByName(t, dec.Prog, "x")
 	if dx == nil {

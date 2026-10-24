@@ -15,11 +15,47 @@ import (
 	"time"
 )
 
-// ASTVersion bumps whenever the AST shape or the gob serialization of
-// *Program / CachedProgram changes in a way that would make a previously
-// cached blob decode into a structurally different tree. It is folded into
-// every on-disk cache key, so bumping it invalidates all stale entries at
-// once without scanning the directory.
+// ASTVersion is the version of the *parse output*, not of the compiler. It is
+// folded into every on-disk cache key, so bumping it invalidates all stale
+// entries at once without scanning the directory.
+//
+// # C9 policy (S6, 2026-10-21)
+//
+// Lowering no longer runs inside ParseProgram (S1 flip, design §22), so a
+// cached blob is a pure function of (source text, parse-time inputs). That makes
+// the bump rule two-sided, and the two sides are NOT symmetric:
+//
+//	MUST bump — anything that changes what ParseProgram RETURNS, or how that
+//	tree is serialized:
+//	  1. surface AST shape: node types, node fields, and any field value that
+//	     comes from the source text or from parse-time inference;
+//	  2. the gob wire layout of CachedProgram / its deterministic shadow
+//	     (astcache_det.go), including a new node-keyed fact table that is
+//	     added without a detU32* mirror — the blob then decodes with that
+//	     fact silently missing;
+//	  3. a parse-time side table that HIR consumes: annotations, platform keys,
+//	     embed data, generic params, IndexInBounds, InferredType, ModuleConst,
+//	     SourceFile, ModuleOwner, ...
+//
+//	MUST NOT bump — anything strictly downstream of the cache:
+//	  lowering (H0 sugar elimination, match representation), monomorphisation,
+//	  assembly renaming / module prefixing / call rewriting, clone isolation.
+//	  These change HIR, never the AST blob. They are versioned by
+//	  hir.HIRVersion instead (documented only: there is no HIR disk cache yet).
+//
+// The old rule was "bump for any change to the lowering pass". It was correct
+// while lowering ran inside ParseProgram, and it is wrong now in both
+// directions: it throws the whole cache away for HIR-only changes, and it
+// obscures the invariant that actually matters — a decoded blob must lower to
+// the same HIR as a fresh parse. That invariant is what G7 measures
+// (TestCachedASTLowersToIdenticalHIR); the bump rule is only the mechanism that
+// keeps it true across compiler builds.
+//
+// The entries below are history. Everything before 2026-10-21.2 was written
+// under the old rule, so several of them record lowering changes that would not
+// require a bump today; they are kept verbatim because they document what the
+// stale-blob failure looked like each time.
+
 // 2026-10-11.1 — walkProgramNodes switched from per-unique-node to
 // per-occurrence indexing (see the comment on walkProgramNodes): the old
 // encoding attached nodeSem entries to the wrong nodes after a gob round-trip.
@@ -40,11 +76,6 @@ import (
 // `no vet` false-positive `ovf-int-default` on `main` as the sole function with
 // a 2-statement body, reproducible only on a cache HIT and gone under
 // NOLANG_AST_CACHE_OFF=1). Bump so every stale entry is invalidated.
-//
-// Rule of thumb: bump this for any change to the lowering pass, not just for
-// changes to the gob layout. The cache key is (content, ASTVersion, sigSalt) —
-// it cannot see the compiler build, so a semantics-only change would otherwise
-// be masked by cached blobs.
 //
 // 2026-10-12.3：D7-R1 反轉 —— 重新載入 bounds.go 的「可證明越界安全」豁免
 // （p.inBoundsIdx / isSafeIndexBase 早退 / AnalyzInBoundsForFunc 合併 /
@@ -125,7 +156,88 @@ import (
 // SurfaceMatch 的樹——S1 的行為被靜默退回翻轉前，且這種「假綠」只在緩存命中時
 // 出現（NOLANG_AST_CACHE_OFF=1 復測即暴露）。2026-10-16.2 的註釋已預言此場景
 // （「若 S1 讓 SurfaceMatch 存活到序列化，那時必須 bump」）。
-const ASTVersion = "2026-10-18.1"
+// 2026-10-21.1：S5 stage 2–4 —— `LetStatement.IsModuleConst`、
+// `CommentedNode.SourceFile`/`ModuleOwner`、`FuncSignature.VariadicUnion`/
+// `GenericUnion` 共 5 個 AST 欄位刪除，事實遷入 SemanticContext side-table
+// （nodeSem）。gob 版面改變：舊 blob 的欄位流會被新 decoder 靜默丟棄，
+// 若不 bump，快取命中會讓這些事實「憑空消失」（nodeSem 鏡像雖已補齊，
+// 但舊 blob 的 nodeSem 本就沒有這些鍵）。⚠️ stage 2/3 落地時漏了 bump，
+// 本次一併作廢全部舊 blob。
+// 2026-10-21.2：S5 stage 5 —— `LetStatement.Type` 的裝配期覆寫遷入
+// `NodeSemantics.TypeOverride`（detNodeSem 鏡像同步）。嚴格說這次是**新增**
+// 欄位（gob 向前相容、零值省略，且快取存的是解析產出、永遠不含 TypeOverride
+// 條目），不 bump 也未必出事——但 stale-cache 故障只在 HIT 且難復現，
+// bump 的代價是一次性作廢，故按慣例保守 bump。
+//
+// **2026-10-21 S6：本次刻意不 bump（維持 2026-10-21.2）** —— 這是新政策
+// （上方 C9）的第一個適用者。S6 只做三件事：把 bump 規則改寫成兩向清單、
+// 新增 `hir.HIRVersion` 承擔降糖/裝配形狀版本、補 G7 門禁
+// （`TestCachedASTLowersToIdenticalHIR`）。三件都不改變 ParseProgram 的產出、
+// 也不改變 gob 版面，按新規則不 bump。若這裡反而 bump，就等於用行動否定剛寫下
+// 的政策——HIR 側的形狀變更永遠不該作廢 AST blob。
+// 2026-10-22.2：同日的兩處 lowering 變更叠加（皆改變 ParseProgram 的輸出形狀）：
+//  1. 捕獲 pass 的 `wasDeclared` 刪除 `localDeclaredType` 回退（見 2026-10-22.1
+//     段）：解析期推斷型別不再冒充「已宣告」，捕獲目標現在一律補 `a ?T = nil`
+//     預宣告。
+//  2. 算術根的 inner 推導補正（lowering.go maybeCaptureOptionAssign）：結果型別
+//     ≠ i64 的算術捕獲（浮點 `a * b` 兩側皆 ?f64 ⇒ ?f64；str 拼接 ⇒ ?str）不再
+//     硬編碼 i64——舊行為會把預宣告弄成錯誤的 `c ?i64 = nil`（實測
+//     tests/arr-test-tmp.no：checker 據此誤報格式串 'g' vs '?i64'）。整數算術
+//     （任意寬度）結果 payload 一律 i64 的慣例不變（實測 aes-vectors：覆寫成
+//     ?byte 會讓 codegen 的 option wrap 發出 trunc i64→i8 而 LLVM 驗證失敗）。
+//
+// 2026-10-22.3：移除 `#{intrinsic}` 註解——連帶刪除 `FunctionDefinition.Intrinsic`
+// 這個 AST 欄位（parser/annotation.go 不再寫入、`no ast` 的 dump 欄位同步消失、
+// checker 的 i3k422u3 抑制改由 `#{buildin}` 獨力承擔）。gob 版面改變：舊 blob 的
+// Intrinsic 欄位會被新 decoder 靜默丟棄（該旗標只影響 checker 的返回值校驗、
+// 不進 HIR），但按 C9 規則「刪除節點欄位」即屬必 bump（surface AST shape 改變），
+// 2026-10-23.1：THIR Stage 2 —— RTFlags / OpeningBraceComment 從
+// `NodeSemantics` 遷到獨立的 `FmtTrivia` 表（`Program.FmtTrivia`）。gob 版面
+// 改變：`detNodeSem` 少了兩個欄位，舊 blob 解出的 NodeSemantics 會帶著已被
+// 廢棄的位元；且新表**刻意不入 detProgram**（formatter-only trivia，fmt/LSP
+// 一律 fresh parse 而從不讀快取），故解碼後 `Program.FmtTrivia` 為 nil。按
+// C9 規則「detNodeSem 欄位增刪」即屬必 bump，作廢全部舊 blob。
+//
+// 2026-10-23.2：THIR Stage 3 —— `RawAnnotations` / `Annotations` /
+// `PlatformKeys` / `GenericParams` 從 `NodeSemantics` 遷到獨立的 `AnnTable`
+// （`SemanticContext.anns`）。gob 版面改變：`detNodeSem` 少四個欄位，註解改由
+// `detCached.Anns`（occurrence 編號鍵）承載。🔴 這裡**必須** bump 且是雙向的：
+// 舊 blob 解出的註解表為空，而註解驅動平台過濾 / 溢位處理 / 索引守衛——丟失
+// 不報錯，只會靜默生成錯誤的程式。作廢全部舊 blob。
+//
+// 2026-10-23.3：THIR Stage 4 —— `InferredType` / `InferredByOptionArith` /
+// `TypeOverride` 從 `NodeSemantics` 遷到獨立的 `TypeFacts` 表
+// （`SemanticContext.typeFacts`）。gob 版面改變：`detNodeSem` 少三個欄位，
+// 型別事實改由 `detCached.TypeFacts`（occurrence 編號鍵）承載。
+// 🔴 必 bump（`astdiskcache.go` 的 MUST-bump 清單點名 `InferredType` 屬
+// 「parse-time side table that HIR consumes」）：舊 blob 解出的型別事實表為空，
+// `?T` 推斷消失 → KLet 的 HIR Type 變空、checker 四處 option 豁免失效；
+// 裝配期有效型別覆寫丟失 → 退回宣告型別。全部靜默，不報錯。
+//
+// 2026-10-23.4：THIR Stage 5 —— 剩餘 9 個欄位（EmbedData / EmbedFiles /
+// Callee / IndexInBounds / ModuleConst / SourceFile / ModuleOwner /
+// VariadicUnion / GenericUnion）從 `NodeSemantics` 遷到獨立的 `NodeFacts` 表
+// （`SemanticContext.nodeFacts`），`NodeSemantics` 自此成為空殼。gob 版面改變：
+// `detNodeSem` 清空，事實改由 `detCached.NodeFacts`（occurrence 編號鍵）承載。
+// 🔴 必 bump（MUST-bump 清單點名 `embed data` / `IndexInBounds` /
+// `ModuleConst` / `SourceFile` / `ModuleOwner` 五項）：舊 blob 解出的節點事實表
+// 為空，診斷歸因靜默回退成主檔路徑、常量傳播與索引守衛豁免靜默失效、
+// union 單態化標記消失（Tier-0 std blob 路徑不重跑 monomorphizeUnions，
+// 無法自行補回）。作廢全部舊 blob。
+//
+// 2026-10-23.5：THIR Stage 7 —— 刪除 `NodeSemantics` 空殼與整條 nodeSem 通道：
+// `SemanticContext.nodeSem` / `ensure` / `HasSemantics`、`CachedProgram.NodeSem`、
+// `SerializeNodeSem` / `RestoreNodeSem`、`detNodeSem` / `detU32Sem` /
+// `detCached.NodeSem`。**無任何欄位搬運**：Stage 2–5 已把 18 個欄位全部遷到
+// `FmtTrivia`（不進 blob）/ `AnnTable` / `TypeFacts` / `NodeFacts`，本輪是純機械
+// 刪除；`SerializeNodeSem` 自 Stage 5 起恆回 nil、`RestoreNodeSem` 恆為 no-op，
+// 故資料面零變化。
+//
+// gob 版面改變：`detCached` 少一個欄位。舊 blob **仍能**解碼（gob 忽略流裡多餘
+// 的欄位，且 `NodeSem` 恆為空、解不出任何東西），但依 C9 MUST-bump 第 2 條
+// 「gob 版面改變」**仍須 bump** —— 版本號是「blob 與本版編譯器匹配」的唯一憑證，
+// 解碼容忍不等於語義正確。作廢全部舊 blob。
+const ASTVersion = "2026-10-23.5"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent
@@ -206,8 +318,16 @@ func DefaultUserASTCache() (*UserASTCache, error) {
 // given external-signature salt. The salt must capture every ParseProgram
 // input other than the source text itself (see the UserASTCache doc comment).
 func (c *UserASTCache) KeyFor(content, sigSalt string) string {
+	return cacheKey(content, sigSalt, ASTVersion)
+}
+
+// cacheKey is KeyFor with the version axis exposed. It exists so the C9 split
+// can be asserted rather than assumed: a test can show that the key moves when
+// the AST version moves, and that hir.HIRVersion is not an input at all
+// (see TestASTCacheKeyCoversParseVersionOnly).
+func cacheKey(content, sigSalt, astVersion string) string {
 	h := sha256.New()
-	h.Write([]byte(ASTVersion))
+	h.Write([]byte(astVersion))
 	h.Write([]byte{0})
 	h.Write([]byte(sigSalt))
 	h.Write([]byte{0})
@@ -245,7 +365,6 @@ func (c *UserASTCache) Get(key string) (*Program, bool) {
 	if err := gob.NewDecoder(zr).Decode(&cp); err != nil {
 		return nil, false
 	}
-	RestoreNodeSem(cp.Prog, cp.NodeSem)
 	return cp.Prog, true
 }
 
@@ -258,7 +377,12 @@ func (c *UserASTCache) Put(key string, prog *Program) {
 	}
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
-	cp := &CachedProgram{Prog: prog, NodeSem: SerializeNodeSem(prog)}
+	cp := &CachedProgram{
+		Prog:      prog,
+		Anns:      SerializeAnns(prog),
+		TypeFacts: SerializeTypeFacts(prog),
+		NodeFacts: SerializeNodeFacts(prog),
+	}
 	if err := gob.NewEncoder(zw).Encode(cp); err != nil {
 		return
 	}

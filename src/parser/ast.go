@@ -419,171 +419,20 @@ type CommentGroup struct {
 }
 
 // CommentedNode is embedded in all statement types that can have comments.
+//
+// 曾經還有兩個欄位在這裡：SourceFile / ModuleOwner。它們在合併後由整程式
+// 裝配 pass 就地寫入（違反 §1.4「ParseProgram 返回後不寫任何 AST 節點欄位」），
+// S5 已搬進 Program.Sem side-table：SemanticContext.SourceFileOf /
+// SetSourceFileOf / ModuleOwnerOf / SetModuleOwnerOf /
+// SetSourceFileDeep（parser/resolver.go）。
 type CommentedNode struct {
 	Doc     *CommentGroup // standalone line(s) above the node
 	Comment *CommentGroup // inline comment on the same line
-	// SourceFile records the source file path from which this statement
-	// originated after module merging. Empty for the main program's own
-	// statements before merging (filled by the transpiler's merge pass).
-	// Replaces the external map[Statement]string stmtFileMap.
-	SourceFile string
-	// ModuleOwner records the source module short name for statements
-	// imported from a module (e.g. "sql", "path"). Empty for the main
-	// program's own statements. Replaces the external
-	// map[Statement]string stmtOwner.
-	ModuleOwner string
 }
 
 func (cn *CommentedNode) GetDoc() *CommentGroup     { return cn.Doc }
 func (cn *CommentedNode) GetComment() *CommentGroup { return cn.Comment }
 func (cn *CommentedNode) SetDoc(d *CommentGroup)    { cn.Doc = d }
-
-// SetModuleOwner sets the module short name on a statement that embeds
-// CommentedNode. Only FunctionDefinition and LetStatement participate in
-// module ownership tracking.
-func SetModuleOwner(stmt Statement, owner string) {
-	switch s := stmt.(type) {
-	case *LetStatement:
-		s.ModuleOwner = owner
-	case *FunctionDefinition:
-		s.ModuleOwner = owner
-	}
-}
-
-// GetModuleOwner retrieves the module short name from a statement that embeds
-// CommentedNode. Returns "" if the statement type does not embed CommentedNode
-// or the field was never set (e.g. main program statements).
-func GetModuleOwner(stmt Statement) string {
-	switch s := stmt.(type) {
-	case *LetStatement:
-		return s.ModuleOwner
-	case *FunctionDefinition:
-		return s.ModuleOwner
-	}
-	return ""
-}
-
-// SetSourceFile sets the source file path on a statement that embeds CommentedNode.
-// Panics if the statement does not embed CommentedNode (should never happen for
-// the statement types that participate in module merging).
-func SetSourceFile(stmt Statement, file string) {
-	switch s := stmt.(type) {
-	case *LetStatement:
-		s.SourceFile = file
-	case *FunctionDefinition:
-		s.SourceFile = file
-	case *StructDefinition:
-		s.SourceFile = file
-	case *InterfaceDefinition:
-		s.SourceFile = file
-	case *TypeAlias:
-		s.SourceFile = file
-	case *EnumDefinition:
-		s.SourceFile = file
-	case *TaggedEnumDefinition:
-		s.SourceFile = file
-	case *ExternStatement:
-		s.SourceFile = file
-	case *ExpressionStatement:
-		s.SourceFile = file
-	case *AnnotationStatement:
-		s.SourceFile = file
-	}
-}
-
-// GetSourceFile retrieves the source file path from a statement that embeds
-// CommentedNode. Returns "" if the statement type does not embed CommentedNode
-// or the field was never set.
-func GetSourceFile(stmt Statement) string {
-	switch s := stmt.(type) {
-	case *LetStatement:
-		return s.SourceFile
-	case *FunctionDefinition:
-		return s.SourceFile
-	case *StructDefinition:
-		return s.SourceFile
-	case *InterfaceDefinition:
-		return s.SourceFile
-	case *TypeAlias:
-		return s.SourceFile
-	case *EnumDefinition:
-		return s.SourceFile
-	case *TaggedEnumDefinition:
-		return s.SourceFile
-	case *ExternStatement:
-		return s.SourceFile
-	case *ExpressionStatement:
-		return s.SourceFile
-	case *AnnotationStatement:
-		return s.SourceFile
-	}
-	return ""
-}
-
-// SetSourceFileDeep recursively sets the source file path on a statement AND all
-// of its nested body statements (function bodies, for-loop bodies, if blocks,
-// etc.). This is needed so that, after std modules are merged into a program,
-// every statement self-identifies its origin file and linter diagnostics are
-// attributed to the correct module rather than inheriting the vetted file's name.
-func SetSourceFileDeep(stmt Statement, file string) {
-	if stmt == nil {
-		return
-	}
-	SetSourceFile(stmt, file)
-	switch s := stmt.(type) {
-	case *FunctionDefinition:
-		if s.Body != nil {
-			for _, b := range s.Body.Statements {
-				SetSourceFileDeep(b, file)
-			}
-		}
-	case *ForStatement:
-		if s.Init != nil {
-			SetSourceFileDeep(s.Init, file)
-		}
-		if s.Body != nil {
-			for _, b := range s.Body.Statements {
-				SetSourceFileDeep(b, file)
-			}
-		}
-	case *BlockStatement:
-		for _, b := range s.Statements {
-			SetSourceFileDeep(b, file)
-		}
-	case *LetStatement:
-		if s.Value != nil {
-			setSourceFileDeepOnExpr(s.Value, file)
-		}
-	case *ExpressionStatement:
-		if s.Expression != nil {
-			setSourceFileDeepOnExpr(s.Expression, file)
-		}
-	}
-}
-
-// setSourceFileDeepOnExpr recurses into expressions that can carry nested body
-// statements (if/else blocks, grouped exprs) so their inner statements inherit
-// the module's source file too.
-func setSourceFileDeepOnExpr(e Expression, file string) {
-	if e == nil {
-		return
-	}
-	switch x := e.(type) {
-	case *IfExpression:
-		if x.Consequence != nil {
-			for _, b := range x.Consequence.Statements {
-				SetSourceFileDeep(b, file)
-			}
-		}
-		if x.Alternative != nil {
-			for _, b := range x.Alternative.Statements {
-				SetSourceFileDeep(b, file)
-			}
-		}
-	case *GroupedExpression:
-		setSourceFileDeepOnExpr(x.Expression, file)
-	}
-}
 
 // ---- Program ----
 //
@@ -620,12 +469,26 @@ type Program struct {
 	Warnings         []string         // parser warnings (e.g., dead code, deprecation)
 	Errors           []string         // post-ParseProgram errors (see the block comment above)
 	Sem              *SemanticContext // 語義副表：註解/平台鍵/embed/泛型參數/類型推斷結果（解析/语义分离）
-	// BuiltinFuncNames 記錄被 #{buildin=...} / #{intrinsic} 標記的函式名稱集合。
+	// BuiltinFuncNames 記錄被 #{buildin=...} 標記的函式名稱集合。
 	// 由 stripBuiltinStubs（編譯/ vet 管線）在移除內建樁函式時填寫，使後續
 	// 校驗（RunAllLints）即便在樁函式被剝離、同名多載延續定義仍保留的情況下，
 	// 仍能依名稱辨識並跳過其返回值校驗，避免對內建多載誤報
 	// "result parameter 'X' is never assigned" (i3k422u3)。
 	BuiltinFuncNames map[string]bool
+	// FmtTrivia 是 formatter 專用的表層 trivia 表（RTFlags / `{` 同行註釋），
+	// 與語義無關，故刻意不放在 Sem 裡。
+	//
+	// 寫入者：parser 解析期（stmt.go / expr.go / match.go / decl.go）與
+	// lowering（lowering.go）；讀取者：只有 src/fmt（LSP 經 fmt 間接消費）。
+	// 編譯管線（build / checker / codegen）對它零读取。
+	//
+	// 由 ParseProgram 在掛 Sem 的同一處掛上（`p.fmtTrivia`），位於 SkipLowering
+	// 分叉之前，故「含糖給 fmt/LSP」與「降糖給編譯」兩條路徑都拿得到。
+	//
+	// 不參與磁碟 blob 序列化：本表刻意不入 detProgram 影子，gob 往返後為 nil。
+	// 這是安全的——fmt / LSP 一律 fresh parse 而從不讀快取。詳見 fmttrivia.go
+	// 檔案頭與 docs/design/nolang-parser-lowering-invariants.md §3.5。
+	FmtTrivia *FmtTrivia
 }
 
 func (p *Program) Pos() lexer.Position {
@@ -633,6 +496,43 @@ func (p *Program) Pos() lexer.Position {
 		return p.Statements[0].Pos()
 	}
 	return lexer.Position{}
+}
+
+// Anns 回傳 Program 級註解表（Stage 3，見 anntable.go）。
+//
+// 這是**讀取視圖**，不是獨立存儲：註解實際放在 `p.Sem.anns`，與 `p.Sem` 的
+// 其他副表同源。之所以不另開 `Program.Anns` 字段，是為了避免「兩個字段必須
+// 手工同步」——反序列化期 `detToSem` 重建 Sem、合併期 transpiler 建 merged
+// program，各有一次重建，少同步一處就靜默丟註解。
+//
+// 需要整表操作的呼叫方：blob 序列化（astcache.go 的 SerializeAnns /
+// RestoreAnns）、CloneProgram、模組合併。
+// nil receiver / nil Sem 安全，返回 nil。
+func (p *Program) Anns() *AnnTable {
+	if p == nil || p.Sem == nil {
+		return nil
+	}
+	return p.Sem.anns
+}
+
+// TypeFacts 回傳 Program 級型別事實表（Stage 4，見 typefacts.go）。
+// 與 `Anns()` 同為**讀取視圖**：事實實際放在 `p.Sem.typeFacts`。
+// nil receiver / nil Sem 安全，返回 nil。
+func (p *Program) TypeFacts() *TypeFacts {
+	if p == nil || p.Sem == nil {
+		return nil
+	}
+	return p.Sem.typeFacts
+}
+
+// NodeFacts 回傳 Program 級節點事實表（Stage 5，見 nodefacts.go）。
+// 與 `Anns()` / `TypeFacts()` 同為**讀取視圖**：事實實際放在 `p.Sem.nodeFacts`。
+// nil receiver / nil Sem 安全，返回 nil。
+func (p *Program) NodeFacts() *NodeFacts {
+	if p == nil || p.Sem == nil {
+		return nil
+	}
+	return p.Sem.nodeFacts
 }
 
 func (p *Program) EndPos() lexer.Position {
@@ -778,12 +678,9 @@ type LetStatement struct {
 	// ItArmType 標記 match 派生 it 綁定的 arm 類型（ok/err/nil/else 等），
 	// 供校驗器在 matched 變數型別於解析期未知（跨模組回傳型別）時收窄 it。
 	ItArmType string
-	// IsModuleConst marks this LetStatement as a module-level constant
-	// eligible for constant propagation. Set by the transpiler's module
-	// merge pass when the value is a compile-time constant expression
-	// (checker.IsConstantExpr) and matches the target platform.
-	// Replaces the external map[string]Expression moduleConstants.
-	IsModuleConst bool
+	// IsModuleConst 已於 S5 移至 Program.Sem 的 node-keyed side-table
+	// （SemanticContext.ModuleConstOf）。原欄位由整程式合併 pass 就地寫入，
+	// 違反 §1.4「ParseProgram 返回後不得寫任何 AST 節點欄位」。
 	// IsPropagation marks a compiler-generated `result = __unwrap_N` assignment
 	// emitted by lowering's `?=` (and safe-index capture) error paths:
 	// the whole option value is copied into an option-typed result parameter so
@@ -876,7 +773,8 @@ type BlockStatement struct {
 	TrailingComments    *CommentGroup   // standalone statements before }
 	ClosingBraceComment *CommentGroup   // comment on the } line itself
 	BetweenComments     []*CommentGroup // free-standing comment lines between statements
-	// `{` 同行註釋已遷至語義副表：SemanticContext.OpeningBraceCommentOf(block)。
+	// `{` 同行註釋已遷至排版 trivia 表：FmtTrivia.OpeningBraceCommentOf(block)
+	// （Program.FmtTrivia；原在 SemanticContext，Stage 2 遷出）。
 }
 
 func (bs *BlockStatement) statementNode()      {}
@@ -904,13 +802,16 @@ func (p *Parameter) Pos() lexer.Position    { return posFromToken(p.Token) }
 func (p *Parameter) EndPos() lexer.Position { return posFromToken(p.Token) }
 
 // FuncSignature captures the shared signature of FunctionDefinition and FunctionLiteral.
+//
+// 曾經這裡還有 VariadicUnion / GenericUnion 兩個欄位（checker 的
+// ValidateUnionTypes 就地寫入的 union 單態化標記）。S5 stage 4 已搬進
+// Program.Sem side-table：SemanticContext.VariadicUnionOf / GenericUnionOf
+// （parser/resolver.go）。
 type FuncSignature struct {
 	Parameters    []*Parameter
 	Results       []*Parameter
 	GenericParams []*Identifier // 泛型參數：<N, M, ...>
 	IsVariadic    bool          // 是否有 ...any 可變參數
-	VariadicUnion string        // 當 IsVariadic && 參數類型是 union alias 時記錄 union 名稱；codegen 會單態化
-	GenericUnion  string        // 當函數的參數/結果型別是 union alias（非 variadic）時記錄 union 名稱；codegen 會單態化
 }
 
 // DeclaredResults returns fn's declared result parameters with the implicit
@@ -960,20 +861,15 @@ type FunctionDefinition struct {
 	// 使 generic/union 複本的方法體內相減不遺失模式（HIR 模式下註解只存於
 	// hirPkg.Anns，side-table 拷貝無效，故必須以 AST 節點欄位攜帶）。
 	OverflowMode string
-	// Intrinsic 標記此函式被 #{intrinsic} 註解修飾：其命名返回參數由 codegen /
-	// 内建 / 出參引用等方式在 nolang 源碼之外賦值，靜態檢查無法追蹤，故跳過
-	// ValidateUnassignedReturns 的「未賦值」檢查。此欄位由 parser 在解析註解時
-	// 填寫（見 attachAnnotations），與 OverflowMode 同機制。
-	Intrinsic bool
 	// BuiltinStub 標記此函式被 #{buildin=NAME} 註解修飾：它只是標準庫內建函式的
 	// 簽名聲明（真實實作位於 Go runtime 的 BuiltinMethod 表，透過 ForwardFunc /
 	// CLibCall / LLVMIntrinsic 等接線），nolang 源碼中的函式體（通常為空 {}）不會
 	// 被校驗或 codegen，遇到此標記編譯器直接跳過「不處理」。此欄位由 parser 在解析
-	// 註解時填寫（見 attachAnnotations），與 OverflowMode / Intrinsic 同機制。
+	// 註解時填寫（見 attachAnnotations），與 OverflowMode 同機制。
 	BuiltinStub bool
 	// BuiltinName 攜帶 #{buildin=NAME} 中的 NAME（即 Go 側 BuiltinMethod 的鍵）。
 	BuiltinName string
-	// BuiltinGroup 標記此函式是某個 #{buildin=...} / #{intrinsic} 內建樁的「同名
+	// BuiltinGroup 標記此函式是某個 #{buildin=...} 內建樁的「同名
 	// 多載延續定義」。nolang 以連續同名 `name = ...` 表達 arity 多載，註解只掛在
 	// 首個定義上，其餘多載體同為空樁、命名返回參數同樣「未賦值」。此欄位由 parser
 	// 在解析時為緊隨其後的同名多載補上，使校驗器能跳過其返回值校驗。它刻意「不」
@@ -1636,8 +1532,9 @@ func (ae *AwaitExpression) EndPos() lexer.Position {
 // if
 //
 // 表層語法標誌（裸 match / wildcard / standalone / wrapper / elif）與 `{` 同行
-// 註釋已遷至語義副表：見 SemanticContext 的 RTFlag（HasRTFlag/SetRTFlag）與
-// OpeningBraceCommentOf/SetOpeningBraceComment。
+// 註釋已遷至排版 trivia 表：見 Program.FmtTrivia 的 RTFlag（HasRTFlag/SetRTFlag）
+// 與 OpeningBraceCommentOf/SetOpeningBraceComment（原在 SemanticContext，
+// Stage 2 遷出）。
 type IfExpression struct {
 	Token       lexer.Token
 	Condition   Expression

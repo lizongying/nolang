@@ -30,7 +30,12 @@ func buildVarTypes(program *parser.Program) map[string]string {
 	varTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
-			if ls.Type != nil {
+			if ov := program.Sem.TypeOverrideOf(ls); ov != "" {
+				// S5 stage 5：裝配期有效型別覆蓋（具現化/具象化）優先於宣告型別——
+				// 舊版就地寫 ls.Type 使這裡讀到的就是覆寫後的值，搬進 Sem 後必須
+				// 显式解析，否則 devirtualizeInterfaceVars 的結果會被此重建覆蓋回介面名。
+				varTypes[ls.Name.Value] = ov
+			} else if ls.Type != nil {
 				varTypes[ls.Name.Value] = ls.Type.String()
 			} else if ls.Value != nil {
 				if t := inferTypeFromExpr(ls.Value); t != "" {
@@ -49,7 +54,7 @@ func buildVarTypes(program *parser.Program) map[string]string {
 					varTypes[r.Name] = r.Type.String()
 				}
 			}
-			collectVarTypesFromBody(fd.Body, varTypes)
+			collectVarTypesFromBody(fd.Body, varTypes, program.Sem)
 		}
 	}
 	return varTypes
@@ -927,24 +932,24 @@ func stmtPosLine(stmt parser.Statement) int {
 // 檢查所有 IndexExpression 中的常數索引是否超出陣列長度
 func validateArrayBounds(program *parser.Program, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
 	for _, stmt := range program.Statements {
-		if err := validateStmtArrayBounds(stmt, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+		if err := validateStmtArrayBounds(stmt, arraySizes, sliceSizes, stringSizes, varTypes, program.Sem); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
+func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string, sem *parser.SemanticContext) error {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
-		return validateExprArrayBounds(s.Expression, arraySizes, sliceSizes, stringSizes, varTypes)
+		return validateExprArrayBounds(s.Expression, arraySizes, sliceSizes, stringSizes, varTypes, sem)
 	case *parser.LetStatement:
 		if s.Value != nil {
 			// Skip validation for synthetic `it` bindings injected by match desugar.
 			// These have sentinel types ("err", "nil") or element types ("str", "i64")
 			// but their value is an option variable, not a direct string/integer.
 			if s.IsSynthetic {
-				return validateExprArrayBounds(s.Value, arraySizes, sliceSizes, stringSizes, varTypes)
+				return validateExprArrayBounds(s.Value, arraySizes, sliceSizes, stringSizes, varTypes, sem)
 			}
 			// Skip string type check for array/slice variables
 			isArrayVar := false
@@ -963,7 +968,7 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 					}
 				}
 			}
-			return validateExprArrayBounds(s.Value, arraySizes, sliceSizes, stringSizes, varTypes)
+			return validateExprArrayBounds(s.Value, arraySizes, sliceSizes, stringSizes, varTypes, sem)
 		}
 	case *parser.FunctionDefinition:
 		// Build a fresh per-function stringSizes map to avoid variable name
@@ -1010,40 +1015,40 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 			}
 		}
 		if s.Body != nil {
-			collectVarTypesFromBody(s.Body, funcVarTypes)
+			collectVarTypesFromBody(s.Body, funcVarTypes, sem)
 			for _, ss := range s.Body.Statements {
 				collectStringSizeMapFromStmt(ss, funcStringSizes)
 				collectSliceSizeMapFromStmt(ss, funcSliceSizes)
 				collectArraySizesFromStmt(ss, funcArraySizes)
 			}
 			for _, ss := range s.Body.Statements {
-				if err := validateStmtArrayBounds(ss, funcArraySizes, funcSliceSizes, funcStringSizes, funcVarTypes); err != nil {
+				if err := validateStmtArrayBounds(ss, funcArraySizes, funcSliceSizes, funcStringSizes, funcVarTypes, sem); err != nil {
 					return err
 				}
 			}
 		}
 	case *parser.ForStatement:
 		if s.Init != nil {
-			if err := validateStmtArrayBounds(s.Init, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			if err := validateStmtArrayBounds(s.Init, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 				return err
 			}
 		}
 		if s.Body != nil {
 			for _, ss := range s.Body.Statements {
-				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 					return err
 				}
 			}
 		}
 	case *parser.BlockStatement:
 		for _, ss := range s.Statements {
-			if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 				return err
 			}
 		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			return validateExprArrayBounds(s.ReturnValue, arraySizes, sliceSizes, stringSizes, varTypes)
+			return validateExprArrayBounds(s.ReturnValue, arraySizes, sliceSizes, stringSizes, varTypes, sem)
 		}
 	}
 	return nil
@@ -1110,7 +1115,7 @@ func isArrOrSliceTypeName(t string) bool {
 	return strings.HasPrefix(t, "[]") || strings.HasPrefix(t, "[") || strings.HasPrefix(t, "%vec")
 }
 
-func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string) error {
+func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string, sem *parser.SemanticContext) error {
 	switch e := expr.(type) {
 	case *parser.IndexExpression:
 		// 檢查索引是否為常數且超出陣列長度
@@ -1141,10 +1146,10 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 			}
 		}
 		// 遞迴檢查 Left 和 Index（Index 自身也可能有巢狀索引）
-		if err := validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+		if err := validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 			return err
 		}
-		return validateExprArrayBounds(e.Index, arraySizes, sliceSizes, stringSizes, varTypes)
+		return validateExprArrayBounds(e.Index, arraySizes, sliceSizes, stringSizes, varTypes, sem)
 	case *parser.AssignExpression:
 		// array.len = val / slice.len = val / string.len = val → 不允許修改唯讀的 len 欄位
 		// 使用 str.truncate(n) 或 []t.truncate(n) 替代直接修改 .len
@@ -1169,34 +1174,34 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		// The LetStatement check for explicitly str-typed variables is sufficient.
 		// a[i] = val → 檢查 Left 中的 IndexExpression
 		// （slice 的索引檢查已在 IndexExpression case 中處理）
-		return validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes)
+		return validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes, sem)
 	case *parser.InfixExpression:
-		if err := validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+		if err := validateExprArrayBounds(e.Left, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 			return err
 		}
-		return validateExprArrayBounds(e.Right, arraySizes, sliceSizes, stringSizes, varTypes)
+		return validateExprArrayBounds(e.Right, arraySizes, sliceSizes, stringSizes, varTypes, sem)
 	case *parser.PrefixExpression:
-		return validateExprArrayBounds(e.Right, arraySizes, sliceSizes, stringSizes, varTypes)
+		return validateExprArrayBounds(e.Right, arraySizes, sliceSizes, stringSizes, varTypes, sem)
 	case *parser.CallExpression:
 		if e.Function != nil {
-			if err := validateExprArrayBounds(e.Function, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			if err := validateExprArrayBounds(e.Function, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 				return err
 			}
 		}
 		for _, arg := range e.Arguments {
-			if err := validateExprArrayBounds(arg, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			if err := validateExprArrayBounds(arg, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 				return err
 			}
 		}
 	case *parser.ArrayLiteral:
 		for _, elem := range e.Elements {
-			if err := validateExprArrayBounds(elem, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			if err := validateExprArrayBounds(elem, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 				return err
 			}
 		}
 	case *parser.SliceLiteral:
 		for _, elem := range e.Elements {
-			if err := validateExprArrayBounds(elem, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			if err := validateExprArrayBounds(elem, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 				return err
 			}
 		}
@@ -1206,13 +1211,13 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		for i := range e.Arms {
 			arm := &e.Arms[i]
 			if arm.Condition != nil {
-				if err := validateExprArrayBounds(arm.Condition, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				if err := validateExprArrayBounds(arm.Condition, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 					return err
 				}
 			}
 			if arm.Body != nil {
 				for _, ss := range arm.Body.Statements {
-					if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+					if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 						return err
 					}
 				}
@@ -1220,20 +1225,20 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			if err := validateExprArrayBounds(e.Condition, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+			if err := validateExprArrayBounds(e.Condition, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 				return err
 			}
 		}
 		if e.Consequence != nil {
 			for _, ss := range e.Consequence.Statements {
-				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 					return err
 				}
 			}
 		}
 		if e.Alternative != nil {
 			for _, ss := range e.Alternative.Statements {
-				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes); err != nil {
+				if err := validateStmtArrayBounds(ss, arraySizes, sliceSizes, stringSizes, varTypes, sem); err != nil {
 					return err
 				}
 			}

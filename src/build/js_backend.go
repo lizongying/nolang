@@ -197,6 +197,10 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		}
 	}
 
+	// S5 stage 6（2026-10-21）：JS 後端同口徑——進入裝配前取工作副本，
+	// ParseProgram 輸出不可變（§1.4），後續合併/改寫全落在副本上。
+	program = parser.CloneProgram(program)
+
 	// Collect main program's top-level variable and function names to avoid
 	// duplicating them when merging module statements.
 	mainVarNames := make(map[string]bool)
@@ -214,6 +218,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 	merged := &parser.Program{Statements: []parser.Statement{}}
 	merged.Sem = parser.NewSemanticContext()
 	merged.Sem.Merge(program.Sem)
+	// 排版 trivia 表（formatter 專用，與 Sem 並列），合併點同步匯集。
+	merged.FmtTrivia = parser.NewFmtTrivia()
+	merged.FmtTrivia.Merge(program.FmtTrivia)
 
 	loadedModules := make(map[string]bool) // track resolved file paths to avoid duplicate loading
 
@@ -315,7 +322,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		if err != nil {
 			return fmt.Errorf("loading module %s: %w", use.Path, err)
 		}
+		modProg = parser.CloneProgram(modProg) // S5 stage 6：模組工作副本
 		merged.Sem.Merge(modProg.Sem)
+		merged.FmtTrivia.Merge(modProg.FmtTrivia)
 
 		for _, ms := range modProg.Statements {
 			// Collect transitive UseStatements for recursive processing.

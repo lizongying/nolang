@@ -317,12 +317,20 @@ func TestKindCoverageAcrossBothCorpora(t *testing.T) {
 		hir.TNullable: "no parser path puts a nullable type in expression position; defensive case",
 		hir.TPointer:  "no parser path puts a pointer type in expression position; defensive case",
 
-		// Two AST features exist but cannot reach a parse-time lowering. Both
-		// are load-bearing findings for the HIR migration, not curiosities:
+		// Three AST features exist but cannot reach a parse-time lowering in
+		// these corpora. All are load-bearing findings for the HIR migration,
+		// not curiosities:
 		hir.KUnwrapAssign: "`x ?= e` is desugared into if/let/return by lowerProgram " +
 			"before ParseProgram returns, so the node never survives to lowering",
-		hir.KUnionName: "FuncSignature.GenericUnion is back-filled by the checker " +
-			"after parsing (checker.go:679), so it is always empty at lowering time",
+		hir.KGrouped: "parentheses are pure syntax; H0 erases them (tohir passes the " +
+			"inner expression through, §10.2 / W5 landed 2026-10-21). The kind is a " +
+			"tombstone — this exemption FAILS if a corpus ever produces one, which " +
+			"is exactly what pins the erasure (G3 gate: hir/sugar_kinds_test.go)",
+		hir.KUnionName: "the generic-union marker lives in Program.Sem (ex-" +
+			"FuncSignature.GenericUnion) and is back-filled by " +
+			"checker.ValidateUnionTypes; these pure-parse corpora never run the " +
+			"checker, so the marker is always empty at lowering time here (real " +
+			"builds can emit KUnionName once the checker has marked a union)",
 	}
 
 	total := map[hir.Kind]int{}

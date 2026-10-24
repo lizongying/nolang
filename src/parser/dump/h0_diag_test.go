@@ -37,6 +37,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -167,6 +168,14 @@ func TestShippedCorpusProducesNoH0Errors(t *testing.T) {
 	if _, err := os.Stat(corpusRoot); err != nil {
 		t.Skipf("no corpus at %s: %v", corpusRoot, err)
 	}
+	if checker.StdSigKey == "" {
+		t.Skip("StdSigKey not injected (bare `go test`); run via `make test`")
+	}
+	// Inject std method/func signatures so H0's match desugar can infer call
+	// return types (e.g. `b-opt = all.byte(j)` → `?byte`) just like the real
+	// build pipeline does via preloadModuleSignatures.
+	stdFuncSigs, stdStructFields := checker.CollectStdModuleSignatures()
+	stdMethodSigs := checker.CollectStdMethodSigs()
 	var offenders []string
 	walkErr := filepath.WalkDir(corpusRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
@@ -179,6 +188,7 @@ func TestShippedCorpusProducesNoH0Errors(t *testing.T) {
 		p := parser.New(lexer.NewCached(path, string(raw)))
 		p.Filename = path
 		p.SkipLowering = true
+		p.SetExternSignatures(stdFuncSigs, stdMethodSigs, stdStructFields)
 		prog := p.ParseProgram()
 		if len(p.Errors()) > 0 {
 			return nil

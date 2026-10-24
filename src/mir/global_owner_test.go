@@ -29,7 +29,7 @@ import (
 // lowerHIRWithOwners lowers src with the named top-level statements tagged as
 // belonging to the given module (an entry of "" means the main program, which
 // is also the default for anything not listed). This mirrors what
-// build.loadStdModuleBody does with parser.SetModuleOwner when it merges a
+// build.loadStdModuleBody does with prog.Sem.SetModuleOwnerOf when it merges a
 // std module into the program.
 func lowerHIRWithOwners(t *testing.T, src string, owners map[string]string) *Module {
 	t.Helper()
@@ -50,14 +50,14 @@ func lowerHIRWithOwners(t *testing.T, src string, owners map[string]string) *Mod
 			}
 		}
 		if owner, ok := owners[name]; ok && owner != "" {
-			parser.SetModuleOwner(stmt, owner)
+			prog.Sem.SetModuleOwnerOf(stmt, owner)
 		}
 	}
 	pkg, idMap := parser.ASTToHIRWithMap(prog)
 	if pkg == nil {
 		t.Fatal("ASTToHIRWithMap returned nil")
 	}
-	parser.PopulateInferredTypes(pkg, idMap)
+	parser.PopulateInferredTypes(pkg, idMap, nil)
 	mod, _, _ := LowerHIR(pkg, nil)
 	if mod == nil {
 		t.Fatal("LowerHIR returned nil")

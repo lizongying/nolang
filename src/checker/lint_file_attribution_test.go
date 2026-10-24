@@ -20,7 +20,7 @@ f = () (x i64) {
 }
 `)
 	for _, stmt := range prog.Statements {
-		parser.SetSourceFile(stmt, "/abs/path/std/net/ip.no")
+		prog.Sem.SetSourceFileOf(stmt, "/abs/path/std/net/ip.no")
 	}
 	results := ValidateUnusedVars(prog, nil)
 	if len(results) != 1 {
@@ -46,7 +46,7 @@ std-f = () (x i64) {
     x = z
 }
 `)
-	parser.SetSourceFile(prog.Statements[1], "/abs/path/std/str.no")
+	prog.Sem.SetSourceFileOf(prog.Statements[1], "/abs/path/std/str.no")
 	results := ValidateRedundantTypeAnnotation(prog)
 	if len(results) != 2 {
 		t.Fatalf("expected 2 redundant-annotation hints, got %d: %+v", len(results), results)
@@ -86,7 +86,7 @@ func TestStatementWalkingLintsCarrySourceFile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prog := mustParse(t, tc.src)
 			for _, stmt := range prog.Statements {
-				parser.SetSourceFile(stmt, stdFile)
+				prog.Sem.SetSourceFileOf(stmt, stdFile)
 			}
 			results := tc.validate(prog)
 			if len(results) == 0 {

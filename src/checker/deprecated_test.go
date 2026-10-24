@@ -127,3 +127,118 @@ func TestDeprecatedCharToStr_NoFalsePositive(t *testing.T) {
 		}
 	}
 }
+
+// ── 棄用方法（str.copy / txt.copy → a = b）──────────────────────────────
+//
+// 與自由函數不同，方法名屬於用戶命名空間：只有接收者型別可「肯定判定」為
+// str/txt 時才提示（見 deprecatedMethodCalls 的表註釋）。
+
+func TestDeprecatedCopyMethod_Fires(t *testing.T) {
+	cases := map[string]string{
+		// let 型別註解（最常見形態）
+		"let_annotated": `d str = ''
+s str = 'x'
+d = s.copy()`,
+		// 參數型別
+		"param": `f = (s str) (out str) {
+    out = s.copy()
+}`,
+		// 無註解、字面量推斷
+		"literal_inferred": `s = 'hello'
+d str = ''
+d = s.copy()`,
+		// txt 接收者
+		"txt_recv": `t txt = 'hello'
+u txt
+u = t.copy()`,
+		// 字面量接收者（number.no 形態）
+		"literal_receiver": `f = () (out str) {
+    out = 'nan'.copy()
+}`,
+	}
+	for name, src := range cases {
+		res := ValidateDeprecatedCalls(parseProg(t, src))
+		if got := countTrace(res, deprecatedMethodCallTraceID); got != 1 {
+			t.Errorf("%s: 期望 1 條 %s，實際 %d 條: %+v", name, deprecatedMethodCallTraceID, got, res)
+			continue
+		}
+		for _, r := range res {
+			if !strings.Contains(r.Message, "a = b") {
+				t.Errorf("%s: 提示訊息應包含替代寫法 a = b，實際: %q", name, r.Message)
+			}
+			if r.File != "" {
+				t.Errorf("%s: 單檔解析不該帶 File，實際 %q", name, r.File)
+			}
+		}
+	}
+}
+
+func TestDeprecatedCopyMethod_NoFalsePositive(t *testing.T) {
+	cases := map[string]string{
+		// 用戶自訂結構體的同名方法不受影響（接收者型別不是 str/txt）
+		"user_struct": `box {
+    v i64
+}
+box.copy = () (out box) {
+    out.v = .v
+}
+f = () {
+    b box = box { v: 1 }
+    c box
+    c = b.copy()
+}`,
+		// 接收者型別未知（下標結果）⇒ 放行，寧漏報不誤報
+		"unknown_recv": `f = (ss []str) (out str) {
+    out = ss[0].copy()
+}`,
+		// 直接賦值（新寫法）本就該靜默
+		"plain_assign": `d str = ''
+s str = 'x'
+d = s`,
+		// 其他方法名
+		"other_method": `s str = 'x'
+n i64 = s.len()`,
+		// bigint.copy 不在表內：賦值 `b = a` 共享 limbs 緩衝區，不具深拷貝語義
+		"bigint": `a bigint = bigint.from-i64(7)
+b bigint = a.copy()`,
+	}
+	for name, src := range cases {
+		if res := ValidateDeprecatedCalls(parseProg(t, src)); len(res) > 0 {
+			t.Errorf("%s: 期望不報，卻命中: %+v", name, res)
+		}
+	}
+}
+
+// std 內部實作（如 number.no 的 'nan'.copy()）不該對使用者刷屏：
+// 語句自帶 std 來源檔時抑制，與 isSelfImplCall 對自由函數的豁免同一理由。
+func TestDeprecatedCopyMethod_StdSourceSuppressed(t *testing.T) {
+	prog := parseProg(t, `f = () (out str) {
+    out = 'nan'.copy()
+}`)
+	for _, stmt := range prog.Statements {
+		prog.Sem.SetSourceFileOf(stmt, "/repo/src/std/number.no")
+	}
+	if res := ValidateDeprecatedCalls(prog); len(res) > 0 {
+		t.Errorf("std 內部呼叫不該提示，實際: %+v", res)
+	}
+}
+
+// 作用域：內層同名變數遮蔽外層型別時，按內層型別判定（i64 的 copy 不該提示）；
+// 內層塊結束後恢復外層型別（str 的 copy 應提示）。
+func TestDeprecatedCopyMethod_ScopeShadowing(t *testing.T) {
+	src := `f = () (out str) {
+    s str = 'x'
+    {
+        s i64 = 1
+        n i64 = s.copy()
+    }
+    out = s.copy()
+}`
+	res := ValidateDeprecatedCalls(parseProg(t, src))
+	if got := countTrace(res, deprecatedMethodCallTraceID); got != 1 {
+		t.Fatalf("期望 1 條（僅內層塊之後的 str 接收者），實際 %d 條: %+v", got, res)
+	}
+	if res[0].Line != 7 {
+		t.Errorf("期望命中第 7 行（out = s.copy()），實際第 %d 行: %+v", res[0].Line, res[0])
+	}
+}

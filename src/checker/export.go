@@ -48,12 +48,12 @@ func ResolveMethodCalls(program *parser.Program, typeOwner map[string]string) {
 func ResolveSelfMethodCalls(program *parser.Program) { resolveSelfMethodCalls(program) }
 
 // ResolveModuleConstants 替換 program 中的模組常量引用。
-// 遍歷 program 語句，從帶有 IsModuleConst 標記的 LetStatement 收集常量名→值
-// 映射，然後替換表達式中對常量名的引用為字面值。
+// 遍歷 program 語句，從 Sem side-table 中帶 ModuleConst 標記的 LetStatement
+// 收集常量名→值映射，然後替換表達式中對常量名的引用為字面值。
 func ResolveModuleConstants(program *parser.Program) {
 	constants := make(map[string]parser.Expression)
 	for _, stmt := range program.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsModuleConst && ls.Name != nil {
+		if ls, ok := stmt.(*parser.LetStatement); ok && program.Sem.ModuleConstOf(ls) && ls.Name != nil {
 			constants[ls.Name.Value] = ls.Value
 		}
 	}

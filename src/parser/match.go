@@ -543,7 +543,7 @@ func (p *Parser) parseBareMatchExpr() Expression {
 		if parsedBlock != nil {
 			bodyBlock.TrailingComments = parsedBlock.TrailingComments
 			bodyBlock.ClosingBraceComment = parsedBlock.ClosingBraceComment
-			p.sem.SetOpeningBraceComment(bodyBlock, p.sem.OpeningBraceCommentOf(parsedBlock))
+			p.fmtTrivia.SetOpeningBraceComment(bodyBlock, p.fmtTrivia.OpeningBraceCommentOf(parsedBlock))
 			bodyBlock.RBrace = parsedBlock.RBrace
 			// Preserve the actual { token so formatters can check comment
 			// line numbers against the real opening brace position.

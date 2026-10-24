@@ -24,7 +24,8 @@ import (
 // checker via SetStdASTBlob before any build. A nil blob makes StdASTFor fall
 // back to on-the-fly parsing, so the build still works.
 //
-// The format is parser.CachedProgram (Program + flattened nodeSem side-table);
+// The format is parser.CachedProgram (Program + the flattened occurrence-keyed
+// side tables);
 // see parser/astcache.go. AST only — MIR/LLVM IR is never cached here, so the
 // cache key needs no target/opt-level/bounds-check dimension.
 var (
@@ -153,7 +154,6 @@ func StdASTFor(embedPath string) (*parser.Program, bool) {
 	if os.Getenv("NOLANG_DEBUG_IT") != "" {
 		fmt.Fprintf(os.Stderr, "[debug-it] StdASTFor HIT: %s\n", embedPath)
 	}
-	parser.RestoreNodeSem(cp.Prog, cp.NodeSem)
 	return cp.Prog, true
 }
 
@@ -262,7 +262,12 @@ func SerializeStdAST(fsys fs.FS) (*StdASTBlob, error) {
 		if blob.Config == "" {
 			blob.Config = p.ExternSignatureFingerprint()
 		}
-		cp := &parser.CachedProgram{Prog: prog, NodeSem: parser.SerializeNodeSem(prog)}
+		cp := &parser.CachedProgram{
+			Prog:      prog,
+			Anns:      parser.SerializeAnns(prog),
+			TypeFacts: parser.SerializeTypeFacts(prog),
+			NodeFacts: parser.SerializeNodeFacts(prog),
+		}
 		var raw bytes.Buffer
 		if err := gob.NewEncoder(&raw).Encode(cp); err != nil {
 			return nil, fmt.Errorf("std AST: encode %s: %w", embedPath, err)

@@ -5632,6 +5632,63 @@ func (c *codegen) emitCast(inst *Inst) error {
 	return nil
 }
 
+// emitOptionValueEq emits a STRUCTURAL comparison of two option VALUES —
+// `tagA == tagB && payloadA == payloadB` — into inst.Dst, and reports whether it
+// did. It returns false (having emitted NOTHING) when the payload type has no
+// structural equality, leaving the caller to fall back to the discriminant.
+//
+// Why the tag alone is wrong: `ok(1) == ok(2)` and `ok(1) == ok(1)` both hold
+// tag 0, so a tag-only comparison answered TRUE for every pair of ok values, and
+// `err('a') != err('b')` answered FALSE for every pair of errors — `==` on two
+// options had degenerated into "are both ok". The payload was never read.
+//
+// No nil guard is needed around the payload read: the tags are compared as part
+// of the same result, and two `nil` operands carry a ZEROED payload anyway
+// (optStoreTag clears the slot), so `nil == nil` stays true.
+//
+// `!=` is emitted as the negation of the whole conjunction, not as a
+// tag-inequality OR payload-inequality: the two are equivalent, and the
+// negation keeps the operand loads on one path.
+func (c *codegen) emitOptionValueEq(inst *Inst, aV, aT, bV, bT, lt, slot string) bool {
+	if inst.Op != OpEq && inst.Op != OpNe {
+		// Ordering on options stays a discriminant comparison: nolang defines
+		// no ordering over payloads.
+		return false
+	}
+	pA, pTA := c.optionPayloadOf(inst.Args[0], aV, aT)
+	pB, pTB := c.optionPayloadOf(inst.Args[1], bV, bT)
+	if pA == "" || pB == "" || pTA != pTB || c.shouldUseMemcpy(pTA) {
+		return false
+	}
+	// Every payload type accepted below is INLINE (optionPayloadOf returned a
+	// loaded value), so the payload comparison needs no control flow.
+	peq := fmt.Sprintf("%%c%dpq", inst.Dst)
+	switch pTA {
+	case "i64", "i32", "i16", "i8", "i1":
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, %s\n", peq, pTA, pA, pB))
+	case "double":
+		c.sb.WriteString(fmt.Sprintf("  %s = fcmp oeq %s %s, %s\n", peq, pTA, pA, pB))
+	case "%str-long":
+		c.sb.WriteString(fmt.Sprintf("  %s = call i1 @str_eq(%s %s, %s %s)\n", peq, pTA, pA, pTA, pB))
+	case "%txt":
+		c.txtEqInline(pA, pB, peq)
+	default:
+		return false
+	}
+	teq := fmt.Sprintf("%%c%dtq", inst.Dst)
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, %s\n", teq, c.optionTag(aV, aT), c.optionTag(bV, bT)))
+	eqR := fmt.Sprintf("%%c%d", inst.Dst)
+	if inst.Op == OpNe {
+		eqR = fmt.Sprintf("%%c%deq", inst.Dst)
+	}
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", eqR, teq, peq))
+	if inst.Op == OpNe {
+		c.sb.WriteString(fmt.Sprintf("  %%c%d = xor i1 %s, true\n", inst.Dst, eqR))
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot))
+	return true
+}
+
 func (c *codegen) emitCmp(inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
@@ -5640,9 +5697,12 @@ func (c *codegen) emitCmp(inst *Inst) error {
 	// Option operands. Which half of the `{ tag, payload }` struct is compared
 	// depends on the OTHER side:
 	//
-	//   - option vs option (`opt == nil`, `opt == err`, `a == b` on two
-	//     optionals) is nolang's null/error TEST, so compare the TAG
+	//   - option vs a bare variant keyword (`opt == nil`, `opt == err`,
+	//     `opt == ok`) is nolang's null/error TEST, so compare the TAG
 	//     (discriminant, field 0). A direct `icmp` on %option is illegal.
+	//   - option vs option (`a == b` on two optionals) is a VALUE comparison:
+	//     the tags must match AND the payloads must be equal. It used to take
+	//     the tag-only path above as well, which made `ok(1) == ok(2)` true.
 	//   - option vs a plain value (`content == 'Hello World'` on a `?str`) uses
 	//     the PAYLOAD — that is the legacy behaviour, and it is the only reading
 	//     that makes the expression mean anything.
@@ -5672,6 +5732,29 @@ func (c *codegen) emitCmp(inst *Inst) error {
 	aOpt, bOpt := isOptionType(aT), isOptionType(bT)
 	switch {
 	case aOpt && bOpt:
+		// TWO different meanings share this shape, and conflating them was the
+		// bug this branch now separates:
+		//
+		//   - a VARIANT TEST — `o == nil`, `o == err`, `o == ok`, and EVERY
+		//     match arm (the parser desugars `o: { ok -> ... }` into
+		//     `o == ok`). The right-hand side is a bare keyword carrying no
+		//     payload, so the comparison that the source means is the
+		//     DISCRIMINANT. Inst.TagOnly records this (hir2mir sets it from
+		//     lowerer.bareVariant).
+		//   - a comparison of two option VALUES (`a == b` on two ?T). This used
+		//     to compare tags only as well, so `ok(1) == ok(2)` was TRUE and
+		//     `err('a') != err('b')` was FALSE — the payload was never looked
+		//     at, and the operator degenerated into "are both ok".
+		if !inst.TagOnly {
+			if c.emitOptionValueEq(inst, aV, aT, bV, bT, lt, slot) {
+				return nil
+			}
+			// The payload has no structural equality (a slice, a struct, a
+			// fixed array, or a boxed payload). Comparing its BYTES would
+			// compare heap pointers, which is not what `==` on two options
+			// means, so fall back to the discriminant — well-defined, and the
+			// behaviour every such comparison had before this fix.
+		}
 		aV = c.optionTag(aV, aT)
 		aT = "i64"
 		bV = c.optionTag(bV, bT)
@@ -15106,12 +15189,27 @@ func (c *codegen) syntheticVal(tid TypeID) ValueID {
 }
 
 // emitBuiltinRawByteAt lowers `str.byte(i)` / `txt.byte(i)`: the raw-byte
-// accessor `s.byte(i)` in source. It returns the byte at index i of the
-// receiver's underlying buffer, zero-extended to i64 — always O(1), unlike the
-// UTF-8 codepoint index `s[i]`. No bounds check is emitted here because the MIR
-// backend has no bounds-check helper (consistent with the rest of its codegen);
-// in-bounds access (the only case used by the std library) is unaffected.
-// Mirrors legacy build/llvm strchar_at.go generateRawByteAt.
+// accessor `s.byte(i)` in source. It returns the byte at BYTE index i of the
+// receiver's underlying buffer as a `?byte` OPTION:
+//
+//	tag = ok  (0), payload = zext(byte)   when 0 <= i < len
+//	tag = nil (1), payload = 0            otherwise
+//
+// The accessor is PUBLIC (user code calls `s.byte(i)`), so out-of-range
+// indices must fail like `arr[i]` instead of reading past the buffer. Two
+// details make the load itself safe:
+//
+//   - the GEP index is the ORIGINAL index (used only when in bounds), and the
+//     POINTER is selected between the real data pointer and a fallback that is
+//     always mapped (the destination option slot itself). An empty str has
+//     data == NULL, so clamping the index alone would still dereference NULL
+//     on the nil path.
+//   - the tag/payload are runtime `select`s, so no branch is emitted and the
+//     surrounding block stays intact.
+//
+// Mirrors legacy build/llvm strchar_at.go generateRawByteAt (the unchecked
+// reader); the bounds check is the 2026-10-21 addition that made `byte` a
+// fallible accessor.
 func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	if len(inst.Args) < 2 {
 		c.fail("builtin %s: missing receiver or index", inst.Sym)
@@ -15134,6 +15232,34 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	// and normalises integer width. Without it `s.byte(j)` failed opt-verify
 	// where `s[j]` and `s.set-byte(j, b)` both worked.
 	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
+
+	// --- length of the receiver, for the bounds check ---
+	// %str-long = { i64 len, i64 cap, i8* data } — field 0.
+	// %txt       = { [255 x i8] buf, i8 len }    — field 1, an i8.
+	c.loadSeq++
+	lenGEP := fmt.Sprintf("%%rblg%d", c.loadSeq)
+	var lenLoad, lenVal string
+	if rt == "%txt" {
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lenGEP, rslot))
+		c.loadSeq++
+		lenLoad = fmt.Sprintf("%%rbll%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", lenLoad, lenGEP))
+		c.loadSeq++
+		lenVal = fmt.Sprintf("%%rblz%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", lenVal, lenLoad))
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGEP, rslot))
+		c.loadSeq++
+		lenVal = fmt.Sprintf("%%rbll%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", lenVal, lenGEP))
+	}
+	c.loadSeq++
+	inb := fmt.Sprintf("%%rbi%d", c.loadSeq)
+	// unsigned compare covers the negative-index case: a negative i64 is a
+	// huge unsigned value, so `ult` rejects it.
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", inb, idxV, lenVal))
+
+	// --- data pointer ---
 	var dataPtr string
 	c.loadSeq++
 	dGEP := fmt.Sprintf("%%rbdg%d", c.loadSeq)
@@ -15150,26 +15276,55 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 		dataPtr = fmt.Sprintf("%%rbdp%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", dataPtr, dGEP))
 	}
-	c.loadSeq++
-	gep := fmt.Sprintf("%%rbg%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", gep, dataPtr, idxV))
-	c.loadSeq++
-	val := fmt.Sprintf("%%rbv%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", val, gep))
-	c.loadSeq++
-	zext := fmt.Sprintf("%%rbz%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", zext, val))
+
+	// --- destination: the result is a ?byte option ---
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		c.fail("builtin %s: no result slot", inst.Sym)
 		return fmt.Errorf("builtin %s: no dst slot", inst.Sym)
 	}
-	v := c.coerce("i64", zext, dstLT)
-	if v == "" {
-		return fmt.Errorf("builtin %s: cannot store i64 into %s", inst.Sym, dstLT)
+	if dstLT != "%option" {
+		// `byte` returns ?byte; a non-option destination means a caller that
+		// never handled the option slipped past the checker (MIR-only tests
+		// lower without it). Refuse rather than store an option into a scalar
+		// slot — that is a silent type-pun, not a coercion.
+		c.fail("builtin %s: ?byte result into %s destination; handle the option (match / ?= / #{index-out})", inst.Sym, dstLT)
+		return fmt.Errorf("builtin %s: option result into %s dst", inst.Sym, dstLT)
 	}
-	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
+
+	// --- safe load: select the pointer so the nil path never dereferences ---
+	// The fallback is the destination slot itself — always mapped stack
+	// memory, whose bytes are overwritten by optStoreTag below anyway.
+	c.loadSeq++
+	fbPtr := fmt.Sprintf("%%rbf%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %%option* %s to i8*\n", fbPtr, dstSlot))
+	c.loadSeq++
+	safePtr := fmt.Sprintf("%%rbs%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8* %s, i8* %s\n", safePtr, inb, dataPtr, fbPtr))
+	c.loadSeq++
+	gep := fmt.Sprintf("%%rbg%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", gep, safePtr, idxV))
+	c.loadSeq++
+	val := fmt.Sprintf("%%rbv%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", val, gep))
+	c.loadSeq++
+	zext := fmt.Sprintf("%%rbz%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i8 %s to i64\n", zext, val))
+
+	// --- assemble the option: { tag, payload } both runtime-selected ---
+	c.loadSeq++
+	tagSel := fmt.Sprintf("%%rbt%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 1\n", tagSel, inb))
+	c.loadSeq++
+	paySel := fmt.Sprintf("%%rbp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", paySel, inb, zext))
+	// optStoreTag zeroes the payload slot (clearing any stale longer payload);
+	// optStoreTagValue then installs the runtime tag, and
+	// optStoreInlinePayload writes the byte.
+	c.optStoreTag(dstSlot, 0)
+	c.optStoreTagValue(dstSlot, tagSel)
+	c.optStoreInlinePayload(dstSlot, "i64", paySel)
 	return nil
 }
 
@@ -15180,8 +15335,17 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 // based: `t[i] = v` now re-encodes UTF-8 via utf8_cp_put, so std byte-fill
 // builders (from-bytes, to-upper, the []byte/str -> txt copiers) must write
 // raw bytes through this builtin to stay byte-addressed. Mirrors the reader's
-// addressing (GEP on the inline %txt buffer / the %str-long data pointer);
-// no bounds check is emitted, consistent with the reader.
+// addressing (GEP on the inline %txt buffer / the %str-long data pointer).
+//
+// The result is `?bool` and the write is BOUNDS-CHECKED against the receiver's
+// PHYSICAL CAPACITY — a %txt buffer is a fixed 255 bytes, a %str-long uses its
+// `cap` field — NOT the logical length, so the fill-then-set-len builders that
+// write past the current length keep working. Out of range (i >= capacity, or
+// a negative i, which `icmp ult` rejects as a huge unsigned value) returns nil
+// and SKIPS the store: the store address is selected to a hoisted 1-byte
+// scratch with a clamped index so no wild write ever happens. In range returns
+// some(true). The option is assembled exactly like emitBuiltinRawByteAt; when
+// the caller discards the result (Dst <= NoVal) only the conditional store runs.
 func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 	if len(inst.Args) < 3 {
 		c.fail("builtin %s: missing receiver, index, or value", inst.Sym)
@@ -15219,6 +15383,32 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
 	_, valV := c.loadVal(inst.Args[2])
 	valT, _ := c.ptype(inst.Args[2])
+	// An OPTION value written into the raw-byte slot stores its ok PAYLOAD, the
+	// same rule emitIndexStore applies to `a[i] = <option>` (see the
+	// "Overflow-default integer arithmetic yields ?i64" branch there): option
+	// values are how integer arithmetic and the raw accessors are typed, and
+	// every byte-slot writer in the language unwraps them the same way.
+	//
+	// This matters because `s.byte(i)` is now `?byte` (2026-10-21, see
+	// src/builtin/str.go). The byte-copy idiom that std is built out of —
+	// `out.set-byte(i, s.byte(i))` in txt.from-str / txt.to-hex / str.to-txt,
+	// `val.set-byte(pos, .byte(i + k))` in the UTF-8 re-encoders — hands the
+	// option straight to the writer, exactly as `out[i] = s.byte(i)` does on
+	// the direct-index path. Without this branch those calls died at codegen
+	// with `builtin str.set-byte: bad value type %option` (measured on
+	// tests/set-byte-receiver-writeback.no case 3, which reaches
+	// txt.to-str through the `{t}` interpolation desugar).
+	//
+	// The checker deliberately does NOT reject an option argument for a
+	// builtin (see the `strings.HasPrefix(argType, "?")` skip in
+	// stdMethodParamTypes), so this branch is the only place that can define
+	// the semantics. A nil option contributes its zero payload — the same
+	// value the direct-index path stores — never a whole %option struct.
+	if strings.HasPrefix(valT, "%option") {
+		if pl, plt := c.optionPayloadOf(inst.Args[2], valV, valT); pl != "" {
+			valV, valT = pl, plt
+		}
+	}
 	b8 := valV
 	if valT != "i8" {
 		if cv := c.coerce(valT, valV, "i8"); cv != "" {
@@ -15242,10 +15432,68 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 		dataPtr = fmt.Sprintf("%%bpd%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", dataPtr, dGEP))
 	}
+	// --- capacity, for the bounds check (PHYSICAL capacity, NOT the logical ---
+	// --- len, so fill-then-set-len builders keep writing past the current len). ---
+	// %txt buffer is a fixed 255 bytes; %str-long capacity is field 1 (`cap`).
+	c.loadSeq++
+	inb := fmt.Sprintf("%%bpb%d", c.loadSeq)
+	if rt == "%txt" {
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, 255\n", inb, idxV))
+	} else {
+		c.loadSeq++
+		capGEP := fmt.Sprintf("%%bpkg%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", capGEP, rslot))
+		c.loadSeq++
+		capVal := fmt.Sprintf("%%bpk%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", capVal, capGEP))
+		// unsigned compare covers the negative-index case: a negative i64 is a
+		// huge unsigned value, so `ult` rejects it.
+		c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", inb, idxV, capVal))
+	}
+
+	// --- conditional store ---
+	// OOB routes the write to a hoisted 1-byte scratch with the index clamped to
+	// 0, so an out-of-range (or negative) index never wild-writes; the store
+	// always executes but lands somewhere harmless when the check fails.
+	c.loadSeq++
+	scratch := fmt.Sprintf("%%bps%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i8\n", scratch))
+	c.loadSeq++
+	safePtr := fmt.Sprintf("%%bpbp%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8* %s, i8* %s\n", safePtr, inb, dataPtr, scratch))
+	c.loadSeq++
+	safeIdx := fmt.Sprintf("%%bpsi%d", c.loadSeq)
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", safeIdx, inb, idxV))
 	c.loadSeq++
 	gep := fmt.Sprintf("%%bpv%d", c.loadSeq)
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", gep, dataPtr, idxV))
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", gep, safePtr, safeIdx))
 	c.sb.WriteString(fmt.Sprintf("  store i8 %s, i8* %s\n", b8, gep))
+
+	// --- assemble the ?bool result (nil when out of range, some(true) when ok) ---
+	// Unlike the reader we do NOT early-return on Dst <= NoVal: the conditional
+	// store above is the side effect and must still run. Only the option result
+	// is emitted when a real destination exists.
+	if inst.Dst > NoVal {
+		dstLT, _ := c.ptype(inst.Dst)
+		dstSlot := c.valSlot[inst.Dst]
+		if dstSlot == "" {
+			c.fail("builtin %s: no result slot", inst.Sym)
+			return fmt.Errorf("builtin %s: no dst slot", inst.Sym)
+		}
+		if dstLT != "%option" {
+			c.fail("builtin %s: ?bool result into %s destination; handle the option (match / ?= / _ =)", inst.Sym, dstLT)
+			return fmt.Errorf("builtin %s: option result into %s dst", inst.Sym, dstLT)
+		}
+		c.loadSeq++
+		tagSel := fmt.Sprintf("%%bpt%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 1\n", tagSel, inb))
+		c.loadSeq++
+		paySel := fmt.Sprintf("%%bpp%d", c.loadSeq)
+		c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 0\n", paySel, inb))
+		c.optStoreTag(dstSlot, 0)
+		c.optStoreTagValue(dstSlot, tagSel)
+		c.optStoreInlinePayload(dstSlot, "i64", paySel)
+	}
 	return nil
 }
 

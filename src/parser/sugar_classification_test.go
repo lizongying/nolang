@@ -62,7 +62,8 @@ var sugarASTTypes = map[string]string{
 	"UnwrapAssignStatement": "§4.1 #2 — `x ?= e`; expands to a tag test + let/return",
 	"MultiAssignStatement":  "§4.1 #6 — `a, b = f()`; destructuring, H0 emits KMultiAssign 1:1",
 	"GroupedExpression": "§5 rules KGrouped SUGAR (pure parentheses, no semantics), " +
-		"so H0 must erase it — §10.2 lists this as the first non-vacuous instance",
+		"so H0 must erase it — §10.2's first non-vacuous instance; erased at tohir " +
+		"since 2026-10-21 (G3 gate pins the count at 0)",
 }
 
 // baseASTTypes names every remaining AST node type: nodes H0 emits 1:1 with a

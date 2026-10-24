@@ -178,7 +178,7 @@ func monomorphizeSliceStructs(program *parser.Program, varTypes map[string]strin
 		if !ok {
 			concrete = b.tmpl.bare + "-" + parser.SanitizeLLVMTypeName(b.elem)
 			concreteCache[key] = concrete
-			generated = append(generated, specializeSliceStruct(b.tmpl, b.elem, concrete)...)
+			generated = append(generated, specializeSliceStruct(program.Sem, b.tmpl, b.elem, concrete)...)
 		}
 		b.concrete = concrete
 		if perTmpl[b.tmpl.bare] == nil {
@@ -231,7 +231,7 @@ func scanStmtForFactories(stmt parser.Statement, templates map[string]*sliceTemp
 				local[p.Name] = p.Type.String()
 			}
 		}
-		collectVarTypesFromBody(s.Body, local)
+		collectVarTypesFromBody(s.Body, local, program.Sem)
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
 				scanStmtForFactories(b, templates, local, program, binds)
@@ -428,7 +428,7 @@ func rewriteFactoryCalls(program *parser.Program, binds []factoryBind, varTypes 
 	}
 	// 遍歷（含函數體）標註 let 型別。
 	for _, stmt := range program.Statements {
-		retypesFactoryLets(stmt, byCall, varTypes)
+		retypesFactoryLets(stmt, byCall, varTypes, program.Sem)
 	}
 	// 所有工廠呼叫（含巢狀 / 丟棄結果）改寫接收者型別名。
 	for i := range binds {
@@ -442,13 +442,16 @@ func rewriteFactoryCalls(program *parser.Program, binds []factoryBind, varTypes 
 }
 
 // retypesFactoryLets 遞迴走訪語句，將值為工廠呼叫的 let 標註為具現化型別。
-// 頂層 let 同時寫入 varTypes；函數區域 let 僅改 AST 型別（MIR 會自行推斷）。
-func retypesFactoryLets(stmt parser.Statement, byCall map[*parser.CallExpression]*factoryBind, varTypes map[string]string) {
+// 頂層 let 同時寫入 varTypes；函數區域 let 僅記錄有效型別（MIR 會自行推斷）。
+// S5 stage 5：原就地寫 `s.Type = &NamedType{…}`（違反 §1.4）改為寫
+// Sem.TypeOverride（覆蓋語義；tohir / buildVarTypes 按 TypeOverride > Type
+// 解析有效型別）。
+func retypesFactoryLets(stmt parser.Statement, byCall map[*parser.CallExpression]*factoryBind, varTypes map[string]string, sem *parser.SemanticContext) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		if ce, isCall := s.Value.(*parser.CallExpression); isCall {
 			if b, isFactory := byCall[ce]; isFactory {
-				s.Type = &parser.NamedType{Value: b.concrete, IsInferred: true}
+				sem.SetTypeOverrideOf(s, b.concrete)
 				if varTypes != nil && s.Name != nil {
 					varTypes[s.Name.Value] = b.concrete
 				}
@@ -457,17 +460,17 @@ func retypesFactoryLets(stmt parser.Statement, byCall map[*parser.CallExpression
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
-				retypesFactoryLets(b, byCall, nil)
+				retypesFactoryLets(b, byCall, nil, sem)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, b := range s.Statements {
-			retypesFactoryLets(b, byCall, varTypes)
+			retypesFactoryLets(b, byCall, varTypes, sem)
 		}
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
-				retypesFactoryLets(b, byCall, varTypes)
+				retypesFactoryLets(b, byCall, varTypes, sem)
 			}
 		}
 	case *parser.ExpressionStatement:
@@ -475,7 +478,7 @@ func retypesFactoryLets(stmt parser.Statement, byCall map[*parser.CallExpression
 			if ce, isCall := s.Expression.(*parser.CallExpression); isCall {
 				for _, arg := range ce.Arguments {
 					if inner, ok := arg.(*parser.CallExpression); ok {
-						retypesFactoryLets(&parser.LetStatement{Value: inner}, byCall, varTypes)
+						retypesFactoryLets(&parser.LetStatement{Value: inner}, byCall, varTypes, sem)
 					}
 				}
 			}
@@ -506,7 +509,7 @@ func removeSliceTemplates(program *parser.Program, templates map[string]*sliceTe
 }
 
 // specializeSliceStruct 依元素型別從模板結構體 + 方法生成具現化定義。
-func specializeSliceStruct(tmpl *sliceTemplate, elemType, concreteName string) []parser.Statement {
+func specializeSliceStruct(sem *parser.SemanticContext, tmpl *sliceTemplate, elemType, concreteName string) []parser.Statement {
 	subst := map[string]string{tmpl.varName: elemType}
 	subst[tmpl.bare] = concreteName
 	if tmpl.sd.Name != tmpl.bare {
@@ -553,7 +556,7 @@ func specializeSliceStruct(tmpl *sliceTemplate, elemType, concreteName string) [
 	})
 
 	for _, fd := range tmpl.methods {
-		generated = append(generated, cloneMethod(fd, subst, concreteName))
+		generated = append(generated, cloneMethod(sem, fd, subst, concreteName))
 	}
 	return generated
 }

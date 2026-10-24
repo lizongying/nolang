@@ -195,6 +195,23 @@ type lowerer struct {
 	// and cleared immediately afterwards.
 	typeHint TypeID
 
+	// bareVariant marks the MIR values produced by a BARE option-variant
+	// keyword (`ok` / `err` / `nil` / `some`) used as a PATTERN — i.e. the
+	// right-hand side of a match arm (`o: { ok -> ... }`) or of an explicit
+	// `o == nil` test. Such a value carries the discriminant only: its payload
+	// is a zero constant (or absent, for `nil`), so it must NEVER be compared
+	// field-by-field against a real option value.
+	//
+	// A match desugars to `subject == <variant>` in HIR, which makes the arm
+	// test indistinguishable from a user-written `a == b` on two options by the
+	// time it reaches MIR — this set is what keeps them apart. Consulted by
+	// the KInfix lowering, which sets Inst.TagOnly on the comparison (see its
+	// doc comment for why tag-only is the right reading).
+	//
+	// `ok(1)` / `err('msg')` are NOT bare: they build a real value and go
+	// through the normal constructor path, so `a == ok(1)` compares payloads.
+	bareVariant map[ValueID]bool
+
 	// funcOvfAnnotated records whether the current function carries a
 	// function-level `#{overflow = ...}` annotation (KFuncDef flags). It is the
 	// BASE mode for every arithmetic instruction lowered inside the function.
@@ -1071,6 +1088,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		enumVariants:  copiedEnumVariants(enumVariants),
 		asyncResTypes: map[ValueID]TypeID{},
 		asyncHandles:  map[ValueID]bool{},
+		bareVariant:   map[ValueID]bool{},
 	}
 	l.b = NewBuilder("hir")
 	l.mod = l.b.Module()
@@ -1511,22 +1529,6 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 			return l.b.Type("bool")
 		}
 		if c := n.First; c != hir.NoID {
-			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
-				return t
-			}
-		}
-		return l.inferredTypeOf(n)
-	case hir.KGrouped:
-		// Parenthesized expression: strip the grouping and resolve the inner
-		// node's type (mirrors lowerExpr's KGrouped handling). Without this,
-		// `(i+1) & 255` resolved the infix result type from the group wrapper,
-		// which fell through to void and produced `and void`.
-		if c := n.First; c != hir.NoID {
-			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
-				return t
-			}
-		}
-		for _, c := range l.pkg.Children(n.Id) {
 			if t := l.typeOfNode(l.pkg.Node(c)); t != l.voidType {
 				return t
 			}
@@ -2575,6 +2577,11 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		}
 		var val ValueID = NoVal
 		var childID int32
+		// fromCapture records that the value came from the exprSink capture
+		// below; freshCapture additionally records that the binding did not
+		// exist yet, so the capture slot IS the binding (until a type
+		// conversion replaces it — see the late rebind after the conversions).
+		var fromCapture, freshCapture bool
 		// Publish the binding's declared type as a hint while lowering the
 		// value expression. Builtins like with-len/with-cap declare an empty
 		// return list (the result type comes from the LHS), so without this
@@ -2622,7 +2629,31 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				}
 				l.lowerIf(cn)
 				if l.exprSink != NoVal {
-					l.locals[name] = l.exprSink
+					// Report the captured slot as this statement's value. Without
+					// it `val` stayed NoVal, the "declaration with no
+					// initializer" zero-fill below fired (it only needs the
+					// DECLARED type, which an annotated `b i64 = <match>` has),
+					// and the rebind path then moved that zero into the very slot
+					// the arms had just filled — the captured match value was
+					// silently replaced by 0:
+					//
+					//   b i64 = o: { ok -> it  -> }   ; b == 0
+					//   b     = o: { ok -> it  -> }   ; b == it  (no declared type,
+					//                                 ;  so the zero-fill never fired)
+					val = l.exprSink
+					fromCapture = true
+					if _, exists := l.locals[name]; exists {
+						// Re-binding an existing slot — a result parameter
+						// (`out = <match>`) or a reassignment. The sink is a
+						// temporary: aliasing it here would repoint the NAME and
+						// leave the real slot (and the out-parameter write-back)
+						// untouched, which is how `out = o: { ok -> it  -> }`
+						// returned 0 while the identical local-binding form
+						// worked. The rebind path below moves the value in.
+					} else {
+						l.locals[name] = l.exprSink
+						freshCapture = true
+					}
 					if f := l.mod.Func(l.curFunc); f != nil {
 						if _, ok := f.LocalTypes[l.exprSink]; !ok {
 							f.LocalTypes[l.exprSink] = l.valueTypeOf(l.exprSink)
@@ -2940,7 +2971,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		// storage instead of copying it. No allocation, no ownership transfer,
 		// and no drop — this is what makes `json.get = (key str) (child ?&json)`
 		// cheap (a pointer, not a copy of the struct).
-		if val != NoVal && l.viewTargetType(name, n) != NoType {
+		if !fromCapture && val != NoVal && l.viewTargetType(name, n) != NoType {
 			if bv := l.lowerBorrow(childID); bv != NoVal {
 				val = bv
 			}
@@ -2970,6 +3001,14 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// print/.len would use str semantics (no 255 cap, heap not stack).
 			if l.pkg.Type(n.Type) == "txt" {
 				val = l.b.Emit(OpTxtFromStr, l.b.Type("txt"), []ValueID{val}, "")
+			}
+			// The conversions above may have produced a NEW value (an option
+			// wrap, a txt re-layout). A fresh capture bound the name to the
+			// capture slot, so repoint it at the converted value — otherwise the
+			// name would keep reading the pre-conversion slot, which for `txt`
+			// is a %str-long where a %txt is expected.
+			if freshCapture {
+				l.locals[name] = val
 			}
 			// A synthetic MATCH-ARM binding (`ok(v) -> ...` prepends
 			// `let v = <matched>`, flagged FlagArmBinding) is SCOPED TO ITS
@@ -3670,12 +3709,21 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	// keeps Term separate from Insts and codegen emits Insts first.)
 	if l.exprCapture && l.exprSink != NoVal {
 		st := l.valueTypeOf(l.exprSink)
+		// The seed VALUE must be materialised in initBlk as well, not in
+		// whatever block the last arm happened to leave current. Emitting the
+		// zero constant before switching blocks put its defining `store` in the
+		// else-arm's block while the move that reads it landed in initBlk — so
+		// the dominating block loaded a slot nothing had stored to yet, i.e.
+		// uninitialised stack, on every path that produced no value. (Measured:
+		// `b = o: { ok -> it  -> }` emitted `%mv = load i64, i64* %const.s`
+		// before the branch and `store i64 0, i64* %const.s` inside the else
+		// arm.) Switch first, then create.
+		savedBlk := l.b.CurBlock
+		l.b.SetBlock(initBlk)
 		src := l.exprSinkInit
 		if src == NoVal || l.valueTypeOf(src) != st {
 			src = l.b.EmitInt(OpConst, st, 0, "")
 		}
-		savedBlk := l.b.CurBlock
-		l.b.SetBlock(initBlk)
 		// Owned seed: the binding's own slot still drops its copy, so the seed
 		// must own a separate one.
 		if l.isOwnedLocal(src) {
@@ -4876,10 +4924,10 @@ func (l *lowerer) mangledSuffixMatches(id int32, suffix string) bool {
 // checker types the binding `[]i64`) and `array-lit` for a FIXED ARRAY literal
 // (`a [3]i64 = [1,2,3]`). Materializing a slice literal as a stack `[N x elem]`
 // is what MIR used to do unconditionally, and it is WRONG: every slice builtin
-// (`[]t.sort-asc` -> vec-sort-asc, `[]t.push` -> vec-push, ...) reads its
+// (`[]t.asc` -> vec-sort-asc, `[]t.push` -> vec-push, ...) reads its
 // receiver as `%vec { len, cap, data }`, so it interpreted the array's first
 // three ELEMENTS as len/cap/data and dereferenced element 2 as a pointer —
-// `v = [5,3,8]; v.sort-asc()` read len=5, cap=3, data=8 and segfaulted on the
+// `v = [5,3,8]; v.asc()` read len=5, cap=3, data=8 and segfaulted on the
 // first store (test/std/sort.no, tests reaching sort/push on a literal).
 // A slice therefore gets a real heap-backed %vec: `with-len(N)` allocates and
 // zero-fills the buffer and sets len=cap=N, then each element is stored through
@@ -5682,7 +5730,7 @@ func (l *lowerer) operandUnsigned(id int32, depth int) bool {
 	switch nd.Kind {
 	case hir.KIdent:
 		return isUnsignedRaw(l.localRaw[l.pkg.Str(nd.S)])
-	case hir.KInfix, hir.KPrefix, hir.KGrouped:
+	case hir.KInfix, hir.KPrefix:
 		for _, c := range l.pkg.Children(id) {
 			if l.operandUnsigned(c, depth+1) {
 				return true
@@ -5764,17 +5812,6 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return NoVal
 	}
 	switch n.Kind {
-	case hir.KGrouped:
-		// Parenthesized expression: strip the grouping and lower the inner node.
-		var child int32
-		for _, c := range l.pkg.Children(id) {
-			child = c
-			break
-		}
-		if child != hir.NoID {
-			return l.lowerExpr(child)
-		}
-		return NoVal
 	case hir.KAssign:
 		// An assignment used as an expression (e.g. `if (x = read())` or an
 		// assignment wrapped in a KExprStmt) evaluates to its right-hand side.
@@ -5966,7 +6003,17 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					if name != "nil" && tt.Elem != NoType {
 						payload = l.b.Emit(OpConst, tt.Elem, nil, "")
 					}
-					return l.b.EmitOptionWrap(optTyp, tag, payload)
+					v := l.b.EmitOptionWrap(optTyp, tag, payload)
+					// This value is a DISCRIMINANT PATTERN, not a real option:
+					// its payload is a zero constant (or absent). Record it so
+					// the enclosing `==` / `!=` compares tags only — see
+					// lowerer.bareVariant and Inst.TagOnly. Without it a match
+					// arm `o: { ok -> ... }` would compare the subject's payload
+					// against this zero and never fire.
+					if v != NoVal {
+						l.bareVariant[v] = true
+					}
+					return v
 				}
 			}
 			// Non-option context: `match 42: { err -> ... }` compares a plain
@@ -6599,6 +6646,13 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 		}
 		v := l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
+		// A `==` / `!=` against a BARE option-variant keyword is a variant TEST,
+		// not a value comparison: the keyword side carries a zero payload (or
+		// none at all), so a structural comparison would answer `false` for
+		// every arm of every match on a ?T. See Inst.TagOnly.
+		if (op == OpEq || op == OpNe) && v != NoVal && (l.bareVariant[lv] || l.bareVariant[rv]) {
+			l.b.Mod.Insts[len(l.b.Mod.Insts)-1].TagOnly = true
+		}
 		// Carry the statement/function-level `#{overflow = ...}` annotation onto
 		// the arithmetic instruction so codegen's option-wrapping path skips the
 		// runtime overflow check (the annotation chooses wrap/clamp/... instead).
@@ -6744,7 +6798,17 @@ func (l *lowerer) lowerNilLit(n *hir.Node) ValueID {
 			}
 		}
 	}
-	return l.b.EmitInt(OpConst, t, 0, "")
+	// An option-typed `nil` is the DISCRIMINANT PATTERN "none" (codegen's
+	// emitConst turns an option-typed OpConst into tag=1 + zeroed payload).
+	// Record it as a bare variant so an enclosing `==` / `!=` compares tags
+	// only — see lowerer.bareVariant and Inst.TagOnly. Without it
+	// `o == nil` (and every `nil ->` match arm) would compare the subject's
+	// real payload against this zeroed one and answer `false` for a genuine nil.
+	v := l.b.EmitInt(OpConst, t, 0, "")
+	if tt := l.mod.Type(t); tt != nil && tt.Kind == KindOption {
+		l.bareVariant[v] = true
+	}
+	return v
 }
 
 // canonStructRaw resolves a possibly-unqualified struct type name to the exact
@@ -7922,7 +7986,7 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 				return hashmapCallee, rv
 			}
 		}
-		// A CONCRETE slice method (`[]byte.slice`, `[]char.to-str`, `[]ord.sort-asc`,
+		// A CONCRETE slice method (`[]byte.slice`, `[]char.to-str`, `[]ord.asc`,
 		// `[]str.join`, ...) is a real function with a real body, defined by the std
 		// library for that element type. It must win over the canonicalised `[]t.m`
 		// form: canonSliceRecv is a fallback for GENERIC slice methods (`[]t.len`),
@@ -8204,13 +8268,6 @@ func (l *lowerer) foldStrConcat(id int32) (s string, hasField bool, ok bool) {
 	case hir.KStrLit:
 		s = l.pkg.Str(n.S)
 		return s, formatStringHasField(s), true
-	case hir.KGrouped:
-		// A parenthesised sub-expression: `(a - b)` is transparent here, just
-		// as it is in lowerExpr.
-		for _, c := range l.pkg.Children(id) {
-			return l.foldStrConcat(c)
-		}
-		return "", false, false
 	case hir.KInfix:
 		// Only concatenation. `*` is string REPEAT (`s * n`) and every other
 		// operator is not a string operation at all — none of them fold.
@@ -8257,7 +8314,7 @@ func (l *lowerer) reportUnloweredInterpLeaves(id int32) {
 	switch n.Kind {
 	case hir.KStrLit:
 		l.reportUnloweredInterp(l.pkg.Str(n.S))
-	case hir.KGrouped, hir.KInfix:
+	case hir.KInfix:
 		for _, c := range l.pkg.Children(id) {
 			l.reportUnloweredInterpLeaves(c)
 		}

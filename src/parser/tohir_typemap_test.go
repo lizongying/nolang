@@ -51,7 +51,7 @@ func TestPopulateInferredTypesKeyedByHIRID(t *testing.T) {
 
 	// Simulate the checker having inferred "i32" into the AST node's Type field.
 	let.Type = &NamedType{Value: "i32"}
-	PopulateInferredTypes(pkg, idMap)
+	PopulateInferredTypes(pkg, idMap, nil)
 
 	if got := pkg.InferredType(letID); got != "i32" {
 		t.Errorf("InferredType = %q, want %q", got, "i32")

@@ -38,16 +38,20 @@ import (
 // S1 flip: SurfaceMatch moved from "removedByParser" to "removedByH0" — ParseProgram
 // now DEFERS it (keeps the SurfaceMatch node) instead of expanding it. It therefore
 // leaves this list; see deferredSugarTypes for the inverted-polarity check.
-var parserTierSugarTypes = []string{"UnwrapAssignStatement"}
+//
+// S3 (2026-10-22): UnwrapAssignStatement moved to deferredSugarTypes — with
+// skipSugarExpand=true the walk validates ?= but no longer rewrites it; H0
+// (lowerUnwrapAssignToHIR) is the erasure point.
+var parserTierSugarTypes = []string{}
 
 // deferredSugarTypes are the sugar node types the parser DEFERS past ParseProgram
 // (tier "removedByH0" in src/parser/sugar_seam_test.go): SurfaceMatch,
-// GroupedExpression, MultiAssignStatement. The whole point of the S1 seam is to
-// make lowering movable, so the deferred route must hand back a tree that STILL
-// contains them. The anti-vacuity check for these asserts PRESENCE in the shared
-// result (not absence), so the equivalence gate cannot pass by comparing two
-// fully-lowered trees.
-var deferredSugarTypes = []string{"SurfaceMatch", "GroupedExpression", "MultiAssignStatement"}
+// UnwrapAssignStatement, GroupedExpression, MultiAssignStatement. The whole point
+// of the S1 seam is to make lowering movable, so the deferred route must hand
+// back a tree that STILL contains them. The anti-vacuity check for these asserts
+// PRESENCE in the shared result (not absence), so the equivalence gate cannot
+// pass by comparing two fully-lowered trees.
+var deferredSugarTypes = []string{"SurfaceMatch", "UnwrapAssignStatement", "GroupedExpression", "MultiAssignStatement"}
 
 // TestSkipLoweringMatchesDefaultPath pins the S1 seam: parsing with
 // Parser.SkipLowering and then calling (*Parser).LowerSurface explicitly must

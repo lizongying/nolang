@@ -34,6 +34,34 @@ const deprecatedCallTraceID = "nolang-deprecated-call"
 // deprecatedAssignTraceID 用於複合賦算運算符（`+=` 一族）的棄用提示。
 const deprecatedAssignTraceID = "nolang-deprecated-compound-assign"
 
+// deprecatedMethodCallTraceID 用於棄用「方法」呼叫的提示（接收者型別可判定時）。
+// 與 deprecatedCallTraceID（自由函數）分開，方便各自開關與統計。
+const deprecatedMethodCallTraceID = "nolang-deprecated-method-call"
+
+// deprecatedMethodInfo 是單一 (方法, 接收者型別) 組合的替代建議。
+type deprecatedMethodInfo struct {
+	repl string // 建議替代寫法
+	note string // 補充說明（可選，跟在提示括號內）
+}
+
+// deprecatedMethodCalls 是「棄用方法 base 名 → 接收者型別 → 替代資訊」表。
+// 新增棄用項只需在此加一行，RunAllLints 無需改動。
+//
+// 為什麼必須按「接收者型別」限定：方法名屬於用戶命名空間（用戶可為自己的結構體
+// 定義同名 copy），只有接收者型別可**肯定判定**為表中型別時才提示；其餘形態
+// （型別未知、結構體欄位、呼叫回傳值等）一律放行——寧漏報，不誤報。
+//
+// bigint.copy 刻意不在表內：賦值 `b = a` 只複製結構描述符、與 a 共享同一條
+// limbs 緩衝區（實測：a.limbs[0] = 99 後 b.limbs[0] 同為 99），不具深拷貝語義，
+// 棄用會把別名缺陷引進用戶碼。str/txt 的賦值則確實是複製語義（str 的源值存活時
+// 由所有權分析自動深拷貝；txt 為值類型）。
+var deprecatedMethodCalls = map[string]map[string]deprecatedMethodInfo{
+	"copy": {
+		"str": {"a = b", "賦值即複製：所有權分析會在源值仍存活時自動深拷貝"},
+		"txt": {"a = b", "txt 為值類型，賦值即逐位元組拷貝"},
+	},
+}
+
 // deprecatedCallReplacements 是「棄用函數 base 名 → 替代信息」表。
 // 新增棄用項只需在此加一行，RunAllLints 無需改動。
 //
@@ -77,7 +105,7 @@ func ValidateDeprecatedCalls(program *parser.Program) []ValidateResult {
 	if program == nil {
 		return nil
 	}
-	v := &deprecatedVisitor{optResultFuncs: funcsWithOptionResult(program)}
+	v := &deprecatedVisitor{optResultFuncs: funcsWithOptionResult(program), sem: program.Sem}
 	v.walkBlock(program.Statements, "", "")
 	return v.results
 }
@@ -108,21 +136,166 @@ type deprecatedVisitor struct {
 	// optResultFuncs 記錄哪些函式有 option 型別的結果參數（見
 	// funcsWithOptionResult）。空名（頂層程式碼）一律視為「沒有」。
 	optResultFuncs map[string]bool
+
+	// sem 是 SourceFile/ModuleOwner 等「合併期寫入的語義事實」的 side-table
+	// 宿主（S5 從 CommentedNode 欄位搬入）。
+	sem *parser.SemanticContext
+
+	// scopes 是自建的「變數名 → 型別」作用域棧（棄用方法 lint 判定接收者型別
+	// 用）。只收錄**可肯定判定**的宣告：let 型別註解、函式參數/結果參數、字面
+	// 量推斷；推斷不出的一律不收錄（lookupVar 回 "" ⇒ 不放行也不提示）。
+	scopes []map[string]string
+}
+
+// pushScope / popScope / declareVar / lookupVar 管理 scopes 棧。
+func (v *deprecatedVisitor) pushScope() {
+	v.scopes = append(v.scopes, map[string]string{})
+}
+
+func (v *deprecatedVisitor) popScope() {
+	if len(v.scopes) > 0 {
+		v.scopes = v.scopes[:len(v.scopes)-1]
+	}
+}
+
+func (v *deprecatedVisitor) declareVar(name, typ string) {
+	if name == "" || typ == "" || len(v.scopes) == 0 {
+		return
+	}
+	v.scopes[len(v.scopes)-1][name] = typ
+}
+
+func (v *deprecatedVisitor) lookupVar(name string) string {
+	for i := len(v.scopes) - 1; i >= 0; i-- {
+		if t, ok := v.scopes[i][name]; ok {
+			return t
+		}
+	}
+	return ""
+}
+
+// declareLet 記錄 let 綁定的型別：型別註解優先，否則對字面量（含字面量拼接）
+// 做最小推斷。推斷不出一律不收錄。
+func (v *deprecatedVisitor) declareLet(st *parser.LetStatement) {
+	if st == nil || st.Name == nil {
+		return
+	}
+	typ := ""
+	if st.Type != nil {
+		typ = st.Type.String()
+	} else {
+		typ = literalStrType(st.Value)
+	}
+	v.declareVar(st.Name.Value, typ)
+}
+
+// literalStrType 對「純字面量」表達式回傳 "str"，其餘回 ""。
+// 只處理 StringLiteral / CharLiteral（兩者在 nolang 都是 str）及其 +/- 拼接，
+// 覆蓋 `s = 'hello'` / `s = 'a' - 'b'` 這兩種無註解形態。
+func literalStrType(e parser.Expression) string {
+	switch ex := e.(type) {
+	case *parser.StringLiteral, *parser.CharLiteral:
+		return "str"
+	case *parser.InfixExpression:
+		if literalStrType(ex.Left) == "str" && literalStrType(ex.Right) == "str" {
+			return "str"
+		}
+	}
+	return ""
+}
+
+// recvType 盡力推斷方法接收者的型別；無法肯定判定時回傳 ""（呼叫方放行）。
+func (v *deprecatedVisitor) recvType(e parser.Expression) string {
+	switch r := e.(type) {
+	case *parser.StringLiteral, *parser.CharLiteral:
+		return "str"
+	case *parser.Identifier:
+		return v.lookupVar(r.Value)
+	}
+	return ""
+}
+
+// checkDeprecatedMethod 對「接收者型別可肯定判定」的棄用方法呼叫發言。
+// std 內部實作（如 number.no 的 'nan'.copy()）由 isStdSourceFile 抑制——
+// 與 isSelfImplCall 對自由函數的豁免同一理由：實作細節不該對使用者刷屏。
+func (v *deprecatedVisitor) checkDeprecatedMethod(ex *parser.CallExpression, file string) {
+	if isStdSourceFile(file) {
+		return
+	}
+	var method, rt string
+	var recv parser.Expression // 接收者表達式（用於合併模式的位置回退）
+	switch fn := ex.Function.(type) {
+	case *parser.DotExpression:
+		method, rt, recv = fn.Property, v.recvType(fn.Receiver), fn.Receiver
+	case *parser.Identifier:
+		// 模組合併後呼叫目標可能成為點分 Identifier（如 `str.copy`）：
+		// 倒數第二段即接收者型別。接收者是變數的方法呼叫不會落到這個形態。
+		if i := strings.LastIndexByte(fn.Value, '.'); i > 0 {
+			method = fn.Value[i+1:]
+			if j := strings.LastIndexByte(fn.Value[:i], '.'); j >= 0 {
+				rt = fn.Value[j+1 : i]
+			} else {
+				rt = fn.Value[:i]
+			}
+		}
+	}
+	if method == "" {
+		return
+	}
+	info, ok := deprecatedMethodCalls[method][rt]
+	if !ok {
+		return
+	}
+	msg := fmt.Sprintf("方法 %s.%s 已棄用，建議使用 %s 替代（%s）", rt, method, info.repl, info.note)
+	line, col, endCol := ex.Function.Pos().Line, ex.Function.Pos().Column, ex.Function.EndPos().Column
+	if line == 0 {
+		// 合併模式（no vet）把 `recv.m(args)` 攤平成合成 Identifier `Type.m`
+		// （零 token，位置全丟），接收者被挪到 Arguments[0] 且保留原位置。
+		// 用接收者位置 + 方法名長度畫出等價的範圍。
+		if recv == nil && len(ex.Arguments) > 0 {
+			recv = ex.Arguments[0]
+		}
+		if recv != nil {
+			if p := recv.Pos(); p.Line > 0 {
+				line, col, endCol = p.Line, p.Column, recvEndColumn(recv)+1+len(method)
+			}
+		}
+	}
+	v.results = append(v.results, ValidateResult{
+		Line:      line,
+		Column:    col,
+		EndColumn: endCol,
+		File:      file,
+		Message:   msg,
+		TraceID:   deprecatedMethodCallTraceID,
+	})
+}
+
+// recvEndColumn 回傳接收者表達式的結束列（不含）。Identifier 的 EndPos 只到
+// 識別字起始列，需按名字長度補齊；其餘形態直接用 EndPos。
+func recvEndColumn(e parser.Expression) int {
+	if id, ok := e.(*parser.Identifier); ok {
+		return id.Pos().Column + len(id.Value)
+	}
+	return e.EndPos().Column
 }
 
 // walkBlock 遍歷語句列表；file/curFn 為外層上下文（來源檔、外層頂層函數名），
 // 嵌套語句在合併模式下 SourceFile 為空，需逐層傳入（同 overflow lint 的口徑）。
+// 每個 block 擁有自己的變數作用域（pushScope/popScope）。
 func (v *deprecatedVisitor) walkBlock(stmts []parser.Statement, file, curFn string) {
+	v.pushScope()
 	for _, s := range stmts {
 		v.walkStmt(s, file, curFn)
 	}
+	v.popScope()
 }
 
 func (v *deprecatedVisitor) walkStmt(s parser.Statement, file, curFn string) {
 	if s == nil {
 		return
 	}
-	if f := parser.GetSourceFile(s); f != "" {
+	if f := v.sem.SourceFileOf(s); f != "" {
 		file = f
 	}
 	switch st := s.(type) {
@@ -132,9 +305,22 @@ func (v *deprecatedVisitor) walkStmt(s parser.Statement, file, curFn string) {
 		if name == "" {
 			name = curFn
 		}
+		// 參數與結果參數進入函式作用域，供棄用方法 lint 判定接收者型別。
+		v.pushScope()
+		for _, p := range st.Parameters {
+			if p != nil && p.Name != "" && p.Type != nil {
+				v.declareVar(p.Name, p.Type.String())
+			}
+		}
+		for _, r := range parser.DeclaredResults(st) {
+			if r != nil && r.Name != "" && r.Type != nil {
+				v.declareVar(r.Name, r.Type.String())
+			}
+		}
 		if st.Body != nil {
 			v.walkBlock(st.Body.Statements, file, name)
 		}
+		v.popScope()
 	case *parser.BlockStatement:
 		v.walkBlock(st.Statements, file, curFn)
 	case *parser.ForStatement:
@@ -144,6 +330,7 @@ func (v *deprecatedVisitor) walkStmt(s parser.Statement, file, curFn string) {
 		}
 	case *parser.LetStatement:
 		v.walkExpr(st.Value, file, curFn)
+		v.declareLet(st)
 	case *parser.ExpressionStatement:
 		v.walkExpr(st.Expression, file, curFn)
 	case *parser.MultiAssignStatement:
@@ -223,6 +410,7 @@ func (v *deprecatedVisitor) walkExpr(e parser.Expression, file, curFn string) {
 				TraceID:   deprecatedCallTraceID,
 			})
 		}
+		v.checkDeprecatedMethod(ex, file)
 		v.walkExpr(ex.Function, file, curFn)
 		for _, a := range ex.Arguments {
 			v.walkExpr(a, file, curFn)

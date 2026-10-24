@@ -5,80 +5,16 @@
 // ResolveProgram pass 在解析之后、lowering 之前收尾计算。下游（lowering /
 // transpiler / formatter / lsp）统一通过 prog.Sem.XxxOf(node) 读取语义信息，
 // 不再直接访问 AST 节点上的语义字段。
-package parser
-
-// NodeSemantics 存放单个 AST 节点的语义信息（原分散在节点上的 Annotations /
-// PlatformKeys / EmbedData / GenericParams 字段，以及类型推断用的结果之外的
-// 节点级数据）。
 //
-// RawAnnotations 是 parser 在解析期从 #{...} 直接收集的原始註解条目；
-// ResolveProgram 据此推算出 Annotations / PlatformKeys / GenericParams /
-// EmbedData 等“成品”语义，存入同一结构。
-type NodeSemantics struct {
-	// RawAnnotations 解析期收錄的原始 #{...} 註解條目（未經篩選）。
-	RawAnnotations []*AnnotationEntry
-
-	// 以下欄位由 ResolveProgram 計算填充：
-	Annotations   []*AnnotationEntry // 過濾後的註解條目（與 RawAnnotations 相同集合，便於下游直接取用）
-	PlatformKeys  []string           // 平台註解 key（如 ["mac-arm64"]）；空 = 平台通用
-	GenericParams []string           // 泛型型別參數名（來自 #{generic=[K,V]}）
-	EmbedData     []byte             // 編譯期嵌入的文件字節（來自 #{embed=...}）
-	EmbedFiles    map[string][]byte  // directory embed (relative path -> content, #{embed=dir})
-
-	// RTFlags 是 fmt 往返（round-trip）專用的表層語法標誌位（裸 match /
-	// wildcard arm / standalone if / rawCond 包裝層 / elif）。僅 formatter
-	// 讀取，編譯管線（build/checker/codegen）不讀。
-	RTFlags RTFlag
-
-	// OpeningBraceComment 保存 `{` 同行註釋（BlockStatement 或裸 match 的
-	// IfExpression）。僅 formatter 讀取。
-	OpeningBraceComment *CommentGroup
-
-	// Callee 記錄「這個 CallExpression 被改寫成了什麼」（見 CalleeKind）。
-	//
-	// 用途：整程式 pass 會把方法呼叫 `recv.m(args)` 攤平為自由函式呼叫
-	// `Type.m(recv, args)`（接收者 unshift 進 Arguments，被呼叫者換成
-	// Identifier），語法上的 DotExpression 隨之消失。攤平後「第一個實參曾
-	// 是接收者」這件事在 AST 上已不可自證，過去只能靠「被呼叫者的名字是否
-	// 撞上某個方法定義」反推——那既會漏（同名 alias）也會誤（自由函式被
-	// 誤認）。改寫時在此留一筆，就把這個事實變成**顯式記錄**。
-	//
-	// 寫入者（全部在整程式 pass 中，皆早於 RunAllLints）：
-	//   - build/transpiler.go 的 resolveMethodCall（攤平方法呼叫，兩個分支）
-	//     → CalleeMethod。此時 program 即 merged，其 Sem 已建好並歸併完各模塊。
-	//   - checker.go 的 resolveModuleCallsInExpr（衝突函式改名 `module.fn`）
-	//     → CalleeModuleFn。
-	// 讀取者：checker（目前唯一消費點是 ValidateUnassignedReturns 系列的
-	// collectAssignedNamesInExpr）。
-	Callee CalleeKind
-
-	// IndexInBounds 是 bounds 分析器對該 IndexExpression 的證明結果。
-	// 它屬於節點語義 side-table，不是 AST 語法欄位；因此可在保留原始 AST
-	// 的同時供 AST→HIR 消費，並隨 nodeSem 一起通過快取序列化。
-	IndexInBounds bool
-
-	// InferredType 記錄「lowering 為某個 LetStatement 推斷出的 ?T 型別字串」
-	//（如 `"?i64"`）。其原 AST 寫點 `s.Type = &NullableType{IsInferred: true}`
-	// 在 P1 下被禁止——lowering 不得再寫 AST；此欄位讓 ASTToHIR / checker /
-	// formatter 在不破壞語法樹的前提下讀到同樣的事實。
-	//
-	// 寫入者：parser/lowering.go 的 prepareInferredTypes（在 SkipLowering
-	// 閘門之前對兩條路徑都執行一次）。
-	// 讀取者：parser/tohir.go 的 KLet 產生、checker 的 inferredOption 判定、
-	// formatter 的 nullable 型別跳過渲染。
-	InferredType string
-
-	// InferredByOptionArith 區分 InferredType 的寫入來源：true 表示由
-	// `inferOptionArith`（D6 算術根推斷）寫入，false 表示由
-	// `synthesizeNullableType`（結構捕獲期間合成索引／捕獲根節點型別）
-	// 寫入。兩者最終都給同一個 HIR 型別，但對「根為算術的綁定是否還要進
-	// 結構 desugar」的回答不同 —— `maybeCaptureOptionAssign` 的短路檢查
-	// 需區分兩者：用戶寫 `a = b + c`（純量）時 inferOptionArith 走完即收手，
-	// 不該再被結構捕獲改寫成 `__cap_N`；用戶寫 `a = x + 1`（x 為 option）
-	// 時 inferOptionArith 推不出，但 synthesizeNullableType 仍會給 `?i64`，
-	// 仍需結構捕獲（否則溢位碼／除零守衛消失）。語義層面此差異僅一 bit。
-	InferredByOptionArith bool
-}
+// ⚠️ 排版 trivia（RTFlags / `{` 同行註釋）**不在**本副表：Stage 2（2026-10-23）
+// 已遷到獨立的 `FmtTrivia` 表（`Program.FmtTrivia`，見 fmttrivia.go）——它只服務
+// formatter，與語義無關。
+//
+// ⚠️ `NodeSemantics` 這個「以 AST 節點指針為鍵的語義副表」已於 Stage 7
+// （2026-10-23）整體刪除：它的 18 個欄位分四期遷到 `FmtTrivia`（Stage 2）/
+// `AnnTable`（Stage 3）/ `TypeFacts`（Stage 4）/ `NodeFacts`（Stage 5），殼被
+// 留到最後一次無欄位搬運的機械刪除。今日語義副表只剩這四張。
+package parser
 
 // CalleeKind 描述一個 CallExpression 在整程式改寫後代表哪一類呼叫。
 //
@@ -146,14 +82,38 @@ const (
 
 // SemanticContext 是解析/语义分离后的“副表”。
 //
-//   - NodeSem：以 AST 節點（指針，包裝為 Node 接口）為鍵的語義信息表。
+//   - anns / typeFacts / nodeFacts：三張以 AST 節點（指針，包裝為 Node 接口）
+//     為鍵的語義事實表（見 anntable.go / typefacts.go / nodefacts.go）。
 //   - VarTypes / EnumVariants / DeclaredVars：類型推斷結果
 //     （原 parser.varDeclTypes / enumVariantNames / declaredVars）。nolang 是單遍
 //     遞歸下降解析器，部分類型感知（如 match arm 分類、方法返回型別推斷）必須在
 //     解析當下完成；這些推斷結果統一寫入本 side-table，而非散落在 parser 私有字段，
 //     從而實現“語義結果集中存放、AST 節點零語義字段”。
 type SemanticContext struct {
-	nodeSem map[Node]*NodeSemantics
+	// anns 是 Program 級註解表（Stage 3，見 anntable.go）：以 AST 節點為鍵的
+	// `#{...}` 原始條目，是 `AnnotationsOf` / `RawAnnotationsOf` 的唯一存儲，
+	// 也是 `PlatformKeysOf` / `GenericParamsOf` 的計算來源。
+	// `Program.Anns()` 是它的外部出口（blob 序列化 / clone / 合併用）。
+	anns *AnnTable
+
+	// typeFacts 是 Program 級型別事實表（Stage 4，見 typefacts.go）：以 AST 節點
+	// 為鍵的 `InferredType` / `ByOptionArith` / `TypeOverride` 三件事實。
+	// `Program.TypeFacts()` 是外部出口。
+	typeFacts *TypeFacts
+
+	// nodeFacts 是 Program 級節點事實表（Stage 5，見 nodefacts.go）：以 AST 節點
+	// 為鍵的剩餘 9 項事實（embed / Callee / IndexInBounds / 溯源三元組 /
+	// union 標記）。`Program.NodeFacts()` 是外部出口。
+	nodeFacts *NodeFacts
+
+	// captureFacts 是結構捕獲（option capture）的判定結果表（S3-b 第一步，見
+	// capturefacts.go）：lowerer 為每個參與捕獲的 LetStatement 登記「內層型別 +
+	// 各條 __cap_N 綁定」，供日後 tohir 直接產出 `KLet` + `KIf` 鏈（捕獲不再改寫
+	// AST）。當下**只寫不讀**，無消費方。
+	//
+	// ⚠️ 刻意不進 blob（不加入 Serialize*/Restore*）：它是編譯期降糖產物，
+	// 反序列化後由 lowerer 重算即可；不鏡像不造成行為差異。
+	captureFacts *CaptureFacts
 
 	// 類型推斷結果（原 parser 私有符號表）。
 	VarTypes     map[string]string
@@ -204,12 +164,28 @@ type SemanticContext struct {
 	// 比較 —— 不報錯、不炸，只是靜默產生錯誤的 HIR。type-match.no 實測即此。
 	// 故這裡掛到語義副表匯出，與 IdxLocalTypes 同一模式。
 	UnionMembers map[string][]string
+
+	// ExternFuncSigs / ExternMethodSigs：跨文件 / 內置（std / 外部 C）的函數與
+	// 方法簽名快照，由 transpiler 的 SetExternSignatures 注入同一份 map。
+	//
+	// H0 降糖的 scratch parser 只用 c.prog.Statements 重建 funcSignatures，拿不到
+	// 內置簽名；而 lowerUnwrapAssign 的 ?= 解箱型別推斷（inferTypeFromCallExpr）
+	// 正是查這張表。缺少時對內置呼叫（如 fs.fstat-size）無法推斷，unwrap 變數
+	// 無型別 → MIR 轉出現 "move src slot" 崩潰（src/std/fs.no 的
+	// read-bytes: `size ?= fs.fstat-size(.fd)` 即命中）。故把簽名快照掛到語義
+	// 副表，供 scratchParser 合併進 funcSignatures / methodSignatures。
+	// 與 IdxLocalTypes / UnionMembers 同一模式：語義事實從被丟棄的 Parser 實例
+	// 匯出到可跨 H0 存活的 side-table。
+	ExternFuncSigs   map[string][]string
+	ExternMethodSigs map[string][]string
 }
 
 // NewSemanticContext 建立空語義副表。
 func NewSemanticContext() *SemanticContext {
 	return &SemanticContext{
-		nodeSem:            make(map[Node]*NodeSemantics),
+		anns:               NewAnnTable(),
+		typeFacts:          NewTypeFacts(),
+		nodeFacts:          NewNodeFacts(),
 		VarTypes:           make(map[string]string),
 		EnumVariants:       make(map[string][]string),
 		DeclaredVars:       make(map[string]bool),
@@ -223,19 +199,21 @@ func NewSemanticContext() *SemanticContext {
 
 // Merge 將另一份語義副表合併進本表（模塊合併時使用：merged program 匯集多個
 // 模塊的 AST 節點，各節點的語義信息也必須匯集到同一張 side-table）。
-// NodeSem 以節點指針為鍵，不會衝突；名稱級映射（VarTypes 等）僅在本表缺失時填入。
+// 三張 node-keyed 表以節點指針為鍵，不會衝突；名稱級映射（VarTypes 等）僅在
+// 本表缺失時填入。
 func (s *SemanticContext) Merge(other *SemanticContext) {
 	if s == nil || other == nil {
 		return
 	}
-	if s.nodeSem == nil {
-		s.nodeSem = make(map[Node]*NodeSemantics)
-	}
-	for n, ns := range other.nodeSem {
-		if _, exists := s.nodeSem[n]; !exists {
-			s.nodeSem[n] = ns
-		}
-	}
+	// 合併註解表／型別事實表／節點事實表（不覆蓋既有條目）。
+	// 實例化／合併期三張表都可能為 nil（反序列化重建的 Sem 不帶表），
+	// ensure 惰性建立。
+	s.anns = s.anns.ensure()
+	s.anns.Merge(other.anns)
+	s.typeFacts = s.typeFacts.ensure()
+	s.typeFacts.Merge(other.typeFacts)
+	s.nodeFacts = s.nodeFacts.ensure()
+	s.nodeFacts.Merge(other.nodeFacts)
 	for k, v := range other.VarTypes {
 		if _, exists := s.VarTypes[k]; !exists {
 			s.SetVarType(k, v)
@@ -304,6 +282,44 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 			s.SetUnionMembers(name, members)
 		}
 	}
+	// Merge cross-file / builtin signature snapshots (don't overwrite).
+	// These drive the H0 scratch parser's ?= RHS type inference
+	// (inferTypeFromCallExpr → returnTypeFromCallExpr); dropping them here
+	// makes the unwrap temp lose its ?T type (void slot → MIR codegen
+	// "move src slot" error on builtin method calls like str.to-i64).
+	s.MergeExternSigs(other.ExternFuncSigs, other.ExternMethodSigs)
+}
+
+// MergeExternSigs merges cross-file / builtin function & method signature
+// snapshots into this context with "don't overwrite existing" semantics,
+// mirroring SetExternSignatures. Exposed separately from Merge so the
+// transpiler can re-inject the authoritative std/extern signatures even when
+// program.Sem lacks them (e.g. a restored Tier-1 AST cache never serialized
+// them). Keeps the same local-priority rule: existing keys win.
+func (s *SemanticContext) MergeExternSigs(funcSigs, methodSigs map[string][]string) {
+	if s == nil {
+		return
+	}
+	if len(funcSigs) > 0 {
+		if s.ExternFuncSigs == nil {
+			s.ExternFuncSigs = make(map[string][]string, len(funcSigs))
+		}
+		for k, v := range funcSigs {
+			if _, exists := s.ExternFuncSigs[k]; !exists {
+				s.ExternFuncSigs[k] = v
+			}
+		}
+	}
+	if len(methodSigs) > 0 {
+		if s.ExternMethodSigs == nil {
+			s.ExternMethodSigs = make(map[string][]string, len(methodSigs))
+		}
+		for k, v := range methodSigs {
+			if _, exists := s.ExternMethodSigs[k]; !exists {
+				s.ExternMethodSigs[k] = v
+			}
+		}
+	}
 }
 
 // SetUnionMembers records a union alias and its direct member type names.
@@ -318,81 +334,97 @@ func (s *SemanticContext) SetUnionMembers(name string, members []string) {
 }
 
 // SetEmbedData 設定節點的嵌入字節（由 Resolver 的 embed 解析填入 side-table）。
+//
+// Stage 5 起轉發到 `NodeFacts`（`s.nodeFacts`），不再是已於 Stage 7 刪除的
+// nodeSem 副表的欄位。
 func (s *SemanticContext) SetEmbedData(n Node, data []byte) {
-	s.ensure(n).EmbedData = data
+	if s == nil {
+		return
+	}
+	s.nodeFacts.ensure().SetEmbedData(n, data)
 }
 
 // SetEmbedFiles sets the directory embed file map for a node.
+// Stage 5 起轉發到 `NodeFacts`。
 func (s *SemanticContext) SetEmbedFiles(n Node, files map[string][]byte) {
-	s.ensure(n).EmbedFiles = files
+	if s == nil {
+		return
+	}
+	s.nodeFacts.ensure().SetEmbedFiles(n, files)
 }
 
 // ---- 節點級語義（side-table）----
 
 // SetRawAnnotations 記錄某節點的原始 #{...} 註解條目（parser 解析期呼叫）。
+//
+// Stage 3 起轉發到 `AnnTable`（`s.anns`），不再是已於 Stage 7 刪除的 nodeSem
+// 副表的欄位。
+// 覆蓋語義（整批替換）保持不變。nil 安全。
 func (s *SemanticContext) SetRawAnnotations(n Node, entries []*AnnotationEntry) {
-	s.ensure(n).RawAnnotations = entries
+	if s == nil {
+		return
+	}
+	s.anns.ensure().Set(n, entries)
 }
 
-// ensure 取得（必要時創建）節點的 NodeSemantics 條目。
-func (s *SemanticContext) ensure(n Node) *NodeSemantics {
-	if s.nodeSem == nil {
-		s.nodeSem = make(map[Node]*NodeSemantics)
+// Anns 回傳本副表的註解表（外部出口：blob 序列化 / clone / 合併用）。
+// nil receiver 安全，返回 nil。
+func (s *SemanticContext) Anns() *AnnTable {
+	if s == nil {
+		return nil
 	}
-	ns, ok := s.nodeSem[n]
-	if !ok {
-		ns = &NodeSemantics{}
-		s.nodeSem[n] = ns
+	return s.anns
+}
+
+// SetAnns 裝配本副表的註解表（反序列化重建 Sem 後由 RestoreAnns 呼叫）。
+func (s *SemanticContext) SetAnns(t *AnnTable) {
+	if s == nil {
+		return
 	}
-	return ns
+	s.anns = t
 }
 
 // SetIndexInBounds records that an IndexExpression's read is proven in bounds.
 // The fact is semantic metadata and never changes the syntax AST.
+//
+// Stage 5 起轉發到 `NodeFacts`（`s.nodeFacts`）。`yes == false` 只清既有條目、
+// 不新建的不對稱語義由表層保留（見 `NodeFacts.SetIndexInBounds`）。
 func (s *SemanticContext) SetIndexInBounds(n Node, yes bool) {
-	if s == nil || n == nil {
+	if s == nil {
 		return
 	}
 	if !yes {
-		if ns, ok := s.nodeSem[n]; ok {
-			ns.IndexInBounds = false
-		}
+		s.nodeFacts.SetIndexInBounds(n, false)
 		return
 	}
-	s.ensure(n).IndexInBounds = true
+	s.nodeFacts.ensure().SetIndexInBounds(n, true)
 }
 
 // IndexIsInBounds reports the bounds analyzer's proof for an AST node. Nil-safe.
 func (s *SemanticContext) IndexIsInBounds(n Node) bool {
-	if s == nil || n == nil {
+	if s == nil {
 		return false
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.IndexInBounds
-	}
-	return false
+	return s.nodeFacts.IndexInBoundsOf(n)
 }
 
 // SetInferredType 為一個 LetStatement 記錄 lowering 推斷出的 ?T 型別字串。
 // 這是純語義事實：不會改寫 AST，可在 SkipLowering 路徑下仍提供同一份證明。
 // empty 字串會被忽略（nil receiver / nil 節點安全）。
 func (s *SemanticContext) SetInferredType(n Node, typ string) {
-	if s == nil || n == nil || typ == "" {
+	if s == nil {
 		return
 	}
-	s.ensure(n).InferredType = typ
+	s.typeFacts.ensure().SetInferred(n, typ)
 }
 
 // InferredType 回傳該節點的推斷 ?T 型別字串（如 `"?i64"`），未記錄時回 ""。
 // Nil receiver / nil 節點安全。
 func (s *SemanticContext) InferredType(n Node) string {
-	if s == nil || n == nil {
+	if s == nil {
 		return ""
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.InferredType
-	}
-	return ""
+	return s.typeFacts.InferredOf(n)
 }
 
 // HasInferredType 報告節點是否帶推斷的 ?T 型別（Nil-safe）。
@@ -403,51 +435,233 @@ func (s *SemanticContext) HasInferredType(n Node) bool {
 // SetInferredByOptionArith 標記某個 LetStatement 的推斷 ?T 型別來自
 // `inferOptionArith`（D6 算術根推斷）。與 `InferredType` 寫入成對。
 func (s *SemanticContext) SetInferredByOptionArith(n Node, v bool) {
-	if s == nil || n == nil {
+	if s == nil {
 		return
 	}
-	s.ensure(n).InferredByOptionArith = v
+	s.typeFacts.ensure().SetByOptionArith(n, v)
+}
+
+// SetTypeOverrideOf 記錄整程式裝配為節點定下的**有效型別覆蓋**（具現化 /
+// 具象化結果）。覆蓋語義：優先於節點宣告的 Type。empty 字串會被忽略
+// （nil receiver / nil 節點安全）。
+func (s *SemanticContext) SetTypeOverrideOf(n Node, typ string) {
+	if s == nil {
+		return
+	}
+	s.typeFacts.ensure().SetOverride(n, typ)
+}
+
+// TypeOverrideOf 回傳節點的有效型別覆蓋字串，未記錄時回 ""。nil receiver /
+// nil 節點安全。
+func (s *SemanticContext) TypeOverrideOf(n Node) string {
+	if s == nil {
+		return ""
+	}
+	return s.typeFacts.OverrideOf(n)
 }
 
 // InferredByOptionArith 回傳該節點的推斷是否由 option-arith 路徑寫入。
 // Nil-safe。
 func (s *SemanticContext) InferredByOptionArith(n Node) bool {
-	if s == nil || n == nil {
-		return false
-	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.InferredByOptionArith
-	}
-	return false
-}
-
-// SetRTFlag 為節點疊加 fmt 往返標誌位（parser/lowering 寫入）。
-func (s *SemanticContext) SetRTFlag(n Node, fl RTFlag) {
-	if s == nil || n == nil {
-		return
-	}
-	s.ensure(n).RTFlags |= fl
-}
-
-// HasRTFlag 報告節點是否帶指定往返標誌。nil receiver 安全。
-func (s *SemanticContext) HasRTFlag(n Node, fl RTFlag) bool {
 	if s == nil {
 		return false
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.RTFlags&fl != 0
+	return s.typeFacts.ByOptionArithOf(n)
+}
+
+// TypeFactsTab 回傳本副表的型別事實表（外部出口：blob 序列化 / clone / 合併用）。
+// 命名加 Tab 後綴是因為 `Program.TypeFacts()` 與 `SemanticContext` 上的方法名
+// 空間不同——但 `TypeFacts` 已被 `TypeFact` 的複數型別名佔用，故避免混淆。
+// nil receiver 安全，返回 nil。
+func (s *SemanticContext) TypeFactsTab() *TypeFacts {
+	if s == nil {
+		return nil
 	}
-	return false
+	return s.typeFacts
+}
+
+// NodeFactsTab 回傳本副表的節點事實表（外部出口：blob 序列化 / clone / 合併用）。
+// 命名加 Tab 後綴的原因同 `TypeFactsTab`：`NodeFacts` 已被複數型別名佔用。
+// nil receiver 安全，返回 nil。
+func (s *SemanticContext) NodeFactsTab() *NodeFacts {
+	if s == nil {
+		return nil
+	}
+	return s.nodeFacts
+}
+
+// SetModuleConstOf 標記一個 LetStatement 是「模組級常量」（可參與常量傳播）。
+//
+// 這是裝配（H1）寫入的語義事實，不是語法：原 AST 欄位
+// `LetStatement.IsModuleConst` 由整程式合併 pass 就地寫入，違反嚴格範圍
+// 不變量（§1.4）。S5 把它搬進 side-table。寫入者：
+//   - build/transpiler.go 的模組合併（use 展開 + 自動載入 std 模組體）
+//   - build/transpiler.go 的可變全局變量回收（`false` 覆寫）
+//
+// 讀取者：parser/tohir.go 的 KLet flags、checker.ResolveModuleConstants、
+// parser/dump 的 moduleConst 列。
+func (s *SemanticContext) SetModuleConstOf(n Node, yes bool) {
+	if s == nil {
+		return
+	}
+	if !yes {
+		s.nodeFacts.SetModuleConst(n, false)
+		return
+	}
+	s.nodeFacts.ensure().SetModuleConst(n, true)
+}
+
+// ModuleConstOf 回傳該節點是否被標記為模組級常量。Nil-safe。
+func (s *SemanticContext) ModuleConstOf(n Node) bool {
+	if s == nil || n == nil {
+		return false
+	}
+	return s.nodeFacts.ModuleConstOf(n)
+}
+
+// SetSourceFileOf 記錄節點的來源檔路徑。Nil-safe（`s == nil || n == nil` 早退）。
+//
+// 這是裝配（H1）寫入的語義事實，不是語法：原 AST 欄位
+// `CommentedNode.SourceFile` 由整程式合併 pass 就地寫入，違反嚴格範圍
+// 不變量（§1.4）。S5 把它搬進 side-table。
+//
+// 注意舊 AST 欄位的 `SetSourceFile` 只對「嵌有 CommentedNode 的語句型別」
+// 生效（其它型別靜默 no-op）。side-table 版對任何 Node 都生效 —— 包括
+// 表達式與合成節點。這正是需要的：`SetSourceFileDeep` 要遞迴到
+// FunctionLiteral / IfExpression 臂內的語句，而那些語句同樣嵌 CommentedNode，
+// 舊版的型別開關其實漏掉了它們（靠 `setSourceFileDeepOnExpr` 才補上）。
+func (s *SemanticContext) SetSourceFileOf(n Node, file string) {
+	if s == nil {
+		return
+	}
+	s.nodeFacts.ensure().SetSourceFile(n, file)
+}
+
+// SourceFileOf 回傳節點的來源檔路徑；未記錄時回空字串。Nil-safe。
+func (s *SemanticContext) SourceFileOf(n Node) string {
+	if s == nil || n == nil {
+		return ""
+	}
+	return s.nodeFacts.SourceFileOf(n)
+}
+
+// SetModuleOwnerOf 記錄節點的來源模組短名。Nil-safe。
+func (s *SemanticContext) SetModuleOwnerOf(n Node, owner string) {
+	if s == nil {
+		return
+	}
+	s.nodeFacts.ensure().SetModuleOwner(n, owner)
+}
+
+// ModuleOwnerOf 回傳節點的來源模組短名；未記錄（主程式自身語句）回空字串。
+// Nil-safe。
+func (s *SemanticContext) ModuleOwnerOf(n Node) string {
+	if s == nil || n == nil {
+		return ""
+	}
+	return s.nodeFacts.ModuleOwnerOf(n)
+}
+
+// SetVariadicUnionOf 記錄函式的 union variadic 標記（checker.ValidateUnionTypes
+// 寫入）。Nil-safe。
+func (s *SemanticContext) SetVariadicUnionOf(n Node, union string) {
+	if s == nil {
+		return
+	}
+	s.nodeFacts.ensure().SetVariadicUnion(n, union)
+}
+
+// VariadicUnionOf 回傳函式的 union variadic 標記；未記錄回空字串。Nil-safe。
+func (s *SemanticContext) VariadicUnionOf(n Node) string {
+	if s == nil || n == nil {
+		return ""
+	}
+	return s.nodeFacts.VariadicUnionOf(n)
+}
+
+// SetGenericUnionOf 記錄函式的單一 union 標記（checker.ValidateUnionTypes
+// 寫入）。Nil-safe。
+func (s *SemanticContext) SetGenericUnionOf(n Node, union string) {
+	if s == nil {
+		return
+	}
+	s.nodeFacts.ensure().SetGenericUnion(n, union)
+}
+
+// GenericUnionOf 回傳函式的單一 union 標記；未記錄回空字串。Nil-safe。
+func (s *SemanticContext) GenericUnionOf(n Node) string {
+	if s == nil || n == nil {
+		return ""
+	}
+	return s.nodeFacts.GenericUnionOf(n)
+}
+
+// SetSourceFileDeep 遞迴地把來源檔路徑寫到語句本身與其所有巢狀語句上
+// （函式體、區塊、for 的 Init/Body、if/else 臂、群組表達式），並下潛到
+// LetStatement.Value / ExpressionStatement.Expression 這兩個唯一能攜帶
+// 巢狀語句的表達式掛載點。
+//
+// 為什麼必須 Deep：合併後只有頂層語句被淺標記時，函式體內的語句
+// SourceFile 留空，lint 端拿不到來源檔就回退成主檔路徑，而 Line/Column
+// 取自節點本身（模組座標）——報出 `main.no:1098` 這種主檔根本沒有的行號。
+//
+// 呼叫點全部在整程式合併 pass（build/transpiler.go 的 processUseAndMerge、
+// build/transpiler_stdload.go 的自動載入），傳入的是**合併後存活的
+// entry program 的 Sem**：模組自己的 Sem 隨該模組的 Program 一起被丟棄，
+// 寫在那裡等於沒寫。
+func (s *SemanticContext) SetSourceFileDeep(stmt Statement, file string) {
+	if s == nil || stmt == nil {
+		return
+	}
+	s.SetSourceFileOf(stmt, file)
+	switch st := stmt.(type) {
+	case *FunctionDefinition:
+		s.SetSourceFileDeepOnBlock(st.Body, file)
+	case *ForStatement:
+		s.SetSourceFileDeep(st.Init, file)
+		s.SetSourceFileDeepOnBlock(st.Body, file)
+	case *BlockStatement:
+		s.SetSourceFileDeepOnBlock(st, file)
+	case *LetStatement:
+		s.setSourceFileDeepOnExpr(st.Value, file)
+	case *ExpressionStatement:
+		s.setSourceFileDeepOnExpr(st.Expression, file)
+	}
+}
+
+// SetSourceFileDeepOnBlock 對區塊內每條語句執行 Deep 標記。Nil-safe。
+func (s *SemanticContext) SetSourceFileDeepOnBlock(b *BlockStatement, file string) {
+	if s == nil || b == nil {
+		return
+	}
+	for _, inner := range b.Statements {
+		s.SetSourceFileDeep(inner, file)
+	}
+}
+
+// setSourceFileDeepOnExpr 下潛能攜帶巢狀語句的表達式：IfExpression 的
+// Consequence/Alternative 臂、GroupedExpression。
+func (s *SemanticContext) setSourceFileDeepOnExpr(e Expression, file string) {
+	if s == nil || e == nil {
+		return
+	}
+	switch x := e.(type) {
+	case *IfExpression:
+		s.SetSourceFileDeepOnBlock(x.Consequence, file)
+		s.SetSourceFileDeepOnBlock(x.Alternative, file)
+	case *GroupedExpression:
+		s.setSourceFileDeepOnExpr(x.Expression, file)
+	}
 }
 
 // SetCallee 記錄某個 CallExpression 被整程式改寫成了哪一種呼叫（見 CalleeKind）。
 // 由 build/transpiler.go 的 resolveMethodCall 在攤平／改名當下寫入。
 // nil receiver / nil 節點安全。
 func (s *SemanticContext) SetCallee(n Node, k CalleeKind) {
-	if s == nil || n == nil {
+	if s == nil {
 		return
 	}
-	s.ensure(n).Callee = k
+	s.nodeFacts.ensure().SetCallee(n, k)
 }
 
 // CalleeOf 回報節點被改寫成的呼叫種類；從未記錄時返回 CalleeUnknown
@@ -456,81 +670,45 @@ func (s *SemanticContext) CalleeOf(n Node) CalleeKind {
 	if s == nil || n == nil {
 		return CalleeUnknown
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.Callee
-	}
-	return CalleeUnknown
-}
-
-// SetOpeningBraceComment 設定節點的 `{` 同行註釋；cg 為 nil 時清除。
-func (s *SemanticContext) SetOpeningBraceComment(n Node, cg *CommentGroup) {
-	if s == nil || n == nil {
-		return
-	}
-	if cg == nil {
-		if ns, ok := s.nodeSem[n]; ok {
-			ns.OpeningBraceComment = nil
-		}
-		return
-	}
-	s.ensure(n).OpeningBraceComment = cg
-}
-
-// OpeningBraceCommentOf 返回節點的 `{` 同行註釋（無則 nil）。nil receiver 安全。
-func (s *SemanticContext) OpeningBraceCommentOf(n Node) *CommentGroup {
-	if s == nil {
-		return nil
-	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.OpeningBraceComment
-	}
-	return nil
-}
-
-// HasSemantics 報告該節點是否帶有任意語義信息。
-func (s *SemanticContext) HasSemantics(n Node) bool {
-	if s == nil {
-		return false
-	}
-	_, ok := s.nodeSem[n]
-	return ok
+	return s.nodeFacts.CalleeOf(n)
 }
 
 // AnnotationsOf 返回節點的註解條目（無則 nil）。nil receiver 安全。
+//
+// Stage 3 起與 `RawAnnotationsOf` 讀同一份存儲（`AnnTable`）：原先兩者分別讀
+// `ns.Annotations`（ResolveProgram 後才有值）與 `ns.RawAnnotations`（解析期就有），
+// 迫使下游寫 `AnnotationsOf(n) || RawAnnotationsOf(n)` 這種「同一事實問兩遍」的
+// 雙查。遷移後兩者恆等，雙查退化為等價重複（保留雙查不影響正確性，僅為減小
+// 本輪改動面）。
 func (s *SemanticContext) AnnotationsOf(n Node) []*AnnotationEntry {
 	if s == nil {
 		return nil
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.Annotations
-	}
-	return nil
+	return s.anns.Of(n)
 }
 
-// SetAnnotations 直接設定節點的「已解析」註解條目（ns.Annotations）。
+// SetAnnotations 直接設定節點的註解條目。
 // 供工具（如 `no fmt --fix=overflow`）在 ParseProgram 之後、不重跑
 // ResolveProgram（重跑會把 #{generic=[K,V]} 等泛型參數重複附加到函式定義）
 // 的前提下，把新增的註解條目（如 overflow=wrap）寫入解析側表，使 formatter
 // 的 attachedAnnotations 能讀到並輸出。nil receiver / nil 節點安全。
+//
+// Stage 3 起與 `SetRawAnnotations` 寫同一張表（`AnnTable`）。
 func (s *SemanticContext) SetAnnotations(n Node, entries []*AnnotationEntry) {
 	if s == nil || n == nil {
 		return
 	}
-	s.ensure(n).Annotations = entries
+	s.anns.ensure().Set(n, entries)
 }
 
 // RawAnnotationsOf 返回節點在「解析期」由 #{...} 收集的原始註解條目（無則 nil）。
-// 解析期 Annotations 尚未由 ResolveProgram 從 RawAnnotations 拷貝，故解析期邏輯
-// （如 blockLevelOverflowMode / propagateOverflowInStmts）必須讀此欄位，否則永遠看不到
-// 語句自帶（attached）的註解。nil receiver 安全。
+// 見 `AnnotationsOf` 的註解：Stage 3 起兩者讀同一份存儲，恆等。
+// nil receiver 安全。
 func (s *SemanticContext) RawAnnotationsOf(n Node) []*AnnotationEntry {
 	if s == nil {
 		return nil
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.RawAnnotations
-	}
-	return nil
+	return s.anns.Of(n)
 }
 
 // RawAnnotationsOf 是 Parser 級便利訪問器，轉發到語義副表，供呼叫方在
@@ -543,47 +721,42 @@ func (p *Parser) RawAnnotationsOf(n Node) []*AnnotationEntry {
 }
 
 // PlatformKeysOf 返回節點的平台註解 key（無則 nil）。nil receiver 安全。
+//
+// Stage 3 起是**純函數**：不再讀物化欄位，改從註解條目即時算出
+// （`ExtractPlatformKeys`）。原欄位由 ResolveProgram 填充，凡是沒跑
+// ResolveProgram 的路徑（單檔 vet、依賴模組）都拿不到值——現在兩條路徑一致。
 func (s *SemanticContext) PlatformKeysOf(n Node) []string {
 	if s == nil {
 		return nil
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.PlatformKeys
-	}
-	return nil
+	return ExtractPlatformKeys(s.anns.Of(n))
 }
 
 // GenericParamsOf 返回節點的泛型參數名（無則 nil）。nil receiver 安全。
+// Stage 3 起是純函數（見 `PlatformKeysOf` 註解）。
 func (s *SemanticContext) GenericParamsOf(n Node) []string {
 	if s == nil {
 		return nil
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.GenericParams
-	}
-	return nil
+	return extractGenericParams(s.anns.Of(n))
 }
 
 // EmbedDataOf 返回節點的嵌入字節（無則 nil）。nil receiver 安全。
+// Stage 5 起轉發到 `NodeFacts`。
 func (s *SemanticContext) EmbedDataOf(n Node) []byte {
 	if s == nil {
 		return nil
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.EmbedData
-	}
-	return nil
+	return s.nodeFacts.EmbedDataOf(n)
 }
 
 // EmbedFilesOf returns the directory embed file map for a node (nil if none).
+// Stage 5 起轉發到 `NodeFacts`。
 func (s *SemanticContext) EmbedFilesOf(n Node) map[string][]byte {
 	if s == nil {
 		return nil
 	}
-	if ns, ok := s.nodeSem[n]; ok {
-		return ns.EmbedFiles
-	}
-	return nil
+	return s.nodeFacts.EmbedFilesOf(n)
 }
 
 // ---- 類型推斷結果（side-table）----
@@ -754,28 +927,32 @@ func (s *SemanticContext) IsDeclared(name string) bool {
 // ---- Resolver pass ----
 
 // ResolveProgram 是“解析/语义分离”的独立语义 pass：在解析之后、lowering 之前执行。
-// 它对每个带原始註解的節點收尾計算平台键与泛型参数，写入 side-table。
 // 类型推断结果由 parser 增量写入 VarTypes/EnumVariants，此处无需重复计算。
 // embed 文件读取（需真实文件系统与包根目录）由 ResolveEmbeds 在 transpiler 阶段执行。
+//
+// Stage 3 起本 pass 只剩一件事：把註解派生的函數泛型（#{generic=[K,V]}）物化回
+// `FuncSignature.GenericParams`。原本它還負責把 RawAnnotations 拷貝成
+// Annotations、並算出 PlatformKeys / GenericParams 三個物化欄位——那三件事
+// 隨著註解遷到 `AnnTable` 全部消失：Annotations 與 RawAnnotations 本就同讀一份
+// 存儲，後兩者降為純函數（`PlatformKeysOf` / `GenericParamsOf`）。
 func ResolveProgram(prog *Program) {
 	if prog == nil || prog.Sem == nil {
 		return
 	}
 	sem := prog.Sem
-	for n, ns := range sem.nodeSem {
-		entries := ns.RawAnnotations
-		ns.Annotations = entries
-		ns.PlatformKeys = ExtractPlatformKeys(entries)
-		ns.GenericParams = extractGenericParams(entries)
-		sem.nodeSem[n] = ns
-
+	if sem.anns == nil {
+		return
+	}
+	for n := range sem.anns.entries {
 		// 註解派生的函數泛型（#{generic=[K,V]}）物化回 FuncSignature.GenericParams：
 		// 單態化管線（monomorphizeGenerics/cloneAndSubstitute）以該字段為具現化狀態
 		// （具現化後清空），保留與顯式 <K,V> 泛型一致的處理路徑。
-		if fd, ok := n.(*FunctionDefinition); ok {
-			for _, name := range ns.GenericParams {
-				fd.GenericParams = append(fd.GenericParams, &Identifier{Value: name})
-			}
+		fd, ok := n.(*FunctionDefinition)
+		if !ok {
+			continue
+		}
+		for _, name := range extractGenericParams(sem.anns.entries[n]) {
+			fd.GenericParams = append(fd.GenericParams, &Identifier{Value: name})
 		}
 	}
 }

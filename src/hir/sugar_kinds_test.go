@@ -5,29 +5,41 @@ package hir_test
 //
 // Invariant P2 / constraint C4: HIR must contain zero sugar. Gate G3 declares
 // the sugar kinds and requires their corpus-wide count to be 0, with an
-// anti-vacuity half (design doc §7): each declared kind must be *produced* by
-// the pre-H1 snapshot — a kind that is never produced means the exemption is
-// dead and the entry must be deleted.
+// anti-vacuity half (design doc §7): the erasure has to be demonstrated, not
+// assumed — a kind whose sugar is never even fed into H0 would make the zero
+// count meaningless.
 //
-// Today neither half of C4 holds, so the gate is skipped and replaced by a
-// census that PINS the pre-migration state. The census is a tripwire, not a
-// formality: when S2 lands, KGrouped drops to 0 and the census fails, which is
-// the signal to delete the assertion and enable the real gate.
+// History: this file originally held a census TRIPWIRE pinning the
+// pre-migration state (KGrouped > 0 = W5, KUnwrapAssign == 0 = W4) plus a
+// skipped placeholder for the real gate. W5 landed 2026-10-21 (H0 erases
+// parentheses at tohir, §10.2), which drove the census's KGrouped count to 0.
+// Per the tripwire's own instruction the census is deleted and the real gate
+// below is now active; the census's residual checks are folded into it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import (
+	"reflect"
 	"sort"
 	"strconv"
 	"testing"
 
 	"github.com/lizongying/nolang/hir"
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
 )
 
 // sugarHIRKinds names the HIR node kinds the design doc rules SUGAR (design doc
-// §5). Each must be consumed by H0 and therefore reach 0 in HIR.
+// §5). Each must be consumed by H0 and therefore reach 0 in HIR. Both entries
+// are tombstone guards today: the erasure already happened, so these rows pin
+// the zero and name where the erasure proof lives.
 var sugarHIRKinds = map[hir.Kind]string{
-	hir.KUnwrapAssign: "§5 — `x ?= e`; the kind is deleted from HIR once H0 consumes the sugar node",
-	hir.KGrouped:      "§5 — parentheses; pure syntax with no semantics, so H0 must erase it (§10.2)",
+	hir.KUnwrapAssign: "§5 — `x ?= e`; the parser's lowering pass expands it before " +
+		"ParseProgram returns (W4), so nothing survives for H0. Its erasure is " +
+		"proven parser-side (parser/sugar_seam_test.go seamProbes[\"unwrap\"]); " +
+		"here it is a keep-at-zero tombstone guard",
+	hir.KGrouped: "§5 — parentheses are pure syntax with no semantics (§10.2); H0 " +
+		"erases them via a transparent passthrough in tohir (W5 landed " +
+		"2026-10-21). The kind stays a tombstone to avoid renumbering KindNames",
 }
 
 func sugarKindNames() []hir.Kind {
@@ -39,18 +51,79 @@ func sugarKindNames() []hir.Kind {
 	return out
 }
 
-// TestSugarHIRKindCensus pins the PRE-migration census over the std corpus and
-// documents the two violations the migration has to remove (design doc §2.3):
-//
-//	W5  KGrouped IS produced — pure-paren sugar survives into HIR
-//	W4  KUnwrapAssign is NOT produced — the kind is already dead, because the
-//	    parser desugars `?=` before ParseProgram returns
-//
-// Both facts change at S2; this test is what forces that update to be
-// deliberate rather than silent.
-func TestSugarHIRKindCensus(t *testing.T) {
-	mods := stdModules(t)
+var programReflectType = reflect.TypeOf(parser.Program{})
 
+// countASTNodeType counts AST nodes of the given type name by reflective walk.
+// The AST is a DAG with shared nodes and whole subtrees hanging off unexported
+// fields, so the walk mirrors parser's sugarNodeCensus (sugar_seam_test.go):
+// reflection reaches them read-only. Used only by the G3 anti-vacuity half to
+// prove the sugar was fed INTO H0 before the zero count means anything.
+func countASTNodeType(prog *parser.Program, want string) int {
+	seen := map[uintptr]bool{}
+	n := 0
+	var walk func(v reflect.Value, depth int)
+	walk = func(v reflect.Value, depth int) {
+		if !v.IsValid() || depth > 400 {
+			return
+		}
+		switch v.Kind() {
+		case reflect.Pointer:
+			if v.IsNil() {
+				return
+			}
+			addr := v.Pointer()
+			if seen[addr] {
+				return
+			}
+			seen[addr] = true
+			if v.Elem().Type().Name() == want {
+				n++
+			}
+			walk(v.Elem(), depth+1)
+		case reflect.Interface:
+			if !v.IsNil() {
+				walk(v.Elem(), depth+1)
+			}
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < v.Len(); i++ {
+				walk(v.Index(i), depth+1)
+			}
+		case reflect.Struct:
+			isProgram := v.Type() == programReflectType
+			for i := 0; i < v.NumField(); i++ {
+				if isProgram {
+					// Side tables, not part of the node tree. Sem in particular
+					// is a map keyed by Node and would dominate the walk.
+					switch v.Type().Field(i).Name {
+					case "Sem", "Warnings", "BuiltinFuncNames", "TrailingComments", "FmtTrivia":
+						continue
+					}
+				}
+				walk(v.Field(i), depth+1)
+			}
+		case reflect.Map:
+			it := v.MapRange()
+			for it.Next() {
+				walk(it.Value(), depth+1)
+			}
+		}
+	}
+	walk(reflect.ValueOf(prog), 0)
+	return n
+}
+
+// TestSugarHIRKindsAbsentAfterH0 is gate G3 (constraint C4), active since the
+// W5 erasure landed (2026-10-21). Two halves:
+//
+//	G3.1 — over the std corpus, every declared sugar kind has count 0.
+//	G3.2 — anti-vacuity (§7): prove ERASURE rather than ABSENCE. A
+//	       parenthesized probe must parse into GroupedExpression AST nodes
+//	       (the sugar really is fed into H0) and still lower to zero KGrouped.
+//	       Without this half the gate would also pass on a corpus with no
+//	       parentheses at all, which would prove nothing.
+func TestSugarHIRKindsAbsentAfterH0(t *testing.T) {
+	// G3.1 — corpus-wide absence.
+	mods := stdModules(t)
 	total := map[hir.Kind]int{}
 	var nodes int
 	for _, m := range mods {
@@ -60,42 +133,43 @@ func TestSugarHIRKindCensus(t *testing.T) {
 		}
 	}
 	if nodes < 100000 {
-		t.Fatalf("only %d HIR nodes built from the std corpus; the census would be "+
+		t.Fatalf("only %d HIR nodes built from the std corpus; the gate would be "+
 			"vacuous", nodes)
 	}
-
-	// W5 — the violation the migration must remove.
-	if total[hir.KGrouped] == 0 {
-		t.Errorf("KGrouped count is 0 over the std corpus. Either the corpus stopped "+
-			"producing parentheses, or S2 landed and erased the kind: if it landed, "+
-			"delete this assertion and enable TestSugarHIRKindsAbsentAfterH0")
+	for _, k := range sugarKindNames() {
+		if n := total[k]; n != 0 {
+			t.Errorf("G3: %s: %d node(s) over the std corpus; P2/C4 requires HIR to "+
+				"contain zero sugar — H0 stopped consuming it", k, n)
+		}
 	}
-	// W4 — the dead kind.
-	if n := total[hir.KUnwrapAssign]; n != 0 {
-		t.Errorf("KUnwrapAssign count is %d over the std corpus; it is supposed to be "+
-			"desugared inside ParseProgram, before H0 ever sees it", n)
+
+	// G3.2 — anti-vacuity: the erasure must be visible on a controlled probe.
+	const (
+		probeSrc = "x = (1 + 2) * 3\n"
+		probe    = "g3-parens"
+	)
+	p := parser.New(lexer.NewCached(probe+".no", probeSrc))
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("probe %q no longer parses: %v", probe, errs)
+	}
+	if got := countASTNodeType(prog, "GroupedExpression"); got == 0 {
+		t.Fatalf("anti-vacuity: the probe's AST holds no GroupedExpression, so the " +
+			"erasure half of this gate cannot fail; fix the probe (it must feed " +
+			"paren sugar into H0)")
+	}
+	pkg := parser.ASTToHIR(prog)
+	probeCount := pkg.KindCounts()[hir.KGrouped]
+	if probeCount != 0 {
+		t.Errorf("anti-vacuity: H0 emitted %d KGrouped from an AST that contains "+
+			"GroupedExpression; the §10.2/W5 erasure regressed (tohir must pass the "+
+			"inner expression through)", probeCount)
 	}
 
 	census := make([]string, 0, len(sugarHIRKinds))
 	for _, k := range sugarKindNames() {
 		census = append(census, k.String()+"="+strconv.Itoa(total[k]))
 	}
-	t.Logf("%d nodes across %d std modules; sugar census: %v", nodes, len(mods), census)
-}
-
-// TestSugarHIRKindsAbsentAfterH0 is gate G3 (constraint C4).
-//
-// SKIPPED until S2. When enabled it must assert, over the corpus:
-//
-//	for each kind in sugarHIRKinds: total[kind] == 0
-//
-// and carry the anti-vacuity half from design doc §7: on a snapshot taken AFTER
-// H0 and BEFORE H1, every declared kind must be non-zero — otherwise the
-// exemption is dead and the entry has to go. hir/golden_test.go's KUnwrapAssign
-// exemption is already an instance of this pattern, and it is currently
-// *stale*: that entry claims the kind never reaches HIR, which is true, but the
-// kind is then unreachable by any corpus and the entry cannot be validated.
-func TestSugarHIRKindsAbsentAfterH0(t *testing.T) {
-	t.Skip("S2 (docs/design/nolang-parser-lowering-invariants.md §8): enable once H0 " +
-		"consumes every sugar node and the kind set is genuinely empty in HIR")
+	t.Logf("%d nodes across %d std modules; sugar census: %v; probe: AST "+
+		"GroupedExpression → %d KGrouped", nodes, len(mods), census, probeCount)
 }

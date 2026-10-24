@@ -54,19 +54,19 @@ func ValidateLiteralConversion(program *parser.Program) []ValidateResult {
 	}
 	var results []ValidateResult
 	for _, stmt := range program.Statements {
-		results = append(results, literalConvInStmt(stmt, parser.GetSourceFile(stmt))...)
+		results = append(results, literalConvInStmt(program.Sem, stmt, program.Sem.SourceFileOf(stmt))...)
 	}
 	return results
 }
 
 // literalConvInStmt 递归走访语句树。file 为外层顶层语句的来源档（合并模式只有
 // 顶层语句被 SetSourceFile 标记），供诊断归属使用。
-func literalConvInStmt(stmt parser.Statement, file string) []ValidateResult {
+func literalConvInStmt(sem *parser.SemanticContext, stmt parser.Statement, file string) []ValidateResult {
 	var results []ValidateResult
 	if stmt == nil {
 		return nil
 	}
-	if f := parser.GetSourceFile(stmt); f != "" {
+	if f := sem.SourceFileOf(stmt); f != "" {
 		file = f
 	}
 	switch s := stmt.(type) {
@@ -83,20 +83,20 @@ func literalConvInStmt(stmt parser.Statement, file string) []ValidateResult {
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
-				results = append(results, literalConvInStmt(b, file)...)
+				results = append(results, literalConvInStmt(sem, b, file)...)
 			}
 		}
 	case *parser.BlockStatement:
 		for _, b := range s.Statements {
-			results = append(results, literalConvInStmt(b, file)...)
+			results = append(results, literalConvInStmt(sem, b, file)...)
 		}
 	case *parser.ForStatement:
-		results = append(results, literalConvInStmt(s.Init, file)...)
+		results = append(results, literalConvInStmt(sem, s.Init, file)...)
 		results = append(results, literalConvInExpr(s.Condition, file)...)
-		results = append(results, literalConvInStmt(s.Update, file)...)
+		results = append(results, literalConvInStmt(sem, s.Update, file)...)
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
-				results = append(results, literalConvInStmt(b, file)...)
+				results = append(results, literalConvInStmt(sem, b, file)...)
 			}
 		}
 	}

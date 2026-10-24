@@ -82,7 +82,7 @@ func parseHIR(t *testing.T, src string) *hir.Package {
 	if pkg == nil {
 		t.Fatal("ASTToHIRWithMap returned nil")
 	}
-	parser.PopulateInferredTypes(pkg, idMap)
+	parser.PopulateInferredTypes(pkg, idMap, nil)
 	return pkg
 }
 

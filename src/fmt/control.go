@@ -224,7 +224,7 @@ func (f *formatter) formatSurfaceMatch(sm *parser.SurfaceMatch) {
 // 混合情形不會掉註釋。
 func (f *formatter) matchOpeningBraceComment(sm *parser.SurfaceMatch) *parser.CommentGroup {
 	if f.sem != nil {
-		if g := f.sem.OpeningBraceCommentOf(sm); g != nil && len(g.List) > 0 {
+		if g := f.trivia.OpeningBraceCommentOf(sm); g != nil && len(g.List) > 0 {
 			return g
 		}
 	}

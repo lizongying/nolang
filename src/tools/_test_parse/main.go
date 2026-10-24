@@ -22,7 +22,7 @@ func main() {
 		fmt.Printf("  %T\n", s)
 		if v, ok := s.(*parser.FunctionDefinition); ok {
 			if v.Name == "str.to-i64" {
-				fmt.Printf("Function: %q IsVariadic=%v VariadicUnion=%q\n", v.Name, v.IsVariadic, v.VariadicUnion)
+				fmt.Printf("Function: %q IsVariadic=%v VariadicUnion=%q\n", v.Name, v.IsVariadic, prog.Sem.VariadicUnionOf(v))
 				fmt.Printf("  Parameters:\n")
 				for _, p := range v.Parameters {
 					fmt.Printf("    %q : %s\n", p.Name, p.Type.String())

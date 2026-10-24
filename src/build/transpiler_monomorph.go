@@ -98,7 +98,7 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 					funcVarTypes[r.Name] = r.Type.String()
 				}
 			}
-			collectVarTypesFromBody(s.Body, funcVarTypes)
+			collectVarTypesFromBody(s.Body, funcVarTypes, program.Sem)
 			for _, bodyStmt := range s.Body.Statements {
 				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts, typeOwner)
 			}
@@ -122,7 +122,7 @@ func scanStmtForGenericCalls(stmt parser.Statement, genericFns map[string]*parse
 					funcVarTypes[r.Name] = r.Type.String()
 				}
 			}
-			collectVarTypesFromBody(fl.Body, funcVarTypes)
+			collectVarTypesFromBody(fl.Body, funcVarTypes, program.Sem)
 			for _, bodyStmt := range fl.Body.Statements {
 				scanStmtForGenericCalls(bodyStmt, genericFns, funcVarTypes, program, newStmts, typeOwner)
 			}
@@ -159,7 +159,7 @@ func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[str
 		for k, v := range varTypes {
 			blockVarTypes[k] = v
 		}
-		collectVarTypesFromBody(ie.Consequence, blockVarTypes)
+		collectVarTypesFromBody(ie.Consequence, blockVarTypes, program.Sem)
 		for _, s := range ie.Consequence.Statements {
 			scanStmtForGenericCalls(s, genericFns, blockVarTypes, program, newStmts, typeOwner)
 		}
@@ -169,7 +169,7 @@ func scanIfExpressionForGenericCalls(ie *parser.IfExpression, genericFns map[str
 		for k, v := range varTypes {
 			altVarTypes[k] = v
 		}
-		collectVarTypesFromBody(ie.Alternative, altVarTypes)
+		collectVarTypesFromBody(ie.Alternative, altVarTypes, program.Sem)
 		for _, s := range ie.Alternative.Statements {
 			scanStmtForGenericCalls(s, genericFns, altVarTypes, program, newStmts, typeOwner)
 		}
@@ -217,7 +217,7 @@ func scanSurfaceMatchForGenericCalls(sm *parser.SurfaceMatch, genericFns map[str
 					blockVarTypes[name] = t
 				}
 			}
-			collectVarTypesFromBody(arm.Body, blockVarTypes)
+			collectVarTypesFromBody(arm.Body, blockVarTypes, program.Sem)
 			for _, s := range arm.Body.Statements {
 				scanStmtForGenericCalls(s, genericFns, blockVarTypes, program, newStmts, typeOwner)
 			}
@@ -360,7 +360,7 @@ func monomorphizeUnions(program *parser.Program) {
 		for _, stmt := range program.Statements {
 			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 				fmt.Fprintf(os.Stderr, "[union-debug]   func %s: IsVariadic=%v VariadicUnion=%q GenericUnion=%q\n",
-					fd.Name, fd.IsVariadic, fd.VariadicUnion, fd.GenericUnion)
+					fd.Name, fd.IsVariadic, program.Sem.VariadicUnionOf(fd), program.Sem.GenericUnionOf(fd))
 			}
 		}
 	}
@@ -380,15 +380,15 @@ func monomorphizeUnions(program *parser.Program) {
 			continue
 		}
 		var unionName string
-		if fd.IsVariadic && fd.VariadicUnion != "" {
-			unionName = fd.VariadicUnion
-		} else if !fd.IsVariadic && fd.GenericUnion != "" {
-			unionName = fd.GenericUnion
+		if fd.IsVariadic && program.Sem.VariadicUnionOf(fd) != "" {
+			unionName = program.Sem.VariadicUnionOf(fd)
+		} else if !fd.IsVariadic && program.Sem.GenericUnionOf(fd) != "" {
+			unionName = program.Sem.GenericUnionOf(fd)
 		}
 		if unionName == "" {
 			if os.Getenv("NOLANG_UNION_DEBUG") != "" {
 				fmt.Fprintf(os.Stderr, "[union-debug] skip %s: IsVariadic=%v VariadicUnion=%q GenericUnion=%q\n",
-					fd.Name, fd.IsVariadic, fd.VariadicUnion, fd.GenericUnion)
+					fd.Name, fd.IsVariadic, program.Sem.VariadicUnionOf(fd), program.Sem.GenericUnionOf(fd))
 			}
 			continue
 		}
@@ -411,7 +411,7 @@ func monomorphizeUnions(program *parser.Program) {
 			if !ok {
 				continue
 			}
-			concrete := cloneUnionVariant(p.fd, nt.Value, aliases)
+			concrete := cloneUnionVariant(p.fd, nt.Value, aliases, program.Sem)
 			// 攜帶模板函數的註解（如 #{overflow = wrap}）到單態化複本，
 			// 否則 generic/union 方法體內的有符號相減會遺失溢出模式而誤用預設 option 路徑。
 			if program.Sem != nil {
@@ -472,21 +472,21 @@ func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 		}
 	}
 	// 遍歷所有語句，重寫呼叫
-	rewriteUnionCallStmts(program.Statements, templates, varTypes)
+	rewriteUnionCallStmts(program.Statements, templates, varTypes, program.Sem)
 }
 
 // rewriteUnionCallStmts 遍歷語句列表，對每個語句中的聯合型別泛型呼叫進行重寫。
 // 此函數與 rewriteUnionCallExpr 互相遞迴：rewriteUnionCallExpr 處理 IfExpression
 // 的 Consequence/Alternative 時會呼叫本函數，以正確走訪所有語句類型
 // （包括 LetStatement、ReturnStatement 等，而不僅是 ExpressionStatement）。
-func rewriteUnionCallStmts(stmts []parser.Statement, templates map[string]*unionTemplateInfo, vt map[string]string) {
+func rewriteUnionCallStmts(stmts []parser.Statement, templates map[string]*unionTemplateInfo, vt map[string]string, sem *parser.SemanticContext) {
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *parser.ExpressionStatement:
-			rewriteUnionCallExpr(s.Expression, templates, vt)
+			rewriteUnionCallExpr(s.Expression, templates, vt, sem)
 		case *parser.LetStatement:
 			if s.Value != nil {
-				rewriteUnionCallExpr(s.Value, templates, vt)
+				rewriteUnionCallExpr(s.Value, templates, vt, sem)
 			}
 		case *parser.FunctionDefinition:
 			if os.Getenv("NOLANG_UNION_DEBUG") != "" {
@@ -516,32 +516,32 @@ func rewriteUnionCallStmts(stmts []parser.Statement, templates map[string]*union
 				// dns-parse-records vs `c []str` elsewhere) resolve to the correct
 				// union member type. Without this, a single global varTypes entry
 				// would leak across functions and produce wrong memberType inference.
-				collectVarTypesFromBody(s.Body, localVt)
-				rewriteUnionCallStmts(s.Body.Statements, templates, localVt)
+				collectVarTypesFromBody(s.Body, localVt, sem)
+				rewriteUnionCallStmts(s.Body.Statements, templates, localVt, sem)
 			}
 		case *parser.BlockStatement:
-			rewriteUnionCallStmts(s.Statements, templates, vt)
+			rewriteUnionCallStmts(s.Statements, templates, vt, sem)
 		case *parser.ForStatement:
 			if s.Condition != nil {
-				rewriteUnionCallExpr(s.Condition, templates, vt)
+				rewriteUnionCallExpr(s.Condition, templates, vt, sem)
 			}
 			if s.Body != nil {
-				rewriteUnionCallStmts(s.Body.Statements, templates, vt)
+				rewriteUnionCallStmts(s.Body.Statements, templates, vt, sem)
 			}
 		case *parser.MultiAssignStatement:
 			if s.Value != nil {
-				rewriteUnionCallExpr(s.Value, templates, vt)
+				rewriteUnionCallExpr(s.Value, templates, vt, sem)
 			}
 		case *parser.ReturnStatement:
 			if s.ReturnValue != nil {
-				rewriteUnionCallExpr(s.ReturnValue, templates, vt)
+				rewriteUnionCallExpr(s.ReturnValue, templates, vt, sem)
 			}
 		}
 	}
 }
 
 // rewriteUnionCallExpr 遞迴重寫表達式中的聯合型別呼叫
-func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTemplateInfo, varTypes map[string]string) {
+func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTemplateInfo, varTypes map[string]string, sem *parser.SemanticContext) {
 	if expr == nil {
 		return
 	}
@@ -549,11 +549,11 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 	case *parser.CallExpression:
 		// 先遞迴處理引數中的呼叫
 		for _, arg := range e.Arguments {
-			rewriteUnionCallExpr(arg, templates, varTypes)
+			rewriteUnionCallExpr(arg, templates, varTypes, sem)
 		}
 		// 處理 curried 呼叫：(innerCall)(args)
 		if _, ok := e.Function.(*parser.CallExpression); ok {
-			rewriteUnionCallExpr(e.Function, templates, varTypes)
+			rewriteUnionCallExpr(e.Function, templates, varTypes, sem)
 			return
 		}
 		// 檢查是否為聯合型別泛型呼叫
@@ -610,46 +610,46 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 			}
 		}
 	case *parser.InfixExpression:
-		rewriteUnionCallExpr(e.Left, templates, varTypes)
-		rewriteUnionCallExpr(e.Right, templates, varTypes)
+		rewriteUnionCallExpr(e.Left, templates, varTypes, sem)
+		rewriteUnionCallExpr(e.Right, templates, varTypes, sem)
 	case *parser.PrefixExpression:
-		rewriteUnionCallExpr(e.Right, templates, varTypes)
+		rewriteUnionCallExpr(e.Right, templates, varTypes, sem)
 	case *parser.SurfaceMatch:
 		// S1：糖形態 match。降糖後 Condition 已內嵌 subject 比較與模式值，
 		// 此處分臂顯式重寫 Matched / Condition / MultiValuePatterns / Body。
 		if e.Matched != nil {
-			rewriteUnionCallExpr(e.Matched, templates, varTypes)
+			rewriteUnionCallExpr(e.Matched, templates, varTypes, sem)
 		}
 		for i := range e.Arms {
 			arm := &e.Arms[i]
 			if arm.Condition != nil {
-				rewriteUnionCallExpr(arm.Condition, templates, varTypes)
+				rewriteUnionCallExpr(arm.Condition, templates, varTypes, sem)
 			}
 			for _, vp := range arm.MultiValuePatterns {
 				if vp != nil {
-					rewriteUnionCallExpr(vp, templates, varTypes)
+					rewriteUnionCallExpr(vp, templates, varTypes, sem)
 				}
 			}
 			if arm.Body != nil {
-				rewriteUnionCallStmts(arm.Body.Statements, templates, varTypes)
+				rewriteUnionCallStmts(arm.Body.Statements, templates, varTypes, sem)
 			}
 		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			rewriteUnionCallExpr(e.Condition, templates, varTypes)
+			rewriteUnionCallExpr(e.Condition, templates, varTypes, sem)
 		}
 		// 走訪 Consequence/Alternative 中的所有語句類型（不僅 ExpressionStatement），
 		// 以正確重寫 LetStatement（如 `blen-str = body-len.to-str()`）等內部的呼叫。
 		// 僅走 ExpressionStatement 會導致 standalone if-then (`cond -> { let = call() }`)
 		// 內的聯合型別呼叫未被重寫，產生 undefined `@int.to-str` 錯誤。
 		if e.Consequence != nil {
-			rewriteUnionCallStmts(e.Consequence.Statements, templates, varTypes)
+			rewriteUnionCallStmts(e.Consequence.Statements, templates, varTypes, sem)
 		}
 		if e.Alternative != nil {
-			rewriteUnionCallStmts(e.Alternative.Statements, templates, varTypes)
+			rewriteUnionCallStmts(e.Alternative.Statements, templates, varTypes, sem)
 		}
 	case *parser.AssignExpression:
-		rewriteUnionCallExpr(e.Value, templates, varTypes)
+		rewriteUnionCallExpr(e.Value, templates, varTypes, sem)
 	}
 }
 
@@ -802,7 +802,7 @@ func isValidType(name string) bool {
 // 替換函數簽名中的 variadic 元素型別為該成員（若為 variadic），
 // 並將所有 union 別名的參數/結果型別替換為具體成員型別。
 // 對於函數體內所有對「自己」的遞迴呼叫改名為具體版本。
-func cloneUnionVariant(fd *parser.FunctionDefinition, memberType string, aliases map[string]*parser.TypeAlias) *parser.FunctionDefinition {
+func cloneUnionVariant(fd *parser.FunctionDefinition, memberType string, aliases map[string]*parser.TypeAlias, sem *parser.SemanticContext) *parser.FunctionDefinition {
 	// 簡單深拷貝：先淺拷貝結構體，再逐欄位拷貝容器。
 	clone := *fd
 	clone.Parameters = make([]*parser.Parameter, len(fd.Parameters))
@@ -846,31 +846,31 @@ func cloneUnionVariant(fd *parser.FunctionDefinition, memberType string, aliases
 		clone.Results[i] = &rCopy
 	}
 	clone.Name = fd.Name + "__" + memberType
-	// 重設 union 標記：實例化後該函數就是具體的
-	clone.VariadicUnion = ""
-	clone.GenericUnion = ""
+	// union 標記（VariadicUnion / GenericUnion）在 S5 stage 4 已遷入
+	// SemanticContext side-table：克隆體是新節點、Sem 中無條目即空字串，
+	// 等同舊版「克隆後清空標記」（實例化後該函數就是具體的）。
 	// 繼承模板函數的溢出模式（#{overflow = wrap|clamp0}），使複本方法體內的
 	// 有符號相減沿用正確模式（HIR 模式下 side-table 註解拷貝無效，必須以欄位攜帶）。
 	clone.OverflowMode = fd.OverflowMode
 	// 深拷貝 Body
-	clone.Body = cloneBlockForUnion(fd.Body, fd.Name, clone.Name, memberType)
+	clone.Body = cloneBlockForUnion(fd.Body, fd.Name, clone.Name, memberType, sem)
 	return &clone
 }
 
 // cloneBlockForUnion 深拷貝一個 block，遞迴地把對 <oldName> 的呼叫
 // 改名為 <newName>。<memberType> 是當前單態化的具體型別。
-func cloneBlockForUnion(bs *parser.BlockStatement, oldName, newName, memberType string) *parser.BlockStatement {
+func cloneBlockForUnion(bs *parser.BlockStatement, oldName, newName, memberType string, sem *parser.SemanticContext) *parser.BlockStatement {
 	if bs == nil {
 		return nil
 	}
 	out := &parser.BlockStatement{Token: bs.Token, RBrace: bs.RBrace}
 	for _, s := range bs.Statements {
-		out.Statements = append(out.Statements, cloneStmtForUnion(s, oldName, newName, memberType))
+		out.Statements = append(out.Statements, cloneStmtForUnion(s, oldName, newName, memberType, sem))
 	}
 	return out
 }
 
-func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType string) parser.Statement {
+func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType string, sem *parser.SemanticContext) parser.Statement {
 	if stmt == nil {
 		return nil
 	}
@@ -881,7 +881,7 @@ func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType strin
 	case *parser.ExpressionStatement:
 		// shallow-copy the wrapper and rewrite its expression
 		es := *s
-		es.Expression = cloneExprForUnion(s.Expression, oldName, newName, memberType)
+		es.Expression = cloneExprForUnion(s.Expression, oldName, newName, memberType, sem)
 		return &es
 	case *parser.LetStatement:
 		ls := *s
@@ -890,74 +890,80 @@ func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType strin
 			ls.Name = &n
 		}
 		ls.Type = s.Type
-		ls.Value = cloneExprForUnion(s.Value, oldName, newName, memberType)
+		// TypeOverride 必須繼承（S5 stage 5）：舊版複製的是已被裝配覆寫的
+		// s.Type；覆寫搬進 Sem 後，不帶走條目會讓克隆體退回宣告型別。
+		// 與 GenericUnion 的「克隆不繼承」相反——那裡是實例化後語義消失。
+		if ov := sem.TypeOverrideOf(s); ov != "" {
+			sem.SetTypeOverrideOf(&ls, ov)
+		}
+		ls.Value = cloneExprForUnion(s.Value, oldName, newName, memberType, sem)
 		return &ls
 	case *parser.BlockStatement:
-		return cloneBlockForUnion(s, oldName, newName, memberType)
+		return cloneBlockForUnion(s, oldName, newName, memberType, sem)
 	case *parser.ForStatement:
 		fs := *s
 		if s.IterRange != nil {
-			fs.IterRange = cloneIterForUnion(s.IterRange, oldName, newName, memberType)
+			fs.IterRange = cloneIterForUnion(s.IterRange, oldName, newName, memberType, sem)
 		}
 		if s.Condition != nil {
-			fs.Condition = cloneExprForUnion(s.Condition, oldName, newName, memberType)
+			fs.Condition = cloneExprForUnion(s.Condition, oldName, newName, memberType, sem)
 		}
-		fs.Body = cloneBlockForUnion(s.Body, oldName, newName, memberType)
+		fs.Body = cloneBlockForUnion(s.Body, oldName, newName, memberType, sem)
 		return &fs
 	case *parser.ReturnStatement:
 		rs := *s
-		rs.ReturnValue = cloneExprForUnion(s.ReturnValue, oldName, newName, memberType)
+		rs.ReturnValue = cloneExprForUnion(s.ReturnValue, oldName, newName, memberType, sem)
 		return &rs
 	case *parser.MultiAssignStatement:
 		mas := *s
 		mas.Targets = append([]parser.Expression{}, s.Targets...)
-		mas.Value = cloneExprForUnion(s.Value, oldName, newName, memberType)
+		mas.Value = cloneExprForUnion(s.Value, oldName, newName, memberType, sem)
 		return &mas
 	}
 	// Fallback: shallow copy via type assertion to the concrete type
 	return stmt
 }
 
-func cloneIterForUnion(it *parser.IterationExpr, oldName, newName, memberType string) *parser.IterationExpr {
+func cloneIterForUnion(it *parser.IterationExpr, oldName, newName, memberType string, sem *parser.SemanticContext) *parser.IterationExpr {
 	if it == nil {
 		return nil
 	}
 	cp := *it
 	if it.Range != nil {
 		// RangeExpression has Start and End
-		cp.Range = cloneRangeForUnion(it.Range, oldName, newName, memberType)
+		cp.Range = cloneRangeForUnion(it.Range, oldName, newName, memberType, sem)
 	}
 	if it.RangeExpr != nil {
-		cp.RangeExpr = cloneExprForUnion(it.RangeExpr, oldName, newName, memberType)
+		cp.RangeExpr = cloneExprForUnion(it.RangeExpr, oldName, newName, memberType, sem)
 	}
 	return &cp
 }
 
-func cloneRangeForUnion(r *parser.RangeExpression, oldName, newName, memberType string) *parser.RangeExpression {
+func cloneRangeForUnion(r *parser.RangeExpression, oldName, newName, memberType string, sem *parser.SemanticContext) *parser.RangeExpression {
 	if r == nil {
 		return nil
 	}
 	cp := *r
 	if r.Start != nil {
-		cp.Start = cloneExprForUnion(r.Start, oldName, newName, memberType)
+		cp.Start = cloneExprForUnion(r.Start, oldName, newName, memberType, sem)
 	}
 	if r.End != nil {
-		cp.End = cloneExprForUnion(r.End, oldName, newName, memberType)
+		cp.End = cloneExprForUnion(r.End, oldName, newName, memberType, sem)
 	}
 	return &cp
 }
 
-func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType string) parser.Expression {
+func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType string, sem *parser.SemanticContext) parser.Expression {
 	if expr == nil {
 		return nil
 	}
 	switch e := expr.(type) {
 	case *parser.CallExpression:
 		ce := *e
-		ce.Function = cloneExprForUnion(e.Function, oldName, newName, memberType)
+		ce.Function = cloneExprForUnion(e.Function, oldName, newName, memberType, sem)
 		ce.Arguments = make([]parser.Expression, len(e.Arguments))
 		for i, a := range e.Arguments {
-			ce.Arguments[i] = cloneExprForUnion(a, oldName, newName, memberType)
+			ce.Arguments[i] = cloneExprForUnion(a, oldName, newName, memberType, sem)
 		}
 		return &ce
 	case *parser.Identifier:
@@ -968,49 +974,49 @@ func cloneExprForUnion(expr parser.Expression, oldName, newName, memberType stri
 		return &cp
 	case *parser.DotExpression:
 		de := *e
-		de.Receiver = cloneExprForUnion(e.Receiver, oldName, newName, memberType)
+		de.Receiver = cloneExprForUnion(e.Receiver, oldName, newName, memberType, sem)
 		return &de
 	case *parser.SurfaceMatch:
 		// S1：糖形態 match。克隆 Matched + 每臂 Condition / MultiValuePatterns / Body，
 		// 其餘 MatchArm 欄位（綁定名、型別臂等）隨值拷貝保留。
 		newSm := &parser.SurfaceMatch{
 			Token:   e.Token,
-			Matched: cloneExprForUnion(e.Matched, oldName, newName, memberType),
+			Matched: cloneExprForUnion(e.Matched, oldName, newName, memberType, sem),
 		}
 		if len(e.Arms) > 0 {
 			newSm.Arms = make([]parser.MatchArm, len(e.Arms))
 			for i := range e.Arms {
 				arm := e.Arms[i]
 				if arm.Condition != nil {
-					arm.Condition = cloneExprForUnion(arm.Condition, oldName, newName, memberType)
+					arm.Condition = cloneExprForUnion(arm.Condition, oldName, newName, memberType, sem)
 				}
 				if len(arm.MultiValuePatterns) > 0 {
 					arm.MultiValuePatterns = make([]parser.Expression, len(arm.MultiValuePatterns))
 					for j, vp := range arm.MultiValuePatterns {
-						arm.MultiValuePatterns[j] = cloneExprForUnion(vp, oldName, newName, memberType)
+						arm.MultiValuePatterns[j] = cloneExprForUnion(vp, oldName, newName, memberType, sem)
 					}
 				}
-				arm.Body = cloneBlockForUnion(arm.Body, oldName, newName, memberType)
+				arm.Body = cloneBlockForUnion(arm.Body, oldName, newName, memberType, sem)
 				newSm.Arms[i] = arm
 			}
 		}
 		return newSm
 	case *parser.IfExpression:
 		ie := *e
-		ie.Condition = cloneExprForUnion(e.Condition, oldName, newName, memberType)
-		ie.Consequence = cloneBlockForUnion(e.Consequence, oldName, newName, memberType)
+		ie.Condition = cloneExprForUnion(e.Condition, oldName, newName, memberType, sem)
+		ie.Consequence = cloneBlockForUnion(e.Consequence, oldName, newName, memberType, sem)
 		if e.Alternative != nil {
-			ie.Alternative = cloneBlockForUnion(e.Alternative, oldName, newName, memberType)
+			ie.Alternative = cloneBlockForUnion(e.Alternative, oldName, newName, memberType, sem)
 		}
 		return &ie
 	case *parser.InfixExpression:
 		ie := *e
-		ie.Left = cloneExprForUnion(e.Left, oldName, newName, memberType)
-		ie.Right = cloneExprForUnion(e.Right, oldName, newName, memberType)
+		ie.Left = cloneExprForUnion(e.Left, oldName, newName, memberType, sem)
+		ie.Right = cloneExprForUnion(e.Right, oldName, newName, memberType, sem)
 		return &ie
 	case *parser.PrefixExpression:
 		pe := *e
-		pe.Right = cloneExprForUnion(e.Right, oldName, newName, memberType)
+		pe.Right = cloneExprForUnion(e.Right, oldName, newName, memberType, sem)
 		return &pe
 	}
 	return expr
@@ -1027,7 +1033,7 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 				genericArgs = inferGenericArgs(fd, ce, program)
 			}
 			if len(genericArgs) > 0 {
-				concrete := cloneAndSubstitute(fd, genericArgs)
+				concrete := cloneAndSubstitute(program, fd, genericArgs)
 				// 攜帶模板函數的註解（如 #{overflow = wrap}）到單態化複本，
 				// 否則 generic 方法體內的有符號相減會遺失溢出模式而誤用預設 option 路徑。
 				if program.Sem != nil {
@@ -1245,7 +1251,9 @@ func devirtualizeInterfaceVars(mainProg, merged *parser.Program,
 			if !ok || !isIfaceName(ls.Type.String()) {
 				continue
 			}
-			ls.Type = &parser.NamedType{Value: concrete, IsInferred: true}
+			// S5 stage 5：原就地寫 `ls.Type = &NamedType{…}`（違反 §1.4）改為
+			// 寫 Sem.TypeOverride（覆蓋語義；ls.Type 保留宣告的介面名不動）。
+			prog.Sem.SetTypeOverrideOf(ls, concrete)
 		}
 	}
 	applyTo(mainProg)
@@ -1367,7 +1375,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 		// monomorphizes std module methods and relies on the codegen to do it
 		// per call site (with the receiver passed by reference).
 		// Create concrete version and flatten the call.
-		concrete := cloneAndSubstitute(fd, genericArgs)
+		concrete := cloneAndSubstitute(program, fd, genericArgs)
 		// 攜帶模板函數的註解（如 #{overflow = wrap}）到單態化複本，
 		// 否則 generic 方法體內的有符號相減會遺失溢出模式而誤用預設 option 路徑。
 		if program.Sem != nil {
@@ -1789,7 +1797,7 @@ func stmtCount(body *parser.BlockStatement) int {
 }
 
 // cloneAndSubstitute 複製泛型函數並以具體值替換泛型參數
-func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expression) *parser.FunctionDefinition {
+func cloneAndSubstitute(program *parser.Program, fd *parser.FunctionDefinition, genericArgs []parser.Expression) *parser.FunctionDefinition {
 	if len(genericArgs) == 0 {
 		return fd
 	}
@@ -1909,8 +1917,8 @@ func cloneAndSubstitute(fd *parser.FunctionDefinition, genericArgs []parser.Expr
 	// SourceFile 變成空值，導致 (a) lint 診斷無法歸因到正確源檔、(b) 標準庫
 	// 泛型（如 vec/map）的實例被誤判為主程式碼而觸發使用者向檢查（如未處理
 	// 溢出 option 的 ovfhndld）。
-	parser.SetSourceFile(nf, parser.GetSourceFile(fd))
-	parser.SetModuleOwner(nf, parser.GetModuleOwner(fd))
+	program.Sem.SetSourceFileOf(nf, program.Sem.SourceFileOf(fd))
+	program.Sem.SetModuleOwnerOf(nf, program.Sem.ModuleOwnerOf(fd))
 	return nf
 }
 
@@ -2199,7 +2207,7 @@ func substituteType(t parser.Type, subst map[string]string) parser.Type {
 }
 
 // collectVarTypesFromBody recursively collects variable types from a function body
-func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]string) {
+func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]string, sem *parser.SemanticContext) {
 	if body == nil {
 		return
 	}
@@ -2208,16 +2216,20 @@ func collectVarTypesFromBody(body *parser.BlockStatement, varTypes map[string]st
 	// branch below can tell a REASSIGNMENT of a local apart from a fresh
 	// binding that merely shadows a global of the same name.
 	declared := make(map[string]bool)
-	collectVarTypesFromBodyIn(body, varTypes, declared)
+	collectVarTypesFromBodyIn(body, varTypes, declared, sem)
 }
 
-func collectVarTypesFromBodyIn(body *parser.BlockStatement, varTypes map[string]string, declared map[string]bool) {
+func collectVarTypesFromBodyIn(body *parser.BlockStatement, varTypes map[string]string, declared map[string]bool, sem *parser.SemanticContext) {
 	if body == nil {
 		return
 	}
 	for _, stmt := range body.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
-			if ls.Type != nil {
+			if ov := sem.TypeOverrideOf(ls); ov != "" {
+				// S5 stage 5：裝配期有效型別覆蓋（具現化/具象化）優先於宣告型別。
+				varTypes[ls.Name.Value] = ov
+				declared[ls.Name.Value] = true
+			} else if ls.Type != nil {
 				varTypes[ls.Name.Value] = ls.Type.String()
 				declared[ls.Name.Value] = true
 			} else if ls.Value != nil {
@@ -2242,13 +2254,13 @@ func collectVarTypesFromBodyIn(body *parser.BlockStatement, varTypes map[string]
 		}
 		if bs, ok := stmt.(*parser.BlockStatement); ok {
 			collectItScoped(varTypes, func() {
-				collectVarTypesFromBodyIn(bs, varTypes, declared)
+				collectVarTypesFromBodyIn(bs, varTypes, declared, sem)
 			})
 		}
 		if fs, ok := stmt.(*parser.ForStatement); ok {
 			if fs.Body != nil {
 				collectItScoped(varTypes, func() {
-					collectVarTypesFromBodyIn(fs.Body, varTypes, declared)
+					collectVarTypesFromBodyIn(fs.Body, varTypes, declared, sem)
 				})
 			}
 		}
@@ -2258,7 +2270,7 @@ func collectVarTypesFromBodyIn(body *parser.BlockStatement, varTypes map[string]
 		// shadow globals / outer-locals correctly during method resolution.
 		if es, ok := stmt.(*parser.ExpressionStatement); ok {
 			collectItScoped(varTypes, func() {
-				collectVarTypesFromExpr(es.Expression, varTypes)
+				collectVarTypesFromExpr(es.Expression, varTypes, sem)
 			})
 		}
 	}
@@ -2266,7 +2278,7 @@ func collectVarTypesFromBodyIn(body *parser.BlockStatement, varTypes map[string]
 
 // collectVarTypesFromExpr recurses into expression nodes that contain
 // BlockStatement bodies (IfExpression, etc.) and collects local variable types.
-func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string) {
+func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string, sem *parser.SemanticContext) {
 	if expr == nil {
 		return
 	}
@@ -2295,7 +2307,7 @@ func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string)
 				for k, v := range varTypes {
 					armVT[k] = v
 				}
-				collectItScoped(armVT, func() { collectVarTypesFromBody(arm.Body, armVT) })
+				collectItScoped(armVT, func() { collectVarTypesFromBody(arm.Body, armVT, sem) })
 			}
 		}
 	case *parser.IfExpression:
@@ -2304,13 +2316,13 @@ func collectVarTypesFromExpr(expr parser.Expression, varTypes map[string]string)
 		// 分支說明）。DotValBody 是降糖 option match 的尾部臂載體；主管線
 		// IfExpression 分支不含 match（match 由上方 SurfaceMatch 分支處理），
 		// 故不處理——即便走到也只會是 collectVarTypesFromBody(nil) 的 no-op。
-		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.Consequence, varTypes) })
-		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.Alternative, varTypes) })
+		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.Consequence, varTypes, sem) })
+		collectItScoped(varTypes, func() { collectVarTypesFromBody(e.Alternative, varTypes, sem) })
 	case *parser.GroupedExpression:
-		collectVarTypesFromExpr(e.Expression, varTypes)
+		collectVarTypesFromExpr(e.Expression, varTypes, sem)
 	case *parser.ConditionalExpression:
-		collectItScoped(varTypes, func() { collectVarTypesFromExpr(e.Consequence, varTypes) })
-		collectItScoped(varTypes, func() { collectVarTypesFromExpr(e.Alternative, varTypes) })
+		collectItScoped(varTypes, func() { collectVarTypesFromExpr(e.Consequence, varTypes, sem) })
+		collectItScoped(varTypes, func() { collectVarTypesFromExpr(e.Alternative, varTypes, sem) })
 	}
 }
 

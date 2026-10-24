@@ -130,7 +130,7 @@ db-mysql.close = () {
 `)
 	for _, stmt := range prog.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			parser.SetSourceFile(fd, "/std/net/net.no")
+			prog.Sem.SetSourceFileOf(fd, "/std/net/net.no")
 		}
 	}
 	results := ValidateInterfaceImplementation(prog)

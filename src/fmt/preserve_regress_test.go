@@ -99,11 +99,11 @@ func TestFormatDocCommentBeforeAutoPromotedIndex(t *testing.T) {
 //	{
 //
 // Previously an (older) formatter corrupted this shape in two ways:
-//   1. it merged the standalone comment onto the preceding statement as an
-//      inline trailing comment — `pos = pos + 1; 名稱長度…` — destroying the
-//      comment's association with the `{` block;
-//   2. it silently dropped the `#{overflow=wrap}` annotation, leaving integer
-//      arithmetic to fall back to option<int>.
+//  1. it merged the standalone comment onto the preceding statement as an
+//     inline trailing comment — `pos = pos + 1; 名稱長度…` — destroying the
+//     comment's association with the `{` block;
+//  2. it silently dropped the `#{overflow=wrap}` annotation, leaving integer
+//     arithmetic to fall back to option<int>.
 //
 // The corrected formatter keeps the comment on its own line (separated from the
 // previous statement by a blank line, since it is the `{` block's doc comment),

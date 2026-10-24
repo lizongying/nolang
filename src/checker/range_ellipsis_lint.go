@@ -150,7 +150,7 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 			if s == nil {
 				continue
 			}
-			if f := parser.GetSourceFile(s); f != "" {
+			if f := program.Sem.SourceFileOf(s); f != "" {
 				file = f
 			}
 			switch st := s.(type) {

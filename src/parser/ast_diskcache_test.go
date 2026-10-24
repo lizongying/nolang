@@ -12,7 +12,7 @@ import (
 // and that:
 //   - two Gets return distinct (freshly decoded) instances, so the "parse fresh
 //     per load" codegen semantics hold across builds;
-//   - the pointer-keyed nodeSem side-table and per-node annotations survive
+//   - the three pointer-keyed node-keyed side tables survive
 //     (annotation fingerprint identical to the in-memory original);
 //   - the name-keyed semantic maps (VarTypes / EnumVariants, consumed during
 //     lowering) survive intact.

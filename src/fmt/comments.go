@@ -346,8 +346,7 @@ func (f *formatter) nodeHeadWillEmit(stmt parser.Statement) bool {
 }
 
 // attachedAnnotationsWillEmitAny 保留為 attachedAnnotationsWillEmit 的別名：內聯
-// 守衛（isStandaloneInline / writeBareMatchArm 的 canInline）要求「只要上方會有一行
-// 註解就不得內聯」。
+// 守衛（isStandaloneInline）要求「只要上方會有一行註解就不得內聯」。
 //
 // 內聯會把註解寫成 `cond -> #{overflow=wrap}`，而解析器會把 `#{...}` 當成 arm
 // 本體、二次格式化再產生 `overflow = wrap` 之類的錯亂（非冪等）。因此只要該陳述

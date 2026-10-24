@@ -50,9 +50,15 @@ func ValidateOptionComparison(program *parser.Program) []ValidateResult {
 	if program == nil {
 		return nil
 	}
+	return runOptionCmpCore(program, collectOptionCmpFuncTypes(program))
+}
+
+// runOptionCmpCore 是 ValidateOptionComparison 兩變體共享的 walker 跑法 +
+// 去重尾巴（6C：THIR 變體只換 funcTypes 來源，走查不動）。
+func runOptionCmpCore(program *parser.Program, funcTypes map[string]string) []ValidateResult {
 	w := &optCmpWalker{
 		program:   program,
-		funcTypes: collectOptionCmpFuncTypes(program),
+		funcTypes: funcTypes,
 		locals:    make(map[string]string),
 		untyped:   make(map[string]bool),
 		unwrapped: make(map[string]bool),

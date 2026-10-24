@@ -645,9 +645,22 @@ func TestOptKeepsTheSoleProducerOfALiveValue(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		src  string
+		// wantRetained is the non-vacuity expectation: at least one unreachable
+		// block must survive, or the case proves nothing about the guard.
+		//
+		// `const-used-by-a-clone-in-another-block` used to satisfy it because the
+		// seed of a match-expression binding (`r = n: { ... }`) was materialised
+		// in the LAST ARM's block instead of the block dominating both arms — so
+		// the dead `if 1 { ... }` else-branch of an `ok(cond)` arm was the sole
+		// producer of that constant. The seed now lands in the dominating block
+		// (see match_expr_value_test.go), the dead block holds nothing live, and
+		// removing it is correct. The case is kept because both fixtures must
+		// still verify clean; the guard's non-vacuity is carried by the second
+		// fixture.
+		wantRetained bool
 	}{
-		{"const-used-by-a-clone-in-another-block", optSoleProducerSrc},
-		{"const-re-targeted-by-move-into-elsewhere", optMoveIntoSrc},
+		{"const-used-by-a-clone-in-another-block", optSoleProducerSrc, false},
+		{"const-re-targeted-by-move-into-elsewhere", optMoveIntoSrc, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			off := lowerWithOpt(t, tc.src, "0")
@@ -661,9 +674,14 @@ func TestOptKeepsTheSoleProducerOfALiveValue(t *testing.T) {
 			}
 			// Non-vacuity: the guard must actually have kept something, or this
 			// test would pass even with the guard deleted.
-			if n := optUnreachableRetained(on); n == 0 {
+			n := optUnreachableRetained(on)
+			if tc.wantRetained && n == 0 {
 				t.Error("no unreachable block was retained — the guard did not fire, " +
 					"so this test proves nothing about it")
+			}
+			if !tc.wantRetained && n != 0 {
+				t.Errorf("retained %d unreachable block(s), want 0: the capture seed is "+
+					"being materialised in a dead arm block again", n)
 			}
 		})
 	}

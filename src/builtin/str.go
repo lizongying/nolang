@@ -39,22 +39,37 @@ func init() {
 	})
 
 	// str.byte / txt.byte: raw-byte accessors (`s.byte(i)` / `t.byte(i)`).
-	// NOT real functions — intercepted by the codegen (legacy generateRawByteAt
-	// and MIR emitBuiltinRawByteAt) and expanded inline to a GEP+load+zext on the
-	// underlying byte buffer. Registered here SOLELY so the MIR lowerer
-	// (hir2mir.lowerCall) learns the result type is i64 and allocates a
-	// destination value; without this entry `resultTypeOfCallee` returns void and
-	// the call is emitted with Dst=0, discarding the result (the f64↔str
-	// conversions in str.no depend on mstr.byte(j) and were broken under MIR=3).
+	// NOT real functions — intercepted by the codegen (MIR emitBuiltinRawByteAt)
+	// and expanded inline to a BOUNDS-CHECKED GEP+load+zext on the underlying
+	// byte buffer. Registered here SOLELY so the MIR lowerer
+	// (hir2mir.lowerCall) learns the result type; without this entry
+	// `resultTypeOfCallee` returns void and the call is emitted with Dst=0,
+	// discarding the result (the f64↔str conversions in str.no depend on
+	// mstr.byte(j) and were broken under MIR=3).
 	// ReceiverType is ReceiverStr only for table-matching purposes: FindBuiltinMethod
 	// matches by bare MethodName "byte", and lookupBuiltin's bare-name fallback
 	// makes this entry resolve both "str.byte" and "txt.byte".
+	//
+	// 2026-10-21: the result is now `?byte` (option), NOT a bare i64. The raw
+	// accessor used to read the buffer with NO bounds check — out-of-range
+	// indices were undefined behaviour. `byte` is a PUBLIC method (user code
+	// calls `s.byte(i)`), so it now fails like `arr[i]`: out of range returns
+	// nil instead of reading past the buffer. Callers must handle the option
+	// (match / `?=` / `_ =`). Codegen emits `tag = (i < len) ? ok : nil` and
+	// only dereferences the buffer when the index is in range (see
+	// emitBuiltinRawByteAt).
+	//
+	// 🔴 `#{index-out = DEF}` does NOT unwrap (D1, docs/design/option-unified.md):
+	// the annotation only picks the value used when the range check fails, the
+	// result type stays `?byte`, and a plain target still has to go through
+	// match / `?=`. The checker enforces that on an explicitly plain-annotated
+	// let (`b i64 = s.byte(0)` is trace 15w45dqk, see optionResultOfCallTarget).
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverStr,
 		MethodName:   "byte",
 		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64},
-		Doc:          "Return the byte at index i of the underlying UTF-8 buffer (raw byte access)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeByte}},
+		Doc:          "Return the byte at index i of the underlying UTF-8 buffer as ?byte (nil when out of range)",
 		Intercepted:  true,
 	})
 
@@ -68,12 +83,29 @@ func init() {
 	// ReceiverType is ReceiverStr only for table-matching purposes: like the
 	// "byte" entry above, lookupBuiltin's bare-name fallback resolves both
 	// "txt.set-byte" and "str.set-byte".
+	//
+	// Params are `(i64, byte)` — the value is a real `byte`, mirroring src/std/
+	// str.no / txt.no. Option-typed arguments are accepted by the builtin checker
+	// (see the `strings.HasPrefix(argType, "?")` skip in stdMethodParamTypes,
+	// funcargs.go), so the many `out.set-byte(i, s.byte(i))` sites (a `?byte`)
+	// pass unchanged. Only genuinely-plain i64/char call-site args (a `HEX[..]`
+	// char, an `bv` i64) would trip `stdargtyp`; those are narrowed at the call
+	// site with a bitwise mask (`& 255`), which the checker recognises as safe
+	// narrowing to `byte`.
+	//
+	// Return is `?bool` (fallible, paired with the `?byte` reader above): the
+	// emitter bounds-checks the BYTE index against the receiver's PHYSICAL
+	// capacity (a `txt` is a fixed 255-byte buffer, a `%str-long` uses its `cap`
+	// field) — NOT the logical length, so fill-then-set-len builders keep
+	// working — and returns nil (skipping the store) when out of range, some(true)
+	// on success (see emitBuiltinRawBytePut). Call sites that discard the `?bool`
+	// as a bare statement are legal: optunuse only fires on bound names.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverStr,
 		MethodName:   "set-byte",
-		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
-		Return:       []parser.Type{},
-		Doc:          "Write raw byte b at BYTE index i of the underlying UTF-8 buffer (raw byte access, length unchanged)",
+		Params:       []parser.Type{parser.TypeI64, parser.TypeByte},
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeBool}},
+		Doc:          "Write raw byte b at BYTE index i of the underlying UTF-8 buffer, returns ?bool (nil when i is out of capacity, store skipped)",
 		Intercepted:  true,
 	})
 

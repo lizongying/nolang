@@ -164,7 +164,7 @@ hashmap-str-tmpl.contains = (key str)(found bool) {
 		t.Fatalf("expected 2 methods, got %d", len(methods))
 	}
 
-	generated := specializeGenericStruct("str", "i64", sd, methods)
+	generated := specializeGenericStruct(nil, "str", "i64", sd, methods)
 	// 1 struct + 2 methods
 	if len(generated) != 3 {
 		t.Fatalf("expected 3 generated statements, got %d", len(generated))
@@ -257,7 +257,7 @@ hashmap-int-tmpl.put = (key k, val v) {
 }
 `
 	sd, methods := parseTemplate(t, src)
-	generated := specializeGenericStruct("i64", "bool", sd, methods)
+	generated := specializeGenericStruct(nil, "i64", "bool", sd, methods)
 	if len(generated) != 2 {
 		t.Fatalf("expected 2 generated statements, got %d", len(generated))
 	}
@@ -500,7 +500,7 @@ func TestSpecializeGenericStructRewritesMethodCalls(t *testing.T) {
 		},
 	}
 
-	generated := specializeGenericStruct("str", "i64", tmplSD, []*parser.FunctionDefinition{hashMethod, getMethod})
+	generated := specializeGenericStruct(nil, "str", "i64", tmplSD, []*parser.FunctionDefinition{hashMethod, getMethod})
 	// 1 struct + 2 methods
 	if len(generated) != 3 {
 		t.Fatalf("expected 3 statements (struct + 2 methods), got %d", len(generated))

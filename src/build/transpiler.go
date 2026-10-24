@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	nolang "github.com/lizongying/nolang"
+	"github.com/lizongying/nolang/build/astaudit"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/hir"
@@ -70,6 +71,91 @@ type Transpiler struct {
 	// 快取後降至 1 次。安全性：preload 和 checker.ValidateFuncArgs 只讀不修改 AST，
 	// merge 步驟的 prefixModuleStatements/alias 改名是冪等的（已帶前綴的名稱會被跳過）。
 	fileCache map[string]*parser.Program
+	// astAuditDelta / astAuditByRoot: S5 門禁的觀測結果。設
+	// NOLANG_AUDIT_AST_WRITES=1 時，每個進入編譯器的 Program（新解析或快取
+	// 還原）都會在那一刻拍一份值快照（auditRegister），CompileTarget 返回時
+	// 再拍一次，差集即「ParseProgram 之後被寫入的 AST 節點欄位」——嚴格範圍
+	// 不變量（docs/design/nolang-parser-lowering-invariants.md §1.4）要求它
+	// 為空。涵蓋每個 root 而不只是 entry：模組合併寫的是模組自己的節點，
+	// 只看 entry 程式會把 §13.5 清单裡 transpiler_stdload.go 的寫點全漏掉。
+	// 未設環境變數時完全不拍，成本為零。
+	astAuditDelta  astaudit.Delta
+	astAuditByRoot map[string]astaudit.Delta
+	astAuditRoots  []astAuditRoot
+	astAuditSeen   map[*parser.Program]bool
+}
+
+// astAuditRoot pairs a compiled Program with the pristine value snapshot taken
+// the moment it entered the compiler.
+type astAuditRoot struct {
+	label    string
+	prog     *parser.Program
+	snapshot *astaudit.Snapshot
+}
+
+// ASTAuditDelta returns the merged AST-write audit of the most recent Compile.
+// Only populated when NOLANG_AUDIT_AST_WRITES was set; otherwise zero-valued.
+func (t *Transpiler) ASTAuditDelta() astaudit.Delta { return t.astAuditDelta }
+
+// ASTAuditByRoot returns the AST-write audit split per compiled Program root,
+// keyed by the label passed to auditRegister (a file path).
+func (t *Transpiler) ASTAuditByRoot() map[string]astaudit.Delta { return t.astAuditByRoot }
+
+// astAuditEnabled reports whether the AST-write gate should run.
+func astAuditEnabled() bool { return os.Getenv("NOLANG_AUDIT_AST_WRITES") != "" }
+
+// auditRegister records prog's pristine snapshot. It must be called at every
+// point a Program enters the compiler — fresh parse or cache restore — i.e.
+// before any assembly pass can touch it. Idempotent per pointer.
+func (t *Transpiler) auditRegister(label string, prog *parser.Program) {
+	if prog == nil || !astAuditEnabled() {
+		return
+	}
+	if t.astAuditSeen == nil {
+		t.astAuditSeen = make(map[*parser.Program]bool)
+	}
+	if t.astAuditSeen[prog] {
+		return
+	}
+	t.astAuditSeen[prog] = true
+	t.astAuditRoots = append(t.astAuditRoots, astAuditRoot{
+		label: label, prog: prog, snapshot: astaudit.Capture(prog),
+	})
+}
+
+// collectASTAudit diffs every registered root against its pristine snapshot.
+// Called via defer at the end of CompileTarget so that every exit path
+// (including the errors returned mid-assembly) is covered.
+func (t *Transpiler) collectASTAudit() {
+	if !astAuditEnabled() {
+		return
+	}
+	t.astAuditByRoot = make(map[string]astaudit.Delta, len(t.astAuditRoots))
+	for _, r := range t.astAuditRoots {
+		d := astaudit.Diff(r.snapshot, astaudit.Capture(r.prog))
+		// A file may legitimately be reachable through more than one label
+		// (aliased use); fold those together rather than dropping one.
+		if prev, ok := t.astAuditByRoot[r.label]; ok {
+			prev.Merge(d)
+			t.astAuditByRoot[r.label] = prev
+			continue
+		}
+		t.astAuditByRoot[r.label] = d
+		t.astAuditDelta.Merge(d)
+	}
+	// The report is opt-in separately: CI turns the gate on for every build and
+	// does not want ~50k lines of diff per file on stderr.
+	if os.Getenv("NOLANG_AUDIT_AST_WRITES_VERBOSE") == "" {
+		return
+	}
+	for label, d := range t.astAuditByRoot {
+		if s := d.Summary(); s != "" {
+			fmt.Fprintf(os.Stderr, "[ast-audit] %s: %d field write(s), %d slice delta(s), %d added / %d removed node(s)\n%s",
+				label, len(d.Writes), len(d.Slices), len(d.AddedNodes), len(d.RemovedNodes), s)
+		} else {
+			fmt.Fprintf(os.Stderr, "[ast-audit] %s: clean (no AST writes after ParseProgram)\n", label)
+		}
+	}
 }
 
 func NewTranspiler(pkg *Package) *Transpiler {
@@ -189,7 +275,18 @@ const (
 	TargetLLVM
 )
 
+// parseFile resolves filePath to its AST. parseFileWrapped is the real body;
+// this wrapper exists so the AST-write gate can snapshot every Program at the
+// exact moment it enters the compiler (see auditRegister).
 func (t *Transpiler) parseFile(filePath string) (*parser.Program, error) {
+	prog, err := t.parseFileWrapped(filePath)
+	if err == nil {
+		t.auditRegister(filePath, prog)
+	}
+	return prog, err
+}
+
+func (t *Transpiler) parseFileWrapped(filePath string) (*parser.Program, error) {
 	// 快取命中：同一檔案在單次編譯中可能被 resolveUse 調用多次
 	if t.fileCache != nil {
 		if cached, ok := t.fileCache[filePath]; ok {
@@ -271,7 +368,17 @@ func (t *Transpiler) astCacheSalt() string {
 // parseEmbeddedProgram 從內嵌 FS 的位元組資料解析 Nolang 程式。
 // 與 parseFile 平行，但來源為 embed.FS.ReadFile 的結果而非磁碟檔案。
 // 用於 js/ 相容層模組解析（# js/<module>）。
+// parseEmbeddedProgram parses embedded std source. Wrapped for the same
+// reason as parseFile: auditRegister must see the Program before assembly.
 func (t *Transpiler) parseEmbeddedProgram(filename string, data []byte) (*parser.Program, error) {
+	prog, err := t.parseEmbeddedProgramWrapped(filename, data)
+	if err == nil {
+		t.auditRegister("embed:"+filename, prog)
+	}
+	return prog, err
+}
+
+func (t *Transpiler) parseEmbeddedProgramWrapped(filename string, data []byte) (*parser.Program, error) {
 	// 快取命中：同一內嵌檔案在單次編譯中可能被 resolveUse 調用多次
 	if t.fileCache != nil {
 		if cached, ok := t.fileCache[filename]; ok {
@@ -897,6 +1004,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			dc.Put(dc.KeyFor(source, t.astCacheSalt()), program)
 		}
 	}
+	// AST 寫入稽核（S5 門禁，設計文檔 §1.4）：在 program 進入編譯器的第一時間
+	// 拍下快照。快照的 root 是**解析輸出本體**——S5 stage 6 起裝配只碰工作
+	// 副本（下方 CloneProgram 重綁定），此 root 必須保持乾淨，門禁釘住零寫入。
+	t.auditRegister(t.sourcePath, program)
+	defer t.collectASTAudit()
 	// 保留字檢查：'main' 是程式入口的保留名。Nolang 的入口由頂層語句自動
 	// 合成（見 hir2mir.synthesizeMainForTopLevel），不需要也不允許使用者顯式
 	// 定義名為 main 的函式（含方法 .main、嵌套函式）。顯式定義 main 直接報錯。
@@ -1001,7 +1113,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					varTypes[r.Name] = r.Type.String()
 				}
 			}
-			collectVarTypesFromBody(fd.Body, varTypes)
+			collectVarTypesFromBody(fd.Body, varTypes, program.Sem)
 			// (4) 收集主程序函數名
 			mainVarNames[fd.Name] = true
 		}
@@ -1026,18 +1138,21 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// is otherwise only set later (after module merge), which is too late for
 	// the validation phase.
 	for _, stmt := range program.Statements {
-		parser.SetSourceFile(stmt, t.sourcePath)
+		program.Sem.SetSourceFileOf(stmt, t.sourcePath)
 	}
 	// 型別檢查（收集所有錯誤後統一報告，而非遇錯即返）
 	// 這樣用戶在 no build 時能一次看到所有型別錯誤，而非逐個修復後才能看到下一個。
+	// Stage 6D：已遷移 validator 經 THIR 型別副表視圖（BuildTHIRView，含 H0
+	// 副作用隔離——validators 看到的 program 狀態與 legacy 路徑完全一致）。
 	var allValidateErrs []string
-	if typeErrs := checker.ValidateTypes(program); len(typeErrs) > 0 {
+	thirView := checker.BuildTHIRView(program)
+	if typeErrs := checker.ValidateTypesTHIR(program, thirView); len(typeErrs) > 0 {
 		for _, e := range typeErrs {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
 	}
 	// 函數呼叫引數型別檢查（包括 newtype 語義：fd 變量不能傳給 i64 參數）
-	if funcArgErrs := checker.ValidateFuncArgs(program, filepath.Dir(t.sourcePath)); len(funcArgErrs) > 0 {
+	if funcArgErrs := checker.ValidateFuncArgsTHIR(program, filepath.Dir(t.sourcePath), thirView); len(funcArgErrs) > 0 {
 		for _, e := range funcArgErrs {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
@@ -1051,7 +1166,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 關係運算子（< <= > >=）的多字元字串運算元（編譯硬錯誤）：nolang 沒有字串
 	// 字典序比較，codegen 的 str 分支只有 @str_eq（相等），`a >= b`（a/b 為 str）
 	// 會靜默退化成恆假。單字元字串字面量（'a'）隱式當 char，仍合法。
-	if strOrderErrs := checker.ValidateStrOrdering(program); len(strOrderErrs) > 0 {
+	if strOrderErrs := checker.ValidateStrOrderingTHIR(program, thirView); len(strOrderErrs) > 0 {
 		for _, e := range strOrderErrs {
 			allValidateErrs = append(allValidateErrs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
 		}
@@ -1063,7 +1178,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	//     靜默丟棄 —— 這才是唯一該讓 no build / no run / no test 失敗的診斷。
 	// 因此這裡必須逐條依 TraceID 過濾，不能整批當硬錯誤（否則每個 `x = a + b` 都會
 	// 讓建置失敗，而它其實是合法且常見的寫法）。
-	if leakErrs := checker.ValidateUnhandledOverflow(program, t.sourcePath); len(leakErrs) > 0 {
+	if leakErrs := checker.ValidateUnhandledOverflowTHIR(program, t.sourcePath, thirView); len(leakErrs) > 0 {
 		for _, e := range leakErrs {
 			if e.TraceID != checker.OptUnuseTraceID {
 				continue
@@ -1081,7 +1196,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// **沒有任何邊界檢查**，越界即 raw OOB write，是記憶體安全洞而非風格問題。
 	// 必須先用 place-match 解包（多行形式；match 臂以换行分隔）或 `a[i] ?= v`
 	// 上拋，故在此逐條過濾 TraceID 後匯入硬錯誤。
-	if writeErrs := checker.ValidateIndexWrite(program, t.sourcePath); len(writeErrs) > 0 {
+	if writeErrs := checker.ValidateIndexWriteTHIR(program, t.sourcePath, thirView); len(writeErrs) > 0 {
 		for _, e := range writeErrs {
 			if e.TraceID != checker.IndexWriteTraceID {
 				continue
@@ -1098,6 +1213,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	if len(allValidateErrs) > 0 {
 		return "", fmt.Errorf("validation errors: %s", strings.Join(allValidateErrs, "; "))
 	}
+	// S5 stage 6（2026-10-21）：進入裝配前取工作副本——ParseProgram 輸出
+	// 自此不可變，改名 / 模組前綴 / 呼叫解析等寫點全部落在副本上（§1.4）。
+	// 快取 Put 與 auditRegister 均已持有原樹，重綁定不影響兩者。
+	program = parser.CloneProgram(program)
 	// 名稱修飾 pass：處理方法重載
 	mangleOverloads(program, varTypes)
 	// 自動 enter/leave：插入作用域生命週期調用
@@ -1109,11 +1228,25 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 各自 side-table 中的節點語義（註解/平台鍵/embed 等）也必須匯集。
 	merged.Sem = parser.NewSemanticContext()
 	merged.Sem.Merge(program.Sem)
+	// 重新注入內置 / 跨文件簽名快照。兩點原因使這裡不能只依賴 Merge：
+	//   1. ExternFuncSigs / ExternMethodSigs 長期不在 Merge 的合併範圍內。
+	//   2. Tier-1 user-AST 磁盤快取序列化 Sem 時不含這兩張表，故快照命中
+	//      （cache hit）時 program.Sem.ExternMethodSigs 從一開始就是空的。
+	// H0 scratch parser 靠這兩張表推斷 ?= 解箱右側的內建方法回傳型別
+	// （如 `str.to-i64`）；缺表時 __unwrap_N 拿不到 ?T 型別 → MIR codegen
+	// 報 "move src slot"（void 槽）。t.externMethodSigs 由 preloadModuleSignatures
+	// 在本函式開頭恆先填好，fresh parse 與 cache hit 兩條路徑一致受益。
+	merged.Sem.MergeExternSigs(t.externFuncSigs, t.externMethodSigs)
+	// 排版 trivia 表：與 Sem 並列的第二張副表，合併點同樣要匯集
+	// （formatter 專用；build 本身不讀它，但漏合併會讓裝配後的 Program
+	// 少帶一張本該有的表）。
+	merged.FmtTrivia = parser.NewFmtTrivia()
+	merged.FmtTrivia.Merge(program.FmtTrivia)
 	// 記錄已顯式導入的模組路徑，避免重複載入
 	explicitStdModules := make(map[string]bool)
-	// moduleConstants 的功能已下沉到 LetStatement.IsModuleConst 欄位。
-	// 合併模組時直接在 LetStatement 上標記 IsModuleConst = true，
-	// resolveModuleConstants 改為遍歷 program 語句從帶標記的節點收集常量。
+	// moduleConstants 的功能已下沉到 Program.Sem 的 node-keyed side-table
+	// （SemanticContext.ModuleConstOf）。合併模組時對 LetStatement 標記
+	// SetModuleConstOf(ls, true)，resolveModuleConstants 改為走 Sem 收集常量。
 	// mergedGlobalConsts tracks uppercase constant names already added to
 	// merged from any module (std or user). Prevents duplicate-declaration
 	// errors when multiple std modules define the same constant (e.g.
@@ -1124,12 +1257,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 用於將導入模組的 struct/interface/enum 等型別定義加上模組前綴
 	// （如 result → sql.result），避免與主檔案變數或型別衝突。
 	typeOwner := make(map[string]string)
-	// stmtOwner 的功能已下沉到 CommentedNode.ModuleOwner 欄位。
-	// 語句的來源模組短名直接存儲在 AST 節點上（parser.SetModuleOwner），
+	// stmtOwner 的功能已下沉到 Program.Sem 的 node-keyed side-table
+	// （SemanticContext.ModuleOwnerOf / SetModuleOwnerOf，S5 從
+	// CommentedNode.ModuleOwner 搬入）。語句的來源模組短名不再寫在 AST 上，
 	// 供 prefixCollidingFunctions 判定：同名頂層函數衝突時，只有模組側定義
 	// 改名為 module.fn，主程序定義永不改名。
-	// stmtFileMap 的功能已下沉到 CommentedNode.SourceFile 欄位。
-	// 語句的源碼檔案路徑直接存儲在 AST 節點上（parser.SetSourceFile），
+	// stmtFileMap 的功能已下沉到 Program.Sem 的 node-keyed side-table
+	// （SemanticContext.SourceFileOf / SetSourceFileOf，S5 從
+	// CommentedNode.SourceFile 搬入）。語句的源碼檔案路徑不再寫在 AST 上，
 	// 供 vet 模式的 RunAllLints 填充 LintResult.File，使 lint 診斷歸因到
 	// 正確的源檔而非一律使用輸入檔路徑。
 	// loadedUserModules tracks non-std module paths that have already been
@@ -1158,7 +1293,11 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		// 解析模組的源碼檔案路徑，供 vet lint 歸因使用。
 		// std/ 模組 → GetStdSourceFile；用戶模組 → workspace 根目錄解析。
 		modFile := resolveModuleFile(use.Path, t.workspaceRoot())
+		// S5 stage 6：模組解析輸出同樣不可變——取工作副本後綴續（原樹留在
+		// fileCache / audit root 中保持乾淨）。
+		modProg = parser.CloneProgram(modProg)
 		merged.Sem.Merge(modProg.Sem)
+		merged.FmtTrivia.Merge(modProg.FmtTrivia)
 		if use.Alias == "" {
 			loadedUserModules[use.Path] = true
 		}
@@ -1211,14 +1350,14 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 					if use.Function != "" && fd.Name == use.Function {
 						fd.Name = use.Alias
 						merged.Statements = append(merged.Statements, fd)
-						parser.SetSourceFileDeep(fd, modFile)
+						merged.Sem.SetSourceFileDeep(fd, modFile)
 						// alias 導入按用戶指定名，不參與衝突前綴
 					}
 					// Skip other functions when alias is used
 				} else {
 					merged.Statements = append(merged.Statements, fd)
-					parser.SetModuleOwner(fd, useModShort)
-					parser.SetSourceFileDeep(fd, modFile)
+					merged.Sem.SetModuleOwnerOf(fd, useModShort)
+					merged.Sem.SetSourceFileDeep(fd, modFile)
 				}
 			}
 			if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
@@ -1230,9 +1369,9 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 						}
 						if !mainVarNames[ls.Name.Value] {
 							merged.Statements = append(merged.Statements, ls)
-							parser.SetSourceFileDeep(ls, modFile)
+							merged.Sem.SetSourceFileDeep(ls, modFile)
 							if checker.IsConstantExpr(ls.Value) && checker.MatchesTargetPlatform(modProg.Sem.PlatformKeysOf(ls), t.targetGoos, t.targetGoarch) {
-								ls.IsModuleConst = true
+								merged.Sem.SetModuleConstOf(ls, true)
 							}
 						}
 					}
@@ -1252,10 +1391,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 							mergedGlobalConsts[ls.Name.Value] = true
 						}
 						merged.Statements = append(merged.Statements, ls)
-						parser.SetModuleOwner(ls, useModShort)
-						parser.SetSourceFileDeep(ls, modFile)
+						merged.Sem.SetModuleOwnerOf(ls, useModShort)
+						merged.Sem.SetSourceFileDeep(ls, modFile)
 						if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
-							ls.IsModuleConst = true
+							merged.Sem.SetModuleConstOf(ls, true)
 						}
 					}
 				}
@@ -1263,29 +1402,29 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			if use.Alias == "" {
 				if sd, ok := ms.(*parser.StructDefinition); ok {
 					merged.Statements = append(merged.Statements, sd)
-					parser.SetSourceFile(sd, modFile)
+					merged.Sem.SetSourceFileOf(sd, modFile)
 				}
 				if id, ok := ms.(*parser.InterfaceDefinition); ok {
 					merged.Statements = append(merged.Statements, id)
-					parser.SetSourceFile(id, modFile)
+					merged.Sem.SetSourceFileOf(id, modFile)
 				}
 				if ta, ok := ms.(*parser.TypeAlias); ok {
 					merged.Statements = append(merged.Statements, ta)
-					parser.SetSourceFile(ta, modFile)
+					merged.Sem.SetSourceFileOf(ta, modFile)
 				}
 				if ed, ok := ms.(*parser.EnumDefinition); ok {
 					merged.Statements = append(merged.Statements, ed)
-					parser.SetSourceFile(ed, modFile)
+					merged.Sem.SetSourceFileOf(ed, modFile)
 				}
 				if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
 					merged.Statements = append(merged.Statements, ted)
-					parser.SetSourceFile(ted, modFile)
+					merged.Sem.SetSourceFileOf(ted, modFile)
 				}
 				// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
 				// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
 				if es, ok := ms.(*parser.ExternStatement); ok {
 					merged.Statements = append(merged.Statements, es)
-					parser.SetSourceFile(es, modFile)
+					merged.Sem.SetSourceFileOf(es, modFile)
 				}
 			}
 		}
@@ -1301,12 +1440,12 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		}
 		if _, ok := stmt.(*parser.FunctionDefinition); ok {
 			merged.Statements = append(merged.Statements, stmt)
-			parser.SetSourceFile(stmt, t.sourcePath)
+			merged.Sem.SetSourceFileOf(stmt, t.sourcePath)
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok {
 			// FFI extern 宣告 — 收集至 merged 供後續 codegen 使用（目前尚未實作）
 			merged.Statements = append(merged.Statements, es)
-			parser.SetSourceFile(es, t.sourcePath)
+			merged.Sem.SetSourceFileOf(es, t.sourcePath)
 		}
 	}
 	// Process transitive imports: drain the pendingUses worklist.
@@ -1448,7 +1587,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	for _, stmt := range merged.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
 			if reassignedGlobals[ls.Name.Value] {
-				ls.IsModuleConst = false
+				merged.Sem.SetModuleConstOf(ls, false)
 			}
 		}
 	}
@@ -1632,7 +1771,7 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 	// 再次傳播模組常量：頂層語句此時已加入 merged，且 module.CONST 已被
 	// ResolveModuleCalls 改寫為裸名（如 math.PI → PI），需要再次將裸名
 	// 常量替換為字面值。否則頂層代碼中的模組常量會殘留為變數引用。
-	// reassignedGlobals 已在前面處理（清除 IsModuleConst 標記），
+	// reassignedGlobals 已在前面處理（清除 Sem 上的 ModuleConst 標記），
 	// 可變全局變量不會被常量傳播替換。
 	checker.ResolveModuleConstants(merged)
 	// 解析 Type.method(args) 靜態方法呼叫：將 bigint.cmp(d, d2) 重寫為
@@ -1706,7 +1845,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		return "", fmt.Errorf("function argument errors: %s", strings.Join(msgs, "; "))
 	}
 	// 字面零除數檢查：整數 / 與 % 的除數為字面常數 0 會觸發 LLVM UB，編譯期攔截。
-	if divZeroErrs := checker.ValidateDivByZero(merged); len(divZeroErrs) > 0 {
+	// 6C-optional 第三批型別精化：被除數確定為浮點時跳過（fdiv 非 UB），判據走
+	// THIRView 表達式級型別表 —— 與 lint 軌道（ValidateDivByZeroTHIR）同步精化，
+	// 兩條管道口徑一致。
+	if divZeroErrs := checker.ValidateDivByZero(merged, checker.BuildTHIRView(merged)); len(divZeroErrs) > 0 {
 		var msgs []string
 		for _, e := range divZeroErrs {
 			msgs = append(msgs, fmt.Sprintf("line %d, column %d: %s [%s]", e.Line, e.Column, e.Message, e.TraceID))
@@ -1786,7 +1928,19 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 		if len(merged.Errors) > 0 {
 			return "", fmt.Errorf("%s: %s", t.sourcePath, strings.Join(merged.Errors, "\n"))
 		}
-		parser.PopulateInferredTypes(hirPkg, idMap)
+		parser.PopulateInferredTypes(hirPkg, idMap, merged.Sem)
+		// Stage 6C 影子双跑挂载点（docs/design/nolang-parser-lowering-invariants.md
+		// §3.5）：对 14 对已迁移 THIR 轨检查做旧版 vs THIR 版诊断多重集对拍，
+		// 只记 stderr、不改行为。开关 NOLANG_THIR_SHADOW=1。6D 切换后正式
+		// THIR 轨入口已切至 RunAllLints / 硬错误块（BuildTHIRView）；本挂载
+		// 保留为回归对拍——在同一 merged program 上再建一次 view 做全量比对，
+		// 验证 THIR 变体与旧版持续全等。
+		if os.Getenv("NOLANG_THIR_SHADOW") != "" {
+			view := checker.NewTHIRView(hirPkg, idMap)
+			for _, m := range checker.ShadowCompareTHIR(merged, view) {
+				fmt.Fprintf(os.Stderr, "[thir-shadow] %s\n", m)
+			}
+		}
 		if os.Getenv("NOLANG_DEBUG_SELF") != "" {
 			for _, id := range hirPkg.Top {
 				n := hirPkg.Node(id)

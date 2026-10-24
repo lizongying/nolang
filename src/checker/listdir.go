@@ -83,7 +83,7 @@ func ValidateListDirUnfiltered(program *parser.Program) []ValidateResult {
 			results = append(results, ValidateResult{
 				Line:    fd.Pos().Line,
 				Column:  fd.Pos().Column,
-				File:    parser.GetSourceFile(fd),
+				File:    program.Sem.SourceFileOf(fd),
 				Message: "函數 " + fd.Name + " 用 fs.list-dir/fs.read-dir 結果做遞歸/刪除，但未見過濾 \".\" 和 \"..\"；兩者都含 POSIX readdir 的 \".\"/\"..\"，遞歸進入 \"..\" 會向上逃逸誤刪整棵父樹。請改用 fs.dir-entries（已自動過濾），或在遞歸前顯式跳過 \".\"/\"..\"。",
 				TraceID: listDirTraceID,
 			})

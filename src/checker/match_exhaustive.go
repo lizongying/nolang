@@ -148,7 +148,7 @@ func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*pa
 			// 陳述自身帶 SourceFile 時刷新當前檔（模組合併後由 transpiler
 			// 填入；只有頂層陳述持有，其函式體內部陳述不繼承）。與
 			// range_index_lint.go 的 curFile 下傳口徑一致。
-			if f := parser.GetSourceFile(s); f != "" {
+			if f := program.Sem.SourceFileOf(s); f != "" {
 				file = f
 			}
 			switch st := s.(type) {

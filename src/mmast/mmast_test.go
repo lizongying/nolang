@@ -176,10 +176,14 @@ func TestASTZipForeignBlobRejected(t *testing.T) {
 
 	// 用另一个 gob 型别（模拟上一代 astDoc 流）重建 ast.gob
 	type legacyAstDoc struct {
-		ZipVer  string
-		AstVer  string
-		Prog    *parser.Program
-		NodeSem map[uint32]*parser.NodeSemantics
+		ZipVer string
+		AstVer string
+		Prog   *parser.Program
+		// Stage 7 起 `parser.NodeSemantics` 已不存在；用今天三張 node-keyed 副表
+		// 之一占位，保住「上一代流 = Prog + 一張 occurrence 編號副表」的形狀。
+		// 該字段在下面的字面量裡恆為 nil，出現與否都不影響本測試的判據 ——
+		// 判據是 gob **型別名**不匹配（legacyAstDoc vs parser.CachedProgram）。
+		Anns map[uint32][]*parser.AnnotationEntry
 	}
 	var tb bytes.Buffer
 	if err := gob.NewEncoder(&tb).Encode(&legacyAstDoc{ZipVer: "old", AstVer: parser.ASTVersion, Prog: prog}); err != nil {

@@ -22,8 +22,8 @@
 // AST：介面欄位靠 gob 型別註冊表（parser/gob_register.go）原生落地，不需要中間
 // 結構；同體積比 mm 路線小 ~7 倍、快 ~80 倍（基準：tests/tls.no）。gob 丢未導出
 // 欄位、拍平共享指標的兩個坑，走增量構建 AST 快取現成的 CachedProgram /
-// SerializeNodeSem / RestoreNodeSem occurrence 索引方案規避——與磁盤快取同一條
-// 已被測試錐牢的路徑。
+// occurrence 索引方案規避（三張 node-keyed 副表各自拍平成 map[uint32]…）——
+// 與磁盤快取同一條已被測試錐牢的路徑。
 package mmast
 
 import (
@@ -81,8 +81,10 @@ func WriteASTZip(w io.Writer, prog *parser.Program, pkgJSONC []byte) (*ZipStats,
 		return nil, err
 	}
 	cp := parser.CachedProgram{
-		Prog:    prog,
-		NodeSem: parser.SerializeNodeSem(prog),
+		Prog:      prog,
+		Anns:      parser.SerializeAnns(prog),
+		TypeFacts: parser.SerializeTypeFacts(prog),
+		NodeFacts: parser.SerializeNodeFacts(prog),
 	}
 	if err := gob.NewEncoder(tw).Encode(&cp); err != nil {
 		return nil, fmt.Errorf("mmast: encode ast: %w", err)
@@ -216,7 +218,5 @@ func ReadASTZip(data []byte) (*parser.Program, *ASTZip, error) {
 	if cp.Prog == nil {
 		return nil, nil, fmt.Errorf("mmast: ast.gob carries no program")
 	}
-	// 語義副表按 SerializeNodeSem 的 occurrence 順序重建（與磁盤 AST 快取同機制）。
-	parser.RestoreNodeSem(cp.Prog, cp.NodeSem)
 	return cp.Prog, &ASTZip{PackageJSONC: byName[packageName]}, nil
 }

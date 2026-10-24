@@ -6,7 +6,15 @@ package checker
 //   2. lsp/vet.go VetFile（nolang-lsp vet CLI 命令）
 //   3. lsp/server.go publishDiagnostics（編輯器實時診斷）
 //
-// 新增 lint 時只需在這裡加一行，三條路徑同時生效，避免漂移。
+// 新增 lint 時只需在 lintSteps 加一條，三條路徑同時生效，避免漂移。
+//
+// Stage 6A 機械重構：RunAllLints 的 39 步串接拆為 runLintXxx 函數 +
+// lintSteps 表，並提供三個入口：
+//   - RunAllLints:       全部步（原行為，順序不變）
+//   - RunSurfaceLints:   surface=true 步（S2 糖形態/命名/宣告/注解）
+//   - runTHIRStageChecks: surface=false 步（THIR 型別軌，暫未導出）
+// 共享尾巴（File 歸因 / Strict 升級 / std 過濾 / 排序）由 finalizeLintResults
+// 統一執行。多重集不變式：RunAllLints ≡ RunSurfaceLints ⊎ runTHIRStageChecks。
 
 import (
 	"fmt"
@@ -69,10 +77,13 @@ type LintOptions struct {
 	// rand(kp-state) 被誤判為 []byte 而非 i64）。
 	// LSP 路徑不做模組合併，program 是原始的，需要執行這兩項檢查。
 	SkipTypeChecks bool
-	// StmtFileMap 的功能已下沉到 CommentedNode.SourceFile 欄位。
-	// 語句的源碼檔案路徑直接存儲在 AST 節點上，RunAllLints 通過
-	// parser.GetSourceFile(stmt) 讀取。此欄位保留為向後相容佔位，
-	// 不再被讀取。
+	// thirView 是 THIR 軌 lint 步驟的型別副表視圖（6D 切換）。
+	// 由 runLintPipeline 在有待跑 THIR 軌步時經 BuildTHIRView 統一構建
+	// （含 H0 副作用隔離），不導出——外部調用者無需關心。
+	thirView *THIRView
+	// StmtFileMap 已徹底移除：語句的來源檔歸因現在存於
+	// Program.Sem side-table（SemanticContext.SourceFileOf，S5），
+	// RunAllLints 直接以 program.Sem.SourceFileOf(stmt) 讀取。
 }
 
 // LintIneffectiveOverflow 報告「無效」的 #{overflow = ...} 註解：其管轄陳述不含
@@ -123,9 +134,9 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 	for as, gov := range governed {
 		if gov == nil || !relevant[gov] {
 			// 來源檔優先取註解節點自身；回退到被管轄陳述，再回退到主檔。
-			file := parser.GetSourceFile(as)
+			file := program.Sem.SourceFileOf(as)
 			if file == "" && gov != nil {
-				file = parser.GetSourceFile(gov)
+				file = program.Sem.SourceFileOf(gov)
 			}
 			if isImportedCopy(file) {
 				continue
@@ -156,7 +167,7 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 				for _, e := range program.Sem.AnnotationsOf(stmt) {
 					if e != nil && e.Key == "overflow" && !e.Trailing {
 						if !relevant[stmt] {
-							file := parser.GetSourceFile(stmt)
+							file := program.Sem.SourceFileOf(stmt)
 							if isImportedCopy(file) {
 								continue
 							}
@@ -229,24 +240,74 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 	return results
 }
 
-// RunAllLints 對 program 執行全部 lint 校驗，返回匯總結果。
-// 調用者可根據 LintOptions.Strict 決定是否將 warning/hint 視為錯誤。
-//
-// 注意：ValidateTypes、ValidateFuncArgs、ValidateUninitOutputParams 在
-// build/transpiler.go Compile 流程中已被調用並可能作為 hard error 阻止編譯，
-// 但在 vet 模式（不走 Compile 的 LSP 路徑）下需要在此重新執行。
-// 為保證三條路徑一致，這裡不遺漏地全部執行——同一 program 重複調用
-// Validate* 是安全的（純只讀，不改 AST）。
-func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
-	if program == nil {
-		return nil
-	}
+// ──────────────────────────────────────────────────────────────────────────────
+// Stage 6A: lintSteps 表 + runLintXxx 步驟函數
+// ──────────────────────────────────────────────────────────────────────────────
 
+// lintStep 描述一條 lint 檢查步驟。
+type lintStep struct {
+	// name 是步驟的唯一名稱（kebab-case），用於診斷與等價測試。
+	name string
+	// surface 標記軌道：true = RunSurfaceLints（S2 糖形態/命名/宣告/注解），
+	// false = runTHIRStageChecks（THIR 型別軌）。
+	surface bool
+	// run 執行該步驟，返回其診斷。不得修改 program（純只讀）。
+	run func(program *parser.Program, opts LintOptions) []LintResult
+}
+
+// lintSteps 是全部 lint 檢查步驟，順序即 RunAllLints 的串接順序（不可重排）。
+// surface=true 的步驟構成 RunSurfaceLints；surface=false 構成 runTHIRStageChecks。
+// 切分判據：需要操作數型別推斷（inferExprType / TypeFacts）⇒ THIR 軌；
+// 只需糖形態/命名/宣告/注解/作用域形態 ⇒ Surface 軌。
+var lintSteps = []lintStep{
+	{"types", false, runLintTypes},
+	{"naming", true, runLintNaming},
+	{"async-naming", true, runLintAsyncNaming},
+	{"unused-vars", true, runLintUnusedVars},
+	{"undefined-vars", true, runLintUndefinedVars},
+	{"uninit-output-params", true, runLintUninitOutputParams},
+	{"multi-option-results", true, runLintMultiOptionResults},
+	{"unassigned-returns", true, runLintUnassignedReturns},
+	{"embed-annotations", true, runLintEmbedAnnotations},
+	{"interface-impl", false, runLintInterfaceImpl},
+	{"use-keyword", true, runLintUseKeyword},
+	{"use-alias", true, runLintUseAlias},
+	{"redundant-type-annot", true, runLintRedundantTypeAnnot},
+	{"duplicate-vars", true, runLintDuplicateVars},
+	{"dependency-imports", true, runLintDependencyImports},
+	{"export-symbols", true, runLintExportSymbols},
+	{"string-concat", false, runLintStringConcat},
+	{"str-index-complexity", false, runLintStrIndexComplexity},
+	{"list-dir-unfiltered", true, runLintListDirUnfiltered},
+	{"deprecated-calls", true, runLintDeprecatedCalls},
+	{"hex-case", true, runLintHexCase},
+	{"literal-conversion", true, runLintLiteralConversion},
+	{"func-args", false, runLintFuncArgs},
+	{"non-exhaustive-match", true, runLintNonExhaustiveMatch},
+	{"option-comparison", false, runLintOptionComparison},
+	{"str-ordering", false, runLintStrOrdering},
+	{"print-format", true, runLintPrintFormat},
+	{"cross-module-type-refs", true, runLintCrossModuleTypeRefs},
+	{"unresolved-module-calls", true, runLintUnresolvedModuleCalls},
+	{"int-overflow", false, runLintIntOverflow},
+	{"div-by-zero", false, runLintDivByZero},
+	{"ineffective-overflow", true, runLintIneffectiveOverflow},
+	{"unhandled-overflow", false, runLintUnhandledOverflow},
+	{"unhandled-index", false, runLintUnhandledIndex},
+	{"catch-all-arms", true, runLintCatchAllArms},
+	{"range-index-loops", true, runLintRangeIndexLoops},
+	{"range-self-ellipsis", true, runLintRangeSelfEllipsis},
+	{"index-write", false, runLintIndexWrite},
+	{"parser-warnings", true, runLintParserWarnings},
+}
+
+// ── THIR 軌（surface=false）─────────────────────────────────────────────────────
+
+// runLintTypes — 1. 型別錯誤（no vet 路徑已在合併前執行，跳過以避免 merged program 誤報）
+func runLintTypes(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
-
-	// 1. 型別錯誤（no vet 路徑已在合併前執行，跳過以避免 merged program 誤報）
 	if !opts.SkipTypeChecks {
-		for _, e := range ValidateTypes(program) {
+		for _, e := range ValidateTypesTHIR(program, opts.thirView) {
 			results = append(results, LintResult{
 				Line: e.Line, Column: e.Column,
 				Severity: LintError, Source: "nolang-type-checker",
@@ -254,8 +315,187 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			})
 		}
 	}
+	return results
+}
 
-	// 2. 命名規範
+// runLintInterfaceImpl — 9. 接口實現
+func runLintInterfaceImpl(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateInterfaceImplementationTHIR(program, opts.thirView) {
+		endCol := u.Column
+		if u.EndColumn > 0 {
+			endCol = u.EndColumn
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
+			Severity: LintWarning, Source: "nolang-lint",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintStringConcat — 16. 字串拼接提示（建議用 - 代替 +）
+func runLintStringConcat(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateStringConcatTHIR(program, opts.thirView) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, File: u.File,
+			Severity: LintHint, Source: "nolang-lint",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintStrIndexComplexity — 16b. str/txt 的 s[i] 码点下标 O(n) 性能告警
+func runLintStrIndexComplexity(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateStrIndexComplexityTHIR(program, opts.thirView) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, File: u.File,
+			Severity: LintWarning, Source: "nolang-lint",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintFuncArgs — 18. 函數引數型別校驗（no vet 路徑已在合併前執行，跳過以避免 merged program 誤報）
+func runLintFuncArgs(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	if !opts.SkipTypeChecks {
+		for _, u := range ValidateFuncArgsTHIR(program, opts.RootDir, opts.thirView) {
+			results = append(results, LintResult{
+				Line: u.Line, Column: u.Column,
+				Severity: LintError, Source: "nolang-type-checker",
+				Message: u.Message, TraceID: u.TraceID,
+			})
+		}
+	}
+	return results
+}
+
+// runLintOptionComparison — 19c. option 值直接比較
+func runLintOptionComparison(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateOptionComparisonTHIR(program, opts.thirView) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintError, Source: "nolang-type-checker",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintStrOrdering — 19d. 關係運算子（< <= > >=）的多字元字串運算元
+func runLintStrOrdering(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateStrOrderingTHIR(program, opts.thirView) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, File: u.File,
+			Severity: LintError, Source: "nolang-type-checker",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintIntOverflow — 20c. 整數四則運算溢出提示
+func runLintIntOverflow(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateIntOverflowTHIR(program, opts.thirView) {
+		results = append(results, LintResult{
+			File: u.File, // 節點級來源檔；空則由下方行號範圍回退歸因
+			Line: u.Line, Column: u.Column,
+			Severity: LintHint, Source: "nolang-overflow",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintDivByZero — 20c-bis. 整數除法/取模的字面零除數（編譯硬錯誤）
+func runLintDivByZero(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, d := range ValidateDivByZeroTHIR(program, opts.thirView) {
+		results = append(results, LintResult{
+			File: d.File,
+			Line: d.Line, Column: d.Column,
+			Severity: LintError, Source: "nolang-div-zero",
+			Message: d.Message, TraceID: d.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintUnhandledOverflow — 20d. option 生命週期（D2）——產生處 HINT、未消費 ERROR。
+// 嚴重度逐條依 TraceID 決定（ovfhndld→HINT，optunuse→ERROR）。
+func runLintUnhandledOverflow(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateUnhandledOverflowTHIR(program, opts.SourcePath, opts.thirView) {
+		// 攜帶 ValidateResult.File（陳述所屬模組），避免合併 std vet 時
+		// 誤歸因。File 為空則回退到 opts.SourcePath。
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		sev := LintHint
+		if u.TraceID == optUnuseTraceID {
+			sev = LintError
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: sev, Source: "nolang-overflow",
+			File:    file,
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintUnhandledIndex — 20e. 未處理的越界索引（D2：產生處 HINT）
+func runLintUnhandledIndex(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateUnhandledIndexTHIR(program, opts.SourcePath, opts.thirView) {
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintHint, Source: "nolang-index",
+			File:    file,
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintIndexWrite — 20h. 下標直寫 `a[i] = v`（D9）→ ERROR `idxwrite`
+func runLintIndexWrite(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateIndexWriteTHIR(program, opts.SourcePath, opts.thirView) {
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintError, Source: "nolang-index-write",
+			File:    file,
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// ── Surface 軌（surface=true）──────────────────────────────────────────────────
+
+// runLintNaming — 2. 命名規範
+func runLintNaming(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, w := range ValidateNaming(program) {
 		results = append(results, LintResult{
 			Line: w.Line, Column: w.Column, File: w.File,
@@ -263,8 +503,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: w.Message, TraceID: w.TraceID,
 		})
 	}
+	return results
+}
 
-	// 3. async 命名規範
+// runLintAsyncNaming — 3. async 命名規範
+func runLintAsyncNaming(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, w := range ValidateAsyncNaming(program) {
 		results = append(results, LintResult{
 			Line: w.Line, Column: w.Column, File: w.File,
@@ -272,8 +516,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: w.Message, TraceID: w.TraceID,
 		})
 	}
+	return results
+}
 
-	// 4. 未使用變數
+// runLintUnusedVars — 4. 未使用變數
+func runLintUnusedVars(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateUnusedVars(program, opts.MainFileVarNames) {
 		endCol := u.Column
 		if u.EndColumn > 0 {
@@ -285,8 +533,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 5. 未定義變數
+// runLintUndefinedVars — 5. 未定義變數
+func runLintUndefinedVars(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateUndefinedVars(program, opts.RootDir, opts.SourcePath) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
@@ -294,8 +546,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 6. 未初始化的 ?T 輸出參數
+// runLintUninitOutputParams — 6. 未初始化的 ?T 輸出參數
+func runLintUninitOutputParams(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateUninitOutputParams(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -303,8 +559,29 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 7. 未賦值的命名返回參數
+// runLintMultiOptionResults — 6.5 一個函式最多只能有一個 ?T 返回參數。
+// 已接在 ValidateTypes 尾端（hard error）；這裡只在 SkipTypeChecks 為 true
+// 時補跑（no vet CLI 合併路徑），LSP 不會重複回報。
+func runLintMultiOptionResults(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	if opts.SkipTypeChecks {
+		for _, e := range ValidateMultiOptionResults(program) {
+			results = append(results, LintResult{
+				Line: e.Line, Column: e.Column, File: e.File,
+				Severity: LintError, Source: "nolang-type-checker",
+				Message: e.Message, TraceID: e.TraceID,
+			})
+		}
+	}
+	return results
+}
+
+// runLintUnassignedReturns — 7. 未賦值的命名返回參數
+func runLintUnassignedReturns(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, w := range ValidateUnassignedReturns(program) {
 		results = append(results, LintResult{
 			Line: w.Line, Column: w.Column, File: w.File,
@@ -312,8 +589,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: w.Message, TraceID: w.TraceID,
 		})
 	}
+	return results
+}
 
-	// 8. embed 註解校驗
+// runLintEmbedAnnotations — 8. embed 註解校驗
+func runLintEmbedAnnotations(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, e := range ValidateEmbedAnnotations(program, opts.SourcePath) {
 		results = append(results, LintResult{
 			Line: e.Line, Column: e.Column,
@@ -321,21 +602,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: e.Message, TraceID: e.TraceID,
 		})
 	}
+	return results
+}
 
-	// 9. 接口實現
-	for _, u := range ValidateInterfaceImplementation(program) {
-		endCol := u.Column
-		if u.EndColumn > 0 {
-			endCol = u.EndColumn
-		}
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
-			Severity: LintWarning, Source: "nolang-lint",
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-
-	// 10. use 關鍵字提示
+// runLintUseKeyword — 10. use 關鍵字提示
+func runLintUseKeyword(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateUseKeyword(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -343,8 +615,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 11. use as 別名提示
+// runLintUseAlias — 11. use as 別名提示
+func runLintUseAlias(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateUseAlias(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -352,8 +628,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 12. 冗餘型別標註
+// runLintRedundantTypeAnnot — 12. 冗餘型別標註
+func runLintRedundantTypeAnnot(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateRedundantTypeAnnotation(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -361,8 +641,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 13. 重複變數
+// runLintDuplicateVars — 13. 重複變數
+func runLintDuplicateVars(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateDuplicateVars(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -370,8 +654,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 14. 依賴導入校驗
+// runLintDependencyImports — 14. 依賴導入校驗
+func runLintDependencyImports(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateDependencyImports(program, opts.RootDir) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -379,8 +667,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 15. 導出符號校驗
+// runLintExportSymbols — 15. 導出符號校驗
+func runLintExportSymbols(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateExportSymbols(program, opts.SourcePath) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
@@ -388,26 +680,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 16. 字串拼接提示（建議用 - 代替 +）
-	for _, u := range ValidateStringConcat(program) {
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column, File: u.File,
-			Severity: LintHint, Source: "nolang-lint",
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-
-	// 16b. str/txt 的 s[i] 码点下标 O(n) 性能告警（不禁止语法，建议 #{ascii}/s.byte(i)/for c in s）
-	for _, u := range ValidateStrIndexComplexity(program) {
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column, File: u.File,
-			Severity: LintWarning, Source: "nolang-lint",
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-
-	// 16c. fs.list-dir 遞歸/刪除未過濾 "."/".."（防沿 .. 上爬誤刪整棵父樹）
+// runLintListDirUnfiltered — 16c. fs.list-dir 遞歸/刪除未過濾 "."/".."
+func runLintListDirUnfiltered(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateListDirUnfiltered(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -415,8 +693,13 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 16d. 棄用函數呼叫提示（如 math.char-to-str → char.to-str()）
+// runLintDeprecatedCalls — 16d. 棄用函數呼叫提示。
+// 複合賦算運算符（`+=` 一族）按用戶定案是 WARNING；棄用函數是 HINT。
+func runLintDeprecatedCalls(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateDeprecatedCalls(program) {
 		endCol := u.Column
 		if u.EndColumn > 0 {
@@ -433,8 +716,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 17. hex 字面量大寫提示
+// runLintHexCase — 17. hex 字面量大寫提示
+func runLintHexCase(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateHexCase(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -442,8 +729,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 17b. 数字字面量直接转换提示（`(123).to-str()` → 直接写 `'123'`）
+// runLintLiteralConversion — 17b. 数字字面量直接转换提示
+func runLintLiteralConversion(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateLiteralConversion(program) {
 		endCol := u.Column
 		if u.EndColumn > 0 {
@@ -455,22 +746,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 18. 函數引數型別校驗（no vet 路徑已在合併前執行，跳過以避免 merged program 誤報）
-	if !opts.SkipTypeChecks {
-		for _, u := range ValidateFuncArgs(program, opts.RootDir) {
-			results = append(results, LintResult{
-				Line: u.Line, Column: u.Column,
-				Severity: LintError, Source: "nolang-type-checker",
-				Message: u.Message, TraceID: u.TraceID,
-			})
-		}
-	}
-
-	// 19b. option match 穷尽性（缺 nil/err 且无通配 -> 时静默 fall through）
-	// 与 parser 层 [RAL] 互补：[RAL] 只在解析期能证明主语是 option（裸 Identifier
-	// 且 sem.VarTypes 有 ? 前缀）时才报；主语为函数调用等形态时 [RAL] 沉默，
-	// 只有本规则能兜住。详见 checker/match_exhaustive.go 的注释。
+// runLintNonExhaustiveMatch — 19b. option match 穷尽性
+func runLintNonExhaustiveMatch(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateNonExhaustiveMatch(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
@@ -478,33 +759,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 19c. option 值直接比較（如 `size = fstat-size(.fd); size == 0`）。
-	// option 在 HIR/LLVM 層是 tagged enum {tag, data}，拿它跟數字/字串比是
-	// 無意義的；正確寫法是先 `v ?= expr` 解包或用 match 分支。與 [RAL] /
-	// ValidateNonExhaustiveMatch 互補：本規則管「比較」，那兩個管「解構」。
-	// 參見 checker/option_compare.go。
-	for _, u := range ValidateOptionComparison(program) {
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
-			Severity: LintError, Source: "nolang-type-checker",
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-
-	// 19d. 關係運算子（< <= > >=）的多字元字串運算元。
-	// nolang 沒有字串字典序比較：codegen 的 str 分支只有 @str_eq（相等），
-	// `a >= b`（a/b 為 str）會靜默退化成恆假。單字元字串字面量（'a'）隱式當
-	// char，仍合法；多字元 / str 變數 / 回傳 str 的呼叫則在此拒絕。
-	for _, u := range ValidateStrOrdering(program) {
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column, File: u.File,
-			Severity: LintError, Source: "nolang-type-checker",
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-
-	// 19. print 格式字串校驗
+// runLintPrintFormat — 19. print 格式字串校驗
+func runLintPrintFormat(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidatePrintFormat(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
@@ -512,8 +772,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 20. 跨模組型別前綴校驗
+// runLintCrossModuleTypeRefs — 20. 跨模組型別前綴校驗
+func runLintCrossModuleTypeRefs(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, u := range ValidateCrossModuleTypeRefs(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
@@ -521,10 +785,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: u.Message, TraceID: u.TraceID,
 		})
 	}
+	return results
+}
 
-	// 20b. 輕量版未解析模組函數呼叫檢查（僅 LSP 路徑）
-	// no vet 路徑已有 build/module_check.go 的完整版（依賴 merged 上下文），
-	// 不需要重複執行。
+// runLintUnresolvedModuleCalls — 20b. 輕量版未解析模組函數呼叫檢查（僅 LSP 路徑）
+func runLintUnresolvedModuleCalls(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	if opts.LightweightMode {
 		for _, u := range CheckUnresolvedModuleCalls(program) {
 			results = append(results, LintResult{
@@ -534,87 +800,19 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			})
 		}
 	}
+	return results
+}
 
-	// 20c. 整數四則運算溢出提示（#{overflow = wrap|clamp0|min|max|saturate} 註解）
-	// D2：由 ERROR 降為 HINT。統一 option 規則（D6）下 `a OP b` 一律產生
-	// option，產生處本身不再代表「錯誤」——真正該硬攔的是「既沒上拋也沒解包」
-	// （見下方 20d 的 optunuse）。這裡只提示「可以補註解指定溢出行為」。
-	for _, u := range ValidateIntOverflow(program) {
-		results = append(results, LintResult{
-			File: u.File, // 節點級來源檔；空則由下方行號範圍回退歸因
-			Line: u.Line, Column: u.Column,
-			Severity: LintHint, Source: "nolang-overflow",
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
+// runLintIneffectiveOverflow — 20c-ter. 無效 overflow 註解（WARNING）。
+// 結果自帶 File（語句 SourceFile 或主檔回退），不参与行號範圍回退歸因。
+func runLintIneffectiveOverflow(program *parser.Program, opts LintOptions) []LintResult {
+	return LintIneffectiveOverflow(program, opts.SourcePath)
+}
 
-	// 20c-bis. 整數除法/取模的字面零除數（編譯硬錯誤）。與 20c 獨立：不受 #{overflow}
-	// 註解豁免，只要除數是整數字面量 0 即報錯。
-	for _, d := range ValidateDivByZero(program) {
-		results = append(results, LintResult{
-			File: d.File,
-			Line: d.Line, Column: d.Column,
-			Severity: LintError, Source: "nolang-div-zero",
-			Message: d.Message, TraceID: d.TraceID,
-		})
-	}
-
-	// 20c-ter. 無效 overflow 註解（WARNING）：管轄陳述不含整數運算，註解對溢出
-	// 無作用，建議刪除。採保守（超集）判定，不會誤報有效註解。
-	// 結果自帶 File（語句 SourceFile 或主檔回退），不参与下方行號範圍回退歸因。
-	for _, u := range LintIneffectiveOverflow(program, opts.SourcePath) {
-		results = append(results, u)
-	}
-
-	// 20d. option 生命週期（D2）——產生處 HINT、未消費 ERROR。
-	// 本規則由同一趟 ValidateUnhandledOverflow 產出兩種 trace：
-	//   - ovfhndld（HINT）：整數運算產生 option 並綁定到變數。D6 下這是常態，
-	//     後續通常確有處理，故只提示「該變數是 ?T，記得 match 或 ?=」。
-	//   - optunuse（ERROR）：該 option 在本函式內既沒上拋（?=）、也沒解包
-	//     （match / `_ =`），錯誤被靜默丟棄。這是唯一該阻斷建置的診斷。
-	// 嚴重度因此逐條依 TraceID 決定，不能整批套用。
-	for _, u := range ValidateUnhandledOverflow(program, opts.SourcePath) {
-		// 與 20e（idxhndld）一致：攜帶 ValidateResult.File（陳述所屬模組），
-		// 避免合併 std vet 時把 std 函式內的未處理溢位誤歸因到呼叫端測試檔案
-		// （行號回退會把 std 行號對到測試檔案某函式的行距範圍）。File 為空則
-		// 回退到 opts.SourcePath（主檔，通常是使用者碼）。
-		file := u.File
-		if file == "" {
-			file = opts.SourcePath
-		}
-		sev := LintHint
-		if u.TraceID == optUnuseTraceID {
-			sev = LintError
-		}
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
-			Severity: sev, Source: "nolang-overflow",
-			File:    file,
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-
-	// 20e. 未處理的越界索引（D2：產生處由 ERROR 降為 HINT，理由同 20c ——
-	// 索引讀取產生 option 是統一規則的常態，「沒解包」由 20d 的 optunuse 兜底）。
-	for _, u := range ValidateUnhandledIndex(program, opts.SourcePath) {
-		file := u.File
-		if file == "" {
-			file = opts.SourcePath
-		}
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
-			Severity: LintHint, Source: "nolang-index",
-			File:    file,
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-
-	// 20f. option match 的空 `->` 兜底臂（D9）。两种状态、两种严重度：
-	//   - arm-unreach（HINT）：可证明主体恒为 ok → 该臂是死代码，告知用户但仍
-	//     须保留（match 穷尽性 + 未来语义变化时语法不变）。
-	//   - arm-should（WARNING）：无法证明 → 该臂可能会被执行，提示用户决定失败
-	//     时应做什么（如 `log('...')` / `print('...')`），而非静默取默认零值。
-	// 两者都只提示不阻断（D4：空臂合法）。严重度逐条依 TraceID 决定，同 20d。
+// runLintCatchAllArms — 20f. option match 的空 `->` 兜底臂（D9）。
+// 嚴重度逐條依 TraceID 決定：arm-unreach→HINT，arm-should→WARNING。
+func runLintCatchAllArms(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, a := range ValidateCatchAllArms(program) {
 		sev := LintWarning
 		if a.TraceID == armUnreachTraceID {
@@ -626,11 +824,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: a.Message, TraceID: a.TraceID,
 		})
 	}
+	return results
+}
 
-	// 20g. 手動按下標遍歷容器（`for i <- [a..b) { … arr[i] … }`）→ HINT `rngidx`，
-	// 建議改用容器迭代。只在**編譯器證明不了越界安全**的讀取上提示（§8.1(a)：
-	// 可證明安全處 option 已被消除，沒有代價可省，提示純屬噪音）。
-	// 不自動改寫 —— 兩種寫法語義不等價（手動下標需要下標本身）。
+// runLintRangeIndexLoops — 20g. 手動按下標遍歷容器 → HINT `rngidx`
+func runLintRangeIndexLoops(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, r := range ValidateRangeIndexLoops(program, opts.SourcePath) {
 		file := r.File
 		if file == "" {
@@ -643,11 +842,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: r.Message, TraceID: r.TraceID,
 		})
 	}
+	return results
+}
 
-	// 20g-bis. 區間上界以隱式 self 的 `.field` 開頭，與 `..` 連寫成 `...`（歧義：
-	// `...` 亦是 return/終止運算子）→ HINT `rng-ellipsis`，建議顯式寫 `self.field`
-	// （如 `[0..self.count)`）。詞法器目前會把 `...` 拆成 `..` + ``.`，仍能正確解析，
-	// 故只提示不阻斷（見 src/std/arr.no 頂部說明）。
+// runLintRangeSelfEllipsis — 20g-bis. 區間上界以隱式 self 的 `.field` 開頭 → HINT `rng-ellipsis`
+func runLintRangeSelfEllipsis(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, r := range ValidateRangeSelfEllipsis(program, opts.SourcePath) {
 		file := r.File
 		if file == "" {
@@ -660,27 +860,12 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: r.Message, TraceID: r.TraceID,
 		})
 	}
+	return results
+}
 
-	// 20h. 下標直寫 `a[i] = v`（D9）→ ERROR `idxwrite`，**阻斷建置**。
-	// 與 20e（idxhndld，HINT）不同：讀側產生 option 只是「記得解包」，而寫側
-	// 今天走 `emitIndexStore` 的原始 GEP+store、**完全沒有邊界檢查**，越界就是
-	// raw OOB write —— 這是記憶體安全洞，不是風格問題，故定為 ERROR。
-	// 正確寫法二選一，錯誤文案已直接印出：place-match
-	// 多行 place-match（match 臂以换行分隔）或錯誤上拋 `a[i] ?= v`。
-	for _, u := range ValidateIndexWrite(program, opts.SourcePath) {
-		file := u.File
-		if file == "" {
-			file = opts.SourcePath
-		}
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
-			Severity: LintError, Source: "nolang-index-write",
-			File:    file,
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-
-	// 21. parser 警告
+// runLintParserWarnings — 21. parser 警告
+func runLintParserWarnings(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
 	for _, warnMsg := range program.Warnings {
 		var line, col int
 		// Strip optional "filename:" prefix so Sscanf can match "line N, column M:"
@@ -707,7 +892,17 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 			Message: msg,
 		})
 	}
+	return results
+}
 
+// ──────────────────────────────────────────────────────────────────────────────
+// 共享尾巴 + 管線 + 入口
+// ──────────────────────────────────────────────────────────────────────────────
+
+// finalizeLintResults 完成 File 歸因、Strict 升級、std 過濾與排序。
+// 尾巴對每條診斷獨立作用（多重集可分配），故 RunAllLints ≡
+// finalize(surface) ⊎ finalize(thir) 在多重集意義下成立。
+func finalizeLintResults(results []LintResult, program *parser.Program, opts LintOptions) []LintResult {
 	// 用語句的 SourceFile 欄位填充每條結果的 File 欄位。
 	// 構建行號範圍 → 檔案路徑的映射：對 FunctionDefinition 記錄
 	// [startLine, endLine]；對其他語句記錄單行 startLine。
@@ -729,7 +924,7 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 		var ranges []lineRange
 		var refFile string
 		for _, stmt := range program.Statements {
-			file := parser.GetSourceFile(stmt)
+			file := program.Sem.SourceFileOf(stmt)
 			if file == "" {
 				continue
 			}
@@ -773,8 +968,8 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 
 	// 檢查目標不是 std 檔時，丟棄歸屬到 std 的診斷：
 	// std 有獨立閘門（`no vet src/std`，目前 0 error），而 merged 模式下 std 自帶的
-	// `#{overflow}` 註解會因為 lowering 重建 AST 節點、導致註解側表（nodeSem，
-	// 以節點指標為鍵）查不到而產生大量假警報——實測 src/std/arr.no:68 已存在
+	// `#{overflow}` 註解會因為 lowering 重建 AST 節點、導致註解側表
+	// （`SemanticContext.anns`，以節點指標為鍵）查不到而產生大量假警報——實測 src/std/arr.no:68 已存在
 	// `#{overflow=wrap}`，merged vet 仍報 :69 未處理溢位；同一份 std 單獨 vet 卻是
 	// 乾淨的。把 std 內部診斷算進使用者/測試檔的 vet 結果只會誤導，故在此過濾。
 	// merged 模式（多檔程式）下跨檔行號無法歸因（singleFile=false → File 為空）
@@ -805,6 +1000,68 @@ func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
 	})
 
 	return results
+}
+
+// runLintPipeline 按 filter 執行 lintSteps 並 finalize。
+// filter 為 nil 時執行全部步；否則只執行 filter(step)==true 的步。
+// 步驟執行順序恒為 lintSteps 的宣告順序。
+// 6D 切換：有待跑 THIR 軌步（!step.surface）時，先經 BuildTHIRView 構建
+// THIR 型別副表視圖（H0 副作用已隔離——lint 步驟看到的 program 狀態與
+// legacy 路徑完全一致），注入 opts.thirView 供 THIR 变体使用。
+func runLintPipeline(program *parser.Program, opts LintOptions, filter func(lintStep) bool) []LintResult {
+	if program == nil {
+		return nil
+	}
+	// Lazy-build THIR view: only when at least one THIR-track step will run.
+	// BuildTHIRView isolates H0 side effects (h0Diags + Sem name-map writes),
+	// so every lint step sees the same program state as the legacy path.
+	needView := false
+	for _, step := range lintSteps {
+		if filter != nil && !filter(step) {
+			continue
+		}
+		if !step.surface {
+			needView = true
+			break
+		}
+	}
+	if needView && opts.thirView == nil {
+		opts.thirView = BuildTHIRView(program)
+	}
+	var results []LintResult
+	for _, step := range lintSteps {
+		if filter != nil && !filter(step) {
+			continue
+		}
+		results = append(results, step.run(program, opts)...)
+	}
+	return finalizeLintResults(results, program, opts)
+}
+
+// RunAllLints 對 program 執行全部 lint 校驗，返回匯總結果。
+// 調用者可根據 LintOptions.Strict 決定是否將 warning/hint 視為錯誤。
+//
+// 注意：ValidateTypes、ValidateFuncArgs、ValidateUninitOutputParams 在
+// build/transpiler.go Compile 流程中已被調用並可能作為 hard error 阻止編譯，
+// 但在 vet 模式（不走 Compile 的 LSP 路徑）下需要在此重新執行。
+// 為保證三條路徑一致，這裡不遺漏地全部執行——同一 program 重複調用
+// Validate* 是安全的（純只讀，不改 AST）。
+func RunAllLints(program *parser.Program, opts LintOptions) []LintResult {
+	return runLintPipeline(program, opts, nil)
+}
+
+// RunSurfaceLints 只執行 surface=true 的步（S2 糖形態/命名/宣告/注解/作用域形態）。
+// 目標掛載點：H0 降糖之前（L0 Surface AST 階段）。設計意圖見
+// docs/design/nolang-parser-lowering-invariants.md §3.5 裁決 3。
+func RunSurfaceLints(program *parser.Program, opts LintOptions) []LintResult {
+	return runLintPipeline(program, opts, func(s lintStep) bool { return s.surface })
+}
+
+// runTHIRStageChecks 只執行 surface=false 的步（THIR 型別軌：inferExprType /
+// TypeFacts 依賴項）。目標掛載點：H0 之後、Checker-on-THIR 階段。
+// 暫未導出——6C 影子雙跑期間供內部對拍使用。
+func runTHIRStageChecks(program *parser.Program, opts LintOptions) []LintResult {
+	return runLintPipeline(program, opts, func(s lintStep) bool { return !s.surface })
 }
 
 // isStdPath 報告路徑是否屬於標準函式庫（std）。std 可能以絕對路徑

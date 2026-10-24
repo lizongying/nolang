@@ -57,7 +57,12 @@ type formatter struct {
 	column      int                     // current output column (0-based)
 	stringAlign int                     // alignment column for multi-line string concat continuation lines
 	sem         *parser.SemanticContext // 語義 side-table（來自 program.Sem，可為 nil）
-	loopStyle   LoopStyle               // 循環預設寫法（prefix = 條件前置）
+	// trivia 是 formatter 專用的表層 trivia 表（RTFlags / `{` 同行註釋），
+	// 來自 program.FmtTrivia，可為 nil（blob 解碼的 Program 沒有它——fmt/LSP
+	// 一律 fresh parse，故實務上不會發生；各存取子皆 nil 安全）。
+	// 它與 sem 的差別：sem 服務編譯管線，trivia 只服務排版。
+	trivia    *parser.FmtTrivia
+	loopStyle LoopStyle // 循環預設寫法（prefix = 條件前置）
 
 	// overflowRelevant 由 checker 計算：標註「含整數溢出運算」的陳述集合。
 	// 當非 nil 時，formatter 會移除「無效」的 #{overflow = ...} 註解——亦即其
@@ -77,14 +82,14 @@ type formatter struct {
 	indexOutAnnRemovable map[*parser.AnnotationStatement]bool
 }
 
-// hasRT 查詢 IfExpression 的 fmt 往返標誌：查語義副表（f.sem 為 nil 時安全）。
+// hasRT 查詢 IfExpression 的 fmt 往返標誌：查 trivia 表（f.trivia 為 nil 時安全）。
 func (f *formatter) hasRT(e *parser.IfExpression, fl parser.RTFlag) bool {
-	return f.sem.HasRTFlag(e, fl)
+	return f.trivia.HasRTFlag(e, fl)
 }
 
 // obcOf 返回節點的 `{` 同行註釋（無則 nil）。
 func (f *formatter) obcOf(n parser.Node) *parser.CommentGroup {
-	return f.sem.OpeningBraceCommentOf(n)
+	return f.trivia.OpeningBraceCommentOf(n)
 }
 
 func (f *formatter) writeIndent() {
@@ -233,6 +238,7 @@ func formatProgramASTWithLoopStyle(program *parser.Program, code string, style L
 	f := &formatter{
 		sourceLines: sourceLines,
 		sem:         program.Sem,
+		trivia:      program.FmtTrivia,
 		loopStyle:   style,
 	}
 	f.formatProgram(program)
@@ -259,6 +265,7 @@ func formatProgramASTWithOverflow(program *parser.Program, code string, style Lo
 	f := &formatter{
 		sourceLines:          sourceLines,
 		sem:                  program.Sem,
+		trivia:               program.FmtTrivia,
 		loopStyle:            style,
 		overflowRelevant:     relevant,
 		overflowGoverned:     governed,

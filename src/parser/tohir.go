@@ -82,7 +82,7 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 	owners := make(map[int32]string, len(prog.Statements))
 	for _, stmt := range prog.Statements {
 		id := c.stmt(stmt)
-		if owner := GetModuleOwner(stmt); owner != "" {
+		if owner := c.sem.ModuleOwnerOf(stmt); owner != "" {
 			owners[id] = owner
 		}
 		c.top(id)
@@ -132,14 +132,14 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 		switch s := stmt.(type) {
 		case *FunctionDefinition:
 			if !s.IsMethodDef {
-				pkg.FuncOwners[s.Name] = GetModuleOwner(stmt)
+				pkg.FuncOwners[s.Name] = c.sem.ModuleOwnerOf(stmt)
 			}
 		case *LetStatement:
 			if s.Name == nil {
 				continue
 			}
 			if _, isFn := s.Value.(*FunctionLiteral); isFn && !strings.Contains(s.Name.Value, ".") {
-				pkg.FuncOwners[s.Name.Value] = GetModuleOwner(stmt)
+				pkg.FuncOwners[s.Name.Value] = c.sem.ModuleOwnerOf(stmt)
 			}
 		}
 	}
@@ -179,12 +179,33 @@ type hirConv struct {
 	// no case for it either, so a literal's body keeps the ENCLOSING function's
 	// name. Matching that is what keeps HIR identical whichever stage desugars.
 	curFunc string
+	// curResultName is the name of the option-typed result param (?T) of the
+	// function whose body is currently being lowered ("" if none). Extracted by
+	// funcLike from sig.Results for FunctionDefinition; FunctionLiteral inherits
+	// the enclosing scope's value (matching lowerUnwrapAssign's use of
+	// curFuncDef, which the walk only sets on FunctionDefinition). Consumed by
+	// lowerUnwrapAssignToHIR to feed lowerUnwrapAssign's resultNameOverride.
+	curResultName string
 	// h0Diags collects diagnostics produced by desugaring done inside H0 (see
 	// desugarSurfaceMatch). They have no channel of their own, so they are
 	// gathered here and folded into Program.Warnings (warnings) / Program.Errors
 	// (errors) by ASTToHIRWithMap — without that they would be silently
 	// dropped, which is the failure mode this whole migration exists to remove.
 	h0Diags []Diagnostic
+	// captureOrigin，非空時是「本條陳述正由 H0 捕獲軌產出」的 AST 節點。
+	//
+	// S3-b 雙軌對齊用，只影響 **remember**（astOf 對映）：
+	// AST 軌會把該陳述**換成** BlockStatement，原 LetStatement 從此不在樹裡、
+	// 也不會進 c.stmt ⇒ 不會有 astOf[ls] 條目。H0 軌裡該陳述仍在、照常進
+	// c.stmt ⇒ 會多出一條 astOf[ls]，讓 PopulateInferredTypes 把 ls 的推斷
+	// 型別寫到鏈的 block id 上（MIR 的 typeOfNode 讀得到）⇒ 與 AST 軌發散。
+	//
+	// annotate **刻意保留**：實測（tests/byte-option-index.no）AST 軌仍會把
+	// `#{overflow=wrap}` 之類的註解帶進 HIR，H0 軌若一併抑制反而丟失。
+	// 兩處需求相反 ⇒ 沒有通用抑制規則，只對齊 remember 這一項。
+	//
+	// 只對**這一個**節點生效：巢狀的綁定 let、if 鏈等仍照常 remember。
+	captureOrigin Node
 }
 
 // remember records the HIR id assigned to an AST node so the checker can later
@@ -199,44 +220,101 @@ func (c *hirConv) remember(n Node, id int32) {
 	c.astOf[n] = id
 }
 
-// nodeType extracts the declared/inferred Type of an AST node via reflection so
-// PopulateInferredTypes need not enumerate every node kind. Most type-carrying
-// nodes expose a `Type parser.Type` field; those that don't return nil and are
-// skipped. Reflection is safe here: the set of AST types is closed and the
-// field is always exported and of interface type parser.Type.
+// nodeType extracts the declared/inferred Type of an AST node via an explicit
+// type switch (6C-optional「去反射」). The set of AST types exposing a
+// `Type` field is closed and enumerated here; nodes without a Type field
+// (expressions, blocks, etc.) return nil and are skipped by
+// PopulateInferredTypes. Typed-nil receivers return nil (mirrors the old
+// reflect-based behaviour).
 func nodeType(n Node) Type {
-	rv := reflect.ValueOf(n)
-	for rv.Kind() == reflect.Ptr {
-		if rv.IsNil() {
-			return nil
+	switch t := n.(type) {
+	case *LetStatement:
+		if t != nil {
+			return t.Type
 		}
-		rv = rv.Elem()
-	}
-	if rv.Kind() != reflect.Struct {
-		return nil
-	}
-	f := rv.FieldByName("Type")
-	if !f.IsValid() || !f.CanInterface() {
-		return nil
-	}
-	if t, ok := f.Interface().(Type); ok {
-		return t
+	case *Parameter:
+		if t != nil {
+			return t.Type
+		}
+	case *NullableType:
+		if t != nil {
+			return t.Type
+		}
+	case *PointerType:
+		if t != nil {
+			return t.Type
+		}
+	case *ViewType:
+		if t != nil {
+			return t.Type
+		}
+	case *CastExpression:
+		if t != nil {
+			return t.Type
+		}
+	case *StructField:
+		if t != nil {
+			return t.Type
+		}
+	case *TypeAlias:
+		if t != nil {
+			return t.Type
+		}
+	case *TaggedEnumVariant:
+		if t != nil {
+			return t.Type
+		}
 	}
 	return nil
 }
 
-// PopulateInferredTypes fills pkg.Inferred with the checker's inferred types,
-// keyed by HIR node id, using the AST-node -> HIR-id map returned by
-// ASTToHIRWithMap. Call it AFTER type checking has mutated the AST nodes' Type
-// fields (the checker infers in place). This is stage 3 of the HIR plan: the
-// inferred TypeMap lets codegen read types without holding AST pointers.
-func PopulateInferredTypes(pkg *hir.Package, idMap map[Node]int32) {
+// effectiveTypeMap 建構「AST 節點 → 有效型別字串」的**顯式 type map**
+// （設計文檔 §3.3：「現在就地寫 `.Type` 的做法改為返回 type map」，
+// `IdxLocalTypes`（parser.go）是同一模式的先例）。
+//
+// 解析序與 KLet 的有效型別解析序（TypeOverride > Type > InferredType）前兩檔
+// 一致：
+//  1. TypeOverride：裝配期（slice-structs / devirtualize / union clone）為某個
+//     LetStatement 定下的有效型別覆寫，優先於節點宣告的 Type；
+//  2. 宣告型別：AST 節點自帶的 `.Type`（nodeType 顯式 type switch，6C-optional
+//     第一步已去反射）——這是 parser 期就存在的用戶註解，非 checker 推斷產物。
+//
+// ⚠️ 表達式級**推斷**型別（checker.inferExprType 的結果）刻意**不在**本表：
+// 它活在 checker 側的 THIRView.ExprTypes（thir_exprtypes.go），經 TypeOf 第三
+// 檔查詢。理由見該文件頭——若寫進 pkg.Inferred，MIR 的 4 處消費點
+// （hir2mir.go KCast 1540 / inferredTypeOf 1641 / letTypeRaw 2038 /
+// lowerMapLit 7050）會把 codegen 的 void 兜底翻成型別，屬 codegen 級行為變更。
+//
+// 只收錄有型別的節點（無宣告、無覆寫的節點不入表），與舊版逐節點判定等價。
+func effectiveTypeMap(idMap map[Node]int32, sem *SemanticContext) map[Node]string {
+	m := make(map[Node]string, len(idMap))
+	for n := range idMap {
+		if ov := sem.TypeOverrideOf(n); ov != "" {
+			m[n] = ov
+			continue
+		}
+		if t := nodeType(n); t != nil && t.String() != "" {
+			m[n] = t.String()
+		}
+	}
+	return m
+}
+
+// PopulateInferredTypes fills pkg.Inferred with the effective types keyed by
+// HIR node id, using the AST-node -> HIR-id map returned by ASTToHIRWithMap.
+// Call it AFTER type checking has run.
+//
+// 本函數已是**純搬運**：型別結論全部來自 effectiveTypeMap 這張顯式 type map
+// （§3.3 終態——「反射讀被刪除，改為消費 checker 的 type map」），函數體不再
+// 逐節點解析 AST。sem 可為 nil（TypeOverrideOf 容忍 nil receiver）。
+func PopulateInferredTypes(pkg *hir.Package, idMap map[Node]int32, sem *SemanticContext) {
 	if pkg == nil || len(idMap) == 0 {
 		return
 	}
+	types := effectiveTypeMap(idMap, sem)
 	for astNode, hirID := range idMap {
-		if t := nodeType(astNode); t != nil && t.String() != "" {
-			pkg.SetInferred(hirID, t.String())
+		if t := types[astNode]; t != "" {
+			pkg.SetInferred(hirID, t)
 		}
 	}
 }
@@ -339,15 +417,28 @@ func pos(n Node) (line, col int32) {
 // statement kind cannot forget it.
 func (c *hirConv) stmt(s Statement) int32 {
 	// Thread the origin file down the statement tree. Only top-level statements
-	// are tagged via SetSourceFile for the MAIN program (module bodies use
+	// are tagged via SetSourceFileOf for the MAIN program (module bodies use
 	// SetSourceFileDeep), so a nested statement with an empty SourceFile keeps
 	// the enclosing statement's file instead of losing it.
-	if sf := GetSourceFile(s); sf != "" {
+	if sf := c.sem.SourceFileOf(s); sf != "" {
 		c.curFile = filepath.Base(sf)
 	}
-	id := c.annotate(s, c.stmtNode(s))
+	id := c.stmtNode(s)
+	// S3-b：H0 捕獲軌的來源陳述刻意不 annotate / remember —— 見 captureOrigin
+	// 的註解（複刻 AST 軌「替換後註解丟失」的既有行為，以保零行為變化）。
+	//
+	// ⚠️ skip 必須在 stmtNode **之後**判定、且清空放在末尾：lowerCaptureToHIR
+	// 內部會巢狀呼叫 c.stmt（綁定 let、if 鏈），那些呼叫的 s 不是來源陳述，
+	// 必須照常 annotate/remember，也不能由它們來清空旗標。
+	skip := s == c.captureOrigin
+	id = c.annotate(s, id)
 	c.embed(s, id)
-	c.remember(s, id)
+	if !skip {
+		c.remember(s, id)
+	}
+	if skip {
+		c.captureOrigin = nil
+	}
 	return id
 }
 
@@ -402,15 +493,46 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 		return c.b.Add(hir.Node{Kind: hir.KMultiAssign, First: c.kids(nodes), Line: line, Col: col})
 
 	case *UnwrapAssignStatement:
-		return c.b.Add(hir.Node{
-			Kind:  hir.KUnwrapAssign,
-			S:     c.b.Intern(s.TargetName()),
-			First: c.expr(s.Value),
-			Line:  line, Col: col,
-		})
+		// S3 H0 直出：?= 由 H0 降成基礎 HIR（KBlock+KLet+KIf 鏈），不再依賴
+		// parser walk 的 lowerUnwrapAssign 原地展開回寫 AST。lowerUnwrapAssignToHIR
+		// 呼叫 lowerUnwrapAssign（語義變換完全共享：resultName 探測、D9 分支、
+		// guardOptionOperands、型別副表推斷、targetIsResult 兩形態、目標預宣告、
+		// ok 臂 AssignExpression/LetStatement），再將產出的 BlockStatement 轉 HIR。
+		// KUnwrapAssign 降為 tombstone（G3 門禁釘住計數 = 0）。
+		if id := c.lowerUnwrapAssignToHIR(s, line, col); id != hir.NoID {
+			return id
+		}
+		// 直出失敗（錯誤已由 h0Diags 上報）：發 KUnknown 避免 tombstone KUnwrapAssign。
+		return c.b.Add(hir.Node{Kind: hir.KUnknown, S: c.b.Intern("UnwrapAssignStatement"), Line: line, Col: col})
 
 	case *LetStatement:
-		typ := s.Type
+		// S3-b 雙軌：H0 軌讀捕獲副表直接產出 KLet + KIf 鏈，取代 AST 軌的
+		// 「就地改寫用戶 AST」（V4 違規）。副表為 nil 表示本陳述未判定要捕獲，
+		// 走下方原有路徑。產出失敗（NoID）時同樣回落，避免留下 tombstone。
+		if HIRCaptureEnabled && c.sem != nil {
+			if f := c.sem.CaptureFactOf(s); f != nil {
+				// 旗標由 stmt() 的末尾清空（見該處註解）：這裡不能清，
+				// annotate/remember 是在 stmtNode 返回之後才跑的。
+				c.captureOrigin = s
+				id := c.lowerCaptureToHIR(s, f)
+				if id != hir.NoID {
+					return id
+				}
+			}
+		}
+		// 有效型別解析序（S5 stage 5 起）：TypeOverride（裝配期具現化/具象化的
+		// 有效型別覆蓋，語義副表）> s.Type（宣告）> InferredType（lowering 的
+		// ?T 推斷，S3 起也在副表）。覆蓋必須最先——它改寫的正是「已宣告為介面/
+		// 範本、但有效型別已收窄」的綁定。
+		var typ Type
+		if c.sem != nil {
+			if ov := c.sem.TypeOverrideOf(s); ov != "" {
+				typ = typeFromInferredString(ov)
+			}
+		}
+		if typ == nil {
+			typ = s.Type
+		}
 		// lowering 不再就地寫 `s.Type = &NullableType{IsInferred: true}`，改走
 		// 語義副表 (Program.Sem.InferredType)。ASTToHIR 在 `s.Type` 為空時補讀
 		// 推斷型別，使 HIR Type ID 與「寫 AST」時代逐字節一致。typeString 內含
@@ -427,7 +549,7 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 			Type: c.typeID(typ),
 			Flags: hir.FlagSynthetic*u32(s.IsSynthetic) |
 				hir.FlagArmBinding*u32(s.IsArmBinding) |
-				hir.FlagModuleConst*u32(s.IsModuleConst) |
+				hir.FlagModuleConst*u32(c.sem.ModuleConstOf(s)) |
 				overflowModeFlags(s.OverflowMode),
 			First: c.expr(s.Value),
 			Line:  line, Col: col,
@@ -452,7 +574,8 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 		})
 
 	case *FunctionDefinition:
-		return c.funcLike(hir.KFuncDef, &s.FuncSignature, s.Name, s.Body, s.VariadicUnion, line, col,
+		return c.funcLike(hir.KFuncDef, &s.FuncSignature, s.Name, s.Body,
+			c.sem.VariadicUnionOf(s), c.sem.GenericUnionOf(s), line, col,
 			hir.FlagMethod*u32(s.IsMethodDef)|
 				hir.FlagColon*u32(s.ColonSyntax)|
 				hir.FlagSkipNaming*u32(s.IsSkipNamingCheck)|
@@ -604,7 +727,7 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 // FunctionDefinition today, and reusable for future declaration forms.
 func (c *hirConv) funcLike(
 	kind hir.Kind, sig *FuncSignature, name string, body *BlockStatement,
-	variadicUnion string, line, col int32, extra uint32,
+	variadicUnion, genericUnion string, line, col int32, extra uint32,
 	scope string,
 ) int32 {
 	nodes := make([]int32, 0, len(sig.Parameters)+len(sig.Results)+len(sig.GenericParams)+2)
@@ -641,9 +764,9 @@ func (c *hirConv) funcLike(
 			Flags: hir.FlagImplicitGeneric * u32(g.IsImplicitGeneric),
 		}))
 	}
-	if sig.GenericUnion != "" {
+	if genericUnion != "" {
 		nodes = append(nodes, c.b.Add(hir.Node{
-			Kind: hir.KUnionName, S: c.b.Intern(sig.GenericUnion),
+			Kind: hir.KUnionName, S: c.b.Intern(genericUnion),
 		}))
 	}
 	if body != nil {
@@ -652,8 +775,26 @@ func (c *hirConv) funcLike(
 		// passes the enclosing scope unchanged, matching the lowering pass.
 		saved := c.curFunc
 		c.curFunc = scope
+		// Extract the option-typed result param name (?T) for UnwrapAssign
+		// expansion. FunctionDefinition opens a new result scope; FunctionLiteral
+		// inherits the enclosing one (matching lowerUnwrapAssign's use of
+		// curFuncDef, which the walk only sets on FunctionDefinition).
+		savedResult := c.curResultName
+		if kind == hir.KFuncDef {
+			c.curResultName = ""
+			for _, res := range sig.Results {
+				if res.Type != nil {
+					ts := typeString(res.Type)
+					if strings.HasPrefix(ts, "?") {
+						c.curResultName = res.Name
+						break
+					}
+				}
+			}
+		}
 		nodes = append(nodes, c.slot("body", c.stmt(body)))
 		c.curFunc = saved
+		c.curResultName = savedResult
 	}
 	return c.b.Add(hir.Node{
 		Kind:  kind,
@@ -924,7 +1065,10 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		return c.b.Add(hir.Node{Kind: hir.KAwait, First: c.expr(e.Right), Line: line, Col: col})
 
 	case *GroupedExpression:
-		return c.b.Add(hir.Node{Kind: hir.KGrouped, First: c.expr(e.Expression), Line: line, Col: col})
+		// W5 / §10.2（2026-10-21）：括号是纯语法、无语义，H0 抹除——直接
+		// 透传内层表达式的 HIR（P2「HIR 无糖」；KGrouped 自此计数为 0，
+		// 由 hir/sugar_kinds_test.go 的 G3 门禁钉住）。
+		return c.expr(e.Expression)
 
 	case *IfExpression:
 		// S-d (2026-10-19) 把 match 降糖改为走 `case *SurfaceMatch` 流式直出
@@ -1095,7 +1239,8 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		// case either, so a literal's body resolves names against the enclosing
 		// function. Diverging here would change which side table a nested match
 		// reads.
-		return c.funcLike(hir.KFuncLit, &e.FuncSignature, "", e.Body, e.VariadicUnion, line, col, 0, c.curFunc)
+		return c.funcLike(hir.KFuncLit, &e.FuncSignature, "", e.Body,
+			c.sem.VariadicUnionOf(e), c.sem.GenericUnionOf(e), line, col, 0, c.curFunc)
 
 	case *SurfaceMatch:
 		// S2: H0 lowers the sugar node itself instead of relying on a pre-pass
@@ -1191,6 +1336,39 @@ func (c *hirConv) exprNode(e Expression) int32 {
 	return c.b.Add(hir.Node{Kind: hir.KUnknown, S: c.b.Intern(fmt.Sprintf("%T", e)), Line: line, Col: col})
 }
 
+// lowerUnwrapAssignToHIR is the H0 direct emitter for `?=` (UnwrapAssignStatement).
+//
+// S3: instead of relying on the parser walk's lowerUnwrapAssign to expand the
+// sugar node into a BlockStatement (in-place v.Set AST rewrite) and then
+// converting that expanded AST to HIR, H0 calls the SAME lowerUnwrapAssign
+// (sharing every semantic transformation: resultName detection, D9 index
+// branch, guardOptionOperands, type side-table inference, targetIsResult two
+// forms, target pre-declaration, ok-arm AssignExpression/LetStatement) and
+// converts the resulting BlockStatement to HIR on the spot.
+//
+// The HIR is byte-identical to the legacy path because the same AST is fed
+// through the same c.stmt / case *IfExpression folding — the only difference
+// is WHERE the expansion happens (H0 vs parser walk).
+//
+// Returns hir.NoID on error (diagnostics already collected into c.h0Diags);
+// the caller falls back to KUnknown to avoid the tombstone KUnwrapAssign.
+func (c *hirConv) lowerUnwrapAssignToHIR(uas *UnwrapAssignStatement, line, col int32) int32 {
+	sp := c.scratchParser()
+	l := &lowerer{
+		p:                  sp,
+		visited:            map[uintptr]bool{},
+		declaredLocals:     map[string]bool{},
+		curFuncName:        c.curFunc,
+		resultNameOverride: c.curResultName,
+	}
+	stmt := l.lowerUnwrapAssign(uas)
+	c.h0Diags = append(c.h0Diags, sp.diags...)
+	if stmt == nil {
+		return hir.NoID
+	}
+	return c.stmt(stmt)
+}
+
 // scratchParser builds the minimal *Parser that H0-side desugaring needs.
 //
 // ASTToHIR takes only a Program, so hirConv has no parser of its own. Everything
@@ -1213,6 +1391,45 @@ func (c *hirConv) scratchParser() *Parser {
 		Filename:    c.curFile,
 		prog:        c.prog,
 	}
+	// funcSignatures drives inferTypeFromCallExpr (used by lowerUnwrapAssign
+	// for RHS type inference). The real Parser fills it during parsing; the
+	// scratch parser must reconstruct it from the merged Program's
+	// FunctionDefinitions so ?= expansion sees the same return-type facts.
+	if c.prog != nil {
+		sp.funcSignatures = make(map[string][]string, len(c.prog.Statements))
+		for _, stmt := range c.prog.Statements {
+			fd, ok := stmt.(*FunctionDefinition)
+			if !ok || fd.Name == "" {
+				continue
+			}
+			rets := make([]string, 0, len(fd.Results))
+			for _, res := range fd.Results {
+				if res.Type != nil {
+					rets = append(rets, typeString(res.Type))
+				}
+			}
+			sp.funcSignatures[fd.Name] = rets
+		}
+		// 合併內置 / 跨文件簽名快照（SetExternSignatures 注入）：H0 ?= 解箱對
+		// 內置呼叫（如 fs.fstat-size）的型別推斷依賴它們。本地定義優先（不覆蓋）。
+		for k, v := range c.sem.ExternFuncSigs {
+			if _, exists := sp.funcSignatures[k]; !exists {
+				sp.funcSignatures[k] = v
+			}
+		}
+		// methodSignatures 同樣由 scratch parser 重建時遺漏，補齊以免方法呼叫型別
+		// 推斷缺漏（H0 ?= 解箱僅依賴 funcSignatures 的模組鍵查表，但保持對稱）。
+		if len(c.sem.ExternMethodSigs) > 0 {
+			if sp.methodSignatures == nil {
+				sp.methodSignatures = make(map[string][]string, len(c.sem.ExternMethodSigs))
+			}
+			for k, v := range c.sem.ExternMethodSigs {
+				if _, exists := sp.methodSignatures[k]; !exists {
+					sp.methodSignatures[k] = v
+				}
+			}
+		}
+	}
 	if c.sem != nil {
 		if c.sem.IdxLocalTypes == nil {
 			c.sem.IdxLocalTypes = make(map[string]map[string]string)
@@ -1225,6 +1442,101 @@ func (c *hirConv) scratchParser() *Parser {
 		sp.unionMembers = c.sem.UnionMembers
 	}
 	return sp
+}
+
+// lowerCaptureToHIR 在 H0 內部產出「結構捕獲」的 KLet + KIf 鏈（S3-b 第二步）。
+//
+// 對應的 AST 軌（默認）：parser 走查期的 maybeCaptureOptionAssign 建出同樣的
+// 結構並**寫回用戶的 AST**（V4 違規）。H0 軌改由 CaptureFacts 副表重建素材、
+// 呼叫**共用**的 buildCaptureChain，產物只進 HIR——用戶的 AST 全程凍結。
+//
+// 兩軌共用同一個建構函式，且同樣經 c.stmt / case *IfExpression 折疊，故 HIR
+// 逐字節一致；`TestHIRCaptureMatchesASTDesugar` 釘住這條等價。
+func (c *hirConv) lowerCaptureToHIR(ls *LetStatement, f *CaptureFact) int32 {
+	if ls == nil || f == nil || len(f.Binds) == 0 {
+		return hir.NoID
+	}
+	sp := c.scratchParser()
+	l := &lowerer{
+		p:              sp,
+		visited:        map[uintptr]bool{},
+		declaredLocals: map[string]bool{},
+		curFuncName:    c.curFunc,
+	}
+	tok := ls.Token
+	subst := make(map[Node]*Identifier, len(f.Binds))
+	nodes := make([]captureNode, 0, len(f.Binds))
+	for _, b := range f.Binds {
+		expr, ok := b.Expr.(Expression)
+		if !ok || expr == nil {
+			return hir.NoID
+		}
+		subst[b.Expr] = &Identifier{Token: tok, Value: b.Name}
+		nodes = append(nodes, captureNode{expr: expr, inner: b.Inner, name: b.Name})
+	}
+	// rewritten 由**非破壞性**替換取得：AST 軌是就地改寫 ls.Value，H0 軌不能
+	// 碰用戶的樹，故另建一份替換版（只拷貝路徑上的容器，見 substCaptureExprs）。
+	rewritten := substCaptureExprs(ls.Value, subst)
+	stmt := l.buildCaptureChain(ls, f.Inner, nodes, f.WasDeclared, rewritten)
+	c.h0Diags = append(c.h0Diags, sp.diags...)
+	if stmt == nil {
+		return hir.NoID
+	}
+	return c.stmt(stmt)
+}
+
+// substCaptureExprs 回傳 e 的替換版：m 中的節點換成對應的 `__cap_N` 識別符。
+//
+// **非破壞性**——原樹一律不動（AST 凍結正是 S3-b 的目的）。只有「通往被捕獲
+// 節點的路徑上」的容器被淺拷貝，其餘子樹回傳**原指標**：語義副表
+// （InferredType / TypeOverride）以原始指標為鍵，盡量保留原身份才能讓型別
+// 解析與 AST 降糖路徑一致（見 CaptureFact.Binds 的註解）。
+//
+// 只需處理 collectCaptureNodes 實際會捕獲的容器型別；其餘節點原樣回傳。
+func substCaptureExprs(e Expression, m map[Node]*Identifier) Expression {
+	if e == nil || len(m) == 0 {
+		return e
+	}
+	if id, ok := m[e]; ok {
+		return id
+	}
+	switch v := e.(type) {
+	case *GroupedExpression:
+		if sub := substCaptureExprs(v.Expression, m); sub != v.Expression {
+			cp := *v
+			cp.Expression = sub
+			return &cp
+		}
+	case *InfixExpression:
+		left, right := substCaptureExprs(v.Left, m), substCaptureExprs(v.Right, m)
+		if left != v.Left || right != v.Right {
+			cp := *v
+			cp.Left, cp.Right = left, right
+			return &cp
+		}
+	case *IndexExpression:
+		left, index := substCaptureExprs(v.Left, m), substCaptureExprs(v.Index, m)
+		if left != v.Left || index != v.Index {
+			cp := *v
+			cp.Left, cp.Index = left, index
+			return &cp
+		}
+	case *CallExpression:
+		changed := false
+		args := make([]Expression, len(v.Arguments))
+		for i, a := range v.Arguments {
+			args[i] = substCaptureExprs(a, m)
+			if args[i] != a {
+				changed = true
+			}
+		}
+		if changed {
+			cp := *v
+			cp.Arguments = args
+			return &cp
+		}
+	}
+	return e
 }
 
 // lowerTypeMatchToHIR emits KTypeMatch for a type-destructuring match directly

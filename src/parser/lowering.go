@@ -170,7 +170,7 @@ func (p *Parser) prepareInBoundsMetadata(program *Program) {
 // lowering pass never ran), causing 24/532 corpus files to diverge in HIR
 // `t=?int` vs no-type for let-statements (see parser/dump/s3_breakdown_test.go
 // typeSynth bucket). With this preparation, both paths populate the same
-// nodeSem entry and ASTToHIR can produce identical Type IDs.
+// side-table entry and ASTToHIR can produce identical Type IDs.
 func (p *Parser) prepareInferredTypes(program *Program) {
 	if program == nil || program.Sem == nil {
 		return
@@ -195,7 +195,12 @@ func (p *Parser) lowerProgram(prog *Program) {
 	if os.Getenv("NOLANG_DEBUG_IT") != "" {
 		fmt.Fprintf(os.Stderr, "[debug-it] lowerProgram called, %d top-level statements\n", len(prog.Statements))
 	}
-	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}, deferMatchDesugar: true}
+	// S3: skipSugarExpand=true 讓 walk 遇 UnwrapAssign 不再原地展開回寫 AST；
+	// H0 (tohir.go case *UnwrapAssignStatement → lowerUnwrapAssignToHIR) 直接把
+	// 糖節點降成基礎 HIR。checker 亦已糖感知（checker.go 多處 case *UnwrapAssignStatement）。
+	// 側表推斷仍在 walk 其它分支進行。D9 下標寫入目標（a[i] ?= v，uas.Name == nil）
+	// 仍走原展開（lowerUnwrapAssignToIndex）。
+	l := &lowerer{p: p, visited: map[uintptr]bool{}, declaredLocals: map[string]bool{}, deferMatchDesugar: true, skipSugarExpand: true}
 	l.walk(reflect.ValueOf(prog))
 }
 
@@ -288,6 +293,19 @@ type lowerer struct {
 	// 階段只需要補上 match 降糖，不該再動這張副表。其它糖節點展開與語義推斷仍照常
 	// 進行（buildMatchDesugar 需要 p.sem.FuncVarType 等副表，必須保留）。
 	skipCollectLocalTypes bool
+	// skipSugarExpand 為 true 時，walk 遇到 UnwrapAssign / index-out / 結構捕獲
+	// 等糖節點不做「原地展開回寫 AST」(v.Set 替換成 BlockStatement / match /
+	// __cap_N)，只遞迴走訪其子節點；展開改由下游負責：LLVM 路徑由 H0 (ASTToHIR)
+	// 直接把糖節點降成基礎 HIR，js/wasm 路徑由 DesugarSurfaceMatchesPlain 的泛化
+	// 兜底 pass 展開成核心 AST。這是 S3 的目標：消除 parser 端 AST 回寫成本，以及
+	// 「展開後整棵 AST 再整體轉 HIR」的冗餘轉換。注意：側表推斷（?T / 捕獲 inner
+	// 型別）仍照常進行——checker / H0 需要這些事實。
+	skipSugarExpand bool
+	// resultNameOverride 非空時，lowerUnwrapAssign 用它作為 option 結果參數名，
+	// 不再從 curFuncDef.Results 探測。H0 直出（tohir.go 的 lowerUnwrapAssignToHIR）
+	// 用它傳入 hirConv.curResultName（funcLike 從 sig.Results 提取的 ?T 結果名），
+	// 因為 H0 侧沒有 curFuncDef。
+	resultNameOverride string
 }
 
 var surfaceMatchPtrType = reflect.TypeOf((*SurfaceMatch)(nil))
@@ -358,6 +376,7 @@ func (l *lowerer) walk(v reflect.Value) {
 			return
 		}
 		if v.Elem().Type() == unwrapAssignPtrType && v.CanSet() {
+			uas := v.Interface().(*UnwrapAssignStatement)
 			// UnwrapAssignStatement 一律展開為 BlockStatement（編譯器需要展開後的
 			// IR）。formatter 現走糖 AST（SkipLowering），不經此路徑，故不再需要
 			// SkipUnwrapLowering 跳過——該旗標已隨 §4.3 刪除。
@@ -365,7 +384,20 @@ func (l *lowerer) walk(v reflect.Value) {
 				l.walk(v.Elem())
 				return
 			}
-			uas := v.Interface().(*UnwrapAssignStatement)
+			// S3：LLVM 路徑（skipSugarExpand=true）不再原地展開——H0 (ASTToHIR 的
+			// case *UnwrapAssignStatement → lowerUnwrapAssignToHIR) 直接把糖節點降成
+			// 基礎 HIR，checker 亦已糖感知（checker.go 多處 case *UnwrapAssignStatement）。
+			// 仍呼叫 lowerUnwrapAssign 執行校驗（resultName 檢查、rhsDefinitelyNonOption、
+			// 型別副表推斷），但**丟棄**展開結果——不 v.Set 回寫 AST。這是 S3 的核心：
+			// 側表推斷與診斷在 walk 進行，結構展開在 H0。
+			// 限簡單變數目標（Name != nil）：下標/欄位目標（Target != nil，D9 寫入側
+			// `a[i] ?= v`）H0 尚不支援，暫時仍走原展開。
+			if l.skipSugarExpand && uas.Name != nil {
+				l.walk(v.Elem())
+				// 執行 lowerUnwrapAssign 以收集診斷與型別副表事實，但不回寫。
+				l.lowerUnwrapAssign(uas)
+				return
+			}
 			lowered := l.lowerUnwrapAssign(uas)
 			if lowered != nil {
 				// UnwrapAssignStatement 降級為 BlockStatement（Statement）。
@@ -414,12 +446,12 @@ func (l *lowerer) walk(v reflect.Value) {
 						if anns := l.p.sem.RawAnnotationsOf(es); len(anns) > 0 {
 							switch tgt := es.Expression.(type) {
 							case *AssignExpression:
+								// Stage 3 起一筆就夠：`SetRawAnnotations` 寫的是
+								// `AnnTable`，`AnnotationsOf` 與 `RawAnnotationsOf`
+								// 都讀它。原來還要補 `ns.Annotations`（因
+								// ResolveProgram 只對解析期直接收過註解的節點回填，
+								// 而內層 ae 是 lowering 才有的），現在不存在這個差異。
 								l.p.sem.SetRawAnnotations(tgt, anns)
-								// 同時填 Annotations：ResolveProgram 只對解析期直接
-								// 收到 RawAnnotations 的節點（此處為外層 es）回填
-								// Annotations，內層 ae 沒有；maybeIndexOutAssign
-								// 讀 AnnotationsOf，必須在此一併補齊，否則註解查不到。
-								l.p.sem.ensure(tgt).Annotations = anns
 								stmt = tgt
 							case *SurfaceMatch:
 								// D9 place-write：`#{index-out=DEF}` 註解套用到
@@ -430,7 +462,6 @@ func (l *lowerer) walk(v reflect.Value) {
 								// 读取」的舊語意（与 maybeIndexOutAssign 对 AssignExpression
 								// 的處理一致：註解只帶外層、desugar 時才轉移進內層）。
 								l.p.sem.SetRawAnnotations(tgt, anns)
-								l.p.sem.ensure(tgt).Annotations = anns
 							}
 						}
 					}
@@ -549,7 +580,7 @@ func (l *lowerer) walk(v reflect.Value) {
 // that the lowering pass uses for inferOptionArith / synthesizeNullableType
 // (via maybeCaptureOptionAssign's root-typing branch) but in analysisOnly mode:
 // no AST field is written, no sugar node is replaced. The inferred ?T is
-// published to Program.Sem's nodeSem via publishInferredType so the
+// published to Program.Sem's type-facts table via publishInferredType so the
 // SkipLowering path produces the same HIR / checker / formatter output as the
 // default path.
 func (l *lowerer) runInferredTypeAnalysis(program *Program) {
@@ -863,7 +894,7 @@ func (l *lowerer) inferOptionArith(s *LetStatement) {
 	if len(rt) > len(base) {
 		base = rt
 	}
-	// 推斷結果改走語義副表（Program.Sem 的 nodeSem），不再寫 AST。
+	// 推斷結果改走語義副表（Program.Sem 的 typeFacts），不再寫 AST。
 	// byArith=true：標位讓 `maybeCaptureOptionAssign` 的根-算術短路生效，
 	// 避免同一節點被結構捕獲改寫成 `__cap_N` 包裹。
 	l.publishInferredType(s, "?"+base, true)
@@ -943,6 +974,25 @@ func (l *lowerer) callOptionInner(c *CallExpression) string {
 		return inferred[1:]
 	}
 	return ""
+}
+
+// commonCaptureInner 回傳捕獲節點們一致的內部型別；為空、型別不一致
+// （混合整/浮點等，理論上被 checker 擋）或無節點時回傳 ""，讓呼叫端保留
+// 舊的預設（算術根 = i64）。呼叫端（maybeCaptureOptionAssign 的算術根
+// inner 補正）只對結果型別 ≠ i64 的算術（浮點、str 拼接）採用它。
+func commonCaptureInner(nodes []captureNode) string {
+	common := ""
+	for _, n := range nodes {
+		if n.inner == "" {
+			return ""
+		}
+		if common == "" {
+			common = n.inner
+		} else if common != n.inner {
+			return ""
+		}
+	}
+	return common
 }
 
 // addCaptureNode 把 e 登記為捕獲節點（分配 __cap_N、註冊型別），回傳替代 e 的識別符。
@@ -1137,7 +1187,7 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 	//
 	// S3（2026-10-16.4）：inferOptionArith 不再就地寫 `s.Type`；推斷結果改放
 	// `sem.InferredType` side-table，並以 `InferredByOptionArith` 標位區分來源
-	//（見 NodeSemantics 註釋）。`a = b + c` 算術根且雙運算元為有號整數時由
+	//（見 `TypeFact.ByOptionArith` 註釋）。`a = b + c` 算術根且雙運算元為有號整數時由
 	// inferOptionArith 推斷出 `?i64`（byArith=true），本短路生效，跳過結構
 	// desugar；`a = x + 1`（x 為 option）則 inferOptionArith 推不出，
 	// byArith 標位保持 false，捕獲照走，建構 `__cap_N` 暫存。
@@ -1182,9 +1232,42 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 		return nil
 	}
 	var nodes []captureNode
+	// S3-b 雙軌：開關打開時 collectCaptureNodes **必須**走「不改寫 AST」的分支
+	//（即 analysisOnly 那一路，見該函式的 `if l.analysisOnly` 各段）。
+	//
+	// 不這麼做的實測後果（本函式會被 walker 多次走到）：第一次就地把 `o` 換成
+	// `__cap_1`，而 addCaptureNode 已用 setVarType 給它登記了 `?i64` ⇒ 後續
+	// pass 把合成標識當成**新的可錯源**再捕獲一次，Binds 裡存的是 `__cap_1`
+	// 本身而非原始表達式，副表直接失去意義。
+	//
+	// rewritten 在 HIR 軌不使用（回傳 nil）：替換成 `__cap_N` 的動作改由
+	// tohir 依副表即席完成，不產生也不改寫任何 AST。
+	savedAnalysisOnly := l.analysisOnly
+	if HIRCaptureEnabled {
+		l.analysisOnly = true
+	}
 	rewritten := l.collectCaptureNodes(ls.Value, &nodes, ls.Token, false)
+	l.analysisOnly = savedAnalysisOnly
 	if len(nodes) == 0 {
 		return nil
+	}
+	// 算術根的 inner 推導補正：上方 `case *InfixExpression: inner = "i64"`
+	// 只對「整數算術」成立——codegen 的 option payload 慣例是整數算術（任意
+	// 寬度，含 byte/u32/char）的結果一律 zext 至 i64（窄型別已 zext／符號擴展，
+	// 見 lowerUnwrapAssign 對 ?T 內部型別與 ?= 暫存的說明），故硬編碼 i64 對
+	// 它們正確。需要覆寫的只有「結果型別 ≠ i64」的兩種：
+	//   - 浮點算術：結果是運算元的浮點型別（`a * b`，a/b 皆 ?f64 ⇒ ?f64；
+	//     實測 tests/arr-test-tmp.no，?i64 會讓 checker 誤報格式串 'g'）。
+	//   - str 拼接（`+`）：結果是 str。
+	// 其餘（整數、型別不一致、未知）保留 i64。⚠️ 實測教訓：把 byte 移位組合
+	// （aes.no 的 `(ek[x] << 24) | …`）覆寫成 ?byte 會讓 codegen 的 option
+	// wrap 發出 `trunc i64 %c614 to i8` 而 LLVM 驗證失敗（'%c614' defined
+	// with type 'i8' but expected 'i64'，tests/aes-vectors.no）。
+	if inf, isInf := root.(*InfixExpression); isInf {
+		if common := commonCaptureInner(nodes); common == "f32" || common == "f64" ||
+			(common == "str" && inf.Operator == "+") {
+			inner = common
+		}
 	}
 	// 顯式標註 ?T 時補內部守衛（推斷內部型別以顯式為準）。
 	if ls.Type != nil {
@@ -1192,22 +1275,58 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 			inner = explicit
 		}
 	}
-	// 目標是否在原始碼中已宣告（供下面的預宣告判斷）。必須在
-	// synthesizeNullableType 之前取樣：它會把 `a` 註冊進 VarTypes，之後再問
-	// 「VarTypes 是否為空」永遠是 false，預宣告就成了死碼。
+	// S3-b 第一步：把捕獲判定結果**物化**進副表（當下只寫不讀，無消費方）。
 	//
-	// 判定用 declaredLocals（walk 順序的宣告名單）+ 函式作用域的型別查詢，
-	// 不能直接讀全域 VarTypes：
-	//   - 全域表不記錄由字面量推斷出的型別（`mi = 0.0` 之後 VarTypes["mi"] 仍空），
-	//     漏判會對已存在的變數再發一次 `mi ?f64 = nil` 預宣告，清掉它的既有值；
-	//   - 全域表會被其他函式的同名參數污染（f 的 `c i64` 讓 h 的區域 `c` 被當成
-	//     已宣告），漏掉 h 需要的預宣告。
-	wasDeclared := l.declaredLocals[ls.Name.Value]
-	if !wasDeclared {
-		if _, ok := l.localDeclaredType(ls.Name.Value); ok {
-			wasDeclared = true
+	// 走到這裡代表「本陳述確定要捕獲」已判定完畢：inner 是最終內層型別，
+	// nodes 是由內至外的捕獲綁定。日後 tohir 可直接讀本表產出 `KLet` + `KIf`
+	// 鏈，捕獲就不再需要在 AST 層注入 `__cap_N` 合成節點（V4 違規，S3 backlog）。
+	//
+	// ⚠️ 本段**不改任何行為**：下方的結構改寫（預宣告 / 巢狀 match / 取代節點）
+	// 照舊執行，副表純屬旁路記錄。
+	if l.p != nil && l.p.sem != nil {
+		binds := make([]CaptureBind, 0, len(nodes))
+		for _, cn := range nodes {
+			binds = append(binds, CaptureBind{Expr: cn.expr, Inner: cn.inner, Name: cn.name})
 		}
+		// WasDeclared 必須在預宣告判斷之前取值，且隨表帶出：它活在 lowerer 的
+		// 走查期作用域（declaredLocals）裡，tohir 拿不到。取值時機見下方同名
+		// 註解——declaredLocals 在本陳述的捕獲跑完之後才登記本陳述的名字。
+		wasDeclared := l.declaredLocals[ls.Name.Value]
+		l.p.sem.SetCaptureFact(ls, &CaptureFact{Inner: inner, Binds: binds, WasDeclared: wasDeclared})
 	}
+	// S3-b 雙軌：開關打開時**只記錄、不改寫 AST** —— 巢狀 match / 預宣告 /
+	// 取代節點的結構改寫全部略過，交由 H0（tohir）讀副表產出等價的
+	// `KLet` + `KIf` 鏈。型別推斷（synthesizeNullableType → sem.InferredType）
+	// 仍須執行：它是 H0 產出 `?T` 型別的唯一來源。
+	//
+	// ⚠️ 此刻 H0 側產出尚未實作 ⇒ 開關為 true 時捕獲語義**缺失**，僅供副表
+	// 記錄面與 AST 凍結的驗證，不得用於端到端編譯（見 HIRCaptureEnabled）。
+	if HIRCaptureEnabled {
+		l.synthesizeNullableType(ls, inner)
+		return nil
+	}
+	// 目標是否在原始碼中已宣告（供下面的預宣告判斷）。
+	//
+	// 判定只能用 declaredLocals（walk 順序的宣告名單，參數在函式入口入帳）：
+	// 它在本陳述的捕獲跑完之後才登記本陳述的名字（見 walker 的
+	// `l.declaredLocals[ls.Name.Value] = true`），所以這裡看到的名字必然是
+	// 「先前陳述／參數」宣告的，正是預宣告要區分的兩種情形。
+	//
+	// 曾經還有一條 `localDeclaredType` 回退，已於 2026-10-22 刪除：它把
+	// **本陳述自己**在解析期登記的型別也算成「已宣告」，而捕獲會把本陳述連同
+	// 它的型別節點一起替換掉，預宣告才是唯一能把 `?T` 型別建立起來的地方——
+	// 漏掉它，MIR 只能從第一條臂（nil 臂的 `a = __cap_N` option 傳播）推導
+	// 目標型別，於是 `xs = shs-sub(ln, i + 1, rb)`（callee 回傳 str，
+	// filterInferableType 保留 str）捕獲後 xs 被錯定型別，`xs.len-bytes()`
+	// 在 emitBuiltinLen 報 "unsupported receiver type i64"。解析期會登記的
+	// 兩種來源（呼叫回傳推斷的 str/[]T/struct、本陳述顯式 `?T` 標註）都落在
+	// 這條回退裡，故一併刪除。
+	//
+	// 先前的 `?=` 目標／match 臂綁定不走 declaredLocals，但它們登记的型別是
+	// plain（?= 记的是解箱後的內層型別），會被上面 captureTargetAllowsOption
+	// 的 localDefinitelyNonOption 先擋下，走不到這裡；本陳述是它們的首次
+	// let 時，預宣告只是把型別重新建立一次，安全。
+	wasDeclared := l.declaredLocals[ls.Name.Value]
 	l.synthesizeNullableType(ls, inner)
 
 	// analysisOnly 模式（prepareInferredTypes）：分析到此結束，後續建巢
@@ -1216,6 +1335,42 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 		return nil
 	}
 
+	block := l.buildCaptureChain(ls, inner, nodes, wasDeclared, rewritten)
+	// S3-c：AST 軌把被捕獲的 LetStatement 就地替換成 buildCaptureChain 產出的
+	// BlockStatement，原節點隨即從 AST 消失；其 `#{...}` 註解（以節點指針為鍵存於
+	// sem.anns）若不相隨搬運，就會在進 HIR 前丟失。H0 軌看凍結形態、不經此替換，
+	// 故保留註解（見 parser/dump/hir_equivalence_test.go 的 hirCaptureKnownDivergence
+	// 與 tests/arr-test-tmp.no 的 `#{index-out=0.0}`）。這是 AST 軌的既有缺陷；此處把
+	// 原節點的註解 remap 到取代它的 BlockStatement，使兩軌註解都進 HIR（落在同一個
+	// KBlock 上）、S3-c 切換零行為變化。
+	//
+	// 只在 AST 軌執行：本路徑（maybeCaptureOptionAssign 對 buildCaptureChain 的呼叫）
+	// 僅在 !HIRCaptureEnabled 時抵達（H0 軌在上方 1304 行早退，改由 tohir 的
+	// lowerCaptureToHIR 建鏈並直接 annotate 原語句）。若在 buildCaptureChain 內無條件
+	// remap，H0 軌會经 c.stmt(block) 的 annotate(block) 与外层 annotate(ls) 重複掛兩次。
+	if bs, ok := block.(*BlockStatement); ok && l.p != nil && l.p.sem != nil {
+		if anns := l.p.sem.RawAnnotationsOf(ls); len(anns) > 0 {
+			l.p.sem.SetRawAnnotations(bs, anns)
+		}
+	}
+	return block
+}
+
+// buildCaptureChain 由「已判定要捕獲」的素材建出巢狀 match 結構（預宣告 +
+// 綁定 + 三臂），回傳取代原陳述的 BlockStatement。
+//
+// S3-b：本函式是**兩條軌道的唯一實作**——
+//   - AST 軌（默認）：由 maybeCaptureOptionAssign 就地改寫 AST 前呼叫；
+//   - H0 軌（HIRCaptureEnabled）：由 tohir 的 lowerCaptureToHIR 以副表
+//     （CaptureFact）重建的素材呼叫，產物**不寫回**用戶的 AST。
+//
+// 共用同一個建構函式是「HIR 逐字節一致」的根本保證：兩軌餵進來的是同一套
+// 素材、走的是同一段 code、也同樣經 c.stmt / case *IfExpression 折疊，
+// 差別只在**合成發生在哪裡**（parser 走查 vs H0）。
+//
+// 參數 rewritten 是最終賦值（子表達式已換成 `__cap_N`）；AST 軌由
+// collectCaptureNodes 就地改寫取得，H0 軌由 substCaptureExprs 非破壞性取得。
+func (l *lowerer) buildCaptureChain(ls *LetStatement, inner string, nodes []captureNode, wasDeclared bool, rewritten Expression) Statement {
 	tok := ls.Token
 	// 由最內層節點往外建巢狀 match；最內層 body 即最終賦值。
 	body := Statement(&LetStatement{
@@ -1551,7 +1706,6 @@ func (l *lowerer) carryOverflowAnnotation(from Node, to Statement) {
 		return
 	}
 	l.p.sem.SetRawAnnotations(to, entries)
-	l.p.sem.ensure(to).Annotations = entries
 }
 
 // stmtHasOverflowAnnotation 回報陳述是否帶有 `#{overflow=...}` 行註解（側表條目
@@ -2130,7 +2284,7 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 		}
 		l.p.curFuncName = savedFuncName
 		if ifExpr, ok := result.(*IfExpression); ok && ifExpr != nil {
-			l.p.sem.SetOpeningBraceComment(ifExpr, sm.OpeningBraceComment)
+			l.p.fmtTrivia.SetOpeningBraceComment(ifExpr, sm.OpeningBraceComment)
 		}
 		return result
 	}
@@ -2301,7 +2455,6 @@ func (p *Parser) prepareSurfaceMatch(sm *SurfaceMatch) *SurfaceMatch {
 	clone.Arms = arms
 	if anns := p.sem.RawAnnotationsOf(sm); len(anns) > 0 {
 		p.sem.SetRawAnnotations(&clone, anns)
-		p.sem.ensure(&clone).Annotations = anns
 	}
 	p.armPreChecks(&clone)
 	return &clone
@@ -3072,7 +3225,7 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 		// BlockStatement，區塊指標不保證存活到 formatter；語句指標則一定存活。
 		// Formatter 據此把該語句濾掉、還原成空臂輸出（否則 `->` 會被改寫成 `-> 0`，
 		// 破壞 `no fmt` 冪等）。
-		p.sem.SetRTFlag(zb.Statements[0], RTEmptyArmDefault)
+		p.fmtTrivia.SetRTFlag(zb.Statements[0], RTEmptyArmDefault)
 		if arms[i].Body != nil {
 			zb.IsInline = arms[i].Body.IsInline
 			zb.TrailingComments = arms[i].Body.TrailingComments
@@ -4182,7 +4335,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 				changed = true
 			}
 		case *ExpressionStatement:
-			if ie, ok := n.Expression.(*IfExpression); ok && !p.sem.HasRTFlag(ie, RTBareMatch) {
+			if ie, ok := n.Expression.(*IfExpression); ok && !p.fmtTrivia.HasRTFlag(ie, RTBareMatch) {
 				if ie.Consequence != nil {
 					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
 						ie.Consequence.Statements = ns
@@ -4588,8 +4741,8 @@ func (p *Parser) prependStmt(body *BlockStatement, stmt Statement) *BlockStateme
 	nb.TrailingComments = body.TrailingComments
 	nb.ClosingBraceComment = body.ClosingBraceComment
 	nb.RBrace = body.RBrace
-	if obc := p.sem.OpeningBraceCommentOf(body); obc != nil {
-		p.sem.SetOpeningBraceComment(nb, obc)
+	if obc := p.fmtTrivia.OpeningBraceCommentOf(body); obc != nil {
+		p.fmtTrivia.SetOpeningBraceComment(nb, obc)
 	}
 	// 保留原 body 區塊的 #{overflow = ...} 等註解：裸配對臂的溢出模式掛在
 	// bodyBlock 上，desugar 插入 `it` 綁定時若丟棄註解，generateIfExpression
@@ -4629,8 +4782,10 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	l.walk(reflect.ValueOf(&uas.Value))
 
 	// Find the option-typed result param name from the current function def.
-	resultName := ""
-	if l.curFuncDef != nil {
+	// H0 直出（lowerUnwrapAssignToHIR）透過 resultNameOverride 傳入（funcLike
+	// 已從 sig.Results 提取），此處僅在 walk 路徑（curFuncDef 可用）時探測。
+	resultName := l.resultNameOverride
+	if resultName == "" && l.curFuncDef != nil {
 		for _, res := range l.curFuncDef.Results {
 			if res.Type != nil {
 				ts := typeString(res.Type)
@@ -4663,13 +4818,14 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// 若右側含 option 運算元（如 a ?= b + c + d、a ?= f(b + c)），為每個 option 運算元
 	// 綁定臨時變數並注入傳播守衛（nil/err → result = __opt_N; return）。
 	var guards []Statement
+	rhs := uas.Value
 	if resultName != "" {
 		if l.rhsDefinitelyNonOption(uas.Value) {
 			l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` RHS `%s` is not an option — use `=` instead",
 				tok.Line, tok.Column, uas.String()))
 			return nil
 		}
-		l.guardOptionOperands(uas.Value, &guards, resultName, tok)
+		rhs = l.guardOptionOperands(uas.Value, &guards, resultName, tok)
 	}
 
 	// Create a unique temporary variable name for the option value.
@@ -4680,7 +4836,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// This allows buildMatchDesugar to resolve elemType for `it` bindings.
 	savedFuncName2 := l.p.curFuncName
 	l.p.curFuncName = l.curFuncName
-	if call, ok := uas.Value.(*CallExpression); ok {
+	if call, ok := rhs.(*CallExpression); ok {
 		if inferred := l.p.inferTypeFromCallExpr(call); inferred != "" {
 			l.p.setVarType(tmpName, inferred)
 		}
@@ -4695,7 +4851,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// i64 -> ?i64 型別錯誤。
 	var tmpType Type
 	var elemType string // 安全索引的元素型別（v[i] 的 i）；用於標註 LHS 區域變數型別
-	switch v := uas.Value.(type) {
+	switch v := rhs.(type) {
 	case *InfixExpression:
 		l.p.setVarType(tmpName, "?i64")
 		tmpType = &NullableType{
@@ -4721,6 +4877,18 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			inner := strings.TrimPrefix(inferred, "?")
 			elemType = inner
 			l.p.setVarType(tmpName, inferred)
+			// 必須同時在 LetStatement 上掛 NullableType 節點：H0 直出（tohir.go
+			// 的 lowerUnwrapAssignToHIR）只從 s.Type 取型別 ID，讀不到 FuncVarTypes。
+			// 漏設時 `let __unwrap_N` 的 HIR Type=0（無型別），MIR 取不到 ?T 的
+			// payload ⇒ ok 臂 `let it = __unwrap_N` 無值 ⇒ 目標變數恆 undef
+			//（fs.no 的 `size ?= fs.fstat-size(.fd)` 即為 CallExpression 分支）。
+			// Infix / Index 兩分支早已如此，此處為對齊補齊。
+			if strings.HasPrefix(inferred, "?") {
+				tmpType = &NullableType{
+					Token: tok,
+					Type:  &NamedType{Token: tok, Value: inner},
+				}
+			}
 			if uas.Name != nil && uas.Name.Value != resultName {
 				l.p.sem.SetFuncVarType(l.curFuncName, uas.Name.Value, inner)
 			}
@@ -4759,7 +4927,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// 的型別，導致 inner 被誤配為 %str-long、且 __unwrap_N 被誤配為 i64（8 位元組）
 	// 卻以 %option（16 位元組）存取 → 記憶體損壞與崩潰（見 test-iso-q.no）。
 	if elemType == "" {
-		if ident, ok := uas.Value.(*Identifier); ok {
+		if ident, ok := rhs.(*Identifier); ok {
 			t := ""
 			if tt, ok2 := l.p.sem.FuncVarType(l.curFuncName, ident.Value); ok2 {
 				t = tt
@@ -4785,7 +4953,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		Token: tok,
 		Name:  tmpIdent,
 		Type:  tmpType,
-		Value: uas.Value,
+		Value: rhs,
 	}
 
 	// Build match arms.
@@ -4901,7 +5069,20 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 				Value: &Identifier{Token: tok, Value: "it"},
 			},
 		}
+	} else if uas.Name != nil && uas.Name.Value != resultName {
+		// 非結果參數目標（v != result）：v 已在 match 前預宣告（見下方 stmts 組裝），
+		// 此處僅賦值 `v = it`（AssignExpression 寫入預宣告的 slot）。若用 LetStatement
+		// 會把 v 定義成臂內局部，臂外 `r = v` 讀不到 ⇒ MIR "move src slot"（bug #85 鄰域）。
+		okArm = &ExpressionStatement{
+			Token: tok,
+			Expression: &AssignExpression{
+				Token: tok,
+				Left:  uas.Name,
+				Value: &Identifier{Token: tok, Value: "it"},
+			},
+		}
 	} else {
+		// 結果參數目標（r ?= …）：r 是 out-param，本就有 slot，LetStatement 直接賦值。
 		la := &LetStatement{
 			Token: tok,
 			Name:  uas.Name,
@@ -4961,7 +5142,20 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// guards（option 運算元守衛）必須在 __unwrap_N 指派與 match 之前，確保任一
 	// option 運算元為 nil/err 時先上拋；preStmts（result = __unwrap_N）亦須在
 	// match 之前，確保 r 在 arm 內的 return 前已被賦值為 opt 結果（ok/err/nil）。
-	stmts := make([]Statement, 0, len(guards)+len(preStmts)+2)
+	stmts := make([]Statement, 0, len(guards)+len(preStmts)+3)
+	// 非結果參數目標（v != result）：在 match 前預宣告 `v <elemType> = <zero>`，使 v
+	// 在臂外（`r = v`）可見且有 slot。ok 臂以 AssignExpression 寫入此預宣告的 slot，
+	// 避免臂內 LetStatement 把 v 定義成臂內局部（MIR "move src slot"）。
+	if uas.Name != nil && uas.Name.Value != resultName && elemType != "" {
+		if zero := scalarZeroLiteral(tok, elemType); zero != nil {
+			stmts = append(stmts, &LetStatement{
+				Token: tok,
+				Name:  uas.Name,
+				Type:  &NamedType{Token: tok, Value: elemType},
+				Value: zero,
+			})
+		}
+	}
 	stmts = append(stmts, guards...)
 	stmts = append(stmts, tmpAssign)
 	for _, s := range preStmts {
@@ -5256,17 +5450,35 @@ func (l *lowerer) infixAllLiterals(e Expression) bool {
 // guardOptionOperands 遍歷 ?= 右側表達式，為其中的 option 運算元注入傳播守衛。
 // 僅在「算術運算元」位置直接解包 option 運算元；呼叫引數位置則只遞迴下探
 // （如 f(b+c) 的 b+c），不直接解包作為引數的 option 變數（交給被呼叫方或 ?= 豁免）。
-// 守衛語句會被附加到 *guards，並就地重寫 uas.Value 中的 option 運算元為臨時變數。
-func (l *lowerer) guardOptionOperands(e Expression, guards *[]Statement, resultName string, tok lexer.Token) {
+// 守衛語句會被附加到 *guards。
+//
+// C6（H0 不動 AST）：回傳**新的**表達式樹（不變的子樹共享原節點），不原地改寫
+// 傳入的 e —— H0 直出（lowerUnwrapAssignToHIR）呼叫時不得污染原 AST。walk 路徑
+// 用回傳值替換 uas.Value 即可，行為一致。
+func (l *lowerer) guardOptionOperands(e Expression, guards *[]Statement, resultName string, tok lexer.Token) Expression {
 	switch v := e.(type) {
 	case *InfixExpression:
-		v.Left = l.guardInArithmetic(v.Left, guards, resultName, tok)
-		v.Right = l.guardInArithmetic(v.Right, guards, resultName, tok)
-	case *CallExpression:
-		for i := range v.Arguments {
-			v.Arguments[i] = l.guardInCallArg(v.Arguments[i], guards, resultName, tok)
+		left := l.guardInArithmetic(v.Left, guards, resultName, tok)
+		right := l.guardInArithmetic(v.Right, guards, resultName, tok)
+		if left == v.Left && right == v.Right {
+			return v
 		}
+		return &InfixExpression{Token: v.Token, Left: left, Operator: v.Operator, Right: right}
+	case *CallExpression:
+		changed := false
+		args := make([]Expression, len(v.Arguments))
+		for i := range v.Arguments {
+			args[i] = l.guardInCallArg(v.Arguments[i], guards, resultName, tok)
+			if args[i] != v.Arguments[i] {
+				changed = true
+			}
+		}
+		if !changed {
+			return v
+		}
+		return &CallExpression{Token: v.Token, Function: v.Function, Arguments: args}
 	}
+	return e
 }
 
 func (l *lowerer) guardInArithmetic(e Expression, guards *[]Statement, resultName string, tok lexer.Token) Expression {
@@ -5275,14 +5487,25 @@ func (l *lowerer) guardInArithmetic(e Expression, guards *[]Statement, resultNam
 	}
 	switch v := e.(type) {
 	case *InfixExpression:
-		v.Left = l.guardInArithmetic(v.Left, guards, resultName, tok)
-		v.Right = l.guardInArithmetic(v.Right, guards, resultName, tok)
-		return v
-	case *CallExpression:
-		for i := range v.Arguments {
-			v.Arguments[i] = l.guardInCallArg(v.Arguments[i], guards, resultName, tok)
+		left := l.guardInArithmetic(v.Left, guards, resultName, tok)
+		right := l.guardInArithmetic(v.Right, guards, resultName, tok)
+		if left == v.Left && right == v.Right {
+			return v
 		}
-		return v
+		return &InfixExpression{Token: v.Token, Left: left, Operator: v.Operator, Right: right}
+	case *CallExpression:
+		changed := false
+		args := make([]Expression, len(v.Arguments))
+		for i := range v.Arguments {
+			args[i] = l.guardInCallArg(v.Arguments[i], guards, resultName, tok)
+			if args[i] != v.Arguments[i] {
+				changed = true
+			}
+		}
+		if !changed {
+			return v
+		}
+		return &CallExpression{Token: v.Token, Function: v.Function, Arguments: args}
 	}
 	return e
 }
@@ -5290,14 +5513,25 @@ func (l *lowerer) guardInArithmetic(e Expression, guards *[]Statement, resultNam
 func (l *lowerer) guardInCallArg(e Expression, guards *[]Statement, resultName string, tok lexer.Token) Expression {
 	switch v := e.(type) {
 	case *InfixExpression:
-		v.Left = l.guardInArithmetic(v.Left, guards, resultName, tok)
-		v.Right = l.guardInArithmetic(v.Right, guards, resultName, tok)
-		return v
-	case *CallExpression:
-		for i := range v.Arguments {
-			v.Arguments[i] = l.guardInCallArg(v.Arguments[i], guards, resultName, tok)
+		left := l.guardInArithmetic(v.Left, guards, resultName, tok)
+		right := l.guardInArithmetic(v.Right, guards, resultName, tok)
+		if left == v.Left && right == v.Right {
+			return v
 		}
-		return v
+		return &InfixExpression{Token: v.Token, Left: left, Operator: v.Operator, Right: right}
+	case *CallExpression:
+		changed := false
+		args := make([]Expression, len(v.Arguments))
+		for i := range v.Arguments {
+			args[i] = l.guardInCallArg(v.Arguments[i], guards, resultName, tok)
+			if args[i] != v.Arguments[i] {
+				changed = true
+			}
+		}
+		if !changed {
+			return v
+		}
+		return &CallExpression{Token: v.Token, Function: v.Function, Arguments: args}
 	}
 	return e
 }

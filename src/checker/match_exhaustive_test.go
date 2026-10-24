@@ -368,7 +368,7 @@ bar = () {
 `
 	prog := parseProg(t, src)
 	for _, s := range prog.Statements {
-		parser.SetSourceFile(s, "/repo/main.no")
+		prog.Sem.SetSourceFileOf(s, "/repo/main.no")
 	}
 	results := ValidateNonExhaustiveMatch(prog)
 	if n := countMatchNonex(results); n != 1 {
@@ -393,14 +393,14 @@ func TestNonExhaustiveMatchVetMergedSurvivesFilter(t *testing.T) {
 `
 	prog := parseProg(t, mainSrc)
 	for _, s := range prog.Statements {
-		parser.SetSourceFile(s, "/repo/main.no")
+		prog.Sem.SetSourceFileOf(s, "/repo/main.no")
 	}
 	// A second top-level statement attributed to a different (std) file forces
 	// RunAllLints into the multi-file branch (singleFile == false).
 	stdSrc := `helper = () { 1 }`
 	stdProg := parseProg(t, stdSrc)
 	for _, s := range stdProg.Statements {
-		parser.SetSourceFile(s, "/std/env/env.no")
+		prog.Sem.SetSourceFileOf(s, "/std/env/env.no")
 		prog.Statements = append(prog.Statements, s)
 	}
 

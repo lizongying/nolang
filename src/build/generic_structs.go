@@ -213,7 +213,7 @@ func isTemplateMethodName(name string, templates map[string]*parser.StructDefini
 
 // specializeGenericStruct 依據具體鍵/值型別，從模板結構與方法產生具體定義。
 // 回傳生成的陳述句列表（結構定義 + 各方法定義）。
-func specializeGenericStruct(keyStr, valueStr string, tmplSD *parser.StructDefinition, tmplMethods []*parser.FunctionDefinition) []parser.Statement {
+func specializeGenericStruct(sem *parser.SemanticContext, keyStr, valueStr string, tmplSD *parser.StructDefinition, tmplMethods []*parser.FunctionDefinition) []parser.Statement {
 	cat := keyCategory(keyStr)
 	concreteName := "hashmap-" + keyStr + "-" + parser.SanitizeLLVMTypeName(valueStr)
 
@@ -292,14 +292,14 @@ func specializeGenericStruct(keyStr, valueStr string, tmplSD *parser.StructDefin
 
 	// 複製每個方法
 	for _, fd := range tmplMethods {
-		generated = append(generated, cloneMethod(fd, subst, concreteName))
+		generated = append(generated, cloneMethod(sem, fd, subst, concreteName))
 	}
 
 	return generated
 }
 
 // cloneMethod 複製一個模板方法，套用替換表並更名為 "concreteName.methodSuffix"。
-func cloneMethod(fd *parser.FunctionDefinition, subst map[string]string, concreteName string) *parser.FunctionDefinition {
+func cloneMethod(sem *parser.SemanticContext, fd *parser.FunctionDefinition, subst map[string]string, concreteName string) *parser.FunctionDefinition {
 	methodSuffix := fd.Name
 	if dotIdx := strings.LastIndex(fd.Name, "."); dotIdx >= 0 {
 		methodSuffix = fd.Name[dotIdx+1:]
@@ -353,8 +353,8 @@ func cloneMethod(fd *parser.FunctionDefinition, subst map[string]string, concret
 	}
 	// 傳承模板方法的來源檔 / 模組歸屬（理由同 transpiler 的泛型函式單態化：
 	// 不複製會讓 SourceFile 為空，造成診斷歸因錯誤與標準庫實例被誤判為主程式碼）。
-	parser.SetSourceFile(nf, parser.GetSourceFile(fd))
-	parser.SetModuleOwner(nf, parser.GetModuleOwner(fd))
+	sem.SetSourceFileOf(nf, sem.SourceFileOf(fd))
+	sem.SetModuleOwnerOf(nf, sem.ModuleOwnerOf(fd))
 	return nf
 }
 
@@ -417,7 +417,7 @@ func monomorphizeGenericStructs(program *parser.Program) {
 		if !ok {
 			continue // 該分類無對應模板
 		}
-		generated = append(generated, specializeGenericStruct(pair.key, pair.value, tmplSD, templateMethods[tmplName])...)
+		generated = append(generated, specializeGenericStruct(program.Sem, pair.key, pair.value, tmplSD, templateMethods[tmplName])...)
 	}
 
 	// 4. 移除原始模板陳述句（模板結構定義與模板方法）

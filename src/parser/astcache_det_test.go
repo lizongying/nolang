@@ -26,13 +26,13 @@ import (
 //     single-entry map has only one possible iteration order, so it would not
 //     exercise the nondeterminism at all);
 //   - the shadow is walked and must contain NO map anywhere — that is the
-//     structural guard against a new map field being added to one of the four
+//     structural guard against a new map field being added to one of the
 //     map-bearing types without a matching shadow, which would silently
 //     reintroduce the nondeterminism this test exists to prevent.
 func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	// Source copied from TestProgramGobRoundTripPreservesNodeSemMapping: known
-	// to parse cleanly AND to produce annotations (hence a non-empty nodeSem,
-	// so the map[uint32]*NodeSemantics path is exercised too).
+	// to parse cleanly AND to produce annotations, so the Anns / TypeFacts /
+	// NodeFacts occurrence-keyed paths are exercised too.
 	src := "f = (a []i64, i i64) {\n" +
 		"    n [24]i64\n" +
 		"    #{index-out=zero}\n" +
@@ -67,23 +67,49 @@ func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	prog.Sem.IdxLocalTypes["f"] = map[string]string{"q": "[]i64", "p": "[]str"}
 	prog.BuiltinFuncNames = map[string]bool{"sqrt": true, "abs": true}
 
-	cp := &CachedProgram{Prog: prog, NodeSem: SerializeNodeSem(prog)}
-	if cp.NodeSem == nil {
-		cp.NodeSem = map[uint32]*NodeSemantics{}
+	cp := &CachedProgram{
+		Prog:      prog,
+		Anns:      SerializeAnns(prog),
+		TypeFacts: SerializeTypeFacts(prog),
 	}
-	// NodeSemantics.EmbedFiles is the fourth map-bearing type; it is reached
-	// through the side-table, so inject it explicitly.
-	cp.NodeSem[1] = &NodeSemantics{EmbedFiles: map[string][]byte{"b.bin": {2}, "a.bin": {1}}}
-	cp.NodeSem[2] = &NodeSemantics{PlatformKeys: []string{"mac-arm64"}}
+	// NodeFact.EmbedFiles is the third map-bearing type; since Stage 5 it lives
+	// in the node-facts table (it used to be NodeSemantics.EmbedFiles), so it is
+	// injected through that table explicitly.
+	if cp.NodeFacts == nil {
+		cp.NodeFacts = map[uint32]*NodeFact{}
+	}
+	cp.NodeFacts[1] = &NodeFact{EmbedFiles: map[string][]byte{"b.bin": {2}, "a.bin": {1}}}
+	cp.NodeFacts[2] = &NodeFact{VariadicUnion: "num"}
+	// Stage 3: the annotation table is the FOURTH map-bearing type. Two entries
+	// are required — a single-entry map cannot expose iteration-order
+	// nondeterminism, so one entry would make the byte comparison below luck.
+	if cp.Anns == nil {
+		cp.Anns = map[uint32][]*AnnotationEntry{}
+	}
+	cp.Anns[3] = []*AnnotationEntry{{Key: "overflow"}}
+	cp.Anns[4] = []*AnnotationEntry{{Key: "index-out"}}
+	// Stage 4: the type-facts table is the FIFTH map-bearing type. Same rule —
+	// two entries minimum.
+	if cp.TypeFacts == nil {
+		cp.TypeFacts = map[uint32]*TypeFact{}
+	}
+	cp.TypeFacts[5] = &TypeFact{InferredType: "?i64"}
+	cp.TypeFacts[6] = &TypeFact{TypeOverride: "vec.i64", ByOptionArith: true}
 
 	// Non-vacuity #1: the maps really are populated.
-	if len(prog.Sem.VarTypes) < 2 || len(cp.NodeSem) < 2 {
-		t.Fatalf("fixture is vacuous: VarTypes=%d NodeSem=%d", len(prog.Sem.VarTypes), len(cp.NodeSem))
+	if len(prog.Sem.VarTypes) < 2 || len(cp.NodeFacts) < 2 || len(cp.Anns) < 2 || len(cp.TypeFacts) < 2 {
+		t.Fatalf("fixture is vacuous: VarTypes=%d NodeFacts=%d Anns=%d TypeFacts=%d",
+			len(prog.Sem.VarTypes), len(cp.NodeFacts), len(cp.Anns), len(cp.TypeFacts))
 	}
 
 	// Non-vacuity #2: no map may survive into the shadow. A raw map there is
 	// encoded by gob in random order and the byte comparison below becomes luck.
-	shadow := detCached{Prog: detFromProgram(prog), NodeSem: detFromNodeSemMap(cp.NodeSem)}
+	shadow := detCached{
+		Prog:      detFromProgram(prog),
+		Anns:      detFromAnnsMap(cp.Anns),
+		TypeFacts: detFromTypeFactsMap(cp.TypeFacts),
+		NodeFacts: detFromNodeFactsMap(cp.NodeFacts),
+	}
 	if maps := shadowMapTypes(reflect.ValueOf(&shadow), map[uintptr]bool{}); len(maps) > 0 {
 		names := make([]string, 0, len(maps))
 		for m := range maps {
@@ -131,8 +157,8 @@ func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	if len(dcp.Prog.BuiltinFuncNames) != len(prog.BuiltinFuncNames) {
 		t.Fatalf("BuiltinFuncNames lost across the round-trip: %v", dcp.Prog.BuiltinFuncNames)
 	}
-	if ns := dcp.NodeSem[1]; ns == nil || len(ns.EmbedFiles) != 2 {
-		t.Fatalf("NodeSemantics.EmbedFiles lost across the round-trip: %+v", ns)
+	if f := dcp.NodeFacts[1]; f == nil || len(f.EmbedFiles) != 2 {
+		t.Fatalf("NodeFact.EmbedFiles lost across the round-trip: %+v", f)
 	}
 }
 

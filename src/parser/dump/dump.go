@@ -24,7 +24,7 @@
 //
 //  3. **The output must be deterministic.** Nothing here iterates a Go map or
 //     depends on pointer values. Note in particular that the annotation
-//     side-table is a `map[Node]*NodeSemantics`; it is therefore *looked up per
+//     side-table is a `map[Node][]*AnnotationEntry`; it is therefore *looked up per
 //     node in tree order*, never ranged over (see (*dumper).annotations).
 //
 // Scalar fields that carry source-level information are always printed. Fields
@@ -53,7 +53,7 @@ type Options struct {
 	// Sem is the semantic side-table holding those annotations. Required when
 	// Annotations is true; a nil Sem simply yields no annotations.
 	//
-	// ⚠️ Sem.nodeSem is a map keyed by Node. It must never be iterated: Go
+	// ⚠️ Sem's node-keyed tables are maps keyed by Node. They must never be iterated: Go
 	// randomises map iteration order, which would make the dump irreproducible.
 	Sem *parser.SemanticContext
 }
@@ -222,7 +222,7 @@ func (d *dumper) node(node parser.Node, depth int) {
 		fmt.Fprintf(&d.buf, "%sLetStatement{%s}\n", indent(depth),
 			fields(kv("name", n.Name.Value), kvs("type", typeString(n.Type)), kv("value", valStr),
 				kvb("synthetic", n.IsSynthetic), kvb("armBinding", n.IsArmBinding),
-				kvb("moduleConst", n.IsModuleConst), kvb("propagation", n.IsPropagation),
+				kvb("moduleConst", d.opts.Sem.ModuleConstOf(n)), kvb("propagation", n.IsPropagation),
 				kvs("itArmType", n.ItArmType), kvs("overflow", n.OverflowMode)))
 		d.comments(n, depth+1)
 		if n.Type != nil {
@@ -275,10 +275,10 @@ func (d *dumper) node(node parser.Node, depth int) {
 				kvb("colonSyntax", n.ColonSyntax), kvb("methodDef", n.IsMethodDef),
 				kvb("skipNamingCheck", n.IsSkipNamingCheck),
 				kvs("overflow", n.OverflowMode),
-				kvb("intrinsic", n.Intrinsic), kvb("builtinStub", n.BuiltinStub),
+				kvb("builtinStub", n.BuiltinStub),
 				kvs("builtinName", n.BuiltinName), kvb("builtinGroup", n.BuiltinGroup)))
 		d.comments(n, depth+1)
-		d.signature(n.FuncSignature, depth+1)
+		d.signature(n, n.FuncSignature, depth+1)
 		if n.Body != nil {
 			d.node(n.Body, depth+1)
 		}
@@ -406,7 +406,7 @@ func (d *dumper) node(node parser.Node, depth int) {
 	case *parser.FunctionLiteral:
 		fmt.Fprintf(&d.buf, "%sFunctionLiteral\n", indent(depth))
 		d.comments(n, depth+1)
-		d.signature(n.FuncSignature, depth+1)
+		d.signature(n, n.FuncSignature, depth+1)
 		if n.Body != nil {
 			d.node(n.Body, depth+1)
 		}
@@ -804,8 +804,10 @@ func (d *dumper) node(node parser.Node, depth int) {
 // ── shared sub-structures ────────────────────────────────────────────────────
 
 // signature dumps the parameter/result part shared by FunctionDefinition,
-// FunctionLiteral and FunctionType.
-func (d *dumper) signature(sig parser.FuncSignature, depth int) {
+// FunctionLiteral and FunctionType. owner is the enclosing node (for the
+// SemanticContext-side variadic-union lookup; S5 stage 4 moved the union
+// markers off FuncSignature).
+func (d *dumper) signature(owner parser.Node, sig parser.FuncSignature, depth int) {
 	if len(sig.GenericParams) > 0 {
 		names := make([]string, 0, len(sig.GenericParams))
 		for _, g := range sig.GenericParams {
@@ -817,7 +819,7 @@ func (d *dumper) signature(sig parser.FuncSignature, depth int) {
 	}
 	if sig.IsVariadic {
 		fmt.Fprintf(&d.buf, "%sVariadic{%s}\n", indent(depth),
-			fields(kvs("union", sig.VariadicUnion)))
+			fields(kvs("union", d.opts.Sem.VariadicUnionOf(owner))))
 	}
 	for _, p := range sig.Parameters {
 		if p != nil {
@@ -959,7 +961,8 @@ func (d *dumper) commentGroupInline(cg *parser.CommentGroup) {
 
 // annotations prints the `#{...}` entries the parser attached to n.
 //
-// ⚠️ The side-table is a map[Node]*NodeSemantics. It is never ranged over —
+// ⚠️ The annotation side-table is a map[Node][]*AnnotationEntry. It is never
+// ranged over —
 // Go randomises map iteration order, which would make the dump irreproducible.
 // Instead each node does a point lookup as the tree is walked, so the output
 // order is the tree order.

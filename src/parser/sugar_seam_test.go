@@ -21,7 +21,9 @@ package parser
 //	                  caller sees no longer mirrors the source.
 //	removedByH0     — it survives the parser intact and is only erased by H0
 //	                  (step S2). These do not violate P1; they violate P2 by
-//	                  surviving into HIR (KGrouped, KMultiAssign).
+//	                  surviving into HIR (KMultiAssign today — KGrouped was the
+//	                  first instance and has been erased at H0 since 2026-10-21,
+//	                  see hir/sugar_kinds_test.go's G3 gate).
 //
 // Getting that wrong is easy — the first version of this file asserted "the
 // default route contains zero sugar" and failed immediately on GroupedExpression
@@ -65,8 +67,10 @@ var sugarTiers = map[string]sugarTier{
 	// S1 翻转：ParseProgram 默认路径保留 SurfaceMatch（deferMatchDesugar），
 	// 不再在 parser 内展成 if 链。SurfaceMatch 因此改由 H0（S2）擦除，
 	// 从 removedByParser 升为 removedByH0。
+	// S3（2026-10-22）：skipSugarExpand=true 让 ?= 同样保留至 H0 擦除
+	//（lowerUnwrapAssignToHIR 直出基礎 HIR），walk 只做校驗不回寫。
 	"SurfaceMatch":          removedByH0,
-	"UnwrapAssignStatement": removedByParser,
+	"UnwrapAssignStatement": removedByH0,
 	"GroupedExpression":     removedByH0,
 	"MultiAssignStatement":  removedByH0,
 }
@@ -149,7 +153,7 @@ func sugarNodeCensus(prog *Program) map[string]int {
 					// Side tables, not part of the node tree. Sem in particular
 					// is a map keyed by Node and would dominate the walk.
 					switch v.Type().Field(i).Name {
-					case "Sem", "Warnings", "BuiltinFuncNames":
+					case "Sem", "Warnings", "BuiltinFuncNames", "FmtTrivia":
 						continue
 					}
 				}
@@ -269,8 +273,10 @@ func TestSeamProbesAreControlled(t *testing.T) {
 //   - removedByH0 types must be present both before AND after, because the
 //     parser does not touch them — that is the P2 obligation still outstanding.
 //
-// The second half is the AST-side evidence for the HIR census's `grouped=11021`:
-// the parentheses are not created by lowering, they are simply passed through.
+// The second half is the AST-side evidence the G3 gate's anti-vacuity half
+// rests on (hir/sugar_kinds_test.go): the parentheses are not created by
+// lowering, they are simply passed through — so their later absence in HIR is
+// genuine erasure at H0, not a corpus without parens.
 func TestCorpusSugarCensus(t *testing.T) {
 	root := filepath.Join("..", "..", "tests")
 	if _, err := os.Stat(root); err != nil {
@@ -344,9 +350,12 @@ func TestCorpusSugarCensus(t *testing.T) {
 			h0Total += after[name]
 		}
 	}
-	if parserTotal == 0 || h0Total == 0 {
-		t.Fatalf("census split is degenerate (parser=%d, h0=%d); the corpus no longer "+
-			"exercises both tiers", parserTotal, h0Total)
+	// S3 (2026-10-22): all sugar types are now removedByH0 — parserTotal is
+	// expected to be 0. Only h0Total is required non-degenerate (the corpus
+	// must still carry sugar into H0 for the erasure to be meaningful).
+	if h0Total == 0 {
+		t.Fatalf("census is degenerate (h0=%d); the corpus no longer "+
+			"carries any sugar into H0", h0Total)
 	}
 
 	t.Logf("%d files; before lowering: %s | after the parser's lowering pass: %s "+

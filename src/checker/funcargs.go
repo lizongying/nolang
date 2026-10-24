@@ -292,7 +292,25 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 	return nil
 }
 
+// ValidateFuncArgs 是旧版入口（view=nil）；THIR 侧变体见 ValidateFuncArgsTHIR。
 func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult {
+	return runFuncArgsCore(program, rootDir, nil)
+}
+
+// runFuncArgsCore 是 ValidateFuncArgs / THIR 两变体共享的收集 + 走查主体。
+// view 作用面：
+//   - sigs 签名表：view 非 nil 时 FuncSigs（HIR 提取，与 funcSigFromDef 逐字段
+//     对齐——见 thir_stage.go FuncSigs 注释）优先，AST/导入收集只补缺（导入模块
+//     是独立 parse 树、不在 HIR，必须兜底）；
+//   - topLevelVarTypes 与 walker 内声明登记值（let / param / result）经 declTypeOf。
+//
+// 影子期刻意保留 AST 的面：
+//   - structFields：legacy 值是 structFieldTypeString（折叠 ArraySize/IsSlice
+//     修饰），而 TypeOf 回裸 .Type 字段（Inferred 优先）——口径分叉、换源会改
+//     值（`[]byte` vs `byte`），禁；
+//   - 推断面（inferExprType / funcSigFirstReturnType 回填）保持原路径——sigs
+//     值等价前提下行为不变，且登记只进本地 varTypes（不写 sem 副表）。
+func runFuncArgsCore(program *parser.Program, rootDir string, view *THIRView) []ValidateResult {
 	validationMu.Lock()
 	defer validationMu.Unlock()
 	var results []ValidateResult
@@ -309,8 +327,16 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 	// 1. Collect local function signatures (including from resolved imports
 	//    which are already merged into the program at build time)
 	sigs := make(map[string]*funcSig)
+	if view != nil {
+		for k, s := range view.FuncSigs() {
+			sigs[k] = s
+		}
+	}
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if _, exists := sigs[fd.Name]; exists && view != nil {
+				continue // THIR 侧 FuncSigs 已收录（HIR 优先）
+			}
 			sigs[fd.Name] = funcSigFromDef(fd)
 		}
 	}
@@ -342,7 +368,10 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 			}
 		}
 	}
-	// 3. Collect struct field type info from struct definitions
+	// 3. Collect struct field type info from struct definitions.
+	//    刻意不走 declTypeOf：legacy 值 structFieldTypeString 折叠了
+	//    ArraySize/IsSlice 修饰（`[]byte`），TypeOf 回裸 .Type（`byte`）——
+	//    口径分叉，影子期保留 AST 来源（见 runFuncArgsCore 注释）。
 	structFields := make(map[string]map[string]string)
 	for _, stmt := range program.Statements {
 		if sd, ok := stmt.(*parser.StructDefinition); ok {
@@ -366,7 +395,7 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value {
 				if _, exists := topLevelVarTypes[ls.Name.Value]; !exists {
-					topLevelVarTypes[ls.Name.Value] = ls.Type.String()
+					topLevelVarTypes[ls.Name.Value] = declTypeOf(view, ls, ls.Type.String())
 				}
 			}
 		}
@@ -386,8 +415,8 @@ func ValidateFuncArgs(program *parser.Program, rootDir string) []ValidateResult 
 		// Attribute the statement to its owning std module so the private
 		// builtin-method check can reject underscore-prefixed str/txt field
 		// accesses called from outside their own module.
-		validationCurModule = stdModuleForSourceFile(parser.GetSourceFile(stmt))
-		results = append(results, checkCallArgsInStmt(stmt, sigs, topLevelVarTypes, structFields)...)
+		validationCurModule = stdModuleForSourceFile(program.Sem.SourceFileOf(stmt))
+		results = append(results, checkCallArgsInStmt(stmt, sigs, topLevelVarTypes, structFields, view)...)
 	}
 	return results
 }
@@ -502,53 +531,53 @@ func parseProgramFile(filePath string) *parser.Program {
 	return prog
 }
 
-func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
-	return checkCallArgsInStmtWithResultParams(stmt, sigs, varTypes, nil, structFields, false)
+func checkCallArgsInStmt(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string, view *THIRView) []ValidateResult {
+	return checkCallArgsInStmtWithResultParams(stmt, sigs, varTypes, nil, structFields, false, view)
 }
 
 // checkCallArgsInIfExpr descends into an IfExpression's branches.
-func checkCallArgsInIfExpr(s *parser.IfExpression, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
+func checkCallArgsInIfExpr(s *parser.IfExpression, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string, underUnwrap bool, view *THIRView) []ValidateResult {
 	var results []ValidateResult
 	if s.Condition != nil {
-		results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields, underUnwrap)...)
+		results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields, underUnwrap, view)...)
 	}
 	if s.Consequence != nil {
 		for _, bs := range s.Consequence.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
 		}
 	}
 	if s.Alternative != nil {
 		for _, bs := range s.Alternative.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
 		}
 	}
 	return results
 }
-func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
+func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]*funcSig, varTypes map[string]string, resultParamNames map[string]bool, structFields map[string]map[string]string, underUnwrap bool, view *THIRView) []ValidateResult {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
 			// If-as-statement: ExpressionStatement wraps an IfExpression.
 			// Descend into both branches so result-param types propagate.
 		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-			return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields, underUnwrap)
+			return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)
 		}
 		// S1：糖形態 match 是 SurfaceMatch；逐臂條件/臂體下鑽 call-arg 檢查。
 		if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
 			var res []ValidateResult
 			for _, arm := range sm.Arms {
 				if arm.Condition != nil {
-					res = append(res, checkCallArgsInExpr(arm.Condition, sigs, varTypes, structFields, underUnwrap)...)
+					res = append(res, checkCallArgsInExpr(arm.Condition, sigs, varTypes, structFields, underUnwrap, view)...)
 				}
 				if arm.Body != nil {
 					for _, bs := range arm.Body.Statements {
-						res = append(res, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
+						res = append(res, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
 					}
 				}
 			}
 			return res
 		}
-		return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields, underUnwrap)
+		return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields, underUnwrap, view)
 		}
 	case *parser.LetStatement:
 		// Compiler-injected synthetic let statements (e.g. match arm `it` bindings).
@@ -556,13 +585,24 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		// If not (fallback path when parser couldn't resolve the matched variable's
 		// type at parse time), infer from value but unwrap Optional types (?T → T),
 		// because `it` in a match arm always represents the unwrapped inner value.
-		if s.IsSynthetic {
-			if s.Value != nil {
-				results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, underUnwrap)
-				if s.Name != nil && !resultParamNames[s.Name.Value] {
-					if s.Type != nil && s.Type.String() != "" {
-						varTypes[s.Name.Value] = s.Type.String()
-					} else {
+	if s.IsSynthetic {
+		if s.Value != nil {
+			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, underUnwrap, view)
+			// Compiler-generated `target = __cap_N` propagation assignment on the
+			// nil/err arm of a safe-index / `?=` capture (lowering.go:1230-1235).
+			// It copies the WHOLE option into the target, so the value's type is
+			// `?T` while the target's real type is whatever the ok arm assigns —
+			// recording the unwrapped `T` here (the branch below) poisons
+			// varTypes: the ok arm's real let is then skipped by the
+			// `!exists` guard, and every later use of the target resolves to the
+			// wrong type (`xs str = shs-sub(ln, i + 1, rb)` → varTypes["xs"]=="i64"
+			// → spurious 6fgg3htw on `shs-byte(xs, k)`).
+			// checker.go:6830 (str-ordering) and :8766 (type-compat) already skip
+			// IsPropagation lets; do the same here so the ok arm's let wins.
+			if s.Name != nil && !resultParamNames[s.Name.Value] && !s.IsPropagation {
+				if s.Type != nil && s.Type.String() != "" {
+					varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+				} else {
 						// Untyped shared `it` binding (ok/wildcard arm whose matched
 						// type is unknown at parse time). Arms share one varTypes map,
 						// so a preceding sentinel (nil/err) arm's typed `it` binding may
@@ -586,7 +626,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 				return results
 			}
 			if s.Name != nil && s.Type != nil {
-				varTypes[s.Name.Value] = s.Type.String()
+				varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
 			}
 			return nil
 		}
@@ -598,7 +638,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 			if s.Name != nil && strings.HasPrefix(s.Name.Value, "__unwrap_") {
 				uw = true
 			}
-			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, uw)
+			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, uw, view)
 			// Register the variable type from assignment for subsequent checks.
 			// Prefer the user-defined function's first return type over the
 			// generic "i64" default of inferExprType for CallExpression.
@@ -609,7 +649,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 				// is authoritative — do not overwrite with inferred type.
 				// e.g. `t u64 = 0` should register "u64", not "i64".
 				if s.Type != nil && s.Type.String() != "" {
-					varTypes[s.Name.Value] = s.Type.String()
+					varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
 				} else if _, exists := varTypes[s.Name.Value]; !exists {
 					// No explicit type and variable not yet seen: infer from value.
 					inferred := ""
@@ -656,12 +696,12 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		}
 		// Type-only declaration: name [N]type (no = value)
 		if s.Name != nil && s.Type != nil {
-			varTypes[s.Name.Value] = s.Type.String()
+			varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
 		}
 	case *parser.MultiAssignStatement:
 		var results []ValidateResult
 		if s.Value != nil {
-			results = append(results, checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, underUnwrap, view)...)
 			// #5: Validate that the number of assignment targets matches the
 			// number of return values of the called function.  A mismatch
 			// causes silent memory corruption / SIGTRAP at runtime.
@@ -690,48 +730,48 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		innerResultParams := make(map[string]bool)
 		for _, p := range s.Parameters {
 			if p.Type != nil {
-				localTypes[p.Name] = p.Type.String()
+				localTypes[p.Name] = declTypeOf(view, p, p.Type.String())
 			}
 		}
 		for _, r := range s.Results {
 			if r.Name != "" && r.Type != nil {
-				localTypes[r.Name] = r.Type.String()
+				localTypes[r.Name] = declTypeOf(view, r, r.Type.String())
 				innerResultParams[r.Name] = true
 			}
 		}
 		if s.Body != nil {
 			var results []ValidateResult
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, localTypes, innerResultParams, structFields, false)...)
+				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, localTypes, innerResultParams, structFields, false, view)...)
 			}
 			return results
 		}
 	case *parser.BlockStatement:
 		var results []ValidateResult
 		for _, bs := range s.Statements {
-			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
 		}
 		return results
 	case *parser.ForStatement:
 		var results []ValidateResult
 		if s.Init != nil {
-			results = append(results, checkCallArgsInStmtWithResultParams(s.Init, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(s.Init, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
 		}
 		if s.Condition != nil {
-			results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(s.Condition, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		if s.Update != nil {
-			results = append(results, checkCallArgsInStmtWithResultParams(s.Update, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInStmtWithResultParams(s.Update, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
 		}
 		if s.Body != nil {
 			for _, bs := range s.Body.Statements {
-				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap)...)
+				results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
 			}
 		}
 		return results
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			return checkCallArgsInExpr(s.ReturnValue, sigs, varTypes, structFields, underUnwrap)
+			return checkCallArgsInExpr(s.ReturnValue, sigs, varTypes, structFields, underUnwrap, view)
 		}
 	}
 	return nil
@@ -1596,6 +1636,89 @@ func stdMethodParamTypes(recvType, method string) ([]string, string, bool) {
 	return params, key, len(params) > 0
 }
 
+// stdMethodOptionResult 解析 `recv.method(...)` 的**回傳型別**，且只在「確定是
+// option」時回傳 `?T`，其餘一律回 ""。
+//
+// 🔴 為什麼只回 option：本函式的唯一呼叫者是「顯式 plain 標註 + option 呼叫」的
+// 嚴格模式（checker.go 的 optionResultOfCallTarget → 15w45dqk）。把 plain 結果也
+// 一併餵進去只會擴大誤報面（例如型別變數沒綁定的泛型方法、跨模組同名列），對「不
+// 允許靜默拆包」這個目標沒有任何幫助。option 結果則是可判定的事實：目標是 plain
+// 而值是 `?T` 時，tag 一定被丟掉。
+//
+// 解析順序與 stdMethodParamTypes 逐字對稱（同鍵、同跳過條件），避免「引數查得到、
+// 結果查不到」的第二次不對稱：
+//  1. std 簽名表（stdSigsCache / stdMethodSigsCache）；
+//  2. Go builtin 表的 **str/txt 裸名回落**（`lookupBuiltin` 的 bare-name fallback：
+//     `str.byte` / `txt.byte` 在 Go 表裡只以裸名 "byte" 註冊，與 std 聲明是同一
+//     個內建的兩面）。
+//
+// 兩條「不猜」的邊界（寧可漏報，不可誤報）：
+//   - 結構體方法被多個 std 模組定義（structMethodIsAmbiguous）→ 鍵不可信；
+//   - 結果仍帶型別變數（泛型 `?v`，如 hashmap 的 get）→ mentionsTypeVar 擋掉。
+func stdMethodOptionResult(recvType, method string) string {
+	if recvType == "" || method == "" {
+		return ""
+	}
+	// 簽名表未暖表時（`go test` 沒帶 StdSigKey 的二進位）必須直接安靜返回：
+	// CollectStdModuleSignatures 在 StdSigKey 為空時會 os.Exit(1)，而 structMethodIsAmbiguous
+	// → initStdStructMethodMods 也會走同一條路。
+	if stdSigsCache == nil && stdMethodSigsCache == nil {
+		if StdSigKey == "" {
+			return ""
+		}
+		CollectStdModuleSignatures()
+		if stdSigsCache == nil && stdMethodSigsCache == nil {
+			return ""
+		}
+	}
+	keys := make([]string, 0, 2)
+	keys = append(keys, recvType+"."+method)
+	if strings.HasPrefix(recvType, "[]") {
+		keys = append(keys, "[]t."+method)
+	}
+	for _, key := range keys {
+		if structMethodIsAmbiguous(key) {
+			continue
+		}
+		if entry, ok := stdMethodSigsCache[key]; ok {
+			if r := optionResultOfSigEntry(entry); r != "" {
+				return r
+			}
+		}
+		if entry, ok := stdSigsCache[key]; ok {
+			if r := optionResultOfSigEntry(entry); r != "" {
+				return r
+			}
+		}
+	}
+	// Go builtin 表的裸名回落：只有 str/txt 兩種接收者（與 builtin/str.go 的
+	// 註釋一致），且只認 option 結果，因此不可能影響其他型別的方法解析。
+	if recvType == "str" || recvType == "txt" {
+		for _, m := range builtin.BuiltinMethodList {
+			if m.MethodName != method || len(m.Return) == 0 {
+				continue
+			}
+			if r := m.Return[0].String(); strings.HasPrefix(r, "?") && !mentionsTypeVar(r) {
+				return r
+			}
+		}
+	}
+	return ""
+}
+
+// optionResultOfSigEntry 從一條 std 簽名表條目取出「確定為 option」的第一個結果型別；
+// 非 option、無結果、或仍帶型別變數（泛型）時回 ""。
+func optionResultOfSigEntry(entry StdSigEntry) string {
+	if len(entry.Results) == 0 {
+		return ""
+	}
+	r := entry.Results[0]
+	if !strings.HasPrefix(r, "?") || mentionsTypeVar(r) {
+		return ""
+	}
+	return r
+}
+
 // builtinSliceMethodParamTypes resolves a slice method that exists ONLY in the
 // builtin registry (src/builtin/vec.go) and therefore has no std declaration
 // and never reaches the signature tables.
@@ -1606,7 +1729,7 @@ func stdMethodParamTypes(recvType, method string) ([]string, string, bool) {
 // (`[]t.insert = (i i64, val t)`), so `[]str.remove(0)` is checked as an i64
 // index and passes. push is NOT declared in std — it is a global `#{buildin}`
 // stub (`vec-push = (val t)`) precisely so that no `[]t.push` method body is
-// created — and clear/sort-asc/sort-desc take no arguments, so push is the
+// created — and clear/asc/desc take no arguments, so push is the
 // only builtin-only method with anything to check.
 //
 // The types come from BuiltinMethod.ElemParams, NOT from BuiltinMethod.Params:
@@ -1819,7 +1942,7 @@ func isLoweringTempArg(e parser.Expression) bool {
 	return ok && strings.HasPrefix(id.Value, "__")
 }
 
-func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string, underUnwrap bool) []ValidateResult {
+func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string, underUnwrap bool, view *THIRView) []ValidateResult {
 	if expr == nil {
 		return nil
 	}
@@ -1837,7 +1960,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 			if ident.Value == "err" || ident.Value == "ok" {
 				// Still recurse into arguments for nested call checking
 				for _, arg := range e.Arguments {
-					results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields, underUnwrap)...)
+					results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields, underUnwrap, view)...)
 				}
 				return results
 			}
@@ -2010,39 +2133,39 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 		}
 		// Recurse into arguments for nested calls
 		for _, arg := range e.Arguments {
-			results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(arg, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		return results
 	case *parser.InfixExpression:
 		var results []ValidateResult
 		if e.Left != nil {
-			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		if e.Right != nil {
-			results = append(results, checkCallArgsInExpr(e.Right, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(e.Right, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		return results
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			return checkCallArgsInExpr(e.Right, sigs, varTypes, structFields, underUnwrap)
+			return checkCallArgsInExpr(e.Right, sigs, varTypes, structFields, underUnwrap, view)
 		}
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			return checkCallArgsInExpr(e.Expression, sigs, varTypes, structFields, underUnwrap)
+			return checkCallArgsInExpr(e.Expression, sigs, varTypes, structFields, underUnwrap, view)
 		}
 	case *parser.IfExpression:
 		var results []ValidateResult
 		if e.Condition != nil {
-			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		if e.Consequence != nil {
 			for _, is := range e.Consequence.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
+				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields, view)...)
 			}
 		}
 		if e.Alternative != nil {
 			for _, is := range e.Alternative.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
+				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields, view)...)
 			}
 		}
 		return results
@@ -2051,54 +2174,54 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 		// S4：糖形態下 match 是 SurfaceMatch，臂體對本 walker 不可見。見 sugar_walk.go。
 		walkSurfaceMatchChildren(e, varTypes,
 			func(x parser.Expression) {
-				results = append(results, checkCallArgsInExpr(x, sigs, varTypes, structFields, underUnwrap)...)
+				results = append(results, checkCallArgsInExpr(x, sigs, varTypes, structFields, underUnwrap, view)...)
 			},
 			func(s parser.Statement) {
-				results = append(results, checkCallArgsInStmt(s, sigs, varTypes, structFields)...)
+				results = append(results, checkCallArgsInStmt(s, sigs, varTypes, structFields, view)...)
 			})
 		return results
 	case *parser.IndexExpression:
 		var results []ValidateResult
 		if e.Left != nil {
-			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		if e.Index != nil {
-			results = append(results, checkCallArgsInExpr(e.Index, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(e.Index, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		return results
 	case *parser.AssignExpression:
 		if e.Value != nil {
-			return checkCallArgsInExpr(e.Value, sigs, varTypes, structFields, underUnwrap)
+			return checkCallArgsInExpr(e.Value, sigs, varTypes, structFields, underUnwrap, view)
 		}
 	case *parser.ConditionalExpression:
 		var results []ValidateResult
 		if e.Condition != nil {
-			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(e.Condition, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		if e.Consequence != nil {
-			results = append(results, checkCallArgsInExpr(e.Consequence, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(e.Consequence, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		if e.Alternative != nil {
-			results = append(results, checkCallArgsInExpr(e.Alternative, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(e.Alternative, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		return results
 	case *parser.ArrayLiteral:
 		var results []ValidateResult
 		for _, elem := range e.Elements {
-			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		return results
 	case *parser.SliceLiteral:
 		var results []ValidateResult
 		for _, elem := range e.Elements {
-			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields, underUnwrap)...)
+			results = append(results, checkCallArgsInExpr(elem, sigs, varTypes, structFields, underUnwrap, view)...)
 		}
 		return results
 	case *parser.StructLiteral:
 		var results []ValidateResult
 		for _, f := range e.Fields {
 			if f.Value != nil {
-				results = append(results, checkCallArgsInExpr(f.Value, sigs, varTypes, structFields, underUnwrap)...)
+				results = append(results, checkCallArgsInExpr(f.Value, sigs, varTypes, structFields, underUnwrap, view)...)
 			}
 		}
 		return results
@@ -2106,7 +2229,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 		if e.Body != nil {
 			var results []ValidateResult
 			for _, is := range e.Body.Statements {
-				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields)...)
+				results = append(results, checkCallArgsInStmt(is, sigs, varTypes, structFields, view)...)
 			}
 			return results
 		}

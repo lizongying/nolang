@@ -99,7 +99,7 @@ func TestCorpusHasNoUnknownNodes(t *testing.T) {
 }
 
 // TestDumpIsDeterministic pins rule 3. The annotation side-table is a
-// map[Node]*NodeSemantics; ranging over it would make the output depend on Go's
+// map[Node][]*AnnotationEntry; ranging over it would make the output depend on Go's
 // randomised map iteration order and the L2 comparison would flake. Dumping the
 // same program twice must be byte-identical.
 func TestDumpIsDeterministic(t *testing.T) {

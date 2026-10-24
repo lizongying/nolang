@@ -354,7 +354,10 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 		f.Close()
 	}
 	modFile := resolveModuleFile(path, t.workspaceRoot())
+	// S5 stage 6：模組解析輸出不可變——取工作副本後綴續（§1.4）。
+	modProg = parser.CloneProgram(modProg)
 	merged.Sem.Merge(modProg.Sem)
+	merged.FmtTrivia.Merge(modProg.FmtTrivia)
 	// 為自動載入模組的型別定義加上模組前綴（如 result → sql.result）
 	prefixModuleStatements(modProg.Statements, short, typeOwner)
 	for _, ms := range modProg.Statements {
@@ -365,8 +368,8 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 				continue
 			}
 			merged.Statements = append(merged.Statements, fd)
-			parser.SetModuleOwner(fd, short)
-			parser.SetSourceFileDeep(fd, modFile)
+			merged.Sem.SetModuleOwnerOf(fd, short)
+			merged.Sem.SetSourceFileDeep(fd, modFile)
 		}
 		if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 			// 如果主程序已有同名變量，跳過以避免衝突
@@ -387,32 +390,32 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 					mergedGlobalConsts[ls.Name.Value] = true
 				}
 				merged.Statements = append(merged.Statements, ls)
-				parser.SetModuleOwner(ls, short)
-				parser.SetSourceFileDeep(ls, modFile)
+				merged.Sem.SetModuleOwnerOf(ls, short)
+				merged.Sem.SetSourceFileDeep(ls, modFile)
 				if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
-					ls.IsModuleConst = true
+					merged.Sem.SetModuleConstOf(ls, true)
 				}
 			}
 		}
 		if sd, ok := ms.(*parser.StructDefinition); ok {
 			merged.Statements = append(merged.Statements, sd)
-			parser.SetSourceFile(sd, modFile)
+			merged.Sem.SetSourceFileOf(sd, modFile)
 		}
 		if id, ok := ms.(*parser.InterfaceDefinition); ok {
 			merged.Statements = append(merged.Statements, id)
-			parser.SetSourceFile(id, modFile)
+			merged.Sem.SetSourceFileOf(id, modFile)
 		}
 		if ta, ok := ms.(*parser.TypeAlias); ok {
 			merged.Statements = append(merged.Statements, ta)
-			parser.SetSourceFile(ta, modFile)
+			merged.Sem.SetSourceFileOf(ta, modFile)
 		}
 		if ed, ok := ms.(*parser.EnumDefinition); ok {
 			merged.Statements = append(merged.Statements, ed)
-			parser.SetSourceFile(ed, modFile)
+			merged.Sem.SetSourceFileOf(ed, modFile)
 		}
 		if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
 			merged.Statements = append(merged.Statements, ted)
-			parser.SetSourceFile(ted, modFile)
+			merged.Sem.SetSourceFileOf(ted, modFile)
 		}
 	}
 	// 傳遞閉包：掃描本模組體內的 std 引用（module.fn()/use std/...），
