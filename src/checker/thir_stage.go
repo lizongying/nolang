@@ -107,9 +107,9 @@ func NewTHIRView(pkg *hir.Package, idMap map[parser.Node]int32) *THIRView {
 //     state the legacy path observes today (RunAllLints / hard-error block
 //     run BEFORE ASTToHIRWithMap in the shipped pipeline).
 //
-// Node-keyed tables (AnnTable / TypeFacts / NodeFacts) are NOT restored: H0
-// only writes AnnTable entries for freshly-cloned nodes (new pointers,
-// invisible to original-node lookups) and does not write TypeFacts / NodeFacts.
+// Node-keyed tables (TypeFacts / NodeFacts) are NOT restored: H0 does not
+// write TypeFacts / NodeFacts. Annotations are no longer a table at all —
+// they live on the AST nodes (parser.AnnotatedNode) and ride with the tree.
 //
 // The returned view is built from the HIR side tables (Inferred / Node.Type)
 // which are independent of the restored name-level maps, so the view's answers

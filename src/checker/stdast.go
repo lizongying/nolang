@@ -24,9 +24,10 @@ import (
 // checker via SetStdASTBlob before any build. A nil blob makes StdASTFor fall
 // back to on-the-fly parsing, so the build still works.
 //
-// The format is parser.CachedProgram (Program + the flattened occurrence-keyed
-// side tables);
-// see parser/astcache.go. AST only — MIR/LLVM IR is never cached here, so the
+// The format is parser.CachedProgram, which is now the *syntax tree only*
+// (`CachedProgram{Prog}`): every derived fact is regenerated after decoding by
+// parser.BuildSemViews. See parser/semviews.go for why the blob must not carry
+// compiler-derived data. AST only — MIR/LLVM IR is never cached here, so the
 // cache key needs no target/opt-level/bounds-check dimension.
 var (
 	stdASTMu     sync.Mutex
@@ -148,9 +149,15 @@ func StdASTFor(embedPath string) (*parser.Program, bool) {
 		return nil, false
 	}
 	var cp parser.CachedProgram
-	if err := gob.NewDecoder(bytes.NewReader(raw)).Decode(&cp); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(raw)).Decode(&cp); err != nil || cp.Prog == nil {
 		return nil, false
 	}
+	// The blob carries the syntax tree only, so the semantic views (`?T`
+	// inference, index proofs, IdxLocalTypes) must be regenerated — with the
+	// same configuration the generator baked it under. That configuration is
+	// the baked signature tables, which loadStdAST has already proven this
+	// binary would inject (the Config fingerprint check above).
+	parser.BuildSemViews(cp.Prog, stdSemConfig(embedPath, bakedStdParseTables()))
 	if os.Getenv("NOLANG_DEBUG_IT") != "" {
 		fmt.Fprintf(os.Stderr, "[debug-it] StdASTFor HIT: %s\n", embedPath)
 	}
@@ -197,6 +204,19 @@ func stdParseTablesFor(fsys fs.FS) (stdParseTables, error) {
 	return t, nil
 }
 
+// stdSemConfig is the parse configuration a std module body is parsed with.
+// Both the generator (newStdModuleParser) and the Tier-0 rebuild (StdASTFor)
+// go through it, so a configuration change cannot reach one and miss the other.
+func stdSemConfig(embedPath string, t stdParseTables) parser.SemRebuildConfig {
+	return parser.SemRebuildConfig{
+		Filename:     filepath.Base(embedPath),
+		FuncSigs:     t.FuncSigs,
+		MethodSigs:   t.MethodSigs,
+		StructFields: t.StructFields,
+		EnumVariants: t.EnumVariants,
+	}
+}
+
 // newStdModuleParser builds the parser for a std module body with the SAME
 // configuration build.parseEmbeddedProgram uses, because StdASTFor replaces
 // that call at build time. Keep the two in sync: the parse result (not just its
@@ -210,13 +230,42 @@ func stdParseTablesFor(fsys fs.FS) (stdParseTables, error) {
 // baseline, so both sides were missing the safe-index normalisation and agreed.
 func newStdModuleParser(filename, source string, t stdParseTables) *parser.Parser {
 	p := parser.New(lexer.NewCached(filename, source))
-	p.Filename = filepath.Base(filename)
-	p.SetExternSignatures(t.FuncSigs, t.MethodSigs, t.StructFields)
-	if len(t.EnumVariants) > 0 {
-		p.SetExternEnumVariants(t.EnumVariants)
-	}
+	stdSemConfig(filename, t).Apply(p)
 	return p
 }
+
+// bakedStdParseTables projects the baked signature tables into the shape the
+// parser consumes (result types only), once per process. It is the runtime
+// counterpart of stdParseTablesFor, which reads the same tables off StdFS at
+// bake time — the two must stay the same shape or a rebuilt std AST would
+// diverge from the baked one.
+func bakedStdParseTables() stdParseTables {
+	bakedTablesOnce.Do(func() {
+		t := stdParseTables{
+			StructFields: embeddedStdStructFields,
+			EnumVariants: embeddedStdEnumVariants,
+		}
+		if embeddedStdFuncSigs != nil {
+			t.FuncSigs = make(map[string][]string, len(embeddedStdFuncSigs))
+			for k, e := range embeddedStdFuncSigs {
+				t.FuncSigs[k] = e.Results
+			}
+		}
+		if embeddedStdMethodSigs != nil {
+			t.MethodSigs = make(map[string][]string, len(embeddedStdMethodSigs))
+			for k, e := range embeddedStdMethodSigs {
+				t.MethodSigs[k] = e.Results
+			}
+		}
+		bakedTables = t
+	})
+	return bakedTables
+}
+
+var (
+	bakedTablesOnce sync.Once
+	bakedTables     stdParseTables
+)
 
 // SerializeStdAST parses every std module under fsys and returns a
 // map[embedPath][]byte of gob-encoded parser.CachedProgram blobs (the whole
@@ -262,12 +311,7 @@ func SerializeStdAST(fsys fs.FS) (*StdASTBlob, error) {
 		if blob.Config == "" {
 			blob.Config = p.ExternSignatureFingerprint()
 		}
-		cp := &parser.CachedProgram{
-			Prog:      prog,
-			Anns:      parser.SerializeAnns(prog),
-			TypeFacts: parser.SerializeTypeFacts(prog),
-			NodeFacts: parser.SerializeNodeFacts(prog),
-		}
+		cp := &parser.CachedProgram{Prog: prog}
 		var raw bytes.Buffer
 		if err := gob.NewEncoder(&raw).Encode(cp); err != nil {
 			return nil, fmt.Errorf("std AST: encode %s: %w", embedPath, err)

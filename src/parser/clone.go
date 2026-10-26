@@ -171,16 +171,10 @@ func (c *cloner) remapSem(src *SemanticContext) *SemanticContext {
 		return out
 	}
 	out.Merge(src) // 名稱級映射 + anns + typeFacts + nodeFacts + captureFacts（暫為舊鍵）
-	// 註解表／型別事實表／節點事實表／捕獲事實表換鍵到副本節點（四者同口徑）。
-	// 四表已由 Merge 帶過來，這裡只需重映射鍵。
-	if out.anns != nil && len(out.anns.entries) > 0 {
-		out.anns = out.anns.Clone(func(n Node) Node {
-			if nn, ok := c.nodes[n]; ok {
-				return nn
-			}
-			return n
-		})
-	}
+	// 註解不在此列：它們住在 AST 節點上（`AnnotatedNode.Annotations`），
+	// 已由上面的 AST 深拷貝隨節點一起複製，無需換鍵。
+	// 型別事實表／節點事實表／捕獲事實表換鍵到副本節點（三者同口徑）。
+	// 三表已由 Merge 帶過來，這裡只需重映射鍵。
 	if out.typeFacts != nil && len(out.typeFacts.entries) > 0 {
 		out.typeFacts = out.typeFacts.Clone(func(n Node) Node {
 			if nn, ok := c.nodes[n]; ok {

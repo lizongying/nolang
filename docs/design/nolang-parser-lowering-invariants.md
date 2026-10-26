@@ -129,7 +129,7 @@ H1 是**链接与命名**，不是降糖：
 
 ### 3.5 L1 THIR 分层定义与边界不变量
 
-THIR = `hir.Package` + 类型化副表（`Inferred`/`Anns`/`Embeds`/`Owners`/`FuncOwners`/`GoSpawns`/`Syms`），不新增独立树。四表并立：`FmtTrivia` / `AnnTable` / `TypeFacts` / `NodeFacts`，宿主 `SemanticContext`，经 `(*Program).Anns()`/`TypeFacts()`/`NodeFacts()`/`FmtTrivia` 暴露。
+THIR = `hir.Package` + 类型化副表（`Inferred`/`Anns`/`Embeds`/`Owners`/`FuncOwners`/`GoSpawns`/`Syms`），不新增独立树。三表并立：`FmtTrivia` / `TypeFacts` / `NodeFacts`，宿主 `SemanticContext`，经 `(*Program).TypeFacts()`/`NodeFacts()`/`FmtTrivia` 暴露。（Stage 3 的第四张表 `AnnTable` 已于 2026-10-26 整条删除：`#{...}` 是语法，条目住在 AST 节点上 —— `parser.AnnotatedNode`，见 `parser/annotations.go`。）
 
 **目标管线**：
 
@@ -162,6 +162,7 @@ Checker-on-THIR ──► L2 MIR ──► L3 LLVM
 **Stage 2–5/7 落地摘要**：
 - **Stage 2**：`RTFlags`/`OpeningBraceComment` → `parser.FmtTrivia`。不进 blob（自带空 GobEncode/Decode）。`ASTVersion` → `2026-10-23.1`。
 - **Stage 3**：`RawAnnotations`/`Annotations`/`PlatformKeys`/`GenericParams` → `parser.AnnTable`。**必须进 blob**（`CachedProgram.Anns`）。`ASTVersion` → `2026-10-23.2`。setter 不对称：`SetInferred("")` 不建条目。
+  - **已撤销（2026-10-26）**：`AnnTable` 整条删除，条目回到 AST 节点（`AnnotatedNode`），`CachedProgram` 只剩 `{Prog, TypeFacts, NodeFacts}`，`ASTVersion` → `2026-10-26.1`。撤销理由：`attachAnnotations` 明确「不再挂载到 AST 节点上」⇒ **尾随注解**（`stmt #{...}`）只存在于表里、AST 完全不承载 ⇒ 任何「从 Prog 重建副表」的路径都会静默丢掉它们（全库 59 处尾随注解，18 处 `#{index-out}`）。
 - **Stage 4**：`InferredType`/`InferredByOptionArith`/`TypeOverride` → `parser.TypeFacts`。三字段全镜像进 blob。`ASTVersion` → `2026-10-23.3`。setter 不对称：`SetByOptionArith(n,false)` 必建条目。
 - **Stage 5**：剩餘 9 欄 → `parser.NodeFacts`。9 欄全鏡像（`EmbedFiles` 排序影子）。setter 不对称：`SetModuleConst(n,false)`/`SetIndexInBounds(n,false)` 只清不建。`ASTVersion` → `2026-10-23.4`。pin 30→0（装配工作副本隔离 `parser.CloneProgram`）。
 - **Stage 7**：`NodeSemantics` 空殼 + 整條 nodeSem 通道全刪。`ASTVersion` → `2026-10-23.5`。
@@ -381,6 +382,96 @@ H0 快照与最终 `pkg.Nodes` 差值可被 H1 封闭清单逐条解释。
 ### 12.8 §20 推断 ?T 迁入 side-table
 - `LetStatement.Type` 就地写消除 → `NodeFacts.InferredType` + `InferredByOptionArith`（1-bit 区分）。
 - `publishInferredType` 统一入口。`ASTVersion` bump。
+- **2026-10-26 追记：`InferredByOptionArith` 已删除**。它是 `inferOptionArith`
+  在同一次 `LowerSurface` walk 内写、`maybeCaptureOptionAssign` 同一次 walk 稍后读的
+  **局部判定结果**，不是可重建的程式事实；改由 walker 把 `inferOptionArith` 的回传值
+  以参数 `byOptionArith` 直接传给消费点。`TypeFact` 现只剩
+  `{InferredType, TypeOverride}`。`ASTVersion` bump 至 `2026-10-26.2`。
+  - 语义等价证明：`ls.Type != nil` 时 `inferOptionArith` 必然提前返回 false ⇒
+    旧的「两条短路」互斥，合并为 `(ls.Type != nil || byOptionArith)`。
+  - 实测：482 档 `tests/*.no` 的 `no ast` 输出**逐字节相同**（旧语义二进制用
+    `go build -overlay` 构造，未动工作树）；全仓 `go test ./...` 绿。
+  - ⚠️ 不能改成「消费点重算 `signedIntOperandType`」：`inferOptionArith` 自己会
+    `setVarType` 改动可见型别集合（`x = x + 1` 自引用），重算会得到不同答案。
+
+### 12.8.1 「只存 Prog + 重走重建」的可行性（2026-10-26 实测，结论：不做）
+动机是让 `CachedProgram` 只剩 `Prog`，两张事实表在解码后由 `BuildSemViews(prog)` 重建。
+
+- **重建是可行的，但有三个前置，每一个都是静默失效源**：
+  1. `ParseProgram` 设 `program.Sem = p.sem`；重建必须把 parser 的 `sem` 指回
+     **解码后 program 的 Sem**，否则事实全写进另一张表（`no ast` 看不出来）。
+  2. 解码后 `Sem.typeFacts` / `Sem.nodeFacts` 是 **nil**（unexported，gob 不搬），
+     而所有 setter 对 nil 表**静默 no-op** ⇒ 必须先 `NewTypeFacts()` / `NewNodeFacts()`。
+  3. 捕获 pass 依赖 **parser 实例状态** `funcSignatures` / `methodSignatures`
+     （`returnTypeFromCallExpr`）。重建必须按 `decl.go:1818-1837` 的规则重填：
+     方法（`IsMethodDef && Name[0] != '['`）进 `methodSignatures`，其余进
+     `funcSignatures`，且 **`#{buildin}` 桩（`BuiltinStub`）一律跳过**——
+     桩的回传型别来自 extern 表，本地不登记。
+- **实测结果**（600 档 = `tests/*.no` 482 + `src/std/*.no` 118，比较
+  `ASTToHIR().Dump()` 逐字节）：
+  | 步骤 | 分歧 |
+  |---|---|
+  | 冷 parser，不补 (1)(2) | 78 / 482 |
+  | 只补 (1)（sem 重指） | 75 / 482 |
+  | 补 (1)(2)（安装事实表） | **0 / 482** |
+  | 扩到 600 档 | 2 / 600（`dom.no` / `txt.no`） |
+  | 补 (3) 只填 `funcSignatures` | 2 / 600（`fs.no` / `txt.no`） |
+  | 补 (3) 按 `decl.go` 分流方法 | 1 / 600（`fs.no`） |
+  | 再跳过 `#{buildin}` 桩 | **1 / 600**（`txt.no`） |
+  残差 `txt.no`：`c = .byte(i + k) - target.byte(k)` 的参考捕获由
+  `maybeIndexOutAssign` 一侧产生，重建只跑推断分析、不复现该侧效应。
+- **但收益是 0.09%**：把两张表从 blob 里彻底去掉，41 个 std 顶层文件合计
+  gzip 后 818,198 → 817,434 字节（**−764 B，−0.09%**）。真正的体积收益早已由
+  「注解回归 AST」拿到（3,000,375 → 2,637,719，−12%）。
+- **结论：不做。** 用 0.09% 换一条必须与 `decl.go` 永久同步的第二推导路径
+  （两条规则已经踩中，第三条迟早出现）不划算。两张表保留序列化；
+  `ByOptionArith` 的删除独立成立（少一栏、去掉顺序依赖、语料逐字节不变），已落地。
+
+### 12.8.2 `CachedProgram` 收敛为 `{Prog}`（2026-10-26 定案并落地，推翻 12.8.1 的「不做」）
+
+12.8.1 以体积论证被推翻：**这个 blob 是「结构化的原始码」**——未来可能换序列化
+格式、且要作为**分发格式**，因此不得夹带任何编译器推导结果。推导规则会随编译器
+版本变化，而缓存键（内容哈希 + `ASTVersion` + salt）看不到编译器建置；同一件事
+有樹與副表兩個真相來源本身就會漂移。`ASTVersion = 2026-10-26.3`，作廢全部舊
+blob（舊 blob 的 `TypeFacts`/`NodeFacts` 欄位被新 decoder 靜默丟棄——「能解碼」
+不等於「語義正確」）。
+
+**落地形態**（`parser/semviews.go`）：
+- `CachedProgram` 只剩 `Prog`；`detCached` 同步收斂，兩表的 detU32 鏡像全刪。
+- 解碼後由 `BuildSemViews(prog, cfg)` 重建；`cfg` 是 `SemRebuildConfig`
+  （Filename / AllowAnonymousFnType / 跨模組簽名表 / 枚舉變體）——**新鮮解析與
+  重建共用同一份 `cfg.Apply(p)`**，新增解析輸入不可能只加在一側。
+- `Get(key, cfg)` 把 cfg 設為必傳參：解碼不重建會得到空事實表（靜默錯誤），
+  簽名上無法遺忘。調用點：`build.parseFile` / `parseEntryProgram`（共用
+  `astParseConfig`）、`checker.funcargs`（空配置，對應裸解析）、Tier-0 的
+  `StdASTFor`（`stdSemConfig` + 已烤指紋驗證）、mmast。
+- 門禁 `TestBuildSemViewsMatchesFreshParse`（`semviews_test.go`）：**523 檔**
+  「encode `{Prog}` → decode → BuildSemViews ≡ fresh parse」逐位元組等價
+  （事實指紋 + HIR dump 雙 oracle + blob 不夾帶事實的反空洞斷言）。
+
+**12.8.1 的殘差（`txt.no`/`fs.no`）已全部解決，根因是「簽名登記規則」抄錯**，
+三條實測規則（`rebuildLocalSignatures`）：
+
+1. **`#{buildin}` 樁照樣登記**（decl.go:1820-1838 不查 `BuiltinStub`）。
+   fs.no 的 `read` 樁最終不在表裡，不是因為它是樁，而是因為同檔後面的
+   `file.read` 方法在註冊當下的裸名也是 `read`——**先覆寫、再被 ：56-58 的
+   改名刪除**，淨效果是樁條目被沖掉。跳過樁會讓樁方法 `txt.byte`（實測有登記）
+   漏掉，`.byte(...)` 的 `?byte` 回傳型別消失。
+2. **`=`-形式方法落在 `funcSignatures` 的全名鍵**：註冊點執行時
+   `IsMethodDef` 尚未置 true（decl.go:52 才設）⇒ 進了 `funcSignatures[裸名]`，
+   隨後 ：56-58 刪除裸名、改名為全名。只查最終 `IsMethodDef` 會把它錯路由進
+   `methodSignatures`（12.8.1 的 txt.no 殘差正是這個，不是 `maybeIndexOutAssign`）。
+3. **運算子方法（`Name[0] == '['`，如 `[]txt.join`）不登記**（解析期不走
+   `parseFunctionDefinition` 的登記點）。
+
+⇒ 沖刷語意依賴**文件順序**（`file.read` 必須在其後刪掉 `read` 樁條目）；
+`walkNodes` 按語句順序走訪頂層宣告，與解析順序一致。
+
+**12.8.1 的殘差（`fs.no`）根因之二**：`prepareInferredTypes` 的 analysisOnly
+走查會在重建時對 `n = read(...)` 憑空合成 `?i64`（call-root 捕獲）——上述規則 1
+修好後，重建的 `funcSignatures` 與新鮮解析逐鍵一致，該分歧消失。
+
+blob 体积：2,636,391 → 2,595,880 B（两表移出）。
 
 ### 12.9 §21 S4（formatter 翻糖形态）
 - 532 档 A/B 门禁。收敛：169→1。
@@ -628,6 +719,8 @@ block
 **这不是 AST 轨的缺陷，恰恰相反**：AST 轨降糖后 `x` 在 nil/err/ok 各臂都被重新赋值，制造了「已消费」的假象；H0 轨看到用户源码，一眼看出 `x` 绑到 `?T` 后从未解包。**H0 侧是修好了漏报。**
 
 > ⚠️ **这是 S3-c 最大的风险**：切换会在**今天能通过检查的程式上新增诊断**（`optunuse` 是 error 级）。必须在切换前独立决定——接受并更新语料／用户程式，或让检查器对冻结形态维持旧判决。不可夹带进 S3-b。
+>
+> **（2026-10-25 已切换并实测）**：`HIRCaptureEnabled` 默认翻为 `true`（H0 成为生产默认）。实测影响面：① `src/std` + `tests` 全量 `no vet` **零** `optunuse`/`ovfhndld`，标准库与测试不受影响；② 仅特定用户形态（option 源作呼叫引数、结果被绑定，如 `r0 = g(3, j - 1)`）在 H0 轨因看到原始 `?i64` 而新增 `optunuse` error——该诊断在语义上正确（绑定了 option 却未解包），属 S3-c 收紧检查器的预期收益，已接受。③ 编译器自身 2 个编码了 AST 轨不变量的测试（`TestCaptureFactsRecorded`、`TestBareOptionArgLoweringTempExempt`）已改为显式锁定各自适用的轨道。切换经 `make test` 全量门禁（含 S3-b 双轨四层等价）验证通过。
 
 处置同注解一项：`captureCheckerKnownDiff` allowlist 钉住（只减不增 + 断言观察数 == 名单数）。
 
@@ -648,7 +741,7 @@ PATH="/opt/homebrew/opt/llvm/bin:$PATH" ./bin/no-smoke run tests/<f>.no
 | `arr-test-tmp.no`（**走捕获**） | a=1.5 b=2.5 a*b=3.75 sum=3.75 | ✅ |
 | `byte-option-index.no`（**走捕获**） | byte=195 idx=195 | ✅ |
 
-⇒ 生产路径（默认 = AST 轨，开关关闭）在全部改动后完好，含 LLVM codegen 与运行期行为。
+⇒ 生产路径（默认 = H0 轨，即 `HIRCaptureEnabled=true`，S3-c 已于 2026-10-25 切换）在全部改动后完好，含 LLVM codegen 与运行期行为。
 
 **仍未验证**：两轨的 **LLVM IR 等价**（原先认为需把 `HIRCaptureEnabled` 暴露成环境变量之类的外部开关，属生产代码改动）。→ **已验证，且不必改生产代码（见下）**。
 
@@ -672,12 +765,12 @@ PATH="/opt/homebrew/opt/llvm/bin:$PATH" ./bin/no-smoke run tests/<f>.no
 
 四层均已接入 `tmp/run_gates.sh`（带 `-ldflags`，否则 checker 那道会 `t.Skip`）。
 
-**S3-c 前剩余的三项决策（均已量化，须人工定夺）**：
+**S3-c 决策（三项均已量化，于 2026-10-25 切换落地）**：
 
 | # | 决策点 | 现状 | 影响 |
 |---|---|---|---|
-| ① | AST 轨注解丢失（`#{index-out=0.0}`） | allowlist 钉住；H0 侧是「修好了」的一侧 | 须**先独立修 AST 轨**（remap 注解到替换出的 `BlockStatement`），不可靠抹平 H0 侧过关 |
-| ② | checker 诊断差异（2/7，含 error 级 `optunuse`） | allowlist 钉住 | 切换会在**今天能通过的程式上新增诊断**；须决定接受并更新语料，或让检查器对冻结形态维持旧判决 |
+| ① | AST 轨注解丢失（`#{index-out=0.0}`） | **已修**（lowering.go:1364 将 `ls` 注解 remap 到替换出的 `BlockStatement`；`hirCaptureKnownDivergence` 已清空） | H0 侧是「修好了」的一侧；切换零行为变化，remap 随 S3-c 一并生效 |
+| ② | checker 诊断差异（2/7，含 error 级 `optunuse`） | **已切换并实测** | `src/std`+`tests` 全量 `no vet` 零新增 `optunuse`/`ovfhndld`；仅 `r0 = g(3, j - 1)` 类「option 源作呼叫引数、结果被绑定」的特定用户形态在 H0 轨新增 `optunuse`（语义正确，已接受为收紧收益） |
 | ③ | LLVM IR / 运行期 | 已验证逐字节相同 | 非阻塞项，已结案 |
 
 ### 13.2 S7 残差（gap I）—— 实测更正：match 表示已收官，残差全为正交轨

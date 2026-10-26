@@ -13,7 +13,9 @@
 // ⚠️ `NodeSemantics` 這個「以 AST 節點指針為鍵的語義副表」已於 Stage 7
 // （2026-10-23）整體刪除：它的 18 個欄位分四期遷到 `FmtTrivia`（Stage 2）/
 // `AnnTable`（Stage 3）/ `TypeFacts`（Stage 4）/ `NodeFacts`（Stage 5），殼被
-// 留到最後一次無欄位搬運的機械刪除。今日語義副表只剩這四張。
+// 留到最後一次無欄位搬運的機械刪除。其中 Stage 3 的 `AnnTable` 也已於
+// 2026-10-26 刪除（註解回歸 AST，見 parser/annotations.go）—— 今日語義副表
+// 只剩 `TypeFacts` / `NodeFacts` 兩張。
 package parser
 
 // CalleeKind 描述一個 CallExpression 在整程式改寫後代表哪一類呼叫。
@@ -90,14 +92,16 @@ const (
 //     解析當下完成；這些推斷結果統一寫入本 side-table，而非散落在 parser 私有字段，
 //     從而實現“語義結果集中存放、AST 節點零語義字段”。
 type SemanticContext struct {
-	// anns 是 Program 級註解表（Stage 3，見 anntable.go）：以 AST 節點為鍵的
-	// `#{...}` 原始條目，是 `AnnotationsOf` / `RawAnnotationsOf` 的唯一存儲，
-	// 也是 `PlatformKeysOf` / `GenericParamsOf` 的計算來源。
-	// `Program.Anns()` 是它的外部出口（blob 序列化 / clone / 合併用）。
-	anns *AnnTable
+	// 🔴 註解**不在**本副表裡：`#{...}` 條目是語法的一部分，住在節點上
+	// （`AnnotatedNode.Annotations`，見 parser/annotations.go）。`AnnotationsOf` /
+	// `RawAnnotationsOf` / `PlatformKeysOf` / `GenericParamsOf` 都是對節點的純查詢。
+	//
+	// 歷史：Stage 3 曾在此放 `anns *AnnTable`（節點指針鍵的 side-table），
+	// 導致尾隨註解只存在於表裡、AST 完全不承載，且 clone/merge/blob 各需一條
+	// 手工通道。已整條刪除。
 
 	// typeFacts 是 Program 級型別事實表（Stage 4，見 typefacts.go）：以 AST 節點
-	// 為鍵的 `InferredType` / `ByOptionArith` / `TypeOverride` 三件事實。
+	// 為鍵的 `InferredType` / `TypeOverride` 兩件事實。
 	// `Program.TypeFacts()` 是外部出口。
 	typeFacts *TypeFacts
 
@@ -183,7 +187,6 @@ type SemanticContext struct {
 // NewSemanticContext 建立空語義副表。
 func NewSemanticContext() *SemanticContext {
 	return &SemanticContext{
-		anns:               NewAnnTable(),
 		typeFacts:          NewTypeFacts(),
 		nodeFacts:          NewNodeFacts(),
 		VarTypes:           make(map[string]string),
@@ -205,11 +208,10 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	if s == nil || other == nil {
 		return
 	}
-	// 合併註解表／型別事實表／節點事實表／捕獲事實表（不覆蓋既有條目）。
-	// 實例化／合併期四張表都可能為 nil（反序列化重建的 Sem 不帶表），
+	// 合併型別事實表／節點事實表／捕獲事實表（不覆蓋既有條目）。
+	// 實例化／合併期三張表都可能為 nil（反序列化重建的 Sem 不帶表），
 	// ensure 惰性建立。
-	s.anns = s.anns.ensure()
-	s.anns.Merge(other.anns)
+	// ⚠️ 註解不在此列：它們住在 AST 節點上，隨 AST 深拷貝/拼接自動跟隨。
 	s.typeFacts = s.typeFacts.ensure()
 	s.typeFacts.Merge(other.typeFacts)
 	s.nodeFacts = s.nodeFacts.ensure()
@@ -363,31 +365,10 @@ func (s *SemanticContext) SetEmbedFiles(n Node, files map[string][]byte) {
 
 // SetRawAnnotations 記錄某節點的原始 #{...} 註解條目（parser 解析期呼叫）。
 //
-// Stage 3 起轉發到 `AnnTable`（`s.anns`），不再是已於 Stage 7 刪除的 nodeSem
-// 副表的欄位。
-// 覆蓋語義（整批替換）保持不變。nil 安全。
+// 存儲是**節點本身**（`AnnotatedNode.Annotations`，語法即真相）。
+// 覆蓋語義（整批替換）保持不變。nil 節點安全。
 func (s *SemanticContext) SetRawAnnotations(n Node, entries []*AnnotationEntry) {
-	if s == nil {
-		return
-	}
-	s.anns.ensure().Set(n, entries)
-}
-
-// Anns 回傳本副表的註解表（外部出口：blob 序列化 / clone / 合併用）。
-// nil receiver 安全，返回 nil。
-func (s *SemanticContext) Anns() *AnnTable {
-	if s == nil {
-		return nil
-	}
-	return s.anns
-}
-
-// SetAnns 裝配本副表的註解表（反序列化重建 Sem 後由 RestoreAnns 呼叫）。
-func (s *SemanticContext) SetAnns(t *AnnTable) {
-	if s == nil {
-		return
-	}
-	s.anns = t
+	setAnnotationsOf(n, entries)
 }
 
 // SetIndexInBounds records that an IndexExpression's read is proven in bounds.
@@ -438,15 +419,6 @@ func (s *SemanticContext) HasInferredType(n Node) bool {
 	return s.InferredType(n) != ""
 }
 
-// SetInferredByOptionArith 標記某個 LetStatement 的推斷 ?T 型別來自
-// `inferOptionArith`（D6 算術根推斷）。與 `InferredType` 寫入成對。
-func (s *SemanticContext) SetInferredByOptionArith(n Node, v bool) {
-	if s == nil {
-		return
-	}
-	s.typeFacts.ensure().SetByOptionArith(n, v)
-}
-
 // SetTypeOverrideOf 記錄整程式裝配為節點定下的**有效型別覆蓋**（具現化 /
 // 具象化結果）。覆蓋語義：優先於節點宣告的 Type。empty 字串會被忽略
 // （nil receiver / nil 節點安全）。
@@ -464,15 +436,6 @@ func (s *SemanticContext) TypeOverrideOf(n Node) string {
 		return ""
 	}
 	return s.typeFacts.OverrideOf(n)
-}
-
-// InferredByOptionArith 回傳該節點的推斷是否由 option-arith 路徑寫入。
-// Nil-safe。
-func (s *SemanticContext) InferredByOptionArith(n Node) bool {
-	if s == nil {
-		return false
-	}
-	return s.typeFacts.ByOptionArithOf(n)
 }
 
 // TypeFactsTab 回傳本副表的型別事實表（外部出口：blob 序列化 / clone / 合併用）。
@@ -647,6 +610,14 @@ func (s *SemanticContext) SetSourceFileDeepOnBlock(b *BlockStatement, file strin
 
 // setSourceFileDeepOnExpr 下潛能攜帶巢狀語句的表達式：IfExpression 的
 // Consequence/Alternative 臂、GroupedExpression。
+//
+// ⚠️ 已知缺口（2026-10-26 發現，**未**在本輪修）：`*FunctionLiteral` 的 Body 不在
+// 這裡下潛。實測本語料裡 `name = (params) (results) { ... }` 全部解析成
+// `*FunctionDefinition`（由 `SetSourceFileDeep` 的第一個 case 覆蓋），所以目前
+// 沒有可觀測後果——補上這一臂對 `./parser ./checker ./build` 全量測試零差異。
+// 但模組頂層的**匿名**函式字面量（值型別是 FunctionLiteral 而非 FunctionDefinition）
+// 仍會漏標來源檔，lint 端會把它的行號歸到主檔。真要修需先有可證偽的語料，
+// 不宜夾帶進註解重構這一輪。
 func (s *SemanticContext) setSourceFileDeepOnExpr(e Expression, file string) {
 	if s == nil || e == nil {
 		return
@@ -679,42 +650,32 @@ func (s *SemanticContext) CalleeOf(n Node) CalleeKind {
 	return s.nodeFacts.CalleeOf(n)
 }
 
-// AnnotationsOf 返回節點的註解條目（無則 nil）。nil receiver 安全。
+// AnnotationsOf 返回節點的註解條目（無則 nil）。
 //
-// Stage 3 起與 `RawAnnotationsOf` 讀同一份存儲（`AnnTable`）：原先兩者分別讀
-// `ns.Annotations`（ResolveProgram 後才有值）與 `ns.RawAnnotations`（解析期就有），
-// 迫使下游寫 `AnnotationsOf(n) || RawAnnotationsOf(n)` 這種「同一事實問兩遍」的
-// 雙查。遷移後兩者恆等，雙查退化為等價重複（保留雙查不影響正確性，僅為減小
-// 本輪改動面）。
+// 🔴 語法即真相：條目住在節點本身（`AnnotatedNode.Annotations`），本方法是
+// 對節點的純查詢，不再有 side-table。因此 receiver 只為保持既有呼叫點簽名而
+// 存在，**與 `s` 是否為 nil 無關**（舊實現 `s == nil` 時返回 nil，會把「節點
+// 上有註解但 sem 為空」誤判成無註解）。
+//
+// 與 `RawAnnotationsOf` 恆等（兩者讀同一份節點存儲）：舊的
+// `AnnotationsOf(n) || RawAnnotationsOf(n)` 雙查是歷史包袱，保留不影響正確性。
 func (s *SemanticContext) AnnotationsOf(n Node) []*AnnotationEntry {
-	if s == nil {
-		return nil
-	}
-	return s.anns.Of(n)
+	return annotationsOf(n)
 }
 
 // SetAnnotations 直接設定節點的註解條目。
 // 供工具（如 `no fmt --fix=overflow`）在 ParseProgram 之後、不重跑
 // ResolveProgram（重跑會把 #{generic=[K,V]} 等泛型參數重複附加到函式定義）
-// 的前提下，把新增的註解條目（如 overflow=wrap）寫入解析側表，使 formatter
-// 的 attachedAnnotations 能讀到並輸出。nil receiver / nil 節點安全。
-//
-// Stage 3 起與 `SetRawAnnotations` 寫同一張表（`AnnTable`）。
+// 的前提下，把新增的註解條目（如 overflow=wrap）寫入節點，使 formatter
+// 的 attachedAnnotations 能讀到並輸出。nil 節點安全。
 func (s *SemanticContext) SetAnnotations(n Node, entries []*AnnotationEntry) {
-	if s == nil || n == nil {
-		return
-	}
-	s.anns.ensure().Set(n, entries)
+	setAnnotationsOf(n, entries)
 }
 
 // RawAnnotationsOf 返回節點在「解析期」由 #{...} 收集的原始註解條目（無則 nil）。
-// 見 `AnnotationsOf` 的註解：Stage 3 起兩者讀同一份存儲，恆等。
-// nil receiver 安全。
+// 見 `AnnotationsOf` 的註解：兩者讀同一份節點存儲，恆等。
 func (s *SemanticContext) RawAnnotationsOf(n Node) []*AnnotationEntry {
-	if s == nil {
-		return nil
-	}
-	return s.anns.Of(n)
+	return annotationsOf(n)
 }
 
 // RawAnnotationsOf 是 Parser 級便利訪問器，轉發到語義副表，供呼叫方在
@@ -726,25 +687,17 @@ func (p *Parser) RawAnnotationsOf(n Node) []*AnnotationEntry {
 	return p.sem.RawAnnotationsOf(n)
 }
 
-// PlatformKeysOf 返回節點的平台註解 key（無則 nil）。nil receiver 安全。
+// PlatformKeysOf 返回節點的平台註解 key（無則 nil）。
 //
-// Stage 3 起是**純函數**：不再讀物化欄位，改從註解條目即時算出
-// （`ExtractPlatformKeys`）。原欄位由 ResolveProgram 填充，凡是沒跑
-// ResolveProgram 的路徑（單檔 vet、依賴模組）都拿不到值——現在兩條路徑一致。
+// 純函數：從節點上的註解條目即時算出（`ExtractPlatformKeys`），無物化欄位。
 func (s *SemanticContext) PlatformKeysOf(n Node) []string {
-	if s == nil {
-		return nil
-	}
-	return ExtractPlatformKeys(s.anns.Of(n))
+	return ExtractPlatformKeys(annotationsOf(n))
 }
 
-// GenericParamsOf 返回節點的泛型參數名（無則 nil）。nil receiver 安全。
-// Stage 3 起是純函數（見 `PlatformKeysOf` 註解）。
+// GenericParamsOf 返回節點的泛型參數名（無則 nil）。
+// 純函數（見 `PlatformKeysOf` 註解）。
 func (s *SemanticContext) GenericParamsOf(n Node) []string {
-	if s == nil {
-		return nil
-	}
-	return extractGenericParams(s.anns.Of(n))
+	return extractGenericParams(annotationsOf(n))
 }
 
 // EmbedDataOf 返回節點的嵌入字節（無則 nil）。nil receiver 安全。
@@ -939,26 +892,29 @@ func (s *SemanticContext) IsDeclared(name string) bool {
 // Stage 3 起本 pass 只剩一件事：把註解派生的函數泛型（#{generic=[K,V]}）物化回
 // `FuncSignature.GenericParams`。原本它還負責把 RawAnnotations 拷貝成
 // Annotations、並算出 PlatformKeys / GenericParams 三個物化欄位——那三件事
-// 隨著註解遷到 `AnnTable` 全部消失：Annotations 與 RawAnnotations 本就同讀一份
+// 隨著註解改為節點原生承載全部消失：Annotations 與 RawAnnotations 本就同讀一份
 // 存儲，後兩者降為純函數（`PlatformKeysOf` / `GenericParamsOf`）。
 func ResolveProgram(prog *Program) {
 	if prog == nil || prog.Sem == nil {
 		return
 	}
-	sem := prog.Sem
-	if sem.anns == nil {
-		return
-	}
-	for n := range sem.anns.entries {
+	// 註解住在節點上，故這裡走一遍樹（而不是遍歷一張表）。seen 去重：
+	// walkProgramNodes 按 **occurrence** 走訪，共享節點會出現多次。
+	seen := make(map[Node]bool)
+	walkProgramNodes(prog, func(n Node) {
+		if seen[n] {
+			return
+		}
+		seen[n] = true
 		// 註解派生的函數泛型（#{generic=[K,V]}）物化回 FuncSignature.GenericParams：
 		// 單態化管線（monomorphizeGenerics/cloneAndSubstitute）以該字段為具現化狀態
 		// （具現化後清空），保留與顯式 <K,V> 泛型一致的處理路徑。
 		fd, ok := n.(*FunctionDefinition)
 		if !ok {
-			continue
+			return
 		}
-		for _, name := range extractGenericParams(sem.anns.entries[n]) {
+		for _, name := range extractGenericParams(annotationsOf(fd)) {
 			fd.GenericParams = append(fd.GenericParams, &Identifier{Value: name})
 		}
-	}
+	})
 }

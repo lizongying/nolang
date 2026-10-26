@@ -55,6 +55,10 @@ func (t *Transpiler) parseFileWrapped(filePath string) (*parser.Program, error) 
 	if err != nil {
 		return nil, err
 	}
+	// The parse configuration is expressed ONCE here and consumed by both the
+	// fresh parse below and the Tier-1 rebuild, so a new parser input cannot be
+	// added to one path only.
+	cfg := t.astParseConfig(filePath)
 	// Tier 1: on-disk content-addressed AST cache. Skips lex+parse for every
 	// unchanged user file across builds. The salt captures the non-source
 	// ParseProgram inputs (injected cross-file signatures, the anonymous-fn
@@ -62,7 +66,7 @@ func (t *Transpiler) parseFileWrapped(filePath string) (*parser.Program, error) 
 	if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
 		salt := t.astCacheSalt()
 		key := dc.KeyFor(string(source), salt)
-		if cached, ok := dc.Get(key); ok {
+		if cached, ok := dc.Get(key, cfg); ok {
 			if os.Getenv("NOLANG_DEBUG_IT") != "" {
 				fmt.Fprintf(os.Stderr, "[debug-it] parseFile DISK CACHE HIT: %s\n", filePath)
 			}
@@ -74,17 +78,7 @@ func (t *Transpiler) parseFileWrapped(filePath string) (*parser.Program, error) 
 	}
 	l := lexer.NewCached(filePath, string(source))
 	p := parser.New(l)
-	p.AllowAnonymousFnType = t.allowAnonymousFn
-	p.Filename = filepath.Base(filePath)
-	// 注入預載入的跨文件簽名，支援 let 型別推斷
-	if t.externFuncSigs != nil || t.externStructFields != nil {
-		p.SetExternSignatures(t.externFuncSigs, t.externMethodSigs, t.externStructFields)
-	}
-	// 注入跨模組枚舉變體，使 match desugar 能識別枚舉型別
-	stdEnumVariants := checker.CollectStdEnumVariants()
-	if len(stdEnumVariants) > 0 {
-		p.SetExternEnumVariants(stdEnumVariants)
-	}
+	cfg.Apply(p)
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %s", filePath, parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
@@ -117,6 +111,31 @@ func (t *Transpiler) astCacheSalt() string {
 	return string(b)
 }
 
+// astParseConfig returns the source-independent inputs that shape a parse of
+// filePath. It is consumed by BOTH the fresh-parse path and the Tier-1 rebuild
+// path (`UserASTCache.Get`), which is the whole point: the AST blob carries the
+// syntax tree only, so the semantic views have to be regenerated with the same
+// configuration that produced the tree. Expressing that configuration once is
+// what keeps the two paths from drifting — a new parser input added here reaches
+// both, and one added by hand at a single call site reaches only that one.
+//
+// An empty filePath yields an empty Filename (not filepath.Base("") == "."),
+// matching the old `if t.sourcePath != ""` guard in parseEntryProgram.
+func (t *Transpiler) astParseConfig(filePath string) parser.SemRebuildConfig {
+	name := ""
+	if filePath != "" {
+		name = filepath.Base(filePath)
+	}
+	return parser.SemRebuildConfig{
+		Filename:             name,
+		AllowAnonymousFnType: t.allowAnonymousFn,
+		FuncSigs:             t.externFuncSigs,
+		MethodSigs:           t.externMethodSigs,
+		StructFields:         t.externStructFields,
+		EnumVariants:         checker.CollectStdEnumVariants(),
+	}
+}
+
 // parseEmbeddedProgram 從內嵌 FS 的位元組資料解析 Nolang 程式。
 // 與 parseFile 平行，但來源為 embed.FS.ReadFile 的結果而非磁碟檔案。
 // 用於 js/ 相容層模組解析（# js/<module>）。
@@ -139,16 +158,7 @@ func (t *Transpiler) parseEmbeddedProgramWrapped(filename string, data []byte) (
 	}
 	l := lexer.NewCached(filename, string(data))
 	p := parser.New(l)
-	p.AllowAnonymousFnType = t.allowAnonymousFn
-	p.Filename = filepath.Base(filename)
-	if t.externFuncSigs != nil || t.externStructFields != nil {
-		p.SetExternSignatures(t.externFuncSigs, t.externMethodSigs, t.externStructFields)
-	}
-	// 注入跨模組枚舉變體，使 match desugar 能識別枚舉型別
-	stdEnumVariants := checker.CollectStdEnumVariants()
-	if len(stdEnumVariants) > 0 {
-		p.SetExternEnumVariants(stdEnumVariants)
-	}
+	t.astParseConfig(filename).Apply(p)
 	prog := p.ParseProgram()
 	if len(p.Errors()) > 0 {
 		return nil, fmt.Errorf("%s: %s", filename, parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
@@ -329,7 +339,7 @@ func (t *Transpiler) parseEntryProgram(source string) (*parser.Program, error) {
 	if program == nil {
 		// Tier 1: on-disk content-addressed AST cache for the entry file.
 		if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
-			if cached, ok := dc.Get(dc.KeyFor(source, t.astCacheSalt())); ok {
+			if cached, ok := dc.Get(dc.KeyFor(source, t.astCacheSalt()), t.astParseConfig(t.sourcePath)); ok {
 				if os.Getenv("NOLANG_DEBUG_IT") != "" {
 					fmt.Fprintf(os.Stderr, "[debug-it] entry DISK CACHE HIT: %s\n", t.sourcePath)
 				}
@@ -340,20 +350,9 @@ func (t *Transpiler) parseEntryProgram(source string) (*parser.Program, error) {
 	if program == nil {
 		l := lexer.NewCached(t.sourcePath, source)
 		p := parser.New(l)
-		p.AllowAnonymousFnType = t.allowAnonymousFn
-		if t.sourcePath != "" {
-			p.Filename = filepath.Base(t.sourcePath)
-		}
-		// 注入外部簽名（t.extern*Sigs 由 preloadModuleSignatures 在本函式
-		// 呼叫前填好；此處讀字段等同原本傳入的區域副本）
-		if len(t.externFuncSigs) > 0 || len(t.externStructFields) > 0 {
-			p.SetExternSignatures(t.externFuncSigs, t.externMethodSigs, t.externStructFields)
-		}
-		// 注入跨模組枚舉變體，使 match desugar 能識別枚舉型別
-		stdEnumVariants := checker.CollectStdEnumVariants()
-		if len(stdEnumVariants) > 0 {
-			p.SetExternEnumVariants(stdEnumVariants)
-		}
+		// 外部簽名由 preloadModuleSignatures 在本函式呼叫前填好；此處與 Tier-1
+		// 重建路徑共用同一份配置（見 astParseConfig）。
+		t.astParseConfig(t.sourcePath).Apply(p)
 		program = p.ParseProgram()
 		if len(p.Errors()) > 0 {
 			return nil, fmt.Errorf("parser errors: %s", parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))

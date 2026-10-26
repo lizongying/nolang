@@ -143,7 +143,7 @@ func TestNodeFactsWritesDoNotTouchOtherTables(t *testing.T) {
 	sem.SetModuleConstOf(n, true)
 	sem.SetVariadicUnionOf(n, "num")
 	after := semTableLens(sem)
-	want := [3]int{before[0], before[1], before[2] + 1}
+	want := [2]int{before[0], before[1] + 1}
 	if after != want {
 		t.Errorf("writing node facts touched another table: before=%v after=%v want=%v",
 			before, after, want)
@@ -259,38 +259,65 @@ func TestNodeFactsMergeDoesNotOverwrite(t *testing.T) {
 	}
 }
 
-// TestNodeFactsSurvivesCacheRoundTrip is THE Stage 5 gate.
+// TestNodeFactsBlobCarriesNoFacts is THE Stage 5 gate, re-expressed for the
+// 2026-10-26 collapse (`CachedProgram` carries the syntax tree only).
 //
-// A blob HIT must restore all nine facts onto the same nodes. Nothing errors if
-// it does not: diagnostics get reattributed to the main file (reporting line
-// numbers that file does not have), const propagation and the index-guard
-// exemption silently stop firing, and union monomorphisation marks vanish for
-// std modules because the Tier-0 blob path never re-runs monomorphizeUnions.
-func TestNodeFactsSurvivesCacheRoundTrip(t *testing.T) {
-	src := "f = (i i64) (r ?i64) {\n  r = i + 1\n  r\n}\n"
+// It pins three things at once, and the first two are what keep the third from
+// being vacuous:
+//
+//  1. a decode WITHOUT BuildSemViews yields an EMPTY node-fact table, even
+//     though the tree it was encoded from had one — proof the blob carries no
+//     derived data;
+//  2. BuildSemViews regenerates exactly the facts that have a pure post-pass
+//     (`IndexInBounds` via AnalyzeInBoundsIndex);
+//  3. the eight ASSEMBLY-time facts (SourceFile / ModuleOwner / EmbedData /
+//     EmbedFiles / Callee / VariadicUnion / GenericUnion / ModuleConst) are
+//     gone after the round-trip — deliberately, and not a regression: they are
+//     written by build/transpiler_inject.go and the union monomorphiser AFTER
+//     the cache is filled, so they were never in the blob to begin with
+//     (measured: all eight have zero entries at Put time).
+//
+// Nothing errors if (1) or (2) regresses: diagnostics get reattributed to the
+// main file (reporting line numbers that file does not have) and the index-guard
+// exemption silently stops firing.
+func TestNodeFactsBlobCarriesNoFacts(t *testing.T) {
+	src := "f = () (r i64) {\n" +
+		"    n [4]i64\n" +
+		"    n[1] = 7\n" +
+		"    r = n[1]\n" +
+		"}\n"
+	cfg := SemRebuildConfig{Filename: "nf-round-trip.no"}
 	p := New(lexer.NewCached("nf-round-trip.no", src))
-	p.Filename = "nf-round-trip.no"
+	cfg.Apply(p)
 	prog := p.ParseProgram()
 	if prog == nil || len(p.Errors()) > 0 {
 		t.Fatalf("parse failed: %v", p.Errors())
 	}
 
-	// Plant all nine facts on real, walk-reachable nodes.
-	var fn, let Node
+	// Anti-vacuity: the fixture must actually produce a parse-time in-bounds proof.
+	countInBounds := func(pr *Program) int {
+		n := 0
+		walkProgramNodes(pr, func(node Node) {
+			if pr.Sem.IndexIsInBounds(node) {
+				n++
+			}
+		})
+		return n
+	}
+	if countInBounds(prog) == 0 {
+		t.Fatal("anti-vacuity: fixture produced no IndexInBounds fact")
+	}
+
+	// Plant the assembly-time facts on a real node so their disappearance is
+	// observable rather than assumed.
+	var fn Node
 	walkProgramNodes(prog, func(n Node) {
-		switch n.(type) {
-		case *FunctionDefinition:
-			if fn == nil {
-				fn = n
-			}
-		case *LetStatement:
-			if let == nil {
-				let = n
-			}
+		if _, ok := n.(*FunctionDefinition); ok && fn == nil {
+			fn = n
 		}
 	})
-	if fn == nil || let == nil {
-		t.Fatal("anti-vacuity: fixture has no FunctionDefinition / LetStatement")
+	if fn == nil {
+		t.Fatal("anti-vacuity: fixture has no FunctionDefinition")
 	}
 	prog.Sem.SetSourceFileOf(fn, "/repo/src/std/math.no")
 	prog.Sem.SetModuleOwnerOf(fn, "math")
@@ -298,132 +325,51 @@ func TestNodeFactsSurvivesCacheRoundTrip(t *testing.T) {
 	prog.Sem.SetGenericUnionOf(fn, "ord")
 	prog.Sem.SetEmbedData(fn, []byte{1, 2, 3})
 	prog.Sem.SetEmbedFiles(fn, map[string][]byte{"b.bin": {2}, "a.bin": {1}})
-	prog.Sem.SetModuleConstOf(let, true)
-	prog.Sem.SetIndexInBounds(let, true)
-	prog.Sem.SetCallee(let, CalleeMethod)
+	prog.Sem.SetCallee(fn, CalleeMethod)
 
-	before := prog.NodeFacts().Len()
-	if before < 2 {
-		t.Fatalf("anti-vacuity: only %d node-fact entries planted", before)
-	}
-
-	cp := &CachedProgram{
-		Prog:      prog,
-		Anns:      SerializeAnns(prog),
-		TypeFacts: SerializeTypeFacts(prog),
-		NodeFacts: SerializeNodeFacts(prog),
-	}
-	if cp.NodeFacts == nil {
-		t.Fatal("anti-vacuity: SerializeNodeFacts produced nothing")
-	}
 	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(cp); err != nil {
+	if err := gob.NewEncoder(&buf).Encode(&CachedProgram{Prog: prog}); err != nil {
 		t.Fatalf("encode: %v", err)
 	}
 	var dcp CachedProgram
 	if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&dcp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if dcp.NodeFacts == nil {
-		t.Fatal("NodeFacts missing from the decoded CachedProgram")
+	if dcp.Prog == nil {
+		t.Fatal("decode produced no program")
 	}
-	// Anti-vacuity: both planted nodes must be re-locatable on the decoded tree.
-	var dfn, dlet Node
+
+	// (1) The blob carries no fact of any kind.
+	if got := dcp.Prog.NodeFacts().Len(); got != 0 {
+		t.Fatalf("blob carried %d node facts; CachedProgram must hold the syntax tree only", got)
+	}
+
+	// (2) The rebuildable fact comes back.
+	BuildSemViews(dcp.Prog, cfg)
+	if got := countInBounds(dcp.Prog); got == 0 {
+		t.Fatal("BuildSemViews restored no IndexInBounds fact; " +
+			"the index-guard exemption would silently stop firing on a cache HIT")
+	}
+
+	// (3) The assembly-time facts stay absent — they are not the blob's job.
+	var dfn Node
 	walkProgramNodes(dcp.Prog, func(n Node) {
-		switch n.(type) {
-		case *FunctionDefinition:
-			if dfn == nil {
-				dfn = n
-			}
-		case *LetStatement:
-			if dlet == nil {
-				dlet = n
-			}
+		if _, ok := n.(*FunctionDefinition); ok && dfn == nil {
+			dfn = n
 		}
 	})
-	if dfn == nil || dlet == nil {
-		t.Fatal("anti-vacuity: decoded tree lost the planted nodes")
+	if dfn == nil {
+		t.Fatal("decoded tree lost the FunctionDefinition")
 	}
 	sem := dcp.Prog.Sem
-	if got := sem.SourceFileOf(dfn); got != "/repo/src/std/math.no" {
-		t.Errorf("SourceFile lost across the round-trip: %q", got)
+	if got := sem.SourceFileOf(dfn); got != "" {
+		t.Errorf("SourceFile came back as %q; assembly-time facts are not rebuilt", got)
 	}
-	if got := sem.ModuleOwnerOf(dfn); got != "math" {
-		t.Errorf("ModuleOwner lost across the round-trip: %q", got)
+	if got := sem.EmbedDataOf(dfn); got != nil {
+		t.Errorf("EmbedData came back as %v; assembly-time facts are not rebuilt", got)
 	}
-	if got := sem.VariadicUnionOf(dfn); got != "num" {
-		t.Errorf("VariadicUnion lost across the round-trip: %q", got)
-	}
-	if got := sem.GenericUnionOf(dfn); got != "ord" {
-		t.Errorf("GenericUnion lost across the round-trip: %q", got)
-	}
-	if got := sem.EmbedDataOf(dfn); !bytes.Equal(got, []byte{1, 2, 3}) {
-		t.Errorf("EmbedData lost across the round-trip: %v", got)
-	}
-	files := sem.EmbedFilesOf(dfn)
-	if len(files) != 2 || !bytes.Equal(files["a.bin"], []byte{1}) || !bytes.Equal(files["b.bin"], []byte{2}) {
-		t.Errorf("EmbedFiles lost across the round-trip: %v", files)
-	}
-	if !sem.ModuleConstOf(dlet) {
-		t.Error("ModuleConst lost across the round-trip")
-	}
-	if !sem.IndexIsInBounds(dlet) {
-		t.Error("IndexInBounds lost across the round-trip")
-	}
-	if sem.CalleeOf(dlet) != CalleeMethod {
-		t.Errorf("Callee lost across the round-trip: %v", sem.CalleeOf(dlet))
-	}
-	if got := dcp.Prog.NodeFacts().Len(); got != before {
-		t.Errorf("node-fact count changed across the round-trip: before=%d after=%d", before, got)
-	}
-}
-
-// TestNodeFactsEmbedFilesEncodingIsDeterministic pins the one property
-// EmbedFiles endangers: `NodeFact.EmbedFiles` is the only map in the table, and
-// gob encodes maps in randomized iteration order. A map that reaches gob would
-// make the std blob un-reproducible (genstdsig's "content unchanged → don't
-// rewrite" guard would never fire, and two builds would produce different `no`
-// binaries). Several entries are required — a one-entry map cannot expose
-// order sensitivity.
-func TestNodeFactsEmbedFilesEncodingIsDeterministic(t *testing.T) {
-	m := map[uint32]*NodeFact{
-		1: {EmbedFiles: map[string][]byte{"b.bin": {2}, "a.bin": {1}, "c.bin": {3}}},
-		2: {EmbedFiles: map[string][]byte{"z.bin": {26}, "y.bin": {25}}},
-		3: {SourceFile: "/repo/src/std/math.no", Callee: CalleeMethod},
-	}
-	var prev []byte
-	for i := 0; i < 5; i++ {
-		d := detCached{NodeFacts: detFromNodeFactsMap(m)}
-		var buf bytes.Buffer
-		if err := gob.NewEncoder(&buf).Encode(&d); err != nil {
-			t.Fatalf("encode: %v", err)
-		}
-		if i == 0 {
-			prev = buf.Bytes()
-			continue
-		}
-		if !bytes.Equal(prev, buf.Bytes()) {
-			t.Fatalf("NodeFacts encoding is not deterministic: run 0 = %d bytes, "+
-				"run %d = %d bytes with different content", len(prev), i, buf.Len())
-		}
-	}
-	if len(prev) == 0 {
-		t.Fatal("encoded 0 bytes")
-	}
-	// And the round-trip must still restore the maps.
-	var d detCached
-	if err := gob.NewDecoder(bytes.NewReader(prev)).Decode(&d); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	back := detToNodeFactsMap(d.NodeFacts)
-	if len(back) != 3 {
-		t.Fatalf("round-trip lost entries: %d", len(back))
-	}
-	if len(back[1].EmbedFiles) != 3 || back[1].EmbedFiles["c.bin"][0] != 3 {
-		t.Errorf("EmbedFiles lost across the round-trip: %v", back[1].EmbedFiles)
-	}
-	if back[3].SourceFile != "/repo/src/std/math.no" || back[3].Callee != CalleeMethod {
-		t.Errorf("scalar slots lost across the round-trip: %+v", back[3])
+	if got := sem.CalleeOf(dfn); got != CalleeUnknown {
+		t.Errorf("Callee came back as %v; assembly-time facts are not rebuilt", got)
 	}
 }
 

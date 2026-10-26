@@ -67,11 +67,11 @@ func main () i64 {
 	key := cache.KeyFor(src, "salt-v1")
 	cache.Put(key, orig)
 
-	got1, ok := cache.Get(key)
+	got1, ok := cache.Get(key, SemRebuildConfig{})
 	if !ok {
 		t.Fatal("cache Get returned false on a key that was just Put")
 	}
-	got2, ok := cache.Get(key)
+	got2, ok := cache.Get(key, SemRebuildConfig{})
 	if !ok {
 		t.Fatal("second cache Get returned false")
 	}
@@ -102,7 +102,7 @@ func main () i64 {
 	}
 
 	// Missing key must miss, not panic.
-	if _, ok := cache.Get("deadbeef"); ok {
+	if _, ok := cache.Get("deadbeef", SemRebuildConfig{}); ok {
 		t.Fatal("Get on unknown key should miss")
 	}
 }
@@ -129,7 +129,7 @@ func TestUserASTCacheRoundTripPreservesInBoundsProof(t *testing.T) {
 	}
 	key := cache.KeyFor(src, "inbounds-side-table")
 	cache.Put(key, orig)
-	got, ok := cache.Get(key)
+	got, ok := cache.Get(key, SemRebuildConfig{})
 	if !ok {
 		t.Fatal("cache Get returned false after Put")
 	}

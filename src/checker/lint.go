@@ -968,8 +968,8 @@ func finalizeLintResults(results []LintResult, program *parser.Program, opts Lin
 
 	// 檢查目標不是 std 檔時，丟棄歸屬到 std 的診斷：
 	// std 有獨立閘門（`no vet src/std`，目前 0 error），而 merged 模式下 std 自帶的
-	// `#{overflow}` 註解會因為 lowering 重建 AST 節點、導致註解側表
-	// （`SemanticContext.anns`，以節點指標為鍵）查不到而產生大量假警報——實測 src/std/arr.no:68 已存在
+	// `#{overflow}` 註解會因為 lowering 重建 AST 節點、導致註解掛在已被替換掉的
+	// 舊節點上（註解隨節點走，見 parser/annotations.go）查不到而產生大量假警報——實測 src/std/arr.no:68 已存在
 	// `#{overflow=wrap}`，merged vet 仍報 :69 未處理溢位；同一份 std 單獨 vet 卻是
 	// 乾淨的。把 std 內部診斷算進使用者/測試檔的 vet 結果只會誤導，故在此過濾。
 	// merged 模式（多檔程式）下跨檔行號無法歸因（singleFile=false → File 為空）

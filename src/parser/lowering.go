@@ -39,6 +39,10 @@ type SurfaceMatch struct {
 	// 重複報出 `it` 非法使用等診斷。SkipLowering 路徑下節點從未經過 walk，PreChecked
 	// 為 false，desugarSurfaceMatch 仍會補跑預檢。
 	PreChecked bool
+
+	// 表層 match 節點自身的 `#{...}`（arm 級註解會複製到臂體陳述上，
+	// 而 match 節點本身也可能被搬移註解）。
+	AnnotatedNode
 }
 
 func (sm *SurfaceMatch) expressionNode()     {}
@@ -446,11 +450,12 @@ func (l *lowerer) walk(v reflect.Value) {
 						if anns := l.p.sem.RawAnnotationsOf(es); len(anns) > 0 {
 							switch tgt := es.Expression.(type) {
 							case *AssignExpression:
-								// Stage 3 起一筆就夠：`SetRawAnnotations` 寫的是
-								// `AnnTable`，`AnnotationsOf` 與 `RawAnnotationsOf`
-								// 都讀它。原來還要補 `ns.Annotations`（因
-								// ResolveProgram 只對解析期直接收過註解的節點回填，
-								// 而內層 ae 是 lowering 才有的），現在不存在這個差異。
+								// 一筆就夠：`SetRawAnnotations` 寫的是節點本身
+								// （`AnnotatedNode.Annotations`），`AnnotationsOf` 與
+								// `RawAnnotationsOf` 讀的是同一份存儲。Stage 3 時代
+								// 還要補 `ns.Annotations`（因 ResolveProgram 只對解析期
+								// 直接收過註解的節點回填，而內層 ae 是 lowering 才有的），
+								// 現在不存在這個差異。
 								l.p.sem.SetRawAnnotations(tgt, anns)
 								stmt = tgt
 							case *SurfaceMatch:
@@ -487,8 +492,9 @@ func (l *lowerer) walk(v reflect.Value) {
 				// analysisOnly 模式下**必須**執行：對 SkipLowering 路徑補齊
 				// `?T` 推斷事實，使 ASTToHIR 產生與預設路徑一致的 Type ID。
 				// SkipUnwrapLowering 旗標已隨 §4.3 刪除，option 算術推斷在此一律進行。
+				arithRoot := false
 				if ls, ok := stmt.(*LetStatement); ok {
-					l.inferOptionArith(ls)
+					arithRoot = l.inferOptionArith(ls)
 				}
 				// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
 				// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
@@ -498,8 +504,13 @@ func (l *lowerer) walk(v reflect.Value) {
 				// 不會建構取代節點。
 				// SkipUnwrapLowering / SkipSafeIndexLowering 旗標已隨 §4.3 刪除，
 				// 捕獲賦值在此一律進行。
+				//
+				// arithRoot 必須**在此處**由 inferOptionArith 的當次回傳值帶入，
+				// 不能改成進副表再讀回：判據依賴 `signedIntOperandType` 當下可見的
+				// 型別集合，而 inferOptionArith 自己會 setVarType 改動那份集合
+				//（`x = x + 1` 自引用），重算會得到不同答案。
 				if ls, ok := stmt.(*LetStatement); ok && !replaced {
-					if repl := l.maybeCaptureOptionAssign(ls); !l.analysisOnly && repl != nil {
+					if repl := l.maybeCaptureOptionAssign(ls, arithRoot); !l.analysisOnly && repl != nil {
 						l.carryOverflowAnnotation(carryFrom, repl)
 						v.Index(i).Set(reflect.ValueOf(repl))
 						replaced = true
@@ -878,13 +889,17 @@ func (l *lowerer) recordIndexLocalType(funcName, name, lt string) {
 // carryOverflowAnnotation 原樣保留，MIR 端以 Inst.OvfAnnotated 消費（結果仍是
 // %option，只是溢位臂不再點亮 tag=2）。字串拼接的 `+` 由 signedIntOperandType
 // 的型別判定自然排除（str 非有號整數）。
-func (l *lowerer) inferOptionArith(s *LetStatement) {
+//
+// 回傳值 = 「本陳述的根-算術推斷是否成立」。呼叫端（walker）把它原值轉交給
+// `maybeCaptureOptionAssign` 作短路判據，取代 S3 時期的 `InferredByOptionArith`
+// 持久位（見 maybeCaptureOptionAssign 的註釋）。
+func (l *lowerer) inferOptionArith(s *LetStatement) bool {
 	if s == nil || s.IsSynthetic || s.Name == nil || s.Value == nil {
-		return
+		return false
 	}
 	// 顯式標註（含 ?T）一律不碰：用戶意圖優先，也保證冪等（重解析不重複改寫）。
 	if s.Type != nil {
-		return
+		return false
 	}
 	// 目標已宣告為非 option（`x i64 = 0` 之後的 `x = a + b`、純量出參 `r i64`）
 	// → 不改寫。合成 `?T` 會就地改掉一個已存在變數的型別：它先前的所有普通值
@@ -892,25 +907,24 @@ func (l *lowerer) inferOptionArith(s *LetStatement) {
 	// 棄）。交由既有診斷處理，維持與 maybeCaptureOptionAssign 同一條規則
 	//（captureTargetAllowsOption）。
 	if !l.captureTargetAllowsOption(s) {
-		return
+		return false
 	}
 	inf, ok := unwrapLowerExpr(s.Value).(*InfixExpression)
 	if !ok || !isOptionArithOperator(inf.Operator) {
-		return
+		return false
 	}
 	lt, okLT := l.signedIntOperandType(inf.Left)
 	rt, okRT := l.signedIntOperandType(inf.Right)
 	if !okLT || !okRT {
-		return
+		return false
 	}
 	base := lt
 	if len(rt) > len(base) {
 		base = rt
 	}
 	// 推斷結果改走語義副表（Program.Sem 的 typeFacts），不再寫 AST。
-	// byArith=true：標位讓 `maybeCaptureOptionAssign` 的根-算術短路生效，
-	// 避免同一節點被結構捕獲改寫成 `__cap_N` 包裹。
-	l.publishInferredType(s, "?"+base, true)
+	l.publishInferredType(s, "?"+base)
+	return true
 }
 
 // synthesizeNullableType 把推斷出的 `?inner` 型別字串記入 Program.Sem，
@@ -918,31 +932,32 @@ func (l *lowerer) inferOptionArith(s *LetStatement) {
 // 豁免）與 MIR（KLet typeHint）由 AST→HIR 透過語義副表讀到同一事實，
 // 完全復用「用戶顯式寫 ?T」的已驗證路徑。
 //
-// byArith=false：來自結構捕獲期間對索引根／混合運算元根的合成，語義
-// 標誌 InferredByOptionArith 為 false，使 `maybeCaptureOptionAssign` 的
-// 短路檢查仍可為該變數觸發結構 desugar（構造 `__cap_N` 暫存）。見
-// `publishInferredType` 的標誌位區分原則。
+// 與 `inferOptionArith` 的差別只剩「誰寫的」：本函式在**結構捕獲期間**對
+// 索引根／混合運算元根合成型別，該路徑仍需要結構 desugar（構造 `__cap_N`
+// 暫存），故呼叫端不會把它當成根-算術短路依據 —— 短路判據由 walker 從
+// `inferOptionArith` 的回傳值傳遞，與本函式無關。
 func (l *lowerer) synthesizeNullableType(s *LetStatement, inner string) {
 	if s == nil || s.Name == nil || inner == "" {
 		return
 	}
-	l.publishInferredType(s, "?"+inner, false)
+	l.publishInferredType(s, "?"+inner)
 }
 
 // publishInferredType 為 s 推斷 ?T 型別字串並同時登記到語義副表 + VarTypes。
 // 這是把原本 `s.Type = &NullableType{IsInferred: true}; setVarType(...)` 的
 // 「AST 寫」/「副表寫」兩步合成為單一副表操作；前者已被 P1 禁止。
 //
-// byArith=true 時同步把 `InferredByOptionArith` 標位拉起——供
-// `maybeCaptureOptionAssign` 的短路檢查區分「算術根推斷已收手（不要再被
-// 結構 desugar）」與「結構捕獲期間的合成（仍需要結構 desugar）」。
-func (l *lowerer) publishInferredType(s *LetStatement, typ string, byArith bool) {
+// 2026-10-26：本函式不再區分寫入來源。原本的 `byArith` 參數只為了拉起
+// `InferredByOptionArith` 這個持久位，而該位的唯一消費者是
+// `maybeCaptureOptionAssign` 的根-算術短路 —— 那條短路現在由 walker 把
+// `inferOptionArith` 的回傳值直接傳參，不再經副表。故副表只剩「推斷出什麼」，
+// 不再記錄「誰推斷的」。
+func (l *lowerer) publishInferredType(s *LetStatement, typ string) {
 	if s == nil || s.Name == nil || typ == "" || l == nil || l.p == nil {
 		return
 	}
 	if l.p.sem != nil {
 		l.p.sem.SetInferredType(s, typ)
-		l.p.sem.SetInferredByOptionArith(s, byArith)
 	}
 	l.p.setVarType(s.Name.Value, typ)
 }
@@ -1140,7 +1155,15 @@ func (l *lowerer) collectCaptureNodes(e Expression, out *[]captureNode, tok lexe
 //   - 根為呼叫但回傳型別未知、或回傳本身已是 option（整體拷貝語意）
 //   - 根為其他型別（字面量、欄位存取…）語意未定
 //   - 掃描後沒有任何可錯源節點（`len(nodes) == 0`）
-func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
+//
+// 參數 `byOptionArith` 是 walker 剛呼叫 `inferOptionArith` 的回傳值，語意為
+// 「本陳述的根-算術推斷剛剛成立」。它取代了 S3 時期的 `InferredByOptionArith`
+// 持久位（`TypeFact.ByOptionArith`）：那位在 S3 是為了不寫 AST 才搬進副表，
+// 但它其實是**同一次 walk 內的局部判定結果**，不是可重建的程式事實 —— 存起來
+// 既讓 blob 多一欄，又讓「只存 Prog + 重走重建」在 6 個語料上失效（重走時
+// `signedIntOperandType` 的可見型別集合與首次 walk 不同）。改為值傳遞後，
+// 判定與消費發生在同一時刻、同一份狀態上，與 walk 順序無關。
+func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}, byOptionArith bool) Statement {
 	ls, ok := stmt.(*LetStatement)
 	if !ok || ls == nil || ls.IsSynthetic || ls.Name == nil || ls.Value == nil {
 		return nil
@@ -1199,15 +1222,14 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 	// 捕獲，不比今日更漏。
 	//
 	// S3（2026-10-16.4）：inferOptionArith 不再就地寫 `s.Type`；推斷結果改放
-	// `sem.InferredType` side-table，並以 `InferredByOptionArith` 標位區分來源
-	//（見 `TypeFact.ByOptionArith` 註釋）。`a = b + c` 算術根且雙運算元為有號整數時由
-	// inferOptionArith 推斷出 `?i64`（byArith=true），本短路生效，跳過結構
-	// desugar；`a = x + 1`（x 為 option）則 inferOptionArith 推不出，
-	// byArith 標位保持 false，捕獲照走，建構 `__cap_N` 暫存。
-	if inf, isInf := root.(*InfixExpression); isInf && isOptionArithOperator(inf.Operator) && ls.Type != nil {
-		return nil
-	}
-	if inf, isInf := root.(*InfixExpression); isInf && isOptionArithOperator(inf.Operator) && l.p.sem != nil && l.p.sem.InferredByOptionArith(ls) {
+	// `sem.InferredType` side-table。`a = b + c` 算術根且雙運算元為有號整數時由
+	// inferOptionArith 推斷出 `?i64`，walker 把該事實以 `byOptionArith` 傳入，
+	// 本短路生效，跳過結構 desugar；`a = x + 1`（x 為 option）則 inferOptionArith
+	// 推不出，`byOptionArith` 為 false，捕獲照走，建構 `__cap_N` 暫存。
+	//
+	// 兩條短路合併成一個條件是安全的：`ls.Type != nil` 時 inferOptionArith 必定
+	// 提前返回 false（顯式標註不碰），故二者互斥且並集即「根-算術已被別處收手」。
+	if inf, isInf := root.(*InfixExpression); isInf && isOptionArithOperator(inf.Operator) && (ls.Type != nil || byOptionArith) {
 		return nil
 	}
 	// 根為 option 變數：賦值本身即整體拷貝，現有行為已正確。
@@ -1350,8 +1372,8 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}) Statement {
 
 	block := l.buildCaptureChain(ls, inner, nodes, wasDeclared, rewritten)
 	// S3-c：AST 軌把被捕獲的 LetStatement 就地替換成 buildCaptureChain 產出的
-	// BlockStatement，原節點隨即從 AST 消失；其 `#{...}` 註解（以節點指針為鍵存於
-	// sem.anns）若不相隨搬運，就會在進 HIR 前丟失。H0 軌看凍結形態、不經此替換，
+	// BlockStatement，原節點隨即從 AST 消失；其 `#{...}` 註解（住在原節點上）
+	// 若不相隨搬運，就會在進 HIR 前丟失。H0 軌看凍結形態、不經此替換，
 	// 故保留註解（見 parser/dump/hir_equivalence_test.go 的 hirCaptureKnownDivergence
 	// 與 tests/arr-test-tmp.no 的 `#{index-out=0.0}`）。這是 AST 軌的既有缺陷；此處把
 	// 原節點的註解 remap 到取代它的 BlockStatement，使兩軌註解都進 HIR（落在同一個

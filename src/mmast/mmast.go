@@ -80,12 +80,7 @@ func WriteASTZip(w io.Writer, prog *parser.Program, pkgJSONC []byte) (*ZipStats,
 	if err != nil {
 		return nil, err
 	}
-	cp := parser.CachedProgram{
-		Prog:      prog,
-		Anns:      parser.SerializeAnns(prog),
-		TypeFacts: parser.SerializeTypeFacts(prog),
-		NodeFacts: parser.SerializeNodeFacts(prog),
-	}
+	cp := parser.CachedProgram{Prog: prog}
 	if err := gob.NewEncoder(tw).Encode(&cp); err != nil {
 		return nil, fmt.Errorf("mmast: encode ast: %w", err)
 	}
@@ -202,7 +197,16 @@ func cachePathPart(s string) string {
 // 版本閘不在流内——由 ASTZipCachePath 的檔名鍵控（std 随编译器下发、第三方識別
 // 在 package.jsonc，跨代讀取場景不存在）。gob 型別名不匹配（舊 astDoc/mm 格式）
 // 會直接報錯，不会静默錯解。
+//
+// 語義視圖用**空配置**重建：本函式不知道打包端當初的解析輸入（打包者與消費者
+// 是不同建置）。對「宣告自足」的模組這是正確的；對依賴注入簽名表的模組則不然。
+// 這是「分發 AST 卻不分發解析輸入」的固有缺口，知道配置的呼叫方請走 ReadASTZipWith。
 func ReadASTZip(data []byte) (*parser.Program, *ASTZip, error) {
+	return ReadASTZipWith(data, parser.SemRebuildConfig{})
+}
+
+// ReadASTZipWith 與 ReadASTZip 相同，但由呼叫方提供解析配置，供重建語義視圖。
+func ReadASTZipWith(data []byte, cfg parser.SemRebuildConfig) (*parser.Program, *ASTZip, error) {
 	byName, err := readZipEntries(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("mmast: open zip: %w", err)
@@ -218,5 +222,7 @@ func ReadASTZip(data []byte) (*parser.Program, *ASTZip, error) {
 	if cp.Prog == nil {
 		return nil, nil, fmt.Errorf("mmast: ast.gob carries no program")
 	}
+	// 分發物只有語法樹（與磁碟 AST 快取同一個 CachedProgram），衍生事實一律重建。
+	parser.BuildSemViews(cp.Prog, cfg)
 	return cp.Prog, &ASTZip{PackageJSONC: byName[packageName]}, nil
 }

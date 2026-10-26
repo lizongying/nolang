@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/lexer"
@@ -19,11 +20,13 @@ import (
 //     P1 invariant).
 //  2. Program.Sem publishes the inferred ?T string and `HasInferredType`
 //     answers the right question.
-//  3. The InferredByOptionArith flag distinguishes the two WRITE SOURCES:
-//     inferOptionArith (root arithmetic) sets it true, synthesizeNullableType
-//     (structural capture) sets it false. A flag collapse here lets the
-//     option-capture pass re-desugar `a = b + c` into `__cap_N`, silently
-//     dropping the `?i64` annotation the user would otherwise see.
+//  3. The type-fact entry carries ONLY reconstructible program facts. The
+//     former `ByOptionArith` bit — which told `maybeCaptureOptionAssign`
+//     whether root-arithmetic inference had already fired — is gone: it is a
+//     local decision made and consumed inside one `LowerSurface` walk, passed
+//     by value instead. The behavioural half of that invariant is pinned here
+//     too: `x = a + b` must NOT be re-desugared into `__cap_N`, while
+//     `x = p[i] + 1` (where inference genuinely fails) MUST be.
 //  4. The cache mirror (detCached.TypeFacts) round-trips through gob, so an
 //     incremental-build AST cache hit produces identical checker / formatter
 //     output to a fresh parse.
@@ -65,39 +68,54 @@ f = () () {
 	if got := arithProg.Sem.InferredType(x); got != "?i64" {
 		t.Fatalf("`x = a + b` published %q to Program.Sem, want \"?i64\"", got)
 	}
-	// Root-arithmetic inference must set InferredByOptionArith=true; this is
-	// what stops maybeCaptureOptionAssign from re-desugaring into __cap_N.
-	if !arithProg.Sem.InferredByOptionArith(x) {
-		t.Fatal("inferOptionArith source must set InferredByOptionArith=true")
+	// 3a. The entry type must carry no walk-local bookkeeping. A future
+	//     re-introduction of `ByOptionArith` (or any sibling "who wrote this"
+	//     bit) would silently re-add a non-reconstructible field to the blob.
+	//     Reflection with an exact field set — a subset check would let a new
+	//     field slip in unnoticed.
+	wantFactFields := []string{"InferredType", "TypeOverride"}
+	var gotFactFields []string
+	ft := reflect.TypeOf(TypeFact{})
+	for i := 0; i < ft.NumField(); i++ {
+		gotFactFields = append(gotFactFields, ft.Field(i).Name)
+	}
+	if len(gotFactFields) == 0 {
+		t.Fatal("reflection saw zero fields on TypeFact — the gate would be vacuous")
+	}
+	if !reflect.DeepEqual(gotFactFields, wantFactFields) {
+		t.Fatalf("TypeFact fields = %v, want %v\n"+
+			"Every field here is gob-serialized into the Tier-0/Tier-1 blob. "+
+			"Walk-local decisions (e.g. the removed ByOptionArith bit) must be "+
+			"passed by value at the consumption point, not persisted.",
+			gotFactFields, wantFactFields)
 	}
 
-	// 3. Two-source distinction: structural-capture cases (where
-	//    synthesizeNullableType is the writer) leave the flag false, so the
-	//    option-capture pass is allowed to run.
+	// 3b. Behavioural half: root arithmetic is NOT structurally re-desugared.
+	//     Without this, deleting the bit could silently start emitting `__cap_N`
+	//     for `x = a + b`, which changes the HIR the cache must reproduce.
+	if n := countCapTemps(t, arithProg); n != 0 {
+		t.Fatalf("`x = a + b` produced %d __cap_ temp(s); root-arithmetic "+
+			"inference must short-circuit the structural capture pass", n)
+	}
+
+	// 3c. Anti-vacuity for 3b: a root arithmetic expression whose operand type
+	//     is NOT inferable (safe index) must still be captured. If this fixture
+	//     also produced zero temps, 3b would be proving nothing.
+	//
+	//     Note: the captured LetStatement itself leaves the tree (it is replaced
+	//     by the capture chain), so `findLetByName` would find the *synthesised*
+	//     ok-arm binding, not the original — assert on the temp count only.
 	captureProg := parseProg(t, `
 f = () () {
     p []i64 = [1, 2, 3]
     i i64 = 0
-    x = p[i]
+    x = p[i] + 1
     print(x)
 }
 `)
-	cx := findLetByName(t, captureProg, "x")
-	if cx.Type != nil {
-		t.Fatalf("`x = p[i]` mutated LetStatement.Type (got %s); "+
-			"structural inference must live in Program.Sem", typeString(cx.Type))
-	}
-	if !captureProg.Sem.HasInferredType(cx) {
-		t.Fatal("`x = p[i]` did not publish an inferred type to Program.Sem")
-	}
-	if got := captureProg.Sem.InferredType(cx); got != "?i64" {
-		t.Fatalf("`x = p[i]` published %q, want \"?i64\"", got)
-	}
-	// Structural-capture cases: InferredByOptionArith must be false so
-	// option-capture can still re-desugar (the `__cap_N` rewrites
-	// OUT of `prepareInferredTypes`, in the structural pass).
-	if captureProg.Sem.InferredByOptionArith(cx) {
-		t.Fatal("synthesizeNullableType must leave InferredByOptionArith=false")
+	if n := countCapTemps(t, captureProg); n == 0 {
+		t.Fatal("`x = p[i] + 1` produced no __cap_ temp; the structural capture " +
+			"pass is dead, so the 3b assertion above is vacuous")
 	}
 
 	// 4. Two-form mechanism: the surface path (SkipUnwrapLowering +
@@ -120,19 +138,13 @@ f = (a i64, b i64) () {
 	// `prepareInferredTypes` skips it under `SkipUnwrapLowering`. This is
 	// why the gate is "AST untouched" not "side-table populated".
 
-	// 5. Cache round-trip: since Stage 4 the type facts live in their own
-	//    `CachedProgram.TypeFacts` table (occurrence-keyed, mirroring Anns)
-	//    instead of the detNodeSem mirror. A Tier-1 cache hit
-	//    must still restore both fields byte-for-byte (paralleling the
-	//    InBoundsProofLivesInSemanticSideTable round-trip).
-	//    ⚠️ All three serialize helpers must be passed: dropping TypeFacts here
-	//    is exactly the failure this test exists to catch.
-	cp := &CachedProgram{
-		Prog:      arithProg,
-		Anns:      SerializeAnns(arithProg),
-		TypeFacts: SerializeTypeFacts(arithProg),
-		NodeFacts: SerializeNodeFacts(arithProg),
-	}
+	// 5. Cache round-trip: since 2026-10-26 the blob is the syntax tree only, so
+	//    the `?T` fact is NOT on the wire — it is regenerated by BuildSemViews.
+	//    Both halves matter: the first proves the envelope really carries no
+	//    derived data, the second proves the rebuild brings the fact back on the
+	//    SAME node. (A Tier-1 hit that skipped the rebuild would leave `x`
+	//    untyped, which is exactly the failure this step guards.)
+	cp := &CachedProgram{Prog: arithProg}
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(cp); err != nil {
 		t.Fatalf("gob encode: %v", err)
@@ -141,20 +153,42 @@ f = (a i64, b i64) () {
 	if err := gob.NewDecoder(&buf).Decode(&dec); err != nil {
 		t.Fatalf("gob decode: %v", err)
 	}
+	if n := dec.Prog.TypeFacts().Len(); n != 0 {
+		t.Fatalf("blob carried %d type facts; CachedProgram must hold the syntax tree only", n)
+	}
 
+	BuildSemViews(dec.Prog, SemRebuildConfig{Filename: "arith.no"})
 	dx := findLetByName(t, dec.Prog, "x")
 	if dx == nil {
 		t.Fatal("decoded program has no `x` binding")
 	}
 	if !dec.Prog.Sem.HasInferredType(dx) {
-		t.Fatal("gob round-trip lost InferredType")
+		t.Fatal("decode+rebuild lost InferredType")
 	}
 	if got := dec.Prog.Sem.InferredType(dx); got != "?i64" {
-		t.Fatalf("gob round-trip restored InferredType=%q, want \"?i64\"", got)
+		t.Fatalf("decode+rebuild restored InferredType=%q, want \"?i64\"", got)
 	}
-	if !dec.Prog.Sem.InferredByOptionArith(dx) {
-		t.Fatal("gob round-trip lost InferredByOptionArith")
-	}
+}
+
+// countCapTemps counts identifiers the option-capture pass synthesised
+// (`__cap_N`). It is the observable footprint of the structural desugar: zero
+// means the capture pass declined to rewrite the statement.
+func countCapTemps(t *testing.T, prog *Program) int {
+	t.Helper()
+	n := 0
+	walkNodes(prog, func(v interface{}) {
+		switch x := v.(type) {
+		case *Identifier:
+			if x != nil && strings.HasPrefix(x.Value, "__cap_") {
+				n++
+			}
+		case *LetStatement:
+			if x != nil && x.Name != nil && strings.HasPrefix(x.Name.Value, "__cap_") {
+				n++
+			}
+		}
+	})
+	return n
 }
 
 // parseProg parses src under the same flags ParseProgram uses by default;

@@ -237,7 +237,56 @@ import (
 // 的欄位，且 `NodeSem` 恆為空、解不出任何東西），但依 C9 MUST-bump 第 2 條
 // 「gob 版面改變」**仍須 bump** —— 版本號是「blob 與本版編譯器匹配」的唯一憑證，
 // 解碼容忍不等於語義正確。作廢全部舊 blob。
-const ASTVersion = "2026-10-23.5"
+//
+// 2026-10-26.1：註解回歸 AST —— 刪除 `AnnTable` 整條通道（`SemanticContext.anns`
+// / `NewAnnTable` / `Set` / `Of` / `Len` / `Clone` / `Merge`、`CachedProgram.Anns`、
+// `SerializeAnns` / `RestoreAnns`、`detCached.Anns` / `detU32Anns` /
+// `detFromAnnsMap` / `detToAnnsMap`），`#{...}` 條目改為住在節點上
+// （`AnnotatedNode`，嵌入 `CommentedNode` / `StructField` / `EnumValue` /
+// `TaggedEnumVariant` / `AssignExpression` / `SurfaceMatch`）。
+//
+// 🔴 必 bump，理由有三層，每一層單獨就足夠：
+//  1. surface AST 形狀變了（MUST-bump 第 1 條）：六類節點各多一個
+//     `Annotations []*AnnotationEntry` 欄位，gob 會把它們一起編碼；
+//  2. gob 版面變了（第 2 條）：`detCached` 少一個欄位 `Anns`；
+//  3. 註解是 HIR 消費的 parse-time side table（第 3 條）：`#{index-out}` 驅動
+//     索引守衛、`#{overflow}` 驅動算術處理、`#{platform}` 驅動平台過濾。
+//
+// 舊 blob **不能**靠 gob 的「忽略多餘欄位」容錯：舊 blob 的註解只活在流裡的
+// `detCached.Anns` 中，而新版解碼器已無該欄位 ⇒ 解出的樹上零註解，全部
+// 註解驅動行為靜默失效（不報錯，只生成錯誤的程式）。這正是本輪改動要消滅的
+// 那種「靜默丟失」形態，所以**必須**作廢全部舊 blob。
+//
+// 2026-10-26.2：`TypeFact` 刪除 `ByOptionArith` 欄位。它是「`InferredType` 由誰
+// 寫入」的一 bit 標記，唯一消費者是 `maybeCaptureOptionAssign` 的根-算術短路，
+// 而該短路其實是 `inferOptionArith` 在**同一次 `LowerSurface` walk 內**的局部
+// 判定結果 ⇒ 改為 walker 把回傳值直接傳參，不再進副表。
+//
+// 🔴 必 bump（第 2 條「gob 版面改變」）：`TypeFact` 是 `detCached.TypeFacts` 的
+// 線值，少一個欄位即版面變更。舊 blob 仍能解碼（gob 丟棄多餘欄位），但此欄位的
+// 存在本身就證明「blob 與本版編譯器匹配」不成立；且此輪同時改了
+// `maybeCaptureOptionAssign` 的簽名與短路條件（屬 parse-time 產出形狀），
+// 舊 blob 是舊 walk 的產物，語義上不可重用。
+// 2026-10-26.3：`CachedProgram` 收斂為**只有 `Prog`** —— `TypeFacts` / `NodeFacts`
+// 兩個欄位連同它們的 `detCached` 鏡像（`detU32Facts` / `detU32NodeFacts` /
+// `detNodeFact` 及四個轉換函式）全部刪除；解碼後改由 `BuildSemViews`
+// （semviews.go）重走整棵樹重建。
+//
+// 動機不是體積（實測 gzip 只差 0.09%），是**邊界**：這個 blob 是「結構化的原始碼」，
+// 未來可能換序列化格式、且要作為**分發格式**，所以不得夾帶任何編譯器推導結果 ——
+// 推導規則會隨編譯器版本變化，而快取鍵（內容哈希 + ASTVersion + salt）看不到
+// 編譯器建置。同一件事有兩個真相來源（樹 vs 副表）本身也會漂移。
+//
+// 🔴 必 bump（第 2 條「gob 版面改變」，且是雙向的）：
+//   - 舊 blob 裡多出來的 `TypeFacts` / `NodeFacts` 欄位會被新 decoder 靜默丟棄
+//     （gob 忽略流裡多餘的欄位），所以「能解碼」不等於「語義正確」；
+//   - 若沿用舊版本號，新二進位會 HIT 到舊 blob 並**看起來一切正常**，實際上
+//     `?T` 推斷與索引證明全部缺失 —— 正是本輪要消滅的那類靜默失效。
+//
+// `TypeFacts` / `NodeFacts` 型別本身仍保留 `GobEncode`/`GobDecode` 空方法：它們
+// 沒有導出字段，直接 gob 編碼 `*parser.Program` 的路徑（mmast_test.go 模擬舊格式）
+// 仍會碰到，缺了會報 `no exported fields`。
+const ASTVersion = "2026-10-26.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent
@@ -346,7 +395,14 @@ func (c *UserASTCache) tmpPathFor(key string) string {
 // Get decodes and returns the cached Program for key, or (nil, false). The
 // returned Program is freshly decoded (not shared across calls), preserving
 // the "parse fresh per load" semantics the codegen pipeline relies on.
-func (c *UserASTCache) Get(key string) (*Program, bool) {
+//
+// cfg MUST describe the parse inputs the tree was produced under (see
+// SemRebuildConfig). The blob carries the syntax tree only, so the derived
+// semantic views are rebuilt here by BuildSemViews. Requiring cfg as a
+// parameter is deliberate: a decode that skips the rebuild yields a Program
+// whose fact tables are empty, which is silently wrong (missing `?T`, missing
+// index proofs) rather than loudly broken.
+func (c *UserASTCache) Get(key string, cfg SemRebuildConfig) (*Program, bool) {
 	if c == nil {
 		return nil, false
 	}
@@ -362,27 +418,27 @@ func (c *UserASTCache) Get(key string) (*Program, bool) {
 	}
 	defer zr.Close()
 	var cp CachedProgram
-	if err := gob.NewDecoder(zr).Decode(&cp); err != nil {
+	if err := gob.NewDecoder(zr).Decode(&cp); err != nil || cp.Prog == nil {
 		return nil, false
 	}
+	BuildSemViews(cp.Prog, cfg)
 	return cp.Prog, true
 }
 
 // Put serializes prog and writes it to the cache under key, evicting the
 // oldest entries when over capacity. It never returns an error that should
 // abort a build; failures are silent.
+//
+// Only the syntax tree is written: CachedProgram has a single Prog field, and
+// everything the compiler derives from it (TypeFacts / NodeFacts / index
+// proofs) is recomputed by Get. See the semviews.go header for why.
 func (c *UserASTCache) Put(key string, prog *Program) {
 	if c == nil || prog == nil {
 		return
 	}
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
-	cp := &CachedProgram{
-		Prog:      prog,
-		Anns:      SerializeAnns(prog),
-		TypeFacts: SerializeTypeFacts(prog),
-		NodeFacts: SerializeNodeFacts(prog),
-	}
+	cp := &CachedProgram{Prog: prog}
 	if err := gob.NewEncoder(zw).Encode(cp); err != nil {
 		return
 	}

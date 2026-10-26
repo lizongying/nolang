@@ -418,6 +418,49 @@ type CommentGroup struct {
 	End   lexer.Position // position of last comment
 }
 
+// AnnotatedNode 是「可攜帶 `#{...}` 註解條目」的節點共享的存儲與訪問器。
+//
+// 🔴 語法即真相：註解是源碼的一部分，條目住在**節點**上，不再有並行的
+// side-table 作為第二份存儲。舊的 `SemanticContext.anns`（`AnnTable`）已整條
+// 刪除 —— 它曾導致三類問題：
+//   - 尾隨註解（`x = v[5] #{index-out=zero}`）只進表、不落節點，於是
+//     「從 AST 重建註解」根本不可能；
+//   - 表的鍵是節點指針，`CloneProgram` / 模組合併必須手工 `Clone(remap)` /
+//     `Merge`，漏一處就靜默丟註解（`OverflowMode` 當年就是為此被迫另存節點欄位）；
+//   - 跨進程必須靠 occurrence 編號編碼，多出一整條序列化通道。
+//
+// 嵌入本型別的節點：`CommentedNode`（覆蓋全部 statement）、`StructField`、
+// `EnumValue`、`TaggedEnumVariant`、`AssignExpression`、`SurfaceMatch`。
+//
+// `MatchArm` **刻意不嵌**：match 臂上的 `#{...}` 在解析期就被複製到臂體陳述上
+// （臂體是 `*BlockStatement`，已由 `CommentedNode` 攜帶），故臂節點自身不需要
+// 第二份存儲。全語料門禁 `TestAnnotationsLiveOnAST` 釘住這一點——若哪天真有條目
+// 落在臂上，該門禁會紅。
+type AnnotatedNode struct {
+	// Annotations 是掛在本節點上的 `#{...}` 條目（覆蓋語義，整批替換）。
+	// 空/ nil 表示本節點沒有註解。
+	Annotations []*AnnotationEntry
+}
+
+// GetAnnotations 返回本節點的註解條目（nil receiver 安全）。
+func (a *AnnotatedNode) GetAnnotations() []*AnnotationEntry {
+	if a == nil {
+		return nil
+	}
+	return a.Annotations
+}
+
+// SetAnnotations 整批替換本節點的註解條目（nil receiver 安全）。
+//
+// ⚠️ 覆蓋語義是被依賴的：lowering 的 `moveOverflowAnnotations` 類改寫會把
+// 外層陳述的註解搬去內層，若變成追加就會重複觸發溢位處理。
+func (a *AnnotatedNode) SetAnnotations(ents []*AnnotationEntry) {
+	if a == nil {
+		return
+	}
+	a.Annotations = ents
+}
+
 // CommentedNode is embedded in all statement types that can have comments.
 //
 // 曾經還有兩個欄位在這裡：SourceFile / ModuleOwner。它們在合併後由整程式
@@ -428,6 +471,9 @@ type CommentGroup struct {
 type CommentedNode struct {
 	Doc     *CommentGroup // standalone line(s) above the node
 	Comment *CommentGroup // inline comment on the same line
+	// 註解條目隨節點走（見 AnnotatedNode）。全部 statement 都嵌本型別，
+	// 故 `#{...}` 對 statement 而言天然是語法的一部分。
+	AnnotatedNode
 }
 
 func (cn *CommentedNode) GetDoc() *CommentGroup     { return cn.Doc }
@@ -498,25 +544,7 @@ func (p *Program) Pos() lexer.Position {
 	return lexer.Position{}
 }
 
-// Anns 回傳 Program 級註解表（Stage 3，見 anntable.go）。
-//
-// 這是**讀取視圖**，不是獨立存儲：註解實際放在 `p.Sem.anns`，與 `p.Sem` 的
-// 其他副表同源。之所以不另開 `Program.Anns` 字段，是為了避免「兩個字段必須
-// 手工同步」——反序列化期 `detToSem` 重建 Sem、合併期 transpiler 建 merged
-// program，各有一次重建，少同步一處就靜默丟註解。
-//
-// 需要整表操作的呼叫方：blob 序列化（astcache.go 的 SerializeAnns /
-// RestoreAnns）、CloneProgram、模組合併。
-// nil receiver / nil Sem 安全，返回 nil。
-func (p *Program) Anns() *AnnTable {
-	if p == nil || p.Sem == nil {
-		return nil
-	}
-	return p.Sem.anns
-}
-
 // TypeFacts 回傳 Program 級型別事實表（Stage 4，見 typefacts.go）。
-// 與 `Anns()` 同為**讀取視圖**：事實實際放在 `p.Sem.typeFacts`。
 // nil receiver / nil Sem 安全，返回 nil。
 func (p *Program) TypeFacts() *TypeFacts {
 	if p == nil || p.Sem == nil {
@@ -526,7 +554,7 @@ func (p *Program) TypeFacts() *TypeFacts {
 }
 
 // NodeFacts 回傳 Program 級節點事實表（Stage 5，見 nodefacts.go）。
-// 與 `Anns()` / `TypeFacts()` 同為**讀取視圖**：事實實際放在 `p.Sem.nodeFacts`。
+// 與 `TypeFacts()` 同為**讀取視圖**：事實實際放在 `p.Sem.nodeFacts`。
 // nil receiver / nil Sem 安全，返回 nil。
 func (p *Program) NodeFacts() *NodeFacts {
 	if p == nil || p.Sem == nil {
@@ -1615,6 +1643,10 @@ type AssignExpression struct {
 	// validators (e.g. the idxwrite check) from rejecting constructs the
 	// compiler itself emits.
 	IsSynthetic bool
+	// 赋值目标级 `#{...}`：lowering 的 `moveOverflowAnnotations` 会把外层
+	// 陈述的 overflow 条目搬到内层赋值表达式上（`x = a + b` 降糖后的写入点），
+	// 故本型别必须能携带注解。
+	AnnotatedNode
 }
 
 func (ae *AssignExpression) expressionNode()     {}
@@ -1830,6 +1862,8 @@ type StructField struct {
 	ReadOnly  bool  // true = read-only field modifier
 	Sealed    bool  // true = sealed field modifier
 	Value     Expression
+	// 欄位級 `#{...}`（含尾隨 `pool json-pool #{inline=false}`）。
+	AnnotatedNode
 }
 
 func (sf *StructField) Pos() lexer.Position { return posFromToken(sf.Token) }
@@ -1852,6 +1886,8 @@ type EnumValue struct {
 	// `= <int>` so the bare `red, green, blue` form is preserved. Codegen still
 	// uses Value (the sequential index) regardless of Explicit.
 	Explicit bool
+	// 枚舉值級 `#{...}`（含尾隨寫法）。
+	AnnotatedNode
 }
 
 // Pos / EndPos 讓 EnumValue 實作 parser.Node，使其能作為語義副表
@@ -1952,6 +1988,8 @@ type TaggedEnumVariant struct {
 	// 供析構綁定 `rect(w, h) -> ...` 生成 `it.<欄位名>` 提取。
 	FieldNames []string
 	Index      int64
+	// 變體級 `#{...}`（含尾隨寫法）。
+	AnnotatedNode
 }
 
 // Pos / EndPos 讓 TaggedEnumVariant 實作 parser.Node，使其能作為語義副表

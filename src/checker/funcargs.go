@@ -509,10 +509,13 @@ func parseProgramFile(filePath string) *parser.Program {
 	}
 	// Tier 1: on-disk content-addressed AST cache. This standalone parse injects
 	// no cross-file signatures, so the only non-source parse input is the std
-	// signature key — fold it into the salt.
+	// signature key — fold it into the salt. The rebuild config is bare for the
+	// same reason: the fresh parse below leaves Filename and the extern tables
+	// empty, and the blob's semantic views must be regenerated under exactly
+	// those inputs or the rebuilt AST would differ from the parsed one.
 	if dc, derr := parser.DefaultUserASTCache(); derr == nil && dc != nil {
 		dkey := dc.KeyFor(string(source), StdSigKey)
-		if cached, ok := dc.Get(dkey); ok {
+		if cached, ok := dc.Get(dkey, parser.SemRebuildConfig{}); ok {
 			parseProgramFileCache.Put(ck, cached)
 			return cached
 		}

@@ -358,8 +358,9 @@ func TestStdASTBlobHasSafeIndexNormalisation(t *testing.T) {
 // comparison agree with itself.
 //
 // 名字沿用 Stage 3 之前「註解住在 nodeSem 裡」的時代；nodeSem 通道已於 Stage 7
-// 刪除，這裡讀的是 `Program.Sem.AnnotationsOf`（AnnTable）。跨包改名成本高於收益，
-// 維持原名，只在此釘住事實。
+// 刪除，AnnTable 亦於 2026-10-26 刪除 —— 這裡讀的是
+// `Program.Sem.AnnotationsOf`，它現在直接查節點（`AnnotatedNode`）。跨包改名
+// 成本高於收益，維持原名，只在此釘住事實。
 func nodeSemFingerprint(prog *parser.Program) []string {
 	var out []string
 	onPath := make(map[parser.Node]bool)

@@ -80,12 +80,7 @@ func TestProgramGobRoundTripPreservesNodeSemMapping(t *testing.T) {
 					"the regression it guards cannot be exercised", occ, uniq)
 			}
 
-			cp := &CachedProgram{
-				Prog:      orig,
-				Anns:      SerializeAnns(orig),
-				TypeFacts: SerializeTypeFacts(orig),
-				NodeFacts: SerializeNodeFacts(orig),
-			}
+			cp := &CachedProgram{Prog: orig}
 			var buf bytes.Buffer
 			if err := gob.NewEncoder(&buf).Encode(cp); err != nil {
 				t.Fatalf("encode: %v", err)
@@ -125,7 +120,8 @@ func TestProgramGobRoundTripPreservesNodeSemMapping(t *testing.T) {
 // shows up as a mismatch.
 //
 // 名字沿用 Stage 2 之前「註解還住在 nodeSem 裡」的時代；nodeSem 通道已於
-// Stage 7 刪除，這裡讀的是 `Program.Sem.AnnotationsOf`（AnnTable）。
+// Stage 7 刪除，AnnTable 亦於 2026-10-26 刪除 —— 這裡讀的是
+// `Program.Sem.AnnotationsOf`，它現在直接查節點（`AnnotatedNode`）。
 func nodeSemSequence(prog *Program) []string {
 	var out []string
 	walkProgramNodes(prog, func(n Node) {
@@ -299,15 +295,10 @@ func main () i64 {
 		t.Fatal("ParseProgram returned nil")
 	}
 
-	// 1) encode original via the cache wrapper (the three node-keyed side tables
-	//    are each flattened to uint32 keys; annotations travel in their own
-	//    occurrence-keyed table since Stage 3)
-	cp := &CachedProgram{
-		Prog:      orig,
-		Anns:      SerializeAnns(orig),
-		TypeFacts: SerializeTypeFacts(orig),
-		NodeFacts: SerializeNodeFacts(orig),
-	}
+	// 1) encode original via the cache wrapper. Since 2026-10-26 the envelope is
+	//    the syntax tree only — annotations ride on the nodes (AnnotatedNode),
+	//    and the derived fact tables are rebuilt, not serialized.
+	cp := &CachedProgram{Prog: orig}
 	var b1 bytes.Buffer
 	if err := gob.NewEncoder(&b1).Encode(cp); err != nil {
 		t.Fatalf("gob encode original failed: %v", err)

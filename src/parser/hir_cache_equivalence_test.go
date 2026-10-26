@@ -59,7 +59,7 @@ func TestCachedASTLowersToIdenticalHIR(t *testing.T) {
 
 		key := cache.KeyFor(string(src), "g7-hir-equivalence")
 		cache.Put(key, prog)
-		decoded, ok := cache.Get(key)
+		decoded, ok := cache.Get(key, SemRebuildConfig{Filename: filepath.Base(path)})
 		if !ok {
 			t.Fatalf("%s: cache Get missed right after Put", path)
 		}

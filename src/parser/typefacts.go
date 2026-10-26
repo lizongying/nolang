@@ -9,27 +9,35 @@ package parser
 // 與剩下的改寫事實（Callee / IndexInBounds）、溯源（SourceFile / ModuleOwner）、
 // union（VariadicUnion / GenericUnion）在寫入階段與消費者上都不相同：
 //
-//   - `InferredType` / `InferredByOptionArith`：**解析期**產出
-//     （lowering.go:931-932 的 publishInferredType 唯一寫入點），消費者橫跨
+//   - `InferredType`：**解析期**產出
+//     （lowering.go 的 publishInferredType 唯一寫入點），消費者橫跨
 //     tohir / fmt / checker / lowering 四個包；
 //   - `TypeOverride`：**裝配期**產出（slice-structs 的 retypesFactoryLets、
 //     devirtualizeInterfaceVars、cloneStmtForUnion），消費者是 tohir 與 build。
 //
+// ⚠️ `InferredByOptionArith` 已於 2026-10-26 刪除：它是 `inferOptionArith` 在同一
+// 次 walk 內寫、`maybeCaptureOptionAssign` 同一次 walk 稍後讀的局部判定結果，
+// 不是可重建的程式事實，改由 walker 以值傳遞（見 lowering.go 的同名註釋）。
+//
 // 搬出 nodeSem 的理由與 Stage 2/3 一致：讓 nodeSem 逐類瘦身，Stage 7 才能整體
 // 刪除（已完成）。設計文檔 §3.5 的目標管線已為本表預留名字 `TypeFacts`，與
-// `AnnTable`（Stage 3）、`FmtTrivia`（Stage 2）、`NodeFacts`（Stage 5）四表並立。
+// `FmtTrivia`（Stage 2）、`NodeFacts`（Stage 5）並立。
 //
-// 掛載：`SemanticContext.typeFacts`（與 `anns` 並列），經 `Program.TypeFacts()`
+// ⚠️ Stage 3 曾在同一位置並立第四張表 `AnnTable`（`SemanticContext.anns`），
+// 已於 2026-10-26 整條刪除：`#{...}` 是語法，條目改為住在 AST 節點上
+// （`AnnotatedNode`，見 parser/annotations.go），不再是 side-table。
+//
+// 掛載：`SemanticContext.typeFacts`，經 `Program.TypeFacts()`
 // 暴露給整表操作的呼叫方（blob 序列化 / clone / 合併）。**不做**「Program 字段 +
 // Sem 別名」—— 反序列化（`detToSem`）與合併期各有一次重建，兩處手工同步必漏。
 //
 // 🔴 本輪是**純重構**：`SemanticContext` 上 7 個訪問器的簽名全部不變、方法體改為
 // 轉發，故下游 11 個讀寫點（tohir / fmt / checker / build / lowering）零改動。
 //
-// Serialization：三字段**全部**鏡像進 blob（`CachedProgram.TypeFacts`，
-// occurrence 編號鍵）。`InferredType` 丟失會讓 KLet 的 `?T` 型別消失、checker
-// 四處 option 豁免失效；`TypeOverride` 雖是裝配期產物（按 C9「下游」清單理論上
-// 可不鏡像），但遷移前 `detNodeSem` 就是鏡像它的——不鏡像即行為變更，本輪保持原狀。
+// Serialization：**不進 blob**（2026-10-26 定案，見 semviews.go 檔案頭）。
+// `CachedProgram` 只帶語法樹，`InferredType` / `TypeOverride` 由 `BuildSemViews`
+// 在解碼後從樹重算（`prepareInferredTypes`）。這比鏡像更安全：鏡像等於把「某個
+// 編譯器版本的推論結論」烘進內容尋址的 blob，而快取鍵看不到編譯器建置。
 
 // TypeFacts 存放一批節點的型別事實，以 AST 節點指針為鍵。
 //
@@ -53,16 +61,6 @@ type TypeFact struct {
 	// 讀取者：tohir 的 KLet（:449）、fmt 的 nullable 型別跳過渲染（:392）、
 	// checker 的 inferredOption 判定（:3195 / :5317 / :5341 / :5736）。
 	InferredType string
-
-	// ByOptionArith 區分 InferredType 的寫入來源：true 表示由 `inferOptionArith`
-	//（D6 算術根推斷）寫入，false 表示由 `synthesizeNullableType`（結構捕獲期間
-	// 合成索引／捕獲根節點型別）寫入。兩者最終給同一個 HIR 型別，但對「根為
-	// 算術的綁定是否還要進結構 desugar」的回答不同 —— `maybeCaptureOptionAssign`
-	// 的短路檢查需區分兩者（lowering.go:1197）。語義層面此差異僅一 bit。
-	//
-	// ⚠️ 它是 parser 的**内部控制位**，不是程式事實：MIR / checker / fmt 都不讀，
-	// 唯一消費點是 lowering 自己。故**不進 THIR**（不消耗 Flag 位）。
-	ByOptionArith bool
 
 	// TypeOverride 是整程式裝配為某個 LetStatement 定下的**有效型別覆蓋**
 	//（具現化後的 `vec.i64`、介面具象化後的具體實作型別）。覆蓋語義：優先於
@@ -91,11 +89,10 @@ func NewTypeFacts() *TypeFacts {
 // walker 看不見它），而 gob 對「無導出字段的型別」會直接報錯
 // `gob: type parser.TypeFacts has no exported fields`。
 //
-// ⚠️ 這**不代表**型別事實不進 blob —— 那樣 `?T` 推斷與裝配期覆寫會在快取命中時
-// 全部靜默失效。真實數據走 `CachedProgram.TypeFacts`（occurrence 編號鍵，見
-// astcache.go 的 SerializeTypeFacts / RestoreTypeFacts）。這對空方法只服務
-// 「直接 gob 編碼 `*parser.Program`」的路徑（實測只有 mmast_test.go 為模擬上一代
-// 格式而這麼做）。
+// ⚠️ 這**不代表**型別事實進 blob —— 它們根本不進（見上方 Serialization 段）。
+// 解碼後的樹上沒有任何型別事實，由 `BuildSemViews` 呼叫 `prepareInferredTypes`
+// 重算。這對空方法只服務「直接 gob 編碼 `*parser.Program`」的路徑（實測只有
+// mmast_test.go 為模擬上一代格式而這麼做）。
 func (t *TypeFacts) GobEncode() ([]byte, error) { return nil, nil }
 
 func (t *TypeFacts) GobDecode([]byte) error { return nil }
@@ -145,29 +142,6 @@ func (t *TypeFacts) InferredOf(n Node) string {
 		return f.InferredType
 	}
 	return ""
-}
-
-// SetByOptionArith 標記推斷來源是否為 `inferOptionArith`。
-//
-// ⚠️ 與 `SetInferred` / `SetOverride` 不同：本方法**總是建條目**，即使 `v == false`
-// —— 原 `SemanticContext.SetInferredByOptionArith` 無條件 `ensure(n)` 後賦值。
-// 這個不對稱是有意保留的（見 `TypeFact.ByOptionArith` 的註釋）。
-func (t *TypeFacts) SetByOptionArith(n Node, v bool) {
-	if t == nil || n == nil {
-		return
-	}
-	t.fact(n).ByOptionArith = v
-}
-
-// ByOptionArithOf 回傳推斷來源標記（無條目時 false）。nil 安全。
-func (t *TypeFacts) ByOptionArithOf(n Node) bool {
-	if t == nil || n == nil {
-		return false
-	}
-	if f, ok := t.entries[n]; ok {
-		return f.ByOptionArith
-	}
-	return false
 }
 
 // SetOverride 記錄裝配期定下的有效型別覆蓋。

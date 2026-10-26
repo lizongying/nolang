@@ -17,13 +17,14 @@ import (
 // signatures and merely forward to the new table, so the 11 downstream
 // read/write sites are untouched. What can still break is subtle:
 //
-//  1. the three setters have DIFFERENT empty-value semantics, and that asymmetry
-//     is load-bearing — `SetInferred("")`/`SetOverride("")` must NOT create an
-//     entry (it would change the entry set, hence the blob layout and merge
-//     results), while `SetByOptionArith(n, false)` MUST create one (the old
-//     setter called `ensure(n)` unconditionally);
-//  2. all three facts must survive a blob HIT — losing InferredType empties the
-//     KLet HIR type and disables four checker option exemptions; losing
+//  1. the two string setters have the SAME empty-value semantics —
+//     `SetInferred("")`/`SetOverride("")` must NOT create an entry (it would
+//     change the entry set, hence the blob layout and merge results).
+//     ⚠️ There used to be a third setter, `SetByOptionArith`, with the OPPOSITE
+//     rule (always recorded, even false). It was removed on 2026-10-26 together
+//     with its field: the bit was a walk-local decision, now passed by value.
+//  2. both remaining facts must survive a blob HIT — losing InferredType empties
+//     the KLet HIR type and disables four checker option exemptions; losing
 //     TypeOverride silently falls back to the declared type. Neither errors.
 //  3. clone must remap keys, or a write to a union monomorph would land on the
 //     template.
@@ -56,29 +57,6 @@ func TestTypeFactsEmptyStringIgnored(t *testing.T) {
 	}
 }
 
-// TestTypeFactsSetByOptionArithAlwaysRecords pins the OTHER half of the
-// asymmetry: unlike the two string setters, this one records even when the
-// value is false. The old `SetInferredByOptionArith` called `ensure(n)`
-// unconditionally, and lowering relies on the flag being readable afterwards.
-//
-// A "cleanup" that adds a `if !v { return }` guard here would silently disable
-// the arithmetic-root short circuit in maybeCaptureOptionAssign.
-func TestTypeFactsSetByOptionArithAlwaysRecords(t *testing.T) {
-	tb := NewTypeFacts()
-	n := factsTestNode()
-	tb.SetByOptionArith(n, false)
-	if tb.Len() != 1 {
-		t.Fatalf("SetByOptionArith(false) must still create an entry: Len=%d", tb.Len())
-	}
-	if tb.ByOptionArithOf(n) {
-		t.Error("ByOptionArithOf = true although written false")
-	}
-	tb.SetByOptionArith(n, true)
-	if !tb.ByOptionArithOf(n) {
-		t.Error("ByOptionArithOf = false although written true")
-	}
-}
-
 // TestTypeFactsNilSafety mirrors the Stage 2/3 guards: a blob-decoded Program's
 // Sem is rebuilt by detToSem, which carries no TypeFacts, so every accessor has
 // to degrade quietly.
@@ -86,13 +64,9 @@ func TestTypeFactsNilSafety(t *testing.T) {
 	var tb *TypeFacts
 	n := factsTestNode()
 	tb.SetInferred(n, "?i64")    // must not panic
-	tb.SetByOptionArith(n, true) // must not panic
 	tb.SetOverride(n, "vec.i64") // must not panic
 	if tb.InferredOf(n) != "" {
 		t.Error("nil TypeFacts must report no inferred type")
-	}
-	if tb.ByOptionArithOf(n) {
-		t.Error("nil TypeFacts must report ByOptionArith=false")
 	}
 	if tb.OverrideOf(n) != "" {
 		t.Error("nil TypeFacts must report no override")
@@ -107,7 +81,6 @@ func TestTypeFactsNilSafety(t *testing.T) {
 
 	live := NewTypeFacts()
 	live.SetInferred(nil, "?i64")
-	live.SetByOptionArith(nil, true)
 	live.SetOverride(nil, "vec.i64")
 	if live.Len() != 0 {
 		t.Errorf("nil node created an entry: Len=%d", live.Len())
@@ -124,7 +97,7 @@ func TestTypeFactsWritesDoNotTouchOtherTables(t *testing.T) {
 	sem.SetInferredType(n, "?i64")
 	sem.SetTypeOverrideOf(n, "vec.i64")
 	after := semTableLens(sem)
-	want := [3]int{before[0], before[1] + 1, before[2]}
+	want := [2]int{before[0] + 1, before[1]}
 	if after != want {
 		t.Errorf("writing type facts touched another table: before=%v after=%v want=%v",
 			before, after, want)
@@ -157,62 +130,60 @@ func TestTypeFactsOverrideAndInferredCoexist(t *testing.T) {
 	}
 }
 
-// TestTypeFactsSurvivesCacheRoundTrip is THE Stage 4 gate.
+// TestTypeFactsSurviveCacheRoundTrip is THE Stage 4 gate, re-expressed for the
+// 2026-10-26 collapse (`CachedProgram` carries the syntax tree only).
 //
-// A blob HIT must restore both type facts onto the same nodes. Nothing errors
-// if it does not: the inferred ?T disappears (KLet's HIR Type goes empty, four
-// checker option exemptions stop firing) and the assembly-time override falls
-// back to the declared type — a silently wrong program, not a build failure.
-func TestTypeFactsSurvivesCacheRoundTrip(t *testing.T) {
+// Two things must hold, and the second is what keeps the first from being
+// vacuous:
+//   - a decode WITHOUT BuildSemViews yields an EMPTY fact table — proof that the
+//     blob really carries no derived data;
+//   - a decode WITH BuildSemViews restores the inferred ?T onto the same nodes.
+//
+// Nothing errors if the second fails: the inferred ?T disappears (KLet's HIR
+// Type goes empty, four checker option exemptions stop firing) — a silently
+// wrong program, not a build failure.
+//
+// TypeOverride is deliberately NOT asserted. It is an assembly-time fact written
+// after the cache is filled (measured: zero entries at Put time), so it was
+// never in the blob, and no rebuild can invent it.
+func TestTypeFactsSurviveCacheRoundTrip(t *testing.T) {
 	src := "f = (i i64) (r ?i64) {\n  r = i + 1\n  r\n}\n"
+	cfg := SemRebuildConfig{Filename: "facts-round-trip.no"}
 	p := New(lexer.NewCached("facts-round-trip.no", src))
-	p.Filename = "facts-round-trip.no"
+	cfg.Apply(p)
 	prog := p.ParseProgram()
 	if prog == nil || len(p.Errors()) > 0 {
 		t.Fatalf("parse failed: %v", p.Errors())
 	}
 
 	// Anti-vacuity: a real parse must have produced at least one inferred ?T.
-	if prog.TypeFacts() == nil || prog.TypeFacts().Len() == 0 {
+	if prog.TypeFacts().Len() == 0 {
 		t.Fatal("anti-vacuity: no type facts recorded, the round-trip below is vacuous")
 	}
-	// Plant an override too, so both fields are exercised (TypeOverride is
-	// written during assembly, which a bare parse does not run).
-	planted := 0
-	walkProgramNodes(prog, func(n Node) {
-		if _, ok := n.(*LetStatement); ok && planted == 0 {
-			prog.Sem.SetTypeOverrideOf(n, "vec.i64")
-			planted++
-		}
-	})
-	if planted == 0 {
-		t.Fatal("anti-vacuity: no LetStatement to plant an override on")
-	}
-	before := prog.TypeFacts().Len()
 
-	cp := &CachedProgram{
-		Prog:      prog,
-		Anns:      SerializeAnns(prog),
-		TypeFacts: SerializeTypeFacts(prog),
-		NodeFacts: SerializeNodeFacts(prog),
-	}
-	if cp.TypeFacts == nil {
-		t.Fatal("anti-vacuity: SerializeTypeFacts produced nothing")
-	}
 	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(cp); err != nil {
+	if err := gob.NewEncoder(&buf).Encode(&CachedProgram{Prog: prog}); err != nil {
 		t.Fatalf("encode: %v", err)
 	}
 	var dcp CachedProgram
 	if err := gob.NewDecoder(&buf).Decode(&dcp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-
-	if got := dcp.Prog.TypeFacts().Len(); got != before {
-		t.Fatalf("type-fact count changed across the blob round-trip: before=%d after=%d", before, got)
+	if dcp.Prog == nil {
+		t.Fatal("decode produced no program")
 	}
-	// Both fields must still be readable on the decoded tree.
-	sawInferred, sawOverride := false, false
+
+	// The blob must carry no derived fact at all.
+	if got := dcp.Prog.TypeFacts().Len(); got != 0 {
+		t.Fatalf("blob carried %d type facts; CachedProgram must hold the syntax tree only", got)
+	}
+
+	BuildSemViews(dcp.Prog, cfg)
+	if got := dcp.Prog.TypeFacts().Len(); got == 0 {
+		t.Fatal("BuildSemViews restored no type facts; " +
+			"a cache HIT would emit an empty HIR type for every `?T` binding")
+	}
+	sawInferred := false
 	walkProgramNodes(dcp.Prog, func(n Node) {
 		if _, ok := n.(*LetStatement); !ok {
 			return
@@ -220,17 +191,10 @@ func TestTypeFactsSurvivesCacheRoundTrip(t *testing.T) {
 		if dcp.Prog.Sem.InferredType(n) != "" {
 			sawInferred = true
 		}
-		if dcp.Prog.Sem.TypeOverrideOf(n) == "vec.i64" {
-			sawOverride = true
-		}
 	})
 	if !sawInferred {
-		t.Error("InferredType lost across the blob round-trip; " +
+		t.Error("InferredType lost across the decode+rebuild; " +
 			"KLet would emit an empty HIR type on a cache HIT")
-	}
-	if !sawOverride {
-		t.Error("TypeOverride lost across the blob round-trip; " +
-			"the effective type would silently fall back to the declared one")
 	}
 }
 

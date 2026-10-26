@@ -15,9 +15,10 @@ package parser
 // 搬出 nodeSem 後 `NodeSemantics` 成為空殼 —— 這是刻意的：先把欄位全部搬走、
 // 空殼留到 Stage 7 純刪（已完成），中途任一檔 REGRESS 都能二分出是哪一期引入的。
 //
-// 🔴 為什麼這 9 個欄位裝**一張**表而不是按類別拆成四張：`FmtTrivia`（Stage 2）/
-// `AnnTable`（Stage 3）/ `TypeFacts`（Stage 4）之所以分表，是因為它們的寫入
-// 階段或 blob 策略不同（FmtTrivia 不進 blob，AnnTable 必須進）。剩餘這 9 個
+// 🔴 為什麼這 9 個欄位裝**一張**表而不是按類別拆成三張：`FmtTrivia`（Stage 2）/
+// `TypeFacts`（Stage 4）之所以分表，是因為它們的寫入階段或 blob 策略不同
+// （FmtTrivia 不進 blob）。（Stage 3 的第三張表 `AnnTable` 已於 2026-10-26
+// 整條刪除 —— `#{...}` 是語法，條目住在 AST 節點上，不該是 side-table。）剩餘這 9 個
 // 欄位的寫入階段雖然橫跨解析期／checker／裝配期，但**沒有一個有「不進 blob」
 // 的理由**（C9 明確點名 `embed data` / `IndexInBounds` / `ModuleConst` /
 // `SourceFile` / `ModuleOwner` 五項為 MUST bump），拆分只會多出三張要各自接
@@ -38,8 +39,7 @@ type NodeFacts struct {
 
 // NodeFact 是單一節點的事實條目。
 //
-// 與 `NodeFacts` 相反，本型別**必須導出**：它是 `CachedProgram.NodeFacts` 的
-// 值型別，序列化側與 Clone / Merge 都要按欄位操作它。
+// 與 `NodeFacts` 相反，本型別**必須導出**：Clone / Merge 要按欄位操作它。
 type NodeFact struct {
 	// EmbedData 是 `#{embed=<file>}` 的檔案字節。由裝配期
 	// （build/transpiler_inject.go）讀真實檔案系統後寫入 —— 發生在快取
@@ -141,10 +141,10 @@ func NewNodeFacts() *NodeFacts {
 // walker 看不見它），而 gob 對「無導出字段的型別」會直接報錯
 // `gob: type parser.NodeFacts has no exported fields`。
 //
-// ⚠️ 這**不代表**節點事實不進 blob —— Trace/Callee/embed/溯源全部丟失只會靜默
-// 生成錯誤程式。真實數據走 `CachedProgram.NodeFacts`（occurrence 編號鍵，見
-// astcache.go 的 SerializeNodeFacts / RestoreNodeFacts）。這對空方法只服務
-// 「直接 gob 編碼 `*parser.Program`」的路徑（實測只有 mmast_test.go 為模擬
+// ⚠️ 這**不代表**節點事實進 blob —— 它們根本不進（見 semviews.go 檔案頭）。
+// 解碼後的樹上沒有任何節點事實，由 `BuildSemViews` 呼叫 `prepareInBoundsMetadata`
+// 重算；Trace/Callee/embed 這類裝配期事實則本來就寫在快取**之後**。這對空方法只
+// 服務「直接 gob 編碼 `*parser.Program`」的路徑（實測只有 mmast_test.go 為模擬
 // 上一代格式而這麼做）。
 func (t *NodeFacts) GobEncode() ([]byte, error) { return nil, nil }
 

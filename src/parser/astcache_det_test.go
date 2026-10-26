@@ -31,8 +31,9 @@ import (
 //     reintroduce the nondeterminism this test exists to prevent.
 func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	// Source copied from TestProgramGobRoundTripPreservesNodeSemMapping: known
-	// to parse cleanly AND to produce annotations, so the Anns / TypeFacts /
-	// NodeFacts occurrence-keyed paths are exercised too.
+	// to parse cleanly AND to produce annotations and index proofs, so the
+	// symbol-table maps below are populated by a real parse rather than by the
+	// test alone.
 	src := "f = (a []i64, i i64) {\n" +
 		"    n [24]i64\n" +
 		"    #{index-out=zero}\n" +
@@ -65,51 +66,26 @@ func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	prog.Sem.FuncVarTypes["f"] = map[string]string{"q": "i64", "p": "str"}
 	prog.Sem.FuncDeclaredVars["f"] = map[string]bool{"q": true, "p": false}
 	prog.Sem.IdxLocalTypes["f"] = map[string]string{"q": "[]i64", "p": "[]str"}
+	// SetUnionMembers lazily initializes the map (a bare parse of this fixture
+	// records no union aliases).
+	prog.Sem.SetUnionMembers("num", []string{"i32", "i64", "f64"})
+	prog.Sem.SetUnionMembers("ord", []string{"i64", "f64"})
 	prog.BuiltinFuncNames = map[string]bool{"sqrt": true, "abs": true}
 
-	cp := &CachedProgram{
-		Prog:      prog,
-		Anns:      SerializeAnns(prog),
-		TypeFacts: SerializeTypeFacts(prog),
-	}
-	// NodeFact.EmbedFiles is the third map-bearing type; since Stage 5 it lives
-	// in the node-facts table (it used to be NodeSemantics.EmbedFiles), so it is
-	// injected through that table explicitly.
-	if cp.NodeFacts == nil {
-		cp.NodeFacts = map[uint32]*NodeFact{}
-	}
-	cp.NodeFacts[1] = &NodeFact{EmbedFiles: map[string][]byte{"b.bin": {2}, "a.bin": {1}}}
-	cp.NodeFacts[2] = &NodeFact{VariadicUnion: "num"}
-	// Stage 3: the annotation table is the FOURTH map-bearing type. Two entries
-	// are required — a single-entry map cannot expose iteration-order
-	// nondeterminism, so one entry would make the byte comparison below luck.
-	if cp.Anns == nil {
-		cp.Anns = map[uint32][]*AnnotationEntry{}
-	}
-	cp.Anns[3] = []*AnnotationEntry{{Key: "overflow"}}
-	cp.Anns[4] = []*AnnotationEntry{{Key: "index-out"}}
-	// Stage 4: the type-facts table is the FIFTH map-bearing type. Same rule —
-	// two entries minimum.
-	if cp.TypeFacts == nil {
-		cp.TypeFacts = map[uint32]*TypeFact{}
-	}
-	cp.TypeFacts[5] = &TypeFact{InferredType: "?i64"}
-	cp.TypeFacts[6] = &TypeFact{TypeOverride: "vec.i64", ByOptionArith: true}
+	// Since 2026-10-26 the envelope is the syntax tree and nothing else.
+	cp := &CachedProgram{Prog: prog}
 
 	// Non-vacuity #1: the maps really are populated.
-	if len(prog.Sem.VarTypes) < 2 || len(cp.NodeFacts) < 2 || len(cp.Anns) < 2 || len(cp.TypeFacts) < 2 {
-		t.Fatalf("fixture is vacuous: VarTypes=%d NodeFacts=%d Anns=%d TypeFacts=%d",
-			len(prog.Sem.VarTypes), len(cp.NodeFacts), len(cp.Anns), len(cp.TypeFacts))
+	if len(prog.Sem.VarTypes) < 2 || len(prog.Sem.FuncVarTypes["f"]) < 2 ||
+		len(prog.Sem.UnionMembers) < 2 || len(prog.BuiltinFuncNames) < 2 {
+		t.Fatalf("fixture is vacuous: VarTypes=%d FuncVarTypes=%d UnionMembers=%d BuiltinFuncNames=%d",
+			len(prog.Sem.VarTypes), len(prog.Sem.FuncVarTypes["f"]),
+			len(prog.Sem.UnionMembers), len(prog.BuiltinFuncNames))
 	}
 
 	// Non-vacuity #2: no map may survive into the shadow. A raw map there is
 	// encoded by gob in random order and the byte comparison below becomes luck.
-	shadow := detCached{
-		Prog:      detFromProgram(prog),
-		Anns:      detFromAnnsMap(cp.Anns),
-		TypeFacts: detFromTypeFactsMap(cp.TypeFacts),
-		NodeFacts: detFromNodeFactsMap(cp.NodeFacts),
-	}
+	shadow := detCached{Prog: detFromProgram(prog)}
 	if maps := shadowMapTypes(reflect.ValueOf(&shadow), map[uintptr]bool{}); len(maps) > 0 {
 		names := make([]string, 0, len(maps))
 		for m := range maps {
@@ -154,11 +130,19 @@ func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	if !mapSliceEqual(dcp.Prog.Sem.EnumVariants, prog.Sem.EnumVariants) {
 		t.Fatalf("Sem.EnumVariants lost across the round-trip: %v", dcp.Prog.Sem.EnumVariants)
 	}
+	if !mapSliceEqual(dcp.Prog.Sem.UnionMembers, prog.Sem.UnionMembers) {
+		t.Fatalf("Sem.UnionMembers lost across the round-trip: %v", dcp.Prog.Sem.UnionMembers)
+	}
 	if len(dcp.Prog.BuiltinFuncNames) != len(prog.BuiltinFuncNames) {
 		t.Fatalf("BuiltinFuncNames lost across the round-trip: %v", dcp.Prog.BuiltinFuncNames)
 	}
-	if f := dcp.NodeFacts[1]; f == nil || len(f.EmbedFiles) != 2 {
-		t.Fatalf("NodeFact.EmbedFiles lost across the round-trip: %+v", f)
+	// The derived fact tables are NOT on the wire — that is the point of the
+	// collapse, and BuildSemViews is what brings them back.
+	if got := dcp.Prog.TypeFacts().Len(); got != 0 {
+		t.Fatalf("decoded blob carries %d type facts; CachedProgram must hold the syntax tree only", got)
+	}
+	if got := dcp.Prog.NodeFacts().Len(); got != 0 {
+		t.Fatalf("decoded blob carries %d node facts; CachedProgram must hold the syntax tree only", got)
 	}
 }
 
@@ -198,5 +182,114 @@ func shadowMapTypes(v reflect.Value, seen map[uintptr]bool) map[string]bool {
 		}
 	}
 	rec(v)
+	return out
+}
+
+// TestCachedProgramCarriesProgOnly pins the ENVELOPE's field set to exactly
+// `{Prog}`.
+//
+// The architecture decision (2026-10-26, see semviews.go): the AST cache is
+// *structured source code*. It may switch serialization format, it must not
+// carry compiler-derived results (those change with the compiler, while the
+// cache key only covers the source text + ASTVersion + salt), and it is
+// intended to become a distribution format. So the envelope holds the tree and
+// nothing else; TypeFacts / NodeFacts (and before them Anns) were removed and
+// are rebuilt by BuildSemViews.
+//
+// This gate exists because that deletion is invisible to every behavioural test
+// if it is ever reverted: re-adding a redundant field would keep the whole
+// suite green (it would just be written twice and read from the copy), while
+// re-introducing exactly the redundancy the refactor removed.
+//
+// It is written so it cannot pass vacuously:
+//   - the expected field list is EXACT, so both an addition and a rename fail;
+//   - it asserts the walk actually saw fields, so a reflection bug that returns
+//     nothing cannot masquerade as "no redundant field present";
+//   - it checks the wire shadow (detCached) as well as the public envelope,
+//     because a field present only on the shadow still ships in the blob.
+func TestCachedProgramCarriesProgOnly(t *testing.T) {
+	want := []string{"Prog"}
+
+	got := fieldNames(reflect.TypeOf(CachedProgram{}))
+	if len(got) == 0 {
+		t.Fatal("reflection saw zero fields on CachedProgram — the gate would be vacuous")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("CachedProgram fields = %v, want exactly %v\n"+
+			"  A derived table must be REBUILT from Prog (see BuildSemViews), not\n"+
+			"  stored: the blob is structured source, so it must not carry results\n"+
+			"  that vary with the compiler build.", got, want)
+	}
+
+	shadowFields := fieldNames(reflect.TypeOf(detCached{}))
+	if len(shadowFields) == 0 {
+		t.Fatal("reflection saw zero fields on detCached — the gate would be vacuous")
+	}
+	if !reflect.DeepEqual(shadowFields, want) {
+		t.Errorf("detCached fields = %v, want exactly %v\n"+
+			"  detCached is what actually hits the wire; a field that exists only\n"+
+			"  there is just as redundant as one on the envelope.", shadowFields, want)
+	}
+}
+
+// TestDetSemCoversEverySemMapField is the structural half of the determinism
+// gate: every exported map-typed field on SemanticContext must appear in the
+// detSem shadow, otherwise gob encodes it directly and in randomized order.
+//
+// `ExternFuncSigs` / `ExternMethodSigs` are the ONLY allowed exceptions, and
+// for a different reason than determinism: they are injected from outside the
+// file (cross-module / std signature tables), so putting them in a
+// content-addressed blob would bake caller state into a source artifact. They
+// are restored by SemRebuildConfig.Apply during BuildSemViews.
+func TestDetSemCoversEverySemMapField(t *testing.T) {
+	shadowed := map[string]bool{}
+	for _, n := range fieldNames(reflect.TypeOf(detSem{})) {
+		shadowed[n] = true
+	}
+	if len(shadowed) < 5 {
+		t.Fatalf("detSem has only %d fields — the gate would be vacuous", len(shadowed))
+	}
+
+	injected := map[string]bool{"ExternFuncSigs": true, "ExternMethodSigs": true}
+
+	typ := reflect.TypeOf(SemanticContext{})
+	checked := 0
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		if f.PkgPath != "" || f.Type.Kind() != reflect.Map {
+			continue
+		}
+		checked++
+		if shadowed[f.Name] || injected[f.Name] {
+			continue
+		}
+		t.Errorf("SemanticContext.%s is a map with no detSem shadow: gob would encode "+
+			"it in randomized order and break byte-reproducibility. Add it to detSem "+
+			"(and detFromSem/detToSem) in astcache_det.go, or to the injected list "+
+			"above if it must not be in the blob at all.", f.Name)
+	}
+	if checked == 0 {
+		t.Fatal("reflection saw no map fields on SemanticContext — the gate would be vacuous")
+	}
+}
+
+// fieldNames returns the exported field names of a struct type, in declaration
+// order. Unexported fields are skipped because gob drops them — they cannot be
+// part of the wire layout this gate protects.
+func fieldNames(typ reflect.Type) []string {
+	for typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		return nil
+	}
+	var out []string
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		out = append(out, f.Name)
+	}
 	return out
 }
