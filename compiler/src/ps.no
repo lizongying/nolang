@@ -6415,6 +6415,27 @@ ps-parse-type = (t ast, p psst) (idx i64) {
             ast.kid-add(t, idx, vty)
         }
 
+        ; s8s：`[?]T` ——【尺寸為 unknown 的 ArrayType】（非 SliceType、非 NullableType 包裹）。
+        ;   Go parseParamTypeAfterName type.go:1090-1092：`]` 前遇 `?` ⇒ paramType="[?]"，
+        ;   再拼元素名 → buildType("[?]T") 產 ArrayType{Size:nil, Elem:NamedType{T}}；
+        ;   dump 為 `ArrayType{size: <nil>}` 且【僅一個】可見子節點（Size 為 nil 不印）。
+        ;   ⚠️ 必須排在其他 `[` 臂之前/互斥：本臂特徵是 +1==QUESTION（`[]`臂 +1==RBRACKET、
+        ;   `[K]V`/`[N]T`臂 +1==INT/IDENT），故彼此不重疊。
+        ;   ⚠️ kid0 佔位 push 0（Size=nil），type-string（ast.no:740）讀 kid0==0 ⇒ 印 `?`，
+        ;   kid1=elem（ast.no:744 讀 kid0+1）。實測 number.no:1250 `(out [?]byte)`、
+        ;   vec.no:182 `(out [?]t)`（修好後 s63 泛型走訪亦能由 NamedType{t} 收得 GenericParams）。
+        handled == 0 && tk.typ == tok.LBRACKET && ps-peek-at(p, 1) == tok.QUESTION && ps-peek-at(p, 2) == tok.RBRACKET && (ps-peek-at(p, 3) == tok.IDENT || ps-peek-at(p, 3) == tok.LBRACKET || ps-peek-at(p, 3) == tok.QUESTION) -> {
+            handled = 1
+            ps-bump(p); 消費 [
+            ps-bump(p); 消費 ?
+            ps-bump(p); 消費 ]
+            elem = ps-parse-type(t, p); 元素型別（遞迴，子先於父）
+            idx = ast.add(t, asp.K_ARRAY_TYPE)
+            ast.set-slot(t, idx, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
+            ast.kid-add(t, idx, 0); Size=nil（→ dump `size: <nil>`、type-string 印 `?`）
+            ast.kid-add(t, idx, elem)
+        }
+
         ; s65a：尺寸除 INT 外亦接受 IDENT（泛型尺寸 `[n]t`）。Go decl.go:301-303 的參數型別
         ;   解析 `if cur==INT || cur==IDENT { paramType = "[" + lit + "]" }` 同形；此前只收 INT
         ;   ⇒ `(dst [n]t)` 的 `[n]t` 不被當型別，逐 token 退化成 dst/n/t 三個參數（arr.no 實測）。

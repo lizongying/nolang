@@ -1617,6 +1617,20 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **門禁**：L0 `ps-test.no` 25/25；`no vet compiler/src` 殘留 19 ERROR 皆平行 session WIP（本輪改動區 0 新增）。
 
+### 5.3.4.ae s8s `[?]T` 回傳參數型別（ArrayType size=nil）（2026-10-27 本輪）
+
+**背景**：§5.3.4.ad 收官後 L2 剩 **10 檔 DIFF**。本輪攻「`[?]T` 參數型別誤拆」家族 C（number/vec）。複測基線：SUT=`/tmp/noc-s67`、DIFF=10。
+
+**缺口形狀**：`(out [?]byte)`（number.no:1250/1273）與 `(out [?]t)`（vec.no:182）。Go 參數型別走 `parseParamTypeAfterName`（type.go:1090-1092）：`]` 前遇 `?` → `paramType="[?]"`，拼元素名後 `buildType("[?]T")` 產 **`ArrayType{Size:nil, Elem:NamedType{T}}`**（dump 為 `ArrayType{size: <nil>}`、僅一個可見子節點）。既非 `SliceType`、亦非 `parseTypeExpression`(type.go:826-833) 那條 `SliceType{NullableType}` 路徑。noc `ps-parse-type` 的 `[` 三臂（`[]T`/`[K]V`/`[N]T`）都以 +1==RBRACKET/INT/IDENT 為特徵，`[?]`（+1==QUESTION）無臂命中 ⇒ 回 0 且不消費 token ⇒ 參數迴圈逐 token 退化：`out` 落成【無型別】Parameter、`byte`/`t` 被當【下一個參數名】。
+
+**修法（`compiler/src/ps.no`，ps-parse-type 新增 `[?]T` 臂，標記 s8s，置於 `[N]T` 臂前）**：`tk==LBRACKET && peek-at(1)==QUESTION && peek-at(2)==RBRACKET && peek-at(3)∈{IDENT,LBRACKET,QUESTION}` → bump `[ ? ]` 三者、`elem=ps-parse-type`（遞迴）、建 `K_ARRAY_TYPE`：slot0='false'（inferred 旗）、**kid0 push 0（Size=nil）**、kid1=elem。⚠️ `type-string`（ast.no:740-744）讀 kid0==0 印 `?`、kid0+1 讀 elem，結構 dump 由 asp spec（鏡像 Go dump.go，已支援 Size==nil）處理，零改 dumper。
+
+**連帶收 GenericParams**：修好 `(out [?]t)` → `NamedType{t}` 後，s63 隱式泛型走訪（ps.no:4426/4594，先 Parameters 後 Results、走訪型別節點單字母 a-z）自回傳參數【取得】`t` ⇒ `[]t.to-arr` 補回 `GenericParams: t`（`[]t` 接收者本不播種，泛型 solely 來自此 `[?]t`）。
+
+**歸因（同一 harness、同一 CTL，A/B `noc-s67`→`noc-s68`）**：**DIFF 10→9 / SAME +1**。轉 SAME：`src/std/number.no`（兩處 `(out [?]byte)` 完整對齊，全檔 SAME）。`src/std/vec.no`：`[?]t`/GenericParams 段已收斂，惟仍殘【無關】的 `j`/`sum` 識別符型別推斷過度/不足（既有、非本家族），故 vec 仍 DIFF。**SAME→DIFF 真回歸 0 檔**（本輪 DIFF 集為上輪真子集，僅移出 number）。
+
+**門禁**：L0 `ps-test.no` **26/26**（新增 `test-param-nullable-size-array`，golden 取於 oracle：`ArrayType{size: <nil>}` + `GenericParams: t`）；`no vet compiler/src` 殘留 19 ERROR（本輪改動區 0 新增）；`no vet src/std` 的 `str.no:1388/1393` index-write ERROR 屬 HEAD 既有（最後由 `67646cbe` str.to-f64 提交觸及、非本 session、src/ 側範圍外），且 `no vet src/std` 跑 Go oracle vet，與 self-host ps.no 改動無涉。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。

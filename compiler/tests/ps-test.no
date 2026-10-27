@@ -157,6 +157,19 @@ test-slice-recv-generic-from-param = () {
 }
 
 ; ═══════════════════════════════════════════════
+; 9b. s8s：`[?]T` 回傳參數 —— ArrayType{size: <nil>}（尺寸 unknown），
+;     非 SliceType、非 NullableType 包裹。且 NamedType{t} 元素為【隱式泛型】
+;     來源（s63 走訪 Results 型別），故 `[]t` 接收者本不播種，泛型 `t` 由
+;     此 `[?]t` 回傳參數取得 → GenericParams: t（鏡像 vec.no:182）。
+; ═══════════════════════════════════════════════
+
+test-param-nullable-size-array = () {
+    got = parse-dump('[]t.to-arr = () (out [?]t) {\n    out = 0\n}')
+    want = 'Program{}\n    FunctionDefinition{name: []t.to-arr, methodDef: true}\n        GenericParams: t\n        Parameter{name: self, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: out, type: [?]t}\n            ArrayType{size: <nil>}\n                NamedType{name: t}\n        BlockStatement{}\n            LetStatement{name: out, type: i64, value: 0}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 0, raw: 0}'
+    runner.is-true(got.eq-full(want), '(out [?]t) -> one Parameter ArrayType{size:<nil>} + GenericParams: t (not split into out/t)')
+}
+
+; ═══════════════════════════════════════════════
 
 test-in-index-rhs()
 test-in-call-arg()
@@ -167,6 +180,7 @@ test-array-recv-generic()
 test-array-param-generic-size()
 test-slice-recv-no-generic()
 test-slice-recv-generic-from-param()
+test-param-nullable-size-array()
 
 ; ═══════════════════════════════════
 ; 10. S7 裁定①（2026-10-21）：match 產 SurfaceMatch（預設開 PS-SURFACE-MATCH=1）
