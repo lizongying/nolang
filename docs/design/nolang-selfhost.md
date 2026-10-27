@@ -1605,6 +1605,18 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 ./bin/no build -cc zig -o /tmp/noc-sNN compiler
 ```
 
+### 5.3.4.ad s8r module-path 接收者的呼叫回傳型別推斷（2026-10-27 本輪）
+
+**背景**：§5.3.4.ac 收官後 L2 剩 **12 檔 DIFF**。按 root cause 歸因分組，本輪攻「呼叫回傳型別推斷」家族 A（dom/toml）。複測基線：SUT=`/tmp/noc-s66`、654 檔、DIFF=12。
+
+**缺口形狀**：`let x = <Mod>.<fn>()`（同檔以限定名定義的方法，如 toml.no:55 `toml.new = () (doc toml-doc)`）的【回傳型別推斷】。Go `returnTypeFromCallExpr`（type.go）對 DotExpression 呼叫有兩段：①`resolveReceiverType(recv)` 非空 → 查 `methodSignatures[recvTy.method]`；②recv 是 IDENT 但【非變數】→ **module-path 分支**，以全名 `recv.method` 查簽名表。noc 的 s58 臂【只實了①】（`rty != ''` 守衛），②整段缺失 ⇒ `x = <Mod>.<fn>()` 的 let 不帶型別，oracle 帶。
+
+**修法（`compiler/src/ps.no`，s58 dot 臂新增 `rty == ''` 分支，標記 s8r）**：接收者 IDENT 且 `ps-var-type(recv)==''` 時，把它當套件限定名，組 `mq = recv + '.' + method`，`ps-msig-find(p, mq)`（`toml.new` 於 ps-parse-method-func 已註冊為 `ms:toml.new`），命中即克隆型別起點重跑 `ps-parse-type` + `ps-filter-ok` + 型別表登記（完全鏡像 rty!='' 臂與 Go 尾語意）。⚠️ 本臂區域變數一律 **q 後綴**，避免與 rty!='' 臂的 tn3/ts3/keep2 同名串型別（s7l 教訓）。裸名表 ps-sig-find 的 s8j 後綴掃描【不】用於此（其鍵為字面 `toml.new`，非 `.new` 結尾）。
+
+**歸因（同一 harness、同一 CTL、654 檔，A/B `noc-s66`→`noc-s67`）**：**DIFF 12→10 / SAME 642→644**。轉 SAME 兩檔：`src/std/toml.no`（`doc = toml.new()` → `type: toml-doc`）、`src/std/yaml.no`（`s = <Mod>.<fn>()` → `type: str`，同根因）。**SAME→DIFF 真回歸 0 檔**。**⚠️ 家族 A 未全然收官**：`src/std/dom.no` 的 `out = self.pool.collect-tag(...)` 是【鏈式接收者】（rc 為 DotExpression 非 IDENT），需 `resolveReceiverType(self.pool)`＝struct `dom` 欄位 `pool`→型別 `dom-pool` 的**結構體欄位型別解析**，是 noc 尚未具備的獨立機制（登記為後續 A2）。
+
+**門禁**：L0 `ps-test.no` 25/25；`no vet compiler/src` 殘留 19 ERROR 皆平行 session WIP（本輪改動區 0 新增）。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。

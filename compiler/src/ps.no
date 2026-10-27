@@ -3624,10 +3624,11 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                 }
             }
 
-            ; s58：方法呼叫回傳型別推斷（Go returnTypeFromCallExpr 的 DotExpression 臂：
-            ;   resolveReceiverType(recv) → methodSignatures['recv.method']）——仅覆盖
-            ;   【同檔裸名接收者】形（recv 是 IDENT 且 varType 表已知，如 `p = view-point{…}` /
-            ;   `nd view-node = …`）；模組路径/hashmap 鍵換算等語料未用形不建。
+            ; s58：方法呼叫回傳型別推斷（Go returnTypeFromCallExpr 的 DotExpression 臂）——
+            ;   ① rty!=''：recv 是 IDENT 變數且 varType 已知 → methodSignatures['recvTy.method']
+            ;      （如 `p = view-point{…}`）；② s8r：rty==''：recv 是 IDENT 但非變數 → 視為
+            ;      套件限定名，查 msig['recv.method']（如 `doc = toml.new()`）。
+            ;   hashmap 鍵換算、鏈式接收者（self.pool.method）等形另見後續增補。
             ;   克隆舆上方裸名臂同法（跳 token 重跑 ps-parse-type，未采用即孤兒零回歸）。
             ast.kind-at(t, fc) == asp.K_DOT_EXPRESSION -> {
                 fd = ast.nd-at(t, fc)
@@ -3669,6 +3670,50 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                                 keep2 == 1 -> {
                                     ps-mark-inferred(t, tn3)
                                     typ = tn3
+                                }
+                            }
+                        }
+                    }
+
+                    ; s8r：module-path 接收者（Go type.go returnTypeFromCallExpr 的 module-path 臂）——
+                    ;   當 recv IDENT【不是】變數（ps-var-type 空）時，把它當【套件限定名】，
+                    ;   查全名 `recv.method`（如 toml.new = () (doc toml-doc) registered as ms:toml.new）。
+                    ;   克隆舆 rty!='' 臂同法（跳 token 重跑 ps-parse-type，未采用即孤兒零回歸）。
+                    ;   ⚠️ 本臂局部變數一律 q 後綴，避免舆 rty!='' 臂同名串型別（s7l 教訓）。
+                    rty == '' -> {
+                        mq = ast.str-at(t, rd.s0) + '.' + ast.str-at(t, fd.s0)
+                        tpq = ps-msig-find(p, mq)
+                        tpq >= 0 -> {
+                            oldposq = p.pos
+                            p.pos = tpq
+                            tnq = ps-parse-type(t, p)
+                            p.pos = oldposq
+                            tsq = ''
+                            tnq > 0 -> tsq = ast.type-string(t, tnq)
+                            tnq > 0 && ps-filter-ok(t, tnq, tsq) == 1 -> {
+                                keepq = 0
+                                ps-is-declared(p, name) == 0 -> {
+                                    keepq = 1
+                                    ps-set-var-type(p, name, tsq)
+                                }
+
+                                -> {
+                                    isoq = 0
+                                    ast.kind-at(t, tnq) == asp.K_NULLABLE_TYPE -> isoq = 1
+                                    isoq == 1 -> {
+                                        ps-set-var-type(p, name, tsq)
+                                    }
+                                    isoq == 0 -> {
+                                        exq = ps-var-type-strict(p, name)
+                                        exq == '' || exq == 'i64' -> {
+                                            keepq = 1
+                                            ps-set-var-type(p, name, tsq)
+                                        }
+                                    }
+                                }
+                                keepq == 1 -> {
+                                    ps-mark-inferred(t, tnq)
+                                    typ = tnq
                                 }
                             }
                         }
