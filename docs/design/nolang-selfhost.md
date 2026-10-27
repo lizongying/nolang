@@ -927,9 +927,9 @@ $ ./bin/no ast tests/async-group.no | grep -A3 CoExpression
 
 ##### `-annotations`：註解系統進入差分覆蓋
 
-`#{...}` 註解**不在節點欄位裡**，而在 `Program.Sem`（`SemanticContext`）的 node-keyed side-table 中（Stage 3 起是 `AnnTable`；Stage 7 前整族住在 `map[Node]*NodeSemantics` 裡）。
+`#{...}` 註解住在 **AST 節點自己身上**（`AnnotatedNode.Annotations`，嵌入 `CommentedNode` / `StructField` / `EnumValue` / `TaggedEnumVariant` / `AssignExpression` / `SurfaceMatch`），不在 `Program.Sem` 的 side-table 裡。歷史：Stage 7 之前整族住在 `map[Node]*NodeSemantics`；Stage 3 遷進 `AnnTable`（`SemanticContext.anns`，node-keyed）；2026-10-26 整條 `AnnTable` 刪除——因為「尾隨註解」（`stmt #{...}`）只存在於表裡、AST 完全不承載，任何「從 AST 重建註解」的路徑都會靜默丟掉它們。
 
-🔴 **絕不可 range 這張 map**：Go 隨機化 map 疊代序，dump 會變成不可重現。實作改為**依樹序走訪、對每個節點做點查詢**（`Sem.AnnotationsOf(n)`），因此輸出順序恆定。`TestDumpIsDeterministic` 對全語料連跑兩次逐位元組比對以釘住這一點。
+🔴 **絕不可 range 一張註解 map**：Go 隨機化 map 疊代序，dump 會變成不可重現。實作**依樹序走訪、對每個節點做點查詢**（`Sem.AnnotationsOf(n)`，現為純查詢、直接讀節點），因此輸出順序恆定。`TestDumpIsDeterministic` 對全語料連跑兩次逐位元組比對以釘住這一點。
 
 **預設行為不變**：不加旗標時，dump 中**不得出現任何 `AnnotationEntry{` / `Annotation*Value{`**（`TestNoAnnotationsByDefault` 釘住）。結構性的 `AnnotationStatement{entries: N}` 是**普通 AST 節點**，照常印出——它與「註解內容」是兩回事。
 
@@ -1553,6 +1553,57 @@ oracle 覆蓋：0 行 <unknown>（71/71 節點型別全覆蓋）
 → 再做 S3-c（收 33 檔）→ 再推安全索引降糖同類遷移（再收 ~26 檔）。
 
 > 附帶：§5.3.4.y 引用的「§11.1 記帳」在本文件**不存在**（無 §11 章節）⇒ 引用斷裂，待補。
+
+### 5.3.4.ac s8q pipeline 同位差——`let` 右側 `->` 鏈包成 value（2026-10-27 本輪）
+
+**背景**：str.to-f64 MIR 回歸由平行 session 修復後，工作樹 `compiler/` 首次可建。
+複測 L2（CTL=`bin/no`、SUT=`/tmp/noc-s64`、語料 `tests`+`src/std` **654 檔**、`no ast`）：
+**SAME=640 / DIFF=14**（較 §5.3.4.ab 的 120 已因多條正交軌收斂大幅下降）。14 檔中
+**同位差家族 = 2 檔**（`tests/pipeline-value.no`、`tests/stmt-boundary.no`）——為本輪攻擊目標。
+
+**同位差形狀（探針 `/tmp/pipe-probe.no` 實測钉死）**：`x = A -> B` 中【整條鏈】是 let 的
+value。Go（`src/parser/stmt.go:1242-1260`，`parseLetStatement`）在 `stmt.Value = parseExpression`
+後，若【同位】緊接 `RARROW`（且非 `CTX_MATCH_ARM`/`CTX_FOR_COND`）就把 value 包成
+`IfExpression{Condition: value, Consequence: 獨立 body, Alternative: 同列 else}`，並掛
+`RTPipelineValue` 旗標；鏈 `a -> 8 -> 9` 右接為 `if a { if 8 { 9 } }`。舊 `noc` 缺這一步：
+`ps-parse-let` 讓 let 只吃掉 `A`，殘留的 `-> B` 落到 `ps-parse-expr-stmt` (A) 被當成
+**wildcard 獨立陳述**（`ExpressionStatement{IfExpression{cond: IntegerLiteral{1}}}`）——
+既錯位（多一個頂層陳述）、又錯 cond（wildcard 標記 1 而非 `A`），且推論臂把 `p = a -> 7`
+的 `a` 誤傳播成 `type: i64`。
+
+**修法（`compiler/src/ps.no`，兩處同位規則）**：
+1. `ps-parse-let`（推論型 `name = expr`）：`val = ps-parse-expr` 之後、型別推斷之前，加
+   `val > 0 && p.inMatch == 0 && ps-peek(p) == tok.RARROW -> val = ps-mk-standalone-if(t, p, val)`。
+   復用既有 `ps-mk-standalone-if`（已含 wrap-chain 遞迴 + 換行 `-> else` 續接，語義與 Go 一致）。
+2. `ps-parse-stmt` 明示型別臂（`name T = expr`）：同一行守衛——對齊 Go 統一的
+   `parseLetStatement`（Go 只有一個函式、型別有無皆走同段 pipeline 包裹）。語料無此形，純為規則完備。
+
+包覆後 `val` 變 `IF_EXPRESSION` ⇒ 下游型別推斷各臂（Slice/Struct/Index/IDENT/Call）自然不命中，
+`p = a -> 7` 不再誤推 `type: i64`（對齊 oracle）。⚠️ 守衛用【活】`ps-peek`（不跳 trivia）——
+`a \n -> b`（arrow 換行）不構成 pipeline let，另起 wildcard 陳述（已由單元反向看守）。
+
+**歸因（同一 harness、同一 CTL、654 檔，A/B `noc-s64`→`noc-s66`）**：**DIFF 14→12 / SAME 640→642**；
+`pipeline-value.no`、`stmt-boundary.no` **轉 SAME**；**SAME→DIFF 真回歸 0 檔**；其餘 12 檔
+（bigint/byte/sql/dom/http2/number/toml/vec/yaml/2/match-test/vec-elem-ownership）皆正交家族
+（InterfaceDefinition 解析、`[?]byte` 參數型別、warnings 計數、decode-bit 巢狀等），本輪不動。
+
+**門禁**：
+- L0 單元：`compiler/tests/ps-test.no` 新增 `test-let-pipeline-value`（推論/鏈式/明示型別三形）
+  與 `test-let-pipeline-no-newline`（換行反向看守），want 逐位元組取自 `bin/no ast`。
+  `no run -cc zig compiler/tests/ps-test.no` ⇒ **25/25 通過**。
+- fixture：`tests/pipeline-value.no`（本家族語料）L2 轉 SAME。
+- vet：`no vet compiler/src` 殘留 19 ERROR 全為平行 session 的 WIP（`ps-is-builtin-type`
+  重定義 @2854/6241、index-write lint @5210-5218/7676-7684），**本輪改動區（@3378、@1290）0 新增**。
+
+**🔴 工具鏈附註（本輪構建必經）**：工作樹 `bin/no` 用 `/usr/bin/ld`（clang 17）連結時炸
+`ld: tapi error: malformed file`——`MacOSX27.0.sdk` 的 `libSystem.tbd` 含 `arm64e.x1-macos`
+架構記號，現存所有 `ld`/Xcode ld-1230 皆無法解析（SDKROOT/DEVELOPER_DIR/isysroot 覆寫無效）。
+**解法：改用 `zig` 作連結器**（自帶可用 lld）：
+```
+export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  # 沙箱禁寫 ~/.cache/zig
+./bin/no build -cc zig -o /tmp/noc-sNN compiler
+```
 
 ### 5.4 語義檢查（M3）
 

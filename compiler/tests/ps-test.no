@@ -380,6 +380,37 @@ test-let-idx-elem-infer = () {
 
 test-let-idx-elem-infer()
 
+; ═══════════════════════════════════════════════════════════════════
+; s8q：let RHS 的 pipeline 同位——`x = A -> B`【整條鏈】是 let 的 value
+;     （包成 IfExpression），不是「let 吃掉 A、`-> B` 另起獨立陳述」。
+;     鏡像 Go parseLetStatement（stmt.go:1242-1260）。覆蓋：
+;       · 推論型 `x = 2 > 1 -> 42`（ps-parse-let）；
+;       · 鏈式 `q = a > 0 -> 8 -> 9`（右接 `if a>0 { if 8 { 9 } }`）；
+;       · 明示型別 `p i64 = a > 1 -> 42`（ps-parse-stmt 明示型別臂，型別仍保留）。
+;     舊缺陷：value 解析後未檢查同位 `->` ⇒ LetStatement{value: InfixExpression}
+;     + 分離 ExpressionStatement{IfExpression}（且推論臂誤傳 i64 型別）。
+;     want 由 L2 oracle 實測取得（`./bin/no ast`）。
+; ═══════════════════════════════════════════════════════════════════
+
+test-let-pipeline-value = () {
+    got = parse-dump('a i64 = 5\nx = 2 > 1 -> 42\nq = a > 0 -> 8 -> 9\np i64 = a > 1 -> 42\n')
+    want = 'Program{}\n    LetStatement{name: a, type: i64, value: 5}\n        NamedType{name: i64}\n        IntegerLiteral{value: 5, raw: 5}\n    LetStatement{name: x, value: IfExpression}\n        IfExpression\n            InfixExpression{op: >}\n                IntegerLiteral{value: 2, raw: 2}\n                IntegerLiteral{value: 1, raw: 1}\n            BlockStatement{inline: true}\n                ExpressionStatement{42}\n                    IntegerLiteral{value: 42, raw: 42}\n    LetStatement{name: q, value: IfExpression}\n        IfExpression\n            InfixExpression{op: >}\n                Identifier{name: a}\n                IntegerLiteral{value: 0, raw: 0}\n            BlockStatement{inline: true}\n                ExpressionStatement{IfExpression}\n                    IfExpression\n                        IntegerLiteral{value: 8, raw: 8}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{9}\n                                IntegerLiteral{value: 9, raw: 9}\n    LetStatement{name: p, type: i64, value: IfExpression}\n        NamedType{name: i64}\n        IfExpression\n            InfixExpression{op: >}\n                Identifier{name: a}\n                IntegerLiteral{value: 1, raw: 1}\n            BlockStatement{inline: true}\n                ExpressionStatement{42}\n                    IntegerLiteral{value: 42, raw: 42}'
+    runner.is-true(got.eq-full(want), 'let RHS pipeline 同位為 IfExpression value（推論/鏈式/明示型別）')
+}
+
+test-let-pipeline-value()
+
+; s8q 反向看守：`a \n -> b`（arrow 換行）【不】構成 pipeline——對齊 Go
+;     只看 currentToken==RARROW（活 ps-peek 不跳 trivia）。let 值後換行、
+;     下個非 trivia 才是 `->` ⇒ let 只吃 `a`，`-> b` 另起 wildcard 陳述。
+test-let-pipeline-no-newline = () {
+    got = parse-dump('a i64 = 5\nx = a\n-> b\n')
+    want = 'Program{}\n    LetStatement{name: a, type: i64, value: 5}\n        NamedType{name: i64}\n        IntegerLiteral{value: 5, raw: 5}\n    LetStatement{name: x, type: i64, value: a}\n        NamedType{name: i64, inferred: true}\n        Identifier{name: a}\n    ExpressionStatement{IfExpression}\n        IfExpression\n            IntegerLiteral{value: 1}\n            BlockStatement{inline: true}\n                ExpressionStatement{b}\n                    Identifier{name: b}'
+    runner.is-true(got.eq-full(want), 'arrow 換行不構成 pipeline let（活 ps-peek 守則）')
+}
+
+test-let-pipeline-no-newline()
+
 runner.summary()
 f = runner.failed-count()
 {
