@@ -282,18 +282,16 @@ test-expr-string = () {
 ; 7. unsupported：未接線的 opcode 必須被計數，不能靜默略過
 ; ═══════════════════════════════════════════════
 ;
-; InterfaceDefinition 的指令帶含 OP-IMPLEMENTS 與 OP-HELPER(interfaceMethod)。
-; 前者已接線，後者未接線 ⇒ unsupported 必須 > 0。這條同時證明
+; s8y 起 interfaceMethod 已接線（sqlite/ps-test 需要），不再是缺線哨兵。
+; AnnotationStructValue（kind 9）的 tape 帶一支 OP-HELPER(annotationStructField)，
+; 該 helper 仍未接線 ⇒ dump 必計 1 個 unsupported。這條同時證明
 ; 「計數器真的會被觸發」（否則它是個永遠為 0 的假斷言）。
 
 test-unsupported-is-live = () {
     t = ast.make()
-    id = ast.add(t, asp.K_INTERFACE_DEFINITION)
-    ast.set-slot(t, id, 0, ast.put-str(t, 'shape'))
-    ast.set-slot(t, id, 1, ast.put-str(t, '0'))
-    ast.set-slot(t, id, 2, ast.put-str(t, '0'))
-    _ = ast.dump(t, id)
-    runner.eq(ast.unsupported(t), 1, 'interfaceMethod helper is counted as unsupported')
+    v = ast.add(t, asp.K_ANNOTATION_STRUCT_VALUE)
+    _ = ast.dump(t, v)
+    runner.eq(ast.unsupported(t), 1, 'annotationStructField helper is counted as unsupported')
 }
 
 ; ═══════════════════════════════════════════════

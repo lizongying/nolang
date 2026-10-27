@@ -39,9 +39,10 @@
 ; ── 本檔目前的覆蓋範圍（M2 進行中，**刻意可量測**）────────────────
 ;   已接線：OP-HDR / OP-SCALAR / OP-COMMENTS / OP-CHILD / OP-KIDS /
 ;           OP-FREE / OP-BETWEEN / OP-TRAILING / OP-CLOSING /
-;           OP-IMPLEMENTS / OP-SIG / OP-HELPER（僅 taggedEnumField）
+;           OP-IMPLEMENTS / OP-SIG / OP-HELPER（taggedEnumField / matchArm /
+;           interfaceMethod）
 ;   未接線：OP-SELF-HELPER（AnnotationEntry）、OP-HELPER 的
-;           interfaceMethod / annotationStructField 兩支
+;           annotationStructField 一支
 ; ⚠️ 未接線的指令會讓 `.unsup` 計數 +1（**不是**靜默略過），
 ;    所以「這個 fixture 的 dump 可不可信」是可判定的：ast.unsupported(t) == 0。
 ;
@@ -1340,8 +1341,8 @@ signature = (t ast, o sb, d nd, depth i64) {
 
 ; helper: 分派非 Node 的子結構（dump.go 的 (*dumper).helper）
 ;
-; ⚠️ 已接線 taggedEnumField（TaggedEnumVariant.Fields）與 matchArm（SurfaceMatch.Arms）。
-;    interfaceMethod（InterfaceDefinition）與 annotationStructField
+; ⚠️ 已接線 taggedEnumField（TaggedEnumVariant.Fields）、matchArm（SurfaceMatch.Arms）
+;    與 interfaceMethod（InterfaceDefinition）。annotationStructField
 ;    （AnnotationStructValue）尚未接線，會計入 .unsup。
 ;
 ; 元素編碼（**依 hname 而異**，兩支互不衝突）：
