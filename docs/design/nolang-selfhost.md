@@ -1631,6 +1631,22 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **門禁**：L0 `ps-test.no` **26/26**（新增 `test-param-nullable-size-array`，golden 取於 oracle：`ArrayType{size: <nil>}` + `GenericParams: t`）；`no vet compiler/src` 殘留 19 ERROR（本輪改動區 0 新增）；`no vet src/std` 的 `str.no:1388/1393` index-write ERROR 屬 HEAD 既有（最後由 `67646cbe` str.to-f64 提交觸及、非本 session、src/ 側範圍外），且 `no vet src/std` 跑 Go oracle vet，與 self-host ps.no 改動無涉。
 
+### 5.3.4.af s8t match-test 死碼臂告警計數＋裸可空宣告 Doc 附着（2026-10-27 本輪）
+
+**背景**：§5.3.4.ae（s8s）收官後 L2 剩 **9 檔 DIFF**。本輪攻家族 F。原估 F＝「byte.no＋match-test.no，Program{warnings} 計數＋Doc 附着，小」；複測分岔後**重新定性**：`src/std/byte.no` 的 2 條警告是 W_CHAIN_IF（UTF-8 編碼器 `cp<0x80 -> -> cp<0x800 -> -> …` 鏈式獨立 if），其 316 行結構差是同一鏈式降糖的分歧 ⇒ **歸家族 G（重）**，本輪擱置。真 F 只剩 `tests/match-test.no`（**中等**：須移植 parse 期語義警告）。基線：SUT=`/tmp/noc-s68`、DIFF=9。
+
+**缺口形狀**（`diff <(oracle ast) <(noc ast)` 共 3 行）：
+1. 首行 `Program{}` ↔ `Program{warnings: 2}`；
+2. 缺 1 行 `Doc: // 直接->是else`（match-test.no:11 行前註解，須附著到 `x: { … }` 首陳述）。
+
+**(A) 警告移植（`warnUnreachableArms`，Go match_warn.go:68-199）**：Go 已把「'->' 臂不可達」診斷從降糖（`buildMatchDesugar`/`skipItBinding`）搬到 parse 期 S4（match_warn.go:12-13 註明全語料僅 match-test.no 19:9／79:9 兩處命中）。noc `ps-parse-match` **早已算出同條件的 `dead` 旗標**（option：`ol==1 && oe==1 && onil==1` ⇒ 1，鏡 Go skipItBinding；enum：`bt==''` 全變體已列 ⇒ 1），僅供跳過 it 綁定。**修法**：於函式頂宣告 `deadTotal = 0`；兩處 `dead = 1` 改為 `{ dead = 1 deadTotal = deadTotal + 1 }`；臂迴圈走完后、組 if/else 鏈前發射 `matchHasRaw == 0 -> p.warn = p.warn + deadTotal`（鏡 Go：任一臂 IsRawCond ⇒ 整段 per-arm 判定 return ⇒ 不告警，故 raw-cond 閘控）。
+
+**(B) Doc 修复（`ps-parse-stmt` QUESTION 裸可空臂，~1479）**：舊行為在解析完 `x ?i64` 的型別後【無條件】`ps-skip-trivia(p)`——destructive 吞掉緊接的換行＋行前註解，令 `; 直接->是else` 無法經區塊迴圈的 `ps-skip-trivia-doc` 成為下一陳述 Doc。**隔離實證**（dp2/dp4/dp5/dp6）：僅裸 `x ?i64`（QUESTION 臂）會丟 Doc，同形帶值 `x ?i64 = v`、型別宣告 `s status` 皆正常。**修法**：刪該 `ps-skip-trivia`，鏡 `ps-parse-typedecl`（6460-6517）含值/裸雙形口徑——直接【非破壞性】`ps-peek(p)` 判 `=`（同列 `name ?T = v` 時 `=` 緊接型別、ps-peek 即見 ASSIGN；裸形見 NEWLINE ⇒ 不進含值支）。
+
+**歸因（同一 harness、同一 CTL，A/B `noc-s68`→`noc-s69`）**：**DIFF 9→8 / SAME +1**。轉 SAME：`tests/match-test.no`（warnings 計數＋Doc 雙缺皆收）。**SAME→DIFF 真回歸 0 檔**（本輪 DIFF 集為上輪真子集，僅移出 match-test）。
+
+**門禁**：L0 `ps-test.no` **29/29**（新增 3 條：`test-match-unreachable-warn-option`／`test-match-unreachable-warn-enum`／`test-bare-nullable-doc-attach`，golden 皆取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（`fl[]`／`out[]` index-write 與 duplicate-fn，皆在本輪改動區【外】、HEAD 既有，0 新增）；`no vet src/std` 的 `str.no` index-write ERROR 屬 src/ 側既有（非本 session、範圍外）。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。

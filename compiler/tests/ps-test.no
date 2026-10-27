@@ -425,6 +425,43 @@ test-let-pipeline-no-newline = () {
 
 test-let-pipeline-no-newline()
 
+; ═══════════════════════════════════════════════════════════════════
+; s8t（Family F / match-test.no）：兩項 parse 期缺陷。
+;   (A) warnUnreachableArms（Go match_warn.go）：主語為 option（ok/err/nil 全列）
+;       或 enum（全變體列舉）、含裸 wildcard `->` 臂、且無 raw-cond 臂 ⇒ 該 `->`
+;       臂為死碼，parse 期 saveWarning ⇒ dump 現 `Program{warnings: N}`。
+;       noc 鏡像：ps-parse-match 既有 `dead` 旗標（option 8541 / enum 8597）累加
+;       deadTotal，臂迴圈走完后以 matchHasRaw==0 閘控入 p.warn。
+;   (B) 裸可空宣告 `x ?i64`（ps-parse-stmt QUESTION 臂）舊行為 destructive
+;       ps-skip-trivia 吞掉型別後換行＋行前註解 ⇒ 註解無法成下一陳述 Doc。
+;       修：鏡像 ps-parse-typedecl 非破壞性 ps-peek 判 `=`（去 ps-skip-trivia）。
+;   want 由 L2 oracle 實測取得（`./bin/no ast`）。
+; ═══════════════════════════════════════════════════════════════════
+
+test-match-unreachable-warn-option = () {
+    got = parse-dump('f = () {\n    x ?i64\n    x: {\n        err -> log()\n        nil -> log()\n        ok -> log()\n        -> log()\n    }\n}')
+    want = 'Program{warnings: 1}\n    FunctionDefinition{name: f}\n        BlockStatement{}\n            LetStatement{name: x, type: ?i64, value: }\n                NullableType\n                    NamedType{name: i64}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 4}\n                    Identifier{name: x}\n                    MatchArm{binding: , bindingVariant: }\n                        Identifier{name: err}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{binding: , bindingVariant: }\n                        NilLiteral\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{wildcard: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}'
+    runner.is-true(got.eq-full(want), 'option 主語 ok/err/nil 全列＋裸 -> 死碼臂 ⇒ warnings:1')
+}
+
+test-match-unreachable-warn-option()
+
+test-match-unreachable-warn-enum = () {
+    got = parse-dump('status {\n    status1,\n    status2,\n}\ng = () {\n    s status\n    s: {\n        status1 -> log()\n        status2 -> log()\n        -> log()\n    }\n}')
+    want = 'Program{warnings: 1}\n    EnumDefinition{name: status, values: 2}\n        EnumValue{name: status1, value: 0}\n        EnumValue{name: status2, value: 1}\n    FunctionDefinition{name: g}\n        BlockStatement{}\n            LetStatement{name: s, type: status, value: }\n                NamedType{name: status}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 3}\n                    Identifier{name: s}\n                    MatchArm{binding: , bindingVariant: }\n                        Identifier{name: status1}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{binding: , bindingVariant: }\n                        Identifier{name: status2}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{wildcard: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}'
+    runner.is-true(got.eq-full(want), 'enum 主語全變體列舉＋裸 -> 死碼臂 ⇒ warnings:1')
+}
+
+test-match-unreachable-warn-enum()
+
+test-bare-nullable-doc-attach = () {
+    got = parse-dump('d = () {\n    x ?i64\n\n    ; 這是下一陳述的 Doc\n    a i64 = 1\n}')
+    want = 'Program{}\n    FunctionDefinition{name: d}\n        BlockStatement{}\n            LetStatement{name: x, type: ?i64, value: }\n                NullableType\n                    NamedType{name: i64}\n            LetStatement{name: a, type: i64, value: 1}\n                Doc: // 這是下一陳述的 Doc\n                NamedType{name: i64}\n                IntegerLiteral{value: 1, raw: 1}'
+    runner.is-true(got.eq-full(want), '裸可空宣告後行前註解保留為下一陳述 Doc（非破壞性 peek）')
+}
+
+test-bare-nullable-doc-attach()
+
 runner.summary()
 f = runner.failed-count()
 {

@@ -1476,7 +1476,11 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ;   ⚠️ 舊缺陷：無條件 ps-expect(ASSIGN) 失敗不退 ⇒ 後隨陳述（如
                 ;   `x: { … }`）被 ps-parse-expr 吃成 RHS，且 valCtx=1 污染 MatchArm
                 ;   valueCtx（實測 match-test.no）。鏡像 ps-parse-typedecl 雙形口徑。
-                ps-skip-trivia(p)
+                ; s8t：⚠️【不】在此 ps-skip-trivia——舊行為會 destructive 吞掉型別後
+                ;   緊接的換行＋行前註解（如 `x ?i64` 後另起一行的 `; cmt`），令該註解
+                ;   無法成為下一陳述的 Doc（實測 match-test.no:11 `; 直接->是else` 丟失）。
+                ;   鏡像 ps-parse-typedecl 含值/裸雙形口徑：直接【非破壞性】ps-peek 判 `=`
+                ;   （同列 `name ?T = v` 時 `=` 緊接型別，ps-peek 即見 ASSIGN；裸形見 NEWLINE⇒不進此支）。
                 nlval = 0
                 nlAsg = 0; s8f：是否有 `=`（含值 let 才記 IsFuncDeclared，裸宣告不記）
                 ps-peek(p) == tok.ASSIGN -> {
@@ -8360,6 +8364,14 @@ ps-parse-match = (t ast, p psst, subj str, subjNode i64) (idx i64) {
     evs []str = with-cap(8)
     isenum == 1 -> ps-enum-variants(p, st0, evs)
 
+    ; s8t：移植 Go match_warn.go::warnUnreachableArms 的【不可達 wildcard 臂】計數——
+    ;   當 option 主體（型別 `?T`）三變體 ok/err/nil 全列、或 enum 主體全部變體全列時，
+    ;   裸 `->` 臂為死碼（同 Go skipItBinding 觸發點，lowering.go:2214）。Go 已把這條
+    ;   saveWarning 從降糖搬到 parse 期（降糖路徑那兩處移除），故 noc 須在此累加 p.warn，
+    ;   dump 才現 `Program{warnings: N}`。⚠️ 全語料僅 tests/match-test.no 命中 2 臂（19:9/79:9）。
+    ;   deadTotal 於下方兩處 dead=1 累加；發射時【raw-cond 抑制】（Go：任一臂 IsRawCond 整段 return）。
+    deadTotal = 0
+
     ; s59：臂首 armDoc 收集（Go match.go:208 collectDocComments）——行尾註解已在上一臂
     ;   body 解析完當場被 tail-attach 取走，迴圈頭所見註解恆為 standalone⇒prev=0 純 doc。
     ;   套用規則（Go match.go:440-452）：inline 體→setDoc(bodyStmts[0])；區塊體→置入尾註群。
@@ -8538,7 +8550,7 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
                 onil = listed[2]
 
                 ; 全列 ok/err/nil ⇒ wildcard 臂為死碼（Go skipItBinding，lowering.go:2214）——不建任何 it 綁定
-                ol == 1 && oe == 1 && onil == 1 -> dead = 1
+                ol == 1 && oe == 1 && onil == 1 -> { dead = 1 deadTotal = deadTotal + 1 }
                 ol == 1 && oe == 0 && onil == 1 -> bt = 'err'
                 ol == 1 && oe == 1 && onil == 0 -> bt = 'nil'
                 ol == 1 && oe == 0 && onil == 0 -> bt = 'err | nil'
@@ -8594,7 +8606,7 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
                     #{overflow=wrap}
                     i2 = i2 + 1
                 }
-                bt == '' -> dead = 1
+                bt == '' -> { dead = 1 deadTotal = deadTotal + 1 }
             }
 
             ; s60：綁定名 varType 登記值（Go :2276-2296：elemType→armBindingType→err且非枚舉='str'）
@@ -8902,6 +8914,11 @@ cA[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
             p.pos == pos0 -> ps-bump(p)
         }
     }
+
+    ; s8t：發射不可達 wildcard 臂計數（Go warnUnreachableArms：只要任一臂為 raw-cond
+    ;   （ok(<expr>)），整段 per-arm 判定被跳過 ⇒ 不告警；故以 matchHasRaw 閘控）。
+    ;   deadTotal 於 option（8549）/enum（8605）兩 dead 點累加，全臂走完後一次入 p.warn。
+    matchHasRaw == 0 -> p.warn = p.warn + deadTotal
 
     ; 由末臂往回組 if/else 鏈
     res = 0
