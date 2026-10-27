@@ -305,7 +305,7 @@ JS 後端可以直接引入 npm 生態的套件（TypeScript 的 `import` 等價
 規則：
 
 - **必須是 JS 後端**。LLVM 與 Direct-WASM 後端遇到 `# npm/...` 直接報錯並提示改用 `no build --js`。
-- **套件必須宣告在 `package.jsonc`** 的 `dependencies`（或 `devDependencies`）裡，否則建置失敗。子路徑導入（`lodash/fp`）只要父套件（`lodash`）在清單中即可。
+- **套件必須宣告在 `package.noml`** 的 `dependencies`（或 `devDependencies`）裡，否則建置失敗。子路徑導入（`lodash/fp`）只要父套件（`lodash`）在清單中即可。
 - **短名限定的用法保持不變**：`# npm/lodash` 之後即可寫 `lodash.get(...)`；具名導入（`as get`）則直接呼叫 `get(...)`。
 - **v1 無型別直通**：導入的綁定不攜帶 Nolang 型別（checker 零改動），因此不做簽名檢查；導入項與本地同名函式碰撞時，導入側自動改名（尾碼 `$esm`）。
 - **與內建模組重名時以導入為準**：`# npm/math` 之後 `math.sin(x)` 指向 npm 的 `math` 套件而非 `Math.sin`。
@@ -337,7 +337,7 @@ no run --js main.no                   # 建置到暫存目錄後自動以 node �
 換 CDN 的方式（優先級由高到低）：
 
 1. `no build --js --browser --esm-cdn https://cdn.jsdelivr.net/npm main.no`
-2. `package.jsonc` 的 `"compiler": { "esm-cdn": "https://cdn.jsdelivr.net/npm" }`
+2. `package.noml` 的 `compiler: { esm-cdn: 'https://cdn.jsdelivr.net/npm' }`
 
 因為 `<script type="module">` 在 `file://` 下會被 CORS 攔截，`no run --js --browser` 會在 `127.0.0.1` 的臨時埠起一個一次性靜態服務再打開瀏覽器（Ctrl+C 停止）。完整範例見 `example/esm-imports/`。
 
@@ -373,7 +373,7 @@ pow = (x f64, y f64) (r f64)
 
 ### FFI（本地 / node）
 
-FFI 走 [`koffi`](https://koffi.dev) 真 FFI：`koffi.load(<庫>)` + `lib.func(symbol, ret, args)`。庫來源是 `package.jsonc` 的 `compiler.link-libs`（`lib=` 可覆蓋）；多個庫依序嘗試，命中即用。每個 `#{c}` extern 產生一個綁定，本地名為 `jsIdent(name)`（`_sqlite3-open` → `_sqlite3Open`），C 符號名為去前導 `_`、`-` 換 `_`（`sqlite3_open`）。型別對映：
+FFI 走 [`koffi`](https://koffi.dev) 真 FFI：`koffi.load(<庫>)` + `lib.func(symbol, ret, args)`。庫來源是 `package.noml` 的 `compiler.link-libs`（`lib=` 可覆蓋）；多個庫依序嘗試，命中即用。每個 `#{c}` extern 產生一個綁定，本地名為 `jsIdent(name)`（`_sqlite3-open` → `_sqlite3Open`），C 符號名為去前導 `_`、`-` 換 `_`（`sqlite3_open`）。型別對映：
 
 | Nolang | koffi | Nolang | koffi |
 | --- | --- | --- | --- |

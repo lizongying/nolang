@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,10 +9,10 @@ import (
 // SumFileVersion 是當前總和檔案格式版本
 const SumFileVersion = "1"
 
-// SumFile 表示 sum.jsonc 的結構
+// SumFile 表示 sum.noml 的結構
 type SumFile struct {
-	Version  string             `json:"version"`   // 總和檔案格式版本
-	Packages map[string]SumPkg  `json:"packages"`  // key@version → SHA256 資訊
+	Version  string            `json:"version"`  // 總和檔案格式版本
+	Packages map[string]SumPkg `json:"packages"` // key@version → SHA256 資訊
 }
 
 // SumPkg 表示總和檔案中的一個套件
@@ -23,12 +22,12 @@ type SumPkg struct {
 	SHA256  string `json:"sha256"` // 目錄中所有檔案的 SHA256 雜湊值
 }
 
-// sumFilePath 返回 sum.jsonc 的路徑
+// sumFilePath 返回 sum.noml 的路徑
 func sumFilePath(dir string) string {
-	return filepath.Join(dir, "sum.jsonc")
+	return filepath.Join(dir, SumFileName)
 }
 
-// LoadSumFile 載入 sum.jsonc
+// LoadSumFile 載入 sum.noml
 func LoadSumFile(dir string) (*SumFile, error) {
 	path := sumFilePath(dir)
 	raw, err := os.ReadFile(path)
@@ -39,9 +38,12 @@ func LoadSumFile(dir string) (*SumFile, error) {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	// 總和檔案使用標準 JSON（無註解）
+	m, err := ParseNomlMap(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
 	var sum SumFile
-	if err := json.Unmarshal(raw, &sum); err != nil {
+	if err := DecodeInto(m, &sum); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
@@ -52,7 +54,7 @@ func LoadSumFile(dir string) (*SumFile, error) {
 	return &sum, nil
 }
 
-// SaveSumFile 保存 sum.jsonc（SHA256 來自下載的壓縮包）
+// SaveSumFile 保存 sum.noml（SHA256 來自下載的壓縮包）
 func SaveSumFile(dir string, graph *DependencyGraph) error {
 	if graph == nil || len(graph.resolved) == 0 {
 		return nil
@@ -77,20 +79,31 @@ func SaveSumFile(dir string, graph *DependencyGraph) error {
 		sum.Packages[key] = pkg
 	}
 
-	path := sumFilePath(dir)
-	data, err := json.MarshalIndent(sum, "", "  ")
+	pkgs := make(map[string]any, len(sum.Packages))
+	for name, sp := range sum.Packages {
+		pkgs[name] = map[string]any{
+			"key":     sp.Key,
+			"version": sp.Version,
+			"sha256":  sp.SHA256,
+		}
+	}
+	data, err := MarshalNoml(map[string]any{
+		"version":  sum.Version,
+		"packages": pkgs,
+	})
 	if err != nil {
 		return fmt.Errorf("marshaling sum file: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	path := sumFilePath(dir)
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 
 	return nil
 }
 
-// VerifySumFile 驗證 sum.jsonc 中的 SHA256 是否與快取中的壓縮包匹配
+// VerifySumFile 驗證 sum.noml 中的 SHA256 是否與快取中的壓縮包匹配
 func VerifySumFile(graph *DependencyGraph, sum *SumFile) (bool, error) {
 	if sum == nil || graph == nil {
 		return true, nil
@@ -137,7 +150,7 @@ func VerifySumFile(graph *DependencyGraph, sum *SumFile) (bool, error) {
 	return true, nil
 }
 
-// CheckSumFile 檢查總和檔案是否與 package.jsonc 相容
+// CheckSumFile 檢查總和檔案是否與 package.noml 相容
 // 返回 (是否需要重新解析, 錯誤)
 func CheckSumFile(pkg *Package, sum *SumFile) (bool, error) {
 	if pkg == nil || sum == nil {

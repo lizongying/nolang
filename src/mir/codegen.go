@@ -1366,7 +1366,7 @@ const optSlotMinBytes = 8
 // i64s and the size is rounded UP: a payload the user said fits (<= threshold)
 // must actually fit.
 //
-// Range rules (OptionInlineThreshold comes from package.jsonc's
+// Range rules (OptionInlineThreshold comes from package.noml's
 // compiler.option-inline-threshold or NOLANG_OPTION_INLINE_THRESHOLD):
 //
 //	unset / 0   -> optSlotDefaultBytes (24)

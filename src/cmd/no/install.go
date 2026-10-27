@@ -83,7 +83,7 @@ func installCommand(args []string) {
 func installCurrentPackage(force bool) {
 	p, err := nbuild.LoadPackage(".")
 	if err != nil || p == nil {
-		fmt.Fprintf(os.Stderr, "Error: package.jsonc not found in current directory\n")
+		fmt.Fprintf(os.Stderr, "Error: package.noml not found in current directory\n")
 		return
 	}
 	name := p.Name

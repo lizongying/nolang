@@ -91,7 +91,7 @@ func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
 }
 
 // buildJSPkg 使用 JS 後端從 Nolang 源碼發射 JavaScript 並寫入輸出檔案。
-// 當 package.jsonc 的 compiler.emit 為 "js" 時由 buildWithPkg 呼叫，
+// 當 package.noml 的 compiler.emit 為 "js" 時由 buildWithPkg 呼叫，
 // 使 workspace 模式下的單個 JS 目標也能自動走 JS 後端。
 func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions, outPath string, sink *bytes.Buffer) error {
 	// 輸出路徑加上 .js 副檔名
@@ -272,7 +272,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 	esmSeen := make(map[string]bool)
 	processUseAndMerge := func(use *parser.UseStatement) error {
 		// Third-party ESM imports (# npm/<specifier>): never resolved to .no
-		// source. The specifier must be declared in package.jsonc, and the use
+		// source. The specifier must be declared in package.noml, and the use
 		// statement is kept verbatim so the JS backend can emit the import
 		// header and the checker can register the imported names.
 		if js.IsESMUse(use) {
@@ -281,7 +281,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 				return fmt.Errorf("import %q: %w", use.Path, err)
 			}
 			if !esmDeclared(pkgConfig, spec) {
-				return fmt.Errorf("ESM module %q is not declared in package.jsonc dependencies; add \"dependencies\": {\"%s\": \"^latest\"} (or dev-dependencies) and run npm install", spec, spec)
+				return fmt.Errorf("ESM module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest',] (or dev-dependencies) and run npm install", spec, spec)
 			}
 			key := use.Path + "\x00" + use.Function + "\x00" + use.Alias
 			if !esmSeen[key] {
@@ -300,7 +300,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 			// next to the emitted output, not an npm package: it needs no
 			// dependencies entry and is not installed by npm.
 			if np.WASM != "" && !js.IsRelativeSpecifier(np.WASM) && !esmDeclared(pkgConfig, np.WASM) {
-				return fmt.Errorf("native wasm module %q is not declared in package.jsonc dependencies; add \"dependencies\": {\"%s\": \"^latest\"} (or dev-dependencies) and run npm install", np.WASM, np.WASM)
+				return fmt.Errorf("native wasm module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest',] (or dev-dependencies) and run npm install", np.WASM, np.WASM)
 			}
 			merged.Statements = append(merged.Statements, use)
 			return nil
@@ -513,7 +513,7 @@ func BuildJSEx(inputPath string, opts BuildOptions) (*BuildJSResult, error) {
 }
 
 // esmCDNBase resolves the browser import-map CDN base: an explicit
-// BuildOptions.ESMCDN (the --esm-cdn flag) wins, then package.jsonc
+// BuildOptions.ESMCDN (the --esm-cdn flag) wins, then package.noml
 // compiler.esm-cdn, then "" (the built-in default in the js package).
 func esmCDNBase(inputPath string, opts BuildOptions) string {
 	if opts.ESMCDN != "" {

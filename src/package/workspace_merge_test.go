@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-// TestLoadWorkspaceMap_PublicOnly tests loading only workspace.jsonc (no .workspace.jsonc).
+// TestLoadWorkspaceMap_PublicOnly tests loading only workspace.noml (no .workspace.noml).
 func TestLoadWorkspaceMap_PublicOnly(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	// Create workspace.jsonc — paths use "/" prefix (workspace-relative)
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{
-  "foo": "/foo",
-  "bar": "/bar"
+	// Create workspace.noml — paths use "/" prefix (workspace-relative)
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{
+  foo: '/foo'
+  bar: '/bar'
 }`)
 
 	ws, err := loadWorkspaceMap(root)
@@ -32,20 +32,20 @@ func TestLoadWorkspaceMap_PublicOnly(t *testing.T) {
 	}
 }
 
-// TestLoadWorkspaceMap_PrivateOverride tests that .workspace.jsonc overrides workspace.jsonc.
+// TestLoadWorkspaceMap_PrivateOverride tests that .workspace.noml overrides workspace.noml.
 func TestLoadWorkspaceMap_PrivateOverride(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
 	// Public config
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{
-  "foo": "/foo",
-  "bar": "/bar"
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{
+  foo: '/foo'
+  bar: '/bar'
 }`)
 
 	// Private config: override "foo", keep "bar" from public
-	writeFile(t, filepath.Join(root, ".workspace.jsonc"), `{
-  "foo": "/my-foo"
+	writeFile(t, filepath.Join(root, ".workspace.noml"), `{
+  foo: '/my-foo'
 }`)
 
 	ws, err := loadWorkspaceMap(root)
@@ -65,19 +65,19 @@ func TestLoadWorkspaceMap_PrivateOverride(t *testing.T) {
 	}
 }
 
-// TestLoadWorkspaceMap_PrivateNewKey tests that .workspace.jsonc adds new keys.
+// TestLoadWorkspaceMap_PrivateNewKey tests that .workspace.noml adds new keys.
 func TestLoadWorkspaceMap_PrivateNewKey(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
 	// Public config
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{
-  "foo": "/foo"
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{
+  foo: '/foo'
 }`)
 
 	// Private config: add new key "baz"
-	writeFile(t, filepath.Join(root, ".workspace.jsonc"), `{
-  "baz": "/baz"
+	writeFile(t, filepath.Join(root, ".workspace.noml"), `{
+  baz: '/baz'
 }`)
 
 	ws, err := loadWorkspaceMap(root)
@@ -95,38 +95,38 @@ func TestLoadWorkspaceMap_PrivateNewKey(t *testing.T) {
 	}
 }
 
-// TestLoadWorkspaceMap_PrivateOnly tests that .workspace.jsonc alone (no workspace.jsonc) returns nil.
-// This is because workspace.jsonc is the primary config; .workspace.jsonc is supplementary.
+// TestLoadWorkspaceMap_PrivateOnly tests that .workspace.noml alone (no workspace.noml) returns nil.
+// This is because workspace.noml is the primary config; .workspace.noml is supplementary.
 func TestLoadWorkspaceMap_PrivateOnly(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	// Only private config, no public workspace.jsonc
-	writeFile(t, filepath.Join(root, ".workspace.jsonc"), `{
-  "baz": "/baz"
+	// Only private config, no public workspace.noml
+	writeFile(t, filepath.Join(root, ".workspace.noml"), `{
+  baz: '/baz'
 }`)
 
 	ws, err := loadWorkspaceMap(root)
 	if err != nil {
 		t.Fatalf("loadWorkspaceMap error: %v", err)
 	}
-	// Without workspace.jsonc, loadWorkspaceMap returns nil (public config is required)
+	// Without workspace.noml, loadWorkspaceMap returns nil (public config is required)
 	if ws != nil {
-		t.Fatalf("expected nil when no workspace.jsonc exists, got %v", ws)
+		t.Fatalf("expected nil when no workspace.noml exists, got %v", ws)
 	}
 }
 
-// TestLoadWorkspaceMap_BothEmpty tests that empty workspace.jsonc works with .workspace.jsonc.
+// TestLoadWorkspaceMap_BothEmpty tests that empty workspace.noml works with .workspace.noml.
 func TestLoadWorkspaceMap_BothEmpty(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
 	// Empty public config
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{}`)
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{}`)
 
 	// Private config adds a key
-	writeFile(t, filepath.Join(root, ".workspace.jsonc"), `{
-  "override": "/override"
+	writeFile(t, filepath.Join(root, ".workspace.noml"), `{
+  override: '/override'
 }`)
 
 	ws, err := loadWorkspaceMap(root)
@@ -141,21 +141,21 @@ func TestLoadWorkspaceMap_BothEmpty(t *testing.T) {
 	}
 }
 
-// TestLoadWorkspaceMap_JSONCComments tests that JSONC comments work in both files.
-func TestLoadWorkspaceMap_JSONCComments(t *testing.T) {
+// TestLoadWorkspaceMap_NomlComments tests that noml comments work in both files.
+func TestLoadWorkspaceMap_NomlComments(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
 	// Public config with comments
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{
-  // Public mapping
-  "foo": "/foo",
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{
+  ; Public mapping
+  foo: '/foo'
 }`)
 
 	// Private config with comments
-	writeFile(t, filepath.Join(root, ".workspace.jsonc"), `{
-  // Private override
-  "foo": "/my-foo", // personal fork
+	writeFile(t, filepath.Join(root, ".workspace.noml"), `{
+  ; Private override
+  foo: '/my-foo' ; personal fork
 }`)
 
 	ws, err := loadWorkspaceMap(root)
@@ -167,60 +167,60 @@ func TestLoadWorkspaceMap_JSONCComments(t *testing.T) {
 	}
 }
 
-// TestLoadWorkspaceMap_PrivateBadJSON tests that invalid .workspace.jsonc returns an error.
-func TestLoadWorkspaceMap_PrivateBadJSON(t *testing.T) {
+// TestLoadWorkspaceMap_PrivateBadNoml tests that invalid .workspace.noml returns an error.
+func TestLoadWorkspaceMap_PrivateBadNoml(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{"foo": "/foo"}`)
-	writeFile(t, filepath.Join(root, ".workspace.jsonc"), `{invalid json`)
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{foo: '/foo'}`)
+	writeFile(t, filepath.Join(root, ".workspace.noml"), `{invalid noml`)
 
 	_, err := loadWorkspaceMap(root)
 	if err == nil {
-		t.Fatal("expected error for invalid .workspace.jsonc, got nil")
+		t.Fatal("expected error for invalid .workspace.noml, got nil")
 	}
 }
 
 // --- 工作區邊界約束測試 ---
 
-// TestLoadWorkspaceMap_AcceptRelativePath_Public tests that workspace.jsonc accepts "./" and "../" paths.
+// TestLoadWorkspaceMap_AcceptRelativePath_Public tests that workspace.noml accepts "./" and "../" paths.
 func TestLoadWorkspaceMap_AcceptRelativePath_Public(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{
-  "foo": "./foo"
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{
+  foo: './foo'
 }`)
 
 	ws, err := loadWorkspaceMap(root)
 	if err != nil {
-		t.Fatalf("expected no error for ./ path in workspace.jsonc, got: %v", err)
+		t.Fatalf("expected no error for ./ path in workspace.noml, got: %v", err)
 	}
 	if ws["foo"] != "./foo" {
 		t.Errorf("ws[foo] = %q, want %q", ws["foo"], "./foo")
 	}
 }
 
-// TestLoadWorkspaceMap_AcceptRelativePath_Private tests that .workspace.jsonc accepts "./" and "../" paths.
+// TestLoadWorkspaceMap_AcceptRelativePath_Private tests that .workspace.noml accepts "./" and "../" paths.
 func TestLoadWorkspaceMap_AcceptRelativePath_Private(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{"foo": "/foo"}`)
-	writeFile(t, filepath.Join(root, ".workspace.jsonc"), `{
-  "bar": "../bar"
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{foo: '/foo'}`)
+	writeFile(t, filepath.Join(root, ".workspace.noml"), `{
+  bar: '../bar'
 }`)
 
 	ws, err := loadWorkspaceMap(root)
 	if err != nil {
-		t.Fatalf("expected no error for ../ path in .workspace.jsonc, got: %v", err)
+		t.Fatalf("expected no error for ../ path in .workspace.noml, got: %v", err)
 	}
 	if ws["bar"] != "../bar" {
 		t.Errorf("ws[bar] = %q, want %q", ws["bar"], "../bar")
 	}
 }
 
-// TestLoadWorkspaceMap_AcceptOSAbsolutePath tests that OS absolute paths are allowed in workspace.jsonc.
+// TestLoadWorkspaceMap_AcceptOSAbsolutePath tests that OS absolute paths are allowed in workspace.noml.
 func TestLoadWorkspaceMap_AcceptOSAbsolutePath(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
@@ -229,8 +229,8 @@ func TestLoadWorkspaceMap_AcceptOSAbsolutePath(t *testing.T) {
 	externalDir := t.TempDir()
 	externalDir, _ = filepath.EvalSymlinks(externalDir)
 
-	writeFile(t, filepath.Join(root, "workspace.jsonc"), `{
-  "github.com/user/repo/core": "`+externalDir+`"
+	writeFile(t, filepath.Join(root, "workspace.noml"), `{
+  'github.com/user/repo/core': '`+externalDir+`'
 }`)
 
 	ws, err := loadWorkspaceMap(root)

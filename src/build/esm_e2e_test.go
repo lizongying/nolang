@@ -7,22 +7,22 @@ import (
 	"testing"
 )
 
-// writeESMProject lays out a minimal JS-backend project (package.jsonc +
+// writeESMProject lays out a minimal JS-backend project (package.noml +
 // main.no) in a fresh temp dir and returns the main.no path.
 func writeESMProject(t *testing.T, deps bool, main string) string {
 	t.Helper()
 	dir := t.TempDir()
 	manifest := `{
-  "name": "esmtest",
+  name: 'esmtest'
 `
 	if deps {
-		manifest += `  "dependencies": { "lodash": "^4.17.21" },
+		manifest += `  dependencies: ['lodash:^4.17.21']
 `
 	}
-	manifest += `  "compiler": { "emit": "js" },
+	manifest += `  compiler: { emit: 'js' }
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	mainPath := filepath.Join(dir, "main.no")
@@ -32,7 +32,7 @@ func writeESMProject(t *testing.T, deps bool, main string) string {
 	return mainPath
 }
 
-// An ESM import whose package is declared in package.jsonc compiles, keeps the
+// An ESM import whose package is declared in package.noml compiles, keeps the
 // use statement in the merged program, and emits the import header.
 func TestBuildJSESMDeclared(t *testing.T) {
 	mainPath := writeESMProject(t, true,
@@ -60,7 +60,7 @@ func TestBuildJSESMUndeclared(t *testing.T) {
 			"print(get(m, 'a'))\n")
 	if _, err := BuildJS(mainPath, BuildOptions{UseJS: true}); err == nil {
 		t.Fatal("expected an error for an undeclared ESM package")
-	} else if !strings.Contains(err.Error(), "not declared in package.jsonc") {
+	} else if !strings.Contains(err.Error(), "not declared in package.noml") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -69,12 +69,12 @@ func TestBuildJSESMUndeclared(t *testing.T) {
 func TestBuildJSESMSubpathCoveredByParentDecl(t *testing.T) {
 	dir := t.TempDir()
 	manifest := `{
-  "name": "esmtest",
-  "dependencies": { "lodash": "^4.17.21" },
-  "compiler": { "emit": "js" },
+  name: 'esmtest'
+  dependencies: ['lodash:^4.17.21']
+  compiler: { emit: 'js' }
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	mainPath := filepath.Join(dir, "main.no")

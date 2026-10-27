@@ -1,0 +1,21 @@
+{
+  name: 'test1'
+  mirrors: []
+  dependencies: [
+    ; 线上包，指定版本
+    ; 'test1:v0.1.0@github.com/lizongying/nolang',
+    ; 线上包，允许任何版本
+    ; 'test2@github.com/lizongying/nolang',
+    ; 本地包，相对 workspace 根目录的路径
+    '/example/test2',
+    ; 本地包，workspace.noml 中注册的短名称
+    ; 'test2',
+    ; 本地包（workspace.noml 中注册了 test2），用 github.com 形式
+    ; 'test2@github.com/lizongying/nolang',
+  ]
+  compiler: {
+    version: 'v0.1.0'
+    link-libs: []
+    anonymous-fn-type: false
+  }
+}

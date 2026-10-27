@@ -1,0 +1,10 @@
+{
+  name: 'native-wasm'
+  description: 'Native package calls from the Nolang JS backend: a local WebAssembly module forwarded by same-named exports'
+  license: 'Apache-2.0'
+  author: 'lizongying'
+  compiler: {
+    emit: 'js'
+  }
+  output: '/dist'
+}

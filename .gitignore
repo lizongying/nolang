@@ -15,7 +15,7 @@ Thumbs.db
 .catpaw
 .workbuddy
 .workbuddy-ai
-.workspace.jsonc
+.workspace.noml
 
 tmp
 bin

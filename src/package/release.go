@@ -107,7 +107,7 @@ func (t ToolSpec) RepoURL() string {
 	return fmt.Sprintf("https://%s/%s/%s", t.Host, t.Owner, t.Repo)
 }
 
-// DepKey 回傳 package.jsonc 的依賴鍵：<tool>@<host>/<owner>/<repo>。
+// DepKey 回傳 package.noml 的依賴鍵：<tool>@<host>/<owner>/<repo>。
 // 刻意不含版本——版本是這個鍵的值。
 func (t ToolSpec) DepKey() string {
 	return fmt.Sprintf("%s@%s/%s/%s", t.Name, t.Host, t.Owner, t.Repo)
@@ -233,7 +233,6 @@ func githubGETOnce(url string) (data []byte, httpErr bool, err error) {
 	}
 	return data, false, nil
 }
-
 
 // githubToken 讀取可用的 GitHub API token（避免匿名限流）。
 func githubToken() string {

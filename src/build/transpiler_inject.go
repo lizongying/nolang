@@ -231,7 +231,7 @@ func injectEnterLeave(program *parser.Program) {
 
 // processEmbeds 遍歷 program 中帶有 #{embed=...} 註解的 LetStatement，
 // 在編譯期讀取指定文件並填充 EmbedData 字段。
-// 路徑相對於包根目錄（package.jsonc 所在目錄）解析。
+// 路徑相對於包根目錄（package.noml 所在目錄）解析。
 func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) error {
 	for _, stmt := range program.Statements {
 		ls, ok := stmt.(*parser.LetStatement)
@@ -304,11 +304,11 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 	return nil
 }
 
-// findPackageRootFromFile walks up from a file path to find the directory containing package.jsonc.
+// findPackageRootFromFile walks up from a file path to find the directory containing package.noml.
 func findPackageRootFromFile(filePath string) string {
 	dir := filepath.Dir(filePath)
 	for {
-		cfgFile := filepath.Join(dir, "package.jsonc")
+		cfgFile := filepath.Join(dir, pkg.PackageManifestName)
 		if _, err := os.Stat(cfgFile); err == nil {
 			return dir
 		}

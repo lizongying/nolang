@@ -208,11 +208,11 @@ func TestASTZipForeignBlobRejected(t *testing.T) {
 	}
 }
 
-// TestASTZipWithPackageJSONC：附 package.jsonc 打包時 zip 应多一個條目，
+// TestASTZipWithPackageNoml：附 package.noml 打包時 zip 应多一個條目，
 // 且 ReadASTZip 回傳的位元組與寫入完全一致（原樣分發，不做任何改寫）。
-func TestASTZipWithPackageJSONC(t *testing.T) {
+func TestASTZipWithPackageNoml(t *testing.T) {
 	prog := parseStd(t, "vec.no")
-	pj := []byte("{\n  name: \"vec\",\n  version: \"v1.2.3\",\n  dependencies: { nogit: \"nogit@github.com/lizongying/notools\" },\n}\n")
+	pj := []byte("{\n  name: 'vec'\n  version: 'v1.2.3'\n  dependencies: ['nogit:v1.0.0@github.com/lizongying/notools',]\n}\n")
 	var buf bytes.Buffer
 	if _, err := WriteASTZip(&buf, prog, pj); err != nil {
 		t.Fatal(err)
@@ -222,7 +222,7 @@ func TestASTZipWithPackageJSONC(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(entries) != 2 {
-		t.Fatalf("expected ast.gob + package.jsonc, got %v", keysOf(entries))
+		t.Fatalf("expected ast.gob + package.noml, got %v", keysOf(entries))
 	}
 	back, info, err := ReadASTZip(buf.Bytes())
 	if err != nil {
@@ -231,10 +231,10 @@ func TestASTZipWithPackageJSONC(t *testing.T) {
 	if back == nil {
 		t.Fatal("nil program after read")
 	}
-	if !bytes.Equal(info.PackageJSONC, pj) {
-		t.Fatalf("package.jsonc round-trip mismatch: %q", info.PackageJSONC)
+	if !bytes.Equal(info.PackageNoml, pj) {
+		t.Fatalf("package.noml round-trip mismatch: %q", info.PackageNoml)
 	}
-	// 不附清單的入口維持單條目，且 PackageJSONC 為 nil。
+	// 不附清單的入口維持單條目，且 PackageNoml 為 nil。
 	var plain bytes.Buffer
 	if _, err := WriteASTZip(&plain, prog, nil); err != nil {
 		t.Fatal(err)
@@ -243,8 +243,8 @@ func TestASTZipWithPackageJSONC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.PackageJSONC != nil {
-		t.Fatalf("plain zip should carry no package.jsonc, got %q", info.PackageJSONC)
+	if info.PackageNoml != nil {
+		t.Fatalf("plain zip should carry no package.noml, got %q", info.PackageNoml)
 	}
-	t.Logf("with package.jsonc: zip=%d bytes, round-trip OK", buf.Len())
+	t.Logf("with package.noml: zip=%d bytes, round-trip OK", buf.Len())
 }

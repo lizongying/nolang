@@ -39,6 +39,24 @@
         "mimetypes": [
           "text/x-nolang"
         ]
+      },
+      {
+        "id": "noml",
+        "aliases": [
+          "NOML",
+          "noml"
+        ],
+        "extensions": [
+          ".noml"
+        ],
+        "filenames": [
+          "workspace.noml",
+          "package.noml",
+          ".workspace.noml",
+          "nolang.lock.noml",
+          "sum.noml"
+        ],
+        "configuration": "./language-configuration-noml.json"
       }
     ],
     "grammars": [
@@ -46,6 +64,11 @@
         "language": "nolang",
         "scopeName": "source.nolang",
         "path": "./syntaxes/nolang.tmLanguage.json"
+      },
+      {
+        "language": "noml",
+        "scopeName": "source.noml",
+        "path": "./syntaxes/noml.tmLanguage.json"
       },
       {
         "scopeName": "inject.nolang.md",

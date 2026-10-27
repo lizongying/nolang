@@ -21,7 +21,7 @@ const astDepModuleSrc = "greet = (name str) (out str) {\n  out = 'hi ' + name\n}
 // TestResolveUseASTDependency 端到端驗證消費側閉環：
 //
 //	生產側  no pack  →  mymod.ast.zip
-//	消費側  use mymod →  package.jsonc 的 `mymod@host/owner/repo` 依賴鍵
+//	消費側  use mymod →  package.noml 的 `mymod@host/owner/repo` 依賴鍵
 //	                  →  ReleaseASTZipURL → zip → gob → *parser.Program
 //
 // 編碼/解碼的正確性由 mmast 與 parser 各自的測試覆蓋；這裡只保證三件事：

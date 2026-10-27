@@ -13,8 +13,8 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// workspaceRoot 回傳當前編譯的工作區根目錄（workspace.jsonc 所在目錄）。
-// 優先使用套件宣告的 WorkspaceRoot，否則從 sourcePath 向上查找 workspace.jsonc。
+// workspaceRoot 回傳當前編譯的工作區根目錄（workspace.noml 所在目錄）。
+// 優先使用套件宣告的 WorkspaceRoot，否則從 sourcePath 向上查找 workspace.noml。
 // 這是所有本地導入路徑解析的單一基準，編譯器不再以當前源碼檔目錄作為相對基準。
 func (t *Transpiler) workspaceRoot() string {
 	if t.pkg != nil {
@@ -270,7 +270,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		spec := strings.TrimPrefix(path, "npm/")
 		return nil, fmt.Errorf("import %q: ESM (npm) imports are only supported by the JS backend; rebuild with `no build --js` or `no run --js` (specifier %q cannot be linked into a native binary)", path, spec)
 	}
-	// 依賴解析：嘗試所有導入路徑匹配 package.jsonc 中宣告的依賴
+	// 依賴解析：嘗試所有導入路徑匹配 package.noml 中宣告的依賴
 	// 支援 URL 風格（github.com/...）、路徑風格（/example/pkg、./pkg）、短名稱風格（test2）
 	first := strings.SplitN(path, "/", 2)[0]
 	isURLStyle := strings.Contains(first, ".")
@@ -291,7 +291,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	}
 	if isURLStyle {
 		// URL 風格的導入路徑但未在 dependencies 中宣告
-		return nil, fmt.Errorf("dependency not found: %q is not declared in package.jsonc dependencies", path)
+		return nil, fmt.Errorf("dependency not found: %q is not declared in package.noml dependencies", path)
 	}
 	// 非 std 路徑 → 透過 alias 解析（一律相對於工作區根目錄，不再以當前源碼檔目錄為基準）
 	modulePath := pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), path)

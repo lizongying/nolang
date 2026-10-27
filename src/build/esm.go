@@ -1,4 +1,4 @@
-// esm.go 集中放置「第三方 ESM（npm）導入」在建置層的關注點：package.jsonc 宣告
+// esm.go 集中放置「第三方 ESM（npm）導入」在建置層的關注點：package.noml 宣告
 // 檢查（esmDeclared）、ESM 產物的 package.json sidecar（writeESMModuleSidecar）與
 // 執行期依賴探測（CheckESMDeps，供 `no run --js` 以 node 執行前檢查 node_modules）。
 // codegen 側的 import 發射在 build/js/esm.go；此檔只做建置／運行決策，與 native 路徑無關。

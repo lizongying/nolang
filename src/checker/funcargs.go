@@ -424,7 +424,7 @@ func runFuncArgsCore(program *parser.Program, rootDir string, view *THIRView) []
 // resolveUseModule resolves a UseStatement to its module program.
 // It handles local paths (/path), std paths, and dependency paths (domain/...).
 // rootDir is the directory of the entry source file, used as a fallback
-// for workspace root resolution when pkg is nil (no package.jsonc found).
+// for workspace root resolution when pkg is nil (no package.noml found).
 func resolveUseModule(use *parser.UseStatement, p *pkg.Package, rootDir string) *parser.Program {
 	filePath := resolveModuleFilePath(use, p, rootDir)
 	if filePath == "" {

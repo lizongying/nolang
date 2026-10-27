@@ -8,8 +8,8 @@ sidebar_position: 99
 
 All **embed paths** and **import paths** (`use` / `#` directives, embed resources) are resolved to a **canonical absolute path relative to the workspace root** — they are **no longer resolved relative to "the directory of the current source file"**.
 
-- "Workspace root" = the directory containing `workspace.jsonc`, i.e. `pkg.WorkspaceRoot()`.
-  Note: the directory containing `package.jsonc` is the **package root** (`pkg.RootDir`); these are not the same level — the workspace root is above (contains `workspace.jsonc`, may contain multiple packages), while the package root is a specific **package's** directory (contains `package.jsonc`), which holds multiple **modules** (`.no` source files). Do not confuse them.
+- "Workspace root" = the directory containing `workspace.noml`, i.e. `pkg.WorkspaceRoot()`.
+  Note: the directory containing `package.noml` is the **package root** (`pkg.RootDir`); these are not the same level — the workspace root is above (contains `workspace.noml`, may contain multiple packages), while the package root is a specific **package's** directory (contains `package.noml`), which holds multiple **modules** (`.no` source files). Do not confuse them.
 - After resolution, canonicalization is applied (`filepath.Clean`, remove `.`/`..`, normalize separators), producing a **globally unique** canonical path that serves as the sole identifier for module loading, cache keys, and AST/semantic ownership.
 - This canonical path is the **path component** of `lexer.tokenCache` and `checker.parseProgramFileCache` cache keys. The cache key is actually a composite key `(canonical path, content hash)` (`cache.Key`, see `src/cache/lru.go`): same path but changed content → different hash → auto-invalidation; stale tokens/AST are no longer returned. The cache is a bounded LRU, so long-running processes (LSP / fmt) do not leak memory (item ③ from the original two-pass architecture audit).
 
@@ -29,14 +29,14 @@ All **embed paths** and **import paths** (`use` / `#` directives, embed resource
 
 Unified helpers reside in `src/package/paths.go` (package `pkg`, pure standard library, no circular dependencies):
 
-- `FindWorkspaceRoot(start)`: walks upward from `start` to find the directory containing `workspace.jsonc`.
-- `FindPackageRoot(start)`: walks upward from `start` to find the directory containing `package.jsonc` (fallback when no workspace exists).
+- `FindWorkspaceRoot(start)`: walks upward from `start` to find the directory containing `workspace.noml`.
+- `FindPackageRoot(start)`: walks upward from `start` to find the directory containing `package.noml` (fallback when no workspace exists).
 - `ResolveToWorkspaceRoot(wsRoot, rel)`: normalizes any import/embed path into a workspace-root-relative absolute path (strips leading `/`; absolute paths returned as-is; falls back to current directory when `wsRoot` is empty).
 - `ResolveEmbedBase(sourcePath)`: resolution base for relative embed paths — workspace root preferred, fallback to package root / source file directory.
 
 Converged entry points:
 
-- `src/build/transpiler.go` `resolveUse`: branch A (`/`-prefix) and branch E (alias) unified to `pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), path)`, with a new `t.workspaceRoot()` method (prefers `pkg.WorkspaceRoot()`, otherwise walks up from `sourcePath` to find `workspace.jsonc`). The old redundant logic `if t.pkg != nil { baseDir = pkg.RootDir; if wsRoot... }` was deleted; the cwd-relative fallback now uses `FindWorkspaceRoot`.
+- `src/build/transpiler.go` `resolveUse`: branch A (`/`-prefix) and branch E (alias) unified to `pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), path)`, with a new `t.workspaceRoot()` method (prefers `pkg.WorkspaceRoot()`, otherwise walks up from `sourcePath` to find `workspace.noml`). The old redundant logic `if t.pkg != nil { baseDir = pkg.RootDir; if wsRoot... }` was deleted; the cwd-relative fallback now uses `FindWorkspaceRoot`.
 - `src/build/transpiler.go` `processEmbeds`: relative embed paths now use `pkg.ResolveEmbedBase(sourcePath)` (workspace root preferred).
 - `src/checker/checker.go` `ValidateEmbedAnnotations`: embed validation paths likewise use `pkg.ResolveEmbedBase`.
 
@@ -48,8 +48,8 @@ Cache keys (`tokenCache` / `parseProgramFileCache`) obtain the workspace-root-re
 
 ## Glossary (Unified, 2026-08-02)
 
-- **workspace** — typically corresponds to one repo. The root directory holds `workspace.jsonc`; may contain multiple packages. The workspace root is the sole base for all embed/import path resolution.
-- **package** — a large compilation unit: one library or one executable. Root directory holds `package.jsonc` (the **package root**). Declares dependencies, emit backend, etc. A package contains multiple modules.
+- **workspace** — typically corresponds to one repo. The root directory holds `workspace.noml`; may contain multiple packages. The workspace root is the sole base for all embed/import path resolution.
+- **package** — a large compilation unit: one library or one executable. Root directory holds `package.noml` (the **package root**). Declares dependencies, emit backend, etc. A package contains multiple modules.
 - **module** — typically one source file (`.no`). Current convention: **one file = one module**. Loading a module = loading a `.no` file.
 
 Hierarchy: **workspace ⊃ package (one or more) ⊃ module (one or more)**. Do not use "module" to mean "package" (compilation unit) — that is "package"'s role.

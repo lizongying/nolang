@@ -109,17 +109,17 @@ func TestDetectNoCycles(t *testing.T) {
 func TestLoadLockFile(t *testing.T) {
 	// 建立臨時目錄和鎖檔案
 	tmpDir := t.TempDir()
-	lockPath := filepath.Join(tmpDir, "nolang.lock.json")
+	lockPath := filepath.Join(tmpDir, LockFileName)
 
 	content := `{
-  "version": "1",
-  "packages": {
-    "github.com/a/a@v1.0.0": {
-      "key": "github.com/a/a",
-      "version": "v1.0.0",
-      "dependencies": {
-        "github.com/b/b": "v1.0.0"
-      }
+  version: '1'
+  packages: {
+    'github.com/a/a@v1.0.0': {
+      key: 'github.com/a/a'
+      version: 'v1.0.0'
+      dependencies: [
+        'github.com/b/b:v1.0.0'
+      ]
     }
   }
 }`
@@ -240,7 +240,7 @@ func TestSaveLockFile(t *testing.T) {
 	}
 
 	// 驗證鎖檔案存在
-	lockPath := filepath.Join(tmpDir, "nolang.lock.json")
+	lockPath := filepath.Join(tmpDir, LockFileName)
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Fatalf("lock file not created: %v", err)
 	}
@@ -298,19 +298,19 @@ func TestEnsureDependenciesEmptyDeps(t *testing.T) {
 func TestHasNolangConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// 沒有 package.jsonc
+	// 沒有 package.noml
 	if hasNolangConfig(tmpDir) {
-		t.Error("expected false for dir without package.jsonc")
+		t.Error("expected false for dir without package.noml")
 	}
 
-	// 建立 package.jsonc
-	cfgPath := filepath.Join(tmpDir, "package.jsonc")
-	if err := os.WriteFile(cfgPath, []byte(`{}`), 0644); err != nil {
+	// 建立 package.noml
+	cfgPath := filepath.Join(tmpDir, PackageManifestName)
+	if err := os.WriteFile(cfgPath, []byte("{\n}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	if !hasNolangConfig(tmpDir) {
-		t.Error("expected true for dir with package.jsonc")
+		t.Error("expected true for dir with package.noml")
 	}
 }
 
@@ -323,19 +323,19 @@ func TestFindPackageRootForDep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 在 pkgDir 中建立 package.jsonc
-	cfgPath := filepath.Join(pkgDir, "package.jsonc")
-	if err := os.WriteFile(cfgPath, []byte(`{"name":"test-pkg"}`), 0644); err != nil {
+	// 在 pkgDir 中建立 package.noml
+	cfgPath := filepath.Join(pkgDir, PackageManifestName)
+	if err := os.WriteFile(cfgPath, []byte("{\n  name: 'test-pkg'\n}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// findPackageRootForDep 應該返回 pkgDir 因為它包含 package.jsonc
+	// findPackageRootForDep 應該返回 pkgDir 因為它包含 package.noml
 	result := findPackageRootForDep("github.com/user/test-pkg", "v1.0.0", pkgDir)
 	if result != pkgDir {
 		t.Errorf("expected %q, got %q", pkgDir, result)
 	}
 
-	// 如果 pkgDir 中沒有 package.jsonc，應該返回 pkgDir 本身
+	// 如果 pkgDir 中沒有 package.noml，應該返回 pkgDir 本身
 	os.Remove(cfgPath)
 	result2 := findPackageRootForDep("github.com/user/test-pkg", "v1.0.0", pkgDir)
 	if result2 == "" {

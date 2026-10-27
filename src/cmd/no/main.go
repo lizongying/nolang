@@ -190,7 +190,7 @@ func printUsage() {
 	fmt.Println("")
 	fmt.Println("  no fmt [flags] <file|dir>  Format source files")
 	fmt.Println("    With no args in a terminal:")
-	fmt.Println("      - if workspace.jsonc exists, format all its project dirs;")
+	fmt.Println("      - if workspace.noml exists, format all its project dirs;")
 	fmt.Println("      - otherwise, default to the current directory.")
 	fmt.Println("    With piped stdin, reads from stdin (e.g. echo 'x=1' | no fmt).")
 	fmt.Println("    Directories are processed recursively automatically.")
@@ -218,8 +218,8 @@ func printUsage() {
 	fmt.Println("      no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'")
 	fmt.Println("")
 	fmt.Println("  no build [flags] [<file|dir>]  Build a Nolang project")
-	fmt.Println("    If no file/dir is given and workspace.jsonc exists,")
-	fmt.Println("    all projects in workspace.jsonc are built in parallel.")
+	fmt.Println("    If no file/dir is given and workspace.noml exists,")
+	fmt.Println("    all projects in workspace.noml are built in parallel.")
 	fmt.Println("    Flags:")
 	fmt.Println("      -o <file>     Output file path")
 	fmt.Println("      -cc <s>       C compiler: clang (default), zig")
@@ -231,7 +231,7 @@ func printUsage() {
 	fmt.Println("      -ld-KEY=VALUE   Inject a compile-time global constant (see -ld section below)")
 	fmt.Println("    Use -v to emit LLVM IR (.ll) files for analysis alongside the build.")
 	fmt.Println("    For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
-	fmt.Println("    Default: build current directory or workspace.jsonc projects")
+	fmt.Println("    Default: build current directory or workspace.noml projects")
 	fmt.Println("    Examples:")
 	fmt.Println("      no build")
 	fmt.Println("      no build main.no")
@@ -287,7 +287,7 @@ func printUsage() {
 	fmt.Println("  no add <tool>[:<version>]@<host>/<owner>/<repo>")
 	fmt.Println("                    Add a dependency (prebuilt AST: <tool>.ast.zip)")
 	fmt.Println("                    Version omitted = latest release; key written to")
-	fmt.Println("                    package.jsonc is <tool>@<host>/<owner>/<repo>.")
+	fmt.Println("                    package.noml is <tool>@<host>/<owner>/<repo>.")
 	fmt.Println("    Examples:")
 	fmt.Println("      no add nogit@github.com/lizongying/notools")
 	fmt.Println("      no add nogit:v0.1.33@github.com/lizongying/notools")
@@ -499,14 +499,14 @@ func initProject() {
 		return
 	}
 
-	// `no init` only defines the workspace: it creates workspace.jsonc (if missing)
-	// and does NOT generate a package.jsonc. Packages are added later via `no new`.
+	// `no init` only defines the workspace: it creates workspace.noml (if missing)
+	// and does NOT generate a package.noml. Packages are added later via `no new`.
 	createWorkspaceFile()
 
 	fmt.Printf("Workspace initialized in %s\n", dir)
 	fmt.Println("")
 	fmt.Println("Files created:")
-	fmt.Println("  - workspace.jsonc (workspace definition)")
+	fmt.Println("  - workspace.noml (workspace definition)")
 	fmt.Println("")
 	fmt.Println("Next: create a package with `no new <name>`")
 }
@@ -555,7 +555,7 @@ func newProject(name string) {
 	fmt.Printf("Package created: %s\n", name)
 	fmt.Println("")
 	fmt.Println("Files created:")
-	fmt.Println("  - package.jsonc (package configuration)")
+	fmt.Println("  - package.noml (package configuration)")
 	fmt.Println("  - main.no (main entry file)")
 	fmt.Println("  - lib.no (library export file)")
 	fmt.Println("  - src/ (source directory)")
@@ -577,44 +577,14 @@ func newProject(name string) {
 		}
 		fmt.Println("")
 	}
-	fmt.Printf("Registered '%s' in workspace.jsonc\n", name)
+	fmt.Printf("Registered '%s' in workspace.noml\n", name)
 }
 
 func createConfigFile(config ProjectConfig) {
 
-	content := fmt.Sprintf(`{
-  "name": "%s",
-  "description": "%s",
-  "keywords": [],
-  "author": "%s",
-  "email": "%s",
-  "organization": "%s",
-  "repository": "%s",
-  "homepage": "%s",
-  "license": "%s",
-  "mirrors": [],
-  "dependencies": %s,
-  "compiler": {
-    "version": "%s",
-	"link-libs": [],
-  },
-  "output": "%s",
-  "ignore": [],
-}`,
-		config.Name,
-		config.Description,
-		config.Author,
-		config.Email,
-		config.Organization,
-		config.Repository,
-		config.Homepage,
-		config.License,
-		formatDependencies(config.Dependencies),
-		config.Compiler.Version,
-		config.Output,
-	)
+	content := renderPackageNoml(config)
 
-	err := os.WriteFile("package.jsonc", []byte(content), 0644)
+	err := os.WriteFile(pkg.PackageManifestName, []byte(content), 0644)
 	if err != nil {
 		fmt.Printf("Error writing config file: %v\n", err)
 	}
@@ -705,20 +675,6 @@ func gitURLToHTTPS(url string) string {
 	return ""
 }
 
-func formatDependencies(deps map[string]string) string {
-	if len(deps) == 0 {
-		return "{}"
-	}
-
-	var sb strings.Builder
-	sb.WriteString("{\n")
-	for name, version := range deps {
-		sb.WriteString(fmt.Sprintf("    \"%s\": \"%s\"\n", name, version))
-	}
-	sb.WriteString("  }")
-	return sb.String()
-}
-
 func createMainFile() {
 	content := `// Main entry point
 print('Hello, Nolang!')
@@ -729,14 +685,14 @@ print('Hello, Nolang!')
 	}
 }
 
-// createWorkspaceFile generates a workspace.jsonc in the current directory if one
+// createWorkspaceFile generates a workspace.noml in the current directory if one
 // does not already exist. A freshly initialized workspace starts empty (no packages
 // yet); packages are added via `no new`, which also registers them here. An existing
-// workspace.jsonc is never overwritten.
+// workspace.noml is never overwritten.
 func createWorkspaceFile() {
-	wsFile := "workspace.jsonc"
+	wsFile := pkg.WorkspaceFileName
 	if _, err := os.Stat(wsFile); err == nil {
-		// workspace.jsonc already exists; keep the user's configuration intact.
+		// workspace.noml already exists; keep the user's configuration intact.
 		return
 	}
 	content := `{
@@ -747,8 +703,8 @@ func createWorkspaceFile() {
 	}
 }
 
-// registerPackageInWorkspace records the new package in the nearest workspace.jsonc
-// (searched upward from the current directory). If no workspace.jsonc is found, one
+// registerPackageInWorkspace records the new package in the nearest workspace.noml
+// (searched upward from the current directory). If no workspace.noml is found, one
 // is created in the current directory so the package is always registered.
 func registerPackageInWorkspace(name string) {
 	cwd, err := os.Getwd()
@@ -757,18 +713,18 @@ func registerPackageInWorkspace(name string) {
 	}
 	wsRoot, ok := findWorkspaceRoot(cwd)
 	if !ok {
-		// No workspace.jsonc found anywhere upward; create one in cwd.
+		// No workspace.noml found anywhere upward; create one in cwd.
 		wsRoot = cwd
 	}
 
-	wsFile := filepath.Join(wsRoot, "workspace.jsonc")
+	wsFile := filepath.Join(wsRoot, pkg.WorkspaceFileName)
 	ws := map[string]string{}
 	if raw, err := os.ReadFile(wsFile); err == nil && len(raw) > 0 {
-		// Use the JSONC parser so that comments and trailing commas — both
-		// legal in JSONC — are handled natively without json.Unmarshal.
-		parsed, perr := jsoncParseMap(raw)
+		// Use the noml parser so that ';' comments and string values are
+		// handled natively without json.Unmarshal.
+		parsed, perr := nomlParseMap(raw)
 		if perr != nil {
-			fmt.Printf("Warning: parsing workspace.jsonc: %v\n", perr)
+			fmt.Printf("Warning: parsing workspace.noml: %v\n", perr)
 		} else {
 			ws = parsed
 		}
@@ -783,16 +739,16 @@ func registerPackageInWorkspace(name string) {
 	}
 	ws[name] = "./" + rel
 
-	if err := os.WriteFile(wsFile, []byte(jsoncMarshalMap(ws)), 0644); err != nil {
+	if err := os.WriteFile(wsFile, []byte(nomlMarshalMap(ws)), 0644); err != nil {
 		fmt.Printf("Error writing workspace file: %v\n", err)
 	}
 }
 
-// findWorkspaceRoot walks up from start looking for a workspace.jsonc file.
+// findWorkspaceRoot walks up from start looking for a workspace.noml file.
 func findWorkspaceRoot(start string) (string, bool) {
 	dir := start
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "workspace.jsonc")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, pkg.WorkspaceFileName)); err == nil {
 			return dir, true
 		}
 		parent := filepath.Dir(dir)
@@ -807,7 +763,7 @@ func findWorkspaceRoot(start string) (string, bool) {
 // resolveRunTarget interprets the `no run` positional argument as one of:
 //  1. an existing .no file                 -> run that file
 //  2. an existing directory                -> run its main.no
-//  3. a package name in the nearest workspace.jsonc -> run that package's main.no
+//  3. a package name in the nearest workspace.noml -> run that package's main.no
 //
 // An empty argument (or ".") defaults to the current directory (folder semantics).
 // It returns the path to the entry .no file to build & run, or an error if the
@@ -815,7 +771,7 @@ func findWorkspaceRoot(start string) (string, bool) {
 func resolveRunTarget(arg string) (string, error) {
 	// 無參數或 "."：目前目錄（資料夾語意）。
 	if arg == "" || arg == "." {
-		if _, werr := os.Stat("workspace.jsonc"); werr == nil {
+		if _, werr := os.Stat(pkg.WorkspaceFileName); werr == nil {
 			if _, merr := os.Stat("main.no"); merr != nil {
 				return "", fmt.Errorf("current directory is a workspace root with no main.no; run a package with: no run <package>")
 			}
@@ -837,12 +793,12 @@ func resolveRunTarget(arg string) (string, error) {
 		return mainPath, nil
 	}
 
-	// 3. 最近 workspace.jsonc 中註冊的套件名稱
+	// 3. 最近 workspace.noml 中註冊的套件名稱
 	if cwd, err := os.Getwd(); err == nil {
 		if wsRoot, ok := findWorkspaceRoot(cwd); ok {
-			wsFile := filepath.Join(wsRoot, "workspace.jsonc")
+			wsFile := filepath.Join(wsRoot, pkg.WorkspaceFileName)
 			if raw, rerr := os.ReadFile(wsFile); rerr == nil && len(raw) > 0 {
-				ws, perr := jsoncParseMap(raw)
+				ws, perr := nomlParseMap(raw)
 				if perr == nil && len(ws) > 0 {
 					if rel, found := ws[arg]; found {
 						dir := rel
@@ -935,7 +891,7 @@ func createTestDirectory() {
 //
 //	<tool>[:<version>]@<host>/<owner>/<repo>
 //
-// package.jsonc 裡的鍵是 `<tool>@<host>/<owner>/<repo>`，值是具體版本
+// package.noml 裡的鍵是 `<tool>@<host>/<owner>/<repo>`，值是具體版本
 // （省略版本時查 releases/latest 解析成具體 tag，不寫 "*"，避免下次解析漂移）。
 func addDependency(specStr string) {
 	spec, err := pkg.ParseToolSpec(specStr)
@@ -971,11 +927,11 @@ func addDependency(specStr string) {
 }
 
 func loadProjectConfig() (*ProjectConfig, error) {
-	data, err := os.ReadFile("package.jsonc")
+	data, err := os.ReadFile(pkg.PackageManifestName)
 	if err != nil {
-		return nil, fmt.Errorf("package.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
+		return nil, fmt.Errorf("package.noml not found. Run 'no new <name>' to create a package, or cd into a package directory")
 	}
-	return jsoncParseProjectConfig(data)
+	return nomlParseProjectConfig(data)
 }
 
 func removeDependency(name string) {
@@ -1056,7 +1012,7 @@ func syncDependencies() {
 		return
 	}
 	if p == nil {
-		fmt.Println("Error: package.jsonc not found. Run 'no new <name>' to create a package, or cd into a package directory")
+		fmt.Println("Error: package.noml not found. Run 'no new <name>' to create a package, or cd into a package directory")
 		return
 	}
 	if len(p.Dependencies) == 0 {
@@ -1124,7 +1080,7 @@ func fmtCommand(args []string) {
 		fmt.Println("")
 		fmt.Println("Format Nolang source files.")
 		fmt.Println("When no file/dir is given and stdin is a terminal:")
-		fmt.Println("  - if workspace.jsonc exists, format all its project dirs;")
+		fmt.Println("  - if workspace.noml exists, format all its project dirs;")
 		fmt.Println("  - otherwise, default to the current directory.")
 		fmt.Println("When stdin is piped (e.g. echo 'x=1' | no fmt), reads from stdin.")
 		fmt.Println("Directories are processed recursively automatically.")
@@ -1181,10 +1137,10 @@ func fmtCommand(args []string) {
 			}
 			return
 		}
-		// 交互式終端：先檢查 workspace.jsonc，有則按其中目錄找，否則用 ./
+		// 交互式終端：先檢查 workspace.noml，有則按其中目錄找，否則用 ./
 		// （與 build 命令的 workspace 模式行為一致）
 		if ws, _ := nbuild.LoadWorkspaceFile("."); ws != nil && len(ws) > 0 {
-			fmt.Fprintf(os.Stderr, "fmt: workspace.jsonc found, formatting %d project(s)\n", len(ws))
+			fmt.Fprintf(os.Stderr, "fmt: workspace.noml found, formatting %d project(s)\n", len(ws))
 			for _, relPath := range ws {
 				remaining = append(remaining, relPath)
 			}
@@ -2462,13 +2418,13 @@ func buildCommand(args []string) {
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript source, no LLVM toolchain required)")
 	browserMode := fs.Bool("browser", false, "Generate browser-targeted output (HTML + JS, requires --js)")
-	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.jsonc compiler.esm-cdn)")
+	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)")
 	fs.Usage = func() {
 		fmt.Println("Usage: no build [flags] <file|directory>")
 		fmt.Println("")
 		fmt.Println("Build Nolang source files to an executable.")
-		fmt.Println("If no file/directory is specified and workspace.jsonc exists,")
-		fmt.Println("all projects in workspace.jsonc are built in parallel.")
+		fmt.Println("If no file/directory is specified and workspace.noml exists,")
+		fmt.Println("all projects in workspace.noml are built in parallel.")
 		fmt.Println("")
 		fmt.Println("Flags:")
 		fs.PrintDefaults()
@@ -2481,7 +2437,7 @@ func buildCommand(args []string) {
 		fmt.Println("Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default).")
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  no build                  build current directory or workspace.jsonc projects")
+		fmt.Println("  no build                  build current directory or workspace.noml projects")
 		fmt.Println("  no build main.no")
 		fmt.Println("  no build -o output main.no")
 		fmt.Println("  no build -cc zig main.no")
@@ -2499,7 +2455,7 @@ func buildCommand(args []string) {
 		fmt.Println("  # npm/lodash               the whole module object (use lodash.get(...))")
 		fmt.Println("  # npm/lodash.get as get    one named/exported binding")
 		fmt.Println("  # npm/lodash.default as d  the package default export")
-		fmt.Println("Each package must be declared in package.jsonc dependencies (or")
+		fmt.Println("Each package must be declared in package.noml dependencies (or")
 		fmt.Println("devDependencies) and installed with npm install before `no run --js`.")
 		fmt.Println("Browser output resolves them through an import map; point it at")
 		fmt.Println("another CDN with --esm-cdn (e.g. https://cdn.jsdelivr.net/npm).")
@@ -2526,7 +2482,7 @@ func buildCommand(args []string) {
 	}
 
 	// 後端選擇（JS / Direct-WASM / LLVM 的 auto-detect）已集中至 build 層的
-	// nbuild.ResolveBackend；此處不再複製 package.jsonc emit=="js" 的判斷邏輯
+	// nbuild.ResolveBackend；此處不再複製 package.noml emit=="js" 的判斷邏輯
 	// （見下方 ResolveBackend 呼叫）。
 
 	opts := nbuild.BuildOptions{
@@ -2546,9 +2502,9 @@ func buildCommand(args []string) {
 
 	// 後端決策集中化：ResolveBackend 是唯一決策點（Direct-WASM > JS > LLVM），
 	// BuildBackend 是唯一分發點。命令層不再複製三後端的判斷與寫盤邏輯。
-	// 無參數時，優先檢查 workspace.jsonc 並行編譯（workspace 模式不走 BuildBackend）。
+	// 無參數時，優先檢查 workspace.noml 並行編譯（workspace 模式不走 BuildBackend）。
 	if len(fs.Args()) == 0 {
-		if _, err := os.Stat("workspace.jsonc"); err == nil {
+		if _, err := os.Stat(pkg.WorkspaceFileName); err == nil {
 			if err := nbuild.BuildWorkspace(".", opts); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
@@ -2618,7 +2574,7 @@ func runCommand(args []string) {
 	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
 	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with --js-runtime; default node)")
 	browserMode := fs.Bool("browser", false, "Open in browser (requires --js)")
-	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.jsonc compiler.esm-cdn)")
+	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)")
 	jsRuntime := fs.String("js-runtime", defaultJSRuntime, "JS runtime used by --js runs: node (default), bun, deno, ... (extra args allowed, e.g. \"deno run --allow-read\")")
 	fs.Usage = func() {
 		fmt.Println("Usage: no run [<package|dir|file>]")
@@ -2642,12 +2598,12 @@ func runCommand(args []string) {
 		fmt.Println("")
 		fmt.Println("Third-party ESM imports (--js): import npm packages with `# npm/lodash`,")
 		fmt.Println("`# npm/lodash.get as get` or `# npm/lodash.default as d`. Declare them in")
-		fmt.Println("package.jsonc dependencies and npm install first; `no run --js` fails with")
+		fmt.Println("package.noml dependencies and npm install first; `no run --js` fails with")
 		fmt.Println("an install hint when a package is missing.")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no run                       build and run main.no in current dir")
-		fmt.Println("  no run foo                   run package 'foo' (from workspace.jsonc)")
+		fmt.Println("  no run foo                   run package 'foo' (from workspace.noml)")
 		fmt.Println("  no run ./foo                 run the ./foo directory's main.no")
 		fmt.Println("  no run main.no               build and run main.no")
 		fmt.Println("  no run -cc zig main.no       build and run with Zig compiler")
@@ -2659,7 +2615,7 @@ func runCommand(args []string) {
 	}
 	_ = fs.Parse(args)
 
-	// 解析執行目標：包名（來自最近 workspace.jsonc）/ 資料夾 / 檔案。
+	// 解析執行目標：包名（來自最近 workspace.noml）/ 資料夾 / 檔案。
 	// 無參數時預設為目前目錄（資料夾語意，執行其中的 main.no）。
 	var runArg string
 	if len(fs.Args()) > 0 {
@@ -3538,22 +3494,22 @@ func asBuildDiagnostic(err error) (*nbuild.DiagnosticError, bool) {
 // packAST 把一個包（或單個 .no 檔）打包成預編 AST 包 <tool>.ast.zip。
 //
 // target 可以是：
-//   - 目錄（預設 "."）：讀 package.jsonc，入口取 main 欄位（預設 main.no），
+//   - 目錄（預設 "."）：讀 package.noml，入口取 main 欄位（預設 main.no），
 //     模組名取 name 欄位；
-//   - 單一 .no 檔：模組名取檔名（去掉副檔名）——CI 常這樣用，不必有 package.jsonc。
+//   - 單一 .no 檔：模組名取檔名（去掉副檔名）——CI 常這樣用，不必有 package.noml。
 //
 // out 為空時輸出到 dist/<tool>.ast.zip。回傳實際寫出的 zip 路徑與統計。
 // 這是 `no pack` 與未來 `no pub`（打包 + 上傳）共用的唯一打包入口。
 func packAST(target, out string) (string, *mmast.ZipStats, error) {
 	var name, src string
-	var pkgJSONC []byte
+	var pkgNoml []byte
 	if strings.HasSuffix(target, ".no") {
 		src = target
 		name = strings.TrimSuffix(filepath.Base(target), ".no")
 	} else {
 		p, err := nbuild.LoadPackage(target)
 		if err != nil || p == nil {
-			return "", nil, fmt.Errorf("package.jsonc not found in %s", target)
+			return "", nil, fmt.Errorf("package.noml not found in %s", target)
 		}
 		name = p.Name
 		src = p.Main
@@ -3563,8 +3519,8 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 		src = filepath.Join(target, src)
 		// 隨包分發原始清單：消費端 no add 不解仓库就能拿到 name/version/dependencies。
 		// 讀失敗不致命（AST 本身已完整），缺了條目只是少帶清單。
-		if raw, err := os.ReadFile(filepath.Join(p.RootDir, "package.jsonc")); err == nil {
-			pkgJSONC = raw
+		if raw, err := os.ReadFile(filepath.Join(p.RootDir, pkg.PackageManifestName)); err == nil {
+			pkgNoml = raw
 		}
 	}
 
@@ -3597,7 +3553,7 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	st, err := mmast.WriteASTZip(f, prog, pkgJSONC)
+	st, err := mmast.WriteASTZip(f, prog, pkgNoml)
 	if cerr := f.Close(); err == nil && cerr != nil {
 		err = cerr
 	}

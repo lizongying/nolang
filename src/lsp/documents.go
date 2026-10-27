@@ -562,16 +562,16 @@ func (m *DocumentManager) IsDirty(uri string) bool {
 var ErrDocumentNotFound = errors.New("document not found")
 
 // resolveLocalModuleFile resolves a local module relative path (no leading /)
-// to an absolute file path by searching for the project root (package.jsonc).
+// to an absolute file path by searching for the project root (package.noml).
 func (m *DocumentManager) resolveLocalModuleFile(relPath, docURI string) string {
 	// Extract document directory from URI (file:///path/to/file.no)
 	docPath := strings.TrimPrefix(docURI, "file://")
 	docDir := filepath.Dir(docPath)
 
-	// 優先向上搜尋 workspace.jsonc，以 workspace 根目錄為導入基準
+	// 優先向上搜尋 workspace.noml，以 workspace 根目錄為導入基準
 	wsRoot := docDir
 	for {
-		wsCandidate := filepath.Join(wsRoot, "workspace.jsonc")
+		wsCandidate := filepath.Join(wsRoot, pkg.WorkspaceFileName)
 		if _, err := os.Stat(wsCandidate); err == nil {
 			return filepath.Join(wsRoot, relPath) + ".no"
 		}
@@ -582,10 +582,10 @@ func (m *DocumentManager) resolveLocalModuleFile(relPath, docURI string) string 
 		wsRoot = parent
 	}
 
-	// 沒有 workspace.jsonc，向上搜尋 package.jsonc 作為包根目錄
+	// 沒有 workspace.noml，向上搜尋 package.noml 作為包根目錄
 	root := docDir
 	for {
-		candidate := filepath.Join(root, "package.jsonc")
+		candidate := filepath.Join(root, pkg.PackageManifestName)
 		if _, err := os.Stat(candidate); err == nil {
 			return filepath.Join(root, relPath) + ".no"
 		}

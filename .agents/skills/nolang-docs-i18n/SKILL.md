@@ -103,8 +103,8 @@ PY
   `#{doc = ''}` vs `#{doc = 'has value'}` —— 语义相同，`code parity` 会误报整节。
 - **注释语言不同**：`# 构建当前目录` vs `# Build current directory`、`; 這是註釋` vs `// this is a comment`。
   归一化已剥 `;` / `//` / `#` 注释，但如果整节**只有**注释差异（尤其注释在 EN 里被写得更长）仍会命中。
-- **EN 给 ASCII 示意行补了英文注解**：ZH 的目录树/判定流程代码块只写 `workspace/`、`workspace.jsonc`、
-  `判定规则` 这种裸行，EN 会写成 `workspace/ top-level workspace`、`workspace.jsonc package name -> path mapping`。
+- **EN 给 ASCII 示意行补了英文注解**：ZH 的目录树/判定流程代码块只写 `workspace/`、`workspace.noml`、
+  `判定规则` 这种裸行，EN 会写成 `workspace/ top-level workspace`、`workspace.noml package name -> path mapping`。
   这类**成对 `-`/`+`** 全是假阳性（`usage.md` 的「判定规则 / 递归工作区映射 / 工作区流程」都是这个）。
 - **模块清单注释被翻译并展开**：`### crypto/hkdf HKDF RFC 5869` → `### crypto/hkdf HKDF Key Derivation (RFC 5869)`。
   整份 `std/crypto.md` 曾因此报 3 节，实际 `--code-diff` 是 `identical code skeleton`。

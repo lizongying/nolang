@@ -7,7 +7,6 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -211,7 +210,7 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 	}
 
 	// Find the actual package directory within the extracted content
-	// by looking for workspace.jsonc or the shortName directory.
+	// by looking for workspace.noml or the shortName directory.
 	actualDir := findPackageDir(cachePath, shortName)
 	if actualDir == "" {
 		return "", "", fmt.Errorf("package %s not found in extracted archive", shortName)
@@ -356,7 +355,7 @@ func execCommand(name string, args ...string) error {
 }
 
 // findPackageDir looks for the package directory within the extracted cache path.
-// It first checks for workspace.jsonc, then falls back to looking for the shortName directory.
+// It first checks for workspace.noml, then falls back to looking for the shortName directory.
 func findPackageDir(cachePath, shortName string) string {
 	// Check if shortName directory exists directly
 	pkgDir := filepath.Join(cachePath, shortName)
@@ -364,14 +363,17 @@ func findPackageDir(cachePath, shortName string) string {
 		return pkgDir
 	}
 
-	// Look for workspace.jsonc to find the actual package mapping
-	wsFile := filepath.Join(cachePath, "workspace.jsonc")
+	// Look for workspace.noml to find the actual package mapping
+	wsFile := filepath.Join(cachePath, WorkspaceFileName)
 	if _, err := os.Stat(wsFile); err == nil {
 		raw, err := os.ReadFile(wsFile)
 		if err == nil {
-			cleaned := stripJSONC(raw)
+			m, err := ParseNomlMap(raw)
 			var ws WorkspaceMap
-			if err := json.Unmarshal(cleaned, &ws); err == nil {
+			if err == nil {
+				err = DecodeInto(m, &ws)
+			}
+			if err == nil {
 				if localPath, exists := ws[shortName]; exists {
 					dir := filepath.Join(cachePath, localPath)
 					if info, err := os.Stat(dir); err == nil && info.IsDir() {
@@ -396,7 +398,7 @@ func findPackageDir(cachePath, shortName string) string {
 	return ""
 }
 
-// findPackageRoot 在快取路徑中尋找包含 package.jsonc 的目錄
+// findPackageRoot 在快取路徑中尋找包含 package.noml 的目錄
 // 優先檢查短名稱目錄，然後遍歷子目錄
 func findPackageRoot(cachePath, shortName string) string {
 	// 先檢查短名稱目錄
@@ -405,14 +407,17 @@ func findPackageRoot(cachePath, shortName string) string {
 		return pkgDir
 	}
 
-	// 檢查 workspace.jsonc 映射
-	wsFile := filepath.Join(cachePath, "workspace.jsonc")
+	// 檢查 workspace.noml 映射
+	wsFile := filepath.Join(cachePath, WorkspaceFileName)
 	if _, err := os.Stat(wsFile); err == nil {
 		raw, err := os.ReadFile(wsFile)
 		if err == nil {
-			cleaned := stripJSONC(raw)
+			m, err := ParseNomlMap(raw)
 			var ws WorkspaceMap
-			if err := json.Unmarshal(cleaned, &ws); err == nil {
+			if err == nil {
+				err = DecodeInto(m, &ws)
+			}
+			if err == nil {
 				if localPath, exists := ws[shortName]; exists {
 					dir := filepath.Join(cachePath, localPath)
 					if hasNolangConfig(dir) {
@@ -423,7 +428,7 @@ func findPackageRoot(cachePath, shortName string) string {
 		}
 	}
 
-	// 遍歷子目錄尋找 package.jsonc
+	// 遍歷子目錄尋找 package.noml
 	entries, err := os.ReadDir(cachePath)
 	if err != nil {
 		return pkgDir // 返回預設路徑
@@ -450,13 +455,13 @@ func findPackageRoot(cachePath, shortName string) string {
 		}
 	}
 
-	// 沒找到 package.jsonc，返回短名稱目錄（套件可能沒有配置文件）
+	// 沒找到 package.noml，返回短名稱目錄（套件可能沒有配置文件）
 	return pkgDir
 }
 
-// hasNolangConfig 檢查目錄中是否存在 package.jsonc
+// hasNolangConfig 檢查目錄中是否存在 package.noml
 func hasNolangConfig(dir string) bool {
-	cfgFile := filepath.Join(dir, "package.jsonc")
+	cfgFile := filepath.Join(dir, PackageManifestName)
 	info, err := os.Stat(cfgFile)
 	return err == nil && !info.IsDir()
 }

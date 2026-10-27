@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"os"
+	"sort"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,21 +12,22 @@ import (
 // Returns the root temp dir (cleanup is caller's responsibility).
 //
 // Structure:
-//   root/
-//     workspace.jsonc        — maps "testkey" → "/pkgA"
-//     pkgA/
-//       workspace.jsonc      — maps "testkey" → "/pkgB"
-//       pkgB/
-//         main.no            — dummy file
 //
-// If cycleDirs is non-empty, creates a cycle: pkgB/workspace.jsonc maps back to pkgA.
+//	root/
+//	  workspace.noml        — maps "testkey" → "/pkgA"
+//	  pkgA/
+//	    workspace.noml      — maps "testkey" → "/pkgB"
+//	    pkgB/
+//	      main.no            — dummy file
+//
+// If cycleDirs is non-empty, creates a cycle: pkgB/workspace.noml maps back to pkgA.
 func createTempWorkspace(t *testing.T, cycle bool) string {
 	t.Helper()
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	// Root workspace.jsonc: "testkey" → "/pkgA" (workspace-relative)
-	writeWorkspaceJSONC(t, root, map[string]string{
+	// Root workspace.noml: "testkey" → "/pkgA" (workspace-relative)
+	writeWorkspaceNoml(t, root, map[string]string{
 		"testkey": "/pkgA",
 	})
 
@@ -35,12 +37,12 @@ func createTempWorkspace(t *testing.T, cycle bool) string {
 		t.Fatal(err)
 	}
 
-	// pkgA/workspace.jsonc: "testkey" → "/pkgB" (workspace-relative to pkgA)
+	// pkgA/workspace.noml: "testkey" → "/pkgB" (workspace-relative to pkgA)
 	pkgB := filepath.Join(pkgA, "pkgB")
 	if err := os.MkdirAll(pkgB, 0755); err != nil {
 		t.Fatal(err)
 	}
-	writeWorkspaceJSONC(t, pkgA, map[string]string{
+	writeWorkspaceNoml(t, pkgA, map[string]string{
 		"testkey": "/pkgB",
 	})
 
@@ -50,12 +52,12 @@ func createTempWorkspace(t *testing.T, cycle bool) string {
 	}
 
 	if cycle {
-		// pkgB/workspace.jsonc: "testkey" → OS absolute path to pkgA (cycle back)
-		writeWorkspaceJSONC(t, pkgB, map[string]string{
+		// pkgB/workspace.noml: "testkey" → OS absolute path to pkgA (cycle back)
+		writeWorkspaceNoml(t, pkgB, map[string]string{
 			"testkey": pkgA,
 		})
 	} else {
-		// pkgC directory (final destination, no workspace.jsonc)
+		// pkgC directory (final destination, no workspace.noml)
 		pkgC := filepath.Join(pkgB, "pkgC")
 		if err := os.MkdirAll(pkgC, 0755); err != nil {
 			t.Fatal(err)
@@ -64,8 +66,8 @@ func createTempWorkspace(t *testing.T, cycle bool) string {
 			t.Fatal(err)
 		}
 
-		// pkgB/workspace.jsonc maps to pkgC (workspace-relative to pkgB)
-		writeWorkspaceJSONC(t, pkgB, map[string]string{
+		// pkgB/workspace.noml maps to pkgC (workspace-relative to pkgB)
+		writeWorkspaceNoml(t, pkgB, map[string]string{
 			"testkey": "/pkgC",
 		})
 	}
@@ -73,24 +75,28 @@ func createTempWorkspace(t *testing.T, cycle bool) string {
 	return root
 }
 
-func writeWorkspaceJSONC(t *testing.T, dir string, m map[string]string) {
+func writeWorkspaceNoml(t *testing.T, dir string, m map[string]string) {
 	t.Helper()
 	var sb strings.Builder
 	sb.WriteString("{\n")
-	first := true
-	for k, v := range m {
-		if !first {
-			sb.WriteString(",\n")
-		}
-		sb.WriteString("  \"")
-		sb.WriteString(k)
-		sb.WriteString("\": \"")
-		sb.WriteString(v)
-		sb.WriteString("\"")
-		first = false
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	sb.WriteString("\n}\n")
-	if err := os.WriteFile(filepath.Join(dir, "workspace.jsonc"), []byte(sb.String()), 0644); err != nil {
+	sort.Strings(keys)
+	for _, k := range keys {
+		sb.WriteString("  ")
+		if IsNomlIdentifierKey(k) {
+			sb.WriteString(k)
+		} else {
+			sb.WriteString(NomlQuote(k))
+		}
+		sb.WriteString(": ")
+		sb.WriteString(NomlQuote(m[k]))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("}\n")
+	if err := os.WriteFile(filepath.Join(dir, WorkspaceFileName), []byte(sb.String()), 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -103,7 +109,7 @@ func TestResolveWorkspaceChain_SingleLevel(t *testing.T) {
 	if err := os.MkdirAll(pkgDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	writeWorkspaceJSONC(t, root, map[string]string{
+	writeWorkspaceNoml(t, root, map[string]string{
 		"testkey": "/mypkg",
 	})
 
@@ -123,10 +129,10 @@ func TestResolveWorkspaceChain_SingleLevel(t *testing.T) {
 
 // TestResolveWorkspaceChain_Recursive tests recursive resolution through nested workspaces.
 //
-//	root/workspace.jsonc:        "testkey" → "/pkgA"
-//	pkgA/workspace.jsonc:        "testkey" → "/pkgB"
-//	pkgB/workspace.jsonc:        "testkey" → "/pkgC"
-//	pkgC has no workspace.jsonc  → final resolution
+//	root/workspace.noml:        "testkey" → "/pkgA"
+//	pkgA/workspace.noml:        "testkey" → "/pkgB"
+//	pkgB/workspace.noml:        "testkey" → "/pkgC"
+//	pkgC has no workspace.noml  → final resolution
 //
 // Expected: resolveWorkspaceChain("testkey", root) → pkgC directory
 func TestResolveWorkspaceChain_Recursive(t *testing.T) {
@@ -143,16 +149,16 @@ func TestResolveWorkspaceChain_Recursive(t *testing.T) {
 		}
 	}
 
-	// Root workspace.jsonc
-	writeWorkspaceJSONC(t, root, map[string]string{
+	// Root workspace.noml
+	writeWorkspaceNoml(t, root, map[string]string{
 		"testkey": "/pkgA",
 	})
-	// pkgA/workspace.jsonc
-	writeWorkspaceJSONC(t, pkgA, map[string]string{
+	// pkgA/workspace.noml
+	writeWorkspaceNoml(t, pkgA, map[string]string{
 		"testkey": "/pkgB",
 	})
-	// pkgB/workspace.jsonc
-	writeWorkspaceJSONC(t, pkgB, map[string]string{
+	// pkgB/workspace.noml
+	writeWorkspaceNoml(t, pkgB, map[string]string{
 		"testkey": "/pkgC",
 	})
 
@@ -172,9 +178,9 @@ func TestResolveWorkspaceChain_Recursive(t *testing.T) {
 
 // TestResolveWorkspaceChain_CycleDetection tests that circular mappings are detected.
 //
-//	root/workspace.jsonc:        "testkey" → "/pkgA"
-//	pkgA/workspace.jsonc:        "testkey" → "/pkgB"
-//	pkgB/workspace.jsonc:        "testkey" → OS absolute path to pkgA (cycle)
+//	root/workspace.noml:        "testkey" → "/pkgA"
+//	pkgA/workspace.noml:        "testkey" → "/pkgB"
+//	pkgB/workspace.noml:        "testkey" → OS absolute path to pkgA (cycle)
 //
 // Expected: error with "circular workspace mapping detected" and full chain in message
 func TestResolveWorkspaceChain_CycleDetection(t *testing.T) {
@@ -190,16 +196,16 @@ func TestResolveWorkspaceChain_CycleDetection(t *testing.T) {
 		}
 	}
 
-	// Root workspace.jsonc
-	writeWorkspaceJSONC(t, root, map[string]string{
+	// Root workspace.noml
+	writeWorkspaceNoml(t, root, map[string]string{
 		"testkey": "/pkgA",
 	})
-	// pkgA/workspace.jsonc
-	writeWorkspaceJSONC(t, pkgA, map[string]string{
+	// pkgA/workspace.noml
+	writeWorkspaceNoml(t, pkgA, map[string]string{
 		"testkey": "/pkgB",
 	})
-	// pkgB/workspace.jsonc: cycle back to pkgA via OS absolute path
-	writeWorkspaceJSONC(t, pkgB, map[string]string{
+	// pkgB/workspace.noml: cycle back to pkgA via OS absolute path
+	writeWorkspaceNoml(t, pkgB, map[string]string{
 		"testkey": pkgA,
 	})
 
@@ -219,7 +225,7 @@ func TestResolveWorkspaceChain_CycleDetection(t *testing.T) {
 }
 
 // TestResolveWorkspaceChain_NoWorkspaceAtTarget tests that resolution stops
-// when the target directory has no workspace.jsonc.
+// when the target directory has no workspace.noml.
 func TestResolveWorkspaceChain_NoWorkspaceAtTarget(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
@@ -228,9 +234,9 @@ func TestResolveWorkspaceChain_NoWorkspaceAtTarget(t *testing.T) {
 	if err := os.MkdirAll(pkgDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	// No workspace.jsonc in pkgDir
+	// No workspace.noml in pkgDir
 
-	writeWorkspaceJSONC(t, root, map[string]string{
+	writeWorkspaceNoml(t, root, map[string]string{
 		"testkey": "/mypkg",
 	})
 
@@ -251,7 +257,7 @@ func TestResolveWorkspaceChain_NoWorkspaceAtTarget(t *testing.T) {
 func TestResolveWorkspaceChain_KeyNotFound(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
-	writeWorkspaceJSONC(t, root, map[string]string{
+	writeWorkspaceNoml(t, root, map[string]string{
 		"otherkey": "/otherpkg",
 	})
 
@@ -274,7 +280,7 @@ func TestResolveWorkspaceChain_PreloadedMap(t *testing.T) {
 	if err := os.MkdirAll(pkgDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	writeWorkspaceJSONC(t, root, map[string]string{
+	writeWorkspaceNoml(t, root, map[string]string{
 		"testkey": "/mypkg",
 	})
 
@@ -313,9 +319,9 @@ func TestResolveWorkspaceChain_DeepChain(t *testing.T) {
 		}
 	}
 
-	// Each level (except the last) has a workspace.jsonc mapping to the next
+	// Each level (except the last) has a workspace.noml mapping to the next
 	for i := 0; i < 3; i++ {
-		writeWorkspaceJSONC(t, levels[i], map[string]string{
+		writeWorkspaceNoml(t, levels[i], map[string]string{
 			"deepkey": "/L" + string(rune('0'+i+1)),
 		})
 	}

@@ -316,7 +316,7 @@ Rules:
 
 - **JS backend only.** The LLVM and Direct-WASM backends reject `# npm/...`
   with a pointer to `no build --js`.
-- **The package must be declared in `package.jsonc`** (`dependencies` or
+- **The package must be declared in `package.noml`** (`dependencies` or
   `devDependencies`), otherwise the build fails. Subpath imports (`lodash/fp`)
   only need the parent package (`lodash`) on the list.
 - **Short-name qualification is unchanged**: after `# npm/lodash` write
@@ -364,7 +364,7 @@ Change the CDN (highest priority first):
 
 1. `no build --js --browser --esm-cdn https://cdn.jsdelivr.net/npm main.no`
 2. `"compiler": { "esm-cdn": "https://cdn.jsdelivr.net/npm" }` in
-   `package.jsonc`
+   `package.noml`
 
 Because `<script type="module">` is blocked by CORS under `file://`,
 `no run --js --browser` starts a one-shot static server on `127.0.0.1` and
@@ -412,7 +412,7 @@ strategies across the program fail the build.
 ### FFI (local / node)
 
 FFI goes through [`koffi`](https://koffi.dev) (real FFI): `koffi.load(<lib>)` +
-`lib.func(symbol, ret, args)`. The library comes from `package.jsonc`'s
+`lib.func(symbol, ret, args)`. The library comes from `package.noml`'s
 `compiler.link-libs` (`lib=` overrides); multiple libraries are tried in order
 and the first hit wins. Each `#{c}` extern yields one binding whose local name
 is `jsIdent(name)` (`_sqlite3-open` → `_sqlite3Open`) and whose C symbol drops a

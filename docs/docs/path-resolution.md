@@ -10,8 +10,8 @@ sidebar_position: 99
 **以工作区根目录（workspace root）为基准的规范化绝对路径**，**不再以"当前源码文件所在目录"
 作为相对基准**。
 
-- "工作区根目录" = `workspace.jsonc` 所在目录，即 `pkg.WorkspaceRoot()`。
-  注意：`package.jsonc` 所在目录是**包根目录**（`pkg.RootDir`），二者不是同一层——工作区根在上层（含 `workspace.jsonc`，可包含多个包），包根是具体**包**的目录（含 `package.jsonc`），包内包含若干**模块**（`.no` 源文件）。不要混淆。
+- "工作区根目录" = `workspace.noml` 所在目录，即 `pkg.WorkspaceRoot()`。
+  注意：`package.noml` 所在目录是**包根目录**（`pkg.RootDir`），二者不是同一层——工作区根在上层（含 `workspace.noml`，可包含多个包），包根是具体**包**的目录（含 `package.noml`），包内包含若干**模块**（`.no` 源文件）。不要混淆。
 - 解析后做规范化（`filepath.Clean`、去 `.`/`..`、统一分隔符），得到**全局唯一**的规范路径，
   作为模块加载、缓存键、AST/语义归属的唯一标识。
 - 该规范路径是 `lexer.tokenCache` 与 `checker.parseProgramFileCache` 缓存键的**路径分量**。
@@ -41,8 +41,8 @@ sidebar_position: 99
 
 统一 helper 已落地于 `src/package/paths.go`（package `pkg`，纯标准库，无循环依赖）：
 
-- `FindWorkspaceRoot(start)`：从 `start` 向上查找 `workspace.jsonc` 所在目录。
-- `FindPackageRoot(start)`：从 `start` 向上查找 `package.jsonc` 所在目录（无 workspace 时的退路）。
+- `FindWorkspaceRoot(start)`：从 `start` 向上查找 `workspace.noml` 所在目录。
+- `FindPackageRoot(start)`：从 `start` 向上查找 `package.noml` 所在目录（无 workspace 时的退路）。
 - `ResolveToWorkspaceRoot(wsRoot, rel)`：把任意导入 / embed 原始路径规范化为工作区根基准的
   绝对路径（去前导 `/`、绝对路径原样返回、`wsRoot` 为空时退路当前目录）。
 - `ResolveEmbedBase(sourcePath)`：相对 embed 路径的解析基准——工作区根优先，退路包根 / 源文件目录。
@@ -51,7 +51,7 @@ sidebar_position: 99
 
 - `src/build/transpiler.go` `resolveUse`：分支 A（`/`-前缀）与分支 E（alias）统一改为
   `pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), path)`，并新增 `t.workspaceRoot()`
-  方法（优先 `pkg.WorkspaceRoot()`，否则从 `sourcePath` 向上查 `workspace.jsonc`）。
+  方法（优先 `pkg.WorkspaceRoot()`，否则从 `sourcePath` 向上查 `workspace.noml`）。
   旧的 `if t.pkg != nil { baseDir = pkg.RootDir; if wsRoot... }` 重复逻辑被删除，cwd-相对
   退路改为走 `FindWorkspaceRoot`。
 - `src/build/transpiler.go` `processEmbeds`：相对 embed 路径改走 `pkg.ResolveEmbedBase(sourcePath)`
@@ -71,9 +71,9 @@ sidebar_position: 99
 
 ## 术语对照（统一，2026-08-02）
 
-- **workspace 工作区** —— 一般就是一个 repo。根目录放 `workspace.jsonc`，可包含多个包。工作区根是
+- **workspace 工作区** —— 一般就是一个 repo。根目录放 `workspace.noml`，可包含多个包。工作区根是
   所有 embed/导入路径解析的唯一基准。
-- **package 包** —— 一个大的编译单元：一个库或一个可执行文件。根目录放 `package.jsonc`（即**包根**）。
+- **package 包** —— 一个大的编译单元：一个库或一个可执行文件。根目录放 `package.noml`（即**包根**）。
   声明依赖、emit 后端等。一个包包含若干模块。
 - **module 模块** —— 一般就是一个源文件（`.no`）。当前约定 **一个文件 = 一个模块**。加载一个模块
   = 加载一个 `.no` 文件。

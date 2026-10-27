@@ -2,7 +2,6 @@ package build
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/lizongying/nolang/build/wasm"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
+	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -208,19 +208,19 @@ type BuildOptions struct {
 	UseDirectWasm bool   // use Direct WASM backend (no LLVM toolchain required)
 	UseJS         bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
 	BrowserMode   bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
-	// OptionInlineThreshold 覆寫 `?T` 載荷內聯的字節閾值（0 = 沿用 package.jsonc
+	// OptionInlineThreshold 覆寫 `?T` 載荷內聯的字節閾值（0 = 沿用 package.noml
 	// / NOLANG_OPTION_INLINE_THRESHOLD 的解析結果）。見 transpiler.SetOptionInlineThreshold。
 	OptionInlineThreshold int
-	CompilerVersion       string            // current compiler version (for package.jsonc compatibility check)
+	CompilerVersion       string            // current compiler version (for package.noml compatibility check)
 	Strict                bool              // vet mode: treat all lint warnings/hints as errors
 	LDFlags               map[string]string // -ld-KEY=VALUE pairs injected as compile-time global constants
 	// ESMCDN overrides the import-map CDN base for browser ESM output
-	// ("" = package.jsonc compiler.esm-cdn, else the built-in default).
+	// ("" = package.noml compiler.esm-cdn, else the built-in default).
 	ESMCDN string
 }
 
-// versionCompatible 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本兼容。
-// package.jsonc 的 version 約定帶前導 v（如 "v0.1.0"），但解析時前後綴皆相容：
+// versionCompatible 檢查 package.noml 中聲明的編譯器版本是否與當前編譯器版本兼容。
+// package.noml 的 version 約定帶前導 v（如 "v0.1.0"），但解析時前後綴皆相容：
 // 一律先剝除前導 "v" 再比較，因此 "v0.1.0" 與 "0.1.0" 視為同一版本。
 // 採用語義化版本規則：
 //   - major >= 1 時，major 版本相同即視為兼容（1.2.0 與 1.3.1 兼容）
@@ -351,7 +351,7 @@ func BuildFile(inputPath string, opts BuildOptions) (string, error) {
 		return "", err
 	}
 
-	// 若指定的是目錄，先找目錄內的 package.jsonc
+	// 若指定的是目錄，先找目錄內的 package.noml
 	info, err := os.Stat(inputPath)
 	isDir := err == nil && info.IsDir()
 
@@ -408,7 +408,7 @@ const (
 
 // ResolveBackend 是唯一的後端決策點。優先級：Direct-WASM > JS > LLVM。
 //   - Direct-WASM：明確 --wasm-direct，或 wasip1 平台下目標含 wasm32（無 LLVM 可用）。
-//   - JS：命令列 -js，或 package.jsonc 的 compiler.emit == "js"。
+//   - JS：命令列 -js，或 package.noml 的 compiler.emit == "js"。
 //   - 其餘皆為 LLVM（MIR 後端）。
 func ResolveBackend(opts BuildOptions, pkg *Package) BackendKind {
 	if opts.UseDirectWasm || (runtime.GOOS == "wasip1" && strings.Contains(opts.Target, "wasm32")) {
@@ -470,7 +470,7 @@ func VetFile(inputPath string, opts BuildOptions) error {
 // 非阻塞性診斷——調用者可選擇輸出為 warning/hint 或在 --strict 模式下
 // 升級為 error。
 func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult, error) {
-	// 若指定的是目錄，先找目錄內的 package.jsonc
+	// 若指定的是目錄，先找目錄內的 package.noml
 	info, err := os.Stat(inputPath)
 	isDir := err == nil && info.IsDir()
 
@@ -669,10 +669,10 @@ func parseCompileErrorToLints(err error) []checker.LintResult {
 // buildWithPkg 是核心編譯邏輯，使用已載入的 Package（可為 nil）。
 // BuildFile 和 BuildWorkspace 共用此函數，避免重複載入 Package。
 func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bool) (string, error) {
-	// 檢查 package.jsonc 中聲明的編譯器版本是否與當前編譯器版本匹配
+	// 檢查 package.noml 中聲明的編譯器版本是否與當前編譯器版本匹配
 	if pkg != nil && pkg.Compiler.Version != "" && opts.CompilerVersion != "" {
 		if !versionCompatible(pkg.Compiler.Version, opts.CompilerVersion) {
-			msg := fmt.Sprintf("warning: compiler version mismatch: package.jsonc requires %q, current compiler is %q\n",
+			msg := fmt.Sprintf("warning: compiler version mismatch: package.noml requires %q, current compiler is %q\n",
 				pkg.Compiler.Version, opts.CompilerVersion)
 			fmt.Fprint(os.Stderr, msg)
 		}
@@ -723,7 +723,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		sink = &bytes.Buffer{}
 	}
 
-	// 如果 package.jsonc 指定 emit: js，使用 JS 後端發射 JavaScript
+	// 如果 package.noml 指定 emit: js，使用 JS 後端發射 JavaScript
 	if pkg != nil && pkg.Compiler.Emit == "js" {
 		if err := buildJSPkg(source, inputPath, pkg, opts, outPath, sink); err != nil {
 			return "", err
@@ -1222,25 +1222,32 @@ func validateProgram(program *parser.Program, inputPath string) error {
 	return fmt.Errorf("%s: validation failed:\n%s", inputPath, b.String())
 }
 
-// LoadWorkspaceFile reads and parses a standalone workspace.jsonc file from the given directory.
+// LoadWorkspaceFile reads and parses a standalone workspace.noml file from the given directory.
 // Returns a map of project name -> relative path.
-// Returns nil, nil if workspace.jsonc does not exist (it is optional).
+// Returns nil, nil if workspace.noml does not exist (it is optional).
 func LoadWorkspaceFile(dir string) (map[string]string, error) {
-	wsFile := filepath.Join(dir, "workspace.jsonc")
+	wsFile := filepath.Join(dir, pkg.WorkspaceFileName)
 	raw, err := os.ReadFile(wsFile)
 	if err != nil {
-		return nil, nil // workspace.jsonc is optional
+		return nil, nil // workspace.noml is optional
 	}
 
-	cleaned := stripJSONC(raw)
-	var ws map[string]string
-	if err := json.Unmarshal(cleaned, &ws); err != nil {
+	m, err := pkg.ParseNomlMap(raw)
+	if err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
+	}
+	ws := make(map[string]string, len(m))
+	for k, v := range m {
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("parsing %s: value for key %q is not a string", wsFile, k)
+		}
+		ws[k] = s
 	}
 	return ws, nil
 }
 
-// BuildWorkspace reads workspace.jsonc from workspaceDir and builds all listed
+// BuildWorkspace reads workspace.noml from workspaceDir and builds all listed
 // projects in parallel. For each project, it builds main.no (if exists), lib.no
 // (if exists), and all .no files in tests/ (if exists).
 // At least one of main.no or lib.no must exist; otherwise the project is skipped.
@@ -1257,10 +1264,10 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 		return err
 	}
 	if ws == nil {
-		return fmt.Errorf("workspace.jsonc not found in %s", workspaceDir)
+		return fmt.Errorf("workspace.noml not found in %s", workspaceDir)
 	}
 	if len(ws) == 0 {
-		return fmt.Errorf("workspace.jsonc is empty")
+		return fmt.Errorf("workspace.noml is empty")
 	}
 
 	type buildTarget struct {

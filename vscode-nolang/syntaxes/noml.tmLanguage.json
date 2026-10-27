@@ -1,0 +1,66 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "NOML",
+    "scopeName": "source.noml",
+    "fileTypes": [
+        "noml"
+    ],
+    "patterns": [
+        {
+            "name": "comment.line.semicolon.noml",
+            "match": ";.*$"
+        },
+        {
+            "name": "string.quoted.single.noml",
+            "begin": "'",
+            "end": "'",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.noml",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        {
+            "comment": "bare identifier key immediately preceding a colon",
+            "name": "entity.name.tag.noml",
+            "match": "\\b[a-z_][a-z0-9_-]*(?=[ \\t]*:)"
+        },
+        {
+            "name": "constant.language.boolean.noml",
+            "match": "\\b(true|false)\\b"
+        },
+        {
+            "name": "constant.language.null.noml",
+            "match": "\\bnull\\b"
+        },
+        {
+            "name": "constant.numeric.noml",
+            "match": "-?\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b"
+        },
+        {
+            "name": "punctuation.separator.colon.noml",
+            "match": ":"
+        },
+        {
+            "name": "punctuation.separator.comma.noml",
+            "match": ","
+        },
+        {
+            "name": "punctuation.section.block.begin.noml",
+            "match": "\\{"
+        },
+        {
+            "name": "punctuation.section.block.end.noml",
+            "match": "\\}"
+        },
+        {
+            "name": "punctuation.section.array.begin.noml",
+            "match": "\\["
+        },
+        {
+            "name": "punctuation.section.array.end.noml",
+            "match": "\\]"
+        }
+    ]
+}

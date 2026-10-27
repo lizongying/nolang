@@ -3143,7 +3143,7 @@ ICON []byte
 
 **路徑解析**：
 
-- 相對路徑相對於包根目錄（`package.jsonc` 所在目錄）解析
+- 相對路徑相對於包根目錄（`package.noml` 所在目錄）解析
 - 支援絕對路徑
 - 路徑中可包含 `/`、`.`、`-` 字符
 
@@ -3318,16 +3318,16 @@ neural = () {
 
 使用 `os.get-arch()` 可在執行期取得當前架構，使用平台註解則在編譯期包含或排除代碼。
 
-## package.jsonc 編譯器配置
+## package.noml 編譯器配置
 
-`package.jsonc` 中的 `compiler` 區塊控制編譯器行為。`version` 值約定帶前導 `v`（如 `"v0.1.0"`）；編譯器內部解析時對前綴不敏感，`"v0.1.0"` 與 `"0.1.0"` 皆視為同一版本。
+`package.noml` 中的 `compiler` 區塊控制編譯器行為。`version` 值約定帶前導 `v`（如 `"v0.1.0"`）；編譯器內部解析時對前綴不敏感，`"v0.1.0"` 與 `"0.1.0"` 皆視為同一版本。
 
-```jsonc
+```noml
 {
-  "compiler": {
-    "version": "v0.1.0",
-    "anonymous-fn-type": false,
-    "emit": "js"
+  compiler: {
+    version: 'v0.1.0'
+    anonymous-fn-type: false
+    emit: 'js'
   }
 }
 ```
@@ -3343,10 +3343,10 @@ neural = () {
 
 設定為 `"js"` 後，`no build` 自動走 JS 後端，等效於命令列 `--js`。命令列旗標優先級高於配置文件。
 
-```jsonc
-// 自動生成 JavaScript
-"compiler": {
-  "emit": "js"
+```noml
+; 自動生成 JavaScript
+compiler: {
+  emit: 'js'
 }
 ```
 
@@ -3358,9 +3358,9 @@ neural = () {
 
 指定連結的 C 函式庫列表：
 
-```jsonc
-"compiler": {
-  "link-libs": ["crypto", "ssl"]
+```noml
+compiler: {
+  link-libs: ['crypto', 'ssl',]
 }
 ```
 

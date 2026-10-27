@@ -1061,7 +1061,7 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 	// 語法（如 `cb ()()`）被拒絕，應改用具名函式型別定義。
 	if p.currentToken.Type == lexer.LPAREN {
 		if !p.AllowAnonymousFnType {
-			msg := fmt.Sprintf("line %d, column %d: anonymous function type syntax '()' is disabled; use a named function type alias or enable 'anonymous-fn-type' in package.jsonc",
+			msg := fmt.Sprintf("line %d, column %d: anonymous function type syntax '()' is disabled; use a named function type alias or enable 'anonymous-fn-type' in package.noml",
 				p.currentToken.Line, p.currentToken.Column)
 			p.saveError(msg)
 			return nil, false

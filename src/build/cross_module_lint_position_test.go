@@ -72,7 +72,7 @@ func TestVetCrossModulePositionReliability(t *testing.T) {
 		"    print(y)\n" +
 		"}\n"
 	mainPath := write("main.no", mainContent)
-	write("workspace.jsonc", `{"test":"."}`)
+	write("workspace.noml", `{ test: '.' }`)
 	mainTotal := countLinesOf(t, mainPath)
 
 	lints, err := VetFileWithLints(mainPath, BuildOptions{})

@@ -140,7 +140,7 @@ func VetDir(dirPath string) []VetResult {
 type VetProgressFunc func(path string, diagCount int, elapsed time.Duration)
 
 func VetDirVerbose(dirPath string, progress VetProgressFunc) []VetResult {
-	// 載入 package.jsonc 以套用 ignore 列表 + 解析依賴
+	// 載入 package.noml 以套用 ignore 列表 + 解析依賴
 	// （與 no vet CLI 的目錄模式行為對齊）
 	vetPkg, _ := pkg.LoadPackage(dirPath)
 	if vetPkg != nil {

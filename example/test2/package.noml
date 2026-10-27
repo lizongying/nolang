@@ -1,0 +1,19 @@
+{
+  name: 'test2'
+  description: 'A new Nolang project'
+  keywords: []
+  author: ''
+  email: ''
+  organization: 'nolang'
+  repository: ''
+  homepage: ''
+  license: 'Apache-2.0'
+  mirrors: []
+  dependencies: []
+  compiler: {
+    version: 'v0.1.0'
+    link-libs: []
+  }
+  output: '/dist'
+  ignore: []
+}

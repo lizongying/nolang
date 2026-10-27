@@ -35,10 +35,10 @@ func TestVetLibExportFilteredModuleKeepsOverflowAnnotation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("workspace.jsonc", `{"test":"."}`)
+	write("workspace.noml", `{ test: '.' }`)
 
-	// 被導入的驅動套件：package.jsonc + lib.no（`@` 匯出）是觸發條件，兩者缺一不報。
-	write("drv/package.jsonc", `{"name":"drv"}`)
+	// 被導入的驅動套件：package.noml + lib.no（`@` 匯出）是觸發條件，兩者缺一不報。
+	write("drv/package.noml", `{ name: 'drv' }`)
 	write("drv/lib.no", "@ /drv/src/mod.fill\n")
 	write("drv/src/mod.no", "fill = (seed [20]byte) (out [40]byte) {\n"+
 		"    i = 0\n"+

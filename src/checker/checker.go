@@ -3315,7 +3315,7 @@ func ValidateDependencyImports(program *parser.Program, rootDir string) []Valida
 				File:    program.Sem.SourceFileOf(us),
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
-				Message: fmt.Sprintf("dependency not found: %q is not declared in package.jsonc dependencies", path),
+				Message: fmt.Sprintf("dependency not found: %q is not declared in package.noml dependencies", path),
 			})
 		}
 	}
@@ -11526,7 +11526,7 @@ func intTypeBits(t string) int {
 func findPackageRootFromFile(filePath string) string {
 	dir := filepath.Dir(filePath)
 	for {
-		cfgFile := filepath.Join(dir, "package.jsonc")
+		cfgFile := filepath.Join(dir, pkg.PackageManifestName)
 		if _, err := os.Stat(cfgFile); err == nil {
 			return dir
 		}

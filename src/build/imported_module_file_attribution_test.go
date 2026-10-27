@@ -63,7 +63,7 @@ func writeAttributionFixture(t *testing.T) (tmpDir, mainPath string) {
 			t.Fatal(err)
 		}
 	}
-	write("workspace.jsonc", `{"test":"."}`)
+	write("workspace.noml", `{ test: '.' }`)
 	// 模組：把無效 overflow 註解推到第 30 行。
 	write("drv/src/mod.no", ineffectiveOverflowBody(27))
 	// 主檔：9 行，行號上限遠小於模組那行。

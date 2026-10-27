@@ -18,9 +18,9 @@ import (
 type Transpiler struct {
 	pkg              *Package // 當前套件（用於路徑解析）
 	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
-	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 package.jsonc）
+	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 package.noml）
 	// optionInlineThreshold 是 `?T` 載荷內聯的字節閾值（0 = 用 MIR 預設值 24）。
-	// 來源依序為 NOLANG_OPTION_INLINE_THRESHOLD 環境變數、package.jsonc 的
+	// 來源依序為 NOLANG_OPTION_INLINE_THRESHOLD 環境變數、package.noml 的
 	// compiler.option-inline-threshold。它決定 MIR 的
 	// `%option = { i64 tag, [N x i64] slot }` 裡 slot 的寬度：載荷 sizeof 不
 	// 大於它則內聯，大於它則堆裝箱、slot[0] 存指針。
@@ -156,7 +156,7 @@ func NewTranspiler(pkg *Package) *Transpiler {
 		t.allowAnonymousFn = pkg.Compiler.AnonymousFnType
 		t.optionInlineThreshold = pkg.Compiler.OptionInlineThreshold
 	}
-	// 環境變數覆寫 package.jsonc，方便不改專案檔就能做 A/B。
+	// 環境變數覆寫 package.noml，方便不改專案檔就能做 A/B。
 	if v := os.Getenv("NOLANG_OPTION_INLINE_THRESHOLD"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			t.optionInlineThreshold = n
@@ -184,7 +184,7 @@ func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
 // SetNoBoundsCheck configures whether bounds checks are skipped in generated code.
 // When true (unsafe mode), array/slice/string indexing does not emit bounds checks.
 // SetOptionInlineThreshold 以命令列 `--option-inline-threshold=N` 覆寫閾值。
-// 優先序：命令列 > NOLANG_OPTION_INLINE_THRESHOLD > package.jsonc；0 表示「未指定」，
+// 優先序：命令列 > NOLANG_OPTION_INLINE_THRESHOLD > package.noml；0 表示「未指定」，
 // 保留 NewTranspiler 已經解析好的值。
 func (t *Transpiler) SetOptionInlineThreshold(n int) {
 	if n > 0 {
@@ -252,7 +252,7 @@ const (
 	TargetLLVM
 )
 
-// LinkLibs 收集本次編譯「實際載入」的每個源檔所屬套件在 package.jsonc 中宣告的
+// LinkLibs 收集本次編譯「實際載入」的每個源檔所屬套件在 package.noml 中宣告的
 // compiler.link-libs，去重後回傳（套件根排序，保證結果穩定）。
 //
 // 為什麼需要：link-libs 原本只從「被建置的套件」（opts 的 pkg）取得。但
@@ -261,7 +261,7 @@ const (
 //
 // 這類直接編譯單一 .no 檔的入口 pkg == nil，而該檔以 `# <path>` 直接引用驅動
 // 源檔（example/sqlite-driver/src/sqlite.no）。驅動的 #{c} 外部函式需要
-// -lsqlite3，卻因為只有驅動自己的 package.jsonc 宣告過這件事而拿不到連結參數，
+// -lsqlite3，卻因為只有驅動自己的 package.noml 宣告過這件事而拿不到連結參數，
 // 連結期報：
 //
 //	"_sqlite3_open", referenced from: _sqlite.open in ...

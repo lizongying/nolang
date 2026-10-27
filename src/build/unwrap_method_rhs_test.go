@@ -34,7 +34,7 @@ x ?i64 = get-val('123')
 _ = x
 `
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "workspace.jsonc"), []byte(`{"test":"."}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "workspace.noml"), []byte(`{ test: '.' }`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	mainPath := filepath.Join(dir, "main.no")

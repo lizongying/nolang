@@ -1,0 +1,17 @@
+{
+  name: 'my-project'
+  description: 'A Nolang project'
+  keywords: ['nolang']
+  author: 'lizongying'
+  email: 'lizongying@msn.com'
+  organization: ''
+  repository: 'https://github.com/lizongying/nolang'
+  homepage: ''
+  license: 'Apache-2.0'
+  dependencies: []
+  compiler: {
+    version: 'v0.1.0'
+  }
+  output: '/dist'
+  ignore: []
+}

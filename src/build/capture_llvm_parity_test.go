@@ -63,9 +63,9 @@ func TestCaptureTracksProduceIdenticalLLVMIR(t *testing.T) {
 func compileCaptureTrackIR(t *testing.T, src string) string {
 	t.Helper()
 	dir := t.TempDir()
-	// 與 transitive_import_test.go 同款：workspace.jsonc 定義工作區根目錄，
+	// 與 transitive_import_test.go 同款：workspace.noml 定義工作區根目錄，
 	// 缺少它路徑解析會走不同的分支。
-	if err := os.WriteFile(filepath.Join(dir, "workspace.jsonc"), []byte(`{"test":"."}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "workspace.noml"), []byte(`{ test: '.' }`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	mainPath := filepath.Join(dir, "main.no")

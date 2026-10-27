@@ -3,36 +3,36 @@ package pkg
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // LockFileVersion 是當前鎖檔案格式版本
 const LockFileVersion = "1"
 
-// LockFile 表示 nolang.lock.json 的結構
+// LockFile 表示 nolang.lock.noml 的結構
 type LockFile struct {
-	Version  string              `json:"version"`  // 鎖檔案格式版本
-	Packages map[string]LockPkg  `json:"packages"` // key@version → 詳細資訊
+	Version  string             `json:"version"`  // 鎖檔案格式版本
+	Packages map[string]LockPkg `json:"packages"` // key@version → 詳細資訊
 }
 
 // LockPkg 表示鎖檔案中的一個套件
 type LockPkg struct {
 	Key          string            `json:"key"`
 	Version      string            `json:"version"`
-	Dependencies map[string]string `json:"dependencies"` // 子依賴 key → version
+	Dependencies map[string]string `json:"dependencies"`        // 子依賴（noml 中序列化為 'key:version' 字串陣列）
 	Integrity    string            `json:"integrity,omitempty"` // SHA256 可選
 }
 
-// lockFilePath 返回 nolang.lock.json 的路徑
+// lockFilePath 返回 nolang.lock.noml 的路徑
 func lockFilePath(dir string) string {
-	return filepath.Join(dir, "nolang.lock.json")
+	return filepath.Join(dir, LockFileName)
 }
 
-// LoadLockFile 載入 nolang.lock.json
+// LoadLockFile 載入 nolang.lock.noml
 func LoadLockFile(dir string) (*LockFile, error) {
 	path := lockFilePath(dir)
 	raw, err := os.ReadFile(path)
@@ -43,9 +43,12 @@ func LoadLockFile(dir string) (*LockFile, error) {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	// 鎖檔案使用標準 JSON（無註解）
+	m, err := ParseNomlMap(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
 	var lock LockFile
-	if err := json.Unmarshal(raw, &lock); err != nil {
+	if err := DecodeInto(m, &lock); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
@@ -56,7 +59,7 @@ func LoadLockFile(dir string) (*LockFile, error) {
 	return &lock, nil
 }
 
-// SaveLockFile 保存 nolang.lock.json
+// SaveLockFile 保存 nolang.lock.noml
 func SaveLockFile(dir string, graph *DependencyGraph) error {
 	if graph == nil || len(graph.resolved) == 0 {
 		return nil
@@ -89,23 +92,62 @@ func SaveLockFile(dir string, graph *DependencyGraph) error {
 		lock.Packages[key] = pkg
 	}
 
-	path := lockFilePath(dir)
-	data, err := json.MarshalIndent(lock, "", "  ")
+	data, err := marshalLock(lock)
 	if err != nil {
 		return fmt.Errorf("marshaling lock file: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	path := lockFilePath(dir)
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 
 	return nil
 }
 
-// CheckLockFile 檢查鎖檔案是否與 package.jsonc 相容
+// marshalLock 把鎖檔案序列化為 noml 文字。dependencies 以 'key:version'
+// 字串陣列落地（noml 的 map[string]string 表示法），並排序以求確定性。
+func marshalLock(lock *LockFile) (string, error) {
+	pkgs := make(map[string]any, len(lock.Packages))
+	for name, lp := range lock.Packages {
+		pkgs[name] = lockPkgToNoml(lp)
+	}
+	return MarshalNoml(map[string]any{
+		"version":  lock.Version,
+		"packages": pkgs,
+	})
+}
+
+func lockPkgToNoml(lp LockPkg) map[string]any {
+	m := map[string]any{
+		"key":          lp.Key,
+		"version":      lp.Version,
+		"dependencies": depSpecArray(lp.Dependencies),
+	}
+	if lp.Integrity != "" {
+		m["integrity"] = lp.Integrity
+	}
+	return m
+}
+
+// depSpecArray 把 key→version 映射轉成排序後的 'key:version' 字串陣列。
+func depSpecArray(deps map[string]string) []any {
+	keys := make([]string, 0, len(deps))
+	for k := range deps {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]any, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, FormatDepSpec(k, deps[k]))
+	}
+	return out
+}
+
+// CheckLockFile 檢查鎖檔案是否與 package.noml 相容
 // 返回 (是否需要重新解析, 錯誤)
 // 相容條件：
-//   - package.jsonc 中所有的 dependencies 都在鎖檔案中
+//   - package.noml 中所有的 dependencies 都在鎖檔案中
 //   - 版本號一致
 func CheckLockFile(pkg *Package, lock *LockFile) (bool, error) {
 	if pkg == nil || lock == nil {

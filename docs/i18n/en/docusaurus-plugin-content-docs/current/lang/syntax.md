@@ -3211,7 +3211,7 @@ The `embed` annotation attaches to the `[]byte` variable declaration that immedi
 
 **Path Resolution**:
 
-- Relative paths are resolved relative to the package root (the directory containing `package.jsonc`)
+- Relative paths are resolved relative to the package root (the directory containing `package.noml`)
 - Absolute paths are supported
 - Paths may contain `/`, `.`, and `-` characters
 
@@ -3387,16 +3387,16 @@ neural = () {
 
 Use `os.get-arch()` to get the current architecture at runtime, and platform annotations to include/exclude code at compile time.
 
-## package.jsonc Compiler Configuration
+## package.noml Compiler Configuration
 
-The `compiler` block in `package.jsonc` controls compiler behavior. The `version` value is conventionally written with a leading `v` (e.g. `"v0.1.0"`); the compiler's internal parsing is prefix-insensitive, treating `"v0.1.0"` and `"0.1.0"` as the same version.
+The `compiler` block in `package.noml` controls compiler behavior. The `version` value is conventionally written with a leading `v` (e.g. `"v0.1.0"`); the compiler's internal parsing is prefix-insensitive, treating `"v0.1.0"` and `"0.1.0"` as the same version.
 
-```jsonc
+```noml
 {
-  "compiler": {
-    "version": "v0.1.0",
-    "anonymous-fn-type": false,
-    "emit": "js"
+  compiler: {
+    version: 'v0.1.0'
+    anonymous-fn-type: false
+    emit: 'js'
   }
 }
 ```
@@ -3412,10 +3412,10 @@ Controls the output target backend:
 
 When set to `"js"`, `no build` automatically uses the JS backend, equivalent to the `--js` command-line flag. Command-line flags take precedence over config file settings.
 
-```jsonc
-// Automatically generate JavaScript
-"compiler": {
-  "emit": "js"
+```noml
+; Automatically generate JavaScript
+compiler: {
+  emit: 'js'
 }
 ```
 
@@ -3427,9 +3427,9 @@ Controls whether anonymous function type syntax (e.g. `cb ()()`) is permitted. D
 
 Specifies a list of C libraries to link:
 
-```jsonc
-"compiler": {
-  "link-libs": ["crypto", "ssl"]
+```noml
+compiler: {
+  link-libs: ['crypto', 'ssl',]
 }
 ```
 

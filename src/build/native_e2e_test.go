@@ -7,20 +7,21 @@ import (
 	"testing"
 )
 
-// writeNativeProject lays out a package.jsonc with compiler.link-libs plus a
+// writeNativeProject lays out a package.noml with compiler.link-libs plus a
 // main.no whose native bind intent is supplied by main, returning main.no.
+// linkLibs is the noml array body (single-quoted elements, comma separated).
 func writeNativeProject(t *testing.T, linkLibs string, main string) string {
 	t.Helper()
 	dir := t.TempDir()
 	manifest := `{
-  "name": "nativeffi",
-  "compiler": {
-    "emit": "js",
-    "link-libs": [` + linkLibs + `]
+  name: 'nativeffi'
+  compiler: {
+    emit: 'js'
+    link-libs: [` + linkLibs + `]
   }
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	mainPath := filepath.Join(dir, "main.no")
@@ -33,7 +34,7 @@ func writeNativeProject(t *testing.T, linkLibs string, main string) string {
 // A bind=ffi program with link-libs emits the koffi loader and symbol binding
 // end to end through BuildJSEx (module merge + native policy + codegen).
 func TestBuildNativeFFIEndToEnd(t *testing.T) {
-	mainPath := writeNativeProject(t, `"sqlite3"`,
+	mainPath := writeNativeProject(t, `'sqlite3'`,
 		`#{bind = ffi}
 # /src/sqlite
 #{c}
@@ -69,7 +70,7 @@ main()
 // bind=ffi forced to browser is a build-time error (never emits a doomed
 // artifact).
 func TestBuildNativeFFIBrowserRejected(t *testing.T) {
-	mainPath := writeNativeProject(t, `"sqlite3"`,
+	mainPath := writeNativeProject(t, `'sqlite3'`,
 		`#{bind = ffi}
 # /src/sqlite
 #{c}
@@ -86,7 +87,7 @@ _sqlite3-open = (filename str, db **byte) (rc i32)
 
 // A bind=ffi program with no #{c} extern is a build error.
 func TestBuildNativeFFINoExtern(t *testing.T) {
-	mainPath := writeNativeProject(t, `"sqlite3"`,
+	mainPath := writeNativeProject(t, `'sqlite3'`,
 		`#{bind = ffi}
 # /src/sqlite
 main = () { }
@@ -98,7 +99,7 @@ main()
 	}
 }
 
-// A bind=wasm program declares its wasm specifier in package.jsonc and emits the
+// A bind=wasm program declares its wasm specifier in package.noml and emits the
 // wasm bootstrap; the wasm specifier reaches ESMImports for the browser import
 // map.
 func TestBuildNativeWasmEndToEnd(t *testing.T) {
@@ -133,12 +134,12 @@ func writeWasmNativeProject(t *testing.T, main string) string {
 	t.Helper()
 	dir := t.TempDir()
 	manifest := `{
-  "name": "nativewasm",
-  "dependencies": { "@sqlite.org/sqlite-wasm": "^3.49.0" },
-  "compiler": { "emit": "js" }
+  name: 'nativewasm'
+  dependencies: ['@sqlite.org/sqlite-wasm:^3.49.0']
+  compiler: { emit: 'js' }
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	mainPath := filepath.Join(dir, "main.no")
@@ -152,11 +153,11 @@ func writeWasmNativeProject(t *testing.T, main string) string {
 func TestBuildNoNativeNoMachinery(t *testing.T) {
 	dir := t.TempDir()
 	manifest := `{
-  "name": "plain",
-  "compiler": { "emit": "js" }
+  name: 'plain'
+  compiler: { emit: 'js' }
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	mainPath := filepath.Join(dir, "main.no")
@@ -181,11 +182,11 @@ func writeLocalWasmProject(t *testing.T, wasm string) string {
 	t.Helper()
 	dir := t.TempDir()
 	manifest := `{
-  "name": "localwasm",
-  "compiler": { "emit": "js" }
+  name: 'localwasm'
+  compiler: { emit: 'js' }
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	main := `#{bind = wasm, wasm = '` + wasm + `'}
@@ -231,11 +232,11 @@ func TestBuildWasmBareSpecifierStillRequiresDependency(t *testing.T) {
 func TestLocalESMAssets(t *testing.T) {
 	dir := t.TempDir()
 	manifest := `{
-  "name": "localassets",
-  "compiler": { "emit": "js" }
+  name: 'localassets'
+  compiler: { emit: 'js' }
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	main := `#{bind = wasm, wasm = './math-wasm.mjs'}
@@ -256,7 +257,7 @@ square = (x f64) (r f64)
 
 	// A program with no ESM imports at all reports none, without error.
 	plain := t.TempDir()
-	if err := os.WriteFile(filepath.Join(plain, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(plain, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(plain, "main.no"), []byte("main = () { print('hi') }\nmain()\n"), 0644); err != nil {
@@ -276,11 +277,11 @@ square = (x f64) (r f64)
 func TestCheckESMDepsSkipsRelativeSpecifiers(t *testing.T) {
 	dir := t.TempDir()
 	manifest := `{
-  "name": "localdeps",
-  "compiler": { "emit": "js" }
+  name: 'localdeps'
+  compiler: { emit: 'js' }
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "package.jsonc"), []byte(manifest), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.noml"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	main := `#{bind = wasm, wasm = './math-wasm.mjs'}

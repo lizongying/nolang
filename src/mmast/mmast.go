@@ -9,12 +9,12 @@
 //
 //	ast.gob        唯一本體：原始 AST（直接就是 parser.CachedProgram，
 //	               與磁盤 AST 快取同型別同編碼面）
-//	package.jsonc  包的原始清單（可選：源目錄有 package.jsonc 時原樣附上一份，
+//	package.noml   包的原始清單（可選：源目錄有 package.noml 時原樣附上一份，
 //	               讓消費端 no add 不解包仓库就能拿到 name/version/dependencies）
 //
 // 版本資訊不入流（先是獨立 manifest.gob 條目、後是流内 ZipVer/AstVer 前置欄，
 // 兩皆摈除）：std 的 .ast.zip 随编译器下发（同 build 產物，寫讀必同代）；
-// 第三方包的識別資訊在 package.jsonc。唯一陳舊風險是本機殘留快取——由
+// 第三方包的識別資訊在 package.noml。唯一陳舊風險是本機殘留快取——由
 // ASTZipCachePath 把 ASTVersion+ZipVer 編進檔名做路徑鍵控（與磁盤 AST 快取同法）：
 // 版本 bump 即路徑變，舊檔自然不被讀，std 走 miss→自動重建，硬錯都不需要。
 //
@@ -46,12 +46,13 @@ import (
 // 2026-10-16.7：取消 manifest.gob（版本閘壓進 ast.gob 流内前置欄）。
 // 2026-10-16.8：版本資訊不入流——std 随编译器下发、第三方識別靠 package.jsonc；
 //               本機陳舊快取由 ASTZipCachePath 檔名鍵控 ASTVersion+ZipVer 自動失效。
-const ZipVer = "2026-10-16.8"
+// 2026-10-16.9：配置格式硬切 .jsonc → .noml，zip 條目名改為 package.noml。
+const ZipVer = "2026-10-16.9"
 
 // zip 內的條目名。
 const (
 	treeName    = "ast.gob"
-	packageName = "package.jsonc"
+	packageName = "package.noml"
 )
 
 // ── 寫出 ────────────────────────────────────────────────────────────────────
@@ -63,8 +64,8 @@ type ZipStats struct {
 }
 
 // WriteASTZip 把 *Program 打包成 <tool>.ast.zip 的內容並寫進 w；
-// pkgJSONC 非空時以 package.jsonc 條目原樣附上（不改寫、不正規化）。
-func WriteASTZip(w io.Writer, prog *parser.Program, pkgJSONC []byte) (*ZipStats, error) {
+// pkgNoml 非空時以 package.noml 條目原樣附上（不改寫、不正規化）。
+func WriteASTZip(w io.Writer, prog *parser.Program, pkgNoml []byte) (*ZipStats, error) {
 	if prog == nil {
 		return nil, fmt.Errorf("mmast: nil program")
 	}
@@ -85,12 +86,12 @@ func WriteASTZip(w io.Writer, prog *parser.Program, pkgJSONC []byte) (*ZipStats,
 		return nil, fmt.Errorf("mmast: encode ast: %w", err)
 	}
 
-	if len(pkgJSONC) > 0 {
+	if len(pkgNoml) > 0 {
 		pw, err := zw.Create(packageName)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := pw.Write(pkgJSONC); err != nil {
+		if _, err := pw.Write(pkgNoml); err != nil {
 			return nil, err
 		}
 	}
@@ -117,7 +118,7 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 
 // ASTZip 描述讀入的 zip 的附帶資訊。
 type ASTZip struct {
-	PackageJSONC []byte // zip 內附的 package.jsonc（無則 nil）
+	PackageNoml []byte // zip 內附的 package.noml（無則 nil）
 }
 
 // readZipEntries 讀出 zip 的所有條目（測試用：逐條校驗佈局）。
@@ -195,7 +196,7 @@ func cachePathPart(s string) string {
 
 // ReadASTZip 解析 <tool>.ast.zip 的內容，還原成 *Program。
 // 版本閘不在流内——由 ASTZipCachePath 的檔名鍵控（std 随编译器下发、第三方識別
-// 在 package.jsonc，跨代讀取場景不存在）。gob 型別名不匹配（舊 astDoc/mm 格式）
+// 在 package.noml，跨代讀取場景不存在）。gob 型別名不匹配（舊 astDoc/mm 格式）
 // 會直接報錯，不会静默錯解。
 //
 // 語義視圖用**空配置**重建：本函式不知道打包端當初的解析輸入（打包者與消費者
@@ -224,5 +225,5 @@ func ReadASTZipWith(data []byte, cfg parser.SemRebuildConfig) (*parser.Program, 
 	}
 	// 分發物只有語法樹（與磁碟 AST 快取同一個 CachedProgram），衍生事實一律重建。
 	parser.BuildSemViews(cp.Prog, cfg)
-	return cp.Prog, &ASTZip{PackageJSONC: byName[packageName]}, nil
+	return cp.Prog, &ASTZip{PackageNoml: byName[packageName]}, nil
 }

@@ -1,14 +1,13 @@
 package pkg
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// CompilerOptions 表示 package.jsonc 的 compiler 區塊選項
+// CompilerOptions 表示 package.noml 的 compiler 區塊選項
 type CompilerOptions struct {
 	AnonymousFnType bool   `json:"anonymous-fn-type"`
 	Version         string `json:"version,omitempty"`
@@ -27,7 +26,7 @@ type CompilerOptions struct {
 	ESMCDN string `json:"esm-cdn,omitempty"`
 }
 
-// Package 表示 package.jsonc 定義的專案套件
+// Package 表示 package.noml 定義的專案套件
 type Package struct {
 	Name            string            `json:"name"`
 	Version         string            `json:"version,omitempty"`
@@ -44,133 +43,20 @@ type Package struct {
 	DevDependencies map[string]string `json:"dev-dependencies,omitempty"`
 	Ignore          []string          `json:"ignore,omitempty"`
 	Alias           map[string]string `json:"alias,omitempty"`
-	Workspace       string            `json:"workspace,omitempty"` // 已廢棄：workspace 根目錄現由 workspace.jsonc 自動偵測
+	Workspace       string            `json:"workspace,omitempty"` // 已廢棄：workspace 根目錄現由 workspace.noml 自動偵測
 	Mirrors         []string          `json:"mirrors,omitempty"`   // 下載鏡像清單（依序嘗試）
 	Compiler        CompilerOptions   `json:"compiler,omitempty"`
 	Output          string            `json:"output,omitempty"` // 輸出目錄（如 "./dist"）
-	RootDir         string            // 套件根目錄（含 package.jsonc）
+	RootDir         string            // 套件根目錄（含 package.noml）
 	workspaceRoot   string            // 解析後的絕對工作區根目錄路徑
-	wsMap           WorkspaceMap      // 快取的 workspace.jsonc 映射
+	wsMap           WorkspaceMap      // 快取的 workspace.noml 映射
 	warned          bool              // 是否已輸出過 workspace 版本警告
 	lockFile        *LockFile         // 已載入的鎖檔案（可選）
 	sumFile         *SumFile          // 已載入的總和檔案（可選）
 	depGraph        *DependencyGraph  // 已解析的依賴圖（可選）
 }
 
-// StripJSONC 移除 JSONC 中的 // 和 /* */ 註解及尾隨逗號
-func StripJSONC(raw []byte) []byte {
-	return stripJSONC(raw)
-}
-
-// stripJSONC 移除 JSONC 中的 // 和 /* */ 註解
-func stripJSONC(raw []byte) []byte {
-	s := string(raw)
-	var out strings.Builder
-	inStr := false
-	inLine := false
-	inBlock := false
-	runes := []rune(s)
-
-	for i := 0; i < len(runes); i++ {
-		ch := runes[i]
-
-		if inStr {
-			out.WriteRune(ch)
-			if ch == '"' && (i == 0 || runes[i-1] != '\\') {
-				inStr = false
-			}
-			continue
-		}
-
-		if inLine {
-			if ch == '\n' {
-				inLine = false
-				out.WriteRune(ch)
-			}
-			continue
-		}
-
-		if inBlock {
-			if ch == '*' && i+1 < len(runes) && runes[i+1] == '/' {
-				inBlock = false
-				i++
-			}
-			continue
-		}
-
-		if ch == '"' {
-			inStr = true
-			out.WriteRune(ch)
-			continue
-		}
-
-		if ch == '/' && i+1 < len(runes) {
-			next := runes[i+1]
-			if next == '/' {
-				inLine = true
-				i++
-				continue
-			}
-			if next == '*' {
-				inBlock = true
-				i++
-				continue
-			}
-		}
-
-		out.WriteRune(ch)
-	}
-
-	// 移除物件/陣列結尾前的尾隨逗號
-	result := out.String()
-	result = removeTrailingCommas(result)
-
-	return []byte(result)
-}
-
-// removeTrailingCommas 移除 JSON 中物件/陣列結尾前的尾隨逗號
-// 例如 {"a": 1,} → {"a": 1} 或 [1, 2,] → [1, 2]
-func removeTrailingCommas(s string) string {
-	var out strings.Builder
-	inStr := false
-	runes := []rune(s)
-
-	for i := 0; i < len(runes); i++ {
-		ch := runes[i]
-
-		if inStr {
-			out.WriteRune(ch)
-			if ch == '"' && (i == 0 || runes[i-1] != '\\') {
-				inStr = false
-			}
-			continue
-		}
-
-		if ch == '"' {
-			inStr = true
-			out.WriteRune(ch)
-			continue
-		}
-
-		// 跳過 // 註解（防止 "key,//comment" 的情況，但這裡輸入已無註解）
-		// 移除尾隨逗號：逗號後跟空白後跟 } 或 ]
-		if ch == ',' {
-			// 向前查找，忽略空白
-			j := i + 1
-			for j < len(runes) && (runes[j] == ' ' || runes[j] == '\t' || runes[j] == '\n' || runes[j] == '\r') {
-				j++
-			}
-			if j < len(runes) && (runes[j] == '}' || runes[j] == ']') {
-				// 跳過逗號，不寫入
-				continue
-			}
-		}
-
-		out.WriteRune(ch)
-	}
-
-	return out.String()
-}
+// StripJSONC 已移除：配置檔格式硬切 noml（見 noml.go）。
 
 // IsIgnored 判斷給定的檔案路徑是否匹配 ignore 列表中的任一模式。
 //
@@ -250,33 +136,36 @@ func (p *Package) IsIgnored(filePath string) bool {
 	return false
 }
 
-// LoadPackage 從 dir 目錄尋找並解析 package.jsonc
+// LoadPackage 從 dir 目錄尋找並解析 package.noml
 func LoadPackage(dir string) (*Package, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	// 向上尋找 package.jsonc
+	// 向上尋找 package.noml
 	root := abs
 	for {
-		candidate := filepath.Join(root, "package.jsonc")
+		candidate := filepath.Join(root, PackageManifestName)
 		if _, err := os.Stat(candidate); err == nil {
 			raw, err := os.ReadFile(candidate)
 			if err != nil {
 				return nil, fmt.Errorf("reading %s: %w", candidate, err)
 			}
-			cleaned := stripJSONC(raw)
+			m, err := ParseNomlMap(raw)
+			if err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", candidate, err)
+			}
 			var pkg Package
-			if err := json.Unmarshal(cleaned, &pkg); err != nil {
+			if err := DecodeInto(m, &pkg); err != nil {
 				return nil, fmt.Errorf("parsing %s: %w", candidate, err)
 			}
 			pkg.RootDir = root
 
-			// 自動偵測 workspace 根目錄：向上搜尋 workspace.jsonc
+			// 自動偵測 workspace 根目錄：向上搜尋 workspace.noml
 			wsRoot := root
 			for {
-				candidate := filepath.Join(wsRoot, "workspace.jsonc")
+				candidate := filepath.Join(wsRoot, WorkspaceFileName)
 				if _, err := os.Stat(candidate); err == nil {
 					pkg.workspaceRoot = wsRoot
 					break
@@ -288,12 +177,12 @@ func LoadPackage(dir string) (*Package, error) {
 				wsRoot = parent
 			}
 
-		// 快取 workspace.jsonc 映射，避免後續重複讀取磁碟
-		if pkg.workspaceRoot != "" {
-			pkg.wsMap, _ = loadWorkspaceMap(pkg.workspaceRoot)
-		}
-		// 警告依賴版本約束不當（本地包應用 *，線上包應用版本號）
-		pkg.warnWorkspaceDepVersion()
+			// 快取 workspace.noml 映射，避免後續重複讀取磁碟
+			if pkg.workspaceRoot != "" {
+				pkg.wsMap, _ = loadWorkspaceMap(pkg.workspaceRoot)
+			}
+			// 警告依賴版本約束不當（本地包應用 *，線上包應用版本號）
+			pkg.warnWorkspaceDepVersion()
 
 			// 補上預設 alias
 			if pkg.Alias == nil {
@@ -322,8 +211,8 @@ func LoadPackage(dir string) (*Package, error) {
 	return nil, nil // 沒有找到套件
 }
 
-// WorkspaceRoot 返回工作區根目錄（workspace.jsonc 所在目錄）。
-// 若未偵測到 workspace.jsonc 則返回空字串。
+// WorkspaceRoot 返回工作區根目錄（workspace.noml 所在目錄）。
+// 若未偵測到 workspace.noml 則返回空字串。
 func (p *Package) WorkspaceRoot() string {
 	if p == nil {
 		return ""
@@ -351,38 +240,44 @@ func (p *Package) ResolvePath(inputPath string) string {
 	return filepath.Clean(filepath.Join(p.RootDir, inputPath))
 }
 
-// WorkspaceMap 表示 workspace.jsonc 解析結果
+// WorkspaceMap 表示 workspace.noml 解析結果
 // key 為套件短名稱，value 為相對於 workspaceRoot 的本地路徑
 type WorkspaceMap map[string]string
 
-// loadWorkspaceMap 從磁碟讀取並解析 workspace.jsonc，同時合併 .workspace.jsonc。
+// loadWorkspaceMap 從磁碟讀取並解析 workspace.noml，同時合併 .workspace.noml。
 //
-// 加載順序：先加載公共配置 workspace.jsonc，再加載私有配置 .workspace.jsonc。
+// 加載順序：先加載公共配置 workspace.noml，再加載私有配置 .workspace.noml。
 // 相同的 key，私有配置覆蓋公共配置；新 key 相互疊加。
 // 這分離了「工程標準化配置」與「個人本地調試配置」，避免臨時 fork 映射污染項目公共配置。
 func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
-	// 1. 加載公共配置 workspace.jsonc
-	wsFile := filepath.Join(workspaceRoot, "workspace.jsonc")
+	// 1. 加載公共配置 workspace.noml
+	wsFile := filepath.Join(workspaceRoot, WorkspaceFileName)
 	raw, err := os.ReadFile(wsFile)
 	if err != nil {
-		return nil, nil // workspace.jsonc 可選
+		return nil, nil // workspace.noml 可選
 	}
 
-	cleaned := stripJSONC(raw)
+	m, err := ParseNomlMap(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
+	}
 	var ws WorkspaceMap
-	if err := json.Unmarshal(cleaned, &ws); err != nil {
+	if err := DecodeInto(m, &ws); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
 	}
 	if ws == nil {
 		ws = make(WorkspaceMap)
 	}
 
-	// 2. 加載私有配置 .workspace.jsonc（可選，覆蓋公共配置）
-	privateFile := filepath.Join(workspaceRoot, ".workspace.jsonc")
+	// 2. 加載私有配置 .workspace.noml（可選，覆蓋公共配置）
+	privateFile := filepath.Join(workspaceRoot, WorkspacePrivateName)
 	if privateRaw, pErr := os.ReadFile(privateFile); pErr == nil {
-		privateCleaned := stripJSONC(privateRaw)
+		privateM, err := ParseNomlMap(privateRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", privateFile, err)
+		}
 		var privateWs WorkspaceMap
-		if err := json.Unmarshal(privateCleaned, &privateWs); err != nil {
+		if err := DecodeInto(privateM, &privateWs); err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", privateFile, err)
 		}
 		// 合併：私有配置覆蓋公共配置，新 key 疊加
@@ -394,7 +289,7 @@ func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
 	return ws, nil
 }
 
-// LoadWorkspace 載入 workspace.jsonc（優先使用快取）
+// LoadWorkspace 載入 workspace.noml（優先使用快取）
 func (p *Package) LoadWorkspace() (WorkspaceMap, error) {
 	if p == nil || p.workspaceRoot == "" {
 		return nil, nil
@@ -477,13 +372,13 @@ func PackageShortName(depKey string) string {
 // resolveDependency 解析依賴路徑，返回本地套件目錄
 //
 // 工作區邊界約束：
-//   - package.jsonc 中的本地路徑只能以 "/" 開頭（工作區相對），
+//   - package.noml 中的本地路徑只能以 "/" 開頭（工作區相對），
 //     禁止 "./"、"../" 和作業系統絕對路徑。
-//   - 唯一允許突破工作區邊界的入口是 workspace.jsonc / .workspace.jsonc 映射。
+//   - 唯一允許突破工作區邊界的入口是 workspace.noml / .workspace.noml 映射。
 //
 // 解析順序：
 // 1. "/" 前綴 → 工作區相對路徑解析（嚴格限制在工作區內）
-// 2. workspace.jsonc 中有匹配（短名稱或直接鍵）→ 遞迴解析（支援跨包映射鏈，允許逃逸工作區）
+// 2. workspace.noml 中有匹配（短名稱或直接鍵）→ 遞迴解析（支援跨包映射鏈，允許逃逸工作區）
 // 3. 無本地覆蓋 → 下載線上套件
 func (p *Package) resolveDependency(importPath string) (string, error) {
 	key, version, ok := p.MatchDependency(importPath)
@@ -491,9 +386,9 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 		return "", nil
 	}
 
-	// 禁止 "./" 和 "../" 前綴（package.jsonc 不允許相對跳轉）
+	// 禁止 "./" 和 "../" 前綴（package.noml 不允許相對跳轉）
 	if strings.HasPrefix(key, "./") || strings.HasPrefix(key, "../") {
-		return "", fmt.Errorf("dependency %q: relative paths (./ ../) are not allowed in package.jsonc; use `/` prefix for workspace-relative paths", key)
+		return "", fmt.Errorf("dependency %q: relative paths (./ ../) are not allowed in package.noml; use `/` prefix for workspace-relative paths", key)
 	}
 
 	// "/" 前綴：相對於 workspace 根目錄解析（嚴格限制在工作區內）
@@ -502,7 +397,7 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 		localDir := filepath.Join(p.workspaceRoot, relPath)
 		// 安全檢查：解析後的路徑必須在工作區根目錄內
 		if !isWithinWorkspace(localDir, p.workspaceRoot) {
-			return "", fmt.Errorf("dependency %q: path escapes workspace root; package.jsonc dependencies must stay within the workspace", key)
+			return "", fmt.Errorf("dependency %q: path escapes workspace root; package.noml dependencies must stay within the workspace", key)
 		}
 		if info, err := os.Stat(localDir); err == nil && info.IsDir() {
 			return filepath.Clean(localDir), nil
@@ -510,8 +405,8 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 		return "", fmt.Errorf("workspace-local dependency path %q not found", key)
 	}
 
-	// 檢查 workspace.jsonc 是否有本地覆蓋（遞迴解析，支援跨包映射鏈）
-	// workspace.jsonc / .workspace.jsonc 是唯一允許逃逸工作區邊界的入口
+	// 檢查 workspace.noml 是否有本地覆蓋（遞迴解析，支援跨包映射鏈）
+	// workspace.noml / .workspace.noml 是唯一允許逃逸工作區邊界的入口
 	ws, _ := p.LoadWorkspace()
 	localDir, found, err := resolveWorkspaceChain(key, p.workspaceRoot, ws, nil)
 	if err != nil {
@@ -529,10 +424,10 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 // warnWorkspaceDepVersion 警告依賴版本約束不當（僅首次）
 //
 // 規則：
-//   - 本地包（在 workspace.jsonc 中存在，或依賴鍵以 "/" 開頭）：
+//   - 本地包（在 workspace.noml 中存在，或依賴鍵以 "/" 開頭）：
 //     應使用 "*"，若指定了版本號則警告。
-//   - "./" 和 "../" 前綴的依賴鍵：報錯（不允許在 package.jsonc 中使用）。
-//   - 線上包（不在 workspace.jsonc 中且非路徑形式）：
+//   - "./" 和 "../" 前綴的依賴鍵：報錯（不允許在 package.noml 中使用）。
+//   - 線上包（不在 workspace.noml 中且非路徑形式）：
 //     版本號和 "*" 均可，不警告。
 func (p *Package) warnWorkspaceDepVersion() {
 	if p == nil || p.warned || len(p.Dependencies) == 0 {
@@ -543,10 +438,10 @@ func (p *Package) warnWorkspaceDepVersion() {
 	for key, version := range p.Dependencies {
 		// 禁止 "./" 和 "../" 前綴
 		if strings.HasPrefix(key, "./") || strings.HasPrefix(key, "../") {
-			fmt.Fprintf(os.Stderr, "Error: dependency %q: relative paths (./ ../) are not allowed in package.jsonc; use `/` prefix for workspace-relative paths\n", key)
+			fmt.Fprintf(os.Stderr, "Error: dependency %q: relative paths (./ ../) are not allowed in package.noml; use `/` prefix for workspace-relative paths\n", key)
 			continue
 		}
-		// 先判斷是否為本地包（路徑形式或 workspace.jsonc 中直接匹配）
+		// 先判斷是否為本地包（路徑形式或 workspace.noml 中直接匹配）
 		isLocal := isLocalPathDep(key) || isWorkspaceLocalDepStatic(ws, key, p.workspaceRoot)
 		if isLocal {
 			if version != "" && version != "*" {
@@ -574,7 +469,7 @@ func isRelativeJumpPath(path string) bool {
 }
 
 // isWorkspaceLocalDepStatic 判斷依賴鍵是否為 workspace 本地套件（無需 *Package 接收者）
-// 使用遞迴解析，支援被依賴包自帶 workspace.jsonc 的跨包映射。
+// 使用遞迴解析，支援被依賴包自帶 workspace.noml 的跨包映射。
 func isWorkspaceLocalDepStatic(ws WorkspaceMap, key, workspaceRoot string) bool {
 	if workspaceRoot == "" {
 		// 無工作區根目錄時，退路為單層查找
@@ -588,7 +483,7 @@ func isWorkspaceLocalDepStatic(ws WorkspaceMap, key, workspaceRoot string) bool 
 	return found
 }
 
-// lookupWorkspaceMap 在 workspace.jsonc 中查找依賴鍵對應的本地路徑。
+// lookupWorkspaceMap 在 workspace.noml 中查找依賴鍵對應的本地路徑。
 // 查找順序：短名稱匹配 → 直接鍵匹配。
 //
 // 映射值（localPath）的解析規則：
@@ -609,7 +504,7 @@ func lookupWorkspaceMap(ws WorkspaceMap, key, workspaceRoot string) (string, boo
 			return dir, true
 		}
 	}
-	// 2. 直接鍵匹配（workspace.jsonc 可直接以完整依賴鍵註冊）
+	// 2. 直接鍵匹配（workspace.noml 可直接以完整依賴鍵註冊）
 	if localPath, exists := ws[key]; exists {
 		if dir, ok := resolveWorkspaceMapValue(localPath, workspaceRoot); ok {
 			return dir, true
@@ -618,14 +513,14 @@ func lookupWorkspaceMap(ws WorkspaceMap, key, workspaceRoot string) (string, boo
 	return "", false
 }
 
-// resolveWorkspaceMapValue 解析 workspace.jsonc 映射值為本地目錄。
+// resolveWorkspaceMapValue 解析 workspace.noml 映射值為本地目錄。
 //
 // 支援三種路徑形式：
 //   - 工作區相對路徑（以 "/" 開頭）：workspaceRoot + path
 //   - 相對跳轉路徑（以 "./" 或 "../" 開頭）：相對於 workspaceRoot 解析，允許逃逸工作區邊界
 //   - 作業系統絕對路徑：直接使用（允許指向工作區外部，用於 fork、外部組件）
 //
-// workspace.jsonc / .workspace.jsonc 是唯一允許突破工作區邊界的入口。
+// workspace.noml / .workspace.noml 是唯一允許突破工作區邊界的入口。
 func resolveWorkspaceMapValue(localPath, workspaceRoot string) (string, bool) {
 	// 相對跳轉路徑（"./" 或 "../"）：相對於 workspaceRoot 解析
 	if strings.HasPrefix(localPath, "./") || strings.HasPrefix(localPath, "../") {
@@ -674,12 +569,12 @@ func (p *Package) lookupWorkspaceLocal(key string) (string, bool) {
 	return dir, found
 }
 
-// resolveWorkspaceChain 遞迴解析依賴鍵通過多層 workspace.jsonc 映射。
+// resolveWorkspaceChain 遞迴解析依賴鍵通過多層 workspace.noml 映射。
 //
-// 當依賴鍵在當前 workspace.jsonc 中找到映射後，檢查目標目錄是否自帶 workspace.jsonc。
+// 當依賴鍵在當前 workspace.noml 中找到映射後，檢查目標目錄是否自帶 workspace.noml。
 // 若有，則繼續在同一鍵的基礎上查找，形成自然的解析鏈。
 //
-// 這是 Nolang 的核心差異化能力：被依賴的包可以自帶 workspace.jsonc，
+// 這是 Nolang 的核心差異化能力：被依賴的包可以自帶 workspace.noml，
 // 內部繼續存在映射規則，形成自然的跨包解析鏈。
 // 適用場景：基礎庫統一內部別名、標準化導入路徑、多層庫兼容遷移。
 // 主流 Go/Cargo 不具備此能力，它們的 replace/patch 僅生效於當前項目。
@@ -722,8 +617,8 @@ func resolveWorkspaceChain(key, workspaceRoot string, ws WorkspaceMap, visitStac
 		return "", false, nil
 	}
 
-	// 檢查目標目錄是否有自己的 workspace.jsonc（遞迴解析）
-	nestedWsFile := filepath.Join(localDir, "workspace.jsonc")
+	// 檢查目標目錄是否有自己的 workspace.noml（遞迴解析）
+	nestedWsFile := filepath.Join(localDir, WorkspaceFileName)
 	if _, err := os.Stat(nestedWsFile); err == nil {
 		// 遞迴：在同一鍵的基礎上繼續查找
 		deeperDir, deeperFound, err := resolveWorkspaceChain(key, localDir, nil, append(visitStack, workspaceRoot))
@@ -814,7 +709,7 @@ func (p *Package) GetDependencyGraph() *DependencyGraph {
 }
 
 // isWorkspaceLocalDep 判斷依賴鍵是否為本地套件
-// 如果依賴鍵為本地路徑形式（以 "/" 開頭），或在 workspace.jsonc 中有匹配（含遞迴），則返回 true
+// 如果依賴鍵為本地路徑形式（以 "/" 開頭），或在 workspace.noml 中有匹配（含遞迴），則返回 true
 func (p *Package) isWorkspaceLocalDep(key string) bool {
 	if isLocalPathDep(key) {
 		return true

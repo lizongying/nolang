@@ -12,8 +12,8 @@ When resolving **embed paths** or **import paths** (`use` / `#` directives, embe
 resources) in the Nolang compiler, resolve them to a **canonical absolute path relative
 to the workspace root** — **never relative to the importing source file's directory**.
 
-- "Workspace root" = the directory containing `workspace.jsonc`, i.e. `pkg.WorkspaceRoot()`.
-  (The directory containing `package.jsonc` is the **package root**, `pkg.RootDir` — a distinct,
+- "Workspace root" = the directory containing `workspace.noml`, i.e. `pkg.WorkspaceRoot()`.
+  (The directory containing `package.noml` is the **package root**, `pkg.RootDir` — a distinct,
   lower level: the workspace root sits above the package root and may contain multiple
   packages. Do not conflate the two.)
 - After resolving, run `filepath.Clean` (strip `.`/`..`, normalize separators) to get a
@@ -44,8 +44,8 @@ to the workspace root** — **never relative to the importing source file's dire
 
 Shared helpers live in `src/package/paths.go` (package `pkg`, stdlib-only, no import cycle):
 
-- `FindWorkspaceRoot(start)` — walk up from `start` to the dir containing `workspace.jsonc`.
-- `FindPackageRoot(start)` — walk up to the dir containing `package.jsonc` (fallback).
+- `FindWorkspaceRoot(start)` — walk up from `start` to the dir containing `workspace.noml`.
+- `FindPackageRoot(start)` — walk up to the dir containing `package.noml` (fallback).
 - `ResolveToWorkspaceRoot(wsRoot, rel)` — canonicalize any import/embed raw path to a
   workspace-root absolute path (strips leading `/`, returns abs paths as-is, falls back to
   cwd when `wsRoot == ""`).
@@ -83,11 +83,11 @@ std module's own embed still resolves relative to its own location.
 
 ## Terminology (unified, 2026-08-02)
 
-- **workspace 工作区** — generally one repo. Marked by `workspace.jsonc` at its root.
+- **workspace 工作区** — generally one repo. Marked by `workspace.noml` at its root.
   Contains one or more packages. The workspace root is the single base for all
   embed/import path resolution.
 - **package 包** — a large compilation unit: a library or an executable. Marked by
-  `package.jsonc` at its root (the *package root*). Declares dependencies, emit backend,
+  `package.noml` at its root (the *package root*). Declares dependencies, emit backend,
   etc. A package contains one or more modules.
 - **module 模块** — generally one source file (`.no`). The current convention is
   **one file = one module**. Loading a module = loading a single `.no` file.

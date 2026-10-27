@@ -46,9 +46,9 @@ func irHasFunc(ir, fn string) bool {
 func TestTransitiveImportLLVM(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// workspace.jsonc — defines the workspace root for path resolution.
-	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.jsonc"),
-		[]byte(`{"test":"."}`), 0644); err != nil {
+	// workspace.noml — defines the workspace root for path resolution.
+	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
+		[]byte(`{ test: '.' }`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -107,8 +107,8 @@ func TestTransitiveImportLLVM(t *testing.T) {
 func TestTransitiveImportJS(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.jsonc"),
-		[]byte(`{"test":"."}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
+		[]byte(`{ test: '.' }`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -196,8 +196,8 @@ func TestTransitiveImportJS(t *testing.T) {
 func TestTransitiveImportThreeLevels(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.jsonc"),
-		[]byte(`{"test":"."}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
+		[]byte(`{ test: '.' }`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -258,8 +258,8 @@ func TestTransitiveImportThreeLevels(t *testing.T) {
 func TestTransitiveImportDiamond(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.jsonc"),
-		[]byte(`{"test":"."}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
+		[]byte(`{ test: '.' }`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -333,8 +333,8 @@ func TestTransitiveImportDiamond(t *testing.T) {
 func TestTransitiveImportEntryUsesDeepFn(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.jsonc"),
-		[]byte(`{"test":"."}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
+		[]byte(`{ test: '.' }`), 0644); err != nil {
 		t.Fatal(err)
 	}
 

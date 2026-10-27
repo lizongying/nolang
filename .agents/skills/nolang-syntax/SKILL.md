@@ -136,8 +136,8 @@ Install the Nolang extension from [VS Code Marketplace](https://marketplace.visu
 | Command                                                      | Description             |
 | ------------------------------------------------------------ | ----------------------- |
 | `no version`                                                 | Print version info      |
-| `no init`                                                    | Define the workspace (creates workspace.jsonc, no package.jsonc) |
-| `no new <name>`                                              | Create a new package under the workspace (subdir + package.jsonc, registered in workspace.jsonc) |
+| `no init`                                                    | Define the workspace (creates workspace.noml, no package.noml) |
+| `no new <name>`                                              | Create a new package under the workspace (subdir + package.noml, registered in workspace.noml) |
 | `no fmt [-w] [-d] <file\|dir>`                               | Format source code      |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [-ld-KEY=VAL] [<file\|dir>]` | Build (outputs executable) |
 | `no run [-cc <s>] [-target <s>] [-ld-KEY=VAL] [<package\|dir\|file>]`        | Build and run (package/dir/file) |
@@ -195,14 +195,14 @@ Injected variables interact with source declarations: if the source already decl
 
 Nolang separates `no init` and `no new` into two distinct steps:
 
-- `no init` —— defines the workspace in the current directory (creates `workspace.jsonc` only; **no `package.jsonc`**).
-- `no new <name>` —— creates a package under the current workspace (subdirectory `./<name>/` with its `package.jsonc`) and registers it in `workspace.jsonc`.
+- `no init` —— defines the workspace in the current directory (creates `workspace.noml` only; **no `package.noml`**).
+- `no new <name>` —— creates a package under the current workspace (subdirectory `./<name>/` with its `package.noml`) and registers it in `workspace.noml`.
 
 ```bash
 # 1) Define the workspace at the repo root
 no init
 
-# 2) Create a package (auto-registered in workspace.jsonc)
+# 2) Create a package (auto-registered in workspace.noml)
 no new foo
 
 # 3) Enter the package directory
@@ -219,41 +219,41 @@ no run
 no init
 ```
 
-`no init` only creates `workspace.jsonc` (initially an empty `{}`); it does **not** generate `package.jsonc` or `main.no`. If `workspace.jsonc` already exists, it is left untouched. Packages are added with `no new <name>`, which writes `"<name>": "./<name>"` into `workspace.jsonc`:
+`no init` only creates `workspace.noml` (initially an empty `{}`); it does **not** generate `package.noml` or `main.no`. If `workspace.noml` already exists, it is left untouched. Packages are added with `no new <name>`, which writes `"<name>": "./<name>"` into `workspace.noml`:
 
-```jsonc
+```noml
 {
-  "foo": "./foo",
-  "bar": "./bar"
+  foo: './foo'
+  bar: './bar'
 }
 ```
 
-#### Private Local Configuration (.workspace.jsonc)
+#### Private Local Configuration (.workspace.noml)
 
-Nolang supports a private local config `.workspace.jsonc` (add to `.gitignore`) alongside the shared `workspace.jsonc`. Loading: public first, then private; same keys — private overrides public; new keys — merged. This separates team-standardized config from personal local debugging overrides.
+Nolang supports a private local config `.workspace.noml` (add to `.gitignore`) alongside the shared `workspace.noml`. Loading: public first, then private; same keys — private overrides public; new keys — merged. This separates team-standardized config from personal local debugging overrides.
 
 #### Workspace Flow
 
-The compile/execute entry directory is always the **workspace directory** (where `workspace.jsonc` resides). The flow:
+The compile/execute entry directory is always the **workspace directory** (where `workspace.noml` resides). The flow:
 
 1. User runs `no build` or `no run <package>` from the workspace directory
-2. Compiler reads `workspace.jsonc`, looks up the package's subdirectory by name
-3. Loads the `package.jsonc` in that subdirectory (the **package root**), builds/runs relative to it
-4. All import paths (`# /path/to/module`) are **resolved relative to the package's `package.jsonc` directory**
+2. Compiler reads `workspace.noml`, looks up the package's subdirectory by name
+3. Loads the `package.noml` in that subdirectory (the **package root**), builds/runs relative to it
+4. All import paths (`# /path/to/module`) are **resolved relative to the package's `package.noml` directory**
 
 ```
-workspace/               ← workspace dir (workspace.jsonc lives here)
-├── workspace.jsonc      ← package name -> path mapping
+workspace/               ← workspace dir (workspace.noml lives here)
+├── workspace.noml      ← package name -> path mapping
 ├── foo/                 ← package foo
-│   ├── package.jsonc        ← foo's package root (import paths resolve from here)
+│   ├── package.noml        ← foo's package root (import paths resolve from here)
 │   ├── main.no
 │   └── lib.no
 └── bar/                 ← package bar
-    ├── package.jsonc        ← bar's package root
+    ├── package.noml        ← bar's package root
     └── main.no
 ```
 
-> **Important**: Import paths are relative to the package's own `package.jsonc` directory, **not** the workspace root. If a nested `package.jsonc` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `package.jsonc` as the package root.
+> **Important**: Import paths are relative to the package's own `package.noml` directory, **not** the workspace root. If a nested `package.noml` exists in a subdirectory within a package, `LoadPackage` searches upward and uses the nearest `package.noml` as the package root.
 
 ### Build & Run
 
@@ -267,7 +267,7 @@ no build -target x86_64-linux-gnu  # Cross-compile (specify target platform)
 
 # Run (build + execute)
 no run                      # Build and execute main.no in the current directory
-no run foo                  # Run package 'foo' from the workspace (resolves workspace.jsonc)
+no run foo                  # Run package 'foo' from the workspace (resolves workspace.noml)
 no run ./foo                # Run the ./foo directory's main.no
 no run main.no              # Run a specified .no file
 no run -cc zig
@@ -277,9 +277,9 @@ no run -target aarch64-macos-gnu
 `no run` resolves its argument in this order:
 1. an existing `.no` file -> run that file
 2. an existing directory -> run its `main.no`
-3. a package name registered in the nearest `workspace.jsonc` -> run that package's `main.no`
+3. a package name registered in the nearest `workspace.noml` -> run that package's `main.no`
 
-With no argument it runs `main.no` in the current directory. A bare workspace root (has `workspace.jsonc` but no `main.no`) requires `no run <package>`.
+With no argument it runs `main.no` in the current directory. A bare workspace root (has `workspace.noml` but no `main.no`) requires `no run <package>`.
 
 ### Cross-compilation Targets
 
@@ -360,30 +360,30 @@ no uninstall pkg-name
 
 ### Project Configuration
 
-The `package.jsonc` file in the project root directory describes project information. Version values are conventionally written with a leading `v` (e.g. `"v0.1.0"`); the compiler parses them prefix-insensitively, so `"v0.1.0"` and `"0.1.0"` are treated as the same version.
+The `package.noml` file in the project root directory describes project information. Version values are conventionally written with a leading `v` (e.g. `"v0.1.0"`); the compiler parses them prefix-insensitively, so `"v0.1.0"` and `"0.1.0"` are treated as the same version.
 
-```jsonc
+```noml
 {
-  "name": "my-project",
-  "version": "v0.1.0",
-  "description": "A new Nolang project",
-  "keywords": [],
-  "author": "",
-  "email": "",
-  "organization": "",
-  "repository": "",
-  "homepage": "",
-  "license": "MIT",
-  "workspace": "",
-  "mirrors": [],
-  "dependencies": {
-    "fmt": "*",
-  },
-  "compiler": {
-    "version": "v0.1.0",
-  },
-  "output": "./dist",
-  "ignore": [],
+  name: 'my-project'
+  version: 'v0.1.0'
+  description: 'A new Nolang project'
+  keywords: []
+  author: ''
+  email: ''
+  organization: ''
+  repository: ''
+  homepage: ''
+  license: 'MIT'
+  workspace: ''
+  mirrors: []
+  dependencies: [
+    'fmt',,
+  ]
+  compiler: {
+    version: 'v0.1.0'
+  }
+  output: './dist'
+  ignore: []
 }
 ```
 
@@ -411,48 +411,46 @@ no sync
 
 ### Dependency Types & Version Rules
 
-Dependencies in `package.jsonc` are classified as **local packages** or **remote packages**. The compiler automatically determines the type and emits a warning when a local package does not use `"*"` as its version.
+Dependencies in `package.noml` are classified as **local packages** or **remote packages**. The compiler automatically determines the type and emits a warning when a local package does not use `"*"` as its version.
 
 #### Classification Rules
 
 ```
-Dependency key → lookup in workspace.jsonc (short name or full key match)
+Dependency key → lookup in workspace.noml (short name or full key match)
   ├─ Found → local package (should use "*")
   └─ Not found → check path prefix (./ or /)
       ├─ Yes → local package (should use "*")
       └─ No → remote package (use version number, no warning)
 ```
 
-1. **Lookup `workspace.jsonc`**: Search for the dependency key as a short name or full key in `workspace.jsonc`. If found, it is a local package.
-2. **Check path prefix**: If not found in `workspace.jsonc`, and the key starts with `./` (relative path) or `/` (workspace-relative path), it is also a local package.
+1. **Lookup `workspace.noml`**: Search for the dependency key as a short name or full key in `workspace.noml`. If found, it is a local package.
+2. **Check path prefix**: If not found in `workspace.noml`, and the key starts with `./` (relative path) or `/` (workspace-relative path), it is also a local package.
 3. **Otherwise → remote package**: Should specify a version number.
 
 #### Local Package Reference Forms
 
-Local packages support four reference forms, all using `"*"`:
+Local packages support the following three reference forms, all omitting the version (defaults to `"*"`):
 
-```jsonc
-"dependencies": {
-  // 1. Short name: a key registered in workspace.jsonc
-  "test2": "*",
-  // 2. Workspace-relative path: starts with /
-  "/example/test2": "*",
-  // 3. Relative path: starts with ./
-  "./test2": "*",
-  // 4. Full URL: local if workspace.jsonc has a matching mapping
-  "github.com/lizongying/nolang/test2": "*",
-}
+```noml
+dependencies: [
+  ; 1. Short name: a key registered in workspace.noml
+  'test2',
+  ; 2. Workspace-relative path: starts with /
+  '/example/test2',
+  ; 3. Full URL: local if workspace.noml has a matching mapping
+  'github.com/lizongying/nolang/test2',,
+]
 ```
 
 #### Advanced: Redirecting a Remote Package to Local
 
-`workspace.jsonc` can map a remote package name to a local path:
+`workspace.noml` can map a remote package name to a local path:
 
-```jsonc
-// workspace.jsonc
+```noml
+; workspace.noml
 {
-  "test2": "/example/test2",
-  "github.com/lizongying/nolang/test2": "/example/test2"
+  test2: '/example/test2'
+  'github.com/lizongying/nolang/test2': '/example/test2'
 }
 ```
 
@@ -464,9 +462,9 @@ If a local package uses a non-`"*"` version (e.g. `"v0.1.0"`), a warning is emit
 
 #### Recursive Workspace Mapping (Cross-Package Chains)
 
-Nolang supports recursive workspace mapping: dependency packages can carry their own `workspace.jsonc`, creating natural cross-package resolution chains. This is a core differentiator — Go/Cargo `replace`/`patch` only applies to the current project.
+Nolang supports recursive workspace mapping: dependency packages can carry their own `workspace.noml`, creating natural cross-package resolution chains. This is a core differentiator — Go/Cargo `replace`/`patch` only applies to the current project.
 
-When resolving a dependency key, the compiler checks the target directory for its own `workspace.jsonc` and follows the chain recursively. Cycle detection via a visit stack prevents infinite loops:
+When resolving a dependency key, the compiler checks the target directory for its own `workspace.noml` and follows the chain recursively. Cycle detection via a visit stack prevents infinite loops:
 
 ```
 Error: circular workspace mapping detected: /path/A → /path/B → /path/A
@@ -476,11 +474,11 @@ See [usage docs](#dependency-types--version-rules) for details.
 
 ### Mirror Configuration
 
-Configure mirror addresses in the `mirrors` array of `package.jsonc` to accelerate remote package downloads:
+Configure mirror addresses in the `mirrors` array of `package.noml` to accelerate remote package downloads:
 
-```jsonc
-"mirrors": [
-  "https://mirror.example.com/"
+```noml
+mirrors: [
+  'https://mirror.example.com/',,
 ]
 ```
 
@@ -2755,7 +2753,7 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 // use std/math.add a
 ```
 
-Import paths are resolved relative to the **workspace root** (the directory containing `workspace.jsonc`). Local packages can also be referenced by short name or full URL if they are registered in `workspace.jsonc` (see [Dependency Types & Version Rules](#dependency-types--version-rules) for details on how `workspace.jsonc` mappings affect local vs. remote classification).
+Import paths are resolved relative to the **workspace root** (the directory containing `workspace.noml`). Local packages can also be referenced by short name or full URL if they are registered in `workspace.noml` (see [Dependency Types & Version Rules](#dependency-types--version-rules) for details on how `workspace.noml` mappings affect local vs. remote classification).
 
 ### Module Prefix Rules
 
@@ -3595,12 +3593,12 @@ When using `--browser`, the compiler generates an HTML wrapper that:
 
 The HTML template is defined in `src/build/js/html_wrapper.go`.
 
-- #{embed='path/to/file'} 或 #{embed=path/to/file} — 編譯期文件嵌入：將外部文件內容嵌入為 []byte 只讀常量，路徑相對於包根目錄（package.jsonc 所在目錄）解析；變數宣告不能帶顯式初始值；嵌入數據為只讀，不參與堆釋放
+- #{embed='path/to/file'} 或 #{embed=path/to/file} — 編譯期文件嵌入：將外部文件內容嵌入為 []byte 只讀常量，路徑相對於包根目錄（package.noml 所在目錄）解析；變數宣告不能帶顯式初始值；嵌入數據為只讀，不參與堆釋放
 - #{embed='dir/'} - Directory embed: recursively reads all files in a directory, embedding them as fs.embed type (read-only filesystem). Access files at runtime via read(path)->([]byte,bool) and exists(path)->(bool). Lookup logic is pure Nolang, no C functions. Ideal for single-binary distribution (e.g. HTTP static server embedding frontend files).
 
-## package.jsonc Compiler Configuration
+## package.noml Compiler Configuration
 
-The `compiler` block in `package.jsonc` controls compiler behavior:
+The `compiler` block in `package.noml` controls compiler behavior:
 
 - `emit` (string): Output target backend. `"js"` = use JS backend (type erasure, no LLVM toolchain). Default empty = LLVM native backend. Command-line `--js` flag takes precedence.
 - `anonymous-fn-type` (bool): Whether anonymous function type syntax is permitted. Default false.
@@ -3642,7 +3640,7 @@ The two are independent and do not conflict: the annotation shapes a struct, the
 
 1. command line `--option-inline-threshold=N` (`no build` and `no run`)
 2. environment `NOLANG_OPTION_INLINE_THRESHOLD=N`
-3. `package.jsonc` → `compiler.option-inline-threshold`
+3. `package.noml` → `compiler.option-inline-threshold`
 
 **Rules**
 

@@ -1358,7 +1358,7 @@ type Module struct {
 	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值：载荷 sizeof 小于等于
 	// 它则内联进 option 的 slot，大于它则堆装箱、slot[0] 存指针。默认 24
 	// （err 载荷是 24 字节的 %str-long，24 是它能原样内联的最小值）；可配置
-	// 更大，最小 8；小于 8 是编译错误。由 build 从 package.jsonc 的
+	// 更大，最小 8；小于 8 是编译错误。由 build 从 package.noml 的
 	// compiler.option-inline-threshold（或 NOLANG_OPTION_INLINE_THRESHOLD）
 	// 填入，0 表示取默认值。
 	OptionInlineThreshold int

@@ -96,21 +96,21 @@ func TestVetFile_UnusedVar(t *testing.T) {
 }
 
 // TestVetDirVerbose_IgnoreList 验证 LSP 目录模式（VetDirVerbose）
-// 会跳过 package.jsonc 中 ignore 列表匹配的文件。
+// 会跳过 package.noml 中 ignore 列表匹配的文件。
 //
 // 回归保障：防止 LSP 目录模式跑出来的文件数量与 no vet 不一致
 // （因 ignore 列表未对齐导致多跑或少跑文件）。
 func TestVetDirVerbose_IgnoreList(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// 创建 package.jsonc，忽略 *_skip.no 文件
+	// 创建 package.noml，忽略 *_skip.no 文件
 	pkgJSON := `{
-	"name": "test-pkg",
-	"ignore": ["*_skip.no"]
+  name: 'test-pkg'
+  ignore: ['*_skip.no',]
 }`
-	pkgPath := filepath.Join(tmpDir, "package.jsonc")
+	pkgPath := filepath.Join(tmpDir, "package.noml")
 	if err := os.WriteFile(pkgPath, []byte(pkgJSON), 0644); err != nil {
-		t.Fatalf("写入 package.jsonc 失败: %v", err)
+		t.Fatalf("写入 package.noml 失败: %v", err)
 	}
 
 	// 创建两个文件：一个正常，一个应被忽略

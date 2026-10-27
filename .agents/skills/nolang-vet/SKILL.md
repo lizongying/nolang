@@ -61,7 +61,7 @@ ls -d */std/              # 常见位置：src/std/、std/、lib/std/
 ./bin/no vet <实际标准库路径>
 ```
 
-如果项目使用了 `package.jsonc` 自定义包结构，标准库可能在 `pkg/std/` 或其他自定义路径下。始终根据项目实际结构调整 vet 路径。
+如果项目使用了 `package.noml` 自定义包结构，标准库可能在 `pkg/std/` 或其他自定义路径下。始终根据项目实际结构调整 vet 路径。
 
 ## 何时执行验证
 

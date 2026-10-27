@@ -5,7 +5,7 @@ import (
 )
 
 func TestLoadPackageTestDir(t *testing.T) {
-	// 確保 tests/package.jsonc 能被正確解析
+	// 確保 tests/package.noml 能被正確解析
 	pkg, err := LoadPackage("../../tests")
 	if err != nil {
 		t.Fatalf("LoadPackage(tests) error: %v", err)
@@ -16,7 +16,7 @@ func TestLoadPackageTestDir(t *testing.T) {
 	if pkg.Name != "my-project" {
 		t.Errorf("Name = %q, want %q", pkg.Name, "my-project")
 	}
-	// package.jsonc 的 version 約定帶前導 v（見 commit 3f88ca23 與 docs/docs/usage.md），
+	// package.noml 的 version 約定帶前導 v（見 commit 3f88ca23 與 docs/docs/usage.md），
 	// 編譯器僅在比較時對前綴不敏感，解析結果原樣保留前導 v。
 	if pkg.Version != "v1.0.0" {
 		t.Errorf("Version = %q, want %q", pkg.Version, "v1.0.0")
