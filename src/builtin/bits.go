@@ -114,4 +114,31 @@ func init() {
 			ForwardFunc:  "arr-zero",
 		})
 	}
+
+	// f64.to-bits: reinterpret the 64 IEEE-754 bits of an f64 as a u64
+	// (LLVM bitcast double->i64). Needed by src/std/number.no's shortest
+	// round-trip f64.to-str (no libm, pure Nolang bigint expansion of the
+	// exact m×2^E value, then shortest decimal selection). Mirrors the
+	// project's "禁 libm、纯 .no 实现" constraint — the bitcast is a native
+	// LLVM op, not a C math call.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverF64,
+		MethodName:   "f64.to-bits",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeU64},
+		Doc:          "Reinterpret f64 bits as u64 (bitcast double->i64)",
+		ForwardFunc:  "f64-to-bits",
+	})
+
+	// u64.from-bits: inverse of f64.to-bits (bitcast i64->double). Pairs with
+	// f64.to-bits so the exact bit pattern can be recovered — useful for
+	// high-precision decimal parsing and round-trip checks.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverU64,
+		MethodName:   "u64.from-bits",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{parser.TypeF64},
+		Doc:          "Reinterpret u64 bits as f64 (bitcast i64->double)",
+		ForwardFunc:  "u64-from-bits",
+	})
 }

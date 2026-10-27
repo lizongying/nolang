@@ -148,7 +148,10 @@ t-copy = () {
     d = s.copy()
     runner.eq(d.len(), 3, 'copy len')
     runner.is-true(d.eq(s, 3), 'copy content equal')
-    d[0] = 120
+    d[0]: {
+        ok -> it = 120
+        -> _
+    }
     runner.eq(s[0], 97, 'copy is independent (source unchanged)')
 }
 

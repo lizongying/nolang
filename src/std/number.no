@@ -178,21 +178,20 @@ f64.to-str = () (out str) {
     ; 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
     {
         x != x -> {
-            out = 'nan'.copy()
+            out = 'NaN'.copy()
             return
         }
-
         x == 0.0 -> {
+            ; Go strconv.FormatFloat(-0.0,'g',-1,64) 亦回傳 "0"，故不區分 -0
             out = '0'.copy()
             return
         }
-
         x + x == x -> {
             x < 0.0 -> {
-                out = '-inf'.copy()
+                out = '-Inf'.copy()
                 return
             }
-            out = 'inf'.copy()
+            out = '+Inf'.copy()
             return
         }
     }
@@ -207,184 +206,246 @@ f64.to-str = () (out str) {
         ax = 0.0 - x
     }
 
-    ; 計算指數 e = floor(log10(ax))
-    lg10 = ax.log10()
-    flr = lg10.floor()
-    e = flr.to-i64()
+    ; 位元分解：value = M * 2^e2（M 為整數有效數，含隱含位；e2 使得 value 精確等於此式）
+    one64 u64 = 1
+    mask11 u64 = (one64 << 11) - 1
+    mask52 u64 = (one64 << 52) - 1
+    bit52 u64 = (one64 << 52)
+    bits = ax.to-bits()
+    exp-bits u64 = (bits >> 52) & mask11
+    frac u64 = bits & mask52
+    exp-i i64 = exp-bits
 
-    ; 邊界調整：若 ax >= 10^(e+1)，則 e++
-    #{overflow=wrap}
-    epw = (e + 1).to-f64() * math.LN10
-    upper = epw.exp()
-
-    #{overflow=wrap}
-    ax >= upper -> e = e + 1
-
-    ; 計算 6 位有效數字的整數尾數
-    ; m = round(ax / 10^e * 100000)
-    #{overflow=wrap}
-    bpw = e.to-f64() * math.LN10
-    base = bpw.exp()
-
-    #{overflow=wrap}
-    ax < base -> {
-
-        #{overflow=wrap}
-        e = e - 1
-
-        #{overflow=wrap}
-        bpw2 f64 = e.to-f64() * math.LN10
-        base = bpw2.exp()
+    Mval u64 = 0
+    e2 i64 = 0
+    exp-bits == 0 -> {
+        ; 非規約：M = frac, e2 = -1022 - 52 = -1074
+        Mval = frac
+        e2 = -1074
+    }
+    -> {
+        ; 規約：M = (1<<52) | frac, e2 = exp-bits - 1023 - 52 = exp-bits - 1075
+        Mval = bit52 | frac
+        e2 = exp-i - 1075
     }
 
-    m = (ax / base * 100000.0 + 0.5).to-i64()
-
-    ; 四捨五入溢出處理
-    #{overflow=wrap}
-    m >= 1000000 -> {
-
+    ; base = M * 2^max(e2,0)；den = 2^max(-e2,0)；value = base / den
+    one = bigint.one()
+    Mval-i i64 = Mval
+    bM = bigint.from-i64(Mval-i)
+    base = bM
+    den = one
+    e2 >= 0 -> {
+        base = bigint.shl(bM, e2)
+    }
+    e2 < 0 -> {
         #{overflow=wrap}
-        m = m / 10
-        e = e + 1
+        ne = 0 - e2
+        den = bigint.shl(one, ne)
     }
 
-    ; 將 m 轉為 6 位數字字串（補前導零）
-    ; ⚠️ 必須給定長度 6（不能只用 with-cap(6)，那會是長度 0 的 str），
-    ; 否則 digits[i] 的 place-match 因越界永遠走 `-> _` 分支、數字寫不進去 → to-str 全亂碼。
-    digits str = '      '
-    tmp = m
-    i = 5
-    (i >= 0) {
+    ; hd = 2^e2 * den（整數）：e2>=0 → 2^e2；否則 1
+    hd = one
+    e2 >= 0 -> {
+        hd = bigint.shl(one, e2)
+    }
 
-        #{overflow=wrap}
-        digits[i]: {
-            ok -> it = (tmp % 10) + 48
-            -> _
+    ; M 是否偶數（邊界 tie-to-even 判定用）
+    m-even = 0
+    (Mval & 1) == 0 -> {
+        m-even = 1
+    }
+
+    ; 最短往返搜尋：找最小 K 使 N = round(value * 10^K) 落在 [v-h, v+h] 內
+    ; （h = 2^(e2-1) 為半 ulp；N×10^(-K) 即候選十進位值）
+    ten = bigint.from-i64(10)
+    pow10 = one
+    K = 0
+    found = 0
+    best-N = one
+    best-K = 0
+    (K <= 350) {
+        found == 1 -> { K = 351 }
+        found == 0 -> {
+            ; N = (2*base*pow10 + den) / (2*den) = round(base*pow10/den)
+            t1 = bigint.mul(base, pow10)
+            t2 = bigint.add(t1, t1)
+            t3 = bigint.add(t2, den)
+            den2 = bigint.add(den, den)
+            N = bigint.div(t3, den2)
+
+            ; Nchk = 2*N*den；A=(2*base-hd)*pow10；B=(2*base+hd)*pow10
+            twoN = bigint.add(N, N)
+            Nchk = bigint.mul(twoN, den)
+            twoBase = bigint.add(base, base)
+            Am = bigint.sub(twoBase, hd)
+            Bm = bigint.add(twoBase, hd)
+            A = bigint.mul(Am, pow10)
+            B = bigint.mul(Bm, pow10)
+
+            c1 = A.cmp(Nchk)
+            c2 = Nchk.cmp(B)
+            valid = 0
+            c1 <= 0 -> {
+                c2 <= 0 -> {
+                    bound = 0
+                    c1 == 0 -> bound = 1
+                    c2 == 0 -> bound = 1
+                    bound == 1 -> {
+                        m-even == 1 -> valid = 1
+                    }
+                    bound == 0 -> valid = 1
+                }
+            }
+            valid == 1 -> {
+                found = 1
+                best-N = N
+                best-K = K
+            }
+            found == 0 -> {
+                #{overflow=wrap}
+                K = K + 1
+                pow10 = bigint.mul(pow10, ten)
+            }
         }
-
-        #{overflow=wrap}
-        tmp = tmp / 10
-
-        #{overflow=wrap}
-        i = i - 1
     }
 
-    ; 找最後一個非零位（用於去尾隨零）
-    last-nz = 0
-    i = 5
-    (i >= 0) {
+    Nstr = best-N.to-str()
+    k = Nstr.len-bytes()
+    #{overflow=wrap}
+    E = k - best-K - 1
 
-        digits[i] != 48 -> {
-            last-nz = i
-            i = -1
-        }
-
-        #{overflow=wrap}
-        i = i - 1
-    }
-
-    ; 決定格式
+    ; 科學記號閾值（與 Go %g 對齊）：E <= -5 或 E >= 6
     use-sci = 0
-    {
-        e < -4 -> use-sci = 1
+    E <= -5 -> use-sci = 1
+    E >= 6 -> use-sci = 1
 
-        e >= 6 -> use-sci = 1
-    }
-
-    #{overflow=wrap}
     use-sci == 1 -> {
-
-        ; 科學記號：d.ddddde±NN
-        out = with-cap(20)
+        ; 科學記號：剝離尾隨零（僅調整顯示長度 sk，E 不變）→ 1e+06 而非 1.000000e+06
+        sk = k
+        stz = 1
+        (stz == 1) {
+            sk <= 1 -> { stz = 0 }
+            sk > 1 -> {
+                slb = Nstr[sk - 1]
+                slb == 48 -> { sk = sk - 1 }
+                slb != 48 -> { stz = 0 }
+            }
+        }
+        exp-abs = E
+        exp-abs < 0 -> exp-abs = 0 - exp-abs
+        expstr = exp-abs.to-str()
+        elen = expstr.len-bytes()
+        elen < 2 -> elen = 2
+        cap = 1
+        sk > 1 -> cap = cap + 1 + (sk - 1)
+        cap = cap + 1 + 1 + elen
+        neg == 1 -> cap = cap + 1
+        out = with-len(cap)
         pos = 0
         neg == 1 -> {
-
-            out[pos] = 45
+            out[pos]: {
+                ok -> it = 45
+                -> _
+            }
             pos = pos + 1
         }
-
-        out[pos] = digits[0]
+        out[pos]: {
+            ok -> it = Nstr[0]
+            -> _
+        }
         pos = pos + 1
-        last-nz >= 1 -> {
-
-            out[pos] = 46
+        sk > 1 -> {
+            out[pos]: {
+                ok -> it = 46
+                -> _
+            }
             pos = pos + 1
             j = 1
-            (j <= last-nz) {
-
-                out[pos] = digits[j]
+            (j < sk) {
+                out[pos]: {
+                    ok -> it = Nstr[j]
+                    -> _
+                }
                 pos = pos + 1
                 j = j + 1
             }
         }
-
-        out[pos] = 101
+        out[pos]: {
+            ok -> it = 101
+            -> _
+        }
         pos = pos + 1
-        ae i64 = e
-        {
-            ae < 0 -> {
-                out[pos] = 45
-                pos = pos + 1
-                ae = 0 - ae
+        E >= 0 -> {
+            out[pos]: {
+                ok -> it = 43
+                -> _
             }
-
-            -> {
-                out[pos] = 43
-                pos = pos + 1
-            }
-        }
-        estr = ae.to-str()
-        estr.len-bytes() == 1 -> {
-
-            out[pos] = 48
             pos = pos + 1
         }
-        j = 0
-        (j < estr.len-bytes()) {
-
-            out[pos] = estr[j]
+        E < 0 -> {
+            out[pos]: {
+                ok -> it = 45
+                -> _
+            }
             pos = pos + 1
-            j = j + 1
+        }
+        ; 指數補零至 2 位
+        elen > expstr.len-bytes() -> {
+            out[pos]: {
+                ok -> it = 48
+                -> _
+            }
+            pos = pos + 1
+        }
+        e = 0
+        (e < expstr.len-bytes()) {
+            out[pos]: {
+                ok -> it = expstr[e]
+                -> _
+            }
+            pos = pos + 1
+            e = e + 1
         }
         return
     }
 
     ; 固定記號
-    #{overflow=wrap}
-    e >= 0 -> {
-
-        #{overflow=wrap}
-        int-digits = e + 1
-        total = int-digits
-        neg == 1 -> total = total + 1
-        last-nz >= int-digits -> {
-
-            #{overflow=wrap}
-            total = total + 1
-            total = total + (last-nz - int-digits + 1)
-        }
-        out = with-cap(total)
+    E >= 0 -> {
+        int-digits = E + 1
+        cap = int-digits
+        best-K > 0 -> cap = int-digits + 1 + best-K
+        neg == 1 -> cap = cap + 1
+        out = with-len(cap)
         pos = 0
         neg == 1 -> {
-
-            out[pos] = 45
+            out[pos]: {
+                ok -> it = 45
+                -> _
+            }
             pos = pos + 1
         }
-        j = 0
-        (j < int-digits) {
-
-            out[pos] = digits[j]
+        i = 0
+        (i < int-digits) {
+            out[pos]: {
+                ok -> it = Nstr[i]
+                -> _
+            }
             pos = pos + 1
-            j = j + 1
+            i = i + 1
         }
-        last-nz >= int-digits -> {
-
-            out[pos] = 46
+        best-K > 0 -> {
+            out[pos]: {
+                ok -> it = 46
+                -> _
+            }
             pos = pos + 1
             j = int-digits
-            (j <= last-nz) {
-
-                out[pos] = digits[j]
+            (j < k) {
+                out[pos]: {
+                    ok -> it = Nstr[j]
+                    -> _
+                }
                 pos = pos + 1
                 j = j + 1
             }
@@ -392,56 +453,48 @@ f64.to-str = () (out str) {
         return
     }
 
-    ; e < 0: 0.00dddd
-    #{overflow=wrap}
-    lead-zeros = 0 - e - 1
-
-    #{overflow=wrap}
-    total = 2 + lead-zeros + last-nz + 1
-
-    #{overflow=wrap}
-    neg == 1 -> total = total + 1
-    out = with-cap(total)
+    ; E < 0：0.00...d
+    zeros = 0 - E - 1
+    cap = 2 + zeros + k
+    neg == 1 -> cap = cap + 1
+    out = with-len(cap)
     pos = 0
-
-    #{overflow=wrap}
     neg == 1 -> {
-
-        out[pos] = 45
+        out[pos]: {
+            ok -> it = 45
+            -> _
+        }
         pos = pos + 1
     }
-
-    out[pos] = 48
-
-    #{overflow=wrap}
+    out[pos]: {
+        ok -> it = 48
+        -> _
+    }
     pos = pos + 1
-
-    out[pos] = 46
-
-    #{overflow=wrap}
+    out[pos]: {
+        ok -> it = 46
+        -> _
+    }
     pos = pos + 1
-    j = 0
-    (j < lead-zeros) {
-
-        out[pos] = 48
-
-        #{overflow=wrap}
+    z = 0
+    (z < zeros) {
+        out[pos]: {
+            ok -> it = 48
+            -> _
+        }
         pos = pos + 1
-
-        #{overflow=wrap}
-        j = j + 1
+        z = z + 1
     }
-    j = 0
-    (j <= last-nz) {
-
-        out[pos] = digits[j]
-
-        #{overflow=wrap}
+    i = 0
+    (i < k) {
+        out[pos]: {
+            ok -> it = Nstr[i]
+            -> _
+        }
         pos = pos + 1
-
-        #{overflow=wrap}
-        j = j + 1
+        i = i + 1
     }
+    return
 }
 
 ; f32.to-str: f32 轉字串（方法）
@@ -1146,6 +1199,18 @@ f64.to-f32 = () (out f32) {
 ; u64.to-f64: 無號整數轉浮點
 #{buildin}
 u64.to-f64 = () (out f64) {
+}
+
+; f64.to-bits: 以 u64 取出 f64 的 64 位元 IEEE-754 位元模式（bitcast double→i64）。
+; 由 src/builtin/bits.go 註冊 ForwardFunc "f64-to-bits"，原生 LLVM bitcast 實作，
+; 不依賴 libm。f64.to-str 最短往返展開前先取位元模式，再拆 sign/exp/frac。
+#{buildin}
+f64.to-bits = () (out u64) {
+}
+
+; u64.from-bits: f64.to-bits 的逆運算（bitcast i64→double），由原生 LLVM 實作。
+#{buildin}
+u64.from-bits = () (out f64) {
 }
 
 ; i128.to-f64: 128 位有號整數轉浮點

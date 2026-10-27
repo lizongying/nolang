@@ -868,142 +868,242 @@ str.to-byte = () (val ?byte) {
     }
 }
 
-; str-to-f64: 將字串解析為 f64（底層實作）
-; 支援格式：[空白][+-][數字][.數字][eE[+-]數字]
-; 空字串或無數字回傳 0.0
+; str-to-f64: 將字串精確解析為 f64（bigint 精確 strtod）
+; 以 bigint 建立精確有理數 int-mant * 10^K，再求最近可表示 f64（捨入至偶），
+; 取代原本 f64 累積（17 位字面量會差 1 ULP）。支援 [+-][數字][.數字][eE[+-]數字]。
+
+; bigint-bitlen: 回傳正 bigint 的位元長度（floor(log2)+1）
+bigint-bitlen = (b bigint) (out i64) {
+    bm i64 = 4294967295
+    out = (b.len - 1) * 32
+    top = (b.limbs[b.len - 1] & bm)
+    sh = 0
+    t = top
+    (t > 0) {
+        t = t >> 1
+        sh = sh + 1
+    }
+    out = out + sh
+}
+
 str-to-f64 = (s str) (result f64) {
 
     n i64 = s.len-bytes()
     n == 0 -> return
     i = 0
-    sign = 1.0
-    int-part = 0.0
-    frac-part = 0.0
-    frac-div = 1.0
-    exp = 0
-    exp-sign = 1
+    sign = 1
     has-digit = 0
+    int-mant bigint = bigint.zero()
+    frac-count i64 = 0
+    exp-val i64 = 0
+    exp-sign = 1
     c = 0
 
     ; 跳過前導空白
     (i < n) {
-
         c = s.byte(i)
-
-        #{overflow=wrap}
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> i = i + 1
-
             -> break
         }
     }
     i >= n -> return
 
-    ; 處理正負號
+    ; 正負號
     c = s.byte(i)
-
-    #{overflow=wrap}
     {
         c == 45 -> {
-            sign = -1.0
-
+            sign = -1
             i = i + 1
         }
-
         c == 43 -> i = i + 1
     }
 
-    ; 解析整數部分
+    ; 整數部分 → int-mant = int-mant * 10 + digit
     (i < n) {
-
         c = s.byte(i)
-
-        #{overflow=wrap}
         {
             c >= 48 && c <= 57 -> {
-                int-part = int-part * 10.0 + (c - 48).to-f64()
+                int-mant = bigint.add-i64(bigint.mul-i64(int-mant, 10), c - 48)
                 has-digit = 1
                 i = i + 1
             }
-
             -> break
         }
     }
 
-    ; 解析小數部分
-    #{overflow=wrap}
-    i < n -> {
+    ; 小數部分 → int-mant = int-mant * 10 + digit; frac-count++
+    (i < n) {
         c = s.byte(i)
         c == 46 -> {
-
-            #{overflow=wrap}
             i = i + 1
             (i < n) {
                 c = s.byte(i)
                 {
                     c >= 48 && c <= 57 -> {
-                        frac-part = frac-part * 10.0 + (c - 48).to-f64()
-                        frac-div = frac-div * 10.0
+                        int-mant = bigint.add-i64(bigint.mul-i64(int-mant, 10), c - 48)
+                        frac-count = frac-count + 1
                         has-digit = 1
                         i = i + 1
                     }
-
                     -> break
                 }
             }
         }
+        -> break
     }
     has-digit == 0 -> return
 
-    ; 解析指數部分
-    #{overflow=wrap}
-    i < n -> {
+    ; 指數部分
+    (i < n) {
         c = s.byte(i)
         c == 101 || c == 69 -> {
-
-            #{overflow=wrap}
             i = i + 1
-            i < n -> {
+            (i < n) {
                 c = s.byte(i)
                 c == 45 -> {
                     exp-sign = -1
                     i = i + 1
                 }
                 c == 43 -> i = i + 1
+                -> break
             }
             (i < n) {
                 c = s.byte(i)
                 {
                     c >= 48 && c <= 57 -> {
-
                         #{overflow=wrap}
-                        exp = exp * 10 + (c - 48)
+                        exp-val = exp-val * 10 + (c - 48)
                         i = i + 1
                     }
-
                     -> break
                 }
             }
         }
+        -> break
     }
 
-    ; 合併結果：result = sign * (int-part + frac-part / frac-div) * 10^(exp-sign * exp)
-    result = int-part + frac-part / frac-div
+    ; K = exp-val * exp-sign - frac-count：精確有理數 = int-mant * 10^K
+    K = exp-val * exp-sign - frac-count
 
+    num = bigint.copy(int-mant)
+    den = bigint.one()
+    (K >= 0) -> {
+        num = bigint.mul(int-mant, bigint.pow(bigint.from-i64(10), K))
+    }
+    -> {
+        den = bigint.pow(bigint.from-i64(10), 0 - K)
+    }
+
+    ; 零值特例（含 -0.0）
+    (num.is-zero()) -> {
+        result = 0.0
+        (sign < 0) -> result = -result
+        return
+    }
+
+    ; e = floor(log2(num/den))
+    nbl = bigint-bitlen(num)
+    dbl = bigint-bitlen(den)
     #{overflow=wrap}
-    exp != 0 -> {
-
-        ; 以迴圈計算 10^exp，避免與 number.no / bigint.no 的整數 pow 名稱衝突
-        p f64 = 1.0
-        ei i64 = exp
-        (ei > 0) {
-            p = p * 10.0
-            ei = ei - 1
+    e = nbl - dbl
+    {
+        e >= 0 -> {
+            (bigint.shl(den, e).cmp(num) > 0) -> e = e - 1
         }
-        exp-sign == 1 -> result = result * p
-        exp-sign == -1 -> result = result / p
+        -> {
+            (bigint.shl(num, 0 - e).cmp(den) < 0) -> e = e - 1
+        }
     }
-    result = result * sign
+
+    ; 超出上界 → ±inf
+    (e > 1023) -> {
+        result = 1.0
+        (result * 2.0 != result) {
+            result = result * 2.0
+        }
+        (sign < 0) -> result = -result
+        return
+    }
+
+    two52 = bigint.from-i64(4503599627370496)
+    two53 = bigint.from-i64(9007199254740992)
+
+    ; 次正規：value = F * 2^-1074（F 為 52-bit 分數）
+    (e < -1022) -> {
+        A = bigint.shl(num, 1074)
+        qS, rS = bigint.div-mod(A, den)
+        twoR = bigint.shl(rS, 1)
+        c2 = twoR.cmp(den)
+        Fb = qS
+        (c2 > 0) -> Fb = qS.add-i64(1)
+        (c2 == 0) -> {
+            (bigint.mod-i64(qS, 2) == 0) -> Fb = qS
+            -> Fb = qS.add-i64(1)
+        }
+        Ff ?i64 = bigint.mod-i64(Fb, 4503599627370496)
+        inv1074f f64 = 1.0
+        j = 0
+        (j < 1074) {
+            inv1074f = inv1074f / 2.0
+            j = j + 1
+        }
+        Ffv f64 = Ff: {
+            ok -> it.to-f64()
+            -> 0.0
+        }
+        result = Ffv * inv1074f
+        (sign < 0) -> result = -result
+        return
+    }
+
+    ; 正規：value = (1 + m/2^52) * 2^e（m 為 52-bit 分數）
+    (e >= 0) -> {
+        A = bigint.shl(num, 52)
+        B = bigint.shl(den, e)
+    }
+    -> {
+        A = bigint.shl(num, 52 - e)
+        B = den.copy()
+    }
+    qW, rW = bigint.div-mod(A, B)
+    twoR = bigint.shl(rW, 1)
+    c2 = twoR.cmp(B)
+    W = qW
+    (c2 > 0) -> W = qW.add-i64(1)
+    (c2 == 0) -> {
+        (bigint.mod-i64(qW, 2) == 0) -> W = qW
+        -> W = qW.add-i64(1)
+    }
+    ; 溢位保護：W >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
+    (W.cmp(two53) >= 0) -> {
+        e = e + 1
+        W = two52.copy()
+    }
+    mW = bigint.sub(W, two52)
+    m ?i64 = bigint.mod-i64(mW, 4503599627370496)
+    mv f64 = m: {
+        ok -> it.to-f64()
+        -> 0.0
+    }
+    two52f f64 = 1.0
+    k = 0
+    (k < 52) {
+        two52f = two52f * 2.0
+        k = k + 1
+    }
+    val-f f64 = 1.0 + (mv / two52f)
+    scale f64 = 1.0
+    (e > 0) {
+        scale = scale * 2.0
+        e = e - 1
+    }
+    (e < 0) {
+        scale = scale / 2.0
+        e = e + 1
+    }
+    result = val-f * scale
+    (sign < 0) -> result = -result
 }
 
 ; str.to-f64: 將字串解析為 f64
@@ -1034,6 +1134,14 @@ str.to-f64 = () (val ?f64) {
 
             c == 101 || c == 69 -> {
                 ; 科學記號 e/E - 允許
+            }
+
+            c == 43 || c == 45 -> {
+                ; 正負號（首位或指數位）- 允許
+            }
+
+            c == 32 || c == 9 || c == 10 || c == 13 -> {
+                ; 前後空白 - 允許（str-to-f64 自行跳過）
             }
 
             -> {
@@ -1476,9 +1584,9 @@ new = (cs []char) (s str) {
 ; 十六進制解碼
 ; ═══════════════════════════════════════════════
 
-; hex-val: 單個十六進制字元轉數值
-; 無效字元回傳 -1
-hex-val = (c i64) (v i64) {
+; str-hex-val: 單個十六進制字元轉數值
+; 無效字元回傳 -1（原名 hex-val 與 uuid.hex-val 撞名，跨模組解析會被要求限定，改掛模組前綴同 txt-hex-val 慣例）
+str-hex-val = (c i64) (v i64) {
     v = -1
     {
         c >= 48 && c <= 57 -> {
@@ -1526,16 +1634,145 @@ str.from-hex = () (out ?[]byte) {
     i <- [0..half): {
 
         #{overflow=wrap}
-        hi = hex-val(.byte(i * 2))
+        hi = str-hex-val(.byte(i * 2))
 
         #{overflow=wrap}
-        lo = hex-val(.byte(i * 2 + 1))
+        lo = str-hex-val(.byte(i * 2 + 1))
         hi < 0 || lo < 0 -> {
             out = err('invalid hex character')
             return
         }
         out[i] = (hi << 4) | lo
     }
+}
+
+; ═══════════════════════════════════════════════
+; 大數（bigint）轉換
+; ═══════════════════════════════════════════════
+
+; _str-dig-val: 單個數字字元轉數值（0-15），無效字元回傳 -1
+_str-dig-val = (c i64) (d i64) {
+    d = -1
+    {
+        c >= 48 && c <= 57 -> {
+
+            #{overflow=wrap}
+            d = c - 48
+            return
+        }
+
+        c >= 65 && c <= 70 -> {
+
+            #{overflow=wrap}
+            d = c - 55
+            return
+        }
+
+        c >= 97 && c <= 102 -> {
+
+            #{overflow=wrap}
+            d = c - 87
+        }
+    }
+}
+
+; str.to-bigint: 將字串解析為 bigint，自動判斷進位制
+;   前綴 0b/0B → 二進位、0o/0O → 八進位、0x/0X → 十六進位；無前綴 → 十進位
+;   支援可選前導空白與正負號（+ / -）
+; 返回 ?bigint：ok(bigint) 成功 / nil 空字串 / err('msg') 無有效數字
+str.to-bigint = () (out ?bigint) {
+    n = .len-bytes()
+    n == 0 -> {
+        out = nil
+        return
+    }
+
+    acc = bigint.zero()
+    pos = 0
+
+    ; 跳過前導空白
+    (pos < n) {
+        c = .byte(pos)
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
+
+    ; 可選正負號
+    sign = 1
+    pos < n -> {
+        c = .byte(pos)
+        c == 45 -> {
+            sign = -1
+
+            #{overflow=wrap}
+            pos = pos + 1
+        }
+
+        c == 43 -> {
+
+            #{overflow=wrap}
+            pos = pos + 1
+        }
+    }
+
+    ; 進位制前綴
+    radix = 10
+    pos + 1 < n -> {
+        c0 = .byte(pos)
+        c0 == 48 -> {
+            c1 = .byte(pos + 1)
+            {
+                c1 == 98 || c1 == 66 -> {
+                    radix = 2
+
+                    #{overflow=wrap}
+                    pos = pos + 2
+                }
+
+                c1 == 111 || c1 == 79 -> {
+                    radix = 8
+
+                    #{overflow=wrap}
+                    pos = pos + 2
+                }
+
+                c1 == 120 || c1 == 88 -> {
+                    radix = 16
+
+                    #{overflow=wrap}
+                    pos = pos + 2
+                }
+            }
+        }
+    }
+
+    ; 逐位解析數字
+    started = 0
+    (pos < n) {
+
+        d = _str-dig-val(.byte(pos))
+        d < 0 -> break
+        d >= radix -> break
+
+        acc = bigint.mul-i64(acc, radix)
+
+        acc = acc.add-i64(d)
+        started = 1
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
+
+    started == 0 -> {
+        out = err('no digits to parse')
+        return
+    }
+
+    sign == -1 -> acc.sign = -1
+    acc.normalize()
+    out = acc
 }
 
 ; ═══════════════════════════════════════════════

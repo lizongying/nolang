@@ -1558,6 +1558,135 @@ txt.from-hex = () (out ?txt) {
 }
 
 ; ═══════════════════════════════════════════════
+; 大數（bigint）轉換
+; ═══════════════════════════════════════════════
+
+; _txt-dig-val: 單個數字字元轉數值（0-15），無效字元回傳 -1
+_txt-dig-val = (c i64) (d i64) {
+    d = -1
+    {
+        c >= 48 && c <= 57 -> {
+
+            #{overflow=wrap}
+            d = c - 48
+            return
+        }
+
+        c >= 65 && c <= 70 -> {
+
+            #{overflow=wrap}
+            d = c - 55
+            return
+        }
+
+        c >= 97 && c <= 102 -> {
+
+            #{overflow=wrap}
+            d = c - 87
+        }
+    }
+}
+
+; txt.to-bigint: 將文字解析為 bigint，自動判斷進位制
+;   前綴 0b/0B → 二進位、0o/0O → 八進位、0x/0X → 十六進位；無前綴 → 十進位
+;   支援可選前導空白與正負號（+ / -）
+; 返回 ?bigint：ok(bigint) 成功 / nil 空字串 / err('msg') 無有效數字
+txt.to-bigint = () (out ?bigint) {
+    n = .len-bytes()
+    n == 0 -> {
+        out = nil
+        return
+    }
+
+    acc = bigint.zero()
+    pos = 0
+
+    ; 跳過前導空白
+    (pos < n) {
+        c = .byte(pos)
+        c != 32 && c != 9 && c != 10 && c != 13 -> break
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
+
+    ; 可選正負號
+    sign = 1
+    pos < n -> {
+        c = .byte(pos)
+        c == 45 -> {
+            sign = -1
+
+            #{overflow=wrap}
+            pos = pos + 1
+        }
+
+        c == 43 -> {
+
+            #{overflow=wrap}
+            pos = pos + 1
+        }
+    }
+
+    ; 進位制前綴
+    radix = 10
+    pos + 1 < n -> {
+        c0 = .byte(pos)
+        c0 == 48 -> {
+            c1 = .byte(pos + 1)
+            {
+                c1 == 98 || c1 == 66 -> {
+                    radix = 2
+
+                    #{overflow=wrap}
+                    pos = pos + 2
+                }
+
+                c1 == 111 || c1 == 79 -> {
+                    radix = 8
+
+                    #{overflow=wrap}
+                    pos = pos + 2
+                }
+
+                c1 == 120 || c1 == 88 -> {
+                    radix = 16
+
+                    #{overflow=wrap}
+                    pos = pos + 2
+                }
+            }
+        }
+    }
+
+    ; 逐位解析數字
+    started = 0
+    (pos < n) {
+
+        d = _txt-dig-val(.byte(pos))
+        d < 0 -> break
+        d >= radix -> break
+
+        acc = bigint.mul-i64(acc, radix)
+
+        acc = acc.add-i64(d)
+        started = 1
+
+        #{overflow=wrap}
+        pos = pos + 1
+    }
+
+    started == 0 -> {
+        out = err('no digits to parse')
+        return
+    }
+
+    sign == -1 -> acc.sign = -1
+    acc.normalize()
+    out = acc
+}
+
+; ═══════════════════════════════════════════════
 ; 全等比較
 ; ═══════════════════════════════════════════════
 
