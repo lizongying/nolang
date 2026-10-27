@@ -462,6 +462,25 @@ test-bare-nullable-doc-attach = () {
 
 test-bare-nullable-doc-attach()
 
+; ═══════════════════════════════════════════════════════════════════
+; s8u（vec-elem-ownership.no）：map 標註 let `name [K]V = { … }`——舊 map 臂只認
+;     單 IDENT 值型別（+4==IDENT +5==ASSIGN），複合 V（`[]i64`/`?i64`/`[N]i64`）
+;     落到通用 ps-parse-typedecl ⇒ `{ }` 被 ps-is-struct-lit 誤判 StructLiteral。
+;     修：V【經 ps-parse-type 遞迴】、以 ps-is-map-assign-let 前探確認 `=`（裸 map
+;     宣告 `m1 [str]i64` 無 `=` 不得誤入），再型別導向：RHS 起於 { ⇒ MapLiteral。
+;     ⚠️ 教訓（見 §5.3.4.ag）：塊內各 `cond -> stmt` 為獨立 bare-if，裸 `-> else`
+;     僅掛在最末臂 ⇒ 掃描迴圈的 catch-all 須顯式列全【已處理 token 補集】。
+;     want 由 L2 oracle 實測取得。
+; ═══════════════════════════════════════════════════════════════════
+
+test-map-annotated-composite-value-literal = () {
+    got = parse-dump('f = () {\n    m [str][]i64 = { }\n    n [str]i64 = { \'a\': 1, \'b\': 2 }\n}')
+    want = 'Program{}\n    FunctionDefinition{name: f}\n        BlockStatement{}\n            LetStatement{name: m, type: [str][]i64, value: MapLiteral}\n                MapType{}\n                    NamedType{name: str}\n                    SliceType{}\n                        NamedType{name: i64}\n                MapLiteral{}\n                    MapType{}\n                        NamedType{name: str}\n                        SliceType{}\n                            NamedType{name: i64}\n            LetStatement{name: n, type: [str]i64, value: MapLiteral}\n                MapType{}\n                    NamedType{name: str}\n                    NamedType{name: i64}\n                MapLiteral{pairs: 2}\n                    MapPair\n                        StringLiteral{value: a}\n                        IntegerLiteral{value: 1, raw: 1}\n                    MapPair\n                        StringLiteral{value: b}\n                        IntegerLiteral{value: 2, raw: 2}\n                    MapType{}\n                        NamedType{name: str}\n                        NamedType{name: i64}'
+    runner.is-true(got.eq-full(want), 'map 標註 let 複合值型別 []i64/單 ident ⇒ MapLiteral（型別導向）')
+}
+
+test-map-annotated-composite-value-literal()
+
 runner.summary()
 f = runner.failed-count()
 {

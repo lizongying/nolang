@@ -1400,31 +1400,43 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 handled = 1
             }
 
-            ; Map 標註：`name [K]V = { k1: v1, … }`（單行形）
-            ;   偏移：+0 IDENT name / +1 LBRACKET / +2 IDENT keyType / +3 RBRACKET / +4 IDENT valType / +5 ASSIGN / +6 LBRACE
-            ;   復刻 Go parseMapLiteral（只在有 MapType 標註時走此路）
-            nxt_typ == tok.LBRACKET && ps-peek-at(p, 2) == tok.IDENT && ps-peek-at(p, 3) == tok.RBRACKET && ps-peek-at(p, 4) == tok.IDENT && ps-peek-at(p, 5) == tok.ASSIGN -> {
+            ; Map 標註：`name [K]V = { k1: v1, … }`
+            ;   s8u：泛化——V【經 ps-parse-type 遞迴】而非單 IDENT，覆蓋 `[str][]i64`
+            ;   （V 為 SliceType）等複合型別（鏡 ps-parse-type 的 [K]V 臂 6407、Go type.go:835-849）。
+            ;   鑑別同 ps-parse-type：`[ K ]` 且 K 為內建型別名 ⇒ MapType（非 [N]T 陣列）。
+            ;   ⚠️ 須確有 `=`（ps-is-map-assign-let）——裸 map 宣告 `m1 [str]i64`（無 `=`）不得誤入本臂
+            ;   （鏡 s8u 前舊守衛 +5==ASSIGN；否則裸宣告被吞、後隨陳述錯位，nested-container-clone.no 實測回歸）。
+            ;   型別導向值解析（鏡 Go parseLetStatement stmt.go:1221）：RHS 起於 { ⇒ MapLiteral，
+            ;   否則普通運算式（`m [K]V = f()`）。舊缺陷：V 非單 IDENT（如 `[]i64`）⇒ 本臂前綴守衛
+            ;   +4==IDENT 失敗 ⇒ 落到通用型別 let，`{ }` 被 ps-is-struct-lit 誤判 StructLiteral。
+            nxt_typ == tok.LBRACKET && ps-is-map-assign-let(p) == 1 -> {
                 ps-bump(p); 消費 IDENT name
                 ps-bump(p); 消費 LBRACKET
                 kt = ps-peek-token(p)
                 kn = kt.lit
                 ps-bump(p); 消費 key 型別名
                 ps-expect(p, tok.RBRACKET)
-                vt = ps-peek-token(p)
-                vn = vt.lit
-                ps-bump(p); 消費 value 型別名
+                vty = ps-parse-type(t, p); value 型別（可複合，遞迴）
                 ps-expect(p, tok.ASSIGN)
 
-                ; 先建 key/value NamedType → MapType（子先於父），再作為共用節點傳给 map 字面量
+                ; 子先於父：key NamedType + value 型別 → MapType（共用節點傳给 map 字面量）
                 ktyp = ast.add(t, asp.K_NAMED_TYPE)
                 ast.set-slot(t, ktyp, 0, ast.put-str(t, kn))
-                vtyp = ast.add(t, asp.K_NAMED_TYPE)
-                ast.set-slot(t, vtyp, 0, ast.put-str(t, vn))
                 mt = ast.add(t, asp.K_MAP_TYPE)
                 ast.set-slot(t, mt, 0, ast.put-str(t, 'false')); 明示 → inferred 不印
                 ast.kid-add(t, mt, ktyp)
-                ast.kid-add(t, mt, vtyp)
-                ml = ps-parse-map-lit(t, p, mt)
+                ast.kid-add(t, mt, vty)
+
+                ; 型別導向：{ ⇒ MapLiteral；否則普通 expr（valCtx=1）
+                ml = 0
+                ps-skip-trivia(p)
+                ps-peek(p) == tok.LBRACE -> ml = ps-parse-map-lit(t, p, mt)
+                -> {
+                    vcSave = p.valCtx
+                    p.valCtx = 1
+                    ml = ps-parse-expr(t, p)
+                    p.valCtx = vcSave
+                }
                 idx = ast.add(t, asp.K_LET_STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
                 ast.kid-add(t, idx, mt)
@@ -3811,6 +3823,43 @@ ps-parse-arr-lit = (t ast, p psst, sz i64) (idx i64) {
         #{overflow=wrap}
         m = m + 1
     }
+}
+
+; ps-is-map-assign-let：非破壞性前探——判斷 `name [K]V =`（map 標註【含值】）。
+;   起點 p 於 name（IDENT）。鑑別 `[ K ]` 且 K 為內建型別名（同 ps-parse-type 的 [K]V 臂）。
+;   V 可為複合型別：從 +4 起掃描型別語法（前導 `[]`/`[*T`/`&T`/巢狀 `[K]V` 括號群），
+;   停在 base IDENT 之後一個 token；該 token 為 `=` ⇒ 回 1；換行/EOF/其他 ⇒ 裸宣告 `name [K]V` ⇒ 回 0。
+;   ⚠️ s8u：舊 map 臂守衛 +5==ASSIGN 只認單 IDENT V；泛化 V 遞迴後須以此前探補回 `=` 判別，
+;     否則裸 map 宣告（無 `=`）誤入、吞掉後隨陳述（nested-container-clone.no 實測回歸）。
+ps-is-map-assign-let = (p psst) (res i64) {
+    res = 0
+    ps-peek-at(p, 1) == tok.LBRACKET && ps-peek-at(p, 2) == tok.IDENT && ps-peek-at(p, 3) == tok.RBRACKET && ps-is-builtin-type(ps-lit-at(p, 2)) == 1 -> {
+        j = 4
+        scan = 1
+        (scan == 1) {
+            tkj = ps-peek-at(p, j)
+            tkj == tok.EOF -> scan = 0
+            tkj == tok.MUL || tkj == tok.AND || tkj == tok.STAR_STAR -> j = j + 1
+            tkj == tok.LBRACKET -> {
+                ; 跳到配對 RBRACKET（樸素取首個 ]：巢狀 map 值型別極少見，失配⇒不回 1⇒退回通用路、無回歸）
+                k = j + 1
+                (ps-peek-at(p, k) != tok.RBRACKET && ps-peek-at(p, k) != tok.EOF) {
+                    k = k + 1
+                }
+                j = k + 1
+            }
+            tkj == tok.IDENT -> {
+                j = j + 1
+                scan = 0
+            }
+            ; ⚠️ 未知 token（換行/ASSIGN/其他）⇒ 型別掃描中止。此else【不可】寫成裸 `-> scan = 0`——
+            ;   ps.no 塊內各 `cond -> stmt` 為互相獨立之 bare-if，裸 `->` 只掛在最末 `tkj==IDENT` 臂
+            ;   ⇒ 任何非 IDENT token（含 `[`）都會誤中止掃描。須顯式列出所有已處理 token 之補集。
+            tkj != tok.EOF && tkj != tok.MUL && tkj != tok.AND && tkj != tok.STAR_STAR && tkj != tok.LBRACKET && tkj != tok.IDENT -> scan = 0
+        }
+        ps-peek-at(p, j) == tok.ASSIGN -> res = 1
+    }
+    res
 }
 
 ; ps-parse-map-lit：在 **Map 型別上下文**下把 RHS `{ k1: v1, … }` 建為

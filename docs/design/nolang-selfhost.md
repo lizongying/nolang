@@ -1647,6 +1647,27 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **門禁**：L0 `ps-test.no` **29/29**（新增 3 條：`test-match-unreachable-warn-option`／`test-match-unreachable-warn-enum`／`test-bare-nullable-doc-attach`，golden 皆取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（`fl[]`／`out[]` index-write 與 duplicate-fn，皆在本輪改動區【外】、HEAD 既有，0 新增）；`no vet src/std` 的 `str.no` index-write ERROR 屬 src/ 側既有（非本 session、範圍外）。
 
+### 5.3.4.ag s8u map 標註 let 複合值型別 → MapLiteral（2026-10-27 本輪）
+
+**背景**：§5.3.4.af（s8t）收官後 L2 剩 **8 檔 DIFF**。本輪攻 `tests/vec-elem-ownership.no`（8 行差）。基線：SUT=`/tmp/noc-s69`、DIFF=8。
+
+**缺口形狀**：`m [str][]i64 = { }`——宣告型別為 MapType（`[str][]i64`），Go parseLetStatement（stmt.go:1221）對 `Type.(*MapType) && 當前=={` 走 `parseMapLiteral` 產 **MapLiteral**；noc 卻產 **StructLiteral{type: }**。
+
+**根因**：noc `ps-parse-stmt` 的 map 標註臂（s8u 前 1406）以【固定偏移】手解析 key/value：守衛 `+4==IDENT && +5==ASSIGN`——只認【單一 IDENT】值型別。`[]i64`（+4==LBRACKET）不符守衛 ⇒ 本臂跳過 ⇒ 落到通用 catch-all `ps-parse-typedecl`（1624，用 `ps-parse-type` 建型別、`ps-parse-expr` 解 RHS）：型別仍建對（MapType），但 `{ }` 被 `ps-is-struct-lit` 誤判成 StructLiteral。
+
+**修法（`compiler/src/ps.no`）**：
+1. map 臂值型別改由 `vty = ps-parse-type(t, p)`【遞迴】解析（鏡 ps-parse-type 的 `[K]V` 臂 6453、Go type.go:835-849，V 可為 SliceType/NullableType/ArrayType/巢狀 MapType）；
+2. 守衛由固定偏移改寫成非破壞性前探 `ps-is-map-assign-let(p)`：`[ K ]` 且 K 為內建型別名（同 map 鑑別），再從 +4 掃描型別語法（`[]`/`*T`/`&T`/`[K]V` 前綴群）至 base IDENT，其後必須為 `=` ⇒ 回 1；
+3. 型別導向值解析（鏡 Go）：`ps-peek=={` ⇒ `ps-parse-map-lit`；否則 `ps-parse-expr`（`m [K]V = f()`）。
+
+**⚠️ 踩坑（本輪真因、隱蔽）**：`ps-is-map-assign-let` 掃描迴圈最初寫成 `tkj==LBRACKET -> {…}`／`tkj==IDENT -> {…}`／`-> scan = 0`（意圖 catch-all）。但 **ps.no 塊內各 `cond -> stmt` 是互相獨立的 bare-if，裸 `-> X` 只掛在最【末】個 bare-if 作其 else**——於是 `-> scan=0` 對任何非 IDENT token（含 `[`）都觸發，掃描在 j=4 即中止 ⇒ 複合 V 回 0 ⇒ 本臂【根本不進】⇒ 仍由 typedecl 產 StructLiteral（單 IDENT 的 `n [str]i64` 因第一步就遇 IDENT 而倖免，故只 m 壞、n 好）。修：catch-all 改為顯式【已處理 token 補集】`tkj!=EOF && tkj!=MUL && … && tkj!=IDENT -> scan=0`。同坑亦見「裸 `->` 誤當 if/else」——欲得真 if/else 須將兩臂包進 `{ cond -> {…} -> {…} }`（ps-parse-map-lit 用此形）。另：初版泛化【丟了 `=` 判別】，令裸 map 宣告 `m1 [str]i64`（無 `=`）誤入本臂、吞後隨陳述 ⇒ `tests/mem-safety/nested-container-clone.no` 真回歸；`ps-is-map-assign-let` 的 `=` 前探即為補回。
+
+**連帶踩坑（工具鏈）**：`ps-is-map-assign-let` 迴圈旗標命名 `run`——`run` 是 Nolang 保留的異步前綴運算子（run/co/awy），作識別字 ⇒ `expected ')' got INT`。改 `scan`。另 `build -cc zig` 若反覆报同一陈旧行，先排 AST 快取：`NOLANG_AST_CACHE_OFF=1`（本次實為真實語法錯，非快取）。
+
+**歸因（同一 harness、同一 CTL，A/B `noc-s69`→`noc-s70`）**：**DIFF 8→7 / SAME +1**。轉 SAME：`tests/vec-elem-ownership.no`。`nested-container-clone.no` 先回歸後經 `=` 前探修復回 SAME。**最終 SAME→DIFF 真回歸 0 檔**。
+
+**門禁**：L0 `ps-test.no` **30/30**（新增 `test-map-annotated-composite-value-literal`：複合 `[]i64` 空 map ＋ 單 ident 帶 pair map，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（`out[]`@5312-5320／`fl[]`@7799-7807／duplicate-fn@6343，僅因插行而重新編號、與 s8t 同集合，本輪改動區 0 新增）；`no vet src/std` ERROR 屬 src/ 側既有（非本 session、範圍外）。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。
