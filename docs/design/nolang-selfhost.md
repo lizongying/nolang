@@ -1668,6 +1668,29 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **門禁**：L0 `ps-test.no` **30/30**（新增 `test-map-annotated-composite-value-literal`：複合 `[]i64` 空 map ＋ 單 ident 帶 pair map，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（`out[]`@5312-5320／`fl[]`@7799-7807／duplicate-fn@6343，僅因插行而重新編號、與 s8t 同集合，本輪改動區 0 新增）；`no vet src/std` ERROR 屬 src/ 側既有（非本 session、範圍外）。
 
+### 5.3.4.ah s8v let-RHS 型別推斷家族：切片方法參數不傳播＋鏈式欄位回傳型（2026-10-27 本輪）
+
+**背景**：§5.3.4.ag（s8u）收官後 L2 剩 **7 檔 DIFF**。本輪攻「let-RHS 型別推斷」家族兩檔——`src/std/vec.no`（6 行差）與 `src/std/dom.no`（4 行差）。基線：SUT=`/tmp/noc-s70`、DIFF=7。
+
+**形狀一（vec.no）——`[]T`/`[N]T` 方法體內 `x = <識別符>` 的傳播邊界**：
+- `[]t.remove = (i i64) …` 內 `j = i`：oracle【無型別】，SUT 卻推 `i64`（過推）；
+- `[]t.sum = () (sum t)` 內 `sum = acc`（`acc = 0`）：oracle 推 `i64, inferred`，SUT【無型別】（漏推）。
+兩者同為 s66 識別符傳播（stmt.go:1410-1433：`x = y` 僅傳播【有號整數】base，讀 `FuncVarType(curFunc, y)`，且僅當 x 尚無型別）。
+
+**根因（Go 路徑分流）**：Go 有兩條方法定義解析路徑——普通方法 `t.foo`／結構方法走 `parseMethodDefinition`→`parseFunctionBody`（decl.go:1568/1766-1770），會把【參數與回傳值 setVarType 進 FuncVarTypes】；而【切片/陣列接收者】`[]T.m`／`[N]T.m` 走 `parseArrayTypeMethodDefinition`（decl.go:191），它只設 curFuncName＋parseBlockStatement、【完全不登參數/回傳型別】。故 `[]t.remove` 的參數 `i` 不在 FuncVarTypes ⇒ `j = i` 查不到 base ⇒ 不推；結果參數 `sum`（型別 t）亦未預登 ⇒ `sum = acc` 時 existing=="" ⇒ 本地 let `acc`（parseLetStatement 自登 i64）照常傳播。noc 舊碼 `ps-parse-method-func` 對【所有】方法無差別 `ps-set-var-type` 參數/回傳 ⇒ 與此相反（i 被登、sum 被預登成 t）。
+
+**修法（`compiler/src/ps.no` `ps-parse-method-func`）**：以 `selfnt`（接收者型別節點）是否 `K_SLICE_TYPE`/`K_ARRAY_TYPE` 判定 array-method 路徑（鏡 Go 分流）；此路徑下參數/回傳型別改登進【s7v 命名空間 `vt7:`】（`ps-set-var-type-s7v`）而非 `vt:`。妙處正在於既有雙查表語意：`ps-var-type-strict`（推斷閘門，鏡 Go `FuncVarType`）【不讀】`vt7:` ⇒ `j=i` 不推、`sum=acc` 補推；`ps-var-type`（非嚴格，降糖端 `ps-apply-index-out` 讀取）【仍讀】`vt7:` ⇒ `self[cur] = …` 安全索引降糖的參數型別線索不丟。**⚠️ 首版教訓**：最初直接【跳過】params/outs 登記 ⇒ vec.no 內一個 `[]T` 方法的安全索引降糖（需讀參數 `cur` 型別）退化成裸 AssignExpression、真回歸一處；改走 `vt7:` 後兩全。
+
+**形狀二（dom.no）——鏈式接收者 `self.field.method(...)` 回傳型推斷**：`out = .pool.collect-tag(.root, want, star)`，oracle 推 `[]i64`（`dom.pool` 欄位型別 dom-pool ⇒ `dom-pool.collect-tag` 回 `[]i64`），SUT【無型別】。根因：Go `returnTypeFromCallExpr`（type.go:173）先 `resolveReceiverType(dot.Receiver)`（type.go:45-54 的 DotExpression 臂——`self.field` 由 `structFields[當前結構][欄位]` 解析出欄位型別），再以 `欄位型別.方法` 查 `methodSignatures`。noc 的 DotExpression 呼叫臂（s58）只認 `rc` 為【裸 IDENT】變數；`self.pool` 是巢狀 DotExpression ⇒ 不觸發。
+
+**修法（`compiler/src/ps.no`）**：
+1. 新增結構欄位登記表 `ps-reg-struct-field`/`ps-struct-field-type`（鍵 `'sf:' sname ' ' fname`，鏡 Go `p.structFields`），`ps-parse-struct-def` 逐欄位登記 `type-string(ty)`；
+2. DotExpression 呼叫臂增補【rc==K_DOT_EXPRESSION】子臂：其 receiver 為 `self` IDENT 時，`snm = ps-var-type('self')`（方法接收者型別，ps-parse-method-func 預登）→ `fty = ps-struct-field-type(snm, field)` → 以 `fty + '.' + method` 查 `ps-msig-find`，克隆 s58 的「跳 token 重解析回傳型別＋filter-ok＋宣告閘門＋mark-inferred」流程。純增量（僅在原本推不出型別時才補），節點變數 c 後綴避免串型別。
+
+**歸因（同一 harness、同一 CTL，A/B `noc-s70`→`noc-s71`）**：**DIFF 7→5 / SAME +2**。轉 SAME：`src/std/vec.no`、`src/std/dom.no`。**SAME→DIFF 真回歸 0 檔**（中途 vec.no 索引降糖回歸經 `vt7:` 承接已消）。
+
+**門禁**：L0 `ps-test.no` **32/32**（新增 `test-slice-method-param-no-propagate-local-yes` 釘 j=i 無型別/m=k i64；`test-chained-self-field-method-return-infer` 釘 structFields＋msig 鏈式推 []i64，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（`out[]`／`fl[]`／duplicate-fn 同 s8u 集合，本輪改動區 0 新增）；`no vet src/std` 145 ERROR 屬 src/ 側既有（oracle 執行、非本 session 範圍）。工具鏈：`no build -cc zig`；跑 L0 需 `no run -cc zig`（預設 clang 在 MacOSX27 SDK 連結 libSystem.tbd 報 unknown architecture）。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。

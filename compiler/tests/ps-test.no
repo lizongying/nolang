@@ -481,6 +481,34 @@ test-map-annotated-composite-value-literal = () {
 
 test-map-annotated-composite-value-literal()
 
+; ═══════════════════════════════════════════════════════════════════
+; s8v（vec.no / dom.no）：let-RHS 型別推斷家族两处对齐。
+;   ① vec.no：切片/陣列接收者方法走 Go parseArrayTypeMethodDefinition（decl.go:191），
+;      它【不】把參數/回傳值登進 FuncVarTypes（只 parseMethodDefinition/parseFunctionBody 登）。
+;      ⇒ `[]T.m` 體內 `x = <參數>` 不傳播（`j = i` 無型別），但本地 let（`acc = 0`）自登
+;      ⇒ `x = <本地>` 照常傳播（`sum = acc` 推 i64）。noc 以【s7v 命名空間 vt7:】承接：降糖
+;      讀得到（ps-var-type 非嚴格）、推斷閘門讀不到（ps-var-type-strict 鏡像 Go FuncVarType）。
+;   ② dom.no：鏈式接收者 `self.field.method(...)` 的回傳型推斷（Go resolveReceiverType
+;      DotExpression 臂 type.go:47-54）——新增 structFields 登記（ps-parse-struct-def）＋
+;      由 self 型別查欄位型別、再以 `fieldTy.method` 查 msig。want 由 L2 oracle 實測取得。
+; ═══════════════════════════════════════════════════════════════════
+
+test-slice-method-param-no-propagate-local-yes = () {
+    got = parse-dump('[]t.remove = (i i64) (val ?t) {\n    j = i\n    k = 0\n    m = k\n}')
+    want = 'Program{}\n    FunctionDefinition{name: []t.remove, methodDef: true}\n        GenericParams: t\n        Parameter{name: i, type: i64}\n            NamedType{name: i64}\n        Parameter{name: self, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: val, type: ?t}\n            NullableType\n                NamedType{name: t}\n        BlockStatement{}\n            LetStatement{name: j, value: i}\n                Identifier{name: i}\n            LetStatement{name: k, type: i64, value: 0}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 0, raw: 0}\n            LetStatement{name: m, type: i64, value: k}\n                NamedType{name: i64, inferred: true}\n                Identifier{name: k}'
+    runner.is-true(got.eq-full(want), '切片方法：參數不傳播(j=i 無型別)、本地 let 傳播(m=k i64)')
+}
+
+test-slice-method-param-no-propagate-local-yes()
+
+test-chained-self-field-method-return-infer = () {
+    got = parse-dump('dom-pool {\n    x i64\n}\ndom {\n    pool dom-pool\n}\ndom-pool.collect = () (out []i64) {\n    out = [0]\n}\ndom.f = () (o []i64) {\n    v = .pool.collect()\n}')
+    want = 'Program{}\n    StructDefinition{name: dom-pool, fields: 1}\n        StructField{name: x, type: i64}\n            NamedType{name: i64}\n    StructDefinition{name: dom, fields: 1}\n        StructField{name: pool, type: dom-pool}\n            NamedType{name: dom-pool}\n    FunctionDefinition{name: dom-pool.collect, methodDef: true}\n        Parameter{name: self, type: dom-pool}\n            NamedType{name: dom-pool}\n        Parameter{name: out, type: []i64}\n            SliceType{}\n                NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, type: []i64, value: SliceLiteral}\n                SliceType{inferred: true}\n                    NamedType{name: i64, inferred: true}\n                SliceLiteral{elements: 1}\n                    IntegerLiteral{value: 0, raw: 0}\n    FunctionDefinition{name: dom.f, methodDef: true}\n        Parameter{name: self, type: dom}\n            NamedType{name: dom}\n        Parameter{name: o, type: []i64}\n            SliceType{}\n                NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: v, type: []i64, value: CallExpression}\n                SliceType{inferred: true}\n                    NamedType{name: i64, inferred: true}\n                CallExpression{fn: DotExpression}\n                    DotExpression{receiver: DotExpression, property: collect}\n                        DotExpression{receiver: self, property: pool}\n                            Identifier{name: self}'
+    runner.is-true(got.eq-full(want), '鏈式 self.field.method 回傳型推斷 ⇒ v 推 []i64（structFields+msig）')
+}
+
+test-chained-self-field-method-return-infer()
+
 runner.summary()
 f = runner.failed-count()
 {

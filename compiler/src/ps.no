@@ -2646,6 +2646,22 @@ ps-msig-find = (p psst, key str) (pos i64) {
     (pos < 0) -> pos = -1
 }
 
+; s8v-dom：結構欄位型別登記表（鏡像 Go p.structFields：structName → fieldName → typeString，
+;   type.go:30/50/71 讀取）。ps-parse-struct-def 逐欄位登記；僅供 ps-reg-let 鏈式接收者
+;   `self.field.method(...)` 的回傳型推斷查表（Go resolveReceiverType 的 DotExpression 臂）。
+;   ⚠️ 純增量鍵空間 'sf:'——既有流程不讀 ⇒ 登記本身零回歸；只有新增的推斷臂會消費。
+ps-reg-struct-field = (p psst, sname str, fname str, ty str) {
+    tidx = p.htTy.len()
+    p.htTy.push(ty)
+    ps-ht-put(p, 'sf:' - sname - ' ' - fname, tidx)
+}
+
+ps-struct-field-type = (p psst, sname str, fname str) (ty str) {
+    ty = ''
+    tidx = ps-ht-get(p, 'sf:' - sname - ' ' - fname)
+    tidx >= 0 -> ty = p.htTy[tidx]
+}
+
 ; ps-set-var-type：登記變數型別。頂層（fn==''）進全域 VarTypes；函式內僅進 FuncVarTypes
 ;   （Go parser.go:1050-1066：函式區域變數不污染全域表）。
 ps-set-var-type = (p psst, vname str, ty str) {
@@ -3735,6 +3751,63 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                         }
                     }
                 }
+
+                ; s8v-dom：鏈式接收者 `self.field.method(...)`（Go resolveReceiverType 的
+                ;   DotExpression 臂，type.go:47-54）——recv 是 DotExpression `self.field` 時，
+                ;   先由 structFields 查出欄位型別（self 型別取自 ps-var-type('self')＝方法接收者
+                ;   型別，於 ps-parse-method-func 預登），再以 `fieldTy.method` 查 msig 推回傳型別。
+                ;   ⚠️ 純增量：僅在 rc 為 DotExpression（既有 IDENT 臂不觸發）時才補；節點變數 c 後綴。
+                ast.kind-at(t, rc) == asp.K_DOT_EXPRESSION -> {
+                    rd2 = ast.nd-at(t, rc)
+                    rc2 = ast.kid-at(t, rd2.kid0)
+                    ast.kind-at(t, rc2) == asp.K_IDENTIFIER -> {
+                        rc2d = ast.nd-at(t, rc2)
+                        ast.str-at(t, rc2d.s0) == 'self' -> {
+                            snm = ps-var-type(p, 'self')
+                            fnm = ast.str-at(t, rd2.s0)
+                            fty = ''
+                            snm != '' && fnm != '' -> fty = ps-struct-field-type(p, snm, fnm)
+                            fty != '' -> {
+                                mkeyc = fty + '.' + ast.str-at(t, fd.s0)
+                                tpc = ps-msig-find(p, mkeyc)
+                                tpc >= 0 -> {
+                                    oldposc = p.pos
+                                    p.pos = tpc
+                                    tnc = ps-parse-type(t, p)
+                                    p.pos = oldposc
+                                    tsc = ''
+                                    tnc > 0 -> tsc = ast.type-string(t, tnc)
+                                    tnc > 0 && ps-filter-ok(t, tnc, tsc) == 1 -> {
+                                        keepc = 0
+                                        ps-is-declared(p, name) == 0 -> {
+                                            keepc = 1
+                                            ps-set-var-type(p, name, tsc)
+                                        }
+
+                                        -> {
+                                            isoc = 0
+                                            ast.kind-at(t, tnc) == asp.K_NULLABLE_TYPE -> isoc = 1
+                                            isoc == 1 -> {
+                                                ps-set-var-type(p, name, tsc)
+                                            }
+                                            isoc == 0 -> {
+                                                exc = ps-var-type-strict(p, name)
+                                                exc == '' || exc == 'i64' -> {
+                                                    keepc = 1
+                                                    ps-set-var-type(p, name, tsc)
+                                                }
+                                            }
+                                        }
+                                        keepc == 1 -> {
+                                            ps-mark-inferred(t, tnc)
+                                            typ = tnc
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -4599,6 +4672,20 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str, recvNode i64,
     ast.kid-add(t, selfp, 0)
 
     ; s51：body 前登記輸入參數型別（Go decl.go 只登 Parameters；self 不隨 params 登）
+    ; s8v：Go 對【切片/陣列接收者方法】走 parseArrayTypeMethodDefinition（decl.go:191），
+    ;   它【不】setVarType 參數/回傳值型別進 FuncVarTypes（只有 parseMethodDefinition/
+    ;   parseFunctionBody 才登）。故 `[]T.m`/`[N]T.m` 體內 `x = <參數>` 的識別符型別傳播
+    ;   （stmt.go:1421 讀 FuncVarType）查不到該參數 ⇒ 不推斷（vec.no `[]t.remove` 的
+    ;   `j = i`：oracle 不給 j 型別）；而 `[]t.sum` 的 `sum = acc`：結果參數 `sum` 未預登
+    ;   ⇒ existing=="" ⇒ 本地 let `acc`（parseLetStatement 自登 i64）照常傳播。
+    ;   ⚠️ 但降糖（index-out 安全索引，ps-apply-index-out）需讀參數型別——Go 的 lowering
+    ;   直接讀 def.Parameters AST（不经 FuncVarTypes）。noc 用【s7v 命名空間 vt7:】承接：
+    ;   ps-var-type（非嚴格，降糖端）讀得到 vt7，ps-var-type-strict（推斷閘門，鏡像 Go
+    ;   FuncVarType）讀不到 ⇒ 兩邊語意同時對齊。selfnt 為 SliceType/ArrayType ⇒ 走此路徑。
+    ;   ⚠️ 用 regp/skp 前綴變數避免串型別（s7l 教訓）。
+    skp = ast.kind-at(t, selfnt)
+    regp = 1
+    skp == asp.K_SLICE_TYPE || skp == asp.K_ARRAY_TYPE -> regp = 0
     rp = 0
     (rp < params.len()) {
         ; 索引讀提取為獨立陳述並標 #{index-out=zero}：巢置於 call 引數內的索引讀會被
@@ -4608,7 +4695,10 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str, recvNode i64,
         pni = params[rp]
         pd = ast.nd-at(t, pni)
         pt = ast.kid-at(t, pd.kid0)
-        pt > 0 -> ps-set-var-type(p, ast.str-at(t, pd.s0), ast.type-string(t, pt))
+        pt > 0 -> {
+            regp == 1 -> ps-set-var-type(p, ast.str-at(t, pd.s0), ast.type-string(t, pt))
+            regp == 0 -> ps-set-var-type-s7v(p, ast.str-at(t, pd.s0), ast.type-string(t, pt))
+        }
 
         #{overflow=wrap}
         rp = rp + 1
@@ -4621,7 +4711,10 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str, recvNode i64,
         oni = outs[rr]
         od = ast.nd-at(t, oni)
         ot = ast.kid-at(t, od.kid0)
-        ot > 0 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
+        ot > 0 -> {
+            regp == 1 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
+            regp == 0 -> ps-set-var-type-s7v(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
+        }
 
         #{overflow=wrap}
         rr = rr + 1
@@ -7180,6 +7273,9 @@ ps-parse-struct-def = (t ast, p psst, name str) (idx i64) {
         ast.kid-add(t, sf, ty)
         ast.kid-add(t, sf, 0)
         sf > 0 -> flds.push(sf)
+        ; s8v-dom：登記欄位型別進 structFields（供 self.field.method 回傳型推斷查表）。
+        ;   泛型接收者欄位（如 `[]t`）的 type-string 原樣存（`[]t`），鏈式查表以字面鍵匹配。
+        ty > 0 -> ps-reg-struct-field(p, name, fname, ast.type-string(t, ty))
         ps-skip-trivia(p)
         ps-peek(p) == tok.COMMA -> {
             ps-bump(p)
