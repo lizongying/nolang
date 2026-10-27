@@ -1,0 +1,162 @@
+; ck-sig-test.no — compiler/src/ck-sig.no（M3-b stdsig 表）的單元測試
+;
+; 執行： ./bin/no run compiler/tests/ck-sig-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
+;
+; ── 期望值從哪來 ──────────────────────────────────────────────────
+; 全部取自 src/checker/stdsig_gen.go（authority）實測，不是手寫猜的。
+; std 改動 ⇒ 'make gen' 重生 stdsig_gen.go ⇒ 重跑
+;     python3 compiler/tools/gen_ck_sig.py
+; 表規模若變，下面的 CK-SIG-N-* 斷言會紅——這是刻意的盤點氣閂，提醒同步更新
+; 本檔數量與錨點（錨點鍵逐一在 stdsig_gen.go 內 grep 可復核）。
+
+# /test/runner.eq
+# /test/runner.str-eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/ck-sig
+
+CK-SIG-N-FUNC = 870
+CK-SIG-N-METHOD = 2371
+CK-SIG-N-SFIELD = 720
+CK-SIG-N-ALIAS = 1
+CK-SIG-N-STRUCTMOD = 105
+CK-SIG-N-ENUM = 3
+CK-SIG-N-MODULE = 118
+
+; ═══════════════════════════════════════════════
+; ck-sig-lt — 逐字節字典序（鍵全 ASCII）
+; ═══════════════════════════════════════════════
+
+test-lt = () {
+    runner.eq(ck-sig-lt('a', 'b'), 1, 'a<b')
+    runner.eq(ck-sig-lt('b', 'a'), 0, 'b<a false')
+    runner.eq(ck-sig-lt('abc', 'abd'), 1, 'abc<abd')
+    runner.eq(ck-sig-lt('abc', 'abcd'), 1, 'prefix shorter is less')
+    runner.eq(ck-sig-lt('abcd', 'abc'), 0, 'longer prefix is not less')
+    runner.eq(ck-sig-lt('', 'a'), 1, 'empty is less')
+    runner.eq(ck-sig-lt('a', 'a'), 0, 'equal is not less')
+    runner.eq(ck-sig-lt('', ''), 0, 'both empty')
+    runner.eq(ck-sig-lt('[]t.at', 'arr-stack.clear'), 1, 'bracket sorts before letter')
+}
+
+; ═══════════════════════════════════════════════
+; 表規模（盤點氣閂）
+; ═══════════════════════════════════════════════
+
+test-sizes = (t ck-sig) {
+    runner.eq(t.fk.len(), CK-SIG-N-FUNC, 'func table size')
+    runner.eq(t.fp.len(), CK-SIG-N-FUNC, 'func params align')
+    runner.eq(t.fr.len(), CK-SIG-N-FUNC, 'func results align')
+    runner.eq(t.mk.len(), CK-SIG-N-METHOD, 'method table size')
+    runner.eq(t.sfk.len(), CK-SIG-N-SFIELD, 'struct-field table size')
+    runner.eq(t.alk.len(), CK-SIG-N-ALIAS, 'alias table size')
+    runner.eq(t.smk.len(), CK-SIG-N-STRUCTMOD, 'struct-mod table size')
+    runner.eq(t.evk.len(), CK-SIG-N-ENUM, 'enum table size')
+    runner.eq(t.mok.len(), CK-SIG-N-MODULE, 'module table size')
+}
+
+; ═══════════════════════════════════════════════
+; func 表查找（首/尾/中/miss）
+; ═══════════════════════════════════════════════
+
+test-find-func = (t ck-sig) {
+    i = ck-sig-find-func(t, '[]byte.index')
+    runner.eq(i, 0, 'first key hit at 0')
+    ; ⚠️ 欄位取值一律走 ck-sig-str-at：外掛 receiver 的 []str.at() 單態化會報
+    ;    'EmitLLVM: unknown callee []t.at'（實測），索引讀 x=v[i] 回 ?str 亦不可直接使用。
+    runner.str-eq(ck-sig-str-at(t.fp, i), 'str', 3, '[]byte.index params=str')
+    runner.str-eq(ck-sig-str-at(t.fr, i), 'i64', 3, '[]byte.index results=i64')
+
+    runner.eq(ck-sig-find-func(t, 'zstd.zstd-decompress'), 869, 'last key hit at 869')
+    j = ck-sig-find-func(t, 'fs.read-bytes')
+    runner.eq(j >= 0, 1, 'fs.read-bytes hit')
+    runner.str-eq(ck-sig-str-at(t.fr, j), '?[]byte', 7, 'fs.read-bytes results=?[]byte')
+
+    ; fmt.print 不存在（只有 printf/println 族）——miss 必回 -1
+    runner.eq(ck-sig-find-func(t, 'fmt.print'), -1, 'fmt.print is not a std func')
+    runner.eq(ck-sig-find-func(t, ''), -1, 'empty miss')
+    runner.eq(ck-sig-find-func(t, 'zzz-nope'), -1, 'tail miss')
+    runner.eq(ck-sig-find-func(t, 'AAA'), -1, 'head miss')
+}
+
+; ═══════════════════════════════════════════════
+; method 表查找
+; ═══════════════════════════════════════════════
+
+test-find-method = (t ck-sig) {
+    ; ⚠️ 容器方法（[]t.at 等 [ ]/n 前綴 receiver）在 authority 裡落在【funcSigs】表，
+    ; methodSigs 只收具名 receiver（str.*、zstd.* 等）——兩張表的分界以此為準。
+    m = ck-sig-find-func(t, '[]t.at')
+    runner.eq(m, 16, '[]t.at in func table at 16')
+    runner.str-eq(ck-sig-str-at(t.fp, m), 'i64', 3, '[]t.at params=i64')
+    runner.str-eq(ck-sig-str-at(t.fr, m), '?t', 2, '[]t.at results=?t')
+
+    runner.eq(ck-sig-find-method(t, 'zstd.zs-huffman.decode'), 2370, 'last method key')
+    u = ck-sig-find-method(t, 'str.to-upper')
+    runner.eq(u >= 0, 1, 'str.to-upper hit')
+    runner.str-eq(ck-sig-str-at(t.mp, u), '', 0, 'str.to-upper params empty')
+    runner.eq(ck-sig-find-method(t, 'nope.nope'), -1, 'method miss')
+}
+
+; ═══════════════════════════════════════════════
+; struct-fields / aliases / struct-mod / enums / modules
+; ═══════════════════════════════════════════════
+
+test-find-others = (t ck-sig) {
+    s = ck-sig-find-struct-field(t, 'arp-info.mac')
+    runner.eq(s >= 0, 1, 'arp-info.mac hit')
+    runner.str-eq(ck-sig-str-at(t.sft, s), 'str', 3, 'arp-info.mac type=str')
+    runner.eq(ck-sig-find-struct-field(t, 'arp-info.nope'), -1, 'struct-field miss')
+
+    a = ck-sig-find-alias(t, 'fd')
+    runner.eq(a, 0, 'fd alias at 0')
+    runner.str-eq(ck-sig-str-at(t.alt, a), 'i64', 3, 'fd -> i64')
+
+    sm = ck-sig-find-struct-mod(t, 'arp-info')
+    runner.eq(sm >= 0, 1, 'arp-info module hit')
+    runner.str-eq(ck-sig-str-at(t.smt, sm), 'net', 3, 'arp-info -> net')
+
+    e = ck-sig-find-enum(t, 'code')
+    runner.eq(e >= 0, 1, 'code enum hit')
+    runner.str-eq(ck-sig-str-at(t.evt, e), 'ok,not-found,permission,io,timeout,parse,invalid,overflow', 57, 'code variants')
+
+    mo = ck-sig-find-module(t, 'aes')
+    runner.eq(mo >= 0, 1, 'aes module hit')
+    runner.str-eq(ck-sig-str-at(t.moo, mo), 'crypto/aes', 10, 'aes -> crypto/aes')
+}
+
+; ═══════════════════════════════════════════════
+; ck-sig-types — 逗號串 ⇒ 型串 vec
+; ═══════════════════════════════════════════════
+
+test-types = () {
+    r = ck-sig-types('')
+    runner.eq(r.len(), 0, 'empty types -> 0')
+    r1 = ck-sig-types('str')
+    runner.eq(r1.len(), 1, 'single type')
+    r2 = ck-sig-types('i64,i64')
+    runner.eq(r2.len(), 2, 'two types')
+    r3 = ck-sig-types('?[]byte')
+    runner.eq(r3.len(), 1, 'option-slice is one type')
+}
+
+; ═══════════════════════════════════════════════
+test-lt()
+t = ck-sig.new()
+test-sizes(t)
+test-find-func(t)
+test-find-method(t)
+test-find-others(t)
+test-types()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}
