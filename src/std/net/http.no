@@ -1390,11 +1390,16 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     -> data = body
 
     ; ── 寫入檔案 ──
-    w = fs.write-bytes(dest, data)
-    w: {
-        ok -> ok = it
+    ok = http-write-ok(dest, data)
+}
 
-        -> ok = false
+; http-write-ok: 寫入位元組並把 ?bool 結果折疊為 bool 成功旗標
+http-write-ok = (p str, data []byte) (ok bool) {
+    w ?bool = fs.write-bytes(p, data)
+    ok = w: {
+        ok -> it
+
+        -> false
     }
 }
 

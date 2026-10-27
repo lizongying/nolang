@@ -528,7 +528,11 @@ txt.trim-char = (ch char) (val txt) {
     n i64 = .len-bytes()
     start = 0
     (start < n) {
-        b = .byte(start)
+        b-opt = .byte(start)
+        b = b-opt: {
+            ok -> it
+            ->
+        }
         cp i64 = b
         clen = 1
         {
@@ -560,7 +564,11 @@ txt.trim-char = (ch char) (val txt) {
     end = start
     i = start
     (i < n) {
-        b = .byte(i)
+        b-opt = .byte(i)
+        b = b-opt: {
+            ok -> it
+            ->
+        }
         cp = b
         clen = 1
         {
@@ -1095,7 +1103,11 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
     pos = 0
     i = 0
     (i < n) {
-        b = .byte(i)
+        b-opt = .byte(i)
+        b = b-opt: {
+            ok -> it
+            ->
+        }
         cp i64 = b
         clen = 1
         {

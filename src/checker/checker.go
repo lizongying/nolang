@@ -5951,6 +5951,139 @@ func ValidateIndexWrite(program *parser.Program, mainFile string) []ValidateResu
 	return runIndexWriteCore(program, mainFile, nil)
 }
 
+// isWithCapCall 判定 e 是否為裸緩衝構造器呼叫：`with-cap(...)`（len=0 容量緩衝）、
+// `with-len(...)`（len=n 預填充緩衝）或 `with-cap-len(...)`。這些構造器的唯一用途
+// 就是被逐位元組直接下標寫入填充，idxwrite 對其基底一律豁免。
+func isWithCapCall(e parser.Expression) bool {
+	call, ok := e.(*parser.CallExpression)
+	if !ok {
+		return false
+	}
+	id, ok := call.Function.(*parser.Identifier)
+	if !ok {
+		return false
+	}
+	switch id.Value {
+	case "with-cap", "with-len", "with-cap-len":
+		return true
+	}
+	return false
+}
+
+// collectWithCapBases 走查一個函式體（不下钻巢狀函式定義——那是另一個作用域、
+// 另有自己的鍵），回傳「曾被 `with-cap(...)` 指派過」的識別符名稱集合。
+//
+// 背景（idxwrite 誤報）：with-cap 建立的是 len=0 的容量緩衝，標準的「逐位元組填充」
+// 構造慣例靠直接下標寫入 `buf[i] = b` 把長度增長起來（見 number.no u64.to-str）。
+// checker 建議的兩種替代形體對 len=0 緩衝都會靜默產出空字串——
+//   - place-match `buf[i]: { ok -> it = v / -> _ }`：讀取 i 越界為 nil，ok 臂永不執行；
+//   - `buf.set-byte(i, v)`：只寫既有 in-bounds 槽位，不增長長度。
+// 因此「以 with-cap 建立、再用直接下標寫入增長」是這個慣例唯一能正確執行的寫法，
+// idxwrite 不得對其報錯。本集合讓 ValidateIndexWrite 精確豁免這類基底：只有确实
+// 由 with-cap 構造過的變數才豁免；以字面量陣列 / 固定陣列 / 切片建立的基底仍照報，
+// 保留「未經解包的越界寫」保護。
+func collectWithCapBases(body *parser.BlockStatement) map[string]bool {
+	set := map[string]bool{}
+	if body == nil {
+		return set
+	}
+	var ws func(parser.Statement)
+	var we func(parser.Expression)
+	mark := func(e parser.Expression, val parser.Expression) {
+		if isWithCapCall(val) {
+			if id, ok := e.(*parser.Identifier); ok && id.Value != "" {
+				set[id.Value] = true
+			}
+		}
+	}
+	ws = func(s parser.Statement) {
+		switch x := s.(type) {
+		case *parser.FunctionDefinition:
+			return // 巢狀作用域，不在此鍵下收集
+		case *parser.LetStatement:
+			if x.Name != nil {
+				mark(x.Name, x.Value)
+			}
+			if x.Value != nil {
+				we(x.Value)
+			}
+		case *parser.ExpressionStatement:
+			if x.Expression != nil {
+				we(x.Expression)
+			}
+		case *parser.MultiAssignStatement:
+			if x.Value != nil {
+				we(x.Value)
+			}
+		case *parser.BlockStatement:
+			for _, b := range x.Statements {
+				ws(b)
+			}
+		case *parser.ForStatement:
+			if x.Init != nil {
+				ws(x.Init)
+			}
+			if x.Condition != nil {
+				we(x.Condition)
+			}
+			if x.Update != nil {
+				ws(x.Update)
+			}
+			if x.Body != nil {
+				for _, b := range x.Body.Statements {
+					ws(b)
+				}
+			}
+		case *parser.ReturnStatement:
+			if x.ReturnValue != nil {
+				we(x.ReturnValue)
+			}
+		}
+	}
+	we = func(e parser.Expression) {
+		switch x := e.(type) {
+		case *parser.AssignExpression:
+			mark(x.Left, x.Value)
+			if x.Value != nil {
+				we(x.Value)
+			}
+		case *parser.IfExpression:
+			if x.Condition != nil {
+				we(x.Condition)
+			}
+			if x.Consequence != nil {
+				for _, b := range x.Consequence.Statements {
+					ws(b)
+				}
+			}
+			if x.Alternative != nil {
+				for _, b := range x.Alternative.Statements {
+					ws(b)
+				}
+			}
+		case *parser.GroupedExpression:
+			we(x.Expression)
+		case *parser.PrefixExpression:
+			we(x.Right)
+		case *parser.InfixExpression:
+			we(x.Left)
+			we(x.Right)
+		case *parser.SurfaceMatch:
+			walkSurfaceMatchChildren(x, nil,
+				func(sub parser.Expression) { we(sub) },
+				func(sub parser.Statement) { ws(sub) })
+		case *parser.CallExpression:
+			for _, a := range x.Arguments {
+				we(a)
+			}
+		}
+	}
+	for _, b := range body.Statements {
+		ws(b)
+	}
+	return set
+}
+
 // runIndexWriteCore 是 ValidateIndexWrite / THIR 两变体共享的走查主体。
 // 本检查零 AST 型别直读：容器型别查询只走 sem.IdxLocalTypes（lower 预扫描
 // 副表），故 view 目前无作用点——保留参数是为了三件套入口形态统一，且
@@ -5962,6 +6095,10 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 	sem := program.Sem
 	var results []ValidateResult
 	seen := map[string]bool{}
+	// capBases[curFunc] = 該函式內曾被 `with-cap(...)` 指派過的識別符名稱集合。
+	// idxwrite 對此集合內的基底不報錯——with-cap 建立 len=0 容量緩衝，逐位元組
+	// 填充靠直接下標寫入增長， checker 建議的替代形體對 len=0 緩衝會靜默產空字串。
+	capBases := map[string]map[string]bool{}
 
 	// 與 ValidateUnhandledIndex 同款：合併 std 的 vet 會讓同一份原始檔帶兩種
 	// SourceFile 字串，去重鍵對路徑做正規化。
@@ -6032,6 +6169,19 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 	// isContainerWriteBase 判定這個下標寫入是否落在 arr/vec/slice/str/txt 的
 	// 直接變數基底上（map 與 struct-field 基底都放行）。
 	isContainerWriteBase := func(curFunc string, idx *parser.IndexExpression) bool {
+		// with-cap 豁免：基底若在本函式內曾被 `with-cap(...)` 指派過，它是
+		// len=0 的容量緩衝，直接下標寫入是唯一能正確增長的寫法，不報 idxwrite。
+		if ident, ok := idx.Left.(*parser.Identifier); ok && ident.Value != "" {
+			funcKeys := []string{curFunc}
+			if i := strings.Index(curFunc, "."); i >= 0 {
+				funcKeys = append(funcKeys, curFunc[i+1:])
+			}
+			for _, cf := range funcKeys {
+				if set, ok := capBases[cf]; ok && set[ident.Value] {
+					return false
+				}
+			}
+		}
 		lt := baseTypeOf(curFunc, idx)
 		if lt == "" {
 			return false
@@ -6097,6 +6247,8 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
 			fcf := resolveFile(program.Sem.SourceFileOf(s), curFile)
+			// 收集本函式內 by with-cap 構造過的基底，供 isContainerWriteBase 豁免。
+			capBases[s.Name] = collectWithCapBases(s.Body)
 			if s.Body != nil {
 				for _, b := range s.Body.Statements {
 					walkStmt(b, s.Name, fcf)

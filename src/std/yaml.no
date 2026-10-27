@@ -568,7 +568,7 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
 
             err -> return
 
-            -> {
+            ok -> {
                 kind = YAML-KIND-FLOAT
                 fval = it
             }
@@ -909,7 +909,7 @@ yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
 
                     err -> ival = 0
 
-                    -> fval = it
+                    ok -> fval = it
                 }
             }
             kind == YAML-KIND-BOOL -> {

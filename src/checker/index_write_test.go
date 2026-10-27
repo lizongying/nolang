@@ -170,3 +170,57 @@ func TestIndexWriteWiredIntoLints(t *testing.T) {
 		t.Fatalf("ValidateIndexWrite not surfaced through RunAllLints as idxwrite")
 	}
 }
+
+// ── with-cap / with-len 緩衝增長豁免 ─────────────────────────────
+//
+// with-cap(n) 建立 len=0 容量緩衝、with-len(n) 建立 len=n 預填充緩衝，两者的
+// 標準構造慣例都靠「逐位元組直接下標寫入」填充（见 fmt.no fmt-apply-spec、
+// str.no / txt.no UTF-8 解碼）。checker 建議的替代形體（place-match / set-byte）
+// 對 len=0 緩衝會靜默產空字串，故這類基底必須豁免，否則 src/std 大量誤報。
+
+// TestIndexWriteWithCapExempt 負例：with-cap 建立的 str 緩衝逐位元組直寫不得報。
+func TestIndexWriteWithCapExempt(t *testing.T) {
+	src := `build = (n i64) (buf str) {
+    buf str = with-cap(n)
+    buf[0] = 65
+}`
+	prog := parseProg(t, src)
+	res := ValidateIndexWrite(prog, "src/app.no")
+	if len(res) != 0 {
+		t.Fatalf("with-cap buffer byte-fill write must NOT be reported, got %d: %+v", len(res), res)
+	}
+}
+
+// TestIndexWriteWithLenExempt 負例：with-len 建立的 str 緩衝逐位元組直寫不得報
+// （對應 str.no:1522 的 `val str = with-len(n); val[j] = ...` 解碼回填）。
+func TestIndexWriteWithLenExempt(t *testing.T) {
+	src := `copy2 = (self str, start i64, end i64) (val str) {
+    n = end - start
+    val str = with-len(n)
+    val[0] = self.byte(start)
+}`
+	prog := parseProg(t, src)
+	res := ValidateIndexWrite(prog, "src/app.no")
+	if len(res) != 0 {
+		t.Fatalf("with-len buffer byte-fill write must NOT be reported, got %d: %+v", len(res), res)
+	}
+}
+
+// TestIndexWriteWithCapExemptScoped 守門：豁免只針對 by with-cap/with-len 構造
+// 的那個基底；同一函式內以字面量定長陣列建立的另一基底仍必須報（越界寫保護不流失）。
+func TestIndexWriteWithCapExemptScoped(t *testing.T) {
+	src := `mixed = (n i64) () {
+    buf str = with-cap(n)
+    a [3]i64 = [1, 2, 3]
+    buf[0] = 65
+    a[1] = 2
+}`
+	prog := parseProg(t, src)
+	res := ValidateIndexWrite(prog, "src/app.no")
+	if len(res) != 1 {
+		t.Fatalf("only the literal-array base must be reported (with-cap base exempt), got %d: %+v", len(res), res)
+	}
+	if !strings.Contains(res[0].Message, "`a[1] = 2`") {
+		t.Errorf("report should name the literal-array write, not the with-cap base:\n%s", res[0].Message)
+	}
+}

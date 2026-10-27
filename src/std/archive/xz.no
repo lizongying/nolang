@@ -747,9 +747,8 @@ xz-decompress = (data []byte) (out []byte) {
         #{overflow=wrap}
         pos = pos + 1
 
-        ; 檢查 filter count（低 2 bits）
-        #{overflow=wrap}
-        n-filters = (block-flags & 0x3) + 1
+        ; 檢查 filter count（低 2 bits，此解析器不消費，顯式丟棄 option）
+        _ = (block-flags & 0x3) + 1
 
         ; 跳過壓縮大小（如果有）
         #{overflow=wrap}
@@ -888,8 +887,8 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             unpacked-size = (data[pos] << 8) | data[pos + 1]
             pos = pos + 2
 
-            ; 檢查字典重置
-            reset-dict = (ctrl & 0x20) != 0
+            ; 檢查字典重置（此解析器不消費，顯式丟棄 option）
+            _ = (ctrl & 0x20) != 0
 
             ; 讀取 LZMA 屬性（如果字典重置且 ctrl >= 0xC0）
             ctrl >= 0xc0 -> {
