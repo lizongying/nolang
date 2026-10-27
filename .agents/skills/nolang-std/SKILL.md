@@ -2896,14 +2896,15 @@ r = bigint.is-zero(a)
 r = bigint.is-neg(a)
 r = bigint.is-pos(a)
 
-// Arithmetic
-c = bigint.add(a, b)
-c = bigint.sub(a, b)
-c = bigint.abs-add(a, b)              // Absolute addition
-c = bigint.abs-sub(a, b)              // Absolute subtraction
-c = bigint.mul(a, b)
-q, r = bigint.div-mod(a, b)
-r = bigint.mod(a, b)
+// Arithmetic — + - * / % are operator-overloaded on bigint (see nolang-syntax: Operator overloading)
+c = a + b                             // same as a._add(b)
+c = a - b                             // same as a._sub(b)
+c = a * b                             // same as a._mul(b)
+q = a / b                             // same as a._div(b); division by zero returns zero (div-mod semantics)
+r = a % b                             // same as a._mod(b)
+c = a.abs-add(b)                      // Absolute addition (helper method, not overloaded)
+c = a.abs-sub(b)                      // Absolute subtraction (helper method)
+q, r = bigint.div-mod(a, b)           // quotient and remainder together
 q = bigint.div-i64(a, v)
 r = bigint.mod-i64(a, v)
 c = bigint.pow(a, n)

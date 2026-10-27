@@ -54,12 +54,13 @@ r = bigint.is-zero(a)
 r = bigint.is-neg(a)
 r = bigint.is-pos(a)
 
-; 運算
-c = bigint.add(a, b)
-c = bigint.sub(a, b)
-c = bigint.mul(a, b)
-q, r = bigint.div-mod(a, b)
-r = bigint.mod(a, b)
+; 運算（+ - * / % 已對 bigint 運算符重載，見「語法 > 運算符重載」）
+c = a + b                     ; 等價 a._add(b)
+c = a - b                     ; 等價 a._sub(b)
+c = a * b                     ; 等價 a._mul(b)
+q = a / b                     ; 等價 a._div(b)，除零依 div-mod 回傳零
+r = a % b                     ; 等價 a._mod(b)
+q, r = bigint.div-mod(a, b)   ; 同時取商與餘數
 q = bigint.div-i64(a, v)
 r = bigint.mod-i64(a, v)
 c = bigint.pow(a, n)

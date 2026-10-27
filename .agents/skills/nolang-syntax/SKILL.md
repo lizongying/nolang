@@ -3186,6 +3186,9 @@ External packages can only access exports declared in `lib.no` when importing vi
 - `-` // subtraction (also used for string concatenation)
 - `*` // multiplication (also used for string repetition)
 - `/` // division
+- `%` // remainder
+
+> **Operator overloading:** when the left operand's static type defines a `_op` method, the compiler rewrites `a op b` into `a._op(b)` at the lowering stage. The overload set is closed — exactly five symmetric binary arithmetic operators: `+`→`_add`, `-`→`_sub`, `*`→`_mul`, `/`→`_div`, `%`→`_mod`. The method's result parameter is **written `?T` but takes effect as the pure payload `T`** — the compiler strips the `?` everywhere (signature lookup, checker types, HIR result ABI); no option boxing/unwrapping, and divide-by-zero traps at runtime like builtin numerics. `bigint` supports `+ - * / %` through this mechanism; explicit `a._add(b)` is fully equivalent to `a + b`, and left-nested chains rewrite layer by layer (`a + b + c` → `(a._add(b))._add(c)`).
 
 #### Comparison Operators
 

@@ -1491,6 +1491,45 @@ Rules:
   `{ r1 = co worker(1); r2 = co worker(2) }` lowers like a coroutine group — the
   two `worker-async` tasks are spawned first, then `awy`-ed together.
 
+## Operator Overloading
+
+When the static type of the left operand defines a designated `_op` method, the compiler rewrites the infix expression `a op b` into the method call `a._op(b)` at the lowering stage. The overload set is a closed group of five symmetric binary arithmetic operators:
+
+| Operator | Overload method |
+|----------|-----------------|
+| `+` | `_add` |
+| `-` | `_sub` |
+| `*` | `_mul` |
+| `/` | `_div` |
+| `%` | `_mod` |
+
+```no
+big {
+    v i64
+}
+
+; the result type is written ?big but treated by the compiler as plain payload big
+big._add = (b big) (c ?big) {
+    c = big {
+        v: .v + b.v
+    }
+}
+
+f = (a big, b big) (out big) {
+    r big = a + b      ; rewritten by the compiler into a._add(b)
+    out = r
+}
+```
+
+**Type convention**: the result parameter of an operator method is **written as `?T` but takes effect as the pure payload `T`** — the compiler performs no option boxing or unwrapping; inside the method body a plain `T` value is assigned to `c`, and callers receive `T` as well. Errors such as division by zero trap at runtime exactly like the builtin numeric types; no option value is produced.
+
+**Key semantics**:
+
+- The rewrite only fires when the left operand's static type defines the corresponding `_op` method; builtin numeric types (i64, f64, ...) keep builtin arithmetic.
+- An explicit method call `a._add(b)` is fully equivalent to `a + b`.
+- Left-nested chains are rewritten layer by layer: `a + b + c` → `(a._add(b))._add(c)`; the intermediate result stays `T` and can keep participating in operators or method calls.
+- The standard library `bigint` gains `+ - * / %` support through this mechanism (see the bigint section under "Standard Library > Others").
+
 ## Arrays and Slices
 
 Containers store copies of data; the original variable and the container are independent, eliminating dangling references.

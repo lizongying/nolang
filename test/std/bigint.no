@@ -86,12 +86,12 @@ t-is-neg = () {
 t-add = () {
     a = bigint.from-i64(10)
     b = bigint.from-i64(20)
-    c = bigint.add(a, b)
+    c = a + b
     s = c.to-str()
     runner.str-eq(s, '30', 2, 'add(10, 20) == 30')
     d = bigint.from-i64(-5)
     e = bigint.from-i64(8)
-    f = bigint.add(d, e)
+    f = d + e
     s2 = f.to-str()
     runner.str-eq(s2, '3', 1, 'add(-5, 8) == 3')
 }
@@ -99,12 +99,12 @@ t-add = () {
 t-sub = () {
     a = bigint.from-i64(20)
     b = bigint.from-i64(10)
-    c = bigint.sub(a, b)
+    c = a - b
     s = c.to-str()
     runner.str-eq(s, '10', 2, 'sub(20, 10) == 10')
     d = bigint.from-i64(5)
     e = bigint.from-i64(8)
-    f = bigint.sub(d, e)
+    f = d - e
     s2 = f.to-str()
     runner.str-eq(s2, '-3', 2, 'sub(5, 8) == -3')
 }
@@ -114,12 +114,12 @@ t-sub = () {
 t-mul = () {
     a = bigint.from-i64(6)
     b = bigint.from-i64(7)
-    c = bigint.mul(a, b)
+    c = a * b
     s = c.to-str()
     runner.str-eq(s, '42', 2, 'mul(6, 7) == 42')
     d = bigint.from-i64(-3)
     e = bigint.from-i64(4)
-    f = bigint.mul(d, e)
+    f = d * e
     s2 = f.to-str()
     runner.str-eq(s2, '-12', 3, 'mul(-3, 4) == -12')
 }
