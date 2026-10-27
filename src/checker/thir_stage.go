@@ -77,6 +77,13 @@ type THIRView struct {
 	prog      *parser.Program
 	exprOnce  sync.Once
 	exprTypes map[parser.Node]string
+	// exprBuilding 標記惰性全樹收集正在進行中（見 thir_exprtypes.go
+	// ExprTypeOf）。sync.Once 不可重入：collectExprTypes 的走查會經
+	// collectFuncDeclared → declTypeOf → TypeOf 對「不在 IdMap 的運算式節點
+	// （含 *Parameter，它實現了 expressionNode）」再次呼叫 ExprTypeOf，
+	// 若不擋下就會 Do 套 Do 自鎖 → 全進程死鎖。構建中直接回 ""，讓
+	// declTypeOf 退回 legacy AST 值兜底。見 ExprTypeOf 註解。
+	exprBuilding bool
 }
 
 // NewTHIRView returns a view over the AST→HIR mapping produced by

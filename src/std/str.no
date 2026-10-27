@@ -989,7 +989,7 @@ str-to-f64 = (s str) (result f64) {
     num = bigint.copy(int-mant)
     den = bigint.one()
     (K >= 0) -> {
-        num = bigint.mul(int-mant, bigint.pow(bigint.from-i64(10), K))
+        num = int-mant._mul(bigint.pow(bigint.from-i64(10), K))
     }
     -> {
         den = bigint.pow(bigint.from-i64(10), 0 - K)
@@ -1080,7 +1080,7 @@ str-to-f64 = (s str) (result f64) {
         e = e + 1
         W = two52.copy()
     }
-    mW = bigint.sub(W, two52)
+    mW = W._sub(two52)
     m ?i64 = bigint.mod-i64(mW, 4503599627370496)
     mv f64 = m: {
         ok -> it.to-f64()

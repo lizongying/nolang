@@ -268,20 +268,20 @@ f64.to-str = () (out str) {
         found == 1 -> { K = 351 }
         found == 0 -> {
             ; N = (2*base*pow10 + den) / (2*den) = round(base*pow10/den)
-            t1 = bigint.mul(base, pow10)
-            t2 = bigint.add(t1, t1)
-            t3 = bigint.add(t2, den)
-            den2 = bigint.add(den, den)
-            N = bigint.div(t3, den2)
+            t1 = base._mul(pow10)
+            t2 = t1._add(t1)
+            t3 = t2._add(den)
+            den2 = den._add(den)
+            N = t3._div(den2)
 
             ; Nchk = 2*N*den；A=(2*base-hd)*pow10；B=(2*base+hd)*pow10
-            twoN = bigint.add(N, N)
-            Nchk = bigint.mul(twoN, den)
-            twoBase = bigint.add(base, base)
-            Am = bigint.sub(twoBase, hd)
-            Bm = bigint.add(twoBase, hd)
-            A = bigint.mul(Am, pow10)
-            B = bigint.mul(Bm, pow10)
+            twoN = N._add(N)
+            Nchk = twoN._mul(den)
+            twoBase = base._add(base)
+            Am = twoBase._sub(hd)
+            Bm = twoBase._add(hd)
+            A = Am._mul(pow10)
+            B = Bm._mul(pow10)
 
             c1 = A.cmp(Nchk)
             c2 = Nchk.cmp(B)
@@ -305,7 +305,7 @@ f64.to-str = () (out str) {
             found == 0 -> {
                 #{overflow=wrap}
                 K = K + 1
-                pow10 = bigint.mul(pow10, ten)
+                pow10 = pow10._mul(ten)
             }
         }
     }

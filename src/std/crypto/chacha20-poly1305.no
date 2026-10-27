@@ -240,12 +240,12 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     out = x
     hi = bigint.shr(out, 130)
     (! hi.is-zero()) {
-        lo bigint.bigint = bigint.sub(out, bigint.shl(hi, 130))
-        out = bigint.add(lo, bigint.mul-i64(hi, 5))
+        lo bigint.bigint = out._sub(bigint.shl(hi, 130))
+        out = lo._add(bigint.mul-i64(hi, 5))
         hi = bigint.shr(out, 130)
     }
-    p = bigint.sub(bigint.shl(bigint.one(), 130), bigint.from-i64(5))
-    out.cmp(p) >= 0 -> out = bigint.sub(out, p)
+    p = bigint.shl(bigint.one(), 130)._sub(bigint.from-i64(5))
+    out.cmp(p) >= 0 -> out = out._sub(p)
 }
 
 ; poly1305: 計算 Poly1305 MAC
@@ -267,14 +267,14 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
             i == 4 || i == 8 || i == 12 -> bvr = bvr & 252
         }
-        r = bigint.add(bigint.mul-i64(r, 256), bigint.from-i64(bvr))
+        r = bigint.mul-i64(r, 256)._add(bigint.from-i64(bvr))
     }
 
     ; s = key[16..32]（小端 128-bit，无 clamp）
     s = bigint.zero()
     j <- [31..16]: {
         bvs i64 = key[j]
-        s = bigint.add(bigint.mul-i64(s, 256), bigint.from-i64(bvs))
+        s = bigint.mul-i64(s, 256)._add(bigint.from-i64(bvs))
     }
 
     ; 累加器 h = 0
@@ -296,12 +296,13 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
             #{index-out=zero, overflow=wrap}
             bvk i64 = data[pos + k]
-            c = bigint.add(bigint.mul-i64(c, 256), bigint.from-i64(bvk))
+            c = bigint.mul-i64(c, 256)._add(bigint.from-i64(bvk))
         }
 
         #{overflow=wrap}
-        c = bigint.add(c, bigint.shl(bigint.one(), n * 8))
-        h = poly1305-reduce(bigint.mul(bigint.add(h, c), r))
+        c = c._add(bigint.shl(bigint.one(), n * 8))
+        hc = h._add(c)
+        h = poly1305-reduce(hc._mul(r))
 
         #{overflow=wrap}
         pos = pos + 16
@@ -310,7 +311,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     ; tag = (h + s) 的低 128 位，小端输出（逐字节）
     ; 注意：不可用 mod-i64/div-i64 取 32-bit limb —— 除数 2^32 会让内部 rem<<32 溢出 i64。
     ; 改用 shr + mod-i64(.,256)：小除数保证 rem<256，rem<<32 不溢出。
-    hs = bigint.add(h, s)
+    hs = h._add(s)
     out <- [0..16): {
 
         #{overflow=wrap}

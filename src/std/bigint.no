@@ -198,25 +198,32 @@ bigint.eq = (b bigint) (r bool) {
 ; 加法與減法
 ; ═══════════════════════════════════════════════
 
-; _add: a + b（運算符重載；書寫 ?bigint，編譯器視作 bigint，不產生 option 包裝）
+; _add: a + b（運算符重載；委派自由函数 add；書寫 ?bigint，編譯器視作 bigint）
+; 註：方法體不直接內聯 `b.abs-sub(.)`——裸 `.` 作「方法呼叫」實參存在
+; 既有降級缺口（實參被降成 zeroinitializer 傳值，指針欄位為 null → 段錯誤），
+; 與 `_sub`/`_mul` 等一致委派自由函数即可繞開，且語義與 add 同源難出錯。
 bigint._add = (b bigint) (c ?bigint) {
-    .sign == b.sign -> {
-        c = .abs-add(b)
-        c.sign = .sign
-        return
-    }
-    ac = .abs-cmp(b)
-    {
-        ac >= 0 -> {
-            c = .abs-sub(b)
-            c.sign = .sign
-        }
+    c = add(., b)
+}
 
-        -> {
-            c = b.abs-sub(.)
-            c.sign = b.sign
-        }
-    }
+; _sub: a - b（運算符重載；委派自由函数 sub）
+bigint._sub = (b bigint) (c ?bigint) {
+    c = sub(., b)
+}
+
+; _mul: a * b（運算符重載；委派自由函数 mul）
+bigint._mul = (b bigint) (c ?bigint) {
+    c = mul(., b)
+}
+
+; _div: a / b（運算符重載；委派自由函数 div，除零依 div-mod 回傳零）
+bigint._div = (b bigint) (q ?bigint) {
+    q = div(., b)
+}
+
+; _mod: a % b（運算符重載；委派自由函数 mod，除零依 div-mod 回傳零）
+bigint._mod = (b bigint) (r ?bigint) {
+    r = mod(., b)
 }
 
 ; abs-add: |self| + |b|（忽略正負號）
@@ -260,19 +267,19 @@ bigint.abs-add = (b bigint) (c bigint) {
 ; add: c = a + b（自由函数形，與 _add 運算符重載同義；供 bigint.add 跨模組限定呼叫）
 add = (a bigint, b bigint) (c bigint) {
     a.sign == b.sign -> {
-        c = abs-add(a, b)
+        c = a.abs-add(b)
         c.sign = a.sign
         return
     }
     ac = a.abs-cmp(b)
     {
         ac >= 0 -> {
-            c = abs-sub(a, b)
+            c = a.abs-sub(b)
             c.sign = a.sign
         }
 
         -> {
-            c = abs-sub(b, a)
+            c = b.abs-sub(a)
             c.sign = -a.sign
         }
     }
@@ -281,34 +288,34 @@ add = (a bigint, b bigint) (c bigint) {
 ; sub: a - b
 sub = (a bigint, b bigint) (c bigint) {
     a.sign != b.sign -> {
-        c = abs-add(a, b)
+        c = a.abs-add(b)
         c.sign = a.sign
         return
     }
     ac = a.abs-cmp(b)
     {
         ac >= 0 -> {
-            c = abs-sub(a, b)
+            c = a.abs-sub(b)
             c.sign = a.sign
         }
 
         -> {
-            c = abs-sub(b, a)
+            c = b.abs-sub(a)
             c.sign = -a.sign
         }
     }
 }
 
-; abs-sub: |a| - |b|（假設 |a| >= |b|）
-abs-sub = (a bigint, b bigint) (c bigint) {
+; bigint.abs-sub: |self| - |b|（假設 |self| >= |b|，忽略正負號）
+bigint.abs-sub = (b bigint) (c bigint) {
     borrow = 0
-    al = a.len
+    al = .len
     bl = b.len
     c.limbs = with-len(al)
     c.len = al
     i <- [0..al): {
 
-        av = a.limbs[i]
+        av = .limbs[i]
         bv = 0
         i < bl -> {
 
@@ -768,7 +775,7 @@ gcd = (a bigint, b bigint) (g bigint) {
     y.sign = 1
     yz = y.is-zero()
     (! yz) {
-        x = bigint.mod(x, y)
+        x = x._mod(y)
         tmp = bigint {}
         tmp = y.copy()
         y = x.copy()

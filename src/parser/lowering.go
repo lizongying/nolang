@@ -335,6 +335,20 @@ func (l *lowerer) walk(v reflect.Value) {
 		if v.IsNil() {
 			return
 		}
+		// 運算符重載派發（post-order）：先遞迴把子節點（如巢狀 `a + b`、
+		// `(a + b) * c`）降成 method-call，再嘗試把「本節點」的 `x OP y`
+		// 重寫為 `x._op(y)`。僅 build 路徑（非 analysisOnly）改寫 AST；
+		// fmt / LSP 的 analysisOnly 路徑跳過，保留 `a + b` 原樣輸出，
+		// 故格式化源碼不受影響。
+		if _, ok := v.Elem().Interface().(*InfixExpression); ok {
+			l.walk(v.Elem()) // 先降子節點
+			if !l.analysisOnly && v.CanSet() {
+				if repl, ok := l.maybeDesugarInfix(v); ok {
+					v.Set(reflect.ValueOf(repl))
+				}
+			}
+			return
+		}
 		if v.Elem().Type() == surfaceMatchPtrType && v.CanSet() {
 			if l.analysisOnly {
 				// warnMatchArms 模式：由 warnMatchArmsPass 自行走訪子節點
@@ -612,6 +626,37 @@ func (l *lowerer) runInferredTypeAnalysis(program *Program) {
 		return
 	}
 	l.walk(reflect.ValueOf(program))
+}
+
+// maybeDesugarInfix 嘗試把介面 v 持有的 InfixExpression 重寫為對應的運算符重載
+// 方法呼叫。呼叫此函數前，v 的子節點（Left / Right 中的巢狀 InfixExpression）
+// 必須已先降成 method-call（post-order），否則左操作數型別可能尚未就位而探測失敗。
+// v 必須是持有 *InfixExpression 的介面。傳回取代節點與是否成功改寫。
+func (l *lowerer) maybeDesugarInfix(v reflect.Value) (Node, bool) {
+	inf, ok := v.Interface().(*InfixExpression)
+	if !ok || inf == nil {
+		return nil, false
+	}
+	// 非可重載運算符（比較、位運算等）直接跳過，保留原 InfixExpression。
+	if _, ok := OperatorMethod(inf.Operator); !ok {
+		return nil, false
+	}
+	// 探測左操作數靜態型別是否定義對應運算符重載方法；無則不改寫。
+	rt := l.p.OperatorOverloadReturnType(inf)
+	if rt == "" {
+		return nil, false
+	}
+	method, _ := OperatorMethod(inf.Operator)
+	repl := &CallExpression{
+		Token: inf.Token,
+		Function: &DotExpression{
+			Token:    inf.Token,
+			Receiver: inf.Left,
+			Property: method,
+		},
+		Arguments: []Expression{inf.Right},
+	}
+	return repl, true
 }
 
 // collectLocalTypes 預掃描函數體，將「未標型別、但可由 RHS 推導容器型別」的

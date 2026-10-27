@@ -1540,6 +1540,19 @@ func (p *Parser) parseLetStatement() Statement {
 				p.setVarType(stmt.Name.Value, v.Type)
 			}
 
+		case *InfixExpression:
+			// 運算符重載派發的「型別推斷」分支：對 `c = a + b`（其中 a 的
+			// 靜態型別定義了 `_add` 等），把 c 的型別推斷為該方法的回傳型別
+			// （payload T，去掉 `?`）。此處**只推斷型別、不改寫 AST 節點**——
+			// 結構重寫 `a + b → a._add(b)` 發生在 build 路徑的 lowering walk，
+			// 故 fmt / LSP 看到的仍是 `a + b`，格式化源碼不受影響。
+			if t := p.OperatorOverloadReturnType(v); t != "" {
+				if existing, ok := p.sem.FuncVarType(p.curFuncName, stmt.Name.Value); !ok || existing == "" {
+					stmt.Type = markInferred(buildType(t, nameToken))
+					p.setVarType(stmt.Name.Value, t)
+				}
+			}
+
 		case *CallExpression:
 			// 從函數/方法調用推斷返回型別（僅首次宣告，不覆蓋已有型別）
 			// 例外：option 型別（?type）必須始終更新，因為 match desugar 依賴它

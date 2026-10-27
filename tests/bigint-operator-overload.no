@@ -1,0 +1,192 @@
+; bigint-operator-overload.no — 回归测试：bigint 算术运算符重载 `+ - * / %`
+;
+; 验证「通用语言特性」：任意用户类型只要定义 `_op` 方法，编译器即把 `a op b`
+; 自动重写为 `a._op(b)`。bigint 定义了 `_add/_sub/_mul/_div/_mod`，故下列写法
+; 全部生效，且结果类型为纯 payload `bigint`（无 option 包装）。
+;
+; 同时钉住「显式方法调用 `a._add(b)`」与「运算符 `a + b`」产出相同结果——
+; 二者走同一条派发路径（InfixExpression 在 lowering 期重写为 CallExpression）。
+;
+; 判定形式用块 `{ cond -> print(PASS)  -> print(FAIL) }`：裸 `->` else 分支
+; 必须与 then 分支同处一个 match 块，写成两条独立语句会被解析成两个单向 if。
+
+print('=== bigint-operator-overload ===')
+
+; ─────────────────────────────────────────────
+; 1. 加法 _add：同号 / 异号 / 进位
+; ─────────────────────────────────────────────
+two bigint = bigint.from-i64(2)
+three bigint = bigint.from-i64(3)
+neg2 bigint = bigint.from-i64(-2)
+big bigint = bigint.from-i64(4294967296) ; 2^32，触发跨 limb
+
+c1 = two + three
+{
+    c1.to-str() == '5' -> print('PASS: 1a 2 + 3 = 5')
+
+    -> print('FAIL: 1a 2+3={c1.to-str()}')
+}
+
+c2 = neg2 + three
+{
+    c2.to-str() == '1' -> print('PASS: 1b -2 + 3 = 1（异号）')
+
+    -> print('FAIL: 1b -2+3={c2.to-str()}')
+}
+
+c3 = two + neg2
+{
+    c3.to-str() == '0' -> print('PASS: 1c 2 + -2 = 0')
+
+    -> print('FAIL: 1c 2+-2={c3.to-str()}')
+}
+
+c4 = big + big
+{
+    c4.to-str() == '8589934592' -> print('PASS: 1d 2^32 + 2^32 = 2^33（跨 limb）')
+
+    -> print('FAIL: 1d big+big={c4.to-str()}')
+}
+
+; ─────────────────────────────────────────────
+; 2. 减法 _sub
+; ─────────────────────────────────────────────
+c5 = three - two
+{
+    c5.to-str() == '1' -> print('PASS: 2a 3 - 2 = 1')
+
+    -> print('FAIL: 2a 3-2={c5.to-str()}')
+}
+
+c6 = two - three
+{
+    c6.to-str() == '-1' -> print('PASS: 2b 2 - 3 = -1（结果为负）')
+
+    -> print('FAIL: 2b 2-3={c6.to-str()}')
+}
+
+c7 = neg2 - two
+{
+    c7.to-str() == '-4' -> print('PASS: 2c -2 - 2 = -4')
+
+    -> print('FAIL: 2c -2-2={c7.to-str()}')
+}
+
+; ─────────────────────────────────────────────
+; 3. 乘法 _mul
+; ─────────────────────────────────────────────
+c8 = two * three
+{
+    c8.to-str() == '6' -> print('PASS: 3a 2 * 3 = 6')
+
+    -> print('FAIL: 3a 2*3={c8.to-str()}')
+}
+
+c9 = neg2 * three
+{
+    c9.to-str() == '-6' -> print('PASS: 3b -2 * 3 = -6')
+
+    -> print('FAIL: 3b -2*3={c9.to-str()}')
+}
+
+c10 = big * two
+{
+    c10.to-str() == '8589934592' -> print('PASS: 3c 2^32 * 2 = 2^33（跨 limb）')
+
+    -> print('FAIL: 3c big*2={c10.to-str()}')
+}
+
+; ─────────────────────────────────────────────
+; 4. 除法 _div（整数截断）
+; ─────────────────────────────────────────────
+seven bigint = bigint.from-i64(7)
+c11 = seven / two
+{
+    c11.to-str() == '3' -> print('PASS: 4a 7 / 2 = 3（向零截断）')
+
+    -> print('FAIL: 4a 7/2={c11.to-str()}')
+}
+
+c12 = neg2 / two
+{
+    c12.to-str() == '-1' -> print('PASS: 4b -2 / 2 = -1')
+
+    -> print('FAIL: 4b -2/2={c12.to-str()}')
+}
+
+; ─────────────────────────────────────────────
+; 5. 取模 _mod
+; ─────────────────────────────────────────────
+c13 = seven % two
+{
+    c13.to-str() == '1' -> print('PASS: 5a 7 % 2 = 1')
+
+    -> print('FAIL: 5a 7%2={c13.to-str()}')
+}
+
+c14 = big % three
+{
+    ; 2^32 = 4294967296, mod 3 = 4294967296 % 3 = 1
+    c14.to-str() == '1' -> print('PASS: 5b 2^32 % 3 = 1（跨 limb 取模）')
+
+    -> print('FAIL: 5b big%3={c14.to-str()}')
+}
+
+; ─────────────────────────────────────────────
+; 6. 运算符形式与显式方法调用形式等价（同一条派发路径）
+; ─────────────────────────────────────────────
+c15 = two + three
+c16 = two._add(three)
+{
+    c15.to-str() == c16.to-str() -> print('PASS: 6a a+b ≡ a._add(b)')
+
+    -> print('FAIL: 6a {c15.to-str()} != {c16.to-str()}')
+}
+
+c17 = two * three
+c18 = two._mul(three)
+{
+    c17.to-str() == c18.to-str() -> print('PASS: 6b a*b ≡ a._mul(b)')
+
+    -> print('FAIL: 6b {c17.to-str()} != {c18.to-str()}')
+}
+
+; ─────────────────────────────────────────────
+; 7. 混合表达式：运算符链接（post-order 降级：(a+b)*c → (a._add(b))._mul(c)）
+; ─────────────────────────────────────────────
+c19 = (two + three) * big
+{
+    ; (2+3) * 2^32 = 5 * 4294967296 = 21474836480
+    c19.to-str() == '21474836480' -> print('PASS: 7 (2+3)*2^32 = 21474836480（链式）')
+
+    -> print('FAIL: 7 (2+3)*big={c19.to-str()}')
+}
+
+c19b = two + three + neg2
+{
+    ; 左嵌套链 2 + 3 + (-2) = 3：第二个 `+` 的接收者是前一次 _add 的结果
+    c19b.to-str() == '3' -> print('PASS: 7b 2 + 3 + -2 = 3（左嵌套链）')
+
+    -> print('FAIL: 7b 2+3+-2={c19b.to-str()}')
+}
+
+; ─────────────────────────────────────────────
+; 8. 结果类型是纯 payload bigint（无 option 包装）：可直接再参与运算、
+;    可直接调用 bigint 方法，无需 ?= 解包。
+; ─────────────────────────────────────────────
+c20 bigint = two + three ; 显式标注 bigint 必须被 checker 接受（不是 ?bigint）
+{
+    c20.is-zero() == false -> print('PASS: 8a a+b 结果是 bigint（直接方法调用）')
+
+    -> print('FAIL: 8a c20 无法当 bigint 使用')
+}
+
+c21 = (two + three) - (big + big)
+{
+    ; 5 - 2^33 = 5 - 8589934592 = -8589934587：两个 _add 结果直接相减
+    c21.to-str() == '-8589934587' -> print('PASS: 8b (2+3)-(2^32+2^32) = -8589934587（结果再运算）')
+
+    -> print('FAIL: 8b {c21.to-str()}')
+}
+
+print('=== bigint-operator-overload done ===')

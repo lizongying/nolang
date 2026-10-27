@@ -172,7 +172,14 @@ func (p *Parser) rebuildLocalSignatures(prog *Program) {
 		}
 		rets := make([]string, 0, len(results))
 		for _, r := range results {
-			rets = append(rets, typeString(r.Type))
+			ts := typeString(r.Type)
+			// 運算符重載方法（_add 等）回傳書寫 `?T`、生效 payload T：與
+			// decl.go 解析期註冊保持一致地剝 `?`，否則鏈式運算子在外層
+			// 探測內層呼叫型別時拿到 `?T`，查 `?T._add` 鍵落空而放棄改寫。
+			if IsOperatorOverloadName(OperatorOverloadBaseName(fd.Name)) {
+				ts = strings.TrimPrefix(ts, "?")
+			}
+			rets = append(rets, ts)
 		}
 		if fd.IsMethodDef {
 			if fd.ColonSyntax {

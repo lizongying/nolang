@@ -78,8 +78,25 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 	// CallExpression receiver (e.g., fs.read-file(path).to-str()):
 	// recursively infer the return type of the inner call, then use it
 	// as the receiver type for the outer method call.
+	// 剝 `?`：其餘分支（Identifier / Dot / Grouped）查方法簽名時一律以
+	// payload 型別作鍵，option 接收者查 `?T.method` 必然落空。鏈式運算子
+	// `a + b + c` 的外層探測正是以 `a._add(b)` 呼叫作接收者，若保留
+	// `?bigint`（filterInferableType 對 option 原樣放行），鍵 `?bigint._add`
+	// 查不到簽名 → 放棄改寫 → 退回原生 codegen 對 struct emit add → 崩潰。
 	if innerCall, ok := receiver.(*CallExpression); ok {
-		return p.inferTypeFromCallExpr(innerCall)
+		return strings.TrimPrefix(p.inferTypeFromCallExpr(innerCall), "?")
+	}
+	// GroupedExpression receiver（如 `(a + b).method()`）：剥括號後遞迴解析。
+	if grouped, ok := receiver.(*GroupedExpression); ok {
+		return p.resolveReceiverType(grouped.Expression)
+	}
+	// InfixExpression receiver（鏈式運算子 `a + b + c`、`(a + b) * c`）：
+	// 左運算元本身是可能派發為運算符重載的中綴式。若它是運算符重載（左型別
+	// 定義了 `_op`），其生效型別即該運算符重載方法的 payload 回傳型別；否則
+	// 回傳空字串（純內建數值中綴，不作方法接收者）。不依賴 post-order 是否已
+	// 把內層重寫為 CallExpression——兩條路徑在此均能解析出一致的结果型別。
+	if innerInf, ok := receiver.(*InfixExpression); ok {
+		return p.OperatorOverloadReturnType(innerInf)
 	}
 	return ""
 }
@@ -93,6 +110,7 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 //   - 模組函數（mod.fn）查 p.funcSignatures
 //   - 結構體方法（receiver.method）查 p.methodSignatures
 //     本模組方法以 "struct.method" 為鍵，跨模組 std 方法以 "module.struct.method" 為鍵。
+//
 // currentModuleName 由目前原始檔名推出所屬模組名（".../std/fs.no" → "fs"）。
 //
 // 只用於裸名呼叫在 funcSignatures 未命中時的「module.fn」回退查表；對使用者
@@ -171,14 +189,14 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 				// 兩種鍵均以 receiverType + "." + dot.Property 查找即可。
 				key := receiverType + "." + dot.Property
 				if rets, ok := p.methodSignatures[key]; ok && len(rets) == 1 {
-					return rets[0]
+					return stripOperatorOverloadReturn(dot.Property, rets[0])
 				}
 			}
 			// array/slice type methods (如 []t.len()) 仍存於 funcSignatures
 			if p.funcSignatures != nil {
 				fnName := receiverType + "." + dot.Property
 				if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
-					return rets[0]
+					return stripOperatorOverloadReturn(dot.Property, rets[0])
 				}
 			}
 			return ""
@@ -208,7 +226,7 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 			// 先查方法簽名（如 bufio.reader.init 在 methodSigs 中）
 			if p.methodSignatures != nil {
 				if rets, ok := p.methodSignatures[fullPath]; ok && len(rets) == 1 {
-					return rets[0]
+					return stripOperatorOverloadReturn(dot.Property, rets[0])
 				}
 			}
 			if p.funcSignatures != nil {
@@ -268,18 +286,18 @@ func containerElemType(lt string) string {
 	if lt == "" {
 		return ""
 	}
-// D6（2026-10-13）：str/txt 索引一样产生 option —— `s[i]` 越界 → `nil`，
-// 成功 → `ok(char)`。此前这里返回 ""，注释写着 "char, not option-indexed"，
-// 是 D1-b「先测量再分期」留下的豁免。§7.1 ③ 的测量结果否掉了分期：
-// src/std 11 处、tests 34 处需要迁移（几乎全是同一个 x25519 十六进制解析块
-// 在 16 个文件里的副本），规模可接受，故与主体同期落地。
-//
-// 注意两者的元素型别口径必须与 hir2mir 的 elemTypeOfType 一致：那里对 str 与
-// txt 都回 `char`（尽管 txt 在历史上曾写成 i8），不统一会让
-// `x ?char = s[i]` 的舱体尺寸与实际读取错位。
-if lt == "str" || lt == "txt" {
-	return "char"
-}
+	// D6（2026-10-13）：str/txt 索引一样产生 option —— `s[i]` 越界 → `nil`，
+	// 成功 → `ok(char)`。此前这里返回 ""，注释写着 "char, not option-indexed"，
+	// 是 D1-b「先测量再分期」留下的豁免。§7.1 ③ 的测量结果否掉了分期：
+	// src/std 11 处、tests 34 处需要迁移（几乎全是同一个 x25519 十六进制解析块
+	// 在 16 个文件里的副本），规模可接受，故与主体同期落地。
+	//
+	// 注意两者的元素型别口径必须与 hir2mir 的 elemTypeOfType 一致：那里对 str 与
+	// txt 都回 `char`（尽管 txt 在历史上曾写成 i8），不统一会让
+	// `x ?char = s[i]` 的舱体尺寸与实际读取错位。
+	if lt == "str" || lt == "txt" {
+		return "char"
+	}
 	if strings.HasPrefix(lt, "[]") {
 		return lt[2:]
 	}

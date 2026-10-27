@@ -33,7 +33,20 @@ func (v *THIRView) ExprTypeOf(n parser.Node) string {
 	if v == nil || n == nil {
 		return ""
 	}
-	v.exprOnce.Do(func() { v.exprTypes = collectExprTypes(v.prog, v) })
+	// 構建期間的重入呼叫直接回 ""（sync.Once 不可重入）。collectExprTypes 的
+	// 走查會透過 collectFuncDeclared → declTypeOf → TypeOf 對不在 IdMap 的
+	// 運算式節點（例如運算符重載方法未 remember 的 *Parameter 結果參數）再次
+	// 進入本方法；此時最終表尚未成形，回 "" 讓 declTypeOf 退回 legacy AST
+	// 宣告值兜底，語義與構建完成後查表對宣告節點的結論一致（nodeType 直讀
+	// .Type.String()），且避免了 Do 套 Do 的死鎖。
+	if v.exprBuilding {
+		return ""
+	}
+	v.exprOnce.Do(func() {
+		v.exprBuilding = true
+		v.exprTypes = collectExprTypes(v.prog, v)
+		v.exprBuilding = false
+	})
 	return v.exprTypes[n]
 }
 
@@ -52,19 +65,20 @@ type exprTypeCtx struct {
 // collectExprTypes 走查整棵程序，对每个表达式节点记录 inferExprType 的结果。
 //
 // 上下文口径刻意与 runIntOverflowCore 对齐（同一套 collectFuncDeclared +
-// Sem.FuncVarTypes 补缺 + snapshotValidationFuncTypes），使本表与 validator
-// 走查时调用 inferExprType 得到的答案同源。
+// Sem.FuncVarTypes 补缺），函數回傳型別表則以 localFuncTypes 就地從本
+// program 構造（登記規則與 validator 入口重建 validationFuncTypes 逐位元
+// 一致），使本表與 validator 走查時呼叫 inferExprType 得到的答案同源。
 //
-// ⚠️ 已知限制（本批刻意接受，消费方迁移前需重新谈判）：varTypes 用的是
-// 「整函数扁平表」，而部分 validator 用「逐语句推进的作用域表」。函数内同名
-// 变数在不同语句被赋不同型别时两者会分叉。本表当下无生产消费方，分叉不产生
-// 行为差异；TestExprTypesFaithful 统计覆盖率供后续批次决策。
+// ⚠️ 已知限制（本批刻意接受，消費方遷移前需重新談判）：varTypes 用的是
+// 「整函數扁平表」，而部分 validator 用「逐語句推進的作用域表」。函數內同名
+// 變數在不同語句被賦不同型別時兩者會分叉。本表當下無生產消費方，分叉不產生
+// 行為差異；TestExprTypesFaithful 統計覆蓋率供後續批次決策。
 func collectExprTypes(program *parser.Program, view *THIRView) map[parser.Node]string {
 	out := make(map[parser.Node]string)
 	if program == nil {
 		return out
 	}
-	funcTypes := snapshotValidationFuncTypes()
+	funcTypes := localFuncTypes(program)
 	top := &exprTypeCtx{
 		varTypes:  collectTopLevelLets(program, funcTypes, view),
 		funcTypes: funcTypes,
@@ -73,6 +87,35 @@ func collectExprTypes(program *parser.Program, view *THIRView) map[parser.Node]s
 	top.selfType = top.varTypes["self"]
 	collectStmtsExprTypes(program.Statements, top, view, out)
 	return out
+}
+
+// localFuncTypes 從本 program 的 AST 就地構造「函數名 → 回傳型別」表，
+// 登記規則與 ValidateFuncArgs / ValidateRedundantTypeAnnotation 入口重建
+// validationFuncTypes 的方式一致（fd 取 declaredResults[0] 原始 Type.String，
+// extern 取 Results[0]）。
+//
+// 為何不用 snapshotValidationFuncTypes()：global validationFuncTypes 由
+// 各 validator 在 validationMu 临界区内重建；而本收集表经 ExprTypeOf 的
+// sync.Once **惰性**构建，触发点恰在持锁路径（runTypesCore 锁内 →
+// declTypeOf → TypeOf → ExprTypeOf → Once.Do）内。snapshot 会再次
+// validationMu.Lock，非可重入互斥锁自锁 → 全进程死锁（fatal error: all
+// goroutines are asleep）。就地读 AST 不碰全局、不需锁，语义与锁内快照
+// 等价（同一 program 同一登记规则），并消除整类重入死锁。
+func localFuncTypes(program *parser.Program) map[string]string {
+	m := make(map[string]string)
+	for _, stmt := range program.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if rs := declaredResults(fd); len(rs) > 0 && rs[0].Type != nil {
+				m[fd.Name] = rs[0].Type.String()
+			}
+		}
+		if es, ok := stmt.(*parser.ExternStatement); ok {
+			if len(es.Results) > 0 && es.Results[0].Type != nil {
+				m[es.Name.Value] = es.Results[0].Type.String()
+			}
+		}
+	}
+	return m
 }
 
 // collectStmtsExprTypes 走查语句列表。函数定义切换独立作用域（参数 + 该函数的

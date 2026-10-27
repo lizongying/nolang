@@ -562,25 +562,25 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		if s.Expression != nil {
 			// If-as-statement: ExpressionStatement wraps an IfExpression.
 			// Descend into both branches so result-param types propagate.
-		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-			return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)
-		}
-		// S1：糖形態 match 是 SurfaceMatch；逐臂條件/臂體下鑽 call-arg 檢查。
-		if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
-			var res []ValidateResult
-			for _, arm := range sm.Arms {
-				if arm.Condition != nil {
-					res = append(res, checkCallArgsInExpr(arm.Condition, sigs, varTypes, structFields, underUnwrap, view)...)
-				}
-				if arm.Body != nil {
-					for _, bs := range arm.Body.Statements {
-						res = append(res, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
+			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+				return checkCallArgsInIfExpr(ifExpr, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)
+			}
+			// S1：糖形態 match 是 SurfaceMatch；逐臂條件/臂體下鑽 call-arg 檢查。
+			if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
+				var res []ValidateResult
+				for _, arm := range sm.Arms {
+					if arm.Condition != nil {
+						res = append(res, checkCallArgsInExpr(arm.Condition, sigs, varTypes, structFields, underUnwrap, view)...)
+					}
+					if arm.Body != nil {
+						for _, bs := range arm.Body.Statements {
+							res = append(res, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
+						}
 					}
 				}
+				return res
 			}
-			return res
-		}
-		return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields, underUnwrap, view)
+			return checkCallArgsInExpr(s.Expression, sigs, varTypes, structFields, underUnwrap, view)
 		}
 	case *parser.LetStatement:
 		// Compiler-injected synthetic let statements (e.g. match arm `it` bindings).
@@ -588,24 +588,24 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		// If not (fallback path when parser couldn't resolve the matched variable's
 		// type at parse time), infer from value but unwrap Optional types (?T → T),
 		// because `it` in a match arm always represents the unwrapped inner value.
-	if s.IsSynthetic {
-		if s.Value != nil {
-			results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, underUnwrap, view)
-			// Compiler-generated `target = __cap_N` propagation assignment on the
-			// nil/err arm of a safe-index / `?=` capture (lowering.go:1230-1235).
-			// It copies the WHOLE option into the target, so the value's type is
-			// `?T` while the target's real type is whatever the ok arm assigns —
-			// recording the unwrapped `T` here (the branch below) poisons
-			// varTypes: the ok arm's real let is then skipped by the
-			// `!exists` guard, and every later use of the target resolves to the
-			// wrong type (`xs str = shs-sub(ln, i + 1, rb)` → varTypes["xs"]=="i64"
-			// → spurious 6fgg3htw on `shs-byte(xs, k)`).
-			// checker.go:6830 (str-ordering) and :8766 (type-compat) already skip
-			// IsPropagation lets; do the same here so the ok arm's let wins.
-			if s.Name != nil && !resultParamNames[s.Name.Value] && !s.IsPropagation {
-				if s.Type != nil && s.Type.String() != "" {
-					varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
-				} else {
+		if s.IsSynthetic {
+			if s.Value != nil {
+				results := checkCallArgsInExpr(s.Value, sigs, varTypes, structFields, underUnwrap, view)
+				// Compiler-generated `target = __cap_N` propagation assignment on the
+				// nil/err arm of a safe-index / `?=` capture (lowering.go:1230-1235).
+				// It copies the WHOLE option into the target, so the value's type is
+				// `?T` while the target's real type is whatever the ok arm assigns —
+				// recording the unwrapped `T` here (the branch below) poisons
+				// varTypes: the ok arm's real let is then skipped by the
+				// `!exists` guard, and every later use of the target resolves to the
+				// wrong type (`xs str = shs-sub(ln, i + 1, rb)` → varTypes["xs"]=="i64"
+				// → spurious 6fgg3htw on `shs-byte(xs, k)`).
+				// checker.go:6830 (str-ordering) and :8766 (type-compat) already skip
+				// IsPropagation lets; do the same here so the ok arm's let wins.
+				if s.Name != nil && !resultParamNames[s.Name.Value] && !s.IsPropagation {
+					if s.Type != nil && s.Type.String() != "" {
+						varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+					} else {
 						// Untyped shared `it` binding (ok/wildcard arm whose matched
 						// type is unknown at parse time). Arms share one varTypes map,
 						// so a preceding sentinel (nil/err) arm's typed `it` binding may
@@ -738,7 +738,14 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		}
 		for _, r := range s.Results {
 			if r.Name != "" && r.Type != nil {
-				localTypes[r.Name] = declTypeOf(view, r, r.Type.String())
+				rt := r.Type.String()
+				// 運算符重載方法（_add 等）書寫為 `?T`，但編譯器視作 payload T：
+				// 結果參數的生效型別去掉 `?`，使方法體內 `c = <T>` 合法、
+				// 不觸發 option 包裝／解包，對齊內建數值型別（int.div 先例）。
+				if s.IsMethodDef && parser.IsOperatorOverloadName(parser.OperatorOverloadBaseName(s.Name)) {
+					rt = strings.TrimPrefix(rt, "?")
+				}
+				localTypes[r.Name] = declTypeOf(view, r, rt)
 				innerResultParams[r.Name] = true
 			}
 		}
@@ -1905,7 +1912,7 @@ func checkPrivateBuiltinMethodCall(e *parser.CallExpression, dot *parser.DotExpr
 	// Only enforce for a builtin actually registered under this
 	// receiver.method (str._len, txt._data, ...). Bare-name matches are
 	// impossible here because the key is always receiver-qualified.
-	if builtin.FindBuiltinMethod(recvType + "." + dot.Property) == nil {
+	if builtin.FindBuiltinMethod(recvType+"."+dot.Property) == nil {
 		return nil
 	}
 	if curModule == recvType {
@@ -2468,9 +2475,9 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			}
 		case *parser.SurfaceMatch:
 			// S4：糖形態下 match 是 SurfaceMatch，臂體對本 walker 不可見。見 sugar_walk.go。
-		walkSurfaceMatchChildren(e, nil,
-			func(x parser.Expression) { walkExpr(x) },
-			func(s parser.Statement) { walkStmts([]parser.Statement{s}) })
+			walkSurfaceMatchChildren(e, nil,
+				func(x parser.Expression) { walkExpr(x) },
+				func(s parser.Statement) { walkStmts([]parser.Statement{s}) })
 		case *parser.ArrayLiteral:
 			for _, elem := range e.Elements {
 				walkExpr(elem)
