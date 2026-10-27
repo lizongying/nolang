@@ -1709,7 +1709,7 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **門禁**：L0 `ps-test.no` **34/34**（新增 `test-chain-bare-if-else-fold-and-warn` 釘 wrapper 結構＋warnings:2；`test-slice-method-param-reassign-propagate` 釘補登記→傳播，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（同 s8v 集合，本輪改動區 0 新增）。工具鏈：`no build -cc zig`／`no run -cc zig`。
 
-### 5.3.4.aj s8x 多重指派逗號後目標專用解析器（2026-10-27 本輪）
+### 5.3.4.aj s8x 多重指派逗號後目標專用解析器（2026-10-27）
 
 **背景**：§5.3.4.ai（s8w）收官後 L2 剩 **3 檔 DIFF**。本輪攻 `tests/2.no`（48 行差，多值指派家族）。基線：SUT=`/tmp/noc-s77`。
 
@@ -1722,6 +1722,22 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 **歸因（同一 harness，A/B `noc-s77`→`noc-s78`）**：**DIFF 3→2 / SAME +1**：`tests/2.no` 轉逐字元一致。**SAME→DIFF 真回歸 0 檔**（全量 655 檔 sweep 逐檔比對差集為空）。剩 2 檔：`bigint.no`（src/ 側平行 WIP、本 session 禁改）、`database/sql.no`（多返回值 tuple、已判不可行）。
 
 **門禁**：L0 `ps-test.no` **35/35**（新增 `test-multi-assign-index-target-no-swallow` 釘三形：末索引目標吞號修復、索引目標居首、多值 RHS 尾值另成陳述，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（同 s8w 集合，本輪改動區 0 新增）；`no vet src/std` 148 ERROR 屬 src/ 側平行 WIP（oracle 行為，非本 session 觸及）。工具鏈：`no build -cc zig`／`no run -cc zig`。
+
+### 5.3.4.ak s8y 收官雙檔——裸型名陳述＋運算符重載剥 `?`＋介面繼承清單（2026-10-27 本輪）
+
+**背景**：§5.3.4.aj（s8x）收官後 L2 剩 **2 檔 DIFF**：`src/std/bigint.no`（101 行，曾標「禁改/平行 WIP」）與 `src/std/database/sql.no`（207 行，曾標「不可行」）。本輪復核兩案：bigint.no 的兩族差異全部落在 `parseStatement`/`returnTypeFromCallExpr` 的**穩定** Go 路徑（平行 WIP 未觸及 stmt.go 相關區段，oracle 目標不動）；sql.no 的 207 行差實為**介面繼承清單解析缺口**（非多返回值 tuple）。兩檔均改判**可行**，本輪一併攻克 ⇒ **L2 DIFF 2→0 / 語料 655 檔全數逐位元組一致**。
+
+**規則 A——裸型名陳述（`bigint.no` 家族一）**：後綴 cast `av u64 = (.limbs[i] & MASK) u64` 中，Go `parseExpression` 在 `)` 後即止，尾部 `u64` **獨行成句**；`parseStatement` IDENT 分派（stmt.go:346-356）見 `peekToken ∈ {NEWLINE, SEMICOLON}` 且 `isTypeName(literal)`（type.go:404-413 **閉集 15 名**，不含 any/txt/char/bigint）⇒ `parseLetStatement`：型別 token **回落至名 token 本身**（stmt.go:1153-1155）⇒ `LetStatement{name: u64, type: NamedType(u64 非 inferred), value: nil}`（dump `value: ` 佔位），裸分支 setVarType 後 early return ⇒ **跳過 SetFuncDeclared**。oracle 實測 g-a 釘住：`x = (x & 255) u64` 之 value 為 `GroupedExpression`（cast 未被吸收），前後各出一條 `LetStatement{name: u64, type: u64, value: }`。noc 新增 `ps-is-type-name-literal`（逐字鏡閉集；⚠️ 不複用 `ps-is-builtin-type`——它多含 `'any'`）＋ `ps-parse-stmt` 分派臂（置於 expr-stmt 兜底前）。
+
+**規則 B——運算符重載回傳剥 `?`（`bigint.no` 家族二）**：`c = a._mul(b)` oracle 推 `bigint`，noc 推 `?bigint`。Go 權威兩處：① `returnTypeFromCallExpr` 的 **dot 分支**以 `dot.Property` 為鍵 `stripOperatorOverloadReturn`（type.go:192/199/229；`TrimPrefix "?"`），閉集 `{_add,_sub,_mul,_div,_mod}`（operator_overload.go:40-63，`OperatorOverloadBaseName` 取末 `.` 段）；**裸名 Identifier 分支不剥**（type.go:151-170）。② 結果參數登記（decl.go:1766-1790）：定義名末段為重載名時 `setVarType(resName, TrimPrefix ts)`。此規則同時解釋級聯差 `g = x.copy()` no-type：`x = x._mod(y)` 舊推 `?bigint` 污染 varType ⇒ 接收者鍵 `?bigint.copy` miss；剥 `?` 後級聯自解。noc 新增 `ps-is-op-overload-name`＋`ps-unwrap-op-overload-type`（節點級 NullableType 剥一层），落點：呼叫點推論**三條 dot 查找臂**（recv-var `mkey`／模組限定 `mq`／鏈式 `mkeyc`，`ps-parse-type` 重跑後、`ts` 導出前剥）＋**兩處結果登記循環**（`ps-parse-func-def` 以 `name`、`ps-parse-method-func` 以 `fullName`，含 regp 雙臂）。
+
+**規則 C——介面繼承清單（`database/sql.no` 全檔）**：`db enter, leave { fs.close() (ok bool) … }`。Go 分派 stmt.go:65-113：`peek==IDENT` ⇒ 以 `look(k)`（= current 後第 **k+2** 個**非註解** token，⚠️ 掃描起點是清單**第二**元素、首元素由 `peek==IDENT` 守衛本身覆蓋）掃 DOT/COMMA 交錯介面名列表；終點恰 `LBRACE` ⇒ 內容首 token `IDENT+( /.)` 回 `parseInterfaceDefinition`（欄位形回 struct-with-implements——**全語料無此形**，s79 掃圖僅 sql.no，故守衛不放行、零回退）。解析端 decl.go:874-885：while current IDENT 收集實作名、跳逗號，再無條件跳 `LBRACE`。dump：`InterfaceDefinition{name, methods}` 後印 `Implements: [enter leave]`（dump.go:396-397，`%v` 空格分隔）。noc 側 tape kind40 **已含 OP-IMPLEMENTS**（規格表機械生成、dumper 已接線），僅缺解析：新增 `ps-is-iface-inherits` 守衛＋分派臂（置於 typedecl 前——Go 中 implements 掃描先於 `parseLetStatement`，否則 `db enter` 誤解為 `name TYPE` 宣告）＋`ps-parse-iface-def` 繼承清單循環；aux 規約［trail→clos→impl］⇒ `aux-begin`（置 imps 字串）＋`set-aux-counts(-1, -1, nimp)` **必須先於** `helper-begin`（hbase 取當時 aux 尾，順序顛倒則 impl 段與 helper 段錯位）。generic-receiver `fs.close()` 為既有能力。無繼承清單時 `nimp` 預設 0 ⇒ 零外溢。
+
+**歸因（同一 harness，A/B）**：`noc-s78`→`noc-s79`（規則 A+B）：`bigint.no` 101→**0**、`tests/2.no`/其餘不动 ⇒ DIFF 2→1；`noc-s79`→`noc-s80`（規則 C）：`sql.no` 207→**0** ⇒ **DIFF 1→0 / SAME 655/655**，全量 655 檔逐檔差集為空、**真回歸 0 檔**。重現檔：`tmp/s8y/t2/t3/t8.no`（規則 A/B 最小重現）、`tmp/s8y/g-a/g-b/g-c.no`（三規則 golden 釘檔）。
+
+**門禁**：L0 `ps-test.no` **38/38**（新增 `test-lone-type-name-statement`、`test-op-overload-return-strip`、`test-iface-inherits-list`，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（同 s8x 集合，本輪改動區 0 新增）；`no vet src/std` 145 ERROR 屬 src/ 側平行 WIP（oracle 行為，較 s8x 記帳 148 減 3，非本 session 觸及）。工具鏈：`no build -cc zig`／`no run -cc zig`。
+
+**🏁 L2 門禁現狀**：語料 `tests src/std`（655 檔）`no ast` 逐位元組一致，**DIFF=0**。§5.3.4.ac 所列「剩餘家族」（InterfaceDefinition 繼承清單、decode-bit 巢狀、`[?]byte` 參數型別、warnings 計數）已於本輪全部結清。
 
 ### 5.4 語義檢查（M3）
 

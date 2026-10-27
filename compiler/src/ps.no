@@ -944,6 +944,59 @@ ps-parse-assign-target = (t ast, p psst) (r i64) {
     r
 }
 
+; ps-is-type-name-literal（s8y）：鏡 Go isTypeName（type.go:404-413，閉集 15 名）。
+;   ⚠️ 與 ps-is-builtin-type 不同：後者多含 'any' 且各处用途為型別位辨認；本鏡像須逐字對齊
+;   Go 之閉集（不含 txt/char/any/bigint），供【裸型名陳述】(`u64` 独行) 分流守衛使用。
+ps-is-type-name-literal = (s str) (r i64) {
+    r = 0
+    {
+        s == 'i8' || s == 'i16' || s == 'i32' || s == 'i64' || s == 'i128' -> r = 1
+
+        s == 'u8' || s == 'u16' || s == 'u32' || s == 'u64' || s == 'u128' -> r = 1
+
+        s == 'f32' || s == 'f64' -> r = 1
+
+        s == 'byte' || s == 'bool' || s == 'str' -> r = 1
+    }
+}
+
+; ps-is-op-overload-name（s8y）：鏡 Go OperatorOverloadBaseName + IsOperatorOverloadName
+;   （operator_overload.go:40-63）：限定名（`bigint._mul`）取最後 '.' 後裸名，閉集
+;   {_add,_sub,_mul,_div,_mod} 命中回 1。裸名（呼叫點 dot.Property）無點同路。
+ps-is-op-overload-name = (nm str) (r i64) {
+    base = nm
+    d = -1
+    j = nm.len-bytes() - 1
+    (j >= 0 && d < 0) {
+
+        #{index-out=zero}
+        nb-opt = nm.byte(j)
+        nb = nb-opt: {
+            ok -> it
+            -> 0
+        }
+        nb == 46 -> d = j
+
+        #{overflow=wrap}
+        j = j - 1
+    }
+    d >= 0 -> base = nm.slice-bytes(d + 1, nm.len-bytes())
+    r = 0
+    (base == '_add' || base == '_sub' || base == '_mul' || base == '_div' || base == '_mod') -> r = 1
+}
+
+; ps-unwrap-op-overload-type（s8y）：節點級鏡 Go stripOperatorOverloadReturn／decl.go 的
+;   `strings.TrimPrefix(ts, "?")`——nm 為運算符重載名且 tn 為 NullableType 時，回内層型別節點
+;   （?T ⇒ T，剥一次）；否則原樣回 tn。
+ps-unwrap-op-overload-type = (t ast, nm str, tn i64) (r i64) {
+    r = tn
+    ps-is-op-overload-name(nm) == 1 && tn > 0 && ast.kind-at(t, tn) == asp.K_NULLABLE_TYPE -> {
+        ndo = ast.nd-at(t, tn)
+        r = ast.kid-at(t, ndo.kid0)
+    }
+    r
+}
+
 ps-parse-stmt = (t ast, p psst) (idx i64) {
     idx = 0
     p.rwDoc = 0; s8a：每條陳述起始重置（呼叫端據此決定是否丟棄行前 Doc）
@@ -1621,6 +1674,17 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 handled = 1
             }
 
+            ; s8y 規則C：介面繼承清單形 `name iface1, iface2 { m(...) }`（鏡 Go stmt.go:65-113）。
+            ;   nxt_typ==IDENT ⇒ 必須排在【複合型明示宣告 typedecl】之前（Go 中 implements 掃描
+            ;   先於 parseLetStatement；否則 `db enter` 被 typedecl 解成 `name TYPE` 宣告）。
+            ;   守衛只放行【介面內容】形（內容首 token IDENT+( /.)；欄位形語料無見⇒不回退 struct 路）。
+            ;   ⚠️ 須先於 ps-is-multi-assign-start 之外無衝突：本形 +1==IDENT（非 COMMA/LBRACKET）
+            ;   ⇒ 多重指派守衛不觸發；但 `a, b = …` 的 nxt_typ==COMMA 亦不進本臂。
+            handled == 0 && nxt_typ == tok.IDENT && ps-is-iface-inherits(p) == 1 -> {
+                idx = ps-parse-iface-def(t, p, name)
+                handled = 1
+            }
+
             ; 結構體定義：`name { field TYPE ... }`（陳述位置，peek==LBRACE 且分類器認可）
             ;   對應 Go stmt.go:277 classifyBlock()==blockStruct。僅在 ps-is-struct-def 回 1 時走此路；
             ;   枚舉/介面/實作清單/限定型別等一律回退原運算式陳述路徑（零回歸）。
@@ -1649,6 +1713,24 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                     idx = td
                     handled = 1
                 }
+            }
+
+            ; s8y 規則A：裸型名陳述（鏡 Go stmt.go:346-356）：IDENT 且 peek ∈ {NEWLINE, SEMICOLON}
+            ;   且 literal ∈ isTypeName 閉集 ⇒ 走 parseLetStatement。Go 內 typeToken 回落至名 token
+            ;   本身（stmt.go:1153-1155）⇒ stmt.Type = buildType(name)（NamedType、非 inferred）；
+            ;   current 抵達 NEWLINE 落入裸分支（1187-1196）：setVarType 後 early return——
+            ;   Value=nil、【不】觸及 SetFuncDeclared。典型觸發：後綴_cast_ `av u64 = (expr) u64`
+            ;   尾部的 `u64` 独行成句（bigint.no 實測原被解為 ExpressionStatement）。
+            handled == 0 && (nxt_typ == tok.NEWLINE || nxt_typ == tok.SEMICOLON) && ps-is-type-name-literal(name) == 1 -> {
+                ps-bump(p); 消費 IDENT（名與型同一 token，鏡 Go typeToken 回落）
+                laTy = ast.add(t, asp.K_NAMED_TYPE)
+                ast.set-slot(t, laTy, 0, ast.put-str(t, name))
+                idx = ast.add(t, asp.K_LET_STATEMENT)
+                ast.set-slot(t, idx, 0, ast.put-str(t, name))
+                ast.kid-add(t, idx, laTy); guarded CHILD=Type
+                ast.kid-add(t, idx, 0); guarded CHILD=Value 缺席→0 佔位（dump 印 `value: `）
+                ps-reg-let(t, p, name, laTy); 鏡裸分支：setVarType+declaredLocals；early-return 跳過 SetFuncDeclared ⇒ 不 ps-mark-ifd
+                handled = 1
             }
             handled == 0 -> idx = ps-parse-expr-stmt(t, p)
         }
@@ -3698,6 +3780,10 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             p.pos = tp2
                             tn3 = ps-parse-type(t, p)
                             p.pos = oldpos2
+                            ; s8y 規則B1：Go returnTypeFromCallExpr 的 dot 分支以 dot.Property
+                            ;   剝 `?`（type.go:192/199/229 stripOperatorOverloadReturn）⇒
+                            ;   重載名（_mul 等）呼叫點推論 bigint 而非 ?bigint。
+                            tn3 = ps-unwrap-op-overload-type(t, ast.str-at(t, fd.s0), tn3)
                             ts3 = ''
                             tn3 > 0 -> ts3 = ast.type-string(t, tn3)
                             tn3 > 0 && ps-filter-ok(t, tn3, ts3) == 1 -> {
@@ -3742,6 +3828,9 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             p.pos = tpq
                             tnq = ps-parse-type(t, p)
                             p.pos = oldposq
+                            ; s8y 規則B1：同 rty≠'' 臂——Go dot 分支統一剝 `?`，module-path 鍵
+                            ;   （`pkg._mul`）命中時 property 仍為 dot.Property（fd.s0）。
+                            tnq = ps-unwrap-op-overload-type(t, ast.str-at(t, fd.s0), tnq)
                             tsq = ''
                             tnq > 0 -> tsq = ast.type-string(t, tnq)
                             tnq > 0 && ps-filter-ok(t, tnq, tsq) == 1 -> {
@@ -3797,6 +3886,8 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                                     p.pos = tpc
                                     tnc = ps-parse-type(t, p)
                                     p.pos = oldposc
+                                    ; s8y 規則B1：鏈式接收者臂同受 Go dot 分支剝 `?` 語意管轄
+                                    tnc = ps-unwrap-op-overload-type(t, ast.str-at(t, fd.s0), tnc)
                                     tsc = ''
                                     tnc > 0 -> tsc = ast.type-string(t, tnc)
                                     tnc > 0 && ps-filter-ok(t, tnc, tsc) == 1 -> {
@@ -4557,7 +4648,10 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         oni = outs[rr]
         od = ast.nd-at(t, oni)
         ot = ast.kid-at(t, od.kid0)
-        ot > 0 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
+        ; s8y 規則B2：鏡 Go decl.go:1766-1790——輸出參數 setVarType 登記時，若定義名
+        ;   （OperatorOverloadBaseName 取末段）為運算符重載 ⇒ TrimPrefix "?"。
+        ;   ⚠️ 節點級剥離僅影響登記字串；typ 節點（ifd 推斷路徑）不經此處，零外溢。
+        ot > 0 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ps-unwrap-op-overload-type(t, name, ot)))
 
         #{overflow=wrap}
         rr = rr + 1
@@ -4739,9 +4833,11 @@ ps-parse-method-func = (t ast, p psst, fullName str, recvType str, recvNode i64,
         oni = outs[rr]
         od = ast.nd-at(t, oni)
         ot = ast.kid-at(t, od.kid0)
+        ; s8y 規則B2：同 ps-parse-func-def 口徑——Go decl.go:1766-1790 對方法定義以
+        ;   OperatorOverloadBaseName（`t._mul`→`_mul`）判重載後 TrimPrefix "?"。
         ot > 0 -> {
-            regp == 1 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
-            regp == 0 -> ps-set-var-type-s7v(p, ast.str-at(t, od.s0), ast.type-string(t, ot))
+            regp == 1 -> ps-set-var-type(p, ast.str-at(t, od.s0), ast.type-string(t, ps-unwrap-op-overload-type(t, fullName, ot)))
+            regp == 0 -> ps-set-var-type-s7v(p, ast.str-at(t, od.s0), ast.type-string(t, ps-unwrap-op-overload-type(t, fullName, ot)))
         }
 
         #{overflow=wrap}
@@ -7129,6 +7225,78 @@ ps-is-iface-def = (p psst) (r i64) {
     r = 1
 }
 
+; ps-is-iface-inherits（s8y 規則C）：介面【繼承清單形】分派守衛（鏡 Go stmt.go:65-113，
+;   不消費 token）：pos=IDENT name 且 +1=IDENT（首個繼承介面名）。Go 的 look(k)=current 之後
+;   第 k+2 個【非註解】token ⇒ 以索引前視 + COMMENT 跳讀模擬（NEWLINE 【不】跳，鏡 Go 寬容）。
+;   掃描 DOT/COMMA 交錯的介面名列表；終點須恰為 LBRACE，再分類區塊內容首 token：
+;   IDENT 且其後（跳註解）為 LPAREN 或 DOT ⇒ 介面（Go:107 回 parseInterfaceDefinition）。
+;   ⚠️ 內容為欄位形時 Go 回 parseStructDefinition（struct-with-implements），但全語料無此形
+;   （s79 掃圖仅 sql.no 為介面形）⇒ 本守衛【不】放行欄位形，維持舊路徑零回歸。
+ps-is-iface-inherits = (p psst) (r i64) {
+    r = 0
+    ps-peek-at(p, 1) != tok.IDENT -> return
+    i = 2
+    goS = true
+    (goS) {
+        t = ps-peek-at(p, i)
+        {
+            t == tok.COMMENT -> {
+
+                #{overflow=wrap}
+                i = i + 1
+            }
+
+            t == tok.DOT -> {
+
+                #{overflow=wrap}
+                i = i + 1
+                u = ps-peek-at(p, i)
+                u == tok.IDENT -> {
+
+                    #{overflow=wrap}
+                    i = i + 1
+                }
+                u != tok.IDENT -> goS = false
+            }
+
+            t == tok.COMMA -> {
+
+                #{overflow=wrap}
+                i = i + 1
+                u = ps-peek-at(p, i)
+                u == tok.IDENT -> {
+
+                    #{overflow=wrap}
+                    i = i + 1
+                }
+                u != tok.IDENT -> goS = false
+            }
+
+            -> goS = false
+        }
+    }
+    ps-peek-at(p, i) != tok.LBRACE -> return
+    ; 區塊內容首 token：跳 NEWLINE／COMMENT（Go:96-102 跳 NEWLINE，look() 天然跳 COMMENT）
+    goC = true
+    (goC) {
+        t = ps-peek-at(p, i + 1)
+        {
+            t == tok.NEWLINE || t == tok.COMMENT -> {
+
+                #{overflow=wrap}
+                i = i + 1
+            }
+
+            -> goC = false
+        }
+    }
+    t1 = ps-peek-at(p, i + 1)
+    t2i = i + 2
+    ps-peek-at(p, t2i) == tok.COMMENT -> t2i = t2i + 1
+    t2 = ps-peek-at(p, t2i)
+    t1 == tok.IDENT && (t2 == tok.LPAREN || t2 == tok.DOT) -> r = 1
+}
+
 ; ps-parse-iface-def：把陳述位置的 `name { m(...) }` 建為 InterfaceDefinition。
 ;   InterfaceDefinition：slot0=name、slot1=methods 數（OF-LEN）；無 kids
 ;     （Go 的 InterfaceDefinition 只有 Name/Methods/Implements 三個欄位）。
@@ -7138,6 +7306,25 @@ ps-is-iface-def = (p psst) (r i64) {
 ;   對應 Go decl.go:867-1075 parseInterfaceDefinition。
 ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
     ps-bump(p); 消費 name IDENT
+    ; s8y 規則C：繼承清單（鏡 Go decl.go:874-885）：while current 為 IDENT 收集介面名、
+    ;   跳逗號；Go 於非 IDENT 止、再【無條件】nextToken 跳 LBRACE。COMMENT 容忍跳讀。
+    imps []str = with-cap(4)
+    ig = true
+    (ig) {
+        tt = ps-peek(p)
+        {
+            tt == tok.COMMENT -> ps-bump(p)
+
+            tt == tok.IDENT -> {
+                it = ps-peek-token(p)
+                imps.push(it.lit)
+                ps-bump(p)
+                ps-peek(p) == tok.COMMA -> ps-bump(p)
+            }
+
+            -> ig = false
+        }
+    }
     ps-bump(p); 消費 LBRACE
     mn []str = with-cap(4)
     mr []str = with-cap(4)
@@ -7256,6 +7443,24 @@ ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
     idx = ast.add(t, asp.K_INTERFACE_DEFINITION)
     ast.set-slot(t, idx, 0, ast.put-str(t, name))
     ast.set-slot(t, idx, 1, ast.put-str(t, nm.to-str()))
+    ; s8y 規則C：Implements 清單（鏡 Go decl.go:878 id.Implements；dump.go:396-397 於標頭後、
+    ;   註解前印 `Implements: [a b]`，tape kind40 已含 OP-IMPLEMENTS）。aux 區段規約
+    ;   ［trail→clos→impl］（ast.aux-begin 註解）⇒ 本處無 trail/clos，ct0 起頭即 impl，
+    ;   ntrail/nclos 傳 -1（無群組）。⚠️ aux-begin 必須先於 helper-begin（hbase 取當時
+    ;   aux 尾，順序顛倒則 impl 段與 helper 段錯位）。nimp 預設 0 ⇒ 無繼承清單時零外溢。
+    imps.len() > 0 -> {
+        ia = ast.aux-begin(t, idx)
+        ia >= 0 -> {
+            ii = 0
+            (ii < imps.len()) {
+                ast.aux-add(t, ast.put-str(t, imps[ii]))
+
+                #{overflow=wrap}
+                ii = ii + 1
+            }
+        }
+        ast.set-aux-counts(t, idx, -1, -1, imps.len())
+    }
     ast.helper-begin(t, idx, nm)
     j = 0
     (j < nm) {

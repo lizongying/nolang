@@ -562,6 +562,47 @@ test-multi-assign-index-target-no-swallow = () {
 
 test-multi-assign-index-target-no-swallow()
 
+; ═══════════════════════════════════════════════════════════════════
+; s8y（src/std/bigint.no + src/std/database/sql.no）：三條鏡像規則。
+;   規則A【裸型名陳述】鏡 Go stmt.go:346-356：IDENT 且 peek ∈ {NEWLINE,SEMICOLON}
+;     且 literal ∈ isTypeName 閉集（type.go:404-413，15 名、不含 any/txt/char/bigint）
+;     ⇒ parseLetStatement；Go 內 typeToken 回落至名 token（stmt.go:1153-1155）
+;     ⇒ LetStatement{name: u64, type: NamedType(u64 非 inferred), value: nil}（dump `value: `）。
+;     bigint.no 後綴 cast `x = (expr) u64` 尾部的 `u64` 独行成句即此形（舊解為 ExpressionStatement）。
+;   規則B【運算符重載回傳剥 ?】鏡 operator_overload.go + type.go:192/199/229 + decl.go:1766-1790：
+;     閉集 {_add,_sub,_mul,_div,_mod}，OperatorOverloadBaseName 取末 '.' 段。呼叫點推論
+;     （returnTypeFromCallExpr dot 分支）與結果參數登記（setVarType）都以 stripOperatorOverloadReturn
+;     TrimPrefix "?" ⇒ `c = a._mul(b)` 推 bigint 非 ?bigint（並解 bigint.no 級聯 g=x.copy no-type）。
+;   規則C【介面繼承清單】鏡 Go stmt.go:65-113 + decl.go:874-885：`db enter, leave { m(...) }`
+;     ⇒ InterfaceDefinition + `Implements: [enter leave]`（dump.go:396-397 %v）；區塊內容首
+;     token IDENT+( /.) 判介面。generic-receiver `fs.close()` 既有支援。sql.no 全 207 行即此形。
+;   want 由 L2 oracle 實測取得（s80 語料 DIFF=0/655）。
+; ═══════════════════════════════════════════════════════════════════
+
+test-lone-type-name-statement = () {
+    got = parse-dump('f = (x i64) {\n    u64\n    x = (x & 255) u64\n}')
+    want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: x, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: u64, type: u64, value: }\n                NamedType{name: u64}\n            LetStatement{name: x, value: GroupedExpression}\n                GroupedExpression\n                    InfixExpression{op: &}\n                        Identifier{name: x}\n                        IntegerLiteral{value: 255, raw: 255}\n            LetStatement{name: u64, type: u64, value: }\n                NamedType{name: u64}'
+    runner.is-true(got.eq-full(want), '規則A：裸型名 `u64` 独行 ⇒ LetStatement{name,type:u64,value:空}（鏡 Go isTypeName 閉集）')
+}
+
+test-lone-type-name-statement()
+
+test-op-overload-return-strip = () {
+    got = parse-dump('t {\n    v i64\n}\nt._mul = (b t) (c ?t) {\n}\nf = (a t, b t) (c t) {\n    c = a._mul(b)\n}')
+    want = 'Program{}\n    StructDefinition{name: t, fields: 1}\n        StructField{name: v, type: i64}\n            NamedType{name: i64}\n    FunctionDefinition{name: t._mul, methodDef: true}\n        GenericParams: t\n        Parameter{name: b, type: t}\n            NamedType{name: t}\n        Parameter{name: self, type: t}\n            NamedType{name: t}\n        Parameter{name: c, type: ?t}\n            NullableType\n                NamedType{name: t}\n        BlockStatement{}\n    FunctionDefinition{name: f}\n        GenericParams: t\n        Parameter{name: a, type: t}\n            NamedType{name: t}\n        Parameter{name: b, type: t}\n            NamedType{name: t}\n        Parameter{name: c, type: t}\n            NamedType{name: t}\n        BlockStatement{}\n            LetStatement{name: c, type: t, value: CallExpression}\n                NamedType{name: t, inferred: true}\n                CallExpression{fn: DotExpression, args: 1}\n                    DotExpression{receiver: a, property: _mul}\n                        Identifier{name: a}\n                    Identifier{name: b}'
+    runner.is-true(got.eq-full(want), '規則B：`c = a._mul(b)` 呼叫點剥 ? ⇒ c 推 t（非 ?t）')
+}
+
+test-op-overload-return-strip()
+
+test-iface-inherits-list = () {
+    got = parse-dump('db enter, leave {\n    fs.close() (ok bool)\n    exec(sql str) (r i64)\n}')
+    want = 'Program{}\n    InterfaceDefinition{name: db, methods: 2}\n        Implements: [enter leave]\n        InterfaceMethod{name: close, receiver: fs, genericReceiver: true}\n            Parameter{name: ok, type: bool}\n                NamedType{name: bool}\n        InterfaceMethod{name: exec}\n            Parameter{name: sql, type: str}\n                NamedType{name: str}\n            Parameter{name: r, type: i64}\n                NamedType{name: i64}'
+    runner.is-true(got.eq-full(want), '規則C：`db enter, leave { m(...) }` ⇒ InterfaceDefinition + Implements:[enter leave]')
+}
+
+test-iface-inherits-list()
+
 runner.summary()
 f = runner.failed-count()
 {
