@@ -49,6 +49,7 @@ drv.usage = () {
     print('  help               print this help')
     print('  tokens <file>      dump token stream (not implemented in M0)')
     print('  ast <file>         dump AST (not implemented in M0)')
+    print('  vet <file>         run diagnostics (M3-a skeleton: always reports no issues)')
     print('  build <file|dir>   compile to executable (not implemented in M0)')
 }
 
@@ -150,6 +151,61 @@ drv.cmd-ast = () (code i64) {
     print(out)
 }
 
+; cmd-vet: 執行診斷檢查（M3-a 骨架）
+; 輸出契約錨定 oracle `no vet <file>`（authority：Go printLintResults，src/cmd/no/main.go）：
+;   無診斷        ⇒ stdout 'No issues found.'，rc=0
+;   檔案不存在    ⇒ stderr 'Error: stat <path>: no such file or directory'，rc=1
+;   有診斷        ⇒ 每條 <file>:<line>:<col>: [LEVEL] <src>: <msg> [<code>]（stdout），
+;                  摘要走 stderr（harness 不可見，M3-c 才接）
+; ⚠️ M3-a 階段前端【尚未接上任何診斷來源】——ps.no 不產錯、checker 未實作，
+;    所以任何可讀檔一律回 'No issues found.'。這不是 PASS：oracle 報診斷的檔
+;    會在 L3 差分處誠實 DIFF，基盤解見 docs §6.4。
+drv.cmd-vet = () (code i64) {
+    code = EXIT-OK
+    n = args.count()
+    n < 3 -> {
+        eprint(NOC-NAME - ': vet requires a file argument')
+        code = EXIT-USAGE
+        return
+    }
+    path = args.get(2)
+
+    ; 讀檔走 read-bytes + ok/nil/err 三臂（與 cmd-tokens 同理由，§8 P0-⑥）：
+    ;   nil = 存在但 0 位元組（合法空檔，oracle 回 No issues found.）
+    ;   err = 路徑不存在 ⇒ 覆刻 oracle 的 os.Stat ENOENT 文案
+    c = fs.read-bytes(path)
+    src []byte = with-cap(0)
+    got = false
+    c: {
+        ok -> {
+            src = it
+            got = true
+        }
+
+        nil -> {
+            got = true
+        }
+
+        err -> {
+            eprint('Error: stat ' - path - ': no such file or directory')
+            code = EXIT-FAIL
+        }
+    }
+    got == false -> {
+        return
+    }
+
+    ; 跑完整前端，保證 vet 與 ast 共用同一條 parse 路徑；
+    ; M3-b/M3-c 的診斷收集器會掛在這裡（取代下方的恆「無診斷」出口）。
+    t = ast.make()
+    p = ps.new(src)
+    root = ps.parse(t, p)
+    _ = root
+
+    ; M3-a：診斷清單恆空 ⇒ 總走「無問題」分支
+    print('No issues found.')
+}
+
 ; dispatch: 依 argv[1] 分派；回傳行程退出碼
 drv.dispatch = () (code i64) {
     code = EXIT-OK
@@ -174,6 +230,8 @@ drv.dispatch = () (code i64) {
                 cmd == 'tokens' -> code = drv.cmd-tokens()
 
                 cmd == 'ast' -> code = drv.cmd-ast()
+
+                cmd == 'vet' -> code = drv.cmd-vet()
 
                 cmd == 'build' -> code = drv.not-implemented('build')
 

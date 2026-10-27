@@ -1,0 +1,108 @@
+; diag-test.no — compiler/src/diag.no 的單元測試
+;
+; 執行： ./bin/no run compiler/tests/diag-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
+;
+; ── 這些期望字串從哪來 ────────────────────────────────────────────
+; 全部由 L3 oracle 實測釘死，**不是**手寫猜的。重跑方式：
+;     ./bin/no vet /tmp/bad-syntax.no
+; 得到：
+;     /tmp/bad-syntax.no:4:0: [ERROR] nolang-compile: ... [E_GENERAL]
+; 檔案級行形（line==0，無位置）的 authority 是 Go printLintResults
+; （src/cmd/no/main.go）：Line > 0 才印 `:line:col:`，否則只有 `file: `。
+
+# /test/runner.eq
+# /test/runner.str-eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/diag
+
+; ⚠️ 構造約定（s8za 實測釘死的 Go 側 quirk）：struct 字面量的字段值若寫
+;    **模組限定常量**（如 `level: diag.LEVEL-ERROR`）會被【靜默置 0】，
+;    整數字面量與構造後賦值 `d.level = diag.LEVEL-ERROR` 均正常。
+;    參照：/tmp/diag-probe2.no 三例（0 / 2 / 2）。故本檔 level 一律構造後賦值。
+
+; ═══════════════════════════════════════════════
+; level-name — 三個級別的名字
+; ═══════════════════════════════════════════════
+
+test-level-name = () {
+    d = diag {
+        file: 'x.no'
+        line: 1
+        col: 1
+        src: 's'
+        msg: 'm'
+        code: 'c'
+    }
+    d.level = diag.LEVEL-ERROR
+    runner.str-eq(d.level-name(), 'ERROR', 5, 'level-name ERROR')
+    d.level = diag.LEVEL-WARNING
+    runner.str-eq(d.level-name(), 'WARNING', 7, 'level-name WARNING')
+    d.level = diag.LEVEL-HINT
+    runner.str-eq(d.level-name(), 'HINT', 4, 'level-name HINT')
+}
+
+; ═══════════════════════════════════════════════
+; render — 面向使用者的行形（含 line==0 檔案級分支）
+; ═══════════════════════════════════════════════
+
+test-render = () {
+    d = diag {
+        file: 'x.no'
+        line: 231
+        col: 17
+        src: 'nolang-compile'
+        msg: 'boom'
+        code: 'idxwrite'
+    }
+    d.level = diag.LEVEL-ERROR
+
+    ; 有位置：file:line:col: [ERROR] source: msg [code]
+    runner.str-eq(d.render(), 'x.no:231:17: [ERROR] nolang-compile: boom [idxwrite]', 52, 'render positioned')
+
+    ; 檔案級（line==0）：不得出現 ':0:0:'——printLintResults 的 else 分支
+    d.line = 0
+    d.col = 0
+    runner.str-eq(d.render(), 'x.no: [ERROR] nolang-compile: boom [idxwrite]', 45, 'render file-level')
+
+    ; WARNING / HINT 級別名必須原樣出現在方括號內（L3 歸一化的 [ERROR] 過濾依賴此形）
+    d.line = 4
+    d.col = 0
+    d.level = diag.LEVEL-WARNING
+    d.code = 'E_GENERAL'
+    runner.str-eq(d.render(), 'x.no:4:0: [WARNING] nolang-compile: boom [E_GENERAL]', 52, 'render warning')
+}
+
+; ═══════════════════════════════════════════════
+; render-mid — 中間編譯錯誤串的一條（無檔名前綴）
+; ═══════════════════════════════════════════════
+
+test-render-mid = () {
+    d = diag {
+        file: 'x.no'
+        line: 4
+        col: 0
+        src: 'nolang-compile'
+        msg: 'expected expression'
+        code: 'E_GENERAL'
+    }
+    d.level = diag.LEVEL-ERROR
+    runner.str-eq(d.render-mid(), 'line 4, column 0: expected expression [E_GENERAL]', 49, 'render-mid shape')
+}
+
+; ═══════════════════════════════════════════════
+test-level-name()
+test-render()
+test-render-mid()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

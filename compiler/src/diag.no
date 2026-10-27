@@ -31,8 +31,21 @@ diag.level-name = () (r str) {
 }
 
 ; render: 面向使用者的單行輸出
+; Authority：Go printLintResults（src/cmd/no/main.go）只有兩種行形：
+;   line > 0  ⇒ <file>:<line>:<col>: [LEVEL] <src>: <msg> [<code>]
+;   line == 0 ⇒ <file>: [LEVEL] <src>: <msg> [<code>]   （檔案級診斷，無位置）
 diag.render = () (r str) {
-    r = .file + ':' + .line.to-str() + ':' + .col.to-str() + ': [' + .level-name() + '] ' + .src + ': ' + .msg + ' [' + .code + ']'
+    head str = ''
+    {
+        .line > 0 -> {
+            head = .file + ':' + .line.to-str() + ':' + .col.to-str() + ': '
+        }
+
+        -> {
+            head = .file + ': '
+        }
+    }
+    r = head + '[' + .level-name() + '] ' + .src + ': ' + .msg + ' [' + .code + ']'
 }
 
 ; render-mid: 中間編譯錯誤串的一條（無檔名前綴）
