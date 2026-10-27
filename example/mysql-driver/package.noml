@@ -1,7 +1,7 @@
 {
   name: 'mysql-driver'
   description: 'MySQL driver for Nolang (pure Nolang, no libmysqlclient)'
-  keywords: ['nolang', 'mysql', 'protocol', 'pure',]
+  keywords: ['nolang', 'mysql', 'protocol', 'pure']
   author: 'lizongying'
   email: 'lizongying@msn.com'
   organization: 'nolang'

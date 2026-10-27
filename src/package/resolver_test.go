@@ -118,7 +118,7 @@ func TestLoadLockFile(t *testing.T) {
       key: 'github.com/a/a'
       version: 'v1.0.0'
       dependencies: [
-        'github.com/b/b:v1.0.0'
+        'github.com/b/b:v1.0.0',
       ]
     }
   }

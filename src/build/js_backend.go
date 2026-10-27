@@ -281,7 +281,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 				return fmt.Errorf("import %q: %w", use.Path, err)
 			}
 			if !esmDeclared(pkgConfig, spec) {
-				return fmt.Errorf("ESM module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest',] (or dev-dependencies) and run npm install", spec, spec)
+				return fmt.Errorf("ESM module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", spec, spec)
 			}
 			key := use.Path + "\x00" + use.Function + "\x00" + use.Alias
 			if !esmSeen[key] {
@@ -300,7 +300,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 			// next to the emitted output, not an npm package: it needs no
 			// dependencies entry and is not installed by npm.
 			if np.WASM != "" && !js.IsRelativeSpecifier(np.WASM) && !esmDeclared(pkgConfig, np.WASM) {
-				return fmt.Errorf("native wasm module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest',] (or dev-dependencies) and run npm install", np.WASM, np.WASM)
+				return fmt.Errorf("native wasm module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", np.WASM, np.WASM)
 			}
 			merged.Statements = append(merged.Statements, use)
 			return nil

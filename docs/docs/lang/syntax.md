@@ -3360,7 +3360,7 @@ compiler: {
 
 ```noml
 compiler: {
-  link-libs: ['crypto', 'ssl',]
+  link-libs: ['crypto', 'ssl']
 }
 ```
 

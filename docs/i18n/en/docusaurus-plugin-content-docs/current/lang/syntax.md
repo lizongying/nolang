@@ -3429,7 +3429,7 @@ Specifies a list of C libraries to link:
 
 ```noml
 compiler: {
-  link-libs: ['crypto', 'ssl',]
+  link-libs: ['crypto', 'ssl']
 }
 ```
 

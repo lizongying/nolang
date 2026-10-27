@@ -1,7 +1,7 @@
 {
   name: 'sqlite-driver'
   description: 'SQLite driver for Nolang using FFI'
-  keywords: ['nolang', 'sqlite', 'ffi',]
+  keywords: ['nolang', 'sqlite', 'ffi']
   author: 'lizongying'
   email: 'lizongying@msn.com'
   organization: 'nolang'
@@ -12,7 +12,7 @@
   dependencies: []
   compiler: {
     version: 'v0.1.0'
-    link-libs: ['sqlite3',]
+    link-libs: ['sqlite3']
   }
   output: '/dist'
   ignore: []

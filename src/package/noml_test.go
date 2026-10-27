@@ -79,6 +79,9 @@ func TestNomlArrayTrailingComma(t *testing.T) {
     'nolang',
     'js',
   ]
+  no-tail: [
+    'a'
+  ]
   empty: []
 }
 `
@@ -89,6 +92,10 @@ func TestNomlArrayTrailingComma(t *testing.T) {
 	arr, ok := m["keywords"].([]any)
 	if !ok || len(arr) != 2 || arr[0] != "nolang" || arr[1] != "js" {
 		t.Errorf("keywords = %v", m["keywords"])
+	}
+	// 尾隨逗號是書寫風格約定；解析器對省略尾逗號同樣宽容
+	if nt, ok := m["no-tail"].([]any); !ok || len(nt) != 1 || nt[0] != "a" {
+		t.Errorf("no-tail = %v", m["no-tail"])
 	}
 	if e, ok := m["empty"].([]any); !ok || len(e) != 0 {
 		t.Errorf("empty = %v", m["empty"])

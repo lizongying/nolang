@@ -1,7 +1,7 @@
 {
   name: 'js-test'
   description: 'JS backend demonstration project'
-  keywords: ['nolang', 'js',]
+  keywords: ['nolang', 'js']
   author: 'lizongying'
   email: 'lizongying@msn.com'
   organization: 'nolang'

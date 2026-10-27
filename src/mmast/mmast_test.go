@@ -212,7 +212,7 @@ func TestASTZipForeignBlobRejected(t *testing.T) {
 // 且 ReadASTZip 回傳的位元組與寫入完全一致（原樣分發，不做任何改寫）。
 func TestASTZipWithPackageNoml(t *testing.T) {
 	prog := parseStd(t, "vec.no")
-	pj := []byte("{\n  name: 'vec'\n  version: 'v1.2.3'\n  dependencies: ['nogit:v1.0.0@github.com/lizongying/notools',]\n}\n")
+	pj := []byte("{\n  name: 'vec'\n  version: 'v1.2.3'\n  dependencies: ['nogit:v1.0.0@github.com/lizongying/notools']\n}\n")
 	var buf bytes.Buffer
 	if _, err := WriteASTZip(&buf, prog, pj); err != nil {
 		t.Fatal(err)

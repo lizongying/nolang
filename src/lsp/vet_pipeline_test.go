@@ -106,7 +106,7 @@ func TestVetDirVerbose_IgnoreList(t *testing.T) {
 	// 创建 package.noml，忽略 *_skip.no 文件
 	pkgJSON := `{
   name: 'test-pkg'
-  ignore: ['*_skip.no',]
+  ignore: ['*_skip.no']
 }`
 	pkgPath := filepath.Join(tmpDir, "package.noml")
 	if err := os.WriteFile(pkgPath, []byte(pkgJSON), 0644); err != nil {
