@@ -922,6 +922,28 @@ ps-is-multi-assign-start = (p psst) (r i64) {
     }
 }
 
+; ps-parse-assign-target（s8x）：多重指派目標 = IDENT 或 IDENT[expr]（鏡 Go parseAssignTarget stmt.go:834-847）。
+;   ⚠️ 不可複用 ps-parse-expr-prec：`=` 非中綴運算子，但 parseExpression 尾對 Dot/Index LHS 會
+;   吸收 `= value` 建 AssignExpression（expr.go:598-637）⇒ 末目標為索引形（`bit, probs[m] = call(...)`）
+;   時整個 `= call(...)` 被吞進目標 2、語句邊界錯位（tests/2.no 實測）。Go 用专用目標解析器：
+;   讀 IDENT、可選一個 `[` expr `]`（索引内為 LOWEST 表達式）、`]` 後即止，不碰 `=`。
+ps-parse-assign-target = (t ast, p psst) (r i64) {
+    tk = ps-peek-token(p)
+    ps-bump(p); 消費 IDENT
+    r = ps-mk-ident(t, tk.lit)
+    ps-peek(p) == tok.LBRACKET -> {
+        ps-bump(p); 消費 [
+        index = ps-parse-expr(t, p)
+        ; Go：current 非 RBRACKET 時不報錯也不消費（寬容形），對齊之
+        ps-peek(p) == tok.RBRACKET -> ps-bump(p)
+        ie = ast.add(t, asp.K_INDEX_EXPRESSION)
+        ast.kid-add(t, ie, r)
+        ast.kid-add(t, ie, index)
+        r = ie
+    }
+    r
+}
+
 ps-parse-stmt = (t ast, p psst) (idx i64) {
     idx = 0
     p.rwDoc = 0; s8a：每條陳述起始重置（呼叫端據此決定是否丟棄行前 Doc）
@@ -1520,14 +1542,14 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
             ;   守衛 ps-is-multi-assign-start：首目標為裸 IDENT(`x,`) 或索引(`a[i],`) 後緊接 COMMA。
             ps-is-multi-assign-start(p) == 1 -> {
                 maTargets []i64 = with-cap(4)
-                maT0 = ps-parse-expr-prec(t, p, 0)
+                maT0 = ps-parse-expr-prec(t, p, 0); 首目標鏡 Go firstExpr（parseExpressionStatement:1919）：完整表達式解析；`=` 吸收在本形不可見（IDENT/索引後必為 COMMA 才進入）
                 maT0 > 0 -> maTargets.push(maT0)
                 more = 1
                 (more == 1) {
                     ps-peek(p) == tok.COMMA -> {
                         ps-bump(p); 消費 COMMA
                         ps-skip-trivia(p)
-                        maTn = ps-parse-expr-prec(t, p, 0)
+                        maTn = ps-parse-assign-target(t, p)
                         maTn > 0 -> maTargets.push(maTn)
                     }
                     ps-peek(p) != tok.COMMA -> more = 0

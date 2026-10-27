@@ -541,6 +541,27 @@ test-slice-method-param-reassign-propagate = () {
 
 test-slice-method-param-reassign-propagate()
 
+; ═══════════════════════════════════════════════════════════════════
+; s8x（tests/2.no）：多重指派【逗號後目標】不可走一般表達式解析。
+;   `bit, probs[m] = decode-bit(probs[m])`：`=` 非中綴運算子，但 parseExpression 尾
+;   對 Dot/Index LHS 會吸收 `= value` 建 AssignExpression（expr.go:598-637）⇒ noc 舊
+;   ps-parse-expr-prec(0) 解末目標時整個 `= call(...)` 被吞進目標 2，後續語句邊界
+;   錯位（函式定義被拆成 ExpressionStatement 碎片）。Go 用专用 parseAssignTarget
+;   （stmt.go:834-847）：IDENT + 可選一個 `[` LOWEST-expr `]`、`]` 後即止不碰 `=`；
+;   逗號後非 IDENT 直接 fatal（E_EXPECTED_IDENT）。首目標仍鏡 Go firstExpr
+;   （parseExpressionStatement:1919 完整表達式解析，二者對 IDENT/IDENT[..] COMMA 同形）。
+;   多值 RHS `y, z[w] = 1, 2`：Go 僅取單一 value，`, 2` 另成 ExpressionStatement。
+;   want 由 L2 oracle 實測取得。
+; ═══════════════════════════════════════════════════════════════════
+
+test-multi-assign-index-target-no-swallow = () {
+    got = parse-dump('probs = [1, 2, 3]\nm = 1\nbit, probs[m] = decode-bit(probs[m])\narr = [4, 5]\ni = 0\narr[i], x = f(1)\ny, z[w] = 1, 2')
+    want = 'Program{}\n    LetStatement{name: probs, type: []i64, value: SliceLiteral}\n        SliceType{inferred: true}\n            NamedType{name: i64, inferred: true}\n        SliceLiteral{elements: 3}\n            IntegerLiteral{value: 1, raw: 1}\n            IntegerLiteral{value: 2, raw: 2}\n            IntegerLiteral{value: 3, raw: 3}\n    LetStatement{name: m, type: i64, value: 1}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 1, raw: 1}\n    MultiAssignStatement{targets: 2}\n        Identifier{name: bit}\n        IndexExpression\n            Identifier{name: probs}\n            Identifier{name: m}\n        CallExpression{fn: decode-bit, args: 1}\n            Identifier{name: decode-bit}\n            IndexExpression\n                Identifier{name: probs}\n                Identifier{name: m}\n    LetStatement{name: arr, type: []i64, value: SliceLiteral}\n        SliceType{inferred: true}\n            NamedType{name: i64, inferred: true}\n        SliceLiteral{elements: 2}\n            IntegerLiteral{value: 4, raw: 4}\n            IntegerLiteral{value: 5, raw: 5}\n    LetStatement{name: i, type: i64, value: 0}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 0, raw: 0}\n    MultiAssignStatement{targets: 2}\n        IndexExpression\n            Identifier{name: arr}\n            Identifier{name: i}\n        Identifier{name: x}\n        CallExpression{fn: f, args: 1}\n            Identifier{name: f}\n            IntegerLiteral{value: 1, raw: 1}\n    MultiAssignStatement{targets: 2}\n        Identifier{name: y}\n        IndexExpression\n            Identifier{name: z}\n            Identifier{name: w}\n        IntegerLiteral{value: 1, raw: 1}\n    ExpressionStatement{2}\n        IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), '多重指派末目標為索引形：目標不吞 `=`，語句邊界不錯位')
+}
+
+test-multi-assign-index-target-no-swallow()
+
 runner.summary()
 f = runner.failed-count()
 {

@@ -1691,7 +1691,7 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **門禁**：L0 `ps-test.no` **32/32**（新增 `test-slice-method-param-no-propagate-local-yes` 釘 j=i 無型別/m=k i64；`test-chained-self-field-method-return-infer` 釘 structFields＋msig 鏈式推 []i64，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（`out[]`／`fl[]`／duplicate-fn 同 s8u 集合，本輪改動區 0 新增）；`no vet src/std` 145 ERROR 屬 src/ 側既有（oracle 執行、非本 session 範圍）。工具鏈：`no build -cc zig`；跑 L0 需 `no run -cc zig`（預設 clang 在 MacOSX27 SDK 連結 libSystem.tbd 報 unknown architecture）。
 
-### 5.3.4.ai s8w 鏈式裸 if 尾隨 else 折疊＋切片方法參數補登記（2026-10-27 本輪）
+### 5.3.4.ai s8w 鏈式裸 if 尾隨 else 折疊＋切片方法參數補登記（2026-10-27）
 
 **背景**：§5.3.4.ah（s8v）收官後 L2 剩 **5 檔 DIFF**（byte/bigint/database-sql/net-http2/tests-2）。本輪攻「chained-if 降糖」家族兩檔——`src/std/net/http2.no`（87 行差）與 `src/std/byte.no`（322 行差）。基線：SUT=`/tmp/noc-s71`、DIFF=5。
 
@@ -1708,6 +1708,20 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 **歸因（同一 harness、同一 CTL，A/B `noc-s71`→`noc-s76`）**：**DIFF 5→3 / SAME +2**。轉 SAME：`src/std/net/http2.no`、`src/std/byte.no`。**SAME→DIFF 真回歸 0 檔**。剩 3 檔：`bigint.no`（src/ 側平行 WIP、本 session 禁改）、`database/sql.no`（多返回值 tuple、已判不可行）、`tests/2.no`（多值指派家族）。
 
 **門禁**：L0 `ps-test.no` **34/34**（新增 `test-chain-bare-if-else-fold-and-warn` 釘 wrapper 結構＋warnings:2；`test-slice-method-param-reassign-propagate` 釘補登記→傳播，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（同 s8v 集合，本輪改動區 0 新增）。工具鏈：`no build -cc zig`／`no run -cc zig`。
+
+### 5.3.4.aj s8x 多重指派逗號後目標專用解析器（2026-10-27 本輪）
+
+**背景**：§5.3.4.ai（s8w）收官後 L2 剩 **3 檔 DIFF**。本輪攻 `tests/2.no`（48 行差，多值指派家族）。基線：SUT=`/tmp/noc-s77`。
+
+**形狀——`bit, probs[m] = decode-bit(probs[m])` 末目標吞掉 `= RHS`**：noc 的 multi-assign 循環（`ps-parse-stmt` 的 `ps-is-multi-assign-start` 分支）對【逗號後目標】用通用 `ps-parse-expr-prec(t, p, 0)`。`=` 雖非中綴運算子（中綴迴圈停在 ASSIGN），但 `ps-parse-expr-prec` 尾部鏡像 Go `parseExpression`（expr.go:598-637）：左值為 Dot/Index 時吸收 `= value` 建 AssignExpression ⇒ 整個 `= decode-bit(probs[m])` 被折進目標 2，`ps-expect(ASSIGN)` 落空後越界吃掉下一行的 `decode-bit`（多出一個 `Identifier{decode-bit}` 當 value），其後【函式定義】被撕成 ExpressionStatement 碎片（`(prob i64)`、`i64`、裸 `BlockStatement{}` 等 40+ 行錯位）。實測觸發條件極窄：ident 目標（不吸收）、索引目標居首/居中段（後隨 COMMA 不吸收）皆 SAME；唯【末目標為索引】翻車。
+
+**Go 權威**：逗號後目標走专用 `parseAssignTarget`（stmt.go:834-847）——讀 IDENT、可選【恰好一個】`[` LOWEST-expr `]`（`]` 缺席不報錯也不消費）、`]` 後即止【絕不碰 `=`】；逗號後非 IDENT 直接 `fatalf E_EXPECTED_IDENT`（parseMultiAssignStatement:801 / parseExpressionStatement:1942）。首目標則不同：`stmt.go:379` 分派（IDENT+peek COMMA）用 parseAssignTarget、`parseExpressionStatement:1919` 分派（索引/呼叫開頭）用完整 `firstExpr = parseExpression(LOWEST)`——對本守衛可達的 IDENT／IDENT[..]＋COMMA 兩形，通用解析與专用解析同果，故 noc `maT0` 保留 `ps-parse-expr-prec`（同時覆蓋 `m[i][j], x = f(1)` 嵌套索引首目標——Go firstExpr 支援、parseAssignTarget 反不支援）。
+
+**修法（`ps.no`）**：新增 `ps-parse-assign-target`（鏡 parseAssignTarget：IDENT→Identifier，可選單個 `[` `ps-parse-expr` `]`→IndexExpression），multi-assign 循環逗號後改調之。`tests/2.no` 的 `;` 行前註解转 Doc（`FunctionDefinition{Doc: // bit, tmp = …}`）為既有能力，邊界修正後自然對齊。附带釘住多值 RHS 語意：`y, z[w] = 1, 2` Go 僅取單一 value（`1`），`, 2` 另成 `ExpressionStatement{2}`——noc 原行為即同，無需改動。
+
+**歸因（同一 harness，A/B `noc-s77`→`noc-s78`）**：**DIFF 3→2 / SAME +1**：`tests/2.no` 轉逐字元一致。**SAME→DIFF 真回歸 0 檔**（全量 655 檔 sweep 逐檔比對差集為空）。剩 2 檔：`bigint.no`（src/ 側平行 WIP、本 session 禁改）、`database/sql.no`（多返回值 tuple、已判不可行）。
+
+**門禁**：L0 `ps-test.no` **35/35**（新增 `test-multi-assign-index-target-no-swallow` 釘三形：末索引目標吞號修復、索引目標居首、多值 RHS 尾值另成陳述，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（同 s8w 集合，本輪改動區 0 新增）；`no vet src/std` 148 ERROR 屬 src/ 側平行 WIP（oracle 行為，非本 session 觸及）。工具鏈：`no build -cc zig`／`no run -cc zig`。
 
 ### 5.4 語義檢查（M3）
 
