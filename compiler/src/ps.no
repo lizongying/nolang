@@ -3841,9 +3841,15 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
     ;   （t66 `_ = a`、t33 `x = v` 實測與 oracle 不符）。
     ;   ⚠️ 僅在變數尚無型別時補登記：字面量推斷不是用戶意圖，對已宣告的變數
     ;   （如 `?i64` 參數）寫 `v = 1` 時若覆寫成 i64 會讓 option 窮盡性檢查失效。
+    ;   ⚠️ existing 查詢走 ps-var-type-strict（鏡 Go stmt.go:1604 讀 FuncVarType）：
+    ;     切片/陣列方法參數經 s8v 只登記在 vt7（非嚴格），若這裡用非嚴格 ps-var-type
+    ;     會看到 vt7 的參數型別而誤判「已有型別」⇒ 跳過補登記 ⇒ 參數永不進嚴格表 ⇒
+    ;     其後 `x = param` 的識別符傳播查不到 param（byte.no `from = 0` 之後 `i = from`
+    ;     漏推 i64）。Go 側 FuncVarType 對切片方法參數恆空（parseArrayTypeMethodDefinition
+    ;     不登記）⇒ 一定補登記 ⇒ 傳播成功。
     typ != 0 -> {
         tsx = ast.type-string(t, typ)
-        tsx != '' && ps-var-type(p, name) == '' -> ps-set-var-type(p, name, tsx)
+        tsx != '' && ps-var-type-strict(p, name) == '' -> ps-set-var-type(p, name, tsx)
     }
 
     idx = ast.add(t, asp.K_LET_STATEMENT)
@@ -5535,12 +5541,45 @@ ps-wrap-chain = (t ast, p psst, blk i64, tail i64, linkIdx i64) (blk2 i64) {
         #{overflow=wrap}
         lid = lid + 1
         nextBlk = ps-wrap-chain(t, p, nextBlk, nextTail, lid)
+        ; s8w：鏈式獨立 if 的尾隨 else【綁到最內層 if】（Go 語意）。
+        ;   當本層 body 為區塊（nextTail==0、鏈到此終止）且其後【同列】有 `->` 時，就地
+        ;   吃掉該 `-> {E}`。⚠️ Go 不是把它當最內層 if 的 else，而是以整條最內層 if
+        ;   作【條件】再包一層 IfExpression{cond=chained, consequence=nil, alternative={E}}
+        ;   （dump.go:486-492：恆印 cond、then/else 非 nil 才印 ⇒ 外層只顯示 cond=內層 if
+        ;   + 一個 else 區塊）。`a -> b -> {B} -> {E}`：oracle 為
+        ;   if(a){ inline: if( if(b){B} ){else E} }，非 if(a){if(b){B}else{E}}。單條 if
+        ;   （外層 blk 的 tail 恆 0、不進本支）仍由 mk-standalone-if 的 else 邏輯處理。
+        altW = 0
+        nextTail == 0 && ps-rarrow-same-line(p) -> {
+            ; s8w：尾隨 else 是 Go wrapStandaloneChainDepth【同一 frame 的下一次 for 迭代】
+            ;   （stmt.go:1847–1862）——同 linkIdx、再 consume 一個 `->`。故此折疊在
+            ;   linkIdx==2 時【也要】告警一次（與上方主鏈迭代同 frame、Go 各迭代各報一次）。
+            ;   else-body 的後續鏈（若 body 是運算式鏈）以 linkIdx+1 遞迴，鏡 Go
+            ;   `wrapStandaloneChainDepth(nextBody, linkIdx+1)`。
+            ;   byte.no UTF-8 分支 `c1->{B}->c2->{B}->c3->{B}->{E}`：c3 子鏈落在 linkIdx==2
+            ;   frame，主迭代(->{B})+尾折疊(->{E}) 各報一次 ⇒ oracle Program{warnings: 2}。
+            linkIdx == 2 -> p.warn = p.warn + 1
+            ps-bump(p); 消費 ->
+            ablk, atail = ps-standalone-body(t, p)
+            elid = linkIdx
+            #{overflow=wrap}
+            elid = elid + 1
+            altW = ps-wrap-chain(t, p, ablk, atail, elid)
+        }
         chained = ast.add(t, asp.K_IF_EXPRESSION)
         ast.kid-add(t, chained, tail)
         ast.kid-add(t, chained, nextBlk)
         ast.kid-add(t, chained, 0)
+        esChild = chained
+        altW > 0 -> {
+            wrapper = ast.add(t, asp.K_IF_EXPRESSION)
+            ast.kid-add(t, wrapper, chained)
+            ast.kid-add(t, wrapper, 0)
+            ast.kid-add(t, wrapper, altW)
+            esChild = wrapper
+        }
         es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
-        ast.kid-add(t, es, chained)
+        ast.kid-add(t, es, esChild)
         newblk = ast.add(t, asp.K_BLOCK_STATEMENT)
         ast.kid-add(t, newblk, es)
         ast.set-count(t, newblk, 0, 1)

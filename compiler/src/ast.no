@@ -290,7 +290,9 @@ set-sig-extras = (t ast, i i64, union i64, variadic i64) {
 }
 
 ; set-doc / set-cmt: 節點自己的 Doc / Comment（存**首條**註解文字的 str id；
-; 0 = 無群組，-1 = 有群組但空的 —— 後者 dump.go 會印出沒有換行的 "Doc: "）
+; 0 = 無群組，-1 = 有群組但首條文字空 —— 見 put-doc-str）
+; ⚠️ 渲染端（comments）對 -1 仍要印出 "Doc: //" + 換行（oracle commentGroupInline
+;    無條件印 "//" + 首條文字 + 換行；首條文字為空 ⇒ 印 "//" 換行）
 set-doc = (t ast, i i64, v i64) {
     d = ast.nd-at(t, i)
     d.doc = v
@@ -451,6 +453,20 @@ put-str = (t ast, s str) (id i64) {
     id = 0
     s.len-bytes() == 0 -> return
     id = ast-str-intern(t, s)
+}
+
+; put-doc-str：Doc / Comment 欄位用的**首條註解文字** id。
+;
+;   空字串 ⇒ -1（群組存在但首條文字為空）；非空 ⇒ put-str 的 id（≥1）。
+;   ⚠️ 不能直接用 put-str：它對空字串回 0，而 0 在 doc/cmt 欄位是
+;      「**無群組**」的哨兵 ⇒ 空文字的首條註解會讓整組憑空消失。
+;      oracle 側的 CommentGroup 恆非空（commentGroupFromTokens 對空切片回 nil），
+;      dump.go 的 commentGroupInline 只印首條文字 ⇒ 空文字仍印 "Doc: //"。
+;      故以 -1 標示「群組在、首條文字空」，-1/0 兩個哨兵語意互斥。
+put-doc-str = (t ast, s str) (id i64) {
+    id = -1
+    s.len-bytes() == 0 -> return
+    id = ast.put-str(t, s)
 }
 
 ; ═══════════════════════════════════════════════════════════════════
@@ -1112,30 +1128,29 @@ node = (t ast, o sb, i i64, depth i64) {
 ; ═══════════════════════════════════════════════════════════════════
 
 ; comments: Doc: //… 與 Comment: //…
-; ⚠️ commentGroupInline 只印群組的**第一條**註解（dump.go 的既有行為）。
-;    doc == -1 表示「群組存在但空」⇒ dump.go 只印出 "Doc: "，**沒有換行**。
+; ⚠️ commentGroupInline 只印群組的**第一條**註解（dump.go 的既有行為），
+;    且**無條件**印 "//" + 首條文字 + 換行（dump.go:954-958）：
+;    首條文字為空（裸 `;`）⇒ 輸出 "Doc: //" + 換行。
+;    故 d.doc == -1（群組在、首條文字空）與 d.doc > 0 的差別只在「有沒有文字」，
+;    "//" 與換行兩者都要印。
 comments = (t ast, o sb, d nd, depth i64) {
     d.doc != 0 -> {
 
         #{overflow=wrap}
         ast.indent(o, depth + 1)
         o.push('Doc: ')
-        d.doc > 0 -> {
-            o.push('//')
-            o.push(ast.str-at(t, d.doc))
-            o.push-byte(10)
-        }
+        o.push('//')
+        o.push(ast.str-at(t, d.doc))
+        o.push-byte(10)
     }
     d.cmt != 0 -> {
 
         #{overflow=wrap}
         ast.indent(o, depth + 1)
         o.push('Comment: ')
-        d.cmt > 0 -> {
-            o.push('//')
-            o.push(ast.str-at(t, d.cmt))
-            o.push-byte(10)
-        }
+        o.push('//')
+        o.push(ast.str-at(t, d.cmt))
+        o.push-byte(10)
     }
 }
 
@@ -1496,6 +1511,74 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
                     ast.node(t, o, ty, depth + 2)
                 }
             }
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+    }
+
+    hname.eq-full('interfaceMethod') -> {
+        ; interfaceMethod（InterfaceDefinition 的方法）—— **不是 Node**
+        ;   （Go dump.go:837-849：d.interfaceMethod 單獨印，不經 node switch）
+        ;   ⇒ 資料全部走 aux；參數／回傳的**節點索引**也走 aux（節點本身在 arena）。
+        ;   aux 編碼（寬度 5，見 ps-parse-iface-def）：
+        ;     [0] name / [1] receiver / [2] variadic('true'/'') / [3] genericReceiver
+        ;     [4] 該方法的節點數（參數 + 回傳）
+        ;   節點索引段緊接在 helper 區之後：起點 = hbase + 5 * hcount。
+        ;   ⚠️ 欄位順序與 Go dump.go:842-843 的 fields(...) 逐項一致：
+        ;     name 恆印；receiver 非空才印；variadic / genericReceiver 為 true 才印。
+        ;   ⚠️ 參數與回傳**不分組**，都印在 depth+2（InterfaceMethod 印在 depth+1，
+        ;     見 dump.go:845-850 的 d.node(p, depth+1) —— 該處的 depth 已是
+        ;     InterfaceDefinition.depth+1）。
+        j = 0
+        off = 0
+        segB = d.hbase + 5 * d.hcount
+        (j < d.hcount) {
+
+            #{overflow=wrap}
+            hb = d.hbase + 5 * j
+
+            #{overflow=wrap}
+            imnm = ast.str-at(t, ast.aux-at(t, hb))
+
+            #{overflow=wrap}
+            imrc = ast.str-at(t, ast.aux-at(t, hb + 1))
+
+            #{overflow=wrap}
+            imva = ast.str-at(t, ast.aux-at(t, hb + 2))
+
+            #{overflow=wrap}
+            imgr = ast.str-at(t, ast.aux-at(t, hb + 3))
+
+            #{overflow=wrap}
+            impc = ast.aux-at(t, hb + 4)
+
+            ast.indent(o, depth + 1)
+            o.push('InterfaceMethod{name: ')
+            o.push(imnm)
+            imrc.len-bytes() > 0 -> {
+                o.push(', receiver: ')
+                o.push(imrc)
+            }
+            imva.eq-full('true') -> o.push(', variadic: true')
+            imgr.eq-full('true') -> o.push(', genericReceiver: true')
+            o.push('}')
+            o.push-byte(10)
+
+            #{overflow=wrap}
+            k = 0
+            (k < impc) {
+
+                #{overflow=wrap}
+                v = ast.aux-at(t, segB + off + k)
+                v > 0 -> ast.node(t, o, v, depth + 2)
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+
+            #{overflow=wrap}
+            off = off + impc
 
             #{overflow=wrap}
             j = j + 1

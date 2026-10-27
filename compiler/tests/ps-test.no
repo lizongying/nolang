@@ -509,6 +509,38 @@ test-chained-self-field-method-return-infer = () {
 
 test-chained-self-field-method-return-infer()
 
+; ═══════════════════════════════════════════════════════════════════
+; s8w（net/http2.no / byte.no）：鏈式獨立 if 尾隨 else + 切片方法參數補登記。
+;   ① byte.no/http2.no：`a -> b -> {B} -> {E}` 的尾隨 else，Go 不綁最外 cond、也不是
+;      `if(b){B}else{E}`，而是以整條最內層 if 作【條件】再包一層
+;      IfExpression{cond=if(b){B}, consequence=nil, alternative={E}}（dump.go:486-492 恆印
+;      cond、then/else 非 nil 才印）。noc ps-wrap-chain 在 body 為區塊(nextTail==0)且同列
+;      有 `->` 時就地吃掉、折疊成 wrapper；並鏡 Go wrapStandaloneChainDepth 的 for 迭代語意
+;      補計告警：同一 linkIdx==2 frame 的主迭代 + 尾折疊各報一次 ⇒ `a->b->c->{B}->{E}`
+;      得 Program{warnings: 2}（else-body 遞迴以 linkIdx+1，非重置 1）。
+;   ② byte.no：切片方法參數被標量字面量重新指派（`from = 0`）後，Go stmt.go:1599-1606 的
+;      【補登記】把推斷型別寫進嚴格 FuncVarType（existing 查詢走嚴格表，切片方法參數恆空
+;      ⇒ 一定補登記）⇒ 其後 `i = from` 的識別符傳播查到 from=i64。noc 補登記的 existing
+;      查詢曾誤用非嚴格 ps-var-type（看到 s8v 的 vt7 參數型別而跳過）⇒ 漏推；改走
+;      ps-var-type-strict 對齊。want 由 L2 oracle 實測取得。
+; ═══════════════════════════════════════════════════════════════════
+
+test-chain-bare-if-else-fold-and-warn = () {
+    got = parse-dump('f = (a bool, b bool, c bool) (w i64) {\n    a -> b -> c -> {\n        w = 1\n    } -> {\n        w = 2\n    }\n}')
+    want = 'Program{warnings: 2}\n    FunctionDefinition{name: f}\n        Parameter{name: a, type: bool}\n            NamedType{name: bool}\n        Parameter{name: b, type: bool}\n            NamedType{name: bool}\n        Parameter{name: c, type: bool}\n            NamedType{name: bool}\n        Parameter{name: w, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            ExpressionStatement{IfExpression}\n                IfExpression\n                    Identifier{name: a}\n                    BlockStatement{inline: true}\n                        ExpressionStatement{IfExpression}\n                            IfExpression\n                                Identifier{name: b}\n                                BlockStatement{inline: true}\n                                    ExpressionStatement{IfExpression}\n                                        IfExpression\n                                            IfExpression\n                                                Identifier{name: c}\n                                                BlockStatement{}\n                                                    LetStatement{name: w, type: i64, value: 1}\n                                                        NamedType{name: i64, inferred: true}\n                                                        IntegerLiteral{value: 1, raw: 1}\n                                            BlockStatement{}\n                                                LetStatement{name: w, type: i64, value: 2}\n                                                    NamedType{name: i64, inferred: true}\n                                                    IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), '鏈式裸 if 尾隨 else 折疊成 cond-wrapper ＋ linkIdx==2 雙迭代 ⇒ warnings:2')
+}
+
+test-chain-bare-if-else-fold-and-warn()
+
+test-slice-method-param-reassign-propagate = () {
+    got = parse-dump('[]byte.idx = (from i64) (pos i64) {\n    from = 0\n    i = from\n}')
+    want = 'Program{}\n    FunctionDefinition{name: []byte.idx, methodDef: true}\n        Parameter{name: from, type: i64}\n            NamedType{name: i64}\n        Parameter{name: self, type: []byte}\n            SliceType{}\n                NamedType{name: byte}\n        Parameter{name: pos, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: from, type: i64, value: 0}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 0, raw: 0}\n            LetStatement{name: i, type: i64, value: from}\n                NamedType{name: i64, inferred: true}\n                Identifier{name: from}'
+    runner.is-true(got.eq-full(want), '切片方法參數被標量字面量重指派 ⇒ 補登記進嚴格表 ⇒ i=from 推 i64')
+}
+
+test-slice-method-param-reassign-propagate()
+
 runner.summary()
 f = runner.failed-count()
 {

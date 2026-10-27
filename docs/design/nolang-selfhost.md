@@ -1691,6 +1691,24 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **門禁**：L0 `ps-test.no` **32/32**（新增 `test-slice-method-param-no-propagate-local-yes` 釘 j=i 無型別/m=k i64；`test-chained-self-field-method-return-infer` 釘 structFields＋msig 鏈式推 []i64，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（`out[]`／`fl[]`／duplicate-fn 同 s8u 集合，本輪改動區 0 新增）；`no vet src/std` 145 ERROR 屬 src/ 側既有（oracle 執行、非本 session 範圍）。工具鏈：`no build -cc zig`；跑 L0 需 `no run -cc zig`（預設 clang 在 MacOSX27 SDK 連結 libSystem.tbd 報 unknown architecture）。
 
+### 5.3.4.ai s8w 鏈式裸 if 尾隨 else 折疊＋切片方法參數補登記（2026-10-27 本輪）
+
+**背景**：§5.3.4.ah（s8v）收官後 L2 剩 **5 檔 DIFF**（byte/bigint/database-sql/net-http2/tests-2）。本輪攻「chained-if 降糖」家族兩檔——`src/std/net/http2.no`（87 行差）與 `src/std/byte.no`（322 行差）。基線：SUT=`/tmp/noc-s71`、DIFF=5。
+
+**形狀一（http2.no／byte.no 結構）——鏈式獨立 if 的尾隨 else 綁定**：`cond1 -> cond2 -> {B} -> {E}`（裸 if 鏈 + 尾 else）。SUT 舊碼把 `{E}` 綁到【最外 cond1】得 `if(c1){if(c2){B}}else{E}`。根因：`ps-mk-standalone-if` 的 else 分支在【鏈吃光之後】才取 `-> {E}`，誤掛最外層。
+
+**⚠️ oracle 並非直覺的 `if(c1){if(c2){B}else{E}}`**：實測 `a -> b -> {B} -> {E}` 的 dump 是——最內層 if `if(b){B}` 充當**條件**、再包一層 `IfExpression{cond=if(b){B}, consequence=nil, alternative={E}}`（`dump.go:486-492`：IfExpression 恆印 cond、then/else【非 nil 才印】⇒ 外層只顯示 cond=內層 if ＋ 一個 else 區塊）。**修法（`ps-wrap-chain`）**：當本層 body 為區塊（`nextTail==0`、鏈到此終止）且其後【同列】有 `->` 時，就地吃掉 `-> {E}`、建 `chained = IfExpr{tail, nextBlk, 0}` 後再以 `wrapper = IfExpr{chained, 0, altW}` 包覆（`esChild = wrapper`）。http2.no 結構差全消。
+
+**形狀二（warnings 計數）——Go wrapStandaloneChainDepth 的 for 迭代語意**：`a->b->c->{B}->{E}` oracle `Program{warnings: 2}`，SUT 0；`a->{B}->b->{D}->c->{F}->{G}`（byte.no UTF-8 編碼分支）亦 2。根因：Go 用 **for 迴圈**在同一 `linkIdx` 折疊多個 `->`（每迭代各報一次 WarnChainedIf），而 noc 用**純遞迴**（每個 `->` 落到 linkIdx+1 的新 frame），尾 else 折疊更曾被【重置 linkIdx=1】⇒ 從不达 2 ⇒ 不告警。**修法（`ps-wrap-chain` 尾折疊支）**：尾 else 是【同 frame 的下一次 for 迭代】⇒ `linkIdx == 2` 時【也要】`p.warn + 1`；其 else-body 遞迴改用 `linkIdx + 1`（鏡 Go `wrapStandaloneChainDepth(nextBody, linkIdx+1)`）。實測 e3(2)、byte-style(2)、純鏈 w3(1)/w4(1)、e2(0)、單 if/else(0) 全部對齊。
+
+**形狀三（byte.no 型別）——切片方法參數標量重指派的補登記**：`[]byte.index-from = (… from i64)` 內 `from = 0`（標量字面量重指派參數）之後 `i = from`，oracle 推 `i64`、SUT【無型別】。根因：Go `parseLetStatement` 尾部 `stmt.go:1599-1606` 把（推斷的）標量型別【補登記】進嚴格 `FuncVarType`——其 existing 查詢讀嚴格表，而切片方法參數經 s8v 只登 `vt7:`（嚴格表恆空）⇒ 【一定補登記】⇒ 其後 `x = param` 識別符傳播查得到。noc 補登記（`ps-parse-let`）的 existing 查詢曾誤用【非嚴格】`ps-var-type`（看到 `vt7:` 的參數型別而誤判「已有型別」⇒ 跳過補登記 ⇒ 參數永不進嚴格表 ⇒ 漏推）。**修法**：existing 查詢改走 `ps-var-type-strict`。连带修正 `pos = i` 的既有型別閘門（已登 i64 的 pos 不再被覆寫推斷節點）。
+
+**⚠️ 提交衛生事故（本輪發現並修正）**：`put-doc-str`（空字串首條註解回 -1、鏡 oracle `commentGroupInline` 無條件印 `//`＋文字＋換行）的【呼叫端】早在 **s8q（a761ab11）** 就寫進 ps.no（`ps-collect-tail` 等 7 處），但【定義】從未提交進 `ast.no`——即 `HEAD` 自 s8q 起【根本無法獨立 build】，歷輪全靠未提交的工作區 `ast.no` 建置。本輪把這份缺失的 `ast.no` 依賴（`put-doc-str` 定義、`comments` 對 -1 的 `//`＋換行渲染、`interfaceMethod` 非 Node 匯出）一併納入 s8w 提交，恢復 `HEAD` 可建置性。L2 全量（652 SAME）證明其輸出與 oracle 一致。
+
+**歸因（同一 harness、同一 CTL，A/B `noc-s71`→`noc-s76`）**：**DIFF 5→3 / SAME +2**。轉 SAME：`src/std/net/http2.no`、`src/std/byte.no`。**SAME→DIFF 真回歸 0 檔**。剩 3 檔：`bigint.no`（src/ 側平行 WIP、本 session 禁改）、`database/sql.no`（多返回值 tuple、已判不可行）、`tests/2.no`（多值指派家族）。
+
+**門禁**：L0 `ps-test.no` **34/34**（新增 `test-chain-bare-if-else-fold-and-warn` 釘 wrapper 結構＋warnings:2；`test-slice-method-param-reassign-propagate` 釘補登記→傳播，golden 取於 oracle）；`no vet compiler/src` 殘留 19 ERROR（同 s8v 集合，本輪改動區 0 新增）。工具鏈：`no build -cc zig`／`no run -cc zig`。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。
