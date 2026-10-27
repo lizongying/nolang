@@ -3,6 +3,7 @@
 > 状态（2026-10-24）：**S0–S6 全部落地**；S7（`compiler/` 同步）match 表示已裁定①、缺口 A→H→I 修完、**match-表示残差 0 档**（gap I 已关闭，实测 L2 533/120，见 §13.2）。**Stage 6（Checker 迁 THIR）✅ 完成（6A–6E）**；**6C-optional ✅ 全链完成（① nodeType 去反射 → ② 显式 type map → ③ DivByZero 精化/减报 → ④ StringConcat 补报/增报 → ⑤ §3.3 终态收口）**；**S3-b ✅ 完成（四层等价门禁全绿）**。
 >
 > 剩余（见 §末 backlog）：**S3-c（`__cap_N` 结构捕获切换，V4 违规收口）**、**S7 正交轨 120 档收敛**。
+> **✅ 收官补记（2026-10-27）：上述两项剩余均已关闭，本文 backlog 清零。** ① S3-c 已于 2026-10-25 切换为生产默认（`HIRCaptureEnabled=true`，`src/parser/capturefacts.go`，详见 §13.1 三项决策）；② S7 正交轨——33 档 `cap` 残差随 S3-c 自动消失（§819 预言兑现）、前置 I/O 回归（缺口 4）已修（§854），且后续 s8q→s8y 增量把其余族（`synth`/`idxout`/`inferred`/`generic`/`warn`）全部由自举 parser 侧复现消解：语料 `tests src/std`（655 档）L2 `no ast` 实测 **DIFF=0**（commit `261ab91c`）。逐轮记录见 `docs/design/nolang-selfhost.md` §5.3.4。
 > ⚠️ **两者实为同一杠杆**：120 档残差中 33 档（27.5%）直接源于 `__cap_N` 的 AST 注入，S3-c 落地即自动消失（§13.2）。
 > 涉及层：parser / hir / checker / mir / fmt / lsp / build / 自举 `compiler/`
 > 相关文档：`docs/design/nolang-selfhost.md`、`docs/design/option-unified.md`、`docs/design/nolang-ast-grammar.md`、`docs/design/nolang-mm-ast.md`、**`docs/design/nolang-s1-match-unification.md`（S1 全记录）**、`NOLANG-OWNERSHIP-MODEL.md`
