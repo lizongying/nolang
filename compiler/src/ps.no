@@ -103,6 +103,7 @@ psst {
     ifdFn str
     varFlag i64
     resParam i64
+    nIllegal i64
     eLn []i64
     eCl []i64
     eMsg []str
@@ -2223,9 +2224,15 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             ;   「跳前導換行」的形（`x = (\n1 + 2\n)`）亦已實測對齊：入口 skip 只吞
             ;   【前導】換行，尾換行由中綴循環停在原處 ⇒ 報 3:0 NEWLINE（探針 c6）。
             ps-peek(p) != tok.RPAREN -> ps-error(p, 'expected right parenthesis, got ' + tok.name(ps-peek(p)) + ' instead', 'E_GENERAL')
-            ps-expect(p, tok.RPAREN)
-            idx = ast.add(t, asp.K_GROUPED_EXPRESSION)
-            inner > 0 -> ast.kid-add(t, idx, inner)
+
+            ; s12：報錯路徑【不建節點、不消費】——Go :956-960 saveError 後直接 return nil，
+            ;   表達式以 nil 傳到 let 站點觸發同位級聯報文（§5.3.4.ap 缺口①）。
+            ;   正常路徑才 expect+建點。兩臂互斥且中途無消費，peek 重取安全。
+            ps-peek(p) == tok.RPAREN -> {
+                ps-expect(p, tok.RPAREN)
+                idx = ast.add(t, asp.K_GROUPED_EXPRESSION)
+                inner > 0 -> ast.kid-add(t, idx, inner)
+            }
         }
 
         tk.typ == tok.LBRACE -> {
@@ -2510,6 +2517,10 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
                 args []i64 = with-cap(4)
                 clDone = 0
 
+                ; s12：Go else 臂 :2245 報錯後 return nil ⇒ 整個 CallExpression 丟失，
+                ;   表達式以 nil 上拋 let 站點級聯報文（缺口①）。
+                clNil = 0
+
                 ; Go 循環前空參速出（peek 原樣，不跳）
                 ps-peek(p) == tok.RPAREN -> {
                     ps-bump(p)
@@ -2554,37 +2565,43 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
                                 clDone = 1
                             }
 
-                            ; Go else 臂：實參後既無逗號也無閉括號 ⇒ 報錯（游標已在
-                            ;   換行後的首個非換行 token，與 oracle 同位）、不消耗、離開
-                            ps-err-count(p) == 0 -> {
+                            ; Go else 臂：實參後既無逗號也無閉括號 ⇒ saveError（游標已在
+                            ;   換行後的首個非換行 token，與 oracle 同位）、【不消費】、
+                            ;   return nil。s12 撤掉舊「err-count>0 ⇒ 靜默前進」近似——
+                            ;   Go 無條件上報，重複由收集器 (ln,cl,msg) 去重兜底
+                            ;   （探針 p62：分組錯在前時逗號錯照報）。
+                            -> {
                                 ps-error(p, 'expected comma or right parenthesis, got ' + tok.name(ps-peek(p)) + ' instead', 'E_GENERAL')
                                 clDone = 1
+                                clNil = 1
                             }
-
-                            ; 已有其他錯誤在前（Go saveError 去重/非法 token 已報）⇒ 靜默前進
-                            -> ps-bump(p)
                         }
                     }
                 }
 
-                ; arena 順序：Function (idx) 与 args 子树已完成 → add 父后依序 kid-add
-                call = ast.add(t, asp.K_CALL_EXPRESSION)
+                ; s12：報錯態 ⇒ Go return nil——不建 CallExpression，整個表達式以 0 上拋；
+                ;   函數標識子節點已入 arena 成孤兒（無害：錯誤檔不在 L2 語料）。
+                ;   正常態：arena 順序 Function (idx) 与 args 子树已完成 → add 父后依序 kid-add
+                clNil == 1 -> idx = 0
+                clNil == 0 -> {
+                    call = ast.add(t, asp.K_CALL_EXPRESSION)
 
-                ; slot 0 = "args" 纯量的预渲染（kvc=NON-ZERO 政策：0 不印）
-                ast.set-slot(t, call, 0, ast.put-str(t, args.len().to-str()))
+                    ; slot 0 = "args" 纯量的预渲染（kvc=NON-ZERO 政策：0 不印）
+                    ast.set-slot(t, call, 0, ast.put-str(t, args.len().to-str()))
 
-                ; count slot 0 = KIDS 迭代次数（Arguments 切片长度）
-                ast.set-count(t, call, 0, args.len())
-                ast.kid-add(t, call, idx)
-                k = 0
-                (k < args.len()) {
-                    ast.kid-add(t, call, args[k])
+                    ; count slot 0 = KIDS 迭代次数（Arguments 切片长度）
+                    ast.set-count(t, call, 0, args.len())
+                    ast.kid-add(t, call, idx)
+                    k = 0
+                    (k < args.len()) {
+                        ast.kid-add(t, call, args[k])
 
-                    #{overflow=wrap}
-                    k = k + 1
+                        #{overflow=wrap}
+                        k = k + 1
+                    }
+                    idx = call
+                    handled = 1
                 }
-                idx = call
-                handled = 1
             }
         }
         nt == tok.DOT -> {
@@ -3706,10 +3723,12 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
     p.valCtx = vcSave
 
     ; s10：RHS 落空 ⇒ 復刻 stmt.go:1306-1312（parseLetStatement 的 value==nil else 臂）：
-    ;   「expected expression, got nil instead」定位在【目前 token】，且僅在【尚無任何
-    ;   已報錯誤】時上報（Go 的閘門是 reportedIllegal——ILLEGAL token 已自行報錯就不重複；
-    ;   Go 全程只收 ERROR 級 diags，用 eLn 非空近似同形）。
-    val == 0 && ps-err-count(p) == 0 -> ps-error(p, 'expected expression, got nil instead', 'E_GENERAL')
+    ;   「expected expression, got nil instead」定位在【目前 token】。
+    ; s12 閘門修正：Go 的抑制條件是 len(p.reportedIllegal)==0——只數【ILLEGAL 詞法錯】，
+    ;   普通 saveError（分組/逗號報文）**不**抑制級聯（探針 p12：2:0 括號錯 + 2:0 nil 錯
+    ;   兩條都在）。舊 s10 近似成 ps-err-count==0 會吞掉級聯條，正是 §5.3.4.ap 缺口①。
+    ;   nIllegal 目前恆 0（noc 無 ILLEGAL 報錯族），接上該族時在此計位即可。
+    val == 0 && p.nIllegal == 0 -> ps-error(p, 'expected expression, got nil instead', 'E_GENERAL')
 
     ; s8q：Pipeline 同位——`x = A -> B` 的【整條鏈】是 let 的 value（鏡像 Go stmt.go:1242-1260）。
     ;   值解析完後若【同位】緊接 `->`（用活 ps-peek，對齊 Go 只看 currentToken==RARROW；
