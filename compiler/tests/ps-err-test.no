@@ -10,9 +10,12 @@
 ; 全部由 L3 oracle 實測釘死（`./bin/no vet <檔>`），**不是**手寫猜的：
 ;   'x = foo(1 2)'  ⇒ 1:11 expected comma or right parenthesis, got INT instead
 ;   'y =\n'         ⇒ 2:1  expected expression, got nil instead
-;   'x = (1 + 2\n'  ⇒ oracle 報 2:0 got NEWLINE；noc 游標在跳行後停在
-;                     2:1 EOF——NEWLINE 坐標族是已錄缺口（docs §5.3.4.ao），
-;                     本檔先釘 noc 現況，坐標族修復後再擰到 oracle 形。
+;   'x = (1 + 2\n'  ⇒ 2:0  expected right parenthesis, got NEWLINE instead
+;                     （s11 游標對齊後與 oracle 逐字元全等；舊 s10 釘的是 noc
+;                     現況 2:1 EOF，坐標族缺口已清）
+;   'x = foo(1\n2)' ⇒ 2:1  expected comma or right parenthesis, got INT instead
+;                     （s11：Go 實參循環 arg 後只跳 NEWLINE 再分派 ⇒ 報錯落在
+;                     換行後首個非換行 token，oracle 錨點 p14）
 ;
 ; ⚠️ 本檔只測【收集器】（ps.eLn/eCl/eMsg/eCode + ps-err-count）；
 ;    渲染行形已由 diag-test.no 釘死，端到端 CLI 契約由 L3 差分覆蓋。
@@ -64,15 +67,15 @@ test-let-nil-value = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 3. 分組缺 RPAREN：'x = (1 + 2\n' ⇒ 恰 1 條（noc 現況坐標 2:1 EOF）
+; 3. 分組缺 RPAREN：'x = (1 + 2\n' ⇒ 恰 1 條（s11 起坐標與 oracle 全等 2:0 NEWLINE）
 ; ═══════════════════════════════════════════════
 
 test-group-missing-rparen = () {
     p = parse-err('x = (1 + 2\n')
     runner.eq(ps-err-count(p), 1, 'group count')
     runner.eq(p.eLn[0], 2, 'group line')
-    runner.eq(p.eCl[0], 1, 'group col (noc cursor; oracle 2:0 NEWLINE — recorded gap)')
-    runner.str-eq(p.eMsg[0], 'expected right parenthesis, got EOF instead', 43, 'group msg')
+    runner.eq(p.eCl[0], 0, 'group col (oracle 2:0 NEWLINE — s11 游標對齊)')
+    runner.str-eq(p.eMsg[0], 'expected right parenthesis, got NEWLINE instead', 47, 'group msg')
 }
 
 ; ═══════════════════════════════════════════════
@@ -86,6 +89,15 @@ test-dedup = () {
     _ = root
     n0 = ps-err-count(p)
     n0 == 1 -> {
+
+        ; s11 起分組錯報在 NEWLINE（2:0），parse 收尾後游標已停到別處 ⇒
+        ;   回溯游標到已錄錯誤所在 token，重報才命中同 (ln,cl,msg) 鍵
+        ;   ⚠️ 必須用塊形 while——單語句形 `(cond) q = q + 1` 只執行一次非循環
+        q = 0
+        (p.toks[q].ln != p.eLn[0] || p.toks[q].cl != p.eCl[0]) {
+            q = q + 1
+        }
+        p.pos = q
 
         ; 同坐標同文重報 ⇒ 不新增（Go saveError 去重；restoreState 重試即此形態）
         ; ⚠️ 先 .copy()：把 vec 元素的 str 欄位直接交給 ps-error 的 push 會產生別名）
