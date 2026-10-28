@@ -79,24 +79,33 @@ comptime 打印 `7 0`——程序行为被改变了。
 ⚠️ 这条同时是方法折叠的前置条件：方法写全局（`self` 之外的包级状态）与函数同性质，
 没有这道闸门，方法折叠会把写入一起吞掉。
 
-### 2.3.5 `char` 结果不折叠
+### 2.3.5 `char` 结果现在可折叠（已修复类型丢失）
 
-求值器把 char 算术**当成 int** 算（`evalInfix` 里 `cvChar` 与 `cvInt` 混为 `li`），
-于是一个 `char` 类型的结果到达 `evalConstCall` 时只是一个 `int`。char 常量的发出形态
-是 `i64`，而它所有的下游使用都**静态绑定到 char 类型**（`c.to-str()` 一定解析成
-`char.to-str`），于是那个 `i64` 常量让它们在「运行时是字符」的地方读到了「数字」：
+早期 v1 让 char 算术**当成 int** 算（`evalInfix` 里 `cvChar` 与 `cvInt` 混为 `li`，结果恒返 `cvInt`），
+于是 `char` 结果到达 `evalConstCall` 时只是一个 `int`，`comptimeFold` 又把它当成 `i64` 常量发出。
+char 在 MIR/codegen 里是 **i32**（码点整数），而所有下游使用都**静态绑定到 char 类型**
+（`c.to-str()` 一定解析成 `char.to-str`），于是那个 i64 常量让它们在「运行时是字符」的地方读到了
+「数字」：`"A" + 1` 关掉 comptime 打印 `B`，打开 comptime 却打印 `66`（65+1 被当数值而非字符）。
 
-- `"A" + 1` 关掉 comptime 打印 `B`，打开 comptime 打印 `66`（65+1 被当数值而非字符）。
-- `char.to-lower()` 被折叠成 `i64` 后下游 `.to-str()` 输出 `65` 而非 `A`
-  （`src/std/char.no` 实测捕获）。
+当时用双保险守卫（`resultTypeRaw == "char"` 与 `cvInt && char` 类型）直接**拒绝折叠** char，
+代价是少一次折叠机会。
 
-修法（双保险）：`evalConstCall` 在析构结果参数后看 `resultTypeRaw == "char"` 就拒绝；
-`comptimeFold` 在回退类型时若 `cv.kind == cvInt && t.Raw == "char"` 也拒绝。
-char **字面量**自己带 `cvChar` 且 `comptimeFold` 只接受 infix/prefix/cond/call 形态，
-所以也不会被当成可发常量。
+**现改为修复根因而非回避**：
+- `evalInfix` 的 `li` 分支：当任一操作数是 `cvChar` 时 `resKind = cvChar`，所有算术 / 位运算返回
+  `comptimeVal{kind: cvChar, i: ...}`（比较运算仍是 `cvBool`）。char 算术的结果保持 char。
+- `emitConstVal` 的 `cvInt` 分支：**不再把 char 静态类型 widen 成 i64**。char 在 codegen 本就是
+  i32，把 char 值发成 i64 会写成 `store i64 …, i32* %slot` 的类型错配、并让下游误读成数字；
+  现在直接按静态类型（char → i32）发出。
+- 移除 `evalConstCall` 的 `resultTypeRaw == "char"` 守卫与 `comptimeFold` 的 `cvInt && char` 守卫；
+  多结果折叠（`foldMultiResultCall`）的 `KindChar` 拒绝也一并移除（char 现可折叠）。
 
-> 取舍：v1 不折叠任何 `char` 结果，哪怕它确实可算。代价只是少一次折叠机会（char 算术
-> 照常在运行期执行），收益是绝不生产「类型被悄悄改写的常量」——这类污染比不折叠危险得多。
+修复后 `"A" + 1` 与 `to-next("A")`（返回 char）在 comptime 开 / 关两态都打印 `B`（经 `to-str`），
+且折叠确实发生（调用消失、`OpConst` 带 `char` 类型）——见单测 `comptime_char_test.go`
+（`TestComptimeFoldsCharResult` / `TestComptimeFoldsCharExpr` / `TestComptimeFoldsMultiResultChar`
+/ `TestComptimeLeavesCharRuntimeArgAlone`）。
+
+> 取值：与其「不折叠」而保留一次优化机会的丧失，不如从求值器与发出两条链路同时修掉类型改写，
+> 让 char 表达式 / 结果像运行期一样端到端保持 char 类型。
 
 ### 2.3.3 Option 结果不折叠
 
@@ -258,7 +267,7 @@ lowering 是**顺序**的：进入循环体后，先 lower `start < 0` 这个**�
   判定纯性时 `blockImpure`/`subtreeImpure` 对 `KIf` 改为递归两个臂去找**真实**副作用（如 `print` /
   非纯调用），而不是一刀切判非纯。`match` 降成同样的 if 链，故常量 match 一并可折叠。
   见 §6.2，单测见 `TestComptimeFoldsIfBranch` / `TestComptimeFoldsMatchConstant`。
-- 结果参数多于一个（或匿名）的函数不折叠（`evalConstCall` 要求恰好 1 个具名 result）。
+- 多结果参数（out-param）的纯函数现在可折叠（见 §6.5），前提是：函数纯、参数可常量化、结果类型为标量（非 Option / 聚合）、函数体直序（无循环 / 分支）、且调用为 arg-form（`f(x, a, b)` 末尾传结果目标）。方法 / 变长 / 含分支或循环 / 结果为 Option·聚合 的函数仍不折叠。Nolang 的结果参数**都是具名的**，没有「匿名结果」这一支。
 - **聚合常量**（struct / 数组 / 切片）目前只用于「接收者」与「读字段 / 读下标」，
   **不能作为折叠结果发出**（`evalConstCall` 见到 `cvAgg` 结果就放弃折叠）。
   要折叠一个返回 struct 的函数，还得能发出常量聚合。
@@ -411,3 +420,29 @@ r = true                   ; 照跑 -> 折成 true
 
 > 取含两个方向是这道门禁有意义的前提：只断言「调用在」会被「任何 cond-chain 都不折叠」
 > 蒙混过关，所以配对一个「无 return 的 cond-chain 仍要折出来 72」的对照用例。
+
+### 6.5 已实现：多结果（out-param）折叠
+
+Nolang 的结果参数都是具名的 out-param（如 `str.copy = () (dst str)`，调用 `src.copy(dst)`
+把 `dst` 作为末尾实参传进结果参数位；`countResultParams` / `bindOutParams` 据此把末尾 N 个
+实参绑回 N 个结果）。此前 comptime 只折叠恰好 1 个结果（`evalConstCall` 的
+`len(resultNames) != 1` 守卫），多结果函数一律不折叠。现已增加语句位的多结果折叠（2026-10-28）：
+
+- **求值侧**：`foldMultiResultCall` 在 `lowerCall` 入口（`resolveCallee` 解出 `callee` 后、
+  任何早返回之前）对 `countResultParams(callee) > 1` 的纯 HIR 函数尝试折叠；它复用
+  `isComptimePure`，收集参数与结果名，对每个结果类型做 Option / 聚合守卫（任一命中
+  则整体放弃，否则 tag / 类型被静默改写），再用 `evalConstBodyMulti` 把函数体求值为
+  `map[结果名]comptimeVal`（直序 KLet/KAssign 绑结果、裸 `return` 或落到函数尾；遇到
+  KIf / KFor / KRange 直接放弃——v1 保守）。char 结果现在可折叠（见 §2.3.5 的修复）。
+- **落地侧**：拿到 N 个常量后依次 `emitConstVal` 发成 `OpConst`，再复用**与运行时完全相同**的
+  `bindOutParams(n, callee, dsts)` 把常量 `EmitMoveInto` 进末尾 N 个 identifier 实参对应的
+  caller 变量，随后 `lowerCall` 直接 `return NoVal`（不发调用）。单一结果 out-param 函数仍走原路径。
+
+健全性边界：方法（需同时绑定 receiver 常量）、变长、含分支 / 循环的函数、或任一结果为
+Option / 聚合的函数**整体放弃折叠**，调用照常发出——与单结果路径的同名守卫一致。
+
+单测（`src/mir/comptime_multi_result_test.go`）：
+- `TestComptimeFoldsMultiResult`：`g = (n i64) (a i64, b i64) { a = n+1; b = n*2 }` 经 `g(5, a, b)`
+  折叠为 `a=6, b=10`，`g` 的调用消失；OFF 两态对照（6 / 10 在 ON 出现、OFF 不出现）。
+- `TestComptimeLeavesMultiResultRuntimeCallAlone`：反向守卫——`g(i, a, b)`（i 为循环变量）
+  不得折叠，调用保留。

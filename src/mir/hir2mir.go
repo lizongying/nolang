@@ -6101,18 +6101,10 @@ func (l *lowerer) comptimeFold(id int32) (comptimeVal, TypeID, bool) {
 	if t := l.mod.Type(typ); t != nil && (t.Kind == KindOption || strings.HasPrefix(t.Raw, "?")) {
 		return comptimeVal{}, NoType, false
 	}
-	// A CHAR-typed expression must not be folded either. The evaluator models
-	// char arithmetic as int, so the value is an int while the static type
-	// stays char; the constant form of a char-typed value is an i64, and every
-	// downstream use is bound statically to the char type (`c.to-str()`
-	// resolves to `char.to-str`), so the i64 makes them read a NUMBER where
-	// the runtime has a CHARACTER: `"A" + 1` printed "B" with the evaluator
-	// off and "66" with it on.
-	if cv.kind == cvInt {
-		if t := l.mod.Type(typ); t != nil && t.Raw == "char" {
-			return comptimeVal{}, NoType, false
-		}
-	}
+	// A char expression now folds correctly: char arithmetic preserves the
+	// char kind (evalInfix) and emitConstVal emits the char type (i32) rather
+	// than widening to i64, so the folded constant carries the char type
+	// downstream and `.to-str()` still resolves to `char.to-str`.
 	return cv, typ, true
 }
 
@@ -6492,40 +6484,48 @@ func (l *lowerer) evalInfix(op string, lv, rv comptimeVal, n *hir.Node) (comptim
 		return comptimeVal{}, false
 	}
 	if li {
+		// char arithmetic stays char (Nolang: a char plus an int is still a
+		// char). When either operand is a char, the result keeps the char kind
+		// so the folded constant carries the char type (i32) downstream and
+		// method resolution (`.to-str()` -> `char.to-str`) is unchanged.
+		resKind := cvInt
+		if lv.kind == cvChar || rv.kind == cvChar {
+			resKind = cvChar
+		}
 		a, b := lv.i, rv.i
 		switch op {
 		case "+":
-			return comptimeVal{kind: cvInt, i: a + b}, true
+			return comptimeVal{kind: resKind, i: a + b}, true
 		case "-":
-			return comptimeVal{kind: cvInt, i: a - b}, true
+			return comptimeVal{kind: resKind, i: a - b}, true
 		case "*":
-			return comptimeVal{kind: cvInt, i: a * b}, true
+			return comptimeVal{kind: resKind, i: a * b}, true
 		case "/":
 			if b == 0 {
 				return comptimeVal{}, false
 			}
-			return comptimeVal{kind: cvInt, i: a / b}, true
+			return comptimeVal{kind: resKind, i: a / b}, true
 		case "%":
 			if b == 0 {
 				return comptimeVal{}, false
 			}
-			return comptimeVal{kind: cvInt, i: a % b}, true
+			return comptimeVal{kind: resKind, i: a % b}, true
 		case "&":
-			return comptimeVal{kind: cvInt, i: a & b}, true
+			return comptimeVal{kind: resKind, i: a & b}, true
 		case "|":
-			return comptimeVal{kind: cvInt, i: a | b}, true
+			return comptimeVal{kind: resKind, i: a | b}, true
 		case "^":
-			return comptimeVal{kind: cvInt, i: a ^ b}, true
+			return comptimeVal{kind: resKind, i: a ^ b}, true
 		case "<<":
 			if b < 0 || b >= 64 {
 				return comptimeVal{}, false
 			}
-			return comptimeVal{kind: cvInt, i: a << uint64(b)}, true
+			return comptimeVal{kind: resKind, i: a << uint64(b)}, true
 		case ">>":
 			if b < 0 || b >= 64 {
 				return comptimeVal{}, false
 			}
-			return comptimeVal{kind: cvInt, i: a >> uint64(b)}, true
+			return comptimeVal{kind: resKind, i: a >> uint64(b)}, true
 		case "==":
 			return comptimeVal{kind: cvBool, b: a == b}, true
 		case "!=":
@@ -6658,17 +6658,10 @@ func (l *lowerer) evalConstCall(id int32, env map[string]comptimeVal, stack []st
 	if len(resultNames) != 1 {
 		return comptimeVal{}, false
 	}
-	// A CHAR result must not be folded. The evaluator models char arithmetic
-	// as int, so the value arrives here as an int; the constant form of a
-	// char-typed value is an i64, and every downstream use is bound
-	// statically to the char type (`c.to-str()` resolves to `char.to-str`),
-	// so an i64 constant makes them read a NUMBER where the runtime has a
-	// CHARACTER: `"A" + 1` printed "B" with the evaluator off and "66" with
-	// it on. A char LITERAL keeps its own kind and is not folded either
-	// (comptimeFold only accepts infix / prefix / cond / call).
-	if resultTypeRaw == "char" {
-		return comptimeVal{}, false
-	}
+	// A char RESULT now folds correctly: char arithmetic preserves the char
+	// kind (evalInfix) and emitConstVal emits the char type (i32), so the
+	// folded constant keeps the char type and `.to-str()` still resolves to
+	// `char.to-str`.
 	if method && (recvParam == "" || recv == nil) {
 		// A method without a bindable receiver cannot be folded.
 		return comptimeVal{}, false
@@ -6705,6 +6698,243 @@ func (l *lowerer) evalConstCall(id int32, env map[string]comptimeVal, stack []st
 		return comptimeVal{}, false
 	}
 	return res, rok
+}
+
+// foldMultiResultCall evaluates a pure HIR function with more than one named
+// result at compile time and returns the constant results in result-parameter
+// order, paired with their static types. It is the statement-position
+// counterpart to evalConstCall (which folds a single-result call into one value
+// usable as an expression). Returns ok=false for anything that cannot be
+// folded: non-HIR callees, methods, variadic callees, impure bodies, results
+// of an option / aggregate type, arguments that are not compile-time
+// constants, or a body that is not straight-line (loops, branches, early
+// returns via `if`).
+//
+// The caller is expected to feed the returned constants into bindOutParams so
+// they land in the caller's out-parameter destinations — reusing the EXACT
+// same destination binding the runtime call would have performed.
+func (l *lowerer) foldMultiResultCall(n *hir.Node, callee string) ([]comptimeVal, []TypeID, bool) {
+	if !comptimeEnabled() {
+		return nil, nil, false
+	}
+	fid, ok := l.funcNames[callee]
+	if !ok {
+		return nil, nil, false
+	}
+	fdef := l.pkg.Node(fid)
+	if fdef == nil || fdef.Kind != hir.KFuncDef {
+		return nil, nil, false
+	}
+	if fdef.Has(hir.FlagMethod) {
+		// Multi-result METHOD folding would need the receiver bound as a
+		// constant too (evalConstCall's method path); out of scope for v1.
+		return nil, nil, false
+	}
+	if fdef.Has(hir.FlagVariadic) {
+		return nil, nil, false
+	}
+	if !l.isComptimePure(callee) {
+		return nil, nil, false
+	}
+	var paramNames, resultNames []string
+	var resultTypes []TypeID
+	for _, c := range l.pkg.Children(fid) {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			continue
+		}
+		switch cn.Kind {
+		case hir.KParam:
+			paramNames = append(paramNames, l.pkg.Str(cn.S))
+		case hir.KResult:
+			resultNames = append(resultNames, l.pkg.Str(cn.S))
+			resultTypes = append(resultTypes, l.typeOfNode(cn))
+		}
+	}
+	if len(resultNames) < 2 {
+		return nil, nil, false
+	}
+	// Reject result types that cannot be emitted as a bare constant: an option
+	// is a {tag, payload} pair with no comptimeVal form, and an aggregate
+	// (struct/array/slice) has no scalar constant form. Folding any of these
+	// would corrupt the caller, so refuse the WHOLE call rather than fold a
+	// subset. char results fold correctly (evalInfix keeps the char kind and
+	// emitConstVal emits the char type, i32) — see comptimeFold / evalInfix.
+	for _, rt := range resultTypes {
+		t := l.mod.Type(rt)
+		if t == nil {
+			return nil, nil, false
+		}
+		if t.Kind == KindOption || strings.HasPrefix(t.Raw, "?") {
+			return nil, nil, false
+		}
+		if t.Kind == KindStruct || t.Kind == KindArray || t.Kind == KindSlice {
+			return nil, nil, false
+		}
+	}
+	args := l.slotArgs(n.Id, "arg")
+	if len(args) != len(paramNames)+len(resultNames) {
+		// Only the ARG-FORM call (every param supplied AND every result
+		// destination supplied as a trailing identifier argument) can be
+		// folded here. LHS-form (`r, s = f(x)`, which reaches
+		// lowerMultiAssignCall with an empty callee) is not handled.
+		return nil, nil, false
+	}
+	callEnv := map[string]comptimeVal{}
+	for i, aid := range args[:len(paramNames)] {
+		av, ok2 := l.evalConst(aid, nil, nil)
+		if !ok2 {
+			return nil, nil, false
+		}
+		callEnv[paramNames[i]] = av
+	}
+	bodyID := l.slot(fid, "body")
+	if bodyID == hir.NoID {
+		return nil, nil, false
+	}
+	vals, ok2 := l.evalConstBodyMulti(bodyID, callEnv, []string{callee}, resultNames)
+	if !ok2 {
+		return nil, nil, false
+	}
+	out := make([]comptimeVal, len(resultNames))
+	for i, rn := range resultNames {
+		v, bound := vals[rn]
+		if !bound {
+			return nil, nil, false
+		}
+		out[i] = v
+	}
+	return out, resultTypes, true
+}
+
+// evalConstBodyMulti is the multi-result sibling of evalConstBody. It walks a
+// function body the same way but collects a value for EVERY named result
+// (resultNames) instead of a single one. It is deliberately conservative for
+// v1: any branch (KIf / KExprStmt-KIf) or loop aborts the fold, and a valued
+// `return` with more than one result is not (yet) supported — only bare
+// `return` (use the current bindings) or falling off the end of the body is
+// folded. Nolang returns by BINDING result parameters (an identifier-LHS
+// assignment lowers to KLet, not KAssign), so a KLet/KAssign targeting a
+// result name records that result's value.
+func (l *lowerer) evalConstBodyMulti(blockID int32, env map[string]comptimeVal, stack []string, resultNames []string) (map[string]comptimeVal, bool) {
+	res := map[string]comptimeVal{}
+	inResults := map[string]bool{}
+	for _, rn := range resultNames {
+		inResults[rn] = true
+	}
+	for _, c := range l.pkg.Children(blockID) {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			continue
+		}
+		switch cn.Kind {
+		case hir.KLet:
+			var child int32
+			for _, cc := range l.pkg.Children(c) {
+				child = cc
+				break
+			}
+			v, ok2 := l.evalConst(child, env, stack)
+			if !ok2 {
+				return nil, false
+			}
+			name := l.pkg.Str(cn.S)
+			env[name] = v
+			if inResults[name] {
+				res[name] = v
+			}
+		case hir.KAssign:
+			var lhs, rhs int32
+			i := 0
+			for _, cc := range l.pkg.Children(c) {
+				if i == 0 {
+					lhs = cc
+				} else if i == 1 {
+					rhs = cc
+				}
+				i++
+			}
+			ln := l.pkg.Node(lhs)
+			if ln == nil || ln.Kind != hir.KIdent {
+				return nil, false
+			}
+			name := l.pkg.Str(ln.S)
+			if !inResults[name] {
+				// A non-result assignment (e.g. a field/index write): evaluate
+				// its RHS for env consistency but it is not a result binding.
+				if _, ok2 := l.evalConst(rhs, env, stack); !ok2 {
+					return nil, false
+				}
+				continue
+			}
+			v, ok2 := l.evalConst(rhs, env, stack)
+			if !ok2 {
+				return nil, false
+			}
+			res[name] = v
+		case hir.KReturn:
+			var child int32
+			for _, cc := range l.pkg.Children(c) {
+				child = cc
+				break
+			}
+			if child == hir.NoID {
+				// Bare return: the current bindings ARE the results.
+				for _, rn := range resultNames {
+					if _, bound := res[rn]; bound {
+						continue
+					}
+					if v, bb := env[rn]; bb {
+						res[rn] = v
+						continue
+					}
+					return nil, false
+				}
+				return res, true
+			}
+			// Valued return: only the single-result form is representable here;
+			// a multi-result valued return is not supported in v1.
+			if len(resultNames) != 1 {
+				return nil, false
+			}
+			v, ok2 := l.evalConst(child, env, stack)
+			if !ok2 {
+				return nil, false
+			}
+			res[resultNames[0]] = v
+			return res, true
+		case hir.KExprStmt:
+			var child int32
+			for _, cc := range l.pkg.Children(c) {
+				child = cc
+				break
+			}
+			if cn := l.pkg.Node(child); cn != nil && cn.Kind == hir.KIf {
+				return nil, false // conservative: no branches in v1 multi-result
+			}
+			if _, ok2 := l.evalConst(child, env, stack); !ok2 {
+				return nil, false
+			}
+		case hir.KIf:
+			return nil, false // conservative
+		case hir.KFor, hir.KRange, hir.KBreak, hir.KContinue:
+			return nil, false
+		default:
+			return nil, false
+		}
+	}
+	// Fell off the end: every result must be bound.
+	for _, rn := range resultNames {
+		if _, bound := res[rn]; bound {
+			continue
+		}
+		if v, bb := env[rn]; bb {
+			res[rn] = v
+			continue
+		}
+		return nil, false
+	}
+	return res, true
 }
 
 // comptimeAggValue evaluates a node to an AGGREGATE constant (a struct /
@@ -7206,10 +7436,6 @@ func (l *lowerer) subtreeImpure(id int32, visiting map[string]bool) bool {
 func (l *lowerer) emitConstVal(cv comptimeVal, typ TypeID) ValueID {
 	switch cv.kind {
 	case cvInt:
-		if t := l.mod.Type(typ); t != nil && t.Raw == "char" {
-			// char values that survive arithmetic widen to i64.
-			typ = l.b.Type("i64")
-		}
 		if typ == NoType || typ == l.voidType {
 			typ = l.b.Type("i64")
 		}
@@ -10613,6 +10839,34 @@ func bareCalleeName(callee string) string {
 
 func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	callee, recvV := l.resolveCallee(n)
+	// Implicit comptime folding of a multi-result (out-parameter) call. If the
+	// callee is a pure HIR function with MORE THAN ONE named result, evaluate
+	// it at compile time and move the constant results straight into the
+	// caller's out-parameter destinations (the trailing identifier arguments),
+	// skipping the real call entirely. Single-result calls are folded elsewhere
+	// (comptimeFold in lowerExpr); this path handles the statement-position
+	// multi-result form, which cannot be represented as a single expression
+	// value. Methods, variadic callees, and callers that are not in arg-form
+	// are rejected so the ordinary call path runs unchanged.
+	if comptimeEnabled() && callee != "" {
+		if rp := l.countResultParams(callee); rp > 1 {
+			if vals, typs, ok := l.foldMultiResultCall(n, callee); ok && len(vals) == rp {
+				dsts := make([]ValueID, len(vals))
+				folded := true
+				for i, v := range vals {
+					dsts[i] = l.emitConstVal(v, typs[i])
+					if dsts[i] == NoVal {
+						folded = false
+						break
+					}
+				}
+				if folded {
+					l.bindOutParams(n, callee, dsts)
+					return NoVal
+				}
+			}
+		}
+	}
 	if callee == "" && recvV != NoVal {
 		// Indirect call through a fn-typed local/parameter (e.g. `setup()`
 		// where `setup` has named function type `test-cb`). resolveCallee
