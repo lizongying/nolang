@@ -231,10 +231,10 @@ drv.cmd-vet = () (code i64) {
             msg: ''
             code: 'E_GENERAL'
         }
-        d.line = p.eLn[i]
-        d.col = p.eCl[i]
-        d.msg = p.eMsg[i]
-        d.code = p.eCode[i]
+        d.line = p.e-ln[i]
+        d.col = p.e-cl[i]
+        d.msg = p.e-msg[i]
+        d.code = p.e-code[i]
         print(d.render())
 
         #{overflow=wrap}
@@ -321,22 +321,22 @@ drv.dispatch = () (code i64) {
 
         -> {
             cmd = args.get(1)
-            {
-                cmd == 'version' -> drv.cmd-version()
+            cmd: {
+                'version' -> drv.cmd-version()
 
-                cmd == 'help' -> drv.usage()
+                'help' -> drv.usage()
 
-                cmd == '--help' -> drv.usage()
+                '--help' -> drv.usage()
 
-                cmd == '-h' -> drv.usage()
+                '-h' -> drv.usage()
 
-                cmd == 'tokens' -> code = drv.cmd-tokens()
+                'tokens' -> code = drv.cmd-tokens()
 
-                cmd == 'ast' -> code = drv.cmd-ast()
+                'ast' -> code = drv.cmd-ast()
 
-                cmd == 'vet' -> code = drv.cmd-vet()
+                'vet' -> code = drv.cmd-vet()
 
-                cmd == 'build' -> code = drv.not-implemented('build')
+                'build' -> code = drv.not-implemented('build')
 
                 -> {
                     eprint(NOC-NAME - ': unknown command "' - cmd - '"')

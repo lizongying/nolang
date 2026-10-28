@@ -230,7 +230,7 @@ test-bare-match-ok-dotval = () {
 
 ; ═══════════════════════════════════
 ; 13. s67 讀點修正（s7）：明示 match 值語境 valueCtx 必須【入函快照】。
-;     舊缺陷：發射時尾讀活 p.valCtx，但臂體 ps-parse-stmt 每陳述把它重置為 0
+;     舊缺陷：發射時尾讀活 p.val-ctx，但臂體 ps-parse-stmt 每陳述把它重置為 0
 ;     ⇒ `r = n: { -> 1 }` 漏 valueCtx: true（L2 flag_gap 一源）。
 ; ═══════════════════════════════════
 
@@ -304,7 +304,7 @@ test-match-range-pattern()
 ; ═══════════════════════════════════════════════════════════════════════
 ; s7 續 G：`name ?T` 裸宣告（無 `=`）不得吞後隨陳述當 RHS。
 ;     舊缺陷：ps-expect(ASSIGN) 失敗不退 ⇒ `x: {…}` 被吃成 LetStatement.value
-;     且 valCtx=1 污染 MatchArm.valueCtx（match-test.no flag_gap 根因）。
+;     且 val-ctx=1 污染 MatchArm.valueCtx（match-test.no flag_gap 根因）。
 ; ═══════════════════════════════════════════════════════════════════════
 
 test-nullable-let-no-value = () {

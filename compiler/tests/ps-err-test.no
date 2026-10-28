@@ -21,7 +21,7 @@
 ;   分組/實參錯後表達式以 nil 落進 let 站點照報（探針 p12/p14/p60-p64 釘死）。
 ;   僅 let 形級聯；表達式語句（如 print(…)）不級聯（探針 p62）。
 ;
-; ⚠️ 本檔只測【收集器】（ps.eLn/eCl/eMsg/eCode + ps-err-count）；
+; ⚠️ 本檔只測【收集器】（ps.e-ln/e-cl/e-msg/e-code + ps-err-count）；
 ;    渲染行形已由 diag-test.no 釘死，端到端 CLI 契約由 L3 差分覆蓋。
 
 # /test/runner.eq
@@ -52,13 +52,13 @@ parse-err = (src str) (p psst) {
 test-call-missing-comma = () {
     p = parse-err('x = foo(1 2)')
     runner.eq(ps-err-count(p), 2, 'call-comma count')
-    runner.eq(p.eLn[0], 1, 'call-comma line')
-    runner.eq(p.eCl[0], 11, 'call-comma col')
-    runner.str-eq(p.eMsg[0], 'expected comma or right parenthesis, got INT instead', 52, 'call-comma msg')
-    runner.str-eq(p.eCode[0], 'E_GENERAL', 9, 'call-comma code')
-    runner.eq(p.eLn[1], 1, 'call-comma cascade line')
-    runner.eq(p.eCl[1], 11, 'call-comma cascade col')
-    runner.str-eq(p.eMsg[1], 'expected expression, got nil instead', 36, 'call-comma cascade msg')
+    runner.eq(p.e-ln[0], 1, 'call-comma line')
+    runner.eq(p.e-cl[0], 11, 'call-comma col')
+    runner.str-eq(p.e-msg[0], 'expected comma or right parenthesis, got INT instead', 52, 'call-comma msg')
+    runner.str-eq(p.e-code[0], 'E_GENERAL', 9, 'call-comma code')
+    runner.eq(p.e-ln[1], 1, 'call-comma cascade line')
+    runner.eq(p.e-cl[1], 11, 'call-comma cascade col')
+    runner.str-eq(p.e-msg[1], 'expected expression, got nil instead', 36, 'call-comma cascade msg')
 }
 
 ; ═══════════════════════════════════════════════
@@ -68,9 +68,9 @@ test-call-missing-comma = () {
 test-let-nil-value = () {
     p = parse-err('y =\n')
     runner.eq(ps-err-count(p), 1, 'let-nil count')
-    runner.eq(p.eLn[0], 2, 'let-nil line')
-    runner.eq(p.eCl[0], 1, 'let-nil col')
-    runner.str-eq(p.eMsg[0], 'expected expression, got nil instead', 36, 'let-nil msg')
+    runner.eq(p.e-ln[0], 2, 'let-nil line')
+    runner.eq(p.e-cl[0], 1, 'let-nil col')
+    runner.str-eq(p.e-msg[0], 'expected expression, got nil instead', 36, 'let-nil msg')
 }
 
 ; ═══════════════════════════════════════════════
@@ -80,12 +80,12 @@ test-let-nil-value = () {
 test-group-missing-rparen = () {
     p = parse-err('x = (1 + 2\n')
     runner.eq(ps-err-count(p), 2, 'group count')
-    runner.eq(p.eLn[0], 2, 'group line')
-    runner.eq(p.eCl[0], 0, 'group col (oracle 2:0 NEWLINE — s11 游標對齊)')
-    runner.str-eq(p.eMsg[0], 'expected right parenthesis, got NEWLINE instead', 47, 'group msg')
-    runner.eq(p.eLn[1], 2, 'group cascade line')
-    runner.eq(p.eCl[1], 0, 'group cascade col (oracle p12: 級聯同位 2:0)')
-    runner.str-eq(p.eMsg[1], 'expected expression, got nil instead', 36, 'group cascade msg')
+    runner.eq(p.e-ln[0], 2, 'group line')
+    runner.eq(p.e-cl[0], 0, 'group col (oracle 2:0 NEWLINE — s11 游標對齊)')
+    runner.str-eq(p.e-msg[0], 'expected right parenthesis, got NEWLINE instead', 47, 'group msg')
+    runner.eq(p.e-ln[1], 2, 'group cascade line')
+    runner.eq(p.e-cl[1], 0, 'group cascade col (oracle p12: 級聯同位 2:0)')
+    runner.str-eq(p.e-msg[1], 'expected expression, got nil instead', 36, 'group cascade msg')
 }
 
 ; ═══════════════════════════════════════════════
@@ -106,14 +106,14 @@ test-dedup = () {
         ;   回溯游標到已錄錯誤所在 token，重報才命中同 (ln,cl,msg) 鍵
         ;   ⚠️ 必須用塊形 while——單語句形 `(cond) q = q + 1` 只執行一次非循環
         q = 0
-        (p.toks[q].ln != p.eLn[0] || p.toks[q].cl != p.eCl[0]) {
+        (p.toks[q].ln != p.e-ln[0] || p.toks[q].cl != p.e-cl[0]) {
             q = q + 1
         }
         p.pos = q
 
         ; 同坐標同文重報 ⇒ 不新增（Go saveError 去重；restoreState 重試即此形態）
         ; ⚠️ 先 .copy()：把 vec 元素的 str 欄位直接交給 ps-error 的 push 會產生別名）
-        m = p.eMsg[0].copy()
+        m = p.e-msg[0].copy()
         ps-error(p, m, 'E_GENERAL')
         runner.eq(ps-err-count(p), 2, 'dedup: same (ln,cl,msg) kept once')
 
@@ -151,8 +151,8 @@ test-multiline-call = () {
 test-expr-stmt-no-cascade = () {
     p = parse-err('print((1 + 2\n')
     runner.eq(ps-err-count(p), 2, 'expr-stmt-cascade count')
-    runner.str-eq(p.eMsg[0], 'expected right parenthesis, got NEWLINE instead', 47, 'expr-stmt-cascade msg0')
-    runner.str-eq(p.eMsg[1], 'expected comma or right parenthesis, got EOF instead', 52, 'expr-stmt-cascade msg1')
+    runner.str-eq(p.e-msg[0], 'expected right parenthesis, got NEWLINE instead', 47, 'expr-stmt-cascade msg0')
+    runner.str-eq(p.e-msg[1], 'expected comma or right parenthesis, got EOF instead', 52, 'expr-stmt-cascade msg1')
 }
 
 ; ═══════════════════════════════════════════════

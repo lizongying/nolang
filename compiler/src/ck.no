@@ -71,9 +71,9 @@ check = (t ast, path str) (out []str) {
     ;   `val, dec-ok = …` 后续引用全族误报（实测 s13c 语料误报扫）。
     defs []i64 = with-cap(64)
     rcv []i64 = with-cap(16)
-    ki = asp.K_IDENTIFIER
-    kd = asp.K_DOT_EXPRESSION
-    km = asp.K_MULTI_ASSIGN_STATEMENT
+    ki = asp.K-IDENTIFIER
+    kd = asp.K-DOT-EXPRESSION
+    km = asp.K-MULTI-ASSIGN-STATEMENT
     i = 1
     (i < t.n) {
         nd = ast.nd-at(t, i)
@@ -203,98 +203,31 @@ check = (t ast, path str) (out []str) {
 ; ck-name-silent：固定字符集放行名（关键字 val/err/ok/nil/it/self + 内建型名 + char）。
 ;   正主 8239-8243（关键字）与 8261（isBuiltinType+char；char 不在 isBuiltinType 但确是型）。
 ck-name-silent = (nm str) (r i64) {
-    r = 0
-    nm == 'val' -> {
-        r = 1
-        return
-    }
-    nm == 'err' -> {
-        r = 1
-        return
-    }
-    nm == 'ok' -> {
-        r = 1
-        return
-    }
-    nm == 'nil' -> {
-        r = 1
-        return
-    }
-    nm == 'it' -> {
-        r = 1
-        return
-    }
-    nm == 'self' -> {
-        r = 1
-        return
-    }
-    nm == 'char' -> {
-        r = 1
-        return
-    }
-    nm == 'byte' -> {
-        r = 1
-        return
-    }
-    nm == 'bool' -> {
-        r = 1
-        return
-    }
-    nm == 'str' -> {
-        r = 1
-        return
-    }
-    nm == 'txt' -> {
-        r = 1
-        return
-    }
-    nm == 'f32' -> {
-        r = 1
-        return
-    }
-    nm == 'f64' -> {
-        r = 1
-        return
-    }
-    nm == 'i8' -> {
-        r = 1
-        return
-    }
-    nm == 'i16' -> {
-        r = 1
-        return
-    }
-    nm == 'i32' -> {
-        r = 1
-        return
-    }
-    nm == 'i64' -> {
-        r = 1
-        return
-    }
-    nm == 'i128' -> {
-        r = 1
-        return
-    }
-    nm == 'u8' -> {
-        r = 1
-        return
-    }
-    nm == 'u16' -> {
-        r = 1
-        return
-    }
-    nm == 'u32' -> {
-        r = 1
-        return
-    }
-    nm == 'u64' -> {
-        r = 1
-        return
-    }
-    nm == 'u128' -> {
-        r = 1
-        return
+    r = nm: {
+        'val' -> 1
+        'err' -> 1
+        'ok' -> 1
+        'nil' -> 1
+        'it' -> 1
+        'self' -> 1
+        'char' -> 1
+        'byte' -> 1
+        'bool' -> 1
+        'str' -> 1
+        'txt' -> 1
+        'f32' -> 1
+        'f64' -> 1
+        'i8' -> 1
+        'i16' -> 1
+        'i32' -> 1
+        'i64' -> 1
+        'i128' -> 1
+        'u8' -> 1
+        'u16' -> 1
+        'u32' -> 1
+        'u64' -> 1
+        'u128' -> 1
+        -> 0
     }
 }
 

@@ -131,7 +131,7 @@ def parse_ast():
                     break
             j += 1
         fields = []
-        for ln in code[i + 1 : j].split("\n"):
+        for ln in code[i + 1: j].split("\n"):
             ln = ln.strip()
             fm = re.match(r"^([A-Za-z][A-Za-z0-9_]*)\s+([^\s]+)", ln)
             if fm:
@@ -188,7 +188,8 @@ def parse_block(lines, i):
                                   "body": sub, "else": []}]
                     continue
                 break
-            stmts.append({"t": "if", "cond": cond, "body": body, "else": else_body})
+            stmts.append({"t": "if", "cond": cond,
+                         "body": body, "else": else_body})
             continue
         if s.startswith("for ") and s.endswith("{"):
             body, i = parse_block(lines, i + 1)
@@ -246,7 +247,8 @@ def go_type_renderer(t):
 
 
 def classify_scalar(call, ftype, owner, locals_):
-    m = re.match(r'^(kv|kvs|kvb|kvn|kvc)\(\s*"([^"]*)"\s*,\s*(.*)\)\s*$', call, re.S)
+    m = re.match(
+        r'^(kv|kvs|kvb|kvn|kvc)\(\s*"([^"]*)"\s*,\s*(.*)\)\s*$', call, re.S)
     if not m:
         return None
     fn, label, expr = m.group(1), m.group(2), m.group(3).strip()
@@ -272,12 +274,14 @@ def classify_scalar(call, ftype, owner, locals_):
         return {"label": label, "policy": policy, "src": km.group(1),
                 "render": "labelKind", "of": "labelKind"}
 
-    sm = re.match(r'^fmt\.Sprintf\(\s*"%(d|v)"\s*,\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*\)$', expr)
+    sm = re.match(
+        r'^fmt\.Sprintf\(\s*"%(d|v)"\s*,\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*\)$', expr)
     if sm:
         return {"label": label, "policy": policy, "src": sm.group(2),
                 "render": "int" if sm.group(1) == "d" else "float", "of": "sprintf"}
 
-    pm = re.match(r"^n\.([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)$", expr)
+    pm = re.match(
+        r"^n\.([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)$", expr)
     if pm:
         path = pm.group(1).split(".")
         t = resolve_type(path, ftype, owner)
@@ -389,7 +393,8 @@ def classify_stmt(stmt, ftype, owner, locals_, sink, problems):
         sink.append({"op": "SIG"})
         return
     # d.node(n.X, depth+1)
-    cm = re.match(r"^d\.node\(\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*,\s*depth\+1\s*\)$", stmt)
+    cm = re.match(
+        r"^d\.node\(\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*,\s*depth\+1\s*\)$", stmt)
     if cm:
         sink.append({"op": "CHILD", "field": cm.group(1), "guard": False})
         return
@@ -456,12 +461,15 @@ def find_prelude_locals(stmts, ftype, owner):
         for inner in st["body"]:
             if inner["t"] != "s":
                 continue
-            am = re.match(r"^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*)$", inner["text"])
+            am = re.match(
+                r"^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*)$", inner["text"])
             if not am or am.group(1) not in out:
                 continue
             name, expr = am.group(1), am.group(2).strip()
-            nm = re.match(r"^d\.nodeString\(\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*\)$", expr)
-            pm = re.match(r"^n\.([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)$", expr)
+            nm = re.match(
+                r"^d\.nodeString\(\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*\)$", expr)
+            pm = re.match(
+                r"^n\.([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)$", expr)
             if nm:
                 out[name].update(src=nm.group(1), render="nodeString",
                                  guard=gm.group(1))
@@ -483,7 +491,8 @@ def classify_loop_body(field, body, problems, owner, sink):
     """
     inner, skip_nil = body, False
     if len(inner) == 1 and inner[0]["t"] == "if":
-        gm = re.match(r"^([A-Za-z][A-Za-z0-9_]*)\s*!=\s*nil$", inner[0]["cond"])
+        gm = re.match(
+            r"^([A-Za-z][A-Za-z0-9_]*)\s*!=\s*nil$", inner[0]["cond"])
         if gm:
             inner, skip_nil = inner[0]["body"], True
     if len(inner) == 1 and inner[0]["t"] == "s":
@@ -500,7 +509,8 @@ def classify_loop_body(field, body, problems, owner, sink):
                 sink.append({"op": "KIDS", "field": field, "skip_nil": skip_nil,
                              "ptr": arg.startswith("&")})
                 return True
-        hmm = re.match(r"^d\.([A-Za-z][A-Za-z0-9_]*)\(&?[A-Za-z][A-Za-z0-9_]*,depth\+1\)$", t)
+        hmm = re.match(
+            r"^d\.([A-Za-z][A-Za-z0-9_]*)\(&?[A-Za-z][A-Za-z0-9_]*,depth\+1\)$", t)
         if hmm:
             sink.append({"op": "HELPER", "field": field, "helper": hmm.group(1),
                          "skip_nil": skip_nil})
@@ -527,16 +537,19 @@ def interpret(stmts, ftype, owner, locals_, sink, problems, prelude_texts):
             gm = re.match(r"^n\.([A-Za-z][A-Za-z0-9_]*)\s*!=\s*nil$", cond)
             if gm and len(body) == 1 and body[0]["t"] == "s":
                 t = re.sub(r"\s+", "", body[0]["text"])
-                m2 = re.match(r"^d\.node\(n\.([A-Za-z][A-Za-z0-9_]*),depth\+1\)$", t)
+                m2 = re.match(
+                    r"^d\.node\(n\.([A-Za-z][A-Za-z0-9_]*),depth\+1\)$", t)
                 if m2 and m2.group(1) == gm.group(1):
-                    sink.append({"op": "CHILD", "field": gm.group(1), "guard": True})
+                    sink.append(
+                        {"op": "CHILD", "field": gm.group(1), "guard": True})
                     continue
                 if re.match(r"^d\.(commentGroup|[A-Za-z][A-Za-z0-9_]*)\(n\.[A-Za-z][A-Za-z0-9_]*,depth\+2\)$", t):
                     continue  # folded into the *_COMMENTS op
                 if re.match(r"^[A-Za-z][A-Za-z0-9_]*=[A-Za-z][A-Za-z0-9_.]*$", t):
                     continue  # a prelude local assignment
                 if body[0]["text"] in prelude_texts:
-                    continue  # a prelude local assignment (with a call on the RHS)
+                    # a prelude local assignment (with a call on the RHS)
+                    continue
             # d.opts.Annotations { for ... n.Entries { d.annotationEntry } }
             if cond == "d.opts.Annotations":
                 sink.append({"op": "ANNOTS"})
@@ -548,7 +561,8 @@ def interpret(stmts, ftype, owner, locals_, sink, problems, prelude_texts):
                 sub = []
                 for b in body:
                     if b["t"] == "s":
-                        classify_stmt(b["text"], ftype, owner, locals_, sub, problems)
+                        classify_stmt(b["text"], ftype, owner,
+                                      locals_, sub, problems)
                 # The whole arm runs only when the field is non-nil, so every
                 # CHILD it emits is guarded.
                 if gm:
@@ -557,22 +571,26 @@ def interpret(stmts, ftype, owner, locals_, sink, problems, prelude_texts):
                             op["guard"] = True
                 alt = []
                 if els and els[0]["t"] == "s":
-                    classify_stmt(els[0]["text"], ftype, owner, locals_, alt, problems)
+                    classify_stmt(els[0]["text"], ftype,
+                                  owner, locals_, alt, problems)
                 for op in sub:
                     if op["op"] == "HDR" and alt and alt[0]["op"] == "HDR":
                         if alt[0].get("literal") is not None:
                             op["absent"] = alt[0]["literal"]
                         elif alt[0]["scalars"] and alt[0]["scalars"][0].get("bare"):
-                            op["absent"] = alt[0]["scalars"][0].get("src") or ""
+                            op["absent"] = alt[0]["scalars"][0].get(
+                                "src") or ""
                     sink.append(op)
                 continue
             # `if len(n.X) > 0 {` / `if n.X != nil {` guarding an EXTRA or a comment group
-            lm = re.match(r"^len\(\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*\)\s*>\s*0$", cond)
+            lm = re.match(
+                r"^len\(\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*\)\s*>\s*0$", cond)
             if lm or gm:
                 inner_ops = []
                 for b in body:
                     if b["t"] == "s":
-                        classify_stmt(b["text"], ftype, owner, locals_, inner_ops, problems)
+                        classify_stmt(b["text"], ftype, owner,
+                                      locals_, inner_ops, problems)
                 if inner_ops:
                     sink.extend(inner_ops)
                 continue
@@ -586,7 +604,8 @@ def interpret(stmts, ftype, owner, locals_, sink, problems, prelude_texts):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def extract_node_switch(code):
-    m = re.search(r"func \(d \*dumper\) node\(node parser\.Node, depth int\) \{", code)
+    m = re.search(
+        r"func \(d \*dumper\) node\(node parser\.Node, depth int\) \{", code)
     if not m:
         raise SystemExit("could not find (*dumper).node")
     start = m.end()
@@ -682,12 +701,14 @@ def emit_go(spec, path):
                     of = sc.get("of", "field")
                     if render in ("type", "nodeString") or of in ("len", "typeString",
                                                                   "nodeString"):
-                        ref = child_ordinal.get(sc.get("src", "").split(".")[0], 0)
+                        ref = child_ordinal.get(
+                            sc.get("src", "").split(".")[0], 0)
                     else:
                         ref = 0
                     tape.append((gop("SCALAR"),
                                  GO_POLICY[sc.get("policy", "always")],
-                                 GO_RENDER.get(render, 0) | (GO_OFMAP[of] << 8),
+                                 GO_RENDER.get(render, 0) | (
+                                     GO_OFMAP[of] << 8),
                                  sid(sc.get("src") or ""),
                                  sid(sc.get("label") or "") | (ref << 24)))
                 continue
@@ -1425,7 +1446,8 @@ NO_OPS_KEYS = ["HDR", "SCALAR", "COMMENTS", "CHILD", "KIDS", "HELPER", "SIG",
                "ANNOTS"]
 NO_RENDER = ["R-STR", "R-INT", "R-FLOAT", "R-BOOL", "R-TYPE", "R-NODE-STRING",
              "R-LABEL-KIND"]
-NO_RENDER_KEYS = ["str", "int", "float", "bool", "type", "nodeString", "labelKind"]
+NO_RENDER_KEYS = ["str", "int", "float",
+                  "bool", "type", "nodeString", "labelKind"]
 NO_POLICY = ["P-ALWAYS", "P-NON-EMPTY", "P-TRUE", "P-NON-ZERO", "P-COUNT"]
 NO_POLICY_KEYS = ["always", "nonempty", "true", "nonzero", "count"]
 NO_OF = ["OF-FIELD", "OF-LEN", "OF-TYPE", "OF-NODE-STRING", "OF-LABEL-KIND",
@@ -1517,7 +1539,8 @@ def emit_nolang(spec, path):
                         ref = ns
                         ns += 1
                     tape.append((NO_OPS_KEYS.index("SCALAR"),
-                                 NO_POLICY_KEYS.index(sc.get("policy", "always")),
+                                 NO_POLICY_KEYS.index(
+                                     sc.get("policy", "always")),
                                  NO_RENDER_KEYS.index(render),
                                  NO_OF_KEYS.index(of),
                                  sid(sc.get("label") or "") | (ref << 24)))
@@ -1604,58 +1627,58 @@ def emit_nolang(spec, path):
     A("")
     A("; strs: 字串池（id 0 = 空字串，不在此列）")
     A("strs = () (r []str) {")
-    A(f"    out []str = with-cap({len(strs) + 1})")
-    A("    out.push('')")
-    for st in strs:
-        A(f"    out.push({no_q(st)})")
-    A("    r = out")
+    str_items = ["''"] + [no_q(st) for st in strs]
+    A("    r = [")
+    for j, s in enumerate(str_items):
+        tail = "," if j + 1 < len(str_items) else ""
+        A(f"        {s}{tail}")
+    A("    ]")
     A("}")
     A("")
     A("; tape: 扁平指令帶，每 5 個 i64 一條")
     A("tape = () (r []i64) {")
-    A(f"    out []i64 = with-cap({len(tape) * 5})")
-    for (op, a, b, c, d) in tape:
-        A(f"    out.push({op})")
-        A(f"    out.push({a})")
-        A(f"    out.push({b})")
-        A(f"    out.push({c})")
-        A(f"    out.push({d})")
-    A("    r = out")
+    flat = [v for (op, a, b, c, d) in tape for v in (op, a, b, c, d)]
+    A("    r = [")
+    for j in range(0, len(flat), 5):
+        tail = "," if j + 5 < len(flat) else ""
+        A("        " + ", ".join(str(x) for x in flat[j:j + 5]) + tail)
+    A("    ]")
     A("}")
     A("")
     A("; kinds: 每 4 個 i64 一種節點 (name-id, first, num, reserved)")
     A("kinds = () (r []i64) {")
-    A(f"    out []i64 = with-cap({(len(kind_rows) + 1) * 4})")
-    A("    out.push(0)")
-    A("    out.push(0)")
-    A("    out.push(0)")
-    A("    out.push(0)")
+    kflat = [0, 0, 0, 0]
     for (k, sid_, first, num) in kind_rows:
-        A(f"    out.push({sid_})")
-        A(f"    out.push({first})")
-        A(f"    out.push({num})")
-        A("    out.push(0)")
-    A("    r = out")
+        kflat += [sid_, first, num, 0]
+    A("    r = [")
+    for j in range(0, len(kflat), 4):
+        tail = "," if j + 4 < len(kflat) else ""
+        A("        " + ", ".join(str(x) for x in kflat[j:j + 4]) + tail)
+    A("    ]")
     A("}")
     A("")
     A("; ── 節點種類 id ──")
-    A("; 命名照 tok.no 的風格：大寫 + 底線，跨模組寫 asp.K_IDENTIFIER。")
+    A("; 命名照 tok.no 的風格：大寫 + 中劃線，跨模組寫 asp.K-IDENTIFIER。")
     for i, (k, sid_, first, num) in enumerate(kind_rows):
-        snake = re.sub(r"(?<!^)(?=[A-Z])", "_", k).upper()
-        A(f"K_{snake} = {i + 1}")
+        kebab = re.sub(r"(?<!^)(?=[A-Z])", "-", k).upper()
+        A(f"K-{kebab} = {i + 1}")
     A("")
     A("; kind-name: 節點種類 id → 型別名（供 <unknown> 與除錯用）")
     A("kind-name = (id i64) (r str) {")
-    A("    r = 'UNKNOWN-KIND'")
+    A("    r = id: {")
     for i, (k, sid_, first, num) in enumerate(kind_rows):
-        A(f"    id == {i + 1} -> r = {no_q(k)}")
+        A(f"        {i + 1} -> {no_q(k)}")
+    A("        -> 'UNKNOWN-KIND'")
+    A("    }")
     A("}")
     A("")
     A("; kind-id: 型別名 → 節點種類 id（找不到回 0）")
     A("kind-id = (name str) (r i64) {")
-    A("    r = 0")
+    A("    r = name: {")
     for i, (k, sid_, first, num) in enumerate(kind_rows):
-        A(f"    name == {no_q(k)} -> r = {i + 1}")
+        A(f"        {no_q(k)} -> {i + 1}")
+    A("        -> 0")
+    A("    }")
     A("}")
 
     open(path, "w").write("\n".join(L) + "\n")
@@ -1672,7 +1695,8 @@ def main():
     for m in re.finditer(r"case\s+\*parser\.([A-Za-z][A-Za-z0-9_]*)\s*:", switch):
         kind = m.group(1)
         start = m.end()
-        nxt = re.search(r"\n\tcase\s+\*parser\.|\n\tdefault\s*:", switch[start:])
+        nxt = re.search(
+            r"\n\tcase\s+\*parser\.|\n\tdefault\s*:", switch[start:])
         end = start + nxt.start() if nxt else len(switch)
         blocks.append((kind, switch[start:end]))
 
@@ -1684,15 +1708,18 @@ def main():
         prelude_texts = set()
         for st in stmts:
             if st["t"] == "s":
-                m = re.match(r'^([A-Za-z][A-Za-z0-9_]*)\s*:=\s*""$', st["text"])
+                m = re.match(
+                    r'^([A-Za-z][A-Za-z0-9_]*)\s*:=\s*""$', st["text"])
                 if m and m.group(1) in locals_:
                     prelude_texts.add(st["text"])
             elif st["t"] == "if":
-                gm = re.match(r"^n\.([A-Za-z][A-Za-z0-9_]*)\s*!=\s*nil$", st["cond"])
+                gm = re.match(
+                    r"^n\.([A-Za-z][A-Za-z0-9_]*)\s*!=\s*nil$", st["cond"])
                 if gm:
                     for inner in st["body"]:
                         if inner["t"] == "s":
-                            am = re.match(r"^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*)$", inner["text"])
+                            am = re.match(
+                                r"^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*)$", inner["text"])
                             if am and am.group(1) in locals_:
                                 prelude_texts.add(inner["text"])
         ops = []

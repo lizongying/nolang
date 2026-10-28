@@ -9,8 +9,9 @@
 ;    為什麼要生成：92 常量 + 92 名字手抄必有轉錄風險，而「編號錯一位」肉眼最難發現。
 ;    生成 + L1 全語料差分是兩道獨立的鎖。
 ;
-; 命名：常量名**照抄 Go 的識別符**（含底線，如 NOT_EQUALS），使本檔與
-;    src/lexer/token.go 逐項對得上。跨模組引用寫 tok.IF / tok.NOT_EQUALS。
+; 命名：常量名照抄 Go 的識別符，但底線改中劃線（如 NOT-EQUALS）；
+;    name() 回傳的字串仍照 Go 原樣（含底線），L1 差分比對的是字串值。
+;    跨模組引用寫 tok.IF / tok.NOT-EQUALS。
 ;
 ; ⚠️ 順序即編號，**不得重排**。
 ;
@@ -46,7 +47,7 @@ SELF = 22
 IT = 23
 USE = 24
 LABEL = 25
-HASH_LBRACE = 26
+HASH-LBRACE = 26
 AS = 27
 CHAN = 28
 PTR = 29
@@ -65,11 +66,11 @@ MUL = 41
 QUO = 42
 MOD = 43
 EQUALS = 44
-NOT_EQUALS = 45
+NOT-EQUALS = 45
 LESS = 46
-LESS_EQUALS = 47
+LESS-EQUALS = 47
 GREATER = 48
-GREATER_EQUALS = 49
+GREATER-EQUALS = 49
 LAND = 50
 LOR = 51
 INC = 52
@@ -82,22 +83,22 @@ ARROW = 58
 RARROW = 59
 AND = 60
 OR = 61
-AND_NOT = 62
-STAR_STAR = 63
-BANG_BANG = 64
+AND-NOT = 62
+STAR-STAR = 63
+BANG-BANG = 64
 ELLIPSIS = 65
-ADD_ASSIGN = 66
-SUB_ASSIGN = 67
-MUL_ASSIGN = 68
-QUO_ASSIGN = 69
-MOD_ASSIGN = 70
-AND_ASSIGN = 71
-OR_ASSIGN = 72
-XOR_ASSIGN = 73
-SHL_ASSIGN = 74
-SHR_ASSIGN = 75
-AND_NOT_ASSIGN = 76
-QUESTION_ASSIGN = 77
+ADD-ASSIGN = 66
+SUB-ASSIGN = 67
+MUL-ASSIGN = 68
+QUO-ASSIGN = 69
+MOD-ASSIGN = 70
+AND-ASSIGN = 71
+OR-ASSIGN = 72
+XOR-ASSIGN = 73
+SHL-ASSIGN = 74
+SHR-ASSIGN = 75
+AND-NOT-ASSIGN = 76
+QUESTION-ASSIGN = 77
 LPAREN = 78
 RPAREN = 79
 LBRACE = 80
@@ -145,127 +146,131 @@ str-eq = (a str, b str) (yes bool) {
 
 ; ── name：code -> 識別符名（L1 差分實際比較的就是它）──
 name = (c i64) (r str) {
-    r = 'UNKNOWN'
-    c == ILLEGAL -> r = 'ILLEGAL'
-    c == EOF -> r = 'EOF'
-    c == NEWLINE -> r = 'NEWLINE'
-    c == COMMENT -> r = 'COMMENT'
-    c == IDENT -> r = 'IDENT'
-    c == INT -> r = 'INT'
-    c == FLOAT -> r = 'FLOAT'
-    c == STRING -> r = 'STRING'
-    c == CHAR -> r = 'CHAR'
-    c == REGEX -> r = 'REGEX'
-    c == TRUE -> r = 'TRUE'
-    c == FALSE -> r = 'FALSE'
-    c == NIL -> r = 'NIL'
-    c == IF -> r = 'IF'
-    c == ELIF -> r = 'ELIF'
-    c == ELSE -> r = 'ELSE'
-    c == RETURN -> r = 'RETURN'
-    c == FOR -> r = 'FOR'
-    c == IN -> r = 'IN'
-    c == BREAK -> r = 'BREAK'
-    c == CONTINUE -> r = 'CONTINUE'
-    c == SUPER -> r = 'SUPER'
-    c == SELF -> r = 'SELF'
-    c == IT -> r = 'IT'
-    c == USE -> r = 'USE'
-    c == LABEL -> r = 'LABEL'
-    c == HASH_LBRACE -> r = 'HASH_LBRACE'
-    c == AS -> r = 'AS'
-    c == CHAN -> r = 'CHAN'
-    c == PTR -> r = 'PTR'
-    c == SWITCH -> r = 'SWITCH'
-    c == CASE -> r = 'CASE'
-    c == DEFAULT -> r = 'DEFAULT'
-    c == MATCH -> r = 'MATCH'
-    c == MAP -> r = 'MAP'
-    c == RUN -> r = 'RUN'
-    c == AWY -> r = 'AWY'
-    c == CO -> r = 'CO'
-    c == ASSIGN -> r = 'ASSIGN'
-    c == ADD -> r = 'ADD'
-    c == SUB -> r = 'SUB'
-    c == MUL -> r = 'MUL'
-    c == QUO -> r = 'QUO'
-    c == MOD -> r = 'MOD'
-    c == EQUALS -> r = 'EQUALS'
-    c == NOT_EQUALS -> r = 'NOT_EQUALS'
-    c == LESS -> r = 'LESS'
-    c == LESS_EQUALS -> r = 'LESS_EQUALS'
-    c == GREATER -> r = 'GREATER'
-    c == GREATER_EQUALS -> r = 'GREATER_EQUALS'
-    c == LAND -> r = 'LAND'
-    c == LOR -> r = 'LOR'
-    c == INC -> r = 'INC'
-    c == DEC -> r = 'DEC'
-    c == NOT -> r = 'NOT'
-    c == XOR -> r = 'XOR'
-    c == SHL -> r = 'SHL'
-    c == SHR -> r = 'SHR'
-    c == ARROW -> r = 'ARROW'
-    c == RARROW -> r = 'RARROW'
-    c == AND -> r = 'AND'
-    c == OR -> r = 'OR'
-    c == AND_NOT -> r = 'AND_NOT'
-    c == STAR_STAR -> r = 'STAR_STAR'
-    c == BANG_BANG -> r = 'BANG_BANG'
-    c == ELLIPSIS -> r = 'ELLIPSIS'
-    c == ADD_ASSIGN -> r = 'ADD_ASSIGN'
-    c == SUB_ASSIGN -> r = 'SUB_ASSIGN'
-    c == MUL_ASSIGN -> r = 'MUL_ASSIGN'
-    c == QUO_ASSIGN -> r = 'QUO_ASSIGN'
-    c == MOD_ASSIGN -> r = 'MOD_ASSIGN'
-    c == AND_ASSIGN -> r = 'AND_ASSIGN'
-    c == OR_ASSIGN -> r = 'OR_ASSIGN'
-    c == XOR_ASSIGN -> r = 'XOR_ASSIGN'
-    c == SHL_ASSIGN -> r = 'SHL_ASSIGN'
-    c == SHR_ASSIGN -> r = 'SHR_ASSIGN'
-    c == AND_NOT_ASSIGN -> r = 'AND_NOT_ASSIGN'
-    c == QUESTION_ASSIGN -> r = 'QUESTION_ASSIGN'
-    c == LPAREN -> r = 'LPAREN'
-    c == RPAREN -> r = 'RPAREN'
-    c == LBRACE -> r = 'LBRACE'
-    c == RBRACE -> r = 'RBRACE'
-    c == LBRACKET -> r = 'LBRACKET'
-    c == RBRACKET -> r = 'RBRACKET'
-    c == COMMA -> r = 'COMMA'
-    c == SEMICOLON -> r = 'SEMICOLON'
-    c == COLON -> r = 'COLON'
-    c == DOT -> r = 'DOT'
-    c == UNDERSCORE -> r = 'UNDERSCORE'
-    c == AT -> r = 'AT'
-    c == QUESTION -> r = 'QUESTION'
-    c == TILDE -> r = 'TILDE'
+    r = c: {
+        ILLEGAL -> 'ILLEGAL'
+        EOF -> 'EOF'
+        NEWLINE -> 'NEWLINE'
+        COMMENT -> 'COMMENT'
+        IDENT -> 'IDENT'
+        INT -> 'INT'
+        FLOAT -> 'FLOAT'
+        STRING -> 'STRING'
+        CHAR -> 'CHAR'
+        REGEX -> 'REGEX'
+        TRUE -> 'TRUE'
+        FALSE -> 'FALSE'
+        NIL -> 'NIL'
+        IF -> 'IF'
+        ELIF -> 'ELIF'
+        ELSE -> 'ELSE'
+        RETURN -> 'RETURN'
+        FOR -> 'FOR'
+        IN -> 'IN'
+        BREAK -> 'BREAK'
+        CONTINUE -> 'CONTINUE'
+        SUPER -> 'SUPER'
+        SELF -> 'SELF'
+        IT -> 'IT'
+        USE -> 'USE'
+        LABEL -> 'LABEL'
+        HASH-LBRACE -> 'HASH_LBRACE'
+        AS -> 'AS'
+        CHAN -> 'CHAN'
+        PTR -> 'PTR'
+        SWITCH -> 'SWITCH'
+        CASE -> 'CASE'
+        DEFAULT -> 'DEFAULT'
+        MATCH -> 'MATCH'
+        MAP -> 'MAP'
+        RUN -> 'RUN'
+        AWY -> 'AWY'
+        CO -> 'CO'
+        ASSIGN -> 'ASSIGN'
+        ADD -> 'ADD'
+        SUB -> 'SUB'
+        MUL -> 'MUL'
+        QUO -> 'QUO'
+        MOD -> 'MOD'
+        EQUALS -> 'EQUALS'
+        NOT-EQUALS -> 'NOT_EQUALS'
+        LESS -> 'LESS'
+        LESS-EQUALS -> 'LESS_EQUALS'
+        GREATER -> 'GREATER'
+        GREATER-EQUALS -> 'GREATER_EQUALS'
+        LAND -> 'LAND'
+        LOR -> 'LOR'
+        INC -> 'INC'
+        DEC -> 'DEC'
+        NOT -> 'NOT'
+        XOR -> 'XOR'
+        SHL -> 'SHL'
+        SHR -> 'SHR'
+        ARROW -> 'ARROW'
+        RARROW -> 'RARROW'
+        AND -> 'AND'
+        OR -> 'OR'
+        AND-NOT -> 'AND_NOT'
+        STAR-STAR -> 'STAR_STAR'
+        BANG-BANG -> 'BANG_BANG'
+        ELLIPSIS -> 'ELLIPSIS'
+        ADD-ASSIGN -> 'ADD_ASSIGN'
+        SUB-ASSIGN -> 'SUB_ASSIGN'
+        MUL-ASSIGN -> 'MUL_ASSIGN'
+        QUO-ASSIGN -> 'QUO_ASSIGN'
+        MOD-ASSIGN -> 'MOD_ASSIGN'
+        AND-ASSIGN -> 'AND_ASSIGN'
+        OR-ASSIGN -> 'OR_ASSIGN'
+        XOR-ASSIGN -> 'XOR_ASSIGN'
+        SHL-ASSIGN -> 'SHL_ASSIGN'
+        SHR-ASSIGN -> 'SHR_ASSIGN'
+        AND-NOT-ASSIGN -> 'AND_NOT_ASSIGN'
+        QUESTION-ASSIGN -> 'QUESTION_ASSIGN'
+        LPAREN -> 'LPAREN'
+        RPAREN -> 'RPAREN'
+        LBRACE -> 'LBRACE'
+        RBRACE -> 'RBRACE'
+        LBRACKET -> 'LBRACKET'
+        RBRACKET -> 'RBRACKET'
+        COMMA -> 'COMMA'
+        SEMICOLON -> 'SEMICOLON'
+        COLON -> 'COLON'
+        DOT -> 'DOT'
+        UNDERSCORE -> 'UNDERSCORE'
+        AT -> 'AT'
+        QUESTION -> 'QUESTION'
+        TILDE -> 'TILDE'
+        -> 'UNKNOWN'
+    }
 }
 
 ; ── keyword：識別符 -> 關鍵字 code（照抄 src/lexer/token.go 的 lookupKeyword）──
 ; 回 ILLEGAL(0) 表示不是關鍵字，呼叫端應視為 IDENT。
-; 刻意用相等比較鏈而非 map：SHS 禁「map 欄位 + 方法」，且只有 23 個關鍵字。
+; 刻意用值匹配而非 map：SHS 禁「map 欄位 + 方法」，且只有 23 個關鍵字。
 keyword = (s str) (r i64) {
-    r = ILLEGAL
-    str-eq(s, 'if') -> r = IF
-    str-eq(s, 'elif') -> r = ELIF
-    str-eq(s, 'else') -> r = ELSE
-    str-eq(s, 'switch') -> r = SWITCH
-    str-eq(s, 'case') -> r = CASE
-    str-eq(s, 'default') -> r = DEFAULT
-    str-eq(s, 'match') -> r = MATCH
-    str-eq(s, 'for') -> r = FOR
-    str-eq(s, 'while') -> r = FOR
-    str-eq(s, 'in') -> r = IN
-    str-eq(s, 'return') -> r = RETURN
-    str-eq(s, 'break') -> r = BREAK
-    str-eq(s, 'continue') -> r = CONTINUE
-    str-eq(s, 'true') -> r = TRUE
-    str-eq(s, 'false') -> r = FALSE
-    str-eq(s, 'nil') -> r = NIL
-    str-eq(s, 'as') -> r = AS
-    str-eq(s, 'ptr') -> r = PTR
-    str-eq(s, 'chan') -> r = CHAN
-    str-eq(s, 'use') -> r = USE
-    str-eq(s, 'run') -> r = RUN
-    str-eq(s, 'awy') -> r = AWY
-    str-eq(s, 'co') -> r = CO
+    r = s: {
+        'if' -> IF
+        'elif' -> ELIF
+        'else' -> ELSE
+        'switch' -> SWITCH
+        'case' -> CASE
+        'default' -> DEFAULT
+        'match' -> MATCH
+        'for' -> FOR
+        'while' -> FOR
+        'in' -> IN
+        'return' -> RETURN
+        'break' -> BREAK
+        'continue' -> CONTINUE
+        'true' -> TRUE
+        'false' -> FALSE
+        'nil' -> NIL
+        'as' -> AS
+        'ptr' -> PTR
+        'chan' -> CHAN
+        'use' -> USE
+        'run' -> RUN
+        'awy' -> AWY
+        'co' -> CO
+        -> ILLEGAL
+    }
 }

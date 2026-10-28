@@ -168,27 +168,22 @@ def probe_bare_ok(universe):
     return verdict
 
 
-def chunked_fill(name, pairs, idx, label, chunk=400):
-    """分塊 push 鏈：外殼 ck-sig-fill-{name} ＋ 各塊 ck-sig-fill-{name}-g{N}。
+def chunked_fill(name, pairs, idx, label, chunk=None):
+    """單函數整列字面量：`ck-sig-fill-{name} = (t ck-sig) { t.{label} = [...] }`。
 
-    ⚠️ 單函數 push 數必須有界（實測）：MIR 每個值表達式進函數入口一個 alloca，
-    一條 push ≈2 alloca/49 行 IR；2,371 條 push 的單函數 ⇒ 11.6 萬行 IR，
-    clang -O2 18 分鐘未完（asp.no tape 1,540 條可過 ⇒ 閾值在 1.5k~2.4k 之間）。
+    歷史：早期按「MIR 每條 push ≈2 alloca/49 行 IR」的分塊閾值拆成
+    -g0/-g1/...（2,371 條 push ⇒ 11.6 萬行 IR，clang -O2 18 分鐘未完）。
+    改寫為 `t.{label} = [...]` 字面量整體賦值後，元素不再是逐條 push 表達式，
+    分塊動機消失 ⇒ 合併為單函數（chunk 參數保留但不再使用）。
+    ck-sig.new 裡該列初始為 `[]`，容量由字面量給。
     """
-    lines = []
-    groups = [pairs[i:i + chunk] for i in range(0, len(pairs), chunk)]
-    shell = [f"ck-sig-fill-{name} = (t ck-sig) {{"]
-    for gi in range(len(groups)):
-        shell.append(f"    ck-sig-fill-{name}-g{gi}(t)")
-    shell.append("}")
-    lines.extend(shell)
+    lines = [f"ck-sig-fill-{name} = (t ck-sig) {{", f"    t.{label} = ["]
+    for pi, p in enumerate(pairs):
+        tail = "," if pi + 1 < len(pairs) else ""
+        lines.append(f"        '{esc(p[idx])}'{tail}")
+    lines.append("    ]")
+    lines.append("}")
     lines.append("")
-    for gi, g in enumerate(groups):
-        lines.append(f"ck-sig-fill-{name}-g{gi} = (t ck-sig) {{")
-        for p in g:
-            lines.append(f"    t.{label}.push('{esc(p[idx])}')")
-        lines.append("}")
-        lines.append("")
     return lines
 
 
@@ -297,20 +292,12 @@ def main():
     fills += value_col("bv", bare_rows, 1, "bv")
     fills += value_col("bo", bare_rows, 2, "bo")
 
-    out.append("; ── 表构造（一次性 push 链，仿 asp.no strs/tape 形制）──")
+    out.append("; ── 表构造（首块字面量整賦＋余块 push 链，仿 asp.no strs/tape 形制）──")
     out.append("")
-    caps = dict(fk=len(t["funcs"]), fp=len(t["funcs"]), fr=len(t["funcs"]),
-                mk=len(t["methods"]), mp=len(t["methods"]), mr=len(t["methods"]),
-                sfk=len(t["struct_fields"]), sft=len(t["struct_fields"]),
-                alk=len(t["aliases"]), alt=len(t["aliases"]),
-                smk=len(t["struct_mod"]), smt=len(t["struct_mod"]),
-                evk=len(t["enum_variants"]), evt=len(t["enum_variants"]),
-                mok=len(t["modules"]), moo=len(t["modules"]),
-                bk=len(bare_rows), bv=len(bare_rows), bo=len(bare_rows))
     new_body = ["ck-sig.new = () (t ck-sig) {", "    t = ck-sig {", ]
     for col in ("fk", "fp", "fr", "mk", "mp", "mr", "sfk", "sft", "alk", "alt",
                 "smk", "smt", "evk", "evt", "mok", "moo", "bk", "bv", "bo"):
-        new_body.append(f"        {col}: with-cap({caps[col]})")
+        new_body.append(f"        {col}: []")
     new_body.append("    }")
     for name in ("fk", "fp", "fr", "mk", "mp", "mr", "sfk", "sft", "alk", "alt",
                  "smk", "smt", "evk", "evt", "mok", "moo", "bk", "bv", "bo"):

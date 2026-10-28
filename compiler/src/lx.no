@@ -842,7 +842,7 @@ lx-regex-start = (lx lxst) (yes bool) {
         yes = false
         return
     }
-    p == tok.HASH_LBRACE -> {
+    p == tok.HASH-LBRACE -> {
         yes = false
         return
     }
@@ -922,13 +922,13 @@ lx-scan-token = (lx lxst, t tk) () {
             pk = lx-peek(lx)
             pk == B-EQ -> {
                 lx-read-char(lx)
-                typ = tok.NOT_EQUALS
+                typ = tok.NOT-EQUALS
                 lit = '!='
             }
             (pk == B-EQ) == false -> {
                 pk == B-BANG -> {
                     lx-read-char(lx)
-                    typ = tok.BANG_BANG
+                    typ = tok.BANG-BANG
                     lit = '!!'
                 }
                 (pk == B-BANG) == false -> {
@@ -945,7 +945,7 @@ lx-scan-token = (lx lxst, t tk) () {
                 pk2 = lx-peek(lx)
                 pk2 == B-EQ -> {
                     lx-read-char(lx)
-                    typ = tok.SHL_ASSIGN
+                    typ = tok.SHL-ASSIGN
                     lit = '<<='
                 }
                 pk2 != B-EQ -> {
@@ -956,7 +956,7 @@ lx-scan-token = (lx lxst, t tk) () {
             (pk == B-LT) == false -> {
                 pk == B-EQ -> {
                     lx-read-char(lx)
-                    typ = tok.LESS_EQUALS
+                    typ = tok.LESS-EQUALS
                     lit = '<='
                 }
                 (pk == B-EQ) == false -> {
@@ -980,7 +980,7 @@ lx-scan-token = (lx lxst, t tk) () {
                 pk2 = lx-peek(lx)
                 pk2 == B-EQ -> {
                     lx-read-char(lx)
-                    typ = tok.SHR_ASSIGN
+                    typ = tok.SHR-ASSIGN
                     lit = '>>='
                 }
                 pk2 != B-EQ -> {
@@ -991,7 +991,7 @@ lx-scan-token = (lx lxst, t tk) () {
             (pk == B-GT) == false -> {
                 pk == B-EQ -> {
                     lx-read-char(lx)
-                    typ = tok.GREATER_EQUALS
+                    typ = tok.GREATER-EQUALS
                     lit = '>='
                 }
                 (pk == B-EQ) == false -> {
@@ -1011,7 +1011,7 @@ lx-scan-token = (lx lxst, t tk) () {
             (pk == B-PLUS) == false -> {
                 pk == B-EQ -> {
                     lx-read-char(lx)
-                    typ = tok.ADD_ASSIGN
+                    typ = tok.ADD-ASSIGN
                     lit = '+='
                 }
                 (pk == B-EQ) == false -> {
@@ -1037,7 +1037,7 @@ lx-scan-token = (lx lxst, t tk) () {
                 (pk == B-GT) == false -> {
                     pk == B-EQ -> {
                         lx-read-char(lx)
-                        typ = tok.SUB_ASSIGN
+                        typ = tok.SUB-ASSIGN
                         lit = '-='
                     }
                     (pk == B-EQ) == false -> {
@@ -1052,13 +1052,13 @@ lx-scan-token = (lx lxst, t tk) () {
             pk = lx-peek(lx)
             pk == B-STAR -> {
                 lx-read-char(lx)
-                typ = tok.STAR_STAR
+                typ = tok.STAR-STAR
                 lit = '**'
             }
             (pk == B-STAR) == false -> {
                 pk == B-EQ -> {
                     lx-read-char(lx)
-                    typ = tok.MUL_ASSIGN
+                    typ = tok.MUL-ASSIGN
                     lit = '*='
                 }
                 (pk == B-EQ) == false -> {
@@ -1094,7 +1094,7 @@ lx-scan-token = (lx lxst, t tk) () {
                         pk2 = lx-peek(lx)
                         pk2 == B-EQ -> {
                             lx-read-char(lx)
-                            typ = tok.QUO_ASSIGN
+                            typ = tok.QUO-ASSIGN
                             lit = '/='
                         }
                         pk2 != B-EQ -> {
@@ -1107,7 +1107,7 @@ lx-scan-token = (lx lxst, t tk) () {
                     pk2 = lx-peek(lx)
                     pk2 == B-EQ -> {
                         lx-read-char(lx)
-                        typ = tok.QUO_ASSIGN
+                        typ = tok.QUO-ASSIGN
                         lit = '/='
                     }
                     pk2 != B-EQ -> {
@@ -1122,7 +1122,7 @@ lx-scan-token = (lx lxst, t tk) () {
             pk = lx-peek(lx)
             pk == B-EQ -> {
                 lx-read-char(lx)
-                typ = tok.MOD_ASSIGN
+                typ = tok.MOD-ASSIGN
                 lit = '%='
             }
             pk != B-EQ -> {
@@ -1144,18 +1144,18 @@ lx-scan-token = (lx lxst, t tk) () {
                     pk2 = lx-peek(lx)
                     pk2 == B-EQ -> {
                         lx-read-char(lx)
-                        typ = tok.AND_NOT_ASSIGN
+                        typ = tok.AND-NOT-ASSIGN
                         lit = '&^='
                     }
                     pk2 != B-EQ -> {
-                        typ = tok.AND_NOT
+                        typ = tok.AND-NOT
                         lit = '&^'
                     }
                 }
                 (pk == B-CARET) == false -> {
                     pk == B-EQ -> {
                         lx-read-char(lx)
-                        typ = tok.AND_ASSIGN
+                        typ = tok.AND-ASSIGN
                         lit = '&='
                     }
                     (pk == B-EQ) == false -> {
@@ -1170,7 +1170,7 @@ lx-scan-token = (lx lxst, t tk) () {
             pk = lx-peek(lx)
             pk == B-EQ -> {
                 lx-read-char(lx)
-                typ = tok.XOR_ASSIGN
+                typ = tok.XOR-ASSIGN
                 lit = '^='
             }
             pk != B-EQ -> {
@@ -1189,7 +1189,7 @@ lx-scan-token = (lx lxst, t tk) () {
             (pk == B-PIPE) == false -> {
                 pk == B-EQ -> {
                     lx-read-char(lx)
-                    typ = tok.OR_ASSIGN
+                    typ = tok.OR-ASSIGN
                     lit = '|='
                 }
                 (pk == B-EQ) == false -> {
@@ -1323,7 +1323,7 @@ lx-scan-token = (lx lxst, t tk) () {
             pk == B-LC -> {
                 lx-read-char(lx)
                 lx-read-char(lx)
-                typ = tok.HASH_LBRACE
+                typ = tok.HASH-LBRACE
                 lit = '#{'
                 done = true
             }
@@ -1350,7 +1350,7 @@ lx-scan-token = (lx lxst, t tk) () {
             pk = lx-peek(lx)
             pk == B-EQ -> {
                 lx-read-char(lx)
-                typ = tok.QUESTION_ASSIGN
+                typ = tok.QUESTION-ASSIGN
                 lit = '?='
             }
             pk != B-EQ -> {

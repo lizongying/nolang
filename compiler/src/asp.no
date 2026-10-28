@@ -85,2266 +85,819 @@ INSTR-COUNT = 308
 
 ; strs: 字串池（id 0 = 空字串，不在此列）
 strs = () (r []str) {
-    out []str = with-cap(187)
-    out.push('')
-    out.push('AnnotationArrayValue')
-    out.push('')
-    out.push('elements')
-    out.push('Elements')
-    out.push('AnnotationBoolValue')
-    out.push('annotationEntry')
-    out.push('AnnotationEntry')
-    out.push('AnnotationIdentValue')
-    out.push('AnnotationIntValue')
-    out.push('AnnotationRangeValue')
-    out.push('leftInc')
-    out.push('rightInc')
-    out.push('Start')
-    out.push('End')
-    out.push('AnnotationStatement')
-    out.push('entries')
-    out.push('AnnotationStringValue')
-    out.push('AnnotationStructValue')
-    out.push('type')
-    out.push('fields')
-    out.push('Fields')
-    out.push('annotationStructField')
-    out.push('ArrayLiteral')
-    out.push('size')
-    out.push('wasSliceLiteral')
-    out.push('Size')
-    out.push('ArrayType')
-    out.push('inferred')
-    out.push('Elem')
-    out.push('AssignExpression')
-    out.push('Left')
-    out.push('Value')
-    out.push('AwaitExpression')
-    out.push('Right')
-    out.push('BlockStatement')
-    out.push('inline')
-    out.push('Statements')
-    out.push('BooleanLiteral')
-    out.push('BreakStatement')
-    out.push('label')
-    out.push('kind')
-    out.push('CallExpression')
-    out.push('fn')
-    out.push('args')
-    out.push('Function')
-    out.push('Arguments')
-    out.push('CastExpression')
-    out.push('Expr')
-    out.push('Type')
-    out.push('CharLiteral')
-    out.push('value')
-    out.push('raw')
-    out.push('CoExpression')
-    out.push('Call')
-    out.push('ConditionalExpression')
-    out.push('Condition')
-    out.push('Consequence')
-    out.push('Alternative')
-    out.push('ContinueStatement')
-    out.push('DotExpression')
-    out.push('receiver')
-    out.push('property')
-    out.push('Receiver')
-    out.push('EnumDefinition')
-    out.push('name')
-    out.push('values')
-    out.push('Values')
-    out.push('EnumValue')
-    out.push('explicit')
-    out.push('ExportStatement')
-    out.push('path')
-    out.push('function')
-    out.push('alias')
-    out.push('as')
-    out.push('ExpressionStatement')
-    out.push('nil')
-    out.push('Expression')
-    out.push('ExternStatement')
-    out.push('lang')
-    out.push('params')
-    out.push('results')
-    out.push('Parameters')
-    out.push('Results')
-    out.push('FloatLiteral')
-    out.push('ForStatement')
-    out.push('condWrapper')
-    out.push('overflow')
-    out.push('Init')
-    out.push('Update')
-    out.push('CountExpr')
-    out.push('IterRange')
-    out.push('Body')
-    out.push('FunctionDefinition')
-    out.push('colonSyntax')
-    out.push('methodDef')
-    out.push('skipNamingCheck')
-    out.push('builtinStub')
-    out.push('builtinName')
-    out.push('builtinGroup')
-    out.push('FunctionLiteral')
-    out.push('FunctionType')
-    out.push('Params')
-    out.push('GroupedExpression')
-    out.push('Identifier')
-    out.push('implicitGeneric')
-    out.push('IfExpression')
-    out.push('IndexExpression')
-    out.push('Index')
-    out.push('InfixExpression')
-    out.push('op')
-    out.push('IntegerLiteral')
-    out.push('InterfaceDefinition')
-    out.push('methods')
-    out.push('Methods')
-    out.push('interfaceMethod')
-    out.push('IterationExpr')
-    out.push('var')
-    out.push('rangeStr')
-    out.push('Range')
-    out.push('RangeExpr')
-    out.push('LetStatement')
-    out.push('synthetic')
-    out.push('armBinding')
-    out.push('moduleConst')
-    out.push('propagation')
-    out.push('itArmType')
-    out.push('MapLiteral')
-    out.push('pairs')
-    out.push('Pairs')
-    out.push('MapType')
-    out.push('MapPair')
-    out.push('Key')
-    out.push('MultiAssignStatement')
-    out.push('targets')
-    out.push('Targets')
-    out.push('NamedType')
-    out.push('NilLiteral')
-    out.push('NullableType')
-    out.push('Parameter')
-    out.push('DefaultExpr')
-    out.push('PointerType')
-    out.push('PrefixExpression')
-    out.push('Program')
-    out.push('warnings')
-    out.push('RangeExpression')
-    out.push('start')
-    out.push('end')
-    out.push('RegexLiteral')
-    out.push('pattern')
-    out.push('flags')
-    out.push('ReturnStatement')
-    out.push('ReturnValue')
-    out.push('RunExpression')
-    out.push('SliceExpression')
-    out.push('SliceLiteral')
-    out.push('SliceType')
-    out.push('StringLiteral')
-    out.push('StructDefinition')
-    out.push('implements')
-    out.push('StructField')
-    out.push('arraySize')
-    out.push('slice')
-    out.push('readonly')
-    out.push('sealed')
-    out.push('StructLiteral')
-    out.push('SurfaceMatch')
-    out.push('arms')
-    out.push('Matched')
-    out.push('Arms')
-    out.push('matchArm')
-    out.push('TaggedEnumDefinition')
-    out.push('builtin')
-    out.push('variants')
-    out.push('Variants')
-    out.push('TaggedEnumVariant')
-    out.push('index')
-    out.push('taggedEnumField')
-    out.push('TypeAlias')
-    out.push('Union')
-    out.push('UnionType')
-    out.push('types')
-    out.push('Types')
-    out.push('UnwrapAssignStatement')
-    out.push('Target')
-    out.push('UseStatement')
-    out.push('ViewType')
-    r = out
+    r = [
+        '',
+        'AnnotationArrayValue',
+        '',
+        'elements',
+        'Elements',
+        'AnnotationBoolValue',
+        'annotationEntry',
+        'AnnotationEntry',
+        'AnnotationIdentValue',
+        'AnnotationIntValue',
+        'AnnotationRangeValue',
+        'leftInc',
+        'rightInc',
+        'Start',
+        'End',
+        'AnnotationStatement',
+        'entries',
+        'AnnotationStringValue',
+        'AnnotationStructValue',
+        'type',
+        'fields',
+        'Fields',
+        'annotationStructField',
+        'ArrayLiteral',
+        'size',
+        'wasSliceLiteral',
+        'Size',
+        'ArrayType',
+        'inferred',
+        'Elem',
+        'AssignExpression',
+        'Left',
+        'Value',
+        'AwaitExpression',
+        'Right',
+        'BlockStatement',
+        'inline',
+        'Statements',
+        'BooleanLiteral',
+        'BreakStatement',
+        'label',
+        'kind',
+        'CallExpression',
+        'fn',
+        'args',
+        'Function',
+        'Arguments',
+        'CastExpression',
+        'Expr',
+        'Type',
+        'CharLiteral',
+        'value',
+        'raw',
+        'CoExpression',
+        'Call',
+        'ConditionalExpression',
+        'Condition',
+        'Consequence',
+        'Alternative',
+        'ContinueStatement',
+        'DotExpression',
+        'receiver',
+        'property',
+        'Receiver',
+        'EnumDefinition',
+        'name',
+        'values',
+        'Values',
+        'EnumValue',
+        'explicit',
+        'ExportStatement',
+        'path',
+        'function',
+        'alias',
+        'as',
+        'ExpressionStatement',
+        'nil',
+        'Expression',
+        'ExternStatement',
+        'lang',
+        'params',
+        'results',
+        'Parameters',
+        'Results',
+        'FloatLiteral',
+        'ForStatement',
+        'condWrapper',
+        'overflow',
+        'Init',
+        'Update',
+        'CountExpr',
+        'IterRange',
+        'Body',
+        'FunctionDefinition',
+        'colonSyntax',
+        'methodDef',
+        'skipNamingCheck',
+        'builtinStub',
+        'builtinName',
+        'builtinGroup',
+        'FunctionLiteral',
+        'FunctionType',
+        'Params',
+        'GroupedExpression',
+        'Identifier',
+        'implicitGeneric',
+        'IfExpression',
+        'IndexExpression',
+        'Index',
+        'InfixExpression',
+        'op',
+        'IntegerLiteral',
+        'InterfaceDefinition',
+        'methods',
+        'Methods',
+        'interfaceMethod',
+        'IterationExpr',
+        'var',
+        'rangeStr',
+        'Range',
+        'RangeExpr',
+        'LetStatement',
+        'synthetic',
+        'armBinding',
+        'moduleConst',
+        'propagation',
+        'itArmType',
+        'MapLiteral',
+        'pairs',
+        'Pairs',
+        'MapType',
+        'MapPair',
+        'Key',
+        'MultiAssignStatement',
+        'targets',
+        'Targets',
+        'NamedType',
+        'NilLiteral',
+        'NullableType',
+        'Parameter',
+        'DefaultExpr',
+        'PointerType',
+        'PrefixExpression',
+        'Program',
+        'warnings',
+        'RangeExpression',
+        'start',
+        'end',
+        'RegexLiteral',
+        'pattern',
+        'flags',
+        'ReturnStatement',
+        'ReturnValue',
+        'RunExpression',
+        'SliceExpression',
+        'SliceLiteral',
+        'SliceType',
+        'StringLiteral',
+        'StructDefinition',
+        'implements',
+        'StructField',
+        'arraySize',
+        'slice',
+        'readonly',
+        'sealed',
+        'StructLiteral',
+        'SurfaceMatch',
+        'arms',
+        'Matched',
+        'Arms',
+        'matchArm',
+        'TaggedEnumDefinition',
+        'builtin',
+        'variants',
+        'Variants',
+        'TaggedEnumVariant',
+        'index',
+        'taggedEnumField',
+        'TypeAlias',
+        'Union',
+        'UnionType',
+        'types',
+        'Types',
+        'UnwrapAssignStatement',
+        'Target',
+        'UseStatement',
+        'ViewType'
+    ]
 }
 
 ; tape: 扁平指令帶，每 5 個 i64 一條
 tape = () (r []i64) {
-    out []i64 = with-cap(1540)
-    out.push(0)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(3)
-    out.push(4)
-    out.push(4)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(5)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(3)
-    out.push(6)
-    out.push(2)
-    out.push(7)
-    out.push(6)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(8)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(6)
-    out.push(2)
-    out.push(0)
-    out.push(9)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(1)
-    out.push(6)
-    out.push(2)
-    out.push(0)
-    out.push(10)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(11)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777228)
-    out.push(3)
-    out.push(13)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(14)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(15)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(16)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(13)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(17)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(6)
-    out.push(2)
-    out.push(0)
-    out.push(18)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(19)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(16777236)
-    out.push(5)
-    out.push(21)
-    out.push(0)
-    out.push(22)
-    out.push(0)
-    out.push(0)
-    out.push(23)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(5)
-    out.push(3)
-    out.push(24)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(3)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777241)
-    out.push(3)
-    out.push(26)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(4)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(27)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(5)
-    out.push(3)
-    out.push(24)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(28)
-    out.push(3)
-    out.push(26)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(29)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(30)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(31)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(32)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(33)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(34)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(35)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(36)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(37)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(11)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(9)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(10)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(38)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(3)
-    out.push(6)
-    out.push(2)
-    out.push(0)
-    out.push(39)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(40)
-    out.push(1)
-    out.push(0)
-    out.push(6)
-    out.push(4)
-    out.push(16777257)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(42)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(5)
-    out.push(3)
-    out.push(43)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(44)
-    out.push(3)
-    out.push(45)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(46)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(47)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(1)
-    out.push(4)
-    out.push(2)
-    out.push(16777235)
-    out.push(3)
-    out.push(48)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(50)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(51)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(16777268)
-    out.push(0)
-    out.push(53)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(54)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(55)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(56)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(57)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(58)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(59)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(40)
-    out.push(1)
-    out.push(0)
-    out.push(6)
-    out.push(4)
-    out.push(16777257)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(60)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(5)
-    out.push(3)
-    out.push(61)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(62)
-    out.push(3)
-    out.push(63)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(64)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(16777282)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(67)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(68)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(0)
-    out.push(1)
-    out.push(5)
-    out.push(16777267)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(33554501)
-    out.push(0)
-    out.push(70)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(71)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(16777288)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(33554505)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(50331722)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(75)
-    out.push(1)
-    out.push(1)
-    out.push(76)
-    out.push(3)
-    out.push(77)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(78)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(79)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(7)
-    out.push(16777281)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(33554512)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(50331729)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(82)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(83)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(84)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(5)
-    out.push(51)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(16777268)
-    out.push(0)
-    out.push(85)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(40)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777302)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(33554519)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(88)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(56)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(89)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(90)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(91)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(92)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(93)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777310)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(33554527)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(50331744)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(67108951)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(83886177)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(100663394)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(117440611)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(6)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(92)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(100)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(6)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(92)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(101)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(80)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(16777297)
-    out.push(4)
-    out.push(102)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(83)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(103)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(77)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(104)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777321)
-    out.push(0)
-    out.push(106)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(56)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(57)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(58)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(107)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(31)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(108)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(109)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(110)
-    out.push(3)
-    out.push(31)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(34)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(111)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(1)
-    out.push(5)
-    out.push(51)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(16777268)
-    out.push(0)
-    out.push(112)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(16777329)
-    out.push(12)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(5)
-    out.push(114)
-    out.push(0)
-    out.push(115)
-    out.push(0)
-    out.push(0)
-    out.push(116)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(117)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(16777334)
-    out.push(3)
-    out.push(119)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(120)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(121)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(1)
-    out.push(4)
-    out.push(2)
-    out.push(19)
-    out.push(1)
-    out.push(0)
-    out.push(5)
-    out.push(7)
-    out.push(16777267)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777338)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(33554555)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(50331772)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(67108989)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(83886206)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(100663383)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(32)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(127)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(128)
-    out.push(4)
-    out.push(129)
-    out.push(0)
-    out.push(1)
-    out.push(0)
-    out.push(3)
-    out.push(130)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(131)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(132)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(32)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(130)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(28)
-    out.push(3)
-    out.push(132)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(32)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(133)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(134)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(16777303)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(135)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(32)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(136)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777244)
-    out.push(0)
-    out.push(137)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(0)
-    out.push(138)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(139)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(1)
-    out.push(4)
-    out.push(2)
-    out.push(19)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(140)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(141)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(142)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(110)
-    out.push(3)
-    out.push(34)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(143)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(144)
-    out.push(4)
-    out.push(37)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(8)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(10)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(145)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(5)
-    out.push(3)
-    out.push(146)
-    out.push(1)
-    out.push(0)
-    out.push(5)
-    out.push(3)
-    out.push(16777363)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(11)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777228)
-    out.push(3)
-    out.push(13)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(14)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(148)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(149)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(16777366)
-    out.push(0)
-    out.push(151)
-    out.push(1)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(152)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(153)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(54)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(154)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(31)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(119)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(155)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(3)
-    out.push(4)
-    out.push(4)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(156)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(28)
-    out.push(3)
-    out.push(29)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(157)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(51)
-    out.push(1)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(16777268)
-    out.push(0)
-    out.push(158)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(16777375)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(33554452)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(21)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(160)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(1)
-    out.push(4)
-    out.push(2)
-    out.push(19)
-    out.push(1)
-    out.push(3)
-    out.push(1)
-    out.push(0)
-    out.push(16777377)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(33554594)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(50331811)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(67109028)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(32)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(165)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(19)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(16777236)
-    out.push(4)
-    out.push(21)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(166)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(167)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(168)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(5)
-    out.push(169)
-    out.push(0)
-    out.push(170)
-    out.push(0)
-    out.push(0)
-    out.push(171)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(16777388)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(33554605)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(4)
-    out.push(174)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(175)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(1)
-    out.push(4)
-    out.push(2)
-    out.push(19)
-    out.push(1)
-    out.push(3)
-    out.push(1)
-    out.push(0)
-    out.push(16777392)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(33554452)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(5)
-    out.push(21)
-    out.push(0)
-    out.push(177)
-    out.push(0)
-    out.push(0)
-    out.push(178)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(65)
-    out.push(1)
-    out.push(1)
-    out.push(4)
-    out.push(2)
-    out.push(19)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(179)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(180)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(4)
-    out.push(1)
-    out.push(1)
-    out.push(181)
-    out.push(4)
-    out.push(182)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(183)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(7)
-    out.push(65)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(184)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(3)
-    out.push(32)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(185)
-    out.push(1)
-    out.push(0)
-    out.push(2)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(71)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(16777288)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(33554505)
-    out.push(1)
-    out.push(2)
-    out.push(3)
-    out.push(0)
-    out.push(50331722)
-    out.push(2)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(186)
-    out.push(0)
-    out.push(0)
-    out.push(2)
-    out.push(3)
-    out.push(49)
-    out.push(1)
-    out.push(0)
-    out.push(0)
-    r = out
+    r = [
+        0, 1, 1, 0, 2,
+        1, 4, 1, 1, 3,
+        4, 4, 1, 0, 0,
+        0, 5, 1, 0, 2,
+        1, 0, 3, 6, 2,
+        7, 6, 0, 0, 0,
+        0, 8, 1, 0, 2,
+        1, 0, 0, 6, 2,
+        0, 9, 1, 0, 2,
+        1, 0, 1, 6, 2,
+        0, 10, 1, 0, 2,
+        1, 2, 3, 0, 11,
+        1, 2, 3, 0, 16777228,
+        3, 13, 1, 0, 0,
+        3, 14, 1, 0, 0,
+        0, 15, 1, 0, 2,
+        1, 4, 1, 1, 16,
+        2, 0, 0, 0, 0,
+        13, 0, 0, 0, 0,
+        0, 17, 1, 0, 2,
+        1, 0, 0, 6, 2,
+        0, 18, 1, 0, 2,
+        1, 0, 0, 0, 19,
+        1, 4, 1, 1, 16777236,
+        5, 21, 0, 22, 0,
+        0, 23, 1, 0, 2,
+        1, 0, 5, 3, 24,
+        1, 4, 1, 1, 3,
+        1, 2, 3, 0, 16777241,
+        3, 26, 1, 0, 0,
+        4, 4, 0, 0, 0,
+        0, 27, 1, 0, 2,
+        1, 0, 5, 3, 24,
+        1, 2, 3, 0, 28,
+        3, 26, 1, 0, 0,
+        3, 29, 1, 0, 0,
+        0, 30, 0, 0, 2,
+        3, 31, 0, 0, 0,
+        3, 32, 0, 0, 0,
+        0, 33, 0, 0, 2,
+        3, 34, 1, 0, 0,
+        0, 35, 1, 0, 2,
+        1, 2, 3, 0, 36,
+        2, 0, 0, 0, 0,
+        4, 37, 0, 0, 0,
+        11, 0, 0, 0, 0,
+        9, 0, 0, 0, 0,
+        10, 0, 0, 0, 0,
+        0, 38, 1, 0, 2,
+        1, 0, 3, 6, 2,
+        0, 39, 1, 0, 2,
+        1, 0, 0, 0, 40,
+        1, 0, 6, 4, 16777257,
+        2, 0, 0, 0, 0,
+        0, 42, 1, 0, 2,
+        1, 0, 5, 3, 43,
+        1, 4, 1, 1, 44,
+        3, 45, 0, 0, 0,
+        4, 46, 0, 0, 0,
+        0, 47, 1, 0, 2,
+        1, 1, 4, 2, 16777235,
+        3, 48, 1, 0, 0,
+        3, 49, 1, 0, 0,
+        0, 50, 1, 0, 2,
+        1, 0, 0, 0, 51,
+        1, 1, 0, 0, 16777268,
+        0, 53, 0, 0, 2,
+        3, 54, 1, 0, 0,
+        0, 55, 0, 0, 2,
+        3, 56, 0, 0, 0,
+        3, 57, 0, 0, 0,
+        3, 58, 0, 0, 0,
+        0, 59, 1, 0, 2,
+        1, 0, 0, 0, 40,
+        1, 0, 6, 4, 16777257,
+        2, 0, 0, 0, 0,
+        0, 60, 1, 0, 2,
+        1, 0, 5, 3, 61,
+        1, 0, 0, 0, 62,
+        3, 63, 0, 0, 0,
+        0, 64, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 4, 1, 1, 16777282,
+        2, 0, 0, 0, 0,
+        4, 67, 1, 0, 0,
+        0, 68, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 0, 1, 5, 16777267,
+        1, 2, 3, 0, 33554501,
+        0, 70, 1, 0, 2,
+        1, 0, 0, 0, 71,
+        1, 0, 0, 0, 16777288,
+        1, 0, 0, 0, 33554505,
+        1, 2, 3, 0, 50331722,
+        2, 0, 0, 0, 0,
+        0, 75, 1, 1, 76,
+        3, 77, 1, 0, 0,
+        2, 0, 0, 0, 0,
+        0, 78, 1, 0, 2,
+        1, 0, 0, 0, 79,
+        1, 0, 0, 7, 16777281,
+        1, 4, 1, 1, 33554512,
+        1, 4, 1, 1, 50331729,
+        2, 0, 0, 0, 0,
+        4, 82, 1, 0, 0,
+        4, 83, 1, 0, 0,
+        0, 84, 1, 0, 2,
+        1, 0, 2, 5, 51,
+        1, 1, 0, 0, 16777268,
+        0, 85, 1, 0, 2,
+        1, 0, 0, 0, 40,
+        1, 2, 3, 0, 16777302,
+        1, 1, 0, 0, 33554519,
+        2, 0, 0, 0, 0,
+        3, 88, 1, 0, 0,
+        3, 56, 1, 0, 0,
+        3, 89, 1, 0, 0,
+        3, 90, 1, 0, 0,
+        3, 91, 1, 0, 0,
+        3, 92, 1, 0, 0,
+        0, 93, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 2, 3, 0, 16777310,
+        1, 2, 3, 0, 33554527,
+        1, 2, 3, 0, 50331744,
+        1, 1, 0, 0, 67108951,
+        1, 2, 3, 0, 83886177,
+        1, 1, 0, 0, 100663394,
+        1, 2, 3, 0, 117440611,
+        2, 0, 0, 0, 0,
+        6, 0, 0, 0, 0,
+        3, 92, 1, 0, 0,
+        0, 100, 0, 0, 2,
+        2, 0, 0, 0, 0,
+        6, 0, 0, 0, 0,
+        3, 92, 1, 0, 0,
+        0, 101, 1, 0, 2,
+        1, 4, 1, 1, 80,
+        1, 4, 1, 1, 16777297,
+        4, 102, 1, 0, 0,
+        4, 83, 1, 0, 0,
+        0, 103, 0, 0, 2,
+        3, 77, 0, 0, 0,
+        0, 104, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 2, 3, 0, 16777321,
+        0, 106, 0, 0, 2,
+        3, 56, 0, 0, 0,
+        3, 57, 1, 0, 0,
+        3, 58, 1, 0, 0,
+        0, 107, 0, 0, 2,
+        3, 31, 0, 0, 0,
+        3, 108, 0, 0, 0,
+        0, 109, 1, 0, 2,
+        1, 0, 0, 0, 110,
+        3, 31, 0, 0, 0,
+        3, 34, 0, 0, 0,
+        0, 111, 1, 0, 2,
+        1, 0, 1, 5, 51,
+        1, 1, 0, 0, 16777268,
+        0, 112, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 4, 1, 1, 16777329,
+        12, 0, 0, 0, 0,
+        2, 0, 0, 0, 0,
+        5, 114, 0, 115, 0,
+        0, 116, 1, 0, 2,
+        1, 1, 0, 0, 117,
+        1, 1, 0, 0, 16777334,
+        3, 119, 1, 0, 0,
+        3, 120, 1, 0, 0,
+        0, 121, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 1, 4, 2, 19,
+        1, 0, 5, 7, 16777267,
+        1, 2, 3, 0, 16777338,
+        1, 2, 3, 0, 33554555,
+        1, 2, 3, 0, 50331772,
+        1, 2, 3, 0, 67108989,
+        1, 1, 0, 0, 83886206,
+        1, 1, 0, 0, 100663383,
+        2, 0, 0, 0, 0,
+        3, 49, 1, 0, 0,
+        3, 32, 1, 0, 0,
+        0, 127, 1, 0, 2,
+        1, 4, 1, 1, 128,
+        4, 129, 0, 1, 0,
+        3, 130, 1, 0, 0,
+        0, 131, 0, 0, 2,
+        3, 132, 1, 0, 0,
+        3, 32, 1, 0, 0,
+        0, 130, 1, 0, 2,
+        1, 2, 3, 0, 28,
+        3, 132, 1, 0, 0,
+        3, 32, 1, 0, 0,
+        0, 133, 1, 0, 2,
+        1, 4, 1, 1, 134,
+        1, 1, 0, 0, 16777303,
+        2, 0, 0, 0, 0,
+        4, 135, 0, 0, 0,
+        3, 32, 1, 0, 0,
+        0, 136, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 2, 3, 0, 16777244,
+        0, 137, 0, 0, 2,
+        0, 138, 0, 0, 2,
+        3, 49, 1, 0, 0,
+        0, 139, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 1, 4, 2, 19,
+        3, 49, 1, 0, 0,
+        3, 140, 1, 0, 0,
+        0, 141, 0, 0, 2,
+        3, 49, 1, 0, 0,
+        0, 142, 1, 0, 2,
+        1, 0, 0, 0, 110,
+        3, 34, 0, 0, 0,
+        0, 143, 1, 0, 2,
+        1, 4, 1, 1, 144,
+        4, 37, 0, 0, 0,
+        8, 0, 0, 0, 0,
+        10, 0, 0, 0, 0,
+        0, 145, 1, 0, 2,
+        1, 0, 5, 3, 146,
+        1, 0, 5, 3, 16777363,
+        1, 2, 3, 0, 11,
+        1, 2, 3, 0, 16777228,
+        3, 13, 1, 0, 0,
+        3, 14, 1, 0, 0,
+        0, 148, 1, 0, 2,
+        1, 0, 0, 0, 149,
+        1, 1, 0, 0, 16777366,
+        0, 151, 1, 1, 2,
+        3, 152, 1, 0, 0,
+        2, 0, 0, 0, 0,
+        0, 153, 0, 0, 2,
+        3, 54, 1, 0, 0,
+        0, 154, 0, 0, 2,
+        3, 31, 0, 0, 0,
+        3, 119, 1, 0, 0,
+        0, 155, 1, 0, 2,
+        1, 4, 1, 1, 3,
+        4, 4, 0, 0, 0,
+        0, 156, 1, 0, 2,
+        1, 2, 3, 0, 28,
+        3, 29, 1, 0, 0,
+        0, 157, 1, 0, 2,
+        1, 0, 0, 0, 51,
+        1, 1, 0, 0, 16777268,
+        0, 158, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 4, 1, 1, 16777375,
+        1, 4, 1, 1, 33554452,
+        2, 0, 0, 0, 0,
+        4, 21, 1, 0, 0,
+        0, 160, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 1, 4, 2, 19,
+        1, 3, 1, 0, 16777377,
+        1, 2, 3, 0, 33554594,
+        1, 2, 3, 0, 50331811,
+        1, 2, 3, 0, 67109028,
+        3, 49, 1, 0, 0,
+        3, 32, 1, 0, 0,
+        0, 165, 1, 0, 2,
+        1, 0, 0, 0, 19,
+        1, 4, 1, 1, 16777236,
+        4, 21, 1, 0, 0,
+        0, 166, 1, 0, 2,
+        1, 4, 1, 1, 167,
+        2, 0, 0, 0, 0,
+        3, 168, 1, 0, 0,
+        5, 169, 0, 170, 0,
+        0, 171, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 2, 3, 0, 16777388,
+        1, 4, 1, 1, 33554605,
+        2, 0, 0, 0, 0,
+        4, 174, 1, 0, 0,
+        0, 175, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 1, 4, 2, 19,
+        1, 3, 1, 0, 16777392,
+        1, 4, 1, 1, 33554452,
+        3, 49, 1, 0, 0,
+        5, 21, 0, 177, 0,
+        0, 178, 1, 0, 2,
+        1, 0, 0, 0, 65,
+        1, 1, 4, 2, 19,
+        2, 0, 0, 0, 0,
+        3, 49, 1, 0, 0,
+        3, 179, 1, 0, 0,
+        0, 180, 1, 0, 2,
+        1, 4, 1, 1, 181,
+        4, 182, 0, 0, 0,
+        0, 183, 1, 0, 2,
+        1, 0, 0, 7, 65,
+        2, 0, 0, 0, 0,
+        3, 184, 1, 0, 0,
+        3, 32, 1, 0, 0,
+        0, 185, 1, 0, 2,
+        1, 0, 0, 0, 71,
+        1, 0, 0, 0, 16777288,
+        1, 0, 0, 0, 33554505,
+        1, 2, 3, 0, 50331722,
+        2, 0, 0, 0, 0,
+        0, 186, 0, 0, 2,
+        3, 49, 1, 0, 0
+    ]
 }
 
 ; kinds: 每 4 個 i64 一種節點 (name-id, first, num, reserved)
 kinds = () (r []i64) {
-    out []i64 = with-cap(292)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(0)
-    out.push(1)
-    out.push(0)
-    out.push(3)
-    out.push(0)
-    out.push(5)
-    out.push(3)
-    out.push(2)
-    out.push(0)
-    out.push(7)
-    out.push(5)
-    out.push(1)
-    out.push(0)
-    out.push(8)
-    out.push(6)
-    out.push(2)
-    out.push(0)
-    out.push(9)
-    out.push(8)
-    out.push(2)
-    out.push(0)
-    out.push(10)
-    out.push(10)
-    out.push(5)
-    out.push(0)
-    out.push(15)
-    out.push(15)
-    out.push(4)
-    out.push(0)
-    out.push(17)
-    out.push(19)
-    out.push(2)
-    out.push(0)
-    out.push(18)
-    out.push(21)
-    out.push(4)
-    out.push(0)
-    out.push(23)
-    out.push(25)
-    out.push(6)
-    out.push(0)
-    out.push(27)
-    out.push(31)
-    out.push(5)
-    out.push(0)
-    out.push(30)
-    out.push(36)
-    out.push(3)
-    out.push(0)
-    out.push(33)
-    out.push(39)
-    out.push(2)
-    out.push(0)
-    out.push(35)
-    out.push(41)
-    out.push(7)
-    out.push(0)
-    out.push(38)
-    out.push(48)
-    out.push(2)
-    out.push(0)
-    out.push(39)
-    out.push(50)
-    out.push(4)
-    out.push(0)
-    out.push(42)
-    out.push(54)
-    out.push(5)
-    out.push(0)
-    out.push(47)
-    out.push(59)
-    out.push(4)
-    out.push(0)
-    out.push(50)
-    out.push(63)
-    out.push(3)
-    out.push(0)
-    out.push(53)
-    out.push(66)
-    out.push(2)
-    out.push(0)
-    out.push(55)
-    out.push(68)
-    out.push(4)
-    out.push(0)
-    out.push(59)
-    out.push(72)
-    out.push(4)
-    out.push(0)
-    out.push(60)
-    out.push(76)
-    out.push(4)
-    out.push(0)
-    out.push(64)
-    out.push(80)
-    out.push(5)
-    out.push(0)
-    out.push(68)
-    out.push(85)
-    out.push(4)
-    out.push(0)
-    out.push(70)
-    out.push(89)
-    out.push(6)
-    out.push(0)
-    out.push(75)
-    out.push(95)
-    out.push(3)
-    out.push(0)
-    out.push(78)
-    out.push(98)
-    out.push(8)
-    out.push(0)
-    out.push(84)
-    out.push(106)
-    out.push(3)
-    out.push(0)
-    out.push(85)
-    out.push(109)
-    out.push(11)
-    out.push(0)
-    out.push(93)
-    out.push(120)
-    out.push(12)
-    out.push(0)
-    out.push(100)
-    out.push(132)
-    out.push(4)
-    out.push(0)
-    out.push(101)
-    out.push(136)
-    out.push(5)
-    out.push(0)
-    out.push(103)
-    out.push(141)
-    out.push(2)
-    out.push(0)
-    out.push(104)
-    out.push(143)
-    out.push(3)
-    out.push(0)
-    out.push(106)
-    out.push(146)
-    out.push(4)
-    out.push(0)
-    out.push(107)
-    out.push(150)
-    out.push(3)
-    out.push(0)
-    out.push(109)
-    out.push(153)
-    out.push(4)
-    out.push(0)
-    out.push(111)
-    out.push(157)
-    out.push(3)
-    out.push(0)
-    out.push(112)
-    out.push(160)
-    out.push(6)
-    out.push(0)
-    out.push(116)
-    out.push(166)
-    out.push(5)
-    out.push(0)
-    out.push(121)
-    out.push(171)
-    out.push(13)
-    out.push(0)
-    out.push(127)
-    out.push(184)
-    out.push(4)
-    out.push(0)
-    out.push(131)
-    out.push(188)
-    out.push(3)
-    out.push(0)
-    out.push(130)
-    out.push(191)
-    out.push(4)
-    out.push(0)
-    out.push(133)
-    out.push(195)
-    out.push(6)
-    out.push(0)
-    out.push(136)
-    out.push(201)
-    out.push(3)
-    out.push(0)
-    out.push(137)
-    out.push(204)
-    out.push(1)
-    out.push(0)
-    out.push(138)
-    out.push(205)
-    out.push(2)
-    out.push(0)
-    out.push(139)
-    out.push(207)
-    out.push(5)
-    out.push(0)
-    out.push(141)
-    out.push(212)
-    out.push(2)
-    out.push(0)
-    out.push(142)
-    out.push(214)
-    out.push(3)
-    out.push(0)
-    out.push(143)
-    out.push(217)
-    out.push(5)
-    out.push(0)
-    out.push(145)
-    out.push(222)
-    out.push(7)
-    out.push(0)
-    out.push(148)
-    out.push(229)
-    out.push(3)
-    out.push(0)
-    out.push(151)
-    out.push(232)
-    out.push(3)
-    out.push(0)
-    out.push(153)
-    out.push(235)
-    out.push(2)
-    out.push(0)
-    out.push(154)
-    out.push(237)
-    out.push(3)
-    out.push(0)
-    out.push(155)
-    out.push(240)
-    out.push(3)
-    out.push(0)
-    out.push(156)
-    out.push(243)
-    out.push(3)
-    out.push(0)
-    out.push(157)
-    out.push(246)
-    out.push(3)
-    out.push(0)
-    out.push(158)
-    out.push(249)
-    out.push(6)
-    out.push(0)
-    out.push(160)
-    out.push(255)
-    out.push(9)
-    out.push(0)
-    out.push(165)
-    out.push(264)
-    out.push(4)
-    out.push(0)
-    out.push(166)
-    out.push(268)
-    out.push(5)
-    out.push(0)
-    out.push(171)
-    out.push(273)
-    out.push(6)
-    out.push(0)
-    out.push(175)
-    out.push(279)
-    out.push(7)
-    out.push(0)
-    out.push(178)
-    out.push(286)
-    out.push(6)
-    out.push(0)
-    out.push(180)
-    out.push(292)
-    out.push(3)
-    out.push(0)
-    out.push(183)
-    out.push(295)
-    out.push(5)
-    out.push(0)
-    out.push(185)
-    out.push(300)
-    out.push(6)
-    out.push(0)
-    out.push(186)
-    out.push(306)
-    out.push(2)
-    out.push(0)
-    r = out
+    r = [
+        0, 0, 0, 0,
+        1, 0, 3, 0,
+        5, 3, 2, 0,
+        7, 5, 1, 0,
+        8, 6, 2, 0,
+        9, 8, 2, 0,
+        10, 10, 5, 0,
+        15, 15, 4, 0,
+        17, 19, 2, 0,
+        18, 21, 4, 0,
+        23, 25, 6, 0,
+        27, 31, 5, 0,
+        30, 36, 3, 0,
+        33, 39, 2, 0,
+        35, 41, 7, 0,
+        38, 48, 2, 0,
+        39, 50, 4, 0,
+        42, 54, 5, 0,
+        47, 59, 4, 0,
+        50, 63, 3, 0,
+        53, 66, 2, 0,
+        55, 68, 4, 0,
+        59, 72, 4, 0,
+        60, 76, 4, 0,
+        64, 80, 5, 0,
+        68, 85, 4, 0,
+        70, 89, 6, 0,
+        75, 95, 3, 0,
+        78, 98, 8, 0,
+        84, 106, 3, 0,
+        85, 109, 11, 0,
+        93, 120, 12, 0,
+        100, 132, 4, 0,
+        101, 136, 5, 0,
+        103, 141, 2, 0,
+        104, 143, 3, 0,
+        106, 146, 4, 0,
+        107, 150, 3, 0,
+        109, 153, 4, 0,
+        111, 157, 3, 0,
+        112, 160, 6, 0,
+        116, 166, 5, 0,
+        121, 171, 13, 0,
+        127, 184, 4, 0,
+        131, 188, 3, 0,
+        130, 191, 4, 0,
+        133, 195, 6, 0,
+        136, 201, 3, 0,
+        137, 204, 1, 0,
+        138, 205, 2, 0,
+        139, 207, 5, 0,
+        141, 212, 2, 0,
+        142, 214, 3, 0,
+        143, 217, 5, 0,
+        145, 222, 7, 0,
+        148, 229, 3, 0,
+        151, 232, 3, 0,
+        153, 235, 2, 0,
+        154, 237, 3, 0,
+        155, 240, 3, 0,
+        156, 243, 3, 0,
+        157, 246, 3, 0,
+        158, 249, 6, 0,
+        160, 255, 9, 0,
+        165, 264, 4, 0,
+        166, 268, 5, 0,
+        171, 273, 6, 0,
+        175, 279, 7, 0,
+        178, 286, 6, 0,
+        180, 292, 3, 0,
+        183, 295, 5, 0,
+        185, 300, 6, 0,
+        186, 306, 2, 0
+    ]
 }
 
 ; ── 節點種類 id ──
-; 命名照 tok.no 的風格：大寫 + 底線，跨模組寫 asp.K_IDENTIFIER。
-K_ANNOTATION_ARRAY_VALUE = 1
-K_ANNOTATION_BOOL_VALUE = 2
-K_ANNOTATION_ENTRY = 3
-K_ANNOTATION_IDENT_VALUE = 4
-K_ANNOTATION_INT_VALUE = 5
-K_ANNOTATION_RANGE_VALUE = 6
-K_ANNOTATION_STATEMENT = 7
-K_ANNOTATION_STRING_VALUE = 8
-K_ANNOTATION_STRUCT_VALUE = 9
-K_ARRAY_LITERAL = 10
-K_ARRAY_TYPE = 11
-K_ASSIGN_EXPRESSION = 12
-K_AWAIT_EXPRESSION = 13
-K_BLOCK_STATEMENT = 14
-K_BOOLEAN_LITERAL = 15
-K_BREAK_STATEMENT = 16
-K_CALL_EXPRESSION = 17
-K_CAST_EXPRESSION = 18
-K_CHAR_LITERAL = 19
-K_CO_EXPRESSION = 20
-K_CONDITIONAL_EXPRESSION = 21
-K_CONTINUE_STATEMENT = 22
-K_DOT_EXPRESSION = 23
-K_ENUM_DEFINITION = 24
-K_ENUM_VALUE = 25
-K_EXPORT_STATEMENT = 26
-K_EXPRESSION_STATEMENT = 27
-K_EXTERN_STATEMENT = 28
-K_FLOAT_LITERAL = 29
-K_FOR_STATEMENT = 30
-K_FUNCTION_DEFINITION = 31
-K_FUNCTION_LITERAL = 32
-K_FUNCTION_TYPE = 33
-K_GROUPED_EXPRESSION = 34
-K_IDENTIFIER = 35
-K_IF_EXPRESSION = 36
-K_INDEX_EXPRESSION = 37
-K_INFIX_EXPRESSION = 38
-K_INTEGER_LITERAL = 39
-K_INTERFACE_DEFINITION = 40
-K_ITERATION_EXPR = 41
-K_LET_STATEMENT = 42
-K_MAP_LITERAL = 43
-K_MAP_PAIR = 44
-K_MAP_TYPE = 45
-K_MULTI_ASSIGN_STATEMENT = 46
-K_NAMED_TYPE = 47
-K_NIL_LITERAL = 48
-K_NULLABLE_TYPE = 49
-K_PARAMETER = 50
-K_POINTER_TYPE = 51
-K_PREFIX_EXPRESSION = 52
-K_PROGRAM = 53
-K_RANGE_EXPRESSION = 54
-K_REGEX_LITERAL = 55
-K_RETURN_STATEMENT = 56
-K_RUN_EXPRESSION = 57
-K_SLICE_EXPRESSION = 58
-K_SLICE_LITERAL = 59
-K_SLICE_TYPE = 60
-K_STRING_LITERAL = 61
-K_STRUCT_DEFINITION = 62
-K_STRUCT_FIELD = 63
-K_STRUCT_LITERAL = 64
-K_SURFACE_MATCH = 65
-K_TAGGED_ENUM_DEFINITION = 66
-K_TAGGED_ENUM_VARIANT = 67
-K_TYPE_ALIAS = 68
-K_UNION_TYPE = 69
-K_UNWRAP_ASSIGN_STATEMENT = 70
-K_USE_STATEMENT = 71
-K_VIEW_TYPE = 72
+; 命名照 tok.no 的風格：大寫 + 中劃線，跨模組寫 asp.K-IDENTIFIER。
+K-ANNOTATION-ARRAY-VALUE = 1
+K-ANNOTATION-BOOL-VALUE = 2
+K-ANNOTATION-ENTRY = 3
+K-ANNOTATION-IDENT-VALUE = 4
+K-ANNOTATION-INT-VALUE = 5
+K-ANNOTATION-RANGE-VALUE = 6
+K-ANNOTATION-STATEMENT = 7
+K-ANNOTATION-STRING-VALUE = 8
+K-ANNOTATION-STRUCT-VALUE = 9
+K-ARRAY-LITERAL = 10
+K-ARRAY-TYPE = 11
+K-ASSIGN-EXPRESSION = 12
+K-AWAIT-EXPRESSION = 13
+K-BLOCK-STATEMENT = 14
+K-BOOLEAN-LITERAL = 15
+K-BREAK-STATEMENT = 16
+K-CALL-EXPRESSION = 17
+K-CAST-EXPRESSION = 18
+K-CHAR-LITERAL = 19
+K-CO-EXPRESSION = 20
+K-CONDITIONAL-EXPRESSION = 21
+K-CONTINUE-STATEMENT = 22
+K-DOT-EXPRESSION = 23
+K-ENUM-DEFINITION = 24
+K-ENUM-VALUE = 25
+K-EXPORT-STATEMENT = 26
+K-EXPRESSION-STATEMENT = 27
+K-EXTERN-STATEMENT = 28
+K-FLOAT-LITERAL = 29
+K-FOR-STATEMENT = 30
+K-FUNCTION-DEFINITION = 31
+K-FUNCTION-LITERAL = 32
+K-FUNCTION-TYPE = 33
+K-GROUPED-EXPRESSION = 34
+K-IDENTIFIER = 35
+K-IF-EXPRESSION = 36
+K-INDEX-EXPRESSION = 37
+K-INFIX-EXPRESSION = 38
+K-INTEGER-LITERAL = 39
+K-INTERFACE-DEFINITION = 40
+K-ITERATION-EXPR = 41
+K-LET-STATEMENT = 42
+K-MAP-LITERAL = 43
+K-MAP-PAIR = 44
+K-MAP-TYPE = 45
+K-MULTI-ASSIGN-STATEMENT = 46
+K-NAMED-TYPE = 47
+K-NIL-LITERAL = 48
+K-NULLABLE-TYPE = 49
+K-PARAMETER = 50
+K-POINTER-TYPE = 51
+K-PREFIX-EXPRESSION = 52
+K-PROGRAM = 53
+K-RANGE-EXPRESSION = 54
+K-REGEX-LITERAL = 55
+K-RETURN-STATEMENT = 56
+K-RUN-EXPRESSION = 57
+K-SLICE-EXPRESSION = 58
+K-SLICE-LITERAL = 59
+K-SLICE-TYPE = 60
+K-STRING-LITERAL = 61
+K-STRUCT-DEFINITION = 62
+K-STRUCT-FIELD = 63
+K-STRUCT-LITERAL = 64
+K-SURFACE-MATCH = 65
+K-TAGGED-ENUM-DEFINITION = 66
+K-TAGGED-ENUM-VARIANT = 67
+K-TYPE-ALIAS = 68
+K-UNION-TYPE = 69
+K-UNWRAP-ASSIGN-STATEMENT = 70
+K-USE-STATEMENT = 71
+K-VIEW-TYPE = 72
 
 ; kind-name: 節點種類 id → 型別名（供 <unknown> 與除錯用）
 kind-name = (id i64) (r str) {
-    r = 'UNKNOWN-KIND'
-    id == 1 -> r = 'AnnotationArrayValue'
-    id == 2 -> r = 'AnnotationBoolValue'
-    id == 3 -> r = 'AnnotationEntry'
-    id == 4 -> r = 'AnnotationIdentValue'
-    id == 5 -> r = 'AnnotationIntValue'
-    id == 6 -> r = 'AnnotationRangeValue'
-    id == 7 -> r = 'AnnotationStatement'
-    id == 8 -> r = 'AnnotationStringValue'
-    id == 9 -> r = 'AnnotationStructValue'
-    id == 10 -> r = 'ArrayLiteral'
-    id == 11 -> r = 'ArrayType'
-    id == 12 -> r = 'AssignExpression'
-    id == 13 -> r = 'AwaitExpression'
-    id == 14 -> r = 'BlockStatement'
-    id == 15 -> r = 'BooleanLiteral'
-    id == 16 -> r = 'BreakStatement'
-    id == 17 -> r = 'CallExpression'
-    id == 18 -> r = 'CastExpression'
-    id == 19 -> r = 'CharLiteral'
-    id == 20 -> r = 'CoExpression'
-    id == 21 -> r = 'ConditionalExpression'
-    id == 22 -> r = 'ContinueStatement'
-    id == 23 -> r = 'DotExpression'
-    id == 24 -> r = 'EnumDefinition'
-    id == 25 -> r = 'EnumValue'
-    id == 26 -> r = 'ExportStatement'
-    id == 27 -> r = 'ExpressionStatement'
-    id == 28 -> r = 'ExternStatement'
-    id == 29 -> r = 'FloatLiteral'
-    id == 30 -> r = 'ForStatement'
-    id == 31 -> r = 'FunctionDefinition'
-    id == 32 -> r = 'FunctionLiteral'
-    id == 33 -> r = 'FunctionType'
-    id == 34 -> r = 'GroupedExpression'
-    id == 35 -> r = 'Identifier'
-    id == 36 -> r = 'IfExpression'
-    id == 37 -> r = 'IndexExpression'
-    id == 38 -> r = 'InfixExpression'
-    id == 39 -> r = 'IntegerLiteral'
-    id == 40 -> r = 'InterfaceDefinition'
-    id == 41 -> r = 'IterationExpr'
-    id == 42 -> r = 'LetStatement'
-    id == 43 -> r = 'MapLiteral'
-    id == 44 -> r = 'MapPair'
-    id == 45 -> r = 'MapType'
-    id == 46 -> r = 'MultiAssignStatement'
-    id == 47 -> r = 'NamedType'
-    id == 48 -> r = 'NilLiteral'
-    id == 49 -> r = 'NullableType'
-    id == 50 -> r = 'Parameter'
-    id == 51 -> r = 'PointerType'
-    id == 52 -> r = 'PrefixExpression'
-    id == 53 -> r = 'Program'
-    id == 54 -> r = 'RangeExpression'
-    id == 55 -> r = 'RegexLiteral'
-    id == 56 -> r = 'ReturnStatement'
-    id == 57 -> r = 'RunExpression'
-    id == 58 -> r = 'SliceExpression'
-    id == 59 -> r = 'SliceLiteral'
-    id == 60 -> r = 'SliceType'
-    id == 61 -> r = 'StringLiteral'
-    id == 62 -> r = 'StructDefinition'
-    id == 63 -> r = 'StructField'
-    id == 64 -> r = 'StructLiteral'
-    id == 65 -> r = 'SurfaceMatch'
-    id == 66 -> r = 'TaggedEnumDefinition'
-    id == 67 -> r = 'TaggedEnumVariant'
-    id == 68 -> r = 'TypeAlias'
-    id == 69 -> r = 'UnionType'
-    id == 70 -> r = 'UnwrapAssignStatement'
-    id == 71 -> r = 'UseStatement'
-    id == 72 -> r = 'ViewType'
+    r = id: {
+        1 -> 'AnnotationArrayValue'
+        2 -> 'AnnotationBoolValue'
+        3 -> 'AnnotationEntry'
+        4 -> 'AnnotationIdentValue'
+        5 -> 'AnnotationIntValue'
+        6 -> 'AnnotationRangeValue'
+        7 -> 'AnnotationStatement'
+        8 -> 'AnnotationStringValue'
+        9 -> 'AnnotationStructValue'
+        10 -> 'ArrayLiteral'
+        11 -> 'ArrayType'
+        12 -> 'AssignExpression'
+        13 -> 'AwaitExpression'
+        14 -> 'BlockStatement'
+        15 -> 'BooleanLiteral'
+        16 -> 'BreakStatement'
+        17 -> 'CallExpression'
+        18 -> 'CastExpression'
+        19 -> 'CharLiteral'
+        20 -> 'CoExpression'
+        21 -> 'ConditionalExpression'
+        22 -> 'ContinueStatement'
+        23 -> 'DotExpression'
+        24 -> 'EnumDefinition'
+        25 -> 'EnumValue'
+        26 -> 'ExportStatement'
+        27 -> 'ExpressionStatement'
+        28 -> 'ExternStatement'
+        29 -> 'FloatLiteral'
+        30 -> 'ForStatement'
+        31 -> 'FunctionDefinition'
+        32 -> 'FunctionLiteral'
+        33 -> 'FunctionType'
+        34 -> 'GroupedExpression'
+        35 -> 'Identifier'
+        36 -> 'IfExpression'
+        37 -> 'IndexExpression'
+        38 -> 'InfixExpression'
+        39 -> 'IntegerLiteral'
+        40 -> 'InterfaceDefinition'
+        41 -> 'IterationExpr'
+        42 -> 'LetStatement'
+        43 -> 'MapLiteral'
+        44 -> 'MapPair'
+        45 -> 'MapType'
+        46 -> 'MultiAssignStatement'
+        47 -> 'NamedType'
+        48 -> 'NilLiteral'
+        49 -> 'NullableType'
+        50 -> 'Parameter'
+        51 -> 'PointerType'
+        52 -> 'PrefixExpression'
+        53 -> 'Program'
+        54 -> 'RangeExpression'
+        55 -> 'RegexLiteral'
+        56 -> 'ReturnStatement'
+        57 -> 'RunExpression'
+        58 -> 'SliceExpression'
+        59 -> 'SliceLiteral'
+        60 -> 'SliceType'
+        61 -> 'StringLiteral'
+        62 -> 'StructDefinition'
+        63 -> 'StructField'
+        64 -> 'StructLiteral'
+        65 -> 'SurfaceMatch'
+        66 -> 'TaggedEnumDefinition'
+        67 -> 'TaggedEnumVariant'
+        68 -> 'TypeAlias'
+        69 -> 'UnionType'
+        70 -> 'UnwrapAssignStatement'
+        71 -> 'UseStatement'
+        72 -> 'ViewType'
+        -> 'UNKNOWN-KIND'
+    }
 }
 
 ; kind-id: 型別名 → 節點種類 id（找不到回 0）
 kind-id = (name str) (r i64) {
-    r = 0
-    name == 'AnnotationArrayValue' -> r = 1
-    name == 'AnnotationBoolValue' -> r = 2
-    name == 'AnnotationEntry' -> r = 3
-    name == 'AnnotationIdentValue' -> r = 4
-    name == 'AnnotationIntValue' -> r = 5
-    name == 'AnnotationRangeValue' -> r = 6
-    name == 'AnnotationStatement' -> r = 7
-    name == 'AnnotationStringValue' -> r = 8
-    name == 'AnnotationStructValue' -> r = 9
-    name == 'ArrayLiteral' -> r = 10
-    name == 'ArrayType' -> r = 11
-    name == 'AssignExpression' -> r = 12
-    name == 'AwaitExpression' -> r = 13
-    name == 'BlockStatement' -> r = 14
-    name == 'BooleanLiteral' -> r = 15
-    name == 'BreakStatement' -> r = 16
-    name == 'CallExpression' -> r = 17
-    name == 'CastExpression' -> r = 18
-    name == 'CharLiteral' -> r = 19
-    name == 'CoExpression' -> r = 20
-    name == 'ConditionalExpression' -> r = 21
-    name == 'ContinueStatement' -> r = 22
-    name == 'DotExpression' -> r = 23
-    name == 'EnumDefinition' -> r = 24
-    name == 'EnumValue' -> r = 25
-    name == 'ExportStatement' -> r = 26
-    name == 'ExpressionStatement' -> r = 27
-    name == 'ExternStatement' -> r = 28
-    name == 'FloatLiteral' -> r = 29
-    name == 'ForStatement' -> r = 30
-    name == 'FunctionDefinition' -> r = 31
-    name == 'FunctionLiteral' -> r = 32
-    name == 'FunctionType' -> r = 33
-    name == 'GroupedExpression' -> r = 34
-    name == 'Identifier' -> r = 35
-    name == 'IfExpression' -> r = 36
-    name == 'IndexExpression' -> r = 37
-    name == 'InfixExpression' -> r = 38
-    name == 'IntegerLiteral' -> r = 39
-    name == 'InterfaceDefinition' -> r = 40
-    name == 'IterationExpr' -> r = 41
-    name == 'LetStatement' -> r = 42
-    name == 'MapLiteral' -> r = 43
-    name == 'MapPair' -> r = 44
-    name == 'MapType' -> r = 45
-    name == 'MultiAssignStatement' -> r = 46
-    name == 'NamedType' -> r = 47
-    name == 'NilLiteral' -> r = 48
-    name == 'NullableType' -> r = 49
-    name == 'Parameter' -> r = 50
-    name == 'PointerType' -> r = 51
-    name == 'PrefixExpression' -> r = 52
-    name == 'Program' -> r = 53
-    name == 'RangeExpression' -> r = 54
-    name == 'RegexLiteral' -> r = 55
-    name == 'ReturnStatement' -> r = 56
-    name == 'RunExpression' -> r = 57
-    name == 'SliceExpression' -> r = 58
-    name == 'SliceLiteral' -> r = 59
-    name == 'SliceType' -> r = 60
-    name == 'StringLiteral' -> r = 61
-    name == 'StructDefinition' -> r = 62
-    name == 'StructField' -> r = 63
-    name == 'StructLiteral' -> r = 64
-    name == 'SurfaceMatch' -> r = 65
-    name == 'TaggedEnumDefinition' -> r = 66
-    name == 'TaggedEnumVariant' -> r = 67
-    name == 'TypeAlias' -> r = 68
-    name == 'UnionType' -> r = 69
-    name == 'UnwrapAssignStatement' -> r = 70
-    name == 'UseStatement' -> r = 71
-    name == 'ViewType' -> r = 72
+    r = name: {
+        'AnnotationArrayValue' -> 1
+        'AnnotationBoolValue' -> 2
+        'AnnotationEntry' -> 3
+        'AnnotationIdentValue' -> 4
+        'AnnotationIntValue' -> 5
+        'AnnotationRangeValue' -> 6
+        'AnnotationStatement' -> 7
+        'AnnotationStringValue' -> 8
+        'AnnotationStructValue' -> 9
+        'ArrayLiteral' -> 10
+        'ArrayType' -> 11
+        'AssignExpression' -> 12
+        'AwaitExpression' -> 13
+        'BlockStatement' -> 14
+        'BooleanLiteral' -> 15
+        'BreakStatement' -> 16
+        'CallExpression' -> 17
+        'CastExpression' -> 18
+        'CharLiteral' -> 19
+        'CoExpression' -> 20
+        'ConditionalExpression' -> 21
+        'ContinueStatement' -> 22
+        'DotExpression' -> 23
+        'EnumDefinition' -> 24
+        'EnumValue' -> 25
+        'ExportStatement' -> 26
+        'ExpressionStatement' -> 27
+        'ExternStatement' -> 28
+        'FloatLiteral' -> 29
+        'ForStatement' -> 30
+        'FunctionDefinition' -> 31
+        'FunctionLiteral' -> 32
+        'FunctionType' -> 33
+        'GroupedExpression' -> 34
+        'Identifier' -> 35
+        'IfExpression' -> 36
+        'IndexExpression' -> 37
+        'InfixExpression' -> 38
+        'IntegerLiteral' -> 39
+        'InterfaceDefinition' -> 40
+        'IterationExpr' -> 41
+        'LetStatement' -> 42
+        'MapLiteral' -> 43
+        'MapPair' -> 44
+        'MapType' -> 45
+        'MultiAssignStatement' -> 46
+        'NamedType' -> 47
+        'NilLiteral' -> 48
+        'NullableType' -> 49
+        'Parameter' -> 50
+        'PointerType' -> 51
+        'PrefixExpression' -> 52
+        'Program' -> 53
+        'RangeExpression' -> 54
+        'RegexLiteral' -> 55
+        'ReturnStatement' -> 56
+        'RunExpression' -> 57
+        'SliceExpression' -> 58
+        'SliceLiteral' -> 59
+        'SliceType' -> 60
+        'StringLiteral' -> 61
+        'StructDefinition' -> 62
+        'StructField' -> 63
+        'StructLiteral' -> 64
+        'SurfaceMatch' -> 65
+        'TaggedEnumDefinition' -> 66
+        'TaggedEnumVariant' -> 67
+        'TypeAlias' -> 68
+        'UnionType' -> 69
+        'UnwrapAssignStatement' -> 70
+        'UseStatement' -> 71
+        'ViewType' -> 72
+        -> 0
+    }
 }

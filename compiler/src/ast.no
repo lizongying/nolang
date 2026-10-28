@@ -123,9 +123,9 @@ ast {
     nodes []nd
     kids []i64
     strs []str
-    strK []str; string-interning hash table (open addressing; grows on demand)
-    strV []i64; maps interned string -> index in strs
-    strN i64; live entry count in strK/strV (drives load-factor growth)
+    str-k []str; string-interning hash table (open addressing; grows on demand)
+    str-v []i64; maps interned string -> index in strs
+    str-n i64; live entry count in str-k/str-v (drives load-factor growth)
     aux []i64
     tape []i64
     kinds []i64
@@ -181,9 +181,9 @@ make = () (r ast) {
         kids: []
         i64
         strs: asp.strs()
-        strK: with-cap(256)
-        strV: with-cap(256)
-        strN: 0
+        str-k: with-cap(256)
+        str-v: with-cap(256)
+        str-n: 0
         aux: []
         i64
         tape: asp.tape()
@@ -199,8 +199,8 @@ make = () (r ast) {
     ; pre-fill string-interner sentinel slots (open addressing; '' = empty)
     hi = 0
     (hi < 256) {
-        r.strK.push('')
-        r.strV.push(0)
+        r.str-k.push('')
+        r.str-v.push(0)
         hi = hi + 1
     }
 }
@@ -371,18 +371,18 @@ ast-str-hash = (sx str) (h i64) {
 
 ; 不查重、直接插入 mapping s -> target（grow 重哈希時用，避免遞歸增長）
 ast-str-intern-raw = (t ast, s str, target i64) () {
-    n = t.strK.len()
+    n = t.str-k.len()
     h = ast-str-hash(s)
     #{overflow=wrap}
     h = h % n
     (h < 0) -> h = h + n
     i = 0
     (i < n) {
-        k = t.strK[h]
+        k = t.str-k[h]
         k == '' -> {
-            t.strK[h] = s
-            t.strV[h] = target
-            t.strN = t.strN + 1
+            t.str-k[h] = s
+            t.str-v[h] = target
+            t.str-n = t.str-n + 1
             return
         }
         k == s -> { return }
@@ -393,22 +393,22 @@ ast-str-intern-raw = (t ast, s str, target i64) () {
     }
 }
 
-; 翻倍重哈希（strV 存的是 strs 下標，strs 本身不動）
+; 翻倍重哈希（str-v 存的是 strs 下標，strs 本身不動）
 ast-str-grow = (t ast) () {
-    oldK = t.strK
-    oldV = t.strV
+    oldK = t.str-k
+    oldV = t.str-v
     oldN = oldK.len()
     newCap = oldN * 2
     (newCap == 0) -> newCap = 256
-    t.strK = with-cap(newCap)
-    t.strV = with-cap(newCap)
+    t.str-k = with-cap(newCap)
+    t.str-v = with-cap(newCap)
     hi = 0
     (hi < newCap) {
-        t.strK.push('')
-        t.strV.push(0)
+        t.str-k.push('')
+        t.str-v.push(0)
         hi = hi + 1
     }
-    t.strN = 0
+    t.str-n = 0
     hi = 0
     (hi < oldN) {
         kk = oldK[hi]
@@ -419,26 +419,26 @@ ast-str-grow = (t ast) () {
 
 ; 回傳 s 在 strs 中的駐留下標（首次出現則 append 後駐留；與原線性掃描下標完全一致）
 ast-str-intern = (t ast, s str) (idx i64) {
-    cap = t.strK.len()
-    (t.strN * 4 >= cap * 3) -> ast-str-grow(t)
-    n = t.strK.len()
+    cap = t.str-k.len()
+    (t.str-n * 4 >= cap * 3) -> ast-str-grow(t)
+    n = t.str-k.len()
     h = ast-str-hash(s)
     #{overflow=wrap}
     h = h % n
     (h < 0) -> h = h + n
     i = 0
     (i < n) {
-        k = t.strK[h]
+        k = t.str-k[h]
         k == s -> {
-            idx = t.strV[h]
+            idx = t.str-v[h]
             return
         }
         k == '' -> {
-            t.strK[h] = s
+            t.str-k[h] = s
             t.strs.push(s)
             idx = t.strs.len() - 1
-            t.strV[h] = idx
-            t.strN = t.strN + 1
+            t.str-v[h] = idx
+            t.str-n = t.str-n + 1
             return
         }
         #{overflow=wrap}
@@ -694,19 +694,19 @@ node-string = (t ast, i i64) (r str) {
     d.kind <= 0 -> return
     k = d.kind
     {
-        k == asp.K_IDENTIFIER -> r = ast.str-at(t, d.s0)
+        k == asp.K-IDENTIFIER -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_INTEGER_LITERAL -> r = ast.str-at(t, d.s0)
+        k == asp.K-INTEGER-LITERAL -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_FLOAT_LITERAL -> r = ast.str-at(t, d.s0)
+        k == asp.K-FLOAT-LITERAL -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_STRING_LITERAL -> r = ast.str-at(t, d.s0)
+        k == asp.K-STRING-LITERAL -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_CHAR_LITERAL -> r = ast.str-at(t, d.s0)
+        k == asp.K-CHAR-LITERAL -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_BOOLEAN_LITERAL -> r = ast.str-at(t, d.s0)
+        k == asp.K-BOOLEAN-LITERAL -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_NIL_LITERAL -> r = 'nil'
+        k == asp.K-NIL-LITERAL -> r = 'nil'
 
         -> r = asp.kind-name(k)
     }
@@ -730,11 +730,11 @@ type-string = (t ast, i i64) (r str) {
     d.kind <= 0 -> return
     k = d.kind
     {
-        k == asp.K_NAMED_TYPE -> r = ast.str-at(t, d.s0)
+        k == asp.K-NAMED-TYPE -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_SLICE_TYPE -> r = '[]' - ast.type-string(t, ast.kid-at(t, d.kid0))
+        k == asp.K-SLICE-TYPE -> r = '[]' - ast.type-string(t, ast.kid-at(t, d.kid0))
 
-        k == asp.K_ARRAY_TYPE -> {
+        k == asp.K-ARRAY-TYPE -> {
 
             ; ArrayType.String()：Size == nil ⇒ "[?]"；否則 "[" + exprToString(Size) + "]"
             inner = '?'
@@ -745,20 +745,20 @@ type-string = (t ast, i i64) (r str) {
             r = '[' - inner - ']' - ast.type-string(t, ast.kid-at(t, d.kid0 + 1))
         }
 
-        k == asp.K_MAP_TYPE -> {
+        k == asp.K-MAP-TYPE -> {
             r = '[' - ast.type-string(t, ast.kid-at(t, d.kid0))
 
             #{overflow=wrap}
             r = r - ']' - ast.type-string(t, ast.kid-at(t, d.kid0 + 1))
         }
 
-        k == asp.K_NULLABLE_TYPE -> r = '?' - ast.type-string(t, ast.kid-at(t, d.kid0))
+        k == asp.K-NULLABLE-TYPE -> r = '?' - ast.type-string(t, ast.kid-at(t, d.kid0))
 
-        k == asp.K_POINTER_TYPE -> r = '*' - ast.type-string(t, ast.kid-at(t, d.kid0))
+        k == asp.K-POINTER-TYPE -> r = '*' - ast.type-string(t, ast.kid-at(t, d.kid0))
 
-        k == asp.K_VIEW_TYPE -> r = '&' - ast.type-string(t, ast.kid-at(t, d.kid0))
+        k == asp.K-VIEW-TYPE -> r = '&' - ast.type-string(t, ast.kid-at(t, d.kid0))
 
-        k == asp.K_FUNCTION_TYPE -> r = ast.fn-str(t, d)
+        k == asp.K-FUNCTION-TYPE -> r = ast.fn-str(t, d)
 
         -> r = '*parser.' - asp.kind-name(k)
     }
@@ -771,18 +771,18 @@ expr-string = (t ast, i i64) (r str) {
     d = ast.nd-at(t, i)
     k = d.kind
     {
-        k == asp.K_INTEGER_LITERAL -> r = ast.str-at(t, d.s0)
+        k == asp.K-INTEGER-LITERAL -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_IDENTIFIER -> r = ast.str-at(t, d.s0)
+        k == asp.K-IDENTIFIER -> r = ast.str-at(t, d.s0)
 
-        k == asp.K_STRING_LITERAL -> {
+        k == asp.K-STRING-LITERAL -> {
             raw = ast.str-at(t, d.s1)
             raw.len-bytes() > 0 -> r = raw
 
             -> r = "'" - ast.str-at(t, d.s0) - "'"
         }
 
-        k == asp.K_INFIX_EXPRESSION -> {
+        k == asp.K-INFIX-EXPRESSION -> {
             folded = ast.fold-int(t, d)
             folded.len-bytes() > 0 -> r = folded
 
@@ -818,8 +818,8 @@ fold-int = (t ast, d nd) (r str) {
     rr <= 0 -> return
     ld = ast.nd-at(t, l)
     rd = ast.nd-at(t, rr)
-    ld.kind != asp.K_INTEGER_LITERAL -> return
-    rd.kind != asp.K_INTEGER_LITERAL -> return
+    ld.kind != asp.K-INTEGER-LITERAL -> return
+    rd.kind != asp.K-INTEGER-LITERAL -> return
     a = ast.str-at(t, ld.s0).to-i64()
     b = ast.str-at(t, rd.s0).to-i64()
     op = ast.str-at(t, d.s0)
