@@ -60,6 +60,38 @@ type lowerer struct {
 	worklist  []string
 	lowered   map[string]bool
 	locals    map[string]ValueID
+	// constLocals records, per function, the compile-time constant value of
+	// each `let` binding whose initializer is a pure compile-time constant.
+	// It feeds the implicit comptime evaluator (comptimeFold / evalConst).
+	constLocals map[string]comptimeVal
+	// constLocalWrites counts, per function, how many times each local name is
+	// bound or assigned. A name written MORE THAN ONCE is never treated as a
+	// compile-time constant: different branches can assign different values,
+	// and recording only one of them lets a NON-TAKEN arm's literal leak into
+	// later folds. Real bug this fixes: in
+	//     x == 0 -> { e2 = -1074 } -> { e2 = x - 1075 }
+	// (x == 1023, so the first arm never runs) `0 - e2` used to fold to
+	// 0 - (-1074) = 1074 instead of the runtime 0 - (-52) = 52, which made
+	// std f64.to-str emit garbage (den = 2^1074 instead of 2^52).
+	constLocalWrites map[string]int
+	// reassignedNames records, per function, every local name that is ever the
+	// target of a reassignment (`x = expr` after `x` was already declared). A
+	// name that is reassigned is NOT a single compile-time constant even if its
+	// first `let` initializer folds: the reassignment can lower BEFORE a later
+	// read in lowering order (e.g. `start = -1` followed by
+	// `for { start < 0 -> start = i }`, where the loop body's first read of
+	// `start` precedes its first `start = i`), so a constLocals entry would
+	// leak the initializer literal into an unrelated comparison and silently
+	// corrupt runtime control flow (txt.fields returned "e o e" instead of
+	// "one two three"). Computed by a pre-scan of the function body before any
+	// statement is lowered; names found here are never entered into constLocals.
+	reassignedNames map[string]bool
+	// constCache memoizes comptimeFold results for program nodes (env == nil).
+	constCache map[int32]*comptimeVal
+	// comptimePure maps a top-level function name to whether it is safe to
+	// evaluate at compile time (no side effects, no loops, no impure/recursive
+	// calls). Computed lazily by computeComptimePurity.
+	comptimePure map[string]bool
 	// localRaw records each local's DECLARED nolang raw type by name. MIR
 	// flattens every integer to i64 and registers u64 locals as i64, so the
 	// signedness is lost from the lowered value — but it is needed to choose
@@ -1085,10 +1117,13 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		// (checker.stdEnumVariantsCache), and collectLocalEnumVariants adds the
 		// program's own enum definitions to it. Writing into the shared map
 		// would leak one program's enums into every later compilation.
-		enumVariants:  copiedEnumVariants(enumVariants),
-		asyncResTypes: map[ValueID]TypeID{},
-		asyncHandles:  map[ValueID]bool{},
-		bareVariant:   map[ValueID]bool{},
+		enumVariants:     copiedEnumVariants(enumVariants),
+		asyncResTypes:    map[ValueID]TypeID{},
+		asyncHandles:     map[ValueID]bool{},
+		bareVariant:      map[ValueID]bool{},
+		constCache:       map[int32]*comptimeVal{},
+		constLocals:      map[string]comptimeVal{},
+		constLocalWrites: map[string]int{},
 	}
 	l.b = NewBuilder("hir")
 	l.mod = l.b.Module()
@@ -1588,6 +1623,14 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 			}
 		}
 		return l.inferredTypeOf(n)
+	case hir.KStructLit:
+		// A struct literal's type is its declared type name (`point { … }` ->
+		// "point"). The comptime path needs it to qualify a method call to
+		// the method's HIR name ("<ReceiverType>.<method>").
+		if name := l.pkg.Str(n.S); name != "" {
+			return l.b.Type(name)
+		}
+		return l.inferredTypeOf(n)
 	case hir.KCall:
 		// A call expression's type is the callee's (first) result type. Resolve
 		// the callee name and look up its signature; nolang calls return a single
@@ -2043,6 +2086,38 @@ func (l *lowerer) letTypeRaw(n *hir.Node) string {
 		if cn == nil {
 			continue
 		}
+		// A unary prefix operator does not change the binding's type: `-7` is
+		// an i64, `~b` is whatever `b` is, `!flag` is a bool. Without this
+		// descent, `letTypeRaw` returned "" for EVERY unannotated negative
+		// literal, which is not a cosmetic gap: the module-global registration
+		// loop skips a `let` whose raw type is "" (hir2mir.go ~1292), while the
+		// inlining loop skips the same `let` because it carries FlagModuleConst
+		// with a foldable initializer (~928) — so the binding was materialised
+		// by NEITHER path and every function that read it got a void `const`:
+		//
+		//	FNV-OFFSET = -3750763034362895579
+		//	hashmap-str-tmpl.hash = (key str) (idx i64) { h = FNV-OFFSET ... }
+		//	  -> EmitLLVM: move src slot v20 -> v18
+		//
+		// That single shape broke EVERY map, because std/collection/map.no's
+		// hash starts from FNV-OFFSET (measured on a pristine HEAD build).
+		// The folded constant already knows the type (foldConstText has a
+		// KPrefix case); this only teaches the raw-type query the same thing.
+		for hops := 0; cn != nil && cn.Kind == hir.KPrefix && hops < 8; hops++ {
+			next := hir.NoID
+			for _, cc := range l.pkg.Children(cn.Id) {
+				next = cc
+				break
+			}
+			if next == hir.NoID {
+				cn = nil
+				break
+			}
+			cn = l.pkg.Node(next)
+		}
+		if cn == nil {
+			continue
+		}
 		switch cn.Kind {
 		case hir.KStructLit:
 			return l.pkg.Str(cn.S) // struct name, e.g. "fs.file"
@@ -2240,6 +2315,9 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 		l.curRecv = resultVals[0]
 	}
 	l.locals = map[string]ValueID{}
+	l.constLocals = map[string]comptimeVal{}
+	l.constLocalWrites = map[string]int{}
+	l.reassignedNames = map[string]bool{}
 	l.movedSlots = map[ValueID]bool{}
 	l.paramVals = map[ValueID]bool{}
 	// Build l.locals: each KParam/KResult name maps to its value. The params
@@ -2328,6 +2406,13 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	}
 
 	bodyID := l.slot(hirID, "body")
+	// Pre-scan the function body for reassignments so that a local whose first
+	// `let` folds to a constant is NOT recorded in constLocals when it is later
+	// reassigned — otherwise the constant leaks into an unrelated comparison
+	// and corrupts runtime control flow (see reassignedNames).
+	if bodyID != hir.NoID {
+		l.scanReassignedNames(bodyID)
+	}
 	if bodyID != hir.NoID {
 		l.lowerBlock(bodyID)
 	}
@@ -2694,6 +2779,27 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				}
 			}
 			val = l.lowerExpr(c)
+			if name != "" {
+				if l.constLocalWrites == nil {
+					l.constLocalWrites = map[string]int{}
+				}
+				// A local written more than once is not a single compile-time
+				// constant: branches may assign different values, and keeping only
+				// one of them lets a non-taken arm's literal leak into later folds.
+			l.constLocalWrites[name]++
+			if l.constLocalWrites[name] > 1 || l.reassignedNames[name] {
+				delete(l.constLocals, name)
+			} else if cv, _, ok := l.comptimeFold(c); ok {
+				l.constLocals[name] = cv
+			} else if cv, ok := l.comptimeAggValue(c); ok {
+					// A binding to a struct / array literal is an AGGREGATE
+					// constant: it has no scalar form to emit (the literal is
+					// still lowered as a real value), but it is what makes the
+					// binding usable as a compile-time constant RECEIVER for
+					// a method call.
+					l.constLocals[name] = cv
+				}
+			}
 			break
 		}
 		l.typeHint = NoType
@@ -3761,6 +3867,16 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	}
 }
 
+// typeTail 取型別名的模組限定末段（剝一層 `mod.` 前綴），供靜態型別選臂把源碼
+// 裸名 arm 模式（`bigint`）與 prefixMethodsAndTypes 前綴化後的具體主體型別
+// （`bigint.bigint`）對齊。內建純量名無「.」時末段即原名，比對退化为精確匹配。
+func typeTail(name string) string {
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		return name[i+1:]
+	}
+	return name
+}
+
 // lowerTypeMatch lowers a `type-match` over a union / type-set via static
 // single-dispatch. The matched value's static type is a union alias
 // (e.g. `num = i32 | i64 | f64`). The build pipeline monomorphizes every union
@@ -3812,7 +3928,12 @@ func (l *lowerer) lowerTypeMatch(n *hir.Node) ValueID {
 			defaultBody = bodyID
 			continue
 		}
-		if l.pkg.Str(an.S) == concrete {
+		// 靜態選臂：arm 模式（源碼裸名，如 std/bigint 的 `bigint`）需與單態化後
+		// 主體的具體型別（prefixMethodsAndTypes 已前綴成 `bigint.bigint`）比對。
+		// 內建純量（i32/i64/f64…）無「.」，末段==原名，精確匹配是嚴格超集；僅當
+		// 兩端去前綴末段一致才選中該臂，讓跨模組前綴化型別也能靜態派發。
+		pattern := l.pkg.Str(an.S)
+		if pattern == concrete || typeTail(pattern) == typeTail(concrete) {
 			chosenBody = bodyID
 			break
 		}
@@ -5804,12 +5925,1341 @@ func (l *lowerer) cloneIfBorrowedParamSlice(v ValueID) ValueID {
 	return v
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Implicit comptime (compile-time evaluation by inference)
+//
+// No user annotation is required. When the whole value of an expression can be
+// inferred to be a pure compile-time constant — it is built only from literals,
+// operators, references to compile-time-constant `let` bindings, and calls to
+// pure functions with constant arguments — the MIR lowerer evaluates it during
+// compilation and emits the constant directly (an OpConst).
+//
+// Soundness rules (see evalConst / evalInfix / evalConstCall):
+//   - integer arithmetic is folded only under the default wrap overflow mode;
+//     an explicit `#{overflow=...}` annotation defers to the runtime path.
+//   - division/remainder by zero is NOT folded (the runtime traps); folding
+//     would hide the trap.
+//   - shifts are only folded for 0 <= shift < 64.
+//   - a function is comptime-pure only if it has no loops, no assignment to
+//     non-local state, and calls only pure functions (no I/O, no builtins,
+//     no FFI, no extern, no recursion, no methods). Otherwise its calls are
+//     left to run at run time.
+//   - expressions with any impure sub-expression (print, file I/O, mutation)
+//     are never folded.
+// ─────────────────────────────────────────────────────────────────────────
+
+type comptimeKind int
+
+const (
+	cvInt comptimeKind = iota
+	cvFloat
+	cvBool
+	cvStr
+	cvChar
+	// cvAgg is an aggregate constant: a struct (named fields) or an
+	// array/slice (positional fields, empty name). It exists so a struct
+	// RECEIVER can be a compile-time constant — without it a method call
+	// could never be folded, because the receiver is the method's first
+	// argument.
+	cvAgg
+)
+
+type comptimeVal struct {
+	kind comptimeKind
+	i    int64
+	f    float64
+	b    bool
+	s    string
+	agg  *comptimeAgg
+}
+
+// comptimeAgg is the value of a struct / array / slice constant: an ordered
+// list of (field name, value) pairs. Struct fields keep their name; array
+// and slice elements have an empty name and are reached by index only.
+//
+// typeName is the aggregate's declared type name (e.g. "point"). It is what
+// qualifies a method call: a method's HIR name is "<ReceiverType>.<method>",
+// so the receiver's type has to be known to find the method at all.
+type comptimeAgg struct {
+	typeName string
+	names    []string
+	vals     []comptimeVal
+}
+
+// get returns the field named `name`. Positional elements (arrays) carry an
+// empty name and are NOT reachable by name.
+func (a *comptimeAgg) get(name string) (comptimeVal, bool) {
+	if a == nil || name == "" {
+		return comptimeVal{}, false
+	}
+	for i, n := range a.names {
+		if n == name {
+			return a.vals[i], true
+		}
+	}
+	return comptimeVal{}, false
+}
+
+// at returns the i-th element (arrays / slices).
+func (a *comptimeAgg) at(i int) (comptimeVal, bool) {
+	if a == nil || i < 0 || i >= len(a.vals) {
+		return comptimeVal{}, false
+	}
+	return a.vals[i], true
+}
+
+// comptimeEnabled reports whether the implicit compile-time evaluator is on.
+//
+// It is ON by default: comptime is an implicit, annotation-free feature and
+// must apply to ordinary builds. NOLANG_COMPTIME=0|off disables it. That switch
+// exists for the MIR-optimiser tests, which use NOLANG_MIR_OPT="" as a
+// genuinely-unoptimised CONTROL program and assert that it still contains the
+// add/mul the pass is supposed to fold; with comptime on, the control is
+// already folded at lowering time and "did the pass change anything?" becomes
+// unanswerable. Disabling comptime in those tests keeps them measuring the
+// optimiser pass and nothing else.
+func comptimeEnabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("NOLANG_COMPTIME")))
+	if v == "" {
+		return true
+	}
+	switch v {
+	case "0", "off", "false", "no", "none":
+		return false
+	}
+	return true
+}
+
+// comptimeFold reports whether the expression node `id` is a pure compile-time
+// constant. If so it returns the constant value and the MIR type it should be
+// emitted with. Only expression forms that can be constant are considered;
+// everything else (identifiers, indices, struct literals, ...) falls through to
+// the normal lowering.
+func (l *lowerer) comptimeFold(id int32) (comptimeVal, TypeID, bool) {
+	if !comptimeEnabled() {
+		return comptimeVal{}, NoType, false
+	}
+	// Never fold an async spawn site. `run <call>` / `awy <call>` force the
+	// call node to lower as OpRun (a task); replacing it with a constant would
+	// delete the task and everything the spawn-graph / tier analysis derives
+	// from it — even when the callee is pure. forceRunCall is scoped to that
+	// exact node id, so arguments are still free to fold.
+	if l.forceRunCall != hir.NoID && id == l.forceRunCall {
+		return comptimeVal{}, NoType, false
+	}
+	n := l.pkg.Node(id)
+	if n == nil {
+		return comptimeVal{}, NoType, false
+	}
+	switch n.Kind {
+	case hir.KInfix, hir.KPrefix, hir.KCond, hir.KCall:
+	default:
+		return comptimeVal{}, NoType, false
+	}
+	cv, ok := l.evalConst(id, nil, nil)
+	if !ok {
+		return comptimeVal{}, NoType, false
+	}
+	typ := l.typeOfNode(n)
+	if typ == NoType || typ == l.voidType {
+		if n.Kind == hir.KCall {
+			if l.isMethodCallNode(id) {
+				// A method call's result type comes straight from the HIR
+				// (the method's KResult). resolveCallee must NOT be used here:
+				// it LOWERs the receiver, and the receiver's lowering would
+				// be left behind as stray instructions once the call is
+				// replaced by the folded constant.
+				if rt := l.methodResultType(id); rt != NoType && rt != l.voidType {
+					typ = rt
+				}
+			} else if callee, _ := l.resolveCallee(n); callee != "" {
+				if rt := l.resultTypeOfCallee(callee); rt != NoType && rt != l.voidType {
+					typ = rt
+				}
+			}
+		}
+	}
+	if typ == NoType || typ == l.voidType {
+		switch cv.kind {
+		case cvInt:
+			typ = l.b.Type("i64")
+		case cvFloat:
+			typ = l.b.Type("f64")
+		case cvBool:
+			typ = l.b.Type("bool")
+		case cvStr:
+			typ = l.b.Type("str")
+		case cvChar:
+			typ = l.b.Type("char")
+		}
+	}
+	// An Option is a {tag, payload} pair; comptimeVal models neither the tag nor
+	// the nil/err states, so emitting a folded value with an option type writes
+	// a bare scalar where the caller expects an option — the match then reads a
+	// garbage tag. Folding `mk-ok()` (result `?i64`) to 11 turned
+	// `p: { ok(v) -> … }` into the nil arm. Option results are never folded.
+	if t := l.mod.Type(typ); t != nil && (t.Kind == KindOption || strings.HasPrefix(t.Raw, "?")) {
+		return comptimeVal{}, NoType, false
+	}
+	// A CHAR-typed expression must not be folded either. The evaluator models
+	// char arithmetic as int, so the value is an int while the static type
+	// stays char; the constant form of a char-typed value is an i64, and every
+	// downstream use is bound statically to the char type (`c.to-str()`
+	// resolves to `char.to-str`), so the i64 makes them read a NUMBER where
+	// the runtime has a CHARACTER: `"A" + 1` printed "B" with the evaluator
+	// off and "66" with it on.
+	if cv.kind == cvInt {
+		if t := l.mod.Type(typ); t != nil && t.Raw == "char" {
+			return comptimeVal{}, NoType, false
+		}
+	}
+	return cv, typ, true
+}
+
+// scanReassignedNames walks the function body (without descending into nested
+// function definitions) and records every local name that is written MORE THAN
+// ONCE. Such names are excluded from constLocals so a folded `let` initializer
+// cannot leak into an unrelated comparison and corrupt runtime control flow.
+//
+// A name is a "write" if it is the target of a `let` binding OR an `assign` to a
+// bare identifier. Nolang lowers an identifier-LHS assignment (`x = expr`) to a
+// KLet even when `x` is a reassignment of an already-declared local, so the
+// FIRST `let x = …` and every later reassignment all carry the same KLet kind —
+// counting KLet targets catches both. A name written exactly once is a genuine
+// single-assignment constant and stays eligible for folding.
+//
+// Computing this UP FRONT (before any statement is lowered) is essential: a loop
+// body's first read of `start` precedes its first `start = i` reassignment in
+// lowering order, so deleting constLocals only when the reassignment is seen
+// (the old constLocalWrites path) is too late and lets the initializer literal
+// leak into the comparison.
+func (l *lowerer) scanReassignedNames(id int32) {
+	if l.reassignedNames == nil {
+		l.reassignedNames = map[string]bool{}
+	}
+	writeCount := map[string]int{}
+	stack := []int32{id}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		n := l.pkg.Node(cur)
+		if n == nil {
+			continue
+		}
+		switch n.Kind {
+		case hir.KFuncDef, hir.KFuncLit:
+			// Do not descend into a nested function: its writes belong to a
+			// separate scope and must not poison the enclosing function's
+			// constLocals.
+			continue
+		case hir.KLet:
+			// Identifier-LHS assignment lowers to KLet even for reassignments,
+			// so every KLet target counts as a write.
+			if nm := l.pkg.Str(n.S); nm != "" {
+				writeCount[nm]++
+			}
+		case hir.KAssign:
+			// The assignment target is the FIRST child. A bare-identifier
+			// target is a local (or result-param) reassignment.
+			for _, c := range l.pkg.Children(cur) {
+				if cn := l.pkg.Node(c); cn != nil && cn.Kind == hir.KIdent {
+					if nm := l.pkg.Str(cn.S); nm != "" {
+						writeCount[nm]++
+					}
+				}
+				break
+			}
+		}
+		for _, c := range l.pkg.Children(cur) {
+			stack = append(stack, c)
+		}
+	}
+	for nm, c := range writeCount {
+		if c > 1 {
+			l.reassignedNames[nm] = true
+		}
+	}
+}
+
+// evalConst evaluates the HIR expression `id` to a compile-time constant.
+// `env` binds names (function parameters, body lets) to constants during a
+// comptime function-body evaluation; `stack` records the active comptime call
+// chain to guard against infinite recursion.
+func (l *lowerer) evalConst(id int32, env map[string]comptimeVal, stack []string) (comptimeVal, bool) {
+	if id == hir.NoID {
+		return comptimeVal{}, false
+	}
+	if env == nil && len(stack) == 0 {
+		if c, ok := l.constCache[id]; ok {
+			if c == nil {
+				return comptimeVal{}, false
+			}
+			return *c, true
+		}
+	}
+	n := l.pkg.Node(id)
+	if n == nil {
+		return comptimeVal{}, false
+	}
+	var res comptimeVal
+	var ok bool
+	switch n.Kind {
+	case hir.KIntLit:
+		res, ok = comptimeVal{kind: cvInt, i: n.Val}, true
+	case hir.KFloatLit:
+		res, ok = comptimeVal{kind: cvFloat, f: n.Float()}, true
+	case hir.KBoolLit:
+		res, ok = comptimeVal{kind: cvBool, b: n.Bool()}, true
+	case hir.KCharLit:
+		s := strings.Trim(l.pkg.Str(n.S), "'")
+		var cp int64
+		for _, r := range s {
+			cp = int64(r)
+			break
+		}
+		res, ok = comptimeVal{kind: cvChar, i: cp}, true
+	case hir.KStrLit:
+		res, ok = comptimeVal{kind: cvStr, s: l.pkg.Str(n.S)}, true
+	case hir.KPrefix:
+		var operand int32
+		for _, c := range l.pkg.Children(id) {
+			operand = c
+			break
+		}
+		if operand == hir.NoID {
+			return comptimeVal{}, false
+		}
+		ov, ok2 := l.evalConst(operand, env, stack)
+		if !ok2 {
+			return comptimeVal{}, false
+		}
+		switch l.pkg.Str(n.S) {
+		case "-":
+			if ov.kind == cvFloat {
+				res, ok = comptimeVal{kind: cvFloat, f: -ov.f}, true
+			} else {
+				res, ok = comptimeVal{kind: cvInt, i: -ov.i}, true
+			}
+		case "!":
+			res, ok = comptimeVal{kind: cvBool, b: !ov.b}, true
+		case "~":
+			res, ok = comptimeVal{kind: cvInt, i: ^ov.i}, true
+		default:
+			return comptimeVal{}, false
+		}
+	case hir.KInfix:
+		var lr [2]int32
+		i := 0
+		for _, c := range l.pkg.Children(id) {
+			if i < 2 {
+				lr[i] = c
+				i++
+			}
+		}
+		if i < 2 {
+			return comptimeVal{}, false
+		}
+		op := l.pkg.Str(n.S)
+		if op == "&&" || op == "||" {
+			lv, ok2 := l.evalConst(lr[0], env, stack)
+			if !ok2 || lv.kind != cvBool {
+				return comptimeVal{}, false
+			}
+			if op == "&&" {
+				if !lv.b {
+					return comptimeVal{kind: cvBool, b: false}, true
+				}
+				rv, ok3 := l.evalConst(lr[1], env, stack)
+				if !ok3 || rv.kind != cvBool {
+					return comptimeVal{}, false
+				}
+				return comptimeVal{kind: cvBool, b: rv.b}, true
+			}
+			if lv.b {
+				return comptimeVal{kind: cvBool, b: true}, true
+			}
+			rv, ok3 := l.evalConst(lr[1], env, stack)
+			if !ok3 || rv.kind != cvBool {
+				return comptimeVal{}, false
+			}
+			return comptimeVal{kind: cvBool, b: rv.b}, true
+		}
+		lv, ok2 := l.evalConst(lr[0], env, stack)
+		if !ok2 {
+			return comptimeVal{}, false
+		}
+		rv, ok3 := l.evalConst(lr[1], env, stack)
+		if !ok3 {
+			return comptimeVal{}, false
+		}
+		// An explicit non-default overflow mode changes the result vs. the
+		// plain two's-complement fold, so defer to the runtime path.
+		if n.Flags&ovfFlagMask != 0 {
+			return comptimeVal{}, false
+		}
+		res, ok = l.evalInfix(op, lv, rv, n)
+	case hir.KCond:
+		var cr [3]int32
+		i := 0
+		for _, c := range l.pkg.Children(id) {
+			if i < 3 {
+				cr[i] = c
+				i++
+			}
+		}
+		if cr[0] == hir.NoID || cr[1] == hir.NoID {
+			return comptimeVal{}, false
+		}
+		cv, ok2 := l.evalConst(cr[0], env, stack)
+		if !ok2 || cv.kind != cvBool {
+			return comptimeVal{}, false
+		}
+		branch := cr[1]
+		if !cv.b {
+			branch = cr[2]
+		}
+		if branch == hir.NoID {
+			return comptimeVal{}, false
+		}
+		return l.evalConst(branch, env, stack)
+	case hir.KIdent:
+		name := l.pkg.Str(n.S)
+		if env != nil {
+			if v, e := env[name]; e {
+				return v, true
+			}
+		}
+		if v, e := l.constLocals[name]; e {
+			return v, true
+		}
+		return comptimeVal{}, false
+	case hir.KStructLit:
+		// A struct literal is an aggregate constant: every field is evaluated
+		// and kept under its name. This is what makes a struct RECEIVER a
+		// compile-time constant, so a method call on it can be folded.
+		agg := &comptimeAgg{typeName: l.pkg.Str(n.S)}
+		for _, c := range l.pkg.Children(id) {
+			f := l.pkg.Node(c)
+			if f == nil || f.Kind != hir.KStructField {
+				return comptimeVal{}, false
+			}
+			fv, ok2 := l.evalConst(f.First, env, stack)
+			if !ok2 {
+				return comptimeVal{}, false
+			}
+			agg.names = append(agg.names, l.pkg.Str(f.S))
+			agg.vals = append(agg.vals, fv)
+		}
+		res, ok = comptimeVal{kind: cvAgg, agg: agg}, true
+	case hir.KArrayLit, hir.KSliceLit:
+		// Array / slice literal: a positional aggregate (empty field name).
+		agg := &comptimeAgg{}
+		for _, c := range l.pkg.Children(id) {
+			ev, ok2 := l.evalConst(c, env, stack)
+			if !ok2 {
+				return comptimeVal{}, false
+			}
+			agg.names = append(agg.names, "")
+			agg.vals = append(agg.vals, ev)
+		}
+		res, ok = comptimeVal{kind: cvAgg, agg: agg}, true
+	case hir.KDot:
+		// A field read on a constant aggregate. Inside a method body the
+		// receiver is implicit, so `.field` lowers to a KDot with NO child:
+		// the base is then the `self` binding of the current frame.
+		var base comptimeVal
+		if len(l.pkg.Children(id)) == 0 {
+			v, found := env["self"]
+			if !found {
+				return comptimeVal{}, false
+			}
+			base = v
+		} else {
+			bv, ok2 := l.evalConst(n.First, env, stack)
+			if !ok2 {
+				return comptimeVal{}, false
+			}
+			base = bv
+		}
+		if base.kind != cvAgg {
+			return comptimeVal{}, false
+		}
+		fv, found := base.agg.get(l.pkg.Str(n.S))
+		if !found {
+			return comptimeVal{}, false
+		}
+		res, ok = fv, true
+	case hir.KIndex:
+		// An element read on a constant array / slice aggregate.
+		var baseID, idxID int32
+		i := 0
+		for _, c := range l.pkg.Children(id) {
+			if i == 0 {
+				baseID = c
+			} else {
+				idxID = c
+				break
+			}
+			i++
+		}
+		if baseID == hir.NoID || idxID == hir.NoID {
+			return comptimeVal{}, false
+		}
+		bv, ok2 := l.evalConst(baseID, env, stack)
+		if !ok2 || bv.kind != cvAgg {
+			return comptimeVal{}, false
+		}
+		iv, ok2 := l.evalConst(idxID, env, stack)
+		if !ok2 || iv.kind != cvInt {
+			return comptimeVal{}, false
+		}
+		ev, found := bv.agg.at(int(iv.i))
+		if !found {
+			return comptimeVal{}, false
+		}
+		res, ok = ev, true
+	case hir.KCall:
+		// A spawn (`co f(x)` / `run f(x)`) creates a task. Folding it would
+		// silently delete that task and everything the spawn-graph analysis
+		// derives from it, so spawns are never folded.
+		if l.isSpawnCall(id) {
+			return comptimeVal{}, false
+		}
+		return l.evalConstCall(id, env, stack)
+	default:
+		return comptimeVal{}, false
+	}
+	if env == nil && len(stack) == 0 {
+		c := res
+		if !ok {
+			l.constCache[id] = nil
+		} else {
+			l.constCache[id] = &c
+		}
+	}
+	return res, ok
+}
+
+func toF64(v comptimeVal) float64 {
+	if v.kind == cvFloat {
+		return v.f
+	}
+	return float64(v.i)
+}
+
+func (l *lowerer) evalInfix(op string, lv, rv comptimeVal, n *hir.Node) (comptimeVal, bool) {
+	// String concatenation: `'a' - 'b'` (Nolang uses `-` for string concat).
+	if op == "-" && lv.kind == cvStr && rv.kind == cvStr {
+		if t := l.mod.Type(l.typeOfNode(n)); t != nil && t.Raw == "txt" {
+			return comptimeVal{}, false
+		}
+		return comptimeVal{kind: cvStr, s: lv.s + rv.s}, true
+	}
+	lf := lv.kind == cvFloat || rv.kind == cvFloat
+	li := (lv.kind == cvInt || lv.kind == cvChar) && (rv.kind == cvInt || rv.kind == cvChar)
+	if lf {
+		a, b := toF64(lv), toF64(rv)
+		switch op {
+		case "+":
+			return comptimeVal{kind: cvFloat, f: a + b}, true
+		case "-":
+			return comptimeVal{kind: cvFloat, f: a - b}, true
+		case "*":
+			return comptimeVal{kind: cvFloat, f: a * b}, true
+		case "/":
+			if b == 0 {
+				return comptimeVal{}, false
+			}
+			return comptimeVal{kind: cvFloat, f: a / b}, true
+		case "%":
+			if b == 0 {
+				return comptimeVal{}, false
+			}
+			return comptimeVal{kind: cvFloat, f: math.Mod(a, b)}, true
+		case "==":
+			return comptimeVal{kind: cvBool, b: a == b}, true
+		case "!=":
+			return comptimeVal{kind: cvBool, b: a != b}, true
+		case "<":
+			return comptimeVal{kind: cvBool, b: a < b}, true
+		case "<=":
+			return comptimeVal{kind: cvBool, b: a <= b}, true
+		case ">":
+			return comptimeVal{kind: cvBool, b: a > b}, true
+		case ">=":
+			return comptimeVal{kind: cvBool, b: a >= b}, true
+		}
+		return comptimeVal{}, false
+	}
+	if li {
+		a, b := lv.i, rv.i
+		switch op {
+		case "+":
+			return comptimeVal{kind: cvInt, i: a + b}, true
+		case "-":
+			return comptimeVal{kind: cvInt, i: a - b}, true
+		case "*":
+			return comptimeVal{kind: cvInt, i: a * b}, true
+		case "/":
+			if b == 0 {
+				return comptimeVal{}, false
+			}
+			return comptimeVal{kind: cvInt, i: a / b}, true
+		case "%":
+			if b == 0 {
+				return comptimeVal{}, false
+			}
+			return comptimeVal{kind: cvInt, i: a % b}, true
+		case "&":
+			return comptimeVal{kind: cvInt, i: a & b}, true
+		case "|":
+			return comptimeVal{kind: cvInt, i: a | b}, true
+		case "^":
+			return comptimeVal{kind: cvInt, i: a ^ b}, true
+		case "<<":
+			if b < 0 || b >= 64 {
+				return comptimeVal{}, false
+			}
+			return comptimeVal{kind: cvInt, i: a << uint64(b)}, true
+		case ">>":
+			if b < 0 || b >= 64 {
+				return comptimeVal{}, false
+			}
+			return comptimeVal{kind: cvInt, i: a >> uint64(b)}, true
+		case "==":
+			return comptimeVal{kind: cvBool, b: a == b}, true
+		case "!=":
+			return comptimeVal{kind: cvBool, b: a != b}, true
+		case "<":
+			return comptimeVal{kind: cvBool, b: a < b}, true
+		case "<=":
+			return comptimeVal{kind: cvBool, b: a <= b}, true
+		case ">":
+			return comptimeVal{kind: cvBool, b: a > b}, true
+		case ">=":
+			return comptimeVal{kind: cvBool, b: a >= b}, true
+		}
+		return comptimeVal{}, false
+	}
+	return comptimeVal{}, false
+}
+
+func (l *lowerer) evalConstCall(id int32, env map[string]comptimeVal, stack []string) (comptimeVal, bool) {
+	fnID := l.slot(id, "fn")
+	if fnID == hir.NoID {
+		return comptimeVal{}, false
+	}
+	fnn := l.pkg.Node(fnID)
+	if fnn == nil {
+		return comptimeVal{}, false
+	}
+	var (
+		name   string       // callee key in funcNames
+		recv   *comptimeVal // receiver constant (method calls only)
+		method bool
+	)
+	switch fnn.Kind {
+	case hir.KIdent:
+		name = l.pkg.Str(fnn.S)
+	case hir.KDot:
+		// A method call `recv.method(args)`: the fn slot is a KDot whose
+		// property is the method name and whose single child is the receiver
+		// expression. The receiver is the method's FIRST argument, so it must
+		// be a compile-time constant for the call to be foldable.
+		method = true
+		mname := l.pkg.Str(fnn.S)
+		if mname == "" {
+			return comptimeVal{}, false
+		}
+		var recvID int32 = hir.NoID
+		for _, c := range l.pkg.Children(fnID) {
+			recvID = c
+			break
+		}
+		if recvID == hir.NoID {
+			// Implicit receiver (`.method()` inside a method body). Its type
+			// is the enclosing method's receiver type, which is not available
+			// here — refuse (conservative, and it also covers the module
+			// namespace form `fs.open(...)`, whose "receiver" is a module).
+			return comptimeVal{}, false
+		}
+		rv, ok2 := l.evalConst(recvID, env, stack)
+		if !ok2 {
+			return comptimeVal{}, false
+		}
+		// A method's HIR name is "<ReceiverType>.<method>" (the parser builds
+		// it from the declaring type name), so the receiver's static type is
+		// what qualifies the callee.
+		rtype := l.recvTypeName(recvID, rv)
+		if rtype == "" {
+			return comptimeVal{}, false
+		}
+		name = rtype + "." + mname
+		recv = &rv
+	default:
+		// field / indirect calls are not comptime-foldable.
+		return comptimeVal{}, false
+	}
+	if name == "" {
+		return comptimeVal{}, false
+	}
+	// An `-async` callee lowers to OpRun (a lazily-enqueued task) even as a
+	// bare call, so folding it would drop the task. Same rule as the
+	// forceRunCall guard in comptimeFold, applied by name because the bare
+	// spelling has no `run`/`awy` wrapper to key off.
+	if strings.HasSuffix(name, "-async") {
+		return comptimeVal{}, false
+	}
+	fid, ok := l.funcNames[name]
+	if !ok {
+		return comptimeVal{}, false
+	}
+	if !l.isComptimePure(name) {
+		return comptimeVal{}, false
+	}
+	for _, s := range stack {
+		if s == name {
+			return comptimeVal{}, false
+		}
+	}
+	fnNode := l.pkg.Node(fid)
+	if fnNode == nil || fnNode.Kind != hir.KFuncDef {
+		return comptimeVal{}, false
+	}
+	// A method's implicit receiver is its FIRST result parameter, named
+	// `self` (parser/tohir.go emits the self KResult before the KParams);
+	// the remaining KResults are the method's real results.
+	var recvParam string
+	var paramNames []string
+	var resultNames []string
+	var resultTypeRaw string
+	seenResult := false
+	for _, c := range l.pkg.Children(fid) {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			continue
+		}
+		switch cn.Kind {
+		case hir.KParam:
+			paramNames = append(paramNames, l.pkg.Str(cn.S))
+		case hir.KResult:
+			if method && !seenResult && l.pkg.Str(cn.S) == "self" {
+				seenResult = true
+				recvParam = l.pkg.Str(cn.S)
+				continue
+			}
+			resultNames = append(resultNames, l.pkg.Str(cn.S))
+			if resultTypeRaw == "" {
+				resultTypeRaw = l.pkg.Type(cn.Type)
+			}
+		}
+	}
+	// Comptime folding supports exactly one (named) result parameter in v1.
+	if len(resultNames) != 1 {
+		return comptimeVal{}, false
+	}
+	// A CHAR result must not be folded. The evaluator models char arithmetic
+	// as int, so the value arrives here as an int; the constant form of a
+	// char-typed value is an i64, and every downstream use is bound
+	// statically to the char type (`c.to-str()` resolves to `char.to-str`),
+	// so an i64 constant makes them read a NUMBER where the runtime has a
+	// CHARACTER: `"A" + 1` printed "B" with the evaluator off and "66" with
+	// it on. A char LITERAL keeps its own kind and is not folded either
+	// (comptimeFold only accepts infix / prefix / cond / call).
+	if resultTypeRaw == "char" {
+		return comptimeVal{}, false
+	}
+	if method && (recvParam == "" || recv == nil) {
+		// A method without a bindable receiver cannot be folded.
+		return comptimeVal{}, false
+	}
+	args := l.slotArgs(id, "arg")
+	if len(args) != len(paramNames) {
+		return comptimeVal{}, false
+	}
+	callEnv := map[string]comptimeVal{}
+	if env != nil {
+		for k, v := range env {
+			callEnv[k] = v
+		}
+	}
+	if method {
+		callEnv[recvParam] = *recv
+	}
+	for i, aid := range args {
+		av, ok2 := l.evalConst(aid, env, stack)
+		if !ok2 {
+			return comptimeVal{}, false
+		}
+		callEnv[paramNames[i]] = av
+	}
+	bodyID := l.slot(fid, "body")
+	if bodyID == hir.NoID {
+		return comptimeVal{}, false
+	}
+	newStack := append(append([]string{}, stack...), name)
+	res, rok := l.evalConstBody(bodyID, callEnv, newStack, resultNames[0])
+	if rok && res.kind == cvAgg {
+		// An aggregate RESULT cannot be emitted as a constant yet (the
+		// receiver may be an aggregate, but the folded value may not be).
+		return comptimeVal{}, false
+	}
+	return res, rok
+}
+
+// comptimeAggValue evaluates a node to an AGGREGATE constant (a struct /
+// array / slice literal). It is deliberately separate from comptimeFold:
+// comptimeFold only accepts the expression kinds that have a scalar constant
+// form to EMIT, and an aggregate has none — the literal must still be lowered
+// as a real struct / array value at run time. It exists so a binding to such
+// a literal can serve as a compile-time constant RECEIVER for a method call.
+func (l *lowerer) comptimeAggValue(id int32) (comptimeVal, bool) {
+	n := l.pkg.Node(id)
+	if n == nil {
+		return comptimeVal{}, false
+	}
+	switch n.Kind {
+	case hir.KStructLit, hir.KArrayLit, hir.KSliceLit:
+	default:
+		return comptimeVal{}, false
+	}
+	return l.evalConst(id, nil, nil)
+}
+
+// recvTypeName returns the static type name of a receiver expression, e.g.
+// "point" for a local of struct type `point`. It is what qualifies a method
+// call to the method's HIR name ("<ReceiverType>.<method>").
+//
+// The aggregate constant's OWN type name is preferred: it is the declared
+// type of the literal the receiver was bound to, which is exactly what the
+// method was declared on. typeOfNode is the fallback for a receiver that is
+// not an aggregate constant.
+func (l *lowerer) recvTypeName(recvID int32, recv comptimeVal) string {
+	if recv.kind == cvAgg && recv.agg != nil && recv.agg.typeName != "" {
+		return recv.agg.typeName
+	}
+	t := l.typeOfNode(l.pkg.Node(recvID))
+	if t == NoType || t == l.voidType {
+		return ""
+	}
+	ti := l.mod.Type(t)
+	if ti == nil || ti.Raw == "" {
+		return ""
+	}
+	return ti.Raw
+}
+
+// isMethodCallNode reports whether a call node's callee is a method selector
+// (its fn slot is a KDot) rather than a plain function name.
+func (l *lowerer) isMethodCallNode(callID int32) bool {
+	fnID := l.slot(callID, "fn")
+	if fnID == hir.NoID {
+		return false
+	}
+	fnn := l.pkg.Node(fnID)
+	return fnn != nil && fnn.Kind == hir.KDot
+}
+
+// methodResultType returns the result type of the method a call node names,
+// read straight from the HIR (the method's own KResult child). The comptime
+// path uses it so it never has to call resolveCallee, which lowers the
+// receiver and would leave stray instructions behind once the call is
+// replaced by a folded constant.
+func (l *lowerer) methodResultType(callID int32) TypeID {
+	fnID := l.slot(callID, "fn")
+	if fnID == hir.NoID {
+		return NoType
+	}
+	fnn := l.pkg.Node(fnID)
+	if fnn == nil || fnn.Kind != hir.KDot {
+		return NoType
+	}
+	mname := l.pkg.Str(fnn.S)
+	if mname == "" {
+		return NoType
+	}
+	var recvID int32 = hir.NoID
+	for _, c := range l.pkg.Children(fnID) {
+		recvID = c
+		break
+	}
+	if recvID == hir.NoID {
+		return NoType
+	}
+	rtype := l.recvTypeName(recvID, comptimeVal{})
+	if rtype == "" {
+		return NoType
+	}
+	fid, ok := l.funcNames[rtype+"."+mname]
+	if !ok {
+		return NoType
+	}
+	seenResult := false
+	for _, c := range l.pkg.Children(fid) {
+		cn := l.pkg.Node(c)
+		if cn == nil || cn.Kind != hir.KResult {
+			continue
+		}
+		if !seenResult && l.pkg.Str(cn.S) == "self" {
+			seenResult = true
+			continue
+		}
+		if raw := l.pkg.Type(cn.Type); raw != "" && raw != "void" {
+			return l.b.Type(raw)
+		}
+		return NoType
+	}
+	return NoType
+}
+
+func (l *lowerer) evalConstBody(blockID int32, env map[string]comptimeVal, stack []string, resultName string) (comptimeVal, bool) {
+	var last comptimeVal
+	found := false
+	for _, c := range l.pkg.Children(blockID) {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			continue
+		}
+		switch cn.Kind {
+		case hir.KLet:
+			var child int32
+			for _, cc := range l.pkg.Children(c) {
+				child = cc
+				break
+			}
+			v, ok2 := l.evalConst(child, env, stack)
+			if !ok2 {
+				return comptimeVal{}, false
+			}
+			name := l.pkg.Str(cn.S)
+			env[name] = v
+			// Nolang returns by BINDING the result parameter, and an
+			// identifier-LHS assignment (`r = <expr>`) lowers to KLet, not
+			// KAssign (parser/stmt.go -> parseLetStatement; AssignExpression is
+			// only built for dot/index LHS). So binding the result name IS the
+			// return: without this, only KAssign/KExprStmt ever set `found`
+			// and every pure call fold was dropped at the end of this loop.
+			if name == resultName {
+				last, found = v, true
+			}
+		case hir.KReturn:
+			var child int32
+			for _, cc := range l.pkg.Children(c) {
+				child = cc
+				break
+			}
+			if child == hir.NoID {
+				// A BARE `return` carries no value: the function returns whatever
+				// its result parameter currently holds. Nolang returns by BINDING
+				// the result name, so that binding IS the return value.
+				//
+				// Reporting (zero,false) here was read by the callers as "this
+				// branch did NOT return", so they kept scanning PAST the return and
+				// executed the statements that follow it:
+				//
+				//	leap = false
+				//	{ y % 4 != 0 -> return }   ; taken for 2023
+				//	leap = true                ; ran anyway -> folded to true
+				//
+				// is-leap(1900) and is-leap(2023) therefore answered true, which
+				// test/std/time.no caught ("1900 not leap" / "2023 not leap") while
+				// the same binary with NOLANG_COMPTIME=0 passed 41/41.
+				if v, bound := env[resultName]; bound {
+					return v, true
+				}
+				// The result was never bound, so there is no value to return:
+				// stay conservative rather than invent one.
+				return comptimeVal{}, false
+			}
+			return l.evalConst(child, env, stack)
+		case hir.KExprStmt:
+			var child int32
+			for _, cc := range l.pkg.Children(c) {
+				child = cc
+				break
+			}
+			if cn := l.pkg.Node(child); cn != nil && cn.Kind == hir.KIf {
+				// An `if` placed in statement position is wrapped in a
+				// KExprStmt. Fold only the taken branch: if it returns, we
+				// return; if it falls through, keep scanning (its local
+				// bindings are already in `env`). Do NOT set `found` here.
+				bl, bf, okIf := l.evalConstIfBranch(child, env, stack, resultName)
+				if !okIf {
+					return comptimeVal{}, false
+				}
+				if bf {
+					return bl, true
+				}
+				continue
+			}
+			// Do not discard ok: the zero comptimeVal is {cvInt, i:0}, so a
+			// failed evaluation would silently fold the function to 0.
+			v, ok2 := l.evalConst(child, env, stack)
+			if !ok2 {
+				return comptimeVal{}, false
+			}
+			last, found = v, true
+		case hir.KAssign:
+			// In Nolang a function returns by binding its result parameter
+			// (which lowers to KLet, see above). KAssign only survives for
+			// dot/index LHS; treat it as a return for symmetry, and refuse any
+			// other target.
+			var lhs, rhs int32
+			i := 0
+			for _, cc := range l.pkg.Children(c) {
+				if i == 0 {
+					lhs = cc
+				} else if i == 1 {
+					rhs = cc
+				}
+				i++
+			}
+			ln := l.pkg.Node(lhs)
+			if ln == nil || ln.Kind != hir.KIdent || l.pkg.Str(ln.S) != resultName {
+				return comptimeVal{}, false
+			}
+			v, ok2 := l.evalConst(rhs, env, stack)
+			if !ok2 {
+				return comptimeVal{}, false
+			}
+			last, found = v, true
+		case hir.KIf:
+			// Constant-condition `if` (appears as a direct block child when not
+			// wrapped in a KExprStmt). Same logic as the KExprStmt-KIf path.
+			bl, bf, okIf := l.evalConstIfBranch(c, env, stack, resultName)
+			if !okIf {
+				return comptimeVal{}, false
+			}
+			if bf {
+				return bl, true
+			}
+		case hir.KFor, hir.KRange, hir.KBreak, hir.KContinue:
+			// Loops / non-local control flow: not foldable in v1. Folding a
+			// loop would require unrolling or proving an invariant, so we stay
+			// conservative and refuse.
+			return comptimeVal{}, false
+		default:
+			// Any other statement kind: be conservative and refuse to fold.
+			return comptimeVal{}, false
+		}
+	}
+	if !found {
+		return comptimeVal{}, false
+	}
+	return last, true
+}
+
+// evalConstIfBranch folds a constant-condition `if`: if the condition evaluates
+// to a compile-time bool, only the taken branch can actually run, so we evaluate
+// just that branch block (via evalConstBody) and never touch the other one —
+// folding a branch that cannot execute would be unsound. A `match` desugars to
+// exactly this if-chain (each arm body is a then-block), so constant matches fold
+// for free too.
+//
+// It returns (val, returned, ok):
+//
+//	ok == false      — the `if` cannot be interpreted at compile time: its
+//	                   condition is not a foldable bool, or the taken branch hit
+//	                   something the evaluator refuses. The caller MUST abandon
+//	                   the whole fold, because `continue`ing past an if we did
+//	                   not understand silently skips any `return` inside it.
+//	returned == true — the taken branch returned; val is the function's result.
+//	otherwise        — the taken branch fell through; the caller keeps scanning.
+//
+// The ok/returned split is the whole point. A braced cond-chain
+// (`{ c -> s }`, the form std/time.no's is-leap uses) desugars to a SYNTHETIC
+// `if 1 { … }` whose condition is not a bool — the arm-ifs live inside it. With
+// a single bool return, that wrapper was read as "fell through", so the scan
+// continued PAST the chain's `return` and ran the statements after it:
+//
+//	leap = false
+//	{ y % 4 != 0 -> return }   ; taken for 2023
+//	leap = true                ; ran anyway -> is-leap(2023) folded to true
+//
+// test/std/time.no caught exactly that ("1900 not leap" / "2023 not leap") while
+// the same binary with NOLANG_COMPTIME=0 passed 41/41. Refusing to fold a shape
+// the evaluator cannot interpret is the conservative fix; the call simply stays.
+func (l *lowerer) evalConstIfBranch(ifID int32, env map[string]comptimeVal, stack []string, resultName string) (comptimeVal, bool, bool) {
+	cv, ok := l.evalConst(l.slot(ifID, "cond"), env, stack)
+	if !ok || cv.kind != cvBool {
+		return comptimeVal{}, false, false
+	}
+	taken := l.slot(ifID, "then")
+	if !cv.b {
+		taken = l.slot(ifID, "else")
+	}
+	if taken == hir.NoID {
+		// No branch can run, so the `if` is a no-op that we DO understand.
+		return comptimeVal{}, false, true
+	}
+	res, rok := l.evalConstBody(taken, env, stack, resultName)
+	if !rok {
+		return comptimeVal{}, false, true
+	}
+	return res, true, true
+}
+
+// isSpawnCall reports whether id is a `co <call>` / `run <call>` spawn site
+// (hir.Package.GoSpawns). A spawn creates a task, so it is never folded and any
+// function containing one counts as impure: dropping the task would change the
+// program's concurrency structure even when the callee itself is pure.
+func (l *lowerer) isSpawnCall(id int32) bool {
+	for _, s := range l.pkg.GoSpawns {
+		if s == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *lowerer) isComptimePure(name string) bool {
+	if l.comptimePure == nil {
+		l.computeComptimePurity()
+	}
+	if v, ok := l.comptimePure[name]; ok {
+		return v
+	}
+	// Methods are NOT in the eager table: walking every std method body at
+	// compile time is expensive, and only the methods a call site actually
+	// reaches need a verdict. Compute one on demand and cache it.
+	if fid, ok := l.funcNames[name]; ok {
+		if fn := l.pkg.Node(fid); fn != nil && fn.Kind == hir.KFuncDef && fn.Has(hir.FlagMethod) {
+			pure := !l.funcImpure(name, map[string]bool{})
+			l.comptimePure[name] = pure
+			return pure
+		}
+	}
+	return false
+}
+
+func (l *lowerer) computeComptimePurity() {
+	l.comptimePure = map[string]bool{}
+	for name, fid := range l.funcNames {
+		fn := l.pkg.Node(fid)
+		if fn == nil || fn.Kind != hir.KFuncDef || fn.Has(hir.FlagMethod) {
+			continue
+		}
+		l.comptimePure[name] = true
+	}
+	for name := range l.comptimePure {
+		if l.funcImpure(name, map[string]bool{}) {
+			l.comptimePure[name] = false
+		}
+	}
+}
+
+func (l *lowerer) funcImpure(name string, visiting map[string]bool) bool {
+	if visiting[name] {
+		return true
+	}
+	visiting[name] = true
+	defer delete(visiting, name)
+	fid, ok := l.funcNames[name]
+	if !ok {
+		return true
+	}
+	bodyID := l.slot(fid, "body")
+	if bodyID == hir.NoID {
+		return false
+	}
+	return l.blockImpure(bodyID, visiting)
+}
+
+func (l *lowerer) blockImpure(blockID int32, visiting map[string]bool) bool {
+	for _, c := range l.pkg.Children(blockID) {
+		cn := l.pkg.Node(c)
+		if cn == nil {
+			continue
+		}
+		switch cn.Kind {
+		case hir.KLet:
+			// A binding whose name is a MODULE GLOBAL is a side effect, not a
+			// local: folding the function would drop the store. The write is
+			// observable — `counter = 0` + `bump = () { counter = 5 }` printed
+			// 5 with the evaluator off and 0 with it on, because the folded
+			// call took the write with it.
+			//
+			// The check is conservative: a LOCAL that shadows a global name
+			// (a parameter of the same name) is also reported impure, which
+			// only costs a folding opportunity, never soundness.
+			if name := l.pkg.Str(cn.S); name != "" {
+				if _, isGlobal := l.globals[name]; isGlobal {
+					return true
+				}
+			}
+			for _, cc := range l.pkg.Children(c) {
+				if l.subtreeImpure(cc, visiting) {
+					return true
+				}
+			}
+		case hir.KReturn, hir.KExprStmt:
+			for _, cc := range l.pkg.Children(c) {
+				if l.subtreeImpure(cc, visiting) {
+					return true
+				}
+			}
+		case hir.KIf:
+			// A constant-condition `if` IS foldable (evalConstBody folds only
+			// the taken branch), so it is not inherently impure. Recurse into
+			// both arms to catch REAL side effects (print / impure calls). A
+			// runtime-condition `if` stays pure too — evalConstBody bails on a
+			// non-constant condition, so it simply is not folded. `match`
+			// desugars to this same if-chain, so constant matches fold as well.
+			if t := l.slot(c, "then"); t != hir.NoID {
+				if l.blockImpure(t, visiting) {
+					return true
+				}
+			}
+			if e := l.slot(c, "else"); e != hir.NoID {
+				if l.blockImpure(e, visiting) {
+					return true
+				}
+			}
+		case hir.KFor, hir.KRange, hir.KAssign, hir.KBreak, hir.KContinue:
+			// Loops / local mutation / loop control: not foldable in v1, so
+			// stay conservative. (evalConstBody also bails on a loop.)
+			return true
+		case hir.KCall:
+			fnID := l.slot(c, "fn")
+			if fnID == hir.NoID || l.isSpawnCall(c) {
+				return true
+			}
+			fnn := l.pkg.Node(fnID)
+			if fnn == nil || fnn.Kind != hir.KIdent {
+				return true
+			}
+			callee := l.pkg.Str(fnn.S)
+			if _, ok := l.funcNames[callee]; !ok {
+				return true
+			}
+			if l.funcImpure(callee, visiting) {
+				return true
+			}
+			for _, a := range l.slotArgs(c, "arg") {
+				if l.subtreeImpure(a, visiting) {
+					return true
+				}
+			}
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+func (l *lowerer) subtreeImpure(id int32, visiting map[string]bool) bool {
+	n := l.pkg.Node(id)
+	if n == nil {
+		return false
+	}
+	switch n.Kind {
+	case hir.KCall:
+		fnID := l.slot(id, "fn")
+		if fnID == hir.NoID || l.isSpawnCall(id) {
+			return true
+		}
+		fnn := l.pkg.Node(fnID)
+		if fnn == nil || fnn.Kind != hir.KIdent {
+			return true
+		}
+		callee := l.pkg.Str(fnn.S)
+		if _, ok := l.funcNames[callee]; !ok {
+			return true
+		}
+		if l.funcImpure(callee, visiting) {
+			return true
+		}
+		for _, a := range l.slotArgs(id, "arg") {
+			if l.subtreeImpure(a, visiting) {
+				return true
+			}
+		}
+		return false
+	case hir.KIf:
+		// A constant-condition `if` is foldable (evalConstBody folds only the
+		// taken branch); it is not inherently impure. Recurse into both arms to
+		// catch real side effects. (Same reasoning as blockImpure's KIf case —
+		// `if` reaches here wrapped inside a KExprStmt.)
+		if t := l.slot(id, "then"); t != hir.NoID {
+			if l.blockImpure(t, visiting) {
+				return true
+			}
+		}
+		if e := l.slot(id, "else"); e != hir.NoID {
+			if l.blockImpure(e, visiting) {
+				return true
+			}
+		}
+		return false
+	case hir.KFor, hir.KRange, hir.KAssign, hir.KBreak, hir.KContinue:
+		return true
+	default:
+		for _, cc := range l.pkg.Children(id) {
+			if l.subtreeImpure(cc, visiting) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func (l *lowerer) emitConstVal(cv comptimeVal, typ TypeID) ValueID {
+	switch cv.kind {
+	case cvInt:
+		if t := l.mod.Type(typ); t != nil && t.Raw == "char" {
+			// char values that survive arithmetic widen to i64.
+			typ = l.b.Type("i64")
+		}
+		if typ == NoType || typ == l.voidType {
+			typ = l.b.Type("i64")
+		}
+		return l.b.EmitInt(OpConst, typ, cv.i, "")
+	case cvChar:
+		if typ == NoType || typ == l.voidType {
+			typ = l.b.Type("char")
+		}
+		return l.b.EmitInt(OpConst, typ, cv.i, "")
+	case cvBool:
+		if typ == NoType || typ == l.voidType {
+			typ = l.b.Type("bool")
+		}
+		v := int64(0)
+		if cv.b {
+			v = 1
+		}
+		return l.b.EmitInt(OpConst, typ, v, "")
+	case cvFloat:
+		if typ == NoType || typ == l.voidType {
+			typ = l.b.Type("f64")
+		}
+		v := l.b.Emit(OpConst, typ, nil, "")
+		if v != NoVal {
+			l.mod.Insts[len(l.mod.Insts)-1].Flt = cv.f
+		}
+		return v
+	case cvStr:
+		if typ == NoType || typ == l.voidType {
+			typ = l.b.Type("str")
+		}
+		return l.b.EmitStr(OpConst, typ, cv.s, "")
+	}
+	return NoVal
+}
+
 // ---- expressions ----
 
 func (l *lowerer) lowerExpr(id int32) ValueID {
 	n := l.pkg.Node(id)
 	if n == nil {
 		return NoVal
+	}
+	// Implicit comptime: if the whole expression is a pure compile-time
+	// constant (literals + operators + const lets + pure fn calls), evaluate
+	// it now and emit the constant directly (OpConst). Runtime behaviour is
+	// unchanged — we only substitute a value the program could never observe
+	// differing at run time.
+	if cv, typ, ok := l.comptimeFold(id); ok {
+		return l.emitConstVal(cv, typ)
 	}
 	switch n.Kind {
 	case hir.KAssign:
@@ -5844,6 +7294,22 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		l.typeHint = savedIdxHint
 		if arrV == NoVal || idxV == NoVal {
 			return NoVal
+		}
+		// A MAP base is a key lookup, not a positional read: lower to
+		// `hashmap-<K>-<V>.get` and return its `?V`. This must come BEFORE the
+		// array element typing and the safe-index branch below, because both
+		// assume a positional container:
+		//   * elementTypeOf on a map struct yields void (the hashmap layout has
+		//     no element type), which is exactly the "index dst slot (dst=N
+		//     type=void)" failure;
+		//   * the safe-index branch would emit OpLen/OpGe on the hashmap struct
+		//     and a bounds check that means nothing for a key lookup.
+		// Note the parser DOES classify a map base as an option-indexed
+		// container (parser.containerElemType returns "i64" for "[str]i64"), so
+		// `x ?i64 = m[k]` reaches here with an option type hint — the get's
+		// ?V result is what that hint expects, so the hint needs no handling.
+		if mapRaw, _, _, isMap := l.mapIndexTypes(arrV); isMap {
+			return l.lowerMapIndexRead(arrV, idxV, mapRaw)
 		}
 		elemT := l.elementTypeOf(arrV)
 		// A narrow (byte/u8) element READ is promoted to i64, matching the
@@ -7095,6 +8561,195 @@ func (l *lowerer) lowerMapLit(n *hir.Node) ValueID {
 		l.b.EmitVoid(OpCall, []ValueID{res, keyV, valV, isNew}, putCallee)
 	}
 	return res
+}
+
+// mapIndexTypes reports whether an index base value is a MAP, and if so returns
+// its map type text plus the key/value type texts (`[str]i64` -> "str", "i64").
+//
+// A map's index is a KEY, not a position: there is no out-of-bounds case, so
+// `m[k]` is a get and `m[k] = v` is a put — neither needs the option
+// unwrapping D9 demands for arr/vec/slice/str/txt (see
+// docs/design/option-unified.md §12.2.1). This predicate is what keeps a map
+// base out of the array paths in this file; without it `m['b'] = 2` fell into
+// OpIndexStore's array GEP (the str key was used as an i64 index, producing
+// invalid IR) and `m['a']` failed with "index dst slot (dst=N type=void)".
+//
+// An option-wrapped map (`?[K]V`) is unwrapped: `it['k']` inside a match arm
+// binds the option itself, exactly like the container case in elemTypeOfType.
+//
+// TWO spellings denote the same map and both must be recognised:
+//
+//	"[str]i64"         — the source-level type, carried by a declared local
+//	"hashmap-str-i64"  — the SPECIALISED struct, carried by a map literal
+//	                     (lowerMapLit allocates OpStructLit with hmName) and
+//	                     by anything copied out of one
+//
+// Only the first parses through parseMapTypes, so a KindMap-only check
+// silently missed `m = {...}` bindings — the value is a struct, and the index
+// then fell through to the array GEP path (str key used as an i64 index).
+// For the second spelling valRaw is left empty (the value type is sanitised in
+// the struct name and cannot be un-sanitised); callers recover it from the
+// specialised method's own signature.
+func (l *lowerer) mapIndexTypes(v ValueID) (mapRaw, keyRaw, valRaw string, ok bool) {
+	if v <= NoVal {
+		return "", "", "", false
+	}
+	ty := l.mod.Type(l.valueTypeOf(v))
+	for ty != nil && ty.Kind == KindOption && ty.Elem != NoType {
+		ty = l.mod.Type(ty.Elem)
+	}
+	if ty == nil {
+		return "", "", "", false
+	}
+	if k, val, ok2 := parseMapTypes(ty.Raw); ok2 {
+		return ty.Raw, k, val, true
+	}
+	if strings.HasPrefix(ty.Raw, "hashmap-") {
+		if parts := strings.SplitN(ty.Raw, "-", 3); len(parts) == 3 {
+			// The value type is SANITISED in the struct name (`[]str` ->
+			// `slice_str`) and a nested map's own name contains '-', so the tail
+			// is only a trustworthy type text when it is plainly one: no
+			// "slice_", no '-', no option marker. Otherwise leave it empty and
+			// let the caller read the type off the specialised callee.
+			val := parts[2]
+			if val != "" && !strings.Contains(val, "slice_") && !strings.Contains(val, "-") && !strings.Contains(val, "?") {
+				return ty.Raw, parts[1], val, true
+			}
+			return ty.Raw, parts[1], "", true
+		}
+	}
+	return "", "", "", false
+}
+
+// mapCalleeOutRaw returns the source-level type text of the first real result
+// of a callee (`hashmap-str-i64.get` -> "?i64"). It is the authoritative answer
+// for the option type a map read produces: the value type is a generic `v` in
+// the template, and only the specialised callee's signature carries the
+// substituted form. Reuses resultTypesOfCallee so the map path and the ordinary
+// call path agree on which KResult is a return value (the first one is `self`
+// for a method).
+func (l *lowerer) mapCalleeOutRaw(callee string) string {
+	rts := l.resultTypesOfCallee(callee)
+	if len(rts) == 0 {
+		return ""
+	}
+	if t := l.mod.Type(rts[0]); t != nil {
+		return t.Raw
+	}
+	return ""
+}
+
+// mapMethodCallee returns the specialised callee `hashmap-<K>-<V>.<method>` for
+// a map type and enqueues it for lowering, mirroring resolveMapMethod's naming
+// (the value type is sanitised: `[]str` -> `slice_str`, so `[str][]str` is
+// `hashmap-str-slice_str`). Returns "" when the specialised method does not
+// exist (e.g. a map type whose std template was never instantiated).
+func (l *lowerer) mapMethodCallee(mapRaw, method string) string {
+	hm := mapRaw
+	if !strings.HasPrefix(mapRaw, "hashmap-") {
+		k, v, ok := parseMapTypes(mapRaw)
+		if !ok {
+			return ""
+		}
+		hm = "hashmap-" + k + "-" + strings.ReplaceAll(v, "[]", "slice_")
+	}
+	callee := hm + "." + method
+	l.enqueueCallee(callee)
+	if _, ok := l.funcNames[callee]; !ok {
+		return ""
+	}
+	return callee
+}
+
+// lowerMapIndexRead lowers `m[k]` (read) to `hashmap-<K>-<V>.get(m, k, &out)`
+// and returns the `?V` option value it writes. `get` already has exactly the
+// semantics the read side promises: nil when the key is absent, ok(v)
+// otherwise. The option type is derived from the map's VALUE type, not from the
+// binding site's type hint — a map read is always `?V`, whatever context it
+// appears in (same rule as an array read's `?elem`).
+func (l *lowerer) lowerMapIndexRead(arrV, keyV ValueID, mapRaw string) ValueID {
+	callee := l.mapMethodCallee(mapRaw, "get")
+	if callee == "" {
+		l.unsupported(l.curFuncName(), "map-index", "no specialised map method for "+mapRaw+".get")
+		return NoVal
+	}
+	// The option type comes from the specialised callee's own result param
+	// ("?i64"), which is the only place the template's generic `v` has been
+	// substituted. mapIndexTypes' valRaw is the fallback: it is known when the
+	// value carried the source-level map type, and empty when it carried the
+	// sanitised `hashmap-<k>-<v>` struct name.
+	optRaw := l.mapCalleeOutRaw(callee)
+	if optRaw == "" {
+		if _, _, valRaw, ok := l.mapIndexTypes(arrV); ok && valRaw != "" {
+			optRaw = "?" + valRaw
+		}
+	}
+	if optRaw == "" {
+		l.unsupported(l.curFuncName(), "map-index", "cannot resolve result type of "+callee)
+		return NoVal
+	}
+	optT := l.b.Type(optRaw)
+	if optT == l.voidType {
+		l.unsupported(l.curFuncName(), "map-index", "cannot intern option type "+optRaw)
+		return NoVal
+	}
+	dsts := l.b.EmitCallMulti([]TypeID{optT}, []ValueID{arrV, keyV}, callee)
+	if len(dsts) == 0 {
+		return NoVal
+	}
+	return dsts[0]
+}
+
+// lowerMapIndexStore lowers `m[k] = v` (write) to
+// `hashmap-<K>-<V>.put(m, k, v, &is-new)`.
+//
+// This is the whole point of the map exemption in D9: put is an INSERT/UPDATE,
+// defined for every key, so there is nothing to unwrap and no out-of-bounds
+// store to guard. The `is-new` result is discarded — the language's
+// `m[k] = v` statement has no value; callers wanting the flag use `.put()`
+// directly.
+func (l *lowerer) lowerMapIndexStore(arrV, keyV, valV ValueID, mapRaw string) {
+	// A `?V` value must not be fed to put's `v` parameter. `m['a'] = m['b']` reads
+	// an option and the checker does not reject it (the RHS of an index write is
+	// not run through the option-capture pass), so without this guard codegen
+	// emitted `store %str-long %lvN` where %lvN was a `%option` — an LLVM
+	// verifier error with no source-level explanation. A clean diagnostic beats
+	// that; the fix is to unwrap explicitly.
+	//
+	// Checked BEFORE resolving the callee: this is a property of the value, and
+	// the build-side fatal list treats every "map-index" diag as fatal, so the
+	// diagnostic must not be preempted by "no specialised method" (which is what
+	// happens in a unit test harness that does not load std).
+	//
+	// Only fires when the map's own value type is NOT an option, so a
+	// `[str]?i64` map keeps accepting an option value. The value type comes from
+	// the source-level map type when the base carries it, and otherwise from the
+	// specialised `get`'s `?V` result — a map literal's value carries the
+	// sanitised `hashmap-<k>-<v>` struct name, where V cannot be recovered
+	// (`[]str` became `slice_str`).
+	valRaw := ""
+	if _, _, vr, ok := l.mapIndexTypes(arrV); ok {
+		valRaw = vr
+	}
+	if valRaw == "" {
+		if gr := l.mapCalleeOutRaw(l.mapMethodCallee(mapRaw, "get")); strings.HasPrefix(gr, "?") {
+			valRaw = strings.TrimPrefix(gr, "?")
+		}
+	}
+	if valRaw != "" && !strings.HasPrefix(valRaw, "?") {
+		if vt := l.mod.Type(l.valueTypeOf(valV)); vt != nil && vt.Kind == KindOption {
+			l.unsupported(l.curFuncName(), "map-index",
+				"map subscript write value is an option, not `"+valRaw+"`; unwrap it first (e.g. `v ?= m[k]` then `m[j] = v`, or read it through a match arm)")
+			return
+		}
+	}
+	callee := l.mapMethodCallee(mapRaw, "put")
+	if callee == "" {
+		l.unsupported(l.curFuncName(), "map-index", "no specialised map method for "+mapRaw+".put")
+		return
+	}
+	boolT := l.b.Type("bool")
+	l.b.EmitCallMulti([]TypeID{boolT}, []ValueID{arrV, keyV, valV}, callee)
 }
 
 // lowerSlice lowers `a[lo:hi]` (KSlice: First = [array, RangeExpression]) into an
@@ -10492,6 +12147,12 @@ func (l *lowerer) bindTarget(targetID int32, v ValueID) {
 		if arrV == NoVal || idxV == NoVal {
 			return
 		}
+		// A map target is a put (`x, m['k'] = f()` writes by key), not an
+		// element store — same rule as lowerAssignNode's KIndex case.
+		if mapRaw, _, _, isMap := l.mapIndexTypes(arrV); isMap {
+			l.lowerMapIndexStore(arrV, idxV, v, mapRaw)
+			return
+		}
 		// Implicit `ok(v)` wrap for `a[i] = scalar` where `a` is a `[]?T`
 		// (same rule as the KIdent reassignment / lowerAssignNode paths).
 		if eT := l.indexElemType(arrV); eT != NoType {
@@ -11154,6 +12815,16 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		l.typeHint = savedIdxHint
 		if arrV == NoVal || idxV == NoVal {
 			return NoVal
+		}
+		// A MAP base is a put, not an element store: `m[k] = v` lowers to
+		// `hashmap-<K>-<V>.put(m, k, v, &is-new)`. This is the D9 map
+		// exemption in code: put is an insert-or-update defined for EVERY key,
+		// so there is no out-of-bounds store to unwrap (and no place-match /
+		// `?=` form to demand). OpIndexStore's array GEP on a hashmap struct
+		// used the str key as an i64 index and emitted invalid IR.
+		if mapRaw, _, _, isMap := l.mapIndexTypes(arrV); isMap {
+			l.lowerMapIndexStore(arrV, idxV, v, mapRaw)
+			return v
 		}
 		// Implicit `ok(v)` wrap for `a[i] = scalar` where `a` is a `[]?T` (same
 		// rule as the KIdent reassignment path above).
