@@ -2917,8 +2917,9 @@ func testCommand(args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
-	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
-	fs.Usage = func() {
+		wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
+		timeoutSec := fs.Int("timeout", 0, "per-test run timeout in seconds (0 = unlimited); a single hang is killed and reported, not fatal to the whole run")
+		fs.Usage = func() {
 		fmt.Println("Usage: no test [<file>]")
 		fmt.Println("")
 		fmt.Println("Run tests.")
@@ -2938,6 +2939,7 @@ func testCommand(args []string) {
 		fmt.Println("  no test -target x86_64-linux-gnu")
 		fmt.Println("  no test -target wasm32-wasi")
 		fmt.Println("  no test --wasm-direct       run tests via Direct WASM backend with wasmtime")
+		fmt.Println("  no test -timeout 90 test/std   run a whole dir sequentially; each file capped at 90s")
 	}
 	_ = fs.Parse(args)
 
@@ -3035,94 +3037,63 @@ func testCommand(args []string) {
 
 	hadFailure := false
 
-	// 兩遍遍歷方式：
-	// Pass 1（並行構建）：所有測試文件並行編譯，共用全局 token/AST 緩存。
-	//   編譯是最耗時的階段（lex+parse+check+LLVM codegen），並行化可大幅加速。
-	// Pass 2（順序執行）：依次執行編譯產物，避免 stdout/stderr 交錯。
-	type testBuildResult struct {
-		testFile string
-		binPath  string
-		tmpDir   string
-		err      error
+	// 順序執行（不再並行構建）：每個測試文件依序「編譯 + 執行」。
+	// 這避免了並行共享全域 token/AST 緩存造成的資源衝突（「防止衝突」）。
+	// 單一文件若超過 -timeout（run 階段）會被連同其 process group 一併乾淨殺掉，
+	// 因此整個目錄（如 test/std/）可以安全 gate，不會被單一 hang 卡死。
+	reportBuildErr := func(tf string, berr error) {
+		if de, ok := asBuildDiagnostic(berr); ok {
+			// 結構化診斷：與 no vet 同格式（見 #6 follow-up）。
+			fmt.Fprintf(os.Stderr, "FAIL: %s\n", tf)
+			printLintResults([]nbuild.LintResult{{File: tf, Lints: de.Lints}})
+		} else {
+			fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", tf, berr)
+		}
 	}
 
-	// Pass 1: 並行構建所有測試文件
-	var wg sync.WaitGroup
-	concurrency := runtime.NumCPU()
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	sem := make(chan struct{}, concurrency)
-	results := make([]testBuildResult, len(testFiles))
-
-	for i, tf := range testFiles {
+	for _, tf := range testFiles {
 		if verbose {
 			fmt.Printf("Testing: %s\n", tf)
 		}
-		wg.Add(1)
-		go func(idx int, f string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
 
-			tmpDir, err := os.MkdirTemp("", "nolang-test")
-			if err != nil {
-				results[idx] = testBuildResult{testFile: f, err: err}
-				return
+		tmpDir, err := os.MkdirTemp("", "nolang-test")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", tf, err)
+			hadFailure = true
+			continue
+		}
+
+		var binPath string
+		if useDirectWasm {
+			binPath = filepath.Join(tmpDir, "out.wasm")
+			if _, berr := nbuild.BuildBackend(nbuild.BackendWASMDirect, tf, nbuild.BuildOptions{
+				Target:        targetStr,
+				UseDirectWasm: true,
+				Verbose:       false,
+				LDFlags:       ldFlags,
+				Output:        binPath,
+			}); berr != nil {
+				reportBuildErr(tf, berr)
+				hadFailure = true
+				os.RemoveAll(tmpDir)
+				continue
 			}
-
-			if useDirectWasm {
-				outPath := filepath.Join(tmpDir, "out.wasm")
-				// 後端分發集中化：BuildBackend(BackendWASMDirect) 負責 BuildDirectWasm
-				// + 寫盤（原 testCommand 在此重複了寫盤邏輯）。
-				_, berr := nbuild.BuildBackend(nbuild.BackendWASMDirect, f, nbuild.BuildOptions{
-					Target:        targetStr,
-					UseDirectWasm: true,
-					Verbose:       false,
-					LDFlags:       ldFlags,
-					Output:        outPath,
-				})
-				if berr != nil {
-					results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: berr}
-					return
-				}
-				results[idx] = testBuildResult{testFile: f, binPath: outPath, tmpDir: tmpDir}
-				return
-			}
-
-			outPath := filepath.Join(tmpDir, "out")
+		} else {
+			binPath = filepath.Join(tmpDir, "out")
 			opts := nbuild.BuildOptions{
 				CC:            *cc,
 				Target:        targetStr,
-				Output:        outPath,
+				Output:        binPath,
 				Verbose:       false,
 				UseDirectWasm: *wasmDirect,
 				LDFlags:       ldFlags,
 			}
-			if _, err := nbuild.BuildBackend(nbuild.BackendLLVM, f, opts); err != nil {
-				results[idx] = testBuildResult{testFile: f, tmpDir: tmpDir, err: err}
-				return
+			if _, berr := nbuild.BuildBackend(nbuild.BackendLLVM, tf, opts); berr != nil {
+				reportBuildErr(tf, berr)
+				hadFailure = true
+				os.RemoveAll(tmpDir)
+				continue
 			}
-			results[idx] = testBuildResult{testFile: f, binPath: outPath, tmpDir: tmpDir}
-		}(i, tf)
-	}
-	wg.Wait()
-
-	// Pass 2: 順序執行編譯產物（避免輸出交錯）
-	for _, r := range results {
-		if r.err != nil {
-			if de, ok := asBuildDiagnostic(r.err); ok {
-				// 結構化診斷：與 no vet 同格式（見 #6 follow-up）。
-				fmt.Fprintf(os.Stderr, "FAIL: %s\n", r.testFile)
-				printLintResults([]nbuild.LintResult{{File: r.testFile, Lints: de.Lints}})
-			} else {
-				fmt.Fprintf(os.Stderr, "FAIL: %s\n  %v\n", r.testFile, r.err)
-			}
-			hadFailure = true
-			if r.tmpDir != "" {
-				os.RemoveAll(r.tmpDir)
-			}
-			continue
 		}
 
 		// WASM 下無法執行編譯產物（瀏覽器沙箱不支援 spawn 子行程）。
@@ -3131,21 +3102,44 @@ func testCommand(args []string) {
 			os.Exit(1)
 		}
 
-		var cmd *exec.Cmd
+		var runCmd *exec.Cmd
 		if useDirectWasm {
-			cmd = exec.Command("wasmtime", "run", r.binPath)
+			runCmd = exec.Command("wasmtime", "run", binPath)
 		} else {
-			cmd = exec.Command(r.binPath)
+			runCmd = exec.Command(binPath)
 		}
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "FAIL: %s (exit code %v)\n", r.testFile, err)
+		runCmd.Stdout = os.Stdout
+		runCmd.Stderr = os.Stderr
+		// 以獨立 process group 執行：超時時 syscall.Kill(-pid) 可連同被測二進制
+		// 及其孫程序一併殺掉，不殘留孤兒行程。
+		runCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := runCmd.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: %s (start: %v)\n", tf, err)
 			hadFailure = true
+			os.RemoveAll(tmpDir)
+			continue
 		}
-		if r.tmpDir != "" {
-			os.RemoveAll(r.tmpDir)
+		done := make(chan error, 1)
+		go func() { done <- runCmd.Wait() }()
+		if *timeoutSec > 0 {
+			select {
+			case werr := <-done:
+				if werr != nil {
+					fmt.Fprintf(os.Stderr, "FAIL: %s (exit code %v)\n", tf, werr)
+					hadFailure = true
+				}
+			case <-time.After(time.Duration(*timeoutSec) * time.Second):
+				_ = syscall.Kill(-runCmd.Process.Pid, syscall.SIGKILL)
+				fmt.Fprintf(os.Stderr, "FAIL: %s (timed out after %ds)\n", tf, *timeoutSec)
+				hadFailure = true
+			}
+		} else {
+			if werr := <-done; werr != nil {
+				fmt.Fprintf(os.Stderr, "FAIL: %s (exit code %v)\n", tf, werr)
+				hadFailure = true
+			}
 		}
+		os.RemoveAll(tmpDir)
 	}
 
 	if hadFailure {
