@@ -78,8 +78,16 @@ type fixShapeFixture struct {
 func fixShapeFixtures() []fixShapeFixture {
 	return []fixShapeFixture{
 		{
+			// 2026-10-24 形狀更正：原本用 `b = a + 1`（裸賦值）。parser 的
+			// p.curFuncName 同步修復後，糖形態與 full 形態一致地把它推斷為
+			// `b ?i64`（inferOptionArith ⇒ sem.FuncVarTypes 正確分桶），
+			// walkStmtForOverflow 的「目標已是 ?T」豁免隨之生效——这与
+			// checker 的 option_capture_lint_test（plain_arith_assignment:
+			// ovf-int-default=0）钉住的 full 形态行为相同，是正确的一侧。
+			// 故改用一个**无 let 目标**的算术站点（call 引数），它在两种形态下
+			// 都确实触发 ovf-int-default（实测 sugar=1）。
 			name:          "overflow",
-			src:           "f = () () {\n    a i64 = 5\n    b = a + 1\n    print(b)\n}\n",
+			src:           "f = () () {\n    a i64 = 5\n    print(a + 1)\n}\n",
 			wantOverflow:  true,
 			wantRedundant: true, // `a i64 = 5` also has a redundant annotation
 		},

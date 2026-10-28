@@ -32,6 +32,12 @@ import (
 // ⚠️ 這條一度被誤判為「副表覆蓋缺口」（2026-10-24 上一批），實測後更正：
 // 本表只需覆蓋「結構 desugar 族」，索引根不需記錄。
 func TestCaptureFactsRecorded(t *testing.T) {
+	// S3-c 後的生產預設是 H0 軌（HIRCaptureEnabled=true）：捕獲事實登記進副表、
+	// 但 AST 保持凍結（V4 合規）。本測試顯式鎖定 H0，使斷言與預設一致，不受
+	// 日後開關預設變動影響。雙軌回歸仍由 TestHIRCaptureTrackMatchesASTTrack 守護。
+	HIRCaptureEnabled = true
+	defer func() { HIRCaptureEnabled = false }()
+
 	// ① API 往返：Set → Of 讀回相同內容。
 	sem := &SemanticContext{}
 	ls := &LetStatement{}
@@ -64,12 +70,12 @@ func TestCaptureFactsRecorded(t *testing.T) {
 		t.Errorf("plain binding CaptureFactsLen = %d, want 0", got)
 	}
 
-	// ③ 真實語料：走到結構捕獲的綁定必須登記 —— 且**必須真的注入了合成節點**
-	//    （對偶的「有登記」側）。
+	// ③ 真實語料：走到結構捕獲的綁定必須登記 —— 且**不得注入合成節點**
+	//    （S3-c：V4 合規，AST 保持凍結，結構由 H0 讀副表重建）。
 	//
-	// 只能斷言**條數**，不能斷言內容：maybeCaptureOptionAssign 會把原 ls
-	// 整條替換成 BlockStatement（預宣告 + match 三臂），原指針已不在樹裡，
-	// 無法用 findLetByName 查回做 CaptureFactOf。內容形狀由 ① 的往返覆蓋。
+	// 只能斷言**條數**，不能斷言內容：maybeCaptureOptionAssign 在 H0 軌只記錄
+	// 副表、不改寫 AST，原 ls 仍在樹裡（未替換成 BlockStatement）。內容形狀由 ①
+	// 的往返與 TestCaptureFactsHIRTrackFreezesAST 覆蓋。
 	captured := []struct {
 		name string
 		src  string
@@ -90,12 +96,11 @@ func TestCaptureFactsRecorded(t *testing.T) {
 		if got := prog.Sem.CaptureFactsLen(); got != 1 {
 			t.Errorf("[%s] CaptureFactsLen = %d, want 1", c.name, got)
 		}
-		// 對偶的另一半：登記了就必須真的做了結構 desugar。缺這一側的斷言，
-		// 副表可能記錄到「其實沒注入合成節點」的綁定，S3-b 切換後 tohir
-		// 會為它們憑空建 KLet + KIf 鏈。
-		if caps, lets := syntheticInjection(prog); caps == 0 || lets == 0 {
-			t.Errorf("[%s] CaptureFactsLen=1 but no synthetic AST injection (caps=%d lets=%d); "+
-				"the side table must record exactly the V4-violating family", c.name, caps, lets)
+		// 對偶的另一半：登記了就**必須**是「凍結 AST」—— 若 here 出現了合成
+		// 注入，代表退回 V4 違規（S3-b 之前的舊行為），S3-c 切換白做。
+		if caps, lets := syntheticInjection(prog); caps != 0 || lets != 0 {
+			t.Errorf("[%s] CaptureFactsLen=1 but synthetic AST injection happened (caps=%d lets=%d); "+
+				"S3-c must keep the AST frozen (V4 compliant)", c.name, caps, lets)
 		}
 	}
 

@@ -60,9 +60,9 @@ c = a - b                     ; 等價 a._sub(b)
 c = a * b                     ; 等價 a._mul(b)
 q = a / b                     ; 等價 a._div(b)，除零依 div-mod 回傳零
 r = a % b                     ; 等價 a._mod(b)
-; 混合運算數：右側 i64 標量會自動提升為 bigint，`a + 1` / `a * 256` 等原生可用
-; （等價 a._add(bigint.from-i64(1))）。僅限「左運算元是 bigint」，`1 + a` 不支援。
-c = a + 1                     ; bigint ⊕ i64，i64 自動提升
+; 混合運算數：運算符重載參數為 `bigint | i64` 聯合，編譯期按右運算元型別單態化選臂，
+; `a + 1` / `a * 256` 等原生可用（零運行期 tag）。僅限「左運算元是 bigint」，`1 + a` 不支援。
+c = a + 1                     ; bigint ⊕ i64
 c = a * 256                   ; bigint ⊕ i64
 q, r = a.div-mod(b)           ; 同時取商與餘數
 q = a.div-i64(v)

@@ -1,0 +1,132 @@
+; test/std/map-index.no — map 下标读写（D9 map 豁免）
+;
+; 執行：no test test/std/map-index.no
+; 覆蓋：m[k] = v 插入 / 覆寫、m[k] 讀取（在場 / 缺席）、與 put/get 的等價性、
+;       i64 鍵、str 值、多賦值目標 x, m[k] = f()
+;
+; 為什麼 map 不需要解包（docs/design/option-unified.md §12.2.1）：
+;   D9 要求 a[i] = v 顯式解包，理由是「位置可能越界，寫入無處落地」。
+;   map 的下標是**鍵**：讀缺席 → nil，寫 = put（對任何鍵都有定義），
+;   既沒有越界寫，也就沒有需要解包的東西。故 m[k] = v 直寫合法。
+;
+; 本檔是該規則的執行期門禁：m[k] = v 必須真的落到 hashmap.put（長度會變、
+; 覆寫會生效），m[k] 必須真的落到 hashmap.get（在場回 ok、缺席回 nil）。
+
+# /test/runner
+
+; peek 把 map 下標讀取的 ?V 原樣傳出。必須在 ?T 結果函式內讀，才能得到
+; option 語意（與 arr/vec/slice 的安全索引完全同一條規則）。
+peek = (m [str]i64, k str) (r ?i64) {
+    r = m[k]
+}
+
+t-write-insert = () {
+    m [str]i64 = {}
+    m['a'] = 1
+    m['b'] = 2
+    runner.eq(m.len(), 2, 'insert two keys via m[k] = v')
+    runner.is-true(m.contains('a'), 'key a present after subscript write')
+    runner.is-true(m.contains('b'), 'key b present after subscript write')
+}
+
+t-write-overwrite = () {
+    m [str]i64 = { 'k': 1 }
+    m['k'] = 42
+    runner.eq(m.len(), 1, 'overwrite keeps len at 1')
+    v = m.get('k')
+    v: {
+        ok -> runner.eq(v, 42, 'overwrite updates the value')
+        nil -> runner.is-true(false, 'k must be present after overwrite')
+        err -> runner.is-true(false, 'unexpected err arm')
+    }
+}
+
+t-read-present = () {
+    m [str]i64 = { 'a': 7 }
+    r = peek(m, 'a')
+    r: {
+        ok -> runner.eq(r, 7, 'read present key')
+        nil -> runner.is-true(false, 'a must be present')
+        err -> runner.is-true(false, 'unexpected err arm')
+    }
+}
+
+t-read-absent = () {
+    m [str]i64 = { 'a': 7 }
+    r = peek(m, 'missing')
+    r: {
+        ok -> runner.is-true(false, 'absent key must not be ok')
+        nil -> runner.is-true(true, 'absent key reads nil')
+        err -> runner.is-true(false, 'unexpected err arm')
+    }
+}
+
+; m[k] 与 .put/.get 必须等价：同一次写入两条路径看到同一个值。
+t-eq-put-get = () {
+    m [str]i64 = {}
+    m['x'] = 3
+    g1 = m.get('x')
+    g1: {
+        ok -> runner.eq(g1, 3, 'subscript write visible to get')
+        nil -> runner.is-true(false, 'x must be present')
+        err -> runner.is-true(false, 'unexpected err arm')
+    }
+    m.put('y', 4)
+    r = peek(m, 'y')
+    r: {
+        ok -> runner.eq(r, 4, 'put visible to subscript read')
+        nil -> runner.is-true(false, 'y must be present')
+        err -> runner.is-true(false, 'unexpected err arm')
+    }
+    runner.eq(m.len(), 2, 'both keys counted once')
+}
+
+; i64 键 + str 值：证明特化命名 hashmap-i64-str 也走同一条下标路径。
+t-i64-key-str-val = () {
+    m [i64]str = {}
+    m[1] = 'one'
+    m[2] = 'two'
+    m[1] = 'ONE'
+    runner.eq(m.len(), 2, 'i64-key map: insert then overwrite')
+    v = m.get(1)
+    v: {
+        ok -> runner.str-eq(v, 'ONE', 3, 'i64-key map: overwrite wins')
+        nil -> runner.is-true(false, 'key 1 must be present')
+        err -> runner.is-true(false, 'unexpected err arm')
+    }
+}
+
+; 多赋值目标：x, m[k] = f() —— 写侧必须同样落到 put。
+two = () (a i64, b i64) {
+    a = 1
+    b = 2
+}
+
+t-multi-assign-target = () {
+    m [str]i64 = {}
+    x, m['k'] = two()
+    runner.eq(x, 1, 'multi-assign first target')
+    runner.eq(m.len(), 1, 'multi-assign map target inserted a key')
+    r = peek(m, 'k')
+    r: {
+        ok -> runner.eq(r, 2, 'multi-assign map target value')
+        nil -> runner.is-true(false, 'k must be present')
+        err -> runner.is-true(false, 'unexpected err arm')
+    }
+}
+
+p1 = runner.test('map-index.write-insert', t-write-insert)
+p2 = runner.test('map-index.write-overwrite', t-write-overwrite)
+p3 = runner.test('map-index.read-present', t-read-present)
+p4 = runner.test('map-index.read-absent', t-read-absent)
+p5 = runner.test('map-index.eq-put-get', t-eq-put-get)
+p6 = runner.test('map-index.i64-key-str-val', t-i64-key-str-val)
+p7 = runner.test('map-index.multi-assign-target', t-multi-assign-target)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

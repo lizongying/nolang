@@ -63,6 +63,10 @@ main = () {
 // the failure mode is a stack overflow that needs ~180k iterations to reach —
 // far too slow for a unit test, and it depends on the machine's stack limit.
 func TestCallTemporariesAreAllocatedInTheEntryBlock(t *testing.T) {
+	// Comptime OFF: `g()` is pure and takes no arguments, so folding turns the
+	// loop body into `n = n + 1` and no call temporary is emitted at all — the
+	// vacuity guard below would then fire for the wrong reason.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	ir := mustEmit(t, entryAllocaLoopSrc)
 	main := irFunc(ir, "_nolang_main")
 	if main == "" {
@@ -87,6 +91,11 @@ func TestCallTemporariesAreAllocatedInTheEntryBlock(t *testing.T) {
 // simply dropped them would make the test above pass while breaking every call
 // in the language.
 func TestStraightLineCallStillEmitsItsTemporary(t *testing.T) {
+	// Comptime OFF: `g` is a zero-argument pure function returning a literal,
+	// so with folding on there is no call left to emit a temporary for and this
+	// vacuity guard would fail for the wrong reason. The invariant under test
+	// (out-param temporaries are emitted at all) is independent of folding.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	main := irFunc(mustEmit(t, entryAllocaStraightSrc), "_nolang_main")
 	if !strings.Contains(main, "%cres") {
 		t.Fatalf("no %%cres temporary for a straight-line out-param call:\n%s", main)

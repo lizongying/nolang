@@ -19,6 +19,8 @@
 # /compiler/src/ps
 # /compiler/src/asp
 # /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
 
 ; ⚠️ 本檔的 drv.* 是**含點的自由函式**（沒有宣告 struct drv），因此受 SHS S6
 ;    約束：每個定義的 out-param 至多 1 個，否則執行期 SIGSEGV。見 docs 附錄 A.6。
@@ -50,7 +52,7 @@ drv.usage = () {
     print('  help               print this help')
     print('  tokens <file>      dump token stream (not implemented in M0)')
     print('  ast <file>         dump AST (not implemented in M0)')
-    print('  vet <file>         run diagnostics (M3-a skeleton: always reports no issues)')
+    print('  vet <file>         run diagnostics (M3-c skeleton: syntax errors + not-defined family)')
     print('  build <file|dir>   compile to executable (not implemented in M0)')
 }
 
@@ -200,7 +202,16 @@ drv.cmd-vet = () (code i64) {
     t = ast.make()
     p = ps.new(src)
     root = ps.parse(t, p)
-    _ = root
+
+    ; s13：checker 骨架首族 `'X' is not defined`（ck.no，TraceID 4bek3xc6）。
+    ;   正主 runParseGate 語義（p90 實證）：有 parse 錯 ⇒ checker 整族跳過。
+    ;   診斷順序：ps 錯誤在前、ck 在後（各自內部按構造序），摘要計數合併。
+    ;   ck↔drv 介面 = 打包串 vec 'L|C|CODE|MSG'（結構體跨模組按值傳參觸 MIR 坑，s13 實證）。
+    ck-out []str = with-cap(4)
+    ps-errs = ps.ps-err-count(p)
+    ps-errs == 0 -> {
+        ck-out = ck.check(t, path)
+    }
 
     ; s10：渲染 ps 收集的語法錯誤。契約（authority Go printLintResults）：
     ;   每條診斷 stdout：render 行形（file=被 vet 的路徑；parser 錯誤無跨檔歸屬）
@@ -210,7 +221,7 @@ drv.cmd-vet = () (code i64) {
     ;   無診斷：stdout 'No issues found.'，rc=0
     nerr = 0
     i = 0
-    (i < ps.ps-err-count(p)) {
+    (i < ps-errs) {
         d = diag {
             file: path
             line: 0
@@ -224,6 +235,57 @@ drv.cmd-vet = () (code i64) {
         d.col = p.eCl[i]
         d.msg = p.eMsg[i]
         d.code = p.eCode[i]
+        print(d.render())
+
+        #{overflow=wrap}
+        nerr = nerr + 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+
+    ; s13：渲染 ck 的 not-defined 診斷。ck↔drv 介面 = 打包串 vec，每條 'L|C|CODE|MSG'
+    ;   （前 3 段以 '|' 分隔且無歧義：L/C 為十進制、CODE 為 TraceID；MSG 可含 '|'）。
+    i = 0
+    (i < ck-out.len()) {
+        raw = ck.ck-str-at(ck-out, i)
+
+        ; 逐段切：L | C | CODE | 余下整段作 MSG
+        p1 = raw.index('|')
+        ln-part = ''
+        rest = ''
+        p1 > 0 -> {
+            ln-part = raw.slice-bytes(0, p1)
+            rest = raw.slice-bytes(p1 + 1, raw.len-bytes())
+        }
+        p2 = rest.index('|')
+        cl-part = ''
+        rest2 = ''
+        p2 > 0 -> {
+            cl-part = rest.slice-bytes(0, p2)
+            rest2 = rest.slice-bytes(p2 + 1, rest.len-bytes())
+        }
+        p3 = rest2.index('|')
+        code-part = rest2
+        msg-part = ''
+        p3 > 0 -> {
+            code-part = rest2.slice-bytes(0, p3)
+            msg-part = rest2.slice-bytes(p3 + 1, rest2.len-bytes())
+        }
+
+        d = diag {
+            file: path
+            line: 0
+            col: 0
+            level: 2
+            src: 'nolang-compile'
+            msg: ''
+            code: 'E_GENERAL'
+        }
+        d.line = ln-part.to-i64()
+        d.col = cl-part.to-i64()
+        d.code = code-part
+        d.msg = msg-part
         print(d.render())
 
         #{overflow=wrap}

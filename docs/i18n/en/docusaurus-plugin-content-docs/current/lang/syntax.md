@@ -1635,8 +1635,11 @@ c char = str[i]           ; explicit plain type pulls the result back to char
 arr[i]                    ; → ?elem
 vec[i]                    ; → ?elem
 
- ; Get a value from a map
-map[str]
+; Get a value from a map → ?V (a missing key yields nil)
+m[k]                      ; same as m.get(k)
+
+; Write into a map — no unwrapping needed: a key has no out-of-range case
+m[k] = v                  ; same as m.put(k, v)
 
 ```
 
@@ -1652,6 +1655,21 @@ a str  = s[1]               ; 'é' (implicit char → str conversion)
 b str  = s[0..1]            ; 'hé' (the slice result already is str)
 msg    = 'first: ' - s[0]   ; concatenating (-) a char converts it to str implicitly
 ok     = s[0] == 'h'        ; comparing a char with a str converts it to str implicitly
+```
+
+### Map Subscripts
+
+A map index is a **key**, not a position, so the two sides follow different rules:
+
+- **Read** — same unified `?T` rule as every other container: `x = m[k]` has type `?V`, and `nil` when the key is absent. `m[k]` and `m.get(k)` are the same operation.
+- **Write** — `m[k] = v` is written **directly, with no unwrapping**: a write is a put/insert (insert when absent, overwrite when present), so it is defined for every key and there is no "out-of-range write" to guard. `m[k] = v` and `m.put(k, v)` are the same operation. This is the one exemption from "a subscript write must be explicitly unwrapped" — that rule exists because an array/vec write can be out of range, which cannot happen for a key.
+- **`m[k] ?= v` is a compile error**, not merely redundant: the `?=` ok-arm means "read the element, then write back to that **position**", but the `?V` read from a map is only a copy from `get`, so writing it back does not reach the map. Write `m[k] = v` instead. The place-match form `m[k]: { ok -> it = v }` is still accepted (equivalent to put).
+
+```no
+m [str]i64 = {}
+m['a'] = 1              ; insert  (same as m.put('a', 1))
+m['a'] = 2              ; overwrite
+v ?i64 = m['a']         ; read    (same as m.get('a'))
 ```
 
 ### Safe Indexing

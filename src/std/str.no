@@ -924,7 +924,7 @@ str-to-f64 = (s str) (result f64) {
         c = s.byte(i)
         {
             c >= 48 && c <= 57 -> {
-                int-mant = bigint.add-i64(bigint.mul-i64(int-mant, 10), c - 48)
+                int-mant = int-mant.mul-i64(10).add-i64(c - 48)
                 has-digit = 1
                 i = i + 1
             }
@@ -941,7 +941,7 @@ str-to-f64 = (s str) (result f64) {
                 c = s.byte(i)
                 {
                     c >= 48 && c <= 57 -> {
-                        int-mant = bigint.add-i64(bigint.mul-i64(int-mant, 10), c - 48)
+                        int-mant = int-mant.mul-i64(10).add-i64(c - 48)
                         frac-count = frac-count + 1
                         has-digit = 1
                         i = i + 1
@@ -989,10 +989,12 @@ str-to-f64 = (s str) (result f64) {
     num = bigint.copy(int-mant)
     den = bigint.one()
     (K >= 0) -> {
-        num = int-mant._mul(bigint.pow(bigint.from-i64(10), K))
+        t10 bigint = bigint.from-i64(10)
+        num = int-mant._mul(t10.pow(K))
     }
     -> {
-        den = bigint.pow(bigint.from-i64(10), 0 - K)
+        t10d bigint = bigint.from-i64(10)
+        den = t10d.pow(0 - K)
     }
 
     ; 零值特例（含 -0.0）
@@ -1032,16 +1034,16 @@ str-to-f64 = (s str) (result f64) {
     ; 次正規：value = F * 2^-1074（F 為 52-bit 分數）
     (e < -1022) -> {
         A = bigint.shl(num, 1074)
-        qS, rS = bigint.div-mod(A, den)
+        qS, rS = A.div-mod(den)
         twoR = bigint.shl(rS, 1)
         c2 = twoR.cmp(den)
         Fb = qS
         (c2 > 0) -> Fb = qS.add-i64(1)
         (c2 == 0) -> {
-            (bigint.mod-i64(qS, 2) == 0) -> Fb = qS
+            (qS.mod-i64(2) == 0) -> Fb = qS
             -> Fb = qS.add-i64(1)
         }
-        Ff ?i64 = bigint.mod-i64(Fb, 4503599627370496)
+        Ff ?i64 = Fb.mod-i64(4503599627370496)
         inv1074f f64 = 1.0
         j = 0
         (j < 1074) {
@@ -1066,13 +1068,13 @@ str-to-f64 = (s str) (result f64) {
         A = bigint.shl(num, 52 - e)
         B = den.copy()
     }
-    qW, rW = bigint.div-mod(A, B)
+    qW, rW = A.div-mod(B)
     twoR = bigint.shl(rW, 1)
     c2 = twoR.cmp(B)
     W = qW
     (c2 > 0) -> W = qW.add-i64(1)
     (c2 == 0) -> {
-        (bigint.mod-i64(qW, 2) == 0) -> W = qW
+        (qW.mod-i64(2) == 0) -> W = qW
         -> W = qW.add-i64(1)
     }
     ; 溢位保護：W >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
@@ -1081,7 +1083,7 @@ str-to-f64 = (s str) (result f64) {
         W = two52.copy()
     }
     mW = W._sub(two52)
-    m ?i64 = bigint.mod-i64(mW, 4503599627370496)
+    m ?i64 = mW.mod-i64(4503599627370496)
     mv f64 = m: {
         ok -> it.to-f64()
         -> 0.0
@@ -1756,7 +1758,7 @@ str.to-bigint = () (out ?bigint) {
         d < 0 -> break
         d >= radix -> break
 
-        acc = bigint.mul-i64(acc, radix)
+        acc = acc.mul-i64(radix)
 
         acc = acc.add-i64(d)
         started = 1

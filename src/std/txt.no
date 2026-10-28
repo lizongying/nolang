@@ -1679,7 +1679,7 @@ txt.to-bigint = () (out ?bigint) {
         d < 0 -> break
         d >= radix -> break
 
-        acc = bigint.mul-i64(acc, radix)
+        acc = acc.mul-i64(radix)
 
         acc = acc.add-i64(d)
         started = 1

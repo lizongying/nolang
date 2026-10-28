@@ -32,8 +32,41 @@ func (p *Parser) isUnionType(name string) bool {
 	if name == "" {
 		return false
 	}
-	_, ok := p.unionMembers[name]
-	return ok
+	if _, ok := p.unionMembers[name]; ok {
+		return true
+	}
+	_, members := p.lookupUnionByTail(name)
+	return members != nil
+}
+
+// lookupUnionByTail 以「去模組前綴末段」查找 union 別名條目。std 型別在
+// prefixMethodsAndTypes 後被前綴成 `mod.Type`（如 `bigint.big`），但 unionMembers
+// 是在 parse 期以裸名鍵登記（`big`），從不前綴化。故前綴化主體型別需按末段回查
+// 才能命中。多個 union 末段相同時回傳首個命中（union 末段名在同專案内實務不重名）。
+func (p *Parser) lookupUnionByTail(name string) (string, []string) {
+	tail := matchTypeTail(name)
+	if tail == "" {
+		return "", nil
+	}
+	for u, members := range p.unionMembers {
+		if matchTypeTail(u) == tail {
+			return u, members
+		}
+	}
+	return "", nil
+}
+
+// matchTypeTail 取型別名的模組限定末段並剝 option／view 前綴，供「源碼型別臂模式」
+// （如 `v bigint ->` 寫成裸名 `bigint`）與「單態化後前綴化的 union 成員名／複本主體
+// 型別」（如 `bigint.bigint`）做去前綴比對。std 型別在 prefixMethodsAndTypes 後被前綴
+// 成 `mod.Type`，而源碼 arm 始終寫裸名；两者末段一致才代表同一型別。對本就裸名的場景
+// （tests/type-match.no 的 num/i32/i64/f64）末段==原名，是精確匹配的嚴格超集，無行為變化。
+func matchTypeTail(name string) string {
+	name = strings.TrimPrefix(strings.TrimPrefix(name, "?"), "&")
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }
 
 // flattenUnion 遞迴展平 union 別名，回傳其葉子成員型別名集合（如
@@ -48,6 +81,12 @@ func (p *Parser) flattenUnion(name string, visited map[string]bool) []string {
 	}
 	visited[name] = true
 	direct, ok := p.unionMembers[name]
+	if !ok {
+		// 前綴化主體型別（如 `bigint.big`）按末段回查 union 條目（`big`）。
+		if _, byTail := p.lookupUnionByTail(name); byTail != nil {
+			direct, ok = byTail, true
+		}
+	}
 	if !ok {
 		// 非 union 別名：本身是葉子型別
 		return []string{name}
@@ -91,11 +130,16 @@ func (p *Parser) recoverUnionFromMember(name string, armPatterns []string) strin
 	var cands []cand
 	for u := range p.unionMembers {
 		flat := p.flattenUnion(u, nil)
+		// 成員集按「去前綴末段」建索引：unionMembers 存裸名（`bigint`），而傳入
+		// name 可能是前綴化具體型別（`bigint.bigint`），armPatterns 則是源碼裸名
+		// （`bigint`）。三者末段一致即代表同一型別，故統一走末段比對。內建純量無
+		// 「.」，末段==原名，此改动对其为无操作（嚴格超集，无行为变化）。
 		set := make(map[string]bool, len(flat))
 		hit := false
+		nameTail := matchTypeTail(name)
 		for _, m := range flat {
-			set[m] = true
-			if m == name {
+			set[matchTypeTail(m)] = true
+			if matchTypeTail(m) == nameTail {
 				hit = true
 			}
 		}
@@ -120,7 +164,7 @@ func (p *Parser) recoverUnionFromMember(name string, armPatterns []string) strin
 		valid := true
 		cover := 0
 		for _, ap := range armPatterns {
-			if c.members[ap] {
+			if c.members[matchTypeTail(ap)] {
 				cover++
 			} else {
 				valid = false

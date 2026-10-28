@@ -44,6 +44,11 @@ func irHasFunc(ir, fn string) bool {
 // Without correct transitive closure, dep.no would be silently dropped
 // and deep-fn would be missing from the IR (D17 regression).
 func TestTransitiveImportLLVM(t *testing.T) {
+	// Comptime OFF: `middle-fn(5)` is a pure call with a literal argument, so
+	// folding collapses it to 105 and neither middle-fn nor deep-fn is emitted —
+	// the assertions below would then fail for a reason that has nothing to do
+	// with transitive module loading.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	tmpDir := t.TempDir()
 
 	// workspace.noml — defines the workspace root for path resolution.
@@ -194,6 +199,11 @@ func TestTransitiveImportJS(t *testing.T) {
 //
 // main.no → a.no → b.no → c.no
 func TestTransitiveImportThreeLevels(t *testing.T) {
+	// Comptime OFF: every level of the chain is a pure function called with a
+	// literal, so folding collapses `level1-fn(7)` to 307 and none of the three
+	// functions is emitted at all. This test is about module LOADING, so it must
+	// keep the calls.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	tmpDir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
@@ -256,6 +266,10 @@ func TestTransitiveImportThreeLevels(t *testing.T) {
 // Both left and right import shared. The shared module must be loaded
 // exactly once (dedup) and its functions must be available.
 func TestTransitiveImportDiamond(t *testing.T) {
+	// Comptime OFF: same reason as TestTransitiveImportThreeLevels — the whole
+	// diamond is constant-foldable, which would erase the functions this test
+	// checks for.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	tmpDir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
@@ -331,6 +345,10 @@ func TestTransitiveImportDiamond(t *testing.T) {
 // main.no ALSO directly calls c-fn() — but does NOT explicitly import c.no.
 // The transitive import through a.no should make c-fn available to main.no too.
 func TestTransitiveImportEntryUsesDeepFn(t *testing.T) {
+	// Comptime OFF: both `a-fn(10)` and `c-fn(20)` are pure calls with literal
+	// arguments, so folding would erase them and neither function would be
+	// emitted. This test is about transitive module visibility, not folding.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	tmpDir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),

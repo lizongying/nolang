@@ -6,7 +6,7 @@ sidebar_position: 6
 
 Nolang enforces a mandatory module namespace convention: when calling functions or constants defined in **other modules** (other `.no` files) from within a `.no` file, you must use the `ShortName.` prefix. This avoids cross-module naming conflicts.
 
-Standard library modules are automatically loaded by the compiler — **no explicit import needed** (no `# std/...` annotation required). Simply use the `ShortName.` prefix to call them.
+Standard library modules are automatically loaded by the compiler — **no explicit import needed** (no `# std/...` annotation required). Simply use the `ShortName.` prefix to call them. `# std/fmt` is especially redundant — `print` / `eprint` / `format` are compiler builtins, and `no fmt` automatically removes an unaliased `# std/fmt` (see [Code Style · Import Statement Cleanup](./code-style#import-statement-cleanup-dedup--remove-stdfmt--sort)).
 
 ## ShortName Definition
 

@@ -457,7 +457,45 @@ func rewriteUnionCalls(program *parser.Program, varTypes map[string]string) {
 					memberNames = append(memberNames, nt.Value)
 				}
 			}
-			templates[origName] = &unionTemplateInfo{origName: origName, unionName: unionName, members: memberNames}
+			// 定位 union 形參在「攤平後呼叫實參向量」中的下標：宣告參數裡找型別末段
+			// 等於 union 末段的那一位（如 `b big`）；方法式呼叫被 resolveMethodCall
+			// 前置接收者，故整體右移 1。找不到（例如 union 位就是隱含 self、或符號
+			// 未前綴對齊）則退回 0，維持舊的自由函數語義。
+			unionTail := unionMemberTail(unionName)
+			declaredIdx := 0
+			found := false
+			for i, p := range fd.Parameters {
+				nt, ok := p.Type.(*parser.NamedType)
+				if !ok {
+					continue
+				}
+				if unionMemberTail(nt.Value) == unionTail {
+					declaredIdx = i
+					found = true
+					break
+				}
+			}
+			argIdx := declaredIdx
+			if fd.IsMethodDef {
+				argIdx++
+			}
+			if !found {
+				argIdx = 0
+			}
+			// 推定失敗時的回退成員：union 中唯一的非內建標量（聚合體）成員。至多一個
+			// 才採用（多個聚合體無法判別該選哪個 → 留空，維持 i64 默認）。
+			fallback := ""
+			aggregateCount := 0
+			for _, m := range memberNames {
+				if !unionScalarMemberTail(unionMemberTail(m)) {
+					aggregateCount++
+					fallback = m
+				}
+			}
+			if aggregateCount != 1 {
+				fallback = ""
+			}
+			templates[origName] = &unionTemplateInfo{origName: origName, unionName: unionName, members: memberNames, unionArgIdx: argIdx, fallbackMember: fallback}
 		}
 	}
 	if len(templates) == 0 {
@@ -542,6 +580,18 @@ func rewriteUnionCallStmts(stmts []parser.Statement, templates map[string]*union
 }
 
 // rewriteUnionCallExpr 遞迴重寫表達式中的聯合型別呼叫
+// unionMemberTail 取型別名的模組限定末段並剝 option／view 前綴，供「實參推定型別」
+// 與「複本後綴（union 成員名）」做去前綴比對：`bigint.bigint`→`bigint`、`?i64`→`i64`、
+// `&point`→`point`、`i64`→`i64`。用戶碼方法呼叫的實參型別常被前綴成 `mod.Type`，
+// 而 monomorphizeUnions 的複本後綴用 union 成員裸名，兩者末段一致才代表同一成員。
+func unionMemberTail(name string) string {
+	name = strings.TrimPrefix(strings.TrimPrefix(name, "?"), "&")
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		return name[i+1:]
+	}
+	return name
+}
+
 func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTemplateInfo, varTypes map[string]string, sem *parser.SemanticContext) {
 	if expr == nil {
 		return
@@ -566,18 +616,20 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 				}
 				if memberType != "" {
 					// Verify memberType is a valid member of the template's union.
-					// This prevents incorrectly rewriting calls from different
-					// modules that share the same function name (e.g. bigint.gcd
-					// should not be rewritten by the number.gcd template).
-					isValid := false
+					// 用去前綴末段比對——用戶碼實參型別常被前綴成 `bigint.bigint` 或
+					// 僅末段 `bigint`，而複本後綴（tpl.members 一項，即 cloneUnionVariant
+					// 用的 nt.Value）可能是另一種前綴形態；只比末段才不會漏改寫。跨模組
+					// 同名呼叫已由 `templates[ident.Value]` 的「全名精確命中」擋掉，此處
+					// 只決定選哪個 member，後綴一律用 members 的權威寫法。
+					matchedMember := ""
 					for _, m := range tpl.members {
-						if m == memberType {
-							isValid = true
+						if unionMemberTail(m) == unionMemberTail(memberType) {
+							matchedMember = m
 							break
 						}
 					}
-					if isValid {
-						ident.Value = ident.Value + "__" + memberType
+					if matchedMember != "" {
+						ident.Value = ident.Value + "__" + matchedMember
 						if os.Getenv("NOLANG_UNION_DEBUG") != "" {
 							fmt.Fprintf(os.Stderr, "[union-debug]   rewritten to %s\n", ident.Value)
 						}
@@ -591,15 +643,15 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 						// Found a method template, rewrite the identifier to use it
 						memberType := inferArgMemberType(e, tpl, varTypes)
 						if memberType != "" {
-							isValid := false
+							matchedMember := ""
 							for _, m := range tpl.members {
-								if m == memberType {
-									isValid = true
+								if unionMemberTail(m) == unionMemberTail(memberType) {
+									matchedMember = m
 									break
 								}
 							}
-							if isValid {
-								ident.Value = tplName + "__" + memberType
+							if matchedMember != "" {
+								ident.Value = tplName + "__" + matchedMember
 								if os.Getenv("NOLANG_UNION_DEBUG") != "" {
 									fmt.Fprintf(os.Stderr, "[union-debug]   rewritten (method) %s → %s\n", ident.Value, ident.Value)
 								}
@@ -609,10 +661,49 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 					}
 				}
 			}
+		} else if dot, ok := e.Function.(*parser.DotExpression); ok {
+			// 路線 C：運算符重載 desugar 產出 `a._add(b)`——Function 是 DotExpression
+			// 而非 Identifier，舊碼只改寫 Identifier 呼叫，導致方法式聯合呼叫綁到
+			// 未實例化的模板名（monomorphizeUnions 已把 `bigint._add` 改名成
+			// `bigint._add__big_TEMPLATE` 並生成複本 `bigint._add__<member>`）。此處把
+			// 方法呼叫的 Property 追加 `__<member>`，讓下游 resolveCallee
+			// （recvTypeName + "." + method）命中對應複本。依「實參（右運算數）」推定
+			// member 型別；比對時去模組前綴（末段），讓用戶碼 `a + b`（兩 bigint、實參
+			// 型別被前綴成 `bigint.bigint`）也能對上複本後綴 `bigint`。
+			//
+			// 先遞迴進 Receiver：聯合方法呼叫常嵌在另一方法呼叫的接收者位，如
+			// `(a + 1).to-str()`——運算子 `a._add(1)` 藏在 `.to-str` 的 Receiver 裡，
+			// 舊碼不下降 Receiver 就永遠走不到，產生 "unknown callee ..._add"。
+			rewriteUnionCallExpr(dot.Receiver, templates, varTypes, sem)
+			matched := false
+			for tplName, tpl := range templates {
+				if !strings.HasSuffix(tplName, "."+dot.Property) {
+					continue
+				}
+				memberType := inferArgMemberType(e, tpl, varTypes)
+				if memberType == "" {
+					continue
+				}
+				for _, m := range tpl.members {
+					if unionMemberTail(m) == unionMemberTail(memberType) {
+						dot.Property = dot.Property + "__" + m
+						matched = true
+						break
+					}
+				}
+				if matched {
+					break
+				}
+			}
 		}
 	case *parser.InfixExpression:
 		rewriteUnionCallExpr(e.Left, templates, varTypes, sem)
 		rewriteUnionCallExpr(e.Right, templates, varTypes, sem)
+	case *parser.GroupedExpression:
+		// `(a + 1).to-str()` 等場景：聯合方法呼叫被括號包成 GroupedExpression 作
+		// 另一呼叫的 Receiver／實參。舊碼不下降到 Grouped 內層，導致嵌在括號裡的
+		// `_add(a, 1)` 永遠漏改寫 → "unknown callee ..._add"。展開內層表達式續走。
+		rewriteUnionCallExpr(e.Expression, templates, varTypes, sem)
 	case *parser.PrefixExpression:
 		rewriteUnionCallExpr(e.Right, templates, varTypes, sem)
 	case *parser.SurfaceMatch:
@@ -659,21 +750,33 @@ func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo, var
 	if len(call.Arguments) == 0 {
 		return ""
 	}
-	// 對於 variadic 函數（..num），使用第一個引數的型別
-	// 對於非 variadic 函數（abs(a num)），也使用第一個引數的型別
-	firstArg := call.Arguments[0]
-	return inferExprMemberType(firstArg, varTypes)
+	// 用 union 形參所在實參位（tpl.unionArgIdx）——方法式呼叫已把接收者前置，
+	// 舊碼硬編 arguments[0] 會讀到接收者型別而非 union 實參型別。越界時退回 0。
+	idx := tpl.unionArgIdx
+	if idx < 0 || idx >= len(call.Arguments) {
+		idx = 0
+	}
+	member, known := inferExprMemberType(call.Arguments[idx], varTypes)
+	if !known && tpl.fallbackMember != "" {
+		// 實參型別無法靜態推定（未知标识符／呼叫結果）：對含聚合體成員的 union
+		// 回退到該聚合體（std 內部運算符運算幾乎皆同型聚合體×聚合體）。
+		return tpl.fallbackMember
+	}
+	return member
 }
 
-// inferExprMemberType 從表達式推斷聯合成員型別
-func inferExprMemberType(expr parser.Expression, varTypes map[string]string) string {
+// inferExprMemberType 從表達式推斷聯合成員型別。第二返回值 known=false 表示「無法
+// 靜態推定」（未知標識符、呼叫結果等），調用方可據此決定是否回退；known=true 時
+// 返回的是可靠推定（字面量、varTypes 命中的標識符）。舊默認 i64 僅在 known=false
+// 且無聚合體回退時由調用方保留。
+func inferExprMemberType(expr parser.Expression, varTypes map[string]string) (string, bool) {
 	switch v := expr.(type) {
 	case *parser.IntegerLiteral:
-		return "i64" // 整數字面常量預設為 i64
+		return "i64", true // 整數字面常量預設為 i64
 	case *parser.FloatLiteral:
-		return "f64"
+		return "f64", true
 	case *parser.Identifier:
-		// Look up the variable's actual type, default to i64
+		// Look up the variable's actual type
 		if varTypes != nil {
 			if t, ok := varTypes[v.Value]; ok {
 				// A union method reached through an OPTIONAL receiver dispatches
@@ -685,16 +788,18 @@ func inferExprMemberType(expr parser.Expression, varTypes map[string]string) str
 				// "unknown callee number.int.to-str" (notools ls-run:
 				// `size = fs.stat-size(full)` then `size.to-str()`). Strip the
 				// option / view markers so the member type matches.
-				return strings.TrimPrefix(strings.TrimPrefix(t, "?"), "&")
+				return strings.TrimPrefix(strings.TrimPrefix(t, "?"), "&"), true
 			}
 		}
-		return "i64"
+		// 未知標識符：無法靜態推定（舊碼硬回 i64，對聚合體 union 會誤綁）。
+		return "i64", false
 	case *parser.PrefixExpression:
 		return inferExprMemberType(v.Right, varTypes)
 	case *parser.GroupedExpression:
 		return inferExprMemberType(v.Expression, varTypes)
 	}
-	return "i64"
+	// 呼叫結果等其它表達式：無法靜態推定。
+	return "i64", false
 }
 
 // inferTypeFromExpr 嘗試從值表達式推斷變數型別。無法推斷時返回空白字串。
@@ -855,6 +960,22 @@ func cloneUnionVariant(fd *parser.FunctionDefinition, memberType string, aliases
 	clone.OverflowMode = fd.OverflowMode
 	// 深拷貝 Body
 	clone.Body = cloneBlockForUnion(fd.Body, fd.Name, clone.Name, memberType, sem)
+	// 🔴 來源檔必須**深**繼承（2026-10-26）：cloneStmtForUnion 是淺拷貝 + 逐欄位
+	// 搬運（TypeOverride 等），它不知道 NodeFacts 裡還有 SourceFile。少了這一行，
+	// 單態化出來的 div__u8 / div__u16 / … 全體失去來源檔，lint 端於是回退成
+	// 「空 SourceFile ＝ 主檔」的假設，把 std 的行號貼到用戶主檔上
+	// （`main.no:250`，而主檔只有 9 行）。
+	//
+	// 為什麼到 2026-10-26 才暴露：在此之前 `#{...}` 註解存在各 Program 自己的
+	// `SemanticContext.anns` 裡，克隆體是新節點、查不到條目 ⇒ std 的
+	// `#{overflow=...}` 從來不觸發 lint，這條歸因路徑也就沒被走到。註解改為住在
+	// 節點上之後它們隨淺拷貝一起進了克隆體，歸因缺陷才第一次顯形。
+	//
+	// 用 SetSourceFileDeep 而不是逐點 SetSourceFileOf：克隆體的每個子節點都是新
+	// 指標，必須整棵子樹一起標（與 loadStdModulesOnDemand 的口徑一致）。
+	if src := sem.SourceFileOf(fd); src != "" {
+		sem.SetSourceFileDeep(&clone, src)
+	}
 	return &clone
 }
 
@@ -2417,6 +2538,36 @@ type unionTemplateInfo struct {
 	origName  string
 	unionName string
 	members   []string
+	// unionArgIdx 是「實參向量中承載 union 形參的那一位」的下標。自由泛型函數
+	// `f(x num)` → 0。方法式泛型 `Recv.m(self, b big)` 被 resolveMethodCall 攤平成
+	// `Recv.m(recv, b)` 後，接收者佔 arguments[0]，union 形參右移到 (1 + 宣告位)。
+	// 舊碼硬編 arguments[0]，對方法式呼叫會誤用「接收者型別」推 member，導致用戶碼
+	// `a + 1`（接收者 bigint、實參 i64）被判成 bigint、又因 bigint≠成員 `bigint.bigint`
+	// 而匹配失敗、呼叫保留成未實例化的 `bigint.bigint._add` → unknown callee。
+	unionArgIdx int
+	// fallbackMember 是「實參型別無法靜態推定」時的默認成員。運算符重載的聯合
+	// （`big = bigint | i64`）在 std 內部幾乎全是 bigint×bigint（如 number.no
+	// f64.to-str 的 `base._mul(pow10)`），而實参常是大整數工廠呼叫／運算符結果等
+	// 無法由 `inferTypeFromExpr` 語法推定的區域變數——舊邏輯一律默認 i64，會把
+	// bigint 實参誤綁到 `__i64` 複本，進而不兼容型別（aggregate 傳给 scalar 参數）
+	// 編譯失敗。此處記錄 union 中唯一的非內建標量成員（聚合體，如 bigint）；推定
+	// 失敗時回退到它。**僅對含聚合體成員的 union 生效**：純標量 union（num/int/
+	// float）無此成員，fallbackMember 為空，推定失敗仍走 i64 默認，行為逐位元組不變。
+	fallbackMember string
+}
+
+// unionScalarMemberTail 判定 union 成員末段是否為內建標量型別（可安全傳入標量参數）。
+// 與 checker.isBuiltinType 對齊並補上 `char`（i32 表示，仍是標量）。聚合體成員
+// （struct／str／容器等）返回 false，以被選為 fallbackMember。
+func unionScalarMemberTail(tail string) bool {
+	switch tail {
+	case "i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "u128",
+		"f32", "f64",
+		"byte", "bool", "char", "str", "txt":
+		return true
+	}
+	return false
 }
 
 // runMonomorphizationLoop 單態化迭代收斂迴圈（頂層語句加入 merged 之後、

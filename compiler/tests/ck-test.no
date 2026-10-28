@@ -1,0 +1,146 @@
+; ck-test.no — compiler/src/ck.no（M3-c s13 checker 骨架首族 `'X' is not defined`）單測
+;
+; 執行： ./bin/no run compiler/tests/ck-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
+;
+; ── 期望值從哪來 ──────────────────────────────────────────────────
+; 全部取自 oracle `no vet` 實測（./bin/no vet 於同形最小檔逐檔核對，2026-10-28）：
+;   門控帶提示（cancelled）/門控無提示（from-bits）/完全未知（wuzzle）/
+;   沉默（max）/dot 整子樹跳過/本地遮蔽/'_' 前綴/ALL-CAPS/自模組裸調。
+; ck.check 回值每條 'L|C|CODE|MSG'（坐標=token 起始 1-based）。
+
+# /test/runner.eq
+# /test/runner.str-eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/tok
+# /compiler/src/ps
+# /compiler/src/ck
+
+; ck-run：源碼串 ⇒ 診斷 vec（path 固定中性 '/tmp/t.no' ⇒ curModule=''）
+; ⚠️ ps.parse 返回值必須捕獲後顯式丟棄（裸語句調用觸發 bug #85 NoVal，實測）
+ck-run = (src str) (out []str) {
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    _ = root
+    out = ck.check(t, '/tmp/t.no')
+}
+
+; ck-run-in：指定檔案路徑（測 curModule 自模組放行臂）
+ck-run-in = (src str, path str) (out []str) {
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    _ = root
+    out = ck.check(t, path)
+}
+
+; vec[?] 索引回 option，兩段 match 解毒（同行 `v = x: {}` 僅裸標識符可用）
+at = (v []str, i i64) (r str) {
+    o = v[i]
+    x = o: {
+        ok -> it
+
+        -> ''
+    }
+    r = x
+}
+
+; ═══════════════════════════════════════════════
+; 沉默面：不報
+; ═══════════════════════════════════════════════
+
+test-silent = () {
+
+    ; std 沉默名（bk 表 '-'：probe 實測 oracle 不報）
+    runner.eq(ck-run('x = max\n').len(), 0, 'max silent')
+
+    ; 本地遮蔽（LET 名入 defs）
+    runner.eq(ck-run('max = 5\ny = max\n').len(), 0, 'local shadow')
+
+    ; dot 整子樹跳過（正主 8306）：接受者 rcv 壓制 + 屬性名非 IDENT 節點
+    runner.eq(ck-run('x = async.cancelled\n').len(), 0, 'dot skipped')
+
+    ; 非模組名接受者亦由 rcv 壓制（kid0==0 起點實錯族，s13d dot2 回歸）
+    runner.eq(ck-run('x = zzz.yyy\n').len(), 0, 'dot receiver suppressed')
+
+    ; 模組名自動導入放行（正主 definedVars ⊇ knownStdModules，118 名實測全靜默）
+    runner.eq(ck-run('x = async\n').len(), 0, 'module name kept')
+    runner.eq(ck-run('x = bigint\n').len(), 0, 'module bigint kept')
+
+    ; '_' 前綴放行臂
+    runner.eq(ck-run('x = _priv\n').len(), 0, 'underscore kept')
+
+    ; ALL-CAPS 常量放行臂（isAllCapsConst）
+    runner.eq(ck-run('x = SQLITE-OK\n').len(), 0, 'allcaps kept')
+
+    ; 內建型名放行臂
+    runner.eq(ck-run('x = i64\n').len(), 0, 'builtin type kept')
+
+    ; 多重指派目標全登記（s13c 語料誤報族回歸）
+    runner.eq(ck-run('a, b = with-cap(2)\nprint(a)\n').len(), 0, 'multi targets defined')
+
+    ; 自模組裸調放行（正主 arm⑦：owner==curModule）
+    runner.eq(ck-run-in('x = cancelled\n', '/r/src/std/async.no').len(), 0, 'self-module kept')
+}
+
+; ═══════════════════════════════════════════════
+; 報錯面：門控帶提示 / 門控無提示 / 完全未知
+; ═══════════════════════════════════════════════
+
+test-gated-hint = () {
+    d = ck-run('x = cancelled\n')
+    runner.eq(d.len(), 1, 'cancelled one diag')
+    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'cancelled\' is not defined; call it as \'async.cancelled\' (cross-module calls must be module-qualified)', 115, 'cancelled hint form')
+}
+
+test-gated-nohint = () {
+
+    ; 門控無 unique owner（僅方法短名）⇒ 裸形態（oracle smoke4 實測同文）
+    d = ck-run('x = from-bits\n')
+    runner.eq(d.len(), 1, 'from-bits one diag')
+    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'from-bits\' is not defined', 39, 'from-bits bare form')
+}
+
+test-unknown = () {
+
+    ; 完全未知名（'@'）⇒ 裸形態（正主同形）
+    d = ck-run('x = wuzzle\n')
+    runner.eq(d.len(), 1, 'wuzzle one diag')
+    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'wuzzle\' is not defined', 36, 'wuzzle bare form')
+}
+
+test-order = () {
+
+    ; 多條按 arena 構造序（≈源序）
+    d = ck-run('x = wuzzle\ny = frobnicate\n')
+    runner.eq(d.len(), 2, 'two unknowns')
+    w0 = at(d, 0)
+    p0 = w0.index('|')
+    runner.str-eq(w0.slice-bytes(0, p0), '1', 1, 'first at line 1')
+    w1 = at(d, 1)
+    p1 = w1.index('|')
+    runner.str-eq(w1.slice-bytes(0, p1), '2', 1, 'second at line 2')
+}
+
+; ═══════════════════════════════════════════════
+test-silent()
+test-gated-hint()
+test-gated-nohint()
+test-unknown()
+test-order()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

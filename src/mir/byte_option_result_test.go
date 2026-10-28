@@ -23,6 +23,10 @@ import (
 // icmp, no select on a pointer, and no `%option` store. The negative control
 // proves the pattern does not appear in a function that never calls `.byte`.
 func TestByteAccessorReturnsBoundsCheckedOption(t *testing.T) {
+	// Comptime OFF: `plain` is a pure zero-argument constant function, so
+	// folding would replace its only call with 42 and the function would never
+	// be emitted — the negative control in (c) needs the body.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	const src = `sprobe = (s str, i i64) (b ?byte) {
     b = s.byte(i)
 }

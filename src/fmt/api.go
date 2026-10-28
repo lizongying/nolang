@@ -115,6 +115,8 @@ func (f *formatter) newline() {
 // docStartLine returns the first line of the Doc comment before a statement, or 0.
 
 func (f *formatter) formatProgram(p *parser.Program) {
+	// 導入區段規範化：去重、移除無別名的 `# std/fmt`、按字典序排序（imports.go）。
+	normalizeImportRun(p)
 	// 追蹤上一個「有輸出」的頂層陳述，使無輸出的陳述不會產生空白行，且空白行
 	// 保留以最後一個有輸出的陳述為基準（見 formatBlockInner 的同名邏輯）。
 	lastEmitEndLine := 0

@@ -69,10 +69,11 @@ c = a - b                     ; same as a._sub(b)
 c = a * b                     ; same as a._mul(b)
 q = a / b                     ; same as a._div(b); division by zero returns zero (div-mod semantics)
 r = a % b                     ; same as a._mod(b)
-; Mixed operands: a right-hand i64 scalar is auto-promoted to bigint, so
-; `a + 1` / `a * 256` work natively (equivalent to a._add(bigint.from-i64(1))).
+; Mixed operands: the operator overloads take a `bigint | i64` union parameter,
+; and the compiler monomorphizes/selects the arm statically by the right operand's
+; type, so `a + 1` / `a * 256` work natively (zero runtime tag).
 ; Only "left operand is bigint" is supported; `1 + a` is not.
-c = a + 1                     ; bigint + i64, i64 auto-promoted
+c = a + 1                     ; bigint + i64
 c = a * 256                   ; bigint + i64
 q, r = a.div-mod(b)           ; quotient and remainder together
 q = a.div-i64(v)

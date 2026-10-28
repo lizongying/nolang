@@ -1902,12 +1902,12 @@ func TestFormatProgram(t *testing.T) {
 		{
 			name:     "multiple imports no blanks between",
 			input:    "# std/hash/md5\n# std/hash/sha1\n# std/fmt\ntest-fn = () {\n    fmt.println('ok')\n}",
-			expected: "# std/hash/md5\n# std/hash/sha1\n# std/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+			expected: "# std/hash/md5\n# std/hash/sha1\n\ntest-fn = () {\n    fmt.println('ok')\n}",
 		},
 		{
 			name:     "import blanks compressed",
 			input:    "# std/hash/md5\n\n# std/hash/sha1\n# std/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
-			expected: "# std/hash/md5\n# std/hash/sha1\n# std/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+			expected: "# std/hash/md5\n# std/hash/sha1\n\ntest-fn = () {\n    fmt.println('ok')\n}",
 		},
 	}
 

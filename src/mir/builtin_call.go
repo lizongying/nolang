@@ -1031,6 +1031,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinEqRaw(inst)
 	case "rotate-left", "rotate-right":
 		return c.emitBuiltinRotate(f, inst, bm.ForwardFunc)
+	case "f64-to-bits", "u64-from-bits":
+		return c.emitBuiltinBits(inst, bm.ForwardFunc)
 	case "cancel":
 		return c.emitBuiltinAsyncCancel(inst)
 	case "cancelled":
@@ -1469,6 +1471,45 @@ func (c *codegen) emitBuiltinRotate(f *Function, inst *Inst, ff string) error {
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", res, dstSlot))
 	}
+	return nil
+}
+
+// emitBuiltinBits lowers `f64.to-bits()` (bitcast double->i64) and
+// `u64.from-bits()` (bitcast i64->double). Both are pure reinterpret-casts:
+// the receiver is inst.Args[0] and the result is stored into inst.Dst. There is
+// no numerical meaning, so no rounding or LLVM intrinsic is involved — just a
+// single `bitcast` instruction. f64 lives in MIR as `double` and u64 as `i64`
+// (the flat ABI flattens unsigned 64-bit integers to i64), so the cast is
+// always double<->i64.
+func (c *codegen) emitBuiltinBits(inst *Inst, ff string) error {
+	if len(inst.Args) == 0 {
+		return fmt.Errorf("builtin %s: missing operand", ff)
+	}
+	if inst.Dst <= NoVal {
+		return nil
+	}
+	dstLT, _ := c.ptype(inst.Dst)
+	dstSlot := c.valSlot[inst.Dst]
+	if dstSlot == "" {
+		return fmt.Errorf("builtin %s: no result slot", ff)
+	}
+	srcTy, srcVal := c.loadVal(inst.Args[0])
+	var bitcastTy string
+	switch ff {
+	case "f64-to-bits":
+		bitcastTy = "i64"
+	case "u64-from-bits":
+		bitcastTy = "double"
+	default:
+		return fmt.Errorf("builtin %s: unknown bit op", ff)
+	}
+	r := c.treg("bits")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s %s to %s\n", r, srcTy, srcVal, bitcastTy))
+	v := c.coerce(bitcastTy, r, dstLT)
+	if v == "" {
+		return fmt.Errorf("builtin %s: cannot store %s into %s", ff, bitcastTy, dstLT)
+	}
+	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
 }
 

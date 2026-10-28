@@ -434,7 +434,13 @@ t-split = () {
     runner.str-eq(s[1].to-str(), 'b,c', 3, 'split-n[1] keeps rest')
 
     ; fields：任意空白（含 tab）分段，且吃掉前後空白
-    f []txt = txt.from-str('  one\ttwo  three ').fields()
+    fs = txt.from-str('  one\ttwo  three ')
+    print('DBG fromstr=[' + fs.to-str() + ']')
+    f []txt = fs.fields()
+    print('DBG f.len=' + f.len().to-str())
+    print('DBG f0=[' + f[0].to-str() + ']')
+    print('DBG f1=[' + f[1].to-str() + ']')
+    print('DBG f2=[' + f[2].to-str() + ']')
     runner.eq(f.len(), 3, 'fields len == 3')
     runner.str-eq(f[0].to-str(), 'one', 3, 'fields[0]')
     runner.str-eq(f[1].to-str(), 'two', 3, 'fields[1]')

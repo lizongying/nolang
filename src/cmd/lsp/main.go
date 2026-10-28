@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/checker/stdastembed"
 	"github.com/lizongying/nolang/lsp"
 )
 
@@ -23,12 +24,15 @@ var buildDate = ""
 
 func main() {
 	// Install the std AST (Tier 0) before anything else, so both the server and
-	// the `vet` subcommand see it. The `no` binary gets this blob embedded
-	// (checker/stdastembed); the LSP does not link that package, so it reads the
-	// same payload from the on-disk cache file instead — materialising it on
-	// first use. Without it the LSP parses every std module with a bare parser,
-	// whose AST differs from the build path's (see checker.StdASTBlob).
-	installStdAST()
+	// the `vet` subcommand see it. The blob is embedded into this binary via
+	// checker/stdastembed — the same package and payload cmd/no uses — so the
+	// AST the LSP sees is guaranteed to match the binary that shipped it. A
+	// consumer that instead read a shared on-disk cache could load a blob baked
+	// by an OLDER binary whose parser config differs; loadStdAST's fingerprint
+	// guard then hard-exits ("解析配置指紋…不符"). Embedding removes that
+	// footgun entirely. Without any blob StdASTFor degrades to parsing std from
+	// source, so the server still starts.
+	checker.SetStdASTBlob(stdastembed.Blob)
 
 	// Check for "vet" subcommand before flag parsing
 	if len(os.Args) > 1 && os.Args[1] == "vet" {
@@ -92,23 +96,6 @@ func main() {
 	}
 
 	log.Println("Server stopped")
-}
-
-// installStdAST loads the Tier-0 std AST blob from the on-disk cache
-// (checker.EnsureStdASTCache), generating the cache file from the std sources
-// when it is missing, and installs it into the checker.
-//
-// It is deliberately best-effort: the LSP worked before this file existed by
-// re-parsing std from source, so a missing/unwritable cache must degrade to that
-// rather than refuse to start. The one-line log is the only signal, and only on
-// failure.
-func installStdAST() {
-	blob, err := checker.EnsureStdASTCache()
-	if err != nil {
-		log.Printf("std AST cache unavailable (%v); std modules will be parsed from source", err)
-		return
-	}
-	checker.SetStdASTBlob(blob)
 }
 
 func printUsage() {

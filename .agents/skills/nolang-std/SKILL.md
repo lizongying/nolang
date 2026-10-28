@@ -9,6 +9,8 @@ The Nolang standard library (`src/std/`) contains 80+ modules, covering formatti
 
 Usage: `# std/xxx` (core modules do not need to be imported).
 
+> **`# std/fmt` 不需要顯式導入，且會被 `no fmt` 自動移除**：`print` / `eprint` / `format` / `sprintf` 是編譯器內建函數；只有刻意寫別名或函數導入（如 `# std/fmt.sprintf fm`）才會保留。`no fmt` 還會對文件頂部導入區段自動去重並按 路徑→函數→別名 排序（實作 `src/fmt/imports.go`）。
+
 > **The old-style `use std/xxx` still works but is deprecated; using the new-style `# std/xxx` syntax is recommended.**
 
 > **Note: All code examples follow the "one statement per line" rule — `;` and `//` are both comment markers; commas `,` must not join multiple statements on one line.**

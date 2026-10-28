@@ -245,7 +245,7 @@ func (p *Parser) desugarSurfaceMatchToIfExpr(sm *SurfaceMatch) Expression {
 		return nil
 	}
 	if ident, ok := sm.Matched.(*Identifier); ok {
-		t, _ := p.sem.FuncVarType(p.curFuncName, ident.Value)
+		t := p.matchSubjectUnionType(p.curFuncName, ident.Value)
 		if !hasOptionMatchArm(sm.Arms) &&
 			(p.isUnionType(t) || p.armsCarryTypePatterns(sm.Arms)) {
 			return p.buildTypeMatchDesugar(sm, t)
@@ -647,37 +647,6 @@ func (l *lowerer) maybeDesugarInfix(v reflect.Value) (Node, bool) {
 		return nil, false
 	}
 	method, _ := OperatorMethod(inf.Operator)
-	// 路線 A（計劃核准的回退方案）：運算符重載要求兩操作數同型。若右操作數是
-	// 可提升到左型別的標量（如 `a + 1`，a 為 bigint、1 為 i64），desugar 時把右
-	// 操作數包一層提升建構函式 `a._add(bigint.from-i64(1))`，讓呼叫綁回既有
-	// concrete `_add(b bigint)`——聯合形參（路線 C）無法派發用戶碼運算子呼叫。
-	arg := inf.Right
-	if ctor := l.p.operandPromotionCtor(l.p.resolveReceiverType(inf.Left), inf.Right); ctor != "" {
-		// 建構函式以「模組限定名」登記（如 `bigint.from-i64`）。注入成與源碼
-		// `bigint.from-i64(v)` 相同的 DotExpression 形態（接收者 = 模組裸名，
-		// Property = 函數名），讓後續模組呼叫解析把它當作源碼呼叫一樣改寫到實際
-		// 註冊符號（std 自由函數在合併後以裸名 `from-i64` 註冊）。若注入成扁平
-		// Identifier("bigint.from-i64")，解析路徑不同 → codegen 報 unknown callee。
-		ctorFn, ctorMod := ctor, ""
-		if i := lastDotIndex(ctor); i >= 0 {
-			ctorMod, ctorFn = ctor[:i], ctor[i+1:]
-		}
-		var ctorTarget Expression
-		if ctorMod != "" {
-			ctorTarget = &DotExpression{
-				Token:    inf.Token,
-				Receiver: &Identifier{Token: inf.Token, Value: ctorMod},
-				Property: ctorFn,
-			}
-		} else {
-			ctorTarget = &Identifier{Token: inf.Token, Value: ctorFn}
-		}
-		arg = &CallExpression{
-			Token:     inf.Token,
-			Function:  ctorTarget,
-			Arguments: []Expression{inf.Right},
-		}
-	}
 	repl := &CallExpression{
 		Token: inf.Token,
 		Function: &DotExpression{
@@ -685,7 +654,7 @@ func (l *lowerer) maybeDesugarInfix(v reflect.Value) (Node, bool) {
 			Receiver: inf.Left,
 			Property: method,
 		},
-		Arguments: []Expression{arg},
+		Arguments: []Expression{inf.Right},
 	}
 	return repl, true
 }
@@ -2411,7 +2380,7 @@ func (l *lowerer) lowerSurfaceMatch(sm *SurfaceMatch) Expression {
 	if ident, ok := sm.Matched.(*Identifier); ok {
 		// 臂形前置守衛：含 option 臂（ok/nil/err）的 match 絕不可能是靜態型別
 		// 派發 match，即使 subject 型別被（跨模組污染的）全域回退解析成 union。
-		t, _ := l.p.sem.FuncVarType(l.curFuncName, ident.Value)
+		t := l.p.matchSubjectUnionType(l.curFuncName, ident.Value)
 		if !hasOptionMatchArm(sm.Arms) &&
 			(l.p.isUnionType(t) || l.p.armsCarryTypePatterns(sm.Arms)) {
 			result := l.p.buildTypeMatchDesugar(sm, t)
@@ -2571,6 +2540,35 @@ func (p *Parser) prepareSurfaceMatch(sm *SurfaceMatch) *SurfaceMatch {
 	return &clone
 }
 
+// matchSubjectUnionType 解析「類型解構 match 主體」的靜態型別，且刻意繞開
+// SemanticContext.FuncVarType 對全域 VarTypes 的回退。單態化複本／模板（名字含
+// "__"）在語義表裡沒有以自己函數名為鍵的條目，若回退到全域 VarTypes，主體參數名
+// 可能被 OTHER 模組的同名全域變數污染（例：bigint._add 的運算元 `b` 抓到
+// tests/type-match.no 模組級 `b: num`），把臂拿去對錯誤 union 校驗而誤報
+// "arm pattern X is not a member of union num"（lowering.go 頂部已記錄此類跨模組
+// 污染案）。複本的正解是 matchedVarType==""（跳過成員集校驗，改由臂形態 + MIR 具體
+// 型別靜態選臂），故對 "__" 函數名不回退全域；原始函數仍走 per-func→全域→AST-local。
+func (p *Parser) matchSubjectUnionType(funcName, varName string) string {
+	if p.sem != nil && p.sem.FuncVarTypes != nil {
+		if vars, ok := p.sem.FuncVarTypes[funcName]; ok {
+			if t, ok := vars[varName]; ok && t != "" {
+				return t
+			}
+		}
+	}
+	if strings.Contains(funcName, "__") {
+		// 單態化複本／模板：不回退全域，交由臂形態判據 + 具體型別選臂。
+		return ""
+	}
+	if t, ok := p.sem.VarTypes[varName]; ok && t != "" {
+		return t
+	}
+	if at := p.astLocalVarType(funcName, varName); at != "" {
+		return at
+	}
+	return ""
+}
+
 // typeDestructuringSubjectType reports whether sm is a type-destructuring match
 // and returns the subject type to dispatch on, with the union alias recovered
 // for union-monomorphized clones (see recoverUnionFromMember).
@@ -2587,14 +2585,7 @@ func (p *Parser) typeDestructuringSubjectType(sm *SurfaceMatch) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	t, _ := p.sem.FuncVarType(p.curFuncName, ident.Value)
-	if t == "" {
-		// S1 flip fallback: FuncVarType can miss for blob-loaded std functions
-		// whose local-let types were never collected into the side table.
-		if at := p.astLocalVarType(p.curFuncName, ident.Value); at != "" {
-			t = at
-		}
-	}
+	t := p.matchSubjectUnionType(p.curFuncName, ident.Value)
 	var armPatterns []string
 	for i := range sm.Arms {
 		a := &sm.Arms[i]
@@ -2670,9 +2661,12 @@ func (p *Parser) isUnionMemberName(name string) bool {
 	if name == "" || p.unionMembers == nil {
 		return false
 	}
+	// 前綴化具體型別（`bigint.bigint`）與裸名成員（`bigint`）末段一致即同一型別；
+	// 內建純量末段==原名，比對退化为精確匹配，无行为变化。
+	nameTail := matchTypeTail(name)
 	for _, members := range p.unionMembers {
 		for _, m := range members {
-			if m == name {
+			if m == name || matchTypeTail(m) == nameTail {
 				return true
 			}
 		}

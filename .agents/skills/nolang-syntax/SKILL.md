@@ -2755,6 +2755,8 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 
 Import paths are resolved relative to the **workspace root** (the directory containing `workspace.noml`). Local packages can also be referenced by short name or full URL if they are registered in `workspace.noml` (see [Dependency Types & Version Rules](#dependency-types--version-rules) for details on how `workspace.noml` mappings affect local vs. remote classification).
 
+> **`no fmt` automatic import cleanup** (implementation: `src/fmt/imports.go`): for the contiguous import block at the top of a file, `no fmt` (and LSP format-on-save) **dedups byte-identical imports**, **removes an unaliased `# std/fmt`** (print/eprint/format/sprintf are compiler builtins; std modules auto-load), and **sorts imports** lexicographically by path → function → alias. If any import in the block carries a comment or an attached `#{...}` annotation (e.g. `#{bind=ffi}`), the block keeps its source order and nothing is removed. Do not fight this behavior — never re-add a bare `# std/fmt`.
+
 ### Module Prefix Rules
 
 Nolang enforces a mandatory module namespace convention: when calling functions or constants defined in **other modules** (other `.no` files) from a `.no` file, you must use the `ShortName.` prefix. This avoids cross-module naming conflicts.

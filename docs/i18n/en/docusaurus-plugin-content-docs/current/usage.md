@@ -28,7 +28,7 @@ Install the Nolang extension from the [VS Code Marketplace](https://marketplace.
 | `no version`                                                 | Print version info      |
 | `no init`                                                    | Define the workspace (creates workspace.noml, no package.noml) |
 | `no new <name>`                                              | Create a new package under the workspace (subdir + package.noml, registered in workspace.noml) |
-| `no fmt [-w] [-d] <file\|dir>`                               | Format source code      |
+| `no fmt [-w] [-d] <file\|dir>`                               | Format source code (dedups/sorts imports, drops `# std/fmt`) |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | Build (output executable) |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | Build and run (package/dir/file) |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | Run tests               |

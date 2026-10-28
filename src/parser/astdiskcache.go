@@ -286,14 +286,7 @@ import (
 // `TypeFacts` / `NodeFacts` 型別本身仍保留 `GobEncode`/`GobDecode` 空方法：它們
 // 沒有導出字段，直接 gob 編碼 `*parser.Program` 的路徑（mmast_test.go 模擬舊格式）
 // 仍會碰到，缺了會報 `no exported fields`。
-//
-// 2026-10-26.4：運算符重載「實參提升」（路線 A）改變 LowerSurface 產出形狀——
-// `a + 1`（左 bigint、右 i64）現在 desugar 成 `a._add(bigint.from-i64(1))`（實參
-// 被包一層提升建構函式呼叫），而非舊版的 `a._add(1)`。這是 ParseProgram 輸出的
-// AST 節點改變，舊 blob 缺注入節點 → 復測 `a + 1` 只在 cache HIT 時退回舊語義
-// （checker 判 stdargtyp / codegen unknown callee），`NOLANG_AST_CACHE_OFF=1` 即
-// 消失。按 rule of thumb 必 bump 以失效所有舊條目。
-const ASTVersion = "2026-10-26.4"
+const ASTVersion = "2026-10-26.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

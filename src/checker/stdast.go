@@ -20,9 +20,9 @@ import (
 // The serialized std AST blob is produced by genstdsig and embedded into the
 // binary by the separate `checker/stdastembed` package (so that genstdsig
 // itself — which compiles this package — does not require the blob to already
-// exist). The embed package populates Blob at program init; cmd/no hands it to
-// checker via SetStdASTBlob before any build. A nil blob makes StdASTFor fall
-// back to on-the-fly parsing, so the build still works.
+// exist). The embed package populates Blob at program init; cmd/no and cmd/lsp
+// hand it to checker via SetStdASTBlob before any build. A nil blob makes
+// StdASTFor fall back to on-the-fly parsing, so the build still works.
 //
 // The format is parser.CachedProgram, which is now the *syntax tree only*
 // (`CachedProgram{Prog}`): every derived fact is regenerated after decoding by
@@ -37,9 +37,10 @@ var (
 )
 
 // SetStdASTBlob installs the baked std AST blob into the checker at process
-// start. Called by cmd/no from the stdastembed package. The blob's staleness is
-// guarded by its parse-configuration fingerprint (see StdASTBlob.Config) and by
-// the build-path StdSigKey emptiness check — there is no separate content key.
+// start. Called by cmd/no and cmd/lsp from the stdastembed package. The blob's
+// staleness is guarded by its parse-configuration fingerprint (see
+// StdASTBlob.Config) and by the build-path StdSigKey emptiness check — there is
+// no separate content key.
 func SetStdASTBlob(blob []byte) {
 	stdASTMu.Lock()
 	stdASTBlob = blob

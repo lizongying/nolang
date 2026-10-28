@@ -28,6 +28,28 @@ Implementation lives in `src/fmt/formatter.go`:
 - `FormatFile(code)` formats a complete file and calls `ensureTrailingNewline`, which strips all trailing `\r` / `\n` (CRLF-safe, multi-blank-line-safe) and appends a single `\n`. Empty or unparseable input is returned unchanged so the formatter never mangles a file it cannot understand.
 - `Format(code)` is the pure fragment formatter (no trailing newline), used mainly by unit tests; prefer `FormatFile` whenever you write a real source file.
 
+## Import Statement Cleanup (Dedup / Remove `# std/fmt` / Sort)
+
+`no fmt` (and LSP format-on-save) automatically normalizes the **contiguous import block at the top of a file** (`# path[.fn] [alias]`); the implementation lives in `src/fmt/imports.go`:
+
+1. **Dedup**: imports that are byte-identical (same path, function name, and alias) are collapsed to the first occurrence.
+2. **Automatic removal of `# std/fmt`**: `print` / `eprint` / `format` / `sprintf` are compiler builtins, and standard library modules are implicitly loadable anyway (see [Cross-Module Call Prefixes](./module)) — so `# std/fmt` is never required and the formatter removes it. Two exceptions keep it:
+   - an **alias** or **function import** was written (e.g. `# std/fmt.sprintf fm`) — a deliberate name binding;
+   - the import line carries a **comment** or an attached `#{...}` annotation — user-written content is never silently dropped.
+3. **Automatic sorting**: imports are sorted lexicographically by path → function → alias (stable sort).
+
+Conservative boundary: if any import in the block carries a comment (own line above or trailing on the same line) or an attached `#{...}` annotation (e.g. the `#{bind=ffi}` native-binding policy), the whole block **keeps its source order and nothing is removed** — sorting would break the comment/statement pairing and removal would take the comment with it. Exact duplicates with no attached content are still deduplicated in that case.
+
+Import blocks that appear anywhere other than the top of the file (after code) are left untouched.
+
+```no
+; before                             ; after
+# std/vec                            # std/io
+# std/fmt                            # std/vec
+# std/io
+# std/fmt        →  print/format are builtins, # std/fmt removed; the rest sorted lexicographically
+```
+
 ## Comment Markers
 
 Nolang supports two **single-line comment** markers and one **multi-line (block) comment** marker, with the following semantics:

@@ -65,6 +65,13 @@ func hasLoweringTempBinding(prog *parser.Program) bool {
 // be rejected, or the exemption would have been widened into "never check
 // arguments".
 func TestBareOptionArgLoweringTempExempt(t *testing.T) {
+	// 本測試守護的是 AST 軌的「降級合成臨時變數豁免 fxxoptarg」不變量：該豁免
+	// 依賴捕獲 pass 真的把引數 desugar 成 `__cap_N` 臨時（H0 軌不注入，故無此
+	// 豁免對象）。顯式鎖定 AST 軌（false），使其非真空守衛有意義；H0 軌的行為
+	// 由 dual-track 等價測試與 checker parity 守護。
+	parser.HIRCaptureEnabled = false
+	defer func() { parser.HIRCaptureEnabled = true }()
+
 	desugared := `g = (x i64, y i64) (r i64) {
 	r = x - y
 }

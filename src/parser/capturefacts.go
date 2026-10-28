@@ -55,18 +55,18 @@ type CaptureFact struct {
 	WasDeclared bool
 }
 
-// HIRCaptureEnabled 是 S3-b 的**雙軌開關**（默認 false，即生產路徑）。
+// HIRCaptureEnabled 是 S3-b 的**雙軌開關**，也是 S3-c 切換後的**生產預設**。
 //
-//   - false（默認）：lowerer 照舊在 AST 層注入 `__cap_N` 合成節點（現狀）。
-//   - true：lowerer 只把捕獲判定寫進本表、**不再改寫 AST**；結構由 H0
-//     （tohir）讀本表產出等價的 `KLet` + `KIf` 鏈。
+//   - true（S3-c 後的生產預設，自 2026-10-25 起）：lowerer 只把捕獲判定寫進
+//     本表、**不再改寫 AST**（V4 合規：用戶 AST 保持凍結）；結構由 H0
+//     （tohir 的 lowerCaptureToHIR）讀本表產出等價的 `KLet` + `KIf` 鏈。
+//   - false：lowerer 照舊在 AST 層注入 `__cap_N` 合成節點（S3-b 之前的舊路徑，
+//     僅供雙軌等價測試 `TestHIRCaptureTrackMatchesASTTrack` 對照用）。
 //
 // 兩軌並存是為了逐檔比對（AST 降糖產物 vs H0 直產產物須 HIR 逐字節一致）；
-// S3-c 刪除 AST 合成路徑後，本開關連同舊路徑一併移除。
-//
-// ⚠️ 開關為 true 時程式**尚不具備捕獲語義**（H0 側產出未實作）——僅供副表
-// 記錄面與「AST 凍結」的驗證使用，不得用於任何端到端編譯。
-var HIRCaptureEnabled = false
+// 雙軌測試會顯式設回 false 跑 AST 軌，故舊路徑仍被持續守護。S3-c 並未刪除
+// 舊路徑——保留它使雙軌回歸閘不退化成 H0-vs-H0 的空比較。
+var HIRCaptureEnabled = true
 
 // CaptureBind 描述單一條捕獲綁定。
 type CaptureBind struct {

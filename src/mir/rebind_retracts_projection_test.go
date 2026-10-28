@@ -104,6 +104,14 @@ main = () {
 
 func rebindIR(t *testing.T, src string) string {
 	t.Helper()
+	// Comptime OFF: these probes are pure methods called on a constant
+	// receiver (`rows[0].pset()` — a literal slice, so the element read is a
+	// compile-time constant). Folding the call would erase the `@str_pset`
+	// / `@str_plen` calls whose RECEIVER OPERAND these tests inspect, and
+	// they would then fail on a missing call rather than on a broken
+	// projection. The assertions are about emitted IR shapes, not about
+	// folding.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	mod := lowerForTest(t, src)
 	ir, err := mod.EmitLLVM()
 	if err != nil {

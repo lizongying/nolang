@@ -310,7 +310,12 @@ func (f *formatter) formatUseStatement(s *parser.UseStatement) {
 		f.write(s.Function)
 	}
 	if s.Alias != "" {
-		f.write(" ")
+		// `as` 寫法原樣保留（parser 兩種都收），否則往返會改變用戶寫下的形式。
+		if s.AsKeyword {
+			f.write(" as ")
+		} else {
+			f.write(" ")
+		}
 		f.write(s.Alias)
 	}
 }

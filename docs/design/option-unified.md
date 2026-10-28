@@ -18,7 +18,7 @@
 | D6 | 统一规则作用范围                              | 整数 `+ - * / %`、容器索引 `arr[i]`、`str`/`txt` 索引 `s[i]`。**不含**浮点算术、`char` 算术（保持现状）。                                                            |
 | D7 | in-bounds 豁免 | **最终定案（2026-10-15）：两层分离。** ①**用户侧**：即使编译器能静态证明不会溢出/除零/越界，`arr[i]` / 算术**一律产生 `?T`**，后续使用必须解包（match / `?=` / `_ =`）——**无任何用户侧豁免**。②**语言内部**：编译器在能证明安全时**内部消除** option 包装与解包（codegen/MIR 优化，如省略 nil 检查、直接走 ok 分支），用户不可见。`bounds.go` 静态分析保留，服务内部消除与诊断，**不影响用户侧类型**。 |
 | D8 | match 穷尽性                             | **不放宽**。注解使失败情形变成"有值"，`nil`/`err` 臂虽永不触发仍**必须写**——值终究要靠 match 解包出来，match 是唯一的解包语法。不引入"注解后只需 `ok` 臂"的特例。                                   |
-| D9 | 下标写入（index store）                   | **必须显式解包**（2026-10-15 定案）：`a[i] = v` 为 ERROR（新 trace `idxwrite`），正确写法为 place-match（多行形式，match 臂以换行分隔）或错误上抛 `a[i] ?= v`；map（`[K]V`）不受影响；D7 两层分离延伸到写入侧（可证明界内 → 内部消除、零开销；用户侧无豁免）。详见 §12。 |
+| D9 | 下标写入（index store）                   | **必须显式解包**（2026-10-15 定案）：`a[i] = v` 为 ERROR（新 trace `idxwrite`），正确写法为 place-match（多行形式，match 臂以换行分隔）或错误上抛 `a[i] ?= v`；**map（`[K]V`）不需要解包**——`m['b'] = c` 直接写（put 语义，无越界写，§12.2.1）；D7 两层分离延伸到写入侧（可证明界内 → 内部消除、零开销；用户侧无豁免）。详见 §12。 |
 
 ### D1 的直接后果（必须写进预期）
 
@@ -281,7 +281,7 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
   - **明确写出注解只影响行为、不解包**（`#{overflow=wrap}` ⏎ `x = a + b` 的 `x` 仍是 `?i64`）；
   - `-> return` / 空臂零值；
   - in-bounds 豁免取消，并给出 `for i <- arr { x = i }` 这一惯用替代写法。
-  - **下标写入必须显式解包（D9，§12）**：`a[i] = v` 不允许，必须 place-match（多行形式，match 臂以换行分隔）或 `a[i] ?= v`；写入侧同样「用户侧恒 option、内部消除」。
+  - **下标写入必须显式解包（D9，§12）**：`a[i] = v` 不允许，必须 place-match（多行形式，match 臂以换行分隔）或 `a[i] ?= v`；写入侧同样「用户侧恒 option、内部消除」。**map 例外**：`m['b'] = c` 直接写（put 语义，无越界写，见 §12.2.1）。
 - EN 镜像 `docs/i18n/en/.../lang/*.md` 同步（历史上 EN 常落后，需显式跟进）。
 - `docs/docs/lang/memory.md`（若有 option/ownership 相关段落）复核。
 
@@ -391,7 +391,7 @@ z-opt: {
 
 | # | 决策 | 结论 |
 |---|---|---|
-| D9 | 下标写入（index store） | **必须显式解包**。`a[i] = v`（赋值目标为 IndexExpression）为 **ERROR**（新 trace `idxwrite`），报错信息给出两种正确写法；用户层无豁免（D7 两层分离延伸到写入侧）；map 不受影响；全仓 `.no` 迁移完成后才启用 ERROR。 |
+| D9 | 下标写入（index store） | **必须显式解包**。`a[i] = v`（赋值目标为 IndexExpression）为 **ERROR**（新 trace `idxwrite`），报错信息给出两种正确写法；用户层无豁免（D7 两层分离延伸到写入侧）。**map（`[K]V`）不需要解包**——`m['b'] = c` 直接写即可（put 语义，见 §12.2.1）；全仓 `.no` 迁移完成后才启用 ERROR。 |
 
 ### 12.2 rationale：为什么「option 赋值不合理」（现状实测，2026-10-15）
 
@@ -417,6 +417,36 @@ z-opt: {
    `checker/stdast_test.go:112-117`；臂文法 `ok -> body` / `-> body` 通配臂，
    `parser/match.go:96-145`）。D9 把 statement 语境的多行 place-match（`a[i]: { ok -> it = v / -> _ }`）
    定为**写入**形态。
+
+### 12.2.1 为什么 map 不需要解包（`m['b'] = c` 直接写）
+
+D9 的立论是「读侧越界返回 nil，写侧却裸奔」——这**只在「下标可能越界」时成立**。map 的
+下标不是位置而是**键**：
+
+- 读 `m[k]` 的 `nil` 表示**键不存在**（不是越界）；
+- 写 `m[k] = v` 是 **put / insert**：缺键插入、有键覆盖，**任何键都恒有定义**，不触碰任何
+  越界内存。
+
+所以 map 上没有「越界写」这回事，也就没有可解包的东西——硬套解包只会把「插入新键」这个
+**正常且唯一的目的**掰成错误分支（`m[k] ?= v` 在缺键时直接上抛，等于禁止插入）。结论：
+**map 完全在 D9 之外，`a['b'] = c` 直接写即可，不需要 place-match、不需要 `?=`、也不需要
+退化成 `.put('b', c)`。** 读侧同理保持 `.get(k)` / `m[k]` 的 `?V` 口径（缺键 → nil），那是
+读的事，与写无关。
+
+**`m[k] ?= v` 是硬错误**（2026-10-28 定案，`parser/lowering.go:lowerUnwrapAssign`）。不只是
+「不必要」，而是**降糖出来就是错的**：`?=` 的 ok 臂是「读出 `a[i]`，再写回元素**位置**」，
+而 map 读出的 `?V` 只是 `get` 的 out-param 副本，写回那个副本不回到 map；更糟的是
+`containerElemType("[str]i64")` 把 map 当数组，于是这条路径会命中 `isSafeIndexBase` 分支，
+降糖出的控制流让**同一张 map 在多条路径上各 drop 一次**（三重 free）。实测后果：
+pristine HEAD 是编译期 `lencap struct: len/cap unsupported on struct hashmap-str-i64`；
+MIR 补上 map 下标降糖后变成**编译成功、运行期 SIGBUS**。故必须拦在 `isSafeIndexBase`
+之前并给出「直接写 `m[k] = v`」的指引。place-match（`m[k]: { ok -> it = v }`）不受影响——
+它的 `it = v` 走的是写侧 dispatch，落成 put，实测正确。
+
+⚠️ **验证纪律（本次踩到）**：AST 缓存是**内容寻址**的（`~/.cache/nolang/ast`），改编译器
+却保持被测程序内容不变时，`no build` 会**重放旧 AST**——本次因此误判过「`?=` 改写成 put
+后不再崩溃」。跨编译器版本做 A/B 必须 `NOLANG_AST_CACHE_OFF=1`（或让程序内容变化）。
+若解析期输出形状真的变了，则按 `parser/astdiskcache.go` 的规矩 bump `parser.ASTVersion`。
 
 ### 12.3 语义规格：两种正确写法
 
@@ -460,7 +490,7 @@ f = (i i64) (res ?i64) {
 | `a[i] = v`（单赋值，基底 = 直接变数 arr/slice/vec/str/txt） | **ERROR `idxwrite`** |
 | `x, a[i] = f()`（多赋值目标，`parser/stmt.go:776-835`） | **ERROR `idxwrite`** |
 | `a[i] += v`（复合赋值） | 维持 parse error（`parser/stmt.go:858-869`，复合赋值只支持 IDENT LHS）；文案补两种正确写法 |
-| map `[K]V`（`MapType`） | 不受影响（无下标赋值语法，走 put/get）。型别判定**必须先判 `MapType`**——`containerElemType("[str]i64")` 会把 map 型别字串误判为数组（返回 `"i64"`） |
+| map `[K]V`（`MapType`） | **不需要解包，直接写 `m['b'] = c`**（put/insert 语义，缺键即插入、有键即覆盖，恒有定义、无越界写；见 §12.2.1）。实现侧 `idxwrite` 必须放行 map 基底；型别判定**必须先判 `MapType`**——`containerElemType("[str]i64")` 会把 map 型别字串误判为数组（返回 `"i64"`），不先排除就会把合法的 map 下标写误报成 `idxwrite`（`checker/checker.go:6190` 已如此）。MIR 降糖为 `put`/`get` 已实现（见 §12.8 末条） |
 | `self.keys[i] = v`（struct-field 基底，str-map.no 等大量存在） | **wave 1 豁免**：其读侧走 legacy 非 option 路径（`isSafeIndexBase` 明确排除 DotExpression 基底，`parser/type.go:313-321`；`lowerUnwrapAssign:3197` 对 `receiver.field[i]` 直接报错）。待 field-base 索引统一后二期 |
 
 ### 12.5 零开销：D7 两层分离延伸到写入（已实现并验证，2026-10-16）
@@ -517,7 +547,8 @@ walkStmt/walkExpr + report + seen 去重 + canonPath 归属，`checker/checker.g
 
 1. 编译器侧落地：两种写法可编译可运行；`idxwrite` 可报；写侧 BCE。
 2. codemod：`BASE[IDX] = VALUE` → 多行陈述式 place-match（python 精确替换、先断言命中计数、
-   保留缩进与行尾注释、不碰 `#{...}` 注解行与注释行、struct-field 基底站点跳过）。
+   保留缩进与行尾注释、不碰 `#{...}` 注解行与注释行、struct-field 基底站点跳过、**map 基底
+   站点跳过**——`m['b'] = c` 本来就合法，改它等于把 put 拆成 match，纯属倒退）。
    review 清单：① 依赖「常量越界 = 编译错误」的测试（tests/oob-slice-assign.no 等）改为显式
    越界臂行为；② 所在函数有 option 结果参数的热点站人工改 `?=`；③ str/txt 字节写
    （str.no 大量 `val[i] = .byte(i)`）确认 growth guard 行为不变；④ 多赋值目标形态专门设计。
@@ -535,6 +566,32 @@ walkStmt/walkExpr + report + seen 去重 + canonPath 归属，`checker/checker.g
 - `-> _` 与空臂 `->` 的规范写法以探针定稿（全仓 `.no` 现有 0 处 `-> _` 用法，属新形式；
   bare `_` 作臂体若不过 checker，规范写法定空臂 `->` 并在文档注明）。
 - 多赋值目标 codemod 形态（`x, a[i] = f()` 整体包 match 还是逐目标）。
+- ~~map 下标读写 codegen 未实现~~ **已实现（2026-10-28）**：MIR 的 `hir2mir.go` 在
+  `KIndex` 读/写分派处先判 map 基底（`mapIndexTypes`），分别降糖为
+  `hashmap-<K>-<V>.get(m, k, &out)`（→ `?V`）与 `.put(m, k, v, &is-new)`（is-new 丢弃），
+  单赋值与多赋值目标（`x, m[k] = f()`）两条写路径都覆盖。此前 `m['b'] = c` 落到
+  `emitIndexStore` 的数组 GEP（str 键当 i64 下标 → 非法 IR），`m['a']` 读侧在 MIR 直接
+  失败（`index dst slot (dst=N type=void)`）——而 `no vet` 全绿，属 vet-green / build-red。
+  两个实现要点已写进代码注释，勿回退：
+  ① 值上携带的型别可能是**源级** `[str]i64`（声明过的局部）或**特化结构体名**
+  `hashmap-str-i64`（map 字面量，`lowerMapLit` 用 hmName 建 `OpStructLit`），两者都要认，
+  只判 `KindMap` 会漏掉字面量；
+  ② 读侧 `?V` 的 V 取自**被调函数自己的结果参数**（`resultTypesOfCallee`），因为模板里的
+  `v` 只在特化签名上被替换过，从结构体名反推 `[]str`→`slice_str` 是不可逆的。
+  门禁：`mir/d9_map_index_test.go`（缺席断言 + 数组正向对照）、`test/std/map-index.no`
+  （端到端：插入/覆写/读回/缺席/多赋值目标）。
+  遗留（与 D9 无关的既有缺口，已在基线复现）：map 作为**返回值**（`r = { ... }` 于
+  `?[K]V` 结果）与嵌套 map `[str][str]i64` 仍不可用。
+  **结构体字段里的 map 另有更上游的既有缺陷**（本次实测，与下标降糖无关）：
+  ① 字段里的 map **根本没被填充**——`s store = { counts: { 'a': 7 } }` 之后
+  `m [str]i64 = s.counts` 的 `m.len()` 为 `0`（字段位置的 map 字面量没走 init+put）；
+  ② 字段 map 的方法调用早已失败——`s.counts.put('a', 1)` 报
+  `EmitLLVM: unknown callee s.counts.put`，`s.counts.len()` 报 `builtin str-len:
+  missing receiver`。因为①，`s.counts[k]` 的读/写都是**静默无效**（读到 nil、写不进
+  去），但这不是下标降糖引入的：`mapIndexTypes` 对字段访问降下来的值返回 `false`
+  （其类型不是 map），所以字段基底**根本不进 map 分支**，本次改动对它零影响
+  （实测打点确认该分派函数在字段基底上从未被调用）。修它需要先让字段访问产出
+  map 类型/lvalue 地址，属独立课题。
 - LSP「插入解包」quickfix（仿现有 `#{index-out = 0}` quickfix，`lsp/server.go:903`）不在
   本决策范围，后续另开。
 

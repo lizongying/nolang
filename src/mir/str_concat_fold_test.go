@@ -168,6 +168,11 @@ func TestStrConcatFoldDoesNotInventInterpolation(t *testing.T) {
 // literal part carries an unsubstituted {field}, because emitting the braces
 // verbatim would be silently wrong.
 func TestStrConcatLitFoldNotForRuntimeValues(t *testing.T) {
+	// This test pins the interpolation-lowering behaviour (including the
+	// diagnostic) of a mixed literal/runtime concat. Comptime changes how the
+	// literal fragments are combined at lowering time, so it is switched off
+	// here to keep the assertion about interpolation and not about folding.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	// 1. no field: plain runtime concat, no diagnostic.
 	src := "main = () () {\n  n str = 'bob'\n  s = 'a=' - n\n  print(s)\n}\n"
 	mod, diags := lowerSrcWithDiags(t, src)

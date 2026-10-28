@@ -26,6 +26,10 @@ import (
 // subtraction must stay 64-bit (the width rule cannot be a blanket widening),
 // and a narrow source must reach a 128-bit slot through an explicit sext.
 func TestI128MoveWidensInsteadOfTypePunning(t *testing.T) {
+	// Comptime OFF: every helper here is a pure constant-argument function, so
+	// folding would erase the `sub i128` / `sext` instructions this test exists
+	// to pin. The assertions are about emitted widths, not about folding.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	const src = `sub-zero = () (r i128) {
     d i128 = 7
     r = 0 - d

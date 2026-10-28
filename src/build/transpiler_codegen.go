@@ -214,7 +214,13 @@ func firstFatalLowerDiag(diags []mir.LowerDiag) (mir.LowerDiag, bool) {
 		// "deprecated": a call to a removed builtin (printf / eprintf) that got
 		//   past the checker — the call target does not exist, so the build must
 		//   stop instead of emitting it.
-		if d.Kind == "interp" || d.Kind == "deprecated" {
+		// "map-index": a map subscript read/write the lowerer could not turn into
+		//   a get/put (no specialised hashmap method, unresolvable ?V, or a `?V`
+		//   value fed to put's `v`). Every one of those DROPS the operation: the
+		//   read yields nothing, the write silently does not happen. A silent
+		//   no-op map write is exactly the kind of wrong-but-exit-0 outcome this
+		//   list exists to prevent, so it is fatal.
+		if d.Kind == "interp" || d.Kind == "deprecated" || d.Kind == "map-index" {
 			return d, true
 		}
 	}

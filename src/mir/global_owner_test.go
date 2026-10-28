@@ -111,6 +111,11 @@ func funcRefsValue(mod *Module, fnName string, v ValueID) int {
 // `referencedByFunc` is true and the promotion is legitimate) — which is the
 // point: the scope has to hold even when the binding really is module storage.
 func TestForeignModuleFunctionCannotBindMainGlobal(t *testing.T) {
+	// Comptime OFF: `fmt-parse-spec` is a pure zero-argument constant function,
+	// so folding would replace the only call to it with a constant and the
+	// function would never be emitted — the scoping assertion below would then
+	// fail with "not found" instead of testing anything.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	mod := lowerHIRWithOwners(t, `i = 9
 use-i = () (r i64) {
     r = i

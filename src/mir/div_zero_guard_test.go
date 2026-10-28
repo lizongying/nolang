@@ -36,6 +36,10 @@ import (
 //	(d) float division is untouched (IEEE-754 defines /0.0);
 //	(e) a function with no division gets neither the helper nor the call.
 func TestDivZeroGuardSurvivesOverflowAnnotation(t *testing.T) {
+	// Comptime OFF: every probe is a pure function called with literal
+	// arguments, so folding would erase the calls and with them the emitted
+	// @wrapped/@modded/@optdiv/@addonly bodies this test inspects.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	const src = `wrapped = (a i64, b i64) (r i64) {
     #{overflow=wrap}
     r = a / b

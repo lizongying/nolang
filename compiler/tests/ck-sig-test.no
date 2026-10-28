@@ -19,8 +19,8 @@
 # /test/runner.summary
 # /compiler/src/ck-sig
 
-CK-SIG-N-FUNC = 870
-CK-SIG-N-METHOD = 2371
+CK-SIG-N-FUNC = 862
+CK-SIG-N-METHOD = 2387
 CK-SIG-N-SFIELD = 720
 CK-SIG-N-ALIAS = 1
 CK-SIG-N-STRUCTMOD = 105
@@ -66,12 +66,13 @@ test-sizes = (t ck-sig) {
 test-find-func = (t ck-sig) {
     i = ck-sig-find-func(t, '[]byte.index')
     runner.eq(i, 0, 'first key hit at 0')
+
     ; ⚠️ 欄位取值一律走 ck-sig-str-at：外掛 receiver 的 []str.at() 單態化會報
     ;    'EmitLLVM: unknown callee []t.at'（實測），索引讀 x=v[i] 回 ?str 亦不可直接使用。
     runner.str-eq(ck-sig-str-at(t.fp, i), 'str', 3, '[]byte.index params=str')
     runner.str-eq(ck-sig-str-at(t.fr, i), 'i64', 3, '[]byte.index results=i64')
 
-    runner.eq(ck-sig-find-func(t, 'zstd.zstd-decompress'), 869, 'last key hit at 869')
+    runner.eq(ck-sig-find-func(t, 'zstd.zstd-decompress'), 861, 'last key hit at 861')
     j = ck-sig-find-func(t, 'fs.read-bytes')
     runner.eq(j >= 0, 1, 'fs.read-bytes hit')
     runner.str-eq(ck-sig-str-at(t.fr, j), '?[]byte', 7, 'fs.read-bytes results=?[]byte')
@@ -88,6 +89,7 @@ test-find-func = (t ck-sig) {
 ; ═══════════════════════════════════════════════
 
 test-find-method = (t ck-sig) {
+
     ; ⚠️ 容器方法（[]t.at 等 [ ]/n 前綴 receiver）在 authority 裡落在【funcSigs】表，
     ; methodSigs 只收具名 receiver（str.*、zstd.* 等）——兩張表的分界以此為準。
     m = ck-sig-find-func(t, '[]t.at')
@@ -95,7 +97,7 @@ test-find-method = (t ck-sig) {
     runner.str-eq(ck-sig-str-at(t.fp, m), 'i64', 3, '[]t.at params=i64')
     runner.str-eq(ck-sig-str-at(t.fr, m), '?t', 2, '[]t.at results=?t')
 
-    runner.eq(ck-sig-find-method(t, 'zstd.zs-huffman.decode'), 2370, 'last method key')
+    runner.eq(ck-sig-find-method(t, 'zstd.zs-huffman.decode'), 2386, 'last method key')
     u = ck-sig-find-method(t, 'str.to-upper')
     runner.eq(u >= 0, 1, 'str.to-upper hit')
     runner.str-eq(ck-sig-str-at(t.mp, u), '', 0, 'str.to-upper params empty')

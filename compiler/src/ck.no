@@ -1,0 +1,401 @@
+; ck — checker 骨架（M3-c s13）：首族 `'X' is not defined`（oracle TraceID 4bek3xc6）
+;
+; Authority：src/checker/checker.go ValidateUndefinedVars / checkUndefinedVarsInExpr
+;   （Identifier 臂 8180-8295）。放行臂序列（全部实测定型，probe p70-p99）：
+;   ① definedVars（本地定义/模块名/dotted 导出短名/常量导出）
+;   ② 含点实参的短名回落 ③ builtin∧无模块 owner ④ '_' 前缀 / ALL-CAPS 常量
+;   ⑤ val/err/ok/nil/it 关键字 ⑥ 内建型名 + char + struct 名 ⑦ 自模块裸调放行
+;   报错形态两种：
+;     `'{name}' is not defined`（无 unique owner / 完全未知）
+;     `'{name}' is not defined; call it as '{owner}.{name}' (cross-module calls must be module-qualified)`
+;
+; 与正主的三处刻意偏差（全部偏保守 = 少报不误报）：
+;   * 正主是树走访（DotExpression 整子树跳过，checker.go:8306）；本檔是【扁平
+;     arena 扫描】——dot 属性名（DOT.s0）非 IDENT 节点天然不入检；dot 接受者
+;     （IDENT）由第一遍 rcv 压制表显式跳过。s8 无坐标的合成叶一律跳过。
+;     代价：`a.cancelled()` 的 dot 属性名会登记 cancelled 为 def（正主由 8194
+;     短名回落臂处理，语料实测同侧）。
+;   * 正主 funcNames/exports 跨档解析（collectModuleExports 读盘上 #use 目标）；
+;     noc 单档骨架不解析 import ⇒ 跨档导出名靠 bk/bo 表兜。
+;   * 【完全未知名（'@'）报裸错】（正主同形：'foo' is not defined）。放行面靠
+;     四张网兜住：ck-name-silent 型名/关键字表、defs（本档定义节点名全登记）、
+;     rcv（dot 接受者压制）、mok 模块名二分（正主 definedVars ⊇ knownStdModules
+;     自動導入，checker.go:1938；118 名探针实测全静默）。跨档 struct 裸名
+;     （validationStructNames）不可辨 ⇒ 理论误报面，语料 278 档实测零误报后
+;     启用（L3 扫若现误报回退沉默侧）。
+;   * C 式 `for i = 0; cond; update {}`：noc 词法把 `;` 当行註解（ps.no:5393），
+;     条件位落成裸 IDENT `i` ⇒ defs 无从登记，正主则由 for-init 定义 i——
+;     语料（tests+src/std+compiler/src）实测【零】此形（grep 无命中），
+;     偏差仅限语料外手写探针（p94/d7），不补特例。
+;   * 报出顺序：正主 = 树走访序；本檔 = arena 序（构造序 ≈ 源序，实测 probe 矩阵对齐）。
+;
+; 数据源：ck-sig.no bk/bv/bo 裸名门表（gen_ck_sig.py 对 oracle 批量探测烘焙，
+;   Authority = oracle 二进制行为本身）；curModule 归约复刻 stdModuleForSourceFile。
+;
+; ⚠️ 本檔自由函数受 SHS S6 约束（含点定义 out-param ≤1）；裸名定义 = 跨模块
+;   呼叫端写 ck.check（见 ps.no:58 同款注释）。
+; ⚠️ 跨模块【只传 primitive/vec】：结构体按值传参（ck 收集器、19-vec 的 ck-sig）
+;   在当代 Go 工具鏈触发 MIR 聚合体布局错/`argument is %vec`（实测 s13，见 §5.3.4.as）。
+;   ⇒ check 直接回【打包串 vec】，每条形如 'L|C|CODE|MSG'（MSG 可含 '|'，前 3 段无歧义）。
+
+# /compiler/src/ast
+# /compiler/src/asp
+# /compiler/src/ck-sig
+
+; check：对 parse 产物执行 not-defined 族检查（drv.cmd-vet 在 ps 错误数==0 时调用）。
+;   正主 runParseGate 语义（p90 实证）：有 parse 错 ⇒ 整族跳过，此处同。
+;   回值：诊断条目 vec（'L|C|CODE|MSG'），顺序 = arena 构造序（≈源序）。
+check = (t ast, path str) (out []str) {
+    out []str = with-cap(4)
+    sig = ck-sig.new()
+
+    ; ── 第一遍：defs 采集 + dot 接受者压制表 ──
+    ; defs =【非 IDENT】节点的 s0/s1 intern id（LET/FD/PARAM/TYPE_ALIAS/
+    ;   ITERATION_EXPR/ENUM_VALUE/TAGGED_ENUM_VARIANT/UNWRAP/NamedType/
+    ;   DOT-属性名… ∪ EXTERN 的 s1；数字/计数串一并登记无害）。
+    ;   ⚠️ 必须排除 IDENT 节点自身——否则裸引用名自登记，门②恒真、整族静默
+    ;   （s13 smoke 实錯：`x = cancelled` 不报）。
+    ; rcv = DOT 节点 kid0 且为 IDENT 的【节点索引】——正主走访对 DotExpression
+    ;   整子树跳过（checker.go:8306-8308），接受者名（多为模块名）不得入检；
+    ;   '@' 报裸错后【无沉默兜底】，rcv 是模块名/门控名接受者的唯一压制面。
+    ;   ⚠️ 压制条件必须用 nkid>0 而非 kid0>0——kid0 是【扁平 kids 数组起点】，
+    ;   节点创建于任何 kid 追加前时合法为 0（ast.no:212 `kid0 = kids.len()`），
+    ;   用 kid0>0 当门会把首个 DOT 的接受者漏进报面（s13d dot2 實證）。
+    ; 模块名放行：正主 collectModuleNames 把【全部 knownStdModules】灌进
+    ;   definedVars（checker.go:1936-1941，自動導入）⇒ 裸 async/math/bigint/arr
+    ;   等短名恒静默；以 sig.mok 二分復刻（p82/p83/p96/d4-d6 實證缺失）。
+    ; ⚠️ defs 无单调性保证：重复串在后续节点回【旧小 id】⇒ 序列必破升序，
+    ;   二分前提不成立 ⇒ 登记时线性去重 + 线性查属（勿用 vec.sort，codegen 坑）。
+    ; ⚠️ 多重指派 `a, b = f()` 的目标是 IDENT 节点（非槽名）——正主 CollectDefinedVars
+    ;   把目标名全登记；须从 kids[0..count0) 补登记 s0，否则 dom.no/toml.no 的
+    ;   `val, dec-ok = …` 后续引用全族误报（实测 s13c 语料误报扫）。
+    defs []i64 = with-cap(64)
+    rcv []i64 = with-cap(16)
+    ki = asp.K_IDENTIFIER
+    kd = asp.K_DOT_EXPRESSION
+    km = asp.K_MULTI_ASSIGN_STATEMENT
+    i = 1
+    (i < t.n) {
+        nd = ast.nd-at(t, i)
+        dk = nd.kind
+        s0 = nd.s0
+        s1 = nd.s1
+        kk = nd.kid0
+        nk = nd.nkid
+        dk != ki -> {
+            s0 > 0 && ck-def-has(defs, s0) == 0 -> {
+                defs.push(s0)
+            }
+            s1 > 0 && ck-def-has(defs, s1) == 0 -> {
+                defs.push(s1)
+            }
+        }
+        dk == kd && nk > 0 -> {
+            r = ast.kid-at(t, kk)
+            r > 0 && ast.kind-at(t, r) == ki -> {
+                rcv.push(r)
+            }
+        }
+        dk == km -> {
+            ntag = ast.count-at(t, i, 0)
+            mc = 0
+            (mc < ntag) {
+                tv = ast.kid-at(t, kk + mc)
+                tv > 0 && ast.kind-at(t, tv) == ki -> {
+                    tsv = ast.slot-at(t, tv, 0)
+                    tsv > 0 && ck-def-has(defs, tsv) == 0 -> {
+                        defs.push(tsv)
+                    }
+                }
+
+                #{overflow=wrap}
+                mc = mc + 1
+            }
+        }
+        i = i + 1
+    }
+
+    ; curModule 归约（正主 stdModuleForSourceFile，checker.go:2142）：
+    ;   取最后一个 "/std/" 之后首段，查 knownStdModules。
+    cur-module = ''
+    pos = path.rindex('/std/')
+    pos >= 0 -> {
+        rel = path.slice-bytes(pos + 5, path.len-bytes())
+        f = rel.split('/')
+        f0 = ''
+        f.len() > 0 -> {
+            f0 = ck-str-at(f, 0)
+        }
+        dot = f0.index('.no')
+        dot > 0 -> {
+            f0 = f0.slice-bytes(0, dot)
+        }
+        ck-sig-bsearch(sig.mok, f0) >= 0 -> {
+            cur-module = f0
+        }
+    }
+
+    ; ── 第二遍：裸标识符门 ──
+    ; ⚠️ nd-at 回结构体拷贝：其字段【不得直接出现在区块臂条件】——当代 Go 工具鏈
+    ;   报 'MIR->LLVM: NoVal'（实测 s13 最小复现）；一律先落地局部变量再用
+    ;   （ps.no:906 'k == asp.K_*' 同款惯用法）。
+    i = 1
+    (i < t.n) {
+        d = ast.nd-at(t, i)
+        dk = d.kind
+        s0 = d.s0
+        p8 = d.s8
+        dk == ki && p8 > 0 && ck-def-has(rcv, i) == 0 -> {
+            nm = ast.str-at(t, s0)
+            gate-keep = ck-name-silent(nm)
+            gate-keep == 0 -> {
+                gate-keep = ck-def-has(defs, s0)
+            }
+            gate-keep == 0 -> {
+                gate-keep = ck-allcaps(nm)
+            }
+            gate-keep == 0 -> {
+                b0 = ck-byte-at(nm, 0)
+                b0 == 95 -> {
+                    gate-keep = 1
+                }
+            }
+            gate-keep == 0 -> {
+
+                ; 模块名自动导入放行（正主 definedVars ⊇ knownStdModules，checker.go:1938）
+                ck-sig-bsearch(sig.mok, nm) >= 0 -> {
+                    gate-keep = 1
+                }
+            }
+            gate-keep == 0 -> {
+
+                ; bk/bv/bo 门表三态：'-' 沉默 / '@' 完全未知（报裸错）/ 'own&bo' 门控。
+                v = ck-sig-bare(sig, nm)
+                v == '-' -> {
+                    gate-keep = 1
+                }
+                gate-keep == 0 -> {
+                    own = ''
+                    v != '@' -> {
+                        amp = v.index('&')
+                        own = v.slice-bytes(0, amp)
+                        bo = v.slice-bytes(amp + 1, v.len-bytes())
+
+                        ; 自模块裸调放行（正主 arm⑦ checker.go:8270：owner==curModule 整臂 return）
+                        bo != '' && bo == cur-module -> {
+                            gate-keep = 1
+                        }
+                    }
+                    gate-keep == 0 -> {
+                        m = '\'' - nm - '\' is not defined'
+                        own != '' -> {
+                            m = '\'' - nm - '\' is not defined; call it as \'' - own - '.' - nm - '\' (cross-module calls must be module-qualified)'
+                        }
+                        out.push((p8 / 16777216).to-str() - '|' - (p8 % 16777216).to-str() - '|4bek3xc6|' - m)
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+; ck-name-silent：固定字符集放行名（关键字 val/err/ok/nil/it/self + 内建型名 + char）。
+;   正主 8239-8243（关键字）与 8261（isBuiltinType+char；char 不在 isBuiltinType 但确是型）。
+ck-name-silent = (nm str) (r i64) {
+    r = 0
+    nm == 'val' -> {
+        r = 1
+        return
+    }
+    nm == 'err' -> {
+        r = 1
+        return
+    }
+    nm == 'ok' -> {
+        r = 1
+        return
+    }
+    nm == 'nil' -> {
+        r = 1
+        return
+    }
+    nm == 'it' -> {
+        r = 1
+        return
+    }
+    nm == 'self' -> {
+        r = 1
+        return
+    }
+    nm == 'char' -> {
+        r = 1
+        return
+    }
+    nm == 'byte' -> {
+        r = 1
+        return
+    }
+    nm == 'bool' -> {
+        r = 1
+        return
+    }
+    nm == 'str' -> {
+        r = 1
+        return
+    }
+    nm == 'txt' -> {
+        r = 1
+        return
+    }
+    nm == 'f32' -> {
+        r = 1
+        return
+    }
+    nm == 'f64' -> {
+        r = 1
+        return
+    }
+    nm == 'i8' -> {
+        r = 1
+        return
+    }
+    nm == 'i16' -> {
+        r = 1
+        return
+    }
+    nm == 'i32' -> {
+        r = 1
+        return
+    }
+    nm == 'i64' -> {
+        r = 1
+        return
+    }
+    nm == 'i128' -> {
+        r = 1
+        return
+    }
+    nm == 'u8' -> {
+        r = 1
+        return
+    }
+    nm == 'u16' -> {
+        r = 1
+        return
+    }
+    nm == 'u32' -> {
+        r = 1
+        return
+    }
+    nm == 'u64' -> {
+        r = 1
+        return
+    }
+    nm == 'u128' -> {
+        r = 1
+        return
+    }
+}
+
+; ck-def-has：值是否在 vec 中（线性扫描——defs/rcv 皆无升序保证，见第一遍注释；
+;   实测 s13：重复串回旧小 id 破单调 ⇒ 二分前提不成立）。
+ck-def-has = (v []i64, id i64) (r i64) {
+    r = 0
+    i = 0
+    n = v.len()
+    (i < n) {
+        ck-i64-at(v, i) == id -> {
+            r = 1
+            return
+        }
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; ck-allcaps：正主 isAllCapsConst（checker.go:1327）——非空、含至少一大写、
+;   其余仅 [0-9A-Z-]；否则 false。
+ck-allcaps = (nm str) (r i64) {
+    r = 0
+    has-upper = 0
+    legal = 1
+    i = 0
+    n = nm.len-bytes()
+    (i < n) {
+        cb = ck-byte-at(nm, i)
+        cls = ck-char-cls(cb)
+        cls == 1 -> {
+            has-upper = 1
+        }
+        cls == 0 -> {
+            legal = 0
+        }
+        i = i + 1
+    }
+    has-upper == 1 && legal == 1 -> {
+        r = 1
+    }
+}
+
+; ck-byte-at：字节取值——越界/空回 0（哨兵 cls 非法侧，保守不放行）。
+;   ⚠️ s.byte(i) 回 ?byte 且「内联 call(): {match}」有毒（ck-sig-lt 同款两步形注释）。
+ck-byte-at = (s str, i i64) (r i64) {
+    r = 0
+    o = s.byte(i)
+    x = o: {
+        ok -> it
+
+        -> -1
+    }
+    x >= 0 -> {
+        r = x
+    }
+}
+
+; ck-char-cls：0=非法（小写或其他）/ 1=大写 A-Z / 2=数字 / 3=连字符 '-'。
+ck-char-cls = (c i64) (r i64) {
+    r = 0
+    c >= 65 && c <= 90 -> {
+        r = 1
+    }
+    c >= 97 && c <= 122 -> {
+        r = 0
+    }
+    c >= 48 && c <= 57 -> {
+        r = 2
+    }
+    c == 45 -> {
+        r = 3
+    }
+}
+
+; ck-str-at：vec 索引安全取值（越界回 ''）。⚠️ 不用外掛容器泛型方法（.at/.sort
+;   单態化 codegen 坑，实测 s13）；索引形回 option，两步 match 形解毒。
+ck-str-at = (v []str, i i64) (r str) {
+    r = ''
+    o = v[i]
+    x = o: {
+        ok -> it
+
+        -> ''
+    }
+    x != '' -> {
+        r = x
+    }
+}
+
+; ck-i64-at：i64 vec 索引安全取值（越界回 -1——intern id 恒 >0，哨兵无碰撞）。
+ck-i64-at = (v []i64, i i64) (r i64) {
+    r = -1
+    o = v[i]
+    x = o: {
+        ok -> it
+
+        -> -1
+    }
+    x != nil -> {
+        r = x
+    }
+}

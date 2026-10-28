@@ -28,6 +28,11 @@ bigint {
     len i64
 }
 
+; big: 運算符重載的「聯合形參」型別（路線 C）。`a + 1` 等混合運算數由
+; `_add = (b big)` + 型別解構 match 按 b 的具體型別靜態選臂；右側 i64 標量走
+; i64 臂（借道既有 `*-i64` 方法），bigint 走同型臂（原 big⊕big 核心）。
+big = bigint | i64
+
 ; ═══════════════════════════════════════════════
 ; 建構與初始化
 ; ═══════════════════════════════════════════════
@@ -199,9 +204,25 @@ bigint.eq = (b bigint) (r bool) {
 ; ═══════════════════════════════════════════════
 
 ; _add: a + b（運算符重載；書寫 ?bigint，編譯器視作 bigint）
-; 註：`b.abs-sub(s)` 的實參須為具名變數——裸 `.` 作「方法呼叫」實參存在
-; 既有降級缺口（實參被降成 zeroinitializer 傳值 → 段錯誤），故先 `s = .` 捕获。
-bigint._add = (b bigint) (c ?bigint) {
+; 路線 C：聯合形參 `(b big)` + 型別解構 match。bigint 臂委派 `add-bigint`、i64 臂
+; 委派 `add-i64`。核心不內聯於型別臂內：實測在 match 臂 BlockStatement 裡對命名輸出
+; 形參 `c` 先 `c = expr` 再 `c.sign = ...` 的欄位突變不會回寫（符號丟失，如 -100+7
+; 誤得 93），委派到普通方法後 `c.sign` 突變語義回歸正常（與 _mul 委派 mul-bigint 同理）。
+bigint._add = (b big) (c ?bigint) {
+    b: {
+        v bigint -> {
+            c = .add-bigint(v)
+        }
+
+        v i64 -> {
+            c = .add-i64(v)
+        }
+    }
+}
+
+; add-bigint: self + b 的 big⊕big 核心（普通具體方法，非運算符重載；供 _add 委派）
+; 實參具名化：`v.abs-sub(s)` 的 s 需先 `s = .` 捕獲（裸 `.` 作方法實參有既有降級缺口）。
+bigint.add-bigint = (b bigint) (c bigint) {
     s = .
     .sign == b.sign -> {
         c = .abs-add(b)
@@ -222,8 +243,21 @@ bigint._add = (b bigint) (c ?bigint) {
     }
 }
 
-; _sub: a - b（運算符重載；實參具名化理由同 _add）
-bigint._sub = (b bigint) (c ?bigint) {
+; _sub: a - b（運算符重載；委派策略同 _add）
+bigint._sub = (b big) (c ?bigint) {
+    b: {
+        v bigint -> {
+            c = .sub-bigint(v)
+        }
+
+        v i64 -> {
+            c = .add-i64(0 - v)
+        }
+    }
+}
+
+; sub-bigint: self - b 的 big⊖big 核心（普通具體方法；供 _sub 委派）
+bigint.sub-bigint = (b bigint) (c bigint) {
     s = .
     .sign != b.sign -> {
         c = .abs-add(b)
@@ -244,8 +278,25 @@ bigint._sub = (b bigint) (c ?bigint) {
     }
 }
 
-; _mul: a * b（運算符重載）
-bigint._mul = (b bigint) (c ?bigint) {
+; _mul: a * b（運算符重載；路線 C 同 _add，兩臂皆委派給具體方法）
+; bigint 臂委派 mul-bigint、i64 臂委派 mul-i64。核心不內聯於型別臂內是因為
+; 重量級迴圈／`with-len`／`#{overflow=wrap}` 嵌在 match 臂 BlockStatement 裡
+; 的 lowering 邊界會崩潰（實測 segfault），委派到普通方法後 `.` 接收者與輸出
+; 形參語義回歸正常，與可用的 _add i64 臂同形。
+bigint._mul = (b big) (c ?bigint) {
+    b: {
+        v bigint -> {
+            c = .mul-bigint(v)
+        }
+
+        v i64 -> {
+            c = .mul-i64(v)
+        }
+    }
+}
+
+; mul-bigint: |self| * |b| 的大整數核心（普通具體方法，非運算符重載；供 _mul 委派）
+bigint.mul-bigint = (b bigint) (c bigint) {
 
     al = .len
     bl = b.len
@@ -290,16 +341,33 @@ bigint._mul = (b bigint) (c ?bigint) {
     c.normalize()
 }
 
-; _div: a / b（運算符重載；除零依 div-mod 回傳零）
-bigint._div = (b bigint) (q ?bigint) {
-    r = bigint {}
-    q, r = .div-mod(b)
+; _div: a / b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 div-i64）
+bigint._div = (b big) (q ?bigint) {
+    b: {
+        v bigint -> {
+            r = bigint {}
+            q, r = .div-mod(v)
+        }
+
+        v i64 -> {
+            q = .div-i64(v)
+        }
+    }
 }
 
-; _mod: a % b（運算符重載；除零依 div-mod 回傳零）
-bigint._mod = (b bigint) (r ?bigint) {
-    q = bigint {}
-    q, r = .div-mod(b)
+; _mod: a % b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 mod-i64，
+; 其結果為 i64，再以 from-i64 提升為 bigint 以對齊輸出形參 r）
+bigint._mod = (b big) (r ?bigint) {
+    b: {
+        v bigint -> {
+            q = bigint {}
+            q, r = .div-mod(v)
+        }
+
+        v i64 -> {
+            r = bigint.from-i64(.mod-i64(v))
+        }
+    }
 }
 
 ; abs-add: |self| + |b|（忽略正負號）

@@ -2207,6 +2207,12 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
         tk.typ == tok.IDENT || tk.typ == tok.IN || tk.typ == tok.MATCH -> {
             idx = ast.add(t, asp.K_IDENTIFIER)
             ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
+
+            ; s13 坐标槽：s8 = ln*2^24 + cl（1-based，同 ps-error 取值）。
+            ;   ck.no 的 not-defined 族需在【标识符叶】上报行列；nd 无 ln/cl 字段，
+            ;   s8 在 dump 渲染区（s0..s7）之外 ⇒ `no ast` 输出不变（L2 实证）。
+            ;   未打包的合成人 Identifier（desugar/泛型名等）⇒ ck 侧静默跳过（保守）。
+            ast.set-slot(t, idx, 8, tk.ln * 16777216 + tk.cl)
             ps-bump(p)
         }
 

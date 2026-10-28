@@ -399,6 +399,39 @@ func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
 	return containerElemType(lt) != ""
 }
 
+// mapIndexBaseType returns the map type text of an IndexExpression's base when
+// that base is a map-typed variable (`m [str]i64` -> "[str]i64"), else "".
+//
+// It exists because isSafeIndexBase CANNOT answer this: containerElemType treats
+// a map type as an array (`[str]i64` -> elem "i64"), so a map base looks exactly
+// like a positional container there. That conflation is harmless when typing a
+// read (both yield an option) but fatal for `?=`, whose write-back assumes the
+// element lives at a POSITION in the container - see lowerUnwrapAssign.
+//
+// Type lookup order mirrors isSafeIndexBase (per-function table first, to avoid
+// cross-function pollution from the global snapshot).
+func (p *Parser) mapIndexBaseType(idx *IndexExpression) string {
+	if idx == nil || idx.Left == nil {
+		return ""
+	}
+	ident, ok := idx.Left.(*Identifier)
+	if !ok {
+		return ""
+	}
+	lt := ""
+	if t, ok := p.idxLocalTypes[p.curFuncName][ident.Value]; ok && t != "" {
+		lt = strings.TrimPrefix(t, "?")
+	} else if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
+		lt = strings.TrimPrefix(t, "?")
+	} else if t, ok := p.sem.VarTypes[ident.Value]; ok {
+		lt = strings.TrimPrefix(t, "?")
+	}
+	if IsMapTypeString(lt) {
+		return lt
+	}
+	return ""
+}
+
 // isTypeName checks if the given literal is a known type name.
 // Used to support concise declarations like `i64` on its own line.
 func isTypeName(literal string) bool {

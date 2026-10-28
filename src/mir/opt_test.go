@@ -114,6 +114,11 @@ func optIntConsts(m *Module) map[int64]int {
 func lowerWithOpt(t *testing.T, src, lvl string) *Module {
 	t.Helper()
 	t.Setenv("NOLANG_MIR_OPT", lvl)
+	// Comptime folds at LOWERING time, independently of NOLANG_MIR_OPT, so
+	// without this the "" control would already be folded and the assertions
+	// below ("the control must still contain the add/mul") could never hold.
+	// Turning it off in both arms keeps the comparison about the optimiser pass.
+	t.Setenv("NOLANG_COMPTIME", "0")
 	return lowerSrc(t, src)
 }
 

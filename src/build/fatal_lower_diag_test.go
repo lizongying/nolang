@@ -14,6 +14,11 @@ import (
 // that is silently ignored is worse than none: the build would emit a call whose
 // target does not exist. `firstFatalLowerDiag` is what turns a lower diagnostic
 // into a refused build, so "deprecated" must be one of its fatal kinds.
+//
+// The same argument covers "map-index" (D9 map subscript lowering): every such
+// diagnostic means the get/put was NOT emitted — the read yields nothing and the
+// write silently does not happen. A map write that quietly does nothing is a
+// wrong-but-exit-0 program, which is worse than a build error.
 func TestFirstFatalLowerDiagAcceptsDeprecated(t *testing.T) {
 	cases := []struct {
 		name string
@@ -22,6 +27,7 @@ func TestFirstFatalLowerDiagAcceptsDeprecated(t *testing.T) {
 	}{
 		{"interp (pre-existing fatal kind)", "interp", true},
 		{"deprecated (removed builtin backstop)", "deprecated", true},
+		{"map-index (dropped map subscript)", "map-index", true},
 		{"an unrelated non-fatal kind", "for-range", false},
 		{"another unrelated non-fatal kind", "unsupported", false},
 	}
