@@ -1,10 +1,10 @@
 ; err — 錯誤處理
 ;
 ; 提供結構化的錯誤型別與工具函式。
-; error 結構體封裝錯誤碼與訊息，code 枚舉定義常見錯誤類別。
+; err 結構體封裝錯誤碼、訊息與發生位置（file / line / col），code 枚舉定義常見錯誤類別。
 ;
 ; 用法：
-;   e = err.new(code.io, 'disk full')
+;   e = err('disk full', code.io)
 ;   yes = e.is(code.io)
 ;   s = e.format()
 
@@ -22,18 +22,23 @@ code {
     parse,
     invalid,
     overflow,
+    unknown,
 }
 
 ; ═══════════════════════════════════════════════
 ; 錯誤結構體
 ; ═══════════════════════════════════════════════
 
-; error: 結構化錯誤
+; err: 結構化錯誤
 ; code: 錯誤碼（code 枚舉值）
 ; msg: 錯誤訊息
-error {
+; file / line / col: 錯誤發生位置（由編譯器在構造點自動注入；手動建構時留空字串與 0）
+err {
     code code
     msg str
+    file str
+    line i64
+    col i64
 }
 
 ; ═══════════════════════════════════════════════
@@ -41,18 +46,31 @@ error {
 ; ═══════════════════════════════════════════════
 
 ; new: 建立錯誤
-; ec: 錯誤碼（code 枚舉值，如 code.io）
 ; msg: 錯誤訊息
-new = (ec code, msg str) (e error) {
-    e = error {
+; ec: 錯誤碼（code 枚舉值，如 code.io；省略時為 code.unknown）
+new = (msg str, ec code = code.unknown) (e err) {
+    e = err {
         code: ec
         msg: msg
+        file: ''
+        line: 0
+        col: 0
+    }
+}
+
+; new-at: 建立帶位置的錯誤（位置由呼叫方明確提供）
+new-at = (msg str, ec code, file str, line i64, col i64) (e err) {
+    e = err {
+        code: ec
+        msg: msg
+        file: file
+        line: line
+        col: col
     }
 }
 
 ; errno-to-code: 將 C errno 對映為 code 列舉
 errno-to-code = (errno i64) (ec code) {
-    ec = code.invalid
     {
         errno == 0 -> ec = code.ok
 
@@ -67,16 +85,21 @@ errno-to-code = (errno i64) (ec code) {
         errno == 84 -> ec = code.parse
 
         errno == 12 || errno == 28 || errno == 34 || errno == 75 -> ec = code.overflow
+
+        -> ec = code.unknown
     }
 }
 
-; err-from-errno: 從 C errno 建立錯誤
+; from-errno: 從 C errno 建立錯誤
 ; errno: C 標準錯誤碼（如 13 = EACCES）
-err-from-errno = (errno i64) (e error) {
+from-errno = (errno i64) (e err) {
     msg = os.strerror(errno)
-    e = error {
+    e = err {
         code: errno-to-code(errno)
         msg: msg
+        file: ''
+        line: 0
+        col: 0
     }
 }
 
@@ -84,22 +107,22 @@ err-from-errno = (errno i64) (e error) {
 ; 查詢函式
 ; ═══════════════════════════════════════════════
 
-; error.is: 檢查錯誤碼是否匹配
+; err.is: 檢查錯誤碼是否匹配
 ; ec: 要匹配的錯誤碼
 ; 返回 yes: 是否匹配
-error.is = (ec code) (yes bool) {
+err.is = (ec code) (yes bool) {
     .code == ec -> yes = true
 }
 
-; error.msg: 取得錯誤訊息
+; err.msg: 取得錯誤訊息
 ; 返回 msg: 錯誤訊息
-error.msg = () (msg str) {
+err.msg = () (msg str) {
     msg = .msg
 }
 
-; error.code: 取得錯誤碼
+; err.code: 取得錯誤碼
 ; 返回 ec: 錯誤碼
-error.code = () (ec code) {
+err.code = () (ec code) {
     ec = .code
 }
 
@@ -107,8 +130,8 @@ error.code = () (ec code) {
 ; 格式化
 ; ═══════════════════════════════════════════════
 
-; error.format: 格式化錯誤為字串
+; err.format: 格式化錯誤為字串
 ; 返回 s: 錯誤訊息
-error.format = () (s str) {
+err.format = () (s str) {
     s = .msg
 }

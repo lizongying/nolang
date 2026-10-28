@@ -7,7 +7,7 @@
 # /test/runner
 
 t-new = () {
-    e = err.new(code.io, 'disk full')
+    e = err.new('disk full', code.io)
     yes = e.is(code.io)
     runner.is-true(yes, 'err.is(code.io) matches')
     msg = e.msg()
@@ -15,19 +15,19 @@ t-new = () {
 }
 
 t-is = () {
-    e = err.new(code.timeout, 'timed out')
+    e = err.new('timed out', code.timeout)
     yes = e.is(code.timeout)
     runner.is-true(yes, 'is(timeout) matches')
 }
 
 t-msg = () {
-    e = err.new(code.parse, 'bad json')
+    e = err.new('bad json', code.parse)
     msg = e.msg()
     runner.str-eq(msg, 'bad json', 8, 'msg content')
 }
 
 t-format = () {
-    e = err.new(code.io, 'read error')
+    e = err.new('read error', code.io)
     s = e.format()
     runner.str-eq(s, 'read error', 10, 'format content')
 }

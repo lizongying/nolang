@@ -115,17 +115,21 @@ code {
     parse,
     invalid,
     overflow,
+    unknown,
 }
 
 ; Struct
-error {
+err {
     code code
     msg str
+    file str
+    line i64
+    col i64
 }
 
 ; Functions
-e = err.new(code.io, msg)            ; Create error
-e = err.err-from-errno(errno)         ; Create from C errno
+e = err.new(msg, code.io)            ; Create error
+e = err.from-errno(errno)         ; Create from C errno
 yes = e.is(code.io)                  ; Check error code
 msg = e.msg()                       ; Get error message
 c = e.code()                        ; Get error code

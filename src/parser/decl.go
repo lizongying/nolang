@@ -1149,6 +1149,10 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 				if p.currentToken.Type == lexer.RPAREN {
 					break
 				}
+				// 無進度保護：若本輪迭代後 token 位置完全沒動（型別解析器認不得
+				// 該 token 且未消耗它），立即報錯跳出。否則迴圈會原地空轉、每圈
+				// 配置一個 TaggedEnumField，把整支 genstdsig 撐到 OOM 被砍。
+				prevLine, prevCol := p.currentToken.Line, p.currentToken.Column
 				field := &TaggedEnumField{Token: p.currentToken}
 				if p.currentToken.Type == lexer.IDENT {
 					field.Name = p.currentToken.Literal
@@ -1158,6 +1162,12 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 					field.Type = buildType(ts, field.Token)
 				}
 				variant.Fields = append(variant.Fields, field)
+				if p.currentToken.Line == prevLine && p.currentToken.Column == prevCol {
+					msg := fmt.Sprintf("line %d, column %d: unexpected token %s in tagged enum variant payload (parser made no progress)",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					p.saveError(msg)
+					break
+				}
 				if p.currentToken.Type == lexer.COMMA {
 					p.nextToken()
 				}
@@ -1234,6 +1244,19 @@ func (p *Parser) parseTaggedEnumVariantType() string {
 	case lexer.IDENT, lexer.NIL:
 		s := p.currentToken.Literal
 		p.nextToken()
+		// 支援 dotted/qualified 載荷型別：err(e error.err) / err(e err.err)。
+		// 少了這段，`error` 之後的 DOT 無人消耗且此函式回傳 "" 不前進，
+		// parseTaggedEnumDefinition 的欄位迴圈會原地空轉、每圈配置一個
+		// TaggedEnumField，直到整支 genstdsig 被 OOM/訊號砍掉。
+		for p.currentToken.Type == lexer.DOT {
+			p.nextToken() // skip DOT
+			if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.NIL {
+				s += "." + p.currentToken.Literal
+				p.nextToken()
+				continue
+			}
+			break
+		}
 		return s
 	case lexer.LBRACKET:
 		// []type 或 [N]type

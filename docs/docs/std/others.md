@@ -104,17 +104,21 @@ code {
     parse,
     invalid,
     overflow,
+    unknown,
 }
 
 ; 結構體
-error {
+err {
     code code
     msg str
+    file str
+    line i64
+    col i64
 }
 
 ; 函數
-e = err.new(code.io, msg)            ; 建立錯誤
-e = err.err-from-errno(errno)         ; 從 C errno 建立
+e = err.new(msg, code.io)            ; 建立錯誤
+e = err.from-errno(errno)         ; 從 C errno 建立
 yes = e.is(code.io)                  ; 判斷錯誤碼
 msg = e.msg()                       ; 取得錯誤訊息
 c = e.code()                        ; 取得錯誤碼

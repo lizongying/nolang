@@ -1,13 +1,13 @@
 ; err.no — err 模組測試
 ;
-; 測試 new, error.is, error.msg, error.code, err-from-errno, error.format
+; 測試 new, error.is, error.msg, error.code, from-errno, error.format
 ; 注意：str-long value type 跨函式邊界傳遞時長度不一致，
 ; 故 msg 相關測試只驗證呼叫完成，不檢查字串長度。
 
 ; # std/err
 
 ; ── 1. new 建立錯誤，檢查 code ──
-e = err.new(code.io, 'disk full')
+e = err.new('disk full', code.io)
 
 yes = e.is(code.io)
 {
@@ -42,16 +42,16 @@ mc = e.code()
     -> print('fail: error.code')
 }
 
-; ── 5. err-from-errno(2) 建立錯誤（errno 2 = ENOENT → code.not-found）──
-e2 = err.err-from-errno(2)
+; ── 5. from-errno(2) 建立錯誤（errno 2 = ENOENT → code.not-found）──
+e2 = err.from-errno(2)
 yes2 = e2.is(code.not-found)
 {
-    yes2 -> print('ok: err-from-errno code')
+    yes2 -> print('ok: from-errno code')
 
-    -> print('fail: err-from-errno code')
+    -> print('fail: from-errno code')
 }
 errno-msg = e2.msg()
-print('ok: err-from-errno msg')
+print('ok: from-errno msg')
 
 ; ── 6. error.format 格式化錯誤 ──
 s = e.format()

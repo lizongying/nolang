@@ -9,6 +9,8 @@
 ;       其余所有跨模块调用都必须加模块前缀（如 fs.read、os.get-env）。
 ; ═══════════════════════════════════════════════════════════
 
+# std/err error
+
 ; ── 容量/长度构造 ──────────────────────────────────────────
 
 ; with-cap: 建立指定容量的字串或切片（len=0），型别由赋值左侧推断
@@ -146,6 +148,7 @@ exit = (c i64) {
 ;   x = 42                     // 設為有值
 ;   x = nil                    // 設為空
 ;   x = err('msg')             // 設為錯誤
+;   x = err('msg', code.io)    // 設為錯誤並指定 code（TODO: 待 err.err 載荷落地）
 ;
 ;   match
 ;   x: {
@@ -157,5 +160,9 @@ exit = (c i64) {
 option {
     ok(v t),
     nil,
-    err(e str),
+    err(e error.err),
+}
+
+#{buildin}
+err = (msg str, ec error.code = error.code.unknown) (e error.err) {
 }
