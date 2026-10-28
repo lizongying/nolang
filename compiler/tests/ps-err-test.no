@@ -1,0 +1,136 @@
+; ps-err-test.no — compiler/src/ps 語法錯誤收集器（s10/M3-c 首族）的 L0 測試
+;
+; 執行： ./bin/no run compiler/tests/ps-err-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
+;
+; ── 這些期望字串從哪來 ────────────────────────────────────────────
+; 全部由 L3 oracle 實測釘死（`./bin/no vet <檔>`），**不是**手寫猜的：
+;   'x = foo(1 2)'  ⇒ 1:11 expected comma or right parenthesis, got INT instead
+;   'y =\n'         ⇒ 2:1  expected expression, got nil instead
+;   'x = (1 + 2\n'  ⇒ oracle 報 2:0 got NEWLINE；noc 游標在跳行後停在
+;                     2:1 EOF——NEWLINE 坐標族是已錄缺口（docs §5.3.4.ao），
+;                     本檔先釘 noc 現況，坐標族修復後再擰到 oracle 形。
+;
+; ⚠️ 本檔只測【收集器】（ps.eLn/eCl/eMsg/eCode + ps-err-count）；
+;    渲染行形已由 diag-test.no 釘死，端到端 CLI 契約由 L3 差分覆蓋。
+
+# /test/runner.eq
+# /test/runner.str-eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/tok
+# /compiler/src/ps
+
+; ═══════════════════════════════════════════════
+; helper：parse 一段源碼，回傳收集器（呼叫端負責讀欄位）
+; ═══════════════════════════════════════════════
+
+parse-err = (src str) (p psst) {
+    t = ast.make()
+    p = ps.new(src)
+    root = ps.parse(t, p)
+    _ = root
+}
+
+; ═══════════════════════════════════════════════
+; 1. 實參缺逗號：'x = foo(1 2)' ⇒ 恰 1 條、坐標與正文釘死
+; ═══════════════════════════════════════════════
+
+test-call-missing-comma = () {
+    p = parse-err('x = foo(1 2)')
+    runner.eq(ps-err-count(p), 1, 'call-comma count')
+    runner.eq(p.eLn[0], 1, 'call-comma line')
+    runner.eq(p.eCl[0], 11, 'call-comma col')
+    runner.str-eq(p.eMsg[0], 'expected comma or right parenthesis, got INT instead', 52, 'call-comma msg')
+    runner.str-eq(p.eCode[0], 'E_GENERAL', 9, 'call-comma code')
+}
+
+; ═══════════════════════════════════════════════
+; 2. let RHS 落空：'y =\n' ⇒ expected expression, got nil instead
+; ═══════════════════════════════════════════════
+
+test-let-nil-value = () {
+    p = parse-err('y =\n')
+    runner.eq(ps-err-count(p), 1, 'let-nil count')
+    runner.eq(p.eLn[0], 2, 'let-nil line')
+    runner.eq(p.eCl[0], 1, 'let-nil col')
+    runner.str-eq(p.eMsg[0], 'expected expression, got nil instead', 36, 'let-nil msg')
+}
+
+; ═══════════════════════════════════════════════
+; 3. 分組缺 RPAREN：'x = (1 + 2\n' ⇒ 恰 1 條（noc 現況坐標 2:1 EOF）
+; ═══════════════════════════════════════════════
+
+test-group-missing-rparen = () {
+    p = parse-err('x = (1 + 2\n')
+    runner.eq(ps-err-count(p), 1, 'group count')
+    runner.eq(p.eLn[0], 2, 'group line')
+    runner.eq(p.eCl[0], 1, 'group col (noc cursor; oracle 2:0 NEWLINE — recorded gap)')
+    runner.str-eq(p.eMsg[0], 'expected right parenthesis, got EOF instead', 43, 'group msg')
+}
+
+; ═══════════════════════════════════════════════
+; 4. 去重鍵 (ln, cl, msg)：同鍵只留一條（Go saveError 同形）；異鍵兩條
+; ═══════════════════════════════════════════════
+
+test-dedup = () {
+    t = ast.make()
+    p = ps.new('x = (1 + 2\n')
+    root = ps.parse(t, p)
+    _ = root
+    n0 = ps-err-count(p)
+    n0 == 1 -> {
+
+        ; 同坐標同文重報 ⇒ 不新增（Go saveError 去重；restoreState 重試即此形態）
+        ; ⚠️ 先 .copy()：把 vec 元素的 str 欄位直接交給 ps-error 的 push 會產生別名）
+        m = p.eMsg[0].copy()
+        ps-error(p, m, 'E_GENERAL')
+        runner.eq(ps-err-count(p), 1, 'dedup: same (ln,cl,msg) kept once')
+
+        ; 同坐標異文 ⇒ 新鍵，須新增
+        ps-error(p, 'different message', 'E_GENERAL')
+        runner.eq(ps-err-count(p), 2, 'dedup: different message recorded')
+    }
+
+    n0 != 1 -> runner.eq(n0, 1, 'dedup: baseline one error')
+}
+
+; ═══════════════════════════════════════════════
+; 5. 合法源碼零錯誤 + 空參呼叫不誤報
+; ═══════════════════════════════════════════════
+
+test-clean-no-errors = () {
+    p = parse-err('x = foo(1, 2)\ny = bar()\nz = (1 + 2) * 3\n')
+    runner.eq(ps-err-count(p), 0, 'clean count')
+}
+
+; ═══════════════════════════════════════════════
+; 6. 多行呼叫（實參前後換行）不誤報——實參循環重寫的回歸釘樁
+; ═══════════════════════════════════════════════
+
+test-multiline-call = () {
+    p = parse-err('x = foo(\n    1,\n    2)\n')
+    runner.eq(ps-err-count(p), 0, 'multiline-call count')
+}
+
+; ═══════════════════════════════════════════════
+test-call-missing-comma()
+test-let-nil-value()
+test-group-missing-rparen()
+test-dedup()
+test-clean-no-errors()
+test-multiline-call()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

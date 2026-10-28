@@ -18,6 +18,7 @@
 # /compiler/src/ast
 # /compiler/src/ps
 # /compiler/src/asp
+# /compiler/src/diag
 
 ; ⚠️ 本檔的 drv.* 是**含點的自由函式**（沒有宣告 struct drv），因此受 SHS S6
 ;    約束：每個定義的 out-param 至多 1 個，否則執行期 SIGSEGV。見 docs 附錄 A.6。
@@ -151,15 +152,14 @@ drv.cmd-ast = () (code i64) {
     print(out)
 }
 
-; cmd-vet: 執行診斷檢查（M3-a 骨架）
+; cmd-vet: 執行診斷檢查（M3-a 骨架＋s10 語法錯誤首族）
 ; 輸出契約錨定 oracle `no vet <file>`（authority：Go printLintResults，src/cmd/no/main.go）：
 ;   無診斷        ⇒ stdout 'No issues found.'，rc=0
 ;   檔案不存在    ⇒ stderr 'Error: stat <path>: no such file or directory'，rc=1
-;   有診斷        ⇒ 每條 <file>:<line>:<col>: [LEVEL] <src>: <msg> [<code>]（stdout），
-;                  摘要走 stderr（harness 不可見，M3-c 才接）
-; ⚠️ M3-a 階段前端【尚未接上任何診斷來源】——ps.no 不產錯、checker 未實作，
-;    所以任何可讀檔一律回 'No issues found.'。這不是 PASS：oracle 報診斷的檔
-;    會在 L3 差分處誠實 DIFF，基盤解見 docs §6.4。
+;   有診斷        ⇒ 每條 <file>:<line>:<col>: [LEVEL] <src>: <msg> [<code>] （stdout），
+;                  摘要「\nN error(s), W warning(s), H hint(s)」走 stderr；rc=1（鉗制，見下）
+;   s10 起的診斷源 = ps.no 的語法錯誤收集器（三站點：分組缺 RPAREN、實參缺逗號、
+;   let RHS 落空）；checker 未實作 ⇒ WARNING/HINT 恆 0，LINT 族留 M3-c 後續增量。
 drv.cmd-vet = () (code i64) {
     code = EXIT-OK
     n = args.count()
@@ -196,14 +196,55 @@ drv.cmd-vet = () (code i64) {
     }
 
     ; 跑完整前端，保證 vet 與 ast 共用同一條 parse 路徑；
-    ; M3-b/M3-c 的診斷收集器會掛在這裡（取代下方的恆「無診斷」出口）。
+    ; ps.no 的語法錯誤收集器（s10/M3-c 首族）掛在 parse 期間。
     t = ast.make()
     p = ps.new(src)
     root = ps.parse(t, p)
     _ = root
 
-    ; M3-a：診斷清單恆空 ⇒ 總走「無問題」分支
-    print('No issues found.')
+    ; s10：渲染 ps 收集的語法錯誤。契約（authority Go printLintResults）：
+    ;   每條診斷 stdout：render 行形（file=被 vet 的路徑；parser 錯誤無跨檔歸屬）
+    ;   有診斷：stderr 摘要「\nN error(s), W warning(s), H hint(s)」
+    ;     （Go `return errorCount` 是函式內值；caller vet 端 `if errorCount > 0 { os.Exit(1) }`
+    ;      ——實測 3 錯檔 rc=1，行程退出碼恆鉗制為 1；本族只產 ERROR ⇒ W/H 恆 0）
+    ;   無診斷：stdout 'No issues found.'，rc=0
+    nerr = 0
+    i = 0
+    (i < ps.ps-err-count(p)) {
+        d = diag {
+            file: path
+            line: 0
+            col: 0
+            level: 2
+            src: 'nolang-compile'
+            msg: ''
+            code: 'E_GENERAL'
+        }
+        d.line = p.eLn[i]
+        d.col = p.eCl[i]
+        d.msg = p.eMsg[i]
+        d.code = p.eCode[i]
+        print(d.render())
+
+        #{overflow=wrap}
+        nerr = nerr + 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    nerr > 0 -> {
+        eprint('')
+        eprint(nerr.to-str() - ' error(s), 0 warning(s), 0 hint(s)')
+    }
+
+    nerr == 0 -> {
+        print('No issues found.')
+    }
+
+    ; rc 鉗制：對齊 Go vet caller `errorCount > 0 ⇒ os.Exit(1)`（main.go:3328-3332）
+    nerr > 0 -> {
+        code = 1
+    }
 }
 
 ; dispatch: 依 argv[1] 分派；回傳行程退出碼

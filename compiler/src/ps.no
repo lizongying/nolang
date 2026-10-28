@@ -103,6 +103,10 @@ psst {
     ifdFn str; s8g：IsFuncDeclared 追蹤鍵（''⇒用 p.fn；`recv.method = (…)` 形 Go 以**裸方法名**為鍵且事後不隨 FuncVarTypes 遷移，decl.go:56-82 ⇒ 同名方法跨接收者共享宣告集，實測 mD/mE）
     varFlag i64; 變參標記（ps-parse-param 檢測 `name ..T` 時置 1；呼叫端建 FunctionDefinition 時寫入 varflag 槽，對齊 Go IsVariadic / dump 的 Variadic{}）
     resParam i64; 解析**回傳值**參數時為 1（Go decl.go:1693-1698 的 Results 路徑**不**解析默認值；只有 Parameters 路徑 decl.go:362-366 / :1631-1635 才解析 `= expr`）
+    eLn []i64; s10：診斷收集器（對齊 Go parser.diags []Diagnostic）——錯誤行號
+    eCl []i64; 錯誤列號
+    eMsg []str; 錯誤正文（【不含】位置前綴；渲染由呼叫端負責）
+    eCode []str; 穩定錯誤碼（saveError 系的字面 'E_GENERAL'，見 parser.go:1698）
 }
 
 ; s58：方法簽名表鍵 'recv.method'（Go methodSignatures）
@@ -162,6 +166,10 @@ new = (src []byte) (r psst) {
         htV: with-cap(256)
         htTy: with-cap(256)
         htN: 0
+        eLn: with-cap(4)
+        eCl: with-cap(4)
+        eMsg: with-cap(4)
+        eCode: with-cap(4)
     }
     ; pre-fill initial hash slots (open addressing; grows on demand via ps-ht-put)
     hi = 0
@@ -661,6 +669,41 @@ ps-expect = (p psst, want i64) {
     ps-peek(p) == want -> ps-bump(p)
 
     -> {}
+}
+
+; ── s10：語法錯誤收集器（M3-c 首族）───────────────────────────────
+; 對齊 Go parser 的 Diagnostic 通道（src/parser/error.go）：本檔只存【結構化】
+; 欄位（行/列/正文/碼），位置前綴「line L, column C:」從不進正文——渲染Shape
+; 由消費端負責（diag.render 的面向使用者行形、FormatDiagnostics 的中間串形）。
+; Authority：p.errorf 以 tok 定位（1-based ln/cl，lx.no §2：NEWLINE 的 col 恆 0）；
+; p.saveError 按 (Pos, Message) 去重（parser.go:1685-1693，防 restoreState 重試
+; 重複上報）——去鍵不含 Code，此處同形。
+
+; ps-error：在【目前 token】位置記一條錯誤（坐標取自 p.toks[p.pos]，越界視同 EOF
+;   的 0/0——Go 端 currentToken 恆有值，EOF token 也帶行列；語料外差異留 M3-c 後續）。
+ps-error = (p psst, msg str, code str) {
+    ; 坐標先擷取（p.pos 可等於 toks.len()——尾哨兵越界一格的讀一律按 0 處理）
+    #{index-out=zero}
+    curLn = p.toks[p.pos].ln
+    #{index-out=zero}
+    curCl = p.toks[p.pos].cl
+
+    ; 去重：同 (ln, cl, msg) 已報過 ⇒ 直接返回（Go saveError 同鍵）
+    k = 0
+    (k < p.eLn.len()) {
+        p.eLn[k] == curLn && p.eCl[k] == curCl && p.eMsg[k] == msg -> return
+
+        k = k + 1
+    }
+    p.eLn.push(curLn)
+    p.eCl.push(curCl)
+    p.eMsg.push(msg)
+    p.eCode.push(code)
+}
+
+; ps-err-count：已收集的錯誤條數（= Go len(p.diags) 的 error 級子集；本階段只收錯誤）。
+ps-err-count = (p psst) (n i64) {
+    n = p.eLn.len()
 }
 
 ; ── 進入點 ──
@@ -2117,6 +2160,10 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             ps-bump(p)
             inner = ps-parse-expr-prec(t, p, 0)
             ps-skip-trivia(p)
+            ; s10：缺 RPAREN ⇒ 復刻 expr.go:956-960（parseGroupedExpression 的報錯點：
+            ;   「expected right parenthesis, got <TYPE> instead」定位在【目前 token】）。
+            ;   ⚠️ 僅報錯、不改容錯消費路徑（ps-expect 照舊），觀測面 L2 不受影響。
+            ps-peek(p) != tok.RPAREN -> ps-error(p, 'expected right parenthesis, got ' + tok.name(ps-peek(p)) + ' instead', 'E_GENERAL')
             ps-expect(p, tok.RPAREN)
             idx = ast.add(t, asp.K_GROUPED_EXPRESSION)
             inner > 0 -> ast.kid-add(t, idx, inner)
@@ -2382,24 +2429,55 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             }
             isRng == 0 -> {
 
-                ; 消耗 LPAREN，依逗號分隔解析实参，直到 RPAREN
+                ; 消耗 LPAREN，實參循環鏡像 Go parseCallExpression（expr.go:2207-2245）：
+                ;   空參速出（Go 進循環前 currentToken==RPAREN ⇒ nextToken; return）；
+                ;   每輪＝跳前導 trivia → parseArgument → 跳尾 trivia → COMMA/RPAREN/其他
+                ;   三分支；其他 ⇒ s10 報錯「expected comma or right parenthesis, got X
+                ;   instead」（expr.go:2242 saveError）且【不消耗】該 token 即離開
+                ;   （Go return nil；呼叫表達式落空）。
+                ; ⚠️ 前導跳語義僅對【首實參前】的 NEWLINE 與 Go 對齊：Go 在「上一實參
+                ;   已 Consumed、尚未報錯」的態直接進下一輪 parseArgument，不會先跳行；
+                ;   noc 無法從 arg==0 區分「換行開頭的實參」與「缺逗號」，統一跳 trivia
+                ;   （語料中 `f(\n  x)` 形 Go 也照收，noc 收同 AST；僅缺逗號報錯的時序略異）。
                 ps-bump(p)
                 args []i64 = with-cap(4)
-                ps-skip-trivia(p)
-                (ps-peek(p) != tok.RPAREN) {
-                    pos0 = p.pos
-                    a = ps-parse-expr-prec(t, p, 0)
-                    a > 0 -> args.push(a)
+                clDone = 0
+                (clDone == 0) {
                     ps-skip-trivia(p)
-                    ps-peek(p) == tok.COMMA -> {
-                        ps-bump(p)
-                        ps-skip-trivia(p)
-                    }
+                    {
+                        ; 空參數表：`)` 直接開 ⇒ Go 前導速出（消費 RPAREN、不報錯）
+                        ps-peek(p) == tok.RPAREN && args.len() == 0 -> {
+                            ps-bump(p)
+                            clDone = 1
+                        }
 
-                    ; 防呆：未消耗任何 token 则前进一步避免永转
-                    p.pos == pos0 -> ps-bump(p)
+                        -> {
+                            clPos0 = p.pos
+                            a = ps-parse-expr-prec(t, p, 0)
+                            a > 0 -> args.push(a)
+                            ; 防呆：arg 解析一 token 未吃（如非法起始符）⇒ 前進一格
+                            p.pos == clPos0 -> ps-bump(p)
+                            {
+                                ps-peek(p) == tok.COMMA -> ps-bump(p)
+
+                                ; 結尾：消費 RPAREN 並退出（Go nextToken(); break）
+                                ps-peek(p) == tok.RPAREN -> {
+                                    ps-bump(p)
+                                    clDone = 1
+                                }
+
+                                ; Go else 臂：實參後既無逗號也無閉括號 ⇒ 報錯、不消耗
+                                ps-err-count(p) == 0 -> {
+                                    ps-error(p, 'expected comma or right parenthesis, got ' + tok.name(ps-peek(p)) + ' instead', 'E_GENERAL')
+                                    clDone = 1
+                                }
+
+                                ; 已有其他錯誤在前（Go saveError 去重/非法 token 已報）⇒ 靜默前進
+                                -> ps-bump(p)
+                            }
+                        }
+                    }
                 }
-                ps-expect(p, tok.RPAREN)
 
                 ; arena 順序：Function (idx) 与 args 子树已完成 → add 父后依序 kid-add
                 call = ast.add(t, asp.K_CALL_EXPRESSION)
@@ -3515,6 +3593,12 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
     p.valCtx = 1
     val = ps-parse-expr(t, p)
     p.valCtx = vcSave
+
+    ; s10：RHS 落空 ⇒ 復刻 stmt.go:1306-1312（parseLetStatement 的 value==nil else 臂）：
+    ;   「expected expression, got nil instead」定位在【目前 token】，且僅在【尚無任何
+    ;   已報錯誤】時上報（Go 的閘門是 reportedIllegal——ILLEGAL token 已自行報錯就不重複；
+    ;   Go 全程只收 ERROR 級 diags，用 eLn 非空近似同形）。
+    val == 0 && ps-err-count(p) == 0 -> ps-error(p, 'expected expression, got nil instead', 'E_GENERAL')
 
     ; s8q：Pipeline 同位——`x = A -> B` 的【整條鏈】是 let 的 value（鏡像 Go stmt.go:1242-1260）。
     ;   值解析完後若【同位】緊接 `->`（用活 ps-peek，對齊 Go 只看 currentToken==RARROW；
