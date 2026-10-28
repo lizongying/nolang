@@ -8,6 +8,7 @@
 ;       pow / gcd / lcm /
 ;       shl / shr /
 ;       bigint.to-str / from-str / bigint.to-hex / from-hex
+;       混合運算數運算符重載（bigint ⊕ i64：+ - * / %）
 ;
 ; ⚠️ 不進守衛：整個 bigint 模組在 HEAD 與 MIR-only 後端皆 bus error
 ;    （from-i64+to-str、from-hex+to-hex 等，連 from-i64(42).to-str() 都崩），
@@ -129,7 +130,7 @@ t-mul = () {
 t-div-mod = () {
     a = bigint.from-i64(100)
     b = bigint.from-i64(7)
-    q, r = bigint.div-mod(a, b)
+    q, r = a.div-mod(b)
     qs = q.to-str()
     runner.str-eq(qs, '14', 2, 'div-mod(100, 7) q == 14')
     rs = r.to-str()
@@ -138,7 +139,7 @@ t-div-mod = () {
 
 t-mod-i64 = () {
     a = bigint.from-i64(100)
-    r = bigint.mod-i64(a, 7)
+    r = a.mod-i64(7)
     runner.eq(r, 2, 'mod-i64(100, 7) == 2')
 }
 
@@ -146,11 +147,11 @@ t-mod-i64 = () {
 
 t-pow = () {
     a = bigint.from-i64(2)
-    c = bigint.pow(a, 10)
+    c = a.pow(10)
     s = c.to-str()
     runner.str-eq(s, '1024', 4, 'pow(2, 10) == 1024')
     b = bigint.from-i64(3)
-    d = bigint.pow(b, 0)
+    d = b.pow(0)
     s2 = d.to-str()
     runner.str-eq(s2, '1', 1, 'pow(3, 0) == 1')
 }
@@ -160,7 +161,7 @@ t-pow = () {
 t-gcd = () {
     a = bigint.from-i64(12)
     b = bigint.from-i64(8)
-    g = bigint.gcd(a, b)
+    g = a.gcd(b)
     s = g.to-str()
     runner.str-eq(s, '4', 1, 'gcd(12, 8) == 4')
 }
@@ -168,9 +169,37 @@ t-gcd = () {
 t-lcm = () {
     a = bigint.from-i64(4)
     b = bigint.from-i64(6)
-    l = bigint.lcm(a, b)
+    l = a.lcm(b)
     s = l.to-str()
     runner.str-eq(s, '12', 2, 'lcm(4, 6) == 12')
+}
+
+; ── 混合運算數運算符重載（bigint ⊕ i64）──────────
+; 運算符重載要求兩運算數同型；右側為 i64 標量時，編譯器在 desugar 期以
+; 提升建構函式（bigint.from-i64）把標量包成 bigint，使 `a + 1` 等原生可用。
+; 覆蓋五個運算符的 `bigint op i64`，另含 `bigint op bigint`（同型走既有路徑）。
+t-operator-mixed = () {
+    a = bigint.from-i64(100)
+    s1 = (a + 1).to-str()
+    runner.str-eq(s1, '101', 3, 'a(100) + 1 == 101')
+    s2 = (a - 1).to-str()
+    runner.str-eq(s2, '99', 2, 'a(100) - 1 == 99')
+    s3 = (a * 256).to-str()
+    runner.str-eq(s3, '25600', 5, 'a(100) * 256 == 25600')
+    s4 = (a / 2).to-str()
+    runner.str-eq(s4, '50', 2, 'a(100) / 2 == 50')
+    s5 = (a % 9).to-str()
+    runner.str-eq(s5, '1', 1, 'a(100) % 9 == 1')
+    ; i64 區域變數實參同樣被提升（非僅字面量）
+    n = 5
+    s6 = (a + n).to-str()
+    runner.str-eq(s6, '105', 3, 'a(100) + n(5) == 105')
+    ; 同型 bigint ⊕ bigint 仍走既有運算符重載
+    b = bigint.from-i64(7)
+    s7 = (a + b).to-str()
+    runner.str-eq(s7, '107', 3, 'a(100) + b(7) == 107')
+    s8 = (a * b).to-str()
+    runner.str-eq(s8, '700', 3, 'a(100) * b(7) == 700')
 }
 
 ; ── 字串轉換 ──────────────────────────────────
@@ -229,6 +258,7 @@ p11, f11 = runner.test('bigint.mod-i64', t-mod-i64)
 p12, f12 = runner.test('bigint.pow', t-pow)
 p13, f13 = runner.test('bigint.gcd', t-gcd)
 p14, f14 = runner.test('bigint.lcm', t-lcm)
+p15, f15 = runner.test('bigint.operator-mixed', t-operator-mixed)
 total = runner.summary()
 f = runner.failed-count()
 {

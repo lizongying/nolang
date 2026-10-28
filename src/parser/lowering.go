@@ -647,6 +647,37 @@ func (l *lowerer) maybeDesugarInfix(v reflect.Value) (Node, bool) {
 		return nil, false
 	}
 	method, _ := OperatorMethod(inf.Operator)
+	// 路線 A（計劃核准的回退方案）：運算符重載要求兩操作數同型。若右操作數是
+	// 可提升到左型別的標量（如 `a + 1`，a 為 bigint、1 為 i64），desugar 時把右
+	// 操作數包一層提升建構函式 `a._add(bigint.from-i64(1))`，讓呼叫綁回既有
+	// concrete `_add(b bigint)`——聯合形參（路線 C）無法派發用戶碼運算子呼叫。
+	arg := inf.Right
+	if ctor := l.p.operandPromotionCtor(l.p.resolveReceiverType(inf.Left), inf.Right); ctor != "" {
+		// 建構函式以「模組限定名」登記（如 `bigint.from-i64`）。注入成與源碼
+		// `bigint.from-i64(v)` 相同的 DotExpression 形態（接收者 = 模組裸名，
+		// Property = 函數名），讓後續模組呼叫解析把它當作源碼呼叫一樣改寫到實際
+		// 註冊符號（std 自由函數在合併後以裸名 `from-i64` 註冊）。若注入成扁平
+		// Identifier("bigint.from-i64")，解析路徑不同 → codegen 報 unknown callee。
+		ctorFn, ctorMod := ctor, ""
+		if i := lastDotIndex(ctor); i >= 0 {
+			ctorMod, ctorFn = ctor[:i], ctor[i+1:]
+		}
+		var ctorTarget Expression
+		if ctorMod != "" {
+			ctorTarget = &DotExpression{
+				Token:    inf.Token,
+				Receiver: &Identifier{Token: inf.Token, Value: ctorMod},
+				Property: ctorFn,
+			}
+		} else {
+			ctorTarget = &Identifier{Token: inf.Token, Value: ctorFn}
+		}
+		arg = &CallExpression{
+			Token:     inf.Token,
+			Function:  ctorTarget,
+			Arguments: []Expression{inf.Right},
+		}
+	}
 	repl := &CallExpression{
 		Token: inf.Token,
 		Function: &DotExpression{
@@ -654,7 +685,7 @@ func (l *lowerer) maybeDesugarInfix(v reflect.Value) (Node, bool) {
 			Receiver: inf.Left,
 			Property: method,
 		},
-		Arguments: []Expression{inf.Right},
+		Arguments: []Expression{arg},
 	}
 	return repl, true
 }
@@ -4885,9 +4916,24 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// 僅當目標是「安全索引基底」（直接 arr/vec/slice 變數）時接管；struct-field
 	// 基底 / map / 未知型別落在 wave 1 豁免區，交回既有 ?= 路徑（其報錯會在 P2
 	// idxwrite 啟用後被更精確的寫入側指引取代）。
+	// map 基底必须在 isSafeIndexBase 之前拦下（D9 §12.2.1）：map 的写是 put，
+	// 任何键恒有定义，没有可传播的 nil；而 ?= 的 ok 臂是「读出 a[i] 再写回元素
+	// **位置**」，map 读出的 ?V 只是 get 的 out-param 副本，写回它不会回到 map。
+	// 放任它落到 isSafeIndexBase 分支（containerElemType 把 [str]i64 当数组，
+	// 故该分支确实会命中），降糖出的控制流会让同一张 map 在多条路径上各 drop
+	// 一次 —— pristine HEAD 是编译期 `lencap struct: len/cap unsupported on
+	// struct hashmap-str-i64`；MIR 补上 map 下标降糖后变成**编译成功、运行期
+	// SIGBUS** 的三重 free。故此处必须是硬错误。
 	if uas.Name == nil {
-		if idx, ok := uas.Target.(*IndexExpression); ok && l.p.isSafeIndexBase(idx) {
-			return l.lowerUnwrapAssignToIndex(uas, idx, resultName)
+		if idx, ok := uas.Target.(*IndexExpression); ok {
+			if mt := l.p.mapIndexBaseType(idx); mt != "" {
+				l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` on a map subscript is not supported (base type `%s`); write `%s = v` directly — a map key has no out-of-range case, so the write is a put and cannot fail",
+					tok.Line, tok.Column, mt, exprToString(uas.Target)))
+				return nil
+			}
+			if l.p.isSafeIndexBase(idx) {
+				return l.lowerUnwrapAssignToIndex(uas, idx, resultName)
+			}
 		}
 	}
 

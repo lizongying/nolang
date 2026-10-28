@@ -290,16 +290,16 @@ bigint._mul = (b bigint) (c ?bigint) {
     c.normalize()
 }
 
-; _div: a / b（運算符重載；除零依 div-mod 回傳零；`.` 作自由函数實參為安全模式）
+; _div: a / b（運算符重載；除零依 div-mod 回傳零）
 bigint._div = (b bigint) (q ?bigint) {
     r = bigint {}
-    q, r = div-mod(., b)
+    q, r = .div-mod(b)
 }
 
 ; _mod: a % b（運算符重載；除零依 div-mod 回傳零）
 bigint._mod = (b bigint) (r ?bigint) {
     q = bigint {}
-    q, r = div-mod(., b)
+    q, r = .div-mod(b)
 }
 
 ; abs-add: |self| + |b|（忽略正負號）
@@ -380,10 +380,10 @@ bigint.abs-sub = (b bigint) (c bigint) {
 ; 乘法
 ; ═══════════════════════════════════════════════
 
-; mul-i64: a * v（小整數乘法）
-mul-i64 = (a bigint, v i64) (c bigint) {
+; bigint.mul-i64: self * v（小整數乘法）
+bigint.mul-i64 = (v i64) (c bigint) {
     r-v = v
-    sign = a.sign
+    sign = .sign
 
     #{overflow=wrap}
     r-v < 0 -> {
@@ -408,7 +408,7 @@ mul-i64 = (a bigint, v i64) (c bigint) {
         b.len = 1
     }
     b.sign = 1
-    c = a._mul(b)
+    c = ._mul(b)
     c.sign = sign
 }
 
@@ -416,27 +416,27 @@ mul-i64 = (a bigint, v i64) (c bigint) {
 ; 除法
 ; ═══════════════════════════════════════════════
 
-; div-mod: a / b, 同時傳回商和餘數
-div-mod = (a bigint, b bigint) (q bigint, r bigint) {
+; bigint.div-mod: self / b, 同時傳回商和餘數
+bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
     b.len == 1 && b.limbs[0] == 0 -> {
         q = zero()
         r = zero()
         return
     }
-    ac = a.abs-cmp(b)
+    ac = .abs-cmp(b)
 
     #{overflow=wrap}
     {
         ac < 0 -> {
             q = zero()
-            r = a.copy()
+            r = .copy()
             return
         }
 
         ac == 0 -> {
             q = one()
-            q.sign = a.sign * b.sign
+            q.sign = .sign * b.sign
             r = zero()
             return
         }
@@ -447,18 +447,18 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     b.len == 1 -> {
 
         v = b.limbs[0] & MASK
-        q = div-i64(a, v)
+        q = .div-i64(v)
         r.limbs = with-len(1)
 
-        r.limbs[0] = mod-i64(a, v)
+        r.limbs[0] = .mod-i64(v)
         r.len = 1
-        q.sign = a.sign * b.sign
-        r.sign = a.sign
+        q.sign = .sign * b.sign
+        r.sign = .sign
         return
     }
 
     #{overflow=wrap}
-    q.len = a.len - b.len + 1
+    q.len = .len - b.len + 1
     q.limbs = with-len(q.len)
     i <- [0..q.len): {
 
@@ -491,7 +491,7 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     }
 
     #{overflow=wrap}
-    norm-a-len = a.len + 1
+    norm-a-len = .len + 1
     norm-a = bigint {}
     norm-a.limbs = with-len(norm-a-len)
     norm-a.len = norm-a-len
@@ -499,9 +499,9 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     i <- [0..norm-a-len): {
 
         av = 0
-        i < a.len -> {
+        i < .len -> {
 
-            av = a.limbs[i]
+            av = .limbs[i]
         }
 
         norm-a.limbs[i] = av
@@ -616,12 +616,12 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     }
 
     #{overflow=wrap}
-    q.sign = a.sign * b.sign
+    q.sign = .sign * b.sign
     q.normalize()
 
     r.limbs = with-len(b.len)
     r.len = b.len
-    r.sign = a.sign
+    r.sign = .sign
 
     ; 餘數取自正規化後的 norm-a，必須右移 shift 還原（原本直接複製，導致 r 可能 >= b）
     rc = 0
@@ -636,21 +636,21 @@ div-mod = (a bigint, b bigint) (q bigint, r bigint) {
     r.normalize()
 }
 
-; div-i64: q = a / v（小整數除法）
-div-i64 = (a bigint, v i64) (q bigint) {
+; bigint.div-i64: q = self / v（小整數除法）
+bigint.div-i64 = (v i64) (q bigint) {
     r-v = v
 
     #{overflow=wrap}
     r-v < 0 -> r-v = 0 - r-v
-    q.sign = a.sign
-    q.limbs = with-len(a.len)
-    q.len = a.len
+    q.sign = .sign
+    q.limbs = with-len(.len)
+    q.len = .len
     rem = 0
 
     #{overflow=wrap}
-    i <- [a.len - 1..0]: {
+    i <- [.len - 1..0]: {
 
-        cur = (rem << 32) | (a.limbs[i] & MASK)
+        cur = (rem << 32) | (.limbs[i] & MASK)
 
         #{overflow=wrap}
         q.limbs[i] = cur / r-v
@@ -659,8 +659,8 @@ div-i64 = (a bigint, v i64) (q bigint) {
     q.normalize()
 }
 
-; mod-i64: r = a % v（小整數取模）
-mod-i64 = (a bigint, v i64) (r i64) {
+; bigint.mod-i64: r = self % v（小整數取模）
+bigint.mod-i64 = (v i64) (r i64) {
     r-v = v
 
     #{overflow=wrap}
@@ -668,9 +668,9 @@ mod-i64 = (a bigint, v i64) (r i64) {
     rem = 0
 
     #{overflow=wrap}
-    i <- [a.len - 1..0]: {
+    i <- [.len - 1..0]: {
 
-        cur = (rem << 32) | (a.limbs[i] & MASK)
+        cur = (rem << 32) | (.limbs[i] & MASK)
         rem = cur % r-v
     }
     r = rem
@@ -680,22 +680,22 @@ mod-i64 = (a bigint, v i64) (r i64) {
 ; 冪運算
 ; ═══════════════════════════════════════════════
 
-; pow: c = a^n（n >= 0，非負整數冪）
-pow = (a bigint, n i64) (c bigint) {
+; bigint.pow: c = self^n（n >= 0，非負整數冪）
+bigint.pow = (n i64) (c bigint) {
     c = one()
     n == 0 -> return
-    base = bigint {}
-    base = a.copy()
+    b = bigint {}
+    b = .copy()
     i = n
     (i > 0) {
-        i & 1 == 1 -> c = c._mul(base)
-        base = base._mul(base)
+        i & 1 == 1 -> c = c._mul(b)
+        b = b._mul(b)
         i = i >> 1
     }
 }
 
-; mod-pow: r = base^exp mod modulus
-mod-pow = (base bigint, exp bigint, modulus bigint) (r bigint) {
+; bigint.mod-pow: r = self^exp mod modulus
+bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
 
     mz = modulus.is-zero()
     mz -> {
@@ -704,7 +704,7 @@ mod-pow = (base bigint, exp bigint, modulus bigint) (r bigint) {
     }
     r = one()
     b = bigint {}
-    b = base.copy()
+    b = .copy()
 
     #{overflow=wrap}
     top = exp.limbs[exp.len - 1] & MASK
@@ -741,10 +741,10 @@ mod-pow = (base bigint, exp bigint, modulus bigint) (r bigint) {
 ; 最大公因數與最小公倍數
 ; ═══════════════════════════════════════════════
 
-; gcd: g = gcd(a, b)（歐幾里得演算法）
-gcd = (a bigint, b bigint) (g bigint) {
+; bigint.gcd: g = gcd(self, b)（歐幾里得演算法）
+bigint.gcd = (b bigint) (g bigint) {
     x = bigint {}
-    x = a.copy()
+    x = .copy()
     y = bigint {}
     y = b.copy()
     x.sign = 1
@@ -761,16 +761,16 @@ gcd = (a bigint, b bigint) (g bigint) {
     g = x.copy()
 }
 
-; lcm: l = lcm(a, b)
-lcm = (a bigint, b bigint) (l bigint) {
-    az = a.is-zero()
+; bigint.lcm: l = lcm(self, b)
+bigint.lcm = (b bigint) (l bigint) {
+    az = .is-zero()
     bz = b.is-zero()
     az || bz -> {
         l = zero()
         return
     }
-    g = gcd(a, b)
-    q, r = div-mod(a, g)
+    g = .gcd(b)
+    q, r = .div-mod(g)
     l = q._mul(b)
 }
 
@@ -789,8 +789,15 @@ bigint.shl1 = () {
         .limbs[i] = v & MASK
     }
     carry > 0 -> {
-
-        .limbs[.len] = carry
+        ; 必須「先擴容再寫入」：.limbs 是恰好 .len 個元素的切片（copy/one 皆以 with-len 建立），
+        ; 直接寫 .limbs[.len] 是越界寫，會讓 limb 數與內容失控
+        ; （實測 bigint.shl(one, 52) 曾因此得到 2^1074 而非 2^52）。
+        grown []i64 = with-len(.len + 1)
+        k <- [0...len): {
+            grown[k] = .limbs[k]
+        }
+        grown[.len] = carry
+        .limbs = grown
 
         #{overflow=wrap}
         .len = .len + 1
@@ -871,7 +878,7 @@ bigint.to-str = () (out str) {
         ; 因此這裡用顯式欄位存取來判斷 tmp 是否為零。
         tz = tmp.len == 1 && tmp.limbs[0] == 0
         tz -> break
-        d = mod-i64(tmp, 10)
+        d = tmp.mod-i64(10)
 
         #{overflow=wrap}
         buf[bufn]: {
@@ -881,7 +888,7 @@ bigint.to-str = () (out str) {
 
         #{overflow=wrap}
         bufn = bufn + 1
-        next = div-i64(tmp, 10)
+        next = tmp.div-i64(10)
         tmp = next
     }
 

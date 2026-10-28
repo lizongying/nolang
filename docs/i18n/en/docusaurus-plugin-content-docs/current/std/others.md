@@ -69,15 +69,20 @@ c = a - b                     ; same as a._sub(b)
 c = a * b                     ; same as a._mul(b)
 q = a / b                     ; same as a._div(b); division by zero returns zero (div-mod semantics)
 r = a % b                     ; same as a._mod(b)
-q, r = bigint.div-mod(a, b)   ; quotient and remainder together
-q = bigint.div-i64(a, v)
-r = bigint.mod-i64(a, v)
-c = bigint.pow(a, n)
-r = bigint.mod-pow(base, exp, mod, r)
+; Mixed operands: a right-hand i64 scalar is auto-promoted to bigint, so
+; `a + 1` / `a * 256` work natively (equivalent to a._add(bigint.from-i64(1))).
+; Only "left operand is bigint" is supported; `1 + a` is not.
+c = a + 1                     ; bigint + i64, i64 auto-promoted
+c = a * 256                   ; bigint + i64
+q, r = a.div-mod(b)           ; quotient and remainder together
+q = a.div-i64(v)
+r = a.mod-i64(v)
+c = a.pow(n)
+r = base.mod-pow(exp, mod)
 
 ; Number theory
-bigint.gcd(a, b, g)
-bigint.lcm(a, b, l)
+g = a.gcd(b)
+l = a.lcm(b)
 
 ; Shifting
 bigint.shl(a, n, c)
@@ -90,8 +95,8 @@ n = bigint.to-hex(a, out)
 out = bigint.from-hex(s, sn)
 
 ; Small integer helpers
-bigint.add-i64(a, v, c)
-bigint.mul-i64(a, v, c)
+c = a.add-i64(v)
+c = a.mul-i64(v)
 ```
 
 ### err — Error Handling
