@@ -7,6 +7,19 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.11
+
+- feat(err): restructure error type to `err` with location payload (err.msg/code/file/line/col)
+- feat(bigint): add bigint operator overloading and mixed bigint/i64 operands for + - * / %
+- feat(parser): reach byte-exact syntax-error position parity with Go oracle (NEWLINE coordinate, call-arg, cascade families)
+- feat(std): precise strtod and shortest round-trip f64 formatting via method form
+- feat(js): support npm ESM imports and native package / FFI-koffi calls
+- refactor(config): hard-cut JSONC configuration to self-authored noml format
+- refactor(parser): unify match on SurfaceMatch and drop legacy desugar path
+- fix(mir): eliminate O(N^2) in vec push/insert codegen and optimize safe-index bounds checks
+- fix(compiler): eliminate O(N^2) in self-hosted lexer/parser and resolve call-return type inference
+- docs(design): record parser faithfulness, match-lowering invariants, and S7 dual-track findings
+
 ## v0.4.10
 
 - refactor(mmast): switch AST encoding to a recursive root forest structure
