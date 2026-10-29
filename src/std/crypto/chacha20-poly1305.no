@@ -102,7 +102,11 @@ qr = (state []u32, a i64, b i64, c i64, d i64) {
 chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; 初始化狀態（16 個 32-bit 字）
+    ; 先以 with-len 填出 16 個元素：下方 `state[i]: { ok -> it = … }` 是「索引在
+    ; 界內才寫」的 option 語義，空 vec 時 ok 恆不成立、寫入被靜默跳過（state 不會
+    ; 因索引寫自動 grow），會令金鑰流全為 0、seal 原樣回傳明文（見 test/std/ccpoly）。
     state []u32
+    state = with-len(16)
 
     state[0]: {
         ok -> it = CC-SIGMA0
@@ -152,6 +156,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; 複製初始狀態
     init []u32
+    init = with-len(16)
     i <- [0..16): {
 
         #{index-out=zero}
@@ -241,7 +246,7 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     hi = bigint.shr(out, 130)
     (! hi.is-zero()) {
         lo bigint.bigint = out._sub(bigint.shl(hi, 130))
-        out = lo._add(hi.mul-i64(5))
+        out = lo._add(hi._mul-i64(5))
         hi = bigint.shr(out, 130)
     }
     p = bigint.shl(bigint.one(), 130)._sub(bigint.from-i64(5))
@@ -267,14 +272,14 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
             i == 4 || i == 8 || i == 12 -> bvr = bvr & 252
         }
-        r = r.mul-i64(256)._add(bigint.from-i64(bvr))
+        r = r._mul-i64(256)._add(bigint.from-i64(bvr))
     }
 
     ; s = key[16..32]（小端 128-bit，无 clamp）
     s = bigint.zero()
     j <- [31..16]: {
         bvs i64 = key[j]
-        s = s.mul-i64(256)._add(bigint.from-i64(bvs))
+        s = s._mul-i64(256)._add(bigint.from-i64(bvs))
     }
 
     ; 累加器 h = 0
@@ -296,7 +301,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
             #{index-out=zero, overflow=wrap}
             bvk i64 = data[pos + k]
-            c = c.mul-i64(256)._add(bigint.from-i64(bvk))
+            c = c._mul-i64(256)._add(bigint.from-i64(bvk))
         }
 
         #{overflow=wrap}
@@ -309,14 +314,14 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     }
 
     ; tag = (h + s) 的低 128 位，小端输出（逐字节）
-    ; 注意：不可用 mod-i64/div-i64 取 32-bit limb —— 除数 2^32 会让内部 rem<<32 溢出 i64。
-    ; 改用 shr + .mod-i64(256)：小除数保证 rem<256，rem<<32 不溢出。
+    ; 注意：不可用 _mod-i64/_div-i64 取 32-bit limb —— 除数 2^32 会让内部 rem<<32 溢出 i64。
+    ; 改用 shr + ._mod-i64(256)：小除数保证 rem<256，rem<<32 不溢出。
     hs = h._add(s)
     out <- [0..16): {
 
         #{overflow=wrap}
         shifted bigint.bigint = bigint.shr(hs, out * 8)
-        b i64 = shifted.mod-i64(256)
+        b i64 = shifted._mod-i64(256)
         tag[out] = b & 255
     }
 }
@@ -357,7 +362,15 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     cipher = chacha20-xor(key, 1, nonce, plain)
 
     ; 3. 構建 Poly1305 輸入: aad || pad16 || cipher || pad16 || aad_len || cipher_len
+    ; 先算出 mac-input 的總長度並 with-len 填充：下方的 `mac-input[k]: { ok -> it = … }`
+    ; 為「界內才寫」的 option 語義，空 vec 會靜默略過所有寫入，令 mac-input 恆為空、
+    ; poly1305 對 0 位元組運算而得到全零 tag。
     mac-input []byte
+    padAad i64 = 16 - (aad.len() % 16)
+    padAad == 16 -> padAad = 0
+    padCipher i64 = 16 - (cipher.len() % 16)
+    padCipher == 16 -> padCipher = 0
+    mac-input = with-len(aad.len() + padAad + cipher.len() + padCipher + 16)
     pos = 0
 
     ; AAD
@@ -563,6 +576,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
 
     ; 2. 提取密文和 tag
     cipher []byte
+    cipher = with-len(cipher-len)
     i <- [0..cipher-len): {
 
         #{index-out=zero}
@@ -582,7 +596,14 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     ; 3. 構建 Poly1305 輸入並計算期望 tag
+    ; 同 seal：先 with-len 填出 mac-input 總長度，否則 `mac-input[k]: { ok -> it = … }`
+    ; 對空 vec 靜默略過，mac-input 恆空。
     mac-input []byte
+    padAad i64 = 16 - (aad.len() % 16)
+    padAad == 16 -> padAad = 0
+    padCipher i64 = 16 - (cipher.len() % 16)
+    padCipher == 16 -> padCipher = 0
+    mac-input = with-len(aad.len() + padAad + cipher.len() + padCipher + 16)
     pos = 0
     i <- [0..aad.len()): {
 

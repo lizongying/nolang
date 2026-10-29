@@ -289,8 +289,10 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         }
     }
 
-    ; Convert buffer to string and trim to actual length
-    name = buf.to-str()
+    ; Convert buffer to string and trim to actual length.
+    ; buf 已是 DNS 名稱的原始 ASCII 位元組流，需 1:1 原樣拷貝，故用 to-bytes-str()
+    ; （回傳 str）而非 to-str()（回傳 ?str、且會把每個位元組當碼點重新 UTF-8 編碼）。
+    name = buf.to-bytes-str()
     name = name.slice(0, buf-pos)
     {
         jumped -> next-pos = end-pos
@@ -515,6 +517,6 @@ dial = (domain str, port i64) (fd fd) {
 
         ok -> fd = net.net-dial(ip, port)
 
-        ->
+        -> _
     }
 }

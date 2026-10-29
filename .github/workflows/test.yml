@@ -126,24 +126,12 @@ jobs:
 
       - name: Run std tests
         run: |
-          # bufio / uuid rejoined the gate: the open compiler-codegen bugs that
-          # had them excluded are now fixed, so every test/std/*.no passes.
-          # math.no rejoined earlier for the same reason (duplicate-name truncating
-          # f64 builtin + variadic arg-form misjudgement in MIR, both gone).
-          # If a file ever fails on a KNOWN COMPILER bug (not a std defect), add
-          # its path to `skip` below and remove it once that bug is fixed.
-          skip=""
-          fail=0
-          for f in test/std/*.no; do
-            case " $skip " in
-              *" $f "*) echo "SKIP (known compiler bug): $f"; continue;;
-            esac
-            if ! ./bin/no test "$f"; then
-              echo "FAILED: $f"
-              fail=1
-            fi
-          done
-          exit $fail
+          # Run the whole test/std directory in one `no test` invocation: it
+          # walks every .no file sequentially (compile + run) and exits 1 if any
+          # file fails. -timeout guards against a single hang blocking CI; each
+          # file is capped at 120s and gets killed cleanly with its process
+          # group. Never drop a file from the gate silently.
+          ./bin/no test -timeout 120 test/std
 
   # ── Static check gate: std + tests must vet with 0 errors ──────────────
   vet-gate:

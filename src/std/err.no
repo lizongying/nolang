@@ -165,9 +165,16 @@ err.code = () (ec code) {
 ; 純訊息請用 err.msg()，只要錯誤碼請用 err.code()
 err.format = () (s str) {
     cn = .code.to-name()
+    ; format() 的 {…} 欄位目前只認「简单标识符」，不解析接收者的 `.field`
+    ; 存取（MIR lowerFormatField 会对 `{.file}` 报 unresolved format field）。
+    ; 故先把接收者欄位绑到局部变量，再以简单名插值；cn/loc 已示范简单名可用。
+    fn = .file
+    ln = .line
+    cl = .col
+    mt = .msg
     loc = ''
     .file != '' -> {
-        loc = format(' at {.file}:{.line}:{.col}')
+        loc = format(' at {fn}:{ln}:{cl}')
     }
-    s = format('code.{cn}: {.msg}{loc}')
+    s = format('code.{cn}: {mt}{loc}')
 }

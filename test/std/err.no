@@ -29,7 +29,9 @@ t-msg = () {
 t-format = () {
     e = err.new('read error', code.io)
     s = e.format()
-    runner.str-eq(s, 'read error', 10, 'format content')
+    ; err.format() 产出 'code.<名称>: <msg>'（见 src/std/err.no 文件头注释）；
+    ; err.new 不注入位置，故 loc 为空。整串即 'code.io: read error'（19 字节）。
+    runner.str-eq(s, 'code.io: read error', 19, 'format content')
 }
 
 ; ── 執行 ──────────────────────────────────────
