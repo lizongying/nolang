@@ -115,12 +115,18 @@ main = () () {
 	}
 
 	// (e) The same for a LITERAL assigned to a 128-bit result — this is exactly
-	// the `r = 0` arm of i128.sqrt's negative case. The literal is allowed to
-	// stay i64 as long as the move into the i128 slot widens it; what must never
-	// happen is a 128-bit read of the i64 slot (already asserted in (a)).
+	// the `r = 0` arm of i128.sqrt's negative case. Two emissions are both safe
+	// and accepted:
+	//   - the literal stays i64 and the move widens it (`sext i64 .. to i128`);
+	//   - the literal is materialized directly in the 128-bit slot
+	//     (`alloca i128` + `store i128 <n>` — no narrow slot exists at all).
+	// What must never happen is a 128-bit read of an i64 slot (asserted by the
+	// (a) scan above for every function in the module, this one included).
 	litInto128 := extractDefineBlock(t, ll, "@lit_into_128")
-	if !strings.Contains(litInto128, "sext i64") || !strings.Contains(litInto128, "to i128") {
-		t.Errorf("@lit_into_128 must widen the literal into the i128 slot via sext:\n%s", litInto128)
+	sext := strings.Contains(litInto128, "sext i64") && strings.Contains(litInto128, "to i128")
+	direct := regexp.MustCompile(`store i128 -?[0-9]+, i128\*`).MatchString(litInto128)
+	if !sext && !direct {
+		t.Errorf("@lit_into_128 must widen the literal into the i128 slot (sext, or a direct i128 constant store):\n%s", litInto128)
 	}
 }
 
