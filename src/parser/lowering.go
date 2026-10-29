@@ -587,10 +587,9 @@ func (l *lowerer) walk(v reflect.Value) {
 				isFuncDef = true
 			}
 		}
-		for i := 0; i < v.NumField(); i++ {
-			if t.Field(i).PkgPath != "" {
-				continue // 非導出欄位（AST 子節點欄位均導出；MatchArm 由 lowerSurfaceMatch 顯式處理）
-			}
+		// 非導出欄位一律跳過（AST 子節點欄位均導出；MatchArm 由 lowerSurfaceMatch
+		// 顯式處理）。欄位索引按型別緩存，避免每個節點重複 t.Field(i)。
+		for _, i := range exportedFieldIndices(t) {
 			l.walk(v.Field(i))
 		}
 		if isFuncDef {
@@ -775,10 +774,7 @@ func gatherLetsInFuncScope(body *BlockStatement) []*LetStatement {
 			}
 		case reflect.Struct:
 			t := rv.Type()
-			for i := 0; i < t.NumField(); i++ {
-				if t.Field(i).PkgPath != "" {
-					continue // 非導出欄位
-				}
+			for _, i := range exportedFieldIndices(t) {
 				walk(rv.Field(i))
 			}
 		}
@@ -829,10 +825,7 @@ func gatherFuncDefs(root interface{}) []*FunctionDefinition {
 			}
 		case reflect.Struct:
 			t := rv.Type()
-			for i := 0; i < t.NumField(); i++ {
-				if t.Field(i).PkgPath != "" {
-					continue // 非導出欄位
-				}
+			for _, i := range exportedFieldIndices(t) {
 				walk(rv.Field(i))
 			}
 		}

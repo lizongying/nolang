@@ -33,6 +33,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // arrayStaticLen 解析定長陣列型別字串 `[N]T` → (N, true)。
@@ -756,6 +757,28 @@ func ProvablyInBoundsIndexReads(prog *Program) map[*IndexExpression]bool {
 // 界內 → 誤刪註解」的不安全方向。AST 以介面持有子節點、皆為指標，可能共享（DAG），
 // 故以指標去重。
 
+// walkFieldCache 按 AST 節點型別緩存「可導出欄位的索引」。
+//
+// reflect.Type.Field(i) 每次呼叫都構造一個完整的 StructField（含名稱、型別與 tag
+// 解析），在大型 AST 上約佔 walkReflect 40% 的取樣時間；AST 節點型別數量有限，
+// 因此每個型別只需計算一次，之後直接以索引走訪。
+var walkFieldCache sync.Map // reflect.Type -> []int
+
+// exportedFieldIndices 回傳 t 的可導出欄位索引（非導出欄位的 Interface() 會 panic）。
+func exportedFieldIndices(t reflect.Type) []int {
+	if cached, ok := walkFieldCache.Load(t); ok {
+		return cached.([]int)
+	}
+	idxs := make([]int, 0, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		if t.Field(i).PkgPath == "" {
+			idxs = append(idxs, i)
+		}
+	}
+	walkFieldCache.Store(t, idxs)
+	return idxs
+}
+
 // walkNodes 走訪 root 子樹，對每個可尋址節點（指標背後的值）呼叫 visit(node)。
 func walkNodes(root interface{}, visit func(node interface{})) {
 	if root == nil || visit == nil {
@@ -791,10 +814,7 @@ func walkReflect(v reflect.Value, visit func(interface{}), seen map[uintptr]bool
 		}
 	case reflect.Struct:
 		t := v.Type()
-		for i := 0; i < t.NumField(); i++ {
-			if t.Field(i).PkgPath != "" {
-				continue // 非導出欄位（其 Interface() 會 panic，跳過）
-			}
+		for _, i := range exportedFieldIndices(t) {
 			walkReflect(v.Field(i), visit, seen)
 		}
 	}
