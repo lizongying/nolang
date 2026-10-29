@@ -1156,6 +1156,16 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		{Name: "len", TypeRaw: "byte", Tag: FieldTagInline},
 	}
 	l.collectStructFields()
+	// The builtin option's err-variant payload (see Module.OptionErrRaw). std's
+	// structured error is used whenever the std err module is part of the
+	// compilation — which is every compilation, since global.no declares
+	// `option { ..., err(e err.err) }` and imports it — and the historical
+	// message string otherwise.
+	if _, ok := l.mod.StructFields[errPayloadRawStd]; ok {
+		l.mod.OptionErrRaw = errPayloadRawStd
+	} else {
+		l.mod.OptionErrRaw = "str"
+	}
 	l.collectTaggedEnums()
 	l.collectLocalEnumVariants()
 	l.collectValueTypeAliases()
@@ -2854,9 +2864,9 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		}
 		// Match-arm `it` binding whose declared HIR type is the `err` variant
 		// marker (the parser puts `t=err` on the synthetic `it = matched` let of
-		// an `err ->` arm). The err payload is ALWAYS `str` (the builtin option
-		// is `option { ok(v t), nil, err(e str) }`), so bind `it` as a str by
-		// peeling the option's payload and reinterpreting it as %str-long. The
+		// an `err ->` arm). Bind `it` to the err-variant payload by peeling the
+		// option: the historical message string, or std's structured err.err
+		// now that `option { ..., err(e err.err) }` declares it so. The
 		// previous code let `it` keep the WHOLE option type (?fs.file / ?[]byte /
 		// ...), so uses like `print('...' - it)` peeled to the OK payload
 		// (fs.file / []byte) instead of the err message (str) — tripping
@@ -2872,10 +2882,10 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			if raw := l.pkg.Type(n.Type); raw == "err" {
 				if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
 					if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption {
-						// The err payload is ALWAYS `str` (option { ...,
-						// err(e str) }), whatever the OK element is, so peel
-						// + clone it into `it` as an independently-owned
-						// %str-long for BOTH shapes:
+						// The err payload is the option's declared err-variant
+						// type (option { ..., err(e err.err) }), whatever the
+						// OK element is, so peel + clone it into `it` as an
+						// independently-owned value for BOTH shapes:
 						//   - non-scalar (?str / ?fs.file / ...): the err str
 						//     fits in the payload slot, so emitMove re-puns
 						//     the slot (test_fs_error_complete,
@@ -2894,23 +2904,39 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						//     correct for scalars too.
 						// DEPENDS ON the unified %option slot in codegen.go —
 						// scalar err arms cannot be validated until it lands.
-						if elem, ok := parseOptionElem(vty.Raw); ok && elem != "" {
-							if et := l.mod.Type(l.b.Type(elem)); et != nil {
-								switch et.Kind {
-								case KindStr, KindStruct:
-									peeled := l.b.Emit(OpMove, l.b.Type("str"), []ValueID{val}, "")
-									val = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{peeled}, "")
-								case KindInt, KindBool, KindChar, KindFloat, KindPtr:
-									// SCALAR option (?i64 / ?bool / ?u8 / ...).
-									// See the comment above: the unified
-									// %option slot is 24 bytes, so the err
-									// message is recoverable and `it` is the
-									// message — the same semantic as a
-									// non-scalar option.
-									peeled := l.b.Emit(OpMove, l.b.Type("str"), []ValueID{val}, "")
-									val = l.b.Emit(OpClone, l.b.Type("str"), []ValueID{peeled}, "")
-								}
+						// EVERY element kind peels the same way now. The old
+						// code peeled only str / struct / scalar elements and
+						// left a `?[]byte` err arm holding the OK payload
+						// (`it` was a %vec reinterpretation of the slot). That
+						// "worked" by accident while the err payload was a
+						// 24-byte message: reading the slot as a %vec and
+						// handing it back to `err(...)` copied the message's
+						// bytes straight through. A boxed err.err breaks it —
+						// `err(it)` would build an error whose msg is a %vec —
+						// so there is no longer any kind for which keeping the
+						// OK payload is right.
+						if _, ok := parseOptionElem(vty.Raw); ok {
+							// `it` is the err-variant PAYLOAD, whatever
+							// the declared element is: the historical
+							// message string, or std's structured
+							// err.err now. Peel it out of the option
+							// and clone it — the option owns the payload
+							// (and, when it is boxed, the box), so
+							// sharing would double-free on drop.
+							//
+							// A structured err.err is ~72 bytes, far
+							// past the 24-byte slot, so it lives in a
+							// heap box: optPayloadAddrAs resolves the
+							// box under `tag == 2` and emitMove
+							// dereferences it, which is why the read
+							// works for a scalar option too (?i64 /
+							// ?bool / ...).
+							errT := l.b.Type(l.mod.OptionErrRaw)
+							if errT == NoType || errT == l.voidType {
+								errT = l.b.Type("str")
 							}
+							peeled := l.b.Emit(OpMove, errT, []ValueID{val}, "")
+							val = l.b.Emit(OpClone, errT, []ValueID{peeled}, "")
 						}
 					}
 				}
@@ -7691,10 +7717,22 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					case "nil":
 						tag = 1
 					}
-					var payload ValueID = NoVal
-					if name != "nil" && tt.Elem != NoType {
-						payload = l.b.Emit(OpConst, tt.Elem, nil, "")
-					}
+				var payload ValueID = NoVal
+				// `err` is a tag-only discriminant: its comparison is gated by
+				// `bareVariant[v]=true` (TagOnly) so the enclosing `==`/`!=`
+				// compares the TAG alone. Emitting the *element* type as a
+				// payload would box it into the err slot — but the err slot's
+				// payload type is the global `%err_err` (64B for `?outer`, never
+				// the element), so the option's drop helper would read the
+				// element-sized box as an `err_err` and walk 8+ bytes past it
+				// (EXC_BAD_ACCESS under libgmalloc, silent heap corruption under
+				// plain). `nil` already takes this path (NoVal); `err` must too.
+				// `ok`/`some` (tag 0) keep the zero-element payload because the
+				// ok slot really is the element type and its drop frees a
+				// correctly-sized box.
+				if name != "nil" && name != "err" && tt.Elem != NoType {
+					payload = l.b.Emit(OpConst, tt.Elem, nil, "")
+				}
 					v := l.b.EmitOptionWrap(optTyp, tag, payload)
 					// This value is a DISCRIMINANT PATTERN, not a real option:
 					// its payload is a zero constant (or absent). Record it so
@@ -10923,6 +10961,16 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 			tag := int64(0)
 			if callee == "err" {
 				tag = 2
+				// The err variant's payload is std's structured error, not the
+				// message string: `err(msg)` / `err(msg, code)` build an
+				// err.err { code, msg, file, line, col } whose position fields
+				// are filled from THIS CALL SITE. That is the whole point of
+				// the structured error — an option used to carry the message
+				// and nothing else, so a `?i64` failure said "boom" with no
+				// idea where it came from.
+				if ev := l.buildErrValue(n, argv); ev != NoVal {
+					return l.b.EmitOptionWrap(optTyp, tag, ev)
+				}
 			}
 			var payload ValueID = NoVal
 			if len(argv) > 0 {
@@ -11838,6 +11886,105 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 		}
 	}
 	return argv
+}
+
+// buildErrValue materialises the builtin option's err payload: a std err.err
+// struct { code, msg, file, line, col }.
+//
+// `err(msg)` / `err(msg, code)` are the source forms. msg and code come from the
+// call's arguments; file / line / col are the CALL SITE's own coordinates, which
+// is the reason the payload is a struct at all — the old str payload had nowhere
+// to put them, so a `?i64` failure carried "boom" and nothing else.
+//
+// Returns NoVal when the option's err payload is still the historical string
+// (std's err module not part of this compilation), so the caller falls back to
+// wrapping the message itself.
+func (l *lowerer) buildErrValue(n *hir.Node, argv []ValueID) ValueID {
+	if l.mod.OptionErrRaw != errPayloadRawStd {
+		return NoVal
+	}
+	// `err(e)` where e is ALREADY an err.err: propagate it verbatim instead of
+	// building a new one. This is how std re-raises an error —
+	// `err -> val = err(it)` in str.no / txt.no / fs.no. Treating `it` as a
+	// message there would not even type-check, and rebuilding from
+	// `it.msg()` would silently drop the code and the position, which is the
+	// whole reason the payload is a struct.
+	if len(argv) > 0 && argv[0] != NoVal {
+		if vt := l.valueTypeOf(argv[0]); vt != NoType {
+			if t := l.mod.Type(vt); t != nil && t.Raw == errPayloadRawStd {
+				return argv[0]
+			}
+		}
+	}
+	typ := l.b.Type(errPayloadRawStd)
+	if typ == NoType || typ == l.voidType {
+		return NoVal
+	}
+	fields := l.mod.StructFields[errPayloadRawStd]
+	if len(fields) == 0 {
+		return NoVal
+	}
+	res := l.b.Emit(OpStructLit, typ, nil, errPayloadRawStd)
+	set := func(field string, v ValueID) {
+		if v == NoVal {
+			return
+		}
+		sid := l.b.EmitVoid(OpSetField, []ValueID{res, v}, "")
+		l.mod.Insts[sid].Str = field
+		// Same ownership rule the `obj.field = v` and struct-literal sites use:
+		// the initializer is consumed only when emitSetField MOVES it (an owned
+		// leaf is deep-copied instead), so the two cannot drift.
+		l.mod.Insts[sid].MovesArg = l.mod.SetFieldConsumesRHS(res, field)
+	}
+	msg := NoVal
+	if len(argv) > 0 {
+		msg = argv[0]
+	}
+	if msg == NoVal {
+		// A bare `err()`: an empty message, exactly as the old inline payload
+		// read back (the slot was zeroed).
+		msg = l.b.EmitStr(OpConst, l.b.Type("str"), "", "")
+	}
+	file := ""
+	line, col := int64(0), int64(0)
+	if n != nil {
+		if n.S2 != hir.NoID {
+			file = l.pkg.Str(n.S2)
+		}
+		line, col = int64(n.Line), int64(n.Col)
+	}
+	i64T := l.b.Type("i64")
+	set("code", l.errCodeValue(argv))
+	set("msg", msg)
+	set("file", l.b.EmitStr(OpConst, l.b.Type("str"), file, ""))
+	set("line", l.b.EmitInt(OpConst, i64T, line, ""))
+	set("col", l.b.EmitInt(OpConst, i64T, col, ""))
+	return res
+}
+
+// errCodeValue returns the `code` argument of `err(msg, code)` when one was
+// given, and the `code.unknown` discriminant otherwise — the default the std
+// constructor `err.new` declares.
+func (l *lowerer) errCodeValue(argv []ValueID) ValueID {
+	if len(argv) > 1 && argv[1] != NoVal {
+		return argv[1]
+	}
+	ct := l.b.Type("code")
+	if ct == NoType || ct == l.voidType {
+		ct = l.b.Type("i64")
+	}
+	// A plain enum is inlined as an integer, so the discriminant IS the
+	// declaration index of `unknown` within `code`.
+	idx := int64(0)
+	if vs, ok := l.enumVariants["code"]; ok {
+		for i, name := range vs {
+			if name == "unknown" {
+				idx = int64(i)
+				break
+			}
+		}
+	}
+	return l.b.EmitInt(OpConst, ct, idx, "")
 }
 
 // callerLocation builds a "file:line:col" string from a call node, for

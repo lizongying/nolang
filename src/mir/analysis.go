@@ -1381,6 +1381,13 @@ func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 		// payload's contents, and it handles the err tag itself.
 		return true
 	}
+	// An INLINE ok payload does NOT mean the copy is free of sharing: the err
+	// variant's payload is sized independently of the element, so a `?i64` can
+	// hold a boxed err.err while its ok payload is a plain inline i64. Both
+	// sides would then drop the same box, so the copy must re-box it.
+	if m.ErrPayloadOwnsHeap() {
+		return true
+	}
 	// An INLINE payload. The clone helper must also duplicate the err message,
 	// and it only implements the inline layout; a slot small enough to box the
 	// 24-byte message would box every owned payload too (a `%str-long` and a

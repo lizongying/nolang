@@ -163,6 +163,15 @@ option {
     err(e error.err),
 }
 
-#{buildin}
-err = (msg str, ec error.code = error.code.unknown) (e error.err) {
-}
+; err: 建立結構化錯誤（別名 → std/err.new）
+;
+; `@ <path>.<fn> <alias>` 宣告一個全域可用的第二名稱：下面這一行讓
+; `err('msg')` / `err('msg', err.code.io)` 就是 `err.new('msg')` 的呼叫，
+; 而不是編譯器裡另寫的一條特殊規則。
+;
+; 與選項的 err 變體不衝突：在期望型別是 option 的位置（`x ?i64` 之後的
+; `x = err('msg')`、`err ->` 匹配臂、回傳 ?T 的函式），`err(...)` 仍然是
+; 選項的 err 變體構造器（tag 2），由 MIR 依期望型別分派；其餘位置才走這個
+; 別名。std 模組內部呼叫自己的同名函式（io.no 的 stderr 寫入器 io.err）
+; 也不受影響。
+@ std/err.new err

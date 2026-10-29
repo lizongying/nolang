@@ -1,0 +1,93 @@
+; err-structured.no — option 的 err 載荷是結構化的 err.err
+;
+; 回歸：err 載荷從「訊息字串」換成 std 的 err.err（code / msg / file / line / col）
+; 之後，它 ~72 字節裝不進 24 字節的載荷槽，改走 tag==2 堆裝箱。整套機制必須咬合：
+;   - 構造器：err(msg[, code]) 建出 err.err，file/line/col 由構造點自動注入；
+;   - 讀側：optPayloadAddrAs 在 tag == 2 解箱，err 臂的 it 拿到完整的 err.err；
+;   - drop：emitOptionDropHelper 的 err 分支釋放 box 與其擁有的字串；
+;   - 拷貝：option → option 必須重新裝箱，否則兩側釋放同一塊（雙重釋放）。
+;
+; 只改其中任一處的症狀：讀到指標（亂碼）、漏釋放、或 trace/BPT trap。
+
+check = (name str, got str, want str) {
+    got == want -> print('ok: {name}')
+
+    -> print('fail: {name} got=[{got}] want=[{want}]')
+}
+
+fail-i64 = () (out ?i64) {
+    out = err('boom', code.io)
+}
+
+; ── 1. 訊息 ──
+a = fail-i64()
+got1 = ''
+a: {
+    err -> got1 = it.msg()
+
+    -> got1 = 'ok'
+}
+check('msg', got1, 'boom')
+
+; ── 2. 錯誤碼 ──
+a2 = fail-i64()
+got2 = ''
+a2: {
+    err -> {
+        yes = it.is(code.io)
+        {
+            yes -> got2 = 'io'
+
+            -> got2 = 'other'
+        }
+    }
+
+    -> got2 = 'ok'
+}
+check('code', got2, 'io')
+
+; ── 3. 位置：file 由編譯器在 err(...) 構造點注入 ──
+a3 = fail-i64()
+got3 = ''
+a3: {
+    err -> got3 = it.file
+
+    -> got3 = 'ok'
+}
+check('file', got3, 'err-structured.no')
+
+; ── 4. 透傳：err(err.err) 必須保留 code 與位置，不能退化成「重建一則訊息」 ──
+rethrow = () (out ?bool) {
+    m = fail-i64()
+    m: {
+        err -> out = err(it)
+
+        -> out = true
+    }
+}
+b = rethrow()
+got4 = ''
+b: {
+    err -> got4 = it.msg() - '@' - it.file
+
+    -> got4 = 'ok'
+}
+check('rethrow', got4, 'boom@err-structured.no')
+
+; ── 5. option → option 拷貝：兩側都要讀得到訊息，且不能雙重釋放 ──
+c = fail-i64()
+d = c
+got5 = ''
+got6 = ''
+c: {
+    err -> got5 = it.msg()
+
+    -> got5 = 'ok'
+}
+d: {
+    err -> got6 = it.msg()
+
+    -> got6 = 'ok'
+}
+check('copy-src', got5, 'boom')
+check('copy-dst', got6, 'boom')

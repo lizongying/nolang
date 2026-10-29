@@ -505,6 +505,13 @@ func (m *Module) OptionOwnsHeap(raw string) bool {
 	if m.OptionPayloadBoxed(elem) {
 		return true
 	}
+	// The err variant's payload is a property of the OPTION, not of its element:
+	// a `?i64` whose ok payload is a plain inline i64 still owns a heap box when
+	// it holds a structured err, and dropping it is the only thing that frees
+	// that box.
+	if m.ErrPayloadOwnsHeap() {
+		return true
+	}
 	return m.inlineStructPayloadOwnsHeap(elem)
 }
 
@@ -558,6 +565,24 @@ func (m *Module) OptionPayloadBoxed(elemRaw string) bool {
 	}
 	m.optBoxed[elemRaw] = boxed
 	return boxed
+}
+
+// ErrPayloadOwnsHeap reports whether dropping an option that currently holds an
+// ERR must free heap — i.e. whether the option's err-variant payload is boxed
+// (a pointer in slot[0]) or is a struct owning heap.
+//
+// It is the err-variant counterpart of OptionPayloadBoxed and feeds the same
+// two decisions: OptionOwnsHeap (does `?T` need a drop at all) and
+// optionCopyOwnsPayload (must an option→option copy clone). A `?i64` is the
+// case that flips: its ok payload is a plain inline i64, but once the err
+// payload is a ~72-byte err.err it is boxed, so the option DOES own heap and a
+// bitwise copy would leave both sides freeing one box.
+func (m *Module) ErrPayloadOwnsHeap() bool {
+	if m.OptionErrRaw == "" || m.OptionErrRaw == "str" {
+		return false
+	}
+	c := &codegen{mod: m, sb: &strings.Builder{}, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
+	return c.errPayloadOwnsHeap()
 }
 
 // ---------------------------------------------------------------------------
@@ -1353,6 +1378,9 @@ type GlobalDecl struct {
 	EmbedBytes []byte
 }
 
+// errPayloadRawStd 是 std 结构化错误型别的原始名（模块 err 的 struct err）。
+const errPayloadRawStd = "err.err"
+
 type Module struct {
 	Name      string
 	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值：载荷 sizeof 小于等于
@@ -1362,6 +1390,22 @@ type Module struct {
 	// compiler.option-inline-threshold（或 NOLANG_OPTION_INLINE_THRESHOLD）
 	// 填入，0 表示取默认值。
 	OptionInlineThreshold int
+
+	// OptionErrRaw 是内建 option 的 err 变体载荷的原始型别名。
+	//
+	// `option { ok(v t), nil, err(e <OptionErrRaw>) }` 的 err 载荷曾经恒为
+	// `str`（旧的结构化错误之前的形态）。改成 std 的 `err.err` 之后它是一颗
+	// ~72 字节的 struct（code / msg / file / line / col），装不进 24 字节的
+	// 载荷槽，因此 tag 2 走堆装箱、slot[0] 存指针。
+	//
+	// 读侧（optPayloadAddrAs 的 tag 判定）、释放侧（emitOptionDropHelper 的
+	// err 分支）、拷贝侧（rebox / clone 的 err 分支）都必须用同一个答案来
+	// 判断「tag 2 的槽里到底是指针还是值」，所以答案存在 Module 上，而不是
+	// 各处各写一份。
+	//
+	// 由 LowerHIR 在 collectStructFields 之后填入：std 的 err 模块参与编译
+	// 时为 "err.err"，否则回退 "str"（历史形态，所有旧路径仍然认得）。
+	OptionErrRaw string
 
 	// optBoxed memoizes OptionPayloadBoxed per element raw type. The answer is
 	// a pure function of (element type, OptionInlineThreshold), but computing
