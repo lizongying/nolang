@@ -3544,10 +3544,13 @@ entry:
   ret void
 }
 
-; Best-effort option printer: "nil" for the nil tag, the inner value otherwise.
+; Best-effort option printer: "nil" for the nil tag, "err" for the err tag (the
+; structured err.err payload would need err.format to display usefully — the
+; raw slot/box pointer is worse than useless here), the inner value otherwise.
 ; Inner value field is read as i64 (exact for option-i64; an approximation for
 ; other element types, matching the v1 MIR print subset).
 @.nilstr = private constant [3 x i8] c"nil"
+@.errstr = private constant [3 x i8] c"err"
 define void @print_option(%option %o) {
 entry:
   %os = alloca %option
@@ -3555,9 +3558,15 @@ entry:
   %tp = getelementptr inbounds %option, %option* %os, i32 0, i32 0
   %tag = load i64, i64* %tp
   %isnil = icmp eq i64 %tag, 1
-  br i1 %isnil, label %nil, label %some
+  %iserr = icmp eq i64 %tag, 2
+  br i1 %isnil, label %nil, label %chk
+chk:
+  br i1 %iserr, label %err, label %some
 nil:
   call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.nilstr, i64 0, i64 0), i64 3)
+  ret void
+err:
+  call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.errstr, i64 0, i64 0), i64 3)
   ret void
 some:
   %ps = getelementptr inbounds %option, %option* %os, i32 0, i32 1
@@ -3579,9 +3588,15 @@ entry:
   %tp = getelementptr inbounds %option, %option* %os, i32 0, i32 0
   %tag = load i64, i64* %tp
   %isnil = icmp eq i64 %tag, 1
-  br i1 %isnil, label %nil, label %some
+  %iserr = icmp eq i64 %tag, 2
+  br i1 %isnil, label %nil, label %chk
+chk:
+  br i1 %iserr, label %err, label %some
 nil:
   call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.nilstr, i64 0, i64 0), i64 3)
+  ret void
+err:
+  call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.errstr, i64 0, i64 0), i64 3)
   ret void
 some:
   %ps = getelementptr inbounds %option, %option* %os, i32 0, i32 1
@@ -12260,8 +12275,10 @@ func (c *codegen) emitEnumPayloadFieldClone(b *strings.Builder, ft *Type, fieldL
 // emitOptionPrintHelper emits a dedicated `define void @print_option_<payload>`
 // helper for one option payload type. The helper spills the by-value `%option`,
 // reads the tag (field 0), branches on nil (tag == 1) to print the literal
-// "nil", and otherwise reads the payload out of the 24-byte slot and routes it
-// to the matching scalar printer — mirroring the generic @print_option helper.
+// "nil" and on err (tag == 2) to print the literal "err" (the structured
+// err.err payload is not a scalar; printing its box pointer is worse than
+// useless), and otherwise reads the payload out of the 24-byte slot and routes
+// it to the matching scalar printer — mirroring the generic @print_option helper.
 // Keeping the branch inside its own function lets emitCall route the print
 // through a plain `call` instead of synthesizing new basic blocks mid-function
 // (which breaks LLVM verification). Only payload types with a scalar printer
@@ -12296,9 +12313,15 @@ func (c *codegen) emitOptionPrintHelper(payloadLT string) {
 	c.sb.WriteString("  %otp = getelementptr inbounds %option, %option* %os, i32 0, i32 0\n")
 	c.sb.WriteString("  %otag = load i64, i64* %otp\n")
 	c.sb.WriteString("  %oisnil = icmp eq i64 %otag, 1\n")
-	c.sb.WriteString("  br i1 %oisnil, label %onil, label %osome\n")
+	c.sb.WriteString("  %oiserr = icmp eq i64 %otag, 2\n")
+	c.sb.WriteString("  br i1 %oisnil, label %onil, label %ochk\n")
+	c.sb.WriteString("ochk:\n")
+	c.sb.WriteString("  br i1 %oiserr, label %oerr, label %osome\n")
 	c.sb.WriteString("onil:\n")
 	c.sb.WriteString("  call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.nilstr, i64 0, i64 0), i64 3)\n")
+	c.sb.WriteString("  ret void\n")
+	c.sb.WriteString("oerr:\n")
+	c.sb.WriteString("  call i64 @write(i32 1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.errstr, i64 0, i64 0), i64 3)\n")
 	c.sb.WriteString("  ret void\n")
 	c.sb.WriteString("osome:\n")
 	// optPayloadAddr, not a raw GEP to field 1: when the slot is configured

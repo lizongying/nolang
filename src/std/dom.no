@@ -650,7 +650,8 @@ dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np ?i64) {
 dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
     ne i64 = 0
-    nopt = xml-read-name(s, p + 2)
+    nm-start = p + 2
+    nopt = xml-read-name(s, nm-start)
     nopt: {
         ok -> ne = it
         -> return
@@ -718,7 +719,8 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
     idx = .alloc(DOM-KIND-DOCTYPE)
     .vals[idx] = s.slice-bytes(p + 2, j)
     ; names 存放文檔元素名（跳過 'DOCTYPE' 關鍵字後的第二個名字）
-    kwopt = xml-read-name(s, p + 2)
+    kwopt-start = p + 2
+    kwopt = xml-read-name(s, kwopt-start)
     kwopt: {
         ok -> {
             kw = it
@@ -817,7 +819,8 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np ?i64) {
 dom-pool.xml-parse-close = (node i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
     ne i64 = 0
-    nopt = xml-read-name(s, p + 2)
+    nm-start = p + 2
+    nopt = xml-read-name(s, nm-start)
     nopt: {
         ok -> ne = it
         -> return
@@ -838,7 +841,8 @@ dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
     depth > DOM-MAX-DEPTH -> return
     p + 1 >= n -> return
     ne i64 = 0
-    nopt = xml-read-name(s, p + 1)
+    nm-start = p + 1
+    nopt = xml-read-name(s, nm-start)
     nopt: {
         ok -> ne = it
         -> return
@@ -1096,7 +1100,8 @@ html-peek-name = (s str, p i64) (nm str) {
     n = s.len-bytes()
     p + 1 >= n -> return
     e i64 = 0
-    nopt = xml-read-name(s, p + 1)
+    nm-start = p + 1
+    nopt = xml-read-name(s, nm-start)
     nopt: {
         ok -> e = it
         -> return
@@ -1169,7 +1174,8 @@ dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
 dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
     n = s.len-bytes()
     ne i64 = 0
-    nopt = xml-read-name(s, p + 2)
+    nm-start = p + 2
+    nopt = xml-read-name(s, nm-start)
     nopt: {
         ok -> ne = it
         -> {
@@ -1421,7 +1427,8 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
     nm = ''
     ok = false
     ne i64 = 0
-    nopt = xml-read-name(s, p + 2)
+    nm-start = p + 2
+    nopt = xml-read-name(s, nm-start)
     nopt: {
         ok -> ne = it
         -> {

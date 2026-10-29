@@ -706,9 +706,8 @@ yaml-apply-tag = (tag str, kind i64) (k i64) {
 }
 
 ; yaml-unescape-double: 处理双引号转义序列
-yaml-unescape-double = (body str) (out str, ok bool) {
-    out = ''
-    ok = true
+yaml-unescape-double = (body str) (out ?str) {
+    acc str = ''
     i = 0
     n = body.len-bytes()
     (i < n) {
@@ -720,7 +719,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
         }
         c != 92 -> {
             u1 char = c
-            out = out - u1.to-str()
+            acc = acc - u1.to-str()
 
             #{overflow=wrap}
             i = i + 1
@@ -729,40 +728,37 @@ yaml-unescape-double = (body str) (out str, ok bool) {
 
         #{overflow=wrap}
         i = i + 1
-        i >= n -> {
-            ok = false
-            return
-        }
+        i >= n -> return
         e = body.byte(i)
 
         #{overflow=wrap}
         i = i + 1
         {
-            e == 110 -> out = out - '\n'
+            e == 110 -> acc = acc - '\n'
 
-            e == 116 -> out = out - '\t'
+            e == 116 -> acc = acc - '\t'
 
-            e == 114 -> out = out - '\r'
+            e == 114 -> acc = acc - '\r'
 
-            e == 48 -> out = out - '\0'
+            e == 48 -> acc = acc - '\0'
 
-            e == 97 -> out = out - '\x07'
+            e == 97 -> acc = acc - '\x07'
 
-            e == 98 -> out = out - '\x08'
+            e == 98 -> acc = acc - '\x08'
 
-            e == 118 -> out = out - '\x0b'
+            e == 118 -> acc = acc - '\x0b'
 
-            e == 102 -> out = out - '\x0c'
+            e == 102 -> acc = acc - '\x0c'
 
-            e == 101 -> out = out - '\x1b'
+            e == 101 -> acc = acc - '\x1b'
 
-            e == 34 -> out = out - '"'
+            e == 34 -> acc = acc - '"'
 
-            e == 47 -> out = out - '/'
+            e == 47 -> acc = acc - '/'
 
-            e == 92 -> out = out - '\\'
+            e == 92 -> acc = acc - '\\'
 
-            e == 32 -> out = out - ' '
+            e == 32 -> acc = acc - ' '
 
             e == 120 -> {
 
@@ -774,10 +770,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
 
                         #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
-                        d < 0 -> {
-                            ok = false
-                            return
-                        }
+                        d < 0 -> return
 
                         #{overflow=wrap}
                         cp = cp * 16 + d
@@ -789,10 +782,9 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         -> i = 0
                     }
                     ucp1 char = cp
-                    out = out - ucp1.to-str()
+                    acc = acc - ucp1.to-str()
                     continue
                 }
-                ok = false
                 return
             }
 
@@ -806,10 +798,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
 
                         #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
-                        d < 0 -> {
-                            ok = false
-                            return
-                        }
+                        d < 0 -> return
 
                         #{overflow=wrap}
                         cp = cp * 16 + d
@@ -821,10 +810,9 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         -> i = 0
                     }
                     ucp2 char = cp
-                    out = out - ucp2.to-str()
+                    acc = acc - ucp2.to-str()
                     continue
                 }
-                ok = false
                 return
             }
 
@@ -838,10 +826,7 @@ yaml-unescape-double = (body str) (out str, ok bool) {
 
                         #{overflow=wrap}
                         d = yaml-hex-digit(body.byte(i + k))
-                        d < 0 -> {
-                            ok = false
-                            return
-                        }
+                        d < 0 -> return
 
                         #{overflow=wrap}
                         cp = cp * 16 + d
@@ -853,19 +838,18 @@ yaml-unescape-double = (body str) (out str, ok bool) {
                         -> i = 0
                     }
                     ucp3 char = cp
-                    out = out - ucp3.to-str()
+                    acc = acc - ucp3.to-str()
                     continue
                 }
-                ok = false
                 return
             }
 
             -> {
-                ok = false
                 return
             }
         }
     }
+    out = acc
 }
 
 ; ═══════════════════════════════════════════════
@@ -1358,9 +1342,11 @@ yaml-parser.parse-double = () (idx i64) {
         return
     }
     text = ''
-    ok = true
-    text, ok = yaml-unescape-double(raw)
-    ok == false -> .fail-at('invalid escape sequence in double-quoted scalar')
+    uopt = yaml-unescape-double(raw)
+    uopt: {
+        ok -> text = it
+        -> .fail-at('invalid escape sequence in double-quoted scalar')
+    }
     idx = .push-scalar(text, YAML-STYLE-DOUBLE, '', '')
 }
 
@@ -2303,18 +2289,8 @@ yaml.doc-count = () (n i64) {
 }
 
 ; yaml.doc: 取第 i 份文档
-; 说明：子节点视图以 (out yaml, ok bool) 返回，而不是 ?yaml。
-; MIR 后端目前无法安全地共享节点池：把含 vec 的 struct 装进 option 并交还调用方后，
-; 调用方释放该 option 会连带释放父文档的节点缓冲区（表现为再用父文档时长度变成 0）。
-; 作为 out 参数交还则不会发生这个所有权转移。
-yaml.doc = (i i64) (out yaml, ok bool) {
-    ok = false
-    out = yaml {
-        pool: .pool
-        root: .root
-        roots: .roots
-        source: .source
-    }
+; 说明：子节点视图以 ?yaml 返回，供调用方 match 解包。
+yaml.doc = (i i64) (out ?yaml) {
     i < 0 -> return
     i >= .roots.len() -> return
     r = .roots[i]
@@ -2324,7 +2300,6 @@ yaml.doc = (i i64) (out yaml, ok bool) {
         roots: .roots
         source: .source
     }
-    ok = true
 }
 
 ; yaml.node-count: 节点总数
@@ -2438,77 +2413,56 @@ yaml.text = () (t str) {
 }
 
 ; yaml.str: 取字符串值（数值/布尔返回其原文）
-yaml.str = () (val str, ok bool) {
-    ok = false
-    val = ''
+yaml.str = () (val ?str) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
     k = .pool.nodes[.root].kind
     k == YAML-KIND-SEQ || k == YAML-KIND-MAP || k == YAML-KIND-NULL -> return
     val = .pool.nodes[.root].text
-    ok = true
 }
 
 ; yaml.i64: 取整数值
-yaml.i64 = () (val i64, ok bool) {
-    ok = false
-    val = 0
+yaml.i64 = () (val ?i64) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
     k = .pool.nodes[.root].kind
     k == YAML-KIND-INT -> {
         val = .pool.nodes[.root].ival
-        ok = true
         return
     }
     k == YAML-KIND-FLOAT -> {
 
         ; val 是 i64 出參，fval 是 f64：必須顯式轉換，不能靠隱式截斷
         val = .pool.nodes[.root].fval.to-i64()
-        ok = true
     }
 }
 
 ; yaml.f64: 取浮点值
-yaml.f64 = () (val f64, ok bool) {
-    ok = false
-    val = 0.0
+yaml.f64 = () (val ?f64) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
     k = .pool.nodes[.root].kind
     k == YAML-KIND-FLOAT -> {
         val = .pool.nodes[.root].fval
-        ok = true
         return
     }
     k == YAML-KIND-INT -> {
         val = .pool.nodes[.root].ival.to-f64()
-        ok = true
     }
 }
 
 ; yaml.bool: 取布尔值
-yaml.bool = () (val bool, ok bool) {
-    ok = false
-    val = false
+yaml.bool = () (val ?bool) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
     k = .pool.nodes[.root].kind
     k == YAML-KIND-BOOL -> {
         val = .pool.nodes[.root].bval
-        ok = true
     }
 }
 
 ; yaml.at: 取序列元素 / 映射第 i 个值
-yaml.at = (i i64) (out yaml, ok bool) {
-    ok = false
-    out = yaml {
-        pool: .pool
-        root: .root
-        roots: .roots
-        source: .source
-    }
+yaml.at = (i i64) (out ?yaml) {
     i < 0 -> return
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
@@ -2521,18 +2475,10 @@ yaml.at = (i i64) (out yaml, ok bool) {
         roots: .roots
         source: .source
     }
-    ok = true
 }
 
 ; yaml.key-node: 取映射第 i 个键节点
-yaml.key-node = (i i64) (out yaml, ok bool) {
-    ok = false
-    out = yaml {
-        pool: .pool
-        root: .root
-        roots: .roots
-        source: .source
-    }
+yaml.key-node = (i i64) (out ?yaml) {
     i < 0 -> return
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
@@ -2545,33 +2491,24 @@ yaml.key-node = (i i64) (out yaml, ok bool) {
         roots: .roots
         source: .source
     }
-    ok = true
 }
 
 ; yaml.key: 取映射第 i 个键的文本
-yaml.key = (i i64) (out str, ok bool) {
-    out = ''
-    ok = false
-    n, f = .key-node(i)
-    f -> {
-        out, ok = n.scalar-text()
+yaml.key = (i i64) (out ?str) {
+    knopt = .key-node(i)
+    knopt: {
+        ok -> out = it.scalar-text()
+        -> _
     }
 }
 
 ; yaml.value: 取映射第 i 个键对应的值节点
-yaml.value = (i i64) (out yaml, ok bool) {
-    out, ok = .at(i)
+yaml.value = (i i64) (out ?yaml) {
+    out = .at(i)
 }
 
 ; yaml.get: 按标量键取映射值
-yaml.get = (key str) (out yaml, ok bool) {
-    ok = false
-    out = yaml {
-        pool: .pool
-        root: .root
-        roots: .roots
-        source: .source
-    }
+yaml.get = (key str) (out ?yaml) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
     .pool.nodes[.root].kind != YAML-KIND-MAP -> return
@@ -2586,73 +2523,58 @@ yaml.get = (key str) (out yaml, ok bool) {
                 roots: .roots
                 source: .source
             }
-            ok = true
             return
         }
     }
 }
 
 ; yaml.get-str: 按标量键取字符串
-yaml.get-str = (key str) (out str, ok bool) {
-    out = ''
-    ok = false
-    n, f = .get(key)
-    f -> {
-        out, ok = n.str()
+yaml.get-str = (key str) (out ?str) {
+    gopt = .get(key)
+    gopt: {
+        ok -> out = it.str()
+        -> _
     }
 }
 
 ; yaml.get-i64: 按标量键取整数
-yaml.get-i64 = (key str) (out i64, ok bool) {
-    out = 0
-    ok = false
-    n, f = .get(key)
-    f -> {
-        out, ok = n.i64()
+yaml.get-i64 = (key str) (out ?i64) {
+    gopt = .get(key)
+    gopt: {
+        ok -> out = it.i64()
+        -> _
     }
 }
 
 ; yaml.get-f64: 按标量键取浮点
-yaml.get-f64 = (key str) (out f64, ok bool) {
-    out = 0.0
-    ok = false
-    n, f = .get(key)
-    f -> {
-        out, ok = n.f64()
+yaml.get-f64 = (key str) (out ?f64) {
+    gopt = .get(key)
+    gopt: {
+        ok -> out = it.f64()
+        -> _
     }
 }
 
 ; yaml.get-bool: 按标量键取布尔
-yaml.get-bool = (key str) (out bool, ok bool) {
-    out = false
-    ok = false
-    n, f = .get(key)
-    f -> {
-        out, ok = n.bool()
+yaml.get-bool = (key str) (out ?bool) {
+    gopt = .get(key)
+    gopt: {
+        ok -> out = it.bool()
+        -> _
     }
 }
 
 ; yaml.scalar-text: 当前节点的标量文本（容器返回 ok=false）
-yaml.scalar-text = () (out str, ok bool) {
-    out = ''
-    ok = false
+yaml.scalar-text = () (out ?str) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
     k = .pool.nodes[.root].kind
     k == YAML-KIND-SEQ || k == YAML-KIND-MAP -> return
     out = .pool.nodes[.root].text
-    ok = true
 }
 
 ; yaml.find: 按点号路径查找（序列可用数字下标）
-yaml.find = (path str) (out yaml, ok bool) {
-    ok = false
-    out = yaml {
-        pool: .pool
-        root: .root
-        roots: .roots
-        source: .source
-    }
+yaml.find = (path str) (out ?yaml) {
     cur = .root
     cur < 0 -> return
     parts = path.split('.')
@@ -2698,46 +2620,41 @@ yaml.find = (path str) (out yaml, ok bool) {
         roots: .roots
         source: .source
     }
-    ok = true
 }
 
 ; yaml.find-str: 路径取字符串
-yaml.find-str = (path str) (out str, ok bool) {
-    out = ''
-    ok = false
-    n, f = .find(path)
-    f -> {
-        out, ok = n.str()
+yaml.find-str = (path str) (out ?str) {
+    fopt = .find(path)
+    fopt: {
+        ok -> out = it.str()
+        -> _
     }
 }
 
 ; yaml.find-i64: 路径取整数
-yaml.find-i64 = (path str) (out i64, ok bool) {
-    out = 0
-    ok = false
-    n, f = .find(path)
-    f -> {
-        out, ok = n.i64()
+yaml.find-i64 = (path str) (out ?i64) {
+    fopt = .find(path)
+    fopt: {
+        ok -> out = it.i64()
+        -> _
     }
 }
 
 ; yaml.find-f64: 路径取浮点
-yaml.find-f64 = (path str) (out f64, ok bool) {
-    out = 0.0
-    ok = false
-    n, f = .find(path)
-    f -> {
-        out, ok = n.f64()
+yaml.find-f64 = (path str) (out ?f64) {
+    fopt = .find(path)
+    fopt: {
+        ok -> out = it.f64()
+        -> _
     }
 }
 
 ; yaml.find-bool: 路径取布尔
-yaml.find-bool = (path str) (out bool, ok bool) {
-    out = false
-    ok = false
-    n, f = .find(path)
-    f -> {
-        out, ok = n.bool()
+yaml.find-bool = (path str) (out ?bool) {
+    fopt = .find(path)
+    fopt: {
+        ok -> out = it.bool()
+        -> _
     }
 }
 
