@@ -207,6 +207,14 @@ func githubGET(url string) ([]byte, error) {
 	return nil, lastErr
 }
 
+// maxAssetBytes 是單個 release 資產允許下載的最大體積（256 MiB）。
+// 防止被劫持或惡意的來源返回超大響應體把進程讀到 OOM。
+const maxAssetBytes = 256 << 20
+
+// githubHTTPClient 帶整體超時，避免慢速／掛死的伺服器讓 no install 永久阻塞
+// （http.DefaultClient 沒有 Timeout，會無限期等待）。
+var githubHTTPClient = &http.Client{Timeout: time.Hour}
+
 // githubGETOnce 執行一次 GET。httpErr 為 true 表示伺服器回了非 200 的狀態碼
 // （資產不存在／限流），這類錯誤重試不會改變結果；false 表示傳輸層失敗，值得重試。
 func githubGETOnce(url string) (data []byte, httpErr bool, err error) {
@@ -219,13 +227,17 @@ func githubGETOnce(url string) (data []byte, httpErr bool, err error) {
 	if tok := githubToken(); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githubHTTPClient.Do(req)
 	if err != nil {
 		return nil, false, fmt.Errorf("fetching %s: %w", url, err)
 	}
 	defer resp.Body.Close()
-	data, err = io.ReadAll(resp.Body)
+	// 限制響應體大小：超出 maxAssetBytes 直接失敗（重試也不會改變結果）。
+	data, err = io.ReadAll(http.MaxBytesReader(nil, resp.Body, maxAssetBytes))
 	if err != nil {
+		if strings.Contains(err.Error(), "too large") {
+			return nil, true, fmt.Errorf("asset %s exceeds size limit (%d bytes)", url, maxAssetBytes)
+		}
 		return nil, false, fmt.Errorf("reading %s: %w", url, err)
 	}
 	if resp.StatusCode != http.StatusOK {

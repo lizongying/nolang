@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	nbuild "github.com/lizongying/nolang/build"
 	pkg "github.com/lizongying/nolang/package"
@@ -24,6 +27,7 @@ import (
 func installCommand(args []string) {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
 	update := fs.Bool("u", false, "force re-download / re-install")
+	expectSHA := fs.String("sha256", "", "expected SHA-256 of the downloaded asset; install is refused on mismatch")
 	fs.Usage = func() {
 		fmt.Println("Usage: no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]")
 		fmt.Println("")
@@ -69,7 +73,7 @@ func installCommand(args []string) {
 
 	code := 0
 	for _, spec := range remaining {
-		if err := installReleaseBinary(spec, *update); err != nil {
+		if err := installReleaseBinary(spec, *update, *expectSHA); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			code = 1
 		}
@@ -123,7 +127,8 @@ func installCurrentPackage(force bool) {
 }
 
 // installReleaseBinary 解析 spec、定位 release 資產、下載並安裝。
-func installReleaseBinary(specStr string, force bool) error {
+// expectSHA 非空時強制校驗下載內容的 SHA-256，不符即拒絕安裝。
+func installReleaseBinary(specStr string, force bool, expectSHA string) error {
 	spec, err := pkg.ParseToolSpec(specStr)
 	if err != nil {
 		return err
@@ -155,6 +160,19 @@ func installReleaseBinary(specStr string, force bool) error {
 	}
 	if len(data) == 0 {
 		return fmt.Errorf("downloaded asset is empty: %s", url)
+	}
+
+	// 一律計算並列印 SHA-256 以便審計；提供期望哈希時強制校驗，
+	// 不符即拒絕安裝（防安裝被投毒／篡改的二進位）。
+	sum := sha256.Sum256(data)
+	actual := hex.EncodeToString(sum[:])
+	fmt.Printf("  sha256:   %s\n", actual)
+	if want := strings.TrimSpace(expectSHA); want != "" {
+		if !strings.EqualFold(actual, want) {
+			return fmt.Errorf("checksum mismatch for %s: want %s, got %s (refusing to install)",
+				spec.Name, want, actual)
+		}
+		fmt.Printf("  checksum: verified\n")
 	}
 
 	if err := installBytes(data, binName); err != nil {

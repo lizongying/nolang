@@ -283,6 +283,10 @@ func extractTarGz(r io.Reader, destDir string) error {
 	return nil
 }
 
+// maxExtractBytes 限制單個壓縮包解壓後的總寫入量（512 MiB）以及單個條目的
+// 未壓縮大小。防止 zip-bomb（高壓縮比的惡意壓縮包）寫爆磁碟。
+const maxExtractBytes = 512 << 20
+
 // extractZip extracts a zip archive from r into destDir.
 func extractZip(r io.Reader, destDir string) error {
 	// Read entire zip data (needed for zip.Reader)
@@ -298,6 +302,7 @@ func extractZip(r io.Reader, destDir string) error {
 		return extractZipFallback(data, destDir)
 	}
 
+	var written int64
 	for _, f := range zipReader.File {
 		fpath := filepath.Join(destDir, f.Name)
 		if !strings.HasPrefix(fpath, filepath.Clean(destDir)+string(os.PathSeparator)) {
@@ -314,6 +319,11 @@ func extractZip(r io.Reader, destDir string) error {
 			return err
 		}
 
+		// 單條目未壓縮大小超限：不必打開就直接拒絕。
+		if f.UncompressedSize64 > maxExtractBytes {
+			return fmt.Errorf("zip entry %q is too large (%d bytes)", f.Name, f.UncompressedSize64)
+		}
+
 		rc, err := f.Open()
 		if err != nil {
 			return err
@@ -325,11 +335,17 @@ func extractZip(r io.Reader, destDir string) error {
 			return err
 		}
 
-		_, err = io.Copy(outFile, rc)
+		// 限制累計寫入量：單條目寫到預算上限即中止，杜絕 zip-bomb 寫爆磁碟。
+		budget := maxExtractBytes - written
+		n, err := io.Copy(outFile, io.LimitReader(rc, budget))
+		written += n
 		rc.Close()
 		outFile.Close()
 		if err != nil {
 			return err
+		}
+		if n >= budget {
+			return fmt.Errorf("zip archive exceeds extraction size limit (%d bytes)", maxExtractBytes)
 		}
 	}
 	return nil
