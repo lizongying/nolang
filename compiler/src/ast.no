@@ -395,24 +395,24 @@ ast-str-intern-raw = (t ast, s str, target i64) () {
 
 ; 翻倍重哈希（str-v 存的是 strs 下標，strs 本身不動）
 ast-str-grow = (t ast) () {
-    oldK = t.str-k
-    oldV = t.str-v
-    oldN = oldK.len()
-    newCap = oldN * 2
-    (newCap == 0) -> newCap = 256
-    t.str-k = with-cap(newCap)
-    t.str-v = with-cap(newCap)
+    old-k = t.str-k
+    old-v = t.str-v
+    old-n = old-k.len()
+    new-cap = old-n * 2
+    (new-cap == 0) -> new-cap = 256
+    t.str-k = with-cap(new-cap)
+    t.str-v = with-cap(new-cap)
     hi = 0
-    (hi < newCap) {
+    (hi < new-cap) {
         t.str-k.push('')
         t.str-v.push(0)
         hi = hi + 1
     }
     t.str-n = 0
     hi = 0
-    (hi < oldN) {
-        kk = oldK[hi]
-        kk != '' -> ast-str-intern-raw(t, kk, oldV[hi])
+    (hi < old-n) {
+        kk = old-k[hi]
+        kk != '' -> ast-str-intern-raw(t, kk, old-v[hi])
         hi = hi + 1
     }
 }
@@ -1533,7 +1533,7 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
         ;     InterfaceDefinition.depth+1）。
         j = 0
         off = 0
-        segB = d.hbase + 5 * d.hcount
+        seg-b = d.hbase + 5 * d.hcount
         (j < d.hcount) {
 
             #{overflow=wrap}
@@ -1571,7 +1571,7 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
             (k < impc) {
 
                 #{overflow=wrap}
-                v = ast.aux-at(t, segB + off + k)
+                v = ast.aux-at(t, seg-b + off + k)
                 v > 0 -> ast.node(t, o, v, depth + 2)
 
                 #{overflow=wrap}
