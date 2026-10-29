@@ -3110,9 +3110,9 @@ func testCommand(args []string) {
 		}
 		runCmd.Stdout = os.Stdout
 		runCmd.Stderr = os.Stderr
-		// 以獨立 process group 執行：超時時 syscall.Kill(-pid) 可連同被測二進制
-		// 及其孫程序一併殺掉，不殘留孤兒行程。
-		runCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		// 以獨立 process group 執行：超時時 killProcGroup(-pid) 可連同被測二進制
+		// 及其孫程序一併殺掉，不殘留孤兒行程（平台差異由 procgroup_*.go 封装）。
+		runCmd.SysProcAttr = procGroupAttr()
 		if err := runCmd.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "FAIL: %s (start: %v)\n", tf, err)
 			hadFailure = true
@@ -3129,7 +3129,7 @@ func testCommand(args []string) {
 					hadFailure = true
 				}
 			case <-time.After(time.Duration(*timeoutSec) * time.Second):
-				_ = syscall.Kill(-runCmd.Process.Pid, syscall.SIGKILL)
+				_ = killProcGroup(runCmd.Process.Pid)
 				fmt.Fprintf(os.Stderr, "FAIL: %s (timed out after %ds)\n", tf, *timeoutSec)
 				hadFailure = true
 			}
