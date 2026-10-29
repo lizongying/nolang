@@ -1,6 +1,6 @@
 module github.com/lizongying/nolang
 
-go 1.25.4
+go 1.27.3
 
 require go.lsp.dev/jsonrpc2 v0.10.0
 

@@ -695,13 +695,13 @@ server-conn.recv = () (msg ?message) {
         b0-opt = .recv-buf.byte(0)
         b0 = b0-opt: {
             ok -> it
-            ->
+            -> _
         }
 
         b1-opt = .recv-buf.byte(1)
         b1 = b1-opt: {
             ok -> it
-            ->
+            -> _
         }
         fin = (b0 & 128) != 0
         opcode = b0 & 15
@@ -987,13 +987,13 @@ server-conn.recv-nb = () (msg ?message) {
     b0-opt = .recv-buf.byte(0)
     b0 = b0-opt: {
         ok -> it
-        ->
+        -> _
     }
 
     b1-opt = .recv-buf.byte(1)
     b1 = b1-opt: {
         ok -> it
-        ->
+        -> _
     }
     fin = (b0 & 128) != 0
     opcode = b0 & 15
@@ -1161,7 +1161,7 @@ client.send = (opcode i64, data str) (ok bool) {
                     return
                 }
 
-                ->
+                -> _
             }
         }
 
@@ -1281,13 +1281,13 @@ client.recv = () (msg ?message) {
         b0-opt = .recv-buf.byte(0)
         b0 = b0-opt: {
             ok -> it
-            ->
+            -> _
         }
 
         b1-opt = .recv-buf.byte(1)
         b1 = b1-opt: {
             ok -> it
-            ->
+            -> _
         }
         fin = (b0 & 128) != 0
         opcode = b0 & 15
@@ -1680,7 +1680,7 @@ connect = (url str) (c ?client) {
                     return
                 }
 
-                ->
+                -> _
             }
         }
 

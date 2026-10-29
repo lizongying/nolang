@@ -157,9 +157,15 @@ t-tamper = () {
     i <- [0..64): {
 
         #{index-out=zero}
-        bad[i] = sig[i]
+        bad[i]: {
+            ok -> it = sig[i]
+            -> _
+        }
     }
-    bad[63] = bad[63] ^ 0x01
+    bad[63]: {
+        ok -> it = it ^ 0x01
+        -> _
+    }
     ok = ecdsa.ecdsa-verify(pub, arr25(MSG25), bad)
     runner.eq(ok, 0, 'tampered signature rejected')
 
@@ -168,9 +174,15 @@ t-tamper = () {
     i <- [0..25): {
 
         #{index-out=zero}
-        mb2[i] = MSG25[i]
+        mb2[i]: {
+            ok -> it = MSG25[i]
+            -> _
+        }
     }
-    mb2[0] = mb2[0] ^ 0x01
+    mb2[0]: {
+        ok -> it = it ^ 0x01
+        -> _
+    }
     ok2 = ecdsa.ecdsa-verify(pub, arr25(mb2), sig)
     runner.eq(ok2, 0, 'wrong message rejected')
 }

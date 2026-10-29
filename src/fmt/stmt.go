@@ -126,6 +126,10 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
 			f.formatExpression(s.Expression)
+		} else if isUnderscorePlaceholder(s) {
+			// 用戶寫下的 `_` 佔位陳述（`-> _`、塊內裸 `_`）：語意是「不處理」的
+			// no-op，但拼寫與留空的臂（`->`）不同，吞掉會破壞 `no fmt` 冪等。
+			f.write("_")
 		} else {
 			// nil expression = bare { from condition: { body } syntax — skip silently
 			emitted = false
@@ -236,6 +240,19 @@ func (f *formatter) isBareElseAfterIfThen(prev, cur parser.Statement) bool {
 	return f.isStandaloneIfThen(prev)
 }
 
+// isUnderscorePlaceholder reports whether stmt is a bare `_` no-op statement
+// written by the user (`-> _` in a match arm, or `_` alone in a block). The
+// parser has no prefix handler for UNDERSCORE, so it leaves an
+// ExpressionStatement whose Expression is nil but whose Token is still `_`.
+// That nil makes it look identical to the `;`-separator / synthetic placeholders
+// the formatter filters out, so every site that drops nil-expression statements
+// must exempt this shape: `_` is the explicit "deliberately do nothing" marker
+// and its spelling has to survive `no fmt`.
+func isUnderscorePlaceholder(stmt parser.Statement) bool {
+	es, ok := stmt.(*parser.ExpressionStatement)
+	return ok && es.Expression == nil && es.Token.Type == lexer.UNDERSCORE
+}
+
 // statementEmitsSomething reports whether formatting this statement will produce
 // any visible output. It mirrors the emit logic of formatStatement without
 // side effects (except reading the read-only f.activeOverflow for overflow
@@ -254,7 +271,7 @@ func (f *formatter) statementEmitsSomething(stmt parser.Statement) bool {
 	case *parser.LetStatement:
 		return !s.IsSynthetic
 	case *parser.ExpressionStatement:
-		return s.Expression != nil
+		return s.Expression != nil || isUnderscorePlaceholder(s)
 	}
 	return true
 }
@@ -647,7 +664,8 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 	// 過濾掉 ; 分隔符產生的空表達式語句及 compiler 注入的合成語句
 	statements := make([]parser.Statement, 0, len(body.Statements))
 	for _, stmt := range body.Statements {
-		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+		// `_` 佔位陳述亦為 nil 表達式形態，但它是用戶顯式寫下的 no-op，必須保留。
+		if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil && !isUnderscorePlaceholder(es) {
 			continue
 		}
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.IsSynthetic {

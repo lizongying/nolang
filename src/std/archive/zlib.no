@@ -24,16 +24,16 @@
 ;   n: 資料長度 (i64)
 ;   返回 sum: 32 位校驗和 (i64)
 adler-32 = (data []byte, n i64) (sum i64) {
-    MOD = 65521
+    mod-base = 65521
     a = 1
     b = 0
     i <- [0..n): {
 
         #{index-out=zero, overflow=wrap}
-        a = (a + data[i]) % MOD
+        a = (a + data[i]) % mod-base
 
         #{overflow=wrap}
-        b = (b + a) % MOD
+        b = (b + a) % mod-base
     }
     sum = ((b << 16) | a) & 4294967295
 }

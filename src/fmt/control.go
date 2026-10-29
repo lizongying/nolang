@@ -256,8 +256,10 @@ func (f *formatter) armFromMatchArm(ma *parser.MatchArm) bareMatchArm {
 		a.stmts = make([]parser.Statement, 0, len(ma.Body.Statements))
 		for _, stmt := range ma.Body.Statements {
 			// 糖形態沒有降糖合成的 `it` 綁定與零值語句；這裡只濾掉解析器為
-			// 空臂留下的 nil 佔位，與降糖路徑保持同一口徑。
-			if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil {
+			// 空臂留下的 nil 佔位，與降糖路徑保持同一口徑。用戶顯式寫下的
+			// `-> _` 也是 nil 表達式，但它是「不處理」的佔位拼寫，必須留下
+			// 由 writeArm/formatStatement 印回 `_`。
+			if es, ok := stmt.(*parser.ExpressionStatement); ok && es.Expression == nil && !isUnderscorePlaceholder(es) {
 				continue
 			}
 			a.stmts = append(a.stmts, stmt)

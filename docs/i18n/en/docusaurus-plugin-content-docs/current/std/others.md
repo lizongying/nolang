@@ -76,8 +76,6 @@ r = a % b                     ; same as a._mod(b)
 c = a + 1                     ; bigint + i64
 c = a * 256                   ; bigint + i64
 q, r = a.div-mod(b)           ; quotient and remainder together
-q = a.div-i64(v)
-r = a.mod-i64(v)
 c = a.pow(n)
 r = base.mod-pow(exp, mod)
 
@@ -94,10 +92,8 @@ n = bigint.to-str(a, out)
 out = bigint.from-str(s, sn)
 n = bigint.to-hex(a, out)
 out = bigint.from-hex(s, sn)
-
-; Small integer helpers
-c = a.add-i64(v)
-c = a.mul-i64(v)
+; The small-integer fast paths (_add-i64 / _mul-i64 / _div-i64 / _mod-i64) are private
+; to the bigint module; use the + - * / % operator overloads above for mixed operands
 ```
 
 ### err — Error Handling

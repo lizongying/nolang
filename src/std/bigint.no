@@ -30,7 +30,9 @@ bigint {
 
 ; big: 運算符重載的「聯合形參」型別（路線 C）。`a + 1` 等混合運算數由
 ; `_add = (b big)` + 型別解構 match 按 b 的具體型別靜態選臂；右側 i64 標量走
-; i64 臂（借道既有 `*-i64` 方法），bigint 走同型臂（原 big⊕big 核心）。
+; i64 臂（借道既有 `_*-i64` 私有方法），bigint 走同型臂（原 big⊕big 核心）。
+; 私有約定：`_add-i64` / `_mul-i64` / `_div-i64` / `_mod-i64` 等小整數快速路徑僅供
+; 本模組內部使用，其他模組一律改用運算符重載（`+ - * / %`，即 `_add`/`_sub`/`_mul`/`_div`/`_mod`）。
 big = bigint | i64
 
 ; ═══════════════════════════════════════════════
@@ -205,7 +207,7 @@ bigint.eq = (b bigint) (r bool) {
 
 ; _add: a + b（運算符重載；書寫 ?bigint，編譯器視作 bigint）
 ; 路線 C：聯合形參 `(b big)` + 型別解構 match。bigint 臂委派 `add-bigint`、i64 臂
-; 委派 `add-i64`。核心不內聯於型別臂內：實測在 match 臂 BlockStatement 裡對命名輸出
+; 委派 `_add-i64`。核心不內聯於型別臂內：實測在 match 臂 BlockStatement 裡對命名輸出
 ; 形參 `c` 先 `c = expr` 再 `c.sign = ...` 的欄位突變不會回寫（符號丟失，如 -100+7
 ; 誤得 93），委派到普通方法後 `c.sign` 突變語義回歸正常（與 _mul 委派 mul-bigint 同理）。
 bigint._add = (b big) (c ?bigint) {
@@ -215,7 +217,7 @@ bigint._add = (b big) (c ?bigint) {
         }
 
         v i64 -> {
-            c = .add-i64(v)
+            c = ._add-i64(v)
         }
     }
 }
@@ -251,7 +253,7 @@ bigint._sub = (b big) (c ?bigint) {
         }
 
         v i64 -> {
-            c = .add-i64(0 - v)
+            c = ._add-i64(0 - v)
         }
     }
 }
@@ -279,7 +281,7 @@ bigint.sub-bigint = (b bigint) (c bigint) {
 }
 
 ; _mul: a * b（運算符重載；路線 C 同 _add，兩臂皆委派給具體方法）
-; bigint 臂委派 mul-bigint、i64 臂委派 mul-i64。核心不內聯於型別臂內是因為
+; bigint 臂委派 mul-bigint、i64 臂委派 _mul-i64。核心不內聯於型別臂內是因為
 ; 重量級迴圈／`with-len`／`#{overflow=wrap}` 嵌在 match 臂 BlockStatement 裡
 ; 的 lowering 邊界會崩潰（實測 segfault），委派到普通方法後 `.` 接收者與輸出
 ; 形參語義回歸正常，與可用的 _add i64 臂同形。
@@ -290,7 +292,7 @@ bigint._mul = (b big) (c ?bigint) {
         }
 
         v i64 -> {
-            c = .mul-i64(v)
+            c = ._mul-i64(v)
         }
     }
 }
@@ -341,7 +343,7 @@ bigint.mul-bigint = (b bigint) (c bigint) {
     c.normalize()
 }
 
-; _div: a / b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 div-i64）
+; _div: a / b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 _div-i64）
 bigint._div = (b big) (q ?bigint) {
     b: {
         v bigint -> {
@@ -350,12 +352,12 @@ bigint._div = (b big) (q ?bigint) {
         }
 
         v i64 -> {
-            q = .div-i64(v)
+            q = ._div-i64(v)
         }
     }
 }
 
-; _mod: a % b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 mod-i64，
+; _mod: a % b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 _mod-i64，
 ; 其結果為 i64，再以 from-i64 提升為 bigint 以對齊輸出形參 r）
 bigint._mod = (b big) (r ?bigint) {
     b: {
@@ -365,7 +367,7 @@ bigint._mod = (b big) (r ?bigint) {
         }
 
         v i64 -> {
-            r = bigint.from-i64(.mod-i64(v))
+            r = bigint.from-i64(._mod-i64(v))
         }
     }
 }
@@ -448,8 +450,8 @@ bigint.abs-sub = (b bigint) (c bigint) {
 ; 乘法
 ; ═══════════════════════════════════════════════
 
-; bigint.mul-i64: self * v（小整數乘法）
-bigint.mul-i64 = (v i64) (c bigint) {
+; bigint._mul-i64: self * v（小整數乘法）
+bigint._mul-i64 = (v i64) (c bigint) {
     r-v = v
     sign = .sign
 
@@ -510,15 +512,15 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         }
     }
 
-    ; 單 limb 除數：使用簡單的 div-i64/mod-i64
+    ; 單 limb 除數：使用簡單的 _div-i64/_mod-i64
     #{overflow=wrap}
     b.len == 1 -> {
 
         v = b.limbs[0] & MASK
-        q = .div-i64(v)
+        q = ._div-i64(v)
         r.limbs = with-len(1)
 
-        r.limbs[0] = .mod-i64(v)
+        r.limbs[0] = ._mod-i64(v)
         r.len = 1
         q.sign = .sign * b.sign
         r.sign = .sign
@@ -704,8 +706,8 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     r.normalize()
 }
 
-; bigint.div-i64: q = self / v（小整數除法）
-bigint.div-i64 = (v i64) (q bigint) {
+; bigint._div-i64: q = self / v（小整數除法）
+bigint._div-i64 = (v i64) (q bigint) {
     r-v = v
 
     #{overflow=wrap}
@@ -727,8 +729,8 @@ bigint.div-i64 = (v i64) (q bigint) {
     q.normalize()
 }
 
-; bigint.mod-i64: r = self % v（小整數取模）
-bigint.mod-i64 = (v i64) (r i64) {
+; bigint._mod-i64: r = self % v（小整數取模）
+bigint._mod-i64 = (v i64) (r i64) {
     r-v = v
 
     #{overflow=wrap}
@@ -946,7 +948,7 @@ bigint.to-str = () (out str) {
         ; 因此這裡用顯式欄位存取來判斷 tmp 是否為零。
         tz = tmp.len == 1 && tmp.limbs[0] == 0
         tz -> break
-        d = tmp.mod-i64(10)
+        d = tmp._mod-i64(10)
 
         #{overflow=wrap}
         buf[bufn]: {
@@ -956,7 +958,7 @@ bigint.to-str = () (out str) {
 
         #{overflow=wrap}
         bufn = bufn + 1
-        next = tmp.div-i64(10)
+        next = tmp._div-i64(10)
         tmp = next
     }
 
@@ -975,8 +977,8 @@ bigint.to-str = () (out str) {
     }
 }
 
-; bigint.add-i64: c = self + v（小整數加法）
-bigint.add-i64 = (v i64) (c bigint) {
+; bigint._add-i64: c = self + v（小整數加法）
+bigint._add-i64 = (v i64) (c bigint) {
     tmp = bigint {}
     tmp = from-i64(v)
     c = ._add(tmp)

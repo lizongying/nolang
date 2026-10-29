@@ -345,7 +345,7 @@ server-conn.parse = () (ok bool) {
             }
         }
 
-        ->
+        -> _
     }
 
     ; 讀取請求體（如有 Content-Length）
@@ -379,7 +379,7 @@ server-conn.parse = () (ok bool) {
             }
         }
 
-        ->
+        -> _
     }
     ok = true
 }
@@ -1034,7 +1034,7 @@ https-server-conn.parse = () (ok bool) {
             }
         }
 
-        ->
+        -> _
     }
 
     ; 讀取請求體
@@ -1065,7 +1065,7 @@ https-server-conn.parse = () (ok bool) {
             }
         }
 
-        ->
+        -> _
     }
     ok = true
 }

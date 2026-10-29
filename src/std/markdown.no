@@ -129,7 +129,7 @@ markdown.thematic-break = (line str) (yes bool) {
         c-opt = s.byte(i)
         c = c-opt: {
             ok -> it
-            ->
+            -> _
         }
         c == 32 || c == 9 -> {
 
@@ -245,7 +245,7 @@ markdown.fence = (line str) (out markdown-fence) {
         c-opt = s.byte(0)
         c = c-opt: {
             ok -> it
-            ->
+            -> _
         }
         (c == 96 || c == 126) -> {
             count = markdown.prefix-count(s, c)
@@ -325,7 +325,7 @@ markdown.inline = (s str) (out str) {
         c-opt = s.byte(i)
         c char = c-opt: {
             ok -> it
-            ->
+            -> _
         }
 
         ; 反斜杠转义 ASCII 标记。

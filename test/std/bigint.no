@@ -3,8 +3,8 @@
 ; 執行：no test test/std/bigint.no
 ; 覆蓋：from-i64 / zero / one / copy /
 ;       bigint.cmp / bigint.eq / bigint.is-zero / bigint.is-neg / bigint.is-pos /
-;       add / sub / mul / mul-i64 /
-;       div / mod / div-mod / div-i64 / mod-i64 /
+;       add / sub / mul / _mul-i64 /
+;       div / mod / div-mod / _div-i64 / _mod-i64 /
 ;       pow / gcd / lcm /
 ;       shl / shr /
 ;       bigint.to-str / from-str / bigint.to-hex / from-hex
@@ -139,8 +139,8 @@ t-div-mod = () {
 
 t-mod-i64 = () {
     a = bigint.from-i64(100)
-    r = a.mod-i64(7)
-    runner.eq(r, 2, 'mod-i64(100, 7) == 2')
+    r = a._mod-i64(7)
+    runner.eq(r, 2, '_mod-i64(100, 7) == 2')
 }
 
 ; ── 冪運算 ────────────────────────────────────
@@ -177,7 +177,7 @@ t-lcm = () {
 ; ── 混合運算數運算符重載（bigint ⊕ i64）──────────
 ; 路線 C：運算符重載採聯合形參 `(b big)`（big = bigint | i64）＋型別解構 match。
 ; 編譯器按實參具體型別單態化派發（零執行期 tag）：bigint 臂委派 add/sub/mul-bigint，
-; i64 臂委派 add/mul/div/mod-i64，同型 bigint ⊕ bigint 亦自然命中 bigint 臂。
+; i64 臂委派 _add/_mul/_div/_mod-i64，同型 bigint ⊕ bigint 亦自然命中 bigint 臂。
 ; 覆蓋五個運算符的 `bigint op i64`、`bigint op bigint`，並含負運算數（守衛符號回寫）。
 t-operator-mixed = () {
     a = bigint.from-i64(100)
@@ -271,7 +271,7 @@ p7, f7 = runner.test('bigint.add', t-add)
 p8, f8 = runner.test('bigint.sub', t-sub)
 p9, f9 = runner.test('bigint.mul', t-mul)
 p10, f10 = runner.test('bigint.div-mod', t-div-mod)
-p11, f11 = runner.test('bigint.mod-i64', t-mod-i64)
+p11, f11 = runner.test('bigint._mod-i64', t-mod-i64)
 p12, f12 = runner.test('bigint.pow', t-pow)
 p13, f13 = runner.test('bigint.gcd', t-gcd)
 p14, f14 = runner.test('bigint.lcm', t-lcm)

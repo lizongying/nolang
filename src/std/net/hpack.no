@@ -621,7 +621,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     first-opt = data.byte(pos)
     first-b = first-opt: {
         ok -> it
-        ->
+        -> _
     }
     first = first-b & max-prefix
     val = first
@@ -699,7 +699,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     first-opt = data.byte(pos)
     first = first-opt: {
         ok -> it
-        ->
+        -> _
     }
 
     ; H bit = first & 128，本實作不支援 Huffman

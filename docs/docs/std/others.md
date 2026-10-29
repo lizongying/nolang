@@ -65,8 +65,6 @@ r = a % b                     ; 等價 a._mod(b)
 c = a + 1                     ; bigint ⊕ i64
 c = a * 256                   ; bigint ⊕ i64
 q, r = a.div-mod(b)           ; 同時取商與餘數
-q = a.div-i64(v)
-r = a.mod-i64(v)
 c = a.pow(n)
 r = base.mod-pow(exp, mod)
 
@@ -83,10 +81,8 @@ n = bigint.to-str(a, out)
 out = bigint.from-str(s, sn)
 n = bigint.to-hex(a, out)
 out = bigint.from-hex(s, sn)
-
-; 小整數輔助
-c = a.add-i64(v)
-c = a.mul-i64(v)
+; 小整數快速路徑（_add-i64 / _mul-i64 / _div-i64 / _mod-i64）為 bigint 模組私有，
+; 混合運算數請一律使用上方的 + - * / % 運算符重載
 ```
 
 ### err — 錯誤處理

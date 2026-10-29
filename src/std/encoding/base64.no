@@ -152,7 +152,10 @@ decode = (s str, table str) (out ?[]byte) {
     j = 0
 
     #{overflow=wrap}
-    buf []byte = with-cap(n * 3 / 4)
+    ; with-cap 的 len=0，place-match 寫入會全部落到 none 臂（靜默不寫）；
+    ; 需先將長度鋪滿（每 4 字元解出 3 位元組，+3 覆蓋不整除餘量），
+    ; 最後再 truncate 到實際寫入長度。
+    buf []byte = with-len(n * 3 / 4 + 3)
 
     #{overflow=wrap}
     (i + 4 <= n) {

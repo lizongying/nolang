@@ -21,7 +21,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: "1.27"
 
       - name: Set Version Name
         id: set_version_name
@@ -222,7 +222,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           architecture: ${{ matrix.go_arch }}
 
       - name: "Install LLVM 22 (Linux - headers + static libs)"
@@ -437,7 +437,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: "1.27"
 
       - name: Cache LLVM
         id: llvm-cache

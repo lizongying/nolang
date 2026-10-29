@@ -40,15 +40,10 @@ sha224 = (data []byte) (hash [28]byte) {
     #{overflow=wrap}
     total-len = dlen + 1 + pad-len + 8
 
-    ; 建立填充緩衝區
-    padded []byte
-    i <- [0..total-len): {
-
-        padded[i]: {
-            ok -> it = 0
-            -> _
-        }
-    }
+    ; 建立填充緩衝區：with-len 直接給出 len=total-len 的全零緩衝。
+    ; 不可寫成 `padded []byte`（nil、len=0）再用 place-match 填充——
+    ; 越界的 ok 臂永不觸發，資料會被靜默丟棄。
+    padded []byte = with-len(total-len)
 
     ; 複製原始資料
     i <- [0..dlen): {
@@ -85,24 +80,15 @@ sha224 = (data []byte) (hash [28]byte) {
         }
     }
 
-    ; 處理每個 64 位元組區塊
-    block []u32
-    i <- [0..16): {
-
-        block[i]: {
-            ok -> it = 0
-            -> _
-        }
-    }
+    ; 處理每個 64 位元組區塊（同樣必須 with-len，否則 place-match 寫入不生效）
+    block []u32 = with-len(16)
     offset = 0
     (offset < total-len) {
+        ; 注意：必須用普通賦值；option 寫入 ok 分支主體內讀 []byte 會被編譯器錯算 GEP（+0x100）→ digest 錯。
         i <- [0..16): {
 
             #{index-out=zero, overflow=wrap}
-            block[i]: {
-                ok -> it = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
-                -> _
-            }
+            block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
         }
 
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)

@@ -396,7 +396,7 @@ client.reconnect = () (ok bool) {
                     return
                 }
 
-                ->
+                -> _
             }
         }
 
@@ -644,7 +644,7 @@ sse-connect = (url str) (client ?client) {
                     return
                 }
 
-                ->
+                -> _
             }
         }
 

@@ -95,7 +95,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     }
 
     ; inner = H(ipad-key || msg)
-    inner-data []byte
+    inner-data []byte = with-len(64 + msg-n)
     i <- [0..64): {
 
         inner-data[i]: {
@@ -114,7 +114,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     inner-hash = sha256.sha256(inner-data)
 
     ; outer = H(opad-key || inner)
-    outer-data []byte
+    outer-data []byte = with-len(96)
     i <- [0..64): {
 
         outer-data[i]: {
@@ -207,7 +207,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
             -> _
         }
     }
-    inner-data []byte
+    inner-data []byte = with-len(64 + msg-n)
     i <- [0..64): {
 
         inner-data[i]: {
@@ -225,7 +225,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     }
     inner-hash = sha1.sha1(inner-data)
 
-    outer-data []byte
+    outer-data []byte = with-len(84)
     i <- [0..64): {
 
         outer-data[i]: {
@@ -318,7 +318,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
             -> _
         }
     }
-    inner-data []byte
+    inner-data []byte = with-len(128 + msg-n)
     i <- [0..128): {
 
         inner-data[i]: {
@@ -336,7 +336,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     }
     inner-hash = sha512.sha512(inner-data)
 
-    outer-data []byte
+    outer-data []byte = with-len(192)
     i <- [0..128): {
 
         outer-data[i]: {
@@ -422,7 +422,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
             -> _
         }
     }
-    inner-data []byte
+    inner-data []byte = with-len(128 + msg-n)
     i <- [0..128): {
 
         inner-data[i]: {
@@ -440,7 +440,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     }
     inner-hash = sha384.sha384(inner-data)
 
-    outer-data []byte
+    outer-data []byte = with-len(176)
     i <- [0..128): {
 
         outer-data[i]: {
@@ -526,7 +526,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
             -> _
         }
     }
-    inner-data []byte
+    inner-data []byte = with-len(64 + msg-n)
     i <- [0..64): {
 
         inner-data[i]: {
@@ -544,7 +544,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     }
     inner-hash = md5.md5(inner-data)
 
-    outer-data []byte
+    outer-data []byte = with-len(80)
     i <- [0..64): {
 
         outer-data[i]: {

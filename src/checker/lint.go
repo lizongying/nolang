@@ -494,12 +494,14 @@ func runLintIndexWrite(program *parser.Program, opts LintOptions) []LintResult {
 // ── Surface 軌（surface=true）──────────────────────────────────────────────────
 
 // runLintNaming — 2. 命名規範
+// 局部变量/函数名必须只含小写字母、数字与中划线（大写首字母仅允许用于
+// 模块级全局常量/变量）。这是强制语言规则，故升级为 ERROR。
 func runLintNaming(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
 	for _, w := range ValidateNaming(program) {
 		results = append(results, LintResult{
 			Line: w.Line, Column: w.Column, File: w.File,
-			Severity: LintWarning, Source: "nolang-lint",
+			Severity: LintError, Source: "nolang-lint",
 			Message: w.Message, TraceID: w.TraceID,
 		})
 	}

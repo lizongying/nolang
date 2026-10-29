@@ -408,7 +408,7 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
         c-opt = t.byte(i)
         c = c-opt: {
             ok -> it
-            ->
+            -> _
         }
         c == 95 -> {
 
@@ -715,7 +715,7 @@ yaml-unescape-double = (body str) (out ?str) {
         c-opt = body.byte(i)
         c = c-opt: {
             ok -> it
-            ->
+            -> _
         }
         c != 92 -> {
             u1 char = c
@@ -1323,7 +1323,7 @@ yaml-parser.parse-double = () (idx i64) {
                 e-opt = .src.byte(i)
                 e-b = e-opt: {
                     ok -> it
-                    ->
+                    -> _
                 }
                 e char = e-b
                 raw = raw - e.to-str()
@@ -2741,7 +2741,7 @@ yaml-json-escape = (s str) (out str) {
         c-opt = s.byte(i)
         c = c-opt: {
             ok -> it
-            ->
+            -> _
         }
         {
             c == 34 -> {
@@ -2948,7 +2948,7 @@ yaml-quote = (s str) (out str) {
         c-opt = s.byte(i)
         c = c-opt: {
             ok -> it
-            ->
+            -> _
         }
         {
             c == 34 -> {

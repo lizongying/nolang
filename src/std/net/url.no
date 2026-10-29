@@ -473,14 +473,14 @@ url-decode = (s str) (out str) {
 
                 h1 i64 = h1-opt: {
                     ok -> it
-                    ->
+                    -> _
                 }
 
                 h2-opt = s.byte(i + 2)
 
                 h2 i64 = h2-opt: {
                     ok -> it
-                    ->
+                    -> _
                 }
 
                 v1 = -1

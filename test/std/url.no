@@ -115,10 +115,22 @@ t-encode-decode = () {
 t-build-join = () {
     k [16]str
     v [16]str
-    k[0] = 'a'
-    k[1] = 'b'
-    v[0] = '1'
-    v[1] = '2'
+    k[0]: {
+        ok -> it = 'a'
+        -> _
+    }
+    k[1]: {
+        ok -> it = 'b'
+        -> _
+    }
+    v[0]: {
+        ok -> it = '1'
+        -> _
+    }
+    v[1]: {
+        ok -> it = '2'
+        -> _
+    }
     eq-str(url.url-build-query(k, v, 2), 'a=1&b=2', 'build-query')
     eq-str(url.url-join('http://x.com/a/b', 'c/d'), 'http://x.com/a/c/d', 'join relative')
     eq-str(url.url-join('http://x.com/a/b', '/root'), 'http://x.com:80/root', 'join absolute')

@@ -150,7 +150,7 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 								File:    file,
 								TraceID: rngidxTraceID,
 								Message: fmt.Sprintf(
-									"range-index loop: '%s[%s]' 在 `for %s <- [a..b)` 裡手動按下標讀取；若不需要下標本身，改用容器迭代 `x <- %s`（無下標即無越界，也無需解包 option）。",
+									"range-index loop: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標讀取；若不需要下標本身，改用容器迭代 `x <- %s`（無下標即無越界，也無需解包 option）。",
 									base, name, name, base),
 							})
 						}

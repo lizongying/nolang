@@ -216,27 +216,27 @@ f64.to-str = () (out str) {
     frac u64 = bits & mask52
     exp-i i64 = exp-bits
 
-    Mval u64 = 0
+    mant-val u64 = 0
     e2 i64 = 0
     exp-bits == 0 -> {
         ; 非規約：M = frac, e2 = -1022 - 52 = -1074
-        Mval = frac
+        mant-val = frac
         e2 = -1074
     }
     -> {
         ; 規約：M = (1<<52) | frac, e2 = exp-bits - 1023 - 52 = exp-bits - 1075
-        Mval = bit52 | frac
+        mant-val = bit52 | frac
         e2 = exp-i - 1075
     }
 
     ; base = M * 2^max(e2,0)；den = 2^max(-e2,0)；value = base / den
     one = bigint.one()
-    Mval-i i64 = Mval
-    bM = bigint.from-i64(Mval-i)
-    base = bM
+    mant-i64 i64 = mant-val
+    mant-big = bigint.from-i64(mant-i64)
+    base = mant-big
     den = one
     e2 >= 0 -> {
-        base = bigint.shl(bM, e2)
+        base = bigint.shl(mant-big, e2)
     }
     e2 < 0 -> {
         #{overflow=wrap}
@@ -252,39 +252,39 @@ f64.to-str = () (out str) {
 
     ; M 是否偶數（邊界 tie-to-even 判定用）
     m-even = 0
-    (Mval & 1) == 0 -> {
+    (mant-val & 1) == 0 -> {
         m-even = 1
     }
 
-    ; 最短往返搜尋：找最小 K 使 N = round(value * 10^K) 落在 [v-h, v+h] 內
-    ; （h = 2^(e2-1) 為半 ulp；N×10^(-K) 即候選十進位值）
+    ; 最短往返搜尋：找最小 k-ten 使 n-big = round(value * 10^k-ten) 落在 [v-h, v+h] 內
+    ; （h = 2^(e2-1) 為半 ulp；n-big×10^(-k-ten) 即候選十進位值）
     ten = bigint.from-i64(10)
     pow10 = one
-    K = 0
+    k-ten = 0
     found = 0
-    best-N = one
-    best-K = 0
-    (K <= 350) {
-        found == 1 -> { K = 351 }
+    best-n = one
+    best-k = 0
+    (k-ten <= 350) {
+        found == 1 -> { k-ten = 351 }
         found == 0 -> {
-            ; N = (2*base*pow10 + den) / (2*den) = round(base*pow10/den)
+            ; n-big = (2*base*pow10 + den) / (2*den) = round(base*pow10/den)
             t1 = base._mul(pow10)
             t2 = t1._add(t1)
             t3 = t2._add(den)
             den2 = den._add(den)
-            N = t3._div(den2)
+            n-big = t3._div(den2)
 
-            ; Nchk = 2*N*den；A=(2*base-hd)*pow10；B=(2*base+hd)*pow10
-            twoN = N._add(N)
-            Nchk = twoN._mul(den)
-            twoBase = base._add(base)
-            Am = twoBase._sub(hd)
-            Bm = twoBase._add(hd)
-            A = Am._mul(pow10)
-            B = Bm._mul(pow10)
+            ; n-chk = 2*n-big*den；a-bound=(2*base-hd)*pow10；b-bound=(2*base+hd)*pow10
+            two-n = n-big._add(n-big)
+            n-chk = two-n._mul(den)
+            two-base = base._add(base)
+            a-m = two-base._sub(hd)
+            b-m = two-base._add(hd)
+            a-bound = a-m._mul(pow10)
+            b-bound = b-m._mul(pow10)
 
-            c1 = A.cmp(Nchk)
-            c2 = Nchk.cmp(B)
+            c1 = a-bound.cmp(n-chk)
+            c2 = n-chk.cmp(b-bound)
             valid = 0
             c1 <= 0 -> {
                 c2 <= 0 -> {
@@ -299,21 +299,21 @@ f64.to-str = () (out str) {
             }
             valid == 1 -> {
                 found = 1
-                best-N = N
-                best-K = K
+                best-n = n-big
+                best-k = k-ten
             }
             found == 0 -> {
                 #{overflow=wrap}
-                K = K + 1
+                k-ten = k-ten + 1
                 pow10 = pow10._mul(ten)
             }
         }
     }
 
-    Nstr = best-N.to-str()
-    k = Nstr.len-bytes()
+    n-str = best-n.to-str()
+    k = n-str.len-bytes()
     #{overflow=wrap}
-    E = k - best-K - 1
+    E = k - best-k - 1
 
     ; 科學記號閾值（與 Go %g 對齊）：E <= -5 或 E >= 6
     use-sci = 0
@@ -327,7 +327,7 @@ f64.to-str = () (out str) {
         (stz == 1) {
             sk <= 1 -> { stz = 0 }
             sk > 1 -> {
-                slb = Nstr[sk - 1]
+                slb = n-str[sk - 1]
                 slb == 48 -> { sk = sk - 1 }
                 slb != 48 -> { stz = 0 }
             }
@@ -351,7 +351,7 @@ f64.to-str = () (out str) {
             pos = pos + 1
         }
         out[pos]: {
-            ok -> it = Nstr[0]
+            ok -> it = n-str[0]
             -> _
         }
         pos = pos + 1
@@ -364,7 +364,7 @@ f64.to-str = () (out str) {
             j = 1
             (j < sk) {
                 out[pos]: {
-                    ok -> it = Nstr[j]
+                    ok -> it = n-str[j]
                     -> _
                 }
                 pos = pos + 1
@@ -414,7 +414,7 @@ f64.to-str = () (out str) {
     E >= 0 -> {
         int-digits = E + 1
         cap = int-digits
-        best-K > 0 -> cap = int-digits + 1 + best-K
+        best-k > 0 -> cap = int-digits + 1 + best-k
         neg == 1 -> cap = cap + 1
         out = with-len(cap)
         pos = 0
@@ -428,13 +428,13 @@ f64.to-str = () (out str) {
         i = 0
         (i < int-digits) {
             out[pos]: {
-                ok -> it = Nstr[i]
+                ok -> it = n-str[i]
                 -> _
             }
             pos = pos + 1
             i = i + 1
         }
-        best-K > 0 -> {
+        best-k > 0 -> {
             out[pos]: {
                 ok -> it = 46
                 -> _
@@ -443,7 +443,7 @@ f64.to-str = () (out str) {
             j = int-digits
             (j < k) {
                 out[pos]: {
-                    ok -> it = Nstr[j]
+                    ok -> it = n-str[j]
                     -> _
                 }
                 pos = pos + 1
@@ -488,7 +488,7 @@ f64.to-str = () (out str) {
     i = 0
     (i < k) {
         out[pos]: {
-            ok -> it = Nstr[i]
+            ok -> it = n-str[i]
             -> _
         }
         pos = pos + 1
@@ -980,7 +980,7 @@ f64.to-str-general = (precision i64) (out str) {
         tmp-pad = precision - mn
         pad = tmp-pad: {
             ok -> it
-            -> 0
+            -> _
         }
     }
 

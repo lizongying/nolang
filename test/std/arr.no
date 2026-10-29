@@ -23,7 +23,10 @@ t-element-access = () {
 
 t-mutate = () {
     a = [1, 2, 3]
-    a[1] = 99
+    a[1]: {
+        ok -> it = 99
+        -> _
+    }
     runner.eq(a[1], 99, 'mutated a[1] == 99')
     runner.eq(a[0], 1, 'a[0] unchanged')
 }

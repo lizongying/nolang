@@ -1,3 +1,3 @@
 module md5-bench
 
-go 1.25.4
+go 1.27.3

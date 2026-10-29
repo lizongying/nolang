@@ -111,7 +111,7 @@ str.decode-cp = (i i64) (cp i64, clen i64) {
     b-opt = .byte(i)
     b = b-opt: {
         ok -> it
-        ->
+        -> _
     }
     cp = b
     clen = 1
@@ -924,7 +924,7 @@ str-to-f64 = (s str) (result f64) {
         c = s.byte(i)
         {
             c >= 48 && c <= 57 -> {
-                int-mant = int-mant.mul-i64(10).add-i64(c - 48)
+                int-mant = int-mant._mul-i64(10)._add-i64(c - 48)
                 has-digit = 1
                 i = i + 1
             }
@@ -941,7 +941,7 @@ str-to-f64 = (s str) (result f64) {
                 c = s.byte(i)
                 {
                     c >= 48 && c <= 57 -> {
-                        int-mant = int-mant.mul-i64(10).add-i64(c - 48)
+                        int-mant = int-mant._mul-i64(10)._add-i64(c - 48)
                         frac-count = frac-count + 1
                         has-digit = 1
                         i = i + 1
@@ -983,18 +983,18 @@ str-to-f64 = (s str) (result f64) {
         -> break
     }
 
-    ; K = exp-val * exp-sign - frac-count：精確有理數 = int-mant * 10^K
-    K = exp-val * exp-sign - frac-count
+    ; exp-adj = exp-val * exp-sign - frac-count：精確有理數 = int-mant * 10^exp-adj
+    exp-adj = exp-val * exp-sign - frac-count
 
     num = bigint.copy(int-mant)
     den = bigint.one()
-    (K >= 0) -> {
+    (exp-adj >= 0) -> {
         t10 bigint = bigint.from-i64(10)
-        num = int-mant._mul(t10.pow(K))
+        num = int-mant._mul(t10.pow(exp-adj))
     }
     -> {
         t10d bigint = bigint.from-i64(10)
-        den = t10d.pow(0 - K)
+        den = t10d.pow(0 - exp-adj)
     }
 
     ; 零值特例（含 -0.0）
@@ -1033,60 +1033,60 @@ str-to-f64 = (s str) (result f64) {
 
     ; 次正規：value = F * 2^-1074（F 為 52-bit 分數）
     (e < -1022) -> {
-        A = bigint.shl(num, 1074)
-        qS, rS = A.div-mod(den)
-        twoR = bigint.shl(rS, 1)
-        c2 = twoR.cmp(den)
-        Fb = qS
-        (c2 > 0) -> Fb = qS.add-i64(1)
+        num-s = bigint.shl(num, 1074)
+        qS, rS = num-s.div-mod(den)
+        two-r = bigint.shl(rS, 1)
+        c2 = two-r.cmp(den)
+        fb-q = qS
+        (c2 > 0) -> fb-q = qS._add-i64(1)
         (c2 == 0) -> {
-            (qS.mod-i64(2) == 0) -> Fb = qS
-            -> Fb = qS.add-i64(1)
+            (qS._mod-i64(2) == 0) -> fb-q = qS
+            -> fb-q = qS._add-i64(1)
         }
-        Ff ?i64 = Fb.mod-i64(4503599627370496)
+        frac-i64 ?i64 = fb-q._mod-i64(4503599627370496)
         inv1074f f64 = 1.0
         j = 0
         (j < 1074) {
             inv1074f = inv1074f / 2.0
             j = j + 1
         }
-        Ffv f64 = Ff: {
+        frac-f64 f64 = frac-i64: {
             ok -> it.to-f64()
-            -> 0.0
+            -> _
         }
-        result = Ffv * inv1074f
+        result = frac-f64 * inv1074f
         (sign < 0) -> result = -result
         return
     }
 
     ; 正規：value = (1 + m/2^52) * 2^e（m 為 52-bit 分數）
     (e >= 0) -> {
-        A = bigint.shl(num, 52)
-        B = bigint.shl(den, e)
+        num-s = bigint.shl(num, 52)
+        den-s = bigint.shl(den, e)
     }
     -> {
-        A = bigint.shl(num, 52 - e)
-        B = den.copy()
+        num-s = bigint.shl(num, 52 - e)
+        den-s = den.copy()
     }
-    qW, rW = A.div-mod(B)
-    twoR = bigint.shl(rW, 1)
-    c2 = twoR.cmp(B)
-    W = qW
-    (c2 > 0) -> W = qW.add-i64(1)
+    qw, rw = num-s.div-mod(den-s)
+    two-r = bigint.shl(rw, 1)
+    c2 = two-r.cmp(den-s)
+    wv = qw
+    (c2 > 0) -> wv = qw._add-i64(1)
     (c2 == 0) -> {
-        (qW.mod-i64(2) == 0) -> W = qW
-        -> W = qW.add-i64(1)
+        (qw._mod-i64(2) == 0) -> wv = qw
+        -> wv = qw._add-i64(1)
     }
-    ; 溢位保護：W >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
-    (W.cmp(two53) >= 0) -> {
+    ; 溢位保護：wv >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
+    (wv.cmp(two53) >= 0) -> {
         e = e + 1
-        W = two52.copy()
+        wv = two52.copy()
     }
-    mW = W._sub(two52)
-    m ?i64 = mW.mod-i64(4503599627370496)
+    mw = wv._sub(two52)
+    m ?i64 = mw._mod-i64(4503599627370496)
     mv f64 = m: {
         ok -> it.to-f64()
-        -> 0.0
+        -> _
     }
     two52f f64 = 1.0
     k = 0
@@ -1304,7 +1304,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
-            ->
+            -> _
         }
         cp i64 = b
         clen = 1
@@ -1357,7 +1357,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
-            ->
+            -> _
         }
         cp = b
         clen = 1
@@ -1443,7 +1443,7 @@ str.trim-char = (ch char) (val str) {
         b-opt = .byte(start)
         b = b-opt: {
             ok -> it
-            ->
+            -> _
         }
         cp i64 = b
         clen = 1
@@ -1481,7 +1481,7 @@ str.trim-char = (ch char) (val str) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
-            ->
+            -> _
         }
         cp = b
         clen = 1
@@ -1758,9 +1758,9 @@ str.to-bigint = () (out ?bigint) {
         d < 0 -> break
         d >= radix -> break
 
-        acc = acc.mul-i64(radix)
+        acc = acc._mul-i64(radix)
 
-        acc = acc.add-i64(d)
+        acc = acc._add-i64(d)
         started = 1
 
         #{overflow=wrap}

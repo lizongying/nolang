@@ -1363,11 +1363,23 @@ func (p *Parser) parseLetStatement() Statement {
 	if stmt.Type == nil {
 		switch v := stmt.Value.(type) {
 		case *IntegerLiteral:
-			// 十六進位字面量（0xNN）推斷為 byte，十進位整數推斷為 i64
+			// 十六進位字面量（0xNN）的推斷寬度必須跟字面量真實取值走，不能
+			// 無腦壓成 byte：一個寬常數（如 sha256/hmac/hkdf 裡的
+			// 0x428a2f98）一旦被記成 i8，後續變數雖按字面量真實寬度存進
+			// i64 全域槽，codegen 卻按 i8 讀取 → load 寬度不符 / 結果錯位，
+			// 且在 `& 0xFFFFFFFF` 這類遮罩的 store 路徑對結果調
+			// wrapIntToStorage（假定輸入是 i64）直接 IR 驗證崩潰（'%cN'
+			// defined with type 'i8' but expected 'i64'）。MIR 把所有整數
+			// 存在 i64 槽，所以「塞得進單 byte 才給 byte，否則給 i64」既
+			// 保留 0xFF 這類 byte/char 既有語境（含下方 [0x50,0x4b,...] →
+			// []byte 的簽名陣列推斷），又避免把多 byte 常數壓窄而破壞 crypto
+			// 等依賴寬位模式的正整數演算法。
 			inferredType := ValueTypeInt64.String()
 			raw := v.Token.Literal
 			if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
-				inferredType = ValueTypeByte.String()
+				if val, err := strconv.ParseUint(raw[2:], 16, 64); err == nil && val <= 0xFF {
+					inferredType = ValueTypeByte.String()
+				}
 			}
 			stmt.Type = &NamedType{
 				Token:      nameToken,

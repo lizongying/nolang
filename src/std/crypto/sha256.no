@@ -2201,13 +2201,14 @@ sha256 = (data []byte) (hash [32]byte) {
     (offset < total-len) {
 
         ; 將 64 位元組轉為 16 個 32-bit big-endian 字
+        ; 注意：必須用「普通賦值」`block[i] = …`，不能用 option 寫入
+        ; `block[i]: { ok -> it = … }`。編譯器在函式上下文中，對 option 寫入
+        ; ok 分支主體內的陣列讀取（來源 []byte 與目標 []u32 元素寬不同）
+        ; 會算錯 GEP，讀到 +0x100 錯位的值，組出的 block 是垃圾 → digest 錯。
         i <- [0..16): {
 
             #{index-out=zero, overflow=wrap}
-            block[i]: {
-                ok -> it = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
-                -> _
-            }
+            block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
         }
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 

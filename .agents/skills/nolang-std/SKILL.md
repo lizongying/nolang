@@ -2964,8 +2964,6 @@ r = a % b                             ; same as a._mod(b)
 c = a.abs-add(b)                      ; Absolute addition (helper method, not overloaded)
 c = a.abs-sub(b)                      ; Absolute subtraction (helper method)
 q, r = bigint.div-mod(a, b)           ; quotient and remainder together
-q = bigint.div-i64(a, v)
-r = bigint.mod-i64(a, v)
 c = bigint.pow(a, n)
 r = bigint.mod-pow(base, exp, mod, r)
 
@@ -2983,9 +2981,8 @@ out = bigint.from-str(s, sn)
 n = bigint.to-hex(a, out)
 out = bigint.from-hex(s, sn)
 
-; Small integer helpers
-bigint.add-i64(a, v, c)
-bigint.mul-i64(a, v, c)
+; Small-integer fast paths _add-i64 / _mul-i64 / _div-i64 / _mod-i64 are PRIVATE
+; to the bigint module — cross-module code must use the + - * / % operator overloads
 ```
 
 ### err — Error Handling

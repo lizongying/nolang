@@ -186,7 +186,10 @@ t-parse-response = () {
 
     ; 提問段含保留標籤：不得掛死，返回 nil（回归點）
     bad = make-resp(0, 1, 0, 1)
-    bad[12] = 0x80
+    bad[12]: {
+        ok -> it = 0x80
+        -> _
+    }
     br = dns.parse-response(bad)
     br: {
         ok -> runner.is-true(false, 'reserved must not return ok')

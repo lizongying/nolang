@@ -71,9 +71,13 @@ check = (t ast, path str) (out []str) {
     ;   `val, dec-ok = …` 后续引用全族误报（实测 s13c 语料误报扫）。
     defs []i64 = with-cap(64)
     rcv []i64 = with-cap(16)
+    calle []i64 = with-cap(16)
     ki = asp.K-IDENTIFIER
     kd = asp.K-DOT-EXPRESSION
     km = asp.K-MULTI-ASSIGN-STATEMENT
+    kf = asp.K-FUNCTION-DEFINITION
+    ksm = asp.K-SURFACE-MATCH
+    kc = asp.K-CALL-EXPRESSION
     i = 1
     (i < t.n) {
         nd = ast.nd-at(t, i)
@@ -82,6 +86,9 @@ check = (t ast, path str) (out []str) {
         s1 = nd.s1
         kk = nd.kid0
         nk = nd.nkid
+        gc3 = nd.c3
+        hhc = nd.hcount
+        hhb = nd.hbase
         dk != ki -> {
             s0 > 0 && ck-def-has(defs, s0) == 0 -> {
                 defs.push(s0)
@@ -94,6 +101,16 @@ check = (t ast, path str) (out []str) {
             r = ast.kid-at(t, kk)
             r > 0 && ast.kind-at(t, r) == ki -> {
                 rcv.push(r)
+            }
+        }
+        ; 跨模块裸调 callee 放行（单档骨架不解析 `#use` 导入⇒无法区分导入函数与
+        ;   未定义 callee）——按头部「偏保守 = 少报不误报」对 callee 位置回退沉默；
+        ;   裸标识符 USE（`x = wuzzle`）仍照报，ck-test 全用 USE 形不受影响。
+        ;   点形调（`m.f()`）kid0 为 DotExpression非 IDENT⇒自然不入。
+        dk == kc && nk > 0 -> {
+            c = ast.kid-at(t, kk)
+            c > 0 && ast.kind-at(t, c) == ki -> {
+                calle.push(c)
             }
         }
         dk == km -> {
@@ -110,6 +127,74 @@ check = (t ast, path str) (out []str) {
 
                 #{overflow=wrap}
                 mc = mc + 1
+            }
+        }
+
+        ; 泛型参数放行（正主 isArrayTypeMethodDefinition／generic 形把 [n]t、<T>
+        ;   的参数字母登记为局部定义变量）——FD 的 generic kids 位于 [kid0, kid0+c3)，
+        ;   皆為 Identifier 節點；c3 由 ast.no:96 的 SIG 泛型計數讀取。
+        dk == kf && gc3 > 0 -> {
+            ng = gc3
+            gc = 0
+            (gc < ng) {
+                gv = ast.kid-at(t, kk + gc)
+                gv > 0 && ast.kind-at(t, gv) == ki -> {
+                    gvs = ast.slot-at(t, gv, 0)
+                    gvs > 0 && ck-def-has(defs, gvs) == 0 -> {
+                        defs.push(gvs)
+                    }
+                }
+
+                #{overflow=wrap}
+                gc = gc + 1
+            }
+        }
+
+        ; match 臂綁定名放行（正主 buildItBinding／typed-arm 在臂作用域內定義
+        ;   綁定變數）——SurfaceMatch 的臂存於 HELPER 區、寬 12/臂（ast.no:1372），
+        ;   offset0=binding（destructure 名）、offset3=typeBinding（`w T ->` 名）；
+        ;   二者為 ast.put-str 的 intern id，與臂體 Identifier.s0 同表 ⇒ 直接入 defs。
+        dk == ksm && hhc > 0 -> {
+            narm = hhc
+            hba = hhb
+            ac = 0
+            (ac < narm) {
+                hb = hba + 12 * ac
+                bnd = ast.aux-at(t, hb)
+                bnd > 0 && ck-def-has(defs, bnd) == 0 -> {
+                    defs.push(bnd)
+                }
+                tbnd = ast.aux-at(t, hb + 3)
+                tbnd > 0 && ck-def-has(defs, tbnd) == 0 -> {
+                    defs.push(tbnd)
+                }
+
+                ; tagged-enum 變體解構臂（surface 形：Go lowering.go:2049 才提欄，
+                ;   parse 期 binding 空 ⇒ 綁定名僅存於臂 Condition：
+                ;   CallExpression{fn: variant, args: 綁定名 Identifier}）——采
+                ;   mcond（aux offset10，節點索引）之 CallExpression 參數 Identifier。
+                mcond = ast.aux-at(t, hb + 10)
+                mcond > 0 && ast.kind-at(t, mcond) == kc -> {
+                    pd = ast.nd-at(t, mcond)
+                    pk0 = pd.kid0
+                    pnk = pd.nkid
+                    pc = 1
+                    (pc < pnk) {
+                        pv = ast.kid-at(t, pk0 + pc)
+                        pv > 0 && ast.kind-at(t, pv) == ki -> {
+                            pvs = ast.slot-at(t, pv, 0)
+                            pvs > 0 && ck-def-has(defs, pvs) == 0 -> {
+                                defs.push(pvs)
+                            }
+                        }
+
+                        #{overflow=wrap}
+                        pc = pc + 1
+                    }
+                }
+
+                #{overflow=wrap}
+                ac = ac + 1
             }
         }
         i = i + 1
@@ -145,7 +230,7 @@ check = (t ast, path str) (out []str) {
         dk = d.kind
         s0 = d.s0
         p8 = d.s8
-        dk == ki && p8 > 0 && ck-def-has(rcv, i) == 0 -> {
+        dk == ki && p8 > 0 && ck-def-has(rcv, i) == 0 && ck-def-has(calle, i) == 0 -> {
             nm = ast.str-at(t, s0)
             gate-keep = ck-name-silent(nm)
             gate-keep == 0 -> {
@@ -215,6 +300,7 @@ ck-name-silent = (nm str) (r i64) {
         'bool' -> 1
         'str' -> 1
         'txt' -> 1
+        'std' -> 1
         'f32' -> 1
         'f64' -> 1
         'i8' -> 1

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -85,10 +86,21 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 	}
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
-		// 十六進位字面量（0xNN）優先推斷為 byte
+		// 十六進位字面量（0xNN）的推斷寬度必須跟字面量真實取值走，不能
+		// 無腦壓成 byte：一個寬常數（如 sha256/hmac/hkdf 裡的 0x428a2f98）
+		// 一旦被記成 i8，後續 `h = 0x428a2f98` 的變數雖然按字面量真實寬度
+		// 存進 i64 全域槽，codegen 卻按 i8 讀取 → load 寬度不符 / 結果錯位，
+		// 且在 `& 0xFFFFFFFF` 這類遮罩的 store 路徑對結果調 wrapIntToStorage
+		//（假定輸入是 i64）直接 IR 驗證崩潰（'%cN' defined with type 'i8' but
+		// expected 'i64'）。MIR 把所有整數存在 i64 槽，所以「塞得進單 byte 才
+		// 給 byte，否則給 i64」既保留 0xFF 這類 byte/char 既有語境，又避免
+		// 把多 byte 常數壓窄而破壞 crypto 等依賴寬位模式的正整數演算法。
 		raw := e.Token.Literal
 		if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
-			return "byte"
+			if v, err := strconv.ParseUint(raw[2:], 16, 64); err == nil && v <= 0xFF {
+				return "byte"
+			}
+			return "i64"
 		}
 		return "i64"
 	case *parser.FloatLiteral:
@@ -1356,6 +1368,12 @@ func isValidVarName(name string) bool {
 	if name == "" {
 		return true
 	}
+	// `_` 是語言級顯式捨棄識別符（`_ = expr` 是三條 option 消費路徑之一），
+	// checker 多處按名字 `"_"` 豁免；命名規則不得把它判違規，否則 std
+	// 既有的 `_` 綁定（如 crypto/ecdsa.no）會被強制報錯。
+	if name == "_" {
+		return true
+	}
 	for i, ch := range name {
 		if i == 0 {
 			// 不能以數字開頭
@@ -1372,15 +1390,31 @@ func isValidVarName(name string) bool {
 func ValidateNaming(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 
-	// Reuse the shared defined-vars collection (same first pass as
-	// ValidateUndefinedVars) to know which names are global variables.
-	definedVars := CollectDefinedVars(program)
+	// 只認「真正的模組級全域」：頂層 LetStatement 名字與頂層 MultiAssign 目標。
+	// 不可复用 CollectDefinedVars——它把 Sem.DeclaredVars（parser 在*任意作用域*
+	// 見到 LetStatement 就登記，含函式體局部，見 parser/stmt.go）也併進來，
+	// 導致 checkNaming 把 Ff/X 這類局部大寫名當成全域重賦值而跳過，命名規則
+	// 對區域變數形同虛設。函式/型別/接口名也不適合在此豁免：函式名本身有
+	// x6swm2kk 分支校驗，函式體內的同名局部宣告也必須守小寫連字號規則。
+	globalVars := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			globalVars[ls.Name.Value] = true
+		}
+		if mas, ok := stmt.(*parser.MultiAssignStatement); ok {
+			for _, target := range mas.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					globalVars[ident.Value] = true
+				}
+			}
+		}
+	}
 
 	for _, stmt := range program.Statements {
 		if _, ok := stmt.(*parser.LetStatement); ok {
 			continue
 		}
-		results = append(results, checkNaming(program.Sem, stmt, program.Sem.SourceFileOf(stmt), definedVars)...)
+		results = append(results, checkNaming(program.Sem, stmt, program.Sem.SourceFileOf(stmt), globalVars)...)
 	}
 	return results
 }
@@ -1454,6 +1488,14 @@ func checkNaming(sem *parser.SemanticContext, stmt parser.Statement, file string
 	case *parser.BlockStatement:
 		for _, bStmt := range s.Statements {
 			results = append(results, checkNaming(sem, bStmt, file, globalVars)...)
+		}
+	case *parser.ForStatement:
+		// `(cond) { … }` 循环糖与 `for x <- …` 都解析為 ForStatement，其 Body
+		// 必須下鑽，否則迴圈體內的區域宣告（如 `Yy = 3`）永遠逃過命名檢查。
+		if s.Body != nil {
+			for _, bStmt := range s.Body.Statements {
+				results = append(results, checkNaming(sem, bStmt, file, globalVars)...)
+			}
 		}
 	case *parser.ExpressionStatement:
 		if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {

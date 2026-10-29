@@ -1451,6 +1451,15 @@ func (l *lowerer) buildCaptureChain(ls *LetStatement, inner string, nodes []capt
 		Name:        ls.Name,
 		Value:       rewritten,
 		IsSynthetic: true,
+		// OverflowMode 繼承：原陳述的 `#{overflow=wrap}` 行注解經 setStmtOverflowMode
+		// 寫在 ls.OverflowMode 欄位上，但捕獲鏈把原陳述替換成嵌套 match 後，
+		// 真正的整數運算落在最內層 ok 臂的這條合成賦值裡。tohir 只從
+		// LetStatement.OverflowMode 欄位編碼 HIR overflow flags（KBlock 不編碼、
+		// S3-c 的側表 remap 進不了 Flags），漏掉它，內層 add 在 codegen 退回
+		// checked `llvm.*.with.overflow`——即使 u64 鏈上加法真溢出也產生 err
+		// option 並沿資料流污染後續計算（sha512 調度 w29 首個真溢出即觸發，
+		// 2026-10-30 crypto 回歸根因）。
+		OverflowMode: ls.OverflowMode,
 	})
 	for i := len(nodes) - 1; i >= 0; i-- {
 		n := nodes[i]
@@ -1483,8 +1492,10 @@ func (l *lowerer) buildCaptureChain(ls *LetStatement, inner string, nodes []capt
 			// 少了它，checker 的冗餘型別標註 lint（tcpoxtfd）會把它當成用戶寫的
 			// 顯式標註並建議刪除——指向一個用戶根本看不到的臨時變數
 			//（`__cap_1 ?i64 = …`）。
-			Type:  &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: n.inner}, IsInferred: true},
-			Value: n.expr,
+			Type: &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: n.inner}, IsInferred: true},
+			// OverflowMode 同上繼承：bind 的值運算式（n.expr）也可能含整數運算。
+			OverflowMode: ls.OverflowMode,
+			Value:        n.expr,
 		}
 		body = &BlockStatement{Token: tok, Statements: []Statement{
 			bind,
@@ -4531,15 +4542,20 @@ func (p *Parser) desugarIndexOutReads(expr Expression, tok lexer.Token, defVal A
 			if lowered == nil {
 				return expr, nil
 			}
-			// __idx_val_N = match（u64）。
-			valStmt := &LetStatement{
+			// 與 maybeIndexOutAssign 同形：先宣告 __idx_val_N = DEF，再把 match 當
+			// **陳述**發出（兩個臂各自對 __idx_val_N 賦值）。
+			// 不可把 lowered 當成 LetStatement 的右值：臂是 IsBlockBody 語句形態、
+			// 沒有 ValueCtx，放在值語境時整個 if 表達式求值為空 → 讀取恆取 DEF
+			// （place-match 臂內 `it = base[j]` 全變 0，AES 等 std 加解密因此算錯）。
+			preDecl := &LetStatement{
 				Token:       tok,
 				Name:        &Identifier{Token: tok, Value: valName},
 				Type:        &NamedType{Token: tok, Value: elem},
-				Value:       lowered,
+				Value:       defLit,
 				IsSynthetic: true,
 			}
-			return &Identifier{Token: tok, Value: valName}, []Statement{outStmt, valStmt}
+			matchStmt := &ExpressionStatement{Token: tok, Expression: lowered}
+			return &Identifier{Token: tok, Value: valName}, []Statement{preDecl, outStmt, matchStmt}
 		}
 		// 遞歸進入索引的左右子表達式（如 `a[b[c]]`）。
 		newLeft, ls := p.desugarIndexOutReads(e.Left, tok, defVal, counter)

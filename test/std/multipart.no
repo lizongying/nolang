@@ -131,10 +131,16 @@ t-encrypted = () {
     key [32]byte
     iv [12]byte
     i <- [0..32): {
-        key[i] = 65 + (i % 26)
+        key[i]: {
+            ok -> it = 65 + (i % 26)
+            -> _
+        }
     }
     i <- [0..12): {
-        iv[i] = 48 + i
+        iv[i]: {
+            ok -> it = 48 + i
+            -> _
+        }
     }
     w = multipart.multipart-create-boundary('ENC')
     okw = w.write-encrypted-field('secret', 'pw123', key, iv)
@@ -185,7 +191,10 @@ t-encrypted = () {
     }
     key2 [32]byte
     i <- [0..32): {
-        key2[i] = 66 + (i % 26)
+        key2[i]: {
+            ok -> it = 66 + (i % 26)
+            -> _
+        }
     }
     kbad = multipart.multipart-decrypt-field(d, key2, 'secret'.to-bytes())
     kbad: {

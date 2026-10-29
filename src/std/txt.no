@@ -66,8 +66,8 @@ txt.byte = (i i64) (c ?byte) {
 ; txt.set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
 ; txt.byte 的配對寫者；取代 txt[i] = b（後者按碼點重新編碼並移動尾部位元組）
 ;
-; b 宣告為 byte：表層實參若是 option（.byte(i)、HEX[..] 等）由內建參數檢查直接
-; 放過（funcargs.go 的 `?` 跳過）；若為純 i64/char（如 bv、HEX[..] 的 char）則在
+; b 宣告為 byte：表層實參若是 option（.byte(i)、hex-table[..] 等）由內建參數檢查直接
+; 放過（funcargs.go 的 `?` 跳過）；若為純 i64/char（如 bv、hex-table[..] 的 char）則在
 ; 呼叫端以位元運算遮罩 `& 255` 窄化。與 src/builtin/str.go 條目一致。
 ;
 ; 回傳 ?bool（可失敗）：越界（i < 0 或 i >= 255 實體容量）時回傳 nil 並**跳過寫入**，
@@ -150,7 +150,7 @@ txt.to-bytes = () (out []byte) {
 ; txt.to-hex: 将 txt 转换为十六进制字符串
 txt.to-hex = () (out str) {
 
-    HEX = '0123456789ABCDEF'
+    hex-table = '0123456789ABCDEF'
     n i64 = .len-bytes()
 
     #{overflow=wrap}
@@ -160,10 +160,10 @@ txt.to-hex = () (out str) {
         b = .byte(i)
 
         #{overflow=wrap}
-        out.set-byte(i * 2, HEX[b >> 4] & 255)
+        out.set-byte(i * 2, hex-table[b >> 4] & 255)
 
         #{overflow=wrap}
-        out.set-byte(i * 2 + 1, HEX[b & 15] & 255)
+        out.set-byte(i * 2 + 1, hex-table[b & 15] & 255)
     }
 }
 
@@ -531,7 +531,7 @@ txt.trim-char = (ch char) (val txt) {
         b-opt = .byte(start)
         b = b-opt: {
             ok -> it
-            ->
+            -> _
         }
         cp i64 = b
         clen = 1
@@ -567,7 +567,7 @@ txt.trim-char = (ch char) (val txt) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
-            ->
+            -> _
         }
         cp = b
         clen = 1
@@ -1106,7 +1106,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
-            ->
+            -> _
         }
         cp i64 = b
         clen = 1
@@ -1679,9 +1679,9 @@ txt.to-bigint = () (out ?bigint) {
         d < 0 -> break
         d >= radix -> break
 
-        acc = acc.mul-i64(radix)
+        acc = acc._mul-i64(radix)
 
-        acc = acc.add-i64(d)
+        acc = acc._add-i64(d)
         started = 1
 
         #{overflow=wrap}
