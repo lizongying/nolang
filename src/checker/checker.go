@@ -62,6 +62,14 @@ func identIndexReadOnLine(s string) bool {
 // Migrated from build/transpiler.go: semantic-checker subsystem
 // (validators + module/type resolution helpers).
 
+// errVariantPayloadType 是内建 option 的 err 变体载荷型别，也就是 match 的
+// `err ->` 臂里隐式绑定 `it` 的型别。它必须与 std/global.no 里
+// `option { ok(v t), nil, err(e ...) }` 的宣告一致，且与 mir 侧
+// Module.OptionErrRaw 一致——三者任一漂移，`it` 的型别就会和 codegen 真正
+// 存进载荷槽的东西对不上（历史上 str 恰好是 24 字节能塞进槽，err.err 则是
+// 装箱指针，读侧要解箱）。
+const errVariantPayloadType = "err.err"
+
 var validationFuncTypes map[string]string
 
 // validationStructNames holds the set of struct type names defined in the
@@ -9162,14 +9170,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 		}
 			// `err` 是變體標記，不是真型別：match 的 `err ->` 臂會為隱式綁定 `it`
-			// 合成一條 `let it t=err`。而 err 載荷**永遠是 str**
-			// （`option { ok(v t), nil, err(e str) }`，且統一佈局後標量 option
-			// 也真的存得下整條訊息），所以 err 臂的 `it` 就是一個字串值。
-			// 把它正規化成 "str"，否則 `msg = it` 會誤報
+			// 合成一條 `let it t=err`。err 載荷是 `option { ..., err(e X) }`
+			// 宣告的那個型別——歷史上是 str（統一佈局後標量 option 也真的存得下
+			// 整條訊息），現在是 std 的結構化錯誤 err.err。
+			// 把它正規化成該載荷型別，否則 `msg = it` 會誤報
 			// 「cannot assign err value to str variable」(trace 15w45dqk)，
 			// 而且首次指派時變數會被推斷成根本不存在的型別 "err"。
 			if inferredType == "err" {
-				inferredType = "str"
+				inferredType = errVariantPayloadType
 			}
 			// 有符號整數相減溢位：未標註 #{overflow} 時預設回傳 option<int>
 			// （溢出 err，永不 panic）；標註 wrap/clamp0 時回傳 int。

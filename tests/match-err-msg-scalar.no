@@ -1,17 +1,21 @@
 ; match-err-msg-scalar.no — 標量 option 的 err 臂必須能讀到完整的錯誤訊息
 ;
-; 回歸：`option { ok(v t), nil, err(e str) }` 的 err 載荷**永遠是 str**，但舊的
-; 扁平佈局 `%option = { i64 tag, i64 data }` 的載荷槽只有 8 字節，塞不下 24 字節的
-; %str-long。當時 `err('msg')` 只能把字串的 data 指標塞進去，len/cap 全丟：
+; 回歸：`option { ok(v t), nil, err(e X) }` 的 err 載荷與宣告的元素型別無關，
+; 所以標量 option（?i64 / ?bool）的 err 臂也必須讀得到錯誤本身。
+;
+; 舊的扁平佈局 `%option = { i64 tag, i64 data }` 的載荷槽只有 8 字節，連 24 字節的
+; %str-long 都塞不下。當時 `err('msg')` 只能把字串的 data 指標塞進去，len/cap 全丟：
 ;   - err 臂讀 `it` 會拿到整顆 option（型別是 i64/bool），任何 str 用法都產生
 ;     LLVM 拒收的 IR（「defined with type 'i1' but expected '%str-long'」）；
 ;   - 就算硬讀，印出來也是一個整數（例如 `err=4385955280`），不是訊息。
 ;
-; 統一佈局 `%option = { i64 tag, [3 x i64] slot }`（24 字節載荷槽，err 一律 inline）
-; 讓訊息放得下；搭配 hir2mir 對標量 option 也做 err 載荷 peel，`it` 現在就是訊息。
+; 統一佈局 `%option = { i64 tag, [3 x i64] slot }` 先把訊息放進去（那時 err 載荷是
+; inline 的 str）；現在 err 載荷換成 std 的結構化 `err.err`（~72 字節，裝不進 24 字節
+; 槽），改走 tag==2 堆裝箱：optPayloadAddrAs 在 `tag == 2` 時解箱，讀側拿到完整的
+; err.err，`it.msg()` 就是訊息。
 ;
 ; 註：err 臂的合成綁定帶 `t=err` 這個**變體標記**（不是真型別）。checker 會把它正規化成
-; `str`（err 載荷永遠是 str），所以 `msg = it` 可以直接指派；否則會誤報
+; `err.err`（err 載荷是結構化錯誤），所以 `msg = it.msg()` 才能指派；否則會誤報
 ; 「cannot assign err value to str variable」。
 
 check-str = (name str, got str, want str) {
@@ -36,7 +40,7 @@ fail-str = () (out ?str) {
 a = fail-i64()
 got1 = ''
 a: {
-    err -> got1 = it
+    err -> got1 = it.msg()
 
     nil -> got1 = 'nil'
 
@@ -48,7 +52,7 @@ check-str('?i64 err message', got1, 'boom-i64')
 b = fail-bool()
 got2 = ''
 b: {
-    err -> got2 = it
+    err -> got2 = it.msg()
 
     nil -> got2 = 'nil'
 
@@ -60,7 +64,7 @@ check-str('?bool err message', got2, 'boom-bool')
 c = fail-str()
 got3 = ''
 c: {
-    err -> got3 = it
+    err -> got3 = it.msg()
 
     nil -> got3 = 'nil'
 
@@ -69,10 +73,11 @@ c: {
 check-str('?str err message', got3, 'boom-str')
 
 ; 4. 訊息必須完整（len 正確），不能被截斷成前幾個字節
+;    （it 現在是 err.err，所以要先取 .msg()）
 d = fail-i64()
 got4 = ''
 d: {
-    err -> got4 = 'len=' - it.len().to-str()
+    err -> got4 = 'len=' - it.msg().len().to-str()
 
     nil -> got4 = 'nil'
 

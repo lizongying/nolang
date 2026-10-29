@@ -1179,9 +1179,11 @@ v: {
 補上 `nil ->` / `err ->`，或改用 `ok ->`，即可通過。enum 與裸 match（`{ cond -> ... }`）  
 不在此限：`it` 指的是被匹配的值本身，沒有 nil / err 的可能。
 
-> `err ->` 臂的 `it` **永遠是錯誤訊息（`str`）**，與 option 的元素型別無關——  
-> `option { ok(v t), nil, err(e str) }`。所以就算匹配的是 `?i64` / `?bool` 這類  
-> 純量 option，`err ->` 臂裡的 `it` 也是字串，可以直接 `msg = it`。
+> `err ->` 臂的 `it` **永遠是錯誤值（`err.err`）**，與 option 的元素型別無關——  
+> `option { ok(v t), nil, err(e err.err) }`。所以就算匹配的是 `?i64` / `?bool` 這類  
+> 純量 option，`err ->` 臂裡的 `it` 也是結構化錯誤：讀訊息用 `msg = it.msg()`，  
+> 比對錯誤碼用 `it.is(code.io)`，發生位置在 `it.file` / `it.line` / `it.col`  
+> （由編譯器在 `err(...)` 的構造點自動注入）。
 
 ```no
 ; ✅ 組合 option 模式：nil || err -> body

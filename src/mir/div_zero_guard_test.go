@@ -113,7 +113,12 @@ main = () () {
 	if strings.Contains(optdiv, helper) {
 		t.Errorf("@optdiv must NOT call the stderr report — on the option path the danger travels through the err tag, so a correct program must stay silent:\n%s", optdiv)
 	}
-	if !regexp.MustCompile(`select i1 %\S+, i64 2, i64 0`).MatchString(optdiv) {
+	// The structured-error restructure (compiler-synthesized err.err) replaced
+	// the single `select i1 %dz, i64 2, i64 0` with a guard branch into an err
+	// block that heap-boxes an err.err payload — a select cannot build that. The
+	// pinned semantic is unchanged: the zero divisor must still materialize the
+	// err tag (2), so assert on the STORED tag rather than the select shape.
+	if !regexp.MustCompile(`store %option \{ i64 2,`).MatchString(optdiv) {
 		t.Errorf("@optdiv must still turn a zero divisor into the err tag (2):\n%s", optdiv)
 	}
 

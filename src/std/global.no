@@ -168,8 +168,9 @@ option {
 
 ; err: 建立結構化錯誤（別名 → std/err.new）
 ;
-; 下面這一行讓 `err('msg')` / `err('msg', err.code.io)` 就是
-; `err.new('msg')` 的呼叫，而不是編譯器裡另寫的一條特殊規則。
+; `@ <path>.<fn> <alias>` 宣告一個全域可用的第二名稱：下面這一行讓
+; `err('msg')` / `err('msg', err.code.io)` 就是 `err.new('msg')` 的呼叫，
+; 而不是編譯器裡另寫的一條特殊規則。
 ;
 ; 與選項的 err 變體不衝突：在期望型別是 option 的位置（`x ?i64` 之後的
 ; `x = err('msg')`、`err ->` 匹配臂、回傳 ?T 的函式），`err(...)` 仍然是
