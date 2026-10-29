@@ -95,8 +95,8 @@ func (c *codegen) emitBuiltinWinWaitProcess(inst *Inst) error {
 	return c.storeResult(inst, 0, r, "i64")
 }
 
-// win-get-exit-code: (proc-handle i64) -> (exit-code i64, ok bool)
-// ok=false when the call failed or the process is still running (STILL_ACTIVE=259).
+// win-get-exit-code: (proc-handle i64) -> (exit-code ?i64)
+// nil when the call failed or the process is still running (STILL_ACTIVE=259).
 func (c *codegen) emitBuiltinWinGetExitCode(inst *Inst) error {
 	if len(inst.Args) < 1 {
 		return fmt.Errorf("win-get-exit-code: needs a proc-handle argument")
@@ -119,10 +119,8 @@ func (c *codegen) emitBuiltinWinGetExitCode(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = xor i1 %s, true\n", notActive, active))
 	ok := c.treg("wgec.ok")
 	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", ok, got, notActive))
-	if err := c.storeResult(inst, 0, code64, "i64"); err != nil {
-		return err
-	}
-	return c.storeResult(inst, 1, ok, "i1")
+	// Collapse (exit-code, ok) into a ?i64 option: ok selects the tag.
+	return c.storeOptionFromPair(inst, code64, ok)
 }
 
 // win-terminate-process: (proc-handle i64, exit-code i64) -> (ok bool)

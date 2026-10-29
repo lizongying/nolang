@@ -22,23 +22,51 @@ ratio = 1.5')
         ok -> {
             doc = it
             s str = ''
-            so bool = false
-            s, so = toml.get-str(doc, 'name')
+            so = false
+            sn = toml.get-str(doc, 'name')
+            sn: {
+                ok -> {
+                    so = true
+                    s = it
+                }
+                -> so = false
+            }
             runner.is-true(so, 'name decode ok')
             runner.str-eq(s, 'nolang', 6, 'get-str name')
             p i64 = 0
-            po bool = false
-            p, po = toml.get-i64(doc, 'port')
+            po = false
+            pn = toml.get-i64(doc, 'port')
+            pn: {
+                ok -> {
+                    po = true
+                    p = it
+                }
+                -> po = false
+            }
             runner.is-true(po, 'port decode ok')
             runner.eq(p, 8080, 'get-i64 port')
             b bool = false
-            bo bool = false
-            b, bo = toml.get-bool(doc, 'enabled')
+            bo = false
+            bn = toml.get-bool(doc, 'enabled')
+            bn: {
+                ok -> {
+                    bo = true
+                    b = it
+                }
+                -> bo = false
+            }
             runner.is-true(bo, 'enabled decode ok')
             runner.is-true(b, 'enabled true')
             fr f64 = 0.0
-            fo bool = false
-            fr, fo = toml.get-f64(doc, 'ratio')
+            fo = false
+            fn = toml.get-f64(doc, 'ratio')
+            fn: {
+                ok -> {
+                    fo = true
+                    fr = it
+                }
+                -> fo = false
+            }
             runner.is-true(fo, 'ratio decode ok')
             runner.f64-eq(fr, 1.5, 0.0001, 'get-f64 ratio')
             runner.is-true(toml.has(doc, 'name'), 'has name')
@@ -59,13 +87,27 @@ off = false')
         ok -> {
             doc = it
             p i64 = 0
-            po bool = false
-            p, po = toml.get-i64(doc, 'neg')
+            po = false
+            pn = toml.get-i64(doc, 'neg')
+            pn: {
+                ok -> {
+                    po = true
+                    p = it
+                }
+                -> po = false
+            }
             runner.is-true(po, 'neg decode ok')
             runner.eq(p, -42, 'get-i64 negative')
             b bool = true
-            bo bool = false
-            b, bo = toml.get-bool(doc, 'off')
+            bo = false
+            bn = toml.get-bool(doc, 'off')
+            bn: {
+                ok -> {
+                    bo = true
+                    b = it
+                }
+                -> bo = false
+            }
             runner.is-true(bo, 'off decode ok')
             runner.is-false(b, 'get-bool false')
         }
@@ -87,13 +129,23 @@ port = 8080 # inline comment')
             runner.eq(doc.count, 2, 'table doc entry count')
             runner.eq(doc.table-count, 1, 'table doc table count')
             h str = ''
-            ho bool = false
-            h, ho = toml.get-str(doc, 'server.host')
+            ho = false
+            hn = toml.get-str(doc, 'server.host')
+            hn: {
+                ok -> {
+                    ho = true
+                    h = it
+                }
+                -> ho = false
+            }
             runner.is-true(ho, 'server.host ok')
             runner.str-eq(h, 'localhost', 9, 'get-str dotted key')
             p i64 = 0
-            po bool = false
-            p, po = toml.get-i64(doc, 'server.port')
+            pn = toml.get-i64(doc, 'server.port')
+            pn: {
+                ok -> p = it
+                -> _
+            }
             runner.eq(p, 8080, 'inline comment stripped from value')
         }
 
@@ -146,7 +198,14 @@ t-parse-error = () {
 t-helpers = () {
     u = ''
     uo = false
-    u, uo = toml.toml-unquote('"hi"')
+    un = toml.toml-unquote('"hi"')
+    un: {
+        ok -> {
+            uo = true
+            u = it
+        }
+        -> uo = false
+    }
     runner.is-true(uo, 'unquote ok')
     runner.str-eq(u, 'hi', 2, 'unquote basic string')
 
@@ -155,17 +214,34 @@ t-helpers = () {
 
     hv = 0
     ho = false
-    hv, ho = toml.toml-parse-i64('0xFF')
+    hi = toml.toml-parse-i64('0xFF')
+    hi: {
+        ok -> {
+            ho = true
+            hv = it
+        }
+        -> ho = false
+    }
     runner.is-true(ho, 'hex parse ok')
     runner.eq(hv, 255, 'hex 0xFF == 255')
     uv = 0
     uo2 = false
-    uv, uo2 = toml.toml-parse-i64('1_000')
+    ui = toml.toml-parse-i64('1_000')
+    ui: {
+        ok -> {
+            uo2 = true
+            uv = it
+        }
+        -> uo2 = false
+    }
     runner.is-true(uo2, 'underscore parse ok')
     runner.eq(uv, 1000, 'underscore 1_000 == 1000')
     dv = 0
-    do2 = false
-    dv, do2 = toml.toml-parse-i64('-123')
+    di = toml.toml-parse-i64('-123')
+    di: {
+        ok -> dv = it
+        -> _
+    }
     runner.eq(dv, -123, 'decimal -123')
 }
 
@@ -177,8 +253,11 @@ t-build-roundtrip = () {
     runner.is-true(o2, 'put n ok')
     runner.eq(doc.count, 2, 'built doc count 2')
     s = ''
-    so = false
-    s, so = toml.get-str(doc, 'title')
+    sn = toml.get-str(doc, 'title')
+    sn: {
+        ok -> s = it
+        -> _
+    }
     runner.str-eq(s, 'hello', 5, 'roundtrip get-str')
     st = toml.stringify(doc)
     eq-str(st, 'title = "hello"

@@ -81,15 +81,14 @@ zlib-compress = (data []byte) (out []byte) {
 
 ; zlib-decompress: 解壓 zlib 串流
 ;   data: zlib 串流 ([]byte)
-;   返回 out: 解壓後資料 ([]byte)
-;   返回 ok: 是否成功 (bool)
+;   返回 out ?[]byte: 解壓後資料（some），失敗為 nil
 ;
 ; 支援所有 DEFLATE 區塊類型（stored, fixed Huffman, dynamic Huffman）
 ; 透過 gzip.inflate-decompress 進行解壓。
 ; 先嘗試 stored-block 掃描（快速路徑），失敗則使用 inflate 解壓。
-zlib-decompress = (data []byte) (out []byte, ok bool) {
+zlib-decompress = (data []byte) (out ?[]byte) {
 
-    ok = false
+    out = nil
     data.len() < 6 -> return
 
     ; 檢查 zlib header：CM(低 4 位)必須為 8(deflate)，CINFO(高 4 位)≤7
@@ -128,7 +127,6 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
 
     ; 使用 inflate 解壓 DEFLATE 資料
     out = gzip.inflate-decompress(deflate-data, est-out)
-    ok = true
 }
 
 ; ═══════════════════════════════════════════════
@@ -137,12 +135,12 @@ zlib-decompress = (data []byte) (out []byte, ok bool) {
 
 ; zlib-decompress-stored: 僅解壓 stored-block 的 zlib 串流
 ;   data: 僅含 BTYPE=00 區塊的 zlib 串流 ([]byte)
-;   返回 out: 解壓後資料 ([]byte)
-;   返回 ok: 是否成功 (bool)，非 stored 區塊時返回 false
-zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
-    ok = false
+;   返回 out ?[]byte: 解壓後資料（some），非 stored 區塊或失敗為 nil
+zlib-decompress-stored = (data []byte) (out ?[]byte) {
+    out = nil
     data.len() < 6 -> return
 
+    buf []byte
     p = 2; 跳過 2-byte zlib header
     !! {
 
@@ -167,14 +165,14 @@ zlib-decompress-stored = (data []byte) (out []byte, ok bool) {
         i <- [0..blk-len): {
 
             #{index-out=zero, overflow=wrap}
-            out.push(data[p + i])
+            buf.push(data[p + i])
         }
 
         #{overflow=wrap}
         p = p + blk-len
         bfinal == 1 -> break
     }
-    ok = true
+    out = buf
 }
 
 ; zlib-consumed-stored: 計算 stored-block zlib 串流的消耗位元組數

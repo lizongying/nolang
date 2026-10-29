@@ -12,8 +12,8 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "get-env",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeStr},
-		Doc:          "Get the value of an environment variable",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeStr}},
+		Doc:          "Get the value of an environment variable (?str: nil when unset)",
 		CLibCall:     &CLibCall{FuncName: "getenv", ArgTypes: []LLVMArgType{LLVMStrPtr}, RetType: LLVMI8Ptr, RetCStrToStr: true},
 	})
 
@@ -322,23 +322,23 @@ func init() {
 		ForwardFunc:  "get-errno",
 	})
 
-	// args: number of command-line arguments
+	// args: full command-line argument vector
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "args",
 		Params:       []parser.Type{},
-		Return:       []parser.Type{parser.TypeI64},
-		Doc:          "Return the number of command-line arguments (including program name)",
-		ForwardFunc:  "args-count",
+		Return:       []parser.Type{&parser.SliceType{Elem: parser.TypeStr}},
+		Doc:          "Return all command-line arguments as []str (including program name)",
+		ForwardFunc:  "args-list",
 	})
 
-	// arg: get i-th command-line argument
+	// arg: get i-th command-line argument (nil when idx is out of range)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "arg",
 		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{parser.TypeStr},
-		Doc:          "Return the i-th command-line argument",
+		Return:       []parser.Type{&parser.NamedType{Value: "?str"}},
+		Doc:          "Return the i-th command-line argument (nil when out of range)",
 		ForwardFunc:  "args-get",
 	})
 
@@ -417,8 +417,8 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "stat-mode",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
-		Doc:          "Get file mode (st_mode) including permission and type bits (returns mode, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeI64}},
+		Doc:          "Get file mode (st_mode) including permission and type bits. Returns ?i64 (nil on failure)",
 		ForwardFunc:  "stat-mode",
 	})
 
@@ -427,8 +427,8 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "stat-uid",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
-		Doc:          "Get file owner uid (returns uid, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeI64}},
+		Doc:          "Get file owner uid. Returns ?i64 (nil on failure)",
 		ForwardFunc:  "stat-uid",
 	})
 
@@ -437,8 +437,8 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "stat-gid",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
-		Doc:          "Get file group gid (returns gid, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeI64}},
+		Doc:          "Get file group gid. Returns ?i64 (nil on failure)",
 		ForwardFunc:  "stat-gid",
 	})
 
@@ -447,8 +447,8 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "stat-mtime",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
-		Doc:          "Get file modification time in Unix seconds (returns mtime, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeI64}},
+		Doc:          "Get file modification time in Unix seconds. Returns ?i64 (nil on failure)",
 		ForwardFunc:  "stat-mtime",
 	})
 
@@ -559,8 +559,8 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "read-dir",
 		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
-		Doc:          "Read next directory entry name, returns (name, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeStr}},
+		Doc:          "Read next directory entry name, returns ?str (nil when no more entries)",
 		ForwardFunc:  "read-dir",
 	})
 
@@ -588,13 +588,13 @@ func init() {
 
 	// win-find-next-file: read next Windows directory entry (FindNextFileA)
 	// Args: bufPtr i64 (from win-find-first-file)
-	// Returns: name str, ok bool (ok=false when no more entries)
+	// Returns: name ?str (nil when no more entries)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "win-find-next-file",
 		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
-		Doc:          "Read next Windows directory entry name. Returns (name, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeStr}},
+		Doc:          "Read next Windows directory entry name. Returns ?str (nil when no more entries)",
 		ForwardFunc:  "win-find-next-file",
 	})
 
@@ -640,8 +640,8 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "readlink",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
-		Doc:          "Read target of a symbolic link. Returns (target, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeStr}},
+		Doc:          "Read target of a symbolic link. Returns ?str (nil on failure)",
 		ForwardFunc:  "readlink",
 	})
 
@@ -664,8 +664,8 @@ func init() {
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "mkdtemp",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
-		Doc:          "Create a unique temp directory from template (ending with XXXXXX). Returns (name, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeStr}},
+		Doc:          "Create a unique temp directory from template (ending with XXXXXX). Returns ?str (nil on failure)",
 		ForwardFunc:  "mkdtemp",
 	})
 
@@ -910,13 +910,13 @@ func init() {
 	})
 
 	// get-priority: get process priority (POSIX getpriority(2))
-	// Returns (prio i64, ok bool). Uses errno to distinguish error from -1.
+	// Returns prio ?i64 (nil on error). Uses errno to distinguish error from -1.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "get-priority",
 		Params:       []parser.Type{parser.TypeI64, parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
-		Doc:          "Get process priority (which, who). Returns (prio, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeI64}},
+		Doc:          "Get process priority (which, who). Returns ?i64 (nil on error)",
 		ForwardFunc:  "get-priority",
 	})
 
@@ -943,13 +943,13 @@ func init() {
 	})
 
 	// sysctl: query system control parameter (reads string value)
-	// Returns (val str, ok bool). Platform-specific implementation.
+	// Returns val ?str (nil on failure). Platform-specific implementation.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "sysctl",
 		Params:       []parser.Type{parser.TypeStr},
-		Return:       []parser.Type{parser.TypeStr, parser.TypeBool},
-		Doc:          "Query a system control parameter by name. Returns (value, ok)",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeStr}},
+		Doc:          "Query a system control parameter by name. Returns ?str (nil on failure)",
 		ForwardFunc:  "sysctl",
 	})
 

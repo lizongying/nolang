@@ -62,9 +62,9 @@ realpath = (p str) (abs str) {
 
 ; readlink: 讀取符號連結的目標路徑
 ; p: 符號連結路徑
-; 成功返回目標路徑字串與 ok=true，失敗返回空串與 ok=false
+; 成功返回目標路徑（some），失敗返回 nil
 #{buildin}
-readlink = (p str) (target str, ok bool) {
+readlink = (p str) (target ?str) {
 }
 
 ; mkstemp: 建立並開啟唯一臨時檔案
@@ -78,9 +78,9 @@ mkstemp = (tmpl str) (name str, fd fd) {
 
 ; mkdtemp: 建立唯一臨時目錄
 ; tmpl: 模板字串，末尾必須為 'XXXXXX'
-; 成功返回實際目錄名與 ok=true，失敗返回空串與 ok=false
+; 成功返回實際目錄名（some），失敗返回 nil
 #{buildin}
-mkdtemp = (tmpl str) (name str, ok bool) {
+mkdtemp = (tmpl str) (name ?str) {
 }
 
 ; mkfifo: 建立命名管道（FIFO）
@@ -287,7 +287,7 @@ open-dir = (p str) (dirp i64) {
 ;   需子項列表時優先使用 fs.dir-entries，而非裸 open-dir+read-dir。
 
 #{buildin}
-read-dir = (dirp i64) (name str, ok bool) {
+read-dir = (dirp i64) (name ?str) {
 }
 
 ; close-dir: 關閉目錄控制代碼
@@ -899,10 +899,13 @@ list-dir = (dirpath str) (entries []str) {
         dirp == 0 -> return
     }
     result []str
-    ok = true
-    (ok == true) {
-        name, ok = read-dir(dirp)
-        ok -> result.push(name)
+    more = true
+    (more == true) {
+        name-opt = read-dir(dirp)
+        name-opt: {
+            ok -> result.push(it)
+            -> more = false
+        }
     }
     close-dir(dirp)
     entries = result
@@ -919,11 +922,13 @@ list-dir = (dirpath str) (entries []str) {
         bufptr == 0 -> return
     }
     result []str
-    ok = true
-    (ok == true) {
-        name, ok = os.win-find-next-file(bufptr)
-
-        ok -> result.push(name)
+    more = true
+    (more == true) {
+        name-opt = os.win-find-next-file(bufptr)
+        name-opt: {
+            ok -> result.push(it)
+            -> more = false
+        }
     }
     os.win-find-close(bufptr)
     entries = result
@@ -938,10 +943,13 @@ list-dir = (dirpath str) (entries []str) {
         dirp == 0 -> return
     }
     result []str
-    ok = true
-    (ok == true) {
-        name, ok = read-dir(dirp)
-        ok -> result.push(name)
+    more = true
+    (more == true) {
+        name-opt = read-dir(dirp)
+        name-opt: {
+            ok -> result.push(it)
+            -> more = false
+        }
     }
     close-dir(dirp)
     entries = result

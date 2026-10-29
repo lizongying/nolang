@@ -228,13 +228,13 @@ func init() {
 
 	// win-get-exit-code: get process exit code (GetExitCodeProcess)
 	// Args: proc_handle i64
-	// Returns (exit_code i64, ok bool): ok=false if still running
+	// Returns ?i64 (nil if still running)
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverGlobal,
 		MethodName:   "win-get-exit-code",
 		Params:       []parser.Type{parser.TypeI64},
-		Return:       []parser.Type{parser.TypeI64, parser.TypeBool},
-		Doc:          "Get process exit code (GetExitCodeProcess). Returns (code, ok): ok=false if still running",
+		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeI64}},
+		Doc:          "Get process exit code (GetExitCodeProcess). Returns ?i64 (nil if still running)",
 		ForwardFunc:  "win-get-exit-code",
 	})
 

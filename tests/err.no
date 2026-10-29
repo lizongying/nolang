@@ -53,10 +53,19 @@ yes2 = e2.is(code.not-found)
 errno-msg = e2.msg()
 print('ok: from-errno msg')
 
-; ── 6. error.format 格式化錯誤 ──
+; ── 6. error.format 格式化錯誤（含錯誤碼）──
 s = e.format()
 {
-    s.len-bytes() > 0 -> print('ok: error.format')
+    s == 'code.io: disk full' -> print('ok: error.format')
 
     -> print('fail: error.format')
+}
+
+; ── 7. code.to-name 取得變體名 ──
+tc = e.code()
+ns = tc.to-name()
+{
+    ns == 'io' -> print('ok: code.to-name')
+
+    -> print('fail: code.to-name')
 }

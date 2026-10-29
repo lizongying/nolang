@@ -2,7 +2,7 @@
 ;
 ; 執行：no test test/std/err.no
 ; 覆蓋：new / error.is / error.msg / error.format
-; 未測：error.code / errno-to-code（code 枚舉值映射問題，預存 bug）
+; 未測：error.code / _errno-to-code（code 枚舉值映射問題，預存 bug）
 
 # /test/runner
 

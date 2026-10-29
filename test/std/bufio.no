@@ -1,7 +1,7 @@
 ; std-bufio.no — bufio 模組測試
 ;
 ; 執行：no test test/std/bufio.no
-; 覆蓋：reader.init / reader.fill / reader.read-byte / reader.close
+; 覆蓋：reader.init / reader.fill / reader.read-byte / reader.read-line / reader.close
 
 # /test/runner
 
@@ -98,10 +98,69 @@ t-reader-read-byte = () {
     fs.remove(TMP-FILE)
 }
 
+; ── reader.read-line ─────────────────
+
+t-reader-read-line = () {
+    fs.remove(TMP-FILE)
+    f = fs.open(TMP-FILE,  {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err ->
+
+        nil ->
+
+        -> {
+            content str = 'Hello\nWorld\n'
+            it.write(content, content.len-bytes())
+            it.close()
+        }
+    }
+
+    fd = fs.open-read(TMP-FILE)
+    buf []byte = with-cap(64)
+    r = bufio.reader.init(fd, buf)
+
+    ; 第一行
+    l1 str = ''
+    opt1 = r.read-line()
+    opt1: {
+        ok -> l1 = it
+        -> _
+    }
+    runner.str-eq(l1, 'Hello', 5, 'read-line 1st == Hello')
+
+    ; 第二行
+    l2 str = ''
+    opt2 = r.read-line()
+    opt2: {
+        ok -> l2 = it
+        -> _
+    }
+    runner.str-eq(l2, 'World', 5, 'read-line 2nd == World')
+
+    ; EOF 回傳 nil
+    eof bool = false
+    opt3 = r.read-line()
+    opt3: {
+        nil -> eof = true
+        -> eof = false
+    }
+    runner.is-true(eof, 'read-line at EOF == nil')
+
+    r.close()
+    fs.remove(TMP-FILE)
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('bufio.reader-init', t-reader-init)
 p2, f2 = runner.test('bufio.reader-read-byte', t-reader-read-byte)
+p3, f3 = runner.test('bufio.reader-read-line', t-reader-read-line)
 
 total = runner.summary()
 f = runner.failed-count()

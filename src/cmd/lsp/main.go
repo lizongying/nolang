@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
@@ -67,6 +69,17 @@ func main() {
 	// 如果有 --stdio 參數，忽略它（LSP 總是使用 stdio）
 	if *stdio {
 		log.Println("stdio mode enabled (ignored, LSP always uses stdio)")
+	}
+
+	// 内存诊断开关：NOLANG_LSP_PPROF=<addr> 时在 addr 上提供 /debug/pprof，
+	// 用于压测定位常驻缓存增长（默认不监听，零开销）。
+	if addr := os.Getenv("NOLANG_LSP_PPROF"); addr != "" {
+		go func() {
+			log.Printf("pprof listening on %s", addr)
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				log.Printf("pprof server: %v", err)
+			}
+		}()
 	}
 
 	// 設置日誌

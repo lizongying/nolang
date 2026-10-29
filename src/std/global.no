@@ -7,6 +7,9 @@
 ;
 ; 规则：全局只有以下 7 个函数可以不带模块名调用，
 ;       其余所有跨模块调用都必须加模块前缀（如 fs.read、os.get-env）。
+;       此外文件末尾的 `@ std/err.new err` 以**可呼叫别名**的形式再登记一个
+;       裸名 `err`（详见该行上方的说明），它不是 buildin，走的是普通调用。
+;       别名有两种等价写法：`@ <path>.<fn> <alias>` 与 `<alias> = <mod>.<fn>`。
 ; ═══════════════════════════════════════════════════════════
 
 # std/err error
@@ -163,6 +166,24 @@ option {
     err(e error.err),
 }
 
-#{buildin}
-err = (msg str, ec error.code = error.code.unknown) (e error.err) {
-}
+; err: 建立結構化錯誤（別名 → std/err.new）
+;
+; 下面這一行讓 `err('msg')` / `err('msg', err.code.io)` 就是
+; `err.new('msg')` 的呼叫，而不是編譯器裡另寫的一條特殊規則。
+;
+; 與選項的 err 變體不衝突：在期望型別是 option 的位置（`x ?i64` 之後的
+; `x = err('msg')`、`err ->` 匹配臂、回傳 ?T 的函式），`err(...)` 仍然是
+; 選項的 err 變體構造器（tag 2），由 MIR 依期望型別分派；其餘位置才走這個
+; 別名。std 模組內部呼叫自己的同名函式（io.no 的 stderr 寫入器 io.err）
+; 也不受影響。
+;
+; 兩種寫法**都支援**，語義完全相同（編譯器把兩者正規化成同一個宣告）：
+;
+;   @ std/err.new err      ; 導出式語句（目前啟用）
+;   err = err.new          ; 賦值式（目前註解，未來再評估用哪一種）
+;
+; 目前先用 `@` 形式：它把「目標模組路徑」寫全，一眼看得出 err 來自哪個模組，
+; 也和 lib.no 的導出語法同形。賦值式較短，但 `err = err.new` 長得像一般變數
+; 宣告，讀者可能誤以為 err 是個值。等實際使用一段時間後再定。
+@ std/err.new err
+; err = err.new

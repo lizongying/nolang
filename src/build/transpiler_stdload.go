@@ -9,7 +9,9 @@ import (
 	"strings"
 	"sync"
 
+	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -417,6 +419,16 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 		if ted, ok := ms.(*parser.TaggedEnumDefinition); ok {
 			merged.Statements = append(merged.Statements, ted)
 			merged.Sem.SetSourceFileOf(ted, modFile)
+		}
+		// `@ <path>.<fn> <alias>` in an ordinary module body declares a
+		// CALLABLE ALIAS (global.no: `@ std/err.new err` ⇒ err('m') is
+		// err.new('m')). It must survive the merge, because the alias is read
+		// back from the merged program twice: the HIR signature collector
+		// registers "global.err" from the module's own arena, and the MIR
+		// lowerer resolves the bare call through the merged KExport.
+		if es, ok := ms.(*parser.ExportStatement); ok {
+			merged.Statements = append(merged.Statements, es)
+			merged.Sem.SetSourceFileOf(es, modFile)
 		}
 	}
 	// 傳遞閉包：掃描本模組體內的 std 引用（module.fn()/use std/...），
@@ -1009,5 +1021,91 @@ func (a *compileAssembly) loadStdModulesOnDemand() error {
 			}
 		}
 	}
+	// global.no 的別名宣告（見 mergeGlobalAliases）。
+	t.mergeGlobalAliases(a.merged)
 	return nil
+}
+
+// mergeGlobalAliases appends std/global.no's callable-alias declarations to the
+// merged program.
+//
+// global.no is DECLARATION-ONLY: its functions are `#{buildin}` stubs backed by
+// the Go runtime and its `option` enum is built into the parser, so it is never
+// loaded as an ordinary std module (loadStdModuleBody is not called for it) and
+// nothing in it reaches the merged program by the usual route.
+//
+// Its alias declarations are different in kind: they name a program-wide second
+// name for an existing function, in either of two equivalent spellings —
+//
+//	@ std/err.new err        ; export-style statement
+//	err = err.new            ; plain assignment
+//
+// — and MIR resolves that bare name from the merged program's KExport nodes.
+// Both spellings are therefore NORMALISED to an ExportStatement here: the
+// assignment form is rewritten rather than appended, so the merged program
+// never contains a top-level `err = err.new` binding to lower (which would
+// otherwise shadow the very name the alias declares).
+//
+// The source comes from the baked std AST blob (no parse, no FS walk); the
+// embedded StdFS is parsed only when the blob is unavailable (tools, tests).
+func (t *Transpiler) mergeGlobalAliases(merged *parser.Program) {
+	prog, ok := checker.StdASTFor("std/global.no")
+	if !ok || prog == nil {
+		src, err := nolang.StdFS.ReadFile("std/global.no")
+		if err != nil {
+			return // no global declarations to merge
+		}
+		p := parser.New(lexer.NewCached("std/global.no", string(src)))
+		prog = p.ParseProgram()
+		if len(p.Errors()) > 0 || prog == nil {
+			return
+		}
+	}
+	for _, stmt := range prog.Statements {
+		switch s := stmt.(type) {
+		case *parser.ExportStatement:
+			merged.Statements = append(merged.Statements, s)
+			merged.Sem.SetSourceFileOf(s, "std/global.no")
+		case *parser.LetStatement:
+			path, fn, ok := globalAliasTarget(s)
+			if !ok {
+				continue
+			}
+			es := &parser.ExportStatement{
+				Token:    s.Token, // keep the source position for diagnostics
+				Path:     path,
+				Function: fn,
+				Alias:    s.Name.Value,
+			}
+			merged.Statements = append(merged.Statements, es)
+			merged.Sem.SetSourceFileOf(es, "std/global.no")
+		}
+	}
+}
+
+// globalAliasTarget reports whether a global.no top-level binding is the
+// assignment spelling of a callable alias (`err = err.new`) and, if so, returns
+// its target module and function.
+//
+// Deliberately narrow: the value must be a bare `<module>.<fn>` reference — not
+// a call, not a literal, not a field read, not a typed binding. A target that
+// turns out not to be a function is harmless: mir's collectAliases only
+// registers the alias when the target exists in the program's function table,
+// and hir's registerAliasSigs drops it when the signature key is absent.
+func globalAliasTarget(s *parser.LetStatement) (path, fn string, ok bool) {
+	if s == nil || s.Name == nil || s.Name.Value == "" || s.Value == nil {
+		return "", "", false
+	}
+	if s.Type != nil || s.IsSynthetic || s.IsArmBinding {
+		return "", "", false
+	}
+	dot, isDot := s.Value.(*parser.DotExpression)
+	if !isDot {
+		return "", "", false
+	}
+	recv, isIdent := dot.Receiver.(*parser.Identifier)
+	if !isIdent || recv.Value == "" || dot.Property == "" {
+		return "", "", false
+	}
+	return recv.Value, dot.Property, true
 }

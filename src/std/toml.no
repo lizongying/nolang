@@ -277,36 +277,33 @@ toml-strip-comment = (s str) (out str) {
 }
 
 ; toml-normalize-key: 解析 bare / quoted / dotted key，輸出 canonical dotted key。
-toml-normalize-key = (s str) (key str, ok bool) {
-    key = s.trim()
-    ok = false
-    n = key.len-bytes()
+toml-normalize-key = (s str) (key ?str) {
+    k = s.trim()
+    n = k.len-bytes()
     n == 0 || n > TOML-MAX-KEY -> return
-    key = key.replace-str('"', '')
-    key = key.replace-str('\'', '')
-    n = key.len-bytes()
+    k = k.replace-str('"', '')
+    k = k.replace-str('\'', '')
+    n = k.len-bytes()
 
-    a = key.byte(0)
+    a = k.byte(0)
 
     #{overflow=wrap}
-    z = key.byte(n - 1)
+    z = k.byte(n - 1)
     (a == 34 && z == 34) || (a == 39 && z == 39) -> {
-        key, ok = toml-unquote(key)
+        key = toml-unquote(k)
         return
     }
     i <- [0..n): {
 
-        c = key.byte(i)
+        c = k.byte(i)
         valid = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 45 || c == 95 || c == 46 || c == 32 || c == 9
         valid == false -> return
     }
-    ok = true
+    key = k
 }
 
 ; toml-unquote: 解碼 basic/literal TOML 字串
-toml-unquote = (raw str) (value str, ok bool) {
-    value = ''
-    ok = false
+toml-unquote = (raw str) (value ?str) {
     s = raw.trim()
     n = s.len-bytes()
     n < 2 -> return
@@ -321,11 +318,10 @@ toml-unquote = (raw str) (value str, ok bool) {
 
         #{overflow=wrap}
         value = s.slice-bytes(1, n - 1)
-        ok = true
         return
     }
 
-    value = with-cap(n)
+    v str = with-cap(n)
     j = 0
     i = 1
 
@@ -360,7 +356,7 @@ toml-unquote = (raw str) (value str, ok bool) {
             }
         }
 
-        value[j]: {
+        v[j]: {
             ok -> it = c
             -> _
         }
@@ -371,7 +367,7 @@ toml-unquote = (raw str) (value str, ok bool) {
         #{overflow=wrap}
         i = i + 1
     }
-    ok = true
+    value = v
 }
 
 ; toml-value-complete: 判斷值是否已閉合；用於多行陣列、inline table、multiline string。
@@ -544,19 +540,17 @@ toml-resolve-section = (doc toml-doc, name str) (resolved str) {
 }
 
 ; toml-next-array-table: 取得並登記 array-of-tables 的下一個索引。
-toml-next-array-table = (doc toml-doc, name str) (idx i64, ok bool) {
-    idx = 0
-    ok = false
+toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     i <- [0..doc.array-count): {
 
         array-name = toml-array-name(doc.arrays[i])
         array-name.eq-full(name) -> {
 
             #{overflow=wrap}
-            idx = doc.arrays[i].index + 1
+            n = doc.arrays[i].index + 1
 
-            doc.arrays[i].index = idx
-            ok = true
+            doc.arrays[i].index = n
+            idx = n
             return
         }
     }
@@ -571,7 +565,7 @@ toml-next-array-table = (doc toml-doc, name str) (idx i64, ok bool) {
 
     #{overflow=wrap}
     doc.array-count = doc.array-count + 1
-    ok = true
+    idx = 0
 }
 
 ; toml.parse: 解析 TOML 文件，失敗返回 err(message)
@@ -626,18 +620,25 @@ toml.parse = (s str) (result ?toml-doc) {
                 return
             }
             raw-section = line.slice-bytes(start-pos, end-pos).trim()
-            section, section-ok = toml-normalize-key(raw-section)
-            section-ok == false -> {
+            norm-opt = toml-normalize-key(raw-section)
+            norm-opt: {
+                ok -> section = it
+                -> {
 
-                result = err('toml parse error at line ' - line-no.to-str())
-                return
+                    result = err('toml parse error at line ' - line-no.to-str())
+                    return
+                }
             }
             {
                 is-array-table -> {
-                    array-index, array-ok = toml-next-array-table(doc, section)
-                    array-ok == false -> {
-                        result = err('toml array table limit reached')
-                        return
+                    array-opt = toml-next-array-table(doc, section)
+                    array-index = 0
+                    array-opt: {
+                        ok -> array-index = it
+                        -> {
+                            result = err('toml array table limit reached')
+                            return
+                        }
                     }
 
                     section = section - '[' - array-index.to-str() - ']'
@@ -668,11 +669,15 @@ toml.parse = (s str) (result ?toml-doc) {
             return
         }
         raw-key = line.slice-bytes(0, eq).trim()
-        key, key-ok = toml-normalize-key(raw-key)
-        key-ok == false -> {
+        key-opt = toml-normalize-key(raw-key)
+        key = ''
+        key-opt: {
+            ok -> key = it
+            -> {
 
-            result = err('toml parse error at line ' - line-no.to-str())
-            return
+                result = err('toml parse error at line ' - line-no.to-str())
+                return
+            }
         }
 
         section.len-bytes() > 0 -> key = section - '.' - key
@@ -816,8 +821,11 @@ stringify = (doc toml-doc) (out str) {
 ; value 可為陣列、日期時間等 TOML 語法，模組不會替它加引號。
 toml-doc.put = (key str, value str) (ok bool) {
     ok = false
-    key, key-ok = toml-normalize-key(key)
-    key-ok == false -> return
+    norm-opt = toml-normalize-key(key)
+    norm-opt: {
+        ok -> key = it
+        -> return
+    }
     value-ok = toml-valid-value(value)
     value-ok == false -> return
     i <- [0...count): {
@@ -863,13 +871,10 @@ has = (doc toml-doc, key str) (found bool) {
 }
 
 ; get-str: 取得並解碼字串值
-get-str = (doc toml-doc, key str) (value str, ok bool) {
-    ok = false
+get-str = (doc toml-doc, key str) (value ?str) {
     raw = get(doc, key)
     raw: {
-        ok -> {
-            value, ok = toml-unquote(it)
-        }
+        ok -> value = toml-unquote(it)
 
         nil ->
 
@@ -878,9 +883,8 @@ get-str = (doc toml-doc, key str) (value str, ok bool) {
 }
 
 ; toml-parse-i64: 支援十進位、十六進位、八進位、二進位與底線分隔。
-toml-parse-i64 = (s str) (value i64, ok bool) {
-    value = 0
-    ok = false
+toml-parse-i64 = (s str) (value ?i64) {
+    v = 0
     clean = s.trim()
     n = clean.len-bytes()
     n == 0 -> return
@@ -960,7 +964,7 @@ toml-parse-i64 = (s str) (value i64, ok bool) {
         d < 0 || d >= base -> return
 
         #{overflow=wrap}
-        value = value * base + d
+        v = v * base + d
 
         #{overflow=wrap}
         digits = digits + 1
@@ -969,21 +973,17 @@ toml-parse-i64 = (s str) (value i64, ok bool) {
     neg -> {
 
         #{overflow=wrap}
-        value = 0 - value
+        v = 0 - v
     }
-    ok = true
+    value = v
 }
 
 ; toml-parse-f64: 解析浮點數
-toml-parse-f64 = (s str) (value f64, ok bool) {
-    ok = false
+toml-parse-f64 = (s str) (value ?f64) {
     clean = s.replace-str('_', '')
     parsed = clean.to-f64()
     parsed: {
-        ok -> {
-            value = it
-            ok = true
-        }
+        ok -> value = it
 
         nil ->
 
@@ -992,14 +992,10 @@ toml-parse-f64 = (s str) (value f64, ok bool) {
 }
 
 ; toml-parse-bool: 解析布林值
-toml-parse-bool = (s str) (value bool, ok bool) {
-    ok = false
+toml-parse-bool = (s str) (value ?bool) {
     parsed = s.to-bool()
     parsed: {
-        ok -> {
-            value = it
-            ok = true
-        }
+        ok -> value = it
 
         nil ->
 
@@ -1008,13 +1004,10 @@ toml-parse-bool = (s str) (value bool, ok bool) {
 }
 
 ; get-i64: 取得十進位整數（允許 TOML 的底線分隔）
-get-i64 = (doc toml-doc, key str) (value i64, ok bool) {
-    ok = false
+get-i64 = (doc toml-doc, key str) (value ?i64) {
     raw = get(doc, key)
     raw: {
-        ok -> {
-            value, ok = toml-parse-i64(it)
-        }
+        ok -> value = toml-parse-i64(it)
 
         nil ->
 
@@ -1023,13 +1016,10 @@ get-i64 = (doc toml-doc, key str) (value i64, ok bool) {
 }
 
 ; get-f64: 取得浮點值（支援 exponent）
-get-f64 = (doc toml-doc, key str) (value f64, ok bool) {
-    ok = false
+get-f64 = (doc toml-doc, key str) (value ?f64) {
     raw = get(doc, key)
     raw: {
-        ok -> {
-            value, ok = toml-parse-f64(it)
-        }
+        ok -> value = toml-parse-f64(it)
 
         nil ->
 
@@ -1038,13 +1028,10 @@ get-f64 = (doc toml-doc, key str) (value f64, ok bool) {
 }
 
 ; get-bool: 取得 true/false
-get-bool = (doc toml-doc, key str) (value bool, ok bool) {
-    ok = false
+get-bool = (doc toml-doc, key str) (value ?bool) {
     raw = get(doc, key)
     raw: {
-        ok -> {
-            value, ok = toml-parse-bool(it)
-        }
+        ok -> value = toml-parse-bool(it)
 
         nil ->
 

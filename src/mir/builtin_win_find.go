@@ -91,10 +91,10 @@ func (c *codegen) emitBuiltinWinFindFirstFile(inst *Inst) error {
 	return c.storeResult(inst, 0, res, "i64")
 }
 
-// win-find-next-file: (bufptr i64) -> (name str, ok bool)
+// win-find-next-file: (bufptr i64) -> name ?str
 // Pulls the next entry into the block's WIN32_FIND_DATAA and returns its
-// cFileName. ok=false (and the empty name) once enumeration is exhausted or the
-// handle is invalid/null.
+// cFileName. nil (tag 1) once enumeration is exhausted or the handle is
+// invalid/null; ok (tag 0) carries the entry name.
 func (c *codegen) emitBuiltinWinFindNextFile(inst *Inst) error {
 	if len(inst.Args) < 1 {
 		return fmt.Errorf("win-find-next-file: needs a bufptr argument")
@@ -128,10 +128,14 @@ func (c *codegen) emitBuiltinWinFindNextFile(inst *Inst) error {
 	// When exhausted cFileName is stale — read the empty string instead.
 	safe := c.treg("wfn.safe")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8* %s, i8* %s\n", safe, okc, namePtr, c.emptyStrGlobal()))
-	if err := c.storeBufStrResult(inst, 0, safe); err != nil {
-		return err
-	}
-	if err := c.storeResult(inst, 1, okc, "i1"); err != nil {
+	// ?str result: okc becomes the option tag (0 = some name, 1 = nil / exhausted).
+	// The entry name lives inside the caller's scratch buffer, so copy it to an
+	// owned heap block (strLongFromBuffer) before wrapping.
+	c.decl("declare i64 @strlen(i8*)")
+	slen := c.treg("wfn.slen")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", slen, safe))
+	sreg := c.strLongFromBuffer(safe, slen)
+	if err := c.storeOptionFromPairStr(inst, sreg, okc); err != nil {
 		return err
 	}
 	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", endL))
@@ -139,10 +143,8 @@ func (c *codegen) emitBuiltinWinFindNextFile(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("%s:\n", nilL))
 	f := c.treg("wfn.f")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i8* %s, null\n", f, b))
-	if err := c.storeBufStrResult(inst, 0, c.emptyStrGlobal()); err != nil {
-		return err
-	}
-	if err := c.storeResult(inst, 1, f, "i1"); err != nil {
+	// Null handle -> nil option (tag 1); the %str-long payload is don't-care.
+	if err := c.storeOptionFromPairStr(inst, "zeroinitializer", f); err != nil {
 		return err
 	}
 	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", endL))

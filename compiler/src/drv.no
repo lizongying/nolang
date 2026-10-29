@@ -78,7 +78,12 @@ drv.cmd-tokens = () (code i64) {
         code = EXIT-USAGE
         return
     }
-    path = args.get(2)
+    opt-path = args.get(2)
+    path str = ''
+    opt-path: {
+        ok -> path = it
+        -> _
+    }
 
     ; ⚠️ 必須用 read-bytes + to-bytes-str，**不能**用 fs.read-str：
     ;    fs.read-str 最終呼叫 []byte.to-str()，而該方法（2026-09-06 起）
@@ -125,7 +130,12 @@ drv.cmd-ast = () (code i64) {
         code = EXIT-USAGE
         return
     }
-    path = args.get(2)
+    opt-path = args.get(2)
+    path str = ''
+    opt-path: {
+        ok -> path = it
+        -> _
+    }
     c = fs.read-bytes(path)
     src []byte = with-cap(0)
     got = false
@@ -170,7 +180,12 @@ drv.cmd-vet = () (code i64) {
         code = EXIT-USAGE
         return
     }
-    path = args.get(2)
+    opt-path = args.get(2)
+    path str = ''
+    opt-path: {
+        ok -> path = it
+        -> _
+    }
 
     ; 讀檔走 read-bytes + ok/nil/err 三臂（與 cmd-tokens 同理由，§8 P0-⑥）：
     ;   nil = 存在但 0 位元組（合法空檔，oracle 回 No issues found.）
@@ -320,7 +335,12 @@ drv.dispatch = () (code i64) {
         }
 
         -> {
-            cmd = args.get(1)
+            opt-cmd = args.get(1)
+            cmd str = ''
+            opt-cmd: {
+                ok -> cmd = it
+                -> _
+            }
             cmd: {
                 'version' -> drv.cmd-version()
 

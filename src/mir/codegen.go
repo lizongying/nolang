@@ -4306,7 +4306,7 @@ func (c *codegen) emitEntry(main *Function) {
 	// epilogue (globals free + ret) is deleted — the crash behind
 	// tests/mem-safety/cross-fn-str-return-dfree.no.
 	// Capture the C entry's argc/argv into module globals so the os.args /
-	// os.arg builtins (ForwardFunc args-count / args-get) can read them. The
+	// os.arg builtins (ForwardFunc args-list / args-get) can read them. The
 	// MIR backend otherwise discards them after the entry prologue.
 	c.sb.WriteString("@nolang_argc = global i32 0\n")
 	c.sb.WriteString("@nolang_argv = global i8** null\n")
@@ -5216,6 +5216,24 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	// raw bytes and read back as raw bytes by the err arm. This replaces the
 	// old `str_clone` + ptrtoint hack, which threw away len/cap (the err arm
 	// printed a raw heap address) and leaked the clone.
+	// A tag-2 (err) payload whose type differs from the declared OK payload
+	// used to be type-punned into the slot (optStoreRawBytes below). That only
+	// works while the err payload is a 24-byte %str-long — exactly the slot
+	// width. A structured err (err.err, far larger) would overrun the slot, so
+	// box it and record the pointer instead.
+	//
+	// The tag is what makes this decidable at both ends: the err arm is entered
+	// only when tag==2, so it unboxes unconditionally there, and emitOptionDrop
+	// must free the box under the same tag test. Until the builtin err(...)
+	// constructor actually builds an err.err value this branch never fires
+	// (the err payload is still a 24-byte str, which is inline), so it is
+	// inert — added first so it can be verified not to regress anything.
+	if tag == 2 && svType != "" && svType != payloadLT && !c.optionPayloadInline(svType) {
+		if srcAddr := c.addrOfValue(src, svType, sv); srcAddr != "" {
+			c.optStoreBoxedPayload(slot, tag, payloadLT, srcAddr)
+			return nil
+		}
+	}
 	if svType != "" && svType != payloadLT {
 		c.optStoreRawBytes(slot, tag, svType, src, sv)
 		return nil

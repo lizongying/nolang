@@ -114,70 +114,98 @@ t-parse-error = () {
 
 t-get-str = () {
     j = json.parse('{"name":"Alice","age":30}')
-    ok = false
+    found = false
     val str
     j: {
         ok -> {
-            val, ok = it.get-str('name')
+            so = it.get-str('name')
+            so: {
+                ok -> {
+                    found = true
+                    val = it
+                }
+                -> found = false
+            }
         }
 
-        nil -> ok = false
+        nil -> found = false
 
-        err -> ok = false
+        err -> found = false
     }
-    runner.is-true(ok, 'get-str ok')
+    runner.is-true(found, 'get-str ok')
     runner.str-eq(val, 'Alice', 5, 'get-str content')
 }
 
 t-get-num = () {
     j = json.parse('{"pi":3.14}')
-    ok = false
+    found = false
     val = 0.0
     j: {
         ok -> {
-            val, ok = it.get-num('pi')
+            no = it.get-num('pi')
+            no: {
+                ok -> {
+                    found = true
+                    val = it
+                }
+                -> found = false
+            }
         }
 
-        nil -> ok = false
+        nil -> found = false
 
-        err -> ok = false
+        err -> found = false
     }
-    runner.is-true(ok, 'get-num ok')
+    runner.is-true(found, 'get-num ok')
     eps = 0.001 / 1000.0
     runner.f64-eq(val, 3.14, eps, 'get-num 3.14')
 }
 
 t-get-i64 = () {
     j = json.parse('{"count":42}')
-    ok = false
+    found = false
     val = 0
     j: {
         ok -> {
-            val, ok = it.get-i64('count')
+            io = it.get-i64('count')
+            io: {
+                ok -> {
+                    found = true
+                    val = it
+                }
+                -> found = false
+            }
         }
 
-        nil -> ok = false
+        nil -> found = false
 
-        err -> ok = false
+        err -> found = false
     }
-    runner.is-true(ok, 'get-i64 ok')
+    runner.is-true(found, 'get-i64 ok')
     runner.eq(val, 42, 'get-i64 value')
 }
 
 t-get-bool = () {
     j = json.parse('{"active":true}')
-    ok = false
+    found = false
     val = false
     j: {
         ok -> {
-            val, ok = it.get-bool('active')
+            bo = it.get-bool('active')
+            bo: {
+                ok -> {
+                    found = true
+                    val = it
+                }
+                -> found = false
+            }
         }
 
-        nil -> ok = false
+        nil -> found = false
 
-        err -> ok = false
+        err -> found = false
     }
-    runner.is-true(ok, 'get-bool ok')
+    runner.is-true(found, 'get-bool ok')
     runner.is-true(val, 'get-bool value')
 }
 
@@ -207,7 +235,14 @@ t-arr-get = () {
             elem = it.arr-get(0)
             elem: {
                 ok -> {
-                    val2, ok2 = it.str()
+                    so2 = it.str()
+                    so2: {
+                        ok -> {
+                            ok2 = true
+                            val2 = it
+                        }
+                        -> ok2 = false
+                    }
                 }
 
                 nil -> ok2 = false

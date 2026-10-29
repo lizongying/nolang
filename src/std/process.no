@@ -141,9 +141,9 @@ win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) {
 }
 
 ; win-get-exit-code: 取得進程退出碼（GetExitCodeProcess）
-; 返回 (exit-code, ok)：ok=false 表示仍在執行
+; 返回 exit-code ?i64：nil 表示仍在執行
 #{buildin}
-win-get-exit-code = (proc-handle i64) (exit-code i64, ok bool) {
+win-get-exit-code = (proc-handle i64) (exit-code ?i64) {
 }
 
 ; win-terminate-process: 終止進程（TerminateProcess）
@@ -1117,8 +1117,11 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 ! wait-status == 0 -> {
 
                     ; 已退出
-                    exit-code, ok = win-get-exit-code(proc-handle)
-                    code = exit-code
+                    ec-opt = win-get-exit-code(proc-handle)
+                    ec-opt: {
+                        ok -> code = it
+                        -> code = -1
+                    }
                 }
             }
         }
@@ -1127,8 +1130,11 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
             ; 無限等待
             win-wait-process(proc-handle, 0)
-            exit-code, ok = win-get-exit-code(proc-handle)
-            code = exit-code
+            ec-opt2 = win-get-exit-code(proc-handle)
+            ec-opt2: {
+                ok -> code = it
+                -> code = -1
+            }
         }
     }
 

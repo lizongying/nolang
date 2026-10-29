@@ -10,23 +10,38 @@
 ;       委派 os builtin。本測試驗證委派正確（count 不再為 0）。
 ;
 ; 註：no test 執行時，測試-binary 的 argv 固定為 1（僅含程式路徑），
-;     故正向 flag/option 解析無法在 runner 情境注入；此處斷言 count==os.args()
-;     的委派一致性，並驗證在僅有程式名時 has-flag/get-option/get-positional
-;     皆回傳 false（否定路徑）。
+;     故正向 flag/option 解析無法在 runner 情境注入；此處斷言 count==os.args().len()
+;     的委派一致性，並驗證在僅有程式名時 has-flag 回傳 false、
+;     get-option/get-positional 回傳 nil（否定路徑）。
 
 # /test/runner
 
 t-count = () {
     c i64 = args.count()
-    o i64 = os.args()
-    runner.eq(c, o, 'args.count == os.args (delegation)')
+    o i64 = os.args().len()
+    runner.eq(c, o, 'args.count == os.args().len (delegation)')
     runner.gt(c, 0, 'count >= 1 (regression: was 0)')
 }
 
 t-get-program = () {
-    p str = args.program()
-    g0 str = args.get(0)
-    o0 str = os.arg(0)
+    opt-p = args.program()
+    p str = ''
+    opt-p: {
+        ok -> p = it
+        -> _
+    }
+    opt-g0 = args.get(0)
+    g0 str = ''
+    opt-g0: {
+        ok -> g0 = it
+        -> _
+    }
+    opt-o0 = os.arg(0)
+    o0 str = ''
+    opt-o0: {
+        ok -> o0 = it
+        -> _
+    }
     runner.gt(p.len(), 0, 'program non-empty (was empty)')
     runner.eq(g0.len(), o0.len(), 'get(0).len == os.arg(0).len')
     n i64 = p.len()
@@ -37,20 +52,30 @@ t-get-program = () {
 t-has-flag-absent = () {
 
     ; argv 僅含程式名，[1..n) 迴圈不執行 => 任何 flag 皆不存在
-    v bool = args.has-flag('--absent', 8)
+    v bool = args.has-flag('--absent')
     runner.is-false(v, 'absent flag => false')
 }
 
 t-get-option-absent = () {
-    ok bool = args.get-option('--absent', 8, '')
-    runner.is-false(ok, 'absent option => false')
+    ov = args.get-option('--absent')
+    is-nil = false
+    ov: {
+        nil -> is-nil = true
+
+        -> is-nil = false
+    }
+    runner.is-true(is-nil, 'absent option => nil')
 }
 
 t-get-positional-absent = () {
-    pv = ''
-    po = false
-    pv, po = args.get-positional(0)
-    runner.is-false(po, 'no positional => false')
+    pv = args.get-positional(0)
+    is-nil = false
+    pv: {
+        nil -> is-nil = true
+
+        -> is-nil = false
+    }
+    runner.is-true(is-nil, 'no positional => nil')
 }
 p1 = runner.test('args.count', t-count)
 p2 = runner.test('args.get/program', t-get-program)

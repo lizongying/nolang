@@ -57,9 +57,21 @@ type lowerer struct {
 	mod       *Module
 	b         *Builder
 	funcNames map[string]int32 // nolang function name -> HIR node id
-	worklist  []string
-	lowered   map[string]bool
-	locals    map[string]ValueID
+	// aliases maps a bare name declared with `@ <path>.<fn> <alias>` (see
+	// hir.AliasDecl) to its target. Only names declared by a module in THIS
+	// program are present; an alias never shadows a real definition.
+	aliases map[string]aliasRef
+	// hintDeclared records whether typeHint came from a DECLARATION (a typed
+	// binding, a callee's parameter, a result type) rather than from inference
+	// over the expression being lowered. resolveAlias needs the difference:
+	// `x ?str` + `x = err('m')` (option variant) and a fresh `e = err('m')`
+	// (the aliased constructor) are identical at HIR level and differ only in
+	// whether the option type was DECLARED or merely inferred from the
+	// argument.
+	hintDeclared bool
+	worklist     []string
+	lowered      map[string]bool
+	locals       map[string]ValueID
 	// constLocals records, per function, the compile-time constant value of
 	// each `let` binding whose initializer is a pure compile-time constant.
 	// It feeds the implicit comptime evaluator (comptimeFold / evalConst).
@@ -117,6 +129,11 @@ type lowerer struct {
 	// consults this set.
 	paramVals map[ValueID]bool
 	curFunc   FuncID
+	// curMod is the short module name owning the function currently being
+	// lowered ("" for user-program code). resolveAlias needs it for the
+	// self-module carve-out: io.no's own `err(...)` means io.err, not the
+	// global `err` alias.
+	curMod    string
 	voidType  TypeID
 	curRecv   ValueID // current method's implicit `self` receiver value (first param)
 	diags     []LowerDiag
@@ -867,6 +884,114 @@ func (l *lowerer) collectValueTypeAliases() {
 	}
 }
 
+// aliasRef is one resolved callable alias: the bare name calls Module's Fn.
+type aliasRef struct {
+	Module string // short name of the target module ("err")
+	Fn     string // target function name ("new")
+}
+
+// collectAliases records every `@ <path>.<fn> <alias>` statement in the merged
+// program as a callable alias, so a bare call `<alias>(...)` lowers to the
+// target function exactly as if the source had written `<path>.<fn>(...)`.
+//
+// This is the general mechanism behind src/std/global.no's
+//
+//	@ std/err.new err        ; err('msg')  ==  err.new('msg')
+//
+// Before it existed, `err(...)` was a compiler builtin stub with a hard-coded
+// signature, and every tool that needed the signature (checker, LSP, dump
+// tables) carried its own copy of the special case.
+//
+// The alias is only registered when the target is a real function in this
+// program AND the alias name is not already taken by a definition: an alias is
+// a second name, never an override.
+func (l *lowerer) collectAliases() {
+	l.aliases = map[string]aliasRef{}
+	for _, id := range l.pkg.Top {
+		n := l.pkg.Node(id)
+		if n == nil || n.Kind != hir.KExport {
+			continue
+		}
+		path, fn := l.pkg.Str(n.S), l.pkg.Str(n.S2)
+		alias := ""
+		if aid := l.slot(id, "alias"); aid != hir.NoID {
+			if an := l.pkg.Node(aid); an != nil {
+				alias = l.pkg.Str(an.S)
+			}
+		}
+		if path == "" || fn == "" || alias == "" {
+			continue
+		}
+		// A definition in the USER PROGRAM always wins: if the program defines
+		// its own `err`, that is what `err(...)` means. A std module's function
+		// does NOT veto the alias — std/io.no declares `err(s str)` (the stderr
+		// writer) and the merge registers it under the bare name `err`, which is
+		// precisely the collision this alias settles: `err(...)` in user code
+		// means the alias, io's own body keeps calling io.err (see resolveAlias'
+		// self-module carve-out), and an explicit `io.err(...)` stays io.err
+		// (see hir.FlagQualifiedCall).
+		if fid, taken := l.funcNames[alias]; taken {
+			if owner := l.pkg.Owners[fid]; owner == "" {
+				continue
+			}
+		}
+		if _, dup := l.aliases[alias]; dup {
+			continue
+		}
+		l.aliases[alias] = aliasRef{Module: hir.ModuleShortName(path), Fn: fn}
+	}
+}
+
+// resolveAlias returns the funcNames key an alias name lowers to, and whether
+// the name is an alias at all. Resolution goes through resolveModuleCallName so
+// the alias reaches the same function a qualified `mod.fn(...)` call would — the
+// merge sometimes keeps a module's free functions under their bare name.
+func (l *lowerer) resolveAlias(name string) (string, bool) {
+	a, ok := l.aliases[name]
+	if !ok {
+		return "", false
+	}
+	// Self-module carve-out. A std module that declares a function with the
+	// alias's name keeps calling ITS OWN function: std/io.no's `errln` writes
+	// `err(s)` meaning io.err, not the error constructor. The bare registration
+	// only exists for calls made from inside the owning module, so the alias
+	// must not take it over there.
+	if owner, recorded := l.pkg.FuncOwners[name]; recorded && owner != "" && owner == l.curMod {
+		return "", false
+	}
+	// Option-variant precedence. When the type expected at this site is an
+	// option, `err(x)` / `ok(x)` / `some(x)` is the option's VARIANT
+	// constructor, not a function call — and lowerCall's EmitOptionWrap branch
+	// recognises it by its BARE name, so rewriting here would hide it. That
+	// branch is what makes `x ?i64` + `x = err('boom')` set tag 2.
+	if l.hintDeclared && l.hintIsOption() && (name == "err" || name == "ok" || name == "some") {
+		return "", false
+	}
+	if target := l.resolveModuleCallName(a.Module, a.Fn); target != "" {
+		if _, exists := l.funcNames[target]; exists {
+			return target, true
+		}
+	}
+	return "", false
+}
+
+// hasAlias reports whether name is declared as a callable alias.
+func (l *lowerer) hasAlias(name string) bool {
+	_, ok := l.aliases[name]
+	return ok
+}
+
+// hintIsOption reports whether the binding currently being lowered expects an
+// option type (l.typeHint), which is what makes `err(x)` mean the option's err
+// VARIANT rather than the error constructor.
+func (l *lowerer) hintIsOption() bool {
+	if l.typeHint == NoType || l.typeHint == l.voidType {
+		return false
+	}
+	t := l.mod.Type(l.typeHint)
+	return t != nil && t.Kind == KindOption
+}
+
 // synthesizeMainForTopLevel builds a synthetic `main` function that wraps the
 // package's top-level statements (every pkg.Top node that is not a definition:
 // KLet / KExprStmt / KFor / KIf / KBlock / KReturn / ...). Top-level-statement
@@ -1413,6 +1538,12 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	// back to picking a *random* function from funcNames as entry, yielding
 	// non-deterministic (sometimes-wrong) output.
 	l.synthesizeMainForTopLevel(pkg)
+
+	// Callable aliases (`@ <path>.<fn> <alias>`, today only global.no's
+	// `@ std/err.new err`). Collected AFTER the funcNames sweep above because
+	// resolution reads that table, and BEFORE lowering because every call site
+	// consults it.
+	l.collectAliases()
 
 	// Record every HIR function name so emitCall can prefer a real Nolang
 	// function over a builtin matched only via the bare-name fallback
@@ -2251,6 +2382,15 @@ func (l *lowerer) funcSigRaw(hirID int32) string {
 
 func (l *lowerer) lowerFunction(name string, hirID int32) {
 	l.lowered[name] = true
+	// Which module owns this function — the scope of the alias self-module
+	// carve-out (see resolveAlias). Owners carries the merge's per-statement
+	// module tag; the qualified-name fallback covers HIR that predates it.
+	l.curMod = l.pkg.Owners[hirID]
+	if l.curMod == "" {
+		if i := strings.LastIndexByte(name, '.'); i > 0 {
+			l.curMod = name[:i]
+		}
+	}
 	// Reset the deferred merge-continuation map for this function. Block IDs
 	// are unique per module, but clearing avoids stale cross-function entries
 	// and keeps ensureReturn's lookup scoped to the current function.
@@ -2673,6 +2813,29 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		// hint their call lowers to void, the variable never gets bound, and
 		// every later read of it cascades into "unresolved identifier".
 		l.typeHint = l.typeOfNode(n)
+		// hintDeclared separates a hint the PARENT supplied (a typed binding, a
+		// callee's parameter, a result type) from one inferred over this very
+		// expression. It matters for `err(...)`, whose meaning depends on the
+		// expected type: a FRESH `e = err('boom')` has no expected type, and
+		// the only hint available is the parser's `?<argtype>` guess — which is
+		// exactly the option-variant reading the alias must override.
+		l.hintDeclared = l.pkg.Type(n.Type) != ""
+		// A RE-ASSIGNMENT's type is the existing binding's, not the RHS's
+		// inferred one. `x ?i64` followed by `x = err('boom')` carries no type
+		// on the second KLet, so the hint came from inference — and once
+		// `err(...)` is inferable (global.no's `@ std/err.new err`) it infers
+		// the error STRUCT while the binding is still ?i64. Left alone the hint
+		// says "not an option", `err('boom')` lowers to the aliased constructor,
+		// and a 72-byte struct is stored into a ?i64 slot: the match then reads
+		// a garbage tag. The declared binding wins for every reassignment.
+		if name != "" {
+			if slot, ok := l.locals[name]; ok {
+				if t := l.valueTypeOf(slot); t != NoType && t != l.voidType {
+					l.typeHint = t
+					l.hintDeclared = true
+				}
+			}
+		}
 		// A re-assignment to an already-declared binding (e.g. a result
 		// parameter like `val = with-cap(.len)` inside a std method) carries
 		// NO declared type on the KLet node. Fall back to the existing
@@ -3511,10 +3674,12 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		// %option constant (the "none" discriminant) rather than a bare i64 that
 		// the %option codegen would misread as some(0).
 		savedHint := l.typeHint
+		savedDecl := l.hintDeclared
 		if rf := l.mod.Func(l.curFunc); rf != nil && len(rf.ResultParams) == 1 {
 			if rt := l.valueTypeOf(rf.ResultParams[0]); rt != NoType {
 				if tt := l.mod.Type(rt); tt != nil && tt.Kind == KindOption {
 					l.typeHint = rt
+					l.hintDeclared = true
 				}
 			}
 		}
@@ -3523,6 +3688,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			vals = append(vals, l.lowerExpr(c))
 		}
 		l.typeHint = savedHint
+		l.hintDeclared = savedDecl
 		l.b.Terminate(OpReturn, vals, nil, "")
 	case hir.KAssign:
 		l.lowerAssignNode(id)
@@ -7692,7 +7858,15 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 						tag = 1
 					}
 					var payload ValueID = NoVal
-					if name != "nil" && tt.Elem != NoType {
+					// `err` is a tag-only discriminant: the enclosing `==`/`!=` compares
+					// the TAG alone (see bareVariant[v]=true / Inst.TagOnly), so its
+					// payload is never read. Emitting the *element* type would box it
+					// into the err slot; once the err payload is a heap-boxed struct
+					// (structured error) the drop helper would walk past it. `nil`
+					// already takes this path (NoVal); `err` must too. `ok`/`some`
+					// (tag 0) keep the zero-element payload — the ok slot really is
+					// the element type.
+					if name != "nil" && name != "err" && tt.Elem != NoType {
 						payload = l.b.Emit(OpConst, tt.Elem, nil, "")
 					}
 					v := l.b.EmitOptionWrap(optTyp, tag, payload)
@@ -9524,6 +9698,35 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 	switch fnn.Kind {
 	case hir.KIdent:
 		name := l.pkg.Str(fnn.S)
+		// Callable alias (`@ <path>.<fn> <alias>`, global.no's
+		// `@ std/err.new err`): a BARE name that declares another module's
+		// function IS that function, so the call below becomes an ordinary call
+		// to the target — argument marshalling, defaults, result types,
+		// enqueueing and codegen all see what `mod.fn(...)` would.
+		//
+		// Checked FIRST, because the tables underneath resolve a bare name to
+		// whatever std module happened to register it: io.no's stderr writer is
+		// registered as bare `err` and used to win here, so `e = err('boom')`
+		// typed as i64.
+		//
+		// Two vetoes, both meaning "the source did NOT write the bare name":
+		//   - a local of that name shadows it (it is a value, not a function);
+		//   - hir.FlagQualifiedCall: the callee was written `io.err(...)` and
+		//     flattened to the bare name by checker.ResolveModuleCalls. Without
+		//     this veto `n = io.err('E')` became err.new('E') and test/std/io.no
+		//     stopped compiling ('%lv126' is '%err_err', expected 'i64').
+		if _, bound := l.locals[name]; !bound && !n.Has(hir.FlagQualifiedCall) {
+			if target, ok := l.resolveAlias(name); ok {
+				return target, NoVal
+			}
+		}
+		if _, isAlias := l.aliases[name]; isAlias && os.Getenv("NOLANG_DEBUG_ALIAS") != "" {
+			hk, hr := -1, ""
+			if t := l.mod.Type(l.typeHint); t != nil {
+				hk, hr = int(t.Kind), t.Raw
+			}
+			fmt.Fprintf(os.Stderr, "[alias] KIdent name=%q args=%d hint=%v kind=%d raw=%q isOpt=%v declared=%v qualified=%v owner=%q\n", name, len(l.slotArgs(n.Id, "arg")), l.typeHint, hk, hr, l.hintIsOption(), l.hintDeclared, n.Has(hir.FlagQualifiedCall), l.pkg.FuncOwners[name])
+		}
 		// Indirect call through a fn-typed local/parameter: `setup()` where
 		// `setup` is a parameter of named function type (e.g. `test-cb`).
 		// The callee is the VALUE held in the local's slot (a function pointer),
@@ -10918,19 +11121,40 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// (tests/option-test.no, tests/option-match.no, ...). This is the
 	// documented intent of Builder.EmitOptionWrap — see its comment.
 	if callee == "err" || callee == "ok" || callee == "some" {
-		argv := l.lowerCallArgs(n, recvV, callee)
-		if optTyp := l.variantCtorOptType(argv); optTyp != NoType {
-			tag := int64(0)
-			if callee == "err" {
-				tag = 2
+		// `err(...)` is ambiguous by construction: it is the option's err
+		// VARIANT constructor and — since global.no declares
+		// `@ std/err.new err` — also the error-struct constructor. The type
+		// expected at this site decides which one the source means:
+		//
+		//	x ?i64
+		//	x = err('boom')     ; hint ?i64  → option variant (tag 2)
+		//	e = err('boom')     ; hint err   → err.new('boom')
+		//
+		// Only an OPTION hint can select the variant reading. The payload-type
+		// fallback below (which infers `?str` from a str argument) must not run
+		// for an aliased `err`, or the alias would never be reachable:
+		// `e = err('boom')` has no hint, yet it means the constructor, not a
+		// `?str`. `ok`/`some` have no alias and keep the old inference.
+		aliasCtor := callee == "err" && l.hasAlias("err") && !n.Has(hir.FlagQualifiedCall)
+		if !(aliasCtor && !l.hintIsOption()) {
+			argv := l.lowerCallArgs(n, recvV, callee)
+			if optTyp := l.variantCtorOptType(argv); optTyp != NoType {
+				tag := int64(0)
+				if callee == "err" {
+					tag = 2
+				}
+				var payload ValueID = NoVal
+				if len(argv) > 0 {
+					payload = argv[0]
+				}
+				return l.b.EmitOptionWrap(optTyp, tag, payload)
 			}
-			var payload ValueID = NoVal
-			if len(argv) > 0 {
-				payload = argv[0]
-			}
-			return l.b.EmitOptionWrap(optTyp, tag, payload)
 		}
 	}
+
+	// Callable aliases are resolved in resolveCallee's bare-identifier branch
+	// (so a module-qualified `io.err(...)` is never mistaken for the alias);
+	// by the time control reaches here `callee` is already the target.
 
 	// Named-format interception: `print('x={n}')` / `eprint('{a}:{b}')` /
 	// `printf('{pi:.2f}')`. The legacy backend substitutes {name[:spec]}
@@ -11745,15 +11969,18 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 		// 3.0))` only knows `rect` belongs to `shape` from the parameter's
 		// declared type (tests/tagged-enum.no).
 		saved := l.typeHint
+		savedDecl := l.hintDeclared
 		if pi := i + argOffset; pi < len(paramRaws) {
 			if raw := paramRaws[pi]; raw != "" {
 				if t := l.b.Type(raw); t != NoType && t != l.voidType {
 					l.typeHint = t
+					l.hintDeclared = true
 				}
 			}
 		}
 		v := l.lowerExpr(a)
 		l.typeHint = saved
+		l.hintDeclared = savedDecl
 		// A match arm's shared `it` binding keeps the WHOLE %option at the value
 		// level (the parser types it as the payload, but let-lowering deliberately
 		// refuses to peel an owned payload — see the format-field unwrap in

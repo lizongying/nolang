@@ -8,8 +8,9 @@
 ; ═══════════════════════════════════════════════
 
 ; get-env: 取得環境變數
+; 返回 val ?str: ok=變數值, nil=未設定
 #{buildin}
-get-env = (key str) (val str) {
+get-env = (key str) (val ?str) {
 }
 
 ; set-env: 設定環境變數
@@ -65,106 +66,56 @@ get-arch = () (arch str) {
 ; 以 Nolang 查表實現，取代 libc @strerror CLibCall
 ; 涵蓋 POSIX 標準 errno (1-40)，未知值返回 "Unknown error: N"
 strerror = (errnum i64) (msg str) {
-    {
-        errnum == 1 -> msg = 'Operation not permitted'
-
-        errnum == 2 -> msg = 'No such file or directory'
-
-        errnum == 3 -> msg = 'No such process'
-
-        errnum == 4 -> msg = 'Interrupted system call'
-
-        errnum == 5 -> msg = 'Input/output error'
-
-        errnum == 6 -> msg = 'No such device or address'
-
-        errnum == 7 -> msg = 'Argument list too long'
-
-        errnum == 8 -> msg = 'Exec format error'
-
-        errnum == 9 -> msg = 'Bad file descriptor'
-
-        errnum == 10 -> msg = 'No child processes'
-
-        errnum == 11 -> msg = 'Resource temporarily unavailable'
-
-        errnum == 12 -> msg = 'Cannot allocate memory'
-
-        errnum == 13 -> msg = 'Permission denied'
-
-        errnum == 14 -> msg = 'Bad address'
-
-        errnum == 15 -> msg = 'Block device required'
-
-        errnum == 16 -> msg = 'Device or resource busy'
-
-        errnum == 17 -> msg = 'File exists'
-
-        errnum == 18 -> msg = 'Invalid cross-device link'
-
-        errnum == 19 -> msg = 'No such device'
-
-        errnum == 20 -> msg = 'Not a directory'
-
-        errnum == 21 -> msg = 'Is a directory'
-
-        errnum == 22 -> msg = 'Invalid argument'
-
-        errnum == 23 -> msg = 'Too many open files in system'
-
-        errnum == 24 -> msg = 'Too many open files'
-
-        errnum == 25 -> msg = 'Inappropriate ioctl for device'
-
-        errnum == 26 -> msg = 'Text file busy'
-
-        errnum == 27 -> msg = 'File too large'
-
-        errnum == 28 -> msg = 'No space left on device'
-
-        errnum == 29 -> msg = 'Illegal seek'
-
-        errnum == 30 -> msg = 'Read-only file system'
-
-        errnum == 31 -> msg = 'Too many links'
-
-        errnum == 32 -> msg = 'Broken pipe'
-
-        errnum == 33 -> msg = 'Numerical argument out of domain'
-
-        errnum == 34 -> msg = 'Numerical result out of range'
-
-        errnum == 35 -> msg = 'Resource deadlock avoided'
-
-        errnum == 36 -> msg = 'Operation now in progress'
-
-        errnum == 37 -> msg = 'Operation already in progress'
-
-        errnum == 38 -> msg = 'Socket operation on non-socket'
-
-        errnum == 39 -> msg = 'Destination address required'
-
-        errnum == 40 -> msg = 'Message too long'
-
-        errnum == 98 -> msg = 'Address already in use'
-
-        errnum == 99 -> msg = 'Cannot assign requested address'
-
-        errnum == 100 -> msg = 'Network is down'
-
-        errnum == 101 -> msg = 'Network is unreachable'
-
-        errnum == 104 -> msg = 'Connection reset by peer'
-
-        errnum == 110 -> msg = 'Connection timed out'
-
-        errnum == 111 -> msg = 'Connection refused'
-
-        errnum == 113 -> msg = 'No route to host'
-
-        -> {
-            msg = 'Unknown error: ' + errnum.to-str()
-        }
+    msg = errnum: {
+        1 -> 'Operation not permitted'
+        2 -> 'No such file or directory'
+        3 -> 'No such process'
+        4 -> 'Interrupted system call'
+        5 -> 'Input/output error'
+        6 -> 'No such device or address'
+        7 -> 'Argument list too long'
+        8 -> 'Exec format error'
+        9 -> 'Bad file descriptor'
+        10 -> 'No child processes'
+        11 -> 'Resource temporarily unavailable'
+        12 -> 'Cannot allocate memory'
+        13 -> 'Permission denied'
+        14 -> 'Bad address'
+        15 -> 'Block device required'
+        16 -> 'Device or resource busy'
+        17 -> 'File exists'
+        18 -> 'Invalid cross-device link'
+        19 -> 'No such device'
+        20 -> 'Not a directory'
+        21 -> 'Is a directory'
+        22 -> 'Invalid argument'
+        23 -> 'Too many open files in system'
+        24 -> 'Too many open files'
+        25 -> 'Inappropriate ioctl for device'
+        26 -> 'Text file busy'
+        27 -> 'File too large'
+        28 -> 'No space left on device'
+        29 -> 'Illegal seek'
+        30 -> 'Read-only file system'
+        31 -> 'Too many links'
+        32 -> 'Broken pipe'
+        33 -> 'Numerical argument out of domain'
+        34 -> 'Numerical result out of range'
+        35 -> 'Resource deadlock avoided'
+        36 -> 'Operation now in progress'
+        37 -> 'Operation already in progress'
+        38 -> 'Socket operation on non-socket'
+        39 -> 'Destination address required'
+        40 -> 'Message too long'
+        98 -> 'Address already in use'
+        99 -> 'Cannot assign requested address'
+        100 -> 'Network is down'
+        101 -> 'Network is unreachable'
+        104 -> 'Connection reset by peer'
+        110 -> 'Connection timed out'
+        111 -> 'Connection refused'
+        113 -> 'No route to host'
+        -> 'Unknown error: ' + errnum.to-str()
     }
 }
 
@@ -260,23 +211,27 @@ ttyname = (fd fd) (name str) {
 }
 
 ; stat-mode: 取得檔案模式（包含權限與類型位元）
+; 返回 mode ?i64: ok=模式值, nil=取得失敗
 #{buildin}
-stat-mode = (path str) (mode i64, ok bool) {
+stat-mode = (path str) (mode ?i64) {
 }
 
 ; stat-uid: 取得檔案擁有者 uid
+; 返回 uid ?i64: ok=uid, nil=取得失敗
 #{buildin}
-stat-uid = (path str) (uid i64, ok bool) {
+stat-uid = (path str) (uid ?i64) {
 }
 
 ; stat-gid: 取得檔案群組 gid
+; 返回 gid ?i64: ok=gid, nil=取得失敗
 #{buildin}
-stat-gid = (path str) (gid i64, ok bool) {
+stat-gid = (path str) (gid ?i64) {
 }
 
 ; stat-mtime: 取得檔案修改時間（Unix 秒）
+; 返回 mtime ?i64: ok=修改時間, nil=取得失敗
 #{buildin}
-stat-mtime = (path str) (mtime i64, ok bool) {
+stat-mtime = (path str) (mtime ?i64) {
 }
 
 ; ═══════════════════════════════════════════════
@@ -306,11 +261,11 @@ set-priority = (which i64, who i64, prio i64) (ok bool) {
 ; get-priority: 取得行程優先級
 ; which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
 ; who: 目標 ID（0 表示當前行程/群組/使用者）
-; 成功返回優先級值（-20 ~ 19）與 ok=true，失敗返回 0 與 ok=false
+; 返回 prio ?i64: ok=優先級值(-20~19), nil=取得失敗
 ; 注意：libc 約定返回 -1 並設定 errno 表示錯誤，但因優先級也可能為 -1，
-;       需以 errno==0 區分。這裡以 ok bool 明確表達。
+;       需以 errno==0 區分。這裡以 ?i64 明確表達（nil 表示錯誤）。
 #{buildin}
-get-priority = (which i64, who i64) (prio i64, ok bool) {
+get-priority = (which i64, who i64) (prio ?i64) {
 }
 
 ; set-sid: 建立新對話並脫離控制終端
@@ -329,10 +284,10 @@ flock = (fd fd, op i64) (ok bool) {
 
 ; sysctl: 查詢系統控制參數（讀取字串值）
 ; name: 參數名稱（如 'kern.ostype'、'hw.model'）
-; 成功返回值字串與 ok=true，失敗返回空串與 ok=false
+; 返回 val ?str: ok=值字串, nil=查詢失敗
 ; 注意：Linux 上 /proc/sys 對應；macOS/BSD 走 sysctl(2) syscall
 #{buildin}
-sysctl = (name str) (val str, ok bool) {
+sysctl = (name str) (val ?str) {
 }
 
 ; get-domain-name: 取得 NIS 網域名稱
@@ -400,16 +355,16 @@ sleep-ns = (ns i64) {
 ; ═══════════════════════════════════════════════
 ; 命令列參數
 ; ═══════════════════════════════════════════════
-; args: 命令列參數數量（含程式名）
+; args: 命令列參數全部（[]str，含程式名）
 #{buildin}
-args = () (count i64) {
+args = () (argv []str) {
 }
 
 ;     // LLVM: access argc from main
 ; }
-; arg: 取得第 i 個命令列參數
+; arg: 取得第 i 個命令列參數（越界回傳 nil）
 #{buildin}
-arg = (idx i64) (val str) {
+arg = (idx i64) (val ?str) {
 }
 
 ;     // LLVM: access argv[idx]
@@ -422,9 +377,9 @@ arg = (idx i64) (val str) {
 win-find-first-file = (path str) (bufptr i64) {
 }
 
-; win-find-next-file: 讀取下一個 Windows 目錄條目名稱，返回 (name, ok)
+; win-find-next-file: 讀取下一個 Windows 目錄條目名稱，返回 name ?str（nil=無更多條目）
 #{buildin}
-win-find-next-file = (bufptr i64) (name str, ok bool) {
+win-find-next-file = (bufptr i64) (name ?str) {
 }
 
 ; win-find-close: 關閉 Windows 目錄搜尋 handle

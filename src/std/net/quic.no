@@ -693,17 +693,16 @@ conn.close = () {
 
 ; quic-build-initial-packet: 構建 QUIC Initial 封包
 ; crypto-data []byte: CRYPTO 影格資料（TLS ClientHello）
-; 返回 packet []byte: 完整的 Initial 封包（已加密）
-; 返回 ok bool: true=成功
-conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
+; 返回 out ?[]byte: 成功則為完整 Initial 封包（已加密），失敗為 nil
+conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
-    ok = false
+    out = nil
     pn = .initial-pn
     pn-len = 4
 
     ; ── 構建未保護的封包 ──
     pos = 0
-    packet = with-cap(QUIC-MAX-PACKET-SIZE)
+    packet []byte = with-cap(QUIC-MAX-PACKET-SIZE)
 
     ; 1. 第一位元組: Fixed bit + Long header + Initial type
     packet[0] = QUIC-LONG-HEADER-FIXED-BIT | QUIC-PACKET-INITIAL | (pn-len - 1)
@@ -927,7 +926,7 @@ conn.build-initial-packet = (crypto-data []byte) (packet []byte, ok bool) {
 
     #{overflow=wrap}
     .initial-pn = .initial-pn + 1
-    ok = true
+    out = packet
 }
 
 ; ═══════════════════════════════════════════════

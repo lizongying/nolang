@@ -500,11 +500,10 @@ zs-frame.read-frame-header = () (ok bool) {
     ok = true
 }
 
-; decode-block: 解碼一個區塊
-zs-frame.decode-block = () (last-block bool, ok bool) {
+; decode-block: 解碼一個區塊（回傳 last-block ?bool：some=成功並帶是否最後區塊，nil=失敗）
+zs-frame.decode-block = () (last-block ?bool) {
 
-    last-block = false
-    ok = false
+    last-block = nil
 
     ; 讀取 Block_Header (3 bytes)
     #{overflow=wrap}
@@ -540,7 +539,6 @@ zs-frame.decode-block = () (last-block bool, ok bool) {
 
             #{overflow=wrap}
             .pos = .pos + block-size
-            ok = true
             return
         }
 
@@ -555,7 +553,6 @@ zs-frame.decode-block = () (last-block bool, ok bool) {
 
                 .out.push(b)
             }
-            ok = true
             return
         }
 
@@ -563,13 +560,14 @@ zs-frame.decode-block = () (last-block bool, ok bool) {
 
             ; Compressed_Block (type 2)
 
-            ok = .decode-compressed-block(block-size)
+            sub-ok = .decode-compressed-block(block-size)
+            sub-ok == false -> last-block = nil
             return
         }
     }
 
     ; 保留 (type 3)
-    ok = false
+    last-block = nil
 }
 
 ; decode-compressed-block: 解碼壓縮區塊
@@ -691,7 +689,16 @@ zstd-decompress = (data []byte) (out []byte) {
 
     ; 解碼區塊
     !! {
-        last-block, success = frame.decode-block()
+        lb-opt = frame.decode-block()
+        success = false
+        last-block = false
+        lb-opt: {
+            ok -> {
+                last-block = it
+                success = true
+            }
+            -> success = false
+        }
 
         success == false -> *
         last-block == true -> *

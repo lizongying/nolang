@@ -19,9 +19,9 @@
 # /test/runner.summary
 # /compiler/src/ck-sig
 
-CK-SIG-N-FUNC = 862
-CK-SIG-N-METHOD = 2387
-CK-SIG-N-SFIELD = 720
+CK-SIG-N-FUNC = 864
+CK-SIG-N-METHOD = 2395
+CK-SIG-N-SFIELD = 723
 CK-SIG-N-ALIAS = 1
 CK-SIG-N-STRUCTMOD = 105
 CK-SIG-N-ENUM = 3
@@ -72,7 +72,7 @@ test-find-func = (t ck-sig) {
     runner.str-eq(ck-sig-str-at(t.fp, i), 'str', 3, '[]byte.index params=str')
     runner.str-eq(ck-sig-str-at(t.fr, i), 'i64', 3, '[]byte.index results=i64')
 
-    runner.eq(ck-sig-find-func(t, 'zstd.zstd-decompress'), 861, 'last key hit at 861')
+    runner.eq(ck-sig-find-func(t, 'zstd.zstd-decompress'), 863, 'last key hit at 863')
     j = ck-sig-find-func(t, 'fs.read-bytes')
     runner.eq(j >= 0, 1, 'fs.read-bytes hit')
     runner.str-eq(ck-sig-str-at(t.fr, j), '?[]byte', 7, 'fs.read-bytes results=?[]byte')
@@ -97,7 +97,7 @@ test-find-method = (t ck-sig) {
     runner.str-eq(ck-sig-str-at(t.fp, m), 'i64', 3, '[]t.at params=i64')
     runner.str-eq(ck-sig-str-at(t.fr, m), '?t', 2, '[]t.at results=?t')
 
-    runner.eq(ck-sig-find-method(t, 'zstd.zs-huffman.decode'), 2386, 'last method key')
+    runner.eq(ck-sig-find-method(t, 'zstd.zs-huffman.decode'), 2394, 'last method key')
     u = ck-sig-find-method(t, 'str.to-upper')
     runner.eq(u >= 0, 1, 'str.to-upper hit')
     runner.str-eq(ck-sig-str-at(t.mp, u), '', 0, 'str.to-upper params empty')

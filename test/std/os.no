@@ -1,7 +1,7 @@
 ; std-os.no — os 模組測試
 ;
 ; 執行：no test test/std/os.no
-; 覆蓋：get-env / get-wd / get-pid / host-name / num-cpu
+; 覆蓋：get-env / get-wd / get-pid / host-name / num-cpu / get-priority
 ; 未測：now（預存 codegen bug: i1/i64 類型衝突）
 ;       mkdir / strerror（預存 codegen bug: CLibCall bool 返回值問題）
 ;       exit / signal 等危險操作
@@ -13,7 +13,24 @@
 t-get-env = () {
     os.set-env('NOLANG_OS_TEST', 'xyz')
     val = os.get-env('NOLANG_OS_TEST')
-    runner.str-eq(val, 'xyz', 3, 'get-env after set-env')
+    got str = ''
+    val: {
+        ok -> got = it
+        nil -> got = ''
+        err -> got = ''
+    }
+    runner.str-eq(got, 'xyz', 3, 'get-env after set-env')
+}
+
+t-get-env-unset = () {
+    val = os.get-env('NOLANG_NONEXISTENT_GETENV')
+    is-nil = false
+    val: {
+        ok -> is-nil = false
+        nil -> is-nil = true
+        err -> is-nil = false
+    }
+    runner.is-true(is-nil, 'get-env unset == nil')
 }
 
 ; ── 工作目錄 ──────────────────────────────────
@@ -42,6 +59,23 @@ t-num-cpu = () {
     runner.gt(n, 0, 'num-cpu > 0')
 }
 
+; ── 行程優先級（?i64 option）──────────────────
+
+t-get-priority = () {
+    prio-opt = os.get-priority(0, 0)
+    found = false
+    prio = 0
+    prio-opt: {
+        ok -> {
+            found = true
+            prio = it
+        }
+        -> found = false
+    }
+    runner.is-true(found, 'get-priority returns ok')
+    runner.is-true(prio >= -20 && prio <= 19, 'get-priority in nice range')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('os.get-env', t-get-env)
@@ -49,6 +83,8 @@ p2, f2 = runner.test('os.get-wd', t-get-wd)
 p3, f3 = runner.test('os.get-pid', t-get-pid)
 p4, f4 = runner.test('os.host-name', t-host-name)
 p5, f5 = runner.test('os.num-cpu', t-num-cpu)
+p6, f6 = runner.test('os.get-env-unset', t-get-env-unset)
+p7, f7 = runner.test('os.get-priority', t-get-priority)
 
 total = runner.summary()
 f = runner.failed-count()

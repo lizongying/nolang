@@ -404,11 +404,13 @@ cp-append = (out str, cp i64) (res str) {
 ; decode-entities: 解碼 s[from..to) 的實體（命名實體查 DOM-ENTITY-BLOB，數字實體 &#NN;/&#xHH;）
 ;   html=true：未知/未闭合實體按原文保留；html=false：未知實體判為錯誤
 ; 返回 out=解碼結果, ok=是否成功（XML 模式下非法實體 ok=false）
-decode-entities = (s str, from i64, to i64, html bool) (out str, ok bool) {
-    ok = true
-    out = ''
+decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
+    acc str = ''
     n = to - from
-    n <= 0 -> return
+    n <= 0 -> {
+        out = acc
+        return
+    }
     seg = from
     i = from
     (i < to) {
@@ -420,7 +422,7 @@ decode-entities = (s str, from i64, to i64, html bool) (out str, ok bool) {
         }
 
         ; '&' 命中：先把前導字面片段入結果
-        out = out - s.slice-bytes(seg, i)
+        acc = acc - s.slice-bytes(seg, i)
 
         ; 掃描實體名（字母/數字/#，最長 32，止於 ';' 或越界）
         k = i + 1
@@ -449,12 +451,8 @@ decode-entities = (s str, from i64, to i64, html bool) (out str, ok bool) {
             name-len == 0 -> {
 
                 ; 裸 '&'：XML 錯誤；HTML 原樣保留
-                html == false -> {
-                    out = ''
-                    ok = false
-                    return
-                }
-                out = out - '&'
+                html == false -> return
+                acc = acc - '&'
                 #{overflow=wrap}
                 seg = i + 1
                 i = seg
@@ -464,12 +462,8 @@ decode-entities = (s str, from i64, to i64, html bool) (out str, ok bool) {
             has-semi == false -> {
 
                 ; 未闭合實體：XML 錯誤；HTML 保留字面 '&'（名字仍作正文）
-                html == false -> {
-                    out = ''
-                    ok = false
-                    return
-                }
-                out = out - '&'
+                html == false -> return
+                acc = acc - '&'
                 #{overflow=wrap}
                 seg = i + 1
                 i = seg
@@ -490,25 +484,22 @@ decode-entities = (s str, from i64, to i64, html bool) (out str, ok bool) {
                 }
             }
             cpv < 0 -> {
-                html == false -> {
-                    out = ''
-                    ok = false
-                    return
-                }
+                html == false -> return
                 ; HTML：未知實體原文保留（含分號）
-                out = out - s.slice-bytes(i, k + 1)
+                acc = acc - s.slice-bytes(i, k + 1)
                 #{overflow=wrap}
                 seg = k + 1
                 i = seg
                 continue
             }
-            out = cp-append(out, cpv)
+            acc = cp-append(acc, cpv)
             #{overflow=wrap}
             seg = k + 1
             i = seg
         }
     }
-    out = out - s.slice-bytes(seg, to)
+    acc = acc - s.slice-bytes(seg, to)
+    out = acc
 }
 
 ; parse-numeric-entity: 解析 &#...; 的十進位/十六進位碼點，非法返回 -1
@@ -571,17 +562,17 @@ xml-skip-ws = (s str, p i64) (np i64) {
 }
 
 ; xml-read-name: 從 p 讀取名字（名字元序列），返回結束位置
-xml-read-name = (s str, p i64) (np i64, ok bool) {
+xml-read-name = (s str, p i64) (np ?i64) {
     n = s.len-bytes()
-    np = p
+    pos = p
     c = 0
-    (np < n) {
-        c = s.byte(np)
+    (pos < n) {
+        c = s.byte(pos)
         is-name-byte(c) == false -> break
         #{overflow=wrap}
-        np = np + 1
+        pos = pos + 1
     }
-    ok = np > p
+    pos > p -> np = pos
 }
 
 ; strip-bom: 去掉開頭 UTF-8 BOM，返回起始偏移
@@ -601,8 +592,12 @@ dom-pool.xml-add-text = (parent i64, s str, from i64, to i64) (ok bool) {
         ok = true
         return
     }
-    val, dec-ok = decode-entities(s, from, to, false)
-    dec-ok == false -> return
+    val str = ''
+    dopt = decode-entities(s, from, to, false)
+    dopt: {
+        ok -> val = it
+        -> return
+    }
     idx = .alloc(DOM-KIND-TEXT)
     .vals[idx] = val
     .append(parent, idx)
@@ -610,8 +605,7 @@ dom-pool.xml-add-text = (parent i64, s str, from i64, to i64) (ok bool) {
 }
 
 ; xml-parse-comment: 解析 <!--...-->，附加到 parent，返回下一位置
-dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np i64, ok bool) {
-    ok = false
+dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
     j = p + 4
     found = false
@@ -629,12 +623,10 @@ dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np i64, ok bool) {
     .vals[idx] = s.slice-bytes(p + 4, j)
     .append(parent, idx)
     np = j + 3
-    ok = true
 }
 
 ; xml-parse-cdata: 解析 <![CDATA[...]]>，附加到 parent
-dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np i64, ok bool) {
-    ok = false
+dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
     j = p + 9
     found = false
@@ -652,15 +644,17 @@ dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np i64, ok bool) {
     .vals[idx] = s.slice-bytes(p + 9, j)
     .append(parent, idx)
     np = j + 3
-    ok = true
 }
 
 ; xml-parse-pi: 解析 <?target data?>，附加到 parent
-dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np i64, ok bool) {
-    ok = false
+dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
-    ne, nom-ok = xml-read-name(s, p + 2)
-    nom-ok == false -> return
+    ne i64 = 0
+    nopt = xml-read-name(s, p + 2)
+    nopt: {
+        ok -> ne = it
+        -> return
+    }
     tgt str = s.slice-bytes(p + 2, ne)
     j = ne
     found = false
@@ -682,13 +676,11 @@ dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np i64, ok bool) {
     .vals[idx] = s.slice-bytes(vs, j)
     .append(parent, idx)
     np = j + 2
-    ok = true
 }
 
 ; parse-doctype-node: 解析 <!DOCTYPE ...>（含內部子集與引號），XML/HTML 共用
 ;   內容原樣存放（不解實體）；名稱為 '!' 後的第一個詞
-dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np i64, ok bool) {
-    ok = false
+dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
     j = 0
     #{overflow=wrap}
@@ -726,42 +718,49 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np i64, ok bool) {
     idx = .alloc(DOM-KIND-DOCTYPE)
     .vals[idx] = s.slice-bytes(p + 2, j)
     ; names 存放文檔元素名（跳過 'DOCTYPE' 關鍵字後的第二個名字）
-    kw, kw-ok = xml-read-name(s, p + 2)
-    kw-ok -> {
-        ns = xml-skip-ws(s, kw)
-        ne, nom-ok = xml-read-name(s, ns)
-        nom-ok -> {
-            .names[idx] = s.slice-bytes(ns, ne)
+    kwopt = xml-read-name(s, p + 2)
+    kwopt: {
+        ok -> {
+            kw = it
+            ns = xml-skip-ws(s, kw)
+            nopt = xml-read-name(s, ns)
+            nopt: {
+                ok -> .names[idx] = s.slice-bytes(ns, it)
+                -> _
+            }
         }
+        -> _
     }
     .append(parent, idx)
     np = j + 1
-    ok = true
 }
 
 ; xml-parse-attr: 解析一個屬性（xml=true 時值必須加引號且重複屬性判錯）
 ;   返回下一位置與成功標誌
-dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np i64, ok bool) {
-    ok = false
+dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np ?i64) {
     n = s.len-bytes()
-    ne, nom-ok = xml-read-name(s, p)
-    nom-ok == false -> return
+    ne i64 = 0
+    nopt = xml-read-name(s, p)
+    nopt: {
+        ok -> ne = it
+        -> return
+    }
     nm str = s.slice-bytes(p, ne)
-    np = xml-skip-ws(s, ne)
-    np >= n -> return
-    c = s.byte(np)
+    cpos = xml-skip-ws(s, ne)
+    cpos >= n -> return
+    c = s.byte(cpos)
     c != 61 -> return
     #{overflow=wrap}
-    np = np + 1
-    np = xml-skip-ws(s, np)
-    np >= n -> return
-    q = s.byte(np)
+    cpos = cpos + 1
+    cpos = xml-skip-ws(s, cpos)
+    cpos >= n -> return
+    q = s.byte(cpos)
     vs = 0
     ve = 0
     {
         q == 34 || q == 39 -> {
             #{overflow=wrap}
-            vs = np + 1
+            vs = cpos + 1
             j = vs
             fe = false
             (j < n) {
@@ -775,7 +774,7 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np i64, ok bool) {
             fe == false -> return
             ve = j
             #{overflow=wrap}
-            np = j + 1
+            cpos = j + 1
         }
 
         xml == true -> return
@@ -783,8 +782,8 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np i64, ok bool) {
         -> {
 
             ; HTML 未加引號的值：直到空白或 '>'
-            vs = np
-            j = np
+            vs = cpos
+            j = cpos
             (j < n) {
                 b = s.byte(j)
                 b == 32 || b == 9 || b == 10 || b == 13 || b == 62 -> break
@@ -792,142 +791,165 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np i64, ok bool) {
                 j = j + 1
             }
             ve = j
-            np = j
+            cpos = j
         }
     }
     ; 重複屬性：XML 違規；HTML 首個為準
     ex = .find-attr(node, nm)
     ex >= 0 -> {
         xml == false -> {
-            ok = true
+            np = cpos
             return
         }
         return
     }
-    val, dec-ok = decode-entities(s, vs, ve, xml == false)
-    dec-ok == false -> return
+    val str = ''
+    dopt = decode-entities(s, vs, ve, xml == false)
+    dopt: {
+        ok -> val = it
+        -> return
+    }
     .set-attr(node, nm, val)
-    ok = true
+    np = cpos
 }
 
 ; xml-parse-close: 解析結尾標籤 </name>，必須與 node 的標籤名相符
-dom-pool.xml-parse-close = (node i64, s str, p i64) (np i64, ok bool) {
-    ok = false
+dom-pool.xml-parse-close = (node i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
-    ne, nom-ok = xml-read-name(s, p + 2)
-    nom-ok == false -> return
+    ne i64 = 0
+    nopt = xml-read-name(s, p + 2)
+    nopt: {
+        ok -> ne = it
+        -> return
+    }
     cnm str = s.slice-bytes(p + 2, ne)
     .names[node].eq-full(cnm) == false -> return
-    np = xml-skip-ws(s, ne)
-    np >= n -> return
-    s.byte(np) != 62 -> return
+    cpos = xml-skip-ws(s, ne)
+    cpos >= n -> return
+    s.byte(cpos) != 62 -> return
     #{overflow=wrap}
-    np = np + 1
-    ok = true
+    np = cpos + 1
 }
 
 ; xml-parse-element: 解析一個元素（含子節點），附加到 parent
 ;   p 指向 '<'；depth 為當前嵌套深度
-dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np i64, ok bool) {
-    ok = false
+dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
     n = s.len-bytes()
     depth > DOM-MAX-DEPTH -> return
     p + 1 >= n -> return
-    ne, nom-ok = xml-read-name(s, p + 1)
-    nom-ok == false -> return
+    ne i64 = 0
+    nopt = xml-read-name(s, p + 1)
+    nopt: {
+        ok -> ne = it
+        -> return
+    }
     idx = .alloc(DOM-KIND-ELEMENT)
     .names[idx] = s.slice-bytes(p + 1, ne)
     .append(parent, idx)
-    np = ne
+    cpos = ne
 
     ; 屬性迴圈
     closed-self = false
-    (np <= n) {
-        np = xml-skip-ws(s, np)
-        np >= n -> return
-        c = s.byte(np)
+    (cpos <= n) {
+        cpos = xml-skip-ws(s, cpos)
+        cpos >= n -> return
+        c = s.byte(cpos)
         {
             c == 47 -> {
-                np + 1 >= n -> return
-                s.byte(np + 1) != 62 -> return
-                np = np + 2
+                cpos + 1 >= n -> return
+                s.byte(cpos + 1) != 62 -> return
+                cpos = cpos + 2
                 closed-self = true
                 break
             }
             c == 62 -> {
                 #{overflow=wrap}
-                np = np + 1
+                cpos = cpos + 1
                 break
             }
             -> {
-                an, a-ok = .xml-parse-attr(idx, s, np, true)
-                a-ok == false -> return
-                np = an
+                aopt = .xml-parse-attr(idx, s, cpos, true)
+                aopt: {
+                    ok -> cpos = it
+                    -> return
+                }
             }
         }
     }
     closed-self -> {
-        ok = true
+        np = cpos
         return
     }
 
     ; 子節點迴圈
-    (np < n) {
-        c = s.byte(np)
+    (cpos < n) {
+        c = s.byte(cpos)
         {
             c != 60 -> {
-                te = np
+                te = cpos
                 (te < n) {
                     s.byte(te) == 60 -> break
                     #{overflow=wrap}
                     te = te + 1
                 }
-                t-ok = .xml-add-text(idx, s, np, te)
+                t-ok = .xml-add-text(idx, s, cpos, te)
                 t-ok == false -> return
-                np = te
+                cpos = te
             }
 
             -> {
-                np + 1 >= n -> return
-                h2 str = s.slice-bytes(np, np + 2)
+                cpos + 1 >= n -> return
+                h2 str = s.slice-bytes(cpos, cpos + 2)
                 is-cd = false
-                np + 8 < n -> {
-                    c9 str = s.slice-bytes(np, np + 9)
+                cpos + 8 < n -> {
+                    c9 str = s.slice-bytes(cpos, cpos + 9)
                     c9.eq-full('<![CDATA[') -> is-cd = true
                 }
                 is-cm = false
-                np + 3 < n -> {
-                    s.byte(np + 2) == 45 && s.byte(np + 3) == 45 -> is-cm = true
+                cpos + 3 < n -> {
+                    s.byte(cpos + 2) == 45 && s.byte(cpos + 3) == 45 -> is-cm = true
                 }
                 {
                     h2.eq-full('</') -> {
-                        cn, cl-ok = .xml-parse-close(idx, s, np)
-                        cl-ok == false -> return
-                        np = cn
-                        ok = true
-                        return
+                        clopt = .xml-parse-close(idx, s, cpos)
+                        clopt: {
+                            ok -> {
+                                cpos = it
+                                np = cpos
+                                return
+                            }
+                            -> return
+                        }
                     }
                     is-cd -> {
-                        cn, cd-ok = .xml-parse-cdata(idx, s, np)
-                        cd-ok == false -> return
-                        np = cn
+                        cdopt = .xml-parse-cdata(idx, s, cpos)
+                        cdopt: {
+                            ok -> cpos = it
+                            -> return
+                        }
                     }
                     is-cm -> {
-                        cn, cm-ok = .xml-parse-comment(idx, s, np)
-                        cm-ok == false -> return
-                        np = cn
+                        cmopt = .xml-parse-comment(idx, s, cpos)
+                        cmopt: {
+                            ok -> cpos = it
+                            -> return
+                        }
                     }
                     h2.eq-full('<?') -> {
-                        cn, pi-ok = .xml-parse-pi(idx, s, np)
-                        pi-ok == false -> return
-                        np = cn
+                        piopt = .xml-parse-pi(idx, s, cpos)
+                        piopt: {
+                            ok -> cpos = it
+                            -> return
+                        }
                     }
                     -> {
                         #{overflow=wrap}
                         nd = depth + 1
-                        cn, el-ok = .xml-parse-element(s, idx, np, nd)
-                        el-ok == false -> return
-                        np = cn
+                        elopt = .xml-parse-element(s, idx, cpos, nd)
+                        elopt: {
+                            ok -> cpos = it
+                            -> return
+                        }
                     }
                 }
             }
@@ -956,20 +978,24 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
         h2 str = s.slice-bytes(p, p + 2)
         {
             h2.eq-full('<?') -> {
-                np, pi-ok = .xml-parse-pi(root, s, p)
-                pi-ok == false -> {
-                    failpos = p
-                    return
+                piopt = .xml-parse-pi(root, s, p)
+                piopt: {
+                    ok -> p = it
+                    -> {
+                        failpos = p
+                        return
+                    }
                 }
-                p = np
             }
             h2.eq-full('<!') && p + 3 < n && s.byte(p + 2) == 45 && s.byte(p + 3) == 45 -> {
-                np, cm-ok = .xml-parse-comment(root, s, p)
-                cm-ok == false -> {
-                    failpos = p
-                    return
+                cmopt = .xml-parse-comment(root, s, p)
+                cmopt: {
+                    ok -> p = it
+                    -> {
+                        failpos = p
+                        return
+                    }
                 }
-                p = np
             }
             h2.eq-full('</') -> {
                 failpos = p
@@ -985,25 +1011,29 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
                     failpos = p
                     return
                 }
-                np, dt-ok = .parse-doctype-node(root, s, p)
-                dt-ok == false -> {
-                    failpos = p
-                    return
+                dtopt = .parse-doctype-node(root, s, p)
+                dtopt: {
+                    ok -> p = it
+                    -> {
+                        failpos = p
+                        return
+                    }
                 }
-                p = np
             }
             -> {
                 seen -> {
                     failpos = p
                     return
                 }
-                np, el-ok = .xml-parse-element(s, root, p, 1)
-                el-ok == false -> {
-                    failpos = p
-                    return
+                elopt = .xml-parse-element(s, root, p, 1)
+                elopt: {
+                    ok -> p = it
+                    -> {
+                        failpos = p
+                        return
+                    }
                 }
                 seen = true
-                p = np
             }
         }
     }
@@ -1065,16 +1095,24 @@ html-peek-name = (s str, p i64) (nm str) {
     nm = ''
     n = s.len-bytes()
     p + 1 >= n -> return
-    e, nom-ok = xml-read-name(s, p + 1)
-    nom-ok == false -> return
+    e i64 = 0
+    nopt = xml-read-name(s, p + 1)
+    nopt: {
+        ok -> e = it
+        -> return
+    }
     nm = s.slice-bytes(p + 1, e).to-lower()
 }
 
 ; html-add-text: 把 s[from..to) 按 HTML 實體規則解碼為文字節點附加到 parent
 dom-pool.html-add-text = (parent i64, s str, from i64, to i64) {
     to <= from -> return
-    val, dec-ok = decode-entities(s, from, to, true)
-    dec-ok == false -> return
+    val str = ''
+    dopt = decode-entities(s, from, to, true)
+    dopt: {
+        ok -> val = it
+        -> return
+    }
     idx = .alloc(DOM-KIND-TEXT)
     .vals[idx] = val
     .append(parent, idx)
@@ -1130,10 +1168,14 @@ dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
 ; html-parse-pi: '<?...>'（HTML 中按bogus comment 處理，此處保存為 PI 節點）
 dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
     n = s.len-bytes()
-    ne, nom-ok = xml-read-name(s, p + 2)
-    nom-ok == false -> {
-        np = .html-bogus-comment(parent, s, p)
-        return
+    ne i64 = 0
+    nopt = xml-read-name(s, p + 2)
+    nopt: {
+        ok -> ne = it
+        -> {
+            np = .html-bogus-comment(parent, s, p)
+            return
+        }
     }
     tgt str = s.slice-bytes(p + 2, ne)
     j = ne
@@ -1168,33 +1210,36 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
 }
 
 ; html-parse-attr: 解析 HTML 屬性（支持無引號值），重複屬性首個為準
-dom-pool.html-parse-attr = (node i64, s str, p i64) (np i64, ok bool) {
-    ok = false
+dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
-    ne, nom-ok = xml-read-name(s, p)
-    nom-ok == false -> return
+    ne i64 = 0
+    nopt = xml-read-name(s, p)
+    nopt: {
+        ok -> ne = it
+        -> return
+    }
     nm str = s.slice-bytes(p, ne)
     nm = nm.to-lower()
-    np = xml-skip-ws(s, ne)
-    np < n && s.byte(np) == 61 -> {
+    cpos = xml-skip-ws(s, ne)
+    cpos < n && s.byte(cpos) == 61 -> {
 
         ; 有 '='：解析值
         #{overflow=wrap}
-        np = np + 1
-        np = xml-skip-ws(s, np)
-        vs = np
-        ve = np
+        cpos = cpos + 1
+        cpos = xml-skip-ws(s, cpos)
+        vs = cpos
+        ve = cpos
         q = 0
-        np < n -> q = s.byte(np)
+        cpos < n -> q = s.byte(cpos)
         {
-            np >= n -> {
+            cpos >= n -> {
                 .html-set-attr-once(node, nm, '')
-                ok = true
+                np = cpos
                 return
             }
             q == 34 || q == 39 -> {
                 #{overflow=wrap}
-                vs = np + 1
+                vs = cpos + 1
                 j = vs
                 fe = false
                 (j < n) {
@@ -1206,20 +1251,20 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np i64, ok bool) {
                     j = j + 1
                 }
                 ve = j
-                np = j
+                cpos = j
                 fe -> {
-                    np = j + 1
+                    cpos = j + 1
                 }
             }
             q == 62 -> {
                 ; '=' 後直接 '>'：空值
                 .html-set-attr-once(node, nm, '')
-                ok = true
+                np = cpos
                 return
             }
             -> {
                 ; 未加引號的值：直到空白或 '>'
-                j = np
+                j = cpos
                 (j < n) {
                     b = s.byte(j)
                     b == 32 || b == 9 || b == 10 || b == 13 || b == 62 -> break
@@ -1227,21 +1272,23 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np i64, ok bool) {
                     j = j + 1
                 }
                 ve = j
-                np = j
+                cpos = j
             }
         }
-        val, dec-ok = decode-entities(s, vs, ve, true)
-        dec-ok == false -> {
-            val = s.slice-bytes(vs, ve)
+        val str = ''
+        dopt = decode-entities(s, vs, ve, true)
+        dopt: {
+            ok -> val = it
+            -> val = s.slice-bytes(vs, ve)
         }
         .html-set-attr-once(node, nm, val)
-        ok = true
+        np = cpos
         return
     }
 
     ; 布爾屬性（無值）
     .html-set-attr-once(node, nm, '')
-    ok = true
+    np = cpos
 }
 
 ; html-set-attr-once: 僅當屬性不存在時設定（HTML 重複屬性首個為準）
@@ -1294,14 +1341,15 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
                 np = np + 1
             }
             -> {
-                an, a-ok = .html-parse-attr(el, s, np)
-                a-ok == false -> {
-                    ; 非法屬性起始字元：跳過避免死循環
-                    #{overflow=wrap}
-                    np = np + 1
-                    continue
+                aopt = .html-parse-attr(el, s, np)
+                aopt: {
+                    ok -> np = it
+                    -> {
+                        ; 非法屬性起始字元：跳過避免死循環
+                        #{overflow=wrap}
+                        np = np + 1
+                    }
                 }
-                np = an
             }
         }
     }
@@ -1338,9 +1386,11 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
     cend > np -> {
         tidx = .alloc(DOM-KIND-TEXT)
         rc -> {
-            val, dec-ok = decode-entities(s, np, cend, true)
-            dec-ok == false -> {
-                val = s.slice-bytes(np, cend)
+            val str = ''
+            dopt = decode-entities(s, np, cend, true)
+            dopt: {
+                ok -> val = it
+                -> val = s.slice-bytes(np, cend)
             }
             .vals[tidx] = val
         }
@@ -1370,20 +1420,24 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
     n = s.len-bytes()
     nm = ''
     ok = false
-    ne, nom-ok = xml-read-name(s, p + 2)
-    nom-ok == false -> {
-        ; '</' 後無名字：當註解處理到 '>'
-        np = p
-        (np < n) {
-            s.byte(np) == 62 -> break
-            #{overflow=wrap}
-            np = np + 1
+    ne i64 = 0
+    nopt = xml-read-name(s, p + 2)
+    nopt: {
+        ok -> ne = it
+        -> {
+            ; '</' 後無名字：當註解處理到 '>'
+            np = p
+            (np < n) {
+                s.byte(np) == 62 -> break
+                #{overflow=wrap}
+                np = np + 1
+            }
+            np < n -> {
+                #{overflow=wrap}
+                np = np + 1
+            }
+            return
         }
-        np < n -> {
-            #{overflow=wrap}
-            np = np + 1
-        }
-        return
     }
     nm = s.slice-bytes(p + 2, ne).to-lower()
     ok = true
@@ -1442,10 +1496,13 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 d9.to-lower().eq-full('<!doctype') -> is-dt = true
             }
             is-dt -> {
-                dn, dt-ok = .parse-doctype-node(cur, s, p)
-                dt-ok -> {
-                    p = dn
-                    continue
+                dtopt = .parse-doctype-node(cur, s, p)
+                dtopt: {
+                    ok -> {
+                        p = it
+                        continue
+                    }
+                    -> _
                 }
             }
             p = .html-bogus-comment(cur, s, p)

@@ -4,9 +4,9 @@
 ; err 結構體封裝錯誤碼、訊息與發生位置（file / line / col），code 枚舉定義常見錯誤類別。
 ;
 ; 用法：
-;   e = err('disk full', code.io)
-;   yes = e.is(code.io)
-;   s = e.format()
+;   e = err.new('disk full', code.io)
+;   yes = e.is(err.code.io)
+;   s = e.format()     ; => 'code.io: disk full'（含錯誤碼與位置）
 
 ; ═══════════════════════════════════════════════
 ; 錯誤碼枚舉
@@ -23,6 +23,32 @@ code {
     invalid,
     overflow,
     unknown,
+}
+
+; code.to-name: 取得錯誤碼變體名（不帶 code. 前綴）
+; 返回 s: 變體名（如 'ok' / 'not-found' / 'io'）
+; 用法：
+;   n = code.io.to-name()     ; => 'io'
+code.to-name = () (s str) {
+    .: {
+        ok -> s = 'ok'
+
+        not-found -> s = 'not-found'
+
+        permission -> s = 'permission'
+
+        io -> s = 'io'
+
+        timeout -> s = 'timeout'
+
+        parse -> s = 'parse'
+
+        invalid -> s = 'invalid'
+
+        overflow -> s = 'overflow'
+
+        -> s = 'unknown'
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -69,8 +95,8 @@ new-at = (msg str, ec code, file str, line i64, col i64) (e err) {
     }
 }
 
-; errno-to-code: 將 C errno 對映為 code 列舉
-errno-to-code = (errno i64) (ec code) {
+; _errno-to-code: 將 C errno 對映為 code 列舉（模組內私有，僅 from-errno 使用）
+_errno-to-code = (errno i64) (ec code) {
     {
         errno == 0 -> ec = code.ok
 
@@ -95,7 +121,7 @@ errno-to-code = (errno i64) (ec code) {
 from-errno = (errno i64) (e err) {
     msg = os.strerror(errno)
     e = err {
-        code: errno-to-code(errno)
+        code: _errno-to-code(errno)
         msg: msg
         file: ''
         line: 0
@@ -130,8 +156,18 @@ err.code = () (ec code) {
 ; 格式化
 ; ═══════════════════════════════════════════════
 
-; err.format: 格式化錯誤為字串
-; 返回 s: 錯誤訊息
+; err.format: 格式化錯誤為完整資訊字串
+; 返回 s: 'code.<變體名>: <msg>'，有位置資訊時附加 ' at <file>:<line>:<col>'
+; 用法：
+;   s = err.new('disk full', code.io).format()   ; => 'code.io: disk full'
+;   e = err('no such file', code.not-found)      ; 位置由編譯器注入
+;   t = e.format()                               ; => 'code.not-found: no such file at main.no:12:3'
+; 純訊息請用 err.msg()，只要錯誤碼請用 err.code()
 err.format = () (s str) {
-    s = .msg
+    cn = .code.to-name()
+    loc = ''
+    .file != '' -> {
+        loc = format(' at {.file}:{.line}:{.col}')
+    }
+    s = format('code.{cn}: {.msg}{loc}')
 }

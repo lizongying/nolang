@@ -8,19 +8,19 @@
 ; ═══════════════════════════════════════════════
 
 ; count: 參數數量（含程式名）
-; 委派至 os.args() builtin（讀取 main 的 argc）
+; 委派至 os.args() builtin（回傳完整 argv 向量，取其長度）
 count = () (n i64) {
-    n = os.args()
+    n = os.args().len()
 }
 
 ; get: 獲取第 i 個參數
-; 委派至 os.arg(i) builtin（讀取 main 的 argv[i]）
-get = (i i64) (val str) {
+; 委派至 os.arg(i) builtin（讀取 main 的 argv[i]）；越界回傳 nil
+get = (i i64) (val ?str) {
     val = os.arg(i)
 }
 
 ; program: 程式名（第 0 個參數）
-program = () (name str) {
+program = () (name ?str) {
     name = os.arg(0)
 }
 
@@ -29,10 +29,16 @@ program = () (name str) {
 ; ═══════════════════════════════════════════════
 
 ; has-flag: 判斷標記是否存在（如 --verbose, -v）
-has-flag = (flag str, flagn i64) (yes bool) {
+has-flag = (flag str) (yes bool) {
+    flagn = flag.len-bytes()
     n = count()
     i <- [1..n): {
-        arg = get(i)
+        arg str = ''
+        opt-arg = get(i)
+        opt-arg: {
+            ok -> arg = it
+            -> _
+        }
 
         ; 精確比對 arg 與 flag
         matched = true
@@ -58,11 +64,19 @@ has-flag = (flag str, flagn i64) (yes bool) {
 ; 選項讀取
 ; ═══════════════════════════════════════════════
 
-; get-option: 獲取選項值（如 --output=xxx 或 --output xxx）
-get-option = (key str, keyn i64, val str) (ok bool) {
+; get-option: 獲取選項值（如 --output=xxx）
+; 返回 val ?str: ok=選項值, nil=未找到
+get-option = (key str) (val ?str) {
+    val = nil
+    keyn = key.len-bytes()
     n = count()
     i <- [1..n): {
-        arg = get(i)
+        arg str = ''
+        opt-arg = get(i)
+        opt-arg: {
+            ok -> arg = it
+            -> _
+        }
 
         ; 檢查 arg 是否以 key + '=' 開頭
         matched-prefix = 1
@@ -82,27 +96,10 @@ get-option = (key str, keyn i64, val str) (ok bool) {
             eq = arg[keyn]
             eq == 61 -> {
 
-                ; 複製 '=' 後的內容到 val
+                ; 取 '=' 後的內容作為 val
                 #{overflow=wrap}
-                k = keyn + 1
-                vn = 0
-                !! {
-
-                    c = arg[k]
-                    c == 0 -> break
-
-                    val[vn]: {
-                        ok -> it = c
-                        -> _
-                    }
-
-                    #{overflow=wrap}
-                    vn = vn + 1
-
-                    #{overflow=wrap}
-                    k = k + 1
-                }
-                ok = true
+                start = keyn + 1
+                val = arg.slice-bytes(start, arg.len-bytes())
                 return
             }
         }
@@ -114,13 +111,20 @@ get-option = (key str, keyn i64, val str) (ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; get-positional: 獲取第 i 個位置參數（跳過標記）
-get-positional = (idx i64) (val str, ok bool) {
+; 返回 val ?str: ok=位置參數值, nil=不存在
+get-positional = (idx i64) (val ?str) {
+    val = nil
     n = count()
     pos = 0
     j = 1
     (j < n) {
 
-        arg = get(j)
+        arg str = ''
+        opt-arg = get(j)
+        opt-arg: {
+            ok -> arg = it
+            -> _
+        }
 
         ; 跳過以 '-' 開頭的參數
         c0 = arg[0]
@@ -135,7 +139,12 @@ get-positional = (idx i64) (val str, ok bool) {
             c1 = arg[1]
             c1 != 45 -> j < n -> {
 
-                next = get(j)
+                next str = ''
+                opt-next = get(j)
+                opt-next: {
+                    ok -> next = it
+                    -> _
+                }
 
                 nc = next[0]
                 nc != 45 -> j = j + 1
@@ -146,17 +155,7 @@ get-positional = (idx i64) (val str, ok bool) {
         #{overflow=wrap}
         pos == idx -> {
 
-            ; 複製 arg 到 val
-            k = 0
-            !! {
-
-                c = arg[k]
-                c == 0 -> break
-
-                val[k] = c
-                k = k + 1
-            }
-            ok = true
+            val = arg
             return
         }
 

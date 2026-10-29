@@ -58,7 +58,14 @@ found-last = false
 o: {
     ok -> {
         m = it.obj-len()
-        lastv, found-last = it.get-num('k499')
+        no = it.get-num('k499')
+        no: {
+            ok -> {
+                found-last = true
+                lastv = it
+            }
+            -> found-last = false
+        }
     }
 
     nil ->

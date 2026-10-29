@@ -32,9 +32,10 @@ embed {
 
 ; embed.read: 讀取嵌入的文件
 ; path str: 文件路徑（相對於嵌入目錄，如 'index.html'）
-; 返回 data []byte, ok bool: 文件內容和是否找到
+; 返回 data ?[]byte: 找到則為文件內容（some），未找到為 nil
 
-embed.read = (path str) (data []byte, ok bool) {
+embed.read = (path str) (data ?[]byte) {
+    data = nil
     pathLen = path.len()
     i <- [0...count): {
 
@@ -64,7 +65,6 @@ embed.read = (path str) (data []byte, ok bool) {
 
             ; 從 blob 中切片返回
             data = .blob[dStart..dStart + dLen)
-            ok = true
             return
         }
     }

@@ -96,7 +96,182 @@ func CollectModuleSignatures(mods []ModulePackage) *SymbolTable {
 		}
 		collectInto(out, m.Pkg, m.Short, structCount, own)
 	}
+	// Pass 3: function aliases. `@ <path>.<fn> <alias>` declares that the bare
+	// name <alias> in this module calls <path>'s <fn>. Registering the alias
+	// under the declaring module's own key ("global.err" for global.no) makes
+	// it visible to every consumer of this table — the checker's bare-name
+	// gate, argument checking, and the parser's return-type inference — without
+	// the compiler having to know any specific alias by name. Runs LAST because
+	// it reads the target's signature out of the same table.
+	registerAliasSigs(out, collectAliasDecls(mods))
 	return out
+}
+
+// AliasDecl is one `@ <path>.<fn> <alias>` declaration found in a module.
+//
+// The AST/HIR statement is ExportStatement / KExport: in a package's lib.no it
+// narrows what the package exports, and in an ordinary module (today only
+// src/std/global.no) it declares a CALLABLE ALIAS — a second name for an
+// existing function. Both readings share one syntax; the difference is the
+// module the statement lives in, which the caller already knows.
+type AliasDecl struct {
+	Module string // short name of the declaring module ("global", "err", ...)
+	Path   string // target module path as written ("std/err", "/pkg/src/mysql")
+	Fn     string // target function name
+	Alias  string // new bare name in the declaring module
+}
+
+// ModuleShortName reduces a module path to the short name the HIR merge and the
+// std tables use: the last path segment ("std/err" -> "err", "/a/b/c" -> "c").
+func ModuleShortName(path string) string {
+	path = strings.TrimSuffix(strings.TrimSpace(path), "/")
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		path = path[i+1:]
+	}
+	return path
+}
+
+// slotChild returns the value id of a named KSlot child, or NoID.
+func slotChild(p *Package, id int32, label string) int32 {
+	for _, c := range p.Children(id) {
+		n := p.Node(c)
+		if n != nil && n.Kind == KSlot && p.Str(n.S) == label {
+			return n.First
+		}
+	}
+	return NoID
+}
+
+// GlobalModuleShort is the short name of std/global.no, the one module whose
+// body is DECLARATION-ONLY: it declares the bare names a program may call
+// without a module prefix, and its own statements are never compiled.
+const GlobalModuleShort = "global"
+
+// aliasTargetOf recognises the value side of the ASSIGNMENT form of a callable
+// alias — `err = err.new` — and returns the target's module and function.
+//
+// Two shapes can reach here depending on whether the module-qualified-call
+// rewriter has already run over the module: a KDot (`err.new`, the raw parse)
+// or a dotted KIdent (`err.new` flattened). Everything else is refused, which
+// is what keeps `PI = math.PI` (a constant read) from being mistaken for an
+// alias: a constant target is not in the function table, and registerAliasSigs
+// drops the declaration when the key is absent.
+func aliasTargetOf(p *Package, id int32) (mod, fn string) {
+	n := p.Node(id)
+	if n == nil {
+		return "", ""
+	}
+	switch n.Kind {
+	case KDot:
+		recv := p.Node(n.First)
+		if recv == nil || recv.Kind != KIdent {
+			return "", ""
+		}
+		return p.Str(recv.S), p.Str(n.S)
+	case KIdent:
+		name := p.Str(n.S)
+		if i := strings.LastIndexByte(name, '.'); i > 0 {
+			return name[:i], name[i+1:]
+		}
+	}
+	return "", ""
+}
+
+// collectAliasDecls gathers every callable-alias declaration in mods. Two
+// spellings declare the same thing:
+//
+//	@ std/err.new err        ; export-style statement
+//	err = err.new            ; plain assignment (KLet)
+//
+// The assignment form is accepted ONLY in std/global.no. Everywhere else a
+// top-level `name = mod.fn` is an ordinary variable holding a function value,
+// and reading it as an alias would silently change what the program means (and
+// delete the binding). In global.no there is no program to change: its body is
+// never compiled, it exists only to declare bare names.
+func collectAliasDecls(mods []ModulePackage) []AliasDecl {
+	var out []AliasDecl
+	for _, m := range mods {
+		for _, id := range m.Pkg.Top {
+			n := m.Pkg.Node(id)
+			if n == nil {
+				continue
+			}
+			switch n.Kind {
+			case KExport:
+				path, fn := m.Pkg.Str(n.S), m.Pkg.Str(n.S2)
+				alias := ""
+				if aid := slotChild(m.Pkg, id, "alias"); aid != NoID {
+					if an := m.Pkg.Node(aid); an != nil {
+						alias = m.Pkg.Str(an.S)
+					}
+				}
+				if path == "" || fn == "" || alias == "" {
+					continue
+				}
+				out = append(out, AliasDecl{Module: m.Short, Path: path, Fn: fn, Alias: alias})
+			case KLet:
+				if m.Short != GlobalModuleShort {
+					continue
+				}
+				// A TYPED binding (`f fn = …`), a synthetic one, an arm
+				// binding or a module constant is a real variable, not a
+				// declaration.
+				if n.Type != NoID || n.Has(FlagSynthetic) || n.Has(FlagArmBinding) || n.Has(FlagModuleConst) {
+					continue
+				}
+				alias := m.Pkg.Str(n.S)
+				mod, fn := aliasTargetOf(m.Pkg, n.First)
+				if alias == "" || mod == "" || fn == "" {
+					continue
+				}
+				out = append(out, AliasDecl{Module: m.Short, Path: mod, Fn: fn, Alias: alias})
+			}
+		}
+	}
+	return out
+}
+
+// registerAliasSigs copies each alias target's signature onto
+// "<declaring module>.<alias>".
+//
+// A REAL definition of the same name always wins: the alias is only a second
+// name, never an override (that mirrors `collectInto`'s last-definition-wins
+// rule, where an actual function must beat a mere alias).
+func registerAliasSigs(st *SymbolTable, decls []AliasDecl) {
+	for _, d := range decls {
+		key := ModuleShortName(d.Path) + "." + d.Fn
+		if _, ok := st.Funcs[key]; !ok {
+			// Unknown target (typo'd path, a name filtered out of the module,
+			// or a module this build never loaded). Leave it unresolved so the
+			// call site reports the ordinary "unknown callee" diagnostic
+			// instead of silently aliasing to nothing.
+			continue
+		}
+		target := d.Module + "." + d.Alias
+		if _, exists := st.Funcs[target]; exists {
+			continue
+		}
+		// PARAMETERS ONLY — the RESULT type is deliberately NOT registered.
+		//
+		// The signature table's result type is what makes the CHECKER type
+		// every bare `err(...)` call as `err.err`, and that reading is wrong
+		// for the builtin option's err variant: `x ?i64` + `x = err('boom')`
+		// is the option constructor (tag 2), not an error-struct build. With
+		// the result registered, the option's err payload lowering changed
+		// shape and every `err ->` arm read the wrong bytes (tests/
+		// option-test.no printed `1` instead of `error msg`; a `?str` arm
+		// failed to compile at all).
+		//
+		// Nothing is lost: the alias's result type comes from the TARGET at the
+		// call site, because the call is lowered to the target function itself
+		// (mir/hir2mir.go resolveAlias) and the call's value type is that
+		// function's actual result. The table still answers the two questions it
+		// must: is this name callable, and what arguments does it take.
+		st.Funcs[target] = nil
+		if params, ok := st.FuncParams[key]; ok {
+			st.FuncParams[target] = params
+		}
+	}
 }
 
 // ExtractSignatures collects the symbols of a single package. A package is
@@ -104,6 +279,7 @@ func CollectModuleSignatures(mods []ModulePackage) *SymbolTable {
 func ExtractSignatures(pkg *Package, moduleShort string) *SymbolTable {
 	out := NewSymbolTable()
 	collectInto(out, pkg, moduleShort, nil, nil)
+	registerAliasSigs(out, collectAliasDecls([]ModulePackage{{Short: moduleShort, Pkg: pkg}}))
 	return out
 }
 

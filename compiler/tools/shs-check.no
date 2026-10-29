@@ -1509,7 +1509,7 @@ shs-check-file = (path str, acc []finding) (r []finding) {
 ; ═══════════════════════════════════════════════════════════════════
 shs-main = () (code i64) {
     code = EXIT-OK
-    n = os.args()
+    n = os.args().len()
     n < 2 -> {
         print('usage: shs-check <path>...')
         code = EXIT-USAGE
@@ -1519,7 +1519,12 @@ shs-main = () (code i64) {
     i <- [1..n): {
 
         #{index-out=zero}
-        p = os.arg(i)
+        opt-p = os.arg(i)
+        p str = ''
+        opt-p: {
+            ok -> p = it
+            -> _
+        }
         paths = shs-collect(p, paths)
     }
     paths = shs-sort-strs(paths)

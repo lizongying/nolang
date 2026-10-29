@@ -10,8 +10,8 @@ Provides environment variables, directory operations, process management, system
 
 ```no
 ; Environment variables
-val = os.get-env(key)
-os.set-env(key, val)
+val = os.get-env(key)                ; Returns ?str (nil=unset)
+os.set-env(key, 'value')
 
 ; Directory
 dir = os.get-wd()
@@ -29,10 +29,10 @@ msg = os.strerror(errnum)
 errno = os.get-errno()
 
 ; File attributes and user (permission queries live in os, not fs)
-mode = os.stat-mode(path)           ; Get file mode (st_mode, returns mode, ok)
-uid = os.stat-uid(path)             ; Get file owner uid (returns uid, ok)
-gid = os.stat-gid(path)             ; Get file group gid (returns gid, ok)
-mtime = os.stat-mtime(path)         ; Get modification time (Unix seconds, returns mtime, ok)
+mode = os.stat-mode(path)           ; Get file mode (st_mode, returns ?i64, nil on failure)
+uid = os.stat-uid(path)             ; Get file owner uid (returns ?i64, nil on failure)
+gid = os.stat-gid(path)             ; Get file group gid (returns ?i64, nil on failure)
+mtime = os.stat-mtime(path)         ; Get modification time (Unix seconds, returns ?i64, nil on failure)
 self-uid = os.getuid()              ; Current user ID
 self-gid = os.getgid()              ; Current group ID
 
@@ -46,8 +46,8 @@ os.sleep-us(us)
 os.sleep-ns(ns)
 
 ; Command-line arguments
-count = os.args()
-val = os.arg(idx)
+argv = os.args()                    ; all command-line arguments ([]str, including program name)
+val = os.arg(idx)                   ; the idx-th argument (nil when out of range)
 ```
 
 ### fs — File System Utilities
@@ -209,7 +209,7 @@ embed {
 
 ; Windows-specific (only available on win-amd64/win-arm64)
 bufptr = os.win-find-first-file(path) ; FindFirstFileA, returns handle (0=failure)
-name = os.win-find-next-file(bufptr)  ; FindNextFileA, returns (name, ok)
+name = os.win-find-next-file(bufptr)  ; FindNextFileA, returns ?str (nil when no more entries)
 ok = os.win-find-close(bufptr)        ; FindClose
 
 ; open() flag constants (platform-specific, shown for macOS)
@@ -225,7 +225,7 @@ O-EXCL = 2048       ; macOS=2048, Linux=128, Windows=1024
 ### env — Environment Variables (Simplified Wrapper)
 
 ```no
-val = env.get(key)
+val = env.get(key)                ; Returns ?str (nil=not found)
 val = env.lookup(key)               ; Returns ?str (nil=not found)
 env.set(key, val)
 env.unset(key)
@@ -291,7 +291,7 @@ path.current() (out path)    ; Get current working directory
 r = reader.init(fd, buf)       ; Initialize buffered reader (returns reader)
 ok = reader.fill()              ; Fill buffer
 b = reader.read-byte()          ; Read one byte (?byte, nil=EOF)
-ok = reader.read-line(line)     ; Read one line into line
+line = reader.read-line()       ; Read one line (?str, nil=EOF or error)
 reader.close()                  ; Close
 ```
 

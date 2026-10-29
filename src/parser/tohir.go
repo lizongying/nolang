@@ -1268,7 +1268,17 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		// S2 on a KCall is repurposed to carry the interned source-file base name
 		// (NoID when unknown), so the MIR lowerer can bake a caller
 		// "file:line:col" for FlagTrackCaller callees (see hir.Node.S2, std/log).
-		return c.b.Add(hir.Node{Kind: hir.KCall, First: c.kids(nodes), Line: line, Col: col, S2: file})
+		//
+		// FlagQualifiedCall keeps the record that this call was written
+		// QUALIFIED (`io.err(...)`) and flattened to a bare name by
+		// checker.ResolveModuleCalls. The flattened shape is identical to a
+		// hand-written bare call, and the MIR lowerer must not hand the bare
+		// name to a global callable alias (`@ std/err.new err`).
+		var flags uint32
+		if c.sem != nil && c.sem.CalleeOf(e) == CalleeModuleFn {
+			flags |= hir.FlagQualifiedCall
+		}
+		return c.b.Add(hir.Node{Kind: hir.KCall, First: c.kids(nodes), Line: line, Col: col, S2: file, Flags: flags})
 
 	case *DotExpression:
 		return c.b.Add(hir.Node{

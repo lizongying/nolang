@@ -831,6 +831,16 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		if buf == "" {
 			return fmt.Errorf("builtin %s: keep-alive buffer not materialized", inst.Sym)
 		}
+		// Option-returning builtins (mkdtemp -> ?str): fold the paired ok flag
+		// into the option tag and adopt the buffer as the inline %str-long
+		// payload, exactly like the cRetField i64 path.
+		if lt, ok := c.resultType(inst, 0); ok && isOptionType(lt) {
+			okc := c.treg("sfo")
+			c.sb.WriteString(fmt.Sprintf("  %s = icmp ne %s %s, null\n", okc, callTy, callReg))
+			slen := c.treg("sfl")
+			c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", slen, buf))
+			return c.storeOptionFromPairStr(inst, c.strLongFromBuffer(buf, slen), okc)
+		}
 		if err := c.storeBufStrResult(inst, 0, buf); err != nil {
 			return err
 		}
@@ -838,6 +848,25 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		buf := spec.Args[spec.Ret.BufIdx].Temp
 		if buf == "" {
 			return fmt.Errorf("builtin %s: scratch buffer not materialized", inst.Sym)
+		}
+		// Option-returning builtins (readlink -> ?str): length comes from the C
+		// return; ok = (ret >= 0) becomes the option tag. NUL-terminate when the
+		// spec asks for it so strLongFromBuffer's copy stays correct.
+		if lt, ok := c.resultType(inst, 0); ok && isOptionType(lt) && spec.Ret.LenFromRet {
+			okc := c.treg("bso")
+			c.sb.WriteString(fmt.Sprintf("  %s = icmp sge %s %s, 0\n", okc, callTy, callReg))
+			lenR := c.treg("bsl2")
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %s %s, %s 0\n", lenR, okc, callTy, callReg, callTy))
+			widen := lenR
+			if callTy != "i64" {
+				widen = c.cToI64(lenR, callTy, false)
+			}
+			if spec.Ret.TermBuf {
+				g := c.treg("bstg")
+				c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", g, buf, widen))
+				c.sb.WriteString(fmt.Sprintf("  store i8 0, i8* %s\n", g))
+			}
+			return c.storeOptionFromPairStr(inst, c.strLongFromBuffer(buf, widen), okc)
 		}
 		if spec.Ret.LenFromRet {
 			if err := c.storeBufStrLenResult(inst, 0, buf, callReg, callTy, spec.Ret.TermBuf); err != nil {
@@ -949,6 +978,46 @@ func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
 	w2 := c.treg("optw")
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option %s, i64 %s, 1, 0\n", w2, w1, val))
 	return c.storeResult(inst, 0, w2, "%option")
+}
+
+// storeOptionFromPairStr collapses a (str-value, ok-flag) pair into a `?str`
+// option written to result 0. okFlag (i1) selects the tag (0 = ok, 1 = nil);
+// strLongReg is a fully materialised %str-long aggregate ({ len, cap, data* }).
+// The %str-long is 24 bytes and fits the default inline option slot; if the
+// configured inline threshold were ever lowered below that, a boxed layout would
+// be needed but no runtime-tag boxed helper exists, so fail loudly instead of
+// silently producing a wrong layout (matches the RetCStrToStr ?str path).
+func (c *codegen) storeOptionFromPairStr(inst *Inst, strLongReg, okFlag string) error {
+	if !c.optionPayloadInline("%str-long") {
+		c.fail("builtin %s: ?str option result needs an inline option slot (option-inline-threshold >= 24)", inst.Sym)
+		return fmt.Errorf("builtin %s: %s", inst.Sym, strings.Join(c.errs, "; "))
+	}
+	slot := c.valSlot[inst.Results[0]]
+	if slot == "" {
+		return fmt.Errorf("builtin %s: result 0 has no slot", inst.Sym)
+	}
+	tag := c.treg("opsg")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 1\n", tag, okFlag))
+	w := c.treg("opsw")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, %s zeroinitializer }, i64 %s, 0\n", w, c.optSlotLT, tag))
+	c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", w, slot))
+	c.optStoreInlinePayload(slot, "%str-long", strLongReg)
+	return nil
+}
+
+// buildStrLongReg materialises an owned %str-long { len, cap, data* } aggregate
+// register from three scalar registers via an insertvalue chain. The caller is
+// responsible for the buffer already being heap-owned; this only assembles the
+// value (no copy). Used to feed storeOptionFromPairStr when the backing bytes
+// are produced as a (len, cap, ptr) triple (e.g. sysctl's malloc'd buffer).
+func (c *codegen) buildStrLongReg(lenReg, capReg, dataReg string) string {
+	s0 := c.treg("slr0")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", s0, lenReg))
+	s1 := c.treg("slr1")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, capReg))
+	s2 := c.treg("slr2")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, dataReg))
+	return s2
 }
 
 // storePairResult fills result index 1 when the C return register carries it.
@@ -1213,6 +1282,16 @@ func (c *codegen) storeBufStrLenResult(inst *Inst, i int, buf, retReg, retTy str
 
 // copyStrToSlot builds %str-long { len, cap=len, data=malloc'd copy } into slot.
 func (c *codegen) copyStrToSlot(slot, src, lenR string) error {
+	c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", c.strLongFromBuffer(src, lenR), slot))
+	return nil
+}
+
+// strLongFromBuffer builds an owned %str-long { len, cap=len, data=malloc'd copy }
+// from a NUL-terminated buffer and returns its register (without storing it). The
+// copy is mandatory: the source may be a libc static buffer or a caller scratch
+// buffer that dies at frame exit, and a %str-long is freed by MIR's drop pass, so
+// it must own heap memory.
+func (c *codegen) strLongFromBuffer(src, lenR string) string {
 	sz := c.treg("bss")
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", sz, lenR))
 	buf := c.treg("bsb")
@@ -1224,6 +1303,5 @@ func (c *codegen) copyStrToSlot(slot, src, lenR string) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", r1, r0, lenR))
 	r2 := c.treg("bs2")
 	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i8* %s, 2\n", r2, r1, buf))
-	c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", r2, slot))
-	return nil
+	return r2
 }

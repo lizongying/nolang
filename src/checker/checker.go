@@ -10685,6 +10685,16 @@ func resolveModuleCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 							Token: lexer.Token{Type: lexer.IDENT, Literal: fnName},
 							Value: fnName,
 						}
+						// 留一筆「這是由 module.fn 攤平而來的呼叫」。攤平後
+						// 形狀與使用者手寫的裸名呼叫完全相同（io.err 與
+						// 使用者的 err 都落成 Identifier{"err"}），只有這一
+						// 筆記錄能區分兩者。全域可呼叫別名
+						// （std/global.no 的 `@ std/err.new err`）只認裸名，
+						// 沒有這筆記錄時 `n = io.err('E')` 會被降級成別名
+						// 目標，test/std/io.no 因型別不符而編不過。
+						if sem != nil {
+							sem.SetCallee(e, parser.CalleeModuleFn)
+						}
 					}
 				}
 			}

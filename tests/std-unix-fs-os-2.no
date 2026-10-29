@@ -77,11 +77,15 @@ host-id >= 0 -> print('PASS: get-host-id returns non-negative')
 ; 6. os.set-priority / os.get-priority — 設定/取得優先級
 ; ═══════════════════════════════════════════════
 ; PRIO_PROCESS=0, who=0 (current process)
-cur-prio, prio-ok = os.get-priority(0, 0)
+prio-opt = os.get-priority(0, 0)
 eprint('get-priority = ')
-print(cur-prio.to-str())
-prio-ok -> print('PASS: get-priority succeeded')
-prio-ok == false -> print('WARN: get-priority failed')
+prio-opt: {
+    ok -> {
+        print(it.to-str())
+        print('PASS: get-priority succeeded')
+    }
+    -> print('WARN: get-priority failed')
+}
 
 ; 設定優先級為 10（較低）
 set-ok = os.set-priority(0, 0, 10)
@@ -119,11 +123,15 @@ fd-w3 >= 0 -> {
 ; ═══════════════════════════════════════════════
 ; 8. os.sysctl — 查詢系統控制參數（macOS）
 ; ═══════════════════════════════════════════════
-sc-val, sc-ok = os.sysctl('kern.ostype')
+sc-opt = os.sysctl('kern.ostype')
 eprint('sysctl(kern.ostype) = ')
-print(sc-val)
-sc-ok -> print('PASS: sysctl succeeded')
-sc-ok == false -> print('WARN: sysctl failed (may not be available on this platform)')
+sc-opt: {
+    ok -> {
+        print(it)
+        print('PASS: sysctl succeeded')
+    }
+    -> print('WARN: sysctl failed (may not be available on this platform)')
+}
 
 ; ═══════════════════════════════════════════════
 ; 9. os.get-domain-name — 取得 NIS 網域名稱

@@ -222,6 +222,18 @@ const (
 	// name on KCall — see Node.S2). Used by std/log to attribute log lines to the
 	// caller without a runtime backtrace.
 	FlagTrackCaller uint32 = 1 << 31
+	// FlagQualifiedCall marks a KCall whose callee was written QUALIFIED
+	// (`io.err(...)`) and flattened to the bare name by
+	// checker.ResolveModuleCalls. The bare name alone cannot tell the two
+	// apart: `io.err(...)` and a user's own `err(...)` both arrive as
+	// KIdent "err", owned by module io (io.no declares a top-level `err`).
+	//
+	// MIR needs the difference because a global callable alias
+	// (`@ std/err.new err` in std/global.no) claims the BARE name only.
+	// Without this bit `n = io.err('E')` lowered to the alias target and
+	// test/std/io.no stopped compiling ('%lv126' defined with type
+	// '%err_err' but expected 'i64'). See mir/hir2mir.go resolveCallee.
+	FlagQualifiedCall uint32 = 1 << 24
 )
 
 // NoID marks an absent child, sibling, string or type reference.

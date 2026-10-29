@@ -51,13 +51,22 @@ reader.read-byte = () (b ?byte) {
 }
 
 ; read-line: 讀取一行
-reader.read-line = () (line str, ok bool) {
-    n = 0
+; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+reader.read-line = () (line ?str) {
+    line = nil
+    acc str = ''
+    got bool = false
     !! {
-        ok = .fill()
-        ok == false -> {
-            n > 0 -> ok = true
-            return
+        ; 緩衝區耗盡（pos 到了 avail）時重新填充；fill 只對 avail==0 才真正讀，
+        ; 故需先重置 pos/avail，否則 fill 會因殘留 avail>0 直接回 true 而無限迴圈。
+        (.pos >= .avail) {
+            .pos = 0
+            .avail = 0
+            fok = .fill()
+            fok == false -> {
+                got -> line = acc
+                return
+            }
         }
         (.pos < .avail) {
 
@@ -66,14 +75,15 @@ reader.read-line = () (line str, ok bool) {
             #{overflow=wrap}
             .pos = .pos + 1
             c == 10 -> {
-                ok = true
+                line = acc
                 return
             }
 
-            line[n] = c
-
-            #{overflow=wrap}
-            n = n + 1
+            ; 逐字元拼接構建整行（char.to-str 回傳 str，可用 - 拼接；
+            ; 避免 []byte.to-str 對 push 構成的向量回空字串的已知問題）。
+            ch char = c
+            acc = acc - ch.to-str()
+            got = true
         }
     }
 }

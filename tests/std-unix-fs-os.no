@@ -28,16 +28,19 @@ tmp-fd >= 0 -> {
 tmp-fd < 0 -> print('FAIL: mkstemp returned invalid fd')
 
 ; ═══════════════════════════════════════════════
-; 3. fs.mkdtemp — 建立臨時目錄（多返回值 name, ok）
+; 3. fs.mkdtemp — 建立臨時目錄（返回 ?str option）
 ; ═══════════════════════════════════════════════
-dir-name, dir-ok = fs.mkdtemp('/tmp/nolang-dir-XXXXXX')
-eprint('mkdtemp name = ')
-eprint(dir-name)
-dir-ok -> {
-    print('PASS: mkdtemp created directory')
-    fs.remove(dir-name)
+dir-name-opt = fs.mkdtemp('/tmp/nolang-dir-XXXXXX')
+dir-name-opt: {
+    ok -> {
+        dir-name = it
+        eprint('mkdtemp name = ')
+        eprint(dir-name)
+        print('PASS: mkdtemp created directory')
+        fs.remove(dir-name)
+    }
+    -> print('FAIL: mkdtemp failed')
 }
-dir-ok == false -> print('FAIL: mkdtemp failed')
 
 ; ═══════════════════════════════════════════════
 ; 4. os.geteuid — 取得有效使用者 ID

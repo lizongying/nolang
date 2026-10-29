@@ -245,7 +245,14 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             ; string
             .nodes[node-idx].kind = JSON-KIND-STR
-            next-pos, ok = .parse-str(node-idx, s, p)
+            spo = .parse-str(node-idx, s, p)
+            spo: {
+                ok -> {
+                    next-pos = it
+                    ok = true
+                }
+                -> ok = false
+            }
             return
         }
 
@@ -253,13 +260,27 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             ; number
             .nodes[node-idx].kind = JSON-KIND-NUM
-            next-pos, ok = .parse-num(node-idx, s, p)
+            npo = .parse-num(node-idx, s, p)
+            npo: {
+                ok -> {
+                    next-pos = it
+                    ok = true
+                }
+                -> ok = false
+            }
             return
         }
 
         c >= 48 && c <= 57 -> {
             .nodes[node-idx].kind = JSON-KIND-NUM
-            next-pos, ok = .parse-num(node-idx, s, p)
+            npo = .parse-num(node-idx, s, p)
+            npo: {
+                ok -> {
+                    next-pos = it
+                    ok = true
+                }
+                -> ok = false
+            }
             return
         }
 
@@ -406,8 +427,7 @@ json-pool.skip-ws = (s str, pos i64) (p i64) {
 }
 
 ; parse-str: 解析 JSON 字串（從開引號開始）
-json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
-    ok = false
+json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
 
     ; D1：`+` 的結果恆為 `?i64`。`i` 在本函式全程是普通游標（`i = i + 1` 多處），
     ; 兩段式 match 解包 讓整條鏈回到 plain 算術，也讓 `next-pos = i + 1` 不再被傳染。
@@ -451,7 +471,6 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
                     ok -> next-pos = it
                     -> next-pos = 0
                 }
-                ok = true
                 return
             }
 
@@ -486,8 +505,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
 }
 
 ; parse-num: 解析 JSON 數字
-json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos i64, ok bool) {
-    ok = true
+json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     i = pos
     c = 0
     negative = 0
@@ -610,9 +628,7 @@ json-pool.str-eq = (a str, b str) (eq i64) {
 
 ; get-key: 從物件節點取得鍵對應的子節點索引
 ; 返回 val-idx=子節點索引, ok=找到
-json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok bool) {
-    ok = false
-    val-idx = -1
+json-pool.get-key = (obj-idx i64, key str) (val-idx ?i64) {
     obj-idx < 0 || obj-idx >= .count -> return
     .nodes[obj-idx].kind != JSON-KIND-OBJ -> {
 
@@ -626,7 +642,6 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx i64, ok bool) {
         .str-eq(.ek[e], key) == 1 -> {
 
             val-idx = .ec[e]
-            ok = true
             return
         }
 
@@ -757,9 +772,7 @@ json-pool.copy-self = (node-idx i64) (dst-idx i64) {
 
 ; arr-get: 從陣列節點取得指定索引的子節點
 ; 返回 val-idx=子節點索引, ok=成功
-json-pool.arr-get = (arr-idx i64, elem i64) (val-idx i64, ok bool) {
-    ok = false
-    val-idx = -1
+json-pool.arr-get = (arr-idx i64, elem i64) (val-idx ?i64) {
     arr-idx < 0 || arr-idx >= .count -> return
     .nodes[arr-idx].kind != JSON-KIND-ARR -> {
 
@@ -778,7 +791,6 @@ json-pool.arr-get = (arr-idx i64, elem i64) (val-idx i64, ok bool) {
     }
 
     val-idx = .ec[e]
-    ok = true
 }
 
 ; arr-len: 取得陣列長度
@@ -807,8 +819,7 @@ json-pool.get-kind = (node-idx i64) (kind i64) {
 
 ; get-str: 取得字串值
 ; 返回 out=字串副本, ok=成功
-json-pool.get-str = (node-idx i64) (out str, ok bool) {
-    ok = false
+json-pool.get-str = (node-idx i64) (out ?str) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-STR -> {
 
@@ -816,13 +827,10 @@ json-pool.get-str = (node-idx i64) (out str, ok bool) {
     }
 
     out = .strs[node-idx].copy()
-    ok = true
 }
 
 ; get-num: 取得數值
-json-pool.get-num = (node-idx i64) (val f64, ok bool) {
-    ok = false
-    val = 0.0
+json-pool.get-num = (node-idx i64) (val ?f64) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-NUM -> {
 
@@ -830,14 +838,11 @@ json-pool.get-num = (node-idx i64) (val f64, ok bool) {
     }
 
     val = .nodes[node-idx].num-val
-    ok = true
 }
 
 ; get-bool: 取得布林值
 ; 返回 val=布林值, ok=成功
-json-pool.get-bool = (node-idx i64) (val bool, ok bool) {
-    ok = false
-    val = false
+json-pool.get-bool = (node-idx i64) (val ?bool) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-BOOL -> {
 
@@ -845,7 +850,6 @@ json-pool.get-bool = (node-idx i64) (val bool, ok bool) {
     }
 
     val = .nodes[node-idx].bool-val
-    ok = true
 }
 
 ; ═══════════════════════════════════════════════
@@ -1001,11 +1005,14 @@ json.get-key = (obj json, key str) (child ?json) {
     obj.root < 0 -> return
     k i64 = obj.pool.get-kind(obj.root)
     k != JSON-KIND-OBJ -> return
-    val-idx, found = obj.pool.get-key(obj.root, key)
-    found == true -> {
+    gi = obj.pool.get-key(obj.root, key)
+    gi: {
+        ok -> {
 
-        ; 返回独立深拷贝子树（不与 obj 共享 vec 缓冲）
-        child = json-clone-tree(obj.pool, val-idx)
+            ; 返回独立深拷贝子树（不与 obj 共享 vec 缓冲）
+            child = json-clone-tree(obj.pool, it)
+        }
+        -> child = nil
     }
 }
 
@@ -1138,8 +1145,12 @@ json.get = (key str) (child ?json) {
 
     ; 非物件直接回傳 nil（不在這裡把 root 變成新物件）
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
-    val-idx, found = .pool.get-key(.root, key)
-    found == false -> return
+    gi = .pool.get-key(.root, key)
+    val-idx = -1
+    gi: {
+        ok -> val-idx = it
+        -> val-idx = -1
+    }
     val-idx < 0 -> return
 
     ; 返回独立深拷贝子树（不与父共享 vec 缓冲），避免任一 handle 扩容使另一失效
@@ -1151,48 +1162,58 @@ json.get = (key str) (child ?json) {
 ; 用法：
 ;   s, found = j.get-str('name')
 ;   found -> print(s)
-json.get-str = (key str) (val str, ok bool) {
-    ok = false
+json.get-str = (key str) (val ?str) {
     .root < 0 -> return
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
-    val-idx, found = .pool.get-key(.root, key)
-    found == false -> return
-    val, ok = .pool.get-str(val-idx)
+    gi = .pool.get-key(.root, key)
+    gi: {
+        ok -> val = .pool.get-str(it)
+        -> _
+    }
 }
 
 ; json.get-num: 從物件取得數值
 ; 返回 val f64, ok bool: ok=找到且為數字
-json.get-num = (key str) (val f64, ok bool) {
-    ok = false
+json.get-num = (key str) (val ?f64) {
     .root < 0 -> return
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
-    val-idx, found = .pool.get-key(.root, key)
-    found == false -> return
-    val, ok = .pool.get-num(val-idx)
+    gi = .pool.get-key(.root, key)
+    gi: {
+        ok -> val = .pool.get-num(it)
+        -> _
+    }
 }
 
 ; json.get-bool: 從物件取得布林值
 ; 返回 val bool, ok bool: ok=找到且為布林值
-json.get-bool = (key str) (val bool, ok bool) {
-    ok = false
+json.get-bool = (key str) (val ?bool) {
     .root < 0 -> return
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
-    val-idx, found = .pool.get-key(.root, key)
-    found == false -> return
-    val, ok = .pool.get-bool(val-idx)
+    gi = .pool.get-key(.root, key)
+    gi: {
+        ok -> val = .pool.get-bool(it)
+        -> _
+    }
 }
 
 ; json.get-i64: 從物件取得整數值
 ; 返回 val i64, ok bool: ok=找到且為數字
-json.get-i64 = (key str) (val i64, ok bool) {
-    ok = false
-    f, found = .get-num(key)
+json.get-i64 = (key str) (val ?i64) {
+    f-opt = .get-num(key)
+    f = 0.0
+    found = false
+    f-opt: {
+        ok -> {
+            found = true
+            f = it
+        }
+        -> found = false
+    }
     found == false -> return
 
     ; get-num 回傳 f64，直接 `val = f` 會被當成 f64→i64 的裸指派，
     ; codegen 只做位元重解（42.0 -> 4631107791820423168），必須顯式截斷。
     val = f.to-i64()
-    ok = true
 }
 
 ; json.alloc-node: 分配新節點（pool 為 #{inline=false} 指標欄位，直接委派 .pool.alloc）
@@ -1305,11 +1326,11 @@ json.arr-get = (elem i64) (child ?json) {
     child = nil
     .root < 0 -> return
     .pool.get-kind(.root) != JSON-KIND-ARR -> return
-    val-idx, found = .pool.arr-get(.root, elem)
-    found == false -> return
-
-    ; 返回独立深拷贝子树（不与父共享 vec 缓冲）
-    child = json-clone-tree(.pool, val-idx)
+    ai = .pool.arr-get(.root, elem)
+    ai: {
+        ok -> child = json-clone-tree(.pool, it)
+        -> child = nil
+    }
 }
 
 ; json.arr-len: 取得陣列長度
@@ -1401,30 +1422,37 @@ json.arr-push-bool = (val bool) (ok bool) {
 ; 返回 val str, ok bool: ok=成功
 ; 用法：
 ;   s, found = j.str()
-json.str = () (val str, ok bool) {
-    val, ok = .pool.get-str(.root)
+json.str = () (val ?str) {
+    val = .pool.get-str(.root)
 }
 
 ; json.num: 取得數值（當 root 為數字時）
 ; 返回 val f64, ok bool: ok=成功
-json.num = () (val f64, ok bool) {
-    val, ok = .pool.get-num(.root)
+json.num = () (val ?f64) {
+    val = .pool.get-num(.root)
 }
 
 ; json.bool: 取得布林值（當 root 為布林值時）
 ; 返回 val bool, ok bool: ok=成功
-json.bool = () (val bool, ok bool) {
-    val, ok = .pool.get-bool(.root)
+json.bool = () (val ?bool) {
+    val = .pool.get-bool(.root)
 }
 
 ; json.i64: 取得整數值（當 root 為數字時）
 ; 返回 val i64, ok bool: ok=成功
-json.i64 = () (val i64, ok bool) {
-    ok = false
-    f, found = .num()
+json.i64 = () (val ?i64) {
+    f-opt = .num()
+    f = 0.0
+    found = false
+    f-opt: {
+        ok -> {
+            found = true
+            f = it
+        }
+        -> found = false
+    }
     found == false -> return
-    val = f
-    ok = true
+    val = f.to-i64()
 }
 
 ; json.obj-len: 取得物件 key 數量
@@ -1441,8 +1469,7 @@ json.obj-len = () (n i64) {
 ; json.obj-key: 取得物件指定索引的 key
 ; 返回 key str: key 字串
 ; 返回 ok bool: 是否成功
-json.obj-key = (idx i64) (key str, ok bool) {
-    ok = false
+json.obj-key = (idx i64) (key ?str) {
     .root < 0 -> return
     k = .pool.get-kind(.root)
     k != JSON-KIND-OBJ -> return
@@ -1458,7 +1485,6 @@ json.obj-key = (idx i64) (key str, ok bool) {
     }
 
     key = .pool.ek[e]
-    ok = true
 }
 
 ; json.delete-key: 從物件中刪除指定鍵
@@ -1550,6 +1576,9 @@ json.obj-keys-str = () (keys str) {
 ; json.str-val: 取得字串節點的值
 ; 返回 val str: 字串值
 json.str-val = () (val str) {
-    val, ok = .pool.get-str(.root)
-    ok == false -> val = ''
+    v-opt = .pool.get-str(.root)
+    v-opt: {
+        ok -> val = it
+        -> val = ''
+    }
 }

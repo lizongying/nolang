@@ -10,8 +10,8 @@ sidebar_position: 3.3
 
 ```no
 ; 環境變數
-val = os.get-env(key)
-os.set-env(key, val)
+val = os.get-env(key)                ; 返回 ?str（nil=未設定）
+os.set-env(key, 'value')
 
 ; 目錄
 dir = os.get-wd()
@@ -29,10 +29,10 @@ msg = os.strerror(errnum)
 errno = os.get-errno()
 
 ; 檔案屬性與使用者（權限取得在 os，非 fs）
-mode = os.stat-mode(path)           ; 取得檔案模式（st_mode，返回 mode, ok）
-uid = os.stat-uid(path)             ; 取得檔案所有者 uid（返回 uid, ok）
-gid = os.stat-gid(path)             ; 取得檔案群組 gid（返回 gid, ok）
-mtime = os.stat-mtime(path)         ; 取得修改時間（Unix 秒，返回 mtime, ok）
+mode = os.stat-mode(path)           ; 取得檔案模式（st_mode，返回 ?i64，nil=取得失敗）
+uid = os.stat-uid(path)             ; 取得檔案所有者 uid（返回 ?i64，nil=取得失敗）
+gid = os.stat-gid(path)             ; 取得檔案群組 gid（返回 ?i64，nil=取得失敗）
+mtime = os.stat-mtime(path)         ; 取得修改時間（Unix 秒，返回 ?i64，nil=取得失敗）
 self-uid = os.getuid()              ; 目前使用者 ID
 self-gid = os.getgid()              ; 目前群組 ID
 
@@ -46,8 +46,8 @@ os.sleep-us(us)
 os.sleep-ns(ns)
 
 ; 命令列參數
-count = os.args()
-val = os.arg(idx)
+argv = os.args()                    ; 全部命令列參數（[]str，含程式名）
+val = os.arg(idx)                   ; 取得第 idx 個參數（越界回傳 nil）
 ```
 
 ### fs — 檔案系統工具
@@ -207,7 +207,7 @@ embed {
 
 ; Windows 平台特定（僅 win-amd64/win-arm64 可用）
 bufptr = os.win-find-first-file(path) ; FindFirstFileA，返回控制代碼（0=失敗）
-name = os.win-find-next-file(bufptr)  ; FindNextFileA，返回 (name, ok)
+name = os.win-find-next-file(bufptr)  ; FindNextFileA，返回 ?str（nil=無更多條目）
 ok = os.win-find-close(bufptr)        ; FindClose
 
 ; open() 旗標常量（平台特定，此處顯示 macOS 值）
@@ -223,7 +223,7 @@ O-EXCL = 2048       ; macOS=2048, Linux=128, Windows=1024
 ### env — 環境變數（簡化封裝）
 
 ```no
-val = env.get(key)
+val = env.get(key)                ; 返回 ?str（nil=未找到）
 val = env.lookup(key)               ; 返回 ?str（nil=未找到）
 env.set(key, val)
 env.unset(key)
@@ -289,7 +289,7 @@ path.current() (out path)    ; 取得當前工作目錄
 r = reader.init(fd, buf)       ; 初始化緩衝讀取器（傳回 reader）
 ok = reader.fill()              ; 填充緩衝區
 b = reader.read-byte()          ; 讀取一個位元組（?byte, nil=EOF）
-ok = reader.read-line(line)     ; 讀取一行到 line
+line = reader.read-line()       ; 讀取一行（?str, nil=EOF 或錯誤）
 reader.close()                  ; 關閉
 ```
 

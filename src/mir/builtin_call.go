@@ -678,7 +678,27 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		// (libc static storage must never end up inside a %str-long.)
 		p := c.treg("cp")
 		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @%s(%s)\n", p, fn, argList))
-		if dstLT == "%str-long" && dstSlot != "" {
+		if dstLT == "%option" && dstSlot != "" {
+			// std declares the builtin as `?str` (e.g. os.get-env): NULL (unset)
+			// -> nil (tag 1), non-NULL -> ok(str) (tag 0). str_from_cstr maps NULL
+			// to a zeroed, un-owned %str-long, so storing the payload unconditionally
+			// is safe — the nil arm's slot holds {0,0,null} and emitOptionDrop only
+			// frees it under tag 0.
+			if !c.optionPayloadInline("%str-long") {
+				c.fail("builtin %s: ?str option result needs an inline option slot (option-inline-threshold >= 24)", inst.Sym)
+				return fmt.Errorf("builtin %s: %s", inst.Sym, strings.Join(c.errs, "; "))
+			}
+			isNil := c.treg("c2n")
+			c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8* %s, null\n", isNil, p))
+			tag := c.treg("c2t")
+			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 0\n", tag, isNil))
+			sr := c.treg("c2s")
+			c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cstr(i8* %s)\n", sr, p))
+			s0 := c.treg("c2o")
+			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, %s zeroinitializer }, i64 %s, 0\n", s0, c.optSlotLT, tag))
+			c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", s0, dstSlot))
+			c.optStoreInlinePayload(dstSlot, "%str-long", sr)
+		} else if dstLT == "%str-long" && dstSlot != "" {
 			r := c.treg("c2s")
 			c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cstr(i8* %s)\n", r, p))
 			c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", r, dstSlot))
@@ -1045,8 +1065,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinReadDir(inst)
 	case "str-truncate":
 		return c.emitBuiltinStrTruncate(inst)
-	case "args-count":
-		return c.emitBuiltinArgsCount(inst)
+	case "args-list":
+		return c.emitBuiltinArgsList(inst)
 	case "args-get":
 		return c.emitBuiltinArgsGet(inst)
 	case "getgroups":
@@ -3941,11 +3961,9 @@ func (c *codegen) emitBuiltinReadDir(inst *Inst) error {
 	if len(inst.Args) < 1 {
 		return fmt.Errorf("read-dir: needs dirp")
 	}
-	// result 0 = name (str), result 1 = ok (bool)
-	nameSlot := c.valSlot[inst.Results[0]]
-	if nameSlot == "" {
-		return fmt.Errorf("read-dir: no name result slot")
-	}
+	// result 0 = name (?str): nil when readdir returns NULL. ok (entry != NULL)
+	// becomes the option tag; the entry name is the inline %str-long payload.
+	_ = c.valSlot[inst.Results[0]]
 
 	dirpV, err := c.argIndex(inst, 0)
 	if err != nil {
@@ -3997,24 +4015,10 @@ func (c *codegen) emitBuiltinReadDir(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", nameBuf, bufSize))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", nameBuf, safeName, bufSize))
 
-	// Build %str-long { len, cap, data } in the result slot
-	lenGEP := c.treg("rd.lgep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGEP, nameSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", lenReg, lenGEP))
-	capGEP := c.treg("rd.cgep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", capGEP, nameSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", lenReg, capGEP))
-	dataGEP := c.treg("rd.dgep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dataGEP, nameSlot))
-	dataInt := c.treg("rd.di")
-	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, nameBuf))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
-
-	// Store ok into result 1
-	if err := c.storeResult(inst, 1, okReg, "i1"); err != nil {
-		return err
-	}
-	return nil
+	// Fold (name, ok) into a ?str option: tag 0 when the entry exists, tag 1
+	// (nil) otherwise, payload = the owned %str-long built from the copied name.
+	sr := c.buildStrLongReg(lenReg, lenReg, nameBuf)
+	return c.storeOptionFromPairStr(inst, sr, okReg)
 }
 
 // emitBuiltinStrTruncate lowers `str.truncate(n)` — set len = max(0, min(len, n))
@@ -4133,10 +4137,11 @@ func (c *codegen) errnoFnName() string {
 	return "__error"
 }
 
-// emitBuiltinGetPriority lowers `os.get-priority(which, who)` -> (prio i64, ok bool).
+// emitBuiltinGetPriority lowers `os.get-priority(which, who)` -> prio ?i64.
 // getpriority(2) returns the negated priority on success but -1 on *both* success
 // and failure, so the only reliable success signal is errno == 0: clear errno,
 // call getpriority, then ok = (errno == 0). This mirrors call_stdlib.go exactly.
+// The (prio, ok) pair collapses into a `?i64` option (tag 0 = ok, tag 1 = nil).
 func (c *codegen) emitBuiltinGetPriority(inst *Inst) error {
 	if len(inst.Args) < 2 {
 		return fmt.Errorf("get-priority: needs which, who")
@@ -4167,14 +4172,11 @@ func (c *codegen) emitBuiltinGetPriority(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @%s(i32 %s, i32 %s)\n", ret, gpFn, which, who))
 	ext := c.treg("gp.ext")
 	c.sb.WriteString(fmt.Sprintf("  %s = sext i32 %s to i64\n", ext, ret))
-	if err := c.storeResult(inst, 0, ext, "i64"); err != nil {
-		return err
-	}
 	eLoad := c.treg("gp.eld")
 	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* %s\n", eLoad, ePtr))
 	ok := c.treg("gp.ok")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", ok, eLoad))
-	return c.storeResult(inst, 1, ok, "i1")
+	return c.storeOptionFromPair(inst, ext, ok)
 }
 
 // emitBuiltinGetErrno lowers `os.get-errno()` -> i64 (the last errno value from
@@ -4193,30 +4195,184 @@ func (c *codegen) emitBuiltinGetErrno(inst *Inst) error {
 	return c.storeResult(inst, 0, ext, "i64")
 }
 
-// emitBuiltinArgsCount lowers `os.args()` (ForwardFunc args-count): the number of
-// command-line arguments (including the program name). Reads the @nolang_argc
-// global captured in the C entry prologue (see emitEntry).
-func (c *codegen) emitBuiltinArgsCount(inst *Inst) error {
-	ac := c.treg("ac")
-	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* @nolang_argc\n", ac))
-	ac64 := c.treg("ac64")
-	c.sb.WriteString(fmt.Sprintf("  %s = zext i32 %s to i64\n", ac64, ac))
-	return c.storeResult(inst, 0, ac64, "i64")
+// emitBuiltinArgsList lowers `os.args()` (ForwardFunc args-list): all
+// command-line arguments (including the program name) as `[]str`. It reads the
+// @nolang_argc / @nolang_argv globals captured in the C entry prologue (see
+// emitEntry), adopts each NUL-terminated argv[i] as an owned %str-long
+// (strLongFromBuffer semantics: malloc strlen+1 then memcpy), and stores the
+// %vec { len, cap, data } into the result slot. Element stride is 24 bytes —
+// sizeof(%str-long) — matching the `str -> %str-long, 24` invariant used by the
+// vec mutators. The vec owns the element buffers; MIR's deep-container drop
+// frees them with the same stride.
+func (c *codegen) emitBuiltinArgsList(inst *Inst) error {
+	lt, ok := c.resultType(inst, 0)
+	if !ok {
+		return nil
+	}
+	if lt != "%vec" {
+		return fmt.Errorf("builtin %s: []str result expected %%vec slot, got %s", inst.Sym, lt)
+	}
+	slot := c.valSlot[inst.Results[0]]
+	if slot == "" {
+		return fmt.Errorf("builtin %s: result 0 has no slot", inst.Sym)
+	}
+	// strlen is already declared by the MIR prelude (see codegen.go).
+
+	// n = argc (i32 -> i64, zero when the entry never captured it).
+	ac32 := c.treg("al.ac32")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* @nolang_argc\n", ac32))
+	nRaw := c.treg("al.n")
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i32 %s to i64\n", nRaw, ac32))
+	isNil := c.treg("al.nil")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8** null, @nolang_argv\n", isNil))
+	n := c.treg("al.n2")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", n, isNil, nRaw))
+
+	// Backing store: argc * 24 bytes of %str-long elements.
+	bytes := c.treg("al.bytes")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 24\n", bytes, n))
+	heap := c.treg("al.heap")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", heap, bytes))
+
+	// argv base as an integer (null-safe: clamped to 0 so never dereferenced
+	// when the entry never captured argv — select cannot take an inline
+	// bitcast operand, hence the ptrtoint/inttoptr round-trip).
+	avBase := c.treg("al.av")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8**, i8*** @nolang_argv\n", avBase))
+	avI := c.treg("al.avI")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8** %s to i64\n", avI, avBase))
+	avZI := c.treg("al.avZ")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", avZI, isNil, avI))
+	av := c.treg("al.av2")
+	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", av, avZI))
+
+	// Fill loop: heap[i] = strLongFromBuffer(argv[i]). Same straight-into-body
+	// loop shape as emitBuiltinGetGroups (labels via c.label, counter in an
+	// alloca).
+	ip := c.treg("al.ip")
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i64\n", ip))
+	c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", ip))
+	condL := c.label("al.cond")
+	bodyL := c.label("al.body")
+	endL := c.label("al.end")
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", condL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", condL))
+	i := c.treg("al.i")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", i, ip))
+	more := c.treg("al.more")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", more, i, n))
+	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", more, bodyL, endL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", bodyL))
+	// p = argv[i] (NULL maps to the empty-string global, as in args-get).
+	slotSz := c.treg("al.sz")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 8\n", slotSz, i))
+	sPtr := c.treg("al.sp")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", sPtr, av, slotSz))
+	spi := c.treg("al.spi")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to i8**\n", spi, sPtr))
+	argp := c.treg("al.ag")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", argp, spi))
+	cmpN := c.treg("al.nz")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i8* %s, null\n", cmpN, argp))
+	safeP := c.treg("al.sp2")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8* %s, i8* %s\n", safeP, cmpN, argp, c.emptyStrGlobal()))
+	lenR := c.treg("al.len")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", lenR, safeP))
+	strV := c.strLongFromBuffer(safeP, lenR)
+	// Store the %str-long element at heap + i*24.
+	elemOff := c.treg("al.eo")
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 24\n", elemOff, i))
+	elemPtr := c.treg("al.ep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", elemPtr, heap, elemOff))
+	elemSL := c.treg("al.esl")
+	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %%str-long*\n", elemSL, elemPtr))
+	c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", strV, elemSL))
+	i1 := c.treg("al.i1")
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", i1, i))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", i1, ip))
+	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", condL))
+	c.sb.WriteString(fmt.Sprintf("%s:\n", endL))
+
+	// %vec { len, cap, data }
+	lenGEP := c.treg("al.lgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, slot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", n, lenGEP))
+	capGEP := c.treg("al.cgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, slot))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", n, capGEP))
+	dataGEP := c.treg("al.dgep")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, slot))
+	dataInt := c.treg("al.data")
+	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataInt, heap))
+	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", dataInt, dataGEP))
+	return nil
 }
 
 // emitBuiltinArgsGet lowers `os.arg(i)` (ForwardFunc args-get): the i-th
-// command-line argument as a str. Indexes the @nolang_argv vector captured in the
-// C entry prologue and adopts the NUL-terminated C string as an owned %str-long.
+// command-line argument as a `?str` option. It reads @nolang_argc for the bound
+// and @nolang_argv (both captured in the C entry prologue, see emitEntry). When
+// 0 <= idx < argc the option is ok (tag 0) with the NUL-terminated argv[idx]
+// adopted as an owned %str-long inline payload; otherwise it is nil (tag 1) with
+// a zeroed payload. The option drop frees the inline str buffer unconditionally
+// (see emitOptionDrop's %str-long arm), so the always-built buffer stays exactly
+// one owner regardless of tag.
 func (c *codegen) emitBuiltinArgsGet(inst *Inst) error {
+	lt, ok := c.resultType(inst, 0)
+	if !ok {
+		return nil
+	}
+	if lt != "%option" {
+		return fmt.Errorf("builtin %s: ?str result expected %%option slot, got %s", inst.Sym, lt)
+	}
+	slot := c.valSlot[inst.Results[0]]
+	if slot == "" {
+		return fmt.Errorf("builtin %s: result 0 has no slot", inst.Sym)
+	}
 	idxT, idxV := c.loadVal(inst.Args[0])
 	idx := c.coerce(idxT, idxV, "i64")
+
+	// inrange = (0 <= idx < argc). argc is read from @nolang_argc (i32).
+	ac32 := c.treg("agc")
+	c.sb.WriteString(fmt.Sprintf("  %s = load i32, i32* @nolang_argc\n", ac32))
+	argc := c.treg("agc64")
+	c.sb.WriteString(fmt.Sprintf("  %s = zext i32 %s to i64\n", argc, ac32))
+	ge0 := c.treg("agge")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp sge i64 %s, 0\n", ge0, idx))
+	ltAc := c.treg("aglt")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, %s\n", ltAc, idx, argc))
+	inr := c.treg("agin")
+	c.sb.WriteString(fmt.Sprintf("  %s = and i1 %s, %s\n", inr, ge0, ltAc))
+
+	// Clamp the index to 0 (argv[0], always present) when out of range so the
+	// load never dereferences past the vector; the tag below still marks nil.
+	safeIdx := c.treg("agsi")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", safeIdx, inr, idx))
 	av := c.treg("agv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load i8**, i8*** @nolang_argv\n", av))
 	gep := c.treg("agp")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8*, i8** %s, i64 %s\n", gep, av, idx))
-	argp := c.treg("agc")
+	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8*, i8** %s, i64 %s\n", gep, av, safeIdx))
+	argp := c.treg("aga")
 	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", argp, gep))
-	return c.storeCStrResult(inst, 0, argp)
+	// Map a NULL argv (entry never captured it) to the empty string so
+	// strlen/memcpy stay in-bounds.
+	cmpN := c.treg("agn")
+	c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i8* %s, null\n", cmpN, argp))
+	safeP := c.treg("ags")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i8* %s, i8* %s\n", safeP, cmpN, argp, c.emptyStrGlobal()))
+
+	// Adopt the (possibly empty) C string as an owned %str-long value.
+	lenR := c.treg("agl")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", lenR, safeP))
+	strV := c.strLongFromBuffer(safeP, lenR)
+
+	// Build the option: zero + tag 0, store the inline str payload, then
+	// overwrite the discriminant with nil (tag 1) when out of range.
+	c.optStoreTag(slot, 0)
+	c.optStoreInlinePayload(slot, "%str-long", strV)
+	tagR := c.treg("agtag")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 1\n", tagR, inr))
+	c.optStoreTagValue(slot, tagR)
+	return nil
 }
 
 // getGroupsCap is the number of supplementary group slots the scratch buffer
@@ -4626,9 +4782,10 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 	return nil
 }
 
-// emitBuiltinSysctl lowers `os.sysctl(name)` -> (val str, ok bool) on macOS/BSD
+// emitBuiltinSysctl lowers `os.sysctl(name)` -> val ?str on macOS/BSD
 // via sysctlbyname(3). Two calls: first with NULL buf to learn the size, then
-// malloc(size+1) and refill. ok = (second call returned 0). The value adopts the
+// malloc(size+1) and refill. ok = (second call returned 0) collapses into the
+// option tag (0 = ok, 1 = nil). The value adopts the
 // malloc'd buffer as an owned %str-long (len = returned size, cap = size+1),
 // matching call_stdlib.go's scLen2/scBufSize2 usage so the printed value agrees.
 func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
@@ -4670,13 +4827,11 @@ func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = call i32 @sysctlbyname(i8* %s, i8* %s, i64* %s, i8* null, i64 0)\n", ret2, namePtr, buf, lenBuf))
 	cmp2 := c.treg("sc.cmp2")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", cmp2, ret2))
-	if err := c.storeResult(inst, 1, cmp2, "i1"); err != nil {
-		return err
-	}
 	len2 := c.treg("sc.len2")
 	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", len2, lenBuf))
 	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", namePtr))
-	return c.storeRawStr(inst, 0, len2, capR, buf)
+	sr := c.buildStrLongReg(len2, capR, buf)
+	return c.storeOptionFromPairStr(inst, sr, cmp2)
 }
 
 // emitSysctlProcfs lowers os.sysctl(name) on Linux, where glibc has no
@@ -4684,9 +4839,9 @@ func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 // (/proc/sys/<name with '.' rewritten to '/'>) and reads the whole file, which
 // is exactly the behaviour the std os.sysctl doc comment promises for Linux
 // ("Linux 上 /proc/sys 對應"). A name with no procfs entry (most hw.* / kern.*
-// BSD keys) fails to open and yields ("", ok=false), the same shape the macOS
+// BSD keys) fails to open and yields nil (?str tag 1), the same shape the macOS
 // path returns when sysctlbyname is non-zero, so callers keep their existing
-// ok==false handling. namePtr is the runtime NUL-terminated C string produced by
+// nil handling. namePtr is the runtime NUL-terminated C string produced by
 // cstrOf; it is freed here.
 func (c *codegen) emitSysctlProcfs(inst *Inst, namePtr string) error {
 	c.decl("declare i32 @open(i8*, i32, i32)")
@@ -4800,10 +4955,8 @@ func (c *codegen) emitSysctlProcfs(inst *Inst, namePtr string) error {
 	effLen := c.treg("scp.el")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", effLen, doTrim, lastI, rawLen))
 
-	if err := c.storeResult(inst, 1, allOk, "i1"); err != nil {
-		return err
-	}
-	return c.storeRawStr(inst, 0, effLen, effLen, buf)
+	sr := c.buildStrLongReg(effLen, effLen, buf)
+	return c.storeOptionFromPairStr(inst, sr, allOk)
 }
 
 // storeRawStr builds an owned %str-long {len, cap, data} directly into the slot

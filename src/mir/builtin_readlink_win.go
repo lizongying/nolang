@@ -157,12 +157,13 @@ func (c *codegen) emitBuiltinReadlinkWindows(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("%s:\n", failL))
 	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", mergeL))
 
-	// Merge: target is `out` (empty on the fail path), ok is the phi.
+	// Merge: target is `out` (empty on the fail path), ok is the phi. Fold the
+	// (target, ok) pair into a ?str option: ok selects the tag, the copied
+	// buffer is the inline %str-long payload.
 	c.sb.WriteString(fmt.Sprintf("%s:\n", mergeL))
 	okphi := c.treg("rlw.okphi")
 	c.sb.WriteString(fmt.Sprintf("  %s = phi i1 [ true, %%%s ], [ false, %%%s ]\n", okphi, sucL, failL))
-	if err := c.storeBufStrResult(inst, 0, out); err != nil {
-		return err
-	}
-	return c.storeResult(inst, 1, okphi, "i1")
+	slen := c.treg("rlw.slen")
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", slen, out))
+	return c.storeOptionFromPairStr(inst, c.strLongFromBuffer(out, slen), okphi)
 }
