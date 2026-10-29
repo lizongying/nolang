@@ -3360,11 +3360,19 @@ func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateRe
 			continue
 		}
 
-		// Parse the module file
+		// Parse the module file.
+		// 「std/...」前綴是相對於 std 根的模組路徑，不是相對 CWD 的檔案路徑：
+		// 直接 os.ReadFile 只在 CWD==src/ 時碰巧成立，從 repo root 跑 `no vet src/std`
+		// 會找不到 std/err.no，再以 File="" 的行號回退歸因貼到無關目標檔（zlib.no:189
+		// 假 ERROR 的來源）。故 disk 讀失敗時回退內嵌 StdFS（與 build 期嵌入的 std 一致）。
 		source, err := os.ReadFile(modFile)
+		if err != nil && (strings.HasPrefix(path, "std/") || path == "std") {
+			source, err = nolang.StdFS.ReadFile(modFile)
+		}
 		if err != nil {
 			results = append(results, ValidateResult{
 				TraceID: "8dbrd5fk",
+				File:    program.Sem.SourceFileOf(es),
 				Line:    es.Token.Line,
 				Column:  es.Token.Column,
 				Message: fmt.Sprintf("module file not found: %s", modFile),
@@ -10377,7 +10385,13 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 
 	// 3. Helper: check a single Type and emit a result if it's a cross-module
 	//    struct used without prefix.
-	checkType := func(t parser.Type, fallbackLine, fallbackCol int) {
+	//
+	// owner 是承载该类型引用语句（结构体定义 / let / 函数签名 / extern）。
+	// 诊断的 File 必须来自 owner 的 SourceFile——多模组合并程式（no vet 主档）
+	// 下 finalizeLintResults 不做行号回退归因，File 为空会被 flattenLints 误贴
+	// 到 CLI 目标档名（串档假 ERROR）。填入自身 SourceFile 后，依赖档的跨模块诊断
+	// 才能被正确归属、并在 std 目标的 merged 过滤中按归属档甄别。
+	checkType := func(t parser.Type, fallbackLine, fallbackCol int, owner parser.Statement) {
 		baseName := extractBaseTypeName(t)
 		if baseName == "" {
 			return
@@ -10409,8 +10423,13 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 				col = pos.Column
 			}
 		}
+		file := ""
+		if program.Sem != nil && owner != nil {
+			file = program.Sem.SourceFileOf(owner)
+		}
 		results = append(results, ValidateResult{
 			TraceID: "ol0l3ova",
+			File:    file,
 			Line:    line,
 			Column:  col,
 			Message: fmt.Sprintf("type '%s' not found; did you mean '%s.%s'?", baseName, modName, baseName),
@@ -10423,12 +10442,12 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 		case *parser.StructDefinition:
 			for _, f := range s.Fields {
 				if f.Type != nil {
-					checkType(f.Type, f.Token.Line, f.Token.Column)
+					checkType(f.Type, f.Token.Line, f.Token.Column, s)
 				}
 			}
 		case *parser.LetStatement:
 			if s.Type != nil && !isInferredType(s.Type) {
-				checkType(s.Type, s.Token.Line, s.Token.Column)
+				checkType(s.Type, s.Token.Line, s.Token.Column, s)
 			}
 		case *parser.FunctionDefinition:
 			// 方法定義的合成 receiver `self` 由 parser/decl.go 在解析
@@ -10452,12 +10471,12 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 			}
 			for _, p := range s.Parameters[paramStart:] {
 				if p.Type != nil {
-					checkType(p.Type, p.Token.Line, p.Token.Column)
+					checkType(p.Type, p.Token.Line, p.Token.Column, s)
 				}
 			}
 			for _, r := range s.Results[resStart:] {
 				if r.Type != nil {
-					checkType(r.Type, r.Token.Line, r.Token.Column)
+					checkType(r.Type, r.Token.Line, r.Token.Column, s)
 				}
 			}
 			// Also check local variable declarations inside function bodies.
@@ -10467,19 +10486,19 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 			if s.Body != nil {
 				for _, bodyStmt := range s.Body.Statements {
 					if ls, ok := bodyStmt.(*parser.LetStatement); ok && ls.Type != nil && !isInferredType(ls.Type) {
-						checkType(ls.Type, ls.Token.Line, ls.Token.Column)
+						checkType(ls.Type, ls.Token.Line, ls.Token.Column, ls)
 					}
 				}
 			}
 		case *parser.ExternStatement:
 			for _, p := range s.Parameters {
 				if p.Type != nil {
-					checkType(p.Type, p.Token.Line, p.Token.Column)
+					checkType(p.Type, p.Token.Line, p.Token.Column, s)
 				}
 			}
 			for _, r := range s.Results {
 				if r.Type != nil {
-					checkType(r.Type, r.Token.Line, r.Token.Column)
+					checkType(r.Type, r.Token.Line, r.Token.Column, s)
 				}
 			}
 		}

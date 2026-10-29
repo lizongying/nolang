@@ -780,7 +780,7 @@ func runLintCrossModuleTypeRefs(program *parser.Program, opts LintOptions) []Lin
 	var results []LintResult
 	for _, u := range ValidateCrossModuleTypeRefs(program) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintError, Source: "nolang-type-checker",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -986,6 +986,25 @@ func finalizeLintResults(results []LintResult, program *parser.Program, opts Lin
 			filtered = append(filtered, r)
 		}
 		results = filtered
+	} else if !singleFile {
+		// std 目标的 merged 程式：vet src/std/X 时，依赖闭包里的其它 std 档
+		// （std/err.no、std/bigint.no…）会随合并被重检一遍，其自带诊断若并入
+		// 目标，就形成「串档假 ERROR」——同一行号被贴到不同档名、且远超目标 EOF。
+		// 每个 std 档都在 `no vet src/std` 遍历中有自己的独立闸门，跨档诊断不该
+		// 重复计入。故仅保留归属「目标自身 std 档」的诊断，丢弃其它 std 档与
+		// 无法归因（File 为空）的泄漏诊断（对齐 cross_module_lint_position 不变量 3）。
+		selfRel := stdRelPath(opts.SourcePath)
+		filtered := results[:0]
+		for _, r := range results {
+			if r.File == "" {
+				continue
+			}
+			if isStdPath(r.File) && stdRelPath(r.File) != selfRel {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		results = filtered
 	}
 
 	// 按 file, line, column 排序，方便閱讀
@@ -1075,6 +1094,20 @@ func isStdPath(p string) bool {
 		return true
 	}
 	return strings.Contains(p, "/std/")
+}
+
+// stdRelPath 把 std 路徑正規化為可比較的相对形式「std/<rest>」，讓絕對路徑
+// （/…/src/std/net/http.no）、相對路徑（src/std/net/http.no）與邏輯模組形式
+// （std/net/http.no）指向同一檔時比對相等。非 std 路徑原樣返回。
+func stdRelPath(p string) string {
+	if p == "" {
+		return p
+	}
+	q := filepath.ToSlash(p)
+	if i := strings.Index(q, "/std/"); i >= 0 {
+		return q[i+1:]
+	}
+	return q
 }
 
 // CountBySeverity 統計指定嚴重性的結果數量。

@@ -247,7 +247,6 @@ lcm = (a int, b int) (r int) {
 ; ⚠️ b == 0 時與裸 `/` 一樣會 trap（執行期無除零檢查）。
 div = (a int, b int) (r int) {
 
-    #{overflow=wrap}
     r = a / b
 }
 

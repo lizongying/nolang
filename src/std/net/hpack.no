@@ -644,7 +644,6 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
         #{overflow=wrap}
         next-pos = next-pos + 1
 
-        #{overflow=wrap}
         val = val + ((b & 127) << m)
 
         #{overflow=wrap}

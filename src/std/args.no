@@ -152,7 +152,6 @@ get-positional = (idx i64) (val ?str) {
             continue
         }
 
-        #{overflow=wrap}
         pos == idx -> {
 
             val = arg
