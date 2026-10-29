@@ -7,15 +7,22 @@ print('start')
 j = json.parse('{"name":"Alice","age":30}')
 j: {
     ok -> {
-        name, found = it.get-str('name')
-        found -> print('ok: name={name}')
+        name-opt = it.get-str('name')
+        name-opt: {
+            ok -> {
+                name = it
+                print('ok: name={name}')
+            }
 
-        -> print('fail: name not found')
+            -> print('fail: name not found')
+        }
 
-        age, found2 = it.get-num('age')
-        found2 -> print('ok: age found')
+        age-opt = it.get-num('age')
+        age-opt: {
+            ok -> print('ok: age found')
 
-        -> print('fail: age not found')
+            -> print('fail: age not found')
+        }
     }
 
     nil -> {

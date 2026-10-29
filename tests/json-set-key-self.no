@@ -107,24 +107,19 @@ p-root, p-next, p-ok = p.parse('{"k0":{"v":"0"},"k1":{"v":"1"},"k2":{"v":"2"},"k
                     {
                         dup >= 0 -> {
                             {
-                                last-idx, last-found = p.get-key(dup, 'k39')
-                                {
-                                    {
-                                        last-found -> {
-                                            {
-                                                inner-idx, inner-found = p.get-key(last-idx, 'v')
-                                                {
-                                                    {
-                                                        inner-found -> print('ok: case4 copy-tree self-pool deep')
+                                last-opt = p.get-key(dup, 'k39')
+                                last-opt: {
+                                    ok -> {
+                                        last-idx = it
+                                        inner-opt = p.get-key(last-idx, 'v')
+                                        inner-opt: {
+                                            ok -> print('ok: case4 copy-tree self-pool deep')
 
-                                                        -> print('fail: case4 inner v missing')
-                                                    }
-                                                }
-                                            }
+                                            -> print('fail: case4 inner v missing')
                                         }
-
-                                        -> print('fail: case4 deep k39 missing after realloc')
                                     }
+
+                                    -> print('fail: case4 deep k39 missing after realloc')
                                 }
                             }
                         }

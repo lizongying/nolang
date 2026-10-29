@@ -1,6 +1,9 @@
 ; option-match.no — 測試 option 變數的 match 語法
 ;
-; match 語法：n: { err -> body; nil -> body; -> body }
+; match 語法（每個臂獨立一行）：
+;     n: { err -> body
+;          nil -> body
+;          -> body }
 ; 其中 err/nil 為 option 分支，-> 為預設（ok/val）分支
 
 test-err = () {

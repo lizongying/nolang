@@ -454,22 +454,22 @@ _PRIVATE-CONST = 42
 4. **Global variables MUST be uppercase**: This is a mandatory rule (see above). Lowercase top-level variables are treated as locals by the compiler.
 
 ```no
-// ❌ Avoid: using global mutable variables in modules
-// g-conn = tls.conn {}
-// g-buf = ' '
-//
-// fn-a = () {
-//     g-conn.send(g-buf)   ; global variable address may differ across functions
-// }
+; ❌ Avoid: using global mutable variables in modules
+; g-conn = tls.conn {}
+; g-buf = ' '
+;
+; fn-a = () {
+;     g-conn.send(g-buf)   ; global variable address may differ across functions
+; }
 
-// ✅ Recommended: use local variables, pass state via params/return values
+; ✅ Recommended: use local variables, pass state via params/return values
 fn-a = () {
     conn = tls.conn {}    ; local variable, consistent address
     buf = ' '
     conn.send(buf)
 }
 
-// ✅ Recommended: encapsulate the full flow in a single function to avoid cross-function state passing
+; ✅ Recommended: encapsulate the full flow in a single function to avoid cross-function state passing
 serve-once = (listen-fd fd, body str) (ok bool) {
     ok = false
     client-fd = net.net-accept(listen-fd)
@@ -582,9 +582,14 @@ doc: {
     err -> print(it)
 
     -> {
-        name, ok = it.find-str('name')
-        port, ok2 = it.find-i64('server.port')
-        print(it.to-json())
+        doc = it
+        name = doc.find-str('name')          ; ?str
+        port = doc.find-i64('server.port')   ; ?i64
+        name: {
+            ok -> print(it)
+            -> print('')
+        }
+        print(doc.to-json())
     }
 }
 ```
@@ -593,11 +598,11 @@ Common APIs:
 
 - `yaml.parse(text)` / `yaml.parse-all(text)` — parse, returning `?yaml`
 - `yaml.valid-of(text)` / `yaml.error-of(text)` — validation only
-- `it.find(path)` / `it.get(key)` — child lookup, returning `(yaml, ok)`
-- `it.find-str(path)`, `find-i64`, `find-f64`, `find-bool` — typed shortcuts returning `(value, ok)`
+- `it.find(path)` / `it.get(key)` — child lookup, returning `?yaml`
+- `it.find-str(path)`, `find-i64`, `find-f64`, `find-bool` — typed shortcuts returning `?value`
 - `it.to-json()` / `it.to-yaml()` — serialization
 
-> Note: child views are returned as `(out yaml, ok bool)` rather than `?yaml` — the MIR backend cannot safely share a node pool that contains slices.
+> Note: child views are returned as `?yaml` and value helpers as `?value`; unwrap them with a match (`child = it.find(path)`, whose `ok` arm binds `it` to the child and whose default arm handles the none case, one arm per line).
 
 ## File Naming
 
@@ -2329,7 +2334,7 @@ x: {
 
 ; Force unwrap
 ; Cancel implementation
-//!x.say()
+;!x.say()
 ```
 
 ### Style Guide: Use ?t option Instead of (val, ok)
@@ -3286,7 +3291,7 @@ ok = DIST.exists('css/style.css')
 
 | Method | Signature | Description |
 | --- | --- | --- |
-| `read` | `(path str) (data []byte, ok bool)` | Read an embedded file, returns content and whether found |
+| `read` | `(path str) (data ?[]byte)` | Read an embedded file, returns its content (nil when absent) |
 | `exists` | `(path str) (yes bool)` | Check if an embedded file exists |
 
 **Example**:
@@ -3305,11 +3310,13 @@ serve = (conn server-conn) {
     rel = path.slice(1, path.len-bytes())
 
     ; Read from embedded filesystem
-    data, ok = DIST.read(rel)
-    ok == false -> {
-        conn.write-html(404, 'Not Found')
-        conn.close()
-        return
+    data []byte = DIST.read(rel): {
+        ok -> it
+        -> {
+            conn.write-html(404, 'Not Found')
+            conn.close()
+            return
+        }
     }
     conn.write-status(200)
     conn.write-header('Content-Type', get-content-type(path))

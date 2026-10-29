@@ -42,9 +42,13 @@ j <- [0..2000): {
     r = json.parse('{"name":"Alice"}')
     r: {
         ok -> {
-            s, found = it.get-str('name')
-            found -> {
-                last = s
+            s-opt = it.get-str('name')
+            s-opt: {
+                ok -> {
+                    last = it
+                }
+
+                -> _
             }
         }
 

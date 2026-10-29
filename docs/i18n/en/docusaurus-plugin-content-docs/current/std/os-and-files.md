@@ -160,7 +160,7 @@ ok = fs.lstat(path)                 ; Get symlink info (does not follow link tar
 
 ; Directory operations
 dirp = fs.open-dir(path)             ; Open directory (returns handle, 0 on failure)
-name = fs.read-dir(dirp)             ; Read next dir entry (returns str, ok bool)
+name = fs.read-dir(dirp)             ; Read next dir entry (returns ?str)
 ok = fs.close-dir(dirp)              ; Close directory handle
 names = fs.list-dir(path)            ; List all entry names (includes . and ..)
 names = fs.dir-entries(path)          ; List entries (excludes . and ..)
@@ -168,11 +168,11 @@ paths = fs.walk(root)                ; Recursively walk directory tree
 
 ; Path resolution
 abs = fs.realpath(path)              ; Resolve to absolute canonical path
-target = fs.readlink(path)           ; Read symbolic link target (returns str, ok bool)
+target = fs.readlink(path)           ; Read symbolic link target (returns ?str)
 
 ; Temp file/directory
 name, fd = fs.mkstemp(tmpl)          ; Create temp file (template ending XXXXXX)
-name = fs.mkdtemp(tmpl)             ; Create temp directory (template ending XXXXXX)
+name = fs.mkdtemp(tmpl)             ; Create temp directory (template ending XXXXXX, returns ?str)
 
 ; Special files
 ok = fs.mkfifo(path, mode)          ; Create named pipe (FIFO)

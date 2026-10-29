@@ -240,7 +240,7 @@ compiler bug**. Rule these out before filing anything as a codegen defect.
 1. **New-style if/else must be wrapped in its own `{ }` block.**
 
    ```no
-   // correct
+   ; correct
    f = (a i64) (r i64) {
        {
            a > 0 -> r = 100
@@ -248,11 +248,11 @@ compiler bug**. Rule these out before filing anything as a codegen defect.
        }
    }
 
-   // WRONG — this is not an if/else
+   ; WRONG — this is not an if/else
    f = (a i64) (r i64) {
        a > 0 -> r = 100
-       -> r = -1        // lowered to `if (true) { r = -1 }`: runs unconditionally
-   }                    // and overwrites the previous assignment
+       -> r = -1        ; lowered to `if (true) { r = -1 }`: runs unconditionally
+   }                    ; and overwrites the previous assignment
    ```
 
    The broken form always yields the last arm's value, which looks exactly like
@@ -302,7 +302,7 @@ func TestXxx(t *testing.T) {
 Functions returning a boolean result must use `bool` type, not `i64`:
 
 ```no
-// ✅ Correct — bool type
+; ✅ Correct — bool type
 uuid.is-nil = () (yes bool) {
     yes = 1
     ...
@@ -311,7 +311,7 @@ uuid.eq = (b uuid) (yes bool) { ... }
 is-letter = (r i64) (yes bool) { ... }
 str.path-is-abs = () (yes bool) { ... }
 
-// ❌ Incorrect — i64 is not a boolean type
+; ❌ Incorrect — i64 is not a boolean type
 uuid.is-nil = () (yes i64) { ... }
 ```
 
@@ -320,10 +320,10 @@ uuid.is-nil = () (yes i64) { ... }
 Functions operating on a primary data type should be expressed as type-bound methods with explicit parameter types:
 
 ```no
-// ✅ Correct — method form with typed parameters
+; ✅ Correct — method form with typed parameters
 str.path-join(b str, bn i64) (out str, out-n i64)
 
-// ❌ Incorrect — no receiver, missing types
+; ❌ Incorrect — no receiver, missing types
 join(a, an, b, bn, out) (out-n)
 ```
 
@@ -348,10 +348,10 @@ In the old syntax, `for {}` and `if x {}` and `match x {}` all use the same `{}`
 **Always prefer the new syntax** to avoid this:
 
 ```no
-// ❌ Old syntax — empty body
+; ❌ Old syntax — empty body
 for { }
 
-// ✅ New syntax — explicit infinite loop, no ambiguity
+; ✅ New syntax — explicit infinite loop, no ambiguity
 ! { }
 ```
 
@@ -360,14 +360,14 @@ for { }
 The new bare-match expression is the recommended way to express if/else chains. Each arm is `cond -> body`, with the **last arm's condition optional** (`-> body` is the default branch).
 
 ```no
-// ✅ Recommended (single-line body)
+; ✅ Recommended (single-line body)
 {
     a == 1 -> x = 1
     a == 2 || a == 3 -> y = 2
     -> z = 0
 }
 
-// ✅ Multi-line arm body must use braces -> { ... }
+; ✅ Multi-line arm body must use braces -> { ... }
 {
     a == 1 -> {
         x = 1

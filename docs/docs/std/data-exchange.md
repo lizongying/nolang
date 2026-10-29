@@ -13,8 +13,8 @@ sidebar_position: 4.1
 j = json.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')
 j: {
     ok -> {
-        name, found = it.get-str('name')   ; 取標量：get-str / get-num / get-bool / get-i64
-        age, ok2 = it.get-i64('age')       ; 整數取值
+        name = it.get-str('name')          ; 取標量：get-str / get-num / get-bool / get-i64（?值）
+        age = it.get-i64('age')            ; 整數取值（?i64）
         items = it.get('items')            ; 取子節點，回傳 ?json
         s = it.stringify()                 ; 序列化回字串
     }
@@ -34,7 +34,7 @@ print(j2.stringify())
 - `json.new()` — 建立空（null）`json`
 - `json.parse(s)` — 解析，回傳 `?json`；失敗時 `err` 分支帶具體原因（`empty input` / `parse error` / `trailing characters`）
 - `j.stringify()` — 序列化為字串
-- 取值：`j.get-str(key)` / `j.get-num(key)` / `j.get-bool(key)` / `j.get-i64(key)`（回傳 `(val, ok)`）；`j.get(key)` 回傳子節點 `?json`
+- 取值：`j.get-str(key)` / `j.get-num(key)` / `j.get-bool(key)` / `j.get-i64(key)`（各回傳 `?val`）；`j.get(key)` 回傳子節點 `?json`
 - 標量直取（root 為標量時）：`j.str()` / `j.num()` / `j.bool()` / `j.i64()` / `j.str-val()`
 - 寫入：`j.set-str(key,val)` / `j.set-num` / `j.set-i64` / `j.set-bool` / `j.set-null` / `j.set-key(key, val json)`
 - 陣列：`j.arr-get(i)` / `j.arr-len()` / `j.arr-push(val json)` / `j.arr-push-str` / `j.arr-push-num` / `j.arr-push-bool`
@@ -59,7 +59,7 @@ print(j2.stringify())
 - `idx = p.alloc()` — 分配新節點並回傳索引（堆 vec 自動擴容）
 - `p.add-child(node-idx, child-idx, key)` — 以邊表（`ec`/`ek`/`en` 單向鏈表）附加子元素，無每節點上限
 - `node-idx, next-pos, ok = p.parse(s, pos)` — 從 `pos` 解析一個值，回傳節點索引
-- `val-idx, ok = p.get-key(obj-idx, key)`；`p.arr-get(arr-idx, i)`；`p.arr-len(arr-idx)`
+- `val-idx = p.get-key(obj-idx, key)`（`?i64`）；`p.arr-get(arr-idx, i)`（`?i64`）；`p.arr-len(arr-idx)`
 - `p.get-kind(idx)` / `p.get-str(idx)` / `p.get-num(idx)` / `p.get-bool(idx)`
 - `p.set-key(obj-idx, key, val-idx)`；`p.copy-tree(src, idx)`（遞迴深拷貝子樹）
 - `p.stringify(node-idx)` — 序列化指定節點
@@ -102,12 +102,19 @@ doc: {
     err -> print(it)
 
     -> {
-        name, ok = it.find-str('name')
-        port, ok2 = it.find-i64('server.port')
-        print(name)
-        print(port.to-str())
-        print(it.to-json())
-        print(it.to-yaml())
+        doc = it
+        name = doc.find-str('name')        ; ?str
+        port = doc.find-i64('server.port') ; ?i64
+        name: {
+            ok -> print(it)
+            -> print('')
+        }
+        port: {
+            ok -> print(it.to-str())
+            -> print('')
+        }
+        print(doc.to-json())
+        print(doc.to-yaml())
     }
 }
 ```
@@ -119,14 +126,14 @@ doc: {
 - `yaml.strip-bom(text)` — 去掉 UTF-8 BOM
 - `doc-count()` / `doc(i)` — 多文檔訪問
 - `kind()`、`is-null()`、`is-bool()`、`is-int()`、`is-float()`、`is-nan()`、`is-str()`、`is-seq()`、`is-map()`、`len()`、`text()`、`tag()`、`anchor()`、`line-of()` — 節點資訊
-- `str()`、`i64()`、`f64()`、`bool()`、`scalar-text()` — 取值，一律回傳 `(值, ok)`
+- `str()`、`i64()`、`f64()`、`bool()`、`scalar-text()` — 取值，一律回傳 `?值`
 - `at(i)`、`value(i)`、`key(i)`、`key-node(i)`、`get(key)`、`find(path)` — 取子節點 / 鍵
 - `get-str` / `get-i64` / `get-f64` / `get-bool`、`find-str` / `find-i64` / `find-f64` / `find-bool` — 便捷取值
 - `to-json()`、`to-json-all()`、`to-yaml()`、`stringify()`、`source-of()` — 序列化
 
 節點類型常量：`YAML-KIND-NULL` / `BOOL` / `INT` / `FLOAT` / `STR` / `SEQ` / `MAP`（0–6）；標量風格常量 `YAML-STYLE-PLAIN` / `SINGLE` / `DOUBLE` / `LITERAL` / `FOLDED` / `ALIAS`（0–5）與 `YAML-STYLE-BLOCK` / `FLOW`（6–7）。
 
-> **注意一**：子節點視圖以 `(out yaml, ok bool)` 回傳，而不是 `?yaml`。這是 API 風格的選擇，不是所有權限制——子節點與父文檔共享節點池本來就是安全的。取值一律建議用 `find-str` / `find-i64` 這類路徑便捷函式。
+> **注意一**：子節點視圖以 `?yaml` 回傳，取值協助函式以 `?值` 回傳，用 match 解包（`child = d.at(i)`，其 `ok` 臂以 `it` 綁定子節點、預設臂處理空值，每臂獨立一行）。子節點與父文檔共享節點池，建議在同一個 match 內完成取值，或先繫結一份，別跨多次池變動持有過期 handle。取值一律建議用 `find-str` / `find-i64` 這類路徑便捷函式。
 >
 > **注意二**：巢狀 match 裡 `it` 是**按層還原**的。內層 match 的臂會把 `it` 重新綁到自己的主體（臂體必須看到內層值），但該臂一結束 `it` 就還原成外層臂的主體，所以下面這種寫法是安全的：
 >

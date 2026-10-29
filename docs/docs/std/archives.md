@@ -91,7 +91,7 @@ zlib 串流格式：2-byte 標頭 + 原始 DEFLATE + 4-byte Adler-32 校驗碼�
 
 ```no
 out = zlib.zlib-compress(data)                       ; 壓縮為 zlib 格式（stored blocks）
-out = zlib.zlib-decompress(data)                     ; 解壓 zlib 格式
+out = zlib.zlib-decompress(data)                     ; 解壓 zlib 格式（回傳 ?[]byte）
 sum = zlib.adler-32(data, n)                        ; 計算 Adler-32 校驗碼
 ```
 

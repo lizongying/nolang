@@ -3,5 +3,8 @@
 test-mkdtemp = () {
 
     name-opt = fs.mkdtemp('/tmp/test.XXXXXX')
-    name-opt: { ok -> print(it); -> print('failed') }
+    name-opt: {
+        ok -> print(it)
+        -> print('failed')
+    }
 }

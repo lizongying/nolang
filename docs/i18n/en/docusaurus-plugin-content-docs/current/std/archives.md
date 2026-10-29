@@ -91,7 +91,7 @@ Pure Nolang implementation of RFC 1950 zlib compression and decompression, using
 
 ```no
 out = zlib.zlib-compress(data)                      ; Compress to zlib stream
-out = zlib.zlib-decompress(data)                    ; Decompress zlib stream (returns []byte, ok bool)
+out = zlib.zlib-decompress(data)                    ; Decompress zlib stream (returns ?[]byte)
 sum = zlib.adler-32(data, n)                        ; Adler-32 checksum
 ```
 

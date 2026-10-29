@@ -230,7 +230,7 @@ grep -r 'MethodName.*"read-file"' src/builtin/
    ; my-builtin: 我的内建函数
    ; p: 参数说明
    ; 成功返回 true
-   ; my-builtin = (p str) (ok bool) {  // LLVM: ...
+   ; my-builtin = (p str) (ok bool) {  ; LLVM: ...
    ; }
    ```
 

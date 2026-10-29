@@ -174,19 +174,36 @@ j: {
 
         -> print('FAIL: 5a json.set-str returned false')
 
-        val, found = it.get-str('日本語')
-        found -> {
-            val == 'にほんご' -> print('PASS: 5b json.get-str non-ascii round trip')
+        val-opt = it.get-str('日本語')
+        val-opt: {
+            ok -> {
+                val = it
+                {
+                    val == 'にほんご' -> print('PASS: 5b json.get-str non-ascii round trip')
 
-            -> print('FAIL: 5b json.get-str got=[{val}] (expect にほんご)')
+                    -> print('FAIL: 5b json.get-str got=[{val}] (expect にほんご)')
+                }
+            }
+
+            -> print('FAIL: 5b json.get-str key not found')
         }
 
-        -> print('FAIL: 5b json.get-str key not found')
+        s-val-opt = it.get-str('name')
+        s-val = ''
+        s-ok = false
+        s-val-opt: {
+            ok -> {
+                s-val = it
+                s-ok = true
+            }
 
-        s-val, s-ok = it.get-str('name')
-        s-ok && s-val == 'Alice' -> print('PASS: 5c json ascii value intact')
+            -> _
+        }
+        {
+            s-ok && s-val == 'Alice' -> print('PASS: 5c json ascii value intact')
 
-        -> print('FAIL: 5c json ascii value broken')
+            -> print('FAIL: 5c json ascii value broken')
+        }
     }
 }
 
@@ -203,10 +220,22 @@ jp: {
     nil -> print('FAIL: 5d json.parse non-ascii -> nil')
 
     -> {
-        jpv, jpok = it.get-str('名前')
-        jpok && jpv == '日本語' -> print('PASS: 5d json.parse non-ascii key+value')
+        jpv-opt = it.get-str('名前')
+        jpv = ''
+        jpok = false
+        jpv-opt: {
+            ok -> {
+                jpv = it
+                jpok = true
+            }
 
-        -> print('FAIL: 5d json.parse non-ascii got=[{jpv}] ok={jpok.to-str()}')
+            -> _
+        }
+        {
+            jpok && jpv == '日本語' -> print('PASS: 5d json.parse non-ascii key+value')
+
+            -> print('FAIL: 5d json.parse non-ascii got=[{jpv}] ok={jpok.to-str()}')
+        }
     }
 }
 

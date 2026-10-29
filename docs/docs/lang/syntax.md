@@ -590,9 +590,14 @@ doc: {
     err -> print(it)
 
     -> {
-        name, ok = it.find-str('name')
-        port, ok2 = it.find-i64('server.port')
-        print(it.to-json())
+        doc = it
+        name = doc.find-str('name')          ; ?str
+        port = doc.find-i64('server.port')   ; ?i64
+        name: {
+            ok -> print(it)
+            -> print('')
+        }
+        print(doc.to-json())
     }
 }
 ```
@@ -601,11 +606,11 @@ doc: {
 
 - `yaml.parse(text)` / `yaml.parse-all(text)` — 解析，回傳 `?yaml`
 - `yaml.valid-of(text)` / `yaml.error-of(text)` — 只做校驗
-- `it.find(path)` / `it.get(key)` — 取子節點，回傳 `(yaml, ok)`
-- `it.find-str(path)`、`find-i64`、`find-f64`、`find-bool` — 便捷取值，回傳 `(值, ok)`
+- `it.find(path)` / `it.get(key)` — 取子節點，回傳 `?yaml`
+- `it.find-str(path)`、`find-i64`、`find-f64`、`find-bool` — 便捷取值，回傳 `?值`
 - `it.to-json()` / `it.to-yaml()` — 序列化
 
-> 注意：子節點以 `(out yaml, ok bool)` 回傳而非 `?yaml`——MIR 後端目前不能安全地共享含切片的節點池。
+> 注意：子節點以 `?yaml`、取值協助函式以 `?值` 回傳，用 match 解包（`child = it.find(path)`，其 `ok` 臂以 `it` 綁定子節點、預設臂處理空值，每臂獨立一行）。
 
 ## 檔案命名
 
@@ -2258,7 +2263,7 @@ x: {
 
 ; 強制解包
 ; 取消實現
-//!x.say()
+;!x.say()
 ```
 
 ### 風格指引：使用 ?t option 取代 (val, ok)
@@ -3202,7 +3207,7 @@ ok = DIST.exists('css/style.css')
 
 | 方法       | 簽名                                  | 說明                |
 | -------- | ----------------------------------- | ----------------- |
-| `read`   | `(path str) (data []byte, ok bool)` | 讀取嵌入的文件，返回內容和是否找到 |
+| `read`   | `(path str) (data ?[]byte)`           | 讀取嵌入的文件，返回內容（未找到時為 nil） |
 | `exists` | `(path str) (yes bool)`             | 檢查嵌入的文件是否存在       |
 
 **範例**：
@@ -3221,11 +3226,13 @@ serve = (conn server-conn) {
     rel = path.slice(1, path.len-bytes())
 
     ; 從嵌入的文件系統讀取
-    data, ok = DIST.read(rel)
-    ok == false -> {
-        conn.write-html(404, 'Not Found')
-        conn.close()
-        return
+    data []byte = DIST.read(rel): {
+        ok -> it
+        -> {
+            conn.write-html(404, 'Not Found')
+            conn.close()
+            return
+        }
     }
     conn.write-status(200)
     conn.write-header('Content-Type', get-content-type(path))

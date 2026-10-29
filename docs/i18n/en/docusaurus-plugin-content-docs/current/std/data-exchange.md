@@ -13,8 +13,8 @@ sidebar_position: 4.1
 j = json.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')
 j: {
     ok -> {
-        name, found = it.get-str('name')   ; scalars: get-str / get-num / get-bool / get-i64
-        age, ok2 = it.get-i64('age')
+        name = it.get-str('name')          ; scalars: get-str / get-num / get-bool / get-i64 (?value)
+        age = it.get-i64('age')             ; ?i64
         items = it.get('items')            ; child node, returns ?json
         s = it.stringify()                 ; serialize back to string
     }
@@ -34,7 +34,7 @@ High-level API (methods on `json`):
 - `json.new()` — create an empty (null) `json`
 - `json.parse(s)` — parse, returns `?json`; the `err` branch carries the reason (`empty input` / `parse error` / `trailing characters`)
 - `j.stringify()` — serialize to a string
-- Read by key: `j.get-str(key)` / `j.get-num(key)` / `j.get-bool(key)` / `j.get-i64(key)` (each returns `(val, ok)`); `j.get(key)` returns a child `?json`
+- Read by key: `j.get-str(key)` / `j.get-num(key)` / `j.get-bool(key)` / `j.get-i64(key)` (each returns `?value`); `j.get(key)` returns a child `?json`
 - Direct root scalar access (when root is a scalar): `j.str()` / `j.num()` / `j.bool()` / `j.i64()` / `j.str-val()`
 - Write: `j.set-str(key,val)` / `j.set-num` / `j.set-i64` / `j.set-bool` / `j.set-null` / `j.set-key(key, val json)`
 - Array: `j.arr-get(i)` / `j.arr-len()` / `j.arr-push(val json)` / `j.arr-push-str` / `j.arr-push-num` / `j.arr-push-bool`
@@ -97,12 +97,19 @@ doc: {
     err -> print(it)
 
     -> {
-        name, ok = it.find-str('name')
-        port, ok2 = it.find-i64('server.port')
-        print(name)
-        print(port.to-str())
-        print(it.to-json())
-        print(it.to-yaml())
+        doc = it
+        name = doc.find-str('name')        ; ?str
+        port = doc.find-i64('server.port') ; ?i64
+        name: {
+            ok -> print(it)
+            -> print('')
+        }
+        port: {
+            ok -> print(it.to-str())
+            -> print('')
+        }
+        print(doc.to-json())
+        print(doc.to-yaml())
     }
 }
 ```
@@ -114,14 +121,14 @@ Common functions and methods:
 - `yaml.strip-bom(text)` — strip a UTF-8 BOM
 - `doc-count()` / `doc(i)` — multi-document access
 - `kind()`, `is-null()`, `is-bool()`, `is-int()`, `is-float()`, `is-nan()`, `is-str()`, `is-seq()`, `is-map()`, `len()`, `text()`, `tag()`, `anchor()`, `line-of()` — node information
-- `str()`, `i64()`, `f64()`, `bool()`, `scalar-text()` — value access; all return `(value, ok)`
+- `str()`, `i64()`, `f64()`, `bool()`, `scalar-text()` — value access; all return `?value`
 - `at(i)`, `value(i)`, `key(i)`, `key-node(i)`, `get(key)`, `find(path)` — child nodes and keys
 - `get-str` / `get-i64` / `get-f64` / `get-bool`, `find-str` / `find-i64` / `find-f64` / `find-bool` — typed shortcuts
 - `to-json()`, `to-json-all()`, `to-yaml()`, `stringify()`, `source-of()` — serialization
 
 Kind constants: `YAML-KIND-NULL` / `BOOL` / `INT` / `FLOAT` / `STR` / `SEQ` / `MAP` (0–6). Scalar-style constants: `YAML-STYLE-PLAIN` / `SINGLE` / `DOUBLE` / `LITERAL` / `FOLDED` / `ALIAS` (0–5), plus `YAML-STYLE-BLOCK` / `FLOW` (6–7).
 
-> **Caveat 1**: child views are returned as `(out yaml, ok bool)`, not `?yaml`. This is an API-style choice, not an ownership limitation — a child sharing the parent's node pool is perfectly safe. Prefer the path helpers (`find-str` / `find-i64` / ...) for lookups.
+> **Caveat 1**: child views are returned as `?yaml` and value helpers as `?value`; unwrap them with a match (`child = d.at(i)`, whose `ok` arm binds `it` to the child and whose default arm handles the none case, one arm per line). A child shares the parent's node pool, so finish lookups inside the same match (or bind once) rather than holding a stale handle across further pool mutations. Prefer the path helpers (`find-str` / `find-i64` / ...) for lookups.
 >
 > **Caveat 2**: inside nested matches `it` is restored **per level**. An inner match's arm rebinds `it` to its own subject (the arm body must see the inner value), but as soon as that arm ends `it` reverts to the enclosing arm's subject — so this is safe:
 >

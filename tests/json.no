@@ -34,12 +34,16 @@ root, next, ok = p.parse(json-str, 0)
         return
     }
 }
-val-idx, found = p.get-key(root, 'name')
-{
-    found -> {
-        str-val, ok = p.get-str(val-idx)
-        {
-            ok -> print('ok: name={str-val}')
+name-opt = p.get-key(root, 'name')
+name-opt: {
+    ok -> {
+        val-idx = it
+        str-opt = p.get-str(val-idx)
+        str-opt: {
+            ok -> {
+                str-val = it
+                print('ok: name={str-val}')
+            }
 
             -> print('fail: get-str name')
         }
@@ -47,12 +51,14 @@ val-idx, found = p.get-key(root, 'name')
 
     -> print('fail: get-key name')
 }
-val-idx, found = p.get-key(root, 'age')
-{
-    found -> {
-        num-val, ok = p.get-num(val-idx)
-        {
+age-opt = p.get-key(root, 'age')
+age-opt: {
+    ok -> {
+        val-idx = it
+        num-opt = p.get-num(val-idx)
+        num-opt: {
             ok -> {
+                num-val = it
 
                 ; 用比較驗證，避免 f64.to-str 的 codegen bug
                 {
@@ -68,9 +74,10 @@ val-idx, found = p.get-key(root, 'age')
 
     -> print('fail: get-key age')
 }
-arr-idx, found = p.get-key(root, 'items')
-{
-    found -> {
+items-opt = p.get-key(root, 'items')
+items-opt: {
+    ok -> {
+        arr-idx = it
         n = p.arr-len(arr-idx)
         {
             n == 3 -> print('ok: items len=3')
@@ -80,12 +87,14 @@ arr-idx, found = p.get-key(root, 'items')
                 print(n)
             }
         }
-        elem-idx, ok = p.arr-get(arr-idx, 0)
-        {
+        elem-opt = p.arr-get(arr-idx, 0)
+        elem-opt: {
             ok -> {
-                num-val, ok = p.get-num(elem-idx)
-                {
+                elem-idx = it
+                num-opt = p.get-num(elem-idx)
+                num-opt: {
                     ok -> {
+                        num-val = it
                         num-val == 1.0 -> print('ok: items[0]=1')
 
                         -> print('fail: items[0] should be 1')
@@ -101,12 +110,14 @@ arr-idx, found = p.get-key(root, 'items')
 
     -> print('fail: get-key items')
 }
-val-idx, found = p.get-key(root, 'active')
-{
-    found -> {
-        bool-val, ok = p.get-bool(val-idx)
-        {
+active-opt = p.get-key(root, 'active')
+active-opt: {
+    ok -> {
+        val-idx = it
+        bool-opt = p.get-bool(val-idx)
+        bool-opt: {
             ok -> {
+                bool-val = it
                 bool-val -> print('ok: active=true')
 
                 -> print('fail: active should be true')
@@ -127,10 +138,10 @@ result = p.stringify(root)
 
     -> print('fail: stringify')
 }
-val-idx, found = p.get-key(root, 'nonexistent')
-{
-    found == false -> print('ok: nonexistent key not found')
+ne-opt = p.get-key(root, 'nonexistent')
+ne-opt: {
+    ok -> print('fail: nonexistent key should not be found')
 
-    -> print('fail: nonexistent key should not be found')
+    -> print('ok: nonexistent key not found')
 }
 print('ok: all tests done')

@@ -158,7 +158,7 @@ ok = fs.lstat(path)                 ; 取得符號連結資訊（不跟隨連結
 
 ; 目錄操作
 dirp = fs.open-dir(path)             ; 開啟目錄（返回控制代碼，0=失敗）
-name = fs.read-dir(dirp)             ; 讀取下一個目錄條目（返回 str, ok bool）
+name = fs.read-dir(dirp)             ; 讀取下一個目錄條目（返回 ?str）
 ok = fs.close-dir(dirp)              ; 關閉目錄控制代碼
 names = fs.list-dir(path)            ; 列出所有條目名稱（包含 . 和 ..）
 names = fs.dir-entries(path)          ; 列出條目（不含 . 和 ..）
@@ -166,11 +166,11 @@ paths = fs.walk(root)                ; 遞迴遍歷目錄樹
 
 ; 路徑解析
 abs = fs.realpath(path)              ; 解析為絕對規範路徑
-target = fs.readlink(path)           ; 讀取符號連結目標（返回 str, ok bool）
+target = fs.readlink(path)           ; 讀取符號連結目標（返回 ?str）
 
 ; 臨時檔案/目錄
 name, fd = fs.mkstemp(tmpl)          ; 建立臨時檔案（模板末尾為 XXXXXX）
-name = fs.mkdtemp(tmpl)             ; 建立臨時目錄（模板末尾為 XXXXXX）
+name = fs.mkdtemp(tmpl)             ; 建立臨時目錄（模板末尾為 XXXXXX，返回 ?str）
 
 ; 特殊檔案
 ok = fs.mkfifo(path, mode)          ; 建立命名管道（FIFO）
