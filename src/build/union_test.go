@@ -660,10 +660,13 @@ func TestRewriteUnionCallsArmSeesArmLocalVarTypes(t *testing.T) {
 		&parser.LetStatement{Name: id("mm"), Value: armAdd},
 	}}
 	// 對照組：同样的两条语句放在函数体层级（外層已收集體內型別，理應正確）。
+	// 名稱刻意與臂內不同（da 而非 d）——同名會讓體層級的收集順帶把臂內那條也補上，
+	// 斷言就空轉了（這正是本測試第一版漏掉 D3 的原因）。
 	bodyAdd := newAddCall()
+	bodyAdd.Arguments[1] = id("da")
 	bodyStmts := []parser.Statement{
-		&parser.LetStatement{Name: id("d"), Type: &parser.NamedType{Value: "i64"}, Value: &parser.IntegerLiteral{Value: 4}},
-		&parser.LetStatement{Name: id("mm"), Value: bodyAdd},
+		&parser.LetStatement{Name: id("da"), Type: &parser.NamedType{Value: "i64"}, Value: &parser.IntegerLiteral{Value: 4}},
+		&parser.LetStatement{Name: id("mmb"), Value: bodyAdd},
 	}
 	fn := &parser.FunctionDefinition{
 		Name: "g9",

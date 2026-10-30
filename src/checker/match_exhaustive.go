@@ -6,6 +6,7 @@ import (
 
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 // matchNonexTraceID is the diagnostic ID for non-exhaustive option matches.
@@ -118,7 +119,7 @@ func subjectIsDeclaredEnumExpr(program *parser.Program, subj parser.Expression, 
 		return false
 	}
 	t, ok := program.Sem.FuncVarType(funcName, id.Value)
-	if !ok || t == "" || strings.HasPrefix(t, "?") {
+	if !ok || t == "" || ty.IsOptionRaw(t) {
 		return false
 	}
 	_, isEnum := program.Sem.EnumVariants[t]

@@ -1,0 +1,125 @@
+; cg-runtime-test.no — compiler/src/cg-runtime.no + cg-rc.no 的单元测试（M4-a）
+;
+; 执行： ./bin/no run compiler/tests/cg-runtime-test.no
+;
+; ⚠️ runner 断言失败【不会】自动改变行程退出码，本档结尾必须自己 exit(1)。
+; ⚠️ 讯息一律用单引号字串；nolang 的 "..." 是 char 字面量，不是字串。
+;
+; 断言取自 Go authority（src/mir/codegen.go emitPrelude / 14712-14818）的实测形状，
+; 不是手写猜的。改动 prelude 文本后本档会红——这是刻意的盘点气闩。
+
+# /test/runner.eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+
+; ── 类型/声明 ────────────────────────────────────────────
+test-runtime-types = () {
+    p = cg-runtime-prelude()
+    runner.eq(p.contains('%nolang_hdr = type { i64, i64 }'), 1, 'hdr type present')
+    runner.eq(p.contains('%task = type'), 1, 'task type present')
+    runner.eq(p.contains('@malloc'), 1, 'malloc decl present')
+    runner.eq(p.contains('@free'), 1, 'free decl present')
+}
+
+; ── RC helper IR 文本 ────────────────────────────────────
+test-rc-ir = () {
+    a = cg-rc-alloc()
+    runner.eq(a.contains('@nolang_rc_alloc'), 1, 'alloc define')
+    runner.eq(a.contains('7957698232306827265'), 1, 'alloc writes magic decimal')
+    t = cg-rc-retain()
+    runner.eq(t.contains('@nolang_rc_retain'), 1, 'retain define')
+    runner.eq(t.contains('7957698232306827265'), 1, 'retain checks magic')
+    d = cg-rc-release()
+    runner.eq(d.contains('@nolang_rc_release'), 1, 'release define')
+    f = cg-rc-nolang-free()
+    runner.eq(f.contains('@nolang_free'), 1, 'free define')
+    runner.eq(cg-rc-hdr-size(), 16, 'hdr size')
+    runner.eq(cg-rc-hdr-magic(), 7957698232306827265, 'hdr magic')
+}
+
+; ── check-rc-balance：平衡通过 ────────────────────────────
+test-balance-pass = () {
+    vids []i64 = []
+    ops []i64 = []
+    vids.push(1)
+    ops.push(0)
+    vids.push(1)
+    ops.push(1)
+    e = cg-rc-check-balance(vids, ops)
+    runner.eq(e.len-bytes(), 0, 'balanced passes')
+}
+
+; ── check-rc-balance：欠计数（release 多于 retain）⇒ 报错 ──
+test-balance-under = () {
+    vids []i64 = []
+    ops []i64 = []
+    vids.push(2)
+    ops.push(1)
+    e = cg-rc-check-balance(vids, ops)
+    runner.eq(e.len-bytes() > 0, 1, 'under-count fails')
+    runner.eq(e.contains('under-count'), 1, 'under-count message')
+}
+
+; ── check-rc-balance：过计数是接受的泄漏，不报错 ──────────
+test-balance-over-ok = () {
+    vids []i64 = []
+    ops []i64 = []
+    vids.push(3)
+    ops.push(0)
+    vids.push(3)
+    ops.push(0)
+    vids.push(3)
+    ops.push(1)
+    e = cg-rc-check-balance(vids, ops)
+    runner.eq(e.len-bytes(), 0, 'over-count allowed')
+}
+
+; ── prelude-full：完整 prelude 的组成与顺序 ────────────────
+; @str_concat 调 @nolang_rc_alloc ⇒ 顺序必须是 RC 在前。
+test-prelude-full = () {
+    p = cg-runtime-prelude-full()
+    runner.eq(p.contains('declare void @llvm.memcpy.p0i8.p0i8.i64'), 1, 'memcpy decl')
+    runner.eq(p.contains('define i8* @nolang_rc_alloc'), 1, 'rc_alloc present')
+    runner.eq(p.contains('define %str-long @str_concat'), 1, 'str_concat present')
+    ia = p.index('define i8* @nolang_rc_alloc')
+    ic = p.index('define %str-long @str_concat')
+    runner.eq(ia >= 0, 1, 'rc_alloc found')
+    runner.eq(ic > ia, 1, 'rc_alloc before str_concat')
+}
+
+; ── 向量 helper IR 文本 ───────────────────────────────────
+test-vec-helpers = () {
+    p = cg-runtime-prelude()
+    runner.eq(p.contains('%vec = type { i64, i64, i64 }'), 1, 'vec type')
+    n = cg-runtime-vec-new()
+    runner.eq(n.contains('define %vec @vec_new()'), 1, 'vec_new')
+    l = cg-runtime-vec-len()
+    runner.eq(l.contains('define i64 @vec_len(%vec %v)'), 1, 'vec_len')
+    g = cg-runtime-vec-get()
+    runner.eq(g.contains('define i64 @vec_get_i64(%vec %v, i64 %i)'), 1, 'vec_get')
+    u = cg-runtime-vec-push()
+    runner.eq(u.contains('define %vec @vec_push_i64(%vec %v, i64 %x)'), 1, 'vec_push')
+    runner.eq(u.contains('phi i64 [ %cap, %entry ], [ %ncap, %grow ], [ %ncap, %copy ]'), 1, 'push cap phi')
+    runner.eq(u.contains('br i1 %empty, label %store, label %copy'), 1, 'push skips memcpy when empty')
+    runner.eq(u.contains('call void @free(i8* %old)'), 1, 'push frees old buffer')
+    f = cg-runtime-prelude-full()
+    runner.eq(f.contains('define %vec @vec_push_i64'), 1, 'full has vec_push')
+}
+
+test-runtime-types()
+test-rc-ir()
+test-balance-pass()
+test-balance-under()
+test-balance-over-ok()
+test-prelude-full()
+test-vec-helpers()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

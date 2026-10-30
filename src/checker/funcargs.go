@@ -1838,6 +1838,17 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 		if argType == "" {
 			continue // unknown argument type: nothing to assert
 		}
+		// Union-alias parameters dispatch per MEMBER at monomorphization time, and that
+		// pass matches by type NAME only (see build.inferExprMemberType). A merely
+		// "compatible" argument — `byte` into `bigint | i64` via integer widening —
+		// therefore picks no member and leaves the template callee dangling. Bail out
+		// here with a source position instead (`unionarg`). Placed BEFORE the option
+		// guard on purpose: `?i64` must resolve through its payload, while `?byte`
+		// still has to be rejected.
+		if us := checkUnionMemberArg(arg, paramType, argType, recvType+"."+dot.Property, i+1); len(us) > 0 {
+			results = append(results, us...)
+			continue
+		}
 		// `storage` types describe the builtin's STORAGE SHAPE, not a declared
 		// signature, and the codegen stores the value at the receiver's element
 		// stride — an i64 pushed into a []byte is truncated to one byte by

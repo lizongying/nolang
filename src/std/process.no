@@ -455,6 +455,7 @@ process.wait-nohang = () (status ?i64) {
         status = .exit-code
         return
     }
+
     ; 用 waitpid-nohang：-1=子進程仍在執行，否則=退出碼(WEXITSTATUS)。
     ; 不可用 process-waitpid(.pid, WNOHANG)——它回傳「已解碼退出碼」，
     ; 子進程仍在執行時回傳 0，與「正常退出碼 0」無法區分，會把 rc=0
@@ -1120,6 +1121,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                     ec-opt = win-get-exit-code(proc-handle)
                     ec-opt: {
                         ok -> code = it
+
                         -> code = -1
                     }
                 }
@@ -1133,6 +1135,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             ec-opt2 = win-get-exit-code(proc-handle)
             ec-opt2: {
                 ok -> code = it
+
                 -> code = -1
             }
         }
@@ -1275,12 +1278,14 @@ list-all = () (procs []proc-info) {
 
 #{mac-amd64, mac-arm64}
 list-all = () (procs []proc-info) {
+
     ; macOS 暫時返回空列表（需 libproc proc_listallpids 或 sysctl KERN_PROC）
     procs = []
 }
 
 #{win-amd64, win-arm64}
 list-all = () (procs []proc-info) {
+
     ; Windows 暫時返回空列表（需 CreateToolhelp32Snapshot）
     procs = []
 }

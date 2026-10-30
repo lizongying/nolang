@@ -570,6 +570,46 @@ compiler/                          ← 新子項目（workspace 註冊為 "compi
     └── shs-check.no               ; SHS 白名單守護（§7.6）
 ```
 
+### 4.1.1 目標佈局 vs 當前實際（as-built，2026-10-30 實測）
+
+> ⚠️ §4.1 是**目標**佈局（全部里程碑完成後的形狀），不是現狀。下表把目標樹逐檔對到**當前實際**（`find compiler/src -name '*.no'`），避免讀者誤以為那些檔案已存在。當前 `compiler/src` 只有 **11 個 `.no`**（含 2 個生成物），前端閉環、中端/後端缺席。
+
+| 檔案 | 目標（§4.1） | 當前實際（2026-10-30） | 里程碑 |
+| --- | --- | --- | --- |
+| `main.no` | ✅ 已列 | ✅ 存在（CLI 分派） | M0 |
+| `src/tok.no` | ✅ | ✅ | M1 |
+| `src/lx.no` | ✅ | ✅ | M1 |
+| `src/ast.no` | ✅ | ✅ | M2 |
+| `src/asp.no` | ❌ **未列** | ✅ **生成物**（`no ast` dump 規格表，`scripts/gen_ast_spec.py` 產出，勿手改） | M2 |
+| `src/ps.no` | ✅ | ✅ | M2 |
+| `src/ann.no` | ✅ | ⬜ **未建**——註解已內嵌 `ast.no` 的 `AnnotatedNode`（`AnnTable` 已刪，§5.3.1 演進），**很可能不需要獨立檔** | M2 |
+| `src/ty.no` | ✅ | ⬜ 未建（型別解析暫在 `ps.no` 內） | M2 |
+| `src/diag.no` | ✅ | ✅ | M3-a |
+| `src/ck.no` | ✅ | ✅（首族 `'X' is not defined`，s13） | M3-c |
+| `src/ck-sig.no` | ✅ | ✅ **生成物**（`compiler/tools/gen_ck_sig.py`） | M3-b |
+| `src/ck-args.no` | ✅ | ⬜ 未建 | M3 |
+| `src/ck-lint.no` | ✅ | ⬜ 未建——37 個 `Validate*` 按語料頻度**逐族併入 `ck.no`**（§6.4 s13），未必拆獨立檔 | M3 |
+| `src/hir.no` | ✅ | ⬜ | M4 |
+| `src/hir2mir.no` | ✅ | ⬜ | M4 |
+| `src/mir.no` | ✅ | ⬜ | M4 |
+| `src/mir-opt.no` | ✅ | ⬜（M4 可選，交 LLVM `-O2`） | M4 |
+| `src/cg.no` | ✅ | ⬜ | M4 |
+| `src/cg-builtin.no` | ✅ | ⬜ | M4 |
+| `src/cg-runtime.no` | ✅ | ⬜ | M4 |
+| `src/cg-rc.no` | ✅ | ⬜ | M4 |
+| `src/cg-win.no` | ✅ | ⬜（後置 M7） | M7 |
+| `src/ws.no` | ✅ | ⬜ | M5 |
+| `src/mod.no` | ✅ | ⬜ | M5 |
+| `src/link.no` | ✅ | ⬜ | M5 |
+| `src/drv.no` | ✅ | ✅（`version` / `tokens` / `ast` / `vet`） | M0/M3 |
+| `src/util/sb.no` | ✅ | ✅ | M0 |
+| `src/util/intern.no` | ✅ | ✅ | M0/M1 |
+| `src/util/arena.no` | ✅ | ⬜ | — |
+| `src/util/idxmap.no` | ✅ | ⬜ | — |
+| `src/util/pathx.no` | ✅ | ⬜ | — |
+
+**測試側**（`compiler/tests/`，實際 10 個測試檔 + 68 個 `fixtures/t*.no`）：`tok-test` / `lx-test` / `ast-test` / `ps-test` / `ps-err-test` / `ck-test` / `ck-sig-test` / `diag-test` / `util-test` / `verify-struct-elem`——**全部已存在**（目標樹只列了 5 個，實際已超額）。工具側實際只有 `gen_ck_sig.py` + `shs-check.no`（目標樹的 `gen_stdsig/` 目錄尚未建立，生成器暫為單檔 Python）。
+
 ### 4.2 workspace / package 接入
 
 **`workspace.jsonc`（倉庫根）**：新增一行
@@ -1875,6 +1915,321 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **處置**：跨模組介面**只傳 primitive/vec**——`ck.check` 直接回 **打包串 vec**，每条形如 `'L|C|CODE|MSG'`（坐標=token 起始 1-based；MSG 可含 `'|'`，但前 3 段 `L/C/CODE` 無歧義 ⇒ `drv.cmd-vet` 按前 3 個 `|` 拆段即可還原坐標與碼）。此形既規避聚合體缺陷，又與 `diag.render` 行形契約兼容。屬 §2.2「實測不可用/受限」族的新增條目：**結構體不得跨模組按值傳**（SHS 約束），需要批量回值時以平行 `[]str`/打包串承載。
 
+### 5.3.4.at s14——M4-a：`cg-runtime`/`cg-rc` prelude 照抄 + `check-rc-balance` 骨架（2026-10-30 本轮）
+
+**背景**：§6.5 M4 啟動盤點的首個增量。M4 前 SUT 無中端/codegen；M4-a 的目標是立 **runtime prelude** 與 **RC 正確性地基**，讓後續 emit 有守門。**本輪全為新增檔（3 個 untracked），零改動既有檔**。
+
+**落地**：
+
+1. `compiler/src/cg-runtime.no`——`%nolang_hdr`（16 字節頭：rc@0、magic@8、data=base+16）與 `%task`（32 字節）類型 + `declare i8* @malloc(i64)` / `declare void @free(i8*)`。`cg-runtime-prelude()` 以 `sb` 逐行拼裝（鏡像 Go `emitPrelude` 的 `b.WriteString`）。
+2. `compiler/src/cg-rc.no`——`@nolang_rc_alloc` / `@nolang_rc_retain` / `@nolang_rc_release` / `@nolang_free` 四段 IR 文本（`cg-rc-alloc` / `cg-rc-retain` / `cg-rc-release` / `cg-rc-nolang-free`）；常量 `HDR-SIZE=16`、`HDR-MAGIC=7957698232306827265`（＝ Go `nolangHdrMagic` `0x6E6F6C616E670001`，"nolang\0\1"）；`cg-rc-check-balance(vids []i64, ops []i64)` 欠計數校驗器。
+3. `compiler/tests/cg-runtime-test.no`——16 斷言（類型/宣告存在性、四 RC define、magic 十進位、平衡通過、欠計數報錯、過計數放行）。
+
+**關鍵決策**：
+
+- **用 `sb` 逐行 push 照抄，不用 raw string**——規避 §5.6.2 的「``` 終止字面量」硬規則；IR 註釋內引用識別符號一律用雙引號。
+- **magic 寫十進位**（`store i64` 只吃十進位；Go 用 `%d` 亦同）。
+- **`check-rc-balance` 只查欠計數方向**（某 vid 的 release 次數 > retain 次數 ⇒ UAF ⇒ 報錯）；過計數是 §1.3.1 明確接受的洩漏，**不報錯**（否則 false positive ⇒ 硬編譯失敗）。
+- **簽名用兩個平行 `[]i64`**（vids/ops），不用 `[]rcop` 結構體——遵循 §5.3.4.as 的 SHS 約束（結構體不得跨模組按值傳）。
+- 常量經 `cg-rc-hdr-size()` / `cg-rc-hdr-magic()` 訪問器暴露，避免依賴模組級 `let` 的導出語義。
+
+**驗證（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-runtime-test.no` ⇒ **16/16，ALL TESTS PASSED**。
+- **IR 合法性**：探針拼 `cg-runtime-prelude()` + 四 RC helper 輸出 `/tmp/cgir.ll`（98 行），`opt -passes=verify` **rc=0**。
+- **逐位元組忠實**：從 Go 源（`src/mir/codegen.go` 14712–14818）重建期望文本，與探針輸出歸一化後 **0 刪除行 / 3 新增行**（3 行僅探針 `print` 造成的塊間空行）⇒ RC helper 文本與 Go 源**逐位元組一致**。
+- `no vet compiler/src/cg-runtime.no` / `cg-rc.no` ⇒ **0 ERROR**（cg-rc 餘 1 條 `nolang-range-index` HINT，advisory）。
+
+**刻意惰性 / 後續**：`cg-runtime`/`cg-rc` 目前僅被測試 import，**未接入任何發射路徑**（M4-b 起由 `cg.no` 消費 IR 文本，M4-c 起 `check-rc-balance` 由 MIR 分析餵事件）。windowsShims **未納入**（後置 M7）。**既有基線註記**：`no vet compiler/src` 當樹 34 ERROR（全 `ps.no`；19 基線上漂＋並行 session 的 `ps-is-builtin-type` duplicate），本增量 **0 新增**；`ast-test`/`ck-test` 在當樹因並行 session 髒工具鏈紅（NoVal bug #85 / SIGTERM），與本增量無關（兩檔不 import 新模組）。
+
+### 5.3.4.au s15——M4-b：`mir.no` 表示 + `cg.no` 的 `EmitLLVM` 骨架（2026-10-30 本轮）
+
+**背景**：§6.5 M4 分期的第二件。M4-b 目標＝MIR op 最小閉包 + `emitMIR`/`EmitLLVM` 骨架，打通「MIR → `.ll`」管線。**本輪全為新增檔（3 個 untracked），零改動既有檔**。
+
+**落地**：
+
+1. `compiler/src/mir.no`——M4-b 的 op 子集常量（`OP-CONST/ADD/SUB/MUL/RET/CALL/ALLOC/STORE/LOAD`）＋**扁平 arena 表示約定**：一函數＝平行陣列 `ops/dsts/xa/bs/syms`（同下標一條指令；`dsts` 目標值 id、`xa`/`bs` 操作數、`syms` 僅 CALL 用），遵 §5.3.4.as「結構體不跨模組按值傳」。
+2. `compiler/src/cg.no`——`cg-emit-func(name, nargs, ops, dsts, xa, bs, syms) -> str`：逐 op 發 IR 文本，覆蓋**字面量（CONST）/算術（ADD/SUB/MUL）/呼叫（CALL）/局部槽（ALLOC/STORE/LOAD）/返回（RET）**。值 id → SSA 名 `%v<id>`，槽 id → `%s<id>`（兩命名空間）；函數參數即值 id `1..nargs`（簽名 `define i64 @name(i64 %v1, …)`）。
+3. `compiler/tests/cg-test.no`——13 斷言，4 例：`three()→3`、`dbl(x)→x+x`、`caller()→dbl(2)`、`let-add(){x=3; x+x}`。
+
+**關鍵決策 / 實測坑**：
+
+- **參數名 `as` 是保留字**（`unexpected 'as' at start of expression`）⇒ 改 `xa`。這是 nolang 關鍵字表的新增實測條目（§4.4 的「避開關鍵字」再添一例）。
+- **單基本塊**：M4-b 不發 `br`/`condbr`/`phi`（無基本塊切分），控制流留 M4-c；因此每函數只有一個 `entry:` 塊、指令嚴格按序。
+- **常量用 `add i64 0, <imm>`** 而非直接 `ret` 立即數——保證「常量也是一個值 id」，與後續 SSA 消費統一（M4-c 接 PHI 時不必特判）。
+- **扁平 arena 而非嵌套 `[]struct`**：`mfunc{name, []minst}` 這種嵌套切片會觸 §5.3.4.as 的聚合體缺陷；改用平行 `[]i64`/`[]str`，跨模組只傳 primitive/vec。
+
+**驗證（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-test.no` ⇒ **13/13，ALL TESTS PASSED**。
+- **IR 合法性**：探針拼 `three`+`dbl`+`caller` 輸出 `/tmp/cg2.ll`、`let-add` 輸出 `/tmp/cg3.ll`，`opt -passes=verify` 均 **rc=0**。
+- **端到端執行**：`let-add`（3+3）的 IR 經 `clang -x ir` 編譯 → 執行 ⇒ **exit code 6**（證明不只是合法 IR，語義也對）。
+- `no vet compiler/src/cg.no` / `mir.no` ⇒ **0 ERROR**；`no vet compiler/src` 當樹 **34 ERROR 不變**（全 `ps.no`，本增量 0 新增）。
+
+**刻意惰性 / 後續**：`cg`/`mir` 目前僅被 `cg-test.no` import，尚未接 `drv`（M4-d 起由 `drv.cmd-build` 消費）。**未覆蓋**：控制流（`br`/`condbr`/`phi`，M4-c）、非 i64 型別（str/vec/struct/option）、字符串與容器 op——這些是 M4-c「`hir2mir` 降級主體」的範圍。
+
+### 5.3.4.av s16——M4-c 首件：控制流（多基本块 + `br`/`condbr`）（2026-10-30 本轮）
+
+**背景**：§6.5 M4 分期的第三件。M4-b 只有單基本塊，任何 `if`/`loop` 都發不出。M4-c 首件先打通**多基本塊 + 條件/無條件跳轉**，為後續 `hir2mir` 降級（真正的工作量主體）鋪路。**本輪零新增檔、只擴 `mir.no`/`cg.no`/`cg-test.no`**（仍 6 個 untracked）。
+
+**落地**：
+
+1. `compiler/src/mir.no`——新增 `OP-BR`（`a`=目標塊）、`OP-CONDBR`（`a`=條件值、`bs[k]`=真塊、`dsts[k]`=假塊）、`OP-CMPLT`（`dst = a < b`）；表示新增 **`blks[]` 平行陣列**（每條指令所屬基本塊 id，0=entry）。
+2. `compiler/src/cg.no`——新增 `cg-label(id)`（0→`entry`，其餘→`bb<id>`）與 `cg-emit-cfg(...)`（8 參數，塊切換處發標籤，逐 op 發射含 BR/CONDBR/CMPLT）；原 `cg-emit-func` **保留 7 參數 API**，內部用 `[].with-len(n)` 造全零 `blks` 委託 `cg-emit-cfg` ⇒ **M4-b 測試零改動**。
+3. `compiler/tests/cg-test.no`——新增 `test-cfg`（`lt10(x) = x<10 ? 1 : 2`，7 斷言），總計 **20/20**。
+
+**關鍵決策**：
+
+- **跨塊傳值用 `alloca`/`store`/`load`（-O0 風格），不引入 `PHI`**——這樣 M4-c 首件不必先做 SSA 構造；PHI 留後續（`-O0` 正是 clang 的做法，語義等價）。
+- **`CMPLT` 發 `icmp slt` + `zext i1→i64`**，維持「條件值是 i64」的統一約定 ⇒ `CONDBR` 只判 `!= 0`，不特判 i1。
+- **`CONDBR` 三槽約定**：`a`=條件值、`bs[k]`=真塊、`dsts[k]`=假塊（`dsts` 在此複用為假塊 id；已於 `mir.no` 檔頭註明）。
+- **向後兼容**：`cg-emit-func` 委託 `cg-emit-cfg`，M4-b 的單塊 API 與測試不破。
+
+**驗證（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-test.no` ⇒ **20/20，ALL TESTS PASSED**。
+- **IR 合法性**：`lt10` 多塊 IR（`entry:` + `bb1:` + `bb2:`）`opt -passes=verify` **rc=0**。
+- **端到端執行**：`lt10(5)+lt10(15)` 的 IR 經 clang 編譯 → 執行 ⇒ **exit code 3**（1+2，證明分支確按條件走）。
+- `no vet compiler/src/cg.no` ⇒ **0 ERROR**；`no vet compiler/src` 當樹 **34 ERROR 不變**（全 `ps.no`）。
+
+**未覆蓋 / 後續**：`PHI`（暫以 alloca 代替）、其他比較（`EQ/NE/GT/GE`）、循環回邊（`br` 已支持回邊，待語料驅動）、**非 i64 型別**（str/vec/struct/option）、字符串與容器 op——這些與 `hir2mir` 降級主體同屬 M4-c 續件。
+
+### 5.3.4.aw s17——M4-c 第二件：循环与回边（2026-10-30 本轮）
+
+**背景**：§5.3.4.av 打通了前向跳轉（`bb1`/`bb2`），但**回邊**（跳回已發射的塊）是環的必要條件、也是 CFG 最容易寫錯的地方（標籤重複 / 目標未定義 / SSA 支配破壞）。本件用 `while` 迴圈證明回邊成立。**零新增檔、零新增 op**（`OP-BR` 已支持回邊、`OP-CMPLT` 已夠表達 `i<n`），只擴 `cg-test.no`。
+
+**落地**：`compiler/tests/cg-test.no` 新增 `test-loop`——`sum4()`：`s=0; i=0; while i<4 { s+=i; i+=1 }; return s`，四塊 `entry`/`bb1`(條件)/`bb2`(體)/`bb3`(出口)，`bb2` 尾 `br bb1` 回邊。5 斷言（sig / `br label %bb1` 回邊 / `bb1:` / `bb3:` / `ret i64 %v14`），總計 **25/25**。
+
+**關鍵點**：
+
+- **回邊自然成立**：塊按指令順序發射 ⇒ 目標塊（`bb1`）在 `br` 之前已定義，LLVM 允許前向與後向 `br`；無需第二遍或重排。
+- **循環變數走 `alloca`/`store`/`load`**（`%s1`=s、`%s2`=i），**不用 PHI**——這正是 `-O0` 風格，語義等價且不需要支配樹/SSA 構造。
+- `i<4` 用 `CMPLT` 產生 i64 條件，`CONDBR` 判 `!=0` 分派 `bb2`/`bb3`——與 §5.3.4.av 的約定完全復用。
+
+**驗證（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-test.no` ⇒ **25/25，ALL TESTS PASSED**。
+- **IR 合法性**：`sum4` 四塊含回邊的 IR `opt -passes=verify` **rc=0**。
+- **端到端執行**：`sum4()`（0+1+2+3）IR 經 clang 編譯 → 執行 ⇒ **exit code 6**（回邊確按語義迭代 4 次）。
+- `no vet compiler/src` 當樹 **34 ERROR 不變**（全 `ps.no`）。
+
+**未覆蓋 / 後續**：其他比較（`NE/GT/GE/EQ`）、`PHI`（暫以 alloca 代替）、**非 i64 型別**（str/vec/struct/option）、字符串與容器 op——同屬 M4-c 續件。
+
+### 5.3.4.ax s18——M4-c 第三件：字符串（首个非 i64 型別 `%str-long`）（2026-10-30 本轮）
+
+**背景**：§5.3.4.av/aw 全程假設「所有值都是 i64」——`%v<id>` 一個命名空間、`define i64`、`ret i64`。這在真實程序裡立刻破產：任何 `.len`/字面量/輸出都要 `str`。本件引入**第一個非 i64 型別**，並定下「多型別值命名空間」的規矩。**零新增檔**，改 3 檔（`cg-runtime.no`/`mir.no`/`cg.no`）+ 擴測試。
+
+**落地**：
+
+1. `compiler/src/cg-runtime.no` 新增 `cg-runtime-str-type()`：`%str-long = type { i64, i64, i8* }   ; len, cap, data`，插在 `%task` 與 `decls` 之間——與 Go `emitPrelude` **逐字相同**（含行尾註解），維持 §5.6.2「IR 文本可逐位元組照抄」。
+2. `compiler/src/mir.no` 新增 `OP-STRCONST = 12` / `OP-STRLEN = 13`，並把**值命名空間約定**寫進模組頭註解（見下「關鍵點」）。
+3. `compiler/src/cg.no`：
+   - `cg-strlen1(t)`——字面量數組長度 = `t.len-bytes() + 1`（含結尾 NUL）；加法帶 `#{overflow=wrap}`。
+   - `cg-emit-cfg` 開頭加**全局前置 pass**：掃 `ops[]`，對每條 `OP-STRCONST` 在 `define` **之前**發 `@.s<k> = private unnamed_addr constant [N x i8] c"...\00"`（`k` = 指令下標，天然唯一）。
+   - `OP-STRCONST` 分支：`getelementptr inbounds` 取 `i8*`，再**三步 `insertvalue`** 拼 `%str-long`（`undef` → len → cap → data）。
+   - `OP-STRLEN` 分支：`extractvalue %str-long %sv<x>, 0` 取 len 落 `%v<d>`。
+4. `compiler/tests/cg-test.no` 新增 `test-string`——`slen()` 返回 `'abc'.len`，7 斷言（全局字面量形狀 / gep / 三步 insertvalue / extractvalue / ret），總計 **32/32**。
+
+**關鍵點**：
+
+- 🔴 **兩個值命名空間，不能混**：i64 值住 `%v<id>`，`str` 值住 `%sv<id>`（型別 `%str-long`）。`dsts[]` 裡的 id 在兩種 op 下指同一套 id 空間，但**發出的 SSA 名不同**——因為 LLVM 不允許同名不同型。後續 `vec`/`struct`/`option` 應各自再開 `%vv<id>`/`%st<id>` 之類前綴，**不要**試圖用一個 `%v<id>` 通吃。
+- 🔴 **字面量全局必須在 `define` 之前**：LLVM 要求 `@` 全局是模組級實體。因此**不能**在逐指令循環裡順手發，必須先跑一遍前置 pass。這也解釋了為什麼 `n = ops.len()` 要提到函數最頂端（原本在簽名之後）。
+- **`insertvalue` 而非 `alloca`+`store`**：`%str-long` 是**值型別**（3 個標量），用 `insertvalue` 逐步構造是純 SSA、零內存；這與控制流那邊「跨塊傳值走 alloca」不衝突——跨塊的 `%sv` 才需要 `alloca %str-long`，單塊內不需要。
+- **len 與 cap 都填 `len-bytes()`**：字面量是不可變的，cap 沒有語義，填同值最省；Go 側亦如此。
+- **NUL 結尾**：`c"..."` 裡手寫 `\00`，且數組長度 `+1`。⚠️ 這裡 `\00` 是**兩字節轉義**（反斜線 + `00`），nolang 字面量裡要寫 `'\\00'`——寫成 `'\00'` 會被當成一個 NUL 字符塞進 IR 文本，`opt` 會報 `expected top-level entity`。
+
+**驗證（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-test.no` ⇒ **32/32，ALL TESTS PASSED**。
+- **IR 形狀**（實際產出）：
+  ```
+  @.s0 = private unnamed_addr constant [4 x i8] c"abc\00"
+  define i64 @slen() {
+  entry:
+  	%p0 = getelementptr inbounds [4 x i8], [4 x i8]* @.s0, i64 0, i64 0
+  	%q0 = insertvalue %str-long undef, i64 3, 0
+  	%r0 = insertvalue %str-long %q0, i64 3, 1
+  	%sv1 = insertvalue %str-long %r0, i8* %p0, 2
+  	%v2 = extractvalue %str-long %sv1, 0
+  	ret i64 %v2
+  }
+  ```
+- **IR 合法性**：prelude + 上述 IR + 手寫 `main`（`trunc` 成 `i32` 返回）⇒ `opt -passes=verify -disable-output` **rc=0**。
+- **端到端執行**：同上模組合 `/tmp/ccwrap` 編譯 → 執行 ⇒ **exit code 3**（`'abc'.len == 3`，證明 `len-bytes`/全局佈局/`extractvalue` 全對）。
+- `no vet` 四檔（`cg.no`/`cg-runtime.no`/`mir.no`/`cg-rc.no`）**各 0 ERROR**；`no vet compiler/src` 當樹 **34 ERROR 不變**（全 `ps.no`，並行 session 既有）。
+
+**未覆蓋 / 後續**：字符串**拼接**（`+` 需 `@malloc` + `memcpy` + RC 頭）、`str` 跨塊傳值（`alloca %str-long`）、`vec`/`struct`/`option`、`PHI`、其他比較——同屬 M4-c 續件。
+
+### 5.3.4.ay s19——M4-c 第四件：字符串拼接 `@str_concat`（首个 RC 消费者）（2026-10-30 本轮）
+
+**背景**：§5.3.4.ax 讓 `str` **能存在**，但還不能**產生新的** `str`。拼接是第一個「執行期分配堆內存 + 寫 RC 頭」的 op，也是把 `cg.no`（發射）與 `cg-rc.no`（RC ABI）真正接上的地方——在此之前 RC helper 只是被發射、從未被呼叫。**零新增檔**，改 3 檔 + 擴 2 個測試檔。
+
+**落地**：
+
+1. `compiler/src/cg-runtime.no`：
+   - `cg-runtime-memcpy-decl()`——`declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)`（Go `codegen.go:2987` 同形）。
+   - `cg-runtime-str-concat()`——`@str_concat` **13 行函式體逐字照抄** Go `codegen.go:3139`（含 **2 空格**縮進，不是 tab；這是刻意與該處原文一致）。
+   - `cg-runtime-prelude-full()`——**完整 prelude 的唯裝配點**，順序：類型 → libc 聲明 → memcpy 聲明 → 四個 RC helper → `@str_concat`。`cg-runtime-prelude()`（M4-a 的「最小 prelude」）保持原樣被它委託，**舊斷言零改動**。
+2. `compiler/src/mir.no`：`OP-STRCAT = 14`；`dsts[k]` = 結果串 id、`xa[k]` = 左串、`bs[k]` = 右串。
+3. `compiler/src/cg.no`：`OP-STRCAT` 分支發 `%sv<d> = call %str-long @str_concat(%str-long %sv<x>, %str-long %sv<y>)`。
+4. 測試：`cg-test.no` 加 `test-strcat`（5 斷言，**37/37**）；`cg-runtime-test.no` 加 `test-prelude-full`（5 斷言，**21/21**）。
+
+**關鍵點**：
+
+- 🔴 **prelude 的順序是語義，不是排版**：`@str_concat` 調 `@nolang_rc_alloc`。LLVM 本身允許前向引用，但**照 Go 的發射順序**（RC 在前）才能逐字節對照；`test-prelude-full` 用 `str.index` 比較兩個 `define` 的偏移，把「順序」變成**可執行斷言**而不是註釋承諾。
+- 🔴 **`@str_concat` 的兩段 `memcpy` 必須用 `%la` 當第二段的目的偏移**：`%dst2 = getelementptr i8, i8* %buf, i64 %la`。寫成 `%total` 或漏 gep 會**越界寫**且 `opt -verify` 照樣綠（verify 只查型別/SSA，不查語義）⇒ 必須**跑起來比內容**。
+- **`%str-long` 是值型別**，`call %str-long @f(...)` 直接按值傳/回，不需要 `sret`；這與 Go 的 `_mir_str_concat` 一致。`alloca` 只在**跨基本塊**保存 `%str-long` 時才需要（本件未涉及）。
+- **RC 頭語義**：`@nolang_rc_alloc` 返回 `base+16`，rc=1 ⇒ 拼接結果是**擁有者**（owner）。§5.6.1 的鐵律要求：把這個結果賦給第二個變數時**必須 retain**。本件的 `OP-STRCAT` 只產生值，**不發 retain/release**——那是 `hir2mir` 的責任，留給後續。
+- **`%p<k>`/`%q<k>`/`%r<k>` 用指令下標 `k`**，`%sv<id>` 用值 id ⇒ 同一函數內多條 `STRCONST` 不會撞名（`cat()` 的 k0/k1 分別得 `%p0/%q0/%r0` 與 `%p1/%q1/%r1`）。
+
+**驗證（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-test.no` ⇒ **37/37**；`cg-runtime-test.no` ⇒ **21/21**，均 `ALL TESTS PASSED`。
+- **IR 形狀**（`cat()` 尾部實際產出）：
+  ```
+  	%sv1 = insertvalue %str-long %r0, i8* %p0, 2
+  	%p1 = getelementptr inbounds [3 x i8], [3 x i8]* @.s1, i64 0, i64 0
+  	%q1 = insertvalue %str-long undef, i64 2, 0
+  	%r1 = insertvalue %str-long %q1, i64 2, 1
+  	%sv2 = insertvalue %str-long %r1, i8* %p1, 2
+  	%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)
+  	%v4 = extractvalue %str-long %sv3, 0
+  	ret i64 %v4
+  ```
+- **IR 合法性**：`cg-runtime-prelude-full()` + `cat()` + 手寫 `main` ⇒ 全模組 **123 行**，`opt -passes=verify -disable-output` **rc=0**。
+- **端到端執行（比內容，不只比長度）**：`main` 內另建兩個 `%str-long` 直呼 `@str_concat`，把結果用 `@write(1, data, len)` 打出來 ⇒ stdout **`abcd`**、退出碼 **4**。同時證明「照抄的 helper 本身正確」與「`len-bytes` 算得對」。
+- `no vet` 三檔（`cg.no`/`cg-runtime.no`/`mir.no`）**各 0 ERROR**；`no vet compiler/src` 當樹 **34 ERROR 不變**（全 `ps.no`，並行 session 既有）。
+
+**踩坑**：`2>&1 | grep "warning\|warning generated"` 在 BSD grep 下**靜默失效**（BRE 不支持 `\|`）⇒ clang 的 `warning: overriding the module target triple` 混進 `.ll`，`opt` 報 `1:1: expected top-level entity`。判據：**過濾 stderr 用 `2>/dev/null`，或用 `grep -E`**，不要用 BRE 的 `\|`。
+
+**未覆蓋 / 後續**：`str` 跨塊（`alloca %str-long`）、`STRCAT` 的 retain/release 發射（屬 `hir2mir`）、`vec`/`struct`/`option`、`PHI`、其他比較——同屬 M4-c 續件。
+
+### 5.3.4.az s20——M4-c 第五件：多參數調用（`OP-CALL` 的 `bs` 從佔位改為參數個數）（2026-10-30 本轮）
+
+**背景**：M4-b 的 `OP-CALL` 是「**恰好一個** i64 參數」——`a` 是那個參數、`bs` 是無意義佔位。這在真實程序裡立刻不夠：任何 `f(a, b)` 都編不出來。本件把 `bs[k]` 的語義正式定為**參數個數**、`a` 為**首個參數值 id（連續）**，並讓 `cg.no` 按個數展開實參表。**零新增 op、零新增檔**，改 2 檔 + 擴 1 個測試檔。
+
+**落地**：
+
+1. `compiler/src/mir.no`：`OP-CALL` 的槽位約定寫進註釋——`dst` = 結果值 id、`syms[k]` = 被調名、`a` = 首個參數值 id（連續）、`bs[k]` = 參數個數。**明示破壞性變更**：M4-b 時 `bs` 恒 0 是佔位，現在 `bs=0` 表示**無參調用**、`bs=1` 表示單參 ⇒ 舊的「單參但 `bs=0`」寫法語義變了，必須改。
+2. `compiler/src/cg.no`：`OP-CALL` 分支改為循環展開——`q = x`、`j = 0`，`(j < y)` 內先 `j > 0 -> push(', ')` 再加 `i64 %v<q>`，每輪 `q`/`j` 各 +1（帶 `#{overflow=wrap}`，避免 `+` 退化成 `option<i64>`）。**`define` 側無需改動**：參數表本來就按 `nargs` 循環。
+3. `compiler/tests/cg-test.no`：`test-call` 的 `bs.push(0)` → `bs.push(1)`（語義修正，不是斷言放寬）；新增 `test-call2`——`add2(a,b)=a+b` 的 `define` 雙參形狀 + `caller2()=add2(3,4)` 的雙參調用形狀，8 斷言，累計 **41/41**。
+
+**關鍵點**：
+
+- 🔴 **這是本項目第一個「靜默語義變更」而非純新增**：`OP-CALL` 的槽位含義改了，任何漏改的呼叫點會退化成 `call i64 @f()`（**參數被丟棄**）。而這種退化 **`opt -verify` 全綠、`no vet` 全綠**——只有跑起來比數值才看得見。⇒ 修法是「先改語義、立刻改唯一呼叫點（`test-call`）、再端到端跑一遍」，並把變更寫進 `mir.no` 註釋而不是靠記憶。
+- **參數 id 必須連續**：本件的約定是「`a` 起的 `bs` 個 id」。這是扁平 arena 的必然選擇（不引入 `args []i64` 二級表，遵 §5.3.4.as「結構體不跨模組按值傳」）。代價是 `hir2mir` 在發 CALL 前**必須保證實參值 id 相鄰**——若中間插了別的指令就會錯位。這個約束要在 M4-c 餘的 `hir2mir` 裡顯式檢查（尚未做，記入 §11）。
+- **`+` 的型別陷阱**：`q = q + 1` 不帶 `#{overflow=wrap}` 會得到 `option<i64>`，`q.to-str()` 就編不過。這在循環裡連寫兩處，容易漏一處。
+- **無參調用仍要寫 `bs=0`**：不能靠 `syms[k]` 或 `dst` 推斷。
+
+**驗證（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-test.no` ⇒ **41/41**；`cg-runtime-test.no` ⇒ **21/21**，均 `ALL TESTS PASSED`。
+- **IR 形狀**（實際產出）：
+  ```
+  define i64 @add2(i64 %v1, i64 %v2) {
+  entry:
+  	%v3 = add i64 %v1, %v2
+  	ret i64 %v3
+  }
+  define i64 @caller2() {
+  entry:
+  	%v1 = add i64 0, 3
+  	%v2 = add i64 0, 4
+  	%v3 = call i64 @add2(i64 %v1, i64 %v2)
+  	ret i64 %v3
+  }
+  ```
+- **IR 合法性**：上述 + 手寫 `main`（`trunc` 成 `i32`）⇒ `opt -passes=verify -disable-output` **rc=0**。
+- **端到端執行**：同上經 `/tmp/ccwrap` 編譯 → 執行 ⇒ **exit code 7**（`add2(3,4)`，證明**兩個**實參都真的傳進去了——單參退化會得到 3 或 4）。
+- `no vet` 兩檔（`cg.no`/`mir.no`）**各 0 ERROR**；`no vet compiler/src` 當樹 **34 ERROR 不變**（全 `ps.no`）。
+
+**未覆蓋 / 後續**：非 i64 參數（`str`/`vec` 形參）、多返回值、`str` 跨塊（`alloca %str-long`）、`STRCAT` 的 retain/release、`vec`/`struct`/`option`、`PHI`——同屬 M4-c 續件。
+
+### 5.3.4.ba s21——M4-c 第六件：`%str-long` 跨基本塊（`SALLOC`/`SSTORE`/`SLOAD`）（2026-10-30 本轮）
+
+**背景**：§5.3.4.ax/ay 的字符串只在**單一基本塊內**流動（`%sv` 是 SSA 名，出了塊就失效）。任何真實程序都會把 `str` 存進變數、在分支裡改寫、再在匯合點讀出來——這是 `-O0` 語義下必須用 `alloca` 的地方。本件把 i64 的 `ALLOC/STORE/LOAD` 三件套**按型別重複一份**給 `%str-long`，並定下**第三個槽命名空間** `%ss<id>`。**零新增檔**，改 2 檔 + 擴 1 個測試檔。
+
+**落地**：
+
+1. `compiler/src/mir.no`：`OP-SALLOC=15`（`dst` = 槽 id）、`OP-SSTORE=16`（`a` = 字符串值 id、`bs[k]` = 槽 id）、`OP-SLOAD=17`（`dst` = 字符串值 id、`a` = 槽 id）。
+2. `compiler/src/cg.no`：三個分支分別發 `alloca %str-long` / `store %str-long %sv<a>, %str-long* %ss<bs>` / `%sv<dst> = load %str-long, %str-long* %ss<a>`。
+3. `compiler/tests/cg-test.no`：新增 `test-str-slot`——`pick(c)`：`s='ab'; c ? s='abcdef'; return s.len`，三塊 `entry`/`bb1`/`bb2`，6 斷言，累計 **47/47**。
+
+**關鍵點**：
+
+- 🔴 **槽的命名空間必須按型別分開**：i64 槽住 `%s<id>`，`%str-long` 槽住 `%ss<id>`。若共用 `%s<id>`，`alloca i64` 與 `alloca %str-long` 會撞名 ⇒ `opt` 報 type mismatch。同理值：`%v`（i64）/`%sv`（str）。**每加一個型別就要加一組前綴**，這是本項目已付兩次的學費。
+- 🔴 **`alloca %str-long` 是「unsized type」陷阱**：`%str-long` 在**沒有 prelude 的裸模組**裡是未定義型別，`opt` 會報 `Cannot allocate unsized type`——這個訊息**指向 `alloca` 那行**，很容易誤判成「`%str-long` 不可 alloca」。真相是**模組缺 `%str-long = type { i64, i64, i8* }` 定義**。⇒ 任何用 `SALLOC` 的 IR 都必須與 `cg-runtime-prelude-full()`（或至少 `cg-runtime-prelude()`）一起鏈接。
+- **`insertvalue` vs `alloca` 的分工**：單塊內構造 `%str-long` 用 `insertvalue`（純 SSA、零內存）；**跨塊**才用 `alloca/store/load`。兩者不是替代關係。
+- **`SSTORE` 的槽在 `bs` 而非 `dst`**：`SSTORE` 沒有結果值（`dst=0`），與 `STORE` 一致；`SLOAD` 有結果值（`dst` = 值 id）而槽在 `a`，與 `LOAD` 一致。這種「i64 版與 str 版槽位一一對應」的設計讓 `hir2mir` 可以按型別選 op 而不用改參數排布。
+
+**驗證（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-test.no` ⇒ **47/47，ALL TESTS PASSED**。
+- **IR 形狀**（實際產出，`pick`）：
+  ```
+  entry:
+  	%ss1 = alloca %str-long
+  	...
+  	store %str-long %sv1, %str-long* %ss1
+  	%c3 = icmp ne i64 %v1, 0
+  	br i1 %c3, label %bb1, label %bb2
+  bb1:
+  	...
+  	store %str-long %sv2, %str-long* %ss1
+  	br label %bb2
+  bb2:
+  	%sv3 = load %str-long, %str-long* %ss1
+  	%v4 = extractvalue %str-long %sv3, 0
+  	ret i64 %v4
+  ```
+- **IR 合法性**：prelude 型別塊 + 上述 + 手寫 `main` ⇒ `opt -passes=verify -disable-output` **rc=0**（兩個入口都過）。
+- **端到端執行（兩條分支都跑）**：`pick(0)` ⇒ **exit 2**（`'ab'`）、`pick(1)` ⇒ **exit 6**（`'abcdef'`）。**兩個數字不同**才證明「分支裡的 `SSTORE` 真的覆寫了槽、匯合點的 `SLOAD` 真的讀到新值」；只跑一條會讓「`SSTORE` 完全沒發射」也綠。
+- `no vet` 兩檔（`cg.no`/`mir.no`）**各 0 ERROR**；`no vet compiler/src` 當樹 **34 ERROR 不變**（全 `ps.no`）。
+
+**未覆蓋 / 後續**：非 i64 形參、`vec`/`struct`/`option`、`STRCAT` 的 retain/release、`PHI`——同屬 M4-c 續件。
+
+### 5.3.4.bb s22——M4-c 第七件：`vec`（`%vec` 向量，元素仅 i64）（2026-10-30 本轮）
+
+**背景**：`vec` 是自举的**硬前提**——SHS 強制「結構體不跨模組按值傳」（§5.3.4.as），所以 `compiler/src` 的扁平 arena（`ops/dsts/xa/bs/syms`）全是 `[]i64`/`[]str`。沒有 `vec`，`noc` 連自己的 MIR 容器都表達不了。本件引入**第四個值命名空間** `%vc<id>`。**零新增檔**，改 2 檔 + 擴 2 個測試檔。
+
+**落地**：
+
+1. `compiler/src/cg-runtime.no`：`cg-runtime-vec-type()`——`%vec = type { i64, i64, i64 }`（Go `codegen.go:2936` 逐字：len、cap、data **存成 i64 裸指標**）；四個 helper `@vec_new` / `@vec_len` / `@vec_get_i64` / `@vec_push_i64`，插進 `prelude-full` 尾部。
+2. `compiler/src/mir.no`：`OP-VECNEW=18`、`OP-VECPUSH=19`、`OP-VECLEN=20`、`OP-VECGET=21`。
+3. `compiler/src/cg.no`：四個分支發 `call %vec @vec_new()` / `call %vec @vec_push_i64(...)` / `call i64 @vec_len(...)` / `call i64 @vec_get_i64(...)`。
+4. 測試：`cg-test.no` 加 `test-vec`（`vecsum()` 建 `[1,2,3]` 求和，5 斷言）+ `test-vec-len`（2 斷言）⇒ **54/54**；`cg-runtime-test.no` 加 `test-vec-helpers`（9 斷言）⇒ **30/30**。
+
+**关键决策：刻意偏离 Go 的 inline 展开**。Go 的 `vec.push` 在**每个调用点 inline** 展开（`load %vec` → 扩容 → 步长計算 → store，每站點上百行 IR）。M4 以**行為等價**為驗收（§5.6.3 第①層），故改為 4 個 helper：IR 量級差一個數量級，helper 本身可被單元測試直接釘住，且**唯一一份**擴容邏輯（Go 那份散在 `emitBuiltinVecPush` 裡，任何型別分支寫錯都是堆損壞——源碼註釋裡就有兩段「24 位元組寫進 8 位元組 slot ⇒ `abort trap`」的血淚）。**這是刻意偏離，記入 §11 B5**。
+
+**关键点**：
+
+- 🔴 **第四個值命名空間**：i64 值 `%v`、`str` 值 `%sv`、`str` 槽 `%ss`、**vec 值 `%vc`**。每加一個型別就多一組前綴——這是本項目第三次付同樣的學費（s18、s21、s22）。
+- 🔴 **`%vec` 的 data 是 `i64` 不是 `i8*`**：Go 的型別定義就是 `{ i64, i64, i64 }`。所以每次取用都要 `inttoptr i64 %dat to i8*`、每次存回都要 `ptrtoint i8* %p to i64`。少寫一邊 ⇒ `opt` 型別錯；寫成 `%vec = { i64, i64, i8* }` 看似更自然，但**與 Go 的 prelude 不相容**（後續 A/B 會全線錯位）。
+- 🔴 **`vec.push` 是「返回新 vec」不是原地改**：`%vc<d> = call %vec @vec_push_i64(%vec %vc<a>, i64 %v<bs>)`。這與 Go 的 inline 版語義一致（它也是 load→改→寫回 slot），但對 `hir2mir` 意味著**每次 push 都要把結果賦回同一個槽**。
+- **擴容路徑**：滿則 `ncap = max(cap*2, 4)` → `malloc` 新緩衝 → **`len==0` 時跳過 `memcpy`**（否則 `memcpy(dst, null, 0)` 是 UB）→ `free` 舊緩衝 → `phi` 合流 `cap2`/`dat2`。`store:` 塊有**三個**前驅（`entry`/`grow`/`copy`），phi 必須列全，漏一個 `opt` 就報 `PHI node entries do not match predecessors`。
+- **數據緩衝用裸 `@malloc`**（不帶 RC 頭）：元素目前只有 i64，無 RC 需求；擴容時 `@free` 舊緩衝 ⇒ 不會無界泄漏。等元素變成 `str`/`vec` 時必須換成 `@nolang_rc_alloc` + 逐元素 retain/release（記入 §11 B5）。
+
+**验证（可重跑）**：
+
+- `./bin/no run -cc /tmp/ccwrap compiler/tests/cg-test.no` ⇒ **54/54**；`cg-runtime-test.no` ⇒ **30/30**。
+- **IR 合法性**：`prelude-full` + 一個**十次 push** 的函式（強制擴容 0→4→8→16）+ 手寫 `main` ⇒ 204 行全模組 `opt -passes=verify -disable-output` **rc=0**。
+- **端到端執行**：`vecsum10()` 推入 0..9 再逐個 `vec_get_i64` 求和 ⇒ **exit code 45**（`0+1+…+9`）。⚠️ 這個數字**有鑑別力**：擴容時漏 `memcpy` 會只剩最後 2 個元素、漏 `free` 不會改變數值但會泄漏、`inttoptr`/步長寫錯會 SIGSEGV 或錯值——45 全對說明「擴容 + 搬遷 + 偏移 + 讀回」四件事同時對。
+- **ASan**：同一 IR 用 `-fsanitize=address` 編譯執行 ⇒ **exit 45，無 heap-buffer-overflow / use-after-free 報告**（證明 `free` 舊緩衝後沒有殘留引用）。
+- `no vet` 三檔（`cg.no`/`cg-runtime.no`/`mir.no`）**各 0 ERROR**；`no vet compiler/src` 當樹 **34 ERROR 不變**（全 `ps.no`）。
+
+**🔴 附带发现的工具链 bug（`no` 側，非本專案代碼）**：`#{overflow=wrap}` 用在**首次綁定**且右側是**算術表達式**時，該變數的**讀取**正確，但 **`vec.push(该变量)` 静默壓入 0**。實測四變體：
+
+| 寫法 | 讀取 | `vec.push(v)` |
+| --- | --- | --- |
+| `#{overflow=wrap}`<br>`q = 5 + 1` | `q=6` ✓ | **`0`** ✗ |
+| `#{overflow=wrap}`<br>`r = n + 1` | `r=13` ✓ | **`0`** ✗ |
+| `#{overflow=wrap}`<br>`s = n`（非算術） | `s=12` ✓ | `12` ✓ |
+| `m i64 = 0` 後 `#{overflow=wrap}`<br>`m = n + 1` | `m=13` ✓ | `13` ✓ |
+
+爆破半徑**很窄**：同一變數在 `print` 插值、普通函式呼叫 `f(r)`、陣列字面量 `[r]`、`r.to-str()` 裡**全部正確**——只有 `vec.push` 的實參取值錯。⇒ **規避寫法：先裸宣告（`g = 0`）再帶註解重賦值**。`compiler/src` 現有代碼**不觸發**（`lx.no` 的 `hi`/`lo` 是首次綁定 + 算術，但只傳給普通函式；`cg.no` 的 `q`/`j` 都是先宣告後重賦值），但這是**「門禁全綠、值靜默錯」**的典型，已記入 §11 B6。
+
+**未覆蓋 / 後續**：`vec` 元素非 i64（`[]str`/`[]vec`/結構體，需逐元素 RC）、`vec` 跨基本塊（`alloca %vec`）、`vec` 的 `.set`/`.pop`/切片、非 i64 形參、`struct`/`option`——同屬 M4-c 續件。
+
 ### 5.4 語義檢查（M3）
 
 **目標**：復刻 37 個 `Validate*` 與型別推斷，使 `no vet` 的診斷集合一致。
@@ -2026,7 +2381,7 @@ diag {
 | **M1** | 詞法：`src/tok.no`（92 個 `TokenType`）+ `src/lx.no`（`scanToken()` 的忠實移植）              | ✅ **完成** | `no run compiler/tests/tok-test.no` ⇒ **62/62**；`lx-test.no` ⇒ **45/45**；L1 全語料 **675/675 SAME, 0 DIFF**（§7.1.1） |
 | **M2** | 語法：71 個 AST 節點 + 復刻 `parser/dump.go` 的輸出格式                                     | ✅ **完成（2026-10-27，s8y `261ab91c`）** | **L2 已可執行**：`noc` 已實作 `ast` 子命令（`drv.cmd-ast`），`selfhost_diff.sh --self-test --levels L0,L2 --sut /tmp/noc-s0`（2026-10-11）⇒ **L0 4/4 SAME、L2 646/646 SAME、0 DIFF**、語料 `<unknown>` 0 行（71/71 節點全覆蓋）。真實 noc↔oracle 逐位元組相同：**+1（独立 `AnnotationStatement{entries: N}` 節點增量，解锁 collection/*）、0 回歸**——絕對數方法論敏感（parallelism × 逾時上限）：以 uniform 120s-alarm `-P 3` 同法量測 s31=137（AssignExpression）→s32=145（ReturnStatement）→s33=158（Annotation）→s34=159（UseStatement）→s35=202（ArrayLiteral 推論元素型別，**+43**，為 aes/zlib 等 `[N] = [int-literals]` 表檔解锁）→s36=203（self-dot `.field` 前綴 receiver，新匹配 `src/std/io.no`）→s37=204（独立 `AnnotationStatement{entries: N}` 節點——不可附著之語句級 `#{...}`，新匹配 `src/std/collection/stack.no`）→s38=213（**ForStatement bang/cond-loop 簇**——陳述位 `!! { }`（恆真無限）/`! { }`（恆假）/`(cond) { }`（前置條件），**+9**，新匹配 `src/std/bufio.no`、`collection/hash-set.no`、`collection/str-set.no`、`env.no`、`tests/dowhile.no`、`loop-test.no`、`split-loop.no`、`str-loop-assign.no`、`mem-safety/bug15-read-dowhile-copyfile.no`）→s39=222（**字面量型別推斷補齊**——`CharLiteral`→`char`、十六進位 `0x/0X` `IntegerLiteral`→`byte`（十進位仍 i64），同時補 `ps-infer-type`（裸 RHS）與 `ps-elem-type-of`（陣列/切片首元素），**+9**，新匹配 `tests/char-*`（literal/new-method/new-syntax/old-syntax2/simple/step4/vet））→s40=253（**無值明示型別裸宣告 `name TYPE`**——陳述位 `result []byte`/`z [16]byte`/`x person`/`i8 i8` 此前被誤解析為 IndexExpression，**+31**，覆盖 crypto/archive 大量 `[]byte`/`[32]byte` 暫存宣告）→s41=262（**複合型別名**——`ps-parse-type` 補限定名 `a.b`（NamedType 續吃 `.IDENT`，對齊 Go stmt.go:1034）與巢狀元素 `[][]T`/`[N][]T`（SliceType/ArrayType 臂改為【遞迴】 ps-parse-type，元素 ∈ {IDENT,[,?}），同把 `ps-parse-typedecl-noval` 升級為通用 `ps-parse-typedecl`（新增 `= value` 分支），**+9**，新匹配 tls/tls-part3/http2/hpack/fs-error-{final,info}/fs-open-err/nested-vec-test/push-narrow）→s42=273（**無色 async 前綴運算子 `run`/`co`/`awy`**——`ps-parse-expr-prec` 缺此三前綴臂⇒`h = run f()` 的值被解析為空、`f()` 漏成獨立 ExpressionStatement；補上後 `run e`→RunExpression{Call:e}、`co e`→CoExpression{Call:e}、`awy e`→AwaitExpression{Right:e}（三節點 dumper 早已支援、纯 parser 缺口），**+11**，新匹配 async-{cancel,coop,rc,yield,handle-alias}/module-async/slot-rebind-unsafe/mem-safety/async-*）→s43=284（**區塊/程式尾註解 TrailingComments**——`ast.no` dumper 早已實作 OP-TRAILING（讀 ntrail/ct0/aux 印 `TrailingComments`＋每行 `//<text>`），唯 `ps.no` 的 `parse`（Program）與 `ps-parse-block`（BlockStatement）把 `}`/EOF 前的獨立尾註解群餵進 `ps-skip-trivia-doc` 後**丟棄**⇒語料中「最後一條陳述之後、`}`/EOF 之前」的 standalone 註解從未進入 TrailingComments；新增三 helper（`ps-trail-region` 前瞻（不消費 token）判斷下一個非 trivia 是否 ∈ {RBRACE,EOF}、`ps-collect-tail` 消費 NEWLINE/COMMENT 收集群——同條陳述行尾的首個行內註解仍走 set-cmt、其餘全部入 trail、`ps-attach-trailing` 走 aux-begin/aux-add/set-aux-counts(ntrail=len)），並接進 Program 與 BlockStatement 兩處。**零回歸結構保證**：ntrail 預設 -1⇒renderer 跳過、trail 空則不呼叫 attach⇒原匹配檔輸出位元組不變。**+11**，新匹配 src/std/types.no、tests/{arr,duplicate,for2,i,str,range-test}.no、mem-safety/{deep-free-nested-vec,deep-free-str,deep-free-struct-vec,minimal-str-map2}.no）。→s44=283（**結構體欄位型別拓展 + 欄位尾註解跳過（ps-is-struct-def）**——裸結構定義 `name { field TYPE }` 之前仅在栏位 TYPE ∈ {IDENT, []IDENT, [INT]IDENT} 且无尾注时被识；限定名栏位 `conns [32]net.conn`（`]` 后 `net` 再 `.conn`）、嵌套切片 `rows [][]str`、栏位尾 `#{inline=…}` 注均使旧手筛扫描器回 0⇒整个结构退回 ExpressionStatement（而 ps-parse-struct-def 主体早已走 ps-parse-type（s41 已支援限定/嵌套）⇒**仅 gate 限**）。修复：新增 ps-skip-type-idx（索引前视、不消费 token）完整镜像 ps-parse-type 四形（`a.b`/`?T`/`[]T`/`[N]T`、元素递归∈{IDENT,[,?}）取代 gate 内的手写栏位型扫描；另新增 ps-skip-annot-idx（gate）/ps-skip-annot（body）跳过栏位尾 `#{...}`——`no ast`（无 -annotations）完全不渲染栏位注⇒跳过即可。**零回归结构保证**：含限定/嵌套/注栏位的结构此前必已 NO（gate 拒→ExpressionStatement≠oracle StructDefinition），新能力只改善。**+3**，新匹配 src/std/net/client.no、tests/field-{inline-annotation,tag}.no）。→s45=284（**枚举/标签枚举定义 `name { red, green }` / `name { ok(v T), fail }`**——陈述位 IDENT+LBRACE 此前仅认 struct 形；Go parser.go:273 classifyBlock 把 blockEnum/blockTaggedEnum 与 blockStruct/blockInterface 分流（decl.go:749 parseEnumDefinition、decl.go:1077 parseTaggedEnumDefinition），而 asp.no dumper（EnumDefinition=24/EnumValue=25/TaggedEnumDefinition=65/TaggedEnumVariant=66 + taggedEnumField HELPER 对）早已支援⇒纯 parser 缺口。新增两函数：`ps-is-enum-def`（索引前视 gate，不消费 token）——成员 ∈ {IDENT/NIL 裸变体、`名(字段…)` 括号载荷、`名 = INT` 显式值、`#{…}` 注、NEWLINE/COMMA 分隔}，**保守分流**：括号+裸并存→2（标签）、仅裸/显式→1（枚举）、全括号无裸→0（与接口歧义）、`) (` 返回组或 `t.` 限定→0（接口形）、任何非预期 token→0——gate 拒者原本必走 ExpressionStatement≠oracle⇒结构上零回归；`ps-parse-enum-def`（body）——计数语义对齐 Go：显式 `V = INT`【不】推进 nextVal（decl.go:807–821）、标签变体 index 逐变体+1；变体字段以 helper-begin/aux-add（name|type 成对）挂 taggedEnumField；Type kid 以首字段型别占位（Go 同口径 Fields[0].Type）。⚠️ `#{…}` 变体注不渲染（默认无 -annotations）⇒跳过即可。**+1**，新匹配 tests/chain-copy.no；t49-enum-defs fixture byte-identical。⚠️ 语料其余 9 档首分歧即枚举（TaggedEnum 6+Enum 4+err.no 等）现结构已对，但随即在**下游 armBinding 裸 match desugar 主簇**再分歧（LetStatement 桶 107 档中 44 档为该簇）——该簇已确认为下一个最高价值增量。⚠️ **方法学事故记录**：本增量中 t31-standalone-if 一度显示回归——隔离实验证明源于 `~/.cache/nolang/ast` 被并行会话（Go 侧 concurrent edits + bin/no 重建）污染的**非确定性构建**（同一 HEAD 源码两建不同行为），清缓存重建后 s44/s45f 行为一致、arm 零回归；差分对照必须用**同一工具链代次**重建的新旧 noc。⚠️ 其余 4 fixture（t37/t4/t7/t8）与 live oracle 的差异为 **noc-s0 时代既有**（fixture 门历史基线并非 live-oracle 对照），非本增量引入。→s46=302（**明示 match 的 armBinding desugar 补齐**——三缺口：(a) err/nil 关键字臂（型样为裸关键字且紧接 `->`）→ 新 `ps-mk-it-let-arm` 建 `LetStatement{name:it, type:<变体>, value:subj, synthetic, armBinding:true}`（Go lowering.go buildItBindingForArm：被匹配型别未知时【仅 err/nil】臂带型别，ok/else 回落裸 synthetic——同文件 `ps-mk-it-let`；dumper 早已支持 armBinding 槽，纯 parser 缺口）；(b) 裸尾臂 `-> expr`＝else：peek 见 RARROW 直接视同 wildcard（不消费 token），其区块作前一 IfExpression 的 alternative，不再伪造 `subj == <nil>` 条件臂；(c) kvar 检测用 `ps-peek-at(p,1)==RARROW` 区分关键字臂与同名普通变量。fixture `t50-match-arm-binding.no` 于晋级后 noc-s0 与 oracle 逐位元组相同。**同代 A/B**（同一好代次工具链分别编译 HEAD ps.no＝ctl 与 s46 ps.no）：corpdiff(ctl→s46)＝ +20 档、回归 0；**最终语料门禁** corpdiff(noc-s0[s45f]→noc-s46f)（live oracle 02:18 代）＝ **+19 档（match-*/option-*/vec-*/open-*/arr-* 等 armBinding 主簇）、回归 0**、283→302（旧基线 284→283 系 02:18 oracle 代对个别档预期漂移所致、与本增量无关）；fixture 门 47/51（仅余既有 4 档 t37/t4/t7/t8）；单元 4 测试全 PASS；vet 错误集与 HEAD 完全同（仅行移 3309→3348）。⚠️ **晋级阻塞——外部工具链回归**：当代 Go 源码（deac8377 已提交＋并行会话未提交 WIP）编译【与 noc-r1/r2/r3 时代逐位元组相同】的 HEAD ps.no，产出的 noc 在 t31-standalone-if 与 tests/mkdtemp-debug.no 丢失 standalone-if 链的 inline else（`BlockStatement{inline:true}` 消失，签名一致；284→283）；三代工具链 parse ps.no 自身 AST 逐位元组一致⇒纯 lowering/codegen【静默误编译】；且昨日 20:12 的好状态只存在于【未提交】WIP（fd3f2931 提交信息描述的 parser 工作并未含 Go 文件入仓），不可复现。⚠️ **工具链事故升级与解法（s46 期间）**：主树当代 Go（deac8377+未提交 WIP、bin/no@02:18）以【cache-off】编译 HEAD ps.no 仍丢失 standalone-if inline else（t31+mkdtemp 同签名）——属当代 lowering/codegen 真回归、待 Go 侧修复；但 **纯 346d69ae（v0.4.4）与纯 c872721a 两代工具链 cache-off 均 GOOD**⇒破坏面锁定在 deac8377 及其后 WIP 区间。处置：晋级二进制改用 **git 钉住的纯 v44 工具链 + NOLANG_AST_CACHE_OFF=1 构建**（/tmp/noc-s0＝noc-s46f、sha 51de820a），旧基线存 /tmp/noc-s0-s45.bak。⚠️ **二分期中踩到的缓存新坑**：ASTVersion 只在 commit 时 bump，相邻两代未 bump 的 WIP 共享同 key（content, ASTVersion, StdSigKey）⇒cache-on 的文件级二分结果全是假象（本会话曾被 b3「GOOD」误导数轮）；**任何差分/二分实验必须 NOLANG_AST_CACHE_OFF=1 或隔离 HOME**（该开关只保 user-module AST 盘缓存层）。）→s47=308（**后辍圆括号 range 切片 `f(a..b)`/`f(a..b]`**——语料 7 个 SIGBUS 档的元凶：Go expr.go LPAREN 臂有 isRange 探视（`(` 后跟 ELLIPSIS、或 INT/IDENT 紧接 ELLIPSIS ⇒ parseSliceExpression，leftInc=false、`]` 闭合 rightInc=true；否则普通 CALL），而 ps.no 后辍链把 LPAREN 一律当 CallExpression——`a(1..4]` 落入 call 参数循环的防呆步进＋外层 pgo 重循环⇒死循环/SIGBUS。新增偏移 1/2 token 探视分支（镜像 Go saveState 探视）；并补 LBRACKET 臂两处 en 条件缺 `!= RPAREN`（Go 双闭合）。fixture `t51-range-call.no` 与 oracle 逐位元组相同。门禁：fixture 48/52（仅余既有 t37/t4/t7/t8）；单元 util/tok/lx/ast 4/4 PASS；vet 错误集与基线完全同集（行号全 +40 位移）；语料门 corpdiff(noc-s0[s46]→noc-s47)＝ **+6 档、0 回归**（arr/str/txt/vec-slice、slice-open-inclusive、mem-safety/reverse-slice-clone 六个原 BUS 档全匹配）、302→308。⚠️ **方法学坑——超时误报第三机制**：首跑 -P 4/30s 并发扫描把 sha256/yaml 报成「新增 SUT-FAIL 回归」——实因该两档 noc 解析耗时 ~15-25s 处于临界，并发负载压爆 alarm；串行 -P 2/90s 复测 s0/s47 行为完全一致⇒**语料扫描须 -P ≤2 + alarm ≥90s**，否则慢档被误判回归（与缓存假象、跨代误编并列第三独立机制）。晋级同 s46：git 钉纯 v44 工具链 + NOLANG_AST_CACHE_OFF=1 构建，/tmp/noc-s0＝noc-s47、sha1 fc0216b4，旧基线存 /tmp/noc-s0-s46.bak；余 SUT-FAIL 9 档（aes-cbc/net/fmt-heuristic/fn-type-{result,return}/map-key-leak/str-order 挂死、tls SEGV、https-server BUS——皆 noc-s0 时代既有，非本增量引入））→s48=370（**陈述位 `{ … }` 区块：BlockStatement wrapper + 裸 match desugar**——首分歧调查最大桶：抽样 200 档中 ≈48 档卡 `BlockStatement{}` wrapper 缺失、≈22 档卡裸 match 合成 `IntegerLiteral{value:1}`。此前 `ps-parse-stmt` 无 LBRACE 臂⇒防呆步进吃掉 `{`、语句外泄一层；裸 match `{ cond -> body … -> else }` 完全未实现。新增 `ps-parse-brace-stmt`（镜像 Go stmt.go:402 saveState/restoreState：`ps-bm-scan` 探深度 0 `->`（排除 `{ IDENT : {` 结构化形）⇒先试 `ps-parse-bare-match`、失败还 p.pos 回落普通 `ps-parse-block`+消费 `}`）；`ps-parse-bare-match` 镜像 match.go:134 三形臂体（`{…}` 区块（先试嵌套裸 match）、NEWLINE 块形（statements 至 isArmStart/`}`，inline:true）、同行单语句）+ lowering.go:1727 buildBareMatchDesugar 两装配路：全臂非 wildcard 且 n>1⇒fast path `IfExpression{IntegerLiteral{1}(合成 ps-mk-true), Block{各臂兄弟 ExpressionStatement{IfExpression}}}`，否则倒序 elif 链（尾 wildcard `-> body`＝`IfExpression{IntegerLiteral 1, body}`）；中途 wildcard／臂首 `#{`／`ok->` 保守 bail 还原。**⚠️ match 非排他/有状态守卫三新坑**：(1) wildcard 臂消费箭头后重评 `ps-peek!=RARROW` 因状态已变而误 fail⇒`ad` 快照旗标；(2) 倒序链 `w==1&&res>0→bail` 被本臂刚建的 res 再触发⇒`hdw` 快照；(3) 嵌套裸 match 尝试失败时 p.pos 已越过 `{`、回退路再 bump⇒双消费⇒`j <- [0..N): {` 被吞成 SliceLiteral 整档挂死（http/server 180s rc=142）⇒尝试前 `nsave=p.pos`、失败还原。门禁：fixture 49/53（仅余既有 t37/t4/t7/t8）、单元 4/4 PASS（⚠️ 当代 oracle 新增命名规范检查拒 `_test.no` 下划线路径⇒复制到 tmp/zz-s48gate/*-test.no 运行）、vet 10 既有 ERROR 集不变；语料门（-P 2/90s 全 647 档）＝DIFF 330→268、**新增匹配 62 档、0 回归**（SUT-FAIL 集与 s47 完全同 9 档；http/server 由挂死转 rc=0 且与 oracle 差异行数 6435→1394 / 3089→433，仍属既有 DIFF 档）。晋级：纯 v44 工具链 cache-off，/tmp/noc-s0＝noc-s48 sha1 c53a5641，旧基线存 /tmp/noc-s0-s47.bak）→s49=381（**语句位 `*`/`**` 速写 + `#N` 标签循环**——s48 后首分歧调查最大可解桶：oracle `BlockStatement{}`/`BreakStatement` 侧 ≈48 档中相分成两簇，其中 index-out desugar 簇（≈39 档，Go lowering.go maybeIndexOutAssign）需 sem 函数作域型别表（FuncVarType/idxLocalTypes）+ bounds.go 可证明界内豁免（inBoundsIdx）才可逐位元组复现，超出 parse-local 范畴留待后续；本增量取 `*`→break／`**`→continue 速写簇：Go parseStatement 对语句起始 MUL 走 parseStarBreakOrExpr（stmt.go:552/2913，peek(1) ∈ {NEWLINE,EOF,SEMI,RBRACE,LABEL,IDENT} 才成立、可跟 `#N`/IDENT 标签）、STAR_STAR 走 parseStarStarContinue（stmt.go:558/2937，无閘门）；ps.no 陈述位无 MUL/STAR_STAR 臂⇒`cond -> *` 被防呆拆成 `InfixExpression{op:*}[<nil>,next]`（http.no 首分歧即此）；新增 ps-parse-star-break/ps-parse-star-star-cont/ps-star-label/ps-mk-break-cont 四函数+两 dispatch 臂；另补 `#N` 标签前缀臂（parseLabeledStatement 保守版：消费 LABEL 后递回 ps-parse-stmt，若得 ForStatement 则改写 slot0 label）。⚠️ 多返回值坑：`(label, kind)` 裸组尾式非法语法、`x,y = f()` 解构仅适用已命名结果惯用法——改用 `[]str` out 参数传 label/kind。fixture `t53-star-break.no`（裸 match 臂体 `*`/`**`、`{ }` 内裸 `*`、`* #1`/`** #1` 标签、standalone-if 链）与 oracle 逐位元组相同。门禁：fixture 50/54（仅余既有 t37/t4/t7/t8）、单元 4/4、vet 10 既有；语料门（-P 2/90s 全 647）＝DIFF 268→258、**新增匹配 11 档、0 回归**（tests/https-server.no 由 SUT-FAIL rc=138 SIGBUS 转 rc=0 DIFF、属改善；http.no 与 oracle 差异 1394→185 行）。晋级：/tmp/noc-s0＝noc-s49 sha1 bb07e0ed，旧基线存 /tmp/noc-s0-s48.bak）→s50=383（**区块内换行后 `-> else` 续接（standalone-if else-attach）+ 工具链纪律再确认**——oracle 当日三代重建（08:40→09:56→10:30），10:30 代把 wrapStandaloneChainDepth 定为递归形（stmt.go:1768 注释引 str.replace-n 事故）后， promoted noc-s49（当时误用【主树 bin/no@08:40】编译，违反 s46 钉死纪律）静默丢失链式 `a -> b -> f` 最内层 consequence 而被漂移照出；本增量起一切 noc 构建一律改用 /tmp/nolang-v44 自带 `./bin/no`（纯 v0.4.4 钉死 + cache-off）。新特性：复刻 Go parseBlockStatement 迴圈开头 stmt.go:2168–2186——区块内上一条 standalone-if（RTStandalone、Alternative==nil）后换行的 `-> body` 挂为其 Alternative；实现弃用「建节点后原地覆写 kids」方案（ast.no kid-set），改在 ps-mk-standalone-if 组装前【前探】：跳 NEWLINE/SEMICOLON 后恰为 `->` 即就地吃掉并把 body 写进 alt 槽（节点一次成型、零覆写）；psst 加 inBlk/inMatch 上下文位：program 顶层不挂（t31 系顶层 `d -> e -> f`+`-> g` 分离形）、臂解析中抑制（裸 match/match 自行消化 wildcard 臂），ps-parse-block 进入时 inMatch 清零（臂 body `{ }` 内续接合法）。fixture t54-newline-else.no（j1 形/块形 else/（A）wildcard 三连挂/顶层不挂）与 oracle 逐位元组相同。门禁：fixture 51/55（仅余既有 t37/t4/t7/t8）、单元 util/tok/lx/ast 4/4、vet 10 既有 ERROR。语料门（-P 2/90s 全 647，oracle 10:30 代）＝SAME 383 / DIFF 256 / SUT-FAIL 8（全 rc=142 慢档、与 s49 同集）；vs s49 名单：新增 tests/{float-ne-nan,set}.no、丢 0 档（漂移日净匹配受 oracle 三代重建主导，attach 本身解锁的是语料内裸 match 回退区块形如 json.no 内层块）。晋级：/tmp/noc-s0＝noc-s50g sha1 c766715f，旧基线存 /tmp/noc-s0-s49.bak。⚠️ **事故记录（归因错误）**：s50 期间一度把链式丢 consequence 误判为 ast.no 新增 kid-set（i64 vec 字段元素写入）「污染全模组 codegen」——单变量实验 s50e 因同时混入了错误工具链（主树 bin/no）构建而给出假象；真因＝工具链代次误用，kid-set 无罪（后因设计更优而保留弃用）。差分对照一律同工具链代次重建；晋级前必须用 v44 `./bin/no` 重建并跑 fixture 门。新基线首分歧分桶（256 档）：ORACLE+ LetStatement 104／BlockStatement 48（index-out 簇 ≈39 + 裸 match mid-wildcard bail 簇如 t54 旧 g/h 形）／FunctionDefinition 16／NOC+ ExpressionStatement 11）→s51=413（**同檔裸名呼叫之 parse 期回傳型別推斷**——s50 後最大桶：256 檔首分歧 LetStatement 家族 132（裸 63＋nullable 34＋合成 35），其中 44 檔直接分歧於 `value: CallExpression` 的型別蓋印。復刻 Go parseLetStatement 的 CallExpression 推斷分支（stmt.go:1502–1533）＋ type.go 的 returnTypeFromCallExpr／filterInferableType／markInferred：RHS 為 `CallExpression{fn: 裸 Identifier}` 且簽名表有【單值】回傳 ⇒ 過濾（`?T` 恆留；排除精確 i64/i32/i16/i8/u64/u32/u16/u8/f64/f32/bool/byte/char/fd；含 `|` 排除——union 排除本增量未實作，風險已註於碼）再走三閘門：未宣告→蓋 Type＋setVarType；已宣告且回傳 `?T`→僅 setVarType 不蓋 Type；已宣告非 option 且既有 varType ∈ {'', 'i64'}→蓋 Type。順序註冊（ps-parse-func 於 body 解析完後、僅 outs.len()==1 才登記 sigN/sigP）⇒前向引用與遞迴不推斷（oracle 探針 inf2/inf3 釘死）；方法定義不進裸名表；形參/回傳 varType 註冊提前至 body 前（mirror decl.go:1756）。psst 增 12 欄（fn/lastTp/sigN/sigP/dclF/dclV/gclN/fvF/fvV/fvT/gvN/gvT）實現 FuncVarType（fn→全域 fallback）與 IsFuncDeclared（tracked 函式僅查 pair）。**克隆方案＝token 位置重入**：簽名存回傳型別起始 token 下標（ps-parse-param 捕 p.lastTp），使用處跳 p.pos 過去重跑 ps-parse-type 生成新節點（零既有節點突變）、回pos；ps-mark-inferred 逐 kind 遞迴寫 'true'（NULLABLE 只蓋子節點——dumper 標頭不印 inferred）；被拒克隆成無 kid 引用孤兒⇒零回歸。ps-parse-stmt 六明示型別分支＋typedecl 兩臂補 ps-reg-let 登記（復刻 Go parseLet 尾部 DeclaredVars+SetFuncDeclared）。fixture t55-call-infer.no（首個 `?str` 蓋印／重指派抑制／i64 過濾排除／`[]str` SliceType 推斷／字面量恆蓋／後定義函式不推斷）與 oracle 逐位元組相同。門禁：fixture 52/56（僅余既有 t37/t4/t7/t8）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR 集不變；語料門（-P 2/90s 全 647）＝**SAME 384→413（+29）、0 回歸**（SUT-FAIL 8 檔 rc=142 與基線同集慢檔），新匹配 x25519-* 全系列、mem-safety/struct-* 簇、move/slice/view 諸檔；args.no 差異行數 103→91（剩餘皆 lowering D6 `?char`/`?i64` 合成偽影，超出 parse-local 範疇）。⚠️ oracle 當日 12:26 因平行會話「remove explicit main」重構重建，基線探針全組復核 SAME 後才动工。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s51 sha1 33fd562b，舊基線存 /tmp/noc-s0-s50.bak）→s52=417（**前置 `#{buildin}`/`#{intrinsic}` 註解標記 ⇒ 節點旗標**——s51 後 226 檔首分歧重分桶：LetStatement 79（it-let 束縛 20／D6 option-index 23／CallExpression 残留 10 皆 lowering 产物）、BlockStatement 48（index-out 簇）、**builtinStub 10 檔**為最大單標記 parse-local 簇。語料 17 檔 152 處 `#{buildin}`（裸形＋`#{buildin, intrinsic}` 組合形）、`#{intrinsic}`（含 `#{win-amd64, …, intrinsic}` 平台組合形）。鏡像 Go attachAnnotations（annotation.go:349–378）：FunctionDefinition 上 'intrinsic'⇒Intrinsic（slot5 'true'）、'buildin'⇒BuiltinStub（slot6）＋可選 Value⇒BuiltinName（slot7，語料暫無 `=NAME` 形、預留）；TaggedEnumDefinition 上 'buildin'⇒Builtin（slot1，global.no option 即此）。槽序由 dump.go:272–279 渲染欄序列導出（name0 colonSyntax1 methodDef2 skipNamingCheck3 overflow4 builtinStub5 builtinName6 builtinGroup7；`#{intrinsic}` 已於 2026-10-22 從 Go 側移除，原 intrinsic5 槽消失、其後各槽（builtinStub/builtinName/builtinGroup）整體前移一格）——dumper（asp.no strs 表）早已就緒⇒纯 ps.no 增量（新 helper ps-apply-builtin＋註解迴圈收集 bs/intr/bn＋尾端套用一點）；非函式/非列舉目標忽略旗標（`#{buildin} e = 1` 探針釘死）、不可附著形仍走獨立 AnnotationStatement（Go 同口徑）。多載繼承（後續同名定义 BuiltinGroup）與尾隨同行形語料暫無、未實装。fixture t56-buildin-annot.no 與 oracle 逐位元組相同。門禁：fixture 53/57（僅余既有 t37/t4/t7/t8）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR 集不變；語料門（-P 2/90s 全 647）＝**SAME 413→417（+4）、0 回歸**（SUT-FAIL 8 檔同集），新匹配 global/os/bool/net/unix；async.no 殘差 5 行為 `*i8` PointerType 參數（新缺口）、time/fs/process/number 仍卡下游簇。⚠️ oracle 當日多次重建（12:26→13:24→13:51），掃描後對新 oracle 複驗解鎖檔＋全探針 SAME。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s52 sha1 b71b1210，舊基線存 /tmp/noc-s0-s51.bak）→s53=423（**頂層型別別名——union / 單一 / 函式型別三形**——s52 後重分桶選 TypeAlias 簇：`float = i8|f64|…` 系首分歧 Go 為 `TypeAlias{…Union…}` 而 noc 拆成 LetStatement+InfixExpression。復刻 Go stmt.go:151-170 分派序（isFnDef→isFnTypeAlias→looksLikeEqAlias→let）：type.go:554 looksLikeEqualsTypeAlias（IDENT+OR→scanIsUnionTypeAlias 深度 0 掃描（NEWLINE/EOF/;/閉合符→真；含 QUESTION 在內二元運算子→假；LPAREN 內容限 {IDENT,IN,RPAREN}）；IDENT+陳述邊界→內建 16 型名或 **typeAliasNames 註冊表**；`[]T`/`[N]T`/`?T` 形）、type.go:688 parseTypeAlias（`|` 平鋪收集成 UnionType{types:N}）、type.go:406/433/512 fn 別名形（首 `(...)` 後須陳述邊界或第二 `(...)`）。**三項 ps.no 機械發現**：（a）kvc 計數頭部（`types:`/`params:`/`results:`）由 dumper 讀**字符串槽**渲染、子節點遍歷讀 c 槽——builder 須 set-slot(.to-str()) 與 set-count 兩設（沿 CallExpression 既有範式）；（b）同塊多臂 match 中**裸 `->` 尾臂會被當尾隨無條件陳述執行**覆寫 idx——別名分派全臂加 `aliased == 0 &&` 守衛、無裸臂；（c）Go fn 型別參數規則：`(...)` 內單 IDENT 為**無名具型參數** `Parameter{name: , type: NamedType}`（不同於 FD 形參）——新 helper ps-parse-ftype-param；且結果組換行探測須 `sp = p.pos` 保存、未命中回滾，否則吃掉終結 NEWLINE 使下行文註錯掛為上陳述 Comment。psst 增 `alN []str` 註冊表。⚠️ 記錄偏離：別名閘門用 `p.fn == ''`（僅頂層）替代 Go 的 saveState 試解析——語料函式體内 `x = (expr)` 形皆被 Go 內容掃描否決，頂層閘門安全。fixture t57-type-alias.no（union/單一/註冊表引用/cb0 空參/fn 雙組/負形 `or-value = 1 | 2`、`x = (or-value)`）與 oracle 逐位元組相同。門禁：fixture 54/58（僅余既有 t37/t4/t7/t8）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR。語料門（-P 2/90s 全 647）＝**SAME 417→423（+6）、0 回歸**（SUT-FAIL 8→6 恰為 fn-type-result/return 轉 SAME 脫離慢檔集），新匹配 src/std/{float,num}.no、tests/{fn-type-params,fn-type-result,fn-type-return,named-fn-type}.no；int.no 殘差 8 行=`?int` NullableType 推斷 let 形（新簇出列）。⚠️ /tmp/nolang-v44 被 macOS /tmp 清理蒸發，重建：git clone + checkout v0.4.4 + make no。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s53 sha1 86907d51，舊基線存 /tmp/noc-s0-s52.bak）→s54=427（**D6 有號整數算術 option 推斷——inferOptionArith**——s53 後 218 DIFF 重分桶：LetStatement 86／BlockStatement 49，選中「`type: ?i64/?int, value: InfixExpression`」簇 16 檔（std 8＋tests 8）。復刻 lowering.go:493 inferOptionArith（parse 完成後 walk 逐 LetStatement）：無明示型別、非合成、值剝括號後為 op ∈ {+ - * / %} 的 InfixExpression 且兩側皆「靜態可知有號整數」（IntegerLiteral→i64；Identifier→FuncVarType→lowerSignedIntName 僅收 {int,i8,i16,i32,i64}、限定名取最後 '.' 段、剝前導 *；self/`.`→接收者型別；巢狀算術遞迴取較寬者、平手取左）⇒就地合成 NullableType{NamedType{base}}（dumper 對 NullableType 頭不印 inferred）＋setVarType(name,'?base')。D1：`#{overflow=...}` 不豁免（d6f/sha3/time 探針釘死仍蓋印）。ps.no 增量：五 helper（ps-unwrap-grouped／ps-is-arith-op／ps-lower-signed-int-name／ps-signed-int-operand／ps-mk-opt-arith-type）＋ps-parse-let 尾一鉤點＋ps-parse-method-func 預登記 self=接收者型別（鏡像 lowerSelfType 讀 Results[0]——裸 `.` noc 渲為 Identifier{self} 需在 body 前可查）。⚠️ 偏離：單趟查表 vs parse 完後 walk——前向引用運算元不蓋印（語料未見）。**閘門教訓（首掃曾丟 3 檔回歸）**：captureTargetAllowsOption 不是「查 varType 空即放行」！Go 以 declaredLocals（walk 序出現名單：函式作用域每次進入 FunctionDefinition 重置、形參先入帳、字面量 let 只入名單不入型別表）＋localDeclaredType（**刻意不做全域回退**，lowering.go:3377 事故註釋：他函式 `c i64` 參數污染）雙表判定——「本作用域已出現且型別表查無 entry」也拒，保護 `r = 0`→`r = 10/3` 重指派形與純量出參；新增 ps-walk-declared／ps-local-type＋psst.dclT（僅頂層名單）重造閘門後 net/ip、sha256-simplified、number-div-mod-clamp 回 SAME。⚠️ 誤編譯事故：臂內寫 `-> { r = 'int'; return }`——`;` 是行註解吞掉 ` return }`、括號失衡使後續整檔併入前函式，報錯 `EmitLLVM: unknown callee ps-parse-if in func ps-parse-stmt` 距真因極遠；改互斥條件單表達式形。fixture t58-d6-arith-option.no（正形：函式參數／剝括號／巢狀／方法 `.`；負形：u8、純字面量變數運算元、明示純量重指派、出參、union 別名接收者、D1 overflow 仍蓋、先字面量 let 後重指派拒蓋）與 oracle 逐位元組相同。門禁：fixture 58/59（僅余既有 t7-group-nil-float）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR（無一落於新碼區）。語料門（-P 2/90s 全 647）＝**SAME 423→427（+4）、0 回歸**（SUT-FAIL 6 檔 rc=142 同集），新匹配 src/std/{int,net/hpack}.no、tests/{1-test,basic}.no；簇內其余 12 檔殘差屬 D7 安全索引 `?char`／armBinding 型別／Comment 附著等其他簇。⚠️ oracle 當日漂移 15:02→16:16，晉級後對新 oracle 復核 25 探針＋抽樣 40 原 SAME 檔全 SAME。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s54 sha1 dedb47ef，舊基線存 /tmp/noc-s0-s53.bak）→s55=441（**armBinding it 合成綁定型別蓋印——buildItBindingForArm**——s54 後 214 DIFF 重分桶選中「`LetStatement{name: it, type: T, …, armBinding: true}`」it-let 簇 21 檔。復刻 lowering.go:2809 buildItBindingForArm ＋ per-arm 補集表 :2176–2235：主題靜態可知 `?T` ⇒ err 臂→err、nil 臂→nil、ok 臂→T、wildcard 臂取補集（全列 ok/err/nil ⇒ Go skipItBinding 死臂**不建任何綁定**；列 ok+nil→err、列 ok+err→nil、僅列 ok→`err | nil`、未列 ok→T）；型別未知（t==''）維持 s46 兼容形——僅 err/nil 關鍵字臂帶變體名、ok/wildcard 落回裸 shared 綁定。ps.no 三處增量：（a）`ps-mk-it-let-arm` 泛化為 `ps-mk-it-let-t(t, subj, bt, bname)`（bt 非空⇒NamedType{bt}+s1 synthetic+s2 armBinding；bt 空⇒同 ps-mk-it-let 裸形）；（b）`ps-match-listed` 深度追蹤 token 預掃（不消費、不建節點）收集「緊接 `->` 的 ok/err/nil 關鍵字臂」名單，鏡像 Go parse 後 hasExplicitOk/Err/Nil（嵌套 {…}/(…)/[…] 增深度防内層臂污染補集判定）；（c）ps-parse-match 接線——listed 預掃、`ok` 關鍵字臂 kvar 識別、bt 計算、dead 旗標（全列跳過整條 it 綁定）、it varType 逐臂登記與還原（鏡像 collectVarTypesFromBody 作用域掃描，保巢狀 match 内層 it 不污染外層——match-it-type-scope 回归守）。⚠️ 偏離：`Program{warnings:N}`（死臂 unreachable 警告計數）與未知型別主題 wildcard 裸綁定 vs 無綁定之別屬警告計數／下游簇，本增量未觸及（探針 e55a 剔除此二形後與 oracle 逐位元組相同）。fixture t59-arm-binding.no（n ?i64：err/nil/wildcard、ok/wildcard、僅 err/僅 nil/純 wildcard；m ?str：ok/nil/wildcard 補集 err；巢狀 match 作用域還原）與 oracle 逐位元組相同。門禁：fixture 59/60（僅余既有 t7-group-nil-float）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR（無一落於新碼區）。語料門（-P 2/90s 全 647）＝**SAME 427→441（+14）、0 回歸**（SUT-FAIL 6 檔 rc=142 同集、ORB-FAIL 0），新匹配 tests/{fs-error-complete,fs-error-simple,minimal-it,minimal-it2,opt-match-all,opt-match2,opt-match3,option-nil-predeclare,self-write-str,struct-field-leaf-clone,test-div-mod-option}.no、mem-safety/{option-cmp2,option-match-basic,option-match-direct}.no；簇內其余 7 檔（match-it-type-scope/opt-box-drop/option-capture/tagged-enum/test-div-zero/str-field-set-clone）殘差屬複合指派／enum 載荷析構／D7 安全索引等其他簇。⚠️ oracle 當日漂移 16:16→17:09，首掃 LOST=0 已對新 oracle 復核成立，晉級後復驗 14 新檔＋抽樣 39 原 SAME 檔全 SAME。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s55 sha1 054f3851，舊基線存 /tmp/noc-s0-s54.bak）→s56=445（**W_SEMI_EAT 行尾分號註釋計數——Program{warnings:N}**——s55 後 200 DIFF 首分歧分桶：LetStatement 62／BlockStatement 54／Program 9，選中 warnings 桶：4 檔唯一差異即 `Program{}` vs `Program{warnings:N}` 頭行。復刻 Go buffer.go::warnSemiSwallow 啟發式（advanceCollect 對每個符合的 COMMENT token 發一條 SeverityWarning，parser.go::Warnings 將全部 warning 匯總進 Program.warnings）：① Marker == ';'（單分號行註釋；`;;`/`;;block` 系永不警告）② 註釋文字含 `{` 或 `}` ③ 前一非 COMMENT token 為同一行代碼 token（行尾而非行首）。啟發式純詞法 ⇒ ps.no 以 `ps-semi-eat-count` 對 toks 前向預掃（last 指針跟蹤前一非註釋 token），`parse` 寫 Program 槽前疊加進 p.warn 總和——Go 的 warnedSemiEat[idx] 回溯去重在預掃下天然無需。探針 tmp/p1-p3 釘死：`;;` 行首/同行→0、同一行兩組大括號→僅 1（同屬一條 COMMENT token）。rc4/move-eligibility-improved/range 三檔首行也是 warnings，但 noc 過度計數的根因是 `[1,2,3]:` 陣列字面量被誤析為 RangeExpression 的 body 大 diff（他桶）。fixture t60-semi-eat.no（正形三行含括號／負形行首 `;{}`、`// {}`、`;; {}`、無括號 `;`／同行雙括號串）與 oracle 逐位元組相同。門禁：fixture 60/61（僅余既有 t7-group-nil-float）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR。語料門（-P 2/90s 全 647）＝**SAME 441→445（+4）、0 回歸**（SUT-FAIL 6 檔 rc=142 同集、ORB-FAIL 0），新匹配 tests/{map-to-str,struct-to-str,scratch-fe,print-eprint-to-str}.no。⚠️ oracle 當日漂移 17:09→18:16，首掃 LOST=0 對新 oracle 復核成立，晉級後復驗 4 新檔＋探針＋抽樣 40 原 SAME 檔全 SAME。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s56（構建 sha1 ceaf5862，晉級 codesign 後 1e872f5d），舊基線存 /tmp/noc-s0-s55.bak）→s57=448（**for 族語法補齊：range-for 匿名切片字面量源 + 計數循環雙形**——s56 後 196 DIFF 首分歧分桶：LetStatement 62／BlockStatement 54／ForStatement 6／Program 5，選 for 兩簇：（a）range 源 `i <- [1,2,3]:` 被 ps-for-source 一律當 RangeExpression 誤析（s56 副發現：rc4/move-elg/range 三檔过度 warnings 之真因即此）、语料切片字面量源 4 檔；（b）計數循環 `N * { }`／`{ } * N` 完全缺臂（for3.no 前置形 8 行差）。**鏡像 Go parseForRange LBRACKET 分類**（stmt.go:2582）：saveState→跳 `[`→peek ELLIPSIS 先行⇒kind1；否则 parseExpression(LOWEST) 後 ELLIPSIS⇒kind1（[a..b]/[a..]）、COMMA|RBRACKET⇒kind2（匿名切片字面量 [a,b]/[a]）；restoreState；kind2 整段交 ps-parse-expr 之 LBRACKET 前綴臂建 SliceLiteral 填 IterationExpr.RangeExpr(kid1)（非 range 非切片之 kind0⇒保持舊無分類行為，Go saveError 形無以復現）。分類期投機 parseExpression 所建節點不被任何 kid 引用即孤兒（s40/s51 先例）⇒零回歸。**計數循環雙門+雙 builder**：s57-count-prefix-p 鏡像 isCountLoopPrefix（k=1 用 peekToken、k≥2 用 look(k-2)；`*` 後必緊接 `{` 与乘法區分）於陳述分派 INT/SUB 臂前；s57-count-blockfirst-p 鏡像 isCountedLoopBlockFirst（平衡大括號掃描+`#{` 群組跳過、匹配 `}` 後 MUL [SUB] INT 且 INT 後必為 NEWLINE/EOF/SEMI/RBRACE 語句結束以免 `} * n` 乘法歧義）於 ps-parse-brace-stmt 入口優於裸 match/普通區塊；二者皆建 ForStatement{label:''} 6 guarded CHILD 僅 CountExpr/Body 非零，CountExpr=IntegerLiteral{value:字面量}（無 raw⇒slot1 空串不印，ps-mk-true 先例；Go ParseInt base10 拒 hex 故 hex 安全落回運算式形）。負號形把字面量前綴 '-'（Go intToken.Literal = "-"+lit）；標籤形 `#1 N * { }` 由既有 LABEL 臂遞回+改 slot0 天然覆蓋（e1 探針釘死）。⚠️ **新坑（MIR 層靜默誤讀）**：同一函式體內多次 ps-peek-at（含變量偏移）會讀到陳舊寄存器——探針实計：同體 pa1/pa2/pa3 局部正确，但嵌套臂內 `ps-peek-at(p, ko)`（ko==2）返回 ko==1 時的舊結果，而直接索引 `p.toks[p.pos+ko].typ` 恆正確；vet 的 fxxoptarg 錯位（ps.no:4401/4404/4415 等 6 處既有 `p.pos+1` 傳參）側证此族降格路径确有幉角⇒**新閘門一律改 ps-bm-scan 式直接索引掃描（index-out=zero 守衛）**。fixture t61-for-shapes.no（切片源/範圍源對照/前置計數/後置計數/負計數/標籤前置形）與 oracle 逐位元組相同。門禁：fixture 61/62（僅余既有 t7-group-nil-float）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR（無一落於新碼區）。語料門（-P 2/90s 全 647）＝**SAME 445→448（+3）、0 回歸**（SUT-FAIL 6 檔 rc=142 同集、ORB-FAIL 0），新匹配 tests/{for3,range,call-heavy}.no（call-heavy 為分類修正的級聯紅利）。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s57（構建 sha1 b5c4ac9e，晉級 codesign 後 25a178bb），舊基線存 /tmp/noc-s0-s56.bak）→s58=451（**參數/型別特殊形狀 + 方法回傳型別推斷**——s57 後 193 DIFF 首分歧分桶：LetStatement 62／BlockStatement 55／Identifier 9／Parameter 5，選 B 簇「型別形狀」：（a）參數/回傳位 `*T`/`**T`/`T*`/`&T`/`?&T` 全缺臂（async.no `task *i8`、view-basic `(v &view-point)`）；（b）參數名位缺 IN token（`in []byte` 被丟名）。鏡像 Go parseParamTypeAfterName（type.go:997）：前綴 `?`/`&` 循環＋`*` 循環＋STAR_STAR＋base＋後綴 `*`/`**` 正規化為 `? & * base` 再 buildType（type.go:1206）逐層包節點——noc 單趟直接節點化等價：ps-parse-type 新增 MUL→PointerType、STAR_STAR→雙 PointerType、AND→ViewType 三臂（遞迴先建內層 base 再包外層，子先於父）；IDENT 臂尾加後綴 `*`/`**` 包裹迴圈（`i8*`⇒`*i8`）；ps-parse-param 型別門擴 {MUL,STAR_STAR,AND}、名門容 IN。⚠️ 權威面探針釘死：oracle 函式字面量**參數位**不接 `&T`（isFunctionDefinition 掃描集無 AND，`(b &i64)` 落回 GroupedExpression）但 **results 位**接（掃描無條件跳過）——語料只用 results 位，noc 偵測比 Go 寬的偏差只在語料外形（e2 探針既有之偏離、非本增量引入）；頂部明示 `x &str = 1` oracle 也落回運算式（let 型別門不碰 AND，未改）。**級聯子簇：方法回傳型別推斷（s51 同族 DotExpression 臂，type.go:96 returnTypeFromCallExpr）**——view-basic `q = p.self-view()` 之 `type: &view-point` 為 parse 期推斷非明示：新增 psst.msN/msP 方法簽名表（鍵 'recv.method'，body 解析完才註冊、outs==1 限定、opos[0] 起點 token，鏡像 Go decl.go 尾註冊 methodSignatures 語意）＋ps-msig-find 反掃；ps-parse-let 推斷區加 DOT 臂：接收者 IDENT→ps-var-type 解接收者型別→查表→跳 token 重跑 ps-parse-type 克隆（未採用即孤兒零回歸，s51 法）＋filter-ok/declared 雙閘同裸名臂；StructLiteral let 臂僅登 varType 不蓋 stmt.Type（Go case *StructLiteral 語意，!exists 守衛）。K_POINTER_TYPE=51/K_VIEW_TYPE=71 asp.no 早已註冊、type-string ast.no:632/634 已渲 `*`/`&` 前綴、dumper kind-name 通用⇒纯 parser 增量。fixture t62-type-shapes.no（*T/**T/T* 後綴正規化/&T results/?&T+推斷/[]byte+IN 名對照/負形 `3 & 5`、`6 * 7` 保持 InfixExpression）與 oracle 逐位元組相同。門禁：fixture 62/63（僅余既有 t7-group-nil-float）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR（無一落於新碼區）。語料門（-P 2/90s 全 647）＝**SAME 448→451（+3）、0 回歸**（SUT-FAIL 6 檔 rc=142 同集、ORB-FAIL 0），新匹配 src/std/async.no、tests/{view-basic,view-optional}.no；Parameter 桶另兩檔 aes-ctr/tdes 首分歧已前移至 D7 安全索引簇（275/718 行殘差）。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s58（構建 sha1 cf4ee19f，晉級 codesign 後 e5dcc20d），舊基線存 /tmp/noc-s0-s57.bak）→s59=464（**match 臂区／區塊尾 註釋附着——armDoc 協議 + 區塊內部協議 + if 尾非破壞性預看**——s58 後 190 DIFF 首分歧分桶：Doc 7／Comment 7／TrailingComments 1（每檔僅 1–3 行差、皆缺註釋附着欄位），選中此註釋附着簇。鏡像 Go match.go 權威：臂循環頂 RBRACE/EOF 檢查先於 collectDocComments（:167-174）、`armDoc := p.collectDocComments()` 於型樣前收集（:208）、套用規則（:440-452）inline 體→`setDoc(bodyStmts[0], armDoc)`、區塊體→TrailingComments（空則直設、非空則 armDoc 併入最前）；區塊臂內部走 parseBlockStatement 委託（:265-431）：leading standalone→【其後】陳述 Doc、行尾→【前行】Comment、`}` 前→TrailingComments。**探針 p4 釘死 bare≠explicit 不對稱**：裸 match `{ }` 區塊臂 armDoc→TrailingComments 最前且保留內層首陳述 Doc；明示 `subj: { }` 區塊臂 armDoc **覆寫**首條真陳述之 Doc（內層首 doc 被棄）；兩 form 之 inline 臂皆 armDoc→體首 ExpressionStatement.Doc + 同線行尾註釋→Comment（attachInlineComment）。實作五批：① `ps-parse-if` else 預看由破壞性 `ps-skip-trivia` 改直接索引非破壞掃描（`p.toks[k].typ`、index-out=zero 守衛，遵 s57 MIR 舊寄存器閘門），查無 ELSE 則 pos 不動⇒if 區塊後函式尾註釋不再被吃掉（root cause：move-clone-liveness 等函式尾 TrailingComments 遺失）；② `ps-parse-match` 臂循環重構（armDoc 收集、區塊臂全協議 btrail/bprev/bfirst/bdoc 逐陳述 set-doc＋行尾 set-cmt、循環後 armDoc 覆寫 bfirst.Doc 或入 btrail、`ps-attach-trailing`）；③ inline 臂 armDoc→set-doc + 同線 COMMENT→set-cmt；④ `ps-parse-bare-match` 三體形（LBRACE 區塊／NEWLINE 區塊／同線單陳述）同協議；⑤ 新 helper `ps-premerge-trailing`——aux 區僅可附尾，prepend 需把舊區整段拷進新 aux 段（舊區孤兒無害：dumper 跟 ct0/ntrail 走訪）。fixture t63-comment-attach.no（裸 match 臂首 doc+行尾 tail、明示 match ok 區塊臂內部 doc/tail/trail、err inline 臂 tail、wildcard 區塊臂、頂層 standalone-if 行尾、負形中段 standalone 屬其後陳述 Doc）與 oracle 逐位元組相同。門禁：fixture 63/64（僅余既有 t7-group-nil-float）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR（無一落於新碼區）。語料門（-P 2/90s 全 647）＝**SAME 451→464（+13）、0 回歸**，新匹配 tests/{fs-struct,json-get-clone,map,map-generics,match,option,std-new,strconv,test-div-zero,yaml}.no、mem-safety/{clone-reset-is-moved,if-branch-move-leak,move-clone-liveness}.no；**SUT-FAIL 6→4**——fmt-heuristic/str-order 因 ① 解掛升為 DIFF（結構仍分歧但可解析）。殘差：ws.no（11 行）、vec-push-leak.no（52 行）同簇檔被 D7 安全索引／`?T` 無值裸宣告 downstream 阻塞。⚠️ 已接受偏離（語料未證形）：match 區塊 `}` 前 standalone 於臂循環頭被吃掉且其後無臂時丟棄（Go 留 buffer 給外層區塊）；`->` 與區塊體 `{` 之間註釋仍為跳過；嵌套裸臂 body 的 armDoc 未併入。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s59（構建 sha1 7c403081，晉級 codesign 後 70be6e56），舊基線存 /tmp/noc-s0-s58.bak）→s60=470（**tagged-enum／option 變體臂析構綁定**——s59 掃描後 oracle 漂移（3c2fa429，重基線 463/181/3），首分歧分桶 LetStatement 61／BlockStatement 56／Identifier 9，選 Identifier 簇 9 檔＝`ok(v)`／`err(e)`／`some(v)`／`rect(w,h)` 變體臂 decomp。鏡像 Go 權威：expr.go:1021-1065 parse 期 `ok`／`err` + `( 裸識別符 )` 規範化為析構（condition 換 Identifier{ok|err}＋bindingName）；lowering.go:2049-2090 泛化改寫（主體為枚舉且呼叫臂全裸識別符參數、元數==欄位數 ⇒ bindingNames、condition 換 Identifier{X}）；枚舉登記表（decl.go:1196-1224＋858：payload 單欄位=欄型別、多欄位='enum.variant' 合成結構名、單元=''，裸枚舉 kind==1 亦登記 payload 恒 ''）；typeStr 規則（:2900-2902 枚舉⇒typeStr=armType 直取）；armType 表（載荷替換、單元=變體名、wildcard 補集=登記序−已列、' | ' join、空⇒死臂 skipItBinding）；namedItBinding 回退（:2919-2927 未知主體 ok(v) 具名無型別仍 armBinding）；多欄位提欄（:2307-2334 `a = it.f0` DotExpression 逆序 prepend⇒it;a;b;body）；varType 登記（:2276-2296 elemType→armBindingType→err且非枚舉='str'）。實作五批：① psst 新增 enN/evN/evP/evC/efE/efV/efT 平行陣列登記表＋六 helper（ps-enum-{row,has,payload,ncols,ftype,variants}，限定名剝落以 byte 尾掃回退）；② ps-parse-enum-def 每變體尾填表（ast.type-string）；③ ps-parse-match 型樣塊加 case A（ok(v)/err(e) 消費 4 token→Identifier）、case B（枚舉呼叫臂掃描→Identifier＋參數名收集）、裸變體臂 kvarE；④ bt 計算加 enum armType 補集塊、reg 登記、綁定名 bn plumbing（ps-mk-it-let-t armBinding 改 bt≠''∨具名）、多欄位提欄（新 builder ps-mk-ext-let）；⑤ ps-match-listed 擴 cN/cA 元數候補＋ok(v)/err(e) 形 fl 置位（Go 改寫後掃描之預掃近似，首臂盲區以 caseA 就地置位補）。fixture t64-tagged-enum-arms.no（已知 option ok/err/nil 析構、未知主體回退、單載荷/單元/雙變體補集、多欄位提欄、巢狀同名、裸枚舉變體臂）與 oracle byte-identical。門禁：fixture 64（僅余既有 t7-group-nil-float、與基線既有紅同形）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR（無一落於新碼區）。語料門（-P 2/90s 全 647）＝**SAME 463→470（+7）、0 回歸**（SUT-FAIL 3 檔 rc=142 同集、ORB-FAIL 0），新匹配 tests/{enum-annotation,option-match-silent-wrong,tagged-enum-{alias,cross-fn,payload-ownership,two-match}}.no＋**意外收復 view-basic.no**（s60 Step1 之 LOST 源於平行會污源檔、已自行修復）。殘差：err-binding（8 行）／match-arm-binding-scope（28 行）被**區塊級裸 match 臂續接合併**族阻塞（區塊臂體 `stmt; cond -> X; -> Y`：Go 將臂區合併為單一 if/else 且區塊 inline:true、noc 現拆為 standalone-if＋if(1) 包裹——下一候選增量）；tagged-enum-zero-match（5 行）殘 `_ = o10` discard 形（oracle 建 LetStatement{name: _, value}）。⚠️ 已接受偏離：枚舉全列死臂之 unreachable warnings 計數（Program{warnings:N}、s55 先例）；多行型樣 `X(\n a, b)` 不相鄰形不規範化。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s60（構建 sha1 daca5d8e，晉級 codesign 後 4cf6b9bd），舊基線存 /tmp/noc-s0-s59.bak（70be6e56）→s61=474（**區塊級裸 match 臂續接合併 + 明示臂體 inline**——s60 殘差族：err-binding（原 8 行）／match-arm-binding-scope（原 28 行）之 `cond -> { stmt; cond2 -> X` 換行 `-> Y }` 區塊臂體。鏡像 Go 權威雙機制：① 換行後續接（stmt.go:2168）——`ps-mk-standalone-if` 已存「換行後 `->` 併入前 if 的 Alternative」路徑，於明示臂 `{ }` 體解析期間置 `inBlk=1/inMatch=0`，使 `stmt; cond2 -> X` 後之裸 `-> Y` 併入前 if 而非另起 `if(1)` wrapper；② 臂體 inline 標記（expr.go:1263「Inline 語句形」）——新增 `ps-bm-block-shape`（鏡像 classifyBlockAtCurrent parser.go:704-945，掃描起點 p.pos+1 跳過 LBRACE 本身）判別 `{ }` 首非 trivia token 形：回 blockMatch(1) ⇔ Go 走臂體提取路 ⇒ dump `BlockStatement{inline: true}`（具名區塊臂 `b: {`、`_ ->`、INT/STR/CHAR 型樣臂、`cond ==`/`&&`/`||` 比較臂 Go:943 直接 blockMatch）；回 0 ⇔ 普通區塊路（結構欄 `name: TYPE\n`、`name: 字面值\n`、`name: ident(`、`name: ident{`、`name: -INT`、`name: .x`、`name: Enum.Var`、`name: <value><binop>`、`IDENT NEWLINE`、`IDENT ,`、`IDENT }`、`IDENT (`）。⚠️ `IDENT .` 首臂改用新 helper `ps-arrow-scan-line` 前視深度 0 `->`（鏡像 parser.go:912-942）——`it.v = 99` 無臂 ⇒ blockUnknown(0)，修回 view-optional.no 之誤標 inline。⚠️ `bshape` 每臂重置（防上臂 blockMatch 洩漏至下臂）。fixture t65-block-arm-continuation.no（具名區塊臂 `b: {`→inline、區塊內 `cond -> X`＋換行 `-> Y` 續接、嵌套 err(m) 不污染外層、補集 else 與 wildcard 尾臂共存）與 oracle byte-identical。門禁：fixture 全 SAME（僅余既有 t7-group-nil-float 基線紅、與 s61 零差分）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR（無一落於新碼區）。語料門（-P 2/90s 全 647）＝**SAME 470→474（+4）、0 回歸（LOST=0）**，新匹配 tests/err-binding.no、tests/match-arm-binding-scope.no、tests/mem-safety/{json-nested-match,json-parse-option}.no（SUT-FAIL 3 檔 rc=142 同基線集：aes-cbc/net/tls、ORB-FAIL 0）。殘差：tagged-enum-zero-match（3 行）殘 `_ = o10` discard 形（oracle 建 LetStatement{name: _, value}，與 s60 同因）；`b:`＋換行（無大括號）之具名裸塊嵌套 match（r1/r2 探針）屬另一更深族，本增量未觸。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s61（構建 sha1 31901dcb，晉級 codesign 後 7dfdc91a），舊基線存 /tmp/noc-s0-s60.bak（4cf6b9bd）→s62=481（**`_ = expr` 空白標識符捨棄陳述 ⇒ `LetStatement{name: _}`**——s61 殘留候選族（tagged-enum-zero-match `_ = o10`）擴至全語料 7 檔首分歧。鏡像 Go parseStatement stmt.go:49（case 含 UNDERSCORE）→ :149（peek==ASSIGN）→ :172 parseLetStatement——`_` 走與 IDENT 同一 let 路、name 存字面 `'_'`。此前 noc UNDERSCORE 非 IDENT、陳述分派無臂⇒落預設 expr-stmt⇒`_`/`=` 被逐步防呆丟棄、只剩右值成裸 `ExpressionStatement{RHS}`（正戳中 Go stmt.go:2075-2079 註解所述「`_` 必須是語句邊界否則 `_ = expr` 靜默退化」之 noc 對偶面）。**實作最小兩批**：① ps-parse-stmt 主分派新增臂 `tk.typ==UNDERSCORE && ps-peek-at(p,1)==ASSIGN -> { ps-bump _; ps-bump =; idx = ps-parse-let(t,p,'_') }`（裸 `_`（無 `=`）不落本臂、仍走原路＝零回歸，oracle 裸 `_`⇒`ExpressionStatement{nil}` 屬另族未觸）；② ps-parse-let 內 s54 option-算術合成塊加 `name != '_'` 守衛。**關鍵對稱性（探針 a3/a4/b1/b2/b3 釘死）**：`_` 上【字面量/slice/呼叫回傳】型別推斷照常觸發（`_ = true`→bool、`_ = [1,2,3]`→[]i64、首個 `_ = g()`→?str），惟【option-算術推斷（inferOptionArith）豁免】（`_ = zz*2`⇒無型別）——因 Go captureTargetAllowsOption 拒 blank 目標；ps-mark-dcl('_') 自然令後續 `_ =` 落入「已宣告」閘（`_ = g()` 二次出現不再蓋 ?str，與 oracle 一致）。fixture t66-blank-discard.no（ident/bool/slice/call/option-算術豁免/多次丟棄/緊接他陳述後 全覆蓋）與 oracle byte-identical。門禁：fixture 全 SAME（僅余既有 t7-group-nil-float 基線紅）、單元 util/tok/lx/ast 4/4、vet 10 既有 ERROR（無一落於新碼區 ~985/~2769）。語料門（-P 2/90s 全 647、oracle 漂移 634a0bfa）＝**SAME 474→481（+7）、0 回歸（LOST=0）**，新匹配 tests/{fs-error-final,fs-error-info,fs-open-err,option-copy,uninit-output,tagged-enum-zero-match}.no、tests/mem-safety/option-heap-leak.no（SUT-FAIL 3 檔 rc=142 同基線集：aes-cbc/net/tls、ORB-FAIL 0）。殘留：裸 `_`（無 `=`）⇒`ExpressionStatement{nil}` 另族；`found = true` 於 match 臂體內裸 ident 賦值誤析為 `ExpressionStatement{found}`（collection/* 5 檔首分歧、涉臂體×賦值路由、回歸面較大、暫緩）。晉級：v44 工具鏈 cache-off 構建，/tmp/noc-s0＝noc-s62（構建 sha1 fb51a0d4，晉級 codesign 後 c6095b8e），舊基線存 /tmp/noc-s0-s61.bak（0e1fa13c）⚠️ 其余 6 档（json/net-{http2,pool,sse,ws}/str-vec-push）结构已正确、但仍于**下游 standalone-if desugar / index-out desugar / 裸 match 区块**再分歧（即下一个主簇，也即 LetStatement/IntegerLiteral/BlockStatement 三大桶）。✅ **AnnotationStatement 主鑰匙已打通**（self-dot 揭示者）：語句級 `#{...}` 現依「緊後首 token ∈ {IDENT,IN,RARROW}」分流——可附著→寫 overflow 槽（t37）、不可附著→發 `AnnotationStatement{entries:去重鍵名數}` 節點（t41）。✅ **bang/cond-loop ForStatement 簇已打通**（AnnotationStatement 揭示之下游主簇）：`!! { }`/`! { }` 僅當 bang【緊接】LBRACE 才成立（否則退回 `!x` 取反運算式陳述）；`(cond) { }` 需平衡 `)` 後【立即】是 `{` 且括號內非參數列（含 `,` 或「恰好兩 IDENT」⇒ 匿名函式字面量，退回 `(expr)` 運算式陳述）。三者皆 `ForStatement{label:''}` + `Condition`（BooleanLiteral/expr）+ 6 guarded CHILD 以 0 佔位，且【不】saveWarning（新式語法）。✅ **字面量型別推斷補齊**（Go stmt.go:1227–1268 / 1274–1300）：推斷表既有 INT→i64/FLOAT→f64/STRING→str/BOOL→bool，本增量補上 CHAR→char 與 hex(0x)→byte——雙函數（`ps-infer-type`、`ps-elem-type-of`）同口徑修正。✅ **無值明示型別裸宣告已打通**（Go parseLetStatement no-value 分支 stmt.go:1051–1060）：陳述位 `name TYPE`（TYPE∈{NamedType, SliceType, ArrayType, NullableType}）型別解析完後若緊接【非】`=` 而是陳述邊界（NEWLINE/RBRACE/EOF/;/行內註解）⇒ 建 `LetStatement{name, type, value: }`（Value guarded CHILD 以 0 佔位）。復用既有 `ps-parse-type`（子先於父）；非裸宣告（有 `=`、或索引 `x[i]`）則還原 p.pos——所建孤兒節點不被任何 kid 引用、dumper 自 root 沿 kid 走訪永不觸及（ast.dump 語義）⇒ 零回歸。✅ **複合型別名已打通**（接續 s40 揭示之同族）：`ps-parse-type` 先前只认單 IDENT 型別名，本增量補齊——（a）限定名 `a.b.c`：IDENT 臂建完 NamedType 前以迴圈續吃 `DOT IDENT`，整條字串存進 name 槽（type-string 直接讀 s0，不另建節點，對齊 Go stmt.go:1034）；（b）巢狀元素：SliceType/ArrayType 臂不再硬性要求元素為單 IDENT，改為【遞迴】 `ps-parse-type`（元素起 ∈ {IDENT, LBRACKET, QUESTION}），故 `[][]i64` 建為 SliceType{SliceType{NamedType{i64}}}、`?fs.file` 建為 NullableType{NamedType{fs.file}}（type-string ast.no:610/630 遞迴渲染）。各臂改用 `handled` 旗標防 match 非排他之跨臂重評。級聯效益：`ps-parse-param`（`w io.writer`）、可為空含值臂（`f ?fs.file = call`）無需改動即自動受益；另把 `ps-parse-typedecl-noval` 升級為通用 `ps-parse-typedecl`（新增 `= value` 分支）以接住限定/巢狀【含值】形（如 `d tls.conn = call-tls()`）。⚠️ **未涵蓋**：`?T`【無值】裸宣告（如 `x1 ?str`）仍由可為空臂（需 `=`）誤吞——為避免觸碰众多 option-* 檔的回歸風險，留待下一個專門增量（需把可為空臂改為「先解型別再判斷邊界 vs `=`」）。✅ **無色 async 前綴已打通**（接續 RunExpression/CoExpression 揭示之 async 簇）：Go expr.go:305–357——`run e`/`co e`/`awy e` 皆為前綴運算子包一層guarded-CHILD 節點（子先於父）。`run`/`co` 需歧義消解：若 `peek-at(1)==DOT` 則不是 async 關鍵字而是模組名（`run.list(...)`）⇒建普通 Identifier 停於 DOT 交後綴迴圈；`awy` 無此歧義。三節點（K_RUN_EXPRESSION=57 / K_CO_EXPRESSION=20 / K_AWAIT_EXPRESSION=13）asp.no 早已註冊⇒纯 parser 缺臂。⚠️ 用預先算好的 `dotAfter` 旗標防 match 非排他。⚠️ **下一個主簇**：heap.no/path.no/zlib.no 等仍於 **裸 match 區塊 `{ cond -> body … }` desugar**（首分歧位於 LetStatement/IntegerLiteral/BlockStatement 三大桶，oracle 包一層 `IfExpression{IntegerLiteral{value:1}(synthetic), BlockStatement{各臂}}`）再分歧；另有 `GenericParams`（泛型參數渲染）。⚠️ USE 增量清掉 11 個 use-bucket 檔案的首分歧，但它們随即在**下游 match-block/standalone-if/BlockStatement 簇**（已确認為下一個高價值增量）或 **FloatLiteral value 精度**上再分歧，故僅 sha3.no 逹到全匹配——USE 本身結構正確（t38 byte-identical）。⚠️ `tests/str-order.no` 於 s31/s32 **皆挂死**（既有 hang，非本增量回歸）。單元證據：`ast_test`、`tok_test`、`lx_test`、`util_test` 皆 PASS；`no vet compiler/src` ERROR **0**（硬門檻滿足）、WARNING **0**（既有 `overflow-ineffective` 已由當前 bin/no 降為 HINT，見下方 vet 現況）。覆蓋進度見 §6.3（t0–t51） |
 | **M3** | 語義：37 個 `Validate*` + `stdsig` 表（§5.4）                                           | 🟡 **M3-a 骨架＋M3-b stdsig＋M3-c 首族＋缺口②①清償＋正語義首件 ck.no 零誤報落地（s9a/s9b/s10/s11/s12/**s13**，2026-10-28→**10-29**，§5.3.4.am–.**as**/§6.4）** | L3 MASS-NOOP 已解除：`noc vet` 對語法錯誤檔輸出真診斷（三站點族、rc 鉗制 1、**parser 族含 cascade 第二條在內與 oracle 逐字節全等**）；**M3-c 正語義首件 `'X' is not defined`（ck.no／TraceID 4bek3xc6）已由 `drv.cmd-vet` 接線消費 ck-sig.no 裸名門表**，本輪補齊泛型/match 臂/tagged-enum 綁定 def 採集＋callee 回退沉默＋std 命名空間靜默 ⇒ **全語料 668 檔 ck 誤報 13→0**（ck-test 20/20、L2 ast 逐位元組未受擾）；parser 族仍全語料零誤報、L2 656/656 DIFF=0 |
-| **M4** | 中端 + 代碼生成：HIR / MIR + RC 堆策略 + LLVM IR 文本                                       | ⬜ 未開始   | —                                                                                      |
+| **M4** | 中端 + 代碼生成：HIR / MIR + RC 堆策略 + LLVM IR 文本                                       | 🟡 **M4-a/b 骨架 + M4-c 控制流/循環/字符串/拼接/多參調用/str 跨塊/vec 完成**（s14–s22，2026-10-30，§5.3.4.at–.bb）；M4-c 餘項（vec 元素非 i64、struct/option、非 i64 形參、PHI）、M4-d ⬜   | M4-a：`cg-runtime.no`＋`cg-rc.no`＋`check-rc-balance`，**16/16**、`opt` rc=0、diff 0 刪除行。M4-b：`mir.no`＋`cg.no` 發 CONST/ADD/SUB/MUL/CALL/ALLOC/STORE/LOAD/RET，**13/13**、`let-add` 執行 **exit 6**。M4-c：多基本塊 + `BR/CONDBR/CMPLT`（alloca 傳值、無 PHI），含**回邊/循環**，`lt10(5)+lt10(15)`→**exit 3**、`sum4()`→**exit 6**。字符串（首个非 i64 型別 `%str-long`）：`@.s<k>` 全局字面量前置 pass＋三步 `insertvalue`＋`extractvalue` 取 len，`slen()`→**exit 3**。字符串拼接（首个 RC 消费者）：`@str_concat` 13 行逐字照抄＋`prelude-full` 唯裝配點（順序有斷言），`cat()` 輸出 **`abcd`**、exit **4**。多參調用：`OP-CALL` 的 `bs` 從佔位改為**參數個數**（破壞性語義變更，已同步唯一呼叫點），`add2(3,4)`→**exit 7**。`%str-long` 跨基本塊：`SALLOC/SSTORE/SLOAD` 三件套（第三個槽命名空間 `%ss<id>`），`pick(0)`→**exit 2**、`pick(1)`→**exit 6**。`vec`（第四個值命名空間 `%vc<id>`）：`%vec = { i64, i64, i64 }` + 4 個 helper（刻意不照抄 Go 的 inline 展開），十次 push 強制擴容 0→4→8→16 後求和 ⇒ **exit 45**、ASan 無報告；`cg-test` **54/54**、`cg-runtime-test` **30/30**。下一步 M4-c 餘（`hir2mir` 主體：vec 元素非 i64、struct/option、非 i64 形參、PHI）→ M4-d 接 M5 |
 | **M5** | 驅動層：`build` / `run` / `vet` 的 CLI 與 clang 調用                                     | ⬜ 未開始   | —                                                                                      |
 | **M6** | 定點：S0→S1→S2→S3 + 三路交叉編譯（§3.1 / §3.2）                                            | ⬜ 未開始   | —                                                                                      |
 | **M7** | 精確所有權分析（`insertDrops` 那一整套）                                                       | ⬜ 未開始   | —                                                                                      |
@@ -2196,6 +2551,33 @@ M2 收官（見 §6 表下方「M2 收官」段）後下一里程碑為 **M3 語
 - **M3-c 首族已完成（s10，§5.3.4.ao）**：`ps.no` 接上**結構化語法錯誤收集器**（`psst.eLn/eCl/eMsg/eCode` 四平行欄，對齊 `parser.Diagnostic`＋`saveError` 去重鍵），首批 3 站點復刻（分組缺 `)`／實參缺逗號／let RHS 落空，正文與 token 名逐字對齊 oracle），`drv.cmd-vet` 接線消費 ⇒ **L3 MASS-NOOP 解除**（s9a 記的「診斷源為空」自此有真信號）。門禁：ps-err-test **17/17**、L2 `/tmp/noc-s10b` **656/656 DIFF=0**（含 `parseCallExpression` 實參循環結構性重寫之回歸驗證）、`noc vet` 全語料 663 檔**零誤報**、vet 基線 19 不變；rc 鉗制 1 已對 authority 復核改正。已錄三缺口（cascade 第二條／NEWLINE 坐標族／def 型別宣告族等其餘 saveError 站點）。下一增量建議：NEWLINE 坐標族（游標對齊，修②並同時擰緊 ps-err-test 分組站點坐標）、checker 骨架接線消費 ck-sig.no、或按語料頻率續推 saveError 站點族。
 - **M3-c 缺口②已清（s11，§5.3.4.ap）**：**NEWLINE 坐標族**結清——分組站點刪前置 skip（報錯停在 NEWLINE ⇒ `2:0 got NEWLINE`）、實參站點鏡像 Go「arg 前後只跳 NEWLINE 再分派」（報錯落換行後首個非換行 token ⇒ `foo(1\n2)` 報 `2:1 INT`）；19 個錯形檔＋6 個乾淨檔探針 parser 族與 oracle **逐字節全等**（含 p21 `foo(\n)`⇒2:2 EOF、c6 前後換行形）。ps-err-test 分組站點同步擰到 oracle 形（**17/17**）；L2 `/tmp/noc-s11g` **656/656 DIFF=0**；L3 全語料 **666 檔零誤報**；src/std 0 ERROR、compiler/src 19 基線；ps.no fmt 漂移順帶清零（清掃後重建復跑全部門禁）。新工具鏈事實：單語句形 `(cond) stmt` **非循環**（只執行一次）、`#` 裸名解析要求檔在專案內。新增缺口④入口跳合一族（COMMENT/NEWLINE，語料無此形）。剩餘缺口①cascade 第二條 nil 診斷、③其餘 saveError 站點。下一增量建議：checker 骨架接線消費 ck-sig.no、或 cascade 族（①）、或按語料頻率續推站點族（③）。
 - **M3-c 正語義族首件已完成（s13，§5.3.4.ar/.as）**：`compiler/src/ck.no`（扁平 arena 掃描器）落地首個正語義族 `'X' is not defined`（TraceID `4bek3xc6`，authority `checker.go:8180-8295`），`drv.cmd-vet` 在 `ps-errs==0` 時調用 `ck.check` ⇒ s9b 的 ck-sig.no 裸名門表（bk/bv/bo 1732 條）＋mok 118 模組名**首次被 checker 消費**（`CK-SIG-VERSION` 2→3）；跨模組回值改**打包串 vec** `L|C|CODE|MSG` 規避結構體按值傳參的 MIR 聚合體缺陷（§5.3.4.as）。**本輪續完成**：committed 版 ck.no 全語料 668 檔跑出 **13 檔誤報**（違反檔頭「少報不誤報」硬門禁），根因為 def 採集遺漏多類綁定名——逐一對齊正主補齊：族 A 泛型參數（FD generic kids `[kid0,c3)`，`n` 76）、族 B match 具名型別臂（SurfaceMatch HELPER 寬 12/臂 offset3 `typeBinding`，`w`）、族 C tagged-enum 變體解構（臂 `mcond` CallExpression 參數 IDENT，`v/r/h`）、callee 跨模組裸調回退沉默（單檔不解析 `#use`，ck.no 自檔 `ck-sig-bsearch/bare`）、`std` 命名空間根入靜默集（global.no `@ std/...` 誤解析下游症狀）⇒ **誤報 13→0**。坑紀律：nd-at 結構體欄位（c3/hcount/hbase）不得直入區塊臂條件（MIR NoVal），須先落地為局部。門禁：ck-test **20/20**、L3 ck 誤報全語料 **0**、L2 ast 逐位元組未受擾（ast 不调 ck）、parser 族仍 0；global.no 的 ast 差屬**既有** `@`-export parser 分歧（`noc-s13i`==`noc-s13fin` 哈希相同可證）。下一增量建議：按語料觸發頻率續推其他 `Validate*`/型別推斷族（§5.4 剩 36 個）、或清償缺口③/④、或補 `@ <mod>/<fn> <alias>` export 糖 parser 解析使 global.no 進 L2 SAME 集。
+
+---
+
+### 6.5 M4 啟動盤點（2026-10-29）
+
+M3 收官（見 §6.4 s13）後下一里程碑為 **M4 中端＋代碼生成**（§5.5/§5.6）。本節記錄啟動摸底，作為 M4 首增量選型依據：
+
+- **SUT 現狀**：`compiler/src/` 現有 `lx.no` / `ps.no` / `ck.no` / `ck-sig.no` / `drv.no` / `diag.no` / `util/sb.no` —— **無中端、無 codegen、無 `cg-runtime.no`**；`drv.cmd-build` / `cmd-run` 仍走 `noc` 外殼（調用 `bin/no` 出後端，見 Q1(b) 臨時手段），尚未自產 IR。`/tmp/noc-s13*` 現狀＝**前端閉環、後端缺席**（L4 不可用，M4 之前是合理狀態）。
+- **門禁基建已就緒**：L0–L3 全線（`selfhost_diff.sh` §7.3）已接線；M4 的 **L4 行為門禁**（全語料 `(rc, sha256(stdout))` 與 golden 一致，§7）可直接套用，且 §5.6.3 已規定**三層驗收**（行為 / IR 形狀 / `opt -passes=verify`）。⚠️ `opt` 驗證失敗**不持久化** `.ll` ⇒ 調試唯一窗口是 `NOLANG_MIR_DUMP_LL=1`（該開關在 verify **之前**寫檔）。
+- **範圍裁剪是最大槓桿（§5.5 表）**：`src/mir` 43,177 LOC 中約 **40% 從「自舉必需」降級為可選**——`analysis.go`＋`insertDrops`（所有權分析）由 **RC 取代**（DR-3 / Q2(a)）、`alias_forward.go` / `opt.go` / `tier.go` / `spawn_graph.go`(async) 全部延後（M6/M7/M8）。M4 的**真目標**＝`hir2mir.go` 降級主體 ＋ `codegen.go` 逐 op 發射 ＋ `builtin_call.go` / `builtins.go` 內建降級 ＋ RC runtime prelude 照抄。
+- **RC 鐵律（§5.6.1，最高風險點）**：「每個別名都必須攜帶自己的計數」——漏一處 retain＝**UAF**（非洩漏）。M4 必須先立 `check-rc-balance` 驗證器（沿 `handleAliasSet` 的別名判定），且**只查「欠計數」方向**（過計數是 §1.3.1 接受的洩漏，報錯會 false positive ⇒ 硬編譯失敗）。§5.6.1 的 RC 發射規則表（建立擁有堆值 → `rc_alloc`；`b=a` → `retain`；離作用域 → `release`；參數引用語義不 retain；容器/欄位存入取出 → `retain`）是 M4-c 降級的逐條依據。
+- **IR 文本照抄硬規則（§5.6.2）**：`codegen.go` 的 prelude（`windowsShimsConst` / `%task` / RC helper）是**字串常量，可逐字節照抄**到 `compiler/src/cg-runtime.no`，0 新設計。⚠️ 照抄時 **Go/IR 註釋內不得出現反引號**（會終止 raw string 字面量，報 Go 語法級錯誤）——一律用雙引號引用識別符號。
+- **語料範圍（Q4(b)）**：M1–M3 已全語料（便宜）；M4 先 **SHS+std** 子集，再逐步擴大到全 527 tests。第一個可編譯子集應鎖定「最小能產 `.ll` 且 `opt -verify` 過」的表達式族（字面量 / `let` / 函式呼叫 / 加法），而非一開始就吞下泛型與 async。
+- **建議分期**（沿 M2/M3 的增量方法論，每步可上 L4 差分）：
+  - **M4-a**＝`cg-runtime.no` 照抄 prelude（`@nolang_rc_alloc` / `retain` / `release`、16 字節頭 ABI `data = base + 16`、`%task`、windowsShims）＋ `check-rc-balance` 驗證器骨架（只查欠計數）。先立**正確性論證的局部性**地基，讓後續 emit 有守門。
+  - **M4-b**＝MIR op 子集＋`emitMIR` / `EmitLLVM` 骨架：照抄 `codegen.go` 的 67 個 op 中最小閉包（字面量 / `let` / 呼叫 / 算術 / 控制流），對**排序後** `.ll` 做**存在性** diff（§5.6.3 第②層，不追求逐位元組），先打通 `EmitLLVM` → `.ll` 管線。
+  - **M4-c**＝`hir2mir.go` 降級主體：語句/表達式逐族降級（按語料觸發頻度），嚴格照 §5.6.1 的 RC 發射規則表 emit retain/release；每族上 **L4 行為門禁**（全語料 `(rc, sha256(stdout))`）。
+  - **M4-d**＝與 M5 驅動層接線：`drv.cmd-build` / `cmd-run` 自產 `.ll` → 調用 `clang`（DR-2，不依賴 `opt` / `llc`）完成匯編＋鏈接；L4 全語料行為門禁收斂＋0 回歸。
+- **已知風險/缺口（B4 表項，§11 同步記帳）**：① `opt -passes=verify` 失敗不持久化，調試必須 `NOLANG_MIR_DUMP_LL=1`（§5.6.3 已標）；② RC 遺漏 retain 的 UAF 是靜默運行期錯，只能靠 `check-rc-balance`＋L4 行為門禁雙重捕獲；③ 照抄 IR 文本的反引號陷阱（§5.6.2）；④ 規模仍大——即便砍 40%，剩餘 `hir2mir`＋`codegen`＋`builtins` 仍 ~26k LOC，須按語料頻率增量不可一口吞；⑤ async（`spawn_graph.go`）明確推到 M6 之後，M4 產出的 `noc` 自身不需要 async（除驅動層並行調 clang）；⑥ 精確所有權（`insertDrops` 那一整套）推到 M7，M4 不實作。
+- **M4-a 已完成（s14，§5.3.4.at）**：`compiler/src/cg-runtime.no`（`%nolang_hdr`/`%task` 類型＋`@malloc/@free` 聲明）＋`cg-rc.no`（四段 RC helper IR 文本，逐位元組照抄 Go 14712–14818；`HDR-MAGIC=7957698232306827265`；`check-rc-balance` 只查欠計數）＋`compiler/tests/cg-runtime-test.no`（**16/16**）。驗證：`opt -passes=verify` **rc=0**（98 行 IR）、Go 源重建 diff **0 刪除行**、`no vet` 兩檔 **0 ERROR**。刻意惰性（僅測試 import）；windowsShims 後置 M7；`check-rc-balance` 待 M4-c 由 MIR 餵事件。下一增量建議 **M4-b**（`emitMIR`/`EmitLLVM` 骨架，照抄 `codegen.go` 67 op 的最小閉包，對排序後 `.ll` 做存在性 diff）。
+- **M4-b 已完成（s15，§5.3.4.au）**：`compiler/src/mir.no`（op 子集常量＋扁平 arena 表示：`ops/dsts/xa/bs/syms` 平行陣列）＋`cg.no`（`cg-emit-func` 發 CONST/ADD/SUB/MUL/CALL/ALLOC/STORE/LOAD/RET，單基本塊）＋`compiler/tests/cg-test.no`（**13/13**）。驗證：`opt -passes=verify` **rc=0**（three/dbl/caller/let-add）、**端到端** `let-add`（3+3）IR 經 clang 執行 **exit code 6**、`no vet` 兩檔 **0 ERROR**。實測坑：參數名 `as` 是保留字 ⇒ 改 `xa`。刻意惰性（僅測試 import）；**未覆蓋**控制流（br/condbr/phi）與非 i64 型別（留 M4-c）。下一增量建議 **M4-c**（`hir2mir` 降級主體：控制流 + 非 i64 型別 + 字符串/容器 op）。
+- **M4-c 控制流首件已完成（s16，§5.3.4.av）**：`mir.no` 增 `OP-BR/CONDBR/CMPLT` 與 `blks[]` 平行陣列；`cg.no` 增 `cg-label`＋`cg-emit-cfg`（多基本塊，塊切換發標籤），`cg-emit-func` 保留 7 參數 API 委託之。跨塊傳值用 `alloca/store/load`（-O0 風格、**不引入 PHI**）；`CONDBR` 三槽：`a`=條件、`bs[k]`=真塊、`dsts[k]`=假塊；`CMPLT` 發 `icmp slt`+`zext`。門禁：`cg-test` **20/20**、`opt` verify **rc=0**、端到端 `lt10(5)+lt10(15)` 執行 **exit 3**。**未覆蓋**：PHI、其他比較、非 i64 型別、字符串/容器 op（M4-c 續）。
+- **M4-c 循環/回邊已完成（s17，§5.3.4.aw）**：零新增 op、零新增檔，僅擴 `cg-test.no` 的 `test-loop`（`sum4()` while 迴圈，`bb2→bb1` 回邊）。回邊靠「塊按序發射 ⇒ 目標已定義」自然成立；循環變數用 `alloca/store/load`（無 PHI）。門禁：`cg-test` 累計 **25/25**、`opt` verify **rc=0**、端到端 `sum4()`（0+1+2+3）執行 **exit 6**。**未覆蓋**：其他比較（NE/GT/GE/EQ）、非 i64 型別、字符串/容器 op（M4-c 續）。
+- **M4-c 字符串已完成（s18，§5.3.4.ax）**：首个**非 i64 型別** `%str-long { i64, i64, i8* }` 進場。`cg-runtime.no` 增 `cg-runtime-str-type`（與 Go `emitPrelude` 逐字相同）；`mir.no` 增 `OP-STRCONST=12`/`OP-STRLEN=13`；`cg.no` 增 `cg-strlen1`（`len-bytes()+1`）、**全局前置 pass**（`@.s<k> = private unnamed_addr constant [N x i8] c"...\00"` 必須在 `define` 之前）、`STRCONST` 三步 `insertvalue` 構造、`STRLEN` 用 `extractvalue ..., 0`。定下**值命名空間規矩**：i64 住 `%v<id>`、`str` 住 `%sv<id>`（LLVM 不允許同名不同型）。門禁：`cg-test` 累計 **32/32**、`opt` verify **rc=0**、端到端 `slen()`（`'abc'.len`）執行 **exit 3**。實測坑：IR 裡的 `\00` 在 nolang 字面量必須寫 `'\\00'`（寫單反斜線會把真 NUL 塞進 IR 文本 ⇒ `opt: expected top-level entity`）。**未覆蓋**：字符串拼接（需 `@malloc`+RC 頭）、`str` 跨塊（`alloca %str-long`）、vec/struct/option、PHI（M4-c 續）。
+- **M4-c 字符串拼接已完成（s19，§5.3.4.ay）**：`@str_concat` 13 行**逐字照抄** Go `codegen.go:3139` 進 `cg-runtime.no`，並新增 `cg-runtime-prelude-full()` 作為**完整 prelude 的唯裝配點**（類型 → libc → memcpy → 4 個 RC helper → `@str_concat`，順序用 `str.index` 斷言釘住）。`mir.no` 增 `OP-STRCAT=14`；`cg.no` 發 `%sv<d> = call %str-long @str_concat(...)`。**這是第一個真正呼叫 RC helper 的 op**（`@nolang_rc_alloc` 返回 `base+16`、rc=1 ⇒ 結果是 owner），但**不發 retain/release**——那是 `hir2mir` 的責任。門禁：`cg-test` **37/37**、`cg-runtime-test` **21/21**、全模組 123 行 `opt` verify **rc=0**、端到端 `cat()`（`'ab' + 'cd'`）**stdout `abcd`、exit 4**（比內容不只比長度）。實測坑：BSD grep 的 `\|` 靜默失效 ⇒ clang 警告混進 `.ll`；過濾一律 `2>/dev/null` 或 `grep -E`。**未覆蓋**：`str` 跨塊（`alloca %str-long`）、`STRCAT` 的 retain/release、vec/struct/option、PHI（M4-c 續）。
+- **M4-c `vec` 已完成（s22，§5.3.4.bb）**：`%vec = type { i64, i64, i64 }`（Go 逐字，data 是 **i64 裸指標**，每次取用 `inttoptr`、存回 `ptrtoint`）+ 四個 helper `@vec_new`/`@vec_len`/`@vec_get_i64`/`@vec_push_i64`；`mir.no` 增 `OP-VECNEW=18`/`OP-VECPUSH=19`/`OP-VECLEN=20`/`OP-VECGET=21`，**第四個值命名空間** `%vc<id>`。**刻意偏離 Go 的 inline 展開**（壓 IR 量級、擴容邏輯收斂成唯一一份），記入 §11 B5。擴容：`ncap=max(cap*2,4)` → `malloc` → **`len==0` 跳過 `memcpy`**（否則 `memcpy(dst,null,0)` 是 UB）→ `free` 舊緩衝 → `phi` 三前驅合流。門禁：`cg-test` **54/54**、`cg-runtime-test` **30/30**、204 行全模組 `opt` verify **rc=0**、十次 push（強制擴容 0→4→8→16）求和 ⇒ **exit 45**、**ASan 無報告**。🔴 附帶發現**工具鏈 bug**（§11 B6）：`#{overflow=wrap}` 首次綁定算術表達式後 `vec.push(該變數)` 靜默壓 0（讀取/普通呼叫/字面量/插值全對）⇒ 規避：先裸宣告再帶註解重賦值。**未覆蓋**：vec 元素非 i64（需逐元素 RC）、vec 跨塊、`.set`/`.pop`/切片、struct/option、非 i64 形參、PHI。：`OP-CALL` 的 `bs[k]` 從「無意義佔位」正式改為**參數個數**，`a` = 首個參數值 id（**連續**）。`cg.no` 的 CALL 分支改為循環展開（`q`/`j` 各帶 `#{overflow=wrap}`，否則 `+` 退化成 `option<i64>` 而 `.to-str()` 編不過）；`define` 側本來就按 `nargs` 循環，無需改。⚠️ **這是本項目第一個破壞性語義變更**：漏改的呼叫點會退化成 `call i64 @f()`（實參被丟棄），而 **`opt -verify` 與 `no vet` 都全綠**——只有跑起來比數值才看得見；已同步 `test-call`（`bs` 0→1）。門禁：`cg-test` **41/41**、`cg-runtime-test` **21/21**、`opt` verify **rc=0**、端到端 `add2(3,4)` 執行 **exit 7**（單參退化會得到 3 或 4，故這個數字有鑑別力）。**未覆蓋**：非 i64 形參、多返回值、跨塊 str、vec/struct/option、PHI（M4-c 續）。
+- **M4-c `%str-long` 跨基本塊已完成（s21，§5.3.4.ba）**：`mir.no` 增 `OP-SALLOC=15`/`OP-SSTORE=16`/`OP-SLOAD=17`，槽位與 i64 的 `ALLOC/STORE/LOAD` 一一對應（`SSTORE` 無結果、槽在 `bs`；`SLOAD` 有結果、槽在 `a`），但槽住**第三個命名空間** `%ss<id>`。`cg.no` 發 `alloca %str-long` / `store %str-long ..., %str-long* %ss<y>` / `load %str-long, %str-long* %ss<x>`。門禁：`cg-test` **47/47**、`opt` verify **rc=0**、端到端 `pick(0)`→**exit 2**、`pick(1)`→**exit 6**（兩條分支都跑，只跑一條會讓「`SSTORE` 沒發射」也綠）。⚠️ 實測坑：`alloca %str-long` 在**裸模組**裡報 `Cannot allocate unsized type`，訊息指向 `alloca` 那行但真因是**缺 `%str-long` 型別定義**——用 `SALLOC` 的 IR 必須與 prelude 一起鏈接。**未覆蓋**：非 i64 形參、vec/struct/option、`STRCAT` 的 retain/release、PHI（M4-c 續）。
 
 ---
 
@@ -2429,7 +2811,9 @@ echo "  用法：--l1-ctl /path/to/dumper   （必須支援 `<dumper> tokens <fi
 | B1  | `no vet compiler/src` 19 ERROR（`nolang-index-write` 族，ps.no 既有 `out[i] = …` 形）                          | M3 之前既有基線，待 M3 期間清償或標記 grandfather                                            | §6.4（:2187）                 |
 | B2  | §8 前置改動清單未結項：P0-①/②/④/⑤/⑥/⑦、P1-①~⑤、P2-①                                                         | 多為「不先做則自舉寸步難行」或低優先；P0-③ 已完成                                             | §8（:2365-2377）              |
 | B3  | M3-c 剩餘：`Validate*`/型別推斷族（§5.4 剩 36 個）、缺口③其餘 saveError 站點／④入口跳合族、`@ <mod>/<fn> <alias>` export 糖 parser 解析 | s13 已落地首族 `ck.no`，續推見 s13「下一增量建議」                                        | §5.3.4.ar（:1870）/§6.4（:2198） |
-| B4  | M4–M8（中端/代碼生成、驅動層、定點、所有權分析、後置 fmt/lsp/tools）                                              | 全部 ⬜ 未開始                                                                            | §6（:2029-2033）              |
+| B4  | M4–M8（中端/代碼生成、驅動層、定點、所有權分析、後置 fmt/lsp/tools）                                              | **M4-a/b 骨架＋M4-c 控制流/循環/字符串/拼接/多參調用/str 跨塊/vec 已落地（s14–s22，§5.3.4.at–.bb）**；M4-c 餘項（vec 元素非 i64、struct/option、非 i64 形參、PHI）、M4-d、M5–M8 ⬜ 未開始                                                              | §6（:2148-2152）/§5.3.4.at–.bb    |
+| B5  | `vec` 刻意偏離 Go 的 inline 展開（改用 4 個 helper），且數據緩衝用裸 `@malloc` 無 RC 頭                                    | 元素目前僅 i64，故無 RC 需求；擴容時 `@free` 舊緩衝 ⇒ 不泄漏。**元素變成 `str`/`vec` 前必須換成 `@nolang_rc_alloc` + 逐元素 retain/release**，否則會 UAF。偏離本身是為壓 IR 量級、把擴容邏輯收斂成唯一一份（§5.3.4.bb） | §5.3.4.bb（:2500 附近） |
+| B6  | 🔴 **工具鏈 bug（`no` 側）**：`#{overflow=wrap}` 首次綁定**算術**表達式後，該變數 `vec.push(v)` 靜默壓入 **0**（讀取/普通呼叫/字面量/插值全對） | 爆破半徑窄但**門禁全綠**（`opt`/`vet`/`no test` 都看不出來）⇒ 規避寫法：先裸宣告 `g = 0` 再帶註解重賦值。`compiler/src` 現有代碼不觸發；已列為 SHS 檢查候選 | §5.3.4.bb（:2510 附近） |
 
 ---
 
@@ -2675,4 +3059,4 @@ link.compile = (ll str, out str) (ok bool) {
 
 ---
 
-**進度快照（2026-10-29）**：M0、M1、M2 已完成（L2 全語料 655/655 SAME、0 回歸；M1 L1 675/675 SAME）；M3 已連續落地 M3-a 骨架（`drv.cmd-vet`＋`diag.no`）→ M3-b stdsig 表遷移（`ck-sig.no`）→ M3-c 首族（語法錯誤收集器）→ 缺口② NEWLINE 坐標族 → 正語義首件 `ck.no`（`'X' is not defined`，全語料 668 檔 ck 誤報 13→0、parser 族仍 0），見 §5.3.4.am–.as 與 §6.4。下一步＝**M4**（中端 HIR/MIR＋RC 堆策略＋LLVM IR 文本，§5.5/§5.6）。已知待補項集中見 **§11 記帳**。本文件為持續維護的活文檔——每完成一個里程碑即更新 §6 與本快照，故不再以「文檔結束」收尾。
+**進度快照（2026-10-30）**：M0、M1、M2 已完成（L2 全語料 655/655 SAME、0 回歸；M1 L1 675/675 SAME）；M3 已連續落地 M3-a 骨架（`drv.cmd-vet`＋`diag.no`）→ M3-b stdsig 表遷移（`ck-sig.no`）→ M3-c 首族（語法錯誤收集器）→ 缺口② NEWLINE 坐標族 → 正語義首件 `ck.no`（`'X' is not defined`，全語料 668 檔 ck 誤報 13→0、parser 族仍 0），見 §5.3.4.am–.as 與 §6.4。**M4 已啟動**：M4-a 骨架落地（`cg-runtime.no`/`cg-rc.no` prelude 逐位元組照抄＋`check-rc-balance`，16/16、`opt` verify rc=0）＋M4-b 骨架落地（`mir.no`＋`cg.no` 的 `cg-emit-func` 發 CONST/ADD/SUB/MUL/CALL/ALLOC/STORE/LOAD/RET，13/13、端到端 `let-add` IR 經 clang 執行 exit 6）＋M4-c 控制流/循環（多基本塊＋`BR/CONDBR/CMPLT`＋回邊，`lt10(5)+lt10(15)` 執行 exit 3、`sum4()` 執行 exit 6）＋M4-c 字符串（首个非 i64 型別 `%str-long`：`@.s<k>` 全局字面量前置 pass＋三步 `insertvalue`＋`extractvalue` 取 len，`slen()` 執行 exit 3）＋M4-c 字符串拼接（首个 RC 消費者：`@str_concat` 13 行逐字照抄＋`prelude-full` 唯裝配點，`cat()` 輸出 `abcd`、exit 4；`cg-test` **41/41**、`cg-runtime-test` **21/21**）＋M4-c 多參調用（`OP-CALL` 的 `bs` 從佔位改為**參數個數**，破壞性語義變更，`add2(3,4)` 執行 exit 7）＋M4-c `%str-long` 跨基本塊（`SALLOC/SSTORE/SLOAD`，第三個槽命名空間 `%ss<id>`；`pick(0)`→exit 2、`pick(1)`→exit 6；`cg-test` **47/47**），見 §5.3.4.at–.ba 與 §6.5；M4-c 餘項、M4-d ⬜。下一步＝**M4-c 餘**（`hir2mir` 降級主體：vec/struct/option + 非 i64 形參 + PHI）。已知待補項集中見 **§11 記帳**。本文件為持續維護的活文檔——每完成一個里程碑即更新 §6 與本快照，故不再以「文檔結束」收尾。

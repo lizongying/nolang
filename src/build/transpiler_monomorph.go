@@ -682,9 +682,6 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 					continue
 				}
 				memberType := inferArgMemberType(e, tpl, varTypes)
-				if os.Getenv("NOLANG_UNION_DEBUG") != "" { // TEMP DEBUG
-					fmt.Fprintf(os.Stderr, "[union-debug] method %s via %s: memberType=%q arg=%T\n", dot.Property, tplName, memberType, argAt(e, tpl))
-				}
 				if memberType == "" {
 					continue
 				}
@@ -697,10 +694,6 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 				}
 				if matched {
 					break
-				}
-				if os.Getenv("NOLANG_UNION_DEBUG") != "" { // TEMP DEBUG
-					fmt.Fprintf(os.Stderr, "[union-debug]   method %s NOT rewritten (members=%v fallback=%q)\n",
-						dot.Property, tpl.members, tpl.fallbackMember)
 				}
 			}
 		}
@@ -720,6 +713,18 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 		if e.Matched != nil {
 			rewriteUnionCallExpr(e.Matched, templates, varTypes, sem)
 		}
+		// 每個臂是獨立作用域，且**必須按臂重收區域型別**（同 scanSurfaceMatchForGenericCalls）：
+		// 體層級的 collectVarTypesFromBody 不會走進還沒降糖的臂體，直接把外層 varTypes
+		// 傳進臂體，臂內宣告的 `d i64 = …` 就查不到 → inferArgMemberType 回傳 unknown →
+		// fallbackMember 選了聚合體（`_add__bigint`），而呼叫點仍傳 i64 槽；opaque
+		// pointer 讓 LLVM 不在編譯期拒絕，錯誤一路活到運行期，靜默算出 0
+		// （實測 tmp/bx/d3.no：`m = m * 10 + (c - 48)` 印 0 而非 42；同一段碼搬到函數體
+		// 層級印 4，差異只可能在型別表作用域）。
+		var armMembers map[string][]string
+		if sem != nil {
+			armMembers = sem.UnionMembers
+		}
+		armTypeDispatch := surfaceMatchIsTypeDispatch(e.Arms, armMembers)
 		for i := range e.Arms {
 			arm := &e.Arms[i]
 			if arm.Condition != nil {
@@ -730,9 +735,22 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 					rewriteUnionCallExpr(vp, templates, varTypes, sem)
 				}
 			}
-			if arm.Body != nil {
-				rewriteUnionCallStmts(arm.Body.Statements, templates, varTypes, sem)
+			if arm.Body == nil {
+				continue
 			}
+			armVarTypes := make(map[string]string, len(varTypes)+4)
+			for k, v := range varTypes {
+				armVarTypes[k] = v
+			}
+			if armTypeDispatch {
+				// 型別解構臂（`v i32 ->`／裸型別臂 `i32 ->`）的綁定只在 H0 降糖才落地，
+				// 與 buildTypeMatchDesugar 對齊，先在臂作用域內登記窄化型別。
+				if name, t := surfaceMatchArmTypeBinding(arm, armMembers); name != "" {
+					armVarTypes[name] = t
+				}
+			}
+			collectVarTypesFromBody(arm.Body, armVarTypes, sem)
+			rewriteUnionCallStmts(arm.Body.Statements, templates, armVarTypes, sem)
 		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
@@ -751,18 +769,6 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 	case *parser.AssignExpression:
 		rewriteUnionCallExpr(e.Value, templates, varTypes, sem)
 	}
-}
-
-// argAt TEMP DEBUG：回傳 union 實參位上的表達式（供除錯印型別用）。
-func argAt(call *parser.CallExpression, tpl *unionTemplateInfo) parser.Expression {
-	if call == nil || len(call.Arguments) == 0 {
-		return nil
-	}
-	idx := tpl.unionArgIdx
-	if idx < 0 || idx >= len(call.Arguments) {
-		idx = 0
-	}
-	return call.Arguments[idx]
 }
 
 // inferArgMemberType 從呼叫引數推斷應使用的聯合成員型別

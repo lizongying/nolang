@@ -25,10 +25,10 @@ package checker
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 const optionCompareTraceID = "fe0a5wt2"
@@ -160,8 +160,8 @@ func (w *optCmpWalker) itType() string {
 
 // innerOf 把 `?T` 剝成內層型別 `T`；非 option 回空。
 func innerOf(t string) string {
-	if strings.HasPrefix(t, "?") {
-		return strings.TrimPrefix(t, "?")
+	if ty.IsOptionRaw(t) {
+		return ty.StripOptionRaw(t)
 	}
 	return ""
 }
@@ -372,8 +372,8 @@ func (w *optCmpWalker) checkCompare(e *parser.InfixExpression) {
 	}
 	lt, lok := w.typeOf(e.Left)
 	rt, rok := w.typeOf(e.Right)
-	lOpt := lok && strings.HasPrefix(lt, "?")
-	rOpt := rok && strings.HasPrefix(rt, "?")
+	lOpt := lok && ty.IsOptionRaw(lt)
+	rOpt := rok && ty.IsOptionRaw(rt)
 	if lOpt == rOpt {
 		return // 兩側都是 / 都不是 option
 	}

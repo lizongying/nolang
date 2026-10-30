@@ -358,6 +358,7 @@ toml-unquote = (raw str) (value ?str) {
 
         v[j]: {
             ok -> it = c
+
             -> _
         }
 
@@ -623,8 +624,8 @@ toml.parse = (s str) (result ?toml-doc) {
             norm-opt = toml-normalize-key(raw-section)
             norm-opt: {
                 ok -> section = it
-                -> {
 
+                -> {
                     result = err('toml parse error at line ' - line-no.to-str())
                     return
                 }
@@ -635,6 +636,7 @@ toml.parse = (s str) (result ?toml-doc) {
                     array-index = 0
                     array-opt: {
                         ok -> array-index = it
+
                         -> {
                             result = err('toml array table limit reached')
                             return
@@ -673,8 +675,8 @@ toml.parse = (s str) (result ?toml-doc) {
         key = ''
         key-opt: {
             ok -> key = it
-            -> {
 
+            -> {
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
@@ -696,6 +698,7 @@ toml.parse = (s str) (result ?toml-doc) {
                 j = 0
                 j-opt: {
                     ok -> j = it
+
                     -> j = 0
                 }
                 (j < lines.len()) {
@@ -724,6 +727,7 @@ toml.parse = (s str) (result ?toml-doc) {
                 i = 0
                 i-opt: {
                     ok -> i = it
+
                     -> i = 0
                 }
             }
@@ -824,6 +828,7 @@ toml-doc.put = (key str, value str) (ok bool) {
     norm-opt = toml-normalize-key(key)
     norm-opt: {
         ok -> key = it
+
         -> return
     }
     value-ok = toml-valid-value(value)
@@ -942,6 +947,7 @@ toml-parse-i64 = (s str) (value ?i64) {
         ch-opt = clean.byte(i)
         ch = ch-opt: {
             ok -> it
+
             -> _
         }
         ch == 95 -> continue

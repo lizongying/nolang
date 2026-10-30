@@ -229,23 +229,14 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
 ; BLAKE2b 公開 API
 ; ═══════════════════════════════════════════════
 
-; b-state: 取一份「可寫」的 BLAKE2b 初始狀態切片
+; b-state: 取一份 BLAKE2b 初始狀態切片（陣列切片會拷貝成獨立 []u64）
 ;
-; ⚠️ MIR 已知限制（2026-10-30）：`h = BLAKE2B-IV[..8)` 這種「陣列切片」
-; 配上 option 形式下標寫 `h[i]: { ok -> it = ... }` 時，寫入會**靜默丟失**
-; （普通寫 `h[i] = ...` 正常）。壓縮函式全程用 option 寫，若直接用陣列切片，
-; h 會恆等 IV、雜湊輸出退化成常數（argon2「換 salt 輸出不變」即由此而來）。
-; 故這裡顯式拷貝到 with-len 切片再交給壓縮函式。
+; 歷史：早期編譯器對「陣列切片 + option 形式下標寫 `h[i]: { ok -> it = ... }`」
+; 有靜默丟寫的 MIR bug，當時用 with-len(8) + 循環拷貝規避。該 bug 已在
+; 512d63b6（narrow-slot loads 修復）之後消失：陣列切片 + option 寫現已正確，
+; 故直接用陣列切片語法，無須手動拷貝。
 b-state = () (h []u64) {
-    h = with-len(8)
-    i <- [0..8): {
-
-        #{index-out=zero}
-        h[i]: {
-            ok -> it = BLAKE2B-IV[i]
-            -> _
-        }
-    }
+    h = BLAKE2B-IV[..8)
 }
 
 ; s-state: 同上，BLAKE2s 版

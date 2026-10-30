@@ -1,6 +1,10 @@
 package parser
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/lizongying/nolang/ty"
+)
 
 // operator_overload.go — 運算符重載（operator overloading）支援。
 //
@@ -55,7 +59,7 @@ func IsOperatorOverloadName(name string) bool {
 // 剥掉 `?`，讓運算符重載方法的結果型別在任何巢狀深度都為純 payload。
 func stripOperatorOverloadReturn(method, retType string) string {
 	if IsOperatorOverloadName(method) {
-		return strings.TrimPrefix(retType, "?")
+		return ty.StripOptionRaw(retType)
 	}
 	return retType
 }

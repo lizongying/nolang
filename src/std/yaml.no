@@ -228,6 +228,7 @@ yaml-parser.line-start-of = (i i64) (ls i64) {
         p = 0
         p-opt: {
             ok -> p = it
+
             -> p = 0
         }
         c = .byte-at(p)
@@ -408,6 +409,7 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
         c-opt = t.byte(i)
         c = c-opt: {
             ok -> it
+
             -> _
         }
         c == 95 -> {
@@ -707,7 +709,7 @@ yaml-apply-tag = (tag str, kind i64) (k i64) {
 
 ; yaml-unescape-double: 处理双引号转义序列
 yaml-unescape-double = (body str) (out ?str) {
-    acc str = ''
+    acc = ''
     i = 0
     n = body.len-bytes()
     (i < n) {
@@ -715,6 +717,7 @@ yaml-unescape-double = (body str) (out ?str) {
         c-opt = body.byte(i)
         c = c-opt: {
             ok -> it
+
             -> _
         }
         c != 92 -> {
@@ -779,6 +782,7 @@ yaml-unescape-double = (body str) (out ?str) {
                     i = 0
                     i-opt: {
                         ok -> i = it
+
                         -> i = 0
                     }
                     ucp1 char = cp
@@ -807,6 +811,7 @@ yaml-unescape-double = (body str) (out ?str) {
                     i = 0
                     i-opt: {
                         ok -> i = it
+
                         -> i = 0
                     }
                     ucp2 char = cp
@@ -835,6 +840,7 @@ yaml-unescape-double = (body str) (out ?str) {
                     i = 0
                     i-opt: {
                         ok -> i = it
+
                         -> i = 0
                     }
                     ucp3 char = cp
@@ -1323,6 +1329,7 @@ yaml-parser.parse-double = () (idx i64) {
                 e-opt = .src.byte(i)
                 e-b = e-opt: {
                     ok -> it
+
                     -> _
                 }
                 e char = e-b
@@ -1345,6 +1352,7 @@ yaml-parser.parse-double = () (idx i64) {
     uopt = yaml-unescape-double(raw)
     uopt: {
         ok -> text = it
+
         -> .fail-at('invalid escape sequence in double-quoted scalar')
     }
     idx = .push-scalar(text, YAML-STYLE-DOUBLE, '', '')
@@ -1414,12 +1422,13 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
         return
     }
 
-    #{overflow=wrap}
     ; D1：`-` 的結果恆為 `?i64`，parent-indent 只作縮排整數用 → 兩段式 match 解包。
+    #{overflow=wrap}
     parent-indent-opt = cont-min - 1
     parent-indent = 0
     parent-indent-opt: {
         ok -> parent-indent = it
+
         -> parent-indent = 0
     }
 
@@ -1977,6 +1986,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
             dup >= 0 -> {
                 vals[dup]: {
                     ok -> it = val
+
                     -> _
                 }
             }
@@ -2498,6 +2508,7 @@ yaml.key = (i i64) (out ?str) {
     knopt = .key-node(i)
     knopt: {
         ok -> out = it.scalar-text()
+
         -> _
     }
 }
@@ -2533,6 +2544,7 @@ yaml.get-str = (key str) (out ?str) {
     gopt = .get(key)
     gopt: {
         ok -> out = it.str()
+
         -> _
     }
 }
@@ -2542,6 +2554,7 @@ yaml.get-i64 = (key str) (out ?i64) {
     gopt = .get(key)
     gopt: {
         ok -> out = it.i64()
+
         -> _
     }
 }
@@ -2551,6 +2564,7 @@ yaml.get-f64 = (key str) (out ?f64) {
     gopt = .get(key)
     gopt: {
         ok -> out = it.f64()
+
         -> _
     }
 }
@@ -2560,6 +2574,7 @@ yaml.get-bool = (key str) (out ?bool) {
     gopt = .get(key)
     gopt: {
         ok -> out = it.bool()
+
         -> _
     }
 }
@@ -2627,6 +2642,7 @@ yaml.find-str = (path str) (out ?str) {
     fopt = .find(path)
     fopt: {
         ok -> out = it.str()
+
         -> _
     }
 }
@@ -2636,6 +2652,7 @@ yaml.find-i64 = (path str) (out ?i64) {
     fopt = .find(path)
     fopt: {
         ok -> out = it.i64()
+
         -> _
     }
 }
@@ -2645,6 +2662,7 @@ yaml.find-f64 = (path str) (out ?f64) {
     fopt = .find(path)
     fopt: {
         ok -> out = it.f64()
+
         -> _
     }
 }
@@ -2654,6 +2672,7 @@ yaml.find-bool = (path str) (out ?bool) {
     fopt = .find(path)
     fopt: {
         ok -> out = it.bool()
+
         -> _
     }
 }
@@ -2741,6 +2760,7 @@ yaml-json-escape = (s str) (out str) {
         c-opt = s.byte(i)
         c = c-opt: {
             ok -> it
+
             -> _
         }
         {
@@ -2828,12 +2848,13 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
         nd.kind == YAML-KIND-SEQ -> {
 
             ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
-            ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
+            ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
             d-opt = depth + 1
             d = 0
             d-opt: {
                 ok -> d = it
+
                 -> d = 0
             }
             out = '['
@@ -2849,12 +2870,13 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
         nd.kind == YAML-KIND-MAP -> {
 
             ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
-            ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
+            ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
             d-opt = depth + 1
             d = 0
             d-opt: {
                 ok -> d = it
+
                 -> d = 0
             }
             out = '{'
@@ -2948,6 +2970,7 @@ yaml-quote = (s str) (out str) {
         c-opt = s.byte(i)
         c = c-opt: {
             ok -> it
+
             -> _
         }
         {
@@ -3045,12 +3068,13 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
         nd.kind == YAML-KIND-SEQ -> {
 
             ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
-            ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
+            ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
             d-opt = depth + 1
             d = 0
             d-opt: {
                 ok -> d = it
+
                 -> d = 0
             }
             nd.kids.len() == 0 -> {
@@ -3078,6 +3102,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                         cut = 0
                         cut-opt: {
                             ok -> cut = it
+
                             -> cut = 0
                         }
                         inner = yaml-emit(pool, k, cut, d)
@@ -3100,12 +3125,13 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
         nd.kind == YAML-KIND-MAP -> {
 
             ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
-            ;（否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
+            ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
             d-opt = depth + 1
             d = 0
             d-opt: {
                 ok -> d = it
+
                 -> d = 0
             }
             nd.kids.len() == 0 -> {

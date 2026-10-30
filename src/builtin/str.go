@@ -86,7 +86,7 @@ func init() {
 	//
 	// Params are `(i64, byte)` — the value is a real `byte`, mirroring src/std/
 	// str.no / txt.no. Option-typed arguments are accepted by the builtin checker
-	// (see the `strings.HasPrefix(argType, "?")` skip in stdMethodParamTypes,
+	// (see the `ty.IsOptionRaw(argType)` skip in stdMethodParamTypes,
 	// funcargs.go), so the many `out.set-byte(i, s.byte(i))` sites (a `?byte`)
 	// pass unchanged. Only genuinely-plain i64/char call-site args (a `HEX[..]`
 	// char, an `bv` i64) would trip `stdargtyp`; those are narrowed at the call

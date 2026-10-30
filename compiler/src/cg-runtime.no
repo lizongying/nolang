@@ -1,0 +1,181 @@
+; cg-runtime — LLVM IR 运行期 prelude（M4-a 骨架）
+;
+; Authority：src/mir/codegen.go emitPrelude（%nolang_hdr / %task 类型块 +
+;   @malloc/@free 声明）。照抄策略见 docs/design/nolang-selfhost.md §5.6.2：
+;   IR 文本可逐字节照抄，不重新设计 ABI。
+;
+; ⚠️ IR 注释内引用标识符一律用双引号，不用反引号（nolang 的 ``` 会终止字面量）。
+; ⚠️ 本模块刻意【惰性】：目前只被 compiler/tests/cg-runtime-test.no 引用，
+;    尚未接入任何真实发射路径（M4-b 起由 cg.no 消费）。
+
+# /compiler/src/util/sb.sb
+# /compiler/src/cg-rc
+
+; hdr-type：16 字节头类型。rc@base+0，magic@base+8，data=base+16。
+cg-runtime-hdr-type = () (r str) {
+    r = '%nolang_hdr = type { i64, i64 }'
+}
+
+; task-type：协程任务（32 字节）。
+cg-runtime-task-type = () (r str) {
+    r = '%task = type { void (i8*)*, i64, i1, i1, i8* }'
+}
+
+; str-type：字符串（len, cap, data）。与 Go emitPrelude 的 %str-long 逐字相同。
+cg-runtime-str-type = () (r str) {
+    r = '%str-long = type { i64, i64, i8* }   ; len, cap, data'
+}
+
+; decls：libc 外部声明。
+cg-runtime-decls = () (r str) {
+    r = 'declare i8* @malloc(i64)\ndeclare void @free(i8*)\n'
+}
+
+; memcpy-decl：llvm.memcpy 声明（Go codegen.go:2987 同形）。
+cg-runtime-memcpy-decl = () (r str) {
+    r = 'declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)'
+}
+
+; str-concat：@str_concat —— 堆上拼接两个 %str-long（Go codegen.go:3139 逐字）。
+; 2 空格缩进（与 Go 该处一致，不是 tab）；依赖 @nolang_rc_alloc（见 cg-rc.no）。
+cg-runtime-str-concat = () (r str) {
+    b = sb.init(1024)
+    b.push('define %str-long @str_concat(%str-long %a, %str-long %b) {\n')
+    b.push('entry:\n')
+    b.push('  %la = extractvalue %str-long %a, 0\n')
+    b.push('  %lb = extractvalue %str-long %b, 0\n')
+    b.push('  %total = add i64 %la, %lb\n')
+    b.push('  %buf = call i8* @nolang_rc_alloc(i64 %total)\n')
+    b.push('  %da = extractvalue %str-long %a, 2\n')
+    b.push('  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %da, i64 %la, i1 0)\n')
+    b.push('  %db = extractvalue %str-long %b, 2\n')
+    b.push('  %dst2 = getelementptr i8, i8* %buf, i64 %la\n')
+    b.push('  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst2, i8* %db, i64 %lb, i1 0)\n')
+    b.push('  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %total, 0\n')
+    b.push('  %r1 = insertvalue %str-long %r0, i64 %total, 1\n')
+    b.push('  %r2 = insertvalue %str-long %r1, i8* %buf, 2\n')
+    b.push('  ret %str-long %r2\n}\n')
+    r = b.str()
+}
+
+; vec-type：向量（Go codegen.go:2936 逐字）。len, cap, data（data 存成 i64 裸指针）。
+cg-runtime-vec-type = () (r str) {
+    r = '%vec = type { i64, i64, i64 }'
+}
+
+; ── 向量 helper（M4-c 第六件；**刻意不照抄 Go 的 inline 展开**）──────────
+; Go 的 `vec.push` 在每个调用点 inline 展开（load %vec / 扩容 / store），
+; 好处是零调用开销，代价是每个 push 站点几百行 IR。M4 阶段以**行为等价**
+; 为验收（§5.6.3 第①层），故改为 4 个小 helper：IR 量级差一个数量级，
+; 且 helper 本身可以被单元测试直接钉住。**这是刻意偏离**，记在 §11。
+;
+; ⚠️ 数据缓冲用**裸 @malloc**（不带 RC 头）——元素目前只有 i64，无 RC 需求；
+;    扩容后 @free 旧缓冲，故不会无界泄漏。等元素变成 str/vec 时要换成
+;    @nolang_rc_alloc + 逐元素 retain/release（记入 §11）。
+cg-runtime-vec-new = () (r str) {
+    b = sb.init(256)
+    b.push('define %vec @vec_new() {\n')
+    b.push('entry:\n')
+    b.push('\tret %vec { i64 0, i64 0, i64 0 }\n}\n')
+    r = b.str()
+}
+
+cg-runtime-vec-len = () (r str) {
+    b = sb.init(256)
+    b.push('define i64 @vec_len(%vec %v) {\n')
+    b.push('entry:\n')
+    b.push('\t%l = extractvalue %vec %v, 0\n')
+    b.push('\tret i64 %l\n}\n')
+    r = b.str()
+}
+
+cg-runtime-vec-get = () (r str) {
+    b = sb.init(512)
+    b.push('define i64 @vec_get_i64(%vec %v, i64 %i) {\n')
+    b.push('entry:\n')
+    b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%off = mul i64 %i, 8\n')
+    b.push('\t%base = inttoptr i64 %dat to i8*\n')
+    b.push('\t%slot = getelementptr i8, i8* %base, i64 %off\n')
+    b.push('\t%sp = bitcast i8* %slot to i64*\n')
+    b.push('\t%x = load i64, i64* %sp\n')
+    b.push('\tret i64 %x\n}\n')
+    r = b.str()
+}
+
+; push：满则翻倍（下限 4）→ 新 malloc + memcpy + free 旧 → 写尾部 → len+1。
+cg-runtime-vec-push = () (r str) {
+    b = sb.init(1024)
+    b.push('define %vec @vec_push_i64(%vec %v, i64 %x) {\n')
+    b.push('entry:\n')
+    b.push('\t%len = extractvalue %vec %v, 0\n')
+    b.push('\t%cap = extractvalue %vec %v, 1\n')
+    b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%full = icmp eq i64 %len, %cap\n')
+    b.push('\tbr i1 %full, label %grow, label %store\n')
+    b.push('grow:\n')
+    b.push('\t%ncap0 = mul i64 %cap, 2\n')
+    b.push('\t%small = icmp slt i64 %ncap0, 4\n')
+    b.push('\t%ncap = select i1 %small, i64 4, i64 %ncap0\n')
+    b.push('\t%nb = mul i64 %ncap, 8\n')
+    b.push('\t%nbp = call i8* @malloc(i64 %nb)\n')
+    b.push('\t%nbi = ptrtoint i8* %nbp to i64\n')
+    b.push('\t%ob = mul i64 %len, 8\n')
+    b.push('\t%empty = icmp eq i64 %ob, 0\n')
+    b.push('\tbr i1 %empty, label %store, label %copy\n')
+    b.push('copy:\n')
+    b.push('\t%old = inttoptr i64 %dat to i8*\n')
+    b.push('\tcall void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbp, i8* %old, i64 %ob, i1 0)\n')
+    b.push('\tcall void @free(i8* %old)\n')
+    b.push('\tbr label %store\n')
+    b.push('store:\n')
+    b.push('\t%cap2 = phi i64 [ %cap, %entry ], [ %ncap, %grow ], [ %ncap, %copy ]\n')
+    b.push('\t%dat2 = phi i64 [ %dat, %entry ], [ %nbi, %grow ], [ %nbi, %copy ]\n')
+    b.push('\t%off = mul i64 %len, 8\n')
+    b.push('\t%base = inttoptr i64 %dat2 to i8*\n')
+    b.push('\t%slot = getelementptr i8, i8* %base, i64 %off\n')
+    b.push('\t%sp = bitcast i8* %slot to i64*\n')
+    b.push('\tstore i64 %x, i64* %sp\n')
+    b.push('\t%len1 = add i64 %len, 1\n')
+    b.push('\t%r0 = insertvalue %vec { i64 0, i64 0, i64 0 }, i64 %len1, 0\n')
+    b.push('\t%r1 = insertvalue %vec %r0, i64 %cap2, 1\n')
+    b.push('\t%r2 = insertvalue %vec %r1, i64 %dat2, 2\n')
+    b.push('\tret %vec %r2\n}\n')
+    r = b.str()
+}
+
+; prelude：类型 + 声明（RC helper 见 cg-rc.no）。M4-a 的「最小 prelude」。
+cg-runtime-prelude = () (r str) {
+    b = sb.init(256)
+    b.push(cg-runtime-hdr-type())
+    b.push('\n')
+    b.push(cg-runtime-task-type())
+    b.push('\n')
+    b.push(cg-runtime-str-type())
+    b.push('\n')
+    b.push(cg-runtime-vec-type())
+    b.push('\n\n')
+    b.push(cg-runtime-decls())
+    r = b.str()
+}
+
+; prelude-full：完整 prelude，**顺序有语义**——
+;   类型 → libc 声明 → memcpy 声明 → RC helper → 字符串 helper → 向量 helper。
+; @str_concat 调 @nolang_rc_alloc，故必须排在 RC 之后（LLVM 允许前向引用，
+; 但保持与 Go 发射顺序一致便于逐字节对照）。
+cg-runtime-prelude-full = () (r str) {
+    b = sb.init(8192)
+    b.push(cg-runtime-prelude())
+    b.push(cg-runtime-memcpy-decl())
+    b.push('\n')
+    b.push(cg-rc-alloc())
+    b.push(cg-rc-retain())
+    b.push(cg-rc-release())
+    b.push(cg-rc-nolang-free())
+    b.push(cg-runtime-str-concat())
+    b.push(cg-runtime-vec-new())
+    b.push(cg-runtime-vec-len())
+    b.push(cg-runtime-vec-get())
+    b.push(cg-runtime-vec-push())
+    r = b.str()
+}

@@ -61,6 +61,7 @@ str.len = () (n i64) {
 #{buildin}
 str.byte = (i i64) (c ?byte) {
 }
+
 ;
 ; str.set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，長度不變）
 ; str.byte 的配對寫者；緩衝區逐位元組構建專用（注意 s[i] = v 是位元組級寫入、
@@ -111,6 +112,7 @@ str.decode-cp = (i i64) (cp i64, clen i64) {
     b-opt = .byte(i)
     b = b-opt: {
         ok -> it
+
         -> _
     }
     cp = b
@@ -874,7 +876,7 @@ str.to-byte = () (val ?byte) {
 
 ; bigint-bitlen: 回傳正 bigint 的位元長度（floor(log2)+1）
 bigint-bitlen = (b bigint) (out i64) {
-    bm i64 = 4294967295
+    bm = 4294967295
     out = (b.len - 1) * 32
     top = (b.limbs[b.len - 1] & bm)
     sh = 0
@@ -894,8 +896,9 @@ str-to-f64 = (s str) (result f64) {
     sign = 1
     has-digit = 0
     int-mant bigint = bigint.zero()
-    frac-count i64 = 0
-    exp-val i64 = 0
+    ten bigint = bigint.from-i64(10)
+    frac-count = 0
+    exp-val = 0
     exp-sign = 1
     c = 0
 
@@ -904,6 +907,7 @@ str-to-f64 = (s str) (result f64) {
         c = s.byte(i)
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> i = i + 1
+
             -> break
         }
     }
@@ -916,6 +920,7 @@ str-to-f64 = (s str) (result f64) {
             sign = -1
             i = i + 1
         }
+
         c == 43 -> i = i + 1
     }
 
@@ -924,10 +929,16 @@ str-to-f64 = (s str) (result f64) {
         c = s.byte(i)
         {
             c >= 48 && c <= 57 -> {
-                int-mant = int-mant._mul-i64(10)._add-i64(c - 48)
+
+                ; 逐位累積走公開 bigint 方法鏈，而非 `int-mant * 10 + dig`：
+                ; 後者在「迴圈 + match 臂的巢狀 block」裡目前不會把運算符重載的
+                ; bigint 結果寫回變數（實測恆為 0），故用具體方法形式。
+                dig = bigint.from-i64(c - 48)
+                int-mant = int-mant.mul-bigint(ten).add-bigint(dig)
                 has-digit = 1
                 i = i + 1
             }
+
             -> break
         }
     }
@@ -941,15 +952,20 @@ str-to-f64 = (s str) (result f64) {
                 c = s.byte(i)
                 {
                     c >= 48 && c <= 57 -> {
-                        int-mant = int-mant._mul-i64(10)._add-i64(c - 48)
+
+                        ; 同整數部分：巢狀 block 裡用公開方法鏈累積。
+                        dig = bigint.from-i64(c - 48)
+                        int-mant = int-mant.mul-bigint(ten).add-bigint(dig)
                         frac-count = frac-count + 1
                         has-digit = 1
                         i = i + 1
                     }
+
                     -> break
                 }
             }
         }
+
         -> break
     }
     has-digit == 0 -> return
@@ -966,20 +982,24 @@ str-to-f64 = (s str) (result f64) {
                     i = i + 1
                 }
                 c == 43 -> i = i + 1
+
                 -> break
             }
             (i < n) {
                 c = s.byte(i)
                 {
                     c >= 48 && c <= 57 -> {
+
                         #{overflow=wrap}
                         exp-val = exp-val * 10 + (c - 48)
                         i = i + 1
                     }
+
                     -> break
                 }
             }
         }
+
         -> break
     }
 
@@ -990,8 +1010,9 @@ str-to-f64 = (s str) (result f64) {
     den = bigint.one()
     (exp-adj >= 0) -> {
         t10 bigint = bigint.from-i64(10)
-        num = int-mant._mul(t10.pow(exp-adj))
+        num = int-mant.mul-bigint(t10.pow(exp-adj))
     }
+
     -> {
         t10d bigint = bigint.from-i64(10)
         den = t10d.pow(0 - exp-adj)
@@ -1007,12 +1028,14 @@ str-to-f64 = (s str) (result f64) {
     ; e = floor(log2(num/den))
     nbl = bigint-bitlen(num)
     dbl = bigint-bitlen(den)
+
     #{overflow=wrap}
     e = nbl - dbl
     {
         e >= 0 -> {
             (bigint.shl(den, e).cmp(num) > 0) -> e = e - 1
         }
+
         -> {
             (bigint.shl(num, 0 - e).cmp(den) < 0) -> e = e - 1
         }
@@ -1030,6 +1053,8 @@ str-to-f64 = (s str) (result f64) {
 
     two52 = bigint.from-i64(4503599627370496)
     two53 = bigint.from-i64(9007199254740992)
+    one = bigint.one()
+    two = bigint.from-i64(2)
 
     ; 次正規：value = F * 2^-1074（F 為 52-bit 分數）
     (e < -1022) -> {
@@ -1038,12 +1063,18 @@ str-to-f64 = (s str) (result f64) {
         two-r = bigint.shl(rS, 1)
         c2 = two-r.cmp(den)
         fb-q = qS
-        (c2 > 0) -> fb-q = qS._add-i64(1)
+        (c2 > 0) -> fb-q = qS.add-bigint(one)
         (c2 == 0) -> {
-            (qS._mod-i64(2) == 0) -> fb-q = qS
-            -> fb-q = qS._add-i64(1)
+
+            ; 取奇偶：公開 div-mod 的餘數恆落在 {0,1}，用 is-zero 判別即可，
+            ; 不必把 bigint 拆回 i64，也不碰 bigint 的私有快速路徑。
+            _, qm = qS.div-mod(two)
+            (qm.is-zero()) -> fb-q = qS
+
+            -> fb-q = qS.add-bigint(one)
         }
-        frac-i64 ?i64 = fb-q._mod-i64(4503599627370496)
+        _, frac-b = fb-q.div-mod(two52)
+        frac-i64 ?i64 = frac-b.to-i64()
         inv1074f f64 = 1.0
         j = 0
         (j < 1074) {
@@ -1052,6 +1083,7 @@ str-to-f64 = (s str) (result f64) {
         }
         frac-f64 f64 = frac-i64: {
             ok -> it.to-f64()
+
             -> _
         }
         result = frac-f64 * inv1074f
@@ -1064,6 +1096,7 @@ str-to-f64 = (s str) (result f64) {
         num-s = bigint.shl(num, 52)
         den-s = bigint.shl(den, e)
     }
+
     -> {
         num-s = bigint.shl(num, 52 - e)
         den-s = den.copy()
@@ -1072,30 +1105,41 @@ str-to-f64 = (s str) (result f64) {
     two-r = bigint.shl(rw, 1)
     c2 = two-r.cmp(den-s)
     wv = qw
-    (c2 > 0) -> wv = qw._add-i64(1)
+    (c2 > 0) -> wv = qw.add-bigint(one)
     (c2 == 0) -> {
-        (qw._mod-i64(2) == 0) -> wv = qw
-        -> wv = qw._add-i64(1)
+
+        ; 同次正規分支：奇偶判別走公開 div-mod + is-zero，不碰 bigint 私有快速路徑。
+        _, qm2 = qw.div-mod(two)
+        (qm2.is-zero()) -> wv = qw
+
+        -> wv = qw.add-bigint(one)
     }
+
     ; 溢位保護：wv >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
     (wv.cmp(two53) >= 0) -> {
         e = e + 1
         wv = two52.copy()
     }
-    mw = wv._sub(two52)
-    m ?i64 = mw._mod-i64(4503599627370496)
-    mv f64 = m: {
+
+    ; m = (wv - 2^52) % 2^52，且 wv >= 2^52（本分支 wv = round((num/den)·2^(52-e))
+    ; = 2^52 + m），故餘數非負且恆 < 2^52，必落在 i64 值域內；
+    ; to-i64 是取回 i64 的公開出口（值域守衛見 bigint.no）。
+    mw = wv.sub-bigint(two52)
+    _, mb = mw.div-mod(two52)
+    m ?i64 = mb.to-i64()
+    mv = m: {
         ok -> it.to-f64()
+
         -> _
     }
-    two52f f64 = 1.0
+    two52f = 1.0
     k = 0
     (k < 52) {
         two52f = two52f * 2.0
         k = k + 1
     }
-    val-f f64 = 1.0 + (mv / two52f)
-    scale f64 = 1.0
+    val-f = 1.0 + (mv / two52f)
+    scale = 1.0
     (e > 0) {
         scale = scale * 2.0
         e = e - 1
@@ -1304,6 +1348,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
+
             -> _
         }
         cp i64 = b
@@ -1357,6 +1402,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
+
             -> _
         }
         cp = b
@@ -1443,6 +1489,7 @@ str.trim-char = (ch char) (val str) {
         b-opt = .byte(start)
         b = b-opt: {
             ok -> it
+
             -> _
         }
         cp i64 = b
@@ -1481,6 +1528,7 @@ str.trim-char = (ch char) (val str) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
+
             -> _
         }
         cp = b
@@ -1758,9 +1806,9 @@ str.to-bigint = () (out ?bigint) {
         d < 0 -> break
         d >= radix -> break
 
-        acc = acc._mul-i64(radix)
+        acc = acc * radix
 
-        acc = acc._add-i64(d)
+        acc = acc + d
         started = 1
 
         #{overflow=wrap}

@@ -179,6 +179,7 @@ set.intersection = (other []t, osize i64, out []t) (cnt i64) {
         found -> {
             out[cnt]: {
                 ok -> it = v
+
                 -> _
             }
 
@@ -213,6 +214,7 @@ set.difference = (other []t, osize i64, out []t) (cnt i64) {
         found == false -> {
             out[cnt]: {
                 ok -> it = v
+
                 -> _
             }
 

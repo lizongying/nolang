@@ -46,8 +46,9 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
-	nbuild "github.com/lizongying/nolang/build"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
+	nbuild "github.com/lizongying/nolang/build"
 )
 
 // unwrapOptTraceID 是 `--fix=unwrap` 唯一認可的診斷來源：D2 之下 option 的
@@ -456,7 +457,7 @@ func firstOptionResult(results []*parser.Parameter) string {
 		if r == nil || r.Type == nil {
 			continue
 		}
-		if strings.HasPrefix(r.Type.String(), "?") {
+		if ty.IsOptionRaw(r.Type.String()) {
 			return r.Name
 		}
 	}

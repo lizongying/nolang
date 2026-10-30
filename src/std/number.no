@@ -103,7 +103,7 @@ i8.to-str = () (out str) {
 ; 故把原 math.u64-to-str 的十進位迴圈內聯進方法本體，取代已刪除的函數）
 u64.to-str = () (out str) {
 
-    ru u64 = .
+    ru = .
     ru == 0 -> {
         out = with-cap(1)
 
@@ -172,7 +172,7 @@ byte.to-str = () (out str) {
 ; 的 %g 例程內聯進方法本體，取代已刪除的函數。LN10 仍沿用 math 模組常量。
 f64.to-str = () (out str) {
 
-    x f64 = .
+    x = .
 
     ; 特殊值處理
     ; 注意：必須使用 .copy() 建立堆副本，避免字串字面量的全局常量資料被 emitHeapFree 釋放
@@ -181,11 +181,14 @@ f64.to-str = () (out str) {
             out = 'NaN'.copy()
             return
         }
+
         x == 0.0 -> {
+
             ; Go strconv.FormatFloat(-0.0,'g',-1,64) 亦回傳 "0"，故不區分 -0
             out = '0'.copy()
             return
         }
+
         x + x == x -> {
             x < 0.0 -> {
                 out = '-Inf'.copy()
@@ -210,20 +213,23 @@ f64.to-str = () (out str) {
     one64 u64 = 1
     mask11 u64 = (one64 << 11) - 1
     mask52 u64 = (one64 << 52) - 1
-    bit52 u64 = (one64 << 52)
+    bit52 = (one64 << 52)
     bits = ax.to-bits()
     exp-bits u64 = (bits >> 52) & mask11
     frac u64 = bits & mask52
     exp-i i64 = exp-bits
 
     mant-val u64 = 0
-    e2 i64 = 0
+    e2 = 0
     exp-bits == 0 -> {
+
         ; 非規約：M = frac, e2 = -1022 - 52 = -1074
         mant-val = frac
         e2 = -1074
     }
+
     -> {
+
         ; 規約：M = (1<<52) | frac, e2 = exp-bits - 1023 - 52 = exp-bits - 1075
         mant-val = bit52 | frac
         e2 = exp-i - 1075
@@ -239,6 +245,7 @@ f64.to-str = () (out str) {
         base = bigint.shl(mant-big, e2)
     }
     e2 < 0 -> {
+
         #{overflow=wrap}
         ne = 0 - e2
         den = bigint.shl(one, ne)
@@ -265,8 +272,11 @@ f64.to-str = () (out str) {
     best-n = one
     best-k = 0
     (k-ten <= 350) {
-        found == 1 -> { k-ten = 351 }
+        found == 1 -> {
+            k-ten = 351
+        }
         found == 0 -> {
+
             ; n-big = (2*base*pow10 + den) / (2*den) = round(base*pow10/den)
             t1 = base._mul(pow10)
             t2 = t1._add(t1)
@@ -303,6 +313,7 @@ f64.to-str = () (out str) {
                 best-k = k-ten
             }
             found == 0 -> {
+
                 #{overflow=wrap}
                 k-ten = k-ten + 1
                 pow10 = pow10._mul(ten)
@@ -312,6 +323,7 @@ f64.to-str = () (out str) {
 
     n-str = best-n.to-str()
     k = n-str.len-bytes()
+
     #{overflow=wrap}
     E = k - best-k - 1
 
@@ -321,15 +333,22 @@ f64.to-str = () (out str) {
     E >= 6 -> use-sci = 1
 
     use-sci == 1 -> {
+
         ; 科學記號：剝離尾隨零（僅調整顯示長度 sk，E 不變）→ 1e+06 而非 1.000000e+06
         sk = k
         stz = 1
         (stz == 1) {
-            sk <= 1 -> { stz = 0 }
+            sk <= 1 -> {
+                stz = 0
+            }
             sk > 1 -> {
                 slb = n-str[sk - 1]
-                slb == 48 -> { sk = sk - 1 }
-                slb != 48 -> { stz = 0 }
+                slb == 48 -> {
+                    sk = sk - 1
+                }
+                slb != 48 -> {
+                    stz = 0
+                }
             }
         }
         exp-abs = E
@@ -346,18 +365,21 @@ f64.to-str = () (out str) {
         neg == 1 -> {
             out[pos]: {
                 ok -> it = 45
+
                 -> _
             }
             pos = pos + 1
         }
         out[pos]: {
             ok -> it = n-str[0]
+
             -> _
         }
         pos = pos + 1
         sk > 1 -> {
             out[pos]: {
                 ok -> it = 46
+
                 -> _
             }
             pos = pos + 1
@@ -365,6 +387,7 @@ f64.to-str = () (out str) {
             (j < sk) {
                 out[pos]: {
                     ok -> it = n-str[j]
+
                     -> _
                 }
                 pos = pos + 1
@@ -373,12 +396,14 @@ f64.to-str = () (out str) {
         }
         out[pos]: {
             ok -> it = 101
+
             -> _
         }
         pos = pos + 1
         E >= 0 -> {
             out[pos]: {
                 ok -> it = 43
+
                 -> _
             }
             pos = pos + 1
@@ -386,14 +411,17 @@ f64.to-str = () (out str) {
         E < 0 -> {
             out[pos]: {
                 ok -> it = 45
+
                 -> _
             }
             pos = pos + 1
         }
+
         ; 指數補零至 2 位
         elen > expstr.len-bytes() -> {
             out[pos]: {
                 ok -> it = 48
+
                 -> _
             }
             pos = pos + 1
@@ -402,6 +430,7 @@ f64.to-str = () (out str) {
         (e < expstr.len-bytes()) {
             out[pos]: {
                 ok -> it = expstr[e]
+
                 -> _
             }
             pos = pos + 1
@@ -421,6 +450,7 @@ f64.to-str = () (out str) {
         neg == 1 -> {
             out[pos]: {
                 ok -> it = 45
+
                 -> _
             }
             pos = pos + 1
@@ -429,6 +459,7 @@ f64.to-str = () (out str) {
         (i < int-digits) {
             out[pos]: {
                 ok -> it = n-str[i]
+
                 -> _
             }
             pos = pos + 1
@@ -437,6 +468,7 @@ f64.to-str = () (out str) {
         best-k > 0 -> {
             out[pos]: {
                 ok -> it = 46
+
                 -> _
             }
             pos = pos + 1
@@ -444,6 +476,7 @@ f64.to-str = () (out str) {
             (j < k) {
                 out[pos]: {
                     ok -> it = n-str[j]
+
                     -> _
                 }
                 pos = pos + 1
@@ -462,17 +495,20 @@ f64.to-str = () (out str) {
     neg == 1 -> {
         out[pos]: {
             ok -> it = 45
+
             -> _
         }
         pos = pos + 1
     }
     out[pos]: {
         ok -> it = 48
+
         -> _
     }
     pos = pos + 1
     out[pos]: {
         ok -> it = 46
+
         -> _
     }
     pos = pos + 1
@@ -480,6 +516,7 @@ f64.to-str = () (out str) {
     (z < zeros) {
         out[pos]: {
             ok -> it = 48
+
             -> _
         }
         pos = pos + 1
@@ -489,6 +526,7 @@ f64.to-str = () (out str) {
     (i < k) {
         out[pos]: {
             ok -> it = n-str[i]
+
             -> _
         }
         pos = pos + 1
@@ -513,7 +551,7 @@ f32.to-str = () (out str) {
 ; 返回 out str: 字串表示（如 "3.14"、"-0.005"、"100"）
 f64.to-str-fixed = (precision i64) (out str) {
 
-    x f64 = .
+    x = .
 
     ; NaN
     ! (x == x) -> {
@@ -658,7 +696,7 @@ f64.to-str-fixed = (precision i64) (out str) {
 ; 返回 out str: 字串表示（如 "3.14e+2"、"-5.0e-3"）
 f64.to-str-sci = (precision i64) (out str) {
 
-    x f64 = .
+    x = .
 
     ; NaN
     ! (x == x) -> {
@@ -878,7 +916,7 @@ f64.to-str-sci = (precision i64) (out str) {
 ; 返回 out str: 字串表示（自動去尾隨零）
 f64.to-str-general = (precision i64) (out str) {
 
-    x f64 = .
+    x = .
 
     ; NaN
     ! (x == x) -> {
@@ -980,6 +1018,7 @@ f64.to-str-general = (precision i64) (out str) {
         tmp-pad = precision - mn
         pad = tmp-pad: {
             ok -> it
+
             -> _
         }
     }
@@ -993,6 +1032,7 @@ f64.to-str-general = (precision i64) (out str) {
     i = 0
     i-opt: {
         ok -> i = it
+
         -> i = 0
     }
     (i >= 0) {
@@ -1040,6 +1080,7 @@ f64.to-str-general = (precision i64) (out str) {
         ; 第一位數字
         {
             pad > 0 -> out[pos] = 48
+
             -> out[pos] = mstr.byte(0)
         }
         pos = pos + 1
@@ -1054,6 +1095,7 @@ f64.to-str-general = (precision i64) (out str) {
                 idx = j - pad
                 {
                     idx >= 0 && idx < mn -> out[pos] = mstr.byte(idx)
+
                     -> out[pos] = 48
                 }
                 pos = pos + 1
@@ -1065,6 +1107,7 @@ f64.to-str-general = (precision i64) (out str) {
         pos = pos + 1
         {
             e < 0 -> out[pos] = 45
+
             -> out[pos] = 43
         }
         pos = pos + 1
@@ -1086,12 +1129,14 @@ f64.to-str-general = (precision i64) (out str) {
     ; 定點格式（e >= 0）：委託 f64.to-str-fixed 後去除尾隨零（%g 語意）
     #{overflow=wrap}
     e >= 0 -> {
+
         ; e 為普通 i64（非 option），直接參與運算；`-` 結果為 ?i64 → 兩段式解包
         #{overflow=wrap}
         dp-opt = precision - 1 - e
         dec-places i64 = 0
         dp-opt: {
             ok -> dec-places = it
+
             -> dec-places = 0
         }
         dec-places < 0 -> dec-places = 0
@@ -1105,6 +1150,7 @@ f64.to-str-general = (precision i64) (out str) {
             end = n
             (end > dot-pos + 1) {
                 s.byte(end - 1) == 48 -> end = end - 1
+
                 -> break
             }
             end > dot-pos + 1 -> {
@@ -1157,6 +1203,7 @@ f64.to-str-general = (precision i64) (out str) {
         idx = j - pad
         {
             idx >= 0 && idx < mn -> out[pos] = mstr.byte(idx)
+
             -> out[pos] = 48
         }
 

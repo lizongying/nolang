@@ -137,10 +137,64 @@ t-div-mod = () {
     runner.str-eq(rs, '2', 1, 'div-mod(100, 7) r == 2')
 }
 
-t-mod-i64 = () {
+; `%` 的公開契約：i64 右元委派 _mod-i64，除零依 div-mod 一貫回傳零（見 bigint._mod
+; 的註釋）。私有快速路徑不在這裡測 —— 外部模組呼叫它會被 privstd 直接擋成 ERROR。
+t-mod-public = () {
     a = bigint.from-i64(100)
-    r = a._mod-i64(7)
-    runner.eq(r, 2, '_mod-i64(100, 7) == 2')
+
+    m = a % 7
+    runner.str-eq(m.to-str(), '2', 1, '100 % 7 == 2')
+
+    z = a % 0
+    runner.str-eq(z.to-str(), '0', 1, '100 % 0 == 0（除零回傳零，對齊 div-mod）')
+}
+
+; to-i64：把值域受限的 bigint 取回 i64 的公開出口。測的是「不静默截断」這個契約。
+t-to-i64 = () {
+    a = bigint.from-i64(4503599627370496)
+    av ?i64 = a.to-i64()
+    rv = av: {
+        ok -> it
+        -> -1
+    }
+    runner.eq(rv, 4503599627370496, 'to-i64 round-trips 2^52')
+
+    neg = bigint.from-i64(-123)
+    nv ?i64 = neg.to-i64()
+    nrv = nv: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(nrv, -123, 'to-i64 keeps the sign')
+
+    ; 2^63（正）出界：必須 err，不能截断成低位
+    p63 = bigint.shl(bigint.one(), 63)
+    o63 ?i64 = p63.to-i64()
+    ok63 = o63: {
+        ok -> 1
+        -> 0
+    }
+    runner.eq(ok63, 0, 'to-i64(2^63) is err, not a truncated value')
+
+    ; 3 個 limb（2^64）由長度守衛直接挡掉
+    p64 = bigint.shl(bigint.one(), 64)
+    o64 ?i64 = p64.to-i64()
+    ok64 = o64: {
+        ok -> 1
+        -> 0
+    }
+    runner.eq(ok64, 0, 'to-i64(2^64) is err')
+
+    ; -2^63 恰是 i64 下限：必須 ok，且往回建 bigint 後值相等
+    m63 = bigint.shl(bigint.one(), 63)
+    m63.sign = -1
+    mv63 ?i64 = m63.to-i64()
+    okm = mv63: {
+        ok -> it
+        -> 0
+    }
+    back = bigint.from-i64(okm)
+    runner.eq(back.cmp(m63), 0, 'to-i64(-2^63) round-trips the i64 lower bound')
 }
 
 ; ── 冪運算 ────────────────────────────────────
@@ -271,11 +325,12 @@ p7, f7 = runner.test('bigint.add', t-add)
 p8, f8 = runner.test('bigint.sub', t-sub)
 p9, f9 = runner.test('bigint.mul', t-mul)
 p10, f10 = runner.test('bigint.div-mod', t-div-mod)
-p11, f11 = runner.test('bigint._mod-i64', t-mod-i64)
+p11, f11 = runner.test('bigint.mod-public', t-mod-public)
 p12, f12 = runner.test('bigint.pow', t-pow)
 p13, f13 = runner.test('bigint.gcd', t-gcd)
 p14, f14 = runner.test('bigint.lcm', t-lcm)
 p15, f15 = runner.test('bigint.operator-mixed', t-operator-mixed)
+p16, f16 = runner.test('bigint.to-i64', t-to-i64)
 total = runner.summary()
 f = runner.failed-count()
 {

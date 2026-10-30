@@ -8,16 +8,26 @@ sidebar_position: 2
 
 ## v0.4.11
 
-- feat(err): restructure error type to `err` with location payload (err.msg/code/file/line/col)
+- feat(err): restructure the error type into `err` with a location payload (err.msg/code/file/line/col)
 - feat(bigint): add bigint operator overloading and mixed bigint/i64 operands for + - * / %
-- feat(parser): reach byte-exact syntax-error position parity with Go oracle (NEWLINE coordinate, call-arg, cascade families)
+- feat(parser): reach byte-exact syntax-error position parity with the Go oracle (NEWLINE, call-arg, cascade families)
 - feat(std): precise strtod and shortest round-trip f64 formatting via method form
 - feat(js): support npm ESM imports and native package / FFI-koffi calls
-- refactor(config): hard-cut JSONC configuration to self-authored noml format
-- refactor(parser): unify match on SurfaceMatch and drop legacy desugar path
-- fix(mir): eliminate O(N^2) in vec push/insert codegen and optimize safe-index bounds checks
-- fix(compiler): eliminate O(N^2) in self-hosted lexer/parser and resolve call-return type inference
+- feat(ty): introduce a single structural type authority shared across parser, HIR, THIR and MIR
+- refactor(config): replace JSONC configuration with the self-authored noml format
+- refactor(parser): unify match on SurfaceMatch and drop the legacy desugar path
+- refactor(std): consolidate numeric to-str routines and bigint-based f64 parsing; clean up type annotations across std modules
+- fix(mir): load narrow (byte/u8/i8) stack slots at their allocated width and extend, and choose `trunc` for narrower destinations (fixes silent over-read segfaults in crypto/aes SBOX and invalid `sext i64 to i32`)
+- fix(std/crypto): allocate the blake2 compression work vector and pre-allocate argon2 buffers, restoring real compression and indexed writes
+- fix(build): per-arm type dispatch for union match arms so arm-local bindings resolve before generic-call rewriting (fixes silent 0 results from union arithmetic)
+- fix(compiler): resolve call-return type inference and attribute merged std diagnostics to their own source file
+- perf(parser): cache exported field indices for reflective AST walks; eliminate O(N^2) in vec push/insert codegen and self-hosted lexer/parser
+- fix(mir,std,ci): fix test/std failures (shl err-option drop crash, i8 store width, dns/err/chacha) and add blake2 golden-vector tests
+- fix(package,cmd/no): harden the release download path
+- build: upgrade the Go toolchain to 1.27.3; gate Setpgid/syscall.Kill behind build tags to fix the Windows release build
+- feat(compiler): add an inert self-host MIR/codegen skeleton (mir, cg, cg-rc, cg-runtime) and expand the self-host design doc
 - docs(design): record parser faithfulness, match-lowering invariants, and S7 dual-track findings
+- test(std,mir,checker): add union-arg, grow-write-lower, multiassign operator dispatch, option-struct payload match, and slice/vec option-write coverage
 
 ## v0.4.10
 

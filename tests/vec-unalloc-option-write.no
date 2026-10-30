@@ -1,0 +1,109 @@
+; vec-unalloc-option-write.no — 未分配 vec 的 option 下標寫 回歸
+;
+; 歷史：place-match 寫主體 `v[i]: { ok -> it = x }` 的 ok/nil 判定沿用讀語義
+; `0 <= i < len`。未分配 vec（裸宣告 `v []u64`，len=cap=data=0）的每個下標都
+; 判越界 → ok 臂永不觸發 → ensureVecBuffer（分配+寫入）永不執行 → 寫靜默丟失
+; （blake2 `v []u64` 哈希全錯的根因）。修法：寫主體在可增長容器上改用寫語義
+; `i >= 0` 門控（hir.FlagGrowWrite → lowerGrowWriteIndex），ok 臂的 store 經
+; ensureVecBuffer 分配/擴容並把 len 提到 max(len, i+1)。
+;
+; 鎖死四種形態：裸宣告 vec 迴圈寫、遠端下標（> 預設 1024 容量，驗證分配尺寸
+; 覆蓋 idx+1）、with-len(0)、負下標走 catch-all（不寫入）。
+
+# /test/runner
+
+; 1) 裸宣告 vec + 迴圈 option 寫
+t-unalloc-loop = () {
+    v []u64
+    i <- [0..4): {
+        v[i]: {
+            ok -> it = i + 1
+            -> _
+        }
+    }
+    runner.eq(v[0], 1, 'unalloc loop: v[0] == 1')
+    runner.eq(v[3], 4, 'unalloc loop: v[3] == 4')
+    runner.eq(v.len(), 4, 'unalloc loop: len lifted to 4')
+}
+
+; 2) 遠端下標 1500（超過預設分配 1024）：分配尺寸必須覆蓋 idx+1
+t-unalloc-far-index = () {
+    v []u64
+    v[1500]: {
+        ok -> it = 77
+        -> _
+    }
+    runner.eq(v[1500], 77, 'far index: v[1500] == 77')
+    runner.eq(v.len(), 1501, 'far index: len lifted to 1501')
+}
+
+; 3) with-len(0) + option 寫
+t-withlen0 = () {
+    v []u64 = with-len(0)
+    v[2]: {
+        ok -> it = 9
+        -> _
+    }
+    runner.eq(v[2], 9, 'with-len(0): v[2] == 9')
+    runner.eq(v.len(), 3, 'with-len(0): len lifted to 3')
+}
+
+; 4) 負下標：寫語義下唯一非法索引，必須走 catch-all（不寫入、不崩潰）
+t-negative-index = () {
+    v []u64
+    i i64 = 0
+    #{overflow=wrap}
+    i = i - 1
+    wrote bool = false
+    v[i]: {
+        ok -> {
+            it = 5
+            wrote = true
+        }
+        -> _
+    }
+    runner.eq(wrote, false, 'negative index: ok arm NOT taken')
+    runner.eq(v.len(), 0, 'negative index: len still 0')
+}
+
+; 5) 忠實重現 blake2 b-compress 的初始化形態：未分配 vec + #{index-out=zero} +
+;    RHS 含下標讀（觸發 desugarIndexOutReads）+ 迴圈 + 函數返回該 vec
+WV [8]u64 = [1, 2, 3, 4, 5, 6, 7, 8]
+b-state-like = () (st []u64) {
+    v []u64
+    i <- [0..8): {
+        #{index-out=zero}
+        v[i]: {
+            ok -> it = WV[i] * 10
+            -> _
+        }
+    }
+    i <- [0..8): {
+        #{index-out=zero}
+        v[8 + i]: {
+            ok -> it = WV[i] + 100
+            -> _
+        }
+    }
+    st = v
+}
+t-blake2-like = () {
+    st []u64 = b-state-like()
+    runner.eq(st[0], 10, 'blake2-like: v[0] == 10')
+    runner.eq(st[7], 80, 'blake2-like: v[7] == 80')
+    runner.eq(st[8], 101, 'blake2-like: v[8] == 101')
+    runner.eq(st[15], 108, 'blake2-like: v[15] == 108')
+    runner.eq(st.len(), 16, 'blake2-like: len == 16')
+}
+
+p1, f1 = runner.test('unalloc-loop', t-unalloc-loop)
+p2, f2 = runner.test('unalloc-far-index', t-unalloc-far-index)
+p3, f3 = runner.test('withlen0', t-withlen0)
+p4, f4 = runner.test('negative-index', t-negative-index)
+p5, f5 = runner.test('blake2-like', t-blake2-like)
+runner.summary()
+ff = runner.failed-count()
+{
+    ff > 0 -> exit(1)
+    -> exit(0)
+}

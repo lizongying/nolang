@@ -1,0 +1,75 @@
+; slice-option-write.no — 陣列切片 + option 形式下標寫 回歸
+;
+; 歷史：早期編譯器對「陣列切片 + option 下標寫 `h[i]: { ok -> it = ... }`」
+; 有靜默丟寫的 MIR bug（512d63b6 之前）。此測試鎖死該路徑：切片經 option
+; 寫後必須保留寫入值，且與普通寫 `h[i] = ...` 語意一致。覆蓋四種忠實形態：
+; 全域陣列切片、for 迴圈 + #{index-out=zero}、切片自身讀改寫（RHS 含下標讀，
+; 觸發 desugarIndexOutReads）、函數返回切片。
+
+# /test/runner
+
+IV [8]u64 = [11, 22, 33, 44, 55, 66, 77, 88]
+
+; 1) 全域陣列切片 + option 寫（無 index-out 註解），寫入值與源不同
+t-slice-write-simple = () {
+    h []u64 = IV[..8)
+    h[0]: {
+        ok -> it = 999
+        -> _
+    }
+    runner.eq(h[0], 999, 'slice+option-write: h[0] == 999')
+}
+
+; 2) 切片 + for 迴圈 + #{index-out=zero} + option 寫
+t-slice-write-loop = () {
+    h []u64 = IV[..8)
+    i <- [0..8): {
+        #{index-out=zero}
+        h[i]: {
+            ok -> it = 999
+            -> _
+        }
+    }
+    runner.eq(h[0], 999, 'slice+loop+index-out: h[0] == 999')
+    runner.eq(h[7], 999, 'slice+loop+index-out: h[7] == 999')
+}
+
+; 3) 切片自身讀改寫（RHS 含下標讀，觸發 desugarIndexOutReads）
+t-slice-write-self-rmw = () {
+    h []u64 = IV[..8)
+    i <- [0..8): {
+        #{index-out=zero}
+        h[i]: {
+            ok -> it = h[i] ^ 1
+            -> _
+        }
+    }
+    runner.eq(h[0], 10, 'slice self read-modify-write: 11 ^ 1 == 10')
+}
+
+; 4) 函數返回切片 + option 寫（忠實重現 b-state 語境）
+mk-state = () (h []u64) {
+    h = IV[..8)
+    i <- [0..8): {
+        #{index-out=zero}
+        h[i]: {
+            ok -> it = 999
+            -> _
+        }
+    }
+}
+t-slice-write-fn-return = () {
+    h []u64 = mk-state()
+    runner.eq(h[0], 999, 'fn-return slice + option-write: h[0] == 999')
+}
+
+p1, f1 = runner.test('slice-write-simple', t-slice-write-simple)
+p2, f2 = runner.test('slice-write-loop', t-slice-write-loop)
+p3, f3 = runner.test('slice-write-self-rmw', t-slice-write-self-rmw)
+p4, f4 = runner.test('slice-write-fn-return', t-slice-write-fn-return)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+    -> exit(0)
+}

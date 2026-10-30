@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 // ---- S1：糖節點遍歷助手 ----------------------------------------------------
@@ -58,8 +59,8 @@ func elemTypeOf(t string) string {
 	if t == "" {
 		return ""
 	}
-	if strings.HasPrefix(t, "?") {
-		return strings.TrimPrefix(t, "?")
+	if ty.IsOptionRaw(t) {
+		return ty.StripOptionRaw(t)
 	}
 	if i := strings.Index(t, "|"); i >= 0 {
 		return strings.TrimSpace(t[:i])
@@ -204,7 +205,7 @@ func enumVariantPayloadOf(matchedType, variant string) string {
 	if matchedType == "" || variant == "" {
 		return ""
 	}
-	for _, part := range strings.Split(matchedType, "|") {
+	for _, part := range ty.UnionMembersOrSelfRaw(matchedType) {
 		if strings.TrimSpace(part) == variant {
 			return "" // 無法從 union 字面推斷載荷型別。
 		}

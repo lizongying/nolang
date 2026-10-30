@@ -246,7 +246,7 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     hi = bigint.shr(out, 130)
     (! hi.is-zero()) {
         lo bigint.bigint = out._sub(bigint.shl(hi, 130))
-        out = lo._add(hi._mul-i64(5))
+        out = lo + (hi * 5)
         hi = bigint.shr(out, 130)
     }
     p = bigint.shl(bigint.one(), 130)._sub(bigint.from-i64(5))
@@ -272,14 +272,14 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
             i == 4 || i == 8 || i == 12 -> bvr = bvr & 252
         }
-        r = r._mul-i64(256)._add(bigint.from-i64(bvr))
+        r = r * 256 + bigint.from-i64(bvr)
     }
 
     ; s = key[16..32]（小端 128-bit，无 clamp）
     s = bigint.zero()
     j <- [31..16]: {
         bvs i64 = key[j]
-        s = s._mul-i64(256)._add(bigint.from-i64(bvs))
+        s = s * 256 + bigint.from-i64(bvs)
     }
 
     ; 累加器 h = 0
@@ -301,7 +301,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
             #{index-out=zero, overflow=wrap}
             bvk i64 = data[pos + k]
-            c = c._mul-i64(256)._add(bigint.from-i64(bvk))
+            c = c * 256 + bigint.from-i64(bvk)
         }
 
         #{overflow=wrap}
@@ -314,15 +314,20 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     }
 
     ; tag = (h + s) 的低 128 位，小端输出（逐字节）
-    ; 注意：不可用 _mod-i64/_div-i64 取 32-bit limb —— 除数 2^32 会让内部 rem<<32 溢出 i64。
-    ; 改用 shr + ._mod-i64(256)：小除数保证 rem<256，rem<<32 不溢出。
+    ; 注意：不可用 2^32 取 32-bit limb —— 除数 2^32 会让 _mod-i64 内部 rem<<32 溢出 i64。
+    ; 改用 shr + `% 256`：小除数保证 rem<256，rem<<32 不溢出。
     hs = h._add(s)
     out <- [0..16): {
 
         #{overflow=wrap}
         shifted bigint.bigint = bigint.shr(hs, out * 8)
-        b i64 = shifted._mod-i64(256)
-        tag[out] = b & 255
+        bs = shifted % 256
+        bm ?i64 = bs.to-i64()
+        bv = bm: {
+            ok -> it
+            -> 0
+        }
+        tag[out] = bv & 255
     }
 }
 

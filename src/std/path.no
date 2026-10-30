@@ -298,6 +298,7 @@ path.clean = () {
                                 out-n = 0
                                 out-n-opt: {
                                     ok -> out-n = it
+
                                     -> out-n = 0
                                 }
 
@@ -384,6 +385,7 @@ path.clean = () {
                     out-n = 0
                     out-n-opt: {
                         ok -> out-n = it
+
                         -> out-n = 0
                     }
 

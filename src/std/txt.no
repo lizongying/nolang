@@ -62,6 +62,7 @@ txt.len = () (n i64) {
 #{buildin}
 txt.byte = (i i64) (c ?byte) {
 }
+
 ;
 ; txt.set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
 ; txt.byte 的配對寫者；取代 txt[i] = b（後者按碼點重新編碼並移動尾部位元組）
@@ -141,6 +142,7 @@ txt.to-bytes = () (out []byte) {
     i <- [0..n): {
         b[i]: {
             ok -> it = .byte(i)
+
             -> _
         }
     }
@@ -372,7 +374,7 @@ txt.slice = (start i64, end i64) (out txt) {
 ; 返回 b ?byte: 越界返回 nil；超出 byte 範圍的碼點截斷
 txt.at = (idx i64) (b ?byte) {
     b = nil
-    cur-len i64 = .len()
+    cur-len = .len()
     idx < 0 -> return
     idx >= cur-len -> return
     b = .[idx]
@@ -467,6 +469,7 @@ txt.from-chars = (cs []char) (t ?txt) {
     i <- [0..n): {
         val[i]: {
             ok -> it = cs[i]
+
             -> _
         }
     }
@@ -531,6 +534,7 @@ txt.trim-char = (ch char) (val txt) {
         b-opt = .byte(start)
         b = b-opt: {
             ok -> it
+
             -> _
         }
         cp i64 = b
@@ -567,6 +571,7 @@ txt.trim-char = (ch char) (val txt) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
+
             -> _
         }
         cp = b
@@ -1106,6 +1111,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
         b-opt = .byte(i)
         b = b-opt: {
             ok -> it
+
             -> _
         }
         cp i64 = b
@@ -1411,7 +1417,7 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
 ; sep txt: 分隔符
 ; 返回 out txt: 連接結果
 []txt.join = (sep txt) (out txt) {
-    parts []txt = .
+    parts = .
     n = parts.len()
     n == 0 -> return
     cap = 255
@@ -1679,9 +1685,9 @@ txt.to-bigint = () (out ?bigint) {
         d < 0 -> break
         d >= radix -> break
 
-        acc = acc._mul-i64(radix)
+        acc = acc * radix
 
-        acc = acc._add-i64(d)
+        acc = acc + d
         started = 1
 
         #{overflow=wrap}

@@ -1,0 +1,167 @@
+; cg-rc — RC 头 ABI + 欠计数校验器（M4-a 骨架）
+;
+; Authority：src/mir/codegen.go 14712-14818（@nolang_rc_alloc / @nolang_rc_retain /
+;   @nolang_rc_release / @nolang_free）。16 字节头：rc@base+0、magic@base+8、
+;   data=base+16。
+; ⚠️ magic 与 Go nolangHdrMagic 同值："nolang\0\1" = 7957698232306827265。
+; ⚠️ 铁律（§5.6.1）：每个别名都要带自己的计数；漏 retain = UAF（不是泄漏）。
+;    故 check-rc-balance 只查【欠计数】方向（release 数 > retain 数），过计数是
+;    §1.3.1 明确接受的泄漏，不报错。
+;
+; ⚠️ 本模块刻意【惰性】：目前只被 compiler/tests/cg-runtime-test.no 引用，
+;    尚未接入 MIR（M4-c 起由 cg.no 消费 IR 文本，M4-c 起由 MIR 分析喂事件）。
+
+# /compiler/src/util/sb.sb
+
+; 16 字节头 ABI 常量
+HDR-SIZE = 16
+HDR-MAGIC = 7957698232306827265
+
+; 事件 op 编码
+OP-RETAIN = 0
+OP-RELEASE = 1
+
+; rc-alloc：@nolang_rc_alloc —— 分配 n+16 字节，rc=1，写 magic，返回 data。
+cg-rc-alloc = () (r str) {
+    b = sb.init(512)
+    b.push('define i8* @nolang_rc_alloc(i64 %n) {\n')
+    b.push('entry:\n')
+    b.push('\t%tot = add i64 %n, 16\n')
+    b.push('\t%base = call i8* @malloc(i64 %tot)\n')
+    b.push('\t%hdr = bitcast i8* %base to %nolang_hdr*\n')
+    b.push('\t%rcp = getelementptr inbounds %nolang_hdr, %nolang_hdr* %hdr, i32 0, i32 0\n')
+    b.push('\tstore i64 1, i64* %rcp\n')
+    b.push('\t%fp = getelementptr inbounds %nolang_hdr, %nolang_hdr* %hdr, i32 0, i32 1\n')
+    b.push('\tstore i64 7957698232306827265, i64* %fp\n')
+    b.push('\t%data = getelementptr inbounds i8, i8* %base, i64 16\n')
+    b.push('\tret i8* %data\n}\n')
+    r = b.str()
+}
+
+; rc-retain：@nolang_rc_retain —— 增加我们分配的块的计数。
+; 头部 magic 检查不可省（同 @nolang_free）：对非本编译器分配的指针直接返回。
+cg-rc-retain = () (r str) {
+    b = sb.init(512)
+    b.push('define void @nolang_rc_retain(i8* %p) {\n')
+    b.push('entry:\n')
+    b.push('\t%isnull = icmp eq i8* %p, null\n')
+    b.push('\tbr i1 %isnull, label %out, label %go\n')
+    b.push('go:\n')
+    b.push('\t%base = getelementptr inbounds i8, i8* %p, i64 -16\n')
+    b.push('\t%fp = getelementptr inbounds i8, i8* %base, i64 8\n')
+    b.push('\t%fpi = bitcast i8* %fp to i64*\n')
+    b.push('\t%flags = load i64, i64* %fpi\n')
+    b.push('\t%ours = icmp eq i64 %flags, 7957698232306827265\n')
+    b.push('\tbr i1 %ours, label %chk, label %out\n')
+    b.push('chk:\n')
+    b.push('\t%rcp = bitcast i8* %base to i64*\n')
+    b.push('\t%rc = load i64, i64* %rcp\n')
+    b.push('\t%borrowed = icmp eq i64 %rc, 0\n')
+    b.push('\tbr i1 %borrowed, label %out, label %inc\n')
+    b.push('inc:\n')
+    b.push('\t%rc1 = add i64 %rc, 1\n')
+    b.push('\tstore i64 %rc1, i64* %rcp\n')
+    b.push('\tbr label %out\n')
+    b.push('out:\n')
+    b.push('\tret void\n}\n')
+    r = b.str()
+}
+
+; rc-release：@nolang_rc_release —— 返回 i1（true = 递减到 0 并已释放）。
+cg-rc-release = () (r str) {
+    b = sb.init(512)
+    b.push('define i1 @nolang_rc_release(i8* %p) {\n')
+    b.push('entry:\n')
+    b.push('\t%isnull = icmp eq i8* %p, null\n')
+    b.push('\tbr i1 %isnull, label %no, label %go\n')
+    b.push('go:\n')
+    b.push('\t%base = getelementptr inbounds i8, i8* %p, i64 -16\n')
+    b.push('\t%rc = load i64, i64* %base\n')
+    b.push('\t%borrowed = icmp eq i64 %rc, 0\n')
+    b.push('\tbr i1 %borrowed, label %no, label %dec\n')
+    b.push('dec:\n')
+    b.push('\t%rc1 = sub i64 %rc, 1\n')
+    b.push('\tstore i64 %rc1, i64* %base\n')
+    b.push('\t%zero = icmp eq i64 %rc1, 0\n')
+    b.push('\tbr i1 %zero, label %free, label %no\n')
+    b.push('free:\n')
+    b.push('\tcall void @free(i8* %base)\n')
+    b.push('\tbr label %no\n')
+    b.push('no:\n')
+    b.push('\t%r = phi i1 [ false, %entry ], [ false, %go ], [ false, %dec ], [ true, %free ]\n')
+    b.push('\tret i1 %r\n}\n')
+    r = b.str()
+}
+
+; nolang-free：@nolang_free —— 编译器拥有的堆缓冲区的唯一释放入口（P4）。
+; magic 命中 ⇒ 递减计数，归零才 free(base)；未命中 ⇒ 退化普通 @free(p)。
+cg-rc-nolang-free = () (r str) {
+    b = sb.init(512)
+    b.push('define void @nolang_free(i8* %p) {\n')
+    b.push('entry:\n')
+    b.push('\t%isnull = icmp eq i8* %p, null\n')
+    b.push('\tbr i1 %isnull, label %out, label %go\n')
+    b.push('go:\n')
+    b.push('\t%base = getelementptr inbounds i8, i8* %p, i64 -16\n')
+    b.push('\t%fp = getelementptr inbounds i8, i8* %base, i64 8\n')
+    b.push('\t%fpi = bitcast i8* %fp to i64*\n')
+    b.push('\t%flags = load i64, i64* %fpi\n')
+    b.push('\t%ours = icmp eq i64 %flags, 7957698232306827265\n')
+    b.push('\tbr i1 %ours, label %rel, label %raw\n')
+    b.push('raw:\n')
+    b.push('\tcall void @free(i8* %p)\n')
+    b.push('\tbr label %out\n')
+    b.push('rel:\n')
+    b.push('\t%rcp = bitcast i8* %base to i64*\n')
+    b.push('\t%rc = load i64, i64* %rcp\n')
+    b.push('\t%rc1 = sub i64 %rc, 1\n')
+    b.push('\tstore i64 %rc1, i64* %rcp\n')
+    b.push('\t%zero = icmp eq i64 %rc1, 0\n')
+    b.push('\tbr i1 %zero, label %freeit, label %out\n')
+    b.push('freeit:\n')
+    b.push('\tcall void @free(i8* %base)\n')
+    b.push('\tbr label %out\n')
+    b.push('out:\n')
+    b.push('\tret void\n}\n')
+    r = b.str()
+}
+
+; 常量访问器（供测试跨模块读取，避免依赖模块级 let 的导出语义）
+cg-rc-hdr-size = () (n i64) {
+    n = HDR-SIZE
+}
+
+cg-rc-hdr-magic = () (n i64) {
+    n = HDR-MAGIC
+}
+
+; check-rc-balance：只查【欠计数】方向。
+; vids[k] 与 ops[k] 一一对应（op: 0=retain, 1=release）。
+; 某 vid 的 release 次数 > retain 次数 ⇒ UAF ⇒ 返回首个违例说明；
+; 全部平衡（含过计数）⇒ 返回 ''。
+cg-rc-check-balance = (vids []i64, ops []i64) (r str) {
+    r = ''
+    n = vids.len()
+    i <- [0..n): {
+        cur = vids[i]
+        ops[i] == OP-RELEASE -> {
+            nr = 0
+            nd = 0
+            j <- [0..n): {
+                vids[j] == cur -> {
+                    ops[j] == OP-RETAIN -> {
+                        #{overflow=wrap}
+                        nr = nr + 1
+                    }
+                    ops[j] == OP-RELEASE -> {
+                        #{overflow=wrap}
+                        nd = nd + 1
+                    }
+                }
+            }
+            nd > nr -> {
+                r.len-bytes() == 0 -> r = 'rc-under-count: more releases than retains'
+            }
+        }
+    }
+}

@@ -1,0 +1,757 @@
+; cg-test.no — compiler/src/cg.no（M4-b emit 骨架）单元测试
+;
+; 执行： ./bin/no run compiler/tests/cg-test.no
+; ⚠️ runner 断言失败不改退出码，本档结尾必须自己 exit(1)。
+;
+; 断言取自 Go authority（src/mir/codegen.go emitMIR）的最小闭包形状。
+
+# /test/runner.eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/cg
+# /compiler/src/mir
+
+; ── func three() -> 3 ───────────────────────────────────
+test-const-ret = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-func('three', 0, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @three()'), 1, 'signature')
+    runner.eq(s.contains('add i64 0, 3'), 1, 'const 3')
+    runner.eq(s.contains('ret i64 %v1'), 1, 'ret v1')
+}
+
+; ── func dbl(x) -> x + x ────────────────────────────────
+test-arith = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-ADD)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-func('dbl', 1, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @dbl(i64 %v1)'), 1, 'param sig')
+    runner.eq(s.contains('add i64 %v1, %v1'), 1, 'add operands')
+    runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
+}
+
+; ── func caller() -> dbl(2) ─────────────────────────────
+test-call = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-CALL)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('dbl')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-func('caller', 0, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @caller()'), 1, 'signature')
+    runner.eq(s.contains('call i64 @dbl(i64 %v1)'), 1, 'call dbl')
+    runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
+}
+
+; ── 双参函数 + 双参调用（M4-c 多参 CALL）──────────────────
+; add2(a,b) = a+b；caller2() = add2(3,4)
+test-call2 = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-ADD)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-func('add2', 2, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @add2(i64 %v1, i64 %v2)'), 1, 'two params')
+    runner.eq(s.contains('add i64 %v1, %v2'), 1, 'add operands')
+
+    ops2 []i64 = []
+    dsts2 []i64 = []
+    xa2 []i64 = []
+    bs2 []i64 = []
+    syms2 []str = []
+    ops2.push(OP-CONST)
+    dsts2.push(1)
+    xa2.push(3)
+    bs2.push(0)
+    syms2.push('')
+    ops2.push(OP-CONST)
+    dsts2.push(2)
+    xa2.push(4)
+    bs2.push(0)
+    syms2.push('')
+    ops2.push(OP-CALL)
+    dsts2.push(3)
+    xa2.push(1)
+    bs2.push(2)
+    syms2.push('add2')
+    ops2.push(OP-RET)
+    dsts2.push(0)
+    xa2.push(3)
+    bs2.push(0)
+    syms2.push('')
+    t = cg-emit-func('caller2', 0, ops2, dsts2, xa2, bs2, syms2)
+    runner.eq(t.contains('call i64 @add2(i64 %v1, i64 %v2)'), 1, 'two-arg call')
+    runner.eq(t.contains('ret i64 %v3'), 1, 'ret v3')
+}
+
+; ── func let-add() { x = 3; return x + x } ─────────────
+test-let = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-ALLOC)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-STORE)
+    dsts.push(0)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    ops.push(OP-LOAD)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-ADD)
+    dsts.push(3)
+    xa.push(2)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-func('let-add', 0, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%s1 = alloca i64'), 1, 'alloca slot')
+    runner.eq(s.contains('store i64 %v1, i64* %s1'), 1, 'store')
+    runner.eq(s.contains('%v2 = load i64, i64* %s1'), 1, 'load')
+    runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
+}
+
+; ── func lt10(x) { x < 10 ? 1 : 2 }（多基本块）──────────
+test-cfg = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: CONST v2 = 10
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(10)
+    bs.push(0)
+    syms.push('')
+    ; k1: CMPLT v3 = (v1 < v2)
+    blks.push(0)
+    ops.push(OP-CMPLT)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k2: CONDBR cond=v3, true=bb1, false=bb2
+    blks.push(0)
+    ops.push(OP-CONDBR)
+    dsts.push(2)
+    xa.push(3)
+    bs.push(1)
+    syms.push('')
+    ; k3: bb1: CONST v4 = 1
+    blks.push(1)
+    ops.push(OP-CONST)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ; k4: bb1: RET v4
+    blks.push(1)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    ; k5: bb2: CONST v5 = 2
+    blks.push(2)
+    ops.push(OP-CONST)
+    dsts.push(5)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ; k6: bb2: RET v5
+    blks.push(2)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('lt10', 1, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @lt10(i64 %v1)'), 1, 'sig')
+    runner.eq(s.contains('icmp slt i64 %v1, %v2'), 1, 'cmplt')
+    runner.eq(s.contains('br i1 %c2, label %bb1, label %bb2'), 1, 'condbr')
+    runner.eq(s.contains('bb1:'), 1, 'bb1 label')
+    runner.eq(s.contains('bb2:'), 1, 'bb2 label')
+    runner.eq(s.contains('ret i64 %v4'), 1, 'then ret')
+    runner.eq(s.contains('ret i64 %v5'), 1, 'else ret')
+}
+
+; ── func sum4() { s=0; i=0; while i<4 { s+=i; i+=1 }; return s } ──
+; 证明 CFG 支持回边（bb2 的 br 跳回 bb1）。
+test-loop = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; bb0: alloc s(s1), alloc i(s2), s=0, i=0, br bb1
+    blks.push(0)
+    ops.push(OP-ALLOC)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-ALLOC)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(3)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-STORE)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(4)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-STORE)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(2)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-BR)
+    dsts.push(0)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ; bb1: i<4 ? bb2 : bb3
+    blks.push(1)
+    ops.push(OP-LOAD)
+    dsts.push(5)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-CONST)
+    dsts.push(6)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-CMPLT)
+    dsts.push(7)
+    xa.push(5)
+    bs.push(6)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-CONDBR)
+    dsts.push(3)
+    xa.push(7)
+    bs.push(2)
+    syms.push('')
+    ; bb2: s=s+i; i=i+1; br bb1
+    blks.push(2)
+    ops.push(OP-LOAD)
+    dsts.push(8)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-LOAD)
+    dsts.push(9)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-ADD)
+    dsts.push(10)
+    xa.push(8)
+    bs.push(9)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-STORE)
+    dsts.push(0)
+    xa.push(10)
+    bs.push(1)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-LOAD)
+    dsts.push(11)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-CONST)
+    dsts.push(12)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-ADD)
+    dsts.push(13)
+    xa.push(11)
+    bs.push(12)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-STORE)
+    dsts.push(0)
+    xa.push(13)
+    bs.push(2)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-BR)
+    dsts.push(0)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ; bb3: return s
+    blks.push(3)
+    ops.push(OP-LOAD)
+    dsts.push(14)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(3)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(14)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('sum4', 0, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @sum4()'), 1, 'sig')
+    runner.eq(s.contains('br label %bb1'), 1, 'back-edge br')
+    runner.eq(s.contains('bb1:'), 1, 'loop head')
+    runner.eq(s.contains('bb3:'), 1, 'exit')
+    runner.eq(s.contains('ret i64 %v14'), 1, 'ret s')
+}
+
+; ── func slen() -> 'abc'.len（首个非 i64 型别：%str-long）──
+; 证明：全局字面量 @.s0 + insertvalue 构造 %str-long + extractvalue 取 len。
+test-string = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: STRCONST sv1 = 'abc'
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('abc')
+    ; k1: STRLEN v2 = sv1.len
+    blks.push(0)
+    ops.push(OP-STRLEN)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ; k2: RET v2
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('slen', 0, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('@.s0 = private unnamed_addr constant [4 x i8] c"abc\\00"'), 1, 'global literal')
+    runner.eq(s.contains('getelementptr inbounds [4 x i8]'), 1, 'gep')
+    runner.eq(s.contains('%q0 = insertvalue %str-long undef, i64 3, 0'), 1, 'len field')
+    runner.eq(s.contains('%r0 = insertvalue %str-long %q0, i64 3, 1'), 1, 'cap field')
+    runner.eq(s.contains('%sv1 = insertvalue %str-long %r0, i8* %p0, 2'), 1, 'data field')
+    runner.eq(s.contains('%v2 = extractvalue %str-long %sv1, 0'), 1, 'strlen')
+    runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
+}
+
+; ── func cat() -> ('ab' + 'cd').len（堆拼接 + RC 头）──────
+; 证明：@str_concat 调用形状；结果仍是 %str-long（住在 %sv 命名空间）。
+test-strcat = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: STRCONST sv1 = 'ab'
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    ; k1: STRCONST sv2 = 'cd'
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('cd')
+    ; k2: STRCAT sv3 = sv1 + sv2
+    blks.push(0)
+    ops.push(OP-STRCAT)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k3: STRLEN v4 = sv3.len
+    blks.push(0)
+    ops.push(OP-STRLEN)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k4: RET v4
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('cat', 0, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('@.s0 = private unnamed_addr constant [3 x i8] c"ab\\00"'), 1, 'left literal')
+    runner.eq(s.contains('@.s1 = private unnamed_addr constant [3 x i8] c"cd\\00"'), 1, 'right literal')
+    runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'strcat call')
+    runner.eq(s.contains('%v4 = extractvalue %str-long %sv3, 0'), 1, 'len of result')
+    runner.eq(s.contains('ret i64 %v4'), 1, 'ret v4')
+}
+
+; ── func pick(c) { s='ab'; c ? s='abcdef'; return s.len } ──
+; 证明 %str-long 跨基本块（bb1 → bb2）走 alloca/store/load 而非 PHI。
+test-str-slot = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; bb0: SALLOC ss1; STRCONST sv1='ab'; SSTORE sv1->ss1; CONDBR v1 -> bb1/bb2
+    blks.push(0)
+    ops.push(OP-SALLOC)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    blks.push(0)
+    ops.push(OP-SSTORE)
+    dsts.push(0)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONDBR)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    ; bb1: STRCONST sv2='abcdef'; SSTORE sv2->ss1; BR bb2
+    blks.push(1)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('abcdef')
+    blks.push(1)
+    ops.push(OP-SSTORE)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(1)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-BR)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ; bb2: SLOAD sv3=ss1; STRLEN v4=sv3.len; RET v4
+    blks.push(2)
+    ops.push(OP-SLOAD)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-STRLEN)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('pick', 1, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%ss1 = alloca %str-long'), 1, 'str slot alloca')
+    runner.eq(s.contains('store %str-long %sv1, %str-long* %ss1'), 1, 'sstore')
+    runner.eq(s.contains('store %str-long %sv2, %str-long* %ss1'), 1, 'sstore in bb1')
+    runner.eq(s.contains('%sv3 = load %str-long, %str-long* %ss1'), 1, 'sload in bb2')
+    runner.eq(s.contains('%v4 = extractvalue %str-long %sv3, 0'), 1, 'len of loaded')
+    runner.eq(s.contains('br i1 %c3, label %bb1, label %bb2'), 1, 'condbr')
+}
+
+; ── func vecsum() { v=[1,2,3]; return v[0]+v[1]+v[2] } ────
+; 证明 %vec 值命名空间 %vc 与 push/get/len 的发射形状。
+test-vec = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: VECNEW vc1
+    blks.push(0)
+    ops.push(OP-VECNEW)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    ; k1..k6: CONST 1/2/3 与三次 push
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(3)
+    xa.push(2)
+    bs.push(2)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(3)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(3)
+    syms.push('')
+    ; k7..k9: CONST 0/1/2 作下标
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(4)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(5)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(6)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ; k10..k12: 三次 get
+    blks.push(0)
+    ops.push(OP-VECGET)
+    dsts.push(7)
+    xa.push(4)
+    bs.push(4)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECGET)
+    dsts.push(8)
+    xa.push(4)
+    bs.push(5)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECGET)
+    dsts.push(9)
+    xa.push(4)
+    bs.push(6)
+    syms.push('')
+    ; k13..k15: 求和
+    blks.push(0)
+    ops.push(OP-ADD)
+    dsts.push(10)
+    xa.push(7)
+    bs.push(8)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-ADD)
+    dsts.push(11)
+    xa.push(10)
+    bs.push(9)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(11)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('vecsum', 0, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%vc1 = call %vec @vec_new()'), 1, 'vec_new')
+    runner.eq(s.contains('%vc2 = call %vec @vec_push_i64(%vec %vc1, i64 %v1)'), 1, 'push 1')
+    runner.eq(s.contains('%vc4 = call %vec @vec_push_i64(%vec %vc3, i64 %v3)'), 1, 'push 3')
+    runner.eq(s.contains('%v7 = call i64 @vec_get_i64(%vec %vc4, i64 %v4)'), 1, 'get 0')
+    runner.eq(s.contains('ret i64 %v11'), 1, 'ret sum')
+}
+
+; ── func veclen() { v=[9]; return v.len } ──────────────────
+test-vec-len = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks.push(0)
+    ops.push(OP-VECNEW)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECLEN)
+    dsts.push(2)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('veclen', 0, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%v2 = call i64 @vec_len(%vec %vc2)'), 1, 'vec_len call')
+    runner.eq(s.contains('ret i64 %v2'), 1, 'ret len')
+}
+
+test-const-ret()
+test-arith()
+test-call()
+test-call2()
+test-let()
+test-cfg()
+test-loop()
+test-string()
+test-strcat()
+test-str-slot()
+test-vec()
+test-vec-len()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

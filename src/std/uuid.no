@@ -133,12 +133,14 @@ hex-byte = (b byte, pos i64, out str) {
 
     out[pos]: {
         ok -> it = HEX[(b >> 4) & 15]
+
         -> _
     }
 
     #{overflow=wrap}
     out[pos + 1]: {
         ok -> it = HEX[b & 15]
+
         -> _
     }
 }
@@ -195,12 +197,14 @@ hex-byte-upper = (b byte, pos i64, out str, table str) {
 
     out[pos]: {
         ok -> it = table[(b >> 4) & 15]
+
         -> _
     }
 
     #{overflow=wrap}
     out[pos + 1]: {
         ok -> it = table[b & 15]
+
         -> _
     }
 }
@@ -240,11 +244,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos2-opt = pos + 2
-    ppos2 i64 = 0
+    ppos2 = 0
     ppos2-opt: {
         ok -> {
             ppos2 = it
         }
+
         -> {
             ppos2 = 0
         }
@@ -253,11 +258,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos4-opt = pos + 4
-    ppos4 i64 = 0
+    ppos4 = 0
     ppos4-opt: {
         ok -> {
             ppos4 = it
         }
+
         -> {
             ppos4 = 0
         }
@@ -266,11 +272,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos6-opt = pos + 6
-    ppos6 i64 = 0
+    ppos6 = 0
     ppos6-opt: {
         ok -> {
             ppos6 = it
         }
+
         -> {
             ppos6 = 0
         }
@@ -294,11 +301,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos9-opt = pos + 9
-    ppos9 i64 = 0
+    ppos9 = 0
     ppos9-opt: {
         ok -> {
             ppos9 = it
         }
+
         -> {
             ppos9 = 0
         }
@@ -307,11 +315,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos11-opt = pos + 11
-    ppos11 i64 = 0
+    ppos11 = 0
     ppos11-opt: {
         ok -> {
             ppos11 = it
         }
+
         -> {
             ppos11 = 0
         }
@@ -330,11 +339,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos14-opt = pos + 14
-    ppos14 i64 = 0
+    ppos14 = 0
     ppos14-opt: {
         ok -> {
             ppos14 = it
         }
+
         -> {
             ppos14 = 0
         }
@@ -343,11 +353,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos16-opt = pos + 16
-    ppos16 i64 = 0
+    ppos16 = 0
     ppos16-opt: {
         ok -> {
             ppos16 = it
         }
+
         -> {
             ppos16 = 0
         }
@@ -366,11 +377,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos19-opt = pos + 19
-    ppos19 i64 = 0
+    ppos19 = 0
     ppos19-opt: {
         ok -> {
             ppos19 = it
         }
+
         -> {
             ppos19 = 0
         }
@@ -379,11 +391,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos21-opt = pos + 21
-    ppos21 i64 = 0
+    ppos21 = 0
     ppos21-opt: {
         ok -> {
             ppos21 = it
         }
+
         -> {
             ppos21 = 0
         }
@@ -402,11 +415,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos24-opt = pos + 24
-    ppos24 i64 = 0
+    ppos24 = 0
     ppos24-opt: {
         ok -> {
             ppos24 = it
         }
+
         -> {
             ppos24 = 0
         }
@@ -415,11 +429,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos26-opt = pos + 26
-    ppos26 i64 = 0
+    ppos26 = 0
     ppos26-opt: {
         ok -> {
             ppos26 = it
         }
+
         -> {
             ppos26 = 0
         }
@@ -428,11 +443,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos28-opt = pos + 28
-    ppos28 i64 = 0
+    ppos28 = 0
     ppos28-opt: {
         ok -> {
             ppos28 = it
         }
+
         -> {
             ppos28 = 0
         }
@@ -441,11 +457,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos30-opt = pos + 30
-    ppos30 i64 = 0
+    ppos30 = 0
     ppos30-opt: {
         ok -> {
             ppos30 = it
         }
+
         -> {
             ppos30 = 0
         }
@@ -454,11 +471,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos32-opt = pos + 32
-    ppos32 i64 = 0
+    ppos32 = 0
     ppos32-opt: {
         ok -> {
             ppos32 = it
         }
+
         -> {
             ppos32 = 0
         }
@@ -467,11 +485,12 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     #{overflow=wrap}
     ppos34-opt = pos + 34
-    ppos34 i64 = 0
+    ppos34 = 0
     ppos34-opt: {
         ok -> {
             ppos34 = it
         }
+
         -> {
             ppos34 = 0
         }

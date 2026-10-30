@@ -1,0 +1,290 @@
+; cg — MIR → LLVM IR 文本（M4-b 单块 + M4-c 控制流骨架）
+;
+; Authority：src/mir/codegen.go emitMIR / EmitLLVM（逐 op 发 IR 文本）。
+;
+; 覆盖 op（M4-b 单块 + M4-c 控制流/字符串）：
+;   CONST / ADD / SUB / MUL / CALL / ALLOC / STORE / LOAD / RET
+;   BR / CONDBR / CMPLT（多基本块；跨块传值用 alloca/store/load，不用 PHI）
+;   STRCONST / STRLEN / STRCAT（非 i64 型别 %str-long）
+;   SALLOC / SSTORE / SLOAD（%str-long 跨基本块走 alloca，无 PHI）
+;   VECNEW / VECPUSH / VECLEN / VECGET（%vec，元素仅 i64）
+; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
+; 向量值 → %vc<id>；函数参数即值 id 1..nargs。
+; 块标签：id 0 → entry，其余 → bb<id>。
+;
+; ⚠️ 本模块刻意【惰性】：目前只被 compiler/tests/cg-test.no 引用，尚未接 drv。
+
+# /compiler/src/util/sb.sb
+# /compiler/src/mir
+
+; cg-label：块 id → LLVM 标签名（0 → entry，其余 → bb<id>）。
+cg-label = (id i64) (s str) {
+    s = 'bb' + id.to-str()
+    id == 0 -> s = 'entry'
+}
+
+; cg-strlen1：字符串字面量的数组长度（字节数 + 1，含结尾 NUL）。
+cg-strlen1 = (t str) (n i64) {
+    n = t.len-bytes()
+    #{overflow=wrap}
+    n = n + 1
+}
+
+; cg-emit-func：单块便捷入口（全部指令属块 0）。保留 M4-b 的 7 参数 API。
+cg-emit-func = (name str, nargs i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
+    n = ops.len()
+    z []i64 = [].with-len(n)
+    r = cg-emit-cfg(name, nargs, z, ops, dsts, xa, bs, syms)
+}
+
+; cg-emit-cfg：发射一个 i64 返回的函数（可多基本块）。
+; blks[k] = 第 k 条指令所属块 id；块切换处发标签。
+cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
+    b = sb.init(1024)
+    n = ops.len()
+    ; 前置：为每个 OP-STRCONST 发字符串字面量全局（顶层，须在 define 之前）。
+    g <- [0..n): {
+        ops[g] == OP-STRCONST -> {
+            t = syms[g]
+            b.push('@.s')
+            b.push(g.to-str())
+            b.push(' = private unnamed_addr constant [')
+            b.push(cg-strlen1(t).to-str())
+            b.push(' x i8] c"')
+            b.push(t)
+            b.push('\\00"\n')
+        }
+    }
+    b.push('define i64 @')
+    b.push(name)
+    b.push('(')
+    p = 1
+    #{overflow=wrap}
+    (p <= nargs) {
+        p > 1 -> b.push(', ')
+        b.push('i64 %v')
+        b.push(p.to-str())
+        #{overflow=wrap}
+        p = p + 1
+    }
+    b.push(') {\n')
+    cur = -1
+    k <- [0..n): {
+        bk = blks[k]
+        bk != cur -> {
+            b.push(cg-label(bk) - ':\n')
+            cur = bk
+        }
+        op = ops[k]
+        d = dsts[k]
+        x = xa[k]
+        y = bs[k]
+        op == OP-CONST -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = add i64 0, ')
+            b.push(x.to-str())
+            b.push('\n')
+        }
+        op == OP-ADD -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = add i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-SUB -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = sub i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-MUL -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = mul i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-CALL -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = call i64 @')
+            b.push(syms[k])
+            b.push('(')
+            ; 参数：值 id x .. x+y-1（连续），y = bs[k] 个
+            q = x
+            j = 0
+            (j < y) {
+                j > 0 -> b.push(', ')
+                b.push('i64 %v')
+                b.push(q.to-str())
+                #{overflow=wrap}
+                q = q + 1
+                #{overflow=wrap}
+                j = j + 1
+            }
+            b.push(')\n')
+        }
+        op == OP-ALLOC -> {
+            b.push('\t%s')
+            b.push(d.to-str())
+            b.push(' = alloca i64\n')
+        }
+        op == OP-STORE -> {
+            b.push('\tstore i64 %v')
+            b.push(x.to-str())
+            b.push(', i64* %s')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-LOAD -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = load i64, i64* %s')
+            b.push(x.to-str())
+            b.push('\n')
+        }
+        op == OP-CMPLT -> {
+            b.push('\t%c')
+            b.push(k.to-str())
+            b.push(' = icmp slt i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %c')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-BR -> {
+            b.push('\tbr label %')
+            b.push(cg-label(x))
+            b.push('\n')
+        }
+        op == OP-CONDBR -> {
+            b.push('\t%c')
+            b.push(k.to-str())
+            b.push(' = icmp ne i64 %v')
+            b.push(x.to-str())
+            b.push(', 0\n\tbr i1 %c')
+            b.push(k.to-str())
+            b.push(', label %')
+            b.push(cg-label(y))
+            b.push(', label %')
+            b.push(cg-label(d))
+            b.push('\n')
+        }
+        op == OP-STRCONST -> {
+            t = syms[k]
+            b.push('\t%p')
+            b.push(k.to-str())
+            b.push(' = getelementptr inbounds [')
+            b.push(cg-strlen1(t).to-str())
+            b.push(' x i8], [')
+            b.push(cg-strlen1(t).to-str())
+            b.push(' x i8]* @.s')
+            b.push(k.to-str())
+            b.push(', i64 0, i64 0\n')
+            b.push('\t%q')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long undef, i64 ')
+            b.push(t.len-bytes().to-str())
+            b.push(', 0\n')
+            b.push('\t%r')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long %q')
+            b.push(k.to-str())
+            b.push(', i64 ')
+            b.push(t.len-bytes().to-str())
+            b.push(', 1\n')
+            b.push('\t%sv')
+            b.push(d.to-str())
+            b.push(' = insertvalue %str-long %r')
+            b.push(k.to-str())
+            b.push(', i8* %p')
+            b.push(k.to-str())
+            b.push(', 2\n')
+        }
+        op == OP-STRLEN -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 0\n')
+        }
+        op == OP-STRCAT -> {
+            b.push('\t%sv')
+            b.push(d.to-str())
+            b.push(' = call %str-long @str_concat(%str-long %sv')
+            b.push(x.to-str())
+            b.push(', %str-long %sv')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-SALLOC -> {
+            b.push('\t%ss')
+            b.push(d.to-str())
+            b.push(' = alloca %str-long\n')
+        }
+        op == OP-SSTORE -> {
+            b.push('\tstore %str-long %sv')
+            b.push(x.to-str())
+            b.push(', %str-long* %ss')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-SLOAD -> {
+            b.push('\t%sv')
+            b.push(d.to-str())
+            b.push(' = load %str-long, %str-long* %ss')
+            b.push(x.to-str())
+            b.push('\n')
+        }
+        op == OP-VECNEW -> {
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @vec_new()\n')
+        }
+        op == OP-VECPUSH -> {
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @vec_push_i64(%vec %vc')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-VECLEN -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = call i64 @vec_len(%vec %vc')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-VECGET -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = call i64 @vec_get_i64(%vec %vc')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-RET -> {
+            b.push('\tret i64 %v')
+            b.push(x.to-str())
+            b.push('\n')
+        }
+    }
+    b.push('}\n')
+    r = b.str()
+}

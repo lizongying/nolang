@@ -358,7 +358,8 @@ bigint._div = (b big) (q ?bigint) {
 }
 
 ; _mod: a % b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 _mod-i64，
-; 其結果為 i64，再以 from-i64 提升為 bigint 以對齊輸出形參 r）
+; 其結果為 ?i64，先拆包（失敗回 0，對齊 div-mod 除零回傳零）再以 from-i64 提升為
+; bigint 以對齊輸出形參 r）
 bigint._mod = (b big) (r ?bigint) {
     b: {
         v bigint -> {
@@ -367,7 +368,12 @@ bigint._mod = (b big) (r ?bigint) {
         }
 
         v i64 -> {
-            r = bigint.from-i64(._mod-i64(v))
+            m = ._mod-i64(v)
+            mv = m: {
+                ok -> it
+                -> 0
+            }
+            r = bigint.from-i64(mv)
         }
     }
 }
@@ -520,7 +526,12 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         q = ._div-i64(v)
         r.limbs = with-len(1)
 
-        r.limbs[0] = ._mod-i64(v)
+        md = ._mod-i64(v)
+        mv = md: {
+            ok -> it
+            -> 0
+        }
+        r.limbs[0] = mv
         r.len = 1
         q.sign = .sign * b.sign
         r.sign = .sign
@@ -730,7 +741,9 @@ bigint._div-i64 = (v i64) (q bigint) {
 }
 
 ; bigint._mod-i64: r = self % v（小整數取模）
-bigint._mod-i64 = (v i64) (r i64) {
+; 回傳 ?i64：`cur % r-v` 依 D6 統一 option 規則本就是 ?i64（除數為 0 時失敗），
+; 結果參數刻意宣告 plain 把它壓平會造成靜默拆包，故如實宣告為 ?i64。
+bigint._mod-i64 = (v i64) (r ?i64) {
     r-v = v
 
     #{overflow=wrap}
@@ -948,7 +961,11 @@ bigint.to-str = () (out str) {
         ; 因此這裡用顯式欄位存取來判斷 tmp 是否為零。
         tz = tmp.len == 1 && tmp.limbs[0] == 0
         tz -> break
-        d = tmp._mod-i64(10)
+        dm = tmp._mod-i64(10)
+        d = dm: {
+            ok -> it
+            -> 0
+        }
 
         #{overflow=wrap}
         buf[bufn]: {
@@ -982,6 +999,55 @@ bigint._add-i64 = (v i64) (c bigint) {
     tmp = bigint {}
     tmp = from-i64(v)
     c = ._add(tmp)
+}
+
+; ═══════════════════════════════════════════════
+; 整數轉換
+; ═══════════════════════════════════════════════
+
+; bigint.to-i64: 將 bigint 轉回 i64（公開 API）。
+; 只在 |self| 落於 i64 值域時 ok，超出則 err —— 絕不靜默截斷高位。
+;
+; 為什麼需要它：`_mod-i64` / `_div-i64` 這類小整數快速路徑是本模組私有的（見
+; 上方私有約定）。外部模組拿到的是運算符結果（`% / * + -`，值域天然被除數界定
+; 在 i64 內）的 bigint，要取回 i64 必須走這個公開出口，而不是繞道呼叫私有方法。
+bigint.to-i64 = () (v ?i64) {
+    ; limbs 是 32-bit 小端；先做長度守衛，才去碰 limbs。
+    (.len > 2) -> {
+        v = err('bigint.to-i64: overflow')
+        return
+    }
+    (.len == 0) -> {
+        v = ok(0)
+        return
+    }
+
+    lo-m = .limbs[0] & MASK
+    hi-m i64 = 0
+    (.len > 1) -> hi-m = .limbs[1] & MASK
+
+    ; hi-m 經 MASK 遮罩後必落在 [0, 2^32)，故可與 2^31 直接無符號比較。
+    ; 正數上限 2^63-1：hi-m ≥ 2^31 即出界。
+    (.sign >= 0 && hi-m >= 2147483648) -> {
+        v = err('bigint.to-i64: overflow')
+        return
+    }
+
+    ; 負數下限 -2^63：hi-m > 2^31 出界；hi-m == 2^31 時 lo-m 必須為 0。
+    (.sign < 0 && hi-m > 2147483648) -> {
+        v = err('bigint.to-i64: overflow')
+        return
+    }
+    (.sign < 0 && hi-m == 2147483648 && lo-m != 0) -> {
+        v = err('bigint.to-i64: overflow')
+        return
+    }
+
+    ; 值域已確認落在 i64 內，換算交給 to-str + str.to-i64（兩者都是公開 API，
+    ; 且 str.to-i64 已覆蓋 -2^63 邊界）。不親手組 `(hi-m << 32) | lo-m` 再取負：
+    ; 「`|` 的結果進減法」目前會被誤判成失敗（實測回 err 而不是 -mag）。
+    s = .to-str()
+    v = s.to-i64()
 }
 
 ; ═══════════════════════════════════════════════

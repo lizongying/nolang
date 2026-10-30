@@ -1,0 +1,62 @@
+; mir — MIR 表示（M4-b 骨架；67 op 的最小闭包子集）
+;
+; Authority：src/mir/mir.go（Op enum / Inst / Func / Module）。
+;
+; 表示约定（扁平 arena，遵 §5.3.4.as「结构体不跨模块按值传」）：
+;   一个函数 = 平行数组（ops/dsts/as/bs/syms），同下标成一条指令。
+;   - ops[k]  = OP-*
+;   - dsts[k] = 目标值 id（0 = 无结果）；值 id 1..nargs 是函数参数
+;   - as[k] / bs[k] = 操作数 a / b
+;   - syms[k] = 符号（仅 OP-CALL 用；其余占位 ''，与 ops 等长）
+;   指令按顺序发射（M4-b 单基本块；br/condbr/phi 留 M4-c）。
+
+OP-CONST = 0
+OP-ADD = 1
+OP-SUB = 2
+OP-MUL = 3
+OP-RET = 4
+; OP-CALL：dst = 结果值 id；syms[k] = 被调函数名；
+;   a = 首个参数值 id（连续），bs[k] = 参数个数（0 表示无参调用）。
+;   ⚠️ M4-b 时 a 是「唯一参数」、bs 恒 0；M4-c 起 bs 是【参数个数】，
+;      无参调用必须写 bs=0，单参调用必须写 bs=1（不再是占位）。
+OP-CALL = 5
+OP-ALLOC = 6
+OP-STORE = 7
+OP-LOAD = 8
+; ── 控制流（M4-c 首件）────────────────────────────────────
+; blks[k] 给出每条指令所属的基本块 id（0 = entry）。块切换处发 bb<id>: 标签。
+; 跨块传值用 alloca/store/load（-O0 风格），不引入 PHI（PHI 留后续）。
+OP-BR = 9      ; a = 目标块 id
+OP-CONDBR = 10 ; a = 条件值 id（i64，非零为真）；bs[k] = 真块 id；dsts[k] = 假块 id
+OP-CMPLT = 11  ; dst = (a < b)；发 icmp slt + zext 到 i64
+; ── 字符串（M4-c 非 i64 型别首件）──────────────────────────
+; 字符串值住在独立命名空间 %sv<id>（类型 %str-long）；i64 值住 %v<id>。
+; OP-STRCONST：dst = 字符串值 id；syms[k] = 字面量文本（限可打印 ASCII，无引号/反斜线）。
+;   发射：全局 @.s<k> + getelementptr + insertvalue 构造 %str-long。
+; OP-STRLEN：dst = i64 值 id；a = 字符串值 id。发射 extractvalue %str-long, 0（取 len）。
+; OP-STRCAT：dst = 字符串值 id；a = 左串值 id；bs[k] = 右串值 id。
+;   发射 call %str-long @str_concat(...)；结果在堆上、带 RC 头（rc=1，拥有）。
+OP-STRCONST = 12
+OP-STRLEN = 13
+OP-STRCAT = 14
+; ── 字符串槽（跨基本块保存 %str-long，M4-c 第五件）──────────
+; %str-long 是【值型别】，跨块不能用 SSA 名直接续命（除非 PHI）⇒ 走 alloca。
+; 槽住在独立命名空间 %ss<id>（类型 %str-long*），与 i64 槽 %s<id> 区分。
+; OP-SALLOC：dst = 槽 id。发射 alloca %str-long。
+; OP-SSTORE：a = 字符串值 id；bs[k] = 槽 id。发射 store %str-long %sv<a>, %str-long* %ss<bs>。
+; OP-SLOAD ：dst = 字符串值 id；a = 槽 id。发射 %sv<dst> = load %str-long, %str-long* %ss<a>。
+OP-SALLOC = 15
+OP-SSTORE = 16
+OP-SLOAD = 17
+; ── 向量（M4-c 第六件；%vec = { i64, i64, i64 }，元素目前只有 i64）──────
+; 向量值住在第四个命名空间 %vc<id>（类型 %vec）。
+; OP-VECNEW ：dst = 向量值 id。发 call %vec @vec_new()。
+; OP-VECPUSH：dst = 新向量值 id；a = 旧向量值 id；bs[k] = 被压入的 i64 值 id。
+;             发 call %vec @vec_push_i64(...)（返回新 %vec，**不是**原地改）。
+; OP-VECLEN ：dst = i64 值 id；a = 向量值 id。发 call i64 @vec_len(...)。
+; OP-VECGET ：dst = i64 值 id；a = 向量值 id；bs[k] = 下标 i64 值 id。
+;             发 call i64 @vec_get_i64(...)（下标必须是值 id，不能是立即数）。
+OP-VECNEW = 18
+OP-VECPUSH = 19
+OP-VECLEN = 20
+OP-VECGET = 21

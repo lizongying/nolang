@@ -131,6 +131,7 @@ format-duration = (seconds i64) (out str) {
     rem = 0
     rem-opt: {
         ok -> rem = it
+
         -> rem = 0
     }
 
@@ -140,6 +141,7 @@ format-duration = (seconds i64) (out str) {
     sec = 0
     sec-opt: {
         ok -> sec = it
+
         -> sec = 0
     }
     h-s = h.to-str()
