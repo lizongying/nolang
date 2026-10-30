@@ -1,0 +1,100 @@
+; test/std/blake2.no — crypto/blake2 模組測試
+;
+; 執行：no test test/std/blake2.no
+; 覆蓋：blake2.b（BLAKE2b-512）、blake2.b-256（BLAKE2b-256）、blake2.s（BLAKE2s-256）
+;
+; 測試向量取自 Python hashlib（hashlib.blake2b / blake2s，RFC 7693 參考實作的
+; 公認向量），逐位元組對拍。
+;
+; ⚠️ 為何需要這份測試（2026-10-30）：blake2 過去完全沒有測試，而
+; b-compress/s-compress 的工作向量 `v []u64` 未分配 ⇒ option 下標寫靜默丟失
+; ⇒ 壓縮結果恆等輸入狀態 ⇒ **所有輸入得到同一個雜湊**。因為沒測試，這個
+; 「雜湊退化成常數」的 bug 一直潛伏，直到 argon2 的「換 salt 輸出不變」才暴露。
+; 這裡同時鎖住「不同輸入必須給出不同雜湊」，防止同類退化再發生。
+
+# /test/runner
+
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+
+        #{overflow=wrap}
+        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+    }
+}
+
+seq-bytes = (n i64) (out []byte) {
+    out = with-len(n)
+    i <- [0..n): {
+
+        #{index-out=zero}
+        out[i] = i & 255
+    }
+}
+
+; 空輸入：在函式內局部建（全域零長 vec 傳參會踩到 MIR 已知問題）
+empty-bytes = () (out []byte) {
+    out = with-len(0)
+}
+
+t-b-empty = () {
+    runner.str-eq(bhex(blake2.b(empty-bytes())), '786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce', 128, 'blake2b-512 empty')
+}
+
+t-b-abc = () {
+    runner.str-eq(bhex(blake2.b('abc'.to-bytes())), 'ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923', 128, 'blake2b-512 abc')
+}
+
+; 200 位元組：跨滿區塊（128）+ 尾塊，覆蓋多區塊路徑
+t-b-multiblock = () {
+    runner.str-eq(bhex(blake2.b(seq-bytes(200))), 'fb3c1f0f56a56f8e316fdf5d853c8c872c39635d083634c3904fc3ac07d1b578e85ff0e480e92d44ade33b62e893ee32343e79ddf6ef292e89b582d312502314', 128, 'blake2b-512 200B multiblock')
+}
+
+t-b-256 = () {
+    runner.str-eq(bhex(blake2.b-256('abc'.to-bytes())), 'bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319', 64, 'blake2b-256 abc')
+}
+
+t-s-abc = () {
+    runner.str-eq(bhex(blake2.s('abc'.to-bytes())), '508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982', 64, 'blake2s-256 abc')
+}
+
+t-s-empty = () {
+    runner.str-eq(bhex(blake2.s(empty-bytes())), '69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9', 64, 'blake2s-256 empty')
+}
+
+; 輸入敏感性：不同輸入必須給出不同雜湊（防止「壓縮退化成常數」回歸）
+t-input-sensitive = () {
+    h0 = bhex(blake2.b(empty-bytes()))
+    h1 = bhex(blake2.b('a'.to-bytes()))
+    h2 = bhex(blake2.b('b'.to-bytes()))
+    runner.is-false(h0.eq(h1, 128), 'blake2b differs: empty vs a')
+    runner.is-false(h1.eq(h2, 128), 'blake2b differs: a vs b')
+}
+
+; hex 便利函式與位元組輸出一致
+t-hex-api = () {
+    runner.str-eq(blake2.b-hex('abc'.to-bytes()), 'ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923', 128, 'blake2.b-hex abc')
+    runner.str-eq(blake2.s-hex('abc'.to-bytes()), '508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982', 64, 'blake2.s-hex abc')
+}
+p1 = runner.test('blake2.b-empty', t-b-empty)
+p2 = runner.test('blake2.b-abc', t-b-abc)
+p3 = runner.test('blake2.b-multiblock', t-b-multiblock)
+p4 = runner.test('blake2.b-256', t-b-256)
+p5 = runner.test('blake2.s-abc', t-s-abc)
+p6 = runner.test('blake2.s-empty', t-s-empty)
+p7 = runner.test('blake2.input-sensitive', t-input-sensitive)
+p8 = runner.test('blake2.hex-api', t-hex-api)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

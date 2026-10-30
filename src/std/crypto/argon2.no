@@ -131,7 +131,9 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 
             ; Blake2b 輸出，參數: out_len 作為 salt
             ; 構建輸入: len_bytes || input
-            combined []byte
+            ; combined 必須先分配：4 位元組長度前綴 || input。空 vec 下標寫
+            ; 沒有增長護欄，會越界寫 → SIGSEGV。
+            combined []byte = with-len(4 + input.len())
 
             combined[0]: {
                 ok -> it = len-bytes[0]
@@ -175,7 +177,9 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 
             ; 輸出 > 64 位元組，需要多次 Blake2b
             ; V = Blake2b(len_bytes || input)
-            combined []byte
+            ; combined 必須先分配：4 位元組長度前綴 || input。空 vec 下標寫
+            ; 沒有增長護欄，會越界寫 → SIGSEGV。
+            combined []byte = with-len(4 + input.len())
 
             combined[0]: {
                 ok -> it = len-bytes[0]
@@ -256,7 +260,9 @@ compress = (x []byte, y []byte) (out []byte) {
     out = with-len(1024)
 
     ; R = X XOR Y
-    r []byte
+    ; r 必須先分配 1024 位元組：`r []byte` 是空 vec，下標寫沒有增長護欄，
+    ; 直接 `r[i]: { ok -> it = … }` 是越界寫 → SIGSEGV（compress 崩潰根因）。
+    r []byte = with-len(1024)
     i <- [0..1024): {
 
         #{index-out=zero}
@@ -417,7 +423,10 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     ; 構建 H0 輸入
     ; H0 = Blake2b(p || tau || m || t || v || y || len(P) || P || len(S) || S || len(K) || K || len(X) || X)
-    h0-input []byte
+    ; h0-input 必須先分配：6 個 32-bit 欄位(p/out-len/m/t/v/y) + len(P)||P +
+    ; len(S)||S + len(K) + len(X) = 40 + password.len() + salt.len()。空 vec
+    ; 下標寫會越界 → SIGSEGV（id() 崩潰根因）。
+    h0-input []byte = with-len(40 + password.len() + salt.len())
     pos = 0
 
     ; parallelism (32-bit LE)
@@ -739,12 +748,16 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; ...
 
     ; 記憶體矩陣（簡化為單 lane）
-    mem []byte
+    ; blocks-per-lane 個 1024-byte 區塊。
+    ; 必須預先 with-len 分配：MIR 下對空 vec 按下標寫入沒有增長護欄，
+    ; 未分配就寫會越界 SIGSEGV（2026-10-30 argon2 回歸根因之一）。
+    mem []byte = with-len(blocks-per-lane * 1024)
 
     ; 由於記憶體限制，使用 blocks-per-lane 個 1024-byte 區塊
 
     ; 初始化前兩個區塊
-    init-input []byte
+    ; 72 位元組 = H0(64) || i(32-bit LE) || lane(32-bit LE)
+    init-input []byte = with-len(72)
     i <- [0..64): {
 
         init-input[i]: {
@@ -884,7 +897,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     ; 最終區塊 = XOR 所有 lane 的最後區塊
     ; 簡化（單 lane）：最終區塊 = 最後一個區塊
-    final-block []byte
+    final-block []byte = with-len(1024)
 
     #{overflow=wrap}
     last-idx = blocks-per-lane - 1

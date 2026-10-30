@@ -1,5 +1,13 @@
 # 更新日誌
 
+## Unreleased
+
+- fix(mir): load narrow (byte/u8/i8) stack slots at their allocated width and extend, instead of emitting `load i64` from a 1-byte slot (silent 7-byte over-read made crypto/aes SBOX lookups segfault)
+- fix(mir): choose `trunc` when the destination integer type is narrower than the source slot, fixing invalid `sext i64 to i32` casts
+- fix(std/crypto): allocate the blake2 compression work vector and copy the IV into an owned slice, restoring real compression (hashes were a constant of the input)
+- fix(std/crypto): pre-allocate argon2 buffers before indexed writes instead of writing into unallocated vectors
+- test(std): add blake2 golden-vector tests (BLAKE2b-512/256 and BLAKE2s vs reference vectors) and refresh the MIR golden baseline to 539 entries
+
 ## v0.4.11
 
 - feat(err): restructure error type to `err` with location payload (err.msg/code/file/line/col)

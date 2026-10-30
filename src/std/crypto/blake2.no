@@ -13,7 +13,9 @@
 ; 常量
 ; ═══════════════════════════════════════════════
 
-; BLAKE2b 初始向量（IV）
+; BLAKE2b 初始向量（IV，= SHA-512 IV）。
+; IV[0] = 0x6a09e667f3bcc908 是原始值；參數塊（0x01010000 | out-len）由
+; b()/b-256() 自行在 h[0] 上 XOR，不可把參數塊預先併入 IV。
 BLAKE2B-IV [8]u64 = [7640891576956012808, 13503953896175478587, 4354685564936845355, 11912009170470909681, 5840696475078001361, 11170449401992604703, 2270897969802886507, 6620516959819538809]
 
 ; 排列表（sigma）
@@ -117,7 +119,10 @@ b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 b-compress = (h []u64, block []byte, t u64, last i64) {
 
     ; 初始化工作向量 v[0..15]
-    v []u64
+    ; 必須先 with-len 分配：對未分配（len=0）的 vec 做 option 下標寫會靜默丟失，
+    ; 壓縮結果因而恆等輸入狀態 h ⇒ 雜湊退化成常數、與輸入無關
+    ; （2026-10-30：argon2「換 salt 輸出不變」的真正根因）。
+    v []u64 = with-len(16)
     i <- [0..8): {
 
         #{index-out=zero}
@@ -224,13 +229,45 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
 ; BLAKE2b 公開 API
 ; ═══════════════════════════════════════════════
 
+; b-state: 取一份「可寫」的 BLAKE2b 初始狀態切片
+;
+; ⚠️ MIR 已知限制（2026-10-30）：`h = BLAKE2B-IV[..8)` 這種「陣列切片」
+; 配上 option 形式下標寫 `h[i]: { ok -> it = ... }` 時，寫入會**靜默丟失**
+; （普通寫 `h[i] = ...` 正常）。壓縮函式全程用 option 寫，若直接用陣列切片，
+; h 會恆等 IV、雜湊輸出退化成常數（argon2「換 salt 輸出不變」即由此而來）。
+; 故這裡顯式拷貝到 with-len 切片再交給壓縮函式。
+b-state = () (h []u64) {
+    h = with-len(8)
+    i <- [0..8): {
+
+        #{index-out=zero}
+        h[i]: {
+            ok -> it = BLAKE2B-IV[i]
+            -> _
+        }
+    }
+}
+
+; s-state: 同上，BLAKE2s 版
+s-state = () (h []u64) {
+    h = with-len(8)
+    i <- [0..8): {
+
+        #{index-out=zero}
+        h[i]: {
+            ok -> it = BLAKE2S-IV[i]
+            -> _
+        }
+    }
+}
+
 ; b: 計算 BLAKE2b 雜湊（64 位元組輸出）
 ; data []byte: 輸入資料
 ; 返回 hash [64]byte: 64 位元組雜湊值
 b = (data []byte) (hash [64]byte) {
 
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | out_len
-    h = BLAKE2B-IV[..8)
+    h = b-state()
 
     #{index-out=zero}
     h[0] = (h[0] ^ 16842816) & BLAKE2B-MASK
@@ -316,7 +353,7 @@ b = (data []byte) (hash [64]byte) {
 b-256 = (data []byte) (hash [32]byte) {
 
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | 32
-    h = BLAKE2B-IV[..8)
+    h = b-state()
 
     #{index-out=zero}
     h[0] = (h[0] ^ 16842784) & BLAKE2B-MASK
@@ -519,7 +556,7 @@ s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
 
 ; BLAKE2s 壓縮函數
 s-compress = (h []u32, block []byte, t u32, last i64) {
-    v []u32
+    v []u32 = with-len(16)
     i <- [0..8): {
 
         #{index-out=zero}
@@ -615,7 +652,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
 ; 返回 hash [32]byte: 32 位元組雜湊值
 s = (data []byte) (hash [32]byte) {
 
-    h = BLAKE2S-IV[..8)
+    h = s-state()
 
     #{index-out=zero}
     h[0] = (h[0] ^ 16842784) & BLAKE2S-MASK

@@ -51,6 +51,12 @@ type codegen struct {
 	fname       map[FuncID]string // MIR func id -> llvm function name
 	labelFor    map[BlockID]string
 	valSlot     map[ValueID]string // MIR value -> alloca name
+	// valSlotLT 記錄槽位**實際分配**的 LLVM 型別。它不一定等於值的 ptype：
+	// byte/u8/i8 值會被分配到 1 位元組槽，而 MIR 把整數拉平為 i64。loadVal 必須
+	// 以槽位寬度載入再擴展，否則會從 1 位元組槽發出 `load i64`（opaque pointer
+	// 下 LLVM 不報錯，靜默讀走相鄰棧垃圾）——option 寫入 `x[i]: { ok -> it = T[b] }`
+	// 的 ok 臂即由此取到垃圾索引，crypto/aes 的 SBOX 查表因此越界 SIGSEGV。
+	valSlotLT   map[ValueID]string // MIR value -> alloca llvm type
 	globalSlots map[ValueID]string // module-global ValueID -> "@name" (preserved across functions)
 	globalName  []string           // parallel to mod.Globals: emitted symbol (disambiguated vs functions)
 	paramPtr    map[ValueID]string // MIR param value -> incoming llvm param name
@@ -1058,6 +1064,22 @@ func intWidth(t string) (int, bool) {
 		return 128, true
 	}
 	return 0, false
+}
+
+// intSlotCastOp 選擇「以槽位寬度載入後」轉到目標整數型別的 LLVM 轉換指令。
+// 目標比來源**窄**時只能用 trunc（zext/sext 只允許放大，LLVM 會報
+// "invalid cast opcode"）；目標較寬或等寬時依來源的 nolang 原始型別選
+// zext（無符號 / byte / bool）或 sext。
+func intSlotCastOp(slt, dstLT, raw string) string {
+	if w1, ok1 := intWidth(slt); ok1 {
+		if w2, ok2 := intWidth(dstLT); ok2 && w2 < w1 {
+			return "trunc"
+		}
+	}
+	if raw != "" && !isUnsignedRaw(raw) && raw != "byte" && raw != "bool" {
+		return "sext"
+	}
+	return "zext"
 }
 
 // coerceInt inserts a truncation/extension so that value v (typed fromT) can be
@@ -4830,6 +4852,10 @@ func (c *codegen) emitFunc(f *Function) error {
 			fmt.Fprintf(c.sb, "  store %s zeroinitializer, %s* %s\n", lt, lt, s)
 		}
 		c.valSlot[v] = s
+		if c.valSlotLT == nil {
+			c.valSlotLT = map[ValueID]string{}
+		}
+		c.valSlotLT[v] = lt
 		return s
 	}
 	// By-pointer parameters (owned values, aggregates `[N x T]`, structs /
@@ -5198,6 +5224,21 @@ func (c *codegen) loadVal(v ValueID) (string, string) {
 	// scalar operations — they are only stored/loaded/copied/fielded.
 	if c.shouldUseMemcpy(lt) {
 		return lt, slot
+	}
+	// 窄槽護欄：槽位可能比值的 LLVM 型別**窄**（byte/u8/i8 分配 1 位元組槽，而
+	// MIR 把整數拉平為 i64）。直接發 `load i64, i64* %slot` 在 opaque pointer 下
+	// LLVM 不報錯，卻靜默讀走相鄰棧的 7 個位元組——option 寫入 ok 臂取到的索引
+	// 因此帶高位垃圾，crypto/aes 的 SBOX 查表越界 SIGSEGV（2026-10-30 aes 回歸
+	// 根因）。以槽位寬度載入、再零/符號擴展到值的型別。
+	if slt := c.valSlotLT[v]; slt != "" && slt != lt && isIntType(slt) && isIntType(lt) {
+		c.loadSeq++
+		nr := fmt.Sprintf("%%lvn%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", nr, slt, slt, slot)
+		c.loadSeq++
+		reg := fmt.Sprintf("%%lv%d", c.loadSeq)
+		op := intSlotCastOp(slt, lt, c.rawTypeOfValue(v))
+		fmt.Fprintf(c.sb, "  %s = %s %s %s to %s\n", reg, op, slt, nr, lt)
+		return lt, reg
 	}
 	c.loadSeq++
 	reg := fmt.Sprintf("%%lv%d", c.loadSeq)
@@ -7542,6 +7583,23 @@ func (c *codegen) emitMove(inst *Inst) error {
 				return nil
 			}
 		}
+	}
+	// 窄來源槽（byte/u8/i8）：上面的 i128 分支只擋住「目標比來源寬到 128 位」，
+	// 但同一類讀越界在「來源是 1 位元組槽、目標拉平為 i64」時一樣發生——通用尾聲
+	// 按 dstT 發 `load i64, i64* <i8 slot>`，opaque pointer 下 LLVM 不報錯，靜默
+	// 讀走相鄰棧 7 位元組。option 寫入 ok 臂 `it = T[b]` 的 b 即由此帶高位垃圾，
+	// crypto/aes 的 SBOX 查表越界 SIGSEGV（2026-10-30 aes 回歸根因）。以槽寬 load
+	// 再零/符號擴展到 dstT。
+	if slt := c.valSlotLT[inst.Args[0]]; slt != "" && slt != dstT && isIntType(slt) && isIntType(dstT) {
+		c.loadSeq++
+		nr := fmt.Sprintf("%%mvn%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", nr, slt, slt, srcSlot)
+		op := intSlotCastOp(slt, dstT, c.rawTypeOfValue(inst.Args[0]))
+		c.loadSeq++
+		tmp := fmt.Sprintf("%%mv%d", inst.ID)
+		fmt.Fprintf(c.sb, "  %s = %s %s %s to %s\n", tmp, op, slt, nr, dstT)
+		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstT, tmp, dstT, dstSlot)
+		return nil
 	}
 	// #83 SROA guard: for large aggregate types (user structs like %json_json
 	// at ~22KB, or their containing option/struct types), a `load T, T* src`
