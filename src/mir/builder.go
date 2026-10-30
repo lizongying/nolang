@@ -1,5 +1,10 @@
 package mir
 
+import (
+	"fmt"
+	"os"
+)
+
 // Builder is a fluent constructor for MIR modules. It maintains the "current
 // function" and "current block" and assigns sequential IDs, so callers emit code
 // linearly (with explicit block switches for control flow).
@@ -54,64 +59,21 @@ func (b *Builder) Type(raw string) TypeID {
 	return b.Mod.internType(raw)
 }
 
-// parseArray parses a fixed array type "[N]Elem" and returns (N, Elem, true).
-func parseArray(raw string) (int64, string, bool) {
-	if len(raw) < 3 || raw[0] != '[' {
-		return 0, "", false
-	}
-	end := -1
-	for i := 1; i < len(raw); i++ {
-		if raw[i] == ']' {
-			end = i
-			break
-		}
-	}
-	if end < 0 {
-		return 0, "", false
-	}
-	n := int64(0)
-	for i := 1; i < end; i++ {
-		c := raw[i]
-		if c < '0' || c > '9' {
-			return 0, "", false
-		}
-		n = n*10 + int64(c-'0')
-	}
-	elem := raw[end+1:]
-	if elem == "" {
-		return 0, "", false
-	}
-	return n, elem, true
-}
-
-// parseSliceElem returns the element type of a slice type "[]Elem".
-func parseSliceElem(raw string) (string, bool) {
-	if len(raw) < 3 || raw[0:2] != "[]" {
-		return "", false
-	}
-	elem := raw[2:]
-	if elem == "" {
-		return "", false
-	}
-	return elem, true
-}
-
-// parseOptionElem returns the wrapped type of an option type "?Elem".
-func parseOptionElem(raw string) (string, bool) {
-	if len(raw) < 2 || raw[0] != '?' {
-		return "", false
-	}
-	elem := raw[1:]
-	if elem == "" {
-		return "", false
-	}
-	return elem, true
-}
-
 // TypeExplicit interns a type with explicit kind/owned/elem, bypassing the
 // coarse classifier (used when lowering has precise type information).
+//
+// The raw spelling stays the identity key, so a type that was already interned
+// keeps its first structure. That used to happen SILENTLY even when the caller
+// claimed a different layout kind, which is how a struct-typed value could end
+// up with an integer's layout and only show up as a bogus `undef`/trap much
+// later. A conflict now reports itself: a warning by default, a panic under
+// NOLANG_TY_STRICT=1 (used by the type-system gate so the inconsistency cannot
+// hide in a passing build).
 func (b *Builder) TypeExplicit(raw string, kind TypeKind, owned bool, elem TypeID, sizes ...int64) TypeID {
 	if id, ok := b.Mod.TypeMap[raw]; ok {
+		if ex := b.Mod.Type(id); ex != nil && ex.Kind != kind {
+			b.Mod.reportKindConflict(raw, ex.Kind, kind)
+		}
 		return id
 	}
 	tid := b.newTypeID()
@@ -119,11 +81,31 @@ func (b *Builder) TypeExplicit(raw string, kind TypeKind, owned bool, elem TypeI
 	t.ID = tid
 	t.Raw = raw
 	t.Kind = kind
+	t.T = b.Mod.tyOf(raw)
 	t.Owned = owned
 	t.Elem = elem
 	t.Sizes = sizes
 	b.Mod.TypeMap[raw] = tid
 	return tid
+}
+
+// reportKindConflict surfaces an inconsistency between what a stage claims a
+// type is and what the interned type says. Each (raw, kind) pair is reported
+// once so a hot lowering loop cannot flood stderr.
+func (m *Module) reportKindConflict(raw string, have, want TypeKind) {
+	key := raw + "\x00" + have.String() + "\x00" + want.String()
+	if m.tyWarned == nil {
+		m.tyWarned = map[string]bool{}
+	}
+	if m.tyWarned[key] {
+		return
+	}
+	m.tyWarned[key] = true
+	msg := fmt.Sprintf("mir: type %q is interned as %v but a caller claimed %v", raw, have, want)
+	if os.Getenv("NOLANG_TY_STRICT") == "1" {
+		panic(msg)
+	}
+	fmt.Fprintf(os.Stderr, "nolang: warning: %s\n", msg)
 }
 
 // ---- Functions ----

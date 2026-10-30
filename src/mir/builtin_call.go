@@ -26,6 +26,7 @@ import (
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 // clibLLVMType maps a builtin.LLVMArgType to its LLVM type spelling.
@@ -1941,7 +1942,10 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 	}
 	// Strip option wrapper if needed (mirrors emitGetField).
 	if isOptionType(gfRecvLT) {
-		elem, _ := parseOptionElem(gfRecvRaw)
+		elem := ""
+		if ot := c.mod.tyOf(gfRecvRaw); ot.Kind == ty.Option && ot.Elem != nil {
+			elem = ot.Elem.Raw()
+		}
 		_, payloadLT := c.optionType(elem)
 		innerRaw := elem
 		structKey := c.structKeyOf(innerRaw)
@@ -1961,7 +1965,7 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, payloadLT, payloadLT, pg, idx))
 		return gep, true
 	}
-	gfRecvRaw = strings.TrimPrefix(gfRecvRaw, "?")
+	gfRecvRaw = ty.StripOptionRaw(gfRecvRaw)
 	structKey := c.structKeyOf(gfRecvRaw)
 	if structKey == "" {
 		structKey = gfRecvRaw
@@ -2273,7 +2277,7 @@ func (c *codegen) label(prefix string) string {
 func (c *codegen) elemInfoOfVec(recv ValueID) (elemLL string, stride int64) {
 	raw := c.rawTypeOf(recv)
 	elem := strings.TrimPrefix(raw, "[]")
-	elem = strings.TrimPrefix(elem, "?")
+	elem = ty.StripOptionRaw(elem)
 	switch {
 	case elem == "i8", elem == "u8", elem == "byte", elem == "bool":
 		return "i8", 1
@@ -2669,7 +2673,7 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	// apart. vecDeepClone specialises on T and recurses for nested slices.
 	if elemLL == "%vec" {
 		raw := strings.TrimPrefix(c.rawTypeOf(recv), "[]")
-		raw = strings.TrimPrefix(raw, "?")
+		raw = ty.StripOptionRaw(raw)
 		if et := c.sliceElemTypeOfRaw(raw); et != NoType {
 			if cl := c.vecDeepClone(et, 0); cl != "" {
 				cv := c.treg("ivcv")

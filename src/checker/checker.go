@@ -12,13 +12,14 @@ import (
 	"strings"
 	"sync"
 
-	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
-	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
+	nolang "github.com/lizongying/nolang"
+	pkg "github.com/lizongying/nolang/package"
 )
 
 // identIndexReadOnLine 報告該行是否含「直接變數基底」索引讀取 `base[i]`：base 結尾為
@@ -254,7 +255,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				// typeName 已知但方法定義在 std 模組中（vet 階段尚未 merge），
 				// 無法推斷回傳型別；返回空字串跳過型別檢查，由 LLVM 端驗證
 				// 例外：slice/array/str 的常用方法直接推斷，避免格式字串檢查誤報
-				if strings.HasPrefix(typeName, "[]") || (strings.HasPrefix(typeName, "[") && strings.Contains(typeName, "]")) {
+				if ty.IsContainerRaw(typeName) {
 					switch dot.Property {
 					case "len", "cap", "index", "index-from":
 						return "i64"
@@ -361,7 +362,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 				// on an option value (`opt.field`) resolves against T's fields.
 				// Handles both Nolang-style `?test-conn` and LLVM-style `%test-conn`.
 				unwrapped := typeName
-				if strings.HasPrefix(unwrapped, "?") {
+				if ty.IsOptionRaw(unwrapped) {
 					unwrapped = unwrapped[1:]
 				}
 				unwrapped = strings.TrimPrefix(unwrapped, "%")
@@ -418,7 +419,7 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		// Slicing [N]T returns []T; slicing str returns str
 		if e.Left != nil {
 			leftType := inferExprType(e.Left, varTypes, funcTypes, selfType)
-			if strings.HasPrefix(leftType, "[") {
+			if ty.IsContainerRaw(leftType) {
 				if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
 					return "[]" + leftType[idx+1:]
 				}
@@ -798,7 +799,7 @@ func isStructLenField(t string) bool {
 	if t == "" {
 		return false
 	}
-	unwrapped := strings.TrimPrefix(t, "?")
+	unwrapped := ty.StripOptionRaw(t)
 	unwrapped = strings.TrimPrefix(unwrapped, "%")
 	if fields, ok := validationStructFields[unwrapped]; ok {
 		if _, has := fields["len"]; has {
@@ -1018,12 +1019,12 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 			// declaredResults drops the implicit `self` receiver of methods, so
 			// rs[0] is the real return type (absent for void methods).
 			if rs := declaredResults(fd); len(rs) > 0 && rs[0].Type != nil {
-				funcTypes[fd.Name] = declTypeOf(view, rs[0], rs[0].Type.String())
+				funcTypes[fd.Name] = declTypeOfRaw(view, rs[0], rs[0].Type.String())
 			}
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok {
 			if len(es.Results) > 0 && es.Results[0].Type != nil {
-				funcTypes[es.Name.Value] = declTypeOf(view, es.Results[0], es.Results[0].Type.String())
+				funcTypes[es.Name.Value] = declTypeOfRaw(view, es.Results[0], es.Results[0].Type.String())
 			}
 		}
 	}
@@ -1053,7 +1054,7 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			var paramTypes []string
 			for _, p := range fd.Parameters {
-				paramTypes = append(paramTypes, declTypeOf(view, p, p.Type.String()))
+				paramTypes = append(paramTypes, declTypeOfRaw(view, p, p.Type.String()))
 			}
 			sig := fd.Name + "(" + strings.Join(paramTypes, ", ") + ")"
 			// 使用複合 key：sig + "\x00" + platformKey（無平台註解則 suffix 為空）
@@ -1122,7 +1123,7 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value {
 				if _, exists := topLevelVarTypes[ls.Name.Value]; !exists {
-					topLevelVarTypes[ls.Name.Value] = declTypeOf(view, ls, ls.Type.String())
+					topLevelVarTypes[ls.Name.Value] = declTypeOfRaw(view, ls, ls.Type.String())
 				}
 			}
 		}
@@ -1132,7 +1133,7 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 		selfType := ""
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			if len(fd.Results) > 0 && fd.Results[0].Name == "self" {
-				selfType = declTypeOf(view, fd.Results[0], fd.Results[0].Type.String())
+				selfType = declTypeOfRaw(view, fd.Results[0], fd.Results[0].Type.String())
 			}
 			// 跳過單態化生成的函式（函式名含 '__'），因為這些函式
 			// 由編譯器自動生成，其型別檢查應在泛型模板層面完成。
@@ -1555,32 +1556,32 @@ func walkStatementsForAsync(sem *parser.SemanticContext, stmt parser.Statement, 
 		for _, b := range s.Statements {
 			walkStatementsForAsync(sem, b, file, results)
 		}
-		case *parser.ExpressionStatement:
-			if s.Expression != nil {
-				checkRunAsyncNaming(s.Expression, file, results)
-				if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
-					if ifExpr.Consequence != nil {
-						for _, b := range ifExpr.Consequence.Statements {
-							walkStatementsForAsync(sem, b, file, results)
-						}
-					}
-					if ifExpr.Alternative != nil {
-						for _, b := range ifExpr.Alternative.Statements {
-							walkStatementsForAsync(sem, b, file, results)
-						}
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			checkRunAsyncNaming(s.Expression, file, results)
+			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
+				if ifExpr.Consequence != nil {
+					for _, b := range ifExpr.Consequence.Statements {
+						walkStatementsForAsync(sem, b, file, results)
 					}
 				}
-				// S1：糖形態 match 是 SurfaceMatch；逐臂體下鑽 async 命名檢查。
-				if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
-					for _, arm := range sm.Arms {
-						if arm.Body != nil {
-							for _, b := range arm.Body.Statements {
-								walkStatementsForAsync(sem, b, file, results)
-							}
+				if ifExpr.Alternative != nil {
+					for _, b := range ifExpr.Alternative.Statements {
+						walkStatementsForAsync(sem, b, file, results)
+					}
+				}
+			}
+			// S1：糖形態 match 是 SurfaceMatch；逐臂體下鑽 async 命名檢查。
+			if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
+				for _, arm := range sm.Arms {
+					if arm.Body != nil {
+						for _, b := range arm.Body.Statements {
+							walkStatementsForAsync(sem, b, file, results)
 						}
 					}
 				}
 			}
+		}
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for _, b := range s.Body.Statements {
@@ -2894,12 +2895,12 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 			im := ifaceMethod{Receiver: m.Receiver, Name: m.Name, Token: m.Token}
 			for _, p := range m.Parameters {
 				if p.Type != nil {
-					im.Params = append(im.Params, declTypeOf(view, p, p.Type.String()))
+					im.Params = append(im.Params, declTypeOfRaw(view, p, p.Type.String()))
 				}
 			}
 			for _, r := range m.Results {
 				if r.Type != nil {
-					im.Results = append(im.Results, declTypeOf(view, r, r.Type.String()))
+					im.Results = append(im.Results, declTypeOfRaw(view, r, r.Type.String()))
 				}
 			}
 			methods = append(methods, im)
@@ -2972,12 +2973,12 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 					})
 					continue
 				}
-			for i, p := range implParams {
-				if p.Type == nil {
-					continue
-				}
-				paramType := declTypeOf(view, p, p.Type.String())
-				expected := strings.ReplaceAll(m.Params[i], m.Receiver, implType)
+				for i, p := range implParams {
+					if p.Type == nil {
+						continue
+					}
+					paramType := declTypeOfRaw(view, p, p.Type.String())
+					expected := strings.ReplaceAll(m.Params[i], m.Receiver, implType)
 					if paramType != expected {
 						results = append(results, ValidateResult{
 							TraceID:   "i933a48e",
@@ -3005,7 +3006,7 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 						if r.Type == nil {
 							continue
 						}
-						resType := declTypeOf(view, r, r.Type.String())
+						resType := declTypeOfRaw(view, r, r.Type.String())
 						expected := strings.ReplaceAll(m.Results[i], m.Receiver, implType)
 						if resType != expected {
 							results = append(results, ValidateResult{
@@ -3159,7 +3160,7 @@ func checkRedundantTypeInStmt(sem *parser.SemanticContext, stmt parser.Statement
 				//
 				// 判準沿用 ValidateUnhandledOverflow 的 isDirectOverflowValue
 				// （同一套運算元型別推斷），避免兩處口徑漂移。
-				optionProducing := !strings.HasPrefix(annotatedType, "?") &&
+				optionProducing := !ty.IsOptionRaw(annotatedType) &&
 					(isDirectOverflowValue(s.Value, varTypes, "") || producesOptionIndex(s.Value))
 				if !optionProducing && inferredType != "" && inferredType == annotatedType {
 					results = append(results, ValidateResult{
@@ -3777,7 +3778,7 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 		// `t ?= a - b` 合成為 `__unwrap_N ?i64 = a - b`（見 lowerUnwrapAssign），
 		// 故同一豁免同時覆蓋 `?=` 形式。此處與編譯期檢查 ValidateUnhandledOverflow
 		// 的 declaredOption 豁免保持一致，否則 lint 會誤報、而 `no build` 卻通過。
-		if s.Type != nil && strings.HasPrefix(s.Type.String(), "?") {
+		if s.Type != nil && ty.IsOptionRaw(s.Type.String()) {
 			return
 		}
 		// When s.Type is nil the variable has no explicit annotation in the source
@@ -3789,7 +3790,7 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 		// `a ?T = nil` 預宣告 + ok 臂 `a = b + __cap_1`（後者不帶型別節點），
 		// `a` 由 collectLetsInStmts 以 `?T` 登記，故這裡讀得到。
 		if s.Type == nil && s.Name != nil {
-			if t := declared[s.Name.Value]; strings.HasPrefix(t, "?") {
+			if t := declared[s.Name.Value]; ty.IsOptionRaw(t) {
 				return
 			}
 		}
@@ -3837,13 +3838,13 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 // view 非 nil 時宣告值改讀 THIR 副表（declTypeOf：TypeOf 優先、AST 值兜底），
 // 是 Stage 6C 的來源切換；nil 走 legacy 路徑零行為變化。gate 條件不變
 // （params 僅 NamedType、results 任何型別），TypeOf 在相同 gate 下與原值等價
-//（NamedType.String() ≡ nt.Value，見 thir_stage.go declTypeOf）。
+// （NamedType.String() ≡ nt.Value，見 thir_stage.go declTypeOf）。
 func collectFuncDeclared(fn *parser.FunctionDefinition, funcTypes map[string]string, view *THIRView) map[string]string {
 	types := map[string]string{}
 	for _, p := range fn.FuncSignature.Parameters {
 		if p.Type != nil {
 			if nt, ok := p.Type.(*parser.NamedType); ok {
-				types[p.Name] = declTypeOf(view, p, nt.Value)
+				types[p.Name] = declTypeOfRaw(view, p, nt.Value)
 			}
 		}
 	}
@@ -3854,7 +3855,7 @@ func collectFuncDeclared(fn *parser.FunctionDefinition, funcTypes map[string]str
 	// when the overflow-aware result is being assigned to an already-option target.
 	for _, p := range fn.FuncSignature.Results {
 		if p.Type != nil {
-			types[p.Name] = declTypeOf(view, p, p.Type.String())
+			types[p.Name] = declTypeOfRaw(view, p, p.Type.String())
 		}
 	}
 	if fn.Body != nil {
@@ -3933,7 +3934,7 @@ func registerInferredNonIntLet(s *parser.LetStatement, types map[string]string, 
 	if it == "" || it == s.Name.Value {
 		return
 	}
-	if signedIntTypeNames[it] || unsignedIntTypeNames[it] || strings.HasPrefix(it, "?") || strings.HasPrefix(it, "fn") {
+	if signedIntTypeNames[it] || unsignedIntTypeNames[it] || ty.IsOptionRaw(it) || strings.HasPrefix(it, "fn") {
 		return
 	}
 	if nonIntTypeNames[it] || strings.HasPrefix(it, "f32") || strings.HasPrefix(it, "f64") || strings.HasPrefix(it, "[]") || strings.HasPrefix(it, "[") {
@@ -3950,7 +3951,7 @@ func collectLetsInStmts(stmts []parser.Statement, types map[string]string, funcT
 		case *parser.LetStatement:
 			if s.Name != nil && s.Type != nil {
 				if nt, ok := s.Type.(*parser.NamedType); ok {
-					types[s.Name.Value] = declTypeOf(view, s, nt.Value)
+					types[s.Name.Value] = declTypeOfRaw(view, s, nt.Value)
 				} else {
 					// `?T` 等非具名型別：以字串形式登記（`?i64`），供
 					// walkStmtForOverflow 的 declared-option 豁免判定。lowering 的
@@ -3958,7 +3959,7 @@ func collectLetsInStmts(stmts []parser.Statement, types map[string]string, funcT
 					// （`a = b + __cap_1`）不帶型別節點，只能靠這裡登記的 `?T`
 					// 認出「目標是 option → 溢出已就地捕獲」，否則該賦值會被
 					// 誤報為 ovf-int-default（訊息卻正是推薦這種寫法）。
-					types[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+					types[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 				}
 				continue
 			}
@@ -4034,12 +4035,12 @@ func collectTopLevelLets(program *parser.Program, funcTypes map[string]string, v
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Name != nil && ls.Type != nil {
 				if nt, ok := ls.Type.(*parser.NamedType); ok {
-					types[ls.Name.Value] = declTypeOf(view, ls, nt.Value)
+					types[ls.Name.Value] = declTypeOfRaw(view, ls, nt.Value)
 				} else {
 					// 與 collectLetsInStmts 同：`?T` 以字串形式登記，讓頂層指令稿
 					// 的捕獲賦值（`a = b + c / d` → `a ?T = nil` 預宣告）同樣豁免
 					// ovf-int-default。
-					types[ls.Name.Value] = declTypeOf(view, ls, ls.Type.String())
+					types[ls.Name.Value] = declTypeOfRaw(view, ls, ls.Type.String())
 				}
 				continue
 			}
@@ -4104,7 +4105,7 @@ func runIntOverflowCore(program *parser.Program, view *THIRView) []ValidateResul
 				if sem != nil && fn.Name != "" {
 					for k, v := range sem.FuncVarTypes[fn.Name] {
 						if _, exists := declared[k]; !exists {
-							declared[k] = v
+							declared[k] = v.Raw()
 						}
 					}
 				}
@@ -4244,14 +4245,14 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 			// 節點。少了這一條，臂體內的整數運算對 relevant 完全不可見 ⇒
 			// StatementsWithIntOverflow 漏登 ⇒ `no fmt` 把管轄真實運算的
 			// #{overflow} 註解判成無效並刪除（basic.no 的 `r = 0 - a`）。
-		walkSurfaceMatchChildren(x, nil, func(e parser.Expression) {
-			if exprHasIntOverflow(e, declared, selfType) {
-				found = true
-			}
-		}, func(s parser.Statement) {
-			if stmtHasIntOverflow(s, declared, selfType) {
-				found = true
-			}
+			walkSurfaceMatchChildren(x, nil, func(e parser.Expression) {
+				if exprHasIntOverflow(e, declared, selfType) {
+					found = true
+				}
+			}, func(s parser.Statement) {
+				if stmtHasIntOverflow(s, declared, selfType) {
+					found = true
+				}
 			})
 		}
 		return found
@@ -4823,7 +4824,7 @@ var ovfOptionArithRootOps = map[string]bool{
 // （plain int），不產生 option。
 func signedIntPayloadName(t string) (string, bool) {
 	t = strings.TrimSpace(t)
-	if t == "" || strings.HasPrefix(t, "?") || strings.HasPrefix(t, "&") {
+	if t == "" || ty.IsOptionRaw(t) || ty.IsViewRaw(t) {
 		return "", false
 	}
 	for strings.HasPrefix(t, "*") {
@@ -4954,7 +4955,7 @@ func upgradeOptionArithTargetType(explicitPlain bool, value parser.Expression, t
 	if !explicitPlain || value == nil || targetType == "" {
 		return ""
 	}
-	if strings.HasPrefix(targetType, "?") || strings.HasPrefix(targetType, "&") {
+	if ty.IsOptionRaw(targetType) || ty.IsViewRaw(targetType) {
 		return ""
 	}
 	// 目標必須是整數家族（有號／無號／byte）——option payload 落在整數上，
@@ -5128,7 +5129,7 @@ func functionScopeFacts(body []parser.Statement, results []*parser.Parameter, vi
 		}
 		t := ""
 		if rp.Type != nil {
-			t = declTypeOf(view, rp, rp.Type.String())
+			t = declTypeOfRaw(view, rp, rp.Type.String())
 		}
 		resultTypes[rp.Name] = t
 		read[rp.Name] = true
@@ -5215,16 +5216,16 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			if p == nil || p.Name == "" || p.Type == nil {
 				continue
 			}
-			vt[p.Name] = declTypeOf(view, p, p.Type.String())
+			vt[p.Name] = declTypeOfRaw(view, p, p.Type.String())
 			if isMethod && i == 0 {
-				st = declTypeOf(view, p, p.Type.String())
+				st = declTypeOfRaw(view, p, p.Type.String())
 			}
 		}
 		for _, r := range results {
 			if r == nil || r.Name == "" || r.Type == nil {
 				continue
 			}
-			vt[r.Name] = declTypeOf(view, r, r.Type.String())
+			vt[r.Name] = declTypeOfRaw(view, r, r.Type.String())
 		}
 		return vt, st
 	}
@@ -5329,8 +5330,8 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// tests/type-match.no 27:14 / 28:14 的 ovfhndld）。降糖形態不會誤報
 			// 是因為臂體那時已是 IfExpression 的分支體、走 walkArm；糖形態下
 			// 必須自己補上同一規則，否則兩種形態的口徑就漂移了。
-		walkSurfaceMatchArmBodies(x, varTypes, func(stmts []parser.Statement) {
-			for j, b := range stmts {
+			walkSurfaceMatchArmBodies(x, varTypes, func(stmts []parser.Statement) {
+				for j, b := range stmts {
 					if valueCtx && j == len(stmts)-1 {
 						if _, isExprStmt := b.(*parser.ExpressionStatement); isExprStmt {
 							continue
@@ -5358,7 +5359,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// declaredResults drops the implicit `self` receiver of methods, so
 			// rs[0] is the real return type.
 			if rs := declaredResults(s); len(rs) > 0 && rs[0] != nil && rs[0].Type != nil {
-				if strings.HasPrefix(declTypeOf(view, rs[0], rs[0].Type.String()), "?") {
+				if declaredIsOption(declTypeOf(view, rs[0], rs[0].Type.String())) {
 					fnOpt = true
 				}
 			}
@@ -5378,7 +5379,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// 可能未設此旗標，但 Results[0]=="self" 就是接收者，與 collectFuncDeclared 一致）。
 			if st == "" && len(s.Results) > 0 && s.Results[0] != nil &&
 				s.Results[0].Name == "self" && s.Results[0].Type != nil {
-				st = declTypeOf(view, s.Results[0], s.Results[0].Type.String())
+				st = declTypeOfRaw(view, s.Results[0], s.Results[0].Type.String())
 				vt["self"] = st
 			}
 			if s.Body != nil {
@@ -5397,7 +5398,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			if fl, ok := s.Value.(*parser.FunctionLiteral); ok {
 				fnOpt := false
 				if len(fl.Results) > 0 && fl.Results[0] != nil && fl.Results[0].Type != nil {
-					if strings.HasPrefix(declTypeOf(view, fl.Results[0], fl.Results[0].Type.String()), "?") {
+					if declaredIsOption(declTypeOf(view, fl.Results[0], fl.Results[0].Type.String())) {
 						fnOpt = true
 					}
 				}
@@ -5423,7 +5424,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// 語句能據此判斷運算元型別（如 r str = ... 之後的 r - seg 才會被排除
 			// 為字串拼接而非誤報整數溢出）。
 			if s.Type != nil && s.Name != nil {
-				varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 			} else if s.Type == nil && s.Name != nil && s.Value != nil {
 				// 未標註型別的綁定（`a = 'foo'`）也由初值推斷並登記：否則後續
 				// 陳述中該變數型別「未知」會被保守視為整數，把字串拼接
@@ -5440,7 +5441,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// 求值本身在執行期是安全的（捕獲推斷會讓除零/越界走 option 路徑，不 UB），
 			// 故豁免。這與「裸表達式陳述」（無 `_ =`，下方 ExpressionStatement 分支）
 			// 不同：後者多半是誤寫，仍報錯。
-			declaredOption := s.Type != nil && strings.HasPrefix(declTypeOf(view, s, s.Type.String()), "?")
+			declaredOption := s.Type != nil && declaredIsOption(declTypeOf(view, s, s.Type.String()))
 			// S3 修復後 `x = a + b` 的推斷 ?T 改寫進 Program.Sem.InferredType，
 			// AST `s.Type` 保持 nil——optunuse／ovfhndld 等「宣告為 option」的
 			// 判定若只看 AST 會靜默把這些站點漏報成「未標註的新變數」。補一筆
@@ -5454,7 +5455,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// 的 `q` 是顯式 `?int`，只是 `s.Type == nil`。少了這一條，簽名已宣告的
 			// 結果參數會被當成「未標註的新變數」而多報一次 ovfhndld HINT。
 			if !declaredOption && s.Name != nil {
-				if rt, ok := curResultTypes[s.Name.Value]; ok && strings.HasPrefix(rt, "?") {
+				if rt, ok := curResultTypes[s.Name.Value]; ok && ty.IsOptionRaw(rt) {
 					declaredOption = true
 				}
 			}
@@ -5479,26 +5480,26 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// 靜默丟棄 → ERROR optunuse。此判定不受 fnReturnsOption 影響（回傳 ?T 的
 			// 函式裡 option 同樣不會自動上拋），也不受 effOverflow 影響（D1：註解只改
 			// 失敗時怎麼取值，不解包、也不消費）。
-		// S3-c 行為保持：H0 軌下凍結的捕獲語句（CaptureFactOf(s) 非 nil 且 WasDeclared）
-		// 在 AST 軌會被 maybeCaptureOptionAssign 就地替換成合成捕獲鏈，原語句站點消失、
-		// 不產診斷；此處對同一站點補上豁免，使兩軌診斷一致（見
-		// parser/dump/capture_checker_parity_test.go 的 known-diff 白名單）。用 if-init
-		// 取出 cfCap：CaptureFactOf 對 nil sem/表皆回 nil，安全。WasDeclared 收窄到
-		// 「目標此前已宣告」——全新目標的捕獲，AST 軌由合成預宣告 `x ?T = nil` 在原位置
-		// 報 optunuse，H0 必須保留同一站點才能同鍵（WasDeclared=false 不抑制）。AST 軌下
-		// 被捕獲語句已被替換，checker 永不對其呼叫本處，護欄恆不觸發 ⇒ AST 軌零變化。
-		if cfCap := sem.CaptureFactOf(s); declaredOption && !discarded && s.Name != nil && !curReadNames[s.Name.Value] && (cfCap == nil || !cfCap.WasDeclared) {
-			// D9 place-write 豁免：place-match `a[i]: { ok -> it = v }` 的 ok 臂裡，
-			// `it` 是下標元素位置的綁定。編譯器為它合成 `it ?T = nil` 預宣告，臂內
-			// `it = v` 把值寫回元素位置——寫回即消費，不是「option 綁定後從未消費」。
-			// 故對隱含元素綁定名 `it` 豁免 optunuse。普通值-match 的 `it = matched`
-			// 預宣告型別為 nil（非 ?T），本就不會觸發此分支，本豁免不影響那些路徑。
-			if s.Name.Value == "it" {
-				// 下標寫入的元素位置綁定：寫回即消費，跳過 optunuse。
-			} else {
-				reportOptUnuse(s, s.Name.Value, curFile)
+			// S3-c 行為保持：H0 軌下凍結的捕獲語句（CaptureFactOf(s) 非 nil 且 WasDeclared）
+			// 在 AST 軌會被 maybeCaptureOptionAssign 就地替換成合成捕獲鏈，原語句站點消失、
+			// 不產診斷；此處對同一站點補上豁免，使兩軌診斷一致（見
+			// parser/dump/capture_checker_parity_test.go 的 known-diff 白名單）。用 if-init
+			// 取出 cfCap：CaptureFactOf 對 nil sem/表皆回 nil，安全。WasDeclared 收窄到
+			// 「目標此前已宣告」——全新目標的捕獲，AST 軌由合成預宣告 `x ?T = nil` 在原位置
+			// 報 optunuse，H0 必須保留同一站點才能同鍵（WasDeclared=false 不抑制）。AST 軌下
+			// 被捕獲語句已被替換，checker 永不對其呼叫本處，護欄恆不觸發 ⇒ AST 軌零變化。
+			if cfCap := sem.CaptureFactOf(s); declaredOption && !discarded && s.Name != nil && !curReadNames[s.Name.Value] && (cfCap == nil || !cfCap.WasDeclared) {
+				// D9 place-write 豁免：place-match `a[i]: { ok -> it = v }` 的 ok 臂裡，
+				// `it` 是下標元素位置的綁定。編譯器為它合成 `it ?T = nil` 預宣告，臂內
+				// `it = v` 把值寫回元素位置——寫回即消費，不是「option 綁定後從未消費」。
+				// 故對隱含元素綁定名 `it` 豁免 optunuse。普通值-match 的 `it = matched`
+				// 預宣告型別為 nil（非 ?T），本就不會觸發此分支，本豁免不影響那些路徑。
+				if s.Name.Value == "it" {
+					// 下標寫入的元素位置綁定：寫回即消費，跳過 optunuse。
+				} else {
+					reportOptUnuse(s, s.Name.Value, curFile)
+				}
 			}
-		}
 			if !fnReturnsOption && !effOverflow && !s.IsSynthetic {
 				// !s.IsSynthetic：合成陳述是 lowering 的內部產物（捕獲用的
 				// `__cap_N ?T = expr`、預宣告 `a ?T = nil`），用戶看不到它們，
@@ -5548,7 +5549,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// for 的 init 可能綁定迴圈變數（如 i i64 = 0），登記後續可據此判斷型別。
 			if s.Init != nil {
 				if ls, ok := s.Init.(*parser.LetStatement); ok && ls.Type != nil && ls.Name != nil {
-					varTypes[ls.Name.Value] = declTypeOf(view, ls, ls.Type.String())
+					varTypes[ls.Name.Value] = declTypeOfRaw(view, ls, ls.Type.String())
 				}
 				walkStmt(s.Init, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
 			}
@@ -5731,8 +5732,8 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		lt := ""
 		if sem != nil && sem.IdxLocalTypes != nil {
 			for _, cf := range funcKeys {
-				if t, ok := sem.IdxLocalTypes[cf][ident.Value]; ok && t != "" {
-					lt = strings.TrimPrefix(t, "?")
+				if t, ok := sem.IdxLocalTypeRef(cf, ident.Value); ok && t.Raw() != "" {
+					lt = ty.StripOptionRaw(t.Raw())
 					break
 				}
 			}
@@ -5746,10 +5747,10 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		if name == "" || sem == nil {
 			return false
 		}
-		if t, ok := sem.FuncVarType(curFunc, name); ok && strings.HasPrefix(t, "?") {
+		if t, ok := sem.FuncVarType(curFunc, name); ok && ty.IsOptionRaw(t) {
 			return true
 		}
-		if t, ok := sem.VarType(name); ok && strings.HasPrefix(t, "?") {
+		if t, ok := sem.VarType(name); ok && ty.IsOptionRaw(t) {
 			return true
 		}
 		return false
@@ -5852,7 +5853,7 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			// declaredResults drops the implicit `self` receiver of methods, so
 			// rs[0] is the real return type.
 			if rs := declaredResults(s); len(rs) > 0 && rs[0] != nil && rs[0].Type != nil {
-				if strings.HasPrefix(declTypeOf(view, rs[0], rs[0].Type.String()), "?") {
+				if declaredIsOption(declTypeOf(view, rs[0], rs[0].Type.String())) {
 					fnOpt = true
 				}
 			}
@@ -5885,15 +5886,15 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 					// （producesOptionIndex）是同一件事的兩面。
 					letType := ""
 					if s.Type != nil {
-						letType = declTypeOf(view, s, s.Type.String())
+						letType = declTypeOfRaw(view, s, s.Type.String())
 					}
-					plainDeclared := s.Type != nil && !strings.HasPrefix(letType, "?")
+					plainDeclared := s.Type != nil && !ty.IsOptionRaw(letType)
 					// S3：lowering 把 `a = arr[i]` 的 ?elem 推斷寫入 Program.Sem.
 					// InferredType（synthesizeNullableType）。AST 上 s.Type 為空，
 					// 與「顯式 ?T」走同一條豁免（目標本身就是 option，越界 option
 					// 已被接納，不需要另報 idxhndld）。
 					inferredOption := sem != nil && sem.HasInferredType(s)
-					if isSafeBase(curFunc, idx) && !discarded && !annotated && !plainDeclared && !(s.Type != nil && strings.HasPrefix(letType, "?")) && !inferredOption {
+					if isSafeBase(curFunc, idx) && !discarded && !annotated && !plainDeclared && !(s.Type != nil && ty.IsOptionRaw(letType)) && !inferredOption {
 						cf := program.Sem.SourceFileOf(s)
 						if cf == "" {
 							cf = curFile
@@ -5991,8 +5992,8 @@ const IndexWriteTraceID = indexWriteTraceID
 // 因此下標寫入必須先顯式解包，二選一：
 //  1. place-match（多行；ok 臂的 `it` 綁定元素**位置**，可讀可寫）：
 //     a[i]: {
-//         ok -> it = v
-//         -> _
+//     ok -> it = v
+//     -> _
 //     } —— 越界臂由用戶自選行為；
 //  2. 錯誤上拋：`a[i] ?= v` —— 越界時上拋 nil（要求所在函數有 option 結果參數）。
 //
@@ -6004,6 +6005,7 @@ const IndexWriteTraceID = indexWriteTraceID
 //     map 再判容器**；
 //   - 只認直接變數基底（`*parser.Identifier`）：struct-field 基底
 //     （`self.keys[i] = v`）是 wave 1 豁免區，其讀側本就走 legacy 非 option 路徑。
+//
 // 旧版入口（view=nil）；THIR 侧变体见 ValidateIndexWriteTHIR。
 func ValidateIndexWrite(program *parser.Program, mainFile string) []ValidateResult {
 	return runIndexWriteCore(program, mainFile, nil)
@@ -6036,6 +6038,7 @@ func isWithCapCall(e parser.Expression) bool {
 // checker 建議的兩種替代形體對 len=0 緩衝都會靜默產出空字串——
 //   - place-match `buf[i]: { ok -> it = v / -> _ }`：讀取 i 越界為 nil，ok 臂永不執行；
 //   - `buf.set-byte(i, v)`：只寫既有 in-bounds 槽位，不增長長度。
+//
 // 因此「以 with-cap 建立、再用直接下標寫入增長」是這個慣例唯一能正確執行的寫法，
 // idxwrite 不得對其報錯。本集合讓 ValidateIndexWrite 精確豁免這類基底：只有确实
 // 由 with-cap 構造過的變數才豁免；以字面量陣列 / 固定陣列 / 切片建立的基底仍照報，
@@ -6216,8 +6219,8 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		}
 		if sem != nil && sem.IdxLocalTypes != nil {
 			for _, cf := range funcKeys {
-				if t, ok := sem.IdxLocalTypes[cf][ident.Value]; ok && t != "" {
-					return strings.TrimPrefix(t, "?")
+				if t, ok := sem.IdxLocalTypeRef(cf, ident.Value); ok && t.Raw() != "" {
+					return ty.StripOptionRaw(t.Raw())
 				}
 			}
 		}
@@ -6322,9 +6325,9 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 						if isContainerWriteBase(curFunc, idx) {
 							tgt := parser.ExprToString(ae.Left)
 							val := parser.ExprToString(ae.Value)
-						// 本语言 match 臂以换行分隔；`,` 與 `;` 均非臂分隔符，且 `;` 是注释
-						// token。逗號形式 `{ ok -> it = v, -> _ }` 複製後被 parseExpression 的 default
-						// 分支靜默吞掉、產生畸形臂（`-> _` 通配臂丟失），故推薦多行形式。
+							// 本语言 match 臂以换行分隔；`,` 與 `;` 均非臂分隔符，且 `;` 是注释
+							// token。逗號形式 `{ ok -> it = v, -> _ }` 複製後被 parseExpression 的 default
+							// 分支靜默吞掉、產生畸形臂（`-> _` 通配臂丟失），故推薦多行形式。
 							msg := fmt.Sprintf("不能通过下标直接赋值 `%s = %s`：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。正确写法（二选一）：\n  1) place-match：ok 臂的 it 是元素位置，可读可写\n     %s: {\n         ok -> it = %s\n         -> _\n     }\n  2) 错误上抛（要求所在函数有 option 结果参数）：`%s ?= %s`",
 								tgt, val, tgt, val, tgt, val)
 							report(idx, resolveFile(program.Sem.SourceFileOf(s), curFile), msg, s.EndPos().Column)
@@ -6341,8 +6344,8 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 				if idx, ok := t.(*parser.IndexExpression); ok {
 					if isContainerWriteBase(curFunc, idx) {
 						tgt := parser.ExprToString(idx)
-					msg := fmt.Sprintf("多赋值中的下标写入目标 `%s` 未经解包：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。请把该目标拆出为 place-match（ok 臂的 it 是元素位置，可读可写），或改用 `?=` 在 option 结果函数中上抛。",
-						tgt)
+						msg := fmt.Sprintf("多赋值中的下标写入目标 `%s` 未经解包：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。请把该目标拆出为 place-match（ok 臂的 it 是元素位置，可读可写），或改用 `?=` 在 option 结果函数中上抛。",
+							tgt)
 						report(idx, resolveFile(program.Sem.SourceFileOf(s), curFile), msg, s.EndPos().Column)
 					}
 				}
@@ -6479,7 +6482,7 @@ func checkStringConcatInExpr(view *THIRView, expr parser.Expression, file string
 // isStrConcatOperand 報告運算元是否確定為字串型別（str / txt 家族）。
 //
 // 用途：StringConcat 的**型別精化補報**——`str_var + str_var` 是字串拼接
-//（Nolang 用 `-` 拼接、`+` 不該用於 str），先前只認 StringLiteral 一侧而漏報。
+// （Nolang 用 `-` 拼接、`+` 不該用於 str），先前只認 StringLiteral 一侧而漏報。
 // 判據走 THIRView.TypeOf（表達式級型別表，同 isFloatArithOperand）。
 //
 // 保守口徑：view 為 nil 或型別未知（回 ""）時返回 false → 不補報，維持舊版
@@ -6524,6 +6527,7 @@ func isStrConcatOperand(view *THIRView, e parser.Expression) bool {
 //     行号都以 1 为基准相互重叠，行号→文件单映射会误判，故一律走节点级判定。
 //   - 与 build/llvm/strchar_at.go 的 collectAsciiVars 证明规则保持一致，使告警与实际
 //     生成的 O(1)/O(n) 路径一致：可证明 ASCII 时 s[i] 为 O(1)，不告警。
+//
 // 旧版入口（view=nil）；THIR 侧变体见 ValidateStrIndexComplexityTHIR。
 func ValidateStrIndexComplexity(program *parser.Program) []ValidateResult {
 	return runStrIndexCore(program, nil)
@@ -6617,11 +6621,11 @@ func collectStrIndexTypes(stmts []parser.Statement, sem *parser.SemanticContext,
 		case *parser.FunctionDefinition:
 			scope := ensureScope(st.Name)
 			for _, p := range st.FuncSignature.Parameters {
-				scope[p.Name] = declTypeOf(view, p, typeNodeString(p.Type))
+				scope[p.Name] = declTypeOfRaw(view, p, typeNodeString(p.Type))
 			}
 			// declaredResults drops the implicit `self` receiver of methods.
 			if rs := declaredResults(st); len(rs) > 0 {
-				funcReturns[st.Name] = declTypeOf(view, rs[0], typeNodeString(rs[0].Type))
+				funcReturns[st.Name] = declTypeOfRaw(view, rs[0], typeNodeString(rs[0].Type))
 			}
 			if st.Body != nil {
 				collectStrIndexTypes(st.Body.Statements, sem, st.Name, scopeTypes, funcReturns, asciiVars, view)
@@ -6641,7 +6645,7 @@ func collectStrIndexTypes(stmts []parser.Statement, sem *parser.SemanticContext,
 // （字面量、标识符传播、调用回传）保持 AST 来源——影子期禁换源。
 func exprTypeString(node parser.Node, typ parser.Type, val parser.Expression, scopeTypes map[string]map[string]string, funcName string, funcReturns map[string]string, view *THIRView) string {
 	if typ != nil {
-		return declTypeOf(view, node, typeNodeString(typ))
+		return declTypeOfRaw(view, node, typeNodeString(typ))
 	}
 	switch v := val.(type) {
 	case *parser.StringLiteral:
@@ -7845,7 +7849,7 @@ func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
 	// （runtime 對 option 會自動解包後格式化），因此以內層型別判斷相容性。
 	// 例如 `tvx = vx[0]`（vx 為 []f64，索引回傳 ?f64）搭配 `{tvx:.17g}` 的 'g'
 	// 規格，其內層 f64 属浮點，應視為相容。
-	baseType := strings.TrimPrefix(varType, "?")
+	baseType := ty.StripOptionRaw(varType)
 	switch typeChar {
 	case 'b', 'c', 'd', 'o', 'p', 'x', 'X':
 		// 整數類型（p = 指針地址，亦為整數）
@@ -8294,31 +8298,31 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 			if strings.HasPrefix(e.Value, "_") || isAllCapsConst(e.Value) {
 				return nil
 			}
-		// Option constructors: val, err, ok are not real functions
-		// nil/it are option-pattern keywords and match-binding variables
-		if e.Value == "val" || e.Value == "err" || e.Value == "ok" ||
-			e.Value == "nil" || e.Value == "it" {
-			return nil
-		}
-		// S1：糖形態 match 的**裸型別臂**（`i64 ->` / `point ->`）在語法期只是
-		// 一個 Identifier 條件——parser/expr.go:1161-1180 對這種形态不做型別臂
-		// 标记（IsTypeArm 只在 1152-1158 的「v T ->」帶綁定形态設置），型別臂的
-		// 認定延後到 lowering 的 buildTypeMatchDesugar（lowering.go:2335-2336 按
-		// Identifier 條件取型別名）。翻轉前這些識別字在降糖後消失（型別臂變成
-		// IsTypeMatch 的 if 鏈、Condition 為 nil），校驗器看不見；翻轉後
-		// SurfaceMatch 活到校驗期，臂條件被當成值表達式走訪 ⇒ 每個裸型別臂都
-		// 報「'i32' is not defined」（4bek3xc6）。型別名不是值，一律放行：
-		//   - 内建型別名（i64/f64/str/bool/char/…）；char 不在 isBuiltinType
-		//     裡但確實是型別（checker.go:93 CharLiteral → "char"）。
-		//   - struct 名（CollectDefinedVars 刻意不把型別名當變數收集，見
-		//     2093-2097 的註解；union 別名則已由 CollectDefinedVars:1856-1858
-		//     收進 definedVars，無需在此重複）。
-		// 為什麽 i64 在翻轉後「僥倖」通過、i32 卻暴露：std 有點號導出
-		// （如 X.i64）会把短名註冊進 definedVars（1926-1938），i32 沒有這條
-		// 導出路線，于是同形态兩樣結果。放行型別名讓兩者一致。
-		if isBuiltinType(e.Value) || e.Value == "char" || validationStructNames[e.Value] {
-			return nil
-		}
+			// Option constructors: val, err, ok are not real functions
+			// nil/it are option-pattern keywords and match-binding variables
+			if e.Value == "val" || e.Value == "err" || e.Value == "ok" ||
+				e.Value == "nil" || e.Value == "it" {
+				return nil
+			}
+			// S1：糖形態 match 的**裸型別臂**（`i64 ->` / `point ->`）在語法期只是
+			// 一個 Identifier 條件——parser/expr.go:1161-1180 對這種形态不做型別臂
+			// 标记（IsTypeArm 只在 1152-1158 的「v T ->」帶綁定形态設置），型別臂的
+			// 認定延後到 lowering 的 buildTypeMatchDesugar（lowering.go:2335-2336 按
+			// Identifier 條件取型別名）。翻轉前這些識別字在降糖後消失（型別臂變成
+			// IsTypeMatch 的 if 鏈、Condition 為 nil），校驗器看不見；翻轉後
+			// SurfaceMatch 活到校驗期，臂條件被當成值表達式走訪 ⇒ 每個裸型別臂都
+			// 報「'i32' is not defined」（4bek3xc6）。型別名不是值，一律放行：
+			//   - 内建型別名（i64/f64/str/bool/char/…）；char 不在 isBuiltinType
+			//     裡但確實是型別（checker.go:93 CharLiteral → "char"）。
+			//   - struct 名（CollectDefinedVars 刻意不把型別名當變數收集，見
+			//     2093-2097 的註解；union 別名則已由 CollectDefinedVars:1856-1858
+			//     收進 definedVars，無需在此重複）。
+			// 為什麽 i64 在翻轉後「僥倖」通過、i32 卻暴露：std 有點號導出
+			// （如 X.i64）会把短名註冊進 definedVars（1926-1938），i32 沒有這條
+			// 導出路線，于是同形态兩樣結果。放行型別名讓兩者一致。
+			if isBuiltinType(e.Value) || e.Value == "char" || validationStructNames[e.Value] {
+				return nil
+			}
 			// Self-module bare call: a std module calling its OWN function
 			// (e.g. math.no calling f64-to-i64, net.no calling net-recv) is
 			// legal — the module-qualification rule only constrains CROSS-module
@@ -8582,10 +8586,10 @@ func overflowModeFromSem(sem *parser.SemanticContext, n parser.Node) string {
 // though the type strings differ — this is exactly the rule that makes
 // `json.get = (key str) (child ?&json) { child = self ... }` compile.
 func isViewBorrow(dst, src string) bool {
-	if !strings.HasPrefix(dst, "&") && !strings.HasPrefix(dst, "?&") {
+	if !ty.IsViewRaw(dst) && !strings.HasPrefix(dst, "?&") {
 		return false
 	}
-	inner := strings.TrimPrefix(strings.TrimPrefix(dst, "?"), "&")
+	inner := ty.StripViewRaw(ty.StripOptionRaw(dst))
 	return typeNamesEquivalent(src, inner)
 }
 
@@ -8611,8 +8615,8 @@ func ValidateViewTypes(program *parser.Program) []ValidateResult {
 		if t == nil {
 			return ""
 		}
-		raw := strings.TrimPrefix(t.String(), "?")
-		if !strings.HasPrefix(raw, "&") {
+		raw := ty.StripOptionRaw(t.String())
+		if !ty.IsViewRaw(raw) {
 			return ""
 		}
 		return raw
@@ -8673,7 +8677,7 @@ func ValidateViewTypes(program *parser.Program) []ValidateResult {
 				add(p, "view type "+raw+" is only allowed in a method's result list (a borrow has no lifetime outside a receiver)")
 				continue
 			}
-			if strings.TrimPrefix(raw, "&") != recvType {
+			if ty.StripViewRaw(raw) != recvType {
 				p := r.Pos()
 				add(p, "view result "+raw+" must borrow the receiver type ("+recvType+")")
 			}
@@ -8918,7 +8922,7 @@ func typeNamesEquivalent(a, b string) bool {
 // optionTypesCompatible 判斷兩個 option 型別（?T / ?U）是否可互相賦值：
 // 內部型別相同（容許模組限定名差異）或皆為整數型別（允許窄化）。
 func optionTypesCompatible(inferred, existing string) bool {
-	if !strings.HasPrefix(inferred, "?") || !strings.HasPrefix(existing, "?") {
+	if !ty.IsOptionRaw(inferred) || !ty.IsOptionRaw(existing) {
 		return false
 	}
 	it := inferred[1:]
@@ -8950,7 +8954,7 @@ func optionTypesCompatible(inferred, existing string) bool {
 //
 // 本函式讓賦值路徑與引數路徑口徑一致（`?T = ?T` 是拷貝，不算解包，仍放行）。
 func optionImplicitUnwrapRejected(targetType, valueType string) bool {
-	return strings.HasPrefix(valueType, "?") && !strings.HasPrefix(targetType, "?")
+	return ty.IsOptionRaw(valueType) && !ty.IsOptionRaw(targetType)
 }
 
 // optionUnwrapRecipe 統一產出「怎麼解包一個 option」的建議文字。
@@ -8978,7 +8982,7 @@ func optionUnwrapRecipe(name string) string {
 // 把結果拉回 plain —— 那正是 D1 嚴格模式要禁止的隱含解包，已刪除。`#{overflow=...}`
 // 註解只改變「失敗時怎麼取值」，結果仍是 `?T`。
 func optionUnwrapAssignHint(valueType string) string {
-	inner := strings.TrimPrefix(valueType, "?")
+	inner := ty.StripOptionRaw(valueType)
 	return "；option 不能隐式解包（这只是拷贝，失败分支会被丢弃）。" + optionUnwrapRecipe("k") +
 		"。若本意是回绕/钳位，`#{overflow = wrap` 只改变溢出时的取值，结果仍是 `?" + inner + "`，仍须解包。"
 }
@@ -9052,19 +9056,19 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		// 參數加入作用域
 		for _, p := range s.Parameters {
 			if p.Type != nil {
-				localTypes[p.Name] = declTypeOf(view, p, p.Type.String())
+				localTypes[p.Name] = declTypeOfRaw(view, p, p.Type.String())
 			}
 		}
 		// 結果參數加入作用域
 		for _, p := range s.Results {
 			if p.Type != nil {
-				localTypes[p.Name] = declTypeOf(view, p, p.Type.String())
+				localTypes[p.Name] = declTypeOfRaw(view, p, p.Type.String())
 			}
 		}
 		// 進入方法體時，更新 selfType
 		methodSelfType := selfType
 		if len(s.Results) > 0 && s.Results[0].Name == "self" {
-			methodSelfType = declTypeOf(view, s.Results[0], s.Results[0].Type.String())
+			methodSelfType = declTypeOfRaw(view, s.Results[0], s.Results[0].Type.String())
 		}
 		// 建立局部 funcNames 副本，排除當前函式的參數和輸出參數名，
 		// 避免與全域函式同名時（如 io.out）對輸出參數賦值被誤報為
@@ -9096,7 +9100,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		if s.IsSynthetic {
 			// Still record its declared type so later synthetic references can resolve it
 			if s.Type != nil && s.Type.String() != "" {
-				varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 			} else if s.Name != nil && s.Name.Value == "it" {
 				// Untyped shared `it` binding（ok/wildcard 臂在 parse 期無法確定
 				// matched 型別時不帶 Type 標注）。清掉前一個 arm 的 typed binding
@@ -9147,12 +9151,12 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					})
 				}
 				// 記錄型別
-				varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 				break
 			}
 			// 無顯式型別，檢查是否已有型別
 			if existingType, exists := varTypes[s.Name.Value]; exists {
-				if existingType != "" && !strings.HasPrefix(existingType, "?") {
+				if existingType != "" && !ty.IsOptionRaw(existingType) {
 					results = append(results, ValidateResult{
 						TraceID: "p2epl19k",
 						Line:    s.Token.Line,
@@ -9176,7 +9180,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
 			// 只有新變數才記錄顯式型別；已存在的變數（如函式結果參數）不覆寫
 			if _, exists := varTypes[s.Name.Value]; !exists {
-				varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 			}
 		}
 		if s.Value != nil {
@@ -9205,20 +9209,20 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// 之後重指派」（`x i64 = 0; x = a + b`）與結果參數重綁定則被
 			// captureTargetAllowsOption 的「已存在變數不改型別」否決合成，是自洽的
 			// plain，刻意不報（見 upgradeOptionArithTargetType 的鏡像表）。
-		if s.Name != nil && hasRealTypeAnnotation(s) {
-			if up := upgradeOptionArithTargetType(true, s.Value, declTypeOf(view, s, s.Type.String()), varTypes, selfType); up != "" {
-				inferredType = up
-			} else if up := optionResultOfCallTarget(s.Value, varTypes, selfType); up != "" {
-				// 目標是 plain 才算靜默解包開關：`?T` / `&T` 目標本來就是
-				// option / 借用，由 optionTypesCompatible 與 isViewBorrow 管。
-				// （`k i64 = a + b` 與 `b i64 = s.byte(0)` 在這裡匯合到同一條
-				// 15w45dqk：明文標註不是把 option 拉回 plain 的開關。）
-				tt := declTypeOf(view, s, s.Type.String())
-				if !strings.HasPrefix(tt, "?") && !strings.HasPrefix(tt, "&") {
+			if s.Name != nil && hasRealTypeAnnotation(s) {
+				if up := upgradeOptionArithTargetType(true, s.Value, declTypeOfRaw(view, s, s.Type.String()), varTypes, selfType); up != "" {
 					inferredType = up
+				} else if up := optionResultOfCallTarget(s.Value, varTypes, selfType); up != "" {
+					// 目標是 plain 才算靜默解包開關：`?T` / `&T` 目標本來就是
+					// option / 借用，由 optionTypesCompatible 與 isViewBorrow 管。
+					// （`k i64 = a + b` 與 `b i64 = s.byte(0)` 在這裡匯合到同一條
+					// 15w45dqk：明文標註不是把 option 拉回 plain 的開關。）
+					tt := declTypeOfRaw(view, s, s.Type.String())
+					if !ty.IsOptionRaw(tt) && !ty.IsViewRaw(tt) {
+						inferredType = up
+					}
 				}
 			}
-		}
 			// `err` 是變體標記，不是真型別：match 的 `err ->` 臂會為隱式綁定 `it`
 			// 合成一條 `let it t=err`。err 載荷是 `option { ..., err(e X) }`
 			// 宣告的那個型別——歷史上是 str（統一佈局後標量 option 也真的存得下
@@ -9273,7 +9277,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					// 集合字面量 (ArrayLiteral/SliceLiteral) 可初始化陣列變數，跳過型別不匹配檢查
 					_, isSlice := s.Value.(*parser.SliceLiteral)
 					_, isArrayLit := s.Value.(*parser.ArrayLiteral)
-					isArrayAssign := (isSlice || isArrayLit) && strings.HasPrefix(existingType, "[")
+					isArrayAssign := (isSlice || isArrayLit) && ty.IsContainerRaw(existingType)
 					// Per-element type checking for array/slice literals:
 					// Instead of only skipping the overall type check, verify each
 					// element is compatible with the declared element type.
@@ -9304,14 +9308,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					// 注意：val(x) 已廢棄作為構造器，應改用 ok(x)；隱式賦值請用 val = n
 					isOptionCtor := false
 					if _, isNil := s.Value.(*parser.NilLiteral); isNil {
-						if strings.HasPrefix(existingType, "?") {
+						if ty.IsOptionRaw(existingType) {
 							isOptionCtor = true
 						}
 					}
 					if call, ok := s.Value.(*parser.CallExpression); ok {
 						if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
 							if cid.Value == "err" || cid.Value == "ok" {
-								if strings.HasPrefix(existingType, "?") {
+								if ty.IsOptionRaw(existingType) {
 									isOptionCtor = true
 								}
 							}
@@ -9329,7 +9333,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						}
 					}
 					// 隱式值賦值：val = n 可直接賦值給 ?T 變數（tag 自動設為 0）
-					if strings.HasPrefix(existingType, "?") && !isOptionCtor {
+					if ty.IsOptionRaw(existingType) && !isOptionCtor {
 						// 檢查推斷型別是否與 Option 內部型別相符
 						innerType := existingType[1:]
 						if inferredType == innerType || isArgTypeCompatible(innerType, inferredType, s.Value) {
@@ -9430,11 +9434,11 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		}
 		// S1：糖形態 match 是 SurfaceMatch；逐臂體做型別校驗（臂條件不檢查 val() 構造器，同 if 分支）。
 		if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
-		mt := ""
-		if id, ok := sm.Matched.(*parser.Identifier); ok {
-			mt = varTypes[id.Value]
-		}
-		for _, arm := range sm.Arms {
+			mt := ""
+			if id, ok := sm.Matched.(*parser.Identifier); ok {
+				mt = varTypes[id.Value]
+			}
+			for _, arm := range sm.Arms {
 				for _, b := range matchArmBindings(sm, &arm, mt) {
 					if b.Name != "" {
 						varTypes[b.Name] = b.Type
@@ -9480,7 +9484,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				if _, isNil := assign.Value.(*parser.NilLiteral); isNil {
 					isNilAssign = true
 					if existingType, exists := varTypes[ident.Value]; exists {
-						if !strings.HasPrefix(existingType, "?") {
+						if !ty.IsOptionRaw(existingType) {
 							results = append(results, ValidateResult{
 								TraceID: "b6fjj9ka",
 								Line:    ident.Token.Line,
@@ -9523,7 +9527,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						if call, ok := assign.Value.(*parser.CallExpression); ok {
 							if cid, ok2 := call.Function.(*parser.Identifier); ok2 {
 								if cid.Value == "err" || cid.Value == "ok" {
-									if strings.HasPrefix(existingType, "?") {
+									if ty.IsOptionRaw(existingType) {
 										isOptionCtor = true
 									}
 								}
@@ -9548,7 +9552,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							// Check if this is an array/slice literal assignment to a typed array variable
 							_, isSlice := assign.Value.(*parser.SliceLiteral)
 							_, isArrayLit := assign.Value.(*parser.ArrayLiteral)
-							isArrayAssign := (isSlice || isArrayLit) && strings.HasPrefix(existingType, "[")
+							isArrayAssign := (isSlice || isArrayLit) && ty.IsContainerRaw(existingType)
 							if isArrayAssign {
 								elemType := extractArrayElemType(existingType)
 								if elemType != "" {
@@ -9573,8 +9577,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								}
 							} else {
 								msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType))
-								if subDefaultOpt && !strings.HasPrefix(existingType, "?") {
-									msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", strings.TrimPrefix(valType, "?"), ident.Value, existingType, ident.Value, strings.TrimPrefix(valType, "?"))
+								if subDefaultOpt && !ty.IsOptionRaw(existingType) {
+									msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", ty.StripOptionRaw(valType), ident.Value, existingType, ident.Value, ty.StripOptionRaw(valType))
 								} else if optionImplicitUnwrapRejected(existingType, valType) {
 									msg += optionUnwrapAssignHint(valType)
 								}
@@ -10345,12 +10349,12 @@ func checkLHSInferredInStmt(stmt parser.Statement, varTypes map[string]string, v
 		}
 		for _, p := range s.Parameters {
 			if p.Type != nil {
-				localTypes[p.Name] = declTypeOf(view, p, p.Type.String())
+				localTypes[p.Name] = declTypeOfRaw(view, p, p.Type.String())
 			}
 		}
 		for _, r := range s.Results {
 			if r.Name != "" && r.Type != nil {
-				localTypes[r.Name] = declTypeOf(view, r, r.Type.String())
+				localTypes[r.Name] = declTypeOfRaw(view, r, r.Type.String())
 			}
 		}
 		if s.Body != nil {
@@ -10369,7 +10373,7 @@ func checkLHSInferredInStmt(stmt parser.Statement, varTypes map[string]string, v
 		// Record explicit type annotation
 		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
 			if _, exists := varTypes[s.Name.Value]; !exists {
-				varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 			}
 		}
 		if s.Value != nil {
@@ -11244,7 +11248,7 @@ func resolveSelfInExpr(expr parser.Expression, selfType string, structFields map
 						builtin.FindBuiltinMethod(selfType+"."+dot.Property) != nil {
 						isBuiltinMethodOnBuiltinType = true
 					}
-				} else if strings.HasPrefix(selfType, "[") {
+				} else if ty.IsContainerRaw(selfType) {
 					if builtin.FindBuiltinMethod("arr."+dot.Property) != nil ||
 						builtin.FindBuiltinMethod(selfType+"."+dot.Property) != nil {
 						isBuiltinMethodOnBuiltinType = true
@@ -11290,7 +11294,7 @@ func resolveSelfInExpr(expr parser.Expression, selfType string, structFields map
 									builtin.FindBuiltinMethod(fieldType+"."+dot.Property) != nil {
 									isBuiltinMethod = true
 								}
-							} else if strings.HasPrefix(fieldType, "[") {
+							} else if ty.IsContainerRaw(fieldType) {
 								if builtin.FindBuiltinMethod("arr."+dot.Property) != nil ||
 									builtin.FindBuiltinMethod(fieldType+"."+dot.Property) != nil {
 									isBuiltinMethod = true
@@ -11884,5 +11888,5 @@ func isOptionResultType(t parser.Type) bool {
 	if _, ok := t.(*parser.NullableType); ok {
 		return true
 	}
-	return strings.HasPrefix(t.String(), "?")
+	return ty.IsOptionRaw(t.String())
 }

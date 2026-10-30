@@ -61,6 +61,7 @@ import (
 
 	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 // THIRView couples the AST→HIR id map produced by parser.ASTToHIRWithMap with
@@ -76,7 +77,7 @@ type THIRView struct {
 	// 见 thir_exprtypes.go 文件头注释（为什么不写 pkg.Inferred / 时序桥接）。
 	prog      *parser.Program
 	exprOnce  sync.Once
-	exprTypes map[parser.Node]string
+	exprTypes map[parser.Node]*ty.Type
 	// exprBuilding 標記惰性全樹收集正在進行中（見 thir_exprtypes.go
 	// ExprTypeOf）。sync.Once 不可重入：collectExprTypes 的走查會經
 	// collectFuncDeclared → declTypeOf → TypeOf 對「不在 IdMap 的運算式節點
@@ -131,15 +132,15 @@ func BuildTHIRView(program *parser.Program) *THIRView {
 
 	// Snapshot name-level Sem maps for H0 desugar write rollback.
 	sem := program.Sem
-	var savedVarTypes map[string]string
-	var savedFuncVarTypes map[string]map[string]string
+	var savedVarTypes map[string]*ty.Type
+	var savedFuncVarTypes map[string]map[string]*ty.Type
 	var savedDeclaredVars map[string]bool
-	var savedIdxLocalTypes map[string]map[string]string
+	var savedIdxLocalTypes map[string]map[string]*ty.Type
 	if sem != nil {
-		savedVarTypes = copyStrMap(sem.VarTypes)
-		savedFuncVarTypes = copyStrStrMap(sem.FuncVarTypes)
+		savedVarTypes = copyTypeMap(sem.VarTypes)
+		savedFuncVarTypes = copyTypeTypeMap(sem.FuncVarTypes)
 		savedDeclaredVars = copyBoolMap(sem.DeclaredVars)
-		savedIdxLocalTypes = copyStrStrMap(sem.IdxLocalTypes)
+		savedIdxLocalTypes = copyTypeTypeMap(sem.IdxLocalTypes)
 	}
 
 	hirPkg, idMap := parser.ASTToHIRWithMap(program)
@@ -188,6 +189,39 @@ func copyBoolMap(m map[string]bool) map[string]bool {
 	return cp
 }
 
+// copyTypeMap returns a shallow copy of m (nil in → nil out). Types are
+// immutable, so copying the map is enough to snapshot it.
+func copyTypeMap(m map[string]*ty.Type) map[string]*ty.Type {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]*ty.Type, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
+}
+
+// copyTypeTypeMap returns a deep copy of m (inner maps copied; nil in → nil out).
+func copyTypeTypeMap(m map[string]map[string]*ty.Type) map[string]map[string]*ty.Type {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]map[string]*ty.Type, len(m))
+	for k, inner := range m {
+		if inner == nil {
+			cp[k] = nil
+			continue
+		}
+		icp := make(map[string]*ty.Type, len(inner))
+		for ik, iv := range inner {
+			icp[ik] = iv
+		}
+		cp[k] = icp
+	}
+	return cp
+}
+
 // copyStrStrMap returns a deep copy of m (inner maps copied; nil in → nil out).
 func copyStrStrMap(m map[string]map[string]string) map[string]map[string]string {
 	if m == nil {
@@ -222,27 +256,38 @@ func copyStrStrMap(m map[string]map[string]string) map[string]map[string]string 
 // idMap 的两档里，此前恒为 ""。第 3 档只含表达式键，宣告类节点即使触发
 // 构建也查不到自己，答案不变（零行为变化）。调用方仍须为 "" 留 legacy 兜底。
 func (v *THIRView) TypeOf(n parser.Node) string {
+	if t := v.TypeRefOf(n); t != nil {
+		return t.Raw()
+	}
+	return ""
+}
+
+// TypeRefOf is the STRUCTURED form of TypeOf: the same three-tier resolution
+// (Inferred side table → the HIR node's own interned type → the expression map)
+// but returning a *ty.Type so callers ask Kind/Bits/Signed instead of matching
+// spelling prefixes. Returns nil when THIR knows nothing about n, which is the
+// same condition that made TypeOf answer "".
+func (v *THIRView) TypeRefOf(n parser.Node) *ty.Type {
 	if v == nil || v.Pkg == nil || n == nil {
-		return ""
+		return nil
 	}
 	if id, ok := v.IdMap[n]; ok {
-		if t := v.Pkg.InferredType(id); t != "" {
+		if t := v.Pkg.InferredRef(id); t != nil {
 			return t
 		}
 		if node := v.Pkg.Node(id); node != nil {
-			if t := v.Pkg.Type(node.Type); t != "" {
+			if t := v.Pkg.TypeRef(node.Type); t != nil {
 				return t
 			}
 		}
 	}
-	// 第三档：显式 type map（表达式级推断，惰性构建）。只对表达式节点开放——
-	// 宣告类节点（LetStatement / Parameter / StructField …）不是 Expression，
-	// 在此直接返回 ""，绝不触发全树收集 ⇒ 生产路径零开销（当下唯一的生产
-	// 消费方 declTypeOf 只查宣告节点）。
+	// 第三檔：顯式 type map（運算式級推斷，惰性構建）。只對運算式節點開放——
+	// 宣告類節點（LetStatement / Parameter / StructField …）不是 Expression，
+	// 在此直接回 nil，絕不觸發全樹收集 ⇒ 生產路徑零開銷。
 	if _, isExpr := n.(parser.Expression); isExpr {
-		return v.ExprTypeOf(n)
+		return v.ExprTypeRef(n)
 	}
-	return ""
+	return nil
 }
 
 // FuncSigs extracts named-function signatures from the HIR arena — the
@@ -488,13 +533,37 @@ func runStrOrderingCore(program *parser.Program, funcTypes map[string]string) []
 // TypeOverride（装配期具现化/具象化的有效型别覆写）非空时 TypeOf 回覆写值，
 // 这恰是 KLet 有效型别解析序（TypeOverride > Type > InferredType）的第一档，
 // 比 AST 直读更贴近节点的真实有效型别；该分叉面由 shadow 语料把关。
-func declTypeOf(view *THIRView, n parser.Node, legacy string) string {
-	if view != nil && legacy != "" {
-		if t := view.TypeOf(n); t != "" {
-			return t
-		}
+func declTypeOf(view *THIRView, n parser.Node, legacy string) *ty.Type {
+	if t := view.TypeRefOf(n); t != nil {
+		return t
 	}
-	return legacy
+	if legacy == "" {
+		return nil
+	}
+	return thirPool.Parse(legacy)
+}
+
+// declaredIsOption reports whether a declared type is an option (`?T`). It is
+// the structural replacement for a leading-`?` prefix test: the two are the same
+// predicate, but Kind answers it even when the type arrived already parsed (no
+// re-scan of the text).
+func declaredIsOption(t *ty.Type) bool {
+	if t == nil {
+		return false
+	}
+	return t.Kind == ty.Option || t.Canonical().Kind == ty.Option
+}
+
+// declTypeOfRaw is the raw-spelling form of declTypeOf, used by the validator
+// plumbing that still keeps its scope tables as map[string]string. It exists so
+// that the structured entry point (declTypeOf) is the single place the
+// THIR-vs-legacy precedence is decided; when those tables become
+// map[string]*ty.Type the call sites switch to declTypeOf directly.
+func declTypeOfRaw(view *THIRView, n parser.Node, legacy string) string {
+	if t := declTypeOf(view, n, legacy); t != nil {
+		return t.Raw()
+	}
+	return ""
 }
 
 // ValidateIntOverflowTHIR 是 ValidateIntOverflow 的 THIR 侧变体：主体走共享的

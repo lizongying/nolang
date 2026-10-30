@@ -53,19 +53,22 @@ func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	// Populate every map-bearing field with >= 2 entries. Keys are inserted in
 	// non-sorted order on purpose: a sorted insertion order would let a
 	// "happens to iterate in insertion order" implementation pass by luck.
-	prog.Sem.VarTypes["b"] = "i64"
-	prog.Sem.VarTypes["a"] = "str"
+	prog.Sem.SetVarType("b", "i64")
+	prog.Sem.SetVarType("a", "str")
 	prog.Sem.EnumVariants["E"] = []string{"x", "y"}
 	prog.Sem.EnumVariants["D"] = []string{"p"}
 	prog.Sem.DeclaredVars["z"] = true
 	prog.Sem.DeclaredVars["a"] = false
-	prog.Sem.EnumVariantPayload["E"] = map[string]string{"y": "i64", "x": "str"}
+	prog.Sem.SetEnumVariantPayload("E", "y", "i64")
+	prog.Sem.SetEnumVariantPayload("E", "x", "str")
 	prog.Sem.EnumVariantFields["E"] = map[string][]string{"y": {"i64"}, "x": {"str", "i64"}}
 	prog.Sem.IfaceImpls["I"] = []string{"A", "B"}
 	prog.Sem.IfaceImpls["J"] = []string{"C"}
-	prog.Sem.FuncVarTypes["f"] = map[string]string{"q": "i64", "p": "str"}
+	prog.Sem.SetFuncVarType("f", "q", "i64")
+	prog.Sem.SetFuncVarType("f", "p", "str")
 	prog.Sem.FuncDeclaredVars["f"] = map[string]bool{"q": true, "p": false}
-	prog.Sem.IdxLocalTypes["f"] = map[string]string{"q": "[]i64", "p": "[]str"}
+	prog.Sem.SetIdxLocalType("f", "q", "[]i64")
+	prog.Sem.SetIdxLocalType("f", "p", "[]str")
 	// SetUnionMembers lazily initializes the map (a bare parse of this fixture
 	// records no union aliases).
 	prog.Sem.SetUnionMembers("num", []string{"i32", "i64", "f64"})
@@ -124,7 +127,7 @@ func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	if dcp.Prog == nil {
 		t.Fatal("decoded CachedProgram has a nil Program")
 	}
-	if !mapStrEqual(dcp.Prog.Sem.VarTypes, prog.Sem.VarTypes) {
+	if !mapTypeEqual(dcp.Prog.Sem.VarTypes, prog.Sem.VarTypes) {
 		t.Fatalf("Sem.VarTypes lost across the round-trip: %v", dcp.Prog.Sem.VarTypes)
 	}
 	if !mapSliceEqual(dcp.Prog.Sem.EnumVariants, prog.Sem.EnumVariants) {

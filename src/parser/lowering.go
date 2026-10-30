@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/ty"
 )
 
 // ---- 表層 AST 節點 ----
@@ -538,6 +539,16 @@ func (l *lowerer) walk(v reflect.Value) {
 				if ls, ok := stmt.(*LetStatement); ok && ls.Name != nil && !ls.IsSynthetic {
 					l.declaredLocals[ls.Name.Value] = true
 				}
+				// 多返回值解構（`q, r = a.div-mod(b)`）：把每個目標按被呼叫者宣告的
+				// 回傳型別順位登記進函數作用域型別表。缺這一步，之後 `q % b` 的
+				// 運算符重載探測（resolveReceiverType → FuncVarType）查不到 `q`，
+				// 便放棄改寫；InfixExpression 一路活到 MIR，對結構體 emit 原生
+				// srem／add —— 輕則 LLVM operand-type 錯誤，重則 toolchain abort
+				// （實測 tmp/bx/d1.no、d2.no；型別本身 checker 是知道的，
+				// `q.abs-cmp(r)` 能過 vet，缺的只是這張派發表）。
+				if mas, ok := stmt.(*MultiAssignStatement); ok {
+					l.registerMultiAssignTargetTypes(mas)
+				}
 			}
 			l.walk(v.Index(i))
 			_ = replaced
@@ -656,6 +667,55 @@ func (l *lowerer) maybeDesugarInfix(v reflect.Value) (Node, bool) {
 		Arguments: []Expression{inf.Right},
 	}
 	return repl, true
+}
+
+// registerMultiAssignTargetTypes 把 `q, r = call()` 的每個裸識別符目標，按被呼叫
+// 者宣告的回傳型別順序登記進「函數作用域型別表」（sem.FuncVarTypes + VarTypes）。
+//
+// 為什麼要在這裡登記：運算符重載的派發（`q % b` → `q._mod(b)`）以接收者的**靜態
+// 型別**為唯一判據，而它查的是 parser 自己的函數作用域表。那張表由 LetStatement
+// 的宣告／推斷、match 臂綁定、`#{index-out}` 暫存、for-range 變數等各自寫入，唯獨
+// 漏了多返回值解構 —— 於是一個剛被正规定型成 bigint 的變數，在派發眼裡等於沒有
+// 型別，探測回 ""，改寫被跳過，中綴運算帶著結構體操作數一路走到 MIR。
+//
+// 三條「不亂寫」的邊界：
+//   - 只認裸識別符（`a[i], n = ...` 的索引目標與 `_` 佔位直接跳過）；
+//   - 目標數必須與查到的回傳型數完全相等，否則整條不登記（寧可漏報，不要把
+//     第 k 個型別安到第 j 個名字上）；
+//   - 函數作用域已有條目就不覆寫（參數同名、先前已綁定等用戶意圖優先）。
+//     這裡刻意只看**本函數**那一層，不看 FuncVarType 的全域回退：全域有個同名
+//     `q` 不構成本函數內 `q` 的型別。
+func (l *lowerer) registerMultiAssignTargetTypes(mas *MultiAssignStatement) {
+	if mas == nil || len(mas.Targets) < 2 || mas.Value == nil {
+		return
+	}
+	call, ok := unwrapLowerExpr(mas.Value).(*CallExpression)
+	if !ok || call == nil {
+		return
+	}
+	rets := l.p.multiReturnTypesFromCallExpr(call)
+	if len(rets) != len(mas.Targets) {
+		return
+	}
+	saved := l.p.curFuncName
+	l.p.curFuncName = l.curFuncName
+	defer func() { l.p.curFuncName = saved }()
+	local := l.p.sem.FuncVarTypes[l.curFuncName]
+	for i, tgt := range mas.Targets {
+		id, ok := tgt.(*Identifier)
+		if !ok || id.Value == "" || id.Value == "_" {
+			continue
+		}
+		if rets[i] == "" {
+			continue
+		}
+		if _, exists := local[id.Value]; exists {
+			continue
+		}
+		l.p.sem.SetFuncVarType(l.curFuncName, id.Value, rets[i])
+		l.p.setVarType(id.Value, rets[i])
+		l.declaredLocals[id.Value] = true
+	}
 }
 
 // collectLocalTypes 預掃描函數體，將「未標型別、但可由 RHS 推導容器型別」的
@@ -883,9 +943,9 @@ func (l *lowerer) toVecElemType(val Expression, localTypes map[string]string) st
 	} else if t, ok := l.p.sem.FuncVarType(l.curFuncName, recvName); ok {
 		recvType = t
 	} else if t, ok := l.p.sem.VarTypes[recvName]; ok {
-		recvType = t
+		recvType = t.Raw()
 	}
-	return containerElemType(strings.TrimPrefix(recvType, "?"))
+	return containerElemType(ty.StripOptionRaw(recvType))
 }
 
 // dotReceiverName 返回 `a` / `a.field` 這類接收者表達式中最左識別符名稱。
@@ -905,12 +965,12 @@ func dotReceiverName(recv Expression) string {
 // codegen 對 std 函式區域變數的型別推斷（避免跨函數型別污染崩潰）。
 func (l *lowerer) recordIndexLocalType(funcName, name, lt string) {
 	if l.p.idxLocalTypes == nil {
-		l.p.idxLocalTypes = make(map[string]map[string]string)
+		l.p.idxLocalTypes = make(map[string]map[string]*ty.Type)
 	}
 	if l.p.idxLocalTypes[funcName] == nil {
-		l.p.idxLocalTypes[funcName] = make(map[string]string)
+		l.p.idxLocalTypes[funcName] = make(map[string]*ty.Type)
 	}
-	l.p.idxLocalTypes[funcName][name] = lt
+	l.p.idxLocalTypes[funcName][name] = tyPool.Parse(lt)
 }
 
 // inferOptionArith — 有號整數 `+ - * / %`（D6）本身產生 option（溢位／除零為
@@ -1036,7 +1096,7 @@ func (l *lowerer) callOptionInner(c *CallExpression) string {
 		return ""
 	}
 	inferred := l.p.inferTypeFromCallExpr(c)
-	if inferred != "" && strings.HasPrefix(inferred, "?") {
+	if inferred != "" && ty.IsOptionRaw(inferred) {
 		return inferred[1:]
 	}
 	return ""
@@ -1232,7 +1292,7 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}, byOptionArith bool)
 	// parseLetStatement 的 `case *IndexExpression`）不是用戶意圖，捕獲 pass
 	// 有權把它改寫成 `?elem`。少了這個例外，`v = arr[i]` 在 lowering 前就被
 	// 標成 plain i64，根索引的捕獲分支永遠走不到（越界錯誤只能靠 checker 報）。
-	if ls.Type != nil && !strings.HasPrefix(typeString(ls.Type), "?") && !typeIsInferred(ls.Type) {
+	if ls.Type != nil && !ty.IsOptionRaw(typeString(ls.Type)) && !typeIsInferred(ls.Type) {
 		return nil
 	}
 	// 變數已確定為非 option → 交 checker 報錯（訊息建議 ?= / ?T / match）。
@@ -1297,7 +1357,7 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}, byOptionArith bool)
 		inner = "i64"
 	case *CallExpression:
 		rt := l.p.returnTypeFromCallExpr(r)
-		if rt == "" || strings.HasPrefix(rt, "?") {
+		if rt == "" || ty.IsOptionRaw(rt) {
 			return nil
 		}
 		inner = rt
@@ -1344,7 +1404,7 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}, byOptionArith bool)
 	}
 	// 顯式標註 ?T 時補內部守衛（推斷內部型別以顯式為準）。
 	if ls.Type != nil {
-		if explicit := strings.TrimPrefix(typeString(ls.Type), "?"); explicit != "" {
+		if explicit := ty.StripOptionRaw(typeString(ls.Type)); explicit != "" {
 			inner = explicit
 		}
 	}
@@ -1604,12 +1664,10 @@ func unwrapLowerExpr(e Expression) Expression {
 // 已宣告型別、以及已為 option（?T）的型別。
 func lowerSignedIntName(typ string) (string, bool) {
 	typ = strings.TrimSpace(typ)
-	if typ == "" || strings.HasPrefix(typ, "?") {
+	if typ == "" || ty.IsOptionRaw(typ) {
 		return "", false
 	}
-	for strings.HasPrefix(typ, "*") {
-		typ = strings.TrimSpace(typ[1:])
-	}
+	typ = ty.StripPtrAllRaw(typ)
 	if i := strings.LastIndex(typ, "."); i >= 0 {
 		typ = typ[i+1:]
 	}
@@ -1744,7 +1802,7 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	// 識別符 LHS 且尚未宣告時預先 `let x = DEF` 宣告（所有分支皆會賦值，故安全）；
 	// 索引/點 LHS 是既有 lvalue，無需預先宣告。
 	var stmts []Statement
-	if name != nil && (l.p.sem == nil || l.p.sem.VarTypes[name.Value] == "") {
+	if name != nil && (l.p.sem == nil || l.p.sem.VarTypeRaw(name.Value) == "") {
 		preDecl := &LetStatement{Token: tok, Name: name, Value: defLit}
 		stmts = []Statement{preDecl, tmpAssign, &ExpressionStatement{Token: tok, Expression: lowered}}
 	} else {
@@ -2200,7 +2258,7 @@ func (l *lowerer) rejectItInNonOkArm(sm *SurfaceMatch) {
 			if _, isEnum := l.p.sem.EnumVariantsOf(t); isEnum {
 				return
 			}
-			if !strings.HasPrefix(t, "?") && !strings.Contains(t, "|") {
+			if !ty.IsOptionRaw(t) && !strings.Contains(t, "|") {
 				return
 			}
 		}
@@ -2555,8 +2613,8 @@ func (p *Parser) prepareSurfaceMatch(sm *SurfaceMatch) *SurfaceMatch {
 func (p *Parser) matchSubjectUnionType(funcName, varName string) string {
 	if p.sem != nil && p.sem.FuncVarTypes != nil {
 		if vars, ok := p.sem.FuncVarTypes[funcName]; ok {
-			if t, ok := vars[varName]; ok && t != "" {
-				return t
+			if t, ok := vars[varName]; ok && t.Raw() != "" {
+				return t.Raw()
 			}
 		}
 	}
@@ -2564,8 +2622,8 @@ func (p *Parser) matchSubjectUnionType(funcName, varName string) string {
 		// 單態化複本／模板：不回退全域，交由臂形態判據 + 具體型別選臂。
 		return ""
 	}
-	if t, ok := p.sem.VarTypes[varName]; ok && t != "" {
-		return t
+	if t, ok := p.sem.VarTypes[varName]; ok && t.Raw() != "" {
+		return t.Raw()
 	}
 	if at := p.astLocalVarType(funcName, varName); at != "" {
 		return at
@@ -3170,7 +3228,7 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 				subjElem = elem
 				subjName = fmt.Sprintf("__match_subj_%d_%d", tok.Line, tok.Column)
 				subjType := "?" + elem
-				if strings.HasPrefix(elem, "?") {
+				if ty.IsOptionRaw(elem) {
 					subjType = elem
 				}
 				p.sem.SetFuncVarType(p.curFuncName, subjName, subjType)
@@ -3293,8 +3351,8 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	// For ?i64, elemType = "i64"; for result unions (i64 | err), extract the payload type.
 	elemType := ""
 	if matchedVarType != "" {
-		if strings.HasPrefix(matchedVarType, "?") {
-			elemType = strings.TrimPrefix(matchedVarType, "?")
+		if ty.IsOptionRaw(matchedVarType) {
+			elemType = ty.StripOptionRaw(matchedVarType)
 		} else if strings.Contains(matchedVarType, "|") {
 			// 聯合型別（如 i64 | err）：提取 payload 型別（i64）
 			elemType = unionElemType(matchedVarType)
@@ -4632,8 +4690,8 @@ func unionElemType(t string) string {
 	if t == "" {
 		return ""
 	}
-	if strings.HasPrefix(t, "?") {
-		return strings.TrimPrefix(t, "?")
+	if ty.IsOptionRaw(t) {
+		return ty.StripOptionRaw(t)
 	}
 	parts := strings.Split(t, "|")
 	var elem []string
@@ -4698,7 +4756,7 @@ func isSentinelArmType(armType string) bool {
 	if strings.TrimSpace(armType) == "else" {
 		return true
 	}
-	for _, part := range strings.Split(armType, "|") {
+	for _, part := range ty.UnionMembersOrSelfRaw(armType) {
 		part = strings.TrimSpace(part)
 		if part == "err" || part == "nil" || part == "" {
 			continue
@@ -4762,7 +4820,7 @@ func (p *Parser) buildItBindingForArm(tok lexer.Token, matched Expression, armTy
 	}
 
 	var typeStr string
-	if strings.HasPrefix(t, "?") && elemType != "" {
+	if ty.IsOptionRaw(t) && elemType != "" {
 		// Option type: map armType to specific type string
 		switch armType {
 		case "err":
@@ -4903,7 +4961,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		for _, res := range l.curFuncDef.Results {
 			if res.Type != nil {
 				ts := typeString(res.Type)
-				if strings.HasPrefix(ts, "?") {
+				if ty.IsOptionRaw(ts) {
 					resultName = res.Name
 					break
 				}
@@ -5003,7 +5061,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		// but expected 'i64'（見 q_probe_ab A）。LHS 為結果參數時不標註（結果
 		// 參數本身已是 ?T，走既有 wrap 路徑，保持 res ?= f(21) 既有行為）。
 		if inferred := l.p.inferTypeFromCallExpr(v); inferred != "" {
-			inner := strings.TrimPrefix(inferred, "?")
+			inner := ty.StripOptionRaw(inferred)
 			elemType = inner
 			l.p.setVarType(tmpName, inferred)
 			// 必須同時在 LetStatement 上掛 NullableType 節點：H0 直出（tohir.go
@@ -5012,7 +5070,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			// payload ⇒ ok 臂 `let it = __unwrap_N` 無值 ⇒ 目標變數恆 undef
 			//（fs.no 的 `size ?= fs.fstat-size(.fd)` 即為 CallExpression 分支）。
 			// Infix / Index 兩分支早已如此，此處為對齊補齊。
-			if strings.HasPrefix(inferred, "?") {
+			if ty.IsOptionRaw(inferred) {
 				tmpType = &NullableType{
 					Token: tok,
 					Type:  &NamedType{Token: tok, Value: inner},
@@ -5061,10 +5119,10 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			if tt, ok2 := l.p.sem.FuncVarType(l.curFuncName, ident.Value); ok2 {
 				t = tt
 			} else if tt, ok2 := l.p.sem.VarTypes[ident.Value]; ok2 {
-				t = tt
+				t = tt.Raw()
 			}
-			if strings.HasPrefix(t, "?") {
-				elemType = strings.TrimPrefix(t, "?")
+			if ty.IsOptionRaw(t) {
+				elemType = ty.StripOptionRaw(t)
 				l.p.setVarType(tmpName, "?"+elemType)
 				tmpType = &NullableType{
 					Token: tok,
@@ -5398,11 +5456,10 @@ func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *Inde
 // optionInnerOfVar 回傳變數 name 的 option 元素型別（? 後的 T），非 option 回傳 ""。
 // 優先查函數作用域（避免跨函數同名區域變數污染），回退查全域 VarTypes。
 func (l *lowerer) optionInnerOfVar(name string) string {
-	if t, ok := l.p.sem.FuncVarType(l.curFuncName, name); ok && strings.HasPrefix(t, "?") {
-		return t[1:]
-	}
-	if t, ok := l.p.sem.VarTypes[name]; ok && strings.HasPrefix(t, "?") {
-		return t[1:]
+	// FuncVarTypeRef already falls back to the global table, so one lookup covers
+	// both scopes; the answer is structural, so `?` is never re-scanned by hand.
+	if t, ok := l.p.sem.FuncVarTypeRef(l.curFuncName, name); ok && t.IsOption() {
+		return t.OptionInner().Raw()
 	}
 	return ""
 }
@@ -5415,8 +5472,8 @@ func (l *lowerer) exprOptionInnerType(e Expression) string {
 	case *Identifier:
 		return l.optionInnerOfVar(v.Value)
 	case *CallExpression:
-		if inferred := l.p.inferTypeFromCallExpr(v); inferred != "" && strings.HasPrefix(inferred, "?") {
-			return inferred[1:]
+		if inferred := l.p.inferTypeFromCallExpr(v); inferred != "" && ty.IsOptionRaw(inferred) {
+			return ty.StripOptionRaw(inferred)
 		}
 		return ""
 	case *IndexExpression:
@@ -5434,11 +5491,8 @@ func (l *lowerer) exprOptionInnerType(e Expression) string {
 // 解析期已知且不以 ? 開頭時成立。型別未知（未宣告 / 尚未推斷）或非 option 回傳
 // 的呼叫則回傳 false —— 解析期無法判定，交由檢查器處理，避免誤報。
 func (l *lowerer) isDefinitelyNonOptionVar(name string) bool {
-	if t, ok := l.p.sem.FuncVarType(l.curFuncName, name); ok {
-		return !strings.HasPrefix(t, "?")
-	}
-	if t, ok := l.p.sem.VarTypes[name]; ok {
-		return !strings.HasPrefix(t, "?")
+	if t, ok := l.p.sem.FuncVarTypeRef(l.curFuncName, name); ok {
+		return !t.IsOption()
 	}
 	return false
 }
@@ -5467,7 +5521,7 @@ func (l *lowerer) localDeclaredType(name string) (string, bool) {
 		if l.p.sem != nil {
 			if vars, ok := l.p.sem.FuncVarTypes[l.curFuncName]; ok {
 				if t, ok := vars[name]; ok {
-					return t, true
+					return t.Raw(), true
 				}
 			}
 		}
@@ -5475,7 +5529,7 @@ func (l *lowerer) localDeclaredType(name string) (string, bool) {
 	}
 	if l.p.sem != nil {
 		if t, ok := l.p.sem.VarTypes[name]; ok {
-			return t, true
+			return t.Raw(), true
 		}
 	}
 	return "", false
@@ -5484,7 +5538,7 @@ func (l *lowerer) localDeclaredType(name string) (string, bool) {
 // localDefinitelyNonOption 回報 name 在當前作用域是否「已宣告且非 option」。
 func (l *lowerer) localDefinitelyNonOption(name string) bool {
 	t, ok := l.localDeclaredType(name)
-	return ok && !strings.HasPrefix(t, "?")
+	return ok && !ty.IsOptionRaw(t)
 }
 
 // captureTargetAllowsOption 回報捕獲 pass 是否可以把 s 的目標改寫成 option 變數。
@@ -5506,7 +5560,7 @@ func (l *lowerer) captureTargetAllowsOption(s *LetStatement) bool {
 	name := s.Name.Value
 	if l.declaredLocals[name] {
 		t, ok := l.localDeclaredType(name)
-		return ok && strings.HasPrefix(t, "?")
+		return ok && ty.IsOptionRaw(t)
 	}
 	if s.Type == nil && l.localDefinitelyNonOption(name) {
 		return false

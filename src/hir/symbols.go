@@ -3,6 +3,8 @@ package hir
 import (
 	"strconv"
 	"strings"
+
+	"github.com/lizongying/nolang/ty"
 )
 
 // SymbolTable is the flat, cross-module resolved view of a set of packages.
@@ -288,7 +290,7 @@ func ExtractSignatures(pkg *Package, moduleShort string) *SymbolTable {
 // statement; deviations are bugs, and the equivalence test is what proves it.
 func collectInto(st *SymbolTable, pkg *Package, moduleShort string, structCount map[string]int, ownStructs map[string]bool) {
 	qualify := func(typeStr string) string {
-		bare := strings.TrimPrefix(typeStr, "?")
+		bare := ty.StripOptionRaw(typeStr)
 		if !ownStructs[bare] || structCount[bare] <= 1 {
 			return typeStr
 		}

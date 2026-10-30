@@ -7,7 +7,75 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/ty"
 )
+
+// tyPool is the parser's structural pool. The parser classifies a type from its
+// SPELLING only (a struct name and a scalar alias look identical at that point —
+// the registry is not built yet), so a resolver-free pool is exactly right:
+// unresolved names stay Named and keep their spelling.
+var tyPool = ty.NewPool(nil)
+
+// TyOf converts a surface type node into the structural type, recursively and
+// WITHOUT a string round-trip (the plan's "Parser 語法節點 → ty" boundary).
+// It is the bridge the checker and MIR use when they hold an AST type node
+// rather than raw text. Returns nil for a nil type.
+func TyOf(t Type) *ty.Type {
+	if t == nil {
+		return nil
+	}
+	switch typ := t.(type) {
+	case *NamedType:
+		return tyPool.Parse(typ.Value)
+	case *SliceType:
+		return tyPool.MakeOn("[]"+rawOf(TyOf(typ.Elem)), ty.Type{Kind: ty.Slice, Elem: TyOf(typ.Elem)})
+	case *ArrayType:
+		lenText, n := arraySizeOf(typ.Size)
+		return tyPool.MakeOn("["+lenText+"]"+rawOf(TyOf(typ.Elem)), ty.Type{
+			Kind: ty.Array, Elem: TyOf(typ.Elem), Len: n, LenText: lenText,
+		})
+	case *NullableType:
+		return tyPool.MakeOn("?"+rawOf(TyOf(typ.Type)), ty.Type{Kind: ty.Option, Elem: TyOf(typ.Type)})
+	case *ViewType:
+		return tyPool.MakeOn("&"+rawOf(TyOf(typ.Type)), ty.Type{Kind: ty.View, Elem: TyOf(typ.Type)})
+	case *PointerType:
+		return tyPool.MakeOn("ptr "+rawOf(TyOf(typ.Type)), ty.Type{Kind: ty.Ptr, Elem: TyOf(typ.Type)})
+	case *MapType:
+		return tyPool.MakeOn("["+rawOf(TyOf(typ.Key))+"]"+rawOf(TyOf(typ.Value)), ty.Type{
+			Kind: ty.Map, Key: TyOf(typ.Key), Elem: TyOf(typ.Value),
+		})
+	case *UnionType:
+		members := make([]*ty.Type, 0, len(typ.Types))
+		parts := make([]string, 0, len(typ.Types))
+		for _, m := range typ.Types {
+			mt := TyOf(m)
+			members = append(members, mt)
+			parts = append(parts, rawOf(mt))
+		}
+		return tyPool.MakeOn(strings.Join(parts, "|"), ty.Type{Kind: ty.Union, Members: members})
+	}
+	return nil
+}
+
+// rawOf is the spelling of a structural type, "" for nil.
+func rawOf(t *ty.Type) string {
+	if t == nil {
+		return ""
+	}
+	return t.Raw()
+}
+
+// arraySizeOf renders an array size expression the way the AST printer does and
+// reports the literal length (-1 when the size is symbolic or inferred).
+func arraySizeOf(e Expression) (string, int64) {
+	switch sz := e.(type) {
+	case *IntegerLiteral:
+		return strconv.FormatInt(sz.Value, 10), sz.Value
+	case *Identifier:
+		return sz.Value, -1
+	}
+	return "?", -1
+}
 
 // resolveReceiverType 解析方法調用接收者的型別，用於推斷方法返回型別。
 // 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})、
@@ -245,6 +313,94 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 	return ""
 }
 
+// multiReturnTypesFromCallExpr 回報「多返回值呼叫」宣告的全部回傳型別（按宣告
+// 順序）；單返回值、零返回值或查不到時回 nil。
+//
+// 為什麼不複用 returnTypeFromCallExpr：那條路在每個查表點都要求 `len(rets) == 1`
+// （單值才是「這個呼叫的回傳型別」），多返回值呼叫一律落空回 ""。`q, r =
+// a.div-mod(b)` 的兩個目標需要的恰恰是那份**有序列表**，且多值時不存在「再退一層
+// 查表」的語義，所以這裡只看 len >= 2，不做 strip、不做 filterInferableType。
+//
+// 鍵順序與 returnTypeFromCallExpr 逐字對稱（receiverType 裸名／module.struct、
+// 完整點分路徑、module.fn 三級回退），避免「單值查得到、多值查不到」的不對稱。
+func (p *Parser) multiReturnTypesFromCallExpr(call *CallExpression) []string {
+	if call == nil || call.Function == nil || p == nil {
+		return nil
+	}
+	multi := func(rets []string) []string {
+		if len(rets) < 2 {
+			return nil
+		}
+		return rets
+	}
+	if ident, ok := call.Function.(*Identifier); ok {
+		if p.funcSignatures != nil {
+			if rets := multi(p.funcSignatures[ident.Value]); rets != nil {
+				return rets
+			}
+			if mod := p.currentModuleName(); mod != "" {
+				if rets := multi(p.funcSignatures[mod+"."+ident.Value]); rets != nil {
+					return rets
+				}
+			}
+		}
+		return nil
+	}
+	dot, ok := call.Function.(*DotExpression)
+	if !ok {
+		return nil
+	}
+	if receiverType := p.resolveReceiverType(dot.Receiver); receiverType != "" {
+		if strings.HasPrefix(receiverType, "[") {
+			if idx := strings.Index(receiverType, "]"); idx > 0 {
+				receiverType = "hashmap-" + receiverType[1:idx] + "-" +
+					SanitizeLLVMTypeName(receiverType[idx+1:])
+			}
+		}
+		key := receiverType + "." + dot.Property
+		if p.methodSignatures != nil {
+			if rets := multi(p.methodSignatures[key]); rets != nil {
+				return rets
+			}
+		}
+		if p.funcSignatures != nil {
+			if rets := multi(p.funcSignatures[key]); rets != nil {
+				return rets
+			}
+		}
+		return nil
+	}
+	// 模組限定形態（`bufio.reader.init(...)` / `mod.fn(...)`）
+	modName, fullPath := "", ""
+	if ident, ok := dot.Receiver.(*Identifier); ok {
+		modName = ident.Value
+		fullPath = modName + "." + dot.Property
+	} else if innerDot, ok := dot.Receiver.(*DotExpression); ok {
+		modName = innerDot.Property
+		if innerIdent, ok := innerDot.Receiver.(*Identifier); ok {
+			fullPath = innerIdent.Value + "." + innerDot.Property + "." + dot.Property
+		}
+	}
+	if fullPath != "" {
+		if p.methodSignatures != nil {
+			if rets := multi(p.methodSignatures[fullPath]); rets != nil {
+				return rets
+			}
+		}
+		if p.funcSignatures != nil {
+			if rets := multi(p.funcSignatures[fullPath]); rets != nil {
+				return rets
+			}
+		}
+	}
+	if modName != "" && p.funcSignatures != nil {
+		if rets := multi(p.funcSignatures[modName+"."+dot.Property]); rets != nil {
+			return rets
+		}
+	}
+	return nil
+}
+
 // filterInferableType 判斷返回型別是否可安全地從函數/方法調用推斷。
 // 可推斷的型別：
 //   - option 型別（?type）：match desugar 依賴它生成正確的 it 型別窄化
@@ -332,7 +488,7 @@ func (p *Parser) inferIndexElemType(idx *IndexExpression) string {
 			return t
 		}
 		if t, ok := p.sem.VarTypes[name]; ok {
-			return t
+			return t.Raw()
 		}
 		return ""
 	}
@@ -340,10 +496,10 @@ func (p *Parser) inferIndexElemType(idx *IndexExpression) string {
 	case *Identifier:
 		// 優先查詢「安全索引專用」本地型別表（lower 預掃描所得），
 		// 避免跨函數型別污染（見 isSafeIndexBase 註解）。
-		if t, ok := p.idxLocalTypes[p.curFuncName][b.Value]; ok && t != "" {
-			lt = strings.TrimPrefix(t, "?")
+		if t, ok := p.idxLocalTypes[p.curFuncName][b.Value]; ok && t.Raw() != "" {
+			lt = ty.StripOptionRaw(t.Raw())
 		} else if t := lookupVarType(b.Value); t != "" {
-			lt = strings.TrimPrefix(t, "?")
+			lt = ty.StripOptionRaw(t)
 		}
 	case *DotExpression:
 		// receiver.field[i] — resolve the struct field's container type.
@@ -389,12 +545,12 @@ func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
 	lt := ""
 	// 優先查詢「安全索引專用」本地型別表（lower 預掃描區域變數容器型別所得，
 	// 如 `av = a.to-vec()` → []i64），其優先級高於全域快照，避免跨函數污染。
-	if t, ok := p.idxLocalTypes[p.curFuncName][ident.Value]; ok && t != "" {
-		lt = strings.TrimPrefix(t, "?")
+	if t, ok := p.idxLocalTypes[p.curFuncName][ident.Value]; ok && t.Raw() != "" {
+		lt = ty.StripOptionRaw(t.Raw())
 	} else if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
-		lt = strings.TrimPrefix(t, "?")
+		lt = ty.StripOptionRaw(t)
 	} else if t, ok := p.sem.VarTypes[ident.Value]; ok {
-		lt = strings.TrimPrefix(t, "?")
+		lt = ty.StripOptionRaw(t.Raw())
 	}
 	return containerElemType(lt) != ""
 }
@@ -419,12 +575,12 @@ func (p *Parser) mapIndexBaseType(idx *IndexExpression) string {
 		return ""
 	}
 	lt := ""
-	if t, ok := p.idxLocalTypes[p.curFuncName][ident.Value]; ok && t != "" {
-		lt = strings.TrimPrefix(t, "?")
+	if t, ok := p.idxLocalTypes[p.curFuncName][ident.Value]; ok && t.Raw() != "" {
+		lt = ty.StripOptionRaw(t.Raw())
 	} else if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
-		lt = strings.TrimPrefix(t, "?")
+		lt = ty.StripOptionRaw(t)
 	} else if t, ok := p.sem.VarTypes[ident.Value]; ok {
-		lt = strings.TrimPrefix(t, "?")
+		lt = ty.StripOptionRaw(t.Raw())
 	}
 	if IsMapTypeString(lt) {
 		return lt
@@ -444,6 +600,11 @@ func isTypeName(literal string) bool {
 	}
 	return false
 }
+
+// IsBuiltinTypeName reports whether name is a builtin type name usable as a
+// map key or value type (e.g. [str]i64). Exported for stages that implement
+// ty.Resolver (the checker's IsTypeName needs the same vocabulary).
+func IsBuiltinTypeName(name string) bool { return isBuiltinTypeName(name) }
 
 // isBuiltinTypeName reports whether name is a builtin type name usable as a
 // map key or value type (e.g. [str]i64).
@@ -1300,87 +1461,60 @@ func typeIsInferred(t Type) bool {
 	return false
 }
 
-// buildType 將型別字串轉換為 Type 節點
+// buildType 將型別字串轉換為 Type 節點。
+//
+// 分類（option / 指標 / view / 切片 / 陣列 / map）不再由本函式自行判斷前綴，
+// 一律委派 ty.Parse：那裡的決定是「唯一規則」（`[N]T` 的 N 為數字/`?`/單字母
+// 時是陣列，其餘是 map；`*T` 與 `ptr T` 都是 Ptr）。本函式只負責把結構結果
+// 還原成語法節點，因此 AST 形狀、位置資訊與 String() 輸出都不變。
 func buildType(typeStr string, tok lexer.Token) Type {
 	if typeStr == "" {
 		return nil
 	}
-	// 處理 ? 前綴（option 型別）
-	if typeStr[0] == '?' {
-		inner := buildType(typeStr[1:], tok)
-		if inner == nil {
-			return nil
+	st := tyPool.Parse(typeStr)
+	switch st.Kind {
+	case ty.Option:
+		if inner := buildType(rawOf(st.Elem), tok); inner != nil {
+			return &NullableType{Token: tok, Type: inner}
 		}
-		return &NullableType{Token: tok, Type: inner}
-	}
-	// 處理 ptr 前綴（指標型別）
-	if strings.HasPrefix(typeStr, "ptr ") {
-		inner := buildType(typeStr[4:], tok)
-		if inner == nil {
-			return nil
+	case ty.Ptr:
+		if inner := buildType(rawOf(st.Elem), tok); inner != nil {
+			return &PointerType{Token: tok, Type: inner}
 		}
-		return &PointerType{Token: tok, Type: inner}
-	}
-	// 處理 * 前綴（指標型別，簡寫）
-	if typeStr[0] == '*' {
-		inner := buildType(typeStr[1:], tok)
-		if inner == nil {
-			return nil
+	case ty.View:
+		if inner := buildType(rawOf(st.Elem), tok); inner != nil {
+			return &ViewType{Token: tok, Type: inner}
 		}
-		return &PointerType{Token: tok, Type: inner}
-	}
-	// 處理 & 前綴（view 型別，非擁有借用）
-	if typeStr[0] == '&' {
-		inner := buildType(typeStr[1:], tok)
-		if inner == nil {
-			return nil
-		}
-		return &ViewType{Token: tok, Type: inner}
-	}
-	// 處理 [] 前綴（切片型別）
-	if strings.HasPrefix(typeStr, "[]") {
-		elem := buildType(typeStr[2:], tok)
+	case ty.Slice:
+		elem := buildType(rawOf(st.Elem), tok)
 		if elem == nil {
 			elem = &NamedType{Token: tok, Value: "i64"}
 		}
 		return &SliceType{Token: tok, Elem: elem}
-	}
-	// 處理 [n] 或 [ident] 或 [?] 前綴（陣列型別）
-	if len(typeStr) > 2 && typeStr[0] == '[' {
-		end := strings.IndexByte(typeStr, ']')
-		if end > 0 {
-			sizeStr := typeStr[1:end]
-			// [K]V — 當 K 為內建型別名稱時，視為 map 型別（與 parseTypeExpression 一致）。
-			// 避免將 [str]i64 誤解析為 ArrayType{Size: Identifier{"str"}}。
-			if sizeStr != "" && sizeStr != "?" && isBuiltinTypeName(sizeStr) && end < len(typeStr)-1 {
-				valStr := typeStr[end+1:]
-				valType := buildType(valStr, tok)
-				if valType == nil {
-					valType = &NamedType{Token: tok, Value: valStr}
-				}
-				return &MapType{
-					Token: tok,
-					Key:   &NamedType{Token: tok, Value: sizeStr},
-					Value: valType,
-				}
-			}
-			var sizeExpr Expression
-			if sizeStr != "" && sizeStr != "?" {
-				if val, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
-					sizeExpr = &IntegerLiteral{Token: tok, Value: val, Raw: sizeStr}
-				} else {
-					sizeExpr = &Identifier{Token: tok, Value: sizeStr}
-				}
-			}
-			elemStr := typeStr[end+1:]
-			elem := buildType(elemStr, tok)
-			if elem == nil {
-				elem = &NamedType{Token: tok, Value: elemStr}
-			}
-			return &ArrayType{Token: tok, Size: sizeExpr, Elem: elem}
+	case ty.Array:
+		var sizeExpr Expression
+		if st.Len >= 0 {
+			sizeExpr = &IntegerLiteral{Token: tok, Value: st.Len, Raw: st.LenText}
+		} else if st.LenText != "" && st.LenText != "?" {
+			sizeExpr = &Identifier{Token: tok, Value: st.LenText}
+		}
+		elem := buildType(rawOf(st.Elem), tok)
+		if elem == nil {
+			elem = &NamedType{Token: tok, Value: rawOf(st.Elem)}
+		}
+		return &ArrayType{Token: tok, Size: sizeExpr, Elem: elem}
+	case ty.Map:
+		valType := buildType(rawOf(st.Elem), tok)
+		if valType == nil {
+			valType = &NamedType{Token: tok, Value: rawOf(st.Elem)}
+		}
+		return &MapType{
+			Token: tok,
+			Key:   &NamedType{Token: tok, Value: rawOf(st.Key)},
+			Value: valType,
 		}
 	}
-	// 簡單名稱型別
+	// 簡單名稱型別（含純量、別名、模組限定名與單態化殘留名）
 	return &NamedType{Token: tok, Value: typeStr}
 }
 
@@ -1401,29 +1535,17 @@ func IsMapTypeString(s string) bool {
 }
 
 func parseMapTypeString(s string, tok lexer.Token) *MapType {
-	if len(s) < 4 || s[0] != '[' {
-		return nil
-	}
-	end := strings.IndexByte(s, ']')
-	if end < 0 || end == len(s)-1 {
-		return nil
-	}
-	keyStr := s[1:end]
-	valStr := s[end+1:]
-	if valStr == "" {
-		return nil
-	}
-	// [] → 切片；[?] → 推斷陣列；[數字] → 固定陣列：都不是 map
-	if keyStr == "" || keyStr == "?" {
-		return nil
-	}
-	if _, err := strconv.ParseInt(keyStr, 10, 64); err == nil {
+	// 分類委派 ty：`[K]V` 是 map 還是陣列由 ty 的單一規則回答（`[]`/`[?]`/
+	// `[數字]`/`[單字母符號長度]` 是陣列，其餘是 map），因此 parser 不再維護
+	// 自己的一套「非數字即 map」判定。`[fd]i64` 從此三處同結論（map）。
+	st := tyPool.Parse(s)
+	if st.Kind != ty.Map || st.Key == nil || st.Elem == nil {
 		return nil
 	}
 	return &MapType{
 		Token: tok,
-		Key:   &NamedType{Token: tok, Value: keyStr},
-		Value: &NamedType{Token: tok, Value: valStr},
+		Key:   &NamedType{Token: tok, Value: rawOf(st.Key)},
+		Value: &NamedType{Token: tok, Value: rawOf(st.Elem)},
 	}
 }
 
@@ -1448,8 +1570,9 @@ func typeToString(t Type) string {
 	case *ViewType:
 		return "&" + typeToString(typ.Type)
 	case *PointerType:
-		if strings.HasPrefix(typeToString(typ.Type), "ptr ") {
-			return typeToString(typ.Type)
+		// 雙前綴不重複：內層本身已是指標時沿用其拼寫（結構判斷，不掃字串）。
+		if inner := TyOf(typ.Type); inner != nil && inner.Kind == ty.Ptr {
+			return rawOf(inner)
 		}
 		return "ptr " + typeToString(typ.Type)
 	case *MapType:

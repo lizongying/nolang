@@ -77,8 +77,18 @@ gen: $(STDSIG_GEN)
 # CollectStdModuleSignatures, so it NEEDS the injected key — bare
 # `go test ./tools/...` would hard-exit on it).
 .PHONY: test
-test: $(STDSIG_GEN)
+test: $(STDSIG_GEN) verify-ty
 	cd src && $(GO) test -count=1 $(LD_FLAGS_WITH_SIG) ./...
+
+# ── TYPE-SYSTEM GATE ──────────────────────────────
+# A type is a structure (src/ty), not a string. This gate fails when a package
+# outside src/ty grows NEW ad-hoc type-string parsing (prefix scans for `?`/`&`/
+# `*`/`[`, `|`-splits, prefix trims). The remaining occurrences are recorded in
+# scripts/ty_strings_baseline.txt as a ratchet: a file may never exceed its
+# number, and the gate reports when one drops so the number can be lowered.
+.PHONY: verify-ty
+verify-ty:
+	./scripts/check_ty_strings.sh
 
 # ── STD SIG KEY (injected at build time) ──────────
 # The independent genstdsig tool hashes the CURRENT on-disk src/std tree from

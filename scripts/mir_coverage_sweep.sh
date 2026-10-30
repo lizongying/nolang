@@ -23,7 +23,17 @@
 #   MIR_COV_GLOB='tests/test-sh*.no' scripts/mir_coverage_sweep.sh   # 只跑子集
 #   NO=bin/no_other scripts/mir_coverage_sweep.sh
 set -u
-export PATH="/usr/bin:/opt/homebrew/opt/llvm/bin:$PATH"
+# Toolchain: put the project's LLVM (Homebrew) FIRST and otherwise INHERIT PATH.
+#
+# WHY not "/usr/bin:...": /usr/bin/clang can be older than the macOS SDK on the
+# box (the MEASURED FAILURE block in mir_golden.sh records clang 17 + SDK 27),
+# and forcing it to the front is exactly what produced
+#   ld: tapi error: malformed file ... unknown architecture arm64e.x1-macos
+# An explicit Homebrew LLVM is the toolchain this project builds against, so it
+# wins; when it is absent PATH is left untouched.
+if [ -d /opt/homebrew/opt/llvm/bin ]; then
+  export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+fi
 cd "$(dirname "$0")/.." || exit 1
 NO=${NO:-./bin/no}
 TMO=${MIR_COV_TIMEOUT:-15}

@@ -11,6 +11,7 @@ import (
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 // monomorphizeGenerics 對泛型函數進行單態化
@@ -585,7 +586,7 @@ func rewriteUnionCallStmts(stmts []parser.Statement, templates map[string]*union
 // `&point`→`point`、`i64`→`i64`。用戶碼方法呼叫的實參型別常被前綴成 `mod.Type`，
 // 而 monomorphizeUnions 的複本後綴用 union 成員裸名，兩者末段一致才代表同一成員。
 func unionMemberTail(name string) string {
-	name = strings.TrimPrefix(strings.TrimPrefix(name, "?"), "&")
+	name = unwrapType(name)
 	if i := strings.LastIndexByte(name, '.'); i >= 0 {
 		return name[i+1:]
 	}
@@ -681,6 +682,9 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 					continue
 				}
 				memberType := inferArgMemberType(e, tpl, varTypes)
+				if os.Getenv("NOLANG_UNION_DEBUG") != "" { // TEMP DEBUG
+					fmt.Fprintf(os.Stderr, "[union-debug] method %s via %s: memberType=%q arg=%T\n", dot.Property, tplName, memberType, argAt(e, tpl))
+				}
 				if memberType == "" {
 					continue
 				}
@@ -693,6 +697,10 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 				}
 				if matched {
 					break
+				}
+				if os.Getenv("NOLANG_UNION_DEBUG") != "" { // TEMP DEBUG
+					fmt.Fprintf(os.Stderr, "[union-debug]   method %s NOT rewritten (members=%v fallback=%q)\n",
+						dot.Property, tpl.members, tpl.fallbackMember)
 				}
 			}
 		}
@@ -745,6 +753,18 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 	}
 }
 
+// argAt TEMP DEBUG：回傳 union 實參位上的表達式（供除錯印型別用）。
+func argAt(call *parser.CallExpression, tpl *unionTemplateInfo) parser.Expression {
+	if call == nil || len(call.Arguments) == 0 {
+		return nil
+	}
+	idx := tpl.unionArgIdx
+	if idx < 0 || idx >= len(call.Arguments) {
+		idx = 0
+	}
+	return call.Arguments[idx]
+}
+
 // inferArgMemberType 從呼叫引數推斷應使用的聯合成員型別
 func inferArgMemberType(call *parser.CallExpression, tpl *unionTemplateInfo, varTypes map[string]string) string {
 	if len(call.Arguments) == 0 {
@@ -788,7 +808,7 @@ func inferExprMemberType(expr parser.Expression, varTypes map[string]string) (st
 				// "unknown callee number.int.to-str" (notools ls-run:
 				// `size = fs.stat-size(full)` then `size.to-str()`). Strip the
 				// option / view markers so the member type matches.
-				return strings.TrimPrefix(strings.TrimPrefix(t, "?"), "&"), true
+				return unwrapType(t), true
 			}
 		}
 		// 未知標識符：無法靜態推定（舊碼硬回 i64，對聚合體 union 會誤綁）。
@@ -797,6 +817,35 @@ func inferExprMemberType(expr parser.Expression, varTypes map[string]string) (st
 		return inferExprMemberType(v.Right, varTypes)
 	case *parser.GroupedExpression:
 		return inferExprMemberType(v.Expression, varTypes)
+	case *parser.InfixExpression:
+		// 算術實參（`pick((k - 1))`、`m + (c - 1)`）：整顆 InfixExpression 曾被
+		// 一律当成「無法推定」，於是「union 內恰有一個聚合體成員」的回退邏輯選中
+		// 聚合體（`_add__bigint`），呼叫點卻仍傳 i64 槽——opaque pointer 讓 LLVM 不再
+		// 在編譯期報 ABI 不符，錯誤一路活到運行期（`malloc: pointer being freed was
+		// not allocated` → abort，實見 tmp/bx/d2.no）。
+		//
+		// 判據：變數才表意圖，字面量只表數量級。`1 + c`（c 是聚合體）不能因左側
+		// 是整數字面量就定成 i64；`a + 1`（a 推不定）也必須保留「未知」，讓原本的
+		// 聚合體回退照常生效——任一側推不定即整體未知，宁可回到舊行為。
+		isLit := func(e parser.Expression) bool {
+			switch e.(type) {
+			case *parser.IntegerLiteral, *parser.FloatLiteral:
+				return true
+			}
+			return false
+		}
+		lt, lok := inferExprMemberType(v.Left, varTypes)
+		rt, rok := inferExprMemberType(v.Right, varTypes)
+		if lok && !isLit(v.Left) {
+			return lt, true
+		}
+		if rok && !isLit(v.Right) {
+			return rt, true
+		}
+		if lok && rok {
+			return lt, true // 兩側都是字面量：`pick(1 + 2)` 確為 i64
+		}
+		return "i64", false
 	}
 	// 呼叫結果等其它表達式：無法靜態推定。
 	return "i64", false
@@ -1252,7 +1301,7 @@ func isContainerTypeNolang(typeStr string) bool {
 		return true
 	}
 	// Struct: user-defined type name (not a builtin primitive)
-	if !isBuiltinType(typeStr) && typeStr != "" && !strings.HasPrefix(typeStr, "?") {
+	if !isBuiltinType(typeStr) && typeStr != "" && typeOf(typeStr).Kind != ty.Option {
 		return true
 	}
 	return false
@@ -1447,12 +1496,12 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// receiver and a runtime crash for `it.to-str()` on an option payload.
 	// Stripping here mirrors the existing non-generic branch (recvTypeForMethod)
 	// and is semantically correct: methods on ?T dispatch on T.
-	recvType = strings.TrimPrefix(recvType, "?")
+	recvType = unwrapType(recvType)
 	// A VIEW receiver (`&T` / `?&T`) dispatches on the borrowed type: `v.sum()`
 	// on a `&point` is `point.sum`. A view is `T*` at the LLVM level and a
 	// method's `self` parameter is `T*` too, so the receiver needs no
 	// conversion — only the callee name does.
-	recvType = strings.TrimPrefix(recvType, "&")
+	// （View 前綴已由上一行的 unwrapType 一併剝除）
 	// 接收者靜態型別是介面（`d : db`）時，介面只有方法簽名、沒有方法體，
 	// 攤平成 `sql.db.exec` 會得到不存在的函式（MIR: unknown callee）。
 	// 回退到唯一實作者 —— 多個實作者時保持原樣，讓下游給出明確診斷，
@@ -1567,9 +1616,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// prefix), so we check the bare method name.
 	if bi := builtin.FindBuiltinMethod(methodName); bi != nil && bi.ReceiverType != builtin.ReceiverGlobal {
 		// Only skip if the receiver is a builtin type (str, []T, [N]T, i64, etc.)
-		isBuiltinRecv := isBuiltinType(recvType) ||
-			strings.HasPrefix(recvType, "[]") ||
-			(strings.HasPrefix(recvType, "[") && strings.Contains(recvType, "]"))
+		isBuiltinRecv := isBuiltinType(recvType) || isBuiltinContainer(recvType)
 		if isBuiltinRecv {
 			return false
 		}
@@ -1580,8 +1627,8 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// Option type (?T): method is defined on the inner type T, not on option.
 	// Strip the leading "?" so concreteName becomes "T.method" (e.g. ?str.to-lower → str.to-lower).
 	recvTypeForMethod := recvType
-	if strings.HasPrefix(recvTypeForMethod, "?") {
-		recvTypeForMethod = recvTypeForMethod[1:]
+	if typeOf(recvTypeForMethod).Kind == ty.Option {
+		recvTypeForMethod = optionInner(recvTypeForMethod)
 	}
 	// Apply module prefix if recvTypeForMethod is a bare user-defined type name.
 	// varTypes is built before rewriteTypeRefs, so it may contain the un-prefixed
@@ -1602,7 +1649,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 	// not Nolang type names ([]str, []i64, etc.). The LLVM code generator
 	// handles builtin method calls via DotExpression dispatch + ForwardFunc.
 	// Rewriting them to []str.push(out, ...) would create undefined function calls.
-	if strings.HasPrefix(recvType, "[]") {
+	if typeOf(recvType).Kind == ty.Slice {
 		// Slice types ([]str, []i64, []byte, etc.) map to "vec" builtins.
 		// Check both "vec.<method>" and the concrete type prefix.
 		if builtin.FindBuiltinMethod("vec."+methodName) != nil {
@@ -1620,7 +1667,7 @@ func resolveMethodCall(dot *parser.DotExpression, ce *parser.CallExpression,
 			return false
 		}
 	}
-	if strings.HasPrefix(recvType, "[") && !strings.HasPrefix(recvType, "[]") {
+	if typeOf(recvType).Kind == ty.Array {
 		// Array types ([N]T) map to "arr" builtins
 		if builtin.FindBuiltinMethod("arr."+methodName) != nil {
 			return false

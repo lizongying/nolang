@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/ty"
 )
 
 // ---------------------------------------------------------------------------
@@ -48,9 +49,9 @@ type codegen struct {
 	sb   *strings.Builder
 	errs []string
 
-	fname       map[FuncID]string // MIR func id -> llvm function name
-	labelFor    map[BlockID]string
-	valSlot     map[ValueID]string // MIR value -> alloca name
+	fname    map[FuncID]string // MIR func id -> llvm function name
+	labelFor map[BlockID]string
+	valSlot  map[ValueID]string // MIR value -> alloca name
 	// valSlotLT 記錄槽位**實際分配**的 LLVM 型別。它不一定等於值的 ptype：
 	// byte/u8/i8 值會被分配到 1 位元組槽，而 MIR 把整數拉平為 i64。loadVal 必須
 	// 以槽位寬度載入再擴展，否則會從 1 位元組槽發出 `load i64`（opaque pointer
@@ -345,8 +346,8 @@ func (c *codegen) isViewValue(v ValueID) bool {
 			}
 		}
 	}
-	raw = strings.TrimPrefix(raw, "?")
-	return strings.HasPrefix(raw, "&")
+	raw = ty.StripOptionRaw(raw)
+	return ty.IsViewRaw(raw)
 }
 
 func sizeOfArray(t *Type) int64 {
@@ -887,7 +888,7 @@ func (c *codegen) viewPtrType(t *Type) string {
 			return c.llvmTypeOf(et) + "*"
 		}
 	}
-	if et := c.mod.internType(strings.TrimPrefix(t.Raw, "&")); et != NoType {
+	if et := c.mod.internType(ty.StripViewRaw(t.Raw)); et != NoType {
 		if ety := c.mod.Type(et); ety != nil {
 			return c.llvmTypeOf(ety) + "*"
 		}
@@ -897,15 +898,15 @@ func (c *codegen) viewPtrType(t *Type) string {
 
 func (c *codegen) llvmTypeOf(t *Type) string {
 	// VIEW (`&T`) lowers to a POINTER regardless of T's kind — and it must be
-	// handled BEFORE the kind switch below, because KindOfRaw deliberately
-	// reports `&T` as T's OWN kind (`&` is a lifetime annotation bound to
-	// `self`, not a distinct type; see mir.KindOfRaw). The `case KindPtr`
+	// handled BEFORE the kind switch below, because the syntax classifier
+	// deliberately reports `&T` as T's OWN kind (`&` is a lifetime annotation
+	// bound to `self`, not a distinct type). The `case KindPtr`
 	// branch below is therefore unreachable for views, and without this early
 	// return every `&T` lowers to the bare pointee type: emitGetField's view
 	// auto-deref (`HasSuffix(recvLT, "*")`) then never fires and the field GEP
 	// indexes into the pointer slot itself -> "getfield field"
 	// (tests/view-basic.no / tests/view-optional.no).
-	if strings.HasPrefix(t.Raw, "&") {
+	if ty.IsViewRaw(t.Raw) {
 		return c.viewPtrType(t)
 	}
 	switch t.Kind {
@@ -944,7 +945,8 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 		// then writes out-of-bounds -> SIGSEGV. The naming convention mirrors
 		// hir2mir's resolveMapMethod: [key]val → hashmap-<key>-<val>, with
 		// []-bearing value types sanitised (e.g. []str → slice_str).
-		if k, v, ok := parseMapTypes(t.Raw); ok {
+		if mt := t.T; mt != nil && mt.IsMap() && mt.Key != nil && mt.Elem != nil {
+			k, v := mt.Key.Raw(), mt.Elem.Raw()
 			vSan := strings.ReplaceAll(v, "[]", "slice_")
 			hmName := "hashmap-" + k + "-" + vSan
 			if _, ok := c.mod.StructFields[hmName]; ok {
@@ -960,7 +962,8 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 		// Every ?T lowers to the SAME `%option`; the element survives only in
 		// the nolang type, so the payload must be re-punned from that when the
 		// slot is read (see optPayloadAddr / optPayloadLTOf).
-		if e, ok := parseOptionElem(t.Raw); ok {
+		if ot := t.T; ot != nil && ot.IsOption() && ot.Elem != nil {
+			e := ot.ElemRaw()
 			lt, _ := c.optionType(e)
 			return lt
 		}
@@ -986,7 +989,7 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 		//
 		// NOTE: views never reach this case (see the `&` early return above);
 		// this stays for any future KindPtr that is not spelled `&T`.
-		if strings.HasPrefix(t.Raw, "&") {
+		if ty.IsViewRaw(t.Raw) {
 			return c.viewPtrType(t)
 		}
 		return "i8*"
@@ -1068,16 +1071,19 @@ func intWidth(t string) (int, bool) {
 
 // intSlotCastOp 選擇「以槽位寬度載入後」轉到目標整數型別的 LLVM 轉換指令。
 // 目標比來源**窄**時只能用 trunc（zext/sext 只允許放大，LLVM 會報
-// "invalid cast opcode"）；目標較寬或等寬時依來源的 nolang 原始型別選
-// zext（無符號 / byte / bool）或 sext。
+// "invalid cast opcode"）；目標較寬或等寬時依來源的 nolang 原始型別的
+// 符號性選 zext 或 sext。符號性由 ty 的結構給出（byte/u8/char/bool 一律
+// 無號），不再靠拼寫白名單。
 func intSlotCastOp(slt, dstLT, raw string) string {
 	if w1, ok1 := intWidth(slt); ok1 {
 		if w2, ok2 := intWidth(dstLT); ok2 && w2 < w1 {
 			return "trunc"
 		}
 	}
-	if raw != "" && !isUnsignedRaw(raw) && raw != "byte" && raw != "bool" {
-		return "sext"
+	if raw != "" {
+		if t := syntaxPool.Parse(raw); t.IsInteger() && !t.IsUnsigned() {
+			return "sext"
+		}
 	}
 	return "zext"
 }
@@ -1166,6 +1172,51 @@ func (c *codegen) emitFptSatReg(srcTy, srcVal, toLT string, unsig bool) string {
 		return ""
 	}
 	return r
+}
+
+// coerceIndexElem converts a loaded container element into its destination type.
+//
+// It exists because a container element's LLVM type loses the signedness that
+// decides the extension: `[]i8` and `[]byte` both load as i8, but -9 read out of
+// a `[]i8` must reach the i64 register as -9 (sext) while 0x80 read out of a
+// `[]byte` must reach it as 128 (zext). The element's provenance (Value.Origin,
+// recorded by hir2mir when it promoted the read) is the authority; when there is
+// none, the historical zero-extension of i8/i1 is kept, which is what the whole
+// byte-oriented std corpus relies on.
+func (c *codegen) coerceIndexElem(dst ValueID, fromT, v, toT string) string {
+	if fromT == toT || fromT == "" || toT == "" {
+		return v
+	}
+	fw, fok := intWidth(fromT)
+	tw, tok := intWidth(toT)
+	if !fok || !tok {
+		return c.coerce(fromT, v, toT)
+	}
+	if fw >= tw {
+		// Same width or narrowing: coerceInt's trunc path is the only legal one.
+		return c.coerceIntSigned(dst, v, fromT, toT)
+	}
+	// Widening: ask the element's source type for the extension direction.
+	if src := c.sourceType(dst); src != nil {
+		if ct := c.tyOf(src.Raw); ct != nil {
+			if conv := ty.Convert(ct, c.tyOf(toT)); conv == ty.ConvSExt || conv == ty.ConvZExt {
+				c.loadSeq++
+				r := fmt.Sprintf("%%cv%d", c.loadSeq)
+				op := "zext"
+				if conv == ty.ConvSExt {
+					op = "sext"
+				}
+				fmt.Fprintf(c.sb, "  %s = %s %s %s to %s\n", r, op, fromT, v, toT)
+				return r
+			}
+		}
+	}
+	return c.coerceIntSigned(dst, v, fromT, toT)
+}
+
+// tyOf parses a raw spelling through this codegen's structural pool.
+func (c *codegen) tyOf(raw string) *ty.Type {
+	return c.mod.tyOf(raw)
 }
 
 // coerceIntSigned is coerceInt plus declared-type sign awareness: an i8 operand
@@ -1337,7 +1388,7 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 	if strings.HasPrefix(elemRaw, "[]") {
 		return "%vec"
 	}
-	if strings.HasPrefix(elemRaw, "&") {
+	if ty.IsViewRaw(elemRaw) {
 		// `?&T` — an optional view. The payload is the view pointer itself
 		// (`%T*`), so the option stays a two-field inline struct and no
 		// ownership is implied (ClassifyOwnership reports `&T` as not owned).
@@ -1348,7 +1399,7 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 		}
 		return "i8*"
 	}
-	if strings.HasPrefix(elemRaw, "[") {
+	if ty.IsContainerRaw(elemRaw) {
 		if t := c.mod.internType(elemRaw); t != NoType {
 			if ty := c.mod.Type(t); ty != nil {
 				if lt := c.llvmTypeOf(ty); strings.HasPrefix(lt, "[") {
@@ -2775,7 +2826,8 @@ func (c *codegen) optPayloadLTFor(v ValueID) string {
 		if tid, ok := f.LocalTypes[v]; ok {
 			if t := c.mod.Type(tid); t != nil {
 				if t.Kind == KindOption {
-					if e, ok := parseOptionElem(t.Raw); ok {
+					if ot := t.T; ot != nil && ot.IsOption() && ot.Elem != nil {
+						e := ot.ElemRaw()
 						if pl := c.optionPayloadLLVMType(e); pl != "" {
 							return pl
 						}
@@ -2799,7 +2851,8 @@ func (c *codegen) optPayloadLTFor(v ValueID) string {
 func (c *codegen) optElemRawOf(v ValueID) (bool, string) {
 	if val := c.mod.Value(v); val != nil {
 		if t := c.mod.Type(val.Type); t != nil && t.Kind == KindOption {
-			if e, ok := parseOptionElem(t.Raw); ok {
+			if ot := t.T; ot != nil && ot.IsOption() && ot.Elem != nil {
+				e := ot.ElemRaw()
 				return true, e
 			}
 		}
@@ -2813,7 +2866,8 @@ func optionElemRaw(t *Type) string {
 	if t == nil || t.Kind != KindOption {
 		return ""
 	}
-	if e, ok := parseOptionElem(t.Raw); ok {
+	if ot := t.T; ot != nil && ot.IsOption() && ot.Elem != nil {
+		e := ot.ElemRaw()
 		return e
 	}
 	return ""
@@ -5528,7 +5582,7 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	// A fixed-array literal into a `?[]T` option must become a real slice
 	// first: its bytes are the ELEMENTS, so storing them raw would make the
 	// payload read back as {len=first-elem, cap=second-elem, ...}.
-	if payloadLT == "%vec" && strings.HasPrefix(svType, "[") {
+	if payloadLT == "%vec" && ty.IsContainerRaw(svType) {
 		arrSlot := c.valSlot[src]
 		if arrSlot == "" {
 			c.loadSeq++
@@ -6411,9 +6465,14 @@ func (c *codegen) emitStrEq(inst *Inst) error {
 // isIntType reports whether an LLVM type is an integer width that may be
 // compared against a string (char/byte/i64/...). Floating points are excluded —
 // they lower to fcmp, not string promotion.
+// isIntType reports whether lt is one of MIR's INTEGER LLVM types.
+//
+// The argument is always an LLVM type ("i8", "i64", ...): the nolang spellings
+// ("u64", "u32", ...) that used to be listed here could never match, which is
+// why they are gone. Ask ty for nolang spellings.
 func isIntType(lt string) bool {
 	switch lt {
-	case "i64", "i8", "i32", "i16", "u64", "u32", "u16", "u8":
+	case "i8", "i16", "i32", "i64":
 		return true
 	}
 	return false
@@ -6426,11 +6485,11 @@ func isIntType(lt string) bool {
 // use `udiv`/`urem` (otherwise the i64.MIN magnitude 2^63 corrupts the digit
 // loop of i64-to-str / u64-to-str).
 func isUnsignedRaw(raw string) bool {
-	switch raw {
-	case "u64", "u32", "u16", "u8", "byte", "u128":
-		return true
+	t := syntaxPool.Parse(raw)
+	if !t.IsInteger() {
+		return false
 	}
-	return false
+	return t.IsUnsigned()
 }
 
 // emitIntToStr materializes an integer value as a %str-long (1-char for i8/byte,
@@ -6448,14 +6507,30 @@ func (c *codegen) emitIntToStr(v, t string) string {
 	return r
 }
 
-// rawTypeOfValue returns the source (MIR) type spelling of a value, or "" when
-// it cannot be resolved. Conversions that must tell `char` apart from an
-// ordinary integer have to branch on the raw type: char is i32, which the LLVM
-// width alone does not reveal as a code point, and the raw type is the only
-// place that identity survives (e.g. @str_from_cp's UTF-8 encoding vs
-// @str_from_i64's decimal text).
+// rawTypeOfValue answers "what did the SOURCE declare" for a value: the
+// pre-promotion provenance when there is one, otherwise the value's own type.
+// Conversions that must tell `char` apart from an ordinary integer branch on
+// it, because char is i32 and the LLVM width alone does not reveal a code
+// point. It is the single place provenance is read in this file; prefer it (or
+// sourceType) over reaching for Type.Raw directly.
+// sourceType returns the type a value's SOURCE had before MIR widened it.
+//
+// MIR flattens integers to i64 and floats to double, so Type alone cannot
+// distinguish `i8` from `byte` or `u64` from `i64`. Value.Origin records the
+// pre-promotion spelling at the one place a widening really happens — the
+// narrow (`byte`/`u8`/`i8`) container element read in hir2mir — and everything
+// else keeps its own Type.
+func (c *codegen) sourceType(v ValueID) *Type {
+	if o := c.mod.ValueOrigin(v); o != nil {
+		return o
+	}
+	return c.mirTypeOfValue(v)
+}
+
+// rawTypeOfValue is sourceType in raw-string form, for the callers that only
+// need the spelling (diagnostics, char-vs-int rendering, 128-bit detection).
 func (c *codegen) rawTypeOfValue(v ValueID) string {
-	if ty := c.mirTypeOfValue(v); ty != nil {
+	if ty := c.sourceType(v); ty != nil {
 		return ty.Raw
 	}
 	return ""
@@ -6768,8 +6843,8 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 	elemRaw := ""
 	if val := c.mod.Value(inst.Args[0]); val != nil {
 		if t := c.mod.Type(val.Type); t != nil && t.Raw != "" {
-			if e, ok := parseOptionElem(t.Raw); ok {
-				elemRaw = e
+			if ot := t.T; ot != nil && ot.IsOption() && ot.Elem != nil {
+				elemRaw = ot.ElemRaw()
 			}
 		}
 	}
@@ -8237,32 +8312,32 @@ func (c *codegen) emitClone(inst *Inst) error {
 		// counterpart of emitLeafStructClone / emitPtrStructClone. No re-box is
 		// needed (emitOptionWrap mallocs a box sized for this payload); only the
 		// deep copy of what it points at.
-	if err := c.emitOptionWrap(inst); err != nil {
-		return err
-	}
-	// The BOXED payload shape already deep-copies owned leaves / pointees
-	// inside optStoreBoxedPayload (the single boxing site), so cloning again
-	// here would leak the first clone. Only the INLINE payload shape still
-	// needs the explicit clone, because optStoreInlinePayload stores the
-	// struct bytes verbatim into the 24-byte slot.
-	if srcTy := c.mod.Type(c.localTypeOf(inst.Args[0])); srcTy != nil && srcTy.Kind == KindStruct {
-		payloadLT := c.optPayloadLTOf(dstVal)
-		key := c.structKeyOf(srcTy.Raw)
-		srcSlot := c.valSlot[inst.Args[0]]
-		if key != "" && srcSlot != "" && dstSlot != "" && payloadLT != "" && c.optionPayloadInline(payloadLT) {
-			payloadAddr := c.optPayloadTypedAddr(dstSlot, payloadLT, payloadLT)
-			if payloadAddr != "" {
-				if c.mod.StructHasPtrFields(key) {
-					c.emitPtrFieldsClone(payloadAddr, srcSlot, payloadLT, key, map[string]bool{})
-				}
-				if c.mod.StructHasOwnedLeafFields(key) {
-					c.emitLeafFieldsClone(payloadAddr, payloadLT, key)
+		if err := c.emitOptionWrap(inst); err != nil {
+			return err
+		}
+		// The BOXED payload shape already deep-copies owned leaves / pointees
+		// inside optStoreBoxedPayload (the single boxing site), so cloning again
+		// here would leak the first clone. Only the INLINE payload shape still
+		// needs the explicit clone, because optStoreInlinePayload stores the
+		// struct bytes verbatim into the 24-byte slot.
+		if srcTy := c.mod.Type(c.localTypeOf(inst.Args[0])); srcTy != nil && srcTy.Kind == KindStruct {
+			payloadLT := c.optPayloadLTOf(dstVal)
+			key := c.structKeyOf(srcTy.Raw)
+			srcSlot := c.valSlot[inst.Args[0]]
+			if key != "" && srcSlot != "" && dstSlot != "" && payloadLT != "" && c.optionPayloadInline(payloadLT) {
+				payloadAddr := c.optPayloadTypedAddr(dstSlot, payloadLT, payloadLT)
+				if payloadAddr != "" {
+					if c.mod.StructHasPtrFields(key) {
+						c.emitPtrFieldsClone(payloadAddr, srcSlot, payloadLT, key, map[string]bool{})
+					}
+					if c.mod.StructHasOwnedLeafFields(key) {
+						c.emitLeafFieldsClone(payloadAddr, payloadLT, key)
+					}
 				}
 			}
 		}
+		return nil
 	}
-	return nil
-}
 	// STRUCT WITH POINTER FIELDS: a bitwise copy (what emitMove would do) leaves
 	// the two values sharing their pointees, so the clone must deep-copy them.
 	if key, ok := c.clonePtrStructKey(inst); ok {
@@ -8584,7 +8659,7 @@ func (c *codegen) nolangTypeToLLVM(raw string) string {
 		return "double"
 	}
 	// Option type: ?T
-	if strings.HasPrefix(raw, "?") {
+	if ty.IsOptionRaw(raw) {
 		elem := raw[1:]
 		if lt, _ := c.optionType(elem); lt != "" {
 			return lt
@@ -8596,7 +8671,7 @@ func (c *codegen) nolangTypeToLLVM(raw string) string {
 		return "%vec"
 	}
 	// Fixed array: [N]T
-	if strings.HasPrefix(raw, "[") {
+	if ty.IsContainerRaw(raw) {
 		// Try to resolve via the type system.
 		if tID := c.mod.internType(raw); tID != NoType {
 			if ty := c.mod.Type(tID); ty != nil {
@@ -8606,7 +8681,8 @@ func (c *codegen) nolangTypeToLLVM(raw string) string {
 		return "i64"
 	}
 	// Map type: [K]V
-	if k, v, ok := parseMapTypes(raw); ok {
+	if mt := c.mod.tyOf(raw); mt.IsMap() && mt.Key != nil && mt.Elem != nil {
+		k, v := mt.Key.Raw(), mt.Elem.Raw()
 		vSan := strings.ReplaceAll(v, "[]", "slice_")
 		hmName := "hashmap-" + k + "-" + vSan
 		if _, ok := c.mod.StructFields[hmName]; ok {
@@ -8836,15 +8912,24 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	const vecMinCap = int64(4)
 	elemSz := c.typeSizeOperand(elemT)
 
-	// Fresh-allocation size (case 1): the legacy default capacity.
-	c.loadSeq++
-	sizeReg := fmt.Sprintf("%%vbsz%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = mul i64 %s, %d\n", sizeReg, elemSz, vecDefaultCap)
-
 	// The store needs room for element idxV, i.e. idxV+1 elements.
 	c.loadSeq++
 	needReg := fmt.Sprintf("%%vbneed%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = add i64 %s, 1\n", needReg, idxV)
+
+	// Fresh-allocation size (case 1): the legacy default capacity, but never
+	// smaller than what this write needs — a far-index write into an unallocated
+	// vec must land INSIDE the fresh buffer, and the cap stored in the alloc
+	// block below must cover it (case 2 grows further on subsequent writes).
+	c.loadSeq++
+	needGtCap := fmt.Sprintf("%%vbngc%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %d\n", needGtCap, needReg, vecDefaultCap)
+	c.loadSeq++
+	allocElems := fmt.Sprintf("%%vbae%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %d\n", allocElems, needGtCap, needReg, vecDefaultCap)
+	c.loadSeq++
+	sizeReg := fmt.Sprintf("%%vbsz%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = mul i64 %s, %s\n", sizeReg, elemSz, allocElems)
 
 	// Load data (field 2) and cap (field 1) once, in the entry block, so both
 	// dominate every branch below.
@@ -8886,7 +8971,25 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	ptri := fmt.Sprintf("%%vbptri%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", ptri, buf)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ptri, dg)
-	fmt.Fprintf(c.sb, "  store i64 %d, i64* %s\n", vecDefaultCap, cg)
+	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", allocElems, cg)
+	// Make the freshly-allocated buffer's written element READABLE: a vec declared
+	// with no capacity (nil data) has len=0, so an index write would store into the
+	// new buffer but every subsequent read would still see len=0 → out of bounds →
+	// the write is silently lost (the "未分配 vec option 写丢失" class). Lift len to
+	// at least idxV+1 (needReg) so the slot the caller just wrote is in range.
+	c.loadSeq++
+	llg := fmt.Sprintf("%%vbllg%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", llg, arrSlot)
+	c.loadSeq++
+	cl := fmt.Sprintf("%%vbcl%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", cl, llg)
+	c.loadSeq++
+	lge := fmt.Sprintf("%%vblge%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", lge, needReg, cl)
+	c.loadSeq++
+	lmx := fmt.Sprintf("%%vblmx%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", lmx, lge, needReg, cl)
+	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", lmx, llg)
 	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
 
 	// check block (case 2): a buffer exists — is there room for element idxV?
@@ -9147,23 +9250,6 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 // variable's type. Writing d0:i64 into a []byte must store ONE byte (truncating
 // to i8) at offset i; using the value's i64 type would instead store 8 bytes at
 // offset i*8 and overrun the array (the AES stack-corruption crash).
-// arrayElemRaw extracts the element raw type from a nolang fixed-array raw type
-// string like "[128]i64" -> "i64" or "[512]byte" -> "byte". It returns ok=false
-// for non-array raws so callers can fall through to a default.
-func arrayElemRaw(raw string) (string, bool) {
-	if !strings.HasPrefix(raw, "[") {
-		return "", false
-	}
-	closeB := strings.IndexByte(raw, ']')
-	if closeB < 0 {
-		return "", false
-	}
-	elem := strings.TrimSpace(raw[closeB+1:])
-	if elem == "" {
-		return "", false
-	}
-	return elem, true
-}
 
 // vecElemTypeID returns the MIR TypeID of the ELEMENT of a slice-typed value —
 // the `T` of a `[]T`. vecDeepClone needs it to pick (and emit) the right
@@ -9316,8 +9402,8 @@ func (c *codegen) elemLTOfType(t *Type) string {
 		// elementTypeOf's defensive path so the backing-store element width
 		// is correct (i64 for [128]i64, i8 for [512]byte) instead of the
 		// default i8, which would overrun non-byte arrays.
-		if e, ok := arrayElemRaw(t.Raw); ok {
-			if et := c.mod.Type(c.mod.internType(e)); et != nil {
+		if at := t.T; at != nil && at.Elem != nil {
+			if et := c.mod.Type(c.mod.internType(at.ElemRaw())); et != nil {
 				return c.llvmTypeOf(et)
 			}
 		}
@@ -9392,8 +9478,12 @@ func (c *codegen) emitIndex(inst *Inst) error {
 		lv = cl
 	}
 	// Coerce the loaded element to the destination variable's type (e.g. i8 ->
-	// i64 for `x = slice[i]` where x is i64).
-	if cv := c.coerce(elemT, lv, dstT); cv != "" {
+	// i64 for `x = slice[i]` where x is i64). The EXTENSION DIRECTION comes from
+	// the element's provenance, not from its LLVM width: `[]i8` sign-extends
+	// (-9 stays -9) while `[]byte`/`[]u8` zero-extend (0x80 is 128). Before
+	// provenance existed both were forced through an unconditional i8 zext, so
+	// reading -9 out of a `[]i8` produced 247.
+	if cv := c.coerceIndexElem(inst.Dst, elemT, lv, dstT); cv != "" {
 		lv = cv
 	}
 	fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstT, lv, dstT, dstSlot)
@@ -9874,10 +9964,11 @@ func (c *codegen) lvalueAddrOf(v ValueID, use *Inst) (string, TypeID, bool) {
 		baseRaw := bt.Raw
 		// `?T.field`: the payload lives in field 1 of the option.
 		if isOptionType(baseLT) {
-			elem, ok := parseOptionElem(baseRaw)
-			if !ok {
+			ot := c.mod.tyOf(baseRaw)
+			if !ot.IsOption() || ot.Elem == nil {
 				return slot, tid, false
 			}
+			elem := ot.ElemRaw()
 			_, payloadLT := c.optionType(elem)
 			// optPayloadTypedAddr, not a raw GEP to field 1: field 1 is the 24-byte
 			// slot, and a payload larger than that is BOXED, so the struct lives
@@ -10055,8 +10146,8 @@ func (c *codegen) projectionWasCloned(v ValueID) bool {
 	}
 	raw := recvTy.Raw
 	if recvTy.Kind == KindOption {
-		if elem, ok := parseOptionElem(raw); ok {
-			raw = elem
+		if ot := c.mod.tyOf(raw); ot.IsOption() && ot.Elem != nil {
+			raw = ot.ElemRaw()
 		}
 	}
 	key := c.structKeyOf(raw)
@@ -10365,27 +10456,30 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	// VIEW auto-deref: a `&T` view is `T*` at the LLVM level, so a field read
 	// through a view must load the pointer first and then GEP into the pointee.
 	// Without this the GEP indexes into the POINTER slot and opt rejects it.
-	if strings.HasPrefix(recvRaw, "&") && strings.HasSuffix(recvLT, "*") {
+	if ty.IsViewRaw(recvRaw) && strings.HasSuffix(recvLT, "*") {
 		// recvLT is `%T*`; the slot is `%T**`, so load the POINTER (not the
 		// pointee) and GEP through it.
 		c.loadSeq++
 		pv := fmt.Sprintf("%%vld%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", pv, recvLT, recvLT, recvSlot)
 		recvLT = strings.TrimSuffix(recvLT, "*")
-		recvRaw = strings.TrimPrefix(recvRaw, "&")
+		recvRaw = ty.StripViewRaw(recvRaw)
 		recvSlot = pv
 	}
 	if isOptionType(recvLT) {
 		// `?T.field`: peel the option (field 1 holds the inline payload of type
 		// payloadLT), then GEP into the inner struct's field.
-		elem, _ := parseOptionElem(recvRaw)
+		elem := ""
+		if ot := c.mod.tyOf(recvRaw); ot.IsOption() {
+			elem = ot.ElemRaw()
+		}
 		_, payloadLT := c.optionType(elem)
 		innerRaw := elem
 		// `?&T` — an optional VIEW: the option's payload IS the view pointer
 		// (`%T*`), so the field GEP must peel that pointer first.
-		viewElem := strings.HasPrefix(innerRaw, "&")
+		viewElem := ty.IsViewRaw(innerRaw)
 		if viewElem {
-			innerRaw = strings.TrimPrefix(innerRaw, "&")
+			innerRaw = ty.StripViewRaw(innerRaw)
 		}
 		structKey := c.structKeyOf(innerRaw)
 		if structKey == "" {
@@ -10642,7 +10736,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		pv := fmt.Sprintf("%%vld%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", pv, recvLT, recvLT, recvSlot)
 		recvLT = strings.TrimSuffix(recvLT, "*")
-		recvRaw = strings.TrimPrefix(recvRaw, "&")
+		recvRaw = ty.StripViewRaw(recvRaw)
 		recvSlot = pv
 		if id := c.mod.internType(recvRaw); id != NoType {
 			recvTy = c.mod.Type(id)
@@ -10701,7 +10795,10 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	if isOptionType(recvLT) {
 		// `?T.field = v`: peel the option (field 1 holds the inline payload),
 		// then GEP into the inner struct's field and store v there.
-		elem, _ := parseOptionElem(recvRaw)
+		elem := ""
+		if ot := c.mod.tyOf(recvRaw); ot.IsOption() {
+			elem = ot.ElemRaw()
+		}
 		_, payloadLT := c.optionType(elem)
 		innerRaw := elem
 		structKey := c.structKeyOf(innerRaw)
@@ -11752,10 +11849,11 @@ func (c *codegen) emitStructTypes() {
 		if t.Kind != KindOption {
 			continue
 		}
-		elem, ok := parseOptionElem(t.Raw)
-		if !ok {
+		ot := t.T
+		if ot == nil || !ot.IsOption() || ot.Elem == nil {
 			continue
 		}
+		elem := ot.ElemRaw()
 		_, payloadLT := c.optionType(elem)
 		if seenOpt[payloadLT] {
 			continue
@@ -11881,7 +11979,7 @@ func (c *codegen) enumRawSlots(raw string) int64 {
 	if strings.HasPrefix(raw, "[]") {
 		return 3
 	}
-	if strings.HasPrefix(raw, "?") {
+	if ty.IsOptionRaw(raw) {
 		return 2
 	}
 	if fields, ok := c.mod.StructFields[raw]; ok {
@@ -13166,31 +13264,19 @@ func normFFIRaw(raw string) string {
 	case "", "ptr", "pptr", "ppptr":
 		return raw
 	}
-	if strings.HasPrefix(raw, "*") {
-		levels := 0
-		for levels < len(raw) && raw[levels] == '*' {
-			levels++
-		}
-		switch levels {
-		case 1:
-			return "ptr"
-		case 2:
-			return "pptr"
-		case 3:
-			return "ppptr"
-		}
-		return raw
+	// One pointer layer per `*` or `ptr`: ask the type pool rather than counting
+	// characters, so `*T` and `ptr T` are the same spelling here too.
+	depth := 0
+	for cur := ty.Parse(raw); cur != nil && cur.Kind == ty.Ptr && depth < 8; cur = cur.Elem {
+		depth++
 	}
-	// `ptr T` / `ptr ptr T` 的空白寫法
-	if strings.HasPrefix(raw, "ptr") && strings.Contains(raw, " ") {
-		switch strings.Count(raw, "ptr") {
-		case 1:
-			return "ptr"
-		case 2:
-			return "pptr"
-		case 3:
-			return "ppptr"
-		}
+	switch depth {
+	case 1:
+		return "ptr"
+	case 2:
+		return "pptr"
+	case 3:
+		return "ppptr"
 	}
 	return raw
 }
@@ -13890,7 +13976,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 							gfRecvLT = "%" + sanitize(gfRecvRaw)
 						}
 						// Strip option wrapper if needed (mirrors emitGetField).
-						gfRecvRaw = strings.TrimPrefix(gfRecvRaw, "?")
+						gfRecvRaw = ty.StripOptionRaw(gfRecvRaw)
 						structKey := c.structKeyOf(gfRecvRaw)
 						if structKey == "" {
 							structKey = gfRecvRaw
@@ -14234,14 +14320,14 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// module in opt-verify:
 			//   call void @str_replace_char(%str-long* %v0.s, i32 %lv1, ...)
 			//   opt: '%lv1' defined with type '%str-long' but expected 'i32'
-		// The user-visible symptom was bad: `no vet` reported 0 errors — std
-		// method signatures used to carry only RETURN types (the old
-		// embeddedStdFuncSigs was map[string][]string), so method arguments
-		// were never type-checked. They now live as one merged table of
-		// checker.StdSigEntry{Params, Results} (embeddedStdFuncSigs /
-		// embeddedStdMethodSigs), and the guard below reads the Params half —
-		// and only `no run` failed, with an internal opt-verify dump pointing
-		// at a temp .ll file. Repro:
+			// The user-visible symptom was bad: `no vet` reported 0 errors — std
+			// method signatures used to carry only RETURN types (the old
+			// embeddedStdFuncSigs was map[string][]string), so method arguments
+			// were never type-checked. They now live as one merged table of
+			// checker.StdSigEntry{Params, Results} (embeddedStdFuncSigs /
+			// embeddedStdMethodSigs), and the guard below reads the Params half —
+			// and only `no run` failed, with an internal opt-verify dump pointing
+			// at a temp .ll file. Repro:
 			//   s str = 'hello'
 			//   r str = s.replace-char('-', '*')   ; '-' is a STR, not a char
 			// (the correct spelling uses char literals: "-", "*").
@@ -15881,7 +15967,7 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 	// txt.to-str through the `{t}` interpolation desugar).
 	//
 	// The checker deliberately does NOT reject an option argument for a
-	// builtin (see the `strings.HasPrefix(argType, "?")` skip in
+	// builtin (see the `ty.IsOptionRaw(argType)` skip in
 	// stdMethodParamTypes), so this branch is the only place that can define
 	// the semantics. A nil option contributes its zero payload — the same
 	// value the direct-index path stores — never a whole %option struct.

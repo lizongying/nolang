@@ -22,6 +22,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"github.com/lizongying/nolang/ty"
 )
 
 // Kind identifies the shape of a Node.
@@ -190,10 +192,16 @@ const (
 	FlagGenericReceiver
 	FlagLeftInc
 	FlagRightInc
-	FlagAsKeyword // `use path.fn as alias`
-	FlagSlice     // StructField.IsSlice (legacy slice modifier)
-	FlagFuncType  // declared type renders as a function type
-	FlagInBounds uint32 = 1 << 22 // index read proven provably in-bounds by the bounds analyzer
+	FlagAsKeyword                  // `use path.fn as alias`
+	FlagSlice                      // StructField.IsSlice (legacy slice modifier)
+	FlagFuncType                   // declared type renders as a function type
+	FlagInBounds  uint32 = 1 << 22 // index read proven provably in-bounds by the bounds analyzer
+	// FlagGrowWrite marks a place-match write subject `a[i]: { ok -> it = v }`.
+	// For a growable container (slice/vec) it tells the MIR lowerer to lower the
+	// match subject as "ok iff i >= 0" (grow/allocate on write) instead of the
+	// read semantics "ok iff 0 <= i < len" — an unallocated vec (len=0) would
+	// otherwise make every index out-of-bounds and the write is silently lost.
+	FlagGrowWrite uint32 = 1 << 23
 	// FlagTypeDefault marks a KTypeArm of a KTypeMatch that catches every union
 	// member not covered by an explicit type pattern (the `->` default arm).
 	// KTypeMatch performs static single-dispatch by the monomorphized concrete
@@ -329,10 +337,16 @@ type Package struct {
 	Name    string
 	Nodes   []Node
 	Strings []string
-	Types   []string
-	Top     []int32 // top-level node ids, in source order
-	Anns    []Ann   // annotation groups, sorted by Owner
-	Embeds  []Embed // embed data groups, sorted by Owner
+	// Types is the STRUCTURED view of the id space Node.Type points into.
+	// Node.Type (and every InternType id) indexes Strings; Types[id] holds the
+	// parsed *ty.Type for that spelling once someone asked for it (SetTypeRef /
+	// TypeRef). It is a cache, not a second identity: the identity of a type is
+	// still its raw spelling, so Types[id].Raw() always equals Strings[id] when
+	// the entry is present.
+	Types  []*ty.Type
+	Top    []int32 // top-level node ids, in source order
+	Anns   []Ann   // annotation groups, sorted by Owner
+	Embeds []Embed // embed data groups, sorted by Owner
 	// FuncOwners maps each top-level free-function name (as registered in
 	// the package) to the short name of the module that DEFINES it ("" =
 	// the main program). Filled by parser.ASTToHIRWithMap from the AST
@@ -364,12 +378,17 @@ type Package struct {
 	// then treats the rewritten bare `-async` calls as spawnable. It is empty
 	// for programs that never use `co`, which keeps MonomorphizeGo a no-op.
 	GoSpawns []int32
-	// Inferred holds the checker's inferred type strings, keyed by node id.
-	// HIR nodes only carry *declared* types in Node.Type; the rich inferred
-	// types (which the checker computes by mutating the AST) live here so
-	// codegen can read them without reaching back into the AST. Filled by
-	// parser.PopulateInferredTypes after type checking. Nil until populated.
-	Inferred map[int32]string
+	// Inferred holds the checker's inferred types, keyed by node id, as
+	// structured *ty.Type values. HIR nodes only carry *declared* types in
+	// Node.Type; the rich inferred types (which the checker computes by
+	// mutating the AST) live here so codegen can read them without reaching
+	// back into the AST. Filled by parser.PopulateInferredTypes after type
+	// checking. Nil until populated.
+	//
+	// The value is structured rather than a string so that consumers ask
+	// structural questions (Kind, Bits, Signed) instead of re-parsing the
+	// spelling; InferredType keeps the string form for diagnostics.
+	Inferred map[int32]*ty.Type
 	Syms     *SymbolTable
 }
 
@@ -391,8 +410,56 @@ func (p *Package) Str(id int32) string {
 	return p.Strings[id]
 }
 
-// Type resolves an interned type-string id.
-func (p *Package) Type(id int32) string { return p.Str(id) }
+// typePool is the resolver-free structural pool for HIR. HIR never needs a
+// module registry to answer a structural question (an unresolved alias simply
+// stays Named) and Parse is total, so one package-level pool serves every
+// Package, including the per-target Packages built in parallel.
+var typePool = ty.NewPool(nil)
+
+// Ty returns the structural view of a raw type spelling, interning it in the
+// shared HIR pool. Never returns nil.
+func (p *Package) Ty(raw string) *ty.Type { return typePool.Parse(raw) }
+
+// Type resolves an interned type-string id to its raw spelling: the
+// diagnostic / IR-name form. Use TypeRef when a structural answer is needed.
+func (p *Package) Type(id int32) string {
+	if t := p.TypeRef(id); t != nil {
+		return t.Raw()
+	}
+	return p.Str(id)
+}
+
+// TypeRef resolves an interned type-string id to its structured type, or nil
+// when the id carries no type. An entry recorded through SetTypeRef wins;
+// otherwise the spelling is parsed on demand (and not cached, so TypeRef stays
+// read-only and safe on a shared Package).
+func (p *Package) TypeRef(id int32) *ty.Type {
+	if p == nil || id <= NoID {
+		return nil
+	}
+	if int(id) < len(p.Types) {
+		if t := p.Types[id]; t != nil {
+			return t
+		}
+	}
+	raw := p.Str(id)
+	if raw == "" {
+		return nil
+	}
+	return typePool.Parse(raw)
+}
+
+// SetTypeRef records the structured type for an id in the Node.Type space so
+// that later TypeRef / Type calls skip the parse.
+func (p *Package) SetTypeRef(id int32, t *ty.Type) {
+	if p == nil || id <= NoID || t == nil {
+		return
+	}
+	for int(id) >= len(p.Types) {
+		p.Types = append(p.Types, nil)
+	}
+	p.Types[id] = t
+}
 
 // Children returns the direct children of id as a freshly allocated slice.
 // Hot paths should walk First/Next directly to avoid the allocation.
@@ -453,22 +520,40 @@ func (p *Package) EmbedFilesOf(id int32) map[string][]byte {
 // type has been inferred for that node. Codegen reads this instead of the AST's
 // mutated Type field.
 func (p *Package) InferredType(id int32) string {
-	if p == nil || id <= NoID || id >= int32(len(p.Nodes)) {
-		return ""
+	if t := p.InferredRef(id); t != nil {
+		return t.Raw()
+	}
+	return ""
+}
+
+// InferredRef returns the structured inferred type for id, or nil when the
+// checker inferred nothing there.
+func (p *Package) InferredRef(id int32) *ty.Type {
+	if p == nil || id <= NoID || id >= int32(len(p.Nodes)) || p.Inferred == nil {
+		return nil
 	}
 	return p.Inferred[id]
 }
 
-// SetInferred records the inferred type string for id. Safe to call multiple
-// times; later calls overwrite. Used by parser.PopulateInferredTypes.
+// SetInferred records the inferred type for id from its raw spelling. Safe to
+// call multiple times; later calls overwrite. Used by
+// parser.PopulateInferredTypes, which only ever holds strings.
 func (p *Package) SetInferred(id int32, typ string) {
-	if id <= NoID || id >= int32(len(p.Nodes)) || typ == "" {
+	if typ == "" {
+		return
+	}
+	p.SetInferredRef(id, typePool.Parse(typ))
+}
+
+// SetInferredRef records an already-parsed inferred type for id.
+func (p *Package) SetInferredRef(id int32, t *ty.Type) {
+	if id <= NoID || id >= int32(len(p.Nodes)) || t == nil {
 		return
 	}
 	if p.Inferred == nil {
-		p.Inferred = make(map[int32]string, 64)
+		p.Inferred = make(map[int32]*ty.Type, 64)
 	}
-	p.Inferred[id] = typ
+	p.Inferred[id] = t
 }
 
 // AnnotationKeys returns the annotation keys attached to id, in source order.
@@ -664,6 +749,7 @@ type Builder struct {
 	embeds    []Embed
 	embedSeen map[int32]bool // dedup for AddEmbed; discarded when Package is built
 	name      string
+	types     map[int32]*ty.Type // structured view of the InternType ids
 }
 
 // NewBuilder returns an empty Builder sized for a typical module.
@@ -694,9 +780,20 @@ func (b *Builder) Intern(s string) int32 {
 	return id
 }
 
-// InternType interns a rendered type string into the same table as Intern.
-// Types share the table so that Dump and Str work uniformly.
-func (b *Builder) InternType(s string) int32 { return b.Intern(s) }
+// InternType interns a rendered type string into the same table as Intern and
+// records its STRUCTURED form (Package.Types) so that a later TypeRef on the
+// returned id needs no re-parse. Types share the string table so that Dump and
+// Str keep working uniformly.
+func (b *Builder) InternType(s string) int32 {
+	id := b.Intern(s)
+	if b.types == nil {
+		b.types = make(map[int32]*ty.Type, 64)
+	}
+	if _, ok := b.types[id]; !ok {
+		b.types[id] = typePool.Parse(s)
+	}
+	return id
+}
 
 // Add appends n, assigns its Id, and returns the new id.
 func (b *Builder) Add(n Node) int32 {
@@ -785,10 +882,18 @@ func (b *Builder) AddEmbed(owner int32, data []byte, files map[string][]byte) {
 func (b *Builder) Package() *Package {
 	sort.SliceStable(b.anns, func(i, j int) bool { return b.anns[i].Owner < b.anns[j].Owner })
 	sort.SliceStable(b.embeds, func(i, j int) bool { return b.embeds[i].Owner < b.embeds[j].Owner })
+	var types []*ty.Type
+	if len(b.types) > 0 {
+		types = make([]*ty.Type, len(b.strings))
+		for id, t := range b.types {
+			types[id] = t
+		}
+	}
 	return &Package{
 		Name:    b.name,
 		Nodes:   b.nodes,
 		Strings: b.strings,
+		Types:   types,
 		Top:     b.top,
 		Anns:    b.anns,
 		Embeds:  b.embeds,

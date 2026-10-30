@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/ty"
 )
 
 func (p *Parser) parseStatement() Statement {
@@ -931,7 +932,7 @@ func (p *Parser) flushCompoundAssigns(def *FunctionDefinition) {
 	hasOptionResult := false
 	if def != nil {
 		for _, res := range def.Results {
-			if res != nil && res.Type != nil && strings.HasPrefix(typeString(res.Type), "?") {
+			if res != nil && res.Type != nil && ty.IsOptionRaw(typeString(res.Type)) {
 				hasOptionResult = true
 				break
 			}
@@ -1211,7 +1212,7 @@ func (p *Parser) parseLetStatement() Statement {
 	// 走 parseMapLiteral 路徑。
 	if stmt.Type == nil && p.currentToken.Type == lexer.LBRACE {
 		if varType, ok := p.sem.VarTypes[stmt.Name.Value]; ok {
-			if mt := parseMapTypeString(varType, nameToken); mt != nil {
+			if mt := parseMapTypeString(varType.Raw(), nameToken); mt != nil {
 				// 源碼未顯式標注型別（僅靠 VarTypes 推斷以正確解析 map 字面量）：
 				// 標記為推斷，formatter 不會多渲染 `[K]V`，冗餘檢查也不會誤刪名字。
 				stmt.Type = markInferred(mt)
@@ -1493,12 +1494,13 @@ func (p *Parser) parseLetStatement() Statement {
 			// （如 ct i64 = buf[0] 不應被覆蓋為 byte/u8）
 			if leftIdent, ok := v.Left.(*Identifier); ok {
 				if recvType, ok := p.sem.VarTypes[leftIdent.Value]; ok {
+					// 元素型別直接取自結構：切片、陣列、map 的 Elem 就是最外層括號之後
+					// 的那段拼寫，不必再掃 `]` 的位置，也不會被巢狀括號干擾。
 					elemType := ""
-					if strings.HasPrefix(recvType, "[]") {
-						elemType = recvType[2:]
-					} else if strings.HasPrefix(recvType, "[") {
-						if idx := strings.Index(recvType, "]"); idx >= 0 && idx+1 < len(recvType) {
-							elemType = recvType[idx+1:]
+					switch recvType.Kind {
+					case ty.Slice, ty.Array, ty.Map:
+						if recvType.Elem != nil {
+							elemType = recvType.Elem.Raw()
 						}
 					}
 					if elemType != "" {
@@ -3395,7 +3397,7 @@ func indexElementType(recvType string) string {
 		return strings.TrimPrefix(recvType, "[]")
 	}
 	// [N]T 索引返回 T
-	if strings.HasPrefix(recvType, "[") {
+	if ty.IsContainerRaw(recvType) {
 		if idx := strings.Index(recvType, "]"); idx > 0 {
 			return recvType[idx+1:]
 		}

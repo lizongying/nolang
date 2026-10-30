@@ -361,8 +361,8 @@ func (hp *HoverProvider) resolveOptionType(subject string) (optType string, inne
 			if t == "" {
 				return "", ""
 			}
-			if strings.HasPrefix(t, "?") {
-				return t, strings.TrimPrefix(t, "?")
+			if isOptionType(t) {
+				return t, optionInner(t)
 			}
 			return "?" + t, t
 		}
@@ -371,8 +371,8 @@ func (hp *HoverProvider) resolveOptionType(subject string) (optType string, inne
 	// 純識別符（含 `.fd` 之類的接收者欄位則查不到，回傳空）
 	if entry, ok := hp.index.symbols[base]; ok && entry.Type != "" && !strings.HasPrefix(entry.Type, "call ") {
 		t := entry.Type
-		if strings.HasPrefix(t, "?") {
-			return t, strings.TrimPrefix(t, "?")
+		if isOptionType(t) {
+			return t, optionInner(t)
 		}
 		return "?" + t, t
 	}

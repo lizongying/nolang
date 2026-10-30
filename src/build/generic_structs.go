@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 // mapTypePair 記錄一組 (keyType, valueType) 字串對，用於泛型 hashmap 特化。
@@ -46,18 +47,17 @@ func isMapTypeString(s string) bool {
 // mapTypeToHashmapName 將 map 型別字串（如 "[bool]i64"）轉換為特化結構名稱（如 "hashmap-bool-i64"）。
 // 若輸入不是 map 型別，回傳空字串。
 func mapTypeToHashmapName(mapType string) string {
-	if !strings.HasPrefix(mapType, "[") {
+	// 分類委派 ty：`[K]V` 是 map 還是由 ty 的單一規則判定（`[str]i64` 是 map，
+	// `[3]i64` 是陣列）。key/value 直接取結構欄位，不再自己找 `]`。
+	st := typeOf(mapType)
+	if st.Kind != ty.Map || st.Key == nil || st.Elem == nil {
 		return ""
 	}
-	closeBracket := strings.IndexByte(mapType, ']')
-	if closeBracket <= 1 {
-		return ""
-	}
-	keyType := mapType[1:closeBracket]
+	keyType := st.Key.Raw()
 	if keyCategory(keyType) == "" {
 		return ""
 	}
-	valueType := mapType[closeBracket+1:]
+	valueType := st.Elem.Raw()
 	return "hashmap-" + keyType + "-" + parser.SanitizeLLVMTypeName(valueType)
 }
 

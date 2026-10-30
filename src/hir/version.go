@@ -27,4 +27,4 @@ package hir
 //
 // Bump rule: any change that alters the HIR tree produced from an unchanged
 // AST. Not required for MIR/LLVM changes (those are downstream of HIR).
-const HIRVersion = "2026-10-21.1"
+const HIRVersion = "2026-10-21.2"

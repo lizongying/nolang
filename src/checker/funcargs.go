@@ -15,8 +15,9 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/lexer"
-	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
+	pkg "github.com/lizongying/nolang/package"
 )
 
 // FilterByExports 依 lib.no 匯出聲明過濾模組 Program（供 build 代碼生成使用）。
@@ -57,16 +58,15 @@ func isConcreteType(typeName string) bool {
 		return true
 	}
 	// 複合型別：切片、陣列、可空、指針、view（借用）
-	if strings.HasPrefix(typeName, "[]") || strings.HasPrefix(typeName, "[") ||
-		strings.HasPrefix(typeName, "?") || strings.HasPrefix(typeName, "ptr ") ||
-		strings.HasPrefix(typeName, "&") {
+	if ty.IsContainerRaw(typeName) ||
+		ty.IsOptionRaw(typeName) || ty.IsPtrRaw(typeName) ||
+		ty.IsViewRaw(typeName) {
 		return true
 	}
-	// 已註冊的單具體型別別名（如 fd）視為具體型別，不再跳過型別檢查
-	if validationConcreteTypeAliases != nil {
-		if _, ok := validationConcreteTypeAliases[typeName]; ok {
-			return true
-		}
+	// 已註冊的單具體型別別名（如 fd）視為具體型別，不再跳過型別檢查。
+	// 別名由 Resolver 提供，故 `fs.fd` 這種帶前綴的拼寫一併命中。
+	if checkerType(typeName).Underlying() != nil {
+		return true
 	}
 	return false
 }
@@ -105,7 +105,7 @@ func funcSigReturnsOption(sig *funcSig) bool {
 		return false
 	}
 	for _, r := range sig.ResultTypes {
-		if strings.HasPrefix(r.Type, "?") {
+		if ty.IsOptionRaw(r.Type) {
 			return true
 		}
 	}
@@ -395,7 +395,7 @@ func runFuncArgsCore(program *parser.Program, rootDir string, view *THIRView) []
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value {
 				if _, exists := topLevelVarTypes[ls.Name.Value]; !exists {
-					topLevelVarTypes[ls.Name.Value] = declTypeOf(view, ls, ls.Type.String())
+					topLevelVarTypes[ls.Name.Value] = declTypeOfRaw(view, ls, ls.Type.String())
 				}
 			}
 		}
@@ -604,7 +604,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 				// IsPropagation lets; do the same here so the ok arm's let wins.
 				if s.Name != nil && !resultParamNames[s.Name.Value] && !s.IsPropagation {
 					if s.Type != nil && s.Type.String() != "" {
-						varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+						varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 					} else {
 						// Untyped shared `it` binding (ok/wildcard arm whose matched
 						// type is unknown at parse time). Arms share one varTypes map,
@@ -616,8 +616,8 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 						// cannot be resolved, clear `it` so it stays unknown - mirroring
 						// the equivalent guard in ValidateTypes (trace 15w45dqk).
 						inferred := inferExprType(s.Value, varTypes, nil, "")
-						if strings.HasPrefix(inferred, "?") {
-							inferred = strings.TrimPrefix(inferred, "?")
+						if ty.IsOptionRaw(inferred) {
+							inferred = ty.StripOptionRaw(inferred)
 						}
 						if inferred != "" {
 							varTypes[s.Name.Value] = inferred
@@ -629,7 +629,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 				return results
 			}
 			if s.Name != nil && s.Type != nil {
-				varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 			}
 			return nil
 		}
@@ -652,7 +652,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 				// is authoritative — do not overwrite with inferred type.
 				// e.g. `t u64 = 0` should register "u64", not "i64".
 				if s.Type != nil && s.Type.String() != "" {
-					varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+					varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 				} else if _, exists := varTypes[s.Name.Value]; !exists {
 					// No explicit type and variable not yet seen: infer from value.
 					inferred := ""
@@ -699,7 +699,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		}
 		// Type-only declaration: name [N]type (no = value)
 		if s.Name != nil && s.Type != nil {
-			varTypes[s.Name.Value] = declTypeOf(view, s, s.Type.String())
+			varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
 		}
 	case *parser.MultiAssignStatement:
 		var results []ValidateResult
@@ -733,7 +733,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		innerResultParams := make(map[string]bool)
 		for _, p := range s.Parameters {
 			if p.Type != nil {
-				localTypes[p.Name] = declTypeOf(view, p, p.Type.String())
+				localTypes[p.Name] = declTypeOfRaw(view, p, p.Type.String())
 			}
 		}
 		for _, r := range s.Results {
@@ -743,9 +743,9 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 				// 結果參數的生效型別去掉 `?`，使方法體內 `c = <T>` 合法、
 				// 不觸發 option 包裝／解包，對齊內建數值型別（int.div 先例）。
 				if s.IsMethodDef && parser.IsOperatorOverloadName(parser.OperatorOverloadBaseName(s.Name)) {
-					rt = strings.TrimPrefix(rt, "?")
+					rt = ty.StripOptionRaw(rt)
 				}
-				localTypes[r.Name] = declTypeOf(view, r, rt)
+				localTypes[r.Name] = declTypeOfRaw(view, r, rt)
 				innerResultParams[r.Name] = true
 			}
 		}
@@ -805,7 +805,7 @@ func resolveExprType(expr parser.Expression, varTypes map[string]string, structF
 		if leftType == "str" || leftType == "txt" {
 			return "char"
 		}
-		if strings.HasPrefix(leftType, "[") {
+		if ty.IsContainerRaw(leftType) {
 			if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
 				elemType := leftType[idx+1:]
 				if elemType != "" {
@@ -830,7 +830,7 @@ func resolveExprType(expr parser.Expression, varTypes map[string]string, structF
 		// Slicing [N]T returns []T; slicing str returns str
 		if e.Left != nil {
 			leftType := resolveExprType(e.Left, varTypes, structFields)
-			if strings.HasPrefix(leftType, "[") {
+			if ty.IsContainerRaw(leftType) {
 				if idx := strings.LastIndex(leftType, "]"); idx >= 0 && idx+1 < len(leftType) {
 					return "[]" + leftType[idx+1:]
 				}
@@ -884,17 +884,10 @@ func isNumericType(t string) bool {
 // char is treated as a Unicode code point (0–0x10FFFF).
 func intTypeRange(t string) (min, max int64, ok bool) {
 	// 單具體型別別名解析：若 t 是已註冊的整型基礎別名（如 fd → i64），
-	// 遞迴解析到底層型別的整數範圍，使整數字面量例外可正確範圍檢查
-	if validationConcreteTypeAliases != nil {
-		if underlying, exists := validationConcreteTypeAliases[t]; exists {
-			return intTypeRange(underlying)
-		}
-		// Try with module prefix stripped (e.g. "fs.fd" → "fd")
-		if short := stripModulePrefix(t); short != t {
-			if underlying, exists := validationConcreteTypeAliases[short]; exists {
-				return intTypeRange(underlying)
-			}
-		}
+	// 沿別名鏈解析到底層型別再取整數範圍，使整數字面量例外可正確範圍檢查。
+	// 別名鏈交給 ty.Pool 的 Resolver（Canonical 走到底，且含模組前綴剝除）。
+	if c := checkerCanonicalRaw(t); c != t {
+		return intTypeRange(c)
 	}
 	switch t {
 	case "i8":
@@ -1202,7 +1195,7 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 	}
 	// ?T 到 T 的隱式解包：在 ok 分支中，?T 變數已確認為有值，
 	// 傳給期望 T 的參數是安全的（代碼生成器會自動取值）。
-	if strings.HasPrefix(argType, "?") && argType[1:] == expectedType {
+	if ty.IsOptionRaw(argType) && argType[1:] == expectedType {
 		return true
 	}
 	// 模組前綴類型相容：合併後類型可能被前綴化（如 bigint.bigint），
@@ -1258,7 +1251,7 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 		return true
 	}
 	// [N]T is compatible with []T (array-to-slice coercion)
-	if strings.HasPrefix(argType, "[") && !strings.HasPrefix(argType, "[]") {
+	if ty.IsContainerRaw(argType) && !ty.IsSliceRaw(argType) {
 		if idx := strings.Index(argType, "]"); idx >= 0 {
 			elemType := argType[idx+1:]
 			if "[]"+elemType == expectedType {
@@ -1270,7 +1263,7 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 	// can be assigned to a fixed-size array variable, following the left-hand
 	// side type. e.g. BLAKE2B-SIGMA [12][16]i64 = [[0,1,...,15], ...]
 	// where each inner [0,1,...,15] is a SliceLiteral inferred as []i64.
-	if strings.HasPrefix(argType, "[]") && strings.HasPrefix(expectedType, "[") && !strings.HasPrefix(expectedType, "[]") {
+	if ty.IsSliceRaw(argType) && ty.IsContainerRaw(expectedType) && !ty.IsSliceRaw(expectedType) {
 		if idx := strings.Index(expectedType, "]"); idx >= 0 {
 			expectedElemType := expectedType[idx+1:]
 			if "[]"+expectedElemType == argType {
@@ -1708,7 +1701,7 @@ func stdMethodOptionResult(recvType, method string) string {
 			if m.MethodName != method || len(m.Return) == 0 {
 				continue
 			}
-			if r := m.Return[0].String(); strings.HasPrefix(r, "?") && !mentionsTypeVar(r) {
+			if r := m.Return[0].String(); ty.IsOptionRaw(r) && !mentionsTypeVar(r) {
 				return r
 			}
 		}
@@ -1723,7 +1716,7 @@ func optionResultOfSigEntry(entry StdSigEntry) string {
 		return ""
 	}
 	r := entry.Results[0]
-	if !strings.HasPrefix(r, "?") || mentionsTypeVar(r) {
+	if !ty.IsOptionRaw(r) || mentionsTypeVar(r) {
 		return ""
 	}
 	return r
@@ -1859,7 +1852,7 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 		// `e.init(c, key)` was flagged this way). The dedicated option rule
 		// (fxxoptarg) already covers user-defined calls, where the flow is
 		// known precisely.
-		if strings.HasPrefix(argType, "?") {
+		if ty.IsOptionRaw(argType) {
 			continue
 		}
 		if typeNamesEquivalent(paramType, argType) {
@@ -2089,7 +2082,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						if isLoweringTempArg(arg) {
 							continue
 						}
-						if !underUnwrap && strings.HasPrefix(argType, "?") && strings.TrimPrefix(argType, "?") == expectedType {
+						if !underUnwrap && ty.IsOptionRaw(argType) && ty.StripOptionRaw(argType) == expectedType {
 							results = append(results, ValidateResult{
 								TraceID: "fxxoptarg",
 								Line:    e.Token.Line,
@@ -2140,6 +2133,10 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 			// builtin field accessors (see checkPrivateBuiltinMethodCall).
 			recvType := resolveExprType(dot.Receiver, varTypes, structFields)
 			results = append(results, checkPrivateBuiltinMethodCall(e, dot, recvType, validationCurModule)...)
+			// ... and for underscore-prefixed std symbols owned by a DIFFERENT
+			// module (see checkPrivateStdCall): `_` in std means module-internal,
+			// so a cross-module call is an ERROR, not a convention.
+			results = append(results, checkPrivateStdCall(e, dot, recvType, validationCurModule)...)
 		}
 		// Recurse into arguments for nested calls
 		for _, arg := range e.Arguments {
@@ -2747,11 +2744,11 @@ func lookupReturnCount(callExpr *parser.CallExpression, sigs map[string]*funcSig
 // baseTypeNameForMethod extracts the base type name used for method lookup.
 // e.g. "str" → "str", "i64" → "i64", "[]u8" → "slice", "[64]i64" → "array"
 func baseTypeNameForMethod(typeStr string) string {
-	typeStr = strings.TrimPrefix(typeStr, "?")
-	if strings.HasPrefix(typeStr, "[]") {
+	typeStr = ty.StripOptionRaw(typeStr)
+	if ty.IsSliceRaw(typeStr) {
 		return "slice"
 	}
-	if strings.HasPrefix(typeStr, "[") && strings.Contains(typeStr, "]") {
+	if ty.IsContainerRaw(typeStr) {
 		return "array"
 	}
 	return typeStr
@@ -2776,17 +2773,13 @@ func checkerKeyCategory(keyType string) string {
 // （如 "hashmap-str-i64"）。若輸入不是 map 型別，回傳空字串。
 // 與 build.mapTypeToHashmapName 邏輯一致，供 checker 包獨立使用（避免循環依賴）。
 func checkerMapTypeToHashmapName(mapType string) string {
-	if !strings.HasPrefix(mapType, "[") {
+	st := ty.Parse(mapType)
+	if st.Kind != ty.Map || st.Key == nil || st.Elem == nil {
 		return ""
 	}
-	closeBracket := strings.IndexByte(mapType, ']')
-	if closeBracket <= 1 {
+	keyType := st.Key.Raw()
+	if keyType == "" || checkerKeyCategory(keyType) == "" {
 		return ""
 	}
-	keyType := mapType[1:closeBracket]
-	if checkerKeyCategory(keyType) == "" {
-		return ""
-	}
-	valueType := mapType[closeBracket+1:]
-	return "hashmap-" + keyType + "-" + parser.SanitizeLLVMTypeName(valueType)
+	return "hashmap-" + keyType + "-" + parser.SanitizeLLVMTypeName(st.Elem.Raw())
 }

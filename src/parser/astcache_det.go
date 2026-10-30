@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"encoding/gob"
 	"sort"
-)
+
+	"github.com/lizongying/nolang/ty")
 
 // ---------------------------------------------------------------------------
 // Deterministic (byte-reproducible) encoding of CachedProgram.
@@ -267,34 +268,86 @@ type detCached struct {
 	Prog *detProgram
 }
 
+// ---- spelling <-> structure bridges ----
+//
+// The deterministic shadow stores SPELLINGS, because the AST-cache fingerprint
+// must stay a function of the text a program was written with: interning order,
+// pool generation and pointer identity are all deliberately invisible to it.
+// These four adapters are the only place the two representations meet.
+
+func detStrings(m map[string]*ty.Type) map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v.Raw()
+	}
+	return out
+}
+
+func detStringsMap(m map[string]map[string]*ty.Type) map[string]map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]map[string]string, len(m))
+	for k, v := range m {
+		out[k] = detStrings(v)
+	}
+	return out
+}
+
+func detTypes(m map[string]string) map[string]*ty.Type {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]*ty.Type, len(m))
+	for k, v := range m {
+		out[k] = tyPool.Parse(v)
+	}
+	return out
+}
+
+func detTypesMap(m map[string]map[string]string) map[string]map[string]*ty.Type {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]map[string]*ty.Type, len(m))
+	for k, v := range m {
+		out[k] = detTypes(v)
+	}
+	return out
+}
+
+
 // ---- struct -> shadow ----
 
 func detFromSem(s *SemanticContext) detSem {
 	return detSem{
-		VarTypes:           detSortStrStr(s.VarTypes),
+		VarTypes:           detSortStrStr(detStrings(s.VarTypes)),
 		EnumVariants:       detSortStrStrs(s.EnumVariants),
 		DeclaredVars:       detSortStrBool(s.DeclaredVars),
-		EnumVariantPayload: detSortStrMapStr(s.EnumVariantPayload),
+		EnumVariantPayload: detSortStrMapStr(detStringsMap(s.EnumVariantPayload)),
 		EnumVariantFields:  detSortStrMapStrs(s.EnumVariantFields),
 		IfaceImpls:         detSortStrStrs(s.IfaceImpls),
-		FuncVarTypes:       detSortStrMapStr(s.FuncVarTypes),
+		FuncVarTypes:       detSortStrMapStr(detStringsMap(s.FuncVarTypes)),
 		FuncDeclaredVars:   detSortStrMapBool(s.FuncDeclaredVars),
-		IdxLocalTypes:      detSortStrMapStr(s.IdxLocalTypes),
+		IdxLocalTypes:      detSortStrMapStr(detStringsMap(s.IdxLocalTypes)),
 		UnionMembers:       detSortStrStrs(s.UnionMembers),
 	}
 }
 
 func detToSem(d detSem) *SemanticContext {
 	return &SemanticContext{
-		VarTypes:           detRebuildStrStr(d.VarTypes),
+		VarTypes:           detTypes(detRebuildStrStr(d.VarTypes)),
 		EnumVariants:       detRebuildStrStrs(d.EnumVariants),
 		DeclaredVars:       detRebuildStrBool(d.DeclaredVars),
-		EnumVariantPayload: detRebuildStrMapStr(d.EnumVariantPayload),
+		EnumVariantPayload: detTypesMap(detRebuildStrMapStr(d.EnumVariantPayload)),
 		EnumVariantFields:  detRebuildStrMapStrs(d.EnumVariantFields),
 		IfaceImpls:         detRebuildStrStrs(d.IfaceImpls),
-		FuncVarTypes:       detRebuildStrMapStr(d.FuncVarTypes),
+		FuncVarTypes:       detTypesMap(detRebuildStrMapStr(d.FuncVarTypes)),
 		FuncDeclaredVars:   detRebuildStrMapBool(d.FuncDeclaredVars),
-		IdxLocalTypes:      detRebuildStrMapStr(d.IdxLocalTypes),
+		IdxLocalTypes:      detTypesMap(detRebuildStrMapStr(d.IdxLocalTypes)),
 		UnionMembers:       detRebuildStrStrs(d.UnionMembers),
 	}
 }

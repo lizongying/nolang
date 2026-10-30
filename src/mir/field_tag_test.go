@@ -105,8 +105,8 @@ func TestIsStructTypeRejectsArraysAndBuiltins(t *testing.T) {
 	}
 }
 
-// TestClassifyOwnershipDoesNotOwnFixedArrays pins the parseMapTypes branch that
-// makes `[N]T` a FIXED ARRAY rather than a map.
+// TestClassifyOwnershipDoesNotOwnFixedArrays pins the ty.Pool.isArraySize rule
+// that makes `[N]T` a FIXED ARRAY rather than a map.
 //
 // `[32]net.conn` and `[str]i64` both start with `[`, and only the bracket
 // CONTENT tells them apart: all-digits means a size, anything else means a key

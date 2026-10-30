@@ -20,6 +20,8 @@ package mir
 import (
 	"os"
 	"strings"
+
+	"github.com/lizongying/nolang/ty"
 )
 
 // FieldPtrLayout enables the Phase 1 layout flip: a struct-typed field whose
@@ -402,11 +404,10 @@ func (m *Module) setFieldTarget(recv ValueID, fieldName string) (string, int, bo
 	}
 	raw := t.Raw
 	if t.Kind == KindOption {
-		elem, ok := parseOptionElem(raw)
-		if !ok {
+		if t.T == nil || t.T.Kind != ty.Option || t.T.Elem == nil {
 			return "", 0, false
 		}
-		raw = elem
+		raw = t.T.Elem.Raw()
 	}
 	key := m.StructKeyOf(raw)
 	if key == "" {
@@ -495,10 +496,11 @@ func (m *Module) typeOwnsHeap(ty *Type) bool {
 // local is re-bound every iteration, and with no drop emitted for the option
 // each iteration leaked its whole json pool.
 func (m *Module) OptionOwnsHeap(raw string) bool {
-	elem, ok := parseOptionElem(raw)
-	if !ok {
+	ot := m.tyOf(raw)
+	if ot.Kind != ty.Option || ot.Elem == nil {
 		return false
 	}
+	elem := ot.Elem.Raw()
 	if ClassifyOwnership(elem) {
 		return true
 	}
@@ -590,21 +592,21 @@ func (m *Module) ErrPayloadOwnsHeap() bool {
 // ---------------------------------------------------------------------------
 
 type (
-	FuncID   int32
-	BlockID  int32
-	InstID   int32
-	ValueID  int32
-	TypeID   int32
-	ConstID  int32
+	FuncID  int32
+	BlockID int32
+	InstID  int32
+	ValueID int32
+	TypeID  int32
+	ConstID int32
 )
 
 const (
-	NoFunc   FuncID   = 0
-	NoBlock  BlockID  = 0
-	NoInst   InstID   = 0
-	NoVal    ValueID  = 0
-	NoType   TypeID   = 0
-	NoConst  ConstID  = 0
+	NoFunc  FuncID  = 0
+	NoBlock BlockID = 0
+	NoInst  InstID  = 0
+	NoVal   ValueID = 0
+	NoType  TypeID  = 0
+	NoConst ConstID = 0
 )
 
 // ---------------------------------------------------------------------------
@@ -623,15 +625,15 @@ const (
 	OpSwitch
 
 	// memory
-	OpAlloc   // stack/heap slot (carries Owned flag via its type)
-	OpLoad    // load from a slot
-	OpStore   // store into a slot
-	OpMove    // transfer ownership: source becomes invalid, drop follows dest
+	OpAlloc // stack/heap slot (carries Owned flag via its type)
+	OpLoad  // load from a slot
+	OpStore // store into a slot
+	OpMove  // transfer ownership: source becomes invalid, drop follows dest
 	// ⚠️ OpMove has TWO encodings (fresh value vs EmitMoveInto assignment) and
 	// every consumer must read both — see moveSrc/moveDst in analysis.go.
-	OpClone   // deep copy (heap duplicated); both source and dest stay owned
-	OpDrop    // destructor + @free (owned, exactly once)
-	OpBorrow  // take a reference (no ownership transfer)
+	OpClone  // deep copy (heap duplicated); both source and dest stay owned
+	OpDrop   // destructor + @free (owned, exactly once)
+	OpBorrow // take a reference (no ownership transfer)
 	// OpRetain bumps the refcount of the heap buffer behind an ALIASED value.
 	//
 	// A container element/field read (OpIndex / OpGetField / OpEnumField / the
@@ -673,9 +675,9 @@ const (
 	OpOptionWrap // build inline option {tag, payload} for val/ok/some/err
 	OpIndex      // array/slice element read
 	OpIndexStore // array/slice element write
-	OpSliceOp   // slice sub-range
-	OpLen       // container length (str/vec/slice/array/map) — see lowerDotRead
-	OpCap       // container capacity (str/vec/slice/array)
+	OpSliceOp    // slice sub-range
+	OpLen        // container length (str/vec/slice/array/map) — see lowerDotRead
+	OpCap        // container capacity (str/vec/slice/array)
 
 	// OpUtf8At: decode the UTF-8 code point that STARTS at a BYTE offset.
 	// Args = [strValue, byteOffset], Dst = char (i64 code point), -1 past the
@@ -690,9 +692,9 @@ const (
 	// `{ i64 tag, [N x i64] payload }`; the payload is a union shared by every
 	// variant, so field access is a bitcast at a slot offset rather than a
 	// struct GEP.
-	OpEnumNew    // build a variant value: args = payload fields, Int = tag, Name = enum raw
-	OpEnumTag    // read the discriminant (i64) of an enum value
-	OpEnumField  // read payload field at slot Int, typed by inst.Type
+	OpEnumNew   // build a variant value: args = payload fields, Int = tag, Name = enum raw
+	OpEnumTag   // read the discriminant (i64) of an enum value
+	OpEnumField // read payload field at slot Int, typed by inst.Type
 
 	// arithmetic / logic
 	OpAdd
@@ -804,50 +806,50 @@ const (
 )
 
 var opNames = [opCount]string{
-	OpInvalid:   "invalid",
-	OpReturn:    "return",
-	OpBr:        "br",
-	OpCondBr:    "cond-br",
-	OpSwitch:    "switch",
-	OpAlloc:     "alloc",
-	OpLoad:      "load",
-	OpStore:     "store",
-	OpMove:      "move",
-	OpClone:     "clone",
-	OpDrop:      "drop",
-	OpBorrow:    "borrow",
+	OpInvalid:    "invalid",
+	OpReturn:     "return",
+	OpBr:         "br",
+	OpCondBr:     "cond-br",
+	OpSwitch:     "switch",
+	OpAlloc:      "alloc",
+	OpLoad:       "load",
+	OpStore:      "store",
+	OpMove:       "move",
+	OpClone:      "clone",
+	OpDrop:       "drop",
+	OpBorrow:     "borrow",
 	OpRetain:     "retain",
 	OpRelease:    "release",
-	OpConst:     "const",
-	OpGetField:  "getfield",
-	OpSetField:  "setfield",
-	OpStructLit: "structlit",
+	OpConst:      "const",
+	OpGetField:   "getfield",
+	OpSetField:   "setfield",
+	OpStructLit:  "structlit",
 	OpOptionWrap: "option-wrap",
-	OpIndex:     "index",
+	OpIndex:      "index",
 	OpIndexStore: "indexstore",
-	OpSliceOp:   "sliceop",
-	OpLen:       "len",
-	OpCap:       "cap",
-	OpUtf8At:    "utf8-at",
-	OpAdd:       "add", OpSub: "sub", OpMul: "mul", OpDiv: "div", OpMod: "mod",
+	OpSliceOp:    "sliceop",
+	OpLen:        "len",
+	OpCap:        "cap",
+	OpUtf8At:     "utf8-at",
+	OpAdd:        "add", OpSub: "sub", OpMul: "mul", OpDiv: "div", OpMod: "mod",
 	OpUDiv: "udiv", OpUMod: "umod",
 	OpNeg: "neg", OpNot: "not", OpAnd: "and", OpOr: "or", OpBitAnd: "bitand", OpBitOr: "bitor", OpXor: "xor", OpShl: "shl", OpShr: "shr",
 	OpEq: "eq", OpNe: "ne", OpLt: "lt", OpLe: "le", OpGt: "gt", OpGe: "ge", OpStrEq: "streq",
 	OpULt: "ult", OpULe: "ule", OpUGt: "ugt", OpUGe: "uge",
-	OpPhi:  "phi",
-	OpCall:      "call",
+	OpPhi:        "phi",
+	OpCall:       "call",
 	OpCallExtern: "call-extern",
-	OpCallFFI:   "call-ffi",
-	OpCast:      "cast",
+	OpCallFFI:    "call-ffi",
+	OpCast:       "cast",
 	OpTxtFromStr: "txt-from-str",
 	OpStrFromVec: "str-from-vec",
-	OpFuncRef:   "func-ref",
+	OpFuncRef:    "func-ref",
 	OpRun:        "run",
 	OpAwait:      "await",
 	OpTaskRetain: "task-retain",
-	OpEnumNew:   "enum-new",
-	OpEnumTag:   "enum-tag",
-	OpEnumField: "enum-field",
+	OpEnumNew:    "enum-new",
+	OpEnumTag:    "enum-tag",
+	OpEnumField:  "enum-field",
 }
 
 func (o Op) String() string {
@@ -1086,9 +1088,16 @@ type TaggedEnumInfo struct {
 }
 
 type Type struct {
-	ID    TypeID
-	Raw   string
-	Kind  TypeKind
+	ID   TypeID
+	Raw  string
+	Kind TypeKind
+	// T is the STRUCTURAL view of Raw (ty.Parse of the same spelling). Kind is
+	// the LAYOUT (a registry fact: tagged enums, owned structs, scalar newtypes);
+	// T.Kind is the SYNTAX. A consumer that wants to know "is this an option /
+	// a map / a slice" must ask T, not scan Raw — internType is the only place
+	// the two are reconciled, and it always sets this field.
+	T *ty.Type
+	// Owned reports that the type owns heap memory and must be deep-freed.
 	Owned bool
 	Elem  TypeID
 	Sizes []int64 // for KindArray: dimensions
@@ -1109,121 +1118,157 @@ type FuncType struct {
 	Results []TypeID
 }
 
-// parseMapTypes splits a nolang map type string "[Key]Value" into its key and
-// value type strings.
+// syntaxPool is the shared pool used by the package-level classifiers
+// (ClassifyOwnership and the ty.Parse-backed classifiers).
 //
-// Maps are spelled with a TYPE in the brackets (`[str]i64`), which is
-// syntactically ambiguous with a fixed array (`[32]byte`) — only the content
-// distinguishes them. Earlier code keyed off a "map[" prefix, which no real
-// type string ever has, so every map was misclassified as a fixed array (and
-// therefore as non-owned, and with a bogus element type). Detection is now:
-// bracket content that is not a plain integer => a key type => map.
-func parseMapTypes(raw string) (key, val string, ok bool) {
-	if len(raw) < 4 || raw[0] != '[' || raw[1] == ']' {
-		return "", "", false
+// It is deliberately RESOLVER-FREE: those classifiers answer purely syntactic
+// questions, and the one place a stage registry could change the answer — the
+// `[32]byte` array vs `[fd]i64` map ambiguity — is decided by IGNORING the
+// registry too (a length is digits/`?`/a single generic letter; every other
+// bracket content is a key). So sharing this cache cannot leak one compilation
+// unit's registries into another, which is what the per-unit Module.tyPool is
+// for. The pool is mutex-protected, so concurrent targets are safe.
+var syntaxPool = ty.NewPool(nil)
+
+// mirTypeResolver is this module's ty.Resolver: it teaches the pool the two
+// registries MIR owns and the ty package cannot know — the value-type aliases
+// this compilation unit declares (`fd = i64`, `code = i32`) and the struct names
+// it registered.
+//
+// It NEVER changes a type's Kind: ty records the alias target in Under and keeps
+// the spelling as the identity (Raw), which is what TypeMap and every diagnostic
+// depend on. So installing this resolver cannot move a value's layout — `fd`
+// stays the alias spelling and still interns as the integer its target is.
+type mirTypeResolver struct{ m *Module }
+
+// Alias reports the target spelling of a value-type alias. The registry is
+// Module.ValueTypeAliases, filled by the lowerer's collectValueTypeAliases, so
+// there is exactly one place an alias is recorded and exactly one place read.
+// A module-qualified receiver (`fs.fd`) retries with the prefix stripped, since
+// the lowerer registers both spellings.
+func (r mirTypeResolver) Alias(name string) (string, bool) {
+	if r.m == nil || name == "" || r.m.ValueTypeAliases == nil {
+		return "", false
 	}
-	end := strings.Index(raw, "]")
-	if end < 0 || end+1 >= len(raw) {
-		return "", "", false
+	if t, ok := r.m.ValueTypeAliases[name]; ok && t != "" {
+		return t, true
 	}
-	inner := raw[1:end]
-	if inner == "" {
-		return "", "", false
-	}
-	// A fixed array has a (possibly digit-only) size; anything else is a key type.
-	allDigits := true
-	for i := 0; i < len(inner); i++ {
-		if inner[i] < '0' || inner[i] > '9' {
-			allDigits = false
-			break
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		if t, ok := r.m.ValueTypeAliases[name[i+1:]]; ok && t != "" {
+			return t, true
 		}
 	}
-	if allDigits {
-		return "", "", false // [32]byte -> fixed array, not a map
-	}
-	return inner, raw[end+1:], true
+	return "", false
 }
 
-// isMapRaw reports whether raw is a nolang map type ("[Key]Value").
-func isMapRaw(raw string) bool {
-	_, _, ok := parseMapTypes(raw)
-	return ok
+// IsTypeName reports whether name can name a type: an alias or a struct whose
+// layout this module knows. It resolves the map/array bracket ambiguity, so it
+// must not answer true for a bare length.
+func (r mirTypeResolver) IsTypeName(name string) bool {
+	if r.m == nil || name == "" {
+		return false
+	}
+	if _, ok := r.Alias(name); ok {
+		return true
+	}
+	return r.m.IsStructType(name)
+}
+
+// tyOf returns the structural type for a raw spelling from this module's own
+// pool. Every MIR stage question about "what does this spelling mean" goes
+// through here instead of sniffing string prefixes.
+func (m *Module) tyOf(raw string) *ty.Type {
+	if m.tyPool == nil {
+		// Only reachable for a Module built outside NewModule (tests). The pool is
+		// still per-module, so this cannot leak state between compilation units.
+		m.tyPool = ty.NewPool(mirTypeResolver{m})
+	}
+	return m.tyPool.Parse(raw)
+}
+
+// kindOfTy maps a structural type onto MIR's LAYOUT kind.
+//
+// The two kinds are not the same thing and must not be conflated: ty.Kind is
+// syntax (what the author wrote), mir.TypeKind is layout (how many bytes and in
+// what shape the backend must allocate). `txt` is the clearest case — it is a
+// distinct syntax type but its layout is the registered `txt` struct. Registry
+// overrides (tagged enums, owned structs, qualified struct names) are applied
+// afterwards in internType, which stays the single place they can win.
+func kindOfTy(t *ty.Type) TypeKind {
+	if t == nil {
+		return KindUnknown
+	}
+	switch t.Kind {
+	case ty.Invalid:
+		if t.Raw() == "" {
+			return KindUnknown
+		}
+		return KindStruct
+	case ty.Void:
+		return KindVoid
+	case ty.Bool:
+		return KindBool
+	case ty.Int:
+		return KindInt
+	case ty.Float:
+		return KindFloat
+	case ty.Char:
+		return KindChar
+	case ty.Str:
+		return KindStr
+	case ty.Txt:
+		// Lays out as the registered `txt` struct, not as %str-long.
+		return KindStruct
+	case ty.Slice:
+		return KindSlice
+	case ty.Array:
+		return KindArray
+	case ty.Map:
+		return KindMap
+	case ty.Option:
+		return KindOption
+	case ty.View:
+		// `&T` is a lifetime annotation, not a distinct type: it keeps T's kind
+		// so it inherits T's layout. Views are rendered as pointers by
+		// codegen.viewPtrType.
+		if t.Elem != nil {
+			return kindOfTy(t.Elem)
+		}
+		return KindPtr
+	case ty.Ptr:
+		return KindPtr
+	case ty.Func:
+		return KindFunc
+	case ty.Union:
+		// `num`/`string` and friends are numeric aliases at the layout level.
+		return KindInt
+	case ty.Named:
+		// A bare identifier is a struct/named layout; internType downgrades it to
+		// KindInt when no layout is registered.
+		return KindStruct
+	}
+	return KindStruct
+}
+
+// ownedOfTy reports whether a structurally-known type owns heap memory.
+func ownedOfTy(t *ty.Type) bool {
+	if t == nil {
+		return false
+	}
+	switch t.Kind {
+	case ty.Str, ty.Slice, ty.Map:
+		return true
+	case ty.Option:
+		return ownedOfTy(t.Elem)
+	}
+	return false
 }
 
 // ClassifyOwnership derives whether a nolang type string owns heap memory.
 // Scalars, pointers (borrows), and unannotated structs are not owned; str,
 // slices (vec/[]T), maps, and options-of-owned are owned.
 func ClassifyOwnership(raw string) bool {
-	if raw == "" {
-		return false
-	}
-	switch {
-	case raw == "str", raw == "vec":
-		return true
-	case strings.HasPrefix(raw, "[]"):
-		return true
-	case isMapRaw(raw):
-		return true
-	case strings.HasPrefix(raw, "?"):
-		return ClassifyOwnership(strings.TrimPrefix(raw, "?"))
-	}
-	return false
-}
-
-// KindOfRaw derives a coarse structural kind from a nolang type string. It is a
-// best-effort classifier used by the printer and analysis; an empty Raw maps to
-// KindUnknown (callers may override with explicit struct knowledge).
-func KindOfRaw(raw string) TypeKind {
-	if raw == "" {
-		return KindUnknown
-	}
-	switch {
-	case raw == "str", raw == "vec":
-		return KindStr
-	case strings.HasPrefix(raw, "[]"):
-		return KindSlice
-	case isMapRaw(raw):
-		return KindMap
-	case strings.HasPrefix(raw, "?"):
-		return KindOption
-	case strings.HasPrefix(raw, "&"):
-		// VIEW (`&T`). `&` is a LIFETIME ANNOTATION — "this value's lifetime is
-		// bound to the method receiver (`self`)" — NOT a pointer and NOT a
-		// distinct type. So a view keeps T's kind (and therefore T's layout);
-		// see Module.internType for the two things that do differ.
-		return KindOfRaw(strings.TrimPrefix(raw, "&"))
-	case strings.HasPrefix(raw, "["):
-		return KindArray
-	case raw == "i8", raw == "i16", raw == "i32", raw == "i64", raw == "u8", raw == "u16", raw == "u32", raw == "u64":
-		return KindInt
-	case raw == "f32", raw == "f64":
-		return KindFloat
-	case raw == "bool":
-		return KindBool
-	case raw == "byte":
-		return KindInt
-	case raw == "char":
-		return KindChar
-	case strings.HasPrefix(raw, "fn("):
-		// Function-type signature produced by parser.FunctionType.String():
-		//   fn()            -> no params, no results
-		//   fn(i64)         -> one i64 param, no results
-		//   fn(i64)(i64)    -> one i64 param, one i64 result
-		return KindFunc
-	case strings.HasPrefix(raw, "*"):
-		// A raw pointer type (`*byte`, `*i64`, ...). It lowers to a bare
-		// `i8*` at the LLVM level (see llvmTypeOf's KindPtr branch); the
-		// pointee kind is irrelevant for codegen because nolang never
-		// dereferences through it — the only consumers are the private str/txt
-		// field accessors (`str._data()` / `txt._data()`), which hand the
-		// pointer to memcpy / raw stores and never read its pointee.
-		return KindPtr
-	case raw == "":
-		return KindUnknown
-	}
-	// a bare identifier is a struct or named type; treat as struct (may be owned
-	// via registry). See Module.MarkOwnedStruct.
-	return KindStruct
+	return ownedOfTy(syntaxPool.Parse(raw))
 }
 
 // ---------------------------------------------------------------------------
@@ -1234,20 +1279,52 @@ type Value struct {
 	ID   ValueID
 	Name string
 	Type TypeID
+	// Origin records the ORIGINAL (pre-promotion) type of a value whose Type was
+	// widened for the backend. MIR flattens every integer into an i64 slot and
+	// every float into a double, so Type alone cannot tell a `i8` element read
+	// from a `byte` one, or a `u64` operand from an `i64` one — and those
+	// differences decide sext vs zext and div vs udiv.
+	//
+	// NoType means "not promoted": the value's own Type is its source type.
+	// Codegen must ask sourceType(v) rather than reading Type.Raw directly.
+	Origin TypeID
+}
+
+// SetValueOrigin records the pre-promotion source type of v. It is a no-op when
+// the value already carries the same spelling, so callers can set it
+// unconditionally at a promotion site.
+func (m *Module) SetValueOrigin(v ValueID, raw string) {
+	if v == NoVal || int(v) >= len(m.Values) || raw == "" {
+		return
+	}
+	id := m.internType(raw)
+	if m.Values[v].Origin == id {
+		return
+	}
+	m.Values[v].Origin = id
+}
+
+// ValueOrigin returns the pre-promotion type of v, or nil when v was not
+// promoted (in which case its own Type is authoritative).
+func (m *Module) ValueOrigin(v ValueID) *Type {
+	if int(v) <= 0 || int(v) >= len(m.Values) {
+		return nil
+	}
+	return m.Type(m.Values[v].Origin)
 }
 
 type Inst struct {
-	ID    InstID
-	Op    Op
-	Dst   ValueID // result; NoVal when op yields nothing
+	ID  InstID
+	Op  Op
+	Dst ValueID // result; NoVal when op yields nothing
 	// Results holds every result value of a multi-result call
 	// (`x, y = f()`). Results[0] always equals Dst, so all single-result
 	// consumers can keep reading Dst unchanged.
 	Results []ValueID
-	Args  []ValueID
-	Type  TypeID
-	Block BlockID
-	Int   int64   // integer / bool / enum payload (OpConst/OpInt payloads)
+	Args    []ValueID
+	Type    TypeID
+	Block   BlockID
+	Int     int64 // integer / bool / enum payload (OpConst/OpInt payloads)
 	// IntBig carries the DECIMAL TEXT of a 128-bit integer literal whose value
 	// does not fit an int64 (i128/u128 beyond [-2^63, 2^64)). Int alone would
 	// silently truncate, which is exactly the bug that made `i128 x =
@@ -1255,9 +1332,9 @@ type Inst struct {
 	// as the i128 immediate instead of Int. Set only by hir2mir's KIntLit
 	// lowering for i128/u128-typed bindings; every other int const leaves it "".
 	IntBig string
-	Flt   float64 // float payload
-	Str   string  // literal text / label / field name
-	Sym   string  // callee name / extern symbol / builtin
+	Flt    float64 // float payload
+	Str    string  // literal text / label / field name
+	Sym    string  // callee name / extern symbol / builtin
 	// Callee is the indirect-call target value (a function-pointer local) for an
 	// OpCall whose callee is NOT a named function but a fn-typed local/param
 	// (e.g. `setup()` where `setup` has type `test-cb`). When Callee != NoVal,
@@ -1265,8 +1342,8 @@ type Inst struct {
 	// instead of emitting `call void @Sym(...)`. Sym may carry the fn-type name
 	// for diagnostics only.
 	Callee ValueID
-	Line  int32
-	Col   int32
+	Line   int32
+	Col    int32
 	// MovesArg marks an OpSetField whose value argument (Args[1]) is CONSUMED:
 	// the codegen stores the value's OWN buffer into the field, so the value's
 	// temporary heap must not be dropped separately (the field owns it now). The
@@ -1319,25 +1396,25 @@ type Term struct {
 }
 
 type Block struct {
-	ID     BlockID
-	Name   string
-	Insts  []InstID
-	Term   *Term
-	Preds  []BlockID
-	Succs  []BlockID
+	ID    BlockID
+	Name  string
+	Insts []InstID
+	Term  *Term
+	Preds []BlockID
+	Succs []BlockID
 }
 
 type Function struct {
-	ID         FuncID
-	Name       string
-	Params     []ValueID
-	Results    []TypeID
+	ID           FuncID
+	Name         string
+	Params       []ValueID
+	Results      []TypeID
 	ResultParams []ValueID // which Params are out-params (store back at return)
-	Blocks     []BlockID
-	Entry      BlockID
-	LocalTypes map[ValueID]TypeID // value -> type (carries ownership)
-	IsExtern   bool
-	IsMethod   bool
+	Blocks       []BlockID
+	Entry        BlockID
+	LocalTypes   map[ValueID]TypeID // value -> type (carries ownership)
+	IsExtern     bool
+	IsMethod     bool
 	// Variadic marks a `f (a ..T)` spread function (hir.FlagVariadic). The
 	// call site must pack trailing scalar arguments into the []T spread
 	// parameter; emitCallBody needs this flag because the "more actual args
@@ -1362,9 +1439,9 @@ type ExternDecl struct {
 }
 
 type GlobalDecl struct {
-	Name  string
-	Type  TypeID
-	Init  ValueID
+	Name string
+	Type TypeID
+	Init ValueID
 	// ConstText is the LLVM constant initializer text (e.g. `[256 x i8] [..]`).
 	// Empty means the initializer could not be constant-folded; the reference
 	// then resolves to an undefined @Name, which the verifier rejects and the
@@ -1382,7 +1459,7 @@ type GlobalDecl struct {
 const errPayloadRawStd = "err.err"
 
 type Module struct {
-	Name      string
+	Name string
 	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值：载荷 sizeof 小于等于
 	// 它则内联进 option 的 slot，大于它则堆装箱、slot[0] 存指针。默认 24
 	// （err 载荷是 24 字节的 %str-long，24 是它能原样内联的最小值）；可配置
@@ -1413,15 +1490,24 @@ type Module struct {
 	// module's identity — purely a query cache.
 	optBoxed map[string]bool
 
-	Funcs     []Function
-	Blocks    []Block
-	Insts     []Inst
-	Values    []Value
-	Types     []Type
-	TypeMap   map[string]TypeID
-	Consts    []Const
-	Externs   []ExternDecl
-	Globals   []GlobalDecl
+	// tyWarned dedupes reportKindConflict messages (raw + kind pair).
+	tyWarned map[string]bool
+
+	// tyPool is this compilation unit's structural type pool. There is one per
+	// Module (never a package global) because build/builder.go lowers several
+	// targets concurrently and each may register different aliases. It is
+	// created eagerly so no lowering goroutine can race on a lazy init.
+	tyPool *ty.Pool
+
+	Funcs      []Function
+	Blocks     []Block
+	Insts      []Inst
+	Values     []Value
+	Types      []Type
+	TypeMap    map[string]TypeID
+	Consts     []Const
+	Externs    []ExternDecl
+	Globals    []GlobalDecl
 	FuncByName map[string]FuncID
 
 	// KnownFuncs is the set of every Nolang function name present in the HIR
@@ -1616,6 +1702,7 @@ func (m *Module) redirectTermTargets(from, to BlockID) {
 func NewModule(name string) *Module {
 	m := &Module{
 		Name:         name,
+		tyPool:       ty.NewPool(nil),
 		TypeMap:      map[string]TypeID{},
 		FuncByName:   map[string]FuncID{},
 		Lowered:      map[string]bool{},
@@ -1683,8 +1770,11 @@ func (m *Module) internType(raw string) TypeID {
 			return id
 		}
 	}
-	kind := KindOfRaw(raw)
-	owned := ClassifyOwnership(raw)
+	// One structural parse drives everything below: the layout kind, the
+	// ownership bit and the nested element/dimension/signature components.
+	st := m.tyOf(raw)
+	kind := kindOfTy(st)
+	owned := ownedOfTy(st)
 	// A raw name that names a tagged enum definition is KindEnum, not the
 	// KindStruct that the bare-identifier fallback would produce. Without this
 	// an enum-typed local was materialized as a struct with no fields, and its
@@ -1720,7 +1810,7 @@ func (m *Module) internType(raw string) TypeID {
 		}
 	}
 	tid := TypeID(len(m.Types))
-	m.Types = append(m.Types, Type{ID: tid, Raw: raw, Kind: kind, Owned: owned})
+	m.Types = append(m.Types, Type{ID: tid, Raw: raw, Kind: kind, Owned: owned, T: st})
 	// The nested m.internType calls below APPEND to m.Types and can therefore
 	// REALLOCATE its backing array. Holding `t := &m.Types[tid]` across such a
 	// call — or writing `m.Types[tid].Elem = m.internType(...)`, whose left-hand
@@ -1744,38 +1834,33 @@ func (m *Module) internType(raw string) TypeID {
 	var arrSizes []int64
 	var elemTID TypeID
 	var fnT *FuncType
-	switch {
-	case kind == KindArray:
-		if n, elemRaw, ok := parseArray(raw); ok {
-			arrSizes = []int64{n}
-			elemTID = m.internType(elemRaw)
+	switch st.Kind {
+	case ty.Array:
+		// A symbolic length (`[n]t`) has no literal dimension: the element is
+		// still interned so the layout is not a zero-byte `[0 x i64]`.
+		if st.Elem != nil {
+			elemTID = m.internType(st.Elem.Raw())
 		}
-	case kind == KindSlice:
-		if elemRaw, ok := parseSliceElem(raw); ok {
-			elemTID = m.internType(elemRaw)
+		if st.Len >= 0 {
+			arrSizes = []int64{st.Len}
 		}
-	case kind == KindOption:
-		if elemRaw, ok := parseOptionElem(raw); ok {
-			elemTID = m.internType(elemRaw)
+	case ty.Slice, ty.Option, ty.View:
+		// A view `&T` records the borrowed element so codegen renders it as
+		// `llvm(T)*` instead of a bare `i8*`.
+		if st.Elem != nil {
+			elemTID = m.internType(st.Elem.Raw())
 		}
-	case kind == KindPtr && strings.HasPrefix(raw, "&"):
-		// View type `&T`: record the borrowed element type so codegen can
-		// render the view as `llvm(T)*` instead of a bare `i8*`.
-		elemTID = m.internType(strings.TrimPrefix(raw, "&"))
-	case kind == KindFunc:
-		// Parse the `fn(p0,p1)(r0,r1)` signature into by-value MIR type IDs.
-		// Each parameter/result raw is interned so emitCall can derive the
-		// by-reference LLVM pointer type for the indirect call.
-		if params, results, ok := parseFuncType(raw); ok {
-			ftt := FuncType{}
-			for _, pr := range params {
-				ftt.Params = append(ftt.Params, m.internType(pr))
-			}
-			for _, rr := range results {
-				ftt.Results = append(ftt.Results, m.internType(rr))
-			}
-			fnT = &ftt
+	case ty.Func:
+		// Intern each parameter/result so emitCall can derive the by-reference
+		// LLVM pointer type for the indirect call.
+		ftt := FuncType{}
+		for _, pr := range st.Params {
+			ftt.Params = append(ftt.Params, m.internType(pr.Raw()))
 		}
+		for _, rr := range st.Results {
+			ftt.Results = append(ftt.Results, m.internType(rr.Raw()))
+		}
+		fnT = &ftt
 	}
 	res := &m.Types[tid]
 	res.Sizes = arrSizes
@@ -1785,58 +1870,6 @@ func (m *Module) internType(raw string) TypeID {
 	}
 	m.TypeMap[raw] = tid
 	return tid
-}
-
-// parseFuncType parses a nolang function-type raw string of the form
-//   fn(p0,p1,...)(r0,r1,...)?
-// (exactly parser.FunctionType.String()) into its parameter and result type
-// raw strings. The optional result list may be absent (no results). Type
-// strings are comma-separated within each parenthesized group; nested
-// parentheses are not expected in the supported subset (scalar / slice / option
-// / array element types, not function-typed parameters).
-func parseFuncType(raw string) (params []string, results []string, ok bool) {
-	if !strings.HasPrefix(raw, "fn(") {
-		return nil, nil, false
-	}
-	rest := raw[len("fn("):]
-	// First group: params.
-	closeIdx := strings.IndexByte(rest, ')')
-	if closeIdx < 0 {
-		return nil, nil, false
-	}
-	params = splitTypeGroup(rest[:closeIdx])
-	rest = rest[closeIdx+1:]
-	// Optional second group: results.
-	if strings.HasPrefix(rest, "(") {
-		inner := rest[1:]
-		c := strings.IndexByte(inner, ')')
-		if c < 0 {
-			return nil, nil, false
-		}
-		results = splitTypeGroup(inner[:c])
-		rest = inner[c+1:]
-	}
-	if rest != "" {
-		return nil, nil, false
-	}
-	return params, results, true
-}
-
-// splitTypeGroup splits a comma-separated list of type raw strings. A trailing
-// comma (or empty content) yields no entry, matching parser behavior.
-func splitTypeGroup(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 // FieldIndex returns the GEP index of a named field within a struct type, and

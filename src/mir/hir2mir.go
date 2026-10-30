@@ -12,6 +12,7 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 // byteArrayRe matches a `[N]byte` / `[N]i8` nolang global type, used to fold
@@ -104,13 +105,19 @@ type lowerer struct {
 	// evaluate at compile time (no side effects, no loops, no impure/recursive
 	// calls). Computed lazily by computeComptimePurity.
 	comptimePure map[string]bool
-	// localRaw records each local's DECLARED nolang raw type by name. MIR
+	// localTypes records each local's DECLARED type by name, structurally. MIR
 	// flattens every integer to i64 and registers u64 locals as i64, so the
 	// signedness is lost from the lowered value — but it is needed to choose
 	// `udiv`/`urem` over `sdiv`/`srem` for unsigned division (i64-to-str's u64
 	// magnitude loop for i64.MIN). Populated from the KLet declaration's type
 	// annotation; reassignments (no type) leave the earlier entry intact.
-	localRaw map[string]string
+	//
+	// This table is the FALLBACK, not the primary source. Value.Origin is what a
+	// lowered value knows about its own provenance, and unlike a name it also
+	// covers params, struct fields, map values and cross-module bindings. The
+	// name table still answers the question asked BEFORE a value exists: folding
+	// an unsigned literal inside a declaration's own initializer (`b byte = -1`).
+	localTypes map[string]*ty.Type
 	// movedSlots records ownership-transferred source slots. When an owned
 	// value is moved (its heap ownership transferred into another slot / a
 	// result param), its slot must NOT be re-dropped if that same slot is
@@ -602,7 +609,7 @@ func (l *lowerer) enumFieldSlots(raw string) int64 {
 	if strings.HasPrefix(raw, "[]") {
 		return 3
 	}
-	if strings.HasPrefix(raw, "?") {
+	if ty.IsOptionRaw(raw) {
 		return 4 // %option = 32 bytes (i64 tag + 24-byte payload slot)
 	}
 	if fields, ok := l.mod.StructFields[raw]; ok {
@@ -804,7 +811,7 @@ func (l *lowerer) fieldTag(fieldID int32, raw string) FieldTag {
 	if l.isStructType(raw) {
 		return FieldTagOwned
 	}
-	if strings.HasPrefix(raw, "?") && l.isStructType(strings.TrimPrefix(raw, "?")) {
+	if ty.IsOptionRaw(raw) && l.isStructType(ty.StripOptionRaw(raw)) {
 		return FieldTagOwned
 	}
 	if ClassifyOwnership(raw) {
@@ -1684,7 +1691,7 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 		// whose result parameters are ?int.
 		if operator == "/" || operator == "%" {
 			if ht := l.typeHint; ht != NoType && ht != l.voidType {
-				if hty := l.mod.Type(ht); hty != nil && (hty.Kind == KindOption || strings.HasPrefix(hty.Raw, "?")) {
+				if hty := l.mod.Type(ht); hty != nil && (hty.Kind == KindOption || ty.IsOptionRaw(hty.Raw)) {
 					if c := n.First; c != hir.NoID {
 						if lt := l.mod.Type(l.typeOfNode(l.pkg.Node(c))); lt != nil &&
 							(lt.Kind == KindInt || lt.Raw == "int" || strings.HasSuffix(lt.Raw, ".int")) {
@@ -2172,7 +2179,7 @@ func (l *lowerer) lowerBareEnumVariant(nd, sibling *hir.Node) (ValueID, bool) {
 	if enumRaw == "" {
 		return NoVal, false
 	}
-	v, ok := l.enumVariantValueOf(strings.TrimPrefix(enumRaw, "?"), name)
+	v, ok := l.enumVariantValueOf(ty.StripOptionRaw(enumRaw), name)
 	if !ok {
 		// The sibling's MIR type is the enum's underlying i64, so it no longer
 		// names the enum; fall back to a globally unique variant name.
@@ -2364,7 +2371,7 @@ func (l *lowerer) intLitNeeds128(n *hir.Node) string {
 // function definition's parameter and result nodes. This is used by lowerExpr's
 // KIdent branch to create a KindFunc-typed value when a function name is used
 // as a value (passed as an argument to another function). The string must
-// match the format expected by internType/parseFuncType.
+// match the format ty.Parse expects for `fn(...)`.
 func (l *lowerer) funcSigRaw(hirID int32) string {
 	var params, results []string
 	for _, c := range l.pkg.Children(hirID) {
@@ -2405,9 +2412,9 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	// are unique per module, but clearing avoids stale cross-function entries
 	// and keeps ensureReturn's lookup scoped to the current function.
 	l.contTargets = make(map[BlockID]BlockID)
-	// Reset the declared-raw-type table so each function starts clean (the
+	// Reset the declared-type table
 	// signedness lookup for unsigned division must not leak across functions).
-	l.localRaw = make(map[string]string)
+	l.localTypes = make(map[string]*ty.Type)
 	// A function-level `#{overflow = ...}` annotation is the default overflow
 	// mode for every arithmetic instruction in this function; per-statement
 	// annotations OR on top of it in lowerStmt.
@@ -2489,8 +2496,8 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 					l.locals[paramNames[pIdx]] = params[pIdx+rIdx]
 					l.paramVals[params[pIdx+rIdx]] = true
 					// Record the DECLARED raw type for unsigned division.
-					if isUnsignedRaw(l.mod.Type(paramTypes[pIdx]).Raw) {
-						l.localRaw[paramNames[pIdx]] = l.mod.Type(paramTypes[pIdx]).Raw
+					if pt := l.mod.Type(paramTypes[pIdx]); pt != nil && pt.T.IsInteger() && pt.T.IsUnsigned() {
+						l.localTypes[paramNames[pIdx]] = pt.T
 					}
 					pIdx++
 				}
@@ -2796,8 +2803,8 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		// declaration actually carries an unsigned type; reassignments (no
 		// type annotation) leave the earlier entry intact.
 		if name != "" {
-			if raw := l.pkg.Type(n.Type); isUnsignedRaw(raw) {
-				l.localRaw[name] = raw
+			if t := l.pkg.TypeRef(n.Type); t.IsInteger() && t.IsUnsigned() {
+				l.localTypes[name] = t
 			}
 		}
 		// `#{embed='path'}` binding (`DATA []byte`): the bytes are embedded at
@@ -2938,14 +2945,14 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// option-wrap path below re-add it).
 			if l.typeHint != NoType && l.typeHint != l.voidType {
 				if ty := l.mod.Type(l.typeHint); ty != nil && ty.Raw != "" {
-					l.noteAnonymousStructLit(c, strings.TrimPrefix(ty.Raw, "?"))
+					l.noteAnonymousStructLit(c, optionInnerRaw(ty))
 				}
 			}
 			// 整數字面量指派給無號型別的綁定：常數轉換（`b byte = -1` 存 255 而非 -1）。
 			// 只對「整個初始化式就是（負）整數字面量」生效，不會外溢到巢狀呼叫實參。
 			if name != "" {
-				if raw, ok := l.localRaw[name]; ok {
-					if folded, foldedOK := l.tryUnsignedLitFold(c, raw); foldedOK {
+				if t, ok := l.localTypes[name]; ok {
+					if folded, foldedOK := l.tryUnsignedLitFold(c, t.Raw()); foldedOK {
 						val = folded
 						break
 					}
@@ -2959,12 +2966,12 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				// A local written more than once is not a single compile-time
 				// constant: branches may assign different values, and keeping only
 				// one of them lets a non-taken arm's literal leak into later folds.
-			l.constLocalWrites[name]++
-			if l.constLocalWrites[name] > 1 || l.reassignedNames[name] {
-				delete(l.constLocals, name)
-			} else if cv, _, ok := l.comptimeFold(c); ok {
-				l.constLocals[name] = cv
-			} else if cv, ok := l.comptimeAggValue(c); ok {
+				l.constLocalWrites[name]++
+				if l.constLocalWrites[name] > 1 || l.reassignedNames[name] {
+					delete(l.constLocals, name)
+				} else if cv, _, ok := l.comptimeFold(c); ok {
+					l.constLocals[name] = cv
+				} else if cv, ok := l.comptimeAggValue(c); ok {
 					// A binding to a struct / array literal is an AGGREGATE
 					// constant: it has no scalar form to emit (the literal is
 					// still lowered as a real value), but it is what makes the
@@ -3078,7 +3085,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						// `err(it)` would build an error whose msg is a %vec —
 						// so there is no longer any kind for which keeping the
 						// OK payload is right.
-						if _, ok := parseOptionElem(vty.Raw); ok {
+						if ot := vty.T; ot != nil && ot.IsOption() {
 							// `it` is the err-variant PAYLOAD, whatever
 							// the declared element is: the historical
 							// message string, or std's structured
@@ -3205,7 +3212,8 @@ func (l *lowerer) lowerStmtInner(id int32) {
 							// to `str` in the default arm) — tests/option-test.no
 							// and tests/option-match.no, which the legacy
 							// backend handles by keeping the option intact.
-							if elem, ok := parseOptionElem(vty.Raw); ok {
+							if ot := vty.T; ot != nil && ot.IsOption() && ot.Elem != nil {
+								elem := ot.ElemRaw()
 								if et := l.b.Type(elem); et != NoType {
 									if ety := l.mod.Type(et); ety == nil || !ety.Owned {
 										val = l.b.Emit(OpMove, dt, []ValueID{val}, "")
@@ -3448,7 +3456,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						if !writeback && vt != NoType && vt != l.voidType {
 							if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption {
 								if gty := l.mod.Type(gvt); gty != nil && gty.Kind != KindOption {
-									if elem, ok := parseOptionElem(vty.Raw); ok && elem == l.typeRaw(gvt) {
+									if ot := vty.T; ot != nil && ot.IsOption() && ot.ElemRaw() == l.typeRaw(gvt) {
 										writeback = true
 									}
 								}
@@ -4330,6 +4338,84 @@ func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID, inBound
 	return sink
 }
 
+// isGrowableContainer reports whether indexing v targets a GROWABLE container
+// (slice/vec — the %vec { len, cap, data } triple) as opposed to a fixed-size
+// array. Only growable containers may take a grow-write (FlagGrowWrite): a
+// fixed array cannot extend, so its place-write keeps the read-style bounds
+// check (mir/d9_write_bce_test.go).
+func (l *lowerer) isGrowableContainer(v ValueID) bool {
+	if v <= NoVal {
+		return false
+	}
+	t := NoType
+	if f := l.mod.Func(l.curFunc); f != nil {
+		if tt, ok := f.LocalTypes[v]; ok {
+			t = tt
+		}
+	}
+	if t == NoType {
+		if val := l.mod.Value(v); val != nil {
+			t = val.Type
+		}
+	}
+	if t == NoType {
+		return false
+	}
+	ty := l.mod.Type(t)
+	return ty != nil && ty.Kind == KindSlice
+}
+
+// lowerGrowWriteIndex lowers the match SUBJECT of a place-match WRITE on a
+// growable container: `a[i]: { ok -> it = v / -> _ }` where `a` is a slice.
+//
+// The read-side subject (lowerSafeIndex) gates ok on `0 <= i < len`. For a
+// WRITE that is wrong: the ok arm's store (`a[i] = it`) grows/allocates the
+// vec via codegen's ensureVecBuffer, so the only genuinely invalid index is a
+// negative one — gating on len makes every write into an unallocated vec
+// (len=0) take the nil path and the write is silently lost (the "未分配 vec
+// option 写丢失" bug class, seen as blake2's `v []u64` hashes going wrong).
+//
+// The ok payload must NOT read a[i]: on an unallocated vec the data pointer is
+// still null at subject-evaluation time (the store that allocates it has not
+// run yet), so reading would deref null — the "读取崩溃" half of the same bug.
+// The payload is dead anyway — the place-write rewrite rebinds `it` to the
+// value being written (`it = __place`) — so a zero of elemT is wrapped instead.
+func (l *lowerer) lowerGrowWriteIndex(arrV, idxV ValueID, elemT, optT TypeID) ValueID {
+	i64T := l.b.Type("i64")
+	boolT := l.b.Type("bool")
+	if i64T == l.voidType || boolT == l.voidType {
+		return l.lowerSafeIndex(arrV, idxV, elemT, optT, false)
+	}
+	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
+	zero := l.b.EmitInt(OpConst, i64T, 0, "")
+	nonneg := l.b.Emit(OpGe, boolT, []ValueID{idxV, zero}, "")
+
+	okBlk := l.b.NewBlock("gwo.ok")
+	noneBlk := l.b.NewBlock("gwo.none")
+	mergeBlk := l.b.NewBlock("gwo.merge")
+	l.b.Terminate(OpCondBr, []ValueID{nonneg}, []BlockID{okBlk, noneBlk}, "")
+
+	l.b.SetBlock(okBlk)
+	// Dead payload (see the comment above): zero of elemT, never a read of a[i].
+	e := l.b.EmitInt(OpConst, elemT, 0, "")
+	if e != NoVal {
+		wrapped := l.b.EmitOptionWrap(optT, 0, e)
+		l.b.EmitMoveInto(sink, wrapped)
+	}
+	if l.mod.Block(okBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	// The none arm (negative index) leaves the slot at its nil initial value.
+	l.b.SetBlock(noneBlk)
+	if l.mod.Block(noneBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+
+	l.b.SetBlock(mergeBlk)
+	return sink
+}
+
 // isUTF8IndexReceiver reports whether indexing v must go through the UTF-8
 // code-point read rather than a byte/element GEP — i.e. whether v is a `str`
 // or a `txt` (codegen.isStrReceiver / isTxtReceiver express the same test, but
@@ -5032,7 +5118,7 @@ func (l *lowerer) fieldTypeOf(recvV ValueID, fieldName string) TypeID {
 		return NoType
 	}
 	// Strip option prefix: `?T.field` should resolve to T's field.
-	raw = strings.TrimPrefix(raw, "?")
+	raw = ty.StripOptionRaw(raw)
 	// Resolve the struct key: try exact, then suffix match (e.g. `conn` ->
 	// `tls.conn`), mirroring codegen's structKeyOf.
 	key := raw
@@ -5088,7 +5174,22 @@ func (l *lowerer) fieldTypeOf(recvV ValueID, fieldName string) TypeID {
 // so a method call on a newtype receiver (`fd.to-str`) forms the same callee
 // the legacy backend emits (`i64.to-str`). Names that are not registered
 // aliases are returned unchanged.
+//
+// The structured answer comes first: the module pool carries a mirTypeResolver
+// over the very same registry, so `tyOf(name).Underlying()` is this lookup with
+// the alias chain already parsed. The registry read after it is not a second
+// source of truth — it covers the ordering window where a spelling was interned
+// BEFORE collectValueTypeAliases ran (Under is recorded at parse time), so the
+// expansion cannot be skipped just because the type came first.
 func (l *lowerer) expandTypeAlias(name string) string {
+	if name == "" {
+		return name
+	}
+	if under := l.mod.tyOf(name).Underlying(); under != nil {
+		if raw := under.Raw(); raw != "" && raw != name {
+			return raw
+		}
+	}
 	if l.mod.ValueTypeAliases != nil {
 		if t, ok := l.mod.ValueTypeAliases[name]; ok {
 			return t
@@ -5644,7 +5745,8 @@ func (l *lowerer) lowerGlobalRef(name string) ValueID {
 					break
 				}
 			}
-			if elemRaw, isOpt := parseOptionElem(gtype); isOpt {
+			if ot := l.mod.tyOf(gtype); ot.IsOption() && ot.Elem != nil {
+				elemRaw := ot.ElemRaw()
 				// Option-typed module constant (`v ?i64 = 7`): fold the wrapped
 				// element into a proper `%option { i64 tag, [N x i64] slot }`
 				// initializer. The generic foldConstText only yields the bare
@@ -6004,7 +6106,7 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		// `gtype` test here means the guard's behaviour is unchanged for every
 		// slice-typed binding, and the fixed-array type supplied by
 		// fixedArrayConstGlobalType is the only thing that unlocks the fold.
-		if !strings.HasPrefix(gtype, "[") {
+		if !ty.IsContainerRaw(gtype) {
 			return ""
 		}
 		var parts []string
@@ -6025,7 +6127,7 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 
 // operandUnsigned reports whether the expression subtree rooted at id is
 // unsigned for instruction-selection purposes: a KIdent whose DECLARED raw
-// type (localRaw) is unsigned, or a compound expression with an unsigned
+// type (localTypes) is unsigned, or a compound expression with an unsigned
 // operand anywhere below. The flat KIdent-only check used to MISS nested
 // shapes like `(lo + hi) / 2` — the direct child is a KInfix group, not an
 // identifier — so the division stayed signed and u64.sqrt's binary search
@@ -6042,7 +6144,8 @@ func (l *lowerer) operandUnsigned(id int32, depth int) bool {
 	}
 	switch nd.Kind {
 	case hir.KIdent:
-		return isUnsignedRaw(l.localRaw[l.pkg.Str(nd.S)])
+		t, ok := l.localTypes[l.pkg.Str(nd.S)]
+		return ok && t != nil && t.IsUnsigned()
 	case hir.KInfix, hir.KPrefix:
 		for _, c := range l.pkg.Children(id) {
 			if l.operandUnsigned(c, depth+1) {
@@ -6053,9 +6156,27 @@ func (l *lowerer) operandUnsigned(id int32, depth int) bool {
 	return false
 }
 
+// sourceUnsigned reports whether a LOWERED value's source type is unsigned.
+//
+// This is the provenance-aware replacement for consulting l.localTypes: it works
+// for parameters, struct fields, map values and cross-module bindings, which is
+// exactly where the name table had nothing to say (fix #2).
+func (l *lowerer) sourceUnsigned(v ValueID) bool {
+	if v == NoVal {
+		return false
+	}
+	if o := l.mod.ValueOrigin(v); o != nil && isUnsignedRaw(o.Raw) {
+		return true
+	}
+	if t := l.mod.Type(l.valueTypeOf(v)); t != nil && isUnsignedRaw(t.Raw) {
+		return true
+	}
+	return false
+}
+
 // recordRawFromValue is the fallback for the KLet declared-type recording: a
 // std method's receiver binding `n T = .` loses its annotation on the node
-// after generic instantiation (l.pkg.Type(n.Type) misses), so localRaw["n"]
+// after generic instantiation (l.pkg.Type(n.Type) misses), so localTypes["n"]
 // stayed empty and `n < 2` / `n / 2` lowered to SIGNED ops — u64.MAX.sqrt()
 // returned 0. The lowered MIR value still carries the true Raw (the dump
 // shows `move dst=20:u64`), so read the unsigned-ness back from the value.
@@ -6068,7 +6189,7 @@ func (l *lowerer) recordRawFromValue(name string, val ValueID, declaredRaw strin
 	if name == "" || val == NoVal {
 		return
 	}
-	if _, ok := l.localRaw[name]; ok {
+	if _, ok := l.localTypes[name]; ok {
 		return
 	}
 	switch declaredRaw {
@@ -6080,7 +6201,7 @@ func (l *lowerer) recordRawFromValue(name string, val ValueID, declaredRaw strin
 		return
 	}
 	if vty := l.mod.Type(vt); vty != nil && isUnsignedRaw(vty.Raw) {
-		l.localRaw[name] = vty.Raw
+		l.localTypes[name] = vty.T
 	}
 }
 
@@ -6290,7 +6411,7 @@ func (l *lowerer) comptimeFold(id int32) (comptimeVal, TypeID, bool) {
 	// a bare scalar where the caller expects an option — the match then reads a
 	// garbage tag. Folding `mk-ok()` (result `?i64`) to 11 turned
 	// `p: { ok(v) -> … }` into the nil arm. Option results are never folded.
-	if t := l.mod.Type(typ); t != nil && (t.Kind == KindOption || strings.HasPrefix(t.Raw, "?")) {
+	if t := l.mod.Type(typ); t != nil && (t.Kind == KindOption || ty.IsOptionRaw(t.Raw)) {
 		return comptimeVal{}, NoType, false
 	}
 	// A char expression now folds correctly: char arithmetic preserves the
@@ -6957,7 +7078,7 @@ func (l *lowerer) foldMultiResultCall(n *hir.Node, callee string) ([]comptimeVal
 		if t == nil {
 			return nil, nil, false
 		}
-		if t.Kind == KindOption || strings.HasPrefix(t.Raw, "?") {
+		if t.Kind == KindOption || ty.IsOptionRaw(t.Raw) {
 			return nil, nil, false
 		}
 		if t.Kind == KindStruct || t.Kind == KindArray || t.Kind == KindSlice {
@@ -7730,6 +7851,9 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			return l.lowerMapIndexRead(arrV, idxV, mapRaw)
 		}
 		elemT := l.elementTypeOf(arrV)
+		// promotedFrom is the element spelling that the i64 promotion below
+		// erases; it becomes the read's Origin.
+		promotedFrom := ""
 		// A narrow (byte/u8) element READ is promoted to i64, matching the
 		// legacy backend, which materializes a byte loaded out of a
 		// byte-addressed buffer as a full i64 register. Keeping the read at i8
@@ -7740,6 +7864,12 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// (see codegen.elemTypeOfReceiver) so a write still stores one byte.
 		if elemT != l.voidType {
 			if et := l.mod.Type(elemT); et != nil && (et.Raw == "byte" || et.Raw == "u8" || et.Raw == "i8") {
+				// `[]i8` and `[]byte` share the LLVM i8 load, so the ELEMENT's
+				// own spelling is the only thing that says whether the value
+				// must be sign- or zero-extended into the i64 register. Record
+				// it as the read's provenance; codegen consults it instead of
+				// assuming every i8 came from a byte buffer.
+				promotedFrom = et.Raw
 				if i64T := l.b.Type("i64"); i64T != l.voidType {
 					elemT = i64T
 				}
@@ -7774,13 +7904,25 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				// 的下标（`'héllo'[5]`：OpLen=6 → 误判在界内），读出来却是
 				// @nolang.utf8_cp_at 的越界哨兵 -1，于是把它当成 ok(-1) 交给用户。
 				// 这两类接收者必须改用哨兵判定。
-			if l.isUTF8IndexReceiver(arrV) {
-				return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint, l.pkg.Node(id).Has(hir.FlagInBounds))
-			}
-			return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint, l.pkg.Node(id).Has(hir.FlagInBounds))
+				inBounds := l.pkg.Node(id).Has(hir.FlagInBounds)
+				if l.isUTF8IndexReceiver(arrV) {
+					return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint, inBounds)
+				}
+				// D9 grow-write：place-match 写主体（FlagGrowWrite）落在可增长
+				// 容器（slice/vec）上时，ok 判定改用写语义 `i >= 0`——ok 臂里的
+				// store 会经 codegen 的 ensureVecBuffer 分配/扩容，len 门控只会
+				// 让未分配 vec（len=0）的每次写都判越界而静默丢失。可证界内
+				// （inBounds）时 buffer 必非空，走 lowerSafeIndex 快路同样满足
+				// 写语义（且不重发 gwo.* 块）。
+				if l.pkg.Node(id).Has(hir.FlagGrowWrite) && !inBounds && l.isGrowableContainer(arrV) {
+					return l.lowerGrowWriteIndex(arrV, idxV, elemT, l.typeHint)
+				}
+				return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint, inBounds)
 			}
 		}
-		return l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
+		iv := l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
+		l.mod.SetValueOrigin(iv, promotedFrom)
+		return iv
 	case hir.KArrayLit:
 		// Typed fixed array literal: `a [N] = [e0, e1, ...]`. In HIR the KArrayLit
 		// has a "size" slot followed by "elem" slots; gather the element
@@ -8072,7 +8214,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// codegen takes the wrapResult path and reports the single overflowing
 		// input (MIN) as err. Mirrors the infix promotion above.
 		if op == OpNeg && l.typeHint != NoType && l.typeHint != l.voidType {
-			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || strings.HasPrefix(ht.Raw, "?")) {
+			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || ty.IsOptionRaw(ht.Raw)) {
 				if ty := l.mod.Type(l.valueTypeOf(ov)); ty != nil && ty.Kind == KindInt {
 					rt = l.typeHint
 				}
@@ -8381,7 +8523,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 		}
 		if !isCmp && (srcOp == "/" || srcOp == "%") && l.typeHint != NoType && l.typeHint != l.voidType {
-			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || strings.HasPrefix(ht.Raw, "?")) {
+			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || ty.IsOptionRaw(ht.Raw)) {
 				isIntValue := func(v ValueID) bool {
 					raw := l.valueRaw(v)
 					if raw == "int" || strings.HasSuffix(raw, ".int") {
@@ -8405,7 +8547,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// must stay a plain add/sub/mul, or every expression in the corpus
 		// would become an option and std would fall over.
 		if !isCmp && (srcOp == "+" || srcOp == "-" || srcOp == "*" || srcOp == "<<") && l.typeHint != NoType && l.typeHint != l.voidType {
-			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || strings.HasPrefix(ht.Raw, "?")) {
+			if ht := l.mod.Type(l.typeHint); ht != nil && (ht.Kind == KindOption || ty.IsOptionRaw(ht.Raw)) {
 				isIntValue := func(v ValueID) bool {
 					raw := l.valueRaw(v)
 					if raw == "int" || strings.HasSuffix(raw, ".int") {
@@ -8487,26 +8629,26 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					if side == NoVal {
 						continue
 					}
-				st := l.valueTypeOf(side)
-				if st == l.voidType || st == NoType {
-					continue
-				}
-				// Widen when an operand is a WIDE integer type (int / i64 /
-				// u64 / i32 / u32 / i16 / u16 / i128 / u128) — not just the
-				// literal "i64". The shift count `24` and ordinary `int`
-				// literals flatten to i64 but carry the Raw spelling "int", so
-				// the old `stt.Raw == "i64"` test missed them and left
-				// `byte << 24` truncated to a single byte — which silently
-				// corrupted std/crypto/sha1+sha256 message schedules
-				// (`(padded[i]<<24)|(padded[i+1]<<16)|...` collapsed to just the
-				// low byte). C/Go promote narrow integer operands to int before
-				// a shift/bitwise op, so this matches the intended semantics;
-				// a byte VARIABLE still wraps at 8 bits because the final store
-				// into a byte slot truncates (see the comment above).
-				if stt := l.mod.Type(st); stt != nil && stt.Kind == KindInt && stt.Raw != "byte" && stt.Raw != "u8" && stt.Raw != "i8" {
-					resTyp = st
-					break
-				}
+					st := l.valueTypeOf(side)
+					if st == l.voidType || st == NoType {
+						continue
+					}
+					// Widen when an operand is a WIDE integer type (int / i64 /
+					// u64 / i32 / u32 / i16 / u16 / i128 / u128) — not just the
+					// literal "i64". The shift count `24` and ordinary `int`
+					// literals flatten to i64 but carry the Raw spelling "int", so
+					// the old `stt.Raw == "i64"` test missed them and left
+					// `byte << 24` truncated to a single byte — which silently
+					// corrupted std/crypto/sha1+sha256 message schedules
+					// (`(padded[i]<<24)|(padded[i+1]<<16)|...` collapsed to just the
+					// low byte). C/Go promote narrow integer operands to int before
+					// a shift/bitwise op, so this matches the intended semantics;
+					// a byte VARIABLE still wraps at 8 bits because the final store
+					// into a byte slot truncates (see the comment above).
+					if stt := l.mod.Type(st); stt != nil && stt.Kind == KindInt && stt.Raw != "byte" && stt.Raw != "u8" && stt.Raw != "i8" {
+						resTyp = st
+						break
+					}
 				}
 			}
 		}
@@ -8535,6 +8677,29 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 						break
 					}
 				}
+			}
+		}
+		// POST-LOWERING unsigned routing. The two passes above can only see the
+		// DECLARED spelling of a bare identifier (l.localTypes), so a u64 that
+		// arrived as a parameter, a struct field, a map value or a cross-module
+		// binding was still divided and ordered SIGNED. The operands are lowered
+		// now, so their provenance is authoritative: if either side's SOURCE type
+		// is unsigned, the operation is unsigned. This is what makes
+		// `u64.MAX / 2` correct for a parameter instead of only for a local.
+		if l.sourceUnsigned(lv) || l.sourceUnsigned(rv) {
+			switch op {
+			case OpDiv:
+				op = OpUDiv
+			case OpMod:
+				op = OpUMod
+			case OpLt:
+				op = OpULt
+			case OpLe:
+				op = OpULe
+			case OpGt:
+				op = OpUGt
+			case OpGe:
+				op = OpUGe
 			}
 		}
 		v := l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
@@ -8810,7 +8975,7 @@ func (l *lowerer) paramNodesOfCallee(callee string) []int32 {
 // seeded: an option-typed parameter (`?T`) would additionally need wrapping,
 // which is out of scope here and left to the existing promotion path.
 func (l *lowerer) noteAnonymousStructLit(id int32, typeRaw string) {
-	if id == hir.NoID || typeRaw == "" || strings.HasPrefix(typeRaw, "?") {
+	if id == hir.NoID || typeRaw == "" || ty.IsOptionRaw(typeRaw) {
 		return
 	}
 	n := l.pkg.Node(id)
@@ -8941,11 +9106,12 @@ func (l *lowerer) lowerMapLit(n *hir.Node) ValueID {
 	if mapRaw == "" {
 		mapRaw = l.pkg.InferredType(n.Id)
 	}
-	k, v, ok := parseMapTypes(mapRaw)
-	if !ok {
+	mt := l.mod.tyOf(mapRaw)
+	if !mt.IsMap() {
 		l.unsupported(l.curFuncName(), "map-lit", "cannot parse map type "+mapRaw)
 		return NoVal
 	}
+	k, v := mt.Key.Raw(), mt.Elem.Raw()
 	vSan := strings.ReplaceAll(v, "[]", "slice_")
 	hmName := "hashmap-" + k + "-" + vSan
 	hmT := l.b.Type(hmName)
@@ -9010,7 +9176,7 @@ func (l *lowerer) lowerMapLit(n *hir.Node) ValueID {
 //	                     (lowerMapLit allocates OpStructLit with hmName) and
 //	                     by anything copied out of one
 //
-// Only the first parses through parseMapTypes, so a KindMap-only check
+// Only the first is spelled `[K]V`, so a KindMap-only check
 // silently missed `m = {...}` bindings — the value is a struct, and the index
 // then fell through to the array GEP path (str key used as an i64 index).
 // For the second spelling valRaw is left empty (the value type is sanitised in
@@ -9020,18 +9186,18 @@ func (l *lowerer) mapIndexTypes(v ValueID) (mapRaw, keyRaw, valRaw string, ok bo
 	if v <= NoVal {
 		return "", "", "", false
 	}
-	ty := l.mod.Type(l.valueTypeOf(v))
-	for ty != nil && ty.Kind == KindOption && ty.Elem != NoType {
-		ty = l.mod.Type(ty.Elem)
+	mt := l.mod.Type(l.valueTypeOf(v))
+	for mt != nil && mt.Kind == KindOption && mt.Elem != NoType {
+		mt = l.mod.Type(mt.Elem)
 	}
-	if ty == nil {
+	if mt == nil {
 		return "", "", "", false
 	}
-	if k, val, ok2 := parseMapTypes(ty.Raw); ok2 {
-		return ty.Raw, k, val, true
+	if st := mt.T; st != nil && st.IsMap() {
+		return mt.Raw, st.Key.Raw(), st.Elem.Raw(), true
 	}
-	if strings.HasPrefix(ty.Raw, "hashmap-") {
-		if parts := strings.SplitN(ty.Raw, "-", 3); len(parts) == 3 {
+	if strings.HasPrefix(mt.Raw, "hashmap-") {
+		if parts := strings.SplitN(mt.Raw, "-", 3); len(parts) == 3 {
 			// The value type is SANITISED in the struct name (`[]str` ->
 			// `slice_str`) and a nested map's own name contains '-', so the tail
 			// is only a trustworthy type text when it is plainly one: no
@@ -9039,9 +9205,9 @@ func (l *lowerer) mapIndexTypes(v ValueID) (mapRaw, keyRaw, valRaw string, ok bo
 			// let the caller read the type off the specialised callee.
 			val := parts[2]
 			if val != "" && !strings.Contains(val, "slice_") && !strings.Contains(val, "-") && !strings.Contains(val, "?") {
-				return ty.Raw, parts[1], val, true
+				return mt.Raw, parts[1], val, true
 			}
-			return ty.Raw, parts[1], "", true
+			return mt.Raw, parts[1], "", true
 		}
 	}
 	return "", "", "", false
@@ -9073,10 +9239,11 @@ func (l *lowerer) mapCalleeOutRaw(callee string) string {
 func (l *lowerer) mapMethodCallee(mapRaw, method string) string {
 	hm := mapRaw
 	if !strings.HasPrefix(mapRaw, "hashmap-") {
-		k, v, ok := parseMapTypes(mapRaw)
-		if !ok {
+		mt := l.mod.tyOf(mapRaw)
+		if !mt.IsMap() {
 			return ""
 		}
+		k, v := mt.Key.Raw(), mt.Elem.Raw()
 		hm = "hashmap-" + k + "-" + strings.ReplaceAll(v, "[]", "slice_")
 	}
 	callee := hm + "." + method
@@ -9158,11 +9325,11 @@ func (l *lowerer) lowerMapIndexStore(arrV, keyV, valV ValueID, mapRaw string) {
 		valRaw = vr
 	}
 	if valRaw == "" {
-		if gr := l.mapCalleeOutRaw(l.mapMethodCallee(mapRaw, "get")); strings.HasPrefix(gr, "?") {
-			valRaw = strings.TrimPrefix(gr, "?")
+		if gr := l.mapCalleeOutRaw(l.mapMethodCallee(mapRaw, "get")); ty.IsOptionRaw(gr) {
+			valRaw = ty.StripOptionRaw(gr)
 		}
 	}
-	if valRaw != "" && !strings.HasPrefix(valRaw, "?") {
+	if valRaw != "" && !ty.IsOptionRaw(valRaw) {
 		if vt := l.mod.Type(l.valueTypeOf(valV)); vt != nil && vt.Kind == KindOption {
 			l.unsupported(l.curFuncName(), "map-index",
 				"map subscript write value is an option, not `"+valRaw+"`; unwrap it first (e.g. `v ?= m[k]` then `m[j] = v`, or read it through a match arm)")
@@ -9294,8 +9461,8 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 		// below for the reachable-type path.
 		if rt := l.valueTypeOf(arrV); rt != NoType && rt != l.voidType {
 			if rty := l.mod.Type(rt); rty != nil && rty.Kind == KindArray {
-				if _, elemRaw, ok := parseArray(rty.Raw); ok {
-					resTyp = l.b.Type("[]" + elemRaw)
+				if at := rty.T; at != nil && at.Kind == ty.Array && at.Len >= 0 && at.Elem != nil {
+					resTyp = l.b.Type("[]" + at.Elem.Raw())
 				}
 			} else if rty != nil && rty.Kind == KindSlice {
 				resTyp = rt
@@ -9312,8 +9479,8 @@ func (l *lowerer) lowerSlice(n *hir.Node) ValueID {
 		// element bytes into a stack slot, and the subsequent move into the
 		// []i64 result reinterpreters those bytes as a %vec header — leaving a
 		// garbage data pointer that aborts (trace/BPT trap) on first use.
-		if _, elemRaw, ok := parseArray(t.Raw); ok {
-			resTyp = l.b.Type("[]" + elemRaw)
+		if at := t.T; at != nil && at.Kind == ty.Array && at.Len >= 0 && at.Elem != nil {
+			resTyp = l.b.Type("[]" + at.Elem.Raw())
 		}
 	}
 	// Slicing a `txt` yields a `txt`: the receiver is the fixed inline
@@ -9506,15 +9673,15 @@ func (l *lowerer) lowerFieldReadOn(recvV ValueID, fieldName string) (ValueID, bo
 	// `port` as an unbound name and resolved it as a MODULE namespace
 	// ("unknown callee port.to-str", test-opt-struct-field). emitGetField
 	// already emits the option peel, so only the lookup key needs fixing.
-	recvRaw = strings.TrimPrefix(recvRaw, "?")
+	recvRaw = ty.StripOptionRaw(recvRaw)
 	// A VIEW (`&T`) read reaches transparently through the borrow: `v.x` on a
 	// `&point` resolves against `point`'s field layout, and codegen's
 	// emitGetField loads the pointer before the GEP. `viewOf` remembers the
 	// borrowed type so container properties (`.len` / `.cap`) can be dispatched
 	// on the POINTEE's kind rather than the pointer's.
 	viewOf := ""
-	if strings.HasPrefix(recvRaw, "&") {
-		viewOf = strings.TrimPrefix(recvRaw, "&")
+	if ty.IsViewRaw(recvRaw) {
+		viewOf = ty.StripViewRaw(recvRaw)
 		recvRaw = viewOf
 	}
 
@@ -9594,11 +9761,11 @@ func (l *lowerer) lowerFieldReadOn(recvV ValueID, fieldName string) (ValueID, bo
 // This is used to match the implicit-self call name (`_xt.len`) against the
 // receiver's raw type (`[]t`) in resolveCallee.
 func sliceMangledName(raw string) string {
-	raw = strings.TrimPrefix(raw, "?")
+	raw = ty.StripOptionRaw(raw)
 	if strings.HasPrefix(raw, "[]") {
 		return "_x" + raw[2:]
 	}
-	if strings.HasPrefix(raw, "[") {
+	if ty.IsContainerRaw(raw) {
 		if idx := strings.IndexByte(raw, ']'); idx > 0 {
 			return "_" + raw[1:idx] + "x" + raw[idx+1:]
 		}
@@ -9622,14 +9789,14 @@ func canonSliceRecv(name string) string {
 	if dot < 0 {
 		return name
 	}
-	recv := strings.TrimPrefix(name[:dot], "?")
+	recv := ty.StripOptionRaw(name[:dot])
 	meth := name[dot:] // includes the leading "."
 	if strings.HasPrefix(recv, "[]") {
 		return "[]t" + meth
 	}
 	// Map types like [str]i64 start with '[' but must NOT be canonicalised
 	// to []t — they have their own concrete method definitions.
-	if strings.HasPrefix(recv, "[") && strings.Contains(recv, "]") && !isMapRaw(recv) {
+	if strings.HasPrefix(recv, "[") && strings.Contains(recv, "]") && !syntaxPool.Parse(recv).IsMap() {
 		return "[]t" + meth
 	}
 	return name
@@ -10031,7 +10198,7 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// explicit here: without it `r.len()` on `r ?[]byte` reached
 		// emitBuiltinLen with a `%option___byte` receiver -> "unsupported receiver
 		// type %option___byte" (tests/fs-struct.no).
-		if strings.HasPrefix(recvTypeName, "?") {
+		if ty.IsOptionRaw(recvTypeName) {
 			if uv := l.unwrapOptionOperand(rv); uv != NoVal {
 				rv = uv
 				// Owned-string receivers (?str -> str) share their heap buffer with
@@ -10055,14 +10222,14 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 				recvTypeName = l.expandTypeAlias(recvTypeName)
 			}
 		}
-		recvTypeName = strings.TrimPrefix(recvTypeName, "?")
+		recvTypeName = ty.StripOptionRaw(recvTypeName)
 		// A VIEW receiver (`&T`, e.g. a struct field declared `p &point`) reads
 		// through the borrow: the method is defined on the BORROWED type, so the
 		// callee must be `point.sum`, not `&point.sum` ("unknown callee
 		// &point.sum"). Only the NAME is stripped — the receiver VALUE stays the
 		// view, which is already `T*` and is passed to `self` unchanged by
 		// emitCallBody's view branch.
-		recvTypeName = strings.TrimPrefix(recvTypeName, "&")
+		recvTypeName = ty.StripViewRaw(recvTypeName)
 		// A slice/array method that the builtin table supplies for a vec/array
 		// receiver must be emitted as that BUILTIN, not as a call to the generic
 		// stub (see sliceMethodBuiltin). Otherwise `v.len()` lowers to
@@ -10084,7 +10251,8 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// an i64 receiver). The naming convention is:
 		//   [key]val → hashmap-<key>-<val>
 		// e.g. [str]i64 → hashmap-str-i64, [i64]bool → hashmap-i64-bool.
-		if k, v, ok := parseMapTypes(recvTypeName); ok {
+		if mt := l.mod.tyOf(recvTypeName); mt.IsMap() {
+			k, v := mt.Key.Raw(), mt.Elem.Raw()
 			// Match the legacy generic_structs naming: the value type is sanitised
 			// (e.g. []str → slice_str) so hashmap-str-[]str becomes
 			// hashmap-str-slice_str. Key types in the corpus are always scalar
@@ -10203,10 +10371,10 @@ func sliceMethodBuiltin(recvTypeName, method string) string {
 	// builtins. Without this guard, m.len() on a [str]i64 map was dispatched
 	// to the str-len builtin, which then rejected the i64 (opaque handle)
 	// receiver with "unsupported receiver type i64".
-	if isMapRaw(recvTypeName) {
+	if syntaxPool.Parse(recvTypeName).IsMap() {
 		return ""
 	}
-	if !strings.HasPrefix(recvTypeName, "[]") && !strings.HasPrefix(recvTypeName, "[") {
+	if !ty.IsContainerRaw(recvTypeName) {
 		return ""
 	}
 	if bm := builtin.FindBuiltinMethod("[]t." + method); bm != nil {
@@ -10762,7 +10930,7 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 	if t := l.mod.Type(l.valueTypeOf(v)); t != nil {
 		raw = t.Raw
 	}
-	raw = strings.TrimPrefix(raw, "?")
+	raw = ty.StripOptionRaw(raw)
 	// 128-bit integers render through the native str_from_i128/u128 helpers, not
 	// fmt-int (which is i64-only and would truncate the value to 64 bits).
 	if raw == "i128" || raw == "u128" {
@@ -10790,7 +10958,7 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 		// which is the inconsistent case (its print(b) prints "true" there
 		// too — MIR standardizes on 1/0 for both).
 	case raw == "" || strings.HasPrefix(raw, "option") || strings.HasPrefix(raw, "[]") ||
-		strings.HasPrefix(raw, "[") || strings.Contains(raw, "{"):
+		ty.IsContainerRaw(raw) || strings.Contains(raw, "{"):
 		// Container / option / unknown: legacy has no fmt-* helper for these
 		// either (it routes them through .to-str or emits ""). Refuse instead
 		// of guessing.
@@ -10944,7 +11112,7 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 			recvTypeName = ty.Raw
 		}
 		recvTypeName = l.expandTypeAlias(recvTypeName)
-		recvTypeName = strings.TrimPrefix(recvTypeName, "?")
+		recvTypeName = ty.StripOptionRaw(recvTypeName)
 		// Check if there's a builtin for this receiver+method.
 		// Builtins are dispatched by the Inst.Sym string at codegen time
 		// (emitBuiltinForward), so we just emit the call with the right
@@ -11017,11 +11185,11 @@ func (l *lowerer) letDeclaredType(n *hir.Node) TypeID {
 	if dt == NoType || dt == l.voidType {
 		return dt
 	}
-	ty := l.mod.Type(dt)
-	if ty == nil || ty.Raw == "" {
+	mt := l.mod.Type(dt)
+	if mt == nil || mt.Raw == "" {
 		return dt
 	}
-	for _, p := range strings.Split(ty.Raw, "|") {
+	for _, p := range typeMembersOrSelf(mt) {
 		switch strings.TrimSpace(p) {
 		case "err", "ok", "some", "nil", "":
 		default:
@@ -11046,8 +11214,11 @@ func (l *lowerer) unwrapOptionOperand(v ValueID) ValueID {
 	if ty == nil || ty.Kind != KindOption {
 		return v
 	}
-	elem, ok := parseOptionElem(ty.Raw)
-	if !ok || elem == "" {
+	if ty.T == nil || !ty.T.IsOption() || ty.T.Elem == nil {
+		return v
+	}
+	elem := ty.T.ElemRaw()
+	if elem == "" {
 		return v
 	}
 	et := l.b.Type(elem)
@@ -12031,7 +12202,7 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 		// the correct peel+clone. Only applies when the parameter is a NON-option
 		// type and the argument value is an option whose payload resolves.
 		if pi := i + argOffset; pi < len(paramRaws) {
-			if praw := paramRaws[pi]; praw != "" && !strings.HasPrefix(praw, "?") {
+			if praw := paramRaws[pi]; praw != "" && !ty.IsOptionRaw(praw) {
 				if t := l.mod.Type(l.valueTypeOf(v)); t != nil && t.Kind == KindOption {
 					if uv := l.unwrapOptionOperand(v); uv != NoVal && uv != v {
 						v = uv
@@ -12335,9 +12506,36 @@ func (l *lowerer) structToStrCalleeFor(ty *Type) string {
 // mapToStrCalleeFor returns the `<[k]v>.to-str` callee for a built-in map
 // receiver, or "" when none exists. str-maps are laid out as structs
 // (KindStruct) and handled by structToStrCalleeFor / structFieldsToStr.
-func (l *lowerer) mapToStrCalleeFor(ty *Type) string {
-	raw := strings.TrimPrefix(ty.Raw, "?")
-	if strings.HasPrefix(raw, "[") {
+// optionInnerRaw drops one option layer from a MIR type: `?T` -> `T`.
+//
+// Types are structures now, so the answer comes from Type.T; the spelling is
+// only the fallback for a type interned without a structural view.
+func optionInnerRaw(t *Type) string {
+	if t == nil {
+		return ""
+	}
+	if t.T != nil {
+		return t.T.OptionInner().Raw()
+	}
+	return ty.StripOptionRaw(t.Raw)
+}
+
+// typeMembersOrSelf returns the union member spellings of a MIR type, or the
+// type's own spelling when it is not a union. It is the structured replacement
+// for splitting a type text on "|" (the split always yields at least one part).
+func typeMembersOrSelf(t *Type) []string {
+	if t == nil {
+		return nil
+	}
+	if t.T != nil {
+		return t.T.MembersOrSelfRaw()
+	}
+	return ty.UnionMembersOrSelfRaw(t.Raw)
+}
+
+func (l *lowerer) mapToStrCalleeFor(t *Type) string {
+	raw := optionInnerRaw(t)
+	if ty.IsContainerRaw(raw) {
 		if idx := strings.IndexByte(raw, ']'); idx > 0 {
 			inner := raw[1:idx] + raw[idx+1:] // "K V"
 			mangled := "_" + strings.ReplaceAll(inner, " ", "_x") + ".to-str"
@@ -12637,7 +12835,7 @@ func (l *lowerer) scalarOrStrToStr(v ValueID, t *Type) ValueID {
 		return v
 	}
 	strT := l.b.Type("str")
-	raw := strings.TrimPrefix(t.Raw, "?")
+	raw := ty.StripOptionRaw(t.Raw)
 	switch {
 	case raw == "str":
 		return v
@@ -12702,7 +12900,7 @@ func (l *lowerer) toStrCalleeFor(ty *Type) string {
 			elem = et.Raw
 		}
 	}
-	raw := strings.TrimPrefix(ty.Raw, "?")
+	raw := optionInnerRaw(ty)
 	var cands []string
 	if elem != "" {
 		if closeB := strings.IndexByte(raw, ']'); closeB > 0 {
@@ -12866,8 +13064,8 @@ func (l *lowerer) enqueueCallee(callee string) {
 // method's `self` parameter is also `T*`, so the receiver passes through
 // unchanged — only the callee NAME needs the strip.
 func trimViewPrefix(raw string) string {
-	raw = strings.TrimPrefix(raw, "?")
-	raw = strings.TrimPrefix(raw, "&")
+	raw = ty.StripOptionRaw(raw)
+	raw = ty.StripViewRaw(raw)
 	return raw
 }
 
@@ -12875,8 +13073,8 @@ func trimViewPrefix(raw string) string {
 // option of one (`?&T`). Views are non-owning borrows: they are never dropped
 // (ClassifyOwnership returns false) and are represented as `T*` in LLVM.
 func isViewRaw(raw string) bool {
-	raw = strings.TrimPrefix(raw, "?")
-	return strings.HasPrefix(raw, "&")
+	raw = ty.StripOptionRaw(raw)
+	return ty.IsViewRaw(raw)
 }
 
 // typeRaw returns the nolang type string of a MIR type id ("" when unknown).
@@ -12938,7 +13136,7 @@ func (l *lowerer) lowerBorrow(id int32) ValueID {
 	// The borrow's type is `&T` where T is the SOURCE's type. Strip a leading
 	// `?` so binding to an optional view (`v ?&point = self`) yields `&point`
 	// (the option wrap is applied afterwards) rather than `&?point`.
-	raw := strings.TrimPrefix(l.typeRaw(st), "?")
+	raw := ty.StripOptionRaw(l.typeRaw(st))
 	if raw == "" {
 		return NoVal
 	}
@@ -12946,7 +13144,7 @@ func (l *lowerer) lowerBorrow(id int32) ValueID {
 	// a `&T` local) is already a pointer — borrowing it again would produce a
 	// `&&T` and point at the view's own slot instead of the borrowed value.
 	// Leave those to the normal (copy / alias) path.
-	if strings.HasPrefix(raw, "&") {
+	if ty.IsViewRaw(raw) {
 		return NoVal
 	}
 	return l.borrowValue(src)
@@ -12968,8 +13166,8 @@ func (l *lowerer) borrowValue(v ValueID) ValueID {
 	if st == NoType || st == l.voidType {
 		return NoVal
 	}
-	raw := strings.TrimPrefix(l.typeRaw(st), "?")
-	if raw == "" || strings.HasPrefix(raw, "&") {
+	raw := ty.StripOptionRaw(l.typeRaw(st))
+	if raw == "" || ty.IsViewRaw(raw) {
 		return NoVal
 	}
 	return l.b.Emit(OpBorrow, l.b.Type("&"+raw), []ValueID{v}, "")
@@ -13164,14 +13362,11 @@ func (l *lowerer) elemTypeOfType(ty *Type) TypeID {
 		// Mirrors codegen.elemTypeOfReceiver's defensive path. Only reached
 		// when Elem is missing, so it can never change a currently-correct
 		// (non-void) element type.
-		if e, ok := arrayElemRaw(ty.Raw); ok {
-			if et := l.b.Type(e); et != l.voidType {
-				return et
-			}
-		}
-		if e, ok := parseSliceElem(ty.Raw); ok {
-			if et := l.b.Type(e); et != l.voidType {
-				return et
+		if at := l.mod.tyOf(ty.Raw); at.Elem != nil {
+			if k := kindOfTy(at); k == KindArray || k == KindSlice {
+				if et := l.b.Type(at.ElemRaw()); et != l.voidType {
+					return et
+				}
 			}
 		}
 	}
@@ -13288,8 +13483,8 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 	var v ValueID = NoVal
 	if tn.Kind == hir.KIdent && value != hir.NoID {
 		if nm := l.pkg.Str(tn.S); nm != "" {
-			if raw, ok := l.localRaw[nm]; ok {
-				v, _ = l.tryUnsignedLitFold(value, raw)
+			if t, ok := l.localTypes[nm]; ok {
+				v, _ = l.tryUnsignedLitFold(value, t.Raw())
 			}
 		}
 	}

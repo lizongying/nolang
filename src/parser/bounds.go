@@ -34,13 +34,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/lizongying/nolang/ty"
 )
 
 // arrayStaticLen 解析定長陣列型別字串 `[N]T` → (N, true)。
 // 切片 `[]T`（中括號內空）、`vec[T]`、`[?]T`、`[n]T`（n 為識別符）等一律回傳 false，
 // 因為其運行期長度無法靜態確定（保守）。
 func arrayStaticLen(lt string) (int64, bool) {
-	lt = strings.TrimPrefix(lt, "?")
+	lt = ty.StripOptionRaw(lt)
 	if !strings.HasPrefix(lt, "[") {
 		return 0, false
 	}
@@ -112,7 +114,7 @@ func (c boundsCtx) clone() boundsCtx {
 type boundsAnalyzer struct {
 	sem      *SemanticContext
 	funcName string
-	idxLocal map[string]string
+	idxLocal map[string]*ty.Type
 	inb      map[*IndexExpression]bool
 	// sliceFixedLen：本作用域內「運行期長度可靜態確定」的切片基底 → 其長度。
 	// 由 computeSliceFixedLen 在進入每個函數作用域時計算：僅收錄以函數體頂層
@@ -134,8 +136,8 @@ type boundsAnalyzer struct {
 // 並停止 option 降級，但 checker 重新分析時口徑不同 → 未標記 → 誤報 ERROR」。
 // 回傳去 `?` 前綴的型別字串（查不到回傳 ""）。
 func (a *boundsAnalyzer) typeOf(name string) string {
-	if t := a.idxLocal[name]; t != "" {
-		return strings.TrimPrefix(t, "?")
+	if t, ok := a.idxLocal[name]; ok && t.Raw() != "" {
+		return ty.StripOptionRaw(t.Raw())
 	}
 	return ""
 }
@@ -144,7 +146,7 @@ func (a *boundsAnalyzer) typeOf(name string) string {
 // 帶多餘模組前綴（如 "path.path.join"），而 IdxLocalTypes 的鍵是 lower 期記錄的單
 // 前綴名（"path.join"）。與 checker.ValidateUnhandledIndex 的 isSafeBase 同口徑：先試
 // 原名，再試「去掉第一段前綴」的名字，命中哪個用哪個。
-func resolveIdxLocal(sem *SemanticContext, name string) map[string]string {
+func resolveIdxLocal(sem *SemanticContext, name string) map[string]*ty.Type {
 	if sem == nil || sem.IdxLocalTypes == nil {
 		return nil
 	}
@@ -539,7 +541,7 @@ type InBoundsIndex struct {
 }
 
 // analyzeFunc 在一個函數作用域上執行分析：markStmts 已就地填妥 inb / removable。
-func analyzeFunc(sem *SemanticContext, funcName string, idxLocal map[string]string, body *BlockStatement) (map[*IndexExpression]bool, map[Statement]bool) {
+func analyzeFunc(sem *SemanticContext, funcName string, idxLocal map[string]*ty.Type, body *BlockStatement) (map[*IndexExpression]bool, map[Statement]bool) {
 	a := &boundsAnalyzer{
 		sem: sem, funcName: funcName, idxLocal: idxLocal,
 		inb:          map[*IndexExpression]bool{},
@@ -567,7 +569,7 @@ func AnalyzeInBoundsIndex(prog *Program) InBoundsIndex {
 		return res
 	}
 	sem := prog.Sem
-	var idxLocal map[string]string
+	var idxLocal map[string]*ty.Type
 	if sem != nil {
 		idxLocal = sem.IdxLocalTypes[""]
 	}
@@ -736,7 +738,7 @@ func computeSliceFixedLen(stmts []Statement) map[string]int64 {
 
 // AnalyzInBoundsForFunc 供 lowering 呼叫：在一個函數定義上計算 in-bounds 讀取集合。
 // idxLocal 為該函數的「安全索引專用」本地型別表（p.idxLocalTypes[fd.Name]）。
-func AnalyzInBoundsForFunc(sem *SemanticContext, fd *FunctionDefinition, idxLocal map[string]string) map[*IndexExpression]bool {
+func AnalyzInBoundsForFunc(sem *SemanticContext, fd *FunctionDefinition, idxLocal map[string]*ty.Type) map[*IndexExpression]bool {
 	if fd == nil || fd.Body == nil {
 		return nil
 	}

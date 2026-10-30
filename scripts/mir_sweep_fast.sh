@@ -49,7 +49,17 @@ echo "            scripts/mir_coverage_sweep.sh  （單後端快速冒煙）" >&
 echo "            scripts/mir_coverage.sh        （建置覆蓋率 + 失敗原因分桶）" >&2
 exit 3
 
-export PATH="/usr/bin:/opt/homebrew/opt/llvm/bin:$PATH"
+# Toolchain: put the project's LLVM (Homebrew) FIRST and otherwise INHERIT PATH.
+#
+# WHY not "/usr/bin:...": /usr/bin/clang can be older than the macOS SDK on the
+# box (the MEASURED FAILURE block in mir_golden.sh records clang 17 + SDK 27),
+# and forcing it to the front is exactly what produced
+#   ld: tapi error: malformed file ... unknown architecture arm64e.x1-macos
+# An explicit Homebrew LLVM is the toolchain this project builds against, so it
+# wins; when it is absent PATH is left untouched.
+if [ -d /opt/homebrew/opt/llvm/bin ]; then
+  export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+fi
 cd /Users/lizongying/IdeaProjects/no || exit 1
 NO=./bin/no
 WORKDIR=/tmp/mir_sweep

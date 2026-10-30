@@ -45,6 +45,15 @@ func checkNoPointerInField(t *testing.T, path string, typ reflect.Type) {
 		if typ.Elem().Name() == "SymbolTable" {
 			return
 		}
+		// Allowed: *ty.Type. ty.Type is an immutable, interned type
+		// descriptor owned by a ty.Pool — it has no relation to the AST and
+		// cannot pin a parser node alive. Structured types are the point of
+		// the THIR side tables (Types / Inferred), so the rule this test
+		// protects stays exactly what its name says: no AST pointers, not
+		// "no pointers at all".
+		if typ.Elem().Name() == "Type" {
+			return
+		}
 		t.Errorf("%s is %s; THIR side tables must not carry pointers "+
 			"(AST pointers stop at H0)", path, typ)
 	case reflect.Interface:

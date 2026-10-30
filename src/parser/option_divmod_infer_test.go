@@ -48,7 +48,7 @@ func letTypeOf(t *testing.T, src, name string) (astType string, semType string) 
 			astType = p.sem.InferredType(ls)
 		}
 		if p.sem != nil {
-			semType = p.sem.VarTypes[name]
+			semType = p.sem.VarTypeRaw(name)
 		}
 		return astType, semType
 	}

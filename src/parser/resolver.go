@@ -18,6 +18,8 @@
 // 只剩 `TypeFacts` / `NodeFacts` 兩張。
 package parser
 
+import "github.com/lizongying/nolang/ty"
+
 // CalleeKind 描述一個 CallExpression 在整程式改寫後代表哪一類呼叫。
 //
 // 注意：**原始碼永遠寫不出帶點的 Identifier**——lexer 的 isLetter 含 `-`
@@ -120,7 +122,12 @@ type SemanticContext struct {
 	captureFacts *CaptureFacts
 
 	// 類型推斷結果（原 parser 私有符號表）。
-	VarTypes     map[string]string
+	//
+	// 值是結構化的 *ty.Type，不是拼寫字串：這裡存的每一個型別都可能被下游問
+	// 「是不是 option / 指標 / 容器」或「元素是什麼」，而拼寫只是它在邊界
+	// （診斷、AST 快取、舊字串簽章）上的投影。字串出入口（SetVarType /
+	// VarType）保留，內部一律走 *Ref 版本。
+	VarTypes     map[string]*ty.Type
 	EnumVariants map[string][]string
 	DeclaredVars map[string]bool
 
@@ -129,7 +136,7 @@ type SemanticContext struct {
 	// 完整命名」所必需的：match 分支寫裸名 `some`，解析期據此查出其載荷型別，
 	// 供析構綁定 `some(v) ->` 的 `v` 綁型與 codegen 的 data 欄位拷貝。
 	// 內建 option 也登記於此（ok→t、err→str、nil→""），保持資料驅動一致。
-	EnumVariantPayload map[string]map[string]string
+	EnumVariantPayload map[string]map[string]*ty.Type
 	// EnumVariantFields：枚舉名 → 變體名 → 載荷欄位型別列表（單元變體為 nil）。
 	// 多欄位變體（如 rect(w f64, h f64)）的載荷以「合成結構體」表示，
 	// 型別名為 `<枚舉名>.<變體名>`（由 codegen 登記為具名 LLVM struct）。
@@ -147,7 +154,7 @@ type SemanticContext struct {
 	// function name → variable name → type. This prevents same-named
 	// locals in different functions (e.g. `r` in parse-i64 and parse-f64)
 	// from colliding in the global VarTypes map during lowering.
-	FuncVarTypes     map[string]map[string]string
+	FuncVarTypes     map[string]map[string]*ty.Type
 	FuncDeclaredVars map[string]map[string]bool
 
 	// IdxLocalTypes 是「安全索引專用」的解析器本地型別表（函數作用域）：
@@ -155,7 +162,7 @@ type SemanticContext struct {
 	// 供 checker 的 ValidateUnhandledIndex 判定索引基底是否為 arr/vec/slice。
 	// parser 實例在 ParseProgram 返回後即被丟棄，故 lowering 階段將此表掛到
 	// 語義副表匯出，使 checker 能複現 isSafeIndexBase 的型別查詢。
-	IdxLocalTypes map[string]map[string]string
+	IdxLocalTypes map[string]map[string]*ty.Type
 
 	// UnionMembers 是「類型解構 match 偵測專用」的 union 別名表：
 	// 別名名 → 直接成員型別名（如 num → [i32, i64, f64]），由 parseTypeAlias
@@ -189,12 +196,12 @@ func NewSemanticContext() *SemanticContext {
 	return &SemanticContext{
 		typeFacts:          NewTypeFacts(),
 		nodeFacts:          NewNodeFacts(),
-		VarTypes:           make(map[string]string),
+		VarTypes:           make(map[string]*ty.Type),
 		EnumVariants:       make(map[string][]string),
 		DeclaredVars:       make(map[string]bool),
-		EnumVariantPayload: make(map[string]map[string]string),
+		EnumVariantPayload: make(map[string]map[string]*ty.Type),
 		EnumVariantFields:  make(map[string]map[string][]string),
-		FuncVarTypes:       make(map[string]map[string]string),
+		FuncVarTypes:       make(map[string]map[string]*ty.Type),
 		FuncDeclaredVars:   make(map[string]map[string]bool),
 		IfaceImpls:         make(map[string][]string),
 	}
@@ -224,7 +231,7 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	s.captureFacts.Merge(other.captureFacts)
 	for k, v := range other.VarTypes {
 		if _, exists := s.VarTypes[k]; !exists {
-			s.SetVarType(k, v)
+			s.SetVarTypeRef(k, v)
 		}
 	}
 	for k, v := range other.EnumVariants {
@@ -234,7 +241,7 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	}
 	for enumName, variants := range other.EnumVariantPayload {
 		for vn, pt := range variants {
-			s.SetEnumVariantPayload(enumName, vn, pt)
+			s.SetEnumVariantPayloadRef(enumName, vn, pt)
 		}
 	}
 	for enumName, variants := range other.EnumVariantFields {
@@ -260,7 +267,7 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 					existing[vn] = vt
 				}
 			} else {
-				s.SetFuncVarType(fn, vn, vt)
+				s.SetFuncVarTypeRef(fn, vn, vt)
 			}
 		}
 	}
@@ -274,10 +281,10 @@ func (s *SemanticContext) Merge(other *SemanticContext) {
 	for fn, vars := range other.IdxLocalTypes {
 		for vn, vt := range vars {
 			if s.IdxLocalTypes == nil {
-				s.IdxLocalTypes = make(map[string]map[string]string)
+				s.IdxLocalTypes = make(map[string]map[string]*ty.Type)
 			}
 			if s.IdxLocalTypes[fn] == nil {
-				s.IdxLocalTypes[fn] = make(map[string]string)
+				s.IdxLocalTypes[fn] = make(map[string]*ty.Type)
 			}
 			if _, exists := s.IdxLocalTypes[fn][vn]; !exists {
 				s.IdxLocalTypes[fn][vn] = vt
@@ -385,6 +392,30 @@ func (s *SemanticContext) SetIndexInBounds(n Node, yes bool) {
 		return
 	}
 	s.nodeFacts.ensure().SetIndexInBounds(n, true)
+}
+
+// SetGrowWrite marks an IndexExpression as the write subject of a place match
+// (`a[i]: { ok -> it = v }`). It forwards to NodeFacts exactly like
+// SetIndexInBounds: a false report only clears an existing entry, it never
+// creates one.
+func (s *SemanticContext) SetGrowWrite(n Node, yes bool) {
+	if s == nil {
+		return
+	}
+	if !yes {
+		s.nodeFacts.SetGrowWrite(n, false)
+		return
+	}
+	s.nodeFacts.ensure().SetGrowWrite(n, true)
+}
+
+// GrowWriteOf reports whether an IndexExpression is a place-match write
+// subject. Nil-safe.
+func (s *SemanticContext) GrowWriteOf(n Node) bool {
+	if s == nil {
+		return false
+	}
+	return s.nodeFacts.GrowWriteOf(n)
 }
 
 // IndexIsInBounds reports the bounds analyzer's proof for an AST node. Nil-safe.
@@ -720,33 +751,71 @@ func (s *SemanticContext) EmbedFilesOf(n Node) map[string][]byte {
 
 // ---- 類型推斷結果（side-table）----
 
-// SetVarType 記錄變數宣告型別（含 ? 前綴表示 Option）。
+// SetVarType 記錄變數宣告型別（含 ? 前綴表示 Option）。typ 是拼寫，會被解析成
+// 結構後儲存；已在結構側的呼叫方用 SetVarTypeRef，免去一次往返。
 func (s *SemanticContext) SetVarType(name, typ string) {
+	s.SetVarTypeRef(name, tyPool.Parse(typ))
+}
+
+// SetVarTypeRef 記錄變數宣告型別（結構版本）。
+func (s *SemanticContext) SetVarTypeRef(name string, t *ty.Type) {
 	if s.VarTypes == nil {
-		s.VarTypes = make(map[string]string)
+		s.VarTypes = make(map[string]*ty.Type)
 	}
-	s.VarTypes[name] = typ
+	if t == nil {
+		t = tyPool.Parse("")
+	}
+	s.VarTypes[name] = t
+}
+
+// VarTypeRef 查詢變數型別的結構。第二個回傳值表示「表裡有沒有這一項」，
+// 與型別是否為空字串無關（既有語意）。
+func (s *SemanticContext) VarTypeRef(name string) (*ty.Type, bool) {
+	t, ok := s.VarTypes[name]
+	return t, ok
+}
+
+// VarTypeRaw 是 VarType 的「缺失即空字串」形式，供只比較拼寫的呼叫方使用。
+func (s *SemanticContext) VarTypeRaw(name string) string {
+	if t, ok := s.VarTypes[name]; ok {
+		return t.Raw()
+	}
+	return ""
 }
 
 // SetFuncVarType records a function-local variable type in FuncVarTypes.
 // If funcName is empty, falls back to the global VarTypes.
 func (s *SemanticContext) SetFuncVarType(funcName, varName, typ string) {
+	s.SetFuncVarTypeRef(funcName, varName, tyPool.Parse(typ))
+}
+
+// SetFuncVarTypeRef is the structural form of SetFuncVarType.
+func (s *SemanticContext) SetFuncVarTypeRef(funcName, varName string, t *ty.Type) {
 	if funcName == "" {
-		s.SetVarType(varName, typ)
+		s.SetVarTypeRef(varName, t)
 		return
 	}
+	if t == nil {
+		t = tyPool.Parse("")
+	}
 	if s.FuncVarTypes == nil {
-		s.FuncVarTypes = make(map[string]map[string]string)
+		s.FuncVarTypes = make(map[string]map[string]*ty.Type)
 	}
 	if s.FuncVarTypes[funcName] == nil {
-		s.FuncVarTypes[funcName] = make(map[string]string)
+		s.FuncVarTypes[funcName] = make(map[string]*ty.Type)
 	}
-	s.FuncVarTypes[funcName][varName] = typ
+	s.FuncVarTypes[funcName][varName] = t
 }
 
 // FuncVarType queries a function-local variable type. Returns ("", false) if
 // not found in the per-function map, falling back to the global VarTypes.
 func (s *SemanticContext) FuncVarType(funcName, varName string) (string, bool) {
+	t, ok := s.FuncVarTypeRef(funcName, varName)
+	return t.Raw(), ok
+}
+
+// FuncVarTypeRef is the structural form of FuncVarType.
+func (s *SemanticContext) FuncVarTypeRef(funcName, varName string) (*ty.Type, bool) {
 	if s.FuncVarTypes != nil {
 		if vars, ok := s.FuncVarTypes[funcName]; ok {
 			if t, ok := vars[varName]; ok {
@@ -757,6 +826,46 @@ func (s *SemanticContext) FuncVarType(funcName, varName string) (string, bool) {
 	// Fallback to global VarTypes (module-level vars, params, etc.)
 	t, ok := s.VarTypes[varName]
 	return t, ok
+}
+
+// IdxLocalTypeRef 查詢安全索引本地型別（結構）。
+func (s *SemanticContext) IdxLocalTypeRef(funcName, varName string) (*ty.Type, bool) {
+	if s.IdxLocalTypes == nil {
+		return nil, false
+	}
+	vars, ok := s.IdxLocalTypes[funcName]
+	if !ok {
+		return nil, false
+	}
+	t, ok := vars[varName]
+	return t, ok
+}
+
+// IdxLocalTypeRaw 是 IdxLocalTypeRef 的「缺失即空字串」形式。
+func (s *SemanticContext) IdxLocalTypeRaw(funcName, varName string) string {
+	if t, ok := s.IdxLocalTypeRef(funcName, varName); ok {
+		return t.Raw()
+	}
+	return ""
+}
+
+// SetIdxLocalType 記錄安全索引本地型別（拼寫入口）。
+func (s *SemanticContext) SetIdxLocalType(funcName, varName, typ string) {
+	s.SetIdxLocalTypeRef(funcName, varName, tyPool.Parse(typ))
+}
+
+// SetIdxLocalTypeRef 記錄安全索引本地型別（結構入口）。
+func (s *SemanticContext) SetIdxLocalTypeRef(funcName, varName string, t *ty.Type) {
+	if t == nil {
+		t = tyPool.Parse("")
+	}
+	if s.IdxLocalTypes == nil {
+		s.IdxLocalTypes = make(map[string]map[string]*ty.Type)
+	}
+	if s.IdxLocalTypes[funcName] == nil {
+		s.IdxLocalTypes[funcName] = make(map[string]*ty.Type)
+	}
+	s.IdxLocalTypes[funcName][varName] = t
 }
 
 // SetFuncDeclared marks a variable as declared within a function scope.
@@ -789,10 +898,10 @@ func (s *SemanticContext) IsFuncDeclared(funcName, varName string) bool {
 	return s.IsDeclared(varName)
 }
 
-// VarType 查詢變數型別。
+// VarType 查詢變數型別（拼寫）。
 func (s *SemanticContext) VarType(name string) (string, bool) {
 	t, ok := s.VarTypes[name]
-	return t, ok
+	return t.Raw(), ok
 }
 
 // SetEnumVariants 記錄枚舉型別的變體名列表。
@@ -811,13 +920,35 @@ func (s *SemanticContext) EnumVariantsOf(name string) ([]string, bool) {
 
 // SetEnumVariantPayload 登記某枚舉變體的載荷型別（單元變體傳 ""）。
 func (s *SemanticContext) SetEnumVariantPayload(enumName, variantName, payloadType string) {
+	s.SetEnumVariantPayloadRef(enumName, variantName, tyPool.Parse(payloadType))
+}
+
+// SetEnumVariantPayloadRef is the structural form of SetEnumVariantPayload.
+func (s *SemanticContext) SetEnumVariantPayloadRef(enumName, variantName string, t *ty.Type) {
+	if t == nil {
+		t = tyPool.Parse("")
+	}
 	if s.EnumVariantPayload == nil {
-		s.EnumVariantPayload = make(map[string]map[string]string)
+		s.EnumVariantPayload = make(map[string]map[string]*ty.Type)
 	}
 	if s.EnumVariantPayload[enumName] == nil {
-		s.EnumVariantPayload[enumName] = make(map[string]string)
+		s.EnumVariantPayload[enumName] = make(map[string]*ty.Type)
 	}
-	s.EnumVariantPayload[enumName][variantName] = payloadType
+	s.EnumVariantPayload[enumName][variantName] = t
+}
+
+// EnumVariantPayloadRef 查詢某枚舉變體載荷型別的結構。
+// 單元變體（無載荷）是 Kind==Invalid 且 Raw()=="" 的型別。
+func (s *SemanticContext) EnumVariantPayloadRef(enumName, variantName string) (*ty.Type, bool) {
+	if s.EnumVariantPayload == nil {
+		return nil, false
+	}
+	variants, ok := s.EnumVariantPayload[enumName]
+	if !ok {
+		return nil, false
+	}
+	t, ok := variants[variantName]
+	return t, ok
 }
 
 // EnumVariantPayloadOf 查詢某枚舉變體的載荷型別。回傳 (型別, 是否存在)；
@@ -829,7 +960,7 @@ func (s *SemanticContext) EnumVariantPayloadOf(enumName, variantName string) (st
 	}
 	if variants, ok := s.EnumVariantPayload[enumName]; ok {
 		pt, ok := variants[variantName]
-		return pt, ok
+		return pt.Raw(), ok
 	}
 	return "", false
 }

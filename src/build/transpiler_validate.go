@@ -3,7 +3,6 @@ package build
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/parser"
@@ -1113,7 +1112,7 @@ func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string
 // ([N x T]), a slice ([]T), or a vec (%vec). These are the container types whose
 // .len property is being deprecated in favour of the .len() method.
 func isArrOrSliceTypeName(t string) bool {
-	return strings.HasPrefix(t, "[]") || strings.HasPrefix(t, "[") || strings.HasPrefix(t, "%vec")
+	return t == "%vec" || isBuiltinContainer(t)
 }
 
 func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64, sliceSizes map[string]int64, stringSizes map[string]int64, varTypes map[string]string, sem *parser.SemanticContext) error {

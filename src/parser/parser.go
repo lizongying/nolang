@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
-)
+
+	"github.com/lizongying/nolang/ty")
 
 type Parser struct {
 	lexer *lexer.Lexer
@@ -65,7 +66,7 @@ type Parser struct {
 	// 僅供 isSafeIndexBase / inferIndexElemType 查詢。刻意不寫入
 	// sem.FuncVarTypes / VarTypes，避免 `a`/`av` 等常見名竄改 std 函式
 	// 區域變數型別（跨函數型別污染會讓 str.to-i8 等 std 函式 codegen 崩潰）。
-	idxLocalTypes map[string]map[string]string
+	idxLocalTypes map[string]map[string]*ty.Type
 
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
@@ -1084,10 +1085,10 @@ type parserState struct {
 	prevToken           lexer.Token
 	ctx                 contextStack                 // snapshot of context stack
 	comments            []lexer.Token                // snapshot of collected comments
-	semVarTypes         map[string]string            // snapshot of variable type table
+	semVarTypes         map[string]*ty.Type          // snapshot of variable type table
 	semEnumVariants     map[string][]string          // snapshot of enum variant table
 	semDeclaredVars     map[string]bool              // snapshot of declared variable set
-	semFuncVarTypes     map[string]map[string]string // snapshot of per-function var types
+	semFuncVarTypes     map[string]map[string]*ty.Type // snapshot of per-function var types
 	semFuncDeclaredVars map[string]map[string]bool   // snapshot of per-function declared vars
 }
 
@@ -1200,7 +1201,7 @@ func (p *Parser) saveState() parserState {
 	copy(commentsCopy, p.comments)
 	// 深拷貝類型推斷符號表（位於語義副表 sem 內），避免試探性解析中的寫入
 	// 在 restoreState 後污染後續解析。
-	varDeclTypesCopy := make(map[string]string, len(p.sem.VarTypes))
+	varDeclTypesCopy := make(map[string]*ty.Type, len(p.sem.VarTypes))
 	for k, v := range p.sem.VarTypes {
 		varDeclTypesCopy[k] = v
 	}
@@ -1215,9 +1216,9 @@ func (p *Parser) saveState() parserState {
 		declaredVarsCopy[k] = v
 	}
 	// Deep copy per-function var types
-	funcVarTypesCopy := make(map[string]map[string]string, len(p.sem.FuncVarTypes))
+	funcVarTypesCopy := make(map[string]map[string]*ty.Type, len(p.sem.FuncVarTypes))
 	for fn, vars := range p.sem.FuncVarTypes {
-		cp := make(map[string]string, len(vars))
+		cp := make(map[string]*ty.Type, len(vars))
 		for k, v := range vars {
 			cp[k] = v
 		}

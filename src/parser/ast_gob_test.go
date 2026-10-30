@@ -9,7 +9,8 @@ import (
 	"testing"
 
 	"github.com/lizongying/nolang/lexer"
-)
+
+	"github.com/lizongying/nolang/ty")
 
 // TestProgramGobRoundTripPreservesNodeSemMapping is the DEEP counterpart of
 // TestProgramGobRoundTrip above: it compares the annotation attachment of EVERY
@@ -334,7 +335,7 @@ func main () i64 {
 	}
 
 	// 5) deterministic name-keyed semantic maps must match exactly.
-	if !mapStrEqual(orig.Sem.VarTypes, dcp.Prog.Sem.VarTypes) {
+	if !mapTypeEqual(orig.Sem.VarTypes, dcp.Prog.Sem.VarTypes) {
 		t.Fatalf("Sem.VarTypes mismatch:\n orig=%v\n dec =%v", orig.Sem.VarTypes, dcp.Prog.Sem.VarTypes)
 	}
 	if !mapSliceEqual(orig.Sem.EnumVariants, dcp.Prog.Sem.EnumVariants) {
@@ -369,6 +370,22 @@ func mapStrEqual(a, b map[string]string) bool {
 	}
 	for k, v := range a {
 		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}
+
+// mapTypeEqual compares two name->type tables by SPELLING: *ty.Type values are
+// interned per pool, so pointer identity says nothing about equality across a
+// cache round-trip.
+func mapTypeEqual(a, b map[string]*ty.Type) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		bv, ok := b[k]
+		if !ok || bv.Raw() != v.Raw() {
 			return false
 		}
 	}

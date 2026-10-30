@@ -1332,10 +1332,10 @@ func (m *Module) optionCopySharesHeap(f *Function, inst *Inst) bool {
 		if dt == nil || dt.Kind != KindOption {
 			return false
 		}
-		elem, ok := parseOptionElem(st.Raw)
-		if !ok {
+		if st.T == nil || !st.T.IsOption() || st.T.Elem == nil {
 			return false
 		}
+		elem := st.T.ElemRaw()
 		// The question is "will the DESTINATION free what it would share?" —
 		// NOT "is the payload boxed?". Those differ for `?str` / `?[]T`, whose
 		// payload is stored INLINE but is freed by the option's own drop, so a
@@ -1609,8 +1609,8 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 			if rt := m.valueTypeOf(f, inst.Args[0]); rt != nil {
 				raw := rt.Raw
 				if rt.Kind == KindOption {
-					if elem, ok := parseOptionElem(raw); ok {
-						raw = elem
+					if ot := m.tyOf(raw); ot.IsOption() && ot.Elem != nil {
+						raw = ot.Elem.Raw()
 					}
 				}
 				key := m.StructKeyOf(raw)
@@ -1736,7 +1736,7 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 // feeding nothing but drop placement) and lowers to the shallow @vec_free /
 // @str_free, the exact inverse of @vec_retain.
 //
-// (`Owned` is what excludes `&T` views: KindOfRaw reports a view as its
+// (`Owned` is what excludes `&T` views: the syntax classifier reports a view as its
 // pointee's kind, so without it a `&[]T` would look retained here while
 // emitRetain emitted nothing — a retain that silently does nothing.)
 func (m *Module) borrowRetained(f *Function, inst *Inst) bool {

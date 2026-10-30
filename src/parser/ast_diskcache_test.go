@@ -94,7 +94,7 @@ func main () i64 {
 	if fp := annotationFingerprint(orig); fp != annotationFingerprint(got2) {
 		t.Fatalf("annotation fingerprint mismatch (2nd get):\n orig=%q\n got =%q", fp, annotationFingerprint(got2))
 	}
-	if !mapStrEqual(orig.Sem.VarTypes, got1.Sem.VarTypes) {
+	if !mapTypeEqual(orig.Sem.VarTypes, got1.Sem.VarTypes) {
 		t.Fatalf("Sem.VarTypes mismatch:\n orig=%v\n got =%v", orig.Sem.VarTypes, got1.Sem.VarTypes)
 	}
 	if !mapSliceEqual(orig.Sem.EnumVariants, got1.Sem.EnumVariants) {

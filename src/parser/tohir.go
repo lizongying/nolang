@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lizongying/nolang/hir"
+	"github.com/lizongying/nolang/ty"
 )
 
 // ASTToHIR lowers a parsed Program into an immutable HIR package.
@@ -72,7 +73,7 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 	// the table is missing (overwrites with identical values otherwise).
 	if c.sem != nil {
 		if c.sem.IdxLocalTypes == nil {
-			c.sem.IdxLocalTypes = make(map[string]map[string]string)
+			c.sem.IdxLocalTypes = make(map[string]map[string]*ty.Type)
 		}
 		(&Parser{sem: c.sem, prog: c.prog, idxLocalTypes: c.sem.IdxLocalTypes}).precomputeIdxLocalTypes(c.prog)
 	}
@@ -1168,6 +1169,9 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		if c.sem.IndexIsInBounds(e) {
 			node.Flags |= hir.FlagInBounds
 		}
+		if c.sem.GrowWriteOf(e) {
+			node.Flags |= hir.FlagGrowWrite
+		}
 		return c.b.Add(node)
 
 	case *AssignExpression:
@@ -1486,7 +1490,7 @@ func (c *hirConv) scratchParser() *Parser {
 	}
 	if c.sem != nil {
 		if c.sem.IdxLocalTypes == nil {
-			c.sem.IdxLocalTypes = make(map[string]map[string]string)
+			c.sem.IdxLocalTypes = make(map[string]map[string]*ty.Type)
 		}
 		sp.idxLocalTypes = c.sem.IdxLocalTypes
 		// Union aliases drive isUnionType, which decides whether a match is a
@@ -1874,6 +1878,16 @@ func (c *hirConv) emitSubjectMatchWrappersHIR(prep *subjectMatchPrep, inner int3
 				if c.sem.IndexIsInBounds(prep.origMatched) {
 					c.sem.SetIndexInBounds(subjValue, true)
 				}
+				// D9 grow-write: this fresh node is the WRITE subject. For a
+				// growable container (slice/vec) the match subject must gate on
+				// `i >= 0` (grow/allocate on write), not the read semantics
+				// `0 <= i < len` — an unallocated vec (len=0) would otherwise
+				// make every index out-of-bounds and the write is silently lost.
+				// hir2mir routes a FlagGrowWrite index to lowerGrowWriteIndex
+				// ONLY when the container is actually growable and not already
+				// provably in-bounds, so fixed arrays keep the read-style bounds
+				// check (mir/d9_write_bce_test.go regresses otherwise).
+				c.sem.SetGrowWrite(subjValue, true)
 			}
 		}
 		subjAssign := &LetStatement{

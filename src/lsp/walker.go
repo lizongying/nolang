@@ -161,7 +161,7 @@ func (w *ASTWalker) walkStatement(stmt parser.Statement, scope string) {
 		// 剝掉 option 前綴（?= 賦的是解箱後的內層值）。
 		if s.Name != nil {
 			detail := w.getExprType(s.Value)
-			detail = strings.TrimPrefix(detail, "?")
+			detail = optionInner(detail)
 			if detail == "" || strings.HasPrefix(detail, "call ") {
 				if existing, exists := w.index.symbols[s.Name.Value]; exists && existing.Type != "" && !strings.HasPrefix(existing.Type, "call ") {
 					detail = existing.Type

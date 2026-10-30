@@ -2,7 +2,13 @@ package checker
 
 import (
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
+
+// thirPool is the resolver-free structural pool used by the THIR side tables.
+// A plain structural parse is enough here: an unresolved alias stays Named and
+// keeps its raw spelling, which is all ExprTypeOf promises.
+var thirPool = ty.NewPool(nil)
 
 // 本文件承载 6C-optional 第二步「显式 type map」：把 checker 的表达式级推断
 // （inferExprType）结果持久化成一张节点键型别表，使 THIRView.TypeOf 可答
@@ -29,18 +35,18 @@ import (
 // 首次调用触发一次全树收集（见 collectExprTypes），之后为 O(1) 查表。
 // 表内只含 *表达式* 节点键，故声明类节点（LetStatement / Parameter /
 // StructField …）即使触发构建也查不到自己，答案与构建前一致（零行为变化）。
-func (v *THIRView) ExprTypeOf(n parser.Node) string {
+func (v *THIRView) ExprTypeRef(n parser.Node) *ty.Type {
 	if v == nil || n == nil {
-		return ""
+		return nil
 	}
-	// 構建期間的重入呼叫直接回 ""（sync.Once 不可重入）。collectExprTypes 的
-	// 走查會透過 collectFuncDeclared → declTypeOf → TypeOf 對不在 IdMap 的
+	// 構建期間的重入呼叫直接回 nil（sync.Once 不可重入）。collectExprTypes 的
+	// 走查會透過 collectFuncDeclared → declTypeOf → TypeRefOf 對不在 IdMap 的
 	// 運算式節點（例如運算符重載方法未 remember 的 *Parameter 結果參數）再次
-	// 進入本方法；此時最終表尚未成形，回 "" 讓 declTypeOf 退回 legacy AST
+	// 進入本方法；此時最終表尚未成形，回 nil 讓 declTypeOf 退回 legacy AST
 	// 宣告值兜底，語義與構建完成後查表對宣告節點的結論一致（nodeType 直讀
 	// .Type.String()），且避免了 Do 套 Do 的死鎖。
 	if v.exprBuilding {
-		return ""
+		return nil
 	}
 	v.exprOnce.Do(func() {
 		v.exprBuilding = true
@@ -48,6 +54,15 @@ func (v *THIRView) ExprTypeOf(n parser.Node) string {
 		v.exprBuilding = false
 	})
 	return v.exprTypes[n]
+}
+
+// ExprTypeOf returns the expression-level inferred type as a raw spelling (the
+// diagnostic form). Use ExprTypeRef for structural questions.
+func (v *THIRView) ExprTypeOf(n parser.Node) string {
+	if t := v.ExprTypeRef(n); t != nil {
+		return t.Raw()
+	}
+	return ""
 }
 
 // exprTypeCtx 是表达式型别收集走查的上下文：函数作用域内的名称→型别表、
@@ -73,8 +88,8 @@ type exprTypeCtx struct {
 // 「整函數扁平表」，而部分 validator 用「逐語句推進的作用域表」。函數內同名
 // 變數在不同語句被賦不同型別時兩者會分叉。本表當下無生產消費方，分叉不產生
 // 行為差異；TestExprTypesFaithful 統計覆蓋率供後續批次決策。
-func collectExprTypes(program *parser.Program, view *THIRView) map[parser.Node]string {
-	out := make(map[parser.Node]string)
+func collectExprTypes(program *parser.Program, view *THIRView) map[parser.Node]*ty.Type {
+	out := make(map[parser.Node]*ty.Type)
 	if program == nil {
 		return out
 	}
@@ -120,7 +135,7 @@ func localFuncTypes(program *parser.Program) map[string]string {
 
 // collectStmtsExprTypes 走查语句列表。函数定义切换独立作用域（参数 + 该函数的
 // let），与 collectFuncDeclared 的「巢状函数不写外层」口径一致。
-func collectStmtsExprTypes(stmts []parser.Statement, c *exprTypeCtx, view *THIRView, out map[parser.Node]string) {
+func collectStmtsExprTypes(stmts []parser.Statement, c *exprTypeCtx, view *THIRView, out map[parser.Node]*ty.Type) {
 	for _, stmt := range stmts {
 		if stmt == nil {
 			continue
@@ -141,7 +156,7 @@ func collectStmtsExprTypes(stmts []parser.Statement, c *exprTypeCtx, view *THIRV
 			if view != nil && view.prog != nil && view.prog.Sem != nil && s.Name != "" {
 				for k, v := range view.prog.Sem.FuncVarTypes[s.Name] {
 					if _, exists := sub.varTypes[k]; !exists {
-						sub.varTypes[k] = v
+						sub.varTypes[k] = v.Raw()
 					}
 				}
 			}
@@ -165,7 +180,7 @@ func collectStmtsExprTypes(stmts []parser.Statement, c *exprTypeCtx, view *THIRV
 }
 
 // recordExprType 记录单个表达式节点的推断型别，并对其子表达式递归。
-func recordExprType(e parser.Expression, c *exprTypeCtx, out map[parser.Node]string) {
+func recordExprType(e parser.Expression, c *exprTypeCtx, out map[parser.Node]*ty.Type) {
 	if e == nil {
 		return
 	}
@@ -174,7 +189,7 @@ func recordExprType(e parser.Expression, c *exprTypeCtx, out map[parser.Node]str
 	}
 	c.visited[e] = true
 	if t := inferExprType(e, c.varTypes, c.funcTypes, c.selfType); t != "" {
-		out[e] = t
+		out[e] = thirPool.Parse(t)
 	}
 	switch x := e.(type) {
 	case *parser.InfixExpression:

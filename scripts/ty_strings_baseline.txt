@@ -1,0 +1,14 @@
+# scripts/ty_strings_baseline.txt — the ratchet for scripts/check_ty_strings.sh
+#
+# Format:  <path relative to src/> TAB <class> TAB <count>
+#          class = prefix | split | trim
+#
+# EMPTY ON PURPOSE. The migration is complete: every type-spelling check outside
+# src/ty now goes through Kind, and the only remaining prefix/trim hits are in
+# parser/type.go, whose contract IS to reproduce the source spelling (it is in
+# that script's ALLOW_FILES list). An empty file means the gate fails on the very
+# first new hit, which is the point.
+#
+# If you must land a deferral, add exactly one row for the file and class with
+# its current count, and lower it when the count drops (`--update` reprints the
+# rows so the edit is mechanical). Numbers go down, never up.

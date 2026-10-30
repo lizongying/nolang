@@ -80,6 +80,16 @@ type NodeFact struct {
 	// ⚠️ C9 明確點名 `IndexInBounds` 為 MUST bump 的解析期 side table。
 	IndexInBounds bool
 
+	// GrowWrite 標記某 IndexExpression 是 place-match 寫主體 `a[i]: { ok -> it = v }`
+	// 的下標。對可增長容器（slice/vec），編譯器據此把「讀 a[i] 是否 ok」的門控從
+	// 讀語義的 `0 <= i < len` 改成寫語義的 `i >= 0`（寫時增長/分配），否則未分配
+	// vec（len=0）會讓每個下標都越界，寫靜默丟失。
+	//
+	// 寫入者：parser/lowering.go 在 place-write 主體被識別時（`prep.placeWriteUsed &&
+	// prep.origIdxExpr != nil`）。讀取者：parser/tohir.go 在 KIndex 轉 HIR 時把
+	// 它轉成 hir.FlagGrowWrite。
+	GrowWrite bool
+
 	// ModuleConst 標記 LetStatement 為「模組級常量」（可參與常量傳播）。
 	//
 	// 寫入者：build/transpiler.go 的模組合併（use 展開 + 自動載入 std 模組體）
@@ -262,6 +272,33 @@ func (t *NodeFacts) IndexInBoundsOf(n Node) bool {
 	}
 	if f, ok := t.entries[n]; ok {
 		return f.IndexInBounds
+	}
+	return false
+}
+
+// SetGrowWrite 標記某個 IndexExpression 是 place-match 寫主體的下標。
+//
+// 對稱於 SetIndexInBounds：yes 時寫入條目，no 時只清既有條目不新建。
+func (t *NodeFacts) SetGrowWrite(n Node, yes bool) {
+	if t == nil || n == nil {
+		return
+	}
+	if !yes {
+		if f, ok := t.entries[n]; ok {
+			f.GrowWrite = false
+		}
+		return
+	}
+	t.fact(n).GrowWrite = true
+}
+
+// GrowWriteOf 回傳該 IndexExpression 是否為 place-match 寫主體下標（無條目時 false）。nil 安全。
+func (t *NodeFacts) GrowWriteOf(n Node) bool {
+	if t == nil || n == nil {
+		return false
+	}
+	if f, ok := t.entries[n]; ok {
+		return f.GrowWrite
 	}
 	return false
 }
