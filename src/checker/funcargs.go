@@ -763,14 +763,9 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 		}
 		for _, r := range s.Results {
 			if r.Name != "" && r.Type != nil {
-				rt := r.Type.String()
-				// 運算符重載方法（_add 等）書寫為 `?T`，但編譯器視作 payload T：
-				// 結果參數的生效型別去掉 `?`，使方法體內 `c = <T>` 合法、
-				// 不觸發 option 包裝／解包，對齊內建數值型別（int.div 先例）。
-				if s.IsMethodDef && parser.IsOperatorOverloadName(parser.OperatorOverloadBaseName(s.Name)) {
-					rt = ty.StripOptionRaw(rt)
-				}
-				localTypes[r.Name] = declTypeOfRaw(view, r, rt)
+				// 運算符重載方法的結果參數型別保留書寫的 `?T`（與 parser 端的
+				// 簽名註冊一致）——方法體內對結果名的賦值即走正常 option 包裝路徑。
+				localTypes[r.Name] = declTypeOfRaw(view, r, r.Type.String())
 				innerResultParams[r.Name] = true
 			}
 		}

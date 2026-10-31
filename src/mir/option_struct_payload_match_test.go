@@ -1,7 +1,6 @@
 package mir
 
 import (
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -176,21 +175,18 @@ func TestMatchOnStructPayloadOptionComparesTag(t *testing.T) {
 	}
 }
 
-// TestOperatorOverloadOptionKeepsTag is the RED half of this file: the same
-// `?node` reached through a reserved operator-overload name (`_mod`) loses its
-// option on the caller side, and the `ok` arm degenerates into a whole-struct
-// `icmp` — which LLVM rejects, so EmitLLVM itself fails here.
+// TestOperatorOverloadOptionKeepsTag pins the operator-overload half: a
+// `?node` reached through a reserved operator-overload name (`_mod`) must keep
+// its option on the caller side, so the `ok` arm compares the tag instead of
+// degenerating into a whole-struct `icmp` (which LLVM rejects, failing
+// EmitLLVM outright).
 //
-// It is opt-in (`NOLANG_REPRO_OPERATOR_OPTION_MATCH=1`) because the fix is a
-// frontend decision — parser.stripOperatorOverloadReturn deliberately trims the
-// `?` of every `_add/_sub/_mul/_div/_mod` result — with a blast radius far
-// beyond this file, and `make test` has to stay green while that decision is
-// open. Until it is fixed, std cannot consume `%` on a bigint, which is why
-// `str.str-to-f64` uses bigint's public `div-mod`/`to-i64` instead.
+// The regression this guards was the frontend trimming `?` off every
+// `_add/_sub/_mul/_div/_mod` result before it reached the signature tables.
+// The trim now happens only at consumption positions — see
+// parser/operator_overload.go OperatorOverloadReturnType and
+// parser/type.go resolveReceiverType — so the subject of a match keeps `?T`.
 func TestOperatorOverloadOptionKeepsTag(t *testing.T) {
-	if os.Getenv("NOLANG_REPRO_OPERATOR_OPTION_MATCH") == "" {
-		t.Skip("known red: operator-overload return loses `?`; set NOLANG_REPRO_OPERATOR_OPTION_MATCH=1 to run")
-	}
 	mod, diags := lowerSrcWithDiags(t, operatorOverloadOptionSrc)
 	if len(diags) != 0 {
 		t.Fatalf("unexpected lowering diagnostics: %v", diags)

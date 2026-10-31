@@ -11,9 +11,10 @@ import (
 // operator_overload_test.go — 運算符重載（`_add` 等）的 parser 端不变量：
 //
 //  1. lowering（build 路徑）把 `a + b` 重寫為 `a._add(b)`（CallExpression）。
-//  2. 運算符重載方法的結果參數書寫為 `?T`，但簽名表 / HIR KResult 均為
-//     payload T（不產生 option ABI）——鏈式 `a + b + c` 的中間值因此
-//     不經過 heap 包裝，不會被淺複製後的生命週期問題打穿（讀到 0）。
+//  2. 運算符重載方法的結果參數書寫為 `?T`，簽名表 /
+//     HIR KResult 一律**保留** `?T`（option ABI），呼叫端因而能 match 出
+//     ok／err／nil 三分支；`?` 只在「巢狀運算子的接收者位置」
+//     （resolveReceiverType）剝成 payload T，鏈式派發的查表鍵不受影響。
 //  3. analysisOnly（fmt/LSP）路徑不改寫 AST，`a + b` 原樣保留。
 
 const olSrc = `
@@ -114,36 +115,47 @@ print(r.sign)
 	}
 }
 
-// TestOperatorOverloadSignatureIsPayload 驗證運算符重載方法的簽名表把
-// 書寫的 `?T` 存成 payload T（結果型別不帶 option）。
+// TestOperatorOverloadSignatureKeepsOption 驗證運算符重載方法的簽名表保留
+// 書寫的 `?T`（design B：結果型別在呼叫端是真實 option，可 match 三分支）。
 // 注意存放去向的既有約定（見 semviews.go rebuildLocalSignatures 註釋）：
 // `=`-形式方法（bigint._add = ...）落 funcSignatures[全名]，冒號形式才落
 // methodSignatures[全名]。查表端（returnTypeFromCallExpr）兩張表都查，
 // 這裡按形式斷言實際存放處。
-func TestOperatorOverloadSignatureIsPayload(t *testing.T) {
+func TestOperatorOverloadSignatureKeepsOption(t *testing.T) {
 	p, _ := parseOLProg(t, olSrc)
 	rets, ok := p.funcSignatures["bigint._add"]
 	if !ok || len(rets) != 1 {
-		t.Fatalf("funcSignatures[bigint._add] = %v, want [T]", rets)
+		t.Fatalf("funcSignatures[bigint._add] = %v, want [?T]", rets)
 	}
-	if strings.HasPrefix(rets[0], "?") {
-		t.Fatalf("運算符重載簽名仍帶 option：得 %q，want %q", rets[0], "bigint")
+	if rets[0] != "?bigint" {
+		t.Fatalf("簽名結果型別 = %q, want %q", rets[0], "?bigint")
 	}
-	if rets[0] != "bigint" {
-		t.Fatalf("簽名結果型別 = %q, want %q", rets[0], "bigint")
-	}
-	// 探測入口的一致性：運算符重載回傳型別必須是純 payload（鏈式派發依賴它）。
+	// 派發入口回報書寫型別原樣（binding 型別由 stmt.go 用它推斷）。
 	inf := &InfixExpression{Operator: "+", Left: &Identifier{Value: "a"}, Right: &Identifier{Value: "b"}}
-	if rt := p.OperatorOverloadReturnType(inf); rt != "bigint" {
-		t.Fatalf("OperatorOverloadReturnType = %q, want %q", rt, "bigint")
+	if rt := p.OperatorOverloadReturnType(inf); rt != "?bigint" {
+		t.Fatalf("OperatorOverloadReturnType = %q, want %q", rt, "?bigint")
+	}
+	// 唯一的剝 `?` 點：巢狀運算子的「接收者位置」——鏈式外層以 payload 型別
+	// 作鍵查簽名，否則 `?bigint._add` 查不到而放棄改寫。
+	inner := &CallExpression{
+		Token: inf.Token,
+		Function: &DotExpression{
+			Token:    inf.Token,
+			Receiver: &Identifier{Value: "a"},
+			Property: "_add",
+		},
+		Arguments: []Expression{&Identifier{Value: "b"}},
+	}
+	if got := p.resolveReceiverType(inner); got != "bigint" {
+		t.Fatalf("resolveReceiverType(呼叫接收者) = %q, want %q（僅此處剝 ?）", got, "bigint")
 	}
 }
 
-// TestOperatorOverloadHirResultPayload 驗證 HIR 層 KResult 型別為純
-// payload（`bigint` 而非 `?bigint`），callee ABI 不產生 %option* 結果槽。
-// 這是鏈式運算子中間值不被 heap 包裝的根基（否則淺複製 vec 欄位隨臨時
-// 值釋放，第二個運算子讀到 0）。
-func TestOperatorOverloadHirResultPayload(t *testing.T) {
+// TestOperatorOverloadHirResultKeepsOption 驗證 HIR 層 KResult 型別保留
+// `?bigint`（option ABI）—— callee 結果槽為 %option*，呼叫端才拿得到
+// tag，`m: { ok -> … ; err -> … ; nil -> … }` 才可能成立。
+// 代價：鏈式中間值經過 heap 包裝，生命週期需另行處理（design B 已知風險）。
+func TestOperatorOverloadHirResultKeepsOption(t *testing.T) {
 	_, prog := parseOLProg(t, olSrc)
 	pkg := ASTToHIR(prog)
 	var found bool
@@ -156,14 +168,18 @@ func TestOperatorOverloadHirResultPayload(t *testing.T) {
 			continue
 		}
 		found = true
+		var optionResults int
 		for _, c := range pkg.Children(int32(id)) {
 			cn := pkg.Node(c)
 			if cn == nil || cn.Kind != hir.KResult {
 				continue
 			}
 			if rt := pkg.Type(cn.Type); strings.HasPrefix(rt, "?") {
-				t.Errorf("HIR KResult %q 型別仍為 option：%q，want payload", pkg.Str(cn.S), rt)
+				optionResults++
 			}
+		}
+		if optionResults == 0 {
+			t.Errorf("HIR 中 _add 的結果 KResult 未保留 option 型別，want >=1")
 		}
 	}
 	if !found {
@@ -184,5 +200,53 @@ func TestOperatorOverloadAnalysisKeepsInfix(t *testing.T) {
 	ls := findTopLet(t, prog, "r")
 	if _, ok := ls.Value.(*InfixExpression); !ok {
 		t.Fatalf("analysisOnly 路徑改寫了 AST，got %T，want *InfixExpression", ls.Value)
+	}
+}
+
+// TestOperatorOverloadReassignKeepsDeclaredPayload 驗證「重新賦值給已宣告為
+// payload（非 option）的變數」不會把該變數的型別表登記退成 `?T`。
+//
+// 背景（n1 design B）：運算符重載結果保留 `?T` 之後，`x = x._add(y)` 的 RHS
+// 推斷型別是 `?bigint`。parseLetStatement 的 CallExpression 分支對 `?` 前綴
+// 一律覆寫型別表（那是 option match 型別窄化需要的規則），於是宣告為
+// `x bigint` 的累加器被打成 `?bigint`，後續 `x * 256` 的接收者查表落到
+// 預設 i64 → 運算符不改寫 → MIR 產生 bogus `i64._add`
+// （實測 src/std/crypto/chacha20-poly1305.no poly1305 的 `c`）。
+//
+// 不變量：**已宣告非 option** 的變數，被運算符重載結果重新賦值時維持原宣告型別。
+// （全新綁定 `hc = h._add(c)` 仍保留 `?T`，那是 design B 的語義。）
+func TestOperatorOverloadReassignKeepsDeclaredPayload(t *testing.T) {
+	src := `
+bigint {
+    sign i64
+}
+
+bigint._add = (b bigint) (c ?bigint) {
+    c = b
+}
+
+f = () (out bigint) {
+    x bigint = bigint{}
+    y bigint = bigint{}
+    x = x._add(y)
+    out = x
+}
+`
+	p, _ := parseOLProg(t, src)
+	got, ok := p.sem.FuncVarType("f", "x")
+	if !ok || got != "bigint" {
+		t.Fatalf(`已宣告 'x bigint' 被運算符結果重新賦值後型別 = %q (ok=%v)，want "bigint"`, got, ok)
+	}
+}
+
+// TestOperatorOverloadResultParamKeepsOptionInBody 驗證運算符重載方法「方法體內」
+// 的結果名也登記為書寫的 `?T`（不剝）——與簽名表、HIR KResult 同一口徑，callee 的
+// option ABI 才自洽：結果名照常是 option 槽，body 末的返回走 option 包裝。
+// 舊實作在此剝 `?` 換取純 payload 結果槽，代價是呼叫端拿不到 tag（n1）。
+func TestOperatorOverloadResultParamKeepsOptionInBody(t *testing.T) {
+	p, _ := parseOLProg(t, olSrc)
+	got, ok := p.sem.FuncVarType("bigint._add", "c")
+	if !ok || got != "?bigint" {
+		t.Fatalf(`方法體內結果參數 'c' 型別 = %q (ok=%v)，want "?bigint"`, got, ok)
 	}
 }

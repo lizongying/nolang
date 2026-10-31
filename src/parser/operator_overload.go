@@ -1,10 +1,6 @@
 package parser
 
-import (
-	"strings"
-
-	"github.com/lizongying/nolang/ty"
-)
+import "github.com/lizongying/nolang/ty"
 
 // operator_overload.go — 運算符重載（operator overloading）支援。
 //
@@ -17,10 +13,13 @@ import (
 //	a / b  →  a._div(b)
 //	a % b  →  a._mod(b)
 //
-// 這些方法的結果型別雖可寫成 `?bigint`（書寫統一、提示「這是算術運算符」），
-// 但編譯器將其視作純 payload 型別（如 `bigint`）處理：方法體與呼叫點都拿到
-// `bigint`，不產生 option 包裝／解包；除零等失敗按內建數值型別邏輯處理
-// （見 int.div 的零除守衛）。`_div` / `_mod` 的除零由被呼叫方法體自行守衛。
+// 結果型別按**書寫**生效：寫 `?bigint` 即回傳 option，callee ABI 是 %option*
+// 結果槽，呼叫端因而能 match 運算符結果的 ok／err／nil 三分支——把 `?` 在簽名表裡
+// 剝掉會讓 `x % 256` 這類 subject 退化成對結構體 emit icmp（LLVM 拒收）。
+// `?` 只在**消費位置**剝成 payload T：
+//   - 巢狀運算子的接收者（`(a + b) * c` 的左半）——見 type.go resolveReceiverType；
+//   - 把結果重新賦值給已宣告為 T 的變數（累加器 `c = c + 1`）——見 stmt.go。
+// 除零等失敗由被呼叫方法體自行守衛（見 int.div 的零除守衛）。
 
 // opToMethod 把可重載的中綴運算符對應到其運算符重載方法名。
 var opToMethod = map[string]string{
@@ -49,21 +48,6 @@ func IsOperatorOverloadName(name string) bool {
 	return false
 }
 
-// stripOperatorOverloadReturn 把運算符重載方法（_add 等）的回傳型別由書寫形式
-// `?T` 還原為生效的 payload `T`。非運算符重載方法原樣返回（保留其 `?T` 語義）。
-//
-// 這是鏈式運算子（如 `a + b + c`、`(a + b) * c`）派發的關鍵：內層 `a._add(b)`
-// 的回傳型別若仍是 `?bigint`，外層把該 CallExpression 當接收者解析時會得到
-// `?bigint`，導致 `?bigint._add` 查不到簽名而放棄改寫、退回中綴運算子的原生
-// codegen（在 struct 上 emit `add`／`mul` → LLVM invalid operand）。統一在此
-// 剥掉 `?`，讓運算符重載方法的結果型別在任何巢狀深度都為純 payload。
-func stripOperatorOverloadReturn(method, retType string) string {
-	if IsOperatorOverloadName(method) {
-		return ty.StripOptionRaw(retType)
-	}
-	return retType
-}
-
 // OperatorOverloadBaseName 從可能帶限定前綴的方法定義名（如 `bigint._add`）
 // 取出裸方法名（`_add`）。無點號時原樣返回。
 func OperatorOverloadBaseName(name string) string {
@@ -84,7 +68,7 @@ func lastDotIndex(s string) int {
 
 // OperatorOverloadReturnType 探測「中綴 `left OP right`」是否可派發為運算符重載
 // 方法呼叫（`left._op(right)`）。若左操作數的靜態型別定義了對應的 `_op`
-// 方法，回傳該方法的（去掉 `?` 後的）回傳型別；否則回傳空字串。
+// 方法，回傳該方法**書寫**的回傳型別（寫 `?T` 即 `?T`）；否則回傳空字串。
 //
 // 實作上構造一個等價的 method-call probe，並複用 checker 既有的回傳型別查表
 // （returnTypeFromCallExpr），確保 parser 端派發與 checker 端的型別解析完全一致。
@@ -105,10 +89,35 @@ func (p *Parser) OperatorOverloadReturnType(inf *InfixExpression) string {
 		},
 		Arguments: []Expression{inf.Right},
 	}
-	rt := p.returnTypeFromCallExpr(probe)
-	if rt == "" {
-		return ""
+	// 回傳書寫的 `?T` 原文：`?` 只在消費位置剝成 payload（巢狀運算子的接收者
+	// 見 resolveReceiverType，重新賦值見 parseLetStatement）。
+	return p.returnTypeFromCallExpr(probe)
+}
+
+// IsOperatorOverloadCallExpr 回報呼叫點是否派發到運算符重載方法（`_add` 等
+// 保留名）——無論是方法式 `x._add(y)`，還是 build 攤平後的裸名 `bigint._add(x, y)`。
+func IsOperatorOverloadCallExpr(call *CallExpression) bool {
+	if call == nil {
+		return false
 	}
-	// 運算符重載方法書寫為 `?T`，但編譯器視作 payload `T` 處理，故回傳時去掉 `?`。
-	return strings.TrimPrefix(rt, "?")
+	switch fn := call.Function.(type) {
+	case *DotExpression:
+		return IsOperatorOverloadName(fn.Property)
+	case *Identifier:
+		return IsOperatorOverloadName(OperatorOverloadBaseName(fn.Value))
+	}
+	return false
+}
+
+// preserveDeclaredPayloadForOperatorAssign 回報「把運算符重載結果 `?T` 賦給變數
+// name」是否屬於消費位置：name 已在當前函數宣告為非 option 型別時保留宣告型別，
+// 不讓推斷的 `?T` 覆寫型別表（見 parser/stmt.go parseLetStatement 的
+// CallExpression 分支）。全新綁定（無宣告型別）不在此列——`hc = h._add(c)` 仍
+// 保留 `?T`，這是 n1 design B 的語義。
+func (p *Parser) preserveDeclaredPayloadForOperatorAssign(call *CallExpression, name string) bool {
+	if !IsOperatorOverloadCallExpr(call) || name == "" {
+		return false
+	}
+	existing, ok := p.sem.FuncVarType(p.curFuncName, name)
+	return ok && existing != "" && !ty.IsOptionRaw(existing)
 }

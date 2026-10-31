@@ -1599,9 +1599,14 @@ func (p *Parser) parseLetStatement() Statement {
 				// 全局 DeclaredVars 可能導致 isDeclared 誤判為已宣告，
 				// 使結構體型別推斷被跳過，codegen 使用預設 i64 導致類型不匹配。
 				if inferred := p.inferTypeFromCallExpr(v); inferred != "" {
-					if strings.HasPrefix(inferred, "?") {
+					// 運算符重載結果是 `?T`。把 `?T` 重新賦值給
+					// **已宣告為 payload T** 的變數（累加器 `c = c._add(…)`）是「消費
+					// 位置」，型別表必須保留宣告的 T——覆寫成 `?T` 之後，下一輪 `c * 256`
+					// 的接收者查表退化到預設 i64，運算符不再改寫，MIR 產出 bogus
+					// `i64._add`（實測 src/std/crypto/chacha20-poly1305.no poly1305 的 `c`）。
+					if ty.IsOptionRaw(inferred) && !p.preserveDeclaredPayloadForOperatorAssign(v, stmt.Name.Value) {
 						p.setVarType(stmt.Name.Value, inferred)
-					} else {
+					} else if !ty.IsOptionRaw(inferred) {
 						// 非Option 型別（如結構體）：僅在當前無型別或型別為 i64 時更新
 						if existing, ok := p.sem.FuncVarType(p.curFuncName, stmt.Name.Value); !ok || existing == "" || existing == "i64" {
 							p.setVarType(stmt.Name.Value, inferred)

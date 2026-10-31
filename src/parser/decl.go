@@ -1800,17 +1800,11 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	for _, param := range def.Results {
 		if param.Type != nil && param.Name != "" {
 			ts := typeString(param.Type)
-			// 運算符重載方法（_add / _sub / _mul / _div / _mod）書寫為 `?T`，
-			// 但編譯器視作 payload T：結果參數的生效型別去掉 `?`，使方法體內
-			// `c = <T>` 合法、不觸發 option 包裝／解包。
-			// 僅以名字判定（不用 def.IsMethodDef）：`=`-形式方法（
-			// `bigint._add = ...`）在 parseFunctionDefinition 期間 IsMethodDef
-			// 尚未置 true（parseMethodDefinition 之後才設），若要求該旗標，
-			// std/bigint.no 的運算子方法體會把 `c` 當 `?bigint` 處理，
-			// callee 產生 option ABI → 鏈式運算子的中間值被淺複製而失效。
-			if IsOperatorOverloadName(OperatorOverloadBaseName(def.Name)) {
-				ts = strings.TrimPrefix(ts, "?")
-			}
+			// 運算符重載方法（_add / _sub / _mul / _div / _mod）的結果參數與
+			// 其他方法一樣保留書寫的 `?T`：方法體內對結果名的賦值走正常 option
+			// 包裝路徑，callee 的 ABI 即 %option* 結果槽（呼叫端能對
+			// `a % b` 做 option match）。過去此處剝 `?` 以換取純 payload 結果槽，
+			// 代價是 tag 遺失——已在 n1 中移除該特判。
 			p.setVarType(param.Name, ts)
 		}
 	}
@@ -1859,20 +1853,12 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	// 長度 2 而被 `len(rets) == 1` 守衛整條略過。
 	results := DeclaredResults(def)
 	if len(results) > 0 {
-		// 運算符重載方法的回傳型別書寫為 `?T`，編譯器視作 payload T：
-		// 存入簽名表時去掉 `?`，使 `a + b` 派發到 `a._add(b)` 後的結果型別
-		// 為 `T`（如 bigint），不產生 option 包裝／解包，對齊內建數值型別。
-		// 僅以名字判定：`=`-形式方法此刻 IsMethodDef 尚未置 true（見上方
-		// 結果參數註冊處註釋），但其簽名仍必須剝 `?`，否則鏈式運算子的
-		// 型別探測會拿到 `?bigint` 而查不到方法簽名。
-		isOpOverload := IsOperatorOverloadName(OperatorOverloadBaseName(def.Name))
+		// 運算符重載方法的回傳型別保留書寫的 `?T`（不剝）：呼叫端需要 option
+		// tag 才能 match `a % b` 這類運算符結果。`?` 只在消費位置剝，見
+		// type.go resolveReceiverType 與 stmt.go parseLetStatement。
 		rets := make([]string, 0, len(results))
 		for _, r := range results {
-			ts := typeString(r.Type)
-			if isOpOverload {
-				ts = strings.TrimPrefix(ts, "?")
-			}
-			rets = append(rets, ts)
+			rets = append(rets, typeString(r.Type))
 		}
 		if def.IsMethodDef && len(def.Name) > 0 && def.Name[0] != '[' {
 			// 結構體方法存入 methodSignatures

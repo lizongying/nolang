@@ -164,7 +164,10 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 	// 回傳空字串（純內建數值中綴，不作方法接收者）。不依賴 post-order 是否已
 	// 把內層重寫為 CallExpression——兩條路徑在此均能解析出一致的结果型別。
 	if innerInf, ok := receiver.(*InfixExpression); ok {
-		return p.OperatorOverloadReturnType(innerInf)
+		// 這裡就是「巢狀運算子的接收者位置」——接收者必須
+		// 以 payload 型別作鍵查簽名，故只在這一處剝 `?`（與 CallExpression
+		// 分支 155 行同形）。運算符重載方法本身回傳書寫的 `?T`。
+		return strings.TrimPrefix(p.OperatorOverloadReturnType(innerInf), "?")
 	}
 	return ""
 }
@@ -257,14 +260,14 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 				// 兩種鍵均以 receiverType + "." + dot.Property 查找即可。
 				key := receiverType + "." + dot.Property
 				if rets, ok := p.methodSignatures[key]; ok && len(rets) == 1 {
-					return stripOperatorOverloadReturn(dot.Property, rets[0])
+					return rets[0]
 				}
 			}
 			// array/slice type methods (如 []t.len()) 仍存於 funcSignatures
 			if p.funcSignatures != nil {
 				fnName := receiverType + "." + dot.Property
 				if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
-					return stripOperatorOverloadReturn(dot.Property, rets[0])
+					return rets[0]
 				}
 			}
 			return ""
@@ -294,7 +297,7 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 			// 先查方法簽名（如 bufio.reader.init 在 methodSigs 中）
 			if p.methodSignatures != nil {
 				if rets, ok := p.methodSignatures[fullPath]; ok && len(rets) == 1 {
-					return stripOperatorOverloadReturn(dot.Property, rets[0])
+					return rets[0]
 				}
 			}
 			if p.funcSignatures != nil {

@@ -741,10 +741,8 @@ func (c *hirConv) funcLike(
 	// argument), matching `emitCallBody`'s callArgs ordering:
 	// [self_ptr, arg1, arg2, ...].
 	isMethod := extra&hir.FlagMethod != 0
-	// 運算符重載方法（bigint._add 等，含模組限定名 "bigint.bigint._add"）：
-	// 名字的最後一段屬於保留閉集 `_add/_sub/_mul/_div/_mod` 即命中。
-	isOpOverloadResult := kind == hir.KFuncDef && isMethod &&
-		IsOperatorOverloadName(OperatorOverloadBaseName(name))
+	// 運算符重載方法（`bigint._add` 等）的結果 ABI 與其他方法一致：結果參數
+	// 保留書寫的 `?T`（見下方迴圈），因此這裡不需要按保留名特判。
 	selfSkipped := false
 	if isMethod && len(sig.Results) > 0 && sig.Results[0].Name == "self" {
 		selfSkipped = true
@@ -757,15 +755,11 @@ func (c *hirConv) funcLike(
 		if isMethod && selfSkipped && i == 0 {
 			continue // already emitted as KResult above
 		}
-		// 運算符重載方法（_add 等）的結果參數書寫為 `?T`，僅為宣告標記：
-		// HIR 層把 NullableType 剝成 payload T，使 callee 的 ABI 為純 T*
-		// 結果槽（非 %option*），不產生 heap 包裝／淺複製——鏈式運算子
-		// （`a + b + c`）把前一個呼叫結果再作接收者時，淺複製的 vec 欄位
-		// 會隨臨釋釋放而失效（讀到 0），剝掉包裝即無此生命週期問題。
-		if isOpOverloadResult {
-			nodes = append(nodes, c.resultParamPayload(r))
-			continue
-		}
+		// 運算符重載方法的結果參數保留書寫的 `?T` → callee ABI 為 %option*
+		// 結果槽，呼叫端因而能對 `a % b` 這類運算符結果做 option match
+		// （不剝 `?` 時 tag 遺失，MIR 會對結構體 emit icmp 而崩潰）。
+		// 剝 `?` 只發生在兩個消費位置：巢狀運算子的接收者（type.go
+		// resolveReceiverType）與把結果賦給已宣告 payload 變數（stmt.go）。
 		nodes = append(nodes, c.param(r, hir.KResult))
 	}
 	for _, g := range sig.GenericParams {
@@ -796,17 +790,14 @@ func (c *hirConv) funcLike(
 		savedResult := c.curResultName
 		if kind == hir.KFuncDef {
 			c.curResultName = ""
-			// 運算符重載方法的 `?T` 結果只是宣告標記，HIR 已剝成 payload T
-			// （見上方 resultParamPayload）；不能再把它的名字登記為 option
-			// 結果名，否則 body 內的 `?=`/unwrap 展開會找不到 option 槽。
-			if !isOpOverloadResult {
-				for _, res := range sig.Results {
-					if res.Type != nil {
-						ts := typeString(res.Type)
-						if strings.HasPrefix(ts, "?") {
-							c.curResultName = res.Name
-							break
-						}
+			// 運算符重載方法的 `?T` 是真實型別：結果名照常登記為 option 結果名，
+			// body 內的 `?=`/unwrap 展開才有 option 槽。
+			for _, res := range sig.Results {
+				if res.Type != nil {
+					ts := typeString(res.Type)
+					if strings.HasPrefix(ts, "?") {
+						c.curResultName = res.Name
+						break
 					}
 				}
 			}
@@ -843,32 +834,6 @@ func overflowModeFlags(mode string) uint32 {
 	default:
 		return 0
 	}
-}
-
-// resultParamPayload 是運算符重載方法結果參數的專用降形：與 param 相同的
-// KResult 節點，但把書寫型別 `?T`（NullableType）剝成 payload T 再取 typeID，
-// 使 callee ABI 的結果槽為 T* 而非 %option*。非 NullableType 型別原樣透傳。
-// 不修改 AST（ParseProgram 輸出不可變），只在 HIR 層換型別。
-//
-// 刻意 **不** 呼叫 c.remember：idMap 會餵給 checker 的 PopulateInferredTypes，
-// 其 nodeType() 讀 AST 原始 `?T` 並把 `?bigint` 寫進 HIR InferredType 表；
-// MIR 的 typeOfNode→inferredTypeOf 優先取 InferredType，會把剝掉的 `?` 又
-// 塞回結果槽（option ABI → heap 包裝 → 鏈式中間值淺複製後讀 0）。不登記
-// 這條映射，MIR 即退回節點宣告型別（payload T），ABI 乾淨。
-func (c *hirConv) resultParamPayload(p *Parameter) int32 {
-	if p == nil {
-		return hir.NoID
-	}
-	ty := p.Type
-	if nt, ok := ty.(*NullableType); ok && nt != nil && nt.Type != nil {
-		ty = nt.Type
-	}
-	return c.b.Add(hir.Node{
-		Kind: hir.KResult,
-		S:    c.b.Intern(p.Name),
-		Type: c.typeID(ty),
-		Line: int32(p.Token.Line), Col: int32(p.Token.Column),
-	})
 }
 
 func (c *hirConv) param(p *Parameter, kind hir.Kind) int32 {
