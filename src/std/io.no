@@ -33,26 +33,30 @@ reader {
     fd fd
 }
 
-; reader.from-fd: 從檔案描述符建立讀取器
+; 從檔案描述符建立讀取器
+; [from-fd](#io.reader.from-fd)
 reader.from-fd = (fd fd) (r reader) {
     r.fd = fd
 }
 
-; reader.from-stdin: 從標準輸入建立讀取器
+; 從標準輸入建立讀取器
+; [from-stdin](#io.reader.from-stdin)
 reader.from-stdin = () (r reader) {
     r.fd = fs.STDIN-FD
 }
 
-; read: 從讀取器讀取最多 n 位元組到 buf
+; 從讀取器讀取最多 n 位元組到 buf
 ; 返回實際讀取的位元組數，0 表示 EOF 或錯誤
+; [read](#io.reader.read)
 reader.read = (buf []byte, n i64) (read-n i64) {
     read-n = 0
     .fd < 0 -> return
     read-n = fs.read(.fd, buf, n)
 }
 
-; read-byte: 讀取一個位元組
+; 讀取一個位元組
 ; 返回 b ?i64: ok=位元組值, nil=EOF 或錯誤
+; [read-byte](#io.reader.read-byte)
 reader.read-byte = () (b ?i64) {
     b = nil
     .fd < 0 -> return
@@ -64,8 +68,9 @@ reader.read-byte = () (b ?i64) {
     }
 }
 
-; read-line: 讀取一行（最多 4096 位元組）
+; 讀取一行（最多 4096 位元組）
 ; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; [read-line](#io.reader.read-line)
 reader.read-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
@@ -74,8 +79,9 @@ reader.read-line = () (line ?str) {
     n > 0 -> line = buf.slice(0, n).to-str()
 }
 
-; read-all: 讀取全部內容到 buf（最多 size 位元組）
+; 讀取全部內容到 buf（最多 size 位元組）
 ; 需要呼叫者傳入大小
+; [read-all](#io.reader.read-all)
 reader.read-all = (buf []byte, size i64) (total i64) {
     total = 0
     .fd < 0 -> return
@@ -92,31 +98,36 @@ writer {
     fd fd
 }
 
-; writer.from-fd: 從檔案描述符建立寫入器
+; 從檔案描述符建立寫入器
+; [from-fd](#io.writer.from-fd)
 writer.from-fd = (fd fd) (w writer) {
     w.fd = fd
 }
 
-; writer.from-stdout: 從標準輸出建立寫入器
+; 從標準輸出建立寫入器
+; [from-stdout](#io.writer.from-stdout)
 writer.from-stdout = () (w writer) {
     w.fd = fs.STDOUT-FD
 }
 
-; writer.from-stderr: 從標準錯誤建立寫入器
+; 從標準錯誤建立寫入器
+; [from-stderr](#io.writer.from-stderr)
 writer.from-stderr = () (w writer) {
     w.fd = fs.STDERR-FD
 }
 
-; write: 將 data 的前 n 位元組寫入
+; 將 data 的前 n 位元組寫入
 ; 返回實際寫入的位元組數
+; [write](#io.writer.write)
 writer.write = (data []byte, n i64) (written i64) {
     written = 0
     .fd < 0 -> return
     written = fs.write(.fd, data, n)
 }
 
-; write-str: 寫入整個字串
+; 寫入整個字串
 ; 返回實際寫入的位元組數
+; [write-str](#io.writer.write-str)
 writer.write-str = (s str) (written i64) {
     written = 0
     .fd < 0 -> return
@@ -124,8 +135,9 @@ writer.write-str = (s str) (written i64) {
     written = fs.write(.fd, b, b.len())
 }
 
-; write-byte: 寫入一個位元組
+; 寫入一個位元組
 ; 返回實際寫入的位元組數（0 或 1）
+; [write-byte](#io.writer.write-byte)
 writer.write-byte = (b i64) (written i64) {
     written = 0
     .fd < 0 -> return
@@ -138,8 +150,9 @@ writer.write-byte = (b i64) (written i64) {
     written = fs.write(.fd, buf, 1)
 }
 
-; write-line: 寫入字串並附加換行符
+; 寫入字串並附加換行符
 ; 返回實際寫入的位元組數
+; [write-line](#io.writer.write-line)
 writer.write-line = (s str) (written i64) {
 
     written = 0
@@ -162,13 +175,15 @@ writer.write-line = (s str) (written i64) {
 ; 便捷函數
 ; ═══════════════════════════════════════════════
 
-; out: 寫入字串到標準輸出（不換行）
+; 寫入字串到標準輸出（不換行）
+; [out](#io.out)
 out = (s str) (n i64) {
     b = s.to-bytes()
     n = fs.write(fs.STDOUT-FD, b, b.len())
 }
 
-; outln: 寫入字串到標準輸出並換行
+; 寫入字串到標準輸出並換行
+; [outln](#io.outln)
 outln = (s str) (n i64) {
 
     b = s.to-bytes()
@@ -185,13 +200,15 @@ outln = (s str) (n i64) {
     n = n + m
 }
 
-; err: 寫入字串到標準錯誤（不換行）
+; 寫入字串到標準錯誤（不換行）
+; [err](#io.err)
 err = (s str) (n i64) {
     b = s.to-bytes()
     n = fs.write(fs.STDERR-FD, b, b.len())
 }
 
-; errln: 寫入字串到標準錯誤並換行
+; 寫入字串到標準錯誤並換行
+; [errln](#io.errln)
 errln = (s str) (n i64) {
 
     b = s.to-bytes()
@@ -208,8 +225,9 @@ errln = (s str) (n i64) {
     n = n + m
 }
 
-; read-line: 從標準輸入讀取一行
+; 從標準輸入讀取一行
 ; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; [read-line](#io.read-line)
 read-line = () (line ?str) {
     line = nil
     s = ''

@@ -38,8 +38,9 @@ string = str | txt
 ;    n = .len
 ; }
 
-; str.len: 返回字符串的「字符（碼點）數量」
+; 返回字符串的「字符（碼點）數量」
 ; 與 s[i] 的碼點索引語義一致；要字節數請用 s.len-bytes()
+; [len](#str.len)
 str.len = () (n i64) {
     n = .cp-index(.len-bytes())
 }
@@ -51,19 +52,20 @@ str.len = () (n i64) {
 ;    n = .cap
 ; }
 
-; str.byte: 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
+; 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
 ; 與 s[i] 不同：s[i] 按碼點索引，本方法按底層 UTF-8 緩衝區的位元組偏移取值
 ; 回傳 ?byte：越界（i < 0 或 i >= len-bytes()）時回傳 nil，與 arr[i] 的
 ; 安全索引語義一致；呼叫端必須處理 option（match / ?= / #{index-out = DEF}）
 ; 由編譯器內建處理（#{buildin}）：codegen 攔截後展開為「邊界檢查 + GEP+load」，
 ; 不存在 std 函式體；簽名同時註冊於 src/builtin/str.go 的 BuiltinMethodList
 ; （MethodName "byte"，Intercepted，經 bare-name 回落同時覆蓋 str 與 txt）
+; [byte](#str.byte)
 #{buildin}
 str.byte = (i i64) (c ?byte) {
 }
 
 ;
-; str.set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，長度不變）
+; 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，長度不變）
 ; str.byte 的配對寫者；緩衝區逐位元組構建專用（注意 s[i] = v 是位元組級寫入、
 ; txt[i] = v 是按碼點重新編碼，語意都不同）
 ;
@@ -74,19 +76,22 @@ str.byte = (i i64) (c ?byte) {
 ; 回傳 ?bool（可失敗）：越界（i < 0 或 i >= 實體容量 cap）時回傳 nil 並**跳過寫入**，
 ; 成功回傳 some(true)。邊界以 %str-long 的 cap（實體容量）為準而非 len，故「先填缓冲
 ; 再 set len」的構建程式照舊可用。呼叫端以裸陳述丟棄 ?bool 合法（optunuse 只管綁定名）。
+; [set-byte](#str.set-byte)
 #{buildin}
 str.set-byte = (i i64, b byte) (ok ?bool) {
 }
 
 ; str.eq: 比较两个字符串的前 n 个字节是否相等
 ; 返回 true=相等, false=不相等
+; [eq-raw](#str.eq-raw)
 #{buildin}
 eq-raw = (b str, n i64) (eq bool) {
 }
 
-; str.copy: 将 src 复制到 dst（整個字串）
+; 将 src 复制到 dst（整個字串）
 ; ⚠️ 已棄用（DEPRECATED）：賦值 `dst = src` 即為複製語義——所有權分析會在 src
 ; 後續仍被讀取時自動改寫為深拷貝（OpClone），無需手動 copy。保留僅為兼容。
+; [copy](#str.copy)
 str.copy = () (dst str) {
     dst = with-cap(.len-bytes())
     i <- [0...len-bytes()): {
@@ -95,7 +100,8 @@ str.copy = () (dst str) {
     }
 }
 
-; str.fill: 用 byte 值填充整個字串
+; 用 byte 值填充整個字串
+; [fill](#str.fill)
 str.fill = (val byte) {
     i <- [0...len-bytes()): {
         .[i] = val
@@ -106,8 +112,9 @@ str.fill = (val byte) {
 ; UTF-8 解碼公共函數
 ; ═══════════════════════════════════════════════
 
-; str.decode-cp: 從位置 i 解碼一個 UTF-8 碼點
+; 從位置 i 解碼一個 UTF-8 碼點
 ; 返回 cp=碼點值, clen=序列位元組長度（1~4）
+; [decode-cp](#str.decode-cp)
 str.decode-cp = (i i64) (cp i64, clen i64) {
     b-opt = .byte(i)
     b = b-opt: {
@@ -147,9 +154,10 @@ str.decode-cp = (i i64) (cp i64, clen i64) {
 ; str.index: 在 s 中查找 target 子串
 ; 使用 Sunday 算法，平均 O(n/m)，最壞 O(n*m)
 ; 返回首次出現的位置，未找到返回 -1
-; str.find-byte-from: 內部字節級查找（Sunday 算法）
+; 內部字節級查找（Sunday 算法）
 ; 返回 target 首次出現的「字節偏移」，未找到返回 -1
 ; from-byte 為起始字節位置；split 等內部按字節切片時使用
+; [find-byte-from](#str.find-byte-from)
 str.find-byte-from = (target str, from-byte i64) (pos i64) {
     r-from = from-byte
 
@@ -185,8 +193,9 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
     }
 }
 
-; str.rfind-byte-from: 內部字節級反向查找
+; 內部字節級反向查找
 ; 返回 target 最後一次出現的「字節偏移」（>= from-byte），未找到返回 -1
+; [rfind-byte-from](#str.rfind-byte-from)
 str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
     r-from = from-byte
 
@@ -227,8 +236,9 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
     }
 }
 
-; str.cp-index: 將字節偏移轉為碼點（字符）下標
+; 將字節偏移轉為碼點（字符）下標
 ; 返回 s[0..byte-pos) 內的碼點數量
+; [cp-index](#str.cp-index)
 str.cp-index = (byte-pos i64) (cp i64) {
     cp = 0
     i <- [0..byte-pos): {
@@ -243,8 +253,9 @@ str.cp-index = (byte-pos i64) (cp i64) {
     }
 }
 
-; str.byte-index: 將碼點（字符）下標轉為字節偏移
+; 將碼點（字符）下標轉為字節偏移
 ; 返回第 cp-pos 個碼點起始的字節位置；越界（cp-pos 超出）返回 .len
+; [byte-index](#str.byte-index)
 str.byte-index = (cp-pos i64) (byte i64) {
     byte = 0
     cp = 0
@@ -274,9 +285,10 @@ str.byte-index = (cp-pos i64) (byte i64) {
     byte = .len-bytes()
 }
 
-; str.index: 在 s 中查找 target 子串
+; 在 s 中查找 target 子串
 ; 使用 Sunday 算法，平均 O(n/m)，最壞 O(n*m)
 ; 返回首次出現的「碼點（字符）位置」，與 s[i] 碼點索引語義一致；未找到返回 -1
+; [index](#str.index)
 str.index = (target str) (pos i64) {
     b = .find-byte-from(target, 0)
     b < 0 -> {
@@ -286,8 +298,9 @@ str.index = (target str) (pos i64) {
     pos = .cp-index(b)
 }
 
-; str.index-from: 在 s 中從 from（碼點位置）開始查找 target 子串
+; 在 s 中從 from（碼點位置）開始查找 target 子串
 ; 返回首次出現的「碼點（字符）位置」，未找到返回 -1
+; [index-from](#str.index-from)
 str.index-from = (target str, from i64) (pos i64) {
     fb = .byte-index(from)
     b = .find-byte-from(target, fb)
@@ -298,15 +311,17 @@ str.index-from = (target str, from i64) (pos i64) {
     pos = .cp-index(b)
 }
 
-; str.contains: 判断 s 是否包含 target 子串
+; 判断 s 是否包含 target 子串
 ; 返回 true=包含, false=不包含
+; [contains](#str.contains)
 str.contains = (target str) (yes bool) {
     pos = .index(target)
     pos >= 0 -> yes = true
 }
 
-; str.starts-with: 判断 s 是否以 target 开头
+; 判断 s 是否以 target 开头
 ; 返回 true=是, false=否
+; [starts-with](#str.starts-with)
 str.starts-with = (target str) (yes bool) {
     yes = true
     target.len-bytes() > .len-bytes() -> {
@@ -323,8 +338,9 @@ str.starts-with = (target str) (yes bool) {
     }
 }
 
-; str.ends-with: 判断 s 是否以 target 结尾
+; 判断 s 是否以 target 结尾
 ; 返回 true=是, false=否
+; [ends-with](#str.ends-with)
 str.ends-with = (target str) (yes bool) {
 
     yes = true
@@ -351,8 +367,9 @@ str.ends-with = (target str) (yes bool) {
 ; 转换
 ; ═══════════════════════════════════════════════
 
-; str.to-upper: 将字符串转为大写
+; 将字符串转为大写
 ; 返回新字符串
+; [to-upper](#str.to-upper)
 str.to-upper = () (val str) {
     val = with-cap(.len-bytes())
     i <- [0...len-bytes()): {
@@ -371,8 +388,9 @@ str.to-upper = () (val str) {
     }
 }
 
-; str.to-lower: 将字符串转为小写
+; 将字符串转为小写
 ; 返回新字符串
+; [to-lower](#str.to-lower)
 str.to-lower = () (val str) {
     val = with-cap(.len-bytes())
     i <- [0...len-bytes()): {
@@ -391,8 +409,9 @@ str.to-lower = () (val str) {
     }
 }
 
-; str.trim: 去除字符串首尾空白字符
+; 去除字符串首尾空白字符
 ; 返回新字符串
+; [trim](#str.trim)
 str.trim = () (val str) {
     start <- [0...len-bytes()): {
 
@@ -426,8 +445,9 @@ str.trim = () (val str) {
 ; 重复与切片
 ; ═══════════════════════════════════════════════
 
-; str.repeat: 将字符串重复 times 次
+; 将字符串重复 times 次
 ; 返回新字符串
+; [repeat](#str.repeat)
 str.repeat = (times i64) (val str) {
 
     #{overflow=wrap}
@@ -441,8 +461,9 @@ str.repeat = (times i64) (val str) {
     }
 }
 
-; str.slice: 截取子串 [start, end)，下標為「字符（碼點）位置」
+; 截取子串 [start, end)，下標為「字符（碼點）位置」
 ; 與 s[i] 碼點索引語義一致；要按字節偏移切片請用 s.slice-bytes()
+; [slice](#str.slice)
 str.slice = (start i64, end i64) (val str) {
     r-start = start
     r-end = end
@@ -464,8 +485,9 @@ str.slice = (start i64, end i64) (val str) {
     }
 }
 
-; str.slice-bytes: 按「字節偏移」截取子串 [start, end)（內部位元組級使用）
+; 按「字節偏移」截取子串 [start, end)（內部位元組級使用）
 ; 與 s.byte(i) 語義一致；標準庫 split/replace 等內部按字節切片時使用
+; [slice-bytes](#str.slice-bytes)
 str.slice-bytes = (start i64, end i64) (val str) {
     r-start = start
     r-end = end
@@ -488,17 +510,19 @@ str.slice-bytes = (start i64, end i64) (val str) {
 ; 类型转换
 ; ═══════════════════════════════════════════════
 
-; str.to-str: 恆等轉換（字串轉字串即自身）
+; 恆等轉換（字串轉字串即自身）
 ;
 ; 泛型的 []t.to-str / [n]t.to-str 模板逐元素呼叫 `.[i].to-str()`；元素型別為 str 時
 ; 就落到本方法。此前 std 沒有它，`['a','b'].to-str()` 在建置期報
 ; `unknown callee str.to-str`（產生自 _xstr.to-str 轉發樁）。
 ; str 不可變，回傳自身即可（值語義：共享底層緩衝，不複製）。
+; [to-str](#str.to-str)
 str.to-str = () (out str) {
     out = .
 }
 
-; str.to-bytes: 将字符串转为字节数组
+; 将字符串转为字节数组
+; [to-bytes](#str.to-bytes)
 str.to-bytes = () (val []byte) {
     val = with-len(.len-bytes())
     i <- [0...len-bytes()): {
@@ -507,11 +531,12 @@ str.to-bytes = () (val []byte) {
     }
 }
 
-; str.to-i64: 將字串解析為有號 64 位整數
+; 將字串解析為有號 64 位整數
 ; 返回 Option：
 ;   ok(n) - 成功
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或格式錯誤
+; [to-i64](#str.to-i64)
 str.to-i64 = () (val ?i64) {
 
     .len-bytes() == 0 -> {
@@ -602,11 +627,12 @@ str.to-i64 = () (val ?i64) {
     val = n
 }
 
-; str.to-i8: 將字串解析為 i8
+; 將字串解析為 i8
 ; 返回 Option：
 ;   ok(n) - 成功（-128 ~ 127）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; [to-i8](#str.to-i8)
 str.to-i8 = () (val ?i8) {
     v = .to-i64()
     v: {
@@ -625,11 +651,12 @@ str.to-i8 = () (val ?i8) {
     }
 }
 
-; str.to-i16: 將字串解析為 i16
+; 將字串解析為 i16
 ; 返回 Option：
 ;   ok(n) - 成功（-32768 ~ 32767）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; [to-i16](#str.to-i16)
 str.to-i16 = () (val ?i16) {
     v = .to-i64()
     v: {
@@ -648,11 +675,12 @@ str.to-i16 = () (val ?i16) {
     }
 }
 
-; str.to-i32: 將字串解析為 i32
+; 將字串解析為 i32
 ; 返回 Option：
 ;   ok(n) - 成功（-2147483648 ~ 2147483647）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; [to-i32](#str.to-i32)
 str.to-i32 = () (val ?i32) {
     v = .to-i64()
     v: {
@@ -671,11 +699,12 @@ str.to-i32 = () (val ?i32) {
     }
 }
 
-; str.to-u8: 將字串解析為 u8
+; 將字串解析為 u8
 ; 返回 Option：
 ;   ok(n) - 成功（0 ~ 255）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; [to-u8](#str.to-u8)
 str.to-u8 = () (val ?u8) {
     .len-bytes() == 0 -> {
         val = nil
@@ -716,11 +745,12 @@ str.to-u8 = () (val ?u8) {
     }
 }
 
-; str.to-u16: 將字串解析為 u16
+; 將字串解析為 u16
 ; 返回 Option：
 ;   ok(n) - 成功（0 ~ 65535）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; [to-u16](#str.to-u16)
 str.to-u16 = () (val ?u16) {
     .len-bytes() == 0 -> {
         val = nil
@@ -761,11 +791,12 @@ str.to-u16 = () (val ?u16) {
     }
 }
 
-; str.to-u32: 將字串解析為 u32
+; 將字串解析為 u32
 ; 返回 Option：
 ;   ok(n) - 成功（0 ~ 4294967295）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; [to-u32](#str.to-u32)
 str.to-u32 = () (val ?u32) {
     .len-bytes() == 0 -> {
         val = nil
@@ -806,8 +837,9 @@ str.to-u32 = () (val ?u32) {
     }
 }
 
-; str.to-u64: 將字串解析為 u64
+; 將字串解析為 u64
 ; 拒絕負號；不檢查 i64 範圍溢位（截斷由 LLVM 自動處理）
+; [to-u64](#str.to-u64)
 str.to-u64 = () (val ?u64) {
     .len-bytes() == 0 -> {
         val = nil
@@ -835,11 +867,12 @@ str.to-u64 = () (val ?u64) {
     val = n
 }
 
-; str.to-byte: 將字串解析為 byte（與 u8 等價）
+; 將字串解析為 byte（與 u8 等價）
 ; 返回 Option：
 ;   ok(n) - 成功（0 ~ 255）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、負號或超出範圍
+; [to-byte](#str.to-byte)
 str.to-byte = () (val ?byte) {
     .len-bytes() == 0 -> {
         val = nil
@@ -884,7 +917,8 @@ str.to-byte = () (val ?byte) {
 ; 以 bigint 建立精確有理數 int-mant * 10^K，再求最近可表示 f64（捨入至偶），
 ; 取代原本 f64 累積（17 位字面量會差 1 ULP）。支援 [+-][數字][.數字][eE[+-]數字]。
 
-; bigint-bitlen: 回傳正 bigint 的位元長度（floor(log2)+1）
+; 回傳正 bigint 的位元長度（floor(log2)+1）
+; [bigint-bitlen](#str.bigint-bitlen)
 bigint-bitlen = (b bigint) (out i64) {
     bm = 4294967295
     out = (b.len - 1) * 32
@@ -1162,12 +1196,13 @@ str-to-f64 = (s str) (result f64) {
     (sign < 0) -> result = -result
 }
 
-; str.to-f64: 將字串解析為 f64
+; 將字串解析為 f64
 ; 返回 Option：
 ;   ok(f) - 成功
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元
 ; 使用 Nolang 實作 str-to-f64 進行解析（已移除 strtod CLibCall 依賴）
+; [to-f64](#str.to-f64)
 str.to-f64 = () (val ?f64) {
     .len-bytes() == 0 -> {
         val = nil
@@ -1216,12 +1251,13 @@ str.to-f64 = () (val ?f64) {
     val = f
 }
 
-; str.to-f32: 將字串解析為 f32
+; 將字串解析為 f32
 ; 返回 Option：
 ;   ok(f) - 成功
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元
 ; 使用 Nolang 實作 str-to-f64 + f64-to-f32（已移除 strtod CLibCall 依賴）
+; [to-f32](#str.to-f32)
 str.to-f32 = () (val ?f32) {
     f = .to-f64()
     {
@@ -1238,9 +1274,10 @@ str.to-f32 = () (val ?f32) {
     val = f.to-f32()
 }
 
-; str.to-bool: 將字串 "true" / "false" 解析為 bool
+; 將字串 "true" / "false" 解析為 bool
 ; 大小寫敏感；空字串 → nil，其他 → err
 ; 使用逐字節比較以避免 strcmp 在跨函數呼叫時的記憶體問題
+; [to-bool](#str.to-bool)
 str.to-bool = () (val ?bool) {
     {
         .len-bytes() == 0 -> {
@@ -1273,8 +1310,9 @@ str.to-bool = () (val ?bool) {
 ; 反转与比较
 ; ═══════════════════════════════════════════════
 
-; str.reverse: 反转字符串
+; 反转字符串
 ; 将 s 反转后写入 val
+; [reverse](#str.reverse)
 str.reverse = () (val str) {
     val = with-cap(.len-bytes())
     i <- [0...len-bytes()): {
@@ -1284,8 +1322,9 @@ str.reverse = () (val str) {
     }
 }
 
-; str.compare: 字典序比较两个字符串
+; 字典序比较两个字符串
 ; 返回 -1(a<b), 0(相等), 1(a>b)
+; [compare](#str.compare)
 str.compare = (b str) (r i64) {
     an = .len-bytes()
     bn = b.len-bytes()
@@ -1319,8 +1358,9 @@ str.compare = (b str) (r i64) {
 ; 统计
 ; ═══════════════════════════════════════════════
 
-; str.count: 统计字串中的 char（code point）數量
+; 统计字串中的 char（code point）數量
 ; 因為 .len 已經是 byte 數，count 提供 code point 數
+; [count](#str.count)
 str.count = () (cnt i64) {
     cnt = 0
     i = 0
@@ -1347,8 +1387,9 @@ str.count = () (cnt i64) {
 ; 替换
 ; ═══════════════════════════════════════════════
 
-; str.replace-char: 将 s 中所有 old-ch 替换为 new-ch（UTF-8 码点）
+; 将 s 中所有 old-ch 替换为 new-ch（UTF-8 码点）
 ; 返回结果字符串
+; [replace-char](#str.replace-char)
 str.replace-char = (old-ch char, new-ch char) (val str) {
 
     ; 第一遍：計算輸出長度
@@ -1490,7 +1531,8 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 ; 裁剪（指定字符）
 ; ═══════════════════════════════════════════════
 
-; str.trim-char: 去除字符串首尾指定字符（UTF-8 码点）
+; 去除字符串首尾指定字符（UTF-8 码点）
+; [trim-char](#str.trim-char)
 str.trim-char = (ch char) (val str) {
 
     ; 前向裁剪：跳过所有等于 ch 的 code point
@@ -1587,8 +1629,9 @@ str.trim-char = (ch char) (val str) {
 ; 判空
 ; ═══════════════════════════════════════════════
 
-; str.empty: 判断字符串是否为空
+; 判断字符串是否为空
 ; 返回 true=空, false=非空
+; [empty](#str.empty)
 str.empty = () (yes bool) {
     yes = true
     .len-bytes() != 0 -> yes = false
@@ -1612,23 +1655,26 @@ str.empty = () (yes bool) {
 ; 便捷构造方法（方法形式的全局 with-cap / with-len / with-cap-len）
 ; ═══════════════════════════════════════════════
 
-; str.with-cap: 建立指定容量的新字串（len=0）
+; 建立指定容量的新字串（len=0）
 ;   s = ''.with-cap(256)  → 預分配 256 位元組的空字串
 ; 便捷方法，等同全域 with-cap(cap)
+; [with-cap](#str.with-cap)
 str.with-cap = (cap i64) (out str) {
     out = with-cap(cap)
 }
 
-; str.with-len: 建立指定長度的字串
+; 建立指定長度的字串
 ;   s = ''.with-len(10)  → 長度為 10 的字串
 ; 便捷方法，等同全域 with-len(len)
+; [with-len](#str.with-len)
 str.with-len = (len i64) (out str) {
     out = with-len(len)
 }
 
-; str.with-len-cap: 建立指定長度和容量的字串
+; 建立指定長度和容量的字串
 ;   s = ''.with-len-cap(10, 256)  → 長度 10、容量 256 的字串
 ; 便捷方法，等同全域 with-cap-len(cap, len)
+; [with-len-cap](#str.with-len-cap)
 str.with-len-cap = (len i64, cap i64) (out str) {
     out = with-cap-len(cap, len)
 }
@@ -1636,6 +1682,7 @@ str.with-len-cap = (len i64, cap i64) (out str) {
 ; str.new: 從 char 切片構造 str（模組級構造器）
 ; 編譯期內建（ForwardFunc: chars-new）：[]char 直接逐位元組轉成 bytes 並一次性設定長度，
 ; 無逐位元組 .no 迴圈。str 是內建類型，位元組/長度無法在用戶代碼裡操作，故整體轉換由編譯器生成 IR。
+; [new](#str.new)
 #{buildin}
 new = (cs []char) (s str) {
 }
@@ -1644,8 +1691,9 @@ new = (cs []char) (s str) {
 ; 十六進制解碼
 ; ═══════════════════════════════════════════════
 
-; str-hex-val: 單個十六進制字元轉數值
+; 單個十六進制字元轉數值
 ; 無效字元回傳 -1（原名 hex-val 與 uuid.hex-val 撞名，跨模組解析會被要求限定，改掛模組前綴同 txt-hex-val 慣例）
+; [str-hex-val](#str.str-hex-val)
 str-hex-val = (c i64) (v i64) {
     v = -1
     {
@@ -1671,11 +1719,12 @@ str-hex-val = (c i64) (v i64) {
     }
 }
 
-; str.from-hex: 將十六進制字串解碼為 []byte
+; 將十六進制字串解碼為 []byte
 ; 返回 Option：
 ;   ok(bytes) - 成功
 ;   nil        - 空字串
 ;   err('msg') - 含無效十六進制字元
+; [from-hex](#str.from-hex)
 str.from-hex = () (out ?[]byte) {
     n = .len-bytes()
     n == 0 -> {
@@ -1710,7 +1759,8 @@ str.from-hex = () (out ?[]byte) {
 ; 大數（bigint）轉換
 ; ═══════════════════════════════════════════════
 
-; _str-dig-val: 單個數字字元轉數值（0-15），無效字元回傳 -1
+; 單個數字字元轉數值（0-15），無效字元回傳 -1
+; [_str-dig-val](#str._str-dig-val)
 _str-dig-val = (c i64) (d i64) {
     d = -1
     {
@@ -1736,10 +1786,11 @@ _str-dig-val = (c i64) (d i64) {
     }
 }
 
-; str.to-bigint: 將字串解析為 bigint，自動判斷進位制
+; 將字串解析為 bigint，自動判斷進位制
 ;   前綴 0b/0B → 二進位、0o/0O → 八進位、0x/0X → 十六進位；無前綴 → 十進位
 ;   支援可選前導空白與正負號（+ / -）
 ; 返回 ?bigint：ok(bigint) 成功 / nil 空字串 / err('msg') 無有效數字
+; [to-bigint](#str.to-bigint)
 str.to-bigint = () (out ?bigint) {
     n = .len-bytes()
     n == 0 -> {
@@ -1839,11 +1890,12 @@ str.to-bigint = () (out ?bigint) {
 ; 分割與連接
 ; ═══════════════════════════════════════════════
 
-; str.split: 用分隔符將字串分割為多個子字串
+; 用分隔符將字串分割為多個子字串
 ; sep str: 分隔符
 ; 返回 out []str: 分割後的子字串切片
 ; 空分隔符時返回整個字串作為唯一元素
 ; 注意：使用本地 result 切片再賦值給 out，避免 out.push 在輸出參數上不生效的編譯器 bug
+; [split](#str.split)
 str.split = (sep str) (out []str) {
     result []str
     sep.len-bytes() == 0 -> {
@@ -1867,6 +1919,7 @@ str.split = (sep str) (out []str) {
 ; []str.join: 用分隔符連接字串切片中的所有元素
 ; sep str: 分隔符
 ; 返回 out str: 連接後的字串
+; [join](#strs.join)
 []str.join = (sep str) (out str) {
     n = .len()
     n == 0 -> return
@@ -1904,11 +1957,12 @@ str.split = (sep str) (out []str) {
 ; 子串替換
 ; ═══════════════════════════════════════════════
 
-; str.replace-str: 將 s 中所有 old 子串替換為 new 子串
+; 將 s 中所有 old 子串替換為 new 子串
 ; old str: 要替換的子串
 ; new str: 替換後的子串
 ; 返回 val str: 替換後的結果字串
 ; 若 old 為空字串，直接返回原字串的副本
+; [replace-str](#str.replace-str)
 str.replace-str = (old str, new str) (val str) {
     old.len-bytes() == 0 -> {
         val = .slice-bytes(0, .len-bytes())
@@ -2017,10 +2071,11 @@ str.replace-str = (old str, new str) (val str) {
 ; 按空白分割
 ; ═══════════════════════════════════════════════
 
-; str.fields: 按一個或多個連續空白字元分割字串
+; 按一個或多個連續空白字元分割字串
 ; 空白字元：空格(32)、定位(9)、換行(10)、歸位(13)
 ; 返回 out []str: 分割後的非空子字串切片
 ; 連續空白被視為單一分隔符，首尾空白不產生空元素
+; [fields](#str.fields)
 str.fields = () (out []str) {
     n = .len-bytes()
     n == 0 -> return
@@ -2051,9 +2106,10 @@ str.fields = () (out []str) {
 ; 全等比較
 ; ═══════════════════════════════════════════════
 
-; str.eq-full: 全等比較兩個字串
+; 全等比較兩個字串
 ; b str: 比較目標
 ; 返回 yes bool: true=相等 false=不相等
+; [eq-full](#str.eq-full)
 str.eq-full = (b str) (yes bool) {
     .len-bytes() != b.len-bytes() -> return
     yes = true
@@ -2069,9 +2125,10 @@ str.eq-full = (b str) (yes bool) {
 ; 反向查找
 ; ═══════════════════════════════════════════════
 
-; str.rindex: 反向查找子串最後出現位置
+; 反向查找子串最後出現位置
 ; target str: 要查找的子串
 ; 返回 pos i64: 找到的碼點（字符）位置，未找到 -1
+; [rindex](#str.rindex)
 str.rindex = (target str) (pos i64) {
     b = .rfind-byte-from(target, 0)
     b < 0 -> {
@@ -2081,18 +2138,20 @@ str.rindex = (target str) (pos i64) {
     pos = .cp-index(b)
 }
 
-; str.last-index: 反向查找子串最後出現位置（last-index 是 rindex 的別名）
+; 反向查找子串最後出現位置（last-index 是 rindex 的別名）
 ; target str: 要查找的子串
 ; 返回 pos i64: 找到的碼點（字符）位置，未找到 -1
+; [last-index](#str.last-index)
 str.last-index = (target str) (pos i64) {
     pos = .rindex(target)
 }
 
-; str.rindex-from: 從 from（碼點位置）反向查找子串
+; 從 from（碼點位置）反向查找子串
 ; 語義同 Python rfind(target, from)：在 [from, .len) 範圍內查找 target 最後出現位置
 ; target str: 要查找的子串
 ; from i64: 起始位置（含，下界，碼點）
 ; 返回 pos i64: 找到的碼點（字符）位置，未找到 -1
+; [rindex-from](#str.rindex-from)
 str.rindex-from = (target str, from i64) (pos i64) {
     fb = .byte-index(from)
     b = .rfind-byte-from(target, fb)
@@ -2107,11 +2166,12 @@ str.rindex-from = (target str, from i64) (pos i64) {
 ; 限定次數替換
 ; ═══════════════════════════════════════════════
 
-; str.replace-n: 限定替換次數
+; 限定替換次數
 ; old str: 舊子串
 ; new str: 新子串
 ; n i64: 最大替換次數，n <= 0 不替換
 ; 返回 val str: 替換後字串
+; [replace-n](#str.replace-n)
 str.replace-n = (old str, new str, n i64) (val str) {
     n <= 0 -> {
         val = .slice-bytes(0, .len-bytes())
@@ -2176,10 +2236,11 @@ str.replace-n = (old str, new str, n i64) (val str) {
 ; 限定次數分割
 ; ═══════════════════════════════════════════════
 
-; str.split-n: 限定分割次數
+; 限定分割次數
 ; sep str: 分隔符
 ; maxsplit i64: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
 ; 返回 out []str: 分割結果
+; [split-n](#str.split-n)
 str.split-n = (sep str, maxsplit i64) (out []str) {
     result []str
     sep.len-bytes() == 0 -> {
@@ -2217,9 +2278,10 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
 ; 按行分割
 ; ═══════════════════════════════════════════════
 
-; str.lines: 按換行符分割
+; 按換行符分割
 ; 支持 \n 與 \r\n
 ; 返回 out []str: 行列表（末尾換行不產生空行）
+; [lines](#str.lines)
 str.lines = () (out []str) {
     .len-bytes() == 0 -> return
     result []str
@@ -2252,9 +2314,10 @@ str.lines = () (out []str) {
 ; 十六進制編碼
 ; ═══════════════════════════════════════════════
 
-; str.to-hex: 字串轉十六進制編碼
+; 字串轉十六進制編碼
 ; 每字節轉兩個十六進制字符（小寫）
 ; 返回 out str: 十六進制字串
+; [to-hex](#str.to-hex)
 str.to-hex = () (out str) {
     .len-bytes() == 0 -> return
 
@@ -2277,9 +2340,10 @@ str.to-hex = () (out str) {
 ; ═══════════════════════════════════════════════
 
 ; [deprecated] str.at: 字符（碼點）索引讀取——請改用 s[idx]（原生索引，回傳 ?char）
-; str.at: 安全索引訪問（字符索引；位元組偏移請用 s.byte(i)）
+; 安全索引訪問（字符索引；位元組偏移請用 s.byte(i)）
 ; i i64: 字符（碼點）索引
 ; 返回 val ?byte: 該字符的碼點值（超出 byte 範圍時截斷）；越界返回 nil
+; [at](#str.at)
 str.at = (i i64) (val ?byte) {
     {
         i < 0 -> {
@@ -2299,8 +2363,9 @@ str.at = (i i64) (val ?byte) {
 ; txt 转换
 ; ═══════════════════════════════════════════════
 
-; str.to-txt: 将 str 转换为 txt（最长 255 字节）
+; 将 str 转换为 txt（最长 255 字节）
 ; 返回 out ?txt: ok(txt) / nil（超过 255 字节，txt 容纳不下，不再静默截断）
+; [to-txt](#str.to-txt)
 str.to-txt = () (out ?txt) {
     n = .len-bytes()
     n > 255 -> {

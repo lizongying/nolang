@@ -15,11 +15,13 @@
 
 ; []byte.len: 回傳位元組切片長度
 ; byte 是獨立類型，非 u8 別名，因此 []byte.len 不會從 []t.len 自動實例化。
+; [len](#bytes.len)
 []byte.len = () (out i64) {
     out = .len()
 }
 
 ; []byte.to-i64-be: 將大端序位元組轉為 int64（1~8 位元組）
+; [to-i64-be](#bytes.to-i64-be)
 []byte.to-i64-be = () (v i64) {
     v = 0
     n = .len()
@@ -29,6 +31,7 @@
 }
 
 ; []byte.to-i64-le: 將小端序位元組轉為 int64（1~8 位元組）
+; [to-i64-le](#bytes.to-i64-le)
 []byte.to-i64-le = () (v i64) {
     v = 0
     n = .len()
@@ -47,6 +50,7 @@
 ; 构造成的 []char 运行期会越界损坏），故本方法暂不可用。
 ; 若只需要「byte→码点→UTF-8 字符串」的最终结果，直接用 b.to-str() 即可——
 ; []byte.to-str 已内联本语义（每个 byte 当 0~255 码点重新 UTF-8 编码），无需经过 []char。
+; [to-chars](#bytes.to-chars)
 []byte.to-chars = () (out []char) {
     n = .len()
     cs []char = with-cap(n)
@@ -72,6 +76,7 @@
 ; （例如磁盘上读到的 0xC3 0xA9 会被当成码点 0xC3、0xA9 各自重编码）。若需「原样拷贝
 ; 合法 UTF-8 字节流」（文件 / 子进程读取场景），请改用保留了 1:1 拷贝语义的
 ; b.to-bytes-str()（见下方），或直接使用底层切片。
+; [to-str](#bytes.to-str)
 []byte.to-str = () (out ?str) {
     n = .len()
     r str = with-len(0)
@@ -119,6 +124,7 @@
 ; []byte.to-bytes-str: 1:1 逐字节拷贝（保留原 []byte.to-str 语义）。
 ; 用于 buf 已经是合法 UTF-8 字节流的场景（读取文件 / 子进程输出），不需要按码点重编码。
 ; 该函数等价于旧版 []byte.to-str。
+; [to-bytes-str](#bytes.to-bytes-str)
 []byte.to-bytes-str = () (out str) {
     n = .len()
     out = with-len(n)
@@ -130,6 +136,7 @@
 
 ; []byte.index: 在 []byte 中查找 target 子串
 ; 返回首次出现的位置，未找到返回 -1
+; [index](#bytes.index)
 []byte.index = (target str) (pos i64) {
 
     pos = -1
@@ -169,6 +176,7 @@
 
 ; []byte.index-from: 在 []byte 中從 from 位置開始查找 target 子串
 ; 返回首次出現的位置，未找到返回 -1
+; [index-from](#bytes.index-from)
 []byte.index-from = (target str, from i64) (pos i64) {
 
     pos = -1
@@ -210,6 +218,7 @@
 
 ; []byte.slice: 截取子切片 [start, end)
 ; 返回新切片
+; [slice](#bytes.slice)
 []byte.slice = (start i64, end i64) (val []byte) {
 
     start < 0 -> start = 0
@@ -228,13 +237,14 @@
 
 ; ─── 十六進制編碼 ─────────────────────────────
 
-; HEX-UPPER: 大寫十六進制字元表
+; 大寫十六進制字元表
 HEX-UPPER = '0123456789ABCDEF'
 
-; HEX-LOWER: 小寫十六進制字元表
+; 小寫十六進制字元表
 HEX-LOWER = '0123456789abcdef'
 
 ; []byte.to-hex: 將 []byte 編碼為大寫十六進制字串
+; [to-hex](#bytes.to-hex)
 []byte.to-hex = () (out str) {
 
     n = .len()
@@ -254,6 +264,7 @@ HEX-LOWER = '0123456789abcdef'
 }
 
 ; []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
+; [to-hex-lower](#bytes.to-hex-lower)
 []byte.to-hex-lower = () (out str) {
 
     n = .len()
@@ -283,6 +294,7 @@ HEX-LOWER = '0123456789abcdef'
 
 ; []byte.to-txt: 将 []byte 转换为 txt（截断至 255 字节）
 ; 返回 out txt: 固定 256 字节的 txt 结构
+; [to-txt](#bytes.to-txt)
 []byte.to-txt = () (out txt) {
     n = .len()
     n > 255 -> n = 255

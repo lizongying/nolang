@@ -48,7 +48,7 @@ MYSQL-RECV-BUF = 65536
 ; MySQL 協議輔助函數
 ; ============================================================================
 
-; mysql-read-exact: 從 socket 精確讀取 n 位元組
+; 從 socket 精確讀取 n 位元組
 ; fd: TCP socket fd
 ; n: 要讀取的位元組數
 ; 返回 data=讀取的資料, ok=true=成功
@@ -98,7 +98,7 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
     ok = true
 }
 
-; mysql-pkt-recv: 接收一個 MySQL 封包
+; 接收一個 MySQL 封包
 ; fd: TCP socket fd
 ; 返回 payload=封包載荷, payload-len=載荷長度, seq=序號, ok=true=成功
 mysql-pkt-recv = (fd fd) (payload str, payload-len i64, seq i64, ok bool) {
@@ -121,7 +121,7 @@ mysql-pkt-recv = (fd fd) (payload str, payload-len i64, seq i64, ok bool) {
     payload, ok = mysql-read-exact(fd, payload-len)
 }
 
-; mysql-pkt-send: 發送一個 MySQL 封包
+; 發送一個 MySQL 封包
 ; fd: TCP socket fd
 ; seq: 封包序號
 ; payload: 載荷資料
@@ -155,7 +155,7 @@ mysql-pkt-send = (fd fd, seq i64, payload str, payload-len i64) (ok bool) {
     ok = true
 }
 
-; mysql-read-lenenc: 讀取長度編碼整數
+; 讀取長度編碼整數
 ; data: 資料緩衝區
 ; pos: 當前位置
 ; 返回 val=整數值, is-null=是否為 NULL, new-pos=新位置
@@ -207,7 +207,7 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 ; 算法：token = SHA1(password) XOR SHA1(seed + SHA1(SHA1(password)))
 ; ============================================================================
 
-; mysql-native-password: 計算認證權杖
+; 計算認證權杖
 ; password str: 使用者密碼
 ; seed [20]byte: 20 位元組伺服器隨機種子
 ; 返回 token [20]byte: 20 位元組認證權杖
@@ -313,7 +313,7 @@ stmt-mysql sql.stmt {
 ; 函式：open
 ; ============================================================================
 
-; open: 以 DSN 連線 MySQL
+; 以 DSN 連線 MySQL
 ; DSN 格式：user:password@host:port/dbname
 ; port 可選，預設 3306
 ; 失敗時 d.fd 保持 -1，d.connected 保持 false
@@ -1126,7 +1126,7 @@ stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
     ok = true
 }
 
-; stmt-mysql.bind-str: 綁定字串參數（替換第一個 ?，以單引號包圍）
+; 綁定字串參數（替換第一個 ?，以單引號包圍）
 ; 注意：不做 SQL 跳脫，MVP 限制
 stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     cur = .bound
@@ -1149,7 +1149,7 @@ stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     ok = true
 }
 
-; stmt-mysql.bind-bool: 綁定布林參數（替換第一個 ?，true=1, false=0）
+; 綁定布林參數（替換第一個 ?，true=1, false=0）
 stmt-mysql.bind-bool = (idx i64, v bool) (ok bool) {
     cur = .bound
     pos = cur.index('?')

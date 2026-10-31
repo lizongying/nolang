@@ -574,6 +574,12 @@ func TestNomlQuoteValueRoundTrip(t *testing.T) {
 		"trailing newline\n",
 		"blank\n\nline",
 		"a\n`\nb", // a line that IS the terminator: must fall back
+		// A line that merely STARTS with a backtick also ends the block, because
+		// parseRawString terminates on "whitespace + `" at line start. Doc prose
+		// full of markdown code spans hits this: number.i128.sqrt in the std docs
+		// has a line beginning with `#{overflow=wrap}`.
+		"prose\n`#{overflow=wrap}`; more\nprose",
+		"prose\n   `indented span`\nprose",
 	}
 	for _, c := range cases {
 		quoted := NomlQuoteValue(c)
@@ -588,5 +594,8 @@ func TestNomlQuoteValueRoundTrip(t *testing.T) {
 	}
 	if q := NomlQuoteValue("a\n`\nb"); q[0] == '`' {
 		t.Errorf("a value containing a terminator line must fall back to the quoted form, got %q", q)
+	}
+	if q := NomlQuoteValue("a\n`span`\nb"); q[0] == '`' {
+		t.Errorf("a value whose line starts with a backtick must fall back to the quoted form, got %q", q)
 	}
 }

@@ -8,9 +8,10 @@
 ;   hash = sha384(data)       // hash = 48 位元組 [48]byte
 ;   hex = sha384-hex(data)    // hex = 96 字元 hex 字串
 
-; sha384: 計算 SHA-384 雜湊（含填充與多區塊處理）
+; 計算 SHA-384 雜湊（含填充與多區塊處理）
 ; data []byte: 輸入位元組陣列
 ; 返回 hash [48]byte: 48 位元組雜湊值
+; [sha384](#crypto.sha384.sha384)
 sha384 = (data []byte) (hash [48]byte) {
 
     ; SHA-384 初始狀態（不同於 SHA-512）
@@ -203,9 +204,10 @@ sha384 = (data []byte) (hash [48]byte) {
     hash[47] = h5 & 255
 }
 
-; sha384-hex: 計算 SHA-384 雜湊並返回 hex 字串
+; 計算 SHA-384 雜湊並返回 hex 字串
 ; data []byte: 輸入位元組陣列
 ; 返回 hex str: 96 字元小寫 hex 字串
+; [sha384-hex](#crypto.sha384.sha384-hex)
 sha384-hex = (data []byte) (hex str) {
     hash = sha384(data)
 

@@ -58,7 +58,7 @@
 
 # /test/runner
 
-; at-or: 取 ?byte 的值；nil（越界）時回傳 dflt。
+; 取 ?byte 的值；nil（越界）時回傳 dflt。
 ; txt.at 已廢棄（字符索引、?byte、越界 nil），斷言前先攤平。
 at-or = (b ?byte, dflt i64) (v i64) {
     v = dflt

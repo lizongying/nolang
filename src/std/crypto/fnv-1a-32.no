@@ -5,9 +5,10 @@
 ; 用法：
 ;   h = fnv-1a-32('hello', 5)
 
-; fnv-1a-32: 32-bit FNV-1a 哈希
+; 32-bit FNV-1a 哈希
 ; s: 輸入字串, n: 字串長度
 ; 返回 h: 輸出哈希值
+; [fnv-1a-32](#crypto.fnv-1a-32.fnv-1a-32)
 fnv-1a-32 = (s []byte, n i64) (h i64) {
     h = 2166136261
     i <- [0..n): {

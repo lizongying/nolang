@@ -15,23 +15,27 @@
 ; 時間戳
 ; ═══════════════════════════════════════════════
 
-; now-s: 當前 Unix 時間戳（秒）
+; 當前 Unix 時間戳（秒）
 ; 包裝 builtin now()
+; [now-s](#time.now-s)
 now-s = () (ts i64) {
     ts = os.now()
 }
 
-; now-ms: 當前 Unix 時間戳（毫秒）
+; 當前 Unix 時間戳（毫秒）
+; [now-ms](#time.now-ms)
 #{buildin}
 now-ms = () (ts i64) {
 }
 
-; now-us: 當前 Unix 時間戳（微秒）
+; 當前 Unix 時間戳（微秒）
+; [now-us](#time.now-us)
 #{buildin}
 now-us = () (ts i64) {
 }
 
-; now-ns: 當前時間戳（奈秒）
+; 當前時間戳（奈秒）
+; [now-ns](#time.now-ns)
 #{buildin}
 now-ns = () (ts i64) {
 }
@@ -40,14 +44,16 @@ now-ns = () (ts i64) {
 ; 睡眠
 ; ═══════════════════════════════════════════════
 
-; sleep-s: 睡眠指定秒數
+; 睡眠指定秒數
 ; 包裝 builtin sleep()
+; [sleep-s](#time.sleep-s)
 sleep-s = (s i64) {
     os.sleep(s)
 }
 
-; sleep-ms: 睡眠指定毫秒數
+; 睡眠指定毫秒數
 ; sleep-ms 無對應 builtin，以 sleep-us(ms * 1000) 實作
+; [sleep-ms](#time.sleep-ms)
 sleep-ms = (ms i64) {
 
     #{overflow=wrap}
@@ -55,12 +61,14 @@ sleep-ms = (ms i64) {
     sleep-us(us)
 }
 
-; sleep-us: 睡眠指定微秒數
+; 睡眠指定微秒數
+; [sleep-us](#time.sleep-us)
 #{buildin}
 sleep-us = (us i64) {
 }
 
-; sleep-ns: 睡眠指定奈秒數
+; 睡眠指定奈秒數
+; [sleep-ns](#time.sleep-ns)
 #{buildin}
 sleep-ns = (ns i64) {
 }
@@ -69,28 +77,32 @@ sleep-ns = (ns i64) {
 ; 時長計算
 ; ═══════════════════════════════════════════════
 
-; duration-between: 計算兩個時間戳的差（秒）
+; 計算兩個時間戳的差（秒）
+; [duration-between](#time.duration-between)
 duration-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
     diff = end - start
 }
 
-; duration-ms-between: 計算兩個時間戳的差（毫秒）
+; 計算兩個時間戳的差（毫秒）
+; [duration-ms-between](#time.duration-ms-between)
 duration-ms-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
     diff = end - start
 }
 
-; duration-us-between: 計算兩個時間戳的差（微秒）
+; 計算兩個時間戳的差（微秒）
+; [duration-us-between](#time.duration-us-between)
 duration-us-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
     diff = end - start
 }
 
-; since-s: 從 start 到現在的經過秒數
+; 從 start 到現在的經過秒數
+; [since-s](#time.since-s)
 since-s = (start i64) (diff i64) {
 
     end i64 = os.now()
@@ -99,7 +111,8 @@ since-s = (start i64) (diff i64) {
     diff = end - start
 }
 
-; since-ms: 從 start 到現在的經過毫秒數
+; 從 start 到現在的經過毫秒數
+; [since-ms](#time.since-ms)
 since-ms = (start i64) (diff i64) {
 
     end = now-ms()
@@ -108,7 +121,8 @@ since-ms = (start i64) (diff i64) {
     diff = end - start
 }
 
-; since-us: 從 start 到現在的經過微秒數
+; 從 start 到現在的經過微秒數
+; [since-us](#time.since-us)
 since-us = (start i64) (diff i64) {
 
     end = now-us()
@@ -121,8 +135,9 @@ since-us = (start i64) (diff i64) {
 ; 格式化
 ; ═══════════════════════════════════════════════
 
-; format-duration: 將秒數格式化為人類可讀字串
+; 將秒數格式化為人類可讀字串
 ; 例：3661 → '1h1m1s'
+; [format-duration](#time.format-duration)
 format-duration = (seconds i64) (out str) {
 
     #{overflow=wrap}
@@ -163,24 +178,28 @@ timer {
     end-ts i64
 }
 
-; timer.start: 開始計時
+; 開始計時
+; [start](#time.timer.start)
 timer.start = () {
     .start-ts = now-ms()
 }
 
-; timer.stop: 停止計時
+; 停止計時
+; [stop](#time.timer.stop)
 timer.stop = () {
     .end-ts = now-ms()
 }
 
-; timer.elapsed-ms: 經過毫秒數
+; 經過毫秒數
+; [elapsed-ms](#time.timer.elapsed-ms)
 timer.elapsed-ms = () (ms i64) {
 
     #{overflow=wrap}
     ms = .end-ts - .start-ts
 }
 
-; timer.elapsed-s: 經過秒數
+; 經過秒數
+; [elapsed-s](#time.timer.elapsed-s)
 timer.elapsed-s = () (s i64) {
 
     #{overflow=wrap}
@@ -190,7 +209,8 @@ timer.elapsed-s = () (s i64) {
     s = ms / 1000
 }
 
-; timer.elapsed-us: 經過微秒數
+; 經過微秒數
+; [elapsed-us](#time.timer.elapsed-us)
 timer.elapsed-us = () (us i64) {
 
     #{overflow=wrap}
@@ -221,7 +241,8 @@ _days-in-month = [
     30, 31, 30, 31,
 ]
 
-; is-leap: 判斷閏年
+; 判斷閏年
+; [is-leap](#time.is-leap)
 is-leap = (y i64) (leap bool) {
     leap = false
     {
@@ -236,6 +257,7 @@ is-leap = (y i64) (leap bool) {
 }
 
 ; _days-in-month: 取得指定年月的天數
+; [days-in-month-fn](#time.days-in-month-fn)
 days-in-month-fn = (y i64, m i64) (d i64) {
 
     d = 31
@@ -254,8 +276,9 @@ days-in-month-fn = (y i64, m i64) (d i64) {
     }
 }
 
-; unix-to-date: 將 Unix 時間戳（秒）轉換為 date 結構體（UTC）
+; 將 Unix 時間戳（秒）轉換為 date 結構體（UTC）
 ; 使用經典的 civil-from-days 演算法（Howard Hinnant）
+; [unix-to-date](#time.unix-to-date)
 unix-to-date = (ts i64) (d date) {
 
     ; 分離天數和秒數
@@ -342,8 +365,9 @@ unix-to-date = (ts i64) (d date) {
     d.wday = (w + 4) % 7
 }
 
-; date-to-unix: 將 date 結構體（UTC）轉換為 Unix 時間戳（秒）
+; 將 date 結構體（UTC）轉換為 Unix 時間戳（秒）
 ; 使用 days-from-civil 演算法（Howard Hinnant）
+; [date-to-unix](#time.date-to-unix)
 date-to-unix = (d date) (ts i64) {
 
     y = d.year
@@ -383,8 +407,9 @@ date-to-unix = (d date) (ts i64) {
     ts = days * 86400 + d.hour * 3600 + d.min * 60 + d.sec
 }
 
-; format-date: 將 date 結構體格式化為字串
+; 將 date 結構體格式化為字串
 ; 格式：YYYY-MM-DD HH:MM:SS（負年份加前綴 '-'）
+; [format-date](#time.format-date)
 format-date = (d date) (out str) {
 
     neg = 0
@@ -469,17 +494,19 @@ format-date = (d date) (out str) {
     out[pos + 18] = d.sec % 10 + 48
 }
 
-; format-time-str: 將 Unix 時間戳格式化為可讀字串
+; 將 Unix 時間戳格式化為可讀字串
 ; 格式：YYYY-MM-DD HH:MM:SS（UTC）
+; [format-time-str](#time.format-time-str)
 format-time-str = (ts i64) (out str) {
     d date
     d = unix-to-date(ts)
     out = format-date(d)
 }
 
-; parse-date: 解析日期字串為 Unix 時間戳
+; 解析日期字串為 Unix 時間戳
 ; 支援格式：YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DD
 ; 返回 ?i64：ok=時間戳, nil=解析失敗
+; [parse-date](#time.parse-date)
 parse-date = (s str) (ts ?i64) {
     ts = nil
     n = s.len-bytes()
@@ -583,7 +610,8 @@ parse-date = (s str) (ts ?i64) {
     ts = date-to-unix(d)
 }
 
-; now-date: 取得當前日期時間結構體（UTC）
+; 取得當前日期時間結構體（UTC）
+; [now-date](#time.now-date)
 now-date = () (d date) {
     ts = os.now()
     d = unix-to-date(ts)
@@ -602,8 +630,9 @@ time {
     nsec i64
 }
 
-; now-time: 當前時間點（UTC）
+; 當前時間點（UTC）
 ; 由 builtin now-ns()（CLOCK_REALTIME 奈秒）拆解出 sec 與 nsec
+; [now-time](#time.now-time)
 now-time = () (t time) {
     ns = now-ns()
 
@@ -614,20 +643,23 @@ now-time = () (t time) {
     t.nsec = ns % 1000000000
 }
 
-; unix-to-time: 由 Unix 秒時間戳構造 time（nsec=0）
+; 由 Unix 秒時間戳構造 time（nsec=0）
+; [unix-to-time](#time.unix-to-time)
 unix-to-time = (ts i64) (t time) {
     t.sec = ts
     t.nsec = 0
 }
 
-; duration-time: 計算兩個 time 的差（秒）
+; 計算兩個 time 的差（秒）
+; [duration-time](#time.duration-time)
 duration-time = (start time, end time) (diff i64) {
 
     #{overflow=wrap}
     diff = end.sec - start.sec
 }
 
-; since-time: 從 start 到現在的經過秒數
+; 從 start 到現在的經過秒數
+; [since-time](#time.since-time)
 since-time = (start time) (diff i64) {
     now-t time
     now-t = now-time()
@@ -636,9 +668,10 @@ since-time = (start time) (diff i64) {
     diff = now-t.sec - start.sec
 }
 
-; parse-time: 解析日期字串為 time
+; 解析日期字串為 time
 ; 支援格式同 parse-date：YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DD
 ; 返回 ?time：ok=time, nil=解析失敗
+; [parse-time](#time.parse-time)
 parse-time = (s str) (t ?time) {
     t = nil
     ts = parse-date(s)
@@ -650,31 +683,36 @@ parse-time = (s str) (t ?time) {
     }
 }
 
-; time.unix: 取得 Unix 秒時間戳
+; 取得 Unix 秒時間戳
+; [unix](#time.unix)
 time.unix = () (ts i64) {
     ts = .sec
 }
 
-; time.unix-ms: 取得 Unix 毫秒時間戳
+; 取得 Unix 毫秒時間戳
+; [unix-ms](#time.unix-ms)
 time.unix-ms = () (ms i64) {
 
     #{overflow=wrap}
     ms = .sec * 1000 + .nsec / 1000000
 }
 
-; time.date: 轉換為 date 結構體（UTC，忽略 nsec）
+; 轉換為 date 結構體（UTC，忽略 nsec）
+; [date](#time.date)
 time.date = () (d date) {
     d = unix-to-date(.sec)
 }
 
-; time.format: 格式化為 'YYYY-MM-DD HH:MM:SS'（UTC，忽略 nsec）
+; 格式化為 'YYYY-MM-DD HH:MM:SS'（UTC，忽略 nsec）
+; [format](#time.format)
 time.format = () (out str) {
     d date
     d = unix-to-date(.sec)
     out = format-date(d)
 }
 
-; time.add-seconds: 增加秒數，回傳新的 time
+; 增加秒數，回傳新的 time
+; [add-seconds](#time.add-seconds)
 time.add-seconds = (n i64) (t time) {
 
     #{overflow=wrap}
@@ -682,7 +720,8 @@ time.add-seconds = (n i64) (t time) {
     t.nsec = .nsec
 }
 
-; time.sub: 與另一個 time 的差（秒，. - other）
+; 與另一個 time 的差（秒，. - other）
+; [sub](#time.sub)
 time.sub = (other time) (diff i64) {
 
     #{overflow=wrap}

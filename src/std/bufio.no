@@ -10,7 +10,8 @@ reader {
     avail i64
 }
 
-; init: 建立緩衝讀取器
+; 建立緩衝讀取器
+; [init](#bufio.reader.init)
 reader.init = (fd fd, buf []byte) (r reader) {
     r.fd = fd
     r.buf = buf
@@ -18,7 +19,8 @@ reader.init = (fd fd, buf []byte) (r reader) {
     r.avail = 0
 }
 
-; fill: 填充緩衝區
+; 填充緩衝區
+; [fill](#bufio.reader.fill)
 reader.fill = () (ok bool) {
     .pos < 0 -> return
     .avail > 0 -> {
@@ -34,8 +36,9 @@ reader.fill = () (ok bool) {
     }
 }
 
-; read-byte: 讀取一個位元組
+; 讀取一個位元組
 ; 返回 b ?byte: ok=位元組值, nil=EOF 或錯誤
+; [read-byte](#bufio.reader.read-byte)
 reader.read-byte = () (b ?byte) {
 
     ok = .fill()
@@ -50,8 +53,9 @@ reader.read-byte = () (b ?byte) {
     .pos = .pos + 1
 }
 
-; read-line: 讀取一行
+; 讀取一行
 ; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; [read-line](#bufio.reader.read-line)
 reader.read-line = () (line ?str) {
     line = nil
     acc str = ''
@@ -88,7 +92,8 @@ reader.read-line = () (line ?str) {
     }
 }
 
-; close: 關閉
+; 關閉
+; [close](#bufio.reader.close)
 reader.close = () {
     fs.close(.fd)
 }

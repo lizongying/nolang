@@ -41,7 +41,7 @@ drv.version = () (r str) {
     r = NOC-VERSION
 }
 
-; usage: 打印用法
+; 打印用法
 drv.usage = () {
     print(NOC-NAME - ' — Nolang compiler (self-hosted, M0 skeleton)')
     print('')
@@ -60,13 +60,13 @@ drv.cmd-version = () {
     print(NOC-NAME - ' ' - NOC-VERSION)
 }
 
-; not-implemented: 統一的「未實作」出口
+; 統一的「未實作」出口
 drv.not-implemented = (what str) (code i64) {
     eprint(NOC-NAME - ': command "' - what - '" is not implemented yet (M0 skeleton)')
     code = EXIT-NOTIMPL
 }
 
-; cmd-tokens: dump 詞法 token 流
+; dump 詞法 token 流
 ; 輸出格式與 L1 oracle 逐位元組相同（見 compiler/src/lx.no 檔頭）。
 ; ⚠️ 不要用 print 印「已帶尾端 \n 的字串」——print 自己會補一個 \n，
 ;    那會多出一個空行。lx.dump 回的字串刻意**不帶**尾端 \n。
@@ -119,7 +119,7 @@ drv.cmd-tokens = () (code i64) {
     print(lx.dump(src))
 }
 
-; cmd-ast: 解析並 dump AST（M2）
+; 解析並 dump AST（M2）
 ; 輸出與 L2 oracle `no ast <file>` 逐位元組相同（見 compiler/src/ast.no 檔頭）。
 ; 讀檔走 read-bytes + to-bytes-str（與 cmd-tokens 同理由，§8 P0-⑥）。
 drv.cmd-ast = () (code i64) {
@@ -164,7 +164,7 @@ drv.cmd-ast = () (code i64) {
     print(out)
 }
 
-; cmd-vet: 執行診斷檢查（M3-a 骨架＋s10 語法錯誤首族）
+; 執行診斷檢查（M3-a 骨架＋s10 語法錯誤首族）
 ; 輸出契約錨定 oracle `no vet <file>`（authority：Go printLintResults，src/cmd/no/main.go）：
 ;   無診斷        ⇒ stdout 'No issues found.'，rc=0
 ;   檔案不存在    ⇒ stderr 'Error: stat <path>: no such file or directory'，rc=1
@@ -324,7 +324,7 @@ drv.cmd-vet = () (code i64) {
     }
 }
 
-; dispatch: 依 argv[1] 分派；回傳行程退出碼
+; 依 argv[1] 分派；回傳行程退出碼
 drv.dispatch = () (code i64) {
     code = EXIT-OK
     n = args.count()

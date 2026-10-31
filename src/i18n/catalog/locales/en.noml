@@ -504,14 +504,7 @@ Zig compiler not detected
   'ol0l3ova': 'type \'%s\' not found; did you mean \'%s.%s\'?'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'the divisor of an integer division or modulo is the literal constant 0, which is undefined behaviour in LLVM (sdiv/srem by zero) and produces unpredictable results. Add a runtime zero check, or have the function return the failure as an option.'
-  'oraub2m9': `
-`%s %s= %s` is not supported: an index read returns an option (nil when out of range), so a compound assignment would evaluate the index twice and discard the failure. Rewrite it as (the `it` of the ok arm is the element slot, readable and writable):
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   or `%s ?= %s %s %s` (propagates the failure; requires the enclosing function to have an option result parameter)
-`
+  'oraub2m9': '`%s %s= %s` is not supported: an index read returns an option (nil when out of range), so a compound assignment would evaluate the index twice and discard the failure. Rewrite it as (the `it` of the ok arm is the element slot, readable and writable):\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   or `%s ?= %s %s %s` (propagates the failure; requires the enclosing function to have an option result parameter)'
   'orjs902d': '\'switch/case/default\' is deprecated, use \'x: { 1-> ... }\' instead'
   'os0j8ix4': 'cannot assign %s value to %s element in array \'%s\'%s'
   'osrb7a78': 'move slot'

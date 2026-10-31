@@ -86,10 +86,11 @@ response {
 ; request 方法
 ; ═══════════════════════════════════════════════
 
-; init: 初始化請求
+; 初始化請求
 ; method: HTTP 方法（GET、POST、PUT、DELETE、PATCH 等）
 ; url: 完整 URL
 ; body: 請求主體（GET/DELETE 可傳空字串）
+; [init](#net.http.request.init)
 request.init = (method str, url str, body str) {
     .method = method
     .url = url
@@ -104,9 +105,10 @@ request.init = (method str, url str, body str) {
     }
 }
 
-; add-header: 新增自訂標頭
+; 新增自訂標頭
 ; 將 name 與 value 組裝成 'Name: Value' 存入 headers 陣列
 ; 返回 ok=true=成功, false=標頭數已滿
+; [add-header](#net.http.request.add-header)
 request.add-header = (name str, value str) (ok bool) {
 
     ok = false
@@ -125,8 +127,9 @@ request.add-header = (name str, value str) (ok bool) {
 ; response 方法
 ; ═══════════════════════════════════════════════
 
-; parse-headers: 將 headers 字串拆分到 header-names / header-values
+; 將 headers 字串拆分到 header-names / header-values
 ; 必須在 headers 欄位被填入後呼叫（do / do-req 內部會自動呼叫）
+; [parse-headers](#net.http.response.parse-headers)
 response.parse-headers = () {
 
     .header-count = 0
@@ -185,9 +188,10 @@ response.parse-headers = () {
     }
 }
 
-; get-header: 取得指定標頭值（線性搜尋）
+; 取得指定標頭值（線性搜尋）
 ; name: 標頭名（如 'Content-Type'）
 ; 返回 val ?str: ok=標頭值, nil=未找到
+; [get-header](#net.http.response.get-header)
 response.get-header = (name str) (val ?str) {
     val = nil
     cnt = .header-count
@@ -229,11 +233,12 @@ response.get-header = (name str) (val ?str) {
 ; 主要 API
 ; ═══════════════════════════════════════════════
 
-; do: 執行 HTTP 請求
+; 執行 HTTP 請求
 ; method: HTTP 方法（GET、POST、PUT、DELETE 等）
 ; url: 完整 URL（如 http://host:port/path）
 ; body: 請求主體（GET 應傳空字串）
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [do](#net.http.do)
 do = (method str, url str, body str) (resp ?response) {
 
     resp = nil
@@ -470,9 +475,10 @@ do = (method str, url str, body str) (resp ?response) {
     resp = r
 }
 
-; do-req: 用 request 發送請求（支援自訂標頭）
+; 用 request 發送請求（支援自訂標頭）
 ; req: 已初始化的 request（含自訂標頭）
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [do-req](#net.http.do-req)
 do-req = (req request) (resp ?response) {
     resp = nil
     r response
@@ -718,54 +724,61 @@ do-req = (req request) (resp ?response) {
 ; 便捷函數
 ; ═══════════════════════════════════════════════
 
-; get: 執行 HTTP GET 請求
+; 執行 HTTP GET 請求
 ; url: 完整 URL
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [get](#net.http.get)
 get = (url str) (resp ?response) {
     resp = do('GET', url, '')
 }
 
 ; ping — temporary probe to detect source vs embedded std loading
+; [ping](#net.http.ping)
 ping = () (s str) {
     s = 'pong'
 }
 
-; post: 執行 HTTP POST 請求
+; 執行 HTTP POST 請求
 ; url: 完整 URL
 ; body: 請求主體
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [post](#net.http.post)
 post = (url str, body str) (resp ?response) {
     resp = do('POST', url, body)
 }
 
-; put: 執行 HTTP PUT 請求
+; 執行 HTTP PUT 請求
 ; url: 完整 URL
 ; body: 請求主體
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [put](#net.http.put)
 put = (url str, body str) (resp ?response) {
     resp = do('PUT', url, body)
 }
 
-; delete: 執行 HTTP DELETE 請求
+; 執行 HTTP DELETE 請求
 ; url: 完整 URL
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [delete](#net.http.delete)
 delete = (url str) (resp ?response) {
     resp = do('DELETE', url, '')
 }
 
-; patch: 執行 HTTP PATCH 請求
+; 執行 HTTP PATCH 請求
 ; url: 完整 URL
 ; body: 請求主體
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [patch](#net.http.patch)
 patch = (url str, body str) (resp ?response) {
     resp = do('PATCH', url, body)
 }
 
-; download: 串流下載（支援任意大小，直接寫入檔案）
+; 串流下載（支援任意大小，直接寫入檔案）
 ; 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
 ; url str — 完整 URL
 ; dest str — 目的地檔案路徑
 ; 返回 ok bool — true=成功（且 HTTP 狀態碼為 2xx）
+; [download](#net.http.download)
 download = (url str, dest str) (ok bool) {
     ok = false
     scheme-len = 7
@@ -924,12 +937,13 @@ download = (url str, dest str) (ok bool) {
     ok = true
 }
 
-; upload-put: 串流上傳檔案（PUT，原始二進位 body）
+; 串流上傳檔案（PUT，原始二進位 body）
 ; 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
 ; url str — 完整 URL
 ; token str — Bearer token（可空）
 ; file-path str — 要上傳的檔案
 ; 返回 ok bool — true=成功（且 HTTP 狀態碼為 2xx）
+; [upload-put](#net.http.upload-put)
 upload-put = (url str, token str, file-path str) (ok bool) {
     ok = false
     content-opt = fs.read-str(file-path)
@@ -1106,11 +1120,12 @@ upload-put = (url str, token str, file-path str) (ok bool) {
 ; 認證便捷函數
 ; ═══════════════════════════════════════════════
 
-; set-basic-auth: 為請求加入 HTTP Basic 認證標頭
+; 為請求加入 HTTP Basic 認證標頭
 ; req request: 請求結構體
 ; user str: 用戶名
 ; password str: 密碼
 ; 返回 ok=true=成功
+; [set-basic-auth](#net.http.set-basic-auth)
 set-basic-auth = (req request, user str, password str) (ok bool) {
 
     ; 拼接 user:password 並 Base64 編碼
@@ -1121,29 +1136,32 @@ set-basic-auth = (req request, user str, password str) (ok bool) {
     ok = req.add-header('Authorization', auth-val)
 }
 
-; set-bearer-auth: 為請求加入 Bearer Token 認證標頭
+; 為請求加入 Bearer Token 認證標頭
 ; req request: 請求結構體
 ; token str: Bearer token
 ; 返回 ok=true=成功
+; [set-bearer-auth](#net.http.set-bearer-auth)
 set-bearer-auth = (req request, token str) (ok bool) {
     auth-val = 'Bearer ' - token
     ok = req.add-header('Authorization', auth-val)
 }
 
-; set-api-key: 為請求加入 API Key 標頭
+; 為請求加入 API Key 標頭
 ; req request: 請求結構體
 ; header-name str: 標頭名稱（如 'X-API-Key'）
 ; api-key str: API 金鑰
 ; 返回 ok=true=成功
+; [set-api-key](#net.http.set-api-key)
 set-api-key = (req request, header-name str, api-key str) (ok bool) {
     ok = req.add-header(header-name, api-key)
 }
 
-; get-auth: 執行帶 Basic 認證的 HTTP GET 請求
+; 執行帶 Basic 認證的 HTTP GET 請求
 ; url str: 完整 URL
 ; user str: 用戶名
 ; password str: 密碼
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [get-auth](#net.http.get-auth)
 get-auth = (url str, user str, password str) (resp ?response) {
     resp = nil
     r request
@@ -1152,12 +1170,13 @@ get-auth = (url str, user str, password str) (resp ?response) {
     resp = do-req(r)
 }
 
-; post-auth: 執行帶 Basic 認證的 HTTP POST 請求
+; 執行帶 Basic 認證的 HTTP POST 請求
 ; url str: 完整 URL
 ; body str: 請求主體
 ; user str: 用戶名
 ; password str: 密碼
 ; 返回 resp ?response: ok=回應, nil=失敗
+; [post-auth](#net.http.post-auth)
 post-auth = (url str, body str, user str, password str) (resp ?response) {
     resp = nil
     r request
@@ -1175,12 +1194,14 @@ post-auth = (url str, body str, user str, password str) (resp ?response) {
 ; dest str: 本地寫入路徑
 ; 返回 ok bool: true=成功
 ; ═══════════════════════════════════════════════
+; [download-to-file](#net.http.download-to-file)
 
 download-to-file = (url str, dest str) (ok bool) {
     ok = http-dl-open(url, dest, 0)
 }
 
-; http-dl-open: 實際下載（含 3xx 重定向遞迴，depth 為已跳轉次數）
+; 實際下載（含 3xx 重定向遞迴，depth 為已跳轉次數）
+; [http-dl-open](#net.http.http-dl-open)
 http-dl-open = (url str, dest str, depth i64) (ok bool) {
     ok = false
     depth > 5 -> return
@@ -1393,7 +1414,8 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     ok = http-write-ok(dest, data)
 }
 
-; http-write-ok: 寫入位元組並把 ?bool 結果折疊為 bool 成功旗標
+; 寫入位元組並把 ?bool 結果折疊為 bool 成功旗標
+; [http-write-ok](#net.http.http-write-ok)
 http-write-ok = (p str, data []byte) (ok bool) {
     w ?bool = fs.write-bytes(p, data)
     ok = w: {
@@ -1403,7 +1425,8 @@ http-write-ok = (p str, data []byte) (ok bool) {
     }
 }
 
-; http-dl-location: 從標頭文字找出 Location 值（大小寫不敏感）
+; 從標頭文字找出 Location 值（大小寫不敏感）
+; [http-dl-location](#net.http.http-dl-location)
 http-dl-location = (head-str str) (loc ?str) {
     loc = nil
     lines = head-str.lines()
@@ -1418,7 +1441,8 @@ http-dl-location = (head-str str) (loc ?str) {
     }
 }
 
-; http-dl-resolve: 將 Location 解析為絕對 URL（http(s) 絕對 / 根相對 / 一般相對）
+; 將 Location 解析為絕對 URL（http(s) 絕對 / 根相對 / 一般相對）
+; [http-dl-resolve](#net.http.http-dl-resolve)
 http-dl-resolve = (use-tls bool, host str, port i64, loc str) (out str) {
     loc.starts-with('http://') || loc.starts-with('https://') -> {
         out = loc
@@ -1441,7 +1465,8 @@ http-dl-resolve = (use-tls bool, host str, port i64, loc str) (out str) {
     out = prefix - '/' - loc
 }
 
-; http-dl-dechunk: 將 chunked 編碼的 body 解框為原始位元組
+; 將 chunked 編碼的 body 解框為原始位元組
+; [http-dl-dechunk](#net.http.http-dl-dechunk)
 http-dl-dechunk = (b []byte) (out []byte) {
     out []byte
     blen = b.len()

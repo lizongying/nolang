@@ -12,7 +12,7 @@
 ; 泛型斷言
 ; ═══════════════════════════════════════════════
 
-; eq: a == b
+; a == b
 eq = (a t, b t, msg str) (ok bool) {
     {
         a != b -> {
@@ -25,7 +25,7 @@ eq = (a t, b t, msg str) (ok bool) {
     }
 }
 
-; ne: a != b
+; a != b
 ne = (a t, b t, msg str) (ok bool) {
     {
         a == b -> {
@@ -38,7 +38,7 @@ ne = (a t, b t, msg str) (ok bool) {
     }
 }
 
-; true: val == true
+; val == true
 true = (val bool, msg str) (ok bool) {
     {
         val == false -> {
@@ -51,7 +51,7 @@ true = (val bool, msg str) (ok bool) {
     }
 }
 
-; false: val == false
+; val == false
 false = (val bool, msg str) (ok bool) {
     {
         val == true -> {
@@ -64,7 +64,7 @@ false = (val bool, msg str) (ok bool) {
     }
 }
 
-; gt: a > b
+; a > b
 gt = (a t, b t, msg str) (ok bool) {
     {
         a <= b -> {
@@ -77,7 +77,7 @@ gt = (a t, b t, msg str) (ok bool) {
     }
 }
 
-; ge: a >= b
+; a >= b
 ge = (a t, b t, msg str) (ok bool) {
     {
         a < b -> {
@@ -90,7 +90,7 @@ ge = (a t, b t, msg str) (ok bool) {
     }
 }
 
-; lt: a < b
+; a < b
 lt = (a t, b t, msg str) (ok bool) {
     {
         a >= b -> {
@@ -103,7 +103,7 @@ lt = (a t, b t, msg str) (ok bool) {
     }
 }
 
-; le: a <= b
+; a <= b
 le = (a t, b t, msg str) (ok bool) {
     {
         a > b -> {
@@ -120,7 +120,7 @@ le = (a t, b t, msg str) (ok bool) {
 ; 浮點斷言
 ; ═══════════════════════════════════════════════
 
-; f64-eq: |a - b| < eps
+; |a - b| < eps
 f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
     diff = a - b
     diff < 0.0 -> diff = 0.0 - diff
@@ -135,7 +135,7 @@ f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
     }
 }
 
-; f64-ne: 浮點不相等
+; 浮點不相等
 f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
     diff = a - b
     diff < 0.0 -> diff = 0.0 - diff
@@ -154,7 +154,7 @@ f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
 ; 字串斷言
 ; ═══════════════════════════════════════════════
 
-; str-eq: 字串相等（比較前 n 個字節）
+; 字串相等（比較前 n 個字節）
 str-eq = (a str, b str, n i64, msg str) (ok bool) {
     {
         a.eq(b, n) == false -> {
@@ -167,7 +167,7 @@ str-eq = (a str, b str, n i64, msg str) (ok bool) {
     }
 }
 
-; str-ne: 字串不相等
+; 字串不相等
 str-ne = (a str, b str, n i64, msg str) (ok bool) {
     {
         a.eq(b, n) == true -> {
@@ -180,7 +180,7 @@ str-ne = (a str, b str, n i64, msg str) (ok bool) {
     }
 }
 
-; str-empty: 字串為空（n == 0）
+; 字串為空（n == 0）
 str-empty = (s str, n i64, msg str) (ok bool) {
     {
         n != 0 -> {
@@ -193,7 +193,7 @@ str-empty = (s str, n i64, msg str) (ok bool) {
     }
 }
 
-; str-not-empty: 字串非空
+; 字串非空
 str-not-empty = (s str, n i64, msg str) (ok bool) {
     {
         n == 0 -> {
@@ -223,7 +223,7 @@ is-nil = (p i64, msg str) (ok bool) {
     }
 }
 
-; not-nil: 指標非空
+; 指標非空
 not-nil = (p i64, msg str) (ok bool) {
     {
         p == 0 -> {

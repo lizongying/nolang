@@ -8,12 +8,12 @@ view-point {
     y i64
 }
 
-; self-view: 返回 self 的視圖
+; 返回 self 的視圖
 view-point.self-view = () (v &view-point) {
     v = .
 }
 
-; sum: 一般方法，用來驗證透過 view 呼叫方法
+; 一般方法，用來驗證透過 view 呼叫方法
 view-point.sum = () (s i64) {
 
     #{overflow=wrap}

@@ -6,23 +6,24 @@
 ; 字母表
 ; ═══════════════════════════════════════════════
 
-; BASE64-STD: 標準 Base64 字母表
+; 標準 Base64 字母表
 BASE64-STD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
-; BASE64-URL: URL 安全 Base64 字母表
+; URL 安全 Base64 字母表
 BASE64-URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
-; PAD: 填充字元 '='
+; 填充字元 '='
 PAD = 61
 
 ; ═══════════════════════════════════════════════
 ; 編碼
 ; ═══════════════════════════════════════════════
 
-; encode: 使用指定字母表進行 Base64 編碼
+; 使用指定字母表進行 Base64 編碼
 ; data []byte: 輸入資料
 ; table str: Base64 字母表
 ; 返回 out str: Base64 編碼字串
+; [encode](#encoding.base64.encode)
 encode = (data []byte, table str) (out str) {
 
     n = data.len()
@@ -102,16 +103,18 @@ encode = (data []byte, table str) (out str) {
     }
 }
 
-; encode-std: 使用標準字母表編碼
+; 使用標準字母表編碼
 ; data []byte: 輸入資料
 ; 返回 out str: Base64 編碼字串
+; [encode-std](#encoding.base64.encode-std)
 encode-std = (data []byte) (out str) {
     out = encode(data, BASE64-STD)
 }
 
-; encode-url: 使用 URL 安全字母表編碼
+; 使用 URL 安全字母表編碼
 ; data []byte: 輸入資料
 ; 返回 out str: Base64 編碼字串
+; [encode-url](#encoding.base64.encode-url)
 encode-url = (data []byte) (out str) {
     out = encode(data, BASE64-URL)
 }
@@ -120,10 +123,11 @@ encode-url = (data []byte) (out str) {
 ; 解碼
 ; ═══════════════════════════════════════════════
 
-; decode: 使用指定字母表進行 Base64 解碼
+; 使用指定字母表進行 Base64 解碼
 ; s str: Base64 字串
 ; table str: Base64 字母表
 ; 返回 out ?[]byte: ok=解碼後資料, err=無效字元
+; [decode](#encoding.base64.decode)
 decode = (s str, table str) (out ?[]byte) {
 
     out = nil
@@ -231,8 +235,9 @@ decode = (s str, table str) (out ?[]byte) {
 ; 輔助
 ; ═══════════════════════════════════════════════
 
-; b64-val: 單個 Base64 字元轉數值
+; 單個 Base64 字元轉數值
 ; 填充字元回傳 0，無效字元回傳 -1
+; [b64-val](#encoding.base64.b64-val)
 b64-val = (c i64, table str) (v i64) {
     v = -1
     c == 61 -> {

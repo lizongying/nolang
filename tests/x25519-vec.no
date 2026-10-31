@@ -1,7 +1,7 @@
 ; test-x25519-vec — X25519 RFC 7748 測試向量驗證
 ; # std/crypto/x25519
 
-; hex-to-bytes: 將 hex 字串轉為 [32]byte
+; 將 hex 字串轉為 [32]byte
 ; hex-str str: 64 字元 hex 字串
 ; 返回 out [32]byte
 hex-to-bytes = (hex-str str) (out [32]byte) {
@@ -47,7 +47,7 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
     }
 }
 
-; bytes-eq: 比較兩個 [32]byte 是否相等
+; 比較兩個 [32]byte 是否相等
 bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
     eq = true
     i <- [0..32): {
@@ -58,7 +58,7 @@ bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
     }
 }
 
-; test-vec-1: RFC 7748 第一組測試向量
+; RFC 7748 第一組測試向量
 test-vec-1 = () (pass bool) {
     pass = false
 

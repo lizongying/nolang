@@ -36,18 +36,20 @@ set {
 ; 泛型方法（由工廠呼叫的緩衝區型別單態化元素型別 t）
 ; ═══════════════════════════════════════════════
 
-; set.init: 工廠 — 以呼叫者提供的元素緩衝區建立空集合
+; 工廠 — 以呼叫者提供的元素緩衝區建立空集合
 ; data []t: 元素緩衝區（其長度即容量上限）
 ; 返回 s set: 初始化後的集合實例
+; [init](#set.init)
 set.init = (data []t) (s set) {
     s.data = data
     s.cap = len(data)
     s.size = 0
 }
 
-; set.add: 加入元素到集合（若不存在）
+; 加入元素到集合（若不存在）
 ; val t: 要加入的元素
 ; 返回 new-size i64: 新的大小
+; [add](#set.add)
 #{overflow=wrap}
 set.add = (val t) (new-size i64) {
     sz = .size
@@ -77,10 +79,11 @@ set.add = (val t) (new-size i64) {
     new-size = .size
 }
 
-; set.remove: 從集合移除元素
+; 從集合移除元素
 ; 以最後一個元素填補被移除的位置（無序）
 ; val t: 要移除的元素
 ; 返回 new-size i64: 新的大小
+; [remove](#set.remove)
 #{overflow=wrap}
 set.remove = (val t) (new-size i64) {
     sz = .size
@@ -107,9 +110,10 @@ set.remove = (val t) (new-size i64) {
     new-size = .size
 }
 
-; set.contains: 檢查元素是否存在於集合中
+; 檢查元素是否存在於集合中
 ; val t: 要查詢的元素
 ; 返回 yes bool: true=存在, false=不存在
+; [contains](#set.contains)
 set.contains = (val t) (yes bool) {
     sz = .size
     i <- [0..sz): {
@@ -121,10 +125,11 @@ set.contains = (val t) (yes bool) {
     }
 }
 
-; set.union: 計算聯集（將 other 緩衝區中不在自身的元素加入自身）
+; 計算聯集（將 other 緩衝區中不在自身的元素加入自身）
 ; other []t: 另一個集合的元素緩衝區
 ; osize i64: 另一個集合的元素數量
 ; 返回 new-size i64: 聯集後的大小
+; [union](#set.union)
 #{overflow=wrap}
 set.union = (other []t, osize i64) (new-size i64) {
     j <- [0..osize): {
@@ -152,12 +157,13 @@ set.union = (other []t, osize i64) (new-size i64) {
     new-size = .size
 }
 
-; set.intersection: 計算交集（自身與 other 的共同元素）
+; 計算交集（自身與 other 的共同元素）
 ; 結果寫入呼叫者提供的 out 緩衝區，並回傳交集元素數量
 ; other []t: 另一個集合的元素緩衝區
 ; osize i64: 另一個集合的元素數量
 ; out []t: 交集結果緩衝區
 ; 返回 cnt i64: 交集元素數量
+; [intersection](#set.intersection)
 #{overflow=wrap}
 set.intersection = (other []t, osize i64, out []t) (cnt i64) {
     cnt = 0
@@ -189,12 +195,13 @@ set.intersection = (other []t, osize i64, out []t) (cnt i64) {
     }
 }
 
-; set.difference: 計算差集（在自身中但不在 other 中）
+; 計算差集（在自身中但不在 other 中）
 ; 結果寫入呼叫者提供的 out 緩衝區，並回傳差集元素數量
 ; other []t: 另一個集合的元素緩衝區
 ; osize i64: 另一個集合的元素數量
 ; out []t: 差集結果緩衝區
 ; 返回 cnt i64: 差集元素數量
+; [difference](#set.difference)
 #{overflow=wrap}
 set.difference = (other []t, osize i64, out []t) (cnt i64) {
     cnt = 0
@@ -224,8 +231,9 @@ set.difference = (other []t, osize i64, out []t) (cnt i64) {
     }
 }
 
-; set.to-vec: 將集合轉為切片（無序）
+; 將集合轉為切片（無序）
 ; 返回 out []t: 集合元素切片（長度 = size）
+; [to-vec](#set.to-vec)
 set.to-vec = () (out []t) {
     sz = .size
     out = with-len(sz)
@@ -239,12 +247,14 @@ set.to-vec = () (out []t) {
 ; 狀態查詢方法（不涉及元素型別）
 ; ═══════════════════════════════════════════════
 
-; set.size: 返回集合大小
+; 返回集合大小
+; [size](#set.size)
 set.size = () (sz i64) {
     sz = .size
 }
 
-; set.is-empty: 判斷集合是否為空
+; 判斷集合是否為空
+; [is-empty](#set.is-empty)
 set.is-empty = () (yes bool) {
     yes = .size == 0
 }

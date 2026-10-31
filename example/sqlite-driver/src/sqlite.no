@@ -86,7 +86,7 @@ SQLITE-DONE = 101; sqlite3_step 執行完畢
 ; 函式：open
 ; ============================================================================
 
-; open: 開啟資料庫連線
+; 開啟資料庫連線
 ; dsn str: 資料庫檔名或 ':memory:'
 ; 返回 d db-sqlite: 資料庫連線（失敗時 d.handle 為 0）
 open = (dsn str) (d db-sqlite) {
@@ -111,14 +111,14 @@ db-sqlite.leave = () {
     .close()
 }
 
-; db-sqlite.close: 關閉資料庫連線
+; 關閉資料庫連線
 ; 返回 ok bool: true=成功
 db-sqlite.close = () (ok bool) {
     rc = _sqlite3-close(.handle)
     ok = rc == SQLITE-OK
 }
 
-; db-sqlite.exec: 執行 SQL（無結果集）
+; 執行 SQL（無結果集）
 ; sql str: SQL 語句
 ; 返回 r sql.result: 執行結果（affected=受影響列數, last-id=最後插入 ID）
 db-sqlite.exec = (sql str) (r sql.result) {
@@ -127,7 +127,7 @@ db-sqlite.exec = (sql str) (r sql.result) {
     r.last-id = _sqlite3-last-insert-rowid(.handle)
 }
 
-; db-sqlite.query: 查詢並回傳結果集
+; 查詢並回傳結果集
 ; sql str: SQL 語句
 ; 返回 rs rows-sqlite: 結果集（失敗時 rs.stmt 為 0）
 db-sqlite.query = (sql str) (rs rows-sqlite) {
@@ -143,7 +143,7 @@ db-sqlite.query = (sql str) (rs rows-sqlite) {
     rs.owned = true
 }
 
-; db-sqlite.prepare: 準備預編譯陳述式
+; 準備預編譯陳述式
 ; sql str: SQL 語句
 ; 返回 s stmt-sqlite: 預編譯陳述式（失敗時 s.handle 為 0）
 db-sqlite.prepare = (sql str) (s stmt-sqlite) {
@@ -165,35 +165,35 @@ rows-sqlite.leave = () {
     .close()
 }
 
-; rows-sqlite.next: 前進到下一行
+; 前進到下一行
 ; 返回 ok bool: true=有資料, false=已到結尾
 rows-sqlite.next = () (ok bool) {
     rc = _sqlite3-step(.stmt)
     ok = rc == SQLITE-ROW
 }
 
-; rows-sqlite.scan-int: 讀取當前行的整數欄位
+; 讀取當前行的整數欄位
 ; col i64: 欄位索引（從 0 開始）
 ; 返回 v i64: 欄位的整數值
 rows-sqlite.scan-int = (col i64) (v i64) {
     v = _sqlite3-column-int64(.stmt, col)
 }
 
-; rows-sqlite.scan-str: 讀取當前行的文字欄位
+; 讀取當前行的文字欄位
 ; col i64: 欄位索引（從 0 開始）
 ; 返回 v str: 欄位的文字內容
 rows-sqlite.scan-str = (col i64) (v str) {
     v = _sqlite3-column-text(.stmt, col)
 }
 
-; rows-sqlite.scan-float: 讀取當前行的浮點數欄位
+; 讀取當前行的浮點數欄位
 ; col i64: 欄位索引（從 0 開始）
 ; 返回 v f64: 欄位的浮點數值
 rows-sqlite.scan-float = (col i64) (v f64) {
     v = _sqlite3-column-double(.stmt, col)
 }
 
-; rows-sqlite.close: 關閉結果集
+; 關閉結果集
 ; 返回 ok bool: true=成功
 rows-sqlite.close = () (ok bool) {
     ok = true
@@ -216,7 +216,7 @@ stmt-sqlite.leave = () {
     .close()
 }
 
-; stmt-sqlite.bind-int: 綁定整數參數
+; 綁定整數參數
 ; idx i64: 參數索引（從 1 開始）
 ; v i64: 要綁定的整數值
 ; 返回 ok bool: true=成功
@@ -225,7 +225,7 @@ stmt-sqlite.bind-int = (idx i64, v i64) (ok bool) {
     ok = rc == SQLITE-OK
 }
 
-; stmt-sqlite.bind-str: 綁定文字參數
+; 綁定文字參數
 ; idx i64: 參數索引（從 1 開始）
 ; v str: 要綁定的文字內容
 ; 返回 ok bool: true=成功
@@ -234,7 +234,7 @@ stmt-sqlite.bind-str = (idx i64, v str) (ok bool) {
     ok = rc == SQLITE-OK
 }
 
-; stmt-sqlite.bind-bool: 綁定布林參數
+; 綁定布林參數
 ; idx i64: 參數索引（從 1 開始）
 ; v bool: 要綁定的布林值（true=1, false=0）
 ; 返回 ok bool: true=成功
@@ -247,7 +247,7 @@ stmt-sqlite.bind-bool = (idx i64, v bool) (ok bool) {
     ok = rc == SQLITE-OK
 }
 
-; stmt-sqlite.exec: 執行預編譯陳述式（無結果集）
+; 執行預編譯陳述式（無結果集）
 ; 返回 r sql.result: 執行結果（affected=受影響列數, last-id=最後插入 ID）
 stmt-sqlite.exec = () (r sql.result) {
     rc = _sqlite3-step(.handle)
@@ -257,7 +257,7 @@ stmt-sqlite.exec = () (r sql.result) {
     }
 }
 
-; stmt-sqlite.query: 執行預編譯陳述式並回傳結果集
+; 執行預編譯陳述式並回傳結果集
 ; 返回 rs rows-sqlite: 結果集
 stmt-sqlite.query = () (rs rows-sqlite) {
     rs.stmt = .handle
@@ -267,7 +267,7 @@ stmt-sqlite.query = () (rs rows-sqlite) {
     rs.owned = false
 }
 
-; stmt-sqlite.close: 關閉預編譯陳述式
+; 關閉預編譯陳述式
 ; 返回 ok bool: true=成功
 stmt-sqlite.close = () (ok bool) {
     rc = _sqlite3-finalize(.handle)

@@ -153,7 +153,7 @@ psst {
 ;   降糖留待 M4 的 hir.no 重新實作。開關保留作回歸對照（翻 0 重編即得降糖基線）。
 PS-SURFACE-MATCH = 1
 
-; new：掃描原始碼，建立解析器（跨模組呼叫寫 ps.new → 必須是裸函式名 `new`）
+; 掃描原始碼，建立解析器（跨模組呼叫寫 ps.new → 必須是裸函式名 `new`）
 new = (src []byte) (r psst) {
     r = psst {
         toks: lx.scan-all(src)
@@ -255,7 +255,7 @@ ps-enum-row = (p psst, en str, v str) (r i64) {
     r
 }
 
-; ps-enum-has：en 是否為已登記枚舉（任一變體行即算）
+; en 是否為已登記枚舉（任一變體行即算）
 ps-enum-has = (p psst, en str) (r i64) {
     r = 0
     i = 0
@@ -299,7 +299,7 @@ ps-enum-has = (p psst, en str) (r i64) {
     r
 }
 
-; ps-enum-payload：變體載荷型別文字（無行或單元變體 ⇒ ''）
+; 變體載荷型別文字（無行或單元變體 ⇒ ''）
 ps-enum-payload = (p psst, en str, v str) (s str) {
     s = ''
     r = ps-enum-row(p, en, v)
@@ -310,7 +310,7 @@ ps-enum-payload = (p psst, en str, v str) (s str) {
     }
 }
 
-; ps-enum-ncols：變體欄位數（無行 ⇒ 0；Go enumVariantFieldTypes 長度）
+; 變體欄位數（無行 ⇒ 0；Go enumVariantFieldTypes 長度）
 ps-enum-ncols = (p psst, en str, v str) (n i64) {
     n = 0
     r = ps-enum-row(p, en, v)
@@ -321,7 +321,7 @@ ps-enum-ncols = (p psst, en str, v str) (n i64) {
     }
 }
 
-; ps-enum-ftype：變體第 j 欄位型別文字（越界 ⇒ ''）——依 (en-n[r],ev-n[r]) 匹配行計數定位
+; 變體第 j 欄位型別文字（越界 ⇒ ''）——依 (en-n[r],ev-n[r]) 匹配行計數定位
 ps-enum-ftype = (p psst, en str, v str, j i64) (s str) {
     s = ''
     r = ps-enum-row(p, en, v)
@@ -344,7 +344,7 @@ ps-enum-ftype = (p psst, en str, v str, j i64) (s str) {
     }
 }
 
-; ps-enum-variants：依登記序輸出枚舉全部變體名（補集計算用）
+; 依登記序輸出枚舉全部變體名（補集計算用）
 ps-enum-variants = (p psst, en str, out []str) {
     i = 0
     (i < p.ev-n.len()) {
@@ -357,7 +357,7 @@ ps-enum-variants = (p psst, en str, out []str) {
     }
 }
 
-; ps-peek：目前 token 的型別（越界視為 EOF）。回傳 i64——避免回傳帶字串欄位
+; 目前 token 的型別（越界視為 EOF）。回傳 i64——避免回傳帶字串欄位
 ;   的 tk 結構體當作暫存值（會觸發釋放崩潰）。
 ps-peek = (p psst) (typ i64) {
     i = p.pos
@@ -370,7 +370,7 @@ ps-peek = (p psst) (typ i64) {
     typ = p.toks[i].typ
 }
 
-; ps-peek-token：目前 token 的完整結構體。逐欄位重建 + str `.copy()`，
+; 目前 token 的完整結構體。逐欄位重建 + str `.copy()`，
 ;   回傳的 tk 持有全新字串，呼叫端可安全指派/讀欄位（見檔頭守則）。
 ps-peek-token = (p psst) (t tk) {
     t = tk {
@@ -394,7 +394,7 @@ ps-peek-token = (p psst) (t tk) {
     t.emsg = p.toks[p.pos].emsg.copy()
 }
 
-; ps-peek-at：向前看 k 個 token（0 = 目前）的型別（越界視為 EOF）。
+; 向前看 k 個 token（0 = 目前）的型別（越界視為 EOF）。
 ps-peek-at = (p psst, k i64) (typ i64) {
 
     #{overflow=wrap}
@@ -408,7 +408,7 @@ ps-peek-at = (p psst, k i64) (typ i64) {
     typ = p.toks[i].typ
 }
 
-; ps-is-func：判斷【目前 pos（LPAREN）】起是否為 `(...) {` 形式（即
+; 判斷【目前 pos（LPAREN）】起是否為 `(...) {` 形式（即
 ;   `name = ` 右側是 FunctionLiteral）。⚠️ 單看首個 LPAREN 不够：實測
 ;   `a = (x)` 被误判成函式定義 → 進入 ps-parse-block 後找不到 RBRACE 永轉。
 ;   從 LPAREN 掃到平衡的 RPAREN，再確認下一個非 trivia token 是 LBRACE。
@@ -470,7 +470,7 @@ ps-is-func = (p psst) (r i64) {
     }
 }
 
-; ps-bump：消費目前 token 並前進（回傳 void）。
+; 消費目前 token 並前進（回傳 void）。
 ; ⚠️ 這裡**不能**寫 `_ = ps-peek-token(p)`「消費暫存值」：捨棄回傳的 tk
 ;    會觸發「釋放不存在的指標」（見檔頭「結構體回傳值的釋放陷阱」）。
 ;    bump 只需要前進 pos，不讀 token。
@@ -480,7 +480,7 @@ ps-bump = (p psst) {
     p.pos = p.pos + 1
 }
 
-; ps-skip-trivia：跳過 NEWLINE / COMMENT（詞法上不影響 AST 結構）
+; 跳過 NEWLINE / COMMENT（詞法上不影響 AST 結構）
 ps-skip-trivia = (p psst) {
     go = true
     (go) {
@@ -495,7 +495,7 @@ ps-skip-trivia = (p psst) {
     }
 }
 
-; ps-cur-lit：複製目前 token 的 lit（字串欄位）回傳，供讀取註解文字。
+; 複製目前 token 的 lit（字串欄位）回傳，供讀取註解文字。
 ;   .copy() 切斷與 toks 向量元素的共享（見檔頭釋放守則）。
 ps-cur-lit = (p psst) (s str) {
     s = ''
@@ -506,7 +506,7 @@ ps-cur-lit = (p psst) (s str) {
     }
 }
 
-; ps-lit-at：向前看 k 個 token（0 = 目前）的 lit（字串）。
+; 向前看 k 個 token（0 = 目前）的 lit（字串）。
 ;   .copy() 切斷與 toks 向量元素的共享（見檔頭釋放守則）。
 ps-lit-at = (p psst, k i64) (s str) {
     s = ''
@@ -520,7 +520,7 @@ ps-lit-at = (p psst, k i64) (s str) {
     }
 }
 
-; ps-skip-trivia-doc：跳過 NEWLINE / COMMENT，同時完成「註解歸位」——
+; 跳過 NEWLINE / COMMENT，同時完成「註解歸位」——
 ;   · 行前註解（其前已見換行，或無前兄弟 prev-idx==0）⇒ 取【首條】作為回傳 doc-id
 ;     （dump.go 只渲染群組第一條，故 doc-taken 守衛只留一條）
 ;   · 行尾註解（緊接前一兄弟陳述的同一行、其前無換行）⇒ 掛到 prev-idx 的 Comment:
@@ -566,7 +566,7 @@ ps-skip-trivia-doc = (t ast, p psst, prev-idx i64) (doc-id i64) {
     doc-id
 }
 
-; ps-trail-region：向前掃描（不消費 token）——若跳過全部 NEWLINE/COMMENT 後首個
+; 向前掃描（不消費 token）——若跳過全部 NEWLINE/COMMENT 後首個
 ;   實 token 是 RBRACE 或 EOF，回 1，代表當前處於「尾註解區」：其後不會再有陳述，
 ;   因此緊接的 standalone 註解应歸本區塊/程式的 TrailingComments（對齊 Go stmt.go:2141
 ;   block.TrailingComments = collectDocComments()，其後无语句）。回 0 = 其後仍有陳述
@@ -605,7 +605,7 @@ ps-trail-region = (p psst) (r i64) {
     }
 }
 
-; ps-collect-tail：消費「尾註解區」的 NEWLINE/COMMENT 直到 RBRACE/EOF。
+; 消費「尾註解區」的 NEWLINE/COMMENT 直到 RBRACE/EOF。
 ;   · 緊接 prev 同一行、其前無換行的首條註解 → 掛 prev 的 inline Comment（對齊 Go 行尾註解）；
 ;   · 其餘 standalone 註解 → 其 str-id 依序收集進 trail（本區塊/程式的 TrailingComments 各條）。
 ;   ⚠️ 與 ps-skip-trivia-doc 同形（用旗標 saw-n-l/cmt-taken，非互斥補集重取），只在 ps-trail-region
@@ -640,7 +640,7 @@ ps-collect-tail = (t ast, p psst, prev i64, trail []i64) {
     }
 }
 
-; ps-attach-trailing：把 trail（註解文字 str-id 向量）落成區塊/程式節點的 TrailingComments。
+; 把 trail（註解文字 str-id 向量）落成區塊/程式節點的 TrailingComments。
 ;   對應 ast.no trailing-comments 渲染（OP-TRAILING）：節點需 ct0（aux 起點）+ ntrail（條數）。
 ;   子先於父原則下 aux 區段獨立於 kids，故於節點 add 之後再 aux-begin/aux-add/set-aux-counts。
 ;   trail 空 → 不建任何 aux、不設 ntrail（維持預設 -1 → dumper 跳過印出，零回歸）。
@@ -660,7 +660,7 @@ ps-attach-trailing = (t ast, idx i64, trail []i64) {
     }
 }
 
-; ps-premerge-trailing：s59——把 arm-doc 置前併入既有 TrailingComments 群
+; s59——把 arm-doc 置前併入既有 TrailingComments 群
 ;   （Go match.go:443-451：merged = arm-doc ++ existing；無既有群⇒等同 ps-attach-trailing
 ;   單條）。aux 只append：新區段複製舊條目，舊區段成孤兒（不影走訪，零回歸）。
 ps-premerge-trailing = (t ast, blk i64, head i64) {
@@ -689,7 +689,7 @@ ps-premerge-trailing = (t ast, blk i64, head i64) {
     }
 }
 
-; ps-expect：若目前 token 是 want 就消費它（容錯：不符也繼續）
+; 若目前 token 是 want 就消費它（容錯：不符也繼續）
 ps-expect = (p psst, want i64) {
     ps-peek(p) == want -> ps-bump(p)
 
@@ -704,7 +704,7 @@ ps-expect = (p psst, want i64) {
 ; p.saveError 按 (Pos, Message) 去重（parser.go:1685-1693，防 restoreState 重試
 ; 重複上報）——去鍵不含 Code，此處同形。
 
-; ps-error：在【目前 token】位置記一條錯誤（坐標取自 p.toks[p.pos]，越界視同 EOF
+; 在【目前 token】位置記一條錯誤（坐標取自 p.toks[p.pos]，越界視同 EOF
 ;   的 0/0——Go 端 currentToken 恆有值，EOF token 也帶行列；語料外差異留 M3-c 後續）。
 ps-error = (p psst, msg str, code str) {
 
@@ -728,7 +728,7 @@ ps-error = (p psst, msg str, code str) {
     p.e-code.push(code)
 }
 
-; ps-err-count：已收集的錯誤條數（= Go len(p.diags) 的 error 級子集；本階段只收錯誤）。
+; 已收集的錯誤條數（= Go len(p.diags) 的 error 級子集；本階段只收錯誤）。
 ps-err-count = (p psst) (n i64) {
     n = p.e-ln.len()
 }
@@ -749,7 +749,7 @@ ps-err-count = (p psst) (n i64) {
 ;    最後依序 kid-add 子節點】——即本函式把 Program 留到最後才 add。
 ;    （若先 add 父再建子，子的子樹會插在父的 kid 範圍前面，dump 會把孫
 ;     節點錯置成父的直接子節點——實測 `42` 曾因此少印 ExpressionStatement。）
-; ps-semi-eat-count：復刻 Go buffer.go::warnSemiSwallow 的 W_SEMI_EAT 計數（s56）。
+; 復刻 Go buffer.go::warnSemiSwallow 的 W_SEMI_EAT 計數（s56）。
 ;   nolang 中單個 `;` 是行註釋，行尾其後的代碼（含大括號）整體被吞。Go 在
 ;   advanceCollect 收集每個符合條件的 COMMENT token 時發一條 SeverityWarning，
 ;   Program.warnings 匯總所有 warning（parser.go::Warnings）。
@@ -871,7 +871,7 @@ parse = (t ast, p psst) (root i64) {
     root
 }
 
-; ps-normalize-overflow：復刻 Go NormalizeOverflowMode（annotation.go）。
+; 復刻 Go NormalizeOverflowMode（annotation.go）。
 ;   語料中 overflow 值幾乎恆為 `wrap`；此處認五個正規值，其餘回 ''（丢弃、不寫槽）。
 ps-normalize-overflow = (s str) (r str) {
     r = ''
@@ -894,7 +894,7 @@ ps-normalize-overflow = (s str) (r str) {
 ;   會保留独立 AnnotationStatement{entries: N} 節點，需在同段掃描中累計【去重頂層鍵名】數，
 ;   故改於 ps-parse-stmt 內聯完成（同時產出 ovf 與 keys）。ps-normalize-overflow 仍復用。
 
-; ps-apply-overflow：把 overflow 模式寫到緊後陳述節點對應的純量槽。
+; 把 overflow 模式寫到緊後陳述節點對應的純量槽。
 ;   只有 dump overflow 的節點型別才渲染（槽序依 spec 非 child-derived 純量順序）：
 ;     LetStatement=6 / ForStatement=2 / MultiAssignStatement=1 / FunctionDefinition=4。
 ;   ExpressionStatement/ReturnStatement 雖有 OverflowMode 欄位但 dump 不渲染 ⇒ 略過。
@@ -914,7 +914,7 @@ ps-apply-overflow = (t ast, idx i64, mode str) {
     }
 }
 
-; ps-apply-builtin：s52——把前置 `#{buildin}` 註解標記寫到緊後陳述節點。
+; s52——把前置 `#{buildin}` 註解標記寫到緊後陳述節點。
 ;   Go attachAnnotations（annotation.go:349–378）：對 FunctionDefinition——
 ;     e.Key=='buildin' ⇒ fd.BuiltinStub（slot5 'true'）；`#{buildin=NAME}` 之 Value ⇒ fd.BuiltinName（slot6 字串，語料暫無此形、預留）；
 ;   對 TaggedEnumDefinition——`#{buildin}` ⇒ n.Builtin（slot1 'true'，name=slot0、variants=c2）。
@@ -938,7 +938,7 @@ ps-apply-builtin = (t ast, idx i64, bs i64, bn str) {
     }
 }
 
-; ps-parse-use：`# path` 匯入陳述（對應 Go parseUseStatement、stmt.go:45）。
+; `# path` 匯入陳述（對應 Go parseUseStatement、stmt.go:45）。
 ;   path 由可選前導 `/`（QUO）與以 `/`、`.` 分隔的 IDENT 段串接（joinPathParts）。
 ;   語料恆為純路徑（無 `.fn` / `as`）⇒ function/alias 恆空、as 恆 false。
 ;   UseStatement 槽：path=s0、function=s1（kv 恆渲染、置空字串）、alias=s2（同）、
@@ -1895,7 +1895,7 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-expr-stmt：運算式陳述 `42`，並復刻 Go parseExpressionStatement 的
+; 運算式陳述 `42`，並復刻 Go parseExpressionStatement 的
 ;   **獨立 if-then desugar**（`cond -> body` / wildcard `-> body`，無外層 `{ }`）。
 ;   Go 在陳述層看到 `expr` 後紧跟 `->` 就把整條包成 IfExpression{cond,inline-body,alt}；
 ;   行首即為 `->` 時 cond 是 wildcard 標記 IntegerLiteral{value:1}（ps-mk-true，無 raw）。
@@ -1943,12 +1943,12 @@ ps-parse-expr-stmt = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-expr：解析一個運算式（預設最低優先級）
+; 解析一個運算式（預設最低優先級）
 ps-parse-expr = (t ast, p psst) (idx i64) {
     idx = ps-parse-expr-prec(t, p, 0)
 }
 
-; ps-op-prec：中綴 token 型別 → 優先級（照抄 src/parser/expr.go 的 precedences map）。
+; 中綴 token 型別 → 優先級（照抄 src/parser/expr.go 的 precedences map）。
 ;   LOWEST=0 / COMMA=1 / CONDITIONAL=2 / LOGICAL_OR=3 / LOGICAL_AND=4 /
 ;   EQUALS=5 / LESSGREATER=6 / SUM=7 / PRODUCT=8 / PREFIX=9 / CALL=10。
 ;   回 0 = 不是中綴運算子（含 COMMA/QUESTION/AS/LPAREN──它倆在 Go 裡進這張表
@@ -1998,7 +1998,7 @@ ps-op-prec = (typ i64) (r i64) {
     }
 }
 
-; ps-int-lit-value：復刻 Go parseIntegerLiteral 的 value 計算（expr.go:652-688）。
+; 復刻 Go parseIntegerLiteral 的 value 計算（expr.go:652-688）。
 ;   規則：`0x/0X` 前綴⇒ base16，否則 base10（Go 用 base=0 自動偵測僅限 0x 形）。
 ;   折疊低 64 位並套 overflow=wrap ⇒ 自動得 int64(uval) 的兩倍補數語意（如 2^64-1⇒-1）；
 ;   若數值超出 u64（i128/u128 範圍）⇒ value=0（Go 走 isBareIntToken 分支保留 Raw 文字）。
@@ -2111,7 +2111,7 @@ ps-int-lit-value = (raw str) (out str) {
     out = val.to-str()
 }
 
-; ps-parse-expr-prec：優先級爬升解析（對應 Go parseExpression(precedence)。
+; 優先級爬升解析（對應 Go parseExpression(precedence)。
 ;   左結合：只吞「優先級**嚴格大於** prec」的運算子（Go 的迴圈條件
 ;   `currentPrecedence() > precedence`）。遞迴右運算元時傳入**運算子自身**
 ;   的優先級（Go parseInfixExpression 的 `parseExpression(precedence)`）。
@@ -2975,7 +2975,7 @@ ps-struct-field-type = (p psst, sname str, fname str) (ty str) {
     tidx >= 0 -> ty = p.ht-ty[tidx]
 }
 
-; ps-set-var-type：登記變數型別。頂層（fn==''）進全域 VarTypes；函式內僅進 FuncVarTypes
+; 登記變數型別。頂層（fn==''）進全域 VarTypes；函式內僅進 FuncVarTypes
 ;   （Go parser.go:1050-1066：函式區域變數不污染全域表）。
 ps-set-var-type = (p psst, vname str, ty str) {
     key = 'vt:' - p.fn - ' ' - vname
@@ -2995,7 +2995,7 @@ ps-set-var-type = (p psst, vname str, ty str) {
     }
 }
 
-; ps-set-var-type-s7v：s7v 後備登記（函式內 receiver 的索引元素型別）——寫進**獨立鍵空間**。
+; s7v 後備登記（函式內 receiver 的索引元素型別）——寫進**獨立鍵空間**。
 ;   ⚠️ 為何不混在 'vt:'：Go 的 IndexExpression 臂只從【全域表 p.sem.VarTypes】取 receiver 型別
 ;   （stmt.go:1483），函式內 receiver 讀不到 ⇒ 該 let **不會**被登記進 FuncVarTypes
 ;   ⇒ 後續 `x = y` 傳播（stmt.go:1421 只讀 FuncVarTypes）查不到 y ⇒ 不推斷。
@@ -3014,7 +3014,7 @@ ps-set-var-type-s7v = (p psst, vname str, ty str) {
     ps-ht-put(p, 'fv:' - p.fn - ' ' - vname, 1)
 }
 
-; ps-var-type：FuncVarType 語意——先查當前函式，再回退全域表（Go resolver.go:485）；後寫覆蓋先寫。
+; FuncVarType 語意——先查當前函式，再回退全域表（Go resolver.go:485）；後寫覆蓋先寫。
 ;   ⚠️ 末段 fallback 到 'vt7:'（s7v 後備登記）——Go 側沒有這筆（stmt.go:1483 的 IndexExpression
 ;   臂只從【全域表 p.sem.VarTypes】取 receiver 型別，函式內 receiver 讀不到 ⇒ 該 let 不進
 ;   FuncVarTypes）。noc 保留它只為降糖（ps-apply-index-out）能查到鏈式型別；
@@ -3035,7 +3035,7 @@ ps-var-type = (p psst, vname str) (ty str) {
     tidx7 >= 0 -> ty = p.ht-ty[tidx7]
 }
 
-; ps-var-type-strict：FuncVarType 的**嚴格**語意（鏡像 Go resolver.go:796-807）——
+; FuncVarType 的**嚴格**語意（鏡像 Go resolver.go:796-807）——
 ;   只查本函式 'vt:' 與全域 'vt: '，**不含** s7v 後備登記（'vt7:'）。
 ;   Go 側 s7v 對應路徑根本不存在 ⇒ 該 let 不進 FuncVarTypes ⇒ `x = y` 傳播（stmt.go:1421）
 ;   查不到 y ⇒ 不推斷。noc 的 s7v 線索只供降糖（走 ps-var-type），不得餵進推斷閘門。
@@ -3050,7 +3050,7 @@ ps-var-type-strict = (p psst, vname str) (ty str) {
     gidx >= 0 -> ty = p.ht-ty[gidx]
 }
 
-; ps-g-var-type：全域表只讀（鏡像 Go p.sem.VarTypes 直接索引——setVarType 在函式內
+; 全域表只讀（鏡像 Go p.sem.VarTypes 直接索引——setVarType 在函式內
 ;   只寫 FuncVarTypes，全域表僅含頂層變數，parser.go:1113-1129）。供 IndexExpression
 ;   推斷的 receiver 讀取用：receiver 是函式內區域變數時 Go 讀不到 ⇒ 不推斷。
 ps-g-var-type = (p psst, vname str) (ty str) {
@@ -3059,7 +3059,7 @@ ps-g-var-type = (p psst, vname str) (ty str) {
     tidx >= 0 -> ty = p.ht-ty[tidx]
 }
 
-; ps-mark-dcl：let 解析尾部登記宣告（Go parseLetStatement 尾：DeclaredVars 恒記 + SetFuncDeclared）。
+; let 解析尾部登記宣告（Go parseLetStatement 尾：DeclaredVars 恒記 + SetFuncDeclared）。
 ;   dcl-t【僅頂層】登記——鏡像 lowerer walk 的 declaredLocals：函式作用域每次進入 FunctionDefinition
 ;   即重置（lowering.go:249），頂層名單不得被函式内區域 let 污染（s54 回歸教訓：ip/sha256-simplified/
 ;   number-div-mod-clamp 皆「本作用域已出現、型别表無entry → captureTargetAllowsOption 拒」）。
@@ -3078,7 +3078,7 @@ ps-mark-dcl = (p psst, vname str) {
     }
 }
 
-; ps-mark-ifd：IsFuncDeclared 標記（Go SetFuncDeclared，resolver.go:810）——與 ps-mark-dcl
+; IsFuncDeclared 標記（Go SetFuncDeclared，resolver.go:810）——與 ps-mark-dcl
 ;   （declaredLocals，給 ps-walk-declared 用）分離。Go 的【裸型別宣告】`x []byte`
 ;   （stmt.go:1187-1196 no-value 分支）走 setVarType 卻 early-return，跳過尾端
 ;   SetFuncDeclared（stmt.go:1599）⇒ 裸宣告【不】記 IsFuncDeclared；含值 let 才記。
@@ -3094,13 +3094,13 @@ ps-mark-ifd = (p psst, vname str) {
     }
 }
 
-; ps-ifd-key：IsFuncDeclared 的函式鍵。s8g：`p.ifd-fn` 非空即用之（裸方法名），否則 p.fn。
+; IsFuncDeclared 的函式鍵。s8g：`p.ifd-fn` 非空即用之（裸方法名），否則 p.fn。
 ps-ifd-key = (p psst) (k str) {
     k = p.fn
     p.ifd-fn != '' -> k = p.ifd-fn
 }
 
-; ps-is-declared：IsFuncDeclared 語意（Go resolver.go:519）——函式已被追蹤時【只】查函式對表，
+; IsFuncDeclared 語意（Go resolver.go:519）——函式已被追蹤時【只】查函式對表，
 ;   否則回退全域宣告表。防止不同函式的同名區域變數互相干擾推斷。
 ;   ⚠️ 讀 'ifd:'/'ifdg:'（ps-mark-ifd），非 'dc:'/'dcg:'（後者是 declaredLocals/ps-walk-declared）：
 ;   裸型別宣告只進 declaredLocals、不進 IsFuncDeclared（見 ps-mark-ifd 註）。
@@ -3119,7 +3119,7 @@ ps-is-declared = (p psst, vname str) (r i64) {
     g >= 0 -> r = 1
 }
 
-; ps-filter-ok：filterInferableType 語意（Go type.go:204-226）——option（?T，節點形即 NullableType）恒可推斷；
+; filterInferableType 語意（Go type.go:204-226）——option（?T，節點形即 NullableType）恒可推斷；
 ;   裸名本型別（整數/浮點/bool/byte/char/fd）不可（整数字面量已有専用推断路径）；str/切片/map/結構名可。
 ;   ⚠️ 未實作 Go 的「含 | 聯合型别排除」：簽名字串来自同一解析通道，目前語料未見 union 回傳；如遇會以 DIFF 暴露。
 ps-filter-ok = (t ast, tn i64, ts str) (r i64) {
@@ -3135,7 +3135,7 @@ ps-filter-ok = (t ast, tn i64, ts str) (r i64) {
     }
 }
 
-; ps-mark-inferred：遞迴標記推斷型別節點（Go markInferred type.go:1163）：
+; 遞迴標記推斷型別節點（Go markInferred type.go:1163）：
 ;   NamedType slot1、Slice/Array/Map slot0 = 'true' 並下鑽子節點；NullableType 頭不渲 inferred，僅下鑽。
 ps-mark-inferred = (t ast, tn i64) {
     k = ast.kind-at(t, tn)
@@ -3182,7 +3182,7 @@ ps-mark-inferred = (t ast, tn i64) {
     }
 }
 
-; ps-reg-let：明示型別 let 的登記（Go parseLet：Type!=nil 時 setVarType + 尾部 markDeclared）。
+; 明示型別 let 的登記（Go parseLet：Type!=nil 時 setVarType + 尾部 markDeclared）。
 ps-reg-let = (t ast, p psst, name str, tn i64) {
     tn > 0 -> {
         ps-set-var-type(p, name, ast.type-string(t, tn))
@@ -3199,7 +3199,7 @@ ps-reg-let = (t ast, p psst, name str, tn i64) {
 ;   ⚠️ 偏離說明：Go 的 isFunctionTypeAlias 無 CTX 閘、靠第二趟 saveState 試解析驗內容；
 ;   noc 無法廉价試解析，統一以 p.fn == ''（頂層）閘控替代——語料函式內無 `x = (T)(T)` 別名形。
 
-; ps-is-builtin-type：Go builtInTypeNames（type.go:540）。
+; Go builtInTypeNames（type.go:540）。
 ps-is-builtin-type = (s str) (r i64) {
     {
         s == 'i8' || s == 'i16' || s == 'i32' || s == 'i64' || s == 'i128' -> r = 1
@@ -3215,7 +3215,7 @@ ps-is-builtin-type = (s str) (r i64) {
     }
 }
 
-; ps-alias-registered：Go p.typeAliasNames 登記表（ps-parse-type-alias/fn 式成功後 push）。
+; Go p.typeAliasNames 登記表（ps-parse-type-alias/fn 式成功後 push）。
 ps-alias-registered = (p psst, s str) (r i64) {
     i = 0
     (i < p.al-n.len()) {
@@ -3226,7 +3226,7 @@ ps-alias-registered = (p psst, s str) (r i64) {
     }
 }
 
-; ps-scan-union：Go scanIsUnionTypeAlias（type.go:626）。呼叫點 current=IDENT name。look(j) ≙ ps-peek-at(p, 2 + j)。
+; Go scanIsUnionTypeAlias（type.go:626）。呼叫點 current=IDENT name。look(j) ≙ ps-peek-at(p, 2 + j)。
 ;   depth 0 下僅容 `|` 與型別操作元；陳述結束符（NEWLINE/EOF/SEMICOLON/未配对閉括號）⇒ 別名；其他二元運算子 ⇒ 位元或運算式。
 ps-scan-union = (p psst) (r i64) {
     depth = 0
@@ -3295,7 +3295,7 @@ ps-scan-union = (p psst) (r i64) {
     }
 }
 
-; ps-looks-eq-alias：Go looksLikeEqualsTypeAlias（type.go:554）。呼叫點 current=IDENT name、+1=ASSIGN。
+; Go looksLikeEqualsTypeAlias（type.go:554）。呼叫點 current=IDENT name、+1=ASSIGN。
 ps-looks-eq-alias = (p psst) (r i64) {
     p.fn != '' -> return
     t1 = ps-peek-at(p, 2)
@@ -3320,7 +3320,7 @@ ps-looks-eq-alias = (p psst) (r i64) {
     }
 }
 
-; ps-fn-alias-shape：Go isFunctionTypeAliasShape（type.go:433）。look(j) ≙ ps-peek-at(p, 2 + j)。
+; Go isFunctionTypeAliasShape（type.go:433）。look(j) ≙ ps-peek-at(p, 2 + j)。
 ;   第一組 `(...)` 後必須是陳述結束符或第二組 `(...)`+陳述結束符。
 ps-fn-alias-shape = (p psst) (r i64) {
     ps-peek-at(p, 2) != tok.LPAREN -> return
@@ -3386,7 +3386,7 @@ ps-fn-alias-shape = (p psst) (r i64) {
     }
 }
 
-; ps-fn-alias-inner-ok：對齊 Go isFunctionTypeAlias Step 2（type.go:440-455）的內容驗證。
+; 對齊 Go isFunctionTypeAlias Step 2（type.go:440-455）的內容驗證。
 ;   ps-fn-alias-shape 只驗括號結構，會把 `a = (it == 90)` 這類「括號表達式」誤判成
 ;   函式型別別名（t7 / setbyte-fallible 實測：`TypeAlias{a, fn(it)}`）。oracle 用
 ;   parseFunctionType 試解析 + 錯誤計數判定；本解析器無錯誤計數，改用廉價等價判據：
@@ -3427,7 +3427,7 @@ ps-fn-alias-inner-ok = (p psst) (r i64) {
     }
 }
 
-; ps-parse-type-alias：Go parseTypeAlias（type.go:688）。呼叫點 current=IDENT name。
+; Go parseTypeAlias（type.go:688）。呼叫點 current=IDENT name。
 ;   union 形：平坦收集 `|` 分隔型別 → UnionType；單型形：slot1=typeString + CHILD Type。
 ps-parse-type-alias = (t ast, p psst, name str) (idx i64) {
     ps-bump(p); 消費 IDENT
@@ -3477,7 +3477,7 @@ ps-parse-type-alias = (t ast, p psst, name str) (idx i64) {
     p.al-n.push(name); Go typeAliasNames[name]=true
 }
 
-; ps-parse-ftype-param：fn 型別名的參數/回傳值解析（Go parseFunctionType 參數規則，≠ ps-parse-func 的 FD 參數）：
+; fn 型別名的參數/回傳值解析（Go parseFunctionType 參數規則，≠ ps-parse-func 的 FD 參數）：
 ;   `name TYPE` ⇒ 有名帶型；裸 `IDENT` ⇒ **無名帶型**參數（Parameter{name: '', type: NamedType}，
 ;   s53 測得 oracle 對 `x = (or-value)` 输出 `Parameter{name: , type: or-value}`）。idx=0 表非參數起點（呼叫端防呆前進）。
 ps-parse-ftype-param = (t ast, p psst) (idx i64) {
@@ -3513,7 +3513,7 @@ ps-parse-ftype-param = (t ast, p psst) (idx i64) {
     }
 }
 
-; ps-parse-fn-type-alias：Go parseFunctionTypeAlias（type.go:512）。呼叫點 current=IDENT、+1=ASSIGN、+2=LPAREN。
+; Go parseFunctionTypeAlias（type.go:512）。呼叫點 current=IDENT、+1=ASSIGN、+2=LPAREN。
 ps-parse-fn-type-alias = (t ast, p psst, name str) (idx i64) {
     ps-bump(p); 消費 IDENT
     ps-bump(p); 消費 ASSIGN
@@ -3581,7 +3581,7 @@ ps-parse-fn-type-alias = (t ast, p psst, name str) (idx i64) {
 ;   偏離記錄：Go 在 parse 完成後才 walk，運算元查表能看到「後方才宣告」的變數；
 ;   noc 單趟解析在 let 處即時查表——僅影響前向引用形（語料未見，探針釘死現狀行為）。
 
-; ps-unwrap-grouped： mirrors Go unwrapLowerExpr（lowering.go:922）——剝尽 GroupedExpression 外殼，回傳內層節點。
+; mirrors Go unwrapLowerExpr（lowering.go:922）——剝尽 GroupedExpression 外殼，回傳內層節點。
 ps-unwrap-grouped = (t ast, e i64) (r i64) {
     r = e
     go = true
@@ -3596,13 +3596,13 @@ ps-unwrap-grouped = (t ast, e i64) (r i64) {
     }
 }
 
-; ps-is-arith-op： Go isOptionArithOperator（lowering.go:900）——統一 option 規則覆蓋 + - * / %。
+; Go isOptionArithOperator（lowering.go:900）——統一 option 規則覆蓋 + - * / %。
 ps-is-arith-op = (op str) (r i64) {
     r = 0
     op == '+' || op == '-' || op == '*' || op == '/' || op == '%' -> r = 1
 }
 
-; ps-lower-signed-int-name： Go lowerSignedIntName（lowering.go:936）——靜態型別字串是否可產生 option 的
+; Go lowerSignedIntName（lowering.go:936）——靜態型別字串是否可產生 option 的
 ;   有號整數型：拒 ''/?T 前綴；剝前導 *；取最後一個 '.' 後的裸名；僅收 {int,i8,i16,i32,i64}。
 ;   拒無號/i128/f32/f64/bool/byte/char/str/fd 及一切已宣告複合名（如 union 別名 num2）。
 ps-lower-signed-int-name = (typ str) (r str) {
@@ -3620,7 +3620,7 @@ ps-lower-signed-int-name = (typ str) (r str) {
     typ == 'i64' || typ.ends-with('.i64') -> r = 'i64'
 }
 
-; ps-signed-int-operand： Go signedIntOperandType（lowering.go:860）——回傳運算元的有號整數型別名，
+; Go signedIntOperandType（lowering.go:860）——回傳運算元的有號整數型別名，
 ;   推不出回 ''。整數字面量恆 i64；識別符查 ps-var-type（FuncVarType 同款 fn→全域回落；
 ;   self 靠 ps-parse-method-func 預登記接收者型別，鏡像 Go lowerSelfType 讀 Results[0]）；
 ;   巢狀算術遞迴取較寬者（len 比較、平手取左，Go 同法）。其餘 kind（呼叫/索引/欄位…）一律拒。
@@ -3654,7 +3654,7 @@ ps-signed-int-operand = (t ast, p psst, e i64) (r str) {
     }
 }
 
-; ps-walk-declared： Go lowerer.declaredLocals 成員判定（lowering.go:226 walk 序登記、:249 函式重置、
+; Go lowerer.declaredLocals 成員判定（lowering.go:226 walk 序登記、:249 函式重置、
 ;   :252 形參先入帳）——本作用域已出現的 let 目標名（含形參，無論有無型別）。
 ;   函式内：dcl 對（本函式 let）+ fv 對（參數/已登記區域變數）；頂層：dcl-t（僅頂層 let）。
 ps-walk-declared = (p psst, vname str) (r i64) {
@@ -3671,7 +3671,7 @@ ps-walk-declared = (p psst, vname str) (r i64) {
     }
 }
 
-; ps-local-type： Go localDeclaredType（lowering.go:3377）——【僅本作用域】型別查詢，
+; Go localDeclaredType（lowering.go:3377）——【僅本作用域】型別查詢，
 ;   刻意不做 FuncVarType 的全域回退（防其他函式同名參數污染，Go 碼内事故註釋同述）。
 ;   回 '' = 未找到（ok=false）；正序掃描後寫覆蓋＝Go map 賦值語義。
 ps-local-type = (p psst, vname str) (ty str) {
@@ -3687,7 +3687,7 @@ ps-local-type = (p psst, vname str) (ty str) {
     }
 }
 
-; ps-mk-opt-arith-type： inferOptionArith 主體。
+; inferOptionArith 主體。
 ;   ⚠️ S3（2026-10-16.4）後**不再回傳合成的 NullableType 節點**：Go 的
 ;   inferOptionArith 已改成只 `publishInferredType`（src/parser/lowering.go:866-869，
 ;   註解見 astdiskcache.go:143-148）——把 `?base` 記入語義副表 + VarTypes，
@@ -4214,7 +4214,7 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
     idx
 }
 
-; ps-parse-arr-lit：在**陣列型別上下文**下直接把 RHS `[e1, …, eN]` 建為
+; 在**陣列型別上下文**下直接把 RHS `[e1, …, eN]` 建為
 ;   ArrayLiteral{size, elements, wasSliceLiteral: true}（不經 SliceLiteral 中转）。
 ;   對應 Go stmt.go:1210-1218：ArrayType.Size>0 且 RHS 為 SliceLiteral 時的轉換。
 ;   kid 序：child0=Size（沿用型別側的 sz 節點），child1..N=Elements（KIDS 迭代）。
@@ -4257,7 +4257,7 @@ ps-parse-arr-lit = (t ast, p psst, sz i64) (idx i64) {
     }
 }
 
-; ps-is-map-assign-let：非破壞性前探——判斷 `name [K]V =`（map 標註【含值】）。
+; 非破壞性前探——判斷 `name [K]V =`（map 標註【含值】）。
 ;   起點 p 於 name（IDENT）。鑑別 `[ K ]` 且 K 為內建型別名（同 ps-parse-type 的 [K]V 臂）。
 ;   V 可為複合型別：從 +4 起掃描型別語法（前導 `[]`/`[*T`/`&T`/巢狀 `[K]V` 括號群），
 ;   停在 base IDENT 之後一個 token；該 token 為 `=` ⇒ 回 1；換行/EOF/其他 ⇒ 裸宣告 `name [K]V` ⇒ 回 0。
@@ -4296,7 +4296,7 @@ ps-is-map-assign-let = (p psst) (res i64) {
     res
 }
 
-; ps-parse-map-lit：在 **Map 型別上下文**下把 RHS `{ k1: v1, … }` 建為
+; 在 **Map 型別上下文**下把 RHS `{ k1: v1, … }` 建為
 ;   MapLiteral{pairs}，對應 Go parseMapLiteral。
 ;   kid 序（遵從 dump 源碼序）：child0..N-1 = MapPair（KIDS 迭代），最末 kid = MapType（CHILD）。
 ;   注意舆 ArrayLiteral 相反：MapLiteral 的 KIDS 在前、CHILD(MapType) 在後。
@@ -4347,7 +4347,7 @@ ps-parse-map-lit = (t ast, p psst, mt i64) (idx i64) {
     ast.kid-add(t, idx, mt); MapType（CHILD，永遠排最後）
 }
 
-; ps-is-struct-lit：判斷【目前 pos 為 LBRACE】起是否為結構體字面量形：
+; 判斷【目前 pos 為 LBRACE】起是否為結構體字面量形：
 ;   空 `{}` 或 `{ IDENT : … }`（首個非 trivia token 為 IDENT 且紧跟 COLON）。
 ;   match 用 `->`、enum 用 `,`/`=`，皆不會误中此形。不消耗 p.pos。
 ps-is-struct-lit = (p psst) (r i64) {
@@ -4412,7 +4412,7 @@ ps-is-struct-lit = (p psst) (r i64) {
     }
 }
 
-; ps-dotted-name：把 `net.Conn` / `a.b.C` 的 DotExpression 链重組為點分型名字串。
+; 把 `net.Conn` / `a.b.C` 的 DotExpression 链重組為點分型名字串。
 ;   DotExpression：slot0=property 名、kid0=Receiver（递归展开）；Identifier：slot0=名。
 ;   其他節點 → 回退 node-string（不该出现在限定名的位置）。
 ps-dotted-name = (t ast, n i64) (r str) {
@@ -4432,7 +4432,7 @@ ps-dotted-name = (t ast, n i64) (r str) {
     }
 }
 
-; ps-parse-struct-lit：把 `{ field: val, … }` 建為 StructLiteral{type, fields}。
+; 把 `{ field: val, … }` 建為 StructLiteral{type, fields}。
 ;   slot0=型别名(字串)、slot1=fields 數(OF-LEN 字串槽)、count0=KIDS 迭代數；kid 序=各 StructField。
 ;   每個 StructField：slot0=name、kid0=Type(0 占位)、kid1=Value（對應 dump CHILD 序）。
 ps-parse-struct-lit = (t ast, p psst, ty str) (idx i64) {
@@ -4488,7 +4488,7 @@ ps-parse-struct-lit = (t ast, p psst, ty str) (idx i64) {
     }
 }
 
-; ps-intlit-hex：整數字面量原始文字是否為 `0x`/`0X` 十六進位形（Go stmt.go:1233 口徑）。
+; 整數字面量原始文字是否為 `0x`/`0X` 十六進位形（Go stmt.go:1233 口徑）。
 ;   僅按【進位制前綴】判定，不看數值範圍（與 ps-int-lit-value 的 base 偵測同一寫法）。
 ps-intlit-hex = (raw str) (r i64) {
     r = 0
@@ -4507,7 +4507,7 @@ ps-intlit-hex = (raw str) (r i64) {
     raw.len-bytes() > 2 && h0 == 48 && (h1 == 120 || h1 == 88) -> r = 1
 }
 
-; ps-elem-type-of：从 SliceLiteral 的首元素推論元素型别名（空切片默认 i64）
+; 从 SliceLiteral 的首元素推論元素型别名（空切片默认 i64）
 ;   規則同 Go stmt.go:1274-1300：IntegerLiteral→i64（十六進位 0x⇒byte）, Float→f64,
 ;   String→str, Bool→bool, Char→char, default→i64。
 ps-elem-type-of = (t ast, sl i64) (r str) {
@@ -4538,7 +4538,7 @@ ps-elem-type-of = (t ast, sl i64) (r str) {
     }
 }
 
-; ps-infer-type：依 RHS 字面量種類推論預設型別（§5.3.2 的 desugar 路徑）。
+; 依 RHS 字面量種類推論預設型別（§5.3.2 的 desugar 路徑）。
 ;   回 '' = 不推斷（Oracle 對非标量 RHS 不建 NamedType）。
 ps-infer-type = (t ast, val i64) (r str) {
     r = ''
@@ -4565,7 +4565,7 @@ ps-infer-type = (t ast, val i64) (r str) {
     }
 }
 
-; ps-idx-elem-of：從已登記型別串取索引元素型別——鏡像 Go stmt.go:1470-1478：
+; 從已登記型別串取索引元素型別——鏡像 Go stmt.go:1470-1478：
 ;   `[]X` → X（切片，剝前綴）／`[N]X` → X（定長陣列，取第一個 `]` 之後）。
 ;   非陣列/切片形（含長度不足）⇒ ''。⚠️ 算術一律預算（內聯算術作實參會污染呼叫 ABI）。
 ps-idx-elem-of = (ty str) (r str) {
@@ -4633,7 +4633,7 @@ ps-idx-elem-of = (ty str) (r str) {
 ;   故把形狀判定與切分下推到這些小函式，由它們對參數取 .byte()。
 ; ═════════════════════════════════════════════════════════════════════
 
-; ps-elem-shape：元素型別串形狀。0=扁平名稱 / 1=`?X` / 2=`[]X` / 3=`[N]X`
+; 元素型別串形狀。0=扁平名稱 / 1=`?X` / 2=`[]X` / 3=`[N]X`
 ps-elem-shape = (e str) (shape i64) {
     shape = 0
     n = e.len-bytes()
@@ -4659,7 +4659,7 @@ ps-elem-shape = (e str) (shape i64) {
     }
 }
 
-; ps-elem-arr-size：`[N]X` ⇒ N（找不到 `]` ⇒ ''）
+; `[N]X` ⇒ N（找不到 `]` ⇒ ''）
 ps-elem-arr-size = (e str) (r str) {
     r = ''
     n = e.len-bytes()
@@ -4682,7 +4682,7 @@ ps-elem-arr-size = (e str) (r str) {
     }
 }
 
-; ps-elem-arr-elem：`[N]X` ⇒ X（找不到 `]` ⇒ ''）
+; `[N]X` ⇒ X（找不到 `]` ⇒ ''）
 ps-elem-arr-elem = (e str) (r str) {
     r = ''
     n = e.len-bytes()
@@ -4784,7 +4784,7 @@ ps-detect-generic = (t ast, i i64, g []str) {
 
 ; ps-parse-func：解析 `name = (params) { body }` 或 `name = (params) (results) { body }`
 
-; ps-parse-extern-decl：解析 FFI 宣告 `name = (params) (results)` 為 ExternStatement。
+; 解析 FFI 宣告 `name = (params) (results)` 為 ExternStatement。
 ;   對應 Go parseAnnotationFFIDeclaration（annotation.go:945）。params/results 各為一組
 ;   Parameter（用 ps-parse-param，res-param=1 不解析預設值）；節點 kid 序：先 params
 ;   （KIDS 段 0）後 results（KIDS 段 1），count 由 ast.set-count 填入（LEN 純量自動派生）。
@@ -5001,7 +5001,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     idx
 }
 
-; ps-parse-method-func：方法定義 `recv-type.method = (params) [ (results) ] { body }` 的主體。
+; 方法定義 `recv-type.method = (params) [ (results) ] { body }` 的主體。
 ;   進入時 p.pos 落在輸入參數群的 LPAREN。對應 Go parseMethodDefinition：
 ;     · name = 點分全名（'recv-type.method'）、methodDef 欄位 = 'true'（FunctionDefinition slot2）。
 ;     · self 合成為【首個輸出參數】（Results，非 inputs）：Parameter{name:'self', Type:NamedType{recv-type}}。
@@ -5226,7 +5226,7 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
     idx
 }
 
-; ps-for-source：解析 range 迭代來源（`<-` 右側），對應 Go parseForRange。
+; 解析 range 迭代來源（`<-` 右側），對應 Go parseForRange。
 ;   `[`/`(` → RangeExpression 填 src(kid0)；其他（陣列 IDENT/呼叫等）→ 運算式填 src-expr(kid1)。
 ;   進入時呼叫端已消費 `<-`，本函式先 skip-trivia。回傳 (src, src-expr)（皆 i64、無結構體⇒安全多回傳）。
 ;   ⚠️ 守衛用快照 op，避免活 ps-peek 於 ps-bump 後重評誤觸（跨臂坑）。
@@ -5328,7 +5328,7 @@ ps-for-source = (t ast, p psst) (src i64, src-expr i64) {
     }
 }
 
-; ps-loop-body：解析迴圈本體——鏡像 Go parseLoopBody（stmt.go:2386-2411）。
+; 解析迴圈本體——鏡像 Go parseLoopBody（stmt.go:2386-2411）。
 ;   兩形：`{ ... }` 區塊體（inline 欄位留空）／冒號後單陳述行內體（BlockStatement
 ;   單 kid + slot0='true' ⇒ dump `inline: true`）。⚠️ 行內體【只】綁一條陳述——
 ;   後續行為外層區塊陳述（Go「Single-statement body」，yaml 級聯 c7 探針實證）。
@@ -5357,7 +5357,7 @@ ps-loop-body = (t ast, p psst) (idx i64) {
     }
 }
 
-; ps-parse-for：解析 bare range-for 迭代 `vname <- range-or-array [:] { body }`（不使用 `for` 關鍵字）。
+; 解析 bare range-for 迭代 `vname <- range-or-array [:] { body }`（不使用 `for` 關鍵字）。
 ;   對應 Go parseForStatement 的 bare 分支 + parseForRange。回傳 ForStatement 節點索引。
 ps-parse-for = (t ast, p psst, vname str) (idx i64) {
     ps-bump(p); 消費 IDENT（迴圈變數）
@@ -5392,7 +5392,7 @@ ps-parse-for = (t ast, p psst, vname str) (idx i64) {
     idx
 }
 
-; ps-parse-for-kw：解析 `for`/`while` 關鍵字迴圈（對應 Go parseForStatement 的 FOR 分支）。
+; 解析 `for`/`while` 關鍵字迴圈（對應 Go parseForStatement 的 FOR 分支）。
 ;   僅支援帶 `{ }` 本體的三種形體（無大括號 inline / C-style `,;` / 比較運算子退路等罕見形暫不覆蓋）：
 ;     · `for { }`                → Condition=BooleanLiteral{true}，p.warn+1（2297）
 ;     · `for v <- range [:] { }` → Condition=Identifier{v} + IterRange=IterationExpr，無警告（ARROW 分支）
@@ -5468,7 +5468,7 @@ ps-parse-for-kw = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-bang-loop：`!! { }`（恆真、無限循環）與 `! { }`（恆假、不執行）。
+; `!! { }`（恆真、無限循環）與 `! { }`（恆假、不執行）。
 ;   對應 Go parseBangLoop（stmt.go:2577）：Condition=BooleanLiteral{loop}、Body=BlockStatement。
 ;   此二形【不】saveWarning（新式語法），故不累加 p.warn。其餘 4 個 guarded CHILD 以 0 佔位。
 ps-parse-bang-loop = (t ast, p psst, loop i64) (idx i64) {
@@ -5490,7 +5490,7 @@ ps-parse-bang-loop = (t ast, p psst, loop i64) (idx i64) {
     ast.kid-add(t, idx, body); Body
 }
 
-; s57-count-prefix-p：判定【目前 pos】是否為前置計數循環 `N * { }` / `-N * { }`—鏡像 Go
+; 判定【目前 pos】是否為前置計數循環 `N * { }` / `-N * { }`—鏡像 Go
 ;   isCountLoopPrefix（stmt.go:2842）。【直接索引扫描】而非多次 ps-peek-at——實證同一函式體
 ;   內多點前視（含變量偏位）會讀到陳宅寞存器（MIR 冷路径審查，見 ps-bm-scan 直接索引澉演）。
 ;   nolang 語法下 COMMENT 恆為行首（`;` 吞至行尾）⇙ Go look() 跳 COMMENT 在本形與原樣索引等價。
@@ -5521,7 +5521,7 @@ s57-count-prefix-p = (p psst) (r i64) {
     r
 }
 
-; s57-count-blockfirst-p：判定【目前 pos（LBRACE）】是否為 `{ body } * [(-)?] N` 計數循環——
+; 判定【目前 pos（LBRACE）】是否為 `{ body } * [(-)?] N` 計數循環——
 ;   鏡像 Go isCountedLoopBlockFirst（stmt.go:3085）：平衡大括號掃描，`#{` 群組整體跳過
 ;   （同 isCondLoopBlockFirst 守剉，其 `}` 不得提前收合）；匹配 `}` 後須為 MUL [SUB] INT，
 ;   且 INT 後須為語句結束（NEWLINE/EOF/SEMICOLON/RBRACE），避免與 `} * n` 乘法混淆。
@@ -5602,7 +5602,7 @@ s57-count-blockfirst-p = (p psst) (r i64) {
     r
 }
 
-; s57-parse-count-loop-prefix：`N * { body }` 前置計數循環（鏡像 Go parseCountLoopPrefix
+; `N * { body }` 前置計數循環（鏡像 Go parseCountLoopPrefix
 ;   stmt.go:2867）。CountExpr=IntegerLiteral{value}（無 raw ⇒ slot1 置空串，dumper 不印）；
 ;   負號形把字面量取負（Go intToken.Literal = "-"+lit）。數字直接讀 token 字面量，
 ;   不走 ps-parse-expr（避免冷路徕前視壞）。前提：閘門已過。
@@ -5634,7 +5634,7 @@ s57-parse-count-loop-prefix = (t ast, p psst) (idx i64) {
     idx
 }
 
-; s57-parse-count-loop-blockfirst：`{ body } * [(-)?] N` 後置計數循環（鏡像 Go
+; `{ body } * [(-)?] N` 後置計數循環（鏡像 Go
 ;   parseCountedLoopBlockFirst stmt.go:3134）。前提閘門已過。其餘同 prefix 形。
 s57-parse-count-loop-blockfirst = (t ast, p psst) (idx i64) {
     ps-bump(p); 消費 {
@@ -5664,7 +5664,7 @@ s57-parse-count-loop-blockfirst = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-is-cond-loop-prefix：判定【目前 pos（LPAREN）】是否為 `(cond) {` 前置條件循環。
+; 判定【目前 pos（LPAREN）】是否為 `(cond) {` 前置條件循環。
 ;   對應 Go isCondLoopPrefix（stmt.go:2615）：(1) 掃至平衡 `)`；(2) 其【立即】下一 token 須為 `{`
 ;   （不跳 trivia—換行後的 `{` 屬後綴式循環，非本形）；(3) 括號內容含 `,` 或「恰好兩個 IDENT」
 ;   （參數名+型別）⇒ 是匿名函式參數列，非循環。其餘（含 `()`、單 IDENT `(flag)`）⇒ 循環。
@@ -5726,7 +5726,7 @@ ps-is-cond-loop-prefix = (p psst) (r i64) {
     r = 1
 }
 
-; ps-parse-cond-loop：`(cond) { body }` 前置條件循環。對應 Go parseCondLoopPrefix（stmt.go:2686）。
+; `(cond) { body }` 前置條件循環。對應 Go parseCondLoopPrefix（stmt.go:2686）。
 ;   空括號 `()` ⇒ Condition=BooleanLiteral{false}（不執行）；`(true)`/`(expr)` ⇒ Condition=expr。
 ;   Body=BlockStatement。不 saveWarning（新式語法）。
 ps-parse-cond-loop = (t ast, p psst) (idx i64) {
@@ -5758,7 +5758,7 @@ ps-parse-cond-loop = (t ast, p psst) (idx i64) {
     ast.kid-add(t, idx, body); Body
 }
 
-; ps-parse-break-continue：解析 `break` / `continue`（對應 Go parseBreakStatement / parseContinueStatement）。
+; 解析 `break` / `continue`（對應 Go parseBreakStatement / parseContinueStatement）。
 ;   節點無 CHILD，仅雨個字串 slot：slot0=label（`kv` 恆印，空⇒`label: `）、slot1=kind（`kv` 恆印，'none'/'text'/'numeric'）。
 ;   brk=1⇒BreakStatement，brk=0⇒ContinueStatement。
 ;   標籤侦测对齐 Go：消費关键字後直接看**紧邻** token（不跳 trivia）——LABEL(`#N`)⇒numeric、IDENT⇒text（同列才成立）；
@@ -5788,7 +5788,7 @@ ps-parse-break-continue = (t ast, p psst, brk i64) (idx i64) {
     idx
 }
 
-; ps-mk-break-cont：建 Break/Continue 節點（label/kind 兩純量槽），供速寫復用。
+; 建 Break/Continue 節點（label/kind 兩純量槽），供速寫復用。
 ps-mk-break-cont = (t ast, brk i64, label str, kind str) (idx i64) {
     nodekind = asp.K-BREAK-STATEMENT
     brk == 0 -> nodekind = asp.K-CONTINUE-STATEMENT
@@ -5798,7 +5798,7 @@ ps-mk-break-cont = (t ast, brk i64, label str, kind str) (idx i64) {
     idx
 }
 
-; ps-star-label：消費速寫關鍵字後的【可選】標籤（LABEL `#N`→numeric / IDENT→text），
+; 消費速寫關鍵字後的【可選】標籤（LABEL `#N`→numeric / IDENT→text），
 ;   對應 Go parseBreak/parseStar* 的尾部 label 吸收。回傳 kind：0=none / 1=numeric或text（label 写入 out）。
 ps-star-label = (p psst, out []str) (k i64) {
     k = 0
@@ -5820,7 +5820,7 @@ ps-star-label = (p psst, out []str) (k i64) {
     k
 }
 
-; ps-parse-star-break：語句位 `*` → BreakStatement 速寫（Go parseStarBreakOrExpr stmt.go:2913）。
+; 語句位 `*` → BreakStatement 速寫（Go parseStarBreakOrExpr stmt.go:2913）。
 ;   閘門：peek(1) ∈ {NEWLINE,EOF,SEMICOLON,RBRACE,LABEL,IDENT} 才視作 break；否則退回表達式陳述。
 ;   ⚠️ 閘門含 IDENT——`* x` 在 Go 即 break+label x（怪异但必须逐位元組鏡像）。
 ps-parse-star-break = (t ast, p psst) (idx i64) {
@@ -5840,7 +5840,7 @@ ps-parse-star-break = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-star-star-cont：語句位 `**` → ContinueStatement 速寫（Go parseStarStarContinue stmt.go:2937，無閘門）。
+; 語句位 `**` → ContinueStatement 速寫（Go parseStarStarContinue stmt.go:2937，無閘門）。
 ps-parse-star-star-cont = (t ast, p psst) (idx i64) {
     ps-bump(p); 消費 **
     lab []str = with-cap(2)
@@ -5851,7 +5851,7 @@ ps-parse-star-star-cont = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-rarrow-same-line：目前是否為【與前一個 token 同列】的 `->`（對應 Go
+; 目前是否為【與前一個 token 同列】的 `->`（對應 Go
 ;   `currentToken==RARROW && prevToken.Type != NEWLINE`）。⚠️ NEWLINE 在 ps.no
 ;   raw token 流中【保留】，故直接看 p.pos-1 的型別即可判是否換行。
 ps-rarrow-same-line = (p psst) (yes i64) {
@@ -5867,7 +5867,7 @@ ps-rarrow-same-line = (p psst) (yes i64) {
     }
 }
 
-; ps-standalone-body：解析獨立 if-then 的本體（已消費其前面的 `->`），對應
+; 解析獨立 if-then 的本體（已消費其前面的 `->`），對應
 ;   Go parseStandaloneBody。回傳 (blk, tail)：blk=BlockStatement 節點；tail=可再鏈式
 ;   的單一運算式節點（僅運算式本體非 0；區塊/陳述本體為 0，不可鏈）。
 ;   ⚠️ 不跳 trivia——對齊 Go 直接看 currentToken：`-> \n` 之類換行→回空非內聯 Block。
@@ -5918,7 +5918,7 @@ ps-standalone-body = (t ast, p psst) (blk i64, tail i64) {
     tail = e
 }
 
-; ps-wrap-chain：獨立 if-then 的【鏈式 `->`】處理，對應 Go wrapStandaloneChainDepth。
+; 獨立 if-then 的【鏈式 `->`】處理，對應 Go wrapStandaloneChainDepth。
 ;   當 blk 是單一內聯 ExprStmt（tail>0）且後面跟【同列】`->` 時，tail 變成巢狀 if 的
 ;   cond：`a -> b -> c` → if(a){ inline[ExprStmt{ if(b){ inline[ExprStmt{c}] } }] }。
 ;   ⚠️ 遞迴把後續所有同列 `->` 吃光，故本層只需一次判定（不需 while 迴圈）。
@@ -5989,7 +5989,7 @@ ps-wrap-chain = (t ast, p psst, blk i64, tail i64, link-idx i64) (blk2 i64) {
     }
 }
 
-; ps-mk-standalone-if：由 cond 組裝整個獨立 if-then。前置條件：目前 token 為 cond
+; 由 cond 組裝整個獨立 if-then。前置條件：目前 token 為 cond
 ;   之後的第一個 `->`（呼叫端已確認 ps-peek==RARROW）。對應 Go parseExpressionStatement
 ;   的 standalone 分支：吃 `->` → body → wrap-chain →（可能）else 分支 → 組 IfExpression。
 ;   s50：另復刻 Go parseBlockStatement 迴圈開頭的【換行後 `-> else` 續接】（stmt.go:2168–2186）：
@@ -6048,7 +6048,7 @@ ps-mk-standalone-if = (t ast, p psst, cond i64) (idx i64) {
 ; 保守退讓（回 0 交呼叫端還原）：臂首 `#{...}` 前置註解、`ok->` isDotVal 綁定、
 ; wildcard 出現在鏈中間（Go 要 mutation 已建節點的 else，s48 不支持）。
 
-; ps-scan-nont：從 from 起第一個非 trivia（NEWLINE/COMMENT）的 token 下標；越界回 toks.len()。
+; 從 from 起第一個非 trivia（NEWLINE/COMMENT）的 token 下標；越界回 toks.len()。
 ps-scan-nont = (p psst, from i64) (i i64) {
     i = from
 
@@ -6061,7 +6061,7 @@ ps-scan-nont = (p psst, from i64) (i i64) {
     i
 }
 
-; ps-arrow-scan0：從當前 token 往後、同一 logical 行內（NEWLINE/;/RBRACE/EOF 即停）
+; 從當前 token 往後、同一 logical 行內（NEWLINE/;/RBRACE/EOF 即停）
 ;   是否出現深度 0 的 `->`。鏡像 Go scanForArrowAtDepth0（match.go:607：只跟 ( ) [ ]，
 ;   RBRACE 屬停止集）。
 ps-arrow-scan0 = (p psst) (yes i64) {
@@ -6100,7 +6100,7 @@ ps-arrow-scan0 = (p psst) (yes i64) {
     yes
 }
 
-; ps-arrow-scan-line：從 from 起在同一首陳述內前視深度 0 的 `->`（鏡像 Go parser.go:912-942）。
+; 從 from 起在同一首陳述內前視深度 0 的 `->`（鏡像 Go parser.go:912-942）。
 ;   NEWLINE/EOF/RPAREN/RBRACKET/RBRACE 於深度 0 → 無臂（回 0）；深度 0 `->` → 臂（回 1）。
 ;   服務 `IDENT .` 開頭首臂：`it.v = 99`（無 `->`）⇒ 0；`obj.m() -> ...`⇒ 1。上限 40 token。
 ps-arrow-scan-line = (p psst, from i64) (yes i64) {
@@ -6140,7 +6140,7 @@ ps-arrow-scan-line = (p psst, from i64) (yes i64) {
     yes
 }
 
-; ps-is-arm-start：目前 token（呼叫前已跳 trivia）是否新臂開頭。鏡像 Go isArmStart
+; 目前 token（呼叫前已跳 trivia）是否新臂開頭。鏡像 Go isArmStart
 ;   （match.go:563）：INT/_/:/-> 直接；IDENT 後 :/-> 或 LOR+{err,nil,ok} 或比較運算子後
 ;   同行探 `->`；NIL 後 :/->/LOR；NOT/?/. 後緊接 ->。
 ps-is-arm-start = (p psst) (yes i64) {
@@ -6157,7 +6157,7 @@ ps-is-arm-start = (p psst) (yes i64) {
     yes
 }
 
-; ps-is-opt-pat-start：鏡像 Go isOptionPatternStart（match.go:29543）——option 型樣臂首
+; 鏡像 Go isOptionPatternStart（match.go:29543）——option 型樣臂首
 ;   （`->` / `nil ->` / `ok ->` / `err ->` / `!->` / `?->` / `.->`）。用於 NEWLINE 臂體
 ;   的收束判據與 inline 形空臂體偵測（expr.go:1251-1376：body 位見 option 型樣 ⇒
 ;   本臂空體 fallthrough）。⚠️ Go 中此判據【不受】checkArmStart 閘控（wildcard 臂
@@ -6176,7 +6176,7 @@ ps-is-opt-pat-start = (p psst) (yes i64) {
     yes
 }
 
-; ps-la-sep：行首 `->`（p.pos 即 RARROW）是否為「臂分隔符」而非 wildcard 本身。
+; 行首 `->`（p.pos 即 RARROW）是否為「臂分隔符」而非 wildcard 本身。
 ;   鏡像 Go leadingArrowIsSeparator（match.go:530）：往後遇 NEWLINE/;/EOF ⇒ 非分隔符
 ;   （=wildcard 本體開頭）；深度 0 再見 `->` ⇒ 是分隔符（`-> cond -> body` 形）。
 ps-la-sep = (p psst) (yes i64) {
@@ -6215,7 +6215,7 @@ ps-la-sep = (p psst) (yes i64) {
     yes
 }
 
-; ps-bm-scan：粗探【p.pos 為 LBRACE】的區塊是否裸 match（含深度 0 `->` 才嘗試）。
+; 粗探【p.pos 為 LBRACE】的區塊是否裸 match（含深度 0 `->` 才嘗試）。
 ;   鏡像 Go classifyBlockAtCurrent(blockMatch) + stmt.go:418 例外：`{ name: { … } }`
 ;   （首非 trivia 為 IDENT 且第二/三非 trivia 依序 COLON、LBRACE）強制走普通區塊。
 ps-bm-scan = (p psst) (yes i64) {
@@ -6328,7 +6328,7 @@ ps-bm-scan = (p psst) (yes i64) {
     yes
 }
 
-; ps-arm-blk-match：【臂體大括號】閘——Go expr.go:1253 `classifyBlockAtCurrent() != blockMatch`
+; 【臂體大括號】閘——Go expr.go:1253 `classifyBlockAtCurrent() != blockMatch`
 ;   的鏡像判定。與 ps-bm-scan（stmt 級啟發式）的差異：Go 臂體級嚴格用【形狀分類】，
 ;   「有 depth-0 箭頭」≠blockMatch。補三條箭頭掃描會誤觸的非 match 形（皆 blockUnknown/blockIface）：
 ;     · DOT IDENT LPAREN（`.m(…) ->` 方法呼叫陳述，parser.go:791-793）
@@ -6481,7 +6481,7 @@ t3 == tok.FLOAT || t3 == tok.CHAR || t3 == tok.REGEX || t3 == tok.LBRACKET || t3
     yes
 }
 
-; ps-parse-bare-match：解析裸 match 區塊（p.pos 於 LBRACE），回 desugared 外層
+; 解析裸 match 區塊（p.pos 於 LBRACE），回 desugared 外層
 ;   IfExpression 索引；回 0 ⇒ 失敗（p.pos 不定，呼叫端自行還原重解析）。臂形鏡像
 ;   Go parseBareMatchExpr：`expr -> body`／`_ -> body`／`-> body`（含 `-> cond -> body`
 ;   分隔符形）；body 三形：`{ … }` 區塊（可內層再套裸 match）、換行 block 形（語句
@@ -6835,7 +6835,7 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
     res
 }
 
-; ps-parse-brace-stmt：陳述位 `{ … }` 統一入口（對齐 Go stmt.go:402 LBRACE 臂）：
+; 陳述位 `{ … }` 統一入口（對齐 Go stmt.go:402 LBRACE 臂）：
 ;   含深度 0 `->` ⇒ 試裸 match，成則 ExpressionStatement{if鏈}；敗/非 match ⇒
 ;   還原後走普通 BlockStatement（ps-parse-block + 吃 `}`，語句不外洩）。
 ps-parse-brace-stmt = (t ast, p psst) (idx i64) {
@@ -6873,7 +6873,7 @@ ps-parse-brace-stmt = (t ast, p psst) (idx i64) {
 ;      SliceType{ SliceType{ NamedType{i64} } }；type-string(ast.no:610) 遞迴印 `[][]i64`。
 ;   ⚠️ 用 `handled` 旗標（非互斥條件）防同块多臂重評：某臂已建 idx 後，後續臂不得再跑
 ;      （match 非排他，實測裸條件會因前一臂已消費 token 使後臂的活 ps-peek-at 誤命中）。
-; ps-is-builtin-type：型別名是否為內建（Go type.go:399-408 isBuiltinTypeName）。
+; 型別名是否為內建（Go type.go:399-408 isBuiltinTypeName）。
 ;   用於 `[K]V` 的 map／array 判定（見 ps-parse-type 的 s8e 臂）。
 ps-is-builtin-type = (nm str) (r i64) {
     r = 0
@@ -7045,7 +7045,7 @@ ps-parse-type = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-typedecl：解析【通用明示型別宣告】`name TYPE [= value]`——補齊各特化含值臂未覆蓋的
+; 解析【通用明示型別宣告】`name TYPE [= value]`——補齊各特化含值臂未覆蓋的
 ;   複合型形（限定名 `a.b`、巢狀 `[][]T`/`[N][]T`）之裸宣告與含值兩形。裸形對應 Go parseLetStatement
 ;   的 no-value 分支（stmt.go:1051–1060：型別後遇陳述邊界即 Value=nil，dump 為 `type: X, value: `）；
 ;   含值形對應 Go 的 `= expr` 分支（dump 為 `type: X, value: <expr>`）。
@@ -7095,7 +7095,7 @@ ps-parse-typedecl = (t ast, p psst, name str) (idx i64) {
     }
 }
 
-; ps-skip-annot-idx：鏡像 ps-parse-stmt 的 `#{...}` 群組掃描，但以【索引前視】方式（不消費
+; 鏡像 ps-parse-stmt 的 `#{...}` 群組掃描，但以【索引前視】方式（不消費
 ;   token）回傳跳過自索引 i 起全部相鄰 `#{...}` 群組後的索引；非 `#{` 起 ⇒ 原樣回 i。
 ;   深度計數：`#{ [ ( {` → +1、`} ) ]` → −1（`#{` 自身計作一個開大括號），與 ps-parse-stmt 同口徑。
 ps-skip-annot-idx = (p psst, i i64) (j i64) {
@@ -7138,7 +7138,7 @@ ps-skip-annot-idx = (p psst, i i64) (j i64) {
     }
 }
 
-; ps-skip-annot：【消費】自目前 pos 起全部相鄰 `#{...}` 群組。用於結構體欄位尾的
+; 【消費】自目前 pos 起全部相鄰 `#{...}` 群組。用於結構體欄位尾的
 ;   `#{inline=…}` 等註解——`no ast`（無 -annotations）根本不渲染欄位註解 ⇒ 跳過即可。
 ps-skip-annot = (p psst) {
     (ps-peek(p) == tok.HASH-LBRACE) {
@@ -7169,7 +7169,7 @@ ps-skip-annot = (p psst) {
     }
 }
 
-; ps-skip-type-idx：以【索引前视】（不消費 token）復刻 ps-parse-type 的型別語法，回傳吃完整
+; 以【索引前视】（不消費 token）復刻 ps-parse-type 的型別語法，回傳吃完整
 ;   條型別後的索引；非法型別起 ⇒ 回 −1（呼叫者據此拒绝）。鏡像 ps-parse-type 四形：
 ;   `a.b`（IDENT (.IDENT)*）、`?T`、`[]T`、`[N]T`（N=單 INT）；元素皆可遞迴 ∈ {IDENT, [, ?}。
 ps-skip-type-idx = (p psst, i i64) (j i64) {
@@ -7229,7 +7229,7 @@ ps-skip-type-idx = (p psst, i i64) (j i64) {
     }
 }
 
-; ps-is-struct-def：判斷【目前 pos=IDENT name】起是否為「乾淨」的結構體定義形
+; 判斷【目前 pos=IDENT name】起是否為「乾淨」的結構體定義形
 ;   `name { field TYPE ... }`，TYPE ∈ {IDENT, []IDENT, [INT]IDENT}，欄位以換行或尾隨逗號分隔，
 ;   區塊以 } 收尾。僅作分派守衛（不消費 token）：枚舉(`a, b`)、介面(`m()`)、實作清單
 ;   (`name impl {`)、註解、限定型別(`a.b`)、可為空(`?T`)等一律回 0 → 交回原運算式陳述路徑（零回歸）。
@@ -7326,7 +7326,7 @@ ps-is-struct-def = (p psst) (r i64) {
     }
 }
 
-; ps-iface-has-bare-variant：掃描介面區塊內容，判斷是否存在「裸變體」
+; 掃描介面區塊內容，判斷是否存在「裸變體」
 ;   （深度 0 的 IDENT/NIL 後**不接** `(`）—— 對應 Go parser.go:583-611
 ;   blockIsTaggedEnumWithParens。裸變體存在 ⇒ 該區塊是**標籤列舉**而非介面。
 ps-iface-has-bare-variant = (p psst, start i64) (r i64) {
@@ -7375,7 +7375,7 @@ ps-iface-has-bare-variant = (p psst, start i64) (r i64) {
     }
 }
 
-; ps-iface-all-parens-tagged：判斷「全部成員皆 name(...) 形」的區塊是**標籤列舉**還是介面
+; 判斷「全部成員皆 name(...) 形」的區塊是**標籤列舉**還是介面
 ;   —— 對應 Go parser.go:699-742 blockIsTaggedEnumAllParens（回 1 = 標籤列舉）。
 ;   消歧規則（與 Go 逐項一致）：
 ;     · 某成員的 `)` 後緊跟 `(`（結果組，如 `t.gt(b t) (res bool)`）⇒ **介面**（回 0）；
@@ -7459,7 +7459,7 @@ ps-iface-all-parens-tagged = (p psst, start i64) (r i64) {
     r = has-big
 }
 
-; ps-is-iface-def：判斷【目前 pos=IDENT name】起是否為「介面定義」形
+; 判斷【目前 pos=IDENT name】起是否為「介面定義」形
 ;   `name { m(...) }` 或 `name { t.m(...) (res bool) }`。
 ;   對應 Go stmt.go:288-297 classifyBlock()==blockIface。
 ;   ⚠️ 與標籤列舉的消歧（Go parser.go:396-401 / :699-742）：
@@ -7613,7 +7613,7 @@ ps-is-iface-inherits = (p psst) (r i64) {
     t1 == tok.IDENT && t2 != tok.LPAREN && t2 != tok.DOT && t2 != tok.NEWLINE -> r = 2
 }
 
-; ps-iface-merge-ahead：判定【目前 pos=首段名 IDENT】是否為「接口合併項」。
+; 判定【目前 pos=首段名 IDENT】是否為「接口合併項」。
 ;   合併項形態（鏡 Go decl.go 的 isInterfaceMergeItem）：
 ;     裸名         + NEWLINE / COMMA / RBRACE / EOF
 ;     裸名 . 裸名  + NEWLINE / COMMA / RBRACE / EOF
@@ -7651,7 +7651,7 @@ ps-iface-merge-ahead = (p psst) (r i64) {
     r
 }
 
-; ps-parse-iface-def：把陳述位置的 `name { m(...) }` 建為 InterfaceDefinition。
+; 把陳述位置的 `name { m(...) }` 建為 InterfaceDefinition。
 ;   InterfaceDefinition：slot0=name、slot1=methods 數（OF-LEN）；無 kids
 ;     （Go 的 InterfaceDefinition 只有 Name/Methods/Implements 三個欄位）。
 ;   helper 區（aux，寬度 5 * methods）：name / receiver / variadic / genericReceiver /
@@ -7868,7 +7868,7 @@ ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
     idx
 }
 
-; ps-parse-struct-def：把陳述位置的 `name { field TYPE ... }` 建為 StructDefinition。
+; 把陳述位置的 `name { field TYPE ... }` 建為 StructDefinition。
 ;   StructDefinition：slot0=name、slot1=implements 數('0' 省略)、slot2=fields 數(OF-LEN)、
 ;     count0=KIDS 迭代數、kid 序=各 StructField。
 ;   StructField：slot0=name、slot1=arraySize(kvn '0'省略)、slot2=slice(kvb 'true')、slot3=readonly、slot4=sealed；
@@ -7964,7 +7964,7 @@ ps-parse-struct-def = (t ast, p psst, name str) (idx i64) {
     idx
 }
 
-; ps-is-enum-def：枚舉定義分派守衛（不消費 token，索引前視）。pos=IDENT name 且 +1=LBRACE 時掃描區塊：
+; 枚舉定義分派守衛（不消費 token，索引前視）。pos=IDENT name 且 +1=LBRACE 時掃描區塊：
 ;   成員 ∈ {IDENT/NIL 變體名、`名(欄位…)` 括號載荷、`名 = INT` 顯式值、`#{…}` 註解、NEWLINE/COMMA 分隔符}。
 ;   回 2（標籤）：同時出現括號變體與裸變體（語料全形：`ok(v str), fail,`；介面形含「`) (`回傳群組」或
 ;   首成員 `t.` ⇒ 被拒）；回 1（裸）：僅裸變體/顯式賦值、無任何括號成員；其餘回 0（含純括號無裸變體者—
@@ -8106,7 +8106,7 @@ ps-is-enum-def = (p psst) (r i64) {
     saw-paren == 0 && saw-unit == 1 -> r = 1
 }
 
-; ps-parse-enum-def：於陳述位解析守衛已認可的枚舉定義（kind=1 裸 EnumDefinition / kind=2 標籤 TaggedEnumDefinition）。
+; 於陳述位解析守衛已認可的枚舉定義（kind=1 裸 EnumDefinition / kind=2 標籤 TaggedEnumDefinition）。
 ;   EnumValue：s0=名、s1=value 十進制文字（恒印）、s2=explicit('true'/''，P-TRUE 隱空)；無子節點。
 ;   TaggedEnumVariant：s0=名、s1=index 文字（P-NON-ZERO：'0' 隱、'1' 印）、s2=fields 數（P-COUNT）；
 ;     kid0=Type（恒加：單元變體 0 佔位 ⇒ OF-TYPE 讀空 ⇒ 隱）；HELPER taggedEnumField 成對：
@@ -8279,7 +8279,7 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
     idx
 }
 
-; ps-parse-param：解析一個參數 `name [type]`（型別可為 NamedType / NullableType / SliceType）
+; 解析一個參數 `name [type]`（型別可為 NamedType / NullableType / SliceType）
 ps-parse-param = (t ast, p psst) (idx i64) {
     idx = 0
     p.last-tp = -1
@@ -8352,7 +8352,7 @@ ps-parse-param = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-block：解析 `{ stmts }`（同 parse：子節點全建完才 add 父節點）
+; 解析 `{ stmts }`（同 parse：子節點全建完才 add 父節點）
 ps-parse-block = (t ast, p psst) (idx i64) {
     stmts []i64 = with-cap(4)
     trail []i64 = with-cap(4)
@@ -8415,7 +8415,7 @@ ps-parse-block = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ps-parse-if：解析 `if cond { ... } [else { ... }]`
+; 解析 `if cond { ... } [else { ... }]`
 ;   ⚠️ Oracle 在 expr.go::parseIfExpression 每遇到一個 if 關鍵字就 saveWarning 一次；
 ;     需同步 p.warn 的計數，Program 的 dump 才能出現 `warnings: N`。
 ;   ⚠️ ELIF 舆 `if/else` 共享同一入口（Go 将 elif desugar 为 else { if ... }），
@@ -8487,14 +8487,14 @@ ps-parse-if = (t ast, p psst) (idx i64) {
 ; 範圍（noc 現狀）：識別元主體、字面量/識別元/wildcard 型樣、運算式/區塊臂、if/else 鏈。
 ; 延後：守衛、option/enum 完整型樣、複雜主體（呼叫/索引）。
 
-; ps-mk-ident：建 Identifier 葉節點（僅 slot0=name）——供 desugar 多处複用運算元
+; 建 Identifier 葉節點（僅 slot0=name）——供 desugar 多处複用運算元
 ps-mk-ident = (t ast, name str) (idx i64) {
     idx = ast.add(t, asp.K-IDENTIFIER)
     ast.set-slot(t, idx, 0, ast.put-str(t, name))
     idx
 }
 
-; ps-mk-it-let：建 `it = subj` 合成 LetStatement（synthetic: true、無 Type）
+; 建 `it = subj` 合成 LetStatement（synthetic: true、無 Type）
 ;   dump：LetStatement{name: it, value: subj, synthetic: true} + kid[0=Type(0),1=Ident]
 ps-mk-it-let = (t ast, subj-node i64) (idx i64) {
     idx = ast.add(t, asp.K-LET-STATEMENT)
@@ -8505,7 +8505,7 @@ ps-mk-it-let = (t ast, subj-node i64) (idx i64) {
     idx
 }
 
-; ps-mk-it-let-t：变体臂合成绑定（Go lowering.go buildItBindingForArm）——
+; 变体臂合成绑定（Go lowering.go buildItBindingForArm）——
 ;   bt 非空時建 `LetStatement{name: bname, type: NamedType{bt}, value: subj, synthetic: true, armBinding: true}`；
 ;   bt 空且 bname=='it' 形同 ps-mk-it-let（裸 shared 綁定、無 armBinding）；
 ;   s60：bt 空但具名綁定（未知主體 ok(v)，Go namedItBinding 回退 :2919-2927）仍 armBinding=true。
@@ -8525,7 +8525,7 @@ ps-mk-it-let-t = (t ast, subj-node i64, bt str, bname str) (idx i64) {
     idx
 }
 
-; ps-mk-ext-let：s60 多欄位析構提欄（Go lowering.go:2307-2334）——
+; s60 多欄位析構提欄（Go lowering.go:2307-2334）——
 ;   `LetStatement{name: fname, value: DotExpression{receiver: recv, property: f{j}}, synthetic, armBinding}`，
 ;   無 Type 子節點（0 佔位）
 ps-mk-ext-let = (t ast, fname str, recv str, j i64) (idx i64) {
@@ -8542,7 +8542,7 @@ ps-mk-ext-let = (t ast, fname str, recv str, j i64) (idx i64) {
     idx
 }
 
-; ps-match-listed：掃描當前 match 臂區 token（不消費、不建節點），收集「緊接 `->` 的
+; 掃描當前 match 臂區 token（不消費、不建節點），收集「緊接 `->` 的
 ;   关键字型樣」：fl[0]=ok fl[1]=err fl[2]=nil（Go hasExplicitOk/Err/Nil，lowering.go:2090-2120）。
 ;   僅深度 0（本區塊自己的臂）計入——嵌套 {…}/(…)/[…] 增深度，防内層 match 的 `nil ->` 污染補集判定。
 ;   s60：補集掃描改在 desugar 前（Go 是在 call→Identifier 改寫後掃）——故 ok(v)/err(e) 析構形
@@ -8609,7 +8609,7 @@ ps-match-listed = (p psst, fl []i64, c-n []str, c-a []i64) {
     }
 }
 
-; ps-mk-true：wildcard 條件 = IntegerLiteral{value: 1}（無 raw，故不印 raw）
+; wildcard 條件 = IntegerLiteral{value: 1}（無 raw，故不印 raw）
 ps-mk-true = (t ast) (idx i64) {
     idx = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, idx, 0, ast.put-str(t, '1'))
@@ -8617,7 +8617,7 @@ ps-mk-true = (t ast) (idx i64) {
     idx
 }
 
-; ps-mk-eq：InfixExpression{==}[l, r]（l/r 必須已完整建成）
+; InfixExpression{==}[l, r]（l/r 必須已完整建成）
 ps-mk-eq = (t ast, l i64, r i64) (idx i64) {
     idx = ast.add(t, asp.K-INFIX-EXPRESSION)
     ast.set-slot(t, idx, 0, ast.put-str(t, '=='))
@@ -8640,7 +8640,7 @@ ps-mk-eq = (t ast, l i64, r i64) (idx i64) {
 ; ⚠️ arena 共享 kids 游標（add 設 kid0=kids.len）→ 父節點務必最後 add、再 kid-add。
 ; ═════════════════════════════════════════════════════════════════════
 
-; ps-mk-i64：IntegerLiteral{value:s, raw:s}（s 十進位；Go Raw=FormatInt）
+; IntegerLiteral{value:s, raw:s}（s 十進位；Go Raw=FormatInt）
 ps-mk-i64 = (t ast, s str) (idx i64) {
     idx = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, idx, 0, ast.put-str(t, s))
@@ -8648,14 +8648,14 @@ ps-mk-i64 = (t ast, s str) (idx i64) {
     idx
 }
 
-; ps-mk-bool2：BooleanLiteral{value:b}（b='true'/'false'）
+; BooleanLiteral{value:b}（b='true'/'false'）
 ps-mk-bool2 = (t ast, b str) (idx i64) {
     idx = ast.add(t, asp.K-BOOLEAN-LITERAL)
     ast.set-slot(t, idx, 0, ast.put-str(t, b))
     idx
 }
 
-; ps-mk-str2：StringLiteral{value:v, raw:'v'}（raw=單引號包覆原文；Go defaultLiteralFor str 路徑）
+; StringLiteral{value:v, raw:'v'}（raw=單引號包覆原文；Go defaultLiteralFor str 路徑）
 ;   sq 為單引號字元（ASCII 39）→字串（lx-ch-str 走 sb，避開 .to-str 借用缺陷）；raw = sq - v - sq。
 ps-mk-str2 = (t ast, v str) (idx i64) {
     sq = lx.lx-ch-str(39)
@@ -8666,7 +8666,7 @@ ps-mk-str2 = (t ast, v str) (idx i64) {
     idx
 }
 
-; ps-mk-f64：FloatLiteral{value:v, raw:raw}
+; FloatLiteral{value:v, raw:raw}
 ps-mk-f64 = (t ast, v str, raw str) (idx i64) {
     idx = ast.add(t, asp.K-FLOAT-LITERAL)
     ast.set-slot(t, idx, 0, ast.put-str(t, v))
@@ -8674,7 +8674,7 @@ ps-mk-f64 = (t ast, v str, raw str) (idx i64) {
     idx
 }
 
-; ps-mk-let-full：LetStatement{name, type, value, synthetic, armBinding}（typ/val 已建成；typ=0 表 Type 缺席）
+; LetStatement{name, type, value, synthetic, armBinding}（typ/val 已建成；typ=0 表 Type 缺席）
 ps-mk-let-full = (t ast, name str, typ i64, val i64, synth i64, arm-b i64) (idx i64) {
     idx = ast.add(t, asp.K-LET-STATEMENT)
     ast.set-slot(t, idx, 0, ast.put-str(t, name))
@@ -8685,7 +8685,7 @@ ps-mk-let-full = (t ast, name str, typ i64, val i64, synth i64, arm-b i64) (idx 
     idx
 }
 
-; ps-int-elem-p：整數族元素型別白名單（i8..i128 / u8..u128 / byte / char）
+; 整數族元素型別白名單（i8..i128 / u8..u128 / byte / char）
 ps-int-elem-p = (e str) (r i64) {
     r = 0
     e == 'i8' -> r = 1
@@ -8702,7 +8702,7 @@ ps-int-elem-p = (e str) (r i64) {
     e == 'char' -> r = 1
 }
 
-; ps-mk-zero-slice：空切片零值 ArrayLiteral{size:nil, elements:0, wasSliceLiteral:true}。
+; 空切片零值 ArrayLiteral{size:nil, elements:0, wasSliceLiteral:true}。
 ;   Go zeroValueLiteralFor compositeSlice → ArrayLiteral{Elements:[], WasSliceLiteral:true}。
 ;   dump：`ArrayLiteral{size: <nil>, wasSliceLiteral: true}`。kid0=nil Size 占位。
 ps-mk-zero-slice = (t ast) (idx i64) {
@@ -8713,7 +8713,7 @@ ps-mk-zero-slice = (t ast) (idx i64) {
     ast.kid-add(t, idx, 0); Size = nil 占位（dump 印 <nil>）
 }
 
-; ps-mk-zero-struct：零結構體 StructLiteral{type:ty, fields:0}。
+; 零結構體 StructLiteral{type:ty, fields:0}。
 ;   Go zeroValueLiteralFor default → StructLiteral{Type:elem, Fields:nil}。
 ps-mk-zero-struct = (t ast, ty str) (idx i64) {
     idx = ast.add(t, asp.K-STRUCT-LITERAL)
@@ -8722,7 +8722,7 @@ ps-mk-zero-struct = (t ast, ty str) (idx i64) {
     ast.set-count(t, idx, 0, 0); 0 field kids
 }
 
-; ps-mk-zero-map：空映射 MapLiteral{pairs:0}。
+; 空映射 MapLiteral{pairs:0}。
 ;   Go zeroValueLiteralFor compositeMap → MapLiteral{Pairs:nil}。無 MapType kid。
 ps-mk-zero-map = (t ast) (idx i64) {
     idx = ast.add(t, asp.K-MAP-LITERAL)
@@ -8730,7 +8730,7 @@ ps-mk-zero-map = (t ast) (idx i64) {
     ast.set-count(t, idx, 0, 0); 0 pair kids（無 MapType——Go nil MapType 不 dump）
 }
 
-; ps-mk-zero-array：定長陣列零值 ArrayLiteral{size:N, elements:N, wasSliceLiteral:false}。
+; 定長陣列零值 ArrayLiteral{size:N, elements:N, wasSliceLiteral:false}。
 ;   Go zeroValueLiteralFor compositeArray → ArrayLiteral{Size:N, Elements:[N×zero]}。
 ;   元素遞迴取 scalarZeroLiteral；為簡化先只建標量零元素（複合嵌套元素留待需要時擴展）。
 ps-mk-zero-array = (t ast, szs str, el str) (idx i64) {
@@ -8753,7 +8753,7 @@ ps-mk-zero-array = (t ast, szs str, el str) (idx i64) {
     }
 }
 
-; ps-is-comp-elem：isContainerOrStructElem 鏡像——`[` 開頭為容器；非標量扁平名為結構體。
+; isContainerOrStructElem 鏡像——`[` 開頭為容器；非標量扁平名為結構體。
 ps-is-comp-elem = (e str) (r i64) {
     r = 0
     n = e.len-bytes()
@@ -8771,7 +8771,7 @@ ps-is-comp-elem = (e str) (r i64) {
     }
 }
 
-; ps-is-digits：字串是否全為數字（判 `[N]X` vs `[K]V`）。
+; 字串是否全為數字（判 `[N]X` vs `[K]V`）。
 ps-is-digits = (s str) (r i64) {
     r = 0
     n = s.len-bytes()
@@ -8793,7 +8793,7 @@ ps-is-digits = (s str) (r i64) {
     }
 }
 
-; ps-mk-zero-comp：複合零值分派（Go zeroValueLiteralFor）。
+; 複合零值分派（Go zeroValueLiteralFor）。
 ;   []X→空slice / [N]X→零陣列 / [K]V→空map / 結構體→零struct。
 ps-mk-zero-comp = (t ast, elem str) (idx i64) {
     idx = 0
@@ -8807,7 +8807,7 @@ ps-mk-zero-comp = (t ast, elem str) (idx i64) {
     exsh == 0 -> idx = ps-mk-zero-struct(t, elem); 結構體
 }
 
-; ps-mk-def-lit：依元素型別 + index-out 值建 DEF 字面量（回 0=不支援⇒跳過降糖）。
+; 依元素型別 + index-out 值建 DEF 字面量（回 0=不支援⇒跳過降糖）。
 ;   對齊 Go defaultLiteralFor（標量+複合）+ scalarZeroLiteral。
 ps-mk-def-lit = (t ast, elem str, iv str, iv-ty i64) (idx i64) {
     idx = 0
@@ -8871,7 +8871,7 @@ ps-mk-def-lit = (t ast, elem str, iv str, iv-ty i64) (idx i64) {
     }
 }
 
-; ps-build-idxout：建構安全索引讀形的 BlockStatement（形見 ps-apply-index-out 頂註）。
+; 建構安全索引讀形的 BlockStatement（形見 ps-apply-index-out 頂註）。
 ;   def-none= none 臂 DEF、def-pre= 預宣告 DEF（兩份獨立節點，避免共享）。
 ;   need-pre= 是否建預宣告（Go lowering.go:1676：VarTypes[name]=='' 才建）。
 ps-build-idxout = (t ast, name str, tmp-name str, elem str, idx-expr i64, def-none i64, def-pre i64, need-pre i64) (out i64) {
@@ -8923,7 +8923,7 @@ ps-build-idxout = (t ast, name str, tmp-name str, elem str, idx-expr i64, def-no
     out
 }
 
-; ps-build-idxout-w：建構安全索引寫形的 BlockStatement（`LHS = arr[i]` + `#{index-out=DEF}`）。
+; 建構安全索引寫形的 BlockStatement（`LHS = arr[i]` + `#{index-out=DEF}`）。
 ;   ok 臂：ExpressionStatement{AssignExpression{lval, it}}（解箱元素寫入 LHS）
 ;   none 臂：ExpressionStatement{AssignExpression{lval, DEF}}
 ;   無預宣告（LHS 是既有 lvalue），count=2。lval 為 LHS 表達式節點索引（共享）。
@@ -8980,7 +8980,7 @@ ps-build-idxout-w = (t ast, lval i64, tmp-name str, elem str, idx-expr i64, def-
     out
 }
 
-; ps-idx-elem-d：降糖路徑的元素型別推斷（Go inferIndexElemType → containerElemType）。
+; 降糖路徑的元素型別推斷（Go inferIndexElemType → containerElemType）。
 ;   與 ps-idx-elem-of 的差異：额外处理 str/txt → char（D6 2026-10-13）。
 ;   仅用于 ps-apply-index-out，不用于 ps-parse-let 的型別登记（Go stmt.go 不映射）。
 ps-idx-elem-d = (ty str) (r str) {
@@ -8996,7 +8996,7 @@ ps-idx-elem-d = (ty str) (r str) {
     r = ps-idx-elem-of(ty)
 }
 
-; ps-tv-recv-elem：to-vec 接收者型別 → 元素型別（Go toVecElemType 尾步：
+; to-vec 接收者型別 → 元素型別（Go toVecElemType 尾步：
 ;   containerElemType(TrimPrefix(recv-type, "?"))）。先剝 `?` 前綴再走
 ;   ps-idx-elem-d（str/txt→char + []X/[N]X，同 containerElemType 口徑）。
 ;   ⚠️ 全程以 ty【參數】為 .byte() 接收者（ps.no 巨型模組 str.byte 陷阱）。
@@ -9020,7 +9020,7 @@ ps-tv-recv-elem = (ty str) (r str) {
     r = ps-idx-elem-d(ty)
 }
 
-; ps-dot-recv-name：`a` / `a.field` 接收者表達式最左識別符名（Go dotReceiverName）。
+; `a` / `a.field` 接收者表達式最左識別符名（Go dotReceiverName）。
 ps-dot-recv-name = (t ast, node i64) (nm str) {
     nm = ''
     node > 0 -> {
@@ -9037,7 +9037,7 @@ ps-dot-recv-name = (t ast, node i64) (nm str) {
     }
 }
 
-; ps-to-vec-elem：`X.to-vec()` / `X.to-vec` RHS → 容器元素型別（Go toVecElemType，
+; `X.to-vec()` / `X.to-vec` RHS → 容器元素型別（Go toVecElemType，
 ;   lowering.go:811-840）。非 to-vec 形 / 接收者型別未知 ⇒ ''。鏈式
 ;   （bv=b.to-vec(); cv=bv.to-vec()）靠 ps-var-type 查到先前 to-vec 登記的
 ;   `[]elem`，再取其元素。
@@ -9071,7 +9071,7 @@ ps-to-vec-elem = (t ast, p psst, val i64) (r str) {
     }
 }
 
-; ps-apply-index-out：安全索引降糖主入口（鏡像 Go maybeIndexOutAssign，lowering.go:1558）。
+; 安全索引降糖主入口（鏡像 Go maybeIndexOutAssign，lowering.go:1558）。
 ;   讀形（LetStatement 非 synthetic、value=IndexExpression、base=Identifier）+ 寫形
 ;   （ExpressionStatement{AssignExpression} 非 Identifier LHS、value=IndexExpression）。
 ;   命中時回傳取代的 BlockStatement，否則原樣回傳。
@@ -9145,7 +9145,7 @@ ps-apply-index-out = (t ast, p psst, stmt-idx i64, iv str, iv-ty i64, ln i64, cl
     }
 }
 
-; ps-parse-match：解析 `subj: { pat -> body … }` 的**臂區**（已消費 `:` 與 `{`），
+; 解析 `subj: { pat -> body … }` 的**臂區**（已消費 `:` 與 `{`），
 ;   停在閉合 `}` 前（呼叫端 ps-expect(RBRACE)）。desugar 為 if/else 鏈：
 ;   • 非 wildcard 臂：cond = subj==pat，consequence = 臂區塊（先塞 it 合成綁定）
 ;   • wildcard `_` 或裸 `->`（尾隨無型樣臂＝else）：其區塊直接作前一 if 的 alternative

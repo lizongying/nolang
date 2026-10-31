@@ -23,7 +23,7 @@
 # /compiler/src/ps
 # /compiler/src/ck
 
-; ck-run：源碼串 ⇒ 診斷 vec（path 固定中性 '/tmp/t.no' ⇒ curModule=''）
+; 源碼串 ⇒ 診斷 vec（path 固定中性 '/tmp/t.no' ⇒ curModule=''）
 ; ⚠️ ps.parse 返回值必須捕獲後顯式丟棄（裸語句調用觸發 bug #85 NoVal，實測）
 ck-run = (src str) (out []str) {
     t = ast.make()
@@ -33,7 +33,7 @@ ck-run = (src str) (out []str) {
     out = ck.check(t, '/tmp/t.no')
 }
 
-; ck-run-in：指定檔案路徑（測 curModule 自模組放行臂）
+; 指定檔案路徑（測 curModule 自模組放行臂）
 ck-run-in = (src str, path str) (out []str) {
     t = ast.make()
     p = ps.new(src.to-bytes())

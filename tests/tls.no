@@ -1,7 +1,7 @@
 ; test-tls — TLS 1.2 客戶端測試
 ; # std/net/tls
 
-; test-tls-put-u16: 測試 16-bit 大端序寫入
+; 測試 16-bit 大端序寫入
 test-tls-put-u16 = () {
     buf []byte
     tls.put-u16(buf, 0, 0x1234)
@@ -16,7 +16,7 @@ test-tls-put-u16 = () {
     print('PASS: tls-put-u16')
 }
 
-; test-tls-get-u16: 測試 16-bit 大端序讀取
+; 測試 16-bit 大端序讀取
 test-tls-get-u16 = () {
     buf []byte = with-cap(2)
     buf[0] = 0xab
@@ -30,7 +30,7 @@ test-tls-get-u16 = () {
     print('PASS: tls-get-u16')
 }
 
-; test-tls-put-u24: 測試 24-bit 大端序寫入
+; 測試 24-bit 大端序寫入
 test-tls-put-u24 = () {
     buf []byte
     tls.put-u24(buf, 0, 0x123456)
@@ -49,7 +49,7 @@ test-tls-put-u24 = () {
     print('PASS: tls-put-u24')
 }
 
-; test-tls-get-u24: 測試 24-bit 大端序讀取
+; 測試 24-bit 大端序讀取
 test-tls-get-u24 = () {
     buf []byte = with-cap(3)
     buf[0] = 0x12
@@ -64,7 +64,7 @@ test-tls-get-u24 = () {
     print('PASS: tls-get-u24')
 }
 
-; test-tls-bytes-cat: 測試位元組陣列串接
+; 測試位元組陣列串接
 test-tls-bytes-cat = () {
     a []byte = with-cap(3)
     a[0] = 1
@@ -90,7 +90,7 @@ test-tls-bytes-cat = () {
     print('PASS: tls-bytes-cat')
 }
 
-; test-tls-bytes-to-bn: 測試 big-endian 位元組 → 大整數轉換
+; 測試 big-endian 位元組 → 大整數轉換
 test-tls-bytes-to-bn = () {
     data []byte = with-cap(4)
     data[0] = 0x01
@@ -114,7 +114,7 @@ test-tls-bytes-to-bn = () {
     print('PASS: tls-bytes-to-bn')
 }
 
-; test-tls-bn-to-bytes: 測試大整數 → big-endian 位元組轉換
+; 測試大整數 → big-endian 位元組轉換
 test-tls-bn-to-bytes = () {
     num []i64 = with-cap(1)
     num[0] = 0x01020304
@@ -137,7 +137,7 @@ test-tls-bn-to-bytes = () {
     print('PASS: tls-bn-to-bytes')
 }
 
-; test-tls-rand-bytes: 測試隨機位元組生成
+; 測試隨機位元組生成
 test-tls-rand-bytes = () {
     state = 12345
     out []byte
@@ -153,7 +153,7 @@ test-tls-rand-bytes = () {
     print('PASS: tls-rand-bytes')
 }
 
-; test-tls-prf: 測試 TLS PRF（P_SHA256）
+; 測試 TLS PRF（P_SHA256）
 test-tls-prf = () {
     secret []byte = with-cap(4)
     secret[0] = 1
@@ -179,7 +179,7 @@ test-tls-prf = () {
     print('PASS: tls-prf')
 }
 
-; test-tls-conn-init: 測試 tls.conn 初始化
+; 測試 tls.conn 初始化
 test-tls-conn-init = () {
     c tls.conn
     c.init()
@@ -202,7 +202,7 @@ test-tls-conn-init = () {
     print('PASS: tls-conn-init')
 }
 
-; test-https-url-detection: 測試 http-do 的 https:// 偵測（編譯時驗證）
+; 測試 http-do 的 https:// 偵測（編譯時驗證）
 test-https-url-detection = () {
 
     ; 這個測試僅驗證 https:// URL 能被 http-do 接受（不會因 scheme 不匹配而 return）

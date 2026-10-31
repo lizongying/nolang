@@ -17047,7 +17047,7 @@ ck-sig-fill-bo = (t ck-sig) {
 
 ; ── 查找層 ──
 
-; ck-sig-str-at：str 欄位安全取值。⚠️ 不用 []t.at——外掛 receiver 的泛型容器方法
+; str 欄位安全取值。⚠️ 不用 []t.at——外掛 receiver 的泛型容器方法
 ; 單態化在當代 Go 工具鏈報 'EmitLLVM: unknown callee []t.at'（實測）；索引讀回
 ; ?str、三 tag 臂顯式窮盡（裸 -> 尾臂在 ok 走過還會再觸發——match 塊非排他）。
 ck-sig-str-at = (v []str, i i64) (r str) {
@@ -17066,7 +17066,7 @@ ck-sig-str-at = (v []str, i i64) (r str) {
     }
 }
 
-; ck-sig-lt：ASCII 逐字节字典序比较；a < b ⇒ 1，否则 0。
+; ASCII 逐字节字典序比较；a < b ⇒ 1，否则 0。
 ; 全表键值实测纯 ASCII，故 byte 序 == Go string 排序。
 ; ⚠️ 工具链 bug（实测钉死）：`x = recv.call(): {match块}` 内联形——match 块直接挂在
 ;    调用表达式之后——所得 x 在后续关系比较臂中恒假（区域变量/函数内均复现）；
@@ -17107,7 +17107,7 @@ ck-sig-lt = (a str, b str) (lt i64) {
     }
 }
 
-; ck-sig-bsearch：升序键表二分；命中回下标，未命中回 -1。
+; 升序键表二分；命中回下标，未命中回 -1。
 ; 三條件臂互斥（lt 兩向 + eq），順序求值無串臂風險；鍵表無空串⇒miss 恒 -1。
 ck-sig-bsearch = (keys []str, name str) (idx i64) {
     idx = -1
@@ -17160,7 +17160,7 @@ ck-sig-find-module = (t ck-sig, name str) (idx i64) {
     idx = ck-sig-bsearch(t.mok, name)
 }
 
-; ck-sig-bare：裸名门表查询（s13 not-defined 族）。单串打包回值（SHS 单 out 约束）：
+; 裸名门表查询（s13 not-defined 族）。单串打包回值（SHS 单 out 约束）：
 ;   '-'          ⇒ 表内沉默名（oracle 经 exports/builtin/multiOwner 放行）
 ;   '@'          ⇒ 完全不在表内 ⇒ 裸 not defined（无提示）
 ;   owner - '&' - bo ⇒ 门控名；owner 段 = bv（提示模块，可空——无 unique owner 如
@@ -17180,7 +17180,7 @@ ck-sig-bare = (t ck-sig, name str) (r str) {
     }
 }
 
-; ck-sig-types：逗号串 ⇒ 型串 vec；'' ⇒ 空 vec。
+; 逗号串 ⇒ 型串 vec；'' ⇒ 空 vec。
 ck-sig-types = (s str) (r []str) {
     r []str = with-cap(2)
     s.len-bytes() > 0 -> {

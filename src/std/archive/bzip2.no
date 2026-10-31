@@ -25,7 +25,8 @@ bz-bit-reader {
     bit-cnt i64
 }
 
-; read-bit: 讀取一個位元（MSB-first），越界返回 0
+; 讀取一個位元（MSB-first），越界返回 0
+; [read-bit](#archive.bzip2.bz-bit-reader.read-bit)
 bz-bit-reader.read-bit = () (bit i64) {
     bit = 0
     {
@@ -49,7 +50,8 @@ bz-bit-reader.read-bit = () (bit i64) {
     }
 }
 
-; read-bits: 讀取 n 個位元（MSB-first）
+; 讀取 n 個位元（MSB-first）
+; [read-bits](#archive.bzip2.bz-bit-reader.read-bits)
 bz-bit-reader.read-bits = (n i64) (v i64) {
     v = 0
     i <- [0..n): {
@@ -79,7 +81,8 @@ bz-huffman {
     max-len i64
 }
 
-; build: 從碼長度陣列建構 Huffman 碼表
+; 從碼長度陣列建構 Huffman 碼表
+; [build](#archive.bzip2.bz-huffman.build)
 bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..24): {
 
@@ -167,7 +170,8 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     }
 }
 
-; decode: 解碼一個符號
+; 解碼一個符號
+; [decode](#archive.bzip2.bz-huffman.decode)
 bz-huffman.decode = (br bz-bit-reader) (sym i64) {
 
     sym = -1
@@ -206,6 +210,7 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
 
 ; 修正: 正確的符號計算
 ; sym = perm[zvec - base[zn]]
+; [decode-symbol](#archive.bzip2.bz-huffman.decode-symbol)
 bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
 
     sym = -1
@@ -241,9 +246,10 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
 ; BZIP2 解壓縮
 ; ═══════════════════════════════════════════════
 
-; bzip2-decompress: 解壓縮 bzip2 格式的資料
+; 解壓縮 bzip2 格式的資料
 ;   data: bzip2 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
+; [bzip2-decompress](#archive.bzip2.bzip2-decompress)
 bzip2-decompress = (data []byte) (out []byte) {
 
     ; 檢查標頭: "BZh" + block_size_char
@@ -752,11 +758,12 @@ bzip2-decompress = (data []byte) (out []byte) {
 ; BZIP2 壓縮（基本實現 — RLE1 + stored block）
 ; ═══════════════════════════════════════════════
 
-; bzip2-compress: 使用 bzip2 格式壓縮資料
+; 使用 bzip2 格式壓縮資料
 ;   data: 原始資料 ([]byte)
 ;   out: bzip2 壓縮後的資料 ([]byte)
 ; 注意：目前使用 stored block 的基本實現，
 ;       完整 BWT + MTF + Huffman 壓縮待後續實現。
+; [bzip2-compress](#archive.bzip2.bzip2-compress)
 bzip2-compress = (data []byte) (out []byte) {
 
     ; BZIP2 標頭: "BZh9"

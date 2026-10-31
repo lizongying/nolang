@@ -7,13 +7,13 @@
 ; 常量
 ; ═══════════════════════════════════════════════
 
-; VERSION-4: UUID 版本 4（隨機）
+; UUID 版本 4（隨機）
 VERSION-4 = 4
 
-; VARIANT-RFC4122: RFC 4122 變體
+; RFC 4122 變體
 VARIANT-RFC4122 = 2
 
-; HEX: 小寫十六進制字元表
+; 小寫十六進制字元表
 HEX = '0123456789abcdef'
 
 ; ═══════════════════════════════════════════════
@@ -29,8 +29,9 @@ uuid {
 ; 生成
 ; ═══════════════════════════════════════════════
 
-; new-v4: 生成隨機 UUID v4
+; 生成隨機 UUID v4
 ; state: xorshift32 狀態（輸入/輸出，初始為非零種子）
+; [new-v4](#uuid.new-v4)
 new-v4 = (state i64) (out uuid) {
 
     ; 生成 16 個隨機位元組（每次 rand 產生 4 位元組）
@@ -70,9 +71,10 @@ new-v4 = (state i64) (out uuid) {
 ; 格式化
 ; ═══════════════════════════════════════════════
 
-; to-str: 將 UUID 格式化為標準字串
+; 將 UUID 格式化為標準字串
 ; 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小寫）
 ; 返回 out str: UUID 字串
+; [to-str](#uuid.to-str)
 uuid.to-str = () (out str) {
 
     ; 8-4-4-4-12 格式
@@ -128,7 +130,8 @@ uuid.to-str = () (out str) {
     hex-byte(.bytes[15], 34, out)
 }
 
-; hex-byte: 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
+; 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
+; [hex-byte](#uuid.hex-byte)
 hex-byte = (b byte, pos i64, out str) {
 
     out[pos]: {
@@ -145,8 +148,9 @@ hex-byte = (b byte, pos i64, out str) {
     }
 }
 
-; to-str-upper: 將 UUID 格式化為大寫字串
+; 將 UUID 格式化為大寫字串
 ; 返回 out str: UUID 大寫字串
+; [to-str-upper](#uuid.to-str-upper)
 uuid.to-str-upper = () (out str) {
     out = with-len(36)
     hex-u = '0123456789ABCDEF'
@@ -192,7 +196,8 @@ uuid.to-str-upper = () (out str) {
     hex-byte-upper(.bytes[15], 34, out, hex-u)
 }
 
-; hex-byte-upper: 大寫 hex 位元組寫入
+; 大寫 hex 位元組寫入
+; [hex-byte-upper](#uuid.hex-byte-upper)
 hex-byte-upper = (b byte, pos i64, out str, table str) {
 
     out[pos]: {
@@ -213,11 +218,12 @@ hex-byte-upper = (b byte, pos i64, out str, table str) {
 ; 解析
 ; ═══════════════════════════════════════════════
 
-; from-str: 從字串解析 UUID
+; 從字串解析 UUID
 ; 支援帶連字號（36 字元）和不帶連字號（32 字元）格式
 ; s str: UUID 字串
 ; out uuid: 輸出 UUID
 ; 返回 ok bool: true=解析成功
+; [from-str](#uuid.from-str)
 from-str = (s str, out uuid) (ok bool) {
     ok = false
 
@@ -236,7 +242,8 @@ from-str = (s str, out uuid) (ok bool) {
     }
 }
 
-; parse-with-dashes: 解析帶連字號的 UUID
+; 解析帶連字號的 UUID
+; [parse-with-dashes](#uuid.parse-with-dashes)
 parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
     ok = true
@@ -510,7 +517,8 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     out.bytes[15] = v15
 }
 
-; parse-no-dashes: 解析不帶連字號的 UUID
+; 解析不帶連字號的 UUID
+; [parse-no-dashes](#uuid.parse-no-dashes)
 parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
     ok = true
     i <- [0..16): {
@@ -526,7 +534,8 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 }
 
-; parse-hex-byte: 從字串解析兩個 hex 字元為一個位元組
+; 從字串解析兩個 hex 字元為一個位元組
+; [parse-hex-byte](#uuid.parse-hex-byte)
 parse-hex-byte = (s str, pos i64) (v i64) {
 
     ; s.byte 回傳 ?byte（越界為 nil）：先兩段式解包成 i64 再交給 hex-val。
@@ -557,7 +566,8 @@ parse-hex-byte = (s str, pos i64) (v i64) {
 ; 驗證
 ; ═══════════════════════════════════════════════
 
-; validate: 驗證 UUID 格式是否合法
+; 驗證 UUID 格式是否合法
+; [validate](#uuid.validate)
 uuid.validate = () (ok bool) {
     ok = true
 
@@ -572,19 +582,22 @@ uuid.validate = () (ok bool) {
     var != 2 -> ok = false
 }
 
-; version: 取得 UUID 版本
+; 取得 UUID 版本
+; [version](#uuid.version)
 uuid.version = () (v i64) {
 
     v = (.bytes[6] >> 4) & 15
 }
 
-; variant: 取得 UUID 變體
+; 取得 UUID 變體
+; [variant](#uuid.variant)
 uuid.variant = () (v i64) {
 
     v = (.bytes[8] >> 6) & 3
 }
 
-; is-nil: 判斷是否為空 UUID（全零）
+; 判斷是否為空 UUID（全零）
+; [is-nil](#uuid.is-nil)
 uuid.is-nil = () (yes bool) {
     yes = true
     i <- [0..16): {
@@ -599,7 +612,8 @@ uuid.is-nil = () (yes bool) {
 ; 比較
 ; ═══════════════════════════════════════════════
 
-; eq: 判斷兩個 UUID 是否相等
+; 判斷兩個 UUID 是否相等
+; [eq](#uuid.eq)
 uuid.eq = (b uuid) (yes bool) {
     yes = true
     i <- [0..16): {
@@ -610,7 +624,8 @@ uuid.eq = (b uuid) (yes bool) {
     }
 }
 
-; cmp: 比較兩個 UUID（字典序）
+; 比較兩個 UUID（字典序）
+; [cmp](#uuid.cmp)
 uuid.cmp = (b uuid) (r i64) {
     r = 0
     i <- [0..16): {
@@ -636,7 +651,8 @@ uuid.cmp = (b uuid) (r i64) {
 ; 輔助
 ; ═══════════════════════════════════════════════
 
-; hex-val: 單個 hex 字元轉數值
+; 單個 hex 字元轉數值
+; [hex-val](#uuid.hex-val)
 hex-val = (c i64) (v i64) {
     v = -1
     {
@@ -662,7 +678,8 @@ hex-val = (c i64) (v i64) {
     }
 }
 
-; nil-uuid: 建立空 UUID（全零）
+; 建立空 UUID（全零）
+; [nil-uuid](#uuid.nil-uuid)
 nil-uuid = (out uuid) {
     i <- [0..16): {
 

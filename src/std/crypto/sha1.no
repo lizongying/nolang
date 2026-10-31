@@ -18,9 +18,10 @@
 ;   h4 = 3285377520
 ;   sha1-block(block, h0, h1, h2, h3, h4)
 
-; sha1-block: 處理一個 512-bit 區塊
+; 處理一個 512-bit 區塊
 ; s []u32: 16 個 32-bit 字 (big-endian)
 ; h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 輸入/輸出 160-bit 哈希狀態
+; [sha1-block](#crypto.sha1.sha1-block)
 sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, r2 u32, r3 u32, r4 u32) {
 
     mask u32 = 4294967295
@@ -1131,9 +1132,10 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     r4 = (h4 + e) & mask
 }
 
-; sha1: 計算 SHA-1 雜湊（含填充與多區塊處理）
+; 計算 SHA-1 雜湊（含填充與多區塊處理）
 ; data []byte: 輸入位元組陣列
 ; 返回 hash [20]byte: 20 位元組雜湊值
+; [sha1](#crypto.sha1.sha1)
 sha1 = (data []byte) (hash [20]byte) {
 
     ; SHA-1 初始狀態
@@ -1262,9 +1264,10 @@ sha1 = (data []byte) (hash [20]byte) {
     hash[19] = h4 & 255
 }
 
-; sha1-hex: 計算 SHA-1 雜湊並返回 hex 字串
+; 計算 SHA-1 雜湊並返回 hex 字串
 ; data []byte: 輸入位元組陣列
 ; 返回 hex str: 40 字元小寫 hex 字串
+; [sha1-hex](#crypto.sha1.sha1-hex)
 sha1-hex = (data []byte) (hex str) {
     hash = sha1(data)
 

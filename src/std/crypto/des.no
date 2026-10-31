@@ -178,9 +178,10 @@ SHIFT-TBL [16]byte = [
 
 ; ─── 位元排列輔助 ──────────────────────────────
 
-; permute: 根據排列表提取位元
+; 根據排列表提取位元
 ; tbl 使用標準 DES 1-indexed MSB 位元編號（1..width）。
 ; width 為輸入位元寬度。輸出為 MSB-first（第 0 個表項 → 最高位）。
+; [permute](#crypto.des.permute)
 permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     r = 0
     i = 0
@@ -197,9 +198,10 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     }
 }
 
-; sbox-lookup: 查詢 S-box
+; 查詢 S-box
 ; input 為 6 位元值（MSB-first），b1 b2 b3 b4 b5 b6。
 ; row = b1*2 + b6，col = b2 b3 b4 b5。
+; [sbox-lookup](#crypto.des.sbox-lookup)
 sbox-lookup = (input i64, box []byte) (r i64) {
 
     v = input & 63
@@ -214,7 +216,8 @@ sbox-lookup = (input i64, box []byte) (r i64) {
 
 ; ─── Feistel 輪函數 ──────────────────────────────
 
-; f: DES 輪函數
+; DES 輪函數
+; [f](#crypto.des.f)
 f = (r i64, k i64) (out i64) {
     er = 0
     s0 = 0
@@ -249,7 +252,8 @@ f = (r i64, k i64) (out i64) {
 
 ; ─── 金鑰排程 ──────────────────────────────────────
 
-; des-key-schedule: 產生 16 個 48-bit 子金鑰
+; 產生 16 個 48-bit 子金鑰
+; [des-key-schedule](#crypto.des.des-key-schedule)
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i <- [0..8): {
@@ -310,7 +314,8 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 
 ; ─── 單區塊加密/解密 ──────────────────────────────
 
-; des-block: DES 單區塊處理（通用）
+; DES 單區塊處理（通用）
+; [des-block](#crypto.des.des-block)
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
@@ -359,14 +364,16 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     }
 }
 
-; des-enc: 加密一個 8-byte 區塊
+; 加密一個 8-byte 區塊
+; [des-enc](#crypto.des.des-enc)
 des-enc = (in []byte, n i64, key [8]byte) (out []byte) {
     ks [96]byte
     ks = des-key-schedule(key)
     out = des-block(in, n, ks, 1)
 }
 
-; des-dec: 解密一個 8-byte 區塊
+; 解密一個 8-byte 區塊
+; [des-dec](#crypto.des.des-dec)
 des-dec = (in []byte, n i64, key [8]byte) (out []byte) {
     ks [96]byte
     ks = des-key-schedule(key)

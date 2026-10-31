@@ -9,7 +9,7 @@
 
 # /test/runner
 
-; fbits: 解析字串、拆開 option、取出 IEEE-754 位元模式
+; 解析字串、拆開 option、取出 IEEE-754 位元模式
 fbits = (s str) (b u64) {
     v = s.to-f64()
     f f64 = v: {

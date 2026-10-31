@@ -8,7 +8,7 @@ key-holder {
     shared [32]byte
 }
 
-; parse-hex-into: 將 hex 字串解析到結構體欄位
+; 將 hex 字串解析到結構體欄位
 ; hex-str str: hex 字串
 ; target: 目標 key-holder
 parse-hex-into = (hex-str str, target key-holder) {
@@ -54,7 +54,7 @@ parse-hex-into = (hex-str str, target key-holder) {
     }
 }
 
-; test-dh: 測試 DH 金鑰交換 — 使用 RFC 7748 測試向量
+; 測試 DH 金鑰交換 — 使用 RFC 7748 測試向量
 test-dh = () (pass bool) {
     pass = false
 

@@ -58,6 +58,7 @@ str.gt = (b str) (res bool) {
 }
 
 ; [n]ord.asc: 升序原地排序（插入排序）
+; [asc](#arrords.asc)
 [n]ord.asc = () {
     i <- [1..n): {
 
@@ -82,6 +83,7 @@ str.gt = (b str) (res bool) {
 }
 
 ; [n]ord.desc: 降序原地排序（插入排序）
+; [desc](#arrords.desc)
 [n]ord.desc = () {
     i <- [1..n): {
 
@@ -106,6 +108,7 @@ str.gt = (b str) (res bool) {
 }
 
 ; []ord.asc: 升序原地排序（插入排序）
+; [asc](#ords.asc)
 []ord.asc = () {
     sz = .len()
     i <- [1..sz): {
@@ -131,6 +134,7 @@ str.gt = (b str) (res bool) {
 }
 
 ; []ord.desc: 降序原地排序（插入排序）
+; [desc](#ords.desc)
 []ord.desc = () {
     sz = .len()
     i <- [1..sz): {

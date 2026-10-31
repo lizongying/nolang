@@ -46,7 +46,7 @@ mk-opt = () (out ?outer) {
     out = d
 }
 
-; get-child: 從借用來的參數建一個子視圖，交還給呼叫方
+; 從借用來的參數建一個子視圖，交還給呼叫方
 get-child = (obj outer, i i64) (c ?outer) {
     c = outer {
         p: obj.p

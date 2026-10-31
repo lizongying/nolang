@@ -92,26 +92,29 @@ json {
 ; 初始化
 ; ═══════════════════════════════════════════════
 
-; new: 建立一個空的 json 值（null）
+; 建立一個空的 json 值（null）
 ; 用法：
 ;   j = new()
 ;   j.set('key', 'value')
 ;   s = j.stringify()
+; [new](#json.new)
 new = () (j json) {
     j.root = -1
     j.pool.init()
 }
 
-; new-pool: 建立並初始化一個 json-pool（低級 API）
+; 建立並初始化一個 json-pool（低級 API）
 ; 用法：
 ;   p = new-pool()
 ;   root, next, ok = p.parse('{"key":"value"}', 0)
+; [new-pool](#json.new-pool)
 new-pool = () (p json-pool) {
     p = json-pool {}
     p.init()
 }
 
-; init: 初始化節點池（堆 vec 需在使用前先初始化為非 nil，方能安全 push）
+; 初始化節點池（堆 vec 需在使用前先初始化為非 nil，方能安全 push）
+; [init](#json.json-pool.init)
 json-pool.init = () {
     .nodes = with-len(0)
     .strs = with-len(0)
@@ -124,7 +127,8 @@ json-pool.init = () {
     .id = JSON-POOL-NEXT-ID + 1
 }
 
-; alloc: 分配新節點，返回索引（堆 vec 自動擴容，不再有池滿上限）
+; 分配新節點，返回索引（堆 vec 自動擴容，不再有池滿上限）
+; [alloc](#json.json-pool.alloc)
 json-pool.alloc = () (idx i64) {
     idx = .nodes.len()
     v json-value
@@ -141,8 +145,9 @@ json-pool.alloc = () (idx i64) {
     .count = .count + 1
 }
 
-; add-child: 將子節點 child-idx（鍵名 key，陣列傳空字串）附加到節點 node-idx
+; 將子節點 child-idx（鍵名 key，陣列傳空字串）附加到節點 node-idx
 ; 以邊表單向鏈表實作可變長子元素，無每節點上限
+; [add-child](#json.json-pool.add-child)
 json-pool.add-child = (node-idx i64, child-idx i64, key str) {
     e = .ec.len()
     .ec.push(child-idx)
@@ -171,8 +176,9 @@ json-pool.add-child = (node-idx i64, child-idx i64, key str) {
 ; 剖析
 ; ═══════════════════════════════════════════════
 
-; parse: 從字串位置 pos 剖析 JSON 值
+; 從字串位置 pos 剖析 JSON 值
 ; 返回 node-idx=根節點索引, next-pos=下一位置, ok=成功
+; [parse](#json.json-pool.parse)
 json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     ok = false
     node-idx = -1
@@ -421,7 +427,8 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     }
 }
 
-; skip-ws: 跳過空白字元
+; 跳過空白字元
+; [skip-ws](#json.json-pool.skip-ws)
 json-pool.skip-ws = (s str, pos i64) (p i64) {
     p <- [pos..s.len-bytes()): {
 
@@ -430,7 +437,8 @@ json-pool.skip-ws = (s str, pos i64) (p i64) {
     }
 }
 
-; parse-str: 解析 JSON 字串（從開引號開始）
+; 解析 JSON 字串（從開引號開始）
+; [parse-str](#json.json-pool.parse-str)
 json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
 
     ; D1：`+` 的結果恆為 `?i64`。`i` 在本函式全程是普通游標（`i = i + 1` 多處），
@@ -508,7 +516,8 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     }
 }
 
-; parse-num: 解析 JSON 數字
+; 解析 JSON 數字
+; [parse-num](#json.json-pool.parse-num)
 json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     i = pos
     c = 0
@@ -624,14 +633,16 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
 ; 物件存取
 ; ═══════════════════════════════════════════════
 
-; str-eq: 比較兩個 str 是否相等
+; 比較兩個 str 是否相等
 ; 使用 str.eq-full 統一實作
+; [str-eq](#json.json-pool.str-eq)
 json-pool.str-eq = (a str, b str) (eq i64) {
     a.eq-full(b) -> eq = 1
 }
 
-; get-key: 從物件節點取得鍵對應的子節點索引
+; 從物件節點取得鍵對應的子節點索引
 ; 返回 val-idx=子節點索引, ok=找到
+; [get-key](#json.json-pool.get-key)
 json-pool.get-key = (obj-idx i64, key str) (val-idx ?i64) {
     obj-idx < 0 || obj-idx >= .count -> return
     .nodes[obj-idx].kind != JSON-KIND-OBJ -> {
@@ -653,8 +664,9 @@ json-pool.get-key = (obj-idx i64, key str) (val-idx ?i64) {
     }
 }
 
-; set-key: 在物件節點設定鍵值
+; 在物件節點設定鍵值
 ; 返回 ok=成功
+; [set-key](#json.json-pool.set-key)
 json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     ok = false
     obj-idx < 0 || obj-idx >= .count -> return
@@ -682,7 +694,7 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     ok = true
 }
 
-; copy-tree: 将 src 池中 node-idx 为根的整棵子树深拷贝进接收者池。
+; 将 src 池中 node-idx 为根的整棵子树深拷贝进接收者池。
 ; 返回 dst-idx: 新节点索引（-1=失败）
 ;
 ; 前提：接收者池必须与 src **不是同一个池**。src 以 json-pool 值快照传入，其
@@ -695,6 +707,7 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
 ;   - json-clone-tree：接收者是剛 init 的全新池；
 ;   - json.set-key：先把 val 拷进臨時新池（json-clone-tree），再从中轉池直拷
 ;     进接收者，兩次拷貝的兩端都必不同池，自引用也安全。
+; [copy-tree](#json.json-pool.copy-tree)
 json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
     dst-idx = -1
     node-idx < 0 || node-idx >= src.count -> return
@@ -730,8 +743,9 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
 ; 陣列存取
 ; ═══════════════════════════════════════════════
 
-; arr-get: 從陣列節點取得指定索引的子節點
+; 從陣列節點取得指定索引的子節點
 ; 返回 val-idx=子節點索引, ok=成功
+; [arr-get](#json.json-pool.arr-get)
 json-pool.arr-get = (arr-idx i64, elem i64) (val-idx ?i64) {
     arr-idx < 0 || arr-idx >= .count -> return
     .nodes[arr-idx].kind != JSON-KIND-ARR -> {
@@ -753,7 +767,8 @@ json-pool.arr-get = (arr-idx i64, elem i64) (val-idx ?i64) {
     val-idx = .ec[e]
 }
 
-; arr-len: 取得陣列長度
+; 取得陣列長度
+; [arr-len](#json.json-pool.arr-len)
 json-pool.arr-len = (arr-idx i64) (n i64) {
     n = 0
     arr-idx < 0 || arr-idx >= .count -> return
@@ -769,7 +784,8 @@ json-pool.arr-len = (arr-idx i64) (n i64) {
 ; 標量存取
 ; ═══════════════════════════════════════════════
 
-; get-kind: 取得節點類型
+; 取得節點類型
+; [get-kind](#json.json-pool.get-kind)
 json-pool.get-kind = (node-idx i64) (kind i64) {
     kind = JSON-KIND-NULL
     node-idx < 0 || node-idx >= .count -> return
@@ -777,8 +793,9 @@ json-pool.get-kind = (node-idx i64) (kind i64) {
     kind = .nodes[node-idx].kind
 }
 
-; get-str: 取得字串值
+; 取得字串值
 ; 返回 out=字串副本, ok=成功
+; [get-str](#json.json-pool.get-str)
 json-pool.get-str = (node-idx i64) (out ?str) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-STR -> {
@@ -789,7 +806,8 @@ json-pool.get-str = (node-idx i64) (out ?str) {
     out = .strs[node-idx].copy()
 }
 
-; get-num: 取得數值
+; 取得數值
+; [get-num](#json.json-pool.get-num)
 json-pool.get-num = (node-idx i64) (val ?f64) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-NUM -> {
@@ -800,8 +818,9 @@ json-pool.get-num = (node-idx i64) (val ?f64) {
     val = .nodes[node-idx].num-val
 }
 
-; get-bool: 取得布林值
+; 取得布林值
 ; 返回 val=布林值, ok=成功
+; [get-bool](#json.json-pool.get-bool)
 json-pool.get-bool = (node-idx i64) (val ?bool) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-BOOL -> {
@@ -816,8 +835,9 @@ json-pool.get-bool = (node-idx i64) (val ?bool) {
 ; 序列化
 ; ═══════════════════════════════════════════════
 
-; stringify: 將節點序列化為字串
+; 將節點序列化為字串
 ; 返回 out str: 序列化後的字串
+; [stringify](#json.json-pool.stringify)
 json-pool.stringify = (node-idx i64) (out str) {
     out = ''
     node-idx < 0 || node-idx >= .count -> return
@@ -943,7 +963,7 @@ json-pool.stringify = (node-idx i64) (out str) {
 ;           name, found = it.get-str('name')
 ;       }
 ;   }
-; json-clone-tree: 把 src 池中以 idx 为根的子树深拷贝到一个全新的独立池，
+; 把 src 池中以 idx 为根的子树深拷贝到一个全新的独立池，
 ; 返回持有该子树根的新 json。供 json.get / json.arr-get / json.get-key 等
 ; 「取子句柄」接口使用：返回体与源 json 不共享底层 vec 缓冲区。
 ;
@@ -953,13 +973,15 @@ json-pool.stringify = (node-idx i64) (out str) {
 ; data 缓冲；一旦任一 handle 触发 vec realloc，另一 handle 的 vec 头即指向已
 ; 释放的旧缓冲 → 悬垂读（stringify 返回 null / 数据错乱）。改为独立深拷贝后，
 ; 双方的 alloc/扩容各写自有缓冲，互不影响。
+; [json-clone-tree](#json.json-clone-tree)
 json-clone-tree = (src json-pool, idx i64) (out json) {
     out.pool.init()
     out.root = out.pool.copy-tree(src, idx)
 }
 
-; json.get-key: 全局函数 — 从 json 对象中按键获取子节点
+; 全局函数 — 从 json 对象中按键获取子节点
 ; 返回 child ?json: 子节点（nil 表示不存在）
+; [get-key](#json.get-key)
 json.get-key = (obj json, key str) (child ?json) {
     child = nil
     obj.root < 0 -> return
@@ -1004,28 +1026,31 @@ json.parse = (s str) (result ?json) {
     result = j
 }
 
-; json.stringify: 將 JSON 值序列化為字串
+; 將 JSON 值序列化為字串
 ; 返回 out: JSON 字串
 ; 用法：
 ;   j = new()
 ;   s = j.stringify()
+; [stringify](#json.stringify)
 json.stringify = () (out str) {
     out = ''
     .root < 0 -> return
     out = .pool.stringify(.root)
 }
 
-; json.overflowed: 最近一次操作是否因池容量耗盡而失敗
+; 最近一次操作是否因池容量耗盡而失敗
 ; 供 set / arr-push 等回傳 bool 的方法在返回 false 後區分「溢出」與「其他失敗」
 ; 用法：
 ;   ok = j.set('k', v)
 ;   ok == false && j.overflowed() -> print('pool full')
+; [overflowed](#json.overflowed)
 json.overflowed = () (yes bool) {
     yes = .pool.overflowed
 }
 
-; json.is-null: 判斷是否為 null
+; 判斷是否為 null
 ; 返回 yes: 是否為 null
+; [is-null](#json.is-null)
 json.is-null = () (yes bool) {
     yes = false
     .root < 0 -> {
@@ -1036,7 +1061,8 @@ json.is-null = () (yes bool) {
     yes = k == JSON-KIND-NULL
 }
 
-; json.is-obj: 判斷是否為物件
+; 判斷是否為物件
+; [is-obj](#json.is-obj)
 json.is-obj = () (yes bool) {
     yes = false
     .root < 0 -> return
@@ -1044,7 +1070,8 @@ json.is-obj = () (yes bool) {
     yes = k == JSON-KIND-OBJ
 }
 
-; json.is-arr: 判斷是否為陣列
+; 判斷是否為陣列
+; [is-arr](#json.is-arr)
 json.is-arr = () (yes bool) {
     yes = false
     .root < 0 -> return
@@ -1052,7 +1079,8 @@ json.is-arr = () (yes bool) {
     yes = k == JSON-KIND-ARR
 }
 
-; json.is-str: 判斷是否為字串
+; 判斷是否為字串
+; [is-str](#json.is-str)
 json.is-str = () (yes bool) {
     yes = false
     .root < 0 -> return
@@ -1060,7 +1088,8 @@ json.is-str = () (yes bool) {
     yes = k == JSON-KIND-STR
 }
 
-; json.is-num: 判斷是否為數字
+; 判斷是否為數字
+; [is-num](#json.is-num)
 json.is-num = () (yes bool) {
     yes = false
     .root < 0 -> return
@@ -1068,7 +1097,8 @@ json.is-num = () (yes bool) {
     yes = k == JSON-KIND-NUM
 }
 
-; json.is-bool: 判斷是否為布林值
+; 判斷是否為布林值
+; [is-bool](#json.is-bool)
 json.is-bool = () (yes bool) {
     yes = false
     .root < 0 -> return
@@ -1076,8 +1106,9 @@ json.is-bool = () (yes bool) {
     yes = k == JSON-KIND-BOOL
 }
 
-; json.kind: 取得節點類型
+; 取得節點類型
 ; 返回 JSON kind 常量值
+; [kind](#json.kind)
 json.kind = () (k i64) {
     k = JSON-KIND-NULL
     .root < 0 -> return
@@ -1088,7 +1119,7 @@ json.kind = () (k i64) {
 ; 物件操作
 ; ═══════════════════════════════════════════════
 
-; json.get: 從物件取得子節點作為 json
+; 從物件取得子節點作為 json
 ; child 是 json 自身的子節點（沿用同一節點池，僅 root 指向子節點），
 ; 不會新建物件；找不到或非物件時回傳 nil。
 ; 返回 child ?json: ok=找到, nil=未找到或非物件
@@ -1099,6 +1130,7 @@ json.kind = () (k i64) {
 ;           s, found = it.get-str('sub-key')
 ;       }
 ;   }
+; [get](#json.get)
 json.get = (key str) (child ?json) {
     child = nil
     .root < 0 -> return
@@ -1117,11 +1149,12 @@ json.get = (key str) (child ?json) {
     child = json-clone-tree(.pool, val-idx)
 }
 
-; json.get-str: 從物件取得字串值
+; 從物件取得字串值
 ; 返回 val str, ok bool: ok=找到且為字串
 ; 用法：
 ;   s, found = j.get-str('name')
 ;   found -> print(s)
+; [get-str](#json.get-str)
 json.get-str = (key str) (val ?str) {
     .root < 0 -> return
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
@@ -1132,8 +1165,9 @@ json.get-str = (key str) (val ?str) {
     }
 }
 
-; json.get-num: 從物件取得數值
+; 從物件取得數值
 ; 返回 val f64, ok bool: ok=找到且為數字
+; [get-num](#json.get-num)
 json.get-num = (key str) (val ?f64) {
     .root < 0 -> return
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
@@ -1144,8 +1178,9 @@ json.get-num = (key str) (val ?f64) {
     }
 }
 
-; json.get-bool: 從物件取得布林值
+; 從物件取得布林值
 ; 返回 val bool, ok bool: ok=找到且為布林值
+; [get-bool](#json.get-bool)
 json.get-bool = (key str) (val ?bool) {
     .root < 0 -> return
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
@@ -1156,8 +1191,9 @@ json.get-bool = (key str) (val ?bool) {
     }
 }
 
-; json.get-i64: 從物件取得整數值
+; 從物件取得整數值
 ; 返回 val i64, ok bool: ok=找到且為數字
+; [get-i64](#json.get-i64)
 json.get-i64 = (key str) (val ?i64) {
     f-opt = .get-num(key)
     f = 0.0
@@ -1176,14 +1212,16 @@ json.get-i64 = (key str) (val ?i64) {
     val = f.to-i64()
 }
 
-; json.alloc-node: 分配新節點（pool 為 #{inline=false} 指標欄位，直接委派 .pool.alloc）
+; 分配新節點（pool 為 #{inline=false} 指標欄位，直接委派 .pool.alloc）
 ; 返回 idx: 新節點索引
+; [alloc-node](#json.alloc-node)
 json.alloc-node = () (idx i64) {
     idx = .pool.alloc()
 }
 
-; json.set: 在物件中設定鍵值（值為另一個 json 節點）
+; 在物件中設定鍵值（值為另一個 json 節點）
 ; 返回 ok bool: 是否成功
+; [set](#json.set)
 json.set = (key str, val-idx i64) (ok bool) {
     ok = false
     .root < 0 -> {
@@ -1206,10 +1244,11 @@ json.set = (key str, val-idx i64) (ok bool) {
     ok = .pool.set-key(.root, key, val-idx)
 }
 
-; json.set-str: 在物件中設定字串值
+; 在物件中設定字串值
 ; 返回 ok bool: 是否成功
 ; 用法：
 ;   j.set-str('name', 'Alice')
+; [set-str](#json.set-str)
 json.set-str = (key str, val str) (ok bool) {
     ok = false
     idx = .alloc-node()
@@ -1221,10 +1260,11 @@ json.set-str = (key str, val str) (ok bool) {
     ok = .set(key, idx)
 }
 
-; json.set-num: 在物件中設定數值
+; 在物件中設定數值
 ; 返回 ok bool: 是否成功
 ; 用法：
 ;   j.set-num('age', 30.0)
+; [set-num](#json.set-num)
 json.set-num = (key str, val f64) (ok bool) {
     ok = false
     idx = .alloc-node()
@@ -1236,17 +1276,19 @@ json.set-num = (key str, val f64) (ok bool) {
     ok = .set(key, idx)
 }
 
-; json.set-i64: 在物件中設定整數值
+; 在物件中設定整數值
 ; 返回 ok bool: 是否成功
+; [set-i64](#json.set-i64)
 json.set-i64 = (key str, val i64) (ok bool) {
     f = val.to-f64()
     ok = .set-num(key, f)
 }
 
-; json.set-bool: 在物件中設定布林值
+; 在物件中設定布林值
 ; 返回 ok bool: 是否成功
 ; 用法：
 ;   j.set-bool('active', true)
+; [set-bool](#json.set-bool)
 json.set-bool = (key str, val bool) (ok bool) {
     ok = false
     idx = .alloc-node()
@@ -1258,8 +1300,9 @@ json.set-bool = (key str, val bool) (ok bool) {
     ok = .set(key, idx)
 }
 
-; json.set-null: 在物件中設定 null 值
+; 在物件中設定 null 值
 ; 返回 ok bool: 是否成功
+; [set-null](#json.set-null)
 json.set-null = (key str) (ok bool) {
     ok = false
     idx = .alloc-node()
@@ -1273,7 +1316,7 @@ json.set-null = (key str) (ok bool) {
 ; 陣列操作
 ; ═══════════════════════════════════════════════
 
-; json.arr-get: 從陣列取得指定索引的元素作為 json
+; 從陣列取得指定索引的元素作為 json
 ; 返回 child ?json: ok=找到, nil=未找到或非陣列
 ; 用法：
 ;   elem = j.arr-get(0)
@@ -1282,6 +1325,7 @@ json.set-null = (key str) (ok bool) {
 ;           s, found = it.get-str('name')
 ;       }
 ;   }
+; [arr-get](#json.arr-get)
 json.arr-get = (elem i64) (child ?json) {
     child = nil
     .root < 0 -> return
@@ -1293,10 +1337,11 @@ json.arr-get = (elem i64) (child ?json) {
     }
 }
 
-; json.arr-len: 取得陣列長度
+; 取得陣列長度
 ; 返回 n: 陣列元素數量（非陣列返回 0）
 ; 用法：
 ;   n = j.arr-len()
+; [arr-len](#json.arr-len)
 json.arr-len = () (n i64) {
     n = 0
     .root < 0 -> return
@@ -1304,8 +1349,9 @@ json.arr-len = () (n i64) {
     n = .pool.arr-len(.root)
 }
 
-; json.arr-push-idx: 以節點索引向陣列末尾附加元素（內部輔助，避免構造 json 時深拷貝整個池）
+; 以節點索引向陣列末尾附加元素（內部輔助，避免構造 json 時深拷貝整個池）
 ; 返回 ok bool: 是否成功
+; [arr-push-idx](#json.arr-push-idx)
 json.arr-push-idx = (child-idx i64) (ok bool) {
     ok = false
     .root < 0 -> {
@@ -1329,16 +1375,18 @@ json.arr-push-idx = (child-idx i64) (ok bool) {
     ok = true
 }
 
-; json.arr-push: 向陣列末尾添加元素
+; 向陣列末尾添加元素
 ; 返回 ok bool: 是否成功
 ; 用法：
 ;   j.arr-push(item)
+; [arr-push](#json.arr-push)
 json.arr-push = (val json) (ok bool) {
     ok = .arr-push-idx(val.root)
 }
 
-; json.arr-push-str: 向陣列末尾添加字串元素
+; 向陣列末尾添加字串元素
 ; 返回 ok bool: 是否成功
+; [arr-push-str](#json.arr-push-str)
 json.arr-push-str = (val str) (ok bool) {
     ok = false
     idx = .alloc-node()
@@ -1350,8 +1398,9 @@ json.arr-push-str = (val str) (ok bool) {
     ok = .arr-push-idx(idx)
 }
 
-; json.arr-push-num: 向陣列末尾添加數值元素
+; 向陣列末尾添加數值元素
 ; 返回 ok bool: 是否成功
+; [arr-push-num](#json.arr-push-num)
 json.arr-push-num = (val f64) (ok bool) {
     ok = false
     idx = .alloc-node()
@@ -1362,8 +1411,9 @@ json.arr-push-num = (val f64) (ok bool) {
     ok = .arr-push-idx(idx)
 }
 
-; json.arr-push-bool: 向陣列末尾添加布林元素
+; 向陣列末尾添加布林元素
 ; 返回 ok bool: 是否成功
+; [arr-push-bool](#json.arr-push-bool)
 json.arr-push-bool = (val bool) (ok bool) {
     ok = false
     idx = .alloc-node()
@@ -1378,28 +1428,32 @@ json.arr-push-bool = (val bool) (ok bool) {
 ; 標量值取得（root 為標量時直接取值）
 ; ═══════════════════════════════════════════════
 
-; json.str: 取得字串值（當 root 為字串時）
+; 取得字串值（當 root 為字串時）
 ; 返回 val str, ok bool: ok=成功
 ; 用法：
 ;   s, found = j.str()
+; [str](#json.str)
 json.str = () (val ?str) {
     val = .pool.get-str(.root)
 }
 
-; json.num: 取得數值（當 root 為數字時）
+; 取得數值（當 root 為數字時）
 ; 返回 val f64, ok bool: ok=成功
+; [num](#json.num)
 json.num = () (val ?f64) {
     val = .pool.get-num(.root)
 }
 
-; json.bool: 取得布林值（當 root 為布林值時）
+; 取得布林值（當 root 為布林值時）
 ; 返回 val bool, ok bool: ok=成功
+; [bool](#json.bool)
 json.bool = () (val ?bool) {
     val = .pool.get-bool(.root)
 }
 
-; json.i64: 取得整數值（當 root 為數字時）
+; 取得整數值（當 root 為數字時）
 ; 返回 val i64, ok bool: ok=成功
+; [i64](#json.i64)
 json.i64 = () (val ?i64) {
     f-opt = .num()
     f = 0.0
@@ -1415,8 +1469,9 @@ json.i64 = () (val ?i64) {
     val = f.to-i64()
 }
 
-; json.obj-len: 取得物件 key 數量
+; 取得物件 key 數量
 ; 返回 n i64: key 數量（非物件返回 0）
+; [obj-len](#json.obj-len)
 json.obj-len = () (n i64) {
     n = 0
     .root < 0 -> return
@@ -1426,9 +1481,10 @@ json.obj-len = () (n i64) {
     n = .pool.nodes[.root].count
 }
 
-; json.obj-key: 取得物件指定索引的 key
+; 取得物件指定索引的 key
 ; 返回 key str: key 字串
 ; 返回 ok bool: 是否成功
+; [obj-key](#json.obj-key)
 json.obj-key = (idx i64) (key ?str) {
     .root < 0 -> return
     k = .pool.get-kind(.root)
@@ -1447,8 +1503,9 @@ json.obj-key = (idx i64) (key ?str) {
     key = .pool.ek[e]
 }
 
-; json.delete-key: 從物件中刪除指定鍵
+; 從物件中刪除指定鍵
 ; 返回 ok bool: ok=成功（鍵存在且已刪除）
+; [delete-key](#json.delete-key)
 json.delete-key = (key str) (ok bool) {
     ok = false
     .root < 0 -> return
@@ -1494,8 +1551,9 @@ json.delete-key = (key str) (ok bool) {
     }
 }
 
-; json.set-key: 設定物件鍵值（語意糖，接受 json 值作為 val）
+; 設定物件鍵值（語意糖，接受 json 值作為 val）
 ; 返回 ok bool: ok=成功
+; [set-key](#json.set-key)
 json.set-key = (key str, val json) (ok bool) {
     ok = false
     val.root < 0 || val.root >= val.pool.count -> return
@@ -1517,8 +1575,9 @@ json.set-key = (key str, val json) (ok bool) {
     ok = .pool.set-key(.root, key, v-idx)
 }
 
-; json.obj-keys-str: 取得物件所有鍵，以換行分隔的字串返回
+; 取得物件所有鍵，以換行分隔的字串返回
 ; 返回 keys str: 所有鍵拼接成的字串
+; [obj-keys-str](#json.obj-keys-str)
 json.obj-keys-str = () (keys str) {
     keys = ''
     .root < 0 -> return
@@ -1536,8 +1595,9 @@ json.obj-keys-str = () (keys str) {
     }
 }
 
-; json.str-val: 取得字串節點的值
+; 取得字串節點的值
 ; 返回 val str: 字串值
+; [str-val](#json.str-val)
 json.str-val = () (val str) {
     v-opt = .pool.get-str(.root)
     v-opt: {

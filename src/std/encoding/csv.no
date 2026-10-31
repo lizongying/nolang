@@ -9,12 +9,13 @@
 ;   fields = csv.parse-line(line)           // max-fields 默認 1024
 ;   fields = csv.parse-line(line, 3)        // 限制最多 3 個欄位
 
-; parse-field: 解析 CSV 中的一個欄位
+; 解析 CSV 中的一個欄位
 ; 從 s[pos] 開始解析，處理雙引號和逗號
 ; s str: CSV 文字
 ; pos i64: 開始位置
 ; 返回 field str: 解析出的欄位內容
 ; 返回 new-pos i64: 解析後的新位置
+; [parse-field](#encoding.csv.parse-field)
 parse-field = (s str, pos i64) (field str, new-pos i64) {
     r-pos = pos
     fn = 0
@@ -134,10 +135,11 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     new-pos = r-pos
 }
 
-; parse-line: 解析一行 CSV 文字
+; 解析一行 CSV 文字
 ; s str: CSV 文字
 ; max-fields i64: 最大欄位數
 ; 返回 fields []str: 解析出的欄位陣列
+; [parse-line](#encoding.csv.parse-line)
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     n = 0
     pos = 0
@@ -152,10 +154,11 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     fields.truncate(n)
 }
 
-; encode-field: 將一個欄位編碼為 CSV 格式
+; 將一個欄位編碼為 CSV 格式
 ; 若包含逗號、雙引號或換行，則用雙引號包圍並跳脫
 ; field str: 要編碼的欄位
 ; 返回 out str: CSV 編碼後的字串
+; [encode-field](#encoding.csv.encode-field)
 encode-field = (field str) (out str) {
 
     need-quote = false

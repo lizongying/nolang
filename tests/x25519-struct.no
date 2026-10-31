@@ -7,7 +7,7 @@ key-holder {
     pub [32]byte
 }
 
-; test-struct-field: 測試從結構體欄位讀取私鑰並計算公鑰
+; 測試從結構體欄位讀取私鑰並計算公鑰
 test-struct-field = () (pass bool) {
     pass = false
 
@@ -88,7 +88,7 @@ test-struct-field = () (pass bool) {
 }
 
 ; test-func-output: 測試從函數輸出參數取得 [32]byte 後傳給 scalarmult-base
-; hex-to-bytes: 將 hex 字串轉為 [32]byte
+; 將 hex 字串轉為 [32]byte
 hex-to-bytes = (hex-str str) (out [32]byte) {
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}

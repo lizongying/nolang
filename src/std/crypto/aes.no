@@ -92,7 +92,8 @@ INV-SBOX [256]byte = [
 
 ; ─── GF(2^8) 輔助函數 ──────────────────────────────
 
-; gf-mul2: 在 GF(2^8) 中乘以 x（即多項式 x）
+; 在 GF(2^8) 中乘以 x（即多項式 x）
+; [gf-mul2](#crypto.aes.gf-mul2)
 gf-mul2 = (x i64) (r i64) {
     r = x << 1
     (r & 256) != 0 -> r = r ^ 283
@@ -101,7 +102,8 @@ gf-mul2 = (x i64) (r i64) {
 
 ; ─── AES 輪函數 ─────────────────────────────────────
 
-; sub-bytes: 使用 S-box 取代狀態中每個位元組
+; 使用 S-box 取代狀態中每個位元組
+; [sub-bytes](#crypto.aes.sub-bytes)
 sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
 
@@ -115,7 +117,8 @@ sub-bytes = (state []byte, n i64) {
     }
 }
 
-; inv-sub-bytes: 使用逆 S-box 取代
+; 使用逆 S-box 取代
+; [inv-sub-bytes](#crypto.aes.inv-sub-bytes)
 inv-sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
 
@@ -129,7 +132,8 @@ inv-sub-bytes = (state []byte, n i64) {
     }
 }
 
-; shift-rows: 列位移（第 i 列左旋轉 i 個位元組）
+; 列位移（第 i 列左旋轉 i 個位元組）
+; [shift-rows](#crypto.aes.shift-rows)
 shift-rows = (state []byte) {
 
     #{index-out=zero}
@@ -213,7 +217,8 @@ shift-rows = (state []byte) {
     }
 }
 
-; inv-shift-rows: 逆向列位移（右旋轉）
+; 逆向列位移（右旋轉）
+; [inv-shift-rows](#crypto.aes.inv-shift-rows)
 inv-shift-rows = (state []byte) {
 
     #{index-out=zero}
@@ -297,7 +302,8 @@ inv-shift-rows = (state []byte) {
     }
 }
 
-; mix-col: 混合單一欄（4 位元組）
+; 混合單一欄（4 位元組）
+; [mix-col](#crypto.aes.mix-col)
 mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
     a0 = 0
     a1 = 0
@@ -313,7 +319,8 @@ mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
     d3 = a0 ^ b0 ^ b1 ^ b2 ^ a3
 }
 
-; mix-columns: 混合狀態中所有欄
+; 混合狀態中所有欄
+; [mix-columns](#crypto.aes.mix-columns)
 mix-columns = (state []byte) {
     d0 = 0
     d1 = 0
@@ -413,7 +420,8 @@ mix-columns = (state []byte) {
     }
 }
 
-; inv-mix-col: 逆向混合欄（使用 9,11,13,14）
+; 逆向混合欄（使用 9,11,13,14）
+; [inv-mix-col](#crypto.aes.inv-mix-col)
 inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
     m20 = 0
     m40 = 0
@@ -544,7 +552,8 @@ inv-mix-columns = (state []byte) {
     }
 }
 
-; add-round-key: 將狀態與輪金鑰 XOR
+; 將狀態與輪金鑰 XOR
+; [add-round-key](#crypto.aes.add-round-key)
 add-round-key = (state []byte, rk []byte) {
     i <- [0..16): {
 
@@ -559,6 +568,7 @@ add-round-key = (state []byte, rk []byte) {
 ; ─── 金鑰展開 ─────────────────────────────────────
 
 ; rcon: 輪常數
+; [rcon-val](#crypto.aes.rcon-val)
 rcon-val = (round i64) (r i64) {
     {
         round == 1 -> r = 1
@@ -615,9 +625,10 @@ sub-word = (w i64) (r i64) {
     r = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 }
 
-; key-expand: 將 16-byte 金鑰展開為 176-byte 輪金鑰（AES-128，11 組輪金鑰）
+; 將 16-byte 金鑰展開為 176-byte 輪金鑰（AES-128，11 組輪金鑰）
 ; key [16]byte: 128-bit 金鑰
 ; 返回 ek []byte: 176 位元組輪金鑰，直接餵給 enc-block / dec-block
+; [key-expand](#crypto.aes.key-expand)
 key-expand = (key [16]byte) (ek []byte) {
     ek = with-len(176)
     i <- [0..16): {
@@ -671,9 +682,10 @@ gf-mul3 = (x i64) (r i64) {
     r = (m2 ^ x) & 255
 }
 
-; key-expand-256: 將 32-byte 金鑰展開為 240-byte 輪金鑰（AES-256，15 組輪金鑰）
+; 將 32-byte 金鑰展開為 240-byte 輪金鑰（AES-256，15 組輪金鑰）
 ; key [32]byte: 256-bit 金鑰
 ; 返回 ek []byte: 240 位元組輪金鑰
+; [key-expand-256](#crypto.aes.key-expand-256)
 key-expand-256 = (key [32]byte) (ek []byte) {
     ek = with-len(240)
     i <- [0..32): {
@@ -737,7 +749,8 @@ key-expand-256 = (key [32]byte) (ek []byte) {
 ; 狀態放在真正的切片上：固定陣列的 `arr[..]` 是副本，改不到原陣列，
 ; 必須用 with-len 建立的切片並以變數本身傳遞，輪函數才改得到東西。
 
-; add-round-key-at: 將狀態與第 off 位元組起的輪金鑰 XOR
+; 將狀態與第 off 位元組起的輪金鑰 XOR
+; [add-round-key-at](#crypto.aes.add-round-key-at)
 add-round-key-at = (state []byte, rk []byte, off i64) {
     i <- [0..16): {
 
@@ -749,10 +762,11 @@ add-round-key-at = (state []byte, rk []byte, off i64) {
     }
 }
 
-; enc-block: 用已展開的輪金鑰加密一個 16-byte 區塊
+; 用已展開的輪金鑰加密一個 16-byte 區塊
 ; in [16]byte: 輸入區塊
 ; ek []byte: 輪金鑰（key-expand / key-expand-256 的結果）
 ; 返回 out [16]byte: 加密後的區塊
+; [enc-block](#crypto.aes.enc-block)
 enc-block = (in [16]byte, ek []byte) (out [16]byte) {
 
     #{overflow=wrap}
@@ -791,10 +805,11 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
     }
 }
 
-; dec-block: 用已展開的輪金鑰解密一個 16-byte 區塊
+; 用已展開的輪金鑰解密一個 16-byte 區塊
 ; in [16]byte: 輸入區塊
 ; ek []byte: 輪金鑰（key-expand / key-expand-256 的結果）
 ; 返回 out [16]byte: 解密後的區塊
+; [dec-block](#crypto.aes.dec-block)
 dec-block = (in [16]byte, ek []byte) (out [16]byte) {
 
     #{overflow=wrap}
@@ -840,25 +855,29 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
 
 ; ─── 單區塊薄封裝（自帶金鑰擴展）──────────────────────
 
-; enc-128: 加密一個 16-byte 區塊（AES-128）
+; 加密一個 16-byte 區塊（AES-128）
+; [enc-128](#crypto.aes.enc-128)
 enc-128 = (in [16]byte, key [16]byte) (out [16]byte) {
     ek = key-expand(key)
     out = enc-block(in, ek)
 }
 
-; dec-128: 解密一個 16-byte 區塊（AES-128）
+; 解密一個 16-byte 區塊（AES-128）
+; [dec-128](#crypto.aes.dec-128)
 dec-128 = (in [16]byte, key [16]byte) (out [16]byte) {
     ek = key-expand(key)
     out = dec-block(in, ek)
 }
 
-; enc-256: 加密一個 16-byte 區塊（AES-256）
+; 加密一個 16-byte 區塊（AES-256）
+; [enc-256](#crypto.aes.enc-256)
 enc-256 = (in [16]byte, key [32]byte) (out [16]byte) {
     ek = key-expand-256(key)
     out = enc-block(in, ek)
 }
 
-; dec-256: 解密一個 16-byte 區塊（AES-256）
+; 解密一個 16-byte 區塊（AES-256）
+; [dec-256](#crypto.aes.dec-256)
 dec-256 = (in [16]byte, key [32]byte) (out [16]byte) {
     ek = key-expand-256(key)
     out = dec-block(in, ek)

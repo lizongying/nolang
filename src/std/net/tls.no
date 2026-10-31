@@ -163,9 +163,10 @@ conn {
 ; 工具函數
 ; ═══════════════════════════════════════════════
 
-; rand-bytes: 生成隨機位元組
+; 生成隨機位元組
 ; n i64: 需要的位元組數
 ; 返回 out []byte: 隨機位元組陣列
+; [rand-bytes](#net.tls.rand-bytes)
 rand-bytes = (state i64, n i64) (out []byte) {
     out = with-len(n)
     i <- [0..n): {
@@ -175,10 +176,11 @@ rand-bytes = (state i64, n i64) (out []byte) {
     }
 }
 
-; put-u16: 將 16-bit 大端序值寫入緩衝區
+; 將 16-bit 大端序值寫入緩衝區
 ; buf []byte: 緩衝區
 ; pos i64: 位置
 ; val i64: 值
+; [put-u16](#net.tls.put-u16)
 put-u16 = (buf []byte, pos i64, val i64) {
 
     buf[pos]: {
@@ -193,7 +195,8 @@ put-u16 = (buf []byte, pos i64, val i64) {
     }
 }
 
-; put-u24: 將 24-bit 大端序值寫入緩衝區
+; 將 24-bit 大端序值寫入緩衝區
+; [put-u24](#net.tls.put-u24)
 put-u24 = (buf []byte, pos i64, val i64) {
 
     buf[pos]: {
@@ -214,21 +217,24 @@ put-u24 = (buf []byte, pos i64, val i64) {
     }
 }
 
-; get-u16: 從緩衝區讀取 16-bit 大端序值
+; 從緩衝區讀取 16-bit 大端序值
+; [get-u16](#net.tls.get-u16)
 get-u16 = (buf []byte, pos i64) (val i64) {
 
     #{index-out=zero}
     val = ((buf[pos]) << 8) | (buf[pos + 1])
 }
 
-; get-u24: 從緩衝區讀取 24-bit 大端序值
+; 從緩衝區讀取 24-bit 大端序值
+; [get-u24](#net.tls.get-u24)
 get-u24 = (buf []byte, pos i64) (val i64) {
 
     #{index-out=zero}
     val = ((buf[pos]) << 16) | ((buf[pos + 1]) << 8) | (buf[pos + 2])
 }
 
-; bytes-cat: 串接兩個位元組陣列
+; 串接兩個位元組陣列
+; [bytes-cat](#net.tls.bytes-cat)
 bytes-cat = (a []byte, b []byte) (out []byte) {
 
     an = a.len()
@@ -255,9 +261,10 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
 ; 大整數轉換（用於 RSA）
 ; ═══════════════════════════════════════════════
 
-; bytes-to-bn: big-endian 位元組陣列 → []i64（little-endian base 2^32）
+; big-endian 位元組陣列 → []i64（little-endian base 2^32）
 ; data []byte: big-endian 位元組
 ; 返回 out []i64: 大整數（每個元素為 32-bit limb）
+; [bytes-to-bn](#net.tls.bytes-to-bn)
 bytes-to-bn = (data []byte) (out []i64) {
 
     n = data.len()
@@ -286,9 +293,10 @@ bytes-to-bn = (data []byte) (out []i64) {
     out.truncate(limb-count)
 }
 
-; bn-to-bytes: []i64（little-endian base 2^32）→ big-endian 位元組陣列
+; []i64（little-endian base 2^32）→ big-endian 位元組陣列
 ; num []i64: 大整數
 ; 返回 out []byte: big-endian 位元組
+; [bn-to-bytes](#net.tls.bn-to-bytes)
 bn-to-bytes = (num []i64) (out []byte) {
 
     n = num.len()
@@ -331,12 +339,13 @@ bn-to-bytes = (num []i64) (out []byte) {
 ; TLS PRF（基於 HMAC-SHA256）
 ; ═══════════════════════════════════════════════
 
-; prf: TLS 1.2 PRF（P_SHA256）
+; TLS 1.2 PRF（P_SHA256）
 ; secret []byte: 金鑰材料
 ; label str: 標籤字串
 ; seed []byte: 種子
 ; out-len i64: 需要的輸出長度
 ; 返回 out []byte: PRF 輸出
+; [prf](#net.tls.prf)
 prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
     out = with-len(out-len)
 
@@ -392,11 +401,12 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
 ; 記錄層（Record Layer）
 ; ═══════════════════════════════════════════════
 
-; recv-n: 從 socket 讀取恰好 n 個位元組
+; 從 socket 讀取恰好 n 個位元組
 ; fd fd: socket fd
 ; buf []byte: 接收緩衝區
 ; n i64: 需要讀取的位元組數
 ; 返回 ok bool: true=成功
+; [recv-n](#net.tls.recv-n)
 recv-n = (fd fd, buf []byte, n i64) (ok bool) {
     ok = false
     total = 0
@@ -432,9 +442,10 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
     ok = true
 }
 
-; net-recv-wait: 阻塞式接收（用 nb recv + 短睡重試）
+; 阻塞式接收（用 nb recv + 短睡重試）
 ; 繞開原生阻塞 recv 在 macOS 上「資料已就緒卻不回傳」的卡死問題。
 ; 回傳 r: >0=位元組數, 0=對端關閉(FIN), -1=錯誤
+; [net-recv-wait](#net.tls.net-recv-wait)
 net-recv-wait = (fd fd, buf str, n i64) (r i64) {
     r = -1
     tries = 0
@@ -473,11 +484,12 @@ net-recv-wait = (fd fd, buf str, n i64) (r i64) {
     }
 }
 
-; read-record: 讀取一筆 TLS 記錄
+; 讀取一筆 TLS 記錄
 ; fd fd: socket fd
 ; buf []byte: 記錄緩衝區（含標頭+資料, buf[0..4]=header, buf[5..]=body）
 ; 返回 ct i64: content type（-1=錯誤）
 ; 返回 rlen i64: 資料長度（不含標頭）
+; [read-record](#net.tls.read-record)
 read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     ct = -1
     rlen = 0
@@ -567,10 +579,11 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
     ; 呼叫端使用返回的 rlen 來判斷實際資料長度。
 }
 
-; send-raw: 發送原始 TLS 記錄（未加密）
+; 發送原始 TLS 記錄（未加密）
 ; fd fd: socket fd
 ; ct i64: content type
 ; data []byte: 資料
+; [send-raw](#net.tls.send-raw)
 send-raw = (fd fd, ct i64, data []byte) {
     n = data.len()
     hdr [5]byte
@@ -607,8 +620,9 @@ send-raw = (fd fd, ct i64, data []byte) {
 ; 記錄層加密/解密
 ; ═══════════════════════════════════════════════
 
-; append-hs: 將交握訊息追加到緩衝區
+; 將交握訊息追加到緩衝區
 ; data []byte: 訊息資料
+; [append-hs](#net.tls.conn.append-hs)
 conn.append-hs = (data []byte) {
     n = data.len()
     i <- [0..n): {
@@ -622,10 +636,11 @@ conn.append-hs = (data []byte) {
     .hs-buf.len = .hs-buf-len
 }
 
-; append-hs-from: 從 buf 的 offset 位置追加 n 位元組到交握緩衝區
+; 從 buf 的 offset 位置追加 n 位元組到交握緩衝區
 ; buf []byte: 來源緩衝區（含 record header）
 ; offset i64: 起始偏移（通常為 5, 跳過 record header）
 ; n i64: 要追加的位元組數
+; [append-hs-from](#net.tls.conn.append-hs-from)
 conn.append-hs-from = (buf []byte, offset i64, n i64) {
     i <- [0..n): {
 
@@ -638,13 +653,14 @@ conn.append-hs-from = (buf []byte, offset i64, n i64) {
     .hs-buf.len = .hs-buf-len
 }
 
-; tls-pad: TLS 1.2 CBC 填充（RFC 5246 §6.2.3.2）——與 PKCS#7 不同！
+; TLS 1.2 CBC 填充（RFC 5246 §6.2.3.2）——與 PKCS#7 不同！
 ; 填充共 pad-count 個位元組，每個位元組的值皆為 pad-count - 1（末位長度位元組值 = pad-count-1）。
 ; 對端（如 OpenSSL）讀末位元組 P 後移除 P+1 個位元組，並要求這 P+1 個位元組全等於 P。
 ; 若誤用 PKCS#7（值 = pad-count），當明文已為區塊整數倍時會填 16 個 0x10，
 ; 對端會試圖移除 17 個位元組而踩到 MAC 尾位元組 → bad record mac。
 ; in []byte: 明文（content || MAC）
 ; 返回 out []byte: 填充後的資料（長度為 16 的倍數）
+; [tls-pad](#net.tls.tls-pad)
 tls-pad = (in []byte) (out []byte) {
     n = in.len()
 
@@ -667,9 +683,10 @@ tls-pad = (in []byte) (out []byte) {
     }
 }
 
-; tls-unpad: TLS 1.2 CBC 去填充
+; TLS 1.2 CBC 去填充
 ; in []byte: 解密後的資料（content || MAC || padding）
 ; 返回 out-n i64: 去除填充後的長度（content+MAC），-1=填充錯誤
+; [tls-unpad](#net.tls.tls-unpad)
 tls-unpad = (in []byte) (out-n i64) {
     in.len() == 0 -> {
         out-n = -1
@@ -702,13 +719,14 @@ tls-unpad = (in []byte) (out-n i64) {
     out-n = in.len() - strip
 }
 
-; encrypt-record-gcm: TLS 1.2 AES-128-GCM AEAD 記錄加密（RFC 5288）
+; TLS 1.2 AES-128-GCM AEAD 記錄加密（RFC 5288）
 ; ct i64: content type
 ; data []byte: 明文
 ; key [16]byte: client/server_write_key
 ; salt [4]byte: client/server_write_IV（implicit salt）
 ; seq i64: 記錄序號
 ; 返回 ok bool: true=成功
+; [encrypt-record-gcm](#net.tls.conn.encrypt-record-gcm)
 conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq i64) (ok bool) {
     ok = false
     n = data.len()
@@ -799,7 +817,7 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     ok = true
 }
 
-; decrypt-record-gcm: TLS 1.2 AES-128-GCM AEAD 記錄解密（RFC 5288）
+; TLS 1.2 AES-128-GCM AEAD 記錄解密（RFC 5288）
 ; buf []byte: 接收到的記錄（從標頭開始）
 ; expected-ct i64: 預期 content type（用於 AAD）
 ; key [16]byte: server_write_key
@@ -807,6 +825,7 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
 ; seq i64: 記錄序號
 ; 返回 ct i64: 成功=expected-ct, -1=錯誤
 ; 返回 out []byte: 解密後的明文
+; [decrypt-record-gcm](#net.tls.conn.decrypt-record-gcm)
 conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]byte, seq i64) (ct i64, out []byte) {
     ct = -1
     rlen = get-u16(buf, 3)
@@ -878,10 +897,11 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
     ct = expected-ct
 }
 
-; encrypt-record: 加密記錄並發送
+; 加密記錄並發送
 ; ct i64: 原始 content type
 ; data []byte: 明文資料
 ; 返回 ok bool: true=成功
+; [encrypt-record](#net.tls.conn.encrypt-record)
 conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     ok = false
 
@@ -1023,10 +1043,11 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     ok = true
 }
 
-; decrypt-record: 解密記錄
+; 解密記錄
 ; buf []byte: 接收到的記錄資料（從標頭開始）
 ; 返回 ct i64: 原始 content type（-1=錯誤）
 ; 返回 out []byte: 解密後的明文
+; [decrypt-record](#net.tls.conn.decrypt-record)
 conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ct = -1
 
@@ -1147,11 +1168,12 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
 ; RSA PKCS#1 v1.5 加密
 ; ═══════════════════════════════════════════════
 
-; rsa-pkcs1-encrypt: RSA PKCS#1 v1.5 加密
+; RSA PKCS#1 v1.5 加密
 ; msg []byte: 訊息（premaster secret, 48 bytes）
 ; mod-bytes []byte: RSA 模數（big-endian）
 ; exp i64: RSA 公鑰指數
 ; 返回 out []byte: 加密後的資料（長度 = mod-bytes.len）
+; [rsa-pkcs1-encrypt](#net.tls.rsa-pkcs1-encrypt)
 rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
     msg-n = msg.len()
     mod-n = mod-bytes.len()
@@ -1272,8 +1294,9 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
 ; send-client-hello: 發送 ClientHello
 ; 返回 ok bool: true=成功
-; gen-x25519-keypair: 生成臨時 X25519 金鑰對（存入 .client-priv/.client-pub）
+; 生成臨時 X25519 金鑰對（存入 .client-priv/.client-pub）
 ; 內聯實現，避免多返回值 [32]byte 的編譯器 bug
+; [gen-x25519-keypair](#net.tls.conn.gen-x25519-keypair)
 conn.gen-x25519-keypair = () {
     seed = .rand-state
 
@@ -1311,8 +1334,9 @@ conn.gen-x25519-keypair = () {
     }
 }
 
-; gen-p256-keypair: 生成臨時 P-256 私鑰（大端序）與未壓縮公鑰
+; 生成臨時 P-256 私鑰（大端序）與未壓縮公鑰
 ; 存入 .client-priv/.pub-p256（secp256r1 ECDHE 使用）
+; [gen-p256-keypair](#net.tls.conn.gen-p256-keypair)
 conn.gen-p256-keypair = () {
     s = .rand-state
 
@@ -1333,8 +1357,9 @@ conn.gen-p256-keypair = () {
     }
 }
 
-; send-client-hello: 發送 TLS 1.2 ClientHello（含 ECDHE 密碼套件與擴展）
+; 發送 TLS 1.2 ClientHello（含 ECDHE 密碼套件與擴展）
 ; 返回 ok bool: true=成功
+; [send-client-hello](#net.tls.conn.send-client-hello)
 conn.send-client-hello = () (ok bool) {
     ok = false
 
@@ -1653,7 +1678,8 @@ conn.send-client-hello = () (ok bool) {
     ok = true
 }
 
-; cipher-is-ecdhe: 是否為 ECDHE 密鑰交換的 TLS 1.2 密碼套件
+; 是否為 ECDHE 密鑰交換的 TLS 1.2 密碼套件
+; [cipher-is-ecdhe](#net.tls.cipher-is-ecdhe)
 cipher-is-ecdhe = (c i64) (r bool) {
     r = c == TLS-CIPHER-ECDHE-ECDSA-AES128-CBC-SHA256
     r = r || c == TLS-CIPHER-ECDHE-RSA-AES128-CBC-SHA256
@@ -1661,14 +1687,16 @@ cipher-is-ecdhe = (c i64) (r bool) {
     r = r || c == TLS-CIPHER-ECDHE-RSA-AES128-GCM-SHA256
 }
 
-; cipher-is-gcm: 是否為 AEAD (AES-GCM) 記錄格式的 TLS 1.2 密碼套件
+; 是否為 AEAD (AES-GCM) 記錄格式的 TLS 1.2 密碼套件
+; [cipher-is-gcm](#net.tls.cipher-is-gcm)
 cipher-is-gcm = (c i64) (r bool) {
     r = c == TLS-CIPHER-ECDHE-ECDSA-AES128-GCM-SHA256
     r = r || c == TLS-CIPHER-ECDHE-RSA-AES128-GCM-SHA256
 }
 
-; read-server-hello: 讀取 ServerHello
+; 讀取 ServerHello
 ; 返回 ok bool: true=成功
+; [read-server-hello](#net.tls.conn.read-server-hello)
 conn.read-server-hello = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -1732,9 +1760,10 @@ conn.read-server-hello = () (ok bool) {
     ok = true
 }
 
-; read-certificate: 讀取 Certificate
+; 讀取 Certificate
 ; cert-out []byte: 輸出憑證 DER 資料
 ; 返回 ok bool: true=成功
+; [read-certificate](#net.tls.conn.read-certificate)
 conn.read-certificate = (cert-out []byte) (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -1775,9 +1804,10 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
     ok = true
 }
 
-; read-server-key-exchange: 讀取 ECDHE ServerKeyExchange（僅 ECDHE 套件）
+; 讀取 ECDHE ServerKeyExchange（僅 ECDHE 套件）
 ; 解析出伺服器臨時 X25519 公鑰存入 .server-pub（憑證與簽名不做驗證，與本实现的信任模型一致）
 ; 返回 ok bool: true=成功
+; [read-server-key-exchange](#net.tls.conn.read-server-key-exchange)
 conn.read-server-key-exchange = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -1856,8 +1886,9 @@ conn.read-server-key-exchange = () (ok bool) {
     }
 }
 
-; read-server-hello-done: 讀取 ServerHelloDone
+; 讀取 ServerHelloDone
 ; 返回 ok bool: true=成功
+; [read-server-hello-done](#net.tls.conn.read-server-hello-done)
 conn.read-server-hello-done = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -1872,10 +1903,11 @@ conn.read-server-hello-done = () (ok bool) {
     ok = true
 }
 
-; send-client-key-exchange: 發送 ClientKeyExchange
+; 發送 ClientKeyExchange
 ; premaster []byte: premaster secret（static-RSA 套件用, 48 bytes；ECDHE 套件忽略）
 ; cert []byte: 伺服器憑證 DER（static-RSA 套件用）
 ; 返回 ok bool: true=成功
+; [send-client-key-exchange](#net.tls.conn.send-client-key-exchange)
 conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
     ok = false
 
@@ -1984,7 +2016,8 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
     ok = true
 }
 
-; send-change-cipher-spec: 發送 ChangeCipherSpec
+; 發送 ChangeCipherSpec
+; [send-change-cipher-spec](#net.tls.conn.send-change-cipher-spec)
 conn.send-change-cipher-spec = () {
     ccs [1]byte
 
@@ -2022,8 +2055,9 @@ conn.send-change-cipher-spec = () {
     net.net-send(.fd, ccs, 1)
 }
 
-; send-finished: 發送加密的 Finished 訊息
+; 發送加密的 Finished 訊息
 ; 返回 ok bool: true=成功
+; [send-finished](#net.tls.conn.send-finished)
 conn.send-finished = () (ok bool) {
     ok = false
 
@@ -2063,8 +2097,9 @@ conn.send-finished = () (ok bool) {
     ok = .encrypt-record(TLS-CT-HANDSHAKE, hs)
 }
 
-; read-change-cipher-spec: 讀取 ChangeCipherSpec
+; 讀取 ChangeCipherSpec
 ; 返回 ok bool: true=成功
+; [read-change-cipher-spec](#net.tls.conn.read-change-cipher-spec)
 conn.read-change-cipher-spec = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -2080,8 +2115,9 @@ conn.read-change-cipher-spec = () (ok bool) {
     ok = true
 }
 
-; read-finished: 讀取加密的 Finished 訊息
+; 讀取加密的 Finished 訊息
 ; 返回 ok bool: true=成功
+; [read-finished](#net.tls.conn.read-finished)
 conn.read-finished = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -2127,8 +2163,9 @@ conn.read-finished = () (ok bool) {
 ; 金鑰推導
 ; ═══════════════════════════════════════════════
 
-; derive-keys: 從 premaster secret 推導所有金鑰
+; 從 premaster secret 推導所有金鑰
 ; premaster []byte: premaster secret（static-RSA 48 bytes / ECDHE 32 bytes）
+; [derive-keys](#net.tls.conn.derive-keys)
 conn.derive-keys = (premaster []byte) {
 
     ; master_secret = PRF(premaster, "master secret", client_random + server_random, 48)
@@ -2239,10 +2276,11 @@ conn.derive-keys = (premaster []byte) {
     .read-seq = 0
 }
 
-; handshake-12-body: ServerHello 之後的 TLS 1.2 完整交握
+; ServerHello 之後的 TLS 1.2 完整交握
 ; （Certificate → [ECDHE: ServerKeyExchange] → ServerHelloDone → 金鑰交換 → CCS/Finished）
 ; 依賴 .cipher-id（read-server-hello / read-server-hello-13 已記入）與 ECDHE 時的 .client-priv/.client-pub
 ; 返回 ok bool: true=成功
+; [handshake-12-body](#net.tls.conn.handshake-12-body)
 conn.handshake-12-body = () (ok bool) {
     ok = false
 
@@ -2357,8 +2395,9 @@ conn.handshake-12-body = () (ok bool) {
 ; TLS 1.3 交握與記錄層
 ; ═══════════════════════════════════════════════
 
-; send-client-hello-13: 發送 TLS 1.3 ClientHello（含擴展）
+; 發送 TLS 1.3 ClientHello（含擴展）
 ; 返回 ok bool: true=成功
+; [send-client-hello-13](#net.tls.conn.send-client-hello-13)
 conn.send-client-hello-13 = () (ok bool) {
     ok = false
 
@@ -2759,8 +2798,9 @@ conn.send-client-hello-13 = () (ok bool) {
     ok = true
 }
 
-; read-server-hello-13: 讀取 ServerHello 並偵測 TLS 版本
+; 讀取 ServerHello 並偵測 TLS 版本
 ; 返回 ok bool: true=TLS 1.3, false=TLS 1.2 或失敗
+; [read-server-hello-13](#net.tls.conn.read-server-hello-13)
 conn.read-server-hello-13 = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -2890,7 +2930,8 @@ conn.read-server-hello-13 = () (ok bool) {
     }
 }
 
-; compute-shared-secret-13: 計算 ECDHE 共享金鑰
+; 計算 ECDHE 共享金鑰
+; [compute-shared-secret-13](#net.tls.conn.compute-shared-secret-13)
 conn.compute-shared-secret-13 = () {
 
     ; 透過 []byte 傳遞給 x25519（避開 [32]byte 傳參的編譯器 bug）
@@ -2918,6 +2959,7 @@ conn.compute-shared-secret-13 = () {
 
 ; derive-traffic-keys-13: 推導交握金鑰和應用金鑰
 ; 使用 HKDF 金鑰排程（RFC 8446 §7.1）
+; [derive-handshake-keys-13](#net.tls.conn.derive-handshake-keys-13)
 conn.derive-handshake-keys-13 = () {
 
     ; 1. Early Secret = HKDF-Extract(0, 0^HashLen)
@@ -3029,7 +3071,8 @@ conn.derive-handshake-keys-13 = () {
     .hs-read-seq = 0
 }
 
-; derive-application-keys-13: 推導應用層金鑰
+; 推導應用層金鑰
+; [derive-application-keys-13](#net.tls.conn.derive-application-keys-13)
 conn.derive-application-keys-13 = () {
 
     ; 從 handshake secret 推導
@@ -3113,10 +3156,11 @@ conn.derive-application-keys-13 = () {
     .ap-read-seq = 0
 }
 
-; build-nonce: 構建 AEAD nonce
+; 構建 AEAD nonce
 ; iv [12]byte: IV
 ; seq i64: 序號
 ; 返回 nonce [12]byte: nonce
+; [build-nonce](#net.tls.build-nonce)
 build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
     i <- [0..12): {
 
@@ -3131,13 +3175,14 @@ build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
     }
 }
 
-; encrypt-record-13: TLS 1.3 AEAD 加密記錄並發送
+; TLS 1.3 AEAD 加密記錄並發送
 ; ct i64: 原始 content type
 ; data []byte: 明文資料
 ; key [16]byte: AEAD 金鑰
 ; iv [12]byte: AEAD IV
 ; seq i64: 序號
 ; 返回 ok bool: true=成功
+; [encrypt-record-13](#net.tls.conn.encrypt-record-13)
 conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i64) (ok bool) {
     ok = false
     n = data.len()
@@ -3221,13 +3266,14 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     ok = true
 }
 
-; decrypt-record-13: TLS 1.3 AEAD 解密記錄
+; TLS 1.3 AEAD 解密記錄
 ; rec []byte: 接收到的記錄（含標頭）
 ; key [16]byte: AEAD 金鑰
 ; iv [12]byte: AEAD IV
 ; seq i64: 序號
 ; 返回 ct i64: 原始 content type（-1=錯誤）
 ; 返回 out []byte: 解密後的明文（不含 content type byte）
+; [decrypt-record-13](#net.tls.conn.decrypt-record-13)
 conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i64, out []byte) {
     ct = -1
     rlen = get-u16(rec, 3)
@@ -3302,12 +3348,13 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     }
 }
 
-; read-encrypted-record-13: 讀取並解密一筆 TLS 1.3 記錄
+; 讀取並解密一筆 TLS 1.3 記錄
 ; key [16]byte: AEAD 金鑰
 ; iv [12]byte: AEAD IV
 ; seq i64: 序號（讀取後自動遞增）
 ; 返回 ct i64: 原始 content type（-1=錯誤）
 ; 返回 out []byte: 解密後的明文
+; [read-encrypted-record-13](#net.tls.conn.read-encrypted-record-13)
 conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64, out []byte) {
     ct = -1
 
@@ -3329,10 +3376,11 @@ conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64, ou
     ct, out = .decrypt-record-13(rec, key, iv, seq)
 }
 
-; read-encrypted-handshake-13: 讀取加密的交握訊息
+; 讀取加密的交握訊息
 ; 支援單一記錄中含多個交握訊息的情況（使用 hs-plain-buf 緩衝剩餘資料）
 ; 返回 msg-type i64: 訊息類型（-1=錯誤）
 ; 返回 msg-data []byte: 訊息資料（不含標頭）
+; [read-encrypted-handshake-13](#net.tls.conn.read-encrypted-handshake-13)
 conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     msg-type = -1
 
@@ -3425,8 +3473,9 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     .hs-plain-pos = pos + 4 + msg-len
 }
 
-; connect-13: TLS 1.3 完整交握
+; TLS 1.3 完整交握
 ; 返回 ok bool: true=成功
+; [connect-13](#net.tls.conn.connect-13)
 conn.connect-13 = () (ok bool) {
     ok = false
 
@@ -3491,8 +3540,9 @@ conn.connect-13 = () (ok bool) {
     ok = true
 }
 
-; send-finished-13: 發送 TLS 1.3 Finished 訊息
+; 發送 TLS 1.3 Finished 訊息
 ; 返回 ok bool: true=成功
+; [send-finished-13](#net.tls.conn.send-finished-13)
 conn.send-finished-13 = () (ok bool) {
     ok = false
 
@@ -3547,7 +3597,8 @@ conn.send-finished-13 = () (ok bool) {
     .hs-write-seq = .hs-write-seq + 1
 }
 
-; init: 初始化連線（未連線狀態）
+; 初始化連線（未連線狀態）
+; [init](#net.tls.conn.init)
 conn.init = () {
     .fd = -1
     .host = ''
@@ -3568,10 +3619,11 @@ conn.init = () {
     .rand-state == 0 -> .rand-state = 1
 }
 
-; connect: 建立 TLS 連線（自動協商 1.3/1.2）
+; 建立 TLS 連線（自動協商 1.3/1.2）
 ; host str: 伺服器主機名
 ; port i64: 埠號
 ; 返回 ok bool: true=成功
+; [connect](#net.tls.conn.connect)
 conn.connect = (host str, port i64) (ok bool) {
     ok = false
     .host = host
@@ -3616,8 +3668,9 @@ conn.connect = (host str, port i64) (ok bool) {
     ok = true
 }
 
-; connect-12: TLS 1.2 完整交握（純 TLS 1.2，不發送 supported_versions 擴展）
+; TLS 1.2 完整交握（純 TLS 1.2，不發送 supported_versions 擴展）
 ; 返回 ok bool: true=成功
+; [connect-12](#net.tls.conn.connect-12)
 conn.connect-12 = (host str, port i64) (ok bool) {
     ok = false
 
@@ -3656,10 +3709,11 @@ conn.connect-12 = (host str, port i64) (ok bool) {
     ok = true
 }
 
-; dial-12: TLS 1.2 連線（純 TLS 1.2，不協商 1.3）
+; TLS 1.2 連線（純 TLS 1.2，不協商 1.3）
 ; host str: 主機名或 IP
 ; port i64: 埠號
 ; 返回 conn ?conn: ok=連線, nil=失敗
+; [dial-12](#net.tls.dial-12)
 dial-12 = (host str, port i64) (conn ?conn) {
     conn = nil
     c = conn {}
@@ -3672,9 +3726,10 @@ dial-12 = (host str, port i64) (conn ?conn) {
     conn = c
 }
 
-; send: 透過 TLS 發送資料
+; 透過 TLS 發送資料
 ; data str: 資料
 ; 返回 written ?i64: 已傳送位元組數（nil=錯誤）
+; [send](#net.tls.conn.send)
 conn.send = (data str) (written ?i64) {
     written = nil
     .connected == false -> return
@@ -3706,7 +3761,8 @@ conn.send = (data str) (written ?i64) {
 ; n i64: 最大接收位元組數
 ; 返回 read-n i64: 已接收位元組數（-1=錯誤, 0=連線關閉）
 
-; get-fd: 診斷用 — 暴露底層 socket fd
+; 診斷用 — 暴露底層 socket fd
+; [get-fd](#net.tls.conn.get-fd)
 conn.get-fd = () (fd fd) {
     fd = .fd
 }
@@ -3784,7 +3840,8 @@ conn.recv = (buf str, n i64) (read-n i64) {
     read-n = copy-n
 }
 
-; close: 關閉 TLS 連線
+; 關閉 TLS 連線
+; [close](#net.tls.conn.close)
 conn.close = () {
     .connected -> {
         .fd >= 0 -> fs.close(.fd)
@@ -3798,10 +3855,11 @@ conn.close = () {
 ; 高層 API
 ; ═══════════════════════════════════════════════
 
-; dial: 便捷函數，建立 TLS 連線
+; 便捷函數，建立 TLS 連線
 ; host str: 伺服器主機名
 ; port i64: 埠號
 ; 返回 conn ?conn: 連線（nil=連線失敗）
+; [dial](#net.tls.dial)
 dial = (host str, port i64) (conn ?conn) {
     conn = nil
     c = conn {}
@@ -3886,7 +3944,8 @@ server-conn {
     hs-prk-field [32]byte
 }
 
-; server-conn.append-hs: 追加交握資料到緩衝區
+; 追加交握資料到緩衝區
+; [append-hs](#net.tls.server-conn.append-hs)
 server-conn.append-hs = (data []byte) {
     n = data.len()
     i <- [0..n): {
@@ -3900,7 +3959,8 @@ server-conn.append-hs = (data []byte) {
     .hs-buf.len = .hs-buf-len
 }
 
-; server-conn.append-hs-from: 從 buf 的 offset 位置追加 n 位元組
+; 從 buf 的 offset 位置追加 n 位元組
+; [append-hs-from](#net.tls.server-conn.append-hs-from)
 server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
     i <- [0..n): {
 
@@ -3913,8 +3973,9 @@ server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
     .hs-buf.len = .hs-buf-len
 }
 
-; server-conn.read-client-hello: 讀取 ClientHello
+; 讀取 ClientHello
 ; 返回 ok bool: true=成功
+; [read-client-hello](#net.tls.server-conn.read-client-hello)
 server-conn.read-client-hello = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -4114,8 +4175,9 @@ server-conn.read-client-hello = () (ok bool) {
     ok = true
 }
 
-; server-conn.send-server-hello: 發送 ServerHello
+; 發送 ServerHello
 ; 返回 ok bool: true=成功
+; [send-server-hello](#net.tls.server-conn.send-server-hello)
 server-conn.send-server-hello = () (ok bool) {
     ok = false
 
@@ -4198,8 +4260,9 @@ server-conn.send-server-hello = () (ok bool) {
     ok = true
 }
 
-; server-conn.send-certificate: 發送 Certificate
+; 發送 Certificate
 ; 返回 ok bool: true=成功
+; [send-certificate](#net.tls.server-conn.send-certificate)
 server-conn.send-certificate = () (ok bool) {
     ok = false
 
@@ -4242,8 +4305,9 @@ server-conn.send-certificate = () (ok bool) {
     ok = true
 }
 
-; server-conn.send-server-hello-done: 發送 ServerHelloDone
+; 發送 ServerHelloDone
 ; 返回 ok bool: true=成功
+; [send-server-hello-done](#net.tls.server-conn.send-server-hello-done)
 server-conn.send-server-hello-done = () (ok bool) {
     ok = false
     hs []byte = with-len(4)
@@ -4259,11 +4323,12 @@ server-conn.send-server-hello-done = () (ok bool) {
     ok = true
 }
 
-; rsa-pkcs1-decrypt: RSA PKCS#1 v1.5 解密
+; RSA PKCS#1 v1.5 解密
 ; ciphertext []byte: RSA 加密的資料
 ; n []byte: 模數（big-endian）
 ; d []byte: 私鑰指數（big-endian）
 ; 返回 out []byte: 解密後的明文（nil=失敗）
+; [rsa-pkcs1-decrypt](#net.tls.rsa-pkcs1-decrypt)
 rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     mod-len = n.len()
 
@@ -4364,8 +4429,9 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     out.truncate(msg-len)
 }
 
-; server-conn.read-client-key-exchange: 讀取 ClientKeyExchange 並解密 premaster
+; 讀取 ClientKeyExchange 並解密 premaster
 ; 返回 ok bool: true=成功
+; [read-client-key-exchange](#net.tls.server-conn.read-client-key-exchange)
 server-conn.read-client-key-exchange = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -4424,8 +4490,9 @@ server-conn.read-client-key-exchange = () (ok bool) {
     ok = true
 }
 
-; server-conn.derive-keys: 從 premaster 推導所有金鑰
+; 從 premaster 推導所有金鑰
 ; premaster []byte: premaster secret (48 bytes)
+; [derive-keys](#net.tls.server-conn.derive-keys)
 server-conn.derive-keys = (premaster []byte) {
 
     ; master_secret = PRF(premaster, "master secret", client_random + server_random, 48)
@@ -4503,10 +4570,11 @@ server-conn.derive-keys = (premaster []byte) {
     .read-seq = 0
 }
 
-; server-conn.encrypt-record: 加密記錄並發送（使用 SERVER 金鑰）
+; 加密記錄並發送（使用 SERVER 金鑰）
 ; ct i64: 原始 content type
 ; data []byte: 明文資料
 ; 返回 ok bool: true=成功
+; [encrypt-record](#net.tls.server-conn.encrypt-record)
 server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     ok = false
     n = data.len()
@@ -4635,11 +4703,12 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     ok = true
 }
 
-; server-conn.decrypt-record: 解密記錄（使用 CLIENT 金鑰）
+; 解密記錄（使用 CLIENT 金鑰）
 ; buf []byte: 接收到的記錄資料（從標頭開始）
 ; expected-ct i64: 原始 content type（TLS-CT-HANDSHAKE 或 TLS-CT-APP-DATA）
 ; 返回 ct i64: 原始 content type（-1=錯誤）
 ; 返回 out []byte: 解密後的明文
+; [decrypt-record](#net.tls.server-conn.decrypt-record)
 server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ct = -1
     rlen = get-u16(buf, 3)
@@ -4742,7 +4811,8 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     .read-seq = .read-seq + 1
 }
 
-; server-conn.send-change-cipher-spec: 發送 ChangeCipherSpec
+; 發送 ChangeCipherSpec
+; [send-change-cipher-spec](#net.tls.server-conn.send-change-cipher-spec)
 server-conn.send-change-cipher-spec = () {
     ccs [1]byte
 
@@ -4780,8 +4850,9 @@ server-conn.send-change-cipher-spec = () {
     net.net-send(.fd, ccs, 1)
 }
 
-; server-conn.read-change-cipher-spec: 讀取 ChangeCipherSpec
+; 讀取 ChangeCipherSpec
 ; 返回 ok bool: true=成功
+; [read-change-cipher-spec](#net.tls.server-conn.read-change-cipher-spec)
 server-conn.read-change-cipher-spec = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -4797,8 +4868,9 @@ server-conn.read-change-cipher-spec = () (ok bool) {
     ok = true
 }
 
-; server-conn.read-finished: 讀取加密的 client Finished 並驗證
+; 讀取加密的 client Finished 並驗證
 ; 返回 ok bool: true=成功
+; [read-finished](#net.tls.server-conn.read-finished)
 server-conn.read-finished = () (ok bool) {
     ok = false
     buf []byte = with-len(16400)
@@ -4839,8 +4911,9 @@ server-conn.read-finished = () (ok bool) {
     ok = true
 }
 
-; server-conn.send-finished: 發送加密的 server Finished
+; 發送加密的 server Finished
 ; 返回 ok bool: true=成功
+; [send-finished](#net.tls.server-conn.send-finished)
 server-conn.send-finished = () (ok bool) {
     ok = false
 
@@ -4885,9 +4958,10 @@ server-conn.send-finished = () (ok bool) {
 ; TLS 1.3 伺服器端交握與記錄層
 ; ═══════════════════════════════════════════════
 
-; server-conn.send-server-hello-13: 發送 TLS 1.3 ServerHello
+; 發送 TLS 1.3 ServerHello
 ; 生成 X25519 金鑰對，構建含 supported_versions 和 key_share 擴展的 ServerHello
 ; 返回 ok bool: true=成功
+; [send-server-hello-13](#net.tls.server-conn.send-server-hello-13)
 server-conn.send-server-hello-13 = () (ok bool) {
     ok = false
 
@@ -5069,7 +5143,8 @@ server-conn.send-server-hello-13 = () (ok bool) {
     ok = true
 }
 
-; server-conn.compute-shared-secret-13: 計算 ECDHE 共享金鑰
+; 計算 ECDHE 共享金鑰
+; [compute-shared-secret-13](#net.tls.server-conn.compute-shared-secret-13)
 server-conn.compute-shared-secret-13 = () {
 
     ; 透過 []byte 傳遞給 x25519（避開全域 [32]byte 傳參的編譯器 bug）
@@ -5095,7 +5170,8 @@ server-conn.compute-shared-secret-13 = () {
     }
 }
 
-; server-conn.derive-handshake-keys-13: 推導交握金鑰（HKDF 金鑰排程）
+; 推導交握金鑰（HKDF 金鑰排程）
+; [derive-handshake-keys-13](#net.tls.server-conn.derive-handshake-keys-13)
 server-conn.derive-handshake-keys-13 = () {
 
     ; 1. Early Secret = HKDF-Extract(0, 0^32)
@@ -5199,7 +5275,8 @@ server-conn.derive-handshake-keys-13 = () {
     .hs-read-seq = 0
 }
 
-; server-conn.derive-application-keys-13: 推導應用層金鑰
+; 推導應用層金鑰
+; [derive-application-keys-13](#net.tls.server-conn.derive-application-keys-13)
 server-conn.derive-application-keys-13 = () {
     hs-prk []byte = with-len(32)
     i <- [0..32): {
@@ -5295,13 +5372,14 @@ server-conn.derive-application-keys-13 = () {
     .ap-read-seq = 0
 }
 
-; server-conn.encrypt-record-13: TLS 1.3 AEAD 加密記錄並發送
+; TLS 1.3 AEAD 加密記錄並發送
 ; ct i64: 原始 content type
 ; data []byte: 明文資料
 ; key [16]byte: AEAD 金鑰
 ; iv [12]byte: AEAD IV
 ; seq i64: 序號
 ; 返回 ok bool: true=成功
+; [encrypt-record-13](#net.tls.server-conn.encrypt-record-13)
 server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i64) (ok bool) {
     ok = false
     n = data.len()
@@ -5381,13 +5459,14 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     ok = true
 }
 
-; server-conn.decrypt-record-13: TLS 1.3 AEAD 解密記錄
+; TLS 1.3 AEAD 解密記錄
 ; rec []byte: 接收到的記錄（含標頭）
 ; key [16]byte: AEAD 金鑰
 ; iv [12]byte: AEAD IV
 ; seq i64: 序號
 ; 返回 ct i64: 原始 content type（-1=錯誤）
 ; 返回 out []byte: 解密後的明文
+; [decrypt-record-13](#net.tls.server-conn.decrypt-record-13)
 server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i64, out []byte) {
     ct = -1
     rlen = get-u16(rec, 3)
@@ -5462,8 +5541,9 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     }
 }
 
-; server-conn.read-encrypted-record-13: 讀取並解密一筆 TLS 1.3 記錄
+; 讀取並解密一筆 TLS 1.3 記錄
 ; （跳過 CCS middlebox compatibility 記錄）
+; [read-encrypted-record-13](#net.tls.server-conn.read-encrypted-record-13)
 server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64, out []byte) {
     ct = -1
     rec []byte = with-len(16400)
@@ -5482,7 +5562,8 @@ server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct 
     ct < 0 -> return
 }
 
-; server-conn.read-encrypted-handshake-13: 讀取加密的交握訊息
+; 讀取加密的交握訊息
+; [read-encrypted-handshake-13](#net.tls.server-conn.read-encrypted-handshake-13)
 server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     msg-type = -1
 
@@ -5555,8 +5636,9 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     .hs-plain-pos = pos + 4 + msg-len
 }
 
-; server-conn.send-encrypted-extensions-13: 發送 EncryptedExtensions
+; 發送 EncryptedExtensions
 ; 返回 ok bool: true=成功
+; [send-encrypted-extensions-13](#net.tls.server-conn.send-encrypted-extensions-13)
 server-conn.send-encrypted-extensions-13 = () (ok bool) {
     ok = false
 
@@ -5581,8 +5663,9 @@ server-conn.send-encrypted-extensions-13 = () (ok bool) {
     .hs-write-seq = .hs-write-seq + 1
 }
 
-; server-conn.send-certificate-13: 發送 TLS 1.3 Certificate
+; 發送 TLS 1.3 Certificate
 ; 返回 ok bool: true=成功
+; [send-certificate-13](#net.tls.server-conn.send-certificate-13)
 server-conn.send-certificate-13 = () (ok bool) {
     ok = false
 
@@ -5642,8 +5725,9 @@ server-conn.send-certificate-13 = () (ok bool) {
     .hs-write-seq = .hs-write-seq + 1
 }
 
-; server-conn.send-finished-13: 發送 server Finished
+; 發送 server Finished
 ; 返回 ok bool: true=成功
+; [send-finished-13](#net.tls.server-conn.send-finished-13)
 server-conn.send-finished-13 = () (ok bool) {
     ok = false
 
@@ -5696,8 +5780,9 @@ server-conn.send-finished-13 = () (ok bool) {
     .hs-write-seq = .hs-write-seq + 1
 }
 
-; server-conn.read-client-finished-13: 讀取並驗證 client Finished
+; 讀取並驗證 client Finished
 ; 返回 ok bool: true=成功
+; [read-client-finished-13](#net.tls.server-conn.read-client-finished-13)
 server-conn.read-client-finished-13 = () (ok bool) {
     ok = false
 
@@ -5745,8 +5830,9 @@ server-conn.read-client-finished-13 = () (ok bool) {
     ok = true
 }
 
-; server-conn.handshake-13: TLS 1.3 伺服器交握
+; TLS 1.3 伺服器交握
 ; 返回 ok bool: true=成功
+; [handshake-13](#net.tls.server-conn.handshake-13)
 server-conn.handshake-13 = () (ok bool) {
     ok = false
 
@@ -5787,8 +5873,9 @@ server-conn.handshake-13 = () (ok bool) {
     ok = true
 }
 
-; server-conn.handshake: TLS 伺服器交握（自動協商 1.3/1.2）
+; TLS 伺服器交握（自動協商 1.3/1.2）
 ; 返回 ok bool: true=成功
+; [handshake](#net.tls.server-conn.handshake)
 server-conn.handshake = () (ok bool) {
     ok = false
 
@@ -5837,9 +5924,10 @@ server-conn.handshake = () (ok bool) {
     ok = true
 }
 
-; server-conn.send: 透過 TLS 發送資料
+; 透過 TLS 發送資料
 ; data str: 資料
 ; 返回 written ?i64: 已傳送位元組數（nil=錯誤）
+; [send](#net.tls.server-conn.send)
 server-conn.send = (data str) (written ?i64) {
     written = nil
     .encrypted == false -> return
@@ -5866,10 +5954,11 @@ server-conn.send = (data str) (written ?i64) {
     written = data-len
 }
 
-; server-conn.recv: 接收並解密資料
+; 接收並解密資料
 ; buf str: 接收緩衝區
 ; n i64: 最多接收位元組數
 ; 返回 read-n i64: 實際接收位元組數（-1=錯誤）
+; [recv](#net.tls.server-conn.recv)
 server-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .encrypted == false -> return
@@ -5927,16 +6016,18 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = copy-n
 }
 
-; server-conn.close: 關閉連線
+; 關閉連線
+; [close](#net.tls.server-conn.close)
 server-conn.close = () {
     .fd > 0 -> fs.close(.fd)
     .fd = -1
     .encrypted = false
 }
 
-; server-init: 初始化伺服器連線（生成憑證、設定金鑰）
+; 初始化伺服器連線（生成憑證、設定金鑰）
 ; fd fd: 客戶端 socket fd
 ; 返回 conn ?server-conn: 連線（nil=錯誤）
+; [server-init](#net.tls.server-init)
 server-init = (fd fd) (conn ?server-conn) {
     conn = nil
     c = server-conn {}
@@ -5979,10 +6070,11 @@ server-init = (fd fd) (conn ?server-conn) {
     conn = c
 }
 
-; server-accept: 接受 TCP 連線並執行 TLS 交握
+; 接受 TCP 連線並執行 TLS 交握
 ; 使用局部變數進行交握（全域變數有編譯器 bug：跨函式位址不一致）
 ; listen-fd fd: 監聽 socket fd
 ; 返回 conn ?server-conn: ok=連線（含交握金鑰）, nil=失敗
+; [server-accept](#net.tls.server-accept)
 server-accept = (listen-fd fd) (conn ?server-conn) {
     conn = nil
 
@@ -6017,13 +6109,14 @@ server-accept = (listen-fd fd) (conn ?server-conn) {
     }
 }
 
-; https-serve-once: 完整的 HTTPS 請求-回應週期（單一函式）
+; 完整的 HTTPS 請求-回應週期（單一函式）
 ; 在同一個函式中完成：accept + handshake + recv HTTP + send HTTP + close
 ; 所有 TLS 狀態保持在局部變數 c 中，避開全域變數 bug 和結構體複製 bug。
 ; listen-fd fd: 監聽 socket fd
 ; status i64: HTTP 回應狀態碼
 ; body str: HTTP 回應體
 ; 返回 ok bool: true=成功
+; [https-serve-once](#net.tls.https-serve-once)
 https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
     ok = false
 
@@ -6128,10 +6221,11 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
     }
 }
 
-; server-listen: 建立監聽 socket
+; 建立監聽 socket
 ; host str: 綁定的 IP 地址
 ; port i64: 監聽埠號
 ; 返回 fd fd: 監聽 socket fd（-1=失敗）
+; [server-listen](#net.tls.server-listen)
 server-listen = (host str, port i64) (fd fd) {
     fd = -1
     fd = net.net-listen(host, port)

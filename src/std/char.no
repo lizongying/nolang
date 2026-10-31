@@ -13,12 +13,14 @@
 ; 字元分類
 ; ═══════════════════════════════════════════════
 
-; is-digit: 判斷是否為數字（0-9）
+; 判斷是否為數字（0-9）
+; [is-digit](#char.is-digit)
 char.is-digit = () (result bool) {
     . >= 48 && . <= 57 -> result = true
 }
 
-; is-letter: 判斷是否為字母（A-Z a-z）
+; 判斷是否為字母（A-Z a-z）
+; [is-letter](#char.is-letter)
 char.is-letter = () (result bool) {
     . >= 65 && . <= 90 -> {
         result = true
@@ -27,8 +29,9 @@ char.is-letter = () (result bool) {
     . >= 97 && . <= 122 -> result = true
 }
 
-; is-alpha: 判斷是否為字母（A-Z a-z）
+; 判斷是否為字母（A-Z a-z）
 ; is-letter 的別名
+; [is-alpha](#char.is-alpha)
 char.is-alpha = () (result bool) {
     . >= 65 && . <= 90 -> {
         result = true
@@ -37,22 +40,26 @@ char.is-alpha = () (result bool) {
     . >= 97 && . <= 122 -> result = true
 }
 
-; is-alnum: 判斷是否為字母或數字
+; 判斷是否為字母或數字
+; [is-alnum](#char.is-alnum)
 char.is-alnum = () (result bool) {
     .is-digit() || .is-alpha() -> result = true
 }
 
-; is-space: 判斷是否為空白字元（space tab newline cr）
+; 判斷是否為空白字元（space tab newline cr）
+; [is-space](#char.is-space)
 char.is-space = () (result bool) {
     . == 32 || . == 9 || . == 10 || . == 13 -> result = true
 }
 
-; is-upper: 判斷是否為大寫字母（A-Z）
+; 判斷是否為大寫字母（A-Z）
+; [is-upper](#char.is-upper)
 char.is-upper = () (result bool) {
     . >= 65 && . <= 90 -> result = true
 }
 
-; is-lower: 判斷是否為小寫字母（a-z）
+; 判斷是否為小寫字母（a-z）
+; [is-lower](#char.is-lower)
 char.is-lower = () (result bool) {
     . >= 97 && . <= 122 -> result = true
 }
@@ -61,7 +68,8 @@ char.is-lower = () (result bool) {
 ; 大小寫轉換
 ; ═══════════════════════════════════════════════
 
-; to-upper: 轉為大寫（僅 ASCII）
+; 轉為大寫（僅 ASCII）
+; [to-upper](#char.to-upper)
 char.to-upper = () (result char) {
     {
         . >= 97 && . <= 122 -> {
@@ -74,7 +82,8 @@ char.to-upper = () (result char) {
     }
 }
 
-; to-lower: 轉為小寫（僅 ASCII）
+; 轉為小寫（僅 ASCII）
+; [to-lower](#char.to-lower)
 char.to-lower = () (result char) {
     {
         . >= 65 && . <= 90 -> {
@@ -91,7 +100,8 @@ char.to-lower = () (result char) {
 ; UTF-8 編碼
 ; ═══════════════════════════════════════════════
 
-; to-bytes: 轉為 UTF-8 編碼的位元組陣列
+; 轉為 UTF-8 編碼的位元組陣列
+; [to-bytes](#char.to-bytes)
 char.to-bytes = () (out []byte) {
     buf [4]byte = [0x00, 0x00, 0x00, 0x00]
     len = 0
@@ -161,7 +171,8 @@ char.to-bytes = () (out []byte) {
     out = buf[..len)
 }
 
-; to-str: 轉為 UTF-8 編碼的字串
+; 轉為 UTF-8 編碼的字串
+; [to-str](#char.to-str)
 char.to-str = () (s str) {
     s = with-cap(4)
     {
@@ -195,11 +206,12 @@ char.to-str = () (s str) {
     }
 }
 
-; to-txt: 轉為 UTF-8 編碼的 txt（固定 256 字節結構）
+; 轉為 UTF-8 編碼的 txt（固定 256 字節結構）
 ; 復用 char.to-bytes 得到 1~4 字節的 UTF-8 序列，再逐字節拷入 txt 緩衝區。
 ; 與 str.to-txt / []byte.to-txt 一致，回傳普通 txt（單碼點轉換不會失敗，無需 ?txt）。
 ; 有了它，txt.to-upper / to-lower 等可透過「取 char → char.to-lower → char.to-txt 串接」
 ; 重寫，無須再依賴會回傳 char 的 txt[i] 下標寫入。
+; [to-txt](#char.to-txt)
 char.to-txt = () (out txt) {
     b = .to-bytes()
     out = b.to-txt()
@@ -221,6 +233,7 @@ char.to-txt = () (out txt) {
 ;   - MIR=3 门禁：编译器对 []char 元素类型与新增的 []t.to-chars 泛型方法均无支持，
 ;     直接报 "unknown callee []t.to-chars"，无法编译通过。
 ; 在编译器修复 []char 切片支持前，请勿依赖 to-chars / []char.to-str。
+; [to-str](#chars.to-str)
 []char.to-str = () (out str) {
 
     n = .len()

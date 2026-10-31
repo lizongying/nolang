@@ -1,7 +1,7 @@
 ; test-http2 — HTTP/2 影格與連線測試（vet-only，需伺服器才能執行）
 ; # std/net/http2
 
-; test-frame-parse: 影格標頭解析
+; 影格標頭解析
 test-frame-parse = () {
     space = ' '
     data = space.repeat(16)
@@ -70,7 +70,7 @@ test-frame-parse = () {
     print('PASS: frame-parse')
 }
 
-; test-frame-serialize: 影格標頭序列化
+; 影格標頭序列化
 test-frame-serialize = () {
     space = ' '
     f http2.frame
@@ -112,7 +112,7 @@ test-frame-serialize = () {
     print('PASS: frame-serialize')
 }
 
-; test-conn-init: 連線初始化
+; 連線初始化
 test-conn-init = () {
     conn http2.conn
     conn.init()
@@ -135,7 +135,7 @@ test-conn-init = () {
     print('PASS: conn-init')
 }
 
-; test-http2-do-req-signature: http2-do-req 函數簽名驗證（vet-only）
+; http2-do-req 函數簽名驗證（vet-only）
 test-http2-do-req-signature = () {
 
     ; 此測試只驗證函數可被正確呼叫，不實際連線
@@ -150,7 +150,7 @@ test-http2-do-req-signature = () {
     print('PASS: http2-do-req-signature')
 }
 
-; test-http2-get-signature: http2-get 函數簽名驗證（vet-only）
+; http2-get 函數簽名驗證（vet-only）
 test-http2-get-signature = () {
 
     resp = http2.get('http://127.0.0.1:1/test')
@@ -161,7 +161,7 @@ test-http2-get-signature = () {
     print('PASS: http2-get-signature')
 }
 
-; test-http2-post-signature: http2-post 函數簽名驗證（vet-only）
+; http2-post 函數簽名驗證（vet-only）
 test-http2-post-signature = () {
 
     resp = http2.post('http://127.0.0.1:1/test', 'body')
@@ -172,7 +172,7 @@ test-http2-post-signature = () {
     print('PASS: http2-post-signature')
 }
 
-; test-run-all: 執行所有測試
+; 執行所有測試
 test-run-all = () {
 
     print('=== HTTP/2 Tests ===')

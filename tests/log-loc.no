@@ -6,13 +6,13 @@
 ;
 ; 通过判準（no test 以結束碼 0 為通過）：以下任一斷言失敗即 exit(非0)。
 
-; probe：標記 #{track-caller}，回傳注入的 loc 槽，便於斷言而無需擷取 stderr
+; 標記 #{track-caller}，回傳注入的 loc 槽，便於斷言而無需擷取 stderr
 #{track-caller}
 probe = (msg str, loc str = '') (out str) {
     out = loc
 }
 
-; plain：未標記，省略的末位應維持預設 ''（證明注入只對 track-caller 生效）
+; 未標記，省略的末位應維持預設 ''（證明注入只對 track-caller 生效）
 plain = (msg str, extra str = '') (out str) {
     out = extra
 }

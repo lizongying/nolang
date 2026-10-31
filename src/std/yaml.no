@@ -113,7 +113,8 @@ yaml-parser {
 ; 解析器：字符级基础操作
 ; ═══════════════════════════════════════════════
 
-; byte-at: 取 src[i]，越界返回 0
+; 取 src[i]，越界返回 0
+; [byte-at](#yaml.yaml-parser.byte-at)
 yaml-parser.byte-at = (i i64) (c i64) {
 
     c = 0
@@ -122,12 +123,14 @@ yaml-parser.byte-at = (i i64) (c i64) {
     c = .src.byte(i)
 }
 
-; cur: 当前字节
+; 当前字节
+; [cur](#yaml.yaml-parser.cur)
 yaml-parser.cur = () (c i64) {
     c = .byte-at(.pos)
 }
 
-; at: 相对当前位置偏移 k 的字节
+; 相对当前位置偏移 k 的字节
+; [at](#yaml.yaml-parser.at)
 yaml-parser.at = (k i64) (c i64) {
 
     #{overflow=wrap}
@@ -135,19 +138,22 @@ yaml-parser.at = (k i64) (c i64) {
     c = .byte-at(i)
 }
 
-; eof: 是否到达输入末尾
+; 是否到达输入末尾
+; [eof](#yaml.yaml-parser.eof)
 yaml-parser.eof = () (yes bool) {
     yes = .pos >= .n
 }
 
-; advance: 前进一个字节
+; 前进一个字节
+; [advance](#yaml.yaml-parser.advance)
 yaml-parser.advance = () {
 
     #{overflow=wrap}
     .pos = .pos + 1
 }
 
-; newline: 消费一个换行（\n 或 \r\n）
+; 消费一个换行（\n 或 \r\n）
+; [newline](#yaml.yaml-parser.newline)
 yaml-parser.newline = () (yes bool) {
     yes = false
     c = .cur()
@@ -169,13 +175,15 @@ yaml-parser.newline = () (yes bool) {
     }
 }
 
-; at-eol: 是否位于行尾（含 EOF）
+; 是否位于行尾（含 EOF）
+; [at-eol](#yaml.yaml-parser.at-eol)
 yaml-parser.at-eol = () (yes bool) {
     c = .cur()
     yes = c == 0 || c == 10 || c == 13
 }
 
-; skip-spaces: 跳过行内空格与制表符
+; 跳过行内空格与制表符
+; [skip-spaces](#yaml.yaml-parser.skip-spaces)
 yaml-parser.skip-spaces = () {
     !! {
         c = .cur()
@@ -191,7 +199,8 @@ yaml-parser.skip-spaces = () {
     }
 }
 
-; skip-to-eol: 跳过行尾空白与行注释（不消费换行）
+; 跳过行尾空白与行注释（不消费换行）
+; [skip-to-eol](#yaml.yaml-parser.skip-to-eol)
 yaml-parser.skip-to-eol = () {
     .skip-spaces()
     c = .cur()
@@ -203,7 +212,8 @@ yaml-parser.skip-to-eol = () {
     }
 }
 
-; line-end-of: 返回 i 所在行的行尾偏移（指向换行或 n）
+; 返回 i 所在行的行尾偏移（指向换行或 n）
+; [line-end-of](#yaml.yaml-parser.line-end-of)
 yaml-parser.line-end-of = (i i64) (le i64) {
     le = i
     (le < .n) {
@@ -216,7 +226,8 @@ yaml-parser.line-end-of = (i i64) (le i64) {
     }
 }
 
-; line-start-of: 返回 i 所在行的起始偏移
+; 返回 i 所在行的起始偏移
+; [line-start-of](#yaml.yaml-parser.line-start-of)
 yaml-parser.line-start-of = (i i64) (ls i64) {
     ls = i
     (ls > 0) {
@@ -237,12 +248,13 @@ yaml-parser.line-start-of = (i i64) (ls i64) {
     }
 }
 
-; indent-at: 当前位置距行首的空格数
+; 当前位置距行首的空格数
 ;
 ; 先跳过行首空格再计数：调用点几乎都紧跟在 skip-blank-lines() 之后，
 ; 此时 pos 停在行首（列 0），直接相减会恒得 0，导致嵌套块被判成「不缩进」。
 ; 跳过后 pos 停在首个非空格字符，后续的 is-seq-dash / looks-like-map-entry /
 ; at-doc-marker 也都需要这个位置。
+; [indent-at](#yaml.yaml-parser.indent-at)
 yaml-parser.indent-at = () (ind i64) {
     .skip-spaces()
     ls = .line-start-of(.pos)
@@ -251,14 +263,16 @@ yaml-parser.indent-at = () (ind i64) {
     ind = .pos - ls
 }
 
-; fail: 记录解析错误
+; 记录解析错误
+; [fail](#yaml.yaml-parser.fail)
 yaml-parser.fail = (msg str) {
     .failed -> return
     .failed = true
     .err = msg
 }
 
-; fail-at: 记录带位置的解析错误
+; 记录带位置的解析错误
+; [fail-at](#yaml.yaml-parser.fail-at)
 yaml-parser.fail-at = (msg str) {
     .failed -> return
     .failed = true
@@ -269,7 +283,8 @@ yaml-parser.fail-at = (msg str) {
     .err = 'line ' - .line.to-str() - ', column ' - col.to-str() - ': ' - msg
 }
 
-; push-node: 追加节点并返回索引
+; 追加节点并返回索引
+; [push-node](#yaml.yaml-parser.push-node)
 yaml-parser.push-node = (nd yaml-node) (idx i64) {
     .nodes.push(nd)
 
@@ -277,7 +292,8 @@ yaml-parser.push-node = (nd yaml-node) (idx i64) {
     idx = .nodes.len() - 1
 }
 
-; push-null: 追加空节点（null）
+; 追加空节点（null）
+; [push-null](#yaml.yaml-parser.push-null)
 yaml-parser.push-null = () (idx i64) {
     nd = yaml-node {
         kind: YAML-KIND-NULL
@@ -294,7 +310,8 @@ yaml-parser.push-null = () (idx i64) {
     idx = .push-node(nd)
 }
 
-; set-props: 为节点附加标签与锚点（并登记锚点）
+; 为节点附加标签与锚点（并登记锚点）
+; [set-props](#yaml.yaml-parser.set-props)
 yaml-parser.set-props = (idx i64, tag str, anchor str) {
 
     .nodes[idx].tag = tag
@@ -303,13 +320,15 @@ yaml-parser.set-props = (idx i64, tag str, anchor str) {
     anchor.len-bytes() > 0 -> .register-anchor(anchor, idx)
 }
 
-; register-anchor: 登记锚点
+; 登记锚点
+; [register-anchor](#yaml.yaml-parser.register-anchor)
 yaml-parser.register-anchor = (name str, idx i64) {
     .anchor-names.push(name)
     .anchor-ids.push(idx)
 }
 
-; anchor-id: 查找锚点，未找到返回 -1
+; 查找锚点，未找到返回 -1
+; [anchor-id](#yaml.yaml-parser.anchor-id)
 yaml-parser.anchor-id = (name str) (idx i64) {
     idx = -1
     total = .anchor-names.len()
@@ -326,12 +345,13 @@ yaml-parser.anchor-id = (name str) (idx i64) {
 ; 索引辅助
 ; ═══════════════════════════════════════════════
 
-; yaml-str-at: 取 []str 的第 i 个元素（越界返回空串）
+; 取 []str 的第 i 个元素（越界返回空串）
 ;
 ; 为什么需要这个 helper：`arr[i]`（arr 为 []str）默认返回 option<str>，
 ; 而 MIR 后端在把 option<str> 当作调用实参/方法接收者时会产生非法 IR
 ; （%option_str 与 %str-long 不匹配）。字符串拼接会自动解包 option，
 ; 因此这里用 `out = out - a[i]` 取元素，既解包又满足 `no vet` 的越界检查。
+; [yaml-str-at](#yaml.yaml-str-at)
 yaml-str-at = (a []str, i i64) (out str) {
     out = ''
     i < 0 -> return
@@ -339,16 +359,18 @@ yaml-str-at = (a []str, i i64) (out str) {
     out = out - a[i] #{index-out=''}
 }
 
-; yaml-f-is-nan: 浮点是否为 NaN（NaN != NaN）
+; 浮点是否为 NaN（NaN != NaN）
 ; 不用 `float.is-nan`：模块内的接收者式调用在 MIR 后端解析不到该方法。
+; [yaml-f-is-nan](#yaml.yaml-f-is-nan)
 yaml-f-is-nan = (x f64) (yes bool) {
     yes = x != x
 }
 
-; yaml-f-is-inf: 浮点是否为正/负无穷
+; 浮点是否为正/负无穷
 ;
 ; 不用字面量比较：Nolang 的数值字面量不支持指数（`1e308` 会被切成 `1` + `e308`）。
 ; 无穷的判据是「非零且减半后不变」；先用 `x != x` 排除 NaN。
+; [yaml-f-is-inf](#yaml.yaml-f-is-inf)
 yaml-f-is-inf = (x f64) (yes bool) {
     yes = false
     x != x -> return
@@ -361,21 +383,24 @@ yaml-f-is-inf = (x f64) (yes bool) {
 ; 标量类型推断（YAML 1.2 core schema）
 ; ═══════════════════════════════════════════════
 
-; yaml-inf: 正无穷
+; 正无穷
+; [yaml-inf](#yaml.yaml-inf)
 yaml-inf = () (v f64) {
     v = 1.0 / 0.0
 }
 
-; yaml-nan: 非数
+; 非数
 ;
 ; 必须走运行期除法：编译期常量折叠会把 `0.0 / 0.0` 直接算成 0。
 ; 借道局部变量可避免折叠，得到真正的 NaN（`x != x` 为真）。
+; [yaml-nan](#yaml.yaml-nan)
 yaml-nan = () (v f64) {
     zero = 0.0
     v = zero / zero
 }
 
-; yaml-hex-digit: 十六进制字符转数值，非十六进制返回 -1
+; 十六进制字符转数值，非十六进制返回 -1
+; [yaml-hex-digit](#yaml.yaml-hex-digit)
 yaml-hex-digit = (c i64) (d i64) {
     d = -1
     c >= 48 && c <= 57 -> {
@@ -397,7 +422,8 @@ yaml-hex-digit = (c i64) (d i64) {
     }
 }
 
-; yaml-parse-radix: 解析 radix 进制整数（忽略 _）
+; 解析 radix 进制整数（忽略 _）
+; [yaml-parse-radix](#yaml.yaml-parse-radix)
 yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
     kind = YAML-KIND-STR
     v = 0
@@ -435,7 +461,8 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
     kind = YAML-KIND-INT
 }
 
-; yaml-to-f64: 文本转 f64（返回 nil 表示失败）
+; 文本转 f64（返回 nil 表示失败）
+; [yaml-to-f64](#yaml.yaml-to-f64)
 yaml-to-f64 = (t str) (v ?f64) {
     v = nil
     r = t.to-f64()
@@ -448,8 +475,9 @@ yaml-to-f64 = (t str) (v ?f64) {
     }
 }
 
-; yaml-scan-number: 尝试把文本解析为整数或浮点数
+; 尝试把文本解析为整数或浮点数
 ; 返回 kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR（不是数字）
+; [yaml-scan-number](#yaml.yaml-scan-number)
 yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
     kind = YAML-KIND-STR
     ival = 0
@@ -590,7 +618,8 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
     }
 }
 
-; yaml-resolve-plain: 按 core schema 推断 plain 标量类型
+; 按 core schema 推断 plain 标量类型
+; [yaml-resolve-plain](#yaml.yaml-resolve-plain)
 yaml-resolve-plain = (text str) (kind i64, ival i64, fval f64, bval bool) {
     kind = YAML-KIND-STR
     ival = 0
@@ -660,7 +689,8 @@ yaml-resolve-plain = (text str) (kind i64, ival i64, fval f64, bval bool) {
     }
 }
 
-; yaml-tag-name: 归一化标签名（!!str / tag:yaml.org,2002:str → str）
+; 归一化标签名（!!str / tag:yaml.org,2002:str → str）
+; [yaml-tag-name](#yaml.yaml-tag-name)
 yaml-tag-name = (tag str) (name str) {
     name = tag
     name.starts-with('!<') -> {
@@ -673,7 +703,8 @@ yaml-tag-name = (tag str) (name str) {
     name.starts-with('tag:yaml.org,2002:') -> name = name.slice-bytes(18, name.len-bytes())
 }
 
-; yaml-apply-tag: 按显式标签决定节点类型
+; 按显式标签决定节点类型
+; [yaml-apply-tag](#yaml.yaml-apply-tag)
 yaml-apply-tag = (tag str, kind i64) (k i64) {
     k = kind
     name = yaml-tag-name(tag)
@@ -707,7 +738,8 @@ yaml-apply-tag = (tag str, kind i64) (k i64) {
     }
 }
 
-; yaml-unescape-double: 处理双引号转义序列
+; 处理双引号转义序列
+; [yaml-unescape-double](#yaml.yaml-unescape-double)
 yaml-unescape-double = (body str) (out ?str) {
     acc = ''
     i = 0
@@ -862,7 +894,8 @@ yaml-unescape-double = (body str) (out ?str) {
 ; 标量节点构造
 ; ═══════════════════════════════════════════════
 
-; push-scalar: 依据风格与标签构造标量节点
+; 依据风格与标签构造标量节点
+; [push-scalar](#yaml.yaml-parser.push-scalar)
 yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
     kind = YAML-KIND-STR
     ival = 0
@@ -932,7 +965,8 @@ yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
 ; 属性（锚点 / 标签）
 ; ═══════════════════════════════════════════════
 
-; read-token: 读取一个不含分隔符的裸 token
+; 读取一个不含分隔符的裸 token
+; [read-token](#yaml.yaml-parser.read-token)
 yaml-parser.read-token = () (out str) {
     start = .pos
     !! {
@@ -944,7 +978,8 @@ yaml-parser.read-token = () (out str) {
     out = .src.slice-bytes(start, .pos)
 }
 
-; read-tag: 读取一个标签（!!name / !name / !<verbatim> / !）
+; 读取一个标签（!!name / !name / !<verbatim> / !）
+; [read-tag](#yaml.yaml-parser.read-tag)
 yaml-parser.read-tag = () (out str) {
     start = .pos
     .at(1) == 60 -> {
@@ -972,7 +1007,8 @@ yaml-parser.read-tag = () (out str) {
     out = .src.slice-bytes(start, .pos)
 }
 
-; parse-props: 解析节点前缀的锚点与标签（顺序任意）
+; 解析节点前缀的锚点与标签（顺序任意）
+; [parse-props](#yaml.yaml-parser.parse-props)
 yaml-parser.parse-props = () (tag str, anchor str) {
     tag = ''
     anchor = ''
@@ -997,7 +1033,8 @@ yaml-parser.parse-props = () (tag str, anchor str) {
 ; 结构探测
 ; ═══════════════════════════════════════════════
 
-; is-seq-dash: 当前位置是否为序列项指示符 '- '
+; 当前位置是否为序列项指示符 '- '
+; [is-seq-dash](#yaml.yaml-parser.is-seq-dash)
 yaml-parser.is-seq-dash = () (yes bool) {
     yes = false
     .cur() != 45 -> return
@@ -1005,7 +1042,8 @@ yaml-parser.is-seq-dash = () (yes bool) {
     yes = c == 0 || c == 32 || c == 9 || c == 10 || c == 13
 }
 
-; looks-like-map-entry: 本行是否存在顶层 ': ' 或行尾 ':' 或显式键 '? '
+; 本行是否存在顶层 ': ' 或行尾 ':' 或显式键 '? '
+; [looks-like-map-entry](#yaml.yaml-parser.looks-like-map-entry)
 yaml-parser.looks-like-map-entry = () (yes bool) {
     yes = false
     i = .pos
@@ -1127,7 +1165,8 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 ; 空行 / 注释跳过
 ; ═══════════════════════════════════════════════
 
-; skip-blank-lines: 跳过空行与整行注释，停在下一行内容起始处
+; 跳过空行与整行注释，停在下一行内容起始处
+; [skip-blank-lines](#yaml.yaml-parser.skip-blank-lines)
 yaml-parser.skip-blank-lines = () {
     !! {
         .eof() -> break
@@ -1147,7 +1186,8 @@ yaml-parser.skip-blank-lines = () {
     }
 }
 
-; read-line-content: 读取当前位置到行尾的内容（去掉行尾空白与注释）
+; 读取当前位置到行尾的内容（去掉行尾空白与注释）
+; [read-line-content](#yaml.yaml-parser.read-line-content)
 yaml-parser.read-line-content = () (out str) {
     start = .pos
     !! {
@@ -1170,7 +1210,8 @@ yaml-parser.read-line-content = () (out str) {
 ; 标量解析
 ; ═══════════════════════════════════════════════
 
-; parse-plain: 解析 plain 标量（含跨行折叠）
+; 解析 plain 标量（含跨行折叠）
+; [parse-plain](#yaml.yaml-parser.parse-plain)
 yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
     start = .pos
     !! {
@@ -1268,7 +1309,8 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
     idx = .push-scalar(text, YAML-STYLE-PLAIN, '', '')
 }
 
-; parse-single: 解析单引号标量
+; 解析单引号标量
+; [parse-single](#yaml.yaml-parser.parse-single)
 yaml-parser.parse-single = () (idx i64) {
     .advance()
     out = ''
@@ -1301,7 +1343,8 @@ yaml-parser.parse-single = () (idx i64) {
     idx = .push-scalar(out, YAML-STYLE-SINGLE, '', '')
 }
 
-; parse-double: 解析双引号标量
+; 解析双引号标量
+; [parse-double](#yaml.yaml-parser.parse-double)
 yaml-parser.parse-double = () (idx i64) {
     .advance()
     raw = ''
@@ -1358,7 +1401,8 @@ yaml-parser.parse-double = () (idx i64) {
     idx = .push-scalar(text, YAML-STYLE-DOUBLE, '', '')
 }
 
-; parse-alias: 解析别名 *name
+; 解析别名 *name
+; [parse-alias](#yaml.yaml-parser.parse-alias)
 yaml-parser.parse-alias = () (idx i64) {
     .advance()
     name = .read-token()
@@ -1387,7 +1431,8 @@ yaml-parser.parse-alias = () (idx i64) {
     idx = .push-node(nd)
 }
 
-; parse-block-scalar: 解析块标量 | 与 >
+; 解析块标量 | 与 >
+; [parse-block-scalar](#yaml.yaml-parser.parse-block-scalar)
 yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
     style = YAML-STYLE-LITERAL
     .cur() == 62 -> style = YAML-STYLE-FOLDED
@@ -1568,7 +1613,8 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
 ; 流式集合
 ; ═══════════════════════════════════════════════
 
-; parse-flow-node: 解析一个流上下文节点
+; 解析一个流上下文节点
+; [parse-flow-node](#yaml.yaml-parser.parse-flow-node)
 yaml-parser.parse-flow-node = (cont-min i64, key-mode bool, flow bool) (idx i64) {
     tag = ''
     anchor = ''
@@ -1613,7 +1659,8 @@ yaml-parser.parse-flow-node = (cont-min i64, key-mode bool, flow bool) (idx i64)
     }
 }
 
-; skip-flow-ws: 流式上下文的空白——行内空格、换行与注释
+; 流式上下文的空白——行内空格、换行与注释
+; [skip-flow-ws](#yaml.yaml-parser.skip-flow-ws)
 yaml-parser.skip-flow-ws = () {
     !! {
         .skip-spaces()
@@ -1634,7 +1681,8 @@ yaml-parser.skip-flow-ws = () {
     }
 }
 
-; parse-flow-seq: 解析 [a, b, ...]
+; 解析 [a, b, ...]
+; [parse-flow-seq](#yaml.yaml-parser.parse-flow-seq)
 yaml-parser.parse-flow-seq = () (idx i64) {
     .advance()
     kids []i64 = with-len(0)
@@ -1691,7 +1739,8 @@ yaml-parser.parse-flow-seq = () (idx i64) {
     idx = .push-node(nd)
 }
 
-; parse-flow-map: 解析 {k: v, ...}
+; 解析 {k: v, ...}
+; [parse-flow-map](#yaml.yaml-parser.parse-flow-map)
 yaml-parser.parse-flow-map = () (idx i64) {
     .advance()
     keys []i64 = with-len(0)
@@ -1769,7 +1818,8 @@ yaml-parser.parse-flow-map = () (idx i64) {
 ; 块结构
 ; ═══════════════════════════════════════════════
 
-; parse-block-indented: 解析缩进更深的后续行作为值
+; 解析缩进更深的后续行作为值
+; [parse-block-indented](#yaml.yaml-parser.parse-block-indented)
 yaml-parser.parse-block-indented = (parent-indent i64) (idx i64) {
     .skip-blank-lines()
     .eof() -> {
@@ -1794,7 +1844,8 @@ yaml-parser.parse-block-indented = (parent-indent i64) (idx i64) {
     idx = .parse-block(ind, ind)
 }
 
-; parse-block-seq: 解析块序列
+; 解析块序列
+; [parse-block-seq](#yaml.yaml-parser.parse-block-seq)
 yaml-parser.parse-block-seq = (indent i64) (idx i64) {
     kids []i64 = with-len(0)
     !! {
@@ -1845,9 +1896,10 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
     idx = .push-node(nd)
 }
 
-; merge-one: 把一个映射的条目合并进 keys/vals（不覆盖已有键）
+; 把一个映射的条目合并进 keys/vals（不覆盖已有键）
 ; 说明：MIR 后端不允许把入参 vec 直接 move 进另一个 vec（借用/所有权保护），
 ;       因此这里逐元素复制，而不是 ok-keys = keys。
+; [merge-one](#yaml.yaml-parser.merge-one)
 yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-vals []i64) {
     ok-keys = with-len(0)
     ok-vals = with-len(0)
@@ -1874,7 +1926,8 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
     }
 }
 
-; merge-into: 合并键 << 的处理（支持映射或映射序列）
+; 合并键 << 的处理（支持映射或映射序列）
+; [merge-into](#yaml.yaml-parser.merge-into)
 yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-vals []i64) {
     ok-keys = with-len(0)
     ok-vals = with-len(0)
@@ -1897,7 +1950,8 @@ yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-va
     }
 }
 
-; parse-block-map: 解析块映射
+; 解析块映射
+; [parse-block-map](#yaml.yaml-parser.parse-block-map)
 yaml-parser.parse-block-map = (indent i64) (idx i64) {
     keys []i64 = with-len(0)
     vals []i64 = with-len(0)
@@ -2019,7 +2073,8 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
     idx = .push-node(nd)
 }
 
-; parse-block: 解析一个块上下文节点（当前位置即节点起始列）
+; 解析一个块上下文节点（当前位置即节点起始列）
+; [parse-block](#yaml.yaml-parser.parse-block)
 yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
     tag = ''
     anchor = ''
@@ -2058,7 +2113,8 @@ yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
 ; 文档
 ; ═══════════════════════════════════════════════
 
-; skip-doc-preamble: 跳过空行、注释与指令行
+; 跳过空行、注释与指令行
+; [skip-doc-preamble](#yaml.yaml-parser.skip-doc-preamble)
 yaml-parser.skip-doc-preamble = () {
     !! {
         .eof() -> break
@@ -2079,7 +2135,8 @@ yaml-parser.skip-doc-preamble = () {
     }
 }
 
-; at-doc-marker: 当前位置是否为 --- (1) 或 ... (2)
+; 当前位置是否为 --- (1) 或 ... (2)
+; [at-doc-marker](#yaml.yaml-parser.at-doc-marker)
 yaml-parser.at-doc-marker = () (which i64) {
     which = 0
     .at(0) == 45 && .at(1) == 45 && .at(2) == 45 -> {
@@ -2089,7 +2146,8 @@ yaml-parser.at-doc-marker = () (which i64) {
     .at(0) == 46 && .at(1) == 46 && .at(2) == 46 -> which = 2
 }
 
-; skip-to-doc-boundary: 跳过当前文档剩余内容，停在下一个 --- 或输入末尾
+; 跳过当前文档剩余内容，停在下一个 --- 或输入末尾
+; [skip-to-doc-boundary](#yaml.yaml-parser.skip-to-doc-boundary)
 yaml-parser.skip-to-doc-boundary = () {
     !! {
         .eof() -> break
@@ -2115,7 +2173,8 @@ yaml-parser.skip-to-doc-boundary = () {
     }
 }
 
-; parse-document: 解析一份文档，返回根节点索引
+; 解析一份文档，返回根节点索引
+; [parse-document](#yaml.yaml-parser.parse-document)
 yaml-parser.parse-document = () (idx i64) {
     w = .at-doc-marker()
     w == 1 -> {
@@ -2163,7 +2222,8 @@ yaml-parser.parse-document = () (idx i64) {
     idx = .parse-block(ind, ind)
 }
 
-; parse-docs: 解析全部文档
+; 解析全部文档
+; [parse-docs](#yaml.yaml-parser.parse-docs)
 yaml-parser.parse-docs = () (roots []i64) {
     roots = with-len(0)
     prev = -1
@@ -2184,13 +2244,15 @@ yaml-parser.parse-docs = () (roots []i64) {
 ; 入口
 ; ═══════════════════════════════════════════════
 
-; yaml.parse: 解析 YAML 文本，返回第一份文档
+; 解析 YAML 文本，返回第一份文档
 ; 返回 ok(yaml) / err(消息)
+; [parse](#yaml.parse)
 yaml.parse = (source str) (out ?yaml) {
     out = yaml.parse-all(source)
 }
 
-; yaml.parse-all: 解析全部文档
+; 解析全部文档
+; [parse-all](#yaml.parse-all)
 yaml.parse-all = (source str) (out ?yaml) {
     out = nil
     src = yaml.strip-bom(source)
@@ -2232,7 +2294,8 @@ yaml.parse-all = (source str) (out ?yaml) {
     out = doc
 }
 
-; yaml.strip-bom: 去掉开头的 UTF-8 BOM
+; 去掉开头的 UTF-8 BOM
+; [strip-bom](#yaml.strip-bom)
 yaml.strip-bom = (s str) (out str) {
     out = s
     s.len-bytes() >= 3 -> {
@@ -2247,19 +2310,22 @@ yaml.strip-bom = (s str) (out str) {
 ; 查询 API
 ; ═══════════════════════════════════════════════
 
-; yaml.valid: 本文档是否解析成功（能拿到 yaml 值即成功）
+; 本文档是否解析成功（能拿到 yaml 值即成功）
+; [valid](#yaml.valid)
 yaml.valid = () (yes bool) {
     yes = .roots.len() > 0 || .root >= 0
 }
 
-; yaml.error: 本文档的解析错误（解析成功时恒为空串）
+; 本文档的解析错误（解析成功时恒为空串）
 ; 说明：解析失败时 yaml.parse 返回 err，拿不到 yaml 值；
 ;       失败原因请用 yaml.error-of(source) 获取。
+; [error](#yaml.error)
 yaml.error = () (msg str) {
     msg = ''
 }
 
-; yaml.valid-of: 源文本是否可解析（不构造文档）
+; 源文本是否可解析（不构造文档）
+; [valid-of](#yaml.valid-of)
 yaml.valid-of = (source str) (yes bool) {
     yes = false
     s = yaml.strip-bom(source)
@@ -2276,7 +2342,8 @@ yaml.valid-of = (source str) (yes bool) {
     yes = ! p.failed
 }
 
-; yaml.error-of: 解析源文本并返回错误消息（成功时为空串）
+; 解析源文本并返回错误消息（成功时为空串）
+; [error-of](#yaml.error-of)
 yaml.error-of = (source str) (msg str) {
     msg = ''
     s = yaml.strip-bom(source)
@@ -2293,13 +2360,15 @@ yaml.error-of = (source str) (msg str) {
     p.failed -> msg = p.err
 }
 
-; yaml.doc-count: 文档数量
+; 文档数量
+; [doc-count](#yaml.doc-count)
 yaml.doc-count = () (n i64) {
     n = .roots.len()
 }
 
-; yaml.doc: 取第 i 份文档
+; 取第 i 份文档
 ; 说明：子节点视图以 ?yaml 返回，供调用方 match 解包。
+; [doc](#yaml.doc)
 yaml.doc = (i i64) (out ?yaml) {
     i < 0 -> return
     i >= .roots.len() -> return
@@ -2312,12 +2381,14 @@ yaml.doc = (i i64) (out ?yaml) {
     }
 }
 
-; yaml.node-count: 节点总数
+; 节点总数
+; [node-count](#yaml.node-count)
 yaml.node-count = () (n i64) {
     n = .pool.nodes.len()
 }
 
-; yaml.kind: 当前节点类型
+; 当前节点类型
+; [kind](#yaml.kind)
 yaml.kind = () (k i64) {
     k = YAML-KIND-NULL
     .root < 0 -> return
@@ -2325,7 +2396,8 @@ yaml.kind = () (k i64) {
     k = .pool.nodes[.root].kind
 }
 
-; yaml.style: 当前节点风格
+; 当前节点风格
+; [style](#yaml.style)
 yaml.style = () (s i64) {
     s = YAML-STYLE-PLAIN
     .root < 0 -> return
@@ -2333,7 +2405,8 @@ yaml.style = () (s i64) {
     s = .pool.nodes[.root].style
 }
 
-; yaml.tag: 当前节点显式标签
+; 当前节点显式标签
+; [tag](#yaml.tag)
 yaml.tag = () (t str) {
     t = ''
     .root < 0 -> return
@@ -2341,7 +2414,8 @@ yaml.tag = () (t str) {
     t = .pool.nodes[.root].tag
 }
 
-; yaml.anchor: 当前节点锚点名
+; 当前节点锚点名
+; [anchor](#yaml.anchor)
 yaml.anchor = () (a str) {
     a = ''
     .root < 0 -> return
@@ -2349,7 +2423,8 @@ yaml.anchor = () (a str) {
     a = .pool.nodes[.root].anchor
 }
 
-; yaml.line-of: 当前节点起始行
+; 当前节点起始行
+; [line-of](#yaml.line-of)
 yaml.line-of = () (n i64) {
     n = 0
     .root < 0 -> return
@@ -2357,23 +2432,27 @@ yaml.line-of = () (n i64) {
     n = .pool.nodes[.root].line
 }
 
-; yaml.is-null: 是否为 null
+; 是否为 null
+; [is-null](#yaml.is-null)
 yaml.is-null = () (yes bool) {
     yes = .kind() == YAML-KIND-NULL
 }
 
-; yaml.is-bool: 是否为布尔
+; 是否为布尔
+; [is-bool](#yaml.is-bool)
 yaml.is-bool = () (yes bool) {
     yes = .kind() == YAML-KIND-BOOL
 }
 
-; yaml.is-int: 是否为整数
+; 是否为整数
+; [is-int](#yaml.is-int)
 yaml.is-int = () (yes bool) {
     yes = .kind() == YAML-KIND-INT
 }
 
 ; yaml.is-float: 是否为浮点
-; yaml.is-nan: 当前节点是否为 .nan
+; 当前节点是否为 .nan
+; [is-nan](#yaml.is-nan)
 yaml.is-nan = () (yes bool) {
     yes = false
     .root < 0 -> return
@@ -2385,28 +2464,33 @@ yaml.is-float = () (yes bool) {
     yes = .kind() == YAML-KIND-FLOAT
 }
 
-; yaml.is-num: 是否为数值
+; 是否为数值
+; [is-num](#yaml.is-num)
 yaml.is-num = () (yes bool) {
     k = .kind()
     yes = k == YAML-KIND-INT || k == YAML-KIND-FLOAT
 }
 
-; yaml.is-str: 是否为字符串
+; 是否为字符串
+; [is-str](#yaml.is-str)
 yaml.is-str = () (yes bool) {
     yes = .kind() == YAML-KIND-STR
 }
 
-; yaml.is-seq: 是否为序列
+; 是否为序列
+; [is-seq](#yaml.is-seq)
 yaml.is-seq = () (yes bool) {
     yes = .kind() == YAML-KIND-SEQ
 }
 
-; yaml.is-map: 是否为映射
+; 是否为映射
+; [is-map](#yaml.is-map)
 yaml.is-map = () (yes bool) {
     yes = .kind() == YAML-KIND-MAP
 }
 
-; yaml.len: 序列元素数 / 映射条目数
+; 序列元素数 / 映射条目数
+; [len](#yaml.len)
 yaml.len = () (n i64) {
     n = 0
     .root < 0 -> return
@@ -2414,7 +2498,8 @@ yaml.len = () (n i64) {
     n = .pool.nodes[.root].kids.len()
 }
 
-; yaml.text: 当前节点的标量原文
+; 当前节点的标量原文
+; [text](#yaml.text)
 yaml.text = () (t str) {
     t = ''
     .root < 0 -> return
@@ -2422,7 +2507,8 @@ yaml.text = () (t str) {
     t = .pool.nodes[.root].text
 }
 
-; yaml.str: 取字符串值（数值/布尔返回其原文）
+; 取字符串值（数值/布尔返回其原文）
+; [str](#yaml.str)
 yaml.str = () (val ?str) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
@@ -2431,7 +2517,8 @@ yaml.str = () (val ?str) {
     val = .pool.nodes[.root].text
 }
 
-; yaml.i64: 取整数值
+; 取整数值
+; [i64](#yaml.i64)
 yaml.i64 = () (val ?i64) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
@@ -2447,7 +2534,8 @@ yaml.i64 = () (val ?i64) {
     }
 }
 
-; yaml.f64: 取浮点值
+; 取浮点值
+; [f64](#yaml.f64)
 yaml.f64 = () (val ?f64) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
@@ -2461,7 +2549,8 @@ yaml.f64 = () (val ?f64) {
     }
 }
 
-; yaml.bool: 取布尔值
+; 取布尔值
+; [bool](#yaml.bool)
 yaml.bool = () (val ?bool) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
@@ -2471,7 +2560,8 @@ yaml.bool = () (val ?bool) {
     }
 }
 
-; yaml.at: 取序列元素 / 映射第 i 个值
+; 取序列元素 / 映射第 i 个值
+; [at](#yaml.at)
 yaml.at = (i i64) (out ?yaml) {
     i < 0 -> return
     .root < 0 -> return
@@ -2487,7 +2577,8 @@ yaml.at = (i i64) (out ?yaml) {
     }
 }
 
-; yaml.key-node: 取映射第 i 个键节点
+; 取映射第 i 个键节点
+; [key-node](#yaml.key-node)
 yaml.key-node = (i i64) (out ?yaml) {
     i < 0 -> return
     .root < 0 -> return
@@ -2503,7 +2594,8 @@ yaml.key-node = (i i64) (out ?yaml) {
     }
 }
 
-; yaml.key: 取映射第 i 个键的文本
+; 取映射第 i 个键的文本
+; [key](#yaml.key)
 yaml.key = (i i64) (out ?str) {
     knopt = .key-node(i)
     knopt: {
@@ -2513,12 +2605,14 @@ yaml.key = (i i64) (out ?str) {
     }
 }
 
-; yaml.value: 取映射第 i 个键对应的值节点
+; 取映射第 i 个键对应的值节点
+; [value](#yaml.value)
 yaml.value = (i i64) (out ?yaml) {
     out = .at(i)
 }
 
-; yaml.get: 按标量键取映射值
+; 按标量键取映射值
+; [get](#yaml.get)
 yaml.get = (key str) (out ?yaml) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
@@ -2539,7 +2633,8 @@ yaml.get = (key str) (out ?yaml) {
     }
 }
 
-; yaml.get-str: 按标量键取字符串
+; 按标量键取字符串
+; [get-str](#yaml.get-str)
 yaml.get-str = (key str) (out ?str) {
     gopt = .get(key)
     gopt: {
@@ -2549,7 +2644,8 @@ yaml.get-str = (key str) (out ?str) {
     }
 }
 
-; yaml.get-i64: 按标量键取整数
+; 按标量键取整数
+; [get-i64](#yaml.get-i64)
 yaml.get-i64 = (key str) (out ?i64) {
     gopt = .get(key)
     gopt: {
@@ -2559,7 +2655,8 @@ yaml.get-i64 = (key str) (out ?i64) {
     }
 }
 
-; yaml.get-f64: 按标量键取浮点
+; 按标量键取浮点
+; [get-f64](#yaml.get-f64)
 yaml.get-f64 = (key str) (out ?f64) {
     gopt = .get(key)
     gopt: {
@@ -2569,7 +2666,8 @@ yaml.get-f64 = (key str) (out ?f64) {
     }
 }
 
-; yaml.get-bool: 按标量键取布尔
+; 按标量键取布尔
+; [get-bool](#yaml.get-bool)
 yaml.get-bool = (key str) (out ?bool) {
     gopt = .get(key)
     gopt: {
@@ -2579,7 +2677,8 @@ yaml.get-bool = (key str) (out ?bool) {
     }
 }
 
-; yaml.scalar-text: 当前节点的标量文本（容器返回 ok=false）
+; 当前节点的标量文本（容器返回 ok=false）
+; [scalar-text](#yaml.scalar-text)
 yaml.scalar-text = () (out ?str) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
@@ -2588,7 +2687,8 @@ yaml.scalar-text = () (out ?str) {
     out = .pool.nodes[.root].text
 }
 
-; yaml.find: 按点号路径查找（序列可用数字下标）
+; 按点号路径查找（序列可用数字下标）
+; [find](#yaml.find)
 yaml.find = (path str) (out ?yaml) {
     cur = .root
     cur < 0 -> return
@@ -2637,7 +2737,8 @@ yaml.find = (path str) (out ?yaml) {
     }
 }
 
-; yaml.find-str: 路径取字符串
+; 路径取字符串
+; [find-str](#yaml.find-str)
 yaml.find-str = (path str) (out ?str) {
     fopt = .find(path)
     fopt: {
@@ -2647,7 +2748,8 @@ yaml.find-str = (path str) (out ?str) {
     }
 }
 
-; yaml.find-i64: 路径取整数
+; 路径取整数
+; [find-i64](#yaml.find-i64)
 yaml.find-i64 = (path str) (out ?i64) {
     fopt = .find(path)
     fopt: {
@@ -2657,7 +2759,8 @@ yaml.find-i64 = (path str) (out ?i64) {
     }
 }
 
-; yaml.find-f64: 路径取浮点
+; 路径取浮点
+; [find-f64](#yaml.find-f64)
 yaml.find-f64 = (path str) (out ?f64) {
     fopt = .find(path)
     fopt: {
@@ -2667,7 +2770,8 @@ yaml.find-f64 = (path str) (out ?f64) {
     }
 }
 
-; yaml.find-bool: 路径取布尔
+; 路径取布尔
+; [find-bool](#yaml.find-bool)
 yaml.find-bool = (path str) (out ?bool) {
     fopt = .find(path)
     fopt: {
@@ -2681,14 +2785,16 @@ yaml.find-bool = (path str) (out ?bool) {
 ; 键比较辅助
 ; ═══════════════════════════════════════════════
 
-; yaml-key-text-eq: 标量键文本是否等于给定字符串
+; 标量键文本是否等于给定字符串
+; [yaml-key-text-eq](#yaml.yaml-key-text-eq)
 yaml-key-text-eq = (nd yaml-node, key str) (yes bool) {
     yes = false
     nd.kind == YAML-KIND-SEQ || nd.kind == YAML-KIND-MAP -> return
     yes = nd.text.eq-full(key)
 }
 
-; yaml-key-eq: 两个键节点是否等价（比较标量文本）
+; 两个键节点是否等价（比较标量文本）
+; [yaml-key-eq](#yaml.yaml-key-eq)
 yaml-key-eq = (a yaml-node, b yaml-node) (yes bool) {
     yes = false
     a.kind == YAML-KIND-SEQ || a.kind == YAML-KIND-MAP -> return
@@ -2696,7 +2802,8 @@ yaml-key-eq = (a yaml-node, b yaml-node) (yes bool) {
     yes = a.text.eq-full(b.text)
 }
 
-; yaml-to-i64: 文本转 i64，失败返回 -1
+; 文本转 i64，失败返回 -1
+; [yaml-to-i64](#yaml.yaml-to-i64)
 yaml-to-i64 = (s str) (v i64) {
     v = -1
     n = s.len-bytes()
@@ -2721,10 +2828,11 @@ yaml-to-i64 = (s str) (v i64) {
 ; 序列化：JSON
 ; ═══════════════════════════════════════════════
 
-; yaml-node-is-nan: 节点是否为 .nan
+; 节点是否为 .nan
 ;
 ; `.nan` 的 fval 由 yaml-nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。
 ; 节点原文判定作为兜底：标签改写等路径可能只改 text 而不重算 fval。
+; [yaml-node-is-nan](#yaml.yaml-node-is-nan)
 yaml-node-is-nan = (nd yaml-node) (yes bool) {
     yes = false
     nd.kind != YAML-KIND-FLOAT -> return
@@ -2735,7 +2843,8 @@ yaml-node-is-nan = (nd yaml-node) (yes bool) {
     yes = nd.text == '.nan' || nd.text == '.NaN' || nd.text == '.NAN'
 }
 
-; yaml-hex-char: 单个十六进制数字（0-15）转字符
+; 单个十六进制数字（0-15）转字符
+; [yaml-hex-char](#yaml.yaml-hex-char)
 yaml-hex-char = (v i64) (ch str) {
     ch = '0'
 
@@ -2753,7 +2862,8 @@ yaml-hex-char = (v i64) (ch str) {
     ch = h2.to-str()
 }
 
-; yaml-json-escape: JSON 字符串转义
+; JSON 字符串转义
+; [yaml-json-escape](#yaml.yaml-json-escape)
 yaml-json-escape = (s str) (out str) {
     out = '"'
     i <- [0..s.len-bytes()): {
@@ -2803,7 +2913,8 @@ yaml-json-escape = (s str) (out str) {
     out = out - '"'
 }
 
-; yaml-json-of: 节点转 JSON
+; 节点转 JSON
+; [yaml-json-of](#yaml.yaml-json-of)
 yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
     out = 'null'
     idx < 0 -> return
@@ -2891,14 +3002,16 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
     }
 }
 
-; yaml.to-json: 当前文档转 JSON
+; 当前文档转 JSON
+; [to-json](#yaml.to-json)
 yaml.to-json = () (out str) {
     out = 'null'
     .root < 0 -> return
     out = yaml-json-of(.pool, .root, 0)
 }
 
-; yaml.to-json-all: 全部文档转 JSON 数组
+; 全部文档转 JSON 数组
+; [to-json-all](#yaml.to-json-all)
 yaml.to-json-all = () (out str) {
     out = '['
     total = .roots.len()
@@ -2913,13 +3026,15 @@ yaml.to-json-all = () (out str) {
 ; 序列化：YAML
 ; ═══════════════════════════════════════════════
 
-; yaml-spaces: 生成 n 个空格
+; 生成 n 个空格
+; [yaml-spaces](#yaml.yaml-spaces)
 yaml-spaces = (n i64) (out str) {
     out = ''
     i <- [0..n): out = out - ' '
 }
 
-; yaml-plain-safe: 文本可否作为 plain 标量原样输出
+; 文本可否作为 plain 标量原样输出
+; [yaml-plain-safe](#yaml.yaml-plain-safe)
 yaml-plain-safe = (s str) (yes bool) {
     yes = false
     n = s.len-bytes()
@@ -2963,7 +3078,8 @@ yaml-plain-safe = (s str) (yes bool) {
     yes = kind == YAML-KIND-STR
 }
 
-; yaml-quote: 输出双引号 YAML 标量
+; 输出双引号 YAML 标量
+; [yaml-quote](#yaml.yaml-quote)
 yaml-quote = (s str) (out str) {
     out = '"'
     i <- [0..s.len-bytes()): {
@@ -3013,7 +3129,8 @@ yaml-quote = (s str) (out str) {
     out = out - '"'
 }
 
-; yaml-scalar-repr: 标量的 YAML 表示
+; 标量的 YAML 表示
+; [yaml-scalar-repr](#yaml.yaml-scalar-repr)
 yaml-scalar-repr = (nd yaml-node) (out str) {
     out = ''
     {
@@ -3057,7 +3174,8 @@ yaml-scalar-repr = (nd yaml-node) (out str) {
     }
 }
 
-; yaml-emit: 节点转块风格 YAML（不含尾随换行）
+; 节点转块风格 YAML（不含尾随换行）
+; [yaml-emit](#yaml.yaml-emit)
 yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
     out = ''
     idx < 0 -> return
@@ -3174,19 +3292,22 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
     }
 }
 
-; yaml.to-yaml: 当前文档重新输出为 YAML
+; 当前文档重新输出为 YAML
+; [to-yaml](#yaml.to-yaml)
 yaml.to-yaml = () (out str) {
     out = ''
     .root < 0 -> return
     out = yaml-emit(.pool, .root, 0, 0)
 }
 
-; yaml.stringify: 别名，等同 to-yaml
+; 别名，等同 to-yaml
+; [stringify](#yaml.stringify)
 yaml.stringify = () (out str) {
     out = .to-yaml()
 }
 
-; yaml.source-of: 原始输入文本
+; 原始输入文本
+; [source-of](#yaml.source-of)
 yaml.source-of = () (out str) {
     out = .source
 }

@@ -39,7 +39,8 @@ markdown-fence {
     info str
 }
 
-; markdown.escape-html: 转义 HTML 文字与属性值。
+; 转义 HTML 文字与属性值。
+; [escape-html](#markdown.escape-html)
 markdown.escape-html = (s str) (out str) {
     out = s.replace-str('&', '&amp;')
     out = out.replace-str('<', '&lt;')
@@ -47,12 +48,14 @@ markdown.escape-html = (s str) (out str) {
     out = out.replace-str('"', '&quot;')
 }
 
-; markdown.is-word-byte: 判断一个 ASCII byte 是否属于单词。
+; 判断一个 ASCII byte 是否属于单词。
+; [is-word-byte](#markdown.is-word-byte)
 markdown.is-word-byte = (c i64) (yes bool) {
     yes = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
 }
 
-; markdown.prefix-count: 统计行首连续的指定字符。
+; 统计行首连续的指定字符。
+; [prefix-count](#markdown.prefix-count)
 markdown.prefix-count = (s str, c i64) (n i64) {
     n = 0
     (n < s.len-bytes()) {
@@ -64,7 +67,8 @@ markdown.prefix-count = (s str, c i64) (n i64) {
     }
 }
 
-; markdown.heading: 取得 ATX 标题等级与标题文字。
+; 取得 ATX 标题等级与标题文字。
+; [heading](#markdown.heading)
 markdown.heading = (line str) (out markdown-heading) {
     level-v = 0
     title-v = ''
@@ -94,7 +98,8 @@ markdown.heading = (line str) (out markdown-heading) {
     }
 }
 
-; markdown.setext-level: 取得 Setext 标题等级（=== 或 ---）。
+; 取得 Setext 标题等级（=== 或 ---）。
+; [setext-level](#markdown.setext-level)
 markdown.setext-level = (line str) (level i64) {
     level = 0
     s = line.trim()
@@ -115,7 +120,8 @@ markdown.setext-level = (line str) (level i64) {
     }
 }
 
-; markdown.thematic-break: 判断是否为分隔线。
+; 判断是否为分隔线。
+; [thematic-break](#markdown.thematic-break)
 markdown.thematic-break = (line str) (yes bool) {
     yes = false
     s = line.trim()
@@ -150,7 +156,8 @@ markdown.thematic-break = (line str) (yes bool) {
     yes = count >= 3
 }
 
-; markdown.list-item: 解析列表项。kind=1 无序，kind=2 有序。
+; 解析列表项。kind=1 无序，kind=2 有序。
+; [list-item](#markdown.list-item)
 markdown.list-item = (line str) (out markdown-list) {
     kind-v = 0
     content-v = ''
@@ -199,7 +206,8 @@ markdown.list-item = (line str) (out markdown-list) {
     }
 }
 
-; markdown.list-content: 渲染任务列表内容。
+; 渲染任务列表内容。
+; [list-content](#markdown.list-content)
 markdown.list-content = (content str) (out str) {
     s = content.trim()
     s.starts-with('[ ] ') -> {
@@ -215,7 +223,8 @@ markdown.list-content = (content str) (out str) {
     out = markdown.inline(s)
 }
 
-; markdown.blockquote: 移除引用行首的 > 标记。
+; 移除引用行首的 > 标记。
+; [blockquote](#markdown.blockquote)
 markdown.blockquote = (line str) (out markdown-quote) {
     content-v = ''
     found = false
@@ -233,7 +242,8 @@ markdown.blockquote = (line str) (out markdown-quote) {
     }
 }
 
-; markdown.fence: 解析 fenced code block 标记。
+; 解析 fenced code block 标记。
+; [fence](#markdown.fence)
 markdown.fence = (line str) (out markdown-fence) {
     yes-v = false
     marker-v = 0
@@ -265,7 +275,8 @@ markdown.fence = (line str) (out markdown-fence) {
     }
 }
 
-; markdown.code-close: 判断当前行是否关闭指定 fence。
+; 判断当前行是否关闭指定 fence。
+; [code-close](#markdown.code-close)
 markdown.code-close = (line str, marker i64, width i64) (yes bool) {
     yes = false
     s = line.trim()
@@ -273,7 +284,8 @@ markdown.code-close = (line str, marker i64, width i64) (yes bool) {
     n >= width && n >= 3 -> yes = true
 }
 
-; markdown.table-separator: 判断表格分隔行。
+; 判断表格分隔行。
+; [table-separator](#markdown.table-separator)
 markdown.table-separator = (line str) (yes bool) {
     yes = true
     cells = line.trim().split('|')
@@ -293,7 +305,8 @@ markdown.table-separator = (line str) (yes bool) {
     }
 }
 
-; markdown.table-row: 将 | 分隔的行渲染为 tr。
+; 将 | 分隔的行渲染为 tr。
+; [table-row](#markdown.table-row)
 markdown.table-row = (line str, tag str) (out str) {
     s = line.trim()
     s.starts-with('|') -> s = s.slice-bytes(1, s.len-bytes())
@@ -311,7 +324,8 @@ markdown.table-row = (line str, tag str) (out str) {
     out = out - '</tr>\n'
 }
 
-; markdown.inline: 渲染 Markdown 行内语法。
+; 渲染 Markdown 行内语法。
+; [inline](#markdown.inline)
 markdown.inline = (s str) (out str) {
     result = ''
     strong = false
@@ -565,7 +579,8 @@ markdown.inline = (s str) (out str) {
     out = result
 }
 
-; markdown.join-paragraph: 追加一行到段落，专门处理硬换行。
+; 追加一行到段落，专门处理硬换行。
+; [join-paragraph](#markdown.join-paragraph)
 markdown.join-paragraph = (paragraph str, line str, hard-break bool) (out str) {
     clean = line.trim()
     separator = '\n'
@@ -577,7 +592,8 @@ markdown.join-paragraph = (paragraph str, line str, hard-break bool) (out str) {
     out = paragraph - separator - clean
 }
 
-; markdown.render-code: 输出代码块。
+; 输出代码块。
+; [render-code](#markdown.render-code)
 markdown.render-code = (code str, info str) (out str) {
     class = ''
     info.len-bytes() > 0 -> class = ' class="language-' - markdown.escape-html(info) - '"'
@@ -585,7 +601,8 @@ markdown.render-code = (code str, info str) (out str) {
     out = '<pre><code' - class - '>' - markdown.escape-html(code) - '</code></pre>\n'
 }
 
-; markdown.read-line: 从 byte 游标读取一行，避免对 []str 做不安全的动态索引。
+; 从 byte 游标读取一行，避免对 []str 做不安全的动态索引。
+; [read-line](#markdown.read-line)
 markdown.read-line = (source str, pos i64) (out markdown-line) {
     line-v = ''
     next-v = pos
@@ -621,7 +638,8 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
     }
 }
 
-; markdown.to-html: 将 Markdown 文档渲染为 HTML。
+; 将 Markdown 文档渲染为 HTML。
+; [to-html](#markdown.to-html)
 markdown.to-html = (source str) (out str) {
     result = ''
     normalized = source.replace-str('\r\n', '\n').replace-str('\r', '\n')
@@ -874,7 +892,8 @@ markdown.to-html = (source str) (out str) {
     out = result
 }
 
-; markdown.render: to-html 的语义别名。
+; to-html 的语义别名。
+; [render](#markdown.render)
 markdown.render = (source str) (out str) {
     out = markdown.to-html(source)
 }

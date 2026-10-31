@@ -22,7 +22,8 @@ stack {
     n i64
 }
 
-; push: 推入元素到堆疊頂端
+; 推入元素到堆疊頂端
+; [push](#collection.stack.stack.push)
 stack.push = (val i64) {
 
     .data[.n] = val
@@ -31,8 +32,9 @@ stack.push = (val i64) {
     .n = .n + 1
 }
 
-; pop: 從堆疊頂端彈出元素
+; 從堆疊頂端彈出元素
 ; 返回 val ?i64: ok=彈出值, nil=堆疊為空
+; [pop](#collection.stack.stack.pop)
 stack.pop = () (val ?i64) {
 
     .n == 0 -> {
@@ -46,8 +48,9 @@ stack.pop = () (val ?i64) {
     val = .data[.n]
 }
 
-; peek: 查看堆疊頂端元素（不移除）
+; 查看堆疊頂端元素（不移除）
 ; 返回 val ?i64: ok=頂端值, nil=堆疊為空
+; [peek](#collection.stack.stack.peek)
 stack.peek = () (val ?i64) {
 
     .n == 0 -> {
@@ -59,18 +62,21 @@ stack.peek = () (val ?i64) {
     val = .data[.n - 1]
 }
 
-; size: 返回堆疊大小
+; 返回堆疊大小
+; [size](#collection.stack.stack.size)
 stack.size = () (sz i64) {
     sz = .n
 }
 
-; empty: 判斷堆疊是否為空
+; 判斷堆疊是否為空
 ; 返回 true=空, false=非空
+; [empty](#collection.stack.stack.empty)
 stack.empty = () (yes bool) {
     yes = .n == 0
 }
 
-; clear: 清空堆疊
+; 清空堆疊
+; [clear](#collection.stack.stack.clear)
 stack.clear = () {
     .n = 0
 }

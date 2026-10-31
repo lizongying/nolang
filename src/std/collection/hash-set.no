@@ -18,7 +18,8 @@ hash-set {
     size i64
 }
 
-; init: 初始化
+; 初始化
+; [init](#collection.hash-set.hash-set.init)
 hash-set.init = () {
     .cap = 64
     .size = 0
@@ -28,13 +29,15 @@ hash-set.init = () {
     }
 }
 
-; hash: 計算索引
+; 計算索引
+; [hash](#collection.hash-set.hash-set.hash)
 hash-set.hash = (key i64) (idx i64) {
 
     idx = key & (.cap - 1)
 }
 
-; add: 加入元素，回傳是否新增
+; 加入元素，回傳是否新增
+; [add](#collection.hash-set.hash-set.add)
 hash-set.add = (key i64) (is-new bool) {
 
     idx = .hash(key)
@@ -60,7 +63,8 @@ hash-set.add = (key i64) (is-new bool) {
     is-new = true
 }
 
-; contains: 檢查元素是否存在
+; 檢查元素是否存在
+; [contains](#collection.hash-set.hash-set.contains)
 hash-set.contains = (key i64) (found bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -78,7 +82,8 @@ hash-set.contains = (key i64) (found bool) {
     }
 }
 
-; remove: 刪除元素，回傳是否刪除
+; 刪除元素，回傳是否刪除
+; [remove](#collection.hash-set.hash-set.remove)
 hash-set.remove = (key i64) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -100,7 +105,8 @@ hash-set.remove = (key i64) (removed bool) {
     }
 }
 
-; clear: 清空
+; 清空
+; [clear](#collection.hash-set.hash-set.clear)
 hash-set.clear = () {
     i <- [0...cap): {
 
@@ -109,17 +115,20 @@ hash-set.clear = () {
     .size = 0
 }
 
-; len: 返回元素數量
+; 返回元素數量
+; [len](#collection.hash-set.hash-set.len)
 hash-set.len = () (n i64) {
     n = .size
 }
 
-; is-empty: 是否為空
+; 是否為空
+; [is-empty](#collection.hash-set.hash-set.is-empty)
 hash-set.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-; for-each: 遍歷所有元素
+; 遍歷所有元素
+; [for-each](#collection.hash-set.hash-set.for-each)
 hash-set.for-each = () (val i64) {
     i <- [0...cap): {
         .occ[i] == 1 -> {

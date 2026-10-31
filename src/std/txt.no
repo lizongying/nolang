@@ -40,7 +40,8 @@
 ; 基础操作
 ; ═══════════════════════════════════════════════
 
-; txt.len: 返回字符（code point）数量（与 str.len 对齐；字节长度用 txt.len-bytes()）
+; 返回字符（code point）数量（与 str.len 对齐；字节长度用 txt.len-bytes()）
+; [len](#txt.len)
 txt.len = () (n i64) {
     n = .count()
 }
@@ -53,18 +54,19 @@ txt.len = () (n i64) {
 ;     c = .[i]
 ; }
 ;
-; txt.byte: 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
+; 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
 ; 與 txt[i] 的碼點索引語意不同；緩衝區逐位元組構建程式碼專用
 ; 回傳 ?byte：越界（i < 0 或 i >= len-bytes()）時回傳 nil，呼叫端必須處理 option
 ; 由編譯器內建處理（#{buildin}）：codegen 攔截展開為「邊界檢查 + GEP+load」，
 ; 無 std 函式體；簽名註冊於 src/builtin/str.go 的 BuiltinMethodList
 ; （Intercepted，經 bare-name 回落與 str.byte 共享同一條目）
+; [byte](#txt.byte)
 #{buildin}
 txt.byte = (i i64) (c ?byte) {
 }
 
 ;
-; txt.set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
+; 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
 ; txt.byte 的配對寫者；取代 txt[i] = b（後者按碼點重新編碼並移動尾部位元組）
 ;
 ; b 宣告為 byte：表層實參若是 option（.byte(i)、hex-table[..] 等）由內建參數檢查直接
@@ -75,23 +77,26 @@ txt.byte = (i i64) (c ?byte) {
 ; 成功回傳 some(true)。邊界以「實體容量」（txt 為固定 255 位元組緩衝區）為準，而非
 ; len，因此「先填缓冲再 set len」的構建程式（fill / from-str / to-hex / join）照舊可用。
 ; 呼叫端以裸陳述丟棄 ?bool 是合法的（optunuse 只針對已綁定的名稱）。
+; [set-byte](#txt.set-byte)
 #{buildin}
 txt.set-byte = (i i64, b byte) (ok ?bool) {
 }
 
-; txt.eq: 比较两个 txt 是否相等
+; 比较两个 txt 是否相等
 ; ⚠️ 2026-09-21 重写。旧实现用一条 `->` 管线（`.byte(k) - b.byte(k); c != 0 -> ok = 0;
 ; k == an - 1 -> ok == 0 -> eq = false; k = k + 1`）在**最后一个字节**才回头判定，
 ; 于是 `t('hello').eq('world')` 这种「长度相同、内容不同」的情况永远回传 true
 ; —— `tests/txt.no` 的 `neq:` 一行一直在打印 1，并且被冻进了 golden baseline。
 ; txt.compare 已经是逐字节比较且长度不同时正确分流的版本，直接复用即可。
+; [eq](#txt.eq)
 txt.eq = (b txt) (eq bool) {
     eq = .compare(b) == 0
 }
 
-; txt.copy: 复制 txt
+; 复制 txt
 ; ⚠️ 已废弃（DEPRECATED）：赋值 `a = b` 即为复制语义——txt 是值类型（栈上 256
 ; 位元组内联缓冲区，data[255] + len），赋值即逐位元组拷贝。请改用直接赋值；保留仅为兼容。
+; [copy](#txt.copy)
 txt.copy = () (dst txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
@@ -100,19 +105,22 @@ txt.copy = () (dst txt) {
     dst.len = .len-bytes()
 }
 
-; txt.fill: 用 byte 值填充整个数据区域
+; 用 byte 值填充整个数据区域
+; [fill](#txt.fill)
 txt.fill = (val byte) {
     i <- [0..255): {
         .set-byte(i, val)
     }
 }
 
-; txt.clear: 清空文本（len=0）
+; 清空文本（len=0）
+; [clear](#txt.clear)
 txt.clear = () {
     .len = 0
 }
 
-; txt.empty: 判断是否为空
+; 判断是否为空
+; [empty](#txt.empty)
 txt.empty = () (yes bool) {
     yes = true
     .len-bytes() != 0 -> yes = false
@@ -122,7 +130,8 @@ txt.empty = () (yes bool) {
 ; 转换函数
 ; ═══════════════════════════════════════════════
 
-; txt.to-str: 将 txt 转换为 str
+; 将 txt 转换为 str
+; [to-str](#txt.to-str)
 txt.to-str = () (out str) {
     n i64 = .len-bytes()
     out = with-len(n)
@@ -131,7 +140,8 @@ txt.to-str = () (out str) {
     }
 }
 
-; txt.to-bytes: 将 txt 转换为 []byte
+; 将 txt 转换为 []byte
+; [to-bytes](#txt.to-bytes)
 txt.to-bytes = () (out []byte) {
 
     ; ⚠️ 不能用 out.set-byte(i, …)：set-byte 內建只認 str / txt receiver
@@ -149,7 +159,8 @@ txt.to-bytes = () (out []byte) {
     out = b
 }
 
-; txt.to-hex: 将 txt 转换为十六进制字符串
+; 将 txt 转换为十六进制字符串
+; [to-hex](#txt.to-hex)
 txt.to-hex = () (out str) {
 
     hex-table = '0123456789ABCDEF'
@@ -169,8 +180,9 @@ txt.to-hex = () (out str) {
     }
 }
 
-; txt.from-str: 从 str 创建 txt（截断至 255 字节）
+; 从 str 创建 txt（截断至 255 字节）
 ; 返回 txt，如果 str 超过 255 字节则截断
+; [from-str](#txt.from-str)
 txt.from-str = (s str) (out txt) {
     n = s.len-bytes()
     n > 255 -> n = 255
@@ -180,8 +192,9 @@ txt.from-str = (s str) (out txt) {
     out.len = n
 }
 
-; txt.from-bytes: 从 []byte 创建 txt（截断至 255 字节）
+; 从 []byte 创建 txt（截断至 255 字节）
 ; 返回 txt，如果 []byte 超过 255 字节则截断
+; [from-bytes](#txt.from-bytes)
 txt.from-bytes = (b []byte) (out txt) {
     n = b.len()
     n > 255 -> n = 255
@@ -195,23 +208,27 @@ txt.from-bytes = (b []byte) (out txt) {
 ; 查找操作
 ; ═══════════════════════════════════════════════
 
-; txt.index: 查找子串位置（從 0 開始）
+; 查找子串位置（從 0 開始）
+; [index](#txt.index)
 txt.index = (sub txt) (pos i64) {
     pos = .index-from(sub, 0)
 }
 
-; txt.contains: 是否包含子串
+; 是否包含子串
+; [contains](#txt.contains)
 txt.contains = (sub txt) (yes bool) {
     pos = .index-from(sub, 0)
     yes = pos >= 0
 }
 
-; txt.starts-with: 是否以指定前缀开头
+; 是否以指定前缀开头
+; [starts-with](#txt.starts-with)
 txt.starts-with = (sub txt) (yes bool) {
     yes = .index-from(sub, 0) == 0
 }
 
-; txt.ends-with: 是否以指定后缀结尾
+; 是否以指定后缀结尾
+; [ends-with](#txt.ends-with)
 txt.ends-with = (sub txt) (yes bool) {
 
     yes = false
@@ -229,7 +246,8 @@ txt.ends-with = (sub txt) (yes bool) {
 ; 修改操作
 ; ═══════════════════════════════════════════════
 
-; txt.append: 追加字节（不超出 255 限制）
+; 追加字节（不超出 255 限制）
+; [append](#txt.append)
 txt.append = (b byte) {
 
     n i64 = .len-bytes()
@@ -240,7 +258,8 @@ txt.append = (b byte) {
     .len = n + 1
 }
 
-; txt.append-str: 追加 str（不超出 255 限制）
+; 追加 str（不超出 255 限制）
+; [append-str](#txt.append-str)
 txt.append-str = (s str) {
 
     sn i64 = s.len-bytes()
@@ -266,7 +285,8 @@ txt.append-str = (s str) {
     .len = n + sn
 }
 
-; txt.append-txt: 追加 txt（不超出 255 限制）
+; 追加 txt（不超出 255 限制）
+; [append-txt](#txt.append-txt)
 txt.append-txt = (t txt) {
     tn = t.len-bytes()
     n i64 = .len-bytes()
@@ -284,7 +304,8 @@ txt.append-txt = (t txt) {
     .len = n + tn
 }
 
-; txt.truncate: 截断到指定长度
+; 截断到指定长度
+; [truncate](#txt.truncate)
 txt.truncate = (n i64) {
     rn = n
     rn > 255 -> rn = 255
@@ -296,8 +317,9 @@ txt.truncate = (n i64) {
 ; 比较操作
 ; ═══════════════════════════════════════════════
 
-; txt.compare: 字典序比较
+; 字典序比较
 ; 返回 -1(a<b), 0(相等), 1(a>b)
+; [compare](#txt.compare)
 txt.compare = (b txt) (r i64) {
     an i64 = .len-bytes()
     bn = b.len-bytes()
@@ -331,7 +353,8 @@ txt.compare = (b txt) (r i64) {
 ; 其他操作
 ; ═══════════════════════════════════════════════
 
-; txt.reverse: 反转文本内容
+; 反转文本内容
+; [reverse](#txt.reverse)
 txt.reverse = () (out txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
@@ -342,7 +365,8 @@ txt.reverse = () (out txt) {
     out.len = n
 }
 
-; txt.slice: 截取子串 [start, end) 返回新的 txt
+; 截取子串 [start, end) 返回新的 txt
+; [slice](#txt.slice)
 txt.slice = (start i64, end i64) (out txt) {
     r-start = start
     r-end = end
@@ -370,8 +394,9 @@ txt.slice = (start i64, end i64) (out txt) {
 }
 
 ; [deprecated] txt.at: 字符（碼點）索引讀取——請改用 t[idx]（原生索引，回傳 ?char）
-; txt.at: 獲取指定字符位置的碼點值（位元組偏移請用 t.byte(i)）
+; 獲取指定字符位置的碼點值（位元組偏移請用 t.byte(i)）
 ; 返回 b ?byte: 越界返回 nil；超出 byte 範圍的碼點截斷
+; [at](#txt.at)
 txt.at = (idx i64) (b ?byte) {
     b = nil
     cur-len = .len()
@@ -384,8 +409,9 @@ txt.at = (idx i64) (b ?byte) {
 ; UTF-8 解碼
 ; ═══════════════════════════════════════════════
 
-; txt.decode-cp: 從位置 i 解碼一個 UTF-8 碼點
+; 從位置 i 解碼一個 UTF-8 碼點
 ; 返回 cp=碼點值, clen=序列位元組長度（1~4）
+; [decode-cp](#txt.decode-cp)
 txt.decode-cp = (i i64) (cp i64, clen i64) {
     b = .byte(i)
     cp = b
@@ -417,8 +443,9 @@ txt.decode-cp = (i i64) (cp i64, clen i64) {
 ; 大小寫轉換
 ; ═══════════════════════════════════════════════
 
-; txt.to-upper: 將文字轉為大寫（ASCII）
+; 將文字轉為大寫（ASCII）
 ; 返回新 txt
+; [to-upper](#txt.to-upper)
 txt.to-upper = () (val txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
@@ -438,8 +465,9 @@ txt.to-upper = () (val txt) {
     val.len = n
 }
 
-; txt.to-lower: 將文字轉為小寫（ASCII）
+; 將文字轉為小寫（ASCII）
 ; 返回新 txt
+; [to-lower](#txt.to-lower)
 txt.to-lower = () (val txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
@@ -459,11 +487,12 @@ txt.to-lower = () (val txt) {
     val.len = n
 }
 ;
-; txt.from-chars: 從 char 切片構造新 txt（逐碼點寫入，UTF-8 編碼；超過 255 字節 的內容自動丟棄）
+; 從 char 切片構造新 txt（逐碼點寫入，UTF-8 編碼；超過 255 字節 的內容自動丟棄）
 ; ⚠️ 不可用 `val[i]: { ok -> it = cs[i] }` 逐碼點寫入：D9 的 place-match 以
 ; **讀取**作閘門，len=0 的新 txt 上讀 `val[0]` 越界回 nil，ok 臂永不執行，
 ; 整個函式因此回傳空字串（`txt.from-chars` 曾因此靜默失真）。
 ; txt.new（ForwardFunc: chars-new）正是為此存在的內建：一次寫入全部碼點並設定字節長度。
+; [from-chars](#txt.from-chars)
 txt.from-chars = (cs []char) (t ?txt) {
     v txt = txt.new(cs)
     t = v
@@ -473,6 +502,7 @@ txt.from-chars = (cs []char) (t ?txt) {
 ; 编译期内建（ForwardFunc: chars-new）：[]char 直接逐字节转成 bytes 并一次性写入长度，
 ; 无逐字节 .no 循环。txt 是内置类型，字节/长度无法在用户代码里操作，故整体转换由编译器生成 IR。
 ; 超过 255 字节的部分自动丢弃（长度字节 clamp 到 255）。
+; [new](#txt.new)
 #{buildin}
 new = (cs []char) (t txt) {
 }
@@ -481,8 +511,9 @@ new = (cs []char) (t txt) {
 ; 裁剪
 ; ═══════════════════════════════════════════════
 
-; txt.trim: 去除首尾空白字元
+; 去除首尾空白字元
 ; 返回新 txt
+; [trim](#txt.trim)
 txt.trim = () (val txt) {
     n i64 = .len-bytes()
 
@@ -518,8 +549,9 @@ txt.trim = () (val txt) {
     val.len = m
 }
 
-; txt.trim-char: 去除首尾指定字元（UTF-8 碼點）
+; 去除首尾指定字元（UTF-8 碼點）
 ; 返回新 txt
+; [trim-char](#txt.trim-char)
 txt.trim-char = (ch char) (val txt) {
     n i64 = .len-bytes()
     start = 0
@@ -619,8 +651,9 @@ txt.trim-char = (ch char) (val txt) {
 ; 重複
 ; ═══════════════════════════════════════════════
 
-; txt.repeat: 將內容重複 times 次（上限 255 位元組）
+; 將內容重複 times 次（上限 255 位元組）
 ; 返回新 txt
+; [repeat](#txt.repeat)
 txt.repeat = (times i64) (val txt) {
     n i64 = .len-bytes()
     cap = 255
@@ -642,7 +675,8 @@ txt.repeat = (times i64) (val txt) {
 ; 統計
 ; ═══════════════════════════════════════════════
 
-; txt.count: 統計 code point 數量
+; 統計 code point 數量
+; [count](#txt.count)
 txt.count = () (cnt i64) {
     cnt = 0
     n i64 = .len-bytes()
@@ -670,8 +704,9 @@ txt.count = () (cnt i64) {
 ; 反向 / 限定查找
 ; ═══════════════════════════════════════════════
 
-; txt.index-from: 從 from 位置開始查找子串
+; 從 from 位置開始查找子串
 ; 返回首次出現位置，未找到返回 -1
+; [index-from](#txt.index-from)
 txt.index-from = (target txt, from i64) (pos i64) {
     r-from = from
     pos = -1
@@ -701,8 +736,9 @@ txt.index-from = (target txt, from i64) (pos i64) {
     }
 }
 
-; txt.rindex: 反向查找子串最後出現位置
+; 反向查找子串最後出現位置
 ; 返回位置，未找到 -1
+; [rindex](#txt.rindex)
 txt.rindex = (target txt) (pos i64) {
     pos = -1
     n i64 = .len-bytes()
@@ -730,12 +766,14 @@ txt.rindex = (target txt) (pos i64) {
     }
 }
 
-; txt.last-index: rindex 別名
+; rindex 別名
+; [last-index](#txt.last-index)
 txt.last-index = (target txt) (pos i64) {
     pos = .rindex(target)
 }
 
-; txt.rindex-from: 從 from 位置反向查找子串（返回位置 >= from 的最後一次出現）
+; 從 from 位置反向查找子串（返回位置 >= from 的最後一次出現）
+; [rindex-from](#txt.rindex-from)
 txt.rindex-from = (target txt, from i64) (pos i64) {
     r-from = from
     pos = -1
@@ -769,14 +807,16 @@ txt.rindex-from = (target txt, from i64) (pos i64) {
 ; 數值解析
 ; ═══════════════════════════════════════════════
 
-; txt.to-i64: 將文字解析為有號 64 位整數
+; 將文字解析為有號 64 位整數
 ; 返回 Option：ok(n) / nil（空）/ err('msg')
+; [to-i64](#txt.to-i64)
 txt.to-i64 = () (val ?i64) {
     s = .to-str()
     val = s.to-i64()
 }
 
-; txt.to-i8: 解析為 i8（範圍 -128~127）
+; 解析為 i8（範圍 -128~127）
+; [to-i8](#txt.to-i8)
 txt.to-i8 = () (val ?i8) {
     v = .to-i64()
     v: {
@@ -795,7 +835,8 @@ txt.to-i8 = () (val ?i8) {
     }
 }
 
-; txt.to-i16: 解析為 i16（範圍 -32768~32767）
+; 解析為 i16（範圍 -32768~32767）
+; [to-i16](#txt.to-i16)
 txt.to-i16 = () (val ?i16) {
     v = .to-i64()
     v: {
@@ -814,7 +855,8 @@ txt.to-i16 = () (val ?i16) {
     }
 }
 
-; txt.to-i32: 解析為 i32（範圍 -2147483648~2147483647）
+; 解析為 i32（範圍 -2147483648~2147483647）
+; [to-i32](#txt.to-i32)
 txt.to-i32 = () (val ?i32) {
     v = .to-i64()
     v: {
@@ -833,7 +875,8 @@ txt.to-i32 = () (val ?i32) {
     }
 }
 
-; txt.to-u8: 解析為 u8（範圍 0~255）
+; 解析為 u8（範圍 0~255）
+; [to-u8](#txt.to-u8)
 txt.to-u8 = () (val ?u8) {
     .len-bytes() == 0 -> {
         val = nil
@@ -877,7 +920,8 @@ txt.to-u8 = () (val ?u8) {
     }
 }
 
-; txt.to-u16: 解析為 u16（範圍 0~65535）
+; 解析為 u16（範圍 0~65535）
+; [to-u16](#txt.to-u16)
 txt.to-u16 = () (val ?u16) {
     .len-bytes() == 0 -> {
         val = nil
@@ -921,7 +965,8 @@ txt.to-u16 = () (val ?u16) {
     }
 }
 
-; txt.to-u32: 解析為 u32（範圍 0~4294967295）
+; 解析為 u32（範圍 0~4294967295）
+; [to-u32](#txt.to-u32)
 txt.to-u32 = () (val ?u32) {
     .len-bytes() == 0 -> {
         val = nil
@@ -965,7 +1010,8 @@ txt.to-u32 = () (val ?u32) {
     }
 }
 
-; txt.to-u64: 解析為 u64（拒絕負號）
+; 解析為 u64（拒絕負號）
+; [to-u64](#txt.to-u64)
 txt.to-u64 = () (val ?u64) {
     .len-bytes() == 0 -> {
         val = nil
@@ -996,7 +1042,8 @@ txt.to-u64 = () (val ?u64) {
     val = n
 }
 
-; txt.to-byte: 解析為 byte（與 u8 等價）
+; 解析為 byte（與 u8 等價）
+; [to-byte](#txt.to-byte)
 txt.to-byte = () (val ?byte) {
     .len-bytes() == 0 -> {
         val = nil
@@ -1040,14 +1087,16 @@ txt.to-byte = () (val ?byte) {
     }
 }
 
-; txt.to-f64: 將文字解析為 f64（回傳 ?f64，空字串→nil，非數字→err）
+; 將文字解析為 f64（回傳 ?f64，空字串→nil，非數字→err）
 ; 複用 str 的解析邏輯（先轉 str 再呼叫 str.to-f64）
+; [to-f64](#txt.to-f64)
 txt.to-f64 = () (val ?f64) {
     s = .to-str()
     val = s.to-f64()
 }
 
-; txt.to-f32: 將文字解析為 f32
+; 將文字解析為 f32
+; [to-f32](#txt.to-f32)
 txt.to-f32 = () (val ?f32) {
     f = .to-f64()
     {
@@ -1064,7 +1113,8 @@ txt.to-f32 = () (val ?f32) {
     val = f.to-f32()
 }
 
-; txt.to-bool: 將 "true"/"false" 解析為 bool
+; 將 "true"/"false" 解析為 bool
+; [to-bool](#txt.to-bool)
 txt.to-bool = () (val ?bool) {
     {
         .len-bytes() == 0 -> {
@@ -1093,8 +1143,9 @@ txt.to-bool = () (val ?bool) {
 ; 替換
 ; ═══════════════════════════════════════════════
 
-; txt.replace-char: 將所有 old-ch 替換為 new-ch（UTF-8 碼點）
+; 將所有 old-ch 替換為 new-ch（UTF-8 碼點）
 ; 返回新 txt（超過 255 位元組則截斷）
+; [replace-char](#txt.replace-char)
 txt.replace-char = (old-ch char, new-ch char) (val txt) {
     n i64 = .len-bytes()
     cap = 255
@@ -1201,8 +1252,9 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
     val.len = pos
 }
 
-; txt.replace-str: 將所有 old 子串替換為 new 子串
+; 將所有 old 子串替換為 new 子串
 ; 返回新 txt（超過 255 位元組則截斷）
+; [replace-str](#txt.replace-str)
 txt.replace-str = (old txt, new txt) (val txt) {
     old.len-bytes() == 0 -> {
         val = .slice(0, .len-bytes())
@@ -1263,8 +1315,9 @@ txt.replace-str = (old txt, new txt) (val txt) {
     val.len = pos
 }
 
-; txt.replace-n: 限定替換次數
+; 限定替換次數
 ; old txt, new txt, n i64: 最大替換次數（n<=0 不替換）
+; [replace-n](#txt.replace-n)
 txt.replace-n = (old txt, new txt, n i64) (val txt) {
     n <= 0 -> {
         val = .slice(0, .len-bytes())
@@ -1350,7 +1403,8 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
 ; 分割與連接
 ; ═══════════════════════════════════════════════
 
-; txt.split: 用分隔符分割為 []txt
+; 用分隔符分割為 []txt
+; [split](#txt.split)
 txt.split = (sep txt) (out []txt) {
     result []txt
     sep.len-bytes() == 0 -> {
@@ -1371,8 +1425,9 @@ txt.split = (sep txt) (out []txt) {
     out = result
 }
 
-; txt.split-n: 限定分割次數
+; 限定分割次數
 ; sep txt, maxsplit i64: 最大分割次數（<=0 不限制）
+; [split-n](#txt.split-n)
 txt.split-n = (sep txt, maxsplit i64) (out []txt) {
     result []txt
     sep.len-bytes() == 0 -> {
@@ -1409,6 +1464,7 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
 ; []txt.join: 用分隔符連接 txt 切片（超過 255 位元組則截斷）
 ; sep txt: 分隔符
 ; 返回 out txt: 連接結果
+; [join](#txt.join)
 []txt.join = (sep txt) (out txt) {
     parts = .
     n = parts.len()
@@ -1448,7 +1504,8 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
     out.len = pos
 }
 
-; txt.fields: 按空白分割為 []txt（連續空白視為單一分隔符）
+; 按空白分割為 []txt（連續空白視為單一分隔符）
+; [fields](#txt.fields)
 txt.fields = () (out []txt) {
     n i64 = .len-bytes()
     n == 0 -> return
@@ -1473,7 +1530,8 @@ txt.fields = () (out []txt) {
     out = result
 }
 
-; txt.lines: 按換行符分割為 []txt（支援 \n 與 \r\n）
+; 按換行符分割為 []txt（支援 \n 與 \r\n）
+; [lines](#txt.lines)
 txt.lines = () (out []txt) {
     n i64 = .len-bytes()
     n == 0 -> return
@@ -1507,7 +1565,8 @@ txt.lines = () (out []txt) {
 ; 十六進制解碼
 ; ═══════════════════════════════════════════════
 
-; txt-hex-val: 單個十六進制字元轉數值（無效字元回傳 -1）
+; 單個十六進制字元轉數值（無效字元回傳 -1）
+; [txt-hex-val](#txt.txt-hex-val)
 txt-hex-val = (c i64) (v i64) {
     v = -1
     {
@@ -1533,8 +1592,9 @@ txt-hex-val = (c i64) (v i64) {
     }
 }
 
-; txt.from-hex: 將十六進制文字解碼為 txt
+; 將十六進制文字解碼為 txt
 ; 返回 Option：ok(txt) / nil（空）/ err('msg')
+; [from-hex](#txt.from-hex)
 txt.from-hex = () (out ?txt) {
     {
         .len-bytes() == 0 -> {
@@ -1572,7 +1632,8 @@ txt.from-hex = () (out ?txt) {
 ; 大數（bigint）轉換
 ; ═══════════════════════════════════════════════
 
-; _txt-dig-val: 單個數字字元轉數值（0-15），無效字元回傳 -1
+; 單個數字字元轉數值（0-15），無效字元回傳 -1
+; [_txt-dig-val](#txt._txt-dig-val)
 _txt-dig-val = (c i64) (d i64) {
     d = -1
     {
@@ -1598,10 +1659,11 @@ _txt-dig-val = (c i64) (d i64) {
     }
 }
 
-; txt.to-bigint: 將文字解析為 bigint，自動判斷進位制
+; 將文字解析為 bigint，自動判斷進位制
 ;   前綴 0b/0B → 二進位、0o/0O → 八進位、0x/0X → 十六進位；無前綴 → 十進位
 ;   支援可選前導空白與正負號（+ / -）
 ; 返回 ?bigint：ok(bigint) 成功 / nil 空字串 / err('msg') 無有效數字
+; [to-bigint](#txt.to-bigint)
 txt.to-bigint = () (out ?bigint) {
     n = .len-bytes()
     n == 0 -> {
@@ -1701,7 +1763,8 @@ txt.to-bigint = () (out ?bigint) {
 ; 全等比較
 ; ═══════════════════════════════════════════════
 
-; txt.eq-full: 全等比較兩個 txt（長度 + 逐位元組）
+; 全等比較兩個 txt（長度 + 逐位元組）
+; [eq-full](#txt.eq-full)
 txt.eq-full = (b txt) (yes bool) {
     .len-bytes() != b.len-bytes() -> return
     yes = true

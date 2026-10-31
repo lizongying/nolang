@@ -2,7 +2,7 @@
 ; # std/net
 ; # std/process
 
-; test-tcp-fork-basic: 基本 TCP fork 測試
+; 基本 TCP fork 測試
 test-tcp-fork-basic = () (pass bool) {
     pass = false
 

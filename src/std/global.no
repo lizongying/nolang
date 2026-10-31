@@ -16,22 +16,25 @@
 
 ; ── 容量/长度构造 ──────────────────────────────────────────
 
-; with-cap: 建立指定容量的字串或切片（len=0），型别由赋值左侧推断
+; 建立指定容量的字串或切片（len=0），型别由赋值左侧推断
 ;   s str = with-cap(256)       → 预分配 256 位元组的 str
 ;   v []i64 = with-cap(100)     → 预分配 100 个元素的切片
+; [with-cap](#global.with-cap)
 #{buildin}
 with-cap = (cap i64) {
 }
 
-; with-len: 建立指定长度的字串或切片，型别由赋值左侧推断
+; 建立指定长度的字串或切片，型别由赋值左侧推断
 ;   s str = with-len(10)        → 长度为 10 的 str
 ;   v []i64 = with-len(100)     → 长度为 100 的切片
+; [with-len](#global.with-len)
 #{buildin}
 with-len = (len i64) {
 }
 
-; with-cap-len: 建立指定容量和长度的字串或切片，型别由赋值左侧推断
+; 建立指定容量和长度的字串或切片，型别由赋值左侧推断
 ;   v []i64 = with-cap-len(200, 100)  → 容量 200、长度 100 的切片
+; [with-cap-len](#global.with-cap-len)
 #{buildin}
 with-cap-len = (cap i64, len i64) {
 }
@@ -105,37 +108,41 @@ with-cap-len = (cap i64, len i64) {
 ;   才生效；只含转义、不含栏位的字面量会原样输出（print('{{n}}') → {{n}}）。
 ;   要输出单独的大括号，直接用 print('{') / print('}')。
 
-; print: 输出字串到标准输出并换行，支援 {name:spec} 命名格式栏位
+; 输出字串到标准输出并换行，支援 {name:spec} 命名格式栏位
 ;   print('hello {name}')       → hello world（若 name = 'world'）
 ;   print('{x:.2f}')            → 3.14（若 x = 3.14159）
 ;   多参数：print(a, b, c) 以空格分隔，整行末尾只有一个换行。
 ;   多参数时每个字串字面量各自是模板（见上方「多参数时，字面量默认是模板」）：
 ;     print('result={val}', 42, 'result={val}')  → result=42 42 result=42
+; [print](#global.print)
 #{buildin}
 print = (s str) {
 }
 
-; eprint: 输出字串到标准错误并换行，支援 {name:spec} 命名格式栏位
+; 输出字串到标准错误并换行，支援 {name:spec} 命名格式栏位
 ;   eprint('error: {msg}')
 ;   多参数：eprint('err:', a, b) 以空格分隔，整行末尾只有一个换行；
 ;           每个字串字面量各自是模板（同 print）
+; [eprint](#global.eprint)
 #{buildin}
 eprint = (s str) {
 }
 
-; format: 使用 {name:spec} 命名栏位格式化字串并返回结果（取代 sprintf）
+; 使用 {name:spec} 命名栏位格式化字串并返回结果（取代 sprintf）
 ;   s = format('{x:.2f}')       → '3.14'
 ;   s = format('{name} is {age}')  → 'Alice is 30'
 ;   ⚠️ 只接受单一格式字串（没有多参数形式）
+; [format](#global.format)
 #{buildin}
 format = (s str) (out str) {
 }
 
 ; ── 行程控制 ────────────────────────────────────
 
-; exit: 結束行程（以状态码 c 终止当前进程）
+; 結束行程（以状态码 c 终止当前进程）
 ;   exit(0)   → 正常退出
 ;   exit(1)   → 异常退出
+; [exit](#global.exit)
 #{buildin}
 exit = (c i64) {
 }

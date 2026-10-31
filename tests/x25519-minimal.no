@@ -6,7 +6,7 @@ key-holder {
     priv [32]byte
 }
 
-; hex-to-bytes: 將 hex 字串轉為 [32]byte
+; 將 hex 字串轉為 [32]byte
 hex-to-bytes = (hex-str str) (out [32]byte) {
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}

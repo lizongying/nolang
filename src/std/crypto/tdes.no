@@ -12,11 +12,12 @@
 ;   out = tdes-enc(plain, plain.len(), key)   // 加密
 ;   out = tdes-dec(cipher, cipher.len(), key) // 解密
 
-; tdes-enc: Triple DES 加密（ECB 模式）
+; Triple DES 加密（ECB 模式）
 ; in []byte: 輸入資料（長度需為 8 的倍數）
 ; n i64: 資料長度
 ; key [24]byte: 金鑰（K1 || K2 || K3）
 ; 返回 out []byte: 加密後的資料
+; [tdes-enc](#crypto.tdes.tdes-enc)
 tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
     ; 提取三個金鑰
@@ -83,11 +84,12 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
     }
 }
 
-; tdes-dec: Triple DES 解密（ECB 模式）
+; Triple DES 解密（ECB 模式）
 ; in []byte: 輸入密文（長度需為 8 的倍數）
 ; n i64: 資料長度
 ; key [24]byte: 金鑰（K1 || K2 || K3）
 ; 返回 out []byte: 解密後的資料
+; [tdes-dec](#crypto.tdes.tdes-dec)
 tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     k1 [8]byte
     k2 [8]byte
@@ -152,11 +154,12 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
 ; 3DES-CBC 模式
 ; ═══════════════════════════════════════════════
 
-; tdes-cbc-enc: Triple DES-CBC 加密
+; Triple DES-CBC 加密
 ; in []byte: 輸入資料（長度需為 8 的倍數）
 ; key [24]byte: 金鑰
 ; iv [8]byte: 初始向量
 ; 返回 out []byte: 加密後的資料
+; [tdes-cbc-enc](#crypto.tdes.tdes-cbc-enc)
 tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     prev [8]byte
     i <- [0..8): {
@@ -203,11 +206,12 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     }
 }
 
-; tdes-cbc-dec: Triple DES-CBC 解密
+; Triple DES-CBC 解密
 ; in []byte: 輸入密文（長度需為 8 的倍數）
 ; key [24]byte: 金鑰
 ; iv [8]byte: 初始向量
 ; 返回 out []byte: 解密後的資料
+; [tdes-cbc-dec](#crypto.tdes.tdes-cbc-dec)
 tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     prev [8]byte
     i <- [0..8): {

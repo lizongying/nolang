@@ -1,7 +1,7 @@
 ; test-arr-return — 測試 [32]byte 陣列作為返回值是否正確
 ; 重現 X25519 中前 8 bytes 為零的 bug
 
-; fill-bytes: 填充 [32]byte 陣列，每個位置填入 i+1
+; 填充 [32]byte 陣列，每個位置填入 i+1
 ; 測試函數返回的 [32]byte 是否正確
 fill-bytes = () (out [32]byte) {
     i <- [0..32): {
@@ -10,7 +10,7 @@ fill-bytes = () (out [32]byte) {
     }
 }
 
-; fill-bytes-param: 輸出填充好的 [32]byte
+; 輸出填充好的 [32]byte
 fill-bytes-param = () (out [32]byte) {
     i <- [0..32): {
 
@@ -18,7 +18,7 @@ fill-bytes-param = () (out [32]byte) {
     }
 }
 
-; test-direct-return: 測試直接返回 [32]byte
+; 測試直接返回 [32]byte
 test-direct-return = () (pass bool) {
     pass = false
 
@@ -54,7 +54,7 @@ test-direct-return = () (pass bool) {
     pass = true
 }
 
-; test-param-pass: 測試通過參數填充 [32]byte
+; 測試通過參數填充 [32]byte
 test-param-pass = () (pass bool) {
     pass = false
 

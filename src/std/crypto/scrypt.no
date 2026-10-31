@@ -14,7 +14,8 @@
 ;   derived = scrypt(password, salt, N, r, p, key-len)
 
 ; ═══════════════════════════════════════════════
-; rotl32: 32-bit 循環左移（Salsa20 quarter-round 需旋轉，非左移）
+; 32-bit 循環左移（Salsa20 quarter-round 需旋轉，非左移）
+; [rotl32](#crypto.scrypt.rotl32)
 rotl32 = (x u32, n i64) (r u32) {
     mask u32 = 4294967295
 
@@ -26,6 +27,7 @@ rotl32 = (x u32, n i64) (r u32) {
 
 ; Salsa20/8 核心：對 64 位元組區塊進行 8 輪混合
 ; block []byte: 64 位元組輸入/輸出（原地修改）
+; [salsa20-8-core](#crypto.scrypt.salsa20-8-core)
 salsa20-8-core = (block []byte) {
 
     ; 載入 16 個 32-bit 字（小端序）
@@ -237,10 +239,11 @@ salsa20-8-core = (block []byte) {
 ; BlockMix
 ; ═══════════════════════════════════════════════
 
-; scrypt-blockmix: 區塊混合函數
+; 區塊混合函數
 ; B []byte: 輸入區塊（128*r 位元組）
 ; r i64: 區塊大小參數
 ; 返回 out []byte: 混合後的區塊（128*r 位元組）
+; [scrypt-blockmix](#crypto.scrypt.scrypt-blockmix)
 scrypt-blockmix = (b []byte, r i64) (out []byte) {
 
     #{overflow=wrap}
@@ -312,11 +315,12 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 ; ROMix
 ; ═══════════════════════════════════════════════
 
-; scrypt-romix: 記憶體困難混合函數
+; 記憶體困難混合函數
 ; b []byte: 輸入區塊（128*r 位元組）
 ; n i64: CPU/記憶體參數（2 的冪）
 ; r i64: 區塊大小參數
 ; 返回 out []byte: 混合後的區塊
+; [scrypt-romix](#crypto.scrypt.scrypt-romix)
 scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
     #{overflow=wrap}
@@ -430,7 +434,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 ; Scrypt 公開 API
 ; ═══════════════════════════════════════════════
 
-; scrypt: Scrypt 金鑰推導
+; Scrypt 金鑰推導
 ; password []byte: 密碼
 ; salt []byte: 鹽值
 ; n i64: CPU/記憶體參數（2 的冪，如 16384）
@@ -438,6 +442,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 ; p i64: 並行參數（如 1）
 ; key-len i64: 期望金鑰長度
 ; 返回 out []byte: 推導出的金鑰
+; [scrypt](#crypto.scrypt.scrypt)
 scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out []byte) {
 
     ; 1. B = PBKDF2-HMAC-SHA256(password, salt, 1, p * 128 * r)

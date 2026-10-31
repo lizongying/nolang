@@ -1,7 +1,7 @@
 ; test-x25519-bob-only — 只測試 Bob 的公鑰（排除狀態累積）
 ; # std/crypto/x25519
 
-; hex-to-bytes: 將 hex 字串轉為 [32]byte
+; 將 hex 字串轉為 [32]byte
 hex-to-bytes = (hex-str str) (out [32]byte) {
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
@@ -45,7 +45,7 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
     }
 }
 
-; bytes-eq: 比較兩個 [32]byte 是否相等
+; 比較兩個 [32]byte 是否相等
 bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
     eq = true
     i <- [0..32): {

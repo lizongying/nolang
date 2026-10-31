@@ -2,7 +2,7 @@
 ; # std/net/server
 ; # std/net/tls
 
-; test-https-listen: 測試 HTTPS 伺服器可以建立監聽
+; 測試 HTTPS 伺服器可以建立監聽
 test-https-listen = () (pass bool) {
     pass = false
     srv = https-server {}
@@ -15,7 +15,7 @@ test-https-listen = () (pass bool) {
     pass = true
 }
 
-; test-tls-server-init: 測試 TLS 伺服器連線初始化（憑證生成、金鑰設定）
+; 測試 TLS 伺服器連線初始化（憑證生成、金鑰設定）
 test-tls-server-init = () (pass bool) {
     pass = false
 
@@ -59,7 +59,7 @@ test-tls-server-init = () (pass bool) {
     }
 }
 
-; test-https-server-struct: 測試 https-server-conn 結構體可建立
+; 測試 https-server-conn 結構體可建立
 test-https-server-struct = () (pass bool) {
     pass = false
     space = ' '
@@ -81,7 +81,7 @@ test-https-server-struct = () (pass bool) {
     conn.method.len-bytes() == 0 -> pass = true
 }
 
-; run-https-e2e-client: 父進程客戶端邏輯
+; 父進程客戶端邏輯
 ; 使用局部變數 tc 操作 TLS 連線，避開全域變數跨函式 bug。
 ; host str: 伺服器主機
 ; port i64: 伺服器埠號
@@ -174,7 +174,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
     }
 }
 
-; test-https-e2e: 端到端測試 — fork 伺服器 + TLS 客戶端連線
+; 端到端測試 — fork 伺服器 + TLS 客戶端連線
 ; 驗證: TLS 1.3 交握 + HTTP 請求/回應 through加密通道
 test-https-e2e = () (pass bool) {
     pass = false
@@ -218,7 +218,7 @@ test-https-e2e = () (pass bool) {
     process.process-waitpid(pid, 0)
 }
 
-; run-https-e2e-client-12: 父進程客戶端邏輯（TLS 1.2）
+; 父進程客戶端邏輯（TLS 1.2）
 ; 使用 dial-12 發送純 TLS 1.2 ClientHello（無 supported_versions 擴展）。
 ; host str: 伺服器主機
 ; port i64: 伺服器埠號
@@ -311,7 +311,7 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
     }
 }
 
-; test-https-e2e-12: 端到端測試 — TLS 1.2 交握
+; 端到端測試 — TLS 1.2 交握
 ; 驗證: TLS 1.2 交握 + HTTP 請求/回應 through加密通道
 test-https-e2e-12 = () (pass bool) {
     pass = false

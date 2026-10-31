@@ -83,7 +83,7 @@ KIND-COUNT = 72
 STR-COUNT = 187
 INSTR-COUNT = 308
 
-; strs: 字串池（id 0 = 空字串，不在此列）
+; 字串池（id 0 = 空字串，不在此列）
 strs = () (r []str) {
     r = [
         '',
@@ -276,7 +276,7 @@ strs = () (r []str) {
     ]
 }
 
-; tape: 扁平指令帶，每 5 個 i64 一條
+; 扁平指令帶，每 5 個 i64 一條
 tape = () (r []i64) {
     r = [
         0, 1, 1, 0, 2,
@@ -590,7 +590,7 @@ tape = () (r []i64) {
     ]
 }
 
-; kinds: 每 4 個 i64 一種節點 (name-id, first, num, reserved)
+; 每 4 個 i64 一種節點 (name-id, first, num, reserved)
 kinds = () (r []i64) {
     r = [
         0, 0, 0, 0,
@@ -744,7 +744,7 @@ K-UNWRAP-ASSIGN-STATEMENT = 70
 K-USE-STATEMENT = 71
 K-VIEW-TYPE = 72
 
-; kind-name: 節點種類 id → 型別名（供 <unknown> 與除錯用）
+; 節點種類 id → 型別名（供 <unknown> 與除錯用）
 kind-name = (id i64) (r str) {
     r = id: {
         1 -> 'AnnotationArrayValue'
@@ -823,7 +823,7 @@ kind-name = (id i64) (r str) {
     }
 }
 
-; kind-id: 型別名 → 節點種類 id（找不到回 0）
+; 型別名 → 節點種類 id（找不到回 0）
 kind-id = (name str) (r i64) {
     r = name: {
         'AnnotationArrayValue' -> 1

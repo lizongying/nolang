@@ -10,7 +10,7 @@
 
 # std/heap
 
-; check：純函數，印出結果並回傳布爾值（不可在函式內改動全域變數）
+; 純函數，印出結果並回傳布爾值（不可在函式內改動全域變數）
 check = (cond bool, msg str) (r bool) {
     r = cond
     cond -> {
@@ -22,7 +22,7 @@ check = (cond bool, msg str) (r bool) {
     }
 }
 
-; deref：?i64 -> i64（空/err -> -999），純函數
+; ?i64 -> i64（空/err -> -999），純函數
 deref = (x ?i64) (v i64) {
     v = -999
     x: {
@@ -34,7 +34,7 @@ deref = (x ?i64) (v i64) {
     }
 }
 
-; deref-f：?f64 -> f64（空/err -> -1.0），純函數
+; ?f64 -> f64（空/err -> -1.0），純函數
 deref-f = (x ?f64) (v f64) {
     v = -1.0
     x: {

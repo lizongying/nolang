@@ -51,7 +51,8 @@ toml-doc {
     array-count i64
 }
 
-; toml.new: 建立空 TOML 文件
+; 建立空 TOML 文件
+; [new](#toml.new)
 toml.new = () (doc toml-doc) {
     doc = toml-doc {
         count: 0
@@ -76,7 +77,8 @@ toml.new = () (doc toml-doc) {
     }
 }
 
-; toml-entry-key: 讀取 canonical key。
+; 讀取 canonical key。
+; [toml-entry-key](#toml.toml-entry-key)
 toml-entry-key = (e toml-entry) (s str) {
     s = with-len(e.key-len)
     i <- [0..e.key-len): {
@@ -85,7 +87,8 @@ toml-entry-key = (e toml-entry) (s str) {
     }
 }
 
-; toml-entry-value: 讀取原始 TOML value。
+; 讀取原始 TOML value。
+; [toml-entry-value](#toml.toml-entry-value)
 toml-entry-value = (e toml-entry) (s str) {
     s = with-len(e.value-len)
     i <- [0..e.value-len): {
@@ -94,7 +97,8 @@ toml-entry-value = (e toml-entry) (s str) {
     }
 }
 
-; toml-entry-key-eq: 比較 entry key 與字串。
+; 比較 entry key 與字串。
+; [toml-entry-key-eq](#toml.toml-entry-key-eq)
 toml-entry-key-eq = (e toml-entry, key str) (same bool) {
     same = false
     e.key-len != key.len-bytes() -> return
@@ -105,7 +109,8 @@ toml-entry-key-eq = (e toml-entry, key str) (same bool) {
     same = true
 }
 
-; toml-make-entry: 將 key/value 複製到固定緩衝區。
+; 將 key/value 複製到固定緩衝區。
+; [toml-make-entry](#toml.toml-make-entry)
 toml-make-entry = (key str, value str) (e toml-entry) {
     e.key-len = key.len-bytes()
     e.value-len = value.len-bytes()
@@ -119,7 +124,8 @@ toml-make-entry = (key str, value str) (e toml-entry) {
     }
 }
 
-; toml-table-name: 讀取表格名稱。
+; 讀取表格名稱。
+; [toml-table-name](#toml.toml-table-name)
 toml-table-name = (t toml-table) (s str) {
     s = with-len(t.name-len)
     i <- [0..t.name-len): {
@@ -128,7 +134,8 @@ toml-table-name = (t toml-table) (s str) {
     }
 }
 
-; toml-array-name: 讀取 array-of-tables 名稱。
+; 讀取 array-of-tables 名稱。
+; [toml-array-name](#toml.toml-array-name)
 toml-array-name = (t toml-array-table) (s str) {
     s = with-len(t.name-len)
     i <- [0..t.name-len): {
@@ -137,7 +144,8 @@ toml-array-name = (t toml-array-table) (s str) {
     }
 }
 
-; toml-table-eq: 比較固定緩衝區中的表格名稱。
+; 比較固定緩衝區中的表格名稱。
+; [toml-table-eq](#toml.toml-table-eq)
 toml-table-eq = (name [32]byte, name-len i64, s str) (same bool) {
     same = false
     name-len != s.len-bytes() -> return
@@ -149,7 +157,8 @@ toml-table-eq = (name [32]byte, name-len i64, s str) (same bool) {
     same = true
 }
 
-; toml-find-eq: 找到未被引號包住的第一個等號
+; 找到未被引號包住的第一個等號
+; [toml-find-eq](#toml.toml-find-eq)
 toml-find-eq = (s str) (pos i64) {
     pos = -1
     quote = 0
@@ -190,7 +199,8 @@ toml-find-eq = (s str) (pos i64) {
     }
 }
 
-; toml-strip-comment: 移除字串外的 # 註解並 trim；支援 multiline string。
+; 移除字串外的 # 註解並 trim；支援 multiline string。
+; [toml-strip-comment](#toml.toml-strip-comment)
 toml-strip-comment = (s str) (out str) {
     quote = 0
     escaped = false
@@ -276,7 +286,8 @@ toml-strip-comment = (s str) (out str) {
     out = s.slice-bytes(0, end).trim()
 }
 
-; toml-normalize-key: 解析 bare / quoted / dotted key，輸出 canonical dotted key。
+; 解析 bare / quoted / dotted key，輸出 canonical dotted key。
+; [toml-normalize-key](#toml.toml-normalize-key)
 toml-normalize-key = (s str) (key ?str) {
     k = s.trim()
     n = k.len-bytes()
@@ -302,7 +313,8 @@ toml-normalize-key = (s str) (key ?str) {
     key = k
 }
 
-; toml-unquote: 解碼 basic/literal TOML 字串
+; 解碼 basic/literal TOML 字串
+; [toml-unquote](#toml.toml-unquote)
 toml-unquote = (raw str) (value ?str) {
     s = raw.trim()
     n = s.len-bytes()
@@ -370,7 +382,8 @@ toml-unquote = (raw str) (value ?str) {
     value = v
 }
 
-; toml-value-complete: 判斷值是否已閉合；用於多行陣列、inline table、multiline string。
+; 判斷值是否已閉合；用於多行陣列、inline table、multiline string。
+; [toml-value-complete](#toml.toml-value-complete)
 toml-value-complete = (raw str) (complete bool) {
     complete = false
     s = raw.trim()
@@ -468,7 +481,8 @@ toml-value-complete = (raw str) (complete bool) {
     complete = q == 0 && depth == 0
 }
 
-; toml-valid-value: 接受 TOML 1.0 的 scalar、array、inline table 與日期時間字面值。
+; 接受 TOML 1.0 的 scalar、array、inline table 與日期時間字面值。
+; [toml-valid-value](#toml.toml-valid-value)
 toml-valid-value = (raw str) (valid bool) {
     valid = false
     s = raw.trim()
@@ -497,7 +511,8 @@ toml-valid-value = (raw str) (valid bool) {
     }
 }
 
-; toml-register-table: 記錄已定義表格，重複定義回傳 false。
+; 記錄已定義表格，重複定義回傳 false。
+; [toml-register-table](#toml.toml-register-table)
 toml-register-table = (doc toml-doc, name str) (ok bool) {
     ok = false
     i <- [0..doc.table-count): {
@@ -517,7 +532,8 @@ toml-register-table = (doc toml-doc, name str) (ok bool) {
     ok = true
 }
 
-; toml-resolve-section: 將 array-of-tables 的子表解析到最近一筆元素。
+; 將 array-of-tables 的子表解析到最近一筆元素。
+; [toml-resolve-section](#toml.toml-resolve-section)
 toml-resolve-section = (doc toml-doc, name str) (resolved str) {
     resolved = name
     i <- [0..doc.array-count): {
@@ -539,7 +555,8 @@ toml-resolve-section = (doc toml-doc, name str) (resolved str) {
     }
 }
 
-; toml-next-array-table: 取得並登記 array-of-tables 的下一個索引。
+; 取得並登記 array-of-tables 的下一個索引。
+; [toml-next-array-table](#toml.toml-next-array-table)
 toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     i <- [0..doc.array-count): {
 
@@ -568,7 +585,8 @@ toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     idx = 0
 }
 
-; toml.parse: 解析 TOML 文件，失敗返回 err(message)
+; 解析 TOML 文件，失敗返回 err(message)
+; [parse](#toml.parse)
 toml.parse = (s str) (result ?toml-doc) {
     doc = toml.new()
     section = ''
@@ -772,7 +790,8 @@ toml.parse = (s str) (result ?toml-doc) {
     result = doc
 }
 
-; stringify: 以 TOML 1.0 語法輸出文件；array-of-tables 會還原為 [[table]] 標頭。
+; 以 TOML 1.0 語法輸出文件；array-of-tables 會還原為 [[table]] 標頭。
+; [stringify](#toml.stringify)
 stringify = (doc toml-doc) (out str) {
     out = ''
     last-array = ''
@@ -820,8 +839,9 @@ stringify = (doc toml-doc) (out str) {
     }
 }
 
-; put: 設定原始 TOML 字面值。
+; 設定原始 TOML 字面值。
 ; value 可為陣列、日期時間等 TOML 語法，模組不會替它加引號。
+; [put](#toml.toml-doc.put)
 toml-doc.put = (key str, value str) (ok bool) {
     ok = false
     norm-opt = toml-normalize-key(key)
@@ -849,8 +869,9 @@ toml-doc.put = (key str, value str) (ok bool) {
     ok = true
 }
 
-; get: 取得原始 TOML 字面值
+; 取得原始 TOML 字面值
 ; 例如陣列、日期時間等尚未轉型的值可由此取得。
+; [get](#toml.get)
 get = (doc toml-doc, key str) (value ?str) {
     i <- [0..doc.count): {
 
@@ -862,7 +883,8 @@ get = (doc toml-doc, key str) (value ?str) {
     }
 }
 
-; has: 判斷鍵是否存在
+; 判斷鍵是否存在
+; [has](#toml.has)
 has = (doc toml-doc, key str) (found bool) {
     i <- [0..doc.count): {
 
@@ -874,7 +896,8 @@ has = (doc toml-doc, key str) (found bool) {
     }
 }
 
-; get-str: 取得並解碼字串值
+; 取得並解碼字串值
+; [get-str](#toml.get-str)
 get-str = (doc toml-doc, key str) (value ?str) {
     raw = get(doc, key)
     raw: {
@@ -886,7 +909,8 @@ get-str = (doc toml-doc, key str) (value ?str) {
     }
 }
 
-; toml-parse-i64: 支援十進位、十六進位、八進位、二進位與底線分隔。
+; 支援十進位、十六進位、八進位、二進位與底線分隔。
+; [toml-parse-i64](#toml.toml-parse-i64)
 toml-parse-i64 = (s str) (value ?i64) {
     v = 0
     clean = s.trim()
@@ -983,7 +1007,8 @@ toml-parse-i64 = (s str) (value ?i64) {
     value = v
 }
 
-; toml-parse-f64: 解析浮點數
+; 解析浮點數
+; [toml-parse-f64](#toml.toml-parse-f64)
 toml-parse-f64 = (s str) (value ?f64) {
     clean = s.replace-str('_', '')
     parsed = clean.to-f64()
@@ -996,7 +1021,8 @@ toml-parse-f64 = (s str) (value ?f64) {
     }
 }
 
-; toml-parse-bool: 解析布林值
+; 解析布林值
+; [toml-parse-bool](#toml.toml-parse-bool)
 toml-parse-bool = (s str) (value ?bool) {
     parsed = s.to-bool()
     parsed: {
@@ -1008,7 +1034,8 @@ toml-parse-bool = (s str) (value ?bool) {
     }
 }
 
-; get-i64: 取得十進位整數（允許 TOML 的底線分隔）
+; 取得十進位整數（允許 TOML 的底線分隔）
+; [get-i64](#toml.get-i64)
 get-i64 = (doc toml-doc, key str) (value ?i64) {
     raw = get(doc, key)
     raw: {
@@ -1020,7 +1047,8 @@ get-i64 = (doc toml-doc, key str) (value ?i64) {
     }
 }
 
-; get-f64: 取得浮點值（支援 exponent）
+; 取得浮點值（支援 exponent）
+; [get-f64](#toml.get-f64)
 get-f64 = (doc toml-doc, key str) (value ?f64) {
     raw = get(doc, key)
     raw: {
@@ -1032,7 +1060,8 @@ get-f64 = (doc toml-doc, key str) (value ?f64) {
     }
 }
 
-; get-bool: 取得 true/false
+; 取得 true/false
+; [get-bool](#toml.get-bool)
 get-bool = (doc toml-doc, key str) (value ?bool) {
     raw = get(doc, key)
     raw: {

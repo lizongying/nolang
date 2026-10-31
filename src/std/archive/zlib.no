@@ -19,10 +19,11 @@
 ; Adler-32 校驗和 (RFC 1950)
 ; ═══════════════════════════════════════════════
 
-; adler-32: 計算 Adler-32 校驗和
+; 計算 Adler-32 校驗和
 ;   data: 輸入資料 ([]byte)
 ;   n: 資料長度 (i64)
 ;   返回 sum: 32 位校驗和 (i64)
+; [adler-32](#archive.zlib.adler-32)
 adler-32 = (data []byte, n i64) (sum i64) {
     mod-base = 65521
     a = 1
@@ -42,7 +43,7 @@ adler-32 = (data []byte, n i64) (sum i64) {
 ; zlib 壓縮
 ; ═══════════════════════════════════════════════
 
-; zlib-compress: 壓縮資料為 zlib 串流
+; 壓縮資料為 zlib 串流
 ;   data: 未壓縮輸入資料 ([]byte)
 ;   返回 out: zlib 串流（2-byte header + DEFLATE + 4-byte Adler-32）
 ;
@@ -50,6 +51,7 @@ adler-32 = (data []byte, n i64) (sum i64) {
 ;   - 2-byte zlib header (78 9c)
 ;   - DEFLATE stored blocks（每塊最大 65535 bytes）
 ;   - 4-byte big-endian Adler-32 checksum
+; [zlib-compress](#archive.zlib.zlib-compress)
 zlib-compress = (data []byte) (out []byte) {
     result []byte
 
@@ -79,13 +81,14 @@ zlib-compress = (data []byte) (out []byte) {
 ; zlib 解壓縮
 ; ═══════════════════════════════════════════════
 
-; zlib-decompress: 解壓 zlib 串流
+; 解壓 zlib 串流
 ;   data: zlib 串流 ([]byte)
 ;   返回 out ?[]byte: 解壓後資料（some），失敗為 nil
 ;
 ; 支援所有 DEFLATE 區塊類型（stored, fixed Huffman, dynamic Huffman）
 ; 透過 gzip.inflate-decompress 進行解壓。
 ; 先嘗試 stored-block 掃描（快速路徑），失敗則使用 inflate 解壓。
+; [zlib-decompress](#archive.zlib.zlib-decompress)
 zlib-decompress = (data []byte) (out ?[]byte) {
 
     out = nil
@@ -133,9 +136,10 @@ zlib-decompress = (data []byte) (out ?[]byte) {
 ; 輔助函式
 ; ═══════════════════════════════════════════════
 
-; zlib-decompress-stored: 僅解壓 stored-block 的 zlib 串流
+; 僅解壓 stored-block 的 zlib 串流
 ;   data: 僅含 BTYPE=00 區塊的 zlib 串流 ([]byte)
 ;   返回 out ?[]byte: 解壓後資料（some），非 stored 區塊或失敗為 nil
+; [zlib-decompress-stored](#archive.zlib.zlib-decompress-stored)
 zlib-decompress-stored = (data []byte) (out ?[]byte) {
     out = nil
     data.len() < 6 -> return
@@ -175,9 +179,10 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
     out = buf
 }
 
-; zlib-consumed-stored: 計算 stored-block zlib 串流的消耗位元組數
+; 計算 stored-block zlib 串流的消耗位元組數
 ;   data: 從偏移 0 開始的 zlib 串流 ([]byte)
 ;   返回 consumed: 總消耗位元組數（含 header 和 Adler-32），0 表示非 stored 區塊
+; [zlib-consumed-stored](#archive.zlib.zlib-consumed-stored)
 zlib-consumed-stored = (data []byte) (consumed i64) {
 
     consumed = 0

@@ -8,9 +8,10 @@
 ;   hash = sha224(data)       // hash = 28 位元組 [28]byte
 ;   hex = sha224-hex(data)    // hex = 56 字元 hex 字串
 
-; sha224: 計算 SHA-224 雜湊（含填充與多區塊處理）
+; 計算 SHA-224 雜湊（含填充與多區塊處理）
 ; data []byte: 輸入位元組陣列
 ; 返回 hash [28]byte: 28 位元組雜湊值
+; [sha224](#crypto.sha224.sha224)
 sha224 = (data []byte) (hash [28]byte) {
 
     ; SHA-224 初始狀態（不同於 SHA-256）
@@ -155,9 +156,10 @@ sha224 = (data []byte) (hash [28]byte) {
     hash[27] = h6 & 255
 }
 
-; sha224-hex: 計算 SHA-224 雜湊並返回 hex 字串
+; 計算 SHA-224 雜湊並返回 hex 字串
 ; data []byte: 輸入位元組陣列
 ; 返回 hex str: 56 字元小寫 hex 字串
+; [sha224-hex](#crypto.sha224.sha224-hex)
 sha224-hex = (data []byte) (hex str) {
     hash = sha224(data)
 

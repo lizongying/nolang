@@ -932,9 +932,15 @@ func NomlQuoteValue(s string) string {
 }
 
 // rawStringSafe 判斷 s 放進反引號區塊後能否原樣取回。
+//
+// 判據必須與 parseRawString 的結束偵測完全一致：那裡是「換行之後的一行若只有
+// 空白 + ` 就是結束標記」，即只要某行去掉前導空白後以 ` 開頭就終止區塊。所以
+// 用 HasPrefix 而不是 == —— 一行以 ` 開頭但後面還有內容（例如 markdown 行內
+// 程式碼 `#{overflow=wrap}`；u128 的註解就是這樣）同樣會提前收尾，寫出去的
+// 檔案再讀回來就報 "expected newline after member"。
 func rawStringSafe(s string) bool {
 	for _, line := range strings.Split(s, "\n") {
-		if strings.TrimLeft(line, " \t\r") == "`" {
+		if strings.HasPrefix(strings.TrimLeft(line, " \t\r"), "`") {
 			return false
 		}
 	}

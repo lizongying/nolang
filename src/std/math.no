@@ -22,7 +22,8 @@ E = 2.718281828459045
 ; 2026-10-05 移除——同一裸名註冊兩條（i64 + f64）時，
 ; FindBuiltinMethod 只取第一條，浮點呼叫會被靜默截斷成整數。
 
-; max: 回傳最大值（變參泛型，支援 num 所有成員）
+; 回傳最大值（變參泛型，支援 num 所有成員）
+; [max](#math.max)
 max = (a ..num) (r num) {
 
     #{index-out=zero}
@@ -37,7 +38,8 @@ max = (a ..num) (r num) {
     }
 }
 
-; min: 回傳最小值（變參泛型，支援 num 所有成員）
+; 回傳最小值（變參泛型，支援 num 所有成員）
+; [min](#math.min)
 min = (a ..num) (r num) {
 
     #{index-out=zero}
@@ -52,7 +54,7 @@ min = (a ..num) (r num) {
     }
 }
 
-; pow: f64 求幂 a^b（纯 .no 实现 exp(y*ln|x|)，避免 libm 依赖）
+; f64 求幂 a^b（纯 .no 实现 exp(y*ln|x|)，避免 libm 依赖）
 ; 整数冪（int 泛型）见 std/number.no 的 pow-int
 ;
 ; ⚠️ 负底数必须单独处理：exp(y*ln|x|) **恒为正**，无法还原符号。
@@ -65,6 +67,7 @@ min = (a ..num) (r num) {
 ;   1. |y| > 2^63 时 f64-to-i64 溢出，奇偶判定失真 ⇒ inf 的符号可能反。
 ;      此时 mag 本身已是 inf/0，只影响符号。
 ;   2. x==0.0 且 y<0 时 C pow 回传 +inf，本实现回传 0.0（沿旧行为）。
+; [pow](#math.pow)
 pow = (x f64, y f64) (res f64) {
     y == 0.0 -> {
         res = 1.0
@@ -99,6 +102,7 @@ pow = (x f64, y f64) (res f64) {
 ; 使用快速冪算法 O(log n)
 ; ⚠️ 未移至 math：與 std/math.no 的 pow（f64 求冪函數）同名衝突，
 ;    同一模組不容兩條 pow；函數形式 API 集中於 math 的唯一例外。
+; [pow-int](#math.pow-int)
 pow-int = (a int, n int) (r int) {
     rn = n
     r = 1
@@ -114,7 +118,8 @@ pow-int = (a int, n int) (r int) {
     }
 }
 
-; hypot: 歐幾里得範數 sqrt(x*x + y*y)
+; 歐幾里得範數 sqrt(x*x + y*y)
+; [hypot](#math.hypot)
 hypot = (x f64, y f64) (res f64) {
     s = x * x + y * y
     res = s.sqrt()
@@ -122,6 +127,7 @@ hypot = (x f64, y f64) (res f64) {
 
 ; atan2: 反正切 y/x（纯 .no 实现，避免 libm 依赖）
 ; 内部 atan-kernel：先把 |t| 归约到 <= tan(pi/8)，再用泰勒级数
+; [atan-kernel](#math.atan-kernel)
 atan-kernel = (t f64) (r f64) {
     k = 0.0
     t > 0.414213562373095 -> {
@@ -173,7 +179,8 @@ atan2 = (y f64, x f64) (res f64) {
 }
 
 ; 杂项
-; fmod: 浮點取餘
+; 浮點取餘
+; [fmod](#math.fmod)
 fmod = (x f64, y f64) (res f64) {
 
     y == 0.0 -> {
@@ -188,12 +195,14 @@ fmod = (x f64, y f64) (res f64) {
 ; ═══════════════════════════════════════════════
 ; 整數數學函數（內建）
 ; ═══════════════════════════════════════════════
-; clamp: 將值限制在 [min, max] 範圍內
+; 將值限制在 [min, max] 範圍內
+; [clamp](#math.clamp)
 #{buildin}
 clamp = (val i64, min i64, max i64) (result i64) {
 }
 
-; even: 是否為偶數 — 對所有整數型別（含無符號）通用
+; 是否為偶數 — 對所有整數型別（含無符號）通用
+; [even](#math.even)
 even = (a int) (yes bool) {
 
     #{overflow=wrap}
@@ -201,7 +210,8 @@ even = (a int) (yes bool) {
     yes = (r == 0)
 }
 
-; odd: 是否為奇數 — 對所有整數型別（含無符號）通用
+; 是否為奇數 — 對所有整數型別（含無符號）通用
+; [odd](#math.odd)
 odd = (a int) (yes bool) {
 
     #{overflow=wrap}
@@ -209,7 +219,8 @@ odd = (a int) (yes bool) {
     yes = (r != 0)
 }
 
-; gcd: 最大公因數（輾轉相除法）
+; 最大公因數（輾轉相除法）
+; [gcd](#math.gcd)
 gcd = (a int, b int) (r int) {
     ra = a
     rb = b
@@ -228,7 +239,8 @@ gcd = (a int, b int) (r int) {
     r = ra
 }
 
-; lcm: 最小公倍數
+; 最小公倍數
+; [lcm](#math.lcm)
 lcm = (a int, b int) (r int) {
 
     a == 0 || b == 0 -> {
@@ -241,19 +253,21 @@ lcm = (a int, b int) (r int) {
     r = a / g * b
 }
 
-; div: 整數除法（向零截斷，與 C/Go/Java 的 `a / b` 一致）
+; 整數除法（向零截斷，與 C/Go/Java 的 `a / b` 一致）
 ;
 ; -7 / 2 == -3（不是 -4：floor 語義請自行改用 sign 判斷）
 ; ⚠️ b == 0 時與裸 `/` 一樣會 trap（執行期無除零檢查）。
+; [div](#math.div)
 div = (a int, b int) (r int) {
 
     r = a / b
 }
 
-; mod: 整數取餘（餘數符號跟隨被除數 a，與 C/Go/Java 的 `a % b` 一致）
+; 整數取餘（餘數符號跟隨被除數 a，與 C/Go/Java 的 `a % b` 一致）
 ;
 ; -7 % 2 == -1（floor-mod 語義請自行改用 sign 判斷）
 ; ⚠️ b == 0 時與裸 `%` 一樣會 trap。
+; [mod](#math.mod)
 mod = (a int, b int) (r int) {
 
     #{overflow=wrap}
@@ -273,10 +287,11 @@ mod = (a int, b int) (r int) {
 ; 供舊調用點兼容（字串化另有 char.to-str 方法於 std/char.no）。
 ; ═══════════════════════════════════════════════
 
-; char-to-str: 將 char（Unicode 碼點）轉為 UTF-8 編碼字串
+; 將 char（Unicode 碼點）轉為 UTF-8 編碼字串
 ; 取代舊版 sprintf %c（僅能處理單位元組 ASCII）
 ; ⚠️ 已棄用（DEPRECATED）：建議改用方法形式 char.to-str()（見 std/char.no），
 ;    如 c char = 'A'; c.to-str()；本函數僅為舊調用點保留兼容。
+; [char-to-str](#math.char-to-str)
 char-to-str = (c char) (out str) {
     out = with-cap(4)
     {
@@ -319,7 +334,8 @@ char-to-str = (c char) (out str) {
 
 LN10 = 2.302585092994046
 
-; swap: 交換兩個值
+; 交換兩個值
+; [swap](#math.swap)
 swap = () (a t, b t) {
     tmp = a
     a = b
@@ -329,6 +345,7 @@ swap = () (a t, b t) {
 ; [n]num.zero / []num.zero — 使用 llvm.memset 置零
 ; 定長陣列：總位元組 = n * sizeof(num) 編譯期常量
 ; 堆切片：運行時取 .len() * sizeof(num) 傳入 llvm.memset
+; [arr-zero](#math.arr-zero)
 #{buildin}
 arr-zero = () {
 }
@@ -350,17 +367,20 @@ arr-zero = () {
 ; ═══════════════════════════════════════════════
 ; 位元操作（內建）
 ; ═══════════════════════════════════════════════
-; rotate-left: 整數左旋 n 位元（映射到 ARM64 ROR via llvm.fshl）
+; 整數左旋 n 位元（映射到 ARM64 ROR via llvm.fshl）
+; [rotate-left](#math.rotate-left)
 #{buildin}
 rotate-left = (x i64, n i64) (r i64) {
 }
 
-; rotate-right: 整數右旋 n 位元（映射到 ARM64 ROR via llvm.fshr）
+; 整數右旋 n 位元（映射到 ARM64 ROR via llvm.fshr）
+; [rotate-right](#math.rotate-right)
 #{buildin}
 rotate-right = (x i64, n i64) (r i64) {
 }
 
-; store-le-u32: 將 u32 值以小端序寫入位元組陣列指定偏移位置
+; 將 u32 值以小端序寫入位元組陣列指定偏移位置
+; [store-le-u32](#math.store-le-u32)
 #{buildin}
 store-le-u32 = (arr i64, offset i64, val u32) {
 }

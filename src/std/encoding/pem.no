@@ -40,10 +40,11 @@ pem-block {
 ; 編碼
 ; ═══════════════════════════════════════════════
 
-; pem-encode: 將原始位元組編碼為 PEM 格式字串
+; 將原始位元組編碼為 PEM 格式字串
 ; label str: PEM 標籤（如 'CERTIFICATE', 'RSA PRIVATE KEY'）
 ; data []byte: 原始二進制資料
 ; 返回 out str: PEM 格式字串
+; [pem-encode](#encoding.pem.pem-encode)
 pem-encode = (label str, data []byte) (out str) {
 
     ; Base64 編碼
@@ -140,9 +141,10 @@ pem-encode = (label str, data []byte) (out str) {
 ; 解碼
 ; ═══════════════════════════════════════════════
 
-; pem-decode: 解析 PEM 格式字串
+; 解析 PEM 格式字串
 ; pem-str: PEM 格式字串
 ; 返回 ?pem-block: ok=解析成功, nil=解析失敗
+; [pem-decode](#encoding.pem.pem-decode)
 pem-decode = (pem-str str) (result ?pem-block) {
 
     n = pem-str.len-bytes()

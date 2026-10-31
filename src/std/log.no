@@ -29,23 +29,23 @@ LEVEL-FATAL = 4
 ; 日誌格式位（供 set-format 組合）
 ; ═══════════════════════════════════════════════
 
-; F-TIME: 前置時間戳 YYYY-MM-DD HH:MM:SS（UTC）
+; 前置時間戳 YYYY-MM-DD HH:MM:SS（UTC）
 F-TIME = 1
 
-; F-LEVEL: 前置 [INFO] / [ERROR] 等級標籤
+; 前置 [INFO] / [ERROR] 等級標籤
 F-LEVEL = 2
 
-; F-LOC: 前置呼叫點 [檔案:行:列]（由 #{track-caller} 自動注入）
+; 前置呼叫點 [檔案:行:列]（由 #{track-caller} 自動注入）
 F-LOC = 4
 
 ; ═══════════════════════════════════════════════
 ; 全域設定
 ; ═══════════════════════════════════════════════
 
-; LEVEL: 當前日誌級別（預設 INFO）
+; 當前日誌級別（預設 INFO）
 LEVEL = 1
 
-; FMT-FLAGS: 輸出格式位（預設僅 [INFO] 級別標籤，貼近舊輸出以保持相容；
+; 輸出格式位（預設僅 [INFO] 級別標籤，貼近舊輸出以保持相容；
 ; 需要的話用 set-format 疊加 F-TIME / F-LOC）
 FMT-FLAGS = 2
 
@@ -59,39 +59,46 @@ OUT-FD fd = fs.STDERR-FD
 ; 設定介面
 ; ═══════════════════════════════════════════════
 
-; set-level: 設定日誌級別
+; 設定日誌級別
+; [set-level](#log.set-level)
 set-level = (l i64) {
     LEVEL = l
 }
 
-; set-format: 設定輸出格式位（F-TIME / F-LEVEL / F-LOC 的或運算）
+; 設定輸出格式位（F-TIME / F-LEVEL / F-LOC 的或運算）
+; [set-format](#log.set-format)
 set-format = (flags i64) {
     FMT-FLAGS = flags
 }
 
-; set-output-fd: 切換輸出目標到指定 fd（呼叫端負責開啟/關閉）
+; 切換輸出目標到指定 fd（呼叫端負責開啟/關閉）
+; [set-output-fd](#log.set-output-fd)
 set-output-fd = (new-fd fd) {
     OUT-FD = new-fd
 }
 
-; get-output-fd: 回傳目前輸出目標的 fd（除錯用）
+; 回傳目前輸出目標的 fd（除錯用）
+; [get-output-fd](#log.get-output-fd)
 get-output-fd = () (cur fd) {
     cur = OUT-FD
 }
 
-; set-writer: 切換輸出目標到指定 io.writer（io 介面的抽象寫入器）。
+; 切換輸出目標到指定 io.writer（io 介面的抽象寫入器）。
 ; writer 本質只包一個 fd，std 中唯一可持久化的是標量，故儲存其 fd。
+; [set-writer](#log.set-writer)
 set-writer = (w io.writer) {
     OUT-FD = w.fd
 }
 
-; get-writer: 回傳目前輸出目標對應的 io.writer
+; 回傳目前輸出目標對應的 io.writer
+; [get-writer](#log.get-writer)
 get-writer = () (w io.writer) {
     w = writer.from-fd(OUT-FD)
 }
 
-; open-file: 以追加模式開啟日誌檔案並設為輸出目標
+; 以追加模式開啟日誌檔案並設為輸出目標
 ; 回傳 ?bool：ok=true 成功、err 開啟失敗
+; [open-file](#log.open-file)
 open-file = (path str) (res ?bool) {
     res = nil
     f = fs.open-file(path, fs.O-WRONLY | fs.O-CREAT | fs.O-APPEND, 420)
@@ -107,12 +114,14 @@ open-file = (path str) (res ?bool) {
 ; 內部輸出
 ; ═══════════════════════════════════════════════
 
-; log-stamp: 目前時間戳字串（UTC，YYYY-MM-DD HH:MM:SS）
+; 目前時間戳字串（UTC，YYYY-MM-DD HH:MM:SS）
+; [log-stamp](#log.log-stamp)
 log-stamp = () (s str) {
     s = time.format-time-str(time.now-s())
 }
 
-; log-emit: 依 FMT-FLAGS 組裝單行日誌，經 io.writer 抽象寫入 OUT-FD
+; 依 FMT-FLAGS 組裝單行日誌，經 io.writer 抽象寫入 OUT-FD
+; [log-emit](#log.log-emit)
 log-emit = (tag str, msg str, loc str) {
     buf = ''
     FMT-FLAGS & F-TIME != 0 -> buf = buf - log-stamp() - ' '
@@ -130,6 +139,7 @@ log-emit = (tag str, msg str, loc str) {
 ; ═══════════════════════════════════════════════
 
 ; debug: 輸出 DEBUG 級別日誌
+; [debug](#log.debug)
 
 #{track-caller}
 debug = (msg str, loc str = '') {
@@ -137,6 +147,7 @@ debug = (msg str, loc str = '') {
 }
 
 ; info: 輸出 INFO 級別日誌
+; [info](#log.info)
 
 #{track-caller}
 info = (msg str, loc str = '') {
@@ -144,6 +155,7 @@ info = (msg str, loc str = '') {
 }
 
 ; warn: 輸出 WARN 級別日誌
+; [warn](#log.warn)
 
 #{track-caller}
 warn = (msg str, loc str = '') {
@@ -151,6 +163,7 @@ warn = (msg str, loc str = '') {
 }
 
 ; error: 輸出 ERROR 級別日誌
+; [error](#log.error)
 
 #{track-caller}
 error = (msg str, loc str = '') {
@@ -158,6 +171,7 @@ error = (msg str, loc str = '') {
 }
 
 ; fatal: 輸出 FATAL 級別日誌並退出
+; [fatal](#log.fatal)
 
 #{track-caller}
 fatal = (msg str, code i64, loc str = '') {

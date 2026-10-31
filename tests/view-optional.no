@@ -7,7 +7,7 @@ view-node {
     v i64
 }
 
-; find: 找到就返回 self 的 view，找不到返回 nil
+; 找到就返回 self 的 view，找不到返回 nil
 view-node.find = (want i64) (v ?&view-node) {
     v = nil
     .v == want -> {

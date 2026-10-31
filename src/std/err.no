@@ -25,10 +25,11 @@ code {
     unknown,
 }
 
-; code.to-name: 取得錯誤碼變體名（不帶 code. 前綴）
+; 取得錯誤碼變體名（不帶 code. 前綴）
 ; 返回 s: 變體名（如 'ok' / 'not-found' / 'io'）
 ; 用法：
 ;   n = code.io.to-name()     ; => 'io'
+; [to-name](#err.code.to-name)
 code.to-name = () (s str) {
     .: {
         ok -> s = 'ok'
@@ -71,9 +72,10 @@ err {
 ; 建構函式
 ; ═══════════════════════════════════════════════
 
-; new: 建立錯誤
+; 建立錯誤
 ; msg: 錯誤訊息
 ; ec: 錯誤碼（code 枚舉值，如 code.io；省略時為 code.unknown）
+; [new](#err.new)
 new = (msg str, ec code = code.unknown) (e err) {
     e = err {
         code: ec
@@ -84,7 +86,8 @@ new = (msg str, ec code = code.unknown) (e err) {
     }
 }
 
-; new-at: 建立帶位置的錯誤（位置由呼叫方明確提供）
+; 建立帶位置的錯誤（位置由呼叫方明確提供）
+; [new-at](#err.new-at)
 new-at = (msg str, ec code, file str, line i64, col i64) (e err) {
     e = err {
         code: ec
@@ -95,7 +98,8 @@ new-at = (msg str, ec code, file str, line i64, col i64) (e err) {
     }
 }
 
-; _errno-to-code: 將 C errno 對映為 code 列舉（模組內私有，僅 from-errno 使用）
+; 將 C errno 對映為 code 列舉（模組內私有，僅 from-errno 使用）
+; [_errno-to-code](#err._errno-to-code)
 _errno-to-code = (errno i64) (ec code) {
     {
         errno == 0 -> ec = code.ok
@@ -116,8 +120,9 @@ _errno-to-code = (errno i64) (ec code) {
     }
 }
 
-; from-errno: 從 C errno 建立錯誤
+; 從 C errno 建立錯誤
 ; errno: C 標準錯誤碼（如 13 = EACCES）
+; [from-errno](#err.from-errno)
 from-errno = (errno i64) (e err) {
     msg = os.strerror(errno)
     e = err {
@@ -133,21 +138,24 @@ from-errno = (errno i64) (e err) {
 ; 查詢函式
 ; ═══════════════════════════════════════════════
 
-; err.is: 檢查錯誤碼是否匹配
+; 檢查錯誤碼是否匹配
 ; ec: 要匹配的錯誤碼
 ; 返回 yes: 是否匹配
+; [is](#err.is)
 err.is = (ec code) (yes bool) {
     .code == ec -> yes = true
 }
 
-; err.msg: 取得錯誤訊息
+; 取得錯誤訊息
 ; 返回 msg: 錯誤訊息
+; [msg](#err.msg)
 err.msg = () (msg str) {
     msg = .msg
 }
 
-; err.code: 取得錯誤碼
+; 取得錯誤碼
 ; 返回 ec: 錯誤碼
+; [code](#err.code)
 err.code = () (ec code) {
     ec = .code
 }
@@ -156,13 +164,14 @@ err.code = () (ec code) {
 ; 格式化
 ; ═══════════════════════════════════════════════
 
-; err.format: 格式化錯誤為完整資訊字串
+; 格式化錯誤為完整資訊字串
 ; 返回 s: 'code.<變體名>: <msg>'，有位置資訊時附加 ' at <file>:<line>:<col>'
 ; 用法：
 ;   s = err.new('disk full', code.io).format()   ; => 'code.io: disk full'
 ;   e = err('no such file', code.not-found)      ; 位置由編譯器注入
 ;   t = e.format()                               ; => 'code.not-found: no such file at main.no:12:3'
 ; 純訊息請用 err.msg()，只要錯誤碼請用 err.code()
+; [format](#err.format)
 err.format = () (s str) {
     cn = .code.to-name()
     ; format() 的 {…} 欄位目前只認「简单标识符」，不解析接收者的 `.field`

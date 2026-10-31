@@ -53,13 +53,15 @@ BLAKE2B-MASK u64 = 18446744073709551615
 ; 輔助函數
 ; ═══════════════════════════════════════════════
 
-; rotr64: 64-bit 循環右移
+; 64-bit 循環右移
+; [rotr64](#crypto.blake2.rotr64)
 rotr64 = (x u64, n i64) (r u64) {
 
     r = ((x >> n) | (x << (64 - n))) & BLAKE2B-MASK
 }
 
 ; G 函數（混合函數）
+; [b-g](#crypto.blake2.b-g)
 b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 
     #{index-out=zero}
@@ -116,6 +118,7 @@ b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 ; block []byte: 128 位元組區塊
 ; t u64: 偏移量（已處理的位元組數）
 ; last i64: 是否為最後一個區塊（0 或 1）
+; [b-compress](#crypto.blake2.b-compress)
 b-compress = (h []u64, block []byte, t u64, last i64) {
 
     ; 初始化工作向量 v[0..15]
@@ -229,24 +232,27 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
 ; BLAKE2b 公開 API
 ; ═══════════════════════════════════════════════
 
-; b-state: 取一份 BLAKE2b 初始狀態切片（陣列切片會拷貝成獨立 []u64）
+; 取一份 BLAKE2b 初始狀態切片（陣列切片會拷貝成獨立 []u64）
 ;
 ; 歷史：早期編譯器對「陣列切片 + option 形式下標寫 `h[i]: { ok -> it = ... }`」
 ; 有靜默丟寫的 MIR bug，當時用 with-len(8) + 循環拷貝規避。該 bug 已在
 ; 512d63b6（narrow-slot loads 修復）之後消失：陣列切片 + option 寫現已正確，
 ; 故直接用陣列切片語法，無須手動拷貝。
+; [b-state](#crypto.blake2.b-state)
 b-state = () (h []u64) {
     h = BLAKE2B-IV[..8)
 }
 
-; s-state: 同上，BLAKE2s 版（BLAKE2s 是 32 位元字，故為 []u32 而非 []u64）
+; 同上，BLAKE2s 版（BLAKE2s 是 32 位元字，故為 []u32 而非 []u64）
+; [s-state](#crypto.blake2.s-state)
 s-state = () (h []u32) {
     h = BLAKE2S-IV[..8)
 }
 
-; b: 計算 BLAKE2b 雜湊（64 位元組輸出）
+; 計算 BLAKE2b 雜湊（64 位元組輸出）
 ; data []byte: 輸入資料
 ; 返回 hash [64]byte: 64 位元組雜湊值
+; [b](#crypto.blake2.b)
 b = (data []byte) (hash [64]byte) {
 
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | out_len
@@ -333,9 +339,10 @@ b = (data []byte) (hash [64]byte) {
     }
 }
 
-; b-256: 計算 BLAKE2b 雜湊（32 位元組輸出）
+; 計算 BLAKE2b 雜湊（32 位元組輸出）
 ; data []byte: 輸入資料
 ; 返回 hash [32]byte: 32 位元組雜湊值
+; [b-256](#crypto.blake2.b-256)
 b-256 = (data []byte) (hash [32]byte) {
 
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | 32
@@ -417,9 +424,10 @@ b-256 = (data []byte) (hash [32]byte) {
     }
 }
 
-; b-hex: 計算 BLAKE2b 並返回 hex 字串
+; 計算 BLAKE2b 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 128 字元 hex 字串
+; [b-hex](#crypto.blake2.b-hex)
 b-hex = (data []byte) (hex str) {
     hash = b(data)
     hex-chars = '0123456789abcdef'
@@ -434,9 +442,10 @@ b-hex = (data []byte) (hex str) {
     }
 }
 
-; b-256-hex: 計算 BLAKE2b-256 並返回 hex 字串
+; 計算 BLAKE2b-256 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 64 字元 hex 字串
+; [b-256-hex](#crypto.blake2.b-256-hex)
 b-256-hex = (data []byte) (hex str) {
     hash = b-256(data)
     hex-chars = '0123456789abcdef'
@@ -485,13 +494,15 @@ BLAKE2S-SIGMA = [
 
 BLAKE2S-MASK u32 = 4294967295
 
-; rotr32: 32-bit 循環右移
+; 32-bit 循環右移
+; [rotr32](#crypto.blake2.rotr32)
 rotr32 = (x u32, n i64) (r u32) {
 
     r = ((x >> n) | (x << (32 - n))) & BLAKE2S-MASK
 }
 
 ; G 函數
+; [s-g](#crypto.blake2.s-g)
 s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
 
     #{index-out=zero}
@@ -544,6 +555,7 @@ s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
 }
 
 ; BLAKE2s 壓縮函數
+; [s-compress](#crypto.blake2.s-compress)
 s-compress = (h []u32, block []byte, t u32, last i64) {
     v []u32 = with-len(16)
     i <- [0..8): {
@@ -636,9 +648,10 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
     }
 }
 
-; s: 計算 BLAKE2s 雜湊（32 位元組輸出）
+; 計算 BLAKE2s 雜湊（32 位元組輸出）
 ; data []byte: 輸入資料
 ; 返回 hash [32]byte: 32 位元組雜湊值
+; [s](#crypto.blake2.s)
 s = (data []byte) (hash [32]byte) {
 
     h = s-state()
@@ -706,9 +719,10 @@ s = (data []byte) (hash [32]byte) {
     }
 }
 
-; s-hex: 計算 BLAKE2s 並返回 hex 字串
+; 計算 BLAKE2s 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 64 字元 hex 字串
+; [s-hex](#crypto.blake2.s-hex)
 s-hex = (data []byte) (hex str) {
     hash = s(data)
     hex-chars = '0123456789abcdef'

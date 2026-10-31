@@ -21,9 +21,10 @@
 ;   h7 = 6620516959819538809
 ;   sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
-; sha512-block: 處理一個 1024-bit 區塊
+; 處理一個 1024-bit 區塊
 ; s []u64: 16 個 64-bit 字 (big-endian)
 ; h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64: 輸入/輸出 512-bit 哈希狀態
+; [sha512-block](#crypto.sha512.sha512-block)
 sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) (r0 u64, r1 u64, r2 u64, r3 u64, r4 u64, r5 u64, r6 u64, r7 u64) {
 
     ; 64-bit 全 1 遮罩（用於位元 NOT）
@@ -3028,9 +3029,10 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     r7 = h7 + h
 }
 
-; sha512: 計算 SHA-512 雜湊（含填充與多區塊處理）
+; 計算 SHA-512 雜湊（含填充與多區塊處理）
 ; data []byte: 輸入位元組陣列
 ; 返回 hash [64]byte: 64 位元組雜湊值
+; [sha512](#crypto.sha512.sha512)
 sha512 = (data []byte) (hash [64]byte) {
 
     ; SHA-512 初始狀態
@@ -3260,9 +3262,10 @@ sha512 = (data []byte) (hash [64]byte) {
     hash[63] = h7 & 255
 }
 
-; sha512-hex: 計算 SHA-512 雜湊並返回 hex 字串
+; 計算 SHA-512 雜湊並返回 hex 字串
 ; data []byte: 輸入位元組陣列
 ; 返回 hex str: 128 字元小寫 hex 字串
+; [sha512-hex](#crypto.sha512.sha512-hex)
 sha512-hex = (data []byte) (hex str) {
     hash = sha512(data)
 

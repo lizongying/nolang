@@ -41,7 +41,8 @@ tables {
 ; 初始化
 ; ═══════════════════════════════════════════════
 
-; init: 初始化 HPACK 表（靜態表 + 動態表）
+; 初始化 HPACK 表（靜態表 + 動態表）
+; [init](#net.hpack.tables.init)
 tables.init = () {
     .dyn-count = 0
     .dyn-size = 0
@@ -306,7 +307,8 @@ tables.init = () {
 ; 動態表操作
 ; ═══════════════════════════════════════════════
 
-; dyn-add: 新增標頭到動態表（FIFO，新項在索引 0）
+; 新增標頭到動態表（FIFO，新項在索引 0）
+; [dyn-add](#net.hpack.tables.dyn-add)
 tables.dyn-add = (name str, value str) {
 
     .dyn-count >= HPACK-DYN-MAX -> return
@@ -379,8 +381,9 @@ tables.dyn-add = (name str, value str) {
 ; 查詢
 ; ═══════════════════════════════════════════════
 
-; find: 完全匹配（name+value），返回全局索引（靜態 1-61，動態 62+）
+; 完全匹配（name+value），返回全局索引（靜態 1-61，動態 62+）
 ; 返回 idx=0=未找到，idx>0=索引
+; [find](#net.hpack.tables.find)
 tables.find = (name str, value str) (idx i64) {
     idx = 0
 
@@ -455,8 +458,9 @@ tables.find = (name str, value str) (idx i64) {
     }
 }
 
-; find-name: 只匹配 name，返回全局索引
+; 只匹配 name，返回全局索引
 ; 返回 idx=0=未找到，idx>0=索引
+; [find-name](#net.hpack.tables.find-name)
 tables.find-name = (name str) (idx i64) {
     idx = 0
     nm-len = name.len-bytes()
@@ -500,9 +504,10 @@ tables.find-name = (name str) (idx i64) {
     }
 }
 
-; lookup: 根據索引取得 name/value
+; 根據索引取得 name/value
 ; idx 1-61=靜態表，62+=動態表
 ; 返回 name, value, ok=true=找到
+; [lookup](#net.hpack.tables.lookup)
 tables.lookup = (idx i64) (name str, value str, ok bool) {
 
     ok = false
@@ -553,11 +558,12 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 ; 變長整數編解碼（RFC 7541 §5.1）
 ; ═══════════════════════════════════════════════
 
-; encode-int: 編碼變長整數到 out
+; 編碼變長整數到 out
 ; val: 要編碼的值
 ; prefix-bits: 前綴位數（1-8）
 ; prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
 ; 返回 out=編碼後的字串
+; [encode-int](#net.hpack.encode-int)
 encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     r-val = val
 
@@ -603,9 +609,10 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     out[i] = r-val
 }
 
-; decode-int: 從 data 的 pos 位置解碼變長整數
+; 從 data 的 pos 位置解碼變長整數
 ; prefix-bits: 前綴位數
 ; 返回 val=解碼值, next-pos=下一個未讀位置（-1=錯誤）
+; [decode-int](#net.hpack.decode-int)
 decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 
     val = 0
@@ -660,8 +667,9 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 ; 字串編解碼（RFC 7541 §5.2，不支援 Huffman）
 ; ═══════════════════════════════════════════════
 
-; encode-str: 編碼字串（literal，H=0）
+; 編碼字串（literal，H=0）
 ; 返回 out=編碼後字串
+; [encode-str](#net.hpack.encode-str)
 encode-str = (s str) (out str) {
 
     ; H bit=0, 長度用 7-bit prefix 編碼
@@ -687,8 +695,9 @@ encode-str = (s str) (out str) {
     }
 }
 
-; decode-str: 從 data 的 pos 位置解碼字串
+; 從 data 的 pos 位置解碼字串
 ; 返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
+; [decode-str](#net.hpack.decode-str)
 decode-str = (data str, pos i64) (out str, next-pos i64) {
 
     pos >= data.len-bytes() -> {
@@ -737,10 +746,11 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
 ; 標頭編解碼
 ; ═══════════════════════════════════════════════
 
-; encode-header: 編碼單個標頭
+; 編碼單個標頭
 ; 策略：完全匹配→indexed；name 匹配→literal with indexing（用 name 索引）；
 ;       否則→literal with indexing（新 name）
 ; 返回 out=編碼字串
+; [encode-header](#net.hpack.tables.encode-header)
 tables.encode-header = (name str, value str) (out str) {
 
     ; 1. 完全匹配 → Indexed Header Field（6.1）
@@ -821,9 +831,10 @@ tables.encode-header = (name str, value str) (out str) {
     .dyn-add(name, value)
 }
 
-; decode-headers: 解碼標頭塊
+; 解碼標頭塊
 ; data: 二進位資料
 ; 返回 names/values 陣列, count=標頭數, ok=true=成功
+; [decode-headers](#net.hpack.tables.decode-headers)
 tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, ok bool) {
     ok = false
     count = 0

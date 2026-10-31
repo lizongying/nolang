@@ -8,7 +8,7 @@
 
 # std/crypto/sha3
 
-; check: 比對 got 與 want，輸出 PASS 或 FAIL
+; 比對 got 與 want，輸出 PASS 或 FAIL
 check = (label str, got str, want str) {
     got == want -> {
         print('PASS ')

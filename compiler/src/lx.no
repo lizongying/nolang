@@ -155,7 +155,7 @@ tk {
     emsg str
 }
 
-; tk.new：建立一個空 token（避免每個呼叫端各寫一次七行字面量）
+; 建立一個空 token（避免每個呼叫端各寫一次七行字面量）
 tk.new = () (r tk) {
     r = tk {
         ln: 0
@@ -856,7 +856,7 @@ lx-regex-start = (lx lxst) (yes bool) {
 ; 輸出
 ; ═══════════════════════════════════════════════════════════════════
 
-; lx-fmt：把一個 token 渲染成 `<line>:<col> <NAME> <lit> <raw> <marker> <err>`
+; 把一個 token 渲染成 `<line>:<col> <NAME> <lit> <raw> <marker> <err>`
 ;
 ; ⚠️ 回傳值**不含**尾端 \n；行與行之間由呼叫端用 \n **分隔**。
 ;    原因：nolang 的 print() 自己會補一個 \n，而 oracle（/tmp/notok）是每行
@@ -1446,7 +1446,7 @@ lx-scan-token = (lx lxst, t tk) () {
     lx.count = lx.count + 1
 }
 
-; dump：把整份原始碼的 token 流 dump 成字串（與 /tmp/notok 逐位元組可比）
+; 把整份原始碼的 token 流 dump 成字串（與 /tmp/notok 逐位元組可比）
 ;
 ; ⚠️ 對外進入點刻意**不加 `lx-` 前綴**：
 ;    跨模組呼叫的寫法是 `<模組短名>.<定義名>`，所以叫 dump 才能寫成 lx.dump(src)。
@@ -1468,7 +1468,7 @@ dump = (src []byte) (out str) {
     out = b.str()
 }
 
-; scan-all：掃描整份原始碼，回傳 token 陣列（**含**結尾的 EOF）
+; 掃描整份原始碼，回傳 token 陣列（**含**結尾的 EOF）
 ;
 ; M2 解析器的進入點。與 dump 共用同一個 lx-scan-token ⇒ 兩條路徑不可能漂移
 ; （L1 門禁因此同時保護了 dump 與 scan-all）。

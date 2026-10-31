@@ -65,8 +65,9 @@ P256-B [32]byte = [
 ; 256-bit 大整數運算（byte 陣列，小端序）
 ; ═══════════════════════════════════════════════
 
-; bn-cmp: 比較兩個 256-bit 數（小端序）
+; 比較兩個 256-bit 數（小端序）
 ; 返回: -1 if a < b, 0 if a == b, 1 if a > b
+; [bn-cmp](#crypto.ecdsa.bn-cmp)
 bn-cmp = (a []byte, b []byte) (r i64) {
     i <- [31..0]: {
 
@@ -90,8 +91,9 @@ bn-cmp = (a []byte, b []byte) (r i64) {
     r = 0
 }
 
-; bn-add: 256-bit 加法（不帶模約簡）
+; 256-bit 加法（不帶模約簡）
 ; 返回 sum [32]byte 和 carry i64
+; [bn-add](#crypto.ecdsa.bn-add)
 bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     carry = 0
     i <- [0..32): {
@@ -104,8 +106,9 @@ bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     }
 }
 
-; bn-sub: 256-bit 減法 a - b（不帶模約簡）
+; 256-bit 減法 a - b（不帶模約簡）
 ; 返回 diff [32]byte 和 borrow i64
+; [bn-sub](#crypto.ecdsa.bn-sub)
 bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     borrow = 0
     i <- [0..32): {
@@ -129,7 +132,8 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     }
 }
 
-; bn-mod: 模約簡 a mod m（重複減法）
+; 模約簡 a mod m（重複減法）
+; [bn-mod](#crypto.ecdsa.bn-mod)
 bn-mod = (a []byte, m []byte) (out [32]byte) {
     work [32]byte
     diff [32]byte
@@ -164,7 +168,8 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
     }
 }
 
-; bn-mulmod: 模乘 (a * b) mod m，使用 schoolbook 乘法
+; 模乘 (a * b) mod m，使用 schoolbook 乘法
+; [bn-mulmod](#crypto.ecdsa.bn-mulmod)
 bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
     ; 512-bit 乘積（64 位元組）
@@ -404,13 +409,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     }
 }
 
-; bn-addmod: 模加 (a + b) mod m
+; 模加 (a + b) mod m
 ; a, b < m (m 為 256-bit 模數，通常 m ≈ 2^256)
 ; 關鍵：a + b 可能 >= 2^256，會產生進位。此時真實值為
 ;   (a + b) = 2^256 + sum_low，而 (a+b) mod m = (sum_low + (2^256 mod m)) mod m。
 ; 若只用 bn-mod(sum_low, m) 會少算 2^256 mod m 那一項，結果錯誤。
 ; 這裡將 (a+b) 視為最多 33 位元組的數（含進位），放入 64 位元組空間，
 ; 並與 bn-mulmod 共用「從高位元組開始減去 m<<(k*8)」的規約邏輯。
+; [bn-addmod](#crypto.ecdsa.bn-addmod)
 bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     s [32]byte
     carry = 0
@@ -570,7 +576,8 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     }
 }
 
-; bn-submod: 模減 (a - b) mod m
+; 模減 (a - b) mod m
+; [bn-submod](#crypto.ecdsa.bn-submod)
 bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
     cmp = 0
     cmp = bn-cmp(a, b)
@@ -597,8 +604,9 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
     }
 }
 
-; bn-invmod: 模逆 a^(-1) mod m，使用擴展歐幾里得算法
+; 模逆 a^(-1) mod m，使用擴展歐幾里得算法
 ; 簡化版本：使用費馬小定理 a^(m-2) mod m（僅當 m 為素數時）
+; [bn-invmod](#crypto.ecdsa.bn-invmod)
 bn-invmod = (a []byte, m []byte) (out [32]byte) {
 
     ; 計算 a^(m-2) mod m 使用平方-乘法
@@ -652,9 +660,10 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
 ; 使用 3×32 = 96 位元組陣列
 ; ═══════════════════════════════════════════════
 
-; ec-point-double: 點倍乘 R = 2*P（Jacobian 座標）
+; 點倍乘 R = 2*P（Jacobian 座標）
 ; p []byte: 輸入點 (X, Y, Z)，各 32 位元組
 ; 返回 r []byte: 輸出點 (X, Y, Z)，96 位元組
+; [ec-point-double](#crypto.ecdsa.ec-point-double)
 ec-point-double = (p []byte) (r []byte) {
 
     ; 如果 Y == 0，返回無窮遠點
@@ -756,8 +765,9 @@ ec-point-double = (p []byte) (r []byte) {
     }
 }
 
-; ec-point-add: 點加法 R = P + Q（P 在 Jacobian，Q 在 Jacobian）
+; 點加法 R = P + Q（P 在 Jacobian，Q 在 Jacobian）
 ; 返回 r []byte: 96 位元組
+; [ec-point-add](#crypto.ecdsa.ec-point-add)
 ec-point-add = (p []byte, q []byte) (r []byte) {
     x1 = p[0..32]
     y1 = p[32..64]
@@ -927,10 +937,11 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     }
 }
 
-; ec-scalar-mult: 純量乘法 R = k * P
+; 純量乘法 R = k * P
 ; k [32]byte: 純量
 ; p []byte: 點 (96 位元組)
 ; 返回 r []byte: 96 位元組
+; [ec-scalar-mult](#crypto.ecdsa.ec-scalar-mult)
 ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 
     ; R = 無窮遠點
@@ -970,9 +981,10 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
     }
 }
 
-; ec-point-to-bytes: 將 Jacobian 座標轉為未壓縮編碼
+; 將 Jacobian 座標轉為未壓縮編碼
 ; p []byte: Jacobian 點 (96 位元組)
 ; 返回 out [65]byte: 04 || x || y
+; [ec-point-to-bytes](#crypto.ecdsa.ec-point-to-bytes)
 ec-point-to-bytes = (p []byte) (out [65]byte) {
     px = p[0..32]
     py = p[32..64]
@@ -1027,9 +1039,10 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     }
 }
 
-; ec-bytes-to-point: 將未壓縮編碼轉為 Jacobian 座標
+; 將未壓縮編碼轉為 Jacobian 座標
 ; in [65]byte: 04 || x || y（大端序）
 ; 返回 out []byte: 96 位元組
+; [ec-bytes-to-point](#crypto.ecdsa.ec-bytes-to-point)
 ec-bytes-to-point = (in [65]byte) (out []byte) {
     out = with-len(96)
 
@@ -1070,7 +1083,8 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
 ; 基點
 ; ═══════════════════════════════════════════════
 
-; ec-get-basepoint: 獲取基點 G 的 Jacobian 座標
+; 獲取基點 G 的 Jacobian 座標
+; [ec-get-basepoint](#crypto.ecdsa.ec-get-basepoint)
 ec-get-basepoint = () (g []byte) {
 
     ; Gx, Gy 轉為小端序
@@ -1096,10 +1110,11 @@ ec-get-basepoint = () (g []byte) {
 ; ECDSA 公開 API
 ; ═══════════════════════════════════════════════
 
-; ecdh-p256: P-256 (secp256r1) ECDH 共享秘密
+; P-256 (secp256r1) ECDH 共享秘密
 ; priv [32]byte: 我方私鑰（大端序）
 ; peer [65]byte: 對端未壓縮公鑰（04 || x || y）
 ; 返回 shared []byte: 共享秘密（R 點之 x 座標, 32 bytes 大端序）；空=無效輸入
+; [ecdh-p256](#crypto.ecdsa.ecdh-p256)
 ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
 
     ; 將私鑰轉為小端序（內部點運算使用小端序純量）
@@ -1135,9 +1150,10 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
     }
 }
 
-; ecdsa-publickey: 從私鑰計算公鑰
+; 從私鑰計算公鑰
 ; priv [32]byte: 私鑰（大端序）
 ; 返回 pub [65]byte: 未壓縮公鑰（04 || x || y）
+; [ecdsa-publickey](#crypto.ecdsa.ecdsa-publickey)
 ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
 
     ; 將私鑰轉為小端序
@@ -1163,10 +1179,11 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
     pub = ec-point-to-bytes(q)
 }
 
-; ecdsa-sign: ECDSA 簽名
+; ECDSA 簽名
 ; priv [32]byte: 私鑰（大端序）
 ; msg []byte: 訊息
 ; 返回 sig [64]byte: 簽名（r || s，各 32 位元組，大端序）
+; [ecdsa-sign](#crypto.ecdsa.ecdsa-sign)
 ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
 
     ; 計算哈希 h = SHA-256(msg)
@@ -1271,11 +1288,12 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     }
 }
 
-; ecdsa-verify: ECDSA 驗簽
+; ECDSA 驗簽
 ; pub [65]byte: 公鑰
 ; msg []byte: 訊息
 ; sig [64]byte: 簽名（r || s）
 ; 返回 ok i64: 1=有效, 0=無效
+; [ecdsa-verify](#crypto.ecdsa.ecdsa-verify)
 ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
 
     ; 提取 r, s（大端序 → 小端序）

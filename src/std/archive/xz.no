@@ -27,7 +27,8 @@ lzma-rd {
     code i64
 }
 
-; init: 初始化範圍解碼器
+; 初始化範圍解碼器
+; [init](#archive.xz.lzma-rd.init)
 lzma-rd.init = (data []byte, start-pos i64) {
 
     .data = data
@@ -45,7 +46,8 @@ lzma-rd.init = (data []byte, start-pos i64) {
     }
 }
 
-; normalize: 範圍解碼器正規化
+; 範圍解碼器正規化
+; [normalize](#archive.xz.lzma-rd.normalize)
 lzma-rd.normalize = () {
     .range < 0x1000000 -> {
 
@@ -57,8 +59,9 @@ lzma-rd.normalize = () {
     }
 }
 
-; decode-bit: 解碼一個位元
+; 解碼一個位元
 ; prob: 機率值（0-0x7FFF），返回 bit 和更新後的 prob
+; [decode-bit](#archive.xz.lzma-rd.decode-bit)
 lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
 
     .normalize()
@@ -87,7 +90,8 @@ lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
     }
 }
 
-; decode-direct-bits: 解碼 n 個直接位元
+; 解碼 n 個直接位元
+; [decode-direct-bits](#archive.xz.lzma-rd.decode-direct-bits)
 lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
     res = 0
     i <- [0..num-bits): {
@@ -109,8 +113,9 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
     }
 }
 
-; decode-bit-tree: 解碼位元樹
+; 解碼位元樹
 ; num-bits: 樹的深度，probs: 機率陣列，返回符號
+; [decode-bit-tree](#archive.xz.lzma-rd.decode-bit-tree)
 lzma-rd.decode-bit-tree = (probs []i64, num-bits i64) (sym i64) {
 
     m = 1
@@ -130,7 +135,8 @@ lzma-rd.decode-bit-tree = (probs []i64, num-bits i64) (sym i64) {
     sym = m - (1 << num-bits)
 }
 
-; decode-reverse-bit-tree: 解碼反向位元樹
+; 解碼反向位元樹
+; [decode-reverse-bit-tree](#archive.xz.lzma-rd.decode-reverse-bit-tree)
 lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
     m = 1
     sym = 0
@@ -219,7 +225,8 @@ lzma-decoder {
 
 ; 前一個字節
 
-; init-probs: 初始化所有機率值為 0x400（一半機率）
+; 初始化所有機率值為 0x400（一半機率）
+; [init-probs](#archive.xz.lzma-decoder.init-probs)
 lzma-decoder.init-probs = () {
     i <- [0..16): {
 
@@ -268,7 +275,8 @@ lzma-decoder.init-probs = () {
     .prev-byte = 0
 }
 
-; update-state-literal: 更新狀態（字面量後）
+; 更新狀態（字面量後）
+; [update-state-literal](#archive.xz.lzma-decoder.update-state-literal)
 lzma-decoder.update-state-literal = () {
     {
         .state < 4 -> .state = 0
@@ -287,7 +295,8 @@ lzma-decoder.update-state-literal = () {
     }
 }
 
-; update-state-match: 更新狀態（匹配後）
+; 更新狀態（匹配後）
+; [update-state-match](#archive.xz.lzma-decoder.update-state-match)
 lzma-decoder.update-state-match = () {
     {
         .state < 7 -> .state = 7
@@ -296,7 +305,8 @@ lzma-decoder.update-state-match = () {
     }
 }
 
-; update-state-rep: 更新狀態（重複匹配後）
+; 更新狀態（重複匹配後）
+; [update-state-rep](#archive.xz.lzma-decoder.update-state-rep)
 lzma-decoder.update-state-rep = () {
     {
         .state < 7 -> .state = 8
@@ -305,7 +315,8 @@ lzma-decoder.update-state-rep = () {
     }
 }
 
-; update-state-shortrep: 更新狀態（短重複後）
+; 更新狀態（短重複後）
+; [update-state-shortrep](#archive.xz.lzma-decoder.update-state-shortrep)
 lzma-decoder.update-state-shortrep = () {
     {
         .state < 7 -> .state = 9
@@ -314,7 +325,8 @@ lzma-decoder.update-state-shortrep = () {
     }
 }
 
-; decode-literal: 解碼字面量
+; 解碼字面量
+; [decode-literal](#archive.xz.lzma-decoder.decode-literal)
 lzma-decoder.decode-literal = () {
 
     ; 簡化版：直接從範圍解碼器讀取一個位元組
@@ -348,8 +360,9 @@ lzma-decoder.decode-literal = () {
     .update-state-literal()
 }
 
-; decode-length: 解碼匹配長度
+; 解碼匹配長度
 ; probs: 機率陣列，返回長度
+; [decode-length](#archive.xz.lzma-decoder.decode-length)
 lzma-decoder.decode-length = (probs []i64) (length i64) {
 
     ; 選擇低位/中位/高位
@@ -405,8 +418,9 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
     length = sym + 16
 }
 
-; decode-distance: 解碼匹配距離
+; 解碼匹配距離
 ; length: 匹配長度（用於決定距離編碼方式）
+; [decode-distance](#archive.xz.lzma-decoder.decode-distance)
 lzma-decoder.decode-distance = (length i64) (dist i64) {
 
     ; 根據狀態選擇 pos-slot 機率表
@@ -462,9 +476,10 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     dist = base + (direct << 4) + align
 }
 
-; decode: LZMA 解碼主迴圈
+; LZMA 解碼主迴圈
 ; data: 壓縮資料，start-pos: 資料起始位置
 ; unpacked-size: 預期解壓大小（-1 表示未知）
+; [decode](#archive.xz.lzma-decoder.decode)
 lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
     .rd.init(data, start-pos)
     .init-probs()
@@ -613,7 +628,7 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
 ; .lzma 格式解壓縮（傳統 LZMA alone 格式）
 ; ═══════════════════════════════════════════════
 
-; lzma-decompress: 解壓縮傳統 .lzma 格式
+; 解壓縮傳統 .lzma 格式
 ;   data: .lzma 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
 ;
@@ -622,6 +637,7 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
 ;   - 4 bytes: dict size (little-endian)
 ;   - 8 bytes: unpacked size (little-endian, 0xFFFFFFFFFFFFFFFF = unknown)
 ;   - compressed data
+; [lzma-decompress](#archive.xz.lzma-decompress)
 lzma-decompress = (data []byte) (out []byte) {
 
     data.len() < 13 -> return
@@ -696,7 +712,7 @@ lzma-decompress = (data []byte) (out []byte) {
 ; XZ 常數
 XZ-MAGIC = [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]
 
-; xz-decompress: 解壓縮 .xz 格式
+; 解壓縮 .xz 格式
 ;   data: .xz 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
 ;
@@ -705,6 +721,7 @@ XZ-MAGIC = [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]
 ;   - Blocks: Block Header + Compressed Data + Block Padding + Check
 ;   - Index
 ;   - Stream Footer: 12 bytes
+; [xz-decompress](#archive.xz.xz-decompress)
 xz-decompress = (data []byte) (out []byte) {
     ; 先給空結果；Block 解壓時由 lzma2-decompress-stream 的結果覆寫
     out = []
@@ -806,7 +823,7 @@ xz-decompress = (data []byte) (out []byte) {
     }
 }
 
-; lzma2-decompress-stream: 解壓縮 LZMA2 資料流
+; 解壓縮 LZMA2 資料流
 ; LZMA2 使用控制位元組來切分資料塊：
 ;   0x00 = 結束
 ;   0x01 = 未壓縮字典重置（帶 4-byte 字典 ID）
@@ -816,6 +833,7 @@ xz-decompress = (data []byte) (out []byte) {
 ; 函式體內先累積到本地 res，最後 out = res 交付（與 gzip.no 的
 ; inflate-decompress 等同一模式）；若把 out 宣告成普通輸入參數，輸入參數
 ; 為唯讀引用，push 的結果回不到呼叫方。
+; [lzma2-decompress-stream](#archive.xz.lzma2-decompress-stream)
 lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
     pos = start-pos
     res []byte
@@ -938,11 +956,12 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 ; 壓縮（基本實現 — stored block）
 ; ═══════════════════════════════════════════════
 
-; xz-compress: 使用 xz 格式壓縮資料（基本實現）
+; 使用 xz 格式壓縮資料（基本實現）
 ;   data: 原始資料 ([]byte)
 ;   out: xz 壓縮後的資料 ([]byte)
 ; 注意：目前使用 stored block 的基本實現，
 ;       完整 LZMA2 壓縮待後續實現。
+; [xz-compress](#archive.xz.xz-compress)
 xz-compress = (data []byte) (out []byte) {
 
     ; Stream Header: magic (6 bytes) + stream flags (2 bytes) + CRC32 (4 bytes)

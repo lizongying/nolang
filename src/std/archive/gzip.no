@@ -28,8 +28,9 @@ bit-reader {
 ; 位元緩衝區
 ; 緩衝區中剩餘位元數
 
-; read-bit: 讀取一個位元
+; 讀取一個位元
 ; 越界時返回 0，避免 DEFLATE 解碼器讀超時崩潰
+; [read-bit](#archive.gzip.bit-reader.read-bit)
 bit-reader.read-bit = () (bit i64) {
 
     #{overflow=wrap}
@@ -46,7 +47,8 @@ bit-reader.read-bit = () (bit i64) {
     .bit-cnt = .bit-cnt - 1
 }
 
-; read-bits: 讀取 n 個位元（LSB-first）
+; 讀取 n 個位元（LSB-first）
+; [read-bits](#archive.gzip.bit-reader.read-bits)
 bit-reader.read-bits = (n i64) (v i64) {
     v = 0
     i <- [0..n): {
@@ -55,12 +57,14 @@ bit-reader.read-bits = (n i64) (v i64) {
     }
 }
 
-; skip-to-byte: 跳到下一個位元組邊界
+; 跳到下一個位元組邊界
+; [skip-to-byte](#archive.gzip.bit-reader.skip-to-byte)
 bit-reader.skip-to-byte = () {
     .bit-cnt = 0
 }
 
-; read-u16-le: 讀取 2 位元組小端序整數（位元組對齊時）
+; 讀取 2 位元組小端序整數（位元組對齊時）
+; [read-u16-le](#archive.gzip.bit-reader.read-u16-le)
 bit-reader.read-u16-le = () (v i64) {
 
     lo = .data[.pos]
@@ -86,8 +90,9 @@ huffman {
 ; 各長度的碼數（0-15）
 ; 按碼排序的符號
 
-; build: 從碼長度陣列建構 Huffman 碼表
+; 從碼長度陣列建構 Huffman 碼表
 ; 使用固定陣列欄位直接索引賦值，避免局部 vec 賦值導致懸空指標
+; [build](#archive.gzip.huffman.build)
 huffman.build = (lengths []i64, n i64) {
 
     ; 初始化 count[0..16] = 0
@@ -148,7 +153,8 @@ huffman.build = (lengths []i64, n i64) {
     }
 }
 
-; decode: 解碼一個符號
+; 解碼一個符號
+; [decode](#archive.gzip.huffman.decode)
 huffman.decode = (br bit-reader) (sym i64) {
     code = 0
     first = 0
@@ -185,7 +191,8 @@ huffman.decode = (br bit-reader) (sym i64) {
 
 ; ─── 固定 Huffman 表建構 ──────────────────────
 
-; build-fixed: 建構固定 Huffman 表
+; 建構固定 Huffman 表
+; [build-fixed](#archive.gzip.build-fixed)
 build-fixed = (lc huffman, dc huffman) {
 
     ; 字面/長度碼長度：
@@ -215,7 +222,8 @@ build-fixed = (lc huffman, dc huffman) {
 
 ; ─── 動態 Huffman 表建構 ──────────────────────
 
-; build-dynamic: 從位元串流建構動態 Huffman 表
+; 從位元串流建構動態 Huffman 表
+; [build-dynamic](#archive.gzip.build-dynamic)
 build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
     #{overflow=wrap}
@@ -348,10 +356,11 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
 ; ─── DEFLATE 解壓縮 ───────────────────────────
 
-; inflate-decompress: 解壓縮原始 DEFLATE 資料（RFC 1951，ZIP method 8）
+; 解壓縮原始 DEFLATE 資料（RFC 1951，ZIP method 8）
 ;   data: 壓縮資料 ([]byte)
 ;   out-size: 預期解壓後大小 (i64)
 ;   out: 解壓後的資料 ([]byte)
+; [inflate-decompress](#archive.gzip.inflate-decompress)
 inflate-decompress = (data []byte, out-size i64) (out []byte) {
     br = bit-reader {
         data: data
@@ -521,9 +530,10 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
 ; ─── DEFLATE 壓縮（stored blocks）─────────────
 
-; deflate-stored: 使用 stored blocks 的 DEFLATE 壓縮
+; 使用 stored blocks 的 DEFLATE 壓縮
 ;   data: 原始資料 ([]byte)
 ;   out: 壓縮後的 DEFLATE 資料 ([]byte)
+; [deflate-stored](#archive.gzip.deflate-stored)
 deflate-stored = (data []byte) (out []byte) {
     result []byte
     pos = 0
@@ -570,9 +580,10 @@ deflate-stored = (data []byte) (out []byte) {
 
 ; ─── GZIP 格式 ────────────────────────────────
 
-; gzip-compress: 使用 gzip 格式壓縮資料
+; 使用 gzip 格式壓縮資料
 ;   data: 原始資料 ([]byte)
 ;   out: gzip 壓縮後的資料 ([]byte)
+; [gzip-compress](#archive.gzip.gzip-compress)
 gzip-compress = (data []byte) (out []byte) {
     result []byte
 
@@ -613,9 +624,10 @@ gzip-compress = (data []byte) (out []byte) {
     out = result
 }
 
-; gzip-decompress: 解壓縮 gzip 格式的資料
+; 解壓縮 gzip 格式的資料
 ;   data: gzip 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
+; [gzip-decompress](#archive.gzip.gzip-decompress)
 gzip-decompress = (data []byte) (out []byte) {
 
     ; 跳過 GZIP 標頭（至少 10 bytes）

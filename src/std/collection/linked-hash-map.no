@@ -21,7 +21,8 @@ linked-hash-map {
     size i64
 }
 
-; init: 初始化哈希表
+; 初始化哈希表
+; [init](#collection.linked-hash-map.linked-hash-map.init)
 linked-hash-map.init = () {
     .cap = 64
     .head = -1
@@ -37,13 +38,15 @@ linked-hash-map.init = () {
     }
 }
 
-; hash: 計算索引
+; 計算索引
+; [hash](#collection.linked-hash-map.linked-hash-map.hash)
 linked-hash-map.hash = (key i64) (idx i64) {
 
     idx = key & (.cap - 1)
 }
 
-; put: 插入或更新 key→value
+; 插入或更新 key→value
+; [put](#collection.linked-hash-map.linked-hash-map.put)
 linked-hash-map.put = (key i64, val i64) (is-new bool) {
 
     idx = .hash(key)
@@ -89,7 +92,8 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
     is-new = true
 }
 
-; get: 查找 key，返回 ?i64（nil=未找到）
+; 查找 key，返回 ?i64（nil=未找到）
+; [get](#collection.linked-hash-map.linked-hash-map.get)
 linked-hash-map.get = (key i64) (result ?i64) {
     .size == 0 -> return
     idx = .hash(key)
@@ -108,7 +112,8 @@ linked-hash-map.get = (key i64) (result ?i64) {
     }
 }
 
-; contains: 檢查 key 是否存在
+; 檢查 key 是否存在
+; [contains](#collection.linked-hash-map.linked-hash-map.contains)
 linked-hash-map.contains = (key i64) (found bool) {
     val = .get(key)
     val: {
@@ -120,7 +125,8 @@ linked-hash-map.contains = (key i64) (found bool) {
     }
 }
 
-; remove: 刪除 key
+; 刪除 key
+; [remove](#collection.linked-hash-map.linked-hash-map.remove)
 linked-hash-map.remove = (key i64) (removed bool) {
     idx = .hash(key)
 
@@ -159,7 +165,8 @@ linked-hash-map.remove = (key i64) (removed bool) {
     }
 }
 
-; clear: 清空
+; 清空
+; [clear](#collection.linked-hash-map.linked-hash-map.clear)
 linked-hash-map.clear = () {
     i <- [0...cap): {
 
@@ -170,17 +177,20 @@ linked-hash-map.clear = () {
     .size = 0
 }
 
-; len: 返回元素數量
+; 返回元素數量
+; [len](#collection.linked-hash-map.linked-hash-map.len)
 linked-hash-map.len = () (n i64) {
     n = .size
 }
 
-; is-empty: 是否為空
+; 是否為空
+; [is-empty](#collection.linked-hash-map.linked-hash-map.is-empty)
 linked-hash-map.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-; for-each: 按插入順序遍歷所有 (key, value)
+; 按插入順序遍歷所有 (key, value)
+; [for-each](#collection.linked-hash-map.linked-hash-map.for-each)
 linked-hash-map.for-each = () (k i64, v i64) {
     idx = .head
     (idx != -1) {

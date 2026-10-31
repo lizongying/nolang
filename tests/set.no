@@ -11,7 +11,7 @@
 
 # std/set
 
-; check：純函數，印出結果並回傳布爾值（不可在函式內改動全域變數）
+; 純函數，印出結果並回傳布爾值（不可在函式內改動全域變數）
 check = (cond bool, msg str) (r bool) {
     r = cond
     cond -> {

@@ -26,8 +26,9 @@
 
 ; ─── 大數比較 ─────────────────────────────────────
 
-; rsa-bn-cmp: 比較兩個大數 a 和 b
+; 比較兩個大數 a 和 b
 ; 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
+; [rsa-bn-cmp](#crypto.rsa.rsa-bn-cmp)
 rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
     cmp = 0
 
@@ -62,7 +63,8 @@ rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
 
 ; ─── 大數加法 ─────────────────────────────────────
 
-; rsa-bn-add: c = a + b
+; c = a + b
+; [rsa-bn-add](#crypto.rsa.rsa-bn-add)
 rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區（結果最多 max(an, bn) + 1 個 limb）
@@ -103,7 +105,8 @@ rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
 ; ─── 大數減法 ─────────────────────────────────────
 
-; rsa-bn-sub: c = a - b（需 a ≥ b）
+; c = a - b（需 a ≥ b）
+; [rsa-bn-sub](#crypto.rsa.rsa-bn-sub)
 rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區（多配置 1 個 limb 供後續左移使用）
@@ -164,7 +167,8 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
 ; ─── 大數乘法 ─────────────────────────────────────
 
-; rsa-bn-mul: c = a × b
+; c = a × b
+; [rsa-bn-mul](#crypto.rsa.rsa-bn-mul)
 rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區
@@ -230,7 +234,8 @@ rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
 ; ─── 大數左移 1 位元 ─────────────────────────────
 
-; rsa-bn-shl1: a = a << 1（原地左移 1 位元）
+; a = a << 1（原地左移 1 位元）
+; [rsa-bn-shl1](#crypto.rsa.rsa-bn-shl1)
 rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i <- [0..an): {
@@ -261,7 +266,8 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
 
 ; ─── 大數右移 1 位元 ─────────────────────────────
 
-; rsa-bn-shr1: a = a >> 1（原地右移 1 位元）
+; a = a >> 1（原地右移 1 位元）
+; [rsa-bn-shr1](#crypto.rsa.rsa-bn-shr1)
 rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 
     carry = 0
@@ -312,11 +318,12 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 
 ; ─── 大數除法（二進位長除法）────────────────────
 
-; rsa-bn-div-mod: q = a / b, r = a % b
+; q = a / b, r = a % b
 ; a: 被除數, an: 長度
 ; b: 除數, bn: 長度
 ; q: 商數（輸出）, qn: 商長度
 ; r: 餘數（輸出）, rn: 餘長度
+; [rsa-bn-div-mod](#crypto.rsa.rsa-bn-div-mod)
 rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i64) {
 
     ; 處理 b = 0
@@ -508,8 +515,9 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
 ; ─── 模冪運算 ─────────────────────────────────────
 
-; rsa-modpow-step: 單步平方乘（獨立函數以確保每步釋放暫存緩衝區）
+; 單步平方乘（獨立函數以確保每步釋放暫存緩衝區）
 ; result = result^2 mod modulus; 若 exp-bit == 1，再 result = result * base mod modulus
+; [rsa-modpow-step](#crypto.rsa.rsa-modpow-step)
 rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulus []i64, mn i64) (new-result []i64, new-rn i64) {
 
     ; t = result * result
@@ -537,10 +545,11 @@ rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulu
     new-rn = local-rn
 }
 
-; rsa-modpow: result = base^exp mod modulus
+; result = base^exp mod modulus
 ; 使用左右掃描平方乘（square-and-multiply）
 ; 注意：loop body 提取為 rsa-modpow-step 以確保每步釋放暫存緩衝區
 ; （Nolang heap 變數在函數返回時才釋放，若在 loop body 內分配會累積至 OOM）
+; [rsa-modpow](#crypto.rsa.rsa-modpow)
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
 
     ; 使用局部變數避免輸出參數 aliasing 問題
@@ -603,12 +612,14 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
 
 ; ─── RSA 加密/解密（高階介面）────────────────────
 
-; rsa-encrypt: RSA 加密（c = m^e mod n）
+; RSA 加密（c = m^e mod n）
+; [rsa-encrypt](#crypto.rsa.rsa-encrypt)
 rsa-encrypt = (msg []i64, msgn i64, pub-exp []i64, pubn i64, mod []i64, modn i64) (out []i64, outn i64) {
     out, outn = rsa-modpow(msg, msgn, pub-exp, pubn, mod, modn)
 }
 
-; rsa-decrypt: RSA 解密（m = c^d mod n）
+; RSA 解密（m = c^d mod n）
+; [rsa-decrypt](#crypto.rsa.rsa-decrypt)
 rsa-decrypt = (ct []i64, ctn i64, priv-exp []i64, privn i64, mod []i64, modn i64) (out []i64, outn i64) {
     out, outn = rsa-modpow(ct, ctn, priv-exp, privn, mod, modn)
 }

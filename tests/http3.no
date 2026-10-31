@@ -8,7 +8,7 @@
 ; QUIC 變長整數測試
 ; ═══════════════════════════════════════════════
 
-; test-quic-varint-1byte: 測試 1 位元組變長整數
+; 測試 1 位元組變長整數
 test-quic-varint-1byte = () {
     buf []byte
     n = 0
@@ -39,7 +39,7 @@ test-quic-varint-1byte = () {
     print('PASS: quic-varint-1byte')
 }
 
-; test-quic-varint-2byte: 測試 2 位元組變長整數
+; 測試 2 位元組變長整數
 test-quic-varint-2byte = () {
     buf []byte
     n = 0
@@ -65,7 +65,7 @@ test-quic-varint-2byte = () {
     print('PASS: quic-varint-2byte')
 }
 
-; test-quic-varint-4byte: 測試 4 位元組變長整數
+; 測試 4 位元組變長整數
 test-quic-varint-4byte = () {
     buf []byte
     n = 0
@@ -91,7 +91,7 @@ test-quic-varint-4byte = () {
     print('PASS: quic-varint-4byte')
 }
 
-; test-quic-varint-8byte: 測試 8 位元組變長整數
+; 測試 8 位元組變長整數
 test-quic-varint-8byte = () {
     buf []byte
     n = 0
@@ -116,7 +116,7 @@ test-quic-varint-8byte = () {
 ; QUIC 金鑰推導測試
 ; ═══════════════════════════════════════════════
 
-; test-quic-derive-initial-keys: 測試 Initial 金鑰推導
+; 測試 Initial 金鑰推導
 test-quic-derive-initial-keys = () {
 
     ; 使用 RFC 9001 Appendix A 的測試向量
@@ -263,7 +263,7 @@ test-quic-derive-initial-keys = () {
 ; QUIC CID 生成測試
 ; ═══════════════════════════════════════════════
 
-; test-quic-gen-cid: 測試 Connection ID 生成
+; 測試 Connection ID 生成
 test-quic-gen-cid = () {
     cid = quic.gen-cid(8)
     cid.len() != 8 -> {
@@ -288,7 +288,7 @@ test-quic-gen-cid = () {
 ; HTTP/3 影格編解碼測試
 ; ═══════════════════════════════════════════════
 
-; test-http3-frame-encode-decode: 測試 HTTP/3 影格編解碼
+; 測試 HTTP/3 影格編解碼
 test-http3-frame-encode-decode = () {
 
     ; 編碼一個 SETTINGS 影格
@@ -333,7 +333,7 @@ test-http3-frame-encode-decode = () {
 ; QPACK 編解碼測試
 ; ═══════════════════════════════════════════════
 
-; test-qpack-encode-decode: 測試 QPACK 標頭編解碼
+; 測試 QPACK 標頭編解碼
 test-qpack-encode-decode = () {
 
     ; 編碼單個標頭
@@ -383,7 +383,7 @@ test-qpack-encode-decode = () {
 ; UDP 連接測試
 ; ═══════════════════════════════════════════════
 
-; test-udp-open-close: 測試 UDP socket 建立和關閉
+; 測試 UDP socket 建立和關閉
 test-udp-open-close = () {
     fd = net.net-udp-open()
     fd < 0 -> {
@@ -399,7 +399,7 @@ test-udp-open-close = () {
 ; URL 解析測試
 ; ═══════════════════════════════════════════════
 
-; test-http3-parse-url: 測試 URL 解析
+; 測試 URL 解析
 test-http3-parse-url = () {
     host = ''
     port = 0

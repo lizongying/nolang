@@ -25,7 +25,7 @@ u-str = (o ?str) (v str) {
     }
 }
 
-; err-of: ?dom 是否為 err（1=err, 0=其他）
+; ?dom 是否為 err（1=err, 0=其他）
 err-of = (o ?dom) (yes i64) {
     yes = 0
     o: {

@@ -11,9 +11,10 @@
 ; 主入口
 ; ═══════════════════════════════════════════════
 
-; detect-type: 檢測檔案類型
+; 檢測檔案類型
 ; path: 檔案路徑
 ; 返回類型描述字串（如 'PNG image'、'ELF executable'、'ASCII text'、'directory'、'unknown'）
+; [detect-type](#magic.detect-type)
 detect-type = (path str) (kind str) {
     kind = 'unknown'
 
@@ -54,9 +55,10 @@ detect-type = (path str) (kind str) {
 ; 輔助函數
 ; ═══════════════════════════════════════════════
 
-; get-extension: 取得檔案副檔名（小寫）
+; 取得檔案副檔名（小寫）
 ; path: 檔案路徑
 ; 返回副檔名（不含 '.'），無副檔名返回空串
+; [get-extension](#magic.get-extension)
 get-extension = (path str) (ext str) {
 
     n = path.len-bytes()
@@ -84,9 +86,10 @@ get-extension = (path str) (ext str) {
     }
 }
 
-; detect-by-extension: 基於副檔名判斷類型
+; 基於副檔名判斷類型
 ; ext: 副檔名（小寫）
 ; 返回類型描述，未知返回空串
+; [detect-by-extension](#magic.detect-by-extension)
 detect-by-extension = (ext str) (kind str) {
     {
         ext == 'txt' -> kind = 'ASCII text'
@@ -195,9 +198,10 @@ detect-by-extension = (ext str) (kind str) {
     }
 }
 
-; detect-by-magic: 基於魔數判斷類型
+; 基於魔數判斷類型
 ; path: 檔案路徑
 ; 返回類型描述，未知返回空串
+; [detect-by-magic](#magic.detect-by-magic)
 detect-by-magic = (path str) (kind str) {
     kind = ''
 

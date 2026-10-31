@@ -30,13 +30,15 @@ CC-MASK32 u32 = 4294967295
 ; 輔助函數
 ; ═══════════════════════════════════════════════
 
-; rotl32: 32-bit 循環左移
+; 32-bit 循環左移
+; [rotl32](#crypto.chacha20-poly1305.rotl32)
 rotl32 = (x u32, n i64) (r u32) {
 
     r = ((x << n) | (x >> (32 - n))) & CC-MASK32
 }
 
 ; quarter-round: ChaCha20 四分之一輪
+; [qr](#crypto.chacha20-poly1305.qr)
 qr = (state []u32, a i64, b i64, c i64, d i64) {
 
     #{index-out=zero}
@@ -94,11 +96,12 @@ qr = (state []u32, a i64, b i64, c i64, d i64) {
 ; ChaCha20 核心函數
 ; ═══════════════════════════════════════════════
 
-; chacha20-block: 生成一個 64-byte 密鑰流區塊
+; 生成一個 64-byte 密鑰流區塊
 ; key [32]byte: 256-bit 金鑰
 ; counter u32: 區塊計數器
 ; nonce [12]byte: 96-bit nonce
 ; 返回 out [64]byte: 密鑰流
+; [chacha20-block](#crypto.chacha20-poly1305.chacha20-block)
 chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; 初始化狀態（16 個 32-bit 字）
@@ -202,12 +205,13 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     }
 }
 
-; chacha20-xor: ChaCha20 串流加密/解密
+; ChaCha20 串流加密/解密
 ; key [32]byte: 金鑰
 ; counter u32: 初始計數器
 ; nonce [12]byte: nonce
 ; data []byte: 輸入資料
 ; 返回 out []byte: XOR 後的資料
+; [chacha20-xor](#crypto.chacha20-poly1305.chacha20-xor)
 chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []byte) {
     out = with-len(data.len())
     pos = 0
@@ -238,9 +242,10 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
 ; Poly1305 MAC
 ; ═══════════════════════════════════════════════
 
-; poly1305-reduce: 将 x 约简到 [0, 2^130-5)
+; 将 x 约简到 [0, 2^130-5)
 ; 利用 2^130 ≡ 5 (mod p) 的折叠约简，仅使用已验证的 bigint 运算
 ; 不用 bigint.mod —— 其 div-mod 对多 limb 除数存在未还原 normalize shift 的错误
+; [poly1305-reduce](#crypto.chacha20-poly1305.poly1305-reduce)
 poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     out = x
     hi = bigint.shr(out, 130)
@@ -253,10 +258,11 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     out.cmp(p) >= 0 -> out = out._sub(p)
 }
 
-; poly1305: 計算 Poly1305 MAC
+; 計算 Poly1305 MAC
 ; key [32]byte: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
 ; data []byte: 輸入資料
 ; 返回 tag [16]byte: 16 位元組認證標籤
+; [poly1305](#crypto.chacha20-poly1305.poly1305)
 poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
     ; 用 bigint 直接表达 Poly1305 数学：tag = (h + s) mod 2^128
@@ -335,10 +341,11 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 ; ChaCha20-Poly1305 AEAD
 ; ═══════════════════════════════════════════════
 
-; poly1305-key-gen: 生成 Poly1305 一次性金鑰
+; 生成 Poly1305 一次性金鑰
 ; key [32]byte: ChaCha20 金鑰
 ; nonce [12]byte: nonce
 ; 返回 otk [32]byte: 一次性 Poly1305 金鑰
+; [poly1305-key-gen](#crypto.chacha20-poly1305.poly1305-key-gen)
 poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
 
     ; 使用 ChaCha20(block_counter=0) 生成 64 位元組
@@ -350,12 +357,13 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
     }
 }
 
-; chacha20-poly1305-seal: ChaCha20-Poly1305 加密
+; ChaCha20-Poly1305 加密
 ; key [32]byte: 金鑰
 ; nonce [12]byte: nonce
 ; aad []byte: 額外認證資料
 ; plain []byte: 明文
 ; 返回 sealed []byte: 密文 + 16 位元組 tag
+; [chacha20-poly1305-seal](#crypto.chacha20-poly1305.chacha20-poly1305-seal)
 chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte) (sealed []byte) {
 
     ; 1. 生成 Poly1305 金鑰
@@ -563,12 +571,13 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 }
 
-; chacha20-poly1305-open: ChaCha20-Poly1305 解密
+; ChaCha20-Poly1305 解密
 ; key [32]byte: 金鑰
 ; nonce [12]byte: nonce
 ; aad []byte: 額外認證資料
 ; sealed []byte: 密文 + 16 位元組 tag
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
+; [chacha20-poly1305-open](#crypto.chacha20-poly1305.chacha20-poly1305-open)
 chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byte) (plain []byte) {
     sealed.len() < 16 -> return
 

@@ -8,8 +8,9 @@
 
 num = int | float
 
-; clamp: 限制在 [lo, hi] 範圍內
+; 限制在 [lo, hi] 範圍內
 ; 用法：x.clamp(lo, hi, r)
+; [clamp](#num.clamp)
 num.clamp = (lo num, hi num) (r num) {
     {
         . < lo -> r = lo
@@ -20,7 +21,8 @@ num.clamp = (lo num, hi num) (r num) {
     }
 }
 
-; sign: 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
+; 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
+; [sign](#num.sign)
 num.sign = () (r num) {
     {
         . > 0 -> r = 1
@@ -35,10 +37,11 @@ num.sign = () (r num) {
     }
 }
 
-; abs: 絕對值 — 對所有 num 型別（整數與浮點）通用
+; 絕對值 — 對所有 num 型別（整數與浮點）通用
 ; 調用形式：abs(x)（x 為接收者；num 零參方法目前僅支持此形式，`x.abs()`
 ; 點式因嵌套 num 聯合尚未单態化接收者而不支持，同 num.sign）；
 ; 負數以 overflow=wrap 回繞取反（i64.MIN 的絕對值超出 i64 範圍）
+; [abs](#num.abs)
 num.abs = () (r num) {
     {
         . < 0 -> {

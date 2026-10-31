@@ -8,11 +8,12 @@
 
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 
-; int.to-str: 整數轉字串（聯合類型方法，涵蓋所有整數類型）
+; 整數轉字串（聯合類型方法，涵蓋所有整數類型）
 ; transpiler 會將 i64.to-str() 等解析為 int.to-str()
 ; 直接使用算術運算，避免 int → u64 的類型轉換問題
 ; 注意：不對負數取絕對值（0 - n 在 n = i64.MIN 時會溢出），
 ; 改為直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
+; [to-str](#int.to-str)
 int.to-str = () (out str) {
 
     . == 0 -> {
@@ -68,14 +69,16 @@ int.to-str = () (out str) {
     }
 }
 
-; div: 整數除法，回傳商（a ÷ b）
+; 整數除法，回傳商（a ÷ b）
 ; b 為 0 時回傳 err（編譯器插入的零除守衛；不是 UB）。詳見 docs/docs/lang/syntax.md〈除零〉
+; [div](#int.div)
 int.div = (b int) (q ?int) {
     q = . / b
 }
 
-; mod: 整數取模，回傳餘數（a % b）
+; 整數取模，回傳餘數（a % b）
 ; b 為 0 時回傳 err（編譯器插入的零除守衛；不是 UB）。詳見 docs/docs/lang/syntax.md〈除零〉
+; [mod](#int.mod)
 int.mod = (b int) (r ?int) {
     r = . % b
 }

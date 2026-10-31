@@ -5,9 +5,10 @@
 ; 用法：
 ;   h = new('hello', 5)
 
-; new: 計算 CRC32 校驗和
+; 計算 CRC32 校驗和
 ; s: 輸入字串, n: 字串長度
 ; 返回 crc: 輸出校驗和
+; [new](#crypto.crc-32.new)
 new = (s []byte, n i64) (crc i64) {
     crc = 4294967295
     i <- [0..n): {

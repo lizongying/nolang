@@ -37,6 +37,7 @@
 
 ; []t.eq: 比較兩個切片是否相等
 ; 返回 true=相等, false=不相等
+; [eq](#vec.eq)
 []t.eq = (b []t) (eq bool) {
     eq = true
     i <- [0...len()): {
@@ -81,6 +82,7 @@
 ; }
 
 ; []t.len: 回傳切片長度
+; [len](#vec.len)
 []t.len = () (out i64) {
     out = .len()
 }
@@ -90,6 +92,7 @@
 ;   cap == 0 → new-cap = 4
 ;   cap < 1024 → new-cap = cap * 2
 ;   cap >= 1024 → new-cap = cap * 5 / 4
+; [vec-push](#vec.vec-push)
 #{buildin}
 vec-push = (val t) {
 }
@@ -102,6 +105,7 @@ vec-push = (val t) {
 ; []t.clear: 清空切片（原地修改長度為 0）
 ; 不 free 堆、不縮 cap，data 指標完全不變
 ; 只有寫入帶長度新內容時才走擴容邏輯
+; [vec-clear](#vec.vec-clear)
 #{buildin}
 vec-clear = () {
 }
@@ -110,6 +114,7 @@ vec-clear = () {
 
 ; []t.pop: 從末尾彈出元素
 ; 空切片返回 nil
+; [pop](#vec.pop)
 []t.pop = () (val ?t) {
     {
         .len() > 0 -> {
@@ -129,6 +134,7 @@ vec-clear = () {
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz，
 ; 否則編譯器生成錯誤循環條件 i < 0 導致循環不執行
+; [contains](#vec.contains)
 []t.contains = (val t) (found bool) {
     sz = .len()
     i <- [0...len()): {
@@ -141,6 +147,7 @@ vec-clear = () {
 }
 
 ; []t.reverse: 反轉
+; [reverse](#vec.reverse)
 []t.reverse = () {
 
     i = 0
@@ -163,6 +170,7 @@ vec-clear = () {
 }
 
 ; []t.clone: 複製切片
+; [clone](#vec.clone)
 []t.clone = () (dst []t) {
     dst = with-len(.len())
     i <- [0...len()): {
@@ -172,6 +180,7 @@ vec-clear = () {
 }
 
 ; []t.fill: 填充為 val
+; [fill](#vec.fill)
 []t.fill = (val t) {
     i <- [0...len()): {
         .[i] = val
@@ -179,6 +188,7 @@ vec-clear = () {
 }
 
 ; []t.to-arr: 切片方法，轉為 [n]t 陣列
+; [to-arr](#vec.to-arr)
 []t.to-arr = () (out [?]t) {
     i <- [0...len()): {
 
@@ -190,6 +200,7 @@ vec-clear = () {
 ; i >= .len() 時等同 push
 ; 注意：內聯 push 邏輯（.len = cur + 1; .[cur] = val）以規避方法內呼叫 .push()
 ; 觸發的預存在 LLVM bug（_LB__RB_t.push 未定義）。調用方需確保容量足夠。
+; [insert](#vec.insert)
 []t.insert = (i i64, val t) {
     {
         i >= .len() -> {
@@ -233,6 +244,7 @@ vec-clear = () {
 
 ; []t.remove: 刪除 i 位置元素並返回
 ; 越界返回 nil
+; [remove](#vec.remove)
 []t.remove = (i i64) (val ?t) {
     {
         i < 0 -> val = nil
@@ -266,6 +278,7 @@ vec-clear = () {
 ; []t.index-of: 找到值返回索引，否則 -1
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
+; [index-of](#vec.index-of)
 []t.index-of = (val t) (idx i64) {
     sz = .len()
     idx = -1
@@ -280,6 +293,7 @@ vec-clear = () {
 
 ; []t.first: 第一個元素，空切片返回 nil
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
+; [first](#vec.first)
 []t.first = () (val ?t) {
     sz = .len()
     {
@@ -291,6 +305,7 @@ vec-clear = () {
 
 ; []t.last: 最後一個元素，空切片返回 nil
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
+; [last](#vec.last)
 []t.last = () (val ?t) {
     sz = .len()
     {
@@ -307,6 +322,7 @@ vec-clear = () {
 
 ; []t.at: 安全索引訪問，越界返回 nil
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
+; [at](#vec.at)
 []t.at = (i i64) (val ?t) {
     sz = .len()
     {
@@ -320,6 +336,7 @@ vec-clear = () {
 
 ; []t.swap: 交換兩位置元素
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
+; [swap](#vec.swap)
 []t.swap = (i i64, j i64) {
     sz = .len()
     tmp = .[i]
@@ -330,6 +347,7 @@ vec-clear = () {
 ; []t.max: 最大值，空切片返回 nil
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
+; [max](#vec.max)
 []t.max = () (max ?t) {
     sz = .len()
     {
@@ -349,6 +367,7 @@ vec-clear = () {
 ; []t.min: 最小值，空切片返回 nil
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
+; [min](#vec.min)
 []t.min = () (min ?t) {
     sz = .len()
     {
@@ -368,6 +387,7 @@ vec-clear = () {
 ; []t.sum: 求和
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; 注意：range-for 上界必須用 len（.len 字段），不能用局部變量 sz
+; [sum](#vec.sum)
 []t.sum = () (sum t) {
     sz = .len()
     acc = 0
@@ -380,6 +400,7 @@ vec-clear = () {
 }
 
 ; []t.truncate: 截斷到 cnt 個元素，cnt < 0 時視為 0，cnt >= .len 時無操作
+; [truncate](#vec.truncate)
 []t.truncate = (cnt i64) {
     {
         cnt < 0 -> cnt = 0
@@ -391,6 +412,7 @@ vec-clear = () {
 ; []t.extend: 追加另一切片所有元素
 ; 注意：內聯 push 邏輯以規避方法內呼叫 .push() 的預存在 LLVM bug。
 ; 調用方需確保容量足夠。
+; [extend](#vec.extend)
 []t.extend = (b []t) {
     blen = b.len()
     i = 0
@@ -413,6 +435,7 @@ vec-clear = () {
 ; []t.to-str: 字串表示
 ; 格式如 '[1, 2, 3]'
 ; 元素轉字串：逐元素呼叫其自身的 .to-str() 方法（具體型別見 number.no）
+; [to-str](#vec.to-str)
 []t.to-str = () (out str) {
     {
         .len() == 0 -> out = '[]'

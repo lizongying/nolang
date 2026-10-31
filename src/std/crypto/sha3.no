@@ -45,9 +45,10 @@ SHA3-PAD-HIGH u64 = 128
 ; 輔助函數
 ; ═══════════════════════════════════════════════
 
-; rotl64: 64-bit 循環左移
+; 64-bit 循環左移
 ; x u64: 待旋轉的值
 ; n i64: 旋轉量（0..63，會先 mod 64，避免位移 64 的未定義行為）
+; [rotl64](#crypto.sha3.rotl64)
 rotl64 = (x u64, n i64) (r u64) {
 
     #{overflow=wrap}
@@ -64,8 +65,9 @@ rotl64 = (x u64, n i64) (r u64) {
 ; Keccak-f[1600] 置換
 ; ═══════════════════════════════════════════════
 
-; keccak-f1600: 執行 Keccak-f[1600] 置換（24 輪）
+; 執行 Keccak-f[1600] 置換（24 輪）
 ; state []u64: 25 個 64-bit lane（輸入/輸出）
+; [keccak-f1600](#crypto.sha3.keccak-f1600)
 keccak-f1600 = (state []u64) {
     round <- [0..24): {
 
@@ -163,13 +165,14 @@ keccak-f1600 = (state []u64) {
 ; 海綿函數
 ; ═══════════════════════════════════════════════
 
-; keccak-sponge: Keccak 海綿函數
+; Keccak 海綿函數
 ; data []byte: 輸入資料
 ; rate i64: 位元率（以位元組為單位，必須是 8 的倍數）
 ; capacity i64: 容量（以位元組為單位，rate + capacity = 200）
 ; out-len i64: 輸出長度（位元組）
 ; suffix byte: 填充後綴（SHA-3 = 0x06, SHAKE = 0x1F）
 ; 返回 out []byte: 輸出雜湊值
+; [keccak-sponge](#crypto.sha3.keccak-sponge)
 keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) (out []byte) {
 
     out = with-len(out-len)
@@ -301,9 +304,10 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 ; SHA-3 公開 API
 ; ═══════════════════════════════════════════════
 
-; sha3-224: 計算 SHA3-224 雜湊
+; 計算 SHA3-224 雜湊
 ; data []byte: 輸入資料
 ; 返回 hash [28]byte: 28 位元組雜湊值
+; [sha3-224](#crypto.sha3.sha3-224)
 sha3-224 = (data []byte) (hash [28]byte) {
     out = keccak-sponge(data, 144, 56, 28, 0x06)
     i <- [0..28): {
@@ -313,9 +317,10 @@ sha3-224 = (data []byte) (hash [28]byte) {
     }
 }
 
-; sha3-256: 計算 SHA3-256 雜湊
+; 計算 SHA3-256 雜湊
 ; data []byte: 輸入資料
 ; 返回 hash [32]byte: 32 位元組雜湊值
+; [sha3-256](#crypto.sha3.sha3-256)
 sha3-256 = (data []byte) (hash [32]byte) {
     out = keccak-sponge(data, 136, 64, 32, 0x06)
     i <- [0..32): {
@@ -325,9 +330,10 @@ sha3-256 = (data []byte) (hash [32]byte) {
     }
 }
 
-; sha3-384: 計算 SHA3-384 雜湊
+; 計算 SHA3-384 雜湊
 ; data []byte: 輸入資料
 ; 返回 hash [48]byte: 48 位元組雜湊值
+; [sha3-384](#crypto.sha3.sha3-384)
 sha3-384 = (data []byte) (hash [48]byte) {
     out = keccak-sponge(data, 104, 96, 48, 0x06)
     i <- [0..48): {
@@ -337,9 +343,10 @@ sha3-384 = (data []byte) (hash [48]byte) {
     }
 }
 
-; sha3-512: 計算 SHA3-512 雜湊
+; 計算 SHA3-512 雜湊
 ; data []byte: 輸入資料
 ; 返回 hash [64]byte: 64 位元組雜湊值
+; [sha3-512](#crypto.sha3.sha3-512)
 sha3-512 = (data []byte) (hash [64]byte) {
     out = keccak-sponge(data, 72, 128, 64, 0x06)
     i <- [0..64): {
@@ -353,9 +360,10 @@ sha3-512 = (data []byte) (hash [64]byte) {
 ; Hex 便捷函數
 ; ═══════════════════════════════════════════════
 
-; sha3-224-hex: 計算 SHA3-224 並返回 hex 字串
+; 計算 SHA3-224 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 56 字元 hex 字串
+; [sha3-224-hex](#crypto.sha3.sha3-224-hex)
 sha3-224-hex = (data []byte) (hex str) {
     hash = sha3-224(data)
     hex-chars = '0123456789abcdef'
@@ -376,9 +384,10 @@ sha3-224-hex = (data []byte) (hex str) {
     }
 }
 
-; sha3-256-hex: 計算 SHA3-256 並返回 hex 字串
+; 計算 SHA3-256 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 64 字元 hex 字串
+; [sha3-256-hex](#crypto.sha3.sha3-256-hex)
 sha3-256-hex = (data []byte) (hex str) {
     hash = sha3-256(data)
     hex-chars = '0123456789abcdef'
@@ -399,9 +408,10 @@ sha3-256-hex = (data []byte) (hex str) {
     }
 }
 
-; sha3-384-hex: 計算 SHA3-384 並返回 hex 字串
+; 計算 SHA3-384 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 96 字元 hex 字串
+; [sha3-384-hex](#crypto.sha3.sha3-384-hex)
 sha3-384-hex = (data []byte) (hex str) {
     hash = sha3-384(data)
     hex-chars = '0123456789abcdef'
@@ -422,9 +432,10 @@ sha3-384-hex = (data []byte) (hex str) {
     }
 }
 
-; sha3-512-hex: 計算 SHA3-512 並返回 hex 字串
+; 計算 SHA3-512 並返回 hex 字串
 ; data []byte: 輸入資料
 ; 返回 hex str: 128 字元 hex 字串
+; [sha3-512-hex](#crypto.sha3.sha3-512-hex)
 sha3-512-hex = (data []byte) (hex str) {
     hash = sha3-512(data)
     hex-chars = '0123456789abcdef'

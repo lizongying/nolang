@@ -24,7 +24,8 @@ deque {
     tail i64
 }
 
-; push-front: 從前端推入元素
+; 從前端推入元素
+; [push-front](#collection.deque.deque.push-front)
 deque.push-front = (val i64) {
 
     #{overflow=wrap}
@@ -42,7 +43,8 @@ deque.push-front = (val i64) {
     .head = new-head
 }
 
-; push-back: 從後端推入元素
+; 從後端推入元素
+; [push-back](#collection.deque.deque.push-back)
 deque.push-back = (val i64) {
 
     #{overflow=wrap}
@@ -63,8 +65,9 @@ deque.push-back = (val i64) {
     .tail = .tail + 1
 }
 
-; pop-front: 從前端彈出元素
+; 從前端彈出元素
 ; 返回 val ?i64: ok=彈出值, nil=佇列為空
+; [pop-front](#collection.deque.deque.pop-front)
 deque.pop-front = () (val ?i64) {
 
     #{overflow=wrap}
@@ -88,8 +91,9 @@ deque.pop-front = () (val ?i64) {
     .head = .head + 1
 }
 
-; pop-back: 從後端彈出元素
+; 從後端彈出元素
 ; 返回 val ?i64: ok=彈出值, nil=佇列為空
+; [pop-back](#collection.deque.deque.pop-back)
 deque.pop-back = () (val ?i64) {
 
     #{overflow=wrap}
@@ -114,8 +118,9 @@ deque.pop-back = () (val ?i64) {
     .tail = new-tail
 }
 
-; peek-front: 查看前端元素（不移除）
+; 查看前端元素（不移除）
 ; 返回 val ?i64: ok=前端值, nil=佇列為空
+; [peek-front](#collection.deque.deque.peek-front)
 deque.peek-front = () (val ?i64) {
 
     #{overflow=wrap}
@@ -136,8 +141,9 @@ deque.peek-front = () (val ?i64) {
     val = .buf[idx]
 }
 
-; peek-back: 查看後端元素（不移除）
+; 查看後端元素（不移除）
 ; 返回 val ?i64: ok=後端值, nil=佇列為空
+; [peek-back](#collection.deque.deque.peek-back)
 deque.peek-back = () (val ?i64) {
 
     #{overflow=wrap}
@@ -160,20 +166,23 @@ deque.peek-back = () (val ?i64) {
     val = .buf[idx]
 }
 
-; size: 返回雙端佇列大小
+; 返回雙端佇列大小
+; [size](#collection.deque.deque.size)
 deque.size = () (sz i64) {
 
     #{overflow=wrap}
     sz = .tail - .head
 }
 
-; empty: 判斷雙端佇列是否為空
+; 判斷雙端佇列是否為空
 ; 返回 true=空, false=非空
+; [empty](#collection.deque.deque.empty)
 deque.empty = () (yes bool) {
     yes = .tail <= .head
 }
 
-; clear: 清空雙端佇列
+; 清空雙端佇列
+; [clear](#collection.deque.deque.clear)
 deque.clear = () {
     .tail = .head
 }

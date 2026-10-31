@@ -1,7 +1,7 @@
 ; test-fe-ops — 測試 X25519 域元素基本操作
 ; # std/crypto/x25519
 
-; fe-print: 列印域元素
+; 列印域元素
 fe-print = (label str, h []i64) {
     eprint(label)
     eprint(': ')
@@ -11,7 +11,7 @@ fe-print = (label str, h []i64) {
     }
 }
 
-; test-fe-mul: 測試 fe-mul(2, 3) = 6
+; 測試 fe-mul(2, 3) = 6
 test-fe-mul = () (pass bool) {
     pass = false
 
@@ -42,7 +42,7 @@ test-fe-mul = () (pass bool) {
     pass = true
 }
 
-; test-fe-sq: 測試 fe-sq(3) = 9
+; 測試 fe-sq(3) = 9
 test-fe-sq = () (pass bool) {
     pass = false
 
@@ -60,7 +60,7 @@ test-fe-sq = () (pass bool) {
     pass = true
 }
 
-; test-fe-add: 測試 fe-add(2, 3) = 5
+; 測試 fe-add(2, 3) = 5
 test-fe-add = () (pass bool) {
     pass = false
 
@@ -81,7 +81,7 @@ test-fe-add = () (pass bool) {
     pass = true
 }
 
-; test-fe-frombytes: 測試載入 basepoint (9)
+; 測試載入 basepoint (9)
 test-fe-frombytes = () (pass bool) {
     pass = false
 
@@ -114,7 +114,7 @@ test-fe-frombytes = () (pass bool) {
     pass = true
 }
 
-; test-scalarmult-base: 測試 scalarmult(1, base) — 應為 9 * 2^254 mod p
+; 測試 scalarmult(1, base) — 應為 9 * 2^254 mod p
 test-scalarmult-base = () (pass bool) {
     pass = false
 

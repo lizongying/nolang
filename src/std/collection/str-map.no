@@ -22,7 +22,8 @@ str-map {
     size i64
 }
 
-; init: 初始化
+; 初始化
+; [init](#collection.str-map.str-map.init)
 str-map.init = () {
     .cap = 256
     .size = 0
@@ -36,7 +37,8 @@ str-map.init = () {
     }
 }
 
-; hash: FNV-1a 字串雜湊
+; FNV-1a 字串雜湊
+; [hash](#collection.str-map.str-map.hash)
 str-map.hash = (key str) (idx i64) {
 
     h = FNV-OFFSET
@@ -51,7 +53,8 @@ str-map.hash = (key str) (idx i64) {
     idx = h & (.cap - 1)
 }
 
-; str-eq: 比較兩個 str 是否相等
+; 比較兩個 str 是否相等
+; [str-eq](#collection.str-map.str-map.str-eq)
 str-map.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
@@ -63,7 +66,8 @@ str-map.str-eq = (a str, b str) (eq bool) {
     eq = true
 }
 
-; put: 插入或更新 key→value，回傳是否新增
+; 插入或更新 key→value，回傳是否新增
+; [put](#collection.str-map.str-map.put)
 str-map.put = (key str, val str) (is-new bool) {
 
     idx = .hash(key)
@@ -99,7 +103,8 @@ str-map.put = (key str, val str) (is-new bool) {
     is-new = true
 }
 
-; get: 查找 key，返回 ?str（nil=未找到）
+; 查找 key，返回 ?str（nil=未找到）
+; [get](#collection.str-map.str-map.get)
 str-map.get = (key str) (result ?str) {
     .size == 0 -> return
     idx = .hash(key)
@@ -119,7 +124,8 @@ str-map.get = (key str) (result ?str) {
     }
 }
 
-; contains: 檢查 key 是否存在
+; 檢查 key 是否存在
+; [contains](#collection.str-map.str-map.contains)
 str-map.contains = (key str) (found bool) {
     val = .get(key)
     val: {
@@ -131,7 +137,8 @@ str-map.contains = (key str) (found bool) {
     }
 }
 
-; remove: 刪除 key
+; 刪除 key
+; [remove](#collection.str-map.str-map.remove)
 str-map.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -159,7 +166,8 @@ str-map.remove = (key str) (removed bool) {
     }
 }
 
-; clear: 清空
+; 清空
+; [clear](#collection.str-map.str-map.clear)
 str-map.clear = () {
     i <- [0...cap): {
 
@@ -172,17 +180,20 @@ str-map.clear = () {
     .size = 0
 }
 
-; len: 返回元素數量
+; 返回元素數量
+; [len](#collection.str-map.str-map.len)
 str-map.len = () (n i64) {
     n = .size
 }
 
-; is-empty: 是否為空
+; 是否為空
+; [is-empty](#collection.str-map.str-map.is-empty)
 str-map.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-; for-each: 遍歷所有 (key, value)
+; 遍歷所有 (key, value)
+; [for-each](#collection.str-map.str-map.for-each)
 str-map.for-each = () (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
@@ -194,8 +205,9 @@ str-map.for-each = () (k str, v str) {
     }
 }
 
-; to-str: 字串表示
+; 字串表示
 ; 格式如 `{name: Alice, age: 18}`
+; [to-str](#collection.str-map.str-map.to-str)
 str-map.to-str = () (out str) {
     out = '{'
     first = true

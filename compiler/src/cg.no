@@ -20,27 +20,27 @@
 # /compiler/src/util/sb.sb
 # /compiler/src/mir
 
-; cg-label：块 id → LLVM 标签名（0 → entry，其余 → bb<id>）。
+; 块 id → LLVM 标签名（0 → entry，其余 → bb<id>）。
 cg-label = (id i64) (s str) {
     s = 'bb' + id.to-str()
     id == 0 -> s = 'entry'
 }
 
-; cg-strlen1：字符串字面量的数组长度（字节数 + 1，含结尾 NUL）。
+; 字符串字面量的数组长度（字节数 + 1，含结尾 NUL）。
 cg-strlen1 = (t str) (n i64) {
     n = t.len-bytes()
     #{overflow=wrap}
     n = n + 1
 }
 
-; cg-emit-func：单块便捷入口（全部指令属块 0）。保留 M4-b 的 7 参数 API。
+; 单块便捷入口（全部指令属块 0）。保留 M4-b 的 7 参数 API。
 cg-emit-func = (name str, nargs i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
     n = ops.len()
     z []i64 = [].with-len(n)
     r = cg-emit-cfg(name, nargs, z, ops, dsts, xa, bs, syms)
 }
 
-; cg-ty-name：型别码 → LLVM 型别名（TY-I64 → 'i64'，其余是 prelude 里的具名型）。
+; 型别码 → LLVM 型别名（TY-I64 → 'i64'，其余是 prelude 里的具名型）。
 cg-ty-name = (t i64) (s str) {
     s = 'i64'
     t == TY-STR -> s = '%str-long'
@@ -48,7 +48,7 @@ cg-ty-name = (t i64) (s str) {
     t == TY-OPT -> s = '%option'
 }
 
-; cg-val-prefix：型别码 → 值命名空间前缀（%v / %sv / %vc / %op）。
+; 型别码 → 值命名空间前缀（%v / %sv / %vc / %op）。
 ;   LLVM 里 SSA 名全局唯一，同名不同型直接报错 ⇒ 前缀必须跟着型别走。
 cg-val-prefix = (t i64) (s str) {
     s = '%v'
@@ -57,7 +57,7 @@ cg-val-prefix = (t i64) (s str) {
     t == TY-OPT -> s = '%op'
 }
 
-; cg-emit-cfg：全部形参/返回值/值都是 i64 的便捷入口（M4-b 起的 8 参数 API）。
+; 全部形参/返回值/值都是 i64 的便捷入口（M4-b 起的 8 参数 API）。
 ;   ⚠️ 这里**自己构造**全 0 的型别表（而不是让发射器「空表就当 i64」）——
 ;   s20 的教训：靠「空/0 即默认」的隐式约定，漏填就是静默退化。
 cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
@@ -70,7 +70,7 @@ cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64,
     r = cg-emit-cfg-t(name, TY-I64, nargs, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
 }
 
-; cg-emit-cfg-t：发射一个带型别签名的函数（可多基本块）。
+; 发射一个带型别签名的函数（可多基本块）。
 ; ptyps[q] = 第 q 个形参（值 id q+1）的型别码；retty = 返回值型别码。
 ; vty[id]  = 第 id 号值的型别码（**按值 id 索引**，长度 ≥ 最大值 id + 1）；
 ;            CALL 的实参型别与值命名空间都从这里取，不需要额外的调用点签名。

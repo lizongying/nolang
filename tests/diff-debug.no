@@ -9,7 +9,7 @@ diff-op {
     b-no i64
 }
 
-; diff-split-lines: split content into lines
+; split content into lines
 diff-split-lines = (content str) (lines []str) {
     ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
@@ -29,7 +29,7 @@ diff-split-lines = (content str) (lines []str) {
     eprint('SPLIT: done, lines.len={ll}')
 }
 
-; diff-engine-lcs: full LCS-based diff
+; full LCS-based diff
 diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
     na = a.len()
     nb = b.len()

@@ -21,7 +21,7 @@ diag {
     code str
 }
 
-; level-name: 診斷級別的名稱
+; 診斷級別的名稱
 diag.level-name = () (r str) {
     {
         .level == LEVEL-ERROR -> r = 'ERROR'
@@ -30,7 +30,7 @@ diag.level-name = () (r str) {
     }
 }
 
-; render: 面向使用者的單行輸出
+; 面向使用者的單行輸出
 ; Authority：Go printLintResults（src/cmd/no/main.go）只有兩種行形：
 ;   line > 0  ⇒ <file>:<line>:<col>: [LEVEL] <src>: <msg> [<code>]
 ;   line == 0 ⇒ <file>: [LEVEL] <src>: <msg> [<code>]   （檔案級診斷，無位置）
@@ -48,7 +48,7 @@ diag.render = () (r str) {
     r = head + '[' + .level-name() + '] ' + .src + ': ' + .msg + ' [' + .code + ']'
 }
 
-; render-mid: 中間編譯錯誤串的一條（無檔名前綴）
+; 中間編譯錯誤串的一條（無檔名前綴）
 diag.render-mid = () (r str) {
     r = 'line ' + .line.to-str() + ', column ' + .col.to-str() + ': ' + .msg + ' [' + .code + ']'
 }

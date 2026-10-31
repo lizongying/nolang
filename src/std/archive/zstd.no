@@ -32,7 +32,8 @@ zs-bit-reader.init = (data []byte, pos i64) {
     .bit-cnt = 0
 }
 
-; read-bit: 讀取一個位元（LSB-first）
+; 讀取一個位元（LSB-first）
+; [read-bit](#archive.zstd.zs-bit-reader.read-bit)
 zs-bit-reader.read-bit = () (bit i64) {
     bit = 0
     {
@@ -56,7 +57,8 @@ zs-bit-reader.read-bit = () (bit i64) {
     }
 }
 
-; read-bits: 讀取 n 個位元（LSB-first）
+; 讀取 n 個位元（LSB-first）
+; [read-bits](#archive.zstd.zs-bit-reader.read-bits)
 zs-bit-reader.read-bits = (n i64) (v i64) {
     v = 0
     i <- [0..n): {
@@ -65,7 +67,8 @@ zs-bit-reader.read-bits = (n i64) (v i64) {
     }
 }
 
-; read-varint: 讀取變長整數（LSB-first，每 7 位元一組）
+; 讀取變長整數（LSB-first，每 7 位元一組）
+; [read-varint](#archive.zstd.zs-bit-reader.read-varint)
 zs-bit-reader.read-varint = () (v i64) {
     v = 0
     shift = 0
@@ -83,7 +86,8 @@ zs-bit-reader.read-varint = () (v i64) {
     }
 }
 
-; align-to-byte: 對齊到下一個位元組邊界
+; 對齊到下一個位元組邊界
+; [align-to-byte](#archive.zstd.zs-bit-reader.align-to-byte)
 zs-bit-reader.align-to-byte = () {
     .bit-cnt = 0
 }
@@ -117,10 +121,11 @@ fse-table {
 
 ; 符號出現次數
 
-; build: 從正規化計數建構 FSE 表
+; 從正規化計數建構 FSE 表
 ; norm-count: 各符號的正規化計數
 ; max-symbol: 最大符號值
 ; table-log: 表大小對數
+; [build](#archive.zstd.fse-table.build)
 fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
     .table-log = table-log
@@ -219,9 +224,10 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     }
 }
 
-; bits-for-count: 計算 count 對應的位元數
+; 計算 count 對應的位元數
 ; count > 0: 返回 tableLog - floor(log2(count))
 ; count <= 0: 返回 tableLog
+; [bits-for-count](#archive.zstd.bits-for-count)
 bits-for-count = (count i64) (n i64) {
     r-count = count
     n = 0
@@ -235,8 +241,9 @@ bits-for-count = (count i64) (n i64) {
     }
 }
 
-; decode: FSE 解碼一個符號
+; FSE 解碼一個符號
 ; 返回符號和新的狀態
+; [decode](#archive.zstd.fse-table.decode)
 fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
 
     ; 從當前狀態讀取符號
@@ -271,7 +278,8 @@ zs-huffman {
 
 ; 解碼表（簡化版：使用碼長度 + 符號映射）
 
-; build: 建構 Huffman 解碼表
+; 建構 Huffman 解碼表
+; [build](#archive.zstd.zs-huffman.build)
 zs-huffman.build = (lengths []i64, max-symbol i64) {
 
     .max-symbol = max-symbol
@@ -346,7 +354,8 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
     }
 }
 
-; decode: 解碼一個符號
+; 解碼一個符號
+; [decode](#archive.zstd.zs-huffman.decode)
 zs-huffman.decode = (br zs-bit-reader) (sym i64) {
     sym = 0
 
@@ -391,7 +400,8 @@ zs-frame {
 
 ; 上一個 frame 的字典
 
-; read-frame-header: 讀取 frame header
+; 讀取 frame header
+; [read-frame-header](#archive.zstd.zs-frame.read-frame-header)
 zs-frame.read-frame-header = () (ok bool) {
 
     ok = false
@@ -500,7 +510,8 @@ zs-frame.read-frame-header = () (ok bool) {
     ok = true
 }
 
-; decode-block: 解碼一個區塊（回傳 last-block ?bool：some=成功並帶是否最後區塊，nil=失敗）
+; 解碼一個區塊（回傳 last-block ?bool：some=成功並帶是否最後區塊，nil=失敗）
+; [decode-block](#archive.zstd.zs-frame.decode-block)
 zs-frame.decode-block = () (last-block ?bool) {
 
     last-block = nil
@@ -570,8 +581,9 @@ zs-frame.decode-block = () (last-block ?bool) {
     last-block = nil
 }
 
-; decode-compressed-block: 解碼壓縮區塊
+; 解碼壓縮區塊
 ; block-size: 壓縮區塊大小
+; [decode-compressed-block](#archive.zstd.zs-frame.decode-compressed-block)
 zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
 
     ok = false
@@ -652,9 +664,10 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
 ; Zstandard 解壓縮主函數
 ; ═══════════════════════════════════════════════
 
-; zstd-decompress: 解壓縮 Zstandard 格式的資料
+; 解壓縮 Zstandard 格式的資料
 ;   data: zstd 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
+; [zstd-decompress](#archive.zstd.zstd-decompress)
 zstd-decompress = (data []byte) (out []byte) {
     data.len() < 4 -> return
 
@@ -712,11 +725,12 @@ zstd-decompress = (data []byte) (out []byte) {
 ; Zstandard 壓縮（基本實現 — raw block）
 ; ═══════════════════════════════════════════════
 
-; zstd-compress: 使用 zstd 格式壓縮資料（基本實現）
+; 使用 zstd 格式壓縮資料（基本實現）
 ;   data: 原始資料 ([]byte)
 ;   out: zstd 壓縮後的資料 ([]byte)
 ; 注意：目前使用 raw block 的基本實現，
 ;       完整 FSE + Huffman + LZ77 壓縮待後續實現。
+; [zstd-compress](#archive.zstd.zstd-compress)
 zstd-compress = (data []byte) (out []byte) {
 
     ; Zstandard magic number (小端序)

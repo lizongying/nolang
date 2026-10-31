@@ -46,7 +46,8 @@ static-hashmap-str-tmpl {
     size i64
 }
 
-; init: 初始化
+; 初始化
+; [init](#collection.static-hashmap.static-hashmap-str-tmpl.init)
 static-hashmap-str-tmpl.init = () {
     .cap = 256
     .size = 0
@@ -58,7 +59,8 @@ static-hashmap-str-tmpl.init = () {
     }
 }
 
-; hash: FNV-1a 字串雜湊
+; FNV-1a 字串雜湊
+; [hash](#collection.static-hashmap.static-hashmap-str-tmpl.hash)
 static-hashmap-str-tmpl.hash = (key str) (idx i64) {
 
     h = FNV-OFFSET
@@ -73,7 +75,8 @@ static-hashmap-str-tmpl.hash = (key str) (idx i64) {
     idx = h & (.cap - 1)
 }
 
-; str-eq: 比較兩個 str 是否相等
+; 比較兩個 str 是否相等
+; [str-eq](#collection.static-hashmap.static-hashmap-str-tmpl.str-eq)
 static-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
@@ -85,7 +88,8 @@ static-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     eq = true
 }
 
-; put: 插入或更新 key→value，回傳是否新增
+; 插入或更新 key→value，回傳是否新增
+; [put](#collection.static-hashmap.static-hashmap-str-tmpl.put)
 static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     .cap == 0 -> .init()
 
@@ -129,7 +133,8 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     is-new = true
 }
 
-; get: 查找 key，返回 ?v（nil=未找到）
+; 查找 key，返回 ?v（nil=未找到）
+; [get](#collection.static-hashmap.static-hashmap-str-tmpl.get)
 static-hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
@@ -152,7 +157,8 @@ static-hashmap-str-tmpl.get = (key str) (result ?v) {
     }
 }
 
-; contains: 檢查 key 是否存在
+; 檢查 key 是否存在
+; [contains](#collection.static-hashmap.static-hashmap-str-tmpl.contains)
 static-hashmap-str-tmpl.contains = (key str) (found bool) {
     val = .get(key)
     val: {
@@ -164,7 +170,8 @@ static-hashmap-str-tmpl.contains = (key str) (found bool) {
     }
 }
 
-; remove: 刪除 key（標記墓碑）
+; 刪除 key（標記墓碑）
+; [remove](#collection.static-hashmap.static-hashmap-str-tmpl.remove)
 static-hashmap-str-tmpl.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -190,7 +197,8 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
     }
 }
 
-; clear: 清空
+; 清空
+; [clear](#collection.static-hashmap.static-hashmap-str-tmpl.clear)
 static-hashmap-str-tmpl.clear = () {
     i <- [0...cap): {
 
@@ -201,17 +209,20 @@ static-hashmap-str-tmpl.clear = () {
     .size = 0
 }
 
-; len: 返回元素數量
+; 返回元素數量
+; [len](#collection.static-hashmap.static-hashmap-str-tmpl.len)
 static-hashmap-str-tmpl.len = () (n i64) {
     n = .size
 }
 
-; is-empty: 是否為空
+; 是否為空
+; [is-empty](#collection.static-hashmap.static-hashmap-str-tmpl.is-empty)
 static-hashmap-str-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-; for-each: 遍歷所有 (key, value)
+; 遍歷所有 (key, value)
+; [for-each](#collection.static-hashmap.static-hashmap-str-tmpl.for-each)
 static-hashmap-str-tmpl.for-each = () (k str, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
@@ -252,7 +263,8 @@ static-hashmap-int-tmpl {
     size i64
 }
 
-; init: 初始化
+; 初始化
+; [init](#collection.static-hashmap.static-hashmap-int-tmpl.init)
 static-hashmap-int-tmpl.init = () {
     .cap = 256
     .size = 0
@@ -264,13 +276,15 @@ static-hashmap-int-tmpl.init = () {
     }
 }
 
-; hash: 計算索引（位元遮罩）
+; 計算索引（位元遮罩）
+; [hash](#collection.static-hashmap.static-hashmap-int-tmpl.hash)
 static-hashmap-int-tmpl.hash = (key k) (idx i64) {
 
     idx = key & (.cap - 1)
 }
 
-; put: 插入或更新 key→value，回傳是否新增
+; 插入或更新 key→value，回傳是否新增
+; [put](#collection.static-hashmap.static-hashmap-int-tmpl.put)
 static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     .cap == 0 -> .init()
 
@@ -311,7 +325,8 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     is-new = true
 }
 
-; get: 查找 key，返回 ?v（nil=未找到）
+; 查找 key，返回 ?v（nil=未找到）
+; [get](#collection.static-hashmap.static-hashmap-int-tmpl.get)
 static-hashmap-int-tmpl.get = (key k) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
@@ -333,7 +348,8 @@ static-hashmap-int-tmpl.get = (key k) (result ?v) {
     }
 }
 
-; contains: 檢查 key 是否存在
+; 檢查 key 是否存在
+; [contains](#collection.static-hashmap.static-hashmap-int-tmpl.contains)
 static-hashmap-int-tmpl.contains = (key k) (found bool) {
     val = .get(key)
     val: {
@@ -345,7 +361,8 @@ static-hashmap-int-tmpl.contains = (key k) (found bool) {
     }
 }
 
-; remove: 刪除 key（標記墓碑）
+; 刪除 key（標記墓碑）
+; [remove](#collection.static-hashmap.static-hashmap-int-tmpl.remove)
 static-hashmap-int-tmpl.remove = (key k) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -370,7 +387,8 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
     }
 }
 
-; clear: 清空
+; 清空
+; [clear](#collection.static-hashmap.static-hashmap-int-tmpl.clear)
 static-hashmap-int-tmpl.clear = () {
     i <- [0...cap): {
 
@@ -381,17 +399,20 @@ static-hashmap-int-tmpl.clear = () {
     .size = 0
 }
 
-; len: 返回元素數量
+; 返回元素數量
+; [len](#collection.static-hashmap.static-hashmap-int-tmpl.len)
 static-hashmap-int-tmpl.len = () (n i64) {
     n = .size
 }
 
-; is-empty: 是否為空
+; 是否為空
+; [is-empty](#collection.static-hashmap.static-hashmap-int-tmpl.is-empty)
 static-hashmap-int-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-; for-each: 遍歷所有 (key, value)
+; 遍歷所有 (key, value)
+; [for-each](#collection.static-hashmap.static-hashmap-int-tmpl.for-each)
 static-hashmap-int-tmpl.for-each = () (k k, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
@@ -426,7 +447,8 @@ static-hashmap-bool-tmpl {
     size i64
 }
 
-; init: 初始化
+; 初始化
+; [init](#collection.static-hashmap.static-hashmap-bool-tmpl.init)
 static-hashmap-bool-tmpl.init = () {
     .cap = 2
     .size = 0
@@ -438,7 +460,8 @@ static-hashmap-bool-tmpl.init = () {
     }
 }
 
-; hash: 直接索引（true→1，false→0）
+; 直接索引（true→1，false→0）
+; [hash](#collection.static-hashmap.static-hashmap-bool-tmpl.hash)
 static-hashmap-bool-tmpl.hash = (key bool) (idx i64) {
     {
         key == true -> idx = 1
@@ -447,7 +470,8 @@ static-hashmap-bool-tmpl.hash = (key bool) (idx i64) {
     }
 }
 
-; put: 插入或更新 key→value，回傳是否新增
+; 插入或更新 key→value，回傳是否新增
+; [put](#collection.static-hashmap.static-hashmap-bool-tmpl.put)
 static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     .cap == 0 -> .init()
 
@@ -471,7 +495,8 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     is-new = true
 }
 
-; get: 查找 key，返回 ?v（nil=未找到）
+; 查找 key，返回 ?v（nil=未找到）
+; [get](#collection.static-hashmap.static-hashmap-bool-tmpl.get)
 static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
@@ -483,7 +508,8 @@ static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
     }
 }
 
-; contains: 檢查 key 是否存在
+; 檢查 key 是否存在
+; [contains](#collection.static-hashmap.static-hashmap-bool-tmpl.contains)
 static-hashmap-bool-tmpl.contains = (key bool) (found bool) {
     val = .get(key)
     val: {
@@ -495,7 +521,8 @@ static-hashmap-bool-tmpl.contains = (key bool) (found bool) {
     }
 }
 
-; remove: 刪除 key（標記墓碑）
+; 刪除 key（標記墓碑）
+; [remove](#collection.static-hashmap.static-hashmap-bool-tmpl.remove)
 static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -510,7 +537,8 @@ static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     }
 }
 
-; clear: 清空
+; 清空
+; [clear](#collection.static-hashmap.static-hashmap-bool-tmpl.clear)
 static-hashmap-bool-tmpl.clear = () {
     i <- [0...cap): {
 
@@ -521,17 +549,20 @@ static-hashmap-bool-tmpl.clear = () {
     .size = 0
 }
 
-; len: 返回元素數量
+; 返回元素數量
+; [len](#collection.static-hashmap.static-hashmap-bool-tmpl.len)
 static-hashmap-bool-tmpl.len = () (n i64) {
     n = .size
 }
 
-; is-empty: 是否為空
+; 是否為空
+; [is-empty](#collection.static-hashmap.static-hashmap-bool-tmpl.is-empty)
 static-hashmap-bool-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
-; for-each: 遍歷所有 (key, value)
+; 遍歷所有 (key, value)
+; [for-each](#collection.static-hashmap.static-hashmap-bool-tmpl.for-each)
 static-hashmap-bool-tmpl.for-each = () (k bool, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {

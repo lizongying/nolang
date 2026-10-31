@@ -3,7 +3,7 @@
 
 HPACK-TEST-BUF = 256
 
-; test-encode-int-small: 編碼小整數（fit in prefix）
+; 編碼小整數（fit in prefix）
 test-encode-int-small = () {
     out = hpack.encode-int(10, 5, 0)
 
@@ -21,7 +21,7 @@ test-encode-int-small = () {
     print('PASS: encode-int-small')
 }
 
-; test-encode-int-multi: 編碼多 byte 整數
+; 編碼多 byte 整數
 test-encode-int-multi = () {
 
     ; 1337 with 5-bit prefix: 1337 > 31, so multi-byte
@@ -52,7 +52,7 @@ test-encode-int-multi = () {
     print('PASS: encode-int-multi')
 }
 
-; test-decode-int-small: 解碼小整數
+; 解碼小整數
 test-decode-int-small = () {
     space = ' '
     data = space.repeat(HPACK-TEST-BUF)
@@ -74,7 +74,7 @@ test-decode-int-small = () {
     print('PASS: decode-int-small')
 }
 
-; test-decode-int-multi: 解碼多 byte 整數
+; 解碼多 byte 整數
 test-decode-int-multi = () {
     space = ' '
     data = space.repeat(HPACK-TEST-BUF)
@@ -104,7 +104,7 @@ test-decode-int-multi = () {
     print('PASS: decode-int-multi')
 }
 
-; test-encode-str: 編碼字串
+; 編碼字串
 test-encode-str = () {
     out = hpack.encode-str('abc')
 
@@ -125,7 +125,7 @@ test-encode-str = () {
     print('PASS: encode-str')
 }
 
-; test-decode-str: 解碼字串
+; 解碼字串
 test-decode-str = () {
     space = ' '
     data = space.repeat(HPACK-TEST-BUF)
@@ -164,7 +164,7 @@ test-decode-str = () {
     print('PASS: decode-str')
 }
 
-; test-static-table: 靜態表查找
+; 靜態表查找
 test-static-table = () {
     t hpack.tables
     t.init()
@@ -187,7 +187,7 @@ test-static-table = () {
     print('PASS: static-table')
 }
 
-; test-dyn-table: 動態表新增和查找
+; 動態表新增和查找
 test-dyn-table = () {
     t hpack.tables
     t.init()
@@ -223,7 +223,7 @@ test-dyn-table = () {
     print('PASS: dyn-table')
 }
 
-; test-encode-header-indexed: 編碼已知標頭（完全匹配→indexed）
+; 編碼已知標頭（完全匹配→indexed）
 test-encode-header-indexed = () {
     t hpack.tables
     t.init()
@@ -244,7 +244,7 @@ test-encode-header-indexed = () {
     print('PASS: encode-header-indexed')
 }
 
-; test-decode-headers: 解碼標頭塊
+; 解碼標頭塊
 test-decode-headers = () {
     space = ' '
     t hpack.tables
@@ -289,7 +289,7 @@ test-decode-headers = () {
     print('PASS: decode-headers')
 }
 
-; test-run-all: 執行所有測試
+; 執行所有測試
 test-run-all = () {
     print('=== HPACK Tests ===')
     test-encode-int-small()

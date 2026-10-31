@@ -34,6 +34,7 @@ ARGON2-MASK u64 = 18446744073709551615
 ; ═══════════════════════════════════════════════
 
 ; rotr64: 64-bit 循環右移
+; [rotr](#crypto.argon2.rotr)
 rotr = (x u64, n i64) (r u64) {
 
     r = ((x >> n) | (x << (64 - n))) & ARGON2-MASK
@@ -41,6 +42,7 @@ rotr = (x u64, n i64) (r u64) {
 
 ; Blake2b G 函數（用於 Argon2 壓縮函數）
 ; 操作 8 個 u64 值（索引 a..h 在 v 陣列中）
+; [blake-g](#crypto.argon2.blake-g)
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 
     #{index-out=zero}
@@ -96,10 +98,11 @@ blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 ; 可變長度 Blake2b（H'）
 ; ═══════════════════════════════════════════════
 
-; h-prime: 可變長度 Blake2b
+; 可變長度 Blake2b
 ; input []byte: 輸入資料
 ; out-len i64: 輸出長度
 ; 返回 out []byte: 輸出雜湊
+; [h-prime](#crypto.argon2.h-prime)
 h-prime = (input []byte, out-len i64) (out []byte) {
     out = with-cap(out-len)
 
@@ -252,10 +255,11 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 ; 壓縮函數 G
 ; ═══════════════════════════════════════════════
 
-; compress: Argon2 壓縮函數 G(X, Y)
+; Argon2 壓縮函數 G(X, Y)
 ; x []byte: 1024 位元組區塊 X
 ; y []byte: 1024 位元組區塊 Y
 ; 返回 out []byte: 1024 位元組結果
+; [compress](#crypto.argon2.compress)
 compress = (x []byte, y []byte) (out []byte) {
     out = with-len(1024)
 
@@ -387,7 +391,7 @@ compress = (x []byte, y []byte) (out []byte) {
 ; Argon2id 公開 API
 ; ═══════════════════════════════════════════════
 
-; id: Argon2id 金鑰推導
+; Argon2id 金鑰推導
 ; password []byte: 密碼
 ; salt []byte: 鹽值
 ; time-cost i64: 時間成本（迭代次數，如 3）
@@ -395,6 +399,7 @@ compress = (x []byte, y []byte) (out []byte) {
 ; parallelism i64: 並行度（如 1）
 ; out-len i64: 輸出長度（位元組）
 ; 返回 out []byte: 推導出的金鑰
+; [id](#crypto.argon2.id)
 id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism i64, out-len i64) (out []byte) {
 
     ; 計算記憶體區塊數

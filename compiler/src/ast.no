@@ -173,7 +173,7 @@ zero-nd = () (d nd) {
     }
 }
 
-; make: 建立空 arena（索引 0 保留為「無節點」；strs/aux 的索引 0 亦保留）
+; 建立空 arena（索引 0 保留為「無節點」；strs/aux 的索引 0 亦保留）
 make = () (r ast) {
     r = ast {
         nodes: []
@@ -205,7 +205,7 @@ make = () (r ast) {
     }
 }
 
-; add: 新增節點，回傳其索引（>= 1）
+; 新增節點，回傳其索引（>= 1）
 add = (t ast, kind i64) (idx i64) {
     d = ast.zero-nd()
     d.kind = kind
@@ -219,7 +219,7 @@ add = (t ast, kind i64) (idx i64) {
     idx = t.n - 1
 }
 
-; kid-add: 把子節點索引附加到節點 i 的 kids 區段
+; 把子節點索引附加到節點 i 的 kids 區段
 kid-add = (t ast, i i64, c i64) {
     t.kids.push(c)
     d = ast.nd-at(t, i)
@@ -229,7 +229,7 @@ kid-add = (t ast, i i64, c i64) {
     ast.nd-put(t, i, d)
 }
 
-; set-count: 第 slot 個 KIDS 指令的元素數（slot 從 0 起）
+; 第 slot 個 KIDS 指令的元素數（slot 從 0 起）
 set-count = (t ast, i i64, slot i64, v i64) {
     d = ast.nd-at(t, i)
     {
@@ -245,7 +245,7 @@ set-count = (t ast, i i64, slot i64, v i64) {
     ast.nd-put(t, i, d)
 }
 
-; set-sig: SIG 的三組節點數（泛型參數 / 參數 / 回傳值）
+; SIG 的三組節點數（泛型參數 / 參數 / 回傳值）
 set-sig = (t ast, i i64, ng i64, np i64, nr i64) {
     d = ast.nd-at(t, i)
     d.c3 = ng
@@ -254,7 +254,7 @@ set-sig = (t ast, i i64, ng i64, np i64, nr i64) {
     ast.nd-put(t, i, d)
 }
 
-; set-slot: 第 slot 個純量字串槽（slot 從 0 起；**不含** doc/cmt）
+; 第 slot 個純量字串槽（slot 從 0 起；**不含** doc/cmt）
 set-slot = (t ast, i i64, slot i64, v i64) {
     d = ast.nd-at(t, i)
     {
@@ -282,7 +282,7 @@ set-slot = (t ast, i i64, slot i64, v i64) {
     ast.nd-put(t, i, d)
 }
 
-; set-sig-extras: SIG 的 VariadicUnion 與 IsVariadic
+; SIG 的 VariadicUnion 與 IsVariadic
 set-sig-extras = (t ast, i i64, union i64, variadic i64) {
     d = ast.nd-at(t, i)
     d.varunion = union
@@ -306,7 +306,7 @@ set-cmt = (t ast, i i64, v i64) {
     ast.nd-put(t, i, d)
 }
 
-; set-comments: free / btw 的註解條數（-1 = 無群組）
+; free / btw 的註解條數（-1 = 無群組）
 set-comments = (t ast, i i64, free i64, btw i64) {
     d = ast.nd-at(t, i)
     d.free = free
@@ -314,7 +314,7 @@ set-comments = (t ast, i i64, free i64, btw i64) {
     ast.nd-put(t, i, d)
 }
 
-; aux-begin: 開始本節點的 aux 區段（trailing → closing → implements 依序 append）
+; 開始本節點的 aux 區段（trailing → closing → implements 依序 append）
 aux-begin = (t ast, i i64) (base i64) {
     base = t.aux.len()
     d = ast.nd-at(t, i)
@@ -322,12 +322,12 @@ aux-begin = (t ast, i i64) (base i64) {
     ast.nd-put(t, i, d)
 }
 
-; aux-add: 追加一個 aux 值（註解文字 id / implements 字串 id）
+; 追加一個 aux 值（註解文字 id / implements 字串 id）
 aux-add = (t ast, v i64) {
     t.aux.push(v)
 }
 
-; set-aux-counts: 三段 aux 區段的條數
+; 三段 aux 區段的條數
 set-aux-counts = (t ast, i i64, ntrail i64, nclos i64, nimp i64) {
     d = ast.nd-at(t, i)
     d.ntrail = ntrail
@@ -336,7 +336,7 @@ set-aux-counts = (t ast, i i64, ntrail i64, nclos i64, nimp i64) {
     ast.nd-put(t, i, d)
 }
 
-; helper-begin: 開始本節點的 HELPER 區段（每個元素 2 個 aux 值：name-id, tnode）
+; 開始本節點的 HELPER 區段（每個元素 2 個 aux 值：name-id, tnode）
 helper-begin = (t ast, i i64, count i64) (base i64) {
     base = t.aux.len()
     d = ast.nd-at(t, i)
@@ -456,7 +456,7 @@ put-str = (t ast, s str) (id i64) {
     id = ast-str-intern(t, s)
 }
 
-; put-doc-str：Doc / Comment 欄位用的**首條註解文字** id。
+; Doc / Comment 欄位用的**首條註解文字** id。
 ;
 ;   空字串 ⇒ -1（群組存在但首條文字為空）；非空 ⇒ put-str 的 id（≥1）。
 ;   ⚠️ 不能直接用 put-str：它對空字串回 0，而 0 在 doc/cmt 欄位是
@@ -497,7 +497,7 @@ kid-at = (t ast, i i64) (v i64) {
     v = t.kids[i]
 }
 
-; ins: 第 i 條指令的第 j 欄（每條 5 個 i64）
+; 第 i 條指令的第 j 欄（每條 5 個 i64）
 ins = (t ast, i i64, j i64) (v i64) {
     v = 0
 
@@ -513,7 +513,7 @@ ins = (t ast, i i64, j i64) (v i64) {
     v = t.tape[p]
 }
 
-; kind-f: 節點種類 k 的第 j 欄（每種 4 個 i64）
+; 節點種類 k 的第 j 欄（每種 4 個 i64）
 kind-f = (t ast, k i64, j i64) (v i64) {
     v = 0
 
@@ -587,7 +587,7 @@ nd-s = (d nd, j i64) (v i64) {
     }
 }
 
-; child-at: 預掃出來的 CHILD 節點索引陣列的第 ref 項（越界回 0）
+; 預掃出來的 CHILD 節點索引陣列的第 ref 項（越界回 0）
 child-at = (t ast, childs []i64, ref i64) (v i64) {
     v = 0
     ref < 0 -> return
@@ -631,14 +631,14 @@ indent = (o sb, depth i64) {
     }
 }
 
-; line: 「縮排 + s + 換行」
+; 「縮排 + s + 換行」
 line = (o sb, depth i64, s str) {
     ast.indent(o, depth)
     o.push(s)
     o.push-byte(10)
 }
 
-; sub: 位元組切片（等價於 Go 的 s[a:b]，a/b 都是位元組索引）
+; 位元組切片（等價於 Go 的 s[a:b]，a/b 都是位元組索引）
 sub = (s str, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
@@ -656,7 +656,7 @@ sub = (s str, a i64, b i64) (r str) {
     r = t.str()
 }
 
-; trim-nl: 去掉尾端的換行（等價於 Go 的 strings.TrimRight(s, "\n")）
+; 去掉尾端的換行（等價於 Go 的 strings.TrimRight(s, "\n")）
 trim-nl = (s str) (r str) {
     n = s.len-bytes()
     (n > 0) {
@@ -764,7 +764,7 @@ type-string = (t ast, i i64) (r str) {
     }
 }
 
-; expr-string: 等價於 parser.exprToString（ArrayType 的大小運算式）
+; 等價於 parser.exprToString（ArrayType 的大小運算式）
 expr-string = (t ast, i i64) (r str) {
     r = ''
     i <= 0 -> return
@@ -805,7 +805,7 @@ expr-string = (t ast, i i64) (r str) {
     }
 }
 
-; fold-int: 等價於 parser.evalConstIntExpr。可折疊時回十進位字串，否則回 ''
+; 等價於 parser.evalConstIntExpr。可折疊時回十進位字串，否則回 ''
 ;
 ; ⚠️ 用 '' 當「不可折疊」的哨兵是安全的：成功折疊的結果一律非空（連 "0" 也非空）。
 fold-int = (t ast, d nd) (r str) {
@@ -855,12 +855,12 @@ fold-int = (t ast, d nd) (r str) {
     }
 }
 
-; int-str: i64 → 十進位字串（避免各處重複寫 `-` 的型別推斷問題）
+; i64 → 十進位字串（避免各處重複寫 `-` 的型別推斷問題）
 int-str = (v i64) (r str) {
     r = v.to-str()
 }
 
-; fn-str: 等價於 FunctionType.String()
+; 等價於 FunctionType.String()
 fn-str = (t ast, d nd) (r str) {
     r = 'fn('
     np = d.c0
@@ -896,7 +896,7 @@ fn-str = (t ast, d nd) (r str) {
     }
 }
 
-; param-type: Parameter.Type 的 typeString（Parameter 的第一個 CHILD 就是 Type）
+; Parameter.Type 的 typeString（Parameter 的第一個 CHILD 就是 Type）
 param-type = (t ast, pi i64) (r str) {
     r = ''
     pi <= 0 -> return
@@ -908,24 +908,24 @@ param-type = (t ast, pi i64) (r str) {
 ; dump：解譯 asp.no 的指令帶
 ; ═══════════════════════════════════════════════════════════════════
 
-; dump: 走訪 root 子樹，回傳完整文字（**不帶**尾端換行，與 dump.go 相同）
+; 走訪 root 子樹，回傳完整文字（**不帶**尾端換行，與 dump.go 相同）
 dump = (t ast, root i64) (r str) {
     o = sb.init(4096)
     ast.node(t, o, root, 0)
     r = ast.trim-nl(o.str())
 }
 
-; unsupported: 這次 dump 遇到幾個「尚未接線」的指令（0 ⇒ dump 可信）
+; 這次 dump 遇到幾個「尚未接線」的指令（0 ⇒ dump 可信）
 unsupported = (t ast) (n i64) {
     n = t.unsup
 }
 
-; gaps: 幾個「不可重現」的摘要分支被命中（不影響 unsup，但值得追）
+; 幾個「不可重現」的摘要分支被命中（不影響 unsup，但值得追）
 gaps = (t ast) (n i64) {
     n = t.gaps
 }
 
-; node: 印出節點 i 及其子樹
+; 印出節點 i 及其子樹
 node = (t ast, o sb, i i64, depth i64) {
     i <= 0 -> {
         ast.line(o, depth, '<nil>')
@@ -1128,7 +1128,7 @@ node = (t ast, o sb, i i64, depth i64) {
 ; 註解
 ; ═══════════════════════════════════════════════════════════════════
 
-; comments: Doc: //… 與 Comment: //…
+; Doc: //… 與 Comment: //…
 ; ⚠️ commentGroupInline 只印群組的**第一條**註解（dump.go 的既有行為），
 ;    且**無條件**印 "//" + 首條文字 + 換行（dump.go:954-958）：
 ;    首條文字為空（裸 `;`）⇒ 輸出 "Doc: //" + 換行。
@@ -1234,7 +1234,7 @@ closing-comments = (t ast, o sb, d nd, depth i64) {
     }
 }
 
-; implements: InterfaceDefinition.Implements []string，Go 端用 %v ⇒ "[a b c]"
+; InterfaceDefinition.Implements []string，Go 端用 %v ⇒ "[a b c]"
 implements = (t ast, o sb, d nd, depth i64) {
     d.nimp > 0 -> {
 
@@ -1271,7 +1271,7 @@ implements = (t ast, o sb, d nd, depth i64) {
 ; 共用子結構
 ; ═══════════════════════════════════════════════════════════════════
 
-; signature: FunctionDefinition / FunctionLiteral 的參數與回傳值區塊。
+; FunctionDefinition / FunctionLiteral 的參數與回傳值區塊。
 ;
 ; ⚠️ 注意這裡的子節點印在 **depth**（不是 depth+1），與 dump.go 一致。
 ; ⚠️ 泛型參數是 `[]*Identifier`，只印**名字**（不當節點遞迴）；
@@ -1339,7 +1339,7 @@ signature = (t ast, o sb, d nd, depth i64) {
     }
 }
 
-; helper: 分派非 Node 的子結構（dump.go 的 (*dumper).helper）
+; 分派非 Node 的子結構（dump.go 的 (*dumper).helper）
 ;
 ; ⚠️ 已接線 taggedEnumField（TaggedEnumVariant.Fields）、matchArm（SurfaceMatch.Arms）
 ;    與 interfaceMethod（InterfaceDefinition）。annotationStructField
@@ -1597,7 +1597,7 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
 ; 標頭行與純量
 ; ═══════════════════════════════════════════════════════════════════
 
-; header: 印一條 OP-HDR 指令（含其後緊跟的 OP-SCALAR 指令）
+; 印一條 OP-HDR 指令（含其後緊跟的 OP-SCALAR 指令）
 ;
 ; ⚠️ SCALAR 的掃描必須**以本種類的指令範圍 last 為界**，不能只靠
 ;    「下一條是不是 OP-SCALAR」——那會在跨越種類邊界時誤吞下一種的指令。
@@ -1655,7 +1655,7 @@ header = (t ast, o sb, d nd, ins i64, last i64, childs []i64, depth i64) {
     o.push-byte(10)
 }
 
-; scalar: 渲染第 k 條 OP-SCALAR 指令，回傳 (是否印出, 文字)
+; 渲染第 k 條 OP-SCALAR 指令，回傳 (是否印出, 文字)
 ;
 ; 指令欄位：(op, policy, render, of, label-id | ref<<24)
 scalar = (t ast, d nd, k i64, childs []i64) (shown i64, text str) {
@@ -1702,7 +1702,7 @@ scalar = (t ast, d nd, k i64, childs []i64) (shown i64, text str) {
     }
 }
 
-; wanted: 純量印出政策（dump.go 的 kv / kvs / kvb / kvn / kvc）
+; 純量印出政策（dump.go 的 kv / kvs / kvb / kvn / kvc）
 wanted = (pol i64, val str) (yes i64) {
     yes = 1
     {
