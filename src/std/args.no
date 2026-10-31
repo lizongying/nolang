@@ -9,17 +9,20 @@
 
 ; count: 參數數量（含程式名）
 ; 委派至 os.args() builtin（回傳完整 argv 向量，取其長度）
+; [count](#args.count)
 count = () (n i64) {
     n = os.args().len()
 }
 
 ; get: 獲取第 i 個參數
 ; 委派至 os.arg(i) builtin（讀取 main 的 argv[i]）；越界回傳 nil
+; [get](#args.get)
 get = (i i64) (val ?str) {
     val = os.arg(i)
 }
 
 ; program: 程式名（第 0 個參數）
+; [program](#args.program)
 program = () (name ?str) {
     name = os.arg(0)
 }

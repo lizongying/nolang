@@ -99,7 +99,7 @@ func annotationPrefixIllegal(t lexer.TokenType) bool {
 // "line %d, column %d: ..." 格式，LSP 的 parseErrorToDiagnostic 才能定位
 // （見 lsp/server.go），編譯與 LSP 因此共用同一條規則。
 func (p *Parser) errPrefixAnnotation(tok lexer.Token) {
-	p.saveErrorf("0j1imd2d", "line %d, column %d: `#{...}` 註解不能寫在目標前方同一行；請獨立成行置於目標上方，或寫在目標同一行尾隨",
+	p.saveErrorf("0j1imd2d", "line %d, column %d: an `#{...}` annotation cannot share the line in front of its target; put it on a line of its own above the target, or trailing on the target's own line",
 		tok.Line, tok.Column)
 }
 

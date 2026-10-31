@@ -8,9 +8,14 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// lenDeprTraceID is the TraceID ValidateDeprecatedLen stamps on every `.len`
-// property diagnostic.
-const lenDeprTraceID = "kbutx330"
+// lenDeprTraceIDs are the TraceIDs ValidateDeprecatedLen stamps on `.len`
+// property diagnostics. There are two because the wording differs for str
+// (codepoint count + byte length) and for containers (element count), and the
+// TraceID doubles as the translation index: one ID may map to only one text.
+var lenDeprTraceIDs = map[string]bool{
+	"rhajr9l9": true, // str.len
+	"gf3kb05g": true, // recv.len
+}
 
 // validateLenDepr runs the production entry point (ValidateTypes, which
 // populates validationStructFields before delegating to ValidateDeprecatedLen
@@ -25,7 +30,7 @@ func validateLenDepr(t *testing.T, src string) []ValidateResult {
 	}
 	var out []ValidateResult
 	for _, r := range ValidateTypes(prog) {
-		if r.TraceID == lenDeprTraceID {
+		if lenDeprTraceIDs[r.TraceID] {
 			out = append(out, r)
 		}
 	}

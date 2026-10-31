@@ -26,7 +26,7 @@ package checker
 //     因為本守衛的資料來源只有 std 簽名表，對非 std 符號沒有任何事實可依。
 
 import (
-	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"sort"
 	"strings"
 	"sync"
@@ -174,7 +174,7 @@ func checkPrivateStdCall(e *parser.CallExpression, dot *parser.DotExpression, re
 		TraceID: "raqvyltn",
 		Line:    line,
 		Column:  col,
-		Message: fmt.Sprintf("private std symbol '%s' is owned by module %s and may only be used inside it, not from %s; use the public API instead",
+		Message: i18n.T("raqvyltn", "private std symbol '%s' is owned by module %s and may only be used inside it, not from %s; use the public API instead",
 			dot.Property, strings.Join(from, "/"), where),
 	}}
 }

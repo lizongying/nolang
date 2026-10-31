@@ -43,6 +43,14 @@ type Options struct {
 	// Load returns the catalog for a resolved tag. A nil Load means "English
 	// only": the resolver still reports the tag, but no catalog is installed.
 	Load func(tag string) (map[string]string, error)
+	// DocLoad returns the DOC catalog for a resolved tag — the translations of
+	// `; ...` source comments marked with a trailing Markdown link. It is a
+	// separate loader from Load because the two tables obey different rules:
+	// a message's inline default is English (so "en" needs no table), while a
+	// doc comment is written in whatever language its author used (so "en" is
+	// a translation target and DOES need one). A missing doc catalog is not an
+	// error: nil, nil means "no doc translations for this tag".
+	DocLoad func(tag string) (map[string]string, error)
 	// Canonical maps an alias onto the tag whose catalog file actually exists
 	// (e.g. "zh" -> "zh-CN"). Nil means identity. It is applied after Resolve
 	// and before Load, so the reported language is always the file's own tag.
@@ -63,6 +71,12 @@ var (
 
 	msgMu sync.RWMutex
 	msgs  map[string]string // nil means "no catalog": every lookup falls back
+	// docMsgs is the catalog Doc() reads. It is a SEPARATE map from msgs
+	// because the two have opposite rules for English: msgs must stay empty
+	// under "en" (T's no-lookup fast path), while docMsgs must be populated
+	// under "en" (English is a translation target for source comments, which
+	// are authored in whatever language their writer used).
+	docMsgs map[string]string
 
 	missMu sync.Mutex
 	missed map[string]struct{}
@@ -91,6 +105,7 @@ func SetLang(tag string) {
 	langVal.Store(tag)
 	msgMu.Lock()
 	msgs = nil
+	docMsgs = nil
 	msgMu.Unlock()
 }
 
@@ -144,15 +159,78 @@ func Translate(id, def string, args ...any) string {
 	return T(id, def, args...)
 }
 
-// Errorf translates id and returns it as an error. It is the only helper that
-// may be given a %w verb, because it delegates to fmt.Errorf on the resolved
-// format instead of Sprintf.
-func Errorf(id, def string, args ...any) error {
-	if format := lookup(id); format != "" {
-		return newError(format, args)
+// A doc link needs no ID derivation: the author writes the key in the source as
+// the anchor of a Markdown link (`[get](#args.get)`), so producer and consumer
+// both read it instead of computing it. That is deliberate — a content-addressed
+// key would require the .no scanner and the LSP to agree byte for byte on where a
+// doc block starts and ends, and any disagreement would silently orphan the
+// translation.
+
+// SetDocCatalog installs the table Doc reads. It is independent of SetCatalog:
+// it is installed under every language, including "en".
+//
+// A nil or empty table means "no doc translations", so Doc falls back to the
+// comment text found in the source.
+func SetDocCatalog(table map[string]string) {
+	if len(table) == 0 {
+		msgMu.Lock()
+		docMsgs = nil
+		msgMu.Unlock()
+		return
 	}
-	recordMissing(id)
-	return newError(def, args)
+	cp := make(map[string]string, len(table))
+	for k, v := range table {
+		cp[k] = v
+	}
+	msgMu.Lock()
+	docMsgs = cp
+	msgMu.Unlock()
+}
+
+// Doc resolves a documentation string — the body of a source comment that ends
+// with a Markdown link anchor — and returns it verbatim. key is the anchor
+// (`args.get` for `[get](#args.get)`).
+//
+// It differs from T in exactly two ways, both deliberate:
+//
+//  1. It consults the catalog under "en" too. T's no-lookup fast path is sound
+//     only because the inline default of a *message* is written in English; a
+//     doc comment is written in whatever language its author used (the shipped
+//     std sources are Chinese), so for docs English is a translation TARGET.
+//  2. It never formats. Doc text routinely contains a literal `%` ("50% of the
+//     buffer") and there are no arguments to interpolate; running Sprintf would
+//     turn that into `%!(NOVERB)`.
+//
+// A missing translation falls back to def, so a hover is always readable and
+// never empty, and an untranslated comment degrades to the source text instead
+// of disappearing.
+func Doc(key, def string) string {
+	if key == "" {
+		return def
+	}
+	msgMu.RLock()
+	t := docMsgs[key]
+	msgMu.RUnlock()
+	if t != "" {
+		return t
+	}
+	recordMissing(key)
+	return def
+}
+
+// Errorf translates id and returns it as an error carrying that ID. It is the
+// only helper that may be given a %w verb, because it delegates to fmt.Errorf on
+// the resolved format instead of Sprintf.
+//
+// The returned error is an *Error, so Error() renders "[id] message" and the ID
+// survives %w wrapping (see Error).
+func Errorf(id, def string, args ...any) error {
+	format := lookup(id)
+	if format == "" {
+		recordMissing(id)
+		format = def
+	}
+	return NewError(id, newError(format, args))
 }
 
 // Missing reports the IDs that fell back to English, sorted. It is diagnostic
@@ -197,6 +275,16 @@ func Init(o Options) error {
 		}
 	}
 
+	err := installMessages(o, tag)
+	// Docs come second on purpose: every message installer calls SetLang, which
+	// clears both tables, so installing docs first would wipe them immediately.
+	installDocs(o, tag)
+	return err
+}
+
+// installMessages resolves the message catalog. English is the "no catalog"
+// language by definition, so it never loads one.
+func installMessages(o Options, tag string) error {
 	if tag == defaultLang || o.Load == nil {
 		SetLang(tag)
 		return nil
@@ -209,6 +297,24 @@ func Init(o Options) error {
 	return nil
 }
 
+// installDocs resolves the doc catalog. Unlike messages this runs for every
+// language including English, and a failure is never fatal: a doc translation is
+// a presentation nicety, so a malformed doc file degrades to "show the source
+// text" instead of stopping the compiler.
+func installDocs(o Options, tag string) {
+	if o.DocLoad == nil {
+		return
+	}
+	table, err := o.DocLoad(tag)
+	if err != nil {
+		if o.Warn != nil {
+			o.Warn(fmt.Sprintf("doc translations for %q unavailable, comments will show source text: %v", tag, err))
+		}
+		return
+	}
+	SetDocCatalog(table)
+}
+
 // WithLang runs fn with tag active and restores the previous language and
 // catalog afterwards. Tests must use it instead of bare SetLang so that a
 // forgotten restore cannot leak into a sibling test.
@@ -216,11 +322,13 @@ func WithLang(tag string, fn func()) {
 	prevLang := Lang()
 	msgMu.RLock()
 	prevMsgs := msgs
+	prevDocs := docMsgs
 	msgMu.RUnlock()
 	defer func() {
 		langVal.Store(prevLang)
 		msgMu.Lock()
 		msgs = prevMsgs
+		docMsgs = prevDocs
 		msgMu.Unlock()
 	}()
 	SetLang(tag)

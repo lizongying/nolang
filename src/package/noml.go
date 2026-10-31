@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // ─── noml：Nolang Markup Language ────────────────────────────────────────────
@@ -25,6 +27,9 @@ import (
 //     只允許獨立成行寫在成員**上方**，或寫在成員同一行的**尾隨**位置。
 //     寫在成員前方同一行（`#{...} name: 'x'`）是語法錯誤，判定規則與 nolang
 //     的 `#{...}` 位置規則同源。
+//   - 文件級註解：寫在頂層值**上方**（或頂層值同一行尾隨）的 `#{...}` 屬於整份
+//     文件，保存在 Annotations 的空路徑 `""`。`#{name = 'server-config'}`（或
+//     `#{type = '...'}`）指定重建後的結構體名，預設用檔名。
 //
 // 成員註解目前用於攜帶「元素型別」（`#{type = '[]str'}`）：noml 值本身無型別
 // （`[]`、`0`、`'0'` 都合法），要由 noml 重建強型別結構（例如 nolang 直接
@@ -85,9 +90,10 @@ func IsNomlIdentifierKey(s string) bool {
 // 數字、true/false/null、裸識別字與陣列；裸鍵（`#{debug}`）的 Value 為 nil。
 // 位置規則也一致：只允許獨立成行寫在成員上方，或寫在成員同一行的尾隨位置。
 //
-// 目前唯一有語意的鍵是 `type`（值為 nolang 型別表達式字串，如 `'[]str'`、
-// `'i64'`、`'compiler-options'`），其餘鍵作為元數據原樣保留。成員型別只由
-// 該成員的註解攜帶——這是「從 noml 重建強型別結構」的前提。
+// 有語意的鍵是 `type`（值為 nolang 型別表達式字串，如 `'[]str'`、`'i64'`、
+// `'compiler-options'`），其餘鍵作為元數據原樣保留。成員型別只由該成員的註解
+// 攜帶——這是「從 noml 重建強型別結構」的前提。文件級註解（空路徑 `""`）另
+// 支援 `name`，指定重建後的結構體名。
 //
 // 註解不進值樹，而是保存在 NomlDoc.Annotations（成員路徑 → 條目）。
 type NomlAnnotation struct {
@@ -99,6 +105,7 @@ type NomlAnnotation struct {
 // NomlDoc 是帶註解的 noml 文件。Root 是物件值樹（頂層非物件時為 nil），
 // Annotations 以成員路徑（`compiler.version`、`dependencies`）為 key 保存
 // 該成員的註解條目。路徑段使用原始鍵名；陣列元素不携带獨立註解。
+// 空路徑 `""` 是文件級註解（寫在頂層值上方或同一行尾隨）。
 type NomlDoc struct {
 	Root        map[string]any
 	Value       any
@@ -106,6 +113,7 @@ type NomlDoc struct {
 }
 
 // TypeOf 回傳某成員 `#{type = '...'}` 標註的型別字串（未標註回傳 ""）。
+// 傳空路徑即回傳文件級 `#{type = '...'}`（整個文檔的型別 = 結構體名）。
 func (d *NomlDoc) TypeOf(path string) string {
 	for _, a := range d.Annotations[path] {
 		if a.Key != "type" {
@@ -116,6 +124,30 @@ func (d *NomlDoc) TypeOf(path string) string {
 		}
 	}
 	return ""
+}
+
+// RootName 回傳文件級註解指定的結構體名：`#{name = '...'}` 優先，其次
+// `#{type = '...'}`（頂部註解描述整份文件，其 type 就是重建後的結構體名）。
+// 未標註回傳 ""，呼叫方退回預設規則（檔名）。名字的正規化與合法性由導入方
+// 按 nolang 識別符規則處理，本函式只取註解原文。
+func (d *NomlDoc) RootName() string {
+	if d == nil {
+		return ""
+	}
+	name := ""
+	for _, a := range d.Annotations[""] {
+		s, ok := a.Value.(string)
+		if !ok || s == "" {
+			continue
+		}
+		if a.Key == "name" {
+			return s
+		}
+		if a.Key == "type" && name == "" {
+			name = s
+		}
+	}
+	return name
 }
 
 type nomlParser struct {
@@ -145,9 +177,33 @@ func ParseNomlDoc(data []byte) (*NomlDoc, error) {
 	if p.pos >= len(p.data) {
 		return nil, p.errf("empty input")
 	}
+	// 文件級註解：寫在頂層值上方的 `#{...}`（可多個群組，各自獨立成行）。
+	var rootAnns []NomlAnnotation
+	for {
+		group, err := p.parseLeadingAnnotations()
+		if err != nil {
+			return nil, err
+		}
+		if len(group) == 0 {
+			break
+		}
+		rootAnns = append(rootAnns, group...)
+		p.skipTrivia()
+		if p.pos >= len(p.data) {
+			return nil, p.errf("annotation without a value to attach to")
+		}
+	}
 	v, err := p.parseValue("")
 	if err != nil {
 		return nil, err
+	}
+	// 頂層值同一行尾隨的註解同樣屬於整份文件。
+	trail, err := p.parseTrailingAnnotations()
+	if err != nil {
+		return nil, err
+	}
+	if all := dedupeNomlAnnotations(append(rootAnns, trail...)); len(all) > 0 {
+		p.anns[""] = all
 	}
 	p.skipTrivia()
 	if p.pos < len(p.data) {
@@ -168,7 +224,7 @@ func ParseNomlMap(data []byte) (map[string]any, error) {
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("noml: expected object, got %T", v)
+		return nil, i18n.Errorf("97nc8yti", "noml: expected object, got %T", v)
 	}
 	return m, nil
 }
@@ -193,6 +249,8 @@ func (p *nomlParser) parseValue(path string) (any, error) {
 		return p.parseArray(path)
 	case c == '\'':
 		return p.parseString()
+	case c == '`':
+		return p.parseRawString()
 	case c == 't' || c == 'f':
 		return p.parseBool()
 	case c == 'n':
@@ -424,6 +482,10 @@ func (p *nomlParser) parseAnnotationValue() (any, error) {
 	switch {
 	case c == '\'':
 		return p.parseString()
+	case c == '`':
+		// 多行說明文字（模組 / 方法 / 函式的 doc 註解）走原始字串，
+		// 這樣翻譯索引對應的文字可以保持原本的換行與縮排。
+		return p.parseRawString()
 	case c == '[':
 		p.advance() // skip [
 		var arr []any
@@ -612,6 +674,59 @@ func (p *nomlParser) parseString() (string, error) {
 	return "", p.errf("unterminated string")
 }
 
+// parseRawString 解析反引號原始字串，語法與 nolang 原始碼的反引號字面量完全一致：
+//
+//   - 開頭 ` 後必須緊跟一個換行
+//   - 結尾 ` 必須單獨佔一行（該行只允許空白 + `）
+//   - 首尾兩行不計入內容
+//   - 內部所有字元原樣保留，**不做任何轉義解析**（所以 `\n` 就是反斜線加 n）
+//
+// 存在的理由：單引號字串禁止跨行，長文案（診斷訊息、模組/函式說明）只能寫成
+// `\n` 轉義，既不可讀也容易被翻譯者改壞。原始字串讓多行文案保持原樣。
+//
+// 唯一的偏離：CRLF 檔案裡緊跟換行的 `\r` 會被丟棄。原始碼 lexer 保留它，但那
+// 會讓每個 Windows 換行都變成譯文裡的一個真實 `\r`，而 .noml 是資料而非程式。
+func (p *nomlParser) parseRawString() (string, error) {
+	if p.pos >= len(p.data) || p.data[p.pos] != '`' {
+		return "", p.errf("expected \"`\"")
+	}
+	p.advance() // 跳過開頭 `
+
+	if p.pos >= len(p.data) || p.data[p.pos] != '\n' {
+		return "", p.errf("raw string: the opening ` must be followed by a newline")
+	}
+	p.advance() // 跳過開頭換行
+
+	var sb strings.Builder
+	for p.pos < len(p.data) {
+		c := p.data[p.pos]
+
+		// 結尾偵測：換行之後的一行若只有空白 + ` 就是結束標記。
+		if c == '\n' {
+			j := p.pos + 1
+			for j < len(p.data) && (p.data[j] == ' ' || p.data[j] == '\t' || p.data[j] == '\r') {
+				j++
+			}
+			if j < len(p.data) && p.data[j] == '`' {
+				for p.pos <= j {
+					p.advance()
+				}
+				return sb.String(), nil
+			}
+			sb.WriteByte('\n')
+			p.advance()
+			continue
+		}
+		if c == '\r' && p.pos+1 < len(p.data) && p.data[p.pos+1] == '\n' {
+			p.advance()
+			continue
+		}
+		sb.WriteByte(c)
+		p.advance()
+	}
+	return "", p.errf("unterminated raw string (the closing ` must be alone on its own line)")
+}
+
 func (p *nomlParser) parseBool() (bool, error) {
 	if p.matchKeyword("true") {
 		return true, nil
@@ -621,7 +736,6 @@ func (p *nomlParser) parseBool() (bool, error) {
 	}
 	return false, p.errf("invalid boolean literal")
 }
-
 func (p *nomlParser) parseNull() (any, error) {
 	if p.matchKeyword("null") {
 		return nil, nil
@@ -766,7 +880,7 @@ func (p *nomlParser) advance() {
 }
 
 func (p *nomlParser) errf(format string, args ...any) error {
-	return fmt.Errorf("noml: line %d col %d: %s", p.line, p.col, fmt.Sprintf(format, args...))
+	return i18n.Errorf("m8blb8q2", "noml: line %d col %d: %s", p.line, p.col, fmt.Sprintf(format, args...))
 }
 
 // ─── 序列化 ──────────────────────────────────────────────────────────────────
@@ -800,6 +914,33 @@ func NomlQuote(s string) string {
 	return sb.String()
 }
 
+// NomlQuoteValue 產生 noml 值面值。含換行的字串用反引號原始字串輸出（見
+// parseRawString），單行字串仍用單引號——這樣長文案在檔案裡保持可讀，而不是
+// 變成一長串 `\n` 轉義。
+//
+// 只有當內容能安全往返時才用原始形式：任何一行若去掉前導空白後恰好是 `，就會
+// 被解析器當成結束標記，這種字串退回單引號形式（`\n` 轉義仍然正確）。
+func NomlQuoteValue(s string) string {
+	if strings.ContainsRune(s, '\n') && rawStringSafe(s) {
+		var sb strings.Builder
+		sb.WriteString("`\n")
+		sb.WriteString(s)
+		sb.WriteString("\n`")
+		return sb.String()
+	}
+	return NomlQuote(s)
+}
+
+// rawStringSafe 判斷 s 放進反引號區塊後能否原樣取回。
+func rawStringSafe(s string) bool {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimLeft(line, " \t\r") == "`" {
+			return false
+		}
+	}
+	return true
+}
+
 // nomlFormatKey 依裸鍵規則決定是否加引號。
 func nomlFormatKey(k string) string {
 	if IsNomlIdentifierKey(k) {
@@ -826,14 +967,24 @@ func MarshalNoml(v any) (string, error) {
 	return sb.String(), nil
 }
 
-// MarshalNomlDoc 序列化帶註解的 noml 文件：成員的 `#{...}` 註解輸出在成員
-// 上方的獨立一行（與解析端接受的位置一致），因此 ParseNomlDoc → MarshalNomlDoc
-// 可完整往返（重建）。
+// MarshalNomlDoc 序列化帶註解的 noml 文件：文件級註解（空路徑）輸出在頂層值
+// 上方的獨立一行，成員的 `#{...}` 註解輸出在成員上方的獨立一行（與解析端接受
+// 的位置一致），因此 ParseNomlDoc → MarshalNomlDoc 可完整往返（重建）。
 func MarshalNomlDoc(doc *NomlDoc) (string, error) {
 	if doc == nil {
 		return "", nil
 	}
 	var sb strings.Builder
+	if entries := doc.Annotations[""]; len(entries) > 0 {
+		// 文件級註解輸出在頂層值上方的獨立一行（與解析端接受的位置一致）。
+		sb.WriteString("#{")
+		out := make([]string, 0, len(entries))
+		for _, a := range entries {
+			out = append(out, FormatNomlAnnotation(a))
+		}
+		sb.WriteString(strings.Join(out, ", "))
+		sb.WriteString("}\n")
+	}
 	if err := nomlWriteAnnotated(&sb, doc.Value, 0, "", doc.Annotations); err != nil {
 		return "", err
 	}
@@ -916,7 +1067,7 @@ func nomlNormalize(v any) (any, error) {
 		switch rv.Kind() {
 		case reflect.Map:
 			if rv.Type().Key().Kind() != reflect.String {
-				return nil, fmt.Errorf("noml: map key must be string: %T", v)
+				return nil, i18n.Errorf("89pwo0vg", "noml: map key must be string: %T", v)
 			}
 			m := make(map[string]any, rv.Len())
 			iter := rv.MapRange()
@@ -947,7 +1098,7 @@ func nomlNormalize(v any) (any, error) {
 		case reflect.Float32, reflect.Float64:
 			return rv.Float(), nil
 		default:
-			return nil, fmt.Errorf("noml: unsupported value type %T", v)
+			return nil, i18n.Errorf("8sf1ugcv", "noml: unsupported value type %T", v)
 		}
 	}
 }
@@ -1024,7 +1175,7 @@ func nomlWriteAnnotated(sb *strings.Builder, v any, indent int, path string, ann
 		sb.WriteString(pad)
 		sb.WriteString("]")
 	default:
-		return fmt.Errorf("noml: unsupported value type %T", v)
+		return i18n.Errorf("8sf1ugcv", "noml: unsupported value type %T", v)
 	}
 	return nil
 }
@@ -1095,7 +1246,7 @@ func FormatDepSpec(key, version string) string {
 func DecodeInto(v any, dst any) error {
 	rv := reflect.ValueOf(dst)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
-		return fmt.Errorf("noml: DecodeInto requires non-nil pointer, got %T", dst)
+		return i18n.Errorf("ayjrpinp", "noml: DecodeInto requires non-nil pointer, got %T", dst)
 	}
 	return nomlDecode(v, rv.Elem(), "")
 }
@@ -1120,35 +1271,35 @@ func nomlDecode(v any, dst reflect.Value, field string) error {
 	case reflect.String:
 		s, ok := v.(string)
 		if !ok {
-			return fmt.Errorf("noml: field %s: expected string, got %T", field, v)
+			return i18n.Errorf("qhkl8p9i", "noml: field %s: expected string, got %T", field, v)
 		}
 		dst.SetString(s)
 		return nil
 	case reflect.Bool:
 		b, ok := v.(bool)
 		if !ok {
-			return fmt.Errorf("noml: field %s: expected bool, got %T", field, v)
+			return i18n.Errorf("j6hiyx4e", "noml: field %s: expected bool, got %T", field, v)
 		}
 		dst.SetBool(b)
 		return nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		f, ok := v.(float64)
 		if !ok {
-			return fmt.Errorf("noml: field %s: expected number, got %T", field, v)
+			return i18n.Errorf("33exppv5", "noml: field %s: expected number, got %T", field, v)
 		}
 		dst.SetInt(int64(f))
 		return nil
 	case reflect.Float32, reflect.Float64:
 		f, ok := v.(float64)
 		if !ok {
-			return fmt.Errorf("noml: field %s: expected number, got %T", field, v)
+			return i18n.Errorf("33exppv5", "noml: field %s: expected number, got %T", field, v)
 		}
 		dst.SetFloat(f)
 		return nil
 	case reflect.Slice:
 		arr, ok := v.([]any)
 		if !ok {
-			return fmt.Errorf("noml: field %s: expected array, got %T", field, v)
+			return i18n.Errorf("qoykdxqy", "noml: field %s: expected array, got %T", field, v)
 		}
 		out := reflect.MakeSlice(dst.Type(), len(arr), len(arr))
 		for i, elem := range arr {
@@ -1161,7 +1312,7 @@ func nomlDecode(v any, dst reflect.Value, field string) error {
 	case reflect.Map:
 		m, ok := v.(map[string]any)
 		if !ok {
-			return fmt.Errorf("noml: field %s: expected object, got %T", field, v)
+			return i18n.Errorf("5eo1kvb9", "noml: field %s: expected object, got %T", field, v)
 		}
 		if dst.IsNil() {
 			dst.Set(reflect.MakeMap(dst.Type()))
@@ -1177,7 +1328,7 @@ func nomlDecode(v any, dst reflect.Value, field string) error {
 	case reflect.Struct:
 		m, ok := v.(map[string]any)
 		if !ok {
-			return fmt.Errorf("noml: field %s: expected object, got %T", field, v)
+			return i18n.Errorf("5eo1kvb9", "noml: field %s: expected object, got %T", field, v)
 		}
 		dst_t := dst.Type()
 		for i := 0; i < dst_t.NumField(); i++ {
@@ -1201,7 +1352,7 @@ func nomlDecode(v any, dst reflect.Value, field string) error {
 		// 寫回時未识别欄位由呼叫方自行保留或丟棄。
 		return nil
 	default:
-		return fmt.Errorf("noml: field %s: unsupported target kind %s", field, dst.Kind())
+		return i18n.Errorf("6y4tyjln", "noml: field %s: unsupported target kind %s", field, dst.Kind())
 	}
 }
 
@@ -1224,7 +1375,7 @@ func nomlDecodeDepArray(arr []any, dst reflect.Value, field string) error {
 	for i, elem := range arr {
 		s, ok := elem.(string)
 		if !ok {
-			return fmt.Errorf("noml: field %s[%d]: dependency element must be a string, got %T", field, i, elem)
+			return i18n.Errorf("5ckkrp9f", "noml: field %s[%d]: dependency element must be a string, got %T", field, i, elem)
 		}
 		key, version := SplitDepSpec(s)
 		dst.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(version))

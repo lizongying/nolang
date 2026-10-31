@@ -22,11 +22,12 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/parser"
 )
 
 // literalConvTraceID 是数字字面量冗余转换提示的 TraceID。
-const literalConvTraceID = "nolang-literal-conv"
+const literalConvTraceID = "2mak36nl"
 
 // literalConvTargets 把 `to-<type>` 方法名映射到目标类型名。
 // 布尔/字符/字节等非数字目标不在表内（`(1).to-bool()` 语义并非字面量直写）。
@@ -189,7 +190,7 @@ func checkLiteralConvCall(dot *parser.DotExpression, file string) *ValidateResul
 
 	pos := dot.Receiver.Pos()
 	end := dot.Receiver.EndPos()
-	message := fmt.Sprintf("对数字字面量调用 %s 是多此一举；直接写目标类型（如 %s）", dot.Property, suggestion)
+	message := i18n.T("xtblgfzq", "calling %s on a numeric literal is redundant; write the target type directly (e.g. %s)", dot.Property, suggestion)
 	col := pos.Column
 	endCol := end.Column
 	if endCol <= col {

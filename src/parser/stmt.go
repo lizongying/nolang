@@ -965,12 +965,12 @@ func (p *Parser) flushCompoundAssigns(def *FunctionDefinition) {
 		}
 		if hasOptionResult {
 			p.saveWarningWithCodef(WarnCompoundAssign, "mlm7xpcj",
-				"line %d, column %d: `%s %s= %s` 已废弃；所在函数结果是 option，保存时 `no fmt` 会自动改写为 `%s ?= %s %s %s`（复合赋值的右式现在是 ?T，走 `?=` 解包/上抛）",
+				"line %d, column %d: `%s %s= %s` is deprecated; the enclosing function has an option result, so `no fmt` rewrites it to `%s ?= %s %s %s` on save (the right-hand side of a compound assignment is now `?T` and goes through `?=` to unwrap or propagate it)",
 				pos.Line, pos.Column, target, op, rhs, target, target, op, rhs)
 			continue
 		}
 		p.saveErrorf("985exavg",
-			"line %d, column %d: `%s %s= %s` 已废弃，且所在函数的结果不是 option，无法上抛：请改写成 `%s %s %s: { ok -> %s = it, -> }`（非 ok 分支如何处理由你决定），或把结果参数改成 `?T` 后写 `%s ?= %s %s %s`",
+			"line %d, column %d: `%s %s= %s` is deprecated and the enclosing function has no option result, so the failure cannot be propagated: rewrite it as `%s %s %s: { ok -> %s = it, -> }` (what the non-ok arm does is up to you), or make the result parameter `?T` and write `%s ?= %s %s %s`",
 			pos.Line, pos.Column, target, op, rhs,
 			target, op, rhs, target,
 			target, target, op, rhs)
@@ -1657,7 +1657,7 @@ func (p *Parser) parseReturnStatement() Statement {
 	// 禁止 `return <value>`：RETURN 之后若紧跟表达式起始符（非语句结束符），
 	// 说明写了「带返回值的 return」，而 Nolang 不允许返回值，必须报错。
 	if !isReturnTerminator(p.currentToken.Type) {
-		p.saveErrorf("tfwxqucs", "line %d, column %d: `return` 後不能跟返回值；Nolang 函數結果通過具名結果參數（out-param）傳出，請用裸 `return` 提前返回並在函數體內給結果參數賦值",
+		p.saveErrorf("tfwxqucs", "line %d, column %d: `return` cannot be followed by a value; Nolang returns results through named result parameters (out-params), so use a bare `return` to exit early and assign the result parameter inside the function body",
 			p.currentToken.Line, p.currentToken.Column)
 	}
 	stmt.ReturnValue = nil

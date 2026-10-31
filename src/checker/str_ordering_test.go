@@ -78,7 +78,7 @@ func TestStrOrderingRejectsMultiChar(t *testing.T) {
 		},
 		{
 			name: "str variables",
-			src: "main = () {\n\ta str = 'e'\n\tb str = 'a'\n\tprint(a >= b)\n}",
+			src:  "main = () {\n\ta str = 'e'\n\tb str = 'a'\n\tprint(a >= b)\n}",
 		},
 		{
 			name: "str variable vs char",

@@ -1,7 +1,7 @@
 package checker
 
 import (
-	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"math"
 
 	"github.com/lizongying/nolang/lexer"
@@ -36,8 +36,8 @@ import (
 // sugarMatchHasCatchAll / sugarMatchSubjectName / subjectIsDeclaredEnumExpr），
 // 因此「什么叫恒为 ok」不会漂移。
 const (
-	armUnreachTraceID = "arm-unreach"
-	armShouldTraceID  = "arm-should"
+	armUnreachTraceID = "fw8rehzu"
+	armShouldTraceID  = "chbx2waz"
 )
 
 // maxSubjectResolveDepth 限制「標識符 → 其初始器」的追蹤深度。區域變數的初始器
@@ -93,9 +93,8 @@ func ValidateCatchAllArms(program *parser.Program) []ValidateResult {
 				Line:      pos.Line,
 				Column:    pos.Column,
 				EndColumn: a.EndColumn,
-				TraceID:   armUnreachTraceID,
-				Message: fmt.Sprintf(
-					"空的 `->` 兜底臂不会被执行：编译器可证明 '%s' 恒为 ok（字面量算术不会溢出/除零，或索引可证明在界内）。该臂仍须保留以满足 match 穷尽性；保留也便于日后语义变化时无需改语法。",
+				TraceID:   "fw8rehzu",
+				Message: i18n.T("fw8rehzu", "the empty `->` catch-all arm is unreachable: the compiler can prove '%s' is always ok (literal arithmetic cannot overflow or divide by zero, or the index is provably in bounds). The arm still has to stay for match exhaustiveness, and keeping it means a later change in semantics needs no syntax edit.",
 					a.Subject),
 			})
 			continue
@@ -104,9 +103,8 @@ func ValidateCatchAllArms(program *parser.Program) []ValidateResult {
 			Line:      pos.Line,
 			Column:    pos.Column,
 			EndColumn: a.EndColumn,
-			TraceID:   armShouldTraceID,
-			Message: fmt.Sprintf(
-				"空的 `->` 兜底臂可能会被执行（无法证明 '%s' 恒为 ok）。请决定失败时应该做什么，例如 `-> log('...')` / `-> print('...')`；留空则会静默取默认零值。",
+			TraceID:   "chbx2waz",
+			Message: i18n.T("chbx2waz", "the empty `->` catch-all arm may be taken (the compiler cannot prove '%s' is always ok). Decide what should happen on failure, e.g. `-> log('...')` / `-> print('...')`; leaving it empty silently yields the default zero value.",
 				a.Subject),
 		})
 	}

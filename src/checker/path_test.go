@@ -11,13 +11,14 @@ import (
 // when called as methods on a str receiver.
 //
 // Refactored from standalone functions to method form in 2026-06:
-//   join  -> path.join
-//   base  -> path.base
-//   dir   -> path.dir
-//   ext   -> path.ext
-//   is-abs -> path.is-abs
-//   clean -> path.clean
-//   split -> str.path-split
+//
+//	join  -> path.join
+//	base  -> path.base
+//	dir   -> path.dir
+//	ext   -> path.ext
+//	is-abs -> path.is-abs
+//	clean -> path.clean
+//	split -> str.path-split
 func TestPathMethods(t *testing.T) {
 	src := `
 test-base = () {

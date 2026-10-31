@@ -85,8 +85,8 @@ func Normalize(raw string) string {
 	case "", "c", "posix":
 		return ""
 	}
-	// Script subtags: only Simplified Chinese has a catalog, and a Hans request
-	// is exactly a zh-CN request.
+	// Script subtags: a Hans request is exactly a zh-CN request. Hant is left
+	// alone so the alias table can route it to the zh-TW catalog.
 	if s == "zh-hans" || strings.HasPrefix(s, "zh-hans-") {
 		return "zh-cn"
 	}
@@ -94,14 +94,18 @@ func Normalize(raw string) string {
 }
 
 // fallbackChain expands a normalised tag into the tags to try, most specific
-// first, ending with the primary language subtag:
+// first, dropping one subtag at a time and ending with the primary language:
 //
-//	zh-cn -> [zh-cn, zh]
-//	zh    -> [zh]
-//	en-us -> [en-us, en]
+//	zh-cn       -> [zh-cn, zh]
+//	zh-hant-tw  -> [zh-hant-tw, zh-hant, zh]
+//	en-us       -> [en-us, en]
+//
+// Stripping one subtag at a time (rather than jumping straight to the primary
+// language) is what lets zh-Hant-TW reach the zh-TW catalog via the zh-hant
+// alias instead of collapsing to the Simplified "zh".
 func fallbackChain(norm string) []string {
 	chain := []string{norm}
-	if i := strings.IndexByte(norm, '-'); i > 0 {
+	for i := strings.LastIndexByte(norm, '-'); i > 0; i = strings.LastIndexByte(norm[:i], '-') {
 		chain = append(chain, norm[:i])
 	}
 	return chain

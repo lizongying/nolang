@@ -25,6 +25,7 @@ import (
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/checker/stdastembed"
 	nfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/i18n/catalog"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/mmast"
@@ -110,14 +111,14 @@ func parseLangFlag(args []string) (out []string, lang string, set bool, err erro
 		switch {
 		case arg == "--lang" || arg == "-lang":
 			if i+1 >= len(args) {
-				return nil, "", false, fmt.Errorf("%s requires a value (e.g. %s=zh-CN)", arg, arg)
+				return nil, "", false, i18n.Errorf("o630714m", "%s requires a value (e.g. %s=zh-CN)", arg, arg)
 			}
 			i++
 			lang, set = args[i], true
 		case strings.HasPrefix(arg, "--lang=") || strings.HasPrefix(arg, "-lang="):
 			lang, set = arg[strings.IndexByte(arg, '=')+1:], true
 			if lang == "" {
-				return nil, "", false, fmt.Errorf("--lang requires a value (e.g. --lang=zh-CN)")
+				return nil, "", false, i18n.Errorf("paiorrdo", "--lang requires a value (e.g. --lang=zh-CN)")
 			}
 		default:
 			filtered = append(filtered, arg)
@@ -845,7 +846,7 @@ func resolveRunTarget(arg string) (string, error) {
 	if arg == "" || arg == "." {
 		if _, werr := os.Stat(pkg.WorkspaceFileName); werr == nil {
 			if _, merr := os.Stat("main.no"); merr != nil {
-				return "", fmt.Errorf("current directory is a workspace root with no main.no; run a package with: no run <package>")
+				return "", i18n.Errorf("o41t34tn", "current directory is a workspace root with no main.no; run a package with: no run <package>")
 			}
 		}
 		return ".", nil
@@ -860,7 +861,7 @@ func resolveRunTarget(arg string) (string, error) {
 	if info, err := os.Stat(arg); err == nil && info.IsDir() {
 		mainPath := filepath.Join(arg, "main.no")
 		if _, err := os.Stat(mainPath); err != nil {
-			return "", fmt.Errorf("main.no not found in %s", arg)
+			return "", i18n.Errorf("zpgykko6", "main.no not found in %s", arg)
 		}
 		return mainPath, nil
 	}
@@ -879,7 +880,7 @@ func resolveRunTarget(arg string) (string, error) {
 						}
 						mainPath := filepath.Join(dir, "main.no")
 						if _, serr := os.Stat(mainPath); serr != nil {
-							return "", fmt.Errorf("main.no not found in package %q (%s)", arg, dir)
+							return "", i18n.Errorf("cccby88i", "main.no not found in package %q (%s)", arg, dir)
 						}
 						return mainPath, nil
 					}
@@ -888,7 +889,7 @@ func resolveRunTarget(arg string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no such file, directory, or package: %s", arg)
+	return "", i18n.Errorf("sgk4yra9", "no such file, directory, or package: %s", arg)
 }
 
 func createGitIgnore() {
@@ -1001,7 +1002,7 @@ func addDependency(specStr string) {
 func loadProjectConfig() (*ProjectConfig, error) {
 	data, err := os.ReadFile(pkg.PackageManifestName)
 	if err != nil {
-		return nil, fmt.Errorf("package.noml not found. Run 'no new <name>' to create a package, or cd into a package directory")
+		return nil, i18n.Errorf("hr40fh5v", "package.noml not found. Run 'no new <name>' to create a package, or cd into a package directory")
 	}
 	return nomlParseProjectConfig(data)
 }
@@ -1286,7 +1287,7 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 				for _, e := range perrs {
 					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
 				}
-				return fmt.Errorf("format failed: %d parse error(s)", len(perrs))
+				return i18n.Errorf("0ik1j9cf", "format failed: %d parse error(s)", len(perrs))
 			}
 			result = r
 		} else {
@@ -1377,7 +1378,7 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", path, e)
 				}
 				if firstErr == nil {
-					firstErr = fmt.Errorf("format failed: %d parse error(s) in %s", len(perrs), path)
+					firstErr = i18n.Errorf("h27jskdm", "format failed: %d parse error(s) in %s", len(perrs), path)
 				}
 				return nil
 			}
@@ -1516,7 +1517,7 @@ func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
 		return fixMainFixes(arg), nil
 	}
 	if fixClass != "overflow" {
-		return nil, fmt.Errorf("unknown fix class %q (supported: overflow, redundant, match, unwrap, main)", fixClass)
+		return nil, i18n.Errorf("hc3a6zzw", "unknown fix class %q (supported: overflow, redundant, match, unwrap, main)", fixClass)
 	}
 	info, err := os.Stat(arg)
 	if err != nil {
@@ -3344,7 +3345,7 @@ func vetCommand(args []string) {
 					// I/O error（讀文件失敗等），作為 fatal error
 					errMu.Lock()
 					if firstErr == nil {
-						firstErr = fmt.Errorf("Error in %s: %w", f, e)
+						firstErr = i18n.Errorf("ddutfwr8", "Error in %s: %w", f, e)
 					}
 					errMu.Unlock()
 				}
@@ -3425,6 +3426,9 @@ type vetDiagnostic struct {
 
 // vetReport 是 `no vet --json` 的頂層結構：扁平診斷陣列 + 嚴重性摘要。
 type vetReport struct {
+	// Lang is the message language, omitted for English so that the default
+	// (untranslated) output stays byte-identical to earlier releases.
+	Lang        string          `json:"lang,omitempty"`
 	Diagnostics []vetDiagnostic `json:"diagnostics"`
 	Summary     vetSummary      `json:"summary"`
 }
@@ -3514,10 +3518,11 @@ func printLintResults(results []nbuild.LintResult) int {
 		}
 	}
 	if errorCount > 0 || warnCount > 0 || hintCount > 0 {
-		fmt.Fprintf(os.Stderr, "\n%d error(s), %d warning(s), %d hint(s)\n",
-			errorCount, warnCount, hintCount)
+		fmt.Fprintf(os.Stderr, "\n%s\n",
+			i18n.T("9v43hxr2", "%d error(s), %d warning(s), %d hint(s)",
+				errorCount, warnCount, hintCount))
 	} else {
-		fmt.Println("No issues found.")
+		fmt.Println(i18n.P("7zfvvuin", "No issues found."))
 	}
 	return errorCount
 }
@@ -3534,7 +3539,12 @@ func buildVetReport(results []nbuild.LintResult) (vetReport, int) {
 		}
 		return diags[i].Column < diags[j].Column
 	})
+	lang := i18n.Lang()
+	if lang == "en" {
+		lang = "" // omit for the default language: keeps en JSON byte-identical
+	}
 	return vetReport{
+		Lang:        lang,
 		Diagnostics: diags,
 		Summary:     vetSummary{Errors: errors, Warnings: warnings, Hints: hints},
 	}, errors
@@ -3583,7 +3593,7 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 	} else {
 		p, err := nbuild.LoadPackage(target)
 		if err != nil || p == nil {
-			return "", nil, fmt.Errorf("package.noml not found in %s", target)
+			return "", nil, i18n.Errorf("dk195kbk", "package.noml not found in %s", target)
 		}
 		name = p.Name
 		src = p.Main
@@ -3600,7 +3610,7 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 
 	raw, err := os.ReadFile(src)
 	if err != nil {
-		return "", nil, fmt.Errorf("reading %s: %w", src, err)
+		return "", nil, i18n.Errorf("k1h5kums", "reading %s: %w", src, err)
 	}
 	// 與 build 管線一致的解析入口（見 build/builder.go BuildDirectWasm）：
 	// 只需要 lexer+parser，不需要 LLVM 工具鏈，因此可以直接在 CI 裡跑。
@@ -3608,7 +3618,7 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 	pp.Filename = filepath.Base(src)
 	prog := pp.ParseProgram()
 	if prog == nil {
-		return "", nil, fmt.Errorf("%s: parser returned nil program", src)
+		return "", nil, i18n.Errorf("umcsmsz6", "%s: parser returned nil program", src)
 	}
 	if errs := pp.Errors(); len(errs) > 0 {
 		return "", nil, fmt.Errorf("%s: %v", src, errs[0])

@@ -18,6 +18,7 @@ package checker
 
 import (
 	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"os"
 	"path/filepath"
 	"sort"
@@ -129,7 +130,7 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 		}
 		return absFile != absMain
 	}
-	const msg = "此 #{overflow=...} 註解對應的陳述不含整數運算（如整行僅字串拼接），不會發生溢出，建議刪除。"
+	msg := i18n.T("0cccc2ei", "the statement governed by this #{overflow=...} annotation contains no integer arithmetic (e.g. the line only concatenates strings), so it can never overflow; consider removing the annotation.")
 	var results []LintResult
 	// 獨立成行註解節點：governed 直接給出管轄陳述。
 	for as, gov := range governed {
@@ -376,8 +377,8 @@ func runLintInterfaceMerge(program *parser.Program, opts LintOptions) []LintResu
 			EndColumn: id.Token.Column + len(id.Name),
 			File:      program.Sem.SourceFileOf(id),
 			Severity:  LintWarning, Source: "nolang-lint",
-			Message: fmt.Sprintf("interface '%s': parent interfaces written as a leading list; write one name per line inside the body instead", id.Name),
-			TraceID: InterfaceMergeTraceID,
+			Message: i18n.T("r0360g4t", "interface '%s': parent interfaces written as a leading list; write one name per line inside the body instead", id.Name),
+			TraceID: "r0360g4t",
 		})
 	}
 	return results

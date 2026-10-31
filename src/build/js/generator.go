@@ -11,10 +11,11 @@
 package js
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // Generator 從 Nolang AST 發射 JavaScript 原始碼。
@@ -131,7 +132,7 @@ func (g *Generator) writeRaw(s string) {
 //  5. 輸出頂層語句（直接執行，不包裝 main）
 func (g *Generator) Generate(program *parser.Program) (string, error) {
 	if program == nil {
-		return "", fmt.Errorf("js.Generator.Generate: program is nil")
+		return "", i18n.Errorf("kio8h1tx", "js.Generator.Generate: program is nil")
 	}
 
 	g.out = &strings.Builder{}
@@ -177,7 +178,7 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 	// 不產生任何東西，輸出與特性上線前逐位元組相同。
 	nativePolicy, nativeFound, nativeErr := CollectNativePolicyStmts(program.Sem, stmts)
 	if nativeErr != nil {
-		return "", fmt.Errorf("native policy: %w", nativeErr)
+		return "", i18n.Errorf("yhin5u09", "native policy: %w", nativeErr)
 	}
 	if nativeFound {
 		resolved, rerr := ResolveNativePolicy(nativePolicy, true, g.nativeBrowser, g.nativeLibs)
@@ -189,7 +190,7 @@ func (g *Generator) Generate(program *parser.Program) (string, error) {
 		switch resolved.Mode {
 		case BindFFI:
 			if len(collectFFIExterns(stmts)) == 0 {
-				return "", fmt.Errorf(
+				return "", i18n.Errorf("j2n5poza",
 					"native bind=ffi (import %q) requires at least one #{c} extern declaration to bind",
 					resolved.UsePath)
 			}

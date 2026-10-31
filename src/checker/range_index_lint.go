@@ -1,13 +1,13 @@
 package checker
 
 import (
-	"fmt"
+	"github.com/lizongying/nolang/i18n"
 
 	"github.com/lizongying/nolang/parser"
 )
 
 // rngidxTraceID 是「手動按下標遍歷容器」的建議診斷碼（§3.4 末條 / §11.9）。
-const rngidxTraceID = "rngidx"
+const rngidxTraceID = "m2fh7rfg"
 
 // ValidateRangeIndexLoops 對 `for i <- [a..b) { … arr[i] … }` 這類「手動按下標
 // 遍歷容器」的寫法發一條 HINT，建議改寫為 `for x <- arr { … x … }`。
@@ -116,9 +116,9 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 				// S1：糖形態下 match 臂體也是語句容器（`for` 迴圈本身可能就長在臂裡）。
 				// 見 sugar_walk.go。
 				if sm, ok := st.Expression.(*parser.SurfaceMatch); ok {
-				walkSurfaceMatchChildren(sm, nil, nil, func(sub parser.Statement) {
-					walk([]parser.Statement{sub}, file)
-				})
+					walkSurfaceMatchChildren(sm, nil, nil, func(sub parser.Statement) {
+						walk([]parser.Statement{sub}, file)
+					})
 				}
 			case *parser.ForStatement:
 				if st.IterRange != nil && st.IterRange.Range != nil && st.IterRange.Variable != "" && st.Body != nil {
@@ -135,10 +135,10 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 						case *parser.ExpressionStatement:
 							reads = indexReadsByName(b.Expression, name)
 						}
-					for _, idx := range reads {
-						if seen[idx] {
-							continue
-						}
+						for _, idx := range reads {
+							if seen[idx] {
+								continue
+							}
 							seen[idx] = true
 							base := ""
 							if b, ok := idx.Left.(*parser.Identifier); ok {
@@ -148,9 +148,8 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 								Line:    idx.Pos().Line,
 								Column:  idx.Pos().Column,
 								File:    file,
-								TraceID: rngidxTraceID,
-								Message: fmt.Sprintf(
-									"range-index loop: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標讀取；若不需要下標本身，改用容器迭代 `x <- %s`（無下標即無越界，也無需解包 option）。",
+								TraceID: "m2fh7rfg",
+								Message: i18n.T("m2fh7rfg", "range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` (no index means no bounds check and no option to unwrap).",
 									base, name, name, base),
 							})
 						}

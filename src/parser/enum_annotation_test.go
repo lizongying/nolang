@@ -23,7 +23,7 @@ func TestEnumAnnotationPrefixRejected(t *testing.T) {
 			t.Errorf("%s: same-line prefix annotation must be rejected, got no errors", name)
 			continue
 		}
-		if joined := strings.Join(errs, "\n"); !strings.Contains(joined, "前方同一行") {
+		if joined := strings.Join(errs, "\n"); !strings.Contains(joined, "[0j1imd2d]") {
 			t.Errorf("%s: errors %v do not mention the prefix rule", name, errs)
 		}
 	}

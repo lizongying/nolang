@@ -23,7 +23,7 @@ func TestOptionComparisonErrors(t *testing.T) {
         content = nil
     }
 }`,
-			wantErr:  false,
+			wantErr: false,
 		},
 		{
 			// 顯式 ?i64 標註：r 是 option，與 0 比（解開內層值）合法，不報錯。
@@ -32,7 +32,7 @@ func TestOptionComparisonErrors(t *testing.T) {
     r ?i64 = get-size()
     r == 0 -> return
 }`,
-			wantErr:  false,
+			wantErr: false,
 		},
 		{
 			// 結果參數是 option：在函式體內拿它跟數字比（解開內層值）合法，不報錯。
@@ -40,7 +40,7 @@ func TestOptionComparisonErrors(t *testing.T) {
 			src: `g = () (r ?i64) {
     r == 0 -> return
 }`,
-			wantErr:  false,
+			wantErr: false,
 		},
 		{
 			// option 與「struct 值」比較仍報錯：struct 非值型別，語意不明

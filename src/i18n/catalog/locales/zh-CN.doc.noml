@@ -1,0 +1,16 @@
+; Nolang doc catalog: zh-CN
+; Source-comment translations, keyed by the anchor an author wrote in a
+; trailing `[label](#anchor)` line. Keys come from en.doc.noml; never invent one.
+; A missing key falls back to the comment text in the source, so an untranslated
+; block degrades to the author's language rather than disappearing.
+{
+  'args.count': `
+count: 参数数量（含程序名）
+委派至 os.args() builtin（返回完整 argv 向量，取其长度）
+`
+  'args.get': `
+get: 获取第 i 个参数
+委派至 os.arg(i) builtin（读取 main 的 argv[i]）；越界返回 nil
+`
+  'args.program': 'program: 程序名（第 0 个参数）'
+}

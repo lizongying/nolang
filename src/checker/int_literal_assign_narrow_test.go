@@ -10,7 +10,8 @@ import (
 // as a constant conversion instead of a narrowing error.
 //
 // 放行：負字面量 → 無號目標（二補數位模式，如 `b byte = -1` == 0xFF）。
-//   std/archive/xz.no 的 `unpacked-size = -1`（unpacked-size 為 byte）即此例。
+//
+//	std/archive/xz.no 的 `unpacked-size = -1`（unpacked-size 為 byte）即此例。
 //
 // 仍然報錯（真實數值溢位，不能靜默）：
 //   - 正值超出目標上界：`b byte = 300`

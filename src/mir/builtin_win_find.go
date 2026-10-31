@@ -1,6 +1,10 @@
 package mir
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/lizongying/nolang/i18n"
+)
 
 // builtin_win_find.go — fs.list-dir on Windows (FindFirstFileA family).
 //
@@ -34,14 +38,14 @@ const findDataCFileNameOff = 44
 // heap block pointer, or 0 on failure (INVALID_HANDLE_VALUE or out-of-memory).
 func (c *codegen) emitBuiltinWinFindFirstFile(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("win-find-first-file: needs a path argument")
+		return i18n.Errorf("a7ee394w", "win-find-first-file: needs a path argument")
 	}
 	c.decl("declare i8* @malloc(i64)")
 	c.decl("declare i64 @FindFirstFileA(i8*, i8*)")
 
 	p := c.cstrOf(inst.Args[0])
 	if p == "" {
-		return fmt.Errorf("win-find-first-file: cannot marshal path as C string")
+		return i18n.Errorf("axtpo500", "win-find-first-file: cannot marshal path as C string")
 	}
 
 	b := c.treg("wff.b")
@@ -97,7 +101,7 @@ func (c *codegen) emitBuiltinWinFindFirstFile(inst *Inst) error {
 // invalid/null; ok (tag 0) carries the entry name.
 func (c *codegen) emitBuiltinWinFindNextFile(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("win-find-next-file: needs a bufptr argument")
+		return i18n.Errorf("qlpiqzag", "win-find-next-file: needs a bufptr argument")
 	}
 	c.decl("declare i32 @FindNextFileA(i64, i8*)")
 
@@ -158,7 +162,7 @@ func (c *codegen) emitBuiltinWinFindNextFile(inst *Inst) error {
 // a null bufPtr is a no-op returning false (no double-free).
 func (c *codegen) emitBuiltinWinFindClose(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("win-find-close: needs a bufptr argument")
+		return i18n.Errorf("vpi1fke2", "win-find-close: needs a bufptr argument")
 	}
 	c.decl("declare i32 @FindClose(i64)")
 

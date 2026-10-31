@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // CompilerOptions 表示 package.noml 的 compiler 區塊選項
@@ -150,15 +152,15 @@ func LoadPackage(dir string) (*Package, error) {
 		if _, err := os.Stat(candidate); err == nil {
 			raw, err := os.ReadFile(candidate)
 			if err != nil {
-				return nil, fmt.Errorf("reading %s: %w", candidate, err)
+				return nil, i18n.Errorf("k1h5kums", "reading %s: %w", candidate, err)
 			}
 			m, err := ParseNomlMap(raw)
 			if err != nil {
-				return nil, fmt.Errorf("parsing %s: %w", candidate, err)
+				return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", candidate, err)
 			}
 			var pkg Package
 			if err := DecodeInto(m, &pkg); err != nil {
-				return nil, fmt.Errorf("parsing %s: %w", candidate, err)
+				return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", candidate, err)
 			}
 			pkg.RootDir = root
 
@@ -259,11 +261,11 @@ func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
 
 	m, err := ParseNomlMap(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
+		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", wsFile, err)
 	}
 	var ws WorkspaceMap
 	if err := DecodeInto(m, &ws); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
+		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", wsFile, err)
 	}
 	if ws == nil {
 		ws = make(WorkspaceMap)
@@ -274,11 +276,11 @@ func loadWorkspaceMap(workspaceRoot string) (WorkspaceMap, error) {
 	if privateRaw, pErr := os.ReadFile(privateFile); pErr == nil {
 		privateM, err := ParseNomlMap(privateRaw)
 		if err != nil {
-			return nil, fmt.Errorf("parsing %s: %w", privateFile, err)
+			return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", privateFile, err)
 		}
 		var privateWs WorkspaceMap
 		if err := DecodeInto(privateM, &privateWs); err != nil {
-			return nil, fmt.Errorf("parsing %s: %w", privateFile, err)
+			return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", privateFile, err)
 		}
 		// 合併：私有配置覆蓋公共配置，新 key 疊加
 		for k, v := range privateWs {
@@ -388,7 +390,7 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 
 	// 禁止 "./" 和 "../" 前綴（package.noml 不允許相對跳轉）
 	if strings.HasPrefix(key, "./") || strings.HasPrefix(key, "../") {
-		return "", fmt.Errorf("dependency %q: relative paths (./ ../) are not allowed in package.noml; use `/` prefix for workspace-relative paths", key)
+		return "", i18n.Errorf("9e82usj6", "dependency %q: relative paths (./ ../) are not allowed in package.noml; use `/` prefix for workspace-relative paths", key)
 	}
 
 	// "/" 前綴：相對於 workspace 根目錄解析（嚴格限制在工作區內）
@@ -397,12 +399,12 @@ func (p *Package) resolveDependency(importPath string) (string, error) {
 		localDir := filepath.Join(p.workspaceRoot, relPath)
 		// 安全檢查：解析後的路徑必須在工作區根目錄內
 		if !isWithinWorkspace(localDir, p.workspaceRoot) {
-			return "", fmt.Errorf("dependency %q: path escapes workspace root; package.noml dependencies must stay within the workspace", key)
+			return "", i18n.Errorf("h1vvbufz", "dependency %q: path escapes workspace root; package.noml dependencies must stay within the workspace", key)
 		}
 		if info, err := os.Stat(localDir); err == nil && info.IsDir() {
 			return filepath.Clean(localDir), nil
 		}
-		return "", fmt.Errorf("workspace-local dependency path %q not found", key)
+		return "", i18n.Errorf("zql6tu9p", "workspace-local dependency path %q not found", key)
 	}
 
 	// 檢查 workspace.noml 是否有本地覆蓋（遞迴解析，支援跨包映射鏈）
@@ -597,7 +599,7 @@ func resolveWorkspaceChain(key, workspaceRoot string, ws WorkspaceMap, visitStac
 	for i, visited := range visitStack {
 		if visited == workspaceRoot {
 			chain := strings.Join(visitStack[i:], " → ") + " → " + workspaceRoot
-			return "", false, fmt.Errorf("circular workspace mapping detected: %s", chain)
+			return "", false, i18n.Errorf("yrdjmq57", "circular workspace mapping detected: %s", chain)
 		}
 	}
 
@@ -655,7 +657,7 @@ func (p *Package) ResolveDependencyModule(importPath string) (string, error) {
 	modulePart = strings.TrimPrefix(modulePart, "/")
 
 	if modulePart == "" {
-		return "", fmt.Errorf("no module path after dependency key %s", key)
+		return "", i18n.Errorf("1qz0p808", "no module path after dependency key %s", key)
 	}
 
 	fullPath := filepath.Join(pkgDir, modulePart) + ".no"
@@ -669,7 +671,7 @@ func (p *Package) ResolveDependencyModule(importPath string) (string, error) {
 		return filepath.Clean(srcPath), nil
 	}
 
-	return "", fmt.Errorf("module file not found: %s or %s", fullPath, srcPath)
+	return "", i18n.Errorf("c33l3vql", "module file not found: %s or %s", fullPath, srcPath)
 }
 
 // EnsureDependencies 確保所有傳遞依賴已解析
@@ -739,13 +741,13 @@ func (p *Package) resolveFromScratch(graph *DependencyGraph, maxDepth int) (*Dep
 			continue
 		}
 		if err := graph.ResolveAll(key, version, maxDepth); err != nil {
-			return nil, fmt.Errorf("resolving dependency %s@%s: %w", key, version, err)
+			return nil, i18n.Errorf("3vbgvipn", "resolving dependency %s@%s: %w", key, version, err)
 		}
 	}
 
 	// 循環依賴檢測
 	if err := graph.DetectCycles(); err != nil {
-		return nil, fmt.Errorf("cycle detection: %w", err)
+		return nil, i18n.Errorf("ibaimz2h", "cycle detection: %w", err)
 	}
 
 	// 解析成功，保存鎖檔案
@@ -789,17 +791,17 @@ func (p *Package) resolveFromLock(graph *DependencyGraph, maxDepth int) (*Depend
 		// 從快取或下載取得套件目錄及壓縮包 SHA256
 		pkgDir, downloadHash, err := DownloadPackage(key, version, p.Mirrors)
 		if err != nil {
-			return nil, fmt.Errorf("downloading %s@%s: %w", key, version, err)
+			return nil, i18n.Errorf("cpyd2teh", "downloading %s@%s: %w", key, version, err)
 		}
 
 		if _, err := graph.ResolveFromLock(key, version, pkgDir, downloadHash, lockPkg.Dependencies, 0, maxDepth); err != nil {
-			return nil, fmt.Errorf("resolving %s from lock: %w", key, err)
+			return nil, i18n.Errorf("kmm43ypb", "resolving %s from lock: %w", key, err)
 		}
 	}
 
 	// 循環依賴檢測
 	if err := graph.DetectCycles(); err != nil {
-		return nil, fmt.Errorf("cycle detection: %w", err)
+		return nil, i18n.Errorf("ibaimz2h", "cycle detection: %w", err)
 	}
 
 	// 解析成功，保存鎖檔案和總和檔案

@@ -343,6 +343,9 @@ func TestPlainTargetOperandTypeMustBeStaticallyKnown(t *testing.T) {
 // TestOptionUnwrapRecipeRecommendsParseableForm 釘住建議文字本身可用：
 // 舊文案推薦的 `k = expr: { ok -> it, -> 0 }` 有兩種實測不成立的形態
 // （逗號臂是解析錯誤；同行寫法在 expr 非裸識別字時 match 會脫離）。
+//
+// 斷言的是英文原文（en 是唯一事實來源，各 locale 由 catalog 翻譯），因此
+// 這裡的關鍵詞與 optionUnwrapRecipe 的 i18n.T 預設文案同進同退。
 func TestOptionUnwrapRecipeRecommendsParseableForm(t *testing.T) {
 	msg := optionUnwrapRecipe("k")
 	for _, bad := range []string{"ok -> it, ->", " = expr: {"} {
@@ -350,12 +353,18 @@ func TestOptionUnwrapRecipeRecommendsParseableForm(t *testing.T) {
 			t.Fatalf("recipe still recommends the broken spelling %q: %s", bad, msg)
 		}
 	}
-	for _, good := range []string{"两段式", "换行", "?="} {
+	for _, good := range []string{"two-step", "separate lines", "?="} {
 		if !contains(msg, good) {
 			t.Fatalf("recipe must mention %q: %s", good, msg)
 		}
 	}
-	if h := optionUnwrapAssignHint("?i64"); contains(h, "用显式型别") {
+	h := optionUnwrapAssignHint("?i64")
+	// 建議必須點名具體的 option 型別（否則使用者不知道要解包成什麼）。
+	if !contains(h, "?i64") {
+		t.Fatalf("hint must name the concrete option type: %s", h)
+	}
+	// 不得再推薦「用显式型别把結果拉回 plain」——那正是 D1 禁止的隱含解包。
+	if contains(h, "explicit type") {
 		t.Fatalf("hint must not recommend the plain-type coercion idiom: %s", h)
 	}
 }

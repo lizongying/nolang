@@ -16,7 +16,7 @@ package checker
 //     單文件路徑下無法得知用戶模組的方法定義。
 
 import (
-	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
@@ -231,7 +231,7 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 								TraceID: "ckaj3355",
 								Line:    pos.Line,
 								Column:  pos.Column,
-								Message: fmt.Sprintf("unknown function '%s.%s': module '%s' has no top-level function '%s'", modName, fnName, modName, fnName),
+								Message: i18n.T("ckaj3355", "unknown function '%s.%s': module '%s' has no top-level function '%s'", modName, fnName, modName, fnName),
 							})
 						}
 					}

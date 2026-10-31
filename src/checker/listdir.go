@@ -25,10 +25,11 @@ package checker
 import (
 	"strings"
 
+	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/parser"
 )
 
-const listDirTraceID = "nolang-list-dir-unfiltered"
+const listDirTraceID = "kwu4kuzl"
 
 // dotByte 是 '.' 的 ASCII 值；按字节跳过 "."/".." 的代码会把它作为整数字面量比较。
 const dotByte = 46
@@ -80,11 +81,15 @@ func ValidateListDirUnfiltered(program *parser.Program) []ValidateResult {
 		v := &listDirVisitor{selfName: fd.Name, selfBase: selfBase}
 		v.walkBlock(fd.Body)
 		if v.hasReaddir && (v.hasDestructive || v.recursive) && !v.hasDotFilter {
+			// The ID is written twice on purpose: msgscan only accepts a literal
+			// at the T call site (a computed ID cannot be keyed), while the
+			// printed TraceID must stay listDirTraceID so that downstream
+			// severity mapping and docs keep referring to the same code.
 			results = append(results, ValidateResult{
 				Line:    fd.Pos().Line,
 				Column:  fd.Pos().Column,
 				File:    program.Sem.SourceFileOf(fd),
-				Message: "函數 " + fd.Name + " 用 fs.list-dir/fs.read-dir 結果做遞歸/刪除，但未見過濾 \".\" 和 \"..\"；兩者都含 POSIX readdir 的 \".\"/\"..\"，遞歸進入 \"..\" 會向上逃逸誤刪整棵父樹。請改用 fs.dir-entries（已自動過濾），或在遞歸前顯式跳過 \".\"/\"..\"。",
+				Message: i18n.T("3fulbc9g", "function %s recurses into or deletes from an fs.list-dir/fs.read-dir result without filtering \".\" and \"..\"; both calls return the POSIX readdir \".\" / \"..\" entries, and recursing into \"..\" escapes upward and can wipe the whole parent tree. Use fs.dir-entries (already filtered), or skip \".\" / \"..\" explicitly before recursing.", fd.Name),
 				TraceID: listDirTraceID,
 			})
 		}

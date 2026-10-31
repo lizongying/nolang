@@ -1,11 +1,12 @@
 package js
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // Native package calls for the JS backend.
@@ -194,7 +195,7 @@ func CollectNativePolicyStmts(sem *parser.SemanticContext, stmts []parser.Statem
 	add := func(p NativePolicy) error {
 		if p.Mode != BindAuto {
 			if seenExplicit && p.Mode != merged.Mode {
-				return fmt.Errorf(
+				return i18n.Errorf("zvybywvf",
 					"conflicting native bind modes: %q (from %q) and %q (from %q)",
 					merged.Mode, merged.UsePath, p.Mode, p.UsePath)
 			}
@@ -203,7 +204,7 @@ func CollectNativePolicyStmts(sem *parser.SemanticContext, stmts []parser.Statem
 		}
 		if p.WASM != "" {
 			if seenWASM && merged.WASM != "" && merged.WASM != p.WASM {
-				return fmt.Errorf(
+				return i18n.Errorf("e9kbpohv",
 					"conflicting native wasm specifiers: %q (from %q) and %q (from %q)",
 					merged.WASM, merged.UsePath, p.WASM, p.UsePath)
 			}
@@ -212,7 +213,7 @@ func CollectNativePolicyStmts(sem *parser.SemanticContext, stmts []parser.Statem
 		}
 		if p.Lib != "" {
 			if seenLib && merged.Lib != "" && merged.Lib != p.Lib {
-				return fmt.Errorf(
+				return i18n.Errorf("6c1nlj7d",
 					"conflicting native lib overrides: %q and %q", merged.Lib, p.Lib)
 			}
 			merged.Lib = p.Lib
@@ -261,7 +262,7 @@ func ResolveNativePolicy(p NativePolicy, found, browser bool, linkLibs []string)
 	}
 	if browser {
 		if p.Mode == BindFFI {
-			return NativePolicy{}, fmt.Errorf(
+			return NativePolicy{}, i18n.Errorf("rclf258h",
 				"native bind=ffi is unavailable in the browser (import %q); use bind=wasm or omit bind",
 				p.UsePath)
 		}
@@ -277,7 +278,7 @@ func ResolveNativePolicy(p NativePolicy, found, browser bool, linkLibs []string)
 	case BindFFI:
 		// lib override takes precedence; otherwise require a link lib.
 		if p.Lib == "" && len(linkLibs) == 0 {
-			return NativePolicy{}, fmt.Errorf(
+			return NativePolicy{}, i18n.Errorf("n5k784wb",
 				"native bind=ffi requires a link library (compiler.link-libs or lib= on import %q)",
 				p.UsePath)
 		}
@@ -286,7 +287,7 @@ func ResolveNativePolicy(p NativePolicy, found, browser bool, linkLibs []string)
 	// is a Nolang module path, never a JS module specifier, so an omitted wasm=
 	// is a hard error rather than a silent guess.
 	if p.Mode == BindWASM && p.WASM == "" {
-		return NativePolicy{}, fmt.Errorf(
+		return NativePolicy{}, i18n.Errorf("jeq6vteu",
 			"native bind=wasm requires a wasm= specifier (import %q), e.g. #{bind = wasm, wasm = '@scope/pkg'}",
 			p.UsePath)
 	}

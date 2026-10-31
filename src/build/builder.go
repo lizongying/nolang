@@ -20,6 +20,8 @@ import (
 	"github.com/lizongying/nolang/lexer"
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // DetectTarget 根据当前运行平台返回对应的 target triple。
@@ -140,7 +142,7 @@ func CheckToolchain(cc string) error {
 	// WASM 建構下無法呼叫本機 LLVM 工具鏈（opt/llc/clang）；
 	// 應改用 --wasm-direct 直接產生 WASM 的路徑。
 	if runtime.GOOS == "wasip1" {
-		return fmt.Errorf("LLVM toolchain not available in WASM build; use --wasm-direct flag")
+		return i18n.Errorf("7dl1fkwt", "LLVM toolchain not available in WASM build; use --wasm-direct flag")
 	}
 	// 內置 LLVM（no-llvm 變體且開關啟用）：codegen 在進程內完成，不需要系統 LLVM
 	// （llvm-config 哨兵），也不需要系統 clang——連結只要任何可用的 C 連結器
@@ -148,7 +150,7 @@ func CheckToolchain(cc string) error {
 	capiActive := llvmapi.Enabled() && llvmapi.Available()
 	if !capiActive && cc != "zig" {
 		if _, err := exec.LookPath("llvm-config"); err != nil {
-			return fmt.Errorf(`未檢測到 LLVM 工具鏈
+			return i18n.Errorf("2xehrcuo", `LLVM toolchain not detected
   macOS: brew install llvm
   Ubuntu: sudo apt install llvm-dev clang
   Windows: winget install LLVM.LLVM`)
@@ -158,7 +160,7 @@ func CheckToolchain(cc string) error {
 	switch cc {
 	case "zig":
 		if _, err := exec.LookPath("zig"); err != nil {
-			return fmt.Errorf(`未檢測到 Zig 編譯器
+			return i18n.Errorf("okt5tvxy", `Zig compiler not detected
   macOS: brew install zig
   Ubuntu: sudo snap install zig --classic
   Windows: winget install zig.zig`)
@@ -168,15 +170,15 @@ func CheckToolchain(cc string) error {
 			// 內置 LLVM：只需連結器，探測 clang/cc/gcc 任一即可（實際選取在
 			// buildLLVMInternal 的連結步驟，與此處探測順序保持一致）。
 			if _, err := findLinker(); err != nil {
-				return fmt.Errorf(`未檢測到可用的 C 連結器（clang/cc/gcc）
-  macOS: xcode-select --install  (提供系統 cc/clang)
+				return i18n.Errorf("5lbegnrh", `no usable C linker detected (clang/cc/gcc)
+  macOS: xcode-select --install  (provides the system cc/clang)
   Ubuntu: sudo apt install build-essential
-  Windows: winget install zig.zig  (或改用 -cc zig)`)
+  Windows: winget install zig.zig  (or use -cc zig)`)
 			}
 			return nil
 		}
 		if _, err := exec.LookPath("clang"); err != nil {
-			return fmt.Errorf(`未檢測到 clang，請確認 LLVM 工具鏈完整安裝
+			return i18n.Errorf("gl4bahpp", `clang not detected; check that the LLVM toolchain is fully installed
   macOS: brew install llvm
   Ubuntu: sudo apt install llvm-dev clang
   Windows: winget install LLVM.LLVM`)
@@ -195,7 +197,7 @@ func findLinker() (string, error) {
 			return p, nil
 		}
 	}
-	return "", fmt.Errorf("no C linker (clang/cc/gcc) found")
+	return "", i18n.Errorf("q9p5bmd0", "no C linker (clang/cc/gcc) found")
 }
 
 // BuildOptions holds all options for a build operation.
@@ -360,7 +362,7 @@ func BuildFile(inputPath string, opts BuildOptions) (string, error) {
 		pkg, _ = LoadPackage(inputPath)
 		if pkg != nil {
 			if _, err := pkg.EnsureDependencies(10); err != nil {
-				return "", fmt.Errorf("dependency resolution failed: %w", err)
+				return "", i18n.Errorf("ebzb8tx2", "dependency resolution failed: %w", err)
 			}
 			mainFile := pkg.Main
 			if mainFile == "" {
@@ -374,7 +376,7 @@ func BuildFile(inputPath string, opts BuildOptions) (string, error) {
 	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
 		mainPath := filepath.Join(inputPath, "main.no")
 		if _, err := os.Stat(mainPath); err != nil {
-			return "", fmt.Errorf("main.no not found in %s", inputPath)
+			return "", i18n.Errorf("zpgykko6", "main.no not found in %s", inputPath)
 		}
 		inputPath = mainPath
 	}
@@ -385,7 +387,7 @@ func BuildFile(inputPath string, opts BuildOptions) (string, error) {
 		pkg, _ = LoadPackage(pkgDir)
 		if pkg != nil {
 			if _, err := pkg.EnsureDependencies(10); err != nil {
-				return "", fmt.Errorf("dependency resolution failed: %w", err)
+				return "", i18n.Errorf("ebzb8tx2", "dependency resolution failed: %w", err)
 			}
 		}
 	}
@@ -446,14 +448,14 @@ func buildWasmDirect(inputPath string, opts BuildOptions) (string, error) {
 		out = "a.wasm"
 	}
 	if inputPath == "." {
-		return "", fmt.Errorf("--wasm-direct requires an explicit input file (workspace mode not supported)")
+		return "", i18n.Errorf("ygofqfbs", "--wasm-direct requires an explicit input file (workspace mode not supported)")
 	}
 	wasmBytes, err := BuildDirectWasm(inputPath, opts)
 	if err != nil {
-		return "", fmt.Errorf("WASM build error: %w", err)
+		return "", i18n.Errorf("vf6bc21u", "WASM build error: %w", err)
 	}
 	if err := os.WriteFile(out, wasmBytes, 0755); err != nil {
-		return "", fmt.Errorf("writing WASM output %s: %w", out, err)
+		return "", i18n.Errorf("z8rfu6gf", "writing WASM output %s: %w", out, err)
 	}
 	return out, nil
 }
@@ -484,7 +486,7 @@ func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult
 	pkg, _ := LoadPackage(pkgDir)
 	if pkg != nil && isDir {
 		if _, err := pkg.EnsureDependencies(10); err != nil {
-			return nil, fmt.Errorf("dependency resolution failed: %w", err)
+			return nil, i18n.Errorf("ebzb8tx2", "dependency resolution failed: %w", err)
 		}
 		mainFile := pkg.Main
 		if mainFile == "" {
@@ -497,14 +499,14 @@ func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult
 	if info, err := os.Stat(inputPath); err == nil && info.IsDir() {
 		mainPath := filepath.Join(inputPath, "main.no")
 		if _, err := os.Stat(mainPath); err != nil {
-			return nil, fmt.Errorf("main.no not found in %s", inputPath)
+			return nil, i18n.Errorf("zpgykko6", "main.no not found in %s", inputPath)
 		}
 		inputPath = mainPath
 	}
 
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading input file: %w", err)
+		return nil, i18n.Errorf("8apmtyk6", "reading input file: %w", err)
 	}
 
 	compiler := NewTranspiler(pkg)
@@ -686,7 +688,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		return "", fmt.Errorf("reading input file: %w", err)
+		return "", i18n.Errorf("8apmtyk6", "reading input file: %w", err)
 	}
 
 	// 決定輸出名稱：main 檔 → 套件名稱，lib 檔 → lib-套件名稱
@@ -718,7 +720,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		}
 		distDir := filepath.Join(rootDir, outDir)
 		if err = os.MkdirAll(distDir, 0755); err != nil {
-			return "", fmt.Errorf("creating dist directory: %w", err)
+			return "", i18n.Errorf("zzcfoc04", "creating dist directory: %w", err)
 		}
 		outPath = filepath.Join(distDir, fileName)
 	}
@@ -762,7 +764,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("compilation error: %w", err)
+		return "", i18n.Errorf("s8gh6opt", "compilation error: %w", err)
 	}
 
 	var linkLibs []string
@@ -798,7 +800,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		if sink != nil && sink.Len() > 0 {
 			fmt.Fprint(os.Stderr, sink.String())
 		}
-		return "", fmt.Errorf("build error: %w", err)
+		return "", i18n.Errorf("s116sd0b", "build error: %w", err)
 	}
 
 	if sink != nil && sink.Len() > 0 {
@@ -834,7 +836,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	// WASM 建構下無法呼叫本機 LLVM 工具鏈（opt/llc/clang）。
 	// 瀏覽器 playground 應改用 --wasm-direct 路徑（直接產生 WASM，不經過 LLVM IR）。
 	if runtime.GOOS == "wasip1" {
-		return fmt.Errorf("LLVM toolchain not available in WASM build; use --wasm-direct flag")
+		return i18n.Errorf("7dl1fkwt", "LLVM toolchain not available in WASM build; use --wasm-direct flag")
 	}
 
 	// 偵測 WASI 目標：wasm32-wasi / wasm32-wasi-threads / wasm32-unknown-wasi 等。
@@ -843,7 +845,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 
 	tempDir, err := os.MkdirTemp("", "nolang")
 	if err != nil {
-		return fmt.Errorf("creating temp directory: %w", err)
+		return i18n.Errorf("27jt8xlw", "creating temp directory: %w", err)
 	}
 	// 中間產物（.ll/.s）每次建構可達數百 MB，必須清理，否則會撐爆系統暫存目錄。
 	// 需要保留 IR 供分析時設 NOLANG_KEEP_IR（與 cmd/no run 路徑同一約定）。
@@ -899,7 +901,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		// LLVM 17+ 的 IR 解析器會自動把 typed pointer（i8*、%vec* 等）升級為 opaque
 		// `ptr`，故不再需要 toOpaquePointers 文本重寫層（死代碼，2026-10-09 刪除）。
 		if err = os.WriteFile(llPath, []byte(code), 0644); err != nil {
-			return fmt.Errorf("writing LLVM IR file: %w", err)
+			return i18n.Errorf("2nvmt2tf", "writing LLVM IR file: %w", err)
 		}
 	}
 
@@ -926,7 +928,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 			FPContract: fpContract,
 		}
 		if cerr := llvmapi.CompileToObject(capiOpts, objPath); cerr != nil {
-			return fmt.Errorf("in-process LLVM C API compile failed (disable with %s=0): %w", llvmapi.EnvSwitch, cerr)
+			return i18n.Errorf("rkd2pw8p", "in-process LLVM C API compile failed (disable with %s=0): %w", llvmapi.EnvSwitch, cerr)
 		}
 		capiObject = objPath
 		if verbose {
@@ -960,7 +962,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 				}
 				optPath = llPath
 			} else {
-				return fmt.Errorf("LLVM optimization failed: %w", err)
+				return i18n.Errorf("ghelzw37", "LLVM optimization failed: %w", err)
 			}
 		}
 		if optPath != llPath && verbose {
@@ -990,7 +992,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 				}
 			}
 			if err = llcCmd.Run(); err != nil {
-				return fmt.Errorf("LLVM assembly failed: %w", err)
+				return i18n.Errorf("jko9phaw", "LLVM assembly failed: %w", err)
 			}
 		} else if verbose {
 			vprintf(sink, "Skipping llc for WASI target (clang reads .ll directly)\n")
@@ -1028,7 +1030,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		if cc != "zig" {
 			sysroot := os.Getenv("WASI_SYSROOT")
 			if sysroot == "" {
-				return fmt.Errorf(`WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
+				return i18n.Errorf("tf9xqjf1", `WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   macOS: brew install wasi-libc  (then export WASI_SYSROOT=$(brew --prefix wasi-libc)/share/wasi-sysroot)
   Ubuntu: download from https://github.com/WebAssembly/wasi-sdk/releases and extract
   Or build from source: git clone https://github.com/WebAssembly/wasi-libc && cd wasi-libc && make
@@ -1115,7 +1117,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		vprintf(sink, "Running: %s %s -o %s\n", cmdStr, clangIn, outPath)
 	}
 	if err = clangCmd.Run(); err != nil {
-		return fmt.Errorf("linking failed: %w", err)
+		return i18n.Errorf("wjju8z98", "linking failed: %w", err)
 	}
 
 	// Ensure the output binary has the executable bit.
@@ -1150,7 +1152,7 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 	// 1. 讀取源碼
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading input file: %w", err)
+		return nil, i18n.Errorf("8apmtyk6", "reading input file: %w", err)
 	}
 
 	// 2. 解析為 AST（與 Transpiler.parseFile 一致的最小流程；
@@ -1160,7 +1162,7 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 	p.Filename = filepath.Base(inputPath)
 	program := p.ParseProgram()
 	if program == nil {
-		return nil, fmt.Errorf("%s: parser returned nil program", inputPath)
+		return nil, i18n.Errorf("umcsmsz6", "%s: parser returned nil program", inputPath)
 	}
 	if errs := p.Errors(); len(errs) > 0 {
 		return nil, fmt.Errorf("%s: %v", inputPath, errs)
@@ -1181,7 +1183,7 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 	if imports, err := js.ExtractESMImports(program); err != nil {
 		return nil, err
 	} else if len(imports) > 0 {
-		return nil, fmt.Errorf("ESM (npm) imports are not supported by the Direct WASM backend; use the JS backend (no build --js)")
+		return nil, i18n.Errorf("h1g1ipdw", "ESM (npm) imports are not supported by the Direct WASM backend; use the JS backend (no build --js)")
 	}
 
 	// 型別校驗（與 LLVM 路徑一致，避免型別錯誤延遲到執行期才炸）
@@ -1225,7 +1227,7 @@ func validateProgram(program *parser.Program, inputPath string) error {
 	for _, e := range errs {
 		fmt.Fprintf(&b, "  %s:%d:%d: %s [%s]\n", filepath.Base(inputPath), e.Line, e.Column, e.Message, e.TraceID)
 	}
-	return fmt.Errorf("%s: validation failed:\n%s", inputPath, b.String())
+	return i18n.Errorf("w308jsag", "%s: validation failed:\n%s", inputPath, b.String())
 }
 
 // LoadWorkspaceFile reads and parses a standalone workspace.noml file from the given directory.
@@ -1240,13 +1242,13 @@ func LoadWorkspaceFile(dir string) (map[string]string, error) {
 
 	m, err := pkg.ParseNomlMap(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", wsFile, err)
+		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", wsFile, err)
 	}
 	ws := make(map[string]string, len(m))
 	for k, v := range m {
 		s, ok := v.(string)
 		if !ok {
-			return nil, fmt.Errorf("parsing %s: value for key %q is not a string", wsFile, k)
+			return nil, i18n.Errorf("5l1nkd68", "parsing %s: value for key %q is not a string", wsFile, k)
 		}
 		ws[k] = s
 	}
@@ -1270,10 +1272,10 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 		return err
 	}
 	if ws == nil {
-		return fmt.Errorf("workspace.noml not found in %s", workspaceDir)
+		return i18n.Errorf("lrxsr5pt", "workspace.noml not found in %s", workspaceDir)
 	}
 	if len(ws) == 0 {
-		return fmt.Errorf("workspace.noml is empty")
+		return i18n.Errorf("p9jv1dcz", "workspace.noml is empty")
 	}
 
 	type buildTarget struct {
@@ -1365,7 +1367,7 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 	}
 
 	if len(targets) == 0 {
-		return fmt.Errorf("no build targets found in workspace")
+		return i18n.Errorf("jpy06p6d", "no build targets found in workspace")
 	}
 
 	// Build all targets in parallel, with concurrency limited to NumCPU
@@ -1415,7 +1417,7 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 	}
 
 	if hasError {
-		return fmt.Errorf("one or more workspace targets failed to build")
+		return i18n.Errorf("edps6fxx", "one or more workspace targets failed to build")
 	}
 	return nil
 }

@@ -245,15 +245,21 @@ func TestTHIRShadowSanity(t *testing.T) {
 		{"str-index-complexity", "b = (s str) {\n\tn = 0\n\ti <- [0..s.len-bytes()): {\n\t\tc = s[i]\n\t}\n}\n", ValidateStrIndexComplexityTHIR, ValidateStrIndexComplexity},
 		// unhandled-overflow：沉默泄漏必須報（ovfhndld/optunuse），新舊同多重集（mainFile 固定同参）。
 		{"unhandled-overflow", "main = () () {\n\ta i64 = 5\n\tb i64 = 10\n\tx = a + b\n\tio.outln(x)\n}\n",
-			func(p *parser.Program, v *THIRView) []ValidateResult { return ValidateUnhandledOverflowTHIR(p, "src/app.no", v) },
+			func(p *parser.Program, v *THIRView) []ValidateResult {
+				return ValidateUnhandledOverflowTHIR(p, "src/app.no", v)
+			},
 			func(p *parser.Program) []ValidateResult { return ValidateUnhandledOverflow(p, "src/app.no") }},
 		// unhandled-index：未處理索引讀取必須報（idxhndld），新舊同多重集。
 		{"unhandled-index", "get = (arr []i64, i i64) (res i64) {\n\tres = arr[i]\n}\n",
-			func(p *parser.Program, v *THIRView) []ValidateResult { return ValidateUnhandledIndexTHIR(p, "src/app.no", v) },
+			func(p *parser.Program, v *THIRView) []ValidateResult {
+				return ValidateUnhandledIndexTHIR(p, "src/app.no", v)
+			},
 			func(p *parser.Program) []ValidateResult { return ValidateUnhandledIndex(p, "src/app.no") }},
 		// index-write：下標直寫必須報（idxwrite），新舊同多重集。
 		{"index-write", "set = () () {\n\ta [3]i64 = [1, 2, 3]\n\ta[1] = 2\n}\n",
-			func(p *parser.Program, v *THIRView) []ValidateResult { return ValidateIndexWriteTHIR(p, "src/app.no", v) },
+			func(p *parser.Program, v *THIRView) []ValidateResult {
+				return ValidateIndexWriteTHIR(p, "src/app.no", v)
+			},
 			func(p *parser.Program) []ValidateResult { return ValidateIndexWrite(p, "src/app.no") }},
 		// func-args-compat：型別不符必須報，新舊同多重集（rootDir 同参）。
 		{"func-args-compat", "f = (a i64) {\n}\nmain = () {\n\ts str = 'x'\n\tf(s)\n}\n",

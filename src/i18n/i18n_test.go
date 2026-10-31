@@ -58,8 +58,11 @@ func TestZeroArgsSkipsSprintf(t *testing.T) {
 		t.Fatalf("P = %q, want verbatim %q", got, def)
 	}
 	err := Errorf("cccccccc", def)
-	if err == nil || err.Error() != def {
-		t.Fatalf("zero-arg Errorf = %v, want %q", err, def)
+	if err == nil || stripID(err.Error()) != def {
+		t.Fatalf("zero-arg Errorf = %v, want %q modulo the [id] prefix", err, def)
+	}
+	if got := IDOf(err); got != "cccccccc" {
+		t.Fatalf("IDOf = %q, want cccccccc", got)
 	}
 }
 
@@ -120,7 +123,7 @@ func TestErrorfPreservesWrap(t *testing.T) {
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("translated errors.Is lost the sentinel: %v", err)
 	}
-	if err.Error() != "讀取 f.no：boom" {
+	if stripID(err.Error()) != "讀取 f.no：boom" {
 		t.Fatalf("translated message = %q", err.Error())
 	}
 }
@@ -152,5 +155,70 @@ func TestSetCatalogCopiesTable(t *testing.T) {
 	src["aaaaaaaa"] = "two"
 	if got := T("aaaaaaaa", "def"); got != "one" {
 		t.Fatalf("T = %q, want the copied value", got)
+	}
+}
+
+// stripID removes the trailing " [xxxxxxxx]" slot that Error() renders, so
+// assertions can keep matching the wording itself.
+func stripID(msg string) string {
+	if !strings.HasSuffix(msg, "]") {
+		return msg
+	}
+	start := strings.LastIndex(msg, " [")
+	if start < 0 {
+		return msg
+	}
+	return msg[:start]
+}
+
+// TestErrorCarriesID locks the contract that makes a compiler message
+// reportable: the 8-character base36 ID is rendered inline, survives %w
+// wrapping, and never appears for a message that has no ID.
+func TestErrorCarriesID(t *testing.T) {
+	reset(t)
+	defer reset(t)
+
+	inner := Errorf("abcd1234", "member %q is empty", "a")
+	if got, want := inner.Error(), `member "a" is empty [abcd1234]`; got != want {
+		t.Fatalf("Error() = %q, want %q", got, want)
+	}
+
+	outer := fmt.Errorf("loading module %s: %w", "m.no", inner)
+	if !strings.Contains(outer.Error(), "[abcd1234]") {
+		t.Fatalf("ID lost through %%w: %q", outer.Error())
+	}
+	if got := IDOf(outer); got != "abcd1234" {
+		t.Fatalf("IDOf(wrapped) = %q, want abcd1234", got)
+	}
+	if got := IDOf(errors.New("plain")); got != "" {
+		t.Fatalf("IDOf(plain) = %q, want empty", got)
+	}
+
+	// A wrapper must not add a second ID when the inner error already renders
+	// one: the innermost frame is the one that names the problem.
+	nested := fmt.Errorf("compilation error: %w", fmt.Errorf("parser errors: %w", inner))
+	if got := strings.Count(nested.Error(), "[abcd1234]"); got != 1 {
+		t.Fatalf("nested chain renders %d IDs, want exactly 1: %q", got, nested.Error())
+	}
+	if strings.Contains(nested.Error(), "parser errors: member") == false {
+		t.Fatalf("nested chain lost its context: %q", nested.Error())
+	}
+
+	// No ID: the text must be byte-identical to the pre-migration rendering.
+	plain := Errorf("", "no id here")
+	if got, want := plain.Error(), "no id here"; got != want {
+		t.Fatalf("Error() without ID = %q, want %q", got, want)
+	}
+}
+
+// TestTranslateMatchesT guards the forwarding helper: it must behave exactly
+// like T, because the parser funnels every message through it.
+func TestTranslateMatchesT(t *testing.T) {
+	reset(t)
+	defer reset(t)
+
+	SetCatalog("zh-CN", map[string]string{"eeeeeeee": "需要 %d 個"})
+	if got, want := Translate("eeeeeeee", "needs %d", 3), T("eeeeeeee", "needs %d", 3); got != want {
+		t.Fatalf("Translate = %q, T = %q", got, want)
 	}
 }

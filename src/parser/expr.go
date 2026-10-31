@@ -648,7 +648,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			tgt := exprToString(idx)
 			rhs := exprToString(val)
 			p.saveErrorf("oraub2m9",
-				"line %d, column %d: `%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败。请改写成（ok 臂的 it 是元素位置，可读可写）：\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   或 `%s ?= %s %s %s`（错误上抛，要求所在函数有 option 结果参数）",
+				"line %d, column %d: `%s %s= %s` is not supported: an index read returns an option (nil when out of range), so a compound assignment would evaluate the index twice and discard the failure. Rewrite it as (the `it` of the ok arm is the element slot, readable and writable):\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   or `%s ?= %s %s %s` (propagates the failure; requires the enclosing function to have an option result parameter)",
 				tok.Line, tok.Column, tgt, op, rhs,
 				tgt, op, rhs,
 				tgt, tgt, op, rhs)

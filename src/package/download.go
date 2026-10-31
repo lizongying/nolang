@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // cacheDir returns the local package cache directory: ~/no/cache/packages
@@ -64,11 +66,11 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 	// WASM（瀏覽器 playground）下不支援網路下載與解壓縮外部進程。
 	// 下載相關功能在瀏覽器環境無意義，直接回傳錯誤。
 	if runtime.GOOS == "wasip1" {
-		return "", "", fmt.Errorf("package download not supported in WASM build (browser playground)")
+		return "", "", i18n.Errorf("7p1k0dke", "package download not supported in WASM build (browser playground)")
 	}
 	owner, repo, ok := parseGitHubKey(key)
 	if !ok {
-		return "", "", fmt.Errorf("unsupported dependency key format: %s (only github.com is supported)", key)
+		return "", "", i18n.Errorf("7mitslag", "unsupported dependency key format: %s (only github.com is supported)", key)
 	}
 
 	// Determine cache path
@@ -99,19 +101,19 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, version)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("creating request: %w", err)
+		return "", "", i18n.Errorf("g391pqjl", "creating request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "nolang")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("fetching release %s: %w", apiURL, err)
+		return "", "", i18n.Errorf("o4wq2axo", "fetching release %s: %w", apiURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("failed to fetch release %s (status %d)", apiURL, resp.StatusCode)
+		return "", "", i18n.Errorf("5jtjxzmz", "failed to fetch release %s (status %d)", apiURL, resp.StatusCode)
 	}
 
 	// Parse the release JSON to find the download URL.
@@ -119,7 +121,7 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 	// Parse the JSON response.
 	releaseInfo, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", "", fmt.Errorf("reading release info: %w", err)
+		return "", "", i18n.Errorf("zs1q169p", "reading release info: %w", err)
 	}
 
 	// Simple JSON parsing to find the first asset with .tar.gz or .zip.
@@ -156,12 +158,12 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 
 		dlResp, err := client.Get(url)
 		if err != nil {
-			downloadErr = fmt.Errorf("downloading from %s: %w", url, err)
+			downloadErr = i18n.Errorf("vmy4qtcr", "downloading from %s: %w", url, err)
 			continue
 		}
 
 		if dlResp.StatusCode != http.StatusOK {
-			downloadErr = fmt.Errorf("downloading from %s (status %d)", url, dlResp.StatusCode)
+			downloadErr = i18n.Errorf("r6p4a75i", "downloading from %s (status %d)", url, dlResp.StatusCode)
 			dlResp.Body.Close()
 			continue
 		}
@@ -170,7 +172,7 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 		data, err = io.ReadAll(dlResp.Body)
 		dlResp.Body.Close()
 		if err != nil {
-			downloadErr = fmt.Errorf("reading archive data from %s: %w", url, err)
+			downloadErr = i18n.Errorf("lqcz5x45", "reading archive data from %s: %w", url, err)
 			continue
 		}
 
@@ -179,7 +181,7 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 	}
 
 	if downloadErr != nil {
-		return "", "", fmt.Errorf("all download attempts failed: %w", downloadErr)
+		return "", "", i18n.Errorf("duufpprw", "all download attempts failed: %w", downloadErr)
 	}
 
 	// Compute SHA256 of the raw archive
@@ -188,7 +190,7 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 
 	// Create cache directory
 	if err := os.MkdirAll(cachePath, 0755); err != nil {
-		return "", "", fmt.Errorf("creating cache directory: %w", err)
+		return "", "", i18n.Errorf("2rkb38mw", "creating cache directory: %w", err)
 	}
 
 	// Save archive to cache for later re-hashing
@@ -201,11 +203,11 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 	r := bytes.NewReader(data)
 	if strings.HasSuffix(assetURL, ".zip") {
 		if err := extractZip(r, cachePath); err != nil {
-			return "", "", fmt.Errorf("extracting zip archive: %w", err)
+			return "", "", i18n.Errorf("fs4qotyl", "extracting zip archive: %w", err)
 		}
 	} else {
 		if err := extractTarGz(r, cachePath); err != nil {
-			return "", "", fmt.Errorf("extracting tar.gz archive: %w", err)
+			return "", "", i18n.Errorf("eit5cjgr", "extracting tar.gz archive: %w", err)
 		}
 	}
 
@@ -213,7 +215,7 @@ func DownloadPackage(key, version string, mirrors []string) (pkgDir string, arch
 	// by looking for workspace.noml or the shortName directory.
 	actualDir := findPackageDir(cachePath, shortName)
 	if actualDir == "" {
-		return "", "", fmt.Errorf("package %s not found in extracted archive", shortName)
+		return "", "", i18n.Errorf("9edsvha2", "package %s not found in extracted archive", shortName)
 	}
 
 	return actualDir, archiveHash, nil
@@ -239,7 +241,7 @@ func extractDownloadURL(jsonStr string) string {
 func extractTarGz(r io.Reader, destDir string) error {
 	gzr, err := gzip.NewReader(r)
 	if err != nil {
-		return fmt.Errorf("creating gzip reader: %w", err)
+		return i18n.Errorf("vo2eyrl7", "creating gzip reader: %w", err)
 	}
 	defer gzr.Close()
 
@@ -250,13 +252,13 @@ func extractTarGz(r io.Reader, destDir string) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("reading tar entry: %w", err)
+			return i18n.Errorf("cggefx7i", "reading tar entry: %w", err)
 		}
 
 		// Sanitize path
 		target := filepath.Join(destDir, header.Name)
 		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) {
-			return fmt.Errorf("illegal file path: %s", header.Name)
+			return i18n.Errorf("uruyzlb4", "illegal file path: %s", header.Name)
 		}
 
 		switch header.Typeflag {
@@ -292,7 +294,7 @@ func extractZip(r io.Reader, destDir string) error {
 	// Read entire zip data (needed for zip.Reader)
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return fmt.Errorf("reading zip data: %w", err)
+		return i18n.Errorf("5l5saj7a", "reading zip data: %w", err)
 	}
 
 	// Use bytes.NewReader which implements io.ReaderAt
@@ -306,7 +308,7 @@ func extractZip(r io.Reader, destDir string) error {
 	for _, f := range zipReader.File {
 		fpath := filepath.Join(destDir, f.Name)
 		if !strings.HasPrefix(fpath, filepath.Clean(destDir)+string(os.PathSeparator)) {
-			return fmt.Errorf("illegal file path: %s", f.Name)
+			return i18n.Errorf("uruyzlb4", "illegal file path: %s", f.Name)
 		}
 
 		if f.FileInfo().IsDir() {
@@ -321,7 +323,7 @@ func extractZip(r io.Reader, destDir string) error {
 
 		// 單條目未壓縮大小超限：不必打開就直接拒絕。
 		if f.UncompressedSize64 > maxExtractBytes {
-			return fmt.Errorf("zip entry %q is too large (%d bytes)", f.Name, f.UncompressedSize64)
+			return i18n.Errorf("82l9xk55", "zip entry %q is too large (%d bytes)", f.Name, f.UncompressedSize64)
 		}
 
 		rc, err := f.Open()
@@ -345,7 +347,7 @@ func extractZip(r io.Reader, destDir string) error {
 			return err
 		}
 		if n >= budget {
-			return fmt.Errorf("zip archive exceeds extraction size limit (%d bytes)", maxExtractBytes)
+			return i18n.Errorf("l0ifbo16", "zip archive exceeds extraction size limit (%d bytes)", maxExtractBytes)
 		}
 	}
 	return nil

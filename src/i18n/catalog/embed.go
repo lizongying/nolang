@@ -22,7 +22,7 @@ func embeddedTags() []string {
 	var out []string
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".noml") {
+		if e.IsDir() || !strings.HasSuffix(name, ".noml") || IsDocCatalogName(name) {
 			continue
 		}
 		out = append(out, strings.TrimSuffix(name, ".noml"))
@@ -30,3 +30,8 @@ func embeddedTags() []string {
 	sort.Strings(out)
 	return out
 }
+
+// Locales lists the built-in catalog tags (the files actually embedded), sorted.
+// It excludes aliases and doc catalogs, so it is the right set for a
+// per-catalog validation gate.
+func Locales() []string { return embeddedTags() }

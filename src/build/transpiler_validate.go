@@ -1,11 +1,12 @@
 package build
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // findTypeForVar 從區塊語句中查找變數的類型（簡化版）
@@ -642,7 +643,7 @@ func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, 
 		}
 		for _, k := range dupKeys {
 			if seen[k] {
-				return fmt.Errorf("duplicate variable '%s'", s.Name.Value)
+				return i18n.Errorf("sm7rjfcm", "duplicate variable '%s'", s.Name.Value)
 			}
 		}
 		for _, k := range dupKeys {
@@ -720,7 +721,7 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 		usedNames := collectExprIdentifiers(stmt)
 		for name := range usedNames {
 			if loopOnlyVars[name] && !definedBeforeLoop[name] {
-				return fmt.Errorf("line %d: variable '%s' is declared inside a loop body and may be uninitialized when used here (loop might execute zero iterations)",
+				return i18n.Errorf("sjuueqqo", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when used here (loop might execute zero iterations)",
 					stmtPosLine(stmt), name)
 			}
 		}
@@ -732,7 +733,7 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 			if fs.IterRange != nil && fs.IterRange.Variable != "" {
 				v := fs.IterRange.Variable
 				if loopOnlyVars[v] && !definedBeforeLoop[v] {
-					return fmt.Errorf("line %d: variable '%s' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)",
+					return i18n.Errorf("h9cfkf84", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)",
 						fs.Token.Line, v)
 				}
 			}
@@ -964,7 +965,7 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				isExplicitStr := s.Type != nil && (s.Type.String() == "str")
 				if isExplicitStr {
 					if !isStringExpr(s.Value, stringSizes) && !isCharOrUntypedValue(s.Value, varTypes) {
-						return fmt.Errorf("cannot assign non-string value to string variable '%s'", s.Name.Value)
+						return i18n.Errorf("5jsd564o", "cannot assign non-string value to string variable '%s'", s.Name.Value)
 					}
 				}
 			}
@@ -1100,10 +1101,10 @@ func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string
 		return nil
 	}
 	if idx < 0 {
-		return fmt.Errorf("index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size)
+		return i18n.Errorf("uqby2pvs", "index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size)
 	}
 	if idx >= size {
-		return fmt.Errorf("index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size)
+		return i18n.Errorf("uqby2pvs", "index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size)
 	}
 	return nil
 }
@@ -1141,7 +1142,7 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 			// is negative under either semantics.
 			if size, exists := stringSizes[ident.Value]; exists {
 				if idx, ok := tryEvalConstInt(e.Index); ok && idx < 0 {
-					return fmt.Errorf("index %d out of bounds for string '%s' of size %d", idx, ident.Value, size)
+					return i18n.Errorf("gyuohhum", "index %d out of bounds for string '%s' of size %d", idx, ident.Value, size)
 				}
 			}
 		}
@@ -1157,13 +1158,13 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 			if dot.Property == "len" {
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
 					if _, exists := arraySizes[ident.Value]; exists {
-						return fmt.Errorf("cannot modify read-only field 'len' of array '%s'", ident.Value)
+						return i18n.Errorf("xo6e53hm", "cannot modify read-only field 'len' of array '%s'", ident.Value)
 					}
 					if _, exists := sliceSizes[ident.Value]; exists {
-						return fmt.Errorf("cannot modify read-only field 'len' of slice '%s'", ident.Value)
+						return i18n.Errorf("xlppn81m", "cannot modify read-only field 'len' of slice '%s'", ident.Value)
 					}
 					if _, exists := stringSizes[ident.Value]; exists {
-						return fmt.Errorf("cannot modify read-only field 'len' of string '%s'", ident.Value)
+						return i18n.Errorf("qon2wsev", "cannot modify read-only field 'len' of string '%s'", ident.Value)
 					}
 				}
 			}

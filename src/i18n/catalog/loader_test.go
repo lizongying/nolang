@@ -111,3 +111,58 @@ func TestInitEnglishNeedsNoCatalog(t *testing.T) {
 		t.Fatalf("Lang() = %q, want en", got)
 	}
 }
+
+// TestNewLocalesResolve covers the multilingual matrix: every shipped tag is
+// available, and the Chinese script/region aliases route to the right catalog
+// (Simplified for Hans/plain zh, Traditional for Hant and TW/HK/MO).
+func TestNewLocalesResolve(t *testing.T) {
+	defer i18n.SetLang("en")
+
+	avail := Available(nil)
+	for _, want := range []string{"zh-CN", "zh-TW", "ja", "ko", "fr", "es"} {
+		found := false
+		for _, a := range avail {
+			if a == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Available() missing %q: %v", want, avail)
+		}
+	}
+
+	cases := map[string]string{
+		"zh": "zh-CN", "zh-Hans": "zh-CN", "zh-CN": "zh-CN",
+		"zh-TW": "zh-TW", "zh-Hant": "zh-TW", "zh-Hant-TW": "zh-TW",
+		"zh-HK": "zh-TW", "zh-MO": "zh-TW",
+		"ja": "ja", "ja-JP": "ja", "ko": "ko", "ko-KR": "ko",
+		"fr": "fr", "fr-FR": "fr", "es": "es", "es-ES": "es",
+	}
+	for raw, want := range cases {
+		if err := Init(Options{Lang: raw, LangSet: true}); err != nil {
+			t.Errorf("Init(%q): %v", raw, err)
+			continue
+		}
+		if got := i18n.Lang(); got != want {
+			t.Errorf("Init(%q) -> %q, want %q", raw, got, want)
+		}
+	}
+}
+
+// TestEachLocaleTranslates proves each catalog actually carries a translation for
+// a common message — resolving a tag is not the same as having text for it.
+func TestEachLocaleTranslates(t *testing.T) {
+	defer i18n.SetLang("en")
+	const id = "haahhq7o"
+	en := "function 'f' expects at least 1 argument(s), got 0"
+	for _, tag := range []string{"zh-CN", "zh-TW", "ja", "ko", "fr", "es"} {
+		if err := Init(Options{Lang: tag, LangSet: true}); err != nil {
+			t.Fatalf("Init(%s): %v", tag, err)
+		}
+		got := i18n.T(id, en, "f", 1, 0)
+		if got == en {
+			t.Errorf("%s: message fell back to English: %q", tag, got)
+		}
+	}
+}

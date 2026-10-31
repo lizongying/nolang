@@ -15,6 +15,8 @@ import (
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // buildJSBackend 對應原 main.go 的 -js 分支：繞過 LLVM 工具鏈，發射 JS 原始碼並寫入
@@ -26,7 +28,7 @@ func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
 		if _, err := os.Stat(mainPath); err == nil {
 			inputPath = mainPath
 		} else {
-			return "", fmt.Errorf("JS backend requires an explicit input file or main.no (workspace mode not supported)")
+			return "", i18n.Errorf("0hl9ybj4", "JS backend requires an explicit input file or main.no (workspace mode not supported)")
 		}
 	}
 
@@ -46,13 +48,13 @@ func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
 		os.MkdirAll("dist", 0755)
 		jsCode, htmlCode, esmImports, err := BuildJSBrowser(inputPath, BuildOptions{Verbose: opts.Verbose, UseJS: true, BrowserMode: true}, baseName+".js", esmCDNBase(inputPath, opts))
 		if err != nil {
-			return "", fmt.Errorf("JS build error: %w", err)
+			return "", i18n.Errorf("3bl2ts85", "JS build error: %w", err)
 		}
 		if err := os.WriteFile(outJs, []byte(jsCode), 0644); err != nil {
-			return "", fmt.Errorf("writing JS output %s: %w", outJs, err)
+			return "", i18n.Errorf("v1j0odm2", "writing JS output %s: %w", outJs, err)
 		}
 		if err := os.WriteFile(outHtml, []byte(htmlCode), 0644); err != nil {
-			return "", fmt.Errorf("writing HTML output %s: %w", outHtml, err)
+			return "", i18n.Errorf("bsnjql1o", "writing HTML output %s: %w", outHtml, err)
 		}
 		if len(esmImports) > 0 {
 			if err := writeESMModuleSidecar(outJs); err != nil {
@@ -64,7 +66,7 @@ func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
 
 	res, err := BuildJSEx(inputPath, opts)
 	if err != nil {
-		return "", fmt.Errorf("JS build error: %w", err)
+		return "", i18n.Errorf("3bl2ts85", "JS build error: %w", err)
 	}
 	out := opts.Output
 	if out == "" {
@@ -78,7 +80,7 @@ func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
 		os.MkdirAll("dist", 0755)
 	}
 	if err := os.WriteFile(out, []byte(res.Code), 0644); err != nil {
-		return "", fmt.Errorf("writing JS output %s: %w", out, err)
+		return "", i18n.Errorf("v1j0odm2", "writing JS output %s: %w", out, err)
 	}
 	// ESM output must be loaded as a module: drop a package.json sidecar next
 	// to the artifact (npm convention) so `node dist/x.js` treats it as ESM.
@@ -105,7 +107,7 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	p.Filename = filepath.Base(inputPath)
 	program := p.ParseProgram()
 	if program == nil {
-		return fmt.Errorf("%s: parser returned nil program", inputPath)
+		return i18n.Errorf("umcsmsz6", "%s: parser returned nil program", inputPath)
 	}
 	if errs := p.Errors(); len(errs) > 0 {
 		return fmt.Errorf("%s: %v", inputPath, errs)
@@ -120,7 +122,7 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	// 解析並合併本地模組導入
 	program, err := resolveAndMergeJSModules(program, inputPath, pkg)
 	if err != nil {
-		return fmt.Errorf("module resolution: %w", err)
+		return i18n.Errorf("gczvzsdh", "module resolution: %w", err)
 	}
 
 	// 型別校驗（與 LLVM 路徑一致）
@@ -141,7 +143,7 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	}
 	jsCode, err := g.Generate(program)
 	if err != nil {
-		return fmt.Errorf("JS generation error: %w", err)
+		return i18n.Errorf("8jsgdrcw", "JS generation error: %w", err)
 	}
 
 	// 確保輸出目錄存在
@@ -149,7 +151,7 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 		_ = os.MkdirAll(dir, 0755)
 	}
 	if err := os.WriteFile(outPath, []byte(jsCode), 0644); err != nil {
-		return fmt.Errorf("writing JS output: %w", err)
+		return i18n.Errorf("q20a8lbi", "writing JS output: %w", err)
 	}
 	// ESM output needs the package.json {"type":"module"} sidecar too.
 	if imports, err := js.ExtractESMImports(program); err != nil {
@@ -226,6 +228,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 	merged.FmtTrivia.Merge(program.FmtTrivia)
 
 	loadedModules := make(map[string]bool) // track resolved file paths to avoid duplicate loading
+	// nomlTypeFiles 記錄 .noml 生成的型別名 → 來源檔案：同一檔案被多次導入
+	// （例如再加 `as` 別名）時不重複輸出型別定義，不同檔案撞同名則報錯。
+	nomlTypeFiles := make(map[string]string)
 
 	// parseModuleFile reads and parses a .no file, applying lib.no export
 	// filtering if the module belongs to a package with exports.
@@ -297,10 +302,10 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		if js.IsESMUse(use) {
 			spec, _ := js.ESMSpecifier(use)
 			if _, err := js.SanitizeSpecifier(spec); err != nil {
-				return fmt.Errorf("import %q: %w", use.Path, err)
+				return i18n.Errorf("l62tgcu4", "import %q: %w", use.Path, err)
 			}
 			if !esmDeclared(pkgConfig, spec) {
-				return fmt.Errorf("ESM module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", spec, spec)
+				return i18n.Errorf("nz3ol1c4", "ESM module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", spec, spec)
 			}
 			key := use.Path + "\x00" + use.Function + "\x00" + use.Alias
 			if !esmSeen[key] {
@@ -319,7 +324,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 			// next to the emitted output, not an npm package: it needs no
 			// dependencies entry and is not installed by npm.
 			if np.WASM != "" && !js.IsRelativeSpecifier(np.WASM) && !esmDeclared(pkgConfig, np.WASM) {
-				return fmt.Errorf("native wasm module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", np.WASM, np.WASM)
+				return i18n.Errorf("2lsu55tb", "native wasm module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", np.WASM, np.WASM)
 			}
 			merged.Statements = append(merged.Statements, use)
 			return nil
@@ -332,24 +337,31 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		}
 
 		modulePath := resolveModulePath(use.Path)
-		if loadedModules[modulePath] {
+		isNoml := strings.HasSuffix(modulePath, ".noml")
+		// 與 LLVM 端同口徑：無別名的導入去重。.noml 的 `as` 別名導入只是在同一份
+		// 型別上多一個值綁定，需要再走一次合併（型別定義由 nomlTypeFiles 去重）。
+		if loadedModules[modulePath] && !(isNoml && use.Alias != "") {
 			return nil
 		}
 		loadedModules[modulePath] = true
 
 		// 只有路徑沒有函數名時，別名無對象可導入（.noml 除外，見下方 isNoml）。
-		if use.Alias != "" && use.Function == "" && !strings.HasSuffix(modulePath, ".noml") {
-			return fmt.Errorf("import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file", use.Path, use.Alias)
+		if use.Alias != "" && use.Function == "" && !isNoml {
+			return i18n.Errorf("l9ef35lt", "import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file", use.Path, use.Alias)
 		}
 
 		modProg, err := parseModuleFile(modulePath)
 		if err != nil {
-			return fmt.Errorf("loading module %s: %w", use.Path, err)
+			return i18n.Errorf("kzsepkro", "loading module %s: %w", use.Path, err)
 		}
 		modProg = parser.CloneProgram(modProg) // S5 stage 6：模組工作副本
 		merged.Sem.Merge(modProg.Sem)
 		merged.FmtTrivia.Merge(modProg.FmtTrivia)
-		isNoml := strings.HasSuffix(modulePath, ".noml")
+		// 生成物的值名可能是檔名、也可能是頂部 `#{name = '...'}` 註解指定的名字。
+		nomlBinding := ""
+		if isNoml {
+			nomlBinding = nomlBindingName(modProg)
+		}
 
 		for _, ms := range modProg.Statements {
 			// Collect transitive UseStatements for recursive processing.
@@ -365,7 +377,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 
 			// When alias is specified, only import the specific function/constant.
 			// .noml 例外：別名只改寫頂層值綁定名，結構體定義照常合併（結構體名
-			// 就是文件名）。
+			// 預設就是文件名，可被頂部註解改寫）。
 			if use.Alias != "" && !isNoml {
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
 					if use.Function != "" && fd.Name == use.Function {
@@ -384,8 +396,20 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 				continue
 			}
 			if isNoml && use.Alias != "" {
-				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil && ls.Name.Value == nomlStem(modulePath) {
+				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil && ls.Name.Value == nomlBinding {
 					ls.Name.Value = nomlValueName(use.Alias)
+				}
+			}
+			// 同一份 .noml 再次導入（帶 `as` 別名）時，型別定義不重複輸出。
+			if isNoml {
+				if name := getTypeDefName(ms); name != "" {
+					if prev, ok := nomlTypeFiles[name]; ok {
+						if prev != modulePath {
+							return i18n.Errorf("cnsb9bys", "import %s: type %q is also defined by %s; tell them apart with a top-level #{name = '...'} annotation", use.Path, name, prev)
+						}
+						continue
+					}
+					nomlTypeFiles[name] = modulePath
 				}
 			}
 
@@ -501,7 +525,7 @@ func BuildJSEx(inputPath string, opts BuildOptions) (*BuildJSResult, error) {
 	// 1. 讀取源碼
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading input file: %w", err)
+		return nil, i18n.Errorf("8apmtyk6", "reading input file: %w", err)
 	}
 
 	// 2. 解析為 AST（與 BuildDirectWasm 一致的最小流程）
@@ -510,7 +534,7 @@ func BuildJSEx(inputPath string, opts BuildOptions) (*BuildJSResult, error) {
 	p.Filename = filepath.Base(inputPath)
 	program := p.ParseProgram()
 	if program == nil {
-		return nil, fmt.Errorf("%s: parser returned nil program", inputPath)
+		return nil, i18n.Errorf("umcsmsz6", "%s: parser returned nil program", inputPath)
 	}
 	if errs := p.Errors(); len(errs) > 0 {
 		return nil, fmt.Errorf("%s: %v", inputPath, errs)
@@ -526,7 +550,7 @@ func BuildJSEx(inputPath string, opts BuildOptions) (*BuildJSResult, error) {
 	pkgConfig, _ := LoadPackage(filepath.Dir(inputPath))
 	program, err = resolveAndMergeJSModules(program, inputPath, pkgConfig)
 	if err != nil {
-		return nil, fmt.Errorf("module resolution: %w", err)
+		return nil, i18n.Errorf("gczvzsdh", "module resolution: %w", err)
 	}
 
 	// 3.5 型別校驗（與 LLVM 路徑一致，避免型別錯誤延遲到執行期才炸）

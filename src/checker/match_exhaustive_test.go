@@ -21,7 +21,7 @@ func parseProg(t *testing.T, src string) *parser.Program {
 func countMatchNonex(results []ValidateResult) int {
 	n := 0
 	for _, r := range results {
-		if r.TraceID == "match-nonex" {
+		if r.TraceID == "xl6uu81q" {
 			n++
 		}
 	}
@@ -350,7 +350,6 @@ func TestNonExhaustiveMatchErrOkCombinedMissingNil(t *testing.T) {
 	}
 }
 
-
 // TestNonExhaustiveMatchFileAttribution verifies the match-nonex diagnostic
 // carries the SourceFile of its enclosing top-level statement, so it survives the
 // multi-file (merged) filter in RunAllLints (lint.go: `!singleFile && r.File == ""`).
@@ -410,7 +409,7 @@ func TestNonExhaustiveMatchVetMergedSurvivesFilter(t *testing.T) {
 	})
 	var found *LintResult
 	for i := range results {
-		if results[i].TraceID == "match-nonex" {
+		if results[i].TraceID == "xl6uu81q" {
 			found = &results[i]
 			break
 		}

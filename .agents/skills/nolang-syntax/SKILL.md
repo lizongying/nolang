@@ -2768,8 +2768,9 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 #### Importing `.noml` configuration files directly
 
 `# /cfg/server` resolves `<name>.no` first and falls back to `<name>.noml`. The imported
-file is rebuilt as nolang source: **the struct name is the file name** (`server.noml` →
-`server`), each member becomes a field, and a same-named global value holds the contents
+file is rebuilt as nolang source: **the struct name defaults to the file name**
+(`server.noml` → `server`, overridable by a top-level `#{name = '...'}` annotation),
+each member becomes a field, and a same-named global value holds the contents
 (`server.port`).
 
 ```noml
@@ -2796,6 +2797,27 @@ print(cfg.host)                  ; localhost
 - Nested structs are named `<file>-<member>` (`server-compiler`); keys become lower-case
   kebab-case fields (`anonymous-fn-type`), `f-` prefix for a leading digit, `x-` for
   keywords.
+- A **file-level annotation above the top `{` renames the struct**:
+  `#{name = 'db-options'}` (equivalently `#{type = '...'}`; `name` wins). The value
+  binding and the nested-struct prefix follow it; the import path still comes from the
+  file name. Two different files mapping to one type name is an error — separate them
+  with this annotation. Re-importing the same file (e.g. with `as`) merges the type
+  definition once:
+
+```noml
+; cfg/db.noml
+#{name = 'db-options'}
+{
+  host: 'localhost'
+}
+```
+
+```no
+# /cfg/db
+# /cfg/db as db2
+print(db-options.host)           ; localhost
+print(db2.host)                  ; localhost
+```
 - `.noml` types never take a module prefix (a file named `server.noml` keeps struct
   `server` even though std has a `server` module).
 - `package.noml` / `workspace.noml` also accept `#{...}` annotations; they are ignored at

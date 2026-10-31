@@ -13,8 +13,9 @@ import (
 // compiler cannot infer the element type and defaults to []i64 (8 bytes/element).
 //
 // Example:
-//   buf = with-len(n)       // ERROR: cannot infer type
-//   buf []byte = with-len(n) // OK: type inferred from LHS annotation
+//
+//	buf = with-len(n)       // ERROR: cannot infer type
+//	buf []byte = with-len(n) // OK: type inferred from LHS annotation
 func TestValidateTypesWithLenNoTypeAnnotation(t *testing.T) {
 	src := `save = (path str) (ok bool) {
     n = 14

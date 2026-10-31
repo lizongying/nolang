@@ -439,3 +439,154 @@ func TestNomlDocRoundTrip(t *testing.T) {
 		t.Errorf("name = %v", back.Root["name"])
 	}
 }
+
+// TestNomlRootAnnotation 鎖定文件級註解：寫在頂層值上方的 `#{...}` 屬於整份
+// 文件（保存在空路徑），`name` 指定重建後的結構體名，`type` 為等價寫法。
+func TestNomlRootAnnotation(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"name", "#{name = 'server-config'}\n{\n  port: 8080\n}\n", "server-config"},
+		{"type", "#{type = 'server-options'}\n{\n  port: 8080\n}\n", "server-options"},
+		{"name wins", "#{type = 'a-b', name = 'c-d'}\n{\n  port: 8080\n}\n", "c-d"},
+		{"trailing", "{\n  port: 8080\n} #{name = 'e-f'}\n", "e-f"},
+		{"multiple groups", "#{doc = 'config'}\n#{name = 'g-h'}\n{\n  port: 8080\n}\n", "g-h"},
+		{"none", "{\n  port: 8080\n}\n", ""},
+	}
+	for _, c := range cases {
+		doc, err := ParseNomlDoc([]byte(c.src))
+		if err != nil {
+			t.Fatalf("%s: parse: %v", c.name, err)
+		}
+		if got := doc.RootName(); got != c.want {
+			t.Errorf("%s: RootName() = %q, want %q", c.name, got, c.want)
+		}
+		if doc.Root["port"] != float64(8080) {
+			t.Errorf("%s: value tree broken: %v", c.name, doc.Root)
+		}
+		// 往返：文件級註解輸出在頂層值上方，重建後仍在。
+		text, err := MarshalNomlDoc(doc)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", c.name, err)
+		}
+		back, err := ParseNomlDoc([]byte(text))
+		if err != nil {
+			t.Fatalf("%s: reparse:\n%s\nerr: %v", c.name, text, err)
+		}
+		if back.RootName() != doc.RootName() {
+			t.Errorf("%s: round trip RootName() = %q, want %q\n%s", c.name, back.RootName(), doc.RootName(), text)
+		}
+	}
+}
+
+// TestNomlRootAnnotationPositionRule 鎖定頂部註解同樣只能用文件級位置：
+// 與頂層 `{` 同一行的前綴寫法報錯。
+func TestNomlRootAnnotationPositionRule(t *testing.T) {
+	if _, err := ParseNomlDoc([]byte("#{name = 'x'} {\n  port: 1\n}")); err == nil {
+		t.Error("expected an error for an annotation sharing the line with the top level object")
+	}
+}
+
+// TestNomlRawString locks the backtick form: it is the only way to write a
+// multi-line value without `\n` escapes, and it must behave exactly like the
+// nolang source lexer (opening backtick followed by a newline, closing backtick
+// alone on its line, no escape processing at all).
+func TestNomlRawString(t *testing.T) {
+	src := "{\n  doc: `\nline one\nline two\n`\n  name: 'x'\n}"
+	v, err := ParseNoml([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	m := v.(map[string]any)
+	if got, want := m["doc"], "line one\nline two"; got != want {
+		t.Fatalf("doc = %q, want %q", got, want)
+	}
+	if got, want := m["name"], "x"; got != want {
+		t.Fatalf("name = %q, want %q", got, want)
+	}
+}
+
+// TestNomlRawStringNoEscapes proves the body is verbatim: a backslash-n inside a
+// raw block is two characters, not a newline. If this ever started unescaping,
+// translated text containing a literal backslash would silently change.
+func TestNomlRawStringNoEscapes(t *testing.T) {
+	src := "{\n  doc: `\na\\nb 'quoted' \"dq\"\n`\n}"
+	v, err := ParseNoml([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, want := v.(map[string]any)["doc"], `a\nb 'quoted' "dq"`; got != want {
+		t.Fatalf("doc = %q, want %q", got, want)
+	}
+}
+
+// TestNomlRawStringIndentedClose accepts a closing backtick preceded by
+// whitespace, which is what an indented member looks like.
+func TestNomlRawStringIndentedClose(t *testing.T) {
+	src := "{\n  doc: `\nbody\n   `\n}"
+	v, err := ParseNoml([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, want := v.(map[string]any)["doc"], "body"; got != want {
+		t.Fatalf("doc = %q, want %q", got, want)
+	}
+}
+
+// TestNomlRawStringErrors pins the two failure modes with messages that tell the
+// author what to fix, rather than a bare "unexpected character".
+func TestNomlRawStringErrors(t *testing.T) {
+	if _, err := ParseNoml([]byte("{\n  doc: `same line`\n}")); err == nil {
+		t.Error("expected an error when the opening backtick is not followed by a newline")
+	}
+	if _, err := ParseNoml([]byte("{\n  doc: `\nno terminator\n}")); err == nil {
+		t.Error("expected an error for an unterminated raw string")
+	}
+}
+
+// TestNomlRawStringAnnotation covers the case the syntax exists for: a multi-line
+// doc annotation on a member (module / method / function documentation).
+func TestNomlRawStringAnnotation(t *testing.T) {
+	src := "{\n  #{doc = `\nReads a file.\nReturns option<str>.\n`}\n  read: 'x'\n}"
+	doc, err := ParseNomlDoc([]byte(src))
+	if err != nil {
+		t.Fatalf("parse doc: %v", err)
+	}
+	anns := doc.Annotations["read"]
+	if len(anns) != 1 || anns[0].Key != "doc" {
+		t.Fatalf("annotations = %+v", anns)
+	}
+	if got, want := anns[0].Value, "Reads a file.\nReturns option<str>."; got != want {
+		t.Fatalf("doc value = %q, want %q", got, want)
+	}
+}
+
+// TestNomlQuoteValueRoundTrip is the property that matters for the catalogs: what
+// the generator writes must parse back to the identical string, for both the raw
+// form and the fallback single-quoted form.
+func TestNomlQuoteValueRoundTrip(t *testing.T) {
+	cases := []string{
+		"single line",
+		"has 'quote' and \\backslash",
+		"two\nlines",
+		"trailing newline\n",
+		"blank\n\nline",
+		"a\n`\nb", // a line that IS the terminator: must fall back
+	}
+	for _, c := range cases {
+		quoted := NomlQuoteValue(c)
+		src := "{\n  k: " + quoted + "\n}"
+		v, err := ParseNoml([]byte(src))
+		if err != nil {
+			t.Fatalf("%q -> %q: parse: %v", c, quoted, err)
+		}
+		if got := v.(map[string]any)["k"]; got != c {
+			t.Fatalf("%q -> %q round-tripped to %q", c, quoted, got)
+		}
+	}
+	if q := NomlQuoteValue("a\n`\nb"); q[0] == '`' {
+		t.Errorf("a value containing a terminator line must fall back to the quoted form, got %q", q)
+	}
+}

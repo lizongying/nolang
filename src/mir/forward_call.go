@@ -37,6 +37,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // cArgKind tells emitCCall how to marshal one argument for the C call.
@@ -662,7 +664,7 @@ func forwardCSpecUnavailable(ff string) string {
 // drop pass frees str results exactly like any other owned local).
 func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	if spec == nil || spec.Func == "" {
-		return fmt.Errorf("builtin %s: no C call spec", inst.Sym)
+		return i18n.Errorf("0qnjitgt", "builtin %s: no C call spec", inst.Sym)
 	}
 
 	// --- declare -----------------------------------------------------------
@@ -700,7 +702,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 			}
 			s := c.cstrOf(v)
 			if s == "" {
-				return fmt.Errorf("builtin %s: cannot marshal arg %d as C string", inst.Sym, a.From)
+				return i18n.Errorf("z68vr2e2", "builtin %s: cannot marshal arg %d as C string", inst.Sym, a.From)
 			}
 			if a.KeepAlive {
 				// mkstemp rewrites this buffer in place with the real name;
@@ -718,25 +720,25 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 			}
 			s := c.dataPtrOf(v)
 			if s == "" {
-				return fmt.Errorf("builtin %s: cannot take data pointer of arg %d", inst.Sym, a.From)
+				return i18n.Errorf("r001bqqr", "builtin %s: cannot take data pointer of arg %d", inst.Sym, a.From)
 			}
 			callArgs = append(callArgs, "i8* "+s)
 		case cArgI32:
 			v, err := c.marshalScalar(inst, a.From, "i32")
 			if err != nil {
-				return fmt.Errorf("builtin %s: %v", inst.Sym, err)
+				return i18n.Errorf("appz8ry7", "builtin %s: %v", inst.Sym, err)
 			}
 			callArgs = append(callArgs, "i32 "+v)
 		case cArgDouble:
 			v, err := c.marshalScalar(inst, a.From, "double")
 			if err != nil {
-				return fmt.Errorf("builtin %s: %v", inst.Sym, err)
+				return i18n.Errorf("appz8ry7", "builtin %s: %v", inst.Sym, err)
 			}
 			callArgs = append(callArgs, "double "+v)
 		case cArgI64ToPtr:
 			v, err := c.marshalScalar(inst, a.From, "i64")
 			if err != nil {
-				return fmt.Errorf("builtin %s: %v", inst.Sym, err)
+				return i18n.Errorf("appz8ry7", "builtin %s: %v", inst.Sym, err)
 			}
 			p := c.treg("i2p")
 			c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", p, v))
@@ -744,7 +746,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		default:
 			v, err := c.marshalScalar(inst, a.From, "i64")
 			if err != nil {
-				return fmt.Errorf("builtin %s: %v", inst.Sym, err)
+				return i18n.Errorf("appz8ry7", "builtin %s: %v", inst.Sym, err)
 			}
 			callArgs = append(callArgs, "i64 "+v)
 		}
@@ -787,7 +789,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		// is-dir: stat-failure alone is not enough — a directory is not a file.
 		buf := spec.Args[spec.Ret.BufIdx].Temp
 		if buf == "" {
-			return fmt.Errorf("builtin %s: scratch buffer not materialized", inst.Sym)
+			return i18n.Errorf("y4yxzacz", "builtin %s: scratch buffer not materialized", inst.Sym)
 		}
 		okCmp := c.treg("sfok")
 		c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", okCmp, callTy, callReg))
@@ -829,7 +831,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		// buffer (mkstemp). Adopt it as an owned %str-long.
 		buf := spec.Args[spec.Ret.BufIdx].Temp
 		if buf == "" {
-			return fmt.Errorf("builtin %s: keep-alive buffer not materialized", inst.Sym)
+			return i18n.Errorf("qog571qy", "builtin %s: keep-alive buffer not materialized", inst.Sym)
 		}
 		// Option-returning builtins (mkdtemp -> ?str): fold the paired ok flag
 		// into the option tag and adopt the buffer as the inline %str-long
@@ -847,7 +849,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	case cRetBufStr:
 		buf := spec.Args[spec.Ret.BufIdx].Temp
 		if buf == "" {
-			return fmt.Errorf("builtin %s: scratch buffer not materialized", inst.Sym)
+			return i18n.Errorf("y4yxzacz", "builtin %s: scratch buffer not materialized", inst.Sym)
 		}
 		// Option-returning builtins (readlink -> ?str): length comes from the C
 		// return; ok = (ret >= 0) becomes the option tag. NUL-terminate when the
@@ -880,7 +882,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	case cRetField:
 		buf := spec.Args[spec.Ret.BufIdx].Temp
 		if buf == "" {
-			return fmt.Errorf("builtin %s: scratch buffer not materialized", inst.Sym)
+			return i18n.Errorf("y4yxzacz", "builtin %s: scratch buffer not materialized", inst.Sym)
 		}
 		w := spec.Ret.Width
 		if w == 0 {
@@ -920,7 +922,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		// 8-aligned dummy global stands in — its offset-0 bytes are themselves a
 		// NULL char*, which storeCStrResult turns into the empty string.
 		if callTy != "i8*" {
-			return fmt.Errorf("builtin %s: cRetFieldStr expects i8* return, got %s", inst.Sym, callTy)
+			return i18n.Errorf("gerjn1nt", "builtin %s: cRetFieldStr expects i8* return, got %s", inst.Sym, callTy)
 		}
 		okc := c.treg("pstr")
 		c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i8* %s, null\n", okc, callReg))
@@ -935,7 +937,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 		}
 	case cRetSret:
 		if sretSlot == "" {
-			return fmt.Errorf("builtin %s: sret slot not allocated", inst.Sym)
+			return i18n.Errorf("dmm2rjox", "builtin %s: sret slot not allocated", inst.Sym)
 		}
 		lt, ok := c.resultType(inst, 0)
 		if !ok || lt == "" {
@@ -947,7 +949,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 			return err
 		}
 	default:
-		return fmt.Errorf("builtin %s: unhandled C return kind", inst.Sym)
+		return i18n.Errorf("2nh7qycu", "builtin %s: unhandled C return kind", inst.Sym)
 	}
 
 	// --- the paired second result -----------------------------------------
@@ -990,11 +992,11 @@ func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
 func (c *codegen) storeOptionFromPairStr(inst *Inst, strLongReg, okFlag string) error {
 	if !c.optionPayloadInline("%str-long") {
 		c.fail("builtin %s: ?str option result needs an inline option slot (option-inline-threshold >= 24)", inst.Sym)
-		return fmt.Errorf("builtin %s: %s", inst.Sym, strings.Join(c.errs, "; "))
+		return i18n.Errorf("6umfb8yv", "builtin %s: %s", inst.Sym, strings.Join(c.errs, "; "))
 	}
 	slot := c.valSlot[inst.Results[0]]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: result 0 has no slot", inst.Sym)
+		return i18n.Errorf("4oy26jat", "builtin %s: result 0 has no slot", inst.Sym)
 	}
 	tag := c.treg("opsg")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 1\n", tag, okFlag))
@@ -1049,7 +1051,7 @@ func (c *codegen) storePairResult(inst *Inst, spec *cCallSpec, callReg, callTy s
 	case cPairStrFromBuf:
 		buf := spec.Args[spec.Ret.Pair.BufIdx].Temp
 		if buf == "" {
-			return fmt.Errorf("builtin %s: pair buffer not materialized", inst.Sym)
+			return i18n.Errorf("xhy954hb", "builtin %s: pair buffer not materialized", inst.Sym)
 		}
 		return c.storeBufStrResult(inst, 1, buf)
 	}
@@ -1076,7 +1078,7 @@ func cArgLLVMType(a cArgSpec) string {
 
 func (c *codegen) argIndex(inst *Inst, i int) (ValueID, error) {
 	if i < 0 || i >= len(inst.Args) {
-		return NoVal, fmt.Errorf("missing arg %d", i)
+		return NoVal, i18n.Errorf("82j1xx80", "missing arg %d", i)
 	}
 	return inst.Args[i], nil
 }
@@ -1091,7 +1093,7 @@ func (c *codegen) marshalScalar(inst *Inst, i int, wantTy string) (string, error
 	if r := c.coerce(lt, val, wantTy); r != "" {
 		return r, nil
 	}
-	return "", fmt.Errorf("cannot coerce arg %d from %s to %s", i, lt, wantTy)
+	return "", i18n.Errorf("75qapexc", "cannot coerce arg %d from %s to %s", i, lt, wantTy)
 }
 
 // cToBool turns a C integer result into i1 via `icmp eq <t> %r, 0`.
@@ -1178,13 +1180,13 @@ func (c *codegen) storeResult(inst *Inst, i int, v, srcTy string) error {
 	}
 	slot := c.valSlot[inst.Results[i]]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: result %d has no slot", inst.Sym, i)
+		return i18n.Errorf("ztlqshll", "builtin %s: result %d has no slot", inst.Sym, i)
 	}
 	if srcTy != lt {
 		if r := c.coerce(srcTy, v, lt); r != "" {
 			v = r
 		} else {
-			return fmt.Errorf("builtin %s: cannot store %s result into %s slot", inst.Sym, srcTy, lt)
+			return i18n.Errorf("mgnh35fz", "builtin %s: cannot store %s result into %s slot", inst.Sym, srcTy, lt)
 		}
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", lt, v, lt, slot))
@@ -1216,7 +1218,7 @@ func (c *codegen) storeCStrResult(inst *Inst, i int, ptr string) error {
 		return nil
 	}
 	if lt != "%str-long" {
-		return fmt.Errorf("builtin %s: string result stored into %s slot", inst.Sym, lt)
+		return i18n.Errorf("o3e4tfwx", "builtin %s: string result stored into %s slot", inst.Sym, lt)
 	}
 	cmp := c.treg("scn")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp ne i8* %s, null\n", cmp, ptr))
@@ -1235,11 +1237,11 @@ func (c *codegen) storeBufStrResult(inst *Inst, i int, src string) error {
 		return nil
 	}
 	if lt != "%str-long" {
-		return fmt.Errorf("builtin %s: string result stored into %s slot", inst.Sym, lt)
+		return i18n.Errorf("o3e4tfwx", "builtin %s: string result stored into %s slot", inst.Sym, lt)
 	}
 	slot := c.valSlot[inst.Results[i]]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: result %d has no slot", inst.Sym, i)
+		return i18n.Errorf("ztlqshll", "builtin %s: result %d has no slot", inst.Sym, i)
 	}
 	lenR := c.treg("bsl")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", lenR, src))
@@ -1256,11 +1258,11 @@ func (c *codegen) storeBufStrLenResult(inst *Inst, i int, buf, retReg, retTy str
 		return nil
 	}
 	if lt != "%str-long" {
-		return fmt.Errorf("builtin %s: string result stored into %s slot", inst.Sym, lt)
+		return i18n.Errorf("o3e4tfwx", "builtin %s: string result stored into %s slot", inst.Sym, lt)
 	}
 	slot := c.valSlot[inst.Results[i]]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: result %d has no slot", inst.Sym, i)
+		return i18n.Errorf("ztlqshll", "builtin %s: result %d has no slot", inst.Sym, i)
 	}
 	// len = (ret >= 0) ? ret : 0
 	okCmp := c.treg("blc")

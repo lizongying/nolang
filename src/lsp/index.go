@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -333,14 +334,32 @@ func formatFuncType(params []ParamInfo, retType string) string {
 }
 
 // extractDocComment extracts doc comment text from a CommentedNode.
+//
+// A doc group whose LAST line is a standalone Markdown link (`[get](#args.get)`)
+// is a translated doc block: the link names an entry in the doc catalog, and the
+// lines above it are its text. The link line itself is not part of the text — it
+// is the key, not prose — so it is stripped either way.
+//
+// The comment is authored in whatever language its writer used (the shipped std
+// sources are Chinese), and the hover should read in the language the user asked
+// the toolchain for. An untranslated anchor falls back to the source text, so a
+// hover is never blank and never shows a bare key.
 func extractDocComment(cn *parser.CommentedNode) string {
 	if cn == nil || cn.Doc == nil || len(cn.Doc.List) == 0 {
 		return ""
 	}
-	var lines []string
+	// A `;;block` comment arrives as one Comment whose Text spans lines, so split
+	// first: docscan reads raw source lines and must see the same units.
+	var texts []string
 	for _, c := range cn.Doc.List {
-		text := strings.TrimSpace(c.Text)
-		lines = append(lines, text)
+		if !parser.CommentCarriesDocLink(c.Marker) {
+			continue
+		}
+		texts = append(texts, strings.Split(c.Text, "\n")...)
 	}
-	return strings.Join(lines, "\n")
+	block, anchor, hasLink := parser.SplitDocBlock(texts)
+	if !hasLink || anchor == "" {
+		return block
+	}
+	return i18n.Doc(anchor, block)
 }

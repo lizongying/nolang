@@ -1,0 +1,17 @@
+; Nolang doc catalog: en
+; Source-comment translations, keyed by the anchor an author wrote in a
+; trailing `[label](#anchor)` line. New keys are SEEDED from the comment text
+; by `make i18n`; an existing value is preserved, so this file is meant to be
+; edited by hand. Every key must still exist in some .no source, or the gate
+; rejects it as an orphan.
+{
+  'args.count': `
+count: number of arguments, including the program name
+delegates to the os.args() builtin, which returns the whole argv vector; the length of that vector is the count
+`
+  'args.get': `
+get: the i-th argument
+delegates to the os.arg(i) builtin, which reads argv[i] of main; an out-of-range i returns nil
+`
+  'args.program': 'program: the program name (argument 0)'
+}

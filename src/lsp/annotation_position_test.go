@@ -34,7 +34,7 @@ func TestParseDocumentReportsPrefixAnnotationError(t *testing.T) {
 	}
 	var hits []string
 	for _, e := range errs {
-		if strings.Contains(e, "前方同一行") {
+		if strings.Contains(e, "[0j1imd2d]") {
 			hits = append(hits, e)
 		}
 	}
@@ -66,8 +66,11 @@ func TestParseDocumentReportsPrefixAnnotationError(t *testing.T) {
 	if code, ok := d.Code.(string); !ok || !messageIDRe.MatchString(code) {
 		t.Errorf("code = %v, want an 8-char base36 message ID", d.Code)
 	}
-	if !strings.Contains(d.Message, "前方同一行") {
-		t.Errorf("message lost its text: %q", d.Message)
+	if got, _ := d.Code.(string); got != "0j1imd2d" {
+		t.Errorf("code = %q, want the prefix-annotation message ID", got)
+	}
+	if d.Message == "" {
+		t.Error("message lost its text")
 	}
 
 	// Control: the same annotation written trailing on the line is accepted.
@@ -111,7 +114,7 @@ func TestParseDocumentReportsPrefixAnnotationInIfCondition(t *testing.T) {
 	}
 	var hits []string
 	for _, e := range errs {
-		if strings.Contains(e, "前方同一行") {
+		if strings.Contains(e, "[0j1imd2d]") {
 			hits = append(hits, e)
 		}
 	}

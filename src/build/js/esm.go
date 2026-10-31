@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // Third-party ESM module imports for the JS backend.
@@ -74,22 +76,22 @@ func ESMSpecifier(use *parser.UseStatement) (string, bool) {
 // statement as a path.
 func SanitizeSpecifier(spec string) (string, error) {
 	if spec == "" || spec == "npm" {
-		return "", fmt.Errorf("empty ESM package specifier in import %q", esmUsePrefix+spec)
+		return "", i18n.Errorf("gljrb7g7", "empty ESM package specifier in import %q", esmUsePrefix+spec)
 	}
 	if strings.HasPrefix(spec, "/") || strings.HasSuffix(spec, "/") || strings.Contains(spec, "//") {
-		return "", fmt.Errorf("ESM package specifier %q must not start or end with '/'", spec)
+		return "", i18n.Errorf("68bn4o2m", "ESM package specifier %q must not start or end with '/'", spec)
 	}
 	for _, r := range spec {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 		case r == '@' || r == '/' || r == '.' || r == '_' || r == '-':
 		default:
-			return "", fmt.Errorf("invalid character %q in ESM package specifier %q", r, spec)
+			return "", i18n.Errorf("tsg5cbwu", "invalid character %q in ESM package specifier %q", r, spec)
 		}
 	}
 	for _, seg := range strings.Split(spec, "/") {
 		if seg == "." || seg == ".." {
-			return "", fmt.Errorf("relative path segments are not allowed in ESM package specifier %q", spec)
+			return "", i18n.Errorf("xkgmbluz", "relative path segments are not allowed in ESM package specifier %q", spec)
 		}
 	}
 	return spec, nil
@@ -142,7 +144,7 @@ func ExtractESMImportsFromStmts(stmts []parser.Statement) ([]ESMImport, error) {
 		}
 		short := esmShortName(spec)
 		if short == "" || short == "@" {
-			return nil, fmt.Errorf("invalid ESM package specifier %q", spec)
+			return nil, i18n.Errorf("wlcp0pp6", "invalid ESM package specifier %q", spec)
 		}
 		i, seen := index[spec]
 		if !seen {
@@ -263,7 +265,7 @@ func ResolveESMBindings(imports []ESMImport, taken map[string]bool) ([]ESMBindin
 		if prev, dup := seenShort[imp.ShortName]; dup {
 			// Two specifiers sharing a short name cannot be told apart at
 			// the call site (module.fn uses the short name), so refuse.
-			return nil, fmt.Errorf("ambiguous ESM short name %q: specifiers %q and %q both resolve to call prefix %q", imp.ShortName, prev, imp.Specifier, imp.ShortName)
+			return nil, i18n.Errorf("dkx493in", "ambiguous ESM short name %q: specifiers %q and %q both resolve to call prefix %q", imp.ShortName, prev, imp.Specifier, imp.ShortName)
 		}
 		seenShort[imp.ShortName] = imp.Specifier
 		b := ESMBinding{ESMImport: imp}

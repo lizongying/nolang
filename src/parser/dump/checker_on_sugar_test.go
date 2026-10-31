@@ -734,7 +734,7 @@ func reportTracePaths(t *testing.T, label string, byTrace map[string]map[string]
 // columns side by side and is the way to tell the two cases apart.
 var sugarDriftAllowlist = map[string]string{
 	// ── STOP firing on the sugar AST — S1 must add sugar cases ──────────────
-	"rngidx":          "ValidateRangeIndexLoops (checker/range_index_lint.go) — keys on the lowered index read; moves position as well as count",
+	"m2fh7rfg":          "ValidateRangeIndexLoops (checker/range_index_lint.go) — keys on the lowered index read; moves position as well as count",
 	"xmicjezl": "ValidateIntOverflow (checker/checker.go) — the inferred-?T decision depends on desugared arithmetic (moves position too)",
 	"tcpoxtfd":        "ValidateRedundantTypeAnnotation (checker/checker.go) — compares the annotation against an inferred type that lowering rewrites",
 	"idxwrite":        "ValidateIndexWrite (checker/checker.go) — one residual program (tests/range-inline.no); the 121-diagnostic bulk was fixed by making idxLocalTypes a parse-time product",

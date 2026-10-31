@@ -12,6 +12,8 @@ import (
 	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/mir"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // verifyMIRIRViaOpt pre-flights MIR-emitted IR through the LLVM toolchain so a
@@ -76,7 +78,7 @@ func verifyMIRIRViaOpt(ll string) error {
 			if os.Getenv("NOLANG_MIR_DUMP_BAD") != "" {
 				_ = os.WriteFile("/tmp/mirb/failed.ll", []byte(ll), 0644)
 			}
-			return fmt.Errorf("MIR IR failed LLVM verification: %v: %s", err, buf.String())
+			return i18n.Errorf("d8en6a9j", "MIR IR failed LLVM verification: %v: %s", err, buf.String())
 		}
 		inPath = outPath
 	}
@@ -92,7 +94,7 @@ func verifyMIRIRViaOpt(ll string) error {
 		cmd.Stdout = &buf
 		cmd.Stderr = &buf
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("MIR IR failed LLVM assembly: %v: %s", err, buf.String())
+			return i18n.Errorf("46qem63e", "MIR IR failed LLVM assembly: %v: %s", err, buf.String())
 		}
 	}
 	return nil
@@ -317,7 +319,7 @@ func (t *Transpiler) lowerToIR(merged *parser.Program) (string, error) {
 		// invocation cannot be mistaken for a working legacy run.
 		mirMode := os.Getenv("NOLANG_MIR")
 		if mirMode == "0" || mirMode == "2" {
-			return "", fmt.Errorf("NOLANG_MIR=%s: the legacy codegen backend was removed and MIR is the only backend; unset NOLANG_MIR (or use NOLANG_MIR=1 for the lowering dump)", mirMode)
+			return "", i18n.Errorf("cb4biu8s", "NOLANG_MIR=%s: the legacy codegen backend was removed and MIR is the only backend; unset NOLANG_MIR (or use NOLANG_MIR=1 for the lowering dump)", mirMode)
 		}
 		if mirMode == "1" {
 			func() {
@@ -343,7 +345,7 @@ func (t *Transpiler) lowerToIR(merged *parser.Program) (string, error) {
 		}
 		mout, mreason := t.emitMIR(hirPkg)
 		if mout == "" {
-			return "", fmt.Errorf("MIR codegen could not handle %s: %s", t.sourcePath, mreason)
+			return "", i18n.Errorf("s28lrleh", "MIR codegen could not handle %s: %s", t.sourcePath, mreason)
 		}
 		ir = mout
 	}

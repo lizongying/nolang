@@ -1,11 +1,12 @@
 package pkg
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // FindWorkspaceRoot 從 start 向上查找 workspace.noml 所在的目錄。
@@ -132,7 +133,7 @@ func ValidateSourcePathName(path string) error {
 			name = strings.TrimSuffix(name, ".no")
 		}
 		if !isValidSourceSegment(name) {
-			return fmt.Errorf("源文件路径不符合命名规范：%s\n  其中的路径段 %q 含有不允许的字符（只允许小写字母、数字和中划线，禁止下划线；且不能以中划线开头/结尾、不能连续出现中划线）\n  合规示例：tmp/zz-stridx/r-index.no", path, seg)
+			return i18n.Errorf("83xbz15x", "source file path is not a valid name: %s\n  the path segment %q contains disallowed characters (only lowercase letters, digits and hyphens are allowed; underscores are forbidden, and a hyphen may not lead, trail or repeat)\n  valid example: tmp/zz-stridx/r-index.no", path, seg)
 		}
 	}
 	return nil

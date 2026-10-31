@@ -1,7 +1,7 @@
 package checker
 
 import (
-	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
@@ -42,7 +42,7 @@ const InterfaceMergeTraceID = "ifmrg001"
 // MergedInterface 是一個接口的合併結果：自身方法與繼承來的父方法按穩定順序
 // 去重後的並集。
 type MergedInterface struct {
-	Name    string                    // 原樣名（可能帶模組前綴）
+	Name    string // 原樣名（可能帶模組前綴）
 	Decl    *parser.InterfaceDefinition
 	Methods []*parser.InterfaceMethod // 自身 + 繼承，按穩定順序去重
 	Parents []string                  // 解析到的父接口（完整名）；未知父接口不在內
@@ -196,12 +196,12 @@ func (r *ifaceResolver) fileOf(decl *parser.InterfaceDefinition) string {
 
 func (r *ifaceResolver) reportUnknownParent(name string, decl *parser.InterfaceDefinition, parent string) {
 	r.results = append(r.results, ValidateResult{
-		TraceID:   InterfaceMergeTraceID,
+		TraceID:   "wekxh2lc",
 		File:      r.fileOf(decl),
 		Line:      decl.Token.Line,
 		Column:    decl.Token.Column,
 		EndColumn: decl.Token.Column + len(decl.Name),
-		Message:   fmt.Sprintf("interface '%s': unknown parent interface '%s'", name, parent),
+		Message:   i18n.T("wekxh2lc", "interface '%s': unknown parent interface '%s'", name, parent),
 	})
 }
 
@@ -225,12 +225,12 @@ func (r *ifaceResolver) reportCycle(name string) {
 		line, col = decl.Token.Line, decl.Token.Column
 	}
 	r.results = append(r.results, ValidateResult{
-		TraceID:   InterfaceMergeTraceID,
+		TraceID:   "8zompytc",
 		File:      r.fileOf(decl),
 		Line:      line,
 		Column:    col,
 		EndColumn: col + len(name),
-		Message:   fmt.Sprintf("interface '%s': merge cycle %s", name, strings.Join(names, " -> ")),
+		Message:   i18n.T("8zompytc", "interface '%s': merge cycle %s", name, strings.Join(names, " -> ")),
 	})
 }
 
@@ -241,12 +241,12 @@ func (r *ifaceResolver) reportConflict(name string, mth *parser.InterfaceMethod,
 		line, col = decl.Token.Line, decl.Token.Column
 	}
 	r.results = append(r.results, ValidateResult{
-		TraceID:   InterfaceMergeTraceID,
+		TraceID:   "ifmrg001",
 		File:      r.fileOf(decl),
 		Line:      line,
 		Column:    col,
 		EndColumn: col + len(mth.Name),
-		Message: fmt.Sprintf("interface '%s': merged method '%s' has conflicting signatures ('%s.%s', '%s.%s')",
+		Message: i18n.T("ifmrg001", "interface '%s': merged method '%s' has conflicting signatures ('%s.%s', '%s.%s')",
 			name, mth.Name, prevOwner, prev.Name, owner, mth.Name),
 	})
 }

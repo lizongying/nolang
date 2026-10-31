@@ -3,6 +3,9 @@ package lsp
 import (
 	"fmt"
 	"strings"
+
+	"github.com/lizongying/nolang/i18n"
+	"github.com/lizongying/nolang/parser"
 )
 
 // keywordDoc 為 LSP hover 提供新式/舊式關鍵字文檔
@@ -168,7 +171,84 @@ func NewHoverProvider(doc *TextDocument, index *SymbolIndex) *HoverProvider {
 	}
 }
 
+// docLinkHover resolves a hover placed on a doc-link line.
+//
+// The rule is read straight off the source text rather than the AST: a doc link
+// is "the last `;` line of a run, where that line is a standalone Markdown link",
+// and both the generator (i18n/docscan) and this function apply exactly that
+// rule. Sharing the raw-text reading is what keeps the anchor and the block text
+// identical on both sides — an AST-based reading here would have to reproduce the
+// parser's doc-group merging, and any difference would silently produce a
+// different block than the one that was translated.
+func (hp *HoverProvider) docLinkHover(position Position) (string, bool) {
+	if hp.doc == nil {
+		return "", false
+	}
+	lines := strings.Split(hp.doc.Text, "\n")
+	i := int(position.Line)
+	if i < 0 || i >= len(lines) {
+		return "", false
+	}
+	// Must be a `;` line, and must be the LAST line of its run.
+	if !isDocCommentLine(lines[i]) {
+		return "", false
+	}
+	if i+1 < len(lines) && isDocCommentLine(lines[i+1]) {
+		return "", false
+	}
+	start := i
+	for start > 0 && isDocCommentLine(lines[start-1]) {
+		start--
+	}
+	var texts []string
+	for _, l := range lines[start : i+1] {
+		texts = append(texts, docCommentText(l))
+	}
+	block, anchor, hasLink := parser.SplitDocBlock(texts)
+	if !hasLink || anchor == "" {
+		return "", false
+	}
+	body := i18n.Doc(anchor, block)
+	var sb strings.Builder
+	sb.WriteString("**doc link** `#")
+	sb.WriteString(anchor)
+	sb.WriteString("`\n\n")
+	if body != "" {
+		sb.WriteString(body)
+		sb.WriteString("\n")
+	}
+	return sb.String(), true
+}
+
+// isDocCommentLine reports whether a source line is an ordinary `;` comment —
+// the only kind that can carry a doc link (see parser.CommentCarriesDocLink).
+func isDocCommentLine(line string) bool {
+	t := strings.TrimLeft(line, " \t\r")
+	return len(t) >= 2 && t[0] == ';' && t[1] != ';'
+}
+
+// docCommentText returns the text of a `;` comment line: everything after the
+// marker, which is byte-for-byte what the lexer stores in Comment.Text.
+func docCommentText(line string) string {
+	t := strings.TrimLeft(line, " \t\r")
+	return strings.TrimSuffix(t[1:], "\r")
+}
+
 func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
+	// Hovering the doc-link line itself resolves the link: the reader asked what
+	// `[get](#args.get)` points at, and the answer is that entry's text in the
+	// active language. This runs before the word lookups because a link line is
+	// also full of ordinary identifiers, and the anchor is the more specific
+	// answer at that position.
+	if doc, ok := hp.docLinkHover(position); ok {
+		return &Hover{
+			Contents: MarkupContent{
+				Kind:  MarkupKindMarkdown,
+				Value: doc,
+			},
+		}, true
+	}
+
 	word := getTokenAtPosition(hp.doc.Text, position)
 	if word == "" {
 		return nil, false

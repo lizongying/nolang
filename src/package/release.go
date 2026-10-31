@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // ToolSpec 是 `no install <tool>[:<version>]@<host>/<owner>/<repo>` 的解析結果：
@@ -39,12 +41,12 @@ const defaultToolHost = "github.com"
 func ParseToolSpec(s string) (ToolSpec, error) {
 	raw := strings.TrimSpace(s)
 	if raw == "" {
-		return ToolSpec{}, fmt.Errorf("empty install target")
+		return ToolSpec{}, i18n.Errorf("j3u5n35e", "empty install target")
 	}
 	// 用最後一個 '@' 切分：左側是 <tool>[:<version>]，右側是倉庫座標。
 	at := strings.LastIndex(raw, "@")
 	if at < 0 {
-		return ToolSpec{}, fmt.Errorf("invalid install target %q: missing repository; want <tool>[:<version>]@<host>/<owner>/<repo>", raw)
+		return ToolSpec{}, i18n.Errorf("dt39zm0i", "invalid install target %q: missing repository; want <tool>[:<version>]@<host>/<owner>/<repo>", raw)
 	}
 	left := strings.TrimSpace(raw[:at])
 	right := strings.TrimSpace(raw[at+1:])
@@ -57,10 +59,10 @@ func ParseToolSpec(s string) (ToolSpec, error) {
 		spec.Name = left
 	}
 	if spec.Name == "" {
-		return ToolSpec{}, fmt.Errorf("invalid install target %q: missing tool name", raw)
+		return ToolSpec{}, i18n.Errorf("3gcfur0y", "invalid install target %q: missing tool name", raw)
 	}
 	if strings.ContainsAny(spec.Name, `/\`) {
-		return ToolSpec{}, fmt.Errorf("invalid install target %q: tool name must not contain a path separator", raw)
+		return ToolSpec{}, i18n.Errorf("ocsanpe6", "invalid install target %q: tool name must not contain a path separator", raw)
 	}
 	if spec.Version == "latest" || spec.Version == "*" {
 		spec.Version = ""
@@ -68,7 +70,7 @@ func ParseToolSpec(s string) (ToolSpec, error) {
 
 	host, owner, repo, ok := parseToolRepo(right)
 	if !ok {
-		return ToolSpec{}, fmt.Errorf("invalid install target %q: repository must be <host>/<owner>/<repo> or <owner>/<repo>", raw)
+		return ToolSpec{}, i18n.Errorf("flfh2ueu", "invalid install target %q: repository must be <host>/<owner>/<repo> or <owner>/<repo>", raw)
 	}
 	spec.Host, spec.Owner, spec.Repo = host, owner, repo
 	return spec, nil
@@ -160,7 +162,7 @@ func ReleaseASTZipURL(t ToolSpec, version string) string {
 // 未設定 $GITHUB_TOKEN / $GH_TOKEN 時走匿名請求，受 GitHub 每小時 60 次限流約束。
 func LatestReleaseTag(host, owner, repo string) (string, error) {
 	if host != defaultToolHost {
-		return "", fmt.Errorf("unsupported host %q (only github.com is supported)", host)
+		return "", i18n.Errorf("1m1ocf8t", "unsupported host %q (only github.com is supported)", host)
 	}
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
 	body, err := githubGET(apiURL)
@@ -171,10 +173,10 @@ func LatestReleaseTag(host, owner, repo string) (string, error) {
 		TagName string `json:"tag_name"`
 	}
 	if err := json.Unmarshal(body, &info); err != nil {
-		return "", fmt.Errorf("parsing release info for %s/%s: %w", owner, repo, err)
+		return "", i18n.Errorf("3owkeirf", "parsing release info for %s/%s: %w", owner, repo, err)
 	}
 	if info.TagName == "" {
-		return "", fmt.Errorf("no release found for %s/%s", owner, repo)
+		return "", i18n.Errorf("ectmoin3", "no release found for %s/%s", owner, repo)
 	}
 	return info.TagName, nil
 }
@@ -220,7 +222,7 @@ var githubHTTPClient = &http.Client{Timeout: time.Hour}
 func githubGETOnce(url string) (data []byte, httpErr bool, err error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, false, fmt.Errorf("creating request: %w", err)
+		return nil, false, i18n.Errorf("g391pqjl", "creating request: %w", err)
 	}
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("User-Agent", "nolang")
@@ -229,19 +231,19 @@ func githubGETOnce(url string) (data []byte, httpErr bool, err error) {
 	}
 	resp, err := githubHTTPClient.Do(req)
 	if err != nil {
-		return nil, false, fmt.Errorf("fetching %s: %w", url, err)
+		return nil, false, i18n.Errorf("rsz5rmmt", "fetching %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 	// 限制響應體大小：超出 maxAssetBytes 直接失敗（重試也不會改變結果）。
 	data, err = io.ReadAll(http.MaxBytesReader(nil, resp.Body, maxAssetBytes))
 	if err != nil {
 		if strings.Contains(err.Error(), "too large") {
-			return nil, true, fmt.Errorf("asset %s exceeds size limit (%d bytes)", url, maxAssetBytes)
+			return nil, true, i18n.Errorf("6p2o4902", "asset %s exceeds size limit (%d bytes)", url, maxAssetBytes)
 		}
-		return nil, false, fmt.Errorf("reading %s: %w", url, err)
+		return nil, false, i18n.Errorf("k1h5kums", "reading %s: %w", url, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, true, fmt.Errorf("fetching %s (status %d)", url, resp.StatusCode)
+		return nil, true, i18n.Errorf("g9elmost", "fetching %s (status %d)", url, resp.StatusCode)
 	}
 	return data, false, nil
 }

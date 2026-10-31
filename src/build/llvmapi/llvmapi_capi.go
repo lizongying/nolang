@@ -53,6 +53,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // 本檔案只在 `-tags llvm_capi` 且 CGO_ENABLED=1 時參與構建（見 Makefile 的 no-capi）。
@@ -88,7 +90,7 @@ const fnAttrIndex = C.LLVMAttributeIndex(0xFFFFFFFF)
 // TargetMachine 寫出 .o。後續連結仍交由外部 cc 完成（LLVM C API 不提供 lld）。
 func CompileToObject(opts Options, objPath string) error {
 	if strings.TrimSpace(opts.IR) == "" {
-		return fmt.Errorf("LLVM C API: empty IR")
+		return i18n.Errorf("wdpztov8", "LLVM C API: empty IR")
 	}
 	compileMu.Lock()
 	defer compileMu.Unlock()
@@ -104,7 +106,7 @@ func CompileToObject(opts Options, objPath string) error {
 	// 注意：LLVMParseIRInContext 無論成功或失敗都會接管 buf 的所有權，不要再 Dispose。
 	buf := C.LLVMCreateMemoryBufferWithMemoryRange(irC, C.size_t(len(opts.IR)), nameC, C.LLVMBool(1))
 	if buf == nil {
-		return fmt.Errorf("LLVM C API: creating memory buffer for IR failed")
+		return i18n.Errorf("a5247dgy", "LLVM C API: creating memory buffer for IR failed")
 	}
 
 	var mod C.LLVMModuleRef
@@ -138,7 +140,7 @@ func CompileToObject(opts Options, objPath string) error {
 
 	tm := C.LLVMCreateTargetMachine(target, tripleC, cpuC, featC, codegenLevel(opts.OptLevel), C.LLVMRelocDefault, C.LLVMCodeModelDefault)
 	if tm == nil {
-		return fmt.Errorf("LLVM C API: creating target machine for triple %q failed", triple)
+		return i18n.Errorf("hzv4zwx4", "LLVM C API: creating target machine for triple %q failed", triple)
 	}
 	defer C.LLVMDisposeTargetMachine(tm)
 
@@ -168,7 +170,7 @@ func CompileToObject(opts Options, objPath string) error {
 		errMsg := C.LLVMGetErrorMessage(errRef)
 		what := C.GoString(errMsg)
 		C.LLVMDisposeErrorMessage(errMsg)
-		return fmt.Errorf("LLVM C API: running passes %q: %s", passes, what)
+		return i18n.Errorf("3u02loy5", "LLVM C API: running passes %q: %s", passes, what)
 	}
 
 	objC := C.CString(objPath)
@@ -329,9 +331,9 @@ func clampOptLevel(n int) int {
 // capiError 把 LLVM C API 的 char* 錯誤訊息轉成 Go error（並釋放訊息）。
 func capiError(what string, msg *C.char) error {
 	if msg == nil {
-		return fmt.Errorf("LLVM C API: %s failed", what)
+		return i18n.Errorf("j2lwz7pe", "LLVM C API: %s failed", what)
 	}
 	m := C.GoString(msg)
 	C.LLVMDisposeMessage(msg)
-	return fmt.Errorf("LLVM C API: %s failed: %s", what, m)
+	return i18n.Errorf("yevhjra2", "LLVM C API: %s failed: %s", what, m)
 }

@@ -1,7 +1,7 @@
 package checker
 
 import (
-	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
@@ -10,7 +10,7 @@ import (
 )
 
 // matchNonexTraceID is the diagnostic ID for non-exhaustive option matches.
-const matchNonexTraceID = "match-nonex"
+const matchNonexTraceID = "xl6uu81q"
 
 // optionMatchVariants are the option variants a match arm can test against.
 var optionMatchVariants = map[string]bool{"ok": true, "nil": true, "err": true}
@@ -86,12 +86,11 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 	for _, m := range CollectNonExhaustiveMatches(program) {
 		pos := m.Pos
 		results = append(results, ValidateResult{
-			TraceID: matchNonexTraceID,
+			TraceID: "xl6uu81q",
 			Line:    pos.Line,
 			Column:  pos.Column,
 			File:    m.File,
-			Message: fmt.Sprintf(
-				"non-exhaustive match on option '%s': missing arm(s): %s — add a `-> ` (else) arm, or handle every variant",
+			Message: i18n.T("xl6uu81q", "non-exhaustive match on option '%s': missing arm(s): %s — add a `-> ` (else) arm, or handle every variant",
 				m.Subject, strings.Join(m.Missing, ", ")),
 		})
 	}

@@ -9,7 +9,7 @@ import (
 
 // printfDeprTraceID is stamped on every "printf/eprintf was removed" diagnostic.
 // Stable and greppable: `no vet … | grep printf-depr`.
-const printfDeprTraceID = "printf-depr"
+const printfDeprTraceID = "oflgmsef"
 
 // removedPrintfBuiltins maps the removed print-family builtins to the message
 // reported at every call site.

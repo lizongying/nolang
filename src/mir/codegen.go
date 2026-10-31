@@ -10,6 +10,8 @@ import (
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/ty"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // ---------------------------------------------------------------------------
@@ -431,7 +433,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			out = ""
-			err = fmt.Errorf("MIR->LLVM panicked (recovered, falling back to legacy): %v", r)
+			err = i18n.Errorf("ke8i906b", "MIR->LLVM panicked (recovered, falling back to legacy): %v", r)
 		}
 	}()
 	c := &codegen{
@@ -606,7 +608,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	// shifts float results by 1 ulp relative to legacy (test-tmp-nbody-debug).
 	c.sb.WriteString("!nolang.mir.backend = !{!0}\n!0 = !{i32 1}\n")
 	if len(c.errs) > 0 {
-		return "", fmt.Errorf("MIR->LLVM: %s", strings.Join(c.errs, "; "))
+		return "", i18n.Errorf("zodppsnm", "MIR->LLVM: %s", strings.Join(c.errs, "; "))
 	}
 	ir := c.sb.String()
 	// Behind the optimiser switch, so a default build emits byte-identical IR.
@@ -4744,7 +4746,7 @@ func (c *codegen) emitFunc(f *Function) error {
 		lt, _ := c.ptype(p)
 		if !supportedLLVM(lt) {
 			c.fail("unsupported param type %s in func %s", lt, f.Name)
-			return fmt.Errorf("unsupported param type %s in func %s", lt, f.Name)
+			return i18n.Errorf("5ve092z6", "unsupported param type %s in func %s", lt, f.Name)
 		}
 	}
 	for _, bid := range f.Blocks {
@@ -4798,7 +4800,7 @@ func (c *codegen) emitFunc(f *Function) error {
 				lt, _ := c.ptype(inst.Dst)
 				if !supportedLLVM(lt) {
 					c.fail("unsupported value type %s in func %s", lt, f.Name)
-					return fmt.Errorf("unsupported value type %s in func %s", lt, f.Name)
+					return i18n.Errorf("x57xvqny", "unsupported value type %s in func %s", lt, f.Name)
 				}
 			}
 		}
@@ -5467,7 +5469,7 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return nil
 	default:
 		c.fail("unsupported op %s in func %s", inst.Op, f.Name)
-		return fmt.Errorf("MIR->LLVM: %s", strings.Join(c.errs, "; "))
+		return i18n.Errorf("zodppsnm", "MIR->LLVM: %s", strings.Join(c.errs, "; "))
 	}
 }
 
@@ -5553,7 +5555,7 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	dstVal := moveDst(inst)
 	if dstVal <= NoVal {
 		c.fail("option-wrap has no destination in func %d", c.cf)
-		return fmt.Errorf("option-wrap dst")
+		return i18n.Errorf("iqtr8mht", "option-wrap dst")
 	}
 	dstT, _ := c.ptype(dstVal)
 	if dstT == "void" || dstT == "" {
@@ -5562,7 +5564,7 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	slot := c.valSlot[dstVal]
 	if slot == "" {
 		c.fail("option-wrap destination has no slot in func %d", c.cf)
-		return fmt.Errorf("option-wrap slot")
+		return i18n.Errorf("ojuksusl", "option-wrap slot")
 	}
 	payloadLT := c.optPayloadLTOf(dstVal)
 	if payloadLT == "" {
@@ -6837,7 +6839,7 @@ func (c *codegen) emitDrop(inst *Inst) error {
 // arbitrary memory. That is exactly the guard @str_free / @vec_free use.
 func (c *codegen) emitRetain(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("retain: needs a value")
+		return i18n.Errorf("td32do0k", "retain: needs a value")
 	}
 	lt, _ := c.ptype(inst.Args[0])
 	_, v := c.loadVal(inst.Args[0])
@@ -6872,7 +6874,7 @@ func (c *codegen) emitRetain(inst *Inst) error {
 // no-ops. That symmetry is what keeps the count balanced on every path.
 func (c *codegen) emitRelease(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("release: needs a value")
+		return i18n.Errorf("y23ty9w4", "release: needs a value")
 	}
 	lt, _ := c.ptype(inst.Args[0])
 	_, v := c.loadVal(inst.Args[0])
@@ -7360,13 +7362,13 @@ func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, pay
 func (c *codegen) emitBorrow(inst *Inst) error {
 	if len(inst.Args) < 1 || inst.Args[0] <= NoVal {
 		c.fail("borrow: missing source in func %d", c.cf)
-		return fmt.Errorf("borrow arity")
+		return i18n.Errorf("4hmw6w3i", "borrow arity")
 	}
 	src := inst.Args[0]
 	srcSlot := c.valSlot[src]
 	if srcSlot == "" {
 		c.fail("borrow: source %d has no slot in func %d", src, c.cf)
-		return fmt.Errorf("borrow src slot")
+		return i18n.Errorf("yhg5vw4v", "borrow src slot")
 	}
 	srcLT, _ := c.ptype(src)
 	if srcLT == "" {
@@ -7375,7 +7377,7 @@ func (c *codegen) emitBorrow(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		c.fail("borrow: destination %d has no slot in func %d", inst.Dst, c.cf)
-		return fmt.Errorf("borrow dst slot")
+		return i18n.Errorf("hvk8qwyj", "borrow dst slot")
 	}
 	ptrLT := srcLT + "*"
 	fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", ptrLT, srcSlot, ptrLT, dstSlot)
@@ -7390,7 +7392,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 	dstVal := moveDst(inst)
 	if dstVal == NoVal {
 		c.fail("move with no destination in func %d", c.cf)
-		return fmt.Errorf("move no dst")
+		return i18n.Errorf("z9tyfwf5", "move no dst")
 	}
 	dstT, _ := c.ptype(dstVal)
 	if dstT == "void" {
@@ -7400,12 +7402,12 @@ func (c *codegen) emitMove(inst *Inst) error {
 	dstSlot := c.valSlot[dstVal]
 	if dstSlot == "" {
 		c.fail("move destination has no slot in func %d", c.cf)
-		return fmt.Errorf("move slot")
+		return i18n.Errorf("osrb7a78", "move slot")
 	}
 	srcSlot := c.valSlot[inst.Args[0]]
 	if srcSlot == "" {
 		c.fail("move source has no slot in func %d", c.cf)
-		return fmt.Errorf("move src slot v%d -> v%d", inst.Args[0], dstVal)
+		return i18n.Errorf("t5rup04t", "move src slot v%d -> v%d", inst.Args[0], dstVal)
 	}
 	srcT, _ := c.ptype(inst.Args[0])
 	// Ownership-correctness guard: moving a BORROWED input parameter into an owned
@@ -7463,7 +7465,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 			}
 		}
 		c.fail("moving a borrowed %s parameter transfers ownership the callee does not hold (double-free risk); unsupported in MIR backend", dstT)
-		return fmt.Errorf("borrowed %s param move unsupported in MIR backend", dstT)
+		return i18n.Errorf("soo3tmk2", "borrowed %s param move unsupported in MIR backend", dstT)
 	}
 	// char -> str implicit conversion: `a str = s[0]`. The source is a char
 	// (i32) CODE POINT and the destination is a %str-long, so a bit-copy would
@@ -7535,7 +7537,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 		optSlot := c.optSlotOfValue(inst.Args[0])
 		if optSlot == "" || dstSlot == "" {
 			c.fail("option peel has no slot in func %d", c.cf)
-			return fmt.Errorf("option peel slot")
+			return i18n.Errorf("62z2cnfe", "option peel slot")
 		}
 		// Owned-string payload: extracting the payload copies the
 		// {len,cap,data} triple by value, so the destination would SHARE the
@@ -7809,7 +7811,7 @@ func (c *codegen) emitPtrStructClone(inst *Inst, key string) error {
 	srcSlot := c.valSlot[inst.Args[0]]
 	if dstSlot == "" || srcSlot == "" {
 		c.fail("clone: missing slot in func %d", c.cf)
-		return fmt.Errorf("clone slot")
+		return i18n.Errorf("mf29f4fh", "clone slot")
 	}
 	structLT := "%" + sanitize(key)
 	if t := c.mod.Type(c.localTypeOf(dstVal)); t != nil {
@@ -7861,7 +7863,7 @@ func (c *codegen) emitLeafStructClone(inst *Inst, key string) error {
 	srcSlot := c.valSlot[inst.Args[0]]
 	if dstSlot == "" || srcSlot == "" {
 		c.fail("clone: missing slot in func %d", c.cf)
-		return fmt.Errorf("clone slot")
+		return i18n.Errorf("mf29f4fh", "clone slot")
 	}
 	structLT := "%" + sanitize(key)
 	if t := c.mod.Type(c.localTypeOf(dstVal)); t != nil {
@@ -9511,7 +9513,7 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	dstT, _ := c.ptype(inst.Dst)
 	arrSlot := c.valSlot[inst.Args[0]]
 	if arrSlot == "" {
-		return fmt.Errorf("index slot: value id %d (type %s) has no slot in func %d; elemT=%s", inst.Args[0], arrT, c.cf, elemT)
+		return i18n.Errorf("163t4p8g", "index slot: value id %d (type %s) has no slot in func %d; elemT=%s", inst.Args[0], arrT, c.cf, elemT)
 	}
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
@@ -9520,7 +9522,7 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	if dstSlot == "" {
 		dt, _ := c.ptype(inst.Dst)
 		c.fail("index result has no slot in func %s (dst=%d type=%s) arrT=%s elemT=%s", c.fname[c.cf], inst.Dst, dt, arrT, elemT)
-		return fmt.Errorf("index dst slot (dst=%d type=%s)", inst.Dst, dt)
+		return i18n.Errorf("j312ij2o", "index dst slot (dst=%d type=%s)", inst.Dst, dt)
 	}
 	ep := c.elemAddr(inst.Args[0], arrSlot, idxV, arrT, elemT)
 	c.loadSeq++
@@ -9568,12 +9570,12 @@ func (c *codegen) emitUtf8At(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		c.fail("utf8-at result has no slot in func %d (dst=%d)", c.cf, inst.Dst)
-		return fmt.Errorf("utf8-at dst slot")
+		return i18n.Errorf("mkpo3f8h", "utf8-at dst slot")
 	}
 	data, byteLen := c.strHeaderOf(inst.Args[0])
 	if data == "" {
 		c.fail("utf8-at receiver has no slot in func %d", c.cf)
-		return fmt.Errorf("utf8-at recv slot")
+		return i18n.Errorf("vjkycl6v", "utf8-at recv slot")
 	}
 	offT, offV := c.loadVal(inst.Args[1])
 	offV = c.coerceInt(offV, offT, "i64")
@@ -9603,12 +9605,12 @@ func (c *codegen) emitStrCpIndex(inst *Inst) error {
 	if dstSlot == "" {
 		dt, _ := c.ptype(inst.Dst)
 		c.fail("str index result has no slot in func %s (dst=%d type=%s)", c.fname[c.cf], inst.Dst, dt)
-		return fmt.Errorf("str index dst slot (dst=%d type=%s)", inst.Dst, dt)
+		return i18n.Errorf("8k0xmfmo", "str index dst slot (dst=%d type=%s)", inst.Dst, dt)
 	}
 	data, byteLen := c.strHeaderOf(inst.Args[0])
 	if data == "" {
 		c.fail("str index receiver has no slot in func %d", c.cf)
-		return fmt.Errorf("str index recv slot")
+		return i18n.Errorf("a2hjr26f", "str index recv slot")
 	}
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
@@ -9631,12 +9633,12 @@ func (c *codegen) emitTxtCpIndex(inst *Inst) error {
 	if dstSlot == "" {
 		dt, _ := c.ptype(inst.Dst)
 		c.fail("txt index result has no slot in func %s (dst=%d type=%s)", c.fname[c.cf], inst.Dst, dt)
-		return fmt.Errorf("txt index dst slot (dst=%d type=%s)", inst.Dst, dt)
+		return i18n.Errorf("y5f921sg", "txt index dst slot (dst=%d type=%s)", inst.Dst, dt)
 	}
 	data, _, byteLen := c.txtHeaderOf(inst.Args[0])
 	if data == "" {
 		c.fail("txt index receiver has no slot in func %d", c.cf)
-		return fmt.Errorf("txt index recv slot")
+		return i18n.Errorf("7f3qhn9l", "txt index recv slot")
 	}
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
@@ -9759,7 +9761,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	arrSlot := c.valSlot[inst.Args[0]]
 	if arrSlot == "" {
 		c.fail("index-store of value with no slot in func %d", c.cf)
-		return fmt.Errorf("indexstore slot")
+		return i18n.Errorf("lx7lbupc", "indexstore slot")
 	}
 	// Lvalue projection: `a[i] = v` where `a` is itself a field read
 	// (`self.pool.nodes[i] = x`) or an element read — the alloca holds a COPY of
@@ -10490,7 +10492,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	recvSlot := c.valSlot[inst.Args[0]]
 	if recvSlot == "" {
 		c.fail("getfield receiver has no slot in func %d", c.cf)
-		return fmt.Errorf("getfield slot")
+		return i18n.Errorf("x8bk3eqw", "getfield slot")
 	}
 	recvRaw := ""
 	recvLT := ""
@@ -10556,7 +10558,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		idx, ok := c.mod.FieldIndex(structKey, inst.Str)
 		if !ok {
 			c.fail("getfield: field %q not found on %q (option %q) in func %d", inst.Str, innerRaw, recvRaw, c.cf)
-			return fmt.Errorf("getfield field")
+			return i18n.Errorf("k9270vd6", "getfield field")
 		}
 		fieldLT, owned := c.ptype(inst.Dst)
 		if fieldLT == "" {
@@ -10612,7 +10614,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 	idx, ok := c.mod.FieldIndex(structKey, inst.Str)
 	if !ok {
 		c.fail("getfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
-		return fmt.Errorf("getfield field")
+		return i18n.Errorf("k9270vd6", "getfield field")
 	}
 	structLT := recvLT
 	fieldLT, owned := c.ptype(inst.Dst)
@@ -10769,7 +10771,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	recvSlot := c.valSlot[inst.Args[0]]
 	if recvSlot == "" {
 		c.fail("setfield receiver has no slot in func %d", c.cf)
-		return fmt.Errorf("setfield slot")
+		return i18n.Errorf("3aeomnek", "setfield slot")
 	}
 	recvRaw := ""
 	recvLT := ""
@@ -10876,7 +10878,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		idx, ok := c.mod.FieldIndex(structKey, inst.Str)
 		if !ok {
 			c.fail("setfield: field %q not found on %q (option %q) in func %d", inst.Str, innerRaw, recvRaw, c.cf)
-			return fmt.Errorf("setfield: field %q not found on %q (option %q)", inst.Str, innerRaw, recvRaw)
+			return i18n.Errorf("5yjn9wrj", "setfield: field %q not found on %q (option %q)", inst.Str, innerRaw, recvRaw)
 		}
 		valLT, valV := c.loadVal(inst.Args[1])
 		fieldLT := valLT
@@ -10998,7 +11000,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	idx, ok := c.mod.FieldIndex(structKey, inst.Str)
 	if !ok {
 		c.fail("setfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
-		return fmt.Errorf("setfield: field %q not found on %q (struct key %q)", inst.Str, recvRaw, structKey)
+		return i18n.Errorf("3nktiaae", "setfield: field %q not found on %q (struct key %q)", inst.Str, recvRaw, structKey)
 	}
 	// The field's DECLARED type is authoritative — `fieldLT` above is derived
 	// from the RHS (`c.ptype(inst.Args[1])`), which is the same value only when
@@ -11048,7 +11050,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 					msg := fmt.Sprintf("field %q of %q is declared '%s' but the assigned value is '%s': %s",
 						inst.Str, recvRaw, ft.Raw, c.rawTypeOfValue(inst.Args[1]), reason)
 					c.fail("setfield: %s", msg)
-					return fmt.Errorf("setfield: %s", msg)
+					return i18n.Errorf("k64rvzp7", "setfield: %s", msg)
 				}
 			case declaredLT == "%txt" && valLT == "%vec":
 				// A slice VALUE into a `txt` field. The generic case below
@@ -11059,7 +11061,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 				msg := fmt.Sprintf("field %q of %q is declared '%s' but the assigned value is '%s' — a slice cannot back a fixed 256-byte txt buffer",
 					inst.Str, recvRaw, ft.Raw, c.rawTypeOfValue(inst.Args[1]))
 				c.fail("setfield: %s", msg)
-				return fmt.Errorf("setfield: %s", msg)
+				return i18n.Errorf("k64rvzp7", "setfield: %s", msg)
 			case declaredLT != fieldLT && isAggregateLLVM(declaredLT) && isAggregateLLVM(fieldLT) &&
 				declaredLT != "%vec" && declaredLT != "%str-long" &&
 				fieldLT != "%vec" && fieldLT != "%str-long":
@@ -11069,7 +11071,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 				msg := fmt.Sprintf("field %q of %q is declared '%s' but the assigned value is '%s' — different aggregate layouts cannot be stored",
 					inst.Str, recvRaw, declaredLT, fieldLT)
 				c.fail("setfield: %s", msg)
-				return fmt.Errorf("setfield: %s", msg)
+				return i18n.Errorf("k64rvzp7", "setfield: %s", msg)
 			}
 		}
 	}
@@ -11367,12 +11369,12 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 	ty := c.mod.Type(recvT)
 	if ty == nil {
 		c.fail("len/cap on untyped value in func %d", c.cf)
-		return fmt.Errorf("lencap type")
+		return i18n.Errorf("y1t4g09v", "lencap type")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		c.fail("len/cap result has no slot in func %d", c.cf)
-		return fmt.Errorf("lencap dst slot")
+		return i18n.Errorf("jmamxa8i", "lencap dst slot")
 	}
 	switch ty.Kind {
 	case KindArray:
@@ -11391,7 +11393,7 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 		recvSlot := c.valSlot[inst.Args[0]]
 		if recvSlot == "" {
 			c.fail("len/cap receiver has no slot in func %d", c.cf)
-			return fmt.Errorf("lencap slot")
+			return i18n.Errorf("bjj14xsi", "lencap slot")
 		}
 		c.loadSeq++
 		lv := fmt.Sprintf("%%lc%d", c.loadSeq)
@@ -11407,7 +11409,7 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 			recvSlot := c.valSlot[inst.Args[0]]
 			if recvSlot == "" {
 				c.fail("len/cap receiver has no slot in func %d", c.cf)
-				return fmt.Errorf("lencap slot")
+				return i18n.Errorf("bjj14xsi", "lencap slot")
 			}
 			c.loadSeq++
 			lGEP := fmt.Sprintf("%%tlg%d", c.loadSeq)
@@ -11422,10 +11424,10 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 			return nil
 		}
 		c.fail("len/cap unsupported on struct %s in func %d", ty.Raw, c.cf)
-		return fmt.Errorf("lencap struct: len/cap unsupported on struct %s in func %d", ty.Raw, c.cf)
+		return i18n.Errorf("04mmq0us", "lencap struct: len/cap unsupported on struct %s in func %d", ty.Raw, c.cf)
 	default:
 		c.fail("len/cap unsupported on %s (%s) in func %d", ty.Raw, ty.Kind, c.cf)
-		return fmt.Errorf("lencap kind: len/cap unsupported on %s (%s) in func %d", ty.Raw, ty.Kind, c.cf)
+		return i18n.Errorf("t5qq2leo", "lencap kind: len/cap unsupported on %s (%s) in func %d", ty.Raw, ty.Kind, c.cf)
 	}
 }
 
@@ -11441,19 +11443,19 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 func (c *codegen) emitSliceOp(inst *Inst) error {
 	if len(inst.Args) < 1 {
 		c.fail("slice op: missing receiver in func %d", c.cf)
-		return fmt.Errorf("slice op arity")
+		return i18n.Errorf("vhpl1qzt", "slice op arity")
 	}
 	recvLT, _ := c.ptype(inst.Args[0])
 	recvSlot := c.valSlot[inst.Args[0]]
 	if recvSlot == "" {
 		c.fail("slice op receiver has no slot in func %d", c.cf)
-		return fmt.Errorf("slice op recv slot")
+		return i18n.Errorf("1j6i9o1o", "slice op recv slot")
 	}
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		c.fail("slice op result has no slot in func %d", c.cf)
-		return fmt.Errorf("slice op dst slot")
+		return i18n.Errorf("ejbt38ik", "slice op dst slot")
 	}
 
 	// Determine the source data pointer (i8*), the logical length (i64) and the
@@ -11541,7 +11543,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		}
 	default:
 		c.fail("slice op on unsupported receiver type %s in func %d", recvLT, c.cf)
-		return fmt.Errorf("slice op recv type")
+		return i18n.Errorf("hxy8tpyp", "slice op recv type")
 	}
 
 	// lo / hi are always i64 slice indices; default [lo=0 : hi=len].
@@ -12595,7 +12597,7 @@ func (c *codegen) emitStrFromVec(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		c.fail("str-from-vec dst has no slot in func %d", c.cf)
-		return fmt.Errorf("str-from-vec dst slot")
+		return i18n.Errorf("1plv4fne", "str-from-vec dst slot")
 	}
 	srcT, srcV := c.loadVal(inst.Args[0])
 	if srcT == dstLT {
@@ -12604,7 +12606,7 @@ func (c *codegen) emitStrFromVec(inst *Inst) error {
 	}
 	if srcT != "%vec" || dstLT != "%str-long" {
 		c.fail("str-from-vec: cannot convert %s to %s in func %d", srcT, dstLT, c.cf)
-		return fmt.Errorf("str-from-vec: bad types %s -> %s", srcT, dstLT)
+		return i18n.Errorf("l1ypawem", "str-from-vec: bad types %s -> %s", srcT, dstLT)
 	}
 	c.loadSeq++
 	lv := fmt.Sprintf("%%svl%d", c.loadSeq)
@@ -12635,7 +12637,7 @@ func (c *codegen) emitTxtFromStr(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst] // %txt*
 	if dstSlot == "" {
 		c.fail("txt-from-str dst has no slot in func %d", c.cf)
-		return fmt.Errorf("txt dst slot")
+		return i18n.Errorf("75pom499", "txt dst slot")
 	}
 	srcT, srcV := c.loadVal(inst.Args[0]) // %str-long -- but see below
 	// ⚠️ The source is NOT always %str-long despite the op name.
@@ -12880,7 +12882,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	}
 	if callee == "" {
 		c.fail("call without callee in func %s", f.Name)
-		return fmt.Errorf("no callee in %s", f.Name)
+		return i18n.Errorf("vh7osqp5", "no callee in %s", f.Name)
 	}
 	// `print` is special-cased (not a regular builtin dispatch) and must be
 	// checked BEFORE lookupBuiltin, because `print` is also registered in the
@@ -13026,7 +13028,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 		}
 		if len(inst.Args) == 0 || inst.Args[0] == NoVal {
 			c.fail("%s without argument in func %s", callee, f.Name)
-			return fmt.Errorf("%s: missing argument", callee)
+			return i18n.Errorf("am0g79ly", "%s: missing argument", callee)
 		}
 		argT, argV := c.loadVal(inst.Args[0])
 		if argV == "" || argT == "void" {
@@ -13034,7 +13036,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 		}
 		if argT != rw {
 			c.fail("%s expects %s, got %s in func %s", callee, rw, argT, f.Name)
-			return fmt.Errorf("%s: argument type mismatch", callee)
+			return i18n.Errorf("4ptt84li", "%s: argument type mismatch", callee)
 		}
 		fmt.Fprintf(c.sb, "  call void @%s(%s %s)\n", callee[1:], rw, argV)
 		return nil
@@ -13044,13 +13046,13 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	if callee == "$str_concat" {
 		if len(inst.Args) < 2 {
 			c.fail("$str_concat needs 2 arguments in func %s", f.Name)
-			return fmt.Errorf("$str_concat: bad arity")
+			return i18n.Errorf("8rjhajw9", "$str_concat: bad arity")
 		}
 		aT, aV := c.loadVal(inst.Args[0])
 		bT, bV := c.loadVal(inst.Args[1])
 		if aT != "%str-long" || bT != "%str-long" {
 			c.fail("$str_concat got %s/%s in func %s", aT, bT, f.Name)
-			return fmt.Errorf("$str_concat: argument type mismatch")
+			return i18n.Errorf("21irdw5o", "$str_concat: argument type mismatch")
 		}
 		c.loadSeq++
 		r := fmt.Sprintf("%%cat%d", c.loadSeq)
@@ -13286,12 +13288,12 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	cid, ok := c.mod.FuncByName[callee]
 	if !ok {
 		c.fail("unknown callee %s in func %s", callee, f.Name)
-		return fmt.Errorf("unknown callee %s in func %s", callee, f.Name)
+		return i18n.Errorf("4qhyyund", "unknown callee %s in func %s", callee, f.Name)
 	}
 	cf := c.mod.Func(cid)
 	if cf == nil {
 		c.fail("callee %s unresolved in func %s", callee, f.Name)
-		return fmt.Errorf("callee nil")
+		return i18n.Errorf("wd8mx0q7", "callee nil")
 	}
 	// User-declared FFI extern (`#{c} name = (...) (...)`) uses the C ABI,
 	// NOT the Nolang by-reference ABI. Route it to the FFI marshaller.
@@ -13448,7 +13450,7 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 			cs := c.cstrOf(inst.Args[i])
 			if cs == "" {
 				c.fail("extern %s: cannot marshal str arg %d", cf.Name, i)
-				return fmt.Errorf("extern str arg")
+				return i18n.Errorf("9emnu2fu", "extern str arg")
 			}
 			callArgs = append(callArgs, "i8* "+cs)
 			toFree = append(toFree, cs)
@@ -15263,7 +15265,7 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	cid, ok := c.mod.FuncByName[calleeName]
 	if !ok {
 		c.fail("OpRun: unknown async callee %q", calleeName)
-		return fmt.Errorf("OpRun: unknown async callee %q", calleeName)
+		return i18n.Errorf("giy30qq2", "OpRun: unknown async callee %q", calleeName)
 	}
 	cf := c.mod.Func(cid)
 	targetName := c.fname[cid]
@@ -15631,7 +15633,7 @@ func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	slot := c.valSlot[inst.Dst]
 	if slot == "" {
 		c.fail("OpAwait: no slot for destination")
-		return fmt.Errorf("OpAwait: no slot")
+		return i18n.Errorf("zcelvmmy", "OpAwait: no slot")
 	}
 	// load handle (i64) -> %task*
 	_, hreg := c.loadVal(inst.Args[0])
@@ -15803,12 +15805,12 @@ func (c *codegen) emitIndirectCall(f *Function, inst *Inst) error {
 	ct := c.mod.Type(c.mod.Value(inst.Callee).Type)
 	if ct == nil || ct.Kind != KindFunc || ct.Func == nil {
 		c.fail("indirect call target is not a function type in func %s", f.Name)
-		return fmt.Errorf("bad indirect callee in %s", f.Name)
+		return i18n.Errorf("8870qbob", "bad indirect callee in %s", f.Name)
 	}
 	slot := c.valSlot[inst.Callee]
 	if slot == "" {
 		c.fail("indirect call target has no slot in func %s", f.Name)
-		return fmt.Errorf("no slot for indirect callee in %s", f.Name)
+		return i18n.Errorf("itcnc2oz", "no slot for indirect callee in %s", f.Name)
 	}
 	fnPtrLT := c.llvmTypeOf(ct) // void (...)*
 	c.loadSeq++
@@ -15861,7 +15863,7 @@ func (c *codegen) syntheticVal(tid TypeID) ValueID {
 func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	if len(inst.Args) < 2 {
 		c.fail("builtin %s: missing receiver or index", inst.Sym)
-		return fmt.Errorf("builtin %s: bad args", inst.Sym)
+		return i18n.Errorf("y8ieefsr", "builtin %s: bad args", inst.Sym)
 	}
 	if inst.Dst <= NoVal {
 		return nil
@@ -15870,7 +15872,7 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	rslot := c.valSlot[inst.Args[0]]
 	if rslot == "" {
 		c.fail("builtin %s: receiver has no slot", inst.Sym)
-		return fmt.Errorf("builtin %s: no receiver slot", inst.Sym)
+		return i18n.Errorf("seta2gk3", "builtin %s: no receiver slot", inst.Sym)
 	}
 	_, idxV := c.loadVal(inst.Args[1])
 	idxVT, _ := c.ptype(inst.Args[1])
@@ -15930,7 +15932,7 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		c.fail("builtin %s: no result slot", inst.Sym)
-		return fmt.Errorf("builtin %s: no dst slot", inst.Sym)
+		return i18n.Errorf("tmiibvan", "builtin %s: no dst slot", inst.Sym)
 	}
 	if dstLT != "%option" {
 		// `byte` returns ?byte; a non-option destination means a caller that
@@ -15938,7 +15940,7 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 		// lower without it). Refuse rather than store an option into a scalar
 		// slot — that is a silent type-pun, not a coercion.
 		c.fail("builtin %s: ?byte result into %s destination; handle the option (match / ?= / #{index-out})", inst.Sym, dstLT)
-		return fmt.Errorf("builtin %s: option result into %s dst", inst.Sym, dstLT)
+		return i18n.Errorf("802t452i", "builtin %s: option result into %s dst", inst.Sym, dstLT)
 	}
 
 	// --- safe load: select the pointer so the nil path never dereferences ---
@@ -15997,13 +15999,13 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 	if len(inst.Args) < 3 {
 		c.fail("builtin %s: missing receiver, index, or value", inst.Sym)
-		return fmt.Errorf("builtin %s: bad args", inst.Sym)
+		return i18n.Errorf("y8ieefsr", "builtin %s: bad args", inst.Sym)
 	}
 	rt, _ := c.ptype(inst.Args[0])
 	rslot := c.valSlot[inst.Args[0]]
 	if rslot == "" {
 		c.fail("builtin %s: receiver has no slot", inst.Sym)
-		return fmt.Errorf("builtin %s: no receiver slot", inst.Sym)
+		return i18n.Errorf("seta2gk3", "builtin %s: no receiver slot", inst.Sym)
 	}
 	// Receiver WRITE-BACK: `b.s.set-byte(i, b)` / `arr[0].set-byte(i, b)` read
 	// the receiver OUT of a struct field or a container element, so its slot
@@ -16063,7 +16065,7 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 			b8 = cv
 		} else {
 			c.fail("builtin %s: cannot coerce %s to i8", inst.Sym, valT)
-			return fmt.Errorf("builtin %s: bad value type %s", inst.Sym, valT)
+			return i18n.Errorf("sehpprvy", "builtin %s: bad value type %s", inst.Sym, valT)
 		}
 	}
 	var dataPtr string
@@ -16126,11 +16128,11 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 		dstSlot := c.valSlot[inst.Dst]
 		if dstSlot == "" {
 			c.fail("builtin %s: no result slot", inst.Sym)
-			return fmt.Errorf("builtin %s: no dst slot", inst.Sym)
+			return i18n.Errorf("tmiibvan", "builtin %s: no dst slot", inst.Sym)
 		}
 		if dstLT != "%option" {
 			c.fail("builtin %s: ?bool result into %s destination; handle the option (match / ?= / _ =)", inst.Sym, dstLT)
-			return fmt.Errorf("builtin %s: option result into %s dst", inst.Sym, dstLT)
+			return i18n.Errorf("802t452i", "builtin %s: option result into %s dst", inst.Sym, dstLT)
 		}
 		c.loadSeq++
 		tagSel := fmt.Sprintf("%%bpt%d", c.loadSeq)
@@ -16160,13 +16162,13 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 	if len(inst.Args) < 1 {
 		c.fail("builtin %s: missing receiver", ff)
-		return fmt.Errorf("builtin %s: no receiver", ff)
+		return i18n.Errorf("mz7tmynt", "builtin %s: no receiver", ff)
 	}
 	rt, _ := c.ptype(inst.Args[0])
 	rslot := c.valSlot[inst.Args[0]]
 	if rslot == "" {
 		c.fail("builtin %s: receiver has no slot", ff)
-		return fmt.Errorf("builtin %s: no receiver slot", ff)
+		return i18n.Errorf("seta2gk3", "builtin %s: no receiver slot", ff)
 	}
 	isTxt := rt == "%txt"
 	recvName := "%str-long"
@@ -16195,7 +16197,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 		}
 	default:
 		c.fail("unknown private field builtin %s", ff)
-		return fmt.Errorf("unknown private field builtin %s", ff)
+		return i18n.Errorf("5cid832p", "unknown private field builtin %s", ff)
 	}
 
 	// Writes: honour receiver write-back (lvalueAddrOf) so that
@@ -16212,7 +16214,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 	if isWrite {
 		if len(inst.Args) < 2 {
 			c.fail("builtin %s: missing value argument", ff)
-			return fmt.Errorf("builtin %s: no value", ff)
+			return i18n.Errorf("0ts2eetl", "builtin %s: no value", ff)
 		}
 		_, valV := c.loadVal(inst.Args[1])
 		valT, _ := c.ptype(inst.Args[1])
@@ -16228,7 +16230,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 					pv = cv
 				} else {
 					c.fail("builtin %s: cannot coerce %s to i8*", ff, valT)
-					return fmt.Errorf("builtin %s: bad value type %s", ff, valT)
+					return i18n.Errorf("sehpprvy", "builtin %s: bad value type %s", ff, valT)
 				}
 			}
 			fmt.Fprintf(c.sb, "  store i8* %s, i8** %s\n", pv, g)
@@ -16240,7 +16242,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 					v = cv
 				} else {
 					c.fail("builtin %s: cannot coerce %s to i64", ff, valT)
-					return fmt.Errorf("builtin %s: bad value type %s", ff, valT)
+					return i18n.Errorf("sehpprvy", "builtin %s: bad value type %s", ff, valT)
 				}
 			}
 			if isTxt {
@@ -16263,7 +16265,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
 		c.fail("builtin %s: no result slot", ff)
-		return fmt.Errorf("builtin %s: no dst slot", ff)
+		return i18n.Errorf("tmiibvan", "builtin %s: no dst slot", ff)
 	}
 	if isDataPtr {
 		c.loadSeq++
@@ -16298,7 +16300,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 		fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", z, l)
 		v := c.coerce("i64", z, dstLT)
 		if v == "" {
-			return fmt.Errorf("builtin %s: cannot store i64 into %s", ff, dstLT)
+			return i18n.Errorf("4ccv952m", "builtin %s: cannot store i64 into %s", ff, dstLT)
 		}
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot)
 	} else {
@@ -16400,7 +16402,7 @@ func (c *codegen) emitBuiltin(f *Function, inst *Inst, bm *builtin.BuiltinMethod
 		// and must be reached as ordinary calls, not as intrinsics.
 		if libm, gone := removedMathIntrinsic[bm.LLVMIntrinsic]; gone {
 			c.fail("builtin %s is registered with the LLVM intrinsic %s, which LLVM 21 removed; lowering it to @%s would reintroduce the libm link dependency (-lm). Implement it in pure Nolang (src/std/number.no / src/std/math.no) and drop the LLVMIntrinsic registration instead.", inst.Sym, bm.LLVMIntrinsic, libm)
-			return fmt.Errorf("removed LLVM intrinsic %s for builtin %s", bm.LLVMIntrinsic, inst.Sym)
+			return i18n.Errorf("wmq5sd19", "removed LLVM intrinsic %s for builtin %s", bm.LLVMIntrinsic, inst.Sym)
 		}
 		var argTys, argRegs []string
 		for _, a := range inst.Args {
@@ -16437,7 +16439,7 @@ func (c *codegen) emitBuiltin(f *Function, inst *Inst, bm *builtin.BuiltinMethod
 		return c.emitBuiltinForward(f, inst, bm)
 	default:
 		c.fail("unsupported builtin %s (no CLibCall/LLVMIntrinsic/LLVMConv/ForwardFunc) in func %s", inst.Sym, f.Name)
-		return fmt.Errorf("unsupported builtin %s", inst.Sym)
+		return i18n.Errorf("2kqboupo", "unsupported builtin %s", inst.Sym)
 	}
 }
 
@@ -16448,11 +16450,11 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	lt, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: no result slot", ff)
+		return i18n.Errorf("beppq99h", "builtin %s: no result slot", ff)
 	}
 	if len(inst.Args) == 0 {
 		c.fail("builtin %s expects an argument", ff)
-		return fmt.Errorf("builtin %s arity", ff)
+		return i18n.Errorf("xqz68d5m", "builtin %s arity", ff)
 	}
 	// Overflow-default arithmetic yields ?T, and parse-time inference now types
 	// such a binding `?i64` at the declaration — so a size expression like
@@ -16590,7 +16592,7 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 			slot := c.valSlot[a]
 			if slot == "" {
 				c.fail("eprint(txt) receiver has no slot in func %d", c.cf)
-				return fmt.Errorf("eprint txt slot")
+				return i18n.Errorf("4rsqarsx", "eprint txt slot")
 			}
 			c.loadSeq++
 			lGEP := fmt.Sprintf("%%etlg%d", c.loadSeq)
@@ -16625,7 +16627,7 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 			fmt.Fprintf(c.sb, "  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg)
 		default:
 			c.fail("eprint expects str/i64/byte/char/bool arg, got %s", lt)
-			return fmt.Errorf("eprint expects str/i64/byte/char/bool arg, got %s", lt)
+			return i18n.Errorf("w9ajg8ow", "eprint expects str/i64/byte/char/bool arg, got %s", lt)
 		}
 	}
 	c.sb.WriteString("  call void @eprint_nl()\n")
@@ -16683,5 +16685,5 @@ func (c *codegen) emitTerm(f *Function, t *Term) error {
 		}
 	}
 	c.fail("malformed terminator %s", t.Op)
-	return fmt.Errorf("term")
+	return i18n.Errorf("xe32iowe", "term")
 }

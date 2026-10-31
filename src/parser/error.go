@@ -60,13 +60,19 @@ func (d Diagnostic) ref() string {
 
 // Error implements the error interface so a Diagnostic can stand in wherever an
 // error is expected (fmt.Errorf wrapping, test assertions, logging).
+//
+// The reference token goes in the TRAILING "[xxxxxxxx]" slot, matching
+// FormatDiagnostics and the CLI's own renders (`no vet` prints
+// "file:line:col: [SEVERITY] rule: message [id]"). The trailing position is
+// load-bearing: build.splitCompileErrParts recovers the ID by scanning for it
+// there, so a leading slot would silently yield an empty diagnostic code.
 func (d Diagnostic) Error() string {
 	loc := fmt.Sprintf("line %d, column %d", d.Pos.Line, d.Pos.Column)
 	if d.Filename != "" {
 		loc = d.Filename + ":" + loc
 	}
 	if ref := d.ref(); ref != "" {
-		return fmt.Sprintf("%s: [%s] %s", loc, ref, d.Message)
+		return fmt.Sprintf("%s: %s [%s]", loc, d.Message, ref)
 	}
 	return fmt.Sprintf("%s: %s", loc, d.Message)
 }

@@ -7,12 +7,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/lizongying/nolang/checker"
 	nolangfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/i18n/catalog"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 	"go.lsp.dev/jsonrpc2"
@@ -24,12 +26,19 @@ type Server struct {
 	shutdown     bool
 	mu           sync.RWMutex
 	capabilities ServerCapabilities
+	// projectDirs is where `locales/<tag>.noml` overrides are looked up. It is
+	// fixed at construction so a client-supplied locale in `initialize` can be
+	// resolved against exactly the same search list the process used at
+	// startup — otherwise "the editor says zh-CN" and "the project ships
+	// locales/zh-CN.noml" could disagree about which file wins.
+	projectDirs []string
 }
 
 func NewServer() *Server {
 	return &Server{
-		documents: NewDocumentManager(),
-		shutdown:  false,
+		documents:   NewDocumentManager(),
+		shutdown:    false,
+		projectDirs: catalog.ProjectDirs(),
 		capabilities: ServerCapabilities{
 			TextDocumentSync: &TextDocumentSyncOptions{
 				OpenClose:         true,
@@ -80,6 +89,26 @@ func (s *Server) handleInitialize(params InitializeParams) (any, error) {
 	s.mu.Lock()
 	s.shutdown = false
 	s.mu.Unlock()
+
+	// The client's locale outranks the machine's. An editor that runs in
+	// English while $LANG is zh_CN would otherwise get Chinese diagnostics and
+	// Chinese hover text inside an English UI, which reads as a bug in the
+	// editor rather than a language setting. Precedence is therefore
+	// initialize.locale > NO_LANG > LC_ALL > LANG > en, and an empty locale
+	// means "no opinion" — the startup resolution stands.
+	//
+	// This must happen before any diagnostic is built: the checker translates
+	// when it constructs a message, not when it renders one.
+	if params.Locale != "" {
+		if err := catalog.Init(catalog.Options{
+			Lang:        params.Locale,
+			LangSet:     true,
+			ProjectDirs: s.projectDirs,
+			Warn:        func(msg string) { log.Printf("i18n: %s", msg) },
+		}); err != nil {
+			log.Printf("i18n: %v", err)
+		}
+	}
 
 	return InitializeResult{
 		Capabilities: s.capabilities,
@@ -250,8 +279,18 @@ func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 			}
 		}
 	}
-	// "[E_CODE] " 前綴 → Code 欄位（供編輯器過濾 / quickfix），不留在正文。
-	if strings.HasPrefix(msg, "[") {
+	// The message ID lives in the TRAILING "[xxxxxxxx]" slot: parser.Diagnostic
+	// renders "line L, column C: body [id]", and the same token is what `no vet`
+	// and build.splitCompileErrParts read from the end. Move it into Code so the
+	// editor can filter/quickfix on it and Message stays a sentence.
+	//
+	// The leading form is still accepted: a diagnostic assembled by hand (or a
+	// message whose body legitimately ends with a bracket) should not lose its
+	// code just because it was not produced by Diagnostic.Error().
+	if code, body, ok := splitTrailingMsgID(msg); ok {
+		diagnostic.Code = code
+		msg = body
+	} else if strings.HasPrefix(msg, "[") {
 		if end := strings.Index(msg, "] "); end > 0 {
 			diagnostic.Code = msg[1:end]
 			msg = msg[end+2:]
@@ -259,6 +298,18 @@ func (s *Server) parseErrorToDiagnostic(errMsg string) Diagnostic {
 	}
 	diagnostic.Message = msg
 	return diagnostic
+}
+
+// trailingMsgIDRe splits "body [xxxxxxxx]" into its two halves.
+var trailingMsgIDRe = regexp.MustCompile(`^(.*) \[([0-9a-z]{8})\]$`)
+
+// splitTrailingMsgID reports the message ID rendered at the end of s, if any.
+func splitTrailingMsgID(s string) (code, body string, ok bool) {
+	m := trailingMsgIDRe.FindStringSubmatch(s)
+	if m == nil {
+		return "", "", false
+	}
+	return m[2], m[1], true
 }
 
 // stripDiagFilename 去掉 "file.no:line N, column M: [CODE] msg" 中的 "file.no:" 前綴，

@@ -11,6 +11,8 @@ import (
 	"github.com/lizongying/nolang/lexer"
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // injectLDFlags prepends synthetic LetStatement nodes for each -ld-KEY=VALUE pair
@@ -259,7 +261,7 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 		// 檢測路徑是文件還是目錄
 		info, err := os.Stat(resolvedPath)
 		if err != nil {
-			return fmt.Errorf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath)
+			return i18n.Errorf("t22pcf4p", "embed: file not found: %s (resolved: %s)", embedPath, resolvedPath)
 		}
 		if info.IsDir() {
 			// 文件夾嵌入：遞迴讀取所有文件
@@ -286,17 +288,17 @@ func (t *Transpiler) processEmbeds(program *parser.Program, sourcePath string) e
 				return nil
 			})
 			if err != nil {
-				return fmt.Errorf("embed: failed to read directory %s: %w", resolvedPath, err)
+				return i18n.Errorf("x649sxw4", "embed: failed to read directory %s: %w", resolvedPath, err)
 			}
 			if len(files) == 0 {
-				return fmt.Errorf("embed: directory is empty: %s (resolved: %s)", embedPath, resolvedPath)
+				return i18n.Errorf("so08hhvh", "embed: directory is empty: %s (resolved: %s)", embedPath, resolvedPath)
 			}
 			program.Sem.SetEmbedFiles(ls, files)
 		} else {
 			// 單個文件嵌入：讀取文件字節
 			data, err := os.ReadFile(resolvedPath)
 			if err != nil {
-				return fmt.Errorf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath)
+				return i18n.Errorf("t22pcf4p", "embed: file not found: %s (resolved: %s)", embedPath, resolvedPath)
 			}
 			program.Sem.SetEmbedData(ls, data)
 		}

@@ -37,8 +37,9 @@ func main() {
 	// source, so the server still starts.
 	checker.SetStdASTBlob(stdastembed.Blob)
 
-	// 語言：LSP 沒有 --lang 旗標（客戶端透過 initialize.locale 表達偏好，那是
-	// 後續工作），先只認 $NO_LANG / $LC_ALL / $LANG。必須在任何診斷產生之前完成，
+	// 語言：這裡只做「開機時的預設」——$NO_LANG / $LC_ALL / $LANG 決定，沒有
+	// --lang 旗標。客戶端的偏好走 initialize.locale，在 handleInitialize 裡
+	// 覆寫（見 lsp/server.go），優先級高於環境變數。必須在任何診斷產生之前完成，
 	// 因為 checker 在建構訊息時就翻譯，而不是在渲染時。
 	if err := catalog.Init(catalog.Options{
 		ProjectDirs: catalog.ProjectDirs(),

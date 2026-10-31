@@ -40,36 +40,102 @@ const EnCatalogHeader = "; Nolang message catalog: en\n" +
 // RenderEn renders the English catalog document from id -> inline text, sorted
 // by ID for a byte-stable result.
 func RenderEn(entries map[string]string) string {
+	var sb strings.Builder
+	sb.WriteString(EnCatalogHeader)
+	sb.WriteString("{\n")
+	writeEntries(&sb, entries)
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+func writeEntries(sb *strings.Builder, entries map[string]string) {
 	ids := make([]string, 0, len(entries))
 	for id := range entries {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-
-	var sb strings.Builder
-	sb.WriteString(EnCatalogHeader)
-	sb.WriteString("{\n")
 	for _, id := range ids {
 		sb.WriteString("  ")
 		sb.WriteString(pkg.NomlQuote(id))
 		sb.WriteString(": ")
-		sb.WriteString(pkg.NomlQuote(entries[id]))
+		sb.WriteString(pkg.NomlQuoteValue(entries[id]))
 		sb.WriteString("\n")
 	}
+}
+
+// DocCatalogSuffix marks a doc catalog: `locales/<tag>.doc.noml`. Doc catalogs
+// are a separate FILE, not a section of the message catalog, because the two
+// have different key namespaces and different ownership rules:
+//
+//   - message keys are 8-character base36 IDs assigned by the generator and are
+//     fully regenerated on every `make i18n`;
+//   - doc keys are the anchors an author wrote in the source (`args.get`), and a
+//     value is SEEDED once and then preserved, because its source text lives in
+//     a comment rather than at a Go call site.
+//
+// Keeping them apart lets each gate stay exact: `TestLocaleKeysAndVerbs` can keep
+// demanding `^[0-9a-z]{8}$` for every message key, and the doc gate can demand
+// that every anchor in a doc catalog still exists in the source.
+const DocCatalogSuffix = ".doc.noml"
+
+// IsDocCatalogName reports whether a file name is a doc catalog.
+func IsDocCatalogName(name string) bool {
+	return strings.HasSuffix(name, DocCatalogSuffix)
+}
+
+// DocCatalogHeader is the fixed preamble of a generated `en.doc.noml`.
+const DocCatalogHeader = "; Nolang doc catalog: en\n" +
+	"; Source-comment translations, keyed by the anchor an author wrote in a\n" +
+	"; trailing `[label](#anchor)` line. New keys are SEEDED from the comment text\n" +
+	"; by `make i18n`; an existing value is preserved, so this file is meant to be\n" +
+	"; edited by hand. Every key must still exist in some .no source, or the gate\n" +
+	"; rejects it as an orphan.\n"
+
+// RenderDoc renders a doc catalog, sorted by key.
+func RenderDoc(entries map[string]string) string {
+	var sb strings.Builder
+	sb.WriteString(DocCatalogHeader)
+	sb.WriteString("{\n")
+	writeEntries(&sb, entries)
 	sb.WriteString("}\n")
 	return sb.String()
 }
 
-// alias maps a requested tag onto the tag whose file we actually ship. Any
-// Chinese request resolves to the Simplified catalog: showing English to a
-// zh-TW/zh-HK reader is a worse outcome than showing Simplified.
+// MergeDocTranslations returns the doc table to render: every scanned key,
+// keeping the value already present in the committed catalog when there is one.
+//
+// This is the mechanism that lets en.doc.noml be simultaneously generated and
+// hand-editable. A message's English lives at the Go call site, so the generator
+// owns it; a doc line's source text lives in the .no comment, so re-seeding would
+// silently revert every translation on the next `make i18n`.
+//
+// The generator and the freshness gate both call this, so "what `make i18n`
+// writes" and "what the gate expects" cannot drift.
+func MergeDocTranslations(scanned, existing map[string]string) map[string]string {
+	if len(scanned) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(scanned))
+	for id, text := range scanned {
+		if prev, ok := existing[id]; ok && prev != "" {
+			out[id] = prev
+			continue
+		}
+		out[id] = text
+	}
+	return out
+}
+
+// alias maps a requested tag onto the tag whose file we actually ship. Chinese
+// is split by script: Hans/plain "zh" resolve to the Simplified catalog, while
+// Hant and the Traditional-script regions (TW/HK/MO) resolve to zh-TW.
 var alias = map[string]string{
 	"zh":      "zh-CN",
 	"zh-hans": "zh-CN",
-	"zh-hant": "zh-CN",
-	"zh-tw":   "zh-CN",
-	"zh-hk":   "zh-CN",
-	"zh-mo":   "zh-CN",
+	"zh-hant": "zh-TW",
+	"zh-tw":   "zh-TW",
+	"zh-hk":   "zh-TW",
+	"zh-mo":   "zh-TW",
 }
 
 // Options configures Init.
@@ -100,7 +166,44 @@ func Init(o Options) error {
 		Load: func(tag string) (map[string]string, error) {
 			return Load(o.ProjectDirs, tag)
 		},
+		DocLoad: func(tag string) (map[string]string, error) {
+			return LoadDoc(o.ProjectDirs, tag)
+		},
 	})
+}
+
+// LoadDoc reads the doc catalog for tag: project `locales/<tag>.doc.noml` first,
+// then the embedded copy. A tag with no doc catalog is not an error — it returns
+// nil, nil so that `Doc` simply falls back to the source text.
+//
+// It resolves through Canonical for the same reason Load does: `zh` must find the
+// `zh-CN` file, or a user who typed `--lang=zh` would get untranslated comments
+// while messages were translated.
+func LoadDoc(projectDirs []string, tag string) (map[string]string, error) {
+	tag = Canonical(tag)
+	name := tag + DocCatalogSuffix
+	for _, dir := range projectDirs {
+		if dir == "" {
+			continue
+		}
+		path := filepath.Join(dir, LocaleDirName, name)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("i18n: reading %s: %w", path, err)
+		}
+		return parseCatalog(path, data)
+	}
+
+	path := "locales/" + name
+	data, err := localesFS.ReadFile(path)
+	if err != nil {
+		// No doc catalog for this tag: untranslated, not broken.
+		return nil, nil
+	}
+	return parseCatalog(path, data)
 }
 
 // Canonical maps an alias onto the tag whose file exists. Unknown tags are
@@ -206,6 +309,14 @@ func Load(projectDirs []string, tag string) (map[string]string, error) {
 	return parseCatalog(path, data)
 }
 
+// ParseCatalogData turns a `.noml` catalog document into a flat id -> text map.
+// It is the same reader Load uses, exported so the generator can inspect the
+// committed file it is about to rewrite (to preserve doc translations) without
+// going through the embedded copy.
+func ParseCatalogData(path string, data []byte) (map[string]string, error) {
+	return parseCatalog(path, data)
+}
+
 // parseCatalog turns a `.noml` document into a flat id -> text map. Every value
 // must be a string: a nested object or array means the file was hand-edited
 // wrong, and failing loudly here beats a silent half-loaded catalog.
@@ -225,7 +336,10 @@ func parseCatalog(path string, data []byte) (map[string]string, error) {
 	return out, nil
 }
 
-// tagsInDir lists the `<tag>.noml` files directly under dir/locales.
+// tagsInDir lists the `<tag>.noml` files directly under dir/locales. Doc
+// catalogs (`<tag>.doc.noml`) are skipped: they are not tags of their own, and
+// listing them would make `Available` claim a language the messages have no
+// catalog for.
 func tagsInDir(dir string) []string {
 	entries, err := os.ReadDir(filepath.Join(dir, LocaleDirName))
 	if err != nil {
@@ -233,7 +347,7 @@ func tagsInDir(dir string) []string {
 	}
 	var out []string
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".noml") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".noml") || IsDocCatalogName(e.Name()) {
 			continue
 		}
 		out = append(out, strings.TrimSuffix(e.Name(), ".noml"))

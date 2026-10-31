@@ -13,6 +13,8 @@ import (
 
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // std AST cache (Tier 0 of the incremental-build AST cache).
@@ -187,7 +189,7 @@ type stdParseTables struct {
 func stdParseTablesFor(fsys fs.FS) (stdParseTables, error) {
 	funcEntries, methodEntries, structFields, _, _, enumVariants, err := CollectStdSigsFromFS(fsys)
 	if err != nil {
-		return stdParseTables{}, fmt.Errorf("collect std signatures: %w", err)
+		return stdParseTables{}, i18n.Errorf("j42y1qyx", "collect std signatures: %w", err)
 	}
 	// The parser's inference tables are RESULT-only (see parser.funcSignatures).
 	t := stdParseTables{
@@ -288,19 +290,19 @@ func SerializeStdAST(fsys fs.FS) (*StdASTBlob, error) {
 	known := ListStdModules(fsys)
 	tables, err := stdParseTablesFor(fsys)
 	if err != nil {
-		return nil, fmt.Errorf("std AST: %w", err)
+		return nil, i18n.Errorf("nh8jhhz7", "std AST: %w", err)
 	}
 	blob := &StdASTBlob{Mods: make([]StdASTEntry, 0, len(known))}
 	for _, info := range known {
 		embedPath := "std/" + info.FullPath + ".no"
 		source, err := fs.ReadFile(fsys, embedPath)
 		if err != nil {
-			return nil, fmt.Errorf("std AST: read %s: %w", embedPath, err)
+			return nil, i18n.Errorf("vgfb39et", "std AST: read %s: %w", embedPath, err)
 		}
 		p := newStdModuleParser(embedPath, string(source), tables)
 		prog := p.ParseProgram()
 		if len(p.Errors()) > 0 {
-			return nil, fmt.Errorf("std AST: parse %s failed: %v", embedPath, p.Errors())
+			return nil, i18n.Errorf("n51paa43", "std AST: parse %s failed: %v", embedPath, p.Errors())
 		}
 		// Read the configuration back OFF THE PARSER instead of recomputing it
 		// from `tables`. `tables` is what we MEANT to inject; the parser holds
@@ -315,7 +317,7 @@ func SerializeStdAST(fsys fs.FS) (*StdASTBlob, error) {
 		cp := &parser.CachedProgram{Prog: prog}
 		var raw bytes.Buffer
 		if err := gob.NewEncoder(&raw).Encode(cp); err != nil {
-			return nil, fmt.Errorf("std AST: encode %s: %w", embedPath, err)
+			return nil, i18n.Errorf("50ztzqeo", "std AST: encode %s: %w", embedPath, err)
 		}
 		blob.Mods = append(blob.Mods, StdASTEntry{Path: embedPath, Data: raw.Bytes()})
 	}

@@ -25,6 +25,7 @@ package checker
 
 import (
 	"fmt"
+	"github.com/lizongying/nolang/i18n"
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
@@ -172,8 +173,8 @@ func (w *optCmpWalker) report(e *parser.InfixExpression, optExpr, otherExpr pars
 	results := []ValidateResult{{
 		Line:    e.Token.Line,
 		Column:  e.Token.Column,
-		Message: fmt.Sprintf("cannot compare option value '%s' (%s) with '%s' (%s): unwrap it first (`v ?= expr`) or match on ok/nil/err", exprName(optExpr), optType, exprName(otherExpr), otherType),
-		TraceID: optionCompareTraceID,
+		Message: i18n.T("fe0a5wt2", "cannot compare option value '%s' (%s) with '%s' (%s): unwrap it first (`v ?= expr`) or match on ok/nil/err", exprName(optExpr), optType, exprName(otherExpr), otherType),
+		TraceID: "fe0a5wt2",
 	}}
 	w.results = append(w.results, results...)
 }

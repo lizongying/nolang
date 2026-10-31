@@ -12,6 +12,8 @@ import (
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // parserWarningsByCode 回傳 parser 診斷中指定碼的 WARNING 級 Diagnostic（含位置）。
@@ -355,7 +357,7 @@ func (t *Transpiler) parseEntryProgram(source string) (*parser.Program, error) {
 		t.astParseConfig(t.sourcePath).Apply(p)
 		program = p.ParseProgram()
 		if len(p.Errors()) > 0 {
-			return nil, fmt.Errorf("parser errors: %s", parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
+			return nil, i18n.Errorf("au6g7ji7", "parser errors: %s", parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
 		}
 		// 收集主程序中链式 -> 条件的 lint 提示（仅主程序，不含自动载入的 std 库，
 		// 避免库代码触发噪音）。buildWithPkg 会在编译成功后打印。
@@ -387,7 +389,7 @@ func checkReservedMainName(program *parser.Program) error {
 			switch s := stmt.(type) {
 			case *parser.FunctionDefinition:
 				if s.Name == "main" || strings.HasSuffix(s.Name, ".main") {
-					mainErr = fmt.Errorf("line %d, column %d: 'main' is a reserved name and cannot be used as a function name; use top-level statements instead (the entry point is synthesized automatically)", s.Token.Line, s.Token.Column)
+					mainErr = i18n.Errorf("xgs17cqx", "line %d, column %d: 'main' is a reserved name and cannot be used as a function name; use top-level statements instead (the entry point is synthesized automatically)", s.Token.Line, s.Token.Column)
 					return
 				}
 				if s.Body != nil {
@@ -442,7 +444,7 @@ func collectEntryProgramFacts(program *parser.Program, isUserCode bool) (varType
 			if fd.IsVariadic {
 				for _, p := range fd.Parameters {
 					if p.Type.String() == "[]any" {
-						return nil, nil, nil, nil, fmt.Errorf("..any is only allowed in standard library, not in user code (function: %s)", fd.Name)
+						return nil, nil, nil, nil, i18n.Errorf("2243l8if", "..any is only allowed in standard library, not in user code (function: %s)", fd.Name)
 					}
 				}
 			}

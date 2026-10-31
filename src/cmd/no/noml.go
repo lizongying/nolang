@@ -1,11 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
 	pkg "github.com/lizongying/nolang/package"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // This file hosts the noml (Nolang Markup Language) helpers used by the
@@ -27,7 +28,7 @@ func nomlParseMap(data []byte) (map[string]string, error) {
 	for k, val := range m {
 		s, ok := val.(string)
 		if !ok {
-			return nil, fmt.Errorf("noml: value for key %q is not a string (got %T)", k, val)
+			return nil, i18n.Errorf("dns4nguy", "noml: value for key %q is not a string (got %T)", k, val)
 		}
 		result[k] = s
 	}

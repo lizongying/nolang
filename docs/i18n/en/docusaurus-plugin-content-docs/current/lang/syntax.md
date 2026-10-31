@@ -526,6 +526,41 @@ sha1 = (data []byte) (hash [20]byte) {
 }
 ```
 
+### Translatable Documentation Comments (Markdown Link)
+
+A documentation comment may end with a **standalone Markdown link** that points the
+whole comment at an entry in the translation catalog:
+
+```no
+; get: the i-th argument
+; delegates to the os.arg(i) builtin, which reads argv[i] of main; an out-of-range i returns nil
+; [get](#args.get)
+get = (i i64) (val ?str) {
+    val = os.arg(i)
+}
+```
+
+**Rules:**
+- The link must be the **last line** of the comment group, alone on it. Every line
+  above it forms one block and is translated as a single message
+- The target must be a `#anchor` (an entry in the same catalog). Ordinary external
+  links such as `[docs](https://example.com)` are prose written for humans and are
+  **not** treated as translation markers
+- The anchor is the key (`args.get`). The author writes it and the translator sees
+  it in the catalog; it is not derived from the text, so rewording never orphans an
+  existing translation. Anchors allow letters, digits, `.`, `_` and `-`, are global,
+  and should carry the module prefix
+- The label (`[get]`) is only a hint for whoever reads the source; the whole link
+  line is stripped from the display. `[](#args.get)` is equally valid
+- Only `;` single-line comments can carry a link (`;;` and `;;block` cannot)
+
+Translations live in `locales/<language>.doc.noml`, keyed by the anchor. A missing
+translation falls back to the comment's own text rather than becoming blank.
+
+**LSP hints:** hovering the function name shows the translated block; hovering the
+link line itself shows what the anchor points at (also in the current language), so
+a translation can be checked without leaving the comment.
+
 ## Prefer the Standard Library
 
 The Nolang standard library provides a rich set of common functionality, including string operations, byte conversions, hash computation, networking, and more.
@@ -3091,8 +3126,9 @@ utils/
 #### Importing `.noml` Configuration Files Directly
 
 A `.noml` file can be imported with `#`: resolution looks for `<name>.no` first and falls
-back to `<name>.noml`. After the import, **the struct name is the file name** (without the
-extension) and each member becomes a field of that struct. A same-named global value holds
+back to `<name>.noml`. After the import, **the struct name defaults to the file name**
+(without the extension, overridable by a `#{name = '...'}` annotation at the top of the
+file) and each member becomes a field of that struct. A same-named global value holds
 the file contents, so you read configuration with `server.port`.
 
 ```noml
@@ -3125,6 +3161,31 @@ print(server.compiler.version) ; v0.1.0
   struct is generated.
 - Nested struct names are prefixed with the file name (`server-compiler`); nested types
   are defined before their host type.
+- **A top-level (file-level) annotation can rename the struct**: `#{name = '...'}` (the
+  equivalent spelling `#{type = '...'}`, `name` wins) sits on its own line above the top
+  level `{`, or trails on the top value's line. The value binding and the nested struct
+  prefix follow the new name, while the **import path is still resolved from the file
+  name**:
+
+```noml
+; cfg/db.noml
+#{name = 'db-options'}
+{
+  host: 'localhost'
+}
+```
+
+```no
+# /cfg/db
+# /cfg/db as db2
+print(db-options.host)   ; localhost
+print(db2.host)          ; localhost
+```
+
+- Two different files that would produce the same type name (e.g. same-named files in
+  different directories) are reported as an error — tell them apart with a top-level
+  `#{name = '...'}`. Importing the same file more than once (e.g. again with an `as`
+  alias) merges the type definition only once.
 - Keys are converted to lower-case hyphenated nolang names (`anonymous-fn-type`): a leading
   digit gets `f-`, and a name equal to a keyword gets `x-`.
 - An `as` alias renames the value binding only; the struct name stays the file name:

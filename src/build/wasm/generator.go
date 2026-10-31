@@ -2,10 +2,11 @@ package wasm
 
 import (
 	"bytes"
-	"fmt"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // ---- 內部結構：模組建構狀態 ----
@@ -711,7 +712,7 @@ func (g *Generator) encodeDataSection() []byte {
 // validateState 檢查模組狀態的一致性。
 func (g *Generator) validateState() error {
 	if len(g.functions) != len(g.codes) {
-		return fmt.Errorf("wasm: function/code count mismatch: %d functions vs %d codes",
+		return i18n.Errorf("2fke76na", "wasm: function/code count mismatch: %d functions vs %d codes",
 			len(g.functions), len(g.codes))
 	}
 	return nil

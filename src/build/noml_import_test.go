@@ -118,6 +118,68 @@ func TestNomlImportAlias(t *testing.T) {
 	}
 }
 
+// TestNomlImportRootName 鎖定頂部文件級註解改寫結構體名：`#{name = '...'}`
+// 優先於文件名，巢狀結構體名也以它為前綴，同名全局值跟著改名。
+func TestNomlImportRootName(t *testing.T) {
+	noml := "#{name = 'server-config'}\n" +
+		"{\n  port: 8080\n  compiler: {\n    version: 'v0.1.0'\n  }\n}\n"
+	src, err := NomlImportSource("/ws/cfg/server.noml", []byte(noml))
+	if err != nil {
+		t.Fatalf("NomlImportSource: %v", err)
+	}
+	for _, want := range []string{
+		"server-config {",
+		"server-config-compiler {",
+		"compiler server-config-compiler",
+		"server-config = server-config {",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("generated source missing %q:\n%s", want, src)
+		}
+	}
+	if strings.Contains(src, "\nserver {") {
+		t.Errorf("file name should not be used once the top annotation names the struct:\n%s", src)
+	}
+}
+
+// TestNomlImportRootNameCompile 端到端驗證頂部註解命名後的 .noml 導入：
+// `# /cfg/server` 仍按檔名解析，但綁定名/型別名都是 `#{name}` 指定的名字；
+// `as` 別名只改值名，不受頂部註解影響。
+func TestNomlImportRootNameCompile(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
+		[]byte(`{ test: '.' }`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfgDir := filepath.Join(tmpDir, "cfg")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	noml := "#{name = 'server-config'}\n{\n  port: 8080\n}\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "server.noml"), []byte(noml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mainSrc := "# /cfg/server\n" +
+		"# /cfg/server as cfg2\n" +
+		"print(server-config.port)\n" +
+		"print(cfg2.port)\n"
+	mainPath := filepath.Join(tmpDir, "main.no")
+	if err := os.WriteFile(mainPath, []byte(mainSrc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	trans := NewTranspiler(nil)
+	trans.sourcePath = mainPath
+	ir, err := trans.Compile(mainSrc)
+	if err != nil {
+		t.Fatalf("compile error: %v\n--- IR ---\n%s", err, ir)
+	}
+	// LLVM 型別名會把中劃線洗成下劃線（server-config → %server_config）。
+	if !strings.Contains(ir, "%server_config = type {") {
+		t.Errorf("IR is missing the struct type %%server_config:\n%s", ir)
+	}
+}
+
 // TestNomlImportEmptyContainerNeedsType 驗證空容器必須有型別註解：
 // noml 的值本身無型別，空陣列/空物件無法推斷。
 func TestNomlImportEmptyContainerNeedsType(t *testing.T) {

@@ -29,14 +29,14 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-const deprecatedCallTraceID = "nolang-deprecated-call"
+const deprecatedCallTraceID = "rolt851g"
 
 // deprecatedAssignTraceID 用於複合賦算運算符（`+=` 一族）的棄用提示。
-const deprecatedAssignTraceID = "nolang-deprecated-compound-assign"
+const deprecatedAssignTraceID = "06ni1174"
 
 // deprecatedMethodCallTraceID 用於棄用「方法」呼叫的提示（接收者型別可判定時）。
 // 與 deprecatedCallTraceID（自由函數）分開，方便各自開關與統計。
-const deprecatedMethodCallTraceID = "nolang-deprecated-method-call"
+const deprecatedMethodCallTraceID = "wysk312n"
 
 // deprecatedMethodInfo 是單一 (方法, 接收者型別) 組合的替代建議。
 type deprecatedMethodInfo struct {

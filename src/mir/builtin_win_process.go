@@ -1,6 +1,10 @@
 package mir
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/lizongying/nolang/i18n"
+)
 
 // builtin_win_process.go — Windows subprocess builtins (process.cmd's #{win-*} body).
 //
@@ -27,7 +31,7 @@ func (c *codegen) emitBuiltinWinCreatePipe(inst *Inst) error {
 // win-close-handle: (handle i64) -> (ok bool)
 func (c *codegen) emitBuiltinWinCloseHandle(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("win-close-handle: needs a handle argument")
+		return i18n.Errorf("qxkk7mt2", "win-close-handle: needs a handle argument")
 	}
 	c.decl("declare i32 @nolang.win_close_handle(i64)")
 	_, h := c.loadVal(inst.Args[0])
@@ -41,7 +45,7 @@ func (c *codegen) emitBuiltinWinCloseHandle(inst *Inst) error {
 // win-write-pipe: (handle i64, data str) -> (written i64)
 func (c *codegen) emitBuiltinWinWritePipe(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("win-write-pipe: needs (handle, data)")
+		return i18n.Errorf("5qpe9buw", "win-write-pipe: needs (handle, data)")
 	}
 	c.decl("declare i64 @nolang.win_write_pipe(i64, i8*, i64)")
 	_, h := c.loadVal(inst.Args[0])
@@ -54,7 +58,7 @@ func (c *codegen) emitBuiltinWinWritePipe(inst *Inst) error {
 // win-read-pipe: (handle i64, max-bytes i64) -> (data str, n i64)
 func (c *codegen) emitBuiltinWinReadPipe(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("win-read-pipe: needs (handle, max-bytes)")
+		return i18n.Errorf("sz3i7626", "win-read-pipe: needs (handle, max-bytes)")
 	}
 	c.decl("declare i64 @nolang.win_read_pipe(i64, i8*, i64)")
 	_, h := c.loadVal(inst.Args[0])
@@ -73,7 +77,7 @@ func (c *codegen) emitBuiltinWinReadPipe(inst *Inst) error {
 // win-get-std-handle: (which i64) -> (handle i64)
 func (c *codegen) emitBuiltinWinGetStdHandle(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("win-get-std-handle: needs a which argument")
+		return i18n.Errorf("1x2yhmnf", "win-get-std-handle: needs a which argument")
 	}
 	c.decl("declare i64 @nolang.win_get_std_handle(i64)")
 	_, w := c.loadVal(inst.Args[0])
@@ -85,7 +89,7 @@ func (c *codegen) emitBuiltinWinGetStdHandle(inst *Inst) error {
 // win-wait-process: (proc-handle i64, timeout-ms i64) -> (status i64)
 func (c *codegen) emitBuiltinWinWaitProcess(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("win-wait-process: needs (proc-handle, timeout-ms)")
+		return i18n.Errorf("q2qgyoqo", "win-wait-process: needs (proc-handle, timeout-ms)")
 	}
 	c.decl("declare i64 @nolang.win_wait_process(i64, i64)")
 	_, h := c.loadVal(inst.Args[0])
@@ -99,7 +103,7 @@ func (c *codegen) emitBuiltinWinWaitProcess(inst *Inst) error {
 // nil when the call failed or the process is still running (STILL_ACTIVE=259).
 func (c *codegen) emitBuiltinWinGetExitCode(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("win-get-exit-code: needs a proc-handle argument")
+		return i18n.Errorf("rp7sdc6j", "win-get-exit-code: needs a proc-handle argument")
 	}
 	c.decl("declare i32 @nolang.win_get_exit_code(i64, i32*)")
 	_, h := c.loadVal(inst.Args[0])
@@ -126,7 +130,7 @@ func (c *codegen) emitBuiltinWinGetExitCode(inst *Inst) error {
 // win-terminate-process: (proc-handle i64, exit-code i64) -> (ok bool)
 func (c *codegen) emitBuiltinWinTerminateProcess(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("win-terminate-process: needs (proc-handle, exit-code)")
+		return i18n.Errorf("ghpii6jf", "win-terminate-process: needs (proc-handle, exit-code)")
 	}
 	c.decl("declare i32 @nolang.win_terminate_process(i64, i32)")
 	_, h := c.loadVal(inst.Args[0])
@@ -145,16 +149,16 @@ func (c *codegen) emitBuiltinWinTerminateProcess(inst *Inst) error {
 //	-> (proc-handle i64, status i64)   status: >0 = ok, 0 = fail
 func (c *codegen) emitBuiltinWinCreateProcess(inst *Inst) error {
 	if len(inst.Args) < 5 {
-		return fmt.Errorf("win-create-process: needs (cmdline, dir, stdin, stdout, stderr)")
+		return i18n.Errorf("ww5ngyyh", "win-create-process: needs (cmdline, dir, stdin, stdout, stderr)")
 	}
 	c.decl("declare i32 @nolang.win_create_process(i8*, i8*, i64, i64, i64, i64*)")
 	cl := c.cstrOf(inst.Args[0])
 	if cl == "" {
-		return fmt.Errorf("win-create-process: cannot marshal cmdline as C string")
+		return i18n.Errorf("2qoxhl6a", "win-create-process: cannot marshal cmdline as C string")
 	}
 	dir := c.cstrOf(inst.Args[1])
 	if dir == "" {
-		return fmt.Errorf("win-create-process: cannot marshal dir as C string")
+		return i18n.Errorf("pgapt83d", "win-create-process: cannot marshal dir as C string")
 	}
 	_, si := c.loadVal(inst.Args[2])
 	_, so := c.loadVal(inst.Args[3])

@@ -122,6 +122,17 @@ LD_FLAGS_WITH_SIG_ON = $(subst -ldflags=",-ldflags="$(LLVM_CAPI_ON_X) ,$(LD_FLAG
 stamp-traceid: FORCE
 	@bash scripts/stamp_traceid.sh $(TRACE_ID_FILES)
 
+# Regenerate the English catalogs from the source:
+#   src/i18n/catalog/locales/en.noml      from i18n.T / i18n.P / i18n.Errorf call sites
+#   src/i18n/catalog/locales/en.doc.noml  from `; ... ; [label](#anchor)` doc comments
+# Run this after adding or editing a message or a doc comment, then translate any
+# new keys in zh-CN.noml / zh-CN.doc.noml. A doc value is seeded once and then
+# preserved, so hand edits to en.doc.noml survive. The catalog gate
+# (`go test ./i18n/catalog/`) fails when a committed file is stale.
+.PHONY: i18n
+i18n: FORCE
+	cd src && $(GO) run ./i18n/cmd/genen
+
 # ── NO ────────────────────────────────
 $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
 	$(MAKE) stamp-traceid

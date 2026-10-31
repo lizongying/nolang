@@ -1,12 +1,13 @@
 package build
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/lizongying/nolang/build/js"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // collectReassignedGlobals 掃描語句，找出 Type==nil 的 LetStatement（賦值），
@@ -125,11 +126,15 @@ type compileAssembly struct {
 	mainLocalTypes map[string]bool   // 主程序自行定義的型別裸名（同名時不得加前綴）
 	mainLocalOwner map[string]string // 剔除主程序本地型別後的 typeOwner
 	prefixedFns    map[string]bool   // prefixCollidingFunctions 改名過的函數
-	// nomlTypes / nomlStmts 記錄由 .noml 重建出的型別裸名與語句。結構體名
-	// 就是文件名，故它們必須與主程序本地型別同等對待：不參與模組前綴，也不
-	// 被 typeOwner 中同名的模組型別（如 std/server 的 server.server）改寫。
-	nomlTypes map[string]bool
-	nomlStmts map[parser.Statement]bool
+	// nomlTypes / nomlStmts 記錄由 .noml 重建出的型別裸名與語句。結構體名預設
+	// 就是文件名（可被頂部 `#{name = '...'}` 註解改寫），故它們必須與主程序
+	// 本地型別同等對待：不參與模組前綴，也不被 typeOwner 中同名的模組型別
+	// （如 std/server 的 server.server）改寫。
+	// nomlTypeFiles 記錄型別名 → 來源 .noml，同一檔案被多次導入（例如再加
+	// `as` 別名）時不重複輸出型別定義，不同檔案撞同名則報錯。
+	nomlTypes     map[string]bool
+	nomlStmts     map[parser.Statement]bool
+	nomlTypeFiles map[string]string
 }
 
 // newCompileAssembly 取 program 的工作副本並初始化合併產物（原 CompileTarget
@@ -238,10 +243,10 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	if t.jsBackend && js.IsESMUse(use) {
 		spec, _ := js.ESMSpecifier(use)
 		if _, err := js.SanitizeSpecifier(spec); err != nil {
-			return fmt.Errorf("import %q: %w", use.Path, err)
+			return i18n.Errorf("l62tgcu4", "import %q: %w", use.Path, err)
 		}
 		if !esmDeclared(t.pkg, spec) {
-			return fmt.Errorf("ESM module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", spec, spec)
+			return i18n.Errorf("nz3ol1c4", "ESM module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", spec, spec)
 		}
 		a.merged.Statements = append(a.merged.Statements, use)
 		return nil
@@ -253,7 +258,7 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	if t.jsBackend {
 		if np, isNative := js.NativeUsePolicy(use, a.merged.Sem); isNative {
 			if np.WASM != "" && !js.IsRelativeSpecifier(np.WASM) && !esmDeclared(t.pkg, np.WASM) {
-				return fmt.Errorf("native wasm module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", np.WASM, np.WASM)
+				return i18n.Errorf("2lsu55tb", "native wasm module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", np.WASM, np.WASM)
 			}
 			a.merged.Statements = append(a.merged.Statements, use)
 			return nil
@@ -272,11 +277,11 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	// `# path.fn as alias`）。以前這種寫法是語法錯誤，現在路徑後可跟 as，
 	// 必須明確拒絕而不是默默什麼都不導入。
 	if use.Alias != "" && use.Function == "" {
-		return fmt.Errorf("import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file", use.Path, use.Alias)
+		return i18n.Errorf("l9ef35lt", "import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file", use.Path, use.Alias)
 	}
 	modProg, err := t.resolveUse(use)
 	if err != nil {
-		return fmt.Errorf("loading module %s: %w", use.Path, err)
+		return i18n.Errorf("kzsepkro", "loading module %s: %w", use.Path, err)
 	}
 	// 解析模組的源碼檔案路徑，供 vet lint 歸因使用。
 	// std/ 模組 → GetStdSourceFile；用戶模組 → workspace 根目錄解析。
@@ -632,7 +637,7 @@ func (a *compileAssembly) secondStageResolution() error {
 	// 必須在 ResolveModuleCalls + ResolveMethodCalls 之後執行：合法的
 	// module.fn / Type.method 呼叫此時都已被改寫，殘留的模組點呼叫即非法。
 	if err := checkUnresolvedModuleCalls(a.merged, a.importedModules); err != nil {
-		return fmt.Errorf("check error: %v", err)
+		return i18n.Errorf("trdj5rp8", "check error: %v", err)
 	}
 	return nil
 }

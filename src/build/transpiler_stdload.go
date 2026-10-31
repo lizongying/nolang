@@ -13,6 +13,8 @@ import (
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // stdModuleLookup 建立 std 模組 shortName/fullPath → FullPath 的查表。
@@ -333,7 +335,7 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 	use := &parser.UseStatement{Path: path, Function: ""}
 	modProg, err := t.resolveUse(use)
 	if err != nil {
-		return nil, fmt.Errorf("auto-loading module %s: %w", path, err)
+		return nil, i18n.Errorf("hgedm96o", "auto-loading module %s: %w", path, err)
 	}
 	if os.Getenv("NOLANG_DEBUG_SELF") != "" && strings.Contains(path, "txt") {
 		f, _ := os.OpenFile("/tmp/modprog_dump.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)

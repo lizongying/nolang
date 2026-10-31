@@ -60,6 +60,40 @@ var methodHelpers = map[string]helper{
 	"fatalf":               {1, 3},
 }
 
+// stripPrefixHelpers are the parser helpers that strip a leading "line N, column
+// M: " position prefix from their format string at RUNTIME (parser.splitLocFormat),
+// because the position lives in Diagnostic.Pos rather than in the translatable
+// text. The generator must perform the same strip when extracting the default,
+// otherwise en.noml would record the prefix that the runtime never translates and
+// the verb-signature gate would compare against the wrong format. Helpers that
+// receive the position as an explicit argument (…At / errorf / warnf / fatalf)
+// already carry the body only, so they are not in this set.
+var stripPrefixHelpers = map[string]bool{
+	"saveErrorf":           true,
+	"saveWarningf":         true,
+	"saveWarningWithCodef": true,
+}
+
+// locPrefixFormats mirrors parser.locPrefixFormats: the machine-generated
+// position prefix, longest first so a longer prefix wins over a shorter one that
+// it subsumes.
+var locPrefixFormats = []string{
+	"line %d, column %d: ",
+	"line %d: ",
+}
+
+// stripLocFormatPrefix removes a leading position prefix, matching what the parser
+// does at runtime for stripPrefixHelpers. Texts without such a prefix are returned
+// unchanged.
+func stripLocFormatPrefix(text string) string {
+	for _, p := range locPrefixFormats {
+		if strings.HasPrefix(text, p) {
+			return text[len(p):]
+		}
+	}
+	return text
+}
+
 // Helpers is the union of every helper name, for documentation and tests.
 var Helpers = func() map[string]bool {
 	out := make(map[string]bool, len(pkgHelpers)+len(methodHelpers))
@@ -188,6 +222,12 @@ func scanFile(root, path string, res *Result) error {
 		if id == Placeholder {
 			res.Pending++
 			return true
+		}
+		// The parser's f-variants strip a leading "line N, column M: " position
+		// prefix at runtime (the position lives in Diagnostic.Pos). Mirror that
+		// here so the recorded default matches what is actually translated.
+		if stripPrefixHelpers[sel.Sel.Name] {
+			text = stripLocFormatPrefix(text)
 		}
 		res.Entries = append(res.Entries, Entry{ID: id, Text: text, File: rel, Line: pos.Line})
 		return true

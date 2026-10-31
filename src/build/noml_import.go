@@ -10,6 +10,8 @@ import (
 
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // ─── .noml 直接引入 ──────────────────────────────────────────────────────────
@@ -17,7 +19,8 @@ import (
 // nolang 源碼可以 `# /cfg/server` 直接引入 cfg/server.noml（解析順序：先找
 // server.no，找不到再找 server.noml）。引入後：
 //
-//   - 生成一個結構體，結構體名 = 文件名（server.noml → server）；
+//   - 生成一個結構體，結構體名 = 文件名（server.noml → server），可由檔案
+//     頂部的 `#{name = '...'}`（或 `#{type = '...'}`）註解改寫；
 //   - 各成員成為該結構體的欄位，欄位型別取成員的 `#{type = '...'}` 註解，
 //     未標註則由值推斷（字串 → str、整數 → i64、小數 → f64、布林 → bool、
 //     物件 → 自動生成的巢狀結構體、陣列 → []元素型別）；
@@ -33,12 +36,37 @@ import (
 // 沿用既有管線，不需要在編譯器裡新增第二套型別系統。
 
 // nomlStem 回傳 .noml 檔案對應的 nolang 名稱（結構體名與值名）：server.noml → server。
+// 這是未標註文件級註解時的預設名，實際名字由 nomlStructName 決定。
 func nomlStem(nomlPath string) string {
 	return nomlValueName(strings.TrimSuffix(filepath.Base(nomlPath), filepath.Ext(nomlPath)))
 }
 
-// NomlImportSource 把 .noml 文件重建為 nolang 源碼：文件名即結構體名，
-// 同名全局值承載配置內容（`server = server { ... }`）。
+// nomlStructName 決定 .noml 重建後的結構體名（同時也是同名全局值的名）：
+// 頂部 `#{name = 'server-config'}`（或 `#{type = '...'}`）優先，否則文件名。
+// 名字按 nolang 識別符規則正規化（小寫 kebab-case），與文件名走同一條規則。
+func nomlStructName(doc *pkg.NomlDoc, nomlPath string) string {
+	if n := doc.RootName(); n != "" {
+		return nomlValueName(n)
+	}
+	return nomlStem(nomlPath)
+}
+
+// nomlBindingName 回傳 .noml 生成物裡頂層值綁定的名字（生成物只有一個頂層 let）。
+// 合併階段靠它把 `as` 別名套到正確的綁定上，因此不需要知道名字是檔名還是頂部
+// 註解指定的。找不到回傳 ""。
+func nomlBindingName(prog *parser.Program) string {
+	name := ""
+	for _, stmt := range prog.Statements {
+		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
+			name = ls.Name.Value
+		}
+	}
+	return name
+}
+
+// NomlImportSource 把 .noml 文件重建為 nolang 源碼：結構體名預設為文件名
+// （可被頂部 `#{name = '...'}` 註解改寫），同名全局值承載配置內容
+// （`server = server { ... }`）。
 //
 // 別名不由本函式處理：生成的源碼只依檔案內容（因此可按路徑快取），
 // 合併階段再把頂層值綁定改名為 use.Alias。
@@ -48,9 +76,9 @@ func NomlImportSource(nomlPath string, data []byte) (string, error) {
 		return "", err
 	}
 	if doc.Root == nil {
-		return "", fmt.Errorf("top level must be an object")
+		return "", i18n.Errorf("5ns1mui1", "top level must be an object")
 	}
-	stem := nomlStem(nomlPath)
+	stem := nomlStructName(doc, nomlPath)
 	g := &nomlStructGen{doc: doc, stem: stem, typeNames: make(map[string]string)}
 	if err := g.collect("", stem, doc.Root); err != nil {
 		return "", err
@@ -93,7 +121,7 @@ func (g *nomlStructGen) collect(path, typeName string, obj map[string]any) error
 		mpath := nomlMemberPath(path, k)
 		field := nomlFieldName(k)
 		if prev, ok := seen[field]; ok {
-			return fmt.Errorf("keys %q and %q map to the same nolang field %q", prev, k, field)
+			return i18n.Errorf("8wo2yee6", "keys %q and %q map to the same nolang field %q", prev, k, field)
 		}
 		seen[field] = k
 		ftype, err := g.fieldType(mpath, obj[k])
@@ -131,7 +159,7 @@ func (g *nomlStructGen) fieldType(path string, v any) (string, error) {
 		return "f64", nil
 	case map[string]any:
 		if len(val) == 0 {
-			return "", fmt.Errorf("member %q is an empty object: annotate it with #{type = '<struct>'}", path)
+			return "", i18n.Errorf("n44lxvvk", "member %q is an empty object: annotate it with #{type = '<struct>'}", path)
 		}
 		name := g.nestedTypeName(path)
 		if err := g.collect(path, name, val); err != nil {
@@ -140,7 +168,7 @@ func (g *nomlStructGen) fieldType(path string, v any) (string, error) {
 		return name, nil
 	case []any:
 		if len(val) == 0 {
-			return "", fmt.Errorf("member %q is an empty array: annotate it with #{type = '[]<elem>'}", path)
+			return "", i18n.Errorf("fd9jkb5k", "member %q is an empty array: annotate it with #{type = '[]<elem>'}", path)
 		}
 		elem, err := g.fieldType(path, val[0])
 		if err != nil {
@@ -153,16 +181,16 @@ func (g *nomlStructGen) fieldType(path string, v any) (string, error) {
 			for i := 1; i < len(val); i++ {
 				cur, ok := val[i].(map[string]any)
 				if !ok {
-					return "", fmt.Errorf("member %q[%d]: array mixes objects and scalars; annotate it with #{type = '[]<elem>'}", path, i)
+					return "", i18n.Errorf("pne07fog", "member %q[%d]: array mixes objects and scalars; annotate it with #{type = '[]<elem>'}", path, i)
 				}
 				if got := objKeySet(cur); got != want {
-					return "", fmt.Errorf("member %q[%d]: object keys %s differ from %q's %s; each element needs the same shape", path, i, got, path, want)
+					return "", i18n.Errorf("5j50pfem", "member %q[%d]: object keys %s differ from %q's %s; each element needs the same shape", path, i, got, path, want)
 				}
 			}
 		}
 		return "[]" + elem, nil
 	default:
-		return "", fmt.Errorf("member %q has unsupported value type %T (annotate it with #{type = '...'})", path, v)
+		return "", i18n.Errorf("9a5ye4ws", "member %q has unsupported value type %T (annotate it with #{type = '...'})", path, v)
 	}
 }
 
@@ -196,7 +224,7 @@ func (g *nomlStructGen) valueLiteral(path string, v any, indent int) (string, er
 			typeName = g.doc.TypeOf(path)
 		}
 		if typeName == "" {
-			return "", fmt.Errorf("member %q: missing type for object literal (annotate it with #{type = '<struct>'})", path)
+			return "", i18n.Errorf("oh0vy2qd", "member %q: missing type for object literal (annotate it with #{type = '<struct>'})", path)
 		}
 		return g.objectLiteral(path, typeName, val, indent)
 	case []any:
@@ -210,7 +238,7 @@ func (g *nomlStructGen) valueLiteral(path string, v any, indent int) (string, er
 		}
 		return "[" + strings.Join(parts, ", ") + "]", nil
 	default:
-		return "", fmt.Errorf("member %q has unsupported value type %T", path, v)
+		return "", i18n.Errorf("xgq9y9sz", "member %q has unsupported value type %T", path, v)
 	}
 }
 
@@ -368,7 +396,8 @@ func (t *Transpiler) resolveNomlFile(nomlPath string) (*parser.Program, error) {
 // mergeNomlModule 把 .noml 重建出的語句併入 merged。
 //
 // 與普通模組不同，noml 導入不參與模組前綴：
-//   - 結構體名就是文件名（server.noml → server），導入方以 server.port 讀取；
+//   - 結構體名預設就是文件名（server.noml → server，可被頂部 `#{name = '...'}`
+//     註解改寫），導入方以 server.port 讀取；
 //   - 型別不登記 typeOwner，故 rewriteTypeRefs / prefixMethodNames 不會改寫它；
 //   - use.Alias 只改寫頂層值的綁定名（結構體名不變），因此 alias 導入也要
 //     合併型別定義——這與普通模組「alias 只導入指定函數」的語意不同。
@@ -376,7 +405,7 @@ func (a *compileAssembly) mergeNomlModule(use *parser.UseStatement, nomlPath str
 	t := a.t
 	modProg, err := t.resolveUse(use)
 	if err != nil {
-		return fmt.Errorf("loading module %s: %w", use.Path, err)
+		return i18n.Errorf("kzsepkro", "loading module %s: %w", use.Path, err)
 	}
 	modProg = parser.CloneProgram(modProg)
 	a.merged.Sem.Merge(modProg.Sem)
@@ -384,7 +413,8 @@ func (a *compileAssembly) mergeNomlModule(use *parser.UseStatement, nomlPath str
 	if use.Alias == "" {
 		a.loadedUserModules[use.Path] = true
 	}
-	stem := nomlStem(nomlPath)
+	// 生成物的值名可能是檔名、也可能是頂部註解指定的名字，直接從解析結果取。
+	binding := nomlBindingName(modProg)
 	alias := ""
 	if use.Alias != "" {
 		alias = nomlValueName(use.Alias)
@@ -399,18 +429,29 @@ func (a *compileAssembly) mergeNomlModule(use *parser.UseStatement, nomlPath str
 			if a.nomlTypes == nil {
 				a.nomlTypes = make(map[string]bool)
 			}
+			if a.nomlTypeFiles == nil {
+				a.nomlTypeFiles = make(map[string]string)
+			}
+			if prev, ok := a.nomlTypeFiles[name]; ok {
+				if prev != nomlPath {
+					return i18n.Errorf("cnsb9bys", "import %s: type %q is also defined by %s; tell them apart with a top-level #{name = '...'} annotation", use.Path, name, prev)
+				}
+				// 同一個 .noml 已被導入過（例如再加 `as` 別名）：型別定義不重複輸出。
+				continue
+			}
 			a.nomlTypes[name] = true
+			a.nomlTypeFiles[name] = nomlPath
 		}
 		if a.nomlStmts == nil {
 			a.nomlStmts = make(map[parser.Statement]bool)
 		}
 		a.nomlStmts[ms] = true
 		if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
-			if alias != "" && ls.Name.Value == stem {
+			if alias != "" && ls.Name.Value == binding {
 				ls.Name.Value = alias
 			}
 			if a.mainVarNames[ls.Name.Value] {
-				return fmt.Errorf("import %s: %q is already declared in the main program", use.Path, ls.Name.Value)
+				return i18n.Errorf("m5bv291o", "import %s: %q is already declared in the main program", use.Path, ls.Name.Value)
 			}
 			a.merged.Statements = append(a.merged.Statements, ls)
 			a.merged.Sem.SetSourceFileDeep(ls, nomlPath)

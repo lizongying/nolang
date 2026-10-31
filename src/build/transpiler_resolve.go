@@ -1,7 +1,6 @@
 package build
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +10,8 @@ import (
 	"github.com/lizongying/nolang/mmast"
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // workspaceRoot 回傳當前編譯的工作區根目錄（workspace.noml 所在目錄）。
@@ -113,13 +114,13 @@ func (t *Transpiler) resolveASTDependency(key, version, importPath string) (*par
 	if !hit {
 		rest, hit = subPathAfter(importPath, repo)
 		if !hit {
-			return nil, true, fmt.Errorf(
+			return nil, true, i18n.Errorf("ts6fes3j",
 				"import %q does not match AST dependency %s (use %q or %q)",
 				importPath, key, tool, repo+"/"+tool)
 		}
 	}
 	if rest != "" && rest != tool {
-		return nil, true, fmt.Errorf(
+		return nil, true, i18n.Errorf("ugoucnr9",
 			"dependency %s ships a single prebuilt module %q; cannot import subpath %q",
 			key, tool, importPath)
 	}
@@ -146,7 +147,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	// 源碼導入約束：禁止 "./" 和 "../" 相對跳轉
 	// 所有外部代碼引用只能通過 workspace 別名或遠端包標識間接引入
 	if strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
-		return nil, fmt.Errorf("import %q: relative paths (./ ../) are not allowed in source code; use workspace alias or remote package identifier instead", path)
+		return nil, i18n.Errorf("wlbc2ct9", "import %q: relative paths (./ ../) are not allowed in source code; use workspace alias or remote package identifier instead", path)
 	}
 
 	// 本地模塊：/path → 先嘗試依賴匹配，再回退到相對於 workspace 根目錄的路徑解析
@@ -240,7 +241,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 			}
 		}
 		// 找不到模組 → 返回語意化錯誤（不再回退到磁碟）
-		return nil, fmt.Errorf("std module not found in embedded StdFS: %s", path)
+		return nil, i18n.Errorf("vekjerf5", "std module not found in embedded StdFS: %s", path)
 	}
 	// js/ 開頭 → JS 相容層路徑（內建第三方包，與 std/ 機制平行）
 	// 模組名稱遵循 Nolang 的小寫中劃線風格（如 js/console-log、js/fs-read-file）
@@ -272,12 +273,12 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				return t.resolveFile(fallback)
 			}
 		}
-		return nil, fmt.Errorf("js compatibility module not found: %s", relPath)
+		return nil, i18n.Errorf("u0g1w0d7", "js compatibility module not found: %s", relPath)
 	}
 	// npm/ 開頭 → 第三方 ESM 模組導入（僅 JS 後端支援：LLVM 無法連結 JS 模組）。
 	if strings.HasPrefix(path, "npm/") || path == "npm" {
 		spec := strings.TrimPrefix(path, "npm/")
-		return nil, fmt.Errorf("import %q: ESM (npm) imports are only supported by the JS backend; rebuild with `no build --js` or `no run --js` (specifier %q cannot be linked into a native binary)", path, spec)
+		return nil, i18n.Errorf("v9hnqn6w", "import %q: ESM (npm) imports are only supported by the JS backend; rebuild with `no build --js` or `no run --js` (specifier %q cannot be linked into a native binary)", path, spec)
 	}
 	// 依賴解析：嘗試所有導入路徑匹配 package.noml 中宣告的依賴
 	// 支援 URL 風格（github.com/...）、路徑風格（/example/pkg、./pkg）、短名稱風格（test2）
@@ -300,7 +301,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	}
 	if isURLStyle {
 		// URL 風格的導入路徑但未在 dependencies 中宣告
-		return nil, fmt.Errorf("dependency not found: %q is not declared in package.noml dependencies", path)
+		return nil, i18n.Errorf("7sfqpwmj", "dependency not found: %q is not declared in package.noml dependencies", path)
 	}
 	// 非 std 路徑 → 透過 alias 解析（一律相對於工作區根目錄，不再以當前源碼檔目錄為基準）
 	modulePath := pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), path)

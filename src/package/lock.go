@@ -3,11 +3,12 @@ package pkg
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // LockFileVersion 是當前鎖檔案格式版本
@@ -40,20 +41,20 @@ func LoadLockFile(dir string) (*LockFile, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading %s: %w", path, err)
+		return nil, i18n.Errorf("k1h5kums", "reading %s: %w", path, err)
 	}
 
 	m, err := ParseNomlMap(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
+		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", path, err)
 	}
 	var lock LockFile
 	if err := DecodeInto(m, &lock); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
+		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", path, err)
 	}
 
 	if lock.Version != LockFileVersion {
-		return nil, fmt.Errorf("unsupported lock file version %q (expected %s)", lock.Version, LockFileVersion)
+		return nil, i18n.Errorf("7riv9hah", "unsupported lock file version %q (expected %s)", lock.Version, LockFileVersion)
 	}
 
 	return &lock, nil
@@ -94,12 +95,12 @@ func SaveLockFile(dir string, graph *DependencyGraph) error {
 
 	data, err := marshalLock(lock)
 	if err != nil {
-		return fmt.Errorf("marshaling lock file: %w", err)
+		return i18n.Errorf("m4mu624f", "marshaling lock file: %w", err)
 	}
 
 	path := lockFilePath(dir)
 	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
+		return i18n.Errorf("zae1l26t", "writing %s: %w", path, err)
 	}
 
 	return nil

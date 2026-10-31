@@ -1,6 +1,10 @@
 package mir
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/lizongying/nolang/i18n"
+)
 
 // builtin_readlink_win.go — fs.readlink on Windows.
 //
@@ -43,7 +47,7 @@ import "fmt"
 
 func (c *codegen) emitBuiltinReadlinkWindows(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("readlink: needs a path argument")
+		return i18n.Errorf("0acp587k", "readlink: needs a path argument")
 	}
 	// Declare the Win32 entry points (deduped by c.decl).
 	c.decl("declare i64 @CreateFileA(i8*, i32, i32, i8*, i32, i32, i8*)")
@@ -53,7 +57,7 @@ func (c *codegen) emitBuiltinReadlinkWindows(inst *Inst) error {
 
 	p := c.cstrOf(inst.Args[0])
 	if p == "" {
-		return fmt.Errorf("readlink: cannot marshal path as C string")
+		return i18n.Errorf("9onc0638", "readlink: cannot marshal path as C string")
 	}
 
 	// out: UTF-8 result buffer. Zeroed so a failure path yields the empty

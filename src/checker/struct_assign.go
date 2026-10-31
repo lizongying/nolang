@@ -1,7 +1,7 @@
 package checker
 
 import (
-	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"sync"
 
 	"github.com/lizongying/nolang/parser"
@@ -158,7 +158,7 @@ func checkStructAssignScalar(name, declared string, value parser.Expression, str
 		TraceID: "eubonf62",
 		Line:    pos.Line,
 		Column:  pos.Column,
-		Message: fmt.Sprintf("cannot assign %s value to %s variable '%s': a struct value must be constructed explicitly (e.g. `%s { … }` or its constructor); an integer is promoted implicitly only into a struct that has one lossless constructor (such as bigint)",
+		Message: i18n.T("eubonf62", "cannot assign %s value to %s variable '%s': a struct value must be constructed explicitly (e.g. `%s { … }` or its constructor); an integer is promoted implicitly only into a struct that has one lossless constructor (such as bigint)",
 			scalar, declared, name, base),
 	}}
 }

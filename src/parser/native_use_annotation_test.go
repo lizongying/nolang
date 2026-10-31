@@ -79,7 +79,7 @@ func TestUseAnnotationPrefixStillRejected(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("same-line prefix annotation on a use must be rejected")
 	}
-	if joined := strings.Join(errs, "\n"); !strings.Contains(joined, "前方同一行") {
+	if joined := strings.Join(errs, "\n"); !strings.Contains(joined, "[0j1imd2d]") {
 		t.Fatalf("errors %v do not mention the prefix rule", errs)
 	}
 }

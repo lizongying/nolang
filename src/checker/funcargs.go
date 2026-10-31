@@ -6,6 +6,7 @@ package checker
 
 import (
 	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -238,7 +239,7 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 						TraceID: "j7dzteja",
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
-						Message: fmt.Sprintf("function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
+						Message: i18n.T("j7dzteja", "function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
 					})
 				}
 			}
@@ -689,7 +690,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 							TraceID: "2e14k5et",
 							Line:    valPos.Line,
 							Column:  valPos.Column,
-							Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
+							Message: i18n.T("2e14k5et", "cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
 						})
 					}
 				}
@@ -740,7 +741,7 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 						TraceID: "rfzrw1nh",
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
-						Message: fmt.Sprintf("function returns %d value(s) but %d target(s) provided", expectedReturns, len(s.Targets)),
+						Message: i18n.T("rfzrw1nh", "function returns %d value(s) but %d target(s) provided", expectedReturns, len(s.Targets)),
 					})
 				}
 			}
@@ -1930,7 +1931,7 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 			TraceID: "5lycdtsz",
 			Line:    line,
 			Column:  col,
-			Message: fmt.Sprintf("argument %d of '%s.%s': expected '%s', got '%s'",
+			Message: i18n.T("5lycdtsz", "argument %d of '%s.%s': expected '%s', got '%s'",
 				i+1, recvType, dot.Property, paramType, argType),
 		})
 	}
@@ -1984,7 +1985,7 @@ func checkPrivateBuiltinMethodCall(e *parser.CallExpression, dot *parser.DotExpr
 		TraceID: "8w3q93g2",
 		Line:    line,
 		Column:  col,
-		Message: fmt.Sprintf("private builtin method '%s.%s' may only be called from within module %s, not from %s", recvType, dot.Property, recvType, where),
+		Message: i18n.T("8w3q93g2", "private builtin method '%s.%s' may only be called from within module %s, not from %s", recvType, dot.Property, recvType, where),
 	}}
 }
 
@@ -2059,14 +2060,14 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						TraceID: "uea62he5",
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
-						Message: fmt.Sprintf("function '%s' expects at most %d input argument(s), got %d — output parameters should be bound via assignment, e.g. result = %s(...)", ident.Value, maxArgs, len(e.Arguments), ident.Value),
+						Message: i18n.T("uea62he5", "function '%s' expects at most %d input argument(s), got %d — output parameters should be bound via assignment, e.g. result = %s(...)", ident.Value, maxArgs, len(e.Arguments), ident.Value),
 					})
 				} else if len(e.Arguments) < minArgs {
 					results = append(results, ValidateResult{
 						TraceID: "haahhq7o",
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
-						Message: fmt.Sprintf("function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
+						Message: i18n.T("haahhq7o", "function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
 					})
 				} else {
 					// Check argument types using resolveExprType (handles struct fields, arrays, etc.)
@@ -2148,7 +2149,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 								TraceID: "3604icnf",
 								Line:    e.Token.Line,
 								Column:  e.Token.Column,
-								Message: fmt.Sprintf("argument %d of '%s': passing a bare option value of type '%s' where '%s' is expected requires explicit unwrap (match on the value and call inside the `-> it` arm); implicit unwrap of option arguments is not allowed", i+1, ident.Value, argType, expectedType),
+								Message: i18n.T("3604icnf", "argument %d of '%s': passing a bare option value of type '%s' where '%s' is expected requires explicit unwrap (match on the value and call inside the `-> it` arm); implicit unwrap of option arguments is not allowed", i+1, ident.Value, argType, expectedType),
 							})
 							continue
 						}
@@ -2157,7 +2158,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 								TraceID: "6fgg3htw",
 								Line:    e.Token.Line,
 								Column:  e.Token.Column,
-								Message: fmt.Sprintf("argument %d of '%s': expected '%s', got '%s'", i+1, ident.Value, expectedType, argType),
+								Message: i18n.T("6fgg3htw", "argument %d of '%s': expected '%s', got '%s'", i+1, ident.Value, expectedType, argType),
 							})
 						}
 					}
@@ -2177,7 +2178,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 								TraceID: "f10x20nf",
 								Line:    e.Token.Line,
 								Column:  e.Token.Column,
-								Message: fmt.Sprintf("call to option-returning function '%s' with a bare arithmetic argument requires explicit unwrap: use 'x ?= %s(...)' to unwrap the argument first, or unwrap the result (e.g. 'y ?= %s(...)')", ident.Value, ident.Value, ident.Value),
+								Message: i18n.T("f10x20nf", "call to option-returning function '%s' with a bare arithmetic argument requires explicit unwrap: use 'x ?= %s(...)' to unwrap the argument first, or unwrap the result (e.g. 'y ?= %s(...)')", ident.Value, ident.Value, ident.Value),
 							})
 							break
 						}

@@ -13,6 +13,8 @@ import (
 
 	nbuild "github.com/lizongying/nolang/build"
 	pkg "github.com/lizongying/nolang/package"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // installCommand 處理 `no install`：
@@ -138,7 +140,7 @@ func installReleaseBinary(specStr string, force bool, expectSHA string) error {
 
 	if !force {
 		if _, serr := os.Stat(dst); serr == nil {
-			return fmt.Errorf("%s already installed (%s); use -u to reinstall or update", spec.Name, dst)
+			return i18n.Errorf("u4oybn9r", "%s already installed (%s); use -u to reinstall or update", spec.Name, dst)
 		}
 	}
 
@@ -146,7 +148,7 @@ func installReleaseBinary(specStr string, force bool, expectSHA string) error {
 	if ver == "" {
 		ver, err = pkg.LatestReleaseTag(spec.Host, spec.Owner, spec.Repo)
 		if err != nil {
-			return fmt.Errorf("resolving latest release: %w", err)
+			return i18n.Errorf("jl86npdd", "resolving latest release: %w", err)
 		}
 		fmt.Printf("Latest release of %s/%s: %s\n", spec.Owner, spec.Repo, ver)
 	}
@@ -159,7 +161,7 @@ func installReleaseBinary(specStr string, force bool, expectSHA string) error {
 		return err
 	}
 	if len(data) == 0 {
-		return fmt.Errorf("downloaded asset is empty: %s", url)
+		return i18n.Errorf("j9ir46ed", "downloaded asset is empty: %s", url)
 	}
 
 	// 一律計算並列印 SHA-256 以便審計；提供期望哈希時強制校驗，
@@ -169,7 +171,7 @@ func installReleaseBinary(specStr string, force bool, expectSHA string) error {
 	fmt.Printf("  sha256:   %s\n", actual)
 	if want := strings.TrimSpace(expectSHA); want != "" {
 		if !strings.EqualFold(actual, want) {
-			return fmt.Errorf("checksum mismatch for %s: want %s, got %s (refusing to install)",
+			return i18n.Errorf("ssddj3qk", "checksum mismatch for %s: want %s, got %s (refusing to install)",
 				spec.Name, want, actual)
 		}
 		fmt.Printf("  checksum: verified\n")
@@ -188,7 +190,7 @@ func installReleaseBinary(specStr string, force bool, expectSHA string) error {
 func installBuiltBinary(srcPath, name string) error {
 	data, err := os.ReadFile(srcPath)
 	if err != nil {
-		return fmt.Errorf("reading built binary: %w", err)
+		return i18n.Errorf("tgz86gvc", "reading built binary: %w", err)
 	}
 	return installBytes(data, pkg.ToolBinaryName(name, runtime.GOOS))
 }
@@ -197,11 +199,11 @@ func installBuiltBinary(srcPath, name string) error {
 func installBytes(data []byte, name string) error {
 	binDir := nolangBinDir()
 	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return fmt.Errorf("creating %s: %w", binDir, err)
+		return i18n.Errorf("p763k84p", "creating %s: %w", binDir, err)
 	}
 	dst := filepath.Join(binDir, name)
 	if err := os.WriteFile(dst, data, 0755); err != nil {
-		return fmt.Errorf("writing %s: %w", dst, err)
+		return i18n.Errorf("zae1l26t", "writing %s: %w", dst, err)
 	}
 	return symlinkIntoPathBin(dst, name)
 }

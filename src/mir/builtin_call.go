@@ -27,6 +27,8 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/ty"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // clibLLVMType maps a builtin.LLVMArgType to its LLVM type spelling.
@@ -544,7 +546,7 @@ func clibResolve(cl *builtin.CLibCall) (string, []builtin.LLVMArgType, map[int]s
 func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMethod) error {
 	cl := bm.CLibCall
 	if cl == nil || cl.FuncName == "" {
-		return fmt.Errorf("builtin %s: no CLibCall", inst.Sym)
+		return i18n.Errorf("ge824so3", "builtin %s: no CLibCall", inst.Sym)
 	}
 	fn, clibArgs, fixedArgs := clibResolve(cl)
 
@@ -594,7 +596,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			v := c.coerce(srcTy, srcVal, clibLLVMType(cl.TruncArgs[i]))
 			if v == "" {
 				c.fail("builtin %s: cannot coerce arg %d from %s to %s in func %s", inst.Sym, i, srcTy, lt, f.Name)
-				return fmt.Errorf("builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
+				return i18n.Errorf("n0hl9vde", "builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
 			}
 			argStrs = append(argStrs, clibLLVMType(cl.TruncArgs[i])+" "+v)
 			continue
@@ -603,7 +605,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			p := c.dataPtrOf(av)
 			if p == "" {
 				c.fail("builtin %s: arg %d is not a byte container in func %s", inst.Sym, i, f.Name)
-				return fmt.Errorf("builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
+				return i18n.Errorf("n0hl9vde", "builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
 			}
 			argStrs = append(argStrs, "i8* "+p)
 			continue
@@ -618,7 +620,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			}
 			if p == "" {
 				c.fail("builtin %s: cannot pass arg %d as i8* in func %s", inst.Sym, i, f.Name)
-				return fmt.Errorf("builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
+				return i18n.Errorf("n0hl9vde", "builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
 			}
 			argStrs = append(argStrs, "i8* "+p)
 			continue
@@ -632,7 +634,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		v := c.coerce(srcTy, srcVal, lt)
 		if v == "" {
 			c.fail("builtin %s: cannot coerce arg %d from %s to %s in func %s", inst.Sym, i, srcTy, lt, f.Name)
-			return fmt.Errorf("builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
+			return i18n.Errorf("n0hl9vde", "builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
 		}
 		argStrs = append(argStrs, lt+" "+v)
 	}
@@ -667,7 +669,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		c.sb.WriteString(fmt.Sprintf("  call %s @%s(%s)\n", cTy, fn, argList))
 		if dstLT == "%str-long" {
 			if dstSlot == "" {
-				return fmt.Errorf("builtin %s: no result slot", inst.Sym)
+				return i18n.Errorf("beppq99h", "builtin %s: no result slot", inst.Sym)
 			}
 			buf := "getelementptr inbounds ([1024 x i8], [1024 x i8]* @.mir-os-buf, i64 0, i64 0)"
 			r := c.treg("rb")
@@ -687,7 +689,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			// frees it under tag 0.
 			if !c.optionPayloadInline("%str-long") {
 				c.fail("builtin %s: ?str option result needs an inline option slot (option-inline-threshold >= 24)", inst.Sym)
-				return fmt.Errorf("builtin %s: %s", inst.Sym, strings.Join(c.errs, "; "))
+				return i18n.Errorf("6umfb8yv", "builtin %s: %s", inst.Sym, strings.Join(c.errs, "; "))
 			}
 			isNil := c.treg("c2n")
 			c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8* %s, null\n", isNil, p))
@@ -711,7 +713,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			v := c.coerce(cRet, r, dstLT)
 			if v == "" {
 				c.fail("builtin %s: cannot coerce result %s to %s in func %s", inst.Sym, cRet, dstLT, f.Name)
-				return fmt.Errorf("builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
+				return i18n.Errorf("2xqxrts5", "builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
 			}
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		}
@@ -725,7 +727,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			v := c.coerce("i1", cmp, dstLT)
 			if v == "" {
 				c.fail("builtin %s: cannot coerce bool result to %s in func %s", inst.Sym, dstLT, f.Name)
-				return fmt.Errorf("builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
+				return i18n.Errorf("2xqxrts5", "builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
 			}
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		}
@@ -739,7 +741,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 				v := c.coerce(cRet, r, dstLT)
 				if v == "" {
 					c.fail("builtin %s: cannot coerce result %s to %s in func %s", inst.Sym, cRet, dstLT, f.Name)
-					return fmt.Errorf("builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
+					return i18n.Errorf("2xqxrts5", "builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
 				}
 				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 			}
@@ -765,7 +767,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 // lets opt delete or corrupt the following code.
 func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMethod) error {
 	if len(inst.Args) == 0 {
-		return fmt.Errorf("builtin %s: missing operand", inst.Sym)
+		return i18n.Errorf("06r4gtr3", "builtin %s: missing operand", inst.Sym)
 	}
 	srcTy, srcVal := c.loadVal(inst.Args[0])
 	// An option flowing into a scalar conversion carries the value in its
@@ -780,7 +782,7 @@ func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMe
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("builtin %s: no result slot", inst.Sym)
+		return i18n.Errorf("beppq99h", "builtin %s: no result slot", inst.Sym)
 	}
 	// 參數型別攜帶 MIR 丟失的小數寬度（u64 攤平為 i64、f32 一律以 double
 	// 承載）：I64ToFP/UIToFP 的源操作數寬度按 Params[0] 还原，Trunc/FPTo*
@@ -809,7 +811,7 @@ func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			}
 		}
 		if err := c.emitFptSat(r, srcTy, srcVal, langLT, dstUnsig); err != nil {
-			return fmt.Errorf("builtin %s: %w", inst.Sym, err)
+			return i18n.Errorf("wtg6ai3v", "builtin %s: %w", inst.Sym, err)
 		}
 		if w := c.widenToSlot(r, langLT, dstLT, dstUnsig); w != "" {
 			r = w
@@ -824,7 +826,7 @@ func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			}
 		}
 		if err := c.emitFptSat(r, srcTy, srcVal, langLT, dstUnsig); err != nil {
-			return fmt.Errorf("builtin %s: %w", inst.Sym, err)
+			return i18n.Errorf("wtg6ai3v", "builtin %s: %w", inst.Sym, err)
 		}
 		if w := c.widenToSlot(r, langLT, dstLT, dstUnsig); w != "" {
 			r = w
@@ -851,18 +853,18 @@ func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		// no-op: f32 全鏈路以 double 承載，寬度已足夠。
 		v := c.coerce(srcTy, srcVal, dstLT)
 		if v == "" {
-			return fmt.Errorf("builtin %s: cannot coerce %s to %s", inst.Sym, srcTy, dstLT)
+			return i18n.Errorf("16fmyjhh", "builtin %s: cannot coerce %s to %s", inst.Sym, srcTy, dstLT)
 		}
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		return nil
 	default:
-		return fmt.Errorf("builtin %s: unknown LLVMConv kind %d", inst.Sym, *bm.LLVMConv)
+		return i18n.Errorf("y4yjmhz2", "builtin %s: unknown LLVMConv kind %d", inst.Sym, *bm.LLVMConv)
 	}
 	// 發射結果可能比槽位窄（如 Trunc 到 i32 而 MIR 槽位攤平為 i64），
 	// 統一經 coerce 补齐到 dstLT 再入槽。
 	out := c.coerce(dstLT, r, dstLT)
 	if out == "" {
-		return fmt.Errorf("builtin %s: cannot coerce %s to %s", inst.Sym, r, dstLT)
+		return i18n.Errorf("16fmyjhh", "builtin %s: cannot coerce %s to %s", inst.Sym, r, dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, out, dstLT, dstSlot))
 	return nil
@@ -890,7 +892,7 @@ func builtinIsUnsigned(t parser.Type) bool {
 // src type name embedded in the intrinsic id.
 func (c *codegen) emitFptSat(r, srcTy, srcVal, dstLT string, unsig bool) error {
 	if _, ok := intWidth(dstLT); !ok {
-		return fmt.Errorf("saturating conversion: non-integer destination %q", dstLT)
+		return i18n.Errorf("r80hkipt", "saturating conversion: non-integer destination %q", dstLT)
 	}
 	fn := fmt.Sprintf("llvm.fptosi.sat.%s.%s", dstLT, srcTy)
 	if unsig {
@@ -1147,10 +1149,10 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 	// name) instead of letting it become an `undefined symbol` at link time.
 	if why := forwardCSpecUnavailable(bm.ForwardFunc); why != "" {
 		c.fail("builtin %s: %s in func %s", inst.Sym, why, c.curFuncNameForFail())
-		return fmt.Errorf("builtin %s: %s", inst.Sym, why)
+		return i18n.Errorf("6umfb8yv", "builtin %s: %s", inst.Sym, why)
 	}
 	c.fail("unsupported builtin %s (ForwardFunc=%q) in func %s", inst.Sym, bm.ForwardFunc, f.Name)
-	return fmt.Errorf("unsupported builtin %s", inst.Sym)
+	return i18n.Errorf("2kqboupo", "unsupported builtin %s", inst.Sym)
 }
 
 // emitBuiltinEqRaw lowers `a.eq(b, n)` (builtin `str.eq`, ForwardFunc
@@ -1161,15 +1163,15 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 // to "unsupported builtin str.eq" (tests/str-test.no).
 func (c *codegen) emitBuiltinEqRaw(inst *Inst) error {
 	if len(inst.Args) < 3 {
-		return fmt.Errorf("eq-raw: needs (receiver, b, n)")
+		return i18n.Errorf("mzxtskah", "eq-raw: needs (receiver, b, n)")
 	}
 	ap := c.dataPtrOf(inst.Args[0])
 	if ap == "" {
-		return fmt.Errorf("eq-raw: cannot take data pointer of receiver")
+		return i18n.Errorf("qadj6ck6", "eq-raw: cannot take data pointer of receiver")
 	}
 	bp := c.dataPtrOf(inst.Args[1])
 	if bp == "" {
-		return fmt.Errorf("eq-raw: cannot take data pointer of arg 1")
+		return i18n.Errorf("cw348wnl", "eq-raw: cannot take data pointer of arg 1")
 	}
 	nT, nV := c.loadVal(inst.Args[2])
 	n := c.coerce(nT, nV, "i64")
@@ -1187,14 +1189,14 @@ func (c *codegen) emitBuiltinEqRaw(inst *Inst) error {
 	dstT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("eq-raw: no result slot")
+		return i18n.Errorf("y2vkykls", "eq-raw: no result slot")
 	}
 	if dstT == "" {
 		dstT = "i1"
 	}
 	v := c.coerce("i1", eq, dstT)
 	if v == "" {
-		return fmt.Errorf("eq-raw: cannot store i1 into %s", dstT)
+		return i18n.Errorf("04tb4mwj", "eq-raw: cannot store i1 into %s", dstT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstT, v, dstT, dstSlot))
 	return nil
@@ -1210,7 +1212,7 @@ func (c *codegen) emitBuiltinEqRaw(inst *Inst) error {
 // r 为 zero value").
 func (c *codegen) emitBuiltinAsyncCancel(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("cancel: missing task handle")
+		return i18n.Errorf("ruwo1dvw", "cancel: missing task handle")
 	}
 	lt, hreg := c.loadVal(inst.Args[0])
 	taskT := hreg
@@ -1243,7 +1245,7 @@ func (c *codegen) emitBuiltinAsyncCancelled(inst *Inst) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("cancelled: no result slot")
+		return i18n.Errorf("7t8ke5g1", "cancelled: no result slot")
 	}
 	cur := c.treg("acur.cur")
 	c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** @nolang_current_task\n", cur))
@@ -1268,7 +1270,7 @@ func (c *codegen) emitBuiltinAsyncCancelled(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = phi i1 [ %s, %%%s ], [ false, %%%s ]\n", phi, loaded, loadDef, nullDef))
 	v := c.coerce("i1", phi, dstLT)
 	if v == "" {
-		return fmt.Errorf("cancelled: cannot store i1 into %s", dstLT)
+		return i18n.Errorf("p215kqvl", "cancelled: cannot store i1 into %s", dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
@@ -1319,7 +1321,7 @@ func (c *codegen) rawTypeOf(v ValueID) string {
 func (c *codegen) byteDataPtr(v ValueID) (string, error) {
 	slot := c.valSlot[v]
 	if slot == "" {
-		return "", fmt.Errorf("byte-array receiver has no slot")
+		return "", i18n.Errorf("430ty5x5", "byte-array receiver has no slot")
 	}
 	lt, _ := c.ptype(v)
 	switch {
@@ -1337,7 +1339,7 @@ func (c *codegen) byteDataPtr(v ValueID) (string, error) {
 		return r, nil
 	default:
 		c.fail("load-le/store-le: unsupported receiver type %s", lt)
-		return "", fmt.Errorf("unsupported receiver type %s", lt)
+		return "", i18n.Errorf("2ylupu1o", "unsupported receiver type %s", lt)
 	}
 }
 
@@ -1350,7 +1352,7 @@ func (c *codegen) byteDataPtr(v ValueID) (string, error) {
 func (c *codegen) emitBuiltinLoadLE(f *Function, inst *Inst, ff string) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("load-le-%s: no dst slot", ff)
+		return i18n.Errorf("75f5l5xg", "load-le-%s: no dst slot", ff)
 	}
 	if len(inst.Args) < 2 {
 		c.sb.WriteString(fmt.Sprintf("  store i64 0, i64* %s\n", dstSlot))
@@ -1445,7 +1447,7 @@ func (c *codegen) emitBuiltinRotate(f *Function, inst *Inst, ff string) error {
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("rotate: no dst slot")
+		return i18n.Errorf("ch6tlrpx", "rotate: no dst slot")
 	}
 	xT, xV := c.loadVal(inst.Args[0])
 	nT, nV := c.loadVal(inst.Args[1])
@@ -1504,7 +1506,7 @@ func (c *codegen) emitBuiltinRotate(f *Function, inst *Inst, ff string) error {
 // always double<->i64.
 func (c *codegen) emitBuiltinBits(inst *Inst, ff string) error {
 	if len(inst.Args) == 0 {
-		return fmt.Errorf("builtin %s: missing operand", ff)
+		return i18n.Errorf("06r4gtr3", "builtin %s: missing operand", ff)
 	}
 	if inst.Dst <= NoVal {
 		return nil
@@ -1512,7 +1514,7 @@ func (c *codegen) emitBuiltinBits(inst *Inst, ff string) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("builtin %s: no result slot", ff)
+		return i18n.Errorf("beppq99h", "builtin %s: no result slot", ff)
 	}
 	srcTy, srcVal := c.loadVal(inst.Args[0])
 	var bitcastTy string
@@ -1522,13 +1524,13 @@ func (c *codegen) emitBuiltinBits(inst *Inst, ff string) error {
 	case "u64-from-bits":
 		bitcastTy = "double"
 	default:
-		return fmt.Errorf("builtin %s: unknown bit op", ff)
+		return i18n.Errorf("aljknpjz", "builtin %s: unknown bit op", ff)
 	}
 	r := c.treg("bits")
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s %s to %s\n", r, srcTy, srcVal, bitcastTy))
 	v := c.coerce(bitcastTy, r, dstLT)
 	if v == "" {
-		return fmt.Errorf("builtin %s: cannot store %s into %s", ff, bitcastTy, dstLT)
+		return i18n.Errorf("m17ikt3w", "builtin %s: cannot store %s into %s", ff, bitcastTy, dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
@@ -1551,7 +1553,7 @@ func (c *codegen) emitBuiltinMath(inst *Inst, ff string) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("builtin %s: no result slot", ff)
+		return i18n.Errorf("beppq99h", "builtin %s: no result slot", ff)
 	}
 	loadI64 := func(i int) string {
 		if i >= len(inst.Args) {
@@ -1581,11 +1583,11 @@ func (c *codegen) emitBuiltinMath(inst *Inst, ff string) error {
 		res = loSel
 	}
 	if res == "" {
-		return fmt.Errorf("builtin %s: no result", ff)
+		return i18n.Errorf("yjiapu40", "builtin %s: no result", ff)
 	}
 	v := c.coerce("i64", res, dstLT)
 	if v == "" {
-		return fmt.Errorf("builtin %s: cannot store i64 into %s", ff, dstLT)
+		return i18n.Errorf("4ccv952m", "builtin %s: cannot store i64 into %s", ff, dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
@@ -1601,7 +1603,7 @@ func (c *codegen) emitBuiltinArch(inst *Inst) error {
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("builtin get-arch: no result slot")
+		return i18n.Errorf("d1xzecbk", "builtin get-arch: no result slot")
 	}
 	arch := targetGOARCH()
 	c.global(fmt.Sprintf("@.mir.arch = private constant [%d x i8] c\"%s\"", len(arch), dataStr(arch)))
@@ -1627,7 +1629,7 @@ func (c *codegen) emitBuiltinArch(inst *Inst) error {
 // data pointer (i64-held); each element is an i32 code point.
 func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 	if len(inst.Args) == 0 {
-		return fmt.Errorf("builtin chars-new: missing char slice")
+		return i18n.Errorf("537ew54w", "builtin chars-new: missing char slice")
 	}
 	if inst.Dst <= NoVal {
 		return nil
@@ -1635,12 +1637,12 @@ func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("builtin chars-new: no result slot")
+		return i18n.Errorf("ygx2q6sp", "builtin chars-new: no result slot")
 	}
 	ct, cv := c.loadVal(inst.Args[0])
 	if ct != "%vec" {
 		c.fail("builtin chars-new: expected []char slice, got %s", ct)
-		return fmt.Errorf("builtin chars-new: bad arg type %s", ct)
+		return i18n.Errorf("u3g4qexx", "builtin chars-new: bad arg type %s", ct)
 	}
 	// n = vec field 0 (element count); data = vec field 2 (i64-held pointer).
 	nReg := c.treg("cn")
@@ -1666,7 +1668,7 @@ func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  call void @_mir_txt_from_chars(i8* %s, i8* %s, i8* %s, i64 %s)\n", dataPtr, lenPtr, cReg, nReg))
 	default:
 		c.fail("builtin chars-new: unsupported result type %s", dstLT)
-		return fmt.Errorf("builtin chars-new: %s", dstLT)
+		return i18n.Errorf("ond8w2xr", "builtin chars-new: %s", dstLT)
 	}
 	return nil
 }
@@ -1676,12 +1678,12 @@ func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 // by-value struct load.
 func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 	if len(inst.Args) == 0 {
-		return fmt.Errorf("builtin %s: missing receiver", ff)
+		return i18n.Errorf("1u2vckag", "builtin %s: missing receiver", ff)
 	}
 	lt, _ := c.ptype(inst.Args[0])
 	slot := c.valSlot[inst.Args[0]]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: receiver has no slot", ff)
+		return i18n.Errorf("j8e31b1f", "builtin %s: receiver has no slot", ff)
 	}
 	if strings.HasPrefix(lt, "[") {
 		// Fixed array [N x E]: the length is the compile-time element count N
@@ -1692,7 +1694,7 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 		n, ok := arraySizeOf(lt)
 		if !ok {
 			c.fail("builtin %s: cannot compute size of fixed-array receiver %s", ff, lt)
-			return fmt.Errorf("builtin %s fixed-array %s", ff, lt)
+			return i18n.Errorf("stbjgjqz", "builtin %s fixed-array %s", ff, lt)
 		}
 		if inst.Dst <= NoVal {
 			return nil
@@ -1700,11 +1702,11 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 		dstLT, _ := c.ptype(inst.Dst)
 		dstSlot := c.valSlot[inst.Dst]
 		if dstSlot == "" {
-			return fmt.Errorf("builtin %s: no result slot", ff)
+			return i18n.Errorf("beppq99h", "builtin %s: no result slot", ff)
 		}
 		v := c.coerce("i64", fmt.Sprintf("%d", n), dstLT)
 		if v == "" {
-			return fmt.Errorf("builtin %s: cannot store i64 into %s", ff, dstLT)
+			return i18n.Errorf("4ccv952m", "builtin %s: cannot store i64 into %s", ff, dstLT)
 		}
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		return nil
@@ -1727,18 +1729,18 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 		dstLT, _ := c.ptype(inst.Dst)
 		dstSlot := c.valSlot[inst.Dst]
 		if dstSlot == "" {
-			return fmt.Errorf("builtin %s: no result slot", ff)
+			return i18n.Errorf("beppq99h", "builtin %s: no result slot", ff)
 		}
 		v := c.coerce("i64", z, dstLT)
 		if v == "" {
-			return fmt.Errorf("builtin %s: cannot store i64 into %s", ff, dstLT)
+			return i18n.Errorf("4ccv952m", "builtin %s: cannot store i64 into %s", ff, dstLT)
 		}
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		return nil
 	}
 	if lt != "%str-long" && lt != "%vec" {
 		c.fail("builtin %s: unsupported receiver type %s", ff, lt)
-		return fmt.Errorf("builtin %s receiver %s: %s", ff, lt, strings.Join(c.errs, "; "))
+		return i18n.Errorf("aywuxg5w", "builtin %s receiver %s: %s", ff, lt, strings.Join(c.errs, "; "))
 	}
 	if inst.Dst <= NoVal {
 		return nil
@@ -1746,7 +1748,7 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("builtin %s: no result slot", ff)
+		return i18n.Errorf("beppq99h", "builtin %s: no result slot", ff)
 	}
 	g := c.treg("lg")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", g, lt, lt, slot))
@@ -1754,7 +1756,7 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", l, g))
 	v := c.coerce("i64", l, dstLT)
 	if v == "" {
-		return fmt.Errorf("builtin %s: cannot store i64 into %s", ff, dstLT)
+		return i18n.Errorf("4ccv952m", "builtin %s: cannot store i64 into %s", ff, dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
@@ -1799,7 +1801,7 @@ func (c *codegen) strConst(s string) string {
 // the correct tag/payload for all four outcomes.
 func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 	if len(inst.Args) == 0 {
-		return fmt.Errorf("str.to-bool: missing receiver")
+		return i18n.Errorf("82csl5ay", "str.to-bool: missing receiver")
 	}
 	if inst.Dst <= NoVal {
 		return nil
@@ -1807,7 +1809,7 @@ func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("str.to-bool: no result slot")
+		return i18n.Errorf("sm0xomza", "str.to-bool: no result slot")
 	}
 	rcvTy, rcvV := c.loadVal(inst.Args[0])
 	eqTrue := c.treg("stbt")
@@ -1844,7 +1846,7 @@ func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 	}
 	v := c.coerce("i1", eqTrue, dstLT)
 	if v == "" {
-		return fmt.Errorf("str.to-bool: cannot coerce i1 to %s", dstLT)
+		return i18n.Errorf("7o5ico3h", "str.to-bool: cannot coerce i1 to %s", dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
@@ -1854,7 +1856,7 @@ func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 // literal by the receiver's truth value.
 func (c *codegen) emitBuiltinBoolToStr(inst *Inst) error {
 	if len(inst.Args) == 0 {
-		return fmt.Errorf("bool.to-str: missing receiver")
+		return i18n.Errorf("veqmroa3", "bool.to-str: missing receiver")
 	}
 	if inst.Dst <= NoVal {
 		return nil
@@ -1862,7 +1864,7 @@ func (c *codegen) emitBuiltinBoolToStr(inst *Inst) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("bool.to-str: no result slot")
+		return i18n.Errorf("8vlao0fn", "bool.to-str: no result slot")
 	}
 	rcvTy, rcvV := c.loadVal(inst.Args[0])
 	var cond string
@@ -1879,7 +1881,7 @@ func (c *codegen) emitBuiltinBoolToStr(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, %%str-long %s, %%str-long %s\n", sel, cond, trueV, falseV))
 	v := c.coerce("%str-long", sel, dstLT)
 	if v == "" {
-		return fmt.Errorf("bool.to-str: cannot coerce %%str-long to %s", dstLT)
+		return i18n.Errorf("wo778frg", "bool.to-str: cannot coerce %%str-long to %s", dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
@@ -2023,13 +2025,13 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 // buffer at every borrow read, so the release here only frees at count zero.
 func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("vec.push: needs receiver and element")
+		return i18n.Errorf("cgy953iu", "vec.push: needs receiver and element")
 	}
 	recv := inst.Args[0]
 	elem := inst.Args[1]
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		return fmt.Errorf("vec.push: no receiver slot")
+		return i18n.Errorf("4m2w3mkd", "vec.push: no receiver slot")
 	}
 	elemTy, elemV := c.loadVal(elem)
 	// 元素寬度與步長必須以**接收者宣告的元素型別**為準，不能以引數值的型別為準：
@@ -2337,11 +2339,11 @@ func (c *codegen) emitLessThan(a, b, elemLL string) string {
 // restored for method receivers).
 func (c *codegen) emitBuiltinVecClear(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("vec.clear: needs receiver")
+		return i18n.Errorf("krvc469y", "vec.clear: needs receiver")
 	}
 	slot, _ := c.resolveReceiverSlot(inst.Args[0])
 	if slot == "" {
-		return fmt.Errorf("vec.clear: no receiver slot")
+		return i18n.Errorf("meket0n4", "vec.clear: no receiver slot")
 	}
 	vv := c.treg("clv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
@@ -2358,11 +2360,11 @@ func (c *codegen) emitBuiltinVecClear(inst *Inst) error {
 // its alloca slot, so the caller observes the mutation (by-reference contract).
 func (c *codegen) emitBuiltinStrClear(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("str.clear: needs receiver")
+		return i18n.Errorf("4uv9dunu", "str.clear: needs receiver")
 	}
 	slot, _ := c.resolveReceiverSlot(inst.Args[0])
 	if slot == "" {
-		return fmt.Errorf("str.clear: no receiver slot")
+		return i18n.Errorf("5bj5o9ci", "str.clear: no receiver slot")
 	}
 	vv := c.treg("clv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%str-long, %%str-long* %s\n", vv, slot))
@@ -2381,12 +2383,12 @@ func (c *codegen) emitBuiltinStrClear(inst *Inst) error {
 // contract (and the legacy genArrZero behaviour).
 func (c *codegen) emitBuiltinArrZero(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("arr.zero: needs receiver")
+		return i18n.Errorf("ihr1vm8m", "arr.zero: needs receiver")
 	}
 	recv := inst.Args[0]
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		return fmt.Errorf("arr.zero: no receiver slot")
+		return i18n.Errorf("bp7m5374", "arr.zero: no receiver slot")
 	}
 	raw := c.rawTypeOf(recv)
 	if strings.HasPrefix(raw, "[]") {
@@ -2446,7 +2448,7 @@ func (c *codegen) emitBuiltinVecTruncate(inst *Inst) error {
 	recv := inst.Args[0]
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		return fmt.Errorf("vec.truncate: no receiver slot")
+		return i18n.Errorf("26rmtbup", "vec.truncate: no receiver slot")
 	}
 	nT, nV := c.loadVal(inst.Args[1])
 	n := nV
@@ -2471,12 +2473,12 @@ func (c *codegen) emitBuiltinVecTruncate(inst *Inst) error {
 // On an empty slice the result is the element zero value and len stays 0.
 func (c *codegen) emitBuiltinVecPop(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("vec.pop: needs receiver")
+		return i18n.Errorf("mimqybn2", "vec.pop: needs receiver")
 	}
 	recv := inst.Args[0]
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		return fmt.Errorf("vec.pop: no receiver slot")
+		return i18n.Errorf("qew8n04j", "vec.pop: no receiver slot")
 	}
 	elemLL, _ := c.elemInfoOfVec(recv)
 	vv := c.treg("ppv")
@@ -2517,12 +2519,12 @@ func (c *codegen) emitBuiltinVecPop(inst *Inst) error {
 // mutated through its inttoptr'd element pointer; len/cap/data are unchanged.
 func (c *codegen) emitBuiltinVecReverse(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("vec.reverse: needs receiver")
+		return i18n.Errorf("m5fpbrwd", "vec.reverse: needs receiver")
 	}
 	recv := inst.Args[0]
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		return fmt.Errorf("vec.reverse: no receiver slot")
+		return i18n.Errorf("uwaizocg", "vec.reverse: no receiver slot")
 	}
 	elemLL, _ := c.elemInfoOfVec(recv)
 	vv := c.treg("rvv")
@@ -2585,12 +2587,12 @@ func (c *codegen) emitBuiltinVecReverse(inst *Inst) error {
 // fast 路径必须用 **memmove**（src/dst 同缓冲且相差一个步长，区域重叠）。
 func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	if len(inst.Args) < 3 {
-		return fmt.Errorf("vec.insert: needs receiver, index, element")
+		return i18n.Errorf("al7nsvgl", "vec.insert: needs receiver, index, element")
 	}
 	recv := inst.Args[0]
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		return fmt.Errorf("vec.insert: no receiver slot")
+		return i18n.Errorf("rtopy0mf", "vec.insert: no receiver slot")
 	}
 	elemLL, stride := c.elemInfoOfVec(recv)
 	idxT, idxV := c.loadVal(inst.Args[1])
@@ -2778,12 +2780,12 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 // idx is clamped to [0, len]; newLen = max(0, len-1).
 func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("vec.remove: needs receiver, index")
+		return i18n.Errorf("64t1vgh6", "vec.remove: needs receiver, index")
 	}
 	recv := inst.Args[0]
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		return fmt.Errorf("vec.remove: no receiver slot")
+		return i18n.Errorf("p1ujpxwi", "vec.remove: no receiver slot")
 	}
 	elemLL, stride := c.elemInfoOfVec(recv)
 	idxT, idxV := c.loadVal(inst.Args[1])
@@ -2873,12 +2875,12 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 // ascending order.
 func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("vec.sort: needs receiver")
+		return i18n.Errorf("iykbgab6", "vec.sort: needs receiver")
 	}
 	recv := inst.Args[0]
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		return fmt.Errorf("vec.sort: no receiver slot")
+		return i18n.Errorf("0coyzo4x", "vec.sort: no receiver slot")
 	}
 	elemLL, stride := c.elemInfoOfVec(recv)
 	vv := c.treg("stv")
@@ -2983,7 +2985,7 @@ func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 func (c *codegen) emitBuiltinUname(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("uname: no result slot")
+		return i18n.Errorf("mv6ox1tw", "uname: no result slot")
 	}
 	// The result struct is registered under its module-qualified name
 	// (e.g. os.utsname -> %os_utsname); resolve it from the collected struct
@@ -2991,7 +2993,7 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 	// "utsname" and would miss the lookup.
 	dstLT := c.structLLVMType("utsname")
 	if dstLT == "" {
-		return fmt.Errorf("uname: utsname struct type not collected")
+		return i18n.Errorf("9ru0tpwh", "uname: utsname struct type not collected")
 	}
 
 	fieldLen := int64(256)
@@ -3042,7 +3044,7 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 func (c *codegen) emitBuiltinNetIcmpOpen(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-icmp-open: no result slot")
+		return i18n.Errorf("amiajbn5", "net-icmp-open: no result slot")
 	}
 	dstLT, _ := c.ptype(inst.Dst)
 	if dstLT == "" {
@@ -3079,7 +3081,7 @@ func (c *codegen) emitBuiltinWinWsaStartup(inst *Inst) error {
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("win-wsa-startup: no result slot")
+		return i18n.Errorf("rw998t51", "win-wsa-startup: no result slot")
 	}
 	if targetGOOS() != "windows" {
 		if v := c.coerce("i1", "false", dstLT); v != "" {
@@ -3098,7 +3100,7 @@ func (c *codegen) emitBuiltinWinWsaStartup(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i32 %s, 0\n", ok, rc))
 	v := c.coerce("i1", ok, dstLT)
 	if v == "" {
-		return fmt.Errorf("win-wsa-startup: cannot coerce i1 to %s", dstLT)
+		return i18n.Errorf("998pp6wy", "win-wsa-startup: cannot coerce i1 to %s", dstLT)
 	}
 	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 	return nil
@@ -3113,15 +3115,15 @@ func (c *codegen) emitBuiltinWinWsaStartup(inst *Inst) error {
 // (dns.dial) fall back to their own resolver or report the error.
 func (c *codegen) emitBuiltinNetDial(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("net-dial: needs (host, port)")
+		return i18n.Errorf("8ndov8z0", "net-dial: needs (host, port)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-dial: no result slot")
+		return i18n.Errorf("2u2o0e24", "net-dial: no result slot")
 	}
 	hostPtr := c.cstrOf(inst.Args[0])
 	if hostPtr == "" {
-		return fmt.Errorf("net-dial: cannot marshal host as C string")
+		return i18n.Errorf("l9lio3b1", "net-dial: cannot marshal host as C string")
 	}
 	_, portReg := c.loadVal(inst.Args[1])
 
@@ -3236,15 +3238,15 @@ func (c *codegen) emitBuiltinNetDial(inst *Inst) error {
 // exactly as in emitBuiltinNetDial. Returns -1 if any step fails.
 func (c *codegen) emitBuiltinNetListen(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("net-listen: needs (host, port)")
+		return i18n.Errorf("w6xtqb7k", "net-listen: needs (host, port)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-listen: no result slot")
+		return i18n.Errorf("2g4xt4m5", "net-listen: no result slot")
 	}
 	hostPtr := c.cstrOf(inst.Args[0])
 	if hostPtr == "" {
-		return fmt.Errorf("net-listen: cannot marshal host as C string")
+		return i18n.Errorf("45y022ur", "net-listen: cannot marshal host as C string")
 	}
 	_, portReg := c.loadVal(inst.Args[1])
 
@@ -3348,11 +3350,11 @@ func (c *codegen) emitBuiltinNetListen(inst *Inst) error {
 // in/out addrlen, sign-extended to i64 (-1 on error).
 func (c *codegen) emitBuiltinNetAccept(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("net-accept: needs (listen-fd)")
+		return i18n.Errorf("dphrcd1a", "net-accept: needs (listen-fd)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-accept: no result slot")
+		return i18n.Errorf("kxikdkzu", "net-accept: no result slot")
 	}
 	fdReg, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -3380,7 +3382,7 @@ func (c *codegen) emitBuiltinNetAccept(inst *Inst) error {
 func (c *codegen) emitBuiltinNetUdpOpen(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-udp-open: no result slot")
+		return i18n.Errorf("gdrnjrtu", "net-udp-open: no result slot")
 	}
 	dstLT, _ := c.ptype(inst.Dst)
 	if dstLT == "" {
@@ -3406,11 +3408,11 @@ func (c *codegen) emitBuiltinNetUdpOpen(inst *Inst) error {
 // legacy backend (build/llvm/call_stdlib.go net-send).
 func (c *codegen) emitBuiltinNetSend(inst *Inst) error {
 	if len(inst.Args) < 3 {
-		return fmt.Errorf("net-send: needs (fd, data, n)")
+		return i18n.Errorf("f091hn1f", "net-send: needs (fd, data, n)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-send: no result slot")
+		return i18n.Errorf("k72ohub0", "net-send: no result slot")
 	}
 	fdReg, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -3418,7 +3420,7 @@ func (c *codegen) emitBuiltinNetSend(inst *Inst) error {
 	}
 	dataPtr := c.dataPtrOf(inst.Args[1])
 	if dataPtr == "" {
-		return fmt.Errorf("net-send: cannot take data pointer of arg 1")
+		return i18n.Errorf("r315uabz", "net-send: cannot take data pointer of arg 1")
 	}
 	_, nReg := c.loadVal(inst.Args[2])
 	c.decl("declare i64 @send(i32, i8*, i64, i32)")
@@ -3434,11 +3436,11 @@ func (c *codegen) emitBuiltinNetSend(inst *Inst) error {
 // string length is NOT updated (matching legacy recv on a fixed buffer).
 func (c *codegen) emitBuiltinNetRecv(inst *Inst) error {
 	if len(inst.Args) < 3 {
-		return fmt.Errorf("net-recv: needs (fd, buf, n)")
+		return i18n.Errorf("nkozcyi4", "net-recv: needs (fd, buf, n)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-recv: no result slot")
+		return i18n.Errorf("g6aool5a", "net-recv: no result slot")
 	}
 	fdReg, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -3446,7 +3448,7 @@ func (c *codegen) emitBuiltinNetRecv(inst *Inst) error {
 	}
 	bufPtr := c.dataPtrOf(inst.Args[1])
 	if bufPtr == "" {
-		return fmt.Errorf("net-recv: cannot take data pointer of arg 1")
+		return i18n.Errorf("ap403a8m", "net-recv: cannot take data pointer of arg 1")
 	}
 	_, nReg := c.loadVal(inst.Args[2])
 	c.decl("declare i64 @recv(i32, i8*, i64, i32)")
@@ -3464,11 +3466,11 @@ func (c *codegen) emitBuiltinNetRecv(inst *Inst) error {
 // cooperative scheduler. Returns >=0 client fd, -2 = would block, -1 = error.
 func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("net-accept-nb: needs (listen-fd)")
+		return i18n.Errorf("4g7bz9oy", "net-accept-nb: needs (listen-fd)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-accept-nb: no result slot")
+		return i18n.Errorf("081adx9q", "net-accept-nb: no result slot")
 	}
 	fdReg, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -3539,11 +3541,11 @@ func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
 // macOS and 0x40 (MSG_DONTWAIT) on Linux as well.
 func (c *codegen) emitBuiltinNetRecvNb(inst *Inst) error {
 	if len(inst.Args) < 3 {
-		return fmt.Errorf("net-recv-nb: needs (fd, buf, n)")
+		return i18n.Errorf("xsstot9b", "net-recv-nb: needs (fd, buf, n)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-recv-nb: no result slot")
+		return i18n.Errorf("tt8f2dmd", "net-recv-nb: no result slot")
 	}
 	fdReg, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -3551,7 +3553,7 @@ func (c *codegen) emitBuiltinNetRecvNb(inst *Inst) error {
 	}
 	bufPtr := c.dataPtrOf(inst.Args[1])
 	if bufPtr == "" {
-		return fmt.Errorf("net-recv-nb: cannot take data pointer of arg 1")
+		return i18n.Errorf("0z120eni", "net-recv-nb: cannot take data pointer of arg 1")
 	}
 	_, nReg := c.loadVal(inst.Args[2])
 	c.decl("declare i64 @recv(i32, i8*, i64, i32)")
@@ -3596,11 +3598,11 @@ func (c *codegen) emitBuiltinNetRecvNb(inst *Inst) error {
 // emitBuiltinNetDial's. Returns -1 when the host is not an IP literal.
 func (c *codegen) emitBuiltinNetUdpSendTo(inst *Inst) error {
 	if len(inst.Args) < 5 {
-		return fmt.Errorf("net-udp-sendto: needs (fd, data, n, host, port)")
+		return i18n.Errorf("yjq43ui5", "net-udp-sendto: needs (fd, data, n, host, port)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-udp-sendto: no result slot")
+		return i18n.Errorf("pzdpmlto", "net-udp-sendto: no result slot")
 	}
 	fdReg, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -3608,12 +3610,12 @@ func (c *codegen) emitBuiltinNetUdpSendTo(inst *Inst) error {
 	}
 	dataPtr := c.dataPtrOf(inst.Args[1])
 	if dataPtr == "" {
-		return fmt.Errorf("net-udp-sendto: cannot take data pointer of arg 1")
+		return i18n.Errorf("7h2kezo7", "net-udp-sendto: cannot take data pointer of arg 1")
 	}
 	_, nReg := c.loadVal(inst.Args[2])
 	hostPtr := c.cstrOf(inst.Args[3])
 	if hostPtr == "" {
-		return fmt.Errorf("net-udp-sendto: cannot marshal host as C string")
+		return i18n.Errorf("gir1e4fn", "net-udp-sendto: cannot marshal host as C string")
 	}
 	_, portReg := c.loadVal(inst.Args[4])
 
@@ -3679,11 +3681,11 @@ func (c *codegen) emitBuiltinNetUdpSendTo(inst *Inst) error {
 // read-n i64: recvfrom(2) with a scratch sockaddr the caller ignores.
 func (c *codegen) emitBuiltinNetUdpRecvFrom(inst *Inst) error {
 	if len(inst.Args) < 3 {
-		return fmt.Errorf("net-udp-recvfrom: needs (fd, buf, n)")
+		return i18n.Errorf("pgh2eoft", "net-udp-recvfrom: needs (fd, buf, n)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-udp-recvfrom: no result slot")
+		return i18n.Errorf("bvxzv6u0", "net-udp-recvfrom: no result slot")
 	}
 	fdReg, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -3691,7 +3693,7 @@ func (c *codegen) emitBuiltinNetUdpRecvFrom(inst *Inst) error {
 	}
 	bufPtr := c.dataPtrOf(inst.Args[1])
 	if bufPtr == "" {
-		return fmt.Errorf("net-udp-recvfrom: cannot take data pointer of arg 1")
+		return i18n.Errorf("viuznngf", "net-udp-recvfrom: cannot take data pointer of arg 1")
 	}
 	_, nReg := c.loadVal(inst.Args[2])
 	c.decl("declare i64 @recvfrom(i32, i8*, i64, i32, i8*, i32*)")
@@ -3728,11 +3730,11 @@ func (c *codegen) emitBuiltinNetUdpRecvFrom(inst *Inst) error {
 //	linux : SOL_SOCKET=1,              SO_RCVTIMEO=20
 func (c *codegen) emitBuiltinNetSetRecvTimeout(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("net-set-recv-timeout: needs (fd, timeout-ms)")
+		return i18n.Errorf("wk2mop5d", "net-set-recv-timeout: needs (fd, timeout-ms)")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("net-set-recv-timeout: no result slot")
+		return i18n.Errorf("fh3ukes8", "net-set-recv-timeout: no result slot")
 	}
 	fdReg, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -3798,15 +3800,15 @@ func (c *codegen) emitBuiltinNetSetRecvTimeout(inst *Inst) error {
 // call_stdlib.go read-file inliner, which also clamps to 0 on failure.
 func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("read-file: needs path")
+		return i18n.Errorf("fxhkwtho", "read-file: needs path")
 	}
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("read-file: no result slot")
+		return i18n.Errorf("tdouxx03", "read-file: no result slot")
 	}
 	if dstLT != "%vec" && dstLT != "%str-long" {
-		return fmt.Errorf("read-file: result type %s is not a slice or string", dstLT)
+		return i18n.Errorf("e1i8566c", "read-file: result type %s is not a slice or string", dstLT)
 	}
 	pathV, err := c.argIndex(inst, 0)
 	if err != nil {
@@ -3814,7 +3816,7 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 	}
 	pathPtr := c.cstrOf(pathV)
 	if pathPtr == "" {
-		return fmt.Errorf("read-file: cannot marshal path as C string")
+		return i18n.Errorf("1b3u924y", "read-file: cannot marshal path as C string")
 	}
 
 	// NOTE: `open` is variadic (`int open(const char*, int, ...)`) and c.decl()
@@ -3887,11 +3889,11 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 // O_WRONLY|O_CREAT|O_TRUNC, write(fd, data, len), close(fd), ok = (written == len).
 func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("write-file: needs path and data")
+		return i18n.Errorf("8haww14h", "write-file: needs path and data")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("write-file: no result slot")
+		return i18n.Errorf("oxgtqeo0", "write-file: no result slot")
 	}
 	pathV, err := c.argIndex(inst, 0)
 	if err != nil {
@@ -3899,14 +3901,14 @@ func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
 	}
 	pathPtr := c.cstrOf(pathV)
 	if pathPtr == "" {
-		return fmt.Errorf("write-file: cannot marshal path as C string")
+		return i18n.Errorf("66ybjsus", "write-file: cannot marshal path as C string")
 	}
 
 	// Extract len and data pointer from the []byte (%vec) argument.
 	dataSlot := c.valSlot[inst.Args[1]]
 	if dataSlot == "" {
 		dlt, _ := c.ptype(inst.Args[1])
-		return fmt.Errorf("write-file: data arg has no slot (func %s, arg type %s)", c.curFuncNameForFail(), dlt)
+		return i18n.Errorf("gx02j37c", "write-file: data arg has no slot (func %s, arg type %s)", c.curFuncNameForFail(), dlt)
 	}
 	lenGEP := c.treg("wf.lgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dataSlot))
@@ -3963,7 +3965,7 @@ func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
 // The name is strlen'd, malloc'd, and memcpy'd into an owned %str-long.
 func (c *codegen) emitBuiltinReadDir(inst *Inst) error {
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("read-dir: needs dirp")
+		return i18n.Errorf("lrj1csgo", "read-dir: needs dirp")
 	}
 	// result 0 = name (?str): nil when readdir returns NULL. ok (entry != NULL)
 	// becomes the option tag; the entry name is the inline %str-long payload.
@@ -4030,11 +4032,11 @@ func (c *codegen) emitBuiltinReadDir(inst *Inst) error {
 // are unchanged. Mirrors the legacy genForwardFunc "str-truncate" case.
 func (c *codegen) emitBuiltinStrTruncate(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("str-truncate: needs receiver and n")
+		return i18n.Errorf("h4vlfsi9", "str-truncate: needs receiver and n")
 	}
 	recvSlot, _ := c.resolveReceiverSlot(inst.Args[0])
 	if recvSlot == "" {
-		return fmt.Errorf("str-truncate: receiver has no slot")
+		return i18n.Errorf("cpefnxwk", "str-truncate: receiver has no slot")
 	}
 	nT, nV := c.loadVal(inst.Args[1])
 	n := c.coerce(nT, nV, "i64")
@@ -4072,14 +4074,14 @@ func (c *codegen) emitBuiltinStrTruncate(inst *Inst) error {
 func (c *codegen) emitBuiltinUtime(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		c.fail("utime: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("utime: unsupported on windows")
+		return i18n.Errorf("ngj8b3uj", "utime: unsupported on windows")
 	}
 	if len(inst.Args) < 3 {
-		return fmt.Errorf("utime: needs path, atime, mtime")
+		return i18n.Errorf("ippfc6p4", "utime: needs path, atime, mtime")
 	}
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
-		return fmt.Errorf("utime: no result slot")
+		return i18n.Errorf("4scfdhhp", "utime: no result slot")
 	}
 	pathV, err := c.argIndex(inst, 0)
 	if err != nil {
@@ -4087,7 +4089,7 @@ func (c *codegen) emitBuiltinUtime(inst *Inst) error {
 	}
 	pathPtr := c.cstrOf(pathV)
 	if pathPtr == "" {
-		return fmt.Errorf("utime: cannot marshal path as C string")
+		return i18n.Errorf("bsaaq6j7", "utime: cannot marshal path as C string")
 	}
 	atimeT, atimeV := c.loadVal(inst.Args[1])
 	atime := c.coerce(atimeT, atimeV, "i64")
@@ -4148,7 +4150,7 @@ func (c *codegen) errnoFnName() string {
 // The (prio, ok) pair collapses into a `?i64` option (tag 0 = ok, tag 1 = nil).
 func (c *codegen) emitBuiltinGetPriority(inst *Inst) error {
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("get-priority: needs which, who")
+		return i18n.Errorf("pyo62z10", "get-priority: needs which, who")
 	}
 	which, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -4214,11 +4216,11 @@ func (c *codegen) emitBuiltinArgsList(inst *Inst) error {
 		return nil
 	}
 	if lt != "%vec" {
-		return fmt.Errorf("builtin %s: []str result expected %%vec slot, got %s", inst.Sym, lt)
+		return i18n.Errorf("5jqh5cf2", "builtin %s: []str result expected %%vec slot, got %s", inst.Sym, lt)
 	}
 	slot := c.valSlot[inst.Results[0]]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: result 0 has no slot", inst.Sym)
+		return i18n.Errorf("4oy26jat", "builtin %s: result 0 has no slot", inst.Sym)
 	}
 	// strlen is already declared by the MIR prelude (see codegen.go).
 
@@ -4326,11 +4328,11 @@ func (c *codegen) emitBuiltinArgsGet(inst *Inst) error {
 		return nil
 	}
 	if lt != "%option" {
-		return fmt.Errorf("builtin %s: ?str result expected %%option slot, got %s", inst.Sym, lt)
+		return i18n.Errorf("vgljm585", "builtin %s: ?str result expected %%option slot, got %s", inst.Sym, lt)
 	}
 	slot := c.valSlot[inst.Results[0]]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: result 0 has no slot", inst.Sym)
+		return i18n.Errorf("4oy26jat", "builtin %s: result 0 has no slot", inst.Sym)
 	}
 	idxT, idxV := c.loadVal(inst.Args[0])
 	idx := c.coerce(idxT, idxV, "i64")
@@ -4414,15 +4416,15 @@ func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
 		// No getgroups(2); the builtin is only declared for POSIX platforms
 		// (see the platform guards in std/os.no).
 		c.fail("getgroups: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("getgroups: unsupported on windows")
+		return i18n.Errorf("prohiujy", "getgroups: unsupported on windows")
 	}
 	if len(inst.Results) < 2 {
-		return fmt.Errorf("getgroups: needs 2 results (gids, n)")
+		return i18n.Errorf("wk4p8399", "getgroups: needs 2 results (gids, n)")
 	}
 	gidsSlot := c.valSlot[inst.Results[0]]
 	nSlot := c.valSlot[inst.Results[1]]
 	if gidsSlot == "" || nSlot == "" {
-		return fmt.Errorf("getgroups: missing result slot")
+		return i18n.Errorf("16jxgazk", "getgroups: missing result slot")
 	}
 
 	c.decl("declare i32 @getgroups(i32, i8*)")
@@ -4530,15 +4532,15 @@ func (c *codegen) emitBuiltinGetGrouplist(inst *Inst) error {
 		// No getgrouplist(3); the builtin is only declared for POSIX platforms
 		// (see the platform guards in std/os.no).
 		c.fail("getgrouplist: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("getgrouplist: unsupported on windows")
+		return i18n.Errorf("v9milo3k", "getgrouplist: unsupported on windows")
 	}
 	if len(inst.Results) < 2 {
-		return fmt.Errorf("getgrouplist: needs 2 results (gids, n)")
+		return i18n.Errorf("6xq3uson", "getgrouplist: needs 2 results (gids, n)")
 	}
 	gidsSlot := c.valSlot[inst.Results[0]]
 	nSlot := c.valSlot[inst.Results[1]]
 	if gidsSlot == "" || nSlot == "" {
-		return fmt.Errorf("getgrouplist: missing result slot")
+		return i18n.Errorf("puql0oxg", "getgrouplist: missing result slot")
 	}
 
 	userV, err := c.argIndex(inst, 0)
@@ -4547,11 +4549,11 @@ func (c *codegen) emitBuiltinGetGrouplist(inst *Inst) error {
 	}
 	ucstr := c.cstrOf(userV)
 	if ucstr == "" {
-		return fmt.Errorf("getgrouplist: cannot marshal arg 0 as C string")
+		return i18n.Errorf("3xcxajan", "getgrouplist: cannot marshal arg 0 as C string")
 	}
 	basegid, err := c.marshalScalar(inst, 1, "i32")
 	if err != nil {
-		return fmt.Errorf("getgrouplist: %v", err)
+		return i18n.Errorf("hr4y7owq", "getgrouplist: %v", err)
 	}
 
 	c.decl("declare i32 @getgrouplist(i8*, i32, i8*, i32*)")
@@ -4664,11 +4666,11 @@ func (c *codegen) emitBuiltinSyslog(inst *Inst) error {
 		// No syslog(3) on Windows; the builtin is only declared for POSIX
 		// platforms (see the platform guards in std/os.no).
 		c.fail("syslog: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("syslog: unsupported on windows")
+		return i18n.Errorf("fk1sb6ss", "syslog: unsupported on windows")
 	}
 	prio, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
-		return fmt.Errorf("syslog: %v", err)
+		return i18n.Errorf("nmxs8sop", "syslog: %v", err)
 	}
 	msgV, err := c.argIndex(inst, 1)
 	if err != nil {
@@ -4676,7 +4678,7 @@ func (c *codegen) emitBuiltinSyslog(inst *Inst) error {
 	}
 	msg := c.cstrOf(msgV)
 	if msg == "" {
-		return fmt.Errorf("syslog: cannot marshal arg 1 as C string")
+		return i18n.Errorf("1lg2qpwf", "syslog: cannot marshal arg 1 as C string")
 	}
 
 	c.decl("declare void @syslog(i32, i8*, ...)")
@@ -4710,7 +4712,7 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 	if len(inst.Results) < 1 || inst.Results[0] <= NoVal {
 		if inst.Dst <= NoVal {
 			c.fail("get-line: no result slot")
-			return fmt.Errorf("get-line: no result")
+			return i18n.Errorf("uzzd8eqi", "get-line: no result")
 		}
 	}
 	// The stdin FILE* is picked from the COMPILATION TARGET (targetGOOS), not
@@ -4795,10 +4797,10 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		c.fail("sysctl: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("sysctl: unsupported on windows")
+		return i18n.Errorf("vgxfhc6x", "sysctl: unsupported on windows")
 	}
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("sysctl: needs a name")
+		return i18n.Errorf("ceuorcf6", "sysctl: needs a name")
 	}
 	nameV, err := c.argIndex(inst, 0)
 	if err != nil {
@@ -4806,7 +4808,7 @@ func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 	}
 	namePtr := c.cstrOf(nameV)
 	if namePtr == "" {
-		return fmt.Errorf("sysctl: cannot marshal name as C string")
+		return i18n.Errorf("l90oz2gr", "sysctl: cannot marshal name as C string")
 	}
 	// Linux glibc has no sysctlbyname(3) (the legacy sysctl(2) syscall is
 	// deprecated and removed from glibc), so calling it would leave an undefined
@@ -4973,11 +4975,11 @@ func (c *codegen) storeRawStr(inst *Inst, i int, lenReg, capReg, dataReg string)
 		return nil
 	}
 	if lt != "%str-long" {
-		return fmt.Errorf("builtin %s: raw str stored into %s slot", inst.Sym, lt)
+		return i18n.Errorf("vm9uj5g4", "builtin %s: raw str stored into %s slot", inst.Sym, lt)
 	}
 	slot := c.valSlot[inst.Results[i]]
 	if slot == "" {
-		return fmt.Errorf("builtin %s: result %d has no slot", inst.Sym, i)
+		return i18n.Errorf("ztlqshll", "builtin %s: result %d has no slot", inst.Sym, i)
 	}
 	lg := c.treg("rsl")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", lg, slot))
@@ -4997,10 +4999,10 @@ func (c *codegen) storeRawStr(inst *Inst, i int, lenReg, capReg, dataReg string)
 func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		c.fail("waitpid: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("waitpid: unsupported on windows")
+		return i18n.Errorf("6o12uzmx", "waitpid: unsupported on windows")
 	}
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("waitpid: needs pid, options")
+		return i18n.Errorf("cldvfmqx", "waitpid: needs pid, options")
 	}
 	pid, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -5038,7 +5040,7 @@ func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
 func (c *codegen) emitBuiltinPipe(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		c.fail("pipe: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("pipe: unsupported on windows")
+		return i18n.Errorf("a7wjyiq9", "pipe: unsupported on windows")
 	}
 	c.decl("declare i32 @pipe(i32*)")
 	fds := c.treg("pp.fds")
@@ -5071,10 +5073,10 @@ func (c *codegen) emitBuiltinPipe(inst *Inst) error {
 func (c *codegen) emitBuiltinWaitpidNohang(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		c.fail("waitpid-nohang: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("waitpid-nohang: unsupported on windows")
+		return i18n.Errorf("r4mh5mrg", "waitpid-nohang: unsupported on windows")
 	}
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("waitpid-nohang: needs pid")
+		return i18n.Errorf("kjxtslvr", "waitpid-nohang: needs pid")
 	}
 	pid, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -5111,10 +5113,10 @@ func (c *codegen) emitBuiltinWaitpidNohang(inst *Inst) error {
 func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		c.fail("exec-shell: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("exec-shell: unsupported on windows")
+		return i18n.Errorf("p2m0wxh1", "exec-shell: unsupported on windows")
 	}
 	if len(inst.Args) < 1 {
-		return fmt.Errorf("exec-shell: needs a command")
+		return i18n.Errorf("wigbiu9z", "exec-shell: needs a command")
 	}
 	cmdV, err := c.argIndex(inst, 0)
 	if err != nil {
@@ -5122,7 +5124,7 @@ func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
 	}
 	cmdPtr := c.cstrOf(cmdV)
 	if cmdPtr == "" {
-		return fmt.Errorf("exec-shell: cannot marshal command as C string")
+		return i18n.Errorf("cotvjhmy", "exec-shell: cannot marshal command as C string")
 	}
 	c.global("@.mir.str.sh = private constant [3 x i8] c\"sh\\00\"")
 	c.global("@.mir.str.dashc = private constant [3 x i8] c\"-c\\00\"")
@@ -5147,10 +5149,10 @@ func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
 func (c *codegen) emitBuiltinProcessExec(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		c.fail("process-exec: unsupported on windows in func %s", c.curFuncNameForFail())
-		return fmt.Errorf("process-exec: unsupported on windows")
+		return i18n.Errorf("czinamrs", "process-exec: unsupported on windows")
 	}
 	if len(inst.Args) < 2 {
-		return fmt.Errorf("process-exec: needs (prog, arg)")
+		return i18n.Errorf("e7yptvje", "process-exec: needs (prog, arg)")
 	}
 	progV, err := c.argIndex(inst, 0)
 	if err != nil {
@@ -5162,11 +5164,11 @@ func (c *codegen) emitBuiltinProcessExec(inst *Inst) error {
 	}
 	prog := c.cstrOf(progV)
 	if prog == "" {
-		return fmt.Errorf("process-exec: cannot marshal prog as C string")
+		return i18n.Errorf("td8qfehr", "process-exec: cannot marshal prog as C string")
 	}
 	arg := c.cstrOf(argV)
 	if arg == "" {
-		return fmt.Errorf("process-exec: cannot marshal arg as C string")
+		return i18n.Errorf("n00utq2q", "process-exec: cannot marshal arg as C string")
 	}
 	c.decl("declare i32 @execlp(i8*, i8*, ...)") // variadic
 	ret := c.treg("pe.ret")

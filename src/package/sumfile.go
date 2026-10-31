@@ -1,9 +1,10 @@
 package pkg
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // SumFileVersion 是當前總和檔案格式版本
@@ -35,20 +36,20 @@ func LoadSumFile(dir string) (*SumFile, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading %s: %w", path, err)
+		return nil, i18n.Errorf("k1h5kums", "reading %s: %w", path, err)
 	}
 
 	m, err := ParseNomlMap(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
+		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", path, err)
 	}
 	var sum SumFile
 	if err := DecodeInto(m, &sum); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
+		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", path, err)
 	}
 
 	if sum.Version != SumFileVersion {
-		return nil, fmt.Errorf("unsupported sum file version %q (expected %s)", sum.Version, SumFileVersion)
+		return nil, i18n.Errorf("39o3yr8x", "unsupported sum file version %q (expected %s)", sum.Version, SumFileVersion)
 	}
 
 	return &sum, nil
@@ -92,12 +93,12 @@ func SaveSumFile(dir string, graph *DependencyGraph) error {
 		"packages": pkgs,
 	})
 	if err != nil {
-		return fmt.Errorf("marshaling sum file: %w", err)
+		return i18n.Errorf("pibk34ed", "marshaling sum file: %w", err)
 	}
 
 	path := sumFilePath(dir)
 	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
+		return i18n.Errorf("zae1l26t", "writing %s: %w", path, err)
 	}
 
 	return nil

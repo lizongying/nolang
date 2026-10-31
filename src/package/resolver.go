@@ -1,9 +1,10 @@
 package pkg
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // DependencyGraph 表示完整的依賴圖，管理依賴解析狀態和循環檢測
@@ -66,12 +67,12 @@ func (g *DependencyGraph) resolveNode(key, version string, depth, maxDepth int) 
 
 	// 2. 檢查循環依賴
 	if g.seen[keyWithVer] {
-		return nil, fmt.Errorf("circular dependency detected: %s", keyWithVer)
+		return nil, i18n.Errorf("oi4vt42g", "circular dependency detected: %s", keyWithVer)
 	}
 
 	// 3. 檢查最大深度
 	if maxDepth > 0 && depth >= maxDepth {
-		return nil, fmt.Errorf("dependency depth limit exceeded (%d): %s@%s", maxDepth, key, version)
+		return nil, i18n.Errorf("mhfvvp1u", "dependency depth limit exceeded (%d): %s@%s", maxDepth, key, version)
 	}
 
 	// 4. 標記為正在解析
@@ -81,7 +82,7 @@ func (g *DependencyGraph) resolveNode(key, version string, depth, maxDepth int) 
 	pkgDir, downloadHash, err := DownloadPackage(key, version, g.mirrors)
 	if err != nil {
 		delete(g.seen, keyWithVer)
-		return nil, fmt.Errorf("downloading %s@%s: %w", key, version, err)
+		return nil, i18n.Errorf("cpyd2teh", "downloading %s@%s: %w", key, version, err)
 	}
 
 	// 6. 尋找包含 package.noml 的根目錄
@@ -117,7 +118,7 @@ func (g *DependencyGraph) resolveNode(key, version string, depth, maxDepth int) 
 		childNode, err := g.resolveNode(depKey, depVersion, depth+1, maxDepth)
 		if err != nil {
 			delete(g.seen, keyWithVer)
-			return nil, fmt.Errorf("resolving dependency %s of %s@%s: %w", depKey, key, version, err)
+			return nil, i18n.Errorf("sjvzidyd", "resolving dependency %s of %s@%s: %w", depKey, key, version, err)
 		}
 		node.Dependencies = append(node.Dependencies, childNode)
 	}
@@ -140,7 +141,7 @@ func (g *DependencyGraph) ResolveFromLock(key, version, pkgDir, downloadHash str
 	}
 
 	if maxDepth > 0 && depth >= maxDepth {
-		return nil, fmt.Errorf("dependency depth limit exceeded (%d): %s@%s", maxDepth, key, version)
+		return nil, i18n.Errorf("mhfvvp1u", "dependency depth limit exceeded (%d): %s@%s", maxDepth, key, version)
 	}
 
 	pkgRoot := findPackageRootForDep(key, version, pkgDir)
@@ -164,7 +165,7 @@ func (g *DependencyGraph) ResolveFromLock(key, version, pkgDir, downloadHash str
 		// 下載/從快取獲取套件目錄及壓縮包 SHA256
 		depPkgDir, depDownloadHash, err := DownloadPackage(depKey, depVersion, g.mirrors)
 		if err != nil {
-			return nil, fmt.Errorf("downloading %s@%s from lock: %w", depKey, depVersion, err)
+			return nil, i18n.Errorf("tft18rz5", "downloading %s@%s from lock: %w", depKey, depVersion, err)
 		}
 
 		// 從快取載入該依賴的子依賴列表
@@ -182,7 +183,7 @@ func (g *DependencyGraph) ResolveFromLock(key, version, pkgDir, downloadHash str
 
 		childNode, err := g.ResolveFromLock(depKey, depVersion, depPkgDir, depDownloadHash, childDep, depth+1, maxDepth)
 		if err != nil {
-			return nil, fmt.Errorf("resolving %s from lock: %w", depKey, err)
+			return nil, i18n.Errorf("kmm43ypb", "resolving %s from lock: %w", depKey, err)
 		}
 		node.Dependencies = append(node.Dependencies, childNode)
 	}
@@ -200,7 +201,7 @@ func (g *DependencyGraph) DetectCycles() error {
 	dfs = func(node *DependencyNode) error {
 		key := node.Key + "@" + node.Version
 		if path[key] {
-			return fmt.Errorf("circular dependency detected: %s", key)
+			return i18n.Errorf("oi4vt42g", "circular dependency detected: %s", key)
 		}
 		if visited[key] {
 			return nil

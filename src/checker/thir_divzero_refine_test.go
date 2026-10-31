@@ -50,10 +50,10 @@ func TestDivByZeroRefineOnlyRemovesReports(t *testing.T) {
 		refined := ValidateDivByZero(prog, view)
 		legacy := ValidateDivByZero(prog, nil)
 		type key struct {
-			file   string
-			line   int
-			col    int
-			trace  string
+			file  string
+			line  int
+			col   int
+			trace string
 		}
 		count := func(rs []ValidateResult) map[key]int {
 			m := map[key]int{}

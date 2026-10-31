@@ -1,7 +1,7 @@
 package checker
 
 import (
-	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	"reflect"
 
 	"github.com/lizongying/nolang/parser"
@@ -10,7 +10,7 @@ import (
 // rngEllipsisTraceID 是「區間上界用隱式 self 的 `.field`，與 `..` 連寫成 `...`」的
 // 診斷碼。見 src/std/arr.no 頂部說明：`..`（範圍運算子）與 `.{field}`（self 成員存取）
 // 連寫時會產生 `...` 歧義（`...` 亦是 return/終止運算子）。
-const rngEllipsisTraceID = "rng-ellipsis"
+const rngEllipsisTraceID = "em4a9wv2"
 
 // implicitSelfHead 沿表達式最左側（head）下降，回傳「隱式 self 的 `.` token」與其緊接的
 // 欄位/方法名。命中條件：最左側是一個 Receiver 為隱式 self（Token.Type==DOT 的
@@ -60,9 +60,8 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 			Line:    id.Token.Line,
 			Column:  id.Token.Column,
 			File:    file,
-			TraceID: rngEllipsisTraceID,
-			Message: fmt.Sprintf(
-				"區間上界以隱式 self 的 `.%s` 開頭，與範圍運算子 `..` 連寫會形成 `...%s`（歧義：`...` 亦是 return/終止運算子）。建議顯式寫出接收者，改寫為 `..self.%s`（例：`[a..self.%s)`）。",
+			TraceID: "em4a9wv2",
+			Message: i18n.T("em4a9wv2", "the range upper bound starts with `.%s` on the implicit self, so writing it directly after the `..` operator yields `...%s` (ambiguous: `...` is also the return/terminate operator). Name the receiver explicitly and write `..self.%s` (e.g. `[a..self.%s)`).",
 				prop, prop, prop, prop),
 		})
 	}
@@ -132,9 +131,9 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 		case *parser.SurfaceMatch:
 			// S4：糖形態下 match 是 SurfaceMatch（表達式節點），經 ExpressionStatement
 			// 抵達本 walker；臂體對本 walker 不可見。見 sugar_walk.go。
-		walkSurfaceMatchChildren(x, nil,
-			func(e parser.Expression) { walkExpr(e, file) },
-			func(s parser.Statement) { walkStmtSingle(s, file) })
+			walkSurfaceMatchChildren(x, nil,
+				func(e parser.Expression) { walkExpr(e, file) },
+				func(s parser.Statement) { walkStmtSingle(s, file) })
 		}
 	}
 
@@ -176,10 +175,10 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 				walkExpr(st.Condition, file)
 				walkExpr(st.CountExpr, file)
 				walkStmtSingle(st.Init, file)
-			walkStmtSingle(st.Update, file)
-			walkBlock(st.Body, file)
+				walkStmtSingle(st.Update, file)
+				walkBlock(st.Body, file)
+			}
 		}
-	}
 	}
 
 	walkStmtSingle = func(s parser.Statement, file string) {

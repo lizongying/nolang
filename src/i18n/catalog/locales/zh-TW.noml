@@ -1,0 +1,258 @@
+; Nolang locale: zh-TW（繁體中文）
+; 只改譯文，不要改鍵；鍵由 `make i18n` 從原始碼生成。
+; 格式動詞（%s / %d / %q / %v）必須與 en 完全一致，否則門禁會拒絕。
+{
+  '0cccc2ei': '此 #{overflow=...} 註解對應的陳述不含整數運算（如整行僅字串拼接），不會發生溢出，建議刪除。'
+  '0j1imd2d': '`#{...}` 註解不能寫在目標前方同一行；請獨立成行置於目標上方，或寫在目標同一行尾隨'
+  '14ki3f1w': 'embed: 找不到檔案: %s（解析為: %s）'
+  '170bewkb': '無法從 nil 推斷變數 “%s” 的型別'
+  '1m1ocf8t': '不支援的主機 %q（僅支援 github.com）'
+  '1qz0p808': '依賴鍵 %s 之後缺少模組路徑'
+  '2243l8if': '..any 只允許在標準函式庫中使用，使用者程式碼中不可用（函式: %s）'
+  '238u1xr7': 'embed: 僅支援 []byte / [N]byte / fs.embed 宣告，得到的是無型別宣告'
+  '27jt8xlw': '建立暫存目錄失敗: %w'
+  '28t42vw9': '返回的整數運算預設返回 option<int>，但本函式不返回 option 型別。請加 `#{overflow = wrap}` 註解回普通 int，或讓函式返回 ?T 並用 `result ?= expr` 上拋（或用 `result = expr` 就地捕獲錯誤）。'
+  '2dhoris2': '“%s” 只能使用小寫字母和連字號'
+  '2e14k5et': '無法推斷 “%s” 的型別: %s() 要求左側有顯式型別標註（例如 `name []byte = %s(n)`）'
+  '2ls7kxqp': '不能重新賦值函式名稱 “%s”'
+  '2lsu55tb': '原生 wasm 模組 %q 未在 package.noml 的 dependencies 中宣告；請加入 dependencies: [\'%s:^latest\']（或 dev-dependencies）並執行 npm install'
+  '2nvmt2tf': '寫入 LLVM IR 檔案失敗: %w'
+  '2qdpadhy': '請用兩段式解包：先 `%s = <expr>`（推斷為 ?T），再 `v = %s: {` 換行書寫 `ok -> it` 與 `-> <預設值>` 兩臂；或用 match 語句 `%s: { ok -> { ... } -> { ... } }`，或 `%s ?= <expr>` 上拋，或 `_ = <expr>` 顯式丟棄。注意 match 臂必須換行分隔（逗號形態是解析錯誤），且 `%s = <expr>: { ... }` 的同行寫法只在 <expr> 是裸識別符時生效，否則 match 會脫離成獨立語句、%s 仍是未解包的 ?T。'
+  '2rkb38mw': '建立快取目錄失敗: %w'
+  '2trc49mk': '重複的型別別名 %q'
+  '2xehrcuo': `
+未偵測到 LLVM 工具鏈
+  macOS: brew install llvm
+  Ubuntu: sudo apt install llvm-dev clang
+  Windows: winget install LLVM.LLVM
+`
+  '33exppv5': 'noml: 欄位 %s: 預期數字，得到 %T'
+  '3604icnf': '第 %d 個參數（“%s”）: 傳入了型別為 “%s” 的裸 option 值，而此處需要 “%s”；需要顯式解包（對值做 match 並在 `-> it` 分支內呼叫）；不允許隱式解包 option 參數'
+  '379z4njd': '“%s” 已在此作用域宣告'
+  '39o3yr8x': '不支援的校驗和檔版本 %q（預期 %s）'
+  '3b9bxfnt': '不能將 %s 值賦給陣列 “%s” 的 %s 元素%s'
+  '3fulbc9g': '函數 %s 用 fs.list-dir/fs.read-dir 結果做遞歸/刪除，但未見過濾 "." 和 ".."；兩者都含 POSIX readdir 的 "."/".."，遞歸進入 ".." 會向上逃逸誤刪整棵父樹。請改用 fs.dir-entries（已自動過濾），或在遞歸前顯式跳過 "."/".."。'
+  '3gcfur0y': '不合法的安裝目標 %q: 缺少工具名稱'
+  '3lp1rtuc': `
+不能透過下標直接賦值 `%s = %s`：索引讀取返回 option（越界為 nil），直接寫入等於把越界變成未檢查的越界寫。正確寫法（二選一）：
+  1) place-match：ok 臂的 it 是元素位置，可讀可寫
+     %s: {
+         ok -> it = %s
+         -> _
+     }
+  2) 錯誤上拋（要求所在函式有 option 結果參數）：`%s ?= %s`
+`
+  '3owkeirf': '解析 %s/%s 的發行版資訊失敗: %w'
+  '3vbgvipn': '解析依賴 %s@%s 失敗: %w'
+  '4y6hz2la': 'embed: 僅支援 []byte / [N]byte / fs.embed 宣告，得到的是 %s'
+  '5ckkrp9f': 'noml: 欄位 %s[%d]: 依賴元素必須是字串，得到 %T'
+  '5eo1kvb9': 'noml: 欄位 %s: 預期物件，得到 %T'
+  '5j50pfem': '成員 %q[%d]: 物件鍵 %s 與 %q 的 %s 不一致；每個元素必須有相同的形狀'
+  '5jsd564o': '不能把非字串值賦給字串變數 \'%s\''
+  '5jtjxzmz': '取得發行版 %s 失敗（狀態碼 %d）'
+  '5l1nkd68': '解析 %s 失敗: 鍵 %q 的值不是字串'
+  '5lbegnrh': `
+未偵測到可用的 C 連結器（clang/cc/gcc）
+  macOS: xcode-select --install  （提供系統 cc/clang）
+  Ubuntu: sudo apt install build-essential
+  Windows: winget install zig.zig  （或改用 -cc zig）
+`
+  '5lycdtsz': '第 %d 個參數（“%s.%s”）: 期望 “%s”，得到 “%s”'
+  '5ns1mui1': '頂層必須是一個物件'
+  '6fgg3htw': '第 %d 個參數（“%s”）: 期望 “%s”，得到 “%s”'
+  '6kryrbsq': '“%s” 已定義但從未使用'
+  '6qca9xu4': 'embed: 不能與顯式值組合使用'
+  '6y4tyjln': 'noml: 欄位 %s: 不支援的目標種類 %s'
+  '7c5fbvp4': 'val() 建構子已棄用；顯式建構請用 ok(x)，隱式賦值請用 `name = expr`'
+  '7dl1fkwt': 'WASM 建置中無法使用 LLVM 工具鏈；請使用 --wasm-direct 選項'
+  '7mitslag': '不支援的依賴鍵格式: %s（僅支援 github.com）'
+  '7p1k0dke': 'WASM 建置（瀏覽器演練場）不支援下載依賴套件'
+  '7riv9hah': '不支援的鎖定檔版本 %q（預期 %s）'
+  '7zfvvuin': '未發現問題。'
+  '83xbz15x': `
+原始檔路徑不符合命名規範：%s
+  其中的路徑段 %q 含有不允許的字元（只允許小寫字母、數字和中線，禁止底線；且不能以中線開頭/結尾、不能連續出現中線）
+  合規範例：tmp/zz-stridx/r-index.no
+`
+  '87zc5awf': '唯讀欄位 “%s”（屬於 %s）不能被修改；長度由緩衝區派生 —— 請改用 truncate(n)'
+  '89pwo0vg': 'noml: 映射鍵必須是字串: %T'
+  '8apmtyk6': '讀取輸入檔案失敗: %w'
+  '8dbrd5fk': '找不到模組檔案: %s'
+  '8sf1ugcv': 'noml: 不支援的值型別 %T'
+  '8t1jaj02': '整數運算 `a OP b` 預設在溢出時返回 option<T>，此處綁定到 `%s`（型別 `?T`）。%s若希望溢出時迴繞而不是報錯，可加 `#{overflow = wrap}`——注意註解只改變溢出時的取值，結果仍是 `?T`。'
+  '8w3q93g2': '私有內建方法 “%s.%s” 只能在模組 %s 內部呼叫，不能從 %s 呼叫'
+  '8wo2yee6': '鍵 %q 與 %q 映射到同一個 nolang 欄位 %q'
+  '8zompytc': '介面 “%s”: 合併循環 %s'
+  '96o13ee6': 'val() 建構子已棄用；顯式建構請用 ok(x)，隱式賦值請用 `name = expr`'
+  '9741sawd': '第 %d 個返回值（“%s.%s”）: 期望 “%s”，得到 “%s”'
+  '97nc8yti': 'noml: 預期物件，得到 %T'
+  '985exavg': '`%s %s= %s` 已廢棄，且所在函式的結果不是 option，無法上拋：請改寫成 `%s %s %s: { ok -> %s = it, -> }`（非 ok 分支如何處理由你決定），或把結果參數改成 `?T` 後寫 `%s ?= %s %s %s`'
+  '9a5ye4ws': '成員 %q 的值型別不受支援 %T（請用 #{type = \'...\'} 標註它）'
+  '9e82usj6': '依賴 %q: package.noml 中不允許相對路徑（./ ../）；工作區相對路徑請用 `/` 前綴'
+  '9edsvha2': '解壓縮後的封存中找不到套件 %s'
+  '9v43hxr2': '%d 個錯誤，%d 個警告，%d 個提示'
+  'a3yrogp1': '字串拼接: 用 “-” 代替 “+”'
+  'aih7e3j0': '不能將 nil 賦給非 option 變數 “%s”'
+  'au6g7ji7': '解析錯誤: %s'
+  'ayjrpinp': 'noml: DecodeInto 需要非 nil 指標，得到 %T'
+  'b6fjj9ka': '不能將 nil 賦給非 option 變數 “%s”'
+  'c33l3vql': '找不到模組檔案: %s 或 %s'
+  'chbx2waz': '空的 `->` 兜底臂可能會被執行（無法證明 \'%s\' 恆為 ok）。請決定失敗時應該做什麼，例如 `-> log(\'...\')` / `-> print(\'...\')`；留空則會靜默取預設零值。'
+  'ckaj3355': '未知函式 “%s.%s”: 模組 “%s” 沒有頂層函式 “%s”'
+  'cnsb9bys': '匯入 %s: 型別 %q 也被 %s 定義；請用頂層 #{name = \'...\'} 註解把它們區分開'
+  'cpyd2teh': '下載 %s@%s 失敗: %w'
+  'crange01': '不能將整數字面量賦給 char 變數 “%s”: 值超出 Unicode 碼點範圍 (0..0x10FFFF)'
+  'ddvc98n2': '陣列/切片索引 `arr[i]` 預設在越界時返回 option<elem>。此 option 未被處理：請用 `a ?= arr[i]` 上拋（在返回 ?T 的函式中可直接 `a = arr[i]` 就地捕獲錯誤），或加 `#{index-out = DEF}` 註解以越界時取預設值 DEF，或顯式宣告為 option 型別（如 `a ?elem = arr[i]`）以就地捕獲錯誤，或用 `_ = arr[i]` 顯式丟棄。'
+  'dpcwdbng': '格式字串錯誤: %v'
+  'dt39zm0i': '不合法的安裝目標 %q: 缺少儲存庫；預期 <tool>[:<version>]@<host>/<owner>/<repo>'
+  'duufpprw': '所有下載嘗試均失敗: %w'
+  'ebzb8tx2': '依賴解析失敗: %w'
+  'ectmoin3': '找不到 %s/%s 的發行版'
+  'edps6fxx': '一個或多個工作區目標建置失敗'
+  'eit5cjgr': '解壓縮 tar.gz 封存失敗: %w'
+  'em4a9wv2': '區間上界以隱式 self 的 `.%s` 開頭，與範圍運算子 `..` 連寫會形成 `...%s`（歧義：`...` 亦是 return/終止運算子）。建議顯式寫出接收者，改寫為 `..self.%s`（例：`[a..self.%s)`）。'
+  'eubonf62': '不能將 %s 值賦給 %s 變數 “%s”: 結構體值必須顯式建構（例如 `%s { … }` 或其建構子）；只有當結構體具有唯一的無損建構子（如 bigint）時，整數才會被隱式提升'
+  'f0p0dfha': 'val() 建構子已棄用；顯式建構請用 ok(x)，隱式賦值請用 `name = expr`'
+  'f10x20nf': '呼叫返回 option 的函式 “%s” 時傳入了裸算術參數，需要顯式解包: 先用 “x ?= %s(...)” 解包參數，或解包結果（例如 “y ?= %s(...)”）'
+  'fd9jkb5k': '成員 %q 是空陣列: 請用 #{type = \'[]<elem>\'} 標註它'
+  'fe0a5wt2': '不能將 option 值 “%s” (%s) 與 “%s” (%s) 比較: 請先解包（`v ?= expr`），或對 ok/nil/err 做 match'
+  'flfh2ueu': '不合法的安裝目標 %q: 儲存庫必須是 <host>/<owner>/<repo> 或 <owner>/<repo>'
+  'fs4qotyl': '解壓縮 zip 封存失敗: %w'
+  'fw8rehzu': '空的 `->` 兜底臂不會被執行：編譯器可證明 \'%s\' 恆為 ok（字面量算術不會溢位/除零，或索引可證明在界內）。該臂仍須保留以滿足 match 窮盡性；保留也便於日後語意變化時無需改語法。'
+  'fxdzclp6': '不能給欄位 “%s” 賦值（結構體型別 “%s”）: 請先實例化（例如 `%s0 = %s {}`）'
+  'g391pqjl': '建立請求失敗: %w'
+  'gczvzsdh': '模組解析: %w'
+  'ghelzw37': 'LLVM 最佳化失敗: %w'
+  'gl4bahpp': `
+未偵測到 clang，請確認 LLVM 工具鏈已完整安裝
+  macOS: brew install llvm
+  Ubuntu: sudo apt install llvm-dev clang
+  Windows: winget install LLVM.LLVM
+`
+  'gubuo5cb': 'option 綁定後從未被消費：既沒有上拋（`?=`），也沒有解包（`x: { ... }` / `_ = x`），錯誤被靜默丟棄。%s'
+  'gyuohhum': '索引 %d 越界: 字串 \'%s\' 的長度為 %d'
+  'h1g1ipdw': 'Direct WASM 後端不支援 ESM（npm）匯入；請改用 JS 後端（no build --js）'
+  'h1vvbufz': '依賴 %q: 路徑超出工作區根目錄；package.noml 的依賴必須位於工作區內'
+  'h9cfkf84': '第 %d 行: 變數 \'%s\' 在迴圈體內宣告，在此處被複用作迴圈變數時可能尚未初始化（迴圈可能一次都不執行）'
+  'haahhq7o': '函式 “%s” 至少需要 %d 個參數，實際傳入 %d 個'
+  'hgedm96o': '自動載入模組 %s 失敗: %w'
+  'i3k422u3': '結果參數 “%s” (%s) 在函式體中從未賦值 —— 返回時將被填零'
+  'i933a48e': '第 %d 個參數（“%s.%s”）: 期望 “%s”，得到 “%s”'
+  'ibaimz2h': '循環偵測: %w'
+  'ifmrg001': '介面 “%s”: 合併後的方法 “%s” 簽名衝突 (“%s.%s”, “%s.%s”)'
+  'iky4xsx4': '方法 “%s.%s” 有 %d 個返回值，介面期望 %d 個'
+  'irjygycv': 'val() 建構子已棄用；顯式建構請用 ok(x)，隱式賦值請用 `name = expr`'
+  'iyn3rgtm': '“self” (.) 只能在結構體方法內使用；若你指的是 match 值，請用 “it”'
+  'iyvzh49e': '在迴圈裡對 str/txt 使用 s[i] 取註標為 O(n²)：每次註標都要從串首前向迭代 UTF-8 取第 i 個碼點，迴圈會被重複執行。建議：(1) 若需走訪字元，直接用 c <- s（內部按碼點迭代，O(n)）；(2) 若只需位元組存取，用 s.byte(i)；(3) 若該串可證明為純 ASCII（宣告加 #{ascii} 或賦 ASCII 字面量），s[i] 為 O(1)。'
+  'j3u5n35e': '安裝目標為空'
+  'j6hiyx4e': 'noml: 欄位 %s: 預期布林值，得到 %T'
+  'j7dzteja': '函式 “%s” 至少需要 %d 個參數，實際傳入 %d 個'
+  'jko9phaw': 'LLVM 組譯失敗: %w'
+  'jpy06p6d': '工作區中沒有任何建置目標'
+  'jwegl6bv': '多賦值中的下標寫入目標 `%s` 未經解包：索引讀取返回 option（越界為 nil），直接寫入等於把越界變成未檢查的越界寫。請把該目標拆出為 place-match（ok 臂的 it 是元素位置，可讀可寫），或改用 `?=` 在 option 結果函式中上拋。'
+  'k1h5kums': '讀取 %s 失敗: %w'
+  'k8je3usi': '%s 已存在且不是 ES 模組（沒有 "type": "module"）；請改為輸出 .mjs（no build --js -o out.mjs）'
+  'k9179drd': '“%s” 是函式，必須呼叫；是否想寫 %s(...)?'
+  'kmm43ypb': '從鎖定檔解析 %s 失敗: %w'
+  'kzsepkro': '載入模組 %s 失敗: %w'
+  'l62tgcu4': '匯入 %q: %w'
+  'l9ef35lt': '匯入 %s: 別名 %q 需要函式名稱（`# path.fn as alias`）或一個 .noml 檔案'
+  'ldfvpa0x': '；option 不能隱式解包（這只是拷貝，失敗分支會被丟棄）。%s若本意是迴繞/鉗位，`#{overflow = wrap` 只改變溢出時的取值，結果仍是 `?%s`，仍須解包。'
+  'lkiy53ow': '十六進位字面量 “%s” 使用了大寫；格式化時會轉為小寫（例如 0xff）'
+  'lqcz5x45': '從 %s 讀取封存資料失敗: %w'
+  'lr3c6kg5': '匯出引用了未定義的符號 %q（在 %s 中未找到）'
+  'lrxsr5pt': '在 %s 中找不到 workspace.noml'
+  'm2fh7rfg': 'range-index loop: \'%s[%s]\' 在 `%s <- [a..b):` 裡手動按下標讀取；若不需要下標本身，改用容器迭代 `x <- %s`（無下標即無越界，也無需解包 option）。'
+  'm4mu624f': '序列化鎖定檔失敗: %w'
+  'm5bv291o': '匯入 %s: %q 已在主程式中宣告'
+  'm5klw1rq': '方法 “%s.%s” 有 %d 個參數，介面期望 %d 個'
+  'm7egvbv0': '整數運算結果預設是 option<int>，作為表達式語句被丟棄（未處理）。請加 `#{overflow = wrap}` 註解回普通 int，或用 `?=` 上拋，或用 `_ = expr` 顯式丟棄。'
+  'm8blb8q2': 'noml: 第 %d 行第 %d 列: %s'
+  'mhfvvp1u': '依賴層級超過上限（%d）: %s@%s'
+  'mlm7xpcj': '`%s %s= %s` 已廢棄；所在函式結果是 option，儲存時 `no fmt` 會自動改寫為 `%s ?= %s %s %s`（複合賦值的右式現在是 ?T，走 `?=` 解包/上拋）'
+  'mzwb28br': '格式字串中未定義的變數 “%s”'
+  'n44lxvvk': '成員 %q 是空物件: 請用 #{type = \'<struct>\'} 標註它'
+  'nnqq67ko': '無法推斷 “%s” 的型別: %s() 要求左側有顯式型別標註（例如 `name []byte = %s(n)`）'
+  'nwtpvei9': 'embed: fs.embed 需要一個目錄，得到的是檔案: %s（解析為: %s）'
+  'nz3ol1c4': 'ESM 模組 %q 未在 package.noml 的 dependencies 中宣告；請加入 dependencies: [\'%s:^latest\']（或 dev-dependencies）並執行 npm install'
+  'o4wq2axo': '取得發行版 %s 失敗: %w'
+  'o9bv21zu': '解析 %s 失敗: %w'
+  'ocsanpe6': '不合法的安裝目標 %q: 工具名稱不能包含路徑分隔符'
+  'oh0vy2qd': '成員 %q: 物件字面量缺少型別（請用 #{type = \'<struct>\'} 標註它）'
+  'oi4vt42g': '偵測到循環依賴: %s'
+  'okt5tvxy': `
+未偵測到 Zig 編譯器
+  macOS: brew install zig
+  Ubuntu: sudo snap install zig --classic
+  Windows: winget install zig.zig
+`
+  'ol0l3ova': '找不到型別 “%s”；是否想寫 “%s.%s”?'
+  'onpn7zgb': '整數除法 / 取模的除數是字面常數 0，會觸發 LLVM 未定義行為（sdiv/srem 除以零），產生不可預測的結果。請改以執行時期零檢查，或讓函式以 option 回傳錯誤。'
+  'oraub2m9': `
+`%s %s= %s` 不支援：下標讀取回傳 option（越界為 nil），複合賦值會重複求值下標並丟棄失敗。請改寫成（ok 臂的 it 是元素位置，可讀可寫）：
+     %s: {
+         ok -> it = it %s %s
+         -> _
+     }
+   或 `%s ?= %s %s %s`（錯誤上拋，要求所在函式有 option 結果參數）
+`
+  'os0j8ix4': '不能將 %s 值賦給陣列 “%s” 的 %s 元素%s'
+  'p2epl19k': '不能將 nil 賦給非 option 變數 “%s”'
+  'p56zjfhi': '無法推斷 “%s” 的型別: %s() 要求左側有顯式型別標註（例如 `name []byte = %s(n)`）'
+  'p9jv1dcz': 'workspace.noml 為空'
+  'pibk34ed': '序列化校驗和檔失敗: %w'
+  'pne07fog': '成員 %q[%d]: 陣列混用了物件和純量；請用 #{type = \'[]<elem>\'} 標註它'
+  'q9p5bmd0': '找不到 C 連結器（clang/cc/gcc）'
+  'qhkl8p9i': 'noml: 欄位 %s: 預期字串，得到 %T'
+  'qon2wsev': '不能修改字串 \'%s\' 的唯讀欄位 \'len\''
+  'qoykdxqy': 'noml: 欄位 %s: 預期陣列，得到 %T'
+  'r0360g4t': '介面 “%s”: 父介面寫成了前導列表；請改為在體內每行寫一個名字'
+  'r6p4a75i': '從 %s 下載（狀態碼 %d）'
+  'raqvyltn': '私有 std 符號 “%s” 屬於模組 %s，只能在其內部使用，不能從 %s 使用；請改用公共 API'
+  'rfzrw1nh': '函式返回 %d 個值，但提供了 %d 個目標'
+  'rkd2pw8p': '行程內 LLVM C API 編譯失敗（可用 %s=0 關閉）: %w'
+  's116sd0b': '建置錯誤: %w'
+  's8gh6opt': '編譯錯誤: %w'
+  'sjuueqqo': '第 %d 行: 變數 \'%s\' 在迴圈體內宣告，在此處使用時可能尚未初始化（迴圈可能一次都不執行）'
+  'sjvzidyd': '解析 %s@%s 的依賴 %s 失敗: %w'
+  'sm7rjfcm': '重複的變數 \'%s\''
+  'tcpoxtfd': '型別標註 “%s” 可以省略（可從值推斷）'
+  'tft18rz5': '從鎖定檔下載 %s@%s 失敗: %w'
+  'tfwxqucs': '`return` 後不能跟返回值；Nolang 函式結果透過具名結果參數（out-param）傳出，請用裸 `return` 提前返回並在函式體內給結果參數賦值'
+  'tgutu5g0': '請用 “# %s.%s %s” 代替 “# %s.%s as %s”'
+  'tmqnqq9x': '找不到依賴: %q 未在 package.noml 的 dependencies 中宣告'
+  'trdj5rp8': '檢查錯誤: %v'
+  'uea62he5': '函式 “%s” 最多接受 %d 個輸入參數，實際傳入 %d 個 —— 輸出參數應透過賦值綁定，例如 result = %s(...)'
+  'umcsmsz6': '%s: 解析器回傳了空程式'
+  'uqby2pvs': '索引 %d 越界: %s \'%s\' 的長度為 %d'
+  'uruyzlb4': '不合法的檔案路徑: %s'
+  'uvws00l4': '重複的函式定義 “%s”（首次定義在第 %d 行）'
+  'vf6bc21u': 'WASM 建置錯誤: %w'
+  'vmy4qtcr': '從 %s 下載失敗: %w'
+  'vr0eh0yz': 'embed: []byte 需要一個檔案，得到的是目錄: %s（解析為: %s）。目錄嵌入請使用 fs.embed 型別'
+  'w308jsag': `
+%s: 驗證失敗:
+%s
+`
+  'wdk3k728': '輸出參數 “%s” (?T) 被讀取但在函式體中從未賦值 —— 使用了未初始化的可空輸出參數'
+  'wekxh2lc': '介面 “%s”: 未知的父介面 “%s”'
+  'wjju8z98': '連結失敗: %w'
+  'x6swm2kk': '“%s” 只能使用小寫字母和連字號'
+  'xgq9y9sz': '成員 %q 的值型別不受支援 %T'
+  'xgs17cqx': '第 %d 行第 %d 列: \'main\' 是保留名，不能用作函式名稱；請改用頂層陳述（入口點會自動合成）'
+  'xl6uu81q': '對 option “%s” 的 match 不窮盡: 缺少分支: %s —— 新增一個 `-> `（else）分支，或處理所有變體'
+  'xlppn81m': '不能修改切片 \'%s\' 的唯讀欄位 \'len\''
+  'xmicjezl': '整數運算 `a OP b` 預設在溢位時回傳 option<T>，結果型別恆為 `?T`。三選一：①用 `?T` 接收（`a ?i64 = x + y`，或直接 `a = x + y` 讓編譯器推斷成 option），再用 `?=` 上拋或兩段式 match 解包（`v = a: {` 換行 `ok -> it` / `-> 0`）；②加註解 `#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位）或型別前綴形式如 `#{overflow = u8-max}` 指定溢出行為——注意註解只改變失敗時怎麼取值，結果仍是 `?T`，仍須解包；③`_ = x + y` 顯式丟棄。'
+  'xo6e53hm': '不能修改陣列 \'%s\' 的唯讀欄位 \'len\''
+  'xtblgfzq': '對數字字面量呼叫 %s 是多此一舉；直接寫目標型別（如 %s）'
+  'y7964ox1': '被 “run” 呼叫的函式 “%s” 應以 “-async” 結尾'
+  'yf6kxdmz': '陳述不能只是一個字面量；請呼叫函式或將其賦給變數'
+  'ygofqfbs': '--wasm-direct 需要明確指定輸入檔案（不支援工作區模式）'
+  'yrdjmq57': '偵測到循環的工作區映射: %s'
+  'z8rfu6gf': '寫入 WASM 輸出 %s 失敗: %w'
+  'zae1l26t': '寫入 %s 失敗: %w'
+  'zpgykko6': '在 %s 中找不到 main.no'
+  'zql6tu9p': '找不到工作區本地依賴路徑 %q'
+  'zs1q169p': '讀取發行版資訊失敗: %w'
+  'zzcfoc04': '建立 dist 目錄失敗: %w'
+}

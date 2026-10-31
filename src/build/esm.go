@@ -13,6 +13,8 @@ import (
 	"github.com/lizongying/nolang/build/js"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
+
+	"github.com/lizongying/nolang/i18n"
 )
 
 // esmDeclared reports whether an ESM package specifier is declared in the
@@ -44,10 +46,10 @@ func writeESMModuleSidecar(outPath string) error {
 		if jsoncDeclaresESM(existing) {
 			return nil
 		}
-		return fmt.Errorf("%s already exists and is not an ES module (no \"type\": \"module\"); emit the output as .mjs instead (no build --js -o out.mjs)", sidecar)
+		return i18n.Errorf("k8je3usi", "%s already exists and is not an ES module (no \"type\": \"module\"); emit the output as .mjs instead (no build --js -o out.mjs)", sidecar)
 	}
 	if err := os.WriteFile(sidecar, []byte("{\n  \"type\": \"module\"\n}\n"), 0644); err != nil {
-		return fmt.Errorf("writing %s: %w", sidecar, err)
+		return i18n.Errorf("zae1l26t", "writing %s: %w", sidecar, err)
 	}
 	return nil
 }
@@ -79,14 +81,14 @@ func nativeLinkLibs(pkg *Package) []string {
 func programESMImports(inputPath string) ([]js.ESMImport, error) {
 	source, err := os.ReadFile(inputPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading input file: %w", err)
+		return nil, i18n.Errorf("8apmtyk6", "reading input file: %w", err)
 	}
 	l := lexer.NewCached(inputPath, string(source))
 	p := parser.New(l)
 	p.Filename = filepath.Base(inputPath)
 	program := p.ParseProgram()
 	if program == nil {
-		return nil, fmt.Errorf("%s: parser returned nil program", inputPath)
+		return nil, i18n.Errorf("umcsmsz6", "%s: parser returned nil program", inputPath)
 	}
 	if errs := p.Errors(); len(errs) > 0 {
 		return nil, fmt.Errorf("%s: %v", inputPath, errs)
@@ -96,7 +98,7 @@ func programESMImports(inputPath string) ([]js.ESMImport, error) {
 	pkgConfig, _ := LoadPackage(filepath.Dir(inputPath))
 	program, merr := resolveAndMergeJSModules(program, inputPath, pkgConfig)
 	if merr != nil {
-		return nil, fmt.Errorf("module resolution: %w", merr)
+		return nil, i18n.Errorf("gczvzsdh", "module resolution: %w", merr)
 	}
 	imports, ierr := js.ExtractESMImports(program)
 	if ierr != nil {

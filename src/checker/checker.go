@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"github.com/lizongying/nolang/i18n"
 	fs "io/fs"
 	"os"
 	"path/filepath"
@@ -12,14 +13,14 @@ import (
 	"strings"
 	"sync"
 
+	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/hir"
 	"github.com/lizongying/nolang/lexer"
+	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/ty"
-	nolang "github.com/lizongying/nolang"
-	pkg "github.com/lizongying/nolang/package"
 )
 
 // identIndexReadOnLine 報告該行是否含「直接變數基底」索引讀取 `base[i]`：base 結尾為
@@ -599,7 +600,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 				TraceID: "6qca9xu4",
 				Line:    line,
 				Column:  col,
-				Message: "embed: cannot combine with explicit value",
+				Message: i18n.T("6qca9xu4", "embed: cannot combine with explicit value"),
 			})
 		}
 
@@ -609,7 +610,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 				TraceID: "238u1xr7",
 				Line:    line,
 				Column:  col,
-				Message: "embed: only []byte / [N]byte / fs.embed declarations are supported, got untyped declaration",
+				Message: i18n.T("238u1xr7", "embed: only []byte / [N]byte / fs.embed declarations are supported, got untyped declaration"),
 			})
 		} else {
 			typeStr := ls.Type.String()
@@ -641,7 +642,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 					TraceID: "4y6hz2la",
 					Line:    line,
 					Column:  col,
-					Message: fmt.Sprintf("embed: only []byte / [N]byte / fs.embed declarations are supported, got %s", typeStr),
+					Message: i18n.T("4y6hz2la", "embed: only []byte / [N]byte / fs.embed declarations are supported, got %s", typeStr),
 				})
 			}
 		}
@@ -657,7 +658,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 					TraceID: "14ki3f1w",
 					Line:    line,
 					Column:  col,
-					Message: fmt.Sprintf("embed: file not found: %s (resolved: %s)", embedPath, resolvedPath),
+					Message: i18n.T("14ki3f1w", "embed: file not found: %s (resolved: %s)", embedPath, resolvedPath),
 				})
 			} else if ls.Type != nil {
 				// 規則 3b：fs.embed 類型必須指向目錄；[]byte/[N]byte 類型必須指向文件
@@ -670,7 +671,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 						TraceID: "nwtpvei9",
 						Line:    line,
 						Column:  col,
-						Message: fmt.Sprintf("embed: fs.embed requires a directory, got file: %s (resolved: %s)", embedPath, resolvedPath),
+						Message: i18n.T("nwtpvei9", "embed: fs.embed requires a directory, got file: %s (resolved: %s)", embedPath, resolvedPath),
 					})
 				}
 				if !isFsEmbedType && info.IsDir() {
@@ -678,7 +679,7 @@ func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []Vali
 						TraceID: "vr0eh0yz",
 						Line:    line,
 						Column:  col,
-						Message: fmt.Sprintf("embed: []byte requires a file, got directory: %s (resolved: %s). Use fs.embed type for directory embedding", embedPath, resolvedPath),
+						Message: i18n.T("vr0eh0yz", "embed: []byte requires a file, got directory: %s (resolved: %s). Use fs.embed type for directory embedding", embedPath, resolvedPath),
 					})
 				}
 			}
@@ -898,17 +899,24 @@ func walkExprForLen(expr parser.Expression, varTypes, funcTypes map[string]strin
 					kind = "container"
 				}
 				msg := ""
+				msgID := ""
+				// The ID is repeated as a literal at both the T call and the
+				// TraceID assignment: the catalog generator only accepts a
+				// literal ID at the T call site (a computed one cannot be
+				// keyed), and the printed TraceID must be the same token.
 				switch kind {
 				case "str":
-					msg = "deprecated: str.len property is removed; use s.len-bytes() for byte length or s.len() for codepoint count"
+					msg = i18n.T("rhajr9l9", "deprecated: str.len property is removed; use s.len-bytes() for byte length or s.len() for codepoint count")
+					msgID = "rhajr9l9"
 				default:
-					msg = "deprecated: recv.len property is removed; use recv.len() for element count"
+					msg = i18n.T("gf3kb05g", "deprecated: recv.len property is removed; use recv.len() for element count")
+					msgID = "gf3kb05g"
 				}
 				*results = append(*results, ValidateResult{
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
 					Message: msg,
-					TraceID: "kbutx330",
+					TraceID: msgID,
 				})
 			}
 		}
@@ -1081,7 +1089,7 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 					TraceID: "uvws00l4",
 					Line:    fd.Token.Line,
 					Column:  fd.Token.Column,
-					Message: fmt.Sprintf("duplicate function definition '%s' (first defined at line %d)", sig, firstConflictLine),
+					Message: i18n.T("uvws00l4", "duplicate function definition '%s' (first defined at line %d)", sig, firstConflictLine),
 				})
 			} else {
 				for _, k := range sigKeys {
@@ -1194,7 +1202,7 @@ func ValidateUnionTypes(program *parser.Program) (map[string]*parser.TypeAlias, 
 				TraceID: "2trc49mk",
 				Line:    ta.Token.Line,
 				Column:  ta.Token.Column,
-				Message: fmt.Sprintf("duplicate type alias %q", ta.Name),
+				Message: i18n.T("2trc49mk", "duplicate type alias %q", ta.Name),
 			})
 			continue
 		}
@@ -1453,7 +1461,7 @@ func checkNaming(sem *parser.SemanticContext, stmt parser.Statement, file string
 				File:    file,
 				Line:    s.Token.Line,
 				Column:  s.Token.Column,
-				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name),
+				Message: i18n.T("x6swm2kk", "'%s' should use only lowercase letters and hyphens", s.Name),
 			})
 		}
 		if s.Body != nil {
@@ -1483,7 +1491,7 @@ func checkNaming(sem *parser.SemanticContext, stmt parser.Statement, file string
 				File:    file,
 				Line:    s.Name.Token.Line,
 				Column:  s.Name.Token.Column,
-				Message: fmt.Sprintf("'%s' should use only lowercase letters and hyphens", s.Name.Value),
+				Message: i18n.T("2dhoris2", "'%s' should use only lowercase letters and hyphens", s.Name.Value),
 			})
 		}
 	case *parser.BlockStatement:
@@ -1609,7 +1617,7 @@ func checkRunAsyncNaming(expr parser.Expression, file string, results *[]Validat
 			File:    file,
 			Line:    runExpr.Token.Line,
 			Column:  runExpr.Token.Column,
-			Message: fmt.Sprintf("function '%s' called by 'run' should end with '-async'", fnName),
+			Message: i18n.T("y7964ox1", "function '%s' called by 'run' should end with '-async'", fnName),
 		})
 	}
 }
@@ -1670,7 +1678,7 @@ func ValidateUnusedVars(program *parser.Program, mainVarNames map[string]bool) [
 				Line:      def.line,
 				Column:    def.column,
 				EndColumn: def.column + len(name) - 1,
-				Message:   fmt.Sprintf("'%s' is defined but never used", name),
+				Message:   i18n.T("6kryrbsq", "'%s' is defined but never used", name),
 			})
 		}
 	}
@@ -2297,7 +2305,7 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 					File:    program.Sem.SourceFileOf(fd),
 					Line:    p.line,
 					Column:  p.col,
-					Message: fmt.Sprintf("output parameter '%s' (?T) is read but never assigned in function body — uninitialized use of nullable output parameter", p.name),
+					Message: i18n.T("wdk3k728", "output parameter '%s' (?T) is read but never assigned in function body — uninitialized use of nullable output parameter", p.name),
 				})
 			}
 		}
@@ -2368,7 +2376,7 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 					File:    program.Sem.SourceFileOf(fd),
 					Line:    p.line,
 					Column:  p.col,
-					Message: fmt.Sprintf("result parameter '%s' (%s) is never assigned in function body — will be zero-filled on return", p.name, p.typ),
+					Message: i18n.T("i3k422u3", "result parameter '%s' (%s) is never assigned in function body — will be zero-filled on return", p.name, p.typ),
 				})
 			}
 		}
@@ -2987,7 +2995,7 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 						Line:      fd.Token.Line,
 						Column:    fd.Token.Column,
 						EndColumn: fd.Token.Column + len(fd.Name),
-						Message: fmt.Sprintf("method '%s.%s' has %d parameter(s), interface expects %d",
+						Message: i18n.T("m5klw1rq", "method '%s.%s' has %d parameter(s), interface expects %d",
 							implType, implMethod, len(implParams), len(m.Params)),
 					})
 					continue
@@ -3005,7 +3013,7 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 							Line:      p.Token.Line,
 							Column:    p.Token.Column,
 							EndColumn: p.Token.Column + len(p.Name),
-							Message: fmt.Sprintf("parameter %d of '%s.%s': expected '%s', got '%s'",
+							Message: i18n.T("i933a48e", "parameter %d of '%s.%s': expected '%s', got '%s'",
 								i+1, implType, implMethod, expected, paramType),
 						})
 					}
@@ -3017,7 +3025,7 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 						Line:      fd.Token.Line,
 						Column:    fd.Token.Column,
 						EndColumn: fd.Token.Column + len(fd.Name),
-						Message: fmt.Sprintf("method '%s.%s' has %d result(s), interface expects %d",
+						Message: i18n.T("iky4xsx4", "method '%s.%s' has %d result(s), interface expects %d",
 							implType, implMethod, len(implResults), len(m.Results)),
 					})
 				} else {
@@ -3034,7 +3042,7 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 								Line:      r.Token.Line,
 								Column:    r.Token.Column,
 								EndColumn: r.Token.Column + len(r.Name),
-								Message: fmt.Sprintf("result %d of '%s.%s': expected '%s', got '%s'",
+								Message: i18n.T("9741sawd", "result %d of '%s.%s': expected '%s', got '%s'",
 									i+1, implType, implMethod, expected, resType),
 							})
 						}
@@ -3081,7 +3089,7 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 				File:    program.Sem.SourceFileOf(us),
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
-				Message: fmt.Sprintf("use '# %s.%s %s' instead of '# %s.%s as %s'", us.Path, us.Function, us.Alias, us.Path, us.Function, us.Alias),
+				Message: i18n.T("tgutu5g0", "use '# %s.%s %s' instead of '# %s.%s as %s'", us.Path, us.Function, us.Alias, us.Path, us.Function, us.Alias),
 			})
 		}
 	}
@@ -3207,7 +3215,7 @@ func checkRedundantTypeInStmt(sem *parser.SemanticContext, stmt parser.Statement
 						File:    file,
 						Line:    s.Type.Pos().Line,
 						Column:  s.Type.Pos().Column,
-						Message: fmt.Sprintf("type annotation '%s' can be omitted (inferred from value)", annotatedType),
+						Message: i18n.T("tcpoxtfd", "type annotation '%s' can be omitted (inferred from value)", annotatedType),
 					})
 				}
 			}
@@ -3333,7 +3341,7 @@ func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, 
 						File:    file,
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
-						Message: fmt.Sprintf("'%s' already declared in this scope", s.Name.Value),
+						Message: i18n.T("379z4njd", "'%s' already declared in this scope", s.Name.Value),
 					}}
 				}
 			}
@@ -3405,7 +3413,7 @@ func ValidateDependencyImports(program *parser.Program, rootDir string) []Valida
 				File:    program.Sem.SourceFileOf(us),
 				Line:    us.Token.Line,
 				Column:  us.Token.Column,
-				Message: fmt.Sprintf("dependency not found: %q is not declared in package.noml dependencies", path),
+				Message: i18n.T("tmqnqq9x", "dependency not found: %q is not declared in package.noml dependencies", path),
 			})
 		}
 	}
@@ -3457,7 +3465,7 @@ func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateRe
 				File:    program.Sem.SourceFileOf(es),
 				Line:    es.Token.Line,
 				Column:  es.Token.Column,
-				Message: fmt.Sprintf("module file not found: %s", modFile),
+				Message: i18n.T("8dbrd5fk", "module file not found: %s", modFile),
 			})
 			continue
 		}
@@ -3505,7 +3513,7 @@ func ValidateExportSymbols(program *parser.Program, docPath string) []ValidateRe
 				TraceID: "lr3c6kg5",
 				Line:    es.Token.Line,
 				Column:  es.Token.Column,
-				Message: fmt.Sprintf("export references undefined symbol %q (not found in %s)", es.Function, modFile),
+				Message: i18n.T("lr3c6kg5", "export references undefined symbol %q (not found in %s)", es.Function, modFile),
 			})
 		}
 	}
@@ -4123,7 +4131,7 @@ func runIntOverflowCore(program *parser.Program, view *THIRView) []ValidateResul
 			File:    file,
 			Line:    line,
 			Column:  col,
-			Message: "整数运算 `a OP b` 默认在溢出时返回 option<T>，结果类型恒为 `?T`。三选一：①用 `?T` 接收（`a ?i64 = x + y`，或直接 `a = x + y` 让编译器推断成 option），再用 `?=` 上抛或两段式 match 解包（`v = a: {` 换行 `ok -> it` / `-> 0`）；②加注解 `#{overflow = wrap}`（无声回绕）/`clamp0`（下溢归零）/`min`/`max`/`saturate`（饱和箝位）或型别前缀形式如 `#{overflow = u8-max}` 指定溢出行為——注意注解只改变失败时怎么取值，结果仍是 `?T`，仍须解包；③`_ = x + y` 显式丢弃。",
+			Message: i18n.T("xmicjezl", "integer `a OP b` returns option<T> on overflow by default, so the result type is always `?T`. Pick one of three: (1) receive it as `?T` (`a ?i64 = x + y`, or just `a = x + y` and let the compiler infer an option), then propagate with `?=` or unwrap with a two-arm match (`v = a: {` newline `ok -> it` / `-> 0`); (2) annotate `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`, to choose the value taken on failure - note the annotation only changes that value, the result is still `?T` and still has to be unwrapped; (3) discard it explicitly with `_ = x + y`."),
 			TraceID: "xmicjezl",
 		})
 	}
@@ -4554,7 +4562,7 @@ func ValidateDivByZero(program *parser.Program, view *THIRView) []ValidateResult
 			File:    file,
 			Line:    line,
 			Column:  col,
-			Message: "整數除法 / 取模的除數是字面常數 0，會觸發 LLVM 未定義行為（sdiv/srem 除以零），產生不可預測的結果。請改以執行時期零檢查，或讓函式以 option 回傳錯誤。",
+			Message: i18n.T("onpn7zgb", "the divisor of an integer division or modulo is the literal constant 0, which is undefined behaviour in LLVM (sdiv/srem by zero) and produces unpredictable results. Add a runtime zero check, or have the function return the failure as an option."),
 			TraceID: "onpn7zgb",
 		})
 	}
@@ -5288,7 +5296,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			Column:  stmt.Pos().Column,
 			File:    curFile,
 			Message: msg,
-			TraceID: unhandledOverflowTraceID,
+			TraceID: "ovfhndld",
 		})
 	}
 
@@ -5307,8 +5315,8 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 	// 未消費即泄漏。也不看 fnReturnsOption —— 在回傳 ?T 的函式裡 `x = a + b` 同樣
 	// 不會自動上拋，仍必須自己解包或回傳。
 	reportOptUnuse := func(stmt parser.Statement, name, curFile string) {
-		msg := "option 绑定后从未被消费：既没有上抛（`?=`），也没有解包（`x: { … }` / `_ = x`），错误被静默丢弃。" +
-			optionUnwrapRecipe(name)
+		msg := i18n.T("gubuo5cb", "option bound but never consumed: it is neither propagated (`?=`) nor unwrapped (`x: { ... }` / `_ = x`), so the error is silently discarded. %s",
+			optionUnwrapRecipe(name))
 		key := fmt.Sprintf("%s|%d:%d:%s", canonPath(curFile), stmt.Pos().Line, stmt.Pos().Column, optUnuseTraceID)
 		if seen[key] {
 			return
@@ -5319,7 +5327,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			Column:  stmt.Pos().Column,
 			File:    curFile,
 			Message: msg,
-			TraceID: optUnuseTraceID,
+			TraceID: "optunuse",
 		})
 	}
 
@@ -5552,19 +5560,23 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 				// 對 nil sem 回 nil ⇒ sem==nil 時條件為真、照舊判定，不改變無副表情形。AST
 				// 軌下被捕獲語句已被替換，護欄恆不觸發 ⇒ AST 軌零變化。
 				if !explicitOption && !discarded && sem.CaptureFactOf(s) == nil && isDirectOverflowValue(s.Value, varTypes, selfType) {
-					report(s, "整数运算 `a OP b` 默认在溢出时返回 option<T>，此处绑定到 `"+s.Name.Value+"`（类型 `?T`）。"+
-						optionUnwrapRecipe(s.Name.Value)+
-						"若希望溢出时回绕而不是报错，可加 `#{overflow = wrap}`——注意注解只改变溢出行為，结果仍是 `?T`。", curFile)
+					report(s, i18n.T("8t1jaj02", "integer `a OP b` returns option<T> on overflow by default, so this binds `%s` to a `?T`. %s If you would rather wrap around on overflow than report an error, add `#{overflow = wrap}` - note the annotation only changes the value taken on overflow, the result is still `?T`.", s.Name.Value, optionUnwrapRecipe(s.Name.Value)), curFile)
 				}
 			}
 			if s.Value != nil {
 				walkExpr(s.Value, fnReturnsOption, effOverflow, true, varTypes, selfType, curFile)
 			}
 		case *parser.ReturnStatement:
+			// ⚠️ 這個分支目前**不可達**：Nolang 的 `return` 只做提前退出，不帶
+			// 返回值（parser/stmt.go 的 parseReturnStatement 一律把 ReturnValue
+			// 設為 nil，`return <expr>` 本身是解析錯誤），全倉也沒有任何地方把
+			// ReturnValue 填成非 nil。保留它連同 28t42vw9 的文案，是為了在語言
+			// 真的引入帶值 return 時不必重新發明這條診斷；一旦該形態出現，先
+			// 確認這裡的判定（非 option 函式 + 直接溢出值）仍是想要的口徑。
 			if !effOverflow {
 				// 函式回傳 ?T 時，回傳 option 是合約內預期行為 → 不報。
 				if isDirectOverflowValue(s.ReturnValue, varTypes, selfType) && !fnReturnsOption {
-					report(s, "返回的整数运算默认返回 option<int>，但本函数不返回 option 类型。请加 `#{overflow = wrap}` 注解回普通 int，或让函数返回 ?T 并用 `result ?= expr` 上抛（或用 `result = expr` 就地捕获错误）。", curFile)
+					report(s, i18n.T("28t42vw9", "the returned integer expression is an option<int> by default, but this function does not return an option type. Add a `#{overflow = wrap}` annotation to get a plain int back, or make the function return ?T and propagate with `result ?= expr` (or capture in place with `result = expr`)."), curFile)
 				}
 			}
 			if s.ReturnValue != nil {
@@ -5573,7 +5585,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 		case *parser.ExpressionStatement:
 			if !fnReturnsOption && !effOverflow {
 				if isDirectOverflowValue(s.Expression, varTypes, selfType) {
-					report(s, "整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛，或用 `_ = expr` 显式丢弃。", curFile)
+					report(s, i18n.T("m7egvbv0", "the integer expression is an option<int> by default and is discarded as an expression statement (unhandled). Add a `#{overflow = wrap}` annotation to get a plain int back, or propagate with `?=`, or discard explicitly with `_ = expr`."), curFile)
 				}
 			}
 			if s.Expression != nil {
@@ -5733,7 +5745,7 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		if !lineHasIdentIndexRead(curFile, line) {
 			return
 		}
-		msg := "数组/切片索引 `arr[i]` 默认在越界时返回 option<elem>。此 option 未被处理：请用 `a ?= arr[i]` 上抛（在返回 ?T 的函数中可直接 `a = arr[i]` 就地捕获错误），或加 `#{index-out = DEF}` 注解以越界时取默认值 DEF，或显式声明为 option 类型（如 `a ?elem = arr[i]`）以就地捕获错误，或用 `_ = arr[i]` 显式丢弃。"
+		msg := i18n.T("ddvc98n2", "array/slice index `arr[i]` returns option<elem> on an out-of-range access by default. This option is never handled: propagate it with `a ?= arr[i]` (inside a function returning ?T you can also capture it in place with `a = arr[i]`), or annotate `#{index-out = DEF}` to take the default DEF when out of range, or declare the target as an option (e.g. `a ?elem = arr[i]`) to capture the error in place, or discard it explicitly with `_ = arr[i]`.")
 		key := fmt.Sprintf("%s|%d:%d", canonPath(curFile), line, col)
 		if seen[key] {
 			return
@@ -5745,7 +5757,7 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			EndColumn: idx.EndPos().Column,
 			File:      curFile,
 			Message:   msg,
-			TraceID:   unhandledIndexTraceID,
+			TraceID:   "idxhndld",
 		})
 	}
 
@@ -6238,7 +6250,7 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 			EndColumn: endCol,
 			File:      curFile,
 			Message:   msg,
-			TraceID:   indexWriteTraceID,
+			TraceID:   "idxwrite",
 		})
 	}
 
@@ -6367,7 +6379,7 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 							// 本语言 match 臂以换行分隔；`,` 與 `;` 均非臂分隔符，且 `;` 是注释
 							// token。逗號形式 `{ ok -> it = v, -> _ }` 複製後被 parseExpression 的 default
 							// 分支靜默吞掉、產生畸形臂（`-> _` 通配臂丟失），故推薦多行形式。
-							msg := fmt.Sprintf("不能通过下标直接赋值 `%s = %s`：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。正确写法（二选一）：\n  1) place-match：ok 臂的 it 是元素位置，可读可写\n     %s: {\n         ok -> it = %s\n         -> _\n     }\n  2) 错误上抛（要求所在函数有 option 结果参数）：`%s ?= %s`",
+							msg := i18n.T("3lp1rtuc", "cannot assign through an index directly: `%s = %s`. An index read returns an option (nil when out of range), so writing straight through it turns an out-of-range access into an unchecked out-of-range write. Two correct spellings:\n  1) place-match: `it` in the ok arm is the element position, readable and writable\n     %s: {\n         ok -> it = %s\n         -> _\n     }\n  2) propagate the error (the enclosing function needs an option result parameter): `%s ?= %s`",
 								tgt, val, tgt, val, tgt, val)
 							report(idx, resolveFile(program.Sem.SourceFileOf(s), curFile), msg, s.EndPos().Column)
 						}
@@ -6383,7 +6395,7 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 				if idx, ok := t.(*parser.IndexExpression); ok {
 					if isContainerWriteBase(curFunc, idx) {
 						tgt := parser.ExprToString(idx)
-						msg := fmt.Sprintf("多赋值中的下标写入目标 `%s` 未经解包：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。请把该目标拆出为 place-match（ok 臂的 it 是元素位置，可读可写），或改用 `?=` 在 option 结果函数中上抛。",
+						msg := i18n.T("jwegl6bv", "multi-assignment target `%s` is written through an index without unwrapping: an index read returns an option (nil when out of range), so writing straight through it turns an out-of-range access into an unchecked out-of-range write. Split that target out into a place-match (`it` in the ok arm is the element position, readable and writable), or propagate with `?=` in a function that returns an option.",
 							tgt)
 						report(idx, resolveFile(program.Sem.SourceFileOf(s), curFile), msg, s.EndPos().Column)
 					}
@@ -6494,7 +6506,7 @@ func checkStringConcatInExpr(view *THIRView, expr parser.Expression, file string
 					File:    file,
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
-					Message: "string concatenation: use '-' instead of '+'",
+					Message: i18n.T("a3yrogp1", "string concatenation: use '-' instead of '+'"),
 				})
 			}
 		}
@@ -6968,7 +6980,7 @@ func checkStrIndexInExpr(e parser.Expression, sem *parser.SemanticContext, ascii
 						Line:    x.Token.Line,
 						Column:  x.Token.Column,
 						File:    file,
-						Message: "在循环里对 str/txt 使用 s[i] 取下标为 O(n²)：每次下标都要从串首前向迭代 UTF-8 取第 i 个码点，循环会被重复执行。建议：(1) 若需遍历字符，直接用 c <- s（内部按码点迭代，O(n)）；(2) 若只需字节访问，用 s.byte(i)；(3) 若该串可证明为纯 ASCII（声明加 #{ascii} 或赋 ASCII 字面量），s[i] 为 O(1)。",
+						Message: i18n.T("iyvzh49e", "indexing a str/txt with s[i] inside a loop is O(n^2): each index has to walk the UTF-8 encoding from the start of the string to reach codepoint i, and the loop repeats that work. Options: (1) to iterate characters, use `c <- s` directly (it iterates by codepoint, O(n)); (2) if you only need bytes, use `s.byte(i)`; (3) if the string is provably pure ASCII (annotate the declaration with `#{ascii}`, or assign an ASCII literal), `s[i]` is O(1)."),
 						TraceID: "iyvzh49e",
 					})
 				}
@@ -7447,7 +7459,7 @@ func checkHexCaseInExpr(expr parser.Expression, file string) []ValidateResult {
 				File:    file,
 				Line:    e.Token.Line,
 				Column:  e.Token.Column,
-				Message: fmt.Sprintf("hex literal '%s' uses uppercase; format will convert to lowercase (e.g. 0xff)", e.Token.Literal),
+				Message: i18n.T("lkiy53ow", "hex literal '%s' uses uppercase; format will convert to lowercase (e.g. 0xff)", e.Token.Literal),
 			})
 		}
 	case *parser.InfixExpression:
@@ -7826,7 +7838,7 @@ func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]strin
 			TraceID: "dpcwdbng",
 			Line:    strLit.Token.Line,
 			Column:  strLit.Token.Column,
-			Message: fmt.Sprintf("format string error: %v", err),
+			Message: i18n.T("dpcwdbng", "format string error: %v", err),
 		}}
 	}
 	var results []ValidateResult
@@ -7855,7 +7867,7 @@ func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]strin
 				TraceID: "mzwb28br",
 				Line:    strLit.Token.Line,
 				Column:  strLit.Token.Column,
-				Message: fmt.Sprintf("undefined variable '%s' in format string", field.Name),
+				Message: i18n.T("mzwb28br", "undefined variable '%s' in format string", field.Name),
 			})
 			continue
 		}
@@ -7868,9 +7880,12 @@ func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]strin
 			continue
 		}
 		// 3. 檢查規格類型字元與變數型別相容性
-		if msg := checkFormatSpecTypeCompat(field.Parsed.Type, varType, field.Spec); msg != "" {
+		// 回傳 (id, msg)：三種規格字元各自有不同的措辭，因此不能共用一個
+		// TraceID——TraceID 同時是翻譯索引，一個 ID 對兩種文案會被 en.noml
+		// 的生成器拒絕（"maps to two different texts"）。
+		if msgID, msg := checkFormatSpecTypeCompat(field.Parsed.Type, varType, field.Spec); msg != "" {
 			results = append(results, ValidateResult{
-				TraceID: "xr3x7p5q",
+				TraceID: msgID,
 				Line:    strLit.Token.Line,
 				Column:  strLit.Token.Column,
 				Message: msg,
@@ -7879,10 +7894,18 @@ func validatePrintFormatCall(e *parser.CallExpression, varTypes map[string]strin
 	}
 	return results
 }
-func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
+
+// checkFormatSpecTypeCompat returns the message ID and the (already translated)
+// text describing an incompatible format spec, or ("", "") when compatible.
+//
+// The ID is returned rather than assumed because the three branches below carry
+// three different sentences: the ID doubles as the translation index and as the
+// TraceID rendered in the "[xxxxxxxx]" slot, so a single shared ID would map one
+// key onto three texts and be rejected by the catalog generator.
+func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) (string, string) {
 	if typeChar == 0 {
 		// 無類型字元：任何變數型別皆可
-		return ""
+		return "", ""
 	}
 	// 看穿 option/nullable 包裝（`?T`）：格式規格套用的是 option 的內層值
 	// （runtime 對 option 會自動解包後格式化），因此以內層型別判斷相容性。
@@ -7893,24 +7916,24 @@ func checkFormatSpecTypeCompat(typeChar byte, varType, specStr string) string {
 	case 'b', 'c', 'd', 'o', 'p', 'x', 'X':
 		// 整數類型（p = 指針地址，亦為整數）
 		if !isIntegerTypeStr(baseType) {
-			return fmt.Sprintf("format spec '%c' requires integer type, got '%s' (spec: %q)", typeChar, varType, specStr)
+			return "f3j66rlp", i18n.T("f3j66rlp", "format spec '%c' requires integer type, got '%s' (spec: %q)", typeChar, varType, specStr)
 		}
 	case 'e', 'E', 'f', 'F', 'g', 'G', '%':
 		// 浮點數類型
 		if !isFloatTypeStr(baseType) {
-			return fmt.Sprintf("format spec '%c' requires float type, got '%s' (spec: %q)", typeChar, varType, specStr)
+			return "g3dsu5vf", i18n.T("g3dsu5vf", "format spec '%c' requires float type, got '%s' (spec: %q)", typeChar, varType, specStr)
 		}
 	case 's':
 		// 字串或布林值
 		if baseType != "str" && baseType != "bool" && !isIntegerTypeStr(baseType) {
-			return fmt.Sprintf("format spec 's' requires str/bool/integer type, got '%s' (spec: %q)", varType, specStr)
+			return "v7zs1nru", i18n.T("v7zs1nru", "format spec 's' requires str/bool/integer type, got '%s' (spec: %q)", varType, specStr)
 		}
 	case 't':
 		// 数据类型名：任何类型皆可（编译期输出类型名）
 	case 'v':
 		// 字面量值：任何类型皆可（按类型自动选择格式）
 	}
-	return ""
+	return "", ""
 }
 func isIntegerTypeStr(t string) bool {
 	switch t {
@@ -8377,7 +8400,7 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 					TraceID: "iyn3rgtm",
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
-					Message: "'self' (.) can only be used inside struct methods; if you meant the match value, use 'it'",
+					Message: i18n.T("iyn3rgtm", "'self' (.) can only be used inside struct methods; if you meant the match value, use 'it'"),
 				})
 			} else {
 				msg := fmt.Sprintf("'%s' is not defined", e.Value)
@@ -8496,7 +8519,7 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 						TraceID: "fxdzclp6",
 						Line:    recv.Token.Line,
 						Column:  recv.Token.Column,
-						Message: fmt.Sprintf("cannot assign field '%s' on struct type '%s': instantiate first (e.g. `%s0 = %s {}`)", dot.Property, recv.Value, recv.Value, recv.Value),
+						Message: i18n.T("fxdzclp6", "cannot assign field '%s' on struct type '%s': instantiate first (e.g. `%s0 = %s {}`)", dot.Property, recv.Value, recv.Value, recv.Value),
 					})
 				}
 			}
@@ -8552,7 +8575,7 @@ func checkBareExprStatement(expr parser.Expression, funcNames map[string]bool) *
 				TraceID: "k9179drd",
 				Line:    e.Token.Line,
 				Column:  e.Token.Column,
-				Message: fmt.Sprintf("'%s' is a function and must be called; did you mean %s(...)?", e.Value, e.Value),
+				Message: i18n.T("k9179drd", "'%s' is a function and must be called; did you mean %s(...)?", e.Value, e.Value),
 			}
 		}
 		return nil
@@ -8563,7 +8586,7 @@ func checkBareExprStatement(expr parser.Expression, funcNames map[string]bool) *
 			TraceID: "yf6kxdmz",
 			Line:    pos.Line,
 			Column:  pos.Column,
-			Message: "a statement cannot be just a literal value; call a function or assign it to a variable",
+			Message: i18n.T("yf6kxdmz", "a statement cannot be just a literal value; call a function or assign it to a variable"),
 		}
 	}
 	return nil
@@ -9009,9 +9032,8 @@ func optionImplicitUnwrapRejected(targetType, valueType string) bool {
 //
 // 因此這裡只推荐實測可用的兩段式（rsa.no / r2.no 均驗證通過）。
 func optionUnwrapRecipe(name string) string {
-	return "请用两段式解包：先 `" + name + " = <expr>`（推断为 ?T），再 `v = " + name + ": {` 换行书写 `ok -> it` 与 `-> <默认值>` 两臂；" +
-		"或用 match 语句 `" + name + ": { ok -> { … } -> { … } }`，或 `" + name + " ?= <expr>` 上抛，或 `_ = <expr>` 显式丢弃。" +
-		"注意 match 臂必须换行分隔（逗号形态是解析错误），且 `" + name + " = <expr>: { … }` 的同行写法只在 <expr> 是裸标识符时生效，否则 match 会脱离成独立语句、" + name + " 仍是未解包的 ?T。"
+	return i18n.T("2qdpadhy", "Use the two-step unwrap: first `%s = <expr>` (inferred as ?T), then `v = %s: {` with `ok -> it` and `-> <default>` on separate lines; or use a match statement `%s: { ok -> { ... } -> { ... } }`, or propagate with `%s ?= <expr>`, or discard explicitly with `_ = <expr>`. Note that match arms must be separated by newlines (the comma form is a parse error), and the one-line form `%s = <expr>: { ... }` only attaches when <expr> is a bare identifier; otherwise the match detaches into a standalone statement and %s is still an unwrapped ?T.",
+		name, name, name, name, name, name)
 }
 
 // optionUnwrapAssignHint 為 optionImplicitUnwrapRejected 命中的診斷補上可行修法，
@@ -9022,8 +9044,8 @@ func optionUnwrapRecipe(name string) string {
 // 註解只改變「失敗時怎麼取值」，結果仍是 `?T`。
 func optionUnwrapAssignHint(valueType string) string {
 	inner := ty.StripOptionRaw(valueType)
-	return "；option 不能隐式解包（这只是拷贝，失败分支会被丢弃）。" + optionUnwrapRecipe("k") +
-		"。若本意是回绕/钳位，`#{overflow = wrap` 只改变溢出时的取值，结果仍是 `?" + inner + "`，仍须解包。"
+	return i18n.T("ldfvpa0x", "; an option cannot be unwrapped implicitly (this is only a copy, so the failure branch is discarded). %s If you meant wraparound or clamping, `#{overflow = wrap` only changes the value taken on overflow; the result is still `?%s` and still has to be unwrapped.",
+		optionUnwrapRecipe("k"), inner)
 }
 
 // isContainerLenOwner reports whether a value of type t owns a read-only `len`
@@ -9081,7 +9103,7 @@ func checkReadOnlyLenAssign(a *parser.AssignExpression, varTypes, funcTypes map[
 		TraceID: "87zc5awf",
 		Line:    pos.Line,
 		Column:  pos.Column,
-		Message: fmt.Sprintf("cannot modify read-only field '%s' of %s; the length is derived from the buffer — use truncate(n) instead", dot.Property, rt),
+		Message: i18n.T("87zc5awf", "cannot modify read-only field '%s' of %s; the length is derived from the buffer — use truncate(n) instead", dot.Property, rt),
 	}
 }
 
@@ -9186,7 +9208,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						TraceID: "aih7e3j0",
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
-						Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", s.Name.Value),
+						Message: i18n.T("aih7e3j0", "cannot assign nil to non-option variable '%s'", s.Name.Value),
 					})
 				}
 				// 記錄型別
@@ -9200,7 +9222,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						TraceID: "p2epl19k",
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
-						Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", s.Name.Value),
+						Message: i18n.T("p2epl19k", "cannot assign nil to non-option variable '%s'", s.Name.Value),
 					})
 				}
 				break
@@ -9210,7 +9232,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				TraceID: "170bewkb",
 				Line:    s.Token.Line,
 				Column:  s.Token.Column,
-				Message: fmt.Sprintf("cannot infer type from nil for variable '%s'", s.Name.Value),
+				Message: i18n.T("170bewkb", "cannot infer type from nil for variable '%s'", s.Name.Value),
 			})
 			break
 		}
@@ -9232,7 +9254,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							TraceID: "irjygycv",
 							Line:    callPos.Line,
 							Column:  callPos.Column,
-							Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
+							Message: i18n.T("irjygycv", "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment"),
 						})
 					}
 				}
@@ -9305,7 +9327,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							TraceID: "nnqq67ko",
 							Line:    valPos.Line,
 							Column:  valPos.Column,
-							Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
+							Message: i18n.T("nnqq67ko", "cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
 						})
 					}
 				}
@@ -9337,7 +9359,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 										TraceID: "os0j8ix4",
 										Line:    s.Token.Line,
 										Column:  s.Token.Column,
-										Message: fmt.Sprintf("cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, s.Name.Value, narrowingHint(elemInferred, elemType)),
+										Message: i18n.T("os0j8ix4", "cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, s.Name.Value, narrowingHint(elemInferred, elemType)),
 									})
 								}
 							}
@@ -9365,7 +9387,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 									TraceID: "f0p0dfha",
 									Line:    callPos.Line,
 									Column:  callPos.Column,
-									Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
+									Message: i18n.T("f0p0dfha", "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment"),
 								})
 								isOptionCtor = true
 							}
@@ -9419,7 +9441,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							TraceID: "crange01",
 							Line:    valPos.Line,
 							Column:  valPos.Column,
-							Message: fmt.Sprintf("cannot assign integer literal to char variable '%s': value out of Unicode code point range (0..0x10FFFF)", s.Name.Value),
+							Message: i18n.T("crange01", "cannot assign integer literal to char variable '%s': value out of Unicode code point range (0..0x10FFFF)", s.Name.Value),
 						})
 					}
 				} else {
@@ -9448,7 +9470,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					TraceID: "7c5fbvp4",
 					Line:    callPos.Line,
 					Column:  callPos.Column,
-					Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
+					Message: i18n.T("7c5fbvp4", "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment"),
 				})
 			}
 		}
@@ -9515,7 +9537,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						TraceID: "2ls7kxqp",
 						Line:    ident.Token.Line,
 						Column:  ident.Token.Column,
-						Message: fmt.Sprintf("cannot reassign function name '%s'", ident.Value),
+						Message: i18n.T("2ls7kxqp", "cannot reassign function name '%s'", ident.Value),
 					})
 				}
 				// 檢查 nil 賦值到非可空變數
@@ -9528,7 +9550,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								TraceID: "b6fjj9ka",
 								Line:    ident.Token.Line,
 								Column:  ident.Token.Column,
-								Message: fmt.Sprintf("cannot assign nil to non-option variable '%s'", ident.Value),
+								Message: i18n.T("b6fjj9ka", "cannot assign nil to non-option variable '%s'", ident.Value),
 							})
 						}
 					}
@@ -9576,7 +9598,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 										TraceID: "96o13ee6",
 										Line:    callPos.Line,
 										Column:  callPos.Column,
-										Message: "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment",
+										Message: i18n.T("96o13ee6", "val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment"),
 									})
 									isOptionCtor = true
 								}
@@ -9609,7 +9631,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 												TraceID: "3b9bxfnt",
 												Line:    assign.Token.Line,
 												Column:  assign.Token.Column,
-												Message: fmt.Sprintf("cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, ident.Value, narrowingHint(elemInferred, elemType)),
+												Message: i18n.T("3b9bxfnt", "cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, ident.Value, narrowingHint(elemInferred, elemType)),
 											})
 										}
 									}
@@ -10424,7 +10446,7 @@ func checkLHSInferredInStmt(stmt parser.Statement, varTypes map[string]string, v
 						TraceID: "p56zjfhi",
 						Line:    valPos.Line,
 						Column:  valPos.Column,
-						Message: fmt.Sprintf("cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
+						Message: i18n.T("p56zjfhi", "cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
 					})
 				}
 			}
@@ -10556,7 +10578,7 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 			File:    file,
 			Line:    line,
 			Column:  col,
-			Message: fmt.Sprintf("type '%s' not found; did you mean '%s.%s'?", baseName, modName, baseName),
+			Message: i18n.T("ol0l3ova", "type '%s' not found; did you mean '%s.%s'?", baseName, modName, baseName),
 		})
 	}
 
@@ -11911,7 +11933,7 @@ func ValidateMultiOptionResults(program *parser.Program) []ValidateResult {
 			quoted[i] = "'" + n + "'"
 		}
 		results = append(results, ValidateResult{
-			TraceID: multiOptionResultTraceID,
+			TraceID: "moptres1",
 			File:    file,
 			Line:    tok.Line,
 			Column:  tok.Column,
