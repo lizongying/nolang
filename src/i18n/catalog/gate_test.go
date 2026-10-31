@@ -49,11 +49,14 @@ func TestEnCatalogFresh(t *testing.T) {
 	}
 }
 
-// TestEnDocCatalogFresh is the same gate for the doc catalog, with one twist: a
-// doc value is PRESERVED once present (its source text is a comment, not a Go
-// literal, so re-seeding would revert translations). The gate must therefore
-// apply the generator's merge, or it would demand that every hand-translated
-// block be replaced by the Chinese source text.
+// TestEnDocCatalogFresh is the same gate for the doc catalog, with two twists.
+//
+// A doc catalog holds TRANSLATIONS ONLY: an anchor with no committed value is
+// not seeded, because its source text is in the author's language and English is
+// a translation target. And a committed value is preserved even if the source
+// comment was reworded, because the anchor rather than the text is the key. The
+// gate applies the generator's prune, so it demands exactly what `make i18n`
+// would write.
 func TestEnDocCatalogFresh(t *testing.T) {
 	entries, err := docscan.Scan(srcRoot(t))
 	if err != nil {
@@ -72,29 +75,35 @@ func TestEnDocCatalogFresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse committed doc catalog: %v", err)
 	}
-	want := catalog.RenderDoc(catalog.MergeDocTranslations(scanned, existing))
+	want := catalog.RenderDoc("en", catalog.PruneDocTranslations(scanned, existing))
 	if string(committed) != want {
 		t.Fatalf("en%s is stale: run `make i18n` (committed %d bytes, fresh %d bytes)",
 			catalog.DocCatalogSuffix, len(committed), len(want))
 	}
+	if len(scanned) == 0 {
+		t.Fatal("no anchored doc blocks found: the scanner or the anchors are broken")
+	}
+	t.Logf("%d of %d anchors translated into English", len(existing), len(scanned))
 }
 
-// TestDocCatalogKeys is the orphan gate for doc translations: every key in a
-// locale's doc catalog must still exist in en.doc.noml, which in turn must still
-// exist in the source. A translation of a deleted comment is dead weight and
-// hides the fact that a block was renamed.
+// TestDocCatalogKeys is the orphan gate for doc translations: every key in any
+// doc catalog must still be an anchor that exists in the .no source. A
+// translation of a deleted comment is dead weight and hides the fact that a
+// block was renamed.
+//
+// Orphans are checked against the SOURCE, not against en.doc.noml, so a locale
+// may translate a block that English has not got to yet.
 //
 // No verb check applies here: i18n.Doc never formats, so a `%` in a doc comment
 // is literal text rather than a placeholder.
 func TestDocCatalogKeys(t *testing.T) {
-	enPath := filepath.Join("locales", "en"+catalog.DocCatalogSuffix)
-	enData, err := os.ReadFile(enPath)
+	entries, err := docscan.Scan(srcRoot(t))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("docscan: %v", err)
 	}
-	en, err := catalog.ParseCatalogData(enPath, enData)
+	scanned, err := docscan.Texts(entries)
 	if err != nil {
-		t.Fatalf("parse en doc catalog: %v", err)
+		t.Fatalf("doc texts: %v", err)
 	}
 
 	names, err := filepath.Glob(filepath.Join("locales", "*"+catalog.DocCatalogSuffix))
@@ -106,9 +115,6 @@ func TestDocCatalogKeys(t *testing.T) {
 	}
 	for _, name := range names {
 		tag := strings.TrimSuffix(filepath.Base(name), catalog.DocCatalogSuffix)
-		if tag == "en" {
-			continue
-		}
 		t.Run(tag, func(t *testing.T) {
 			data, err := os.ReadFile(name)
 			if err != nil {
@@ -119,9 +125,8 @@ func TestDocCatalogKeys(t *testing.T) {
 				t.Fatalf("parse: %v", err)
 			}
 			for key := range cat {
-				if _, ok := en[key]; !ok {
-					t.Errorf("orphan doc key %q: not in en%s (the anchor no longer exists in the source)",
-						key, catalog.DocCatalogSuffix)
+				if _, ok := scanned[key]; !ok {
+					t.Errorf("orphan doc key %q: no .no source declares that anchor", key)
 				}
 			}
 		})

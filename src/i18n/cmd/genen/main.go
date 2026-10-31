@@ -13,10 +13,11 @@
 //     at the Go call site, so the generator is the only writer. It is never read
 //     at runtime (T returns the inline default for English); it is a translator
 //     template and a review aid.
-//   - en.doc.noml is SEEDED, then hand-maintained. A doc comment's text lives in
+//   - en.doc.noml is HAND-WRITTEN and only PRUNED. A doc comment's text lives in
 //     the .no source, not at a call site, and English is a translation TARGET for
-//     it; re-seeding every run would silently revert every translation. New
-//     anchors are seeded from the comment text and existing values are preserved.
+//     it. Seeding every anchor with its source text would fill the English
+//     catalog with Chinese, so an untranslated anchor stays absent and falls back
+//     to the comment at runtime. `-doc-missing` lists what is left to translate.
 package main
 
 import (
@@ -35,6 +36,7 @@ func main() {
 	out := flag.String("o", filepath.Join("i18n", "catalog", "locales", "en.noml"), "message catalog output path")
 	docOut := flag.String("doc-o", filepath.Join("i18n", "catalog", "locales", "en"+catalog.DocCatalogSuffix), "doc catalog output path")
 	check := flag.Bool("check", false, "verify the outputs are fresh instead of writing them")
+	listMissing := flag.Bool("doc-missing", false, "print the anchors that have no doc translation yet, then exit")
 	flag.Parse()
 
 	res, err := msgscan.Scan(*root)
@@ -48,13 +50,21 @@ func main() {
 
 	// Doc links live in .no sources, not at Go call sites, so they come from a
 	// second scan and land in their own catalog file.
-	docs, err := scanDocs(*root, *docOut)
+	docs, missing, err := scanDocs(*root, *docOut)
 	if err != nil {
 		fail(err)
 	}
 
+	if *listMissing {
+		for _, anchor := range missing {
+			fmt.Println(anchor)
+		}
+		fmt.Fprintf(os.Stderr, "%d anchor(s) untranslated, %d translated\n", len(missing), len(docs))
+		return
+	}
+
 	renderedMessages := catalog.RenderEn(texts)
-	renderedDocs := catalog.RenderDoc(docs)
+	renderedDocs := catalog.RenderDoc("en", docs)
 
 	if *check {
 		if err := checkFresh(*out, renderedMessages); err != nil {
@@ -64,7 +74,7 @@ func main() {
 			fail(err)
 		}
 		fmt.Printf("%s is fresh (%d messages)\n", *out, len(texts))
-		fmt.Printf("%s is fresh (%d doc anchors)\n", *docOut, len(docs))
+		fmt.Printf("%s is fresh (%d of %d doc anchors translated)\n", *docOut, len(docs), len(docs)+len(missing))
 		return
 	}
 
@@ -75,7 +85,7 @@ func main() {
 		fail(err)
 	}
 	fmt.Printf("wrote %s: %d messages\n", *out, len(texts))
-	fmt.Printf("wrote %s: %d doc anchors", *docOut, len(docs))
+	fmt.Printf("wrote %s: %d of %d doc anchors translated", *docOut, len(docs), len(docs)+len(missing))
 	if res.Pending > 0 {
 		fmt.Printf(" (%d call sites still carry %s — run scripts/stamp_traceid.sh)", res.Pending, msgscan.Placeholder)
 	}
@@ -100,18 +110,18 @@ func checkFresh(path, want string) error {
 	return nil
 }
 
-// scanDocs scans the .no corpus and merges the result with whatever the committed
-// doc catalog already says. A value is PRESERVED once it exists (see
-// catalog.MergeDocTranslations): its source text is a comment, not a Go literal,
-// so re-seeding would revert translations on every run.
-func scanDocs(root, out string) (map[string]string, error) {
+// scanDocs scans the .no corpus and prunes whatever the committed doc catalog
+// already says down to anchors that still exist. Nothing is seeded: see
+// catalog.PruneDocTranslations for why an untranslated anchor must stay absent
+// rather than become a copy of its source text.
+func scanDocs(root, out string) (map[string]string, []string, error) {
 	entries, err := docscan.Scan(root)
 	if err != nil {
-		return nil, fmt.Errorf("scanning doc links: %w", err)
+		return nil, nil, fmt.Errorf("scanning doc links: %w", err)
 	}
 	scanned, err := docscan.Texts(entries)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	existing := map[string]string{}
 	if data, err := os.ReadFile(out); err == nil {
@@ -119,7 +129,8 @@ func scanDocs(root, out string) (map[string]string, error) {
 			existing = m
 		}
 	}
-	return catalog.MergeDocTranslations(scanned, existing), nil
+	return catalog.PruneDocTranslations(scanned, existing),
+		catalog.MissingDocTranslations(scanned, existing), nil
 }
 
 func fail(err error) {

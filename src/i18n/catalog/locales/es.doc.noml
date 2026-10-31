@@ -1,0 +1,114 @@
+; Nolang doc catalog: es
+; Source-comment translations, keyed by the anchor an author wrote in a
+; trailing `[label](#anchor)` line. This file holds TRANSLATIONS ONLY: an
+; anchor that is absent falls back to the comment text in the .no source, so
+; untranslated blocks degrade to the author's language instead of shipping a
+; copy of it here. Every key must still exist in some .no source, or the gate
+; rejects it as an orphan.
+{
+  'args.count': `
+número de argumentos, incluido el nombre del programa
+delega en el builtin os.args(), que devuelve el vector argv completo; se toma su longitud
+`
+  'args.get': `
+el i-ésimo argumento
+delega en el builtin os.arg(i), que lee argv[i] de main; un i fuera de rango devuelve nil
+`
+  'args.get-option': `
+lee el valor de una opción (p. ej. --output=xxx)
+devuelve val ?str: ok = el valor de la opción, nil = no encontrada
+`
+  'args.get-positional': `
+lee el i-ésimo argumento posicional, saltando las opciones
+devuelve val ?str: ok = el valor posicional, nil = ausente
+`
+  'args.has-flag': 'indica si una opción está presente (p. ej. --verbose, -v)'
+  'args.program': 'el nombre del programa (argumento 0)'
+  'bool.to-str': 'convierte un bool en la cadena "true" o "false"'
+  'env.get': `
+lee una variable de entorno
+devuelve val ?str: ok = el valor, nil = no definida (os.get-env ya devuelve una option)
+`
+  'env.get-with-default': 'lee una variable de entorno y devuelve un valor por defecto si no está definida'
+  'env.is-set': `
+indica si una variable de entorno está definida
+devuelve true = definida, false = no definida
+`
+  'env.lookup': `
+lee una variable de entorno
+devuelve val ?str: ok = el valor, nil = ausente
+`
+  'env.set': `
+define una variable de entorno
+devuelve true = éxito, false = fallo
+`
+  'env.unset': `
+elimina una variable de entorno (la pone a la cadena vacía)
+devuelve true = éxito, false = fallo
+`
+  'global.eprint': `
+escribe una línea en la salida de error, con campos con nombre {name:spec}
+eprint('error: {msg}')
+varios argumentos: eprint('err:', a, b) los une con espacios y emite un solo salto de línea al final de la línea;
+cada literal de cadena es su propia plantilla (igual que print)
+`
+  'global.exit': `
+termina el proceso (lo acaba con el código de estado c)
+exit(0)   -> salida normal
+exit(1)   -> salida anómala
+`
+  'global.format': `
+formatea una cadena con campos con nombre {name:spec} y la devuelve (sustituye a sprintf)
+s = format('{x:.2f}')          -> '3.14'
+s = format('{name} is {age}')  -> 'Alice is 30'
+⚠️ solo acepta una cadena de formato (no hay forma con varios argumentos)
+`
+  'global.print': `
+escribe una línea en la salida estándar, con campos con nombre {name:spec}
+print('hello {name}')       -> hello world (cuando name = 'world')
+print('{x:.2f}')            -> 3.14 (cuando x = 3.14159)
+varios argumentos: print(a, b, c) los une con espacios y emite un solo salto de línea al final de la línea.
+Con varios argumentos cada literal de cadena es su propia plantilla (véase «con varios argumentos, los literales son plantillas» arriba):
+print('result={val}', 42, 'result={val}')  -> result=42 42 result=42
+`
+  'global.with-cap': `
+crea una cadena o un slice con la capacidad indicada (len=0); el tipo sale del lado izquierdo de la asignación
+s str = with-cap(256)       -> un str que reserva 256 bytes por adelantado
+v []i64 = with-cap(100)     -> un slice que reserva 100 elementos por adelantado
+`
+  'global.with-cap-len': `
+crea una cadena o un slice con la capacidad y la longitud indicadas; el tipo sale del lado izquierdo de la asignación
+v []i64 = with-cap-len(200, 100)  -> un slice con capacidad 200 y longitud 100
+`
+  'global.with-len': `
+crea una cadena o un slice con la longitud indicada; el tipo sale del lado izquierdo de la asignación
+s str = with-len(10)        -> un str de longitud 10
+v []i64 = with-len(100)     -> un slice de longitud 100
+`
+  'int.div': `
+división entera, devuelve el cociente (a ÷ b)
+devuelve err cuando b es 0 (la guarda de división por cero que inserta el compilador; no es UB). Véase docs/docs/lang/syntax.md, «división por cero»
+`
+  'int.mod': `
+módulo entero, devuelve el resto (a % b)
+devuelve err cuando b es 0 (la guarda de división por cero que inserta el compilador; no es UB). Véase docs/docs/lang/syntax.md, «división por cero»
+`
+  'int.to-str': `
+convierte un entero en cadena (un método de tipo unión que cubre todos los tipos enteros)
+el transpilador resuelve i64.to-str() y similares a int.to-str()
+usa aritmética directamente, evitando el problema de conversión int -> u64
+nota: no toma el valor absoluto de los negativos (0 - n desborda cuando n = i64.MIN);
+en su lugar aplica srem/sdiv al valor negativo (truncando hacia cero) y luego lleva el resto negativo a [0, 9]
+`
+  'num.abs': `
+valor absoluto — sirve para todos los tipos num (enteros y flotantes)
+forma de llamada: abs(x) (x es el receptor; un método num sin argumentos hoy solo admite esta forma, porque
+la forma con punto x.abs() no está soportada — la unión num anidada todavía no monomorfiza el receptor — igual que num.sign);
+los negativos se invierten con overflow=wrap (el valor absoluto de i64.MIN se sale del rango de i64)
+`
+  'num.clamp': `
+limita al rango [lo, hi]
+uso: x.clamp(lo, hi, r)
+`
+  'num.sign': 'el signo (-1, 0, 1) — sirve para todos los tipos num (enteros y flotantes)'
+}

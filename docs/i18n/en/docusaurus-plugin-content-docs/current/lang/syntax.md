@@ -557,6 +557,13 @@ get = (i i64) (val ?str) {
 Translations live in `locales/<language>.doc.noml`, keyed by the anchor. A missing
 translation falls back to the comment's own text rather than becoming blank.
 
+Every documented function and method in the standard library already carries an
+anchor (about 2000 of them), so a translation becomes visible in the LSP the moment
+it lands. `make i18n` writes **only translated** entries into the catalog — it never
+copies the source text in as if it were a translation, which would put Chinese back
+into the English catalog. `go run ./i18n/cmd/genen -doc-missing` lists the anchors
+that are still untranslated.
+
 **LSP hints:** hovering the function name shows the translated block; hovering the
 link line itself shows what the anchor points at (also in the current language), so
 a translation can be checked without leaving the comment.

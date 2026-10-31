@@ -122,16 +122,29 @@ LD_FLAGS_WITH_SIG_ON = $(subst -ldflags=",-ldflags="$(LLVM_CAPI_ON_X) ,$(LD_FLAG
 stamp-traceid: FORCE
 	@bash scripts/stamp_traceid.sh $(TRACE_ID_FILES)
 
-# Regenerate the English catalogs from the source:
+# Regenerate the English message catalog from the source:
 #   src/i18n/catalog/locales/en.noml      from i18n.T / i18n.P / i18n.Errorf call sites
-#   src/i18n/catalog/locales/en.doc.noml  from `; ... ; [label](#anchor)` doc comments
-# Run this after adding or editing a message or a doc comment, then translate any
-# new keys in zh-CN.noml / zh-CN.doc.noml. A doc value is seeded once and then
-# preserved, so hand edits to en.doc.noml survive. The catalog gate
-# (`go test ./i18n/catalog/`) fails when a committed file is stale.
+# and prune the English doc catalog:
+#   src/i18n/catalog/locales/en.doc.noml  keys come from `; ... ; [label](#anchor)`
+#                                         doc comments, values are hand-written
+#
+# Run this after adding or editing a message or a doc comment. Messages are
+# generated; doc entries are NOT seeded — a scanned anchor with no committed
+# translation stays absent, and a committed translation survives only while its
+# anchor still exists in the source. So every doc catalog (en included) holds
+# translations only; English is a translation target just like any other tag.
+# Translate the new anchors listed by `make i18n-missing`, then re-run this.
+# The catalog gate (`go test ./i18n/catalog/`) fails when a committed file is stale.
 .PHONY: i18n
 i18n: FORCE
 	cd src && $(GO) run ./i18n/cmd/genen
+
+# List the doc anchors that are present in the source but still have no
+# translation in en.doc.noml.  Add them there (and to the other locales),
+# then run `make i18n` again to prune orphans.
+.PHONY: i18n-missing
+i18n-missing: FORCE
+	cd src && $(GO) run ./i18n/cmd/genen -doc-missing
 
 # ── NO ────────────────────────────────
 $(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)

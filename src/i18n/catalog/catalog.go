@@ -83,46 +83,73 @@ func IsDocCatalogName(name string) bool {
 	return strings.HasSuffix(name, DocCatalogSuffix)
 }
 
-// DocCatalogHeader is the fixed preamble of a generated `en.doc.noml`.
-const DocCatalogHeader = "; Nolang doc catalog: en\n" +
-	"; Source-comment translations, keyed by the anchor an author wrote in a\n" +
-	"; trailing `[label](#anchor)` line. New keys are SEEDED from the comment text\n" +
-	"; by `make i18n`; an existing value is preserved, so this file is meant to be\n" +
-	"; edited by hand. Every key must still exist in some .no source, or the gate\n" +
-	"; rejects it as an orphan.\n"
+// DocCatalogHeaderFor is the fixed preamble of a rendered doc catalog.
+//
+// The text spells out the rule that makes this file unlike en.noml: it holds
+// TRANSLATIONS ONLY. An anchor that is not in here falls back to the comment
+// text in the .no source, which is exactly what an untranslated block should do.
+// Seeding every anchor with its source text would fill the English catalog with
+// Chinese, which is the failure mode en.noml was already fixed for.
+func DocCatalogHeaderFor(tag string) string {
+	return "; Nolang doc catalog: " + tag + "\n" +
+		"; Source-comment translations, keyed by the anchor an author wrote in a\n" +
+		"; trailing `[label](#anchor)` line. This file holds TRANSLATIONS ONLY: an\n" +
+		"; anchor that is absent falls back to the comment text in the .no source, so\n" +
+		"; untranslated blocks degrade to the author's language instead of shipping a\n" +
+		"; copy of it here. Every key must still exist in some .no source, or the gate\n" +
+		"; rejects it as an orphan.\n"
+}
 
 // RenderDoc renders a doc catalog, sorted by key.
-func RenderDoc(entries map[string]string) string {
+func RenderDoc(tag string, entries map[string]string) string {
 	var sb strings.Builder
-	sb.WriteString(DocCatalogHeader)
+	sb.WriteString(DocCatalogHeaderFor(tag))
 	sb.WriteString("{\n")
 	writeEntries(&sb, entries)
 	sb.WriteString("}\n")
 	return sb.String()
 }
 
-// MergeDocTranslations returns the doc table to render: every scanned key,
-// keeping the value already present in the committed catalog when there is one.
+// PruneDocTranslations returns the doc table to render: the committed values,
+// restricted to anchors that still exist in the source.
 //
-// This is the mechanism that lets en.doc.noml be simultaneously generated and
-// hand-editable. A message's English lives at the Go call site, so the generator
-// owns it; a doc line's source text lives in the .no comment, so re-seeding would
-// silently revert every translation on the next `make i18n`.
+// Two deliberate choices, both different from message catalogs:
+//
+//   - a scanned anchor with no committed value is NOT seeded. The source text is
+//     the author's language, and English is a translation target for it, so
+//     seeding would put Chinese into en.doc.noml and, worse, would make the
+//     catalog claim a translation that no one wrote.
+//   - a committed value is preserved verbatim, even if the source comment was
+//     reworded. The anchor, not the text, is the key, so rewording must not
+//     orphan a translation.
 //
 // The generator and the freshness gate both call this, so "what `make i18n`
 // writes" and "what the gate expects" cannot drift.
-func MergeDocTranslations(scanned, existing map[string]string) map[string]string {
-	if len(scanned) == 0 {
+func PruneDocTranslations(scanned, existing map[string]string) map[string]string {
+	if len(existing) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(scanned))
-	for id, text := range scanned {
-		if prev, ok := existing[id]; ok && prev != "" {
-			out[id] = prev
+	out := make(map[string]string, len(existing))
+	for anchor, text := range existing {
+		if _, ok := scanned[anchor]; !ok || text == "" {
 			continue
 		}
-		out[id] = text
+		out[anchor] = text
 	}
+	return out
+}
+
+// MissingDocTranslations lists, in sorted order, the anchors the source defines
+// but a doc catalog does not translate yet. Used by the generator's report so a
+// translator can see the remaining work without diffing two files.
+func MissingDocTranslations(scanned, existing map[string]string) []string {
+	var out []string
+	for anchor := range scanned {
+		if _, ok := existing[anchor]; !ok {
+			out = append(out, anchor)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

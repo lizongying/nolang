@@ -1,16 +1,3346 @@
 ; Nolang doc catalog: zh-CN
 ; Source-comment translations, keyed by the anchor an author wrote in a
-; trailing `[label](#anchor)` line. Keys come from en.doc.noml; never invent one.
-; A missing key falls back to the comment text in the source, so an untranslated
-; block degrades to the author's language rather than disappearing.
+; trailing `[label](#anchor)` line. This file holds TRANSLATIONS ONLY: an
+; anchor that is absent falls back to the comment text in the .no source, so
+; untranslated blocks degrade to the author's language instead of shipping a
+; copy of it here. Every key must still exist in some .no source, or the gate
+; rejects it as an orphan.
 {
   'args.count': `
-count: 参数数量（含程序名）
+参数数量（含程序名）
 委派至 os.args() builtin（返回完整 argv 向量，取其长度）
 `
   'args.get': `
-get: 获取第 i 个参数
+获取第 i 个参数
 委派至 os.arg(i) builtin（读取 main 的 argv[i]）；越界返回 nil
 `
-  'args.program': 'program: 程序名（第 0 个参数）'
+  'args.get-option': `
+获取选项值（如 --output=xxx）
+返回 val ?str: ok=选项值, nil=未找到
+`
+  'args.get-positional': `
+获取第 i 个位置参数（跳过标记）
+返回 val ?str: ok=位置参数值, nil=不存在
+`
+  'args.has-flag': '判断标记是否存在（如 --verbose, -v）'
+  'args.program': '程序名（第 0 个参数）'
+  'arr.arr-stack-init': `
+[n]t.arr-stack-init: 初始化栈状态
+cap 自动设为数组大小 n
+返回 s arr-stack: 初始化后的栈状态
+`
+  'arr.arr-stack-peek': `
+[n]t.arr-stack-peek: 查看栈顶元素（不移除）
+s arr-stack: 栈状态
+返回 val ?t: ok=栈顶值, nil=栈为空
+`
+  'arr.arr-stack-pop': `
+[n]t.arr-stack-pop: 从栈顶弹出元素
+s arr-stack: 栈状态
+返回 val ?t: ok=弹出值, nil=栈为空
+`
+  'arr.arr-stack-push': `
+[n]t.arr-stack-push: 推入元素到栈顶
+s arr-stack: 栈状态
+val t: 要推入的值
+返回 ok bool: true=成功, false=栈已满
+`
+  'arr.asc': '[n]t.asc: 升序原地排序（插入排序）'
+  'arr.at': `
+[n]t.at: 安全索引访问
+i i64: 索引
+返回 val ?t: 越界返回 nil
+`
+  'arr.clone': '[n]t.clone: 将数组复制到 dst'
+  'arr.contains': '[n]t.contains: 是否包含值 val'
+  'arr.count': `
+[n]t.count: 统计值出现次数
+val t: 要统计的值
+返回 cnt i64: 出现次数
+`
+  'arr.desc': '[n]t.desc: 降序原地排序（插入排序）'
+  'arr.eq': '[n]t.eq: 比较两个数组是否相等'
+  'arr.fill': '[n]t.fill: 全部填充为 val'
+  'arr.first': '[n]t.first: 第一个元素'
+  'arr.index-of': '[n]t.index-of: 找到值返回索引，否则 -1'
+  'arr.last': '[n]t.last: 最后一个元素'
+  'arr.len': `
+[n]t.len: 返回数组长度
+注：输出参数用 out 而非 n，避免与泛型参数 n 冲突
+`
+  'arr.link-clear': `
+[n]t.link-clear: 清空链表，回收所有节点
+l link: 链表状态
+`
+  'arr.link-find': `
+[n]t.link-find: 查找值的位置
+l link: 链表状态
+val t: 要查找的值
+返回 pos i64: 位置索引, -1=未找到
+`
+  'arr.link-get-at': `
+[n]t.link-get-at: 取得指定位置的元素
+l link: 链表状态
+pos i64: 位置
+返回 val ?t: ok=元素值, nil=位置越界
+`
+  'arr.link-init': `
+[n]t.link-init: 初始化链表
+nxt []i64: 下一节点索引数组（由调用方提供，大小 >= n）
+prv []i64: 前一节点索引数组（由调用方提供，大小 >= n）
+返回 l link: 初始化后的链表
+`
+  'arr.link-insert-at': `
+[n]t.link-insert-at: 在指定位置插入元素
+l link: 链表状态
+pos i64: 插入位置（0=头部, size=尾部）
+val t: 要插入的值
+返回 ok bool: true=成功, false=位置越界或节点池已满
+`
+  'arr.link-peek-back': `
+[n]t.link-peek-back: 查看尾部元素（不移除）
+l link: 链表状态
+返回 val ?t: ok=尾部值, nil=链表为空
+`
+  'arr.link-peek-front': `
+[n]t.link-peek-front: 查看头部元素（不移除）
+l link: 链表状态
+返回 val ?t: ok=头部值, nil=链表为空
+`
+  'arr.link-pop-back': `
+[n]t.link-pop-back: 从链表尾部弹出元素
+l link: 链表状态
+返回 val ?t: ok=弹出值, nil=链表为空
+`
+  'arr.link-pop-front': `
+[n]t.link-pop-front: 从链表头部弹出元素
+l link: 链表状态
+返回 val ?t: ok=弹出值, nil=链表为空
+`
+  'arr.link-push-back': `
+[n]t.link-push-back: 插入元素到链表尾部
+l link: 链表状态
+val t: 要插入的值
+返回 ok bool: true=成功, false=节点池已满
+`
+  'arr.link-push-front': `
+[n]t.link-push-front: 插入元素到链表头部
+l link: 链表状态
+val t: 要插入的值
+返回 ok bool: true=成功, false=节点池已满
+`
+  'arr.link-remove-at': `
+[n]t.link-remove-at: 移除指定位置的元素
+l link: 链表状态
+pos i64: 移除位置
+返回 val ?t: ok=移除的值, nil=位置越界
+`
+  'arr.link-reverse': `
+[n]t.link-reverse: 反转链表
+交换所有节点的 next/prev，然后交换 head/tail
+l link: 链表状态
+`
+  'arr.link-set-at': `
+[n]t.link-set-at: 设定指定位置的元素
+l link: 链表状态
+pos i64: 位置
+val t: 新值
+返回 ok bool: true=成功, false=位置越界
+`
+  'arr.max': '[n]t.max: 数组中的最大值'
+  'arr.min': '[n]t.min: 数组中的最小值'
+  'arr.queue-init': `
+[n]t.queue-init: 初始化队列状态
+cap 自动设为数组大小 n
+返回 q queue: 初始化后的队列状态
+`
+  'arr.queue-peek': `
+[n]t.queue-peek: 查看队首元素（不移除）
+q queue: 队列状态
+返回 val ?t: ok=队首值, nil=队列为空
+`
+  'arr.queue-pop': `
+[n]t.queue-pop: 从队列前端弹出元素
+q queue: 队列状态
+返回 val ?t: ok=弹出值, nil=队列为空
+`
+  'arr.queue-push': `
+[n]t.queue-push: 推入元素到队列尾端
+q queue: 队列状态
+val t: 要推入的值
+返回 ok bool: true=成功, false=队列已满
+`
+  'arr.reverse': '[n]t.reverse: 反转数组'
+  'arr.sum': '[n]t.sum: 数组元素总和'
+  'arr.swap': `
+[n]t.swap: 交换两位置元素
+i i64, j i64: 位置
+`
+  'arr.to-str': `
+[n]t.to-str: 字符串表示
+返回 out str: 格式如 '[1, 2, 3]'
+元素转字符串：逐元素调用其自身的 .to-str() 方法（具体类型见 number.no）
+`
+  'arr.to-vec': '[n]t.to-vec: 数组方法，转为 []t vec'
+  'arrords.asc': '[n]ord.asc: 升序原地排序（插入排序）'
+  'arrords.desc': '[n]ord.desc: 降序原地排序（插入排序）'
+  'async.cancel': `
+⚠️ 已废弃：手写 cancel 已废弃，请改用「协程组」（裸块 { ... }）。
+cancel: 取消一个通过 run() 启动的后台任务
+参数 task 为 run 返回的不透明句柄（i8*）。返回 void。
+`
+  'async.cancelled': `
+⚠️ 已废弃：手写 cancelled 已废弃，请改用「协程组」（裸块 { ... }）。
+cancelled: 检查当前正在执行的异步任务是否已被取消
+返回 bool。仅在异步任务（事件循环调度的 -async 函数）内调用才有意义。
+`
+  'bigint._add': 'a + b（运算符重载；书写 ?bigint，编译器视作 bigint）\n路线 C：联合形参 `(b big)` + 类型解构 match。bigint 臂委派 `add-bigint`、i64 臂委派\n`_add-i64`。核心刻意不内联于类型臂内：实测在 match 臂 BlockStatement 里对命名输出形参 `c`\n先 `c = expr` 再 `c.sign = ...` 的字段突变不会回写（符号丢失，如 -100+7 误得 93），\n委派到普通方法后 `c.sign` 突变语义回归正常（与 _mul 委派 mul-bigint 同理）。'
+  'bigint._add-i64': 'c = self + v（小整数加法）'
+  'bigint._div': 'a / b（运算符重载；除零依 div-mod 返回零；路线 C i64 臂借道 _div-i64）'
+  'bigint._div-i64': 'q = self / v（小整数除法）'
+  'bigint._mod': `
+a % b（运算符重载；除零依 div-mod 返回零；路线 C i64 臂借道 _mod-i64，其结果
+为 ?i64，先拆包（失败回 0，对齐 div-mod 除零返回零）再以 from-i64 提升为 bigint
+以对齐输出形参 r）
+`
+  'bigint._mod-i64': `
+r = self % v（小整数取模）
+返回 ?i64：`cur % r-v` 依 D6 统一 option 规则本就是 ?i64（除数为 0 时失败），
+结果参数刻意声明 plain 把它压平会造成静默拆包，故如实声明为 ?i64。
+`
+  'bigint._mul': `
+a * b（运算符重载；路线 C 同 _add，两臂皆委派给具体方法）
+bigint 臂委派 mul-bigint、i64 臂委派 _mul-i64。核心不内联于类型臂内是因为重量级
+循环／`with-len`／`#{overflow=wrap}` 嵌在 match 臂 BlockStatement 里的 lowering 边界
+会崩溃（实测 segfault），委派到普通方法后 `.` 接收者与输出形参语义回归正常，
+与可用的 _add i64 臂同形。
+`
+  'bigint._mul-i64': 'self * v（小整数乘法）'
+  'bigint._sub': 'a - b（运算符重载；委派策略同 _add）'
+  'bigint.abs-add': '|self| + |b|（忽略正负号）'
+  'bigint.abs-cmp': '比较 |self| 和 |b|（1=大, 0=等, -1=小）'
+  'bigint.abs-sub': '|self| - |b|（假设 |self| >= |b|，忽略正负号）'
+  'bigint.add-bigint': `
+self + b 的 big⊕big 核心（普通具体方法，非运算符重载；供 _add 委派）
+实参具名化：`v.abs-sub(s)` 的 s 需先 `s = .` 捕获（裸 `.` 作方法实参有既有降级缺口）。
+`
+  'bigint.cmp': '比较 self 和 b（1=大, 0=等, -1=小）'
+  'bigint.copy': `
+深度复制 bigint
+注意：不弃用（与 str/txt.copy 不同）。赋值 `b = a` 只复制 {sign,limbs,len} 描述符、
+与 a 共享同一条 limbs 缓冲区（实测 a.limbs[0] = 99 后 b.limbs[0] 同为 99），
+不具深拷贝语义。需要独立快照时必须使用本方法。
+`
+  'bigint.div-mod': 'self / b，同时返回商和余数'
+  'bigint.eq': 'self == b 吗？'
+  'bigint.from-i64': '从 i64 建立 bigint'
+  'bigint.from-u64': '从无号 i64 建立 bigint（永远正数）'
+  'bigint.gcd': 'g = gcd(self, b)（欧几里得算法）'
+  'bigint.is-neg': '是否为负数'
+  'bigint.is-pos': '是否为正数'
+  'bigint.is-zero': '是否为零'
+  'bigint.lcm': 'l = lcm(self, b)'
+  'bigint.mod-pow': 'r = self^exp mod modulus'
+  'bigint.mul-bigint': '|self| * |b| 的大整数核心（普通具体方法，非运算符重载；供 _mul 委派）'
+  'bigint.normalize': '移除前导零，确保 len >= 1'
+  'bigint.one': '建立壹值 bigint'
+  'bigint.pow': 'c = self^n（n >= 0，非负整数幂）'
+  'bigint.shl': 'c = a << n'
+  'bigint.shl1': 'self = self << 1'
+  'bigint.shr': 'c = a >> n'
+  'bigint.shr1': 'self = self >> 1'
+  'bigint.sub-bigint': 'self - b 的 big⊖big 核心（普通具体方法；供 _sub 委派）'
+  'bigint.to-hex': `
+将 bigint 转为十六进制字符串（小写）
+返回 out str: 十六进制字符串
+`
+  'bigint.to-i64': `
+为什么需要它：`_mod-i64` / `_div-i64` 这类小整数快速路径是本模块私有的（见上方
+私有约定）。外部模块拿到的是运算符结果（`% / * + -`，值域天然被除数界定在 i64 内）
+的 bigint，要取回 i64 必须走这个公开出口，而不是绕道调用私有方法。
+`
+  'bigint.to-str': `
+将 bigint 转为十进制字符串
+返回 out str: 十进制字符串
+`
+  'bigint.zero': '建立零值 bigint'
+  'bool.to-str': '将 bool 转为字符串 "true" 或 "false"'
+  'bufio.reader.close': '关闭读取器'
+  'bufio.reader.fill': '填充缓冲区'
+  'bufio.reader.init': '建立缓冲读取器'
+  'bufio.reader.read-byte': `
+读取一个字节
+返回 b ?byte: ok=字节值, nil=EOF 或错误
+`
+  'bufio.reader.read-line': `
+读取一行
+返回 line ?str: ok=读取内容, nil=EOF 或错误
+`
+  'bytes.index': `
+[]byte.index: 在 []byte 中查找 target 子串
+返回首次出现的位置，未找到返回 -1
+`
+  'bytes.index-from': `
+[]byte.index-from: 在 []byte 中从 from 位置开始查找 target 子串
+返回首次出现的位置，未找到返回 -1
+`
+  'bytes.len': `
+[]byte.len: 返回字节切片长度
+byte 是独立类型，非 u8 别名，因此 []byte.len 不会从 []t.len 自动实例化。
+`
+  'bytes.slice': `
+[]byte.slice: 截取子切片 [start, end)
+返回新切片
+`
+  'bytes.to-bytes-str': `
+[]byte.to-bytes-str: 1:1 逐字节拷贝（保留原 []byte.to-str 语义）。
+用于 buf 已经是合法 UTF-8 字节流的场景（读取文件 / 子进程输出），不需要按码点重编码。
+该函数等价于旧版 []byte.to-str。
+`
+  'bytes.to-chars': `
+⚠️ 编译器限制：当前 legacy 与 MIR 后端对 []char（i32 元素）切片的支持均不完整
+（与 []byte / []i64 不同，[]char 的 len/cap/stride 在 codegen 中存在隐性错误，
+构造出的 []char 运行期会越界损坏），故本方法暂不可用。
+若只需要「byte→码点→UTF-8 字符串」的最终结果，直接用 b.to-str() 即可——
+[]byte.to-str 已内联本语义（每个 byte 当 0~255 码点重新 UTF-8 编码），无需经过 []char。
+`
+  'bytes.to-hex': '[]byte.to-hex: 将 []byte 编码为大写十六进制字符串'
+  'bytes.to-hex-lower': '[]byte.to-hex-lower: 将 []byte 编码为小写十六进制字符串'
+  'bytes.to-i64-be': '[]byte.to-i64-be: 将大端序字节转为 int64（1~8 字节）'
+  'bytes.to-i64-le': '[]byte.to-i64-le: 将小端序字节转为 int64（1~8 字节）'
+  'bytes.to-str': `
+⚠️ 语义变更（2026-09-06，应需求方要求）：此前本方法是「1:1 逐字节拷贝」，是
+buf.to-str()（读取文件 / 子进程输出，buf 已是合法 UTF-8 字节流）所依赖的契约。
+改为「byte→码点→UTF-8 重新编码」后，对合法的多字节 UTF-8 字节流会做二次编码而损坏
+（例如磁盘上读到的 0xC3 0xA9 会被当成码点 0xC3、0xA9 各自重编码）。若需「原样拷贝
+合法 UTF-8 字节流」（文件 / 子进程读取场景），请改用保留了 1:1 拷贝语义的
+b.to-bytes-str()（见下方），或直接使用底层切片。
+`
+  'bytes.to-txt': `
+[]byte.to-txt: 将 []byte 转换为 txt（截断至 255 字节）
+返回 out txt: 固定 256 字节的 txt 结构
+`
+  'char.is-alnum': '判断是否为字母或数字'
+  'char.is-alpha': `
+判断是否为字母（A-Z a-z）
+is-letter 的别名
+`
+  'char.is-digit': '判断是否为数字（0-9）'
+  'char.is-letter': '判断是否为字母（A-Z a-z）'
+  'char.is-lower': '判断是否为小写字母（a-z）'
+  'char.is-space': '判断是否为空白字符（space tab newline cr）'
+  'char.is-upper': '判断是否为大写字母（A-Z）'
+  'char.to-bytes': '转为 UTF-8 编码的字节数组'
+  'char.to-lower': '转为小写（仅 ASCII）'
+  'char.to-str': '转为 UTF-8 编码的字符串'
+  'char.to-txt': `
+转为 UTF-8 编码的 txt（固定 256 字节结构）
+复用 char.to-bytes 得到 1~4 字节的 UTF-8 序列，再逐字节拷入 txt 缓冲区。
+与 str.to-txt / []byte.to-txt 一致，返回普通 txt（单码点转换不会失败，无需 ?txt）。
+有了它，txt.to-upper / to-lower 等可通过「取 char -> char.to-lower -> char.to-txt 串接」
+重写，无须再依赖会返回 char 的 txt[i] 下标写入。
+`
+  'char.to-upper': '转为大写（仅 ASCII）'
+  'chars.to-str': `
+⚠️ 注意：截至 2026-09-06，nolang 编译器对 []char 切片类型的支持不完整，本方法尚不可用：
+- legacy 后端：[]char 的 with-cap/push 对 len/cap 的单位（元素数 vs 字节数）处理有误，
+导致 .len() 返回的元素数偏大，[]char.to-str 会越界读取产生乱码（实测单个 push(72)
+也输出 "H"+乱码）。[]char 字面量与索引读取本身是 i32 stride 正确的，但 push 构造出的
+切片 len 字段被破坏。
+- MIR=3 门禁：编译器对 []char 元素类型与新增的 []t.to-chars 泛型方法均无支持，
+直接报 "unknown callee []t.to-chars"，无法编译通过。
+在编译器修复 []char 切片支持前，请勿依赖 to-chars / []char.to-str。
+`
+  'collection.arr-stack.arr-stack.clear': '清空堆栈'
+  'collection.arr-stack.arr-stack.empty': `
+判断堆栈是否为空
+返回 yes bool: true=空, false=非空
+`
+  'collection.arr-stack.arr-stack.full': `
+判断堆栈是否已满
+返回 yes bool: true=已满, false=未满
+`
+  'collection.arr-stack.arr-stack.size': `
+返回堆栈中元素数量
+返回 sz i64: 元素数量
+`
+  'collection.deque.deque.clear': '清空双端队列'
+  'collection.deque.deque.empty': `
+判断双端队列是否为空
+返回 true=空, false=非空
+`
+  'collection.deque.deque.peek-back': `
+查看后端元素（不移除）
+返回 val ?i64: ok=后端值, nil=队列为空
+`
+  'collection.deque.deque.peek-front': `
+查看前端元素（不移除）
+返回 val ?i64: ok=前端值, nil=队列为空
+`
+  'collection.deque.deque.pop-back': `
+从后端弹出元素
+返回 val ?i64: ok=弹出值, nil=队列为空
+`
+  'collection.deque.deque.pop-front': `
+从前端弹出元素
+返回 val ?i64: ok=弹出值, nil=队列为空
+`
+  'collection.deque.deque.push-back': '从后端推入元素'
+  'collection.deque.deque.push-front': '从前端推入元素'
+  'collection.deque.deque.size': '返回双端队列大小'
+  'collection.hash-set.hash-set.add': '加入元素，返回是否新增'
+  'collection.hash-set.hash-set.clear': '清空'
+  'collection.hash-set.hash-set.contains': '检查元素是否存在'
+  'collection.hash-set.hash-set.for-each': '遍历所有元素'
+  'collection.hash-set.hash-set.hash': '计算索引'
+  'collection.hash-set.hash-set.init': '初始化'
+  'collection.hash-set.hash-set.is-empty': '是否为空'
+  'collection.hash-set.hash-set.len': '返回元素数量'
+  'collection.hash-set.hash-set.remove': '删除元素，返回是否删除'
+  'collection.link.link.empty': `
+判断链表是否为空
+返回 yes bool: true=空, false=非空
+`
+  'collection.link.link.full': `
+判断节点池是否已满
+返回 yes bool: true=已满, false=未满
+`
+  'collection.link.link.size': `
+返回链表中元素数量
+返回 sz i64: 元素数量
+`
+  'collection.linked-hash-map.linked-hash-map.clear': '清空'
+  'collection.linked-hash-map.linked-hash-map.contains': '检查 key 是否存在'
+  'collection.linked-hash-map.linked-hash-map.for-each': '按插入顺序遍历所有 (key, value)'
+  'collection.linked-hash-map.linked-hash-map.get': '查找 key，返回 ?i64（nil=未找到）'
+  'collection.linked-hash-map.linked-hash-map.hash': '计算索引'
+  'collection.linked-hash-map.linked-hash-map.init': '初始化哈希表'
+  'collection.linked-hash-map.linked-hash-map.is-empty': '是否为空'
+  'collection.linked-hash-map.linked-hash-map.len': '返回元素数量'
+  'collection.linked-hash-map.linked-hash-map.put': '插入或更新 key→value'
+  'collection.linked-hash-map.linked-hash-map.remove': '删除 key'
+  'collection.map.hashmap-bool-tmpl.clear': '清空（重新配置 occ vec）'
+  'collection.map.hashmap-bool-tmpl.contains': '检查 key 是否存在'
+  'collection.map.hashmap-bool-tmpl.for-each': '遍历所有 (key, value)'
+  'collection.map.hashmap-bool-tmpl.get': '查找 key，返回 ?v（nil=未找到）'
+  'collection.map.hashmap-bool-tmpl.hash': '直接索引（true→1，false→0）'
+  'collection.map.hashmap-bool-tmpl.init': '初始化'
+  'collection.map.hashmap-bool-tmpl.is-empty': '是否为空'
+  'collection.map.hashmap-bool-tmpl.len': '返回元素数量'
+  'collection.map.hashmap-bool-tmpl.put': '插入或更新 key→value，返回是否新增（直接索引，无 rehash）'
+  'collection.map.hashmap-bool-tmpl.remove': '删除 key（标记墓碑，不清 keys/vals）'
+  'collection.map.hashmap-int-tmpl.clear': '清空（重新配置 occ vec）'
+  'collection.map.hashmap-int-tmpl.contains': '检查 key 是否存在'
+  'collection.map.hashmap-int-tmpl.for-each': '遍历所有 (key, value)'
+  'collection.map.hashmap-int-tmpl.get': '查找 key，返回 ?v（nil=未找到）'
+  'collection.map.hashmap-int-tmpl.hash': '计算索引（位元遮罩）'
+  'collection.map.hashmap-int-tmpl.init': '初始化'
+  'collection.map.hashmap-int-tmpl.is-empty': '是否为空'
+  'collection.map.hashmap-int-tmpl.len': '返回元素数量'
+  'collection.map.hashmap-int-tmpl.put': '插入或更新 key→value，返回是否新增'
+  'collection.map.hashmap-int-tmpl.rehash': '扩容并重新哈希所有 occ==1 条目'
+  'collection.map.hashmap-int-tmpl.remove': '删除 key（标记墓碑，不清 keys/vals）'
+  'collection.map.hashmap-str-tmpl.clear': '清空（重新配置 occ vec，旧 vec 由编译器 move 语义释放）'
+  'collection.map.hashmap-str-tmpl.contains': '检查 key 是否存在'
+  'collection.map.hashmap-str-tmpl.for-each': '遍历所有 (key, value)'
+  'collection.map.hashmap-str-tmpl.get': '查找 key，返回 ?v（nil=未找到）'
+  'collection.map.hashmap-str-tmpl.hash': 'FNV-1a 字符串哈希'
+  'collection.map.hashmap-str-tmpl.init': '初始化'
+  'collection.map.hashmap-str-tmpl.is-empty': '是否为空'
+  'collection.map.hashmap-str-tmpl.len': '返回元素数量'
+  'collection.map.hashmap-str-tmpl.put': '插入或更新 key→value，返回是否新增'
+  'collection.map.hashmap-str-tmpl.rehash': '扩容并重新哈希所有 occ==1 条目'
+  'collection.map.hashmap-str-tmpl.remove': '删除 key（标记墓碑，不清 keys/vals）'
+  'collection.map.hashmap-str-tmpl.str-eq': '比较两个 str 是否相等'
+  'collection.queue.queue.clear': '清空队列'
+  'collection.queue.queue.empty': `
+判断队列是否为空
+返回 yes bool: true=空, false=非空
+`
+  'collection.queue.queue.full': `
+判断队列是否已满
+返回 yes bool: true=已满, false=未满
+`
+  'collection.queue.queue.size': `
+返回队列中元素数量
+返回 sz i64: 元素数量
+`
+  'collection.stack.stack.clear': '清空堆栈'
+  'collection.stack.stack.empty': `
+判断堆栈是否为空
+返回 true=空, false=非空
+`
+  'collection.stack.stack.peek': `
+查看堆栈顶端元素（不移除）
+返回 val ?i64: ok=顶端值, nil=堆栈为空
+`
+  'collection.stack.stack.pop': `
+从堆栈顶端弹出元素
+返回 val ?i64: ok=弹出值, nil=堆栈为空
+`
+  'collection.stack.stack.push': '推入元素到堆栈顶端'
+  'collection.stack.stack.size': '返回堆栈大小'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.clear': '清空'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.contains': '检查 key 是否存在'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.for-each': '遍历所有 (key, value)'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.get': '查找 key，返回 ?v（nil=未找到）'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.hash': '直接索引（true→1，false→0）'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.init': '初始化'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.is-empty': '是否为空'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.len': '返回元素数量'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.put': '插入或更新 key→value，返回是否新增'
+  'collection.static-hashmap.static-hashmap-bool-tmpl.remove': '删除 key（标记墓碑）'
+  'collection.static-hashmap.static-hashmap-int-tmpl.clear': '清空'
+  'collection.static-hashmap.static-hashmap-int-tmpl.contains': '检查 key 是否存在'
+  'collection.static-hashmap.static-hashmap-int-tmpl.for-each': '遍历所有 (key, value)'
+  'collection.static-hashmap.static-hashmap-int-tmpl.get': '查找 key，返回 ?v（nil=未找到）'
+  'collection.static-hashmap.static-hashmap-int-tmpl.hash': '计算索引（位元遮罩）'
+  'collection.static-hashmap.static-hashmap-int-tmpl.init': '初始化'
+  'collection.static-hashmap.static-hashmap-int-tmpl.is-empty': '是否为空'
+  'collection.static-hashmap.static-hashmap-int-tmpl.len': '返回元素数量'
+  'collection.static-hashmap.static-hashmap-int-tmpl.put': '插入或更新 key→value，返回是否新增'
+  'collection.static-hashmap.static-hashmap-int-tmpl.remove': '删除 key（标记墓碑）'
+  'collection.static-hashmap.static-hashmap-str-tmpl.clear': '清空'
+  'collection.static-hashmap.static-hashmap-str-tmpl.contains': '检查 key 是否存在'
+  'collection.static-hashmap.static-hashmap-str-tmpl.for-each': '遍历所有 (key, value)'
+  'collection.static-hashmap.static-hashmap-str-tmpl.get': '查找 key，返回 ?v（nil=未找到）'
+  'collection.static-hashmap.static-hashmap-str-tmpl.hash': 'FNV-1a 字符串哈希'
+  'collection.static-hashmap.static-hashmap-str-tmpl.init': '初始化'
+  'collection.static-hashmap.static-hashmap-str-tmpl.is-empty': '是否为空'
+  'collection.static-hashmap.static-hashmap-str-tmpl.len': '返回元素数量'
+  'collection.static-hashmap.static-hashmap-str-tmpl.put': '插入或更新 key→value，返回是否新增'
+  'collection.static-hashmap.static-hashmap-str-tmpl.remove': '删除 key（标记墓碑）'
+  'collection.static-hashmap.static-hashmap-str-tmpl.str-eq': '比较两个 str 是否相等'
+  'collection.str-map.str-map.clear': '清空'
+  'collection.str-map.str-map.contains': '检查 key 是否存在'
+  'collection.str-map.str-map.for-each': '遍历所有 (key, value)'
+  'collection.str-map.str-map.get': '查找 key，返回 ?str（nil=未找到）'
+  'collection.str-map.str-map.hash': 'FNV-1a 字符串哈希'
+  'collection.str-map.str-map.init': '初始化'
+  'collection.str-map.str-map.is-empty': '是否为空'
+  'collection.str-map.str-map.len': '返回元素数量'
+  'collection.str-map.str-map.put': '插入或更新 key→value，返回是否新增'
+  'collection.str-map.str-map.remove': '删除 key'
+  'collection.str-map.str-map.str-eq': '比较两个 str 是否相等'
+  'collection.str-map.str-map.to-str': `
+字符串表示
+格式如 `{name: Alice, age: 18}`
+`
+  'collection.str-set.str-set.add': '加入元素，返回是否新增'
+  'collection.str-set.str-set.clear': '清空'
+  'collection.str-set.str-set.contains': '检查元素是否存在'
+  'collection.str-set.str-set.for-each': '遍历所有元素'
+  'collection.str-set.str-set.hash': 'FNV-1a 字符串哈希'
+  'collection.str-set.str-set.init': '初始化'
+  'collection.str-set.str-set.is-empty': '是否为空'
+  'collection.str-set.str-set.len': '返回元素数量'
+  'collection.str-set.str-set.remove': '删除元素'
+  'collection.str-set.str-set.str-eq': '比较两个 str 是否相等'
+  'collection.tree-map.tree-map.alloc-node': `
+从空闲池分配节点
+返回 idx i64: 节点索引，-1=池已满
+`
+  'collection.tree-map.tree-map.bf': `
+取得平衡因子（左高 - 右高）
+idx i64: 节点索引
+返回 b i64: 平衡因子
+`
+  'collection.tree-map.tree-map.clear': '清空所有元素，重建空闲池'
+  'collection.tree-map.tree-map.contains': `
+检查键是否存在
+key i64: 键
+返回 yes bool: true=存在, false=不存在
+`
+  'collection.tree-map.tree-map.empty': `
+判断是否为空
+返回 yes bool: true=空, false=非空
+`
+  'collection.tree-map.tree-map.first': `
+取得最小键
+返回 key ?i64: ok=最小键, nil=空树
+`
+  'collection.tree-map.tree-map.for-each': `
+按键升序遍历所有键值对
+k i64: 输出键（每个元素更新）
+v i64: 输出值（每个元素更新）
+`
+  'collection.tree-map.tree-map.free-node': `
+将节点归还空闲池
+idx i64: 要释放的节点索引
+`
+  'collection.tree-map.tree-map.full': `
+判断节点池是否已满
+返回 yes bool: true=已满, false=未满
+`
+  'collection.tree-map.tree-map.get': `
+查找键对应的值
+key i64: 键
+返回 val ?i64: ok=找到, nil=未找到
+`
+  'collection.tree-map.tree-map.ht': `
+取得节点高度（NIL=0）
+idx i64: 节点索引
+返回 h i64: 高度
+`
+  'collection.tree-map.tree-map.init': '初始化空树与空闲节点池'
+  'collection.tree-map.tree-map.last': `
+取得最大键
+返回 key ?i64: ok=最大键, nil=空树
+`
+  'collection.tree-map.tree-map.lower-bound': `
+找第一个 >= target 的键
+target i64: 目标键
+返回 key ?i64: ok=找到, nil=无此键
+`
+  'collection.tree-map.tree-map.put': `
+插入或更新 key→value
+key i64: 键
+val i64: 值
+返回 ok bool: true=新增, false=更新已存在键或池已满
+`
+  'collection.tree-map.tree-map.rebalance': `
+在节点 idx 检查并修复平衡
+idx i64: 节点索引
+返回 nr i64: 再平衡后的子树根索引
+`
+  'collection.tree-map.tree-map.rebalance-up': `
+从 idx 向上逐层再平衡
+idx i64: 起始节点索引
+`
+  'collection.tree-map.tree-map.remove': `
+删除键
+key i64: 键
+返回 ok bool: true=已删除, false=未找到
+`
+  'collection.tree-map.tree-map.rot-left': `
+左旋
+x                y
+/ \              / \
+a   y     =>     x   c
+/ \          / \
+b   c        a   b
+x i64: 旋转轴节点
+`
+  'collection.tree-map.tree-map.rot-right': `
+右旋
+x              y
+/ \            / \
+y   c   =>     a   x
+/ \                / \
+a   b              b   c
+x i64: 旋转轴节点
+`
+  'collection.tree-map.tree-map.size': `
+返回元素数量
+返回 sz i64: 元素数量
+`
+  'collection.tree-map.tree-map.successor': `
+求节点的中序后继
+idx i64: 节点索引
+返回 succ i64: 后继索引，-1=无后继
+`
+  'collection.tree-map.tree-map.update-ht': `
+重新计算节点高度
+idx i64: 节点索引
+`
+  'collection.tree-map.tree-map.upper-bound': `
+找第一个 > target 的键
+target i64: 目标键
+返回 key ?i64: ok=找到, nil=无此键
+`
+  'collection.tree-set.tree-set.add': `
+加入元素
+key i64: 要加入的值
+返回 ok bool: true=新增, false=已存在或池已满
+`
+  'collection.tree-set.tree-set.alloc-node': `
+从空闲池分配节点
+返回 idx i64: 节点索引，-1=池已满
+`
+  'collection.tree-set.tree-set.bf': `
+取得平衡因子（左高 - 右高）
+idx i64: 节点索引
+返回 b i64: 平衡因子
+`
+  'collection.tree-set.tree-set.clear': '清空所有元素，重建空闲池'
+  'collection.tree-set.tree-set.contains': `
+检查元素是否存在
+key i64: 要检查的值
+返回 yes bool: true=存在, false=不存在
+`
+  'collection.tree-set.tree-set.empty': `
+判断是否为空
+返回 yes bool: true=空, false=非空
+`
+  'collection.tree-set.tree-set.first': `
+取得最小值
+返回 val ?i64: ok=最小值, nil=空集合
+`
+  'collection.tree-set.tree-set.for-each': `
+按升序遍历所有元素
+val i64: 输出值（每个元素更新）
+`
+  'collection.tree-set.tree-set.free-node': `
+将节点归还空闲池
+idx i64: 要释放的节点索引
+`
+  'collection.tree-set.tree-set.full': `
+判断节点池是否已满
+返回 yes bool: true=已满, false=未满
+`
+  'collection.tree-set.tree-set.ht': `
+取得节点高度（NIL=0）
+idx i64: 节点索引
+返回 h i64: 高度
+`
+  'collection.tree-set.tree-set.init': '初始化空树与空闲节点池'
+  'collection.tree-set.tree-set.last': `
+取得最大值
+返回 val ?i64: ok=最大值, nil=空集合
+`
+  'collection.tree-set.tree-set.lower-bound': `
+找第一个 >= target 的元素
+target i64: 目标值
+返回 val ?i64: ok=找到, nil=无此元素
+`
+  'collection.tree-set.tree-set.rebalance': `
+在节点 idx 检查并修复平衡
+idx i64: 节点索引
+返回 nr i64: 再平衡后的子树根索引
+`
+  'collection.tree-set.tree-set.rebalance-up': `
+从 idx 向上逐层再平衡
+idx i64: 起始节点索引
+`
+  'collection.tree-set.tree-set.remove': `
+删除元素
+key i64: 要删除的值
+返回 ok bool: true=已删除, false=未找到
+`
+  'collection.tree-set.tree-set.rot-left': `
+左旋
+x                y
+/ \              / \
+a   y     =>     x   c
+/ \          / \
+b   c        a   b
+x i64: 旋转轴节点
+`
+  'collection.tree-set.tree-set.rot-right': `
+右旋
+x              y
+/ \            / \
+y   c   =>     a   x
+/ \                / \
+a   b              b   c
+x i64: 旋转轴节点
+`
+  'collection.tree-set.tree-set.size': `
+返回元素数量
+返回 sz i64: 元素数量
+`
+  'collection.tree-set.tree-set.successor': `
+求节点的中序后继
+idx i64: 节点索引
+返回 succ i64: 后继索引，-1=无后继
+`
+  'collection.tree-set.tree-set.update-ht': `
+重新计算节点高度
+idx i64: 节点索引
+`
+  'collection.tree-set.tree-set.upper-bound': `
+找第一个 > target 的元素
+target i64: 目标值
+返回 val ?i64: ok=找到, nil=无此元素
+`
+  'dom.append-child': '附加（或移动）子节点到 parent 尾端'
+  'dom.attribute-count': '属性数量'
+  'dom.attribute-name': '第 i 个属性名（按文档顺序，越界返回 nil）'
+  'dom.attribute-value': '第 i 个属性值（越界返回 nil）'
+  'dom.blob-has': '在空格补齐的词表 blob 中查找整词 name'
+  'dom.child-at': '第 i 个子节点（越界返回 nil）'
+  'dom.child-count': '子节点数'
+  'dom.class-has': 'class 值（空白分隔多词）是否含词 cls'
+  'dom.cp-append': '把码点 cp 以 UTF-8 追加到 out（返回新字符串）'
+  'dom.create-comment': '建立注释节点'
+  'dom.create-element': '建立游离元素节点（尚未附加）'
+  'dom.create-text-node': '建立文本节点'
+  'dom.decode-entities': `
+解码 s[from..to) 的实体（命名实体查 DOM-ENTITY-BLOB，数字实体 &#NN; 或 &#xHH;）
+html=true：未知或未闭合实体按原文保留；html=false：未知实体判为错误
+返回 out=解码结果, ok=是否成功（XML 模式下非法实体 ok=false）
+`
+  'dom.document-element': '根元素（第一个 ELEMENT 子节点）'
+  'dom.dom-closers-of': '打开标签 t 时应先闭合的开放标签词表（空串=无规则）'
+  'dom.dom-pool.alloc': '分配新节点（附带平行 names/vals 槽位），返回索引'
+  'dom.dom-pool.append': '将 child 附加到 parent 子链表尾端（已有父节点先摘除）'
+  'dom.dom-pool.attr-edge-at': '取节点第 i 条属性边索引（按文档顺序），-1=越界'
+  'dom.dom-pool.collect-class': '收集 node 子树中 class 属性含 cls 词的元素索引'
+  'dom.dom-pool.collect-tag': '收集 node 子树中标签名为 want（star=true 时所有元素）的元素索引'
+  'dom.dom-pool.detach': '从父节点摘除 child（保持子链表完整）'
+  'dom.dom-pool.find-attr': '查找节点 name 属性对应的边索引，返回 -1 表示不存在'
+  'dom.dom-pool.find-id-node': '在 node 子树中递归查找 id 属性等于 id 的元素，-1=未找到'
+  'dom.dom-pool.html-add-text': '把 s[from..to) 按 HTML 实体规则解码为文本节点附加到 parent'
+  'dom.dom-pool.html-bogus-comment': '以 \'<!\' 开头的其他内容，直到 \'>\'，作为注释保存'
+  'dom.dom-pool.html-parse-attr': '解析 HTML 属性（支持无引号值），重复属性首个为准'
+  'dom.dom-pool.html-parse-close-name': '解析 \'</name\'，返回 \'>\' 之后的位置与小写标签名'
+  'dom.dom-pool.html-parse-comment': '解析 <!--...-->，EOF 容错'
+  'dom.dom-pool.html-parse-doc': '解析整份 HTML 文档（永不失败），返回 document 根索引'
+  'dom.dom-pool.html-parse-open': `
+解析开始标签并附加元素到 cur
+返回 np=下一位置、el=元素索引、mode：
+0=非法 '<'（已作文字）、1=普通元素（调用方入栈）、2=void/自闭合、3=raw-text 已吞内容
+`
+  'dom.dom-pool.html-parse-pi': '\'<?...>\'（HTML 中按 bogus comment 处理，此处保存为 PI 节点）'
+  'dom.dom-pool.html-set-attr-once': '仅当属性不存在时设置（HTML 重复属性首个为准）'
+  'dom.dom-pool.init': '初始化节点池（堆 vec 需先初始化方能安全 push）'
+  'dom.dom-pool.insert-before': '将 node 插入 parent 的 ref 之前（ref 非法或非 parent 之子时附加到尾端）'
+  'dom.dom-pool.parse-doctype-node': `
+解析 <!DOCTYPE ...>（含内部子集与引号），XML/HTML 共用
+内容原样存放（不解实体）；名称为 '!' 后的第一个词
+`
+  'dom.dom-pool.remove-attr': '移除属性，返回是否找到'
+  'dom.dom-pool.ser': '序列化单个节点（outer）'
+  'dom.dom-pool.ser-children': '序列化 idx 的全部子节点'
+  'dom.dom-pool.set-attr': '设置属性（存在则改值，否则按文档顺序附加到尾端）'
+  'dom.dom-pool.text-of': '递归收集 idx 子树的文本内容（TEXT/CDATA）'
+  'dom.dom-pool.valid': '节点索引是否合法'
+  'dom.dom-pool.xml-add-text': '把 s[from..to) 解码为文本节点附加到 parent'
+  'dom.dom-pool.xml-parse-attr': `
+解析一个属性（xml=true 时值必须加引号且重复属性判错）
+返回下一位置与成功标志
+`
+  'dom.dom-pool.xml-parse-cdata': '解析 <![CDATA[...]]>，附加到 parent'
+  'dom.dom-pool.xml-parse-close': '解析结尾标签 </name>，必须与 node 的标签名相符'
+  'dom.dom-pool.xml-parse-comment': '解析 <!--...-->，附加到 parent，返回下一位置'
+  'dom.dom-pool.xml-parse-doc': '解析整份 XML 文档，返回 document 根索引'
+  'dom.dom-pool.xml-parse-element': `
+解析一个元素（含子节点），附加到 parent
+p 指向 '<'；depth 为当前嵌套深度
+`
+  'dom.dom-pool.xml-parse-pi': '解析 <?target data?>，附加到 parent'
+  'dom.dom-strip-bom': 'strip-bom: 去掉开头 UTF-8 BOM，返回起始偏移'
+  'dom.esc-attr': '转义属性值中的 &、<、> 与双引号'
+  'dom.esc-text': '转义文本中的 &、< 与 >'
+  'dom.find-entity': '在 DOM-ENTITY-BLOB 中查找命名实体码点，-1=未找到'
+  'dom.first-child': 'dom.first-child / last-child / next-sibling / prev-sibling'
+  'dom.get-attribute': '读取属性值（nil=不存在；HTML 模式下名字大小写不敏感）'
+  'dom.get-element-by-id': '按 id 属性查找元素'
+  'dom.get-elements-by-class-name': '全文档收集 class 含指定词的元素'
+  'dom.get-elements-by-tag-name': '全文档收集指定标签名元素；\'*\' 返回全部元素'
+  'dom.has-attribute': '是否存在属性'
+  'dom.html-close-match': `
+判断 s[pos..] 是否为 name 的结尾标签名（大小写不敏感，
+结束后必须紧跟 '>'、'/'、'=' 或空白）
+`
+  'dom.html-peek-name': '查看 s[p] 起的 \'<\' 之后的标签名（小写），非法返回空串'
+  'dom.inner-html': '序列化节点的全部子节点'
+  'dom.insert-child-before': '将 child 插入 parent 的 ref 之前'
+  'dom.is-html': '是否为 HTML 模式（影响 void 元素序列化与名字大小写）'
+  'dom.is-name-byte': 'XML/HTML 标签与属性名字符（ASCII 子集 + UTF-8 高字节放行）'
+  'dom.kind': '节点类型（DOM-KIND-* 常量，-1=非法索引）'
+  'dom.name': '元素标签名 / PI 目标 / DOCTYPE 名称'
+  'dom.new-document': `
+建立空文档
+用法：
+d = dom.new-document(true)   // HTML 文档
+`
+  'dom.outer-html': '序列化单个节点（含自身）'
+  'dom.parent': '父节点索引（-1=无）'
+  'dom.parse-html': '宽松解析 HTML（永不失败），返回 document'
+  'dom.parse-numeric-entity': `
+解析 &#...; 的十进制/十六进制码点，非法返回 -1
+s[pos] 起为数字部分（可 'x'/'X' 开头表示十六进制），end 为 ';' 位置
+`
+  'dom.parse-xml': '严谨解析 XML，失败返回 err(含错误位置)'
+  'dom.remove-attribute': '移除属性，返回是否找到'
+  'dom.remove-child': '从 parent 摘除 child'
+  'dom.replace-child': '用 new 替换 parent 的 old'
+  'dom.set-attribute': '设置属性（存在则覆盖）'
+  'dom.set-node-value': '设置节点值'
+  'dom.set-text-content': '清空子节点并设为单一文本节点'
+  'dom.text-content': '子树文本内容（TEXT/CDATA 递归串接）'
+  'dom.to-string': '序列化整份文档（innerHTML of document）'
+  'dom.value': '节点值（text/cdata/comment 内容、PI 数据、DOCTYPE 原始内容）'
+  'dom.xml-read-name': '从 p 读取名字（名字符序列），返回结束位置'
+  'dom.xml-skip-ws': '跳过 XML 空白（空格/Tab/CR/LF）'
+  'encoding.base64.b64-val': `
+单个 Base64 字符转数值
+填充字符返回 0，无效字符返回 -1
+`
+  'encoding.base64.decode': `
+使用指定字母表进行 Base64 解码
+s str: Base64 字符串
+table str: Base64 字母表
+返回 out ?[]byte: ok=解码后数据, err=无效字符
+`
+  'encoding.base64.encode': `
+使用指定字母表进行 Base64 编码
+data []byte: 输入数据
+table str: Base64 字母表
+返回 out str: Base64 编码字符串
+`
+  'encoding.base64.encode-std': `
+使用标准字母表编码
+data []byte: 输入数据
+返回 out str: Base64 编码字符串
+`
+  'encoding.base64.encode-url': `
+使用 URL 安全字母表编码
+data []byte: 输入数据
+返回 out str: Base64 编码字符串
+`
+  'encoding.csv.encode-field': `
+将一个字段编码为 CSV 格式
+若包含逗号、双引号或换行，则用双引号包围并转义
+field str: 要编码的字段
+返回 out str: CSV 编码后的字符串
+`
+  'encoding.csv.parse-field': `
+解析 CSV 中的一个字段
+从 s[pos] 开始解析，处理双引号和逗号
+s str: CSV 文本
+pos i64: 开始位置
+返回 field str: 解析出的字段内容
+返回 new-pos i64: 解析后的新位置
+`
+  'encoding.csv.parse-line': `
+解析一行 CSV 文本
+s str: CSV 文本
+max-fields i64: 最大字段数
+返回 fields []str: 解析出的字段数组
+`
+  'encoding.pem.pem-decode': `
+解析 PEM 格式字符串
+pem-str: PEM 格式字符串
+返回 ?pem-block: ok=解析成功, nil=解析失败
+`
+  'encoding.pem.pem-encode': `
+将原始字节编码为 PEM 格式字符串
+label str: PEM 标签（如 'CERTIFICATE'、'RSA PRIVATE KEY'）
+data []byte: 原始二进制数据
+返回 out str: PEM 格式字符串
+`
+  'env.get': `
+获取环境变量值
+返回 val ?str: ok=变量值, nil=未设置（os.get-env 直接以 option 呈现）
+`
+  'env.get-with-default': '获取环境变量，未设置时返回默认值'
+  'env.is-set': `
+判断环境变量是否已设置
+返回 true=已设置, false=未设置
+`
+  'env.lookup': `
+获取环境变量值
+返回 val ?str: ok=变量值, nil=不存在
+`
+  'env.set': `
+设置环境变量
+返回 true=成功, false=失败
+`
+  'env.unset': `
+删除环境变量（设为空字符串）
+返回 true=成功, false=失败
+`
+  'err._errno-to-code': '将 C errno 映射为 code 枚举（模块内私有，仅 from-errno 使用）'
+  'err.code': `
+取得错误码
+返回 ec: 错误码
+`
+  'err.code.to-name': `
+取得错误码变体名（不带 code. 前缀）
+返回 s: 变体名（如 'ok' / 'not-found' / 'io'）
+用法：
+n = code.io.to-name()     ; => 'io'
+`
+  'err.format': `
+将错误格式化为完整信息字符串
+返回 s: 'code.<变体名>: <msg>'，有位置信息时附加 ' at <file>:<line>:<col>'
+用法：
+s = err.new('disk full', code.io).format()   ; => 'code.io: disk full'
+e = err('no such file', code.not-found)      ; 位置由编译器注入
+t = e.format()                               ; => 'code.not-found: no such file at main.no:12:3'
+只要纯消息请用 err.msg()，只要错误码请用 err.code()
+`
+  'err.from-errno': `
+从 C errno 建立错误
+errno: C 标准错误码（如 13 = EACCES）
+`
+  'err.is': `
+检查错误码是否匹配
+ec: 要匹配的错误码
+返回 yes: 是否匹配
+`
+  'err.msg': `
+取得错误消息
+返回 msg: 错误消息
+`
+  'err.new': `
+建立错误
+msg: 错误消息
+ec: 错误码（code 枚举值，如 code.io；省略时为 code.unknown）
+`
+  'err.new-at': '建立带位置的错误（位置由调用方明确提供）'
+  'float.div': '浮点除法，返回商（a ÷ b）'
+  'float.is-inf': `
+判断是否为无穷大
+注意：不能写 `. + . == .`——对 ±0.0 也成立（0+0==0），会把零误判为无穷。
+加上非零条件后才是无穷的充要条件（有限非零数 x+x!=x；NaN 的比较恒 false）。
+`
+  'float.is-nan': '判断是否为 NaN'
+  'fmt.eprintf': '已移除（名称保留供解析）——调用即编译错误，请改用 eprint（自动换行）或 io.err（不换行）'
+  'fmt.fmt-apply-spec': `
+套用宽度、对齐与填充字符
+align: 60=左, 62=右, 94=居中, 0/61=右（默认）
+`
+  'fmt.fmt-bool': `
+布尔值格式化
+支持 width、align、fill、type(t)
+`
+  'fmt.fmt-f64': `
+浮点数格式化
+支持 type(f/e/g/t)、precision、sign、zero、width、align、fill
+`
+  'fmt.fmt-group-digits': `
+⚠️ 必须在「零填充之后」套用：f'{1234:08,d}' 是 0001,234（先补到 8 位再分组），
+先分组再补零会得到错误的 0001234,。
+`
+  'fmt.fmt-int': `
+有符号整数格式化
+支持 type(c/d/t/无)、sign(+/-/space)、zero、width、align、fill、千分位(,/_)
+`
+  'fmt.fmt-parse-spec': `
+解析格式规范字符串
+返回 fill/align/sign/alt/zero/width/grouping/precision/typ
+align/sign/grouping/typ 为字符 ASCII 值；alt/zero 为 0/1；precision=-1 表示未指定
+`
+  'fmt.fmt-str': `
+字符串格式化
+支持 precision(截断)、width、align、fill、type(t/v)
+`
+  'fmt.fmt-uint': `
+无符号整数格式化
+支持 type(b/o/d/x/X/t)、alt(#前缀)、zero、width、align、fill、千分位(,/_)
+`
+  'fmt.fmt-uint-base': `
+将 u64 按指定进制转为字符串
+base: 2/8/10/16；upper: hex 是否大写
+`
+  'fmt.printf': '已移除（名称保留供解析）——调用即编译错误，请改用 print（自动换行）或 io.out（不换行）'
+  'fmt.sprintf': '已废弃但仍可用，请改用 format'
+  'fs.close': '关闭文件描述符'
+  'fs.copy-file': '复制文件内容'
+  'fs.dir-entries': `
+用法：
+names = dir-entries('/path/to/dir')
+i <- [0..names.len()): {
+print(names[i])
+}
+`
+  'fs.exists': `
+判断路径是否存在（跟随符号链接）
+成功返回 true，失败返回 false
+`
+  'fs.file-size': '取得文件大小（同 stat-size）'
+  'fs.file.append': `
+追加数据到文件末尾
+简化实现：先读取现有内容再合并写入
+`
+  'fs.file.close': `
+关闭文件
+成功后 fd 重置为 -1
+标准文件（STDIN/STDOUT/STDERR）不会被关闭
+`
+  'fs.file.copy-to': `
+将本文件复制到 dst-path
+返回 true=成功, false=失败
+`
+  'fs.file.is-open': '检查文件是否已打开'
+  'fs.file.read': '从文件读取最多 n 字节到 buf'
+  'fs.file.read-bytes': `
+读取整个文件为 []byte（Rust 混合策略）
+返回 content ?[]byte:
+ok([]byte) — 成功，含文件内容
+nil        — 文件为空
+err        — 文件未打开或读取失败
+`
+  'fs.file.read-line': `
+从文件读取一行（最多 4096 字节）
+返回 line ?str: ok=读取内容, nil=EOF 或错误
+`
+  'fs.file.read-str': `
+读取整个文件为字符串
+返回 content ?str:
+ok(str) — 成功，含文件内容
+nil     — 文件为空
+err     — 文件未打开或读取失败
+`
+  'fs.file.size': '取得打开中文件的大小（通过 fstat(fd)，消除 TOCTOU）'
+  'fs.file.write': '将 data 的前 n 字节写入文件'
+  'fs.file.write-bytes': `
+将 []byte 写入文件（覆写整个文件）
+data []byte: 要写入的字节数组
+返回 ok ?bool:
+ok(true)  — 成功
+err       — 文件未打开或写入失败
+`
+  'fs.file.write-str': `
+将字符串写入文件（覆写整个文件）
+data str: 要写入的字符串
+返回 ok ?bool:
+ok(true)  — 成功
+err       — 文件未打开或写入失败
+`
+  'fs.fstat-size': `
+取得已打开文件的大小（用 fstat(fd)，消除 TOCTOU）
+fd: 已打开的文件描述符
+`
+  'fs.get-line': '从标准输入读取一行'
+  'fs.is-dir': '判断路径是否为目录'
+  'fs.is-file': '判断路径是否为普通文件'
+  'fs.link': `
+建立硬链接
+oldpath: 既有文件路径
+newpath: 新硬链接路径
+成功返回 true，失败返回 false
+`
+  'fs.list-dir': `
+用法：
+names = list-dir('/path/to/dir')
+i <- [0..names.len()): {
+print(names[i])
+}
+`
+  'fs.list-dir-2': `
+Windows 版本：使用 FindFirstFileA/FindNextFileA/FindClose
+FindFirstFileA 需要路径附加 '\*' 通配符
+`
+  'fs.list-dir-3': `
+WASI 版本：使用 POSIX opendir/readdir/closedir
+wasi-libc 提供 opendir/readdir/closedir（包装 WASI fd_readdir）
+`
+  'fs.lstat': `
+取得符号链接本身的信息（不跟随链接）
+与 stat 不同：对符号链接调用时返回链接本身的信息，而非目标
+p: 文件路径
+成功返回 true，失败返回 false
+`
+  'fs.mkdtemp': `
+建立唯一临时目录
+tmpl: 模板字符串，末尾必须为 'XXXXXX'
+成功返回实际目录名（some），失败返回 nil
+`
+  'fs.mkfifo': `
+建立命名管道（FIFO）
+p: 管道路径
+mode: 权限模式（如 0o644 = 420）
+成功返回 true，失败返回 false
+`
+  'fs.mknod': `
+建立特殊文件（管道、设备节点等）
+p: 文件路径
+mode: 文件类型与权限（如 0o644=420 普通文件，0o666=438 FIFO）
+dev: 设备号（对普通文件/FIFO 传 0）
+成功返回 true，失败返回 false（macOS/Windows 上可能不支持）
+`
+  'fs.mkstemp': `
+建立并打开唯一临时文件
+tmpl: 模板字符串，末尾必须为 'XXXXXX'（六个 X）
+成功返回实际文件名与文件描述符，失败返回空串与 fd=-1
+注意：返回顺序为 (name, fd) 而非 (fd, name)，因为 lastBuiltinExtra 机制要求
+第二返回值必须是 i64/bool 类型，str 必须为主返回值
+`
+  'fs.open': `
+打开文件（构造函数）
+opts: file-opts 结构体
+成功：f = file{ fd, path }（自动转为 ?file）
+失败：f = err('错误消息')
+`
+  'fs.open-file': '以自定义标志和权限打开文件'
+  'fs.open-read': '以只读模式打开文件'
+  'fs.open-write': '以写入模式打开文件（O-WRONLY|O-CREAT|O-TRUNC, 0644）'
+  'fs.read': '从文件描述符读取最多 n 字节到 buf'
+  'fs.read-bytes': `
+读取整个文件为 []byte
+p str: 文件路径
+返回 content ?[]byte:
+ok([]byte) — 成功，含文件内容
+nil        — 文件为空
+err        — 读取失败
+`
+  'fs.read-file': `
+[deprecated] read-file: 改用 read-bytes（支持错误处理、TOCTOU 安全、循环 read）
+read-file: 读取整个文件内容为 []byte（空 slice 表示失败，无法区分空文件与错误）
+`
+  'fs.read-stdin': `
+循环读取 stdin 全部内容为 []byte（不依赖 stat/fstat，对管道安全）
+返回 content ?[]byte:
+ok([]byte) — 成功，含 stdin 内容
+nil        — stdin 为空
+err        — 读取失败
+`
+  'fs.read-stdin-str': `
+循环读取 stdin 全部内容为 str（不依赖 stat/fstat，对管道安全）
+返回 content ?str:
+ok(str) — 成功，含 stdin 内容
+nil     — stdin 为空
+err     — 读取失败
+`
+  'fs.read-str': `
+读取整个文件为字符串
+p str: 文件路径
+返回 content ?str:
+ok(str) — 成功，含文件内容
+nil     — 文件为空
+err     — 读取失败
+`
+  'fs.readlink': `
+读取符号链接的目标路径
+p: 符号链接路径
+成功返回目标路径（some），失败返回 nil
+`
+  'fs.realpath': `
+解析绝对路径
+p: 输入路径（可能是相对路径或含 . / .. 的路径）
+成功返回规范化的绝对路径字符串，失败返回空串
+`
+  'fs.remove': '删除文件'
+  'fs.rename': '重命名文件'
+  'fs.rmdir': `
+删除空目录
+p: 目录路径（必须为空目录）
+成功返回 true，失败返回 false
+`
+  'fs.stat-size': '取得文件大小'
+  'fs.symlink': `
+建立符号链接
+target: 链接指向的目标路径
+linkpath: 符号链接本身的路径
+成功返回 true，失败返回 false
+`
+  'fs.sync': '将文件系统缓冲区刷到磁盘（无返回值）'
+  'fs.truncate': `
+截断或扩展文件到指定大小
+p: 文件路径
+length: 目标长度（字节）
+成功返回 true，失败返回 false
+`
+  'fs.utime': `
+设置文件的访问与修改时间
+p: 文件路径
+atime: 访问时间（Unix 秒）
+mtime: 修改时间（Unix 秒）
+成功返回 true，失败返回 false
+`
+  'fs.walk': `
+用法：
+paths = walk('/path/to/dir')
+i <- [0..paths.len()): {
+print(paths[i])
+}
+`
+  'fs.walk-collect': 'walk 的内部递归实现'
+  'fs.write': '将 data 的前 n 字节写入文件描述符'
+  'fs.write-bytes': `
+将 []byte 写入文件（覆写）
+p str: 文件路径
+data []byte: 要写入的字节数组
+返回 ok ?bool:
+ok(true) — 成功
+err      — 写入失败
+`
+  'fs.write-file': `
+[deprecated] write-file: 改用 write-bytes（支持错误处理、循环 write）
+write-file: 将 []byte 写入文件（覆写，无法区分部分写入与完全失败）
+`
+  'fs.write-str': `
+将字符串写入文件（覆写）
+p str: 文件路径
+data str: 要写入的字符串
+返回 ok ?bool:
+ok(true) — 成功
+err      — 写入失败
+`
+  'global.eprint': `
+输出字符串到标准错误并换行，支持 {name:spec} 命名格式字段
+eprint('error: {msg}')
+多参数：eprint('err:', a, b) 以空格分隔，整行末尾只有一个换行；
+每个字符串字面量各自是模板（同 print）
+`
+  'global.exit': `
+结束进程（以状态码 c 终止当前进程）
+exit(0)   -> 正常退出
+exit(1)   -> 异常退出
+`
+  'global.format': `
+使用 {name:spec} 命名字段格式化字符串并返回结果（取代 sprintf）
+s = format('{x:.2f}')          -> '3.14'
+s = format('{name} is {age}')  -> 'Alice is 30'
+⚠️ 只接受单一格式字符串（没有多参数形式）
+`
+  'global.print': `
+输出字符串到标准输出并换行，支持 {name:spec} 命名格式字段
+print('hello {name}')       -> hello world（若 name = 'world'）
+print('{x:.2f}')            -> 3.14（若 x = 3.14159）
+多参数：print(a, b, c) 以空格分隔，整行末尾只有一个换行。
+多参数时每个字符串字面量各自是模板（见上方「多参数时，字面量默认是模板」）：
+print('result={val}', 42, 'result={val}')  -> result=42 42 result=42
+`
+  'global.with-cap': `
+建立指定容量的字符串或切片（len=0），类型由赋值左侧推断
+s str = with-cap(256)       -> 预分配 256 字节的 str
+v []i64 = with-cap(100)     -> 预分配 100 个元素的切片
+`
+  'global.with-cap-len': `
+建立指定容量和长度的字符串或切片，类型由赋值左侧推断
+v []i64 = with-cap-len(200, 100)  -> 容量 200、长度 100 的切片
+`
+  'global.with-len': `
+建立指定长度的字符串或切片，类型由赋值左侧推断
+s str = with-len(10)        -> 长度为 10 的 str
+v []i64 = with-len(100)     -> 长度为 100 的切片
+`
+  'heap.empty': '判断堆是否为空'
+  'heap.init': `
+工厂 — 以调用者提供的元素缓冲区建立空堆
+data []t: 元素缓冲区（其长度即容量上限）
+返回 h heap: 初始化后的堆实例
+`
+  'heap.peek': `
+查看最小元素（不移除）
+返回 val ?t: ok=最小值, nil=堆为空
+`
+  'heap.pop': `
+从堆弹出最小元素并向下调整
+返回 val ?t: ok=最小值, nil=堆为空
+`
+  'heap.push': `
+向堆推入一个元素并维持最小堆性质
+val t: 要推入的值
+`
+  'heap.size': '返回堆大小'
+  'int.div': `
+整数除法，返回商（a ÷ b）
+b 为 0 时返回 err（编译器插入的零除守卫；不是 UB）。详见 docs/docs/lang/syntax.md〈除零〉
+`
+  'int.mod': `
+整数取模，返回余数（a % b）
+b 为 0 时返回 err（编译器插入的零除守卫；不是 UB）。详见 docs/docs/lang/syntax.md〈除零〉
+`
+  'int.to-str': `
+整数转字符串（联合类型方法，涵盖所有整数类型）
+transpiler 会将 i64.to-str() 等解析为 int.to-str()
+直接使用算术运算，避免 int -> u64 的类型转换问题
+注意：不对负数取绝对值（0 - n 在 n = i64.MIN 时会溢出），
+改为直接对负数做 srem/sdiv（向零截断），再将负余数映射到 [0, 9]。
+`
+  'io.err': '写入字符串到标准错误（不换行）'
+  'io.errln': '写入字符串到标准错误并换行'
+  'io.out': '写入字符串到标准输出（不换行）'
+  'io.outln': '写入字符串到标准输出并换行'
+  'io.read-line': `
+从标准输入读取一行
+返回 line ?str: ok=读取内容, nil=EOF 或错误
+`
+  'io.reader.from-fd': '从文件描述符建立读取器'
+  'io.reader.from-stdin': '从标准输入建立读取器'
+  'io.reader.read': `
+从读取器读取最多 n 字节到 buf
+返回实际读取的字节数，0 表示 EOF 或错误
+`
+  'io.reader.read-all': `
+读取全部内容到 buf（最多 size 字节）
+需要调用方传入大小
+`
+  'io.reader.read-byte': `
+读取一个字节
+返回 b ?i64: ok=字节值, nil=EOF 或错误
+`
+  'io.reader.read-line': `
+读取一行（最多 4096 字节）
+返回 line ?str: ok=读取内容, nil=EOF 或错误
+`
+  'io.writer.from-fd': '从文件描述符建立写入器'
+  'io.writer.from-stderr': '从标准错误建立写入器'
+  'io.writer.from-stdout': '从标准输出建立写入器'
+  'io.writer.write': `
+将 data 的前 n 字节写入
+返回实际写入的字节数
+`
+  'io.writer.write-byte': `
+写入一个字节
+返回实际写入的字节数（0 或 1）
+`
+  'io.writer.write-line': `
+写入字符串并附加换行符
+返回实际写入的字节数
+`
+  'io.writer.write-str': `
+写入整个字符串
+返回实际写入的字节数
+`
+  'json.alloc-node': `
+分配新节点（pool 为 #{inline=false} 指针字段，直接委派 .pool.alloc）
+返回 idx: 新节点索引
+`
+  'json.arr-get': `
+从数组取得指定索引的元素作为 json
+返回 child ?json: ok=找到, nil=未找到或非数组
+用法：
+elem = j.arr-get(0)
+elem: {
+ok -> {
+s, found = it.get-str('name')
+}
+}
+`
+  'json.arr-len': `
+取得数组长度
+返回 n: 数组元素数量（非数组返回 0）
+用法：
+n = j.arr-len()
+`
+  'json.arr-push': `
+向数组末尾添加元素
+返回 ok bool: 是否成功
+用法：
+j.arr-push(item)
+`
+  'json.arr-push-bool': `
+向数组末尾添加布尔元素
+返回 ok bool: 是否成功
+`
+  'json.arr-push-idx': `
+以节点索引向数组末尾附加元素（内部辅助，避免构造 json 时深拷贝整个池）
+返回 ok bool: 是否成功
+`
+  'json.arr-push-num': `
+向数组末尾添加数值元素
+返回 ok bool: 是否成功
+`
+  'json.arr-push-str': `
+向数组末尾添加字符串元素
+返回 ok bool: 是否成功
+`
+  'json.bool': `
+取得布尔值（当 root 为布尔值时）
+返回 val bool, ok bool: ok=成功
+`
+  'json.delete-key': `
+从对象中删除指定键
+返回 ok bool: ok=成功（键存在且已删除）
+`
+  'json.get': `
+从对象取得子节点作为 json
+child 是 json 自身的子节点（沿用同一节点池，仅 root 指向子节点），
+不会新建对象；找不到或非对象时返回 nil。
+返回 child ?json: ok=找到, nil=未找到或非对象
+用法：
+child = j.get('key')
+child: {
+ok -> {
+s, found = it.get-str('sub-key')
+}
+}
+`
+  'json.get-bool': `
+从对象取得布尔值
+返回 val bool, ok bool: ok=找到且为布尔值
+`
+  'json.get-i64': `
+从对象取得整数值
+返回 val i64, ok bool: ok=找到且为数字
+`
+  'json.get-key': `
+全局函数 — 从 json 对象中按键获取子节点
+返回 child ?json: 子节点（nil 表示不存在）
+`
+  'json.get-num': `
+从对象取得数值
+返回 val f64, ok bool: ok=找到且为数字
+`
+  'json.get-str': `
+从对象取得字符串值
+返回 val str, ok bool: ok=找到且为字符串
+用法：
+s, found = j.get-str('name')
+found -> print(s)
+`
+  'json.i64': `
+取得整数值（当 root 为数字时）
+返回 val i64, ok bool: ok=成功
+`
+  'json.is-arr': '判断是否为数组'
+  'json.is-bool': '判断是否为布尔值'
+  'json.is-null': `
+判断是否为 null
+返回 yes: 是否为 null
+`
+  'json.is-num': '判断是否为数字'
+  'json.is-obj': '判断是否为对象'
+  'json.is-str': '判断是否为字符串'
+  'json.json-clone-tree': `
+为何必须深拷贝：json.pool 是 #{inline=false} 指针字段，而编译器的指针字段
+拷贝目前尚缺借用语义（见 copy-tree 注释与 src/mir 的 hybrid-ownership 说明），
+直接 `child = json { pool: .pool, ... }` 会让父子各持一份 vec 头但共享同一
+data 缓冲；一旦任一 handle 触发 vec realloc，另一 handle 的 vec 头即指向已
+释放的旧缓冲 -> 悬垂读（stringify 返回 null / 数据错乱）。改为独立深拷贝后，
+双方的 alloc/扩容各写自有缓冲，互不影响。
+`
+  'json.json-pool.add-child': `
+将子节点 child-idx（键名 key，数组传空字符串）附加到节点 node-idx
+以边表单向链表实现可变长子元素，无每节点上限
+`
+  'json.json-pool.alloc': '分配新节点，返回索引（堆 vec 自动扩容，不再有池满上限）'
+  'json.json-pool.arr-get': `
+从数组节点取得指定索引的子节点
+返回 val-idx=子节点索引, ok=成功
+`
+  'json.json-pool.arr-len': '取得数组长度'
+  'json.json-pool.copy-tree': `
+池身份不能靠 `src.id == .id`：模块级绑定不可重绑（见 JSON-POOL-NEXT-ID 注释），
+所有池的 id 恒为 1，这个判定曾把每一次跨池拷贝都误当成同池，使
+json.arr-get / json.get 返回的子树 root 恒为 -1。现在改由调用端保证：
+- json-clone-tree：接收者是刚 init 的全新池；
+- json.set-key：先把 val 拷进临时新池（json-clone-tree），再从中转池直拷
+进接收者，两次拷贝的两端都必不同池，自引用也安全。
+`
+  'json.json-pool.get-bool': `
+取得布尔值
+返回 val=布尔值, ok=成功
+`
+  'json.json-pool.get-key': `
+从对象节点取得键对应的子节点索引
+返回 val-idx=子节点索引, ok=找到
+`
+  'json.json-pool.get-kind': '取得节点类型'
+  'json.json-pool.get-num': '取得数值'
+  'json.json-pool.get-str': `
+取得字符串值
+返回 out=字符串副本, ok=成功
+`
+  'json.json-pool.init': '初始化节点池（堆 vec 需在使用前先初始化为非 nil，方能安全 push）'
+  'json.json-pool.parse': `
+从字符串位置 pos 解析 JSON 值
+返回 node-idx=根节点索引, next-pos=下一位置, ok=成功
+`
+  'json.json-pool.parse-num': '解析 JSON 数字'
+  'json.json-pool.parse-str': '解析 JSON 字符串（从开引号开始）'
+  'json.json-pool.set-key': `
+在对象节点设置键值
+返回 ok=成功
+`
+  'json.json-pool.skip-ws': '跳过空白字符'
+  'json.json-pool.str-eq': `
+比较两个 str 是否相等
+使用 str.eq-full 统一实现
+`
+  'json.json-pool.stringify': `
+将节点序列化为字符串
+返回 out str: 序列化后的字符串
+`
+  'json.kind': `
+取得节点类型
+返回 JSON kind 常量值
+`
+  'json.new': `
+建立一个空的 json 值（null）
+用法：
+j = new()
+j.set('key', 'value')
+s = j.stringify()
+`
+  'json.new-pool': `
+建立并初始化一个 json-pool（低级 API）
+用法：
+p = new-pool()
+root, next, ok = p.parse('{"key":"value"}', 0)
+`
+  'json.num': `
+取得数值（当 root 为数字时）
+返回 val f64, ok bool: ok=成功
+`
+  'json.obj-key': `
+取得对象指定索引的 key
+返回 key str: key 字符串
+返回 ok bool: 是否成功
+`
+  'json.obj-keys-str': `
+取得对象所有键，以换行分隔的字符串返回
+返回 keys str: 所有键拼接成的字符串
+`
+  'json.obj-len': `
+取得对象 key 数量
+返回 n i64: key 数量（非对象返回 0）
+`
+  'json.overflowed': `
+最近一次操作是否因池容量耗尽而失败
+供 set / arr-push 等返回 bool 的方法在返回 false 后区分「溢出」与「其他失败」
+用法：
+ok = j.set('k', v)
+ok == false && j.overflowed() -> print('pool full')
+`
+  'json.set': `
+在对象中设置键值（值为另一个 json 节点）
+返回 ok bool: 是否成功
+`
+  'json.set-bool': `
+在对象中设置布尔值
+返回 ok bool: 是否成功
+用法：
+j.set-bool('active', true)
+`
+  'json.set-i64': `
+在对象中设置整数值
+返回 ok bool: 是否成功
+`
+  'json.set-key': `
+设置对象键值（语义糖，接受 json 值作为 val）
+返回 ok bool: ok=成功
+`
+  'json.set-null': `
+在对象中设置 null 值
+返回 ok bool: 是否成功
+`
+  'json.set-num': `
+在对象中设置数值
+返回 ok bool: 是否成功
+用法：
+j.set-num('age', 30.0)
+`
+  'json.set-str': `
+在对象中设置字符串值
+返回 ok bool: 是否成功
+用法：
+j.set-str('name', 'Alice')
+`
+  'json.str': `
+取得字符串值（当 root 为字符串时）
+返回 val str, ok bool: ok=成功
+用法：
+s, found = j.str()
+`
+  'json.str-val': `
+取得字符串节点的值
+返回 val str: 字符串值
+`
+  'json.stringify': `
+将 JSON 值序列化为字符串
+返回 out: JSON 字符串
+用法：
+j = new()
+s = j.stringify()
+`
+  'log.get-output-fd': '返回当前输出目标的 fd（调试用）'
+  'log.get-writer': '返回当前输出目标对应的 io.writer'
+  'log.log-emit': '依 FMT-FLAGS 组装单行日志，经 io.writer 抽象写入 OUT-FD'
+  'log.log-stamp': '当前时间戳字符串（UTC，YYYY-MM-DD HH:MM:SS）'
+  'log.open-file': `
+以追加模式打开日志文件并设为输出目标
+返回 ?bool：ok=true 成功、err 打开失败
+`
+  'log.set-format': '设置输出格式位（F-TIME / F-LEVEL / F-LOC 的或运算）'
+  'log.set-level': '设置日志级别'
+  'log.set-output-fd': '切换输出目标到指定 fd（调用方负责打开/关闭）'
+  'log.set-writer': `
+切换输出目标到指定 io.writer（io 接口的抽象写入器）。
+writer 本质只包一个 fd，std 中唯一可持久化的是标量，故存储其 fd。
+`
+  'magic.detect-by-extension': `
+基于扩展名判断类型
+ext: 扩展名（小写）
+返回类型描述，未知返回空串
+`
+  'magic.detect-by-magic': `
+基于魔数判断类型
+path: 文件路径
+返回类型描述，未知返回空串
+`
+  'magic.detect-type': `
+检测文件类型
+path: 文件路径
+返回类型描述字符串（如 'PNG image'、'ELF executable'、'ASCII text'、'directory'、'unknown'）
+`
+  'magic.get-extension': `
+获取文件扩展名（小写）
+path: 文件路径
+返回扩展名（不含 '.'），无扩展名返回空串
+`
+  'markdown.blockquote': '移除引用行首的 > 标记。'
+  'markdown.code-close': '判断当前行是否关闭指定 fence。'
+  'markdown.escape-html': '转义 HTML 文字与属性值。'
+  'markdown.fence': '解析 fenced code block 标记。'
+  'markdown.heading': '取得 ATX 标题等级与标题文字。'
+  'markdown.inline': '渲染 Markdown 行内语法。'
+  'markdown.is-word-byte': '判断一个 ASCII byte 是否属于单词。'
+  'markdown.join-paragraph': '追加一行到段落，专门处理硬换行。'
+  'markdown.list-content': '渲染任务列表内容。'
+  'markdown.list-item': '解析列表项。kind=1 无序，kind=2 有序。'
+  'markdown.prefix-count': '统计行首连续的指定字符。'
+  'markdown.read-line': '从 byte 游标读取一行，避免对 []str 做不安全的动态索引。'
+  'markdown.render': 'to-html 的语义别名。'
+  'markdown.render-code': '输出代码块。'
+  'markdown.setext-level': '取得 Setext 标题等级（=== 或 ---）。'
+  'markdown.table-row': '将 | 分隔的行渲染为 tr。'
+  'markdown.table-separator': '判断表格分隔行。'
+  'markdown.thematic-break': '判断是否为分隔线。'
+  'markdown.to-html': '将 Markdown 文档渲染为 HTML。'
+  'math.arr-zero': `
+[n]num.zero / []num.zero — 使用 llvm.memset 置零
+定长数组：总字节 = n * sizeof(num) 编译期常量
+堆切片：运行时取 .len() * sizeof(num) 传入 llvm.memset
+`
+  'math.atan-kernel': `
+atan2: 反正切 y/x（纯 .no 实现，避免 libm 依赖）
+内部 atan-kernel：先把 |t| 归约到 <= tan(pi/8)，再用泰勒级数
+`
+  'math.char-to-str': `
+将 char（Unicode 码点）转为 UTF-8 编码字符串
+取代旧版 sprintf %c（仅能处理单字节 ASCII）
+⚠️ 已弃用（DEPRECATED）：建议改用方法形式 char.to-str()（见 std/char.no），
+如 c char = 'A'; c.to-str()；本函数仅为旧调用点保留兼容。
+`
+  'math.clamp': `
+═══════════════════════════════════════════════
+整数数学函数（内建）
+═══════════════════════════════════════════════
+clamp: 将值限制在 [min, max] 范围内
+`
+  'math.div': `
+-7 / 2 == -3（不是 -4：floor 语义请自行改用 sign 判断）
+⚠️ b == 0 时与裸 `/` 一样会 trap（运行期无除零检查）。
+`
+  'math.even': '是否为偶数 — 对所有整数类型（含无符号）通用'
+  'math.fmod': `
+杂项
+fmod: 浮点取余
+`
+  'math.gcd': '最大公因数（辗转相除法）'
+  'math.hypot': '欧几里得范数 sqrt(x*x + y*y)'
+  'math.lcm': '最小公倍数'
+  'math.max': '返回最大值（变参泛型，支持 num 所有成员）'
+  'math.min': '返回最小值（变参泛型，支持 num 所有成员）'
+  'math.mod': `
+-7 % 2 == -1（floor-mod 语义请自行改用 sign 判断）
+⚠️ b == 0 时与裸 `%` 一样会 trap。
+`
+  'math.odd': '是否为奇数 — 对所有整数类型（含无符号）通用'
+  'math.pow': `
+⚠️ 已知限制（与 C pow 的差异，均为极端边界）：
+1. |y| > 2^63 时 f64-to-i64 溢出，奇偶判定失真 => inf 的符号可能反。
+此时 mag 本身已是 inf/0，只影响符号。
+2. x==0.0 且 y<0 时 C pow 返回 +inf，本实现返回 0.0（沿旧行为）。
+`
+  'math.pow-int': `
+pow: 整数幂 a^n（n >= 0）— 对所有整数类型通用
+使用快速幂算法 O(log n)
+⚠️ 未移至 math：与 std/math.no 的 pow（f64 求幂函数）同名冲突，
+同一模块不容两条 pow；函数形式 API 集中于 math 的唯一例外。
+`
+  'math.rotate-left': `
+[]num.zero = () {
+i = 0
+for i < .len() {
+.[i] = 0
+i = i + 1
+}
+}
+═══════════════════════════════════════════════
+位操作（内建）
+═══════════════════════════════════════════════
+rotate-left: 整数左旋 n 位（映射到 ARM64 ROR via llvm.fshl）
+`
+  'math.rotate-right': '整数右旋 n 位（映射到 ARM64 ROR via llvm.fshr）'
+  'math.store-le-u32': '将 u32 值以小端序写入字节数组指定偏移位置'
+  'math.swap': '交换两个值'
+  'num.abs': `
+绝对值 — 对所有 num 类型（整数与浮点）通用
+调用形式：abs(x)（x 为接收者；num 零参方法目前仅支持此形式，
+x.abs() 点式因嵌套 num 联合尚未单态化接收者而不支持，同 num.sign）；
+负数以 overflow=wrap 回绕取反（i64.MIN 的绝对值超出 i64 范围）
+`
+  'num.clamp': `
+限制在 [lo, hi] 范围内
+用法：x.clamp(lo, hi, r)
+`
+  'num.sign': '符号（-1, 0, 1）— 对所有 num 类型（整数与浮点）通用'
+  'number.byte.to-str': 'byte 转字符串（无符号，拓宽至 u64 复用）'
+  'number.exp-f64': `
+指数对数（f64/f32 方法）
+exp-f64: 自由函数形式（接受参数 x，而非方法接收者）。
+作为 f64.exp / cbrt / sinh / cosh / f32.exp 的单一实现来源。
+注意：Nolang 当前对「具名区域变量上的方法调用」(如 t.exp()) 有
+codegen bug，会误用外层接收者；故所有对 exp 的间接调用都走本
+自由函数，避开该问题。
+`
+  'number.f32.to-f64': '将 f32 提升为 f64'
+  'number.f32.to-str': `
+f32 转字符串（方法）
+通过 f32.to-f64（#{buildin} 拓宽）后复用 f64.to-str 的 Nolang %g 实现。
+`
+  'number.f64.cbrt': `
+立方根（f64 方法）
+使用 exp(log(|x|) / 3) 实现；方法体不调用 pow（整数幂 pow 见本模块，f64 pow 见 std/math.no）
+`
+  'number.f64.ceil': '取整（f64/f32 方法；整数类型上取整为恒等，故不提供泛型版本）'
+  'number.f64.degrees': '弧度转角度（f64/f32 方法）'
+  'number.f64.radians': '角度转弧度（f64/f32 方法）'
+  'number.f64.sin': '三角函数（弧度；f64/f32 方法）'
+  'number.f64.sinh': '双曲函数（f64/f32 方法）'
+  'number.f64.sqrt': '幂与根（f64/f32 方法）'
+  'number.f64.tan': 'tangent（libm tan，等价于 sin/cos）'
+  'number.f64.to-bits': `
+以 u64 取出 f64 的 64 位 IEEE-754 位模式（bitcast double->i64）。
+由 src/builtin/bits.go 注册 ForwardFunc "f64-to-bits"，原生 LLVM bitcast 实现，
+不依赖 libm。f64.to-str 最短往返展开前先取位模式，再拆 sign/exp/frac。
+`
+  'number.f64.to-f32': '将 f64 降为 f32（可能损失精度）'
+  'number.f64.to-i32': '浮点转 32 位有符号整数（饱和）'
+  'number.f64.to-i64': '浮点转整数（截断）'
+  'number.f64.to-str': `
+f64 转字符串（直接 Nolang 实现，**最短往返**十进制，对齐 Go 的 %v）
+取「能唯一还原本 double 的最少有效位数」（IEEE-754 位分解 + bigint 精确算术），
+并沿用 %g 的记号选择：E <= -5 或 E >= 6 用科学记号，其余定点。
+特殊值对齐 Go：NaN -> "NaN"、+Inf -> "+Inf"、-Inf -> "-Inf"、±0 -> "0"。
+后端无原生 f64 格式化器（sprintf CLibCall 已移除），故整套例程内联在方法本体。
+`
+  'number.f64.to-str-fixed': `
+定点格式转换
+precision i64: 小数位数（>= 0，建议 <= 17 以避免 i64 溢出）
+返回 out str: 字符串表示（如 "3.14"、"-0.005"、"100"）
+`
+  'number.f64.to-str-general': `
+通用格式（自动选择定点或科学记号）
+precision i64: 最大有效数字位数（>= 1）
+返回 out str: 字符串表示（自动去掉尾随零）
+`
+  'number.f64.to-str-sci': `
+科学记号格式
+precision i64: 小数部分位数（>= 0）
+返回 out str: 字符串表示（如 "3.14e+2"、"-5.0e-3"）
+`
+  'number.f64.to-u32': '浮点转 32 位无符号整数（饱和）'
+  'number.f64.to-u64': '浮点转 64 位无符号整数（饱和）'
+  'number.i128.sqrt': '── 128 位整数方法副本（i128 / u128）──\n128 位算术本身可用（操作数走 LLVM i128 通道），但两点必须兼顾：\n① 区域变量需显式标型（`n i128 = .`、`lo i128 = 1` …）。不标型时\nchecker 把与字面量混算的中间值推断为 i64，循环会收敛于错误值甚至\n挂死（i128.MAX 的二分搜索实测如此）。u128 不标型还会 i64->u128 赋值报错。\n② 溢出注解布局：i128（有符号，除法可能 INT_MIN/-1 溢出）对每条算术加\n`#{overflow=wrap}`；u128（无符号，÷/% 不会溢出）只对 + − 及「除以字面量」\n的运算加注解，对变量间 ÷/% 不加（否则 overflow-ineffective 告警）。\n注解须独立成行、置于目标语句前（单行 `;` 串接的 guard 会触发\n128 位 codegen 丢弃整段 main）。\n同时修复 codegen isUnsignedRaw 漏列 u128：u128 的比较/除法之前误走有符\n号谓词，u128.MAX 值域（>= 2^127）会误序；修正后 u128.sqrt(u128.MAX)=2^64-1 精确。'
+  'number.i128.to-f64': '128 位有符号整数转浮点'
+  'number.i16.sqrt': 'i16'
+  'number.i16.to-str': 'i16 转字符串（拓宽至 i64 复用）'
+  'number.i32.sqrt': 'i32'
+  'number.i32.to-str': 'i32 转字符串（隐式拓宽至 i64 后复用 i64.to-str 原生路径）'
+  'number.i64.is-prime': `
+是否为素数——i64 方法
+试除法 O(√n)：先排除偶数，再试除奇因子；终止条件用 d <= n/d
+避免 d*d 溢出，除数恒 >= 1 不会 trap（同样不用 int 联合接收者，见上）
+`
+  'number.i64.sqrt': '整数平方根 floor(√n)——i64 方法\nn < 0 时整数域无解，返回 0；二分搜索 O(log n)，比较用 n/mid 而非\nmid*mid，无溢出（同 math.no gcd/even 的 wrap 注解惯例）。\n不用 int 联合接收者（本可全宽度通用）：int 别名定义在 std/int.no，\n跨模块声明 `int.X` 方法会被 prefixMethodNames 双重加前缀成\n`int.int.X`，调用点单态化匹配不到，报 unknown callee。'
+  'number.i64.to-bytes-be': `
+将 int64 转为大端序 8 字节
+用法：
+v = 0x1234
+out = v.to-bytes-be()   // out = [0x00,0x00,0x00,0x00,0x00,0x00,0x12,0x34]
+`
+  'number.i64.to-bytes-le': `
+将 int64 转为小端序 8 字节
+用法：
+v = 0x1234
+out = v.to-bytes-le()   // out = [0x34,0x12,0x00,0x00,0x00,0x00,0x00,0x00]
+`
+  'number.i64.to-f64': '整数转浮点'
+  'number.i64.to-i32': '整数位宽收窄（低 32 位截断）'
+  'number.i64.to-str': `
+i64 转字符串
+#{buildin}：底层走原生 @str_from_i64（src/builtin/strconv.go 注册 ForwardFunc "i64-to-str"，
+由 codegen 按名命中原生内联路径）。i64 有原生格式化器，故直接 builtin、不再包装 Nolang 循环。
+`
+  'number.i8.sqrt': 'i8（有符号：保留负数守卫）'
+  'number.i8.to-str': 'i8 转字符串（拓宽至 i64 复用）'
+  'number.pow': `
+整数幂 base^n（n >= 0，i64）—— 供 number.pow 调用（模块前缀）。
+与 math.no 的 f64 pow 同名但不同模块，构建期加 number. 前缀；
+与 math.pow-int（int 泛型快速幂）同义，但明确 i64 签名以符合
+test/std/number.no 的 number.pow(2, 10) 等断言。
+`
+  'number.u128.to-f64': '128 位无符号整数转浮点'
+  'number.u16.sqrt': 'u16'
+  'number.u16.to-str': 'u16 转字符串（拓宽至 u64 复用）'
+  'number.u32.sqrt': 'u32'
+  'number.u32.to-str': 'u32 转字符串（隐式拓宽至 u64 后复用 u64.to-str）'
+  'number.u64.from-bits': 'f64.to-bits 的逆运算（bitcast i64->double），由原生 LLVM 实现。'
+  'number.u64.sqrt': 'u64（值域超出 i64，必须独立同宽实现）'
+  'number.u64.to-f64': '无符号整数转浮点'
+  'number.u64.to-str': `
+u64 转字符串（直接 Nolang 实现：后端无原生 u64 格式化器，
+故把原 math.u64-to-str 的十进制循环内联进方法本体，取代已删除的函数）
+`
+  'number.u8.sqrt': 'u8（无符号：无负数守卫）'
+  'number.u8.to-str': 'u8 转字符串（拓宽至 u64 复用）'
+  'ords.asc': '[]ord.asc: 升序原地排序（插入排序）'
+  'ords.desc': '[]ord.desc: 降序原地排序（插入排序）'
+  'os.arg': `
+// LLVM: access argc from main
+}
+arg: 取得第 i 个命令行参数（越界返回 nil）
+`
+  'os.args': `
+═══════════════════════════════════════════════
+命令行参数
+═══════════════════════════════════════════════
+args: 命令行参数全部（[]str，含程序名）
+`
+  'os.ch-dir': '切换工作目录'
+  'os.ch-mod': '变更文件权限'
+  'os.chown': '变更文件拥有者与群组（uid, gid）'
+  'os.chroot': `
+═══════════════════════════════════════════════
+根目录切换
+═══════════════════════════════════════════════
+chroot: 切换根目录（POSIX chroot(2)）
+path: 新的根目录路径
+成功返回 true，失败返回 false
+注意：需要 root 权限；调用后应配合 ch-dir('/') 设置工作目录
+`
+  'os.flock': `
+对文件描述符施加或释放建议性锁
+fd: 文件描述符
+op: 锁操作（1=LOCK_SH 共享, 2=LOCK_EX 独占, 4=LOCK_UN 解锁, 8=LOCK_NB 非阻塞）
+成功返回 true，失败返回 false
+`
+  'os.get-arch': '取得当前 CPU 架构（编译期常量，如 arm64、amd64）'
+  'os.get-domain-name': `
+取得 NIS 域名
+成功返回域名字符串，失败返回空串
+`
+  'os.get-env': `
+取得环境变量
+返回 val ?str: ok=变量值, nil=未设置
+`
+  'os.get-errno': '取得最后的 errno 值'
+  'os.get-host-id': `
+取得主机标识码（32 位整数）
+返回主机 ID（非负整数；错误时平台行为不同）
+`
+  'os.get-login': `
+═══════════════════════════════════════════════
+用户与系统信息扩展
+═══════════════════════════════════════════════
+get-login: 取得当前登录用户名
+成功返回用户名字符串，失败返回空串
+`
+  'os.get-pid': '取得进程 ID'
+  'os.get-priority': `
+取得进程优先级
+which: 来源类型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
+who: 目标 ID（0 表示当前进程/群组/用户）
+返回 prio ?i64: ok=优先级值(-20~19), nil=取得失败
+注意：libc 约定返回 -1 并设置 errno 表示错误，但因优先级也可能为 -1，
+需以 errno==0 区分。这里以 ?i64 明确表达（nil 表示错误）。
+`
+  'os.get-wd': '取得当前工作目录'
+  'os.getegid': '取得当前有效群组 ID'
+  'os.geteuid': '取得当前有效用户 ID'
+  'os.getgid': '取得当前群组 ID'
+  'os.getgroups': `
+取得当前用户所属群组 ID 列表
+成功返回群组 ID 数组与数量 n，失败返回空数组与 n=0
+`
+  'os.getuid': '取得当前用户 ID'
+  'os.host-name': '取得主机名'
+  'os.mkdir': '建立目录'
+  'os.now': `
+═══════════════════════════════════════════════
+时间
+═══════════════════════════════════════════════
+now: 取得当前 Unix 时间戳（秒）
+`
+  'os.now-ms': '取得当前 Unix 时间戳（毫秒）'
+  'os.now-ns': '取得当前时间戳（纳秒）'
+  'os.now-us': '取得当前 Unix 时间戳（微秒）'
+  'os.num-cpu': `
+取得在线 CPU 核数
+等价于 sysconf(_SC_NPROCESSORS_ONLN)，跨平台常量由编译器处理
+`
+  'os.set-env': '设置环境变量'
+  'os.set-priority': `
+设置进程优先级
+which: 来源类型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
+who: 目标 ID（0 表示当前进程/群组/用户）
+prio: 优先级值（-20 最高 ~ 19 最低）
+成功返回 true，失败返回 false
+`
+  'os.set-sid': `
+建立新会话并脱离控制终端
+成功返回新的进程组 ID（>0），失败返回 -1
+`
+  'os.signal': `
+设置信号处理函数（简化版，仅支持 SIG_IGN=1 / SIG_DFL=0）
+sig: 信号编号
+handler: 处理常量（0=SIG_DFL 默认, 1=SIG_IGN 忽略）
+返回先前的处理值
+`
+  'os.sleep': '睡眠 n 秒'
+  'os.sleep-ns': '睡眠 n 纳秒'
+  'os.sleep-us': '睡眠 n 微秒'
+  'os.stat-gid': `
+取得文件群组 gid
+返回 gid ?i64: ok=gid, nil=取得失败
+`
+  'os.stat-mode': `
+取得文件模式（包含权限与类型位）
+返回 mode ?i64: ok=模式值, nil=取得失败
+`
+  'os.stat-mtime': `
+取得文件修改时间（Unix 秒）
+返回 mtime ?i64: ok=修改时间, nil=取得失败
+`
+  'os.stat-uid': `
+取得文件拥有者 uid
+返回 uid ?i64: ok=uid, nil=取得失败
+`
+  'os.strerror': `
+将 POSIX errno 转为人类可读的错误消息
+以 Nolang 查表实现，取代 libc @strerror CLibCall
+涵盖 POSIX 标准 errno (1-40)，未知值返回 "Unknown error: N"
+`
+  'os.sysconf': `
+查询系统配置限制值
+name: 配置项名称（POSIX _SC_* 常量，注意各平台数值不同）
+_SC_NPROCESSORS_ONLN: macOS=58, Linux=84
+_SC_NPROCESSORS_CONF:  macOS=57, Linux=83
+成功返回值，失败返回 -1
+`
+  'os.sysctl': `
+查询系统控制参数（读取字符串值）
+name: 参数名称（如 'kern.ostype'、'hw.model'）
+返回 val ?str: ok=值字符串, nil=查询失败
+注意：Linux 上对应 /proc/sys；macOS/BSD 走 sysctl(2) syscall
+`
+  'os.syslog': `
+写入一条系统日志
+priority: 日志优先级（0=EMERG ~ 7=DEBUG，常见 6=INFO）
+msg: 日志消息内容
+`
+  'os.ttyname': `
+取得终端机名称
+fd: 文件描述符
+成功返回终端机路径字符串，失败返回空串
+`
+  'os.uname': `
+取得内核与架构信息
+返回 utsname 结构体，含 sysname/nodename/release/version/machine 五个字段
+`
+  'os.win-find-close': '关闭 Windows 目录搜索 handle'
+  'os.win-find-first-file': `
+// LLVM: access argv[idx]
+}
+═══════════════════════════════════════════════
+Windows 平台专用（内建）
+═══════════════════════════════════════════════
+win-find-first-file: Windows 目录搜索（FindFirstFileA），返回 bufPtr（0=失败）
+`
+  'os.win-find-next-file': '读取下一个 Windows 目录条目名称，返回 name ?str（nil=无更多条目）'
+  'os.win-wsa-startup': '初始化 Winsock 2.2（仅 Windows），返回 true=成功'
+  'path.base': `
+取出路径的最后一个元素（文件名）
+返回文件名字符串
+`
+  'path.change-dir': `
+切换工作目录到本路径
+返回 true=成功, false=失败
+`
+  'path.clean': `
+清理路径（移除 . 和 .. 与重复分隔符）
+原地修改 .p
+`
+  'path.current': `
+取得当前工作目录（构造型方法）
+返回新的 path 结构体
+`
+  'path.dir': `
+取出路径的目录部分
+原地修改 .p；**并返回修改后的 .p**（与 base()/ext()/join() 一致，见 join 上的说明）
+`
+  'path.exists': '检查路径是否存在（文件或目录均算存在）'
+  'path.ext': `
+取出文件扩展名（含点）
+返回扩展名字符串
+`
+  'path.is-abs': `
+判断路径是否为绝对路径
+返回 true=是, false=否
+`
+  'path.is-dir': '检查路径是否为目录'
+  'path.is-file': '检查路径是否为文件'
+  'path.join': `
+⚠️ API 一致性：早期 join()/dir() 只做原地修改、没有返回值，而 base()/ext()
+是返回 str，导致 `x = p.join(...)` 拿到空字符串这种陷阱。现在四个方法**都返回**
+str（join/dir 仍会一并更新 .p，保留既有的原地用法）。
+`
+  'path.make-dir': `
+建立目录
+返回 true=成功, false=失败
+`
+  'path.remove': `
+删除文件
+返回 true=成功, false=失败
+`
+  'path.rename': `
+将本路径重命名为 new-p
+返回 true=成功, false=失败
+`
+  'path.size': '取得文件大小'
+  'path.split': `
+将路径分割为目录和文件名
+原地修改 .p 为目录部分，返回文件名
+例：path{ p: '/a/b/c.txt' }.split() -> .p='/a/b', f='c.txt'
+（结构体字面量必须多行，此处为简写示意）
+`
+  'process.close': '关闭所有管道并等待子进程'
+  'process.close-stderr': '关闭子进程的 stderr 管道'
+  'process.close-stdin': '关闭子进程的 stdin 管道'
+  'process.close-stdout': '关闭子进程的 stdout 管道'
+  'process.cmd-2': `
+完整功能的子进程执行器（跨平台生产级实现）
+Windows 版本：使用 Win32 API（CreateProcessA、CreatePipe 等）以纯 Nolang 实现。
+不依赖 process.c C runtime，所有进程创建、管道管理、输出捕获均通过
+win-create-process、win-create-pipe、win-read-pipe 等 ForwardFunc 内建完成。
+`
+  'process.exec': `
+用法：
+o = process.cmdopts{timeout: 5000}
+res = process.exec('ls', ['-la'], o)
+res.code == 0 -> print(res.stdout)
+res.code != 0 -> print('error code: ' + res.code.to-str())
+`
+  'process.exit-code-of': 'exit-code: 取得退出码'
+  'process.find-by-name': `
+按名称查找进程 PID
+name: 进程名称（部分匹配，大小写不敏感）
+返回匹配的 PID 列表
+`
+  'process.find-match': `
+进程名称部分匹配（大小写不敏感）
+pname: 进程名称, target: 查找关键字
+返回 yes=true=匹配成功
+`
+  'process.force-kill': `
+发送 SIG-KILL 信号
+返回 ok=true=成功
+`
+  'process.is-running': '判断子进程是否仍在执行'
+  'process.kill': `
+发送信号给子进程
+sig: 信号编号（如 SIG-TERM=15, SIG-KILL=9）
+返回 ok=true=成功
+`
+  'process.list-all': `
+列出系统中所有进程
+Linux: 遍历 /proc，读取每个 PID 目录下的 /proc/<pid>/comm 取得进程名
+macOS/Windows: 暂时返回空列表（需 libproc/sysctl 或 CreateToolhelp32Snapshot 支持）
+返回 proc-info 列表
+`
+  'process.new': `
+建立并返回一个 process 实例
+用法：p = process.new()
+`
+  'process.output': `
+执行命令并捕获 stdout 输出（实例方法）
+用法：content, code = process.new().output('ls', '-la')
+返回 content=输出内容, code=退出码
+`
+  'process.parent-pid': '取得父进程 ID（静态方法）'
+  'process.pid-of': 'pid: 取得子进程 ID'
+  'process.process-dup2': '复制文件描述符'
+  'process.process-exec': `
+替换当前进程
+调用 execlp(program, program, arg, NULL)
+仅在失败时返回
+`
+  'process.process-exec-shell': `
+用 sh -c 执行命令字符串（替换当前进程）
+cmd: 完整命令字符串
+仅在失败时返回 errno
+`
+  'process.process-fork': `
+fork 当前进程
+返回 0=子进程, >0=父进程(子 PID), -1=错误
+`
+  'process.process-getppid': '取得父进程 ID'
+  'process.process-kill': '发送信号给进程'
+  'process.process-pipe': `
+建立管道
+返回打包值 (read_fd << 32) | write_fd
+`
+  'process.process-shell': `
+替代方案：
+out, stderr, code, err = process.cmd('ls', args, '', '', env, 5000, false)  ; 完整功能
+pid = process.spawn(cmd)                                        ; 非阻塞
+status = process.wait(pid)                                      ; 返回正确退出码
+`
+  'process.process-system': '执行 shell 命令'
+  'process.process-waitpid': `
+等待子进程
+返回退出码 (WEXITSTATUS)
+`
+  'process.process-waitpid-nohang': `
+非阻塞等待子进程 (WNOHANG)
+子进程仍在执行时返回 -1；已退出时返回其退出码；错误时返回 -1。
+用于 timeout 看门狗轮询。
+`
+  'process.read': `
+从子进程的 stdout 读取数据
+返回 read-n=实际读取字节数
+`
+  'process.read-all': `
+读取子进程的所有 stdout 输出
+返回 content=读取内容, n=读取字节数
+`
+  'process.read-line': `
+从子进程的 stdout 读取一行
+返回 line ?str: ok=读取内容, nil=EOF 或错误
+`
+  'process.shell': `
+执行 shell 命令字符串并等待完成（spawn + wait 组合）
+cmd: 完整命令字符串（将通过 sh -c 执行）
+返回 code=退出码（0=成功, >0=命令错误, 127=exec 失败, -1=fork 失败）
+`
+  'process.shell-quote': `
+POSIX 单引号转义 — 把任意字符串包成壳层（sh -c）可安全二次解析的单引号字面量。
+内部单引号替换为 '\'' 四字符序列（结尾引号+转义引号+开始引号）。
+背景：cmd() 通用分支通过 process-exec-shell 执行拼接后的命令行，旧实现把参数裸空格
+拼接会丢失参数边界（含空格/引号的 arg 被壳层重新分词），本函数修复该缺陷。
+`
+  'process.spawn': `
+创建子进程执行命令字符串
+cmd: 完整命令字符串（将通过 sh -c 执行）
+返回 pid > 0=父进程(子 PID), -1=错误
+`
+  'process.start': `
+创建子进程并执行命令（便捷方法，单参数）
+program: 要执行的程序名
+arg: 传给程序的参数
+返回 ok=true=成功
+`
+  'process.start-with-opts': `
+run: 启动子进程（底层实例方法，不等待、不读取输出）
+program   : 要执行的程序名（PATH 搜索）
+args      : 传给程序的参数列表
+dir       : 工作目录；空字符串 = 继承父进程
+input     : 写入子进程 stdin 的内容；空字符串 = 不提供 stdin
+merge-err : true = 将 stderr 合并到 stdout
+返回 ok=true=成功；成功时设置 .pid/.stdout-fd/.stdin-fd/.running
+`
+  'process.terminate': `
+发送 SIG-TERM 信号
+返回 ok=true=成功
+`
+  'process.wait': `
+等待子进程结束
+返回 status=退出状态码（WEXITSTATUS）
+`
+  'process.wait-2': `
+等待指定子进程结束
+pid: 子进程 ID
+返回 status=退出状态码（WEXITSTATUS）
+`
+  'process.wait-nohang': `
+非阻塞等待（轮询）
+返回 status ?i64: ok=子进程已结束(退出状态码), nil=仍在执行
+`
+  'process.win-close-handle': '关闭 Windows handle（CloseHandle）'
+  'process.win-create-pipe': `
+建立匿名管道（CreatePipe）
+返回打包值 (read_handle << 32) | write_handle，0=失败
+`
+  'process.win-create-process': `
+创建子进程（CreateProcessA）
+cmdline: 完整命令行字符串
+dir: 工作目录（空=继承）
+stdin-handle, stdout-handle, stderr-handle: 标准流 handle（0=继承父进程）
+返回 (proc-handle, status)：proc-handle>0=成功, 0=失败
+`
+  'process.win-get-exit-code': `
+取得进程退出码（GetExitCodeProcess）
+返回 exit-code ?i64：nil 表示仍在执行
+`
+  'process.win-get-std-handle': `
+取得标准 handle（GetStdHandle）
+which: 0=stdin, 1=stdout, 2=stderr
+`
+  'process.win-read-pipe': `
+从管道/handle 读取数据（ReadFile）
+返回 (data, n)：n=读取字节数，-1=错误
+`
+  'process.win-terminate-process': '终止进程（TerminateProcess）'
+  'process.win-wait-process': `
+等待进程结束（WaitForSingleObject）
+timeout-ms: 超时毫秒（0=无限等待）
+返回 0=超时, 1=已退出, -1=错误
+`
+  'process.win-write-pipe': `
+写入数据到管道/handle（WriteFile）
+返回写入字节数，-1=错误
+`
+  'process.write': `
+写入数据到子进程的 stdin
+返回 written=实际写入字节数
+`
+  'regexp.alloc-class': `
+分配一个新的字符类别，返回索引
+返回 cls-idx i64: 类别索引
+`
+  'regexp.clear-class-bit': `
+清除位
+cls-idx i64: 类别索引
+c i64: 字符值（0~255）
+`
+  'regexp.compile': '将 pattern 字符串编译为指令序列'
+  'regexp.emit': `
+发射一条指令
+op i64: 指令类型
+arg1 i64: 参数1
+arg2 i64: 参数2
+`
+  'regexp.emit-atom': `
+发射一个 atom 指令
+atom-type i64: atom 类型
+atom-char i64: atom 字符值
+atom-cls i64: atom 类别索引
+`
+  'regexp.emit-quantized': `
+根据量词发射指令
+从结构体字段 .tmp-quant 读取量词内部代码（1=*, 2=+, 3=?）
+使用 1/2/3 作为比较值，避免 LLVM 对 == 42 的优化 bug
+atom-type i64: atom 类型
+atom-char i64: atom 字符值
+atom-cls i64: atom 类别索引
+atom-i i64: atom 后的位置
+`
+  'regexp.find': `
+在 text 中查找第一个匹配 .pattern 的子串
+text str: 待匹配文本
+返回 result str: 匹配的子串，未找到返回空字符串
+`
+  'regexp.in-class': `
+判断字符是否在类别中
+cls-idx i64: 类别索引
+c i64: 字符值（0~255）
+返回 yes bool: true=在类别中
+`
+  'regexp.init-class-all': `
+将类别 bitmap 初始化为全一
+cls-idx i64: 类别索引
+`
+  'regexp.init-class-zero': `
+将类别 bitmap 初始化为全零
+cls-idx i64: 类别索引
+`
+  'regexp.make-class-digits': `
+建立数字类别 \d [0-9]
+返回 cls-idx i64: 类别索引
+`
+  'regexp.make-class-nondigits': `
+建立非数字类别 \D
+返回 cls-idx i64: 类别索引
+`
+  'regexp.make-class-nonspace': `
+建立非空白字符类别 \S
+返回 cls-idx i64: 类别索引
+`
+  'regexp.make-class-nonword': `
+建立非文字字符类别 \W
+返回 cls-idx i64: 类别索引
+`
+  'regexp.make-class-space': `
+建立空白字符类别 \s
+返回 cls-idx i64: 类别索引
+`
+  'regexp.make-class-word': `
+建立文字字符类别 \w [a-zA-Z0-9_]
+返回 cls-idx i64: 类别索引
+`
+  'regexp.match-at': `
+递归回溯匹配
+pc i64: 指令计数器
+sp i64: 文本位置
+text str: 待匹配文本
+返回 ok bool: true=匹配成功
+副作用：成功时设置 .match-end = sp
+`
+  'regexp.matches': `
+判断 text 是否匹配 .pattern（任意位置）
+text str: 待匹配文本
+返回 matched bool: true=匹配
+`
+  'regexp.parse-atom': `
+解析单个 regex atom（不发射指令）
+将结果存入 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
+pattern str: pattern 字符串
+i i64: 当前位置
+返回 new-i i64: 解析后的新位置
+`
+  'regexp.parse-class': `
+解析 [...] 字符类别
+pattern str: pattern 字符串
+i i64: 当前位置（指向 '['）
+返回 new-i i64: 解析后的新位置（']' 之后）
+副作用：建立新的字符类别，索引存入 .tmp-atom-cls
+`
+  'regexp.parse-escape': `
+解析 \x 转义序列
+pattern str: pattern 字符串
+i i64: 当前位置（指向 '\'）
+返回 new-i i64: 解析后的新位置
+副作用：设置 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
+`
+  'regexp.regexp-compile': `
+编译正则表达式 pattern，返回已编译的 regexp 实例。
+供正则字面量 /pattern/ 使用：字面量在 codegen 阶段脱糖为此函数调用。
+pattern str: 正则表达式
+返回 re regexp: 已编译的正则表达式实例
+`
+  'regexp.regexp-find': `
+在 text 中查找第一个匹配 pattern 的子串
+pattern str: 正则表达式
+text str: 待匹配文本
+返回 result str: 匹配的子串，未找到返回空字符串
+`
+  'regexp.regexp-match': `
+判断 text 是否匹配 pattern（任意位置）
+pattern str: 正则表达式
+text str: 待匹配文本
+返回 matched bool: true=匹配
+`
+  'regexp.set-class-bit': `
+设置位
+cls-idx i64: 类别索引
+c i64: 字符值（0~255）
+`
+  'regexp.set-class-escape': `
+在字符类别中处理转义序列
+cls-idx i64: 类别索引
+c i64: 转义字符（如 'd' 'w' 's' 等）
+`
+  'set.add': `
+加入元素到集合（若不存在）
+val t: 要加入的元素
+返回 new-size i64: 新的大小
+`
+  'set.contains': `
+检查元素是否存在于集合中
+val t: 要查询的元素
+返回 yes bool: true=存在, false=不存在
+`
+  'set.difference': `
+计算差集（在自身中但不在 other 中）
+结果写入调用者提供的 out 缓冲区，并返回差集元素数量
+other []t: 另一个集合的元素缓冲区
+osize i64: 另一个集合的元素数量
+out []t: 差集结果缓冲区
+返回 cnt i64: 差集元素数量
+`
+  'set.init': `
+工厂 — 以调用者提供的元素缓冲区建立空集合
+data []t: 元素缓冲区（其长度即容量上限）
+返回 s set: 初始化后的集合实例
+`
+  'set.intersection': `
+计算交集（自身与 other 的共同元素）
+结果写入调用者提供的 out 缓冲区，并返回交集元素数量
+other []t: 另一个集合的元素缓冲区
+osize i64: 另一个集合的元素数量
+out []t: 交集结果缓冲区
+返回 cnt i64: 交集元素数量
+`
+  'set.is-empty': '判断集合是否为空'
+  'set.remove': `
+从集合移除元素
+以最后一个元素填补被移除的位置（无序）
+val t: 要移除的元素
+返回 new-size i64: 新的大小
+`
+  'set.size': '返回集合大小'
+  'set.to-vec': `
+将集合转为切片（无序）
+返回 out []t: 集合元素切片（长度 = size）
+`
+  'set.union': `
+计算并集（将 other 缓冲区中不在自身的元素加入自身）
+other []t: 另一个集合的元素缓冲区
+osize i64: 另一个集合的元素数量
+返回 new-size i64: 并集后的大小
+`
+  'str._str-dig-val': '单个数字字符转数值（0-15），无效字符返回 -1'
+  'str.at': `
+[deprecated] str.at: 字符（码点）索引读取——请改用 s[idx]（原生索引，返回 ?char）
+str.at: 安全索引访问（字符索引；字节偏移请用 s.byte(i)）
+i i64: 字符（码点）索引
+返回 val ?byte: 该字符的码点值（超出 byte 范围时截断）；越界返回 nil
+`
+  'str.bigint-bitlen': '返回正 bigint 的位长度（floor(log2)+1）'
+  'str.byte': `
+返回「字节」下标 i 处的原始字节值（raw byte 读取）
+与 s[i] 不同：s[i] 按码点索引，本方法按底层 UTF-8 缓冲区的字节偏移取值
+返回 ?byte：越界（i < 0 或 i >= len-bytes()）时返回 nil，与 arr[i] 的
+安全索引语义一致；调用方必须处理 option（match / ?= / #{index-out = DEF}）
+由编译器内建处理（#{buildin}）：codegen 拦截后展开为「边界检查 + GEP+load」，
+不存在 std 函数体；签名同时注册于 src/builtin/str.go 的 BuiltinMethodList
+（MethodName "byte"，Intercepted，经 bare-name 回落同时覆盖 str 与 txt）
+`
+  'str.byte-index': `
+将码点（字符）下标转为字节偏移
+返回第 cp-pos 个码点起始的字节位置；越界（cp-pos 超出）返回 .len
+`
+  'str.compare': `
+字典序比较两个字符串
+返回 -1(a<b), 0(相等), 1(a>b)
+`
+  'str.contains': `
+判断 s 是否包含 target 子串
+返回 true=包含, false=不包含
+`
+  'str.copy': `
+将 src 复制到 dst（整个字符串）
+⚠️ 已弃用（DEPRECATED）：赋值 `dst = src` 即为复制语义——所有权分析会在 src
+后续仍被读取时自动改写为深拷贝（OpClone），无需手动 copy。保留仅为兼容。
+`
+  'str.count': `
+统计字符串中的 char（code point）数量
+因为 .len 已经是字节数，count 提供 code point 数
+`
+  'str.cp-index': `
+将字节偏移转为码点（字符）下标
+返回 s[0..byte-pos) 内的码点数量
+`
+  'str.decode-cp': `
+从位置 i 解码一个 UTF-8 码点
+返回 cp=码点值, clen=序列字节长度（1~4）
+`
+  'str.empty': `
+判断字符串是否为空
+返回 true=空, false=非空
+`
+  'str.ends-with': `
+判断 s 是否以 target 结尾
+返回 true=是, false=否
+`
+  'str.eq-full': `
+全等比较两个字符串
+b str: 比较目标
+返回 yes bool: true=相等 false=不相等
+`
+  'str.eq-raw': `
+str.eq: 比较两个字符串的前 n 个字节是否相等
+返回 true=相等, false=不相等
+`
+  'str.fields': `
+按一个或多个连续空白字符分割字符串
+空白字符：空格(32)、制表(9)、换行(10)、回车(13)
+返回 out []str: 分割后的非空子字符串切片
+连续空白被视为单一分隔符，首尾空白不产生空元素
+`
+  'str.fill': '用 byte 值填充整个字符串'
+  'str.find-byte-from': `
+str.index: 在 s 中查找 target 子串
+使用 Sunday 算法，平均 O(n/m)，最坏 O(n*m)
+返回首次出现的位置，未找到返回 -1
+str.find-byte-from: 内部字节级查找（Sunday 算法）
+返回 target 首次出现的「字节偏移」，未找到返回 -1
+from-byte 为起始字节位置；split 等内部按字节切片时使用
+`
+  'str.from-hex': `
+将十六进制字符串解码为 []byte
+返回 Option：
+ok(bytes) - 成功
+nil        - 空字符串
+err('msg') - 含无效十六进制字符
+`
+  'str.index': `
+在 s 中查找 target 子串
+使用 Sunday 算法，平均 O(n/m)，最坏 O(n*m)
+返回首次出现的「码点（字符）位置」，与 s[i] 码点索引语义一致；未找到返回 -1
+`
+  'str.index-from': `
+在 s 中从 from（码点位置）开始查找 target 子串
+返回首次出现的「码点（字符）位置」，未找到返回 -1
+`
+  'str.last-index': `
+反向查找子串最后出现位置（last-index 是 rindex 的别名）
+target str: 要查找的子串
+返回 pos i64: 找到的码点（字符）位置，未找到 -1
+`
+  'str.len': `
+返回字符串的「字符（码点）数量」
+与 s[i] 的码点索引语义一致；要字节数请用 s.len-bytes()
+`
+  'str.lines': `
+按换行符分割
+支持 \n 与 \r\n
+返回 out []str: 行列表（末尾换行不产生空行）
+`
+  'str.new': `
+str.new: 从 char 切片构造 str（模块级构造器）
+编译期内建（ForwardFunc: chars-new）：[]char 直接逐字节转成 bytes 并一次性设置长度，
+无逐字节 .no 循环。str 是内建类型，字节/长度无法在用户代码里操作，故整体转换由编译器生成 IR。
+`
+  'str.repeat': `
+将字符串重复 times 次
+返回新字符串
+`
+  'str.replace-char': `
+将 s 中所有 old-ch 替换为 new-ch（UTF-8 码点）
+返回结果字符串
+`
+  'str.replace-n': `
+限定替换次数
+old str: 旧子串
+new str: 新子串
+n i64: 最大替换次数，n <= 0 不替换
+返回 val str: 替换后字符串
+`
+  'str.replace-str': `
+将 s 中所有 old 子串替换为 new 子串
+old str: 要替换的子串
+new str: 替换后的子串
+返回 val str: 替换后的结果字符串
+若 old 为空字符串，直接返回原字符串的副本
+`
+  'str.reverse': `
+反转字符串
+将 s 反转后写入 val
+`
+  'str.rfind-byte-from': `
+内部字节级反向查找
+返回 target 最后一次出现的「字节偏移」（>= from-byte），未找到返回 -1
+`
+  'str.rindex': `
+反向查找子串最后出现位置
+target str: 要查找的子串
+返回 pos i64: 找到的码点（字符）位置，未找到 -1
+`
+  'str.rindex-from': `
+从 from（码点位置）反向查找子串
+语义同 Python rfind(target, from)：在 [from, .len) 范围内查找 target 最后出现位置
+target str: 要查找的子串
+from i64: 起始位置（含，下界，码点）
+返回 pos i64: 找到的码点（字符）位置，未找到 -1
+`
+  'str.set-byte': `
+返回 ?bool（可失败）：越界（i < 0 或 i >= 实体容量 cap）时返回 nil 并**跳过写入**，
+成功返回 some(true)。边界以 %str-long 的 cap（实体容量）为准而非 len，故「先填缓冲
+再 set len」的构建程序照旧可用。调用方以裸语句丢弃 ?bool 合法（optunuse 只管绑定名）。
+`
+  'str.slice': `
+截取子串 [start, end)，下标为「字符（码点）位置」
+与 s[i] 码点索引语义一致；要按字节偏移切片请用 s.slice-bytes()
+`
+  'str.slice-bytes': `
+按「字节偏移」截取子串 [start, end)（内部字节级使用）
+与 s.byte(i) 语义一致；标准库 split/replace 等内部按字节切片时使用
+`
+  'str.split': `
+用分隔符将字符串分割为多个子字符串
+sep str: 分隔符
+返回 out []str: 分割后的子字符串切片
+空分隔符时返回整个字符串作为唯一元素
+注意：使用本地 result 切片再赋值给 out，避免 out.push 在输出参数上不生效的编译器 bug
+`
+  'str.split-n': `
+限定分割次数
+sep str: 分隔符
+maxsplit i64: 最大分割次数（产生 maxsplit+1 个元素），maxsplit <= 0 不限制
+返回 out []str: 分割结果
+`
+  'str.starts-with': `
+判断 s 是否以 target 开头
+返回 true=是, false=否
+`
+  'str.str-hex-val': `
+单个十六进制字符转数值
+无效字符返回 -1（原名 hex-val 与 uuid.hex-val 撞名，跨模块解析会被要求限定，改挂模块前缀同 txt-hex-val 惯例）
+`
+  'str.to-bigint': `
+将字符串解析为 bigint，自动判断进制
+前缀 0b/0B -> 二进制、0o/0O -> 八进制、0x/0X -> 十六进制；无前缀 -> 十进制
+支持可选前导空白与正负号（+ / -）
+返回 ?bigint：ok(bigint) 成功 / nil 空字符串 / err('msg') 无有效数字
+`
+  'str.to-bool': `
+将字符串 "true" / "false" 解析为 bool
+大小写敏感；空字符串 -> nil，其他 -> err
+使用逐字节比较以避免 strcmp 在跨函数调用时的内存问题
+`
+  'str.to-byte': `
+将字符串解析为 byte（与 u8 等价）
+返回 Option：
+ok(n) - 成功（0 ~ 255）
+nil    - 空字符串
+err('msg') - 含非数字字符、负号或超出范围
+`
+  'str.to-bytes': '将字符串转为字节数组'
+  'str.to-f32': `
+将字符串解析为 f32
+返回 Option：
+ok(f) - 成功
+nil    - 空字符串
+err('msg') - 含非数字字符
+使用 Nolang 实现 str-to-f64 + f64-to-f32（已移除 strtod CLibCall 依赖）
+`
+  'str.to-f64': `
+将字符串解析为 f64
+返回 Option：
+ok(f) - 成功
+nil    - 空字符串
+err('msg') - 含非数字字符
+使用 Nolang 实现 str-to-f64 进行解析（已移除 strtod CLibCall 依赖）
+`
+  'str.to-hex': `
+字符串转十六进制编码
+每字节转两个十六进制字符（小写）
+返回 out str: 十六进制字符串
+`
+  'str.to-i16': `
+将字符串解析为 i16
+返回 Option：
+ok(n) - 成功（-32768 ~ 32767）
+nil    - 空字符串
+err('msg') - 含非数字字符、孤立 +/- 或超出范围
+`
+  'str.to-i32': `
+将字符串解析为 i32
+返回 Option：
+ok(n) - 成功（-2147483648 ~ 2147483647）
+nil    - 空字符串
+err('msg') - 含非数字字符、孤立 +/- 或超出范围
+`
+  'str.to-i64': `
+将字符串解析为有符号 64 位整数
+返回 Option：
+ok(n) - 成功
+nil    - 空字符串
+err('msg') - 含非数字字符、孤立 +/- 或格式错误
+`
+  'str.to-i8': `
+将字符串解析为 i8
+返回 Option：
+ok(n) - 成功（-128 ~ 127）
+nil    - 空字符串
+err('msg') - 含非数字字符、孤立 +/- 或超出范围
+`
+  'str.to-lower': `
+将字符串转为小写
+返回新字符串
+`
+  'str.to-str': '泛型的 []t.to-str / [n]t.to-str 模板逐元素调用 `.[i].to-str()`；元素类型为 str 时\n就落到本方法。此前 std 没有它，`[\'a\',\'b\'].to-str()` 在构建期报\n`unknown callee str.to-str`（产生自 _xstr.to-str 转发桩）。\nstr 不可变，返回自身即可（值语义：共享底层缓冲，不复制）。'
+  'str.to-txt': `
+将 str 转换为 txt（最长 255 字节）
+返回 out ?txt: ok(txt) / nil（超过 255 字节，txt 容纳不下，不再静默截断）
+`
+  'str.to-u16': `
+将字符串解析为 u16
+返回 Option：
+ok(n) - 成功（0 ~ 65535）
+nil    - 空字符串
+err('msg') - 含非数字字符、孤立 +/- 或超出范围
+`
+  'str.to-u32': `
+将字符串解析为 u32
+返回 Option：
+ok(n) - 成功（0 ~ 4294967295）
+nil    - 空字符串
+err('msg') - 含非数字字符、孤立 +/- 或超出范围
+`
+  'str.to-u64': `
+将字符串解析为 u64
+拒绝负号；不检查 i64 范围溢出（截断由 LLVM 自动处理）
+`
+  'str.to-u8': `
+将字符串解析为 u8
+返回 Option：
+ok(n) - 成功（0 ~ 255）
+nil    - 空字符串
+err('msg') - 含非数字字符、孤立 +/- 或超出范围
+`
+  'str.to-upper': `
+将字符串转为大写
+返回新字符串
+`
+  'str.trim': `
+去除字符串首尾空白字符
+返回新字符串
+`
+  'str.trim-char': '去除字符串首尾指定字符（UTF-8 码点）'
+  'str.with-cap': `
+建立指定容量的新字符串（len=0）
+s = ''.with-cap(256)  -> 预分配 256 字节的空字符串
+便捷方法，等同全局 with-cap(cap)
+`
+  'str.with-len': `
+建立指定长度的字符串
+s = ''.with-len(10)  -> 长度为 10 的字符串
+便捷方法，等同全局 with-len(len)
+`
+  'str.with-len-cap': `
+建立指定长度和容量的字符串
+s = ''.with-len-cap(10, 256)  -> 长度 10、容量 256 的字符串
+便捷方法，等同全局 with-cap-len(cap, len)
+`
+  'strs.join': `
+[]str.join: 用分隔符连接字符串切片中的所有元素
+sep str: 分隔符
+返回 out str: 连接后的字符串
+`
+  'time.add-seconds': '增加秒数，返回新的 time'
+  'time.date': '转换为 date 结构体（UTC，忽略 nsec）'
+  'time.date-to-unix': `
+将 date 结构体（UTC）转换为 Unix 时间戳（秒）
+使用 days-from-civil 算法（Howard Hinnant）
+`
+  'time.days-in-month-fn': '_days-in-month: 取得指定年月的天数'
+  'time.duration-between': '计算两个时间戳的差（秒）'
+  'time.duration-ms-between': '计算两个时间戳的差（毫秒）'
+  'time.duration-time': '计算两个 time 的差（秒）'
+  'time.duration-us-between': '计算两个时间戳的差（微秒）'
+  'time.format': '格式化为 \'YYYY-MM-DD HH:MM:SS\'（UTC，忽略 nsec）'
+  'time.format-date': `
+将 date 结构体格式化为字符串
+格式：YYYY-MM-DD HH:MM:SS（负年份加前缀 '-'）
+`
+  'time.format-duration': `
+将秒数格式化为人类可读字符串
+例：3661 -> '1h1m1s'
+`
+  'time.format-time-str': `
+将 Unix 时间戳格式化为可读字符串
+格式：YYYY-MM-DD HH:MM:SS（UTC）
+`
+  'time.is-leap': '判断闰年'
+  'time.now-date': '取得当前日期时间结构体（UTC）'
+  'time.now-ms': '当前 Unix 时间戳（毫秒）'
+  'time.now-ns': '当前时间戳（纳秒）'
+  'time.now-s': `
+当前 Unix 时间戳（秒）
+包装 builtin now()
+`
+  'time.now-time': `
+当前时间点（UTC）
+由 builtin now-ns()（CLOCK_REALTIME 纳秒）拆解出 sec 与 nsec
+`
+  'time.now-us': '当前 Unix 时间戳（微秒）'
+  'time.parse-date': `
+解析日期字符串为 Unix 时间戳
+支持格式：YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DD
+返回 ?i64：ok=时间戳, nil=解析失败
+`
+  'time.parse-time': `
+解析日期字符串为 time
+支持格式同 parse-date：YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DD
+返回 ?time：ok=time, nil=解析失败
+`
+  'time.since-ms': '从 start 到现在的经过毫秒数'
+  'time.since-s': '从 start 到现在的经过秒数'
+  'time.since-time': '从 start 到现在的经过秒数'
+  'time.since-us': '从 start 到现在的经过微秒数'
+  'time.sleep-ms': `
+睡眠指定毫秒数
+sleep-ms 无对应 builtin，以 sleep-us(ms * 1000) 实现
+`
+  'time.sleep-ns': '睡眠指定纳秒数'
+  'time.sleep-s': `
+睡眠指定秒数
+包装 builtin sleep()
+`
+  'time.sleep-us': '睡眠指定微秒数'
+  'time.sub': '与另一个 time 的差（秒，. - other）'
+  'time.timer.elapsed-ms': '经过毫秒数'
+  'time.timer.elapsed-s': '经过秒数'
+  'time.timer.elapsed-us': '经过微秒数'
+  'time.timer.start': '开始计时'
+  'time.timer.stop': '停止计时'
+  'time.unix': '取得 Unix 秒时间戳'
+  'time.unix-ms': '取得 Unix 毫秒时间戳'
+  'time.unix-to-date': `
+将 Unix 时间戳（秒）转换为 date 结构体（UTC）
+使用经典的 civil-from-days 算法（Howard Hinnant）
+`
+  'time.unix-to-time': '由 Unix 秒时间戳构造 time（nsec=0）'
+  'toml.get': `
+获取原始 TOML 字面值
+例如数组、日期时间等尚未转型的值可由此获取。
+`
+  'toml.get-bool': '获取 true/false'
+  'toml.get-f64': '获取浮点值（支持 exponent）'
+  'toml.get-i64': '获取十进制整数（允许 TOML 的下划线分隔）'
+  'toml.get-str': '获取并解码字符串值'
+  'toml.has': '判断键是否存在'
+  'toml.new': '建立空 TOML 文档'
+  'toml.parse': '解析 TOML 文档，失败返回 err(message)'
+  'toml.stringify': '以 TOML 1.0 语法输出文档；array-of-tables 会还原为 [[table]] 标头。'
+  'toml.toml-array-name': '读取 array-of-tables 名称。'
+  'toml.toml-doc.put': `
+设置原始 TOML 字面值。
+value 可为数组、日期时间等 TOML 语法，模块不会替它加引号。
+`
+  'toml.toml-entry-key': '读取 canonical key。'
+  'toml.toml-entry-key-eq': '比较 entry key 与字符串。'
+  'toml.toml-entry-value': '读取原始 TOML value。'
+  'toml.toml-find-eq': '找到未被引号包住的第一个等号'
+  'toml.toml-make-entry': '将 key/value 复制到固定缓冲区。'
+  'toml.toml-next-array-table': '获取并登记 array-of-tables 的下一个索引。'
+  'toml.toml-normalize-key': '解析 bare / quoted / dotted key，输出 canonical dotted key。'
+  'toml.toml-parse-bool': '解析布尔值'
+  'toml.toml-parse-f64': '解析浮点数'
+  'toml.toml-parse-i64': '支持十进制、十六进制、八进制、二进制与下划线分隔。'
+  'toml.toml-register-table': '记录已定义表格，重复定义返回 false。'
+  'toml.toml-resolve-section': '将 array-of-tables 的子表解析到最近一笔元素。'
+  'toml.toml-strip-comment': '移除字符串外的 # 注释并 trim；支持 multiline string。'
+  'toml.toml-table-eq': '比较固定缓冲区中的表格名称。'
+  'toml.toml-table-name': '读取表格名称。'
+  'toml.toml-unquote': '解码 basic/literal TOML 字符串'
+  'toml.toml-valid-value': '接受 TOML 1.0 的 scalar、array、inline table 与日期时间字面值。'
+  'toml.toml-value-complete': '判断值是否已闭合；用于多行数组、inline table、multiline string。'
+  'txt._txt-dig-val': '单个数字字符转数值（0-15），无效字符返回 -1'
+  'txt.append': '追加字节（不超出 255 限制）'
+  'txt.append-str': '追加 str（不超出 255 限制）'
+  'txt.append-txt': '追加 txt（不超出 255 限制）'
+  'txt.at': `
+[deprecated] txt.at: 字符（码点）索引读取——请改用 t[idx]（原生索引，返回 ?char）
+txt.at: 获取指定字符位置的码点值（字节偏移请用 t.byte(i)）
+返回 b ?byte: 越界返回 nil；超出 byte 范围的码点截断
+`
+  'txt.byte': `
+返回「字节」下标 i 处的原始字节值（raw byte 读取）
+与 txt[i] 的码点索引语义不同；缓冲区逐字节构建代码专用
+返回 ?byte：越界（i < 0 或 i >= len-bytes()）时返回 nil，调用方必须处理 option
+由编译器内建处理（#{buildin}）：codegen 拦截展开为「边界检查 + GEP+load」，
+无 std 函数体；签名注册于 src/builtin/str.go 的 BuiltinMethodList
+（Intercepted，经 bare-name 回落与 str.byte 共享同一条目）
+`
+  'txt.clear': '清空文本（len=0）'
+  'txt.compare': `
+字典序比较
+返回 -1(a<b), 0(相等), 1(a>b)
+`
+  'txt.contains': '是否包含子串'
+  'txt.copy': `
+复制 txt
+⚠️ 已废弃（DEPRECATED）：赋值 `a = b` 即为复制语义——txt 是值类型（栈上 256
+字节内联缓冲区，data[255] + len），赋值即逐字节拷贝。请改用直接赋值；保留仅为兼容。
+`
+  'txt.count': '统计 code point 数量'
+  'txt.decode-cp': `
+从位置 i 解码一个 UTF-8 码点
+返回 cp=码点值, clen=序列字节长度（1~4）
+`
+  'txt.empty': '判断是否为空'
+  'txt.ends-with': '是否以指定后缀结尾'
+  'txt.eq': `
+比较两个 txt 是否相等
+⚠️ 2026-09-21 重写。旧实现用一条 `->` 管线（`.byte(k) - b.byte(k); c != 0 -> ok = 0;
+k == an - 1 -> ok == 0 -> eq = false; k = k + 1`）在**最后一个字节**才回头判定，
+于是 `t('hello').eq('world')` 这种「长度相同、内容不同」的情况永远返回 true
+—— tests/txt.no 的 `neq:` 一行一直在打印 1，并且被冻进了 golden baseline。
+txt.compare 已经是逐字节比较且长度不同时正确分流的版本，直接复用即可。
+`
+  'txt.eq-full': '全等比较两个 txt（长度 + 逐字节）'
+  'txt.fields': '按空白分割为 []txt（连续空白视为单一分隔符）'
+  'txt.fill': '用 byte 值填充整个数据区域'
+  'txt.from-bytes': `
+从 []byte 创建 txt（截断至 255 字节）
+返回 txt，如果 []byte 超过 255 字节则截断
+`
+  'txt.from-chars': `
+从 char 切片构造新 txt（逐码点写入，UTF-8 编码；超过 255 字节的内容自动丢弃）
+⚠️ 不可用 `val[i]: { ok -> it = cs[i] }` 逐码点写入：D9 的 place-match 以
+**读取**作闸门，len=0 的新 txt 上读 `val[0]` 越界回 nil，ok 臂永不执行，
+整个函数因此返回空字符串（txt.from-chars 曾因此静默失真）。
+txt.new（ForwardFunc: chars-new）正是为此存在的内建：一次写入全部码点并设置字节长度。
+`
+  'txt.from-hex': `
+将十六进制文本解码为 txt
+返回 Option：ok(txt) / nil（空）/ err('msg')
+`
+  'txt.from-str': `
+从 str 创建 txt（截断至 255 字节）
+返回 txt，如果 str 超过 255 字节则截断
+`
+  'txt.index': '查找子串位置（从 0 开始）'
+  'txt.index-from': `
+从 from 位置开始查找子串
+返回首次出现位置，未找到返回 -1
+`
+  'txt.join': `
+[]txt.join: 用分隔符连接 txt 切片（超过 255 字节则截断）
+sep txt: 分隔符
+返回 out txt: 连接结果
+`
+  'txt.last-index': 'rindex 别名'
+  'txt.len': '返回字符（code point）数量（与 str.len 对齐；字节长度用 txt.len-bytes()）'
+  'txt.lines': '按换行符分割为 []txt（支持 \\n 与 \\r\\n）'
+  'txt.new': `
+txt.new: 从 char 切片构造 txt（模块级构造器，返回具体 txt）
+编译期内建（ForwardFunc: chars-new）：[]char 直接逐字节转成 bytes 并一次性写入长度，
+无逐字节 .no 循环。txt 是内置类型，字节/长度无法在用户代码里操作，故整体转换由编译器生成 IR。
+超过 255 字节的部分自动丢弃（长度字节 clamp 到 255）。
+`
+  'txt.repeat': `
+将内容重复 times 次（上限 255 字节）
+返回新 txt
+`
+  'txt.replace-char': `
+将所有 old-ch 替换为 new-ch（UTF-8 码点）
+返回新 txt（超过 255 字节则截断）
+`
+  'txt.replace-n': `
+限定替换次数
+old txt, new txt, n i64: 最大替换次数（n<=0 不替换）
+`
+  'txt.replace-str': `
+将所有 old 子串替换为 new 子串
+返回新 txt（超过 255 字节则截断）
+`
+  'txt.reverse': '反转文本内容'
+  'txt.rindex': `
+反向查找子串最后出现位置
+返回位置，未找到 -1
+`
+  'txt.rindex-from': '从 from 位置反向查找子串（返回位置 >= from 的最后一次出现）'
+  'txt.set-byte': `
+返回 ?bool（可失败）：越界（i < 0 或 i >= 255 实体容量）时返回 nil 并**跳过写入**，
+成功返回 some(true)。边界以「实体容量」（txt 为固定 255 字节缓冲区）为准，而非
+len，因此「先填缓冲再 set len」的构建程序（fill / from-str / to-hex / join）照旧可用。
+调用方以裸语句丢弃 ?bool 是合法的（optunuse 只针对已绑定的名称）。
+`
+  'txt.slice': '截取子串 [start, end) 返回新的 txt'
+  'txt.split': '用分隔符分割为 []txt'
+  'txt.split-n': `
+限定分割次数
+sep txt, maxsplit i64: 最大分割次数（<=0 不限制）
+`
+  'txt.starts-with': '是否以指定前缀开头'
+  'txt.to-bigint': `
+将文本解析为 bigint，自动判断进制
+前缀 0b/0B -> 二进制、0o/0O -> 八进制、0x/0X -> 十六进制；无前缀 -> 十进制
+支持可选前导空白与正负号（+ / -）
+返回 ?bigint：ok(bigint) 成功 / nil 空字符串 / err('msg') 无有效数字
+`
+  'txt.to-bool': '将 "true"/"false" 解析为 bool'
+  'txt.to-byte': '解析为 byte（与 u8 等价）'
+  'txt.to-bytes': '将 txt 转换为 []byte'
+  'txt.to-f32': '将文本解析为 f32'
+  'txt.to-f64': `
+将文本解析为 f64（返回 ?f64，空字符串->nil，非数字->err）
+复用 str 的解析逻辑（先转 str 再调用 str.to-f64）
+`
+  'txt.to-hex': '将 txt 转换为十六进制字符串'
+  'txt.to-i16': '解析为 i16（范围 -32768~32767）'
+  'txt.to-i32': '解析为 i32（范围 -2147483648~2147483647）'
+  'txt.to-i64': `
+将文本解析为有符号 64 位整数
+返回 Option：ok(n) / nil（空）/ err('msg')
+`
+  'txt.to-i8': '解析为 i8（范围 -128~127）'
+  'txt.to-lower': `
+将文本转为小写（ASCII）
+返回新 txt
+`
+  'txt.to-str': '将 txt 转换为 str'
+  'txt.to-u16': '解析为 u16（范围 0~65535）'
+  'txt.to-u32': '解析为 u32（范围 0~4294967295）'
+  'txt.to-u64': '解析为 u64（拒绝负号）'
+  'txt.to-u8': '解析为 u8（范围 0~255）'
+  'txt.to-upper': `
+将文本转为大写（ASCII）
+返回新 txt
+`
+  'txt.trim': `
+去除首尾空白字符
+返回新 txt
+`
+  'txt.trim-char': `
+去除首尾指定字符（UTF-8 码点）
+返回新 txt
+`
+  'txt.truncate': '截断到指定长度'
+  'txt.txt-hex-val': '单个十六进制字符转数值（无效字符返回 -1）'
+  'uuid.cmp': '比较两个 UUID（字典序）'
+  'uuid.eq': '判断两个 UUID 是否相等'
+  'uuid.from-str': `
+从字符串解析 UUID
+支持带连字号（36 字符）和不带连字号（32 字符）格式
+s str: UUID 字符串
+out uuid: 输出 UUID
+返回 ok bool: true=解析成功
+`
+  'uuid.hex-byte': '将一个字节写为两个 hex 字符到 out 的 pos 位置'
+  'uuid.hex-byte-upper': '大写 hex 字节写入'
+  'uuid.hex-val': '单个 hex 字符转数值'
+  'uuid.is-nil': '判断是否为空 UUID（全零）'
+  'uuid.new-v4': `
+生成随机 UUID v4
+state: xorshift32 状态（输入/输出，初始为非零种子）
+`
+  'uuid.nil-uuid': '建立空 UUID（全零）'
+  'uuid.parse-hex-byte': '从字符串解析两个 hex 字符为一个字节'
+  'uuid.parse-no-dashes': '解析不带连字号的 UUID'
+  'uuid.parse-with-dashes': '解析带连字号的 UUID'
+  'uuid.to-str': `
+将 UUID 格式化为标准字符串
+格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小写）
+返回 out str: UUID 字符串
+`
+  'uuid.to-str-upper': `
+将 UUID 格式化为大写字符串
+返回 out str: UUID 大写字符串
+`
+  'uuid.validate': '验证 UUID 格式是否合法'
+  'uuid.variant': '获取 UUID 变体'
+  'uuid.version': '获取 UUID 版本'
+  'vec.at': `
+[]t.at: 安全索引访问，越界返回 nil
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+`
+  'vec.clone': '[]t.clone: 复制切片'
+  'vec.contains': `
+[]t.contains: 是否包含值 val
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+注意：range-for 上界必须用 len（.len 字段），不能用局部变量 sz，
+否则编译器生成错误循环条件 i < 0 导致循环不执行
+`
+  'vec.eq': `
+[]t.eq: 比较两个切片是否相等
+返回 true=相等, false=不相等
+`
+  'vec.extend': `
+[]t.extend: 追加另一切片所有元素
+注意：内联 push 逻辑以规避方法内调用 .push() 的预先存在的 LLVM bug。
+调用方需确保容量足够。
+`
+  'vec.fill': '[]t.fill: 填充为 val'
+  'vec.first': `
+[]t.first: 第一个元素，空切片返回 nil
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+`
+  'vec.index-of': `
+[]t.index-of: 找到值返回索引，否则 -1
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+注意：range-for 上界必须用 len（.len 字段），不能用局部变量 sz
+`
+  'vec.insert': `
+[]t.insert: 在 i 位置插入元素 val
+i >= .len() 时等同 push
+注意：内联 push 逻辑（.len = cur + 1; .[cur] = val）以规避方法内调用 .push()
+触发的预先存在的 LLVM bug（_LB__RB_t.push 未定义）。调用方需确保容量足够。
+`
+  'vec.last': `
+[]t.last: 最后一个元素，空切片返回 nil
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+`
+  'vec.len': '[]t.len: 返回切片长度'
+  'vec.max': `
+[]t.max: 最大值，空切片返回 nil
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+注意：range-for 上界必须用 len（.len 字段），不能用局部变量 sz
+`
+  'vec.min': `
+[]t.min: 最小值，空切片返回 nil
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+注意：range-for 上界必须用 len（.len 字段），不能用局部变量 sz
+`
+  'vec.pop': `
+[]t.pop: 从末尾弹出元素
+空切片返回 nil
+`
+  'vec.remove': `
+[]t.remove: 删除 i 位置元素并返回
+越界返回 nil
+`
+  'vec.reverse': '[]t.reverse: 反转'
+  'vec.sum': `
+[]t.sum: 求和
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+注意：range-for 上界必须用 len（.len 字段），不能用局部变量 sz
+`
+  'vec.swap': `
+[]t.swap: 交换两位置元素
+注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
+`
+  'vec.to-arr': '[]t.to-arr: 切片方法，转为 [n]t 数组'
+  'vec.to-str': `
+[]t.to-str: 字符串表示
+格式如 '[1, 2, 3]'
+元素转字符串：逐元素调用其自身的 .to-str() 方法（具体类型见 number.no）
+`
+  'vec.truncate': '[]t.truncate: 截断到 cnt 个元素，cnt < 0 时视为 0，cnt >= .len 时无操作'
+  'vec.vec-clear': `
+[]t.clear: 清空切片（原地修改长度为 0）
+不 free 堆、不缩 cap，data 指针完全不变
+只有写入带长度新内容时才走扩容逻辑
+`
+  'vec.vec-push': `
+[]t.push: 在末尾追加元素（自动扩容）
+扩容策略：
+cap == 0 -> new-cap = 4
+cap < 1024 -> new-cap = cap * 2
+cap >= 1024 -> new-cap = cap * 5 / 4
+`
+  'yaml.anchor': '当前节点锚点名'
+  'yaml.at': '取序列元素 / 映射第 i 个值'
+  'yaml.bool': '取布尔值'
+  'yaml.doc': `
+取第 i 份文档
+说明：子节点视图以 ?yaml 返回，供调用方 match 解包。
+`
+  'yaml.doc-count': '文档数量'
+  'yaml.error': `
+本文档的解析错误（解析成功时恒为空串）
+说明：解析失败时 yaml.parse 返回 err，拿不到 yaml 值；
+失败原因请用 yaml.error-of(source) 获取。
+`
+  'yaml.error-of': '解析源文本并返回错误消息（成功时为空串）'
+  'yaml.f64': '取浮点值'
+  'yaml.find': '按点号路径查找（序列可用数字下标）'
+  'yaml.find-bool': '路径取布尔'
+  'yaml.find-f64': '路径取浮点'
+  'yaml.find-i64': '路径取整数'
+  'yaml.find-str': '路径取字符串'
+  'yaml.get': '按标量键取映射值'
+  'yaml.get-bool': '按标量键取布尔'
+  'yaml.get-f64': '按标量键取浮点'
+  'yaml.get-i64': '按标量键取整数'
+  'yaml.get-str': '按标量键取字符串'
+  'yaml.i64': '取整数值'
+  'yaml.is-bool': '是否为布尔'
+  'yaml.is-int': '是否为整数'
+  'yaml.is-map': '是否为映射'
+  'yaml.is-nan': `
+yaml.is-float: 是否为浮点
+当前节点是否为 .nan
+`
+  'yaml.is-null': '是否为 null'
+  'yaml.is-num': '是否为数值'
+  'yaml.is-seq': '是否为序列'
+  'yaml.is-str': '是否为字符串'
+  'yaml.key': '取映射第 i 个键的文本'
+  'yaml.key-node': '取映射第 i 个键节点'
+  'yaml.kind': '当前节点类型'
+  'yaml.len': '序列元素数 / 映射条目数'
+  'yaml.line-of': '当前节点起始行'
+  'yaml.node-count': '节点总数'
+  'yaml.parse': `
+解析 YAML 文本，返回第一份文档
+返回 ok(yaml) / err(消息)
+`
+  'yaml.parse-all': '解析全部文档'
+  'yaml.scalar-text': '当前节点的标量文本（容器返回 ok=false）'
+  'yaml.source-of': '原始输入文本'
+  'yaml.str': '取字符串值（数值/布尔返回其原文）'
+  'yaml.stringify': '别名，等同 to-yaml'
+  'yaml.strip-bom': '去掉开头的 UTF-8 BOM'
+  'yaml.style': '当前节点风格'
+  'yaml.tag': '当前节点显式标签'
+  'yaml.text': '当前节点的标量原文'
+  'yaml.to-json': '当前文档转 JSON'
+  'yaml.to-json-all': '全部文档转 JSON 数组'
+  'yaml.to-yaml': '当前文档重新输出为 YAML'
+  'yaml.valid': '本文档是否解析成功（能拿到 yaml 值即成功）'
+  'yaml.valid-of': '源文本是否可解析（不构造文档）'
+  'yaml.value': '取映射第 i 个键对应的值节点'
+  'yaml.yaml-apply-tag': '按显式标签决定节点类型'
+  'yaml.yaml-emit': '节点转块风格 YAML（不含尾随换行）'
+  'yaml.yaml-f-is-inf': `
+不用字面量比较：Nolang 的数值字面量不支持指数（`1e308` 会被切成 `1` + `e308`）。
+无穷的判据是「非零且减半后不变」；先用 `x != x` 排除 NaN。
+`
+  'yaml.yaml-f-is-nan': `
+浮点是否为 NaN（NaN != NaN）
+不用 `float.is-nan`：模块内的接收者式调用在 MIR 后端解析不到该方法。
+`
+  'yaml.yaml-hex-char': '单个十六进制数字（0-15）转字符'
+  'yaml.yaml-hex-digit': '十六进制字符转数值，非十六进制返回 -1'
+  'yaml.yaml-inf': '正无穷'
+  'yaml.yaml-json-escape': 'JSON 字符串转义'
+  'yaml.yaml-json-of': '节点转 JSON'
+  'yaml.yaml-key-eq': '两个键节点是否等价（比较标量文本）'
+  'yaml.yaml-key-text-eq': '标量键文本是否等于给定字符串'
+  'yaml.yaml-nan': `
+必须走运行期除法：编译期常量折叠会把 `0.0 / 0.0` 直接算成 0。
+借道局部变量可避免折叠，得到真正的 NaN（`x != x` 为真）。
+`
+  'yaml.yaml-node-is-nan': '`.nan` 的 fval 由 yaml-nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。\n节点原文判定作为兜底：标签改写等路径可能只改 text 而不重算 fval。'
+  'yaml.yaml-parse-radix': '解析 radix 进制整数（忽略 _）'
+  'yaml.yaml-parser.advance': '前进一个字节'
+  'yaml.yaml-parser.anchor-id': '查找锚点，未找到返回 -1'
+  'yaml.yaml-parser.at': '相对当前位置偏移 k 的字节'
+  'yaml.yaml-parser.at-doc-marker': '当前位置是否为 --- (1) 或 ... (2)'
+  'yaml.yaml-parser.at-eol': '是否位于行尾（含 EOF）'
+  'yaml.yaml-parser.byte-at': '取 src[i]，越界返回 0'
+  'yaml.yaml-parser.cur': '当前字节'
+  'yaml.yaml-parser.eof': '是否到达输入末尾'
+  'yaml.yaml-parser.fail': '记录解析错误'
+  'yaml.yaml-parser.fail-at': '记录带位置的解析错误'
+  'yaml.yaml-parser.indent-at': `
+先跳过行首空格再计数：调用点几乎都紧跟在 skip-blank-lines() 之后，
+此时 pos 停在行首（列 0），直接相减会恒得 0，导致嵌套块被判成「不缩进」。
+跳过后 pos 停在首个非空格字符，后续的 is-seq-dash / looks-like-map-entry /
+at-doc-marker 也都需要这个位置。
+`
+  'yaml.yaml-parser.is-seq-dash': '当前位置是否为序列项指示符 \'- \''
+  'yaml.yaml-parser.line-end-of': '返回 i 所在行的行尾偏移（指向换行或 n）'
+  'yaml.yaml-parser.line-start-of': '返回 i 所在行的起始偏移'
+  'yaml.yaml-parser.looks-like-map-entry': '本行是否存在顶层 \': \' 或行尾 \':\' 或显式键 \'? \''
+  'yaml.yaml-parser.merge-into': '合并键 << 的处理（支持映射或映射序列）'
+  'yaml.yaml-parser.merge-one': `
+把一个映射的条目合并进 keys/vals（不覆盖已有键）
+说明：MIR 后端不允许把入参 vec 直接 move 进另一个 vec（借用/所有权保护），
+因此这里逐元素复制，而不是 ok-keys = keys。
+`
+  'yaml.yaml-parser.newline': '消费一个换行（\\n 或 \\r\\n）'
+  'yaml.yaml-parser.parse-alias': '解析别名 *name'
+  'yaml.yaml-parser.parse-block': '解析一个块上下文节点（当前位置即节点起始列）'
+  'yaml.yaml-parser.parse-block-indented': '解析缩进更深的后续行作为值'
+  'yaml.yaml-parser.parse-block-map': '解析块映射'
+  'yaml.yaml-parser.parse-block-scalar': '解析块标量 | 与 >'
+  'yaml.yaml-parser.parse-block-seq': '解析块序列'
+  'yaml.yaml-parser.parse-docs': '解析全部文档'
+  'yaml.yaml-parser.parse-document': '解析一份文档，返回根节点索引'
+  'yaml.yaml-parser.parse-double': '解析双引号标量'
+  'yaml.yaml-parser.parse-flow-map': '解析 {k: v, ...}'
+  'yaml.yaml-parser.parse-flow-node': '解析一个流上下文节点'
+  'yaml.yaml-parser.parse-flow-seq': '解析 [a, b, ...]'
+  'yaml.yaml-parser.parse-plain': '解析 plain 标量（含跨行折叠）'
+  'yaml.yaml-parser.parse-props': '解析节点前缀的锚点与标签（顺序任意）'
+  'yaml.yaml-parser.parse-single': '解析单引号标量'
+  'yaml.yaml-parser.push-node': '追加节点并返回索引'
+  'yaml.yaml-parser.push-null': '追加空节点（null）'
+  'yaml.yaml-parser.push-scalar': '依据风格与标签构造标量节点'
+  'yaml.yaml-parser.read-line-content': '读取当前位置到行尾的内容（去掉行尾空白与注释）'
+  'yaml.yaml-parser.read-tag': '读取一个标签（!!name / !name / !<verbatim> / !）'
+  'yaml.yaml-parser.read-token': '读取一个不含分隔符的裸 token'
+  'yaml.yaml-parser.register-anchor': '登记锚点'
+  'yaml.yaml-parser.set-props': '为节点附加标签与锚点（并登记锚点）'
+  'yaml.yaml-parser.skip-blank-lines': '跳过空行与整行注释，停在下一行内容起始处'
+  'yaml.yaml-parser.skip-doc-preamble': '跳过空行、注释与指令行'
+  'yaml.yaml-parser.skip-flow-ws': '流式上下文的空白——行内空格、换行与注释'
+  'yaml.yaml-parser.skip-spaces': '跳过行内空格与制表符'
+  'yaml.yaml-parser.skip-to-doc-boundary': '跳过当前文档剩余内容，停在下一个 --- 或输入末尾'
+  'yaml.yaml-parser.skip-to-eol': '跳过行尾空白与行注释（不消费换行）'
+  'yaml.yaml-plain-safe': '文本可否作为 plain 标量原样输出'
+  'yaml.yaml-quote': '输出双引号 YAML 标量'
+  'yaml.yaml-resolve-plain': '按 core schema 推断 plain 标量类型'
+  'yaml.yaml-scalar-repr': '标量的 YAML 表示'
+  'yaml.yaml-scan-number': `
+尝试把文本解析为整数或浮点数
+返回 kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR（不是数字）
+`
+  'yaml.yaml-spaces': '生成 n 个空格'
+  'yaml.yaml-str-at': `
+为什么需要这个 helper：`arr[i]`（arr 为 []str）默认返回 option<str>，
+而 MIR 后端在把 option<str> 当作调用实参/方法接收者时会产生非法 IR
+（%option_str 与 %str-long 不匹配）。字符串拼接会自动解包 option，
+因此这里用 `out = out - a[i]` 取元素，既解包又满足 `no vet` 的越界检查。
+`
+  'yaml.yaml-tag-name': '归一化标签名（!!str / tag:yaml.org,2002:str → str）'
+  'yaml.yaml-to-f64': '文本转 f64（返回 nil 表示失败）'
+  'yaml.yaml-to-i64': '文本转 i64，失败返回 -1'
+  'yaml.yaml-unescape-double': '处理双引号转义序列'
 }

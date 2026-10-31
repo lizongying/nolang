@@ -155,12 +155,18 @@ Rules, all of them load-bearing:
   check a translation without leaving the comment.
 
 `make i18n` scans every `.no` file and writes `src/i18n/catalog/locales/en.doc.noml`
-(a *separate* file from `en.noml`). That file is **seeded once and then
-hand-maintained**: a message's English lives at the Go call site and is
-regenerated every run, but a doc block's text lives in the comment, so re-seeding
-would revert every translation (`catalog.MergeDocTranslations`). Translations go
-in `locales/<tag>.doc.noml`; a key that no longer exists in `en.doc.noml` is
-rejected as an orphan.
+(a *separate* file from `en.noml`). That file holds **translations only**. Seeding
+every anchor with its source text would put Chinese into the English catalog —
+the exact failure `en.noml` was already fixed for — and would make the catalog
+claim a translation nobody wrote. An anchor that is absent simply falls back to
+the comment text, so an untranslated block degrades to the author's language.
+A committed value is preserved verbatim even if the comment is reworded, because
+the anchor rather than the text is the key (`catalog.PruneDocTranslations`).
+Translations go in `locales/<tag>.doc.noml`; a key that no longer exists in any
+`.no` source is rejected as an orphan.
+
+`go run ./i18n/cmd/genen -doc-missing` lists the anchors still waiting for a
+translation, so the remaining work is visible without diffing two files.
 
 At runtime `i18n.Doc(key, text)` resolves the block — not `i18n.T`. It differs in
 two ways on purpose: it consults the catalog under `en` as well (a comment is
@@ -193,7 +199,23 @@ to `en`.
 
 `en.noml` is the complete set (every call site). The shipped translations cover
 the checker and the build/package wrappers; anything not yet translated falls
-back to English at runtime, per message, with no failure. Doc comments are
-tracked separately in `en.doc.noml`. `go test ./i18n/...` is the gate: it checks
-`en.noml` and `en.doc.noml` freshness, key well-formedness, absence of orphans
-in both, and verb-signature equality for every locale.
+back to English at runtime, per message, with no failure.
+
+Doc comments are tracked separately. Every documented std function or method
+carries an anchor (2009 of them), so the LSP can translate any of them the
+moment a translation lands. `en.doc.noml` and `zh-CN.doc.noml` cover, end to end:
+`args`, `global`, `io`, `fmt`, `str`, `txt`, `json`, `regexp`, `time`, `vec`,
+`arr`, `byte`, `char`, `number`, `int`, `num`, `float`, `math`, `os`, `fs`,
+`process`, `env`, `set`, `heap`, `bufio`, `path`, `err`, `log`, `bool`, `async`,
+`sort`, plus `collection`, `dom`, `yaml`, `toml`, `markdown`, `uuid`, `encoding`,
+`bigint` and `magic` — 1186 of the 1995 anchors. `zh-TW`, `ja`, `ko`, `fr` and
+`es` ship a starter set (the `args`/`global`/`env`/`bool`/`num`/`int` surface)
+and fall back to the source comment for the rest. The `net`, `crypto` and
+`archive` modules are anchored but not translated yet; run
+`go run ./i18n/cmd/genen -doc-missing` (or `make i18n-missing`) for the exact
+list.
+
+`go test ./i18n/...` is the gate: it checks `en.noml` and `en.doc.noml`
+freshness, key well-formedness, absence of orphans in both, and verb-signature
+equality for every locale. A doc catalog is free to translate an anchor English
+has not reached yet — orphans are checked against the source, not against `en`.
