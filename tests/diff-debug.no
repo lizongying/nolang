@@ -11,10 +11,13 @@ diff-op {
 
 ; diff-split-lines: split content into lines
 diff-split-lines = (content str) (lines []str) {
+    ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
+    #{ascii}
+    src = content
     eprint('SPLIT: entered, content.len={content.len-bytes()}')
     start = 0
-    i <- [0..content.len-bytes()): {
-        content[i] == 10 -> {
+    i <- [0..src.len-bytes()): {
+        src[i] == 10 -> {
             lines.push(content.slice(start, i))
 
             #{overflow=wrap}

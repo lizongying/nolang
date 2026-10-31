@@ -947,15 +947,14 @@ regexp.find = (text str) (result str) {
             end < sp -> return
             mlen = end - sp
             mlen == 0 -> return
+            ; 注意：不可寫 `result[j]: { ok -> it = v }`——D9 的 place-match 以「讀」作閘門，
+            ; with-cap 出來的緩衝 len 為 0，讀 result[0] 越界回 nil，ok 臂永不執行，
+            ; 會靜默回空字串。with-cap 基底被 idxwrite lint 豁免，可直接下標寫入並增長。
             result = with-cap(mlen)
             j <- [0..mlen): {
 
                 #{overflow=wrap}
-                result[j]: {
-                    ok -> it = text[sp + j]
-
-                    -> _
-                }
+                result[j] = text[sp + j]
             }
             return
         }

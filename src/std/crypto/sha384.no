@@ -87,11 +87,8 @@ sha384 = (data []byte) (hash [48]byte) {
         }
     }
 
-    ; 處理每個 128 位元組區塊
-    block []u64 = [
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
-    ]
+    ; 處理每個 128 位元組區塊（with-len 預填緩衝：逐字直接下標寫入是合法增長寫法）
+    block []u64 = with-len(16)
 
     offset = 0
     (offset < total-len) {

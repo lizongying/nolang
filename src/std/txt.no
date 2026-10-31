@@ -458,22 +458,15 @@ txt.to-lower = () (val txt) {
     }
     val.len = n
 }
-
-; txt.from-chars: 從 char 切片構造新 txt（逐碼點寫入，UTF-8 編碼；超過 255 字節的內容自動丟棄）
-; 結果參數 t 是 ?txt，不能直接 t[i] 下標寫入；照 to-upper 的模式，
-; 用局部 val txt 做碼點下標賦值（val[i] = cs[i] 即第 i 個碼點，寫入自動維護字節長度），
-; 最後 t = val 一次性賦值回 option 結果。
+;
+; txt.from-chars: 從 char 切片構造新 txt（逐碼點寫入，UTF-8 編碼；超過 255 字節 的內容自動丟棄）
+; ⚠️ 不可用 `val[i]: { ok -> it = cs[i] }` 逐碼點寫入：D9 的 place-match 以
+; **讀取**作閘門，len=0 的新 txt 上讀 `val[0]` 越界回 nil，ok 臂永不執行，
+; 整個函式因此回傳空字串（`txt.from-chars` 曾因此靜默失真）。
+; txt.new（ForwardFunc: chars-new）正是為此存在的內建：一次寫入全部碼點並設定字節長度。
 txt.from-chars = (cs []char) (t ?txt) {
-    val txt
-    n = cs.len()
-    i <- [0..n): {
-        val[i]: {
-            ok -> it = cs[i]
-
-            -> _
-        }
-    }
-    t = val
+    v txt = txt.new(cs)
+    t = v
 }
 
 ; txt.new: 从 char 切片构造 txt（模块级构造器，返回具体 txt）

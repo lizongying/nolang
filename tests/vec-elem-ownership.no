@@ -25,7 +25,10 @@ test-vec-elem-inplace = () {
     outer [][]i64 = with-len(1)
     inner = [1, 2, 3]
     outer[0] = inner
-    inner[0] = 99
+    inner[0]: {
+        ok -> it = 99
+        -> _
+    }
     print(outer[0][0]); 1
 }
 

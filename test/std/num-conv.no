@@ -47,16 +47,17 @@ t-float-int-sat = () {
 }
 
 ; ── B2：f64→str 的 NaN/Inf/大值渲染 ──────────────────────────
+; 口径：f64.to-str 取「最短往返」表示并对齐 Go 的 %v（含 NaN/+Inf/-Inf 拼写）。
 t-f64-str = () {
     za f64 = 0.0
     zb f64 = 0.0
     nan f64 = za / zb
-    runner.str-eq(nan.to-str(), 'nan', 3, 'NaN → "nan"')
+    runner.str-eq(nan.to-str(), 'NaN', 3, 'NaN → "NaN"')
     oa f64 = 1.0
     inf f64 = oa / zb
-    runner.str-eq(inf.to-str(), 'inf', 3, '+Inf → "inf"')
+    runner.str-eq(inf.to-str(), '+Inf', 4, '+Inf → "+Inf"')
     ninf f64 = 0.0 - inf
-    runner.str-eq(ninf.to-str(), '-inf', 4, '-Inf → "-inf"')
+    runner.str-eq(ninf.to-str(), '-Inf', 4, '-Inf → "-Inf"')
 
     ; 普通值仍按十进制打印
     z f64 = 0.0
@@ -64,11 +65,10 @@ t-f64-str = () {
     a f64 = 1500.0
     runner.str-eq(a.to-str(), '1500', 4, '1500.0 → "1500"')
 
-    ; 超 i64 位缓冲的大值归一化成科学计数法（2^63）。注意：.to-str() 走 std/math.no
-    ; 的 %g 格式化（6 位有效数字），与 print 的 @f64_render（整数位+6 小数）语法不同，
-    ; 这里锁定 %g 口径；关键是“不再因 poison 打印成乱码/空”。
+    ; 超 i64 位缓冲的大值归一化成科学计数法（2^63）。最短往返只要 16 位有效数字：
+    ; 9223372036854776e3（19 位的精确展开 9223372036854775808 不是最短形）。
     two63 f64 = 9223372036854775808.0
-    runner.str-eq(two63.to-str(), '9.22337e+18', 11, '2^63 → 9.22337e+18')
+    runner.str-eq(two63.to-str(), '9.223372036854776e+18', 21, '2^63 → 9.223372036854776e+18')
 }
 
 ; ── B3：f64→f32 真实精度损失（fptrunc+fpext 往返）──────────────

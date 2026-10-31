@@ -155,7 +155,7 @@ func checkStructAssignScalar(name, declared string, value parser.Expression, str
 	}
 	pos := value.Pos()
 	return []ValidateResult{{
-		TraceID: "structasg",
+		TraceID: "eubonf62",
 		Line:    pos.Line,
 		Column:  pos.Column,
 		Message: fmt.Sprintf("cannot assign %s value to %s variable '%s': a struct value must be constructed explicitly (e.g. `%s { … }` or its constructor); an integer is promoted implicitly only into a struct that has one lossless constructor (such as bigint)",

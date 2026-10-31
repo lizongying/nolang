@@ -515,6 +515,12 @@ func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult
 	// vet 模式：跳過 LLVM IR 生成，只做前端驗證（語法+型別+模組合併+單態化）
 	compiler.SetVetMode(true)
 	compiler.SetVetStrict(opts.Strict)
+	// JS 後端套件（package.noml 的 compiler.emit = "js"，或呼叫方顯式 opts.UseJS）：
+	// 與 ResolveBackend 同口徑，讓 `# npm/...` 導入不落入 native 的硬錯分支。
+	// LLVM 連結不了 JS 模組，對這類套件做 native 口徑的模組解析只會誤報。
+	if opts.UseJS || (pkg != nil && pkg.Compiler.Emit == "js") {
+		compiler.SetJSBackend(true)
+	}
 	_, err = compiler.Compile(string(source))
 	if err != nil {
 		// 將 compile error 解析為結構化 LintResult，避免塌縮成一行

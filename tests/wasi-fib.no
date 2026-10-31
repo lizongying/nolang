@@ -49,10 +49,7 @@ fib-rec = (n i64) (r i64) {
         ok -> n2 = it
         ->
     }
-    #{overflow=wrap}
     p1 = fib-rec(n1)
-
-    #{overflow=wrap}
     p2 = fib-rec(n2)
 
     #{overflow=wrap}

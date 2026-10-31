@@ -63,6 +63,14 @@ cg-runtime-vec-type = () (r str) {
     r = '%vec = type { i64, i64, i64 }'
 }
 
+; option-type：`?T` 的唯一表示（Go codegen.go:2938 逐字）。
+; 32 字节 = 8 字节 tag + 24 字节 payload slot；slot 是 `[3 x i64]`，
+; 所以能内联 <=24 字节的载荷（i64 / %str-long 都装得下），更大的走堆上装箱。
+; tag：0 = ok、1 = nil、2 = err。
+cg-runtime-option-type = () (r str) {
+    r = '%option = type { i64, [3 x i64] }    ; tag, 24-byte payload slot (32 bytes total)'
+}
+
 ; ── 向量 helper（M4-c 第六件；**刻意不照抄 Go 的 inline 展开**）──────────
 ; Go 的 `vec.push` 在每个调用点 inline 展开（load %vec / 扩容 / store），
 ; 好处是零调用开销，代价是每个 push 站点几百行 IR。M4 阶段以**行为等价**
@@ -154,6 +162,8 @@ cg-runtime-prelude = () (r str) {
     b.push(cg-runtime-str-type())
     b.push('\n')
     b.push(cg-runtime-vec-type())
+    b.push('\n')
+    b.push(cg-runtime-option-type())
     b.push('\n\n')
     b.push(cg-runtime-decls())
     r = b.str()

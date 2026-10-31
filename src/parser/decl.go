@@ -214,9 +214,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		arrayType = "[?]"
 		p.nextToken() // skip ?
 		if p.currentToken.Type != lexer.RBRACKET {
-			msg := fmt.Sprintf("line %d, column %d: expected ']' in nullable slice type, got %s",
+			p.saveErrorf("9buy5tfz", "line %d, column %d: expected ']' in nullable slice type, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 		p.nextToken() // skip ]
@@ -229,9 +228,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		arrayType = "[" + sizeToken.Literal + "]"
 		p.nextToken() // skip size
 		if p.currentToken.Type != lexer.RBRACKET {
-			msg := fmt.Sprintf("line %d, column %d: expected ']' in array type, got %s",
+			p.saveErrorf("mw127e39", "line %d, column %d: expected ']' in array type, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 		p.nextToken() // skip ]
@@ -244,18 +242,16 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	}
 
 	if p.currentToken.Type != lexer.DOT {
-		msg := fmt.Sprintf("line %d, column %d: expected '.' after type, got %s",
+		p.saveErrorf("1k6cdcgx", "line %d, column %d: expected '.' after type, got %s",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip .
 
 	// 方法名
 	if p.currentToken.Type != lexer.IDENT {
-		msg := fmt.Sprintf("line %d, column %d: expected method name, got %s",
+		p.saveErrorf("rusw4b0k", "line %d, column %d: expected method name, got %s",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	methodName := p.currentToken.Literal
@@ -270,9 +266,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 
 	// 解析參數列表
 	if p.currentToken.Type != lexer.LPAREN {
-		msg := fmt.Sprintf("line %d, column %d: expected '('",
+		p.saveErrorf("l9eytl0v", "line %d, column %d: expected '('",
 			p.currentToken.Line, p.currentToken.Column)
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip (
@@ -284,9 +279,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				continue
 			}
 			if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
-				msg := fmt.Sprintf("line %d, column %d: expected parameter name, got %s instead",
+				p.saveErrorf("b360mu4g", "line %d, column %d: expected parameter name, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 
@@ -342,9 +336,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 					}
 				}
 			} else if !isOption && ptrPrefix == "" {
-				msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
+				p.saveErrorf("a3duuqtg", "line %d, column %d: expected parameter type, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 
@@ -371,9 +364,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				break
 			}
 			if p.currentToken.Type != lexer.COMMA {
-				msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+				p.saveErrorf("z87sn8u5", "line %d, column %d: expected comma or right parenthesis, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			p.nextToken()
@@ -381,9 +373,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	}
 
 	if p.currentToken.Type != lexer.RPAREN {
-		msg := fmt.Sprintf("line %d, column %d: expected ')'",
+		p.saveErrorf("5blqb26x", "line %d, column %d: expected ')'",
 			p.currentToken.Line, p.currentToken.Column)
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip )
@@ -417,9 +408,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 					continue
 				}
 				if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
-					msg := fmt.Sprintf("line %d, column %d: expected parameter name, got %s instead",
+					p.saveErrorf("h0rvt6eu", "line %d, column %d: expected parameter name, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return nil
 				}
 
@@ -475,9 +465,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 						}
 					}
 				} else if !isOption && ptrPrefix == "" {
-					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
+					p.saveErrorf("qh0mj3sf", "line %d, column %d: expected parameter type, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return nil
 				}
 				paramType = ptrPrefix + paramType
@@ -495,9 +484,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 					break
 				}
 				if p.currentToken.Type != lexer.COMMA {
-					msg := fmt.Sprintf("line %d, column %d: expected comma or ')'",
+					p.saveErrorf("i59zddv3", "line %d, column %d: expected comma or ')'",
 						p.currentToken.Line, p.currentToken.Column)
-					p.saveError(msg)
 					return nil
 				}
 				p.nextToken()
@@ -505,9 +493,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 		}
 
 		if p.currentToken.Type != lexer.RPAREN {
-			msg := fmt.Sprintf("line %d, column %d: expected ')'",
+			p.saveErrorf("3r03yk09", "line %d, column %d: expected ')'",
 				p.currentToken.Line, p.currentToken.Column)
-			p.saveError(msg)
 			return nil
 		}
 		p.nextToken()
@@ -523,9 +510,8 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 
 	// 解析主體
 	if p.currentToken.Type != lexer.LBRACE {
-		msg := fmt.Sprintf("line %d, column %d: expected '{'",
+		p.saveErrorf("pxxxqtg6", "line %d, column %d: expected '{'",
 			p.currentToken.Line, p.currentToken.Column)
-		p.saveError(msg)
 		return nil
 	}
 	p.ctx.push(CTX_FUNC_BODY)
@@ -784,9 +770,8 @@ func (p *Parser) parseEnumDefinition() Statement {
 			p.nextToken() // skip #{
 			valAnns = p.parseAnnotationBody()
 			if p.currentToken.Type != lexer.RBRACE {
-				msg := fmt.Sprintf("line %d, column %d: expected '}' to close enum value annotation, got %s instead",
+				p.saveErrorf("rolk5ods", "line %d, column %d: expected '}' to close enum value annotation, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			p.nextToken() // skip }
@@ -797,9 +782,8 @@ func (p *Parser) parseEnumDefinition() Statement {
 			continue
 		}
 		if p.currentToken.Type != lexer.IDENT {
-			msg := fmt.Sprintf("line %d, column %d: expected enum value name, got %s",
+			p.saveErrorf("30pb3dos", "line %d, column %d: expected enum value name, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -817,9 +801,8 @@ func (p *Parser) parseEnumDefinition() Statement {
 			if intLit, ok := intExpr.(*IntegerLiteral); ok {
 				variantValue = intLit.Value
 			} else {
-				msg := fmt.Sprintf("line %d, column %d: expected integer value after '=', got %s",
+				p.saveErrorf("fvk7yu8c", "line %d, column %d: expected integer value after '=', got %s",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 		} else {
@@ -840,9 +823,8 @@ func (p *Parser) parseEnumDefinition() Statement {
 			p.nextToken() // skip #{
 			trailAnns := p.parseAnnotationBody()
 			if p.currentToken.Type != lexer.RBRACE {
-				msg := fmt.Sprintf("line %d, column %d: expected '}' to close enum value annotation, got %s instead",
+				p.saveErrorf("hzkv5tvl", "line %d, column %d: expected '}' to close enum value annotation, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			p.nextToken() // skip }
@@ -862,6 +844,37 @@ func (p *Parser) parseEnumDefinition() Statement {
 		p.nextToken() // skip }
 	}
 	return ed
+}
+
+// isInterfaceMergeItem 判斷 currentToken（IDENT）是否為接口體內的「合併項」：
+// 「獨佔一行的父接口名」，可帶模組前綴。回傳 true 時 currentToken 仍停在該名首段。
+//
+//	serialize {
+//	    json          ; 裸名 + NEWLINE ⇒ 合併項
+//	    sql.db        ; 點號名 + NEWLINE ⇒ 合併項
+//	    to-json()     ; 裸名 + LPAREN ⇒ 方法
+//	    t.gt(b t)     ; 點號名 + LPAREN ⇒ 泛型接收者方法
+//	}
+//
+// 因此消歧的唯一依據是「名之後的第一個 token」：LPAREN 走方法分支，其餘
+// （NEWLINE / COMMA / RBRACE / EOF）走合併項。
+func (p *Parser) isInterfaceMergeItem() bool {
+	if p.currentToken.Type != lexer.IDENT {
+		return false
+	}
+	switch p.peekToken.Type {
+	case lexer.NEWLINE, lexer.COMMA, lexer.RBRACE, lexer.EOF:
+		return true
+	case lexer.DOT:
+		if p.look(0).Type != lexer.IDENT {
+			return false
+		}
+		switch p.look(1).Type {
+		case lexer.NEWLINE, lexer.COMMA, lexer.RBRACE, lexer.EOF:
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Parser) parseInterfaceDefinition() Statement {
@@ -892,10 +905,25 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 			break
 		}
 		if p.currentToken.Type != lexer.IDENT {
-			msg := fmt.Sprintf("line %d, column %d: expected method name in interface, got %s",
+			p.saveErrorf("njsutn36", "line %d, column %d: expected method name in interface, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
+		}
+
+		// 接口合併項（體內形式）：每行一個父接口名，可帶模組前綴。追加到
+		// Implements，維持「前置列表在前、體內項在後」的出現順序。
+		if p.isInterfaceMergeItem() {
+			mergeName := p.currentToken.Literal
+			p.nextToken() // 跳过父接口名首段
+			if p.currentToken.Type == lexer.DOT {
+				p.nextToken() // 跳过 .
+				if p.currentToken.Type == lexer.IDENT {
+					mergeName += "." + p.currentToken.Literal
+					p.nextToken() // 跳过末段
+				}
+			}
+			id.Implements = append(id.Implements, mergeName)
+			continue
 		}
 
 		method := &InterfaceMethod{
@@ -917,9 +945,8 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 		}
 
 		if p.currentToken.Type != lexer.LPAREN {
-			msg := fmt.Sprintf("line %d, column %d: expected '(' after interface method name, got %s",
+			p.saveErrorf("rlfpckc0", "line %d, column %d: expected '(' after interface method name, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 		p.nextToken() // skip (
@@ -934,9 +961,8 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 			}
 
 			if p.currentToken.Type != lexer.IDENT {
-				msg := fmt.Sprintf("line %d, column %d: expected parameter name in interface method, got %s",
+				p.saveErrorf("x6tqaeqp", "line %d, column %d: expected parameter name in interface method, got %s",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 
@@ -1034,9 +1060,8 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 			p.nextToken() // skip (
 			for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
 				if p.currentToken.Type != lexer.IDENT {
-					msg := fmt.Sprintf("line %d, column %d: expected result name in interface method, got %s",
+					p.saveErrorf("sciigwn4", "line %d, column %d: expected result name in interface method, got %s",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return nil
 				}
 				resName := p.currentToken.Literal
@@ -1113,9 +1138,8 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 			p.nextToken() // skip #{
 			varAnns = p.parseAnnotationBody()
 			if p.currentToken.Type != lexer.RBRACE {
-				msg := fmt.Sprintf("line %d, column %d: expected '}' to close variant annotation, got %s instead",
+				p.saveErrorf("0ewki0e0", "line %d, column %d: expected '}' to close variant annotation, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			p.nextToken() // skip }
@@ -1126,9 +1150,8 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 			continue
 		}
 		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.NIL {
-			msg := fmt.Sprintf("line %d, column %d: expected variant name in tagged enum, got %s instead",
+			p.saveErrorf("r6gf3a7m", "line %d, column %d: expected variant name in tagged enum, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -1163,9 +1186,8 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 				}
 				variant.Fields = append(variant.Fields, field)
 				if p.currentToken.Line == prevLine && p.currentToken.Column == prevCol {
-					msg := fmt.Sprintf("line %d, column %d: unexpected token %s in tagged enum variant payload (parser made no progress)",
+					p.saveErrorf("yfm52ulo", "line %d, column %d: unexpected token %s in tagged enum variant payload (parser made no progress)",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					break
 				}
 				if p.currentToken.Type == lexer.COMMA {
@@ -1189,9 +1211,8 @@ func (p *Parser) parseTaggedEnumDefinition() Statement {
 			p.nextToken() // skip #{
 			trailAnns := p.parseAnnotationBody()
 			if p.currentToken.Type != lexer.RBRACE {
-				msg := fmt.Sprintf("line %d, column %d: expected '}' to close variant annotation, got %s instead",
+				p.saveErrorf("wcbo6a01", "line %d, column %d: expected '}' to close variant annotation, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			p.nextToken() // skip }
@@ -1311,9 +1332,8 @@ func (p *Parser) parseStructDefinition() Statement {
 	}
 
 	if p.currentToken.Type != lexer.LBRACE {
-		msg := fmt.Sprintf("line %d, column %d: expected '{' after struct name, got %s",
+		p.saveErrorf("jppwnc4n", "line %d, column %d: expected '{' after struct name, got %s",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // 跳过 LBRACE
@@ -1336,9 +1356,8 @@ func (p *Parser) parseStructDefinition() Statement {
 			p.nextToken() // skip #{
 			fieldAnnotations = p.parseAnnotationBody()
 			if p.currentToken.Type != lexer.RBRACE {
-				msg := fmt.Sprintf("line %d, column %d: expected '}' to close field annotation, got %s instead",
+				p.saveErrorf("2t4wkn7s", "line %d, column %d: expected '}' to close field annotation, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			p.nextToken() // skip }
@@ -1357,9 +1376,8 @@ func (p *Parser) parseStructDefinition() Statement {
 		}
 
 		if p.currentToken.Type != lexer.IDENT {
-			msg := fmt.Sprintf("line %d, column %d: expected field name in struct definition, got %s instead",
+			p.saveErrorf("9yjr7gj6", "line %d, column %d: expected field name in struct definition, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -1423,9 +1441,8 @@ func (p *Parser) parseStructDefinition() Statement {
 				}
 				field.Type = buildType(prefix+typeStr, typeTok)
 			} else {
-				msg := fmt.Sprintf("line %d, column %d: expected field type after %q, got %s instead",
+				p.saveErrorf("bbv2nbtt", "line %d, column %d: expected field type after %q, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, prefix, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 		} else if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.PTR {
@@ -1492,9 +1509,8 @@ func (p *Parser) parseStructDefinition() Statement {
 				}
 				fieldAnnotations = append(fieldAnnotations, more...)
 				if p.currentToken.Type != lexer.RBRACE {
-					msg := fmt.Sprintf("line %d, column %d: expected '}' to close field annotation, got %s instead",
+					p.saveErrorf("q9m9no8c", "line %d, column %d: expected '}' to close field annotation, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return nil
 				}
 				p.nextToken() // skip }
@@ -1551,9 +1567,8 @@ func (p *Parser) parseFunctionDefinition() Statement {
 		p.nextToken()
 		for {
 			if p.currentToken.Type != lexer.IDENT {
-				msg := fmt.Sprintf("line %d, column %d: expected generic parameter name, got %s instead",
+				p.saveErrorf("1lssiwyr", "line %d, column %d: expected generic parameter name, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			def.GenericParams = append(def.GenericParams, &Identifier{Token: p.currentToken, Value: p.currentToken.Literal})
@@ -1563,9 +1578,8 @@ func (p *Parser) parseFunctionDefinition() Statement {
 				break
 			}
 			if p.currentToken.Type != lexer.COMMA {
-				msg := fmt.Sprintf("line %d, column %d: expected ',' or '>' in generic parameters, got %s instead",
+				p.saveErrorf("w3k1bwpp", "line %d, column %d: expected ',' or '>' in generic parameters, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			p.nextToken()
@@ -1574,9 +1588,8 @@ func (p *Parser) parseFunctionDefinition() Statement {
 
 	// 新語法要求 = 作爲函數定義標記
 	if p.currentToken.Type != lexer.ASSIGN {
-		msg := fmt.Sprintf("line %d, column %d: expected '=' after function name, got %s instead",
+		p.saveErrorf("t4jhbz5z", "line %d, column %d: expected '=' after function name, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken()
@@ -1592,9 +1605,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	if p.currentToken.Type == lexer.LPAREN {
 		p.nextToken()
 	} else {
-		msg := fmt.Sprintf("line %d, column %d: expected left parenthesis, got %s instead",
+		p.saveErrorf("8o5wqxi2", "line %d, column %d: expected left parenthesis, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return
 	}
 
@@ -1605,9 +1617,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				continue
 			}
 			if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
-				msg := fmt.Sprintf("line %d, column %d: expected parameter name, got %s instead",
+				p.saveErrorf("v0thbcmv", "line %d, column %d: expected parameter name, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return
 			}
 
@@ -1664,9 +1675,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 			}
 
 			if p.currentToken.Type != lexer.COMMA {
-				msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+				p.saveErrorf("3pry7fmd", "line %d, column %d: expected comma or right parenthesis, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return
 			}
 
@@ -1675,9 +1685,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	}
 
 	if p.currentToken.Type != lexer.RPAREN {
-		msg := fmt.Sprintf("line %d, column %d: expected right parenthesis, got %s instead",
+		p.saveErrorf("mi13i3vc", "line %d, column %d: expected right parenthesis, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return
 	}
 
@@ -1697,9 +1706,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 					continue
 				}
 				if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
-					msg := fmt.Sprintf("line %d, column %d: expected parameter name, got %s instead",
+					p.saveErrorf("8gnvlvf4", "line %d, column %d: expected parameter name, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return
 				}
 
@@ -1725,9 +1733,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				}
 
 				if p.currentToken.Type != lexer.COMMA {
-					msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+					p.saveErrorf("v1a6rxna", "line %d, column %d: expected comma or right parenthesis, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return
 				}
 
@@ -1736,9 +1743,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 		}
 
 		if p.currentToken.Type != lexer.RPAREN {
-			msg := fmt.Sprintf("line %d, column %d: expected right parenthesis, got %s instead",
+			p.saveErrorf("3uu88ox1", "line %d, column %d: expected right parenthesis, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return
 		}
 
@@ -1810,9 +1816,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	}
 
 	if p.currentToken.Type != lexer.LBRACE {
-		msg := fmt.Sprintf("line %d, column %d: expected left brace, got %s instead",
+		p.saveErrorf("xczzji7g", "line %d, column %d: expected left brace, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return
 	}
 
@@ -1889,9 +1894,8 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 func (p *Parser) parseExternParamList() ([]*Parameter, bool) {
 	var params []*Parameter
 	if p.currentToken.Type != lexer.LPAREN {
-		msg := fmt.Sprintf("line %d, column %d: expected '(' in extern declaration, got %s instead",
+		p.saveErrorf("81b2ea3o", "line %d, column %d: expected '(' in extern declaration, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil, false
 	}
 	p.nextToken() // skip (
@@ -1915,9 +1919,8 @@ func (p *Parser) parseExternParamList() ([]*Parameter, bool) {
 
 		// 參數名稱
 		if p.currentToken.Type != lexer.IDENT {
-			msg := fmt.Sprintf("line %d, column %d: expected parameter name in extern declaration, got %s instead",
+			p.saveErrorf("soq2h6t2", "line %d, column %d: expected parameter name in extern declaration, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil, false
 		}
 		nameTok := p.currentToken
@@ -1936,18 +1939,16 @@ func (p *Parser) parseExternParamList() ([]*Parameter, bool) {
 			break
 		}
 		if p.currentToken.Type != lexer.COMMA {
-			msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis in extern declaration, got %s instead",
+			p.saveErrorf("8j6njczi", "line %d, column %d: expected comma or right parenthesis in extern declaration, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil, false
 		}
 		p.nextToken() // skip COMMA
 	}
 
 	if p.currentToken.Type != lexer.RPAREN {
-		msg := fmt.Sprintf("line %d, column %d: expected right parenthesis in extern declaration, got %s instead",
+		p.saveErrorf("755ldw47", "line %d, column %d: expected right parenthesis in extern declaration, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil, false
 	}
 	p.nextToken() // skip )
@@ -2021,9 +2022,8 @@ func (p *Parser) parseColonFunctionDefinition() Statement {
 
 	p.nextToken() // skip IDENT → COLON
 	if p.currentToken.Type != lexer.COLON {
-		msg := fmt.Sprintf("line %d, column %d: expected ':', got %s instead",
+		p.saveErrorf("xrmnmwf4", "line %d, column %d: expected ':', got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip COLON
@@ -2048,9 +2048,8 @@ func (p *Parser) parseColonMethodDefinition(structToken lexer.Token) Statement {
 
 	p.nextToken() // skip method name → COLON
 	if p.currentToken.Type != lexer.COLON {
-		msg := fmt.Sprintf("line %d, column %d: expected ':', got %s instead",
+		p.saveErrorf("yzp82ylp", "line %d, column %d: expected ':', got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip COLON

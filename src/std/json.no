@@ -33,9 +33,15 @@ JSON-KIND-STR = 3
 JSON-KIND-ARR = 4
 JSON-KIND-OBJ = 5
 
-; json-pool 实例唯一标识计数器：copy-tree 据此检测“源池 == 接收者池”的自引用。
-; 每次 init 递增取一个 id。即便被常量折叠使所有 id 相同，copy-tree 仍走经
-; copy-tree-into（不查 id）的两段中转，递归在结构上必然收敛，只失去快路径优化。
+; json-pool 的调试標記初值。
+;
+; ⚠️ 這**不是**實例唯一標識，也不能靠它判斷「源池 == 接收者池」：nolang 的
+; 模組級綁定不可重綁，函式內寫 `JSON-POOL-NEXT-ID = …` 只會宣告一個同名區域
+; 變數並遮蔽全域，全域永遠停在 0。實測多次 init 後每個池的 id 都是 1，而
+; copy-tree 曾據此判定「同池」、改走 copy-self，在空的新池上直接返回 -1，
+; 使 json.arr-get / json.get 取到的子樹 root 恒為 -1（.str() 恒 nil、
+; stringify 崩潰）。跨池複製的池身份問題改由呼叫端保證（見 copy-tree 註釋），
+; 自引用場景走 json.set-key 的兩段中轉。
 JSON-POOL-NEXT-ID = 0
 
 ; ═══════════════════════════════════════════════
@@ -115,9 +121,7 @@ json-pool.init = () {
     .count = 0
     .overflowed = false
 
-    #{overflow=wrap}
-    JSON-POOL-NEXT-ID = JSON-POOL-NEXT-ID + 1
-    .id = JSON-POOL-NEXT-ID
+    .id = JSON-POOL-NEXT-ID + 1
 }
 
 ; alloc: 分配新節點，返回索引（堆 vec 自動擴容，不再有池滿上限）
@@ -681,22 +685,19 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
 ; copy-tree: 将 src 池中 node-idx 为根的整棵子树深拷贝进接收者池。
 ; 返回 dst-idx: 新节点索引（-1=失败）
 ;
-; 内存安全（根治自引用崩溃）：src 以 json-pool 值快照传入，其 vec 头与源池共享
-; 底层缓冲区。当源与接收者为同一池（自引用，例如 root.get(k) 取到子树后又
-; root.set-key(k, child)，且 pool 经 #{inline=false} 指针共享缓冲区）时，递归写入
-; 接收者会在 .alloc()/add-child 处扩容共享 vec，使快照 src 的 vec 头失效（UAF）。
-; 检测到同池（src.id == .id）即改走 copy-self：直接在实时接收者 `.` 上沿原始
-; 子边链递归拷贝，读写均用实时 `.`，无快照失效；副本节点不再被遍历，递归
-; 在结构上收敛。跨池（src.id != .id）时保持下方直拷分支，读写分处不同缓冲区。
+; 前提：接收者池必须与 src **不是同一个池**。src 以 json-pool 值快照传入，其
+; vec 头与源池共享底层缓冲区；若同一池，递归写入会在 .alloc()/add-child 处扩容
+; 共享 vec，使快照 src 的 vec 头失效（UAF）。
+;
+; 池身份不能靠 `src.id == .id`：模块级绑定不可重绑（见 JSON-POOL-NEXT-ID 注释），
+; 所有池的 id 恒为 1，这个判定曾把每一次跨池拷贝都误当成同池，使
+; json.arr-get / json.get 返回的子樹 root 恒為 -1。现在改由调用端保证：
+;   - json-clone-tree：接收者是剛 init 的全新池；
+;   - json.set-key：先把 val 拷进臨時新池（json-clone-tree），再从中轉池直拷
+;     进接收者，兩次拷貝的兩端都必不同池，自引用也安全。
 json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
     dst-idx = -1
     node-idx < 0 || node-idx >= src.count -> return
-
-    ; 同池自引用：改用 copy-self 在实时接收者上拷贝，避免快照 vec 头失效
-    src.id == .id -> {
-        dst-idx = .copy-self(node-idx)
-        return
-    }
 
     ; 遞迴深拷貝：分配目標節點，複製標量欄位與字串值
     d = .alloc()
@@ -722,47 +723,6 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
         .add-child(d, cd, ck)
 
         e = src.en[e]
-    }
-}
-
-; copy-self: 在同一池内把 node-idx 为根的子树深拷贝到新分配的節點，返回新根索引。
-; 专用于自引用（源与目标同池）场景：读写均用实时接收者 `.`，无值快照，
-; 因而不存在共享 vec 被扩容作废的 UAF；递归沿原始子边链走，新副本节点不会
-; 被再次遍历，结构上必然收敛。读取子边先于递归写入完成（先存 enext）。
-json-pool.copy-self = (node-idx i64) (dst-idx i64) {
-    dst-idx = -1
-    node-idx < 0 || node-idx >= .count -> return
-    d = .alloc()
-    d < 0 -> return
-    dst-idx = d
-
-    kind = .nodes[node-idx].kind
-
-    numv = .nodes[node-idx].num-val
-
-    boolv = .nodes[node-idx].bool-val
-
-    first = .nodes[node-idx].first
-    sval = .strs[node-idx].copy()
-
-    .nodes[d].kind = kind
-
-    .nodes[d].num-val = numv
-
-    .nodes[d].bool-val = boolv
-
-    .strs[d] = sval
-    e = first
-    (e >= 0) {
-
-        cs = .ec[e]
-
-        ck = .ek[e]
-
-        enext = .en[e]
-        cd = .copy-self(cs)
-        .add-child(d, cd, ck)
-        e = enext
     }
 }
 
@@ -1548,8 +1508,11 @@ json.set-key = (key str, val json) (ok bool) {
         .pool.nodes[.root].count = 0
     }
 
-    ; 深拷贝 val 池中的子树到接收者池，再挂键（避免跨池悬空索引）
-    v-idx = .pool.copy-tree(val.pool, val.root)
+    ; 深拷贝 val 池中的子树到接收者池，再挂键（避免跨池悬空索引）。
+    ; val 可能就是 . 自己（j.set(k, j) 自引用），所以先经一个全新池中转：
+    ; 两次 copy-tree 的两端都必不同池，不依赖池身份判定。
+    tmp = json-clone-tree(val.pool, val.root)
+    v-idx = .pool.copy-tree(tmp.pool, tmp.root)
     v-idx < 0 -> return
     ok = .pool.set-key(.root, key, v-idx)
 }

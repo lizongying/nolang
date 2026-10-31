@@ -9,15 +9,42 @@ test-frame-parse = () {
     ; 構建一個 HEADERS 影格標頭
     ; length = 10 (0x00000a), type = 1 (HEADERS), flags = 4 (END_HEADERS)
     ; stream-id = 1
-    data[0] = 0
-    data[1] = 0
-    data[2] = 10
-    data[3] = 1
-    data[4] = 4
-    data[5] = 0
-    data[6] = 0
-    data[7] = 0
-    data[8] = 1
+    data[0]: {
+        ok -> it = 0
+        -> _
+    }
+    data[1]: {
+        ok -> it = 0
+        -> _
+    }
+    data[2]: {
+        ok -> it = 10
+        -> _
+    }
+    data[3]: {
+        ok -> it = 1
+        -> _
+    }
+    data[4]: {
+        ok -> it = 4
+        -> _
+    }
+    data[5]: {
+        ok -> it = 0
+        -> _
+    }
+    data[6]: {
+        ok -> it = 0
+        -> _
+    }
+    data[7]: {
+        ok -> it = 0
+        -> _
+    }
+    data[8]: {
+        ok -> it = 1
+        -> _
+    }
     f http2.frame
     np = f.parse(data, 0)
     np == nil -> {

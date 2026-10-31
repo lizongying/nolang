@@ -1123,7 +1123,7 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		// IsTypeMatch/TypePattern/TypeBindingName/IsTypeDefault/IsTypeDefault）
 		// 已由 §5 清单待刪，此處不再消費，避免死代碼維持 12 字段存活。
 		return c.b.Add(hir.Node{
-			Kind:  hir.KIf,
+			Kind: hir.KIf,
 			First: c.kids([]int32{
 				c.slot("cond", c.expr(e.Condition)),
 				c.slot("then", c.stmt(e.Consequence)),

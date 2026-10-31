@@ -488,6 +488,16 @@ str.slice-bytes = (start i64, end i64) (val str) {
 ; 类型转换
 ; ═══════════════════════════════════════════════
 
+; str.to-str: 恆等轉換（字串轉字串即自身）
+;
+; 泛型的 []t.to-str / [n]t.to-str 模板逐元素呼叫 `.[i].to-str()`；元素型別為 str 時
+; 就落到本方法。此前 std 沒有它，`['a','b'].to-str()` 在建置期報
+; `unknown callee str.to-str`（產生自 _xstr.to-str 轉發樁）。
+; str 不可變，回傳自身即可（值語義：共享底層緩衝，不複製）。
+str.to-str = () (out str) {
+    out = .
+}
+
 ; str.to-bytes: 将字符串转为字节数组
 str.to-bytes = () (val []byte) {
     val = with-len(.len-bytes())

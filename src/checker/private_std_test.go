@@ -10,7 +10,7 @@ import (
 
 // TestCheckPrivateStdCall pins the compile-time privacy contract for
 // underscore-prefixed STDLIB symbols: `_foo` in std is module-internal, and a
-// cross-module call is an ERROR (TraceID "privstd"), not a convention to be
+// cross-module call is an ERROR (TraceID "raqvyltn"), not a convention to be
 // honored by migrating call sites and hoping nobody regresses.
 //
 // The ownership facts come from the baked std signature tables, so the whole
@@ -103,8 +103,8 @@ func TestCheckPrivateStdCall(t *testing.T) {
 			if !c.wantErr {
 				return
 			}
-			if got[0].TraceID != "privstd" {
-				t.Fatalf("expected TraceID %q, got %q", "privstd", got[0].TraceID)
+			if got[0].TraceID != "raqvyltn" {
+				t.Fatalf("expected TraceID %q, got %q", "raqvyltn", got[0].TraceID)
 			}
 			if got[0].Line != 11 || got[0].Column != 5 {
 				t.Fatalf("expected position 11:5, got %d:%d", got[0].Line, got[0].Column)

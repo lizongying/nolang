@@ -735,6 +735,292 @@ test-vec-len = () {
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret len')
 }
 
+; ── 型别签名：str 形参 + str 返回（纯转发）──────────────
+test-sig-str = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks []i64 = []
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ty []i64 = []
+    ty.push(TY-STR)
+    vt []i64 = []
+    vt.push(TY-I64)
+    vt.push(TY-STR)
+    ct []i64 = []
+    ct.push(TY-I64)
+    s = cg-emit-cfg-t('sident', TY-STR, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define %str-long @sident(%str-long %sv1)'), 1, 'str sig')
+    runner.eq(s.contains('ret %str-long %sv1'), 1, 'str ret')
+    runner.eq(s.contains('i64 %v1'), 0, 'no i64 leak')
+}
+
+; ── 型别签名：i64 与 str 混排形参（命名空间交错）─────────
+test-sig-mixed = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks []i64 = []
+    ops.push(OP-STRLEN)
+    dsts.push(3)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ty []i64 = []
+    ty.push(TY-I64)
+    ty.push(TY-STR)
+    vt []i64 = []
+    vt.push(TY-I64)
+    vt.push(TY-I64)
+    vt.push(TY-STR)
+    vt.push(TY-I64)
+    ct []i64 = []
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    s = cg-emit-cfg-t('mix', TY-I64, 2, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @mix(i64 %v1, %str-long %sv2)'), 1, 'mixed sig')
+    runner.eq(s.contains('%v3 = extractvalue %str-long %sv2, 0'), 1, 'len of sv2')
+    runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
+}
+
+; ── 型别签名：vec 形参（形参本身住 %vc 命名空间）──────────
+test-sig-vec = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks []i64 = []
+    ops.push(OP-VECLEN)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ty []i64 = []
+    ty.push(TY-VEC)
+    vt []i64 = []
+    vt.push(TY-I64)
+    vt.push(TY-VEC)
+    vt.push(TY-I64)
+    ct []i64 = []
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    s = cg-emit-cfg-t('vcount', TY-I64, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @vcount(%vec %vc1)'), 1, 'vec sig')
+    runner.eq(s.contains('call i64 @vec_len(%vec %vc1)'), 1, 'len of vc1')
+    runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
+}
+
+; ── 带型别的 CALL：实参型别混排（i64 + str），结果 i64 ────
+test-sig-call = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks []i64 = []
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('abcd')
+    blks.push(0)
+    ops.push(OP-CALL)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('mix')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    vt []i64 = []
+    vt.push(TY-I64)
+    vt.push(TY-I64)
+    vt.push(TY-STR)
+    vt.push(TY-I64)
+    ct []i64 = []
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    s = cg-emit-cfg-t('caller2', TY-I64, 0, [], vt, ct, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%sv2 = insertvalue %str-long %r1, i8* %p1, 2'), 1, 'str arg built')
+    runner.eq(s.contains('%v3 = call i64 @mix(i64 %v1, %str-long %sv2)'), 1, 'typed call')
+    runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
+}
+
+; ── option：构造（some/none）+ 返回 %option 的签名 ──────
+;   pick(n) = n < 10 ? some(n) : none
+test-option = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks []i64 = []
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(10)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CMPLT)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONDBR)
+    dsts.push(2)
+    xa.push(3)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTSOME)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-OPTNONE)
+    dsts.push(5)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ty []i64 = []
+    ty.push(TY-I64)
+    vt []i64 = []
+    vt.push(TY-I64)
+    vt.push(TY-I64)
+    vt.push(TY-I64)
+    vt.push(TY-I64)
+    vt.push(TY-OPT)
+    vt.push(TY-OPT)
+    ct []i64 = []
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    ct.push(TY-OPT)
+    ct.push(TY-I64)
+    ct.push(TY-OPT)
+    ct.push(TY-I64)
+    s = cg-emit-cfg-t('pick', TY-OPT, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define %option @pick(i64 %v1)'), 1, 'option sig')
+    runner.eq(s.contains('%op4 = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v1, 1, 0'), 1, 'some packs payload')
+    runner.eq(s.contains('%op5 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 1, 0'), 1, 'none sets tag 1')
+    runner.eq(s.contains('br i1 %c2, label %bb1, label %bb2'), 1, 'branch')
+    runner.eq(s.contains('ret %option %op4'), 1, 'ret some')
+    runner.eq(s.contains('ret %option %op5'), 1, 'ret none')
+}
+
+; ── option：读取（tag / is-ok / i64 载荷）───────────────
+test-option-read = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks []i64 = []
+    ops.push(OP-OPTTAG)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTISOK)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTGET)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-ADD)
+    dsts.push(5)
+    xa.push(2)
+    bs.push(3)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ty []i64 = []
+    ty.push(TY-OPT)
+    vt []i64 = []
+    vt.push(TY-I64)
+    vt.push(TY-OPT)
+    vt.push(TY-I64)
+    vt.push(TY-I64)
+    vt.push(TY-I64)
+    vt.push(TY-I64)
+    ct []i64 = []
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    ct.push(TY-I64)
+    s = cg-emit-cfg-t('rd', TY-I64, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @rd(%option %op1)'), 1, 'option param sig')
+    runner.eq(s.contains('%v2 = extractvalue %option %op1, 0'), 1, 'raw tag')
+    runner.eq(s.contains('%ot1 = extractvalue %option %op1, 0'), 1, 'isok temp')
+    runner.eq(s.contains('%c1 = icmp eq i64 %ot1, 0'), 1, 'isok compare')
+    runner.eq(s.contains('%v3 = zext i1 %c1 to i64'), 1, 'isok zext')
+    runner.eq(s.contains('%v4 = extractvalue %option %op1, 1, 0'), 1, 'payload slot0')
+}
+
 test-const-ret()
 test-arith()
 test-call()
@@ -747,6 +1033,12 @@ test-strcat()
 test-str-slot()
 test-vec()
 test-vec-len()
+test-sig-str()
+test-sig-mixed()
+test-sig-vec()
+test-sig-call()
+test-option()
+test-option-read()
 
 runner.summary()
 f = runner.failed-count()

@@ -8,8 +8,11 @@
 ;   STRCONST / STRLEN / STRCAT（非 i64 型别 %str-long）
 ;   SALLOC / SSTORE / SLOAD（%str-long 跨基本块走 alloca，无 PHI）
 ;   VECNEW / VECPUSH / VECLEN / VECGET（%vec，元素仅 i64）
+;   OPTNONE / OPTSOME / OPTTAG / OPTISOK / OPTGET（%option，i64 载荷）
+; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
+;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
 ; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
-; 向量值 → %vc<id>；函数参数即值 id 1..nargs。
+; 向量值 → %vc<id>；option 值 → %op<id>；函数参数即值 id 1..nargs，其命名空间由 ptyps[] 决定。
 ; 块标签：id 0 → entry，其余 → bb<id>。
 ;
 ; ⚠️ 本模块刻意【惰性】：目前只被 compiler/tests/cg-test.no 引用，尚未接 drv。
@@ -37,9 +40,43 @@ cg-emit-func = (name str, nargs i64, ops []i64, dsts []i64, xa []i64, bs []i64, 
     r = cg-emit-cfg(name, nargs, z, ops, dsts, xa, bs, syms)
 }
 
-; cg-emit-cfg：发射一个 i64 返回的函数（可多基本块）。
-; blks[k] = 第 k 条指令所属块 id；块切换处发标签。
+; cg-ty-name：型别码 → LLVM 型别名（TY-I64 → 'i64'，其余是 prelude 里的具名型）。
+cg-ty-name = (t i64) (s str) {
+    s = 'i64'
+    t == TY-STR -> s = '%str-long'
+    t == TY-VEC -> s = '%vec'
+    t == TY-OPT -> s = '%option'
+}
+
+; cg-val-prefix：型别码 → 值命名空间前缀（%v / %sv / %vc / %op）。
+;   LLVM 里 SSA 名全局唯一，同名不同型直接报错 ⇒ 前缀必须跟着型别走。
+cg-val-prefix = (t i64) (s str) {
+    s = '%v'
+    t == TY-STR -> s = '%sv'
+    t == TY-VEC -> s = '%vc'
+    t == TY-OPT -> s = '%op'
+}
+
+; cg-emit-cfg：全部形参/返回值/值都是 i64 的便捷入口（M4-b 起的 8 参数 API）。
+;   ⚠️ 这里**自己构造**全 0 的型别表（而不是让发射器「空表就当 i64」）——
+;   s20 的教训：靠「空/0 即默认」的隐式约定，漏填就是静默退化。
 cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
+    n = ops.len()
+    #{overflow=wrap}
+    m = n + 1
+    ty []i64 = [].with-len(nargs)
+    vt []i64 = [].with-len(m)
+    ct []i64 = [].with-len(n)
+    r = cg-emit-cfg-t(name, TY-I64, nargs, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+}
+
+; cg-emit-cfg-t：发射一个带型别签名的函数（可多基本块）。
+; ptyps[q] = 第 q 个形参（值 id q+1）的型别码；retty = 返回值型别码。
+; vty[id]  = 第 id 号值的型别码（**按值 id 索引**，长度 ≥ 最大值 id + 1）；
+;            CALL 的实参型别与值命名空间都从这里取，不需要额外的调用点签名。
+; cty[k]   = 第 k 条指令**结果**的型别码（CALL 的结果型别靠它）。
+; blks[k]  = 第 k 条指令所属块 id；块切换处发标签。
+cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
     b = sb.init(1024)
     n = ops.len()
     ; 前置：为每个 OP-STRCONST 发字符串字面量全局（顶层，须在 define 之前）。
@@ -55,15 +92,23 @@ cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64,
             b.push('\\00"\n')
         }
     }
-    b.push('define i64 @')
+    b.push('define ')
+    b.push(cg-ty-name(retty))
+    b.push(' @')
     b.push(name)
     b.push('(')
+    q = 0
     p = 1
     #{overflow=wrap}
-    (p <= nargs) {
-        p > 1 -> b.push(', ')
-        b.push('i64 %v')
+    (q < nargs) {
+        q > 0 -> b.push(', ')
+        pt = ptyps[q]
+        b.push(cg-ty-name(pt))
+        b.push(' ')
+        b.push(cg-val-prefix(pt))
         b.push(p.to-str())
+        #{overflow=wrap}
+        q = q + 1
         #{overflow=wrap}
         p = p + 1
     }
@@ -114,17 +159,24 @@ cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64,
             b.push('\n')
         }
         op == OP-CALL -> {
-            b.push('\t%v')
+            rt = cty[k]
+            b.push('\t')
+            b.push(cg-val-prefix(rt))
             b.push(d.to-str())
-            b.push(' = call i64 @')
+            b.push(' = call ')
+            b.push(cg-ty-name(rt))
+            b.push(' @')
             b.push(syms[k])
             b.push('(')
-            ; 参数：值 id x .. x+y-1（连续），y = bs[k] 个
+            ; 参数：值 id x .. x+y-1（连续），y = bs[k] 个；每个的型别查 vty[]
             q = x
             j = 0
             (j < y) {
                 j > 0 -> b.push(', ')
-                b.push('i64 %v')
+                at = vty[q]
+                b.push(cg-ty-name(at))
+                b.push(' ')
+                b.push(cg-val-prefix(at))
                 b.push(q.to-str())
                 #{overflow=wrap}
                 q = q + 1
@@ -279,8 +331,52 @@ cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64,
             b.push(y.to-str())
             b.push(')\n')
         }
+        op == OP-OPTNONE -> {
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 1, 0\n')
+        }
+        op == OP-OPTSOME -> {
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v')
+            b.push(x.to-str())
+            b.push(', 1, 0\n')
+        }
+        op == OP-OPTTAG -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 0\n')
+        }
+        op == OP-OPTISOK -> {
+            b.push('\t%ot')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 0\n\t%c')
+            b.push(k.to-str())
+            b.push(' = icmp eq i64 %ot')
+            b.push(k.to-str())
+            b.push(', 0\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %c')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-OPTGET -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n')
+        }
         op == OP-RET -> {
-            b.push('\tret i64 %v')
+            b.push('\tret ')
+            b.push(cg-ty-name(retty))
+            b.push(' ')
+            b.push(cg-val-prefix(retty))
             b.push(x.to-str())
             b.push('\n')
         }

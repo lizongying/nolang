@@ -5,11 +5,16 @@ package build
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/checker"
 )
+
+// msgIDRe is the shape of a message ID: 8 characters of base36. It doubles as the
+// translation index, so it is the only thing the bracketed slot may contain.
+var msgIDRe = regexp.MustCompile(`^[0-9a-z]{8}$`)
 
 // TestVetFileWithLints_StructuredOutput 验证 no vet 路径（VetFileWithLints）
 // 对已知文件返回结构化 LintResult（含行号/严重度/来源），而非塌缩的单行 error。
@@ -305,8 +310,12 @@ func TestVetFileWithLints_ParserErrorIsStructured(t *testing.T) {
 	if strings.Contains(found.Message, "[E_GENERAL]") {
 		t.Errorf("诊断码应落在 TraceID 字段而非消息正文: %q", found.Message)
 	}
-	if found.TraceID != "E_GENERAL" {
-		t.Errorf("诊断码: got %q, want %q", found.TraceID, "E_GENERAL")
+	// The bracketed slot now carries the 8-char base36 message ID (the
+	// translation index), not the legacy semantic code. What matters is that it
+	// is a well-formed ID and not empty: the ID is what a user pastes into a bug
+	// report and what a translator keys on.
+	if !msgIDRe.MatchString(found.TraceID) {
+		t.Errorf("诊断码: got %q, want an 8-char base36 message ID", found.TraceID)
 	}
 }
 

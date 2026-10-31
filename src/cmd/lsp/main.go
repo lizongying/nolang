@@ -15,6 +15,7 @@ import (
 
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/checker/stdastembed"
+	"github.com/lizongying/nolang/i18n/catalog"
 	"github.com/lizongying/nolang/lsp"
 )
 
@@ -35,6 +36,18 @@ func main() {
 	// footgun entirely. Without any blob StdASTFor degrades to parsing std from
 	// source, so the server still starts.
 	checker.SetStdASTBlob(stdastembed.Blob)
+
+	// 語言：LSP 沒有 --lang 旗標（客戶端透過 initialize.locale 表達偏好，那是
+	// 後續工作），先只認 $NO_LANG / $LC_ALL / $LANG。必須在任何診斷產生之前完成，
+	// 因為 checker 在建構訊息時就翻譯，而不是在渲染時。
+	if err := catalog.Init(catalog.Options{
+		ProjectDirs: catalog.ProjectDirs(),
+		Warn: func(msg string) {
+			log.Printf("i18n: %s", msg)
+		},
+	}); err != nil {
+		log.Printf("i18n: %v", err)
+	}
 
 	// Check for "vet" subcommand before flag parsing
 	if len(os.Args) > 1 && os.Args[1] == "vet" {

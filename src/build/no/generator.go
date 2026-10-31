@@ -405,19 +405,25 @@ func (g *Generator) generateEnumDefinition(ed *parser.EnumDefinition) string {
 	return sb.String()
 }
 
+// generateInterfaceDefinition 輸出介面定義。合併項（Implements）走體內多行形：
+//
+//	serialize {
+//	    json
+//	    noml
+//	    to-str()
+//	}
+//
+// 產出的 `.no` 必須可回讀，故不得沿用已廢棄的前置列表形。
 func (g *Generator) generateInterfaceDefinition(id *parser.InterfaceDefinition) string {
 	var sb strings.Builder
 	sb.WriteString(id.Name)
-	for i, iface := range id.Implements {
-		if i == 0 {
-			sb.WriteString(" ")
-		} else {
-			sb.WriteString(", ")
-		}
-		sb.WriteString(iface)
-	}
 	sb.WriteString(" {\n")
 	g.indentLevel++
+	for _, iface := range id.Implements {
+		sb.WriteString(g.indent())
+		sb.WriteString(iface)
+		sb.WriteString("\n")
+	}
 	for _, m := range id.Methods {
 		sb.WriteString(g.indent())
 		sb.WriteString(m.Name)

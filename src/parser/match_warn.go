@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"reflect"
 )
 
@@ -194,7 +193,7 @@ func (l *lowerer) warnUnreachableArms(sm *SurfaceMatch) {
 		if pos.Line == 0 && a.Body != nil {
 			pos = a.Body.Pos()
 		}
-		l.p.saveWarning(fmt.Sprintf("line %d, column %d: %s", pos.Line, pos.Column, msg))
+		l.p.saveWarningf("u13hzynp", "line %d, column %d: %s", pos.Line, pos.Column, msg)
 	}
 }
 

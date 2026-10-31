@@ -5,13 +5,16 @@
 ; hex-str str: 64 字元 hex 字串
 ; 返回 out [32]byte
 hex-to-bytes = (hex-str str) (out [32]byte) {
+    ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
+    #{ascii}
+    hex-src = hex-str
     i <- [0..32): {
 
         #{overflow=wrap}
-        hi char = hex-str[i * 2]
+        hi char = hex-src[i * 2]
 
         #{overflow=wrap}
-        lo char = hex-str[i * 2 + 1]
+        lo char = hex-src[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {
@@ -77,10 +80,11 @@ test-vec-1 = () (pass bool) {
         print('FAIL: Alice public key mismatch')
         i <- [0..32): {
 
-            e = alice-pub-expected[i]
+            ; 索引讀取返回 option：宣告具體型別即取載荷（OOB 依註解補零）。
+            e byte = alice-pub-expected[i]
 
             #{index-out=zero}
-            c = alice-pub[i]
+            c byte = alice-pub[i]
             eprint('  idx=')
             eprint(i)
             eprint(' expected=')
@@ -115,12 +119,14 @@ test-vec-1 = () (pass bool) {
         eprint('Alice shared:')
         i <- [0..32): {
             eprint(' ')
-            eprint(shared-alice[i])
+            b byte = shared-alice[i]
+            eprint(b)
         }
         eprint('Bob shared:')
         i <- [0..32): {
             eprint(' ')
-            eprint(shared-bob[i])
+            b byte = shared-bob[i]
+            eprint(b)
         }
         return
     }
@@ -134,12 +140,14 @@ test-vec-1 = () (pass bool) {
         eprint('Computed:')
         i <- [0..32): {
             eprint(' ')
-            eprint(shared-alice[i])
+            b byte = shared-alice[i]
+            eprint(b)
         }
         eprint('Expected:')
         i <- [0..32): {
             eprint(' ')
-            eprint(shared-expected[i])
+            b byte = shared-expected[i]
+            eprint(b)
         }
         return
     }

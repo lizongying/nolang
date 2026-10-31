@@ -115,7 +115,10 @@ test-struct-live-copy = () {
 test-arg-inplace-mutation = () {
     a = [1, 2, 3]
     n = co first(a)
-    a[0] = 99
+    a[0]: {
+        ok -> it = 99
+        -> _
+    }
     print(n); expect: 1
 }
 

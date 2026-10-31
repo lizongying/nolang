@@ -14,19 +14,19 @@
 ; after it; cases 3-6 are byte-identical either way (they are the controls that
 ; keep the new retain/release from over-reaching).
 
-dbl = (n i64) (r i64) {
+dbl-async = (n i64) (r i64) {
 
     #{overflow=wrap}
     r = n * 2
 }
 
 mk = () (h i64) {
-    h = run dbl(21)
+    h = run dbl-async(21)
 }
 
 ; 1. the reported crash: h2 aliases h and BOTH are awaited
 alias-both = () {
-    h = run dbl(21)
+    h = run dbl-async(21)
     h2 = h
     a = awy h
     b = awy h2
@@ -35,7 +35,7 @@ alias-both = () {
 
 ; 2. a chain of aliases — every copy is its own reference
 alias-chain = () {
-    h = run dbl(21)
+    h = run dbl-async(21)
     h2 = h
     h3 = h2
     a = awy h
@@ -54,7 +54,7 @@ via-return = () {
 ; 4. a handle stored in a container
 via-container = () {
     hs []i64 = []
-    hs.push(run dbl(21))
+    hs.push(run dbl-async(21))
     a = awy hs[0]
     print('4a={a}')
 }
@@ -62,7 +62,7 @@ via-container = () {
 ; 5. the SAME slot awaited twice stays a defined no-op. The diagnostic goes to
 ;    stderr; stdout keeps the deterministic 42 then 0.
 same-slot-twice = () {
-    h = run dbl(21)
+    h = run dbl-async(21)
     a = awy h
     b = awy h
     print('5a={a} 5b={b}')
@@ -73,7 +73,7 @@ same-slot-twice = () {
 many = () (s i64) {
     s = 0
     i <- [0..2000): {
-        h = run dbl(i)
+        h = run dbl-async(i)
         v = awy h
 
         #{overflow=wrap}

@@ -21,11 +21,24 @@ import (
 //     null、裸數字（整數/小數/指數）、物件 {…}、陣列 […]。
 //   - 陣列：元素用逗號分隔，支援尾隨逗號；[ 、元素、,、] 皆可跨行。
 //   - 註解：; 到行尾（字串內的 ; 除外）。縮排無意義。
+//   - 成員註解：`#{...}` 與 nolang 註解語法完全一致（`key = value`，逗號分隔），
+//     只允許獨立成行寫在成員**上方**，或寫在成員同一行的**尾隨**位置。
+//     寫在成員前方同一行（`#{...} name: 'x'`）是語法錯誤，判定規則與 nolang
+//     的 `#{...}` 位置規則同源。
+//
+// 成員註解目前用於攜帶「元素型別」（`#{type = '[]str'}`）：noml 值本身無型別
+// （`[]`、`0`、`'0'` 都合法），要由 noml 重建強型別結構（例如 nolang 直接
+// 引入 .noml 生成結構體）就必須知道每個成員的型別；空容器無法推斷，必須
+// 顯式標註。
 //
 // 解析產出 Go 原生型別：map[string]any / []any / string / float64 / bool / nil，
 // 再以 DecodeInto（反射，沿用 struct 的 json tag 欄位名）落地到強型別結構。
 // dependencies 等 map[string]string 欄位在 noml 中是字串陣列，元素形如
 // 'key:version'（version 可省略，預設 '*'）。
+//
+// 兩套入口：ParseNoml/ParseNomlMap 回傳純值樹（註解被解析但不保留）；
+// ParseNomlDoc 額外保留每個成員的註解（路徑 → 條目），配合 MarshalNomlDoc
+// 可原樣往返（重建）。
 
 // NomlFileNameRule 描述三類配置檔的檔名（硬切 .jsonc → .noml）。
 const (
@@ -66,22 +79,73 @@ func IsNomlIdentifierKey(s string) bool {
 
 // ─── 解析器 ──────────────────────────────────────────────────────────────────
 
+// NomlAnnotation 是寫在 noml 物件成員上的 `#{key = value}` 註解條目。
+//
+// 語法與 nolang 的 `#{...}` 一致：多個條目以逗號分隔；值支援單引號字串、
+// 數字、true/false/null、裸識別字與陣列；裸鍵（`#{debug}`）的 Value 為 nil。
+// 位置規則也一致：只允許獨立成行寫在成員上方，或寫在成員同一行的尾隨位置。
+//
+// 目前唯一有語意的鍵是 `type`（值為 nolang 型別表達式字串，如 `'[]str'`、
+// `'i64'`、`'compiler-options'`），其餘鍵作為元數據原樣保留。成員型別只由
+// 該成員的註解攜帶——這是「從 noml 重建強型別結構」的前提。
+//
+// 註解不進值樹，而是保存在 NomlDoc.Annotations（成員路徑 → 條目）。
+type NomlAnnotation struct {
+	Key   string
+	Value any // string / float64 / bool / nil / []any
+	Line  int
+}
+
+// NomlDoc 是帶註解的 noml 文件。Root 是物件值樹（頂層非物件時為 nil），
+// Annotations 以成員路徑（`compiler.version`、`dependencies`）為 key 保存
+// 該成員的註解條目。路徑段使用原始鍵名；陣列元素不携带獨立註解。
+type NomlDoc struct {
+	Root        map[string]any
+	Value       any
+	Annotations map[string][]NomlAnnotation
+}
+
+// TypeOf 回傳某成員 `#{type = '...'}` 標註的型別字串（未標註回傳 ""）。
+func (d *NomlDoc) TypeOf(path string) string {
+	for _, a := range d.Annotations[path] {
+		if a.Key != "type" {
+			continue
+		}
+		if s, ok := a.Value.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 type nomlParser struct {
 	data []byte
 	pos  int
 	line int
 	col  int
+	// anns 收集成員註解（路徑 → 條目），成員路徑由 parseValue 的 path 參數累積。
+	anns map[string][]NomlAnnotation
 }
 
 // ParseNoml 解析一份 noml 設定檔，回傳 Go 原生值樹
-// （map[string]any / []any / string / float64 / bool / nil）。
+// （map[string]any / []any / string / float64 / bool / nil）。成員註解會
+// 一併解析（語法錯誤仍會報錯），但不在回傳值中保留；需要註解時用 ParseNomlDoc。
 func ParseNoml(data []byte) (any, error) {
-	p := &nomlParser{data: data, line: 1, col: 1}
+	doc, err := ParseNomlDoc(data)
+	if err != nil {
+		return nil, err
+	}
+	return doc.Value, nil
+}
+
+// ParseNomlDoc 解析 noml 並保留成員註解（路徑 → `#{...}` 條目）。
+func ParseNomlDoc(data []byte) (*NomlDoc, error) {
+	p := &nomlParser{data: data, line: 1, col: 1, anns: make(map[string][]NomlAnnotation)}
 	p.skipTrivia()
 	if p.pos >= len(p.data) {
 		return nil, p.errf("empty input")
 	}
-	v, err := p.parseValue()
+	v, err := p.parseValue("")
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +153,11 @@ func ParseNoml(data []byte) (any, error) {
 	if p.pos < len(p.data) {
 		return nil, p.errf("unexpected character %q after value", p.data[p.pos])
 	}
-	return v, nil
+	doc := &NomlDoc{Value: v, Annotations: p.anns}
+	if m, ok := v.(map[string]any); ok {
+		doc.Root = m
+	}
+	return doc, nil
 }
 
 // ParseNomlMap 解析 noml 頂層物件。
@@ -105,17 +173,24 @@ func ParseNomlMap(data []byte) (map[string]any, error) {
 	return m, nil
 }
 
-func (p *nomlParser) parseValue() (any, error) {
+// parseValue 解析一個值。path 是當前成員路徑（如 "compiler.version"），
+// 僅用於把下層成員的註解歸到正確路徑。
+func (p *nomlParser) parseValue(path string) (any, error) {
 	p.skipTrivia()
 	if p.pos >= len(p.data) {
 		return nil, p.errf("unexpected end of input")
 	}
 	c := p.data[p.pos]
+	// 註解寫在值的位臵（`key: #{type = 'x'} 1`）是位置規則錯誤，而不是
+	// 非法值；單獨報出來，提示使用者放到成員上方或同一行尾隨。
+	if c == '#' && p.pos+1 < len(p.data) && p.data[p.pos+1] == '{' {
+		return nil, p.errf("`#{...}` annotation must be on its own line above the member, or trailing on the member's line (not before the member's value)")
+	}
 	switch {
 	case c == '{':
-		return p.parseObject()
+		return p.parseObject(path)
 	case c == '[':
-		return p.parseArray()
+		return p.parseArray(path)
 	case c == '\'':
 		return p.parseString()
 	case c == 't' || c == 'f':
@@ -129,8 +204,17 @@ func (p *nomlParser) parseValue() (any, error) {
 	}
 }
 
-// parseObject 解析 { 成員... }，成員以換行分隔（無逗號）。
-func (p *nomlParser) parseObject() (map[string]any, error) {
+// memberPath 拼接成員路徑（頂層成員就是鍵本身）。
+func memberPath(prefix, key string) string {
+	if prefix == "" {
+		return key
+	}
+	return prefix + "." + key
+}
+
+// parseObject 解析 { 成員... }，成員以換行分隔（無逗號）。成員上方或
+// 同一行尾隨的 `#{...}` 會收集到 p.anns[成員路徑]。
+func (p *nomlParser) parseObject(path string) (map[string]any, error) {
 	p.advance() // skip {
 	result := make(map[string]any)
 	seen := make(map[string]bool)
@@ -142,6 +226,17 @@ func (p *nomlParser) parseObject() (map[string]any, error) {
 		if p.data[p.pos] == '}' {
 			p.advance()
 			return result, nil
+		}
+		// 成員上方的 `#{...}`（獨立成行）。
+		anns, err := p.parseLeadingAnnotations()
+		if err != nil {
+			return nil, err
+		}
+		if len(anns) > 0 {
+			p.skipTrivia()
+			if p.pos >= len(p.data) || p.data[p.pos] == '}' {
+				return nil, p.errf("annotation without a member to attach to")
+			}
 		}
 		key, err := p.parseKey()
 		if err != nil {
@@ -156,11 +251,20 @@ func (p *nomlParser) parseObject() (map[string]any, error) {
 			return nil, p.errf("expected ':' after key %q", key)
 		}
 		p.advance() // skip :
-		val, err := p.parseValue()
+		mpath := memberPath(path, key)
+		val, err := p.parseValue(mpath)
 		if err != nil {
 			return nil, err
 		}
 		result[key] = val
+		// 成員同一行的尾隨 `#{...}`。
+		trail, err := p.parseTrailingAnnotations()
+		if err != nil {
+			return nil, err
+		}
+		if all := dedupeNomlAnnotations(append(anns, trail...)); len(all) > 0 {
+			p.anns[mpath] = all
+		}
 		if err := p.requireMemberEnd(key); err != nil {
 			return nil, err
 		}
@@ -168,7 +272,7 @@ func (p *nomlParser) parseObject() (map[string]any, error) {
 }
 
 // parseArray 解析 [ 元素, ... ]，元素以逗號分隔，支援尾隨逗號。
-func (p *nomlParser) parseArray() ([]any, error) {
+func (p *nomlParser) parseArray(path string) ([]any, error) {
 	p.advance() // skip [
 	var result []any
 	for {
@@ -180,7 +284,7 @@ func (p *nomlParser) parseArray() ([]any, error) {
 			p.advance()
 			return result, nil
 		}
-		val, err := p.parseValue()
+		val, err := p.parseValue(path)
 		if err != nil {
 			return nil, err
 		}
@@ -198,6 +302,237 @@ func (p *nomlParser) parseArray() ([]any, error) {
 		default:
 			return nil, p.errf("expected ',' or ']' in array, got %q", p.data[p.pos])
 		}
+	}
+}
+
+// ─── 成員註解 #{...} ────────────────────────────────────────────────────────
+
+// parseLeadingAnnotations 解析寫在成員上方的註解群組（可連續多個）。
+// 位置規則與 nolang 一致：註解必須獨立成行（行首只有空白）；若 `}` 之後
+// 同一行還有程式碼（前綴寫法 `#{...} name: 'x'`），報錯。
+func (p *nomlParser) parseLeadingAnnotations() ([]NomlAnnotation, error) {
+	var out []NomlAnnotation
+	for {
+		p.skipInlineBlanks()
+		if p.pos >= len(p.data) || p.data[p.pos] != '#' {
+			return out, nil
+		}
+		if !p.atLineStart() {
+			return nil, p.errf("`#{...}` annotation must be on its own line above the member, or trailing on the member's line (not before it on the same line)")
+		}
+		group, err := p.parseAnnotationGroup()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, group...)
+		// 註解群組後面同一行不得再有程式碼（只能換行、; 註解或下一個註解群組）。
+		p.skipInlineBlanks()
+		if p.pos < len(p.data) && p.data[p.pos] == '#' {
+			continue
+		}
+		if p.pos < len(p.data) && p.data[p.pos] != '\n' && p.data[p.pos] != ';' && p.data[p.pos] != '\r' {
+			return nil, p.errf("`#{...}` annotation must not share its line with the member; put it on the line above or after the member's value")
+		}
+		return out, nil
+	}
+}
+
+// parseTrailingAnnotations 解析成員值同一行尾隨的註解群組。
+// 不跨越換行——換行後的 `#{...}` 屬於下一個成員。
+func (p *nomlParser) parseTrailingAnnotations() ([]NomlAnnotation, error) {
+	var out []NomlAnnotation
+	for {
+		p.skipInlineBlanks()
+		if p.pos >= len(p.data) || p.data[p.pos] != '#' {
+			return out, nil
+		}
+		group, err := p.parseAnnotationGroup()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, group...)
+	}
+}
+
+// parseAnnotationGroup 解析 `#{key = value, ...}`。裸鍵（`#{debug}`）的
+// Value 為 nil，與 nolang 註解語意一致。
+func (p *nomlParser) parseAnnotationGroup() ([]NomlAnnotation, error) {
+	line := p.line
+	if p.pos+1 >= len(p.data) || p.data[p.pos] != '#' || p.data[p.pos+1] != '{' {
+		return nil, p.errf("expected '#{'")
+	}
+	p.advance() // skip #
+	p.advance() // skip {
+	var out []NomlAnnotation
+	for {
+		p.skipAnnotationSpace()
+		if p.pos >= len(p.data) {
+			return nil, p.errf("unterminated annotation (missing '}')")
+		}
+		if p.data[p.pos] == '}' {
+			p.advance()
+			return out, nil
+		}
+		key, err := p.parseAnnotationKey()
+		if err != nil {
+			return nil, err
+		}
+		p.skipInlineBlanks()
+		var val any
+		if p.pos < len(p.data) && p.data[p.pos] == '=' {
+			p.advance() // skip =
+			p.skipInlineBlanks()
+			val, err = p.parseAnnotationValue()
+			if err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, NomlAnnotation{Key: key, Value: val, Line: line})
+		p.skipInlineBlanks()
+		if p.pos < len(p.data) && p.data[p.pos] == ',' {
+			p.advance()
+			continue
+		}
+		if p.pos < len(p.data) && p.data[p.pos] == '}' {
+			p.advance()
+			return out, nil
+		}
+		return nil, p.errf("expected ',' or '}' in annotation, got %q", p.data[p.pos])
+	}
+}
+
+// parseAnnotationKey 解析註解鍵（nolang 標識符規則）。
+func (p *nomlParser) parseAnnotationKey() (string, error) {
+	start := p.pos
+	if p.pos >= len(p.data) || !isNomlIdentStart(p.data[p.pos]) {
+		return "", p.errf("expected annotation key")
+	}
+	p.advance()
+	for p.pos < len(p.data) && isNomlIdentChar(p.data[p.pos]) {
+		p.advance()
+	}
+	return string(p.data[start:p.pos]), nil
+}
+
+// parseAnnotationValue 解析註解值：單引號字串、數字、true/false/null、
+// 裸識別字（含 `/` `.` 等路徑字元）與陣列。
+func (p *nomlParser) parseAnnotationValue() (any, error) {
+	if p.pos >= len(p.data) {
+		return nil, p.errf("expected annotation value")
+	}
+	c := p.data[p.pos]
+	switch {
+	case c == '\'':
+		return p.parseString()
+	case c == '[':
+		p.advance() // skip [
+		var arr []any
+		for {
+			p.skipAnnotationSpace()
+			if p.pos >= len(p.data) {
+				return nil, p.errf("unterminated annotation array")
+			}
+			if p.data[p.pos] == ']' {
+				p.advance()
+				return arr, nil
+			}
+			v, err := p.parseAnnotationValue()
+			if err != nil {
+				return nil, err
+			}
+			arr = append(arr, v)
+			p.skipAnnotationSpace()
+			if p.pos < len(p.data) && p.data[p.pos] == ',' {
+				p.advance()
+			}
+		}
+	case c == '-' || (c >= '0' && c <= '9'):
+		return p.parseNumber()
+	case c == 't' || c == 'f' || c == 'n':
+		if p.matchKeyword("true") {
+			return true, nil
+		}
+		if p.matchKeyword("false") {
+			return false, nil
+		}
+		if p.matchKeyword("null") {
+			return nil, nil
+		}
+		return p.parseAnnotationIdent()
+	default:
+		return p.parseAnnotationIdent()
+	}
+}
+
+// parseAnnotationIdent 解析裸識別字值（型別名、封閉取值、路徑等）。
+func (p *nomlParser) parseAnnotationIdent() (string, error) {
+	start := p.pos
+	for p.pos < len(p.data) {
+		c := p.data[p.pos]
+		if c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == ',' || c == '}' || c == ']' {
+			break
+		}
+		p.advance()
+	}
+	if p.pos == start {
+		return "", p.errf("expected annotation value")
+	}
+	return string(p.data[start:p.pos]), nil
+}
+
+// dedupeNomlAnnotations 依鍵去重，保留最後一次（與 nolang 註解去重語意一致）。
+func dedupeNomlAnnotations(anns []NomlAnnotation) []NomlAnnotation {
+	if len(anns) <= 1 {
+		return anns
+	}
+	out := make([]NomlAnnotation, 0, len(anns))
+	index := make(map[string]int, len(anns))
+	for _, a := range anns {
+		if i, ok := index[a.Key]; ok {
+			out[i] = a
+			continue
+		}
+		index[a.Key] = len(out)
+		out = append(out, a)
+	}
+	return out
+}
+
+// atLineStart 報告當前位置是否為行首（其前只有空白）。
+func (p *nomlParser) atLineStart() bool {
+	for i := p.pos - 1; i >= 0; i-- {
+		c := p.data[i]
+		if c == '\n' {
+			return true
+		}
+		if c != ' ' && c != '\t' && c != '\r' {
+			return false
+		}
+	}
+	return true
+}
+
+// skipInlineBlanks 只跳過行內空白與 ; 行註解，不跨越換行。
+func (p *nomlParser) skipInlineBlanks() {
+	for p.pos < len(p.data) {
+		c := p.data[p.pos]
+		if c == ' ' || c == '\t' {
+			p.advance()
+			continue
+		}
+		return
+	}
+}
+
+// skipAnnotationSpace 跳過註解內部的空白與換行（註解可跨行書寫）。
+func (p *nomlParser) skipAnnotationSpace() {
+	for p.pos < len(p.data) {
+		c := p.data[p.pos]
+		if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+			p.advance()
+			continue
+		}
+		return
 	}
 }
 
@@ -491,6 +826,53 @@ func MarshalNoml(v any) (string, error) {
 	return sb.String(), nil
 }
 
+// MarshalNomlDoc 序列化帶註解的 noml 文件：成員的 `#{...}` 註解輸出在成員
+// 上方的獨立一行（與解析端接受的位置一致），因此 ParseNomlDoc → MarshalNomlDoc
+// 可完整往返（重建）。
+func MarshalNomlDoc(doc *NomlDoc) (string, error) {
+	if doc == nil {
+		return "", nil
+	}
+	var sb strings.Builder
+	if err := nomlWriteAnnotated(&sb, doc.Value, 0, "", doc.Annotations); err != nil {
+		return "", err
+	}
+	return sb.String(), nil
+}
+
+// FormatNomlAnnotation 輸出單個註解條目（`key = value` 或裸鍵 `key`）。
+func FormatNomlAnnotation(a NomlAnnotation) string {
+	if a.Value == nil {
+		return a.Key
+	}
+	return a.Key + " = " + nomlAnnotationValue(a.Value)
+}
+
+// nomlAnnotationValue 輸出註解值面值（與解析端接受的語法一致）。
+func nomlAnnotationValue(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return "null"
+	case string:
+		return NomlQuote(t)
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	case float64:
+		return nomlFormatNumber(t)
+	case []any:
+		parts := make([]string, 0, len(t))
+		for _, e := range t {
+			parts = append(parts, nomlAnnotationValue(e))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return NomlQuote(fmt.Sprint(t))
+	}
+}
+
 // nomlNormalize 把 Go 原生容器（map[string]string 等）轉成值樹形态。
 func nomlNormalize(v any) (any, error) {
 	switch t := v.(type) {
@@ -575,10 +957,11 @@ func nomlWrite(sb *strings.Builder, v any, indent int) error {
 	if err != nil {
 		return err
 	}
-	return nomlWriteNormalized(sb, n, indent)
+	return nomlWriteAnnotated(sb, n, indent, "", nil)
 }
 
-func nomlWriteNormalized(sb *strings.Builder, v any, indent int) error {
+// nomlWriteAnnotated 寫出值樹；物件成員若有註解，先輸出註解行。
+func nomlWriteAnnotated(sb *strings.Builder, v any, indent int, path string, anns map[string][]NomlAnnotation) error {
 	pad := strings.Repeat("  ", indent)
 	switch t := v.(type) {
 	case nil:
@@ -601,11 +984,23 @@ func nomlWriteNormalized(sb *strings.Builder, v any, indent int) error {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
+			mpath := memberPath(path, k)
+			if entries := anns[mpath]; len(entries) > 0 {
+				sb.WriteString(pad)
+				sb.WriteString("  ")
+				sb.WriteString("#{")
+				parts := make([]string, 0, len(entries))
+				for _, a := range entries {
+					parts = append(parts, FormatNomlAnnotation(a))
+				}
+				sb.WriteString(strings.Join(parts, ", "))
+				sb.WriteString("}\n")
+			}
 			sb.WriteString(pad)
 			sb.WriteString("  ")
 			sb.WriteString(nomlFormatKey(k))
 			sb.WriteString(": ")
-			if err := nomlWriteNormalized(sb, t[k], indent+1); err != nil {
+			if err := nomlWriteAnnotated(sb, t[k], indent+1, mpath, anns); err != nil {
 				return err
 			}
 			sb.WriteByte('\n')
@@ -621,7 +1016,7 @@ func nomlWriteNormalized(sb *strings.Builder, v any, indent int) error {
 		for _, elem := range t {
 			sb.WriteString(pad)
 			sb.WriteString("  ")
-			if err := nomlWriteNormalized(sb, elem, indent+1); err != nil {
+			if err := nomlWriteAnnotated(sb, elem, indent+1, path, anns); err != nil {
 				return err
 			}
 			sb.WriteString(",\n") // 尾隨逗號：陣列元素一律帶逗號結尾

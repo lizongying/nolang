@@ -186,14 +186,26 @@ func (f *formatter) formatTaggedEnumDefinition(s *parser.TaggedEnumDefinition) {
 	f.write("}")
 }
 
+// formatInterfaceDefinition 輸出介面定義。
+//
+// 介面合併項（Implements）一律寫在【體內、每行一個】——規範形是
+//
+//	serialize {
+//	    json
+//	    noml
+//	}
+//
+// 舊的「前置列表」形（`serialize json, noml { }`）仍可解析（兼容），但
+// `no fmt` 會改寫為體內形；與 C 風格列舉同形的 `{ json, noml }` 不接受
+// 逗號，因此每行一個裸名是唯一無歧義的寫法。
 func (f *formatter) formatInterfaceDefinition(s *parser.InterfaceDefinition) {
 	f.write(s.Name)
-	if len(s.Implements) > 0 {
-		f.write(" ")
-		f.write(strings.Join(s.Implements, ", "))
-	}
 	f.write(" {")
 	f.indent++
+	for _, imp := range s.Implements {
+		f.newline()
+		f.write(imp)
+	}
 	for _, m := range s.Methods {
 		f.newline()
 		// Generic-receiver form: t.method(...)

@@ -25,6 +25,7 @@ import (
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/checker/stdastembed"
 	nfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/i18n/catalog"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/mmast"
 	pkg "github.com/lizongying/nolang/package"
@@ -86,6 +87,50 @@ func parseOptFlag(args []string) []string {
 	return filtered
 }
 
+// parseLangFlag extracts the global `--lang=<tag>` switch from args.
+//
+// It is global for the same reason -opt is: build, run, test, vet and fmt all
+// produce diagnostics through the same lowering path, so a per-subcommand flag
+// would have to be added nine times and could drift. Stripping it here is also
+// what makes `no build main.no --lang=zh-CN` work at all — Go's flag package
+// stops at the first non-flag token, so a FlagSet-based flag would be silently
+// swallowed as a file argument.
+//
+// Both spellings are accepted (`--lang=X`, `-lang=X`, and the space-separated
+// forms). A bare `--` terminates parsing so `no run prog.no -- --lang=x` still
+// forwards the flag to the program being run.
+func parseLangFlag(args []string) (out []string, lang string, set bool, err error) {
+	filtered := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			filtered = append(filtered, args[i:]...)
+			break
+		}
+		switch {
+		case arg == "--lang" || arg == "-lang":
+			if i+1 >= len(args) {
+				return nil, "", false, fmt.Errorf("%s requires a value (e.g. %s=zh-CN)", arg, arg)
+			}
+			i++
+			lang, set = args[i], true
+		case strings.HasPrefix(arg, "--lang=") || strings.HasPrefix(arg, "-lang="):
+			lang, set = arg[strings.IndexByte(arg, '=')+1:], true
+			if lang == "" {
+				return nil, "", false, fmt.Errorf("--lang requires a value (e.g. --lang=zh-CN)")
+			}
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+	return filtered, lang, set, nil
+}
+
+// localeSearchDirs lists the directories searched for `locales/<tag>.noml`.
+// Kept as a thin wrapper so the CLI reads naturally at the call site; the logic
+// lives in catalog so `no` and the LSP cannot disagree about precedence.
+func localeSearchDirs() []string { return catalog.ProjectDirs() }
+
 func main() {
 	// 安裝烤进二进制的 std AST blob（Tier 0 增量编译缓存）。blob 缺失/过期时
 	// checker.StdASTFor 自动回退到从 StdFS 解析，构建不受影响。
@@ -93,6 +138,30 @@ func main() {
 
 	// 全局 flags
 	os.Args = parseOptFlag(os.Args)
+
+	// --lang 必須在任何診斷產生之前生效（含 printUsage），且必須在 os.Args 被
+	// 各子命令的 FlagSet 解析之前剝離：Go 的 flag 在第一個非 flag 參數處停止，
+	// `no build main.no --lang=zh-CN` 否則會被當成檔案參數靜默忽略。
+	var langFlag string
+	var langSet bool
+	var langErr error
+	os.Args, langFlag, langSet, langErr = parseLangFlag(os.Args)
+	if langErr != nil {
+		fmt.Fprintf(os.Stderr, "no: %v\n", langErr)
+		os.Exit(2)
+	}
+	if err := catalog.Init(catalog.Options{
+		Lang:        langFlag,
+		LangSet:     langSet,
+		ProjectDirs: localeSearchDirs(),
+		Warn: func(msg string) {
+			fmt.Fprintf(os.Stderr, "no: warning: %s\n", msg)
+		},
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "no: %v\n", err)
+		os.Exit(2)
+	}
+
 	for i, arg := range os.Args[1:] {
 		if arg == "-v" {
 			verbose = true
@@ -185,6 +254,9 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("Global flags:")
 	fmt.Println("  -v    Verbose mode (apply to all commands)")
+	fmt.Println("  --lang=<tag>  Message language, e.g. --lang=zh-CN, --lang=en.")
+	fmt.Println("                Defaults to the system locale ($LC_ALL / $LANG);")
+	fmt.Println("                English is the fallback. Also settable via $NO_LANG.")
 	fmt.Println("")
 	fmt.Println("  no version           Print version information")
 	fmt.Println("")
@@ -2917,9 +2989,9 @@ func testCommand(args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
 	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
-		wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
-		timeoutSec := fs.Int("timeout", 0, "per-test run timeout in seconds (0 = unlimited); a single hang is killed and reported, not fatal to the whole run")
-		fs.Usage = func() {
+	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
+	timeoutSec := fs.Int("timeout", 0, "per-test run timeout in seconds (0 = unlimited); a single hang is killed and reported, not fatal to the whole run")
+	fs.Usage = func() {
 		fmt.Println("Usage: no test [<file>]")
 		fmt.Println("")
 		fmt.Println("Run tests.")
@@ -3165,6 +3237,12 @@ func vetCommand(args []string) {
 		fmt.Println("  --reuse-std-ast  reuse already-parsed std Program AST (experimental)")
 		fmt.Println("  --json           emit structured JSON diagnostics (CI/tooling friendly)")
 		fmt.Println("")
+		fmt.Println("Backend:")
+		fmt.Println("  A package declaring compiler.emit = \"js\" in package.noml is validated with")
+		fmt.Println("  the JS backend's module resolution, so `# npm/<pkg>` ESM imports and native")
+		fmt.Println("  package imports (#{bind = ffi|wasm}) resolve instead of failing — LLVM cannot")
+		fmt.Println("  link JS modules. No flag needed; the manifest drives it.")
+		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  no vet                     validate main.no in current dir")
 		fmt.Println("  no vet main.no             validate main.no")
@@ -3185,6 +3263,8 @@ func vetCommand(args []string) {
 		inputPath = fs.Args()[0]
 	}
 
+	// 後端由 package.noml 的 compiler.emit 決定（見 VetFileWithLints）：
+	// emit = "js" 的套件走 JS 模組解析，`# npm/...` 才不會硬錯。不需要 --js 旗標。
 	opts := nbuild.BuildOptions{
 		Verbose: verbose,
 		Strict:  *strict,
@@ -3229,7 +3309,7 @@ func vetCommand(args []string) {
 							Severity: checker.LintError,
 							Source:   "nolang-lint",
 							Message:  verr.Error(),
-							TraceID:  "fn-rule",
+							TraceID:  "jfo4w2df",
 						}},
 					})
 				}
@@ -3293,7 +3373,7 @@ func vetCommand(args []string) {
 					Severity: checker.LintError,
 					Source:   "nolang-lint",
 					Message:  verr.Error(),
-					TraceID:  "fn-rule",
+					TraceID:  "jfo4w2df",
 				}},
 			})
 		}

@@ -8,14 +8,14 @@
   repository: 'https://github.com/lizongying/nolang'
   homepage: 'https://lizongying.github.io/nolang'
   license: 'Apache-2.0'
-  mirrors: []
+  mirrors: [] #{type = '[]str'}
   dependencies: ['lodash:^4.17.21']
   compiler: {
     version: 'v0.1.0'
-    link-libs: []
+    link-libs: [] #{type = '[]str'}
     anonymous-fn-type: false
     emit: 'js'
   }
   output: '/dist'
-  ignore: []
+  ignore: [] #{type = '[]str'}
 }

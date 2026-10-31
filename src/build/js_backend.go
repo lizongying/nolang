@@ -234,6 +234,14 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		if err != nil {
 			return nil, err
 		}
+		// .noml 直接引入：與 LLVM 後端同口徑，把 noml 重建為 nolang 源碼。
+		if strings.HasSuffix(filePath, ".noml") {
+			src, gerr := NomlImportSource(filePath, source)
+			if gerr != nil {
+				return nil, gerr
+			}
+			source = []byte(src)
+		}
 		l := lexer.NewCached(filePath, string(source))
 		p := parser.New(l)
 		p.Filename = filepath.Base(filePath)
@@ -242,6 +250,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		p.DesugarSurfaceMatchesPlain(prog)
 		if len(p.Errors()) > 0 {
 			return nil, fmt.Errorf("%s: %v", filePath, p.Errors())
+		}
+		if strings.HasSuffix(filePath, ".noml") {
+			renameNomlTypesForJS(prog)
 		}
 		// Apply lib.no export filtering if the module's package has exports.
 		pkgRoot := FindPackageRoot(filePath)
@@ -263,7 +274,12 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		if !strings.HasSuffix(fullPath, ".no") {
 			fullPath = fullPath + ".no"
 		}
-		return filepath.Clean(fullPath)
+		fullPath = filepath.Clean(fullPath)
+		// .noml 直接引入：同名 .no 不存在時改用 .noml。
+		if nomlPath := nomlImportPath(fullPath); nomlPath != "" {
+			return nomlPath
+		}
+		return fullPath
 	}
 
 	// processUseAndMerge loads a module from a UseStatement, merges its
@@ -321,6 +337,11 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		}
 		loadedModules[modulePath] = true
 
+		// 只有路徑沒有函數名時，別名無對象可導入（.noml 除外，見下方 isNoml）。
+		if use.Alias != "" && use.Function == "" && !strings.HasSuffix(modulePath, ".noml") {
+			return fmt.Errorf("import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file", use.Path, use.Alias)
+		}
+
 		modProg, err := parseModuleFile(modulePath)
 		if err != nil {
 			return fmt.Errorf("loading module %s: %w", use.Path, err)
@@ -328,6 +349,7 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		modProg = parser.CloneProgram(modProg) // S5 stage 6：模組工作副本
 		merged.Sem.Merge(modProg.Sem)
 		merged.FmtTrivia.Merge(modProg.FmtTrivia)
+		isNoml := strings.HasSuffix(modulePath, ".noml")
 
 		for _, ms := range modProg.Statements {
 			// Collect transitive UseStatements for recursive processing.
@@ -342,7 +364,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 			}
 
 			// When alias is specified, only import the specific function/constant.
-			if use.Alias != "" {
+			// .noml 例外：別名只改寫頂層值綁定名，結構體定義照常合併（結構體名
+			// 就是文件名）。
+			if use.Alias != "" && !isNoml {
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
 					if use.Function != "" && fd.Name == use.Function {
 						fd.Name = use.Alias
@@ -358,6 +382,11 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 					}
 				}
 				continue
+			}
+			if isNoml && use.Alias != "" {
+				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil && ls.Name.Value == nomlStem(modulePath) {
+					ls.Name.Value = nomlValueName(use.Alias)
+				}
 			}
 
 			// No alias: merge all non-UseStatement statements.
@@ -409,6 +438,34 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 	}
 
 	return merged, nil
+}
+
+// renameNomlTypesForJS 給 .noml 生成的結構體名加 "-type" 後綴。
+//
+// JS 的 class 宣告與同名 let 在同一作用域衝突（`class server { }` +
+// `let server = ...` 直接語法錯誤），而配置值必須保留文件名作綁定名（用戶寫
+// `server.port`）。型別名在 JS 輸出裡只是內部構造器，後綴對用戶不可見。
+//
+// 引用同步改寫借助 rewriteTypeRefs 的語義：typeOwner 的 key 是新名、value
+// 是舊名，prefixTypeName 會把裸舊名換成新名。
+func renameNomlTypesForJS(prog *parser.Program) {
+	if prog == nil {
+		return
+	}
+	owner := make(map[string]string)
+	for _, stmt := range prog.Statements {
+		sd, ok := stmt.(*parser.StructDefinition)
+		if !ok || sd.Name == "" || strings.Contains(sd.Name, ".") {
+			continue
+		}
+		old := sd.Name
+		sd.Name = old + "-type"
+		owner[sd.Name] = old
+	}
+	if len(owner) == 0 {
+		return
+	}
+	rewriteTypeRefs(prog.Statements, owner)
 }
 
 // BuildJSResult carries the JS backend output plus the third-party ESM module

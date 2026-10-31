@@ -30,7 +30,10 @@ test-hkdf-expand = () {
     i <- [0..32): {
 
         #{overflow=wrap}
-        prk[i] = i + 1
+        prk[i]: {
+            ok -> it = i + 1
+            -> _
+        }
     }
     info []byte = with-cap(2)
     info[0] = 0xaa
@@ -56,7 +59,10 @@ test-hkdf-expand-label = () {
     i <- [0..32): {
 
         #{overflow=wrap}
-        prk[i] = i + 1
+        prk[i]: {
+            ok -> it = i + 1
+            -> _
+        }
     }
     ctx []byte = with-cap(2)
     ctx[0] = 0xde
@@ -84,7 +90,10 @@ test-aes-gcm-seal-open = () {
     i <- [0..16): {
 
         #{overflow=wrap}
-        key[i] = i + 1
+        key[i]: {
+            ok -> it = i + 1
+            -> _
+        }
     }
 
     ; 12-byte IV
@@ -92,7 +101,10 @@ test-aes-gcm-seal-open = () {
     i <- [0..12): {
 
         #{overflow=wrap}
-        iv[i] = i + 10
+        iv[i]: {
+            ok -> it = i + 10
+            -> _
+        }
     }
 
     ; AAD
@@ -147,7 +159,10 @@ test-x25519-scalarmult = () {
     i <- [0..32): {
 
         #{overflow=wrap}
-        priv[i] = i + 1
+        priv[i]: {
+            ok -> it = i + 1
+            -> _
+        }
     }
 
     ; 計算公鑰 = priv * basepoint

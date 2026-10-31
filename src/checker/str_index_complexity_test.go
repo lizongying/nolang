@@ -18,7 +18,7 @@ func strIndexComplexityWarnings(t *testing.T, src string) int {
 	}
 	n := 0
 	for _, r := range ValidateStrIndexComplexity(prog) {
-		if r.TraceID == "STR_INDEX_COMPLEXITY" {
+		if r.TraceID == "iyvzh49e" {
 			n++
 		}
 	}

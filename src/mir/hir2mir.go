@@ -8624,30 +8624,48 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// at 8 bits while a byte read out of a buffer yields the full value.
 		// Only widen when an operand really IS wider; never narrow a result.
 		if !isCmp && isArithOrBitwiseOp(op) {
-			if rt := l.mod.Type(resTyp); rt != nil && (rt.Raw == "byte" || rt.Raw == "u8" || rt.Raw == "i8") {
-				for _, side := range [...]ValueID{lv, rv} {
-					if side == NoVal {
-						continue
+			if rt := l.mod.Type(resTyp); rt != nil {
+				// The narrow spelling can also arrive WRAPPED in an option: a
+				// sub-expression whose left operand is a `?byte` (e.g.
+				// `(b & 127) << m` with `b = s.byte(i)`) inherits `?byte` from
+				// typeOfNode's KInfix rule (type = left operand's type), so the
+				// declared result is `?byte` while the lowered operands are
+				// already i64. Without unwrapping the option here the widening
+				// below never fired and the shift wrapped at 8 bits:
+				// `98 << 7` became 0, silently swallowing every accumulation
+				// (`val + ((b & 127) << m)`) — std/net/hpack's decode-int
+				// returned 144 instead of 400.
+				narrow := ""
+				wrapped := false
+				switch rt.Raw {
+				case "byte", "u8", "i8":
+					narrow = rt.Raw
+				}
+				if rt.Kind == KindOption {
+					if e := optionElemRaw(rt); e == "byte" || e == "u8" || e == "i8" {
+						narrow = e
+						wrapped = true
 					}
-					st := l.valueTypeOf(side)
-					if st == l.voidType || st == NoType {
-						continue
-					}
-					// Widen when an operand is a WIDE integer type (int / i64 /
-					// u64 / i32 / u32 / i16 / u16 / i128 / u128) — not just the
-					// literal "i64". The shift count `24` and ordinary `int`
-					// literals flatten to i64 but carry the Raw spelling "int", so
-					// the old `stt.Raw == "i64"` test missed them and left
-					// `byte << 24` truncated to a single byte — which silently
-					// corrupted std/crypto/sha1+sha256 message schedules
-					// (`(padded[i]<<24)|(padded[i+1]<<16)|...` collapsed to just the
-					// low byte). C/Go promote narrow integer operands to int before
-					// a shift/bitwise op, so this matches the intended semantics;
-					// a byte VARIABLE still wraps at 8 bits because the final store
-					// into a byte slot truncates (see the comment above).
-					if stt := l.mod.Type(st); stt != nil && stt.Kind == KindInt && stt.Raw != "byte" && stt.Raw != "u8" && stt.Raw != "i8" {
-						resTyp = st
-						break
+				}
+				if narrow != "" {
+					for _, side := range [...]ValueID{lv, rv} {
+						if side == NoVal {
+							continue
+						}
+						st := l.valueTypeOf(side)
+						if st == l.voidType || st == NoType {
+							continue
+						}
+						if stt := l.mod.Type(st); stt != nil && stt.Kind == KindInt && stt.Raw != "byte" && stt.Raw != "u8" && stt.Raw != "i8" {
+							// Keep the option wrapper: codegen's wrapResult path needs
+							// it to publish tag=err on checked overflow.
+							if wrapped {
+								resTyp = l.b.Type("?" + stt.Raw)
+							} else {
+								resTyp = st
+							}
+							break
+						}
 					}
 				}
 			}
@@ -9630,7 +9648,18 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	var recvV ValueID
 	switch {
 	case recvID != hir.NoID:
+		// 接收者是自足的子表达式，其类型由自身决定，不能沿用外层绑定/调用的
+		// typeHint。`v ?str = .nodes[.root].text` 就是反例：`?str` 泄漏进
+		// 接收者里的下标读取，KIndex 的 safe-index 分支把**中间节点**当成
+		// ?str 的元素读并包成 option，末尾的 `.text` 投影因此整个丢失 ——
+		// yaml.str / yaml.find-str 等「点号路径取标量」全部返回 nil。
+		// 与 lowerMethodCall 对调用接收者的处理（见那里 “must NOT be lowered
+		// under the outer result-binding's typeHint”）保持同一规则：只清接收者，
+		// 恢复后 dot 的结果仍按外层 hint 处理。
+		savedRecvHint := l.typeHint
+		l.typeHint = NoType
 		recvV = l.lowerExpr(recvID)
+		l.typeHint = savedRecvHint
 	case l.curRecv != NoVal:
 		recvV = l.curRecv
 	case l.locals["self"] != NoVal:
@@ -10295,6 +10324,19 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		if tmpl := l.unionTemplateCallee(recvTypeName, method); tmpl != "" {
 			return tmpl, rv
 		}
+		// Union-method COPY dispatch on a concrete receiver (counterpart of the
+		// block above). monomorphizeUnions registers every per-member copy under
+		// the DECLARING union (`num.clamp__i64`), but the call-site rewrite
+		// (rewriteUnionCallExpr, DotExpression branch) can only append
+		// `__<member>` to the method name — it has no way to retarget the
+		// receiver. A receiver whose static type IS the member therefore asks for
+		// `i64.clamp__i64`, a name that was never generated: `x.clamp(1, 10)` on
+		// an `i64` died with "unknown callee i64.clamp__i64"
+		// (tests/number-div-mod-clamp.no). Resolve the copy by its registered
+		// name instead.
+		if copy := l.unionMethodCopyCallee(recvTypeName, method); copy != "" {
+			return copy, rv
+		}
 		return canonSliceRecv(concrete), rv
 	}
 	return "", NoVal
@@ -10325,6 +10367,48 @@ func (l *lowerer) unionTemplateCallee(recvTypeName, method string) string {
 		}
 	}
 	return ""
+}
+
+// unionMethodCopyCallee returns the monomorphized copy of a union method for a
+// receiver whose static type is one of the union's members, or "" when none
+// matches. See the "Union-method COPY dispatch" note in resolveCallee.
+//
+// The lookup is deliberately narrow so it can never hijack an unrelated
+// function that merely ends in `__<member>`:
+//   - the receiver must BE that member (same name, or module-qualified
+//     `mod.member`); `[]bigint` must not match `bigint`;
+//   - the owner must still carry the union template symbol
+//     `<owner>.<base>__<owner>_TEMPLATE`, i.e. the copy really came out of
+//     monomorphizeUnions;
+//   - an ambiguous match (two owners producing the same copy suffix) is
+//     rejected, leaving the original diagnostic in place.
+func (l *lowerer) unionMethodCopyCallee(recvTypeName, method string) string {
+	i := strings.LastIndex(method, "__")
+	if i <= 0 || i+2 >= len(method) {
+		return ""
+	}
+	base, member := method[:i], method[i+2:]
+	if recvTypeName != member && !strings.HasSuffix(recvTypeName, "."+member) {
+		return ""
+	}
+	found := ""
+	for fn := range l.funcNames {
+		if !strings.HasSuffix(fn, "."+base+"__"+member) {
+			continue
+		}
+		owner := strings.TrimSuffix(fn, "."+base+"__"+member)
+		if owner == "" {
+			continue
+		}
+		if _, ok := l.funcNames[owner+"."+base+"__"+owner+"_TEMPLATE"]; !ok {
+			continue
+		}
+		if found != "" {
+			return ""
+		}
+		found = fn
+	}
+	return found
 }
 
 // unionTemplateCalleeFromName resolves a bare `union.method` callee name (e.g.
@@ -11006,43 +11090,57 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 	return dsts[0], true
 }
 
-// fmtIndexFieldRe matches the only expression shape a format field
-// realistically uses: `ident[index]` (e.g. `{hash[i]:02x}`).
-var fmtIndexFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\[([A-Za-z_][A-Za-z0-9_-]*|[0-9]+)\]$`)
+// fmtIndexFieldRe matches a container element read `path[key]`, where path is
+// a bare identifier or a chained field/method path (`{a.b[i]}`, `{e.msg[0]}`)
+// and the key is a quoted string (`{m['k']}`, `{m["k"]}`), an integer
+// constant, or a bound identifier. The base is deliberately a general path:
+// lookupFormatValue recurses on it, so chained shapes lower by peeling one
+// suffix at a time. The key text is re-read from the field name (see the index
+// branch) rather than captured, so an EMPTY key (`{m['']}`) stays
+// distinguishable from a numeric/identifier one.
+var fmtIndexFieldRe = regexp.MustCompile(`^(.+)\[(?:'[^']*'|"[^"]*"|[A-Za-z_][A-Za-z0-9_-]*|[0-9]+)\]$`)
 
-// fmtMethodFieldRe matches a zero-argument method call on a simple identifier:
-// `ident.method()` (e.g. `{content.len-bytes()}`). This is the second most
-// common expression-field shape after `ident[index]`, and it covers all the
-// `.len()`, `.len-bytes()`, `.to-str()` calls that appear in debug print
-// statements. Only NO-ARGUMENT methods are supported — the format field syntax
-// has no way to express arguments, and any method that takes args would need a
-// full re-parse.
-var fmtMethodFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\.([A-Za-z_][A-Za-z0-9_-]*)\(\)$`)
+// fmtMethodFieldRe matches a zero-argument method call on a path:
+// `ident.method()` (e.g. `{content.len-bytes()}`) or a chained receiver
+// (`{it.msg.len()}`, `{res.rows[0].to-str()}`). This covers all the `.len()`,
+// `.len-bytes()`, `.to-str()` calls that appear in debug print statements. Only
+// NO-ARGUMENT methods are supported — the format field syntax has no way to
+// express arguments, and any method that takes args would need a full re-parse.
+//
+// The trailing `()` keeps this pattern disjoint from fmtDotFieldRe (a field name
+// never contains `(`), so the order the caller tries them in does not matter.
+var fmtMethodFieldRe = regexp.MustCompile(`^(.+)\.([A-Za-z_][A-Za-z0-9_-]*)\(\)$`)
 
-// fmtDotFieldRe matches a single property/field read on a simple identifier:
-// `ident.field` (e.g. `{img.width}`, `{resolved.len}`). Struct fields and the
-// container properties `.len` / `.cap` both land here — lowerFieldReadOn
-// dispatches on the receiver's kind. Exactly ONE dot is accepted: a chained
-// `{a.b.c}` still has no lowering.
-var fmtDotFieldRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\.([A-Za-z_][A-Za-z0-9_-]*)$`)
+// fmtDotFieldRe matches a single property/field read on a path: `ident.field`
+// (e.g. `{img.width}`, `{resolved.len}`) and chained reads (`{a.b.c}`,
+// `{it.msg}`). Struct fields and the container properties `.len` / `.cap` both
+// land here — lowerFieldReadOn dispatches on the receiver's kind (and on
+// whether the property names a method of a user-defined type).
+var fmtDotFieldRe = regexp.MustCompile(`^(.+)\.([A-Za-z_][A-Za-z0-9_-]*)$`)
 
 // lookupFormatValue resolves the value a {name} format field refers to.
 //
 // A field name is SOURCE TEXT (`hash[i]`, `content.len-bytes()`), and MIR sees
 // only HIR — there is no parser left at this stage, so a general expression
 // field cannot be lowered and is refused (legacy re-parses it with
-// lexer+parser+checker, which is not available here). Two expression shapes
-// are supported because they cover the vast majority of real-world usage:
+// lexer+parser+checker, which is not available here). Three suffix shapes are
+// supported, each peeling ONE suffix off the name and recursing into what is
+// left — which is what makes chained paths such as `{it.msg.len()}`,
+// `{a.b[0]}` or `{res.field.to-str()}` lower without a re-parse:
 //
-//   - `ident[index]` (e.g. `{hash[i]:02x}`) — container element read, lowered
-//     to OpIndex.
-//   - `ident.method()` (e.g. `{content.len-bytes()}`) — zero-argument method
-//     call, lowered to OpCall with the receiver as the first argument.
-//   - `ident.field` (e.g. `{img.width}`, `{resolved.len}`) — struct field or
-//     container property read on the base binding, lowered through
+//   - `[index]` (e.g. `{hash[i]:02x}`, `{e.f0[0]}`) — container element read,
+//     lowered to OpIndex. The key may be an integer constant, a bound
+//     identifier, or a QUOTED string (`{m['k']}`); a map base takes it as a
+//     key lookup (specialised `.get`, returning `?V`) instead of OpIndex.
+//   - `.method()` (e.g. `{content.len-bytes()}`, `{it.msg.len()}`) —
+//     zero-argument method call, lowered to OpCall with the receiver as the
+//     first argument.
+//   - `.field` (e.g. `{img.width}`, `{resolved.len}`, `{a.b.c}`) — struct field
+//     or container property read on the base, lowered through
 //     lowerFieldReadOn (the shared tail of `recv.field`).
 //
-// General expression fields (e.g. `{a.b.c}`, `{f(x)}`) are still refused.
+// A method call WITH arguments (e.g. `{s.slice(0)}`) is still refused: the
+// format field syntax has no way to express the argument list.
 func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 	if v, ok := l.locals[name]; ok {
 		return v, true
@@ -11050,16 +11148,54 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 	if l.globalVisible(name) {
 		return l.lowerGlobalRef(name), true
 	}
-	// ident[index] pattern
+	// `path[key]` pattern — element read. A MAP base is a KEY lookup and goes
+	// through the specialised `.get` (yielding `?V`, which lowerFormatField
+	// peels); a positional container (`[]T`, `[N]T`) reads through OpIndex.
 	if m := fmtIndexFieldRe.FindStringSubmatch(name); m != nil {
 		base, ok := l.lookupFormatValue(m[1])
 		if !ok {
 			return NoVal, false
 		}
+		keyTxt := name[strings.LastIndexByte(name, '[')+1 : len(name)-1]
+		strKey, isStrKey := "", false
+		if len(keyTxt) >= 2 && (keyTxt[0] == '\'' || keyTxt[0] == '"') && keyTxt[len(keyTxt)-1] == keyTxt[0] {
+			strKey, isStrKey = keyTxt[1:len(keyTxt)-1], true
+		}
+		if mapRaw, keyRaw, _, isMap := l.mapIndexTypes(base); isMap {
+			var keyV ValueID
+			switch {
+			case isStrKey:
+				// `{m['k']}`: the quoted key IS a str literal, so a map keyed
+				// by something else cannot be satisfied — refuse rather than
+				// hand a %str-long to a .get that takes i64 (which surfaced as
+				// a raw "aggregate cannot be passed where a scalar is
+				// expected" from codegen).
+				if keyRaw != "str" {
+					return NoVal, false
+				}
+				keyV = l.b.EmitStr(OpConst, l.b.Type("str"), strKey, "")
+			default:
+				if n, err := strconv.ParseInt(keyTxt, 0, 64); err == nil {
+					if keyRaw != "" && keyRaw != "i64" {
+						return NoVal, false
+					}
+					keyV = l.b.EmitInt(OpConst, l.b.Type("i64"), n, "")
+				} else if kv, ok := l.lookupFormatValue(keyTxt); ok {
+					keyV = kv
+				}
+			}
+			if keyV == NoVal {
+				return NoVal, false
+			}
+			if v := l.lowerMapIndexRead(base, keyV, mapRaw); v != NoVal {
+				return v, true
+			}
+			return NoVal, false
+		}
 		var idxV ValueID
-		if n, err := strconv.ParseInt(m[2], 0, 64); err == nil {
+		if n, err := strconv.ParseInt(keyTxt, 0, 64); err == nil {
 			idxV = l.b.EmitInt(OpConst, l.b.Type("i64"), n, "")
-		} else if iv, ok := l.lookupFormatValue(m[2]); ok {
+		} else if iv, ok := l.lookupFormatValue(keyTxt); ok {
 			idxV = iv
 		} else {
 			return NoVal, false
@@ -11070,10 +11206,9 @@ func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
 		}
 		return l.b.Emit(OpIndex, elemT, []ValueID{base, idxV}, ""), true
 	}
-	// ident.field pattern — struct field / container property read. Checked
-	// AFTER the method pattern so `ident.method()` never reaches it (the
-	// trailing `()` makes the two regexes disjoint anyway, but the order keeps
-	// the intent explicit).
+	// `path.field` pattern — struct field / container property read. The base is
+	// any resolvable path, so chained reads (`a.b.c`) peel one field at a time;
+	// `ident.method()` never reaches it because a field name has no `()`.
 	if m := fmtDotFieldRe.FindStringSubmatch(name); m != nil {
 		if base, ok := l.lookupFormatValue(m[1]); ok {
 			if v, ok := l.lowerFieldReadOn(base, m[2]); ok {

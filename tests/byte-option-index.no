@@ -30,10 +30,13 @@ f-byte = (all str, k i64) (out i64) {
 }
 
 f-idx = (all str, k i64) (out i64) {
+    ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
+    #{ascii}
+    src = all
     s = 0
     i <- [0..k): {
         j = k - 1 - i #{overflow=wrap}
-        b i64 = all[j]
+        b i64 = src[j]
         s = s + b #{overflow=wrap}
     }
     out = s

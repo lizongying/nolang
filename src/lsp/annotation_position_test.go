@@ -1,9 +1,13 @@
 package lsp
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// messageIDRe is the shape of a message ID: 8 characters of base36.
+var messageIDRe = regexp.MustCompile(`^[0-9a-z]{8}$`)
 
 // The annotation placement rule — `#{...}` may only be written on its own line
 // above the target, or trailing on the target's line; a same-line prefix is an
@@ -57,8 +61,10 @@ func TestParseDocumentReportsPrefixAnnotationError(t *testing.T) {
 	if strings.Contains(d.Message, "[E_") {
 		t.Errorf("message must not contain the raw code tag: %q", d.Message)
 	}
-	if d.Code != "E_GENERAL" {
-		t.Errorf("code = %v, want %q", d.Code, "E_GENERAL")
+	// Code now carries the 8-char base36 message ID (the translation index), so
+	// the editor can show it and a user can paste it into a bug report.
+	if code, ok := d.Code.(string); !ok || !messageIDRe.MatchString(code) {
+		t.Errorf("code = %v, want an 8-char base36 message ID", d.Code)
 	}
 	if !strings.Contains(d.Message, "前方同一行") {
 		t.Errorf("message lost its text: %q", d.Message)

@@ -54,6 +54,8 @@ check('sha3-512(m200)', sha3.sha3-512-hex(m), '863a1b14ef2b001f1300443ad4fd0a780
 ; sha3-256('abc') 應等於 3a985da7...，確認 [32]byte 版本與 hex 版本一致
 h = sha3.sha3-256('abc')
 hex-chars = '0123456789abcdef'
+; #{ascii}：got 只會填入 hex-chars 的 ASCII 位元組，s[i] 退化為 O(1) 定址
+#{ascii}
 got str = with-len(64)
 i <- [0..32): {
 

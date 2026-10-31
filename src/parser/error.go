@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/lexer"
 )
 
@@ -37,8 +38,24 @@ type Diagnostic struct {
 	Pos      lexer.Position // start position (1-based line/col)
 	End      lexer.Position // end position; zero means "same as Pos"
 	Severity Severity       // error vs warning
-	Code     string         // stable machine-readable code, e.g. "E_UNEXPECTED_TOKEN"
-	Message  string         // human-readable text WITHOUT the "line/col:" prefix
+	// Code is the SEMANTIC rule code (e.g. "W_CHAIN_IF", "E_GENERAL"). It is what
+	// WarningsByCode filters on, so it must stay stable and human-chosen.
+	Code string
+	// ID is the 8-character base36 message ID: the translation index, and the
+	// token printed in the "[xxxxxxxx]" slot. Empty when the diagnostic carries
+	// no translatable message (a purely programmatic code is then shown instead).
+	ID      string
+	Message string // human-readable text WITHOUT the "line/col:" prefix
+}
+
+// ref is the token rendered in the bracketed slot. The message ID wins when
+// present: it is what a user pastes into a bug report and what a translator keys
+// on, and it is stable across refactors of the wording.
+func (d Diagnostic) ref() string {
+	if d.ID != "" {
+		return d.ID
+	}
+	return d.Code
 }
 
 // Error implements the error interface so a Diagnostic can stand in wherever an
@@ -48,8 +65,8 @@ func (d Diagnostic) Error() string {
 	if d.Filename != "" {
 		loc = d.Filename + ":" + loc
 	}
-	if d.Code != "" {
-		return fmt.Sprintf("%s: [%s] %s", loc, d.Code, d.Message)
+	if ref := d.ref(); ref != "" {
+		return fmt.Sprintf("%s: [%s] %s", loc, ref, d.Message)
 	}
 	return fmt.Sprintf("%s: %s", loc, d.Message)
 }
@@ -115,8 +132,8 @@ func FormatDiagnostics(diags []Diagnostic, sev Severity) string {
 			continue
 		}
 		loc := fmt.Sprintf("line %d, column %d", d.Pos.Line, d.Pos.Column)
-		if d.Code != "" {
-			parts = append(parts, fmt.Sprintf("%s: %s [%s]", loc, d.Message, d.Code))
+		if ref := d.ref(); ref != "" {
+			parts = append(parts, fmt.Sprintf("%s: %s [%s]", loc, d.Message, ref))
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%s: %s", loc, d.Message))
@@ -124,26 +141,120 @@ func FormatDiagnostics(diags []Diagnostic, sev Severity) string {
 	return strings.Join(parts, "; ")
 }
 
-// errorf records a structured error located at tok.
-func (p *Parser) errorf(tok lexer.Token, code, format string, args ...any) {
-	p.diags = append(p.diags, Diagnostic{
+// ─── 位置前綴與消息翻譯 ──────────────────────────────────────────────────────
+//
+// 舊呼叫點把位置前綴寫進消息裡（"line %d, column %d: …"），再由 stripLocPrefix
+// 解析回 Pos。這個寫法與 i18n 直接衝突：一旦整串進翻譯表，譯者把 line/column
+// 譯掉，stripLocPrefix 就再也解析不到位置，**每條診斷的位置都會靜默歸零**。
+//
+// 因此位置改由 splitLocFormat 在**翻譯之前**從格式串剝離：可翻譯的只有 body，
+// 位置永遠由程式產生。呼叫端寫
+//
+//	p.saveErrorf("id000000", "line %d, column %d: unexpected %s", tok.Line, tok.Column, x)
+//
+// 或（位置不在格式串裡時）
+//
+//	p.saveErrorAt("id000000", tok.Line, tok.Column, "unexpected %s", x)
+//
+// 兩者等價；saveErrorf 只是為了讓 169 個既有呼叫點免於改寫參數。
+
+// locPrefixFormats 是機器產生的位置前綴，按參數個數區分。順序有意義：較長的
+// 前綴必須先匹配（"line %d, column %d: " 也是 "line %d" 的超集）。
+var locPrefixFormats = []struct {
+	prefix string
+	args   int
+}{
+	{"line %d, column %d: ", 2},
+	{"line %d: ", 1},
+}
+
+// splitLocFormat 把位置前綴從格式串切掉，回傳位置與可翻譯的 body。
+func splitLocFormat(format string, args []any) (line, col int, body string, rest []any) {
+	for _, f := range locPrefixFormats {
+		if !strings.HasPrefix(format, f.prefix) || len(args) < f.args {
+			continue
+		}
+		line = asInt(args[0])
+		if f.args == 2 {
+			col = asInt(args[1])
+		}
+		return line, col, format[len(f.prefix):], args[f.args:]
+	}
+	return 0, 0, format, args
+}
+
+func asInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	}
+	return 0
+}
+
+// emit 是唯一構造 parser 診斷的地方：翻譯在此發生（而不是在渲染時），所以
+// Message 已經是目標語言，Pos 是結構化欄位。
+func (p *Parser) emit(id string, sev Severity, code string, line, col int, format string, args ...any) {
+	p.addDiagnostic(Diagnostic{
 		Filename: p.Filename,
-		Pos:      posFromToken(tok),
-		Severity: SeverityError,
+		Pos:      lexer.Position{Line: line, Column: col},
+		Severity: sev,
 		Code:     code,
-		Message:  fmt.Sprintf(format, args...),
+		ID:       id,
+		Message:  i18n.Translate(id, format, args...),
 	})
 }
 
+// addDiagnostic 追加一條診斷並去重：同一位置、同一文本只記一次。restoreState
+// 重試解析時會重複產生同樣的錯誤，去重避免刷屏。
+func (p *Parser) addDiagnostic(d Diagnostic) {
+	for _, existing := range p.diags {
+		if existing.Pos == d.Pos && existing.Message == d.Message {
+			return
+		}
+	}
+	p.diags = append(p.diags, d)
+}
+
+// saveErrorAt 在給定位置記錄一條帶消息 ID 的錯誤。
+func (p *Parser) saveErrorAt(id string, line, col int, format string, args ...any) {
+	p.emit(id, SeverityError, "E_GENERAL", line, col, format, args...)
+}
+
+// saveErrorf 記錄一條錯誤，位置取自格式串的 "line %d, column %d: " 前綴。
+func (p *Parser) saveErrorf(id, format string, args ...any) {
+	line, col, body, rest := splitLocFormat(format, args)
+	p.emit(id, SeverityError, "E_GENERAL", line, col, body, rest...)
+}
+
+// saveWarningAt 在給定位置記錄一條帶消息 ID 的警告。
+func (p *Parser) saveWarningAt(id string, line, col int, format string, args ...any) {
+	p.emit(id, SeverityWarning, "W_GENERAL", line, col, format, args...)
+}
+
+// saveWarningf 記錄一條警告，位置取自格式串前綴。
+func (p *Parser) saveWarningf(id, format string, args ...any) {
+	line, col, body, rest := splitLocFormat(format, args)
+	p.emit(id, SeverityWarning, "W_GENERAL", line, col, body, rest...)
+}
+
+// saveWarningWithCodef 記錄一條帶語義碼的警告（碼用於 WarningsByCode 過濾）。
+func (p *Parser) saveWarningWithCodef(code, id, format string, args ...any) {
+	line, col, body, rest := splitLocFormat(format, args)
+	p.emit(id, SeverityWarning, code, line, col, body, rest...)
+}
+
+// errorf records a structured error located at tok.
+func (p *Parser) errorf(tok lexer.Token, id, code, format string, args ...any) {
+	p.emit(id, SeverityError, code, tok.Line, tok.Column, format, args...)
+}
+
 // warnf records a structured warning located at tok.
-func (p *Parser) warnf(tok lexer.Token, code, format string, args ...any) {
-	p.diags = append(p.diags, Diagnostic{
-		Filename: p.Filename,
-		Pos:      posFromToken(tok),
-		Severity: SeverityWarning,
-		Code:     code,
-		Message:  fmt.Sprintf(format, args...),
-	})
+func (p *Parser) warnf(tok lexer.Token, id, code, format string, args ...any) {
+	p.emit(id, SeverityWarning, code, tok.Line, tok.Column, format, args...)
 }
 
 // fatalf reports an unrecoverable parse failure and unwinds to the enclosing
@@ -152,13 +263,14 @@ func (p *Parser) warnf(tok lexer.Token, code, format string, args ...any) {
 // collapses to a single expression and the per-statement recover handles
 // resync. It must NOT be used where the parser is expected to keep collecting
 // errors within the same statement; use errorf for those.
-func (p *Parser) fatalf(tok lexer.Token, code, format string, args ...any) {
+func (p *Parser) fatalf(tok lexer.Token, id, code, format string, args ...any) {
 	panic(&parsePanic{diag: &Diagnostic{
 		Filename: p.Filename,
 		Pos:      posFromToken(tok),
 		Severity: SeverityError,
 		Code:     code,
-		Message:  fmt.Sprintf(format, args...),
+		ID:       id,
+		Message:  i18n.Translate(id, format, args...),
 	}})
 }
 

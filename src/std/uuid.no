@@ -529,12 +529,23 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
 ; parse-hex-byte: 從字串解析兩個 hex 字元為一個位元組
 parse-hex-byte = (s str, pos i64) (v i64) {
 
-    c0 = s.byte(pos)
+    ; s.byte 回傳 ?byte（越界為 nil）：先兩段式解包成 i64 再交給 hex-val。
+    c0-opt = s.byte(pos)
+    c0 = -1
+    c0-opt: {
+        ok -> c0 = it
+        -> _
+    }
 
     #{overflow=wrap}
-    c1 = s.byte(pos + 1)
-    h0 = str.hex-val(c0)
-    h1 = str.hex-val(c1)
+    c1-opt = s.byte(pos + 1)
+    c1 = -1
+    c1-opt: {
+        ok -> c1 = it
+        -> _
+    }
+    h0 = hex-val(c0)
+    h1 = hex-val(c1)
     h0 < 0 || h1 < 0 -> {
         v = -1
         return

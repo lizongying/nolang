@@ -185,14 +185,15 @@ t-err = () {
         err -> runner.is-true(true, '?i64 err branch')
     }
 
-    ; `err` 臂不綁定時用 `it` 取訊息
+    ; `err` 臂不綁定時 `it` 是結構化錯誤值（err.err），讀訊息要用 it.msg()
+    ; （見 docs/docs/lang/syntax.md：err 臂的 it 永遠是 err.err，與 option 元素型別無關）
     b ?i64 = err('boom')
     b: {
         ok(v) -> runner.is-true(false, 'err must not be ok')
 
         nil -> runner.is-true(false, 'err must not be nil')
 
-        err -> runner.str-eq(it, 'boom', 4, 'err it == message')
+        err -> runner.str-eq(it.msg(), 'boom', 4, 'err it == message')
     }
 
     ; 空訊息
@@ -202,7 +203,7 @@ t-err = () {
 
         nil -> runner.is-true(false, 'empty-msg err must not be nil')
 
-        err -> runner.eq(it.len(), 0, 'err it empty message')
+        err -> runner.eq(it.msg().len(), 0, 'err it empty message')
     }
 }
 

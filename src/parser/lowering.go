@@ -427,8 +427,8 @@ func (l *lowerer) walk(v reflect.Value) {
 				if v.Type() == statementIfaceType {
 					v.Set(reflect.ValueOf(lowered))
 				} else {
-					l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` is a statement operator and cannot be used as an expression",
-						uas.Token.Line, uas.Token.Column))
+					l.p.saveErrorf("7t6loa4e", "line %d, column %d: `?=` is a statement operator and cannot be used as an expression",
+						uas.Token.Line, uas.Token.Column)
 					v.Set(reflect.Zero(v.Type()))
 				}
 			} else {
@@ -1749,7 +1749,7 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	// 推斷元素型別；推斷不出則無法產生安全的 none 預設值，報錯。
 	elem := l.p.inferIndexElemType(idx)
 	if elem == "" {
-		l.p.saveError(fmt.Sprintf("line %d, column %d: cannot infer element type for safe index with #{index-out}; annotate the container or use an explicit type", tok.Line, tok.Column))
+		l.p.saveErrorf("cmpxd150", "line %d, column %d: cannot infer element type for safe index with #{index-out}; annotate the container or use an explicit type", tok.Line, tok.Column)
 		return nil
 	}
 	// 建構 __idx_out_N = v[i]（?elem 安全索引）。
@@ -1766,7 +1766,7 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	// 建構預設值字面量（依元素型別解釋 DEF）。
 	defLit, errMsg := defaultLiteralFor(tok, elem, defVal)
 	if errMsg != "" {
-		l.p.saveError(fmt.Sprintf("line %d, column %d: %s", tok.Line, tok.Column, errMsg))
+		l.p.saveErrorf("b0k1laq8", "line %d, column %d: %s", tok.Line, tok.Column, errMsg)
 		return nil
 	}
 	if defLit == nil {
@@ -2318,8 +2318,8 @@ func (l *lowerer) rejectItInNonOkArm(sm *SurfaceMatch) {
 		if !okCovered {
 			missing = append(missing, "ok")
 		}
-		l.p.saveError(fmt.Sprintf("line %d, column %d: `it` is not valid in this arm: the catch-all `->` arm may receive %s; claim them with explicit arms (e.g. `nil ->` / `err ->`) or use `ok ->` before reading `it`",
-			line, col, strings.Join(missing, " / ")))
+		l.p.saveErrorf("rgzkvjhx", "line %d, column %d: `it` is not valid in this arm: the catch-all `->` arm may receive %s; claim them with explicit arms (e.g. `nil ->` / `err ->`) or use `ok ->` before reading `it`",
+			line, col, strings.Join(missing, " / "))
 	}
 }
 
@@ -2860,20 +2860,20 @@ func (p *Parser) resolveTypeMatchArms(sm *SurfaceMatch, matchedVarType string) [
 			ra.typePattern = a.TypePattern
 			ra.bindingName = a.TypeBindingName
 			if len(members) > 0 && !memberSet[a.TypePattern] {
-				p.saveError(fmt.Sprintf("line %d, column %d: type match arm pattern %q is not a member of union %q",
-					a.Pos.Line, a.Pos.Column, a.TypePattern, matchedVarType))
+				p.saveErrorf("qkce8wnr", "line %d, column %d: type match arm pattern %q is not a member of union %q",
+					a.Pos.Line, a.Pos.Column, a.TypePattern, matchedVarType)
 			}
 		} else if a.IsWildcard {
 			ra.isDefault = true
 		} else if ident, ok := a.Condition.(*Identifier); ok {
 			ra.typePattern = ident.Value
 			if len(members) > 0 && !memberSet[ident.Value] {
-				p.saveError(fmt.Sprintf("line %d, column %d: type match arm pattern %q is not a member of union %q",
-					a.Pos.Line, a.Pos.Column, ident.Value, matchedVarType))
+				p.saveErrorf("plsdygti", "line %d, column %d: type match arm pattern %q is not a member of union %q",
+					a.Pos.Line, a.Pos.Column, ident.Value, matchedVarType)
 			}
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: type match on union %q requires type patterns (e.g. %q ->) or a default arm (->)",
-				a.Pos.Line, a.Pos.Column, matchedVarType, firstMember(members)))
+			p.saveErrorf("75yiyise", "line %d, column %d: type match on union %q requires type patterns (e.g. %q ->) or a default arm (->)",
+				a.Pos.Line, a.Pos.Column, matchedVarType, firstMember(members))
 			ra.isDefault = true
 		}
 		// 注入收窄綁定：型別臂內 `it`（或 v）按成員型別可見。
@@ -3347,6 +3347,17 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 		}
 	}
 
+	// 模組合併期（build.prefixModuleStatements Phase 4）只改寫 AST 上的型別節點，
+	// 解析期寫入語義副表的型別字串仍是模組內的裸名。多個 std 模組定義同名型別時
+	// （net/server.no 與 net/tls.no 都有 server-conn），裸名在 HIR 解析不到帶前綴
+	// 的方法（`unknown callee server-conn.handshake`）。AST 註解已帶模組限定，
+	// 據此升級副表型別。
+	if ident, ok := matched.(*Identifier); ok && bareModuleType(matchedVarType) {
+		if at := p.astLocalVarType(p.curFuncName, ident.Value); typeQualifiedOver(at, matchedVarType) {
+			matchedVarType = at
+		}
+	}
+
 	// Determine element type from option type for per-arm `it` type inference.
 	// For ?i64, elemType = "i64"; for result unions (i64 | err), extract the payload type.
 	elemType := ""
@@ -3378,8 +3389,8 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 			continue
 		}
 		if elemType == "" {
-			p.saveError(fmt.Sprintf("line %d, column %d: empty match arm cannot determine a value (matched expression type is unknown)",
-				tok.Line, tok.Column))
+			p.saveErrorf("hcdpwnpp", "line %d, column %d: empty match arm cannot determine a value (matched expression type is unknown)",
+				tok.Line, tok.Column)
 			continue
 		}
 		zb := &BlockStatement{
@@ -4336,6 +4347,33 @@ func (p *Parser) desugarRangeCondition(tok lexer.Token, matched Expression, rng 
 	return &IntegerLiteral{Token: tok, Value: 1}
 }
 
+// bareModuleType reports whether t is an option of a bare (unqualified)
+// non-builtin type name — the only shape a module-prefix rewrite can upgrade.
+// Gate for the AST fallback below, so the FuncVarTypes hit path stays O(1) for
+// the common `?i64` / `?str` cases.
+func bareModuleType(t string) bool {
+	if !ty.IsOptionRaw(t) {
+		return false
+	}
+	inner := ty.StripOptionRaw(t)
+	return inner != "" && !strings.Contains(inner, ".") && !isBuiltinTypeName(inner)
+}
+
+// typeQualifiedOver reports whether option type a is the module-qualified form
+// of option type b (e.g. "?tls.server-conn" over "?server-conn"), i.e. the same
+// payload type with a module prefix that b lacks. Used to prefer the
+// post-merge AST annotation over the parse-time semantic side table.
+func typeQualifiedOver(a, b string) bool {
+	if a == b || !ty.IsOptionRaw(a) || !ty.IsOptionRaw(b) {
+		return false
+	}
+	ai, bi := ty.StripOptionRaw(a), ty.StripOptionRaw(b)
+	if ai == bi || bi == "" {
+		return false
+	}
+	return strings.HasSuffix(ai, "."+bi)
+}
+
 // buildItBinding creates `it = matched` LetStatement when matched is an Identifier.
 // Returns nil if matched is not an Identifier.
 //
@@ -4574,7 +4612,7 @@ func (p *Parser) desugarIndexOutReads(expr Expression, tok lexer.Token, defVal A
 			}
 			defLit, errMsg := defaultLiteralFor(tok, elem, defVal)
 			if errMsg != "" {
-				p.saveError(fmt.Sprintf("line %d, column %d: %s", tok.Line, tok.Column, errMsg))
+				p.saveErrorf("7uy8wmqv", "line %d, column %d: %s", tok.Line, tok.Column, errMsg)
 				return expr, nil
 			}
 			if defLit == nil {
@@ -4988,8 +5026,8 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	if uas.Name == nil {
 		if idx, ok := uas.Target.(*IndexExpression); ok {
 			if mt := l.p.mapIndexBaseType(idx); mt != "" {
-				l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` on a map subscript is not supported (base type `%s`); write `%s = v` directly — a map key has no out-of-range case, so the write is a put and cannot fail",
-					tok.Line, tok.Column, mt, exprToString(uas.Target)))
+				l.p.saveErrorf("pvma2wsn", "line %d, column %d: `?=` on a map subscript is not supported (base type `%s`); write `%s = v` directly — a map key has no out-of-range case, so the write is a put and cannot fail",
+					tok.Line, tok.Column, mt, exprToString(uas.Target))
 				return nil
 			}
 			if l.p.isSafeIndexBase(idx) {
@@ -5008,8 +5046,8 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	rhs := uas.Value
 	if resultName != "" {
 		if l.rhsDefinitelyNonOption(uas.Value) {
-			l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` RHS `%s` is not an option — use `=` instead",
-				tok.Line, tok.Column, uas.String()))
+			l.p.saveErrorf("5l952ztl", "line %d, column %d: `?=` RHS `%s` is not an option — use `=` instead",
+				tok.Line, tok.Column, uas.String())
 			return nil
 		}
 		rhs = l.guardOptionOperands(uas.Value, &guards, resultName, tok)
@@ -5085,7 +5123,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		// 僅支援直接 arr/vec/slice 變數（識別符基底）；struct 欄位索引
 		// （receiver.field[i]）安全索引 codegen 尚未支援，直接報錯。
 		if _, ok := v.Left.(*Identifier); !ok {
-			l.p.saveError(fmt.Sprintf("line %d, column %d: safe-index `?=` only supports direct array/vec variables, not struct fields (receiver.field[i])", tok.Line, tok.Column))
+			l.p.saveErrorf("gcvwum3g", "line %d, column %d: safe-index `?=` only supports direct array/vec variables, not struct fields (receiver.field[i])", tok.Line, tok.Column)
 			return nil
 		}
 		// 推斷元素型別以便讓 match desugar 的 it 綁定拿到正確型別。
@@ -5226,7 +5264,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		// flushCompoundAssigns）。同一行再補一句「`?=` can only be used …」只會
 		// 讓用戶以為解決方案是去掉 `?=`，而去掉之後仍是條死路。
 		if uas.DeprecatedOp == "" {
-			l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column))
+			l.p.saveErrorf("l86f91me", "line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column)
 		}
 		arms = append(arms, MatchArm{
 			Condition:     &Identifier{Token: tok, Value: "nil"},
@@ -5385,15 +5423,15 @@ func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *Inde
 	// （D9 的 idxwrite ERROR 會在 P2 提供更具體的寫入側指引；此處保持 ?= 既有語義。）
 	if resultName == "" {
 		if uas.DeprecatedOp == "" {
-			l.p.saveError(fmt.Sprintf("line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column))
+			l.p.saveErrorf("jib2tpel", "line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column)
 		}
 		return nil
 	}
 
 	// 推不出元素型別（基底型別未知）⇒ 無法 place-write，報錯。
 	if l.p.inferIndexElemType(idx) == "" {
-		l.p.saveError(fmt.Sprintf("line %d, column %d: cannot determine element type of index target `%s` for `?=` write",
-			tok.Line, tok.Column, exprToString(uas.Target)))
+		l.p.saveErrorf("g1v1b6qi", "line %d, column %d: cannot determine element type of index target `%s` for `?=` write",
+			tok.Line, tok.Column, exprToString(uas.Target))
 		return nil
 	}
 

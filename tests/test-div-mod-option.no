@@ -1,8 +1,12 @@
 ; Division and remainder are option-producing integer operations.
 ; A zero divisor must become err instead of reaching LLVM sdiv/srem UB.
 
-a int = 10
-b int = 2
+; 運算元用具體型別 i64：union 別名（int）的方法派發是編譯期按成員進行的，
+; `a int = 10` 這種寫法在 `a / b`、`a.mod(b)` 上既選不出成員、也無法在 MIR 裡
+; 當作標量參與 sdiv/srem 與零比較（實測 LLVM 型別不匹配）。本測試驗證的是
+; 「除零 -> err」，不需要 union 派發。
+a i64 = 10
+b i64 = 2
 
 #{overflow=wrap}
 q = a / b
@@ -13,7 +17,7 @@ q: {
 
     -> print(it)
 }
-z int = 0
+z i64 = 0
 
 #{overflow=wrap}
 q0 = a / z

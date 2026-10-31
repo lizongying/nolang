@@ -90,7 +90,7 @@ r0 = g(3, j - 1)
 	}
 	n := 0
 	for _, r := range ValidateFuncArgs(prog, "") {
-		if r.TraceID == "fxxoptarg" {
+		if r.TraceID == "3604icnf" {
 			n++
 		}
 	}

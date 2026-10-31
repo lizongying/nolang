@@ -24,7 +24,7 @@ func countStdargtypErrors(t *testing.T, src string) int {
 	}
 	n := 0
 	for _, r := range ValidateFuncArgs(prog, "") {
-		if r.TraceID == "stdargtyp" {
+		if r.TraceID == "5lycdtsz" {
 			n++
 		}
 	}

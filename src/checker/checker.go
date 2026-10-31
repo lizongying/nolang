@@ -908,7 +908,7 @@ func walkExprForLen(expr parser.Expression, varTypes, funcTypes map[string]strin
 					Line:    e.Token.Line,
 					Column:  e.Token.Column,
 					Message: msg,
-					TraceID: "len-depr",
+					TraceID: "kbutx330",
 				})
 			}
 		}
@@ -1910,6 +1910,15 @@ func markReferencesInExpr(expr parser.Expression, varSet map[string]struct{ line
 }
 func CollectDefinedVars(program *parser.Program) map[string]bool {
 	definedVars := make(map[string]bool)
+	// 接口合併方法集（見 checker/iface_merge.go）。推遲到首次需要時才建：
+	// 無介面的程式（絕大多數）就不必付這筆帳。
+	var mergeSet *InterfaceSet
+	mergedMethods := func(name string) []*parser.InterfaceMethod {
+		if mergeSet == nil {
+			mergeSet, _ = ResolveInterfaces(program)
+		}
+		return mergeSet.MethodsOf(name)
+	}
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name != nil {
 			definedVars[ls.Name.Value] = true
@@ -1929,6 +1938,12 @@ func CollectDefinedVars(program *parser.Program) map[string]bool {
 		// rewrites them to "module.InterfaceName.methodName".
 		if id, ok := stmt.(*parser.InterfaceDefinition); ok {
 			for _, m := range id.Methods {
+				definedVars[id.Name+"."+m.Name] = true
+			}
+			// 接口合併：父接口的方法也要掛在【子接口】名下。跨模組調用經模組
+			// 前綴改寫後是 `module.serialize.to-json`，不註冊就會被誤報
+			// is not defined。
+			for _, m := range mergedMethods(id.Name) {
 				definedVars[id.Name+"."+m.Name] = true
 			}
 		}
@@ -2881,14 +2896,18 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 		Results  []string
 		Token    lexer.Token
 	}
-	ifaces := map[string][]ifaceMethod{} // interface name → methods
-	for _, stmt := range program.Statements {
-		id, ok := stmt.(*parser.InterfaceDefinition)
-		if !ok {
-			continue
-		}
+	ifaces := map[string][]ifaceMethod{} // interface name → merged methods
+	// 接口合併：參與簽名校驗的是【合併後】的方法集（`db enter, leave { … }`
+	// 與體內形 `serialize { json⏎ noml }` 同構）。先父（遞迴）後自身，同名同
+	// 簽名去重，因此子接口繼承來的父接口方法同樣會被校驗。
+	set, _ := ResolveInterfaces(program)
+	for _, mi := range set.All() {
 		var methods []ifaceMethod
-		for _, m := range id.Methods {
+		for _, m := range mi.Methods {
+			// 門禁刻意不拆除：只校驗泛型接收者（t.method）形式。
+			// std/database/sql.no 的 `db.query(sql str) (rs rows)` 與驅動實現
+			// `db-sqlite.query = (sql str) (rs rows-sqlite)` 返回具體型別，
+			// 放開到全部方法會產生假 ERROR。
 			if !m.IsGenericReceiver {
 				continue
 			}
@@ -2905,7 +2924,7 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 			}
 			methods = append(methods, im)
 		}
-		ifaces[id.Name] = methods
+		ifaces[mi.Name] = methods
 	}
 
 	// struct 自帶的 implements 清單（`db-mysql sql.db { ... }`）：只有明確宣告實作
@@ -2978,7 +2997,7 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 						continue
 					}
 					paramType := declTypeOfRaw(view, p, p.Type.String())
-					expected := strings.ReplaceAll(m.Params[i], m.Receiver, implType)
+					expected := replaceIdentWord(m.Params[i], m.Receiver, implType)
 					if paramType != expected {
 						results = append(results, ValidateResult{
 							TraceID:   "i933a48e",
@@ -3007,7 +3026,7 @@ func runInterfaceImplCore(program *parser.Program, view *THIRView) []ValidateRes
 							continue
 						}
 						resType := declTypeOfRaw(view, r, r.Type.String())
-						expected := strings.ReplaceAll(m.Results[i], m.Receiver, implType)
+						expected := replaceIdentWord(m.Results[i], m.Receiver, implType)
 						if resType != expected {
 							results = append(results, ValidateResult{
 								TraceID:   "9741sawd",
@@ -3116,6 +3135,25 @@ func isFixedArrayAnnotation(t parser.Type) bool {
 	return false
 }
 
+// isMapLiteralValue reports whether e is a map literal (`{ 'k': v, ... }`).
+//
+// Same reasoning as isFixedArrayAnnotation: the annotation is what makes the
+// source PARSE as a map literal in the first place. Without a `[K]V`
+// annotation the parser reads `r = { 'a': 'xy', 'b': 'longer' }` as a BLOCK
+// (`expected variable name after ',', got STRING`), so advising its removal
+// would turn working code into a parse error.
+func isMapLiteralValue(e parser.Expression) bool {
+	for {
+		g, ok := e.(*parser.GroupedExpression)
+		if !ok {
+			break
+		}
+		e = g.Expression
+	}
+	_, ok := e.(*parser.MapLiteral)
+	return ok
+}
+
 // checkRedundantTypeInStmt 遞迴掃描語句樹中的冗餘型別標註。file 由外層頂層語句逐層
 // 傳入（合併模式只有頂層語句被 SetSourceFile 標記，巢狀語句的 SourceFile 為空），
 // 節點若確有自身 SourceFile 則覆蓋——否則 tcpoxtfd 的行號是相對於來源檔的，
@@ -3149,7 +3187,8 @@ func checkRedundantTypeInStmt(sem *parser.SemanticContext, stmt parser.Statement
 		if s.Type != nil && !isInferredType(s.Type) && s.Value != nil && s.Name != nil {
 			annotatedType := s.Type.String()
 			// 定長陣列標註決定表示形式（固定棧陣列 vs 堆切片），刪掉會改語意：不報冗餘。
-			if !isFixedArrayAnnotation(s.Type) {
+			// map 字面量同理：沒了 `[K]V` 標註，`{ 'k': v }` 會被當成 block 解析。
+			if !isFixedArrayAnnotation(s.Type) && !isMapLiteralValue(s.Value) {
 				inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
 				// D1：有號整數 `+ - * / %` 的結果恆為 `?T`，因此寫在目標上的 plain `T`
 				// 標註**不是**冗餘 —— 2026-10-14 起它甚至是**錯誤**（D1 嚴格模式：
@@ -4085,7 +4124,7 @@ func runIntOverflowCore(program *parser.Program, view *THIRView) []ValidateResul
 			Line:    line,
 			Column:  col,
 			Message: "整数运算 `a OP b` 默认在溢出时返回 option<T>，结果类型恒为 `?T`。三选一：①用 `?T` 接收（`a ?i64 = x + y`，或直接 `a = x + y` 让编译器推断成 option），再用 `?=` 上抛或两段式 match 解包（`v = a: {` 换行 `ok -> it` / `-> 0`）；②加注解 `#{overflow = wrap}`（无声回绕）/`clamp0`（下溢归零）/`min`/`max`/`saturate`（饱和箝位）或型别前缀形式如 `#{overflow = u8-max}` 指定溢出行為——注意注解只改变失败时怎么取值，结果仍是 `?T`，仍须解包；③`_ = x + y` 显式丢弃。",
-			TraceID: "ovf-int-default",
+			TraceID: "xmicjezl",
 		})
 	}
 	for _, stmt := range program.Statements {
@@ -4516,7 +4555,7 @@ func ValidateDivByZero(program *parser.Program, view *THIRView) []ValidateResult
 			Line:    line,
 			Column:  col,
 			Message: "整數除法 / 取模的除數是字面常數 0，會觸發 LLVM 未定義行為（sdiv/srem 除以零），產生不可預測的結果。請改以執行時期零檢查，或讓函式以 option 回傳錯誤。",
-			TraceID: "div-by-zero",
+			TraceID: "onpn7zgb",
 		})
 	}
 	for _, stmt := range program.Statements {
@@ -6930,7 +6969,7 @@ func checkStrIndexInExpr(e parser.Expression, sem *parser.SemanticContext, ascii
 						Column:  x.Token.Column,
 						File:    file,
 						Message: "在循环里对 str/txt 使用 s[i] 取下标为 O(n²)：每次下标都要从串首前向迭代 UTF-8 取第 i 个码点，循环会被重复执行。建议：(1) 若需遍历字符，直接用 c <- s（内部按码点迭代，O(n)）；(2) 若只需字节访问，用 s.byte(i)；(3) 若该串可证明为纯 ASCII（声明加 #{ascii} 或赋 ASCII 字面量），s[i] 为 O(1)。",
-						TraceID: "STR_INDEX_COMPLEXITY",
+						TraceID: "iyvzh49e",
 					})
 				}
 			}
@@ -8623,7 +8662,7 @@ func ValidateViewTypes(program *parser.Program) []ValidateResult {
 	}
 	add := func(pos lexer.Position, msg string) {
 		results = append(results, ValidateResult{
-			TraceID: "viewtyp01",
+			TraceID: "51fnpxze",
 			Line:    pos.Line,
 			Column:  pos.Column,
 			Message: msg,
@@ -8736,7 +8775,7 @@ func ValidateFieldTags(program *parser.Program) []ValidateResult {
 	}
 	add := func(pos lexer.Position, msg string) {
 		results = append(results, ValidateResult{
-			TraceID: "fieldtag1",
+			TraceID: "2r4io7fc",
 			Line:    pos.Line,
 			Column:  pos.Column,
 			Message: msg,
@@ -9039,7 +9078,7 @@ func checkReadOnlyLenAssign(a *parser.AssignExpression, varTypes, funcTypes map[
 	}
 	pos := a.Left.Pos()
 	return &ValidateResult{
-		TraceID: "rdonlylen",
+		TraceID: "87zc5awf",
 		Line:    pos.Line,
 		Column:  pos.Column,
 		Message: fmt.Sprintf("cannot modify read-only field '%s' of %s; the length is derived from the buffer — use truncate(n) instead", dot.Property, rt),
@@ -10413,20 +10452,55 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 		return results
 	}
 
-	// 2. Collect locally defined type names (structs + type aliases).
-	localTypes := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		if sd, ok := stmt.(*parser.StructDefinition); ok {
-			localTypes[sd.Name] = true
+	// 2. Collect locally defined type names (structs + type aliases), **per module**.
+	//
+	// merged 模式（no vet 主檔）下 std 依賴檔的結構體定義帶模組前綴
+	// （`err.err`、`io.reader`、`bigint.bigint`），而同一檔內的函式簽名仍寫
+	// 裸名（`new = (…) (e err)`）。若只看全域裸名集合，「err」不在其中，於是
+	// std/err.no 自己噴「type 'err' not found; did you mean 'err.err'?」——實測
+	// `no vet test/std/err.no` 必現 3 條假 ERROR，且 File 指向 src/std/err.no。
+	// 故按「定義所屬模組」分組：只有同模組的定義才算本地型別（跨模組引用才報）。
+	localByModule := make(map[string]map[string]bool)
+	moduleKey := func(file string) string {
+		if file == "" {
+			return ""
 		}
-		if ta, ok := stmt.(*parser.TypeAlias); ok {
-			localTypes[ta.Name] = true
+		q := filepath.ToSlash(file)
+		if isStdPath(q) {
+			// std/<rest>.no 作為模組鍵：子目錄（crypto/rand）不會與頂層撞名。
+			return strings.TrimSuffix(stdRelPath(q), ".no")
+		}
+		return filepath.Dir(q)
+	}
+	addLocal := func(module, name string) {
+		m := localByModule[module]
+		if m == nil {
+			m = make(map[string]bool)
+			localByModule[module] = m
+		}
+		m[name] = true
+		// 模組前綴形（`err.err`）同時把短名登記為該模組的本地型別。
+		if i := strings.LastIndex(name, "."); i >= 0 {
+			m[name[i+1:]] = true
+		}
+	}
+	for _, stmt := range program.Statements {
+		file := ""
+		if program.Sem != nil {
+			file = program.Sem.SourceFileOf(stmt)
+		}
+		mod := moduleKey(file)
+		switch s := stmt.(type) {
+		case *parser.StructDefinition:
+			addLocal(mod, s.Name)
+		case *parser.TypeAlias:
+			addLocal(mod, s.Name)
 		}
 	}
 	// Also include std concrete aliases (e.g. "fd") — these are intentionally
 	// shared without module prefix.
 	for k := range CollectStdConcreteAliases() {
-		localTypes[k] = true
+		addLocal("", k)
 	}
 
 	// 3. Helper: check a single Type and emit a result if it's a cross-module
@@ -10450,8 +10524,12 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 		if isBuiltinType(baseName) {
 			return
 		}
-		// Locally defined type — no prefix needed.
-		if localTypes[baseName] {
+		// Locally defined type (same module) — no prefix needed.
+		ownerFile := ""
+		if program.Sem != nil && owner != nil {
+			ownerFile = program.Sem.SourceFileOf(owner)
+		}
+		if localByModule[moduleKey(ownerFile)][baseName] || localByModule[""][baseName] {
 			return
 		}
 		// Check if this type is a struct from another std module.

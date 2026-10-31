@@ -518,9 +518,9 @@ process.read = (buf []byte, n i64) (read-n i64) {
 process.read-line = () (line ?str) {
     line = nil
     .stdout-fd < 0 -> return
-    buf []byte = with-cap(4096)
+    buf []byte = with-len(4096)
     n = fs.read(.stdout-fd, buf, 4096)
-    n > 0 -> line = buf.to-str()
+    n > 0 -> line = buf.slice(0, n).to-bytes-str()
 }
 
 ; read-all: 讀取子進程的所有 stdout 輸出
@@ -534,7 +534,7 @@ process.read-all = () (content str, n i64) {
         chunk-n = fs.read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> *
 
-        content = content - buf.slice(0, chunk-n).to-str()
+        content = content - buf.slice(0, chunk-n).to-bytes-str()
 
         #{overflow=wrap}
         n = n + chunk-n
@@ -888,7 +888,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         n = fs.read(out-read, buf, 4096)
         n <= 0 -> break
 
-        out = out - buf.slice(0, n).to-str()
+        out = out - buf.slice(0, n).to-bytes-str()
     }
 
     fs.close(out-read)
@@ -943,7 +943,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 !! {
                     n = fs.read(err-read, buf, 4096)
                     n <= 0 -> break
-                    stderr = stderr - buf.slice(0, n).to-str()
+                    stderr = stderr - buf.slice(0, n).to-bytes-str()
                 }
                 fs.close(err-read)
             }

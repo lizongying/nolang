@@ -126,7 +126,7 @@ func stdPrivateOwners(recvType, method string, recvExpr parser.Expression) map[s
 	return owners
 }
 
-// checkPrivateStdCall 擋跨模組呼叫 std 私有（`_` 前綴）符號，TraceID "privstd"。
+// checkPrivateStdCall 擋跨模組呼叫 std 私有（`_` 前綴）符號，TraceID "raqvyltn"。
 //
 // 允許：curModule 正好是定義模組（同模組內部使用）——例如 bigint.no 自己的
 // `._mod-i64(v)` 委派。其餘一律 ERROR，包括使用者碼（curModule 為空）。
@@ -171,7 +171,7 @@ func checkPrivateStdCall(e *parser.CallExpression, dot *parser.DotExpression, re
 	// owners 是 map，遍歷順序不穩定；排序後訊息才可對拍（診斷多重集比對的是字串）。
 	sort.Strings(from)
 	return []ValidateResult{{
-		TraceID: "privstd",
+		TraceID: "raqvyltn",
 		Line:    line,
 		Column:  col,
 		Message: fmt.Sprintf("private std symbol '%s' is owned by module %s and may only be used inside it, not from %s; use the public API instead",

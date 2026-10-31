@@ -7,7 +7,8 @@ import (
 
 	"github.com/lizongying/nolang/lexer"
 
-	"github.com/lizongying/nolang/ty")
+	"github.com/lizongying/nolang/ty"
+)
 
 type Parser struct {
 	lexer *lexer.Lexer
@@ -22,25 +23,25 @@ type Parser struct {
 	cur      int           // currentToken 在 tk 中的绝对索引（注释包含）
 	peek     int           // peekToken 的绝对索引
 
-	ctx               contextStack                 // replaces inForCond, inMatchCond, inMatchArm, inExprContext
-	comments          []lexer.Token                // collected comment tokens
-	warnedSemiEat     map[int]bool                 // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
-	reportedIllegal   map[string]bool              // 已報告的 ILLEGAL token 位置（避免重複）
-	sem               *SemanticContext             // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
+	ctx             contextStack     // replaces inForCond, inMatchCond, inMatchArm, inExprContext
+	comments        []lexer.Token    // collected comment tokens
+	warnedSemiEat   map[int]bool     // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
+	reportedIllegal map[string]bool  // 已報告的 ILLEGAL token 位置（避免重複）
+	sem             *SemanticContext // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
 	// fmtTrivia 是 formatter 專用的表層 trivia 表（RTFlags / `{` 同行註釋）。
 	// 與 sem 並列的第二張副表：sem 服務編譯管線，fmtTrivia 只服務 fmt / LSP。
 	// ParseProgram 收尾時掛到 program.FmtTrivia。見 fmttrivia.go 檔案頭。
-	fmtTrivia         *FmtTrivia
+	fmtTrivia *FmtTrivia
 	// prog 是正在 lower 的合併 Program（AST→HIR 階段由 hirConv 注入，
 	// 經 scratchParser 傳給 H0 match desugar）。S1 翻轉後 std 模組以 surface
 	// 形態從 blob 載入、在 H0 才降糖；其區域 let 型別在烘焙期未被收進
 	// FuncVarTypes，故 FuncVarType 查表未命中。此欄位供 astLocalVarType 在
 	// 查表未命中時直接從源碼宣告（let 標註 / 呼叫回傳型別 / 識別符鏈）推導
 	// subject 型別，取代無作用域的全域 VarTypes 回退。
-	prog              *Program
-	funcSignatures    map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
-	methodSignatures  map[string][]string          // 結構體方法 → 結果型別字串列表（鍵：module.struct.method）
-	structFields      map[string]map[string]string // struct 名 → 欄位名 → 型別字串
+	prog             *Program
+	funcSignatures   map[string][]string          // 函數名 → 結果型別字串列表（用於 let 型別推斷）
+	methodSignatures map[string][]string          // 結構體方法 → 結果型別字串列表（鍵：module.struct.method）
+	structFields     map[string]map[string]string // struct 名 → 欄位名 → 型別字串
 
 	// extern* 記錄 SetExternSignatures / SetExternEnumVariants 收到的**注入**
 	// 表（僅記引用，不複製）。刻意與 funcSignatures/methodSignatures/structFields
@@ -53,9 +54,9 @@ type Parser struct {
 	externMethodSigs   map[string][]string
 	externStructFields map[string]map[string]string
 	externEnumVariants map[string][]string
-	methodStructStack []string                     // 當前方法所屬的 struct 名稱棧
-	typeAliasNames    map[string]bool              // 已定義的類型別名名稱（用於等號語法偵測）
-	unionMembers       map[string][]string         // union 別名名 → 直接成員型別名（用於類型解構 match 偵測）
+	methodStructStack  []string            // 當前方法所屬的 struct 名稱棧
+	typeAliasNames     map[string]bool     // 已定義的類型別名名稱（用於等號語法偵測）
+	unionMembers       map[string][]string // union 別名名 → 直接成員型別名（用於類型解構 match 偵測）
 
 	// curFuncName tracks the current function being parsed, for function-scoped
 	// variable type tracking. Empty when parsing module-level code.
@@ -339,6 +340,26 @@ func (p *Parser) classifyBlock() blockType {
 				skip, tok1, tok2 = s, t1, t2
 			}
 		}
+	}
+
+	// 接口合并（體內形式）：首成員是「獨佔一行的裸接口名」。
+	//
+	//	serialize {
+	//	    json
+	//	    noml
+	//	}
+	//
+	// struct 欄位要求同行有型別（`a i64` ⇒ tok2=IDENT），C 風格列舉要求逗號
+	// （`red,` ⇒ tok2=COMMA），標籤列舉要嘛有裸變體逗號、要嘛帶括號載荷，兩者
+	// 都不會出現「裸名 + NEWLINE」，因此本判定不與它們衝突。點號開頭的父接口
+	// （`sql.db⏎`）已由下方 case lexer.DOT 覆蓋。
+	if tok1.Type == lexer.IDENT && tok2.Type == lexer.NEWLINE {
+		return blockIface
+	}
+	// 空介面體 `name { }`：內容無從取証；語句位置的 `IDENT { }` 別無其他
+	// 合法用途（空 struct 字面量作語句是死碼），故判為介面。
+	if tok1.Type == lexer.RBRACE {
+		return blockIface
 	}
 
 	// Tokens that only appear in match arms, not struct/enum/iface
@@ -1083,13 +1104,13 @@ type parserState struct {
 	cur                 int // ring cursor (absolute token index of currentToken)
 	peek                int // ring cursor of peekToken
 	prevToken           lexer.Token
-	ctx                 contextStack                 // snapshot of context stack
-	comments            []lexer.Token                // snapshot of collected comments
-	semVarTypes         map[string]*ty.Type          // snapshot of variable type table
-	semEnumVariants     map[string][]string          // snapshot of enum variant table
-	semDeclaredVars     map[string]bool              // snapshot of declared variable set
+	ctx                 contextStack                   // snapshot of context stack
+	comments            []lexer.Token                  // snapshot of collected comments
+	semVarTypes         map[string]*ty.Type            // snapshot of variable type table
+	semEnumVariants     map[string][]string            // snapshot of enum variant table
+	semDeclaredVars     map[string]bool                // snapshot of declared variable set
 	semFuncVarTypes     map[string]map[string]*ty.Type // snapshot of per-function var types
-	semFuncDeclaredVars map[string]map[string]bool   // snapshot of per-function declared vars
+	semFuncDeclaredVars map[string]map[string]bool     // snapshot of per-function declared vars
 }
 
 func New(lx *lexer.Lexer) *Parser {
@@ -1526,7 +1547,7 @@ func (p *Parser) Errors() []string {
 }
 
 func (p *Parser) peekError(t lexer.TokenType) {
-	p.errorf(p.currentToken, "E_UNEXPECTED_TOKEN",
+	p.errorf(p.currentToken, "m1yd7r5x", "E_UNEXPECTED_TOKEN",
 		"expected next token to be %s, got %s instead",
 		t.String(), p.peekToken.Type.String())
 }
@@ -1685,14 +1706,7 @@ func (p *Parser) recoverStatement() (stmt Statement) {
 
 func (p *Parser) saveError(msg string) {
 	pos, clean := stripLocPrefix(msg)
-	// Deduplicate: skip if the same error at the same position was already reported.
-	// This prevents duplicate errors when restoreState retries parsing after a failed attempt.
-	for _, d := range p.diags {
-		if d.Pos == pos && d.Message == clean {
-			return
-		}
-	}
-	p.diags = append(p.diags, Diagnostic{
+	p.addDiagnostic(Diagnostic{
 		Filename: p.Filename,
 		Pos:      pos,
 		Severity: SeverityError,
@@ -1703,7 +1717,7 @@ func (p *Parser) saveError(msg string) {
 
 func (p *Parser) saveWarning(msg string) {
 	pos, clean := stripLocPrefix(msg)
-	p.diags = append(p.diags, Diagnostic{
+	p.addDiagnostic(Diagnostic{
 		Filename: p.Filename,
 		Pos:      pos,
 		Severity: SeverityWarning,
@@ -1716,7 +1730,7 @@ func (p *Parser) saveWarning(msg string) {
 // 指定 Code，便于按码过滤/选择性输出，如高风险的 W_CHAIN_IF）。
 func (p *Parser) saveWarningWithCode(code, msg string) {
 	pos, clean := stripLocPrefix(msg)
-	p.diags = append(p.diags, Diagnostic{
+	p.addDiagnostic(Diagnostic{
 		Filename: p.Filename,
 		Pos:      pos,
 		Severity: SeverityWarning,

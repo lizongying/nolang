@@ -4,7 +4,7 @@
 ; 期望輸出必須與 baseline（純 copy 語意）完全一致。
 
 ; 異步函數（模組級聲明，供 run 引用）
-double = (n i64) (r i64) {
+double-async = (n i64) (r i64) {
 
     #{overflow=wrap}
     r = n * 2
@@ -13,7 +13,7 @@ double = (n i64) (r i64) {
 coro-capture = () {
     x = 7
     y = x; 若誤重綁定：y 別名 x
-    h = run double(x); 協程捕獲 x（跨線程）
+    h = run double-async(x); 協程捕獲 x（跨線程）
     r = awy h
     print(y); expect: 7   ; y 必須是 7，不受協程/別名影響
     print(r); expect: 14

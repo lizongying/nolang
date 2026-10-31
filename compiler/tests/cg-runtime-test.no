@@ -19,6 +19,9 @@ test-runtime-types = () {
     p = cg-runtime-prelude()
     runner.eq(p.contains('%nolang_hdr = type { i64, i64 }'), 1, 'hdr type present')
     runner.eq(p.contains('%task = type'), 1, 'task type present')
+    runner.eq(p.contains('%str-long = type { i64, i64, i8* }'), 1, 'str type present')
+    runner.eq(p.contains('%vec = type { i64, i64, i64 }'), 1, 'vec type present')
+    runner.eq(p.contains('%option = type { i64, [3 x i64] }'), 1, 'option type present')
     runner.eq(p.contains('@malloc'), 1, 'malloc decl present')
     runner.eq(p.contains('@free'), 1, 'free decl present')
 }

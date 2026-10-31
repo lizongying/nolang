@@ -885,6 +885,15 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				walkType(v.Type)
 			}
 		case *parser.InterfaceDefinition:
+			// 接口合併項（Implements）也是模組引用：`db { enter⏎ leave }`
+			// 的父接口定義住在 enter / leave 模組裡。不把它們計入按需載入，
+			// 父接口就永遠解析不到，lint 會誤報 unknown parent interface。
+			for _, imp := range st.Implements {
+				addRef(imp)
+				if i := strings.IndexByte(imp, '.'); i > 0 {
+					addRef(imp[:i])
+				}
+			}
 			for _, m := range st.Methods {
 				for _, p := range m.Parameters {
 					walkType(p.Type)

@@ -79,7 +79,7 @@ main()
 			}
 			var flagged int
 			for _, r := range ValidateIntOverflow(prog) {
-				if r.TraceID == "ovf-int-default" {
+				if r.TraceID == "xmicjezl" {
 					flagged++
 				}
 			}

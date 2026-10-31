@@ -38,29 +38,37 @@ y = 3
 >
 > **多行結束規則：** 結束的 `;;` 同樣必須後跟換行或 EOF（中間僅允許空白）。未閉合的多行註釋會一直註釋到文件尾。
 
-> **規則：每行一條語句，禁止使用逗號 `,` 將多條語句寫在同一行。**（分號 `;` 現在是註釋標記，不再能連接語句。）  
-> 這條規則同樣適用於註釋中的程式碼範例。即使在註釋裡，也不應該用逗號把多條語句放在同一行，以免給讀者造成困惑。
->
-> ```no
-> ```
+> **規則：每行一條語句，禁止單行多條語句寫法。**
+> 分號 `;` 是**註釋標記**，不是語句分隔符；逗號 `,` 也不能連接多條語句。同一個塊 `{ ... }` 內的每條語句都必須各自獨佔一行。
+> 這條規則同樣適用於註釋中的程式碼範例：即使在註釋裡，也不要用 `;` 或 `,` 把多條語句寫在同一行，以免誤導讀者。
 
-; ❌ 錯誤：註釋中使用逗號合併多條語句  
+```no
+; ❌ 錯誤：用 `;` 分隔多條語句 —— `;` 之後整行都是註釋，
+; 連塊的 `}` 也被一起註釋掉，塊無法閉合，後續程式碼被靜默丟棄
+; cond -> { print('X'); return }
+
+; ❌ 錯誤：用逗號連接多條語句
 ; h0 = 1732584193, h1 = 4023233417
-
-; ❌ 錯誤：使用逗號合併多條語句  
-; out = from-i64(v), out = from-u64(v)  
+; out = from-i64(v), out = from-u64(v)
 ; debug(msg), info(msg), warn(msg)
 
-; ✅ 正確：每條語句獨立一行  
-; h0 = 1732584193  
-; h1 = 4023233417  
-; out = from-i64(v)  
-; out = from-u64(v)  
-; debug(msg)  
-; info(msg)  
-; warn(msg)
+; ✅ 正確：每條語句獨佔一行
+cond -> {
+    print('X')
+    return
+}
 
-````
+; ✅ 正確：每條語句獨佔一行
+; h0 = 1732584193
+; h1 = 4023233417
+; out = from-i64(v)
+; out = from-u64(v)
+; debug(msg)
+; info(msg)
+; warn(msg)
+```
+
+> **為什麼 `;` 特別危險：** `cond -> { print('X'); return }` 裡 `; return }` 全被當成註釋，實際程式碼只剩 `cond -> { print('X')`。塊永遠不閉合，`}` 之後的所有語句（往往包含該函數剩餘的整個函數體）都會被吞掉，報錯位置也可能嚴重偏移，極難定位。
 
 ## 數據類型
 
@@ -1869,6 +1877,18 @@ json {
 json.to-json = () {
 }
 
+noml {
+    to-noml()
+}
+
+serialize {
+    json
+    noml
+}
+
+serialize = json | noml
+serialize = json & noml
+
 ; 接口實現
 user json {
     name str
@@ -1890,10 +1910,50 @@ user.other = () {
 }
 ```
 
+### 接口合併
+
+接口可以「合併」其他接口的方法：父接口名寫在接口體內，**每行一個**（可帶模組前綴），不加逗號、不加括號：
+
+```no
+json { to-json() }
+noml { to-noml() }
+
+serialize {
+    json
+    noml
+}
+
+; 傳遞合併：roundtrip 同時獲得 serialize、json、noml 的全部方法
+roundtrip {
+    serialize
+    roundtrip-json()
+}
+```
+
+規則：
+
+- **遞迴合併**：合併是傳遞的——`roundtrip` 合併 `serialize`，而 `serialize` 又合併 `json` / `noml`，則 `roundtrip` 擁有全部三個接口的方法。
+- **每行一個，不能加逗號**：`serialize { json, noml }` 與 C 風格枚舉（`color { red, green }`）同形，因此仍按枚舉解析，不是接口合併。
+- **同名方法**：簽名相同（參數與回傳型別一致，接收者名可不同）⇒ 去重保留一個；簽名不同 ⇒ 診斷報錯。
+- **實現端**：型別只需寫實作聲明（前置清單 `user serialize { name str }`），父接口的方法一併算作已實現，簽名校驗會穿透父接口。
+- **`no fmt`**：舊的「前置清單」寫法（`serialize json, noml { }`）仍可解析，但 `no fmt` 會改寫成體內形式，`no vet` 對此給出 WARNING 提示。
+
+診斷（`no vet` 與編輯器診斷同源，TraceID `ifmrg001`）：
+
+| 情況 | 訊息 |
+| --- | --- |
+| 父接口未宣告 | `interface 'serialize': unknown parent interface 'noml'` |
+| 循環合併 | `interface 'a': merge cycle a -> b -> a` |
+| 同名異簽名 | `interface 'serialize': merged method 'to-str' has conflicting signatures ('json.to-str', 'noml.to-str')` |
+
+> `serialize = json \| noml` 這類寫法是**聯合型別**（union type）語法，與接口合併無關；接口合併只影響「型別必須具備哪些方法」。
+
 ### 特殊接口
 
 ```no
-file enter, leave {
+file {
+    enter
+    leave
 }
 ```
 
@@ -2927,18 +2987,54 @@ utils/
 # /utils/math.add
 
 ; 別名
-```
-
-
 # std/math.add a
 
-; ── 以下為舊式語法（deprecated，仍可使用但不推薦）──  
-; use std/math.add  
-; use github.com/utils/math.add  
-; use /utils/math.add  
+; ── 以下為舊式語法（deprecated，仍可使用但不推薦）──
+; use std/math.add
+; use github.com/utils/math.add
+; use /utils/math.add
 ; use std/math.add a
+```
 
-````
+#### 直接引入 `.noml` 設定檔
+
+`.noml` 檔案可以用 `#` 直接引入：解析順序先找同名 `.no`，找不到再找 `.noml`。引入後
+**結構體名就是檔名**（去掉副檔名），各成員成為該結構體的欄位；同時生成一個同名的
+全局值承載檔案內容，因此用 `server.port` 讀取設定。
+
+```noml
+; cfg/server.noml
+{
+  host: 'localhost'
+  port: 8080
+  tags: [] #{type = '[]str'}
+  compiler: {
+    version: 'v0.1.0'
+  }
+}
+```
+
+```no
+# /cfg/server
+
+print(server.port)             ; 8080
+print(server.compiler.version) ; v0.1.0
+```
+
+- 欄位型別優先取成員的 `#{type = '...'}` 註解（值是完整的 nolang 型別表達式，如
+  `'[]str'`、`'[]i64'`、`'?i64'`）；未標註時由值推斷：字串 → `str`、整數 → `i64`、
+  小數 → `f64`、布林 → `bool`、物件 → 自動生成的巢狀結構體（`server-compiler`）、
+  陣列 → `[]元素型別`。
+- 空容器（`[]`、`{}`）**必須**寫 `#{type = '...'}`：noml 的值本身沒有型別，空容器
+  無法推斷。物件成員標註 `#{type = 'x'}` 時直接使用 `x`（需自行定義），不再自動生成
+  巢狀結構體。
+- 巢狀物件的結構體名以檔名為前綴（`server-compiler`）；定義順序先巢狀後宿主。
+- 鍵名按 nolang 規則轉成中連接符小寫（`anonymous-fn-type`）：數字開頭加 `f-`，與
+  關鍵字同名的加 `x-`。
+- 允許 `as` 別名改寫值綁定名，結構體名不變：`# /cfg/server as cfg`。
+- `.noml` 型別不參與模組前綴：即使檔名與標準庫模組同名（如 `server`），型別仍是裸名。
+- `package.noml` / `workspace.noml` 同樣可寫 `#{...}` 註解（如 `#{type = '[]str'}`）：
+  解析時忽略，只供外部工具重建強型別結構；語法與 nolang 的 `#{...}` 完全一致。
 
 ### 導出模塊
 
@@ -2946,7 +3042,7 @@ utils/
 
 ```no
 @ std/math.add a
-````
+```
 
 ### FFI（`#{c}` 註解）
 

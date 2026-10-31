@@ -326,3 +326,116 @@ func TestNomlEmptyObject(t *testing.T) {
 		t.Errorf("m = %v", m)
 	}
 }
+
+// TestNomlMemberAnnotations 鎖定：成員上方與同一行尾隨的 `#{...}` 都會
+// 收集到對應路徑，且不影響值樹（與 nolang 註解語法一致）。
+func TestNomlMemberAnnotations(t *testing.T) {
+	src := `{
+  #{type = 'str', doc = '套件名'}
+  name: 'demo'
+  #{type = '[]str'}
+  keywords: []
+  dependencies: ['lodash:^4.17.21'] #{type = '[]str'}
+  compiler: {
+    #{type = 'str'}
+    version: 'v0.1.0' #{doc = 'manifest version'}
+    #{type = '[]str'}
+    link-libs: []
+  }
+}
+`
+	doc, err := ParseNomlDoc([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if doc.Root["name"] != "demo" {
+		t.Errorf("name = %v", doc.Root["name"])
+	}
+	if got := doc.TypeOf("name"); got != "str" {
+		t.Errorf("type(name) = %q, want str", got)
+	}
+	if got := doc.TypeOf("keywords"); got != "[]str" {
+		t.Errorf("type(keywords) = %q, want []str", got)
+	}
+	if got := doc.TypeOf("dependencies"); got != "[]str" {
+		t.Errorf("type(dependencies) = %q, want []str (trailing annotation)", got)
+	}
+	if got := doc.TypeOf("compiler.version"); got != "str" {
+		t.Errorf("type(compiler.version) = %q, want str (nested path)", got)
+	}
+	if got := doc.TypeOf("compiler.link-libs"); got != "[]str" {
+		t.Errorf("type(compiler.link-libs) = %q, want []str", got)
+	}
+	// 尾隨註解與上方註解合併（同一成員多個鍵）。
+	if len(doc.Annotations["compiler.version"]) != 2 {
+		t.Errorf("compiler.version annotations = %v, want 2 entries", doc.Annotations["compiler.version"])
+	}
+	// 值樹不受註解影響，仍可 DecodeInto。
+	base, err := ParseNomlMap([]byte(src))
+	if err != nil {
+		t.Fatalf("ParseNomlMap: %v", err)
+	}
+	comp, ok := base["compiler"].(map[string]any)
+	if !ok || comp["version"] != "v0.1.0" {
+		t.Errorf("compiler = %v", base["compiler"])
+	}
+}
+
+// TestNomlAnnotationPositionRule 鎖定與 nolang 一致的位置規則：
+// 只允許獨立成行寫在成員上方，或寫在成員同一行尾隨；前綴寫法報錯。
+func TestNomlAnnotationPositionRule(t *testing.T) {
+	bad := []struct {
+		name string
+		src  string
+	}{
+		{"prefix same line", "{\n  #{type = 'str'} name: 'x'\n}"},
+		{"annotation without member", "{\n  #{type = 'str'}\n}"},
+		{"unterminated annotation", "{\n  #{type = 'str'\n  name: 'x'\n}"},
+	}
+	for _, c := range bad {
+		if _, err := ParseNomlDoc([]byte(c.src)); err == nil {
+			t.Errorf("%s: expected error, got nil", c.name)
+		}
+	}
+}
+
+// TestNomlDocRoundTrip 鎖定 ParseNomlDoc → MarshalNomlDoc → ParseNomlDoc
+// 完整重建（值樹與成員註解都不丟）。
+func TestNomlDocRoundTrip(t *testing.T) {
+	src := `{
+  #{type = 'str'}
+  name: 'demo'
+  #{type = '[]str'}
+  link-libs: []
+  compiler: {
+    #{type = 'bool'}
+    anonymous-fn-type: false
+    #{type = 'i64', doc = 'bytes'}
+    option-inline-threshold: 24
+  }
+}
+`
+	doc, err := ParseNomlDoc([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	text, err := MarshalNomlDoc(doc)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	back, err := ParseNomlDoc([]byte(text))
+	if err != nil {
+		t.Fatalf("reparse:\n%s\nerr: %v", text, err)
+	}
+	for _, path := range []string{"name", "link-libs", "compiler.anonymous-fn-type", "compiler.option-inline-threshold"} {
+		if doc.TypeOf(path) != back.TypeOf(path) {
+			t.Errorf("type(%s) = %q, want %q\n%s", path, back.TypeOf(path), doc.TypeOf(path), text)
+		}
+	}
+	if len(back.Annotations["compiler.option-inline-threshold"]) != 2 {
+		t.Errorf("annotation entries lost:\n%s", text)
+	}
+	if back.Root["name"] != "demo" {
+		t.Errorf("name = %v", back.Root["name"])
+	}
+}

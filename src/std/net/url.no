@@ -343,7 +343,12 @@ url-info.to-str = () (out str) {
 ; 返回 out str: 編碼後字串
 url-encode = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
-    out = ''
+
+    ; 每個字節最多編成 %XX 三個字節；容量先開好，後面用直接下標寫。
+    ; 不可寫 `out[out.len-bytes()]: { ok -> it = c }`：place-match 以「讀」作
+    ; 閘門，len=0 時讀 out[0] 越界回 nil，ok 臂永不執行 → 整串靜默為空。
+    #{overflow=wrap}
+    out = with-cap(s.len-bytes() * 3 + 1)
     i <- [0..s.len-bytes()): {
 
         c = s.byte(i)
@@ -368,28 +373,12 @@ url-encode = (s str) (out str) {
             ->
         }
         {
-            keep -> {
-                out[out.len-bytes()]: {
-                    ok -> it = c
-                    -> _
-                }
-            }
+            keep -> { out[out.len-bytes()] = c }
 
             -> {
-                out[out.len-bytes()]: {
-                    ok -> it = 37
-                    -> _
-                }
-
-                out[out.len-bytes()]: {
-                    ok -> it = hex-chars[c >> 4]
-                    -> _
-                }
-
-                out[out.len-bytes()]: {
-                    ok -> it = hex-chars[c & 15]
-                    -> _
-                }
+                out[out.len-bytes()] = 37
+                out[out.len-bytes()] = hex-chars[c >> 4]
+                out[out.len-bytes()] = hex-chars[c & 15]
             }
         }
     }
@@ -400,7 +389,8 @@ url-encode = (s str) (out str) {
 ; 返回 out str: 編碼後字串
 url-encode-component = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
-    out = ''
+    #{overflow=wrap}
+    out = with-cap(s.len-bytes() * 3 + 1)
     i <- [0..s.len-bytes()): {
 
         c = s.byte(i)
@@ -425,28 +415,12 @@ url-encode-component = (s str) (out str) {
             ->
         }
         {
-            keep -> {
-                out[out.len-bytes()]: {
-                    ok -> it = c
-                    -> _
-                }
-            }
+            keep -> { out[out.len-bytes()] = c }
 
             -> {
-                out[out.len-bytes()]: {
-                    ok -> it = 37
-                    -> _
-                }
-
-                out[out.len-bytes()]: {
-                    ok -> it = hex-chars[c >> 4]
-                    -> _
-                }
-
-                out[out.len-bytes()]: {
-                    ok -> it = hex-chars[c & 15]
-                    -> _
-                }
+                out[out.len-bytes()] = 37
+                out[out.len-bytes()] = hex-chars[c >> 4]
+                out[out.len-bytes()] = hex-chars[c & 15]
             }
         }
     }
@@ -456,7 +430,7 @@ url-encode-component = (s str) (out str) {
 ; s str: 編碼字串
 ; 返回 out str: 解碼後字串
 url-decode = (s str) (out str) {
-    out = ''
+    out = with-cap(s.len-bytes() + 1)
     i = 0
     (i < s.len-bytes()) {
 
@@ -506,36 +480,22 @@ url-decode = (s str) (out str) {
                     ->
                 }
                 v1 >= 0 && v2 >= 0 -> {
-                    out[out.len-bytes()]: {
-                        ok -> it = (v1 << 4) | v2
-                        -> _
-                    }
+                    out[out.len-bytes()] = (v1 << 4) | v2
 
                     #{overflow=wrap}
                     i = i + 2
                 }
 
-                -> {
-                    out[out.len-bytes()]: {
-                        ok -> it = c
-                        -> _
-                    }
-                }
+                -> { out[out.len-bytes()] = c }
             }
 
             c == 43 -> {
-                out[out.len-bytes()]: {
-                    ok -> it = 32
-                    -> _ ; + 號轉空格
-                }
+
+                ; + 號轉空格
+                out[out.len-bytes()] = 32
             }
 
-            -> {
-                out[out.len-bytes()]: {
-                    ok -> it = c
-                    -> _
-                }
-            }
+            -> { out[out.len-bytes()] = c }
         }
 
         #{overflow=wrap}

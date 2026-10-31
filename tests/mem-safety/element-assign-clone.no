@@ -17,7 +17,10 @@ test-vec-str-assign = () (ok bool) {
     s.push('world')
 
     a = 'original'
-    s[0] = a
+    s[0]: {
+        ok -> it = a
+        -> _
+    }
     a = 'changed'
 
     s[0] == 'original' -> ok = true
@@ -31,11 +34,20 @@ test-vec-str-reassign = () (ok bool) {
     s.push('second')
 
     a = 'aaa'
-    s[0] = a
+    s[0]: {
+        ok -> it = a
+        -> _
+    }
     b = 'bbb'
-    s[0] = b
+    s[0]: {
+        ok -> it = b
+        -> _
+    }
     c = 'ccc'
-    s[0] = c
+    s[0]: {
+        ok -> it = c
+        -> _
+    }
 
     s[0] == 'ccc' -> ok = true
     s[1] == 'second' -> ok = true
@@ -47,7 +59,10 @@ test-vec-str-literal = () (ok bool) {
     s.push('placeholder')
     s.push('keep')
 
-    s[0] = 'literal value'
+    s[0]: {
+        ok -> it = 'literal value'
+        -> _
+    }
 
     s[0] == 'literal value' -> ok = true
     s[1] == 'keep' -> ok = true

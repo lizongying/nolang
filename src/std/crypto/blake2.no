@@ -239,17 +239,9 @@ b-state = () (h []u64) {
     h = BLAKE2B-IV[..8)
 }
 
-; s-state: 同上，BLAKE2s 版
-s-state = () (h []u64) {
-    h = with-len(8)
-    i <- [0..8): {
-
-        #{index-out=zero}
-        h[i]: {
-            ok -> it = BLAKE2S-IV[i]
-            -> _
-        }
-    }
+; s-state: 同上，BLAKE2s 版（BLAKE2s 是 32 位元字，故為 []u32 而非 []u64）
+s-state = () (h []u32) {
+    h = BLAKE2S-IV[..8)
 }
 
 ; b: 計算 BLAKE2b 雜湊（64 位元組輸出）
@@ -261,7 +253,10 @@ b = (data []byte) (hash [64]byte) {
     h = b-state()
 
     #{index-out=zero}
-    h[0] = (h[0] ^ 16842816) & BLAKE2B-MASK
+    h[0]: {
+        ok -> it = (h[0] ^ 16842816) & BLAKE2B-MASK
+        -> _
+    }
 
     dlen = data.len()
     t u64 = 0
@@ -347,7 +342,10 @@ b-256 = (data []byte) (hash [32]byte) {
     h = b-state()
 
     #{index-out=zero}
-    h[0] = (h[0] ^ 16842784) & BLAKE2B-MASK
+    h[0]: {
+        ok -> it = (h[0] ^ 16842784) & BLAKE2B-MASK
+        -> _
+    }
 
     dlen = data.len()
     t u64 = 0
@@ -646,7 +644,10 @@ s = (data []byte) (hash [32]byte) {
     h = s-state()
 
     #{index-out=zero}
-    h[0] = (h[0] ^ 16842784) & BLAKE2S-MASK
+    h[0]: {
+        ok -> it = (h[0] ^ 16842784) & BLAKE2S-MASK
+        -> _
+    }
 
     dlen = data.len()
     t u32 = 0

@@ -676,6 +676,19 @@ func rewriteUnionCallExpr(expr parser.Expression, templates map[string]*unionTem
 			// `(a + 1).to-str()`——運算子 `a._add(1)` 藏在 `.to-str` 的 Receiver 裡，
 			// 舊碼不下降 Receiver 就永遠走不到，產生 "unknown callee ..._add"。
 			rewriteUnionCallExpr(dot.Receiver, templates, varTypes, sem)
+			// `math.clamp(...)`：接收者是模組名而非值，這是模組限定的「全域內建」呼叫，
+			// 不是方法派發。math.no 的 clamp 是 `#{buildin}` 空體樁（合併期被剝掉），
+			// resolveModuleCalls 因此不會把它攤平成裸名 clamp；而它的屬性恰好與聯合方法
+			// `num.clamp` 同名，照樣追加成員後綴就變成 `math.clamp__i64`——既不是函式也
+			// 不是內建，codegen 報 unknown callee，真正該走的 clamp 內建（ForwardFunc
+			// math-clamp）被遮蔽。屬性命中全域內建時保留原名，讓 builtin 派發接手。
+			if id, ok := dot.Receiver.(*parser.Identifier); ok {
+				if _, isValue := varTypes[id.Value]; !isValue {
+					if bm := builtin.FindBuiltinMethod(dot.Property); bm != nil && bm.ReceiverType == builtin.ReceiverGlobal {
+						return
+					}
+				}
+			}
 			matched := false
 			for tplName, tpl := range templates {
 				if !strings.HasSuffix(tplName, "."+dot.Property) {
@@ -1389,26 +1402,64 @@ func devirtualizeInterfaceVars(mainProg, merged *parser.Program,
 	}
 	interfaces := make(map[string]bool)
 	impls := make(map[string][]string)
-	for _, stmt := range merged.Statements {
-		switch s := stmt.(type) {
-		case *parser.InterfaceDefinition:
-			interfaces[s.Name] = true
-		case *parser.StructDefinition:
-			for _, im := range s.Implements {
-				if im == "" {
-					continue
+	// 接口合併：實作 `serialize` 的型別同時實作它的全部父接口（json / noml …）。
+	// 少了父閉包，`s serialize = user{...}` 之後 `s.to-json()` 攤平時仍會找
+	// `serialize.to-json` —— 一個不存在的函式。
+	//
+	// 解析的範圍必須是「主程序 + merged」的並集：本函式在 appendTopLevelStatements
+	// 之前執行，主程序內的接口宣告與實作宣告尚未進入 merged。
+	ifaceView := &parser.Program{Sem: merged.Sem}
+	ifaceView.Statements = make([]parser.Statement, 0, len(mainProg.Statements)+len(merged.Statements))
+	ifaceView.Statements = append(ifaceView.Statements, mainProg.Statements...)
+	ifaceView.Statements = append(ifaceView.Statements, merged.Statements...)
+	ifaceSet, _ := checker.ResolveInterfaces(ifaceView)
+	addImpl := func(iface, impl string) {
+		if iface == "" || impl == "" {
+			return
+		}
+		for _, existing := range impls[iface] {
+			if existing == impl {
+				return
+			}
+		}
+		impls[iface] = append(impls[iface], impl)
+	}
+	// 接口 / 實作型別的定義同時掃 mainProg 與 merged：本函式在
+	// appendTopLevelStatements 之前執行（見 transpiler.go 的裝配順序），主程序
+	// 內的 `serialize { … }` 與 `user serialize { … }` 尚未進入 merged；而 std 模組
+	// 的介面定義已經在 merged 裡。兩邊都要看，否則前一種情形 `interfaces` 為空，
+	// 直接 return。
+	scanDefs := func(prog *parser.Program) {
+		if prog == nil {
+			return
+		}
+		for _, stmt := range prog.Statements {
+			switch s := stmt.(type) {
+			case *parser.InterfaceDefinition:
+				interfaces[s.Name] = true
+			case *parser.StructDefinition:
+				for _, im := range s.Implements {
+					if im == "" {
+						continue
+					}
+					closure := ifaceSet.Closure(im)
+					if len(closure) == 0 {
+						addImpl(im, s.Name)
+						continue
+					}
+					for _, iface := range closure {
+						addImpl(iface, s.Name)
+					}
 				}
-				impls[im] = append(impls[im], s.Name)
 			}
 		}
 	}
+	scanDefs(mainProg)
+	scanDefs(merged)
 	if len(interfaces) == 0 {
 		return
 	}
 	// 供 resolveMethodCall 回退使用（見 ifaceImplTable 的說明）。
-	if os.Getenv("NOLANG_IFACEDBG") != "" {
-		fmt.Fprintf(os.Stderr, "[IFACEDBG] devirt merged=%p sem=%p\n", merged, merged.Sem)
-	}
 	for k, v := range impls {
 		if merged.Sem != nil {
 			merged.Sem.SetIfaceImpls(k, v)
@@ -1447,6 +1498,12 @@ func devirtualizeInterfaceVars(mainProg, merged *parser.Program,
 	// 只改主程序那一份不足以影響後續 buildVarTypes(merged) 的重建（它會把
 	// varTypes 從 AST 重新讀一遍，把具象化結果覆蓋回介面名）。套用時仍要求
 	// 該宣告本身的型別是介面，避免誤傷其他模組裡恰好同名的變數。
+	//
+	// 寫點必須落兩處 Sem：本函式在 appendTopLevelStatements 之前執行，主程序的
+	// LetStatement 只在 mainProg 的語義副表裡；而 HIR/MIR 是拿 merged + merged.Sem
+	// （newCompileAssembly 新建並 Merge 出來的一份，不是同一個物件）建的，只寫
+	// mainProg.Sem 等於沒寫——`v json = u` 就會繼續被當成介面型別配置，接收者
+	// 傳過去的是一塊空值。同一個節點寫兩張表是幂等的。
 	applyTo := func(prog *parser.Program) {
 		if prog == nil {
 			return
@@ -1463,6 +1520,9 @@ func devirtualizeInterfaceVars(mainProg, merged *parser.Program,
 			// S5 stage 5：原就地寫 `ls.Type = &NamedType{…}`（違反 §1.4）改為
 			// 寫 Sem.TypeOverride（覆蓋語義；ls.Type 保留宣告的介面名不動）。
 			prog.Sem.SetTypeOverrideOf(ls, concrete)
+			if merged.Sem != nil && merged.Sem != prog.Sem {
+				merged.Sem.SetTypeOverrideOf(ls, concrete)
+			}
 		}
 	}
 	applyTo(mainProg)

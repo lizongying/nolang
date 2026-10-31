@@ -18,9 +18,6 @@
 #{bind = auto, c}
 pow = (x f64, y f64) (r f64)
 
-main = () {
-    r = pow(2.0, 10.0)
-    print(r)
-}
-
-main()
+; 入口由編譯器合成，直接寫頂層陳述（'main' 是保留名，不能再當函式名）
+r = pow(2.0, 10.0)
+print(r)

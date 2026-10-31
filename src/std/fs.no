@@ -541,9 +541,9 @@ file.read = (buf []byte, n i64) (read-n i64) {
 file.read-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
-    buf []byte = with-cap(4096)
+    buf []byte = with-len(4096)
     n = read(.fd, buf, 4096)
-    n > 0 -> line = buf.to-bytes-str()
+    n > 0 -> line = buf.slice(0, n).to-bytes-str()
 }
 
 ; write: 將 data 的前 n 位元組寫入檔案

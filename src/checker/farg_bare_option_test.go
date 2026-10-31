@@ -19,7 +19,7 @@ func countFxxoptargErrors(t *testing.T, src string) int {
 	}
 	n := 0
 	for _, r := range ValidateFuncArgs(prog, "") {
-		if r.TraceID == "fxxoptarg" {
+		if r.TraceID == "3604icnf" {
 			n++
 		}
 	}

@@ -18,6 +18,7 @@ package checker
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -270,6 +271,7 @@ var lintSteps = []lintStep{
 	{"unassigned-returns", true, runLintUnassignedReturns},
 	{"embed-annotations", true, runLintEmbedAnnotations},
 	{"interface-impl", false, runLintInterfaceImpl},
+	{"interface-merge", true, runLintInterfaceMerge},
 	{"use-keyword", true, runLintUseKeyword},
 	{"use-alias", true, runLintUseAlias},
 	{"redundant-type-annot", true, runLintRedundantTypeAnnot},
@@ -333,6 +335,109 @@ func runLintInterfaceImpl(program *parser.Program, opts LintOptions) []LintResul
 		})
 	}
 	return results
+}
+
+// runLintInterfaceMerge — 9b. 接口合併（interface merging）
+//
+// 合併項寫在接口體內（`serialize { json⏎ noml }`）。本步把
+// checker.ResolveInterfaces 的診斷轉成 lint 結果：未知父接口 / 循環 /
+// 合併後簽名衝突 ⇒ ERROR；仍用舊的「前置列表」寫法 ⇒ WARNING（提示改用體內
+// 形，`no fmt` 會自動改寫）。
+//
+// 結果帶 File，符合 std 診断歸因過濾（finalizeLintResults）。
+func runLintInterfaceMerge(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	if program == nil || program.Sem == nil {
+		return nil
+	}
+	_, diags := ResolveInterfaces(program)
+	for _, d := range diags {
+		endCol := d.Column
+		if d.EndColumn > 0 {
+			endCol = d.EndColumn
+		}
+		results = append(results, LintResult{
+			Line: d.Line, Column: d.Column, EndColumn: endCol, File: d.File,
+			Severity: LintError, Source: "nolang-lint",
+			Message: d.Message, TraceID: d.TraceID,
+		})
+	}
+	// 前置列表兼容寫法：`db enter, leave { ... }` 仍能解析，但規範形是體內。
+	for _, stmt := range program.Statements {
+		id, ok := stmt.(*parser.InterfaceDefinition)
+		if !ok || len(id.Implements) == 0 {
+			continue
+		}
+		if !interfaceUsesLeadingList(program, id, opts) {
+			continue
+		}
+		results = append(results, LintResult{
+			Line: id.Token.Line, Column: id.Token.Column,
+			EndColumn: id.Token.Column + len(id.Name),
+			File:      program.Sem.SourceFileOf(id),
+			Severity:  LintWarning, Source: "nolang-lint",
+			Message: fmt.Sprintf("interface '%s': parent interfaces written as a leading list; write one name per line inside the body instead", id.Name),
+			TraceID: InterfaceMergeTraceID,
+		})
+	}
+	return results
+}
+
+// interfaceUsesLeadingList 報告接口是否採用了舊的「前置列表」寫法。
+//
+// AST 不記錄合併項的位置——複用 Implements 正是為了不改 gob / `std_ast.bin`
+// 格式——因此在這裡回讀來源檔的那幾行：前置列表必然寫在「接口名」與 `{`
+// 之間（`db enter, leave {`），而體內形的 `{` 緊跟接口名。
+// 讀不到檔案時靜默跳過：這只是收斂寫法的建議，不值得為它引入新的 AST 狀態。
+func interfaceUsesLeadingList(program *parser.Program, id *parser.InterfaceDefinition, opts LintOptions) bool {
+	if id == nil || id.Token.Line <= 0 {
+		return false
+	}
+	path := program.Sem.SourceFileOf(id)
+	if path == "" {
+		path = opts.SourcePath
+	}
+	if path == "" {
+		return false
+	}
+	candidates := []string{path}
+	if !filepath.IsAbs(path) && opts.RootDir != "" {
+		candidates = append(candidates, filepath.Join(opts.RootDir, path))
+	}
+	var data []byte
+	for _, c := range candidates {
+		if b, err := os.ReadFile(c); err == nil {
+			data = b
+			break
+		}
+	}
+	if data == nil {
+		return false
+	}
+	lines := strings.Split(string(data), "\n")
+	start := id.Token.Line - 1
+	// 從接口名所在行起，直到遇見 `{`（多行前置列表：`db enter,` / `leave {`）。
+	for i := start; i >= 0 && i < len(lines) && i <= start+8; i++ {
+		line := lines[i]
+		if c := strings.IndexByte(line, ';'); c >= 0 {
+			line = line[:c] // `;` 是行註解
+		}
+		if i == start && id.Token.Column > 0 && id.Token.Column-1 < len(line) {
+			line = line[id.Token.Column-1:]
+			if strings.HasPrefix(line, id.Name) {
+				line = line[len(id.Name):]
+			}
+		}
+		brace := strings.IndexByte(line, '{')
+		if brace < 0 {
+			if strings.TrimSpace(line) != "" {
+				return true // 接口名與 `{` 之間出現了其他內容
+			}
+			continue
+		}
+		return strings.TrimSpace(line[:brace]) != ""
+	}
+	return false
 }
 
 // runLintStringConcat — 16. 字串拼接提示（建議用 - 代替 +）

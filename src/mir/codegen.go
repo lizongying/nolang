@@ -6093,8 +6093,7 @@ func (c *codegen) emitCast(inst *Inst) error {
 // negation keeps the operand loads on one path.
 func (c *codegen) emitOptionValueEq(inst *Inst, aV, aT, bV, bT, lt, slot string) bool {
 	if inst.Op != OpEq && inst.Op != OpNe {
-		// Ordering on options stays a discriminant comparison: nolang defines
-		// no ordering over payloads.
+		// Ordering is handled by emitOptionValueOrder.
 		return false
 	}
 	pA, pTA := c.optionPayloadOf(inst.Args[0], aV, aT)
@@ -6126,6 +6125,58 @@ func (c *codegen) emitOptionValueEq(inst *Inst, aV, aT, bV, bT, lt, slot string)
 	fmt.Fprintf(c.sb, "  %s = and i1 %s, %s\n", eqR, teq, peq)
 	if inst.Op == OpNe {
 		fmt.Fprintf(c.sb, "  %%c%d = xor i1 %s, true\n", inst.Dst, eqR)
+	}
+	fmt.Fprintf(c.sb, "  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot)
+	return true
+}
+
+// emitOptionValueOrder lowers `a < b` / `<=` / `>` / `>=` on two option VALUES by
+// comparing their PAYLOADS. Option-vs-scalar ordering already unwraps the payload
+// (the checker documents `?i64 < 100` as a value comparison), so option-vs-option
+// ordering must do the same instead of comparing the two discriminants.
+//
+// Returns false when the payload has no inline ordered representation (an
+// aggregate, a string, or mismatched payload widths); the caller then keeps the
+// discriminant comparison.
+func (c *codegen) emitOptionValueOrder(inst *Inst, aV, aT, bV, bT, lt, slot string) bool {
+	signed := ""
+	unsigned := ""
+	fpred := ""
+	switch inst.Op {
+	case OpLt:
+		signed, fpred = "slt", "olt"
+	case OpLe:
+		signed, fpred = "sle", "ole"
+	case OpGt:
+		signed, fpred = "sgt", "ogt"
+	case OpGe:
+		signed, fpred = "sge", "oge"
+	case OpULt:
+		unsigned = "ult"
+	case OpULe:
+		unsigned = "ule"
+	case OpUGt:
+		unsigned = "ugt"
+	case OpUGe:
+		unsigned = "uge"
+	default:
+		return false
+	}
+	pA, pTA := c.optionPayloadOf(inst.Args[0], aV, aT)
+	pB, pTB := c.optionPayloadOf(inst.Args[1], bV, bT)
+	if pA == "" || pB == "" || pTA != pTB || c.shouldUseMemcpy(pTA) {
+		return false
+	}
+	if pTA == "double" {
+		fmt.Fprintf(c.sb, "  %%c%d = fcmp %s %s %s, %s\n", inst.Dst, fpred, pTA, pA, pB)
+	} else if isIntType(pTA) {
+		pred := signed
+		if unsigned != "" {
+			pred = unsigned
+		}
+		fmt.Fprintf(c.sb, "  %%c%d = icmp %s %s %s, %s\n", inst.Dst, pred, pTA, pA, pB)
+	} else {
+		return false
 	}
 	fmt.Fprintf(c.sb, "  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot)
 	return true
@@ -6191,6 +6242,14 @@ func (c *codegen) emitCmp(inst *Inst) error {
 			if c.emitOptionValueEq(inst, aV, aT, bV, bT, lt, slot) {
 				return nil
 			}
+			// Ordered comparison of two option VALUES (`a < b` on two ?T) is a
+			// PAYLOAD comparison too. Comparing tags answered `false` for every
+			// pair of present options, which silently made str.compare /
+			// txt.compare report "equal" for any two same-length strings once
+			// `.byte(i)` began returning `?byte`.
+			if c.emitOptionValueOrder(inst, aV, aT, bV, bT, lt, slot) {
+				return nil
+			}
 			// The payload has no structural equality (a slice, a struct, a
 			// fixed array, or a boxed payload). Comparing its BYTES would
 			// compare heap pointers, which is not what `==` on two options
@@ -6208,8 +6267,17 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		// When the payload is an aggregate but the other side is a scalar
 		// (e.g. ?[]str vs bool), comparing the payload is meaningless and
 		// produces a type mismatch. Fall back to comparing the TAG.
+		//
+		// `i1` MUST count as an integer operand here. A bool literal's LLVM
+		// type is i1, which isIntType deliberately excludes (isIntType is
+		// about the i8/i16/i32/i64 family used by integer arithmetic).
+		// Without it, `v == false` on a `?i64`/`?bool` fell through to the
+		// TAG branch and compared the discriminant against false: every
+		// PRESENT option answered `true`, so `valid == false` fired on a
+		// true `valid` and std/toml's normalize-key rejected every bare
+		// key (parse said "toml parse error at line 1").
 		payloadT := c.optPayloadLTOf(inst.Args[0])
-		if payloadT == bT || (isIntType(bT) && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1")) || (bT == "%str-long" && payloadT == "%str-long") || (bT == "%vec" && payloadT == "%vec") {
+		if payloadT == bT || (isIntType(bT) || bT == "i1") && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1") || (bT == "%str-long" && payloadT == "%str-long") || (bT == "%vec" && payloadT == "%vec") {
 			aV, aT = c.optionPayloadOf(inst.Args[0], aV, aT)
 		} else {
 			aV = c.optionTag(aV, aT)
@@ -6217,7 +6285,7 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		}
 	case bOpt:
 		payloadT := c.optPayloadLTOf(inst.Args[1])
-		if payloadT == aT || (isIntType(aT) && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1")) || (aT == "%str-long" && payloadT == "%str-long") || (aT == "%vec" && payloadT == "%vec") {
+		if payloadT == aT || (isIntType(aT) || aT == "i1") && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1") || (aT == "%str-long" && payloadT == "%str-long") || (aT == "%vec" && payloadT == "%vec") {
 			bV, bT = c.optionPayloadOf(inst.Args[1], bV, bT)
 		} else {
 			bV = c.optionTag(bV, bT)
@@ -10808,7 +10876,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		idx, ok := c.mod.FieldIndex(structKey, inst.Str)
 		if !ok {
 			c.fail("setfield: field %q not found on %q (option %q) in func %d", inst.Str, innerRaw, recvRaw, c.cf)
-			return fmt.Errorf("setfield field")
+			return fmt.Errorf("setfield: field %q not found on %q (option %q)", inst.Str, innerRaw, recvRaw)
 		}
 		valLT, valV := c.loadVal(inst.Args[1])
 		fieldLT := valLT
@@ -10930,7 +10998,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	idx, ok := c.mod.FieldIndex(structKey, inst.Str)
 	if !ok {
 		c.fail("setfield: field %q not found on %q in func %d", inst.Str, recvRaw, c.cf)
-		return fmt.Errorf("setfield field")
+		return fmt.Errorf("setfield: field %q not found on %q (struct key %q)", inst.Str, recvRaw, structKey)
 	}
 	// The field's DECLARED type is authoritative — `fieldLT` above is derived
 	// from the RHS (`c.ptype(inst.Args[1])`), which is the same value only when
@@ -12781,6 +12849,19 @@ func (c *codegen) txtEqInline(aV, bV, dst string) {
 
 func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	callee := inst.Sym
+	// Some lowering paths build a call with Builder.Emit (e.g. lookupFormatValue
+	// for `{x.to-str()}`), which sets only Dst and leaves Results empty.
+	// emitCallBody already falls back to Dst, but the callee special cases below
+	// (i64-to-str / i128-to-str) read Results directly and would report
+	// "no result slot" for an otherwise well-formed call. Normalise once here so
+	// every branch sees the same single-result form.
+	if len(inst.Results) == 0 && inst.Dst > NoVal {
+		if v := c.mod.Value(inst.Dst); v != nil {
+			if t := c.mod.Type(v.Type); t != nil && t.Kind != KindVoid {
+				inst.Results = []ValueID{inst.Dst}
+			}
+		}
+	}
 	if os.Getenv("NOLANG_MIR_DEBUG") != "" && (callee == "i64-to-str" || callee == "number.i64-to-str") {
 		argT := ""
 		if len(inst.Args) > 0 {

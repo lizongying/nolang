@@ -2,7 +2,6 @@
 package parser
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -65,9 +64,8 @@ func (p *Parser) parseTrailingAnnotation() []*AnnotationEntry {
 		p.nextToken() // skip #{
 		more := p.parseAnnotationBody()
 		if p.currentToken.Type != lexer.RBRACE {
-			msg := fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s instead",
+			p.saveErrorf("i8i2c8jx", "line %d, column %d: expected '}' to close annotation, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return entries
 		}
 		p.nextToken() // skip }
@@ -101,8 +99,8 @@ func annotationPrefixIllegal(t lexer.TokenType) bool {
 // "line %d, column %d: ..." 格式，LSP 的 parseErrorToDiagnostic 才能定位
 // （見 lsp/server.go），編譯與 LSP 因此共用同一條規則。
 func (p *Parser) errPrefixAnnotation(tok lexer.Token) {
-	p.saveError(fmt.Sprintf("line %d, column %d: `#{...}` 註解不能寫在目標前方同一行；請獨立成行置於目標上方，或寫在目標同一行尾隨",
-		tok.Line, tok.Column))
+	p.saveErrorf("0j1imd2d", "line %d, column %d: `#{...}` 註解不能寫在目標前方同一行；請獨立成行置於目標上方，或寫在目標同一行尾隨",
+		tok.Line, tok.Column)
 }
 
 // skipToBlockOpeningBrace 跳過當前 token 直到左花括號（或 EOF），用於
@@ -147,9 +145,8 @@ func (p *Parser) parseAnnotationStatement() Statement {
 
 	// 預期 '}'
 	if p.currentToken.Type != lexer.RBRACE {
-		msg := fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s instead",
+		p.saveErrorf("phld6glo", "line %d, column %d: expected '}' to close annotation, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip }
@@ -199,9 +196,8 @@ func (p *Parser) parseAnnotationStatement() Statement {
 		p.nextToken() // skip #{
 		moreEntries := p.parseAnnotationBody()
 		if p.currentToken.Type != lexer.RBRACE {
-			msg := fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s instead",
+			p.saveErrorf("sstb7ij2", "line %d, column %d: expected '}' to close annotation, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			break
 		}
 		p.nextToken() // skip }
@@ -359,17 +355,17 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 				if m := NormalizeOverflowMode(raw); m != "" {
 					fd.OverflowMode = m
 				}
-		case e.Key == "buildin":
-			// #{buildin} 標記此函式為標準庫內建聲明：真實實作位於 Go
-			// runtime，nolang 函式體不參與校驗與 codegen（編譯器遇到此標記直接
-			// 跳過）。函式名即為 Go 側 BuiltinMethod 的鍵。
-			fd.BuiltinStub = true
-			if v, ok := e.Value.(*AnnotationIdentValue); ok {
-				fd.BuiltinName = v.Value
-			} else if v, ok := e.Value.(*AnnotationStringValue); ok {
-				fd.BuiltinName = v.Value
+			case e.Key == "buildin":
+				// #{buildin} 標記此函式為標準庫內建聲明：真實實作位於 Go
+				// runtime，nolang 函式體不參與校驗與 codegen（編譯器遇到此標記直接
+				// 跳過）。函式名即為 Go 側 BuiltinMethod 的鍵。
+				fd.BuiltinStub = true
+				if v, ok := e.Value.(*AnnotationIdentValue); ok {
+					fd.BuiltinName = v.Value
+				} else if v, ok := e.Value.(*AnnotationStringValue); ok {
+					fd.BuiltinName = v.Value
+				}
 			}
-		}
 		}
 	}
 	// #{buildin} 標註標籤列舉：變體用於匹配/窮盡性檢查，底層表示與構造由
@@ -386,7 +382,7 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 
 // applyLineOverflowAnnotations 實作 `#{overflow = ...}` 的「行注解」語意：一個
 // 獨立的 AnnotationStatement 只把其 overflow 模式套用到**緊跟其後的下一條陳述**
-//（若該陳述尚未自帶 overflow 註解），不向區塊其餘陳述或巢狀區塊傳播。
+// （若該陳述尚未自帶 overflow 註解），不向區塊其餘陳述或巢狀區塊傳播。
 //
 // 之所以需要此 pass：`#{overflow=wrap}` 緊跟的陳述可能以無法被
 // parseAnnotationStatement 附加的 token 開頭（如 `.n = .n + 1` 以 DOT 開頭、
@@ -453,7 +449,7 @@ func (p *Parser) applyLineOverflowAnnotations(block *BlockStatement) {
 
 // applyLineIndexOutAnnotations 實作 `#{index-out = ...}` 的「行注解」語意：一個
 // 獨立的 AnnotationStatement 只把其 index-out 條目套用到**緊跟其後的下一條陳述**
-//（若該陳述尚未自帶 index-out 註解），不向區塊其餘陳述或巢狀區塊傳播。
+// （若該陳述尚未自帶 index-out 註解），不向區塊其餘陳述或巢狀區塊傳播。
 //
 // 之所以需要此 pass：`#{index-out=zero}` 緊跟的陳述可能以無法被
 // parseAnnotationStatement 附加的 token 開頭（如 `return arr[i]` 以 RETURN 開頭、
@@ -505,26 +501,26 @@ func (p *Parser) applyLineIndexOutAnnotations(block *BlockStatement) {
 				if _, isAnn := next.(*AnnotationStatement); isAnn {
 					break
 				}
-			// 行注解語意：index-out 條目合併進下一條陳述的 side-table，
-			// 供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。
-			// 若下一條陳述已自帶 index-out，不覆蓋（避免重複套用）。
-			if p.indexOutEntries(p.sem.RawAnnotationsOf(next)) == nil {
-				p.mergeIndexOutAnnotations(next, entries)
-			}
-			// D9 place-write：`#{index-out=DEF}` 套用到 `v[i]: { ok -> it = ... }`
-			// 時，下一條陳述是 ExpressionStatement 包裹的 SurfaceMatch，desugar
-			// 主體是內層 SurfaceMatch。把 index-out 條目也合併進內層 sm，使
-			// buildMatchDesugar / rewriteItPlaceWrites 能直接從 sm 讀到註解、
-			// 還原「注解作用到臂內 RHS 下标读取」的舊語意（無須依賴 walk 從外層
-			// ExpressionStatement 轉移，且對 desugarSurfaceMatch 克隆 sm 的路徑
-			// 也生效，因為此處直接寫在原始 sm 上）。
-			if es, ok := next.(*ExpressionStatement); ok {
-				if sm, ok2 := es.Expression.(*SurfaceMatch); ok2 {
-					if p.indexOutEntries(p.sem.RawAnnotationsOf(sm)) == nil {
-						p.mergeIndexOutAnnotations(sm, entries)
+				// 行注解語意：index-out 條目合併進下一條陳述的 side-table，
+				// 供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。
+				// 若下一條陳述已自帶 index-out，不覆蓋（避免重複套用）。
+				if p.indexOutEntries(p.sem.RawAnnotationsOf(next)) == nil {
+					p.mergeIndexOutAnnotations(next, entries)
+				}
+				// D9 place-write：`#{index-out=DEF}` 套用到 `v[i]: { ok -> it = ... }`
+				// 時，下一條陳述是 ExpressionStatement 包裹的 SurfaceMatch，desugar
+				// 主體是內層 SurfaceMatch。把 index-out 條目也合併進內層 sm，使
+				// buildMatchDesugar / rewriteItPlaceWrites 能直接從 sm 讀到註解、
+				// 還原「注解作用到臂內 RHS 下标读取」的舊語意（無須依賴 walk 從外層
+				// ExpressionStatement 轉移，且對 desugarSurfaceMatch 克隆 sm 的路徑
+				// 也生效，因為此處直接寫在原始 sm 上）。
+				if es, ok := next.(*ExpressionStatement); ok {
+					if sm, ok2 := es.Expression.(*SurfaceMatch); ok2 {
+						if p.indexOutEntries(p.sem.RawAnnotationsOf(sm)) == nil {
+							p.mergeIndexOutAnnotations(sm, entries)
+						}
 					}
 				}
-			}
 				// 若下一條是 for 迴圈（含 `k <- [0..N):` 計數迴圈），其體內的
 				// 索引讀取 `buf[base+k] = data[off+base+k]` 才是真正需要降級的
 				// 目標。desugar 只對 LetStatement / AssignExpression / ExpressionStatement
@@ -956,9 +952,8 @@ func (p *Parser) parseAnnotationFFIDeclaration(annotToken lexer.Token, lang stri
 
 	// 函式名稱（可以 _ 開頭表示私有）
 	if p.currentToken.Type != lexer.IDENT {
-		msg := fmt.Sprintf("line %d, column %d: expected identifier after #{%s} directive, got %s instead",
+		p.saveErrorf("x51zwxlr", "line %d, column %d: expected identifier after #{%s} directive, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, lang, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	stmt.Name = &Identifier{Token: p.currentToken, Value: p.currentToken.Literal}
@@ -966,9 +961,8 @@ func (p *Parser) parseAnnotationFFIDeclaration(annotToken lexer.Token, lang stri
 
 	// 預期 '='
 	if p.currentToken.Type != lexer.ASSIGN {
-		msg := fmt.Sprintf("line %d, column %d: expected '=' after FFI name, got %s instead",
+		p.saveErrorf("ne9kyew7", "line %d, column %d: expected '=' after FFI name, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip =
@@ -1015,9 +1009,8 @@ func (p *Parser) parseAnnotationBody() []*AnnotationEntry {
 
 		// 鍵名（IDENT）
 		if p.currentToken.Type != lexer.IDENT {
-			msg := fmt.Sprintf("line %d, column %d: expected annotation key, got %s instead",
+			p.saveErrorf("95a27ccb", "line %d, column %d: expected annotation key, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return entries
 		}
 
@@ -1059,9 +1052,8 @@ func (p *Parser) parseAnnotationBody() []*AnnotationEntry {
 			break
 		}
 		// 未預期的 token
-		msg := fmt.Sprintf("line %d, column %d: expected ',' or '}' in annotation, got %s instead",
+		p.saveErrorf("1ubmxmsr", "line %d, column %d: expected ',' or '}' in annotation, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		break
 	}
 
@@ -1109,9 +1101,8 @@ func (p *Parser) parseAnnotationValue() AnnotationValue {
 				rightInc = false
 				p.nextToken() // skip )
 			} else {
-				msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' to close range, got %s instead",
+				p.saveErrorf("4o348fh8", "line %d, column %d: expected ']' or ')' to close range, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 			}
 			return &AnnotationRangeValue{
 				Token:    openTok,
@@ -1229,17 +1220,15 @@ func (p *Parser) parseAnnotationSimpleValue() AnnotationValue {
 					break
 				}
 				if p.currentToken.Type != lexer.IDENT {
-					msg := fmt.Sprintf("line %d, column %d: expected field name in struct literal, got %s instead",
+					p.saveErrorf("ddljrny8", "line %d, column %d: expected field name in struct literal, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					break
 				}
 				nameTok := p.currentToken
 				p.nextToken() // skip 欄位名
 				if p.currentToken.Type != lexer.COLON {
-					msg := fmt.Sprintf("line %d, column %d: expected ':' after struct field name, got %s instead",
+					p.saveErrorf("mooyq3ok", "line %d, column %d: expected ':' after struct field name, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					break
 				}
 				p.nextToken() // skip :
@@ -1248,9 +1237,8 @@ func (p *Parser) parseAnnotationSimpleValue() AnnotationValue {
 					fields = append(fields, AnnotationStructField{Name: nameTok.Literal, Value: fv})
 				}
 				if p.currentToken.Type != lexer.COMMA && p.currentToken.Type != lexer.RBRACE {
-					msg := fmt.Sprintf("line %d, column %d: expected ',' or '}' in struct literal, got %s instead",
+					p.saveErrorf("96c2yjtk", "line %d, column %d: expected ',' or '}' in struct literal, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					break
 				}
 			}
@@ -1267,9 +1255,8 @@ func (p *Parser) parseAnnotationSimpleValue() AnnotationValue {
 		p.nextToken()
 		return val
 	default:
-		msg := fmt.Sprintf("line %d, column %d: expected annotation value, got %s instead",
+		p.saveErrorf("o1v8wvx8", "line %d, column %d: expected annotation value, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 }
@@ -1310,9 +1297,8 @@ func (p *Parser) parseAnnotationArray() AnnotationValue {
 			break
 		}
 		// 未預期的 token
-		msg := fmt.Sprintf("line %d, column %d: expected ',' or ']' in array, got %s instead",
+		p.saveErrorf("qzwxurol", "line %d, column %d: expected ',' or ']' in array, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		break
 	}
 
@@ -1338,9 +1324,8 @@ func (p *Parser) parseAnnotationRange(leftInc bool) AnnotationValue {
 
 	// 期望 ..
 	if p.currentToken.Type != lexer.ELLIPSIS {
-		msg := fmt.Sprintf("line %d, column %d: expected '..' in range, got %s instead",
+		p.saveErrorf("8wmzq8hx", "line %d, column %d: expected '..' in range, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip ..
@@ -1356,9 +1341,8 @@ func (p *Parser) parseAnnotationRange(leftInc bool) AnnotationValue {
 		rightInc = false
 		p.nextToken() // skip )
 	} else {
-		msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' to close range, got %s instead",
+		p.saveErrorf("te0v5lgz", "line %d, column %d: expected ']' or ')' to close range, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 	}
 
 	return &AnnotationRangeValue{

@@ -31,7 +31,10 @@ test-str-grow = () (ok bool) {
 test-str-far-oob = () (ok bool) {
     s = 'abc'; len=3, cap=3, 非 null 3 字節堆緩衝
     i = 100000
-    s[i] = 'X'; 遠越界，offset 100000 跨越分頁邊界 → 修復前 SIGSEGV
+    s[i]: {
+        ok -> it = 'X'; 遠越界，offset 100000 跨越分頁邊界 → 修復前 SIGSEGV
+        -> _
+    }
     ok = s[i] == 'X'; 讀回：修復前亦越界讀 → 崩潰；修復後增長到 idxV+1 → 'X'
 }
 

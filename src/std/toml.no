@@ -356,11 +356,10 @@ toml-unquote = (raw str) (value ?str) {
             }
         }
 
-        v[j]: {
-            ok -> it = c
-
-            -> _
-        }
+        ; v 是 with-cap 出來的 len=0 緩衝，不能用 `v[j]: { ok -> it = c }`
+        ; （place-match 以讀作閘門，len=0 時讀越界回 nil，ok 臂永不執行），
+        ; 必須直接下標寫入才能增長長度。
+        v[j] = c
 
         #{overflow=wrap}
         j = j + 1

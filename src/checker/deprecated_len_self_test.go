@@ -10,7 +10,7 @@ import (
 
 // lenDeprTraceID is the TraceID ValidateDeprecatedLen stamps on every `.len`
 // property diagnostic.
-const lenDeprTraceID = "len-depr"
+const lenDeprTraceID = "kbutx330"
 
 // validateLenDepr runs the production entry point (ValidateTypes, which
 // populates validationStructFields before delegating to ValidateDeprecatedLen

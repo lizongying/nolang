@@ -56,7 +56,10 @@ test-encode-int-multi = () {
 test-decode-int-small = () {
     space = ' '
     data = space.repeat(HPACK-TEST-BUF)
-    data[0] = 10
+    data[0]: {
+        ok -> it = 10
+        -> _
+    }
     val = 0
     next = 0
     hpack.decode-int(data, 0, 5)(val, next)
@@ -75,9 +78,18 @@ test-decode-int-small = () {
 test-decode-int-multi = () {
     space = ' '
     data = space.repeat(HPACK-TEST-BUF)
-    data[0] = 31
-    data[1] = 170
-    data[2] = 10
+    data[0]: {
+        ok -> it = 31
+        -> _
+    }
+    data[1]: {
+        ok -> it = 170
+        -> _
+    }
+    data[2]: {
+        ok -> it = 10
+        -> _
+    }
     val = 0
     next = 0
     hpack.decode-int(data, 0, 5)(val, next)
@@ -117,10 +129,22 @@ test-encode-str = () {
 test-decode-str = () {
     space = ' '
     data = space.repeat(HPACK-TEST-BUF)
-    data[0] = 3
-    data[1] = 97
-    data[2] = 98
-    data[3] = 99
+    data[0]: {
+        ok -> it = 3
+        -> _
+    }
+    data[1]: {
+        ok -> it = 97
+        -> _
+    }
+    data[2]: {
+        ok -> it = 98
+        -> _
+    }
+    data[3]: {
+        ok -> it = 99
+        -> _
+    }
     out = ''
     next = 0
     hpack.decode-str(data, 0)(out, next)

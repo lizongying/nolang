@@ -768,12 +768,12 @@ tables.encode-header = (name str, value str) (out str) {
         idx-out = encode-int(name-idx, 6, 64)
 
         ; 複製到 out
+        ; ⚠️ out 是 with-cap 出來的 len=0 緩衝，不能用 `out[i]: { ok -> it = v }`
+        ; （place-match 以讀作閘門，len=0 時讀越界回 nil，ok 臂永不執行），
+        ; 必須直接下標寫入才能增長長度（idxwrite 對 with-cap 基底豁免）。
         i <- [0..idx-out.len-bytes()): {
 
-            out[i]: {
-                ok -> it = idx-out.byte(i)
-                -> _
-            }
+            out[i] = idx-out.byte(i)
         }
         out-n = idx-out.len-bytes()
 
@@ -783,10 +783,7 @@ tables.encode-header = (name str, value str) (out str) {
         i <- [0..val-out.len-bytes()): {
 
             #{overflow=wrap}
-            out[out-n + i]: {
-                ok -> it = val-out.byte(i)
-                -> _
-            }
+            out[out-n + i] = val-out.byte(i)
         }
 
         ; 加入動態表
@@ -796,10 +793,7 @@ tables.encode-header = (name str, value str) (out str) {
 
     ; 3. 全新標頭 → Literal with Incremental Indexing（6.2.1），新 name
     ; 格式：01000000（索引 0 = 新 name）
-    out[0]: {
-        ok -> it = 64
-        -> _
-    }
+    out[0] = 64
     out-n = 1
 
     ; 編碼 name
@@ -808,10 +802,7 @@ tables.encode-header = (name str, value str) (out str) {
     i <- [0..name-out.len-bytes()): {
 
         #{overflow=wrap}
-        out[out-n + i]: {
-            ok -> it = name-out.byte(i)
-            -> _
-        }
+        out[out-n + i] = name-out.byte(i)
     }
 
     #{overflow=wrap}
@@ -823,10 +814,7 @@ tables.encode-header = (name str, value str) (out str) {
     i <- [0..val-out.len-bytes()): {
 
         #{overflow=wrap}
-        out[out-n + i]: {
-            ok -> it = val-out.byte(i)
-            -> _
-        }
+        out[out-n + i] = val-out.byte(i)
     }
 
     ; 加入動態表

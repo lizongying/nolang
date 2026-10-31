@@ -132,7 +132,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 		if p.currentToken.Type == lexer.LBRACE && !p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) && !isIncDec {
 			if p.classifyBlockAtCurrent() == blockMatch && !hasColonBeforeBrace {
-				p.warnf(p.currentToken, "W_DEPRECATED_BRACE",
+				p.warnf(p.currentToken, "b9cf2s8p", "W_DEPRECATED_BRACE",
 					"'x { ... }' is deprecated, use 'x: { ... }' instead")
 			}
 			blockHandled := false
@@ -249,9 +249,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		// expression is parsed (see AS handling after the infix loop below).
 		// If we reach here, `as` appeared where an expression was expected,
 		// which is a parse error. Skip it and return nil.
-		msg := fmt.Sprintf("line %d, column %d: unexpected 'as' at start of expression",
+		p.saveErrorf("axj3m1pb", "line %d, column %d: unexpected 'as' at start of expression",
 			p.currentToken.Line, p.currentToken.Column)
-		p.saveError(msg)
 		p.nextToken()
 		return nil
 
@@ -388,15 +387,13 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		key := fmt.Sprintf("%d:%d", p.currentToken.Line, p.currentToken.Column)
 		if !p.reportedIllegal[key] {
 			p.reportedIllegal[key] = true
-			var msg string
 			if p.currentToken.ErrMsg != "" {
-				msg = fmt.Sprintf("line %d, column %d: %s",
+				p.saveErrorf("1gybkrrq", "line %d, column %d: %s",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.ErrMsg)
 			} else {
-				msg = fmt.Sprintf("line %d, column %d: illegal token %q",
+				p.saveErrorf("ghvjbe8q", "line %d, column %d: illegal token %q",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
 			}
-			p.saveError(msg)
 		}
 		p.nextToken()
 		return nil
@@ -411,19 +408,17 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		if p.currentToken.Type == lexer.DOT {
 			p.nextToken()
 			if p.currentToken.Type != lexer.IDENT {
-				var msg string
 				if p.currentToken.Type == lexer.ILLEGAL && p.currentToken.ErrMsg != "" {
 					// A leading double underscore ('__') now lexes as ILLEGAL
 					// with an explanatory ErrMsg (see lexer.go) instead of the
 					// confusing bare "got UNDERSCORE" the wildcard token used to
 					// produce. Surface that message so the rejection is clean.
-					msg = fmt.Sprintf("line %d, column %d: %s",
+					p.saveErrorf("11069k6b", "line %d, column %d: %s",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.ErrMsg)
 				} else {
-					msg = fmt.Sprintf("line %d, column %d: expected identifier after dot, got %s instead",
+					p.saveErrorf("09qseik5", "line %d, column %d: expected identifier after dot, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				}
-				p.saveError(msg)
 				return nil
 			}
 			dotExpr := &DotExpression{
@@ -452,17 +447,15 @@ func (p *Parser) parseExpression(precedence int) Expression {
 					break
 				}
 				if p.currentToken.Type != lexer.COMMA {
-					msg := fmt.Sprintf("line %d, column %d: expected ',' or '>' in generic args, got %s instead",
+					p.saveErrorf("9c615d3t", "line %d, column %d: expected ',' or '>' in generic args, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return nil
 				}
 				p.nextToken()
 			}
 			if p.currentToken.Type != lexer.LPAREN {
-				msg := fmt.Sprintf("line %d, column %d: expected '(' after generic args, got %s instead",
+				p.saveErrorf("dumlt7oj", "line %d, column %d: expected '(' after generic args, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			p.nextToken()
@@ -479,9 +472,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 						p.nextToken()
 						break
 					} else {
-						msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+						p.saveErrorf("gaewcwmo", "line %d, column %d: expected comma or right parenthesis, got %s instead",
 							p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-						p.saveError(msg)
 						return nil
 					}
 				}
@@ -565,16 +557,14 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			// 解析目標型別 — 使用 parseExternType 以支援 *T / **T 等 FFI 指標型別語法
 			typ, ok := p.parseExternType()
 			if !ok || typ == nil {
-				msg := fmt.Sprintf("line %d, column %d: expected type after 'as', got %s instead",
+				p.saveErrorf("309fjp3b", "line %d, column %d: expected type after 'as', got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			// 檢查目標型別是否為指標型別（PointerType）
 			if _, isPtr := typ.(*PointerType); !isPtr {
-				msg := fmt.Sprintf("line %d, column %d: 'as' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s",
+				p.saveErrorf("ua5h1rpc", "line %d, column %d: 'as' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s",
 					asTok.Line, asTok.Column, typ.String())
-				p.saveError(msg)
 				// 仍建立 CastExpression 以維持後續解析流程，但已記錄錯誤
 			}
 			leftExp = &CastExpression{
@@ -657,11 +647,11 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			val := p.parseExpression(LOWEST)
 			tgt := exprToString(idx)
 			rhs := exprToString(val)
-			p.saveError(fmt.Sprintf(
+			p.saveErrorf("oraub2m9",
 				"line %d, column %d: `%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败。请改写成（ok 臂的 it 是元素位置，可读可写）：\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   或 `%s ?= %s %s %s`（错误上抛，要求所在函数有 option 结果参数）",
 				tok.Line, tok.Column, tgt, op, rhs,
 				tgt, op, rhs,
-				tgt, tgt, op, rhs))
+				tgt, tgt, op, rhs)
 			return leftExp
 		}
 	}
@@ -703,9 +693,8 @@ func (p *Parser) parseIntegerLiteral() Expression {
 			// is caught separately by the checker's range validation.
 			value = 0
 		} else {
-			msg := fmt.Sprintf("line %d, column %d: could not parse %q as integer",
+			p.saveErrorf("wskr1nvn", "line %d, column %d: could not parse %q as integer",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
-			p.saveError(msg)
 			p.nextToken()
 			return nil
 		}
@@ -767,9 +756,8 @@ func (p *Parser) parseFloatLiteral() Expression {
 
 	value, err := strconv.ParseFloat(p.currentToken.Literal, 64)
 	if err != nil {
-		msg := fmt.Sprintf("line %d, column %d: could not parse %q as float",
+		p.saveErrorf("3wynwdcq", "line %d, column %d: could not parse %q as float",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
-		p.saveError(msg)
 		p.nextToken()
 		return nil
 	}
@@ -831,8 +819,8 @@ func (p *Parser) parseInfixExpression(left Expression) Expression {
 		// 定位到運算符本身（expr.Token），而不是 p.currentToken：後者此時
 		// 已經停在「吃掉運算符後看到的第一個非 NEWLINE token」，在註解/換行
 		// 插入的情形下會指向一個與錯誤無關的列，反而誤導讀者。
-		p.saveError(fmt.Sprintf("line %d, column %d: expected expression after operator '%s'",
-			expr.Token.Line, expr.Token.Column, expr.Operator))
+		p.saveErrorf("venvcq6s", "line %d, column %d: expected expression after operator '%s'",
+			expr.Token.Line, expr.Token.Column, expr.Operator)
 		return left
 	}
 
@@ -856,9 +844,8 @@ func (p *Parser) parseConditionalExpression(condition Expression) Expression {
 	expr.Consequence = p.parseExpression(CONDITIONAL)
 
 	if p.currentToken.Type != lexer.COLON {
-		msg := fmt.Sprintf("line %d, column %d: expected colon in conditional expression, got %s instead",
+		p.saveErrorf("oswu0as1", "line %d, column %d: expected colon in conditional expression, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 
@@ -900,9 +887,8 @@ func (p *Parser) parseGroupedExpression() Expression {
 			rightInc = true
 			p.nextToken() // skip ]
 		} else {
-			msg := fmt.Sprintf("line %d, column %d: expected ')' or ']' to close range, got %s instead",
+			p.saveErrorf("3sxhaibr", "line %d, column %d: expected ')' or ']' to close range, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -938,9 +924,8 @@ func (p *Parser) parseGroupedExpression() Expression {
 			rightInc = true
 			p.nextToken() // skip ]
 		} else {
-			msg := fmt.Sprintf("line %d, column %d: expected ')' or ']' to close range, got %s instead",
+			p.saveErrorf("dtb82vgd", "line %d, column %d: expected ')' or ']' to close range, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -954,9 +939,8 @@ func (p *Parser) parseGroupedExpression() Expression {
 	}
 
 	if p.currentToken.Type != lexer.RPAREN {
-		msg := fmt.Sprintf("line %d, column %d: expected right parenthesis, got %s instead",
+		p.saveErrorf("5qjs01mp", "line %d, column %d: expected right parenthesis, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 
@@ -1005,8 +989,8 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			p.nextToken() // skip #{
 			armAnnots = append(armAnnots, p.parseAnnotationBody()...)
 			if p.currentToken.Type != lexer.RBRACE {
-				p.saveError(fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+				p.saveErrorf("giw7e5rb", "line %d, column %d: expected '}' to close annotation, got %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				break
 			}
 			p.nextToken() // skip }
@@ -1478,8 +1462,8 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			if !hasValArm {
 				missing = append(missing, "ok")
 			}
-			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
-				tok.Line, tok.Column, strings.Join(missing, ", ")))
+			p.saveErrorf("u5qmp19f", "line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
+				tok.Line, tok.Column, strings.Join(missing, ", "))
 			return nil
 		}
 	}
@@ -1510,8 +1494,8 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 
 func (p *Parser) parseIfExpression() Expression {
 	expr := &IfExpression{Token: p.currentToken}
-	p.saveWarning(fmt.Sprintf("line %d, column %d: 'if/elif/else' is deprecated, use '{ <cond> -> <body> }' instead",
-		expr.Token.Line, expr.Token.Column))
+	p.saveWarningf("2534ei4x", "line %d, column %d: 'if/elif/else' is deprecated, use '{ <cond> -> <body> }' instead",
+		expr.Token.Line, expr.Token.Column)
 
 	// 跳过 if 关键字
 	p.nextToken()
@@ -1525,9 +1509,8 @@ func (p *Parser) parseIfExpression() Expression {
 
 	// 解析左花括号
 	if p.currentToken.Type != lexer.LBRACE {
-		msg := fmt.Sprintf("line %d, column %d: expected left brace, got %s instead",
+		p.saveErrorf("yj5ek705", "line %d, column %d: expected left brace, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 
@@ -1548,9 +1531,8 @@ func (p *Parser) parseIfExpression() Expression {
 
 		// 解析左花括号
 		if p.currentToken.Type != lexer.LBRACE {
-			msg := fmt.Sprintf("line %d, column %d: expected left brace, got %s instead",
+			p.saveErrorf("h6z5s5my", "line %d, column %d: expected left brace, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -1636,9 +1618,8 @@ func (p *Parser) parseElifBlock() *BlockStatement {
 	}
 
 	if p.currentToken.Type != lexer.LBRACE {
-		msg := fmt.Sprintf("line %d, column %d: expected left brace in elif, got %s instead",
+		p.saveErrorf("7clod0r1", "line %d, column %d: expected left brace in elif, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 
@@ -1659,9 +1640,8 @@ func (p *Parser) parseElifBlock() *BlockStatement {
 		}
 
 		if p.currentToken.Type != lexer.LBRACE {
-			msg := fmt.Sprintf("line %d, column %d: expected left brace in else, got %s instead",
+			p.saveErrorf("qmmpavsj", "line %d, column %d: expected left brace in else, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -1715,9 +1695,8 @@ func (p *Parser) parseArrayLiteral(size Expression) Expression {
 		if p.currentToken.Type == lexer.COMMA {
 			p.nextToken() // 跳过 COMMA
 		} else if p.currentToken.Type != lexer.RBRACKET {
-			msg := fmt.Sprintf("line %d, column %d: expected comma or right bracket in array literal, got %s instead",
+			p.saveErrorf("tjwokiw9", "line %d, column %d: expected comma or right bracket in array literal, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 	}
@@ -1816,9 +1795,8 @@ func (p *Parser) parseSliceLiteral() Expression {
 			rightInc = false
 			p.nextToken() // skip )
 		} else {
-			msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' to close range, got %s instead",
+			p.saveErrorf("2cmnxd6l", "line %d, column %d: expected ']' or ')' to close range, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -1855,9 +1833,8 @@ func (p *Parser) parseSliceLiteral() Expression {
 			rightInc = false
 			p.nextToken() // skip )
 		} else {
-			msg := fmt.Sprintf("line %d, column %d: expected ']' or ')' to close range, got %s instead",
+			p.saveErrorf("tt23j5su", "line %d, column %d: expected ']' or ')' to close range, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -1896,9 +1873,8 @@ func (p *Parser) parseSliceLiteral() Expression {
 				p.nextToken()
 			}
 			if p.currentToken.Type != lexer.RBRACKET {
-				msg := fmt.Sprintf("line %d, column %d: expected comma or right bracket in slice literal, got %s instead",
+				p.saveErrorf("cuhyyetq", "line %d, column %d: expected comma or right bracket in slice literal, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			break
@@ -1950,9 +1926,8 @@ func (p *Parser) parseMapLiteral(mapType *MapType) Expression {
 
 		// expect ':'
 		if p.currentToken.Type != lexer.COLON {
-			msg := fmt.Sprintf("line %d, column %d: expected ':' in map literal, got %s instead",
+			p.saveErrorf("dh249i0x", "line %d, column %d: expected ':' in map literal, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 		p.nextToken() // skip :
@@ -2037,9 +2012,8 @@ func (p *Parser) parseStructLiteral(typeExpr Expression) Expression {
 			break
 		}
 		if p.currentToken.Type != lexer.IDENT {
-			msg := fmt.Sprintf("line %d, column %d: expected field name in struct literal, got %s instead",
+			p.saveErrorf("f5ikdmuc", "line %d, column %d: expected field name in struct literal, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 
@@ -2121,9 +2095,8 @@ func (p *Parser) parseFunctionLiteral() Expression {
 	if p.currentToken.Type != lexer.RPAREN {
 		for {
 			if p.currentToken.Type != lexer.IDENT {
-				msg := fmt.Sprintf("line %d, column %d: expected parameter name to be identifier",
+				p.saveErrorf("obx5vjjv", "line %d, column %d: expected parameter name to be identifier",
 					p.currentToken.Line, p.currentToken.Column)
-				p.saveError(msg)
 				return nil
 			}
 
@@ -2149,9 +2122,8 @@ func (p *Parser) parseFunctionLiteral() Expression {
 					p.nextToken()
 				}
 				if p.currentToken.Type != lexer.IDENT {
-					msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
+					p.saveErrorf("1i1o45j6", "line %d, column %d: expected parameter type, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return nil
 				}
 				typeLit += p.currentToken.Literal
@@ -2176,9 +2148,8 @@ func (p *Parser) parseFunctionLiteral() Expression {
 			}
 
 			if p.currentToken.Type != lexer.COMMA {
-				msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+				p.saveErrorf("i0q22lpt", "line %d, column %d: expected comma or right parenthesis, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 
@@ -2189,9 +2160,8 @@ func (p *Parser) parseFunctionLiteral() Expression {
 	p.nextToken()
 
 	if p.currentToken.Type != lexer.LBRACE {
-		msg := fmt.Sprintf("line %d, column %d: expected left brace, got %s instead",
+		p.saveErrorf("roqeis8q", "line %d, column %d: expected left brace, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 
@@ -2239,9 +2209,8 @@ func (p *Parser) parseCallExpression(function Expression) Expression {
 			p.nextToken()
 			break
 		} else {
-			msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+			p.saveErrorf("j1onng8y", "line %d, column %d: expected comma or right parenthesis, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 	}

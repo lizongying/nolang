@@ -87,9 +87,15 @@ test-fe-frombytes = () (pass bool) {
 
     base [32]byte
     i <- [0..32): {
-        base[i] = 0
+        base[i]: {
+            ok -> it = 0
+            -> _
+        }
     }
-    base[0] = 9
+    base[0]: {
+        ok -> it = 9
+        -> _
+    }
 
     r []i64 = with-len(10)
     x25519.fe-frombytes(r, base)
@@ -150,7 +156,10 @@ test-scalarmult-base = () (pass bool) {
                 lo-v = lo - 55
             }
         }
-        scalar[i] = (hi-v << 4) | lo-v
+        scalar[i]: {
+            ok -> it = (hi-v << 4) | lo-v
+            -> _
+        }
     }
     pub = x25519.x25519-scalarmult-base(scalar)
 

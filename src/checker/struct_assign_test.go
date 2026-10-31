@@ -60,7 +60,7 @@ func TestStructAssignStdStructRejected(t *testing.T) {
 `
 	got := 0
 	for _, r := range ValidateFuncArgs(mustParse(t, src), "") {
-		if r.TraceID == "structasg" && strings.Contains(r.Message, "to conn variable 'x'") {
+		if r.TraceID == "eubonf62" && strings.Contains(r.Message, "to conn variable 'x'") {
 			got++
 		} else {
 			t.Logf("other: %s [%s]", r.Message, r.TraceID)
@@ -92,7 +92,7 @@ func TestStructAssignPromotableIntAllowed(t *testing.T) {
 }
 `
 	for _, r := range ValidateFuncArgs(mustParse(t, src), "") {
-		if r.TraceID == "structasg" {
+		if r.TraceID == "eubonf62" {
 			t.Errorf("promotable integer assignment convicted: L%d:C%d %s", r.Line, r.Column, r.Message)
 		} else {
 			t.Logf("other: %s [%s]", r.Message, r.TraceID)
@@ -120,7 +120,7 @@ func TestStructAssignNonPromotableStillRejected(t *testing.T) {
 		src := "f = () (out i64) {\n" + c.body + "    out = 0\n}\n"
 		got := 0
 		for _, r := range ValidateFuncArgs(mustParse(t, src), "") {
-			if r.TraceID == "structasg" && strings.Contains(r.Message, c.want) {
+			if r.TraceID == "eubonf62" && strings.Contains(r.Message, c.want) {
 				got++
 			}
 		}

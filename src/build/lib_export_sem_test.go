@@ -65,7 +65,7 @@ func TestVetLibExportFilteredModuleKeepsOverflowAnnotation(t *testing.T) {
 		t.Fatalf("vet failed: %v", err)
 	}
 	for _, l := range lints {
-		if l.TraceID != "ovf-int-default" {
+		if l.TraceID != "xmicjezl" {
 			continue
 		}
 		if strings.HasSuffix(l.File, filepath.Join("drv", "src", "mod.no")) {
@@ -94,7 +94,7 @@ func TestVetLibExportFilteredModuleKeepsOverflowAnnotation(t *testing.T) {
 		// 本斷言只看「有沒有報」，不看嚴重度：D2 把兩者都降為 HINT（統一 option
 		// 規則下「產生 option」是常態，真正該硬攔的是 optunuse）。側表過濾若把
 		// 診斷整體吃掉，這裡仍然抓得到 —— 那才是本測試要防的迴歸。
-		if l.TraceID == "ovf-int-default" || l.TraceID == "ovfhndld" {
+		if l.TraceID == "xmicjezl" || l.TraceID == "ovfhndld" {
 			found = true
 		}
 	}

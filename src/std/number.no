@@ -166,10 +166,11 @@ byte.to-str = () (out str) {
     out = v.to-str()
 }
 
-; f64.to-str: f64 轉字串（直接 Nolang 實現，模擬 C %g 格式）
-; 6 位有效數字，去除尾隨零，指數 < -4 或 >= 6 時使用科學記號。
-; 後端無原生 f64 格式化器（sprintf CLibCall 已移除），故把原 math.f64-to-str
-; 的 %g 例程內聯進方法本體，取代已刪除的函數。LN10 仍沿用 math 模組常量。
+; f64.to-str: f64 轉字串（直接 Nolang 實現，**最短往返**十進位，對齊 Go 的 %v）
+; 取「能唯一還原本 double 的最少有效位數」（IEEE-754 位分解 + bigint 精確算術），
+; 並沿用 %g 的記號選擇：E <= -5 或 E >= 6 用科學記號，其餘定點。
+; 特殊值對齊 Go：NaN → "NaN"、+Inf → "+Inf"、-Inf → "-Inf"、±0 → "0"。
+; 後端無原生 f64 格式化器（sprintf CLibCall 已移除），故整套例程內聯在方法本體。
 f64.to-str = () (out str) {
 
     x = .
@@ -321,6 +322,49 @@ f64.to-str = () (out str) {
         }
     }
 
+    ; 尾隨零削減（最短往返）：上面的搜尋從 k-ten=0 起算，整數值在 k=0 就「精確但冗長」
+    ; 地命中——2^63 會印成 19 位 9223372036854775808，而能唯一還原它的最短形式只要
+    ; 16 位 9223372036854776×10^3。k=-m 表示候選值 n×10^m（即削掉 n 尾端 m 個零）；
+    ; 只要候選值仍落在同一半 ulp 區間內就繼續削，一旦越界即停。
+    trim-m = 1
+    div10 = ten
+    trim-on = 1
+    (trim-on == 1) {
+        den-x = den._mul(div10)
+        two-base = base._add(base)
+        den2x = den-x._add(den-x)
+        n-big = two-base._add(den-x)._div(den2x)
+        two-n = n-big._add(n-big)
+        n-chk = two-n._mul(den-x)
+        a-bound = two-base._sub(hd)
+        b-bound = two-base._add(hd)
+        c1 = a-bound.cmp(n-chk)
+        c2 = n-chk.cmp(b-bound)
+        valid = 0
+        c1 <= 0 -> {
+            c2 <= 0 -> {
+                bound = 0
+                c1 == 0 -> bound = 1
+                c2 == 0 -> bound = 1
+                bound == 1 -> {
+                    m-even == 1 -> valid = 1
+                }
+                bound == 0 -> valid = 1
+            }
+        }
+        valid == 1 -> {
+            best-n = n-big
+
+            #{overflow=wrap}
+            best-k = 0 - trim-m
+
+            #{overflow=wrap}
+            trim-m = trim-m + 1
+            div10 = div10._mul(ten)
+        }
+        valid == 0 -> trim-on = 0
+    }
+
     n-str = best-n.to-str()
     k = n-str.len-bytes()
 
@@ -457,10 +501,23 @@ f64.to-str = () (out str) {
         }
         i = 0
         (i < int-digits) {
-            out[pos]: {
-                ok -> it = n-str[i]
+            {
+                ; best-k < 0 時 n-str 只有 k 位，整數部分剩下的位數是已削去的尾隨零。
+                i < k -> {
+                    out[pos]: {
+                        ok -> it = n-str[i]
 
-                -> _
+                        -> _
+                    }
+                }
+
+                -> {
+                    out[pos]: {
+                        ok -> it = 48
+
+                        -> _
+                    }
+                }
             }
             pos = pos + 1
             i = i + 1

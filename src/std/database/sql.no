@@ -5,9 +5,16 @@
 ; 提供具體的結構體型別與方法。
 ;
 ; 介面：
-;   db    — 資料庫連線（繼承 enter/leave，作用域結束自動關閉）
-;   rows  — 查詢結果集（繼承 enter/leave，作用域結束自動關閉）
-;   stmt  — 預編譯陳述式（繼承 enter/leave，作用域結束自動關閉）
+;   db    — 資料庫連線（合併 enter/leave，作用域結束自動關閉）
+;   rows  — 查詢結果集（合併 enter/leave，作用域結束自動關閉）
+;   stmt  — 預編譯陳述式（合併 enter/leave，作用域結束自動關閉）
+;
+; 繼承（接口合併）寫在體內，每行一個父介面名（不加逗號）：
+;   db {
+;       enter
+;       leave
+;       exec(sql str) (r result)
+;   }
 ;
 ; 共用結構體：
 ;   result — 執行結果（所有驅動共用）
@@ -33,10 +40,12 @@ result {
 
 ; ============================================================================
 ; 介面：db — 資料庫連線
-; 繼承 enter/leave 介面，變數離開作用域時自動呼叫 leave()
+; 合併 enter/leave 介面，變數離開作用域時自動呼叫 leave()
 ; ============================================================================
 
-db enter, leave {
+db {
+    enter
+    leave
     fs.close() (ok bool)
     exec(sql str) (r result)
     query(sql str) (rs rows)
@@ -45,10 +54,12 @@ db enter, leave {
 
 ; ============================================================================
 ; 介面：rows — 查詢結果集
-; 繼承 enter/leave 介面，變數離開作用域時自動呼叫 leave()
+; 合併 enter/leave 介面，變數離開作用域時自動呼叫 leave()
 ; ============================================================================
 
-rows enter, leave {
+rows {
+    enter
+    leave
     next() (ok bool)
     scan-int(col i64) (v i64)
     scan-str(col i64) (v str)
@@ -58,10 +69,12 @@ rows enter, leave {
 
 ; ============================================================================
 ; 介面：stmt — 預編譯陳述式
-; 繼承 enter/leave 介面，變數離開作用域時自動呼叫 leave()
+; 合併 enter/leave 介面，變數離開作用域時自動呼叫 leave()
 ; ============================================================================
 
-stmt enter, leave {
+stmt {
+    enter
+    leave
     bind-int(idx i64, v i64) (ok bool)
     bind-str(idx i64, v str) (ok bool)
     bind-bool(idx i64, v bool) (ok bool)

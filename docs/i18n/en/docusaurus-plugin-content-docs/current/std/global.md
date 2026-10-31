@@ -31,6 +31,12 @@ s = format('x={x}')               ; Returns formatted string (no newline)
 print(a, b, c)                    ; Multiple args: space-separated, one trailing newline
 print('result={val}', 42, 'result={val}')  ; With multiple args, each literal is a template
                                   ; ({val} resolves from call-site scope — not a C-style format string)
+;
+; A field is a variable, a field path, a zero-arg method, or an index — and they chain:
+print('{user.name} {user.name.len()} {tags[0]}')
+print('{m[\'k\']} {m[\'k\'].len()}')       ; map lookup (escape the quote: \', or write m["k"])
+; Only one suffix is peeled per level: methods with arguments ({s.slice(0)}) and
+; arbitrary expressions ({a + 1}) are not supported.
 
 ; Process control
 exit(0)                             ; End the process with status code 0 (was os.exit, now global)

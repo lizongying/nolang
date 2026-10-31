@@ -6,5 +6,11 @@ foo = () {
     copy-rem = 2
 
     #{index-out=zero, overflow=wrap}
-    k <- [0..copy-rem): buf[base + k] = data[off + base + k]
+    k <- [0..copy-rem): {
+        ; 索引讀取返回 option，寫入必須走 place-match（見 [idxwrite] 規則）。
+        buf[base + k]: {
+            ok -> it = data[off + base + k]
+            -> _
+        }
+    }
 }

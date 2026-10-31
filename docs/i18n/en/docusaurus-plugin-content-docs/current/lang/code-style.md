@@ -77,6 +77,21 @@ y = 2 ;; inline block comment ;;
 
 **Note on `cond -> X; Y`**: since `;` is now a comment, `cond -> X; Y` parses as "run `cond -> X` (evaluate X then discard)" plus an inline comment `; Y` — **X is never assigned**. The correct form is `cond -> X = Y` (an established stdlib pattern; see `arr.no`, `uuid.no`, `path.no`, `err.no`, `assert.no`). If you find `cond -> X; Y` in source, change it to `cond -> X = Y`.
 
+**Single-line multi-statement writing is forbidden**: `;` is only a comment marker and cannot join multiple statements on one line; `,` cannot join statements either. Every statement inside a block `{ ... }` must occupy its own line. Compacting a block onto one line is the most dangerous mistake:
+
+```no
+; ❌ Wrong: `; return }` all becomes a comment, so the block's `}` disappears
+cond -> { print('X'); return }
+
+; ✅ Correct: one statement per line
+cond -> {
+    print('X')
+    return
+}
+```
+
+`cond -> { print('X'); return }` effectively leaves only `cond -> { print('X')`: the block never closes, and every statement after the stranded `}` (usually the whole remainder of the function body, sometimes the following module-level functions) is swallowed. The compiler may not even report an error, and any diagnostic may point far away from the real mistake.
+
 ## Boolean Literals & `== true` / `== false` Simplification (implemented 2026-09-24)
 
 Beyond the `true` / `false` keywords, Nolang accepts two **shorthand boolean literals**:

@@ -1,0 +1,53 @@
+; fmt-field-chain.no — 具名格式欄位的鏈式路徑（`{a.b.m()}`）
+;
+; 格式欄位是**源碼文本**，MIR 階段沒有 parser 可重解析，所以只支援「每層剝掉
+; 一個後綴、對剩下的部分遞迴」這三種形狀：`[i]` / `.method()` / `.field`。
+; 鏈式寫法（`{a.b.len()}`、`{a[i].f}`）因此可以逐層降糖，無需重解析。
+;
+; 方法帶參數（`{s.slice(0)}`）仍不支援：欄位語法無處安放參數列表。
+; 巢狀/鏈式中間層也可以是 map 鍵讀（`{r['a'].len()}`），但任意表達式
+; （`{m['n'] + 1}`）仍不支援——只做「每層剝一個後綴」的降糖。
+
+pt {
+    name str
+    tags [2]i64
+}
+
+p = pt { name: 'abcd', tags: [10, 20] }
+
+; 1) 欄位上再取方法結果
+print('1: {p.name.len()}\n')
+
+; 2) 欄位上再鏈回傳 str 的方法
+print('2: {p.name.to-str()}\n')
+
+; 3) 欄位 + 下標
+print('3: {p.tags[1]}\n')
+
+; 4) 變數自身的方法（原有能力，防回歸）
+print('4: {p.name.len-bytes()}\n')
+
+; 5) err 臂：it.msg.len()——原本報 interp: unresolved format field
+c ?str = err('oops')
+c: {
+    ok(v) -> print('5: fail {v}\n')
+
+    nil -> print('5: nil\n')
+
+    err -> print('5: {it.msg.len()} ({it.msg})\n')
+}
+
+; 6) map 取值：`r['a']`（模板裡用 \' 轉義，或寫 r["a"]）
+;    map 下標是**鍵**查找，走專用 .get，缺鍵得 nil（格式欄位會取空串）。
+;    標註不可省：無標註的 `{ 'k': v }` 會被當成 block 解析（lint 已知此事，不再建議刪除）。
+r [str]str = { 'a': 'xy', 'b': 'longer' }
+print('6: {r[\'a\']} {r[\'b\'].len()} {r[\'missing\']}\n')
+
+; 7) 非字串鍵的 map（[i64]str），以及用變數當鍵
+n [i64]str = { 3: 'three' }
+k = 'n'
+m [str]i64 = { 'n': 7 }
+print('7: {n[3]} {m[k]}\n')
+
+; 8) 鏈式 + 下標（欄位裡再取元素）
+print('8: {p.tags[0]}\n')

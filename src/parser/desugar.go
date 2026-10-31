@@ -3,8 +3,6 @@
 package parser
 
 import (
-	"fmt"
-
 	"github.com/lizongying/nolang/lexer"
 )
 
@@ -158,24 +156,21 @@ func (p *Parser) validateMatchArmReturns(tok lexer.Token, arms []MatchArm) bool 
 		}
 		es, ok := last.(*ExpressionStatement)
 		if !ok {
-			msg := fmt.Sprintf("line %d, column %d: match arm in expression context must end with an expression", tok.Line, tok.Column)
-			p.saveError(msg)
+			p.saveErrorf("9q9raufb", "line %d, column %d: match arm in expression context must end with an expression", tok.Line, tok.Column)
 			return false
 		}
 
 		info := p.classifyExprReturnKind(es.Expression)
 		switch info.kind {
 		case returnNever:
-			msg := fmt.Sprintf("line %d, column %d: match arm never returns a value", tok.Line, tok.Column)
-			p.saveError(msg)
+			p.saveErrorf("fdwcn8i8", "line %d, column %d: match arm never returns a value", tok.Line, tok.Column)
 			return false
 		case returnConcrete:
 			if info.typeName != "unknown" {
 				if firstConcreteType == "" {
 					firstConcreteType = info.typeName
 				} else if firstConcreteType != info.typeName {
-					msg := fmt.Sprintf("line %d, column %d: match arm has inconsistent return types: %s vs %s", tok.Line, tok.Column, firstConcreteType, info.typeName)
-					p.saveError(msg)
+					p.saveErrorf("dwkhnsmo", "line %d, column %d: match arm has inconsistent return types: %s vs %s", tok.Line, tok.Column, firstConcreteType, info.typeName)
 					return false
 				}
 			}

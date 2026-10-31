@@ -104,8 +104,15 @@ func (p *Parser) parseStatement() Statement {
 				tok1 := p.look(contentSkip)
 				tok2 := p.look(contentSkip + 1)
 
-				// 介面繼承：method() 或 t.method() 形式
-				if tok1.Type == lexer.IDENT && (tok2.Type == lexer.LPAREN || tok2.Type == lexer.DOT) {
+				// 介面繼承：method() 或 t.method() 形式。
+				// 另接受「體內合併項」開頭（`db enter, leave { json⏎ }`）與空介面體：
+				// 裸名 + NEWLINE 不可能是 struct 欄位（欄位要求同行有型別），
+				// 而 `{}` 空體已在 classifyBlock 中判為介面。
+				if tok1.Type == lexer.IDENT &&
+					(tok2.Type == lexer.LPAREN || tok2.Type == lexer.DOT || tok2.Type == lexer.NEWLINE) {
+					return p.parseInterfaceDefinition()
+				}
+				if tok1.Type == lexer.RBRACE {
 					return p.parseInterfaceDefinition()
 				}
 				// 結構體實作
@@ -329,11 +336,11 @@ func (p *Parser) parseStatement() Statement {
 				if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.LBRACKET {
 					if p.isDotExprTypeDecl() {
 						propTok := p.currentToken
-						p.saveError(fmt.Sprintf(
+						p.saveErrorf("tb2zxq0f",
 							"line %d, column %d: '%s.%s []T' is not allowed: the field type belongs in the type definition of '%s'. To store into the field write '%s.%s = ...'",
 							structToken.Line, structToken.Column,
 							structToken.Literal, propTok.Literal, structToken.Literal,
-							structToken.Literal, propTok.Literal))
+							structToken.Literal, propTok.Literal)
 						p.restoreState(state)
 						p.skipToStatementEnd()
 						return nil
@@ -598,9 +605,8 @@ func (p *Parser) parseUseStatement() Statement {
 		} else {
 			// use path 段接受 IDENT 及關鍵字 token（如 run、chan 等）
 			if !isPathIdent(p.currentToken.Type) {
-				msg := fmt.Sprintf("line %d, column %d: expected identifier in use path, got %s",
+				p.saveErrorf("ew5qg77j", "line %d, column %d: expected identifier in use path, got %s",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return nil
 			}
 			parts = append(parts, p.currentToken.Literal)
@@ -661,6 +667,18 @@ func (p *Parser) parseUseStatement() Statement {
 		}
 	}
 
+	// 只有路徑、沒有函數名的導入（如 `# /cfg/server as cfg`）。
+	// 一般模組沒有函數可導入，別名只對 `.noml` 導入有意義（改寫頂層值
+	// 綁定名，結構體名仍為文件名）；合併階段會拒絕其他情形。
+	if p.currentToken.Type == lexer.AS {
+		stmt.AsKeyword = true
+		p.nextToken()
+		if isPathIdent(p.currentToken.Type) {
+			stmt.Alias = p.currentToken.Literal
+			p.nextToken()
+		}
+	}
+
 	// 沒有函數名的情況（不應該發生，但兼容處理）
 	stmt.Path = joinPathParts(parts)
 	return stmt
@@ -683,9 +701,8 @@ func (p *Parser) parseExportStatement() Statement {
 
 	for {
 		if !isPathIdent(p.currentToken.Type) {
-			msg := fmt.Sprintf("line %d, column %d: expected identifier in export path, got %s",
+			p.saveErrorf("cfoww4c7", "line %d, column %d: expected identifier in export path, got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 		parts = append(parts, p.currentToken.Literal)
@@ -728,8 +745,8 @@ func (p *Parser) parseExportStatement() Statement {
 					}
 					// 提醒：別名與函數名相同時不需要寫別名
 					if stmt.Alias != "" && stmt.Alias == stmt.Function {
-						p.saveError(fmt.Sprintf("line %d, column %d: export alias '%s' is the same as the function name; the alias can be omitted",
-							stmt.Token.Line, stmt.Token.Column, stmt.Alias))
+						p.saveErrorf("k0fwb241", "line %d, column %d: export alias '%s' is the same as the function name; the alias can be omitted",
+							stmt.Token.Line, stmt.Token.Column, stmt.Alias)
 					}
 					stmt.Path = joinPathParts(parts)
 					return stmt
@@ -800,18 +817,16 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 	for p.currentToken.Type == lexer.COMMA {
 		p.nextToken() // skip COMMA
 		if p.currentToken.Type != lexer.IDENT {
-			msg := fmt.Sprintf("line %d, column %d: expected variable name after ',', got %s",
+			p.saveErrorf("8wckpc2l", "line %d, column %d: expected variable name after ',', got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-			p.saveError(msg)
 			return nil
 		}
 		targets = append(targets, p.parseAssignTarget())
 	}
 
 	if p.currentToken.Type != lexer.ASSIGN {
-		msg := fmt.Sprintf("line %d, column %d: expected '=' after multi-variable list",
+		p.saveErrorf("r60tokvf", "line %d, column %d: expected '=' after multi-variable list",
 			p.currentToken.Line, p.currentToken.Column)
-		p.saveError(msg)
 		return nil
 	}
 	tok := p.currentToken
@@ -949,16 +964,16 @@ func (p *Parser) flushCompoundAssigns(def *FunctionDefinition) {
 			pos = lexer.Position{Line: uas.Name.Token.Line, Column: uas.Name.Token.Column}
 		}
 		if hasOptionResult {
-			p.saveWarningWithCode(WarnCompoundAssign, fmt.Sprintf(
+			p.saveWarningWithCodef(WarnCompoundAssign, "mlm7xpcj",
 				"line %d, column %d: `%s %s= %s` 已废弃；所在函数结果是 option，保存时 `no fmt` 会自动改写为 `%s ?= %s %s %s`（复合赋值的右式现在是 ?T，走 `?=` 解包/上抛）",
-				pos.Line, pos.Column, target, op, rhs, target, target, op, rhs))
+				pos.Line, pos.Column, target, op, rhs, target, target, op, rhs)
 			continue
 		}
-		p.saveError(fmt.Sprintf(
+		p.saveErrorf("985exavg",
 			"line %d, column %d: `%s %s= %s` 已废弃，且所在函数的结果不是 option，无法上抛：请改写成 `%s %s %s: { ok -> %s = it, -> }`（非 ok 分支如何处理由你决定），或把结果参数改成 `?T` 后写 `%s ?= %s %s %s`",
 			pos.Line, pos.Column, target, op, rhs,
 			target, op, rhs, target,
-			target, target, op, rhs))
+			target, target, op, rhs)
 	}
 }
 
@@ -1196,9 +1211,8 @@ func (p *Parser) parseLetStatement() Statement {
 		}
 		return stmt
 	} else if p.peekToken.Type != lexer.ASSIGN {
-		msg := fmt.Sprintf("line %d, column %d: expected assignment operator, got %s instead",
+		p.saveErrorf("yh8904fm", "line %d, column %d: expected assignment operator, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.peekToken.Type.String())
-		p.saveError(msg)
 		return nil
 	} else {
 		p.nextToken() // 跳过 ASSIGN 令牌
@@ -1307,9 +1321,8 @@ func (p *Parser) parseLetStatement() Statement {
 			// Only report "expected expression" if no error was already reported
 			// (e.g. ILLEGAL token from lexer already reported its own error).
 			if len(p.reportedIllegal) == 0 {
-				msg := fmt.Sprintf("line %d, column %d: expected expression, got nil instead",
+				p.saveErrorf("3ei0a0o0", "line %d, column %d: expected expression, got nil instead",
 					p.currentToken.Line, p.currentToken.Column)
-				p.saveError(msg)
 			}
 			return nil
 		}
@@ -1639,8 +1652,8 @@ func (p *Parser) parseReturnStatement() Statement {
 	// 禁止 `return <value>`：RETURN 之后若紧跟表达式起始符（非语句结束符），
 	// 说明写了「带返回值的 return」，而 Nolang 不允许返回值，必须报错。
 	if !isReturnTerminator(p.currentToken.Type) {
-		p.saveError(fmt.Sprintf("line %d, column %d: `return` 後不能跟返回值；Nolang 函數結果通過具名結果參數（out-param）傳出，請用裸 `return` 提前返回並在函數體內給結果參數賦值",
-			p.currentToken.Line, p.currentToken.Column))
+		p.saveErrorf("tfwxqucs", "line %d, column %d: `return` 後不能跟返回值；Nolang 函數結果通過具名結果參數（out-param）傳出，請用裸 `return` 提前返回並在函數體內給結果參數賦值",
+			p.currentToken.Line, p.currentToken.Column)
 	}
 	stmt.ReturnValue = nil
 
@@ -1653,8 +1666,8 @@ func (p *Parser) parseReturnStatement() Statement {
 //
 // Desugars to match expression: x { 1-> ... 2-> ... -> ... }
 func (p *Parser) parseSwitchStatement() Statement {
-	p.saveWarning(fmt.Sprintf("line %d, column %d: 'switch/case/default' is deprecated, use 'x: { 1-> ... }' instead",
-		p.currentToken.Line, p.currentToken.Column))
+	p.saveWarningf("orjs902d", "line %d, column %d: 'switch/case/default' is deprecated, use 'x: { 1-> ... }' instead",
+		p.currentToken.Line, p.currentToken.Column)
 
 	tok := p.currentToken
 	p.nextToken() // skip switch
@@ -1664,8 +1677,8 @@ func (p *Parser) parseSwitchStatement() Statement {
 
 	// Expect {
 	if p.currentToken.Type != lexer.LBRACE {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected '{' after switch expression, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("j3r9pdsp", "line %d, column %d: expected '{' after switch expression, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return nil
 	}
 	p.nextToken() // skip {
@@ -1688,8 +1701,8 @@ func (p *Parser) parseSwitchStatement() Statement {
 			ma.IsWildcard = true
 			p.nextToken() // skip default
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected 'case' or 'default', got %s",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			p.saveErrorf("efflaapc", "line %d, column %d: expected 'case' or 'default', got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			p.skipToStatementEnd()
 			continue
 		}
@@ -1746,7 +1759,7 @@ func (p *Parser) parseSwitchStatement() Statement {
 	}
 
 	if len(arms) == 0 {
-		p.saveError(fmt.Sprintf("line %d, column %d: empty switch statement", tok.Line, tok.Column))
+		p.saveErrorf("0kf267f2", "line %d, column %d: empty switch statement", tok.Line, tok.Column)
 		return nil
 	}
 
@@ -1870,9 +1883,8 @@ func (p *Parser) wrapStandaloneChainDepth(tok lexer.Token, body *BlockStatement,
 		// 链式 if（a -> b -> c -> ...）：本子链达到第 2 个条件（linkIdx==2，即整条链
 		// 第 3 个条件，总长度 >= 3）时给出一次 lint 提示。
 		if linkIdx == 2 {
-			p.saveWarningWithCode(WarnChainedIf,
-				fmt.Sprintf("line %d, column %d: chained '->' conditions (a -> b -> c) are discouraged; merge conditions with &&/|| or use '{ }' blocks to avoid subtle scoping bugs",
-					tok.Line, tok.Column))
+			p.saveWarningWithCodef(WarnChainedIf, "4ewgvnbn", "line %d, column %d: chained '->' conditions (a -> b -> c) are discouraged; merge conditions with &&/|| or use '{ }' blocks to avoid subtle scoping bugs",
+				tok.Line, tok.Column)
 		}
 
 		innerCond := es.Expression
@@ -1954,13 +1966,13 @@ func (p *Parser) parseExpressionStatement() Statement {
 		for p.currentToken.Type == lexer.COMMA {
 			p.nextToken() // skip COMMA
 			if p.currentToken.Type != lexer.IDENT {
-				p.fatalf(p.currentToken, "E_EXPECTED_IDENT",
+				p.fatalf(p.currentToken, "q3v8kn2m", "E_EXPECTED_IDENT",
 					"expected variable name after ',', got %s", p.currentToken.Type.String())
 			}
 			targets = append(targets, p.parseAssignTarget())
 		}
 		if p.currentToken.Type != lexer.ASSIGN {
-			p.fatalf(p.currentToken, "E_EXPECTED_ASSIGN",
+			p.fatalf(p.currentToken, "w6zt4h9c", "E_EXPECTED_ASSIGN",
 				"expected '=' after multi-variable list")
 		}
 		assignTok := p.currentToken
@@ -2426,8 +2438,8 @@ func (p *Parser) parseLoopBody() *BlockStatement {
 	// Single-statement body
 	stmt := p.parseStatement()
 	if stmt == nil {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected loop body statement, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("zm1ivicl", "line %d, column %d: expected loop body statement, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return &BlockStatement{Token: p.currentToken}
 	}
 	return &BlockStatement{
@@ -2451,8 +2463,8 @@ func (p *Parser) parseForStatement() Statement {
 		if p.currentToken.Type == lexer.COLON {
 			p.nextToken() // skip :
 		} else {
-			p.saveWarning(fmt.Sprintf("line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
-				ir.Token.Line, ir.Token.Column))
+			p.saveWarningf("zl7i0mx6", "line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
+				ir.Token.Line, ir.Token.Column)
 		}
 		stmt.Body = p.parseLoopBody()
 		return stmt
@@ -2470,8 +2482,8 @@ func (p *Parser) parseForStatement() Statement {
 			if p.currentToken.Type == lexer.COLON {
 				p.nextToken() // skip :
 			} else {
-				p.saveWarning(fmt.Sprintf("line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
-					ir.Token.Line, ir.Token.Column))
+				p.saveWarningf("o7503w1f", "line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
+					ir.Token.Line, ir.Token.Column)
 			}
 			stmt.Body = p.parseLoopBody()
 			return stmt
@@ -2489,8 +2501,8 @@ func (p *Parser) parseForStatement() Statement {
 
 	// 此时 currentToken 应该是 FOR
 	if p.currentToken.Type != lexer.FOR {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected 'for', got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("o0p7ixno", "line %d, column %d: expected 'for', got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return nil
 	}
 
@@ -2501,8 +2513,8 @@ func (p *Parser) parseForStatement() Statement {
 		stmt.Condition = &BooleanLiteral{Token: stmt.Token, Value: true}
 		stmt.Body = p.parseBlockStatement()
 		p.nextToken() // skip body's }
-		p.saveWarning(fmt.Sprintf("line %d, column %d: 'for { }' is deprecated, use '{ } (true)' infinite loop instead",
-			stmt.Token.Line, stmt.Token.Column))
+		p.saveWarningf("gr0jwheb", "line %d, column %d: 'for { }' is deprecated, use '{ } (true)' infinite loop instead",
+			stmt.Token.Line, stmt.Token.Column)
 		return stmt
 	}
 
@@ -2513,8 +2525,8 @@ func (p *Parser) parseForStatement() Statement {
 	// 檢查 range for: for i <- [a..b] / (a..b] / [a..b) / (a..b) 或 for i in ...
 	if p.currentToken.Type == lexer.IN || p.currentToken.Type == lexer.ARROW {
 		if p.currentToken.Type == lexer.IN {
-			p.saveWarning(fmt.Sprintf("line %d, column %d: 'for i in ...' is deprecated, use 'i <- ...' instead",
-				p.currentToken.Line, p.currentToken.Column))
+			p.saveWarningf("0x41uhua", "line %d, column %d: 'for i in ...' is deprecated, use 'i <- ...' instead",
+				p.currentToken.Line, p.currentToken.Column)
 		}
 		if es, ok := init.(*ExpressionStatement); ok {
 			if ident, ok := es.Expression.(*Identifier); ok {
@@ -2583,8 +2595,8 @@ parseBody:
 		// C-style for: for init, cond, update { }（也接受 ; 向後相容）
 		stmt.Init = init
 		if p.currentToken.Type == lexer.SEMICOLON {
-			p.saveWarning(fmt.Sprintf("line %d, column %d: 'for init; cond; update' is deprecated, use commas ',' instead",
-				p.currentToken.Line, p.currentToken.Column))
+			p.saveWarningf("0tjeipjr", "line %d, column %d: 'for init; cond; update' is deprecated, use commas ',' instead",
+				p.currentToken.Line, p.currentToken.Column)
 		}
 		p.nextToken() // skip ; or ,
 		stmt.Condition = p.parseExpression(LOWEST)
@@ -2607,13 +2619,13 @@ parseBody:
 			// for conditional loops where range-for (i <- [a..b]: {}) doesn't apply
 			// (e.g. non-unit step or complex conditions).
 			if stmt.IterRange == nil && !hasColon && stmt.Token.Literal == "while" {
-				p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
-					stmt.Token.Line, stmt.Token.Column))
+				p.saveWarningf("0jdavdb8", "line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
+					stmt.Token.Line, stmt.Token.Column)
 			}
 		}
 		if stmt.Token.Literal == "for" && stmt.IterRange == nil {
-			p.saveWarning(fmt.Sprintf("line %d, column %d: 'for cond { }' is deprecated, use '{ } (cond)' loop instead",
-				stmt.Token.Line, stmt.Token.Column))
+			p.saveWarningf("16ltowfs", "line %d, column %d: 'for cond { }' is deprecated, use '{ } (cond)' loop instead",
+				stmt.Token.Line, stmt.Token.Column)
 		}
 	} else {
 		// for condition (NL) { } — condition 是完整表達式，後面有換行
@@ -2626,13 +2638,13 @@ parseBody:
 		// for conditional loops where range-for doesn't apply.
 		if stmt.Condition != nil && stmt.IterRange == nil &&
 			stmt.Token.Literal == "while" && !hasColon {
-			p.saveWarning(fmt.Sprintf("line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
-				stmt.Token.Line, stmt.Token.Column))
+			p.saveWarningf("gd7jpkzw", "line %d, column %d: 'while condition { }' is deprecated, use 'for condition { }' instead",
+				stmt.Token.Line, stmt.Token.Column)
 		}
 		if stmt.Condition != nil && stmt.IterRange == nil &&
 			stmt.Token.Literal == "for" && !hasColon {
-			p.saveWarning(fmt.Sprintf("line %d, column %d: 'for cond { }' is deprecated, use '{ } (cond)' loop instead",
-				stmt.Token.Line, stmt.Token.Column))
+			p.saveWarningf("nik0cll9", "line %d, column %d: 'for cond { }' is deprecated, use '{ } (cond)' loop instead",
+				stmt.Token.Line, stmt.Token.Column)
 		}
 		// Skip newlines before {
 		for p.currentToken.Type == lexer.NEWLINE {
@@ -2695,8 +2707,8 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 			}
 			return
 		default:
-			p.saveError(fmt.Sprintf("line %d, column %d: expected '..' for range or ','/']' for slice, got %s instead",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			p.saveErrorf("0iodav1i", "line %d, column %d: expected '..' for range or ','/']' for slice, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			return
 		}
 	case lexer.LPAREN:
@@ -2716,8 +2728,8 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 		}
 		return
 	default:
-		p.saveError(fmt.Sprintf("line %d, column %d: expected '[' or '(' or string in range expression, got %s instead",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("ttlxcrgt", "line %d, column %d: expected '[' or '(' or string in range expression, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return
 	}
 }
@@ -2737,13 +2749,13 @@ func (p *Parser) parseRangeBody(ir *IterationExpr, tok lexer.Token, leftInc bool
 	if p.currentToken.Type != lexer.ELLIPSIS {
 		start = p.parseExpression(LOWEST)
 		if _, ok := start.(*FloatLiteral); ok {
-			p.saveError(fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-				p.currentToken.Line, p.currentToken.Column))
+			p.saveErrorf("vhpiqfim", "line %d, column %d: float range boundary not supported, use integers",
+				p.currentToken.Line, p.currentToken.Column)
 			return
 		}
 		if p.currentToken.Type != lexer.ELLIPSIS {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected '..' in range expression, got %s instead",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			p.saveErrorf("nkr30oz0", "line %d, column %d: expected '..' in range expression, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			return
 		}
 	}
@@ -2752,8 +2764,8 @@ func (p *Parser) parseRangeBody(ir *IterationExpr, tok lexer.Token, leftInc bool
 	if p.currentToken.Type != lexer.RBRACKET && p.currentToken.Type != lexer.RPAREN {
 		end = p.parseExpression(LOWEST)
 		if _, ok := end.(*FloatLiteral); ok {
-			p.saveError(fmt.Sprintf("line %d, column %d: float range boundary not supported, use integers",
-				p.currentToken.Line, p.currentToken.Column))
+			p.saveErrorf("c48g377y", "line %d, column %d: float range boundary not supported, use integers",
+				p.currentToken.Line, p.currentToken.Column)
 			return
 		}
 	}
@@ -2764,8 +2776,8 @@ func (p *Parser) parseRangeBody(ir *IterationExpr, tok lexer.Token, leftInc bool
 	case lexer.RPAREN:
 		rightInc = false
 	default:
-		p.saveError(fmt.Sprintf("line %d, column %d: expected ']' or ')' in range expression, got %s instead",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("gazt89uv", "line %d, column %d: expected ']' or ')' in range expression, got %s instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return
 	}
 	p.nextToken() // skip ] or )
@@ -2902,15 +2914,15 @@ func (p *Parser) parseCondLoopPrefix() Statement {
 		stmt.Condition = p.parseExpression(LOWEST)
 		p.ctx.pop()
 		if p.currentToken.Type != lexer.RPAREN {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected ')' to close loop condition, got %s",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			p.saveErrorf("l48rpvr9", "line %d, column %d: expected ')' to close loop condition, got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			return stmt
 		}
 		p.nextToken() // skip )
 	}
 	if p.currentToken.Type != lexer.LBRACE {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected '{' to open loop body, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("irnz2m56", "line %d, column %d: expected '{' to open loop body, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return stmt
 	}
 	stmt.Body = p.parseBlockStatement()
@@ -2957,14 +2969,14 @@ func (p *Parser) parseCountLoopPrefix() Statement {
 	}
 	intToken := p.currentToken
 	if intToken.Type != lexer.INT {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected integer count before '*' in counted loop, got %s",
-			intToken.Line, intToken.Column, intToken.Type.String()))
+		p.saveErrorf("wnskovpc", "line %d, column %d: expected integer count before '*' in counted loop, got %s",
+			intToken.Line, intToken.Column, intToken.Type.String())
 		return stmt
 	}
 	value, err := strconv.ParseInt(intToken.Literal, 10, 64)
 	if err != nil {
-		p.saveError(fmt.Sprintf("line %d, column %d: could not parse %q as integer",
-			intToken.Line, intToken.Column, intToken.Literal))
+		p.saveErrorf("cfw15ncb", "line %d, column %d: could not parse %q as integer",
+			intToken.Line, intToken.Column, intToken.Literal)
 		return stmt
 	}
 	if negative {
@@ -2974,14 +2986,14 @@ func (p *Parser) parseCountLoopPrefix() Statement {
 	stmt.CountExpr = &IntegerLiteral{Token: intToken, Value: value}
 	p.nextToken() // skip INT
 	if p.currentToken.Type != lexer.MUL {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected '*' between count and loop body, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("tosnl9r7", "line %d, column %d: expected '*' between count and loop body, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return stmt
 	}
 	p.nextToken() // skip *
 	if p.currentToken.Type != lexer.LBRACE {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected '{' to open counted loop body, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("sckw2o8b", "line %d, column %d: expected '{' to open counted loop body, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return stmt
 	}
 	stmt.Body = p.parseBlockStatement()
@@ -3057,8 +3069,8 @@ func (p *Parser) parseLabeledStatement() Statement {
 		if p.isCondLoopPrefix() {
 			stmt = p.parseCondLoopPrefix()
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got '(' without '(cond) { }'",
-				p.currentToken.Line, p.currentToken.Column, label))
+			p.saveErrorf("9ljl8qke", "line %d, column %d: expected loop body after label #%s, got '(' without '(cond) { }'",
+				p.currentToken.Line, p.currentToken.Column, label)
 			return nil
 		}
 	case lexer.TRUE, lexer.FALSE:
@@ -3066,8 +3078,8 @@ func (p *Parser) parseLabeledStatement() Statement {
 		if p.isBoolLiteralLoopFirst() {
 			stmt = p.parseBoolLiteralLoop()
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got %s without '{ }'",
-				p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Literal))
+			p.saveErrorf("8xy43fpc", "line %d, column %d: expected loop body after label #%s, got %s without '{ }'",
+				p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Literal)
 			return nil
 		}
 	case lexer.INT, lexer.SUB:
@@ -3075,8 +3087,8 @@ func (p *Parser) parseLabeledStatement() Statement {
 		if p.isCountLoopPrefix() {
 			stmt = p.parseCountLoopPrefix()
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got %s without '* N' or '* { }'",
-				p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Literal))
+			p.saveErrorf("6a6jynsl", "line %d, column %d: expected loop body after label #%s, got %s without '* N' or '* { }'",
+				p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Literal)
 			return nil
 		}
 	case lexer.LBRACE:
@@ -3087,8 +3099,8 @@ func (p *Parser) parseLabeledStatement() Statement {
 			// Conditional/infinite loop: #1 { ... } (cond) / #1 { ... } (true)
 			stmt = p.parseCondLoopBlockFirst()
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got { without '* N' or '(cond)' or '(true)'",
-				p.currentToken.Line, p.currentToken.Column, label))
+			p.saveErrorf("obm5gtx3", "line %d, column %d: expected loop body after label #%s, got { without '* N' or '(cond)' or '(true)'",
+				p.currentToken.Line, p.currentToken.Column, label)
 			return nil
 		}
 	case lexer.IDENT, lexer.UNDERSCORE:
@@ -3123,8 +3135,8 @@ func (p *Parser) parseLabeledStatement() Statement {
 			}
 		}
 	default:
-		p.saveError(fmt.Sprintf("line %d, column %d: expected loop body after label #%s, got %s",
-			p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Type.String()))
+		p.saveErrorf("r28q9t6z", "line %d, column %d: expected loop body after label #%s, got %s",
+			p.currentToken.Line, p.currentToken.Column, label, p.currentToken.Type.String())
 		return nil
 	}
 
@@ -3220,8 +3232,8 @@ func (p *Parser) parseCountedLoopBlockFirst() Statement {
 	p.nextToken() // skip body's }
 	// 期望 * INT
 	if p.currentToken.Type != lexer.MUL {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected '*' after block in counted loop, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("h6du6sag", "line %d, column %d: expected '*' after block in counted loop, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return stmt
 	}
 	p.nextToken() // skip *
@@ -3232,16 +3244,15 @@ func (p *Parser) parseCountedLoopBlockFirst() Statement {
 		p.nextToken() // skip -
 	}
 	if p.currentToken.Type != lexer.INT {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected integer count after '*' in counted loop, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("yk8jbowb", "line %d, column %d: expected integer count after '*' in counted loop, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return stmt
 	}
 	intToken := p.currentToken
 	value, err := strconv.ParseInt(intToken.Literal, 10, 64)
 	if err != nil {
-		msg := fmt.Sprintf("line %d, column %d: could not parse %q as integer",
+		p.saveErrorf("743idjpl", "line %d, column %d: could not parse %q as integer",
 			intToken.Line, intToken.Column, intToken.Literal)
-		p.saveError(msg)
 		return nil
 	}
 	if negative {
@@ -3356,8 +3367,8 @@ func (p *Parser) parseCondLoopBlockFirst() Statement {
 	p.nextToken() // skip body's }
 	// 期望 (
 	if p.currentToken.Type != lexer.LPAREN {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected '(' after block in loop, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("t0f6p9jl", "line %d, column %d: expected '(' after block in loop, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return stmt
 	}
 	p.nextToken() // skip (
@@ -3372,8 +3383,8 @@ func (p *Parser) parseCondLoopBlockFirst() Statement {
 	stmt.Condition = p.parseExpression(LOWEST)
 	p.ctx.pop()
 	if p.currentToken.Type != lexer.RPAREN {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected ')' to close loop condition, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("n5ksyzmi", "line %d, column %d: expected ')' to close loop condition, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return stmt
 	}
 	p.nextToken() // skip )

@@ -79,12 +79,13 @@
 
         cp = .[i] & 0xff
         seg str = with-cap(4)
+        ; 注意：seg 是 with-cap 出來的 len=0 緩衝，不可用 `seg[0]: { ok -> it = v }`
+        ; 這種 D9 place-match 寫入——它以「讀」作閘門，len=0 時讀 seg[0] 越界回 nil，
+        ; ok 臂永不執行，seg 永遠是空串（曾使本方法靜默回空字串）。
+        ; with-cap 基底被 idxwrite lint 豁免，可直接下標寫入。
         cp < 0x80 -> {
 
-            seg[0]: {
-                ok -> it = cp
-                -> _
-            }
+            seg[0] = cp
         }
 
         -> cp < 0x800 -> {
@@ -101,25 +102,13 @@
             seg[2] = 0x80 | (cp & 0x3f)
         } -> {
 
-            seg[0]: {
-                ok -> it = 0xf0 | ((cp >> 18) & 0x07)
-                -> _
-            }
+            seg[0] = 0xf0 | ((cp >> 18) & 0x07)
 
-            seg[1]: {
-                ok -> it = 0x80 | ((cp >> 12) & 0x3f)
-                -> _
-            }
+            seg[1] = 0x80 | ((cp >> 12) & 0x3f)
 
-            seg[2]: {
-                ok -> it = 0x80 | ((cp >> 6) & 0x3f)
-                -> _
-            }
+            seg[2] = 0x80 | ((cp >> 6) & 0x3f)
 
-            seg[3]: {
-                ok -> it = 0x80 | (cp & 0x3f)
-                -> _
-            }
+            seg[3] = 0x80 | (cp & 0x3f)
         }
 
         r = r - seg

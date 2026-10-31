@@ -27,6 +27,13 @@ type Transpiler struct {
 	optionInlineThreshold int
 	vetMode               bool                 // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
 	vetStrict             bool                 // vet 模式下是否將 warning/hint 升級為 error
+	// jsBackend 標記本次前端組裝服務於 JS 後端（--js 或 package.noml 的
+	// compiler.emit = "js"）。LLVM 無法連結 JS 模組，故 `# npm/<spec>` 這類
+	// ESM 導入在 JS 後端下**不解析為 .no 原始碼**，而是與 js_backend.go 同口徑
+	// 原樣保留 use 行：JS 生成器據此發射 import 頭，checker 據此登記導入名。
+	// 沒有這個標記時 `# npm/...` 走 resolveModule 的硬錯分支（見
+	// transpiler_resolve.go），`no vet example/esm-imports` 因此誤報 ERROR。
+	jsBackend bool
 	vetLints              []checker.LintResult // vet 模式下收集的 lint 結果
 	// chainedIfHints 收集主程序（非 std 库）中链式 -> 条件的 lint 提示，
 	// 由 buildWithPkg 在编译成功后打印到 stderr，提醒用户改用合并条件或 { } 块。
@@ -56,7 +63,7 @@ type Transpiler struct {
 	// Set via SetLDFlags before Compile; the synthetic LetStatements are
 	// prepended to the parsed program in CompileTarget.
 	ldFlags map[string]string
-	// fileCache: per-Transpiler AST 解析快取，消除單次 CompileTarget 內的重复解析。
+	// fileCache: per-Transpiler AST 解析快取，消除單次 CompileTarget 内的重复解析。
 	// 同一 std 模組檔案在一次編譯中最多被解析 4 次（preload/checker.ValidateFuncArgs/merge/auto-load），
 	// 快取後降至 1 次。安全性：preload 和 checker.ValidateFuncArgs 只讀不修改 AST，
 	// merge 步驟的 prefixModuleStatements/alias 改名是冪等的（已帶前綴的名稱會被跳過）。
@@ -224,6 +231,13 @@ func (t *Transpiler) SetVetMode(vet bool) {
 // 必須在 SetVetMode(true) 之後、Compile 之前調用。
 func (t *Transpiler) SetVetStrict(strict bool) {
 	t.vetStrict = strict
+}
+
+// SetJSBackend 標記本次組裝服務於 JS 後端（emit = "js"）。啟用後 `# npm/...`
+// 導入不再嘗試解析成 .no 原始碼，改為原樣保留 use 行（與 js_backend.go 的
+// resolveAndMergeJSModules 同口徑）。必須在 Compile 之前調用。
+func (t *Transpiler) SetJSBackend(v bool) {
+	t.jsBackend = v
 }
 
 // VetLints 返回 vet 模式下收集的 lint 結果。

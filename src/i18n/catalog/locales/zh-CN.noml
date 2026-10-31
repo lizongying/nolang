@@ -1,0 +1,6 @@
+; Nolang message catalog: zh-CN
+; Hand-maintained translations. Copy keys from en.noml — never invent one.
+; A missing key falls back to English at runtime, so this file may lag; the
+; zh-CN.untranslated.txt ratchet records what is still pending.
+{
+}

@@ -61,9 +61,11 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         }
     }
 
-    ; 預分配緩衝區
+    ; 預分配緩衝區：data 用 with-cap 建 len=0 的容量緩衝，靠直接下標寫入增長長度
+    ; （place-match 以「讀」作閘門，對 len=0 緩衝會因讀越界而靜默不寫）。
+    ; with-cap 基底被 idxwrite lint 豁免，見 checker.isWithCapCall。
     space = ' '
-    data = space.repeat(n)
+    data = with-cap(n)
     tmp = space.repeat(MYSQL-RECV-BUF)
 
     total = 0
@@ -84,7 +86,7 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         (i < read-n) {
 
             #{overflow=wrap}
-            data[total + i] = tmp[i]
+            data[total + i] = tmp.byte(i)
 
             #{overflow=wrap}
             i = i + 1
@@ -129,7 +131,7 @@ mysql-pkt-send = (fd fd, seq i64, payload str, payload-len i64) (ok bool) {
     ok = false
 
     ; 建構標頭：3 位元組 LE 長度 + 1 位元組序號
-    hdr = '    '
+    hdr str = with-cap(4)
     hdr[0] = payload-len & 255
     hdr[1] = (payload-len >> 8) & 255
     hdr[2] = (payload-len >> 16) & 255
@@ -223,7 +225,12 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     (i < 20) {
 
         #{index-out=zero}
-        combined[i] = seed[i]
+        cb = seed[i]
+        combined[i]: {
+            ok -> it = cb
+
+            -> _
+        }
 
         #{overflow=wrap}
         i = i + 1
@@ -231,8 +238,15 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     i = 0
     (i < 20) {
 
-        #{index-out=zero, overflow=wrap}
-        combined[20 + i] = stage2[i]
+        #{index-out=zero}
+        cb2 = stage2[i]
+
+        #{overflow=wrap}
+        combined[20 + i]: {
+            ok -> it = cb2
+
+            -> _
+        }
 
         #{overflow=wrap}
         i = i + 1
@@ -448,7 +462,12 @@ open = (dsn str) (d db-mysql) {
     (i < 8) {
 
         #{overflow=wrap}
-        seed[i] = handshake[pos + i]
+        sb = handshake[pos + i]
+        seed[i]: {
+            ok -> it = sb
+
+            -> _
+        }
 
         #{overflow=wrap}
         i = i + 1
@@ -506,7 +525,12 @@ open = (dsn str) (d db-mysql) {
     (i < seed2-len) {
 
         #{overflow=wrap}
-        seed[8 + i] = handshake[pos + i]
+        sb2 = handshake[pos + i]
+        seed[8 + i]: {
+            ok -> it = sb2
+
+            -> _
+        }
 
         #{overflow=wrap}
         i = i + 1
@@ -536,8 +560,9 @@ open = (dsn str) (d db-mysql) {
     client-caps = CLIENT-PROTOCOL-41 | CLIENT-SECURE-CONNECTION | CLIENT-PLUGIN-AUTH | CLIENT-CONNECT-WITH-DB
     max-packet = MYSQL-RECV-BUF
     charset = 255; utf8mb4
-    space = ' '
-    resp = space.repeat(512)
+    ; #{ascii}：resp 是逐位元組填充的協議緩衝（不是碼點串），s[i] 實為位元組定址
+    #{ascii}
+    resp str = with-cap(512)
     wpos = 0
 
     ; Capabilities (4 bytes LE)
@@ -573,7 +598,7 @@ open = (dsn str) (d db-mysql) {
     ; Username (null-terminated)
     i = 0
     (i < user.len-bytes()) {
-        resp[wpos] = user[i]
+        resp[wpos] = user.byte(i)
 
         #{overflow=wrap}
         wpos = wpos + 1
@@ -607,7 +632,7 @@ open = (dsn str) (d db-mysql) {
     ; Database (null-terminated)
     i = 0
     (i < dbname.len-bytes()) {
-        resp[wpos] = dbname[i]
+        resp[wpos] = dbname.byte(i)
 
         #{overflow=wrap}
         wpos = wpos + 1
@@ -684,7 +709,7 @@ db-mysql.close = () (ok bool) {
         .connected -> {
 
             ; 發送 COM_QUIT 封包
-            quit-payload = ' '
+            quit-payload str = with-cap(1)
             quit-payload[0] = COM-QUIT
             send-ok = mysql-pkt-send(.fd, 0, quit-payload, 1)
             fs.close(.fd)
@@ -700,16 +725,17 @@ db-mysql.exec = (sql str) (r sql.result) {
     }
 
     ; 建構 COM_QUERY 封包：0x03 + SQL
-    space = ' '
 
     #{overflow=wrap}
-    payload = space.repeat(sql.len-bytes() + 1)
+    ; #{ascii}：payload 是逐位元組填充的協議緩衝，s[i] 實為位元組定址
+    #{ascii}
+    payload str = with-cap(sql.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     (i < sql.len-bytes()) {
 
         #{overflow=wrap}
-        payload[1 + i] = sql[i]
+        payload[1 + i] = sql.byte(i)
 
         #{overflow=wrap}
         i = i + 1
@@ -757,16 +783,16 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     }
 
     ; 建構 COM_QUERY 封包
-    space = ' '
-
     #{overflow=wrap}
-    payload = space.repeat(sql.len-bytes() + 1)
+    ; #{ascii}：payload 是逐位元組填充的協議緩衝，s[i] 實為位元組定址
+    #{ascii}
+    payload str = with-cap(sql.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     (i < sql.len-bytes()) {
 
         #{overflow=wrap}
-        payload[1 + i] = sql[i]
+        payload[1 + i] = sql.byte(i)
 
         #{overflow=wrap}
         i = i + 1
@@ -1151,10 +1177,10 @@ stmt-mysql.exec = () (r sql.result) {
     }
 
     ; 建構 COM_QUERY 封包
-    space = ' '
-
     #{overflow=wrap}
-    payload = space.repeat(.bound.len-bytes() + 1)
+    ; #{ascii}：payload 是逐位元組填充的協議緩衝，s[i] 實為位元組定址
+    #{ascii}
+    payload str = with-cap(.bound.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     (i < .bound.len-bytes()) {
@@ -1201,10 +1227,10 @@ stmt-mysql.query = () (rs rows-mysql) {
     }
 
     ; 建構 COM_QUERY 封包
-    space = ' '
-
     #{overflow=wrap}
-    payload = space.repeat(.bound.len-bytes() + 1)
+    ; #{ascii}：payload 是逐位元組填充的協議緩衝，s[i] 實為位元組定址
+    #{ascii}
+    payload str = with-cap(.bound.len-bytes() + 1)
     payload[0] = COM-QUERY
     i = 0
     (i < .bound.len-bytes()) {

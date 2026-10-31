@@ -1774,6 +1774,13 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 handled = 1
             }
 
+            ; struct-with-implements：`user serialize, roundtrip { name str }`（欄位形體）。
+            ;   與上一個臂共用前置清單掃描，只是體內容為欄位 ⇒ Go:107 回 parseStructDefinition。
+            handled == 0 && nxt_typ == tok.IDENT && ps-is-iface-inherits(p) == 2 -> {
+                idx = ps-parse-struct-def(t, p, name)
+                handled = 1
+            }
+
             ; 結構體定義：`name { field TYPE ... }`（陳述位置，peek==LBRACE 且分類器認可）
             ;   對應 Go stmt.go:277 classifyBlock()==blockStruct。僅在 ps-is-struct-def 回 1 時走此路；
             ;   枚舉/介面/實作清單/限定型別等一律回退原運算式陳述路徑（零回歸）。
@@ -7454,7 +7461,7 @@ ps-iface-all-parens-tagged = (p psst, start i64) (r i64) {
 
 ; ps-is-iface-def：判斷【目前 pos=IDENT name】起是否為「介面定義」形
 ;   `name { m(...) }` 或 `name { t.m(...) (res bool) }`。
-;   對應 Go stmt.go:288-297 classifyBlock()==blockIface（tok2 ∈ {LPAREN, DOT}）。
+;   對應 Go stmt.go:288-297 classifyBlock()==blockIface。
 ;   ⚠️ 與標籤列舉的消歧（Go parser.go:396-401 / :699-742）：
 ;     · 區塊內有裸變體 ⇒ 標籤列舉，非介面；
 ;     · 全部成員皆括號形但至少一個參數非空 ⇒ 標籤列舉，非介面；
@@ -7462,6 +7469,10 @@ ps-iface-all-parens-tagged = (p psst, start i64) (r i64) {
 ;     · 全部空參數 ⇒ 介面。
 ;   ⚠️ 守衛不消費 token；`name {` 之後若還有 IDENT（implements 繼承清單）⇒ 回 0
 ;   （oracle 對 `a, b {` 走的是另一條路徑並報解析錯誤）。
+;   ⇒ 體內合併項形（Go parser.go:344-357）：首成員為「獨佔一行的裸介面名」
+;     （`tok1==IDENT && tok2==NEWLINE ⇒ blockIface`）或空介面體（`tok1==RBRACE`）。
+;     struct 欄位要求同行有型別（`a i64`）、C 風格列舉要求逗號（`red,`），
+;     兩者都不會出現「裸名 + NEWLINE」，故本判定不與它們衝突。
 ps-is-iface-def = (p psst) (r i64) {
     r = 0
     ps-peek(p) != tok.IDENT -> return
@@ -7491,13 +7502,22 @@ ps-is-iface-def = (p psst) (r i64) {
     ps-peek-at(p, i) != tok.IDENT -> return
     i = i + 1
     t2 = ps-peek-at(p, i)
-    t2 == tok.DOT -> {
 
-        ; generic-receiver 形：t.m(...) ⇒ Go parser.go:404-407 直接判 blockIface
-        i = i + 1
-        ps-peek-at(p, i) != tok.IDENT -> return
-        i = i + 1
-        ps-peek-at(p, i) != tok.LPAREN -> return
+    ; 體內合併項：裸名 + NEWLINE（`serialize { json⏎ noml }`）
+    t2 == tok.NEWLINE -> {
+        r = 1
+        return
+    }
+
+    ; 空介面體 `name { }`：內容無從取証，語句位置別無其他合法用途 ⇒ 介面。
+    t2 == tok.RBRACE -> {
+        r = 1
+        return
+    }
+
+    ; 點號形（點號父介面 `sql.db⏎` 與 generic-receiver `t.m(...)`）：
+    ; Go parser.go:404-407 不看後續 token，直接判 blockIface。
+    t2 == tok.DOT -> {
         r = 1
         return
     }
@@ -7513,9 +7533,11 @@ ps-is-iface-def = (p psst) (r i64) {
 ;   不消費 token）：pos=IDENT name 且 +1=IDENT（首個繼承介面名）。Go 的 look(k)=current 之後
 ;   第 k+2 個【非註解】token ⇒ 以索引前視 + COMMENT 跳讀模擬（NEWLINE 【不】跳，鏡 Go 寬容）。
 ;   掃描 DOT/COMMA 交錯的介面名列表；終點須恰為 LBRACE，再分類區塊內容首 token：
-;   IDENT 且其後（跳註解）為 LPAREN 或 DOT ⇒ 介面（Go:107 回 parseInterfaceDefinition）。
-;   ⚠️ 內容為欄位形時 Go 回 parseStructDefinition（struct-with-implements），但全語料無此形
-;   （s79 掃圖仅 sql.no 為介面形）⇒ 本守衛【不】放行欄位形，維持舊路徑零回歸。
+;   IDENT 且其後（跳註解）為 LPAREN 或 DOT ⇒ 回 1（介面，Go:107 回 parseInterfaceDefinition）。
+;   另接受「首成員為體內合併項」（IDENT + NEWLINE，如 `db enter, leave { json⏎ }`）
+;   與空介面體（RBRACE）——Go stmt.go 的同一條分派已放開這兩形，同樣回 1。
+;   內容為欄位形（`user json { name str⏎ }`）⇒ 回 2（struct-with-implements，
+;   Go:107 回 parseStructDefinition）。
 ps-is-iface-inherits = (p psst) (r i64) {
     r = 0
     ps-peek-at(p, 1) != tok.IDENT -> return
@@ -7580,6 +7602,53 @@ ps-is-iface-inherits = (p psst) (r i64) {
     ps-peek-at(p, t2i) == tok.COMMENT -> t2i = t2i + 1
     t2 = ps-peek-at(p, t2i)
     t1 == tok.IDENT && (t2 == tok.LPAREN || t2 == tok.DOT) -> r = 1
+
+    ; 體內合併項（首成員為裸介面名，如 `db enter, leave { json⏎ }`）與空介面體：
+    ; 對應 Go stmt.go 分派的 `tok2==NEWLINE` / `tok1==RBRACE` 兩形。
+    t1 == tok.IDENT && t2 == tok.NEWLINE -> r = 1
+    t1 == tok.RBRACE -> r = 1
+
+    ; 欄位形（`user serialize, roundtrip { name str⏎ }`）⇒ 回 2：
+    ; 這是 struct-with-implements，Go 走 parseStructDefinition（同一個前置清單掃描）。
+    t1 == tok.IDENT && t2 != tok.LPAREN && t2 != tok.DOT && t2 != tok.NEWLINE -> r = 2
+}
+
+; ps-iface-merge-ahead：判定【目前 pos=首段名 IDENT】是否為「接口合併項」。
+;   合併項形態（鏡 Go decl.go 的 isInterfaceMergeItem）：
+;     裸名         + NEWLINE / COMMA / RBRACE / EOF
+;     裸名 . 裸名  + NEWLINE / COMMA / RBRACE / EOF
+;   其餘（後接 `(` 的方法形、後接 `(` 的 t.m 泛型接收者形）⇒ 回 0，走原方法分支。
+;   ⚠️ current 就是首段名本身 ⇒ 所有前視從 +1 起（名字後的第一個 token）。
+;   本函式不消費 token，只前視。
+ps-iface-merge-ahead = (p psst) (r i64) {
+    r = 0
+    t = ps-peek-at(p, 1)
+    {
+        t == tok.DOT -> {
+            a = ps-peek-at(p, 2)
+            b = ps-peek-at(p, 3)
+            a == tok.IDENT -> {
+                b == tok.NEWLINE -> r = 1
+
+                b == tok.COMMA -> r = 1
+
+                b == tok.RBRACE -> r = 1
+
+                b == tok.EOF -> r = 1
+            }
+        }
+
+        -> {
+            t == tok.NEWLINE -> r = 1
+
+            t == tok.COMMA -> r = 1
+
+            t == tok.RBRACE -> r = 1
+
+            t == tok.EOF -> r = 1
+        }
+    }
+    r
 }
 
 ; ps-parse-iface-def：把陳述位置的 `name { m(...) }` 建為 InterfaceDefinition。
@@ -7641,89 +7710,103 @@ ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
             mt.typ != tok.IDENT -> go = false
             go -> {
                 mname = mt.lit
-                ps-bump(p); 消費方法名
-                mrecv = ''
-                mgen = ''
-                mvar = ''
-                mcnt = 0
-                ps-peek(p) == tok.DOT -> {
+                mio = ps-iface-merge-ahead(p)
+                mio == 1 -> {
 
-                    ; generic receiver：t.m(...) ⇒ Receiver=t、IsGenericReceiver=true
-                    mrecv = mname
-                    mgen = 'true'
-                    ps-bump(p); 消費 DOT
-                    mt2 = ps-peek-token(p)
-                    mt2.typ != tok.IDENT -> go = false
-                    go -> {
-                        mname = mt2.lit
-                        ps-bump(p); 消費方法名
+                    ; 接口合併項（體內形式）：`json` / `sql.db` —— 只收集父介面名，不建方法節點。
+                    ps-bump(p); 消費父介面名首段
+                    ps-peek(p) == tok.DOT -> {
+                        ps-bump(p); 消費 DOT
+                        mname = mname - '.' - ps-peek-token(p).lit
+                        ps-bump(p); 消費末段父介面名
                     }
+                    imps.push(mname)
                 }
-                ps-peek(p) != tok.LPAREN -> go = false
-                go -> {
-                    ps-bump(p); 消費 (
+                mio == 0 -> {
+                    ps-bump(p); 消費方法名
+                    mrecv = ''
+                    mgen = ''
+                    mvar = ''
+                    mcnt = 0
+                    ps-peek(p) == tok.DOT -> {
 
-                    ; 參數：interface 的參數**不解析默認值**（Go decl.go:920-1030）⇒ res-param=1
-                    p.res-param = 1
-                    prm = 1
-                    (prm) {
-                        ps-peek(p) == tok.RPAREN -> prm = 0
-                        ps-peek(p) == tok.EOF -> prm = 0
-                        prm -> {
-                            tt = ps-peek(p)
-                            {
-                                tt == tok.NEWLINE -> ps-bump(p)
+                        ; generic receiver：t.m(...) ⇒ Receiver=t、IsGenericReceiver=true
+                        mrecv = mname
+                        mgen = 'true'
+                        ps-bump(p); 消費 DOT
+                        mt2 = ps-peek-token(p)
+                        mt2.typ != tok.IDENT -> go = false
+                        go -> {
+                            mname = mt2.lit
+                            ps-bump(p); 消費方法名
+                        }
+                    }
+                    ps-peek(p) != tok.LPAREN -> go = false
+                    go -> {
+                        ps-bump(p); 消費 (
 
-                                tt == tok.COMMA -> ps-bump(p)
+                        ; 參數：interface 的參數**不解析默認值**（Go decl.go:920-1030）⇒ res-param=1
+                        p.res-param = 1
+                        prm = 1
+                        (prm) {
+                            ps-peek(p) == tok.RPAREN -> prm = 0
+                            ps-peek(p) == tok.EOF -> prm = 0
+                            prm -> {
+                                tt = ps-peek(p)
+                                {
+                                    tt == tok.NEWLINE -> ps-bump(p)
 
-                                -> {
-                                    vf0 = p.var-flag
-                                    p.var-flag = 0
+                                    tt == tok.COMMA -> ps-bump(p)
+
+                                    -> {
+                                        vf0 = p.var-flag
+                                        p.var-flag = 0
+                                        pj = ps-parse-param(t, p)
+                                        mvar = ''
+                                        p.var-flag == 1 -> mvar = 'true'
+                                        p.var-flag = vf0
+                                        pj > 0 -> {
+                                            mp.push(pj)
+
+                                            #{overflow=wrap}
+                                            mcnt = mcnt + 1
+                                        }
+                                        ps-peek(p) == tok.RPAREN -> prm = 0
+                                    }
+                                }
+                            }
+                        }
+                        ps-peek(p) == tok.RPAREN -> ps-bump(p); 消費 )
+
+                        ; 結果組 `(res bool)`：Go decl.go:1032-1063
+                        ps-peek(p) == tok.LPAREN && ps-peek-at(p, 1) == tok.IDENT -> {
+                            ps-bump(p); 消費 (
+                            rr = 1
+                            (rr) {
+                                ps-peek(p) == tok.RPAREN -> rr = 0
+                                ps-peek(p) == tok.EOF -> rr = 0
+                                rr -> {
                                     pj = ps-parse-param(t, p)
-                                    mvar = ''
-                                    p.var-flag == 1 -> mvar = 'true'
-                                    p.var-flag = vf0
                                     pj > 0 -> {
                                         mp.push(pj)
 
                                         #{overflow=wrap}
                                         mcnt = mcnt + 1
                                     }
-                                    ps-peek(p) == tok.RPAREN -> prm = 0
+                                    ps-peek(p) == tok.COMMA -> ps-bump(p)
+                                    ps-peek(p) == tok.RPAREN -> rr = 0
                                 }
                             }
+                            ps-peek(p) == tok.RPAREN -> ps-bump(p); 消費 )
                         }
+                        p.res-param = 0
+                        mn.push(mname)
+                        mr.push(mrecv)
+                        mv.push(mvar)
+                        mg.push(mgen)
+                        mc.push(mcnt)
+                        nm = nm + 1
                     }
-                    ps-peek(p) == tok.RPAREN -> ps-bump(p); 消費 )
-
-                    ; 結果組 `(res bool)`：Go decl.go:1032-1063
-                    ps-peek(p) == tok.LPAREN && ps-peek-at(p, 1) == tok.IDENT -> {
-                        ps-bump(p); 消費 (
-                        rr = 1
-                        (rr) {
-                            ps-peek(p) == tok.RPAREN -> rr = 0
-                            ps-peek(p) == tok.EOF -> rr = 0
-                            rr -> {
-                                pj = ps-parse-param(t, p)
-                                pj > 0 -> {
-                                    mp.push(pj)
-
-                                    #{overflow=wrap}
-                                    mcnt = mcnt + 1
-                                }
-                                ps-peek(p) == tok.COMMA -> ps-bump(p)
-                                ps-peek(p) == tok.RPAREN -> rr = 0
-                            }
-                        }
-                        ps-peek(p) == tok.RPAREN -> ps-bump(p); 消費 )
-                    }
-                    p.res-param = 0
-                    mn.push(mname)
-                    mr.push(mrecv)
-                    mv.push(mvar)
-                    mg.push(mgen)
-                    mc.push(mcnt)
-                    nm = nm + 1
                 }
             }
         }
@@ -7792,6 +7875,31 @@ ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
 ;     kid0=Type(子先於父)、kid1=Value(定義恒 0)。`type:` 文字由 dumper 自 kid0 合成(OF-TYPE)，不佔槽。
 ps-parse-struct-def = (t ast, p psst, name str) (idx i64) {
     ps-bump(p); 消費 name IDENT
+
+    ; struct-with-implements：前置實作清單 `user json, fmt {`（鏡 Go decl.go:1342-1358）。
+    ;   單純 `name {` 形 current 已是 LBRACE ⇒ 本迴圈零次迭代、零影響。
+    nimp = 0
+    ig = true
+    (ig) {
+        tt = ps-peek(p)
+        {
+            tt == tok.COMMENT -> ps-bump(p)
+
+            tt == tok.IDENT -> {
+                ps-bump(p); 消費介面名首段
+                (ps-peek(p) == tok.DOT) {
+                    ps-bump(p); 消費 DOT
+                    ps-peek(p) == tok.IDENT -> ps-bump(p); 消費末段
+                }
+
+                #{overflow=wrap}
+                nimp = nimp + 1
+                ps-peek(p) == tok.COMMA -> ps-bump(p)
+            }
+
+            -> ig = false
+        }
+    }
     ps-bump(p); 消費 LBRACE
     flds []i64 = with-cap(4)
     (ps-peek(p) != tok.RBRACE && ps-peek(p) != tok.EOF) {
@@ -7843,7 +7951,7 @@ ps-parse-struct-def = (t ast, p psst, name str) (idx i64) {
     ps-expect(p, tok.RBRACE)
     idx = ast.add(t, asp.K-STRUCT-DEFINITION)
     ast.set-slot(t, idx, 0, ast.put-str(t, name))
-    ast.set-slot(t, idx, 1, ast.put-str(t, '0')); implements 數 → 0（省略）
+    ast.set-slot(t, idx, 1, ast.put-str(t, nimp.to-str())); implements 數（0 ⇒ 省略）
     ast.set-slot(t, idx, 2, ast.put-str(t, flds.len().to-str())); fields 數（OF-LEN）
     ast.set-count(t, idx, 0, flds.len()); KIDS 迭代數
     m = 0

@@ -758,17 +758,15 @@ func (p *Parser) parseFunctionTypeAlias() Statement {
 
 	p.nextToken() // skip IDENT → ASSIGN
 	if p.currentToken.Type != lexer.ASSIGN {
-		msg := fmt.Sprintf("line %d, column %d: expected '=' in function type alias, got %s",
+		p.saveErrorf("cjih2jtt", "line %d, column %d: expected '=' in function type alias, got %s",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 	p.nextToken() // skip ASSIGN → LPAREN
 
 	if p.currentToken.Type != lexer.LPAREN {
-		msg := fmt.Sprintf("line %d, column %d: expected '(' after '=' in function type alias, got %s",
+		p.saveErrorf("sd13rw1l", "line %d, column %d: expected '(' after '=' in function type alias, got %s",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil
 	}
 
@@ -938,9 +936,8 @@ func (p *Parser) parseTypeAlias() Statement {
 	}
 	typ, ok := p.parseTypeExpression()
 	if !ok {
-		msg := fmt.Sprintf("line %d, column %d: expected type after %q in type alias",
+		p.saveErrorf("46jwfg5y", "line %d, column %d: expected type after %q in type alias",
 			p.currentToken.Line, p.currentToken.Column, name)
-		p.saveError(msg)
 		return nil
 	}
 	// After parseTypeExpression, currentToken is the first non-type token
@@ -955,9 +952,8 @@ func (p *Parser) parseTypeAlias() Statement {
 			}
 			next, ok := p.parseTypeExpression()
 			if !ok {
-				msg := fmt.Sprintf("line %d, column %d: expected type after '|'",
+				p.saveErrorf("cvl8rf8s", "line %d, column %d: expected type after '|'",
 					p.currentToken.Line, p.currentToken.Column)
-				p.saveError(msg)
 				return nil
 			}
 			ut.Types = append(ut.Types, next)
@@ -1117,9 +1113,8 @@ func (p *Parser) parseFunctionType() *FunctionType {
 	ft := &FunctionType{Token: p.currentToken}
 
 	if p.currentToken.Type != lexer.LPAREN {
-		msg := fmt.Sprintf("line %d, column %d: expected '(' to start function type, got %s instead",
+		p.saveErrorf("ljfz84ro", "line %d, column %d: expected '(' to start function type, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return ft
 	}
 	p.nextToken() // skip (
@@ -1143,9 +1138,8 @@ func (p *Parser) parseFunctionType() *FunctionType {
 				break
 			}
 			if p.currentToken.Type != lexer.COMMA {
-				msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+				p.saveErrorf("wg5j97zm", "line %d, column %d: expected comma or right parenthesis, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-				p.saveError(msg)
 				return ft
 			}
 			p.nextToken() // skip COMMA
@@ -1179,9 +1173,8 @@ func (p *Parser) parseFunctionType() *FunctionType {
 					break
 				}
 				if p.currentToken.Type != lexer.COMMA {
-					msg := fmt.Sprintf("line %d, column %d: expected comma or right parenthesis, got %s instead",
+					p.saveErrorf("qayttv4q", "line %d, column %d: expected comma or right parenthesis, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-					p.saveError(msg)
 					return ft
 				}
 				p.nextToken() // skip COMMA
@@ -1205,9 +1198,8 @@ func (p *Parser) parseFunctionType() *FunctionType {
 // (typically COMMA or RPAREN).
 func (p *Parser) parseFunctionTypeEntry() (*Parameter, bool) {
 	if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
-		msg := fmt.Sprintf("line %d, column %d: expected parameter name or type, got %s instead",
+		p.saveErrorf("y9lj5a9g", "line %d, column %d: expected parameter name or type, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil, false
 	}
 	firstTok := p.currentToken
@@ -1255,9 +1247,8 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 	// 語法（如 `cb ()()`）被拒絕，應改用具名函式型別定義。
 	if p.currentToken.Type == lexer.LPAREN {
 		if !p.AllowAnonymousFnType {
-			msg := fmt.Sprintf("line %d, column %d: anonymous function type syntax '()' is disabled; use a named function type alias or enable 'anonymous-fn-type' in package.noml",
+			p.saveErrorf("zc1zfsat", "line %d, column %d: anonymous function type syntax '()' is disabled; use a named function type alias or enable 'anonymous-fn-type' in package.noml",
 				p.currentToken.Line, p.currentToken.Column)
-			p.saveError(msg)
 			return nil, false
 		}
 		return p.parseFunctionType(), true
@@ -1342,9 +1333,8 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 			}
 		}
 	} else if !isOption && viewPrefix == "" {
-		msg := fmt.Sprintf("line %d, column %d: expected parameter type, got %s instead",
+		p.saveErrorf("ujfsckuo", "line %d, column %d: expected parameter type, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
-		p.saveError(msg)
 		return nil, false
 	}
 

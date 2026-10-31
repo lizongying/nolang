@@ -2,7 +2,6 @@
 package parser
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
@@ -189,8 +188,8 @@ func (p *Parser) recoverUnionFromMember(name string, armPatterns []string) strin
 //
 // Desugars to match expression: x { err-> ... nil-> ... -> ... }
 func (p *Parser) parseTildeMatchStatement() Statement {
-	p.saveWarning(fmt.Sprintf("line %d, column %d: '~match/case/default' is deprecated, use 'x: { pattern-> ... }' instead",
-		p.currentToken.Line, p.currentToken.Column))
+	p.saveWarningf("gno8qk1j", "line %d, column %d: '~match/case/default' is deprecated, use 'x: { pattern-> ... }' instead",
+		p.currentToken.Line, p.currentToken.Column)
 
 	tok := p.currentToken
 	p.nextToken() // skip ~
@@ -201,8 +200,8 @@ func (p *Parser) parseTildeMatchStatement() Statement {
 
 	// Expect {
 	if p.currentToken.Type != lexer.LBRACE {
-		p.saveError(fmt.Sprintf("line %d, column %d: expected '{' after ~match expression, got %s",
-			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+		p.saveErrorf("rocoxbru", "line %d, column %d: expected '{' after ~match expression, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 		return nil
 	}
 	p.nextToken() // skip {
@@ -231,8 +230,8 @@ func (p *Parser) parseTildeMatchStatement() Statement {
 			ma.IsWildcard = true
 			p.nextToken() // skip default
 		} else {
-			p.saveError(fmt.Sprintf("line %d, column %d: expected 'case' or 'default', got %s",
-				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+			p.saveErrorf("sbiepwk2", "line %d, column %d: expected 'case' or 'default', got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			p.skipToStatementEnd()
 			continue
 		}
@@ -276,7 +275,7 @@ func (p *Parser) parseTildeMatchStatement() Statement {
 	}
 
 	if len(arms) == 0 {
-		p.saveError(fmt.Sprintf("line %d, column %d: empty ~match statement", tok.Line, tok.Column))
+		p.saveErrorf("kzomgjsg", "line %d, column %d: empty ~match statement", tok.Line, tok.Column)
 		return nil
 	}
 
@@ -340,8 +339,8 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			p.nextToken() // skip #{
 			armAnnots = append(armAnnots, p.parseAnnotationBody()...)
 			if p.currentToken.Type != lexer.RBRACE {
-				p.saveError(fmt.Sprintf("line %d, column %d: expected '}' to close annotation, got %s",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String()))
+				p.saveErrorf("17mbz8cw", "line %d, column %d: expected '}' to close annotation, got %s",
+					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				break
 			}
 			p.nextToken() // skip }
@@ -666,8 +665,8 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			if !hasValArm {
 				missing = append(missing, "ok")
 			}
-			p.saveError(fmt.Sprintf("line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
-				tok.Line, tok.Column, strings.Join(missing, ", ")))
+			p.saveErrorf("xpp5i92s", "line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
+				tok.Line, tok.Column, strings.Join(missing, ", "))
 			return nil
 		}
 	}
@@ -891,7 +890,6 @@ type MatchArm struct {
 	// （既有行為，如 `parsed: { ok -> {...}  nil ->  err -> }`）。見 buildMatchDesugar（D4）。
 	ValueCtx bool
 }
-
 
 // isArmStart checks if the current token starts a new match arm
 func isArmStart(p *Parser) bool {

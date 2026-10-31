@@ -122,14 +122,38 @@ test-quic-derive-initial-keys = () {
     ; 使用 RFC 9001 Appendix A 的測試向量
     ; dst_cid = 0x8394c8f03e515708
     dst-cid []byte
-    dst-cid[0] = 0x83
-    dst-cid[1] = 0x94
-    dst-cid[2] = 0xc8
-    dst-cid[3] = 0xf0
-    dst-cid[4] = 0x3e
-    dst-cid[5] = 0x51
-    dst-cid[6] = 0x57
-    dst-cid[7] = 0x08
+    dst-cid[0]: {
+        ok -> it = 0x83
+        -> _
+    }
+    dst-cid[1]: {
+        ok -> it = 0x94
+        -> _
+    }
+    dst-cid[2]: {
+        ok -> it = 0xc8
+        -> _
+    }
+    dst-cid[3]: {
+        ok -> it = 0xf0
+        -> _
+    }
+    dst-cid[4]: {
+        ok -> it = 0x3e
+        -> _
+    }
+    dst-cid[5]: {
+        ok -> it = 0x51
+        -> _
+    }
+    dst-cid[6]: {
+        ok -> it = 0x57
+        -> _
+    }
+    dst-cid[7]: {
+        ok -> it = 0x08
+        -> _
+    }
 
     key [16]byte
     iv [12]byte
@@ -150,22 +174,70 @@ test-quic-derive-initial-keys = () {
     ; client_initial_key = 0x1f369613dd76d546
     ;                     0x7730efcbe3b1a22d
     expected-key []byte
-    expected-key[0] = 0x1f
-    expected-key[1] = 0x36
-    expected-key[2] = 0x96
-    expected-key[3] = 0x13
-    expected-key[4] = 0xdd
-    expected-key[5] = 0x76
-    expected-key[6] = 0xd5
-    expected-key[7] = 0x46
-    expected-key[8] = 0x77
-    expected-key[9] = 0x30
-    expected-key[10] = 0xef
-    expected-key[11] = 0xcb
-    expected-key[12] = 0xe3
-    expected-key[13] = 0xb1
-    expected-key[14] = 0xa2
-    expected-key[15] = 0x2d
+    expected-key[0]: {
+        ok -> it = 0x1f
+        -> _
+    }
+    expected-key[1]: {
+        ok -> it = 0x36
+        -> _
+    }
+    expected-key[2]: {
+        ok -> it = 0x96
+        -> _
+    }
+    expected-key[3]: {
+        ok -> it = 0x13
+        -> _
+    }
+    expected-key[4]: {
+        ok -> it = 0xdd
+        -> _
+    }
+    expected-key[5]: {
+        ok -> it = 0x76
+        -> _
+    }
+    expected-key[6]: {
+        ok -> it = 0xd5
+        -> _
+    }
+    expected-key[7]: {
+        ok -> it = 0x46
+        -> _
+    }
+    expected-key[8]: {
+        ok -> it = 0x77
+        -> _
+    }
+    expected-key[9]: {
+        ok -> it = 0x30
+        -> _
+    }
+    expected-key[10]: {
+        ok -> it = 0xef
+        -> _
+    }
+    expected-key[11]: {
+        ok -> it = 0xcb
+        -> _
+    }
+    expected-key[12]: {
+        ok -> it = 0xe3
+        -> _
+    }
+    expected-key[13]: {
+        ok -> it = 0xb1
+        -> _
+    }
+    expected-key[14]: {
+        ok -> it = 0xa2
+        -> _
+    }
+    expected-key[15]: {
+        ok -> it = 0x2d
+        -> _
+    }
 
     match-val = 1
     i <- [0..16): {
@@ -221,8 +293,14 @@ test-http3-frame-encode-decode = () {
 
     ; 編碼一個 SETTINGS 影格
     payload []byte
-    payload[0] = 0x42
-    payload[1] = 0x43
+    payload[0]: {
+        ok -> it = 0x42
+        -> _
+    }
+    payload[1]: {
+        ok -> it = 0x43
+        -> _
+    }
 
     buf []byte
     n = 0
@@ -261,9 +339,15 @@ test-qpack-encode-decode = () {
     ; 編碼單個標頭
     names [16]str
     values [16]str
-    names[0] = 'content-type'
+    names[0]: {
+        ok -> it = 'content-type'
+        -> _
+    }
 
-    values[0] = 'text/plain'
+    values[0]: {
+        ok -> it = 'text/plain'
+        -> _
+    }
     buf []byte
     n = 0
     buf, n = http3.encode-headers(names, values, 1)

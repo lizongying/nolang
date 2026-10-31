@@ -371,11 +371,11 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     ; 為「界內才寫」的 option 語義，空 vec 會靜默略過所有寫入，令 mac-input 恆為空、
     ; poly1305 對 0 位元組運算而得到全零 tag。
     mac-input []byte
-    padAad i64 = 16 - (aad.len() % 16)
-    padAad == 16 -> padAad = 0
-    padCipher i64 = 16 - (cipher.len() % 16)
-    padCipher == 16 -> padCipher = 0
-    mac-input = with-len(aad.len() + padAad + cipher.len() + padCipher + 16)
+    pad-aad i64 = 16 - (aad.len() % 16)
+    pad-aad == 16 -> pad-aad = 0
+    pad-cipher i64 = 16 - (cipher.len() % 16)
+    pad-cipher == 16 -> pad-cipher = 0
+    mac-input = with-len(aad.len() + pad-aad + cipher.len() + pad-cipher + 16)
     pos = 0
 
     ; AAD
@@ -604,11 +604,11 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     ; 同 seal：先 with-len 填出 mac-input 總長度，否則 `mac-input[k]: { ok -> it = … }`
     ; 對空 vec 靜默略過，mac-input 恆空。
     mac-input []byte
-    padAad i64 = 16 - (aad.len() % 16)
-    padAad == 16 -> padAad = 0
-    padCipher i64 = 16 - (cipher.len() % 16)
-    padCipher == 16 -> padCipher = 0
-    mac-input = with-len(aad.len() + padAad + cipher.len() + padCipher + 16)
+    pad-aad i64 = 16 - (aad.len() % 16)
+    pad-aad == 16 -> pad-aad = 0
+    pad-cipher i64 = 16 - (cipher.len() % 16)
+    pad-cipher == 16 -> pad-cipher = 0
+    mac-input = with-len(aad.len() + pad-aad + cipher.len() + pad-cipher + 16)
     pos = 0
     i <- [0..aad.len()): {
 

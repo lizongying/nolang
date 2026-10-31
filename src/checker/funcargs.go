@@ -1932,7 +1932,7 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 			line, col = p.Line, p.Column
 		}
 		results = append(results, ValidateResult{
-			TraceID: "stdargtyp",
+			TraceID: "5lycdtsz",
 			Line:    line,
 			Column:  col,
 			Message: fmt.Sprintf("argument %d of '%s.%s': expected '%s', got '%s'",
@@ -1986,7 +1986,7 @@ func checkPrivateBuiltinMethodCall(e *parser.CallExpression, dot *parser.DotExpr
 		where = "user code"
 	}
 	return []ValidateResult{{
-		TraceID: "privbuiltin",
+		TraceID: "8w3q93g2",
 		Line:    line,
 		Column:  col,
 		Message: fmt.Sprintf("private builtin method '%s.%s' may only be called from within module %s, not from %s", recvType, dot.Property, recvType, where),
@@ -2061,7 +2061,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 				// "expects at most 1 input argument(s), got 3".
 				if !sig.Variadic && len(e.Arguments) > maxArgs {
 					results = append(results, ValidateResult{
-						TraceID: "oarg2",
+						TraceID: "uea62he5",
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
 						Message: fmt.Sprintf("function '%s' expects at most %d input argument(s), got %d — output parameters should be bound via assignment, e.g. result = %s(...)", ident.Value, maxArgs, len(e.Arguments), ident.Value),
@@ -2150,7 +2150,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						}
 						if !underUnwrap && ty.IsOptionRaw(argType) && ty.StripOptionRaw(argType) == expectedType {
 							results = append(results, ValidateResult{
-								TraceID: "fxxoptarg",
+								TraceID: "3604icnf",
 								Line:    e.Token.Line,
 								Column:  e.Token.Column,
 								Message: fmt.Sprintf("argument %d of '%s': passing a bare option value of type '%s' where '%s' is expected requires explicit unwrap (match on the value and call inside the `-> it` arm); implicit unwrap of option arguments is not allowed", i+1, ident.Value, argType, expectedType),

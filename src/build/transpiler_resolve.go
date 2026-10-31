@@ -84,6 +84,10 @@ func resolveModuleFile(modPath, workspaceRoot string) string {
 	if _, err := os.Stat(fullPath); err == nil {
 		return fullPath
 	}
+	// .noml 直接引入：磁碟上沒有同名 .no 時，將診斷（vet lint）歸因到 .noml。
+	if noml := findNomlImport(fullPath); noml != "" {
+		return noml
+	}
 	return ""
 }
 
@@ -169,6 +173,11 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		fullPath := pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), relPath)
 		if !strings.HasSuffix(fullPath, ".no") {
 			fullPath = fullPath + ".no"
+		}
+		// .noml 直接引入：同名 .no 不存在時，把 noml 重建為 nolang 源碼
+		// （結構體名 = 文件名，見 noml_import.go）。
+		if nomlPath := nomlImportPath(fullPath); nomlPath != "" {
+			return t.resolveNomlFile(nomlPath)
 		}
 		return t.resolveFile(fullPath)
 	}
@@ -298,7 +307,12 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	if !strings.HasSuffix(modulePath, ".no") {
 		modulePath = modulePath + ".no"
 	}
-	return t.resolveFile(filepath.Clean(modulePath))
+	modulePath = filepath.Clean(modulePath)
+	// .noml 直接引入（與上面的 / 分支同口徑）。
+	if nomlPath := nomlImportPath(modulePath); nomlPath != "" {
+		return t.resolveNomlFile(nomlPath)
+	}
+	return t.resolveFile(modulePath)
 }
 
 // resolveFile parses a .no file and applies lib.no export filtering if present.

@@ -37,16 +37,25 @@ to be recognized as the ending delimiter
 >
 > **Multi-line closing rule:** The closing `;;` must likewise be followed by a newline or EOF (only whitespace allowed in between). An unterminated multi-line comment runs to the end of the file.
 
-> **Rule: One statement per line; using commas `,` to combine multiple statements on the same line is forbidden.** (The semicolon `;` is now a comment marker and can no longer join statements.)
-> This rule also applies to code examples within comments. Even in comments, multiple statements should not be placed on the same line using commas, to avoid confusing readers.
->
-> ```no
-; ❌ Wrong: combining multiple statements with commas in comments
-; h0 = 1732584193, h1 = 4023233417
+> **Rule: One statement per line — single-line multi-statement writing is forbidden.**
+> The semicolon `;` is a **comment marker**, never a statement separator, and `,` cannot join statements either. Every statement inside a block `{ ... }` must occupy its own line.
+> This rule also applies to code examples inside comments: even there, never put multiple statements on one line with `;` or `,`.
 
-; ❌ Wrong: combining multiple statements with commas
+```no
+; ❌ Wrong: `;` used as a statement separator — everything after `;` is a comment,
+; including the closing `}`. The block never closes and the rest is silently dropped.
+; cond -> { print('X'); return }
+
+; ❌ Wrong: comma joining statements
+; h0 = 1732584193, h1 = 4023233417
 ; out = from-i64(v), out = from-u64(v)
 ; debug(msg), info(msg), warn(msg)
+
+; ✅ Correct: one statement per line
+cond -> {
+    print('X')
+    return
+}
 
 ; ✅ Correct: one statement per line
 ; h0 = 1732584193
@@ -57,6 +66,8 @@ to be recognized as the ending delimiter
 ; info(msg)
 ; warn(msg)
 ```
+
+> **Why `;` is especially dangerous:** in `cond -> { print('X'); return }` the tail `; return }` is all comment, so the real code is only `cond -> { print('X')`. The block never closes, and every statement after the stranded `}` (usually the whole remainder of the function body) is swallowed; diagnostics may also point far away from the actual mistake.
 
 ## Data Types
 
@@ -1910,6 +1921,18 @@ json {
 json.to-json = () {
 }
 
+noml {
+    to-noml()
+}
+
+serialize {
+    json
+    noml
+}
+
+serialize = json | noml
+serialize = json & noml
+
 ; Interface implementation
 user json {
     name str
@@ -1931,10 +1954,50 @@ user.other = () {
 }
 ```
 
+### Interface Merging
+
+An interface can *merge* the methods of other interfaces: write the parent interface names inside the interface body, **one per line** (module prefixes allowed), with no commas and no parentheses:
+
+```no
+json { to-json() }
+noml { to-noml() }
+
+serialize {
+    json
+    noml
+}
+
+; Transitive merge: roundtrip gets every method of serialize, json and noml
+roundtrip {
+    serialize
+    roundtrip-json()
+}
+```
+
+Rules:
+
+- **Recursive merge**: merging is transitive — `roundtrip` merges `serialize`, and `serialize` merges `json` / `noml`, so `roundtrip` owns the methods of all three interfaces.
+- **One per line, no commas**: `serialize { json, noml }` has the same shape as a C-style enum (`color { red, green }`), so it is still parsed as an enum, not as interface merging.
+- **Same-name methods**: identical signatures (same parameter and result types; the receiver name may differ) ⇒ deduplicated into one; different signatures ⇒ a diagnostic is reported.
+- **Implementing side**: a type only declares the interfaces it implements (leading list, `user serialize { name str }`); methods of parent interfaces count as implemented too, and signature checking reaches through parents.
+- **`no fmt`**: the older "leading list" spelling (`serialize json, noml { }`) still parses, but `no fmt` rewrites it into the in-body form and `no vet` emits a WARNING about it.
+
+Diagnostics (shared by `no vet` and the editor, TraceID `ifmrg001`):
+
+| Case | Message |
+| --- | --- |
+| Parent interface not declared | `interface 'serialize': unknown parent interface 'noml'` |
+| Merge cycle | `interface 'a': merge cycle a -> b -> a` |
+| Same name, different signature | `interface 'serialize': merged method 'to-str' has conflicting signatures ('json.to-str', 'noml.to-str')` |
+
+> Spellings such as `serialize = json \| noml` are **union type** syntax and have nothing to do with interface merging; interface merging only affects which methods a type must provide.
+
 ### Special Interfaces
 
 ```no
-file enter, leave {
+file {
+    enter
+    leave
 }
 ```
 
@@ -3024,6 +3087,53 @@ utils/
 ; use /utils/math.add
 ; use std/math.add a
 ```
+
+#### Importing `.noml` Configuration Files Directly
+
+A `.noml` file can be imported with `#`: resolution looks for `<name>.no` first and falls
+back to `<name>.noml`. After the import, **the struct name is the file name** (without the
+extension) and each member becomes a field of that struct. A same-named global value holds
+the file contents, so you read configuration with `server.port`.
+
+```noml
+; cfg/server.noml
+{
+  host: 'localhost'
+  port: 8080
+  tags: [] #{type = '[]str'}
+  compiler: {
+    version: 'v0.1.0'
+  }
+}
+```
+
+```no
+# /cfg/server
+
+print(server.port)             ; 8080
+print(server.compiler.version) ; v0.1.0
+```
+
+- A field's type comes from the member's `#{type = '...'}` annotation (the value is a full
+  nolang type expression such as `'[]str'`, `'[]i64'`, `'?i64'`). Without an annotation it
+  is inferred from the value: string → `str`, integer → `i64`, decimal → `f64`,
+  bool → `bool`, object → a generated nested struct (`server-compiler`), array →
+  `[]element-type`.
+- Empty containers (`[]`, `{}`) **must** carry `#{type = '...'}`: noml values are untyped,
+  so an empty container cannot be inferred. When an object member is annotated with
+  `#{type = 'x'}` the annotation is used as-is (`x` must be defined by you) and no nested
+  struct is generated.
+- Nested struct names are prefixed with the file name (`server-compiler`); nested types
+  are defined before their host type.
+- Keys are converted to lower-case hyphenated nolang names (`anonymous-fn-type`): a leading
+  digit gets `f-`, and a name equal to a keyword gets `x-`.
+- An `as` alias renames the value binding only; the struct name stays the file name:
+  `# /cfg/server as cfg`.
+- `.noml` types never take a module prefix: even when the file name equals a standard
+  library module (e.g. `server`), the type stays bare.
+- `package.noml` / `workspace.noml` also accept `#{...}` annotations (e.g.
+  `#{type = '[]str'}`): they are ignored at parse time and only serve external tools that
+  rebuild a strongly typed structure; the syntax is identical to nolang's `#{...}`.
 
 ### Exporting Modules
 

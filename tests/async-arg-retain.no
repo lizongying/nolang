@@ -52,7 +52,10 @@ test-str-share = () {
 test-inplace-keeps-copy = () {
     a = [1, 2, 3]
     n = co first(a)
-    a[0] = 99
+    a[0]: {
+        ok -> it = 99
+        -> _
+    }
     print(n); expect: 1
 }
 

@@ -73,7 +73,7 @@ func TestCaptureDiscardUnderscoreExempt(t *testing.T) {
 				t.Fatalf("`_ =` must be exempt from ovfhndld, got %d", n)
 			}
 			counts := lintCounts(t, c.src)
-			for _, id := range []string{"idxhndld", "ovfhndld", "ovf-int-default"} {
+			for _, id := range []string{"idxhndld", "ovfhndld", "xmicjezl"} {
 				if counts[id] != 0 {
 					t.Fatalf("`_ =` must not raise %s, got %d (%v)", id, counts[id], counts)
 				}
@@ -267,7 +267,7 @@ func TestCaptureNoCapturePointStillReported(t *testing.T) {
     x = a + b
     io.outln(x)
 }`,
-			traces: map[string]int{"ovfhndld": 1, "ovf-int-default": 0, "optunuse": 0},
+			traces: map[string]int{"ovfhndld": 1, "xmicjezl": 0, "optunuse": 0},
 		},
 		{
 			// 裸表達式陳述（無 `_ =`）多半是誤寫，與 `_ =` 豁免區分開。
@@ -275,7 +275,7 @@ func TestCaptureNoCapturePointStillReported(t *testing.T) {
 			src: `f = (a i64, b i64) () {
     a + b
 }`,
-			traces: map[string]int{"ovfhndld": 1, "ovf-int-default": 1},
+			traces: map[string]int{"ovfhndld": 1, "xmicjezl": 1},
 		},
 	}
 	for _, c := range cases {
@@ -301,7 +301,7 @@ func TestCaptureOptionalTargetSuppressesIntOverflow(t *testing.T) {
     io.outln('done')
 }`
 	counts := lintCounts(t, src)
-	if counts["ovf-int-default"] != 0 {
-		t.Fatalf("option-typed target must suppress ovf-int-default, got %d (%v)", counts["ovf-int-default"], counts)
+	if counts["xmicjezl"] != 0 {
+		t.Fatalf("option-typed target must suppress ovf-int-default, got %d (%v)", counts["xmicjezl"], counts)
 	}
 }

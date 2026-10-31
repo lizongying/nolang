@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lizongying/nolang/build/js"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/parser"
 )
@@ -124,6 +125,11 @@ type compileAssembly struct {
 	mainLocalTypes map[string]bool   // 主程序自行定義的型別裸名（同名時不得加前綴）
 	mainLocalOwner map[string]string // 剔除主程序本地型別後的 typeOwner
 	prefixedFns    map[string]bool   // prefixCollidingFunctions 改名過的函數
+	// nomlTypes / nomlStmts 記錄由 .noml 重建出的型別裸名與語句。結構體名
+	// 就是文件名，故它們必須與主程序本地型別同等對待：不參與模組前綴，也不
+	// 被 typeOwner 中同名的模組型別（如 std/server 的 server.server）改寫。
+	nomlTypes map[string]bool
+	nomlStmts map[parser.Statement]bool
 }
 
 // newCompileAssembly 取 program 的工作副本並初始化合併產物（原 CompileTarget
@@ -223,8 +229,50 @@ func newCompileAssembly(t *Transpiler, program *parser.Program, varTypes, global
 // （傳遞依賴，見 mergeModules 的 drain 迴圈）。
 func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	t := a.t
+	// 第三方 ESM 導入（# npm/<specifier>）：JS 後端下**不**解析為 .no 原始碼。
+	// 與 js_backend.go 的 processUseAndMerge 同口徑：先校驗 specifier 與
+	// package.noml 宣告，再把 use 行原樣留在 merged 裡，供 JS 生成器發射
+	// import 頭、checker 登記導入名（`lodash` / 別名 `deep-get` / `chunk`）。
+	// 缺了這一支，`no vet` 會走 resolveUse → resolveModule 的 npm/ 硬錯分支，
+	// 對 emit="js" 的套件（如 example/esm-imports）誤報 ERROR。
+	if t.jsBackend && js.IsESMUse(use) {
+		spec, _ := js.ESMSpecifier(use)
+		if _, err := js.SanitizeSpecifier(spec); err != nil {
+			return fmt.Errorf("import %q: %w", use.Path, err)
+		}
+		if !esmDeclared(t.pkg, spec) {
+			return fmt.Errorf("ESM module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", spec, spec)
+		}
+		a.merged.Statements = append(a.merged.Statements, use)
+		return nil
+	}
+	// 原生包導入（#{bind = ffi|wasm} + wasm=/lib=）：JS 後端下同口徑——use 行是
+	// 策略標記，不是本地 .no 模組，extern 由程式內的 #{c} 宣告提供。照舊解析會
+	// 把 `# /math` 當成本地模組去找 `<ws-root>/math.no` 而硬錯
+	// （`no vet example/native-wasm` 就是這樣）。故保留 use 行、跳過解析。
+	if t.jsBackend {
+		if np, isNative := js.NativeUsePolicy(use, a.merged.Sem); isNative {
+			if np.WASM != "" && !js.IsRelativeSpecifier(np.WASM) && !esmDeclared(t.pkg, np.WASM) {
+				return fmt.Errorf("native wasm module %q is not declared in package.noml dependencies; add dependencies: ['%s:^latest'] (or dev-dependencies) and run npm install", np.WASM, np.WASM)
+			}
+			a.merged.Statements = append(a.merged.Statements, use)
+			return nil
+		}
+	}
 	if use.Alias == "" && a.loadedUserModules[use.Path] {
 		return nil
+	}
+	// `.noml` 直接引入：結構體名就是文件名，不參與模組前綴（見 noml_import.go
+	// 的 mergeNomlModule）。先看磁盤：傳遞依賴（從模組內部再導入）走不到
+	// preload 的掃描，不能只依賴 resolveUse 登記的 nomlModules。
+	if nomlPath := t.nomlImportForUse(use); nomlPath != "" {
+		return a.mergeNomlModule(use, nomlPath)
+	}
+	// 只有路徑沒有函數名時，別名無對象可導入（別名適用於 `.noml` 導入或
+	// `# path.fn as alias`）。以前這種寫法是語法錯誤，現在路徑後可跟 as，
+	// 必須明確拒絕而不是默默什麼都不導入。
+	if use.Alias != "" && use.Function == "" {
+		return fmt.Errorf("import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file", use.Path, use.Alias)
 	}
 	modProg, err := t.resolveUse(use)
 	if err != nil {
@@ -437,6 +485,11 @@ func (a *compileAssembly) prefixMethodsAndTypes() {
 			a.mainLocalTypes[name] = true
 		}
 	}
+	// .noml 導入生成的型別同樣是本地型別：結構體名就是文件名，不得被同名
+	// 模組型別前綴改寫（見 mergeNomlModule）。
+	for name := range a.nomlTypes {
+		a.mainLocalTypes[name] = true
+	}
 	prefixMethodNames(a.merged.Statements, a.typeOwner, a.mainLocalTypes)
 	// 型別參考改寫必須區分歸屬：
 	//   - 模組語句用完整 typeOwner（模組內的裸名引用要跟隨定義端一起改寫成
@@ -453,7 +506,7 @@ func (a *compileAssembly) prefixMethodsAndTypes() {
 			mainStmtSet[mainStmt] = true
 		}
 		for _, mergedStmt := range a.merged.Statements {
-			if mainStmtSet[mergedStmt] {
+			if mainStmtSet[mergedStmt] || a.nomlStmts[mergedStmt] {
 				rewriteTypeRefsInStmt(mergedStmt, a.mainLocalOwner)
 			} else {
 				rewriteTypeRefsInStmt(mergedStmt, a.typeOwner)

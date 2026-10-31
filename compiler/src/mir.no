@@ -3,12 +3,24 @@
 ; Authority：src/mir/mir.go（Op enum / Inst / Func / Module）。
 ;
 ; 表示约定（扁平 arena，遵 §5.3.4.as「结构体不跨模块按值传」）：
-;   一个函数 = 平行数组（ops/dsts/as/bs/syms），同下标成一条指令。
+;   一个函数 = 平行数组（ops/dsts/xa/bs/syms/blks），同下标成一条指令。
 ;   - ops[k]  = OP-*
 ;   - dsts[k] = 目标值 id（0 = 无结果）；值 id 1..nargs 是函数参数
-;   - as[k] / bs[k] = 操作数 a / b
-;   - syms[k] = 符号（仅 OP-CALL 用；其余占位 ''，与 ops 等长）
-;   指令按顺序发射（M4-b 单基本块；br/condbr/phi 留 M4-c）。
+;   - xa[k] / bs[k] = 操作数 a / b（⚠️ 不叫 as——as 是保留字）
+;   - syms[k] = 符号（仅 OP-CALL / OP-STRCONST 用；其余占位 ''，与 ops 等长）
+;   - blks[k] = 所属基本块 id（M4-c 起）
+;   指令按顺序发射。
+
+; ── 型别码（M4-c 第七件：带型别的函数签名）──────────────────
+; 值 id 的 SSA 名由「型别」决定，不住同一个命名空间：
+;   TY-I64 → %v<id>（i64）、TY-STR → %sv<id>（%str-long）、TY-VEC → %vc<id>（%vec）。
+; LLVM 不允许同名不同型，故形参/返回值的命名必须按型别选前缀。
+TY-I64 = 0
+TY-STR = 1
+TY-VEC = 2
+; TY-OPT → %op<id>（%option）。`?T` 只有**一个** LLVM 型别，元素型别只活在高层
+; 语义里（payload 到底是 i64 还是 %str-long，由读它的 op 决定）。
+TY-OPT = 3
 
 OP-CONST = 0
 OP-ADD = 1
@@ -60,3 +72,17 @@ OP-VECNEW = 18
 OP-VECPUSH = 19
 OP-VECLEN = 20
 OP-VECGET = 21
+; ── option（M4-c 第十件；%option = { i64 tag, [3 x i64] slot }，tag 0=ok/1=nil/2=err）──
+; option 值住在第五个命名空间 %op<id>（类型 %option）。
+; OP-OPTNONE：dst = option 值 id。发 tag=1（nil）的常量。
+; OP-OPTSOME：dst = option 值 id；a = i64 值 id。发 tag=0 + slot[0] = %v<a>
+;             （Go codegen.go:2530 的 `insertvalue ..., i64 %pi, 1, 0` 同形）。
+; OP-OPTTAG ：dst = i64 值 id；a = option 值 id。发 extractvalue %option, 0（原始 tag）。
+; OP-OPTISOK：dst = i64 值 id；a = option 值 id。tag==0 ? 1 : 0（icmp eq + zext）。
+; OP-OPTGET ：dst = i64 值 id；a = option 值 id。发 extractvalue %option, 1, 0（slot[0] 当 i64）。
+;             ⚠️ 只对 **i64 载荷** 有意义；str/vec 载荷要按 payload 型别 bitcast 读，属后续。
+OP-OPTNONE = 22
+OP-OPTSOME = 23
+OP-OPTTAG = 24
+OP-OPTISOK = 25
+OP-OPTGET = 26

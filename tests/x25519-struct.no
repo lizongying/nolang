@@ -90,13 +90,16 @@ test-struct-field = () (pass bool) {
 ; test-func-output: 測試從函數輸出參數取得 [32]byte 後傳給 scalarmult-base
 ; hex-to-bytes: 將 hex 字串轉為 [32]byte
 hex-to-bytes = (hex-str str) (out [32]byte) {
+    ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
+    #{ascii}
+    hex-src = hex-str
     i <- [0..32): {
 
         #{overflow=wrap}
-        hi char = hex-str[i * 2]
+        hi char = hex-src[i * 2]
 
         #{overflow=wrap}
-        lo char = hex-str[i * 2 + 1]
+        lo char = hex-src[i * 2 + 1]
         hi-v = 0
         lo-v = 0
         {

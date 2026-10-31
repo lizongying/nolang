@@ -1,0 +1,98 @@
+; interface-merge.no — 接口合併（interface merging）端到端測試
+;
+; 語法：合併項寫在接口體內，每行一個父接口名（可帶模組前綴，不加逗號）。
+;
+;     serialize {
+;         json
+;         noml
+;     }
+;
+; 舊的前置列表形（`serialize json, noml { }`）仍可解析，但那是兼容寫法，
+; `no fmt` 會改寫為體內形並由 lint 給 WARNING。
+;
+; 本檔驗證四件事：
+;   1. 只有合併項、沒有自身方法的接口可以被解析並被型別實現；
+;   2. `user serialize, roundtrip` 只需實現 json / noml / 自身的方法，簽名校驗
+;      穿透父接口（`t.to-json() (s str)` 與 `user.to-json = () (s str)` 必須一致）；
+;   3. 去虛擬化把 `s serialize` / `r roundtrip` 具象化為唯一實作者 `user`，因此
+;      `s.to-json()` 攤平成 `user.to-json` 而不是不存在的 `serialize.to-json`；
+;   4. 父接口方法（to-json 來自 json、to-noml 來自 noml）都能經子接口變數調用，
+;      且三層傳遞（roundtrip → serialize → json/noml）同樣生效。
+
+; ─────────────────────────────────────────────
+; 父接口
+; ─────────────────────────────────────────────
+json {
+    t.to-json() (s str)
+}
+
+noml {
+    t.to-noml() (s str)
+}
+
+; ─────────────────────────────────────────────
+; 子接口：只有合併項，沒有自身方法
+; ─────────────────────────────────────────────
+serialize {
+    json
+    noml
+}
+
+; 三層：roundtrip 合併 serialize，而 serialize 又合併 json / noml
+roundtrip {
+    serialize
+    t.roundtrip() (s str)
+}
+
+; ─────────────────────────────────────────────
+; 實作：user 宣告實作 serialize 與 roundtrip（父接口方法一併繼承）
+; ─────────────────────────────────────────────
+user serialize, roundtrip {
+    name str
+    age i64
+}
+
+user.to-json = () (s str) {
+    s = 'json:' - .name
+}
+
+user.to-noml = () (s str) {
+    s = 'noml:' - .name - ':' - .age.to-str()
+}
+
+user.roundtrip = () (s str) {
+    s = .to-json() - '/' - .to-noml()
+}
+
+u = user {
+    name: 'Alice'
+    age: 30
+}
+
+; 介面型別變數 —— 唯一實作者是 user
+s serialize = u
+
+j = s.to-json()
+n = s.to-noml()
+
+{
+    j == 'json:Alice' && n == 'noml:Alice:30' -> print('PASS: interface-merge')
+
+    -> {
+        print('FAIL: interface-merge')
+        print(j)
+        print(n)
+    }
+}
+
+r roundtrip = u
+got = r.roundtrip()
+
+{
+    got == 'json:Alice/noml:Alice:30' -> print('PASS: interface-merge-transitive')
+
+    -> {
+        print('FAIL: interface-merge-transitive')
+        print(got)
+    }
+}

@@ -708,19 +708,31 @@ to be recognized as the ending delimiter
 ;;
 ```
 
-**One statement per line** is still a hard rule — never use commas `,` to combine multiple statements on one line (semicolons are now comments, so `;` can no longer join statements). This applies inside comments too.
+**One statement per line — single-line multi-statement writing is forbidden.** The semicolon `;` is a **comment marker**, never a statement separator, and `,` cannot join statements either. Every statement inside a block `{ ... }` must occupy its own line. This applies to comment examples too.
 
 ```no
-; ❌ Wrong: commas combining multiple statements (inside a comment example)
-; h0 = 1732584193, h1 = 4023233417
+; ❌ Wrong: `;` used as a statement separator — everything after `;` is a comment,
+; including the closing `}`. The block never closes and the rest is silently dropped.
+; cond -> { print('X'); return }
 
-; ❌ Wrong: comma joining statements in real code
+; ✅ Correct: one statement per line
+cond -> {
+    print('X')
+    return
+}
+
+; ❌ Wrong: comma joining statements
+; h0 = 1732584193, h1 = 4023233417
 ; out = from-i64(v), out = from-u64(v)
 
-; ✅ Correct: each statement on its own line
+; ✅ Correct: one statement per line
 ; h0 = 1732584193
 ; h1 = 4023233417
+; out = from-i64(v)
+; out = from-u64(v)
 ```
+
+**Why `;` is especially dangerous:** in `cond -> { print('X'); return }` the tail `; return }` is all comment, so the real code is only `cond -> { print('X')`. The block never closes, and every statement after the stranded `}` (usually the whole remainder of the function body) is swallowed; diagnostics may also point far away from the actual mistake. Never “compact” a block onto one line with `;`.
 
 **Multi-line trigger rule:** `;;` must be followed by **only whitespace** (spaces/tabs) up to a newline or EOF to enter multi-line mode. If `;;` is followed by any non-whitespace character on the same line, it is treated as a single-line comment (to end-of-line). The closing `;;` must likewise be followed by a newline or EOF (only whitespace allowed in between). An unterminated multi-line comment runs to EOF.
 
@@ -2752,6 +2764,42 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 ; use /utils/math.add
 ; use std/math.add a
 ```
+
+#### Importing `.noml` configuration files directly
+
+`# /cfg/server` resolves `<name>.no` first and falls back to `<name>.noml`. The imported
+file is rebuilt as nolang source: **the struct name is the file name** (`server.noml` →
+`server`), each member becomes a field, and a same-named global value holds the contents
+(`server.port`).
+
+```noml
+; cfg/server.noml
+{
+  host: 'localhost'
+  tags: [] #{type = '[]str'}
+  compiler: {
+    version: 'v0.1.0'
+  }
+}
+```
+
+```no
+# /cfg/server
+print(server.compiler.version)   ; v0.1.0
+# /cfg/server as cfg              ; alias only renames the value binding
+print(cfg.host)                  ; localhost
+```
+
+- Field types: `#{type = '...'}` wins (full nolang type expression); otherwise inferred
+  from the value (`str` / `i64` / `f64` / `bool` / generated nested struct / `[]elem`).
+- Empty containers (`[]`, `{}`) **require** `#{type = '...'}` — noml values are untyped.
+- Nested structs are named `<file>-<member>` (`server-compiler`); keys become lower-case
+  kebab-case fields (`anonymous-fn-type`), `f-` prefix for a leading digit, `x-` for
+  keywords.
+- `.noml` types never take a module prefix (a file named `server.noml` keeps struct
+  `server` even though std has a `server` module).
+- `package.noml` / `workspace.noml` also accept `#{...}` annotations; they are ignored at
+  parse time and only help external tools rebuild a typed structure.
 
 Import paths are resolved relative to the **workspace root** (the directory containing `workspace.noml`). Local packages can also be referenced by short name or full URL if they are registered in `workspace.noml` (see [Dependency Types & Version Rules](#dependency-types--version-rules) for details on how `workspace.noml` mappings affect local vs. remote classification).
 

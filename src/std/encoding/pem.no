@@ -205,10 +205,10 @@ pem-decode = (pem-str str) (result ?pem-block) {
         #{overflow=wrap}
         skip == false -> {
 
-            b64-data[dst]: {
-                ok -> it = c
-                -> _
-            }
+            ; b64-data 是 with-cap 出來的 len=0 緩衝，不能用 `b64-data[dst]: { ok -> it = c }`
+            ; （place-match 以讀作閘門，len=0 時讀越界回 nil，ok 臂永不執行），
+            ; 必須直接下標寫入才能增長長度。
+            b64-data[dst] = c
             dst = dst + 1
         }
     }

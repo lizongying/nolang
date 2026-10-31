@@ -14,7 +14,7 @@ import (
 // str._set-data / txt._len / txt._data / txt._set-len):
 //
 //   - a call from INSIDE the owning std module (curModule == recvType) is allowed
-//   - a call from user code or any other module is rejected with TraceID "privbuiltin"
+//   - a call from user code or any other module is rejected with TraceID "8w3q93g2"
 //   - non-underscore methods, underscore methods on other types, and unregistered
 //     underscore methods are never enforced (left to the normal checks)
 func TestCheckPrivateBuiltinMethodCall(t *testing.T) {
@@ -69,8 +69,8 @@ func TestCheckPrivateBuiltinMethodCall(t *testing.T) {
 				t.Fatalf("expected NO error for %s.%s from module %q, got: %q", c.recvType, c.prop, c.curModule, got[0].Message)
 			}
 			if c.wantErr {
-				if got[0].TraceID != "privbuiltin" {
-					t.Fatalf("expected TraceID %q, got %q", "privbuiltin", got[0].TraceID)
+				if got[0].TraceID != "8w3q93g2" {
+					t.Fatalf("expected TraceID %q, got %q", "8w3q93g2", got[0].TraceID)
 				}
 				if got[0].Line != 7 || got[0].Column != 3 {
 					t.Fatalf("expected error position 7:3, got %d:%d", got[0].Line, got[0].Column)

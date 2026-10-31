@@ -99,7 +99,7 @@ b {
 				t.Fatalf("expected %d error(s), got %d: %+v", c.want, len(res), res)
 			}
 			for _, r := range res {
-				if r.TraceID != "fieldtag1" {
+				if r.TraceID != "2r4io7fc" {
 					t.Fatalf("unexpected TraceID %q: %+v", r.TraceID, r)
 				}
 			}

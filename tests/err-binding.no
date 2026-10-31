@@ -1,20 +1,27 @@
-; err-binding.no — `err(e) ->` 析構綁定端到端驗證
+; err-binding.no — err 臂的 `it` / `err(e)` 析構綁定端到端驗證
 ;
-; 1) 基本：err(e) 把 err 載荷（str 訊息）綁到 e，等價於 `err ->` 但 it 改名 e
-; 2) 嵌套：內層 match 的 err(e) 綁定不得覆蓋外層綁定名
-; 3) err(e) 載荷可當 str 用（方法呼叫）
+; err 臂綁定的是 **err 結構**（`option { ok(v t), nil, err(e err.err) }`），
+; 即 `{code, msg, file, line, col}`；訊息字串是 `it.msg`。
+;
+; 推薦寫法：`err -> ... it ...`——不引入額外綁定名，也就不會有同名局部型別
+; 跨臂泄漏的問題；確實需要改名時才寫 `err(e) ->`，e 與 it 同值。
+;
+; 1) 基本：推薦形態 `err ->` + `it`
+; 2) 嵌套：內層 match 的 err(m) 綁定不得覆蓋外層綁定名
+; 3) err 的 msg 欄位可當 str 用（方法呼叫）
 
-; (1) 基本 err(e)
+; (1) 基本 err 臂：it 就是 err 結構
 a ?i64 = err('boom')
 a: {
     ok(v) -> print('fail 1: ok {v.to-str()}\n')
 
-    err(e) -> print('ok 1: {e}\n')
+    err -> print('ok 1: {it}\n')
 
     nil -> print('fail 1: nil\n')
 }
 
 ; (2) 嵌套：外層 err(m) 進入後，內層 err(m) 不得污染外層 m
+;     本節專門驗證具名綁定，故仍寫 err(m)
 b ?i64 = err('inner')
 outer ?i64 = err('outer-msg')
 outer: {
@@ -24,24 +31,25 @@ outer: {
         b: {
             ok(w) -> print('fail 2: inner ok\n')
 
-            err(m) -> print('ok 2a: inner {m}\n')
+            err(m) -> print('ok 2a: inner {m.msg}\n')
 
             nil -> print('fail 2: inner nil\n')
         }
-        m == 'outer-msg' -> print('ok 2b: outer restored {m}\n')
+        m.msg == 'outer-msg' -> print('ok 2b: outer restored {m.msg}\n')
 
-        -> print('fail 2b: outer got {m}\n')
+        -> print('fail 2b: outer got {m.msg}\n')
     }
 
     nil -> print('fail 2: outer nil\n')
 }
 
-; (3) err(e) 載荷可當 str 用
+; (3) err 綁定的是整個 err 結構（{code, msg, file, line, col}），
+;     不是載荷字串本身——要取訊息長度得先讀 msg（str）。
 c ?str = err('oops')
 c: {
     ok(v) -> print('fail 3: ok\n')
 
-    err(e) -> print('ok 3: len={e.len()}\n')
+    err -> print('ok 3: len={it.msg.len()}\n')
 
     nil -> print('fail 3: nil\n')
 }
