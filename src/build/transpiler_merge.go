@@ -132,7 +132,8 @@ type compileAssembly struct {
 //  1. CloneProgram：ParseProgram 輸出自此不可變，寫點全部落在副本上。
 //  2. mangleOverloads：處理方法重載（入口程式）。
 //  3. injectEnterLeave：插入作用域生命週期調用。
-//  4. merged 初始化 + Sem / FmtTrivia 副表匯集 + 跨檔案簽名重新注入。
+//  4. promoteScalarAssignments：賦值位置的整數 → 結構體隱式提升。
+//  5. merged 初始化 + Sem / FmtTrivia 副表匯集 + 跨檔案簽名重新注入。
 func newCompileAssembly(t *Transpiler, program *parser.Program, varTypes, globalVarTypes map[string]string, importedModules []string, mainVarNames map[string]bool) *compileAssembly {
 	// S5 stage 6（2026-10-21）：進入裝配前取工作副本——ParseProgram 輸出
 	// 自此不可變，改名 / 模組前綴 / 呼叫解析等寫點全部落在副本上（§1.4）。
@@ -142,6 +143,11 @@ func newCompileAssembly(t *Transpiler, program *parser.Program, varTypes, global
 	mangleOverloads(program, varTypes)
 	// 自動 enter/leave：插入作用域生命週期調用
 	injectEnterLeave(program)
+	// 隱式提升：賦值位置上把整數右值包進結構體的唯一無損構造子（如
+	// `x bigint = 5` → `x bigint = bigint.from-i64(5)`）。必須與 mangleOverloads /
+	// injectEnterLeave 同期落在工作副本上 —— 合成節點要與用戶手寫同形、且在
+	// 模組前綴與方法解析之前就位（見 transpiler_promote.go）。
+	promoteScalarAssignments(program)
 	// 處理 use 陳述句：載入模組並合併函數定義和常量
 	// 註：importedModules 和 mainVarNames 已在上方合併 PASS 中收集完成
 	merged := &parser.Program{Statements: []parser.Statement{}}

@@ -15,9 +15,9 @@ import (
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/lexer"
+	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/ty"
-	pkg "github.com/lizongying/nolang/package"
 )
 
 // FilterByExports 依 lib.no 匯出聲明過濾模組 Program（供 build 代碼生成使用）。
@@ -634,6 +634,13 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 			return nil
 		}
 		if s.Value != nil {
+			// 宣告面（structasg 守衛用）：本次 let 帶標註時以標註為準，否則沿用
+			// 先前登記的型別（參數／輸出參數／更早的宣告）。必須在下面的登記
+			// 覆寫之前取快照。
+			prevDeclType, prevDeclared := "", false
+			if s.Name != nil {
+				prevDeclType, prevDeclared = varTypes[s.Name.Value]
+			}
 			// A `?=` unwrap desugars to `__unwrap_N = <expr>`; calls within that
 			// RHS are exempt from the bare-arithmetic-argument rule because the
 			// `?=` itself is the required explicit unwrap.
@@ -663,6 +670,12 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 					}
 					if inferred == "" {
 						inferred = inferExprType(s.Value, varTypes, nil, "")
+					}
+					// `c = s.byte(i)`：str/txt 的原始位元組存取器在 Go 表裡以裸名
+					// 註冊，inferExprType 查不到 ⇒ c 沒有型別。補一次裸名回落，
+					// 否則下游 union 成員守衛（unionarg）看不到這是 ?byte。
+					if inferred == "" {
+						inferred = inferBareBuiltinCallType(s.Value, varTypes)
 					}
 					if inferred != "" {
 						varTypes[s.Name.Value] = inferred
@@ -694,6 +707,18 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 						}
 					}
 				}
+			}
+			// structasg：宣告是結構體、右值可靜態證明為純量 ⇒ 源碼層拒收。
+			// 這條路不經過 checker.go 的 15w45dqk（其 isConcreteType 門檻對
+			// 具名結構體回 false），所以必須在這裡補。
+			if s.Name != nil && !resultParamNames[s.Name.Value] && !s.IsPropagation {
+				declared := ""
+				if s.Type != nil && s.Type.String() != "" {
+					declared = varTypes[s.Name.Value]
+				} else if prevDeclared {
+					declared = prevDeclType
+				}
+				results = append(results, checkStructAssignScalar(s.Name.Value, declared, s.Value, structFields)...)
 			}
 			return results
 		}
@@ -1796,6 +1821,25 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 	recvType := resolveExprType(dot.Receiver, varTypes, structFields)
 	params, key, storage := stdMethodParamTypes(recvType, dot.Property)
 	if len(params) == 0 {
+		// 降糖運算符鏈 `(m._mul(10))._add(x)`：接收者本身是運算符呼叫，通用解析
+		// 回 ""（表裡沒有 `(呼叫).方法` 這種鍵），上面那張參數表就查不到。對
+		// union 形參而言這正是缺陷的原始形狀，故單獨補一次接收者解析；其餘判定
+		// （stdargtyp 等）保持原樣不動，避免改動既有診斷面。
+		altRecv := resolveArgType(dot.Receiver, varTypes, structFields)
+		if altRecv != "" {
+			if altParams, _, _ := stdMethodParamTypes(altRecv, dot.Property); len(altParams) > 0 {
+				for i, arg := range e.Arguments {
+					if i >= len(altParams) || altParams[i] == "" {
+						break
+					}
+					arg = ungroupExpr(arg)
+					if us := checkUnionMemberArg(arg, altParams[i], resolveArgType(arg, varTypes, structFields),
+						altRecv+"."+dot.Property, i+1); len(us) > 0 {
+						return us
+					}
+				}
+			}
+		}
 		return nil
 	}
 	var results []ValidateResult
@@ -1834,6 +1878,9 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 		if mentionsTypeVar(paramType) {
 			continue
 		}
+		// 括號不改變型別，但 resolveExprType 沒有 GroupedExpression 分支——`(c - 48)`
+		// 這種實參會掉到字面量那一側（右運算元 48 → i64），把 ?byte 藏起來。
+		arg = ungroupExpr(arg)
 		argType := resolveExprType(arg, varTypes, structFields)
 		if argType == "" {
 			continue // unknown argument type: nothing to assert
@@ -1845,7 +1892,15 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 		// here with a source position instead (`unionarg`). Placed BEFORE the option
 		// guard on purpose: `?i64` must resolve through its payload, while `?byte`
 		// still has to be rejected.
-		if us := checkUnionMemberArg(arg, paramType, argType, recvType+"."+dot.Property, i+1); len(us) > 0 {
+		//
+		// 型別用 resolveArgType 重算一次而不是複用 argType：argType 要服務既有的
+		// stdargtyp 判定（對降糖後的 `c._sub(48)` 回 ""），本守衛則必須認得運算符
+		// 呼叫的結果型別。
+		unionArgType := argType
+		if t := resolveArgType(arg, varTypes, structFields); t != "" {
+			unionArgType = t
+		}
+		if us := checkUnionMemberArg(arg, paramType, unionArgType, recvType+"."+dot.Property, i+1); len(us) > 0 {
 			results = append(results, us...)
 			continue
 		}
@@ -2156,6 +2211,9 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 		return results
 	case *parser.InfixExpression:
 		var results []ValidateResult
+		// `a OP b` 尚未被改寫成 `a._op(b)`（那發生在 build 期），所以運算符語法
+		// 的 union 成員守衛必須在這裡補一次；見 checkOperatorOverloadUnionArg。
+		results = append(results, checkOperatorOverloadUnionArg(e, varTypes, structFields)...)
 		if e.Left != nil {
 			results = append(results, checkCallArgsInExpr(e.Left, sigs, varTypes, structFields, underUnwrap, view)...)
 		}

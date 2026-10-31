@@ -80,6 +80,40 @@ print(f('4'))
 	}
 }
 
+// TestUnionArgDesugaredOperatorChain pins the shape the REAL pipeline hands the
+// checker: `m * 10 + (c - 48)` is already `(m._mul(10))._add(c._sub(48))`, so the
+// receiver of `_add` is a CALL, not an identifier. Generic receiver resolution
+// answers "" for that (the signature table has no `(call).method` key), the
+// parameter list comes back empty, and the guard used to be skipped precisely on
+// the shape it exists for. The handler therefore re-resolves the receiver through
+// operator calls — this test fails if that fallback is removed.
+func TestUnionArgDesugaredOperatorChain(t *testing.T) {
+	if StdSigKey == "" {
+		t.Skip("std signature tables not baked; run via `make test`")
+	}
+	id := func(name string) *parser.Identifier { return &parser.Identifier{Value: name} }
+	opCall := func(recv parser.Expression, prop string, arg parser.Expression) *parser.CallExpression {
+		return &parser.CallExpression{
+			Function:  &parser.DotExpression{Receiver: recv, Property: prop},
+			Arguments: []parser.Expression{arg},
+		}
+	}
+	// (m._mul(10))._add(c._sub(48))
+	call := opCall(opCall(id("m"), "_mul", &parser.IntegerLiteral{Value: 10}), "_add", opCall(id("c"), "_sub", &parser.IntegerLiteral{Value: 48}))
+	dot := call.Function.(*parser.DotExpression)
+	varTypes := map[string]string{"m": "bigint", "c": "?byte"}
+
+	got := checkStdMethodCallArgs(call, dot, varTypes, nil)
+	if len(got) != 1 || got[0].TraceID != "unionarg" {
+		t.Fatalf("expected exactly 1 unionarg error for the desugared chain, got %d: %v", len(got), got)
+	}
+	// 對照組：同一條鏈但實參是成員（i64），不得被打斷。
+	ok := opCall(opCall(id("m"), "_mul", &parser.IntegerLiteral{Value: 10}), "_add", id("d"))
+	if got := checkStdMethodCallArgs(ok, ok.Function.(*parser.DotExpression), map[string]string{"m": "bigint", "d": "i64"}, nil); len(got) != 0 {
+		t.Fatalf("expected no error for an i64 member argument, got: %v", got)
+	}
+}
+
 // TestUnionArgMemberAllowed 對照組：合法成員實參不得被打斷。
 // 若這三條也報錯，說明守衛把規則收得太緊（會把 std 全部運算符呼叫判死）。
 func TestUnionArgMemberAllowed(t *testing.T) {

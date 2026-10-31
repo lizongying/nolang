@@ -30,6 +30,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -75,6 +76,104 @@ func unionFlattenedMemberNames(name string, aliases map[string]*parser.TypeAlias
 		out = append(out, nt.Value)
 	}
 	return out
+}
+
+// inferBareBuiltinCallType 補 inferExprType 漏掉的「裸名註冊」內建方法回傳型別。
+//
+// `str.byte` / `txt.byte` / `*.set-byte` 在 Go 表裡只以裸方法名註冊（見
+// builtin/str.go 的 ReceiverStr 註釋），inferExprType 用 `接收者.方法` 拼鍵查表
+// 因此永遠落空、回 ""——`c = s.byte(i)` 於是在參數走查的型別表裡根本不存在，
+// 下游 `c - 48` 只能從字面量推成 i64，union 成員守衛（unionarg）就瞎了。
+//
+// 只在 walker 登記變數型別時使用，不改 inferExprType 本身：那張表餵給溢位／
+// 型別相容等一大票檢查，動它的爆炸半徑與這裡完全不是一個量級。
+func inferBareBuiltinCallType(e parser.Expression, varTypes map[string]string) string {
+	call, ok := e.(*parser.CallExpression)
+	if !ok {
+		return ""
+	}
+	dot, ok := call.Function.(*parser.DotExpression)
+	if !ok {
+		return ""
+	}
+	recvType := unionArgScalarTail(resolveExprType(dot.Receiver, varTypes, nil))
+	if recvType != "str" && recvType != "txt" {
+		return ""
+	}
+	if bm := builtin.FindBuiltinMethod(dot.Property); bm != nil && len(bm.Return) > 0 {
+		return bm.Return[0].String()
+	}
+	return ""
+}
+
+// resolveArgType 是 unionarg 專用的實參型別解析：先走通用 resolveExprType，
+// 解不出來再補「降糖後的運算符呼叫」這一種形狀。
+//
+// 為什麼需要補：checker 看到的 `m + (c - 48)` 已經被 parser 降成
+// `m._add(c._sub(48))`（見 parser/lowering.go 的 maybeDesugarInfix），而
+// resolveExprType 對 `接收者.方法` 的**回傳型別**只能查表；`_sub` 這類原生整數
+// 運算沒有重載方法可查（表裡沒有 `byte._sub`），於是回 ""，整個實參被跳過——
+// 守衛恰好在自己要攔的形狀上失聲。
+//
+// 原生運算符呼叫的結果型別就是接收者的數值型別（去 `?`，與 build 端
+// inferExprMemberType 對 `(c - 48)` 的推定一致）。
+func resolveArgType(e parser.Expression, varTypes map[string]string, structFields map[string]map[string]string) string {
+	e = ungroupExpr(e)
+	if t := resolveExprType(e, varTypes, structFields); t != "" {
+		return t
+	}
+	call, ok := e.(*parser.CallExpression)
+	if !ok {
+		return ""
+	}
+	dot, ok := call.Function.(*parser.DotExpression)
+	if !ok || !parser.IsOperatorOverloadName(dot.Property) {
+		return ""
+	}
+	return unionArgScalarTail(resolveArgType(dot.Receiver, varTypes, structFields))
+}
+
+// ungroupExpr 剝掉括號，讓 `(c - 48)` 這種實參的型別能被解出。
+func ungroupExpr(e parser.Expression) parser.Expression {
+	for {
+		g, ok := e.(*parser.GroupedExpression)
+		if !ok || g.Expression == nil {
+			return e
+		}
+		e = g.Expression
+	}
+}
+
+// checkOperatorOverloadUnionArg 對中綴運算符語法補一次 union 成員守衛。
+//
+// 為什麼需要這一條：`a OP b` 在 checker 階段**還是 InfixExpression**，改寫成
+// `a._op(b)` 發生在 build 期的 lowering，因此 checkStdMethodCallArgs 永遠看不到
+// 這種寫法——而它恰恰是缺陷的原始形狀（`m * 10 + (c - 48)`）。
+//
+// 查不到重載方法參數時一律沉默：本函式只補漏，不承擔派發決策。
+func checkOperatorOverloadUnionArg(inf *parser.InfixExpression, varTypes map[string]string,
+	structFields map[string]map[string]string) []ValidateResult {
+	if inf == nil || inf.Left == nil || inf.Right == nil {
+		return nil
+	}
+	method, ok := parser.OperatorMethod(inf.Operator)
+	if !ok {
+		return nil
+	}
+	recvType := resolveExprType(ungroupExpr(inf.Left), varTypes, structFields)
+	if recvType == "" {
+		return nil
+	}
+	params, _, _ := stdMethodParamTypes(recvType, method)
+	if len(params) == 0 || params[0] == "" {
+		return nil
+	}
+	arg := ungroupExpr(inf.Right)
+	argType := resolveArgType(arg, varTypes, structFields)
+	if argType == "" {
+		return nil
+	}
+	return checkUnionMemberArg(arg, params[0], argType, recvType+"."+method, 1)
 }
 
 // checkUnionMemberArg 在 paramType 是 union 別名時，檢查實參型別是否為其成員。

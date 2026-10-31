@@ -200,6 +200,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 	// S5 stage 6（2026-10-21）：JS 後端同口徑——進入裝配前取工作副本，
 	// ParseProgram 輸出不可變（§1.4），後續合併/改寫全落在副本上。
 	program = parser.CloneProgram(program)
+	// 隱式提升（賦值位置整數 → bigint）與 native 後端同口徑：checker 已依同一張
+	// 表放行，兩邊都得改寫，否則 JS 目標上 `x bigint = 5` 又變回靜默誤編譯。
+	promoteScalarAssignments(program)
 
 	// Collect main program's top-level variable and function names to avoid
 	// duplicating them when merging module statements.
